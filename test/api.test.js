@@ -1,0 +1,93 @@
+// Tests de l'API : connexion, droits, conflits de version, numérotation, factures.
+const { test, before, after } = require('node:test');
+const assert = require('node:assert');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tuilerie-'));
+process.env.DB_FILE = path.join(dir, 'test.db');
+process.env.ADMIN_PASSWORD = 'admin-test-pw';
+const { server } = require('../server/server');
+
+let base;
+before(() => new Promise(r => server.listen(0, '127.0.0.1', () => { base = `http://127.0.0.1:${server.address().port}`; r(); })));
+after(() => { server.close(); server.closeAllConnections(); fs.rmSync(dir, { recursive: true, force: true }); });
+
+async function call(method, url, body, cookie) {
+  const res = await fetch(base + url, {
+    method,
+    headers: { ...(method !== 'GET' ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}) },
+    body: method !== 'GET' ? JSON.stringify(body || {}) : undefined,
+  });
+  return { status: res.status, body: await res.json().catch(() => null), cookie: (res.headers.get('set-cookie') || '').split(';')[0] };
+}
+async function login(l, p) { const r = await call('POST', '/api/login', { login: l, password: p }); assert.strictEqual(r.status, 200); return r.cookie; }
+
+test('accès refusé sans connexion, mauvais mot de passe refusé', async () => {
+  assert.strictEqual((await call('GET', '/api/data')).status, 401);
+  assert.strictEqual((await call('POST', '/api/login', { login: 'admin', password: 'x' })).status, 401);
+});
+
+test('écriture refusée sans Content-Type JSON (protection CSRF)', async () => {
+  const c = await login('admin', 'admin-test-pw');
+  const res = await fetch(base + '/api/records/clients/x', { method: 'PUT', headers: { Cookie: c, 'Content-Type': 'text/plain' }, body: '{}' });
+  assert.strictEqual(res.status, 415);
+});
+
+test('droits par rôle, conflits de version et numérotation', async () => {
+  const admin = await login('admin', 'admin-test-pw');
+  assert.strictEqual((await call('POST', '/api/accounts', { login: 'claire', password: 'motdepasse1', role: 'charge', nom: 'Claire' }, admin)).status, 200);
+  assert.strictEqual((await call('POST', '/api/accounts', { login: 'atelier', password: 'motdepasse2', role: 'atelier' }, admin)).status, 200);
+  const claire = await login('claire', 'motdepasse1');
+  const atelier = await login('atelier', 'motdepasse2');
+
+  // Données de démo partagées
+  const data = (await call('GET', '/api/data', null, claire)).body;
+  assert.ok(data.affaires.length > 0);
+
+  // Atelier : heures oui, clients non
+  assert.strictEqual((await call('PUT', '/api/records/temps/t-test', { data: { affaireId: 'af1', userId: 'u3', date: '2026-10-01', heures: 4 } }, atelier)).status, 200);
+  assert.strictEqual((await call('PUT', '/api/records/clients/c-test', { data: { nom: 'X' } }, atelier)).status, 403);
+  // Chargé : pas les paramètres ni les comptes
+  assert.strictEqual((await call('PUT', '/api/settings', { tva: 20 }, claire)).status, 403);
+  assert.strictEqual((await call('GET', '/api/accounts', null, claire)).status, 403);
+
+  // Conflit : deux utilisateurs modifient la même version
+  const c1 = data.clients[0];
+  const r1 = await call('PUT', `/api/records/clients/${c1.id}`, { data: { ...c1, ville: 'Albi' }, version: c1._v }, claire);
+  assert.strictEqual(r1.status, 200);
+  assert.strictEqual(r1.body._v, c1._v + 1);
+  const r2 = await call('PUT', `/api/records/clients/${c1.id}`, { data: { ...c1, ville: 'Castres' }, version: c1._v }, admin);
+  assert.strictEqual(r2.status, 409);
+  assert.strictEqual(r2.body.record.ville, 'Albi');
+
+  // Numéro de devis attribué par le serveur, à la suite des existants
+  const year = new Date().getFullYear();
+  const [d1, d2] = await Promise.all([
+    call('PUT', '/api/records/devis/dv-a', { data: { affaireId: 'af1', lignes: [] } }, claire),
+    call('PUT', '/api/records/devis/dv-b', { data: { affaireId: 'af1', lignes: [] } }, admin),
+  ]);
+  const nums = [d1.body.numero, d2.body.numero].sort();
+  assert.deepStrictEqual(nums, [`DV-${year}-0006`, `DV-${year}-0007`]);
+
+  // Facture : un chargé ne peut changer que le statut, ni la supprimer
+  const fa = (await call('PUT', '/api/records/factures/fa-x', { data: { affaireId: 'af1', statut: 'Émise', lignes: [{ qte: 1, pu: 100 }] } }, claire)).body;
+  assert.strictEqual(fa.numero, `FA-${year}-0003`);
+  const upd = await call('PUT', '/api/records/factures/fa-x', { data: { ...fa, statut: 'Payée', lignes: [], numero: 'FA-HACK' }, version: fa._v }, claire);
+  assert.strictEqual(upd.body.statut, 'Payée');
+  assert.strictEqual(upd.body.lignes.length, 1);
+  assert.strictEqual(upd.body.numero, fa.numero);
+  assert.strictEqual((await call('DELETE', '/api/records/factures/fa-x', {}, claire)).status, 403);
+  assert.strictEqual((await call('DELETE', '/api/records/factures/fa-x', {}, admin)).status, 200);
+
+  // Historique
+  const audit = (await call('GET', '/api/audit', null, admin)).body;
+  assert.ok(audit.some(a => a.login === 'claire' && a.action === 'modification'));
+});
+
+test('déconnexion invalide la session', async () => {
+  const c = await login('admin', 'admin-test-pw');
+  await call('POST', '/api/logout', {}, c);
+  assert.strictEqual((await call('GET', '/api/me', null, c)).status, 401);
+});

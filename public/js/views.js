@@ -181,7 +181,7 @@ Views.affaire.bind = (root, params) => {
 function newDevis(affaireId) {
   const af = affaireOf(affaireId);
   const cl = Store.get('clients', af.clientId) || {};
-  return Store.upsert('devis', { numero: Store.nextNumber('devis'), affaireId, date: isoDate(new Date()), validite: 30,
+  return Store.upsert('devis', { numero: '', affaireId, date: isoDate(new Date()), validite: 30,
     statut: 'Brouillon', zoneId: cl.zoneId || '', remiseGlobale: 0, lignes: [] });
 }
 
@@ -238,7 +238,7 @@ function docHeader(doc, title) {
   const s = Store.data.settings, a = affaireOf(doc.affaireId), c = Store.get('clients', a.clientId) || {};
   return `<div class="doc-head">
     <div><strong>${esc(s.societe)}</strong><br>${esc(s.adresse)}<br>SIRET ${esc(s.siret)}</div>
-    <div style="text-align:right"><strong style="font-size:18px">${title} ${esc(doc.numero)}</strong><br>Date : ${dateFr(doc.date)}<br>Affaire : ${esc(a.code)} – ${esc(a.nom)}<br>Suivi : ${esc(userName(a.chargeId))}</div>
+    <div style="text-align:right"><strong style="font-size:18px">${title} ${esc(doc.numero || '(numéro en cours…)')}</strong><br>Date : ${dateFr(doc.date)}<br>Affaire : ${esc(a.code)} – ${esc(a.nom)}<br>Suivi : ${esc(userName(a.chargeId))}</div>
   </div>
   <div style="margin-bottom:16px"><strong>${esc(c.nom)}</strong><br>${esc(c.contact)}<br>${esc(c.cp)} ${esc(c.ville)}</div>`;
 }
@@ -327,14 +327,15 @@ function bindDevisEditor(root, id) {
   root.querySelector('#del').onclick = () => { if (confirm('Supprimer ce devis ?')) { Store.remove('devis', d.id); location.hash = '#/devis'; } };
   root.querySelector('#dup').onclick = () => {
     const copy = JSON.parse(JSON.stringify(d));
-    delete copy.id; copy.numero = Store.nextNumber('devis'); copy.statut = 'Brouillon'; copy.date = isoDate(new Date());
+    Object.keys(copy).filter(k => k.startsWith('_')).forEach(k => delete copy[k]);
+    delete copy.id; copy.numero = ''; copy.statut = 'Brouillon'; copy.date = isoDate(new Date());
     const n = Store.upsert('devis', copy);
     location.hash = `#/devis/${n.id}`;
   };
   const fb = root.querySelector('#facturer');
   if (fb) fb.onclick = () => {
     const s = Store.data.settings;
-    const f = Store.upsert('factures', { numero: Store.nextNumber('facture'), devisId: d.id, affaireId: d.affaireId,
+    const f = Store.upsert('factures', { numero: '', devisId: d.id, affaireId: d.affaireId,
       date: isoDate(new Date()), echeance: isoDate(addDays(new Date(), num(s.delaiPaiement))), statut: 'Émise',
       lignes: JSON.parse(JSON.stringify(d.lignes)), zoneId: d.zoneId, remiseGlobale: d.remiseGlobale, livraisonManuelle: d.livraisonManuelle });
     location.hash = `#/facture/${f.id}`;
@@ -363,7 +364,7 @@ Views.facture = params => {
     <span class="spacer"></span>
     <select id="f-statut" style="width:auto">${optionsStr(STATUTS_FACTURE, f.statut)}</select>
     <button class="secondary" onclick="window.print()">Imprimer / PDF</button>
-    <button class="danger" id="del">Supprimer</button>
+    ${Store.can('delete', 'factures') ? '<button class="danger" id="del">Supprimer</button>' : ''}
   </div>
   <div class="doc-print">
     ${docHeader(f, 'FACTURE')}
@@ -376,7 +377,8 @@ Views.facture.bind = (root, params) => {
   const f = Store.get('factures', params[0]);
   if (!f) return;
   root.querySelector('#f-statut').onchange = e => { f.statut = e.target.value; Store.upsert('factures', f); App.toast('Statut mis à jour'); };
-  root.querySelector('#del').onclick = () => { if (confirm('Supprimer cette facture ?')) { Store.remove('factures', f.id); location.hash = '#/factures'; } };
+  const del = root.querySelector('#del');
+  if (del) del.onclick = () => { if (confirm('Supprimer cette facture ?')) { Store.remove('factures', f.id); location.hash = '#/factures'; } };
 };
 
 /* ---------------- Bibliothèque de prix ---------------- */
@@ -419,8 +421,11 @@ Views.articles.bind = root => {
     const ff = new URLSearchParams(location.hash.split('?')[1] || '').get('famille') || '';
     const p = prompt(`Pourcentage de révision des prix de vente${ff ? ` (famille « ${ff} »)` : ' (tous les articles)'} :`, '3');
     if (p === null || isNaN(+p)) return;
-    Store.all('articles').filter(a => !ff || a.famille === ff).forEach(a => { a.prixVente = Math.round(num(a.prixVente) * (1 + +p / 100) * 100) / 100; });
-    Store.save(); App.render(); App.toast('Tarifs révisés');
+    Store.all('articles').filter(a => !ff || a.famille === ff).forEach(a => {
+      a.prixVente = Math.round(num(a.prixVente) * (1 + +p / 100) * 100) / 100;
+      Store.upsert('articles', a);
+    });
+    App.render(); App.toast('Tarifs révisés');
   };
   root.querySelector('#csv').onclick = () => download('bibliotheque-prix.csv',
     toCSV([['Ref', 'Designation', 'Famille', 'Unite', 'PrixVente', 'CoutRevient', 'HeuresUnitaires', 'PoidsUnitaire'],
@@ -533,7 +538,7 @@ Views.temps = (params, query) => {
   <div class="card" style="margin-bottom:16px">
     <div class="grid2">
       <div class="field"><label>Date</label><input id="t-date" type="date" value="${isoDate(new Date())}"></div>
-      <div class="field"><label>Ressource</label><select id="t-user">${options(Store.all('users'), fu, undefined, false)}</select></div>
+      <div class="field"><label>Ressource</label><select id="t-user">${options(Store.all('users'), fu || Store.me.userId, undefined, false)}</select></div>
       <div class="field"><label>Affaire</label><select id="t-aff">${options(affs, fa, affaireLabel, false)}</select></div>
       <div class="field"><label>Tâche</label><input id="t-tache" placeholder="Pressage, cuisson, émaillage, suivi…"></div>
       <div class="field"><label>Heures</label><input id="t-h" type="number" step="0.25"></div>
@@ -616,30 +621,123 @@ const userFields = [
   { key: 'tauxHoraire', label: 'Taux horaire chargé €/h', type: 'number', step: '0.5' },
   { key: 'capaciteHebdo', label: 'Capacité hebdomadaire (h)', type: 'number' },
 ];
-Views.parametres = () => `<h1>Paramètres</h1>
+Views.parametres = () => {
+  const admin = Store.can('admin');
+  return `<h1>Paramètres</h1>
+  <h2>Mon compte</h2>
+  <div class="card">
+    <p class="muted" style="margin-top:0">Connecté en tant que <strong>${esc(Store.me.login)}</strong> (${esc(ROLE_LABELS[Store.me.role])}).</p>
+    <div class="grid2">
+      <div class="field"><label>Mot de passe actuel</label><input id="pw-cur" type="password" autocomplete="current-password"></div>
+      <div class="field"><label>Nouveau mot de passe (8 caractères min.)</label><input id="pw-new" type="password" autocomplete="new-password"></div>
+      <div class="field"><label>&nbsp;</label><button id="pw-save">Changer le mot de passe</button></div>
+    </div>
+  </div>
+  ${admin ? `
+  <h2>Société</h2>
   <div class="card">${formFields(settingsFields, Store.data.settings)}<div class="modal-actions"><button id="s-save">Enregistrer</button></div></div>
-  <h2>Équipe &amp; ressources</h2>
+
+  <h2>Comptes utilisateurs</h2>
+  <p class="muted">Administrateur : tout. Chargé d'affaires : clients, affaires, devis, factures, planning, heures (pas de suppression de facture). Atelier : saisie des heures et consultation du planning.</p>
+  <div class="toolbar"><button id="acc-add">+ Compte</button></div>
+  <div class="table-wrap"><table id="accounts"><tr><td class="muted">Chargement…</td></tr></table></div>` : ''}
+
+  ${Store.can('write', 'users') ? `
+  <h2>Équipe &amp; ressources (planning)</h2>
   <div class="toolbar"><button id="u-add">+ Ressource</button></div>
   <div class="table-wrap"><table><tr><th>Nom</th><th>Rôle</th><th class="num">Taux horaire</th><th class="num">Capacité / sem.</th></tr>
   ${Store.all('users').map(u => `<tr class="clickable" data-id="${u.id}"><td>${esc(u.nom)}</td><td>${u.role === 'charge' ? "Chargé d'affaires" : 'Atelier'}</td><td class="num">${eur(u.tauxHoraire)}</td><td class="num">${fmt(u.capaciteHebdo)} h</td></tr>`).join('')}
-  </table></div>
+  </table></div>` : ''}
+
+  ${Store.me.role !== 'atelier' ? `
   <h2>Données</h2>
-  <p class="muted">Les données sont stockées dans ce navigateur. Exportez régulièrement une sauvegarde.</p>
+  <p class="muted">Les données sont stockées sur le serveur et partagées par tous les utilisateurs. ${admin ? "Sauvegarde complète : copier le fichier de base de données du serveur, ou exporter ici." : ''}</p>
   <div class="toolbar">
     <button class="secondary" id="export">Exporter (JSON)</button>
-    <label class="btn secondary" style="color:var(--text);border:1px solid var(--border)">Importer (JSON)<input type="file" id="import" accept=".json" style="display:none"></label>
-    <button class="danger" id="reset">Réinitialiser avec les données de démo</button>
-  </div>`;
+    ${admin ? `<label class="btn secondary">Importer (JSON) – remplace tout<input type="file" id="import" accept=".json" style="display:none"></label>
+    <button class="danger" id="reset">Réinitialiser avec les données de démo</button>` : ''}
+  </div>` : ''}
+
+  ${admin ? `<h2>Historique des modifications</h2><div class="table-wrap"><table id="audit"><tr><td class="muted">Chargement…</td></tr></table></div>` : ''}`;
+};
+
+const COL_LABELS = { users: 'Ressource', clients: 'Client', articles: 'Article', zones: 'Zone', affaires: 'Affaire', devis: 'Devis', factures: 'Facture', planning: 'Planning', temps: 'Heures' };
+
+function accountModal(acc, onDone) {
+  const isNew = !acc.id;
+  const box = Modal.open(`<h2 style="margin-top:0">${isNew ? 'Nouveau compte' : 'Compte ' + esc(acc.login)}</h2>
+    <div class="grid2">
+      ${isNew ? '<div class="field"><label>Identifiant de connexion</label><input id="a-login" autocomplete="off"></div>' : ''}
+      <div class="field"><label>Nom affiché</label><input id="a-nom" value="${esc(acc.nom)}"></div>
+      <div class="field"><label>Rôle</label><select id="a-role">${Object.entries(ROLE_LABELS).map(([k, v]) => `<option value="${k}" ${k === acc.role ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+      <div class="field"><label>Ressource liée (planning / heures)</label><select id="a-user">${options(Store.all('users'), acc.userId)}</select></div>
+      <div class="field"><label>${isNew ? 'Mot de passe (8 caractères min.)' : 'Nouveau mot de passe (laisser vide pour ne pas changer)'}</label><input id="a-pw" type="password" autocomplete="new-password"></div>
+    </div>
+    <div class="modal-actions">
+      ${!isNew && acc.id !== Store.me.id ? '<button class="danger" id="a-del">Supprimer</button>' : ''}
+      <span style="flex:1"></span>
+      <button class="secondary" id="a-cancel">Annuler</button><button id="a-save">Enregistrer</button>
+    </div>`);
+  const v = id => box.querySelector(id).value;
+  box.querySelector('#a-cancel').onclick = Modal.close;
+  box.querySelector('#a-save').onclick = async () => {
+    const body = { nom: v('#a-nom'), role: v('#a-role'), userId: v('#a-user') };
+    if (v('#a-pw')) body.password = v('#a-pw');
+    try {
+      if (isNew) await api('POST', '/api/accounts', { ...body, login: v('#a-login') });
+      else await api('PUT', `/api/accounts/${acc.id}`, body);
+      Modal.close(); App.toast('Compte enregistré'); onDone();
+    } catch (e) { alert(e.message); }
+  };
+  const del = box.querySelector('#a-del');
+  if (del) del.onclick = async () => {
+    if (!confirm(`Supprimer le compte ${acc.login} ?`)) return;
+    try { await api('DELETE', `/api/accounts/${acc.id}`); Modal.close(); onDone(); } catch (e) { alert(e.message); }
+  };
+}
+
 Views.parametres.bind = root => {
-  root.querySelector('#s-save').onclick = () => { readForm(root, settingsFields, Store.data.settings); Store.save(); App.toast('Paramètres enregistrés'); };
-  root.querySelector('#u-add').onclick = () => editModal({ title: 'Nouvelle ressource', col: 'users', fields: userFields, obj: { role: 'atelier', capaciteHebdo: 35, tauxHoraire: Store.data.settings.tauxHoraireDefaut } });
+  const on = (sel, fn) => { const el = root.querySelector(sel); if (el) el.onclick = fn; };
+  on('#pw-save', async () => {
+    try {
+      await api('POST', '/api/me/password', { current: root.querySelector('#pw-cur').value, next: root.querySelector('#pw-new').value });
+      root.querySelector('#pw-cur').value = root.querySelector('#pw-new').value = '';
+      App.toast('Mot de passe modifié');
+    } catch (e) { alert(e.message); }
+  });
+  on('#s-save', async () => {
+    try { await Store.saveSettings(readForm(root, settingsFields, { ...Store.data.settings })); App.toast('Paramètres enregistrés'); }
+    catch (e) { alert(e.message); }
+  });
+  on('#u-add', () => editModal({ title: 'Nouvelle ressource', col: 'users', fields: userFields, obj: { role: 'atelier', capaciteHebdo: 35, tauxHoraire: Store.data.settings.tauxHoraireDefaut } }));
   root.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () =>
     editModal({ title: 'Ressource', col: 'users', fields: userFields, obj: { ...Store.get('users', tr.dataset.id) } }));
-  root.querySelector('#export').onclick = () => download(`tuilerie-crm-${isoDate(new Date())}.json`, Store.exportJSON());
-  root.querySelector('#import').onchange = e => {
+  on('#export', () => download(`tuilerie-crm-${isoDate(new Date())}.json`, Store.exportJSON()));
+  const imp = root.querySelector('#import');
+  if (imp) imp.onchange = e => {
     const file = e.target.files[0];
-    if (!file) return;
-    file.text().then(t => { try { Store.importJSON(t); App.render(); App.toast('Import réussi'); } catch (err) { alert('Import impossible : ' + err.message); } });
+    if (!file || !confirm('Remplacer TOUTES les données du serveur par ce fichier ?')) return;
+    file.text().then(t => Store.importJSON(t)).then(() => { App.render(); App.toast('Import réussi'); }).catch(err => alert('Import impossible : ' + err.message));
   };
-  root.querySelector('#reset').onclick = () => { if (confirm('Effacer toutes les données et recharger la démo ?')) { Store.reset(); App.render(); } };
+  on('#reset', () => {
+    if (!confirm('Effacer toutes les données du serveur (pour tous les utilisateurs) et recharger la démo ?')) return;
+    Store.reset().then(() => App.render()).catch(e => alert(e.message));
+  });
+
+  if (!Store.can('admin')) return;
+  const loadAccounts = () => api('GET', '/api/accounts').then(list => {
+    const t = root.querySelector('#accounts');
+    if (!t) return;
+    t.innerHTML = `<tr><th>Identifiant</th><th>Nom</th><th>Rôle</th><th>Ressource liée</th><th>Créé le</th></tr>` +
+      list.map(a => `<tr class="clickable" data-acc="${a.id}"><td>${esc(a.login)}</td><td>${esc(a.nom)}</td><td>${esc(ROLE_LABELS[a.role])}</td><td>${esc(a.userId ? userName(a.userId) : '—')}</td><td>${dateFr(a.createdAt)}</td></tr>`).join('');
+    t.querySelectorAll('tr[data-acc]').forEach(tr => tr.onclick = () => accountModal(list.find(a => a.id === tr.dataset.acc), loadAccounts));
+  });
+  on('#acc-add', () => accountModal({ role: 'charge' }, loadAccounts));
+  loadAccounts();
+  api('GET', '/api/audit').then(rows => {
+    const t = root.querySelector('#audit');
+    if (!t) return;
+    t.innerHTML = `<tr><th>Date</th><th>Utilisateur</th><th>Action</th><th>Élément</th></tr>` +
+      rows.map(r => `<tr><td>${new Date(r.at).toLocaleString('fr-FR')}</td><td>${esc(r.login)}</td><td>${esc(r.action)}</td><td>${esc(COL_LABELS[r.col] || '')} ${esc(r.label || '')}</td></tr>`).join('');
+  });
 };

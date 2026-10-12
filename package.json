@@ -1,0 +1,12 @@
+{
+  "name": "tuilerie-crm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CRM multi-utilisateurs pour tuilerie industrielle : devis, facturation, livraison, planning, heures, rentabilité et REX",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server/server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+  },
+  "engines": { "node": ">=22.13" }
+}

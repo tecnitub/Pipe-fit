@@ -38,7 +38,12 @@ const Modal = {
     document.getElementById('modal').classList.remove('hidden');
     return box;
   },
-  close() { document.getElementById('modal').classList.add('hidden'); },
+  close() {
+    const m = document.getElementById('modal');
+    if (m.classList.contains('hidden')) return;
+    m.classList.add('hidden');
+    if (App.pendingRemote) App.render();
+  },
 };
 
 const options = (list, sel, labelFn = x => x.nom, empty = true) =>

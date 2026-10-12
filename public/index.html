@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tuilerie CRM</title>
 <link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:,">
 </head>
-<body>
+<body class="logged-out">
 <header class="topbar">
   <div class="brand">Tuilerie CRM</div>
   <nav id="nav">
@@ -22,7 +23,9 @@
     <a href="#/analyse">Analyse &amp; REX</a>
     <a href="#/parametres">Paramètres</a>
   </nav>
+  <div class="session"><span id="whoami"></span><button class="small secondary" id="logout">Déconnexion</button></div>
 </header>
+<div id="remote-banner" class="remote-banner hidden"><span></span> <button class="small" id="remote-refresh">Rafraîchir</button></div>
 <main id="app"></main>
 <div id="modal" class="modal hidden"><div class="modal-box" id="modal-box"></div></div>
 <script src="js/store.js"></script>

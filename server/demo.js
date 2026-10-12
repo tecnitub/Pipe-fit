@@ -1,73 +1,9 @@
-// Persistance locale (localStorage) + données de démonstration.
-const STORE_KEY = 'tuilerie-crm-v1';
+// Données de démonstration chargées au premier démarrage (base vide).
+const crypto = require('node:crypto');
 
-const COLLECTIONS = ['users', 'clients', 'articles', 'zones', 'affaires', 'devis', 'factures', 'planning', 'temps'];
-
-const Store = {
-  data: null,
-
-  load() {
-    try {
-      const raw = localStorage.getItem(STORE_KEY);
-      this.data = raw ? JSON.parse(raw) : null;
-    } catch (e) {
-      this.data = null;
-    }
-    if (!this.data) this.data = demoData();
-    COLLECTIONS.forEach(c => { if (!this.data[c]) this.data[c] = []; });
-  },
-
-  save() {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(this.data)); } catch (e) { /* stockage indisponible */ }
-  },
-
-  all(col) { return this.data[col]; },
-  get(col, id) { return this.data[col].find(x => x.id === id); },
-
-  upsert(col, obj) {
-    if (!obj.id) {
-      obj.id = uid();
-      this.data[col].push(obj);
-    } else {
-      const i = this.data[col].findIndex(x => x.id === obj.id);
-      if (i >= 0) this.data[col][i] = obj; else this.data[col].push(obj);
-    }
-    this.save();
-    return obj;
-  },
-
-  remove(col, id) {
-    this.data[col] = this.data[col].filter(x => x.id !== id);
-    this.save();
-  },
-
-  nextNumber(kind) {
-    const s = this.data.settings;
-    const year = new Date().getFullYear();
-    const key = kind === 'devis' ? 'nextDevisNo' : 'nextFactureNo';
-    const n = s[key]++;
-    this.save();
-    return `${kind === 'devis' ? 'DV' : 'FA'}-${year}-${String(n).padStart(4, '0')}`;
-  },
-
-  reset() { this.data = demoData(); this.save(); },
-
-  exportJSON() { return JSON.stringify(this.data, null, 2); },
-  importJSON(text) {
-    const d = JSON.parse(text);
-    if (!d.settings) throw new Error('Fichier invalide');
-    this.data = d;
-    COLLECTIONS.forEach(c => { if (!this.data[c]) this.data[c] = []; });
-    this.save();
-  },
-};
-
-function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
-
-function isoDate(d) { return d.toISOString().slice(0, 10); }
-function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
-
-// Semaine ISO "2026-W42"
+const uid = () => crypto.randomBytes(5).toString('hex') + Date.now().toString(36).slice(-4);
+const isoDate = d => d.toISOString().slice(0, 10);
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 function isoWeek(date) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const day = d.getUTCDay() || 7;
@@ -76,10 +12,10 @@ function isoWeek(date) {
   const wk = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
   return `${d.getUTCFullYear()}-W${String(wk).padStart(2, '0')}`;
 }
-function mondayOf(date) { const d = new Date(date); const day = d.getDay() || 7; d.setDate(d.getDate() - day + 1); d.setHours(0, 0, 0, 0); return d; }
 
 function demoData() {
   const today = new Date();
+  const Y = today.getFullYear();
   const d = n => isoDate(addDays(today, n));
   const w = n => isoWeek(addDays(today, n * 7));
 
@@ -125,15 +61,15 @@ function demoData() {
     return { articleId: aid, designation: a.designation, unite: a.unite, qte, pu: a.prixVente, remise, cout: a.coutRevient, poids: a.poidsUnitaire, heures: a.heuresUnitaires };
   };
   const devis = [
-    { id: 'dv1', numero: 'DV-2026-0001', affaireId: 'af1', date: d(-55), validite: 30, statut: 'Accepté', zoneId: 'z1', remiseGlobale: 5, lignes: [line('a3', 1900), line('a4', 420), line('a5', 300), line('a6', 96), line('a9', 40)] },
-    { id: 'dv2', numero: 'DV-2026-0002', affaireId: 'af2', date: d(-115), validite: 60, statut: 'Accepté', zoneId: 'z3', remiseGlobale: 0, lignes: [line('a8', 1), line('a7', 320), line('a4', 60)] },
-    { id: 'dv3', numero: 'DV-2026-0003', affaireId: 'af3', date: d(-88), validite: 30, statut: 'Accepté', zoneId: 'z1', remiseGlobale: 12, lignes: [line('a1', 800), line('a2', 600), line('a4', 150), line('a9', 30)] },
-    { id: 'dv4', numero: 'DV-2026-0004', affaireId: 'af4', date: d(-8), validite: 30, statut: 'Envoyé', zoneId: 'z2', remiseGlobale: 0, lignes: [line('a2', 210), line('a4', 24), line('a6', 8)] },
-    { id: 'dv5', numero: 'DV-2026-0005', affaireId: 'af5', date: d(-40), validite: 30, statut: 'Refusé', zoneId: 'z1', remiseGlobale: 3, lignes: [line('a1', 2200), line('a4', 500)] },
+    { id: 'dv1', numero: `DV-${Y}-` + '0001', affaireId: 'af1', date: d(-55), validite: 30, statut: 'Accepté', zoneId: 'z1', remiseGlobale: 5, lignes: [line('a3', 1900), line('a4', 420), line('a5', 300), line('a6', 96), line('a9', 40)] },
+    { id: 'dv2', numero: `DV-${Y}-` + '0002', affaireId: 'af2', date: d(-115), validite: 60, statut: 'Accepté', zoneId: 'z3', remiseGlobale: 0, lignes: [line('a8', 1), line('a7', 320), line('a4', 60)] },
+    { id: 'dv3', numero: `DV-${Y}-` + '0003', affaireId: 'af3', date: d(-88), validite: 30, statut: 'Accepté', zoneId: 'z1', remiseGlobale: 12, lignes: [line('a1', 800), line('a2', 600), line('a4', 150), line('a9', 30)] },
+    { id: 'dv4', numero: `DV-${Y}-` + '0004', affaireId: 'af4', date: d(-8), validite: 30, statut: 'Envoyé', zoneId: 'z2', remiseGlobale: 0, lignes: [line('a2', 210), line('a4', 24), line('a6', 8)] },
+    { id: 'dv5', numero: `DV-${Y}-` + '0005', affaireId: 'af5', date: d(-40), validite: 30, statut: 'Refusé', zoneId: 'z1', remiseGlobale: 3, lignes: [line('a1', 2200), line('a4', 500)] },
   ];
   const factures = [
-    { id: 'fa1', numero: 'FA-2026-0001', devisId: 'dv2', affaireId: 'af2', date: d(-20), echeance: d(25), statut: 'Payée', lignes: JSON.parse(JSON.stringify(devis[1].lignes)), zoneId: 'z3', remiseGlobale: 0 },
-    { id: 'fa2', numero: 'FA-2026-0002', devisId: 'dv3', affaireId: 'af3', date: d(-35), echeance: d(10), statut: 'Émise', lignes: JSON.parse(JSON.stringify(devis[2].lignes)), zoneId: 'z1', remiseGlobale: 12 },
+    { id: 'fa1', numero: `FA-${Y}-` + '0001', devisId: 'dv2', affaireId: 'af2', date: d(-20), echeance: d(25), statut: 'Payée', lignes: JSON.parse(JSON.stringify(devis[1].lignes)), zoneId: 'z3', remiseGlobale: 0 },
+    { id: 'fa2', numero: `FA-${Y}-` + '0002', devisId: 'dv3', affaireId: 'af3', date: d(-35), echeance: d(10), statut: 'Émise', lignes: JSON.parse(JSON.stringify(devis[2].lignes)), zoneId: 'z1', remiseGlobale: 12 },
   ];
   const planning = [];
   const temps = [];
@@ -156,7 +92,9 @@ function demoData() {
   pushT('af3', 'u1', -85, 6, 'Suivi');
 
   return {
-    settings: { societe: 'Tuilerie Industrielle', adresse: 'ZI des Argiles – 31000 Toulouse', siret: '000 000 000 00000', tva: 20, tauxHoraireDefaut: 55, delaiPaiement: 45, nextDevisNo: 6, nextFactureNo: 3 },
+    settings: { societe: 'Tuilerie Industrielle', adresse: 'ZI des Argiles – 31000 Toulouse', siret: '000 000 000 00000', tva: 20, tauxHoraireDefaut: 55, delaiPaiement: 45 },
     users, zones, articles, clients, affaires, devis, factures, planning, temps,
   };
 }
+
+module.exports = { demoData, uid };
