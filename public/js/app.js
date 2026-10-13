@@ -4,7 +4,7 @@ const ROLE_LABELS = { admin: 'Administrateur', charge: "Chargé d'affaires", ate
 const ATELIER_VIEWS = ['pointage', 'planning', 'parametres', 'bon'];
 // Anciennes adresses et sous-écrans -> écran et entrée de menu
 const ALIASES = { affaires: 'chantiers', affaire: 'chantier', temps: 'rh' };
-const MENU_OF = { bon: 'chantiers', reception: 'chantiers', pv: 'chantiers', situations: 'factures', chantier: 'chantiers', facture: 'factures', entreprise: 'contacts', mainoeuvre: 'articles', livraison: 'articles' };
+const MENU_OF = { documents: 'parametres', bon: 'chantiers', reception: 'chantiers', pv: 'chantiers', situations: 'factures', chantier: 'chantiers', facture: 'factures', entreprise: 'contacts', mainoeuvre: 'articles', livraison: 'articles' };
 
 const App = {
   render() {
@@ -15,6 +15,8 @@ const App = {
     if (Store.me.role === 'atelier' && !ATELIER_VIEWS.includes(name)) name = 'pointage';
     const query = new URLSearchParams(qs || '');
     const view = Views[name] || Views.dashboard;
+    if (name !== 'documents') Doc.draft = null;
+    Doc.appliquer();
     const root = document.getElementById('app');
     root.innerHTML = view(params, query);
     if (view.bind) view.bind(root, params, query);

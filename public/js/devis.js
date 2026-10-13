@@ -17,44 +17,45 @@ function newDevis(fields = {}) {
 }
 
 /* ---------- Rendu du document client (devis / facture) ---------- */
-function docHeader(doc, title) {
-  const s = Store.data.settings, a = affaireOf(doc.affaireId), cid = docClientId(doc), c = entreprise(cid);
+function docHeader(doc, type) {
+  const a = affaireOf(doc.affaireId), cid = docClientId(doc), c = entreprise(cid), o = Doc.t(type);
   const bill = billingSite(cid), contact = Store.get('contacts', doc.contactId), site = siteOf(cid, doc.siteId);
   const objet = doc.objet || (Store.get('devis', doc.devisId) || {}).objet || a.nom;
-  return `<div class="doc-head">
-    <div><strong>${esc(s.societe)}</strong><br>${esc(s.adresse)}<br>SIRET ${esc(s.siret)}</div>
-    <div><strong style="font-size:18px">${title} ${esc(doc.numero || '(numéro en cours…)')}</strong><br>Date : ${dateFr(doc.date)}
-      ${a.code ? `<br>${estHorsDevis(a) ? 'Intervention' : 'Chantier'} : ${esc(a.code)}` : ''}${doc.refCommande ? `<br>Votre commande n° ${esc(doc.refCommande)}` : ''}<br>Chargé d'affaires : ${esc(userName(docChargeId(doc)))}</div>
-  </div>
+  const refs = [`Date : ${dateFr(doc.date)}`, a.code ? `${estHorsDevis(a) ? 'Intervention' : 'Chantier'} : ${esc(a.code)}` : '',
+    doc.refCommande ? `Votre commande n° ${esc(doc.refCommande)}` : '', o.charge ? `Chargé d'affaires : ${esc(userName(docChargeId(doc)))}` : ''].filter(Boolean).join('<br>');
+  return `${Doc.entete(type, `${o.titre} ${doc.numero || '(numéro en cours…)'}`, refs)}
   <div class="doc-parties">
     <div><strong>${esc(c.nom || '—')}</strong>${bill ? `<br>${esc(bill.adresse)}<br>${esc(bill.cp)} ${esc(bill.ville)}` : ''}${c.tvaIntra ? `<br>TVA : ${esc(c.tvaIntra)}` : ''}</div>
-    <div>${contact ? `À l'attention de <strong>${esc(contactName(contact))}</strong>${contact.fonction ? `, ${esc(contact.fonction)}` : ''}${contact.email ? `<br>${esc(contact.email)}` : ''}${contact.mobile || contact.tel ? `<br>${esc(contact.mobile || contact.tel)}` : ''}` : ''}
-      ${site ? `<br><br>Lieu d'intervention : <strong>${esc(site.libelle)}</strong><br>${esc(fullAddress(site))}` : ''}</div>
+    <div>${contact && o.contact ? `À l'attention de <strong>${esc(contactName(contact))}</strong>${contact.fonction ? `, ${esc(contact.fonction)}` : ''}${contact.email ? `<br>${esc(contact.email)}` : ''}${contact.mobile || contact.tel ? `<br>${esc(contact.mobile || contact.tel)}` : ''}` : ''}
+      ${site && o.lieu ? `${contact && o.contact ? '<br><br>' : ''}Lieu d'intervention : <strong>${esc(site.libelle)}</strong><br>${esc(fullAddress(site))}` : ''}</div>
   </div>
-  ${objet ? `<p class="doc-objet"><strong>Objet :</strong> ${esc(objet)}</p>` : ''}`;
+  ${objet ? `<p class="doc-objet"><strong>Objet :</strong> ${esc(objet)}</p>` : ''}${Doc.intro(type)}`;
 }
 
-function docLinesClient(doc) {
+// Lignes du document client ; type absent = tout afficher
+function docLinesClient(doc, type) {
+  const o = type ? Doc.t(type) : { numeros: true, quantites: true, prix: true, detail: true, sousTotaux: true };
   const chaps = Calc.chapitres(doc);
   const subAfter = {};
   chaps.forEach(c => { if (c.last > c.index) subAfter[c.last] = c; });
-  const nums = (doc.lignes || []).some(l => l.num);
-  const n = nums ? 6 : 5;
-  return `<div class="table-wrap"><table class="doc-lines">
-    <tr>${nums ? '<th>N°</th>' : ''}<th>Désignation</th><th class="num">Qté</th><th>Unité</th><th class="num">PU HT</th><th class="num">Total HT</th></tr>
+  const nums = o.numeros && (doc.lignes || []).some(l => l.num);
+  const n = (nums ? 1 : 0) + 1 + (o.quantites ? 2 : 0) + (o.prix ? 2 : 0);
+  const sousTotal = o.sousTotaux || !o.prix;
+  return `<div class="table-wrap"><table class="doc-lines${o.prix && o.quantites ? '' : ' compact'}">
+    <tr>${nums ? '<th>N°</th>' : ''}<th>Désignation</th>${o.quantites ? '<th class="num">Qté</th><th>Unité</th>' : ''}${o.prix ? '<th class="num">PU HT</th><th class="num">Total HT</th>' : ''}</tr>
     ${(doc.lignes || []).map((l, i) => (l.type === 'chapitre'
       ? `<tr class="chap"><td colspan="${n}">${esc(l.titre)}</td></tr>`
-      : `<tr>${nums ? `<td>${esc(l.num || '')}</td>` : ''}<td>${esc(l.designation)}${l.detail ? `<div class="muted small pre">${esc(l.detail)}</div>` : ''}</td><td class="num">${fmt(l.qte, 2)}</td><td>${esc(l.unite)}</td><td class="num">${eur(Calc.pu(l))}</td><td class="num">${eur(Calc.ligneHT(l))}</td></tr>`)
-      + (subAfter[i] ? `<tr class="subtotal"><td colspan="${n - 1}">Sous-total ${esc(subAfter[i].titre)}</td><td class="num">${eur(subAfter[i].total)}</td></tr>` : '')).join('')}
+      : `<tr>${nums ? `<td>${esc(l.num || '')}</td>` : ''}<td>${esc(l.designation)}${l.detail && o.detail ? `<div class="muted small pre">${esc(l.detail)}</div>` : ''}</td>${o.quantites ? `<td class="num">${fmt(l.qte, 2)}</td><td>${esc(l.unite)}</td>` : ''}${o.prix ? `<td class="num">${eur(Calc.pu(l))}</td><td class="num">${eur(Calc.ligneHT(l))}</td>` : ''}</tr>`)
+      + (subAfter[i] && sousTotal ? `<tr class="subtotal"><td colspan="${Math.max(1, n - 1)}">${o.prix ? 'Sous-total' : 'Total'} ${esc(subAfter[i].titre)}</td><td class="num">${eur(subAfter[i].total)}</td></tr>` : '')).join('')}
   </table></div>`;
 }
 
-function totalsTable(doc) {
-  const t = Calc.doc(doc), z = Store.get('zones', doc.zoneId);
+function totalsTable(doc, type) {
+  const t = Calc.doc(doc), z = Store.get('zones', doc.zoneId), o = type ? Doc.t(type) : { ajustements: true };
   return `<table class="totals">
-    <tr><td>Total des travaux</td><td class="num">${eur(t.brut)}</td></tr>
+    ${o.ajustements || !t.ajust.length ? `<tr><td>Total des travaux</td><td class="num">${eur(t.brut)}</td></tr>
     ${t.ajust.map(a => `<tr><td>${esc(a.libelle || (a.pct < 0 ? 'Remise' : 'Majoration'))} ${a.pct > 0 ? '+' : ''}${fmt(a.pct, 1)} %</td><td class="num">${a.montant < 0 ? '− ' : '+ '}${eur(Math.abs(a.montant))}</td></tr>`).join('')}
-    ${t.ajust.length ? `<tr><td>Total après ajustements</td><td class="num">${eur(t.net)}</td></tr>` : ''}
+    ${t.ajust.length ? `<tr><td>Total après ajustements</td><td class="num">${eur(t.net)}</td></tr>` : ''}` : `<tr><td>Total des travaux</td><td class="num">${eur(t.net)}</td></tr>`}
     ${t.livraison || z ? `<tr><td>Livraison ${z ? `(${esc(z.nom)}, ${fmt(t.poids / 1000, 2)} t)` : ''}</td><td class="num">${eur(t.livraison)}</td></tr>` : ''}
     <tr><td>Total HT</td><td class="num">${eur(t.totalHT)}</td></tr>
     <tr><td>TVA ${fmt(Store.data.settings.tva, 1)} %</td><td class="num">${eur(t.tva)}</td></tr>
@@ -62,6 +63,14 @@ function totalsTable(doc) {
     ${t.retenue ? `<tr><td>Retenue de garantie ${fmt(doc.retenuePct, 1)} %</td><td class="num">− ${eur(t.retenue)}</td></tr>
     <tr class="grand"><td>Net à payer TTC</td><td class="num">${eur(t.netAPayer)}</td></tr>` : ''}
   </table>`;
+}
+
+// Devis client complet (aperçu et impression)
+function devisDocument(d) {
+  const o = Doc.t('devis');
+  return `${docHeader(d, 'devis')}${docLinesClient(d, 'devis')}${totalsTable(d, 'devis')}
+    ${Doc.pied('devis', o.validite ? `<p class="doc-conditions">Devis valable ${esc(d.validite)} jours à compter du ${dateFr(d.date)}.</p>` : '',
+      o.signature ? `<div class="signatures"><div>Pour ${esc(Store.data.settings.societe)}<br>${esc(userName(docChargeId(d)))}</div><div>Bon pour accord du client<br>Date, cachet et signature :</div></div>` : '')}`;
 }
 
 // Pilotage : part fournitures / part main-d'œuvre, heures par catégorie, marge
@@ -177,16 +186,14 @@ function devisEditor(id) {
       ${locked ? '' : `<button class="small danger" data-aj-del="${i}" aria-label="Supprimer">✕</button>`}</div>`).join('') || '<p class="muted" style="margin:0">Aucune remise ni majoration.</p>'}
     ${locked ? '' : `<div class="toolbar" style="margin:10px 0 0"><button class="secondary small" id="add-remise">+ Remise</button><button class="secondary small" id="add-maj">+ Majoration</button></div>`}
   </div>
-  ${totalsTable(d)}
+  <div class="no-print">${totalsTable(d)}</div>
 
   <h2 class="no-print">Pilotage prévisionnel</h2>
   <div class="no-print">${pilotageDevis(t)}</div>
 
   <details class="no-print preview"><summary>Aperçu du devis client</summary>
-    <div class="doc-print">${docHeader(d, 'DEVIS')}${docLinesClient(d)}${totalsTable(d)}
-    <p class="muted" style="margin-top:20px">Devis valable ${esc(d.validite)} jours.</p></div></details>
-  <div class="print-only doc-print">${docHeader(d, 'DEVIS')}${docLinesClient(d)}${totalsTable(d)}
-    <p style="margin-top:20px">Devis valable ${esc(d.validite)} jours. Bon pour accord, date et signature :</p></div>`;
+    <div class="doc-print">${devisDocument(d)}</div></details>
+  <div class="print-only doc-print">${devisDocument(d)}</div>`;
 }
 
 Views.devis.bind = (root, params) => {

@@ -290,3 +290,28 @@ details.sign-block summary { cursor: pointer; font-weight: 600; color: var(--acc
 details.sign-block[open] { display: grid; gap: 8px; }
 .recap-hd { background: var(--panel-alt); border-radius: 6px; padding: 8px 12px; font-size: 13px; }
 .recap-hd ul { margin: 4px 0; padding-left: 18px; }
+
+/* Mise en page des documents : logo, couleur, police, mentions */
+.doc-print { font-family: var(--doc-font, inherit); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.doc-titre { font-size: 18px; color: var(--doc-accent, inherit); letter-spacing: .02em; }
+.doc-societe { display: flex; gap: 14px; align-items: flex-start; min-width: 0; }
+.doc-logo { height: var(--doc-logo-h, 60px); max-width: min(260px, 100%); object-fit: contain; }
+.doc-head.logo-centre { flex-direction: column; align-items: stretch; }
+.doc-head.logo-centre .doc-societe { flex-direction: column; align-items: center; text-align: center; }
+.doc-head.logo-centre > div:last-child { text-align: center; }
+.doc-print .doc-lines th { background: color-mix(in srgb, var(--doc-accent, #8f2f1a) 14%, var(--panel)); }
+.doc-print .chap td { color: var(--doc-accent, inherit); }
+.doc-print .totals .grand td { color: var(--doc-accent, inherit); border-top-color: var(--doc-accent, currentColor); }
+.doc-intro { margin: 0 0 14px; }
+.doc-conditions { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+.doc-rib { font-size: 13px; border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: inline-block; margin: 12px 0 0; }
+.doc-pied { margin-top: 24px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); text-align: center; }
+.doc-config { display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.doc-apercu { min-width: 0; }
+.doc-apercu .label { margin-bottom: 4px; }
+.doc-form .card { margin-bottom: 12px; }
+.doc-form summary { cursor: pointer; }
+.logo-zone { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0 4px; }
+.logo-zone .doc-logo { background: repeating-conic-gradient(#e8e8e8 0 25%, #fff 0 50%) 0 0 / 12px 12px; border: 1px solid var(--border); padding: 4px; }
+fieldset.doc-opts { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; margin: 0 0 12px; }
+@media (max-width: 900px) { .doc-config { grid-template-columns: 1fr; } }

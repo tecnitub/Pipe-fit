@@ -312,22 +312,22 @@ Views.pv = params => {
     <button class="secondary print-btn" onclick="window.print()">Imprimer / PDF</button></div>
   <h1 class="no-print">${pv.type === 'levee' ? 'PV de levée des réserves' : 'PV de réception'} ${esc(pv.numero || '')} <span class="badge ${pv.statut === 'Signé' ? 'b-ok' : 'b-warn'}">${esc(pv.statut)}</span></h1>
   <div class="doc-print">
-    <div class="doc-head"><div><strong>${esc(s.societe)}</strong><br>${esc(s.adresse)}<br>SIRET ${esc(s.siret)}</div>
-      <div><strong style="font-size:17px">${titre}</strong><br>N° ${esc(pv.numero || '')} du ${dateFr(pv.date)}${pv.lieu ? `<br>Lieu : ${esc(pv.lieu)}` : ''}</div></div>
+    ${Doc.entete('pv', titre, `N° ${esc(pv.numero || '')} du ${dateFr(pv.date)}${pv.lieu ? `<br>Lieu : ${esc(pv.lieu)}` : ''}`)}
     <div class="doc-parties"><div>Maître d'ouvrage : <strong>${esc(clientName(a.clientId))}</strong>${site ? `<br>${esc(site.libelle)}<br>${esc(fullAddress(site))}` : ''}</div>
       <div>Chantier : <strong>${esc(a.code || '')} – ${esc(a.nom)}</strong>${a.moeId ? `<br>Maîtrise d'œuvre : ${esc(clientName(a.moeId))}` : ''}</div></div>
-    ${pv.presents ? `<p><strong>Présents :</strong> ${esc(pv.presents)}</p>` : ''}
+    ${Doc.intro('pv')}${pv.presents && Doc.t('pv').presents ? `<p><strong>Présents :</strong> ${esc(pv.presents)}</p>` : ''}
     ${pv.type === 'reception' ? `<p>Après visite contradictoire des ouvrages exécutés par ${esc(s.societe)}, le maître d'ouvrage déclare :</p>
       <p class="pv-decision">${coche('Sans réserve')} prononcer la réception sans réserve<br>${coche('Avec réserves')} prononcer la réception avec les réserves listées ci-dessous<br>${coche('Refusée')} refuser la réception</p>`
     : `<p>Le maître d'ouvrage constate la levée des réserves suivantes, formulées lors de la réception :</p>`}
     ${(pv.reservesSnapshot || []).length ? `<div class="table-wrap"><table class="doc-lines"><tr><th>N°</th><th>Localisation</th><th>Réserve</th><th>Responsable</th><th>${pv.type === 'levee' ? 'Levée le' : 'À lever avant le'}</th></tr>
       ${pv.reservesSnapshot.map(r => `<tr><td>${r.numero}</td><td>${esc(r.localisation)}</td><td>${esc(r.description)}</td><td>${esc(r.responsable)}</td><td>${dateFr(pv.type === 'levee' ? r.dateLevee : r.echeance)}</td></tr>`).join('')}</table></div>` : ''}
-    ${pv.commentaire ? `<p><strong>Observations :</strong> ${esc(pv.commentaire)}</p>` : ''}
+    ${pv.commentaire && Doc.t('pv').observations ? `<p><strong>Observations :</strong> ${esc(pv.commentaire)}</p>` : ''}
     <div class="signatures signed">
       <div>Pour le maître d'ouvrage<br><strong>${esc(pv.signataireNom)}</strong>${pv.signataireQualite ? `, ${esc(pv.signataireQualite)}` : ''}${pv.signatureClientId ? `<img src="${fileUrl(pv.signatureClientId)}" alt="Signature du client">` : ''}</div>
       <div>Pour ${esc(s.societe)}<br><strong>${esc(pv.signataireEntreprise || '')}</strong>${pv.signatureEntrepriseId ? `<img src="${fileUrl(pv.signatureEntrepriseId)}" alt="Signature de l'entreprise">` : ''}</div>
     </div>
     ${pv.signeLe ? `<p class="muted small">Signé sur écran le ${new Date(pv.signeLe).toLocaleString('fr-FR')}.</p>` : ''}
+    ${Doc.pied('pv')}
   </div>`;
 };
 
@@ -339,27 +339,28 @@ Views.bon = params => {
   const hd = estHorsDevis(a), v = hd ? Calc.horsDevis(a) : null;
   const tempsBon = hd ? v.temps.filter(t => !r.signeLe || t.date <= r.date) : Store.all('temps').filter(t => t.affaireId === a.id && t.date === r.date && (r.intervenants || []).includes(t.userId));
   const consos = hd ? v.consos.filter(c => !r.signeLe || (c.date || '') <= r.date) : [];
-  const retour = Store.me.role === 'atelier' ? '#/pointage/rapports' : `#/chantier/${a.id}`;
+  const retour = Store.me.role === 'atelier' ? '#/pointage/rapports' : `#/chantier/${a.id}`, o = Doc.t('bon');
   return `<div class="toolbar"><a href="${retour}" class="btn secondary">← Retour</a><span class="spacer"></span><button class="secondary print-btn" onclick="window.print()">Imprimer / PDF</button></div>
   <h1 class="no-print">Bon d'intervention ${esc(r.numero || '')} ${r.signatureClientId ? '<span class="badge b-ok">Signé</span>' : '<span class="badge b-warn">Non signé</span>'}</h1>
   <div class="doc-print">
-    <div class="doc-head"><div><strong>${esc(s.societe)}</strong><br>${esc(s.adresse)}<br>SIRET ${esc(s.siret)}</div>
-      <div><strong style="font-size:17px">BON D'INTERVENTION</strong><br>N° ${esc(r.numero || '')} du ${dateFr(r.date)}<br>${hd ? 'Intervention hors devis' : 'Chantier'} ${esc(a.code || '')}${a.refCommande ? `<br>Commande n° ${esc(a.refCommande)}` : ''}</div></div>
+    ${Doc.entete('bon', o.titre, `N° ${esc(r.numero || '')} du ${dateFr(r.date)}<br>${hd ? 'Intervention hors devis' : 'Chantier'} ${esc(a.code || '')}${a.refCommande ? `<br>Commande n° ${esc(a.refCommande)}` : ''}`)}
     <div class="doc-parties"><div>Client : <strong>${esc(clientName(a.clientId))}</strong>${site ? `<br>${esc(site.libelle)}<br>${esc(fullAddress(site))}` : ''}</div>
-      <div>${contact ? `Demandeur : <strong>${esc(contactName(contact))}</strong>${contact.fonction ? `, ${esc(contact.fonction)}` : ''}<br>` : ''}Intervenants : ${(r.intervenants || [r.userId]).map(userName).map(esc).join(', ')}</div></div>
+      <div>${contact ? `Demandeur : <strong>${esc(contactName(contact))}</strong>${contact.fonction ? `, ${esc(contact.fonction)}` : ''}` : ''}${o.intervenants ? `${contact ? '<br>' : ''}Intervenants : ${(r.intervenants || [r.userId]).map(userName).map(esc).join(', ')}` : ''}</div></div>
     <p class="doc-objet"><strong>Objet :</strong> ${esc(a.nom)}</p>
-    <h3>Travaux réalisés</h3><p class="pre">${esc(r.travaux)}</p>
-    ${r.observations ? `<h3>Observations</h3><p class="pre">${esc(r.observations)}</p>` : ''}
-    ${tempsBon.length ? `<h3>Heures</h3><div class="table-wrap"><table class="doc-lines compact"><tr><th>Date</th><th>Intervenant</th><th>Tâche</th><th>Horaires</th><th class="num">Heures</th></tr>
-      ${tempsBon.sort((x, y) => (x.date + x.userId).localeCompare(y.date + y.userId)).map(t => `<tr><td>${dateFr(t.date)}</td><td>${esc(userName(t.userId))}</td><td>${esc(t.tache)}</td><td>${t.debut ? `${esc(t.debut)} – ${esc(t.fin || '')}` : ''}</td><td class="num">${fmt(t.heures, 2)}</td></tr>`).join('')}
-      <tr class="subtotal"><td colspan="4">Total</td><td class="num">${fmt(sumBy(tempsBon, t => num(t.heures)), 2)} h</td></tr></table></div>` : ''}
-    ${consos.length ? `<h3>Matériel fourni</h3><div class="table-wrap"><table class="doc-lines compact"><tr><th>Désignation</th><th class="num">Quantité</th><th>Unité</th></tr>
+    ${Doc.intro('bon')}<h3>Travaux réalisés</h3><p class="pre">${esc(r.travaux)}</p>
+    ${r.observations && o.observations ? `<h3>Observations</h3><p class="pre">${esc(r.observations)}</p>` : ''}
+    ${tempsBon.length && o.heures ? `<h3>Heures</h3><div class="table-wrap"><table class="doc-lines compact"><tr><th>Date</th><th>Intervenant</th><th>Tâche</th>${o.horaires ? '<th>Horaires</th>' : ''}<th class="num">Heures</th></tr>
+      ${tempsBon.sort((x, y) => (x.date + x.userId).localeCompare(y.date + y.userId)).map(t => `<tr><td>${dateFr(t.date)}</td><td>${esc(userName(t.userId))}</td><td>${esc(t.tache)}</td>${o.horaires ? `<td>${t.debut ? `${esc(t.debut)} – ${esc(t.fin || '')}` : ''}</td>` : ''}<td class="num">${fmt(t.heures, 2)}</td></tr>`).join('')}
+      <tr class="subtotal"><td colspan="${o.horaires ? 4 : 3}">Total</td><td class="num">${fmt(sumBy(tempsBon, t => num(t.heures)), 2)} h</td></tr></table></div>` : ''}
+    ${consos.length && o.materiel ? `<h3>Matériel fourni</h3><div class="table-wrap"><table class="doc-lines compact"><tr><th>Désignation</th><th class="num">Quantité</th><th>Unité</th></tr>
       ${consos.map(c => `<tr><td>${esc(c.designation)}</td><td class="num">${fmt(c.qte, 2)}</td><td>${esc(c.unite)}</td></tr>`).join('')}</table></div>` : ''}
-    ${(r.photos || []).length ? `<div class="photos-grid">${r.photos.map(id => `<img src="${fileUrl(id)}" alt="Photo de l'intervention">`).join('')}</div>` : ''}
+    ${(r.photos || []).length && o.photos ? `<div class="photos-grid">${r.photos.map(id => `<img src="${fileUrl(id)}" alt="Photo de l'intervention">`).join('')}</div>` : ''}
+    ${o.conditions ? `<p class="doc-conditions pre">${esc(o.conditions)}</p>` : ''}
     <div class="signatures signed">
       <div>Pour ${esc(s.societe)}<br><strong>${esc(userName(r.userId))}</strong></div>
       <div>Le client${r.termine ? ' (intervention terminée)' : ''}<br>${r.signatureClientId ? `<strong>${esc(r.signataireNom)}</strong>${r.signataireQualite ? `, ${esc(r.signataireQualite)}` : ''}<img src="${fileUrl(r.signatureClientId)}" alt="Signature du client">` : '<span class="muted">Non signé</span>'}</div>
     </div>
     ${r.signeLe ? `<p class="muted small">Signé sur écran le ${new Date(r.signeLe).toLocaleString('fr-FR')}.</p>` : ''}
+    <div class="doc-pied">${esc(Doc.piedLegal())}</div>
   </div>`;
 };

@@ -118,22 +118,24 @@ function blDocument(sit, c, a, dv) {
   const dest = a.moeId ? entreprise(a.moeId) : entreprise(a.clientId);
   const destContact = Store.get('contacts', a.moeId ? a.moeContactId : a.contactId);
   const bill = billingSite(a.moeId || a.clientId), site = siteOf(a.clientId, a.siteId);
-  return `<div class="doc-head"><div><strong>${esc(s.societe)}</strong><br>${esc(s.adresse)}<br>SIRET ${esc(s.siret)}</div>
-    <div><strong style="font-size:18px">PROPOSITION DE SITUATION N° ${situationRang(sit)}</strong><br>BL ${esc(sit.numero || '')} du ${dateFr(sit.date)}<br>Chantier ${esc(a.code || '')} · Devis ${esc(dv.numero || '')}</div></div>
+  const o = Doc.t('situation');
+  const cols = [['Désignation', r => esc(r.designation), 'Total'], o.marche && ['Marché HT', r => eur(r.marche), eur(c.marche)], ['% cumulé', r => `${fmt(r.cumul, 1)} %`, pct(c.pctCumul)],
+    o.precedent && ['Cumulé HT', r => eur(r.montantCumul), eur(c.cumul)], o.precedent && ['Précédent HT', r => eur(r.montantPrec), eur(c.precedent)], ['Situation HT', r => eur(r.montant), eur(c.montant)]].filter(Boolean);
+  return `${Doc.entete('situation', `${o.titre} N° ${situationRang(sit)}`, `BL ${esc(sit.numero || '')} du ${dateFr(sit.date)}<br>Chantier ${esc(a.code || '')} · Devis ${esc(dv.numero || '')}`)}
     <div class="doc-parties"><div>${a.moeId ? 'Maîtrise d\'œuvre' : 'Client'} : <strong>${esc(dest.nom || '—')}</strong>${bill ? `<br>${esc(fullAddress(bill))}` : ''}${destContact ? `<br>À l'attention de ${esc(contactName(destContact))}${destContact.fonction ? `, ${esc(destContact.fonction)}` : ''}` : ''}</div>
-    <div>Maître d'ouvrage : <strong>${esc(clientName(a.clientId))}</strong>${site ? `<br>${esc(site.libelle)} – ${esc(fullAddress(site))}` : ''}</div></div>
+    <div>${o.maitreOuvrage ? `Maître d'ouvrage : <strong>${esc(clientName(a.clientId))}</strong>${site ? `<br>${esc(site.libelle)} – ${esc(fullAddress(site))}` : ''}` : ''}</div></div>
     <p class="doc-objet"><strong>Objet :</strong> ${esc(dv.objet || a.nom)} – avancement des travaux au ${dateFr(sit.date)}</p>
-    ${sit.commentaire ? `<p>${esc(sit.commentaire)}</p>` : ''}
-    <div class="table-wrap"><table class="doc-lines"><tr><th>Désignation</th><th class="num">Marché HT</th><th class="num">% cumulé</th><th class="num">Cumulé HT</th><th class="num">Précédent HT</th><th class="num">Situation HT</th></tr>
-    ${c.rows.map(r => r.chap ? `<tr class="chap"><td colspan="6">${esc(r.titre)}</td></tr>`
-      : `<tr><td>${esc(r.designation)}</td><td class="num">${eur(r.marche)}</td><td class="num">${fmt(r.cumul, 1)} %</td><td class="num">${eur(r.montantCumul)}</td><td class="num">${eur(r.montantPrec)}</td><td class="num">${eur(r.montant)}</td></tr>`).join('')}
-    <tr class="subtotal"><td>Total</td><td class="num">${eur(c.marche)}</td><td class="num">${pct(c.pctCumul)}</td><td class="num">${eur(c.cumul)}</td><td class="num">${eur(c.precedent)}</td><td class="num">${eur(c.montant)}</td></tr></table></div>
+    ${Doc.intro('situation')}${sit.commentaire ? `<p>${esc(sit.commentaire)}</p>` : ''}
+    <div class="table-wrap"><table class="doc-lines${cols.length < 5 ? ' compact' : ''}"><tr>${cols.map((k, i) => `<th${i ? ' class="num"' : ''}>${k[0]}</th>`).join('')}</tr>
+    ${c.rows.map(r => r.chap ? `<tr class="chap"><td colspan="${cols.length}">${esc(r.titre)}</td></tr>`
+      : `<tr>${cols.map((k, i) => `<td${i ? ' class="num"' : ''}>${k[1](r)}</td>`).join('')}</tr>`).join('')}
+    <tr class="subtotal">${cols.map((k, i) => `<td${i ? ' class="num"' : ''}>${k[2]}</td>`).join('')}</tr></table></div>
     <table class="totals"><tr><td>Montant de la situation HT</td><td class="num">${eur(c.montant)}</td></tr>
       <tr><td>TVA ${fmt(s.tva, 1)} %</td><td class="num">${eur(c.montant * num(s.tva) / 100)}</td></tr>
       <tr class="${retenueChantier(a) ? '' : 'grand'}"><td>Montant TTC</td><td class="num">${eur(c.montant * (1 + num(s.tva) / 100))}</td></tr>
       ${retenueChantier(a) ? `<tr><td>Retenue de garantie ${fmt(retenueChantier(a), 1)} %</td><td class="num">− ${eur(c.montant * (1 + num(s.tva) / 100) * retenueChantier(a) / 100)}</td></tr>
       <tr class="grand"><td>Net à payer TTC</td><td class="num">${eur(c.montant * (1 + num(s.tva) / 100) * (1 - retenueChantier(a) / 100))}</td></tr>` : ''}</table>
-    <div class="signatures"><div>Pour l'entreprise<br>${esc(userName(a.chargeId))}</div><div>Bon pour accord de la maîtrise d'œuvre<br>Date et signature :</div></div>`;
+    ${Doc.pied('situation', '', o.signature ? `<div class="signatures"><div>Pour ${esc(s.societe)}<br>${esc(userName(a.chargeId))}</div><div>Bon pour accord de la maîtrise d'œuvre<br>Date et signature :</div></div>` : '')}`;
 }
 
 Views.situations.bind = (root, params) => {

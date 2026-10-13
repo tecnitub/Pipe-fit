@@ -323,8 +323,12 @@ function demoData() {
   ];
 
   return {
-    files: { 'img-sig': IMAGES.signature, 'img-rack1': IMAGES.rack1, 'img-rack2': IMAGES.rack2 },
-    settings: { societe: 'Pipe-Fit Industrie', adresse: 'ZI des Forges – 69800 Saint-Priest', siret: '000 000 000 00000', tva: 20, tauxHoraireDefaut: 58, delaiPaiement: 45, dureeHebdo: 35, seuilHS50: 43, montantPanier: 10.5 },
+    files: { 'img-logo': IMAGES.logo, 'img-sig': IMAGES.signature, 'img-rack1': IMAGES.rack1, 'img-rack2': IMAGES.rack2 },
+    settings: { societe: 'Pipe-Fit Industrie', adresse: 'ZI des Forges – 69800 Saint-Priest', siret: '000 000 000 00000', tva: 20, tauxHoraireDefaut: 58, delaiPaiement: 45, dureeHebdo: 35, seuilHS50: 43, montantPanier: 10.5,
+      doc: { logoId: 'img-logo', masquerNom: true, logoHauteur: 56, couleur: '#8f2f1a', police: 'sans', tel: '04 72 00 00 00', email: 'contact@pipefit.example', web: 'www.pipefit.example',
+        tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',
+        types: { devis: { conditions: 'Acompte de 30 % à la commande. Travaux réalisés selon les normes EN 13480 et le DTU en vigueur. Hors génie civil, calorifuge et échafaudages sauf mention contraire.' },
+          facture: { conditions: 'Paiement par virement à 45 jours fin de mois.' } } } },
     users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations,
   };
 }

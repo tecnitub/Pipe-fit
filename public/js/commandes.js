@@ -87,13 +87,15 @@ function commandeEditor(id) {
   <div class="print-only doc-print">${bonCommande()}</div>`;
 
   function bonCommande() {
-    return `<div class="doc-head"><div><strong>${esc(s.societe)}</strong><br>${esc(s.adresse)}<br>SIRET ${esc(s.siret)}</div>
-      <div><strong style="font-size:18px">BON DE COMMANDE ${esc(c.numero || '')}</strong><br>Date : ${dateFr(c.date)}${af.code ? `<br>Chantier : ${esc(af.code)} – ${esc(af.nom)}` : ''}${c.dateLivraison ? `<br>Livraison souhaitée : ${dateFr(c.dateLivraison)}` : ''}</div></div>
+    const o = Doc.t('commande');
+    return `${Doc.entete('commande', `${o.titre} ${c.numero || ''}`, `Date : ${dateFr(c.date)}${af.code && o.chantier ? `<br>Chantier : ${esc(af.code)} – ${esc(af.nom)}` : ''}${c.dateLivraison && o.livraison ? `<br>Livraison souhaitée : ${dateFr(c.dateLivraison)}` : ''}`)}
       <div class="doc-parties"><div><strong>${esc(f.nom || '—')}</strong>${fSite ? `<br>${esc(fullAddress(fSite))}` : ''}${f.email ? `<br>${esc(f.email)}` : ''}</div>
-      <div>${livSite ? `Livraison : <strong>${esc(clientName(af.clientId))} – ${esc(livSite.libelle)}</strong><br>${esc(fullAddress(livSite))}${livSite.acces ? `<br>${esc(livSite.acces)}` : ''}` : `Livraison à notre atelier : ${esc(s.adresse)}`}</div></div>
-      <div class="table-wrap"><table class="doc-lines"><tr><th>Désignation</th><th class="num">Qté</th><th>Unité</th><th class="num">PU HT</th><th class="num">Total HT</th></tr>
-      ${(c.lignes || []).map(l => `<tr><td>${esc(l.designation)}</td><td class="num">${fmt(l.qte, 2)}</td><td>${esc(l.unite)}</td><td class="num">${eur(l.pu)}</td><td class="num">${eur(num(l.qte) * num(l.pu))}</td></tr>`).join('')}
-      </table></div><table class="totals"><tr class="grand"><td>Total HT</td><td class="num">${eur(total)}</td></tr></table>`;
+      <div>${!o.livraison ? '' : livSite ? `Livraison : <strong>${esc(clientName(af.clientId))} – ${esc(livSite.libelle)}</strong><br>${esc(fullAddress(livSite))}${livSite.acces ? `<br>${esc(livSite.acces)}` : ''}` : `Livraison à notre atelier : ${esc(s.adresse)}`}</div></div>
+      ${Doc.intro('commande')}
+      <div class="table-wrap"><table class="doc-lines${o.prix ? '' : ' compact'}"><tr><th>Désignation</th><th class="num">Qté</th><th>Unité</th>${o.prix ? '<th class="num">PU HT</th><th class="num">Total HT</th>' : ''}</tr>
+      ${(c.lignes || []).map(l => `<tr><td>${esc(l.designation)}</td><td class="num">${fmt(l.qte, 2)}</td><td>${esc(l.unite)}</td>${o.prix ? `<td class="num">${eur(l.pu)}</td><td class="num">${eur(num(l.qte) * num(l.pu))}</td>` : ''}</tr>`).join('')}
+      </table></div>${o.prix ? `<table class="totals"><tr class="grand"><td>Total HT</td><td class="num">${eur(total)}</td></tr></table>` : ''}
+      ${Doc.pied('commande')}`;
   }
 }
 

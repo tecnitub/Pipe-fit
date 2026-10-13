@@ -253,12 +253,15 @@ Views.facture = params => {
   </div>
   <h1 class="no-print">Facture ${esc(f.numero || '')} ${badge(f.statut)}</h1>
   <div class="doc-print">
-    ${docHeader(f, 'FACTURE')}
-    ${docLinesClient(f)}
-    ${totalsTable(f)}
-    <p class="muted" style="margin-top:20px">Échéance de paiement : ${dateFr(f.echeance)}.${f.devisId ? ` Selon devis ${esc((Store.get('devis', f.devisId) || {}).numero)}${f.situationId ? ` et situation de travaux ${esc((Store.get('situations', f.situationId) || {}).numero || '')} acceptée` : ''}.` : ''}</p>
+    ${factureDocument(f)}
   </div>`;
 };
+function factureDocument(f) {
+  const o = Doc.t('facture'), dv = Store.get('devis', f.devisId), sit = Store.get('situations', f.situationId);
+  const refs = o.references && dv ? `<p class="doc-conditions">Selon devis ${esc(dv.numero || '')}${sit ? ` et situation de travaux ${esc(sit.numero || '')} acceptée` : ''}.</p>` : '';
+  return `${docHeader(f, 'facture')}${docLinesClient(f, 'facture')}${totalsTable(f, 'facture')}
+    ${Doc.pied('facture', `<p class="doc-conditions"><strong>Échéance de paiement : ${dateFr(f.echeance)}</strong></p>${refs}`)}`;
+}
 Views.facture.bind = (root, params) => {
   const f = Store.get('factures', params[0]);
   if (!f) return;
@@ -419,6 +422,10 @@ Views.parametres = () => {
   ${admin ? `
   <h2>Société</h2>
   <div class="card">${formFields(settingsFields, Store.data.settings)}<div class="modal-actions"><button id="s-save">Enregistrer</button></div></div>
+
+  <h2>Documents</h2>
+  <div class="card inline" style="justify-content:space-between;flex-wrap:wrap"><span>Logo, couleur, coordonnées, RIB, mentions légales et éléments affichés sur les devis, factures, BL, bons de commande, attachements, bons d'intervention et PV.</span>
+    <a class="btn" href="#/documents">Mise en page des documents</a></div>
 
   <h2>Comptes utilisateurs</h2>
   <p class="muted">Administrateur : tout. Chargé d'affaires : contacts, devis, chantiers, commandes, factures, planning, RH (pas de suppression de facture). Opérateur : pointage de ses propres heures et consultation du planning. Liez chaque compte opérateur à sa fiche dans « Équipe ».</p>

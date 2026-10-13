@@ -104,20 +104,21 @@ function horsDevisView(a) {
 }
 
 function attachementHD(a, v) {
-  const s = Store.data.settings, site = siteOf(a.clientId, a.siteId), contact = Store.get('contacts', a.contactId), bon = bonSigne(a);
-  return `<div class="doc-head"><div><strong>${esc(s.societe)}</strong><br>${esc(s.adresse)}<br>SIRET ${esc(s.siret)}</div>
-    <div><strong style="font-size:17px">ATTACHEMENT DE TRAVAUX EN RÉGIE</strong><br>Intervention ${esc(a.code || '')} du ${dateFr(a.dateCreation)}${a.refCommande ? `<br>Votre commande n° ${esc(a.refCommande)}` : ''}</div></div>
+  const s = Store.data.settings, site = siteOf(a.clientId, a.siteId), contact = Store.get('contacts', a.contactId), bon = bonSigne(a), o = Doc.t('attachement');
+  const n = o.prix ? 5 : 3;
+  const ligne = (d, q, u, pu, m) => `<tr><td>${esc(d)}</td><td class="num">${fmt(q, 2)}</td><td>${esc(u)}</td>${o.prix ? `<td class="num">${eur(pu)}</td><td class="num">${eur(m)}</td>` : ''}</tr>`;
+  return `${Doc.entete('attachement', o.titre, `Intervention ${esc(a.code || '')} du ${dateFr(a.dateCreation)}${a.refCommande ? `<br>Votre commande n° ${esc(a.refCommande)}` : ''}`)}
     <div class="doc-parties"><div><strong>${esc(clientName(a.clientId))}</strong>${site ? `<br>${esc(site.libelle)}<br>${esc(fullAddress(site))}` : ''}</div>
-    <div>${contact ? `Demandeur : <strong>${esc(contactName(contact))}</strong>${contact.fonction ? `, ${esc(contact.fonction)}` : ''}` : ''}${bon ? `<br>Bon d'intervention signé le ${dateFr(bon.date)} par ${esc(bon.signataireNom)}` : ''}</div></div>
+    <div>${contact && o.contact ? `Demandeur : <strong>${esc(contactName(contact))}</strong>${contact.fonction ? `, ${esc(contact.fonction)}` : ''}` : ''}${bon ? `${contact && o.contact ? '<br>' : ''}Bon d'intervention signé le ${dateFr(bon.date)} par ${esc(bon.signataireNom)}` : ''}</div></div>
     <p class="doc-objet"><strong>Objet :</strong> ${esc(a.nom)}</p>
-    ${a.demande ? `<p class="pre">${esc(a.demande)}</p>` : ''}
-    <div class="table-wrap"><table class="doc-lines"><tr><th>Désignation</th><th class="num">Qté</th><th>Unité</th><th class="num">PU HT</th><th class="num">Montant HT</th></tr>
-      ${v.mo.length ? `<tr class="chap"><td colspan="5">Main-d'œuvre</td></tr>${v.mo.map(g => `<tr><td>${esc(g.libelle)}</td><td class="num">${fmt(g.heures, 2)}</td><td>h</td><td class="num">${eur(g.taux)}</td><td class="num">${eur(g.montant)}</td></tr>`).join('')}` : ''}
-      ${v.consos.length ? `<tr class="chap"><td colspan="5">Fournitures et matériel</td></tr>${v.consos.map(c => `<tr><td>${esc(c.designation)}</td><td class="num">${fmt(c.qte, 2)}</td><td>${esc(c.unite)}</td><td class="num">${eur(c.pu)}</td><td class="num">${eur(num(c.qte) * num(c.pu))}</td></tr>`).join('')}` : ''}
+    ${a.demande && o.demande ? `<p class="pre">${esc(a.demande)}</p>` : ''}${Doc.intro('attachement')}
+    <div class="table-wrap"><table class="doc-lines${o.prix ? '' : ' compact'}"><tr><th>Désignation</th><th class="num">Qté</th><th>Unité</th>${o.prix ? '<th class="num">PU HT</th><th class="num">Montant HT</th>' : ''}</tr>
+      ${v.mo.length ? `<tr class="chap"><td colspan="${n}">Main-d'œuvre</td></tr>${v.mo.map(g => ligne(g.libelle, g.heures, 'h', g.taux, g.montant)).join('')}` : ''}
+      ${v.consos.length ? `<tr class="chap"><td colspan="${n}">Fournitures et matériel</td></tr>${v.consos.map(c => ligne(c.designation, c.qte, c.unite, c.pu, num(c.qte) * num(c.pu))).join('')}` : ''}
     </table></div>
-    <table class="totals"><tr><td>Total HT</td><td class="num">${eur(v.total)}</td></tr><tr><td>TVA ${fmt(s.tva, 1)} %</td><td class="num">${eur(v.total * num(s.tva) / 100)}</td></tr>
-      <tr class="grand"><td>Total TTC</td><td class="num">${eur(v.total * (1 + num(s.tva) / 100))}</td></tr></table>
-    <div class="signatures"><div>Pour ${esc(s.societe)}<br>${esc(userName(a.chargeId))}</div><div>Bon pour commande<br>Date, signature et n° de commande :</div></div>`;
+    ${o.prix ? `<table class="totals"><tr><td>Total HT</td><td class="num">${eur(v.total)}</td></tr><tr><td>TVA ${fmt(s.tva, 1)} %</td><td class="num">${eur(v.total * num(s.tva) / 100)}</td></tr>
+      <tr class="grand"><td>Total TTC</td><td class="num">${eur(v.total * (1 + num(s.tva) / 100))}</td></tr></table>` : ''}
+    ${Doc.pied('attachement', '', o.signature ? `<div class="signatures"><div>Pour ${esc(s.societe)}<br>${esc(userName(a.chargeId))}</div><div>Bon pour commande<br>Date, signature et n° de commande :</div></div>` : '')}`;
 }
 
 function bindHorsDevis(root, a) {

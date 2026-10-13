@@ -120,6 +120,7 @@ Ne pas exposer le port 3000 en HTTP simple sur Internet.
 | **Réserves et réception** | Page de réunion (tablette) : liste des réserves (localisation, description, responsable, échéance, photo), PV de réception signé à l'écran par le client et l'entreprise (sans réserve / avec réserves / refus). Le PV fige les réserves, passe le chantier en « Terminé » et donne le feu vert pour la facturation. Levée des réserves (photo après travaux) puis PV de levée signé. |
 | **Retenue de garantie** | Au choix par chantier (taux, ou caution bancaire) : déduite du TTC des factures de situation (net à payer), cumul suivi sur le chantier, libération après la réception. |
 | **Import / export Excel** | Fournitures, taux de main-d'œuvre, entreprises (feuille « Sites » pour les adresses multiples) et contacts : import d'un fichier .xlsx ou .csv existant (colonnes reconnues automatiquement, ajustables, aperçu), mise à jour des fiches existantes (par ID, référence, SIRET, nom ou e-mail) et ajout des nouvelles, puis export Excel modifiable et réimportable. Une cellule vide ne remplace pas la valeur existante. |
+| **Mise en page des documents** | Paramètres → Documents (administrateur) : logo (PNG transparent), position et taille, couleur, police, coordonnées (téléphone, e-mail, site, TVA, forme juridique, capital, RCS, APE), RIB et pied de page légal communs à toute la liasse. Pour chaque document (devis, facture, situation/BL, bon de commande, attachement, bon d'intervention, PV) : titre, texte d'introduction, conditions, et éléments affichés ou masqués (N° de prix, quantités, prix unitaires ou prix par chapitre, descriptifs, sous-totaux, remises, contact, lieu, chargé d'affaires, RIB, pénalités de retard, horaires, photos…). Aperçu en direct sur un document réel. |
 | **Planning** | Charge hebdomadaire par personne face à sa capacité, heures pointées, reste à planifier par chantier. |
 | **Rôles** | Administrateur ; chargé d'affaires ; opérateur (pointe uniquement ses propres heures). |
 
@@ -131,7 +132,7 @@ server/db.js       base SQLite, mots de passe (scrypt), numérotation
 server/demo.js     données de démonstration
 public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
-public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, biblio.js, contacts.js : écrans métier
+public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, biblio.js, contacts.js : écrans métier
 installer/         installateur Windows (NSIS) : build.sh, PipeFitCRM.nsi, lanceur et service
 ```
 
