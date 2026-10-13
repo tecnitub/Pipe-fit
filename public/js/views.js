@@ -5,7 +5,7 @@ const userName = id => (Store.get('users', id) || {}).nom || '—';
 const affaireLabel = a => `${a.code || '…'} – ${a.nom}`;
 const affaireOf = id => Store.get('affaires', id) || {};
 const STATUTS_CHANTIER = ['En préparation', 'En cours', 'Terminé', 'Facturé', 'Clos'];
-const chantiersActifs = () => Store.all('affaires').filter(a => ['En préparation', 'En cours', 'Ouvert'].includes(a.statut));
+const chantiersActifs = () => Store.all('affaires').filter(a => !a.archive && ['En préparation', 'En cours', 'Ouvert'].includes(a.statut));
 
 const Views = {};
 
@@ -16,28 +16,38 @@ function gauge(reel, budget) {
 }
 
 /* ---------------- Tableau de bord ---------------- */
-Views.dashboard = () => {
-  const devis = Store.all('devis');
-  const actifs = chantiersActifs();
-  const stats = Store.all('affaires').map(a => ({ a, s: Calc.affaire(a) }));
-  const caFacture = sumBy(Store.all('factures'), f => Calc.doc(f).totalHT);
+const FILTRES_TDB = { client: '', charge: '' };
+Views.dashboard = (params, query) => {
+  // Filtre client / chargé d'affaires : tout le tableau de bord se limite aux chantiers et documents concernés (archives exclues)
+  const fd = lireFiltres('dashboard', query, FILTRES_TDB);
+  const okAff = a => !!a.id && !a.archive && (!fd.client || a.clientId === fd.client) && (!fd.charge || a.chargeId === fd.charge);
+  const okDoc = d => !d.archive && (!fd.client || docClientId(d) === fd.client) && (!fd.charge || docChargeId(d) === fd.charge);
+  const surAff = o => !(fd.client || fd.charge) || okAff(affaireOf(o.affaireId));
+  const affaires = Store.all('affaires').filter(okAff);
+  const devis = Store.all('devis').filter(okDoc);
+  const factures = Store.all('factures').filter(f => (!fd.client || docClientId(f) === fd.client) && (!fd.charge || docChargeId(f) === fd.charge));
+  const actifs = chantiersActifs().filter(okAff);
+  const stats = affaires.map(a => ({ a, s: Calc.affaire(a) }));
+  const caFacture = sumBy(factures, f => Calc.doc(f).totalHT);
   const enAttente = devis.filter(d => d.statut === 'Envoyé');
-  const impayes = sumBy(Store.all('factures').filter(f => f.statut !== 'Payée'), f => Calc.doc(f).netAPayer);
+  const impayes = sumBy(factures.filter(f => f.statut !== 'Payée'), f => Calc.doc(f).netAPayer);
   const retenuesALiberer = sumBy(stats, x => x.s.retenueALiberer);
-  const acc = devis.filter(d => d.statut === 'Accepté').length, ref = devis.filter(d => d.statut === 'Refusé').length;
+  const tousDevis = Store.all('devis').filter(d => (!fd.client || docClientId(d) === fd.client) && (!fd.charge || docChargeId(d) === fd.charge)); // taux de transformation : archives comprises
+  const acc = tousDevis.filter(d => d.statut === 'Accepté').length, ref = tousDevis.filter(d => d.statut === 'Refusé').length;
   const carnet = sumBy(stats.filter(x => !x.s.termine), x => x.s.caDevis - x.s.caFacture);
   const alertes = stats.filter(x => !x.s.termine && (x.s.ecartHeuresPct > 0 || x.s.consoF > 100 || x.s.margeFinPct < x.s.margePrevPct - 3));
-  const commandesAttente = Store.all('commandes').filter(c => c.statut === 'Envoyée');
+  const commandesAttente = Store.all('commandes').filter(c => c.statut === 'Envoyée' && surAff(c));
   const week = isoWeek(new Date());
-  const hdAFacturer = Store.all('affaires').filter(a => estHorsDevis(a) && ['Terminé', 'Commande demandée'].includes(statutHD(a)));
-  const rapportsJour = Store.all('rapports').filter(r => r.date >= isoDate(addDays(new Date(), -1))).length;
-  const reservesOuv = Store.all('reserves').filter(r => r.statut !== 'Levée').length;
-  const aValider = sumBy(Store.all('temps').filter(t => !t.statut && t.fin !== '' ), t => num(t.heures));
-  const fraisAValider = Store.all('frais').filter(f => f.statut === 'Soumise');
-  const sitsProposees = Store.all('situations').filter(x => x.statut === 'Proposée');
-  const tempsSemaine = sumBy(Store.all('temps').filter(t => isoWeek(new Date(t.date)) === week), t => num(t.heures));
+  const hdAFacturer = affaires.filter(a => estHorsDevis(a) && ['Terminé', 'Commande demandée'].includes(statutHD(a)));
+  const rapportsJour = Store.all('rapports').filter(r => r.date >= isoDate(addDays(new Date(), -1)) && surAff(r)).length;
+  const reservesOuv = Store.all('reserves').filter(r => r.statut !== 'Levée' && surAff(r)).length;
+  const aValider = sumBy(Store.all('temps').filter(t => !t.statut && t.fin !== '' && surAff(t)), t => num(t.heures));
+  const fraisAValider = Store.all('frais').filter(f => f.statut === 'Soumise' && surAff(f));
+  const sitsProposees = Store.all('situations').filter(x => x.statut === 'Proposée' && surAff(x));
+  const tempsSemaine = sumBy(Store.all('temps').filter(t => isoWeek(new Date(t.date)) === week && surAff(t)), t => num(t.heures));
   return `
   <h1>Tableau de bord</h1>
+  ${barreFiltres(fd, { clients: [...new Set(Store.all('affaires').map(a => a.clientId))], recherche: false, defauts: FILTRES_TDB })}
   <div class="cards">
     <div class="card"><div class="label">Devis en attente</div><div class="value">${eur(sumBy(enAttente, d => Calc.doc(d).totalHT))}</div><div class="sub">${enAttente.length} devis envoyés · transformation ${pct((acc + ref) ? acc / (acc + ref) * 100 : 0)}</div></div>
     <div class="card"><div class="label">Carnet de commandes</div><div class="value">${eur(carnet)}</div><div class="sub">${actifs.length} chantiers en cours, reste à facturer</div></div>
@@ -60,6 +70,8 @@ Views.dashboard = () => {
   ${chantierTable(actifs)}`;
 };
 
+Views.dashboard.bind = (root, params, query) => bindFiltres(root, 'dashboard', lireFiltres('dashboard', query, FILTRES_TDB), FILTRES_TDB);
+
 /* ---------------- Chantiers ---------------- */
 const chantierFields = [
   { key: 'nom', label: 'Intitulé du chantier' },
@@ -76,34 +88,43 @@ const chantierFields = [
   { key: 'heuresPrevues', label: 'Heures prévues (vide = heures du devis)', type: 'number', step: '0.5' },
 ];
 
-function chantierTable(list) {
-  if (!list.length) return '<p class="muted">Aucun chantier. Un chantier est créé quand un devis est accepté.</p>';
-  return `<div class="table-wrap"><table><tr><th>Chantier</th><th>Client</th><th>Chargé</th><th>Statut</th><th class="num">Montant HT</th><th>Heures</th><th>Fournitures</th><th class="num">Marge à terminaison</th></tr>
+function chantierTable(list, selection = false) {
+  if (!list.length) return '<p class="muted">Aucun chantier pour ces critères.</p>';
+  return `<div class="table-wrap"><table><tr>${selection ? '<th class="sel-cell"><input type="checkbox" data-sel-tout aria-label="Tout sélectionner"></th>' : ''}<th>Chantier</th><th>Client</th><th>Chargé</th><th>Statut</th><th class="num">Montant HT</th><th>Heures</th><th>Fournitures</th><th class="num">Marge à terminaison</th></tr>
   ${list.map(a => {
     const s = Calc.affaire(a);
-    return `<tr class="clickable" onclick="location.hash='#/chantier/${a.id}'"><td><strong>${esc(a.code || '…')}</strong>${estHorsDevis(a) ? ' <span class="badge b-warn">Hors devis</span>' : ''}<br>${esc(a.nom)}</td><td>${esc(clientName(a.clientId))}</td><td>${esc(userName(a.chargeId))}</td><td>${badge(estHorsDevis(a) ? statutHD(a) : a.statut)}</td>
+    return `<tr class="clickable ${a.archive ? 'archive' : ''}" onclick="location.hash='#/chantier/${a.id}'">${selection ? `<td class="sel-cell"><input type="checkbox" data-sel-id="${a.id}" aria-label="Sélectionner ${esc(a.code || '')}"></td>` : ''}<td><strong>${esc(a.code || '…')}</strong>${estHorsDevis(a) ? ' <span class="badge b-warn">Hors devis</span>' : ''}${a.archive ? ' <span class="badge">Archivé</span>' : ''}<br>${esc(a.nom)}</td><td>${esc(clientName(a.clientId))}</td><td>${esc(userName(a.chargeId))}</td><td>${badge(estHorsDevis(a) ? statutHD(a) : a.statut)}</td>
       <td class="num">${eur(s.caDevis)}</td><td>${gauge(s.heuresPassees, s.heuresPrevues)}<span class="muted small">${fmt(s.heuresPassees)} / ${fmt(s.heuresPrevues)} h</span></td>
       <td>${gauge(s.achats, s.budgetF)}</td><td class="num">${s.caDevis ? marginBadge(s.margeFinPct) : '—'}</td></tr>`;
   }).join('')}</table></div>`;
 }
 
+const FILTRES_CHANTIERS = { q: '', client: '', charge: '', statut: '' };
+const chantierFiltre = (a, f) => (!f.client || a.clientId === f.client) && (!f.charge || a.chargeId === f.charge)
+  && correspond(f.q, a.code, a.nom, clientName(a.clientId), a.refCommande)
+  && (f.statut === 'archives' ? a.archive : !a.archive && (f.statut === 'tous' || (f.statut ? (estHorsDevis(a) ? statutHD(a) : a.statut) === f.statut : a.statut !== 'Clos')));
 Views.chantiers = (params, query) => {
-  const fc = query.get('charge') || '', fs = query.get('statut') || '';
-  const list = Store.all('affaires').filter(a => (!fc || a.chargeId === fc) && (fs ? a.statut === fs : a.statut !== 'Clos'));
+  const f = lireFiltres('chantiers', query, FILTRES_CHANTIERS);
+  const list = Store.all('affaires').filter(a => chantierFiltre(a, f)).sort((x, y) => String(y.code || '').localeCompare(String(x.code || '')));
+  const archivables = Store.all('affaires').filter(a => !a.archive && ['Clos'].includes(a.statut) && (!f.client || a.clientId === f.client) && (!f.charge || a.chargeId === f.charge));
+  const statuts = [['', 'En cours (hors clos)'], ['tous', 'Tous (hors archivés)'], ...[...new Set([...STATUTS_CHANTIER, ...STATUTS_HD])].map(s => [s, s]), ['archives', 'Archivés']];
   return `<h1>Chantiers</h1>
-  <p class="muted">Un chantier est créé lorsqu'un devis est accepté : le devis devient son budget (fournitures et main-d'œuvre).</p>
-  <div class="toolbar">
-    <button id="add-hd">+ Intervention hors devis</button>
-    <span class="spacer"></span>
-    <select id="fc" style="width:auto"><option value="">Tous les chargés</option>${options(charges(), fc, undefined, false)}</select>
-    <select id="fs" style="width:auto"><option value="">Tous sauf clos</option>${optionsStr([...new Set([...STATUTS_CHANTIER, ...STATUTS_HD])], fs)}</select>
-  </div>${chantierTable(list)}`;
+  <p class="muted">Un chantier est créé lorsqu'un devis est accepté : le devis devient son budget (fournitures et main-d'œuvre). Archivez les chantiers terminés pour alléger les listes.</p>
+  <div class="toolbar"><button id="add-hd">+ Intervention hors devis</button><span class="spacer"></span>
+    ${archivables.length && f.statut !== 'archives' ? `<button class="secondary" id="arch-clos">Archiver les ${archivables.length} chantier(s) clos</button>` : ''}</div>
+  ${barreFiltres(f, { clients: [...new Set(Store.all('affaires').map(a => a.clientId))], statuts, defauts: FILTRES_CHANTIERS })}
+  <div class="toolbar sel-bar hidden" id="sel-bar"><span id="sel-n"></span><button class="secondary" id="sel-arch">${f.statut === 'archives' ? 'Sortir des archives' : 'Archiver la sélection'}</button></div>
+  <p class="muted small">${list.length} chantier(s) · ${eur(sumBy(list, a => Calc.affaire(a).caDevis))} HT</p>
+  ${chantierTable(list, true)}`;
 };
-Views.chantiers.bind = root => {
-  const upd = () => { location.hash = `#/chantiers?charge=${root.querySelector('#fc').value}&statut=${encodeURIComponent(root.querySelector('#fs').value)}`; };
-  root.querySelector('#fc').onchange = upd;
-  root.querySelector('#fs').onchange = upd;
+Views.chantiers.bind = (root, params, query) => {
+  const f = lireFiltres('chantiers', query, FILTRES_CHANTIERS);
+  bindFiltres(root, 'chantiers', f, FILTRES_CHANTIERS);
   root.querySelector('#add-hd').onclick = nouvelleInterventionHD;
+  const sel = selectionListe(root, ids => { root.querySelector('#sel-bar').classList.toggle('hidden', !ids.length); root.querySelector('#sel-n').textContent = `${ids.length} sélectionné(s)`; });
+  root.querySelector('#sel-arch').onclick = () => archiver('affaires', sel().map(id => Store.get('affaires', id)), f.statut !== 'archives');
+  const ac = root.querySelector('#arch-clos');
+  if (ac) ac.onclick = () => archiver('affaires', Store.all('affaires').filter(a => !a.archive && a.statut === 'Clos' && (!f.client || a.clientId === f.client) && (!f.charge || a.chargeId === f.charge)));
 };
 
 Views.chantier = params => {
@@ -129,8 +150,9 @@ Views.chantier = params => {
     <button id="edit" class="secondary">Modifier</button>
     <a class="btn secondary" href="#/reception/${a.id}">Réserves et réception</a>
     <a class="btn secondary" href="#/commandes/new?chantier=${a.id}">+ Commande fournisseur</a>
-    ${dAcc ? '<button id="situation">+ Situation de travaux</button>' : ''}</div>
-  <h1>${esc(affaireLabel(a))} ${badge(a.statut)} ${a.okFacturation ? '<span class="badge b-ok">Réceptionné · OK pour facturation</span>' : ''}</h1>
+    ${dAcc ? '<button id="situation">+ Situation de travaux</button>' : ''}
+    ${a.archive ? '' : `<button class="secondary" data-archiver="affaires|${a.id}">Archiver</button>`}</div>
+  <h1>${esc(affaireLabel(a))} ${badge(a.statut)} ${a.okFacturation ? '<span class="badge b-ok">Réceptionné · OK pour facturation</span>' : ''}</h1>${bandeauArchive(a, 'affaires')}
   <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${a.clientId}">${esc(clientName(a.clientId))}</a>` : '—'}
     ${a.contactId ? ` · Contact : ${esc(contactName(Store.get('contacts', a.contactId)))}` : ''}
     ${a.siteId ? ` · Site : ${esc(siteLabel(siteOf(a.clientId, a.siteId)))}` : ''}
@@ -227,18 +249,28 @@ Views.chantier.bind = (root, params) => {
 
 /* ---------------- Factures ---------------- */
 const STATUTS_FACTURE = ['Émise', 'Payée', 'En retard'];
-Views.factures = () => {
+const FILTRES_FACTURES = { q: '', client: '', charge: '', statut: '' };
+const statutFacture = f => (f.statut !== 'Payée' && f.echeance < isoDate(new Date()) ? 'En retard' : f.statut);
+Views.factures = (params, query) => {
   const today = isoDate(new Date());
-  const list = Store.all('factures').slice().sort((a, b) => (b.numero || '~').localeCompare(a.numero || '~'));
+  const f0 = lireFiltres('factures', query, FILTRES_FACTURES);
+  const list = Store.all('factures').filter(f => (!f0.client || docClientId(f) === f0.client) && (!f0.charge || docChargeId(f) === f0.charge)
+    && (!f0.statut || (f0.statut === 'impayees' ? f.statut !== 'Payée' : statutFacture(f) === f0.statut))
+    && correspond(f0.q, f.numero, f.objet, clientName(docClientId(f)), affaireOf(f.affaireId).code, f.refCommande))
+    .sort((a, b) => (b.numero || '~').localeCompare(a.numero || '~'));
   return `<h1>Facturation</h1>${facturationTabs('factures')}
   <p class="muted">Les factures de situation sont générées quand un BL est accepté par la maîtrise d'œuvre.</p>
+  ${barreFiltres(f0, { clients: [...new Set(Store.all('factures').map(docClientId))], statuts: [['', 'Tous statuts'], ['impayees', 'Non payées'], ...STATUTS_FACTURE.map(s => [s, s])], defauts: FILTRES_FACTURES })}
+  <p class="muted small">${list.length} facture(s) · ${eur(sumBy(list, f => Calc.doc(f).totalHT))} HT · reste dû ${eur(sumBy(list.filter(f => f.statut !== 'Payée'), f => Calc.doc(f).netAPayer))} TTC</p>
   ${list.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Échéance</th><th>Chantier</th><th>Client</th><th>Statut</th><th class="num">Total HT</th><th class="num">Total TTC</th><th class="num">Net à payer</th></tr>
   ${list.map(f => {
     const a = affaireOf(f.affaireId), t = Calc.doc(f);
-    const statut = f.statut !== 'Payée' && f.echeance < today ? 'En retard' : f.statut;
+    const statut = statutFacture(f);
     return `<tr class="clickable" onclick="location.hash='#/facture/${f.id}'"><td>${esc(f.numero || '…')}</td><td>${dateFr(f.date)}</td><td>${dateFr(f.echeance)}</td><td>${esc(a.code || '')}</td><td>${esc(clientName(docClientId(f)))}</td><td>${badge(statut)}</td><td class="num">${eur(t.totalHT)}</td><td class="num">${eur(t.totalTTC)}</td><td class="num">${eur(t.netAPayer)}${t.retenue ? `<br><span class="muted small">RG ${eur(t.retenue)}</span>` : ''}</td></tr>`;
-  }).join('')}</table></div>` : '<p class="muted">Aucune facture.</p>'}`;
+  }).join('')}</table></div>` : '<p class="muted">Aucune facture pour ces critères.</p>'}`;
 };
+
+Views.factures.bind = (root, params, query) => bindFiltres(root, 'factures', lireFiltres('factures', query, FILTRES_FACTURES), FILTRES_FACTURES);
 
 Views.facture = params => {
   const f = Store.get('factures', params[0]);
@@ -370,6 +402,16 @@ Views.analyse = (params, query) => {
     <td class="num">${eur(s.budgetF)}<br><span class="${s.coutFFin > s.budgetF ? 'neg' : 'muted'}">${eur(s.coutFFin)}</span></td><td class="num">${eur(s.budgetMO)}<br><span class="${s.coutMOFin > s.budgetMO ? 'neg' : 'muted'}">${eur(s.coutMOFin)}</span></td>
     <td class="num ${s.ecartHeures > 0 ? 'neg' : 'pos'}">${s.heuresPrevues ? (s.ecartHeures > 0 ? '+' : '') + pct(s.ecartHeuresPct) : '—'}</td><td class="num">${pct(s.margePrevPct)}</td><td class="num">${marginBadge(s.margeFinPct)}</td></tr>`).join('')}
   </table></div>
+
+  ${(() => {
+    const refuses = Store.all('devis').filter(d => d.statut === 'Refusé' && (!fc || docChargeId(d) === fc));
+    if (!refuses.length) return '';
+    const par = {};
+    refuses.forEach(d => { const k = d.motifRefus || 'Non renseigné'; (par[k] = par[k] || []).push(d); });
+    return `<h2>Devis refusés par motif</h2><div class="table-wrap"><table><tr><th>Motif</th><th class="num">Nombre</th><th class="num">Montant HT</th><th>Devis</th></tr>
+      ${Object.entries(par).sort((x, y) => y[1].length - x[1].length).map(([m, l]) => `<tr><td>${esc(m)}</td><td class="num">${l.length}</td><td class="num">${eur(sumBy(l, d => Calc.doc(d).totalHT))}</td>
+        <td>${l.map(d => `<a href="#/devis/${d.id}">${esc(d.numero || '')}</a>${d.commentaireRefus ? ` <span class="muted small">${esc(d.commentaireRefus)}</span>` : ''}`).join('<br>')}</td></tr>`).join('')}</table></div>`;
+  })()}
 
   <h2>Capitalisation des retours d'expérience</h2>
   ${rex.length ? `<div class="table-wrap"><table><tr><th>Chantier</th><th>Chargé</th><th>Note</th><th>Points positifs</th><th>Points négatifs</th><th>Actions</th></tr>

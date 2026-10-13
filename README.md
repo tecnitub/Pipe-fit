@@ -142,6 +142,7 @@ brouillon Outlook (.eml) avec le PDF joint : une fois envoyé depuis Outlook, il
 | **E-mails et PDF** | Bouton « PDF » et « ✉ Envoyer par e-mail » sur les devis, factures, situations (BL), commandes, demandes de prix fournisseur, attachements, bons d'intervention et PV. Le PDF est généré dans le navigateur (mise en page des documents, texte sélectionnable). Destinataires choisis parmi les contacts de l'entreprise (À / Cc, adresse générale, adresses libres, copie au chargé d'affaires), objet et message pré-remplis par un **modèle paramétrable** par type de document (variables {contact}, {numero}, {montant_ttc}, {echeance}…, signature commune). Envoi par **Microsoft 365** (le message part de la boîte de l'utilisateur et se retrouve dans ses « Éléments envoyés ») ou **brouillon Outlook** (.eml avec le PDF joint). Chaque envoi est historisé sur le document ; un devis envoyé passe en « Envoyé », un BL en « Proposée », une commande en « Envoyée ». |
 | **Planning des équipes** | Bureau : grille personnes × jours (chef d'équipe et son équipe regroupés) ; affectation d'une journée à un ou plusieurs chantiers (tâche, horaires, heures, consigne), copiable sur d'autres jours et sur toute l'équipe ; copie de la semaine précédente. Chaque case confronte le prévu au pointé : conforme, écart d'heures, autre chantier, non pointé. Téléphone (onglet Planning du pointage) : planning de la semaine et de la suivante avec adresse du site (lien GPS), consignes d'accès, collègues présents ; le chef d'équipe voit celui de son équipe. « Saisir ma journée » / « Saisir la journée de l'équipe » reprend le chantier et les horaires prévus, que chacun corrige avec ses heures réelles. Le chantier prévu est aussi présélectionné au démarrage du pointage. |
 | **Charge par semaine** | Charge hebdomadaire par personne face à sa capacité (planning jour par jour inclus), heures pointées, reste à planifier par chantier. |
+| **Filtres et archives** | Devis, chantiers, factures, situations et tableau de bord filtrables par client, chargé d'affaires, statut et recherche (n°, objet, client) ; filtres mémorisés par écran sur chaque poste. Par défaut, seuls les devis en cours (brouillons, envoyés) et les chantiers non clos s'affichent. Devis « Refusé » en un clic avec motif (prix, délai, concurrent…) et archivage ; chantiers et devis archivables à l'unité, par sélection multiple ou en lot (clos, refusés) : masqués des listes, du tableau de bord, du pointage et du planning, toujours consultables (filtre « Archivés ») et comptés dans les analyses (motifs de refus). |
 | **Rôles** | Administrateur ; chargé d'affaires ; opérateur (pointe uniquement ses propres heures). |
 
 ## Structure
@@ -153,7 +154,7 @@ server/demo.js     données de démonstration
 server/m365.js     envoi des e-mails par Microsoft Graph
 public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
-public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, biblio.js, contacts.js : écrans métier
+public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, biblio.js, contacts.js : écrans métier
 installer/         installateur Windows (NSIS) : build.sh, PipeFitCRM.nsi, lanceur et service
 ```
 

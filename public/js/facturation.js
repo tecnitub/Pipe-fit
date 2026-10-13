@@ -44,17 +44,18 @@ function facturerSituation(sit) {
 }
 
 /* ---------- Liste des situations ---------- */
+const FILTRES_SITUATIONS = { q: '', client: '', charge: '', statut: '' };
 Views.situations = (params, query) => {
   if (params[0]) return situationEditor(params[0]);
-  const fs = query.get('statut') || '';
-  const list = Store.all('situations').filter(s => !fs || s.statut === fs).sort((a, b) => (b.numero || '~').localeCompare(a.numero || '~'));
+  const f = lireFiltres('situations', query, FILTRES_SITUATIONS);
+  const list = Store.all('situations').filter(s => { const a = affaireOf(s.affaireId); return (!f.statut || s.statut === f.statut) && (!f.client || a.clientId === f.client) && (!f.charge || a.chargeId === f.charge)
+    && correspond(f.q, s.numero, a.code, a.nom, clientName(a.clientId)); }).sort((a, b) => (b.numero || '~').localeCompare(a.numero || '~'));
   return `<h1>Facturation</h1>${facturationTabs('situations')}
   <p class="muted">Chaque mois, proposez l'avancement des travaux à la maîtrise d'œuvre (BL). Une fois le BL accepté, la facture de situation est générée automatiquement.</p>
   <div class="toolbar">
-    <select id="new-sit" style="width:auto"><option value="">+ Nouvelle situation pour le chantier…</option>${options(Store.all('affaires').filter(a => !['Clos'].includes(a.statut)), '', affaireLabel, false)}</select>
-    <span class="spacer"></span>
-    <select id="fs" style="width:auto"><option value="">Tous statuts</option>${optionsStr(STATUTS_SITUATION, fs)}</select>
+    <select id="new-sit" style="width:auto"><option value="">+ Nouvelle situation pour le chantier…</option>${options(Store.all('affaires').filter(a => !a.archive && !estHorsDevis(a) && !['Clos'].includes(a.statut)), '', affaireLabel, false)}</select>
   </div>
+  ${barreFiltres(f, { clients: [...new Set(Store.all('situations').map(s => affaireOf(s.affaireId).clientId))], statuts: [['', 'Tous statuts'], ...STATUTS_SITUATION.map(s => [s, s])], defauts: FILTRES_SITUATIONS })}
   ${list.length ? `<div class="table-wrap"><table><tr><th>N° BL</th><th>Date</th><th>Chantier</th><th>Client</th><th>Statut</th><th class="num">Avancement cumulé</th><th class="num">Montant HT</th><th>Facture</th></tr>
   ${list.map(s => {
     const c = Calc.situation(s), a = affaireOf(s.affaireId), f = Store.get('factures', s.factureId);
@@ -138,9 +139,9 @@ function blDocument(sit, c, a, dv) {
     ${Doc.pied('situation', '', o.signature ? `<div class="signatures"><div>Pour ${esc(s.societe)}<br>${esc(userName(a.chargeId))}</div><div>Bon pour accord de la maîtrise d'œuvre<br>Date et signature :</div></div>` : '')}`;
 }
 
-Views.situations.bind = (root, params) => {
+Views.situations.bind = (root, params, query) => {
   if (!params[0]) {
-    root.querySelector('#fs').onchange = e => { location.hash = `#/situations?statut=${encodeURIComponent(e.target.value)}`; };
+    bindFiltres(root, 'situations', lireFiltres('situations', query, FILTRES_SITUATIONS), FILTRES_SITUATIONS);
     root.querySelector('#new-sit').onchange = e => { const s = e.target.value && nouvelleSituation(e.target.value); if (s) location.hash = `#/situations/${s.id}`; };
     return;
   }

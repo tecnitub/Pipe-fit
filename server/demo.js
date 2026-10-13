@@ -163,7 +163,7 @@ function demoData() {
         chap('Essais'),
         ouv('Épreuve hydraulique avec procès-verbal', 'forfait', 1, [F('a13', 1), MO('mo2', 6)]),
       ] },
-    { id: 'dv5', numero: `DV-${Y}-` + '0005', objet: 'Arrêt technique – lot tuyauterie', ...head('', 'u2', 'e1', 'k1', 's2'), date: d(-40), validite: 30, statut: 'Refusé', zoneId: 'z3',
+    { id: 'dv5', numero: `DV-${Y}-` + '0005', objet: 'Arrêt technique – lot tuyauterie', ...head('', 'u2', 'e1', 'k1', 's2'), date: d(-40), validite: 30, statut: 'Refusé', motifRefus: 'Concurrent retenu', commentaireRefus: 'Écart de 12 % avec le concurrent retenu (prix fournitures).', dateRefus: d(-20), zoneId: 'z3',
       ajustements: [{ libelle: 'Remise commerciale', pct: -3 }],
       lignes: [
         ouv('Remplacement de lignes acier DN150', 'ml', 420, [F('a3', 1.05), F('a6', 0.15), MO('mo1', 0.9), MO('mo2', 0.7)]),

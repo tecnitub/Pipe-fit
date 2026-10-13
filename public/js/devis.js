@@ -85,25 +85,33 @@ function pilotageDevis(t) {
 }
 
 /* ---------- Liste ---------- */
+const FILTRES_DEVIS = { q: '', client: '', charge: '', statut: '' };
+const devisFiltre = (d, f) => (!f.client || docClientId(d) === f.client) && (!f.charge || docChargeId(d) === f.charge)
+  && correspond(f.q, d.numero, d.objet, clientName(docClientId(d)))
+  && (f.statut === 'archives' ? d.archive : !d.archive && (f.statut === 'tous' || (f.statut ? d.statut === f.statut : ['Brouillon', 'Envoyé'].includes(d.statut))));
 Views.devis = (params, query) => {
   if (params[0]) return devisEditor(params[0]);
-  const fs = query.get('statut') || '', fc = query.get('charge') || '';
-  const list = Store.all('devis').filter(d => (!fs || d.statut === fs) && (!fc || docChargeId(d) === fc))
-    .sort((a, b) => (b.numero || '~').localeCompare(a.numero || '~'));
+  const f = lireFiltres('devis', query, FILTRES_DEVIS);
+  const list = Store.all('devis').filter(d => devisFiltre(d, f)).sort((a, b) => (b.numero || '~').localeCompare(a.numero || '~'));
+  const statuts = [['', 'En cours (brouillons et envoyés)'], ['tous', 'Tous (hors archivés)'], ...STATUTS_DEVIS.map(s => [s, s]), ['archives', 'Archivés']];
+  const refusesActifs = Store.all('devis').filter(d => d.statut === 'Refusé' && !d.archive);
   return `<h1>Devis</h1>
   <div class="toolbar">
     <button id="add">+ Nouveau devis</button>
     <span class="spacer"></span>
-    <select id="fc" style="width:auto"><option value="">Tous les chargés</option>${options(charges(), fc, undefined, false)}</select>
-    <select id="fs" style="width:auto"><option value="">Tous statuts</option>${optionsStr(STATUTS_DEVIS, fs)}</select>
+    ${refusesActifs.length && f.statut !== 'archives' ? `<button class="secondary" id="arch-refuses">Archiver les ${refusesActifs.length} devis refusé(s)</button>` : ''}
   </div>
-  ${list.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Objet</th><th>Client</th><th>Contact</th><th>Chargé</th><th>Statut</th><th class="num">Total HT</th><th class="num">Part MO</th><th class="num">Marge prév.</th></tr>
+  ${barreFiltres(f, { clients: [...new Set(Store.all('devis').map(docClientId))], statuts, defauts: FILTRES_DEVIS })}
+  <div class="toolbar sel-bar hidden" id="sel-bar"><span id="sel-n"></span><button class="secondary" id="sel-arch">${f.statut === 'archives' ? 'Sortir des archives' : 'Archiver la sélection'}</button></div>
+  <p class="muted small">${list.length} devis · ${eur(sumBy(list, d => Calc.doc(d).totalHT))} HT</p>
+  ${list.length ? `<div class="table-wrap"><table><tr><th class="sel-cell"><input type="checkbox" data-sel-tout aria-label="Tout sélectionner"></th><th>N°</th><th>Date</th><th>Objet</th><th>Client</th><th>Contact</th><th>Chargé</th><th>Statut</th><th class="num">Total HT</th><th class="num">Part MO</th><th class="num">Marge prév.</th><th></th></tr>
   ${list.map(d => {
     const t = Calc.doc(d), ct = Store.get('contacts', d.contactId);
-    return `<tr class="clickable" onclick="location.hash='#/devis/${d.id}'"><td>${esc(d.numero || '…')}</td><td>${dateFr(d.date)}</td><td>${esc(d.objet)}</td><td>${esc(clientName(docClientId(d)))}</td>
-      <td>${ct ? esc(contactName(ct)) : ''}</td><td>${esc(userName(docChargeId(d)))}</td><td>${badge(d.statut)}${d.affaireId ? ' <span class="badge b-ok">Chantier</span>' : ''}</td>
-      <td class="num">${eur(t.totalHT)}</td><td class="num">${pct(t.partMOPct)}</td><td class="num">${marginBadge(t.margePrevPct)}</td></tr>`;
-  }).join('')}</table></div>` : '<p class="muted">Aucun devis. Créez-en un avec « + Nouveau devis ».</p>'}`;
+    return `<tr class="clickable ${d.archive ? 'archive' : ''}" onclick="location.hash='#/devis/${d.id}'"><td class="sel-cell"><input type="checkbox" data-sel-id="${d.id}" aria-label="Sélectionner ${esc(d.numero || '')}"></td><td>${esc(d.numero || '…')}</td><td>${dateFr(d.date)}</td><td>${esc(d.objet)}</td><td>${esc(clientName(docClientId(d)))}</td>
+      <td>${ct ? esc(contactName(ct)) : ''}</td><td>${esc(userName(docChargeId(d)))}</td><td>${badge(d.statut)}${d.affaireId ? ' <span class="badge b-ok">Chantier</span>' : ''}${d.statut === 'Refusé' && d.motifRefus ? `<br><span class="muted small">${esc(d.motifRefus)}</span>` : ''}</td>
+      <td class="num">${eur(t.totalHT)}</td><td class="num">${pct(t.partMOPct)}</td><td class="num">${marginBadge(t.margePrevPct)}</td>
+      <td>${['Brouillon', 'Envoyé'].includes(d.statut) ? `<button class="small secondary" data-refuser="${d.id}" title="Marquer refusé">✕ Refusé</button>` : ''}</td></tr>`;
+  }).join('')}</table></div>` : '<p class="muted">Aucun devis pour ces critères.</p>'}`;
 };
 
 /* ---------- Éditeur ---------- */
@@ -127,10 +135,13 @@ function devisEditor(id) {
     <button class="secondary" id="dup">Dupliquer</button>
     <button class="secondary print-btn" onclick="window.print()">Imprimer</button>${boutonsEnvoi('devis', d.id)}
     ${!d.affaireId && d.statut !== 'Refusé' ? '<button id="accept">Accepté : créer le chantier</button>' : ''}
+    ${['Brouillon', 'Envoyé'].includes(d.statut) ? `<button class="secondary" data-refuser="${d.id}">Refusé…</button>` : ''}
+    ${d.archive ? '' : `<button class="secondary" data-archiver="devis|${d.id}">Archiver</button>`}
     ${d.affaireId ? `<a class="btn secondary" href="#/situations?devis=${d.id}">Situations</a>` : ''}
     <button class="danger" id="del">Supprimer</button>
   </div>
-  <h1>Devis ${esc(d.numero || '')} ${badge(d.statut)}</h1>${envoisHtml('devis', d.id)}
+  <h1>Devis ${esc(d.numero || '')} ${badge(d.statut)}</h1>${envoisHtml('devis', d.id)}${bandeauArchive(d, 'devis')}
+  ${d.statut === 'Refusé' && d.motifRefus ? `<p class="note no-print">Refusé le ${dateFr(d.dateRefus)} · ${esc(d.motifRefus)}${d.commentaireRefus ? ` : ${esc(d.commentaireRefus)}` : ''}</p>` : ''}
   ${locked ? '<p class="note no-print">Devis accepté : il sert de budget au chantier. Pour le modifier, dupliquez-le en avenant.</p>' : ''}
   ${!locked && lines.filter(aChiffrer).length ? `<p class="note warn no-print">${lines.filter(aChiffrer).length} ouvrage(s) à chiffrer : cliquez sur chaque désignation pour ajouter fournitures et main-d'œuvre.</p>` : ''}
 
@@ -196,12 +207,15 @@ function devisEditor(id) {
   <div class="print-only doc-print">${devisDocument(d)}</div>`;
 }
 
-Views.devis.bind = (root, params) => {
+Views.devis.bind = (root, params, query) => {
   if (!params[0]) {
     root.querySelector('#add').onclick = () => { const d = newDevis(); location.hash = `#/devis/${d.id}`; };
-    const upd = () => { location.hash = `#/devis?statut=${encodeURIComponent(root.querySelector('#fs').value)}&charge=${root.querySelector('#fc').value}`; };
-    root.querySelector('#fs').onchange = upd;
-    root.querySelector('#fc').onchange = upd;
+    const f = lireFiltres('devis', query, FILTRES_DEVIS);
+    bindFiltres(root, 'devis', f, FILTRES_DEVIS);
+    const sel = selectionListe(root, ids => { root.querySelector('#sel-bar').classList.toggle('hidden', !ids.length); root.querySelector('#sel-n').textContent = `${ids.length} sélectionné(s)`; });
+    root.querySelector('#sel-arch').onclick = () => archiver('devis', sel().map(id => Store.get('devis', id)), f.statut !== 'archives');
+    const ar = root.querySelector('#arch-refuses');
+    if (ar) ar.onclick = () => archiver('devis', Store.all('devis').filter(d => d.statut === 'Refusé' && !d.archive));
     return;
   }
   const d = Store.get('devis', params[0]);

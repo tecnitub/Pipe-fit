@@ -372,3 +372,14 @@ tr.pl-membre td:first-child { padding-left: 22px; }
 .pl-ligne { margin-bottom: 10px; }
 .sj-ligne { margin-bottom: 10px; }
 .sj-h { display: block; padding: 8px 0; }
+
+/* Filtres et archives */
+.toolbar.filtres input[type="search"] { flex: 1 1 220px; min-width: 0; max-width: 340px; }
+.toolbar.filtres select { width: auto; max-width: 100%; }
+.sel-cell { width: 1%; }
+.sel-cell input { width: auto; }
+.sel-bar { background: var(--info-bg); color: var(--info); padding: 6px 10px; border-radius: 6px; }
+.hidden.sel-bar { display: none; }
+tr.archive td { color: var(--muted); }
+.archive-note { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 720px) { .toolbar.filtres input[type="search"], .toolbar.filtres select { flex: 1 1 100%; max-width: none; } }

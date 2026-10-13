@@ -63,8 +63,9 @@ function horsDevisView(a) {
     ${['Ouvert', 'Terminé'].includes(st) ? '<button class="secondary" id="hd-cde">Demander une commande au client</button>' : ''}
     ${['Ouvert', 'Terminé', 'Commande demandée'].includes(st) && !f ? '<button id="hd-fact">Facturer</button>' : ''}
     ${f ? `<a class="btn secondary" href="#/facture/${f.id}">Facture ${esc(f.numero || '')}</a>` : ''}
-    ${st === 'Facturé' ? '<button class="secondary" id="hd-clore">Clore</button>' : ''}</div>
-  <h1>${esc(affaireLabel(a))} <span class="badge b-warn">Hors devis</span> ${badge(st)}</h1>
+    ${st === 'Facturé' ? '<button class="secondary" id="hd-clore">Clore</button>' : ''}
+    ${a.archive ? '' : `<button class="secondary" data-archiver="affaires|${a.id}">Archiver</button>`}</div>
+  <h1>${esc(affaireLabel(a))} <span class="badge b-warn">Hors devis</span> ${badge(st)}</h1>${bandeauArchive(a, 'affaires')}
   <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${a.clientId}">${esc(clientName(a.clientId))}</a>` : '—'}
     ${a.contactId ? ` · Demandeur : ${esc(contactName(Store.get('contacts', a.contactId)))}` : ''}${a.siteId ? ` · ${esc(siteLabel(siteOf(a.clientId, a.siteId)))}` : ''}
     · Chargé d'affaires : ${esc(userName(a.chargeId))} · ouvert le ${dateFr(a.dateCreation)}${a.refCommande ? ` · <strong>commande client n° ${esc(a.refCommande)}</strong>` : ''}</p>
