@@ -39,7 +39,7 @@ Views.articles = (params, query) => {
   <div class="toolbar">
     <button id="add">+ Fourniture</button>
     <button class="secondary" id="hausse">Révision des prix de vente %</button>
-    <button class="secondary dl-btn" id="csv">Export CSV</button>
+    ${boutonsEchange('articles')}
     <span class="spacer"></span>
     <input id="search" type="search" placeholder="Rechercher…" style="width:auto;min-width:0;flex:1 1 160px;max-width:260px">
     <select id="ff" style="width:auto"><option value="">Toutes familles</option>${optionsStr(familles, ff)}</select>
@@ -51,6 +51,7 @@ Views.articles = (params, query) => {
 };
 Views.articles.bind = root => {
   bindSearch(root);
+  bindEchange(root);
   root.querySelector('#ff').onchange = e => { location.hash = `#/articles?famille=${encodeURIComponent(e.target.value)}`; };
   root.querySelector('#add').onclick = () => editModal({ title: 'Nouvelle fourniture', col: 'articles', fields: articleFields, obj: { unite: 'u' } });
   root.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () =>
@@ -59,25 +60,25 @@ Views.articles.bind = root => {
     const ff = new URLSearchParams(location.hash.split('?')[1] || '').get('famille') || '';
     const p = await askValue(`Révision des prix de vente en %${ff ? ` (famille « ${ff} »)` : ' (toutes les fournitures)'}`, '3', 'number');
     if (p === null || p === '' || isNaN(+p)) return;
-    Store.all('articles').filter(a => !ff || a.famille === ff).forEach(a => {
-      a.prixVente = Math.round(num(a.prixVente) * (1 + +p / 100) * 100) / 100;
-      Store.upsert('articles', a);
+    const maj = Store.all('articles').filter(a => !ff || a.famille === ff).map(a => {
+      const c = { ...a, prixVente: Math.round(num(a.prixVente) * (1 + +p / 100) * 100) / 100 };
+      Object.keys(c).filter(k => k.startsWith('_')).forEach(k => delete c[k]);
+      return c;
     });
-    App.render(); App.toast('Prix de vente révisés');
+    try { await Store.bulk('articles', maj); } catch (e) { notify(e.message); return; }
+    App.render(); App.toast(`${maj.length} prix de vente révisés`);
   };
-  root.querySelector('#csv').onclick = () => download('bibliotheque-fournitures.csv',
-    toCSV([['Ref', 'Designation', 'Famille', 'Unite', 'PrixAchat', 'PrixVente', 'Poids', 'Fournisseur'],
-      ...Store.all('articles').map(a => [a.ref, a.designation, a.famille, a.unite, a.coutRevient, a.prixVente, a.poidsUnitaire, a.fournisseurId ? clientName(a.fournisseurId) : ''])]), 'text/csv');
 };
 
 Views.mainoeuvre = () => `<h1>Bibliothèque</h1>${biblioTabs('mo')}
   <p class="muted">Taux utilisés dans les ouvrages des devis. Le coût réel des chantiers est calculé avec le coût horaire de chaque personne (Paramètres › Équipe).</p>
-  <div class="toolbar"><button id="add">+ Catégorie</button></div>
+  <div class="toolbar"><button id="add">+ Catégorie</button>${boutonsEchange('mainoeuvre')}</div>
   <div class="table-wrap"><table><tr><th>Code</th><th>Catégorie</th><th class="num">Taux de vente</th><th class="num">Coût moyen</th><th class="num">Marge horaire</th><th class="num">Personnes</th></tr>
   ${Store.all('mainoeuvre').map(m => `<tr class="clickable" data-id="${m.id}"><td>${esc(m.code)}</td><td>${esc(m.libelle)}</td><td class="num">${eur(m.tauxVente)}/h</td><td class="num">${eur(m.tauxCout)}/h</td>
     <td class="num">${marginBadge(num(m.tauxVente) ? (num(m.tauxVente) - num(m.tauxCout)) / num(m.tauxVente) * 100 : 0)}</td><td class="num">${Store.all('users').filter(u => u.categorieId === m.id).length || ''}</td></tr>`).join('')}
   </table></div>`;
 Views.mainoeuvre.bind = root => {
+  bindEchange(root);
   root.querySelector('#add').onclick = () => editModal({ title: "Nouvelle catégorie de main-d'œuvre", col: 'mainoeuvre', fields: moFields, obj: {} });
   root.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () =>
     editModal({ title: "Main-d'œuvre", col: 'mainoeuvre', fields: moFields, obj: { ...Store.get('mainoeuvre', tr.dataset.id) } }));

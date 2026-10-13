@@ -123,6 +123,7 @@ Views.contacts = (params, query) => {
   ${contactsTabs('entreprises')}
   <div class="toolbar">
     <button id="add">+ Entreprise</button>
+    ${boutonsEchange('entreprises')}
     <span class="spacer"></span>
     <input id="search" type="search" placeholder="Rechercher…" style="width:auto;min-width:0;flex:1 1 160px;max-width:260px">
     <select id="fc" style="width:auto"><option value="">Clients et fournisseurs</option>
@@ -138,6 +139,7 @@ Views.contacts = (params, query) => {
   }).join('')}</table></div>` : '<p class="muted">Aucune entreprise. Ajoutez vos clients et fournisseurs avec « + Entreprise ».</p>'}`;
 };
 Views.contacts.bind = (root, params) => {
+  bindEchange(root);
   if (params[0] === 'personnes') return bindPersonnes(root);
   root.querySelector('#add').onclick = () => openEntreprise({ categorie: 'Client', adresses: [] });
   root.querySelector('#fc').onchange = e => { location.hash = `#/contacts?categorie=${encodeURIComponent(e.target.value)}`; };
@@ -152,6 +154,7 @@ function personnesView(query) {
   ${contactsTabs('personnes')}
   <div class="toolbar">
     <button id="add">+ Contact</button>
+    ${boutonsEchange('contacts')}
     <span class="spacer"></span>
     <input id="search" type="search" placeholder="Rechercher…" style="width:auto;min-width:0;flex:1 1 160px;max-width:260px">
     <select id="fe" style="width:auto"><option value="">Toutes les entreprises</option>${options(Store.all('entreprises').slice().sort((a, b) => a.nom.localeCompare(b.nom)), fe, undefined, false)}</select>

@@ -116,6 +116,14 @@ test('droits par rôle, conflits de version et numérotation', async () => {
   const ch = (await call('PUT', '/api/records/affaires/ch-x', { data: { nom: 'Test', code: 'FAUX' } }, claire)).body;
   assert.match(ch.code, new RegExp(`^CH-${year}-\\d{3}$`));
 
+  // Import groupé : réservé aux bureaux, une seule transaction
+  const imp = await call('POST', '/api/bulk/articles', { items: [{ id: 'imp1', ref: 'X-1', designation: 'Test import', prixVente: 10 }, { ref: 'X-2', designation: 'Sans id' }] }, claire);
+  assert.strictEqual(imp.status, 200);
+  assert.strictEqual(imp.body.length, 2);
+  assert.ok(imp.body[1].id);
+  assert.strictEqual((await call('POST', '/api/bulk/articles', { items: [{ ref: 'X-3' }] }, atelier)).status, 403);
+  assert.strictEqual((await call('POST', '/api/bulk/factures', { items: [{}] }, admin)).status, 400);
+
   // Historique
   const audit = (await call('GET', '/api/audit', null, admin)).body;
   assert.ok(audit.some(a => a.login === 'claire' && a.action === 'modification'));

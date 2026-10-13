@@ -218,6 +218,28 @@ async function api(req, res, url) {
     return res.end(Buffer.from(f.data));
   }
 
+  // Import groupé (bibliothèque, entreprises, contacts depuis Excel) : une seule transaction
+  if (p[0] === 'bulk' && p[1] && method === 'POST') {
+    const col = p[1];
+    if (!['articles', 'mainoeuvre', 'entreprises', 'contacts'].includes(col)) return fail(res, 400, 'Import non disponible pour cette liste');
+    if (!canWrite(acc, col)) return fail(res, 403, 'Droits insuffisants');
+    const { items } = await readBody(req);
+    if (!Array.isArray(items) || items.length > 20000) return fail(res, 400, 'Liste invalide');
+    const records = DB.tx(db, () => {
+      const now = new Date().toISOString();
+      const up = db.prepare(`INSERT INTO records (col, id, data, version, updated_at, updated_by) VALUES (?, ?, ?, 1, ?, ?)
+        ON CONFLICT(col, id) DO UPDATE SET data = excluded.data, version = records.version + 1, updated_at = excluded.updated_at, updated_by = excluded.updated_by`);
+      return items.map(it => {
+        const id = String((it && it.id) || uid());
+        up.run(col, id, JSON.stringify({ ...DB.clean(it || {}), id }), now, acc.nom || acc.login);
+        return DB.getRecord(db, col, id);
+      });
+    });
+    DB.audit(db, acc.login, 'import', col, null, `${records.length} ligne(s)`);
+    broadcast('reload', { client: req.headers['x-client-id'] || null });
+    return send(res, 200, records);
+  }
+
   if (p[0] === 'records' && p[1] && p[2]) {
     const [, col, id] = p;
     if (!DB.COLLECTIONS.includes(col)) return fail(res, 404, 'Collection inconnue');

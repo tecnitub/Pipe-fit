@@ -71,6 +71,21 @@
     if (p[0] === 'me' && !p[1]) return [200, acc];
     if (p[0] === 'me' && p[1] === 'password') return [200, { ok: true }];
     if (p[0] === 'logout' || p[0] === 'login') return [200, acc];
+    if (p[0] === 'bulk' && method === 'POST') {
+      const col = p[1];
+      if (!['articles', 'mainoeuvre', 'entreprises', 'contacts'].includes(col)) return [400, { error: 'Import non disponible pour cette liste' }];
+      if (!canWrite(acc, col)) return [403, { error: 'Droits insuffisants' }];
+      const now = new Date().toISOString();
+      const recs = (body.items || []).map(it => {
+        const id = String(it.id || DemoSeed.uid());
+        const i = db[col].findIndex(o => o.id === id);
+        const rec = { ...clean(it), id, _v: i >= 0 ? db[col][i]._v + 1 : 1, _at: now, _by: acc.nom };
+        if (i >= 0) db[col][i] = rec; else db[col].push(rec);
+        return rec;
+      });
+      audit('import', col, `${recs.length} ligne(s)`); save();
+      return [200, JSON.parse(JSON.stringify(recs))];
+    }
     if (p[0] === 'files' && method === 'POST') {
       const id = 'f' + DemoSeed.uid();
       db.files = db.files || {};

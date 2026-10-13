@@ -113,6 +113,7 @@ Ne pas exposer le port 3000 en HTTP simple sur Internet.
 |---|---|
 | **Contacts** | Entreprises client / fournisseur (SIRET, TVA, coordonnées) avec plusieurs sites ; personnes rattachées (chargé de travaux, acheteur…). |
 | **Bibliothèque** | Fournitures (prix d'achat, prix de vente, poids, fournisseur habituel), catégories de main-d'œuvre (taux de vente, coût moyen), zones de livraison. |
+| **Import / export Excel** | Fournitures, taux de main-d'œuvre, entreprises (feuille « Sites » pour les adresses multiples) et contacts : import d'un fichier .xlsx ou .csv existant (colonnes reconnues automatiquement, ajustables, aperçu), mise à jour des fiches existantes (par ID, référence, SIRET, nom ou e-mail) et ajout des nouvelles, puis export Excel modifiable et réimportable. Une cellule vide ne remplace pas la valeur existante. |
 | **Planning** | Charge hebdomadaire par personne face à sa capacité, heures pointées, reste à planifier par chantier. |
 | **Rôles** | Administrateur ; chargé d'affaires ; opérateur (pointe uniquement ses propres heures). |
 

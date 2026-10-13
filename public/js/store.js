@@ -64,6 +64,13 @@ const Store = {
       .catch(err => { this._inflight.delete(key); this._onError(err, col, obj.id); });
   },
 
+  // Import groupé : une requête, puis mise à jour du cache
+  async bulk(col, items) {
+    const recs = await api('POST', `/api/bulk/${col}`, { items });
+    recs.forEach(r => this._put(col, r));
+    return recs;
+  },
+
   remove(col, id) {
     const prev = this.get(col, id);
     this.data[col] = this.data[col].filter(x => x.id !== id);
@@ -130,7 +137,10 @@ const Store = {
       App.remoteUpdate('Des données ont été supprimées par un autre utilisateur');
     });
     es.addEventListener('settings', e => { this.data.settings = JSON.parse(e.data).settings; App.remoteUpdate(); });
-    es.addEventListener('reload', () => this.load().then(() => App.remoteUpdate('Les données ont été rechargées')));
+    es.addEventListener('reload', e => {
+      try { if (JSON.parse(e.data).client === CLIENT_ID) return; } catch (err) { /* ancien format */ }
+      this.load().then(() => App.remoteUpdate('Les données ont été rechargées'));
+    });
     // Après une coupure réseau, on resynchronise tout.
     let wasDown = false;
     es.onerror = () => { wasDown = true; };

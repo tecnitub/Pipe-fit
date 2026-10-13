@@ -85,6 +85,103 @@ const XLSX = (() => {
     ];
     return zip(files);
   }
-  return { build };
+  /* ---------- Lecture d'un classeur .xlsx (ou d'un fichier CSV) ---------- */
+  // Décompression des entrées ZIP « deflate » avec l'API native du navigateur
+  async function inflate(bytes) {
+    const ds = new DecompressionStream('deflate-raw');
+    const out = await new Response(new Blob([bytes]).stream().pipeThrough(ds)).arrayBuffer();
+    return new Uint8Array(out);
+  }
+  async function unzip(buf) {
+    const u8 = new Uint8Array(buf), dv = new DataView(buf);
+    let eocd = -1;
+    for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    if (eocd < 0) throw new Error('Ce fichier n\'est pas un classeur Excel (.xlsx) valide.');
+    const count = dv.getUint16(eocd + 10, true);
+    let p = dv.getUint32(eocd + 16, true);
+    const files = {}, dec = new TextDecoder();
+    for (let n = 0; n < count; n++) {
+      if (dv.getUint32(p, true) !== 0x02014b50) break;
+      const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+      const nameLen = dv.getUint16(p + 28, true), extraLen = dv.getUint16(p + 30, true), comLen = dv.getUint16(p + 32, true);
+      const local = dv.getUint32(p + 42, true);
+      const name = dec.decode(u8.subarray(p + 46, p + 46 + nameLen));
+      const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
+      files[name] = { method, data: u8.subarray(start, start + csize) };
+      p += 46 + nameLen + extraLen + comLen;
+    }
+    return {
+      has: name => !!files[name],
+      async text(name) {
+        const f = files[name];
+        if (!f) return null;
+        const raw = f.method === 8 ? await inflate(f.data) : f.data;
+        return dec.decode(raw);
+      },
+    };
+  }
+  const xml = s => new DOMParser().parseFromString(s, 'application/xml');
+  const byTag = (node, tag) => Array.from(node.getElementsByTagName(tag));
+  const colIndex = ref => { let n = 0; for (const ch of ref.replace(/[0-9]/g, '')) n = n * 26 + ch.charCodeAt(0) - 64; return n - 1; };
+
+  async function read(buf) {
+    const z = await unzip(buf);
+    const wb = xml(await z.text('xl/workbook.xml') || '');
+    const rels = xml(await z.text('xl/_rels/workbook.xml.rels') || '<x/>');
+    const target = {};
+    byTag(rels, 'Relationship').forEach(r => { target[r.getAttribute('Id')] = r.getAttribute('Target'); });
+    const ss = await z.text('xl/sharedStrings.xml');
+    const shared = ss ? byTag(xml(ss), 'si').map(si => byTag(si, 't').map(t => t.textContent).join('')) : [];
+    const sheets = [];
+    for (const sh of byTag(wb, 'sheet')) {
+      const rid = sh.getAttribute('r:id') || sh.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
+      let path = target[rid] || '';
+      path = path.startsWith('/') ? path.slice(1) : 'xl/' + path.replace(/^\.\//, '');
+      const doc = xml(await z.text(path) || '<x/>');
+      const rows = [];
+      byTag(doc, 'row').forEach(row => {
+        const r = (+row.getAttribute('r') || rows.length + 1) - 1;
+        const vals = rows[r] = rows[r] || [];
+        byTag(row, 'c').forEach((c, k) => {
+          const ref = c.getAttribute('r'), t = c.getAttribute('t');
+          const i = ref ? colIndex(ref) : k;
+          const v = (byTag(c, 'v')[0] || {}).textContent;
+          let val = '';
+          if (t === 's') val = shared[+v] ?? '';
+          else if (t === 'inlineStr') val = byTag(c, 't').map(x => x.textContent).join('');
+          else if (t === 'str' || t === 'e') val = v ?? '';
+          else if (t === 'b') val = v === '1' ? 'Oui' : 'Non';
+          else if (v !== undefined && v !== '') val = Number(v);
+          vals[i] = val;
+        });
+      });
+      for (let i = 0; i < rows.length; i++) rows[i] = rows[i] || [];
+      sheets.push({ name: sh.getAttribute('name'), rows });
+    }
+    return sheets;
+  }
+
+  // CSV : séparateur ; ou , détecté, guillemets gérés, encodage UTF-8 ou Windows-1252
+  function readCSV(buf) {
+    let text = new TextDecoder('utf-8').decode(buf);
+    if (text.includes('\uFFFD')) text = new TextDecoder('windows-1252').decode(buf);
+    text = text.replace(/^\uFEFF/, '');
+    const first = text.split(/\r?\n/)[0] || '';
+    const sep = (first.match(/;/g) || []).length >= (first.match(/,/g) || []).length ? ';' : ',';
+    const rows = [[]];
+    let cur = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (q) { if (ch === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+      else if (ch === '"') q = true;
+      else if (ch === sep) { rows[rows.length - 1].push(cur); cur = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; rows[rows.length - 1].push(cur); cur = ''; rows.push([]); }
+      else cur += ch;
+    }
+    rows[rows.length - 1].push(cur);
+    return [{ name: 'CSV', rows: rows.filter(r => r.some(c => c !== '')) }];
+  }
+
+  return { build, read, readCSV };
 })();
 if (typeof module !== 'undefined') module.exports = XLSX;
