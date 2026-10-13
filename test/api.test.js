@@ -116,6 +116,23 @@ test('droits par rôle, conflits de version et numérotation', async () => {
   const ch = (await call('PUT', '/api/records/affaires/ch-x', { data: { nom: 'Test', code: 'FAUX' } }, claire)).body;
   assert.match(ch.code, new RegExp(`^CH-${year}-\\d{3}$`));
 
+  // Rapport d'intervention : l'opérateur rédige les siens ; PV signé figé ; réserve figée = seule la levée change
+  const ri = await call('PUT', '/api/records/rapports/ri-x', { data: { affaireId: 'af1', userId: 'o1', date: '2026-10-02', travaux: 'Soudure', photos: [up.body.id] } }, atelier);
+  assert.match(ri.body.numero, new RegExp(`^RI-${year}-0004$`));
+  assert.strictEqual((await call('PUT', '/api/records/rapports/ri-y', { data: { affaireId: 'af1', userId: 'o2', travaux: 'x' } }, atelier)).status, 403);
+  assert.strictEqual((await call('PUT', '/api/records/reserves/rs-x', { data: { affaireId: 'af1', description: 'x' } }, atelier)).status, 403);
+  const pvs = (await call('GET', '/api/data', null, claire)).body;
+  const pv = pvs.receptions.find(x => x.id === 'pv2');
+  assert.strictEqual((await call('PUT', '/api/records/receptions/pv2', { data: { ...pv, decision: 'Sans réserve' }, version: pv._v }, claire)).status, 403);
+  assert.strictEqual((await call('DELETE', '/api/records/receptions/pv2', {}, claire)).status, 403);
+  const rs = pvs.reserves.find(x => x.id === 'rs4');
+  const lev = await call('PUT', '/api/records/reserves/rs4', { data: { ...rs, description: 'modifiée', statut: 'Levée', dateLevee: '2026-10-01' }, version: rs._v }, claire);
+  assert.strictEqual(lev.body.description, rs.description);
+  assert.strictEqual(lev.body.statut, 'Levée');
+  assert.strictEqual((await call('DELETE', '/api/records/reserves/rs4', {}, claire)).status, 403);
+  // Images de démonstration servies par le serveur
+  assert.strictEqual((await fetch(base + '/api/files/img-sig', { headers: { Cookie: claire } })).headers.get('content-type'), 'image/png');
+
   // Import groupé : réservé aux bureaux, une seule transaction
   const imp = await call('POST', '/api/bulk/articles', { items: [{ id: 'imp1', ref: 'X-1', designation: 'Test import', prixVente: 10 }, { ref: 'X-2', designation: 'Sans id' }] }, claire);
   assert.strictEqual(imp.status, 200);

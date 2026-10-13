@@ -4,9 +4,9 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 
-const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais'];
+const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions'];
 // Numérotation attribuée par le serveur : collection -> [champ, préfixe, chiffres]
-const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4] };
+const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4] };
 const ROLES = ['admin', 'charge', 'atelier'];
 
 function open(file) {
@@ -125,6 +125,11 @@ function replaceAll(db, data, login) {
       ins.run(c, String(obj.id), JSON.stringify(clean(obj)), now, login);
     }
     setSettings(db, data.settings || {});
+    const insFile = db.prepare('INSERT OR REPLACE INTO files (id, mime, data, created_by, created_at) VALUES (?, ?, ?, ?, ?)');
+    for (const [id, url] of Object.entries(data.files || {})) {
+      const m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(url);
+      if (m) insFile.run(id, m[1], Buffer.from(m[2], 'base64'), login, now);
+    }
   });
 }
 

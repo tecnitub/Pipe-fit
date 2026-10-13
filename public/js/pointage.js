@@ -37,7 +37,7 @@ function pointagePour(query) {
 
 function pointageTabs(active, uid) {
   const q = Store.me.role === 'atelier' ? '' : `?pour=${uid}`;
-  return `<div class="tabs"><a href="#/pointage${q}" class="${active === 'heures' ? 'active' : ''}">Heures</a><a href="#/pointage/frais${q}" class="${active === 'frais' ? 'active' : ''}">Notes de frais</a></div>`;
+  return `<div class="tabs"><a href="#/pointage${q}" class="${active === 'heures' ? 'active' : ''}">Heures</a><a href="#/pointage/rapports${q}" class="${active === 'rapports' ? 'active' : ''}">Rapports</a><a href="#/pointage/frais${q}" class="${active === 'frais' ? 'active' : ''}">Notes de frais</a></div>`;
 }
 
 // Sélection des personnes en mode équipe (conservée entre deux rafraîchissements)
@@ -48,6 +48,7 @@ Views.pointage = (params, query) => {
   const u = Store.get('users', uid);
   if (!u) return `<div class="pointage"><h1>Pointage</h1><p>Votre compte n'est relié à aucune fiche de l'équipe. Demandez à l'administrateur de le faire dans Paramètres › Comptes utilisateurs.</p></div>`;
   if (params[0] === 'frais') return fraisView(u);
+  if (params[0] === 'rapports') return rapportsView(u);
   const today = isoDate(new Date());
   const team = equipeDe(u.id);
   const week = isoWeek(new Date());
@@ -139,8 +140,9 @@ Views.pointage = (params, query) => {
 Views.pointage.bind = (root, params, query) => {
   const uid = pointagePour(query);
   const pour = root.querySelector('#p-pour');
-  if (pour) pour.onchange = () => { location.hash = `#/pointage${params[0] === 'frais' ? '/frais' : ''}?pour=${pour.value}`; };
+  if (pour) pour.onchange = () => { location.hash = `#/pointage${params[0] ? '/' + params[0] : ''}?pour=${pour.value}`; };
   if (params[0] === 'frais') return bindFrais(root, uid);
+  if (params[0] === 'rapports') return bindRapports(root, uid);
   const on = (sel, fn) => { const el = root.querySelector(sel); if (el) el.onclick = fn; };
   const tache = () => (root.querySelector('input[name=p-tache]:checked') || {}).value || '';
   const panier = () => !!(root.querySelector('#p-panier') || {}).checked;

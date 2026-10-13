@@ -2,10 +2,10 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v4';
+  const KEY = 'pipefit-crm-demo-v5';
   const ME_KEY = 'pipefit-crm-demo-me';
-  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais'];
-  const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4] };
+  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions'];
+  const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4] };
   const ACCOUNTS = [
     { id: 'acc-admin', login: 'admin', nom: 'Administrateur', role: 'admin', userId: null },
     { id: 'acc-claire', login: 'claire', nom: 'Claire Martin', role: 'charge', userId: 'u1' },
@@ -23,7 +23,7 @@
   function fresh() {
     const seed = DemoSeed.demoData();
     const now = new Date().toISOString();
-    const db = { settings: seed.settings, accounts: ACCOUNTS.map(a => ({ ...a, createdAt: now })), audit: [], counters: {}, files: {} };
+    const db = { settings: seed.settings, accounts: ACCOUNTS.map(a => ({ ...a, createdAt: now })), audit: [], counters: {}, files: { ...(seed.files || {}) } };
     COLLECTIONS.forEach(c => { db[c] = (seed[c] || []).map(o => ({ ...o, _v: 1, _at: now, _by: 'Démo' })); });
     return db;
   }
@@ -43,12 +43,12 @@
   function canWrite(acc, col) {
     if (acc.role === 'admin') return true;
     if (acc.role === 'charge') return col !== 'users';
-    return acc.role === 'atelier' && (col === 'temps' || col === 'frais');
+    return acc.role === 'atelier' && (col === 'temps' || col === 'frais' || col === 'rapports');
   }
   // Mêmes règles que le serveur : un opérateur saisit pour lui (et son équipe pour les pointages), rien de validé ne se modifie
   function atelierRefus(acc, col, obj, existing) {
     if (acc.role !== 'atelier') return null;
-    const allowed = col === 'frais' ? [acc.userId] : [acc.userId, ...db.users.filter(u => u.chefId === acc.userId).map(u => u.id)];
+    const allowed = col !== 'temps' ? [acc.userId] : [acc.userId, ...db.users.filter(u => u.chefId === acc.userId).map(u => u.id)];
     if (obj && !allowed.includes(obj.userId)) return 'Vous ne pouvez saisir que pour vous ou votre équipe';
     if (existing && !allowed.includes(existing.userId)) return 'Vous ne pouvez modifier que vos saisies ou celles de votre équipe';
     if (existing && ['Validé', 'Validée', 'Remboursée'].includes(existing.statut)) return 'Cette saisie est déjà validée : demandez une correction à votre chargé d\'affaires';
@@ -109,6 +109,8 @@
         if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...clean(existing), statut: obj.statut };
         const refus = atelierRefus(acc, col, obj, existing);
         if (refus) return [403, { error: refus }];
+        if (col === 'receptions' && existing && existing.statut === 'Signé' && acc.role !== 'admin') return [403, { error: 'Ce procès-verbal est signé : il ne peut plus être modifié.' }];
+        if (col === 'reserves' && existing && existing.pvId && acc.role !== 'admin') obj = { ...clean(existing), statut: obj.statut, dateLevee: obj.dateLevee, photoLeveeId: obj.photoLeveeId, commentaireLevee: obj.commentaireLevee, pvLeveeId: obj.pvLeveeId };
         if (NUMBERING[col]) { const f = NUMBERING[col][0]; obj[f] = existing ? existing[f] : nextNumber(col); }
         const rec = { ...obj, _v: existing ? existing._v + 1 : 1, _at: new Date().toISOString(), _by: acc.nom };
         if (existing) db[col][i] = rec; else db[col].push(rec);
@@ -117,7 +119,8 @@
         return [200, JSON.parse(JSON.stringify(rec))];
       }
       if (method === 'DELETE') {
-        const allowed = (col === 'factures' ? acc.role === 'admin' : canWrite(acc, col)) && !atelierRefus(acc, col, null, existing);
+        const fige = existing && acc.role !== 'admin' && ((col === 'receptions' && existing.statut === 'Signé') || (col === 'reserves' && existing.pvId));
+        const allowed = (col === 'factures' ? acc.role === 'admin' : canWrite(acc, col)) && !atelierRefus(acc, col, null, existing) && !fige;
         if (!allowed) return [403, { error: 'Droits insuffisants' }];
         if (existing) { db[col].splice(i, 1); audit('suppression', col, labelOf(existing)); save(); }
         return [200, { ok: true }];

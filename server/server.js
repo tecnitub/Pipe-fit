@@ -40,11 +40,13 @@ const isLocal = req => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.soc
 function canWrite(acc, col) {
   if (acc.role === 'admin') return true;
   if (acc.role === 'charge') return col !== 'users';
-  if (acc.role === 'atelier') return col === 'temps' || col === 'frais';
+  if (acc.role === 'atelier') return col === 'temps' || col === 'frais' || col === 'rapports';
   return false;
 }
-function canDelete(acc, col) {
+function canDelete(acc, col, existing) {
   if (col === 'factures') return acc.role === 'admin';
+  // PV signé et réserves figées par un PV : seul l'administrateur peut les supprimer
+  if (existing && acc.role !== 'admin' && ((col === 'receptions' && existing.statut === 'Signé') || (col === 'reserves' && existing.pvId))) return false;
   return canWrite(acc, col);
 }
 
@@ -58,7 +60,7 @@ function pointablePour(acc) {
 // Règles opérateur : pointages pour soi ou son équipe, notes de frais pour soi, rien de validé ne se modifie
 function atelierRefus(acc, col, obj, existing) {
   if (acc.role !== 'atelier') return null;
-  const allowed = col === 'frais' ? [acc.user_id] : pointablePour(acc);
+  const allowed = col === 'temps' ? pointablePour(acc) : [acc.user_id];
   if (!allowed.includes(obj ? obj.userId : null) && obj) return 'Vous ne pouvez saisir que pour vous ou votre équipe';
   if (existing && !allowed.includes(existing.userId)) return 'Vous ne pouvez modifier que vos saisies ou celles de votre équipe';
   if (existing && ['Validé', 'Validée', 'Remboursée'].includes(existing.statut)) return 'Cette saisie est déjà validée : demandez une correction à votre chargé d\'affaires';
@@ -254,6 +256,12 @@ async function api(req, res, url) {
         let obj = { ...DB.clean(data), id };
         // Une facture émise n'est plus modifiable, sauf son statut de paiement (admin excepté).
         if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...DB.clean(existing), statut: obj.statut };
+        // PV de réception signé : figé
+        if (col === 'receptions' && existing && existing.statut === 'Signé' && acc.role !== 'admin') return { forbidden: 'Ce procès-verbal est signé : il ne peut plus être modifié.' };
+        // Réserve figée par le PV : seule sa levée peut être renseignée
+        if (col === 'reserves' && existing && existing.pvId && acc.role !== 'admin') {
+          obj = { ...DB.clean(existing), statut: obj.statut, dateLevee: obj.dateLevee, photoLeveeId: obj.photoLeveeId, commentaireLevee: obj.commentaireLevee, pvLeveeId: obj.pvLeveeId };
+        }
         const refus = atelierRefus(acc, col, obj, existing);
         if (refus) return { forbidden: refus };
         const numbering = DB.NUMBERING[col];
@@ -278,8 +286,8 @@ async function api(req, res, url) {
     }
 
     if (method === 'DELETE') {
-      if (!canDelete(acc, col)) return fail(res, 403, 'Droits insuffisants');
       const existing = DB.getRecord(db, col, id);
+      if (!canDelete(acc, col, existing)) return fail(res, 403, existing && (existing.pvId || existing.statut === 'Signé') ? 'Élément figé par un procès-verbal signé' : 'Droits insuffisants');
       if (!existing) return send(res, 200, { ok: true });
       const refus = atelierRefus(acc, col, null, existing);
       if (refus) return fail(res, 403, refus);

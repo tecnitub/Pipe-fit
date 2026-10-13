@@ -29,6 +29,8 @@ Views.dashboard = () => {
   const alertes = stats.filter(x => !x.s.termine && (x.s.ecartHeuresPct > 0 || x.s.consoF > 100 || x.s.margeFinPct < x.s.margePrevPct - 3));
   const commandesAttente = Store.all('commandes').filter(c => c.statut === 'Envoyée');
   const week = isoWeek(new Date());
+  const rapportsJour = Store.all('rapports').filter(r => r.date >= isoDate(addDays(new Date(), -1))).length;
+  const reservesOuv = Store.all('reserves').filter(r => r.statut !== 'Levée').length;
   const aValider = sumBy(Store.all('temps').filter(t => !t.statut && t.fin !== '' ), t => num(t.heures));
   const fraisAValider = Store.all('frais').filter(f => f.statut === 'Soumise');
   const sitsProposees = Store.all('situations').filter(x => x.statut === 'Proposée');
@@ -44,6 +46,7 @@ Views.dashboard = () => {
   <div class="cards">
     <a class="card clickable-card" href="#/rh/validation"><div class="label">Pointages à valider</div><div class="value ${aValider ? 'warn-text' : ''}">${fmt(aValider, 1)} h</div><div class="sub">avant envoi en paie</div></a>
     <a class="card clickable-card" href="#/rh/frais"><div class="label">Notes de frais à valider</div><div class="value">${fraisAValider.length}</div><div class="sub">${eur(sumBy(fraisAValider, f => num(f.montantTTC)))} TTC</div></a>
+    <div class="card"><div class="label">Terrain</div><div class="value">${rapportsJour} rapport(s)</div><div class="sub">reçus depuis hier · ${reservesOuv} réserve(s) ouverte(s) sur les chantiers</div></div>
     <a class="card clickable-card" href="#/situations?statut=Proposée"><div class="label">Situations en attente d'accord</div><div class="value">${sitsProposees.length}</div><div class="sub">${eur(sumBy(sitsProposees, x => Calc.situation(x).montant))} HT proposés à la maîtrise d'œuvre</div></a>
   </div>
   <h2>Chantiers à surveiller</h2>
@@ -111,14 +114,18 @@ Views.chantier = params => {
   temps.forEach(t => { parOp[t.userId] = (parOp[t.userId] || 0) + num(t.heures); });
   const rex = a.rex || {};
   const dAcc = devis.find(d => d.statut === 'Accepté');
+  const rapports = Store.all('rapports').filter(r => r.affaireId === a.id).sort((x, y) => (y.date || '').localeCompare(x.date || ''));
+  const reserves = Store.all('reserves').filter(r => r.affaireId === a.id), reservesOuvertes = reserves.filter(r => r.statut !== 'Levée').length;
+  const pvRec = Store.all('receptions').find(p => p.affaireId === a.id && p.type === 'reception' && p.statut === 'Signé');
   const sits = Store.all('situations').filter(x => x.affaireId === a.id).sort((x, y) => (x.numero || '~').localeCompare(y.numero || '~'));
   const frais = Store.all('frais').filter(n => n.affaireId === a.id).sort((x, y) => (y.date || '').localeCompare(x.date || ''));
   return `
   <div class="toolbar"><a href="#/chantiers" class="btn secondary">← Chantiers</a><span class="spacer"></span>
     <button id="edit" class="secondary">Modifier</button>
+    <a class="btn secondary" href="#/reception/${a.id}">Réserves et réception</a>
     <a class="btn secondary" href="#/commandes/new?chantier=${a.id}">+ Commande fournisseur</a>
     ${dAcc ? '<button id="situation">+ Situation de travaux</button>' : ''}</div>
-  <h1>${esc(affaireLabel(a))} ${badge(a.statut)}</h1>
+  <h1>${esc(affaireLabel(a))} ${badge(a.statut)} ${a.okFacturation ? '<span class="badge b-ok">Réceptionné · OK pour facturation</span>' : ''}</h1>
   <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${a.clientId}">${esc(clientName(a.clientId))}</a>` : '—'}
     ${a.contactId ? ` · Contact : ${esc(contactName(Store.get('contacts', a.contactId)))}` : ''}
     ${a.siteId ? ` · Site : ${esc(siteLabel(siteOf(a.clientId, a.siteId)))}` : ''}
@@ -148,6 +155,20 @@ Views.chantier = params => {
   <h2>Heures par catégorie de main-d'œuvre</h2>
   ${Object.keys(s.hByMo).length ? `<div class="table-wrap"><table><tr><th>Catégorie</th><th class="num">Prévues</th><th class="num">Pointées</th><th>Consommé</th><th class="num">Reste</th></tr>
     ${Object.entries(s.hByMo).map(([k, v]) => `<tr><td>${esc(moOf(k).libelle || 'Autre')}</td><td class="num">${fmt(v.prevues, 1)} h</td><td class="num">${fmt(v.passees, 1)} h</td><td>${gauge(v.passees, v.prevues)}</td><td class="num ${v.prevues - v.passees < 0 ? 'neg' : ''}">${fmt(v.prevues - v.passees, 1)} h</td></tr>`).join('')}</table></div>` : '<p class="muted">Pas de budget d\'heures.</p>'}
+
+  <h2>Rapports d'intervention <span class="muted small">${rapports.length}</span></h2>
+  ${rapports.length ? `<div class="table-wrap"><table><tr><th>Date</th><th>Rédigé par</th><th>Travaux réalisés</th><th>Observations / besoins</th><th>Photos</th></tr>
+    ${rapports.slice(0, 12).map(r => `<tr class="clickable" data-rapport="${r.id}"><td>${dateFr(r.date)}</td><td>${esc(userName(r.userId))}${(r.intervenants || []).length > 1 ? `<br><span class="muted small">+ ${r.intervenants.length - 1} intervenant(s)</span>` : ''}</td>
+      <td>${esc((r.travaux || '').slice(0, 140))}${(r.travaux || '').length > 140 ? '…' : ''}</td><td class="small">${esc([r.observations, r.besoins].filter(Boolean).join(' · ').slice(0, 120))}</td>
+      <td>${(r.photos || []).slice(0, 3).map(id => `<img class="thumb" src="${fileUrl(id)}" alt="">`).join('')}</td></tr>`).join('')}</table></div>`
+  : '<p class="muted">Aucun rapport. Les équipes les rédigent depuis leur téléphone (Pointage › Rapports).</p>'}
+
+  <h2>Réserves et réception</h2>
+  <div class="card reception-card">
+    ${pvRec ? `<span class="badge b-ok">PV ${esc(pvRec.numero)} signé le ${dateFr(pvRec.date)}</span> ${esc(pvRec.decision)} · signataire ${esc(pvRec.signataireNom)}` : '<span class="badge b-warn">Réception non signée</span>'}
+    · ${reservesOuvertes} réserve(s) ouverte(s) sur ${reserves.length}
+    <a class="btn small" href="#/reception/${a.id}" style="margin-left:8px">${pvRec ? 'Voir les réserves' : 'Préparer la réception'}</a>
+  </div>
 
   <h2>Commandes fournisseurs</h2>
   ${commandes.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Fournisseur</th><th>Statut</th><th class="num">Montant HT</th></tr>
@@ -183,6 +204,7 @@ Views.chantier.bind = (root, params) => {
   if (!a) return;
   root.querySelector('#edit').onclick = () => editModal({ title: `Chantier ${a.code}`, col: 'affaires', fields: chantierFields, obj: { ...a },
     onDelete: () => { location.hash = '#/chantiers'; } });
+  root.querySelectorAll('[data-rapport]').forEach(tr => tr.onclick = () => voirRapport(Store.get('rapports', tr.dataset.rapport)));
   const lib = root.querySelector('#liberer');
   if (lib) lib.onclick = () => ask(`Le client a reversé la retenue de garantie (${eur(Calc.affaire(a).retenues)} TTC) ?`, 'Retenue libérée', false).then(ok => {
     if (ok) { a.retenueLiberee = isoDate(new Date()); Store.upsert('affaires', a); App.render(); }
@@ -416,7 +438,7 @@ Views.parametres = () => {
   ${admin ? `<h2>Historique des modifications</h2><div class="table-wrap"><table id="audit"><tr><td class="muted">Chargement…</td></tr></table></div>` : ''}`;
 };
 
-const COL_LABELS = { situations: 'Situation', frais: 'Note de frais', users: 'Personne', entreprises: 'Entreprise', contacts: 'Contact', articles: 'Fourniture', mainoeuvre: "Main-d'œuvre", zones: 'Zone', affaires: 'Chantier', devis: 'Devis', commandes: 'Commande', factures: 'Facture', planning: 'Planning', temps: 'Pointage' };
+const COL_LABELS = { rapports: "Rapport d'intervention", reserves: 'Réserve', receptions: 'PV de réception', situations: 'Situation', frais: 'Note de frais', users: 'Personne', entreprises: 'Entreprise', contacts: 'Contact', articles: 'Fourniture', mainoeuvre: "Main-d'œuvre", zones: 'Zone', affaires: 'Chantier', devis: 'Devis', commandes: 'Commande', factures: 'Facture', planning: 'Planning', temps: 'Pointage' };
 
 function accountModal(acc, onDone) {
   const isNew = !acc.id;

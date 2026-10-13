@@ -19,6 +19,7 @@ const page = [
   markup,
   inlineScript("document.body.classList.add('logged-out');"),
   // Données de démo isolées dans leur propre portée (mêmes noms de fonctions que l'application)
+  inlineScript(read('server/demo-images.js')),
   inlineScript(`window.DemoSeed = (function (module) {\n${read('server/demo.js')}\nreturn module.exports;\n})({});`),
   ...scripts.map(s => inlineScript(read(path.join('public', s)))),
 ].join('\n');

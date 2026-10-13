@@ -84,6 +84,7 @@ function situationEditor(id) {
   </div>
   <h1>Situation n° ${situationRang(sit)} · ${esc(sit.numero || '')} ${badge(sit.statut)}</h1>
   <p class="muted">Chantier ${esc(affaireLabel(a))} · Devis ${esc(dv.numero || '')} · ${c.prev ? `situation précédente acceptée : ${esc(c.prev.numero)}` : 'première situation'}</p>
+  ${a.okFacturation ? `<p class="note">Réception signée le ${dateFr(a.dateReception)} : feu vert pour facturer le solde des travaux.</p>` : ''}
 
   <div class="cards">
     <div class="card"><div class="label">Montant du marché</div><div class="value">${eur(c.marche)}</div></div>

@@ -1,5 +1,6 @@
 // Données de démonstration chargées au premier démarrage (base vide).
 // Fichier partagé : utilisé par le serveur (Node.js) et par la version de démonstration en ligne (navigateur).
+const IMAGES = typeof DEMO_IMAGES !== 'undefined' ? DEMO_IMAGES : require('./demo-images');
 const uid = () => Math.random().toString(36).slice(2, 12) + Date.now().toString(36).slice(-4);
 const isoDate = d => d.toISOString().slice(0, 10);
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
@@ -101,8 +102,8 @@ function demoData() {
 
   const affaires = [
     { id: 'af1', code: `CH-${Y}-` + '001', nom: 'Ligne NEP inox – Usine de Rumilly', clientId: 'e2', contactId: 'k3', siteId: 's4', moeId: 'e9', moeContactId: 'k9', retenueGarantie: 5, caution: '', chargeId: 'u1', statut: 'En cours', devisId: 'dv1', dateCreation: d(-50), heuresPrevues: 0, rex: { note: '', positif: '', negatif: '', actions: '' } },
-    { id: 'af2', code: `CH-${Y}-` + '002', nom: 'Remplacement collecteur vapeur DN150', clientId: 'e1', contactId: 'k1', siteId: 's2', retenueGarantie: 5, caution: '', dateReception: d(-24), chargeId: 'u2', statut: 'Facturé', devisId: 'dv2', dateCreation: d(-110), heuresPrevues: 0, rex: { note: 3, positif: 'Préfabrication des tronçons en atelier, arrêt de l\'unité tenu en 5 jours.', negatif: '6 soudures reprises après contrôle RX (accès difficile en rack). Heures soudeurs dépassées.', actions: 'Prévoir 15 % de reprises sur les soudures en hauteur. Visite de site systématique avant chiffrage.' } },
-    { id: 'af3', code: `CH-${Y}-` + '003', nom: 'Skid de dosage – bâtiment B', clientId: 'e3', contactId: 'k4', siteId: 's5', chargeId: 'u1', statut: 'Facturé', devisId: 'dv3', dateCreation: d(-85), heuresPrevues: 0, rex: { note: 4, positif: 'Skid préfabriqué à 90 % en atelier, montage en 3 jours.', negatif: 'Remise commerciale trop élevée.', actions: 'Plancher de remise à 8 % sur les skids.' } },
+    { id: 'af2', code: `CH-${Y}-` + '002', nom: 'Remplacement collecteur vapeur DN150', clientId: 'e1', contactId: 'k1', siteId: 's2', retenueGarantie: 5, caution: '', dateReception: d(-24), okFacturation: true, chargeId: 'u2', statut: 'Facturé', devisId: 'dv2', dateCreation: d(-110), heuresPrevues: 0, rex: { note: 3, positif: 'Préfabrication des tronçons en atelier, arrêt de l\'unité tenu en 5 jours.', negatif: '6 soudures reprises après contrôle RX (accès difficile en rack). Heures soudeurs dépassées.', actions: 'Prévoir 15 % de reprises sur les soudures en hauteur. Visite de site systématique avant chiffrage.' } },
+    { id: 'af3', code: `CH-${Y}-` + '003', nom: 'Skid de dosage – bâtiment B', clientId: 'e3', contactId: 'k4', siteId: 's5', chargeId: 'u1', statut: 'Facturé', devisId: 'dv3', dateReception: d(-66), okFacturation: true, dateCreation: d(-85), heuresPrevues: 0, rex: { note: 4, positif: 'Skid préfabriqué à 90 % en atelier, montage en 3 jours.', negatif: 'Remise commerciale trop élevée.', actions: 'Plancher de remise à 8 % sur les skids.' } },
   ];
   const head = (af, chargeId, clientId, contactId, siteId) => ({ affaireId: af, chargeId, clientId, contactId, siteId });
   const devis = [
@@ -264,9 +265,38 @@ function demoData() {
     { id: 'nf4', numero: `NF-${Y}-` + '0004', userId: 'o1', affaireId: 'af2', date: d(-100), categorie: 'Hôtel', montantTTC: 189, tauxTVA: 10, description: '2 nuits à Fos-sur-Mer pendant l\'arrêt', photoId: '', statut: 'Remboursée' },
   ];
 
+  // Rapports d'intervention saisis sur le téléphone par les équipes
+  const rapports = [
+    { id: 'ri1', numero: `RI-${Y}-` + '0001', affaireId: 'af1', userId: 'o3', date: d(-3), intervenants: ['o3', 'o4', 'i1'], photos: ['img-rack1'], statut: 'Envoyé',
+      travaux: 'Pose et supportage de 48 ml de ligne inox DN50 entre la cuve CIP 2 et le collecteur retour (rack nord). Colliers posés tous les 2 m.',
+      observations: 'Accès au rack difficile au-dessus de la cuve 3 : nacelle nécessaire pour la suite.', besoins: '40 colliers DN50 supplémentaires, réservation nacelle jeudi.' },
+    { id: 'ri2', numero: `RI-${Y}-` + '0002', affaireId: 'af1', userId: 'o1', date: d(-2), intervenants: ['o1', 'i2'], photos: ['img-rack2'], statut: 'Envoyé',
+      travaux: 'Soudure orbitale de 26 joints DN50 sur la ligne retour NEP. Contrôle visuel conforme, marquage des soudures sur l\'isométrique.',
+      observations: '', besoins: 'Bouteille d\'argon à remplacer.' },
+    { id: 'ri3', numero: `RI-${Y}-` + '0003', affaireId: 'af1', userId: 'o3', date: d(-1), intervenants: ['o3', 'o4'], photos: [], statut: 'Envoyé',
+      travaux: 'Mise en place des vannes papillon V12 à V18 sur la ligne aller. Serrage des brides au couple.', observations: 'Vanne V15 livrée avec un levier abîmé : photo envoyée au fournisseur.', besoins: '' },
+  ];
+  // Réserves de fin de chantier et procès-verbaux de réception signés
+  const reserves = [
+    { id: 'rs1', affaireId: 'af1', numero: 1, localisation: 'Local CIP – rack nord', description: 'Calorifuge manquant sur 3 m de ligne retour', responsable: 'Pipe-Fit', echeance: d(10), photoId: 'img-rack1', statut: 'Ouverte', pvId: '' },
+    { id: 'rs2', affaireId: 'af1', numero: 2, localisation: 'Toutes lignes', description: 'Repérage des lignes (étiquettes sens de circulation) à compléter', responsable: 'Pipe-Fit', echeance: d(10), photoId: '', statut: 'Ouverte', pvId: '' },
+    { id: 'rs3', affaireId: 'af3', numero: 1, localisation: 'Skid de dosage', description: 'Suintement sur raccord clamp de la vanne V3', responsable: 'Pipe-Fit', echeance: d(-60), photoId: '', statut: 'Levée', dateLevee: d(-62), commentaireLevee: 'Joint remplacé, essai d\'étanchéité OK', pvId: 'pv2' },
+    { id: 'rs4', affaireId: 'af3', numero: 2, localisation: 'Bâtiment B – supports', description: 'Retouches de peinture sur les supports du skid', responsable: 'Pipe-Fit', echeance: d(-50), photoId: '', statut: 'Ouverte', pvId: 'pv2' },
+  ];
+  const snap = r => ({ numero: r.numero, localisation: r.localisation, description: r.description, responsable: r.responsable, echeance: r.echeance });
+  const receptions = [
+    { id: 'pv1', numero: `PV-${Y}-` + '0001', affaireId: 'af2', type: 'reception', date: d(-24), lieu: 'Site de Fos', presents: 'M. Durand (Pétrochimie du Sud), J. Bernard (Pipe-Fit)',
+      contactId: 'k1', signataireNom: 'Marc Durand', signataireQualite: 'Chargé de travaux', decision: 'Sans réserve', reservesSnapshot: [], commentaire: '',
+      signatureClientId: 'img-sig', signatureEntrepriseId: 'img-sig', signataireEntreprise: 'Julien Bernard', signeLe: d(-24) + 'T16:40:00', statut: 'Signé' },
+    { id: 'pv2', numero: `PV-${Y}-` + '0002', affaireId: 'af3', type: 'reception', date: d(-66), lieu: 'Usine de Gerland', presents: 'Mme Benali (Pharmasynth), C. Martin (Pipe-Fit)',
+      contactId: 'k4', signataireNom: 'Nadia Benali', signataireQualite: 'Responsable maintenance', decision: 'Avec réserves', reservesSnapshot: reserves.filter(r => r.pvId === 'pv2').map(snap), commentaire: 'Réserves à lever sous 15 jours.',
+      signatureClientId: 'img-sig', signatureEntrepriseId: 'img-sig', signataireEntreprise: 'Claire Martin', signeLe: d(-66) + 'T11:15:00', statut: 'Signé' },
+  ];
+
   return {
+    files: { 'img-sig': IMAGES.signature, 'img-rack1': IMAGES.rack1, 'img-rack2': IMAGES.rack2 },
     settings: { societe: 'Pipe-Fit Industrie', adresse: 'ZI des Forges – 69800 Saint-Priest', siret: '000 000 000 00000', tva: 20, tauxHoraireDefaut: 58, delaiPaiement: 45, dureeHebdo: 35, seuilHS50: 43, montantPanier: 10.5 },
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais,
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions,
   };
 }
 
