@@ -75,9 +75,11 @@ const Calc = {
     const tva = totalHT * num(Store.data.settings.tva) / 100;
     const coutLivraison = this.coutLivraison(doc, poids);
     const margePrev = totalHT - coutF - coutMO - coutLivraison;
+    // Retenue de garantie (factures de situation) : pourcentage du TTC conservé par le client jusqu'à la réception
+    const retenue = (totalHT + tva) * num(doc.retenuePct) / 100;
     return {
       brut, ajust, totalAjust, net, venteF: venteF * ratio, venteMO: venteMO * ratio,
-      coutF, coutMO, heures, hByMo, poids, livraison, totalHT, tva, totalTTC: totalHT + tva,
+      coutF, coutMO, heures, hByMo, poids, livraison, totalHT, tva, totalTTC: totalHT + tva, retenue, netAPayer: totalHT + tva - retenue,
       coutLivraison, margePrev, margePrevPct: totalHT ? margePrev / totalHT * 100 : 0,
       partMOPct: net ? venteMO * ratio / net * 100 : 0,
     };
@@ -130,6 +132,7 @@ const Calc = {
 
     const caDevis = sumBy(T, t => t.totalHT);
     const caFacture = sumBy(factures, f => this.doc(f).totalHT);
+    const retenues = sumBy(factures, f => this.doc(f).retenue);
     const ca = factures.length ? caFacture : caDevis;
     const budgetF = sumBy(T, t => t.coutF), budgetMO = sumBy(T, t => t.coutMO), budgetLiv = sumBy(T, t => t.coutLivraison);
     const venteF = sumBy(T, t => t.venteF), venteMO = sumBy(T, t => t.venteMO);
@@ -164,6 +167,7 @@ const Calc = {
       ecartHeuresPct: heuresPrevues ? (heuresPassees - heuresPrevues) / heuresPrevues * 100 : 0,
       avancement: heuresPrevues ? heuresPassees / heuresPrevues * 100 : 0,
       marge, margePct: ca ? marge / ca * 100 : 0, margePrev,
+      retenues, retenueALiberer: af.retenueLiberee ? 0 : retenues,
       coutFrais, nbFrais: frais.length, pctFacture: caDevis ? caFacture / caDevis * 100 : 0,
       termine, resteHeures, coutFFin, coutMOFin, margeFin, margeFinPct: caFin ? margeFin / caFin * 100 : 0, margePrevPct: caDevis ? margePrev / caDevis * 100 : 0,
       hByMo,

@@ -113,6 +113,8 @@ Ne pas exposer le port 3000 en HTTP simple sur Internet.
 |---|---|
 | **Contacts** | Entreprises client / fournisseur (SIRET, TVA, coordonnées) avec plusieurs sites ; personnes rattachées (chargé de travaux, acheteur…). |
 | **Bibliothèque** | Fournitures (prix d'achat, prix de vente, poids, fournisseur habituel), catégories de main-d'œuvre (taux de vente, coût moyen), zones de livraison. |
+| **DPGF (marchés publics)** | Import du DPGF du dossier de consultation (.xlsx / .csv) dans un devis : N° de prix, chapitres et sous-chapitres, ouvrages avec unité et quantité, lignes descriptives rattachées à l'ouvrage, totaux ignorés, lignes « PM » conservées ; aperçu avec correction du type de chaque ligne. Repère « à chiffrer » sur chaque ouvrage, fourniture libre possible. Export du DPGF chiffré au même format avec sous-totaux hiérarchiques. |
+| **Retenue de garantie** | Au choix par chantier (taux, ou caution bancaire) : déduite du TTC des factures de situation (net à payer), cumul suivi sur le chantier, libération après la réception. |
 | **Import / export Excel** | Fournitures, taux de main-d'œuvre, entreprises (feuille « Sites » pour les adresses multiples) et contacts : import d'un fichier .xlsx ou .csv existant (colonnes reconnues automatiquement, ajustables, aperçu), mise à jour des fiches existantes (par ID, référence, SIRET, nom ou e-mail) et ajout des nouvelles, puis export Excel modifiable et réimportable. Une cellule vide ne remplace pas la valeur existante. |
 | **Planning** | Charge hebdomadaire par personne face à sa capacité, heures pointées, reste à planifier par chantier. |
 | **Rôles** | Administrateur ; chargé d'affaires ; opérateur (pointe uniquement ses propres heures). |

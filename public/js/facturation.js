@@ -4,6 +4,8 @@ const STATUTS_SITUATION = ['Brouillon', 'Proposée', 'Acceptée', 'Refusée'];
 const r2 = v => Math.round(v * 100) / 100;
 const situationsDe = devisId => Store.all('situations').filter(s => s.devisId === devisId)
   .sort((a, b) => ((a.numero || '~') + a.date).localeCompare((b.numero || '~') + b.date));
+// Retenue de garantie du chantier (0 si aucune ou remplacée par une caution bancaire)
+const retenueChantier = a => (a.caution ? 0 : num(a.retenueGarantie));
 const situationRang = s => situationsDe(s.devisId).findIndex(x => x.id === s.id) + 1;
 
 function facturationTabs(active) {
@@ -34,6 +36,7 @@ function facturerSituation(sit) {
     numero: '', situationId: sit.id, devisId: dv.id, affaireId: sit.affaireId, clientId: docClientId(dv), contactId: dv.contactId || '', siteId: dv.siteId || '', chargeId: docChargeId(dv) || '',
     objet: `${dv.objet || ''} – situation n° ${situationRang(sit)}`, date: isoDate(new Date()), echeance: isoDate(addDays(new Date(), num(s.delaiPaiement))), statut: 'Émise',
     lignes: lignes.filter((l, k, arr) => l.type !== 'chapitre' || (arr[k + 1] && arr[k + 1].type !== 'chapitre')), ajustements: [], zoneId: '',
+    retenuePct: retenueChantier(affaireOf(sit.affaireId)),
   });
   Object.assign(sit, { statut: 'Acceptée', factureId: f.id });
   Store.upsert('situations', sit);
@@ -126,7 +129,9 @@ function blDocument(sit, c, a, dv) {
     <tr class="subtotal"><td>Total</td><td class="num">${eur(c.marche)}</td><td class="num">${pct(c.pctCumul)}</td><td class="num">${eur(c.cumul)}</td><td class="num">${eur(c.precedent)}</td><td class="num">${eur(c.montant)}</td></tr></table></div>
     <table class="totals"><tr><td>Montant de la situation HT</td><td class="num">${eur(c.montant)}</td></tr>
       <tr><td>TVA ${fmt(s.tva, 1)} %</td><td class="num">${eur(c.montant * num(s.tva) / 100)}</td></tr>
-      <tr class="grand"><td>Montant TTC</td><td class="num">${eur(c.montant * (1 + num(s.tva) / 100))}</td></tr></table>
+      <tr class="${retenueChantier(a) ? '' : 'grand'}"><td>Montant TTC</td><td class="num">${eur(c.montant * (1 + num(s.tva) / 100))}</td></tr>
+      ${retenueChantier(a) ? `<tr><td>Retenue de garantie ${fmt(retenueChantier(a), 1)} %</td><td class="num">− ${eur(c.montant * (1 + num(s.tva) / 100) * retenueChantier(a) / 100)}</td></tr>
+      <tr class="grand"><td>Net à payer TTC</td><td class="num">${eur(c.montant * (1 + num(s.tva) / 100) * (1 - retenueChantier(a) / 100))}</td></tr>` : ''}</table>
     <div class="signatures"><div>Pour l'entreprise<br>${esc(userName(a.chargeId))}</div><div>Bon pour accord de la maîtrise d'œuvre<br>Date et signature :</div></div>`;
 }
 

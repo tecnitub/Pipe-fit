@@ -38,12 +38,14 @@ function docLinesClient(doc) {
   const chaps = Calc.chapitres(doc);
   const subAfter = {};
   chaps.forEach(c => { if (c.last > c.index) subAfter[c.last] = c; });
+  const nums = (doc.lignes || []).some(l => l.num);
+  const n = nums ? 6 : 5;
   return `<div class="table-wrap"><table class="doc-lines">
-    <tr><th>Désignation</th><th class="num">Qté</th><th>Unité</th><th class="num">PU HT</th><th class="num">Total HT</th></tr>
+    <tr>${nums ? '<th>N°</th>' : ''}<th>Désignation</th><th class="num">Qté</th><th>Unité</th><th class="num">PU HT</th><th class="num">Total HT</th></tr>
     ${(doc.lignes || []).map((l, i) => (l.type === 'chapitre'
-      ? `<tr class="chap"><td colspan="5">${esc(l.titre)}</td></tr>`
-      : `<tr><td>${esc(l.designation)}</td><td class="num">${fmt(l.qte, 2)}</td><td>${esc(l.unite)}</td><td class="num">${eur(Calc.pu(l))}</td><td class="num">${eur(Calc.ligneHT(l))}</td></tr>`)
-      + (subAfter[i] ? `<tr class="subtotal"><td colspan="4">Sous-total ${esc(subAfter[i].titre)}</td><td class="num">${eur(subAfter[i].total)}</td></tr>` : '')).join('')}
+      ? `<tr class="chap"><td colspan="${n}">${esc(l.titre)}</td></tr>`
+      : `<tr>${nums ? `<td>${esc(l.num || '')}</td>` : ''}<td>${esc(l.designation)}${l.detail ? `<div class="muted small pre">${esc(l.detail)}</div>` : ''}</td><td class="num">${fmt(l.qte, 2)}</td><td>${esc(l.unite)}</td><td class="num">${eur(Calc.pu(l))}</td><td class="num">${eur(Calc.ligneHT(l))}</td></tr>`)
+      + (subAfter[i] ? `<tr class="subtotal"><td colspan="${n - 1}">Sous-total ${esc(subAfter[i].titre)}</td><td class="num">${eur(subAfter[i].total)}</td></tr>` : '')).join('')}
   </table></div>`;
 }
 
@@ -56,7 +58,9 @@ function totalsTable(doc) {
     ${t.livraison || z ? `<tr><td>Livraison ${z ? `(${esc(z.nom)}, ${fmt(t.poids / 1000, 2)} t)` : ''}</td><td class="num">${eur(t.livraison)}</td></tr>` : ''}
     <tr><td>Total HT</td><td class="num">${eur(t.totalHT)}</td></tr>
     <tr><td>TVA ${fmt(Store.data.settings.tva, 1)} %</td><td class="num">${eur(t.tva)}</td></tr>
-    <tr class="grand"><td>Total TTC</td><td class="num">${eur(t.totalTTC)}</td></tr>
+    <tr class="${t.retenue ? '' : 'grand'}"><td>Total TTC</td><td class="num">${eur(t.totalTTC)}</td></tr>
+    ${t.retenue ? `<tr><td>Retenue de garantie ${fmt(doc.retenuePct, 1)} %</td><td class="num">− ${eur(t.retenue)}</td></tr>
+    <tr class="grand"><td>Net à payer TTC</td><td class="num">${eur(t.netAPayer)}</td></tr>` : ''}
   </table>`;
 }
 
@@ -109,6 +113,8 @@ function devisEditor(id) {
     <a href="#/devis" class="btn secondary">← Devis</a>
     ${d.affaireId ? `<a href="#/chantier/${d.affaireId}" class="btn secondary">Chantier ${esc(affaireOf(d.affaireId).code || '')}</a>` : ''}
     <span class="spacer"></span>
+    ${!locked ? '<button class="secondary" id="dpgf-imp">Importer un DPGF</button>' : ''}
+    <button class="secondary dl-btn" id="dpgf-exp">Exporter le DPGF chiffré</button>
     <button class="secondary" id="dup">Dupliquer</button>
     <button class="secondary print-btn" onclick="window.print()">Imprimer / PDF</button>
     ${!d.affaireId && d.statut !== 'Refusé' ? '<button id="accept">Accepté : créer le chantier</button>' : ''}
@@ -117,6 +123,7 @@ function devisEditor(id) {
   </div>
   <h1>Devis ${esc(d.numero || '')} ${badge(d.statut)}</h1>
   ${locked ? '<p class="note no-print">Devis accepté : il sert de budget au chantier. Pour le modifier, dupliquez-le en avenant.</p>' : ''}
+  ${!locked && lines.filter(aChiffrer).length ? `<p class="note warn no-print">${lines.filter(aChiffrer).length} ouvrage(s) à chiffrer : cliquez sur chaque désignation pour ajouter fournitures et main-d'œuvre.</p>` : ''}
 
   <div class="card no-print">
     <div class="grid2">
@@ -145,8 +152,9 @@ function devisEditor(id) {
       } else {
         const u = Calc.unit(l);
         const nbF = (l.composants || []).filter(c => c.type !== 'mo').length;
-        row = `<tr>${move}<td><button class="linklike" data-open="${i}">${esc(l.designation || 'Ouvrage sans titre')}</button>
-            <div class="muted small">${nbF} fourniture${nbF > 1 ? 's' : ''} · ${fmt(u.heures, 2)} h de main-d'œuvre / ${esc(l.unite)}</div></td>
+        row = `<tr class="${aChiffrer(l) ? 'a-chiffrer' : ''}">${move}<td>${l.num ? `<span class="muted small">${esc(l.num)}</span> ` : ''}<button class="linklike" data-open="${i}">${esc(l.designation || 'Ouvrage sans titre')}</button>
+            ${aChiffrer(l) ? '<span class="badge b-warn">à chiffrer</span>' : ''}
+            <div class="muted small">${nbF} fourniture${nbF > 1 ? 's' : ''} · ${fmt(u.heures, 2)} h de main-d'œuvre / ${esc(l.unite)}${l.detail ? ' · <span title="' + esc(l.detail) + '">descriptif</span>' : ''}</div></td>
           <td class="num"><input data-qte="${i}" type="number" step="any" value="${esc(l.qte)}" style="width:80px" ${locked ? 'disabled' : ''} aria-label="Quantité"></td>
           <td>${esc(l.unite)}</td><td class="num">${eur(u.f)}</td><td class="num">${eur(u.mo)}</td><td class="num">${eur(u.f + u.mo)}</td><td class="num"><strong>${eur(Calc.ligneHT(l))}</strong></td>${del}</tr>`;
       }
@@ -233,6 +241,8 @@ Views.devis.bind = (root, params) => {
   on('#add-maj', 'onclick', () => { (d.ajustements = d.ajustements || []).push({ libelle: 'Majoration', pct: 5 }); save(); });
 
   on('#accept', 'onclick', () => acceptDevis(d));
+  on('#dpgf-imp', 'onclick', () => importerDPGF(d));
+  on('#dpgf-exp', 'onclick', () => exporterDPGF(d));
   on('#del', 'onclick', () => ask(`Supprimer le devis ${d.numero} ?${d.affaireId ? ' Le chantier associé sera conservé.' : ''}`, 'Supprimer').then(ok => {
     if (ok) { Store.remove('devis', d.id); location.hash = '#/devis'; }
   }));
@@ -292,20 +302,22 @@ function openOuvrage(d, index) {
     const dis = locked ? 'disabled' : '';
     const box = Modal.open(`<h2 style="margin-top:0">${index === null ? 'Nouvel ouvrage' : 'Ouvrage'}</h2>
       <div class="grid2">
+        <div class="field"><label for="o-num">N° de prix (DPGF)</label><input id="o-num" value="${esc(l.num || '')}" ${dis}></div>
         <div class="field" style="grid-column:1/-1"><label for="o-des">Désignation (texte du devis)</label><input id="o-des" value="${esc(l.designation)}" ${dis}></div>
+        ${l.detail ? `<div class="field" style="grid-column:1/-1"><label for="o-detail">Descriptif</label><textarea id="o-detail" ${dis}>${esc(l.detail)}</textarea></div>` : ''}
         <div class="field"><label for="o-qte">Quantité</label><input id="o-qte" type="number" step="any" value="${esc(l.qte)}" ${dis}></div>
         <div class="field"><label for="o-unite">Unité</label><select id="o-unite" ${dis}>${optionsStr([...new Set([...UNITES, l.unite])], l.unite)}</select></div>
       </div>
 
       <h3>Fournitures <span class="muted small">pour 1 ${esc(l.unite)}</span></h3>
       <div class="table-wrap"><table><tr><th>Fourniture</th><th class="num">Qté</th><th class="num">PU vente</th><th class="num">Achat</th><th class="num">Total</th><th></th></tr>
-        ${F.map(({ c, i }) => `<tr><td>${esc(c.designation)}${c.unite ? ` <span class="muted">(${esc(c.unite)})</span>` : ''}</td>
+        ${F.map(({ c, i }) => `<tr><td>${c.articleId || locked ? `${esc(c.designation)}${c.unite ? ` <span class="muted">(${esc(c.unite)})</span>` : ''}` : `<input data-c="${i}" data-k="designation" value="${esc(c.designation)}" aria-label="Désignation de la fourniture">`}</td>
           <td class="num"><input data-c="${i}" data-k="qte" type="number" step="any" value="${esc(c.qte)}" style="width:80px" ${dis}></td>
           <td class="num"><input data-c="${i}" data-k="pu" type="number" step="0.01" value="${esc(c.pu)}" style="width:90px" ${dis}></td>
-          <td class="num muted">${eur(c.cout)}</td><td class="num">${eur(num(c.qte) * num(c.pu))}</td>
+          <td class="num">${c.articleId || locked ? `<span class="muted">${eur(c.cout)}</span>` : `<input data-c="${i}" data-k="cout" type="number" step="0.01" value="${esc(c.cout)}" style="width:90px" aria-label="Prix d'achat">`}</td><td class="num">${eur(num(c.qte) * num(c.pu))}</td>
           <td>${locked ? '' : `<button class="small danger" data-rm="${i}" aria-label="Retirer">✕</button>`}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Aucune fourniture.</td></tr>'}
       </table></div>
-      ${locked ? '' : `<div class="toolbar" style="margin-top:8px">${articleSelect('o-art')}<input id="o-art-q" type="number" step="any" value="1" style="width:80px" aria-label="Quantité pour une unité"><button class="secondary" id="o-add-f">Ajouter</button></div>`}
+      ${locked ? '' : `<div class="toolbar" style="margin-top:8px">${articleSelect('o-art')}<input id="o-art-q" type="number" step="any" value="1" style="width:80px" aria-label="Quantité pour une unité"><button class="secondary" id="o-add-f">Ajouter</button><button class="secondary" id="o-add-libre">+ Fourniture libre</button></div>`}
 
       <h3>Main-d'œuvre <span class="muted small">pour 1 ${esc(l.unite)}</span></h3>
       <div class="table-wrap"><table><tr><th>Catégorie</th><th class="num">Heures</th><th class="num">Taux vente</th><th class="num">Coût</th><th class="num">Total</th><th></th></tr>
@@ -326,13 +338,17 @@ function openOuvrage(d, index) {
       <p class="muted small">Coût unitaire ${eur(u.coutF + u.coutMO)} · marge ${marginBadge((u.f + u.mo) ? (u.f + u.mo - u.coutF - u.coutMO) / (u.f + u.mo) * 100 : 0)}</p>
       <div class="modal-actions"><button class="secondary" id="o-cancel">${locked ? 'Fermer' : 'Annuler'}</button>${locked ? '' : '<button id="o-save">Enregistrer l\'ouvrage</button>'}</div>`, true);
 
-    const keep = () => { l.designation = box.querySelector('#o-des').value; l.qte = num(box.querySelector('#o-qte').value); l.unite = box.querySelector('#o-unite').value; };
+    const keep = () => {
+      l.designation = box.querySelector('#o-des').value; l.qte = num(box.querySelector('#o-qte').value); l.unite = box.querySelector('#o-unite').value;
+      l.num = box.querySelector('#o-num').value;
+      const det = box.querySelector('#o-detail'); if (det) l.detail = det.value;
+    };
     box.querySelectorAll('#o-qte, #o-unite').forEach(el => el.onchange = () => { keep(); render(); });
     box.querySelectorAll('[data-c]').forEach(el => el.onchange = () => {
       keep();
       const c = l.composants[+el.dataset.c], k = el.dataset.k;
       if (k === 'moId') { const m = moOf(el.value); Object.assign(c, { moId: el.value, libelle: m.libelle, taux: num(m.tauxVente), cout: num(m.tauxCout) }); }
-      else c[k] = +el.value;
+      else c[k] = k === 'designation' ? el.value : +el.value;
       render();
     });
     box.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { keep(); l.composants.splice(+b.dataset.rm, 1); render(); });
@@ -345,6 +361,8 @@ function openOuvrage(d, index) {
       if (!l.designation) { l.designation = a.designation; l.unite = a.unite; }
       render();
     };
+    const addL = box.querySelector('#o-add-libre');
+    if (addL) addL.onclick = () => { keep(); l.composants.push({ type: 'f', designation: 'Fourniture ou sous-traitance', unite: '', qte: 1, pu: 0, cout: 0, poids: 0 }); render(); };
     const addMO = box.querySelector('#o-add-mo');
     if (addMO) addMO.onclick = () => {
       keep();

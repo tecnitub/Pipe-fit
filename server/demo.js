@@ -100,8 +100,8 @@ function demoData() {
   const ouv = (designation, unite, qte, composants) => ({ type: 'ouvrage', designation, unite, qte, composants });
 
   const affaires = [
-    { id: 'af1', code: `CH-${Y}-` + '001', nom: 'Ligne NEP inox – Usine de Rumilly', clientId: 'e2', contactId: 'k3', siteId: 's4', moeId: 'e9', moeContactId: 'k9', chargeId: 'u1', statut: 'En cours', devisId: 'dv1', dateCreation: d(-50), heuresPrevues: 0, rex: { note: '', positif: '', negatif: '', actions: '' } },
-    { id: 'af2', code: `CH-${Y}-` + '002', nom: 'Remplacement collecteur vapeur DN150', clientId: 'e1', contactId: 'k1', siteId: 's2', chargeId: 'u2', statut: 'Facturé', devisId: 'dv2', dateCreation: d(-110), heuresPrevues: 0, rex: { note: 3, positif: 'Préfabrication des tronçons en atelier, arrêt de l\'unité tenu en 5 jours.', negatif: '6 soudures reprises après contrôle RX (accès difficile en rack). Heures soudeurs dépassées.', actions: 'Prévoir 15 % de reprises sur les soudures en hauteur. Visite de site systématique avant chiffrage.' } },
+    { id: 'af1', code: `CH-${Y}-` + '001', nom: 'Ligne NEP inox – Usine de Rumilly', clientId: 'e2', contactId: 'k3', siteId: 's4', moeId: 'e9', moeContactId: 'k9', retenueGarantie: 5, caution: '', chargeId: 'u1', statut: 'En cours', devisId: 'dv1', dateCreation: d(-50), heuresPrevues: 0, rex: { note: '', positif: '', negatif: '', actions: '' } },
+    { id: 'af2', code: `CH-${Y}-` + '002', nom: 'Remplacement collecteur vapeur DN150', clientId: 'e1', contactId: 'k1', siteId: 's2', retenueGarantie: 5, caution: '', dateReception: d(-24), chargeId: 'u2', statut: 'Facturé', devisId: 'dv2', dateCreation: d(-110), heuresPrevues: 0, rex: { note: 3, positif: 'Préfabrication des tronçons en atelier, arrêt de l\'unité tenu en 5 jours.', negatif: '6 soudures reprises après contrôle RX (accès difficile en rack). Heures soudeurs dépassées.', actions: 'Prévoir 15 % de reprises sur les soudures en hauteur. Visite de site systématique avant chiffrage.' } },
     { id: 'af3', code: `CH-${Y}-` + '003', nom: 'Skid de dosage – bâtiment B', clientId: 'e3', contactId: 'k4', siteId: 's5', chargeId: 'u1', statut: 'Facturé', devisId: 'dv3', dateCreation: d(-85), heuresPrevues: 0, rex: { note: 4, positif: 'Skid préfabriqué à 90 % en atelier, montage en 3 jours.', negatif: 'Remise commerciale trop élevée.', actions: 'Plancher de remise à 8 % sur les skids.' } },
   ];
   const head = (af, chargeId, clientId, contactId, siteId) => ({ affaireId: af, chargeId, clientId, contactId, siteId });
@@ -191,7 +191,8 @@ function demoData() {
       const fid = 'fa' + numero;
       sit.factureId = fid;
       factures.push({ id: fid, numero: `FA-${Y}-` + factureNum, situationId: id, devisId: dvId, affaireId: dv.affaireId, clientId: dv.clientId, contactId: dv.contactId, siteId: dv.siteId, chargeId: dv.chargeId,
-        objet: `${dv.objet} – situation n° ${situations.filter(x => x.devisId === dvId).length}`, date: fDate, echeance: fEch, statut: fStatut, lignes: lignes.filter((l, k, arr) => l.type !== 'chapitre' || (arr[k + 1] && arr[k + 1].type !== 'chapitre')), ajustements: [], zoneId: '' });
+        objet: `${dv.objet} – situation n° ${situations.filter(x => x.devisId === dvId).length}`, date: fDate, echeance: fEch, statut: fStatut,
+        retenuePct: (affaires.find(a => a.id === dv.affaireId) || {}).retenueGarantie || 0, lignes: lignes.filter((l, k, arr) => l.type !== 'chapitre' || (arr[k + 1] && arr[k + 1].type !== 'chapitre')), ajustements: [], zoneId: '' });
     }
     return sit;
   };

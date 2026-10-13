@@ -14,7 +14,8 @@ const XLSX = (() => {
       const ref = `${colName(c)}${r + 1}`;
       const isNum = typeof o.v === 'number' && isFinite(o.v);
       const s = STYLES[o.s || (isNum ? 'num' : 'text')] || 0;
-      return isNum ? `<c r="${ref}" s="${s}"><v>${Math.round(o.v * 10000) / 10000}</v></c>`
+      const prec = /eur/.test(o.s || '') ? 100 : 10000; // montants arrondis au centime
+      return isNum ? `<c r="${ref}" s="${s}"><v>${Math.round(o.v * prec) / prec}</v></c>`
         : `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${escXml(o.v)}</t></is></c>`;
     }).join('')}</row>`).join('');
     const freeze = sh.freeze ? `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${sh.freeze}" topLeftCell="A${sh.freeze + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` : '';

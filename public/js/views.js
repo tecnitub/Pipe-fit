@@ -22,7 +22,8 @@ Views.dashboard = () => {
   const stats = Store.all('affaires').map(a => ({ a, s: Calc.affaire(a) }));
   const caFacture = sumBy(Store.all('factures'), f => Calc.doc(f).totalHT);
   const enAttente = devis.filter(d => d.statut === 'Envoyé');
-  const impayes = sumBy(Store.all('factures').filter(f => f.statut !== 'Payée'), f => Calc.doc(f).totalTTC);
+  const impayes = sumBy(Store.all('factures').filter(f => f.statut !== 'Payée'), f => Calc.doc(f).netAPayer);
+  const retenuesALiberer = sumBy(stats, x => x.s.retenueALiberer);
   const acc = devis.filter(d => d.statut === 'Accepté').length, ref = devis.filter(d => d.statut === 'Refusé').length;
   const carnet = sumBy(stats.filter(x => !x.s.termine), x => x.s.caDevis - x.s.caFacture);
   const alertes = stats.filter(x => !x.s.termine && (x.s.ecartHeuresPct > 0 || x.s.consoF > 100 || x.s.margeFinPct < x.s.margePrevPct - 3));
@@ -37,7 +38,7 @@ Views.dashboard = () => {
   <div class="cards">
     <div class="card"><div class="label">Devis en attente</div><div class="value">${eur(sumBy(enAttente, d => Calc.doc(d).totalHT))}</div><div class="sub">${enAttente.length} devis envoyés · transformation ${pct((acc + ref) ? acc / (acc + ref) * 100 : 0)}</div></div>
     <div class="card"><div class="label">Carnet de commandes</div><div class="value">${eur(carnet)}</div><div class="sub">${actifs.length} chantiers en cours, reste à facturer</div></div>
-    <div class="card"><div class="label">CA facturé HT</div><div class="value">${eur(caFacture)}</div><div class="sub">Restant dû ${eur(impayes)} TTC</div></div>
+    <div class="card"><div class="label">CA facturé HT</div><div class="value">${eur(caFacture)}</div><div class="sub">Restant dû ${eur(impayes)} TTC${retenuesALiberer ? ` · retenues de garantie à libérer ${eur(retenuesALiberer)}` : ''}</div></div>
     <div class="card"><div class="label">Heures pointées (${week.replace('-W', ' S')})</div><div class="value">${fmt(tempsSemaine, 1)} h</div><div class="sub">${commandesAttente.length} commande(s) fournisseur en attente de livraison</div></div>
   </div>
   <div class="cards">
@@ -64,6 +65,9 @@ const chantierFields = [
   { key: 'moeContactId', label: "Contact maîtrise d'œuvre", type: 'select', dynamic: true, options: (v, o) => contactOptions(o.moeId, v) },
   { key: 'chargeId', label: "Chargé d'affaires", type: 'select', options: v => options(charges(), v) },
   { key: 'statut', label: 'Statut', type: 'select', options: v => optionsStr(STATUTS_CHANTIER, v) },
+  { key: 'retenueGarantie', label: 'Retenue de garantie % (vide = aucune)', type: 'number', step: '0.5' },
+  { key: 'caution', label: 'Retenue remplacée par une caution bancaire', type: 'select', options: v => `<option value="">Non</option><option value="1" ${v ? 'selected' : ''}>Oui</option>` },
+  { key: 'dateReception', label: 'Date de réception des travaux', type: 'date' },
   { key: 'heuresPrevues', label: 'Heures prévues (vide = heures du devis)', type: 'number', step: '0.5' },
 ];
 
@@ -125,6 +129,9 @@ Views.chantier = params => {
   <div class="cards">
     <div class="card"><div class="label">Montant du marché</div><div class="value">${eur(s.caDevis)}</div>${gauge(s.caFacture, s.caDevis)}<div class="sub">Facturé ${eur(s.caFacture)} · reste ${eur(s.resteAFacturer)}</div></div>
     <div class="card"><div class="label">Heures</div><div class="value">${fmt(s.heuresPassees, 1)} / ${fmt(s.heuresPrevues, 1)} h</div>${gauge(s.heuresPassees, s.heuresPrevues)}<div class="sub">Reste ${fmt(s.resteHeures, 1)} h · planifié ${fmt(s.heuresPlanifiees)} h</div></div>
+    ${num(a.retenueGarantie) ? `<div class="card"><div class="label">Retenue de garantie</div><div class="value">${a.caution ? 'Caution' : fmt(a.retenueGarantie, 1) + ' %'}</div>
+      <div class="sub">${a.caution ? 'Remplacée par une caution bancaire : pas de retenue sur les factures.' : `Retenu à ce jour : ${eur(s.retenues)} TTC`}
+      ${!a.caution && s.retenues ? (a.retenueLiberee ? ` · <span class="pos">libérée le ${dateFr(a.retenueLiberee)}</span>` : `<br>${a.dateReception ? `Réception le ${dateFr(a.dateReception)} · libérable le ${dateFr(isoDate(addDays(new Date(a.dateReception), 365)))}` : 'Libérable un an après la réception'} <button class="small secondary" id="liberer">Retenue libérée</button>`) : ''}</div></div>` : ''}
     <div class="card"><div class="label">Marge prévue</div><div class="value">${eur(s.margePrev)}</div><div class="sub">${pct(s.margePrevPct)} au devis</div></div>
     <div class="card"><div class="label">Marge à terminaison</div><div class="value ${signClass(s.margeFin)}">${eur(s.margeFin)}</div><div class="sub">${marginBadge(s.margeFinPct)} ${s.termine ? 'réelle' : 'projetée'}</div></div>
   </div>
@@ -176,6 +183,10 @@ Views.chantier.bind = (root, params) => {
   if (!a) return;
   root.querySelector('#edit').onclick = () => editModal({ title: `Chantier ${a.code}`, col: 'affaires', fields: chantierFields, obj: { ...a },
     onDelete: () => { location.hash = '#/chantiers'; } });
+  const lib = root.querySelector('#liberer');
+  if (lib) lib.onclick = () => ask(`Le client a reversé la retenue de garantie (${eur(Calc.affaire(a).retenues)} TTC) ?`, 'Retenue libérée', false).then(ok => {
+    if (ok) { a.retenueLiberee = isoDate(new Date()); Store.upsert('affaires', a); App.render(); }
+  });
   const sb = root.querySelector('#situation');
   if (sb) sb.onclick = () => { const x = nouvelleSituation(a.id); if (x) location.hash = `#/situations/${x.id}`; };
   root.querySelector('#rex-save').onclick = () => {
@@ -193,11 +204,11 @@ Views.factures = () => {
   const list = Store.all('factures').slice().sort((a, b) => (b.numero || '~').localeCompare(a.numero || '~'));
   return `<h1>Facturation</h1>${facturationTabs('factures')}
   <p class="muted">Les factures de situation sont générées quand un BL est accepté par la maîtrise d'œuvre.</p>
-  ${list.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Échéance</th><th>Chantier</th><th>Client</th><th>Statut</th><th class="num">Total HT</th><th class="num">Total TTC</th></tr>
+  ${list.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Échéance</th><th>Chantier</th><th>Client</th><th>Statut</th><th class="num">Total HT</th><th class="num">Total TTC</th><th class="num">Net à payer</th></tr>
   ${list.map(f => {
     const a = affaireOf(f.affaireId), t = Calc.doc(f);
     const statut = f.statut !== 'Payée' && f.echeance < today ? 'En retard' : f.statut;
-    return `<tr class="clickable" onclick="location.hash='#/facture/${f.id}'"><td>${esc(f.numero || '…')}</td><td>${dateFr(f.date)}</td><td>${dateFr(f.echeance)}</td><td>${esc(a.code || '')}</td><td>${esc(clientName(docClientId(f)))}</td><td>${badge(statut)}</td><td class="num">${eur(t.totalHT)}</td><td class="num">${eur(t.totalTTC)}</td></tr>`;
+    return `<tr class="clickable" onclick="location.hash='#/facture/${f.id}'"><td>${esc(f.numero || '…')}</td><td>${dateFr(f.date)}</td><td>${dateFr(f.echeance)}</td><td>${esc(a.code || '')}</td><td>${esc(clientName(docClientId(f)))}</td><td>${badge(statut)}</td><td class="num">${eur(t.totalHT)}</td><td class="num">${eur(t.totalTTC)}</td><td class="num">${eur(t.netAPayer)}${t.retenue ? `<br><span class="muted small">RG ${eur(t.retenue)}</span>` : ''}</td></tr>`;
   }).join('')}</table></div>` : '<p class="muted">Aucune facture.</p>'}`;
 };
 

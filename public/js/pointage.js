@@ -426,7 +426,7 @@ function recapExcel(mois) {
     [{ v: `Récapitulatif des heures – ${libMois}`, s: 'title' }],
     [{ v: `${s.societe} · heures validées · semaine de ${fmt(num(s.dureeHebdo) || 35)} h · HS 50 % au-delà de ${fmt(num(s.seuilHS50) || 43)} h · panier ${fmt(num(s.montantPanier), 2)} €`, s: 'muted' }],
     [],
-    ['Nom', 'Statut', 'Agence', 'Catégorie', 'Jours', 'Heures validées', 'Normales', 'HS 25 %', 'HS 50 %', 'Paniers', 'Montant paniers', 'Notes de frais', 'Brut estimé', 'Heures à valider'].map(H),
+    ['Nom', 'Statut', 'Agence', 'Catégorie', 'Jours', 'Heures validées', 'Normales', 'HS 25 %', 'HS 50 %', 'Paniers', 'Montant paniers', 'Notes de frais', 'Brut estimé', 'Heures à valider', 'Déplacements (à compléter)', 'Primes (à compléter)', 'Observations'].map(H),
   ];
   const sheets = [];
   personnes.forEach(u => {
@@ -468,5 +468,5 @@ function recapExcel(mois) {
   const frais = Store.all('frais').filter(f => (f.date || '').startsWith(mois)).sort((a, b) => a.date.localeCompare(b.date));
   const fraisRows = [[{ v: `Notes de frais – ${libMois}`, s: 'title' }], [], ['N°', 'Date', 'Personne', 'Chantier', 'Catégorie', 'Description', 'TTC', 'TVA %', 'HT', 'Statut'].map(H),
     ...frais.map(f => [f.numero || '', dateFr(f.date), userName(f.userId), affaireOf(f.affaireId).code || '', f.categorie, f.description || '', { v: num(f.montantTTC), s: 'eur' }, num(f.tauxTVA), { v: Calc.fraisHT(f), s: 'eur' }, f.statut])];
-  return XLSX.build([{ name: 'Synthèse', cols: [22, 12, 22, 22, 7, 14, 10, 9, 9, 8, 14, 14, 13, 14], freeze: 4, rows: synth }, ...sheets, { name: 'Notes de frais', cols: [14, 11, 18, 14, 16, 34, 11, 7, 11, 12], freeze: 3, rows: fraisRows }]);
+  return XLSX.build([{ name: 'Synthèse', cols: [22, 12, 22, 22, 7, 14, 10, 9, 9, 8, 14, 14, 13, 14, 22, 18, 30], freeze: 4, rows: synth }, ...sheets, { name: 'Notes de frais', cols: [14, 11, 18, 14, 16, 34, 11, 7, 11, 12], freeze: 3, rows: fraisRows }]);
 }
