@@ -1,10 +1,10 @@
 // Routeur (hash), connexion et démarrage.
 const ROLE_LABELS = { admin: 'Administrateur', charge: "Chargé d'affaires", atelier: 'Opérateur' };
 // Écrans accessibles au rôle atelier (saisie des heures + consultation du planning).
-const ATELIER_VIEWS = ['pointage', 'planning', 'parametres'];
+const ATELIER_VIEWS = ['pointage', 'planning', 'parametres', 'bon'];
 // Anciennes adresses et sous-écrans -> écran et entrée de menu
 const ALIASES = { affaires: 'chantiers', affaire: 'chantier', temps: 'rh' };
-const MENU_OF = { reception: 'chantiers', pv: 'chantiers', situations: 'factures', chantier: 'chantiers', facture: 'factures', entreprise: 'contacts', mainoeuvre: 'articles', livraison: 'articles' };
+const MENU_OF = { bon: 'chantiers', reception: 'chantiers', pv: 'chantiers', situations: 'factures', chantier: 'chantiers', facture: 'factures', entreprise: 'contacts', mainoeuvre: 'articles', livraison: 'articles' };
 
 const App = {
   render() {

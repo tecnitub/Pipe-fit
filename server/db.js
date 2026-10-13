@@ -4,7 +4,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 
-const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions'];
+const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations'];
 // Numérotation attribuée par le serveur : collection -> [champ, préfixe, chiffres]
 const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4] };
 const ROLES = ['admin', 'charge', 'atelier'];
@@ -97,8 +97,10 @@ function setSettings(db, s) {
 }
 
 // Numérotation séquentielle par année (DV-2026-0001, CH-2026-001…), attribuée dans la transaction d'écriture.
-function nextNumber(db, col) {
-  const [field, code, digits] = NUMBERING[col];
+// Les interventions hors devis ont leur propre numérotation (HD-AAAA-001) dans la liste des chantiers
+function nextNumber(db, col, obj) {
+  const [field, base, digits] = NUMBERING[col];
+  const code = col === 'affaires' && obj && obj.type === 'horsDevis' ? 'HD' : base;
   const prefix = `${code}-${new Date().getFullYear()}-`;
   let row = db.prepare('SELECT value FROM counters WHERE name = ?').get(prefix);
   if (!row) {

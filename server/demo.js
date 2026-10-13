@@ -76,6 +76,8 @@ function demoData() {
       adresses: [site('s8', 'Agence de Vénissieux', '15 rue de l\'Industrie', '69200', 'Vénissieux', true)] },
     { id: 'e6', nom: 'Robinetterie Industrielle Alpes', categorie: 'Fournisseur', secteur: 'Robinetterie', siret: '445 666 777 00010', tvaIntra: 'FR21445666777', tel: '04 76 22 22 22', email: 'ventes@ria.example', web: '', zoneId: '',
       adresses: [site('s9', 'Siège et dépôt', '8 avenue des Alpes', '38000', 'Grenoble', true)] },
+    { id: 'e10', nom: 'Papeterie du Dauphiné', categorie: 'Client', secteur: 'Papeterie', siret: '398 765 432 00015', tvaIntra: 'FR11398765432', tel: '04 76 00 00 01', email: 'maintenance@pdd.example', web: '', zoneId: 'z1',
+      adresses: [site('s13', 'Siège', '2 rue du Papier', '38500', 'Voiron', true), site('s14', 'Usine de Rives – machine à papier PM2', 'Route de Lyon', '38140', 'Rives')] },
     { id: 'e8', nom: 'Intérim Industrie Rhône', categorie: 'Fournisseur', secteur: 'Travail temporaire', siret: '611 222 333 00019', tvaIntra: 'FR40611222333', tel: '04 72 44 44 44', email: 'lyon@interim-ir.example', web: '', zoneId: '',
       adresses: [site('s11', 'Agence de Lyon 7e', '5 avenue Jean Jaurès', '69007', 'Lyon', true)] },
     { id: 'e9', nom: 'Ingénierie Process Alpes', categorie: "Maîtrise d'œuvre", secteur: 'Ingénierie', siret: '723 555 666 00031', tvaIntra: 'FR62723555666', tel: '04 50 55 55 55', email: 'contact@ipa.example', web: '', zoneId: '',
@@ -91,6 +93,7 @@ function demoData() {
     { id: 'k5', prenom: 'Pierre', nom: 'Morel', fonction: 'Chargé de travaux', entrepriseId: 'e4', siteId: 's7', tel: '04 75 00 00 05', mobile: '06 10 00 00 05', email: 'p.morel@evr.example' },
     { id: 'k6', prenom: 'Julie', nom: 'Fabre', fonction: 'Commerciale', entrepriseId: 'e5', siteId: 's8', tel: '04 78 11 11 12', mobile: '', email: 'j.fabre@inoxdistri.example' },
     { id: 'k8', prenom: 'Sandra', nom: 'Vidal', fonction: 'Responsable planning', entrepriseId: 'e7', siteId: 's10', tel: '04 78 33 33 34', mobile: '', email: 's.vidal@sir.example' },
+    { id: 'k10', prenom: 'Jérôme', nom: 'Faure', fonction: 'Responsable maintenance PM2', entrepriseId: 'e10', siteId: 's14', tel: '04 76 00 00 12', mobile: '06 11 22 33 44', email: 'j.faure@pdd.example' },
     { id: 'k9', prenom: 'Camille', nom: 'Rousset', fonction: "Maître d'œuvre (OPC)", entrepriseId: 'e9', siteId: 's12', tel: '04 50 55 55 56', mobile: '06 10 00 00 09', email: 'c.rousset@ipa.example' },
     { id: 'k7', prenom: 'Luc', nom: 'Perrin', fonction: 'Technico-commercial', entrepriseId: 'e6', siteId: 's9', tel: '04 76 22 22 23', mobile: '06 10 00 00 07', email: 'l.perrin@ria.example' },
   ];
@@ -104,6 +107,11 @@ function demoData() {
     { id: 'af1', code: `CH-${Y}-` + '001', nom: 'Ligne NEP inox – Usine de Rumilly', clientId: 'e2', contactId: 'k3', siteId: 's4', moeId: 'e9', moeContactId: 'k9', retenueGarantie: 5, caution: '', chargeId: 'u1', statut: 'En cours', devisId: 'dv1', dateCreation: d(-50), heuresPrevues: 0, rex: { note: '', positif: '', negatif: '', actions: '' } },
     { id: 'af2', code: `CH-${Y}-` + '002', nom: 'Remplacement collecteur vapeur DN150', clientId: 'e1', contactId: 'k1', siteId: 's2', retenueGarantie: 5, caution: '', dateReception: d(-24), okFacturation: true, chargeId: 'u2', statut: 'Facturé', devisId: 'dv2', dateCreation: d(-110), heuresPrevues: 0, rex: { note: 3, positif: 'Préfabrication des tronçons en atelier, arrêt de l\'unité tenu en 5 jours.', negatif: '6 soudures reprises après contrôle RX (accès difficile en rack). Heures soudeurs dépassées.', actions: 'Prévoir 15 % de reprises sur les soudures en hauteur. Visite de site systématique avant chiffrage.' } },
     { id: 'af3', code: `CH-${Y}-` + '003', nom: 'Skid de dosage – bâtiment B', clientId: 'e3', contactId: 'k4', siteId: 's5', chargeId: 'u1', statut: 'Facturé', devisId: 'dv3', dateReception: d(-66), okFacturation: true, dateCreation: d(-85), heuresPrevues: 0, rex: { note: 4, positif: 'Skid préfabriqué à 90 % en atelier, montage en 3 jours.', negatif: 'Remise commerciale trop élevée.', actions: 'Plancher de remise à 8 % sur les skids.' } },
+    // Interventions hors devis (travaux en régie sur demande du client)
+    { id: 'hd1', type: 'horsDevis', code: `HD-${Y}-` + '001', nom: 'Machine à papier PM2 – remplacement du collecteur de purge', clientId: 'e10', contactId: 'k10', siteId: 's14', chargeId: 'u1', statut: 'Terminé', dateCreation: d(-12),
+      demande: 'Fuite sur le collecteur de purge DN50 de la sécherie : préfabriquer un collecteur neuf à l\'atelier et le poser pendant l\'arrêt du jeudi.', heuresPrevues: 0, rex: {} },
+    { id: 'hd2', type: 'horsDevis', code: `HD-${Y}-` + '002', nom: 'Dépannage fuite vapeur ligne 3', clientId: 'e1', contactId: 'k1', siteId: 's2', chargeId: 'u2', statut: 'Ouvert', dateCreation: d(-1),
+      demande: 'Fuite sur bride DN100 de la ligne vapeur 3, intervention demandée par M. Durand.', heuresPrevues: 0, rex: {} },
   ];
   const head = (af, chargeId, clientId, contactId, siteId) => ({ affaireId: af, chargeId, clientId, contactId, siteId });
   const devis = [
@@ -257,6 +265,10 @@ function demoData() {
   for (let i = 0; i < 16; i++) { pointe('af3', 'o5', -82 + i, 8, 'Préfabrication skid'); pointe('af3', 'o2', -82 + i, 7, 'Soudure'); }
   for (let i = 0; i < 5; i++) pointe('af3', 'o4', -66 + i, 8, 'Montage');
   for (let i = 0; i < 5; i++) pointe('af3', 'o6', -86 + i, 7, 'Plans et DOE');
+  // Hors devis : préfabrication à l'atelier puis pose sur site par l'équipe de Lucas
+  pointe('hd1', 'o5', -9, 8, 'Préfabrication'); pointe('hd1', 'o5', -8, 6, 'Préfabrication'); pointe('hd1', 'o2', -8, 7, 'Soudure');
+  pointe('hd1', 'o3', -7, 9, 'Montage'); pointe('hd1', 'i1', -7, 9, 'Montage');
+  pointe('hd2', 'o4', -1, 5, 'Dépannage');
 
   const frais = [
     { id: 'nf1', numero: `NF-${Y}-` + '0001', userId: 'o3', affaireId: 'af1', date: d(-9), categorie: 'Repas', montantTTC: 68.4, tauxTVA: 10, description: 'Repas équipe montage (4 pers.)', photoId: '', statut: 'Validée' },
@@ -264,6 +276,18 @@ function demoData() {
     { id: 'nf3', numero: `NF-${Y}-` + '0003', userId: 'o3', affaireId: 'af1', date: d(-2), categorie: 'Péage', montantTTC: 18.6, tauxTVA: 20, description: 'Péage A41 aller-retour', photoId: '', statut: 'Soumise' },
     { id: 'nf4', numero: `NF-${Y}-` + '0004', userId: 'o1', affaireId: 'af2', date: d(-100), categorie: 'Hôtel', montantTTC: 189, tauxTVA: 10, description: '2 nuits à Fos-sur-Mer pendant l\'arrêt', photoId: '', statut: 'Remboursée' },
   ];
+
+  // Matériel utilisé sur les interventions hors devis (saisi sur téléphone, à facturer)
+  const conso = (id, aid, userId, offset, articleId, qte, extra = {}) => {
+    const a = articles.find(x => x.id === articleId) || {};
+    return { id, affaireId: aid, userId, date: d(offset), articleId: articleId || '', designation: a.designation || extra.designation, unite: a.unite || extra.unite || 'u', qte, pu: a.prixVente ?? extra.pu, cout: a.coutRevient ?? extra.cout, rapportId: extra.rapportId || '' };
+  };
+  const consommations = [
+    conso('cs1', 'hd1', 'o5', -9, 'a1', 6, { rapportId: 'ri4' }), conso('cs2', 'hd1', 'o5', -9, 'a4', 8, { rapportId: 'ri4' }), conso('cs3', 'hd1', 'o5', -8, 'a5', 0, { rapportId: 'ri4' }),
+    conso('cs4', 'hd1', 'o3', -7, 'a8', 6, { rapportId: 'ri5' }),
+    conso('cs5', 'hd1', 'o3', -7, '', 8, { designation: 'Joints PTFE DN50', unite: 'u', pu: 6.5, cout: 3.2, rapportId: 'ri5' }),
+    conso('cs6', 'hd2', 'o4', -1, '', 2, { designation: 'Joints graphite DN100 PN40', unite: 'u', pu: 18, cout: 9.5 }),
+  ].filter(c => c.qte);
 
   // Rapports d'intervention saisis sur le téléphone par les équipes
   const rapports = [
@@ -275,6 +299,11 @@ function demoData() {
       observations: '', besoins: 'Bouteille d\'argon à remplacer.' },
     { id: 'ri3', numero: `RI-${Y}-` + '0003', affaireId: 'af1', userId: 'o3', date: d(-1), intervenants: ['o3', 'o4'], photos: [], statut: 'Envoyé',
       travaux: 'Mise en place des vannes papillon V12 à V18 sur la ligne aller. Serrage des brides au couple.', observations: 'Vanne V15 livrée avec un levier abîmé : photo envoyée au fournisseur.', besoins: '' },
+    { id: 'ri4', numero: `RI-${Y}-` + '0004', affaireId: 'hd1', userId: 'o5', date: d(-8), intervenants: ['o5', 'o2'], photos: ['img-rack2'], statut: 'Envoyé',
+      travaux: 'Préfabrication à l\'atelier du collecteur de purge DN50 (6 ml, 8 coudes), soudure TIG et contrôle visuel.', observations: '', besoins: '' },
+    { id: 'ri5', numero: `RI-${Y}-` + '0005', affaireId: 'hd1', userId: 'o3', date: d(-7), intervenants: ['o3', 'i1'], photos: ['img-rack1'], statut: 'Envoyé', termine: true,
+      travaux: 'Dépose de l\'ancien collecteur, pose du collecteur préfabriqué et supportage (6 ml). Remise en eau et contrôle d\'étanchéité : OK.', observations: 'Joints PTFE fournis par nos soins.', besoins: '',
+      signatureClientId: 'img-sig', signataireNom: 'Jérôme Faure', signataireQualite: 'Responsable maintenance PM2', signeLe: d(-7) + 'T17:20:00' },
   ];
   // Réserves de fin de chantier et procès-verbaux de réception signés
   const reserves = [
@@ -296,7 +325,7 @@ function demoData() {
   return {
     files: { 'img-sig': IMAGES.signature, 'img-rack1': IMAGES.rack1, 'img-rack2': IMAGES.rack2 },
     settings: { societe: 'Pipe-Fit Industrie', adresse: 'ZI des Forges – 69800 Saint-Priest', siret: '000 000 000 00000', tva: 20, tauxHoraireDefaut: 58, delaiPaiement: 45, dureeHebdo: 35, seuilHS50: 43, montantPanier: 10.5 },
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions,
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations,
   };
 }
 

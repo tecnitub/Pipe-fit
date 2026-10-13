@@ -24,7 +24,7 @@ function docHeader(doc, title) {
   return `<div class="doc-head">
     <div><strong>${esc(s.societe)}</strong><br>${esc(s.adresse)}<br>SIRET ${esc(s.siret)}</div>
     <div><strong style="font-size:18px">${title} ${esc(doc.numero || '(numéro en cours…)')}</strong><br>Date : ${dateFr(doc.date)}
-      ${a.code ? `<br>Chantier : ${esc(a.code)}` : ''}<br>Chargé d'affaires : ${esc(userName(docChargeId(doc)))}</div>
+      ${a.code ? `<br>${estHorsDevis(a) ? 'Intervention' : 'Chantier'} : ${esc(a.code)}` : ''}${doc.refCommande ? `<br>Votre commande n° ${esc(doc.refCommande)}` : ''}<br>Chargé d'affaires : ${esc(userName(docChargeId(doc)))}</div>
   </div>
   <div class="doc-parties">
     <div><strong>${esc(c.nom || '—')}</strong>${bill ? `<br>${esc(bill.adresse)}<br>${esc(bill.cp)} ${esc(bill.ville)}` : ''}${c.tvaIntra ? `<br>TVA : ${esc(c.tvaIntra)}` : ''}</div>

@@ -118,7 +118,7 @@ test('droits par rôle, conflits de version et numérotation', async () => {
 
   // Rapport d'intervention : l'opérateur rédige les siens ; PV signé figé ; réserve figée = seule la levée change
   const ri = await call('PUT', '/api/records/rapports/ri-x', { data: { affaireId: 'af1', userId: 'o1', date: '2026-10-02', travaux: 'Soudure', photos: [up.body.id] } }, atelier);
-  assert.match(ri.body.numero, new RegExp(`^RI-${year}-0004$`));
+  assert.match(ri.body.numero, new RegExp(`^RI-${year}-0006$`));
   assert.strictEqual((await call('PUT', '/api/records/rapports/ri-y', { data: { affaireId: 'af1', userId: 'o2', travaux: 'x' } }, atelier)).status, 403);
   assert.strictEqual((await call('PUT', '/api/records/reserves/rs-x', { data: { affaireId: 'af1', description: 'x' } }, atelier)).status, 403);
   const pvs = (await call('GET', '/api/data', null, claire)).body;
@@ -130,6 +130,17 @@ test('droits par rôle, conflits de version et numérotation', async () => {
   assert.strictEqual(lev.body.description, rs.description);
   assert.strictEqual(lev.body.statut, 'Levée');
   assert.strictEqual((await call('DELETE', '/api/records/reserves/rs4', {}, claire)).status, 403);
+  // Hors devis : numéro HD, matériel saisi par l'opérateur, bon signé par le client figé
+  const hd = (await call('PUT', '/api/records/affaires/hd-x', { data: { nom: 'Dépannage', type: 'horsDevis', statut: 'Ouvert' } }, claire)).body;
+  assert.match(hd.code, new RegExp(`^HD-${year}-\\d{3}$`));
+  assert.strictEqual((await call('PUT', '/api/records/consommations/cs-x', { data: { affaireId: 'hd-x', userId: 'o1', articleId: 'a1', qte: 2 } }, atelier)).status, 200);
+  assert.strictEqual((await call('PUT', '/api/records/consommations/cs-y', { data: { affaireId: 'hd-x', userId: 'o2', articleId: 'a1', qte: 2 } }, atelier)).status, 403);
+  const bon = (await call('PUT', '/api/records/rapports/ri-s', { data: { affaireId: 'hd-x', userId: 'o1', travaux: 'Pose', signatureClientId: up.body.id, signataireNom: 'Client' } }, atelier)).body;
+  assert.strictEqual((await call('PUT', '/api/records/rapports/ri-s', { data: { ...bon, travaux: 'modifié' }, version: bon._v }, atelier)).status, 403);
+  assert.strictEqual((await call('PUT', '/api/records/rapports/ri-s', { data: { ...bon, travaux: 'modifié' }, version: bon._v }, claire)).status, 403);
+  assert.strictEqual((await call('DELETE', '/api/records/rapports/ri-s', {}, atelier)).status, 403);
+  const csv = await call('PUT', '/api/records/consommations/cs-v', { data: { affaireId: 'hd-x', userId: 'o1', articleId: 'a1', qte: 1, verrouille: true } }, atelier);
+  assert.strictEqual((await call('PUT', '/api/records/consommations/cs-v', { data: { ...csv.body, qte: 9 }, version: csv.body._v }, atelier)).status, 403);
   // Images de démonstration servies par le serveur
   assert.strictEqual((await fetch(base + '/api/files/img-sig', { headers: { Cookie: claire } })).headers.get('content-type'), 'image/png');
 

@@ -136,7 +136,7 @@ body.demo .print-btn, body.no-dl .dl-btn { display: none; }
   .modal-box { padding: 16px; }
   .toolbar select { max-width: 100%; }
   .table-wrap > table { min-width: 600px; }
-  .table-wrap > table.totals, .modal .table-wrap > table { min-width: 0; }
+  .table-wrap > table.totals, .table-wrap > table.compact, .modal .table-wrap > table { min-width: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
@@ -278,3 +278,15 @@ li.clickable { cursor: pointer; }
 .signatures.signed img { display: block; max-width: 240px; max-height: 90px; margin-top: 8px; }
 .pv-decision { line-height: 1.9; }
 .reception-card { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+/* Hors devis : matériel saisi sur le téléphone, signature du bon d'intervention */
+fieldset.materiel { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 8px; }
+.mat-list { list-style: none; margin: 0; padding: 0; }
+.mat-list li { display: flex; gap: 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.mat-list li span { flex: 1; }
+.mat-add { display: grid; grid-template-columns: 1fr 80px auto; gap: 6px; }
+details.sign-block { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; }
+details.sign-block summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+details.sign-block[open] { display: grid; gap: 8px; }
+.recap-hd { background: var(--panel-alt); border-radius: 6px; padding: 8px 12px; font-size: 13px; }
+.recap-hd ul { margin: 4px 0; padding-left: 18px; }

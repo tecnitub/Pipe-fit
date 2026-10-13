@@ -111,6 +111,25 @@ const Calc = {
     return { rows, prev, marche, cumul, precedent, montant: cumul - precedent, pctCumul: marche ? cumul / marche * 100 : 0, pctPrec: marche ? precedent / marche * 100 : 0 };
   },
 
+  // Intervention hors devis (régie) : heures pointées valorisées au taux de vente de la catégorie de chaque personne,
+  // matériel saisi par les équipes au prix de vente de la bibliothèque.
+  horsDevis(af) {
+    const temps = Store.all('temps').filter(t => t.affaireId === af.id && t.statut !== 'Refusé' && num(t.heures));
+    const consos = Store.all('consommations').filter(c => c.affaireId === af.id);
+    const parMo = {};
+    temps.forEach(t => {
+      const u = Store.get('users', t.userId) || {}, m = Store.get('mainoeuvre', u.categorieId) || {};
+      const k = m.id || 'autre';
+      const g = parMo[k] = parMo[k] || { moId: m.id || '', libelle: m.libelle || "Main-d'œuvre", taux: num(m.tauxVente) || num(Store.data.settings.tauxHoraireDefaut), heures: 0, cout: 0 };
+      g.heures += num(t.heures); g.cout += num(t.heures) * this.tauxUser(t.userId);
+    });
+    const mo = Object.values(parMo).map(g => ({ ...g, montant: g.heures * g.taux }));
+    const totalMO = sumBy(mo, g => g.montant), totalMat = sumBy(consos, c => num(c.qte) * num(c.pu));
+    const coutMO = sumBy(mo, g => g.cout), coutMat = sumBy(consos, c => num(c.qte) * num(c.cout));
+    return { temps, consos, mo, heures: sumBy(mo, g => g.heures), totalMO, totalMat, total: totalMO + totalMat, coutMO, coutMat,
+      aValider: sumBy(temps.filter(t => t.statut !== 'Validé'), t => num(t.heures)) };
+  },
+
   commande(c) {
     return { total: sumBy(c.lignes || [], l => num(l.qte) * num(l.pu)) };
   },
@@ -130,21 +149,23 @@ const Calc = {
     const frais = Store.all('frais').filter(f => f.affaireId === af.id && f.statut !== 'Refusée');
     const coutFrais = sumBy(frais, f => this.fraisHT(f));
 
-    const caDevis = sumBy(T, t => t.totalHT);
+    const hd = af.type === 'horsDevis' ? this.horsDevis(af) : null;
+    const consoCout = sumBy(Store.all('consommations').filter(c => c.affaireId === af.id), c => num(c.qte) * num(c.cout));
+    const caDevis = hd ? hd.total : sumBy(T, t => t.totalHT);
     const caFacture = sumBy(factures, f => this.doc(f).totalHT);
     const retenues = sumBy(factures, f => this.doc(f).retenue);
     const ca = factures.length ? caFacture : caDevis;
-    const budgetF = sumBy(T, t => t.coutF), budgetMO = sumBy(T, t => t.coutMO), budgetLiv = sumBy(T, t => t.coutLivraison);
-    const venteF = sumBy(T, t => t.venteF), venteMO = sumBy(T, t => t.venteMO);
+    const budgetF = hd ? hd.coutMat : sumBy(T, t => t.coutF), budgetMO = hd ? hd.coutMO : sumBy(T, t => t.coutMO), budgetLiv = sumBy(T, t => t.coutLivraison);
+    const venteF = hd ? hd.totalMat : sumBy(T, t => t.venteF), venteMO = hd ? hd.totalMO : sumBy(T, t => t.venteMO);
     const heuresBudget = sumBy(T, t => t.heures);
     const heuresPrevues = num(af.heuresPrevues) || heuresBudget;
     const heuresPassees = sumBy(temps, t => num(t.heures));
     const coutMO = sumBy(temps, t => num(t.heures) * this.tauxUser(t.userId));
-    const achats = sumBy(commandes, c => this.commande(c).total);
+    const achats = sumBy(commandes, c => this.commande(c).total) + consoCout;
     const marge = ca - achats - coutMO - budgetLiv - coutFrais;
     const margePrev = sumBy(T, t => t.margePrev);
     // Projection à terminaison : reste d'heures au coût moyen du devis, fournitures au plus haut du budget et de l'engagé
-    const termine = ['Terminé', 'Facturé', 'Clos'].includes(af.statut);
+    const termine = ['Terminé', 'Facturé', 'Clos', 'Commande demandée'].includes(af.statut) || !!hd;
     const resteHeures = termine ? 0 : Math.max(0, heuresPrevues - heuresPassees);
     const coutMoyenH = heuresBudget ? budgetMO / heuresBudget : num(Store.data.settings.tauxHoraireDefaut);
     const coutFFin = termine ? achats : Math.max(achats, budgetF);

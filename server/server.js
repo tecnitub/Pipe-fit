@@ -40,7 +40,7 @@ const isLocal = req => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.soc
 function canWrite(acc, col) {
   if (acc.role === 'admin') return true;
   if (acc.role === 'charge') return col !== 'users';
-  if (acc.role === 'atelier') return col === 'temps' || col === 'frais' || col === 'rapports';
+  if (acc.role === 'atelier') return ['temps', 'frais', 'rapports', 'consommations'].includes(col);
   return false;
 }
 function canDelete(acc, col, existing) {
@@ -63,6 +63,7 @@ function atelierRefus(acc, col, obj, existing) {
   const allowed = col === 'temps' ? pointablePour(acc) : [acc.user_id];
   if (!allowed.includes(obj ? obj.userId : null) && obj) return 'Vous ne pouvez saisir que pour vous ou votre équipe';
   if (existing && !allowed.includes(existing.userId)) return 'Vous ne pouvez modifier que vos saisies ou celles de votre équipe';
+  if (existing && (existing.verrouille || (col === 'rapports' && existing.signatureClientId))) return 'Ce bon d\'intervention est signé par le client : il ne peut plus être modifié';
   if (existing && ['Validé', 'Validée', 'Remboursée'].includes(existing.statut)) return 'Cette saisie est déjà validée : demandez une correction à votre chargé d\'affaires';
   if (obj && ['Validé', 'Validée', 'Remboursée', 'Refusé', 'Refusée'].includes(obj.statut) && (!existing || existing.statut !== obj.statut)) return 'La validation est réservée aux chargés d\'affaires';
   return null;
@@ -256,6 +257,8 @@ async function api(req, res, url) {
         let obj = { ...DB.clean(data), id };
         // Une facture émise n'est plus modifiable, sauf son statut de paiement (admin excepté).
         if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...DB.clean(existing), statut: obj.statut };
+        // Bon d'intervention signé par le client : figé (sauf administrateur)
+        if (col === 'rapports' && existing && existing.signatureClientId && acc.role !== 'admin') return { forbidden: 'Ce bon d\'intervention est signé par le client : il ne peut plus être modifié.' };
         // PV de réception signé : figé
         if (col === 'receptions' && existing && existing.statut === 'Signé' && acc.role !== 'admin') return { forbidden: 'Ce procès-verbal est signé : il ne peut plus être modifié.' };
         // Réserve figée par le PV : seule sa levée peut être renseignée
@@ -267,7 +270,7 @@ async function api(req, res, url) {
         const numbering = DB.NUMBERING[col];
         if (numbering) {
           const field = numbering[0];
-          obj[field] = existing ? existing[field] : DB.nextNumber(db, col);
+          obj[field] = existing ? existing[field] : DB.nextNumber(db, col, obj);
         }
         const now = new Date().toISOString();
         const v = existing ? existing._v + 1 : 1;

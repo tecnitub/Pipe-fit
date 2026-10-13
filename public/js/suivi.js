@@ -3,7 +3,7 @@
 const RESPONSABLES = ['Pipe-Fit', 'Autre lot', 'Client'];
 
 /* ---------- Signature au doigt ou au stylet ---------- */
-function signaturePad(canvas) {
+function signaturePad(canvas, onEnd) {
   const ctx = canvas.getContext('2d');
   let vide = true, trace = false;
   const ajuster = () => {
@@ -16,20 +16,27 @@ function signaturePad(canvas) {
   const pos = e => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
   canvas.addEventListener('pointerdown', e => { e.preventDefault(); canvas.setPointerCapture(e.pointerId); trace = true; const [x, y] = pos(e); ctx.beginPath(); ctx.moveTo(x, y); });
   canvas.addEventListener('pointermove', e => { if (!trace) return; const [x, y] = pos(e); ctx.lineTo(x, y); ctx.stroke(); vide = false; });
-  ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => canvas.addEventListener(t, () => { trace = false; }));
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => canvas.addEventListener(t, () => { if (trace && !vide && onEnd) onEnd(canvas.toDataURL('image/png')); trace = false; }));
   ajuster();
-  return { vide: () => vide, effacer: ajuster, image: () => canvas.toDataURL('image/png') };
+  const charger = url => { const img = new Image(); img.onload = () => { const r = canvas.getBoundingClientRect(); ctx.drawImage(img, 0, 0, r.width, r.height); vide = false; }; img.src = url; };
+  return { vide: () => vide, effacer: ajuster, image: () => canvas.toDataURL('image/png'), charger };
 }
 const envoyerImage = async dataUrl => (await api('POST', '/api/files', { dataUrl })).id;
 
 /* ---------- Rapports d'intervention (application des équipes) ---------- */
-const brouillonRapport = { uid: null, affaireId: '', date: '', intervenants: null, travaux: '', observations: '', besoins: '', photos: [] };
+const brouillonRapport = { uid: null, affaireId: '', date: '', intervenants: null, travaux: '', observations: '', besoins: '', photos: [], materiel: [], signature: null, signNom: '', signQual: '', signOpen: false, termine: true };
+const libelleArticle = a => `${a.ref} – ${a.designation}`;
 
 function rapportsView(u) {
   const b = brouillonRapport;
   const team = equipeDe(u.id);
-  if (b.uid !== u.id) Object.assign(brouillonRapport, { uid: u.id, affaireId: '', date: isoDate(new Date()), intervenants: [u.id, ...team.map(x => x.id)], travaux: '', observations: '', besoins: '', photos: [] });
   const dernier = Store.all('temps').filter(t => t.userId === u.id).sort((x, y) => y.date.localeCompare(x.date))[0] || {};
+  if (b.uid !== u.id) Object.assign(brouillonRapport, { uid: u.id, affaireId: (chantiersActifs().find(x => x.id === dernier.affaireId) || chantiersActifs()[0] || {}).id || '', date: isoDate(new Date()), intervenants: [u.id, ...team.map(x => x.id)], travaux: '', observations: '', besoins: '', photos: [], materiel: [], signature: null, signNom: '', signQual: '', signOpen: false, termine: true });
+  const af = affaireOf(b.affaireId), hd = estHorsDevis(af), v = hd ? Calc.horsDevis(af) : null;
+  const ct = Store.get('contacts', af.contactId) || {};
+  const nomSign = b.signNom || (ct.nom ? contactName(ct) : ''), qualSign = b.signQual || ct.fonction || '';
+  const parPers = {};
+  if (v) v.temps.forEach(t => { parPers[t.userId] = (parPers[t.userId] || 0) + num(t.heures); });
   const mes = Store.all('rapports').filter(r => r.userId === u.id).sort((x, y) => (y.date || '').localeCompare(x.date || '')).slice(0, 15);
   return `<div class="pointage">
     <h1>Pointage</h1>
@@ -38,20 +45,36 @@ function rapportsView(u) {
     <div class="card punch">
       <strong>Rapport d'intervention</strong>
       <div class="grid2">
-        <div class="field"><label for="r-aff">Chantier</label><select id="r-aff" class="big-select">${options(chantiersActifs(), b.affaireId || dernier.affaireId, affaireLabel, false)}</select></div>
+        <div class="field"><label for="r-aff">Chantier ou intervention</label><select id="r-aff" class="big-select">${options(chantiersActifs(), b.affaireId, a => affaireLabel(a) + (estHorsDevis(a) ? ' (hors devis)' : ''), false)}</select></div>
         <div class="field"><label for="r-date">Date</label><input id="r-date" type="date" value="${esc(b.date)}"></div>
       </div>
       ${team.length ? `<fieldset class="intervenants"><legend>Intervenants</legend>${[u, ...team].map(m => `<label class="check"><input type="checkbox" data-int="${m.id}" ${b.intervenants.includes(m.id) ? 'checked' : ''}> ${esc(m.nom)} ${interimBadge(m)}</label>`).join('')}</fieldset>` : ''}
       <div class="field"><label for="r-travaux">Travaux réalisés *</label><textarea id="r-travaux" rows="5" placeholder="Ex. pose de 40 ml de DN50 inox rack nord, soudure de 18 joints, essais…">${esc(b.travaux)}</textarea></div>
       <div class="field"><label for="r-obs">Observations, difficultés, incidents</label><textarea id="r-obs" rows="3">${esc(b.observations)}</textarea></div>
       <div class="field"><label for="r-besoins">Besoins (matériel, informations, accès)</label><textarea id="r-besoins" rows="2">${esc(b.besoins)}</textarea></div>
+      ${hd ? `<fieldset class="materiel"><legend>Matériel utilisé (à facturer)</legend>
+        ${af.demande ? `<p class="muted small pre">Demande : ${esc(af.demande)}</p>` : ''}
+        <ul class="mat-list">${b.materiel.map((m, i) => `<li><span>${esc(m.designation)}</span><strong>${fmt(m.qte, 2)} ${esc(m.unite)}</strong><button class="icon" data-rmmat="${i}" aria-label="Retirer">✕</button></li>`).join('') || '<li class="muted small">Aucun matériel ajouté pour ce rapport.</li>'}</ul>
+        <div class="mat-add"><input id="r-mat" list="r-mat-list" placeholder="Bibliothèque ou matériel libre" aria-label="Matériel"><datalist id="r-mat-list">${Store.all('articles').map(a => `<option value="${esc(libelleArticle(a))}">`).join('')}</datalist>
+          <input id="r-mat-q" type="number" step="any" value="1" inputmode="decimal" aria-label="Quantité"><button class="secondary" id="r-mat-add">Ajouter</button></div>
+        <p class="muted small">Déjà sur cette intervention : ${fmt(v.heures, 2)} h pointées, ${v.consos.length} ligne(s) de matériel.</p></fieldset>` : ''}
       <div class="photos-grid">${b.photos.map((p, i) => `<div class="ph"><img src="${p}" alt="Photo ${i + 1}"><button class="icon" data-rmph="${i}" aria-label="Retirer la photo">✕</button></div>`).join('')}
         <label class="ph add" for="r-photo"><span aria-hidden="true">📷</span><span class="small">Ajouter une photo</span><input id="r-photo" type="file" accept="image/*" capture="environment" multiple hidden></label></div>
-      <button class="big" id="r-send">Envoyer le rapport</button>
+      <details class="sign-block" id="r-sign" ${b.signOpen ? 'open' : ''}><summary>Faire signer le client (bon d'intervention)</summary>
+        ${hd ? `<div class="recap-hd"><strong>Récapitulatif de l'intervention</strong>
+          <ul>${Object.entries(parPers).map(([id, h]) => `<li>${esc(userName(id))} : ${fmt(h, 2)} h</li>`).join('') || '<li>Aucune heure pointée</li>'}</ul>
+          <ul>${[...v.consos, ...b.materiel].map(c => `<li>${esc(c.designation)} : ${fmt(c.qte, 2)} ${esc(c.unite)}</li>`).join('') || '<li>Aucun matériel</li>'}</ul></div>` : ''}
+        <div class="grid2"><div class="field"><label for="r-snom">Nom du client</label><input id="r-snom" value="${esc(nomSign)}"></div>
+          <div class="field"><label for="r-squal">Fonction</label><input id="r-squal" value="${esc(qualSign)}"></div></div>
+        <canvas class="sign-pad" id="r-pad" aria-label="Signature du client"></canvas><button class="small secondary" id="r-pad-clear">Effacer la signature</button>
+        ${hd ? `<label class="check"><input type="checkbox" id="r-termine" ${b.termine ? 'checked' : ''}> Intervention terminée</label>` : ''}
+        <p class="muted small">Une fois signé, le rapport devient un bon d'intervention : il n'est plus modifiable.</p>
+      </details>
+      <button class="big" id="r-send">${b.signature ? 'Envoyer le bon signé' : 'Envoyer le rapport'}</button>
     </div>
     <h2>Mes derniers rapports</h2>
     <div class="card"><ul class="punch-list">${mes.map(r => `<li class="clickable" data-rapport="${r.id}"><div><strong>${dateFr(r.date)}</strong> · ${esc(affaireOf(r.affaireId).code || '')} <span class="muted small">${esc(r.numero || '')}</span><br>
-      <span class="muted small">${esc((r.travaux || '').slice(0, 90))}${(r.travaux || '').length > 90 ? '…' : ''}</span></div><div class="num">${(r.photos || []).length ? `<span class="muted small">${r.photos.length} 📷</span>` : ''}</div></li>`).join('') || '<li class="muted">Aucun rapport.</li>'}</ul></div>
+      <span class="muted small">${esc((r.travaux || '').slice(0, 90))}${(r.travaux || '').length > 90 ? '…' : ''}</span></div><div class="num">${r.signatureClientId ? '<span class="badge b-ok">Signé</span> ' : ''}${(r.photos || []).length ? `<span class="muted small">${r.photos.length} 📷</span>` : ''}</div></li>`).join('') || '<li class="muted">Aucun rapport.</li>'}</ul></div>
   </div>`;
 }
 
@@ -62,8 +85,34 @@ function bindRapports(root, uid) {
     b.travaux = root.querySelector('#r-travaux').value; b.observations = root.querySelector('#r-obs').value; b.besoins = root.querySelector('#r-besoins').value;
     const ints = root.querySelectorAll('[data-int]');
     if (ints.length) b.intervenants = [...ints].filter(c => c.checked).map(c => c.dataset.int);
+    const sn = root.querySelector('#r-snom'); if (sn) { b.signNom = sn.value; b.signQual = root.querySelector('#r-squal').value; }
+    const te = root.querySelector('#r-termine'); if (te) b.termine = te.checked;
   };
-  root.querySelectorAll('#r-aff, #r-date, #r-travaux, #r-obs, #r-besoins, [data-int]').forEach(el => { el.onchange = garder; el.oninput = garder; });
+  root.querySelectorAll('#r-date, #r-travaux, #r-obs, #r-besoins, [data-int], #r-snom, #r-squal, #r-termine').forEach(el => { el.onchange = garder; el.oninput = garder; });
+  root.querySelector('#r-aff').onchange = () => { garder(); Object.assign(b, { materiel: [], signNom: '', signQual: '', signature: null }); App.render(); };
+  // Signature : le pavé est initialisé à l'ouverture (il doit être visible pour être dimensionné)
+  const det = root.querySelector('#r-sign');
+  let pad = null;
+  const initPad = () => {
+    if (!det.open || pad) return;
+    pad = signaturePad(root.querySelector('#r-pad'), img => { b.signature = img; root.querySelector('#r-send').textContent = 'Envoyer le bon signé'; });
+    if (b.signature) pad.charger(b.signature);
+  };
+  det.addEventListener('toggle', () => { b.signOpen = det.open; initPad(); });
+  initPad();
+  root.querySelector('#r-pad-clear').onclick = () => { if (pad) pad.effacer(); b.signature = null; root.querySelector('#r-send').textContent = 'Envoyer le rapport'; };
+  // Matériel (interventions hors devis)
+  const addMat = root.querySelector('#r-mat-add');
+  if (addMat) addMat.onclick = () => {
+    garder();
+    const txt = root.querySelector('#r-mat').value.trim(), q = num(root.querySelector('#r-mat-q').value);
+    if (!txt || !q) { notify('Indiquez le matériel et la quantité.'); return; }
+    const a = Store.all('articles').find(x => libelleArticle(x) === txt);
+    b.materiel.push(a ? { articleId: a.id, designation: a.designation, unite: a.unite, qte: q, pu: num(a.prixVente), cout: num(a.coutRevient) }
+      : { articleId: '', designation: txt, unite: 'u', qte: q, pu: 0, cout: 0 });
+    App.render();
+  };
+  root.querySelectorAll('[data-rmmat]').forEach(x => x.onclick = () => { garder(); b.materiel.splice(+x.dataset.rmmat, 1); App.render(); });
   root.querySelector('#r-photo').onchange = async e => {
     garder();
     for (const f of e.target.files) { try { b.photos.push(await compressImage(f)); } catch (err) { notify('Photo illisible.'); } }
@@ -77,12 +126,17 @@ function bindRapports(root, uid) {
     if (!b.travaux.trim()) { notify('Décrivez les travaux réalisés.'); return; }
     const btn = root.querySelector('#r-send'); btn.disabled = true; btn.textContent = 'Envoi en cours…';
     try {
+      if (b.signature && !b.signNom.trim()) { btn.disabled = false; btn.textContent = 'Envoyer le bon signé'; notify('Indiquez le nom du client qui signe.'); return; }
       const photos = [];
       for (const p of b.photos) photos.push(await envoyerImage(p));
-      Store.upsert('rapports', { numero: '', affaireId: b.affaireId, userId: uid, date: b.date, intervenants: b.intervenants || [uid],
-        travaux: b.travaux, observations: b.observations, besoins: b.besoins, photos, statut: 'Envoyé' });
+      const signe = b.signature ? { signatureClientId: await envoyerImage(b.signature), signataireNom: b.signNom, signataireQualite: b.signQual, signeLe: new Date().toISOString() } : {};
+      const hd = estHorsDevis(affaireOf(b.affaireId));
+      const r = Store.upsert('rapports', { numero: '', affaireId: b.affaireId, userId: uid, date: b.date, intervenants: b.intervenants || [uid],
+        travaux: b.travaux, observations: b.observations, besoins: b.besoins, photos, statut: 'Envoyé', termine: hd && !!b.signature && b.termine, ...signe });
+      b.materiel.forEach(m => Store.upsert('consommations', { ...m, affaireId: b.affaireId, userId: uid, date: b.date, rapportId: r.id, verrouille: !!b.signature }));
       brouillonRapport.uid = null;
-      App.render(); App.toast('Rapport envoyé au chargé d\'affaires');
+      if (b.signature) { App.toast('Bon d\'intervention signé et envoyé'); location.hash = `#/bon/${r.id}`; }
+      else { App.render(); App.toast('Rapport envoyé au chargé d\'affaires'); }
     } catch (err) { btn.disabled = false; btn.textContent = 'Envoyer le rapport'; notify('Envoi impossible : ' + err.message); }
   };
 }
@@ -96,7 +150,8 @@ function voirRapport(r) {
     ${r.observations ? `<h3>Observations</h3><p class="pre">${esc(r.observations)}</p>` : ''}
     ${r.besoins ? `<h3>Besoins</h3><p class="pre">${esc(r.besoins)}</p>` : ''}
     ${(r.photos || []).length ? `<div class="photos-grid big">${r.photos.map(id => `<a href="${fileUrl(id)}" target="_blank" rel="noopener"><img src="${fileUrl(id)}" alt="Photo du chantier"></a>`).join('')}</div>` : ''}
-    <div class="modal-actions"><button id="rp-close">Fermer</button></div>`, true);
+    ${r.signatureClientId ? `<p><span class="badge b-ok">Signé par ${esc(r.signataireNom)}</span></p>` : ''}
+    <div class="modal-actions"><a class="btn secondary" href="#/bon/${r.id}">Bon d'intervention</a><button id="rp-close">Fermer</button></div>`, true);
   box.querySelector('#rp-close').onclick = Modal.close;
 }
 
@@ -273,5 +328,38 @@ Views.pv = params => {
       <div>Pour ${esc(s.societe)}<br><strong>${esc(pv.signataireEntreprise || '')}</strong>${pv.signatureEntrepriseId ? `<img src="${fileUrl(pv.signatureEntrepriseId)}" alt="Signature de l'entreprise">` : ''}</div>
     </div>
     ${pv.signeLe ? `<p class="muted small">Signé sur écran le ${new Date(pv.signeLe).toLocaleString('fr-FR')}.</p>` : ''}
+  </div>`;
+};
+
+/* ---------- Bon d'intervention (rapport signé par le client) ---------- */
+Views.bon = params => {
+  const r = Store.get('rapports', params[0]);
+  if (!r) return '<p>Bon introuvable.</p>';
+  const a = affaireOf(r.affaireId), s = Store.data.settings, site = siteOf(a.clientId, a.siteId), contact = Store.get('contacts', a.contactId);
+  const hd = estHorsDevis(a), v = hd ? Calc.horsDevis(a) : null;
+  const tempsBon = hd ? v.temps.filter(t => !r.signeLe || t.date <= r.date) : Store.all('temps').filter(t => t.affaireId === a.id && t.date === r.date && (r.intervenants || []).includes(t.userId));
+  const consos = hd ? v.consos.filter(c => !r.signeLe || (c.date || '') <= r.date) : [];
+  const retour = Store.me.role === 'atelier' ? '#/pointage/rapports' : `#/chantier/${a.id}`;
+  return `<div class="toolbar"><a href="${retour}" class="btn secondary">← Retour</a><span class="spacer"></span><button class="secondary print-btn" onclick="window.print()">Imprimer / PDF</button></div>
+  <h1 class="no-print">Bon d'intervention ${esc(r.numero || '')} ${r.signatureClientId ? '<span class="badge b-ok">Signé</span>' : '<span class="badge b-warn">Non signé</span>'}</h1>
+  <div class="doc-print">
+    <div class="doc-head"><div><strong>${esc(s.societe)}</strong><br>${esc(s.adresse)}<br>SIRET ${esc(s.siret)}</div>
+      <div><strong style="font-size:17px">BON D'INTERVENTION</strong><br>N° ${esc(r.numero || '')} du ${dateFr(r.date)}<br>${hd ? 'Intervention hors devis' : 'Chantier'} ${esc(a.code || '')}${a.refCommande ? `<br>Commande n° ${esc(a.refCommande)}` : ''}</div></div>
+    <div class="doc-parties"><div>Client : <strong>${esc(clientName(a.clientId))}</strong>${site ? `<br>${esc(site.libelle)}<br>${esc(fullAddress(site))}` : ''}</div>
+      <div>${contact ? `Demandeur : <strong>${esc(contactName(contact))}</strong>${contact.fonction ? `, ${esc(contact.fonction)}` : ''}<br>` : ''}Intervenants : ${(r.intervenants || [r.userId]).map(userName).map(esc).join(', ')}</div></div>
+    <p class="doc-objet"><strong>Objet :</strong> ${esc(a.nom)}</p>
+    <h3>Travaux réalisés</h3><p class="pre">${esc(r.travaux)}</p>
+    ${r.observations ? `<h3>Observations</h3><p class="pre">${esc(r.observations)}</p>` : ''}
+    ${tempsBon.length ? `<h3>Heures</h3><div class="table-wrap"><table class="doc-lines compact"><tr><th>Date</th><th>Intervenant</th><th>Tâche</th><th>Horaires</th><th class="num">Heures</th></tr>
+      ${tempsBon.sort((x, y) => (x.date + x.userId).localeCompare(y.date + y.userId)).map(t => `<tr><td>${dateFr(t.date)}</td><td>${esc(userName(t.userId))}</td><td>${esc(t.tache)}</td><td>${t.debut ? `${esc(t.debut)} – ${esc(t.fin || '')}` : ''}</td><td class="num">${fmt(t.heures, 2)}</td></tr>`).join('')}
+      <tr class="subtotal"><td colspan="4">Total</td><td class="num">${fmt(sumBy(tempsBon, t => num(t.heures)), 2)} h</td></tr></table></div>` : ''}
+    ${consos.length ? `<h3>Matériel fourni</h3><div class="table-wrap"><table class="doc-lines compact"><tr><th>Désignation</th><th class="num">Quantité</th><th>Unité</th></tr>
+      ${consos.map(c => `<tr><td>${esc(c.designation)}</td><td class="num">${fmt(c.qte, 2)}</td><td>${esc(c.unite)}</td></tr>`).join('')}</table></div>` : ''}
+    ${(r.photos || []).length ? `<div class="photos-grid">${r.photos.map(id => `<img src="${fileUrl(id)}" alt="Photo de l'intervention">`).join('')}</div>` : ''}
+    <div class="signatures signed">
+      <div>Pour ${esc(s.societe)}<br><strong>${esc(userName(r.userId))}</strong></div>
+      <div>Le client${r.termine ? ' (intervention terminée)' : ''}<br>${r.signatureClientId ? `<strong>${esc(r.signataireNom)}</strong>${r.signataireQualite ? `, ${esc(r.signataireQualite)}` : ''}<img src="${fileUrl(r.signatureClientId)}" alt="Signature du client">` : '<span class="muted">Non signé</span>'}</div>
+    </div>
+    ${r.signeLe ? `<p class="muted small">Signé sur écran le ${new Date(r.signeLe).toLocaleString('fr-FR')}.</p>` : ''}
   </div>`;
 };
