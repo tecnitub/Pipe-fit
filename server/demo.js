@@ -224,16 +224,32 @@ function demoData() {
   ];
   const planning = [];
   const temps = [];
-  // Planning : 6 semaines glissantes sur la ligne NEP
-  for (let i = -2; i <= 3; i++) {
+  // Planning : charge hebdomadaire au-delà, détail jour par jour (semaine dernière, en cours, prochaine)
+  const lundi = addDays(today, -((today.getDay() + 6) % 7));
+  const jour = (sem, j) => isoDate(addDays(lundi, sem * 7 + j));
+  const hm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const affecte = (userId, affaireId, sem, jours, tache, h = 8, extra = {}) => jours.forEach(j => planning.push({ id: uid(), date: jour(sem, j), userId, affaireId, tache,
+    debut: '07:30', fin: hm(450 + h * 60 + (h > 6 ? 60 : 0)), pause: h > 6 ? 60 : 0, heuresPrevues: h, ...extra }));
+  for (const i of [-2, 2, 3]) {
     planning.push({ id: uid(), affaireId: 'af1', userId: 'o5', semaine: w(i), heuresPrevues: 35, libelle: 'Préfabrication des lignes' });
     planning.push({ id: uid(), affaireId: 'af1', userId: 'o1', semaine: w(i), heuresPrevues: 35, libelle: 'Soudure orbitale' });
-    planning.push({ id: uid(), affaireId: 'af1', userId: 'o2', semaine: w(i), heuresPrevues: i === 1 ? 42 : 35, libelle: 'Soudure orbitale' });
-    if (i >= 0) {
-      planning.push({ id: uid(), affaireId: 'af1', userId: 'o3', semaine: w(i), heuresPrevues: 35, libelle: 'Montage sur site' });
-      planning.push({ id: uid(), affaireId: 'af1', userId: 'o4', semaine: w(i), heuresPrevues: 35, libelle: 'Montage sur site' });
-    }
+    planning.push({ id: uid(), affaireId: 'af1', userId: 'o2', semaine: w(i), heuresPrevues: 35, libelle: 'Soudure orbitale' });
+    if (i > 0) ['o3', 'o4'].forEach(o => planning.push({ id: uid(), affaireId: 'af1', userId: o, semaine: w(i), heuresPrevues: 35, libelle: 'Montage sur site' }));
   }
+  const L5 = [0, 1, 2, 3, 4];
+  for (const sem of [-1, 0, 1]) {
+    affecte('o5', 'af1', sem, L5, 'Préfabrication');
+    affecte('o1', 'af1', sem, L5, 'Soudure');
+    affecte('o2', 'af1', sem, L5, 'Soudure');
+    affecte('o3', 'af1', sem, L5, 'Montage');
+    affecte('i1', 'af1', sem, L5, 'Montage');
+    affecte('i2', 'af1', sem, L5, 'Soudure');
+    affecte('o4', 'af1', sem, sem === 1 ? [0, 2, 3, 4] : L5, 'Montage');
+  }
+  planning.filter(p => p.date === jour(1, 0) && ['o3', 'o4', 'i1', 'i2'].includes(p.userId)).forEach(p => { p.note = 'RDV 7h15 au poste de garde de l\'usine, badges nominatifs.'; });
+  // Semaine prochaine : pose de la manchette préfabriquée sur le dépannage PM2
+  affecte('o4', 'hd2', 1, [1], 'Montage', 8, { note: 'Récupérer la manchette DN80 à l\'atelier avant le départ.' });
+  affecte('o6', 'af1', 1, [3, 4], 'Études', 7, { note: 'Isométriques de recollement pour le DOE.' });
   planning.push({ id: uid(), affaireId: 'af1', userId: 'u1', semaine: w(0), heuresPrevues: 6, libelle: 'Suivi chantier' });
 
   // Pointages des opérateurs (jours ouvrés uniquement) : arrivée, départ, pause

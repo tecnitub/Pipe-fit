@@ -154,7 +154,8 @@ function uid() {
   return Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function isoDate(d) { return d.toISOString().slice(0, 10); }
+// Date du jour au fuseau local (et non UTC : après minuit en France, toISOString donnerait la veille)
+function isoDate(d) { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; }
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 
 // Semaine ISO "2026-W42"

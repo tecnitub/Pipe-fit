@@ -37,7 +37,7 @@ function pointagePour(query) {
 
 function pointageTabs(active, uid) {
   const q = Store.me.role === 'atelier' ? '' : `?pour=${uid}`;
-  return `<div class="tabs"><a href="#/pointage${q}" class="${active === 'heures' ? 'active' : ''}">Heures</a><a href="#/pointage/rapports${q}" class="${active === 'rapports' ? 'active' : ''}">Rapports</a><a href="#/pointage/frais${q}" class="${active === 'frais' ? 'active' : ''}">Notes de frais</a></div>`;
+  return `<div class="tabs"><a href="#/pointage${q}" class="${active === 'heures' ? 'active' : ''}">Heures</a><a href="#/pointage/planning${q}" class="${active === 'planning' ? 'active' : ''}">Planning</a><a href="#/pointage/rapports${q}" class="${active === 'rapports' ? 'active' : ''}">Rapports</a><a href="#/pointage/frais${q}" class="${active === 'frais' ? 'active' : ''}">Notes de frais</a></div>`;
 }
 
 // Sélection des personnes en mode équipe (conservée entre deux rafraîchissements)
@@ -49,6 +49,7 @@ Views.pointage = (params, query) => {
   if (!u) return `<div class="pointage"><h1>Pointage</h1><p>Votre compte n'est relié à aucune fiche de l'équipe. Demandez à l'administrateur de le faire dans Paramètres › Comptes utilisateurs.</p></div>`;
   if (params[0] === 'frais') return fraisView(u);
   if (params[0] === 'rapports') return rapportsView(u);
+  if (params[0] === 'planning') return planningMobile(u, query);
   const today = isoDate(new Date());
   const team = equipeDe(u.id);
   const week = isoWeek(new Date());
@@ -57,7 +58,9 @@ Views.pointage = (params, query) => {
   const total = sumBy(semaine, t => num(t.heures));
   const base = num(Store.data.settings.dureeHebdo) || 35;
   const dateLongue = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-  const dernier = semaine[0] || Store.all('temps').filter(t => t.userId === u.id).sort((a, b) => b.date.localeCompare(a.date))[0] || {};
+  const prevu = planJour(u.id, today);
+  // Chantier et tâche proposés : ceux du planning du jour, sinon ceux du dernier pointage
+  const dernier = prevu[0] || semaine[0] || Store.all('temps').filter(t => t.userId === u.id).sort((a, b) => b.date.localeCompare(a.date))[0] || {};
   const choixChantier = (id, sel) => `<select id="${id}" class="big-select" aria-label="Chantier">${options(chantiersActifs(), sel, affaireLabel, false)}</select>`;
   const chips = sel => `<div class="chips" role="radiogroup" aria-label="Tâche">${TACHES.map(t => `<label class="chip"><input type="radio" name="p-tache" value="${esc(t)}" ${(sel || TACHES[0]) === t ? 'checked' : ''}><span>${esc(t)}</span></label>`).join('')}</div>`;
   const panierBox = `<label class="check"><input type="checkbox" id="p-panier" checked> Panier repas</label>`;
@@ -106,6 +109,10 @@ Views.pointage = (params, query) => {
     ${Store.me.role !== 'atelier' ? `<div class="field"><label for="p-pour">Pointer en tant que</label><select id="p-pour">${options(operateurs(), u.id, x => x.nom + (equipeDe(x.id).length ? ` (chef d'équipe, ${equipeDe(x.id).length} pers.)` : ''), false)}</select></div>` : ''}
     ${pointageTabs('heures', u.id)}
     <p class="hello">Bonjour ${esc(u.nom.split(' ')[0])} · ${esc(dateLongue)}</p>
+    ${prevu.length ? `<div class="card pl-aujourdhui"><div class="label">Prévu aujourd'hui</div>
+      ${prevu.map(p => `<div>${puceChantier(affaireOf(p.affaireId), affaireLabel(affaireOf(p.affaireId)))} <span class="small">${esc(p.tache || '')}${p.debut ? ` · ${esc(p.debut)} – ${esc(p.fin || '')}` : ''} · ${fmt(p.heuresPrevues, 2)} h</span>${p.note ? `<div class="small pl-note">${esc(p.note)}</div>` : ''}</div>`).join('')}
+      ${!reelJour(u.id, today).length ? '<button class="secondary" id="p-journee">Saisir ma journée comme prévu (heures modifiables)</button>' : ''}
+      <a class="small" href="#/pointage/planning${Store.me.role === 'atelier' ? '' : `?pour=${u.id}`}">Voir mon planning</a></div>` : ''}
     ${bloc}
 
     <details class="card"><summary>Saisie manuelle (oubli de pointage)</summary>
@@ -143,6 +150,7 @@ Views.pointage.bind = (root, params, query) => {
   if (pour) pour.onchange = () => { location.hash = `#/pointage${params[0] ? '/' + params[0] : ''}?pour=${pour.value}`; };
   if (params[0] === 'frais') return bindFrais(root, uid);
   if (params[0] === 'rapports') return bindRapports(root, uid);
+  if (params[0] === 'planning') return bindPlanningMobile(root, uid);
   const on = (sel, fn) => { const el = root.querySelector(sel); if (el) el.onclick = fn; };
   const tache = () => (root.querySelector('input[name=p-tache]:checked') || {}).value || '';
   const panier = () => !!(root.querySelector('#p-panier') || {}).checked;
@@ -163,6 +171,7 @@ Views.pointage.bind = (root, params, query) => {
   };
 
   on('#p-start', () => { demarrer([uid]); App.render(); App.toast('Bonne journée !'); });
+  on('#p-journee', () => saisirJournee(isoDate(new Date()), [uid]));
   on('#p-stop', async () => { if (await terminer([enCoursDe(uid)])) App.render(); });
   on('#p-switch', async () => { if (await terminer([enCoursDe(uid)])) App.render(); });
   root.querySelectorAll('[data-filtre]').forEach(b => b.onclick = () => { equipeSel.filtre = b.dataset.filtre; App.render(); });

@@ -273,7 +273,7 @@ Views.facture.bind = (root, params) => {
 };
 
 /* ---------------- Planning ---------------- */
-Views.planning = (params, query) => {
+function planningCharge(query) {
   const offset = +(query.get('o') || 0);
   const start = addDays(mondayOf(new Date()), (offset - 2) * 7);
   const weeks = Array.from({ length: 8 }, (_, i) => isoWeek(addDays(start, i * 7)));
@@ -285,7 +285,7 @@ Views.planning = (params, query) => {
 
   const grid = users.map(u => `<tr><td><strong>${esc(u.nom)}</strong><br><span class="muted small">${esc(u.role === 'charge' ? "Chargé d'affaires" : moOf(u.categorieId).libelle || '')} · ${fmt(u.capaciteHebdo)} h</span></td>
     ${weeks.map(wk => {
-      const items = plan.filter(p => p.userId === u.id && p.semaine === wk);
+      const items = plan.filter(p => p.userId === u.id && semaineDe(p) === wk);
       const h = sumBy(items, p => num(p.heuresPrevues));
       const r = num(u.capaciteHebdo) ? h / num(u.capaciteHebdo) : 0;
       const cls = !h ? 'load-0' : r > 1 ? 'load-over' : r > 0.85 ? 'load-high' : 'load-ok';
@@ -294,15 +294,15 @@ Views.planning = (params, query) => {
         <strong>${h ? fmt(h) + ' h' : '·'}</strong>${h ? `<br><span class="muted">${fmt(r * 100)} %</span>` : ''}${real ? `<br><span class="muted">pointé ${fmt(real, 1)} h</span>` : ''}</td>`;
     }).join('')}</tr>`).join('');
 
-  return `<h1>Planning de charge</h1>
+  return `<h1>Planning</h1>${planningTabs('charge')}
   <div class="toolbar">
-    <button class="secondary" onclick="location.hash='#/planning?o=${offset - 4}'">◀ 4 sem.</button>
-    <button class="secondary" onclick="location.hash='#/planning'">Aujourd'hui</button>
-    <button class="secondary" onclick="location.hash='#/planning?o=${offset + 4}'">4 sem. ▶</button>
+    <button class="secondary" onclick="location.hash='#/planning/charge?o=${offset - 4}'">◀ 4 sem.</button>
+    <button class="secondary" onclick="location.hash='#/planning/charge'">Aujourd'hui</button>
+    <button class="secondary" onclick="location.hash='#/planning/charge?o=${offset + 4}'">4 sem. ▶</button>
     <span class="spacer"></span>
     <span class="badge load-ok">≤ 85 %</span><span class="badge load-high">85–100 %</span><span class="badge load-over">&gt; 100 %</span>
   </div>
-  <p class="muted">${canEdit ? 'Cliquez sur une case pour affecter des heures sur un chantier. ' : ''}« pointé » = heures réellement pointées la semaine concernée.</p>
+  <p class="muted">${canEdit ? 'Cliquez sur une case pour affecter des heures sur un chantier (charge globale de la semaine ; le détail jour par jour se fait dans l\'onglet Équipes). ' : ''}« pointé » = heures réellement pointées la semaine concernée.</p>
   <div class="table-wrap"><table><tr><th>Personne</th>${weeks.map(w => `<th class="plan-cell ${w === current ? 'today' : ''}">${w.replace('-W', ' S')}</th>`).join('')}</tr>${grid}</table></div>
 
   <h2>Reste à planifier par chantier</h2>
@@ -310,18 +310,18 @@ Views.planning = (params, query) => {
   ${chantiersActifs().map(a => {
     const s = Calc.affaire(a);
     const reste = s.heuresPrevues - s.heuresPassees;
-    const futur = sumBy(plan.filter(p => p.affaireId === a.id && p.semaine > current), p => num(p.heuresPrevues));
+    const futur = sumBy(plan.filter(p => p.affaireId === a.id && (p.date ? p.date > isoDate(new Date()) : p.semaine > current)), p => num(p.heuresPrevues));
     const aPlanifier = reste - futur;
     return `<tr class="clickable" onclick="location.hash='#/chantier/${a.id}'"><td>${esc(affaireLabel(a))}</td><td class="num">${fmt(s.heuresPrevues)} h</td><td class="num">${fmt(s.heuresPassees, 1)} h</td>
       <td class="num ${reste < 0 ? 'neg' : ''}">${fmt(reste, 1)} h</td><td>${gauge(s.heuresPassees, s.heuresPrevues)}</td><td class="num">${fmt(futur)} h</td><td class="num ${aPlanifier > 0 ? 'neg' : ''}">${aPlanifier > 0 ? fmt(aPlanifier, 1) + ' h' : '—'}</td></tr>`;
   }).join('')}</table></div>`;
-};
-Views.planning.bind = root => {
+}
+function bindPlanningCharge(root) {
   root.querySelectorAll('td[data-u]').forEach(td => td.onclick = () => planningCell(td.dataset.u, td.dataset.w));
-};
+}
 
 function planningCell(userId, semaine) {
-  const items = Store.all('planning').filter(p => p.userId === userId && p.semaine === semaine);
+  const items = Store.all('planning').filter(p => p.userId === userId && p.semaine === semaine && !p.date);
   const affs = chantiersActifs();
   const box = Modal.open(`<h2 style="margin-top:0">${esc(userName(userId))} – ${esc(semaine)}</h2>
     <table><tr><th>Chantier</th><th>Tâche</th><th class="num">Heures</th><th></th></tr>
