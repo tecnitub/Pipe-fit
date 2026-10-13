@@ -1,14 +1,18 @@
 // Routeur (hash), connexion et démarrage.
-const ROLE_LABELS = { admin: 'Administrateur', charge: "Chargé d'affaires", atelier: 'Atelier' };
+const ROLE_LABELS = { admin: 'Administrateur', charge: "Chargé d'affaires", atelier: 'Opérateur' };
 // Écrans accessibles au rôle atelier (saisie des heures + consultation du planning).
-const ATELIER_VIEWS = ['planning', 'temps', 'parametres'];
+const ATELIER_VIEWS = ['pointage', 'planning', 'parametres'];
+// Anciennes adresses et sous-écrans -> écran et entrée de menu
+const ALIASES = { affaires: 'chantiers', affaire: 'chantier', temps: 'rh' };
+const MENU_OF = { chantier: 'chantiers', facture: 'factures', entreprise: 'contacts', mainoeuvre: 'articles', livraison: 'articles' };
 
 const App = {
   render() {
-    const hash = location.hash.replace(/^#\/?/, '') || (Store.me.role === 'atelier' ? 'temps' : 'dashboard');
+    const hash = location.hash.replace(/^#\/?/, '') || (Store.me.role === 'atelier' ? 'pointage' : 'dashboard');
     const [path, qs] = hash.split('?');
     let [name, ...params] = path.split('/');
-    if (Store.me.role === 'atelier' && !ATELIER_VIEWS.includes(name)) name = 'temps';
+    name = ALIASES[name] || name;
+    if (Store.me.role === 'atelier' && !ATELIER_VIEWS.includes(name)) name = 'pointage';
     const query = new URLSearchParams(qs || '');
     const view = Views[name] || Views.dashboard;
     const root = document.getElementById('app');
@@ -17,7 +21,7 @@ const App = {
     this.pendingRemote = false;
     document.getElementById('remote-banner').classList.add('hidden');
 
-    const section = { affaire: 'affaires', facture: 'factures', entreprise: 'contacts' }[name] || name;
+    const section = MENU_OF[name] || name;
     document.querySelectorAll('#nav a').forEach(a => {
       a.classList.toggle('active', a.getAttribute('href') === `#/${section}`);
       a.hidden = Store.me.role === 'atelier' && !ATELIER_VIEWS.includes(a.getAttribute('href').slice(2));

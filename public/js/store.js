@@ -52,11 +52,11 @@ const Store = {
         this._inflight.delete(key);
         if (state.pending) {
           // Une modification plus récente attend : on la renvoie avec la nouvelle version.
-          Object.assign(state.pending, { _v: rec._v, _at: rec._at, _by: rec._by, numero: rec.numero });
+          Object.assign(state.pending, { _v: rec._v, _at: rec._at, _by: rec._by, numero: rec.numero, code: rec.code });
           this._send(col, state.pending, key);
           return;
         }
-        const numeroChanged = rec.numero !== obj.numero;
+        const numeroChanged = rec.numero !== obj.numero || rec.code !== obj.code;
         Object.assign(obj, rec);
         this._put(col, obj);
         if (numeroChanged || col === 'factures') App.render();

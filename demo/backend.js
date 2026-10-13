@@ -2,14 +2,16 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v2';
+  const KEY = 'pipefit-crm-demo-v3';
   const ME_KEY = 'pipefit-crm-demo-me';
-  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'zones', 'affaires', 'devis', 'factures', 'planning', 'temps'];
+  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'commandes', 'factures', 'planning', 'temps'];
+  const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3] };
   const ACCOUNTS = [
     { id: 'acc-admin', login: 'admin', nom: 'Administrateur', role: 'admin', userId: null },
     { id: 'acc-claire', login: 'claire', nom: 'Claire Martin', role: 'charge', userId: 'u1' },
     { id: 'acc-julien', login: 'julien', nom: 'Julien Bernard', role: 'charge', userId: 'u2' },
-    { id: 'acc-soudeur', login: 'soudeur', nom: 'Soudeur atelier', role: 'atelier', userId: 'u4' },
+    { id: 'acc-kevin', login: 'kevin', nom: 'Kevin Roux (soudeur)', role: 'atelier', userId: 'o1' },
+    { id: 'acc-lucas', login: 'lucas', nom: 'Lucas Petit (monteur)', role: 'atelier', userId: 'o3' },
   ];
 
   const storage = {
@@ -44,11 +46,12 @@
     return acc.role === 'atelier' && col === 'temps';
   }
   function nextNumber(col) {
-    const prefix = `${col === 'devis' ? 'DV' : 'FA'}-${new Date().getFullYear()}-`;
+    const [field, code, digits] = NUMBERING[col];
+    const prefix = `${code}-${new Date().getFullYear()}-`;
     if (db.counters[prefix] === undefined) {
-      db.counters[prefix] = db[col].reduce((m, o) => (o.numero || '').startsWith(prefix) ? Math.max(m, parseInt(o.numero.slice(prefix.length), 10) || 0) : m, 0);
+      db.counters[prefix] = db[col].reduce((m, o) => String(o[field] || '').startsWith(prefix) ? Math.max(m, parseInt(o[field].slice(prefix.length), 10) || 0) : m, 0);
     }
-    return prefix + String(++db.counters[prefix]).padStart(4, '0');
+    return prefix + String(++db.counters[prefix]).padStart(digits, '0');
   }
 
   function handle(method, path, body) {
@@ -73,7 +76,8 @@
         if (existing && body.version !== existing._v) return [409, { error: `Modifié entre-temps par ${existing._by}`, record: existing }];
         let obj = { ...clean(body.data || {}), id };
         if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...clean(existing), statut: obj.statut };
-        if (col === 'devis' || col === 'factures') obj.numero = existing ? existing.numero : nextNumber(col);
+        if (acc.role === 'atelier' && (obj.userId !== acc.userId || (existing && existing.userId !== acc.userId))) return [403, { error: 'Vous ne pouvez saisir que vos propres heures' }];
+        if (NUMBERING[col]) { const f = NUMBERING[col][0]; obj[f] = existing ? existing[f] : nextNumber(col); }
         const rec = { ...obj, _v: existing ? existing._v + 1 : 1, _at: new Date().toISOString(), _by: acc.nom };
         if (existing) db[col][i] = rec; else db[col].push(rec);
         audit(existing ? 'modification' : 'création', col, labelOf(rec));
@@ -81,7 +85,7 @@
         return [200, JSON.parse(JSON.stringify(rec))];
       }
       if (method === 'DELETE') {
-        const allowed = col === 'factures' ? acc.role === 'admin' : canWrite(acc, col);
+        const allowed = (col === 'factures' ? acc.role === 'admin' : canWrite(acc, col)) && !(acc.role === 'atelier' && existing && existing.userId !== acc.userId);
         if (!allowed) return [403, { error: 'Droits insuffisants' }];
         if (existing) { db[col].splice(i, 1); audit('suppression', col, labelOf(existing)); save(); }
         return [200, { ok: true }];
@@ -142,7 +146,7 @@
   const banner = document.createElement('div');
   banner.className = 'demo-banner';
   banner.innerHTML = `<span>Démonstration · données enregistrées sur cet appareil uniquement</span>
-    <label>Voir en tant que <select id="demo-as">${db.accounts.map(a => `<option value="${a.id}" ${a.id === me().id ? 'selected' : ''}>${a.nom} (${{ admin: 'admin', charge: "chargé d'affaires", atelier: 'atelier' }[a.role]})</option>`).join('')}</select></label>
+    <label>Voir en tant que <select id="demo-as">${db.accounts.map(a => `<option value="${a.id}" ${a.id === me().id ? 'selected' : ''}>${a.nom} (${{ admin: 'admin', charge: "chargé d'affaires", atelier: 'opérateur' }[a.role]})</option>`).join('')}</select></label>
     <button class="small secondary" id="demo-reset">Remettre les données de départ</button>`;
   document.querySelector('header').after(banner);
   banner.querySelector('#demo-as').onchange = e => { storage.set(ME_KEY, e.target.value); location.hash = ''; location.reload(); };

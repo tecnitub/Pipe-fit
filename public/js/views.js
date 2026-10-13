@@ -1,150 +1,168 @@
-// Écrans de l'application.
+// Écrans : tableau de bord, chantiers (pilotage), factures, planning, analyse, paramètres.
 const charges = () => Store.all('users').filter(u => u.role === 'charge');
+const operateurs = () => Store.all('users').filter(u => u.role !== 'charge');
 const userName = id => (Store.get('users', id) || {}).nom || '—';
-const affaireLabel = a => `${a.code} – ${a.nom}`;
+const affaireLabel = a => `${a.code || '…'} – ${a.nom}`;
 const affaireOf = id => Store.get('affaires', id) || {};
+const STATUTS_CHANTIER = ['En préparation', 'En cours', 'Terminé', 'Facturé', 'Clos'];
+const chantiersActifs = () => Store.all('affaires').filter(a => ['En préparation', 'En cours'].includes(a.statut));
 
 const Views = {};
 
+// Barre budget / réel : remplissage = consommé, trait = 100 % du budget
+function gauge(reel, budget) {
+  const p = budget ? reel / budget * 100 : 0;
+  return `<div class="gauge"><div class="bar ${p > 100 ? 'over' : ''}"><span style="width:${Math.min(100, p)}%"></span></div><span class="muted small">${budget ? pct(p) : '—'}</span></div>`;
+}
+
 /* ---------------- Tableau de bord ---------------- */
 Views.dashboard = () => {
-  const affaires = Store.all('affaires');
   const devis = Store.all('devis');
-  const stats = affaires.map(a => ({ a, s: Calc.affaire(a) }));
-  const caFacture = Store.all('factures').reduce((t, f) => t + Calc.doc(f).totalHT, 0);
-  const pipeline = devis.filter(d => d.statut === 'Envoyé').reduce((t, d) => t + Calc.doc(d).totalHT, 0);
-  const impayes = Store.all('factures').filter(f => f.statut !== 'Payée').reduce((t, f) => t + Calc.doc(f).totalTTC, 0);
+  const actifs = chantiersActifs();
+  const stats = Store.all('affaires').map(a => ({ a, s: Calc.affaire(a) }));
+  const caFacture = sumBy(Store.all('factures'), f => Calc.doc(f).totalHT);
+  const enAttente = devis.filter(d => d.statut === 'Envoyé');
+  const impayes = sumBy(Store.all('factures').filter(f => f.statut !== 'Payée'), f => Calc.doc(f).totalTTC);
   const acc = devis.filter(d => d.statut === 'Accepté').length, ref = devis.filter(d => d.statut === 'Refusé').length;
-  const margeTot = stats.reduce((t, x) => t + x.s.marge, 0), caTot = stats.reduce((t, x) => t + x.s.ca, 0);
-  const derives = stats.filter(x => x.s.heuresPrevues && x.s.ecartHeuresPct > 10);
-
+  const carnet = sumBy(stats.filter(x => !x.s.termine), x => x.s.caDevis - x.s.caFacture);
+  const alertes = stats.filter(x => !x.s.termine && (x.s.ecartHeuresPct > 0 || x.s.consoF > 100 || x.s.margeFinPct < x.s.margePrevPct - 3));
+  const commandesAttente = Store.all('commandes').filter(c => c.statut === 'Envoyée');
   const week = isoWeek(new Date());
-  const tempsSemaine = Store.all('temps').filter(t => isoWeek(new Date(t.date)) === week).reduce((t, x) => t + num(x.heures), 0);
-
+  const tempsSemaine = sumBy(Store.all('temps').filter(t => isoWeek(new Date(t.date)) === week), t => num(t.heures));
   return `
   <h1>Tableau de bord</h1>
   <div class="cards">
-    <div class="card"><div class="label">CA facturé HT</div><div class="value">${eur(caFacture)}</div></div>
-    <div class="card"><div class="label">Devis en attente</div><div class="value">${eur(pipeline)}</div><div class="sub">${devis.filter(d => d.statut === 'Envoyé').length} devis envoyés</div></div>
-    <div class="card"><div class="label">Taux de transformation</div><div class="value">${pct((acc + ref) ? acc / (acc + ref) * 100 : 0)}</div><div class="sub">${acc} acceptés / ${ref} refusés</div></div>
-    <div class="card"><div class="label">Marge globale</div><div class="value ${signClass(margeTot)}">${pct(caTot ? margeTot / caTot * 100 : 0)}</div><div class="sub">${eur(margeTot)}</div></div>
-    <div class="card"><div class="label">Restant dû TTC</div><div class="value">${eur(impayes)}</div></div>
-    <div class="card"><div class="label">Heures saisies (${week})</div><div class="value">${fmt(tempsSemaine, 1)} h</div></div>
+    <div class="card"><div class="label">Devis en attente</div><div class="value">${eur(sumBy(enAttente, d => Calc.doc(d).totalHT))}</div><div class="sub">${enAttente.length} devis envoyés · transformation ${pct((acc + ref) ? acc / (acc + ref) * 100 : 0)}</div></div>
+    <div class="card"><div class="label">Carnet de commandes</div><div class="value">${eur(carnet)}</div><div class="sub">${actifs.length} chantiers en cours, reste à facturer</div></div>
+    <div class="card"><div class="label">CA facturé HT</div><div class="value">${eur(caFacture)}</div><div class="sub">Restant dû ${eur(impayes)} TTC</div></div>
+    <div class="card"><div class="label">Heures pointées (${week.replace('-W', ' S')})</div><div class="value">${fmt(tempsSemaine, 1)} h</div><div class="sub">${commandesAttente.length} commande(s) fournisseur en attente de livraison</div></div>
   </div>
-  <h2>Affaires en dérive d'heures (&gt; 10 %)</h2>
-  ${derives.length ? `<div class="table-wrap"><table><tr><th>Affaire</th><th>Chargé</th><th class="num">Prévu</th><th class="num">Passé</th><th class="num">Écart</th></tr>
-    ${derives.map(({ a, s }) => `<tr class="clickable" onclick="location.hash='#/affaire/${a.id}'"><td>${esc(affaireLabel(a))}</td><td>${esc(userName(a.chargeId))}</td><td class="num">${fmt(s.heuresPrevues)} h</td><td class="num">${fmt(s.heuresPassees)} h</td><td class="num neg">+${pct(s.ecartHeuresPct)}</td></tr>`).join('')}
-  </table></div>` : '<p class="muted">Aucune dérive détectée.</p>'}
-  <h2>Affaires actives</h2>
-  ${affaireTable(affaires.filter(a => !['Perdue', 'Facturée'].includes(a.statut)))}`;
+  <h2>Chantiers à surveiller</h2>
+  ${alertes.length ? `<div class="table-wrap"><table><tr><th>Chantier</th><th>Chargé</th><th>Heures</th><th>Fournitures</th><th class="num">Marge prévue</th><th class="num">À terminaison</th></tr>
+    ${alertes.map(({ a, s }) => `<tr class="clickable" onclick="location.hash='#/chantier/${a.id}'"><td>${esc(affaireLabel(a))}</td><td>${esc(userName(a.chargeId))}</td>
+      <td>${gauge(s.heuresPassees, s.heuresPrevues)}</td><td>${gauge(s.achats, s.budgetF)}</td><td class="num">${pct(s.margePrevPct)}</td><td class="num">${marginBadge(s.margeFinPct)}</td></tr>`).join('')}
+  </table></div>` : '<p class="muted">Aucun chantier en dérive.</p>'}
+  <h2>Chantiers en cours</h2>
+  ${chantierTable(actifs)}`;
 };
 
-/* ---------------- Affaires ---------------- */
-const affaireFields = [
-  { key: 'code', label: 'Code affaire' },
-  { key: 'nom', label: 'Intitulé' },
+/* ---------------- Chantiers ---------------- */
+const chantierFields = [
+  { key: 'nom', label: 'Intitulé du chantier' },
   { key: 'clientId', label: 'Client', type: 'select', options: v => options(clientsList(), v) },
   { key: 'contactId', label: 'Contact client (chargé de travaux)', type: 'select', dynamic: true, options: (v, o) => contactOptions(o.clientId, v) },
   { key: 'siteId', label: "Site d'intervention", type: 'select', dynamic: true, options: (v, o) => siteOptions(o.clientId, v) },
   { key: 'chargeId', label: "Chargé d'affaires", type: 'select', options: v => options(charges(), v) },
-  { key: 'statut', label: 'Statut', type: 'select', options: v => optionsStr(STATUTS_AFFAIRE, v) },
-  { key: 'dateCreation', label: 'Date de création', type: 'date' },
-  { key: 'heuresPrevues', label: 'Heures prévues (budget)', type: 'number', step: '0.5' },
+  { key: 'statut', label: 'Statut', type: 'select', options: v => optionsStr(STATUTS_CHANTIER, v) },
+  { key: 'heuresPrevues', label: 'Heures prévues (vide = heures du devis)', type: 'number', step: '0.5' },
 ];
 
-function affaireTable(list) {
-  if (!list.length) return '<p class="muted">Aucune affaire.</p>';
-  return `<div class="table-wrap"><table><tr><th>Code</th><th>Affaire</th><th>Client</th><th>Chargé</th><th>Statut</th><th class="num">CA HT</th><th>Heures (passé / prévu)</th><th class="num">Marge</th></tr>
+function chantierTable(list) {
+  if (!list.length) return '<p class="muted">Aucun chantier. Un chantier est créé quand un devis est accepté.</p>';
+  return `<div class="table-wrap"><table><tr><th>Chantier</th><th>Client</th><th>Chargé</th><th>Statut</th><th class="num">Montant HT</th><th>Heures</th><th>Fournitures</th><th class="num">Marge à terminaison</th></tr>
   ${list.map(a => {
     const s = Calc.affaire(a);
-    return `<tr class="clickable" onclick="location.hash='#/affaire/${a.id}'"><td>${esc(a.code)}</td><td>${esc(a.nom)}</td><td>${esc(clientName(a.clientId))}</td><td>${esc(userName(a.chargeId))}</td><td>${badge(a.statut)}</td>
-      <td class="num">${eur(s.ca)}</td><td>${bar(s.avancement)}<span class="muted">${fmt(s.heuresPassees)} / ${fmt(s.heuresPrevues)} h</span></td><td class="num">${s.ca ? marginBadge(s.margePct) : '—'}</td></tr>`;
+    return `<tr class="clickable" onclick="location.hash='#/chantier/${a.id}'"><td><strong>${esc(a.code || '…')}</strong><br>${esc(a.nom)}</td><td>${esc(clientName(a.clientId))}</td><td>${esc(userName(a.chargeId))}</td><td>${badge(a.statut)}</td>
+      <td class="num">${eur(s.caDevis)}</td><td>${gauge(s.heuresPassees, s.heuresPrevues)}<span class="muted small">${fmt(s.heuresPassees)} / ${fmt(s.heuresPrevues)} h</span></td>
+      <td>${gauge(s.achats, s.budgetF)}</td><td class="num">${s.caDevis ? marginBadge(s.margeFinPct) : '—'}</td></tr>`;
   }).join('')}</table></div>`;
 }
 
-Views.affaires = (params, query) => {
+Views.chantiers = (params, query) => {
   const fc = query.get('charge') || '', fs = query.get('statut') || '';
-  const list = Store.all('affaires').filter(a => (!fc || a.chargeId === fc) && (!fs || a.statut === fs));
-  return `<h1>Affaires</h1>
+  const list = Store.all('affaires').filter(a => (!fc || a.chargeId === fc) && (fs ? a.statut === fs : a.statut !== 'Clos'));
+  return `<h1>Chantiers</h1>
+  <p class="muted">Un chantier est créé lorsqu'un devis est accepté : le devis devient son budget (fournitures et main-d'œuvre).</p>
   <div class="toolbar">
-    <button id="add">+ Nouvelle affaire</button>
     <span class="spacer"></span>
     <select id="fc" style="width:auto"><option value="">Tous les chargés</option>${options(charges(), fc, undefined, false)}</select>
-    <select id="fs" style="width:auto"><option value="">Tous statuts</option>${optionsStr(STATUTS_AFFAIRE, fs)}</select>
-  </div>${affaireTable(list)}`;
+    <select id="fs" style="width:auto"><option value="">Tous sauf clos</option>${optionsStr(STATUTS_CHANTIER, fs)}</select>
+  </div>${chantierTable(list)}`;
 };
-Views.affaires.bind = root => {
-  const upd = () => { location.hash = `#/affaires?charge=${root.querySelector('#fc').value}&statut=${encodeURIComponent(root.querySelector('#fs').value)}`; };
+Views.chantiers.bind = root => {
+  const upd = () => { location.hash = `#/chantiers?charge=${root.querySelector('#fc').value}&statut=${encodeURIComponent(root.querySelector('#fs').value)}`; };
   root.querySelector('#fc').onchange = upd;
   root.querySelector('#fs').onchange = upd;
-  root.querySelector('#add').onclick = () => {
-    const n = Store.all('affaires').length + 1;
-    editModal({ title: 'Nouvelle affaire', col: 'affaires', fields: affaireFields,
-      obj: { code: `AF-${String(n).padStart(3, '0')}`, statut: 'Prospect', dateCreation: isoDate(new Date()), heuresPrevues: 0, rex: {} } });
-  };
 };
 
-Views.affaire = params => {
+Views.chantier = params => {
   const a = Store.get('affaires', params[0]);
-  if (!a) return '<p>Affaire introuvable.</p>';
+  if (!a) return '<p>Chantier introuvable. <a href="#/chantiers">Retour aux chantiers</a></p>';
   const s = Calc.affaire(a);
   const devis = Store.all('devis').filter(d => d.affaireId === a.id);
   const facts = Store.all('factures').filter(f => f.affaireId === a.id);
-  const temps = Store.all('temps').filter(t => t.affaireId === a.id).sort((x, y) => y.date.localeCompare(x.date));
-  const parRessource = {};
-  temps.forEach(t => { parRessource[t.userId] = (parRessource[t.userId] || 0) + num(t.heures); });
+  const commandes = Store.all('commandes').filter(c => c.affaireId === a.id).sort((x, y) => (y.date || '').localeCompare(x.date || ''));
+  const temps = Store.all('temps').filter(t => t.affaireId === a.id);
+  const parOp = {};
+  temps.forEach(t => { parOp[t.userId] = (parOp[t.userId] || 0) + num(t.heures); });
   const rex = a.rex || {};
+  const dAcc = devis.find(d => d.statut === 'Accepté');
   return `
-  <div class="toolbar"><a href="#/affaires" class="btn secondary">← Affaires</a><span class="spacer"></span><button id="edit" class="secondary">Modifier</button><button id="newdevis">+ Devis</button></div>
+  <div class="toolbar"><a href="#/chantiers" class="btn secondary">← Chantiers</a><span class="spacer"></span>
+    <button id="edit" class="secondary">Modifier</button>
+    <a class="btn" href="#/commandes/new?chantier=${a.id}">+ Commande fournisseur</a>
+    ${dAcc && !facts.length ? '<button class="secondary" id="facturer">Facturer le chantier</button>' : ''}</div>
   <h1>${esc(affaireLabel(a))} ${badge(a.statut)}</h1>
   <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${a.clientId}">${esc(clientName(a.clientId))}</a>` : '—'}
     ${a.contactId ? ` · Contact : ${esc(contactName(Store.get('contacts', a.contactId)))}` : ''}
     ${a.siteId ? ` · Site : ${esc(siteLabel(siteOf(a.clientId, a.siteId)))}` : ''}
-    · Chargé d'affaires : ${esc(userName(a.chargeId))} · Créée le ${dateFr(a.dateCreation)}</p>
+    · Chargé d'affaires : ${esc(userName(a.chargeId))}
+    ${devis.length ? ` · Devis : ${devis.map(d => `<a href="#/devis/${d.id}">${esc(d.numero)}</a>`).join(', ')}` : ''}</p>
+
   <div class="cards">
-    <div class="card"><div class="label">CA (devis acceptés)</div><div class="value">${eur(s.caDevis)}</div><div class="sub">Facturé : ${eur(s.caFacture)} · Reste : ${eur(s.resteAFacturer)}</div></div>
-    <div class="card"><div class="label">Heures passées / prévues</div><div class="value">${fmt(s.heuresPassees, 1)} / ${fmt(s.heuresPrevues, 1)} h</div>${bar(s.avancement)}<div class="sub">Écart : <span class="${s.ecartHeures > 0 ? 'neg' : 'pos'}">${s.ecartHeures > 0 ? '+' : ''}${fmt(s.ecartHeures, 1)} h (${pct(s.ecartHeuresPct)})</span> · Planifié : ${fmt(s.heuresPlanifiees)} h</div></div>
-    <div class="card"><div class="label">Marge prévisionnelle</div><div class="value">${eur(s.margePrev)}</div><div class="sub">${pct(s.margePrevPct)} (au chiffrage)</div></div>
-    <div class="card"><div class="label">Marge réelle</div><div class="value ${signClass(s.marge)}">${eur(s.marge)}</div><div class="sub">${pct(s.margePct)} · écart vs prév. ${pct(s.margePct - s.margePrevPct)}</div></div>
+    <div class="card"><div class="label">Montant du marché</div><div class="value">${eur(s.caDevis)}</div><div class="sub">Facturé ${eur(s.caFacture)} · reste ${eur(s.resteAFacturer)}</div></div>
+    <div class="card"><div class="label">Heures</div><div class="value">${fmt(s.heuresPassees, 1)} / ${fmt(s.heuresPrevues, 1)} h</div>${gauge(s.heuresPassees, s.heuresPrevues)}<div class="sub">Reste ${fmt(s.resteHeures, 1)} h · planifié ${fmt(s.heuresPlanifiees)} h</div></div>
+    <div class="card"><div class="label">Marge prévue</div><div class="value">${eur(s.margePrev)}</div><div class="sub">${pct(s.margePrevPct)} au devis</div></div>
+    <div class="card"><div class="label">Marge à terminaison</div><div class="value ${signClass(s.margeFin)}">${eur(s.margeFin)}</div><div class="sub">${marginBadge(s.margeFinPct)} ${s.termine ? 'réelle' : 'projetée'}</div></div>
   </div>
+
+  <h2>Pilotage : budget du devis face au réel</h2>
   <div class="table-wrap"><table>
-    <tr><th>Décomposition rentabilité</th><th class="num">Montant</th></tr>
-    <tr><td>Chiffre d'affaires HT ${facts.length ? '(facturé)' : '(devis acceptés)'}</td><td class="num">${eur(s.ca)}</td></tr>
-    <tr><td>− Coût matière / énergie</td><td class="num">${eur(s.coutMatiere)}</td></tr>
-    <tr><td>− Main d'œuvre réelle (${fmt(s.heuresPassees, 1)} h)</td><td class="num">${eur(s.coutMO)}</td></tr>
-    <tr><td>− Coût transport</td><td class="num">${eur(s.coutLivraison)}</td></tr>
-    <tr><td><strong>= Marge</strong></td><td class="num"><strong class="${signClass(s.marge)}">${eur(s.marge)}</strong></td></tr>
+    <tr><th>Poste</th><th class="num">Vendu</th><th class="num">Budget (coût)</th><th class="num">Réel à date</th><th>Consommé</th><th class="num">${s.termine ? 'Final' : 'Projection'}</th><th class="num">Écart</th></tr>
+    <tr><td><strong>Fournitures</strong><br><span class="muted small">commandes fournisseurs envoyées ou reçues</span></td><td class="num">${eur(s.venteF)}</td><td class="num">${eur(s.budgetF)}</td><td class="num">${eur(s.achats)}</td><td>${gauge(s.achats, s.budgetF)}</td><td class="num">${eur(s.coutFFin)}</td><td class="num ${s.coutFFin > s.budgetF ? 'neg' : 'pos'}">${eur(s.budgetF - s.coutFFin)}</td></tr>
+    <tr><td><strong>Main-d'œuvre</strong><br><span class="muted small">${fmt(s.heuresPassees, 1)} h pointées × coût horaire de chaque opérateur</span></td><td class="num">${eur(s.venteMO)}</td><td class="num">${eur(s.budgetMO)}</td><td class="num">${eur(s.coutMO)}</td><td>${gauge(s.coutMO, s.budgetMO)}</td><td class="num">${eur(s.coutMOFin)}</td><td class="num ${s.coutMOFin > s.budgetMO ? 'neg' : 'pos'}">${eur(s.budgetMO - s.coutMOFin)}</td></tr>
+    <tr><td>Transport</td><td class="num"></td><td class="num">${eur(s.budgetLiv)}</td><td class="num">${eur(s.budgetLiv)}</td><td></td><td class="num">${eur(s.budgetLiv)}</td><td class="num"></td></tr>
   </table></div>
 
-  <h2>Devis</h2>
-  ${devis.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Statut</th><th class="num">Total HT</th></tr>
-    ${devis.map(d => `<tr class="clickable" onclick="location.hash='#/devis/${d.id}'"><td>${esc(d.numero)}</td><td>${dateFr(d.date)}</td><td>${badge(d.statut)}</td><td class="num">${eur(Calc.doc(d).totalHT)}</td></tr>`).join('')}</table></div>` : '<p class="muted">Aucun devis.</p>'}
+  <h2>Heures par catégorie de main-d'œuvre</h2>
+  ${Object.keys(s.hByMo).length ? `<div class="table-wrap"><table><tr><th>Catégorie</th><th class="num">Prévues</th><th class="num">Pointées</th><th>Consommé</th><th class="num">Reste</th></tr>
+    ${Object.entries(s.hByMo).map(([k, v]) => `<tr><td>${esc(moOf(k).libelle || 'Autre')}</td><td class="num">${fmt(v.prevues, 1)} h</td><td class="num">${fmt(v.passees, 1)} h</td><td>${gauge(v.passees, v.prevues)}</td><td class="num ${v.prevues - v.passees < 0 ? 'neg' : ''}">${fmt(v.prevues - v.passees, 1)} h</td></tr>`).join('')}</table></div>` : '<p class="muted">Pas de budget d\'heures.</p>'}
+
+  <h2>Commandes fournisseurs</h2>
+  ${commandes.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Fournisseur</th><th>Statut</th><th class="num">Montant HT</th></tr>
+    ${commandes.map(c => `<tr class="clickable" onclick="location.hash='#/commandes/${c.id}'"><td>${esc(c.numero || '…')}</td><td>${dateFr(c.date)}</td><td>${esc(clientName(c.fournisseurId))}</td><td>${badge(c.statut)}</td><td class="num">${eur(Calc.commande(c).total)}</td></tr>`).join('')}</table></div>`
+  : '<p class="muted">Aucune commande. Utilisez « + Commande fournisseur » : les fournitures du devis peuvent être reprises automatiquement.</p>'}
+
+  <h2>Heures par opérateur</h2>
+  ${Object.keys(parOp).length ? `<div class="table-wrap"><table><tr><th>Opérateur</th><th>Catégorie</th><th class="num">Heures</th><th class="num">Coût</th></tr>
+    ${Object.entries(parOp).sort((x, y) => y[1] - x[1]).map(([uid, h]) => `<tr><td>${esc(userName(uid))}</td><td>${esc(moOf((Store.get('users', uid) || {}).categorieId).libelle || '')}</td><td class="num">${fmt(h, 1)} h</td><td class="num">${eur(h * Calc.tauxUser(uid))}</td></tr>`).join('')}</table></div>` : '<p class="muted">Aucune heure pointée.</p>'}
 
   <h2>Factures</h2>
   ${facts.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Statut</th><th class="num">Total TTC</th></tr>
     ${facts.map(f => `<tr class="clickable" onclick="location.hash='#/facture/${f.id}'"><td>${esc(f.numero)}</td><td>${dateFr(f.date)}</td><td>${badge(f.statut)}</td><td class="num">${eur(Calc.doc(f).totalTTC)}</td></tr>`).join('')}</table></div>` : '<p class="muted">Aucune facture.</p>'}
 
-  <h2>Heures passées par ressource</h2>
-  ${Object.keys(parRessource).length ? `<div class="table-wrap"><table><tr><th>Ressource</th><th class="num">Heures</th><th class="num">Coût</th></tr>
-    ${Object.entries(parRessource).map(([uid, h]) => `<tr><td>${esc(userName(uid))}</td><td class="num">${fmt(h, 1)} h</td><td class="num">${eur(h * Calc.tauxUser(uid))}</td></tr>`).join('')}</table></div>` : '<p class="muted">Aucune heure saisie.</p>'}
-
   <h2>Retour d'expérience (REX)</h2>
   <div class="card">
     <div class="grid2">
-      <div class="field"><label>Note globale (1 à 5)</label><select id="rex-note">${['', 1, 2, 3, 4, 5].map(n => `<option ${String(n) === String(rex.note ?? '') ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
-      <div class="field" style="grid-column:1/-1"><label>Points positifs</label><textarea id="rex-positif">${esc(rex.positif)}</textarea></div>
-      <div class="field" style="grid-column:1/-1"><label>Points négatifs / difficultés</label><textarea id="rex-negatif">${esc(rex.negatif)}</textarea></div>
-      <div class="field" style="grid-column:1/-1"><label>Actions d'amélioration (à reporter sur les prochains chiffrages)</label><textarea id="rex-actions">${esc(rex.actions)}</textarea></div>
+      <div class="field"><label for="rex-note">Note globale (1 à 5)</label><select id="rex-note">${['', 1, 2, 3, 4, 5].map(n => `<option ${String(n) === String(rex.note ?? '') ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+      <div class="field" style="grid-column:1/-1"><label for="rex-positif">Points positifs</label><textarea id="rex-positif">${esc(rex.positif)}</textarea></div>
+      <div class="field" style="grid-column:1/-1"><label for="rex-negatif">Points négatifs / difficultés</label><textarea id="rex-negatif">${esc(rex.negatif)}</textarea></div>
+      <div class="field" style="grid-column:1/-1"><label for="rex-actions">Actions d'amélioration (à reporter sur les prochains chiffrages)</label><textarea id="rex-actions">${esc(rex.actions)}</textarea></div>
     </div>
     <div class="modal-actions"><button id="rex-save">Enregistrer le REX</button></div>
   </div>`;
 };
-Views.affaire.bind = (root, params) => {
+Views.chantier.bind = (root, params) => {
   const a = Store.get('affaires', params[0]);
   if (!a) return;
-  root.querySelector('#edit').onclick = () => editModal({ title: 'Affaire', col: 'affaires', fields: affaireFields, obj: { ...a },
-    onDelete: () => { location.hash = '#/affaires'; } });
-  root.querySelector('#newdevis').onclick = () => { const d = newDevis(a.id); location.hash = `#/devis/${d.id}`; };
+  root.querySelector('#edit').onclick = () => editModal({ title: `Chantier ${a.code}`, col: 'affaires', fields: chantierFields, obj: { ...a },
+    onDelete: () => { location.hash = '#/chantiers'; } });
+  const fb = root.querySelector('#facturer');
+  if (fb) fb.onclick = () => {
+    const d = Store.all('devis').find(x => x.affaireId === a.id && x.statut === 'Accepté');
+    const f = facturerDevis(d);
+    location.hash = `#/facture/${f.id}`;
+  };
   root.querySelector('#rex-save').onclick = () => {
     a.rex = { note: root.querySelector('#rex-note').value, positif: root.querySelector('#rex-positif').value,
       negatif: root.querySelector('#rex-negatif').value, actions: root.querySelector('#rex-actions').value };
@@ -153,208 +171,19 @@ Views.affaire.bind = (root, params) => {
   };
 };
 
-/* ---------------- Devis ---------------- */
-function newDevis(affaireId) {
-  const af = affaireOf(affaireId);
-  const cl = entreprise(af.clientId);
-  return Store.upsert('devis', { numero: '', affaireId, clientId: af.clientId || '', contactId: af.contactId || defaultContact(af.clientId), siteId: af.siteId || '',
-    date: isoDate(new Date()), validite: 30,
-    statut: 'Brouillon', zoneId: cl.zoneId || '', remiseGlobale: 0, lignes: [] });
-}
-
-Views.devis = (params, query) => {
-  if (params[0]) return devisEditor(params[0]);
-  const fs = query.get('statut') || '';
-  const list = Store.all('devis').filter(d => !fs || d.statut === fs).sort((a, b) => b.numero.localeCompare(a.numero));
-  return `<h1>Devis</h1>
-  <div class="toolbar">
-    <select id="newaff" style="width:auto"><option value="">Nouveau devis pour l'affaire…</option>${options(Store.all('affaires'), '', affaireLabel, false)}</select>
-    <span class="spacer"></span>
-    <select id="fs" style="width:auto"><option value="">Tous statuts</option>${optionsStr(STATUTS_DEVIS, fs)}</select>
-  </div>
-  <div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Affaire</th><th>Client</th><th>Chargé</th><th>Statut</th><th class="num">Total HT</th><th class="num">Marge prév.</th></tr>
-  ${list.map(d => {
-    const a = affaireOf(d.affaireId), t = Calc.doc(d);
-    return `<tr class="clickable" onclick="location.hash='#/devis/${d.id}'"><td>${esc(d.numero)}</td><td>${dateFr(d.date)}</td><td>${esc(a.code)} – ${esc(a.nom)}</td><td>${esc(clientName(docClientId(d)))}</td><td>${esc(userName(a.chargeId))}</td><td>${badge(d.statut)}</td><td class="num">${eur(t.totalHT)}</td><td class="num">${marginBadge(t.margePrevPct)}</td></tr>`;
-  }).join('')}</table></div>`;
-};
-Views.devis.bind = (root, params) => {
-  if (params[0]) return bindDevisEditor(root, params[0]);
-  root.querySelector('#fs').onchange = e => { location.hash = `#/devis?statut=${encodeURIComponent(e.target.value)}`; };
-  root.querySelector('#newaff').onchange = e => { if (e.target.value) { const d = newDevis(e.target.value); location.hash = `#/devis/${d.id}`; } };
-};
-
-function docLinesTable(doc, editable) {
-  return `<div class="table-wrap"><table>
-    <tr><th>Désignation</th><th class="num">Qté</th><th>Unité</th><th class="num">PU HT</th><th class="num">Remise %</th><th class="num">Total HT</th>${editable ? '<th class="no-print"></th>' : ''}</tr>
-    ${doc.lignes.map((l, i) => editable ? `<tr data-i="${i}">
-      <td><input data-k="designation" value="${esc(l.designation)}"></td>
-      <td class="num"><input data-k="qte" type="number" step="any" value="${esc(l.qte)}" style="width:90px"></td>
-      <td>${esc(l.unite)}</td>
-      <td class="num"><input data-k="pu" type="number" step="0.01" value="${esc(l.pu)}" style="width:100px"></td>
-      <td class="num"><input data-k="remise" type="number" step="0.5" value="${esc(l.remise)}" style="width:70px"></td>
-      <td class="num">${eur(Calc.ligneHT(l))}</td>
-      <td class="no-print"><button class="small danger" data-del="${i}">✕</button></td></tr>`
-    : `<tr><td>${esc(l.designation)}</td><td class="num">${fmt(l.qte, 2)}</td><td>${esc(l.unite)}</td><td class="num">${eur(l.pu)}</td><td class="num">${num(l.remise) ? fmt(l.remise, 1) + ' %' : ''}</td><td class="num">${eur(Calc.ligneHT(l))}</td></tr>`).join('')}
-  </table></div>`;
-}
-
-function totalsTable(doc) {
-  const t = Calc.doc(doc), z = Store.get('zones', doc.zoneId);
-  return `<table class="totals">
-    <tr><td>Total marchandise</td><td class="num">${eur(t.brut)}</td></tr>
-    ${t.remiseGlobale ? `<tr><td>Remise ${fmt(doc.remiseGlobale, 1)} %</td><td class="num">− ${eur(t.remiseGlobale)}</td></tr>` : ''}
-    <tr><td>Livraison ${z ? `(${esc(z.nom)}, ${fmt(t.poids / 1000, 2)} t)` : ''}</td><td class="num">${eur(t.livraison)}</td></tr>
-    <tr><td>Total HT</td><td class="num">${eur(t.totalHT)}</td></tr>
-    <tr><td>TVA ${fmt(Store.data.settings.tva, 1)} %</td><td class="num">${eur(t.tva)}</td></tr>
-    <tr class="grand"><td>Total TTC</td><td class="num">${eur(t.totalTTC)}</td></tr>
-  </table>`;
-}
-
-const docClientId = doc => doc.clientId || affaireOf(doc.affaireId).clientId;
-
-function docHeader(doc, title) {
-  const s = Store.data.settings, a = affaireOf(doc.affaireId), cid = docClientId(doc), c = entreprise(cid);
-  const bill = billingSite(cid), contact = Store.get('contacts', doc.contactId), site = siteOf(cid, doc.siteId);
-  return `<div class="doc-head">
-    <div><strong>${esc(s.societe)}</strong><br>${esc(s.adresse)}<br>SIRET ${esc(s.siret)}</div>
-    <div style="text-align:right"><strong style="font-size:18px">${title} ${esc(doc.numero || '(numéro en cours…)')}</strong><br>Date : ${dateFr(doc.date)}<br>Affaire : ${esc(a.code)} – ${esc(a.nom)}<br>Suivi : ${esc(userName(a.chargeId))}</div>
-  </div>
-  <div class="doc-parties">
-    <div><strong>${esc(c.nom || '—')}</strong>${bill ? `<br>${esc(bill.adresse)}<br>${esc(bill.cp)} ${esc(bill.ville)}` : ''}${c.tvaIntra ? `<br>TVA : ${esc(c.tvaIntra)}` : ''}</div>
-    <div>${contact ? `À l'attention de <strong>${esc(contactName(contact))}</strong>${contact.fonction ? `, ${esc(contact.fonction)}` : ''}${contact.email ? `<br>${esc(contact.email)}` : ''}${contact.mobile || contact.tel ? `<br>${esc(contact.mobile || contact.tel)}` : ''}` : ''}
-      ${site ? `<br><br>Lieu d'intervention : <strong>${esc(site.libelle)}</strong><br>${esc(fullAddress(site))}` : ''}</div>
-  </div>`;
-}
-
-function devisEditor(id) {
-  const d = Store.get('devis', id);
-  if (!d) return '<p>Devis introuvable.</p>';
-  const t = Calc.doc(d);
-  const facture = Store.all('factures').find(f => f.devisId === d.id);
-  const familles = [...new Set(Store.all('articles').map(a => a.famille))];
-  return `
-  <div class="toolbar">
-    <a href="#/devis" class="btn secondary">← Devis</a>
-    <a href="#/affaire/${d.affaireId}" class="btn secondary">Affaire</a>
-    <span class="spacer"></span>
-    <button class="secondary" id="dup">Dupliquer</button>
-    <button class="secondary print-btn" onclick="window.print()">Imprimer / PDF</button>
-    ${facture ? `<a class="btn" href="#/facture/${facture.id}">Voir facture ${esc(facture.numero)}</a>` : (d.statut === 'Accepté' ? '<button id="facturer">Générer la facture</button>' : '')}
-    <button class="danger" id="del">Supprimer</button>
-  </div>
-  <div class="card no-print" style="margin-bottom:12px">
-    <div class="grid2">
-      <div class="field"><label>Affaire</label><select id="d-affaire">${options(Store.all('affaires'), d.affaireId, affaireLabel, false)}</select></div>
-      <div class="field"><label>Client</label><select id="d-client">${options(clientsList(), docClientId(d))}</select></div>
-      <div class="field"><label>Contact client (chargé de travaux)</label><select id="d-contact">${contactOptions(docClientId(d), d.contactId)}</select></div>
-      <div class="field"><label>Site d'intervention</label><select id="d-site">${siteOptions(docClientId(d), d.siteId)}</select></div>
-      <div class="field"><label>Date</label><input id="d-date" type="date" value="${esc(d.date)}"></div>
-      <div class="field"><label>Validité (jours)</label><input id="d-validite" type="number" value="${esc(d.validite)}"></div>
-      <div class="field"><label>Statut</label><select id="d-statut">${optionsStr(STATUTS_DEVIS, d.statut)}</select></div>
-      <div class="field"><label>Zone de livraison</label><select id="d-zone">${options(Store.all('zones'), d.zoneId)}</select></div>
-      <div class="field"><label>Livraison forcée (€ HT, vide = calcul auto)</label><input id="d-livman" type="number" step="0.01" value="${esc(d.livraisonManuelle ?? '')}"></div>
-      <div class="field"><label>Remise globale %</label><input id="d-remise" type="number" step="0.5" value="${esc(d.remiseGlobale)}"></div>
-    </div>
-    <h2>Ajouter depuis la bibliothèque de prix</h2>
-    <div class="toolbar">
-      <select id="fam" style="width:auto"><option value="">Toutes familles</option>${optionsStr(familles, '')}</select>
-      <select id="art" style="flex:1;min-width:240px">${articleOptions('')}</select>
-      <input id="qte" type="number" step="any" placeholder="Qté" style="width:100px">
-      <button id="addline">Ajouter</button>
-      <button class="secondary" id="addfree">Ligne libre</button>
-    </div>
-  </div>
-  <div class="doc-print">
-    ${docHeader(d, 'DEVIS')}
-    ${docLinesTable(d, true)}
-    ${totalsTable(d)}
-    <p class="muted" style="margin-top:20px">Devis valable ${esc(d.validite)} jours. Poids total estimé : ${fmt(t.poids / 1000, 2)} t.</p>
-  </div>
-  <div class="card no-print" style="margin-top:12px">
-    <strong>Analyse interne (non imprimée)</strong>
-    <div class="cards" style="margin-top:8px">
-      <div class="card"><div class="label">Coût matière/énergie</div><div class="value">${eur(t.coutMatiere)}</div></div>
-      <div class="card"><div class="label">Heures de fabrication estimées</div><div class="value">${fmt(t.heures, 1)} h</div><div class="sub">${eur(t.coutMO)} à ${eur(Store.data.settings.tauxHoraireDefaut)}/h</div></div>
-      <div class="card"><div class="label">Coût transport</div><div class="value">${eur(t.coutLivraison)}</div><div class="sub">Facturé : ${eur(t.livraison)}</div></div>
-      <div class="card"><div class="label">Marge prévisionnelle</div><div class="value ${signClass(t.margePrev)}">${eur(t.margePrev)}</div><div class="sub">${marginBadge(t.margePrevPct)}</div></div>
-    </div>
-  </div>`;
-}
-
-function articleOptions(famille) {
-  return Store.all('articles').filter(a => !famille || a.famille === famille)
-    .map(a => `<option value="${a.id}">${esc(a.ref)} – ${esc(a.designation)} (${eur(a.prixVente)}/${esc(a.unite)})</option>`).join('');
-}
-
-function bindDevisEditor(root, id) {
-  const d = Store.get('devis', id);
-  if (!d) return;
-  const save = () => { Store.upsert('devis', d); App.render(); };
-  const field = (sel, key, isNum) => { root.querySelector(sel).onchange = e => { d[key] = isNum ? (e.target.value === '' ? '' : +e.target.value) : e.target.value; save(); }; };
-  root.querySelector('#d-affaire').onchange = e => {
-    const af = affaireOf(e.target.value);
-    Object.assign(d, { affaireId: e.target.value, clientId: af.clientId || '', contactId: af.contactId || defaultContact(af.clientId), siteId: af.siteId || '' });
-    save();
-  };
-  root.querySelector('#d-client').onchange = e => {
-    const cid = e.target.value, sites = entreprise(cid).adresses || [];
-    Object.assign(d, { clientId: cid, contactId: defaultContact(cid), siteId: sites.length === 1 ? sites[0].id : '' });
-    if (entreprise(cid).zoneId) d.zoneId = entreprise(cid).zoneId;
-    save();
-  };
-  field('#d-contact', 'contactId'); field('#d-site', 'siteId');
-  field('#d-date', 'date'); field('#d-validite', 'validite', true);
-  field('#d-statut', 'statut'); field('#d-zone', 'zoneId'); field('#d-remise', 'remiseGlobale', true);
-  root.querySelector('#d-livman').onchange = e => { d.livraisonManuelle = e.target.value === '' ? null : +e.target.value; save(); };
-  root.querySelector('#fam').onchange = e => { root.querySelector('#art').innerHTML = articleOptions(e.target.value); };
-  root.querySelector('#addline').onclick = () => {
-    const a = Store.get('articles', root.querySelector('#art').value);
-    const q = +root.querySelector('#qte').value;
-    if (!a || !q) { notify('Choisir un article et une quantité.'); return; }
-    d.lignes.push({ articleId: a.id, designation: a.designation, unite: a.unite, qte: q, pu: a.prixVente, remise: 0,
-      cout: a.coutRevient, poids: a.poidsUnitaire, heures: a.heuresUnitaires });
-    save();
-  };
-  root.querySelector('#addfree').onclick = () => { d.lignes.push({ designation: 'Ligne libre', unite: 'u', qte: 1, pu: 0, remise: 0, cout: 0, poids: 0, heures: 0 }); save(); };
-  root.querySelectorAll('tr[data-i] input').forEach(inp => inp.onchange = e => {
-    const l = d.lignes[+e.target.closest('tr').dataset.i], k = e.target.dataset.k;
-    l[k] = k === 'designation' ? e.target.value : +e.target.value;
-    save();
-  });
-  root.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { d.lignes.splice(+b.dataset.del, 1); save(); });
-  root.querySelector('#del').onclick = () => ask(`Supprimer le devis ${d.numero} ?`, 'Supprimer').then(ok => {
-    if (ok) { Store.remove('devis', d.id); location.hash = '#/devis'; }
-  });
-  root.querySelector('#dup').onclick = () => {
-    const copy = JSON.parse(JSON.stringify(d));
-    Object.keys(copy).filter(k => k.startsWith('_')).forEach(k => delete copy[k]);
-    delete copy.id; copy.numero = ''; copy.statut = 'Brouillon'; copy.date = isoDate(new Date());
-    const n = Store.upsert('devis', copy);
-    location.hash = `#/devis/${n.id}`;
-  };
-  const fb = root.querySelector('#facturer');
-  if (fb) fb.onclick = () => {
-    const s = Store.data.settings;
-    const f = Store.upsert('factures', { numero: '', devisId: d.id, affaireId: d.affaireId, clientId: docClientId(d), contactId: d.contactId || '', siteId: d.siteId || '',
-      date: isoDate(new Date()), echeance: isoDate(addDays(new Date(), num(s.delaiPaiement))), statut: 'Émise',
-      lignes: JSON.parse(JSON.stringify(d.lignes)), zoneId: d.zoneId, remiseGlobale: d.remiseGlobale, livraisonManuelle: d.livraisonManuelle });
-    location.hash = `#/facture/${f.id}`;
-  };
-}
-
 /* ---------------- Factures ---------------- */
+const STATUTS_FACTURE = ['Émise', 'Payée', 'En retard'];
 Views.factures = () => {
   const today = isoDate(new Date());
-  const list = Store.all('factures').slice().sort((a, b) => b.numero.localeCompare(a.numero));
+  const list = Store.all('factures').slice().sort((a, b) => (b.numero || '~').localeCompare(a.numero || '~'));
   return `<h1>Factures</h1>
-  <p class="muted">Les factures sont générées depuis un devis accepté (bouton « Générer la facture »). La livraison y est reprise automatiquement.</p>
-  <div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Échéance</th><th>Affaire</th><th>Client</th><th>Statut</th><th class="num">Livraison HT</th><th class="num">Total HT</th><th class="num">Total TTC</th></tr>
+  <p class="muted">Une facture est générée depuis un devis accepté ou depuis la fiche chantier.</p>
+  ${list.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Échéance</th><th>Chantier</th><th>Client</th><th>Statut</th><th class="num">Total HT</th><th class="num">Total TTC</th></tr>
   ${list.map(f => {
     const a = affaireOf(f.affaireId), t = Calc.doc(f);
     const statut = f.statut !== 'Payée' && f.echeance < today ? 'En retard' : f.statut;
-    return `<tr class="clickable" onclick="location.hash='#/facture/${f.id}'"><td>${esc(f.numero)}</td><td>${dateFr(f.date)}</td><td>${dateFr(f.echeance)}</td><td>${esc(a.code)}</td><td>${esc(clientName(docClientId(f)))}</td><td>${badge(statut)}</td><td class="num">${eur(t.livraison)}</td><td class="num">${eur(t.totalHT)}</td><td class="num">${eur(t.totalTTC)}</td></tr>`;
-  }).join('')}</table></div>`;
+    return `<tr class="clickable" onclick="location.hash='#/facture/${f.id}'"><td>${esc(f.numero || '…')}</td><td>${dateFr(f.date)}</td><td>${dateFr(f.echeance)}</td><td>${esc(a.code || '')}</td><td>${esc(clientName(docClientId(f)))}</td><td>${badge(statut)}</td><td class="num">${eur(t.totalHT)}</td><td class="num">${eur(t.totalTTC)}</td></tr>`;
+  }).join('')}</table></div>` : '<p class="muted">Aucune facture.</p>'}`;
 };
 
 Views.facture = params => {
@@ -362,14 +191,16 @@ Views.facture = params => {
   if (!f) return '<p>Facture introuvable.</p>';
   return `<div class="toolbar">
     <a href="#/factures" class="btn secondary">← Factures</a>
+    ${f.affaireId ? `<a href="#/chantier/${f.affaireId}" class="btn secondary">Chantier</a>` : ''}
     <span class="spacer"></span>
-    <select id="f-statut" style="width:auto">${optionsStr(STATUTS_FACTURE, f.statut)}</select>
+    <select id="f-statut" style="width:auto" aria-label="Statut">${optionsStr(STATUTS_FACTURE, f.statut)}</select>
     <button class="secondary print-btn" onclick="window.print()">Imprimer / PDF</button>
     ${Store.can('delete', 'factures') ? '<button class="danger" id="del">Supprimer</button>' : ''}
   </div>
+  <h1 class="no-print">Facture ${esc(f.numero || '')} ${badge(f.statut)}</h1>
   <div class="doc-print">
     ${docHeader(f, 'FACTURE')}
-    ${docLinesTable(f, false)}
+    ${docLinesClient(f)}
     ${totalsTable(f)}
     <p class="muted" style="margin-top:20px">Échéance de paiement : ${dateFr(f.echeance)}. ${f.devisId ? `Selon devis ${esc((Store.get('devis', f.devisId) || {}).numero)}.` : ''}</p>
   </div>`;
@@ -384,79 +215,6 @@ Views.facture.bind = (root, params) => {
   });
 };
 
-/* ---------------- Bibliothèque de prix ---------------- */
-const articleFields = [
-  { key: 'ref', label: 'Référence' },
-  { key: 'designation', label: 'Désignation' },
-  { key: 'famille', label: 'Famille' },
-  { key: 'unite', label: 'Unité', type: 'select', options: v => optionsStr(['m²', 'ml', 'u', 'forfait', 'palette', 't'], v) },
-  { key: 'prixVente', label: 'Prix de vente HT', type: 'number', step: '0.01' },
-  { key: 'coutRevient', label: 'Coût matière + énergie (hors MO)', type: 'number', step: '0.01' },
-  { key: 'heuresUnitaires', label: 'Heures de fabrication / unité', type: 'number', step: '0.001' },
-  { key: 'poidsUnitaire', label: 'Poids / unité (kg)', type: 'number', step: '0.1' },
-];
-Views.articles = (params, query) => {
-  const ff = query.get('famille') || '';
-  const familles = [...new Set(Store.all('articles').map(a => a.famille))];
-  const taux = num(Store.data.settings.tauxHoraireDefaut);
-  const list = Store.all('articles').filter(a => !ff || a.famille === ff);
-  return `<h1>Bibliothèque de prix</h1>
-  <div class="toolbar">
-    <button id="add">+ Article</button>
-    <button class="secondary" id="hausse">Révision tarifaire %</button>
-    <button class="secondary dl-btn" id="csv">Export CSV</button>
-    <span class="spacer"></span>
-    <select id="ff" style="width:auto"><option value="">Toutes familles</option>${optionsStr(familles, ff)}</select>
-  </div>
-  <div class="table-wrap"><table><tr><th>Réf.</th><th>Désignation</th><th>Famille</th><th>Unité</th><th class="num">Prix vente</th><th class="num">Coût mat.</th><th class="num">h/unité</th><th class="num">kg/unité</th><th class="num">Marge unitaire*</th></tr>
-  ${list.map(a => {
-    const m = num(a.prixVente) - num(a.coutRevient) - num(a.heuresUnitaires) * taux;
-    return `<tr class="clickable" data-id="${a.id}"><td>${esc(a.ref)}</td><td>${esc(a.designation)}</td><td>${esc(a.famille)}</td><td>${esc(a.unite)}</td><td class="num">${eur(a.prixVente)}</td><td class="num">${eur(a.coutRevient)}</td><td class="num">${fmt(a.heuresUnitaires, 3)}</td><td class="num">${fmt(a.poidsUnitaire, 1)}</td><td class="num">${marginBadge(num(a.prixVente) ? m / num(a.prixVente) * 100 : 0)}</td></tr>`;
-  }).join('')}</table></div>
-  <p class="muted">* Marge après matière et main d'œuvre au taux horaire standard (${eur(taux)}/h).</p>`;
-};
-Views.articles.bind = root => {
-  root.querySelector('#ff').onchange = e => { location.hash = `#/articles?famille=${encodeURIComponent(e.target.value)}`; };
-  root.querySelector('#add').onclick = () => editModal({ title: 'Nouvel article', col: 'articles', fields: articleFields, obj: { unite: 'm²' } });
-  root.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () =>
-    editModal({ title: 'Article', col: 'articles', fields: articleFields, obj: { ...Store.get('articles', tr.dataset.id) } }));
-  root.querySelector('#hausse').onclick = async () => {
-    const ff = new URLSearchParams(location.hash.split('?')[1] || '').get('famille') || '';
-    const p = await askValue(`Révision des prix de vente en %${ff ? ` (famille « ${ff} »)` : ' (tous les articles)'}`, '3', 'number');
-    if (p === null || p === '' || isNaN(+p)) return;
-    Store.all('articles').filter(a => !ff || a.famille === ff).forEach(a => {
-      a.prixVente = Math.round(num(a.prixVente) * (1 + +p / 100) * 100) / 100;
-      Store.upsert('articles', a);
-    });
-    App.render(); App.toast('Tarifs révisés');
-  };
-  root.querySelector('#csv').onclick = () => download('bibliotheque-prix.csv',
-    toCSV([['Ref', 'Designation', 'Famille', 'Unite', 'PrixVente', 'CoutRevient', 'HeuresUnitaires', 'PoidsUnitaire'],
-      ...Store.all('articles').map(a => [a.ref, a.designation, a.famille, a.unite, a.prixVente, a.coutRevient, a.heuresUnitaires, a.poidsUnitaire])]), 'text/csv');
-};
-
-/* ---------------- Zones de livraison ---------------- */
-const zoneFields = [
-  { key: 'nom', label: 'Nom de la zone' },
-  { key: 'forfait', label: 'Forfait facturé HT', type: 'number', step: '0.01' },
-  { key: 'prixParTonne', label: 'Prix facturé / tonne', type: 'number', step: '0.01' },
-  { key: 'coutTransporteur', label: 'Coût transporteur (forfait)', type: 'number', step: '0.01' },
-  { key: 'coutParTonne', label: 'Coût transporteur / tonne', type: 'number', step: '0.01' },
-];
-Views.livraison = () => `<h1>Tarifs de livraison</h1>
-  <p class="muted">Livraison facturée = forfait + prix/tonne × poids du devis (calculé à partir des poids unitaires de la bibliothèque). Montant modifiable sur chaque devis.</p>
-  <div class="toolbar"><button id="add">+ Zone</button></div>
-  <div class="table-wrap"><table><tr><th>Zone</th><th class="num">Forfait</th><th class="num">€/t</th><th class="num">Coût forfait</th><th class="num">Coût €/t</th><th class="num">Ex. 10 t facturé</th><th class="num">Marge transport</th></tr>
-  ${Store.all('zones').map(z => {
-    const f = num(z.forfait) + num(z.prixParTonne) * 10, c = num(z.coutTransporteur) + num(z.coutParTonne) * 10;
-    return `<tr class="clickable" data-id="${z.id}"><td>${esc(z.nom)}</td><td class="num">${eur(z.forfait)}</td><td class="num">${eur(z.prixParTonne)}</td><td class="num">${eur(z.coutTransporteur)}</td><td class="num">${eur(z.coutParTonne)}</td><td class="num">${eur(f)}</td><td class="num ${signClass(f - c)}">${eur(f - c)}</td></tr>`;
-  }).join('')}</table></div>`;
-Views.livraison.bind = root => {
-  root.querySelector('#add').onclick = () => editModal({ title: 'Nouvelle zone', col: 'zones', fields: zoneFields, obj: {} });
-  root.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () =>
-    editModal({ title: 'Zone', col: 'zones', fields: zoneFields, obj: { ...Store.get('zones', tr.dataset.id) } }));
-};
-
 /* ---------------- Planning ---------------- */
 Views.planning = (params, query) => {
   const offset = +(query.get('o') || 0);
@@ -465,20 +223,20 @@ Views.planning = (params, query) => {
   const current = isoWeek(new Date());
   const users = Store.all('users');
   const plan = Store.all('planning'), temps = Store.all('temps');
-  const passe = (uid, wk) => temps.filter(t => t.userId === uid && isoWeek(new Date(t.date)) === wk).reduce((s, t) => s + num(t.heures), 0);
+  const passe = (uid, wk) => sumBy(temps.filter(t => t.userId === uid && isoWeek(new Date(t.date)) === wk), t => num(t.heures));
+  const canEdit = Store.me.role !== 'atelier';
 
-  const grid = users.map(u => `<tr><td><strong>${esc(u.nom)}</strong><br><span class="muted">${fmt(u.capaciteHebdo)} h/sem.</span></td>
+  const grid = users.map(u => `<tr><td><strong>${esc(u.nom)}</strong><br><span class="muted small">${esc(u.role === 'charge' ? "Chargé d'affaires" : moOf(u.categorieId).libelle || '')} · ${fmt(u.capaciteHebdo)} h</span></td>
     ${weeks.map(wk => {
       const items = plan.filter(p => p.userId === u.id && p.semaine === wk);
-      const h = items.reduce((s, p) => s + num(p.heuresPrevues), 0);
+      const h = sumBy(items, p => num(p.heuresPrevues));
       const r = num(u.capaciteHebdo) ? h / num(u.capaciteHebdo) : 0;
       const cls = !h ? 'load-0' : r > 1 ? 'load-over' : r > 0.85 ? 'load-high' : 'load-ok';
       const real = passe(u.id, wk);
-      return `<td class="plan-cell ${cls}" data-u="${u.id}" data-w="${wk}" style="cursor:pointer" title="${esc(items.map(p => `${affaireOf(p.affaireId).code} : ${p.heuresPrevues} h – ${p.libelle || ''}`).join('\n'))}">
-        <strong>${h ? fmt(h) + ' h' : '·'}</strong>${h ? `<br><span class="muted">${fmt(r * 100)} %</span>` : ''}${real ? `<br><span class="muted">réel ${fmt(real, 1)} h</span>` : ''}</td>`;
+      return `<td class="plan-cell ${cls}" ${canEdit ? `data-u="${u.id}" data-w="${wk}" style="cursor:pointer"` : ''} title="${esc(items.map(p => `${affaireOf(p.affaireId).code} : ${p.heuresPrevues} h – ${p.libelle || ''}`).join('\n'))}">
+        <strong>${h ? fmt(h) + ' h' : '·'}</strong>${h ? `<br><span class="muted">${fmt(r * 100)} %</span>` : ''}${real ? `<br><span class="muted">pointé ${fmt(real, 1)} h</span>` : ''}</td>`;
     }).join('')}</tr>`).join('');
 
-  const affs = Store.all('affaires').filter(a => !['Perdue', 'Facturée'].includes(a.statut));
   return `<h1>Planning de charge</h1>
   <div class="toolbar">
     <button class="secondary" onclick="location.hash='#/planning?o=${offset - 4}'">◀ 4 sem.</button>
@@ -487,18 +245,18 @@ Views.planning = (params, query) => {
     <span class="spacer"></span>
     <span class="badge load-ok">≤ 85 %</span><span class="badge load-high">85–100 %</span><span class="badge load-over">&gt; 100 %</span>
   </div>
-  <p class="muted">Cliquez sur une case pour planifier des heures sur une affaire. « réel » = heures effectivement saisies la semaine concernée.</p>
-  <div class="table-wrap"><table><tr><th>Ressource</th>${weeks.map(w => `<th class="plan-cell ${w === current ? 'today' : ''}">${w.replace('-W', ' S')}</th>`).join('')}</tr>${grid}</table></div>
+  <p class="muted">${canEdit ? 'Cliquez sur une case pour affecter des heures sur un chantier. ' : ''}« pointé » = heures réellement pointées la semaine concernée.</p>
+  <div class="table-wrap"><table><tr><th>Personne</th>${weeks.map(w => `<th class="plan-cell ${w === current ? 'today' : ''}">${w.replace('-W', ' S')}</th>`).join('')}</tr>${grid}</table></div>
 
-  <h2>Avancement des affaires (heures)</h2>
-  <div class="table-wrap"><table><tr><th>Affaire</th><th class="num">Budget</th><th class="num">Planifié</th><th class="num">Passé</th><th class="num">Reste à faire</th><th>Consommation</th><th class="num">Reste à planifier</th></tr>
-  ${affs.map(a => {
+  <h2>Reste à planifier par chantier</h2>
+  <div class="table-wrap"><table><tr><th>Chantier</th><th class="num">Budget</th><th class="num">Pointé</th><th class="num">Reste à faire</th><th>Consommé</th><th class="num">Planifié à venir</th><th class="num">Reste à planifier</th></tr>
+  ${chantiersActifs().map(a => {
     const s = Calc.affaire(a);
     const reste = s.heuresPrevues - s.heuresPassees;
-    const futur = plan.filter(p => p.affaireId === a.id && p.semaine > current).reduce((t, p) => t + num(p.heuresPrevues), 0);
+    const futur = sumBy(plan.filter(p => p.affaireId === a.id && p.semaine > current), p => num(p.heuresPrevues));
     const aPlanifier = reste - futur;
-    return `<tr class="clickable" onclick="location.hash='#/affaire/${a.id}'"><td>${esc(affaireLabel(a))}</td><td class="num">${fmt(s.heuresPrevues)} h</td><td class="num">${fmt(s.heuresPlanifiees)} h</td><td class="num">${fmt(s.heuresPassees, 1)} h</td>
-      <td class="num ${reste < 0 ? 'neg' : ''}">${fmt(reste, 1)} h</td><td>${bar(s.avancement)}</td><td class="num ${aPlanifier > 0 ? 'neg' : ''}">${aPlanifier > 0 ? fmt(aPlanifier, 1) + ' h' : '—'}</td></tr>`;
+    return `<tr class="clickable" onclick="location.hash='#/chantier/${a.id}'"><td>${esc(affaireLabel(a))}</td><td class="num">${fmt(s.heuresPrevues)} h</td><td class="num">${fmt(s.heuresPassees, 1)} h</td>
+      <td class="num ${reste < 0 ? 'neg' : ''}">${fmt(reste, 1)} h</td><td>${gauge(s.heuresPassees, s.heuresPrevues)}</td><td class="num">${fmt(futur)} h</td><td class="num ${aPlanifier > 0 ? 'neg' : ''}">${aPlanifier > 0 ? fmt(aPlanifier, 1) + ' h' : '—'}</td></tr>`;
   }).join('')}</table></div>`;
 };
 Views.planning.bind = root => {
@@ -507,10 +265,10 @@ Views.planning.bind = root => {
 
 function planningCell(userId, semaine) {
   const items = Store.all('planning').filter(p => p.userId === userId && p.semaine === semaine);
-  const affs = Store.all('affaires').filter(a => a.statut !== 'Perdue');
+  const affs = chantiersActifs();
   const box = Modal.open(`<h2 style="margin-top:0">${esc(userName(userId))} – ${esc(semaine)}</h2>
-    <table><tr><th>Affaire</th><th>Tâche</th><th class="num">Heures</th><th></th></tr>
-    ${items.map(p => `<tr data-id="${p.id}"><td><select data-k="affaireId">${options(affs, p.affaireId, affaireLabel, false)}</select></td><td><input data-k="libelle" value="${esc(p.libelle)}"></td><td><input data-k="heuresPrevues" type="number" step="0.5" value="${esc(p.heuresPrevues)}" style="width:90px"></td><td><button class="small danger" data-del="${p.id}">✕</button></td></tr>`).join('')}
+    <table><tr><th>Chantier</th><th>Tâche</th><th class="num">Heures</th><th></th></tr>
+    ${items.map(p => `<tr data-id="${p.id}"><td><select data-k="affaireId">${options(Store.all('affaires'), p.affaireId, affaireLabel, false)}</select></td><td><input data-k="libelle" value="${esc(p.libelle)}"></td><td><input data-k="heuresPrevues" type="number" step="0.5" value="${esc(p.heuresPrevues)}" style="width:90px"></td><td><button class="small danger" data-del="${p.id}">✕</button></td></tr>`).join('')}
     <tr><td><select id="n-aff">${options(affs, '', affaireLabel, false)}</select></td><td><input id="n-lib" placeholder="Tâche"></td><td><input id="n-h" type="number" step="0.5" style="width:90px"></td><td><button class="small" id="n-add">+</button></td></tr>
     </table>
     <div class="modal-actions"><button id="close">Fermer</button></div>`);
@@ -523,59 +281,18 @@ function planningCell(userId, semaine) {
   box.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { Store.remove('planning', b.dataset.del); refresh(); });
   box.querySelector('#n-add').onclick = () => {
     const h = +box.querySelector('#n-h').value;
-    if (!h) return;
+    if (!h || !box.querySelector('#n-aff').value) return;
     Store.upsert('planning', { userId, semaine, affaireId: box.querySelector('#n-aff').value, libelle: box.querySelector('#n-lib').value, heuresPrevues: h });
     refresh();
   };
   box.querySelector('#close').onclick = Modal.close;
 }
 
-/* ---------------- Heures passées ---------------- */
-Views.temps = (params, query) => {
-  const fu = query.get('user') || '', fa = query.get('affaire') || '';
-  const list = Store.all('temps').filter(t => (!fu || t.userId === fu) && (!fa || t.affaireId === fa))
-    .sort((a, b) => b.date.localeCompare(a.date)).slice(0, 300);
-  const total = list.reduce((s, t) => s + num(t.heures), 0);
-  const affs = Store.all('affaires').filter(a => a.statut !== 'Perdue');
-  return `<h1>Saisie des heures passées</h1>
-  <div class="card" style="margin-bottom:16px">
-    <div class="grid2">
-      <div class="field"><label>Date</label><input id="t-date" type="date" value="${isoDate(new Date())}"></div>
-      <div class="field"><label>Ressource</label><select id="t-user">${options(Store.all('users'), fu || Store.me.userId, undefined, false)}</select></div>
-      <div class="field"><label>Affaire</label><select id="t-aff">${options(affs, fa, affaireLabel, false)}</select></div>
-      <div class="field"><label>Tâche</label><input id="t-tache" placeholder="Pressage, cuisson, émaillage, suivi…"></div>
-      <div class="field"><label>Heures</label><input id="t-h" type="number" step="0.25"></div>
-      <div class="field"><label>&nbsp;</label><button id="t-add" style="width:100%">Enregistrer</button></div>
-    </div>
-  </div>
-  <div class="toolbar">
-    <select id="fu" style="width:auto"><option value="">Toutes ressources</option>${options(Store.all('users'), fu, undefined, false)}</select>
-    <select id="fa" style="width:auto"><option value="">Toutes affaires</option>${options(Store.all('affaires'), fa, affaireLabel, false)}</select>
-    <span class="spacer"></span><strong>Total : ${fmt(total, 2)} h</strong>
-  </div>
-  <div class="table-wrap"><table><tr><th>Date</th><th>Semaine</th><th>Ressource</th><th>Affaire</th><th>Tâche</th><th class="num">Heures</th><th></th></tr>
-  ${list.map(t => `<tr><td>${dateFr(t.date)}</td><td>${isoWeek(new Date(t.date))}</td><td>${esc(userName(t.userId))}</td><td>${esc(affaireOf(t.affaireId).code)}</td><td>${esc(t.tache)}</td><td class="num">${fmt(t.heures, 2)}</td><td><button class="small danger" data-del="${t.id}">✕</button></td></tr>`).join('')}
-  </table></div>`;
-};
-Views.temps.bind = root => {
-  const upd = () => { location.hash = `#/temps?user=${root.querySelector('#fu').value}&affaire=${root.querySelector('#fa').value}`; };
-  root.querySelector('#fu').onchange = upd;
-  root.querySelector('#fa').onchange = upd;
-  root.querySelector('#t-add').onclick = () => {
-    const h = +root.querySelector('#t-h').value;
-    if (!h || !root.querySelector('#t-aff').value) { notify('Renseigner une affaire et un nombre d\'heures.'); return; }
-    Store.upsert('temps', { date: root.querySelector('#t-date').value, userId: root.querySelector('#t-user').value,
-      affaireId: root.querySelector('#t-aff').value, tache: root.querySelector('#t-tache').value, heures: h });
-    App.render(); App.toast('Heures enregistrées');
-  };
-  root.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { Store.remove('temps', b.dataset.del); App.render(); });
-};
-
 /* ---------------- Analyse & REX ---------------- */
 Views.analyse = (params, query) => {
   const fc = query.get('charge') || '';
-  const affaires = Store.all('affaires').filter(a => a.statut !== 'Perdue' && (!fc || a.chargeId === fc));
-  const rows = affaires.map(a => ({ a, s: Calc.affaire(a) })).sort((x, y) => x.s.margePct - y.s.margePct);
+  const affaires = Store.all('affaires').filter(a => !fc || a.chargeId === fc);
+  const rows = affaires.map(a => ({ a, s: Calc.affaire(a) })).sort((x, y) => x.s.margeFinPct - y.s.margeFinPct);
   const rex = Store.all('affaires').filter(a => a.rex && (a.rex.negatif || a.rex.actions || a.rex.positif) && (!fc || a.chargeId === fc));
   return `<h1>Analyse de rentabilité &amp; retour d'expérience</h1>
   <div class="toolbar">
@@ -584,29 +301,31 @@ Views.analyse = (params, query) => {
   </div>
 
   <h2>Par chargé d'affaires</h2>
-  <div class="table-wrap"><table><tr><th>Chargé d'affaires</th><th class="num">Affaires</th><th class="num">En cours</th><th class="num">Devis</th><th class="num">Transfo.</th><th class="num">CA</th><th class="num">Marge</th><th class="num">Marge %</th><th class="num">Heures passé / prévu</th><th class="num">Écart heures</th><th class="num">Note REX moy.</th></tr>
+  <div class="table-wrap"><table><tr><th>Chargé d'affaires</th><th class="num">Devis</th><th class="num">En attente</th><th class="num">Transfo.</th><th class="num">Chantiers</th><th class="num">CA</th><th class="num">Marge à term.</th><th class="num">Marge %</th><th class="num">Heures pointé / prévu</th><th class="num">Écart heures</th><th class="num">Note REX</th></tr>
   ${charges().filter(u => !fc || u.id === fc).map(u => {
     const c = Calc.charge(u.id);
-    return `<tr class="clickable" onclick="location.hash='#/analyse?charge=${u.id}'"><td>${esc(u.nom)}</td><td class="num">${c.nbAffaires}</td><td class="num">${c.enCours}</td><td class="num">${c.nbDevis}</td><td class="num">${pct(c.transfo)}</td><td class="num">${eur(c.ca)}</td><td class="num ${signClass(c.marge)}">${eur(c.marge)}</td><td class="num">${marginBadge(c.margePct)}</td><td class="num">${fmt(c.hPass)} / ${fmt(c.hPrev)} h</td><td class="num ${c.ecartPct > 0 ? 'neg' : 'pos'}">${c.ecartPct > 0 ? '+' : ''}${pct(c.ecartPct)}</td><td class="num">${c.noteMoy ? fmt(c.noteMoy, 1) + ' / 5' : '—'}</td></tr>`;
+    return `<tr class="clickable" onclick="location.hash='#/analyse?charge=${u.id}'"><td>${esc(u.nom)}</td><td class="num">${c.nbDevis}</td><td class="num">${eur(c.enAttente)}</td><td class="num">${pct(c.transfo)}</td><td class="num">${c.nbAffaires}</td><td class="num">${eur(c.ca)}</td><td class="num ${signClass(c.marge)}">${eur(c.marge)}</td><td class="num">${marginBadge(c.margePct)}</td><td class="num">${fmt(c.hPass)} / ${fmt(c.hPrev)} h</td><td class="num ${c.ecartPct > 0 ? 'neg' : 'pos'}">${c.ecartPct > 0 ? '+' : ''}${pct(c.ecartPct)}</td><td class="num">${c.noteMoy ? fmt(c.noteMoy, 1) + ' / 5' : '—'}</td></tr>`;
   }).join('')}</table></div>
 
-  <h2>Par affaire (de la moins rentable à la plus rentable)</h2>
-  <div class="table-wrap"><table><tr><th>Affaire</th><th>Chargé</th><th>Statut</th><th class="num">CA</th><th class="num">Matière</th><th class="num">MO réelle</th><th class="num">Transport</th><th class="num">Marge</th><th class="num">Prév.</th><th class="num">Réel</th><th class="num">Écart h</th></tr>
-  ${rows.map(({ a, s }) => `<tr class="clickable" onclick="location.hash='#/affaire/${a.id}'"><td>${esc(affaireLabel(a))}</td><td>${esc(userName(a.chargeId))}</td><td>${badge(a.statut)}</td><td class="num">${eur(s.ca)}</td><td class="num">${eur(s.coutMatiere)}</td><td class="num">${eur(s.coutMO)}</td><td class="num">${eur(s.coutLivraison)}</td><td class="num ${signClass(s.marge)}">${eur(s.marge)}</td><td class="num">${s.caDevis ? pct(s.margePrevPct) : '—'}</td><td class="num">${s.ca ? marginBadge(s.margePct) : '—'}</td><td class="num ${s.ecartHeures > 0 ? 'neg' : 'pos'}">${s.heuresPrevues ? (s.ecartHeures > 0 ? '+' : '') + pct(s.ecartHeuresPct) : '—'}</td></tr>`).join('')}
+  <h2>Par chantier (du moins rentable au plus rentable)</h2>
+  <div class="table-wrap"><table><tr><th>Chantier</th><th>Chargé</th><th>Statut</th><th class="num">Montant</th><th class="num">Fournitures budget / réel</th><th class="num">MO budget / réel</th><th class="num">Écart heures</th><th class="num">Marge prévue</th><th class="num">À terminaison</th></tr>
+  ${rows.map(({ a, s }) => `<tr class="clickable" onclick="location.hash='#/chantier/${a.id}'"><td>${esc(affaireLabel(a))}</td><td>${esc(userName(a.chargeId))}</td><td>${badge(a.statut)}</td><td class="num">${eur(s.caDevis)}</td>
+    <td class="num">${eur(s.budgetF)}<br><span class="${s.coutFFin > s.budgetF ? 'neg' : 'muted'}">${eur(s.coutFFin)}</span></td><td class="num">${eur(s.budgetMO)}<br><span class="${s.coutMOFin > s.budgetMO ? 'neg' : 'muted'}">${eur(s.coutMOFin)}</span></td>
+    <td class="num ${s.ecartHeures > 0 ? 'neg' : 'pos'}">${s.heuresPrevues ? (s.ecartHeures > 0 ? '+' : '') + pct(s.ecartHeuresPct) : '—'}</td><td class="num">${pct(s.margePrevPct)}</td><td class="num">${marginBadge(s.margeFinPct)}</td></tr>`).join('')}
   </table></div>
 
   <h2>Capitalisation des retours d'expérience</h2>
-  ${rex.length ? `<div class="table-wrap"><table><tr><th>Affaire</th><th>Chargé</th><th>Note</th><th>Points positifs</th><th>Points négatifs</th><th>Actions</th></tr>
-    ${rex.map(a => `<tr class="clickable" onclick="location.hash='#/affaire/${a.id}'"><td>${esc(affaireLabel(a))}</td><td>${esc(userName(a.chargeId))}</td><td>${a.rex.note ? esc(a.rex.note) + '/5' : '—'}</td><td>${esc(a.rex.positif)}</td><td>${esc(a.rex.negatif)}</td><td>${esc(a.rex.actions)}</td></tr>`).join('')}
+  ${rex.length ? `<div class="table-wrap"><table><tr><th>Chantier</th><th>Chargé</th><th>Note</th><th>Points positifs</th><th>Points négatifs</th><th>Actions</th></tr>
+    ${rex.map(a => `<tr class="clickable" onclick="location.hash='#/chantier/${a.id}'"><td>${esc(affaireLabel(a))}</td><td>${esc(userName(a.chargeId))}</td><td>${a.rex.note ? esc(a.rex.note) + '/5' : '—'}</td><td>${esc(a.rex.positif)}</td><td>${esc(a.rex.negatif)}</td><td>${esc(a.rex.actions)}</td></tr>`).join('')}
   </table></div>` : '<p class="muted">Aucun REX saisi.</p>'}`;
 };
 Views.analyse.bind = root => {
   root.querySelector('#fc').onchange = e => { location.hash = `#/analyse?charge=${e.target.value}`; };
-  root.querySelector('#csv').onclick = () => download('analyse-affaires.csv', toCSV([
-    ['Code', 'Affaire', 'Client', 'Charge', 'Statut', 'CA', 'CoutMatiere', 'CoutMO', 'CoutTransport', 'Marge', 'MargePct', 'MargePrevPct', 'HeuresPrevues', 'HeuresPassees', 'EcartHeuresPct', 'NoteREX'],
+  root.querySelector('#csv').onclick = () => download('analyse-chantiers.csv', toCSV([
+    ['Code', 'Chantier', 'Client', 'Charge', 'Statut', 'Montant', 'BudgetFournitures', 'FournituresFin', 'BudgetMO', 'MOFin', 'HeuresPrevues', 'HeuresPointees', 'MargePrevPct', 'MargeFinPct', 'NoteREX'],
     ...Store.all('affaires').map(a => { const s = Calc.affaire(a); return [a.code, a.nom, clientName(a.clientId), userName(a.chargeId), a.statut,
-      s.ca.toFixed(2), s.coutMatiere.toFixed(2), s.coutMO.toFixed(2), s.coutLivraison.toFixed(2), s.marge.toFixed(2), s.margePct.toFixed(1), s.margePrevPct.toFixed(1),
-      s.heuresPrevues, s.heuresPassees, s.ecartHeuresPct.toFixed(1), (a.rex || {}).note || '']; })]), 'text/csv');
+      s.caDevis.toFixed(2), s.budgetF.toFixed(2), s.coutFFin.toFixed(2), s.budgetMO.toFixed(2), s.coutMOFin.toFixed(2),
+      s.heuresPrevues.toFixed(1), s.heuresPassees, s.margePrevPct.toFixed(1), s.margeFinPct.toFixed(1), (a.rex || {}).note || '']; })]), 'text/csv');
 };
 
 /* ---------------- Paramètres ---------------- */
@@ -615,13 +334,16 @@ const settingsFields = [
   { key: 'adresse', label: 'Adresse' },
   { key: 'siret', label: 'SIRET' },
   { key: 'tva', label: 'TVA %', type: 'number', step: '0.1' },
-  { key: 'tauxHoraireDefaut', label: 'Taux horaire standard (chiffrage) €/h', type: 'number', step: '0.5' },
   { key: 'delaiPaiement', label: 'Délai de paiement (jours)', type: 'number' },
+  { key: 'dureeHebdo', label: 'Durée hebdomadaire de travail (h)', type: 'number', step: '0.5' },
+  { key: 'seuilHS50', label: 'Heures sup. majorées à 50 % au-delà de (h/semaine)', type: 'number', step: '0.5' },
 ];
 const userFields = [
   { key: 'nom', label: 'Nom' },
-  { key: 'role', label: 'Rôle', type: 'select', options: v => `<option value="charge" ${v === 'charge' ? 'selected' : ''}>Chargé d'affaires</option><option value="atelier" ${v === 'atelier' ? 'selected' : ''}>Atelier / opérateur</option>` },
-  { key: 'tauxHoraire', label: 'Taux horaire chargé €/h', type: 'number', step: '0.5' },
+  { key: 'role', label: 'Rôle', type: 'select', options: v => `<option value="charge" ${v === 'charge' ? 'selected' : ''}>Chargé d'affaires</option><option value="atelier" ${v === 'atelier' ? 'selected' : ''}>Opérateur</option>` },
+  { key: 'categorieId', label: "Catégorie de main-d'œuvre", type: 'select', options: v => options(moList(), v, m => m.libelle) },
+  { key: 'tauxHoraire', label: 'Coût horaire chargé €/h (rentabilité)', type: 'number', step: '0.5' },
+  { key: 'salaireHoraire', label: 'Salaire horaire brut €/h (paie)', type: 'number', step: '0.01' },
   { key: 'capaciteHebdo', label: 'Capacité hebdomadaire (h)', type: 'number' },
 ];
 Views.parametres = () => {
@@ -641,15 +363,15 @@ Views.parametres = () => {
   <div class="card">${formFields(settingsFields, Store.data.settings)}<div class="modal-actions"><button id="s-save">Enregistrer</button></div></div>
 
   <h2>Comptes utilisateurs</h2>
-  <p class="muted">Administrateur : tout. Chargé d'affaires : contacts, affaires, devis, factures, planning, heures (pas de suppression de facture). Atelier : saisie des heures et consultation du planning.</p>
+  <p class="muted">Administrateur : tout. Chargé d'affaires : contacts, devis, chantiers, commandes, factures, planning, RH (pas de suppression de facture). Opérateur : pointage de ses propres heures et consultation du planning. Liez chaque compte opérateur à sa fiche dans « Équipe ».</p>
   <div class="toolbar"><button id="acc-add">+ Compte</button></div>
   <div class="table-wrap"><table id="accounts"><tr><td class="muted">Chargement…</td></tr></table></div>` : ''}
 
   ${Store.can('write', 'users') ? `
-  <h2>Équipe &amp; ressources (planning)</h2>
-  <div class="toolbar"><button id="u-add">+ Ressource</button></div>
-  <div class="table-wrap"><table><tr><th>Nom</th><th>Rôle</th><th class="num">Taux horaire</th><th class="num">Capacité / sem.</th></tr>
-  ${Store.all('users').map(u => `<tr class="clickable" data-id="${u.id}"><td>${esc(u.nom)}</td><td>${u.role === 'charge' ? "Chargé d'affaires" : 'Atelier'}</td><td class="num">${eur(u.tauxHoraire)}</td><td class="num">${fmt(u.capaciteHebdo)} h</td></tr>`).join('')}
+  <h2>Équipe</h2>
+  <div class="toolbar"><button id="u-add">+ Personne</button></div>
+  <div class="table-wrap"><table><tr><th>Nom</th><th>Rôle</th><th>Catégorie</th><th class="num">Coût horaire</th><th class="num">Salaire brut</th><th class="num">Capacité / sem.</th></tr>
+  ${Store.all('users').map(u => `<tr class="clickable" data-id="${u.id}"><td>${esc(u.nom)}</td><td>${u.role === 'charge' ? "Chargé d'affaires" : 'Opérateur'}</td><td>${esc(moOf(u.categorieId).libelle || '')}</td><td class="num">${eur(u.tauxHoraire)}</td><td class="num">${num(u.salaireHoraire) ? eur(u.salaireHoraire) : '—'}</td><td class="num">${fmt(u.capaciteHebdo)} h</td></tr>`).join('')}
   </table></div>` : ''}
 
   ${Store.me.role !== 'atelier' ? `
@@ -664,7 +386,7 @@ Views.parametres = () => {
   ${admin ? `<h2>Historique des modifications</h2><div class="table-wrap"><table id="audit"><tr><td class="muted">Chargement…</td></tr></table></div>` : ''}`;
 };
 
-const COL_LABELS = { users: 'Ressource', entreprises: 'Entreprise', contacts: 'Contact', articles: 'Article', zones: 'Zone', affaires: 'Affaire', devis: 'Devis', factures: 'Facture', planning: 'Planning', temps: 'Heures' };
+const COL_LABELS = { users: 'Personne', entreprises: 'Entreprise', contacts: 'Contact', articles: 'Fourniture', mainoeuvre: "Main-d'œuvre", zones: 'Zone', affaires: 'Chantier', devis: 'Devis', commandes: 'Commande', factures: 'Facture', planning: 'Planning', temps: 'Pointage' };
 
 function accountModal(acc, onDone) {
   const isNew = !acc.id;
@@ -673,7 +395,7 @@ function accountModal(acc, onDone) {
       ${isNew ? '<div class="field"><label>Identifiant de connexion</label><input id="a-login" autocomplete="off"></div>' : ''}
       <div class="field"><label>Nom affiché</label><input id="a-nom" value="${esc(acc.nom)}"></div>
       <div class="field"><label>Rôle</label><select id="a-role">${Object.entries(ROLE_LABELS).map(([k, v]) => `<option value="${k}" ${k === acc.role ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
-      <div class="field"><label>Ressource liée (planning / heures)</label><select id="a-user">${options(Store.all('users'), acc.userId)}</select></div>
+      <div class="field"><label>Fiche de la personne (pointage, planning)</label><select id="a-user">${options(Store.all('users'), acc.userId)}</select></div>
       <div class="field"><label>${isNew ? 'Mot de passe (8 caractères min.)' : 'Nouveau mot de passe (laisser vide pour ne pas changer)'}</label><input id="a-pw" type="password" autocomplete="new-password"></div>
     </div>
     <div class="modal-actions">
@@ -712,9 +434,9 @@ Views.parametres.bind = root => {
     try { await Store.saveSettings(readForm(root, settingsFields, { ...Store.data.settings })); App.toast('Paramètres enregistrés'); }
     catch (e) { notify(e.message); }
   });
-  on('#u-add', () => editModal({ title: 'Nouvelle ressource', col: 'users', fields: userFields, obj: { role: 'atelier', capaciteHebdo: 35, tauxHoraire: Store.data.settings.tauxHoraireDefaut } }));
+  on('#u-add', () => editModal({ title: 'Nouvelle personne', col: 'users', fields: userFields, obj: { role: 'atelier', capaciteHebdo: 35, tauxHoraire: Store.data.settings.tauxHoraireDefaut } }));
   root.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () =>
-    editModal({ title: 'Ressource', col: 'users', fields: userFields, obj: { ...Store.get('users', tr.dataset.id) } }));
+    editModal({ title: 'Personne', col: 'users', fields: userFields, obj: { ...Store.get('users', tr.dataset.id) } }));
   on('#export', () => download(`pipefit-crm-${isoDate(new Date())}.json`, Store.exportJSON()));
   const imp = root.querySelector('#import');
   if (imp) imp.onchange = async e => {

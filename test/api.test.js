@@ -38,7 +38,7 @@ test('écriture refusée sans Content-Type JSON (protection CSRF)', async () => 
 test('droits par rôle, conflits de version et numérotation', async () => {
   const admin = await login('admin', 'admin-test-pw');
   assert.strictEqual((await call('POST', '/api/accounts', { login: 'claire', password: 'motdepasse1', role: 'charge', nom: 'Claire' }, admin)).status, 200);
-  assert.strictEqual((await call('POST', '/api/accounts', { login: 'atelier', password: 'motdepasse2', role: 'atelier' }, admin)).status, 200);
+  assert.strictEqual((await call('POST', '/api/accounts', { login: 'atelier', password: 'motdepasse2', role: 'atelier', userId: 'o1' }, admin)).status, 200);
   const claire = await login('claire', 'motdepasse1');
   const atelier = await login('atelier', 'motdepasse2');
 
@@ -47,7 +47,9 @@ test('droits par rôle, conflits de version et numérotation', async () => {
   assert.ok(data.affaires.length > 0);
 
   // Atelier : heures oui, entreprises non
-  assert.strictEqual((await call('PUT', '/api/records/temps/t-test', { data: { affaireId: 'af1', userId: 'u3', date: '2026-10-01', heures: 4 } }, atelier)).status, 200);
+  assert.strictEqual((await call('PUT', '/api/records/temps/t-test', { data: { affaireId: 'af1', userId: 'o1', date: '2026-10-01', heures: 4 } }, atelier)).status, 200);
+  // ... mais pas pour un collègue
+  assert.strictEqual((await call('PUT', '/api/records/temps/t-autre', { data: { affaireId: 'af1', userId: 'o2', date: '2026-10-01', heures: 4 } }, atelier)).status, 403);
   assert.strictEqual((await call('PUT', '/api/records/entreprises/c-test', { data: { nom: 'X' } }, atelier)).status, 403);
   // Chargé : pas les paramètres ni les comptes
   assert.strictEqual((await call('PUT', '/api/settings', { tva: 20 }, claire)).status, 403);
@@ -80,6 +82,12 @@ test('droits par rôle, conflits de version et numérotation', async () => {
   assert.strictEqual(upd.body.numero, fa.numero);
   assert.strictEqual((await call('DELETE', '/api/records/factures/fa-x', {}, claire)).status, 403);
   assert.strictEqual((await call('DELETE', '/api/records/factures/fa-x', {}, admin)).status, 200);
+
+  // Commande fournisseur et chantier : numéros attribués par le serveur
+  const cf = (await call('PUT', '/api/records/commandes/cf-x', { data: { affaireId: 'af1', lignes: [] } }, claire)).body;
+  assert.match(cf.numero, new RegExp(`^CF-${year}-\\d{4}$`));
+  const ch = (await call('PUT', '/api/records/affaires/ch-x', { data: { nom: 'Test', code: 'FAUX' } }, claire)).body;
+  assert.match(ch.code, new RegExp(`^CH-${year}-\\d{3}$`));
 
   // Historique
   const audit = (await call('GET', '/api/audit', null, admin)).body;

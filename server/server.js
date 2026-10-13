@@ -198,9 +198,12 @@ async function api(req, res, url) {
         let obj = { ...DB.clean(data), id };
         // Une facture émise n'est plus modifiable, sauf son statut de paiement (admin excepté).
         if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...DB.clean(existing), statut: obj.statut };
-        if ((col === 'devis' || col === 'factures') && (!obj.numero || !existing)) {
-          if (!existing) obj.numero = DB.nextNumber(db, col);
-          else obj.numero = existing.numero;
+        // Opérateur atelier : uniquement ses propres pointages
+        if (acc.role === 'atelier' && (obj.userId !== acc.user_id || (existing && existing.userId !== acc.user_id))) return { forbidden: true };
+        const numbering = DB.NUMBERING[col];
+        if (numbering) {
+          const field = numbering[0];
+          obj[field] = existing ? existing[field] : DB.nextNumber(db, col);
         }
         const now = new Date().toISOString();
         const v = existing ? existing._v + 1 : 1;
@@ -210,6 +213,7 @@ async function api(req, res, url) {
         DB.audit(db, acc.login, existing ? 'modification' : 'création', col, id, labelOf(obj));
         return { record: DB.getRecord(db, col, id) };
       });
+      if (result.forbidden) return fail(res, 403, 'Vous ne pouvez saisir que vos propres heures');
       if (result.conflict) {
         return fail(res, 409, `Modifié entre-temps par ${result.conflict._by || 'un autre utilisateur'}`, { record: result.conflict });
       }
@@ -221,6 +225,7 @@ async function api(req, res, url) {
       if (!canDelete(acc, col)) return fail(res, 403, 'Droits insuffisants');
       const existing = DB.getRecord(db, col, id);
       if (!existing) return send(res, 200, { ok: true });
+      if (acc.role === 'atelier' && existing.userId !== acc.user_id) return fail(res, 403, 'Vous ne pouvez supprimer que vos propres heures');
       db.prepare('DELETE FROM records WHERE col = ? AND id = ?').run(col, id);
       DB.audit(db, acc.login, 'suppression', col, id, labelOf(existing));
       broadcast('delete', { col, id, client: req.headers['x-client-id'] || null });

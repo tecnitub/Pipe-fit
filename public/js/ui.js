@@ -6,16 +6,13 @@ const pct = v => `${fmt(v, 1)} %`;
 const dateFr = s => s ? new Date(s).toLocaleDateString('fr-FR') : '';
 const signClass = v => v >= 0 ? 'pos' : 'neg';
 
-const STATUTS_AFFAIRE = ['Prospect', 'Devis envoyé', 'En production', 'Livrée', 'Facturée', 'Perdue'];
-const STATUTS_DEVIS = ['Brouillon', 'Envoyé', 'Accepté', 'Refusé'];
-const STATUTS_FACTURE = ['Émise', 'Payée', 'En retard'];
 
 function badge(statut) {
   const map = {
-    'Accepté': 'b-ok', 'Payée': 'b-ok', 'Facturée': 'b-ok', 'Livrée': 'b-ok',
-    'Envoyé': 'b-info', 'Devis envoyé': 'b-info', 'En production': 'b-info', 'Émise': 'b-info',
-    'Brouillon': '', 'Prospect': '',
-    'Refusé': 'b-bad', 'Perdue': 'b-bad', 'En retard': 'b-bad',
+    'Accepté': 'b-ok', 'Payée': 'b-ok', 'Facturé': 'b-ok', 'Terminé': 'b-ok', 'Réceptionnée': 'b-ok', 'Clos': '',
+    'Envoyé': 'b-info', 'Envoyée': 'b-info', 'En cours': 'b-info', 'Émise': 'b-info', 'Réceptionnée partiellement': 'b-warn',
+    'Brouillon': '', 'En préparation': 'b-warn',
+    'Refusé': 'b-bad', 'Annulée': 'b-bad', 'En retard': 'b-bad',
   };
   return `<span class="badge ${map[statut] || ''}">${esc(statut)}</span>`;
 }
@@ -88,7 +85,7 @@ function readForm(root, fields, obj) {
 }
 
 // Ouvre une modale d'édition standard pour une collection.
-function editModal({ title, col, fields, obj, onSave, onDelete }) {
+function editModal({ title, col, fields, obj, onSave, onDelete, beforeSave }) {
   const box = Modal.open(`
     <h2 style="margin-top:0">${esc(title)}</h2>
     ${formFields(fields, obj)}
@@ -102,6 +99,7 @@ function editModal({ title, col, fields, obj, onSave, onDelete }) {
   box.querySelector('[data-act=cancel]').onclick = Modal.close;
   box.querySelector('[data-act=save]').onclick = () => {
     readForm(box, fields, obj);
+    if (beforeSave) beforeSave(obj);
     Store.upsert(col, obj);
     Modal.close();
     (onSave || App.render)();

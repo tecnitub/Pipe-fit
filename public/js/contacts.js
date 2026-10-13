@@ -200,7 +200,7 @@ Views.entreprise = params => {
       <td>${esc(siteLabel(siteOf(e.id, c.siteId)))}</td><td>${esc(c.mobile || c.tel)}</td><td>${esc(c.email)}</td></tr>`).join('')}</table></div>`
   : '<p class="muted">Aucun contact rattaché.</p>'}
 
-  ${isClient(e) ? `<h2>Affaires</h2>${affaireTable(affaires)}` : ''}`;
+  ${isClient(e) ? `<h2>Chantiers</h2>${chantierTable(affaires)}` : ''}`;
 };
 Views.entreprise.bind = (root, params) => {
   const e = Store.get('entreprises', params[0]);

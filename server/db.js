@@ -4,7 +4,9 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 
-const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'zones', 'affaires', 'devis', 'factures', 'planning', 'temps'];
+const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'commandes', 'factures', 'planning', 'temps'];
+// Numérotation attribuée par le serveur : collection -> [champ, préfixe, chiffres]
+const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3] };
 const ROLES = ['admin', 'charge', 'atelier'];
 
 function open(file) {
@@ -93,14 +95,15 @@ function setSettings(db, s) {
   db.prepare('INSERT INTO settings (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data').run(JSON.stringify(s));
 }
 
-// Numérotation séquentielle par année, attribuée dans la transaction d'écriture.
-function nextNumber(db, kind) {
-  const prefix = `${kind === 'devis' ? 'DV' : 'FA'}-${new Date().getFullYear()}-`;
+// Numérotation séquentielle par année (DV-2026-0001, CH-2026-001…), attribuée dans la transaction d'écriture.
+function nextNumber(db, col) {
+  const [field, code, digits] = NUMBERING[col];
+  const prefix = `${code}-${new Date().getFullYear()}-`;
   let row = db.prepare('SELECT value FROM counters WHERE name = ?').get(prefix);
   if (!row) {
     let max = 0;
-    for (const r of db.prepare('SELECT data FROM records WHERE col = ?').all(kind)) {
-      const n = JSON.parse(r.data).numero || '';
+    for (const r of db.prepare('SELECT data FROM records WHERE col = ?').all(col)) {
+      const n = JSON.parse(r.data)[field] || '';
       if (n.startsWith(prefix)) max = Math.max(max, parseInt(n.slice(prefix.length), 10) || 0);
     }
     db.prepare('INSERT INTO counters (name, value) VALUES (?, ?)').run(prefix, max);
@@ -108,7 +111,7 @@ function nextNumber(db, kind) {
   }
   const value = row.value + 1;
   db.prepare('UPDATE counters SET value = ? WHERE name = ?').run(value, prefix);
-  return prefix + String(value).padStart(4, '0');
+  return prefix + String(value).padStart(digits, '0');
 }
 
 function replaceAll(db, data, login) {
@@ -130,6 +133,6 @@ function audit(db, login, action, col, rid, label) {
 }
 
 module.exports = {
-  COLLECTIONS, ROLES, open, tx, hashPassword, checkPassword, clean,
+  COLLECTIONS, NUMBERING, ROLES, open, tx, hashPassword, checkPassword, clean,
   getRecord, allData, getSettings, setSettings, nextNumber, replaceAll, audit,
 };

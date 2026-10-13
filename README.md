@@ -83,25 +83,31 @@ Ne pas exposer le port 3000 en HTTP simple sur Internet.
   pas de doublon, même si deux devis sont créés au même instant.
 - **Historique** : connexions, créations, modifications et suppressions (Paramètres, administrateur).
 
-## Fonctionnalités métier
+## Processus métier
+
+1. **Devis** : client, contact client (chargé de travaux), site d'intervention et chargé d'affaires interne.
+   Les lignes sont des **ouvrages** regroupés en **chapitres** (sous-total par chapitre). Un ouvrage =
+   fournitures de la bibliothèque (quantité par unité) + main-d'œuvre (catégorie × heures par unité) :
+   prix unitaire = fournitures + main-d'œuvre. **Remises et majorations** en % sur l'ensemble des lignes.
+   Le pilotage prévisionnel sépare la part fournitures et la part main-d'œuvre (heures par catégorie, coûts, marge).
+2. **Devis accepté → chantier** (numéro `CH-AAAA-001`) : le devis devient le budget du chantier.
+3. **Commandes fournisseurs** (`CF-AAAA-0001`) affectées à un chantier ; elles peuvent reprendre
+   automatiquement les fournitures prévues au devis et pas encore commandées. Leur montant est le coût
+   réel des fournitures.
+4. **Pointage mobile** des opérateurs (arrivée / départ par chantier et tâche, pause, saisie d'oubli).
+   Le coût réel de main-d'œuvre = heures pointées × coût horaire de chaque personne.
+5. **Pilotage du chantier** : budget du devis face au réel (fournitures, main-d'œuvre, heures par catégorie),
+   marge prévue et **marge à terminaison** (projection du reste à faire).
+6. **RH** : synthèse mensuelle par salarié (jours, heures normales, heures supplémentaires à 25 % / 50 %
+   calculées par semaine, salaire brut indicatif) et export CSV pour la paie ; contrôle et correction des pointages.
+7. **Factures** depuis le devis accepté ou le chantier ; **analyse** par chantier et par chargé d'affaires, REX.
 
 | Module | Contenu |
 |---|---|
-| **Contacts** | Entreprises classées client / fournisseur (SIRET, TVA, téléphone, e-mail) avec plusieurs sites/adresses (siège de facturation, usines, sites d'intervention) ; personnes rattachées à une entreprise et à un site (chargé de travaux, acheteur…). |
-| **Bibliothèque de prix** | Articles (tubes, raccords, robinetterie, supportage, heures de soudure et de montage, contrôles, prestations) : prix de vente, coût matière, heures de fabrication/unité, poids/unité. Révision tarifaire en % par famille, export CSV. |
-| **Livraison** | Zones : forfait + prix à la tonne (facturé) et coût transporteur (réel). Poids du devis calculé depuis la bibliothèque. |
-| **Devis** | Choix du client, du contact (chargé de travaux) et du site d'intervention, repris sur le devis et la facture. Lignes depuis la bibliothèque, remises ligne et globale, livraison auto ou forcée, TVA, impression/PDF, duplication. Analyse interne : coût matière, heures estimées, coût transport, marge prévisionnelle. |
-| **Factures** | Générées depuis un devis accepté (livraison reprise), échéance, suivi payé / en retard, impression. |
-| **Planning** | Charge hebdomadaire par ressource vs capacité, heures réellement saisies ; par affaire : budget, planifié, passé, reste à faire, reste à planifier. |
-| **Heures passées** | Saisie par date / ressource / affaire / tâche, filtres. |
-| **Analyse & REX** | Rentabilité par affaire (CA − matière − MO réelle − transport), marge prévue vs réelle ; synthèse par chargé d'affaires (CA, marge, transformation des devis, écart d'heures, note REX) ; fiches REX ; export CSV. |
-
-### Règles de calcul
-
-- **Livraison facturée** = forfait de zone + prix/t × poids total, sauf montant forcé.
-- **Marge prévisionnelle** (devis) = total HT − coût matière − heures estimées × taux horaire standard − coût transport.
-- **Marge réelle** (affaire) = CA facturé (ou devis acceptés) − coût matière − Σ(heures saisies × taux de la ressource) − coût transport.
-- **Écart d'heures** = (heures passées − heures budgétées) / heures budgétées.
+| **Contacts** | Entreprises client / fournisseur (SIRET, TVA, coordonnées) avec plusieurs sites ; personnes rattachées (chargé de travaux, acheteur…). |
+| **Bibliothèque** | Fournitures (prix d'achat, prix de vente, poids, fournisseur habituel), catégories de main-d'œuvre (taux de vente, coût moyen), zones de livraison. |
+| **Planning** | Charge hebdomadaire par personne face à sa capacité, heures pointées, reste à planifier par chantier. |
+| **Rôles** | Administrateur ; chargé d'affaires ; opérateur (pointe uniquement ses propres heures). |
 
 ## Structure
 
@@ -111,6 +117,7 @@ server/db.js       base SQLite, mots de passe (scrypt), numérotation
 server/demo.js     données de démonstration
 public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
+public/js/devis.js, commandes.js, pointage.js, biblio.js, contacts.js : écrans métier
 installer/         installateur Windows (NSIS) : build.sh, PipeFitCRM.nsi, lanceur et service
 ```
 
