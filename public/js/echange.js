@@ -116,6 +116,7 @@ const ECHANGES = {
   contacts: {
     titre: 'contacts', col: 'contacts', fichier: 'contacts', feuille: 'Contacts',
     fields: [ID_FIELD,
+      { key: 'civilite', label: 'Civilité', syn: ['civilite', 'titre de civilite', 'mme / m.', 'genre'] },
       { key: 'prenom', label: 'Prénom', syn: ['prenom', 'first name'] },
       { key: 'nom', label: 'Nom', required: true, syn: ['nom', 'nom de famille', 'last name', 'contact', 'nom complet'] },
       { key: 'fonction', label: 'Fonction', syn: ['fonction', 'poste', 'titre', 'role', 'qualite'] },
@@ -135,6 +136,7 @@ const ECHANGES = {
     },
     appliquer(rec, v, ctx) {
       ['prenom', 'nom', 'fonction', 'tel', 'mobile', 'email', 'notes'].forEach(k => { if (v[k] !== '') rec[k] = String(v[k]); });
+      if (v.civilite !== '') rec.civilite = /^(mme|madame|mlle|f)/i.test(String(v.civilite).trim()) ? 'Madame' : /^(m|monsieur|mr|h)/i.test(String(v.civilite).trim()) ? 'Monsieur' : '';
       if (v.entreprise) rec.entrepriseId = entrepriseParNom(v.entreprise, ctx, 'Client');
       if (v.site && rec.entrepriseId) {
         const ent = Store.get('entreprises', rec.entrepriseId) || {};
@@ -143,8 +145,8 @@ const ECHANGES = {
       }
       return rec;
     },
-    ligne: c => [c.id, c.prenom, c.nom, c.fonction, c.entrepriseId ? clientName(c.entrepriseId) : '', siteLabel(siteOf(c.entrepriseId, c.siteId)), c.tel, c.mobile, c.email, c.notes],
-    largeurs: [12, 14, 18, 24, 30, 30, 15, 15, 30, 30],
+    ligne: c => [c.id, c.civilite || '', c.prenom, c.nom, c.fonction, c.entrepriseId ? clientName(c.entrepriseId) : '', siteLabel(siteOf(c.entrepriseId, c.siteId)), c.tel, c.mobile, c.email, c.notes],
+    largeurs: [12, 10, 14, 18, 24, 30, 30, 15, 15, 30, 30],
   },
 };
 // Feuille « Sites » du fichier des entreprises : plusieurs adresses par entreprise

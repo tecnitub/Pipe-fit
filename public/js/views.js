@@ -248,10 +248,10 @@ Views.facture = params => {
     ${f.affaireId ? `<a href="#/chantier/${f.affaireId}" class="btn secondary">Chantier</a>` : ''}
     <span class="spacer"></span>
     <select id="f-statut" style="width:auto" aria-label="Statut">${optionsStr(STATUTS_FACTURE, f.statut)}</select>
-    <button class="secondary print-btn" onclick="window.print()">Imprimer / PDF</button>
+    <button class="secondary print-btn" onclick="window.print()">Imprimer</button>${boutonsEnvoi('facture', f.id)}
     ${Store.can('delete', 'factures') ? '<button class="danger" id="del">Supprimer</button>' : ''}
   </div>
-  <h1 class="no-print">Facture ${esc(f.numero || '')} ${badge(f.statut)}</h1>
+  <h1 class="no-print">Facture ${esc(f.numero || '')} ${badge(f.statut)}</h1>${envoisHtml('factures', f.id)}
   <div class="doc-print">
     ${factureDocument(f)}
   </div>`;
@@ -406,6 +406,8 @@ const userFields = [
   { key: 'tauxHoraire', label: 'Coût horaire chargé €/h (rentabilité)', type: 'number', step: '0.5' },
   { key: 'salaireHoraire', label: 'Salaire horaire brut €/h (paie)', type: 'number', step: '0.01' },
   { key: 'capaciteHebdo', label: 'Capacité hebdomadaire (h)', type: 'number' },
+  { key: 'email', label: 'E-mail professionnel (copie des envois, signature)', type: 'email' },
+  { key: 'tel', label: 'Téléphone professionnel (signature des e-mails)', type: 'tel' },
 ];
 Views.parametres = () => {
   const admin = Store.can('admin');
@@ -426,6 +428,8 @@ Views.parametres = () => {
   <h2>Documents</h2>
   <div class="card inline" style="justify-content:space-between;flex-wrap:wrap"><span>Logo, couleur, coordonnées, RIB, mentions légales et éléments affichés sur les devis, factures, BL, bons de commande, attachements, bons d'intervention et PV.</span>
     <a class="btn" href="#/documents">Mise en page des documents</a></div>
+  <div class="card inline" style="justify-content:space-between;flex-wrap:wrap;margin-top:10px"><span>Modèles d'e-mails (devis, factures, BL, demandes de prix, commandes…) et connexion Microsoft 365 pour envoyer depuis le CRM avec copie dans les éléments envoyés.</span>
+    <a class="btn" href="#/mails">E-mails et Microsoft 365</a></div>
 
   <h2>Comptes utilisateurs</h2>
   <p class="muted">Administrateur : tout. Chargé d'affaires : contacts, devis, chantiers, commandes, factures, planning, RH (pas de suppression de facture). Opérateur : pointage de ses propres heures et consultation du planning. Liez chaque compte opérateur à sa fiche dans « Équipe ».</p>
@@ -461,6 +465,7 @@ function accountModal(acc, onDone) {
       <div class="field"><label>Nom affiché</label><input id="a-nom" value="${esc(acc.nom)}"></div>
       <div class="field"><label>Rôle</label><select id="a-role">${Object.entries(ROLE_LABELS).map(([k, v]) => `<option value="${k}" ${k === acc.role ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
       <div class="field"><label>Fiche de la personne (pointage, planning)</label><select id="a-user">${options(Store.all('users'), acc.userId)}</select></div>
+      <div class="field"><label>Adresse Microsoft 365 (expéditeur des e-mails)</label><input id="a-email" type="email" value="${esc(acc.email || '')}" autocomplete="off"></div>
       <div class="field"><label>${isNew ? 'Mot de passe (8 caractères min.)' : 'Nouveau mot de passe (laisser vide pour ne pas changer)'}</label><input id="a-pw" type="password" autocomplete="new-password"></div>
     </div>
     <div class="modal-actions">
@@ -471,7 +476,7 @@ function accountModal(acc, onDone) {
   const v = id => box.querySelector(id).value;
   box.querySelector('#a-cancel').onclick = Modal.close;
   box.querySelector('#a-save').onclick = async () => {
-    const body = { nom: v('#a-nom'), role: v('#a-role'), userId: v('#a-user') };
+    const body = { nom: v('#a-nom'), role: v('#a-role'), userId: v('#a-user'), email: v('#a-email').trim() };
     if (v('#a-pw')) body.password = v('#a-pw');
     try {
       if (isNew) await api('POST', '/api/accounts', { ...body, login: v('#a-login') });
@@ -519,8 +524,8 @@ Views.parametres.bind = root => {
   const loadAccounts = () => api('GET', '/api/accounts').then(list => {
     const t = root.querySelector('#accounts');
     if (!t) return;
-    t.innerHTML = `<tr><th>Identifiant</th><th>Nom</th><th>Rôle</th><th>Ressource liée</th><th>Créé le</th></tr>` +
-      list.map(a => `<tr class="clickable" data-acc="${a.id}"><td>${esc(a.login)}</td><td>${esc(a.nom)}</td><td>${esc(ROLE_LABELS[a.role])}</td><td>${esc(a.userId ? userName(a.userId) : '—')}</td><td>${dateFr(a.createdAt)}</td></tr>`).join('');
+    t.innerHTML = `<tr><th>Identifiant</th><th>Nom</th><th>Rôle</th><th>Ressource liée</th><th>E-mail d'envoi</th><th>Créé le</th></tr>` +
+      list.map(a => `<tr class="clickable" data-acc="${a.id}"><td>${esc(a.login)}</td><td>${esc(a.nom)}</td><td>${esc(ROLE_LABELS[a.role])}</td><td>${esc(a.userId ? userName(a.userId) : '—')}</td><td>${esc(a.email || '—')}</td><td>${dateFr(a.createdAt)}</td></tr>`).join('');
     t.querySelectorAll('tr[data-acc]').forEach(tr => tr.onclick = () => accountModal(list.find(a => a.id === tr.dataset.acc), loadAccounts));
   });
   on('#acc-add', () => accountModal({ role: 'charge' }, loadAccounts));

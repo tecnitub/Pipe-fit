@@ -315,3 +315,32 @@ details.sign-block[open] { display: grid; gap: 8px; }
 .logo-zone .doc-logo { background: repeating-conic-gradient(#e8e8e8 0 25%, #fff 0 50%) 0 0 / 12px 12px; border: 1px solid var(--border); padding: 4px; }
 fieldset.doc-opts { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; margin: 0 0 12px; }
 @media (max-width: 900px) { .doc-config { grid-template-columns: 1fr; } }
+/* Rendu hors écran pour la génération PDF : toujours en clair */
+.pdf-render { --panel: #ffffff; --panel-alt: #faf6f2; --head: #efe9e4; --text: #222222; --muted: #6b6b6b; --border: #d9d2cc; --info: #2a5a8f; --info-bg: #dfe9f6;
+  color: #222222; background: #ffffff; font-size: 13px; line-height: 1.4; }
+.pdf-render .no-print, .pdf-render .preview > summary { display: none !important; }
+.pdf-render .table-wrap { overflow: visible; }
+.pdf-render .table-wrap > table { min-width: 0; }
+
+/* Envoi par e-mail */
+.mail-form fieldset { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin: 0 0 12px; }
+.mail-contacts { list-style: none; margin: 0 0 8px; padding: 0; }
+.mail-contacts li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.mail-contacts li > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.mail-contacts .seg { flex-shrink: 0; }
+.mail-mode .check { align-items: flex-start; margin: 4px 0; }
+.mail-mode .check input { margin-top: 3px; }
+.mail-piece { margin: 0 0 12px; }
+.mail-apercu { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; background: var(--panel); overflow-wrap: anywhere; }
+.chips-vars { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.vars-list { columns: 2 220px; padding-left: 16px; }
+details.envois { margin: 0 0 12px; padding: 8px 12px; }
+details.envois summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+details.envois .table-wrap { margin-top: 8px; }
+.doc-head > div:last-child { margin-left: auto; }
+.pdf-render .doc-head { flex-wrap: nowrap; }
+.pdf-render .doc-head > div:last-child { flex: 0 0 auto; text-align: right; }
+.pdf-render .doc-head.logo-centre > div:last-child { text-align: center; margin: 0 auto; }
+.doc-societe { flex-wrap: wrap; }
+.doc-societe > div { min-width: 0; overflow-wrap: anywhere; }
+.pdf-render .doc-societe { flex-wrap: nowrap; }

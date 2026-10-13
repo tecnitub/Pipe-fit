@@ -2,14 +2,14 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v7';
+  const KEY = 'pipefit-crm-demo-v8';
   const ME_KEY = 'pipefit-crm-demo-me';
-  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations'];
+  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4] };
   const ACCOUNTS = [
-    { id: 'acc-admin', login: 'admin', nom: 'Administrateur', role: 'admin', userId: null },
-    { id: 'acc-claire', login: 'claire', nom: 'Claire Martin', role: 'charge', userId: 'u1' },
-    { id: 'acc-julien', login: 'julien', nom: 'Julien Bernard', role: 'charge', userId: 'u2' },
+    { id: 'acc-admin', login: 'admin', nom: 'Administrateur', role: 'admin', userId: null, email: 'admin@pipefit.example' },
+    { id: 'acc-claire', login: 'claire', nom: 'Claire Martin', role: 'charge', userId: 'u1', email: 'c.martin@pipefit.example' },
+    { id: 'acc-julien', login: 'julien', nom: 'Julien Bernard', role: 'charge', userId: 'u2', email: 'j.bernard@pipefit.example' },
     { id: 'acc-kevin', login: 'kevin', nom: 'Kevin Roux (soudeur)', role: 'atelier', userId: 'o1' },
     { id: 'acc-lucas', login: 'lucas', nom: "Lucas Petit (chef d'équipe)", role: 'atelier', userId: 'o3' },
   ];
@@ -23,7 +23,8 @@
   function fresh() {
     const seed = DemoSeed.demoData();
     const now = new Date().toISOString();
-    const db = { settings: seed.settings, accounts: ACCOUNTS.map(a => ({ ...a, createdAt: now })), audit: [], counters: {}, files: { ...(seed.files || {}) } };
+    const db = { settings: seed.settings, accounts: ACCOUNTS.map(a => ({ ...a, createdAt: now })), audit: [], counters: {}, files: { ...(seed.files || {}) },
+      m365: { tenantId: '00000000-demo-0000-0000-000000000000', clientId: '11111111-demo-1111-1111-111111111111', clientSecret: 'demo', actif: true } };
     COLLECTIONS.forEach(c => { db[c] = (seed[c] || []).map(o => ({ ...o, _v: 1, _at: now, _by: 'Démo' })); });
     return db;
   }
@@ -70,7 +71,7 @@
     const p = path.replace(/^\/api\/?/, '').split('/').filter(Boolean);
     const acc = me();
     if (p[0] === 'setup') return [200, { needed: false, local: true }];
-    if (p[0] === 'me' && !p[1]) return [200, acc];
+    if (p[0] === 'me' && !p[1]) return [200, { ...acc, m365: !!(db.m365 || {}).actif }];
     if (p[0] === 'me' && p[1] === 'password') return [200, { ok: true }];
     if (p[0] === 'logout' || p[0] === 'login') return [200, acc];
     if (p[0] === 'bulk' && method === 'POST') {
@@ -87,6 +88,17 @@
       });
       audit('import', col, `${recs.length} ligne(s)`); save();
       return [200, JSON.parse(JSON.stringify(recs))];
+    }
+    // Microsoft 365 simulé : l'envoi est enregistré dans l'historique, aucun e-mail ne part
+    if (p[0] === 'mail' && method === 'POST') {
+      if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Droits insuffisants' }];
+      if (!(db.m365 || {}).actif) return [400, { error: "L'envoi par Microsoft 365 n'est pas configuré (Paramètres → E-mails)." }];
+      if (!acc.email) return [400, { error: "Votre compte n'a pas d'adresse Microsoft 365." }];
+      if (!(body.to || []).length) return [400, { error: 'Aucun destinataire' }];
+      const rec = { id: 'env' + DemoSeed.uid(), date: new Date().toISOString(), type: body.type, col: body.ref && body.ref.col, docId: body.ref && body.ref.id, numero: body.numero || '',
+        to: body.to, cc: body.cc || [], objet: body.subject, pieces: (body.attachments || []).map(a => a.name), mode: 'Microsoft 365', expediteur: acc.email, par: acc.nom, _v: 1, _at: new Date().toISOString(), _by: acc.nom };
+      db.envois.push(rec); audit('envoi e-mail', 'envois', `${rec.numero} → ${rec.to.join(', ')} (démo : non envoyé)`); save();
+      return [200, JSON.parse(JSON.stringify(rec))];
     }
     if (p[0] === 'files' && method === 'POST') {
       const id = 'f' + DemoSeed.uid();
@@ -132,17 +144,24 @@
     if (acc.role !== 'admin') return [403, { error: 'Réservé aux administrateurs' }];
     if (p[0] === 'settings') { db.settings = body; audit('paramètres'); save(); return [200, body]; }
     if (p[0] === 'audit') return [200, db.audit];
+    if (p[0] === 'm365') {
+      db.m365 = db.m365 || { tenantId: '', clientId: '', actif: false };
+      const pub = () => ({ tenantId: db.m365.tenantId, clientId: db.m365.clientId, actif: db.m365.actif, secretDefini: !!db.m365.clientSecret });
+      if (method === 'GET') return [200, pub()];
+      if (method === 'PUT') { Object.assign(db.m365, { tenantId: body.tenantId, clientId: body.clientId, actif: !!body.actif }); if (body.clientSecret) db.m365.clientSecret = body.clientSecret; save(); return [200, pub()]; }
+      if (p[1] === 'test') return [200, { message: 'Démonstration : la connexion n\'est pas réellement testée. Sur votre serveur, un e-mail de test sera envoyé à votre adresse.' }];
+    }
     if (p[0] === 'accounts') {
       if (method === 'GET') return [200, db.accounts];
       if (method === 'POST') {
         if (db.accounts.some(a => a.login.toLowerCase() === String(body.login || '').toLowerCase())) return [400, { error: 'Identifiant déjà utilisé' }];
-        const a = { id: 'acc-' + DemoSeed.uid(), login: body.login, nom: body.nom || body.login, role: body.role || 'charge', userId: body.userId || null, createdAt: new Date().toISOString() };
+        const a = { id: 'acc-' + DemoSeed.uid(), login: body.login, nom: body.nom || body.login, role: body.role || 'charge', userId: body.userId || null, email: body.email || '', createdAt: new Date().toISOString() };
         db.accounts.push(a); audit('création compte', null, a.login); save();
         return [200, { id: a.id }];
       }
       const a = db.accounts.find(x => x.id === p[1]);
       if (!a) return [404, { error: 'Compte introuvable' }];
-      if (method === 'PUT') { Object.assign(a, { nom: body.nom ?? a.nom, role: body.role ?? a.role, userId: body.userId || null }); save(); return [200, { ok: true }]; }
+      if (method === 'PUT') { Object.assign(a, { nom: body.nom ?? a.nom, role: body.role ?? a.role, userId: body.userId || null, email: body.email ?? a.email }); save(); return [200, { ok: true }]; }
       if (method === 'DELETE') {
         if (a.id === acc.id) return [400, { error: 'Impossible de supprimer son propre compte' }];
         db.accounts = db.accounts.filter(x => x !== a); save(); return [200, { ok: true }];

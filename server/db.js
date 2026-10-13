@@ -4,7 +4,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 
-const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations'];
+const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois'];
 // Numérotation attribuée par le serveur : collection -> [champ, préfixe, chiffres]
 const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4] };
 const ROLES = ['admin', 'charge', 'atelier'];
@@ -26,10 +26,13 @@ function open(file) {
       user_id TEXT, pass TEXT NOT NULL, created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, account_id TEXT NOT NULL, expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, mime TEXT NOT NULL, data BLOB NOT NULL, created_by TEXT, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS audit (
       id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, login TEXT, action TEXT, col TEXT, rid TEXT, label TEXT);
   `);
   db.prepare('DELETE FROM sessions WHERE expires < ?').run(Date.now());
+  // Adresse e-mail (Microsoft 365) de chaque compte, ajoutée après coup
+  if (!db.prepare('PRAGMA table_info(accounts)').all().some(c => c.name === 'email')) db.exec('ALTER TABLE accounts ADD COLUMN email TEXT');
   migrateClients(db);
   return db;
 }
@@ -98,6 +101,10 @@ function setSettings(db, s) {
 
 // Numérotation séquentielle par année (DV-2026-0001, CH-2026-001…), attribuée dans la transaction d'écriture.
 // Les interventions hors devis ont leur propre numérotation (HD-AAAA-001) dans la liste des chantiers
+// Configuration confidentielle (jamais renvoyée avec les données) : connexion Microsoft 365
+function getConfig(db, key) { const r = db.prepare('SELECT value FROM config WHERE key = ?').get(key); return r ? JSON.parse(r.value) : null; }
+function setConfig(db, key, value) { db.prepare('INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, JSON.stringify(value)); }
+
 function nextNumber(db, col, obj) {
   const [field, base, digits] = NUMBERING[col];
   const code = col === 'affaires' && obj && obj.type === 'horsDevis' ? 'HD' : base;
@@ -142,5 +149,5 @@ function audit(db, login, action, col, rid, label) {
 
 module.exports = {
   COLLECTIONS, NUMBERING, ROLES, open, tx, hashPassword, checkPassword, clean,
-  getRecord, allData, getSettings, setSettings, nextNumber, replaceAll, audit,
+  getRecord, allData, getSettings, setSettings, nextNumber, replaceAll, audit, getConfig, setConfig,
 };

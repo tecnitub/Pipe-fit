@@ -125,12 +125,12 @@ function devisEditor(id) {
     ${!locked ? '<button class="secondary" id="dpgf-imp">Importer un DPGF</button>' : ''}
     <button class="secondary dl-btn" id="dpgf-exp">Exporter le DPGF chiffré</button>
     <button class="secondary" id="dup">Dupliquer</button>
-    <button class="secondary print-btn" onclick="window.print()">Imprimer / PDF</button>
+    <button class="secondary print-btn" onclick="window.print()">Imprimer</button>${boutonsEnvoi('devis', d.id)}
     ${!d.affaireId && d.statut !== 'Refusé' ? '<button id="accept">Accepté : créer le chantier</button>' : ''}
     ${d.affaireId ? `<a class="btn secondary" href="#/situations?devis=${d.id}">Situations</a>` : ''}
     <button class="danger" id="del">Supprimer</button>
   </div>
-  <h1>Devis ${esc(d.numero || '')} ${badge(d.statut)}</h1>
+  <h1>Devis ${esc(d.numero || '')} ${badge(d.statut)}</h1>${envoisHtml('devis', d.id)}
   ${locked ? '<p class="note no-print">Devis accepté : il sert de budget au chantier. Pour le modifier, dupliquez-le en avenant.</p>' : ''}
   ${!locked && lines.filter(aChiffrer).length ? `<p class="note warn no-print">${lines.filter(aChiffrer).length} ouvrage(s) à chiffrer : cliquez sur chaque désignation pour ajouter fournitures et main-d'œuvre.</p>` : ''}
 

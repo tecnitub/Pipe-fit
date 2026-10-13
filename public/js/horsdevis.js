@@ -59,7 +59,7 @@ function horsDevisView(a) {
   const doc = attachementHD(a, v);
   return `<div class="toolbar"><a href="#/chantiers" class="btn secondary">← Chantiers</a><span class="spacer"></span>
     <button class="secondary" id="hd-edit">Modifier</button>
-    <button class="secondary print-btn" onclick="window.print()">Imprimer l'attachement</button>
+    <button class="secondary print-btn" onclick="window.print()">Imprimer l'attachement</button>${boutonsEnvoi('attachement', a.id, 'Envoyer l\'attachement')}
     ${['Ouvert', 'Terminé'].includes(st) ? '<button class="secondary" id="hd-cde">Demander une commande au client</button>' : ''}
     ${['Ouvert', 'Terminé', 'Commande demandée'].includes(st) && !f ? '<button id="hd-fact">Facturer</button>' : ''}
     ${f ? `<a class="btn secondary" href="#/facture/${f.id}">Facture ${esc(f.numero || '')}</a>` : ''}
@@ -68,6 +68,7 @@ function horsDevisView(a) {
   <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${a.clientId}">${esc(clientName(a.clientId))}</a>` : '—'}
     ${a.contactId ? ` · Demandeur : ${esc(contactName(Store.get('contacts', a.contactId)))}` : ''}${a.siteId ? ` · ${esc(siteLabel(siteOf(a.clientId, a.siteId)))}` : ''}
     · Chargé d'affaires : ${esc(userName(a.chargeId))} · ouvert le ${dateFr(a.dateCreation)}${a.refCommande ? ` · <strong>commande client n° ${esc(a.refCommande)}</strong>` : ''}</p>
+  ${envoisHtml('affaires', a.id)}
   ${a.demande ? `<p class="note pre">${esc(a.demande)}</p>` : ''}
   ${bon ? `<p class="note">Bon d'intervention signé par ${esc(bon.signataireNom)} le ${dateFr(bon.date)} : <a href="#/bon/${bon.id}">voir le bon</a>. ${a.refCommande ? 'Commande reçue : vous pouvez facturer.' : 'Demandez la commande au client ou facturez directement.'}</p>` : ''}
 

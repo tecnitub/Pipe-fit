@@ -75,14 +75,14 @@ function situationEditor(id) {
     <a href="#/situations" class="btn secondary">← Situations</a>
     <a href="#/chantier/${sit.affaireId}" class="btn secondary">Chantier ${esc(a.code || '')}</a>
     <span class="spacer"></span>
-    <button class="secondary print-btn" onclick="window.print()">Imprimer le BL</button>
+    <button class="secondary print-btn" onclick="window.print()">Imprimer le BL</button>${boutonsEnvoi('situation', sit.id)}
     ${sit.statut === 'Brouillon' ? '<button id="proposer">Proposer à la maîtrise d\'œuvre</button>' : ''}
     ${sit.statut === 'Proposée' ? '<button id="accepter">BL accepté : générer la facture</button><button class="secondary" id="refuser">BL refusé</button>' : ''}
     ${sit.statut === 'Refusée' || sit.statut === 'Proposée' ? '<button class="secondary" id="brouillon">Corriger (repasser en brouillon)</button>' : ''}
     ${f ? `<a class="btn" href="#/facture/${f.id}">Facture ${esc(f.numero)}</a>` : ''}
     ${sit.statut !== 'Acceptée' ? '<button class="danger" id="del">Supprimer</button>' : ''}
   </div>
-  <h1>Situation n° ${situationRang(sit)} · ${esc(sit.numero || '')} ${badge(sit.statut)}</h1>
+  <h1>Situation n° ${situationRang(sit)} · ${esc(sit.numero || '')} ${badge(sit.statut)}</h1>${envoisHtml('situations', sit.id)}
   <p class="muted">Chantier ${esc(affaireLabel(a))} · Devis ${esc(dv.numero || '')} · ${c.prev ? `situation précédente acceptée : ${esc(c.prev.numero)}` : 'première situation'}</p>
   ${a.okFacturation ? `<p class="note">Réception signée le ${dateFr(a.dateReception)} : feu vert pour facturer le solde des travaux.</p>` : ''}
 

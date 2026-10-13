@@ -157,6 +157,68 @@ test('droits par rôle, conflits de version et numérotation', async () => {
   assert.ok(audit.some(a => a.login === 'claire' && a.action === 'modification'));
 });
 
+test('envoi par e-mail via Microsoft 365 (Graph simulé)', async () => {
+  const http = require('node:http');
+  const recus = [];
+  const graph = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', c => { body += c; });
+    req.on('end', () => {
+      if (req.url.endsWith('/oauth2/v2.0/token')) {
+        const p = new URLSearchParams(body);
+        if (p.get('client_secret') !== 'secret-ok') { res.writeHead(401, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'invalid_client', error_description: 'Secret invalide' })); }
+        res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ access_token: 'jeton', expires_in: 3600 }));
+      }
+      recus.push({ url: req.url, auth: req.headers.authorization, body: JSON.parse(body) });
+      res.writeHead(202); res.end();
+    });
+  });
+  await new Promise(r => graph.listen(0, '127.0.0.1', r));
+  const g = `http://127.0.0.1:${graph.address().port}`;
+  process.env.M365_LOGIN_URL = g; process.env.M365_GRAPH_URL = g;
+  try {
+    const admin = await login('admin', 'admin-test-pw');
+    await call('POST', '/api/accounts', { login: 'paul', password: 'motdepasse4', role: 'charge', nom: 'Paul' }, admin);
+    await call('POST', '/api/accounts', { login: 'op', password: 'motdepasse5', role: 'atelier', nom: 'Op' }, admin);
+    const paul = await login('paul', 'motdepasse4'), op = await login('op', 'motdepasse5');
+    const mail = { to: ['t.girard@laiterie-alpes.example'], subject: 'Devis', html: '<p>Bonjour</p>', type: 'devis', numero: 'DV-1', ref: { col: 'devis', id: 'dv1' },
+      attachments: [{ name: 'Devis DV-1.pdf', base64: Buffer.from('%PDF-1.4').toString('base64') }] };
+    assert.strictEqual((await call('POST', '/api/mail', mail, op)).status, 403);
+    assert.strictEqual((await call('POST', '/api/mail', mail, paul)).status, 400); // non configuré
+    // Configuration : réservée à l'administrateur, secret jamais renvoyé
+    assert.strictEqual((await call('PUT', '/api/m365', { tenantId: 't', clientId: 'c', actif: true }, paul)).status, 403);
+    assert.strictEqual((await call('PUT', '/api/m365', { tenantId: 't', clientId: 'c', actif: true }, admin)).status, 400);
+    const cfg = await call('PUT', '/api/m365', { tenantId: 'mon-tenant', clientId: 'c', clientSecret: 'secret-ok', actif: true }, admin);
+    assert.deepStrictEqual(cfg.body, { tenantId: 'mon-tenant', clientId: 'c', actif: true, secretDefini: true });
+    assert.ok(!JSON.stringify((await call('GET', '/api/data', null, admin)).body).includes('secret-ok'));
+    assert.strictEqual((await call('GET', '/api/me', null, paul)).body.m365, true);
+    // Adresse d'envoi obligatoire sur le compte
+    assert.strictEqual((await call('POST', '/api/mail', mail, paul)).status, 400);
+    const acc = (await call('GET', '/api/accounts', null, admin)).body.find(a => a.login === 'paul');
+    assert.strictEqual((await call('PUT', `/api/accounts/${acc.id}`, { email: 'pas-une-adresse' }, admin)).status, 400);
+    assert.strictEqual((await call('PUT', `/api/accounts/${acc.id}`, { email: 'p.dupont@pipefit.example' }, admin)).status, 200);
+    assert.strictEqual((await call('POST', '/api/mail', { ...mail, to: ['x@y'] }, paul)).status, 400);
+    assert.strictEqual((await call('POST', '/api/mail', { ...mail, attachments: [{ name: 'virus.exe', base64: 'AA==' }] }, paul)).status, 400);
+    const ok = await call('POST', '/api/mail', mail, paul);
+    assert.strictEqual(ok.status, 200);
+    assert.strictEqual(recus.length, 1);
+    assert.strictEqual(recus[0].url, '/v1.0/users/p.dupont%40pipefit.example/sendMail');
+    assert.strictEqual(recus[0].auth, 'Bearer jeton');
+    assert.strictEqual(recus[0].body.saveToSentItems, true);
+    assert.strictEqual(recus[0].body.message.attachments[0].name, 'Devis DV-1.pdf');
+    assert.strictEqual(recus[0].body.message.toRecipients[0].emailAddress.address, 't.girard@laiterie-alpes.example');
+    // Historique de l'envoi rattaché au document
+    const envoi = (await call('GET', '/api/data', null, admin)).body.envois.find(e => e.id === ok.body.id);
+    assert.strictEqual(envoi.docId, 'dv1');
+    assert.strictEqual(envoi.expediteur, 'p.dupont@pipefit.example');
+    // Mauvais secret : erreur explicite
+    await call('PUT', '/api/m365', { tenantId: 'mon-tenant', clientId: 'c', clientSecret: 'mauvais', actif: true }, admin);
+    const ko = await call('POST', '/api/mail', mail, paul);
+    assert.strictEqual(ko.status, 502);
+    assert.match(ko.body.error, /Secret invalide/);
+  } finally { graph.close(); }
+});
+
 test('déconnexion invalide la session', async () => {
   const c = await login('admin', 'admin-test-pw');
   await call('POST', '/api/logout', {}, c);

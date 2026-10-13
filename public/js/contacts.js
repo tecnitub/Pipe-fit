@@ -37,6 +37,7 @@ const entrepriseFields = [
   { key: 'notes', label: 'Notes', type: 'textarea' },
 ];
 const contactFields = [
+  { key: 'civilite', label: 'Civilité', type: 'select', options: v => optionsStr(['', 'Madame', 'Monsieur'], v || '') },
   { key: 'prenom', label: 'Prénom' },
   { key: 'nom', label: 'Nom' },
   { key: 'fonction', label: 'Fonction', datalist: FONCTIONS },

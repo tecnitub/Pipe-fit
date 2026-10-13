@@ -53,10 +53,10 @@ function commandeEditor(id) {
     <a href="#/commandes" class="btn secondary">← Commandes</a>
     ${c.affaireId ? `<a href="#/chantier/${c.affaireId}" class="btn secondary">Chantier ${esc(af.code || '')}</a>` : ''}
     <span class="spacer"></span>
-    <button class="secondary print-btn" onclick="window.print()">Imprimer / PDF</button>
+    <button class="secondary print-btn" onclick="window.print()">Imprimer</button>${boutonsEnvoi('demandePrix', c.id, 'Demande de prix', false)}${boutonsEnvoi('commande', c.id, 'Envoyer la commande')}
     <button class="danger" id="del">Supprimer</button>
   </div>
-  <h1>Commande ${esc(c.numero || '')} ${badge(c.statut)}</h1>
+  <h1>Commande ${esc(c.numero || '')} ${badge(c.statut)}</h1>${envoisHtml('commandes', c.id)}
   <div class="card no-print">
     <div class="grid2">
       <div class="field"><label for="c-four">Fournisseur</label><select id="c-four">${options(fournisseursList(), c.fournisseurId)}</select></div>
@@ -83,20 +83,8 @@ function commandeEditor(id) {
   </table></div>
   <div class="toolbar no-print" style="margin-top:8px">${articleSelect('c-art')}<input id="c-art-q" type="number" step="any" value="1" style="width:90px" aria-label="Quantité"><button class="secondary" id="c-add">Ajouter</button><button class="secondary" id="c-free">Ligne libre</button></div>
 
-  <details class="no-print preview"><summary>Aperçu du bon de commande</summary><div class="doc-print">${bonCommande()}</div></details>
-  <div class="print-only doc-print">${bonCommande()}</div>`;
-
-  function bonCommande() {
-    const o = Doc.t('commande');
-    return `${Doc.entete('commande', `${o.titre} ${c.numero || ''}`, `Date : ${dateFr(c.date)}${af.code && o.chantier ? `<br>Chantier : ${esc(af.code)} – ${esc(af.nom)}` : ''}${c.dateLivraison && o.livraison ? `<br>Livraison souhaitée : ${dateFr(c.dateLivraison)}` : ''}`)}
-      <div class="doc-parties"><div><strong>${esc(f.nom || '—')}</strong>${fSite ? `<br>${esc(fullAddress(fSite))}` : ''}${f.email ? `<br>${esc(f.email)}` : ''}</div>
-      <div>${!o.livraison ? '' : livSite ? `Livraison : <strong>${esc(clientName(af.clientId))} – ${esc(livSite.libelle)}</strong><br>${esc(fullAddress(livSite))}${livSite.acces ? `<br>${esc(livSite.acces)}` : ''}` : `Livraison à notre atelier : ${esc(s.adresse)}`}</div></div>
-      ${Doc.intro('commande')}
-      <div class="table-wrap"><table class="doc-lines${o.prix ? '' : ' compact'}"><tr><th>Désignation</th><th class="num">Qté</th><th>Unité</th>${o.prix ? '<th class="num">PU HT</th><th class="num">Total HT</th>' : ''}</tr>
-      ${(c.lignes || []).map(l => `<tr><td>${esc(l.designation)}</td><td class="num">${fmt(l.qte, 2)}</td><td>${esc(l.unite)}</td>${o.prix ? `<td class="num">${eur(l.pu)}</td><td class="num">${eur(num(l.qte) * num(l.pu))}</td>` : ''}</tr>`).join('')}
-      </table></div>${o.prix ? `<table class="totals"><tr class="grand"><td>Total HT</td><td class="num">${eur(total)}</td></tr></table>` : ''}
-      ${Doc.pied('commande')}`;
-  }
+  <details class="no-print preview"><summary>Aperçu du bon de commande</summary><div class="doc-print">${commandeDocument(c)}</div></details>
+  <div class="print-only doc-print">${commandeDocument(c)}</div>`;
 }
 
 Views.commandes.bind = (root, params, query) => {
@@ -140,3 +128,18 @@ Views.commandes.bind = (root, params, query) => {
     if (ok) { Store.remove('commandes', c.id); location.hash = '#/commandes'; }
   });
 };
+
+// Bon de commande ou demande de prix (même document, sans prix pour la demande)
+function commandeDocument(c, type = 'commande') {
+  const s = Store.data.settings, f = entreprise(c.fournisseurId), fSite = billingSite(c.fournisseurId);
+  const af = affaireOf(c.affaireId), livSite = siteOf(af.clientId, af.siteId), total = Calc.commande(c).total;
+  const o = { ...Doc.t(type), prix: type === 'commande' && Doc.t('commande').prix };
+  return `${Doc.entete(type, `${o.titre} ${type === 'commande' ? c.numero || '' : ''}`, `${type === 'commande' ? '' : `Référence ${esc(c.numero || '')}<br>`}Date : ${dateFr(type === 'commande' ? c.date : isoDate(new Date()))}${af.code && o.chantier ? `<br>Chantier : ${esc(af.code)} – ${esc(af.nom)}` : ''}${c.dateLivraison && o.livraison ? `<br>Livraison souhaitée : ${dateFr(c.dateLivraison)}` : ''}`)}
+    <div class="doc-parties"><div><strong>${esc(f.nom || '—')}</strong>${fSite ? `<br>${esc(fullAddress(fSite))}` : ''}${f.email ? `<br>${esc(f.email)}` : ''}</div>
+    <div>${!o.livraison ? '' : livSite ? `Livraison : <strong>${esc(clientName(af.clientId))} – ${esc(livSite.libelle)}</strong><br>${esc(fullAddress(livSite))}${livSite.acces ? `<br>${esc(livSite.acces)}` : ''}` : `Livraison à notre atelier : ${esc(s.adresse)}`}</div></div>
+    ${Doc.intro(type)}
+    <div class="table-wrap"><table class="doc-lines${o.prix ? '' : ' compact'}"><tr><th>Désignation</th><th class="num">Qté</th><th>Unité</th>${o.prix ? '<th class="num">PU HT</th><th class="num">Total HT</th>' : ''}</tr>
+    ${(c.lignes || []).map(l => `<tr><td>${esc(l.designation)}</td><td class="num">${fmt(l.qte, 2)}</td><td>${esc(l.unite)}</td>${o.prix ? `<td class="num">${eur(l.pu)}</td><td class="num">${eur(num(l.qte) * num(l.pu))}</td>` : ''}</tr>`).join('')}
+    </table></div>${o.prix ? `<table class="totals"><tr class="grand"><td>Total HT</td><td class="num">${eur(total)}</td></tr></table>` : ''}
+    ${Doc.pied(type)}`;
+}

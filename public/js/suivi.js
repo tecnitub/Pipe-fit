@@ -309,8 +309,8 @@ Views.pv = params => {
   const titre = pv.type === 'levee' ? 'PROCÈS-VERBAL DE LEVÉE DES RÉSERVES' : 'PROCÈS-VERBAL DE RÉCEPTION DES TRAVAUX';
   const coche = v => (pv.decision === v ? '☒' : '☐');
   return `<div class="toolbar"><a href="#/reception/${a.id}" class="btn secondary">← Réception</a><a href="#/chantier/${a.id}" class="btn secondary">Chantier</a><span class="spacer"></span>
-    <button class="secondary print-btn" onclick="window.print()">Imprimer / PDF</button></div>
-  <h1 class="no-print">${pv.type === 'levee' ? 'PV de levée des réserves' : 'PV de réception'} ${esc(pv.numero || '')} <span class="badge ${pv.statut === 'Signé' ? 'b-ok' : 'b-warn'}">${esc(pv.statut)}</span></h1>
+    <button class="secondary print-btn" onclick="window.print()">Imprimer</button>${boutonsEnvoi('pv', pv.id)}</div>
+  <h1 class="no-print">${pv.type === 'levee' ? 'PV de levée des réserves' : 'PV de réception'} ${esc(pv.numero || '')} <span class="badge ${pv.statut === 'Signé' ? 'b-ok' : 'b-warn'}">${esc(pv.statut)}</span></h1>${envoisHtml('receptions', pv.id)}
   <div class="doc-print">
     ${Doc.entete('pv', titre, `N° ${esc(pv.numero || '')} du ${dateFr(pv.date)}${pv.lieu ? `<br>Lieu : ${esc(pv.lieu)}` : ''}`)}
     <div class="doc-parties"><div>Maître d'ouvrage : <strong>${esc(clientName(a.clientId))}</strong>${site ? `<br>${esc(site.libelle)}<br>${esc(fullAddress(site))}` : ''}</div>
@@ -340,8 +340,8 @@ Views.bon = params => {
   const tempsBon = hd ? v.temps.filter(t => !r.signeLe || t.date <= r.date) : Store.all('temps').filter(t => t.affaireId === a.id && t.date === r.date && (r.intervenants || []).includes(t.userId));
   const consos = hd ? v.consos.filter(c => !r.signeLe || (c.date || '') <= r.date) : [];
   const retour = Store.me.role === 'atelier' ? '#/pointage/rapports' : `#/chantier/${a.id}`, o = Doc.t('bon');
-  return `<div class="toolbar"><a href="${retour}" class="btn secondary">← Retour</a><span class="spacer"></span><button class="secondary print-btn" onclick="window.print()">Imprimer / PDF</button></div>
-  <h1 class="no-print">Bon d'intervention ${esc(r.numero || '')} ${r.signatureClientId ? '<span class="badge b-ok">Signé</span>' : '<span class="badge b-warn">Non signé</span>'}</h1>
+  return `<div class="toolbar"><a href="${retour}" class="btn secondary">← Retour</a><span class="spacer"></span><button class="secondary print-btn" onclick="window.print()">Imprimer</button>${boutonsEnvoi('bon', r.id)}</div>
+  <h1 class="no-print">Bon d'intervention ${esc(r.numero || '')} ${r.signatureClientId ? '<span class="badge b-ok">Signé</span>' : '<span class="badge b-warn">Non signé</span>'}</h1>${envoisHtml('rapports', r.id)}
   <div class="doc-print">
     ${Doc.entete('bon', o.titre, `N° ${esc(r.numero || '')} du ${dateFr(r.date)}<br>${hd ? 'Intervention hors devis' : 'Chantier'} ${esc(a.code || '')}${a.refCommande ? `<br>Commande n° ${esc(a.refCommande)}` : ''}`)}
     <div class="doc-parties"><div>Client : <strong>${esc(clientName(a.clientId))}</strong>${site ? `<br>${esc(site.libelle)}<br>${esc(fullAddress(site))}` : ''}</div>

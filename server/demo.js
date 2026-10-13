@@ -20,8 +20,8 @@ function demoData() {
   const w = n => isoWeek(addDays(today, n * 7));
 
   const users = [
-    { id: 'u1', nom: 'Claire Martin', role: 'charge', categorieId: '', tauxHoraire: 68, salaireHoraire: 0, capaciteHebdo: 35 },
-    { id: 'u2', nom: 'Julien Bernard', role: 'charge', categorieId: '', tauxHoraire: 68, salaireHoraire: 0, capaciteHebdo: 35 },
+    { id: 'u1', nom: 'Claire Martin', role: 'charge', categorieId: '', tauxHoraire: 68, salaireHoraire: 0, capaciteHebdo: 35, email: 'c.martin@pipefit.example', tel: '06 20 00 00 01' },
+    { id: 'u2', nom: 'Julien Bernard', role: 'charge', categorieId: '', tauxHoraire: 68, salaireHoraire: 0, capaciteHebdo: 35, email: 'j.bernard@pipefit.example', tel: '06 20 00 00 02' },
     { id: 'o1', nom: 'Kevin Roux', role: 'atelier', categorieId: 'mo1', tauxHoraire: 37, salaireHoraire: 17.5, capaciteHebdo: 35 },
     { id: 'o2', nom: 'Ahmed Haddad', role: 'atelier', categorieId: 'mo1', tauxHoraire: 38, salaireHoraire: 18, capaciteHebdo: 35 },
     { id: 'o3', nom: 'Lucas Petit', role: 'atelier', categorieId: 'mo2', tauxHoraire: 33, salaireHoraire: 15.5, capaciteHebdo: 35 },
@@ -86,16 +86,16 @@ function demoData() {
       adresses: [site('s10', 'Agence de Saint-Fons', '22 rue de la Chimie', '69190', 'Saint-Fons', true)] },
   ];
   const contacts = [
-    { id: 'k1', prenom: 'Marc', nom: 'Durand', fonction: 'Chargé de travaux', entrepriseId: 'e1', siteId: 's2', tel: '04 42 00 00 01', mobile: '06 10 00 00 01', email: 'm.durand@petrosud.example' },
-    { id: 'k2', prenom: 'Sophie', nom: 'Lambert', fonction: 'Acheteuse', entrepriseId: 'e1', siteId: 's1', tel: '04 91 00 00 02', mobile: '', email: 's.lambert@petrosud.example' },
-    { id: 'k3', prenom: 'Thomas', nom: 'Girard', fonction: 'Chargé de travaux', entrepriseId: 'e2', siteId: 's4', tel: '04 50 00 00 03', mobile: '06 10 00 00 03', email: 't.girard@laiterie-alpes.example' },
-    { id: 'k4', prenom: 'Nadia', nom: 'Benali', fonction: 'Responsable maintenance', entrepriseId: 'e3', siteId: 's5', tel: '04 72 00 00 04', mobile: '06 10 00 00 04', email: 'n.benali@pharmasynth.example' },
-    { id: 'k5', prenom: 'Pierre', nom: 'Morel', fonction: 'Chargé de travaux', entrepriseId: 'e4', siteId: 's7', tel: '04 75 00 00 05', mobile: '06 10 00 00 05', email: 'p.morel@evr.example' },
-    { id: 'k6', prenom: 'Julie', nom: 'Fabre', fonction: 'Commerciale', entrepriseId: 'e5', siteId: 's8', tel: '04 78 11 11 12', mobile: '', email: 'j.fabre@inoxdistri.example' },
-    { id: 'k8', prenom: 'Sandra', nom: 'Vidal', fonction: 'Responsable planning', entrepriseId: 'e7', siteId: 's10', tel: '04 78 33 33 34', mobile: '', email: 's.vidal@sir.example' },
-    { id: 'k10', prenom: 'Jérôme', nom: 'Faure', fonction: 'Responsable maintenance PM2', entrepriseId: 'e10', siteId: 's14', tel: '04 76 00 00 12', mobile: '06 11 22 33 44', email: 'j.faure@pdd.example' },
-    { id: 'k9', prenom: 'Camille', nom: 'Rousset', fonction: "Maître d'œuvre (OPC)", entrepriseId: 'e9', siteId: 's12', tel: '04 50 55 55 56', mobile: '06 10 00 00 09', email: 'c.rousset@ipa.example' },
-    { id: 'k7', prenom: 'Luc', nom: 'Perrin', fonction: 'Technico-commercial', entrepriseId: 'e6', siteId: 's9', tel: '04 76 22 22 23', mobile: '06 10 00 00 07', email: 'l.perrin@ria.example' },
+    { id: 'k1', civilite: 'Monsieur', prenom: 'Marc', nom: 'Durand', fonction: 'Chargé de travaux', entrepriseId: 'e1', siteId: 's2', tel: '04 42 00 00 01', mobile: '06 10 00 00 01', email: 'm.durand@petrosud.example' },
+    { id: 'k2', civilite: 'Madame', prenom: 'Sophie', nom: 'Lambert', fonction: 'Acheteuse', entrepriseId: 'e1', siteId: 's1', tel: '04 91 00 00 02', mobile: '', email: 's.lambert@petrosud.example' },
+    { id: 'k3', civilite: 'Monsieur', prenom: 'Thomas', nom: 'Girard', fonction: 'Chargé de travaux', entrepriseId: 'e2', siteId: 's4', tel: '04 50 00 00 03', mobile: '06 10 00 00 03', email: 't.girard@laiterie-alpes.example' },
+    { id: 'k4', civilite: 'Madame', prenom: 'Nadia', nom: 'Benali', fonction: 'Responsable maintenance', entrepriseId: 'e3', siteId: 's5', tel: '04 72 00 00 04', mobile: '06 10 00 00 04', email: 'n.benali@pharmasynth.example' },
+    { id: 'k5', civilite: 'Monsieur', prenom: 'Pierre', nom: 'Morel', fonction: 'Chargé de travaux', entrepriseId: 'e4', siteId: 's7', tel: '04 75 00 00 05', mobile: '06 10 00 00 05', email: 'p.morel@evr.example' },
+    { id: 'k6', civilite: 'Madame', prenom: 'Julie', nom: 'Fabre', fonction: 'Commerciale', entrepriseId: 'e5', siteId: 's8', tel: '04 78 11 11 12', mobile: '', email: 'j.fabre@inoxdistri.example' },
+    { id: 'k8', civilite: 'Madame', prenom: 'Sandra', nom: 'Vidal', fonction: 'Responsable planning', entrepriseId: 'e7', siteId: 's10', tel: '04 78 33 33 34', mobile: '', email: 's.vidal@sir.example' },
+    { id: 'k10', civilite: 'Monsieur', prenom: 'Jérôme', nom: 'Faure', fonction: 'Responsable maintenance PM2', entrepriseId: 'e10', siteId: 's14', tel: '04 76 00 00 12', mobile: '06 11 22 33 44', email: 'j.faure@pdd.example' },
+    { id: 'k9', civilite: 'Madame', prenom: 'Camille', nom: 'Rousset', fonction: "Maître d'œuvre (OPC)", entrepriseId: 'e9', siteId: 's12', tel: '04 50 55 55 56', mobile: '06 10 00 00 09', email: 'c.rousset@ipa.example' },
+    { id: 'k7', civilite: 'Monsieur', prenom: 'Luc', nom: 'Perrin', fonction: 'Technico-commercial', entrepriseId: 'e6', siteId: 's9', tel: '04 76 22 22 23', mobile: '06 10 00 00 07', email: 'l.perrin@ria.example' },
   ];
   // Composants d'ouvrage : fourniture (article × quantité par unité) ou main-d'œuvre (catégorie × heures par unité)
   const F = (aid, qte) => { const a = articles.find(x => x.id === aid); return { type: 'f', articleId: aid, designation: a.designation, unite: a.unite, qte, pu: a.prixVente, cout: a.coutRevient, poids: a.poidsUnitaire }; };
@@ -322,6 +322,13 @@ function demoData() {
       signatureClientId: 'img-sig', signatureEntrepriseId: 'img-sig', signataireEntreprise: 'Claire Martin', signeLe: d(-66) + 'T11:15:00', statut: 'Signé' },
   ];
 
+  // Historique d'envois par e-mail (Microsoft 365)
+  const envoi = (id, jours, type, col, docId, numero, to, objet, par, expediteur) => ({ id, date: d(jours) + 'T09:12:00', type, col, docId, numero, to: [to], cc: [], objet,
+    pieces: [`${objet.split(' – ')[0]}.pdf`], mode: 'Microsoft 365', expediteur, par });
+  const envois = [
+    envoi('env1', -54, 'devis', 'devis', 'dv1', `DV-${Y}-0001`, 't.girard@laiterie-alpes.example', `Devis DV-${Y}-0001 – Ligne NEP inox – Usine de Rumilly`, 'Claire Martin', 'c.martin@pipefit.example'),
+    envoi('env2', -2, 'situation', 'situations', 'sit4', `BL-${Y}-0004`, 'c.rousset@ipa.example', 'Proposition de situation n° 2 – CH-' + Y + '-001 – Ligne NEP inox – Usine de Rumilly', 'Claire Martin', 'c.martin@pipefit.example'),
+  ];
   return {
     files: { 'img-logo': IMAGES.logo, 'img-sig': IMAGES.signature, 'img-rack1': IMAGES.rack1, 'img-rack2': IMAGES.rack2 },
     settings: { societe: 'Pipe-Fit Industrie', adresse: 'ZI des Forges – 69800 Saint-Priest', siret: '000 000 000 00000', tva: 20, tauxHoraireDefaut: 58, delaiPaiement: 45, dureeHebdo: 35, seuilHS50: 43, montantPanier: 10.5,
@@ -329,7 +336,7 @@ function demoData() {
         tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',
         types: { devis: { conditions: 'Acompte de 30 % à la commande. Travaux réalisés selon les normes EN 13480 et le DTU en vigueur. Hors génie civil, calorifuge et échafaudages sauf mention contraire.' },
           facture: { conditions: 'Paiement par virement à 45 jours fin de mois.' } } } },
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations,
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois,
   };
 }
 

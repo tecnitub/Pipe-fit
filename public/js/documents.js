@@ -16,6 +16,8 @@ const DOC_TYPES = {
     ['marche', 'Colonne montant du marché', true], ['precedent', 'Colonnes cumul et précédent', true], ['maitreOuvrage', 'Maître d\'ouvrage et site', true], ['signature', 'Cadre « Bon pour accord » de la maîtrise d\'œuvre', true]] },
   commande: { label: 'Bon de commande fournisseur', titre: 'BON DE COMMANDE', conditions: 'Merci de rappeler le numéro de commande sur le bon de livraison et la facture.', options: [
     ['prix', 'Prix (sinon : bon de commande non chiffré)', true], ['chantier', 'Chantier concerné', true], ['livraison', 'Adresse et date de livraison', true]] },
+  demandePrix: { label: 'Demande de prix fournisseur', titre: 'DEMANDE DE PRIX', conditions: 'Merci de nous faire parvenir votre meilleure offre, avec le délai de livraison et la validité de vos prix.', options: [
+    ['chantier', 'Chantier concerné', true], ['livraison', 'Adresse et date de livraison', true]] },
   attachement: { label: 'Attachement hors devis', titre: 'ATTACHEMENT DE TRAVAUX EN RÉGIE', conditions: '', options: [
     ['prix', 'Prix et montants', true], ['demande', 'Description de la demande', true], ['contact', 'Demandeur', true], ['signature', 'Cadre « Bon pour commande »', true]] },
   bon: { label: 'Bon d\'intervention', titre: 'BON D\'INTERVENTION', conditions: '', options: [
@@ -89,6 +91,7 @@ function apercuDocument(type) {
   if (type === 'facture' && (x = first('factures'))) return rendre(Views.facture([x.id]));
   if (type === 'situation' && (x = first('situations'))) return rendre(Views.situations([x.id], new URLSearchParams()));
   if (type === 'commande' && (x = first('commandes', c => (c.lignes || []).length))) return rendre(Views.commandes([x.id], new URLSearchParams()));
+  if (type === 'demandePrix' && (x = first('commandes', c => (c.lignes || []).length))) return commandeDocument(x, 'demandePrix');
   if (type === 'attachement' && (x = first('affaires', estHorsDevis))) return attachementHD(x, Calc.horsDevis(x));
   if (type === 'bon' && (x = first('rapports', r => r.signatureClientId) || first('rapports'))) return rendre(Views.bon([x.id]));
   if (type === 'pv' && (x = first('receptions'))) return rendre(Views.pv([x.id]));

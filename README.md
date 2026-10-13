@@ -64,6 +64,24 @@ Ne pas exposer le port 3000 en HTTP simple sur Internet.
 **Sauvegarde** : copier régulièrement le dossier `data/` (ou le volume Docker), ou utiliser
 **Paramètres → Exporter (JSON)**.
 
+## Envoi des e-mails par Microsoft 365
+
+1. Dans le portail Azure (**Microsoft Entra ID → Inscriptions d'applications → Nouvelle inscription**), créer une
+   application « Pipe-Fit CRM » (comptes de cet annuaire uniquement).
+2. **Autorisations d'API → Ajouter → Microsoft Graph → Autorisations d'application → `Mail.Send`**, puis
+   « Accorder un consentement d'administrateur ».
+3. **Certificats et secrets → Nouveau secret client** : copier la *valeur* (affichée une seule fois).
+4. Dans le CRM (administrateur) : **Paramètres → E-mails et Microsoft 365** : ID de l'annuaire (locataire),
+   ID d'application, secret, cocher « Activer », puis « Tester » (un e-mail de test est envoyé à votre adresse).
+5. **Paramètres → Comptes** : renseigner l'adresse Microsoft 365 de chaque utilisateur (c'est l'expéditeur de ses envois).
+
+Le secret est stocké sur le serveur uniquement (jamais renvoyé aux navigateurs ni inclus dans l'export JSON).
+L'autorisation `Mail.Send` d'application permet d'envoyer depuis n'importe quelle boîte du locataire : il est
+recommandé de la limiter aux boîtes des utilisateurs du CRM par une *stratégie d'accès d'application* Exchange
+(`New-ApplicationAccessPolicy -AccessRight RestrictAccess -PolicyScopeGroupId <groupe>`). Le serveur doit pouvoir
+joindre `login.microsoftonline.com` et `graph.microsoft.com` en HTTPS. Sans Microsoft 365, l'envoi prépare un
+brouillon Outlook (.eml) avec le PDF joint : une fois envoyé depuis Outlook, il apparaît aussi dans les éléments envoyés.
+
 ## Utilisation à plusieurs
 
 - **Comptes et rôles** (Paramètres, administrateur) :
@@ -121,6 +139,7 @@ Ne pas exposer le port 3000 en HTTP simple sur Internet.
 | **Retenue de garantie** | Au choix par chantier (taux, ou caution bancaire) : déduite du TTC des factures de situation (net à payer), cumul suivi sur le chantier, libération après la réception. |
 | **Import / export Excel** | Fournitures, taux de main-d'œuvre, entreprises (feuille « Sites » pour les adresses multiples) et contacts : import d'un fichier .xlsx ou .csv existant (colonnes reconnues automatiquement, ajustables, aperçu), mise à jour des fiches existantes (par ID, référence, SIRET, nom ou e-mail) et ajout des nouvelles, puis export Excel modifiable et réimportable. Une cellule vide ne remplace pas la valeur existante. |
 | **Mise en page des documents** | Paramètres → Documents (administrateur) : logo (PNG transparent), position et taille, couleur, police, coordonnées (téléphone, e-mail, site, TVA, forme juridique, capital, RCS, APE), RIB et pied de page légal communs à toute la liasse. Pour chaque document (devis, facture, situation/BL, bon de commande, attachement, bon d'intervention, PV) : titre, texte d'introduction, conditions, et éléments affichés ou masqués (N° de prix, quantités, prix unitaires ou prix par chapitre, descriptifs, sous-totaux, remises, contact, lieu, chargé d'affaires, RIB, pénalités de retard, horaires, photos…). Aperçu en direct sur un document réel. |
+| **E-mails et PDF** | Bouton « PDF » et « ✉ Envoyer par e-mail » sur les devis, factures, situations (BL), commandes, demandes de prix fournisseur, attachements, bons d'intervention et PV. Le PDF est généré dans le navigateur (mise en page des documents, texte sélectionnable). Destinataires choisis parmi les contacts de l'entreprise (À / Cc, adresse générale, adresses libres, copie au chargé d'affaires), objet et message pré-remplis par un **modèle paramétrable** par type de document (variables {contact}, {numero}, {montant_ttc}, {echeance}…, signature commune). Envoi par **Microsoft 365** (le message part de la boîte de l'utilisateur et se retrouve dans ses « Éléments envoyés ») ou **brouillon Outlook** (.eml avec le PDF joint). Chaque envoi est historisé sur le document ; un devis envoyé passe en « Envoyé », un BL en « Proposée », une commande en « Envoyée ». |
 | **Planning** | Charge hebdomadaire par personne face à sa capacité, heures pointées, reste à planifier par chantier. |
 | **Rôles** | Administrateur ; chargé d'affaires ; opérateur (pointe uniquement ses propres heures). |
 
@@ -130,9 +149,10 @@ Ne pas exposer le port 3000 en HTTP simple sur Internet.
 server/server.js   API REST, connexion, droits, temps réel (SSE), fichiers statiques
 server/db.js       base SQLite, mots de passe (scrypt), numérotation
 server/demo.js     données de démonstration
+server/m365.js     envoi des e-mails par Microsoft Graph
 public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
-public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, biblio.js, contacts.js : écrans métier
+public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, biblio.js, contacts.js : écrans métier
 installer/         installateur Windows (NSIS) : build.sh, PipeFitCRM.nsi, lanceur et service
 ```
 

@@ -6,6 +6,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const DB = require('./db');
 const { demoData, uid } = require('./demo');
+const M365 = require('./m365');
 
 const PORT = +process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -115,10 +116,13 @@ function currentAccount(req) {
   if (!token) return null;
   const s = db.prepare('SELECT * FROM sessions WHERE token = ?').get(token);
   if (!s || s.expires < Date.now()) return null;
-  const a = db.prepare('SELECT id, login, nom, role, user_id FROM accounts WHERE id = ?').get(s.account_id);
+  const a = db.prepare('SELECT id, login, nom, role, user_id, email FROM accounts WHERE id = ?').get(s.account_id);
   return a ? { ...a, token } : null;
 }
-const publicAccount = a => ({ id: a.id, login: a.login, nom: a.nom, role: a.role, userId: a.user_id });
+const publicAccount = a => ({ id: a.id, login: a.login, nom: a.nom, role: a.role, userId: a.user_id, email: a.email || '' });
+const EMAIL = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/;
+const m365Pret = () => { const c = DB.getConfig(db, 'm365'); return !!(c && c.actif && c.tenantId && c.clientId && c.clientSecret); };
+const MAIL_COLS = ['devis', 'factures', 'situations', 'commandes', 'affaires', 'rapports', 'receptions'];
 const labelOf = o => o.numero || o.code || o.ref || o.nom || o.designation || o.tache || '';
 
 // Limitation des tentatives de connexion (10 échecs / 15 min par adresse IP).
@@ -184,7 +188,7 @@ async function api(req, res, url) {
     db.prepare('DELETE FROM sessions WHERE token = ?').run(acc.token);
     return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(req, '', 0) });
   }
-  if (p[0] === 'me' && !p[1] && method === 'GET') return send(res, 200, publicAccount(acc));
+  if (p[0] === 'me' && !p[1] && method === 'GET') return send(res, 200, { ...publicAccount(acc), m365: m365Pret() });
   if (p[0] === 'me' && p[1] === 'password' && method === 'POST') {
     const { current, next } = await readBody(req);
     const a = db.prepare('SELECT pass FROM accounts WHERE id = ?').get(acc.id);
@@ -301,6 +305,41 @@ async function api(req, res, url) {
     }
   }
 
+  // Envoi d'un document par e-mail via Microsoft 365 (copie dans les éléments envoyés de l'expéditeur)
+  if (p[0] === 'mail' && method === 'POST') {
+    if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Droits insuffisants');
+    const cfg = DB.getConfig(db, 'm365');
+    if (!m365Pret()) return fail(res, 400, "L'envoi par Microsoft 365 n'est pas configuré (Paramètres → E-mails).");
+    if (!acc.email) return fail(res, 400, "Votre compte n'a pas d'adresse Microsoft 365 : demandez à l'administrateur de la renseigner (Paramètres → Comptes).");
+    const b = await readBody(req);
+    const liste = l => (Array.isArray(l) ? l : []).map(x => String(x).trim()).filter(Boolean);
+    const to = liste(b.to), cc = liste(b.cc), bcc = liste(b.bcc);
+    if (!to.length) return fail(res, 400, 'Aucun destinataire');
+    if (to.length + cc.length + bcc.length > 30 || [...to, ...cc, ...bcc].some(x => !EMAIL.test(x))) return fail(res, 400, 'Adresse e-mail invalide');
+    const subject = String(b.subject || '').slice(0, 255);
+    const html = String(b.html || '');
+    if (!subject || html.length > 300000) return fail(res, 400, 'Objet manquant ou message trop long');
+    const pieces = Array.isArray(b.attachments) ? b.attachments.slice(0, 5) : [];
+    let poids = 0;
+    for (const a of pieces) {
+      if (!a || !/^[\w .,()'°&+-]{1,120}\.pdf$/i.test(String(a.name || '')) || !/^[A-Za-z0-9+/=]+$/.test(String(a.base64 || ''))) return fail(res, 400, 'Pièce jointe invalide (PDF attendu)');
+      poids += a.base64.length * 3 / 4;
+    }
+    if (poids > 3 * 1024 * 1024) return fail(res, 400, 'Pièces jointes trop volumineuses (3 Mo maximum)');
+    const ref = b.ref && MAIL_COLS.includes(b.ref.col) ? { col: b.ref.col, id: String(b.ref.id || '') } : null;
+    try {
+      await M365.envoyer(cfg, acc.email, { to, cc, bcc, subject, html, attachments: pieces.map(a => ({ name: a.name, base64: a.base64 })) });
+    } catch (e) { return fail(res, 502, e.message); }
+    const id = uid(), now = new Date().toISOString();
+    const envoi = { id, date: now, type: String(b.type || ''), col: ref && ref.col, docId: ref && ref.id, numero: String(b.numero || ''), to, cc, objet: subject,
+      pieces: pieces.map(a => a.name), mode: 'Microsoft 365', expediteur: acc.email, par: acc.nom || acc.login };
+    db.prepare('INSERT INTO records (col, id, data, version, updated_at, updated_by) VALUES (?, ?, ?, 1, ?, ?)').run('envois', id, JSON.stringify(envoi), now, acc.nom || acc.login);
+    DB.audit(db, acc.login, 'envoi e-mail', 'envois', id, `${envoi.numero} → ${to.join(', ')}`);
+    const record = DB.getRecord(db, 'envois', id);
+    broadcast('change', { col: 'envois', record, client: req.headers['x-client-id'] || null });
+    return send(res, 200, record);
+  }
+
   /* --- Administration --- */
   if (acc.role !== 'admin') return fail(res, 403, 'Réservé aux administrateurs');
 
@@ -312,19 +351,49 @@ async function api(req, res, url) {
     return send(res, 200, s);
   }
 
+  // Connexion Microsoft 365 : le secret n'est jamais renvoyé au navigateur
+  if (p[0] === 'm365') {
+    const cfg = DB.getConfig(db, 'm365') || {};
+    const pub = () => ({ tenantId: cfg.tenantId || '', clientId: cfg.clientId || '', actif: !!cfg.actif, secretDefini: !!cfg.clientSecret });
+    if (!p[1] && method === 'GET') return send(res, 200, pub());
+    if (!p[1] && method === 'PUT') {
+      const b = await readBody(req);
+      const champ = v => String(v || '').trim().slice(0, 200);
+      Object.assign(cfg, { tenantId: champ(b.tenantId), clientId: champ(b.clientId), actif: !!b.actif });
+      if (b.clientSecret) cfg.clientSecret = String(b.clientSecret).trim().slice(0, 500);
+      if (b.effacerSecret) delete cfg.clientSecret;
+      if (cfg.actif && !(cfg.tenantId && cfg.clientId && cfg.clientSecret)) return fail(res, 400, 'Renseignez l\'ID de locataire, l\'ID d\'application et le secret avant d\'activer l\'envoi.');
+      DB.setConfig(db, 'm365', cfg);
+      M365.oublier();
+      DB.audit(db, acc.login, 'configuration Microsoft 365');
+      return send(res, 200, pub());
+    }
+    if (p[1] === 'test' && method === 'POST') {
+      if (!(cfg.tenantId && cfg.clientId && cfg.clientSecret)) return fail(res, 400, 'Configuration incomplète');
+      try {
+        await M365.jeton(cfg);
+        if (!acc.email) return send(res, 200, { ok: true, message: 'Connexion à Microsoft 365 réussie. Renseignez votre adresse dans votre compte pour tester un envoi.' });
+        await M365.envoyer(cfg, acc.email, { to: [acc.email], subject: 'Test Pipe-Fit CRM', html: '<p>Ce message de test a été envoyé par Pipe-Fit CRM via Microsoft 365.</p>' });
+        return send(res, 200, { ok: true, message: `Connexion réussie : un e-mail de test a été envoyé à ${acc.email} (visible aussi dans ses éléments envoyés).` });
+      } catch (e) { return fail(res, 502, e.message); }
+    }
+  }
+
   if (p[0] === 'accounts') {
     if (method === 'GET') {
-      return send(res, 200, db.prepare('SELECT id, login, nom, role, user_id, created_at FROM accounts ORDER BY login').all()
+      return send(res, 200, db.prepare('SELECT id, login, nom, role, user_id, email, created_at FROM accounts ORDER BY login').all()
         .map(a => ({ ...publicAccount(a), createdAt: a.created_at })));
     }
     const body = method === 'DELETE' ? {} : await readBody(req);
     if (body.role && !DB.ROLES.includes(body.role)) return fail(res, 400, 'Rôle invalide');
     if (body.password && String(body.password).length < 8) return fail(res, 400, 'Mot de passe : 8 caractères minimum');
+    if (body.email && !EMAIL.test(String(body.email).trim())) return fail(res, 400, 'Adresse e-mail invalide');
 
     if (method === 'POST') {
       if (!body.login || !body.password) return fail(res, 400, 'Identifiant et mot de passe requis');
       if (db.prepare('SELECT 1 FROM accounts WHERE login = ?').get(body.login)) return fail(res, 400, 'Identifiant déjà utilisé');
       const id = createAccount(body.login, body.nom, body.role || 'charge', body.userId, body.password);
+      if (body.email) db.prepare('UPDATE accounts SET email = ? WHERE id = ?').run(String(body.email).trim(), id);
       DB.audit(db, acc.login, 'création compte', null, id, body.login);
       return send(res, 200, { id });
     }
@@ -333,8 +402,9 @@ async function api(req, res, url) {
     const admins = db.prepare("SELECT COUNT(*) n FROM accounts WHERE role = 'admin'").get().n;
     if (method === 'PUT') {
       if (target.role === 'admin' && body.role && body.role !== 'admin' && admins <= 1) return fail(res, 400, 'Il doit rester au moins un administrateur');
-      db.prepare('UPDATE accounts SET nom = ?, role = ?, user_id = ? WHERE id = ?')
-        .run(body.nom ?? target.nom, body.role ?? target.role, body.userId === undefined ? target.user_id : (body.userId || null), target.id);
+      db.prepare('UPDATE accounts SET nom = ?, role = ?, user_id = ?, email = ? WHERE id = ?')
+        .run(body.nom ?? target.nom, body.role ?? target.role, body.userId === undefined ? target.user_id : (body.userId || null),
+          body.email === undefined ? target.email : (String(body.email).trim() || null), target.id);
       if (body.password) {
         db.prepare('UPDATE accounts SET pass = ? WHERE id = ?').run(DB.hashPassword(body.password), target.id);
         db.prepare('DELETE FROM sessions WHERE account_id = ?').run(target.id);
