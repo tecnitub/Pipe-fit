@@ -4,7 +4,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 
-const COLLECTIONS = ['users', 'clients', 'articles', 'zones', 'affaires', 'devis', 'factures', 'planning', 'temps'];
+const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'zones', 'affaires', 'devis', 'factures', 'planning', 'temps'];
 const ROLES = ['admin', 'charge', 'atelier'];
 
 function open(file) {
@@ -27,7 +27,30 @@ function open(file) {
       id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, login TEXT, action TEXT, col TEXT, rid TEXT, label TEXT);
   `);
   db.prepare('DELETE FROM sessions WHERE expires < ?').run(Date.now());
+  migrateClients(db);
   return db;
+}
+
+// Migration : ancienne fiche « client » unique -> entreprise (avec adresse) + contact.
+function migrateClients(db) {
+  const old = db.prepare("SELECT * FROM records WHERE col = 'clients'").all();
+  if (!old.length) return;
+  const ins = db.prepare('INSERT OR IGNORE INTO records (col, id, data, version, updated_at, updated_by) VALUES (?, ?, ?, 1, ?, ?)');
+  const now = new Date().toISOString();
+  tx(db, () => {
+    for (const r of old) {
+      const c = JSON.parse(r.data);
+      const siteId = 'site-' + c.id;
+      ins.run('entreprises', c.id, JSON.stringify({
+        id: c.id, nom: c.nom, categorie: 'Client', secteur: c.type || '', tel: c.tel || '', email: c.email || '', zoneId: c.zoneId || '', notes: c.notes || '',
+        adresses: (c.ville || c.cp) ? [{ id: siteId, libelle: 'Adresse principale', adresse: '', cp: c.cp || '', ville: c.ville || '', facturation: true }] : [],
+      }), now, 'migration');
+      if (c.contact) {
+        ins.run('contacts', 'ct-' + c.id, JSON.stringify({ id: 'ct-' + c.id, prenom: '', nom: c.contact, fonction: '', entrepriseId: c.id, tel: c.tel || '', email: c.email || '' }), now, 'migration');
+      }
+    }
+    db.prepare("DELETE FROM records WHERE col = 'clients'").run();
+  });
 }
 
 function tx(db, fn) {

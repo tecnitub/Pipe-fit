@@ -9,7 +9,7 @@ const { demoData, uid } = require('./demo');
 
 const PORT = +process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
-const DB_FILE = process.env.DB_FILE || path.join(__dirname, '..', 'data', 'tuilerie.db');
+const DB_FILE = process.env.DB_FILE || path.join(__dirname, '..', 'data', 'pipefit.db');
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const SESSION_DAYS = 30;
 const MAX_BODY = 10 * 1024 * 1024;
@@ -331,7 +331,7 @@ const server = http.createServer(async (req, res) => {
 
 if (require.main === module) {
   server.listen(PORT, HOST, () => {
-    console.log(`Tuilerie CRM : http://localhost:${PORT}  (base : ${DB_FILE})`);
+    console.log(`Pipe-Fit CRM : http://localhost:${PORT}  (base : ${DB_FILE})`);
     if (!hasAccounts()) console.log(`Première utilisation : ouvrez http://localhost:${PORT} sur ce poste pour créer le compte administrateur.`);
   });
 }

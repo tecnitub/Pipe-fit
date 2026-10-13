@@ -1,37 +1,37 @@
-﻿TUILERIE CRM - Mode d'emploi rapide
+﻿PIPE-FIT CRM - Mode d'emploi rapide
 ====================================
 
 INSTALLATION
-  Double-cliquez sur TuilerieCRM-Setup.exe sur le PC qui servira de serveur
+  Double-cliquez sur PipeFitCRM-Setup.exe sur le PC qui servira de serveur
   (un PC allumé en permanence, Windows 10 ou 11, 64 bits).
   Le navigateur s'ouvre ensuite : créez le compte administrateur.
 
 UTILISATION
-  - Sur le serveur : icône « Tuilerie CRM » sur le bureau (http://localhost:3000).
+  - Sur le serveur : icône « Pipe-Fit CRM » sur le bureau (http://localhost:3000).
   - Sur les autres postes : ouvrir http://NOM-DU-SERVEUR:3000 dans le navigateur
     (Chrome, Edge ou Firefox). Aucune installation sur les postes.
   - Créez les comptes de vos collègues dans Paramètres > Comptes utilisateurs.
 
 LE SERVEUR
-  Il démarre automatiquement avec Windows (tâche planifiée « TuilerieCRM »),
+  Il démarre automatiquement avec Windows (tâche planifiée « PipeFitCRM »),
   même si personne n'ouvre de session. Le pare-feu Windows est ouvert sur le
   port 3000 pour les réseaux « Domaine » et « Privé ».
   Si les collègues n'arrivent pas à se connecter : vérifier que le réseau du
   serveur est en « Privé » (Paramètres Windows > Réseau).
 
 DONNÉES ET SAUVEGARDE
-  Toutes les données sont dans : C:\ProgramData\TuilerieCRM\data
+  Toutes les données sont dans : C:\ProgramData\PipeFitCRM\data
   Sauvegardez ce dossier régulièrement (copie sur un disque réseau, NAS...).
-  Journal du serveur : C:\ProgramData\TuilerieCRM\logs\serveur.log
+  Journal du serveur : C:\ProgramData\PipeFitCRM\logs\serveur.log
 
 MISE À JOUR
-  Lancez simplement le nouveau TuilerieCRM-Setup.exe : les données sont conservées.
+  Lancez simplement le nouveau PipeFitCRM-Setup.exe : les données sont conservées.
 
 CHANGER DE PORT
-  Créer le fichier C:\ProgramData\TuilerieCRM\config.cmd contenant :
+  Créer le fichier C:\ProgramData\PipeFitCRM\config.cmd contenant :
       set "PORT=8080"
-  puis redémarrer le PC (et adapter la règle de pare-feu « Tuilerie CRM »).
+  puis redémarrer le PC (et adapter la règle de pare-feu « Pipe-Fit CRM »).
 
 DÉSINSTALLATION
-  Paramètres Windows > Applications > Tuilerie CRM > Désinstaller.
+  Paramètres Windows > Applications > Pipe-Fit CRM > Désinstaller.
   Les données ne sont supprimées que si vous le confirmez.

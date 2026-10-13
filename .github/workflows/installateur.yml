@@ -1,5 +1,5 @@
 # Tests + construction de l'installateur Windows à chaque envoi.
-# Le fichier TuilerieCRM-Setup-x.y.z.exe est téléchargeable dans l'onglet Actions > exécution > Artifacts.
+# Le fichier PipeFitCRM-Setup-x.y.z.exe est téléchargeable dans l'onglet Actions > exécution > Artifacts.
 name: Installateur Windows
 
 on:
@@ -19,5 +19,5 @@ jobs:
       - run: bash installer/build.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: TuilerieCRM-Setup
+          name: PipeFitCRM-Setup
           path: dist/*.exe

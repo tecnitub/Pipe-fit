@@ -17,7 +17,7 @@ const App = {
     this.pendingRemote = false;
     document.getElementById('remote-banner').classList.add('hidden');
 
-    const section = { affaire: 'affaires', facture: 'factures' }[name] || name;
+    const section = { affaire: 'affaires', facture: 'factures', entreprise: 'contacts' }[name] || name;
     document.querySelectorAll('#nav a').forEach(a => {
       a.classList.toggle('active', a.getAttribute('href') === `#/${section}`);
       a.hidden = Store.me.role === 'atelier' && !ATELIER_VIEWS.includes(a.getAttribute('href').slice(2));
@@ -47,7 +47,7 @@ const App = {
     document.body.classList.add('logged-out');
     const root = document.getElementById('app');
     root.innerHTML = `<form class="card login" id="login-form">
-      <h1>Tuilerie CRM</h1>
+      <h1>Pipe-Fit CRM</h1>
       <div class="field"><label>Identifiant</label><input name="login" autocomplete="username" required autofocus></div>
       <div class="field"><label>Mot de passe</label><input name="password" type="password" autocomplete="current-password" required></div>
       ${error ? `<p class="neg">${esc(error)}</p>` : ''}
@@ -67,12 +67,12 @@ const App = {
     document.body.classList.add('logged-out');
     const root = document.getElementById('app');
     if (!local) {
-      root.innerHTML = `<div class="card login"><h1>Tuilerie CRM</h1><p>L'application n'est pas encore configurée.</p>
+      root.innerHTML = `<div class="card login"><h1>Pipe-Fit CRM</h1><p>L'application n'est pas encore configurée.</p>
         <p>Ouvrez <strong>http://localhost:${esc(location.port || '80')}</strong> directement sur le serveur pour créer le compte administrateur.</p></div>`;
       return;
     }
     root.innerHTML = `<form class="card login" id="setup-form">
-      <h1>Bienvenue dans Tuilerie CRM</h1>
+      <h1>Bienvenue dans Pipe-Fit CRM</h1>
       <p class="muted" style="margin:0">Créez le compte administrateur. Vous pourrez ensuite créer les comptes de vos collègues dans Paramètres.</p>
       <div class="field"><label>Identifiant</label><input name="login" value="admin" required autocomplete="username"></div>
       <div class="field"><label>Nom affiché</label><input name="nom" value="Administrateur"></div>

@@ -1,7 +1,6 @@
 // Écrans de l'application.
 const charges = () => Store.all('users').filter(u => u.role === 'charge');
 const userName = id => (Store.get('users', id) || {}).nom || '—';
-const clientName = id => (Store.get('clients', id) || {}).nom || '—';
 const affaireLabel = a => `${a.code} – ${a.nom}`;
 const affaireOf = id => Store.get('affaires', id) || {};
 
@@ -40,39 +39,13 @@ Views.dashboard = () => {
   ${affaireTable(affaires.filter(a => !['Perdue', 'Facturée'].includes(a.statut)))}`;
 };
 
-/* ---------------- Clients ---------------- */
-const clientFields = [
-  { key: 'nom', label: 'Raison sociale' },
-  { key: 'type', label: 'Type', type: 'select', options: v => optionsStr(['Négoce', 'Couvreur', 'Promoteur', 'Entreprise MH', 'Architecte', 'Particulier', 'Autre'], v) },
-  { key: 'contact', label: 'Contact' },
-  { key: 'tel', label: 'Téléphone' },
-  { key: 'email', label: 'E-mail', type: 'email' },
-  { key: 'cp', label: 'Code postal' },
-  { key: 'ville', label: 'Ville' },
-  { key: 'zoneId', label: 'Zone de livraison par défaut', type: 'select', options: v => options(Store.all('zones'), v) },
-  { key: 'notes', label: 'Notes', type: 'textarea' },
-];
-Views.clients = () => {
-  const rows = Store.all('clients').map(c => {
-    const affs = Store.all('affaires').filter(a => a.clientId === c.id);
-    const ca = affs.reduce((t, a) => t + Calc.affaire(a).caFacture, 0);
-    return `<tr class="clickable" data-id="${c.id}"><td>${esc(c.nom)}</td><td>${esc(c.type)}</td><td>${esc(c.contact)}</td><td>${esc(c.tel)}</td><td>${esc(c.ville)}</td><td class="num">${affs.length}</td><td class="num">${eur(ca)}</td></tr>`;
-  }).join('');
-  return `<h1>Clients</h1>
-  <div class="toolbar"><button id="add">+ Nouveau client</button></div>
-  <div class="table-wrap"><table><tr><th>Client</th><th>Type</th><th>Contact</th><th>Tél.</th><th>Ville</th><th class="num">Affaires</th><th class="num">CA facturé</th></tr>${rows}</table></div>`;
-};
-Views.clients.bind = root => {
-  root.querySelector('#add').onclick = () => editModal({ title: 'Nouveau client', col: 'clients', fields: clientFields, obj: {} });
-  root.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () =>
-    editModal({ title: 'Client', col: 'clients', fields: clientFields, obj: { ...Store.get('clients', tr.dataset.id) } }));
-};
-
 /* ---------------- Affaires ---------------- */
 const affaireFields = [
   { key: 'code', label: 'Code affaire' },
   { key: 'nom', label: 'Intitulé' },
-  { key: 'clientId', label: 'Client', type: 'select', options: v => options(Store.all('clients'), v) },
+  { key: 'clientId', label: 'Client', type: 'select', options: v => options(clientsList(), v) },
+  { key: 'contactId', label: 'Contact client (chargé de travaux)', type: 'select', dynamic: true, options: (v, o) => contactOptions(o.clientId, v) },
+  { key: 'siteId', label: "Site d'intervention", type: 'select', dynamic: true, options: (v, o) => siteOptions(o.clientId, v) },
   { key: 'chargeId', label: "Chargé d'affaires", type: 'select', options: v => options(charges(), v) },
   { key: 'statut', label: 'Statut', type: 'select', options: v => optionsStr(STATUTS_AFFAIRE, v) },
   { key: 'dateCreation', label: 'Date de création', type: 'date' },
@@ -124,7 +97,10 @@ Views.affaire = params => {
   return `
   <div class="toolbar"><a href="#/affaires" class="btn secondary">← Affaires</a><span class="spacer"></span><button id="edit" class="secondary">Modifier</button><button id="newdevis">+ Devis</button></div>
   <h1>${esc(affaireLabel(a))} ${badge(a.statut)}</h1>
-  <p class="muted">Client : ${esc(clientName(a.clientId))} · Chargé d'affaires : ${esc(userName(a.chargeId))} · Créée le ${dateFr(a.dateCreation)}</p>
+  <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${a.clientId}">${esc(clientName(a.clientId))}</a>` : '—'}
+    ${a.contactId ? ` · Contact : ${esc(contactName(Store.get('contacts', a.contactId)))}` : ''}
+    ${a.siteId ? ` · Site : ${esc(siteLabel(siteOf(a.clientId, a.siteId)))}` : ''}
+    · Chargé d'affaires : ${esc(userName(a.chargeId))} · Créée le ${dateFr(a.dateCreation)}</p>
   <div class="cards">
     <div class="card"><div class="label">CA (devis acceptés)</div><div class="value">${eur(s.caDevis)}</div><div class="sub">Facturé : ${eur(s.caFacture)} · Reste : ${eur(s.resteAFacturer)}</div></div>
     <div class="card"><div class="label">Heures passées / prévues</div><div class="value">${fmt(s.heuresPassees, 1)} / ${fmt(s.heuresPrevues, 1)} h</div>${bar(s.avancement)}<div class="sub">Écart : <span class="${s.ecartHeures > 0 ? 'neg' : 'pos'}">${s.ecartHeures > 0 ? '+' : ''}${fmt(s.ecartHeures, 1)} h (${pct(s.ecartHeuresPct)})</span> · Planifié : ${fmt(s.heuresPlanifiees)} h</div></div>
@@ -180,8 +156,9 @@ Views.affaire.bind = (root, params) => {
 /* ---------------- Devis ---------------- */
 function newDevis(affaireId) {
   const af = affaireOf(affaireId);
-  const cl = Store.get('clients', af.clientId) || {};
-  return Store.upsert('devis', { numero: '', affaireId, date: isoDate(new Date()), validite: 30,
+  const cl = entreprise(af.clientId);
+  return Store.upsert('devis', { numero: '', affaireId, clientId: af.clientId || '', contactId: af.contactId || defaultContact(af.clientId), siteId: af.siteId || '',
+    date: isoDate(new Date()), validite: 30,
     statut: 'Brouillon', zoneId: cl.zoneId || '', remiseGlobale: 0, lignes: [] });
 }
 
@@ -198,7 +175,7 @@ Views.devis = (params, query) => {
   <div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Affaire</th><th>Client</th><th>Chargé</th><th>Statut</th><th class="num">Total HT</th><th class="num">Marge prév.</th></tr>
   ${list.map(d => {
     const a = affaireOf(d.affaireId), t = Calc.doc(d);
-    return `<tr class="clickable" onclick="location.hash='#/devis/${d.id}'"><td>${esc(d.numero)}</td><td>${dateFr(d.date)}</td><td>${esc(a.code)} – ${esc(a.nom)}</td><td>${esc(clientName(a.clientId))}</td><td>${esc(userName(a.chargeId))}</td><td>${badge(d.statut)}</td><td class="num">${eur(t.totalHT)}</td><td class="num">${marginBadge(t.margePrevPct)}</td></tr>`;
+    return `<tr class="clickable" onclick="location.hash='#/devis/${d.id}'"><td>${esc(d.numero)}</td><td>${dateFr(d.date)}</td><td>${esc(a.code)} – ${esc(a.nom)}</td><td>${esc(clientName(docClientId(d)))}</td><td>${esc(userName(a.chargeId))}</td><td>${badge(d.statut)}</td><td class="num">${eur(t.totalHT)}</td><td class="num">${marginBadge(t.margePrevPct)}</td></tr>`;
   }).join('')}</table></div>`;
 };
 Views.devis.bind = (root, params) => {
@@ -234,13 +211,20 @@ function totalsTable(doc) {
   </table>`;
 }
 
+const docClientId = doc => doc.clientId || affaireOf(doc.affaireId).clientId;
+
 function docHeader(doc, title) {
-  const s = Store.data.settings, a = affaireOf(doc.affaireId), c = Store.get('clients', a.clientId) || {};
+  const s = Store.data.settings, a = affaireOf(doc.affaireId), cid = docClientId(doc), c = entreprise(cid);
+  const bill = billingSite(cid), contact = Store.get('contacts', doc.contactId), site = siteOf(cid, doc.siteId);
   return `<div class="doc-head">
     <div><strong>${esc(s.societe)}</strong><br>${esc(s.adresse)}<br>SIRET ${esc(s.siret)}</div>
     <div style="text-align:right"><strong style="font-size:18px">${title} ${esc(doc.numero || '(numéro en cours…)')}</strong><br>Date : ${dateFr(doc.date)}<br>Affaire : ${esc(a.code)} – ${esc(a.nom)}<br>Suivi : ${esc(userName(a.chargeId))}</div>
   </div>
-  <div style="margin-bottom:16px"><strong>${esc(c.nom)}</strong><br>${esc(c.contact)}<br>${esc(c.cp)} ${esc(c.ville)}</div>`;
+  <div class="doc-parties">
+    <div><strong>${esc(c.nom || '—')}</strong>${bill ? `<br>${esc(bill.adresse)}<br>${esc(bill.cp)} ${esc(bill.ville)}` : ''}${c.tvaIntra ? `<br>TVA : ${esc(c.tvaIntra)}` : ''}</div>
+    <div>${contact ? `À l'attention de <strong>${esc(contactName(contact))}</strong>${contact.fonction ? `, ${esc(contact.fonction)}` : ''}${contact.email ? `<br>${esc(contact.email)}` : ''}${contact.mobile || contact.tel ? `<br>${esc(contact.mobile || contact.tel)}` : ''}` : ''}
+      ${site ? `<br><br>Lieu d'intervention : <strong>${esc(site.libelle)}</strong><br>${esc(fullAddress(site))}` : ''}</div>
+  </div>`;
 }
 
 function devisEditor(id) {
@@ -262,6 +246,9 @@ function devisEditor(id) {
   <div class="card no-print" style="margin-bottom:12px">
     <div class="grid2">
       <div class="field"><label>Affaire</label><select id="d-affaire">${options(Store.all('affaires'), d.affaireId, affaireLabel, false)}</select></div>
+      <div class="field"><label>Client</label><select id="d-client">${options(clientsList(), docClientId(d))}</select></div>
+      <div class="field"><label>Contact client (chargé de travaux)</label><select id="d-contact">${contactOptions(docClientId(d), d.contactId)}</select></div>
+      <div class="field"><label>Site d'intervention</label><select id="d-site">${siteOptions(docClientId(d), d.siteId)}</select></div>
       <div class="field"><label>Date</label><input id="d-date" type="date" value="${esc(d.date)}"></div>
       <div class="field"><label>Validité (jours)</label><input id="d-validite" type="number" value="${esc(d.validite)}"></div>
       <div class="field"><label>Statut</label><select id="d-statut">${optionsStr(STATUTS_DEVIS, d.statut)}</select></div>
@@ -305,7 +292,19 @@ function bindDevisEditor(root, id) {
   if (!d) return;
   const save = () => { Store.upsert('devis', d); App.render(); };
   const field = (sel, key, isNum) => { root.querySelector(sel).onchange = e => { d[key] = isNum ? (e.target.value === '' ? '' : +e.target.value) : e.target.value; save(); }; };
-  field('#d-affaire', 'affaireId'); field('#d-date', 'date'); field('#d-validite', 'validite', true);
+  root.querySelector('#d-affaire').onchange = e => {
+    const af = affaireOf(e.target.value);
+    Object.assign(d, { affaireId: e.target.value, clientId: af.clientId || '', contactId: af.contactId || defaultContact(af.clientId), siteId: af.siteId || '' });
+    save();
+  };
+  root.querySelector('#d-client').onchange = e => {
+    const cid = e.target.value, sites = entreprise(cid).adresses || [];
+    Object.assign(d, { clientId: cid, contactId: defaultContact(cid), siteId: sites.length === 1 ? sites[0].id : '' });
+    if (entreprise(cid).zoneId) d.zoneId = entreprise(cid).zoneId;
+    save();
+  };
+  field('#d-contact', 'contactId'); field('#d-site', 'siteId');
+  field('#d-date', 'date'); field('#d-validite', 'validite', true);
   field('#d-statut', 'statut'); field('#d-zone', 'zoneId'); field('#d-remise', 'remiseGlobale', true);
   root.querySelector('#d-livman').onchange = e => { d.livraisonManuelle = e.target.value === '' ? null : +e.target.value; save(); };
   root.querySelector('#fam').onchange = e => { root.querySelector('#art').innerHTML = articleOptions(e.target.value); };
@@ -337,7 +336,7 @@ function bindDevisEditor(root, id) {
   const fb = root.querySelector('#facturer');
   if (fb) fb.onclick = () => {
     const s = Store.data.settings;
-    const f = Store.upsert('factures', { numero: '', devisId: d.id, affaireId: d.affaireId,
+    const f = Store.upsert('factures', { numero: '', devisId: d.id, affaireId: d.affaireId, clientId: docClientId(d), contactId: d.contactId || '', siteId: d.siteId || '',
       date: isoDate(new Date()), echeance: isoDate(addDays(new Date(), num(s.delaiPaiement))), statut: 'Émise',
       lignes: JSON.parse(JSON.stringify(d.lignes)), zoneId: d.zoneId, remiseGlobale: d.remiseGlobale, livraisonManuelle: d.livraisonManuelle });
     location.hash = `#/facture/${f.id}`;
@@ -354,7 +353,7 @@ Views.factures = () => {
   ${list.map(f => {
     const a = affaireOf(f.affaireId), t = Calc.doc(f);
     const statut = f.statut !== 'Payée' && f.echeance < today ? 'En retard' : f.statut;
-    return `<tr class="clickable" onclick="location.hash='#/facture/${f.id}'"><td>${esc(f.numero)}</td><td>${dateFr(f.date)}</td><td>${dateFr(f.echeance)}</td><td>${esc(a.code)}</td><td>${esc(clientName(a.clientId))}</td><td>${badge(statut)}</td><td class="num">${eur(t.livraison)}</td><td class="num">${eur(t.totalHT)}</td><td class="num">${eur(t.totalTTC)}</td></tr>`;
+    return `<tr class="clickable" onclick="location.hash='#/facture/${f.id}'"><td>${esc(f.numero)}</td><td>${dateFr(f.date)}</td><td>${dateFr(f.echeance)}</td><td>${esc(a.code)}</td><td>${esc(clientName(docClientId(f)))}</td><td>${badge(statut)}</td><td class="num">${eur(t.livraison)}</td><td class="num">${eur(t.totalHT)}</td><td class="num">${eur(t.totalTTC)}</td></tr>`;
   }).join('')}</table></div>`;
 };
 
@@ -642,7 +641,7 @@ Views.parametres = () => {
   <div class="card">${formFields(settingsFields, Store.data.settings)}<div class="modal-actions"><button id="s-save">Enregistrer</button></div></div>
 
   <h2>Comptes utilisateurs</h2>
-  <p class="muted">Administrateur : tout. Chargé d'affaires : clients, affaires, devis, factures, planning, heures (pas de suppression de facture). Atelier : saisie des heures et consultation du planning.</p>
+  <p class="muted">Administrateur : tout. Chargé d'affaires : contacts, affaires, devis, factures, planning, heures (pas de suppression de facture). Atelier : saisie des heures et consultation du planning.</p>
   <div class="toolbar"><button id="acc-add">+ Compte</button></div>
   <div class="table-wrap"><table id="accounts"><tr><td class="muted">Chargement…</td></tr></table></div>` : ''}
 
@@ -665,7 +664,7 @@ Views.parametres = () => {
   ${admin ? `<h2>Historique des modifications</h2><div class="table-wrap"><table id="audit"><tr><td class="muted">Chargement…</td></tr></table></div>` : ''}`;
 };
 
-const COL_LABELS = { users: 'Ressource', clients: 'Client', articles: 'Article', zones: 'Zone', affaires: 'Affaire', devis: 'Devis', factures: 'Facture', planning: 'Planning', temps: 'Heures' };
+const COL_LABELS = { users: 'Ressource', entreprises: 'Entreprise', contacts: 'Contact', articles: 'Article', zones: 'Zone', affaires: 'Affaire', devis: 'Devis', factures: 'Facture', planning: 'Planning', temps: 'Heures' };
 
 function accountModal(acc, onDone) {
   const isNew = !acc.id;
@@ -716,7 +715,7 @@ Views.parametres.bind = root => {
   on('#u-add', () => editModal({ title: 'Nouvelle ressource', col: 'users', fields: userFields, obj: { role: 'atelier', capaciteHebdo: 35, tauxHoraire: Store.data.settings.tauxHoraireDefaut } }));
   root.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () =>
     editModal({ title: 'Ressource', col: 'users', fields: userFields, obj: { ...Store.get('users', tr.dataset.id) } }));
-  on('#export', () => download(`tuilerie-crm-${isoDate(new Date())}.json`, Store.exportJSON()));
+  on('#export', () => download(`pipefit-crm-${isoDate(new Date())}.json`, Store.exportJSON()));
   const imp = root.querySelector('#import');
   if (imp) imp.onchange = async e => {
     const file = e.target.files[0];

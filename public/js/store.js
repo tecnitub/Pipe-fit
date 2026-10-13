@@ -1,5 +1,5 @@
 // Cache local des données serveur + synchronisation (API REST et événements temps réel).
-const COLLECTIONS = ['users', 'clients', 'articles', 'zones', 'affaires', 'devis', 'factures', 'planning', 'temps'];
+const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'zones', 'affaires', 'devis', 'factures', 'planning', 'temps'];
 
 const CLIENT_ID = uid(); // identifie cet onglet, pour ignorer l'écho de nos propres modifications
 

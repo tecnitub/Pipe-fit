@@ -1,12 +1,12 @@
-# Installation / arret / suppression du service Tuilerie CRM (tache planifiee au demarrage de Windows).
+# Installation / arret / suppression du service Pipe-Fit CRM (tache planifiee au demarrage de Windows).
 param(
   [Parameter(Mandatory = $true)][ValidateSet('install', 'stop', 'uninstall')][string]$Action,
   [Parameter(Mandatory = $true)][string]$InstallDir,
   [int]$Port = 3000
 )
 $ErrorActionPreference = 'Continue'
-$TaskName = 'TuilerieCRM'
-$RuleName = 'Tuilerie CRM'
+$TaskName = 'PipeFitCRM'
+$RuleName = 'Pipe-Fit CRM'
 
 function Stop-Crm {
   Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
@@ -32,7 +32,7 @@ switch ($Action) {
       -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
       -StartWhenAvailable -MultipleInstances IgnoreNew
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-    Register-ScheduledTask -TaskName $TaskName -Description 'Serveur Tuilerie CRM' -Action $taskAction `
+    Register-ScheduledTask -TaskName $TaskName -Description 'Serveur Pipe-Fit CRM' -Action $taskAction `
       -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
 
     Remove-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue

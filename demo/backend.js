@@ -2,14 +2,14 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'tuilerie-crm-demo-v1';
-  const ME_KEY = 'tuilerie-crm-demo-me';
-  const COLLECTIONS = ['users', 'clients', 'articles', 'zones', 'affaires', 'devis', 'factures', 'planning', 'temps'];
+  const KEY = 'pipefit-crm-demo-v2';
+  const ME_KEY = 'pipefit-crm-demo-me';
+  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'zones', 'affaires', 'devis', 'factures', 'planning', 'temps'];
   const ACCOUNTS = [
     { id: 'acc-admin', login: 'admin', nom: 'Administrateur', role: 'admin', userId: null },
     { id: 'acc-claire', login: 'claire', nom: 'Claire Martin', role: 'charge', userId: 'u1' },
     { id: 'acc-julien', login: 'julien', nom: 'Julien Bernard', role: 'charge', userId: 'u2' },
-    { id: 'acc-four', login: 'four', nom: 'Opérateur four', role: 'atelier', userId: 'u4' },
+    { id: 'acc-soudeur', login: 'soudeur', nom: 'Soudeur atelier', role: 'atelier', userId: 'u4' },
   ];
 
   const storage = {

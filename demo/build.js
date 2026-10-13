@@ -1,10 +1,10 @@
 // Construit la version de démonstration en un seul fichier HTML (sans serveur).
-// Usage : node demo/build.js [fichier-de-sortie]   (défaut : dist/tuilerie-crm-demo.html)
+// Usage : node demo/build.js [fichier-de-sortie]   (défaut : dist/pipefit-crm-demo.html)
 const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.join(__dirname, '..');
-const out = path.resolve(process.argv[2] || path.join(root, 'dist', 'tuilerie-crm-demo.html'));
+const out = path.resolve(process.argv[2] || path.join(root, 'dist', 'pipefit-crm-demo.html'));
 const read = f => fs.readFileSync(path.join(root, f), 'utf8');
 const inlineScript = code => `<script>\n${code.replace(/<\/script/gi, '<\\/script')}\n</script>`;
 
@@ -14,7 +14,7 @@ const scripts = [...body.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m =>
 const markup = body.replace(/<script src="[^"]+"><\/script>\s*/g, '').trim();
 
 const page = [
-  '<title>Tuilerie CRM</title>',
+  '<title>Pipe-Fit CRM</title>',
   `<style>\n${read('public/css/style.css')}\n</style>`,
   markup,
   inlineScript("document.body.classList.add('logged-out');"),

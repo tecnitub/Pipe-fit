@@ -1,4 +1,4 @@
-﻿; Installateur Windows de Tuilerie CRM (NSIS 3).
+﻿; Installateur Windows de Pipe-Fit CRM (NSIS 3).
 ; Construit par installer/build.sh, qui prépare le dossier build/ (node.exe + application).
 Unicode true
 !include "MUI2.nsh"
@@ -8,14 +8,14 @@ Unicode true
 !ifndef VERSION
   !define VERSION "1.0.0"
 !endif
-!define APPNAME "Tuilerie CRM"
-!define TASKNAME "TuilerieCRM"
+!define APPNAME "Pipe-Fit CRM"
+!define TASKNAME "PipeFitCRM"
 !define PORT "3000"
-!define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\TuilerieCRM"
+!define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\PipeFitCRM"
 
 Name "${APPNAME}"
-OutFile "../dist/TuilerieCRM-Setup-${VERSION}.exe"
-InstallDir "$PROGRAMFILES64\TuilerieCRM"
+OutFile "../dist/PipeFitCRM-Setup-${VERSION}.exe"
+InstallDir "$PROGRAMFILES64\PipeFitCRM"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 BrandingText "${APPNAME} ${VERSION}"
@@ -30,8 +30,8 @@ VIAddVersionKey /LANG=1036 "LegalCopyright" "Tecnitub"
 Var PCNAME
 Var PS
 
-!define MUI_ICON "files/tuilerie.ico"
-!define MUI_UNICON "files/tuilerie.ico"
+!define MUI_ICON "files/pipefit.ico"
+!define MUI_UNICON "files/pipefit.ico"
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TITLE "Installation de ${APPNAME}"
 !define MUI_WELCOMEPAGE_TEXT "Cet assistant installe ${APPNAME} sur ce poste, qui servira de serveur pour toute l'équipe.$\r$\n$\r$\nLe serveur démarrera automatiquement avec Windows. Les autres postes n'ont rien à installer : ils utilisent simplement leur navigateur.$\r$\n$\r$\nCliquez sur Suivant pour continuer."
@@ -96,20 +96,20 @@ Section "Installer"
   File "files/start-server.cmd"
   File "files/service.ps1"
   File "files/LISEZMOI.txt"
-  File "files/tuilerie.ico"
+  File "files/pipefit.ico"
 
-  CreateDirectory "$COMMONPROGRAMDATA\TuilerieCRM\data"
-  CreateDirectory "$COMMONPROGRAMDATA\TuilerieCRM\logs"
+  CreateDirectory "$COMMONPROGRAMDATA\PipeFitCRM\data"
+  CreateDirectory "$COMMONPROGRAMDATA\PipeFitCRM\logs"
 
   ; Raccourcis pour tous les utilisateurs
   SetShellVarContext all
-  WriteINIStr "$INSTDIR\Tuilerie CRM.url" "InternetShortcut" "URL" "http://localhost:${PORT}/"
-  WriteINIStr "$INSTDIR\Tuilerie CRM.url" "InternetShortcut" "IconFile" "$INSTDIR\tuilerie.ico"
-  WriteINIStr "$INSTDIR\Tuilerie CRM.url" "InternetShortcut" "IconIndex" "0"
-  CopyFiles /SILENT "$INSTDIR\Tuilerie CRM.url" "$DESKTOP"
+  WriteINIStr "$INSTDIR\Pipe-Fit CRM.url" "InternetShortcut" "URL" "http://localhost:${PORT}/"
+  WriteINIStr "$INSTDIR\Pipe-Fit CRM.url" "InternetShortcut" "IconFile" "$INSTDIR\pipefit.ico"
+  WriteINIStr "$INSTDIR\Pipe-Fit CRM.url" "InternetShortcut" "IconIndex" "0"
+  CopyFiles /SILENT "$INSTDIR\Pipe-Fit CRM.url" "$DESKTOP"
   CreateDirectory "$SMPROGRAMS\${APPNAME}"
-  CopyFiles /SILENT "$INSTDIR\Tuilerie CRM.url" "$SMPROGRAMS\${APPNAME}"
-  CreateShortcut "$SMPROGRAMS\${APPNAME}\Données et sauvegarde.lnk" "$COMMONPROGRAMDATA\TuilerieCRM"
+  CopyFiles /SILENT "$INSTDIR\Pipe-Fit CRM.url" "$SMPROGRAMS\${APPNAME}"
+  CreateShortcut "$SMPROGRAMS\${APPNAME}\Données et sauvegarde.lnk" "$COMMONPROGRAMDATA\PipeFitCRM"
   CreateShortcut "$SMPROGRAMS\${APPNAME}\Mode d'emploi.lnk" "$INSTDIR\LISEZMOI.txt"
   CreateShortcut "$SMPROGRAMS\${APPNAME}\Désinstaller.lnk" "$INSTDIR\Desinstaller.exe"
 
@@ -118,7 +118,7 @@ Section "Installer"
   WriteRegStr HKLM "${UNINSTKEY}" "DisplayName" "${APPNAME}"
   WriteRegStr HKLM "${UNINSTKEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr HKLM "${UNINSTKEY}" "Publisher" "Tecnitub"
-  WriteRegStr HKLM "${UNINSTKEY}" "DisplayIcon" "$INSTDIR\tuilerie.ico"
+  WriteRegStr HKLM "${UNINSTKEY}" "DisplayIcon" "$INSTDIR\pipefit.ico"
   WriteRegStr HKLM "${UNINSTKEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKLM "${UNINSTKEY}" "UninstallString" '"$INSTDIR\Desinstaller.exe"'
   WriteRegDWORD HKLM "${UNINSTKEY}" "NoModify" 1
@@ -140,12 +140,12 @@ Section "Uninstall"
   ${EnableX64FSRedirection}
 
   SetShellVarContext all
-  Delete "$DESKTOP\Tuilerie CRM.url"
+  Delete "$DESKTOP\Pipe-Fit CRM.url"
   RMDir /r "$SMPROGRAMS\${APPNAME}"
   RMDir /r "$INSTDIR"
   DeleteRegKey HKLM "${UNINSTKEY}"
 
-  MessageBox MB_YESNO|MB_ICONEXCLAMATION|MB_DEFBUTTON2 "Supprimer aussi toutes les données (clients, devis, factures, heures...) ?$\r$\n$\r$\nRépondez Non pour les conserver dans $COMMONPROGRAMDATA\TuilerieCRM." IDNO keep
-    RMDir /r "$COMMONPROGRAMDATA\TuilerieCRM"
+  MessageBox MB_YESNO|MB_ICONEXCLAMATION|MB_DEFBUTTON2 "Supprimer aussi toutes les données (clients, devis, factures, heures...) ?$\r$\n$\r$\nRépondez Non pour les conserver dans $COMMONPROGRAMDATA\PipeFitCRM." IDNO keep
+    RMDir /r "$COMMONPROGRAMDATA\PipeFitCRM"
   keep:
 SectionEnd

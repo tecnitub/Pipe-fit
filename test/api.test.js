@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tuilerie-'));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipefit-'));
 process.env.DB_FILE = path.join(dir, 'test.db');
 process.env.ADMIN_PASSWORD = 'admin-test-pw';
 const { server } = require('../server/server');
@@ -31,7 +31,7 @@ test('accès refusé sans connexion, mauvais mot de passe refusé', async () => 
 
 test('écriture refusée sans Content-Type JSON (protection CSRF)', async () => {
   const c = await login('admin', 'admin-test-pw');
-  const res = await fetch(base + '/api/records/clients/x', { method: 'PUT', headers: { Cookie: c, 'Content-Type': 'text/plain' }, body: '{}' });
+  const res = await fetch(base + '/api/records/entreprises/x', { method: 'PUT', headers: { Cookie: c, 'Content-Type': 'text/plain' }, body: '{}' });
   assert.strictEqual(res.status, 415);
 });
 
@@ -46,19 +46,19 @@ test('droits par rôle, conflits de version et numérotation', async () => {
   const data = (await call('GET', '/api/data', null, claire)).body;
   assert.ok(data.affaires.length > 0);
 
-  // Atelier : heures oui, clients non
+  // Atelier : heures oui, entreprises non
   assert.strictEqual((await call('PUT', '/api/records/temps/t-test', { data: { affaireId: 'af1', userId: 'u3', date: '2026-10-01', heures: 4 } }, atelier)).status, 200);
-  assert.strictEqual((await call('PUT', '/api/records/clients/c-test', { data: { nom: 'X' } }, atelier)).status, 403);
+  assert.strictEqual((await call('PUT', '/api/records/entreprises/c-test', { data: { nom: 'X' } }, atelier)).status, 403);
   // Chargé : pas les paramètres ni les comptes
   assert.strictEqual((await call('PUT', '/api/settings', { tva: 20 }, claire)).status, 403);
   assert.strictEqual((await call('GET', '/api/accounts', null, claire)).status, 403);
 
   // Conflit : deux utilisateurs modifient la même version
-  const c1 = data.clients[0];
-  const r1 = await call('PUT', `/api/records/clients/${c1.id}`, { data: { ...c1, ville: 'Albi' }, version: c1._v }, claire);
+  const c1 = data.entreprises[0];
+  const r1 = await call('PUT', `/api/records/entreprises/${c1.id}`, { data: { ...c1, ville: 'Albi' }, version: c1._v }, claire);
   assert.strictEqual(r1.status, 200);
   assert.strictEqual(r1.body._v, c1._v + 1);
-  const r2 = await call('PUT', `/api/records/clients/${c1.id}`, { data: { ...c1, ville: 'Castres' }, version: c1._v }, admin);
+  const r2 = await call('PUT', `/api/records/entreprises/${c1.id}`, { data: { ...c1, ville: 'Castres' }, version: c1._v }, admin);
   assert.strictEqual(r2.status, 409);
   assert.strictEqual(r2.body.record.ville, 'Albi');
 

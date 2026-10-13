@@ -51,16 +51,31 @@ const options = (list, sel, labelFn = x => x.nom, empty = true) =>
   list.map(x => `<option value="${esc(x.id)}" ${x.id === sel ? 'selected' : ''}>${esc(labelFn(x))}</option>`).join('');
 const optionsStr = (list, sel) => list.map(x => `<option ${x === sel ? 'selected' : ''}>${esc(x)}</option>`).join('');
 
-// Formulaire générique : fields = [{key, label, type, options, step}]
+// Formulaire générique : fields = [{key, label, type, options(valeur, objet), step, datalist, dynamic}]
 function formFields(fields, obj) {
   return '<div class="grid2">' + fields.map(f => {
     const v = obj[f.key] ?? '';
     let input;
-    if (f.type === 'select') input = `<select name="${f.key}">${f.options(v)}</select>`;
-    else if (f.type === 'textarea') input = `<textarea name="${f.key}">${esc(v)}</textarea>`;
-    else input = `<input name="${f.key}" type="${f.type || 'text'}" ${f.step ? `step="${f.step}"` : ''} value="${esc(v)}">`;
-    return `<div class="field" ${f.type === 'textarea' ? 'style="grid-column:1/-1"' : ''}><label>${esc(f.label)}</label>${input}</div>`;
+    if (f.type === 'select') input = `<select name="${f.key}" id="f-${f.key}">${f.options(v, obj)}</select>`;
+    else if (f.type === 'textarea') input = `<textarea name="${f.key}" id="f-${f.key}">${esc(v)}</textarea>`;
+    else {
+      input = `<input name="${f.key}" id="f-${f.key}" type="${f.type || 'text'}" ${f.step ? `step="${f.step}"` : ''} ${f.datalist ? `list="dl-${f.key}" autocomplete="off"` : ''} value="${esc(v)}">`;
+      if (f.datalist) input += `<datalist id="dl-${f.key}">${f.datalist.map(o => `<option value="${esc(o)}">`).join('')}</datalist>`;
+    }
+    return `<div class="field" ${f.type === 'textarea' ? 'style="grid-column:1/-1"' : ''}><label for="f-${f.key}">${esc(f.label)}</label>${input}</div>`;
   }).join('') + '</div>';
+}
+
+// Met à jour les listes qui dépendent d'un autre champ (ex. site selon l'entreprise choisie)
+function bindDynamic(root, fields, obj) {
+  if (!fields.some(f => f.dynamic)) return;
+  root.addEventListener('change', e => {
+    const cur = readForm(root, fields, { ...obj });
+    fields.filter(f => f.dynamic && f.key !== e.target.name).forEach(f => {
+      const el = root.querySelector(`[name="${f.key}"]`);
+      if (el) el.innerHTML = f.options(cur[f.key], cur);
+    });
+  });
 }
 
 function readForm(root, fields, obj) {
@@ -83,6 +98,7 @@ function editModal({ title, col, fields, obj, onSave, onDelete }) {
       <button class="secondary" data-act="cancel">Annuler</button>
       <button data-act="save">Enregistrer</button>
     </div>`);
+  bindDynamic(box, fields, obj);
   box.querySelector('[data-act=cancel]').onclick = Modal.close;
   box.querySelector('[data-act=save]').onclick = () => {
     readForm(box, fields, obj);

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Construit dist/TuilerieCRM-Setup-<version>.exe (installateur Windows 64 bits).
+# Construit dist/PipeFitCRM-Setup-<version>.exe (installateur Windows 64 bits).
 # Prérequis : makensis (paquet "nsis"), curl, sha256sum.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -24,5 +24,5 @@ mkdir -p build/node build/app
 cp "$NODE_EXE" build/node/node.exe
 cp -r ../server ../public ../package.json build/app/
 
-makensis -V2 -DVERSION="$VERSION" TuilerieCRM.nsi
-ls -lh "../dist/TuilerieCRM-Setup-$VERSION.exe"
+makensis -V2 -DVERSION="$VERSION" PipeFitCRM.nsi
+ls -lh "../dist/PipeFitCRM-Setup-$VERSION.exe"

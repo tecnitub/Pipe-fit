@@ -1,6 +1,7 @@
-# Tuilerie CRM
+# Pipe-Fit CRM
 
-CRM **multi-utilisateurs** pour une tuilerie industrielle (terre cuite) : clients, affaires, devis
+CRM **multi-utilisateurs** pour une entreprise de tuyauterie industrielle : contacts (entreprises clientes et
+fournisseurs, sites, chargés de travaux), affaires, devis
 avec bibliothèque de prix, facturation avec livraison, planning de charge, heures passées,
 analyse de rentabilité et retour d'expérience (REX) par affaire et par chargé d'affaires.
 
@@ -9,13 +10,13 @@ Plusieurs personnes travaillent en même temps sur les mêmes données, depuis l
 ## Installation en un clic (Windows)
 
 1. Sur le PC qui servira de serveur (allumé en permanence, Windows 10/11 64 bits),
-   double-cliquer sur **`TuilerieCRM-Setup-x.y.z.exe`** et suivre l'assistant.
+   double-cliquer sur **`PipeFitCRM-Setup-x.y.z.exe`** et suivre l'assistant.
 2. Le navigateur s'ouvre : créer le compte administrateur (avec ou sans données de démonstration).
 3. Les collègues ouvrent `http://NOM-DU-SERVEUR:3000` dans leur navigateur : rien à installer sur leurs postes.
 
 L'installateur embarque Node.js, crée le démarrage automatique avec Windows (tâche planifiée
-`TuilerieCRM`, sans session ouverte), ouvre le pare-feu (port 3000, réseaux Domaine/Privé) et place
-une icône sur le bureau. Données : `C:\ProgramData\TuilerieCRM\data` (à sauvegarder).
+`PipeFitCRM`, sans session ouverte), ouvre le pare-feu (port 3000, réseaux Domaine/Privé) et place
+une icône sur le bureau. Données : `C:\ProgramData\PipeFitCRM\data` (à sauvegarder).
 **Mise à jour** : relancer un Setup plus récent, les données sont conservées.
 
 Obtenir l'installateur : onglet **Actions** du dépôt GitHub → dernière exécution « Installateur Windows »
@@ -23,7 +24,7 @@ Obtenir l'installateur : onglet **Actions** du dépôt GitHub → dernière exé
 
 ## Démonstration en ligne (sans serveur)
 
-`node demo/build.js` produit `dist/tuilerie-crm-demo.html` : l'application complète en un seul fichier,
+`node demo/build.js` produit `dist/pipefit-crm-demo.html` : l'application complète en un seul fichier,
 avec un serveur simulé dans le navigateur (données sur l'appareil, sélecteur de profil
 admin / chargé d'affaires / atelier). Utile pour tester sur téléphone et itérer sur la conception.
 
@@ -44,15 +45,15 @@ permet de créer le compte administrateur et de choisir base vide ou données de
 Avec Docker :
 
 ```bash
-docker build -t tuilerie-crm .
-docker run -d -p 3000:3000 -v tuilerie-data:/data -e ADMIN_PASSWORD=MonMotDePasse tuilerie-crm
+docker build -t pipefit-crm .
+docker run -d -p 3000:3000 -v pipefit-data:/data -e ADMIN_PASSWORD=MonMotDePasse pipefit-crm
 ```
 
 | Variable | Défaut | Rôle |
 |---|---|---|
 | `PORT` | `3000` | Port d'écoute |
 | `HOST` | `0.0.0.0` | Interface d'écoute |
-| `DB_FILE` | `data/tuilerie.db` | Fichier de base de données |
+| `DB_FILE` | `data/pipefit.db` | Fichier de base de données |
 | `ADMIN_PASSWORD` | — | Crée directement le compte `admin` (sinon : écran de première configuration) |
 | `SEED_DEMO` | `1` | Données de démo initiales (l'écran de première configuration permet de partir d'une base vide) |
 
@@ -86,9 +87,10 @@ Ne pas exposer le port 3000 en HTTP simple sur Internet.
 
 | Module | Contenu |
 |---|---|
-| **Bibliothèque de prix** | Articles (tuiles, faîtières, rives, sur‑mesure, prestations) : prix de vente, coût matière/énergie, heures de fabrication/unité, poids/unité. Révision tarifaire en % par famille, export CSV. |
+| **Contacts** | Entreprises classées client / fournisseur (SIRET, TVA, téléphone, e-mail) avec plusieurs sites/adresses (siège de facturation, usines, sites d'intervention) ; personnes rattachées à une entreprise et à un site (chargé de travaux, acheteur…). |
+| **Bibliothèque de prix** | Articles (tubes, raccords, robinetterie, supportage, heures de soudure et de montage, contrôles, prestations) : prix de vente, coût matière, heures de fabrication/unité, poids/unité. Révision tarifaire en % par famille, export CSV. |
 | **Livraison** | Zones : forfait + prix à la tonne (facturé) et coût transporteur (réel). Poids du devis calculé depuis la bibliothèque. |
-| **Devis** | Lignes depuis la bibliothèque, remises ligne et globale, livraison auto ou forcée, TVA, impression/PDF, duplication. Analyse interne : coût matière, heures estimées, coût transport, marge prévisionnelle. |
+| **Devis** | Choix du client, du contact (chargé de travaux) et du site d'intervention, repris sur le devis et la facture. Lignes depuis la bibliothèque, remises ligne et globale, livraison auto ou forcée, TVA, impression/PDF, duplication. Analyse interne : coût matière, heures estimées, coût transport, marge prévisionnelle. |
 | **Factures** | Générées depuis un devis accepté (livraison reprise), échéance, suivi payé / en retard, impression. |
 | **Planning** | Charge hebdomadaire par ressource vs capacité, heures réellement saisies ; par affaire : budget, planifié, passé, reste à faire, reste à planifier. |
 | **Heures passées** | Saisie par date / ressource / affaire / tâche, filtres. |
@@ -109,7 +111,7 @@ server/db.js       base SQLite, mots de passe (scrypt), numérotation
 server/demo.js     données de démonstration
 public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
-installer/         installateur Windows (NSIS) : build.sh, TuilerieCRM.nsi, lanceur et service
+installer/         installateur Windows (NSIS) : build.sh, PipeFitCRM.nsi, lanceur et service
 ```
 
 ## Évolutions possibles
