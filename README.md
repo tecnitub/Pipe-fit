@@ -21,6 +21,12 @@ une icône sur le bureau. Données : `C:\ProgramData\TuilerieCRM\data` (à sauve
 Obtenir l'installateur : onglet **Actions** du dépôt GitHub → dernière exécution « Installateur Windows »
 → *Artifacts*, ou le construire avec `bash installer/build.sh` (Linux/macOS, paquet `nsis` requis).
 
+## Démonstration en ligne (sans serveur)
+
+`node demo/build.js` produit `dist/tuilerie-crm-demo.html` : l'application complète en un seul fichier,
+avec un serveur simulé dans le navigateur (données sur l'appareil, sélecteur de profil
+admin / chargé d'affaires / atelier). Utile pour tester sur téléphone et itérer sur la conception.
+
 ## Installation manuelle (Linux, Windows, macOS)
 
 Prérequis : **Node.js 22.13 ou plus récent** (aucune autre dépendance, la base SQLite est intégrée à Node.js).

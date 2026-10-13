@@ -255,7 +255,7 @@ function devisEditor(id) {
     <a href="#/affaire/${d.affaireId}" class="btn secondary">Affaire</a>
     <span class="spacer"></span>
     <button class="secondary" id="dup">Dupliquer</button>
-    <button class="secondary" onclick="window.print()">Imprimer / PDF</button>
+    <button class="secondary print-btn" onclick="window.print()">Imprimer / PDF</button>
     ${facture ? `<a class="btn" href="#/facture/${facture.id}">Voir facture ${esc(facture.numero)}</a>` : (d.statut === 'Accepté' ? '<button id="facturer">Générer la facture</button>' : '')}
     <button class="danger" id="del">Supprimer</button>
   </div>
@@ -312,7 +312,7 @@ function bindDevisEditor(root, id) {
   root.querySelector('#addline').onclick = () => {
     const a = Store.get('articles', root.querySelector('#art').value);
     const q = +root.querySelector('#qte').value;
-    if (!a || !q) { alert('Choisir un article et une quantité.'); return; }
+    if (!a || !q) { notify('Choisir un article et une quantité.'); return; }
     d.lignes.push({ articleId: a.id, designation: a.designation, unite: a.unite, qte: q, pu: a.prixVente, remise: 0,
       cout: a.coutRevient, poids: a.poidsUnitaire, heures: a.heuresUnitaires });
     save();
@@ -324,7 +324,9 @@ function bindDevisEditor(root, id) {
     save();
   });
   root.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { d.lignes.splice(+b.dataset.del, 1); save(); });
-  root.querySelector('#del').onclick = () => { if (confirm('Supprimer ce devis ?')) { Store.remove('devis', d.id); location.hash = '#/devis'; } };
+  root.querySelector('#del').onclick = () => ask(`Supprimer le devis ${d.numero} ?`, 'Supprimer').then(ok => {
+    if (ok) { Store.remove('devis', d.id); location.hash = '#/devis'; }
+  });
   root.querySelector('#dup').onclick = () => {
     const copy = JSON.parse(JSON.stringify(d));
     Object.keys(copy).filter(k => k.startsWith('_')).forEach(k => delete copy[k]);
@@ -363,7 +365,7 @@ Views.facture = params => {
     <a href="#/factures" class="btn secondary">← Factures</a>
     <span class="spacer"></span>
     <select id="f-statut" style="width:auto">${optionsStr(STATUTS_FACTURE, f.statut)}</select>
-    <button class="secondary" onclick="window.print()">Imprimer / PDF</button>
+    <button class="secondary print-btn" onclick="window.print()">Imprimer / PDF</button>
     ${Store.can('delete', 'factures') ? '<button class="danger" id="del">Supprimer</button>' : ''}
   </div>
   <div class="doc-print">
@@ -378,7 +380,9 @@ Views.facture.bind = (root, params) => {
   if (!f) return;
   root.querySelector('#f-statut').onchange = e => { f.statut = e.target.value; Store.upsert('factures', f); App.toast('Statut mis à jour'); };
   const del = root.querySelector('#del');
-  if (del) del.onclick = () => { if (confirm('Supprimer cette facture ?')) { Store.remove('factures', f.id); location.hash = '#/factures'; } };
+  if (del) del.onclick = () => ask(`Supprimer la facture ${f.numero} ?`, 'Supprimer').then(ok => {
+    if (ok) { Store.remove('factures', f.id); location.hash = '#/factures'; }
+  });
 };
 
 /* ---------------- Bibliothèque de prix ---------------- */
@@ -401,7 +405,7 @@ Views.articles = (params, query) => {
   <div class="toolbar">
     <button id="add">+ Article</button>
     <button class="secondary" id="hausse">Révision tarifaire %</button>
-    <button class="secondary" id="csv">Export CSV</button>
+    <button class="secondary dl-btn" id="csv">Export CSV</button>
     <span class="spacer"></span>
     <select id="ff" style="width:auto"><option value="">Toutes familles</option>${optionsStr(familles, ff)}</select>
   </div>
@@ -417,10 +421,10 @@ Views.articles.bind = root => {
   root.querySelector('#add').onclick = () => editModal({ title: 'Nouvel article', col: 'articles', fields: articleFields, obj: { unite: 'm²' } });
   root.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () =>
     editModal({ title: 'Article', col: 'articles', fields: articleFields, obj: { ...Store.get('articles', tr.dataset.id) } }));
-  root.querySelector('#hausse').onclick = () => {
+  root.querySelector('#hausse').onclick = async () => {
     const ff = new URLSearchParams(location.hash.split('?')[1] || '').get('famille') || '';
-    const p = prompt(`Pourcentage de révision des prix de vente${ff ? ` (famille « ${ff} »)` : ' (tous les articles)'} :`, '3');
-    if (p === null || isNaN(+p)) return;
+    const p = await askValue(`Révision des prix de vente en %${ff ? ` (famille « ${ff} »)` : ' (tous les articles)'}`, '3', 'number');
+    if (p === null || p === '' || isNaN(+p)) return;
     Store.all('articles').filter(a => !ff || a.famille === ff).forEach(a => {
       a.prixVente = Math.round(num(a.prixVente) * (1 + +p / 100) * 100) / 100;
       Store.upsert('articles', a);
@@ -485,7 +489,7 @@ Views.planning = (params, query) => {
     <span class="badge load-ok">≤ 85 %</span><span class="badge load-high">85–100 %</span><span class="badge load-over">&gt; 100 %</span>
   </div>
   <p class="muted">Cliquez sur une case pour planifier des heures sur une affaire. « réel » = heures effectivement saisies la semaine concernée.</p>
-  <div class="table-wrap"><table><tr><th>Ressource</th>${weeks.map(w => `<th class="plan-cell" ${w === current ? 'style="background:#f6d9cf"' : ''}>${w.replace('-W', ' S')}</th>`).join('')}</tr>${grid}</table></div>
+  <div class="table-wrap"><table><tr><th>Ressource</th>${weeks.map(w => `<th class="plan-cell ${w === current ? 'today' : ''}">${w.replace('-W', ' S')}</th>`).join('')}</tr>${grid}</table></div>
 
   <h2>Avancement des affaires (heures)</h2>
   <div class="table-wrap"><table><tr><th>Affaire</th><th class="num">Budget</th><th class="num">Planifié</th><th class="num">Passé</th><th class="num">Reste à faire</th><th>Consommation</th><th class="num">Reste à planifier</th></tr>
@@ -560,7 +564,7 @@ Views.temps.bind = root => {
   root.querySelector('#fa').onchange = upd;
   root.querySelector('#t-add').onclick = () => {
     const h = +root.querySelector('#t-h').value;
-    if (!h || !root.querySelector('#t-aff').value) { alert('Renseigner une affaire et un nombre d\'heures.'); return; }
+    if (!h || !root.querySelector('#t-aff').value) { notify('Renseigner une affaire et un nombre d\'heures.'); return; }
     Store.upsert('temps', { date: root.querySelector('#t-date').value, userId: root.querySelector('#t-user').value,
       affaireId: root.querySelector('#t-aff').value, tache: root.querySelector('#t-tache').value, heures: h });
     App.render(); App.toast('Heures enregistrées');
@@ -577,7 +581,7 @@ Views.analyse = (params, query) => {
   return `<h1>Analyse de rentabilité &amp; retour d'expérience</h1>
   <div class="toolbar">
     <select id="fc" style="width:auto"><option value="">Tous les chargés d'affaires</option>${options(charges(), fc, undefined, false)}</select>
-    <span class="spacer"></span><button class="secondary" id="csv">Export CSV</button>
+    <span class="spacer"></span><button class="secondary dl-btn" id="csv">Export CSV</button>
   </div>
 
   <h2>Par chargé d'affaires</h2>
@@ -653,7 +657,7 @@ Views.parametres = () => {
   <h2>Données</h2>
   <p class="muted">Les données sont stockées sur le serveur et partagées par tous les utilisateurs. ${admin ? "Sauvegarde complète : copier le fichier de base de données du serveur, ou exporter ici." : ''}</p>
   <div class="toolbar">
-    <button class="secondary" id="export">Exporter (JSON)</button>
+    <button class="secondary dl-btn" id="export">Exporter (JSON)</button>
     ${admin ? `<label class="btn secondary">Importer (JSON) – remplace tout<input type="file" id="import" accept=".json" style="display:none"></label>
     <button class="danger" id="reset">Réinitialiser avec les données de démo</button>` : ''}
   </div>` : ''}
@@ -687,12 +691,12 @@ function accountModal(acc, onDone) {
       if (isNew) await api('POST', '/api/accounts', { ...body, login: v('#a-login') });
       else await api('PUT', `/api/accounts/${acc.id}`, body);
       Modal.close(); App.toast('Compte enregistré'); onDone();
-    } catch (e) { alert(e.message); }
+    } catch (e) { notify(e.message); }
   };
   const del = box.querySelector('#a-del');
   if (del) del.onclick = async () => {
-    if (!confirm(`Supprimer le compte ${acc.login} ?`)) return;
-    try { await api('DELETE', `/api/accounts/${acc.id}`); Modal.close(); onDone(); } catch (e) { alert(e.message); }
+    if (!await ask(`Supprimer le compte ${acc.login} ?`, 'Supprimer')) return;
+    try { await api('DELETE', `/api/accounts/${acc.id}`); Modal.close(); onDone(); } catch (e) { notify(e.message); }
   };
 }
 
@@ -703,25 +707,26 @@ Views.parametres.bind = root => {
       await api('POST', '/api/me/password', { current: root.querySelector('#pw-cur').value, next: root.querySelector('#pw-new').value });
       root.querySelector('#pw-cur').value = root.querySelector('#pw-new').value = '';
       App.toast('Mot de passe modifié');
-    } catch (e) { alert(e.message); }
+    } catch (e) { notify(e.message); }
   });
   on('#s-save', async () => {
     try { await Store.saveSettings(readForm(root, settingsFields, { ...Store.data.settings })); App.toast('Paramètres enregistrés'); }
-    catch (e) { alert(e.message); }
+    catch (e) { notify(e.message); }
   });
   on('#u-add', () => editModal({ title: 'Nouvelle ressource', col: 'users', fields: userFields, obj: { role: 'atelier', capaciteHebdo: 35, tauxHoraire: Store.data.settings.tauxHoraireDefaut } }));
   root.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () =>
     editModal({ title: 'Ressource', col: 'users', fields: userFields, obj: { ...Store.get('users', tr.dataset.id) } }));
   on('#export', () => download(`tuilerie-crm-${isoDate(new Date())}.json`, Store.exportJSON()));
   const imp = root.querySelector('#import');
-  if (imp) imp.onchange = e => {
+  if (imp) imp.onchange = async e => {
     const file = e.target.files[0];
-    if (!file || !confirm('Remplacer TOUTES les données du serveur par ce fichier ?')) return;
-    file.text().then(t => Store.importJSON(t)).then(() => { App.render(); App.toast('Import réussi'); }).catch(err => alert('Import impossible : ' + err.message));
+    e.target.value = '';
+    if (!file || !await ask('Remplacer TOUTES les données du serveur par ce fichier ?', 'Remplacer')) return;
+    file.text().then(t => Store.importJSON(t)).then(() => { App.render(); App.toast('Import réussi'); }).catch(err => notify('Import impossible : ' + err.message));
   };
-  on('#reset', () => {
-    if (!confirm('Effacer toutes les données du serveur (pour tous les utilisateurs) et recharger la démo ?')) return;
-    Store.reset().then(() => App.render()).catch(e => alert(e.message));
+  on('#reset', async () => {
+    if (!await ask('Effacer toutes les données (pour tous les utilisateurs) et recharger la démo ?', 'Tout effacer')) return;
+    Store.reset().then(() => App.render()).catch(e => notify(e.message));
   });
 
   if (!Store.can('admin')) return;

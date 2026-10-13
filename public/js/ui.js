@@ -92,11 +92,47 @@ function editModal({ title, col, fields, obj, onSave, onDelete }) {
   };
   const del = box.querySelector('[data-act=del]');
   if (del) del.onclick = () => {
-    if (!confirm('Supprimer cet élément ?')) return;
-    Store.remove(col, obj.id);
-    Modal.close();
-    (typeof onDelete === 'function' ? onDelete : App.render)();
+    ask('Supprimer cet élément ?', 'Supprimer').then(ok => {
+      if (!ok) return;
+      Store.remove(col, obj.id);
+      Modal.close();
+      (typeof onDelete === 'function' ? onDelete : App.render)();
+    });
   };
+}
+
+// Boîtes de dialogue intégrées à la page (remplacent alert / confirm / prompt).
+function notify(msg) { App.toast(msg, 5000); }
+
+function dialog(html, onReady) {
+  return new Promise(resolve => {
+    const wrap = document.createElement('div');
+    wrap.className = 'modal dialog';
+    wrap.innerHTML = `<div class="modal-box dialog-box" role="dialog" aria-modal="true">${html}</div>`;
+    document.body.appendChild(wrap);
+    const done = v => { wrap.remove(); resolve(v); };
+    onReady(wrap, done);
+  });
+}
+
+function ask(message, okLabel = 'Confirmer', danger = true) {
+  return dialog(`<p>${esc(message)}</p><div class="modal-actions">
+      <button class="secondary" data-v="0">Annuler</button><button class="${danger ? 'danger' : ''}" data-v="1">${esc(okLabel)}</button></div>`,
+  (wrap, done) => {
+    wrap.querySelectorAll('[data-v]').forEach(b => { b.onclick = () => done(b.dataset.v === '1'); });
+    wrap.querySelector('[data-v="1"]').focus();
+  });
+}
+
+function askValue(message, value = '', type = 'text') {
+  return dialog(`<form><label class="field"><span>${esc(message)}</span><input id="dlg-value" type="${type}" step="any" value="${esc(value)}"></label>
+      <div class="modal-actions"><button type="button" class="secondary" data-cancel>Annuler</button><button type="submit">Valider</button></div></form>`,
+  (wrap, done) => {
+    const input = wrap.querySelector('#dlg-value');
+    input.focus(); input.select();
+    wrap.querySelector('[data-cancel]').onclick = () => done(null);
+    wrap.querySelector('form').onsubmit = e => { e.preventDefault(); done(input.value); };
+  });
 }
 
 function download(filename, text, type = 'application/json') {

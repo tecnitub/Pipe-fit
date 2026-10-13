@@ -1,7 +1,6 @@
 // Données de démonstration chargées au premier démarrage (base vide).
-const crypto = require('node:crypto');
-
-const uid = () => crypto.randomBytes(5).toString('hex') + Date.now().toString(36).slice(-4);
+// Fichier partagé : utilisé par le serveur (Node.js) et par la version de démonstration en ligne (navigateur).
+const uid = () => Math.random().toString(36).slice(2, 12) + Date.now().toString(36).slice(-4);
 const isoDate = d => d.toISOString().slice(0, 10);
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 function isoWeek(date) {
@@ -97,4 +96,4 @@ function demoData() {
   };
 }
 
-module.exports = { demoData, uid };
+if (typeof module !== 'undefined') module.exports = { demoData, uid };
