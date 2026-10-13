@@ -21,14 +21,19 @@ if (!db.prepare('SELECT 1 FROM settings WHERE id = 1').get()) {
   if (process.env.SEED_DEMO === '0') DB.setSettings(db, demoData().settings);
   else { DB.replaceAll(db, demoData(), 'système'); console.log('Base initialisée avec les données de démonstration.'); }
 }
-if (!db.prepare('SELECT 1 FROM accounts LIMIT 1').get()) {
-  const pw = process.env.ADMIN_PASSWORD || crypto.randomBytes(6).toString('base64url');
+const hasAccounts = () => !!db.prepare('SELECT 1 FROM accounts LIMIT 1').get();
+function createAccount(login, nom, role, userId, password) {
+  const id = uid();
   db.prepare('INSERT INTO accounts (id, login, nom, role, user_id, pass, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(uid(), 'admin', 'Administrateur', 'admin', null, DB.hashPassword(pw), new Date().toISOString());
-  console.log('\n  Compte administrateur créé');
-  console.log('  identifiant : admin');
-  console.log(`  mot de passe : ${pw}\n  (à changer dans Paramètres après la première connexion)\n`);
+    .run(id, login, nom || login, role, userId || null, DB.hashPassword(password), new Date().toISOString());
+  return id;
 }
+// Sans ADMIN_PASSWORD, le compte administrateur est créé depuis le navigateur du serveur (écran de première configuration).
+if (!hasAccounts() && process.env.ADMIN_PASSWORD) {
+  createAccount('admin', 'Administrateur', 'admin', null, process.env.ADMIN_PASSWORD);
+  console.log("Compte administrateur 'admin' créé avec le mot de passe ADMIN_PASSWORD.");
+}
+const isLocal = req => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
 
 /* ---------- Droits ---------- */
 // admin : tout. charge : données métier (hors ressources/paramètres). atelier : saisie des heures uniquement.
@@ -116,6 +121,26 @@ async function api(req, res, url) {
   // Protection CSRF : les écritures doivent être en JSON (impossible via un formulaire d'un autre site).
   if (method !== 'GET' && !(req.headers['content-type'] || '').startsWith('application/json')) {
     return fail(res, 415, 'Content-Type application/json requis');
+  }
+
+  // Première configuration : création du compte administrateur, uniquement depuis le serveur lui-même.
+  if (p[0] === 'setup') {
+    if (method === 'GET') return send(res, 200, { needed: !hasAccounts(), local: isLocal(req) });
+    if (method === 'POST') {
+      if (!isLocal(req)) return fail(res, 403, 'La première configuration doit être faite sur le serveur (http://localhost)');
+      const { login, nom, password, demo } = await readBody(req);
+      if (!login || String(password || '').length < 8) return fail(res, 400, 'Identifiant requis et mot de passe de 8 caractères minimum');
+      const id = DB.tx(db, () => (hasAccounts() ? null : createAccount(String(login), nom, 'admin', null, String(password))));
+      if (!id) return fail(res, 409, 'Le compte administrateur existe déjà');
+      if (!demo) {
+        const d = demoData();
+        DB.replaceAll(db, { settings: d.settings, zones: d.zones }, 'système');
+      }
+      DB.audit(db, String(login), 'première configuration', null, null, demo ? 'avec démo' : 'base vide');
+      const token = crypto.randomBytes(32).toString('hex');
+      db.prepare('INSERT INTO sessions (token, account_id, expires) VALUES (?, ?, ?)').run(token, id, Date.now() + SESSION_DAYS * 86400000);
+      return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(req, token, SESSION_DAYS * 86400) });
+    }
   }
 
   if (p[0] === 'login' && method === 'POST') {
@@ -226,9 +251,7 @@ async function api(req, res, url) {
     if (method === 'POST') {
       if (!body.login || !body.password) return fail(res, 400, 'Identifiant et mot de passe requis');
       if (db.prepare('SELECT 1 FROM accounts WHERE login = ?').get(body.login)) return fail(res, 400, 'Identifiant déjà utilisé');
-      const id = uid();
-      db.prepare('INSERT INTO accounts (id, login, nom, role, user_id, pass, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(id, body.login, body.nom || body.login, body.role || 'charge', body.userId || null, DB.hashPassword(body.password), new Date().toISOString());
+      const id = createAccount(body.login, body.nom, body.role || 'charge', body.userId, body.password);
       DB.audit(db, acc.login, 'création compte', null, id, body.login);
       return send(res, 200, { id });
     }
@@ -307,6 +330,9 @@ const server = http.createServer(async (req, res) => {
 });
 
 if (require.main === module) {
-  server.listen(PORT, HOST, () => console.log(`Tuilerie CRM : http://localhost:${PORT}  (base : ${DB_FILE})`));
+  server.listen(PORT, HOST, () => {
+    console.log(`Tuilerie CRM : http://localhost:${PORT}  (base : ${DB_FILE})`);
+    if (!hasAccounts()) console.log(`Première utilisation : ouvrez http://localhost:${PORT} sur ce poste pour créer le compte administrateur.`);
+  });
 }
 module.exports = { server, db };

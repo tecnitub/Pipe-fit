@@ -6,7 +6,22 @@ analyse de rentabilité et retour d'expérience (REX) par affaire et par chargé
 
 Plusieurs personnes travaillent en même temps sur les mêmes données, depuis leur navigateur.
 
-## Installation sur un serveur de l'entreprise
+## Installation en un clic (Windows)
+
+1. Sur le PC qui servira de serveur (allumé en permanence, Windows 10/11 64 bits),
+   double-cliquer sur **`TuilerieCRM-Setup-x.y.z.exe`** et suivre l'assistant.
+2. Le navigateur s'ouvre : créer le compte administrateur (avec ou sans données de démonstration).
+3. Les collègues ouvrent `http://NOM-DU-SERVEUR:3000` dans leur navigateur : rien à installer sur leurs postes.
+
+L'installateur embarque Node.js, crée le démarrage automatique avec Windows (tâche planifiée
+`TuilerieCRM`, sans session ouverte), ouvre le pare-feu (port 3000, réseaux Domaine/Privé) et place
+une icône sur le bureau. Données : `C:\ProgramData\TuilerieCRM\data` (à sauvegarder).
+**Mise à jour** : relancer un Setup plus récent, les données sont conservées.
+
+Obtenir l'installateur : onglet **Actions** du dépôt GitHub → dernière exécution « Installateur Windows »
+→ *Artifacts*, ou le construire avec `bash installer/build.sh` (Linux/macOS, paquet `nsis` requis).
+
+## Installation manuelle (Linux, Windows, macOS)
 
 Prérequis : **Node.js 22.13 ou plus récent** (aucune autre dépendance, la base SQLite est intégrée à Node.js).
 
@@ -16,10 +31,9 @@ npm start                  # ou : ADMIN_PASSWORD=MonMotDePasse PORT=3000 npm sta
 
 Puis ouvrir `http://<adresse-du-serveur>:3000` depuis n'importe quel poste du réseau.
 
-Au **premier démarrage** :
-- la base `data/tuilerie.db` est créée avec des données de démonstration (`SEED_DEMO=0` pour démarrer vide) ;
-- un compte `admin` est créé ; son mot de passe est affiché dans la console (ou fixé par `ADMIN_PASSWORD`).
-  Changez-le dans **Paramètres**, puis créez les comptes des collaborateurs.
+Au **premier démarrage**, ouvrir `http://localhost:3000` **sur le serveur lui-même** : un écran
+permet de créer le compte administrateur et de choisir base vide ou données de démonstration.
+(Alternative sans écran : définir `ADMIN_PASSWORD`, un compte `admin` est alors créé automatiquement.)
 
 Avec Docker :
 
@@ -33,8 +47,8 @@ docker run -d -p 3000:3000 -v tuilerie-data:/data -e ADMIN_PASSWORD=MonMotDePass
 | `PORT` | `3000` | Port d'écoute |
 | `HOST` | `0.0.0.0` | Interface d'écoute |
 | `DB_FILE` | `data/tuilerie.db` | Fichier de base de données |
-| `ADMIN_PASSWORD` | aléatoire | Mot de passe du compte `admin` créé au premier démarrage |
-| `SEED_DEMO` | `1` | `0` = base vide au premier démarrage |
+| `ADMIN_PASSWORD` | — | Crée directement le compte `admin` (sinon : écran de première configuration) |
+| `SEED_DEMO` | `1` | Données de démo initiales (l'écran de première configuration permet de partir d'une base vide) |
 
 **Accès depuis l'extérieur de l'entreprise** : placer le serveur derrière un reverse proxy HTTPS
 (Nginx, Caddy, IIS…) qui transmet l'en-tête `X-Forwarded-Proto` ; les cookies passent alors en `Secure`.
@@ -89,6 +103,7 @@ server/db.js       base SQLite, mots de passe (scrypt), numérotation
 server/demo.js     données de démonstration
 public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
+installer/         installateur Windows (NSIS) : build.sh, TuilerieCRM.nsi, lanceur et service
 ```
 
 ## Évolutions possibles

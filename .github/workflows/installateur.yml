@@ -1,0 +1,23 @@
+# Tests + construction de l'installateur Windows à chaque envoi.
+# Le fichier TuilerieCRM-Setup-x.y.z.exe est téléchargeable dans l'onglet Actions > exécution > Artifacts.
+name: Installateur Windows
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+      - run: sudo apt-get update && sudo apt-get install -y nsis
+      - run: bash installer/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TuilerieCRM-Setup
+          path: dist/*.exe

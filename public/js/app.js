@@ -63,11 +63,44 @@ const App = {
     };
   },
 
+  showSetup(local, error) {
+    document.body.classList.add('logged-out');
+    const root = document.getElementById('app');
+    if (!local) {
+      root.innerHTML = `<div class="card login"><h1>Tuilerie CRM</h1><p>L'application n'est pas encore configurée.</p>
+        <p>Ouvrez <strong>http://localhost:${esc(location.port || '80')}</strong> directement sur le serveur pour créer le compte administrateur.</p></div>`;
+      return;
+    }
+    root.innerHTML = `<form class="card login" id="setup-form">
+      <h1>Bienvenue dans Tuilerie CRM</h1>
+      <p class="muted" style="margin:0">Créez le compte administrateur. Vous pourrez ensuite créer les comptes de vos collègues dans Paramètres.</p>
+      <div class="field"><label>Identifiant</label><input name="login" value="admin" required autocomplete="username"></div>
+      <div class="field"><label>Nom affiché</label><input name="nom" value="Administrateur"></div>
+      <div class="field"><label>Mot de passe (8 caractères min.)</label><input name="password" type="password" minlength="8" required autocomplete="new-password"></div>
+      <div class="field"><label>Confirmer le mot de passe</label><input name="confirm" type="password" required autocomplete="new-password"></div>
+      <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="demo" style="width:auto"> Charger des données de démonstration (pour découvrir l'outil)</label>
+      ${error ? `<p class="neg">${esc(error)}</p>` : ''}
+      <button type="submit" style="width:100%;margin-top:8px">Commencer</button>
+    </form>`;
+    root.querySelector('#setup-form').onsubmit = async e => {
+      e.preventDefault();
+      const f = e.target;
+      if (f.password.value !== f.confirm.value) return this.showSetup(true, 'Les mots de passe ne correspondent pas.');
+      try {
+        await api('POST', '/api/setup', { login: f.login.value, nom: f.nom.value, password: f.password.value, demo: f.demo.checked });
+        location.reload();
+      } catch (err) { this.showSetup(true, err.message); }
+    };
+  },
+
   async start() {
     try {
       Store.me = await api('GET', '/api/me');
     } catch (e) {
-      if (e.status === 401) return this.showLogin();
+      if (e.status === 401) {
+        const setup = await api('GET', '/api/setup').catch(() => ({}));
+        return setup.needed ? this.showSetup(setup.local) : this.showLogin();
+      }
       document.getElementById('app').innerHTML = `<p class="neg">Serveur injoignable : ${esc(e.message)}</p>`;
       return;
     }

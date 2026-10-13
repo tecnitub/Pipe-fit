@@ -3,3 +3,6 @@ data/
 *.db
 *.db-wal
 *.db-shm
+dist/
+installer/build/
+installer/.cache/
