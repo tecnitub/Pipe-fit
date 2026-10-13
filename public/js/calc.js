@@ -139,6 +139,18 @@ const Calc = {
     return u ? num(u.tauxHoraire) : num(Store.data.settings.tauxHoraireDefaut);
   },
 
+  // Facture ou avoir en montants signés (un avoir vient en déduction : montants négatifs)
+  facture(f) {
+    const t = this.doc(f), k = f.type === 'avoir' ? -1 : 1;
+    return { ...t, sens: k, ht: k * t.totalHT, tva: k * t.tva, ttc: k * t.totalTTC, retenueS: k * t.retenue, net: k * t.netAPayer };
+  },
+  avoirsDe(f) { return Store.all('factures').filter(x => x.type === 'avoir' && x.factureId === f.id); },
+  // Reste dû par le client sur une facture : net à payer moins les avoirs qui s'y imputent
+  resteDu(f) {
+    if (f.type === 'avoir' || ['Payée', 'Annulée'].includes(f.statut)) return 0;
+    return Math.max(0, Math.round((this.doc(f).netAPayer - sumBy(this.avoirsDe(f), a => this.doc(a).netAPayer)) * 100) / 100);
+  },
+
   // Pilotage d'un chantier : budget issu du/des devis accepté(s) face au réel (commandes, heures pointées).
   affaire(af) {
     const devis = Store.all('devis').filter(d => d.affaireId === af.id && d.statut === 'Accepté');
@@ -152,8 +164,8 @@ const Calc = {
     const hd = af.type === 'horsDevis' ? this.horsDevis(af) : null;
     const consoCout = sumBy(Store.all('consommations').filter(c => c.affaireId === af.id), c => num(c.qte) * num(c.cout));
     const caDevis = hd ? hd.total : sumBy(T, t => t.totalHT);
-    const caFacture = sumBy(factures, f => this.doc(f).totalHT);
-    const retenues = sumBy(factures, f => this.doc(f).retenue);
+    const caFacture = sumBy(factures, f => this.facture(f).ht);
+    const retenues = sumBy(factures, f => this.facture(f).retenueS);
     const ca = factures.length ? caFacture : caDevis;
     const budgetF = hd ? hd.coutMat : sumBy(T, t => t.coutF), budgetMO = hd ? hd.coutMO : sumBy(T, t => t.coutMO), budgetLiv = sumBy(T, t => t.coutLivraison);
     const venteF = hd ? hd.totalMat : sumBy(T, t => t.venteF), venteMO = hd ? hd.totalMO : sumBy(T, t => t.venteMO);

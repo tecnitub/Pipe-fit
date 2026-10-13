@@ -64,7 +64,7 @@ function demoData() {
   ];
   const site = (id, libelle, adresse, cp, ville, facturation = false) => ({ id, libelle, adresse, cp, ville, facturation });
   const entreprises = [
-    { id: 'e1', nom: 'Pétrochimie du Sud', categorie: 'Client', secteur: 'Pétrochimie', siret: '412 345 678 00021', tvaIntra: 'FR12412345678', tel: '04 91 00 00 00', email: 'achats@petrosud.example', web: 'petrosud.example', zoneId: 'z3',
+    { id: 'e1', nom: 'Pétrochimie du Sud', compteComptable: 'CPETROSUD', categorie: 'Client', secteur: 'Pétrochimie', siret: '412 345 678 00021', tvaIntra: 'FR12412345678', tel: '04 91 00 00 00', email: 'achats@petrosud.example', web: 'petrosud.example', zoneId: 'z3',
       adresses: [site('s1', 'Siège social', '12 boulevard de la Mer', '13002', 'Marseille', true), site('s2', 'Site de Fos – unité de distillation', 'Route des Étangs', '13270', 'Fos-sur-Mer')] },
     { id: 'e2', nom: 'Laiterie des Alpes', categorie: 'Client', secteur: 'Agroalimentaire', siret: '521 987 654 00018', tvaIntra: 'FR45521987654', tel: '04 50 00 00 00', email: 'contact@laiterie-alpes.example', web: '', zoneId: 'z2',
       adresses: [site('s3', 'Siège', '3 rue du Lac', '74000', 'Annecy', true), site('s4', 'Usine de Rumilly', 'ZI de Madrid', '74150', 'Rumilly')] },
@@ -212,6 +212,12 @@ function demoData() {
   const nep2 = (l, i) => ({ 1: 100, 3: 55, 4: 45, 6: 15, 7: 0, 9: 0, 10: 0, liv: 100 }[i] ?? 0);
   situation('sit3', '0003', 'dv1', d(-12), nep1, 'Acceptée', '0003', d(-9), d(36), 'Émise');
   situation('sit4', '0004', 'dv1', d(-2), nep2, 'Proposée');
+  // Avoir partiel sur la facture de la situation 2 (réfaction après réserve)
+  const fa2 = factures.find(f => f.id === 'fa0002');
+  if (fa2) factures.push({ ...fa2, id: 'av0001', type: 'avoir', numero: `AV-${Y}-0001`, factureId: 'fa0002', situationId: '', date: d(-8), echeance: '', statut: 'Imputé',
+    motif: 'Réfaction suite à réserve (calorifuge repris par le client)', objet: `Avoir sur facture FA-${Y}-0002 – ${fa2.objet}`,
+    lignes: [{ designation: 'Réfaction : reprise du calorifuge par le client', unite: 'forfait', qte: 1, pu: 650 }] });
+  factures.filter(f => f.statut === 'Payée').forEach(f => { f.exportCompta = { date: d(-15), par: 'Administrateur', lot: 'Excel' }; });
   // Commandes fournisseurs affectées aux chantiers
   const CL = (aid, qte, pu) => { const a = articles.find(x => x.id === aid); return { articleId: aid, designation: a.designation, unite: a.unite, qte, pu: pu ?? a.coutRevient }; };
   const commandes = [
@@ -348,6 +354,7 @@ function demoData() {
   return {
     files: { 'img-logo': IMAGES.logo, 'img-sig': IMAGES.signature, 'img-rack1': IMAGES.rack1, 'img-rack2': IMAGES.rack2 },
     settings: { societe: 'Pipe-Fit Industrie', adresse: 'ZI des Forges – 69800 Saint-Priest', siret: '000 000 000 00000', tva: 20, tauxHoraireDefaut: 58, delaiPaiement: 45, dureeHebdo: 35, seuilHS50: 43, montantPanier: 10.5,
+      compta: { journal: 'VT', journalLib: 'Ventes', compteClient: '411000', compteTravaux: '704000', compteLivraison: '708500', compteTVA: '445710', compteRG: '411700', auxiliaires: true, emailComptable: 'compta@cabinet-exemple.fr' },
       doc: { logoId: 'img-logo', masquerNom: true, logoHauteur: 56, couleur: '#8f2f1a', police: 'sans', tel: '04 72 00 00 00', email: 'contact@pipefit.example', web: 'www.pipefit.example',
         tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',
         types: { devis: { conditions: 'Acompte de 30 % à la commande. Travaux réalisés selon les normes EN 13480 et le DTU en vigueur. Hors génie civil, calorifuge et échafaudages sauf mention contraire.' },

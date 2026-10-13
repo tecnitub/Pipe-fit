@@ -99,29 +99,69 @@ function setSettings(db, s) {
   db.prepare('INSERT INTO settings (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data').run(JSON.stringify(s));
 }
 
-// Numérotation séquentielle par année (DV-2026-0001, CH-2026-001…), attribuée dans la transaction d'écriture.
-// Les interventions hors devis ont leur propre numérotation (HD-AAAA-001) dans la liste des chantiers
 // Configuration confidentielle (jamais renvoyée avec les données) : connexion Microsoft 365
 function getConfig(db, key) { const r = db.prepare('SELECT value FROM config WHERE key = ?').get(key); return r ? JSON.parse(r.value) : null; }
 function setConfig(db, key, value) { db.prepare('INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, JSON.stringify(value)); }
 
-function nextNumber(db, col, obj) {
-  const [field, base, digits] = NUMBERING[col];
-  const code = col === 'affaires' && obj && obj.type === 'horsDevis' ? 'HD' : base;
-  const prefix = `${code}-${new Date().getFullYear()}-`;
-  let row = db.prepare('SELECT value FROM counters WHERE name = ?').get(prefix);
-  if (!row) {
-    let max = 0;
-    for (const r of db.prepare('SELECT data FROM records WHERE col = ?').all(col)) {
-      const n = JSON.parse(r.data)[field] || '';
-      if (n.startsWith(prefix)) max = Math.max(max, parseInt(n.slice(prefix.length), 10) || 0);
-    }
-    db.prepare('INSERT INTO counters (name, value) VALUES (?, ?)').run(prefix, max);
-    row = { value: max };
+// Numérotation séquentielle par année (DV-2026-0001, CH-2026-001…), attribuée dans la transaction d'écriture.
+// Les interventions hors devis ont leur propre numérotation (HD-AAAA-001) dans la liste des chantiers.
+// Factures et avoirs : format paramétrable (Paramètres → Numérotation), suite continue sans trou.
+const FORMATS_DEFAUT = { facture: { prefixe: 'FA', separateur: '-', annee: 'AAAA', chiffres: 4 }, avoir: { prefixe: 'AV', separateur: '-', annee: 'AAAA', chiffres: 4 } };
+function formatNumero(db, cle) {
+  const f = { ...FORMATS_DEFAUT[cle], ...(((getSettings(db) || {}).numerotation || {})[cle] || {}) };
+  f.prefixe = String(f.prefixe ?? '').replace(/[^\w/.-]/g, '').slice(0, 12);
+  f.separateur = ['-', '/', '_', '.', ''].includes(f.separateur) ? f.separateur : '-';
+  f.annee = ['AAAA', 'AA', ''].includes(f.annee) ? f.annee : 'AAAA';
+  f.chiffres = Math.min(8, Math.max(3, parseInt(f.chiffres, 10) || 4));
+  return f;
+}
+// Racine du numéro (tout sauf le compteur) et nombre de chiffres
+function racineNumero(db, col, obj, date = new Date()) {
+  const [, base, digits] = NUMBERING[col];
+  if (col === 'factures') {
+    const f = formatNumero(db, obj && obj.type === 'avoir' ? 'avoir' : 'facture');
+    const an = f.annee === 'AAAA' ? String(date.getFullYear()) : f.annee === 'AA' ? String(date.getFullYear()).slice(2) : '';
+    return { prefix: [f.prefixe, an].filter(Boolean).map(x => x + f.separateur).join(''), digits: f.chiffres };
   }
-  const value = row.value + 1;
-  db.prepare('UPDATE counters SET value = ? WHERE name = ?').run(value, prefix);
+  const code = col === 'affaires' && obj && obj.type === 'horsDevis' ? 'HD' : base;
+  return { prefix: `${code}-${date.getFullYear()}-`, digits };
+}
+// Plus grand numéro déjà attribué pour cette racine
+function maxUtilise(db, col, prefix) {
+  const field = NUMBERING[col][0];
+  let max = 0;
+  for (const r of db.prepare('SELECT data FROM records WHERE col = ?').all(col)) {
+    const n = String(JSON.parse(r.data)[field] || '');
+    if (n.startsWith(prefix) && /^\d+$/.test(n.slice(prefix.length))) max = Math.max(max, parseInt(n.slice(prefix.length), 10));
+  }
+  return max;
+}
+function compteur(db, col, prefix) {
+  const lire = nom => (db.prepare('SELECT value FROM counters WHERE name = ?').get(nom) || { value: 0 }).value;
+  // (ancien nom de compteur : la racine seule)
+  return Math.max(lire(`${col}:${prefix}`), lire(prefix), maxUtilise(db, col, prefix));
+}
+function nextNumber(db, col, obj) {
+  const { prefix, digits } = racineNumero(db, col, obj);
+  const value = compteur(db, col, prefix) + 1;
+  db.prepare('INSERT INTO counters (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value').run(`${col}:${prefix}`, value);
   return prefix + String(value).padStart(digits, '0');
+}
+// Reprise d'une numérotation existante : prochain numéro imposé (jamais en dessous d'un numéro déjà attribué)
+function fixerProchain(db, col, obj, prochain) {
+  const { prefix } = racineNumero(db, col, obj);
+  const max = maxUtilise(db, col, prefix);
+  if (!(prochain > max)) return { erreur: `Le numéro ${prefix}${max} est déjà attribué : le prochain numéro doit être supérieur à ${max}.` };
+  db.prepare('INSERT INTO counters (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value').run(`${col}:${prefix}`, prochain - 1);
+  return { ok: true };
+}
+function etatNumerotation(db) {
+  const etat = cle => {
+    const obj = { type: cle === 'avoir' ? 'avoir' : '' }, { prefix, digits } = racineNumero(db, 'factures', obj);
+    const prochain = compteur(db, 'factures', prefix) + 1;
+    return { format: formatNumero(db, cle), racine: prefix, prochain, exemple: prefix + String(prochain).padStart(digits, '0'), dernier: maxUtilise(db, 'factures', prefix) };
+  };
+  return { facture: etat('facture'), avoir: etat('avoir') };
 }
 
 function replaceAll(db, data, login) {
@@ -149,5 +189,5 @@ function audit(db, login, action, col, rid, label) {
 
 module.exports = {
   COLLECTIONS, NUMBERING, ROLES, open, tx, hashPassword, checkPassword, clean,
-  getRecord, allData, getSettings, setSettings, nextNumber, replaceAll, audit, getConfig, setConfig,
+  getRecord, allData, getSettings, setSettings, nextNumber, replaceAll, audit, getConfig, setConfig, fixerProchain, etatNumerotation,
 };

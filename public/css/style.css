@@ -383,3 +383,10 @@ tr.pl-membre td:first-child { padding-left: 22px; }
 tr.archive td { color: var(--muted); }
 .archive-note { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 @media (max-width: 720px) { .toolbar.filtres input[type="search"], .toolbar.filtres select { flex: 1 1 100%; max-width: none; } }
+
+/* Avoirs et comptabilité */
+tr.ligne-avoir td { background: var(--warn-bg); }
+tr.piece-debut td { border-top: 2px solid var(--border); }
+.avoirs-card ul { margin: 6px 0; padding-left: 18px; }
+.num-bloc { margin-bottom: 12px; }
+.num-apercu { display: block; padding: 8px 0; font-weight: 700; font-family: ui-monospace, monospace; }

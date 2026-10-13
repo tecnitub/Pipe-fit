@@ -30,6 +30,7 @@ const entrepriseFields = [
   { key: 'secteur', label: "Secteur d'activité", datalist: SECTEURS },
   { key: 'siret', label: 'SIRET' },
   { key: 'tvaIntra', label: 'N° TVA intracommunautaire' },
+  { key: 'compteComptable', label: 'Compte comptable (auxiliaire, donné par le comptable)' },
   { key: 'tel', label: 'Téléphone standard', type: 'tel' },
   { key: 'email', label: 'E-mail', type: 'email' },
   { key: 'web', label: 'Site web' },

@@ -45,7 +45,8 @@ function canWrite(acc, col) {
   return false;
 }
 function canDelete(acc, col, existing) {
-  if (col === 'factures') return acc.role === 'admin';
+  // Facture ou avoir numéroté : jamais supprimé (numérotation continue) ; on établit un avoir
+  if (col === 'factures') return false;
   // PV signé et réserves figées par un PV : seul l'administrateur peut les supprimer
   if (existing && acc.role !== 'admin' && ((col === 'receptions' && existing.statut === 'Signé') || (col === 'reserves' && existing.pvId))) return false;
   return canWrite(acc, col);
@@ -260,7 +261,8 @@ async function api(req, res, url) {
         if (existing && version !== existing._v) return { conflict: existing };
         let obj = { ...DB.clean(data), id };
         // Une facture émise n'est plus modifiable, sauf son statut de paiement (admin excepté).
-        if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...DB.clean(existing), statut: obj.statut };
+        if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...DB.clean(existing), statut: obj.statut, exportCompta: obj.exportCompta };
+        if (col === 'factures') obj.type = existing ? existing.type : (obj.type === 'avoir' ? 'avoir' : undefined);
         // Bon d'intervention signé par le client : figé (sauf administrateur)
         if (col === 'rapports' && existing && existing.signatureClientId && acc.role !== 'admin') return { forbidden: 'Ce bon d\'intervention est signé par le client : il ne peut plus être modifié.' };
         // PV de réception signé : figé
@@ -294,7 +296,7 @@ async function api(req, res, url) {
 
     if (method === 'DELETE') {
       const existing = DB.getRecord(db, col, id);
-      if (!canDelete(acc, col, existing)) return fail(res, 403, existing && (existing.pvId || existing.statut === 'Signé') ? 'Élément figé par un procès-verbal signé' : 'Droits insuffisants');
+      if (!canDelete(acc, col, existing)) return fail(res, 403, col === 'factures' ? 'Une facture numérotée ne peut pas être supprimée (numérotation continue obligatoire) : établissez un avoir.' : existing && (existing.pvId || existing.statut === 'Signé') ? 'Élément figé par un procès-verbal signé' : 'Droits insuffisants');
       if (!existing) return send(res, 200, { ok: true });
       const refus = atelierRefus(acc, col, null, existing);
       if (refus) return fail(res, 403, refus);
@@ -319,16 +321,17 @@ async function api(req, res, url) {
     const subject = String(b.subject || '').slice(0, 255);
     const html = String(b.html || '');
     if (!subject || html.length > 300000) return fail(res, 400, 'Objet manquant ou message trop long');
-    const pieces = Array.isArray(b.attachments) ? b.attachments.slice(0, 5) : [];
+    const pieces = Array.isArray(b.attachments) ? b.attachments.slice(0, 20) : [];
+    const TYPES_PJ = { pdf: 'application/pdf', csv: 'text/csv', txt: 'text/plain', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
     let poids = 0;
     for (const a of pieces) {
-      if (!a || !/^[\w .,()'°&+-]{1,120}\.pdf$/i.test(String(a.name || '')) || !/^[A-Za-z0-9+/=]+$/.test(String(a.base64 || ''))) return fail(res, 400, 'Pièce jointe invalide (PDF attendu)');
+      if (!a || !/^[\w .,()'°&+-]{1,120}\.(pdf|csv|txt|xlsx)$/i.test(String(a.name || '')) || !/^[A-Za-z0-9+/=]+$/.test(String(a.base64 || ''))) return fail(res, 400, 'Pièce jointe invalide (PDF, CSV, TXT ou XLSX attendu)');
       poids += a.base64.length * 3 / 4;
     }
     if (poids > 3 * 1024 * 1024) return fail(res, 400, 'Pièces jointes trop volumineuses (3 Mo maximum)');
     const ref = b.ref && MAIL_COLS.includes(b.ref.col) ? { col: b.ref.col, id: String(b.ref.id || '') } : null;
     try {
-      await M365.envoyer(cfg, acc.email, { to, cc, bcc, subject, html, attachments: pieces.map(a => ({ name: a.name, base64: a.base64 })) });
+      await M365.envoyer(cfg, acc.email, { to, cc, bcc, subject, html, attachments: pieces.map(a => ({ name: a.name, base64: a.base64, contentType: TYPES_PJ[a.name.split('.').pop().toLowerCase()] })) });
     } catch (e) { return fail(res, 502, e.message); }
     const id = uid(), now = new Date().toISOString();
     const envoi = { id, date: now, type: String(b.type || ''), col: ref && ref.col, docId: ref && ref.id, numero: String(b.numero || ''), to, cc, objet: subject,
@@ -342,6 +345,20 @@ async function api(req, res, url) {
 
   /* --- Administration --- */
   if (acc.role !== 'admin') return fail(res, 403, 'Réservé aux administrateurs');
+
+  // Numérotation des factures et avoirs : état et reprise d'une numérotation existante
+  if (p[0] === 'numerotation') {
+    if (method === 'GET') return send(res, 200, DB.etatNumerotation(db));
+    if (method === 'PUT') {
+      const b = await readBody(req);
+      const prochain = parseInt(b.prochain, 10);
+      if (!['facture', 'avoir'].includes(b.cle) || !(prochain >= 1)) return fail(res, 400, 'Numéro invalide');
+      const r = DB.tx(db, () => DB.fixerProchain(db, 'factures', { type: b.cle === 'avoir' ? 'avoir' : '' }, prochain));
+      if (r.erreur) return fail(res, 400, r.erreur);
+      DB.audit(db, acc.login, 'numérotation', 'factures', null, `${b.cle} : prochain n° ${prochain}`);
+      return send(res, 200, DB.etatNumerotation(db));
+    }
+  }
 
   if (p[0] === 'settings' && method === 'PUT') {
     const s = await readBody(req);

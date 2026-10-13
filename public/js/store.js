@@ -98,6 +98,7 @@ const Store = {
 
   can(action, col) {
     const r = this.me && this.me.role;
+    if (action === 'delete' && col === 'factures') return false; // numérotation continue : on fait un avoir
     if (r === 'admin') return true;
     if (action === 'admin') return false;
     if (r === 'charge') return col !== 'users' && !(action === 'delete' && col === 'factures');

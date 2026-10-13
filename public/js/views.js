@@ -28,9 +28,9 @@ Views.dashboard = (params, query) => {
   const factures = Store.all('factures').filter(f => (!fd.client || docClientId(f) === fd.client) && (!fd.charge || docChargeId(f) === fd.charge));
   const actifs = chantiersActifs().filter(okAff);
   const stats = affaires.map(a => ({ a, s: Calc.affaire(a) }));
-  const caFacture = sumBy(factures, f => Calc.doc(f).totalHT);
+  const caFacture = sumBy(factures, f => Calc.facture(f).ht);
   const enAttente = devis.filter(d => d.statut === 'Envoyé');
-  const impayes = sumBy(factures.filter(f => f.statut !== 'Payée'), f => Calc.doc(f).netAPayer);
+  const impayes = sumBy(factures, f => Calc.resteDu(f));
   const retenuesALiberer = sumBy(stats, x => x.s.retenueALiberer);
   const tousDevis = Store.all('devis').filter(d => (!fd.client || docClientId(d) === fd.client) && (!fd.charge || docChargeId(d) === fd.charge)); // taux de transformation : archives comprises
   const acc = tousDevis.filter(d => d.statut === 'Accepté').length, ref = tousDevis.filter(d => d.statut === 'Refusé').length;
@@ -247,26 +247,29 @@ Views.chantier.bind = (root, params) => {
   };
 };
 
-/* ---------------- Factures ---------------- */
-const STATUTS_FACTURE = ['Émise', 'Payée', 'En retard'];
+/* ---------------- Factures et avoirs ---------------- */
+const STATUTS_FACTURE = ['Émise', 'Payée', 'En retard', 'Annulée'];
+const STATUTS_AVOIR = ['Émis', 'Imputé', 'Remboursé'];
+const estAvoir = f => f.type === 'avoir';
 const FILTRES_FACTURES = { q: '', client: '', charge: '', statut: '' };
-const statutFacture = f => (f.statut !== 'Payée' && f.echeance < isoDate(new Date()) ? 'En retard' : f.statut);
+const statutFacture = f => (estAvoir(f) ? f.statut : !['Payée', 'Annulée'].includes(f.statut) && f.echeance < isoDate(new Date()) ? 'En retard' : f.statut);
 Views.factures = (params, query) => {
-  const today = isoDate(new Date());
   const f0 = lireFiltres('factures', query, FILTRES_FACTURES);
   const list = Store.all('factures').filter(f => (!f0.client || docClientId(f) === f0.client) && (!f0.charge || docChargeId(f) === f0.charge)
-    && (!f0.statut || (f0.statut === 'impayees' ? f.statut !== 'Payée' : statutFacture(f) === f0.statut))
+    && (!f0.statut || (f0.statut === 'impayees' ? Calc.resteDu(f) > 0 : f0.statut === 'avoirs' ? estAvoir(f) : f0.statut === 'factures' ? !estAvoir(f) : statutFacture(f) === f0.statut))
     && correspond(f0.q, f.numero, f.objet, clientName(docClientId(f)), affaireOf(f.affaireId).code, f.refCommande))
-    .sort((a, b) => (b.numero || '~').localeCompare(a.numero || '~'));
+    .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.numero || '~').localeCompare(a.numero || '~'));
+  const statuts = [['', 'Factures et avoirs'], ['factures', 'Factures'], ['avoirs', 'Avoirs'], ['impayees', 'Reste dû'], ...STATUTS_FACTURE.map(s => [s, s])];
   return `<h1>Facturation</h1>${facturationTabs('factures')}
-  <p class="muted">Les factures de situation sont générées quand un BL est accepté par la maîtrise d'œuvre.</p>
-  ${barreFiltres(f0, { clients: [...new Set(Store.all('factures').map(docClientId))], statuts: [['', 'Tous statuts'], ['impayees', 'Non payées'], ...STATUTS_FACTURE.map(s => [s, s])], defauts: FILTRES_FACTURES })}
-  <p class="muted small">${list.length} facture(s) · ${eur(sumBy(list, f => Calc.doc(f).totalHT))} HT · reste dû ${eur(sumBy(list.filter(f => f.statut !== 'Payée'), f => Calc.doc(f).netAPayer))} TTC</p>
-  ${list.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Échéance</th><th>Chantier</th><th>Client</th><th>Statut</th><th class="num">Total HT</th><th class="num">Total TTC</th><th class="num">Net à payer</th></tr>
+  <p class="muted">Les factures de situation sont générées quand un BL est accepté par la maîtrise d'œuvre. Une facture n'est jamais supprimée : pour l'annuler ou la corriger, établissez un avoir depuis la facture.</p>
+  ${barreFiltres(f0, { clients: [...new Set(Store.all('factures').map(docClientId))], statuts, defauts: FILTRES_FACTURES })}
+  <p class="muted small">${list.length} document(s) · ${eur(sumBy(list, f => Calc.facture(f).ht))} HT (avoirs déduits) · reste dû ${eur(sumBy(list, f => Calc.resteDu(f)))} TTC</p>
+  ${list.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Échéance</th><th>Chantier</th><th>Client</th><th>Statut</th><th class="num">Total HT</th><th class="num">Total TTC</th><th class="num">Reste dû</th><th>Compta</th></tr>
   ${list.map(f => {
-    const a = affaireOf(f.affaireId), t = Calc.doc(f);
-    const statut = statutFacture(f);
-    return `<tr class="clickable" onclick="location.hash='#/facture/${f.id}'"><td>${esc(f.numero || '…')}</td><td>${dateFr(f.date)}</td><td>${dateFr(f.echeance)}</td><td>${esc(a.code || '')}</td><td>${esc(clientName(docClientId(f)))}</td><td>${badge(statut)}</td><td class="num">${eur(t.totalHT)}</td><td class="num">${eur(t.totalTTC)}</td><td class="num">${eur(t.netAPayer)}${t.retenue ? `<br><span class="muted small">RG ${eur(t.retenue)}</span>` : ''}</td></tr>`;
+    const a = affaireOf(f.affaireId), t = Calc.facture(f), orig = estAvoir(f) && Store.get('factures', f.factureId);
+    return `<tr class="clickable ${estAvoir(f) ? 'ligne-avoir' : ''}" onclick="location.hash='#/facture/${f.id}'"><td>${esc(f.numero || '…')}${estAvoir(f) ? ` <span class="badge b-warn">Avoir</span>${orig ? `<br><span class="muted small">sur ${esc(orig.numero || '')}</span>` : ''}` : ''}</td><td>${dateFr(f.date)}</td><td>${estAvoir(f) ? '' : dateFr(f.echeance)}</td><td>${esc(a.code || '')}</td><td>${esc(clientName(docClientId(f)))}</td>
+      <td>${badge(statutFacture(f))}${!estAvoir(f) && Calc.avoirsDe(f).length ? `<br><span class="muted small">${Calc.avoirsDe(f).length} avoir(s)</span>` : ''}</td><td class="num">${eur(t.ht)}</td><td class="num">${eur(t.ttc)}</td>
+      <td class="num">${estAvoir(f) ? '' : eur(Calc.resteDu(f))}${t.retenue ? `<br><span class="muted small">RG ${eur(t.retenueS)}</span>` : ''}</td><td>${f.exportCompta ? `<span class="badge b-ok" title="Transmis le ${dateFr(f.exportCompta.date)}">Transmis</span>` : ''}</td></tr>`;
   }).join('')}</table></div>` : '<p class="muted">Aucune facture pour ces critères.</p>'}`;
 };
 
@@ -275,21 +278,32 @@ Views.factures.bind = (root, params, query) => bindFiltres(root, 'factures', lir
 Views.facture = params => {
   const f = Store.get('factures', params[0]);
   if (!f) return '<p>Facture introuvable.</p>';
+  const av = estAvoir(f), orig = av && Store.get('factures', f.factureId), avoirs = av ? [] : Calc.avoirsDe(f);
+  const reste = Calc.resteDu(f), dejaCredite = sumBy(avoirs, a => Calc.doc(a).netAPayer);
   return `<div class="toolbar">
     <a href="#/factures" class="btn secondary">← Factures</a>
     ${f.affaireId ? `<a href="#/chantier/${f.affaireId}" class="btn secondary">Chantier</a>` : ''}
+    ${orig ? `<a href="#/facture/${orig.id}" class="btn secondary">Facture ${esc(orig.numero || '')}</a>` : ''}
     <span class="spacer"></span>
-    <select id="f-statut" style="width:auto" aria-label="Statut">${optionsStr(STATUTS_FACTURE, f.statut)}</select>
-    <button class="secondary print-btn" onclick="window.print()">Imprimer</button>${boutonsEnvoi('facture', f.id)}
-    ${Store.can('delete', 'factures') ? '<button class="danger" id="del">Supprimer</button>' : ''}
+    <select id="f-statut" style="width:auto" aria-label="Statut">${optionsStr(av ? STATUTS_AVOIR : STATUTS_FACTURE, f.statut)}</select>
+    <button class="secondary print-btn" onclick="window.print()">Imprimer</button>${boutonsEnvoi(av ? 'avoir' : 'facture', f.id)}
+    ${!av && f.statut !== 'Annulée' && Store.can('write', 'factures') ? '<button class="secondary" id="avoir">Créer un avoir</button>' : ''}
   </div>
-  <h1 class="no-print">Facture ${esc(f.numero || '')} ${badge(f.statut)}</h1>${envoisHtml('factures', f.id)}
+  <h1 class="no-print">${av ? 'Avoir' : 'Facture'} ${esc(f.numero || '')} ${badge(statutFacture(f))}${f.exportCompta ? ` <span class="badge b-ok">Transmis au comptable le ${dateFr(f.exportCompta.date)}</span>` : ''}</h1>${envoisHtml('factures', f.id)}
+  ${avoirs.length ? `<div class="card no-print avoirs-card"><strong>Avoirs sur cette facture</strong>
+    <ul>${avoirs.map(a => `<li><a href="#/facture/${a.id}">${esc(a.numero || '…')}</a> du ${dateFr(a.date)} · ${eur(Calc.doc(a).netAPayer)} TTC${a.motif ? ` · ${esc(a.motif)}` : ''} ${badge(a.statut)}</li>`).join('')}</ul>
+    <div class="small">Facture ${eur(Calc.doc(f).netAPayer)} − avoirs ${eur(dejaCredite)} = <strong>reste dû ${eur(reste)}</strong></div></div>` : ''}
   <div class="doc-print">
     ${factureDocument(f)}
   </div>`;
 };
 function factureDocument(f) {
-  const o = Doc.t('facture'), dv = Store.get('devis', f.devisId), sit = Store.get('situations', f.situationId);
+  const type = estAvoir(f) ? 'avoir' : 'facture', o = Doc.t(type), dv = Store.get('devis', f.devisId), sit = Store.get('situations', f.situationId);
+  if (estAvoir(f)) {
+    const orig = Store.get('factures', f.factureId);
+    const refs = o.references && orig ? `<p class="doc-conditions"><strong>Avoir sur la facture ${esc(orig.numero || '')} du ${dateFr(orig.date)}</strong>${f.motif ? ` · motif : ${esc(f.motif)}` : ''}.</p>` : (f.motif ? `<p class="doc-conditions">Motif : ${esc(f.motif)}</p>` : '');
+    return `${docHeader(f, 'avoir')}${docLinesClient(f, 'avoir')}${totalsTable(f, 'avoir')}${Doc.pied('avoir', refs)}`;
+  }
   const refs = o.references && dv ? `<p class="doc-conditions">Selon devis ${esc(dv.numero || '')}${sit ? ` et situation de travaux ${esc(sit.numero || '')} acceptée` : ''}.</p>` : '';
   return `${docHeader(f, 'facture')}${docLinesClient(f, 'facture')}${totalsTable(f, 'facture')}
     ${Doc.pied('facture', `<p class="doc-conditions"><strong>Échéance de paiement : ${dateFr(f.echeance)}</strong></p>${refs}`)}`;
@@ -297,12 +311,53 @@ function factureDocument(f) {
 Views.facture.bind = (root, params) => {
   const f = Store.get('factures', params[0]);
   if (!f) return;
-  root.querySelector('#f-statut').onchange = e => { f.statut = e.target.value; Store.upsert('factures', f); App.toast('Statut mis à jour'); };
-  const del = root.querySelector('#del');
-  if (del) del.onclick = () => ask(`Supprimer la facture ${f.numero} ?`, 'Supprimer').then(ok => {
-    if (ok) { Store.remove('factures', f.id); location.hash = '#/factures'; }
-  });
+  root.querySelector('#f-statut').onchange = e => { f.statut = e.target.value; Store.upsert('factures', f); App.toast('Statut mis à jour'); App.render(); };
+  const b = root.querySelector('#avoir');
+  if (b) b.onclick = () => creerAvoir(f);
 };
+
+// Avoir total (annule la facture) ou partiel (lignes et quantités choisies, ou montant libre)
+function creerAvoir(f) {
+  const lignes = (f.lignes || []).map((l, i) => ({ l, i })).filter(x => x.l.type !== 'chapitre');
+  const deja = sumBy(Calc.avoirsDe(f), a => Calc.doc(a).netAPayer), net = Calc.doc(f).netAPayer;
+  const box = Modal.open(`<h2 style="margin-top:0">Avoir sur la facture ${esc(f.numero || '')}</h2>
+    <p class="muted small">Facture ${eur(net)} TTC${deja ? ` · déjà ${eur(deja)} en avoirs` : ''}. L'avoir reçoit son propre numéro dans la suite des avoirs ; la facture n'est ni modifiée ni supprimée.</p>
+    <div class="seg" role="group" aria-label="Type d'avoir" style="margin-bottom:10px">${[['total', 'Avoir total (annule la facture)'], ['lignes', 'Partiel : lignes'], ['montant', 'Partiel : montant']].map(([k, l], i) => `<button type="button" data-mode="${k}" class="${i ? '' : 'on'}">${l}</button>`).join('')}</div>
+    <div data-pane="lignes" hidden><div class="table-wrap"><table><tr><th>Désignation</th><th class="num">Facturé</th><th class="num">Qté à créditer</th><th class="num">PU HT</th></tr>
+      ${lignes.map(({ l, i }) => `<tr><td>${esc(l.designation)}</td><td class="num">${fmt(l.qte, 2)} ${esc(l.unite || '')}</td><td class="num"><input type="number" step="any" min="0" max="${esc(l.qte)}" data-qi="${i}" value="0" style="width:90px"></td><td class="num">${eur(Calc.pu(l))}</td></tr>`).join('')}</table></div></div>
+    <div data-pane="montant" hidden><div class="grid2"><div class="field"><label for="av-lib">Libellé</label><input id="av-lib" value="Geste commercial"></div>
+      <div class="field"><label for="av-ht">Montant HT</label><input id="av-ht" type="number" step="0.01" min="0"></div></div></div>
+    <div class="field"><label for="av-motif">Motif (figure sur l'avoir)</label><input id="av-motif" list="av-motifs" placeholder="Erreur de facturation, geste commercial, travaux non réalisés…">
+      <datalist id="av-motifs">${['Erreur de facturation', 'Annulation de la facture', 'Geste commercial', 'Travaux non réalisés', 'Réfaction suite à réserve', 'Remise de fin d\'année'].map(m => `<option value="${m}">`).join('')}</datalist></div>
+    <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="av-annuler">Annuler</button><button id="av-ok">Créer l'avoir</button></div>`);
+  let mode = 'total';
+  box.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => {
+    mode = b.dataset.mode;
+    box.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x === b));
+    box.querySelectorAll('[data-pane]').forEach(p => { p.hidden = p.dataset.pane !== mode; });
+  });
+  box.querySelector('#av-annuler').onclick = Modal.close;
+  box.querySelector('#av-ok').onclick = () => {
+    const { id, _v, _at, _by, numero, exportCompta, statut, ...base } = f;
+    let nouv;
+    if (mode === 'total') nouv = { ...base, lignes: JSON.parse(JSON.stringify(f.lignes || [])) };
+    else if (mode === 'lignes') {
+      const choisies = [...box.querySelectorAll('[data-qi]')].map(el => ({ l: f.lignes[+el.dataset.qi], q: Math.min(num(el.value), num(f.lignes[+el.dataset.qi].qte)) })).filter(x => x.q > 0);
+      if (!choisies.length) return notify('Indiquez au moins une quantité à créditer.');
+      nouv = { ...base, lignes: choisies.map(x => ({ ...JSON.parse(JSON.stringify(x.l)), qte: x.q })) };
+    } else {
+      const ht = num(box.querySelector('#av-ht').value);
+      if (!(ht > 0)) return notify('Indiquez le montant HT de l\'avoir.');
+      nouv = { ...base, lignes: [{ designation: box.querySelector('#av-lib').value || 'Avoir', unite: 'forfait', qte: 1, pu: ht }], ajustements: [] };
+    }
+    Object.assign(nouv, { type: 'avoir', factureId: f.id, numero: '', date: isoDate(new Date()), statut: 'Émis', motif: box.querySelector('#av-motif').value.trim() || (mode === 'total' ? 'Annulation de la facture' : ''), echeance: '' });
+    if (nouv.objet) nouv.objet = `Avoir sur facture ${f.numero} – ${nouv.objet}`;
+    if (Calc.doc(nouv).netAPayer > net - deja + 0.01) return notify(`L'avoir (${eur(Calc.doc(nouv).netAPayer)}) dépasse ce qui reste à créditer sur la facture (${eur(net - deja)}).`);
+    const a = Store.upsert('factures', nouv);
+    if (mode === 'total' || Calc.doc(nouv).netAPayer >= net - deja - 0.01) { f.statut = 'Annulée'; Store.upsert('factures', f); }
+    Modal.close(); location.hash = `#/facture/${a.id}`; App.toast('Avoir créé');
+  };
+}
 
 /* ---------------- Planning ---------------- */
 function planningCharge(query) {
@@ -473,6 +528,8 @@ Views.parametres = () => {
   <div class="card inline" style="justify-content:space-between;flex-wrap:wrap;margin-top:10px"><span>Modèles d'e-mails (devis, factures, BL, demandes de prix, commandes…) et connexion Microsoft 365 pour envoyer depuis le CRM avec copie dans les éléments envoyés.</span>
     <a class="btn" href="#/mails">E-mails et Microsoft 365</a></div>
 
+  ${numerotationCarte()}
+
   <h2>Comptes utilisateurs</h2>
   <p class="muted">Administrateur : tout. Chargé d'affaires : contacts, devis, chantiers, commandes, factures, planning, RH (pas de suppression de facture). Opérateur : pointage de ses propres heures et consultation du planning. Liez chaque compte opérateur à sa fiche dans « Équipe ».</p>
   <div class="toolbar"><button id="acc-add">+ Compte</button></div>
@@ -563,6 +620,7 @@ Views.parametres.bind = root => {
   });
 
   if (!Store.can('admin')) return;
+  bindNumerotation(root);
   const loadAccounts = () => api('GET', '/api/accounts').then(list => {
     const t = root.querySelector('#accounts');
     if (!t) return;

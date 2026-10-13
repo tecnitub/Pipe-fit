@@ -8,6 +8,8 @@ const MAIL_TYPES = {
     corps: 'Bonjour {contact},\n\nVeuillez trouver ci-joint notre devis {numero} relatif à : {objet}.\nMontant : {montant_ht} HT, soit {montant_ttc} TTC. Offre valable {validite} jours.\n\nNous restons à votre disposition pour tout complément d\'information.\n\nCordialement,\n\n{signature}' },
   facture: { label: 'Facture', objet: 'Facture {numero} – {chantier}',
     corps: 'Bonjour {contact},\n\nVeuillez trouver ci-joint notre facture {numero} relative au chantier {chantier}{ref_commande}.\nNet à payer : {montant_ttc} TTC, à régler avant le {echeance}.\n\nNous vous remercions de votre confiance.\n\nCordialement,\n\n{signature}' },
+  avoir: { label: 'Avoir', objet: 'Avoir {numero} sur facture {facture_origine}',
+    corps: 'Bonjour {contact},\n\nVeuillez trouver ci-joint notre avoir {numero} d\'un montant de {montant_ttc} TTC, établi sur la facture {facture_origine}{motif_phrase}.\n\nCordialement,\n\n{signature}' },
   situation: { label: 'Situation de travaux (BL)', objet: 'Proposition de situation n° {rang} – {chantier}',
     corps: 'Bonjour {contact},\n\nVeuillez trouver ci-joint notre proposition de situation n° {rang} (BL {numero}) arrêtée au {date} pour le chantier {chantier}, d\'un montant de {montant_ht} HT.\n\nMerci de nous retourner votre accord afin que nous puissions établir la facture correspondante.\n\nCordialement,\n\n{signature}' },
   demandePrix: { label: 'Demande de prix fournisseur', objet: 'Demande de prix – {chantier}',
@@ -25,7 +27,7 @@ const MAIL_VARIABLES = [
   ['contact', 'Formule d\'appel du destinataire (Madame Durand)'], ['numero', 'Numéro du document'], ['objet', 'Objet'], ['chantier', 'Chantier (code – nom)'],
   ['client', 'Entreprise destinataire'], ['date', 'Date du document'], ['montant_ht', 'Montant HT'], ['montant_ttc', 'Montant TTC / net à payer'],
   ['echeance', 'Échéance (facture)'], ['validite', 'Validité (devis)'], ['rang', 'N° de situation'], ['ref_commande', '« , votre commande n° … »'],
-  ['date_livraison_phrase', '« pour le … » (date de livraison)'], ['adresse_livraison', 'Adresse de livraison'], ['signataire_phrase', '« , signé par … »'],
+  ['date_livraison_phrase', '« pour le … » (date de livraison)'], ['facture_origine', 'Facture d\'origine (avoir)'], ['motif_phrase', '« (motif) » de l\'avoir'], ['adresse_livraison', 'Adresse de livraison'], ['signataire_phrase', '« , signé par … »'],
   ['societe', 'Votre société'], ['expediteur', 'Votre nom'], ['signature', 'Signature'],
 ];
 
@@ -62,6 +64,14 @@ function mailContexte(type, id) {
         fichier: `Facture ${f.numero || ''}`, html: () => factureDocument(f),
         vars: { objet: f.objet || a.nom || '', chantier: chantier(a), date: dateFr(f.date), montant_ht: eur(t.totalHT), montant_ttc: eur(t.retenue ? t.netAPayer : t.totalTTC),
           echeance: dateFr(f.echeance), ref_commande: f.refCommande ? ` (votre commande n° ${f.refCommande})` : '' } };
+    }
+    case 'avoir': {
+      const f = Store.get('factures', id); if (!f) return null;
+      const a = affaireOf(f.affaireId), t = Calc.doc(f), orig = Store.get('factures', f.factureId) || {};
+      return { ref: { col: 'factures', id }, numero: f.numero, entrepriseId: docClientId(f), contactId: f.contactId, chargeId: docChargeId(f),
+        fichier: `Avoir ${f.numero || ''}`, html: () => factureDocument(f),
+        vars: { objet: f.objet || a.nom || '', chantier: chantier(a), date: dateFr(f.date), montant_ht: eur(t.totalHT), montant_ttc: eur(t.netAPayer),
+          facture_origine: orig.numero || '', motif_phrase: f.motif ? ` (${f.motif})` : '' } };
     }
     case 'situation': {
       const sit = Store.get('situations', id); if (!sit) return null;
@@ -118,14 +128,15 @@ function enBase64(bytes) {
 const b64utf8 = s => enBase64(new TextEncoder().encode(s));
 
 // Brouillon Outlook : fichier .eml « non envoyé » (X-Unsent) que Outlook ouvre en mode rédaction, PDF joint
-function brouillonEML({ to, cc, subject, html, nom, pdf }) {
+function brouillonEML({ to, cc, subject, html, nom, pdf, pieces }) {
   const b = 'pipefit' + Date.now().toString(36);
-  const ascii = nom.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '');
+  const ascii = n => n.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '');
   const lignes = s => s.replace(/.{1,76}/g, '$&\r\n');
+  const pj = (pieces || [{ nom, bytes: pdf, type: 'application/pdf' }]).flatMap(p => [`--${b}`, `Content-Type: ${p.type}; name="${ascii(p.nom)}"`, `Content-Disposition: attachment; filename="${ascii(p.nom)}"`,
+    'Content-Transfer-Encoding: base64', '', lignes(enBase64(p.bytes))]);
   return ['X-Unsent: 1', `To: ${to.join(', ')}`, cc.length ? `Cc: ${cc.join(', ')}` : '', `Subject: =?UTF-8?B?${b64utf8(subject)}?=`, 'MIME-Version: 1.0',
     `Content-Type: multipart/mixed; boundary="${b}"`, '', `--${b}`, 'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '',
-    lignes(b64utf8(`<html><body>${html}</body></html>`)), `--${b}`, `Content-Type: application/pdf; name="${ascii}"`, `Content-Disposition: attachment; filename="${ascii}"`,
-    'Content-Transfer-Encoding: base64', '', lignes(enBase64(pdf)), `--${b}--`, ''].filter((l, i) => l !== '' || i > 4).join('\r\n');
+    lignes(b64utf8(`<html><body>${html}</body></html>`)), ...pj, `--${b}--`, ''].filter((l, i) => l !== '' || i > 4).join('\r\n');
 }
 
 async function telechargerPDF(type, id) {
@@ -286,7 +297,7 @@ Views.mails = () => {
 };
 
 function apercuMail(type, c) {
-  const pick = { devis: ['devis'], facture: ['factures'], situation: ['situations'], commande: ['commandes'], demandePrix: ['commandes'], attachement: ['affaires', estHorsDevis], bon: ['rapports', r => r.signatureClientId], pv: ['receptions'] }[type];
+  const pick = { devis: ['devis'], facture: ['factures', f => f.type !== 'avoir'], avoir: ['factures', f => f.type === 'avoir'], situation: ['situations'], commande: ['commandes'], demandePrix: ['commandes'], attachement: ['affaires', estHorsDevis], bon: ['rapports', r => r.signatureClientId], pv: ['receptions'] }[type];
   const doc = Store.all(pick[0]).filter(pick[1] || (() => true)).slice(-1)[0];
   if (!doc) return '<p class="muted">Aucun document de ce type pour l\'aperçu.</p>';
   const ctx = mailContexte(type, doc.id), contact = Store.get('contacts', ctx.contactId);

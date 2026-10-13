@@ -84,6 +84,7 @@ const ECHANGES = {
       { key: 'secteur', label: "Secteur d'activité", syn: ['secteur', 'activite', 'secteur activite', 'naf'] },
       { key: 'siret', label: 'SIRET', syn: ['siret', 'siren', 'n siret'] },
       { key: 'tvaIntra', label: 'N° TVA intracommunautaire', syn: ['tva', 'tva intra', 'numero tva', 'n tva', 'tva intracommunautaire'] },
+      { key: 'compteComptable', label: 'Compte comptable', syn: ['compte comptable', 'compte auxiliaire', 'code comptable', 'compte tiers', 'auxiliaire', 'compte client'] },
       { key: 'tel', label: 'Téléphone', syn: ['tel', 'telephone', 'standard', 'telephone standard', 'phone'] },
       { key: 'email', label: 'E-mail', syn: ['email', 'mail', 'courriel', 'e mail', 'adresse mail'] },
       { key: 'web', label: 'Site web', syn: ['web', 'site internet', 'url', 'site web'] },
@@ -98,7 +99,7 @@ const ECHANGES = {
       return (siret && Store.all('entreprises').find(e => String(e.siret || '').replace(/\D/g, '') === siret)) || Store.all('entreprises').find(e => normTxt(e.nom) === normTxt(v.nom));
     },
     appliquer(rec, v, ctx) {
-      ['nom', 'secteur', 'siret', 'tvaIntra', 'tel', 'email', 'web', 'notes'].forEach(k => { if (v[k] !== '') rec[k] = v[k]; });
+      ['nom', 'secteur', 'siret', 'tvaIntra', 'compteComptable', 'tel', 'email', 'web', 'notes'].forEach(k => { if (v[k] !== '') rec[k] = String(v[k]); });
       if (v.categorie !== '' || !rec.categorie) rec.categorie = categorieDepuis(v.categorie, rec.categorie || ctx.categorie);
       rec.adresses = (rec.adresses || []).map(s => ({ ...s }));
       if (v.adresse !== '' || v.cp !== '' || v.ville !== '') {
@@ -110,8 +111,8 @@ const ECHANGES = {
       }
       return rec;
     },
-    ligne: e => { const b = billingSite(e.id) || {}; return [e.id, e.nom, e.categorie || 'Client', e.secteur, e.siret, e.tvaIntra, e.tel, e.email, e.web, b.adresse, b.cp, b.ville, e.notes]; },
-    largeurs: [12, 32, 20, 22, 18, 18, 15, 28, 20, 30, 10, 18, 30],
+    ligne: e => { const b = billingSite(e.id) || {}; return [e.id, e.nom, e.categorie || 'Client', e.secteur, e.siret, e.tvaIntra, e.compteComptable || '', e.tel, e.email, e.web, b.adresse, b.cp, b.ville, e.notes]; },
+    largeurs: [12, 32, 20, 22, 18, 18, 14, 15, 28, 20, 30, 10, 18, 30],
   },
   contacts: {
     titre: 'contacts', col: 'contacts', fichier: 'contacts', feuille: 'Contacts',

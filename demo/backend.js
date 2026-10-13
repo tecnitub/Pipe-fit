@@ -2,7 +2,7 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v10';
+  const KEY = 'pipefit-crm-demo-v11';
   const ME_KEY = 'pipefit-crm-demo-me';
   const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4] };
@@ -57,14 +57,28 @@
     if (obj && ['Validé', 'Validée', 'Remboursée', 'Refusé', 'Refusée'].includes(obj.statut) && (!existing || existing.statut !== obj.statut)) return 'La validation est réservée aux chargés d\'affaires';
     return null;
   }
-  function nextNumber(col, obj) {
-    const [field, base, digits] = NUMBERING[col];
-    const code = col === 'affaires' && obj && obj.type === 'horsDevis' ? 'HD' : base;
-    const prefix = `${code}-${new Date().getFullYear()}-`;
-    if (db.counters[prefix] === undefined) {
-      db.counters[prefix] = db[col].reduce((m, o) => String(o[field] || '').startsWith(prefix) ? Math.max(m, parseInt(o[field].slice(prefix.length), 10) || 0) : m, 0);
+  // Même numérotation que le serveur : factures et avoirs au format paramétré, suite continue
+  const FORMATS = { facture: { prefixe: 'FA', separateur: '-', annee: 'AAAA', chiffres: 4 }, avoir: { prefixe: 'AV', separateur: '-', annee: 'AAAA', chiffres: 4 } };
+  function racine(col, obj) {
+    const [, base, digits] = NUMBERING[col], Y = String(new Date().getFullYear());
+    if (col === 'factures') {
+      const f = { ...FORMATS[obj && obj.type === 'avoir' ? 'avoir' : 'facture'], ...(((db.settings || {}).numerotation || {})[obj && obj.type === 'avoir' ? 'avoir' : 'facture'] || {}) };
+      const an = f.annee === 'AAAA' ? Y : f.annee === 'AA' ? Y.slice(2) : '';
+      return { prefix: [f.prefixe, an].filter(Boolean).map(x => x + f.separateur).join(''), digits: Math.min(8, Math.max(3, +f.chiffres || 4)), format: f };
     }
-    return prefix + String(++db.counters[prefix]).padStart(digits, '0');
+    return { prefix: `${col === 'affaires' && obj && obj.type === 'horsDevis' ? 'HD' : base}-${Y}-`, digits };
+  }
+  const maxUtilise = (col, prefix) => db[col].reduce((m, o) => { const n = String(o[NUMBERING[col][0]] || ''); return n.startsWith(prefix) && /^\d+$/.test(n.slice(prefix.length)) ? Math.max(m, +n.slice(prefix.length)) : m; }, 0);
+  const compteur = (col, prefix) => Math.max(db.counters[`${col}:${prefix}`] || 0, maxUtilise(col, prefix));
+  function nextNumber(col, obj) {
+    const { prefix, digits } = racine(col, obj), v = compteur(col, prefix) + 1;
+    db.counters[`${col}:${prefix}`] = v;
+    return prefix + String(v).padStart(digits, '0');
+  }
+  function etatNumerotation() {
+    const e = cle => { const obj = { type: cle === 'avoir' ? 'avoir' : '' }, r = racine('factures', obj), prochain = compteur('factures', r.prefix) + 1;
+      return { format: r.format, racine: r.prefix, prochain, exemple: r.prefix + String(prochain).padStart(r.digits, '0'), dernier: maxUtilise('factures', r.prefix) }; };
+    return { facture: e('facture'), avoir: e('avoir') };
   }
 
   function handle(method, path, body) {
@@ -120,7 +134,8 @@
         if (!canWrite(acc, col)) return [403, { error: 'Droits insuffisants' }];
         if (existing && body.version !== existing._v) return [409, { error: `Modifié entre-temps par ${existing._by}`, record: existing }];
         let obj = { ...clean(body.data || {}), id };
-        if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...clean(existing), statut: obj.statut };
+        if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...clean(existing), statut: obj.statut, exportCompta: obj.exportCompta };
+        if (col === 'factures') { obj.type = existing ? existing.type : (obj.type === 'avoir' ? 'avoir' : undefined); if (!obj.type) delete obj.type; }
         const refus = atelierRefus(acc, col, obj, existing);
         if (refus) return [403, { error: refus }];
         if (col === 'rapports' && existing && existing.signatureClientId && acc.role !== 'admin') return [403, { error: 'Ce bon d\'intervention est signé par le client : il ne peut plus être modifié.' }];
@@ -134,6 +149,7 @@
         return [200, JSON.parse(JSON.stringify(rec))];
       }
       if (method === 'DELETE') {
+        if (col === 'factures') return [403, { error: 'Une facture numérotée ne peut pas être supprimée (numérotation continue obligatoire) : établissez un avoir.' }];
         const fige = existing && acc.role !== 'admin' && ((col === 'receptions' && existing.statut === 'Signé') || (col === 'reserves' && existing.pvId));
         const allowed = (col === 'factures' ? acc.role === 'admin' : canWrite(acc, col)) && !atelierRefus(acc, col, null, existing) && !fige;
         if (!allowed) return [403, { error: 'Droits insuffisants' }];
@@ -144,6 +160,13 @@
     if (acc.role !== 'admin') return [403, { error: 'Réservé aux administrateurs' }];
     if (p[0] === 'settings') { db.settings = body; audit('paramètres'); save(); return [200, body]; }
     if (p[0] === 'audit') return [200, db.audit];
+    if (p[0] === 'numerotation') {
+      if (method === 'GET') return [200, etatNumerotation()];
+      const { prefix } = racine('factures', { type: body.cle === 'avoir' ? 'avoir' : '' }), max = maxUtilise('factures', prefix), n = parseInt(body.prochain, 10);
+      if (!(n > max)) return [400, { error: `Le numéro ${prefix}${max} est déjà attribué : le prochain numéro doit être supérieur à ${max}.` }];
+      db.counters[`factures:${prefix}`] = n - 1; save();
+      return [200, etatNumerotation()];
+    }
     if (p[0] === 'm365') {
       db.m365 = db.m365 || { tenantId: '', clientId: '', actif: false };
       const pub = () => ({ tenantId: db.m365.tenantId, clientId: db.m365.clientId, actif: db.m365.actif, secretDefini: !!db.m365.clientSecret });

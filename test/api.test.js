@@ -81,7 +81,26 @@ test('droits par rôle, conflits de version et numérotation', async () => {
   assert.strictEqual(upd.body.lignes.length, 1);
   assert.strictEqual(upd.body.numero, fa.numero);
   assert.strictEqual((await call('DELETE', '/api/records/factures/fa-x', {}, claire)).status, 403);
-  assert.strictEqual((await call('DELETE', '/api/records/factures/fa-x', {}, admin)).status, 200);
+  // Numérotation continue : même l'administrateur ne supprime pas une facture, il établit un avoir
+  assert.strictEqual((await call('DELETE', '/api/records/factures/fa-x', {}, admin)).status, 403);
+  const av = (await call('PUT', '/api/records/factures/av-x', { data: { type: 'avoir', factureId: 'fa-x', affaireId: 'af1', statut: 'Émis', lignes: [{ qte: 1, pu: 100 }] } }, claire)).body;
+  assert.strictEqual(av.numero, `AV-${year}-0002`); // AV-0001 dans les données de démonstration
+  assert.strictEqual(av.type, 'avoir');
+  // Le type d'une pièce ne change pas après coup (un chargé ne modifie que le statut et la transmission comptable)
+  const av2 = (await call('PUT', '/api/records/factures/av-x', { data: { ...av, type: '', statut: 'Imputé', exportCompta: { date: '2026-10-01' } }, version: av._v }, claire)).body;
+  assert.strictEqual(av2.type, 'avoir'); assert.strictEqual(av2.statut, 'Imputé'); assert.strictEqual(av2.exportCompta.date, '2026-10-01');
+  // Reprise d'une numérotation : prochain numéro imposé, jamais en dessous d'un numéro attribué
+  assert.strictEqual((await call('GET', '/api/numerotation', null, claire)).status, 403);
+  const etat = (await call('GET', '/api/numerotation', null, admin)).body;
+  assert.strictEqual(etat.facture.exemple, `FA-${year}-0005`);
+  assert.strictEqual((await call('PUT', '/api/numerotation', { cle: 'facture', prochain: 3 }, admin)).status, 400);
+  assert.strictEqual((await call('PUT', '/api/numerotation', { cle: 'facture', prochain: 153 }, admin)).body.facture.exemple, `FA-${year}-0153`);
+  assert.strictEqual((await call('PUT', '/api/records/factures/fa-y', { data: { affaireId: 'af1', statut: 'Émise', lignes: [] } }, claire)).body.numero, `FA-${year}-0153`);
+  // Format paramétrable : F2026/00154…
+  const st = (await call('GET', '/api/data', null, admin)).body.settings;
+  await call('PUT', '/api/settings', { ...st, numerotation: { facture: { prefixe: 'F', separateur: '/', annee: 'AAAA', chiffres: 5 } } }, admin);
+  assert.strictEqual((await call('PUT', '/api/records/factures/fa-z', { data: { affaireId: 'af1', statut: 'Émise', lignes: [] } }, claire)).body.numero, `F/${year}/00001`);
+  await call('PUT', '/api/settings', st, admin);
 
   // Chef d'équipe : pointe pour ses intérimaires, pas pour les autres ; un pointage validé est verrouillé
   assert.strictEqual((await call('POST', '/api/accounts', { login: 'lucas', password: 'motdepasse3', role: 'atelier', userId: 'o3' }, admin)).status, 200);
