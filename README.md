@@ -94,13 +94,20 @@ Ne pas exposer le port 3000 en HTTP simple sur Internet.
 3. **Commandes fournisseurs** (`CF-AAAA-0001`) affectées à un chantier ; elles peuvent reprendre
    automatiquement les fournitures prévues au devis et pas encore commandées. Leur montant est le coût
    réel des fournitures.
-4. **Pointage mobile** des opérateurs (arrivée / départ par chantier et tâche, pause, saisie d'oubli).
-   Le coût réel de main-d'œuvre = heures pointées × coût horaire de chaque personne.
+4. **Pointage mobile** des opérateurs (arrivée / départ par chantier et tâche, pause, panier repas, saisie d'oubli).
+   Un **chef d'équipe** pointe en une fois les compagnons et **intérimaires** sous ses ordres (filtre « intérimaires »).
+   Le coût réel de main-d'œuvre = heures pointées × coût horaire de chaque personne (taux agence pour les intérimaires).
+   **Notes de frais** : photo du justificatif prise avec le téléphone, imputée au chantier, validée puis remboursée.
+   **Validation** des pointages par le chargé d'affaires (ses chantiers) avant la paie ; un pointage validé est verrouillé.
 5. **Pilotage du chantier** : budget du devis face au réel (fournitures, main-d'œuvre, heures par catégorie),
    marge prévue et **marge à terminaison** (projection du reste à faire).
-6. **RH** : synthèse mensuelle par salarié (jours, heures normales, heures supplémentaires à 25 % / 50 %
-   calculées par semaine, salaire brut indicatif) et export CSV pour la paie ; contrôle et correction des pointages.
-7. **Factures** depuis le devis accepté ou le chantier ; **analyse** par chantier et par chargé d'affaires, REX.
+6. **RH** : synthèse mensuelle des heures **validées** (heures normales, supplémentaires à 25 % / 50 % calculées
+   par semaine, paniers, notes de frais, salaire brut indicatif), intérimaires à part (rapprochement de la facture
+   d'agence). **Récap Excel** du mois : une feuille de synthèse, une feuille par personne (détail jour par jour,
+   total de chaque semaine et découpage des heures supplémentaires), une feuille des notes de frais.
+7. **Situations de travaux** : proposition d'avancement par ligne du devis à la maîtrise d'œuvre sous forme de
+   **BL numéroté** (`BL-AAAA-0001`, numérotation indépendante) ; BL accepté → facture de situation générée
+   (montant = cumul − situations précédentes). **Analyse** par chantier et par chargé d'affaires, REX.
 
 | Module | Contenu |
 |---|---|

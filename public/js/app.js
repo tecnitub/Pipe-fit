@@ -4,7 +4,7 @@ const ROLE_LABELS = { admin: 'Administrateur', charge: "Chargé d'affaires", ate
 const ATELIER_VIEWS = ['pointage', 'planning', 'parametres'];
 // Anciennes adresses et sous-écrans -> écran et entrée de menu
 const ALIASES = { affaires: 'chantiers', affaire: 'chantier', temps: 'rh' };
-const MENU_OF = { chantier: 'chantiers', facture: 'factures', entreprise: 'contacts', mainoeuvre: 'articles', livraison: 'articles' };
+const MENU_OF = { situations: 'factures', chantier: 'chantiers', facture: 'factures', entreprise: 'contacts', mainoeuvre: 'articles', livraison: 'articles' };
 
 const App = {
   render() {

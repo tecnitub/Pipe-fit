@@ -1,10 +1,11 @@
 // Contacts : entreprises (clients / fournisseurs, avec plusieurs sites) et personnes rattachées.
-const CATEGORIES = ['Client', 'Fournisseur', 'Client et fournisseur'];
+const CATEGORIES = ['Client', 'Fournisseur', 'Client et fournisseur', "Maîtrise d'œuvre"];
 const SECTEURS = ['Pétrochimie', 'Chimie', 'Pharmacie', 'Agroalimentaire', 'Énergie', 'Eau et environnement', 'Papeterie', 'Métallurgie', 'Négoce tubes et raccords', 'Robinetterie', 'Sous-traitance', 'Autre'];
 const FONCTIONS = ['Chargé de travaux', 'Responsable maintenance', 'Responsable travaux neufs', 'Acheteur', 'Acheteuse', "Ingénieur d'affaires", 'Directeur technique', 'Responsable HSE', 'Comptabilité', 'Commercial', 'Commerciale', 'Technico-commercial'];
 
 const entreprise = id => Store.get('entreprises', id) || {};
-const isClient = e => e.categorie !== 'Fournisseur';
+const isClient = e => ['Client', 'Client et fournisseur'].includes(e.categorie || 'Client');
+const moeList = () => Store.all('entreprises').filter(e => e.categorie === "Maîtrise d'œuvre" || isClient(e)).sort((a, b) => a.nom.localeCompare(b.nom));
 const clientsList = () => Store.all('entreprises').filter(isClient).sort((a, b) => a.nom.localeCompare(b.nom));
 const clientName = id => entreprise(id).nom || '—';
 const contactName = c => (c && (c.prenom || c.nom)) ? [c.prenom, c.nom].filter(Boolean).join(' ') : '—';
@@ -13,7 +14,7 @@ const siteOf = (eid, sid) => (entreprise(eid).adresses || []).find(s => s.id ===
 const siteLabel = s => s ? `${s.libelle}${s.ville ? ' – ' + s.ville : ''}` : '';
 const billingSite = eid => { const a = entreprise(eid).adresses || []; return a.find(s => s.facturation) || a[0]; };
 const fullAddress = s => s ? [s.adresse, [s.cp, s.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ') : '';
-const categoryBadge = c => `<span class="badge ${c === 'Fournisseur' ? 'b-warn' : c === 'Client' ? 'b-info' : 'b-ok'}">${esc(c || 'Client')}</span>`;
+const categoryBadge = c => `<span class="badge ${c === 'Fournisseur' ? 'b-warn' : c === 'Client' ? 'b-info' : c === "Maîtrise d'œuvre" ? '' : 'b-ok'}">${esc(c || 'Client')}</span>`;
 
 // Listes déroulantes dépendantes de l'entreprise choisie
 const contactOptions = (eid, sel) => '<option value="">—</option>' + contactsOf(eid)
@@ -116,7 +117,7 @@ Views.contacts = (params, query) => {
   if (params[0] === 'personnes') return personnesView(query);
   const fc = query.get('categorie') || '';
   const list = Store.all('entreprises')
-    .filter(e => !fc || (fc === 'Client' ? isClient(e) : e.categorie !== 'Client'))
+    .filter(e => !fc || (fc === 'Client' ? isClient(e) : fc === 'MOE' ? e.categorie === "Maîtrise d'œuvre" : ['Fournisseur', 'Client et fournisseur'].includes(e.categorie)))
     .sort((a, b) => a.nom.localeCompare(b.nom));
   return `<h1>Contacts</h1>
   ${contactsTabs('entreprises')}
@@ -125,7 +126,7 @@ Views.contacts = (params, query) => {
     <span class="spacer"></span>
     <input id="search" type="search" placeholder="Rechercher…" style="width:auto;min-width:0;flex:1 1 160px;max-width:260px">
     <select id="fc" style="width:auto"><option value="">Clients et fournisseurs</option>
-      <option value="Client" ${fc === 'Client' ? 'selected' : ''}>Clients</option><option value="Fournisseur" ${fc === 'Fournisseur' ? 'selected' : ''}>Fournisseurs</option></select>
+      <option value="Client" ${fc === 'Client' ? 'selected' : ''}>Clients</option><option value="Fournisseur" ${fc === 'Fournisseur' ? 'selected' : ''}>Fournisseurs</option><option value="MOE" ${fc === 'MOE' ? 'selected' : ''}>Maîtrise d'œuvre</option></select>
   </div>
   ${list.length ? `<div class="table-wrap"><table><tr><th>Entreprise</th><th>Catégorie</th><th>Secteur</th><th>Ville</th><th>Téléphone</th><th class="num">Sites</th><th class="num">Contacts</th><th class="num">Affaires</th></tr>
   ${list.map(e => {

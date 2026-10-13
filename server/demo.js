@@ -27,7 +27,12 @@ function demoData() {
     { id: 'o4', nom: 'Romain Blanc', role: 'atelier', categorieId: 'mo2', tauxHoraire: 34, salaireHoraire: 16, capaciteHebdo: 35 },
     { id: 'o5', nom: 'Hugo Faure', role: 'atelier', categorieId: 'mo3', tauxHoraire: 33, salaireHoraire: 16.5, capaciteHebdo: 35 },
     { id: 'o6', nom: 'Émilie Caron', role: 'atelier', categorieId: 'mo4', tauxHoraire: 45, salaireHoraire: 20, capaciteHebdo: 35 },
+    // Intérimaires sous les ordres de Lucas Petit (chef d'équipe) ; coût = taux facturé par l'agence
+    { id: 'i1', nom: 'Yanis Morel', role: 'atelier', type: 'interimaire', agenceId: 'e8', chefId: 'o3', categorieId: 'mo2', tauxHoraire: 36, salaireHoraire: 0, capaciteHebdo: 35 },
+    { id: 'i2', nom: 'Damien Leroy', role: 'atelier', type: 'interimaire', agenceId: 'e8', chefId: 'o3', categorieId: 'mo1', tauxHoraire: 41, salaireHoraire: 0, capaciteHebdo: 35 },
   ];
+  users.forEach(u => { u.type = u.type || 'salarie'; u.chefId = u.chefId || ''; u.agenceId = u.agenceId || ''; });
+  users.find(u => u.id === 'o4').chefId = 'o3';
   // Taux de main-d'œuvre : prix de vente et coût horaire moyen chargé par catégorie
   const mainoeuvre = [
     { id: 'mo1', code: 'SOUD', libelle: 'Soudeur (orbital / TIG)', tauxVente: 55, tauxCout: 38 },
@@ -70,6 +75,10 @@ function demoData() {
       adresses: [site('s8', 'Agence de Vénissieux', '15 rue de l\'Industrie', '69200', 'Vénissieux', true)] },
     { id: 'e6', nom: 'Robinetterie Industrielle Alpes', categorie: 'Fournisseur', secteur: 'Robinetterie', siret: '445 666 777 00010', tvaIntra: 'FR21445666777', tel: '04 76 22 22 22', email: 'ventes@ria.example', web: '', zoneId: '',
       adresses: [site('s9', 'Siège et dépôt', '8 avenue des Alpes', '38000', 'Grenoble', true)] },
+    { id: 'e8', nom: 'Intérim Industrie Rhône', categorie: 'Fournisseur', secteur: 'Travail temporaire', siret: '611 222 333 00019', tvaIntra: 'FR40611222333', tel: '04 72 44 44 44', email: 'lyon@interim-ir.example', web: '', zoneId: '',
+      adresses: [site('s11', 'Agence de Lyon 7e', '5 avenue Jean Jaurès', '69007', 'Lyon', true)] },
+    { id: 'e9', nom: 'Ingénierie Process Alpes', categorie: "Maîtrise d'œuvre", secteur: 'Ingénierie', siret: '723 555 666 00031', tvaIntra: 'FR62723555666', tel: '04 50 55 55 55', email: 'contact@ipa.example', web: '', zoneId: '',
+      adresses: [site('s12', 'Bureau d\'Annecy', '9 rue des Ingénieurs', '74000', 'Annecy', true)] },
     { id: 'e7', nom: 'Services Industriels Rhône', categorie: 'Fournisseur', secteur: 'Sous-traitance', siret: '512 333 444 00027', tvaIntra: 'FR55512333444', tel: '04 78 33 33 33', email: 'planning@sir.example', web: '', zoneId: '',
       adresses: [site('s10', 'Agence de Saint-Fons', '22 rue de la Chimie', '69190', 'Saint-Fons', true)] },
   ];
@@ -81,6 +90,7 @@ function demoData() {
     { id: 'k5', prenom: 'Pierre', nom: 'Morel', fonction: 'Chargé de travaux', entrepriseId: 'e4', siteId: 's7', tel: '04 75 00 00 05', mobile: '06 10 00 00 05', email: 'p.morel@evr.example' },
     { id: 'k6', prenom: 'Julie', nom: 'Fabre', fonction: 'Commerciale', entrepriseId: 'e5', siteId: 's8', tel: '04 78 11 11 12', mobile: '', email: 'j.fabre@inoxdistri.example' },
     { id: 'k8', prenom: 'Sandra', nom: 'Vidal', fonction: 'Responsable planning', entrepriseId: 'e7', siteId: 's10', tel: '04 78 33 33 34', mobile: '', email: 's.vidal@sir.example' },
+    { id: 'k9', prenom: 'Camille', nom: 'Rousset', fonction: "Maître d'œuvre (OPC)", entrepriseId: 'e9', siteId: 's12', tel: '04 50 55 55 56', mobile: '06 10 00 00 09', email: 'c.rousset@ipa.example' },
     { id: 'k7', prenom: 'Luc', nom: 'Perrin', fonction: 'Technico-commercial', entrepriseId: 'e6', siteId: 's9', tel: '04 76 22 22 23', mobile: '06 10 00 00 07', email: 'l.perrin@ria.example' },
   ];
   // Composants d'ouvrage : fourniture (article × quantité par unité) ou main-d'œuvre (catégorie × heures par unité)
@@ -90,7 +100,7 @@ function demoData() {
   const ouv = (designation, unite, qte, composants) => ({ type: 'ouvrage', designation, unite, qte, composants });
 
   const affaires = [
-    { id: 'af1', code: `CH-${Y}-` + '001', nom: 'Ligne NEP inox – Usine de Rumilly', clientId: 'e2', contactId: 'k3', siteId: 's4', chargeId: 'u1', statut: 'En cours', devisId: 'dv1', dateCreation: d(-50), heuresPrevues: 0, rex: { note: '', positif: '', negatif: '', actions: '' } },
+    { id: 'af1', code: `CH-${Y}-` + '001', nom: 'Ligne NEP inox – Usine de Rumilly', clientId: 'e2', contactId: 'k3', siteId: 's4', moeId: 'e9', moeContactId: 'k9', chargeId: 'u1', statut: 'En cours', devisId: 'dv1', dateCreation: d(-50), heuresPrevues: 0, rex: { note: '', positif: '', negatif: '', actions: '' } },
     { id: 'af2', code: `CH-${Y}-` + '002', nom: 'Remplacement collecteur vapeur DN150', clientId: 'e1', contactId: 'k1', siteId: 's2', chargeId: 'u2', statut: 'Facturé', devisId: 'dv2', dateCreation: d(-110), heuresPrevues: 0, rex: { note: 3, positif: 'Préfabrication des tronçons en atelier, arrêt de l\'unité tenu en 5 jours.', negatif: '6 soudures reprises après contrôle RX (accès difficile en rack). Heures soudeurs dépassées.', actions: 'Prévoir 15 % de reprises sur les soudures en hauteur. Visite de site systématique avant chiffrage.' } },
     { id: 'af3', code: `CH-${Y}-` + '003', nom: 'Skid de dosage – bâtiment B', clientId: 'e3', contactId: 'k4', siteId: 's5', chargeId: 'u1', statut: 'Facturé', devisId: 'dv3', dateCreation: d(-85), heuresPrevues: 0, rex: { note: 4, positif: 'Skid préfabriqué à 90 % en atelier, montage en 3 jours.', negatif: 'Remise commerciale trop élevée.', actions: 'Plancher de remise à 8 % sur les skids.' } },
   ];
@@ -151,15 +161,47 @@ function demoData() {
         ouv('Échafaudage', 'semaine', 4, [F('a11', 1)]),
       ] },
   ];
-  const facture = (id, numero, dv, date, echeance, statut) => {
-    const src = devis.find(x => x.id === dv);
-    return { id, numero, devisId: dv, affaireId: src.affaireId, clientId: src.clientId, contactId: src.contactId, siteId: src.siteId, date, echeance, statut,
-      lignes: JSON.parse(JSON.stringify(src.lignes)), ajustements: src.ajustements, zoneId: src.zoneId };
+  // Situations de travaux : proposition d'avancement (BL) à la maîtrise d'œuvre, puis facture une fois acceptée
+  const lineHT = l => l.qte * l.composants.reduce((t, c) => t + (c.type === 'mo' ? c.heures * c.taux : c.qte * c.pu), 0);
+  const livraisonDevis = dv => {
+    const z = zones.find(x => x.id === dv.zoneId); if (!z) return 0;
+    const poids = dv.lignes.filter(l => l.type !== 'chapitre').reduce((t, l) => t + l.qte * l.composants.reduce((p, c) => p + (c.type === 'mo' ? 0 : c.qte * (c.poids || 0)), 0), 0);
+    return z.forfait + z.prixParTonne * poids / 1000;
   };
-  const factures = [
-    facture('fa1', `FA-${Y}-` + '0001', 'dv2', d(-20), d(25), 'Payée'),
-    facture('fa2', `FA-${Y}-` + '0002', 'dv3', d(-35), d(10), 'Émise'),
-  ];
+  const r2 = v => Math.round(v * 100) / 100;
+  const situations = [], factures = [];
+  const situation = (id, numero, dvId, date, pctFn, statut, factureNum, fDate, fEch, fStatut) => {
+    const dv = devis.find(x => x.id === dvId);
+    const brut = dv.lignes.filter(l => l.type !== 'chapitre').reduce((t, l) => t + lineHT(l), 0);
+    const ratio = 1 + dv.ajustements.reduce((t, x) => t + x.pct, 0) / 100;
+    const prev = situations.filter(x => x.devisId === dvId && x.statut === 'Acceptée').pop();
+    const av = {}, lignes = [];
+    dv.lignes.forEach((l, i) => {
+      if (l.type === 'chapitre') { lignes.push({ type: 'chapitre', titre: l.titre }); return; }
+      const p = pctFn(l, i), before = prev ? (prev.avancements[i] || 0) : 0;
+      av[i] = p;
+      if (p !== before) lignes.push({ designation: `${l.designation} – avancement ${before} % → ${p} %`, unite: '', qte: 1, pu: r2(lineHT(l) * ratio * (p - before) / 100) });
+    });
+    const liv = livraisonDevis(dv), pl = pctFn({}, 'liv'), bl = prev ? (prev.avancements.liv || 0) : 0;
+    av.liv = pl;
+    if (liv && pl !== bl) lignes.push({ designation: `Transport / livraison – avancement ${bl} % → ${pl} %`, unite: '', qte: 1, pu: r2(liv * (pl - bl) / 100) });
+    const sit = { id, numero: `BL-${Y}-` + numero, affaireId: dv.affaireId, devisId: dvId, date, statut, avancements: av, factureId: '', commentaire: '' };
+    situations.push(sit);
+    if (factureNum) {
+      const fid = 'fa' + numero;
+      sit.factureId = fid;
+      factures.push({ id: fid, numero: `FA-${Y}-` + factureNum, situationId: id, devisId: dvId, affaireId: dv.affaireId, clientId: dv.clientId, contactId: dv.contactId, siteId: dv.siteId, chargeId: dv.chargeId,
+        objet: `${dv.objet} – situation n° ${situations.filter(x => x.devisId === dvId).length}`, date: fDate, echeance: fEch, statut: fStatut, lignes: lignes.filter((l, k, arr) => l.type !== 'chapitre' || (arr[k + 1] && arr[k + 1].type !== 'chapitre')), ajustements: [], zoneId: '' });
+    }
+    return sit;
+  };
+  situation('sit1', '0001', 'dv2', d(-24), () => 100, 'Acceptée', '0001', d(-20), d(25), 'Payée');
+  situation('sit2', '0002', 'dv3', d(-38), () => 100, 'Acceptée', '0002', d(-35), d(10), 'Émise');
+  // Ligne NEP : situation 1 acceptée et facturée, situation 2 proposée à la maîtrise d'œuvre
+  const nep1 = (l, i) => ({ 1: 100, 3: 30, 4: 20, 6: 0, 7: 0, 9: 0, 10: 0, liv: 50 }[i] ?? 0);
+  const nep2 = (l, i) => ({ 1: 100, 3: 55, 4: 45, 6: 15, 7: 0, 9: 0, 10: 0, liv: 100 }[i] ?? 0);
+  situation('sit3', '0003', 'dv1', d(-12), nep1, 'Acceptée', '0003', d(-9), d(36), 'Émise');
+  situation('sit4', '0004', 'dv1', d(-2), nep2, 'Proposée');
   // Commandes fournisseurs affectées aux chantiers
   const CL = (aid, qte, pu) => { const a = articles.find(x => x.id === aid); return { articleId: aid, designation: a.designation, unite: a.unite, qte, pu: pu ?? a.coutRevient }; };
   const commandes = [
@@ -190,7 +232,10 @@ function demoData() {
     const day = addDays(today, offset).getDay();
     if (day === 0 || day === 6) return;
     const debut = 7 * 60 + 30, pause = h > 6 ? 60 : 0;
-    temps.push({ id: uid(), affaireId: aid, userId: uidv, date: d(offset), heures: h, debut: hhmm(debut), fin: hhmm(debut + h * 60 + pause), pause, tache });
+    const enCours = offset > -8; // pointages récents : en attente de validation
+    const chef = (users.find(u => u.id === uidv) || {}).chefId;
+    temps.push({ id: uid(), affaireId: aid, userId: uidv, date: d(offset), heures: h, debut: hhmm(debut), fin: hhmm(debut + h * 60 + pause), pause, tache,
+      panier: h >= 6, statut: enCours ? '' : 'Validé', saisiPar: chef && offset > -9 ? chef : uidv });
   };
   for (let i = 1; i <= 21; i++) {
     pointe('af1', 'o5', -i, 8, 'Préfabrication');
@@ -199,6 +244,7 @@ function demoData() {
     if (i <= 8) { pointe('af1', 'o3', -i, 8, 'Montage'); pointe('af1', 'o4', -i, 8, 'Montage'); }
   }
   for (let i = 0; i < 8; i++) pointe('af1', 'o6', -48 + i, 7, 'Isométriques');
+  for (let i = 1; i <= 8; i++) { pointe('af1', 'i1', -i, 8, 'Montage'); pointe('af1', 'i2', -i, i % 3 === 0 ? 10 : 8, 'Soudure'); }
   // CH-002 : dépassement d'heures soudeurs (REX)
   for (let i = 0; i < 12; i++) pointe('af2', 'o5', -112 + i, 8, 'Préfabrication des tronçons');
   for (let i = 0; i < 22; i++) pointe('af2', 'o1', -106 + i, 9, 'Soudure + reprises RX');
@@ -210,9 +256,16 @@ function demoData() {
   for (let i = 0; i < 5; i++) pointe('af3', 'o4', -66 + i, 8, 'Montage');
   for (let i = 0; i < 5; i++) pointe('af3', 'o6', -86 + i, 7, 'Plans et DOE');
 
+  const frais = [
+    { id: 'nf1', numero: `NF-${Y}-` + '0001', userId: 'o3', affaireId: 'af1', date: d(-9), categorie: 'Repas', montantTTC: 68.4, tauxTVA: 10, description: 'Repas équipe montage (4 pers.)', photoId: '', statut: 'Validée' },
+    { id: 'nf2', numero: `NF-${Y}-` + '0002', userId: 'o1', affaireId: 'af1', date: d(-3), categorie: 'Carburant', montantTTC: 72.15, tauxTVA: 20, description: 'Gasoil camionnette atelier → Rumilly', photoId: '', statut: 'Soumise' },
+    { id: 'nf3', numero: `NF-${Y}-` + '0003', userId: 'o3', affaireId: 'af1', date: d(-2), categorie: 'Péage', montantTTC: 18.6, tauxTVA: 20, description: 'Péage A41 aller-retour', photoId: '', statut: 'Soumise' },
+    { id: 'nf4', numero: `NF-${Y}-` + '0004', userId: 'o1', affaireId: 'af2', date: d(-100), categorie: 'Hôtel', montantTTC: 189, tauxTVA: 10, description: '2 nuits à Fos-sur-Mer pendant l\'arrêt', photoId: '', statut: 'Remboursée' },
+  ];
+
   return {
-    settings: { societe: 'Pipe-Fit Industrie', adresse: 'ZI des Forges – 69800 Saint-Priest', siret: '000 000 000 00000', tva: 20, tauxHoraireDefaut: 58, delaiPaiement: 45, dureeHebdo: 35, seuilHS50: 43 },
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, commandes, factures, planning, temps,
+    settings: { societe: 'Pipe-Fit Industrie', adresse: 'ZI des Forges – 69800 Saint-Priest', siret: '000 000 000 00000', tva: 20, tauxHoraireDefaut: 58, delaiPaiement: 45, dureeHebdo: 35, seuilHS50: 43, montantPanier: 10.5 },
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais,
   };
 }
 

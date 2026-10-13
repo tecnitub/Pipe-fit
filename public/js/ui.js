@@ -149,9 +149,11 @@ function askValue(message, value = '', type = 'text') {
   });
 }
 
-function download(filename, text, type = 'application/json') {
+// Téléchargement d'un fichier généré (texte ou octets) ; la démo en ligne passe par l'autorisation de téléchargement
+function download(filename, data, type = 'application/json') {
+  if (window.SAVE_FILE) return window.SAVE_FILE(filename, data);
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.href = URL.createObjectURL(new Blob([data], { type }));
   a.download = filename;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);

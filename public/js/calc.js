@@ -83,6 +83,32 @@ const Calc = {
     };
   },
 
+  // Note de frais : montant HT imputé au chantier
+  fraisHT(f) { return num(f.montantTTC) / (1 + num(f.tauxTVA) / 100); },
+
+  // Situation de travaux (BL) : avancement cumulé par ligne du devis, comparé à la dernière situation acceptée.
+  // Les montants tiennent compte des remises / majorations du devis ; la livraison est une ligne à part.
+  situation(sit) {
+    const dv = Store.get('devis', sit.devisId) || { lignes: [] };
+    const t = this.doc(dv), ratio = t.brut ? t.net / t.brut : 1;
+    const ordre = x => (x.numero || '~') + (x.date || '');
+    const prev = Store.all('situations').filter(x => x.devisId === sit.devisId && x.id !== sit.id && x.statut === 'Acceptée' && ordre(x) < ordre(sit))
+      .sort((a, b) => ordre(a).localeCompare(ordre(b))).pop();
+    const av = sit.avancements || {}, pav = (prev && prev.avancements) || {};
+    const rows = [];
+    (dv.lignes || []).forEach((l, i) => {
+      if (l.type === 'chapitre') { rows.push({ chap: true, titre: l.titre }); return; }
+      rows.push({ key: String(i), designation: l.designation, marche: this.ligneHT(l) * ratio, prec: num(pav[i]), cumul: av[i] === undefined ? num(pav[i]) : num(av[i]) });
+    });
+    if (t.livraison) rows.push({ key: 'liv', designation: 'Transport / livraison', marche: t.livraison, prec: num(pav.liv), cumul: av.liv === undefined ? num(pav.liv) : num(av.liv) });
+    let marche = 0, cumul = 0, precedent = 0;
+    rows.filter(r => !r.chap).forEach(r => {
+      r.montantCumul = r.marche * r.cumul / 100; r.montantPrec = r.marche * r.prec / 100; r.montant = r.montantCumul - r.montantPrec;
+      marche += r.marche; cumul += r.montantCumul; precedent += r.montantPrec;
+    });
+    return { rows, prev, marche, cumul, precedent, montant: cumul - precedent, pctCumul: marche ? cumul / marche * 100 : 0, pctPrec: marche ? precedent / marche * 100 : 0 };
+  },
+
   commande(c) {
     return { total: sumBy(c.lignes || [], l => num(l.qte) * num(l.pu)) };
   },
@@ -98,7 +124,9 @@ const Calc = {
     const T = devis.map(d => this.doc(d));
     const factures = Store.all('factures').filter(f => f.affaireId === af.id);
     const commandes = Store.all('commandes').filter(c => c.affaireId === af.id && c.statut !== 'Annulée' && c.statut !== 'Brouillon');
-    const temps = Store.all('temps').filter(t => t.affaireId === af.id);
+    const temps = Store.all('temps').filter(t => t.affaireId === af.id && t.statut !== 'Refusé');
+    const frais = Store.all('frais').filter(f => f.affaireId === af.id && f.statut !== 'Refusée');
+    const coutFrais = sumBy(frais, f => this.fraisHT(f));
 
     const caDevis = sumBy(T, t => t.totalHT);
     const caFacture = sumBy(factures, f => this.doc(f).totalHT);
@@ -110,7 +138,7 @@ const Calc = {
     const heuresPassees = sumBy(temps, t => num(t.heures));
     const coutMO = sumBy(temps, t => num(t.heures) * this.tauxUser(t.userId));
     const achats = sumBy(commandes, c => this.commande(c).total);
-    const marge = ca - achats - coutMO - budgetLiv;
+    const marge = ca - achats - coutMO - budgetLiv - coutFrais;
     const margePrev = sumBy(T, t => t.margePrev);
     // Projection à terminaison : reste d'heures au coût moyen du devis, fournitures au plus haut du budget et de l'engagé
     const termine = ['Terminé', 'Facturé', 'Clos'].includes(af.statut);
@@ -118,7 +146,7 @@ const Calc = {
     const coutMoyenH = heuresBudget ? budgetMO / heuresBudget : num(Store.data.settings.tauxHoraireDefaut);
     const coutFFin = termine ? achats : Math.max(achats, budgetF);
     const coutMOFin = coutMO + resteHeures * coutMoyenH;
-    const margeFin = (termine ? ca : Math.max(ca, caDevis)) - coutFFin - coutMOFin - budgetLiv;
+    const margeFin = (termine ? ca : Math.max(ca, caDevis)) - coutFFin - coutMOFin - budgetLiv - coutFrais;
     const caFin = termine ? ca : Math.max(ca, caDevis);
 
     // Heures prévues / passées par catégorie de main-d'œuvre
@@ -136,6 +164,7 @@ const Calc = {
       ecartHeuresPct: heuresPrevues ? (heuresPassees - heuresPrevues) / heuresPrevues * 100 : 0,
       avancement: heuresPrevues ? heuresPassees / heuresPrevues * 100 : 0,
       marge, margePct: ca ? marge / ca * 100 : 0, margePrev,
+      coutFrais, nbFrais: frais.length, pctFacture: caDevis ? caFacture / caDevis * 100 : 0,
       termine, resteHeures, coutFFin, coutMOFin, margeFin, margeFinPct: caFin ? margeFin / caFin * 100 : 0, margePrevPct: caDevis ? margePrev / caDevis * 100 : 0,
       hByMo,
     };
@@ -161,15 +190,21 @@ const Calc = {
     };
   },
 
-  // Paie : découpage des heures en normales / supplémentaires (25 %, 50 %) semaine par semaine,
-  // puis rattachement au mois de chaque jour.
+  // Paie : heures VALIDÉES découpées en normales / supplémentaires (25 %, 50 %) semaine par semaine,
+  // puis rattachées au mois de chaque jour. Paniers et notes de frais du mois en plus.
   paie(userId, mois) {
     const s = Store.data.settings;
-    const base = num(s.dureeHebdo) || 35, seuil50 = num(s.seuilHS50) || 43;
-    const parJour = {};
-    Store.all('temps').filter(t => t.userId === userId && t.heures).forEach(t => { parJour[t.date] = (parJour[t.date] || 0) + num(t.heures); });
-    const cumul = {};
-    const res = { jours: 0, total: 0, normales: 0, hs25: 0, hs50: 0 };
+    const base = num(s.dureeHebdo) || 35, seuil50 = num(s.seuil50 || s.seuilHS50) || 43;
+    const parJour = {}, paniers = new Set();
+    let attente = 0;
+    Store.all('temps').filter(t => t.userId === userId && num(t.heures)).forEach(t => {
+      if (t.statut === 'Validé') {
+        parJour[t.date] = (parJour[t.date] || 0) + num(t.heures);
+        if (t.panier && t.date.startsWith(mois)) paniers.add(t.date);
+      } else if (t.statut !== 'Refusé' && t.date.startsWith(mois)) attente += num(t.heures);
+    });
+    const cumul = {}, semaines = {};
+    const res = { jours: 0, total: 0, normales: 0, hs25: 0, hs50: 0, attente, semaines };
     Object.keys(parJour).sort().forEach(date => {
       const wk = isoWeek(new Date(date)), h = parJour[date];
       const avant = cumul[wk] || 0, apres = avant + h;
@@ -179,10 +214,15 @@ const Calc = {
       const h25 = Math.max(0, Math.min(apres, seuil50) - Math.max(avant, base));
       const h50 = Math.max(0, apres - Math.max(avant, seuil50));
       res.jours++; res.total += h; res.normales += n; res.hs25 += h25; res.hs50 += h50;
+      const w = semaines[wk] = semaines[wk] || { total: 0, normales: 0, hs25: 0, hs50: 0 };
+      w.total += h; w.normales += n; w.hs25 += h25; w.hs50 += h50;
     });
+    for (const wk in semaines) semaines[wk].semaineComplete = cumul[wk]; // total de la semaine entière (à cheval sur deux mois)
     const u = Store.get('users', userId) || {};
-    const tx = num(u.salaireHoraire);
-    res.brut = tx * (res.normales + res.hs25 * 1.25 + res.hs50 * 1.5);
+    res.paniers = paniers.size;
+    res.montantPaniers = paniers.size * num(s.montantPanier);
+    res.frais = sumBy(Store.all('frais').filter(f => f.userId === userId && ['Validée', 'Remboursée'].includes(f.statut) && (f.date || '').startsWith(mois)), f => num(f.montantTTC));
+    res.brut = num(u.salaireHoraire) * (res.normales + res.hs25 * 1.25 + res.hs50 * 1.5);
     return res;
   },
 };

@@ -75,13 +75,40 @@ test('droits par rôle, conflits de version et numérotation', async () => {
 
   // Facture : un chargé ne peut changer que le statut, ni la supprimer
   const fa = (await call('PUT', '/api/records/factures/fa-x', { data: { affaireId: 'af1', statut: 'Émise', lignes: [{ qte: 1, pu: 100 }] } }, claire)).body;
-  assert.strictEqual(fa.numero, `FA-${year}-0003`);
+  assert.strictEqual(fa.numero, `FA-${year}-0004`);
   const upd = await call('PUT', '/api/records/factures/fa-x', { data: { ...fa, statut: 'Payée', lignes: [], numero: 'FA-HACK' }, version: fa._v }, claire);
   assert.strictEqual(upd.body.statut, 'Payée');
   assert.strictEqual(upd.body.lignes.length, 1);
   assert.strictEqual(upd.body.numero, fa.numero);
   assert.strictEqual((await call('DELETE', '/api/records/factures/fa-x', {}, claire)).status, 403);
   assert.strictEqual((await call('DELETE', '/api/records/factures/fa-x', {}, admin)).status, 200);
+
+  // Chef d'équipe : pointe pour ses intérimaires, pas pour les autres ; un pointage validé est verrouillé
+  assert.strictEqual((await call('POST', '/api/accounts', { login: 'lucas', password: 'motdepasse3', role: 'atelier', userId: 'o3' }, admin)).status, 200);
+  const lucas = await login('lucas', 'motdepasse3');
+  assert.strictEqual((await call('PUT', '/api/records/temps/t-i1', { data: { affaireId: 'af1', userId: 'i1', date: '2026-10-02', heures: 8 } }, lucas)).status, 200);
+  assert.strictEqual((await call('PUT', '/api/records/temps/t-o1', { data: { affaireId: 'af1', userId: 'o1', date: '2026-10-02', heures: 8 } }, lucas)).status, 403);
+  assert.strictEqual((await call('PUT', '/api/records/temps/t-i1b', { data: { affaireId: 'af1', userId: 'i1', date: '2026-10-02', heures: 8, statut: 'Validé' } }, lucas)).status, 403);
+  const ti = (await call('GET', '/api/data', null, claire)).body.temps.find(t => t.id === 't-i1');
+  const val = await call('PUT', '/api/records/temps/t-i1', { data: { ...ti, statut: 'Validé' }, version: ti._v }, claire);
+  assert.strictEqual(val.status, 200);
+  assert.strictEqual((await call('PUT', '/api/records/temps/t-i1', { data: { ...val.body, heures: 12 }, version: val.body._v }, lucas)).status, 403);
+  assert.strictEqual((await call('DELETE', '/api/records/temps/t-i1', {}, lucas)).status, 403);
+
+  // Note de frais avec photo du justificatif
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const up = await call('POST', '/api/files', { dataUrl: png }, atelier);
+  assert.strictEqual(up.status, 200);
+  const img = await fetch(base + '/api/files/' + up.body.id, { headers: { Cookie: atelier } });
+  assert.strictEqual(img.headers.get('content-type'), 'image/png');
+  assert.strictEqual((await call('POST', '/api/files', { dataUrl: 'data:text/html;base64,PHNjcmlwdD4=' }, atelier)).status, 400);
+  const nf = await call('PUT', '/api/records/frais/nf-x', { data: { userId: 'o1', affaireId: 'af1', montantTTC: 12, photoId: up.body.id, statut: 'Soumise' } }, atelier);
+  assert.match(nf.body.numero, new RegExp(`^NF-${year}-\\d{4}$`));
+  assert.strictEqual((await call('PUT', '/api/records/frais/nf-y', { data: { userId: 'o2', affaireId: 'af1', montantTTC: 12 } }, atelier)).status, 403);
+
+  // Situation de travaux : numérotation BL indépendante
+  const bl = (await call('PUT', '/api/records/situations/bl-x', { data: { affaireId: 'af1', devisId: 'dv1', avancements: {} } }, claire)).body;
+  assert.match(bl.numero, new RegExp(`^BL-${year}-0005$`));
 
   // Commande fournisseur et chantier : numéros attribués par le serveur
   const cf = (await call('PUT', '/api/records/commandes/cf-x', { data: { affaireId: 'af1', lignes: [] } }, claire)).body;

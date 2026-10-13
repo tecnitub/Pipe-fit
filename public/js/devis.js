@@ -99,7 +99,6 @@ function devisEditor(id) {
   if (!d) return '<p>Devis introuvable. <a href="#/devis">Retour aux devis</a></p>';
   const t = Calc.doc(d);
   const cid = docClientId(d);
-  const facture = Store.all('factures').find(f => f.devisId === d.id);
   const locked = d.statut === 'Accepté';
   const chaps = Calc.chapitres(d);
   const subAfter = {};
@@ -113,7 +112,7 @@ function devisEditor(id) {
     <button class="secondary" id="dup">Dupliquer</button>
     <button class="secondary print-btn" onclick="window.print()">Imprimer / PDF</button>
     ${!d.affaireId && d.statut !== 'Refusé' ? '<button id="accept">Accepté : créer le chantier</button>' : ''}
-    ${d.statut === 'Accepté' ? (facture ? `<a class="btn secondary" href="#/facture/${facture.id}">Facture ${esc(facture.numero)}</a>` : '<button class="secondary" id="facturer">Générer la facture</button>') : ''}
+    ${d.affaireId ? `<a class="btn secondary" href="#/situations?devis=${d.id}">Situations</a>` : ''}
     <button class="danger" id="del">Supprimer</button>
   </div>
   <h1>Devis ${esc(d.numero || '')} ${badge(d.statut)}</h1>
@@ -234,7 +233,6 @@ Views.devis.bind = (root, params) => {
   on('#add-maj', 'onclick', () => { (d.ajustements = d.ajustements || []).push({ libelle: 'Majoration', pct: 5 }); save(); });
 
   on('#accept', 'onclick', () => acceptDevis(d));
-  on('#facturer', 'onclick', () => { const f = facturerDevis(d); location.hash = `#/facture/${f.id}`; });
   on('#del', 'onclick', () => ask(`Supprimer le devis ${d.numero} ?${d.affaireId ? ' Le chantier associé sera conservé.' : ''}`, 'Supprimer').then(ok => {
     if (ok) { Store.remove('devis', d.id); location.hash = '#/devis'; }
   }));

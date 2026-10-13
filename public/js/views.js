@@ -28,6 +28,9 @@ Views.dashboard = () => {
   const alertes = stats.filter(x => !x.s.termine && (x.s.ecartHeuresPct > 0 || x.s.consoF > 100 || x.s.margeFinPct < x.s.margePrevPct - 3));
   const commandesAttente = Store.all('commandes').filter(c => c.statut === 'Envoyée');
   const week = isoWeek(new Date());
+  const aValider = sumBy(Store.all('temps').filter(t => !t.statut && t.fin !== '' ), t => num(t.heures));
+  const fraisAValider = Store.all('frais').filter(f => f.statut === 'Soumise');
+  const sitsProposees = Store.all('situations').filter(x => x.statut === 'Proposée');
   const tempsSemaine = sumBy(Store.all('temps').filter(t => isoWeek(new Date(t.date)) === week), t => num(t.heures));
   return `
   <h1>Tableau de bord</h1>
@@ -36,6 +39,11 @@ Views.dashboard = () => {
     <div class="card"><div class="label">Carnet de commandes</div><div class="value">${eur(carnet)}</div><div class="sub">${actifs.length} chantiers en cours, reste à facturer</div></div>
     <div class="card"><div class="label">CA facturé HT</div><div class="value">${eur(caFacture)}</div><div class="sub">Restant dû ${eur(impayes)} TTC</div></div>
     <div class="card"><div class="label">Heures pointées (${week.replace('-W', ' S')})</div><div class="value">${fmt(tempsSemaine, 1)} h</div><div class="sub">${commandesAttente.length} commande(s) fournisseur en attente de livraison</div></div>
+  </div>
+  <div class="cards">
+    <a class="card clickable-card" href="#/rh/validation"><div class="label">Pointages à valider</div><div class="value ${aValider ? 'warn-text' : ''}">${fmt(aValider, 1)} h</div><div class="sub">avant envoi en paie</div></a>
+    <a class="card clickable-card" href="#/rh/frais"><div class="label">Notes de frais à valider</div><div class="value">${fraisAValider.length}</div><div class="sub">${eur(sumBy(fraisAValider, f => num(f.montantTTC)))} TTC</div></a>
+    <a class="card clickable-card" href="#/situations?statut=Proposée"><div class="label">Situations en attente d'accord</div><div class="value">${sitsProposees.length}</div><div class="sub">${eur(sumBy(sitsProposees, x => Calc.situation(x).montant))} HT proposés à la maîtrise d'œuvre</div></a>
   </div>
   <h2>Chantiers à surveiller</h2>
   ${alertes.length ? `<div class="table-wrap"><table><tr><th>Chantier</th><th>Chargé</th><th>Heures</th><th>Fournitures</th><th class="num">Marge prévue</th><th class="num">À terminaison</th></tr>
@@ -52,6 +60,8 @@ const chantierFields = [
   { key: 'clientId', label: 'Client', type: 'select', options: v => options(clientsList(), v) },
   { key: 'contactId', label: 'Contact client (chargé de travaux)', type: 'select', dynamic: true, options: (v, o) => contactOptions(o.clientId, v) },
   { key: 'siteId', label: "Site d'intervention", type: 'select', dynamic: true, options: (v, o) => siteOptions(o.clientId, v) },
+  { key: 'moeId', label: "Maîtrise d'œuvre (destinataire des situations)", type: 'select', options: v => options(moeList(), v) },
+  { key: 'moeContactId', label: "Contact maîtrise d'œuvre", type: 'select', dynamic: true, options: (v, o) => contactOptions(o.moeId, v) },
   { key: 'chargeId', label: "Chargé d'affaires", type: 'select', options: v => options(charges(), v) },
   { key: 'statut', label: 'Statut', type: 'select', options: v => optionsStr(STATUTS_CHANTIER, v) },
   { key: 'heuresPrevues', label: 'Heures prévues (vide = heures du devis)', type: 'number', step: '0.5' },
@@ -97,20 +107,23 @@ Views.chantier = params => {
   temps.forEach(t => { parOp[t.userId] = (parOp[t.userId] || 0) + num(t.heures); });
   const rex = a.rex || {};
   const dAcc = devis.find(d => d.statut === 'Accepté');
+  const sits = Store.all('situations').filter(x => x.affaireId === a.id).sort((x, y) => (x.numero || '~').localeCompare(y.numero || '~'));
+  const frais = Store.all('frais').filter(n => n.affaireId === a.id).sort((x, y) => (y.date || '').localeCompare(x.date || ''));
   return `
   <div class="toolbar"><a href="#/chantiers" class="btn secondary">← Chantiers</a><span class="spacer"></span>
     <button id="edit" class="secondary">Modifier</button>
-    <a class="btn" href="#/commandes/new?chantier=${a.id}">+ Commande fournisseur</a>
-    ${dAcc && !facts.length ? '<button class="secondary" id="facturer">Facturer le chantier</button>' : ''}</div>
+    <a class="btn secondary" href="#/commandes/new?chantier=${a.id}">+ Commande fournisseur</a>
+    ${dAcc ? '<button id="situation">+ Situation de travaux</button>' : ''}</div>
   <h1>${esc(affaireLabel(a))} ${badge(a.statut)}</h1>
   <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${a.clientId}">${esc(clientName(a.clientId))}</a>` : '—'}
     ${a.contactId ? ` · Contact : ${esc(contactName(Store.get('contacts', a.contactId)))}` : ''}
     ${a.siteId ? ` · Site : ${esc(siteLabel(siteOf(a.clientId, a.siteId)))}` : ''}
+    ${a.moeId ? ` · Maîtrise d'œuvre : ${esc(clientName(a.moeId))}${a.moeContactId ? ` (${esc(contactName(Store.get('contacts', a.moeContactId)))})` : ''}` : ''}
     · Chargé d'affaires : ${esc(userName(a.chargeId))}
     ${devis.length ? ` · Devis : ${devis.map(d => `<a href="#/devis/${d.id}">${esc(d.numero)}</a>`).join(', ')}` : ''}</p>
 
   <div class="cards">
-    <div class="card"><div class="label">Montant du marché</div><div class="value">${eur(s.caDevis)}</div><div class="sub">Facturé ${eur(s.caFacture)} · reste ${eur(s.resteAFacturer)}</div></div>
+    <div class="card"><div class="label">Montant du marché</div><div class="value">${eur(s.caDevis)}</div>${gauge(s.caFacture, s.caDevis)}<div class="sub">Facturé ${eur(s.caFacture)} · reste ${eur(s.resteAFacturer)}</div></div>
     <div class="card"><div class="label">Heures</div><div class="value">${fmt(s.heuresPassees, 1)} / ${fmt(s.heuresPrevues, 1)} h</div>${gauge(s.heuresPassees, s.heuresPrevues)}<div class="sub">Reste ${fmt(s.resteHeures, 1)} h · planifié ${fmt(s.heuresPlanifiees)} h</div></div>
     <div class="card"><div class="label">Marge prévue</div><div class="value">${eur(s.margePrev)}</div><div class="sub">${pct(s.margePrevPct)} au devis</div></div>
     <div class="card"><div class="label">Marge à terminaison</div><div class="value ${signClass(s.margeFin)}">${eur(s.margeFin)}</div><div class="sub">${marginBadge(s.margeFinPct)} ${s.termine ? 'réelle' : 'projetée'}</div></div>
@@ -122,6 +135,7 @@ Views.chantier = params => {
     <tr><td><strong>Fournitures</strong><br><span class="muted small">commandes fournisseurs envoyées ou reçues</span></td><td class="num">${eur(s.venteF)}</td><td class="num">${eur(s.budgetF)}</td><td class="num">${eur(s.achats)}</td><td>${gauge(s.achats, s.budgetF)}</td><td class="num">${eur(s.coutFFin)}</td><td class="num ${s.coutFFin > s.budgetF ? 'neg' : 'pos'}">${eur(s.budgetF - s.coutFFin)}</td></tr>
     <tr><td><strong>Main-d'œuvre</strong><br><span class="muted small">${fmt(s.heuresPassees, 1)} h pointées × coût horaire de chaque opérateur</span></td><td class="num">${eur(s.venteMO)}</td><td class="num">${eur(s.budgetMO)}</td><td class="num">${eur(s.coutMO)}</td><td>${gauge(s.coutMO, s.budgetMO)}</td><td class="num">${eur(s.coutMOFin)}</td><td class="num ${s.coutMOFin > s.budgetMO ? 'neg' : 'pos'}">${eur(s.budgetMO - s.coutMOFin)}</td></tr>
     <tr><td>Transport</td><td class="num"></td><td class="num">${eur(s.budgetLiv)}</td><td class="num">${eur(s.budgetLiv)}</td><td></td><td class="num">${eur(s.budgetLiv)}</td><td class="num"></td></tr>
+    <tr><td>Notes de frais <span class="muted small">(HT, hors refusées)</span></td><td class="num"></td><td class="num">—</td><td class="num">${eur(s.coutFrais)}</td><td></td><td class="num">${eur(s.coutFrais)}</td><td class="num ${s.coutFrais ? 'neg' : ''}">${s.coutFrais ? eur(-s.coutFrais) : ''}</td></tr>
   </table></div>
 
   <h2>Heures par catégorie de main-d'œuvre</h2>
@@ -137,9 +151,14 @@ Views.chantier = params => {
   ${Object.keys(parOp).length ? `<div class="table-wrap"><table><tr><th>Opérateur</th><th>Catégorie</th><th class="num">Heures</th><th class="num">Coût</th></tr>
     ${Object.entries(parOp).sort((x, y) => y[1] - x[1]).map(([uid, h]) => `<tr><td>${esc(userName(uid))}</td><td>${esc(moOf((Store.get('users', uid) || {}).categorieId).libelle || '')}</td><td class="num">${fmt(h, 1)} h</td><td class="num">${eur(h * Calc.tauxUser(uid))}</td></tr>`).join('')}</table></div>` : '<p class="muted">Aucune heure pointée.</p>'}
 
-  <h2>Factures</h2>
-  ${facts.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Statut</th><th class="num">Total TTC</th></tr>
-    ${facts.map(f => `<tr class="clickable" onclick="location.hash='#/facture/${f.id}'"><td>${esc(f.numero)}</td><td>${dateFr(f.date)}</td><td>${badge(f.statut)}</td><td class="num">${eur(Calc.doc(f).totalTTC)}</td></tr>`).join('')}</table></div>` : '<p class="muted">Aucune facture.</p>'}
+  <h2>Situations de travaux et factures</h2>
+  ${sits.length ? `<div class="table-wrap"><table><tr><th>Situation</th><th>Date</th><th>Statut</th><th class="num">Avancement cumulé</th><th class="num">Montant HT</th><th>Facture</th></tr>
+    ${sits.map(x => { const c = Calc.situation(x), f = Store.get('factures', x.factureId); return `<tr class="clickable" onclick="location.hash='#/situations/${x.id}'"><td>n° ${situationRang(x)} · ${esc(x.numero || '…')}</td><td>${dateFr(x.date)}</td><td>${badge(x.statut)}</td><td class="num">${pct(c.pctCumul)}</td><td class="num">${eur(c.montant)}</td><td>${f ? `${esc(f.numero)} ${badge(f.statut)}` : ''}</td></tr>`; }).join('')}</table></div>`
+  : '<p class="muted">Aucune situation. Utilisez « + Situation de travaux » pour proposer l\'avancement à la maîtrise d\'œuvre.</p>'}
+
+  <h2>Notes de frais imputées</h2>
+  ${frais.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Personne</th><th>Catégorie</th><th>Description</th><th>Statut</th><th class="num">TTC</th></tr>
+    ${frais.map(n => `<tr><td>${esc(n.numero || '')}</td><td>${dateFr(n.date)}</td><td>${esc(userName(n.userId))}</td><td>${esc(n.categorie)}</td><td>${esc(n.description)}</td><td>${badge(n.statut)}</td><td class="num">${eur(n.montantTTC)}</td></tr>`).join('')}</table></div>` : '<p class="muted">Aucune note de frais.</p>'}
 
   <h2>Retour d'expérience (REX)</h2>
   <div class="card">
@@ -157,12 +176,8 @@ Views.chantier.bind = (root, params) => {
   if (!a) return;
   root.querySelector('#edit').onclick = () => editModal({ title: `Chantier ${a.code}`, col: 'affaires', fields: chantierFields, obj: { ...a },
     onDelete: () => { location.hash = '#/chantiers'; } });
-  const fb = root.querySelector('#facturer');
-  if (fb) fb.onclick = () => {
-    const d = Store.all('devis').find(x => x.affaireId === a.id && x.statut === 'Accepté');
-    const f = facturerDevis(d);
-    location.hash = `#/facture/${f.id}`;
-  };
+  const sb = root.querySelector('#situation');
+  if (sb) sb.onclick = () => { const x = nouvelleSituation(a.id); if (x) location.hash = `#/situations/${x.id}`; };
   root.querySelector('#rex-save').onclick = () => {
     a.rex = { note: root.querySelector('#rex-note').value, positif: root.querySelector('#rex-positif').value,
       negatif: root.querySelector('#rex-negatif').value, actions: root.querySelector('#rex-actions').value };
@@ -176,8 +191,8 @@ const STATUTS_FACTURE = ['Émise', 'Payée', 'En retard'];
 Views.factures = () => {
   const today = isoDate(new Date());
   const list = Store.all('factures').slice().sort((a, b) => (b.numero || '~').localeCompare(a.numero || '~'));
-  return `<h1>Factures</h1>
-  <p class="muted">Une facture est générée depuis un devis accepté ou depuis la fiche chantier.</p>
+  return `<h1>Facturation</h1>${facturationTabs('factures')}
+  <p class="muted">Les factures de situation sont générées quand un BL est accepté par la maîtrise d'œuvre.</p>
   ${list.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Échéance</th><th>Chantier</th><th>Client</th><th>Statut</th><th class="num">Total HT</th><th class="num">Total TTC</th></tr>
   ${list.map(f => {
     const a = affaireOf(f.affaireId), t = Calc.doc(f);
@@ -202,7 +217,7 @@ Views.facture = params => {
     ${docHeader(f, 'FACTURE')}
     ${docLinesClient(f)}
     ${totalsTable(f)}
-    <p class="muted" style="margin-top:20px">Échéance de paiement : ${dateFr(f.echeance)}. ${f.devisId ? `Selon devis ${esc((Store.get('devis', f.devisId) || {}).numero)}.` : ''}</p>
+    <p class="muted" style="margin-top:20px">Échéance de paiement : ${dateFr(f.echeance)}. ${f.devisId ? `Selon devis ${esc((Store.get('devis', f.devisId) || {}).numero)}` : ''}${f.situationId ? ` et situation de travaux ${esc((Store.get('situations', f.situationId) || {}).numero || '')} acceptée` : ''}.</p>
   </div>`;
 };
 Views.facture.bind = (root, params) => {
@@ -337,10 +352,14 @@ const settingsFields = [
   { key: 'delaiPaiement', label: 'Délai de paiement (jours)', type: 'number' },
   { key: 'dureeHebdo', label: 'Durée hebdomadaire de travail (h)', type: 'number', step: '0.5' },
   { key: 'seuilHS50', label: 'Heures sup. majorées à 50 % au-delà de (h/semaine)', type: 'number', step: '0.5' },
+  { key: 'montantPanier', label: 'Montant du panier repas (€)', type: 'number', step: '0.01' },
 ];
 const userFields = [
   { key: 'nom', label: 'Nom' },
   { key: 'role', label: 'Rôle', type: 'select', options: v => `<option value="charge" ${v === 'charge' ? 'selected' : ''}>Chargé d'affaires</option><option value="atelier" ${v === 'atelier' ? 'selected' : ''}>Opérateur</option>` },
+  { key: 'type', label: 'Statut', type: 'select', options: v => `<option value="salarie" ${v !== 'interimaire' ? 'selected' : ''}>Salarié</option><option value="interimaire" ${v === 'interimaire' ? 'selected' : ''}>Intérimaire</option>` },
+  { key: 'agenceId', label: "Agence d'intérim", type: 'select', options: v => options(fournisseursList(), v) },
+  { key: 'chefId', label: "Chef d'équipe (peut pointer pour cette personne)", type: 'select', options: v => options(Store.all('users').filter(u => u.role !== 'charge'), v) },
   { key: 'categorieId', label: "Catégorie de main-d'œuvre", type: 'select', options: v => options(moList(), v, m => m.libelle) },
   { key: 'tauxHoraire', label: 'Coût horaire chargé €/h (rentabilité)', type: 'number', step: '0.5' },
   { key: 'salaireHoraire', label: 'Salaire horaire brut €/h (paie)', type: 'number', step: '0.01' },
@@ -370,8 +389,8 @@ Views.parametres = () => {
   ${Store.can('write', 'users') ? `
   <h2>Équipe</h2>
   <div class="toolbar"><button id="u-add">+ Personne</button></div>
-  <div class="table-wrap"><table><tr><th>Nom</th><th>Rôle</th><th>Catégorie</th><th class="num">Coût horaire</th><th class="num">Salaire brut</th><th class="num">Capacité / sem.</th></tr>
-  ${Store.all('users').map(u => `<tr class="clickable" data-id="${u.id}"><td>${esc(u.nom)}</td><td>${u.role === 'charge' ? "Chargé d'affaires" : 'Opérateur'}</td><td>${esc(moOf(u.categorieId).libelle || '')}</td><td class="num">${eur(u.tauxHoraire)}</td><td class="num">${num(u.salaireHoraire) ? eur(u.salaireHoraire) : '—'}</td><td class="num">${fmt(u.capaciteHebdo)} h</td></tr>`).join('')}
+  <div class="table-wrap"><table><tr><th>Nom</th><th>Rôle</th><th>Statut</th><th>Chef d'équipe</th><th>Catégorie</th><th class="num">Coût horaire</th><th class="num">Salaire brut</th><th class="num">Capacité / sem.</th></tr>
+  ${Store.all('users').map(u => `<tr class="clickable" data-id="${u.id}"><td>${esc(u.nom)}</td><td>${u.role === 'charge' ? "Chargé d'affaires" : 'Opérateur'}</td><td>${u.type === 'interimaire' ? `<span class="badge b-warn">Intérimaire</span> ${esc(u.agenceId ? clientName(u.agenceId) : '')}` : 'Salarié'}</td><td>${u.chefId ? esc(userName(u.chefId)) : ''}</td><td>${esc(moOf(u.categorieId).libelle || '')}</td><td class="num">${eur(u.tauxHoraire)}</td><td class="num">${num(u.salaireHoraire) ? eur(u.salaireHoraire) : '—'}</td><td class="num">${fmt(u.capaciteHebdo)} h</td></tr>`).join('')}
   </table></div>` : ''}
 
   ${Store.me.role !== 'atelier' ? `
@@ -386,7 +405,7 @@ Views.parametres = () => {
   ${admin ? `<h2>Historique des modifications</h2><div class="table-wrap"><table id="audit"><tr><td class="muted">Chargement…</td></tr></table></div>` : ''}`;
 };
 
-const COL_LABELS = { users: 'Personne', entreprises: 'Entreprise', contacts: 'Contact', articles: 'Fourniture', mainoeuvre: "Main-d'œuvre", zones: 'Zone', affaires: 'Chantier', devis: 'Devis', commandes: 'Commande', factures: 'Facture', planning: 'Planning', temps: 'Pointage' };
+const COL_LABELS = { situations: 'Situation', frais: 'Note de frais', users: 'Personne', entreprises: 'Entreprise', contacts: 'Contact', articles: 'Fourniture', mainoeuvre: "Main-d'œuvre", zones: 'Zone', affaires: 'Chantier', devis: 'Devis', commandes: 'Commande', factures: 'Facture', planning: 'Planning', temps: 'Pointage' };
 
 function accountModal(acc, onDone) {
   const isNew = !acc.id;

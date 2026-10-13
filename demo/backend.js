@@ -2,16 +2,16 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v3';
+  const KEY = 'pipefit-crm-demo-v4';
   const ME_KEY = 'pipefit-crm-demo-me';
-  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'commandes', 'factures', 'planning', 'temps'];
-  const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3] };
+  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais'];
+  const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4] };
   const ACCOUNTS = [
     { id: 'acc-admin', login: 'admin', nom: 'Administrateur', role: 'admin', userId: null },
     { id: 'acc-claire', login: 'claire', nom: 'Claire Martin', role: 'charge', userId: 'u1' },
     { id: 'acc-julien', login: 'julien', nom: 'Julien Bernard', role: 'charge', userId: 'u2' },
     { id: 'acc-kevin', login: 'kevin', nom: 'Kevin Roux (soudeur)', role: 'atelier', userId: 'o1' },
-    { id: 'acc-lucas', login: 'lucas', nom: 'Lucas Petit (monteur)', role: 'atelier', userId: 'o3' },
+    { id: 'acc-lucas', login: 'lucas', nom: "Lucas Petit (chef d'équipe)", role: 'atelier', userId: 'o3' },
   ];
 
   const storage = {
@@ -23,7 +23,7 @@
   function fresh() {
     const seed = DemoSeed.demoData();
     const now = new Date().toISOString();
-    const db = { settings: seed.settings, accounts: ACCOUNTS.map(a => ({ ...a, createdAt: now })), audit: [], counters: {} };
+    const db = { settings: seed.settings, accounts: ACCOUNTS.map(a => ({ ...a, createdAt: now })), audit: [], counters: {}, files: {} };
     COLLECTIONS.forEach(c => { db[c] = (seed[c] || []).map(o => ({ ...o, _v: 1, _at: now, _by: 'Démo' })); });
     return db;
   }
@@ -43,7 +43,17 @@
   function canWrite(acc, col) {
     if (acc.role === 'admin') return true;
     if (acc.role === 'charge') return col !== 'users';
-    return acc.role === 'atelier' && col === 'temps';
+    return acc.role === 'atelier' && (col === 'temps' || col === 'frais');
+  }
+  // Mêmes règles que le serveur : un opérateur saisit pour lui (et son équipe pour les pointages), rien de validé ne se modifie
+  function atelierRefus(acc, col, obj, existing) {
+    if (acc.role !== 'atelier') return null;
+    const allowed = col === 'frais' ? [acc.userId] : [acc.userId, ...db.users.filter(u => u.chefId === acc.userId).map(u => u.id)];
+    if (obj && !allowed.includes(obj.userId)) return 'Vous ne pouvez saisir que pour vous ou votre équipe';
+    if (existing && !allowed.includes(existing.userId)) return 'Vous ne pouvez modifier que vos saisies ou celles de votre équipe';
+    if (existing && ['Validé', 'Validée', 'Remboursée'].includes(existing.statut)) return 'Cette saisie est déjà validée : demandez une correction à votre chargé d\'affaires';
+    if (obj && ['Validé', 'Validée', 'Remboursée', 'Refusé', 'Refusée'].includes(obj.statut) && (!existing || existing.statut !== obj.statut)) return 'La validation est réservée aux chargés d\'affaires';
+    return null;
   }
   function nextNumber(col) {
     const [field, code, digits] = NUMBERING[col];
@@ -61,6 +71,12 @@
     if (p[0] === 'me' && !p[1]) return [200, acc];
     if (p[0] === 'me' && p[1] === 'password') return [200, { ok: true }];
     if (p[0] === 'logout' || p[0] === 'login') return [200, acc];
+    if (p[0] === 'files' && method === 'POST') {
+      const id = 'f' + DemoSeed.uid();
+      db.files = db.files || {};
+      db.files[id] = body.dataUrl; save();
+      return [200, { id }];
+    }
     if (p[0] === 'data') {
       const out = { settings: db.settings };
       COLLECTIONS.forEach(c => { out[c] = JSON.parse(JSON.stringify(db[c])); });
@@ -76,7 +92,8 @@
         if (existing && body.version !== existing._v) return [409, { error: `Modifié entre-temps par ${existing._by}`, record: existing }];
         let obj = { ...clean(body.data || {}), id };
         if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...clean(existing), statut: obj.statut };
-        if (acc.role === 'atelier' && (obj.userId !== acc.userId || (existing && existing.userId !== acc.userId))) return [403, { error: 'Vous ne pouvez saisir que vos propres heures' }];
+        const refus = atelierRefus(acc, col, obj, existing);
+        if (refus) return [403, { error: refus }];
         if (NUMBERING[col]) { const f = NUMBERING[col][0]; obj[f] = existing ? existing[f] : nextNumber(col); }
         const rec = { ...obj, _v: existing ? existing._v + 1 : 1, _at: new Date().toISOString(), _by: acc.nom };
         if (existing) db[col][i] = rec; else db[col].push(rec);
@@ -85,7 +102,7 @@
         return [200, JSON.parse(JSON.stringify(rec))];
       }
       if (method === 'DELETE') {
-        const allowed = (col === 'factures' ? acc.role === 'admin' : canWrite(acc, col)) && !(acc.role === 'atelier' && existing && existing.userId !== acc.userId);
+        const allowed = (col === 'factures' ? acc.role === 'admin' : canWrite(acc, col)) && !atelierRefus(acc, col, null, existing);
         if (!allowed) return [403, { error: 'Droits insuffisants' }];
         if (existing) { db[col].splice(i, 1); audit('suppression', col, labelOf(existing)); save(); }
         return [200, { ok: true }];
@@ -138,6 +155,20 @@
     const [status, data] = handle(method, u.split('?')[0], body);
     return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
   };
+  // Photos des justificatifs conservées sur l'appareil
+  window.FILE_URL = id => (db.files && db.files[id]) || '';
+  // Téléchargements (récap Excel, CSV) : autorisation « downloads » de la page ; sinon les boutons sont masqués
+  document.body.classList.add('no-dl');
+  if (window.claude && window.claude.use) {
+    window.claude.use('downloads').then(dl => {
+      if (!dl) return;
+      document.body.classList.remove('no-dl');
+      window.SAVE_FILE = (filename, data) => dl.save({ filename, data: typeof data === 'string' ? data : new Blob([data]) })
+        .then(() => App.toast('Fichier enregistré'))
+        .catch(e => { if (e && e.code !== 'declined') notify('Téléchargement impossible : ' + (e.message || e.code)); });
+    }).catch(() => {});
+  }
+
   // Pas de temps réel dans la démo (un seul utilisateur par appareil)
   window.EventSource = class { constructor() {} addEventListener() {} close() {} };
 

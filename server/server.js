@@ -40,12 +40,30 @@ const isLocal = req => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.soc
 function canWrite(acc, col) {
   if (acc.role === 'admin') return true;
   if (acc.role === 'charge') return col !== 'users';
-  if (acc.role === 'atelier') return col === 'temps';
+  if (acc.role === 'atelier') return col === 'temps' || col === 'frais';
   return false;
 }
 function canDelete(acc, col) {
   if (col === 'factures') return acc.role === 'admin';
   return canWrite(acc, col);
+}
+
+// Personnes pour lesquelles un opérateur peut pointer : lui-même et son équipe (chef d'équipe -> intérimaires, compagnons)
+function pointablePour(acc) {
+  if (!acc.user_id) return [];
+  const team = db.prepare("SELECT id, data FROM records WHERE col = 'users'").all()
+    .filter(r => JSON.parse(r.data).chefId === acc.user_id).map(r => r.id);
+  return [acc.user_id, ...team];
+}
+// Règles opérateur : pointages pour soi ou son équipe, notes de frais pour soi, rien de validé ne se modifie
+function atelierRefus(acc, col, obj, existing) {
+  if (acc.role !== 'atelier') return null;
+  const allowed = col === 'frais' ? [acc.user_id] : pointablePour(acc);
+  if (!allowed.includes(obj ? obj.userId : null) && obj) return 'Vous ne pouvez saisir que pour vous ou votre équipe';
+  if (existing && !allowed.includes(existing.userId)) return 'Vous ne pouvez modifier que vos saisies ou celles de votre équipe';
+  if (existing && ['Validé', 'Validée', 'Remboursée'].includes(existing.statut)) return 'Cette saisie est déjà validée : demandez une correction à votre chargé d\'affaires';
+  if (obj && ['Validé', 'Validée', 'Remboursée', 'Refusé', 'Refusée'].includes(obj.statut) && (!existing || existing.statut !== obj.statut)) return 'La validation est réservée aux chargés d\'affaires';
+  return null;
 }
 
 /* ---------- Temps réel (Server-Sent Events) ---------- */
@@ -184,6 +202,22 @@ async function api(req, res, url) {
 
   if (p[0] === 'data' && method === 'GET') return send(res, 200, DB.allData(db));
 
+  // Justificatifs (photos de notes de frais) : envoyés en data URL, servis en binaire
+  if (p[0] === 'files' && method === 'POST' && !p[1]) {
+    const { dataUrl } = await readBody(req);
+    const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
+    if (!m) return fail(res, 400, 'Image invalide (JPEG, PNG ou WebP attendu)');
+    const id = crypto.randomBytes(12).toString('hex');
+    db.prepare('INSERT INTO files (id, mime, data, created_by, created_at) VALUES (?, ?, ?, ?, ?)').run(id, m[1], Buffer.from(m[2], 'base64'), acc.login, new Date().toISOString());
+    return send(res, 200, { id });
+  }
+  if (p[0] === 'files' && method === 'GET' && p[1]) {
+    const f = db.prepare('SELECT mime, data FROM files WHERE id = ?').get(p[1]);
+    if (!f) return fail(res, 404, 'Fichier introuvable');
+    res.writeHead(200, { 'Content-Type': f.mime, 'Cache-Control': 'private, max-age=86400' });
+    return res.end(Buffer.from(f.data));
+  }
+
   if (p[0] === 'records' && p[1] && p[2]) {
     const [, col, id] = p;
     if (!DB.COLLECTIONS.includes(col)) return fail(res, 404, 'Collection inconnue');
@@ -198,8 +232,8 @@ async function api(req, res, url) {
         let obj = { ...DB.clean(data), id };
         // Une facture émise n'est plus modifiable, sauf son statut de paiement (admin excepté).
         if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...DB.clean(existing), statut: obj.statut };
-        // Opérateur atelier : uniquement ses propres pointages
-        if (acc.role === 'atelier' && (obj.userId !== acc.user_id || (existing && existing.userId !== acc.user_id))) return { forbidden: true };
+        const refus = atelierRefus(acc, col, obj, existing);
+        if (refus) return { forbidden: refus };
         const numbering = DB.NUMBERING[col];
         if (numbering) {
           const field = numbering[0];
@@ -213,7 +247,7 @@ async function api(req, res, url) {
         DB.audit(db, acc.login, existing ? 'modification' : 'création', col, id, labelOf(obj));
         return { record: DB.getRecord(db, col, id) };
       });
-      if (result.forbidden) return fail(res, 403, 'Vous ne pouvez saisir que vos propres heures');
+      if (result.forbidden) return fail(res, 403, result.forbidden);
       if (result.conflict) {
         return fail(res, 409, `Modifié entre-temps par ${result.conflict._by || 'un autre utilisateur'}`, { record: result.conflict });
       }
@@ -225,7 +259,8 @@ async function api(req, res, url) {
       if (!canDelete(acc, col)) return fail(res, 403, 'Droits insuffisants');
       const existing = DB.getRecord(db, col, id);
       if (!existing) return send(res, 200, { ok: true });
-      if (acc.role === 'atelier' && existing.userId !== acc.user_id) return fail(res, 403, 'Vous ne pouvez supprimer que vos propres heures');
+      const refus = atelierRefus(acc, col, null, existing);
+      if (refus) return fail(res, 403, refus);
       db.prepare('DELETE FROM records WHERE col = ? AND id = ?').run(col, id);
       DB.audit(db, acc.login, 'suppression', col, id, labelOf(existing));
       broadcast('delete', { col, id, client: req.headers['x-client-id'] || null });
