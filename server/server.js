@@ -8,6 +8,7 @@ const DB = require('./db');
 const { demoData, uid } = require('./demo');
 const M365 = require('./m365');
 const EF = require('./efacture');
+const API = require('./api');
 
 const PORT = +process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -17,6 +18,7 @@ const SESSION_DAYS = 30;
 const MAX_BODY = 10 * 1024 * 1024;
 
 const db = DB.open(DB_FILE);
+API.initTables(db);
 
 /* ---------- Initialisation ---------- */
 if (!db.prepare('SELECT 1 FROM settings WHERE id = 1').get()) {
@@ -77,6 +79,8 @@ const clients = new Set();
 function broadcast(event, payload) {
   const msg = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
   for (const res of clients) res.write(msg);
+  // Webhooks sortants (automatisations) : chaque création / modification / suppression
+  try { API.emettre(DB, db, event, payload); } catch (e) { console.error('Webhook :', e.message); }
 }
 setInterval(() => { for (const res of clients) res.write(': ping\n\n'); }, 25000).unref();
 
@@ -125,7 +129,8 @@ function sessionCookie(req, token, maxAge) {
 
 function currentAccount(req) {
   const token = cookies(req).sid;
-  if (!token) return null;
+  // Clé d'API (automatisations) : les droits sont ceux du compte propriétaire de la clé
+  if (!token) { const a = API.compteDeCle(db, req.headers.authorization); return a ? { ...a, token: null, cleApi: true } : null; }
   const s = db.prepare('SELECT * FROM sessions WHERE token = ?').get(token);
   if (!s || s.expires < Date.now()) return null;
   const a = db.prepare('SELECT id, login, nom, role, user_id, email FROM accounts WHERE id = ?').get(s.account_id);
@@ -207,6 +212,9 @@ async function api(req, res, url) {
     return send(res, 200, publicAccount(a), { 'Set-Cookie': sessionCookie(req, token, SESSION_DAYS * 86400) });
   }
 
+  // Description OpenAPI (création d'un connecteur Power Automate / Make…)
+  if (p[0] === 'openapi.json' && method === 'GET') return send(res, 200, API.openapi(DB, `${isHttps(req) ? 'https' : 'http'}://${req.headers.host}`));
+
   const acc = currentAccount(req);
   if (!acc) return fail(res, 401, 'Non connecté');
 
@@ -234,6 +242,42 @@ async function api(req, res, url) {
   }
 
   if (p[0] === 'data' && method === 'GET') return send(res, 200, DB.allData(db));
+
+  // Lecture par l'API : liste filtrée d'une collection, ou un élément
+  if (p[0] === 'records' && p[1] && method === 'GET') {
+    if (!DB.COLLECTIONS.includes(p[1])) return fail(res, 404, 'Collection inconnue');
+    if (p[2]) { const r = DB.getRecord(db, p[1], p[2]); return r ? send(res, 200, r) : fail(res, 404, 'Élément introuvable'); }
+    const depuis = url.searchParams.get('modifieDepuis') || '';
+    const filtres = String(url.searchParams.get('filtre') || '').split(',').map(x => x.split(':')).filter(x => x[0] && x.length > 1).map(([k, ...v]) => [k, v.join(':')]);
+    const limite = Math.min(5000, parseInt(url.searchParams.get('limite'), 10) || 5000);
+    const rows = db.prepare(`SELECT id FROM records WHERE col = ?${depuis ? ' AND updated_at > ?' : ''} ORDER BY updated_at DESC`).all(...[p[1], ...(depuis ? [depuis] : [])]);
+    const out = [];
+    for (const r of rows) {
+      const rec = DB.getRecord(db, p[1], r.id);
+      if (filtres.every(([k, v]) => String(rec[k] ?? '') === v)) out.push(rec);
+      if (out.length >= limite) break;
+    }
+    return send(res, 200, out);
+  }
+
+  // Clés d'API personnelles
+  if (p[0] === 'cles') {
+    if (method === 'GET') return send(res, 200, API.listerCles(db, acc.role === 'admin' ? null : acc.id));
+    if (method === 'POST') {
+      if (acc.cleApi) return fail(res, 403, 'Une clé d\'API ne peut pas créer d\'autres clés');
+      const b = await readBody(req);
+      const r = API.creerCle(db, acc.id, b.nom);
+      DB.audit(db, acc.login, 'création clé API', null, r.id, String(b.nom || ''));
+      return send(res, 200, r);
+    }
+    if (method === 'DELETE' && p[1]) {
+      const k = db.prepare('SELECT account_id FROM api_keys WHERE id = ?').get(p[1]);
+      if (!k || (k.account_id !== acc.id && acc.role !== 'admin')) return fail(res, 404, 'Clé introuvable');
+      db.prepare('DELETE FROM api_keys WHERE id = ?').run(p[1]);
+      DB.audit(db, acc.login, 'révocation clé API', null, p[1]);
+      return send(res, 200, { ok: true });
+    }
+  }
 
   // Justificatifs (photos de notes de frais) : envoyés en data URL, servis en binaire
   if (p[0] === 'files' && method === 'POST' && !p[1]) {
@@ -393,6 +437,30 @@ async function api(req, res, url) {
 
   /* --- Administration --- */
   if (acc.role !== 'admin') return fail(res, 403, 'Réservé aux administrateurs');
+
+  // Webhooks sortants (automatisations)
+  if (p[0] === 'webhooks') {
+    if (method === 'GET' && !p[1]) return send(res, 200, API.webhooks(DB, db));
+    if (method === 'PUT' && !p[1]) {
+      const b = await readBody(req);
+      const anciens = API.webhooks(DB, db);
+      const liste = (Array.isArray(b.liste) ? b.liste : []).slice(0, 20).map(w => {
+        const ex = anciens.find(x => x.id === w.id) || {};
+        return { id: String(w.id || crypto.randomBytes(6).toString('hex')), nom: String(w.nom || '').slice(0, 80), url: String(w.url || '').trim().slice(0, 500), actif: !!w.actif,
+          collections: (Array.isArray(w.collections) ? w.collections : ['*']).filter(c => c === '*' || DB.COLLECTIONS.includes(c)), secret: ex.secret || crypto.randomBytes(20).toString('hex'), dernier: ex.dernier };
+      });
+      if (liste.some(w => !/^https?:\/\/[^\s]+$/i.test(w.url))) return fail(res, 400, 'Adresse de webhook invalide (http:// ou https:// attendu)');
+      DB.setConfig(db, 'webhooks', liste);
+      DB.audit(db, acc.login, 'configuration webhooks');
+      return send(res, 200, liste);
+    }
+    if (method === 'POST' && p[2] === 'test') {
+      const w = API.webhooks(DB, db).find(x => x.id === p[1]);
+      if (!w) return fail(res, 404, 'Webhook introuvable');
+      const statut = await API.envoyer(DB, db, w, JSON.stringify({ evenement: 'test', date: new Date().toISOString(), donnees: { message: 'Test depuis Pipe-Fit CRM' } }));
+      return send(res, 200, { statut });
+    }
+  }
 
   // Configuration de la facturation électronique (plateforme, dossiers, adresse de dépôt)
   if (p[0] === 'efacture' && p[1] === 'config') {

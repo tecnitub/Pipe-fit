@@ -532,6 +532,8 @@ Views.parametres = () => {
     <a class="btn" href="#/documents">Mise en page des documents</a></div>
   <div class="card inline" style="justify-content:space-between;flex-wrap:wrap;margin-top:10px"><span>Modèles d'e-mails (devis, factures, BL, demandes de prix, commandes…) et connexion Microsoft 365 pour envoyer depuis le CRM avec copie dans les éléments envoyés.</span>
     <a class="btn" href="#/mails">E-mails et Microsoft 365</a></div>
+  <div class="card inline" style="justify-content:space-between;flex-wrap:wrap;margin-top:10px"><span>API et webhooks pour automatiser : Power Automate, Make, Zapier, scripts, badgeuse, logiciel de dessin, Power BI…</span>
+    <a class="btn" href="#/api">API et automatisations</a></div>
 
   ${numerotationCarte()}
 

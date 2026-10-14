@@ -403,3 +403,12 @@ tr.piece-debut td { border-top: 2px solid var(--border); }
 .nowrap .btn, .nowrap button { margin: 1px; }
 .ch-table td { vertical-align: middle; }
 .ch-extras input, .ch-extras select { min-width: 0; }
+
+/* API et automatisations */
+pre.code { background: var(--panel-alt); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; overflow-x: auto; font-size: 12px; white-space: pre; margin: 8px 0 0; }
+.api-ex { margin-bottom: 8px; }
+.api-ex summary { cursor: pointer; }
+fieldset.wh { margin-bottom: 10px; }
+code { font-size: 12px; overflow-wrap: anywhere; }
+.api-ex, .api-ex pre.code { max-width: 100%; min-width: 0; }
+.api-ex { overflow: hidden; }

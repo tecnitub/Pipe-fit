@@ -2,7 +2,7 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v16';
+  const KEY = 'pipefit-crm-demo-v17';
   const ME_KEY = 'pipefit-crm-demo-me';
   const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4] };
@@ -131,6 +131,20 @@
           return [200, JSON.parse(JSON.stringify(rec))];
         } catch (e) { return [422, { error: e.message }]; }
       })();
+    }
+    // API : clés et webhooks simulés (pas de serveur dans la démonstration)
+    if (p[0] === 'cles') {
+      db.cles = db.cles || [];
+      if (method === 'GET') return [200, db.cles];
+      if (method === 'POST') { const id = 'k' + DemoSeed.uid(), cle = 'pf_demo_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2); db.cles.unshift({ id, nom: body.nom || 'Clé API', prefixe: cle.slice(0, 10), creeLe: new Date().toISOString(), utiliseeLe: '', login: acc.login }); save(); return [200, { id, cle }]; }
+      if (method === 'DELETE') { db.cles = db.cles.filter(k => k.id !== p[1]); save(); return [200, { ok: true }]; }
+    }
+    if (p[0] === 'webhooks') {
+      if (acc.role !== 'admin') return [403, { error: 'Réservé aux administrateurs' }];
+      db.webhooks = db.webhooks || [];
+      if (method === 'GET') return [200, db.webhooks];
+      if (method === 'PUT') { db.webhooks = (body.liste || []).map(w => ({ ...w, id: w.id || 'w' + DemoSeed.uid(), secret: w.secret || Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2) })); save(); return [200, db.webhooks]; }
+      if (p[2] === 'test') return [200, { statut: 'démonstration : aucun envoi (disponible sur l\'installation serveur)' }];
     }
     // Microsoft 365 simulé : l'envoi est enregistré dans l'historique, aucun e-mail ne part
     if (p[0] === 'mail' && method === 'POST') {
