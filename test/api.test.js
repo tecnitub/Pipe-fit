@@ -160,6 +160,15 @@ test('droits par rôle, conflits de version et numérotation', async () => {
   assert.strictEqual((await call('DELETE', '/api/records/rapports/ri-s', {}, atelier)).status, 403);
   const csv = await call('PUT', '/api/records/consommations/cs-v', { data: { affaireId: 'hd-x', userId: 'o1', articleId: 'a1', qte: 1, verrouille: true } }, atelier);
   assert.strictEqual((await call('PUT', '/api/records/consommations/cs-v', { data: { ...csv.body, qte: 9 }, version: csv.body._v }, atelier)).status, 403);
+  // Factures fournisseurs : référence FF attribuée par le serveur, saisie réservée aux bureaux, pièce jointe PDF acceptée
+  const ff = (await call('PUT', '/api/records/achats/ff-x', { data: { fournisseurId: 'e11', montantHT: 100, imputations: [{ affaireId: 'af1', montantHT: 60 }] } }, claire)).body;
+  assert.strictEqual(ff.ref, `FF-${year}-0004`);
+  assert.strictEqual((await call('PUT', '/api/records/achats/ff-y', { data: { fournisseurId: 'e11' } }, atelier)).status, 403);
+  const pdf = await call('POST', '/api/files', { dataUrl: 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4 test').toString('base64') }, claire);
+  assert.strictEqual(pdf.status, 200);
+  const pdfRes = await fetch(base + '/api/files/' + pdf.body.id, { headers: { Cookie: claire } });
+  assert.strictEqual(pdfRes.headers.get('content-type'), 'application/pdf');
+  assert.strictEqual(pdfRes.headers.get('x-content-type-options'), 'nosniff');
   // Images de démonstration servies par le serveur
   assert.strictEqual((await fetch(base + '/api/files/img-sig', { headers: { Cookie: claire } })).headers.get('content-type'), 'image/png');
 

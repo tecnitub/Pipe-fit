@@ -151,12 +151,32 @@ const Calc = {
     return Math.max(0, Math.round((this.doc(f).netAPayer - sumBy(this.avoirsDe(f), a => this.doc(a).netAPayer)) * 100) / 100);
   },
 
+  // Achats d'un chantier : commandes (au montant de la facture fournisseur quand elle est rapprochée,
+  // sinon au montant commandé) + parts de factures fournisseurs imputées hors commande.
+  imputations() { return Store.all('achats').flatMap(f => (f.imputations || []).map(l => ({ ...l, achat: f }))); },
+  achatsChantier(afId) {
+    const imp = this.imputations();
+    const commandes = Store.all('commandes').filter(c => c.affaireId === afId && c.statut !== 'Annulée' && (c.statut !== 'Brouillon' || imp.some(l => l.commandeId === c.id))).map(c => {
+      const liees = imp.filter(l => l.commandeId === c.id), commande = this.commande(c).total;
+      const facture = sumBy(liees, l => num(l.montantHT));
+      return { c, commande, facture, liees, cout: liees.length ? facture : commande };
+    });
+    const horsCommande = imp.filter(l => l.affaireId === afId && !l.commandeId);
+    return { commandes, horsCommande, totalCommandes: sumBy(commandes, x => x.cout), totalHorsCommande: sumBy(horsCommande, l => num(l.montantHT)),
+      ecartFactures: sumBy(commandes.filter(x => x.liees.length), x => x.facture - x.commande) };
+  },
+  // Facture fournisseur : montants et part restant à imputer (frais généraux / stock)
+  achat(f) {
+    const ht = num(f.montantHT), tva = f.montantTVA === '' || f.montantTVA === undefined ? ht * num(Store.data.settings.tva) / 100 : num(f.montantTVA);
+    const impute = sumBy(f.imputations || [], l => num(l.montantHT));
+    return { ht, tva, ttc: ht + tva, impute, reste: Math.round((ht - impute) * 100) / 100 };
+  },
+
   // Pilotage d'un chantier : budget issu du/des devis accepté(s) face au réel (commandes, heures pointées).
   affaire(af) {
     const devis = Store.all('devis').filter(d => d.affaireId === af.id && d.statut === 'Accepté');
     const T = devis.map(d => this.doc(d));
     const factures = Store.all('factures').filter(f => f.affaireId === af.id);
-    const commandes = Store.all('commandes').filter(c => c.affaireId === af.id && c.statut !== 'Annulée' && c.statut !== 'Brouillon');
     const temps = Store.all('temps').filter(t => t.affaireId === af.id && t.statut !== 'Refusé');
     const frais = Store.all('frais').filter(f => f.affaireId === af.id && f.statut !== 'Refusée');
     const coutFrais = sumBy(frais, f => this.fraisHT(f));
@@ -173,7 +193,8 @@ const Calc = {
     const heuresPrevues = num(af.heuresPrevues) || heuresBudget;
     const heuresPassees = sumBy(temps, t => num(t.heures));
     const coutMO = sumBy(temps, t => num(t.heures) * this.tauxUser(t.userId));
-    const achats = sumBy(commandes, c => this.commande(c).total) + consoCout;
+    const ach = this.achatsChantier(af.id);
+    const achats = ach.totalCommandes + ach.totalHorsCommande + consoCout;
     const marge = ca - achats - coutMO - budgetLiv - coutFrais;
     const margePrev = sumBy(T, t => t.margePrev);
     // Projection à terminaison : reste d'heures au coût moyen du devis, fournitures au plus haut du budget et de l'engagé
@@ -192,7 +213,7 @@ const Calc = {
 
     return {
       nbDevis: devis.length, caDevis, caFacture, ca, resteAFacturer: Math.max(0, caDevis - caFacture),
-      venteF, venteMO, budgetF, budgetMO, budgetLiv, achats, coutMO, coutLivraison: budgetLiv, coutMatiere: achats,
+      venteF, venteMO, budgetF, budgetMO, budgetLiv, achats, achatsDetail: ach, coutMO, coutLivraison: budgetLiv, coutMatiere: achats,
       consoF: budgetF ? achats / budgetF * 100 : 0, consoMO: budgetMO ? coutMO / budgetMO * 100 : 0,
       heuresBudget, heuresPrevues, heuresPassees,
       heuresPlanifiees: sumBy(Store.all('planning').filter(p => p.affaireId === af.id), p => num(p.heuresPrevues)),

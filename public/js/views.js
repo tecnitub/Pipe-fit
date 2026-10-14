@@ -173,7 +173,7 @@ Views.chantier = params => {
   <h2>Pilotage : budget du devis face au réel</h2>
   <div class="table-wrap"><table>
     <tr><th>Poste</th><th class="num">Vendu</th><th class="num">Budget (coût)</th><th class="num">Réel à date</th><th>Consommé</th><th class="num">${s.termine ? 'Final' : 'Projection'}</th><th class="num">Écart</th></tr>
-    <tr><td><strong>Fournitures</strong><br><span class="muted small">commandes fournisseurs envoyées ou reçues</span></td><td class="num">${eur(s.venteF)}</td><td class="num">${eur(s.budgetF)}</td><td class="num">${eur(s.achats)}</td><td>${gauge(s.achats, s.budgetF)}</td><td class="num">${eur(s.coutFFin)}</td><td class="num ${s.coutFFin > s.budgetF ? 'neg' : 'pos'}">${eur(s.budgetF - s.coutFFin)}</td></tr>
+    <tr><td><strong>Fournitures</strong><br><span class="muted small">commandes (au montant facturé une fois rapprochées) + achats hors commande</span></td><td class="num">${eur(s.venteF)}</td><td class="num">${eur(s.budgetF)}</td><td class="num">${eur(s.achats)}</td><td>${gauge(s.achats, s.budgetF)}</td><td class="num">${eur(s.coutFFin)}</td><td class="num ${s.coutFFin > s.budgetF ? 'neg' : 'pos'}">${eur(s.budgetF - s.coutFFin)}</td></tr>
     <tr><td><strong>Main-d'œuvre</strong><br><span class="muted small">${fmt(s.heuresPassees, 1)} h pointées × coût horaire de chaque opérateur</span></td><td class="num">${eur(s.venteMO)}</td><td class="num">${eur(s.budgetMO)}</td><td class="num">${eur(s.coutMO)}</td><td>${gauge(s.coutMO, s.budgetMO)}</td><td class="num">${eur(s.coutMOFin)}</td><td class="num ${s.coutMOFin > s.budgetMO ? 'neg' : 'pos'}">${eur(s.budgetMO - s.coutMOFin)}</td></tr>
     <tr><td>Transport</td><td class="num"></td><td class="num">${eur(s.budgetLiv)}</td><td class="num">${eur(s.budgetLiv)}</td><td></td><td class="num">${eur(s.budgetLiv)}</td><td class="num"></td></tr>
     <tr><td>Notes de frais <span class="muted small">(HT, hors refusées)</span></td><td class="num"></td><td class="num">—</td><td class="num">${eur(s.coutFrais)}</td><td></td><td class="num">${eur(s.coutFrais)}</td><td class="num ${s.coutFrais ? 'neg' : ''}">${s.coutFrais ? eur(-s.coutFrais) : ''}</td></tr>
@@ -197,10 +197,7 @@ Views.chantier = params => {
     <a class="btn small" href="#/reception/${a.id}" style="margin-left:8px">${pvRec ? 'Voir les réserves' : 'Préparer la réception'}</a>
   </div>
 
-  <h2>Commandes fournisseurs</h2>
-  ${commandes.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Fournisseur</th><th>Statut</th><th class="num">Montant HT</th></tr>
-    ${commandes.map(c => `<tr class="clickable" onclick="location.hash='#/commandes/${c.id}'"><td>${esc(c.numero || '…')}</td><td>${dateFr(c.date)}</td><td>${esc(clientName(c.fournisseurId))}</td><td>${badge(c.statut)}</td><td class="num">${eur(Calc.commande(c).total)}</td></tr>`).join('')}</table></div>`
-  : '<p class="muted">Aucune commande. Utilisez « + Commande fournisseur » : les fournitures du devis peuvent être reprises automatiquement.</p>'}
+  ${achatsChantierHtml(a)}
 
   <h2>Heures par opérateur</h2>
   ${Object.keys(parOp).length ? `<div class="table-wrap"><table><tr><th>Opérateur</th><th>Catégorie</th><th class="num">Heures</th><th class="num">Coût</th></tr>

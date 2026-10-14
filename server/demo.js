@@ -80,6 +80,10 @@ function demoData() {
       adresses: [site('s13', 'Siège', '2 rue du Papier', '38500', 'Voiron', true), site('s14', 'Usine de Rives – machine à papier PM2', 'Route de Lyon', '38140', 'Rives')] },
     { id: 'e8', nom: 'Intérim Industrie Rhône', categorie: 'Fournisseur', secteur: 'Travail temporaire', siret: '611 222 333 00019', tvaIntra: 'FR40611222333', tel: '04 72 44 44 44', email: 'lyon@interim-ir.example', web: '', zoneId: '',
       adresses: [site('s11', 'Agence de Lyon 7e', '5 avenue Jean Jaurès', '69007', 'Lyon', true)] },
+    { id: 'e11', nom: 'Descours & Cabot', categorie: 'Fournisseur', secteur: 'Négoce tubes et raccords', siret: '957 200 000 01234', tvaIntra: 'FR10957200000', tel: '04 72 66 66 66', email: 'agence.lyon@descours-cabot.example', web: '', zoneId: '',
+      adresses: [site('s15', 'Agence de Saint-Priest', 'Rue de l\'Industrie', '69800', 'Saint-Priest', true)] },
+    { id: 'e12', nom: 'Téréva', categorie: 'Fournisseur', secteur: 'Négoce tubes et raccords', siret: '338 200 000 04321', tvaIntra: 'FR22338200000', tel: '04 76 77 77 77', email: 'voiron@tereva.example', web: '', zoneId: '',
+      adresses: [site('s16', 'Agence de Voiron', 'ZA de Centr\'Alp', '38500', 'Voiron', true)] },
     { id: 'e9', nom: 'Ingénierie Process Alpes', categorie: "Maîtrise d'œuvre", secteur: 'Ingénierie', siret: '723 555 666 00031', tvaIntra: 'FR62723555666', tel: '04 50 55 55 55', email: 'contact@ipa.example', web: '', zoneId: '',
       adresses: [site('s12', 'Bureau d\'Annecy', '9 rue des Ingénieurs', '74000', 'Annecy', true)] },
     { id: 'e7', nom: 'Services Industriels Rhône', categorie: 'Fournisseur', secteur: 'Sous-traitance', siret: '512 333 444 00027', tvaIntra: 'FR55512333444', tel: '04 78 33 33 33', email: 'planning@sir.example', web: '', zoneId: '',
@@ -228,6 +232,21 @@ function demoData() {
     { id: 'cf4', numero: `CF-${Y}-` + '0004', fournisseurId: 'e5', affaireId: 'af3', date: d(-80), dateLivraison: d(-74), statut: 'Réceptionnée', lignes: [CL('a1', 170), CL('a4', 72)] },
     { id: 'cf5', numero: `CF-${Y}-` + '0005', fournisseurId: 'e6', affaireId: 'af3', date: d(-80), dateLivraison: d(-70), statut: 'Réceptionnée', lignes: [CL('a7', 12, 165)] },
   ];
+  // Factures fournisseurs : rapprochement de commandes et achats au comptoir imputés aux chantiers
+  const achats = [
+    { id: 'ff1', ref: `FF-${Y}-0001`, fournisseurId: 'e5', numeroFournisseur: 'IDRA-2026-08841', date: d(-36), echeance: d(9), montantHT: 0, montantTVA: '', statut: 'À payer',
+      notes: 'Livraison de la commande CF-0001 ; hausse inox appliquée sur les tubes.', imputations: [{ affaireId: 'af1', commandeId: 'cf1', libelle: 'Commande CF-0001 (tubes et coudes inox)', montantHT: 0 }] },
+    { id: 'ff2', ref: `FF-${Y}-0002`, fournisseurId: 'e11', numeroFournisseur: 'DC-R-0925-1187', date: d(-12), echeance: d(33), montantHT: 1342.6, montantTVA: '', statut: 'À payer',
+      notes: 'Relevé mensuel des achats comptoir (tickets avec n° de chantier).', imputations: [
+        { affaireId: 'af1', commandeId: '', libelle: 'Raccords inox, joints et colliers (tickets 4512, 4538)', montantHT: 486.4 },
+        { affaireId: 'hd2', commandeId: '', libelle: 'Joints graphite et boulonnerie inox (ticket 4561)', montantHT: 124.8 },
+        { affaireId: 'af3', commandeId: '', libelle: 'Vannes à boisseau DN25 (ticket 4402)', montantHT: 389 }] },
+    { id: 'ff3', ref: `FF-${Y}-0003`, fournisseurId: 'e12', numeroFournisseur: 'TV-77120', date: d(-4), echeance: d(41), montantHT: 268.35, montantTVA: '', statut: 'À payer',
+      notes: 'Comptoir de Voiron, intervention PM2.', imputations: [] },
+  ];
+  // Facture de la commande CF-0001 : 2,5 % au-dessus du montant commandé
+  const cf1 = commandes.find(c => c.id === 'cf1');
+  if (cf1) { const tot = cf1.lignes.reduce((t, l) => t + l.qte * l.pu, 0) * 1.025; achats[0].montantHT = Math.round(tot * 100) / 100; achats[0].imputations[0].montantHT = achats[0].montantHT; }
   const planning = [];
   const temps = [];
   // Planning : charge hebdomadaire au-delà, détail jour par jour (semaine dernière, en cours, prochaine)
@@ -359,7 +378,7 @@ function demoData() {
         tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',
         types: { devis: { conditions: 'Acompte de 30 % à la commande. Travaux réalisés selon les normes EN 13480 et le DTU en vigueur. Hors génie civil, calorifuge et échafaudages sauf mention contraire.' },
           facture: { conditions: 'Paiement par virement à 45 jours fin de mois.' } } } },
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois,
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats,
   };
 }
 

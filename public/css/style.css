@@ -390,3 +390,9 @@ tr.piece-debut td { border-top: 2px solid var(--border); }
 .avoirs-card ul { margin: 6px 0; padding-left: 18px; }
 .num-bloc { margin-bottom: 12px; }
 .num-apercu { display: block; padding: 8px 0; font-weight: 700; font-family: ui-monospace, monospace; }
+
+/* Factures fournisseurs */
+.ac-imp select[data-k="affaireId"] { max-width: 300px; }
+.ac-imp input[data-k="libelle"] { min-width: 280px; }
+.ac-piece { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.ac-ttc { display: block; padding: 8px 0; font-weight: 600; }

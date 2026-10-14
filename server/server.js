@@ -213,8 +213,8 @@ async function api(req, res, url) {
   // Justificatifs (photos de notes de frais) : envoyés en data URL, servis en binaire
   if (p[0] === 'files' && method === 'POST' && !p[1]) {
     const { dataUrl } = await readBody(req);
-    const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
-    if (!m) return fail(res, 400, 'Image invalide (JPEG, PNG ou WebP attendu)');
+    const m = /^data:(image\/(?:jpeg|png|webp)|application\/pdf);base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
+    if (!m) return fail(res, 400, 'Fichier invalide (JPEG, PNG, WebP ou PDF attendu)');
     const id = crypto.randomBytes(12).toString('hex');
     db.prepare('INSERT INTO files (id, mime, data, created_by, created_at) VALUES (?, ?, ?, ?, ?)').run(id, m[1], Buffer.from(m[2], 'base64'), acc.login, new Date().toISOString());
     return send(res, 200, { id });
@@ -222,7 +222,7 @@ async function api(req, res, url) {
   if (p[0] === 'files' && method === 'GET' && p[1]) {
     const f = db.prepare('SELECT mime, data FROM files WHERE id = ?').get(p[1]);
     if (!f) return fail(res, 404, 'Fichier introuvable');
-    res.writeHead(200, { 'Content-Type': f.mime, 'Cache-Control': 'private, max-age=86400' });
+    res.writeHead(200, { 'Content-Type': f.mime, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
     return res.end(Buffer.from(f.data));
   }
 

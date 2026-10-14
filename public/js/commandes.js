@@ -24,7 +24,7 @@ Views.commandes = (params, query) => {
   const list = Store.all('commandes').filter(c => (!fa || c.affaireId === fa) && (!ff || c.fournisseurId === ff) && (!fs || c.statut === fs))
     .sort((a, b) => (b.numero || '~').localeCompare(a.numero || '~'));
   const total = sumBy(list.filter(c => c.statut !== 'Annulée'), c => Calc.commande(c).total);
-  return `<h1>Commandes fournisseurs</h1>
+  return `<h1>Achats</h1>${achatsTabs('commandes')}
   <div class="toolbar">
     <a class="btn" href="#/commandes/new">+ Nouvelle commande</a>
     <span class="spacer"></span>
@@ -57,6 +57,9 @@ function commandeEditor(id) {
     <button class="danger" id="del">Supprimer</button>
   </div>
   <h1>Commande ${esc(c.numero || '')} ${badge(c.statut)}</h1>${envoisHtml('commandes', c.id)}
+  ${(() => { const liees = Calc.imputations().filter(l => l.commandeId === c.id); if (!liees.length) return '';
+    const fac = sumBy(liees, l => num(l.montantHT)), ec = fac - total;
+    return `<p class="note no-print">Facturée : ${liees.map(l => `<a href="#/achats/${l.achat.id}">${esc(l.achat.numeroFournisseur || l.achat.ref || 'facture')}</a> (${eur(l.montantHT)})`).join(', ')} · ${Math.abs(ec) > 0.01 ? `<strong>écart ${ec > 0 ? '+' : ''}${eur(ec)}</strong> par rapport à la commande ; ` : ''}c'est le montant facturé qui compte dans la rentabilité du chantier.</p>`; })()}
   <div class="card no-print">
     <div class="grid2">
       <div class="field"><label for="c-four">Fournisseur</label><select id="c-four">${options(fournisseursList(), c.fournisseurId)}</select></div>
