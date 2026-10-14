@@ -11,11 +11,11 @@ const DOC_TYPES = {
     ['numeros', 'Colonne N° de prix (DPGF)', true], ['quantites', 'Quantités et unités', true], ['prix', 'Prix unitaires et totaux par ligne (sinon : prix par chapitre, ou prix global)', true],
     ['detail', 'Descriptifs sous les ouvrages', true], ['sousTotaux', 'Sous-totaux par chapitre', true], ['ajustements', 'Détail des remises et majorations', true],
     ['contact', 'Contact client (à l\'attention de)', true], ['lieu', 'Lieu d\'intervention', true], ['charge', 'Chargé d\'affaires', true],
-    ['references', 'Références devis / situation', true], ['rib', 'Coordonnées bancaires (RIB)', true], ['penalites', 'Mentions légales de retard de paiement', true]] },
+    ['references', 'Références devis / situation', true], ['rib', 'Coordonnées bancaires (RIB)', true], ['penalites', 'Mentions légales de retard de paiement', true], ['mentions2026', 'Mentions de la réforme 2026 (SIREN du client, catégorie de l\'opération)', true]] },
   avoir: { label: 'Avoir', titre: 'AVOIR', conditions: 'Avoir à valoir sur nos prochaines factures ou remboursé sur simple demande.', options: [
     ['numeros', 'Colonne N° de prix (DPGF)', true], ['quantites', 'Quantités et unités', true], ['prix', 'Prix unitaires et totaux par ligne', true],
     ['detail', 'Descriptifs sous les ouvrages', true], ['sousTotaux', 'Sous-totaux par chapitre', true], ['ajustements', 'Détail des remises et majorations', true],
-    ['contact', 'Contact client (à l\'attention de)', true], ['lieu', 'Lieu d\'intervention', true], ['charge', 'Chargé d\'affaires', true], ['references', 'Référence de la facture d\'origine', true]] },
+    ['contact', 'Contact client (à l\'attention de)', true], ['lieu', 'Lieu d\'intervention', true], ['charge', 'Chargé d\'affaires', true], ['references', 'Référence de la facture d\'origine', true], ['mentions2026', 'Mentions de la réforme 2026 (SIREN du client, catégorie de l\'opération)', true]] },
   situation: { label: 'Situation de travaux (BL)', titre: 'PROPOSITION DE SITUATION', conditions: '', options: [
     ['marche', 'Colonne montant du marché', true], ['precedent', 'Colonnes cumul et précédent', true], ['maitreOuvrage', 'Maître d\'ouvrage et site', true], ['signature', 'Cadre « Bon pour accord » de la maîtrise d\'œuvre', true]] },
   commande: { label: 'Bon de commande fournisseur', titre: 'BON DE COMMANDE', conditions: 'Merci de rappeler le numéro de commande sur le bon de livraison et la facture.', options: [

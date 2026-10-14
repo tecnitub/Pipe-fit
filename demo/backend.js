@@ -2,9 +2,9 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v12';
+  const KEY = 'pipefit-crm-demo-v14';
   const ME_KEY = 'pipefit-crm-demo-me';
-  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats'];
+  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4] };
   const ACCOUNTS = [
     { id: 'acc-admin', login: 'admin', nom: 'Administrateur', role: 'admin', userId: null, email: 'admin@pipefit.example' },
@@ -102,6 +102,35 @@
       });
       audit('import', col, `${recs.length} ligne(s)`); save();
       return [200, JSON.parse(JSON.stringify(recs))];
+    }
+    // Facturation électronique : pas de serveur dans la démonstration, l'import manuel est traité dans le navigateur
+    if (p[0] === 'efacture') {
+      db.efconfig = db.efconfig || { plateforme: '', dossierEntree: '', dossierSortie: '', webhook: false };
+      if (p[1] === 'etat') return [200, { plateforme: db.efconfig.plateforme, entree: false, sortie: false, webhook: false }];
+      if (p[1] === 'scruter') return [200, { traites: 0, erreur: 'Démonstration : le dossier de la plateforme est relevé sur l\'installation serveur.' }];
+      if (p[1] === 'emettre') return [400, { error: 'Démonstration : le dépôt vers la plateforme se fait sur l\'installation serveur. Téléchargez le XML ou le PDF Factur-X.' }];
+      if (p[1] === 'config') {
+        if (acc.role !== 'admin') return [403, { error: 'Réservé aux administrateurs' }];
+        if (method === 'PUT') { Object.assign(db.efconfig, { plateforme: body.plateforme || '', dossierEntree: body.dossierEntree || '', dossierSortie: body.dossierSortie || '', webhook: !!body.webhook }); save(); }
+        return [200, { ...db.efconfig, jeton: db.efconfig.webhook ? 'demo-jeton-non-fonctionnel' : '' }];
+      }
+      if (p[1] === 'import') return (async () => {
+        try {
+          const bin = atob(body.base64 || ''), bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+          const inflate = async b => new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer());
+          const { facture, xml, pdf } = await FacturX.lireFichier(bytes, inflate);
+          const cle = `${facture.vendeur.siren || facture.vendeur.tva || facture.vendeur.nom}|${facture.numero}`;
+          const ex = db.efactures.find(r => r.cle === cle);
+          if (ex) return [200, { ...ex, doublon: true }];
+          const id = 'ef' + DemoSeed.uid(), xmlId = 'f' + DemoSeed.uid();
+          db.files[xmlId] = 'data:application/xml;base64,' + btoa(unescape(encodeURIComponent(xml)));
+          let pdfId = '';
+          if (pdf) { pdfId = 'f' + DemoSeed.uid(); db.files[pdfId] = 'data:application/pdf;base64,' + body.base64; }
+          const rec = { id, cle, statut: 'Reçue', recueLe: new Date().toISOString(), origine: acc.login, nomFichier: body.nom || '', ...facture, xmlId, pdfId, _v: 1, _at: new Date().toISOString(), _by: acc.nom };
+          db.efactures.push(rec); save();
+          return [200, JSON.parse(JSON.stringify(rec))];
+        } catch (e) { return [422, { error: e.message }]; }
+      })();
     }
     // Microsoft 365 simulé : l'envoi est enregistré dans l'historique, aucun e-mail ne part
     if (p[0] === 'mail' && method === 'POST') {
@@ -215,7 +244,7 @@
     const method = (opts.method || 'GET').toUpperCase();
     let body = {};
     try { body = opts.body ? JSON.parse(opts.body) : {}; } catch (e) { body = {}; }
-    const [status, data] = handle(method, u.split('?')[0], body);
+    const [status, data] = await handle(method, u.split('?')[0], body);
     return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
   };
   // Photos des justificatifs conservées sur l'appareil

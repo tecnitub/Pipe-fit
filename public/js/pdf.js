@@ -150,7 +150,7 @@ const PDF = (() => {
     return pages.length ? pages : [[0, total]];
   }
 
-  function assembler({ ops, atomes, images, hauteur }, titre) {
+  function assembler({ ops, atomes, images, hauteur }, titre, pj) {
     const pages = paginer(atomes, hauteur);
     const objets = [];
     const ajouter = corps => { objets.push(corps); return objets.length; };
@@ -188,7 +188,15 @@ const PDF = (() => {
       const c = ajouter(`<< /Length ${flux.length} >>\nstream\n${flux}\nendstream`);
       kids.push(ajouter(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${n(PAGE_W * K)} ${n(PAGE_H * K)}] /Resources ${ressources} /Contents ${c} 0 R >>`));
     });
-    objets[0] = '<< /Type /Catalog /Pages 2 0 R >>';
+    // Pièce jointe XML (Factur-X : données structurées de la facture jointes au PDF)
+    let fichiers = '';
+    if (pj) {
+      const data = Array.from(new TextEncoder().encode(pj.xml), b => String.fromCharCode(b)).join('');
+      const ef = ajouter(`<< /Type /EmbeddedFile /Subtype /text#2Fxml /Params << /Size ${data.length} >> /Length ${data.length} >>\nstream\n${data}\nendstream`);
+      const fsp = ajouter(`<< /Type /Filespec /F (${pj.nom}) /UF (${pj.nom}) /Desc (Factur-X) /AFRelationship /Data /EF << /F ${ef} 0 R /UF ${ef} 0 R >> >>`);
+      fichiers = ` /Names << /EmbeddedFiles << /Names [(${pj.nom}) ${fsp} 0 R] >> >> /AF [${fsp} 0 R]`;
+    }
+    objets[0] = `<< /Type /Catalog /Pages 2 0 R${fichiers} >>`;
     objets[1] = `<< /Type /Pages /Kids [${kids.map(i => `${i} 0 R`).join(' ')}] /Count ${kids.length} >>`;
     const info = ajouter(`<< /Title (${echapper(octets(titre || 'Document'))}) /Producer (Pipe-Fit CRM) >>`);
     let out = '%PDF-1.4\n%\xe2\xe3\xcf\xd3\n';
@@ -202,7 +210,7 @@ const PDF = (() => {
   }
 
   return {
-    async depuisHTML(html, titre) { return assembler(await relever(html), titre); },
+    async depuisHTML(html, titre, pj) { return assembler(await relever(html), titre, pj); },
     async telecharger(html, nom) { download(nom, await this.depuisHTML(html, nom.replace(/\.pdf$/i, '')), 'application/pdf'); },
   };
 })();

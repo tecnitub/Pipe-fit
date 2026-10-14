@@ -82,6 +82,21 @@ recommandé de la limiter aux boîtes des utilisateurs du CRM par une *stratégi
 joindre `login.microsoftonline.com` et `graph.microsoft.com` en HTTPS. Sans Microsoft 365, l'envoi prépare un
 brouillon Outlook (.eml) avec le PDF joint : une fois envoyé depuis Outlook, il apparaît aussi dans les éléments envoyés.
 
+## Facturation électronique (plateforme agréée)
+
+Dans **Achats → Factures électroniques → Configuration** (administrateur) :
+
+- **Dossier de réception** : dossier du serveur où la plateforme (ou son outil de synchronisation : SFTP, OneDrive,
+  connecteur fourni par la plateforme) dépose les factures reçues (.xml ou .pdf Factur-X). Les fichiers traités sont
+  rangés dans `traites`, ceux qui ne sont pas des factures électroniques dans `erreurs` (avec la raison).
+- **Adresse de dépôt sécurisée** : URL à jeton (`/api/efacture/depot/<jeton>`) à laquelle la plateforme envoie
+  directement chaque facture (corps XML ou PDF, ou JSON `{ nom, base64 }`). Le serveur doit alors être joignable
+  par la plateforme (reverse proxy HTTPS). Le jeton se change en un clic.
+- **Dossier d'envoi** : le CRM y dépose nos factures (XML CII + PDF Factur-X) pour transmission par la plateforme.
+
+Le XML CII produit suit la structure du profil EN 16931 ; faites valider un premier envoi par votre plateforme.
+Le PDF Factur-X contient le XML joint mais n'est pas certifié PDF/A-3 : si votre plateforme l'exige, transmettez le XML.
+
 ## Utilisation à plusieurs
 
 - **Comptes et rôles** (Paramètres, administrateur) :
@@ -147,7 +162,8 @@ brouillon Outlook (.eml) avec le PDF joint : une fois envoyé depuis Outlook, il
 | **Factures fournisseurs** | Achats → Factures fournisseurs : saisie (fournisseur, n° de facture, montants, échéance, photo ou PDF de la facture) et ventilation sur un ou plusieurs chantiers. Une ligne rapprochée d'une commande remplace le montant commandé par le montant facturé (écart affiché) ; une ligne hors commande ajoute l'achat au chantier (raccords pris au comptoir chez Descours & Cabot ou Téréva avec le n° de chantier). Le reste non imputé est signalé « à ventiler » ou classé en frais généraux / stock. Sur la fiche chantier : commandes, factures rapprochées et achats hors commande, total retenu pour la rentabilité. |
 | **Avoirs** | Depuis une facture : avoir total (la facture passe « Annulée »), partiel par lignes et quantités, ou montant libre (geste commercial, réfaction), avec motif. Numérotation propre (`AV-AAAA-0001`), PDF, envoi par e-mail ; l'avoir est déduit du chiffre d'affaires, du reste dû de la facture et des analyses. Une facture numérotée n'est jamais supprimée. |
 | **Numérotation** | Factures et avoirs : préfixe, séparateur, année (4 ou 2 chiffres, remise à 1 chaque année, ou suite continue sans année) et nombre de chiffres paramétrables (Paramètres). Numéros attribués par le serveur dans l'ordre, sans trou ; reprise d'une numérotation existante en indiquant le prochain numéro (jamais en dessous d'un numéro déjà attribué). |
-| **Comptabilité** | Journal des ventes (Facturation → Comptabilité) : écritures équilibrées par pièce (client 411 avec compte auxiliaire de la fiche entreprise, retenue de garantie, travaux 704, livraison 7085, TVA 44571 ; avoirs en sens inverse), comptes paramétrables. Export Excel, CSV (Sage, Cegid, EBP, Quadra, Pennylane…) et FEC ; suivi des pièces transmises (seules les nouvelles sont exportées la fois suivante) ; envoi au cabinet comptable par e-mail avec le journal et les PDF des factures. |
+| **Comptabilité** | Journaux des ventes et des achats (Facturation → Comptabilité) : écritures équilibrées par pièce. Ventes : client 411 avec compte auxiliaire de la fiche entreprise, retenue de garantie, travaux 704, livraison 7085, TVA 44571 ; avoirs en sens inverse. Achats : achats 601 ventilés par chantier (section analytique = n° de chantier), reste non ventilé, TVA déductible 44566, fournisseur 401 avec compte auxiliaire. Comptes paramétrables. Export Excel, CSV (Sage, Cegid, EBP, Quadra, Pennylane…) et FEC ; suivi des pièces transmises (seules les nouvelles sont exportées la fois suivante) ; envoi au cabinet comptable par e-mail avec le journal et les PDF des factures. |
+| **Facturation électronique** | Réforme 2026. Réception : les factures des fournisseurs (Factur-X / ZUGFeRD, XML CII ou UBL) arrivent de la plateforme agréée par un dossier surveillé sur le serveur (relevé toutes les 2 minutes), par une adresse de dépôt sécurisée (jeton) ou par import manuel ; le fournisseur est reconnu par son SIREN ou son n° de TVA (fiche créée sinon), la commande (n° CF…) ou le chantier (n° CH… / HD…) par les références de la facture ; « Intégrer » crée la facture fournisseur ventilée, « Rejeter » garde le motif. Émission : chaque facture et avoir au format CII (profil EN 16931) et en PDF avec le XML joint (Factur-X), déposés dans le dossier d'envoi de la plateforme ou téléchargés. Mentions obligatoires 2026 (SIREN du client, catégorie de l'opération) sur les factures. |
 | **Filtres et archives** | Devis, chantiers, factures, situations et tableau de bord filtrables par client, chargé d'affaires, statut et recherche (n°, objet, client) ; filtres mémorisés par écran sur chaque poste. Par défaut, seuls les devis en cours (brouillons, envoyés) et les chantiers non clos s'affichent. Devis « Refusé » en un clic avec motif (prix, délai, concurrent…) et archivage ; chantiers et devis archivables à l'unité, par sélection multiple ou en lot (clos, refusés) : masqués des listes, du tableau de bord, du pointage et du planning, toujours consultables (filtre « Archivés ») et comptés dans les analyses (motifs de refus). |
 | **Rôles** | Administrateur ; chargé d'affaires ; opérateur (pointe uniquement ses propres heures). |
 
@@ -158,9 +174,10 @@ server/server.js   API REST, connexion, droits, temps réel (SSE), fichiers stat
 server/db.js       base SQLite, mots de passe (scrypt), numérotation
 server/demo.js     données de démonstration
 server/m365.js     envoi des e-mails par Microsoft Graph
+server/efacture.js réception (dossier, adresse de dépôt) et dépôt des factures électroniques
 public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
-public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, biblio.js, contacts.js : écrans métier
+public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, biblio.js, contacts.js : écrans métier
 installer/         installateur Windows (NSIS) : build.sh, PipeFitCRM.nsi, lanceur et service
 ```
 

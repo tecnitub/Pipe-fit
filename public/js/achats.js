@@ -6,7 +6,8 @@ const FILTRES_ACHATS = { q: '', fournisseur: '', chantier: '', statut: '' };
 function achatsTabs(actif) {
   const aVentiler = Store.all('achats').filter(f => Calc.achat(f).reste > 0.005 && !f.fraisGeneraux).length;
   return `<div class="tabs"><a href="#/commandes" class="${actif === 'commandes' ? 'active' : ''}">Commandes</a>
-    <a href="#/achats" class="${actif === 'achats' ? 'active' : ''}">Factures fournisseurs ${aVentiler ? `<span class="count">${aVentiler} à ventiler</span>` : ''}</a></div>`;
+    <a href="#/achats" class="${actif === 'achats' ? 'active' : ''}">Factures fournisseurs ${aVentiler ? `<span class="count">${aVentiler} à ventiler</span>` : ''}</a>
+    <a href="#/efactures" class="${actif === 'efactures' ? 'active' : ''}">Factures électroniques ${(() => { const n = Store.all('efactures').filter(e => e.statut === 'Reçue').length; return n ? `<span class="count">${n} à traiter</span>` : ''; })()}</a></div>`;
 }
 const etatVentilation = f => { const t = Calc.achat(f); return t.reste <= 0.005 ? (t.reste < -0.005 ? ['b-bad', 'Sur-imputée'] : ['b-ok', 'Ventilée']) : f.fraisGeneraux ? ['', 'Frais généraux'] : t.impute ? ['b-warn', 'Partielle'] : ['b-warn', 'À ventiler']; };
 

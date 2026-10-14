@@ -244,6 +244,14 @@ function demoData() {
     { id: 'ff3', ref: `FF-${Y}-0003`, fournisseurId: 'e12', numeroFournisseur: 'TV-77120', date: d(-4), echeance: d(41), montantHT: 268.35, montantTVA: '', statut: 'À payer',
       notes: 'Comptoir de Voiron, intervention PM2.', imputations: [] },
   ];
+  // Facture électronique reçue de la plateforme : vannes de la commande CF-0002 (rapprochement automatique)
+  const efactures = [{ id: 'ef1', cle: '445666777|RIA-F-26-3317', statut: 'Reçue', recueLe: d(-1) + 'T06:42:00', origine: 'plateforme', nomFichier: 'RIA-F-26-3317.xml', format: 'CII', type: 'facture', typeCode: '380',
+    numero: 'RIA-F-26-3317', date: d(-2), echeance: d(43), devise: 'EUR', refCommande: `CF-${Y}-0002`, refAcheteur: `CH-${Y}-001`, refFacture: '', iban: 'FR7600000000000000000000000',
+    vendeur: { nom: 'Robinetterie Industrielle Alpes', siren: '445666777', siret: '44566677700010', tva: 'FR21445666777', adresse: '', cp: '38000', ville: 'Grenoble', email: 'ventes@ria.example' },
+    acheteur: { nom: 'Pipe-Fit Industrie', siren: '000000000', siret: '', tva: '', adresse: '', cp: '', ville: '', email: '' },
+    totalHT: 3888, totalTVA: 777.6, totalTTC: 4665.6, netAPayer: 4665.6, notes: ['Livraison sur site, usine de Rumilly'],
+    lignes: [{ designation: 'Vanne papillon DN50 PN16 à levier', reference: 'VAN-PAP-050', qte: 24, unite: 'C62', pu: 158, montantHT: 3792, tauxTVA: 20 }, { designation: 'Participation transport', reference: '', qte: 1, unite: 'C62', pu: 96, montantHT: 96, tauxTVA: 20 }],
+    xmlId: '', pdfId: '' }];
   // Facture de la commande CF-0001 : 2,5 % au-dessus du montant commandé
   const cf1 = commandes.find(c => c.id === 'cf1');
   if (cf1) { const tot = cf1.lignes.reduce((t, l) => t + l.qte * l.pu, 0) * 1.025; achats[0].montantHT = Math.round(tot * 100) / 100; achats[0].imputations[0].montantHT = achats[0].montantHT; }
@@ -378,7 +386,7 @@ function demoData() {
         tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',
         types: { devis: { conditions: 'Acompte de 30 % à la commande. Travaux réalisés selon les normes EN 13480 et le DTU en vigueur. Hors génie civil, calorifuge et échafaudages sauf mention contraire.' },
           facture: { conditions: 'Paiement par virement à 45 jours fin de mois.' } } } },
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats,
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures,
   };
 }
 

@@ -7,6 +7,7 @@ const crypto = require('node:crypto');
 const DB = require('./db');
 const { demoData, uid } = require('./demo');
 const M365 = require('./m365');
+const EF = require('./efacture');
 
 const PORT = +process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -87,6 +88,16 @@ function send(res, status, body, headers = {}) {
 }
 const fail = (res, status, message, extra = {}) => send(res, status, { error: message, ...extra });
 
+// Corps brut (dépôt de factures électroniques par la plateforme)
+function readRaw(req, max) {
+  return new Promise((resolve, reject) => {
+    let size = 0; const chunks = [];
+    req.on('data', c => { size += c.length; if (size > max) { reject(Object.assign(new Error('Fichier trop volumineux'), { status: 413 })); req.destroy(); return; } chunks.push(c); });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0; const chunks = [];
@@ -145,6 +156,20 @@ async function api(req, res, url) {
   const method = req.method;
 
   // Protection CSRF : les écritures doivent être en JSON (impossible via un formulaire d'un autre site).
+  // Adresse de dépôt de la plateforme de facturation électronique : authentifiée par jeton (pas de session),
+  // corps brut (XML ou PDF Factur-X) ou JSON { nom, base64 }
+  if (p[0] === 'efacture' && p[1] === 'depot' && method === 'POST') {
+    const c = EF.config(DB, db);
+    if (!c.webhook || !EF.jetonValide(c, String(p[2] || ''))) return fail(res, 404, 'Adresse de dépôt inconnue');
+    const brut = await readRaw(req, EF.MAX_FICHIER * 1.4);
+    let buf = brut, nom = String(req.headers['x-filename'] || 'depot-plateforme');
+    if ((req.headers['content-type'] || '').startsWith('application/json')) {
+      try { const j = JSON.parse(brut.toString('utf8')); buf = Buffer.from(String(j.base64 || ''), 'base64'); nom = String(j.nom || nom); } catch (e) { return fail(res, 400, 'JSON invalide'); }
+    }
+    try { const r = await EF.recevoir(DB, db, buf, nom, 'plateforme', broadcast); return send(res, 200, { ok: true, id: r.record.id, doublon: !!r.doublon }); }
+    catch (e) { return fail(res, 422, e.message); }
+  }
+
   if (method !== 'GET' && !(req.headers['content-type'] || '').startsWith('application/json')) {
     return fail(res, 415, 'Content-Type application/json requis');
   }
@@ -222,7 +247,9 @@ async function api(req, res, url) {
   if (p[0] === 'files' && method === 'GET' && p[1]) {
     const f = db.prepare('SELECT mime, data FROM files WHERE id = ?').get(p[1]);
     if (!f) return fail(res, 404, 'Fichier introuvable');
-    res.writeHead(200, { 'Content-Type': f.mime, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
+    // XML : téléchargé, jamais interprété par le navigateur
+    const xml = /xml/.test(f.mime);
+    res.writeHead(200, { 'Content-Type': f.mime, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff', ...(xml ? { 'Content-Disposition': 'attachment; filename="facture.xml"', 'Content-Security-Policy': 'sandbox' } : {}) });
     return res.end(Buffer.from(f.data));
   }
 
@@ -343,8 +370,42 @@ async function api(req, res, url) {
     return send(res, 200, record);
   }
 
+  // Facturation électronique (bureaux) : état, import manuel, relève du dossier, dépôt d'une facture émise
+  if (p[0] === 'efacture' && ['etat', 'import', 'emettre', 'scruter'].includes(p[1])) {
+    if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Droits insuffisants');
+    const c = EF.config(DB, db);
+    if (p[1] === 'etat' && method === 'GET') return send(res, 200, { plateforme: c.plateforme || '', entree: !!c.dossierEntree, sortie: !!c.dossierSortie, webhook: !!c.webhook });
+    if (p[1] === 'import' && method === 'POST') {
+      const b = await readBody(req);
+      try { const r = await EF.recevoir(DB, db, Buffer.from(String(b.base64 || ''), 'base64'), String(b.nom || 'import'), acc.login, broadcast); return send(res, 200, { ...r.record, doublon: !!r.doublon }); }
+      catch (e) { return fail(res, 422, e.message); }
+    }
+    if (p[1] === 'scruter' && method === 'POST') {
+      try { return send(res, 200, await EF.scruterDossier(DB, db, broadcast)); } catch (e) { return fail(res, 500, e.message); }
+    }
+    if (p[1] === 'emettre' && method === 'POST') {
+      const b = await readBody(req);
+      if (!/^<\?xml|^<rsm:CrossIndustryInvoice/.test(String(b.xml || '').trim())) return fail(res, 400, 'XML de facture attendu');
+      try { const r = EF.deposer(DB, db, b.nom, b.xml, b.pdfBase64 && /^[A-Za-z0-9+/=]+$/.test(b.pdfBase64) ? b.pdfBase64 : ''); DB.audit(db, acc.login, 'dépôt facture électronique', 'factures', null, b.nom); return send(res, 200, r); }
+      catch (e) { return fail(res, 400, e.message); }
+    }
+  }
+
   /* --- Administration --- */
   if (acc.role !== 'admin') return fail(res, 403, 'Réservé aux administrateurs');
+
+  // Configuration de la facturation électronique (plateforme, dossiers, adresse de dépôt)
+  if (p[0] === 'efacture' && p[1] === 'config') {
+    const c = EF.config(DB, db);
+    if (method === 'PUT') {
+      const b = await readBody(req), champ = v => String(v || '').trim().slice(0, 300);
+      Object.assign(c, { plateforme: champ(b.plateforme), dossierEntree: champ(b.dossierEntree), dossierSortie: champ(b.dossierSortie), webhook: !!b.webhook });
+      if (b.nouveauJeton || (c.webhook && !c.jeton)) c.jeton = crypto.randomBytes(24).toString('hex');
+      DB.setConfig(db, 'efacture', c);
+      DB.audit(db, acc.login, 'configuration facturation électronique');
+    }
+    return send(res, 200, { plateforme: c.plateforme || '', dossierEntree: c.dossierEntree || '', dossierSortie: c.dossierSortie || '', webhook: !!c.webhook, jeton: c.webhook ? c.jeton : '' });
+  }
 
   // Numérotation des factures et avoirs : état et reprise d'une numérotation existante
   if (p[0] === 'numerotation') {
@@ -490,6 +551,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 if (require.main === module) {
+  // Relève du dossier de réception des factures électroniques toutes les 2 minutes
+  setInterval(() => EF.scruterDossier(DB, db, broadcast).catch(e => console.error('Facturation électronique :', e.message)), 120000).unref();
   server.listen(PORT, HOST, () => {
     console.log(`Pipe-Fit CRM : http://localhost:${PORT}  (base : ${DB_FILE})`);
     if (!hasAccounts()) console.log(`Première utilisation : ouvrez http://localhost:${PORT} sur ce poste pour créer le compte administrateur.`);

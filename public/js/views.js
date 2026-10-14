@@ -284,6 +284,7 @@ Views.facture = params => {
     <span class="spacer"></span>
     <select id="f-statut" style="width:auto" aria-label="Statut">${optionsStr(av ? STATUTS_AVOIR : STATUTS_FACTURE, f.statut)}</select>
     <button class="secondary print-btn" onclick="window.print()">Imprimer</button>${boutonsEnvoi(av ? 'avoir' : 'facture', f.id)}
+    ${['admin', 'charge'].includes(Store.me.role) ? `<button class="secondary" data-efacture="${f.id}">Facture électronique</button>` : ''}
     ${!av && f.statut !== 'Annulée' && Store.can('write', 'factures') ? '<button class="secondary" id="avoir">Créer un avoir</button>' : ''}
   </div>
   <h1 class="no-print">${av ? 'Avoir' : 'Facture'} ${esc(f.numero || '')} ${badge(statutFacture(f))}${f.exportCompta ? ` <span class="badge b-ok">Transmis au comptable le ${dateFr(f.exportCompta.date)}</span>` : ''}</h1>${envoisHtml('factures', f.id)}
@@ -294,16 +295,22 @@ Views.facture = params => {
     ${factureDocument(f)}
   </div>`;
 };
+// Mentions obligatoires des factures depuis la réforme de la facturation électronique (2026)
+function mentionsReforme(f, o) {
+  if (!o.mentions2026) return '';
+  const siren = String(entreprise(docClientId(f)).siret || '').replace(/\D/g, '').slice(0, 9);
+  return `<p class="doc-conditions">Catégorie de l'opération : prestation de services${siren ? ` · SIREN du client : ${esc(siren)}` : ''} · TVA acquittée sur les encaissements.</p>`;
+}
 function factureDocument(f) {
   const type = estAvoir(f) ? 'avoir' : 'facture', o = Doc.t(type), dv = Store.get('devis', f.devisId), sit = Store.get('situations', f.situationId);
   if (estAvoir(f)) {
     const orig = Store.get('factures', f.factureId);
     const refs = o.references && orig ? `<p class="doc-conditions"><strong>Avoir sur la facture ${esc(orig.numero || '')} du ${dateFr(orig.date)}</strong>${f.motif ? ` · motif : ${esc(f.motif)}` : ''}.</p>` : (f.motif ? `<p class="doc-conditions">Motif : ${esc(f.motif)}</p>` : '');
-    return `${docHeader(f, 'avoir')}${docLinesClient(f, 'avoir')}${totalsTable(f, 'avoir')}${Doc.pied('avoir', refs)}`;
+    return `${docHeader(f, 'avoir')}${docLinesClient(f, 'avoir')}${totalsTable(f, 'avoir')}${Doc.pied('avoir', refs + mentionsReforme(f, o))}`;
   }
   const refs = o.references && dv ? `<p class="doc-conditions">Selon devis ${esc(dv.numero || '')}${sit ? ` et situation de travaux ${esc(sit.numero || '')} acceptée` : ''}.</p>` : '';
   return `${docHeader(f, 'facture')}${docLinesClient(f, 'facture')}${totalsTable(f, 'facture')}
-    ${Doc.pied('facture', `<p class="doc-conditions"><strong>Échéance de paiement : ${dateFr(f.echeance)}</strong></p>${refs}`)}`;
+    ${Doc.pied('facture', `<p class="doc-conditions"><strong>Échéance de paiement : ${dateFr(f.echeance)}</strong></p>${refs}${mentionsReforme(f, o)}`)}`;
 }
 Views.facture.bind = (root, params) => {
   const f = Store.get('factures', params[0]);

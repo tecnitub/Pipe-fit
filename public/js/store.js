@@ -1,5 +1,5 @@
 // Cache local des données serveur + synchronisation (API REST et événements temps réel).
-const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'zones', 'affaires', 'devis', 'factures', 'planning', 'temps', 'envois', 'achats'];
+const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'zones', 'affaires', 'devis', 'factures', 'planning', 'temps', 'envois', 'achats', 'efactures'];
 
 const CLIENT_ID = uid(); // identifie cet onglet, pour ignorer l'écho de nos propres modifications
 
@@ -56,7 +56,7 @@ const Store = {
           this._send(col, state.pending, key);
           return;
         }
-        const numeroChanged = rec.numero !== obj.numero || rec.code !== obj.code;
+        const numeroChanged = rec.numero !== obj.numero || rec.code !== obj.code || rec.ref !== obj.ref;
         Object.assign(obj, rec);
         this._put(col, obj);
         if (numeroChanged || col === 'factures') App.render();
