@@ -160,7 +160,7 @@ Views.chiffrage = params => {
   const moOpts = sel => options(Store.all('mainoeuvre'), sel, m => m.libelle, false);
   const marge = t.total ? (t.total - t.cout) / t.total * 100 : 0;
   return `<div class="toolbar"><a href="#/chiffrages" class="btn secondary">← Chiffrages</a>${d ? `<a class="btn secondary" href="#/devis/${d.id}">Devis ${esc(d.numero || '')}</a>` : ''}<span class="spacer"></span>
-    <button class="danger" id="ch-del">Supprimer</button><button id="ch-gen" ${(ch.lignes || []).length || r.extras.length ? '' : 'disabled'}>${d ? 'Mettre à jour le devis' : 'Créer le devis'}</button></div>
+    <button class="danger" id="ch-del">Supprimer</button><button class="secondary" id="ch-cs" ${r.liste.some(g => g.a) ? '' : 'disabled'}>Consulter les fournisseurs</button><button id="ch-gen" ${(ch.lignes || []).length || r.extras.length ? '' : 'disabled'}>${d ? 'Mettre à jour le devis' : 'Créer le devis'}</button></div>
   <h1>Chiffrage depuis plan</h1>
   <div class="card"><div class="grid2">
     <div class="field"><label for="ch-nom">Intitulé</label><input id="ch-nom" value="${esc(ch.nom || '')}"></div>
@@ -271,6 +271,13 @@ Views.chiffrage.bind = (root, params) => {
     Store.upsert('devis', d); save(false);
     location.hash = `#/devis/${d.id}`;
     App.toast(`Devis mis à jour : ${lignes.filter(l => l.type !== 'chapitre').length} ouvrage(s) depuis le plan`, 4000);
+  };
+  q('#ch-cs').onclick = () => {
+    const d = Store.get('devis', ch.devisId) || {}, lignes = [];
+    calculerChiffrage(ch).liste.filter(g => g.a).forEach(g => { const ex = lignes.find(x => x.articleId === g.a.id); if (ex) ex.qte = Math.round((ex.qte + g.qte) * 100) / 100; else lignes.push({ articleId: g.a.id, designation: g.a.designation, unite: g.a.unite, qte: g.qte }); });
+    const fs = [...new Set(lignes.map(l => (Store.get('articles', l.articleId) || {}).fournisseurId).filter(Boolean))].map(eid => ({ entrepriseId: eid, statut: 'À consulter' }));
+    const cs = nouvelleConsultation({ objet: ch.nom, affaireId: d.affaireId || '', lignes, fournisseurs: fs });
+    location.hash = `#/consultations/${cs.id}`;
   };
   q('#ch-del').onclick = () => ask('Supprimer ce chiffrage ? Le devis déjà généré est conservé.', 'Supprimer').then(ok => { if (ok) { Store.remove('chiffrages', ch.id); location.hash = '#/chiffrages'; } });
 };

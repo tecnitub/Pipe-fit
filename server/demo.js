@@ -237,6 +237,14 @@ function demoData() {
     { id: 'cf4', numero: `CF-${Y}-` + '0004', fournisseurId: 'e5', affaireId: 'af3', date: d(-80), dateLivraison: d(-74), statut: 'Réceptionnée', lignes: [CL('a1', 170), CL('a4', 72)] },
     { id: 'cf5', numero: `CF-${Y}-` + '0005', fournisseurId: 'e6', affaireId: 'af3', date: d(-80), dateLivraison: d(-70), statut: 'Réceptionnée', lignes: [CL('a7', 12, 165)] },
   ];
+  // Consultation fournisseurs en cours : 3 négoces consultés, 2 offres reçues
+  const consultations = [{ id: 'cs1', ref: `CS-${Y}-0001`, objet: 'Raccords inox DN50 / DN100 – complément ligne NEP', affaireId: 'af1', date: d(-6), dateLimite: d(2), dateLivraison: d(14), statut: 'En cours',
+    lignes: [{ articleId: 'a4', designation: 'Coude 90° 3D inox 316L DN50', unite: 'u', qte: 40 }, { articleId: 'a14', designation: 'Té égal inox 316L DN50 à souder', unite: 'u', qte: 12 },
+      { articleId: 'a17', designation: 'Coude 90° 3D inox 316L DN100', unite: 'u', qte: 16 }, { articleId: 'a16', designation: 'Bride à collerette inox DN50 PN16', unite: 'u', qte: 10 }],
+    fournisseurs: [
+      { entrepriseId: 'e5', statut: 'Offre reçue', envoyeLe: d(-6), offre: { date: d(-3), prix: { 0: 20.5, 1: 29.4, 2: 61, 3: 32 }, remise: 3, port: 45, delai: 8, validite: d(30), remarques: 'Coudes DN100 en 3 semaines' } },
+      { entrepriseId: 'e11', statut: 'Offre reçue', envoyeLe: d(-6), offre: { date: d(-2), prix: { 0: 19.9, 1: 31.2, 2: 57.5 }, remise: 0, port: 0, delai: 5, validite: d(20), remarques: 'Brides non disponibles' } },
+      { entrepriseId: 'e12', statut: 'Consulté', envoyeLe: d(-6) }] }];
   // Familles CAO (Revit) reliées à la bibliothèque : article par diamètre, soudures, temps de préfabrication et de pose
   const familles = [
     { id: 'fa1', nom: 'Tuyau', alias: 'Canalisation, Pipe, Tube inox', unite: 'ml', soudures: 0, tempsPrefab: 0.2, tempsPose: 0.35, declinaisons: [{ dn: 50, articleId: 'a1' }, { dn: 100, articleId: 'a2' }, { dn: 150, articleId: 'a3' }] },
@@ -401,7 +409,7 @@ function demoData() {
         tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',
         types: { devis: { conditions: 'Acompte de 30 % à la commande. Travaux réalisés selon les normes EN 13480 et le DTU en vigueur. Hors génie civil, calorifuge et échafaudages sauf mention contraire.' },
           facture: { conditions: 'Paiement par virement à 45 jours fin de mois.' } } } },
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles,
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations,
   };
 }
 

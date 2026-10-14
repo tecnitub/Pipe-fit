@@ -5,7 +5,7 @@ const FILTRES_ACHATS = { q: '', fournisseur: '', chantier: '', statut: '' };
 
 function achatsTabs(actif) {
   const aVentiler = Store.all('achats').filter(f => Calc.achat(f).reste > 0.005 && !f.fraisGeneraux).length;
-  return `<div class="tabs"><a href="#/commandes" class="${actif === 'commandes' ? 'active' : ''}">Commandes</a>
+  return `<div class="tabs"><a href="#/consultations" class="${actif === 'consultations' ? 'active' : ''}">Consultations ${consultationsTab() ? `<span class="count">${consultationsTab()} en cours</span>` : ''}</a><a href="#/commandes" class="${actif === 'commandes' ? 'active' : ''}">Commandes</a>
     <a href="#/achats" class="${actif === 'achats' ? 'active' : ''}">Factures fournisseurs ${aVentiler ? `<span class="count">${aVentiler} à ventiler</span>` : ''}</a>
     <a href="#/efactures" class="${actif === 'efactures' ? 'active' : ''}">Factures électroniques ${(() => { const n = Store.all('efactures').filter(e => e.statut === 'Reçue').length; return n ? `<span class="count">${n} à traiter</span>` : ''; })()}</a></div>`;
 }

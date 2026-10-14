@@ -396,3 +396,10 @@ tr.piece-debut td { border-top: 2px solid var(--border); }
 .ac-imp input[data-k="libelle"] { min-width: 280px; }
 .ac-piece { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 .ac-ttc { display: block; padding: 8px 0; font-weight: 600; }
+
+/* Consultations fournisseurs et chiffrage depuis plan */
+.cs-comparatif td.meilleur { background: var(--ok-bg); color: var(--ok); font-weight: 600; }
+.nowrap { white-space: nowrap; }
+.nowrap .btn, .nowrap button { margin: 1px; }
+.ch-table td { vertical-align: middle; }
+.ch-extras input, .ch-extras select { min-width: 0; }

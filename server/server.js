@@ -134,7 +134,7 @@ function currentAccount(req) {
 const publicAccount = a => ({ id: a.id, login: a.login, nom: a.nom, role: a.role, userId: a.user_id, email: a.email || '' });
 const EMAIL = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/;
 const m365Pret = () => { const c = DB.getConfig(db, 'm365'); return !!(c && c.actif && c.tenantId && c.clientId && c.clientSecret); };
-const MAIL_COLS = ['devis', 'factures', 'situations', 'commandes', 'affaires', 'rapports', 'receptions'];
+const MAIL_COLS = ['devis', 'factures', 'situations', 'commandes', 'affaires', 'rapports', 'receptions', 'consultations'];
 const labelOf = o => o.numero || o.code || o.ref || o.nom || o.designation || o.tache || '';
 
 // Limitation des tentatives de connexion (10 échecs / 15 min par adresse IP).

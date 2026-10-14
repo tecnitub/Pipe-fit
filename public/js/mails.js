@@ -12,6 +12,8 @@ const MAIL_TYPES = {
     corps: 'Bonjour {contact},\n\nVeuillez trouver ci-joint notre avoir {numero} d\'un montant de {montant_ttc} TTC, établi sur la facture {facture_origine}{motif_phrase}.\n\nCordialement,\n\n{signature}' },
   situation: { label: 'Situation de travaux (BL)', objet: 'Proposition de situation n° {rang} – {chantier}',
     corps: 'Bonjour {contact},\n\nVeuillez trouver ci-joint notre proposition de situation n° {rang} (BL {numero}) arrêtée au {date} pour le chantier {chantier}, d\'un montant de {montant_ht} HT.\n\nMerci de nous retourner votre accord afin que nous puissions établir la facture correspondante.\n\nCordialement,\n\n{signature}' },
+  consultation: { label: 'Consultation fournisseurs (appel d\'offres)', objet: 'Demande de prix {numero} – {objet}',
+    corps: 'Bonjour {contact},\n\nNous vous consultons pour les fournitures listées dans la demande ci-jointe (réf. {numero}, chantier {chantier}){date_livraison_phrase}.\nMerci de nous retourner votre meilleure offre avant le {date_limite}, de préférence en complétant le tableau Excel joint (prix unitaires HT, délais, frais de port).\n\nCordialement,\n\n{signature}' },
   demandePrix: { label: 'Demande de prix fournisseur', objet: 'Demande de prix – {chantier}',
     corps: 'Bonjour {contact},\n\nPourriez-vous nous faire parvenir votre meilleure offre pour les fournitures listées dans la demande ci-jointe (réf. {numero}), avec vos délais de livraison{date_livraison_phrase} ?\n\nCordialement,\n\n{signature}' },
   commande: { label: 'Commande fournisseur', objet: 'Commande {numero} – {chantier}',
@@ -27,7 +29,7 @@ const MAIL_VARIABLES = [
   ['contact', 'Formule d\'appel du destinataire (Madame Durand)'], ['numero', 'Numéro du document'], ['objet', 'Objet'], ['chantier', 'Chantier (code – nom)'],
   ['client', 'Entreprise destinataire'], ['date', 'Date du document'], ['montant_ht', 'Montant HT'], ['montant_ttc', 'Montant TTC / net à payer'],
   ['echeance', 'Échéance (facture)'], ['validite', 'Validité (devis)'], ['rang', 'N° de situation'], ['ref_commande', '« , votre commande n° … »'],
-  ['date_livraison_phrase', '« pour le … » (date de livraison)'], ['facture_origine', 'Facture d\'origine (avoir)'], ['motif_phrase', '« (motif) » de l\'avoir'], ['adresse_livraison', 'Adresse de livraison'], ['signataire_phrase', '« , signé par … »'],
+  ['date_livraison_phrase', '« pour le … » (date de livraison)'], ['facture_origine', 'Facture d\'origine (avoir)'], ['date_limite', 'Date limite de remise des offres'], ['motif_phrase', '« (motif) » de l\'avoir'], ['adresse_livraison', 'Adresse de livraison'], ['signataire_phrase', '« , signé par … »'],
   ['societe', 'Votre société'], ['expediteur', 'Votre nom'], ['signature', 'Signature'],
 ];
 
@@ -107,6 +109,17 @@ function mailContexte(type, id) {
         fichier: `Bon d'intervention ${r.numero || ''}`, html: () => premierRendu(Views.bon([id])),
         vars: { chantier: chantier(a), objet: a.nom, date: dateFr(r.date), signataire_phrase: r.signataireNom ? `, signé par ${r.signataireNom}` : '' } };
     }
+    case 'consultation': {
+      const [cid, eid] = String(id).split('~'), c = Store.get('consultations', cid); if (!c) return null;
+      const a = affaireOf(c.affaireId), contacts = contactsOf(eid), four = entreprise(eid);
+      return { ref: { col: 'consultations', id: cid }, numero: c.ref, entrepriseId: eid, chargeId: a.chargeId,
+        contactId: (contacts.find(k => /commercial|vente|adv|devis/i.test(k.fonction || '')) || contacts[0] || {}).id,
+        fichier: `Demande de prix ${c.ref || ''} ${four.nom || ''}`, html: () => consultationDocument(c, eid),
+        libellePiecesSup: 'tableau Excel à compléter', piecesSup: async () => [{ nom: nomFichier(`Offre ${c.ref || ''} ${four.nom || ''}`).replace(/\.pdf$/, '.xlsx'), bytes: excelConsultation(c, eid), type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }],
+        vars: { objet: c.objet || a.nom || '', chantier: chantier(a) || 'notre atelier', date: dateFr(c.date), date_limite: dateFr(c.dateLimite) || 'dès que possible',
+          date_livraison_phrase: c.dateLivraison ? ` pour le ${dateFr(c.dateLivraison)}` : '' },
+        apres: () => { const f = (c.fournisseurs || []).find(x => x.entrepriseId === eid); if (f && f.statut === 'À consulter') { f.statut = 'Consulté'; f.envoyeLe = isoDate(new Date()); Store.upsert('consultations', c); } } };
+    }
     case 'pv': {
       const pv = Store.get('receptions', id); if (!pv) return null;
       const a = affaireOf(pv.affaireId);
@@ -180,7 +193,7 @@ async function envoyerParMail(type, id) {
       </fieldset>
       <div class="field"><label for="ml-objet">Objet</label><input id="ml-objet"></div>
       <div class="field"><label for="ml-corps">Message</label><textarea id="ml-corps" rows="12"></textarea></div>
-      <p class="mail-piece">📎 <strong>${esc(nomFichier(ctx.fichier))}</strong> <button class="small secondary" id="ml-pdf" type="button">Voir le PDF</button></p>
+      <p class="mail-piece">📎 <strong>${esc(nomFichier(ctx.fichier))}</strong>${ctx.piecesSup ? ` + <strong>${esc(ctx.libellePiecesSup || 'pièces jointes')}</strong>` : ''} <button class="small secondary" id="ml-pdf" type="button">Voir le PDF</button></p>
       <fieldset class="mail-mode"><legend>Envoi</legend>
         <label class="check"><input type="radio" name="ml-mode" value="m365" ${st.mode === 'm365' ? 'checked' : ''} ${me.m365 && me.email ? '' : 'disabled'}>
           <span>Microsoft 365, depuis ${me.email ? `<strong>${esc(me.email)}</strong>` : 'votre boîte'} : envoi immédiat, le message est enregistré dans vos « Éléments envoyés »</span></label>
@@ -222,16 +235,17 @@ async function envoyerParMail(type, id) {
     try {
       const nom = nomFichier(ctx.fichier), pdf = await PDF.depuisHTML(ctx.html(), nom.replace(/\.pdf$/, ''));
       const html = Mails.html(corps);
+      const sup = ctx.piecesSup ? await ctx.piecesSup() : [];
       const uniques = l => [...new Set(l.map(a => a.toLowerCase()))];
       const dest = { to: uniques(to), cc: uniques(cc).filter(a => !uniques(to).includes(a)) };
       if (st.mode === 'm365') {
         btn.textContent = 'Envoi…';
-        const rec = await api('POST', '/api/mail', { ...dest, subject, html, type, numero: ctx.numero, ref: ctx.ref, attachments: [{ name: nom, base64: enBase64(pdf) }] });
+        const rec = await api('POST', '/api/mail', { ...dest, subject, html, type, numero: ctx.numero, ref: ctx.ref, attachments: [{ name: nom, base64: enBase64(pdf) }, ...sup.map(p => ({ name: p.nom, base64: enBase64(p.bytes) }))] });
         Store._put('envois', rec);
         App.toast(`E-mail envoyé à ${dest.to.join(', ')}`, 3500);
       } else {
-        download(nom.replace(/\.pdf$/, '.eml'), brouillonEML({ ...dest, subject, html, nom, pdf }), 'message/rfc822');
-        Store.upsert('envois', { date: new Date().toISOString(), type, col: ctx.ref.col, docId: ctx.ref.id, numero: ctx.numero || '', ...dest, objet: subject, pieces: [nom], mode: 'Brouillon Outlook', expediteur: me.email || '', par: me.nom });
+        download(nom.replace(/\.pdf$/, '.eml'), brouillonEML({ ...dest, subject, html, pieces: [{ nom, bytes: pdf, type: 'application/pdf' }, ...sup] }), 'message/rfc822');
+        Store.upsert('envois', { date: new Date().toISOString(), type, col: ctx.ref.col, docId: ctx.ref.id, numero: ctx.numero || '', ...dest, objet: subject, pieces: [nom, ...sup.map(p => p.nom)], mode: 'Brouillon Outlook', expediteur: me.email || '', par: me.nom });
         App.toast('Brouillon téléchargé : ouvrez-le dans Outlook pour l\'envoyer.', 4500);
       }
       if (ctx.apres) ctx.apres();
@@ -297,10 +311,10 @@ Views.mails = () => {
 };
 
 function apercuMail(type, c) {
-  const pick = { devis: ['devis'], facture: ['factures', f => f.type !== 'avoir'], avoir: ['factures', f => f.type === 'avoir'], situation: ['situations'], commande: ['commandes'], demandePrix: ['commandes'], attachement: ['affaires', estHorsDevis], bon: ['rapports', r => r.signatureClientId], pv: ['receptions'] }[type];
+  const pick = { consultation: ['consultations', c => (c.fournisseurs || []).length], devis: ['devis'], facture: ['factures', f => f.type !== 'avoir'], avoir: ['factures', f => f.type === 'avoir'], situation: ['situations'], commande: ['commandes'], demandePrix: ['commandes'], attachement: ['affaires', estHorsDevis], bon: ['rapports', r => r.signatureClientId], pv: ['receptions'] }[type];
   const doc = Store.all(pick[0]).filter(pick[1] || (() => true)).slice(-1)[0];
   if (!doc) return '<p class="muted">Aucun document de ce type pour l\'aperçu.</p>';
-  const ctx = mailContexte(type, doc.id), contact = Store.get('contacts', ctx.contactId);
+  const ctx = mailContexte(type, type === 'consultation' ? `${doc.id}~${doc.fournisseurs[0].entrepriseId}` : doc.id), contact = Store.get('contacts', ctx.contactId);
   const v = { ...ctx.vars, numero: ctx.numero || '', societe: Store.data.settings.societe, client: clientName(ctx.entrepriseId), contact: formuleContact(contact),
     expediteur: Store.me.nom, fonction_expediteur: 'Chargé(e) d\'affaires', tel_expediteur: (Store.get('users', Store.me.userId) || {}).tel || '', email_expediteur: Store.me.email || '' };
   v.signature = Mails.remplir(c.signature || SIGNATURE_DEFAUT, v).replace(/\n{2,}/g, '\n').trim();

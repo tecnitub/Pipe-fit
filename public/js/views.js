@@ -150,6 +150,7 @@ Views.chantier = params => {
     <button id="edit" class="secondary">Modifier</button>
     <a class="btn secondary" href="#/reception/${a.id}">Réserves et réception</a>
     <a class="btn secondary" href="#/commandes/new?chantier=${a.id}">+ Commande fournisseur</a>
+    <button class="secondary" onclick="location.hash='#/consultations/' + nouvelleConsultation({ affaireId: '${a.id}', objet: 'Fournitures ${esc(a.code || '')}' }).id">+ Consultation fournisseurs</button>
     ${dAcc ? '<button id="situation">+ Situation de travaux</button>' : ''}
     ${a.archive ? '' : `<button class="secondary" data-archiver="affaires|${a.id}">Archiver</button>`}</div>
   <h1>${esc(affaireLabel(a))} ${badge(a.statut)} ${a.okFacturation ? '<span class="badge b-ok">Réceptionné · OK pour facturation</span>' : ''}</h1>${bandeauArchive(a, 'affaires')}
