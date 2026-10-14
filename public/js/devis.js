@@ -95,7 +95,7 @@ Views.devis = (params, query) => {
   const list = Store.all('devis').filter(d => devisFiltre(d, f)).sort((a, b) => (b.numero || '~').localeCompare(a.numero || '~'));
   const statuts = [['', 'En cours (brouillons et envoyés)'], ['tous', 'Tous (hors archivés)'], ...STATUTS_DEVIS.map(s => [s, s]), ['archives', 'Archivés']];
   const refusesActifs = Store.all('devis').filter(d => d.statut === 'Refusé' && !d.archive);
-  return `<h1>Devis</h1>
+  return `<h1>Devis</h1>${devisTabs('devis')}
   <div class="toolbar">
     <button id="add">+ Nouveau devis</button>
     <span class="spacer"></span>
@@ -132,6 +132,7 @@ function devisEditor(id) {
     <span class="spacer"></span>
     ${!locked ? '<button class="secondary" id="dpgf-imp">Importer un DPGF</button>' : ''}
     <button class="secondary dl-btn" id="dpgf-exp">Exporter le DPGF chiffré</button>
+    <button class="secondary" onclick="ouvrirChiffrage('${d.id}')">Chiffrage depuis plan</button>
     <button class="secondary" id="dup">Dupliquer</button>
     <button class="secondary print-btn" onclick="window.print()">Imprimer</button>${boutonsEnvoi('devis', d.id)}
     ${!d.affaireId && d.statut !== 'Refusé' ? '<button id="accept">Accepté : créer le chantier</button>' : ''}

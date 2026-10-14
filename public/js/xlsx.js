@@ -164,11 +164,14 @@ const XLSX = (() => {
 
   // CSV : séparateur ; ou , détecté, guillemets gérés, encodage UTF-8 ou Windows-1252
   function readCSV(buf) {
-    let text = new TextDecoder('utf-8').decode(buf);
-    if (text.includes('\uFFFD')) text = new TextDecoder('windows-1252').decode(buf);
+    const u8 = new Uint8Array(buf);
+    // Unicode UTF-16 (exports de nomenclature Revit), sinon UTF-8, sinon Windows-1252
+    let text = u8[0] === 0xff && u8[1] === 0xfe ? new TextDecoder('utf-16le').decode(u8) : new TextDecoder('utf-8').decode(u8);
+    if (text.includes('\uFFFD')) text = new TextDecoder('windows-1252').decode(u8);
     text = text.replace(/^\uFEFF/, '');
-    const first = text.split(/\r?\n/)[0] || '';
-    const sep = (first.match(/;/g) || []).length >= (first.match(/,/g) || []).length ? ';' : ',';
+    // Séparateur le plus fréquent sur les premières lignes : tabulation, point-virgule ou virgule
+    const debut = text.split(/\r?\n/).slice(0, 5).join('\n');
+    const sep = ['\t', ';', ','].map(c => [c, debut.split(c).length]).sort((x, y) => y[1] - x[1])[0][0];
     const rows = [[]];
     let cur = '', q = false;
     for (let i = 0; i < text.length; i++) {

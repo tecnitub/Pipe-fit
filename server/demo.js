@@ -58,6 +58,11 @@ function demoData() {
     { id: 'a6', ref: 'COU-P235-150', designation: 'Coude 90° acier P235GH DN150', famille: 'Raccords', unite: 'u', prixVente: 67, coutRevient: 54, poidsUnitaire: 7.9, fournisseurId: 'e5' },
     { id: 'a7', ref: 'VAN-PAP-050', designation: 'Vanne papillon DN50 PN16 à levier', famille: 'Robinetterie', unite: 'u', prixVente: 200, coutRevient: 160, poidsUnitaire: 3.2, fournisseurId: 'e6' },
     { id: 'a8', ref: 'SUP-RACK', designation: 'Supportage et colliers', famille: 'Supportage', unite: 'ml', prixVente: 12, coutRevient: 9, poidsUnitaire: 1.5, fournisseurId: 'e5' },
+    { id: 'a14', ref: 'TEE-316-050', designation: 'Té égal inox 316L DN50 à souder', famille: 'Raccords', unite: 'u', prixVente: 38, coutRevient: 30, poidsUnitaire: 0.8, fournisseurId: 'e5' },
+    { id: 'a15', ref: 'RED-316-100', designation: 'Réduction concentrique inox 316L DN100×50', famille: 'Raccords', unite: 'u', prixVente: 44, coutRevient: 35, poidsUnitaire: 0.9, fournisseurId: 'e5' },
+    { id: 'a16', ref: 'BRI-316-050', designation: 'Bride à collerette inox DN50 PN16', famille: 'Raccords', unite: 'u', prixVente: 41, coutRevient: 33, poidsUnitaire: 2.1, fournisseurId: 'e5' },
+    { id: 'a17', ref: 'COU-316-100', designation: 'Coude 90° 3D inox 316L DN100', famille: 'Raccords', unite: 'u', prixVente: 74, coutRevient: 59, poidsUnitaire: 2.4, fournisseurId: 'e5' },
+    { id: 'a18', ref: 'TEE-316-100', designation: 'Té égal inox 316L DN100 à souder', famille: 'Raccords', unite: 'u', prixVente: 96, coutRevient: 77, poidsUnitaire: 2.9, fournisseurId: 'e5' },
     { id: 'a11', ref: 'ECH-SEM', designation: 'Location échafaudage', famille: 'Location', unite: 'semaine', prixVente: 400, coutRevient: 320, poidsUnitaire: 0, fournisseurId: 'e7' },
     { id: 'a12', ref: 'CTRL-RX', designation: 'Contrôle radiographique de soudure (sous-traité)', famille: 'Contrôles', unite: 'u', prixVente: 80, coutRevient: 60, poidsUnitaire: 0, fournisseurId: 'e7' },
     { id: 'a13', ref: 'EPR-HYD', designation: 'Consommables épreuve hydraulique + PV', famille: 'Contrôles', unite: 'forfait', prixVente: 260, coutRevient: 120, poidsUnitaire: 0, fournisseurId: '' },
@@ -232,6 +237,16 @@ function demoData() {
     { id: 'cf4', numero: `CF-${Y}-` + '0004', fournisseurId: 'e5', affaireId: 'af3', date: d(-80), dateLivraison: d(-74), statut: 'Réceptionnée', lignes: [CL('a1', 170), CL('a4', 72)] },
     { id: 'cf5', numero: `CF-${Y}-` + '0005', fournisseurId: 'e6', affaireId: 'af3', date: d(-80), dateLivraison: d(-70), statut: 'Réceptionnée', lignes: [CL('a7', 12, 165)] },
   ];
+  // Familles CAO (Revit) reliées à la bibliothèque : article par diamètre, soudures, temps de préfabrication et de pose
+  const familles = [
+    { id: 'fa1', nom: 'Tuyau', alias: 'Canalisation, Pipe, Tube inox', unite: 'ml', soudures: 0, tempsPrefab: 0.2, tempsPose: 0.35, declinaisons: [{ dn: 50, articleId: 'a1' }, { dn: 100, articleId: 'a2' }, { dn: 150, articleId: 'a3' }] },
+    { id: 'fa2', nom: 'Coude - Soudé', alias: 'Coude 90, Coude', unite: 'u', soudures: 2, tempsPrefab: 0.1, tempsPose: 0, declinaisons: [{ dn: 50, articleId: 'a4' }, { dn: 100, articleId: 'a17' }, { dn: 150, articleId: 'a6' }] },
+    { id: 'fa3', nom: 'Té - Soudé', alias: 'Té égal, Té', unite: 'u', soudures: 3, tempsPrefab: 0.15, tempsPose: 0, declinaisons: [{ dn: 50, articleId: 'a14' }, { dn: 100, articleId: 'a18' }] },
+    { id: 'fa4', nom: 'Bride à collerette', alias: 'Bride', unite: 'u', soudures: 1, tempsPrefab: 0.1, tempsPose: 0.3, declinaisons: [{ dn: 50, articleId: 'a16' }, { dn: 100, articleId: 'a5' }] },
+    { id: 'fa5', nom: 'Réduction concentrique', alias: 'Réduction', unite: 'u', soudures: 2, tempsPrefab: 0.1, tempsPose: 0, declinaisons: [{ dn: 100, articleId: 'a15' }] },
+    { id: 'fa6', nom: 'Vanne papillon', alias: 'Robinet papillon', unite: 'u', soudures: 0, tempsPrefab: 0, tempsPose: 0.75, declinaisons: [{ dn: 50, articleId: 'a7' }] },
+    { id: 'fa7', nom: 'Support de tuyauterie', alias: 'Supportage, Collier', unite: 'ml', soudures: 0, tempsPrefab: 0.1, tempsPose: 0.2, declinaisons: [{ dn: 0, articleId: 'a8' }] },
+  ];
   // Factures fournisseurs : rapprochement de commandes et achats au comptoir imputés aux chantiers
   const achats = [
     { id: 'ff1', ref: `FF-${Y}-0001`, fournisseurId: 'e5', numeroFournisseur: 'IDRA-2026-08841', date: d(-36), echeance: d(9), montantHT: 0, montantTVA: '', statut: 'À payer',
@@ -386,7 +401,7 @@ function demoData() {
         tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',
         types: { devis: { conditions: 'Acompte de 30 % à la commande. Travaux réalisés selon les normes EN 13480 et le DTU en vigueur. Hors génie civil, calorifuge et échafaudages sauf mention contraire.' },
           facture: { conditions: 'Paiement par virement à 45 jours fin de mois.' } } } },
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures,
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles,
   };
 }
 
