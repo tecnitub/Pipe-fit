@@ -12,7 +12,8 @@ function newDevis(fields = {}) {
   const me = Store.get('users', Store.me.userId);
   return Store.upsert('devis', {
     numero: '', objet: '', clientId: '', contactId: '', siteId: '', chargeId: me && me.role === 'charge' ? me.id : '',
-    date: isoDate(new Date()), validite: 30, statut: 'Brouillon', zoneId: '', ajustements: [], lignes: [], numAuto: true, ...fields,
+    date: isoDate(new Date()), validite: 30, statut: 'Brouillon', zoneId: '', ajustements: [], lignes: [], numAuto: true,
+    ...(fields.clientId ? tvaDuClient(fields.clientId) : {}), ...fields,
   });
 }
 
@@ -48,25 +49,50 @@ function docLinesClient(doc, type) {
     return `<tr>${nums ? `<td>${esc(numeros[i])}</td>` : ''}<td>${esc(l.designation)}${l.detail && o.detail ? `<div class="muted small pre">${esc(l.detail)}</div>` : ''}</td>${o.quantites ? `<td class="num">${fmt(l.qte, 2)}</td><td>${esc(l.unite)}</td>` : ''}${o.prix ? `<td class="num">${eur(Calc.pu(l))}</td><td class="num">${eur(Calc.ligneHT(l))}</td>` : ''}</tr>`;
   };
   return `<div class="table-wrap"><table class="doc-lines${o.prix && o.quantites ? '' : ' compact'}">
-    <tr>${nums ? '<th>N°</th>' : ''}<th>Désignation</th>${o.quantites ? '<th class="num">Qté</th><th>Unité</th>' : ''}${o.prix ? '<th class="num">PU HT</th><th class="num">Total HT</th>' : ''}</tr>
+    <thead><tr>${nums ? '<th>N°</th>' : ''}<th>Désignation</th>${o.quantites ? '<th class="num">Qté</th><th>Unité</th>' : ''}${o.prix ? '<th class="num">PU HT</th><th class="num">Total HT</th>' : ''}</tr></thead>
     ${(doc.lignes || []).map((l, i) => ligne(l, i)
       + (sousTotal ? (subAfter[i] || []).filter(c => c.n).map(c => `<tr class="subtotal niv-${c.niveau}"><td colspan="${Math.max(1, n - 1)}">${o.prix ? 'Sous-total' : 'Total'} ${esc(c.titre)}</td><td class="num">${eur(c.total)}</td></tr>`).join('') : '')).join('')}
   </table></div>`;
 }
 
+/* ---------- TVA : taux du document, taux par ligne, autoliquidation, mentions ---------- */
+const champsTVA = doc => ({ tauxTVA: doc.tauxTVA ?? '', autoliquidation: !!doc.autoliquidation, mentionTVA: doc.mentionTVA || '' });
+// Régime par défaut d'un client (fiche entreprise) : taux usuel ou autoliquidation
+function tvaDuClient(cid) {
+  const v = entreprise(cid).regimeTVA;
+  return v ? Calc.appliquerRegime({}, v) : { autoliquidation: false, tauxTVA: '' };
+}
+const MENTIONS_TVA = {
+  AL: 'Autoliquidation : TVA due par le preneur assujetti, article 283-2 nonies du CGI (travaux de construction réalisés en sous-traitance).',
+  10: 'TVA au taux de 10 % (article 279-0 bis du CGI) : travaux d\'amélioration, de transformation, d\'aménagement ou d\'entretien portant sur des locaux à usage d\'habitation achevés depuis plus de deux ans ; le client atteste que ces conditions sont remplies.',
+  5.5: 'TVA au taux de 5,5 % (article 278-0 bis A du CGI) : travaux d\'amélioration de la qualité énergétique de locaux à usage d\'habitation achevés depuis plus de deux ans ; le client atteste que ces conditions sont remplies.',
+  0: 'Exonération de TVA.',
+};
+function mentionsTVA(doc) {
+  if (!doc) return '';
+  const t = Calc.doc(doc), cl = entreprise(docClientId(doc)), l = [];
+  if (t.autoliquidation) l.push(MENTIONS_TVA.AL + (cl.tvaIntra ? ` N° de TVA du client : ${cl.tvaIntra}.` : ''));
+  else t.ventilation.filter(v => v.base && MENTIONS_TVA[v.taux]).forEach(v => l.push(MENTIONS_TVA[v.taux]));
+  if (doc.mentionTVA) l.push(doc.mentionTVA);
+  return l.length ? `<div class="doc-tva">${l.map(x => `<p class="doc-conditions">${esc(x)}</p>`).join('')}</div>` : '';
+}
+const libTaux = x => `${fmt(x, x % 1 ? 1 : 0)} %`;
+
 function totalsTable(doc, type) {
   const t = Calc.doc(doc), z = Store.get('zones', doc.zoneId), o = type ? Doc.t(type) : { ajustements: true };
+  const lignesTVA = t.autoliquidation ? `<tr><td>TVA autoliquidée par le preneur</td><td class="num">${eur(0)}</td></tr>`
+    : t.ventilation.map(v => `<tr><td>TVA ${libTaux(v.taux)}${t.ventilation.length > 1 ? ` sur ${eur(v.base)}` : ''}</td><td class="num">${eur(v.tva)}</td></tr>`).join('');
   return `<table class="totals">
     ${o.ajustements || !t.ajust.length ? `<tr><td>Total des travaux</td><td class="num">${eur(t.brut)}</td></tr>
     ${t.ajust.map(a => `<tr><td>${esc(a.libelle || (a.pct < 0 ? 'Remise' : 'Majoration'))} ${a.pct > 0 ? '+' : ''}${fmt(a.pct, 1)} %</td><td class="num">${a.montant < 0 ? '− ' : '+ '}${eur(Math.abs(a.montant))}</td></tr>`).join('')}
     ${t.ajust.length ? `<tr><td>Total après ajustements</td><td class="num">${eur(t.net)}</td></tr>` : ''}` : `<tr><td>Total des travaux</td><td class="num">${eur(t.net)}</td></tr>`}
     ${t.livraison || z ? `<tr><td>Livraison ${z ? `(${esc(z.nom)}, ${fmt(t.poids / 1000, 2)} t)` : ''}</td><td class="num">${eur(t.livraison)}</td></tr>` : ''}
     <tr><td>Total HT</td><td class="num">${eur(t.totalHT)}</td></tr>
-    <tr><td>TVA ${fmt(Store.data.settings.tva, 1)} %</td><td class="num">${eur(t.tva)}</td></tr>
+    ${lignesTVA}
     <tr class="${t.retenue ? '' : 'grand'}"><td>Total TTC</td><td class="num">${eur(t.totalTTC)}</td></tr>
     ${t.retenue ? `<tr><td>Retenue de garantie ${fmt(doc.retenuePct, 1)} %</td><td class="num">− ${eur(t.retenue)}</td></tr>
     <tr class="grand"><td>Net à payer TTC</td><td class="num">${eur(t.netAPayer)}</td></tr>` : ''}
-  </table>`;
+  </table>${mentionsTVA(doc)}`;
 }
 
 // Devis client complet (aperçu et impression)
@@ -218,7 +244,7 @@ function devisEditor(id) {
     ${d.affaireId ? `<a class="btn secondary" href="#/situations?devis=${d.id}">Situations</a>` : ''}
     <button class="danger" id="del">Supprimer</button>
   </div>
-  <h1>Devis ${esc(d.numero || '')} ${badge(d.statut)}</h1>${envoisHtml('devis', d.id)}${bandeauArchive(d, 'devis')}
+  <h1 class="no-print">Devis ${esc(d.numero || '')} ${badge(d.statut)}</h1>${envoisHtml('devis', d.id)}${bandeauArchive(d, 'devis')}
   ${d.statut === 'Refusé' && d.motifRefus ? `<p class="note no-print">Refusé le ${dateFr(d.dateRefus)} · ${esc(d.motifRefus)}${d.commentaireRefus ? ` : ${esc(d.commentaireRefus)}` : ''}</p>` : ''}
   ${locked ? '<p class="note no-print">Devis accepté : il sert de budget au chantier. Pour le modifier, dupliquez-le en avenant.</p>' : ''}
   ${!locked && lines.filter(aChiffrer).length ? `<p class="note warn no-print">${lines.filter(aChiffrer).length} ouvrage(s) à chiffrer : cliquez sur chaque désignation pour ajouter fournitures et main-d'œuvre.</p>` : ''}
@@ -235,6 +261,8 @@ function devisEditor(id) {
       <div class="field"><label for="d-statut">Statut</label><select id="d-statut" ${d.affaireId ? 'disabled' : ''}>${optionsStr(STATUTS_DEVIS, d.statut)}</select></div>
       <div class="field"><label for="d-zone">Livraison (zone)</label><select id="d-zone">${options(Store.all('zones'), d.zoneId)}</select></div>
       <div class="field"><label for="d-livman">Livraison forcée € HT (vide = calcul)</label><input id="d-livman" type="number" step="0.01" value="${esc(d.livraisonManuelle ?? '')}"></div>
+      <div class="field"><label for="d-tva">TVA du devis</label><select id="d-tva" ${locked ? 'disabled' : ''}>${REGIMES_TVA.map(([k, l]) => `<option value="${k}" ${Calc.regimeTVA(d) === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="field"><label for="d-mtva">Mention TVA complémentaire <span class="muted small">(facultatif)</span></label><input id="d-mtva" value="${esc(d.mentionTVA || '')}" placeholder="ex. attestation du client du ${dateFr(isoDate(new Date()))}" ${locked ? 'disabled' : ''}></div>
     </div>
   </div>
 
@@ -265,7 +293,7 @@ function devisEditor(id) {
         const u = Calc.unit(l);
         const nbF = (l.composants || []).filter(c => c.type !== 'mo').length;
         row = `<tr class="${aChiffrer(l) ? 'a-chiffrer' : ''}">${move}${numCell}<td><button class="linklike" data-open="${i}">${esc(l.designation || 'Ouvrage sans titre')}</button>
-            ${l.libre ? '<span class="badge">poste libre</span>' : ''}${aChiffrer(l) ? '<span class="badge b-warn">à chiffrer</span>' : ''}
+            ${l.libre ? '<span class="badge">poste libre</span>' : ''}${!videTVA(l.tva) && !d.autoliquidation && num(l.tva) !== Calc.tauxDoc(d) ? `<span class="badge b-info">TVA ${libTaux(num(l.tva))}</span>` : ''}${aChiffrer(l) ? '<span class="badge b-warn">à chiffrer</span>' : ''}
             <div class="muted small">${nbF} fourniture${nbF > 1 ? 's' : ''} · ${fmt(u.heures, 2)} h de main-d'œuvre / ${esc(l.unite)}${l.detail ? ' · <span title="' + esc(l.detail) + '">descriptif</span>' : ''}</div></td>
           <td class="num"><input data-qte="${i}" type="number" step="any" value="${esc(l.qte)}" style="width:80px" ${locked ? 'disabled' : ''} aria-label="Quantité"></td>
           <td>${esc(l.unite)}</td><td class="num">${eur(u.f)}</td><td class="num">${eur(u.mo)}</td><td class="num">${eur(u.f + u.mo)}</td><td class="num"><strong>${eur(Calc.ligneHT(l))}</strong></td>${del}</tr>`;
@@ -327,10 +355,12 @@ Views.devis.bind = (root, params, query) => {
     const c = e.target.value, sites = entreprise(c).adresses || [];
     Object.assign(d, { clientId: c, contactId: defaultContact(c), siteId: sites.length === 1 ? sites[0].id : '' });
     if (entreprise(c).zoneId) d.zoneId = entreprise(c).zoneId;
+    if (entreprise(c).regimeTVA) Object.assign(d, tvaDuClient(c));
     save();
   });
   field('#d-objet', 'objet'); field('#d-contact', 'contactId'); field('#d-site', 'siteId'); field('#d-charge', 'chargeId');
-  field('#d-date', 'date'); field('#d-validite', 'validite', true); field('#d-zone', 'zoneId');
+  field('#d-date', 'date'); field('#d-validite', 'validite', true); field('#d-zone', 'zoneId'); field('#d-mtva', 'mentionTVA');
+  on('#d-tva', 'onchange', e => { Calc.appliquerRegime(d, e.target.value); save(); });
   on('#d-livman', 'onchange', e => { d.livraisonManuelle = e.target.value === '' ? null : +e.target.value; save(); });
   on('#d-statut', 'onchange', e => {
     if (e.target.value === 'Accepté') { e.target.value = d.statut; acceptDevis(d); return; }
@@ -443,7 +473,7 @@ function facturerDevis(d) {
     numero: '', devisId: d.id, affaireId: d.affaireId || '', clientId: docClientId(d), contactId: d.contactId || '', siteId: d.siteId || '', chargeId: docChargeId(d) || '',
     objet: d.objet, date: isoDate(new Date()), echeance: isoDate(addDays(new Date(), num(s.delaiPaiement))), statut: 'Émise',
     lignes: JSON.parse(JSON.stringify(d.lignes)), ajustements: JSON.parse(JSON.stringify(d.ajustements || [])), remiseGlobale: d.remiseGlobale || 0,
-    zoneId: d.zoneId, livraisonManuelle: d.livraisonManuelle,
+    zoneId: d.zoneId, livraisonManuelle: d.livraisonManuelle, ...champsTVA(d),
   });
 }
 
@@ -491,6 +521,7 @@ function openOuvrage(d, index, opts = {}) {
         <div class="field" style="grid-column:1/-1"><label for="o-des">Désignation (texte du devis)</label><input id="o-des" value="${esc(l.designation)}" ${dis}></div>
         <div class="field" style="grid-column:1/-1"><label for="o-detail">Descriptif <span class="muted small">(facultatif, imprimé sous la désignation)</span></label><textarea id="o-detail" rows="2" ${dis}>${esc(l.detail || '')}</textarea></div>
         ${enBiblio ? '' : `<div class="field"><label for="o-qte">Quantité</label><input id="o-qte" type="number" step="any" value="${esc(l.qte)}" ${dis}></div>`}
+        ${enBiblio || !d || d.autoliquidation ? '' : `<div class="field"><label for="o-tva">TVA de la ligne</label><select id="o-tva" ${dis}><option value="">Taux du devis (${libTaux(Calc.tauxDoc(d))})</option>${TAUX_TVA.map(x => `<option value="${x}" ${!videTVA(l.tva) && num(l.tva) === x ? 'selected' : ''}>${libTaux(x)}</option>`).join('')}</select></div>`}
         <div class="field"><label for="o-unite">Unité</label><select id="o-unite" ${dis}>${optionsStr([...new Set([...UNITES, l.unite])], l.unite)}</select></div>
       </div>
 
@@ -526,7 +557,7 @@ function openOuvrage(d, index, opts = {}) {
     const keep = () => {
       const val = sel => { const el = box.querySelector(sel); return el ? el.value : undefined; };
       l.designation = val('#o-des'); l.unite = val('#o-unite'); l.detail = val('#o-detail');
-      if (!enBiblio) { l.qte = num(val('#o-qte')); l.num = val('#o-num'); } else l.famille = val('#o-fam');
+      if (!enBiblio) { l.qte = num(val('#o-qte')); l.num = val('#o-num'); const tv = val('#o-tva'); if (tv !== undefined) { if (tv === '') delete l.tva; else l.tva = num(tv); } } else l.famille = val('#o-fam');
     };
     const applique = el => {
       const c = l.composants[+el.dataset.c], k = el.dataset.k;

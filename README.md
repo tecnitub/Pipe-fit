@@ -128,6 +128,12 @@ Le PDF Factur-X contient le XML joint mais n'est pas certifié PDF/A-3 : si votr
    **Poste libre** : fournitures et main-d'œuvre saisies pour ce seul devis, sans rien enregistrer en bibliothèque ;
    les ouvrages récurrents s'enregistrent en **ouvrages types** (Bibliothèque → Ouvrages types) et s'insèrent aux
    prix à jour. **Remises et majorations** en % sur l'ensemble des lignes.
+   **TVA** : 20 %, 10 %, 5,5 % ou 0 % par devis (reprise sur ses factures), taux propre à une ligne si besoin
+   (ex. calorifuge à 5,5 % dans un devis à 10 %), ou **autoliquidation** (sous-traitance BTP, art. 283-2 nonies du CGI) ;
+   régime par défaut sur la fiche du client. Ventilation de la TVA par taux sur les documents, mentions légales
+   automatiques, écritures comptables par taux (comptes de TVA 10 % / 5,5 % et de travaux autoliquidés paramétrables),
+   catégories S / AE / E dans la facture électronique Factur-X.
+   Documents au **format A4** (PDF A4 exact, impression A4 avec en-tête de tableau répété sur chaque page).
    Le pilotage prévisionnel sépare la part fournitures et la part main-d'œuvre (heures par catégorie, coûts, marge).
 2. **Devis accepté → chantier** (numéro `CH-AAAA-001`) : le devis devient le budget du chantier.
 3. **Commandes fournisseurs** (`CF-AAAA-0001`) affectées à un chantier ; elles peuvent reprendre

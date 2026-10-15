@@ -42,7 +42,7 @@ function facturerHD(a) {
   const f = Store.upsert('factures', {
     numero: '', affaireId: a.id, clientId: a.clientId, contactId: a.contactId || '', siteId: a.siteId || '', chargeId: a.chargeId || '',
     objet: `Intervention ${a.code} – ${a.nom}`, refCommande: a.refCommande || '', date: isoDate(new Date()), echeance: isoDate(addDays(new Date(), num(s.delaiPaiement))),
-    statut: 'Émise', lignes, ajustements: [], zoneId: '',
+    statut: 'Émise', lignes, ajustements: [], zoneId: '', ...tvaDuClient(a.clientId),
   });
   Object.assign(a, { statut: 'Facturé', factureId: f.id });
   Store.upsert('affaires', a);
@@ -76,7 +76,7 @@ function horsDevisView(a) {
   <div class="cards">
     <div class="card"><div class="label">Heures pointées</div><div class="value">${fmt(v.heures, 2)} h</div><div class="sub">${v.aValider ? `<span class="warn-text">${fmt(v.aValider, 2)} h à valider</span> · ` : ''}${eur(v.totalMO)} HT</div></div>
     <div class="card"><div class="label">Matériel</div><div class="value">${eur(v.totalMat)}</div><div class="sub">${v.consos.length} ligne(s) saisie(s) par les équipes</div></div>
-    <div class="card"><div class="label">À facturer</div><div class="value">${eur(v.total)}</div><div class="sub">HT, soit ${eur(v.total * (1 + num(Store.data.settings.tva) / 100))} TTC</div></div>
+    <div class="card"><div class="label">À facturer</div><div class="value">${eur(v.total)}</div><div class="sub">HT, soit ${eur(v.total * (1 + Calc.tauxDoc(tvaDuClient(a.clientId)) / 100))} TTC</div></div>
     <div class="card"><div class="label">Marge</div><div class="value ${signClass(s.margeFin)}">${eur(s.margeFin)}</div><div class="sub">${marginBadge(s.margeFinPct)} coût réel ${eur(v.coutMO + v.coutMat + s.coutFrais)}</div></div>
   </div>
 
@@ -118,8 +118,8 @@ function attachementHD(a, v) {
       ${v.mo.length ? `<tr class="chap"><td colspan="${n}">Main-d'œuvre</td></tr>${v.mo.map(g => ligne(g.libelle, g.heures, 'h', g.taux, g.montant)).join('')}` : ''}
       ${v.consos.length ? `<tr class="chap"><td colspan="${n}">Fournitures et matériel</td></tr>${v.consos.map(c => ligne(c.designation, c.qte, c.unite, c.pu, num(c.qte) * num(c.pu))).join('')}` : ''}
     </table></div>
-    ${o.prix ? `<table class="totals"><tr><td>Total HT</td><td class="num">${eur(v.total)}</td></tr><tr><td>TVA ${fmt(s.tva, 1)} %</td><td class="num">${eur(v.total * num(s.tva) / 100)}</td></tr>
-      <tr class="grand"><td>Total TTC</td><td class="num">${eur(v.total * (1 + num(s.tva) / 100))}</td></tr></table>` : ''}
+    ${o.prix ? (() => { const tv = tvaDuClient(a.clientId), tx = Calc.tauxDoc(tv); return `<table class="totals"><tr><td>Total HT</td><td class="num">${eur(v.total)}</td></tr><tr><td>${tv.autoliquidation ? 'TVA autoliquidée par le preneur' : `TVA ${libTaux(tx)}`}</td><td class="num">${eur(v.total * tx / 100)}</td></tr>
+      <tr class="grand"><td>Total TTC</td><td class="num">${eur(v.total * (1 + tx / 100))}</td></tr></table>${tv.autoliquidation ? `<p class="doc-conditions">${esc(MENTIONS_TVA.AL)}</p>` : ''}`; })() : ''}
     ${Doc.pied('attachement', '', o.signature ? `<div class="signatures"><div>Pour ${esc(s.societe)}<br>${esc(userName(a.chargeId))}</div><div>Bon pour commande<br>Date, signature et n° de commande :</div></div>` : '')}`;
 }
 

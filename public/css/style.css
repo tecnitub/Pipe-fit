@@ -439,3 +439,18 @@ code { font-size: 12px; overflow-wrap: anywhere; }
 .baremes { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 6px; }
 .baremes > div { flex: 1 1 200px; min-width: 0; }
 .bareme input { padding: 3px 6px; }
+
+/* Documents au format A4 : impression navigateur et aperçu à l'écran */
+@page { size: A4 portrait; margin: 11mm; }
+@media print {
+  .doc-print { font-size: 10pt; }
+  .doc-print .table-wrap { overflow: visible !important; }
+  .doc-lines thead { display: table-header-group; }
+  .doc-lines tr, .doc-print .totals, .doc-print .signatures, .doc-print .doc-tva, .doc-print .doc-fig, .doc-print .doc-parties > div { break-inside: avoid; }
+  .doc-print .totals { break-before: avoid; min-width: 46%; }
+  .doc-print .totals td:first-child { white-space: nowrap; }
+}
+details.preview > .doc-print, .doc-print.feuille { max-width: 794px; margin-left: auto; margin-right: auto; padding: 42px; box-shadow: 0 2px 10px rgb(0 0 0 / 12%); }
+@media (max-width: 700px) { details.preview > .doc-print, .doc-print.feuille { padding: 14px; } }
+.doc-tva { margin-top: 8px; }
+@media print { .doc-print.feuille { max-width: none; padding: 0; box-shadow: none; } }

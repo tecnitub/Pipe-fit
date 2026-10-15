@@ -9,27 +9,42 @@ const sirenDe = s => String(s || '').replace(/\D/g, '').slice(0, 9);
 
 /* ---------- Émission : XML CII (Factur-X, profil EN 16931) ---------- */
 function genererCII(f) {
-  const s = Store.data.settings, c = Doc.cfg(), avoir = f.type === 'avoir', taux = num(s.tva);
+  const s = Store.data.settings, c = Doc.cfg(), avoir = f.type === 'avoir';
   const cid = docClientId(f), cl = entreprise(cid), bill = billingSite(cid) || {}, site = siteOf(cid, f.siteId);
   const a = affaireOf(f.affaireId), orig = avoir ? Store.get('factures', f.factureId) : null, t = Calc.doc(f);
   const lignes = (f.lignes || []).filter(l => Calc.estPrix(l));
-  const totLignes = lignes.reduce((x, l) => x + Math.round(Calc.ligneHT(l) * 100) / 100, 0);
-  // Remises / majorations globales et livraison en remises et frais de pied de facture
-  const ajust = (t.ajust || []).map(x => ({ charge: x.montant > 0, montant: Math.abs(Math.round(x.montant * 100) / 100), motif: x.libelle || (x.montant > 0 ? 'Majoration' : 'Remise') }));
-  if (t.livraison) ajust.push({ charge: true, montant: Math.round(t.livraison * 100) / 100, motif: 'Livraison' });
+  const r2 = v => Math.round(v * 100) / 100, totLignes = lignes.reduce((x, l) => x + r2(Calc.ligneHT(l)), 0);
+  // Catégories de TVA : S taux normal ou réduit, AE autoliquidation, E exonération
+  const cat = tx => (f.autoliquidation ? 'AE' : tx > 0 ? 'S' : 'E');
+  const taxe = tx => `<ram:TypeCode>VAT</ram:TypeCode><ram:CategoryCode>${cat(tx)}</ram:CategoryCode><ram:RateApplicablePercent>${tx}</ram:RateApplicablePercent>`;
+  const parTaux = {};
+  lignes.forEach(l => { const tx = Calc.tauxLigne(f, l); parTaux[tx] = (parTaux[tx] || 0) + r2(Calc.ligneHT(l)); });
+  const taux = Object.keys(parTaux).map(Number).sort((a, b) => b - a);
+  // Remises / majorations globales réparties au prorata de chaque taux, livraison au taux du document
+  const ajust = [];
+  (t.ajust || []).forEach(x => {
+    const total = Math.abs(r2(x.montant)); let reste = total;
+    taux.forEach((tx, i) => { const m = i === taux.length - 1 ? r2(reste) : r2(total * parTaux[tx] / (totLignes || 1)); reste -= m;
+      if (m) ajust.push({ charge: x.montant > 0, montant: m, motif: x.libelle || (x.montant > 0 ? 'Majoration' : 'Remise'), tx }); });
+  });
+  if (t.livraison) ajust.push({ charge: true, montant: r2(t.livraison), motif: 'Livraison', tx: Calc.tauxDoc(f) });
   const charges = ajust.filter(x => x.charge).reduce((x, y) => x + y.montant, 0), remises = ajust.filter(x => !x.charge).reduce((x, y) => x + y.montant, 0);
-  const base = totLignes + charges - remises, tva = Math.round(base * taux) / 100, ttc = base + tva;
+  const groupes = [...new Set([...taux, ...ajust.map(x => x.tx)])].map(tx => {
+    const b = r2((parTaux[tx] || 0) + ajust.filter(x => x.tx === tx).reduce((s2, x) => s2 + (x.charge ? x.montant : -x.montant), 0));
+    return { tx, base: b, tva: r2(b * tx / 100) };
+  });
+  const base = r2(totLignes + charges - remises), tva = r2(groupes.reduce((x, g) => x + g.tva, 0)), ttc = r2(base + tva);
   const d102 = d => `<udt:DateTimeString format="102">${String(d || '').replace(/-/g, '')}</udt:DateTimeString>`;
   const adresse = x => `<ram:PostalTradeAddress>${x.adresse ? `<ram:LineOne>${xmlEsc(x.adresse)}</ram:LineOne>` : ''}${x.cp ? `<ram:PostcodeCode>${xmlEsc(x.cp)}</ram:PostcodeCode>` : ''}${x.ville ? `<ram:CityName>${xmlEsc(x.ville)}</ram:CityName>` : ''}<ram:CountryID>FR</ram:CountryID></ram:PostalTradeAddress>`;
   const sAdr = /^(.*?)\s*[–-]\s*(\d{5})\s+(.+)$/.exec(s.adresse || '') || [];
-  const notes = [avoir && f.motif ? `Motif de l'avoir : ${f.motif}` : '', t.retenue ? `Retenue de garantie ${fmt(f.retenuePct, 1)} % : ${montant(t.retenue)} EUR – net à payer ${montant(t.netAPayer)} EUR` : '',
+  const notes = [avoir && f.motif ? `Motif de l'avoir : ${f.motif}` : '', f.autoliquidation ? MENTIONS_TVA.AL : '', t.retenue ? `Retenue de garantie ${fmt(f.retenuePct, 1)} % : ${montant(t.retenue)} EUR – net à payer ${montant(t.netAPayer)} EUR` : '',
     'Catégorie de l\'opération : prestation de services', a.code ? `Chantier ${a.code} – ${a.nom}` : ''].filter(Boolean);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100" xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100" xmlns:qdt="urn:un:unece:uncefact:data:standard:QualifiedDataType:100" xmlns:udt="urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100">
 <rsm:ExchangedDocumentContext><ram:GuidelineSpecifiedDocumentContextParameter><ram:ID>urn:cen.eu:en16931:2017</ram:ID></ram:GuidelineSpecifiedDocumentContextParameter></rsm:ExchangedDocumentContext>
 <rsm:ExchangedDocument><ram:ID>${xmlEsc(f.numero)}</ram:ID><ram:TypeCode>${avoir ? 381 : 380}</ram:TypeCode><ram:IssueDateTime>${d102(f.date)}</ram:IssueDateTime>${notes.map(n => `<ram:IncludedNote><ram:Content>${xmlEsc(n)}</ram:Content></ram:IncludedNote>`).join('')}</rsm:ExchangedDocument>
 <rsm:SupplyChainTradeTransaction>
-${lignes.map((l, i) => `<ram:IncludedSupplyChainTradeLineItem><ram:AssociatedDocumentLineDocument><ram:LineID>${i + 1}</ram:LineID></ram:AssociatedDocumentLineDocument><ram:SpecifiedTradeProduct>${l.num ? `<ram:SellerAssignedID>${xmlEsc(l.num)}</ram:SellerAssignedID>` : ''}<ram:Name>${xmlEsc(l.designation || 'Prestation')}</ram:Name></ram:SpecifiedTradeProduct><ram:SpecifiedLineTradeAgreement><ram:NetPriceProductTradePrice><ram:ChargeAmount>${(Math.round(Calc.pu(l) * 10000) / 10000).toFixed(4)}</ram:ChargeAmount></ram:NetPriceProductTradePrice></ram:SpecifiedLineTradeAgreement><ram:SpecifiedLineTradeDelivery><ram:BilledQuantity unitCode="${uniteCefact(l.unite)}">${num(l.qte)}</ram:BilledQuantity></ram:SpecifiedLineTradeDelivery><ram:SpecifiedLineTradeSettlement><ram:ApplicableTradeTax><ram:TypeCode>VAT</ram:TypeCode><ram:CategoryCode>S</ram:CategoryCode><ram:RateApplicablePercent>${taux}</ram:RateApplicablePercent></ram:ApplicableTradeTax><ram:SpecifiedTradeSettlementLineMonetarySummation><ram:LineTotalAmount>${montant(Calc.ligneHT(l))}</ram:LineTotalAmount></ram:SpecifiedTradeSettlementLineMonetarySummation></ram:SpecifiedLineTradeSettlement></ram:IncludedSupplyChainTradeLineItem>`).join('\n')}
+${lignes.map((l, i) => `<ram:IncludedSupplyChainTradeLineItem><ram:AssociatedDocumentLineDocument><ram:LineID>${i + 1}</ram:LineID></ram:AssociatedDocumentLineDocument><ram:SpecifiedTradeProduct>${l.num ? `<ram:SellerAssignedID>${xmlEsc(l.num)}</ram:SellerAssignedID>` : ''}<ram:Name>${xmlEsc(l.designation || 'Prestation')}</ram:Name></ram:SpecifiedTradeProduct><ram:SpecifiedLineTradeAgreement><ram:NetPriceProductTradePrice><ram:ChargeAmount>${(Math.round(Calc.pu(l) * 10000) / 10000).toFixed(4)}</ram:ChargeAmount></ram:NetPriceProductTradePrice></ram:SpecifiedLineTradeAgreement><ram:SpecifiedLineTradeDelivery><ram:BilledQuantity unitCode="${uniteCefact(l.unite)}">${num(l.qte)}</ram:BilledQuantity></ram:SpecifiedLineTradeDelivery><ram:SpecifiedLineTradeSettlement><ram:ApplicableTradeTax>${taxe(Calc.tauxLigne(f, l))}</ram:ApplicableTradeTax><ram:SpecifiedTradeSettlementLineMonetarySummation><ram:LineTotalAmount>${montant(Calc.ligneHT(l))}</ram:LineTotalAmount></ram:SpecifiedTradeSettlementLineMonetarySummation></ram:SpecifiedLineTradeSettlement></ram:IncludedSupplyChainTradeLineItem>`).join('\n')}
 <ram:ApplicableHeaderTradeAgreement>${f.refCommande ? `<ram:BuyerReference>${xmlEsc(f.refCommande)}</ram:BuyerReference>` : ''}
 <ram:SellerTradeParty><ram:Name>${xmlEsc(s.societe)}</ram:Name><ram:SpecifiedLegalOrganization><ram:ID schemeID="0002">${sirenDe(s.siret)}</ram:ID></ram:SpecifiedLegalOrganization>${adresse({ adresse: sAdr[1] || s.adresse, cp: sAdr[2], ville: sAdr[3] })}${c.email ? `<ram:URIUniversalCommunication><ram:URIID schemeID="EM">${xmlEsc(c.email)}</ram:URIID></ram:URIUniversalCommunication>` : ''}${c.tvaIntra ? `<ram:SpecifiedTaxRegistration><ram:ID schemeID="VA">${xmlEsc(c.tvaIntra)}</ram:ID></ram:SpecifiedTaxRegistration>` : ''}</ram:SellerTradeParty>
 <ram:BuyerTradeParty><ram:Name>${xmlEsc(cl.nom)}</ram:Name>${sirenDe(cl.siret) ? `<ram:SpecifiedLegalOrganization><ram:ID schemeID="0002">${sirenDe(cl.siret)}</ram:ID></ram:SpecifiedLegalOrganization>` : ''}${adresse(bill)}${cl.tvaIntra ? `<ram:SpecifiedTaxRegistration><ram:ID schemeID="VA">${xmlEsc(cl.tvaIntra)}</ram:ID></ram:SpecifiedTaxRegistration>` : ''}</ram:BuyerTradeParty>
@@ -37,8 +52,8 @@ ${f.refCommande ? `<ram:BuyerOrderReferencedDocument><ram:IssuerAssignedID>${xml
 <ram:ApplicableHeaderTradeDelivery>${site ? `<ram:ShipToTradeParty><ram:Name>${xmlEsc(site.libelle)}</ram:Name>${adresse(site)}</ram:ShipToTradeParty>` : ''}<ram:ActualDeliverySupplyChainEvent><ram:OccurrenceDateTime>${d102(f.date)}</ram:OccurrenceDateTime></ram:ActualDeliverySupplyChainEvent></ram:ApplicableHeaderTradeDelivery>
 <ram:ApplicableHeaderTradeSettlement><ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>
 ${c.iban ? `<ram:SpecifiedTradeSettlementPaymentMeans><ram:TypeCode>58</ram:TypeCode><ram:PayeePartyCreditorFinancialAccount><ram:IBANID>${xmlEsc(c.iban.replace(/\s/g, ''))}</ram:IBANID></ram:PayeePartyCreditorFinancialAccount></ram:SpecifiedTradeSettlementPaymentMeans>` : ''}
-<ram:ApplicableTradeTax><ram:CalculatedAmount>${montant(tva)}</ram:CalculatedAmount><ram:TypeCode>VAT</ram:TypeCode><ram:BasisAmount>${montant(base)}</ram:BasisAmount><ram:CategoryCode>S</ram:CategoryCode><ram:DueDateTypeCode>72</ram:DueDateTypeCode><ram:RateApplicablePercent>${taux}</ram:RateApplicablePercent></ram:ApplicableTradeTax>
-${ajust.map(x => `<ram:SpecifiedTradeAllowanceCharge><ram:ChargeIndicator><udt:Indicator>${x.charge}</udt:Indicator></ram:ChargeIndicator><ram:ActualAmount>${montant(x.montant)}</ram:ActualAmount><ram:Reason>${xmlEsc(x.motif)}</ram:Reason><ram:CategoryTradeTax><ram:TypeCode>VAT</ram:TypeCode><ram:CategoryCode>S</ram:CategoryCode><ram:RateApplicablePercent>${taux}</ram:RateApplicablePercent></ram:CategoryTradeTax></ram:SpecifiedTradeAllowanceCharge>`).join('\n')}
+${groupes.map(g => `<ram:ApplicableTradeTax><ram:CalculatedAmount>${montant(g.tva)}</ram:CalculatedAmount><ram:TypeCode>VAT</ram:TypeCode>${cat(g.tx) === 'AE' ? '<ram:ExemptionReason>Autoliquidation – article 283-2 nonies du CGI</ram:ExemptionReason>' : cat(g.tx) === 'E' ? '<ram:ExemptionReason>Exonération de TVA</ram:ExemptionReason>' : ''}<ram:BasisAmount>${montant(g.base)}</ram:BasisAmount><ram:CategoryCode>${cat(g.tx)}</ram:CategoryCode>${cat(g.tx) === 'AE' ? '<ram:ExemptionReasonCode>VATEX-EU-AE</ram:ExemptionReasonCode>' : ''}${cat(g.tx) === 'S' ? '<ram:DueDateTypeCode>72</ram:DueDateTypeCode>' : ''}<ram:RateApplicablePercent>${g.tx}</ram:RateApplicablePercent></ram:ApplicableTradeTax>`).join('\n')}
+${ajust.map(x => `<ram:SpecifiedTradeAllowanceCharge><ram:ChargeIndicator><udt:Indicator>${x.charge}</udt:Indicator></ram:ChargeIndicator><ram:ActualAmount>${montant(x.montant)}</ram:ActualAmount><ram:Reason>${xmlEsc(x.motif)}</ram:Reason><ram:CategoryTradeTax>${taxe(x.tx)}</ram:CategoryTradeTax></ram:SpecifiedTradeAllowanceCharge>`).join('\n')}
 ${!avoir && f.echeance ? `<ram:SpecifiedTradePaymentTerms><ram:DueDateDateTime>${d102(f.echeance)}</ram:DueDateDateTime></ram:SpecifiedTradePaymentTerms>` : ''}
 <ram:SpecifiedTradeSettlementHeaderMonetarySummation><ram:LineTotalAmount>${montant(totLignes)}</ram:LineTotalAmount><ram:ChargeTotalAmount>${montant(charges)}</ram:ChargeTotalAmount><ram:AllowanceTotalAmount>${montant(remises)}</ram:AllowanceTotalAmount><ram:TaxBasisTotalAmount>${montant(base)}</ram:TaxBasisTotalAmount><ram:TaxTotalAmount currencyID="EUR">${montant(tva)}</ram:TaxTotalAmount><ram:GrandTotalAmount>${montant(ttc)}</ram:GrandTotalAmount><ram:DuePayableAmount>${montant(ttc)}</ram:DuePayableAmount></ram:SpecifiedTradeSettlementHeaderMonetarySummation>
 ${orig ? `<ram:InvoiceReferencedDocument><ram:IssuerAssignedID>${xmlEsc(orig.numero)}</ram:IssuerAssignedID><ram:FormattedIssueDateTime><qdt:DateTimeString format="102">${String(orig.date || '').replace(/-/g, '')}</qdt:DateTimeString></ram:FormattedIssueDateTime></ram:InvoiceReferencedDocument>` : ''}

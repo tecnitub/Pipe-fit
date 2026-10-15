@@ -47,7 +47,7 @@ const premierRendu = html => { const t = document.createElement('div'); t.innerH
 
 // Tout ce qu'il faut pour envoyer un document : contenu PDF, destinataire par défaut, variables, suite donnée
 function mailContexte(type, id) {
-  const s = Store.data.settings, tva = 1 + num(s.tva) / 100;
+  const s = Store.data.settings;
   const chantier = a => (a && a.code ? `${a.code} – ${a.nom}` : (a && a.nom) || '');
   let x;
   switch (type) {
@@ -80,7 +80,7 @@ function mailContexte(type, id) {
       const a = affaireOf(sit.affaireId), c = Calc.situation(sit);
       return { ref: { col: 'situations', id }, numero: sit.numero, entrepriseId: a.moeId || a.clientId, contactId: a.moeId ? a.moeContactId : a.contactId, chargeId: a.chargeId,
         fichier: `Situation ${situationRang(sit)} ${sit.numero || ''}`, html: () => premierRendu(Views.situations([id], new URLSearchParams())),
-        vars: { chantier: chantier(a), objet: a.nom, date: dateFr(sit.date), rang: situationRang(sit), montant_ht: eur(c.montant), montant_ttc: eur(c.montant * tva) },
+        vars: { chantier: chantier(a), objet: a.nom, date: dateFr(sit.date), rang: situationRang(sit), montant_ht: eur(c.montant), montant_ttc: eur(c.montant + c.tva) },
         apres: () => { if (sit.statut === 'Brouillon') { sit.statut = 'Proposée'; Store.upsert('situations', sit); } } };
     }
     case 'commande': case 'demandePrix': {
@@ -99,7 +99,7 @@ function mailContexte(type, id) {
       const v = Calc.horsDevis(a);
       return { ref: { col: 'affaires', id }, numero: a.code, entrepriseId: a.clientId, contactId: a.contactId, chargeId: a.chargeId,
         fichier: `Attachement ${a.code || ''}`, html: () => attachementHD(a, v),
-        vars: { chantier: chantier(a), objet: a.nom, date: dateFr(a.dateCreation), montant_ht: eur(v.total), montant_ttc: eur(v.total * tva) },
+        vars: { chantier: chantier(a), objet: a.nom, date: dateFr(a.dateCreation), montant_ht: eur(v.total), montant_ttc: eur(v.total * (1 + Calc.tauxDoc(tvaDuClient(a.clientId)) / 100)) },
         apres: () => { if (!a.refCommande && ['Ouvert', 'Terminé'].includes(a.statut)) { a.statut = 'Commande demandée'; Store.upsert('affaires', a); } } };
     }
     case 'bon': {
@@ -257,7 +257,7 @@ async function envoyerParMail(type, id) {
 // Boutons à placer dans la barre d'outils d'un document
 function boutonsEnvoi(type, id, libelle = 'Envoyer par e-mail', pdf = true) {
   const peut = ['admin', 'charge'].includes(Store.me.role);
-  return `${pdf ? `<button class="secondary" data-pdf="${type}|${esc(id)}">PDF</button>` : ''}${peut ? `<button data-mail="${type}|${esc(id)}">✉ ${esc(libelle)}</button>` : ''}`;
+  return `${pdf ? `<button class="secondary" data-pdf="${type}|${esc(id)}" title="Télécharger le document au format A4">PDF A4</button>` : ''}${peut ? `<button data-mail="${type}|${esc(id)}">✉ ${esc(libelle)}</button>` : ''}`;
 }
 // Historique des envois d'un document
 function envoisHtml(col, id) {

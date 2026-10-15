@@ -1,7 +1,7 @@
 // Liaison comptable : journaux des ventes (factures et avoirs) et des achats (factures fournisseurs ventilées
 // par chantier = section analytique), exportés au format du logiciel du comptable (Excel, CSV, FEC),
 // suivi des pièces transmises et envoi par e-mail ; numérotation des factures et avoirs.
-const COMPTA_DEFAUT = { journal: 'VT', journalLib: 'Ventes', compteClient: '411000', compteTravaux: '704000', compteLivraison: '708500', compteTVA: '445710', compteRG: '411700',
+const COMPTA_DEFAUT = { journal: 'VT', journalLib: 'Ventes', compteClient: '411000', compteTravaux: '704000', compteLivraison: '708500', compteTVA: '445710', compteTVA10: '', compteTVA55: '', compteTravauxAL: '', compteRG: '411700',
   journalAchats: 'HA', journalAchatsLib: 'Achats', compteFournisseur: '401000', compteAchats: '601000', compteTVADed: '445660', auxiliaires: true, emailComptable: '' };
 const comptaCfg = () => ({ ...COMPTA_DEFAUT, ...(Store.data.settings.compta || {}) });
 // Compte auxiliaire : celui de la fiche entreprise, sinon C (client) ou F (fournisseur) + 7 premières lettres du nom
@@ -13,15 +13,18 @@ function ecrituresDe(f) {
   const c = comptaCfg(), t = Calc.doc(f), avoir = f.type === 'avoir', cid = docClientId(f), client = clientName(cid);
   const lib = `${avoir ? 'Avoir' : 'Facture'} ${f.numero || ''} ${client}`.slice(0, 60);
   const aux = c.auxiliaires ? compteAuxiliaire(cid, 'C') : '';
-  const tva = arrondi2(t.tva), liv = arrondi2(t.livraison || 0), ttc = arrondi2(t.totalTTC), rg = arrondi2(t.retenue), net = arrondi2(ttc - rg);
+  // TVA collectée ventilée par taux (compte propre au taux s'il est renseigné, sinon le compte de TVA collectée)
+  const compteTaux = x => (x === 10 && c.compteTVA10) || (x === 5.5 && c.compteTVA55) || c.compteTVA;
+  const tvas = t.ventilation.filter(v => arrondi2(v.tva)).map(v => ({ taux: v.taux, compte: compteTaux(v.taux), m: arrondi2(v.tva) }));
+  const tva = arrondi2(sumBy(tvas, v => v.m)), liv = arrondi2(t.livraison || 0), ttc = arrondi2(t.totalTTC), rg = arrondi2(t.retenue), net = arrondi2(ttc - rg);
   const travaux = arrondi2(ttc - tva - liv), chantier = affaireOf(f.affaireId).code || '';
   const base = { journal: c.journal, journalLib: c.journalLib, date: f.date, piece: f.numero || '', echeance: avoir ? '' : f.echeance || '', col: 'factures', docId: f.id, tiersLib: client };
   const l = [
     { ...base, compte: c.compteClient, aux, libelle: lib, d: net },
     rg ? { ...base, compte: c.compteRG, aux, libelle: `${lib} retenue de garantie`.slice(0, 60), d: rg } : null,
-    { ...base, compte: c.compteTravaux, aux: '', analytique: chantier, libelle: lib, c: travaux },
+    { ...base, compte: (t.autoliquidation && c.compteTravauxAL) || c.compteTravaux, aux: '', analytique: chantier, libelle: t.autoliquidation ? `${lib} autoliq.`.slice(0, 60) : lib, c: travaux },
     liv ? { ...base, compte: c.compteLivraison, aux: '', analytique: chantier, libelle: `${lib} livraison`.slice(0, 60), c: liv } : null,
-    tva ? { ...base, compte: c.compteTVA, aux: '', libelle: `${lib} TVA`.slice(0, 60), c: tva } : null,
+    ...tvas.map(v => ({ ...base, compte: v.compte, aux: '', libelle: `${lib} TVA ${String(v.taux).replace('.', ',')} %`.slice(0, 60), c: v.m })),
   ].filter(Boolean);
   // Un avoir inverse débit et crédit
   return l.map(e => ({ ...e, analytique: e.analytique || '', debit: arrondi2(avoir ? e.c || 0 : e.d || 0), credit: arrondi2(avoir ? e.d || 0 : e.c || 0) }));
@@ -56,7 +59,7 @@ function exportCSV(ecr) {
 function exportFEC(ecr) {
   const c = comptaCfg(), ymd = s => (s || '').replace(/-/g, ''), auj = ymd(isoDate(new Date()));
   const num0 = {}, numero = e => { const k = `${e.journal}|${e.piece}`; if (!num0[k]) num0[k] = Object.keys(num0).filter(x => x.startsWith(e.journal + '|')).length + 1; return num0[k]; };
-  const libCompte = { [c.compteClient]: 'Clients', [c.compteRG]: 'Clients retenues de garantie', [c.compteTravaux]: 'Travaux', [c.compteLivraison]: 'Ports et frais facturés', [c.compteTVA]: 'TVA collectée',
+  const libCompte = { [c.compteClient]: 'Clients', [c.compteRG]: 'Clients retenues de garantie', [c.compteTravaux]: 'Travaux', [c.compteLivraison]: 'Ports et frais facturés', [c.compteTVA]: 'TVA collectée', ...(c.compteTVA10 ? { [c.compteTVA10]: 'TVA collectée 10 %' } : {}), ...(c.compteTVA55 ? { [c.compteTVA55]: 'TVA collectée 5,5 %' } : {}), ...(c.compteTravauxAL ? { [c.compteTravauxAL]: 'Travaux en autoliquidation' } : {}),
     [c.compteFournisseur]: 'Fournisseurs', [c.compteAchats]: 'Achats de matières et fournitures', [c.compteTVADed]: 'TVA déductible' };
   const net = s => String(s ?? '').replace(/[\t\r\n|]/g, ' ');
   const tri = [...ecr].sort((a, b) => a.journal.localeCompare(b.journal) || (a.date || '').localeCompare(b.date || ''));
@@ -123,7 +126,7 @@ Views.compta = (params, query) => {
   <h2>Paramètres comptables</h2>
   <div class="card">
     <h3 style="margin-top:0">Ventes</h3>
-    <div class="grid2">${[['journal', 'Code journal'], ['journalLib', 'Libellé du journal'], ['compteClient', 'Compte clients (collectif)'], ['compteRG', 'Compte clients retenues de garantie'], ['compteTravaux', 'Compte de vente travaux'], ['compteLivraison', 'Compte livraison / port facturé'], ['compteTVA', 'Compte TVA collectée']]
+    <div class="grid2">${[['journal', 'Code journal'], ['journalLib', 'Libellé du journal'], ['compteClient', 'Compte clients (collectif)'], ['compteRG', 'Compte clients retenues de garantie'], ['compteTravaux', 'Compte de vente travaux'], ['compteLivraison', 'Compte livraison / port facturé'], ['compteTVA', 'Compte TVA collectée (20 %)'], ['compteTVA10', 'Compte TVA collectée 10 % (vide = le même)'], ['compteTVA55', 'Compte TVA collectée 5,5 % (vide = le même)'], ['compteTravauxAL', 'Compte travaux en autoliquidation (vide = travaux)']]
       .map(([k, l]) => `<div class="field"><label for="cc-${k}">${l}</label><input id="cc-${k}" data-cc="${k}" value="${esc(c[k])}" ${admin ? '' : 'disabled'}></div>`).join('')}</div>
     <h3>Achats</h3>
     <div class="grid2">${[['journalAchats', 'Code journal'], ['journalAchatsLib', 'Libellé du journal'], ['compteFournisseur', 'Compte fournisseurs (collectif)'], ['compteAchats', 'Compte d\'achats (matières et fournitures)'], ['compteTVADed', 'Compte TVA déductible']]

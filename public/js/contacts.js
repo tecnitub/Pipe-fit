@@ -30,6 +30,7 @@ const entrepriseFields = [
   { key: 'secteur', label: "Secteur d'activité", datalist: SECTEURS },
   { key: 'siret', label: 'SIRET' },
   { key: 'tvaIntra', label: 'N° TVA intracommunautaire' },
+  { key: 'regimeTVA', label: 'TVA des devis et factures', type: 'select', options: v => `<option value="">Taux habituel (${fmt(Store.data.settings.tva, 1)} %)</option>${REGIMES_TVA.map(([k, l]) => `<option value="${k}" ${v === k ? 'selected' : ''}>${l}</option>`).join('')}` },
   { key: 'compteComptable', label: 'Compte comptable (auxiliaire, donné par le comptable)' },
   { key: 'tel', label: 'Téléphone standard', type: 'tel' },
   { key: 'email', label: 'E-mail', type: 'email' },
@@ -182,7 +183,7 @@ Views.entreprise = params => {
   if (!e) return '<p>Entreprise introuvable. <a href="#/contacts">Retour aux contacts</a></p>';
   const contacts = contactsOf(e.id);
   const affaires = Store.all('affaires').filter(a => a.clientId === e.id);
-  const info = [['SIRET', e.siret], ['TVA intracom.', e.tvaIntra], ['Téléphone', e.tel], ['E-mail', e.email], ['Site web', e.web],
+  const info = [['SIRET', e.siret], ['TVA intracom.', e.tvaIntra], ['TVA appliquée', e.regimeTVA ? (REGIMES_TVA.find(x => x[0] === e.regimeTVA) || [])[1] : ''], ['Téléphone', e.tel], ['E-mail', e.email], ['Site web', e.web],
     ['Zone de livraison', (Store.get('zones', e.zoneId) || {}).nom]].filter(([, v]) => v);
   return `<div class="toolbar"><a href="#/contacts" class="btn secondary">← Entreprises</a><span class="spacer"></span>
     <button class="secondary" id="edit">Modifier</button></div>

@@ -129,7 +129,8 @@ function exporterDPGF(d) {
   t.ajust.forEach(a => rows.push(['', `${a.libelle || (a.pct < 0 ? 'Remise' : 'Majoration')} ${a.pct > 0 ? '+' : ''}${fmt(a.pct, 1)} %`, '', '', '', { v: a.montant, s: 'eur' }]));
   if (t.livraison) rows.push(['', 'Transport / livraison', '', '', '', { v: t.livraison, s: 'eur' }]);
   if (t.ajust.length || t.livraison) rows.push(['', { v: t.ajust.length ? 'Total HT après remises / majorations' : 'Total HT y compris transport', s: 'bold' }, '', '', '', { v: t.totalHT, s: 'boldeur' }]);
-  rows.push(['', `TVA ${fmt(Store.data.settings.tva, 1)} %`, '', '', '', { v: t.tva, s: 'eur' }]);
+  if (t.autoliquidation) rows.push(['', 'TVA autoliquidée par le preneur (art. 283-2 nonies du CGI)', '', '', '', { v: 0, s: 'eur' }]);
+  else t.ventilation.forEach(v => rows.push(['', `TVA ${libTaux(v.taux)}${t.ventilation.length > 1 ? ` sur ${fmt(v.base, 2)} €` : ''}`, '', '', '', { v: v.tva, s: 'eur' }]));
   rows.push(['', { v: 'Total TTC', s: 'bold' }, '', '', '', { v: t.totalTTC, s: 'boldeur' }]);
   const nom = `DPGF-chiffre-${(d.numero || 'devis')}.xlsx`;
   download(nom, XLSX.build([{ name: 'DPGF', cols: [10, 70, 9, 11, 16, 16], freeze: 4, rows }]), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

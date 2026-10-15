@@ -31,13 +31,13 @@ function facturerSituation(sit) {
   const lignes = [];
   c.rows.forEach(r => {
     if (r.chap) { lignes.push({ type: 'chapitre', titre: r.titre, niveau: r.niveau }); return; }
-    if (Math.abs(r.montant) >= 0.005) lignes.push({ designation: `${r.designation} – avancement ${fmt(r.prec, 1)} % → ${fmt(r.cumul, 1)} %`, unite: '', qte: 1, pu: r2(r.montant) });
+    if (Math.abs(r.montant) >= 0.005) lignes.push({ designation: `${r.designation} – avancement ${fmt(r.prec, 1)} % → ${fmt(r.cumul, 1)} %`, unite: '', qte: 1, pu: r2(r.montant), tva: r.tva });
   });
   const f = Store.upsert('factures', {
     numero: '', situationId: sit.id, devisId: dv.id, affaireId: sit.affaireId, clientId: docClientId(dv), contactId: dv.contactId || '', siteId: dv.siteId || '', chargeId: docChargeId(dv) || '',
     objet: `${dv.objet || ''} – situation n° ${situationRang(sit)}`, date: isoDate(new Date()), echeance: isoDate(addDays(new Date(), num(s.delaiPaiement))), statut: 'Émise',
     lignes: Calc.sansChapitresVides(lignes), ajustements: [], zoneId: '',
-    retenuePct: retenueChantier(affaireOf(sit.affaireId)),
+    retenuePct: retenueChantier(affaireOf(sit.affaireId)), ...champsTVA(dv),
   });
   Object.assign(sit, { statut: 'Acceptée', factureId: f.id });
   Store.upsert('situations', sit);
@@ -84,7 +84,7 @@ function situationEditor(id) {
     ${f ? `<a class="btn" href="#/facture/${f.id}">Facture ${esc(f.numero)}</a>` : ''}
     ${sit.statut !== 'Acceptée' ? '<button class="danger" id="del">Supprimer</button>' : ''}
   </div>
-  <h1>Situation n° ${situationRang(sit)} · ${esc(sit.numero || '')} ${badge(sit.statut)}</h1>${envoisHtml('situations', sit.id)}
+  <h1 class="no-print">Situation n° ${situationRang(sit)} · ${esc(sit.numero || '')} ${badge(sit.statut)}</h1>${envoisHtml('situations', sit.id)}
   <p class="muted">Chantier ${esc(affaireLabel(a))} · Devis ${esc(dv.numero || '')} · ${c.prev ? `situation précédente acceptée : ${esc(c.prev.numero)}` : 'première situation'}</p>
   ${a.okFacturation ? `<p class="note">Réception signée le ${dateFr(a.dateReception)} : feu vert pour facturer le solde des travaux.</p>` : ''}
 
@@ -133,10 +133,11 @@ function blDocument(sit, c, a, dv) {
       : `<tr>${cols.map((k, i) => `<td${i ? ' class="num"' : ''}>${k[1](r)}</td>`).join('')}</tr>`).join('')}
     <tr class="subtotal">${cols.map((k, i) => `<td${i ? ' class="num"' : ''}>${k[2]}</td>`).join('')}</tr></table></div>
     <table class="totals"><tr><td>Montant de la situation HT</td><td class="num">${eur(c.montant)}</td></tr>
-      <tr><td>TVA ${fmt(s.tva, 1)} %</td><td class="num">${eur(c.montant * num(s.tva) / 100)}</td></tr>
-      <tr class="${retenueChantier(a) ? '' : 'grand'}"><td>Montant TTC</td><td class="num">${eur(c.montant * (1 + num(s.tva) / 100))}</td></tr>
-      ${retenueChantier(a) ? `<tr><td>Retenue de garantie ${fmt(retenueChantier(a), 1)} %</td><td class="num">− ${eur(c.montant * (1 + num(s.tva) / 100) * retenueChantier(a) / 100)}</td></tr>
-      <tr class="grand"><td>Net à payer TTC</td><td class="num">${eur(c.montant * (1 + num(s.tva) / 100) * (1 - retenueChantier(a) / 100))}</td></tr>` : ''}</table>
+      <tr><td>${c.autoliquidation ? 'TVA autoliquidée (art. 283-2 nonies du CGI)' : 'TVA'}</td><td class="num">${eur(c.tva)}</td></tr>
+      <tr class="${retenueChantier(a) ? '' : 'grand'}"><td>Montant TTC</td><td class="num">${eur(c.montant + c.tva)}</td></tr>
+      ${retenueChantier(a) ? `<tr><td>Retenue de garantie ${fmt(retenueChantier(a), 1)} %</td><td class="num">− ${eur((c.montant + c.tva) * retenueChantier(a) / 100)}</td></tr>
+      <tr class="grand"><td>Net à payer TTC</td><td class="num">${eur((c.montant + c.tva) * (1 - retenueChantier(a) / 100))}</td></tr>` : ''}</table>
+    ${mentionsTVA(dv)}
     ${Doc.pied('situation', '', o.signature ? `<div class="signatures"><div>Pour ${esc(s.societe)}<br>${esc(userName(a.chargeId))}</div><div>Bon pour accord de la maîtrise d'œuvre<br>Date et signature :</div></div>` : '')}`;
 }
 

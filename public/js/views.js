@@ -292,7 +292,7 @@ Views.facture = params => {
   ${avoirs.length ? `<div class="card no-print avoirs-card"><strong>Avoirs sur cette facture</strong>
     <ul>${avoirs.map(a => `<li><a href="#/facture/${a.id}">${esc(a.numero || '…')}</a> du ${dateFr(a.date)} · ${eur(Calc.doc(a).netAPayer)} TTC${a.motif ? ` · ${esc(a.motif)}` : ''} ${badge(a.statut)}</li>`).join('')}</ul>
     <div class="small">Facture ${eur(Calc.doc(f).netAPayer)} − avoirs ${eur(dejaCredite)} = <strong>reste dû ${eur(reste)}</strong></div></div>` : ''}
-  <div class="doc-print">
+  <div class="doc-print feuille">
     ${factureDocument(f)}
   </div>`;
 };
@@ -331,7 +331,8 @@ function creerAvoir(f) {
     <div data-pane="lignes" hidden><div class="table-wrap"><table><tr><th>Désignation</th><th class="num">Facturé</th><th class="num">Qté à créditer</th><th class="num">PU HT</th></tr>
       ${lignes.map(({ l, i }) => `<tr><td>${esc(l.designation)}</td><td class="num">${fmt(l.qte, 2)} ${esc(l.unite || '')}</td><td class="num"><input type="number" step="any" min="0" max="${esc(l.qte)}" data-qi="${i}" value="0" style="width:90px"></td><td class="num">${eur(Calc.pu(l))}</td></tr>`).join('')}</table></div></div>
     <div data-pane="montant" hidden><div class="grid2"><div class="field"><label for="av-lib">Libellé</label><input id="av-lib" value="Geste commercial"></div>
-      <div class="field"><label for="av-ht">Montant HT</label><input id="av-ht" type="number" step="0.01" min="0"></div></div></div>
+      <div class="field"><label for="av-ht">Montant HT</label><input id="av-ht" type="number" step="0.01" min="0"></div>
+      ${!f.autoliquidation && Calc.doc(f).ventilation.length > 1 ? `<div class="field"><label for="av-tva">TVA</label><select id="av-tva">${Calc.doc(f).ventilation.map(v => `<option value="${v.taux}">${libTaux(v.taux)}</option>`).join('')}</select></div>` : ''}</div></div>
     <div class="field"><label for="av-motif">Motif (figure sur l'avoir)</label><input id="av-motif" list="av-motifs" placeholder="Erreur de facturation, geste commercial, travaux non réalisés…">
       <datalist id="av-motifs">${['Erreur de facturation', 'Annulation de la facture', 'Geste commercial', 'Travaux non réalisés', 'Réfaction suite à réserve', 'Remise de fin d\'année'].map(m => `<option value="${m}">`).join('')}</datalist></div>
     <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="av-annuler">Annuler</button><button id="av-ok">Créer l'avoir</button></div>`);
@@ -349,11 +350,12 @@ function creerAvoir(f) {
     else if (mode === 'lignes') {
       const choisies = [...box.querySelectorAll('[data-qi]')].map(el => ({ l: f.lignes[+el.dataset.qi], q: Math.min(num(el.value), num(f.lignes[+el.dataset.qi].qte)) })).filter(x => x.q > 0);
       if (!choisies.length) return notify('Indiquez au moins une quantité à créditer.');
-      nouv = { ...base, lignes: choisies.map(x => ({ ...JSON.parse(JSON.stringify(x.l)), qte: x.q })) };
+      nouv = { ...base, lignes: choisies.map(x => ({ ...JSON.parse(JSON.stringify(x.l)), qte: x.q })), zoneId: '', livraisonManuelle: null };
     } else {
       const ht = num(box.querySelector('#av-ht').value);
       if (!(ht > 0)) return notify('Indiquez le montant HT de l\'avoir.');
-      nouv = { ...base, lignes: [{ designation: box.querySelector('#av-lib').value || 'Avoir', unite: 'forfait', qte: 1, pu: ht }], ajustements: [] };
+      const tv = box.querySelector('#av-tva');
+      nouv = { ...base, lignes: [{ designation: box.querySelector('#av-lib').value || 'Avoir', unite: 'forfait', qte: 1, pu: ht, ...(tv ? { tva: num(tv.value) } : {}) }], ajustements: [], zoneId: '', livraisonManuelle: null };
     }
     Object.assign(nouv, { type: 'avoir', factureId: f.id, numero: '', date: isoDate(new Date()), statut: 'Émis', motif: box.querySelector('#av-motif').value.trim() || (mode === 'total' ? 'Annulation de la facture' : ''), echeance: '' });
     if (nouv.objet) nouv.objet = `Avoir sur facture ${f.numero} – ${nouv.objet}`;

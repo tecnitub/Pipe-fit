@@ -3,7 +3,22 @@
 const num = v => (v === '' || v == null || isNaN(+v)) ? 0 : +v;
 const sumBy = (arr, fn) => arr.reduce((t, x) => t + fn(x), 0);
 
+// Taux de TVA proposés ; « AL » = autoliquidation (sous-traitance de travaux de construction, art. 283-2 nonies du CGI)
+const TAUX_TVA = [20, 10, 5.5, 0];
+const REGIMES_TVA = [['20', 'TVA 20 %'], ['10', 'TVA 10 % (travaux dans un logement de plus de 2 ans)'], ['5.5', 'TVA 5,5 % (rénovation énergétique d\'un logement)'], ['0', 'TVA 0 % (exonération)'], ['AL', 'Autoliquidation (sous-traitance BTP)']];
+const videTVA = v => v === undefined || v === null || v === '';
+
 const Calc = {
+  // TVA : taux du document (celui du devis, repris sur ses factures), taux propre à une ligne, autoliquidation
+  tauxDoc(doc) { return doc && doc.autoliquidation ? 0 : videTVA(doc && doc.tauxTVA) ? num(Store.data.settings.tva) : num(doc.tauxTVA); },
+  tauxLigne(doc, l) { return doc && doc.autoliquidation ? 0 : videTVA(l && l.tva) ? this.tauxDoc(doc) : num(l.tva); },
+  regimeTVA(doc) { return doc && doc.autoliquidation ? 'AL' : String(this.tauxDoc(doc)); },
+  // Régime choisi dans une liste (REGIMES_TVA) : taux du document ou autoliquidation
+  appliquerRegime(doc, v) {
+    if (v === 'AL') { doc.autoliquidation = true; delete doc.tauxTVA; } else { doc.autoliquidation = false; doc.tauxTVA = num(v); }
+    return doc;
+  },
+
   // Décomposition d'un ouvrage pour UNE unité.
   // Ouvrage = composants fournitures (article × quantité) + composants main-d'œuvre (catégorie × heures).
   unit(l) {
@@ -101,11 +116,12 @@ const Calc = {
 
   doc(doc) {
     let venteF = 0, venteMO = 0, coutF = 0, coutMO = 0, heures = 0, poids = 0;
-    const hByMo = {};
+    const hByMo = {}, parTaux = {};
     for (const l of doc.lignes || []) {
       if (!this.estPrix(l)) continue;
       const q = num(l.qte), r = 1 - num(l.remise) / 100, u = this.unit(l);
       venteF += q * u.f * r; venteMO += q * u.mo * r;
+      const tx = this.tauxLigne(doc, l); parTaux[tx] = (parTaux[tx] || 0) + q * (u.f + u.mo) * r;
       coutF += q * u.coutF; coutMO += q * u.coutMO; heures += q * u.heures; poids += q * u.poids;
       for (const k in u.hByMo) hByMo[k] = (hByMo[k] || 0) + q * u.hByMo[k];
     }
@@ -116,12 +132,19 @@ const Calc = {
     const ratio = brut ? net / brut : 1;
     const livraison = this.livraison(doc, poids);
     const totalHT = net + livraison;
-    const tva = totalHT * num(Store.data.settings.tva) / 100;
+    // Ventilation de la TVA par taux : remises / majorations au prorata, livraison au taux du document
+    const tDoc = this.tauxDoc(doc);
+    Object.keys(parTaux).forEach(k => { parTaux[k] *= ratio; });
+    if (livraison) parTaux[tDoc] = (parTaux[tDoc] || 0) + livraison;
+    if (!Object.keys(parTaux).length) parTaux[tDoc] = totalHT;
+    const ventilation = Object.entries(parTaux).map(([k, base]) => ({ taux: +k, base, tva: base * +k / 100 })).sort((a, b) => b.taux - a.taux);
+    const tva = sumBy(ventilation, v => v.tva);
     const coutLivraison = this.coutLivraison(doc, poids);
     const margePrev = totalHT - coutF - coutMO - coutLivraison;
     // Retenue de garantie (factures de situation) : pourcentage du TTC conservé par le client jusqu'à la réception
     const retenue = (totalHT + tva) * num(doc.retenuePct) / 100;
     return {
+      ventilation, autoliquidation: !!doc.autoliquidation, tauxDoc: tDoc,
       brut, ajust, totalAjust, net, venteF: venteF * ratio, venteMO: venteMO * ratio,
       coutF, coutMO, heures, hByMo, poids, livraison, totalHT, tva, totalTTC: totalHT + tva, retenue, netAPayer: totalHT + tva - retenue,
       coutLivraison, margePrev, margePrevPct: totalHT ? margePrev / totalHT * 100 : 0,
@@ -145,15 +168,16 @@ const Calc = {
     (dv.lignes || []).forEach((l, i) => {
       if (l.type === 'chapitre') { rows.push({ chap: true, titre: l.titre, niveau: this.niveau(l) }); return; }
       if (!this.estPrix(l)) return;
-      rows.push({ key: String(i), designation: l.designation, marche: this.ligneHT(l) * ratio, prec: num(pav[i]), cumul: av[i] === undefined ? num(pav[i]) : num(av[i]) });
+      rows.push({ key: String(i), designation: l.designation, tva: this.tauxLigne(dv, l), marche: this.ligneHT(l) * ratio, prec: num(pav[i]), cumul: av[i] === undefined ? num(pav[i]) : num(av[i]) });
     });
-    if (t.livraison) rows.push({ key: 'liv', designation: 'Transport / livraison', marche: t.livraison, prec: num(pav.liv), cumul: av.liv === undefined ? num(pav.liv) : num(av.liv) });
+    if (t.livraison) rows.push({ key: 'liv', designation: 'Transport / livraison', tva: this.tauxDoc(dv), marche: t.livraison, prec: num(pav.liv), cumul: av.liv === undefined ? num(pav.liv) : num(av.liv) });
     let marche = 0, cumul = 0, precedent = 0;
     rows.filter(r => !r.chap).forEach(r => {
       r.montantCumul = r.marche * r.cumul / 100; r.montantPrec = r.marche * r.prec / 100; r.montant = r.montantCumul - r.montantPrec;
       marche += r.marche; cumul += r.montantCumul; precedent += r.montantPrec;
     });
-    return { rows, prev, marche, cumul, precedent, montant: cumul - precedent, pctCumul: marche ? cumul / marche * 100 : 0, pctPrec: marche ? precedent / marche * 100 : 0 };
+    const tva = sumBy(rows.filter(r => !r.chap), r => r.montant * num(r.tva) / 100);
+    return { rows, prev, marche, cumul, precedent, tva, autoliquidation: !!dv.autoliquidation, montant: cumul - precedent, pctCumul: marche ? cumul / marche * 100 : 0, pctPrec: marche ? precedent / marche * 100 : 0 };
   },
 
   // Intervention hors devis (régie) : heures pointées valorisées au taux de vente de la catégorie de chaque personne,

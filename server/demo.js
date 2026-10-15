@@ -83,6 +83,12 @@ function demoData() {
       adresses: [site('s9', 'Siège et dépôt', '8 avenue des Alpes', '38000', 'Grenoble', true)] },
     { id: 'e10', nom: 'Papeterie du Dauphiné', categorie: 'Client', secteur: 'Papeterie', siret: '398 765 432 00015', tvaIntra: 'FR11398765432', tel: '04 76 00 00 01', email: 'maintenance@pdd.example', web: '', zoneId: 'z1',
       adresses: [site('s13', 'Siège', '2 rue du Papier', '38500', 'Voiron', true), site('s14', 'Usine de Rives – machine à papier PM2', 'Route de Lyon', '38140', 'Rives')] },
+    // Entreprise générale : nous intervenons en sous-traitance, TVA autoliquidée
+    { id: 'e13', nom: 'Bâtiment Général Alpes', categorie: 'Client', secteur: 'Entreprise générale du bâtiment', siret: '789 456 123 00017', tvaIntra: 'FR67789456123', regimeTVA: 'AL', tel: '04 76 50 50 50', email: 'travaux@bga.example', web: '', zoneId: 'z1',
+      adresses: [site('s15', 'Siège', '12 avenue Jean Jaurès', '38100', 'Grenoble', true), site('s16', 'Chantier clinique des Cèdres', 'Rue des Cèdres', '38400', 'Saint-Martin-d\'Hères')] },
+    // Bailleur social : travaux dans des logements de plus de deux ans, TVA à 10 %
+    { id: 'e14', nom: 'Habitat Dauphiné', categorie: 'Client', secteur: 'Bailleur social', siret: '275 380 000 00028', tvaIntra: 'FR93275380000', regimeTVA: '10', tel: '04 76 60 60 60', email: 'patrimoine@habitat-dauphine.example', web: '', zoneId: 'z1',
+      adresses: [site('s17', 'Siège', '5 place Grenette', '38000', 'Grenoble', true), site('s18', 'Résidence Les Tilleuls – chaufferie', '20 rue des Tilleuls', '38130', 'Échirolles')] },
     { id: 'e8', nom: 'Intérim Industrie Rhône', categorie: 'Fournisseur', secteur: 'Travail temporaire', siret: '611 222 333 00019', tvaIntra: 'FR40611222333', tel: '04 72 44 44 44', email: 'lyon@interim-ir.example', web: '', zoneId: '',
       adresses: [site('s11', 'Agence de Lyon 7e', '5 avenue Jean Jaurès', '69007', 'Lyon', true)] },
     { id: 'e11', nom: 'Descours & Cabot', categorie: 'Fournisseur', secteur: 'Négoce tubes et raccords', siret: '957 200 000 01234', tvaIntra: 'FR10957200000', tel: '04 72 66 66 66', email: 'agence.lyon@descours-cabot.example', web: '', zoneId: '',
@@ -102,6 +108,8 @@ function demoData() {
     { id: 'k5', civilite: 'Monsieur', prenom: 'Pierre', nom: 'Morel', fonction: 'Chargé de travaux', entrepriseId: 'e4', siteId: 's7', tel: '04 75 00 00 05', mobile: '06 10 00 00 05', email: 'p.morel@evr.example' },
     { id: 'k6', civilite: 'Madame', prenom: 'Julie', nom: 'Fabre', fonction: 'Commerciale', entrepriseId: 'e5', siteId: 's8', tel: '04 78 11 11 12', mobile: '', email: 'j.fabre@inoxdistri.example' },
     { id: 'k8', civilite: 'Madame', prenom: 'Sandra', nom: 'Vidal', fonction: 'Responsable planning', entrepriseId: 'e7', siteId: 's10', tel: '04 78 33 33 34', mobile: '', email: 's.vidal@sir.example' },
+    { id: 'k11', civilite: 'Monsieur', prenom: 'Karim', nom: 'Belkacem', fonction: 'Conducteur de travaux', entrepriseId: 'e13', siteId: 's16', tel: '04 76 50 50 51', mobile: '06 20 30 40 50', email: 'k.belkacem@bga.example' },
+    { id: 'k12', civilite: 'Madame', prenom: 'Hélène', nom: 'Roche', fonction: 'Chargée d\'opérations patrimoine', entrepriseId: 'e14', siteId: 's18', tel: '04 76 60 60 61', mobile: '06 21 31 41 51', email: 'h.roche@habitat-dauphine.example' },
     { id: 'k10', civilite: 'Monsieur', prenom: 'Jérôme', nom: 'Faure', fonction: 'Responsable maintenance PM2', entrepriseId: 'e10', siteId: 's14', tel: '04 76 00 00 12', mobile: '06 11 22 33 44', email: 'j.faure@pdd.example' },
     { id: 'k9', civilite: 'Madame', prenom: 'Camille', nom: 'Rousset', fonction: "Maître d'œuvre (OPC)", entrepriseId: 'e9', siteId: 's12', tel: '04 50 55 55 56', mobile: '06 10 00 00 09', email: 'c.rousset@ipa.example' },
     { id: 'k7', civilite: 'Monsieur', prenom: 'Luc', nom: 'Perrin', fonction: 'Technico-commercial', entrepriseId: 'e6', siteId: 's9', tel: '04 76 22 22 23', mobile: '06 10 00 00 07', email: 'l.perrin@ria.example' },
@@ -187,6 +195,26 @@ function demoData() {
       lignes: [
         ouv('Remplacement de lignes acier DN150', 'ml', 420, [F('a3', 1.05), F('a6', 0.15), MO('mo1', 0.9), MO('mo2', 0.7)]),
         ouv('Échafaudage', 'semaine', 4, [F('a11', 1)]),
+      ] },
+    // Sous-traitance pour une entreprise générale : autoliquidation de la TVA
+    { id: 'dv6', numero: `DV-${Y}-` + '0006', objet: 'Clinique des Cèdres – réseaux fluides médicaux et eau glacée (sous-traitance)', ...head('', 'u1', 'e13', 'k11', 's16'), date: d(-3), validite: 30, statut: 'Envoyé', zoneId: 'z1', ajustements: [], numAuto: true,
+      autoliquidation: true, tauxTVA: '',
+      lignes: [
+        chap('Réseau eau glacée'),
+        ouv('Tuyauterie inox 316L DN100 fournie et posée', 'ml', 60, [F('a2', 1.05), F('a8', 1), MO('mo1', 0.3), MO('mo2', 0.6)]),
+        ouv('Vanne papillon DN50 PN16 à levier', 'u', 6, [F('a7', 1), MO('mo2', 0.6)]),
+        chap('Essais'),
+        ouv('Épreuve hydraulique avec procès-verbal', 'forfait', 1, [F('a13', 1), MO('mo2', 6)]),
+      ] },
+    // Logements de plus de deux ans : TVA à 10 %, isolation et régulation de la chaufferie à 5,5 %
+    { id: 'dv7', numero: `DV-${Y}-` + '0007', objet: 'Résidence Les Tilleuls – rénovation de la chaufferie collective', ...head('', 'u2', 'e14', 'k12', 's18'), date: d(-2), validite: 60, statut: 'Brouillon', zoneId: 'z1', ajustements: [], numAuto: true,
+      tauxTVA: 10, mentionTVA: 'Attestation simplifiée du client jointe au devis.',
+      lignes: [
+        chap('Remplacement des collecteurs'),
+        ouv('Collecteur départ / retour acier DN150 préfabriqué', 'ml', 18, [F('a3', 1.05), F('a6', 0.3), MO('mo3', 0.5), MO('mo1', 0.6)]),
+        ouv('Vanne papillon DN50 PN16 à levier', 'u', 8, [F('a7', 1), MO('mo2', 0.6)]),
+        chap('Amélioration énergétique'),
+        { ...ouv('Calorifuge des réseaux de chaufferie (laine de roche + tôle)', 'ml', 40, [{ type: 'f', designation: 'Coquilles laine de roche 50 mm + tôle alu', unite: 'ml', qte: 1, pu: 32, cout: 21, poids: 1.2 }, MO('mo2', 0.4)]), tva: 5.5 },
       ] },
   ];
   // Situations de travaux : proposition d'avancement (BL) à la maîtrise d'œuvre, puis facture une fois acceptée

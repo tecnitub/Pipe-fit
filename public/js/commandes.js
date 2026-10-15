@@ -56,7 +56,7 @@ function commandeEditor(id) {
     <button class="secondary print-btn" onclick="window.print()">Imprimer</button>${boutonsEnvoi('demandePrix', c.id, 'Demande de prix', false)}${boutonsEnvoi('commande', c.id, 'Envoyer la commande')}
     <button class="danger" id="del">Supprimer</button>
   </div>
-  <h1>Commande ${esc(c.numero || '')} ${badge(c.statut)}</h1>${envoisHtml('commandes', c.id)}
+  <h1 class="no-print">Commande ${esc(c.numero || '')} ${badge(c.statut)}</h1>${envoisHtml('commandes', c.id)}
   ${(() => { const liees = Calc.imputations().filter(l => l.commandeId === c.id); if (!liees.length) return '';
     const fac = sumBy(liees, l => num(l.montantHT)), ec = fac - total;
     return `<p class="note no-print">Facturée : ${liees.map(l => `<a href="#/achats/${l.achat.id}">${esc(l.achat.numeroFournisseur || l.achat.ref || 'facture')}</a> (${eur(l.montantHT)})`).join(', ')} · ${Math.abs(ec) > 0.01 ? `<strong>écart ${ec > 0 ? '+' : ''}${eur(ec)}</strong> par rapport à la commande ; ` : ''}c'est le montant facturé qui compte dans la rentabilité du chantier.</p>`; })()}
