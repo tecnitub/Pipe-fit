@@ -433,3 +433,9 @@ fieldset.wh { margin-bottom: 10px; }
 code { font-size: 12px; overflow-wrap: anywhere; }
 .api-ex, .api-ex pre.code { max-width: 100%; min-width: 0; }
 .api-ex { overflow: hidden; }
+
+/* Chiffrage depuis plan : paramètres préfabrication / pose, barèmes par diamètre */
+.ch-params { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 8px 28px; }
+.baremes { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 6px; }
+.baremes > div { flex: 1 1 200px; min-width: 0; }
+.bareme input { padding: 3px 6px; }

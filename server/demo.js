@@ -257,13 +257,13 @@ function demoData() {
       { entrepriseId: 'e12', statut: 'Consulté', envoyeLe: d(-6) }] }];
   // Familles CAO (Revit) reliées à la bibliothèque : article par diamètre, soudures, temps de préfabrication et de pose
   const familles = [
-    { id: 'fa1', nom: 'Tuyau', alias: 'Canalisation, Pipe, Tube inox', unite: 'ml', soudures: 0, tempsPrefab: 0.2, tempsPose: 0.35, declinaisons: [{ dn: 50, articleId: 'a1' }, { dn: 100, articleId: 'a2' }, { dn: 150, articleId: 'a3' }] },
-    { id: 'fa2', nom: 'Coude - Soudé', alias: 'Coude 90, Coude', unite: 'u', soudures: 2, tempsPrefab: 0.1, tempsPose: 0, declinaisons: [{ dn: 50, articleId: 'a4' }, { dn: 100, articleId: 'a17' }, { dn: 150, articleId: 'a6' }] },
-    { id: 'fa3', nom: 'Té - Soudé', alias: 'Té égal, Té', unite: 'u', soudures: 3, tempsPrefab: 0.15, tempsPose: 0, declinaisons: [{ dn: 50, articleId: 'a14' }, { dn: 100, articleId: 'a18' }] },
-    { id: 'fa4', nom: 'Bride à collerette', alias: 'Bride', unite: 'u', soudures: 1, tempsPrefab: 0.1, tempsPose: 0.3, declinaisons: [{ dn: 50, articleId: 'a16' }, { dn: 100, articleId: 'a5' }] },
-    { id: 'fa5', nom: 'Réduction concentrique', alias: 'Réduction', unite: 'u', soudures: 2, tempsPrefab: 0.1, tempsPose: 0, declinaisons: [{ dn: 100, articleId: 'a15' }] },
-    { id: 'fa6', nom: 'Vanne papillon', alias: 'Robinet papillon', unite: 'u', soudures: 0, tempsPrefab: 0, tempsPose: 0.75, declinaisons: [{ dn: 50, articleId: 'a7' }] },
-    { id: 'fa7', nom: 'Support de tuyauterie', alias: 'Supportage, Collier', unite: 'ml', soudures: 0, tempsPrefab: 0.1, tempsPose: 0.2, declinaisons: [{ dn: 0, articleId: 'a8' }] },
+    { id: 'fa1', nom: 'Tuyau', alias: 'Canalisation, Pipe, Tube inox', categorie: 'tube', unite: 'ml', soudures: 0, tempsPrefab: 0, tempsPose: 0, declinaisons: [{ dn: 50, articleId: 'a1' }, { dn: 100, articleId: 'a2' }, { dn: 150, articleId: 'a3' }] },
+    { id: 'fa2', nom: 'Coude - Soudé', alias: 'Coude 90, Coude', categorie: 'raccord', unite: 'u', soudures: 2, tempsPrefab: 0.1, tempsPose: 0, declinaisons: [{ dn: 50, articleId: 'a4' }, { dn: 100, articleId: 'a17' }, { dn: 150, articleId: 'a6' }] },
+    { id: 'fa3', nom: 'Té - Soudé', alias: 'Té égal, Té', categorie: 'raccord', unite: 'u', soudures: 3, tempsPrefab: 0.15, tempsPose: 0, declinaisons: [{ dn: 50, articleId: 'a14' }, { dn: 100, articleId: 'a18' }] },
+    { id: 'fa4', nom: 'Bride à collerette', alias: 'Bride', categorie: 'raccord', unite: 'u', soudures: 1, tempsPrefab: 0.1, tempsPose: 0.3, declinaisons: [{ dn: 50, articleId: 'a16' }, { dn: 100, articleId: 'a5' }] },
+    { id: 'fa5', nom: 'Réduction concentrique', alias: 'Réduction', categorie: 'raccord', unite: 'u', soudures: 2, tempsPrefab: 0.1, tempsPose: 0, declinaisons: [{ dn: 100, articleId: 'a15', soudures: 2 }] },
+    { id: 'fa6', nom: 'Vanne papillon', alias: 'Robinet papillon', categorie: 'robinetterie', unite: 'u', soudures: 0, tempsPrefab: 0, tempsPose: 0, declinaisons: [{ dn: 50, articleId: 'a7' }] },
+    { id: 'fa7', nom: 'Support de tuyauterie', alias: 'Supportage, Collier', categorie: 'autre', unite: 'ml', soudures: 0, tempsPrefab: 0.1, tempsPose: 0.2, declinaisons: [{ dn: 0, articleId: 'a8' }] },
   ];
   // Factures fournisseurs : rapprochement de commandes et achats au comptoir imputés aux chantiers
   const achats = [
