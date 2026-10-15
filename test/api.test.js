@@ -71,7 +71,7 @@ test('droits par rôle, conflits de version et numérotation', async () => {
     call('PUT', '/api/records/devis/dv-b', { data: { affaireId: 'af1', lignes: [] } }, admin),
   ]);
   const nums = [d1.body.numero, d2.body.numero].sort();
-  assert.deepStrictEqual(nums, [`DV-${year}-0006`, `DV-${year}-0007`]);
+  assert.deepStrictEqual(nums, [`DV-${year}-0008`, `DV-${year}-0009`]);
 
   // Facture : un chargé ne peut changer que le statut, ni la supprimer
   const fa = (await call('PUT', '/api/records/factures/fa-x', { data: { affaireId: 'af1', statut: 'Émise', lignes: [{ qte: 1, pu: 100 }] } }, claire)).body;
