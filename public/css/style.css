@@ -176,6 +176,27 @@ h3 { font-size: 15px; margin: 18px 0 8px; }
 .subtotal td { font-weight: 600; background: var(--panel-alt); text-align: right; }
 .subtotal td.num { text-align: right; }
 .doc-lines .chap td { text-transform: none; }
+.chap.niv-2 td { background: var(--panel-alt); font-weight: 650; }
+.chap.niv-3 td { background: transparent; font-weight: 600; font-style: italic; }
+.doc-lines .chap.niv-2 td:last-child, .chap.niv-2 .chap-edit { padding-left: 14px; }
+.doc-lines .chap.niv-3 td:last-child, .chap.niv-3 .chap-edit { padding-left: 28px; }
+.subtotal.niv-2 td, .subtotal.niv-3 td { font-weight: 500; background: transparent; }
+.chap-edit { display: flex; gap: 6px; align-items: center; }
+.chap-edit select { width: auto; flex: 0 0 auto; font-weight: 400; }
+.chap-edit input { flex: 1 1 auto; min-width: 0; }
+.edit-lines .num-in { width: 76px; padding: 4px 6px; font-variant-numeric: tabular-nums; }
+.edit-lines textarea { width: 100%; min-height: 48px; }
+.img-edit { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.img-edit img { max-height: 64px; max-width: 120px; border: 1px solid var(--border); border-radius: 4px; }
+.img-edit input { flex: 1 1 160px; min-width: 0; width: auto; }
+.img-edit select { width: auto; }
+.num-bar { align-items: center; margin-bottom: 6px; }
+.doc-fig { margin: 4px 0; }
+.doc-fig img { display: block; width: 100%; height: auto; }
+.doc-fig.fig-petite { max-width: 30%; }
+.doc-fig.fig-moyenne { max-width: 60%; }
+.doc-fig.fig-pleine { max-width: 100%; }
+.doc-texte td, .doc-image td { border-bottom: 0; }
 .edit-lines td { vertical-align: middle; }
 .move { white-space: nowrap; width: 1%; }
 button.icon { background: transparent; color: var(--muted); border: 0; padding: 2px 4px; font-size: 11px; }

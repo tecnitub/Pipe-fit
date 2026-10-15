@@ -3,17 +3,17 @@
 
 const DOC_TYPES = {
   devis: { label: 'Devis', titre: 'DEVIS', conditions: '', options: [
-    ['numeros', 'Colonne N° de prix (DPGF)', true], ['quantites', 'Quantités et unités', true], ['prix', 'Prix unitaires et totaux par ligne (sinon : prix par chapitre, ou prix global)', true],
+    ['numeros', 'Colonne N° (numérotation des chapitres et des lignes)', true], ['quantites', 'Quantités et unités', true], ['prix', 'Prix unitaires et totaux par ligne (sinon : prix par chapitre, ou prix global)', true],
     ['detail', 'Descriptifs sous les ouvrages', true], ['sousTotaux', 'Sous-totaux par chapitre', true], ['ajustements', 'Détail des remises et majorations', true],
     ['contact', 'Contact client (à l\'attention de)', true], ['lieu', 'Lieu d\'intervention', true], ['charge', 'Chargé d\'affaires', true],
     ['validite', 'Durée de validité', true], ['signature', 'Cadre « Bon pour accord »', true]] },
   facture: { label: 'Facture', titre: 'FACTURE', conditions: '', options: [
-    ['numeros', 'Colonne N° de prix (DPGF)', true], ['quantites', 'Quantités et unités', true], ['prix', 'Prix unitaires et totaux par ligne (sinon : prix par chapitre, ou prix global)', true],
+    ['numeros', 'Colonne N° (numérotation des chapitres et des lignes)', true], ['quantites', 'Quantités et unités', true], ['prix', 'Prix unitaires et totaux par ligne (sinon : prix par chapitre, ou prix global)', true],
     ['detail', 'Descriptifs sous les ouvrages', true], ['sousTotaux', 'Sous-totaux par chapitre', true], ['ajustements', 'Détail des remises et majorations', true],
     ['contact', 'Contact client (à l\'attention de)', true], ['lieu', 'Lieu d\'intervention', true], ['charge', 'Chargé d\'affaires', true],
     ['references', 'Références devis / situation', true], ['rib', 'Coordonnées bancaires (RIB)', true], ['penalites', 'Mentions légales de retard de paiement', true], ['mentions2026', 'Mentions de la réforme 2026 (SIREN du client, catégorie de l\'opération)', true]] },
   avoir: { label: 'Avoir', titre: 'AVOIR', conditions: 'Avoir à valoir sur nos prochaines factures ou remboursé sur simple demande.', options: [
-    ['numeros', 'Colonne N° de prix (DPGF)', true], ['quantites', 'Quantités et unités', true], ['prix', 'Prix unitaires et totaux par ligne', true],
+    ['numeros', 'Colonne N° (numérotation des chapitres et des lignes)', true], ['quantites', 'Quantités et unités', true], ['prix', 'Prix unitaires et totaux par ligne', true],
     ['detail', 'Descriptifs sous les ouvrages', true], ['sousTotaux', 'Sous-totaux par chapitre', true], ['ajustements', 'Détail des remises et majorations', true],
     ['contact', 'Contact client (à l\'attention de)', true], ['lieu', 'Lieu d\'intervention', true], ['charge', 'Chargé d\'affaires', true], ['references', 'Référence de la facture d\'origine', true], ['mentions2026', 'Mentions de la réforme 2026 (SIREN du client, catégorie de l\'opération)', true]] },
   situation: { label: 'Situation de travaux (BL)', titre: 'PROPOSITION DE SITUATION', conditions: '', options: [

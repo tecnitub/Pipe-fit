@@ -164,13 +164,23 @@ function demoData() {
         ouv('Mise en place et raccordement sur site', 'forfait', 1, [MO('mo2', 40)]),
         ouv('Dossier constructeur / DOE', 'forfait', 1, [MO('mo4', 14)]),
       ] },
-    { id: 'dv4', numero: `DV-${Y}-` + '0004', objet: 'Modification réseau eau glacée', ...head('', 'u2', 'e4', 'k5', 's7'), date: d(-8), validite: 30, statut: 'Envoyé', zoneId: 'z2', ajustements: [],
+    // Devis structuré : chapitres / sous-chapitres / sous-sous-chapitres numérotés automatiquement, textes, image, poste libre
+    { id: 'dv4', numero: `DV-${Y}-` + '0004', objet: 'Modification réseau eau glacée', ...head('', 'u2', 'e4', 'k5', 's7'), date: d(-8), validite: 30, statut: 'Envoyé', zoneId: 'z2', ajustements: [], numAuto: true,
       lignes: [
+        { type: 'texte', texte: 'Suite à notre visite du local technique, nous vous proposons la modification du réseau d\'eau glacée entre la production et la nouvelle centrale de traitement d\'air.' },
         chap('Tuyauterie'),
+        { type: 'chapitre', niveau: 2, titre: 'Réseau principal DN100' },
         ouv('Tuyauterie inox 316L DN100 fournie et posée', 'ml', 90, [F('a2', 1.05), F('a8', 1), MO('mo1', 0.3), MO('mo2', 0.6)]),
+        { type: 'chapitre', niveau: 3, titre: 'Raccordements' },
         ouv('Brides de raccordement DN100', 'u', 16, [F('a5', 1), MO('mo1', 0.5)]),
+        { type: 'image', imageId: 'img-rack1', legende: 'Cheminement existant en rack (relevé de visite)', largeur: 'moyenne' },
+        { type: 'chapitre', niveau: 2, titre: 'Piquages et dérivations DN50' },
+        ouv('Piquage DN50 sur collecteur, vanne d\'isolement comprise', 'u', 4, [F('a14', 1), F('a1', 1.5), F('a7', 1), MO('mo1', 2), MO('mo2', 1.5)]),
+        { type: 'ouvrage', libre: true, designation: 'Dépose et évacuation de l\'ancienne tuyauterie acier', detail: 'Y compris découpe, manutention et benne de tri des métaux.', unite: 'forfait', qte: 1,
+          composants: [{ type: 'f', designation: 'Location benne métaux 10 m³', unite: 'u', qte: 1, pu: 380, cout: 290, poids: 0 }, MO('mo2', 14)] },
         chap('Essais'),
         ouv('Épreuve hydraulique avec procès-verbal', 'forfait', 1, [F('a13', 1), MO('mo2', 6)]),
+        { type: 'texte', texte: 'Non compris : calorifuge, génie civil, raccordement électrique de la centrale.' },
       ] },
     { id: 'dv5', numero: `DV-${Y}-` + '0005', objet: 'Arrêt technique – lot tuyauterie', ...head('', 'u2', 'e1', 'k1', 's2'), date: d(-40), validite: 30, statut: 'Refusé', motifRefus: 'Concurrent retenu', commentaireRefus: 'Écart de 12 % avec le concurrent retenu (prix fournitures).', dateRefus: d(-20), zoneId: 'z3',
       ajustements: [{ libelle: 'Remise commerciale', pct: -3 }],
@@ -394,6 +404,15 @@ function demoData() {
       signatureClientId: 'img-sig', signatureEntrepriseId: 'img-sig', signataireEntreprise: 'Claire Martin', signeLe: d(-66) + 'T11:15:00', statut: 'Signé' },
   ];
 
+  // Bibliothèque d'ouvrages types (réutilisés d'un devis à l'autre)
+  const ot = (id, famille, designation, unite, composants, detail = '') => ({ id, famille, designation, unite, detail, composants });
+  const ouvrages = [
+    ot('ot1', 'Tuyauterie inox', 'Tuyauterie inox 316L DN50 fournie et posée', 'ml', [F('a1', 1.05), F('a4', 0.2), F('a8', 1), MO('mo1', 0.25), MO('mo2', 0.45)]),
+    ot('ot2', 'Tuyauterie inox', 'Tuyauterie inox 316L DN100 fournie et posée', 'ml', [F('a2', 1.05), F('a17', 0.2), F('a8', 1), MO('mo1', 0.3), MO('mo2', 0.6)]),
+    ot('ot3', 'Essais', 'Épreuve hydraulique avec procès-verbal', 'forfait', [F('a13', 1), MO('mo2', 6)], 'Remplissage, mise en pression à 1,5 × PS, maintien 2 h, procès-verbal signé.'),
+    ot('ot4', 'Contrôles', 'Contrôle radiographique des soudures (10 %)', 'u', [F('a12', 1), MO('mo2', 0.5)]),
+  ];
+
   // Historique d'envois par e-mail (Microsoft 365)
   const envoi = (id, jours, type, col, docId, numero, to, objet, par, expediteur) => ({ id, date: d(jours) + 'T09:12:00', type, col, docId, numero, to: [to], cc: [], objet,
     pieces: [`${objet.split(' – ')[0]}.pdf`], mode: 'Microsoft 365', expediteur, par });
@@ -409,7 +428,7 @@ function demoData() {
         tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',
         types: { devis: { conditions: 'Acompte de 30 % à la commande. Travaux réalisés selon les normes EN 13480 et le DTU en vigueur. Hors génie civil, calorifuge et échafaudages sauf mention contraire.' },
           facture: { conditions: 'Paiement par virement à 45 jours fin de mois.' } } } },
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations,
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages,
   };
 }
 

@@ -12,7 +12,7 @@ function genererCII(f) {
   const s = Store.data.settings, c = Doc.cfg(), avoir = f.type === 'avoir', taux = num(s.tva);
   const cid = docClientId(f), cl = entreprise(cid), bill = billingSite(cid) || {}, site = siteOf(cid, f.siteId);
   const a = affaireOf(f.affaireId), orig = avoir ? Store.get('factures', f.factureId) : null, t = Calc.doc(f);
-  const lignes = (f.lignes || []).filter(l => l.type !== 'chapitre');
+  const lignes = (f.lignes || []).filter(l => Calc.estPrix(l));
   const totLignes = lignes.reduce((x, l) => x + Math.round(Calc.ligneHT(l) * 100) / 100, 0);
   // Remises / majorations globales et livraison en remises et frais de pied de facture
   const ajust = (t.ajust || []).map(x => ({ charge: x.montant > 0, montant: Math.abs(Math.round(x.montant * 100) / 100), motif: x.libelle || (x.montant > 0 ? 'Majoration' : 'Remise') }));

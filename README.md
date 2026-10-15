@@ -119,9 +119,15 @@ Le PDF Factur-X contient le XML joint mais n'est pas certifié PDF/A-3 : si votr
 ## Processus métier
 
 1. **Devis** : client, contact client (chargé de travaux), site d'intervention et chargé d'affaires interne.
-   Les lignes sont des **ouvrages** regroupés en **chapitres** (sous-total par chapitre). Un ouvrage =
-   fournitures de la bibliothèque (quantité par unité) + main-d'œuvre (catégorie × heures par unité) :
-   prix unitaire = fournitures + main-d'œuvre. **Remises et majorations** en % sur l'ensemble des lignes.
+   Les lignes sont des **ouvrages** rangés en **chapitres, sous-chapitres et sous-sous-chapitres** (sous-total à
+   chaque niveau). Un ouvrage = fournitures de la bibliothèque (quantité par unité) + main-d'œuvre (catégorie ×
+   heures par unité) : prix unitaire = fournitures + main-d'œuvre. Numérotation automatique (1, 1.1, 1.1.1…) :
+   taper un autre N° déplace la ligne, ou le chapitre avec son contenu, à cette place ; en numérotation manuelle
+   (N° de prix d'un DPGF), les lignes se rangent sous le chapitre et dans l'ordre de leurs numéros.
+   Lignes de **texte** (précisions, exclusions) et d'**image** (photo, schéma, avec légende et largeur) non chiffrées.
+   **Poste libre** : fournitures et main-d'œuvre saisies pour ce seul devis, sans rien enregistrer en bibliothèque ;
+   les ouvrages récurrents s'enregistrent en **ouvrages types** (Bibliothèque → Ouvrages types) et s'insèrent aux
+   prix à jour. **Remises et majorations** en % sur l'ensemble des lignes.
    Le pilotage prévisionnel sépare la part fournitures et la part main-d'œuvre (heures par catégorie, coûts, marge).
 2. **Devis accepté → chantier** (numéro `CH-AAAA-001`) : le devis devient le budget du chantier.
 3. **Commandes fournisseurs** (`CF-AAAA-0001`) affectées à un chantier ; elles peuvent reprendre

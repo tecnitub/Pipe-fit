@@ -34,15 +34,59 @@ const Calc = {
     return list;
   },
 
-  // Sous-totaux par chapitre : { indexDeLigne: montant } sur la dernière ligne de chaque chapitre
+  // Lignes chiffrées (ouvrages, postes libres) : hors chapitres, textes et images
+  estPrix(l) { return !['chapitre', 'texte', 'image'].includes(l.type); },
+  // Niveau d'un chapitre : 1 chapitre, 2 sous-chapitre, 3 sous-sous-chapitre (d'après le N° pour les anciens DPGF)
+  niveau(l) { return Math.min(3, Math.max(1, Math.round(num(l.niveau)) || (l.num ? String(l.num).split('.').length : 1))); },
+
+  // Sous-totaux hiérarchiques : un chapitre court jusqu'au chapitre suivant de même niveau ou de niveau supérieur.
+  // { index, titre, niveau, total, last (dernière ligne couverte), n (lignes chiffrées) }
   chapitres(doc) {
-    const res = [];
-    let cur = null;
+    const res = [], ouverts = [];
     (doc.lignes || []).forEach((l, i) => {
-      if (l.type === 'chapitre') { cur = { index: i, titre: l.titre, total: 0, last: i }; res.push(cur); return; }
-      if (cur) { cur.total += this.ligneHT(l); cur.last = i; }
+      if (l.type === 'chapitre') {
+        const n = this.niveau(l);
+        while (ouverts.length && ouverts[ouverts.length - 1].niveau >= n) ouverts.pop();
+        ouverts.forEach(c => { c.last = i; });
+        const c = { index: i, titre: l.titre, niveau: n, total: 0, last: i, n: 0 };
+        res.push(c); ouverts.push(c); return;
+      }
+      const prix = this.estPrix(l), ht = prix ? this.ligneHT(l) : 0;
+      ouverts.forEach(c => { c.last = i; if (prix) { c.total += ht; c.n++; } });
     });
     return res;
+  },
+  // Retire les chapitres sans aucune ligne chiffrée (factures de situation)
+  sansChapitresVides(lignes) {
+    const garder = new Set();
+    this.chapitres({ lignes }).forEach(c => { if (c.n) garder.add(c.index); });
+    return lignes.filter((l, i) => l.type !== 'chapitre' || garder.has(i));
+  },
+  // Sous-totaux à afficher après chaque ligne (les plus profonds d'abord)
+  sousTotauxApres(doc) {
+    const out = {};
+    this.chapitres(doc).forEach(c => { if (c.last > c.index) (out[c.last] = out[c.last] || []).push(c); });
+    Object.values(out).forEach(list => list.sort((a, b) => b.niveau - a.niveau));
+    return out;
+  },
+  // N° affichés : automatiques (1, 1.1, 1.1.1… chapitres et lignes partagent le compteur de leur parent)
+  // ou saisis à la main (N° de prix du DPGF). Textes et images ne sont pas numérotés.
+  numeros(doc) {
+    const lignes = doc.lignes || [];
+    if (!doc.numAuto) return lignes.map(l => (l.type === 'texte' || l.type === 'image' ? '' : String(l.num || '')));
+    const racine = { numero: '', compteur: 0, niveau: 0 }, pile = [racine];
+    return lignes.map(l => {
+      if (l.type === 'texte' || l.type === 'image') return '';
+      if (l.type === 'chapitre') {
+        const n = this.niveau(l);
+        while (pile.length > 1 && pile[pile.length - 1].niveau >= n) pile.pop();
+        const p = pile[pile.length - 1], numero = (p.numero ? p.numero + '.' : '') + (++p.compteur);
+        pile.push({ numero, compteur: 0, niveau: n });
+        return numero;
+      }
+      const p = pile[pile.length - 1];
+      return (p.numero ? p.numero + '.' : '') + (++p.compteur);
+    });
   },
 
   livraison(doc, poidsKg) {
@@ -59,7 +103,7 @@ const Calc = {
     let venteF = 0, venteMO = 0, coutF = 0, coutMO = 0, heures = 0, poids = 0;
     const hByMo = {};
     for (const l of doc.lignes || []) {
-      if (l.type === 'chapitre') continue;
+      if (!this.estPrix(l)) continue;
       const q = num(l.qte), r = 1 - num(l.remise) / 100, u = this.unit(l);
       venteF += q * u.f * r; venteMO += q * u.mo * r;
       coutF += q * u.coutF; coutMO += q * u.coutMO; heures += q * u.heures; poids += q * u.poids;
@@ -99,7 +143,8 @@ const Calc = {
     const av = sit.avancements || {}, pav = (prev && prev.avancements) || {};
     const rows = [];
     (dv.lignes || []).forEach((l, i) => {
-      if (l.type === 'chapitre') { rows.push({ chap: true, titre: l.titre }); return; }
+      if (l.type === 'chapitre') { rows.push({ chap: true, titre: l.titre, niveau: this.niveau(l) }); return; }
+      if (!this.estPrix(l)) return;
       rows.push({ key: String(i), designation: l.designation, marche: this.ligneHT(l) * ratio, prec: num(pav[i]), cumul: av[i] === undefined ? num(pav[i]) : num(av[i]) });
     });
     if (t.livraison) rows.push({ key: 'liv', designation: 'Transport / livraison', marche: t.livraison, prec: num(pav.liv), cumul: av.liv === undefined ? num(pav.liv) : num(av.liv) });

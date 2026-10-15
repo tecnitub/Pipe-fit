@@ -30,13 +30,13 @@ function facturerSituation(sit) {
   const dv = Store.get('devis', sit.devisId), c = Calc.situation(sit), s = Store.data.settings;
   const lignes = [];
   c.rows.forEach(r => {
-    if (r.chap) { lignes.push({ type: 'chapitre', titre: r.titre }); return; }
+    if (r.chap) { lignes.push({ type: 'chapitre', titre: r.titre, niveau: r.niveau }); return; }
     if (Math.abs(r.montant) >= 0.005) lignes.push({ designation: `${r.designation} – avancement ${fmt(r.prec, 1)} % → ${fmt(r.cumul, 1)} %`, unite: '', qte: 1, pu: r2(r.montant) });
   });
   const f = Store.upsert('factures', {
     numero: '', situationId: sit.id, devisId: dv.id, affaireId: sit.affaireId, clientId: docClientId(dv), contactId: dv.contactId || '', siteId: dv.siteId || '', chargeId: docChargeId(dv) || '',
     objet: `${dv.objet || ''} – situation n° ${situationRang(sit)}`, date: isoDate(new Date()), echeance: isoDate(addDays(new Date(), num(s.delaiPaiement))), statut: 'Émise',
-    lignes: lignes.filter((l, k, arr) => l.type !== 'chapitre' || (arr[k + 1] && arr[k + 1].type !== 'chapitre')), ajustements: [], zoneId: '',
+    lignes: Calc.sansChapitresVides(lignes), ajustements: [], zoneId: '',
     retenuePct: retenueChantier(affaireOf(sit.affaireId)),
   });
   Object.assign(sit, { statut: 'Acceptée', factureId: f.id });
@@ -104,7 +104,7 @@ function situationEditor(id) {
 
   <div class="table-wrap no-print" style="margin-top:12px"><table class="sit-table">
     <tr><th>Désignation</th><th class="num">Marché HT</th><th class="num">% préc.</th><th class="num">% cumulé</th><th class="num">Cumulé</th><th class="num">Précédent</th><th class="num">Cette situation</th></tr>
-    ${c.rows.map(r => r.chap ? `<tr class="chap"><td colspan="7">${esc(r.titre)}</td></tr>`
+    ${c.rows.map(r => r.chap ? `<tr class="chap niv-${r.niveau || 1}"><td colspan="7">${esc(r.titre)}</td></tr>`
       : `<tr><td>${esc(r.designation)}</td><td class="num">${eur(r.marche)}</td><td class="num muted">${fmt(r.prec, 1)} %</td>
         <td class="num">${edit ? `<input data-av="${r.key}" type="number" min="${r.prec}" max="100" step="any" value="${r.cumul}" style="width:80px" aria-label="Avancement cumulé en %">` : `${fmt(r.cumul, 1)} %`}</td>
         <td class="num">${eur(r.montantCumul)}</td><td class="num muted">${eur(r.montantPrec)}</td><td class="num"><strong>${eur(r.montant)}</strong></td></tr>`).join('')}
@@ -129,7 +129,7 @@ function blDocument(sit, c, a, dv) {
     <p class="doc-objet"><strong>Objet :</strong> ${esc(dv.objet || a.nom)} – avancement des travaux au ${dateFr(sit.date)}</p>
     ${Doc.intro('situation')}${sit.commentaire ? `<p>${esc(sit.commentaire)}</p>` : ''}
     <div class="table-wrap"><table class="doc-lines${cols.length < 5 ? ' compact' : ''}"><tr>${cols.map((k, i) => `<th${i ? ' class="num"' : ''}>${k[0]}</th>`).join('')}</tr>
-    ${c.rows.map(r => r.chap ? `<tr class="chap"><td colspan="${cols.length}">${esc(r.titre)}</td></tr>`
+    ${c.rows.map(r => r.chap ? `<tr class="chap niv-${r.niveau || 1}"><td colspan="${cols.length}">${esc(r.titre)}</td></tr>`
       : `<tr>${cols.map((k, i) => `<td${i ? ' class="num"' : ''}>${k[1](r)}</td>`).join('')}</tr>`).join('')}
     <tr class="subtotal">${cols.map((k, i) => `<td${i ? ' class="num"' : ''}>${k[2]}</td>`).join('')}</tr></table></div>
     <table class="totals"><tr><td>Montant de la situation HT</td><td class="num">${eur(c.montant)}</td></tr>

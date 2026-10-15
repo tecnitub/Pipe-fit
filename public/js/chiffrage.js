@@ -270,7 +270,7 @@ Views.chiffrage.bind = (root, params) => {
     d.lignes = [...lignes, ...(d.lignes || []).filter(l => l.plan !== ch.id)];
     Store.upsert('devis', d); save(false);
     location.hash = `#/devis/${d.id}`;
-    App.toast(`Devis mis à jour : ${lignes.filter(l => l.type !== 'chapitre').length} ouvrage(s) depuis le plan`, 4000);
+    App.toast(`Devis mis à jour : ${lignes.filter(l => Calc.estPrix(l)).length} ouvrage(s) depuis le plan`, 4000);
   };
   q('#ch-cs').onclick = () => {
     const d = Store.get('devis', ch.devisId) || {}, lignes = [];

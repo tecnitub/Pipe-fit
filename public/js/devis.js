@@ -12,7 +12,7 @@ function newDevis(fields = {}) {
   const me = Store.get('users', Store.me.userId);
   return Store.upsert('devis', {
     numero: '', objet: '', clientId: '', contactId: '', siteId: '', chargeId: me && me.role === 'charge' ? me.id : '',
-    date: isoDate(new Date()), validite: 30, statut: 'Brouillon', zoneId: '', ajustements: [], lignes: [], ...fields,
+    date: isoDate(new Date()), validite: 30, statut: 'Brouillon', zoneId: '', ajustements: [], lignes: [], numAuto: true, ...fields,
   });
 }
 
@@ -33,20 +33,24 @@ function docHeader(doc, type) {
 }
 
 // Lignes du document client ; type absent = tout afficher
+const LARGEURS_IMAGE = [['petite', 'Petite'], ['moyenne', 'Moyenne'], ['pleine', 'Pleine largeur']];
 function docLinesClient(doc, type) {
   const o = type ? Doc.t(type) : { numeros: true, quantites: true, prix: true, detail: true, sousTotaux: true };
-  const chaps = Calc.chapitres(doc);
-  const subAfter = {};
-  chaps.forEach(c => { if (c.last > c.index) subAfter[c.last] = c; });
-  const nums = o.numeros && (doc.lignes || []).some(l => l.num);
+  const subAfter = Calc.sousTotauxApres(doc), numeros = Calc.numeros(doc);
+  const nums = o.numeros && numeros.some(Boolean);
   const n = (nums ? 1 : 0) + 1 + (o.quantites ? 2 : 0) + (o.prix ? 2 : 0);
   const sousTotal = o.sousTotaux || !o.prix;
+  const pleine = html => (nums ? `<td></td><td colspan="${n - 1}">${html}</td>` : `<td colspan="${n}">${html}</td>`);
+  const ligne = (l, i) => {
+    if (l.type === 'chapitre') return `<tr class="chap niv-${Calc.niveau(l)}">${nums ? `<td>${esc(numeros[i])}</td><td colspan="${n - 1}">${esc(titreSansNum(l.titre, numeros[i]))}</td>` : `<td colspan="${n}">${esc(l.titre)}</td>`}</tr>`;
+    if (l.type === 'texte') return l.texte ? `<tr class="doc-texte">${pleine(`<div class="pre">${esc(l.texte)}</div>`)}</tr>` : '';
+    if (l.type === 'image') return l.imageId ? `<tr class="doc-image">${pleine(`<div class="doc-fig fig-${esc(l.largeur || 'moyenne')}"><img src="${fileUrl(l.imageId)}" alt="${esc(l.legende || 'Illustration')}">${l.legende ? `<div class="muted small">${esc(l.legende)}</div>` : ''}</div>`)}</tr>` : '';
+    return `<tr>${nums ? `<td>${esc(numeros[i])}</td>` : ''}<td>${esc(l.designation)}${l.detail && o.detail ? `<div class="muted small pre">${esc(l.detail)}</div>` : ''}</td>${o.quantites ? `<td class="num">${fmt(l.qte, 2)}</td><td>${esc(l.unite)}</td>` : ''}${o.prix ? `<td class="num">${eur(Calc.pu(l))}</td><td class="num">${eur(Calc.ligneHT(l))}</td>` : ''}</tr>`;
+  };
   return `<div class="table-wrap"><table class="doc-lines${o.prix && o.quantites ? '' : ' compact'}">
     <tr>${nums ? '<th>N°</th>' : ''}<th>Désignation</th>${o.quantites ? '<th class="num">Qté</th><th>Unité</th>' : ''}${o.prix ? '<th class="num">PU HT</th><th class="num">Total HT</th>' : ''}</tr>
-    ${(doc.lignes || []).map((l, i) => (l.type === 'chapitre'
-      ? `<tr class="chap"><td colspan="${n}">${esc(l.titre)}</td></tr>`
-      : `<tr>${nums ? `<td>${esc(l.num || '')}</td>` : ''}<td>${esc(l.designation)}${l.detail && o.detail ? `<div class="muted small pre">${esc(l.detail)}</div>` : ''}</td>${o.quantites ? `<td class="num">${fmt(l.qte, 2)}</td><td>${esc(l.unite)}</td>` : ''}${o.prix ? `<td class="num">${eur(Calc.pu(l))}</td><td class="num">${eur(Calc.ligneHT(l))}</td>` : ''}</tr>`)
-      + (subAfter[i] && sousTotal ? `<tr class="subtotal"><td colspan="${Math.max(1, n - 1)}">${o.prix ? 'Sous-total' : 'Total'} ${esc(subAfter[i].titre)}</td><td class="num">${eur(subAfter[i].total)}</td></tr>` : '')).join('')}
+    ${(doc.lignes || []).map((l, i) => ligne(l, i)
+      + (sousTotal ? (subAfter[i] || []).filter(c => c.n).map(c => `<tr class="subtotal niv-${c.niveau}"><td colspan="${Math.max(1, n - 1)}">${o.prix ? 'Sous-total' : 'Total'} ${esc(c.titre)}</td><td class="num">${eur(c.total)}</td></tr>`).join('') : '')).join('')}
   </table></div>`;
 }
 
@@ -114,6 +118,81 @@ Views.devis = (params, query) => {
   }).join('')}</table></div>` : '<p class="muted">Aucun devis pour ces critères.</p>'}`;
 };
 
+/* ---------- Structure : chapitres, sous-chapitres, numéros ---------- */
+const NIVEAUX_CHAPITRE = ['Chapitre', 'Sous-chapitre', 'Sous-sous-chapitre'];
+
+// Arbre du devis : un chapitre contient ses lignes puis ses sous-chapitres ;
+// textes et images restent collés à l'élément qui les précède.
+function arbreDevis(d) {
+  const nums = Calc.numeros(d), parIndex = {};
+  const racine = { niveau: 0, enfants: [], colles: [], numero: '' }, pile = [racine];
+  (d.lignes || []).forEach((l, i) => {
+    if (l.type === 'texte' || l.type === 'image') {
+      const p = pile[pile.length - 1];
+      (p.enfants[p.enfants.length - 1] || p).colles.push(l); return;
+    }
+    const nd = { l, numero: nums[i], enfants: [], colles: [] };
+    if (l.type === 'chapitre') {
+      nd.chapitre = true; nd.niveau = Calc.niveau(l);
+      while (pile.length > 1 && pile[pile.length - 1].niveau >= nd.niveau) pile.pop();
+    }
+    nd.parent = pile[pile.length - 1]; nd.parent.enfants.push(nd); parIndex[i] = nd;
+    if (nd.chapitre) pile.push(nd);
+  });
+  return { racine, parIndex };
+}
+// Retour à la liste : les lignes d'un chapitre avant ses sous-chapitres, niveau = profondeur
+function aplatirDevis(nd, profondeur = 0, out = []) {
+  if (nd.l) { if (nd.chapitre) nd.l.niveau = Math.min(3, profondeur); out.push(nd.l); }
+  out.push(...nd.colles);
+  [...nd.enfants.filter(e => !e.chapitre), ...nd.enfants.filter(e => e.chapitre)].forEach(e => aplatirDevis(e, profondeur + 1, out));
+  return out;
+}
+const contient = (nd, x) => nd === x || nd.enfants.some(e => contient(e, x));
+const profondeurDe = nd => { let k = 0; for (let p = nd; p.parent; p = p.parent) k++; return k; };
+const hauteurDe = nd => (nd.chapitre ? 1 + Math.max(0, ...nd.enfants.map(hauteurDe)) : 0);
+const noeudsDe = (nd, out = []) => { nd.enfants.forEach(e => { out.push(e); noeudsDe(e, out); }); return out; };
+
+// Numérotation automatique : taper « 2.3 » place la ligne (ou le chapitre et tout son contenu)
+// en 3e position du chapitre 2. Renvoie un message d'erreur, ou '' si c'est fait.
+function deplacerVers(d, index, saisie) {
+  const v = String(saisie || '').trim().replace(/\.$/, '');
+  if (!/^\d+(\.\d+)*$/.test(v) || /(^|\.)0+(\.|$)/.test(v)) return 'Numéro invalide : utilisez 1, 1.2, 1.2.3…';
+  const { racine, parIndex } = arbreDevis(d), x = parIndex[index];
+  if (!x) return '';
+  const parts = v.split('.'), pos = +parts.pop(), numParent = parts.join('.');
+  const parent = numParent ? noeudsDe(racine).find(n => n.chapitre && n.numero === numParent) : racine;
+  if (!parent) return `Il n'y a pas de chapitre ${numParent}.`;
+  if (contient(x, parent)) return 'Un chapitre ne peut pas être placé dans lui-même.';
+  if (x.chapitre && profondeurDe(parent) + hauteurDe(x) > 3) return 'Trois niveaux de chapitres au maximum.';
+  x.parent.enfants.splice(x.parent.enfants.indexOf(x), 1);
+  const nbLignes = parent.enfants.filter(e => !e.chapitre).length;
+  const k = x.chapitre ? Math.min(Math.max(pos - 1, nbLignes), parent.enfants.length) : Math.min(pos - 1, nbLignes);
+  parent.enfants.splice(k, 0, x); x.parent = parent;
+  d.lignes = aplatirDevis(racine);
+  return '';
+}
+
+// Numérotation manuelle (N° de prix d'un DPGF…) : chaque élément va sous le chapitre dont le N° le préfixe
+// (2.1.3 sous 2.1), puis tout est trié dans l'ordre naturel des N° (1.2 avant 1.10).
+function rangerSelonNumeros(d) {
+  const { racine } = arbreDevis({ ...d, numAuto: false }), tous = noeudsDe(racine);
+  const chapitres = tous.filter(n => n.chapitre && n.numero);
+  tous.filter(n => n.numero).forEach(n => {
+    const cible = chapitres.filter(c => n.numero.startsWith(c.numero + '.') && !contient(n, c)).sort((a, b) => b.numero.length - a.numero.length)[0];
+    if (!cible || cible === n.parent || (n.chapitre && profondeurDe(cible) + hauteurDe(n) > 3)) return;
+    n.parent.enfants.splice(n.parent.enfants.indexOf(n), 1); cible.enfants.push(n); n.parent = cible;
+  });
+  const trier = nd => {
+    let cle = ''; const cles = new Map();
+    nd.enfants.forEach(e => { if (e.numero) cle = e.numero; cles.set(e, cle); }); // sans N° : reste derrière l'élément précédent
+    nd.enfants.sort((a, b) => cles.get(a).localeCompare(cles.get(b), 'fr', { numeric: true }));
+    nd.enfants.forEach(trier);
+  };
+  trier(racine);
+  d.lignes = aplatirDevis(racine);
+}
+
 /* ---------- Éditeur ---------- */
 function devisEditor(id) {
   const d = Store.get('devis', id);
@@ -121,9 +200,7 @@ function devisEditor(id) {
   const t = Calc.doc(d);
   const cid = docClientId(d);
   const locked = d.statut === 'Accepté';
-  const chaps = Calc.chapitres(d);
-  const subAfter = {};
-  chaps.forEach(c => { subAfter[c.last] = c; });
+  const subAfter = Calc.sousTotauxApres(d), numeros = Calc.numeros(d);
   const lines = d.lignes || [];
   return `
   <div class="toolbar">
@@ -162,30 +239,51 @@ function devisEditor(id) {
   </div>
 
   <h2 class="no-print">Lignes du devis</h2>
+  <div class="toolbar no-print num-bar">
+    <label class="check"><input type="checkbox" id="num-auto" ${d.numAuto ? 'checked' : ''} ${locked ? 'disabled' : ''}> Numérotation automatique (1, 1.1, 1.1.1…)</label>
+    ${!locked && !d.numAuto && lines.some(l => l.num) ? '<button class="secondary small" id="ranger">Ranger selon les numéros</button>' : ''}
+    <span class="muted small">${locked ? '' : d.numAuto ? 'Tapez un autre N° pour déplacer la ligne ou le chapitre (avec son contenu) à cette place.' : 'Saisissez les N° : les lignes se rangent dans l\'ordre des numéros, sous le chapitre correspondant.'}</span>
+  </div>
   <div class="table-wrap no-print"><table class="edit-lines">
-    <tr><th></th><th>Désignation</th><th class="num">Qté</th><th>Unité</th><th class="num">PU fournit.</th><th class="num">PU MO</th><th class="num">PU HT</th><th class="num">Total HT</th><th></th></tr>
+    <tr><th></th><th>N°</th><th>Désignation</th><th class="num">Qté</th><th>Unité</th><th class="num">PU fournit.</th><th class="num">PU MO</th><th class="num">PU HT</th><th class="num">Total HT</th><th></th></tr>
     ${lines.map((l, i) => {
       const move = locked ? '<td></td>' : `<td class="move"><button class="icon" data-up="${i}" aria-label="Monter" ${i === 0 ? 'disabled' : ''}>▲</button><button class="icon" data-down="${i}" aria-label="Descendre" ${i === lines.length - 1 ? 'disabled' : ''}>▼</button></td>`;
       const del = locked ? '<td></td>' : `<td><button class="small danger" data-del="${i}" aria-label="Supprimer la ligne">✕</button></td>`;
+      const numCell = `<td><input class="num-in" data-num="${i}" value="${esc(numeros[i])}" ${locked ? 'disabled' : ''} aria-label="N°"></td>`;
       let row;
       if (l.type === 'chapitre') {
-        row = `<tr class="chap">${move}<td colspan="7"><input data-titre="${i}" value="${esc(l.titre)}" ${locked ? 'disabled' : ''} aria-label="Titre du chapitre"></td>${del}</tr>`;
+        const niv = Calc.niveau(l);
+        row = `<tr class="chap niv-${niv}">${move}${numCell}<td colspan="6"><div class="chap-edit"><select data-niv="${i}" aria-label="Niveau" ${locked ? 'disabled' : ''}>${NIVEAUX_CHAPITRE.map((x, k) => `<option value="${k + 1}" ${niv === k + 1 ? 'selected' : ''}>${x}</option>`).join('')}</select><input data-titre="${i}" value="${esc(l.titre)}" ${locked ? 'disabled' : ''} aria-label="Titre du chapitre"></div></td><td></td>${del}</tr>`;
+      } else if (l.type === 'texte') {
+        row = `<tr class="ligne-texte">${move}<td></td><td colspan="7"><textarea data-texte="${i}" rows="2" placeholder="Texte libre (conditions, précisions, exclusions…)" ${locked ? 'disabled' : ''} aria-label="Texte">${esc(l.texte || '')}</textarea></td>${del}</tr>`;
+      } else if (l.type === 'image') {
+        row = `<tr class="ligne-image">${move}<td></td><td colspan="7"><div class="img-edit">${l.imageId ? `<img src="${fileUrl(l.imageId)}" alt="">` : '<span class="muted">Aucune image</span>'}
+          <input data-legende="${i}" value="${esc(l.legende || '')}" placeholder="Légende (facultatif)" ${locked ? 'disabled' : ''} aria-label="Légende">
+          <select data-largeur="${i}" ${locked ? 'disabled' : ''} aria-label="Largeur">${LARGEURS_IMAGE.map(([k, x]) => `<option value="${k}" ${(l.largeur || 'moyenne') === k ? 'selected' : ''}>${x}</option>`).join('')}</select>
+          ${locked ? '' : `<button class="secondary small" data-img="${i}">Remplacer</button>`}</div></td>${del}</tr>`;
       } else {
         const u = Calc.unit(l);
         const nbF = (l.composants || []).filter(c => c.type !== 'mo').length;
-        row = `<tr class="${aChiffrer(l) ? 'a-chiffrer' : ''}">${move}<td>${l.num ? `<span class="muted small">${esc(l.num)}</span> ` : ''}<button class="linklike" data-open="${i}">${esc(l.designation || 'Ouvrage sans titre')}</button>
-            ${aChiffrer(l) ? '<span class="badge b-warn">à chiffrer</span>' : ''}
+        row = `<tr class="${aChiffrer(l) ? 'a-chiffrer' : ''}">${move}${numCell}<td><button class="linklike" data-open="${i}">${esc(l.designation || 'Ouvrage sans titre')}</button>
+            ${l.libre ? '<span class="badge">poste libre</span>' : ''}${aChiffrer(l) ? '<span class="badge b-warn">à chiffrer</span>' : ''}
             <div class="muted small">${nbF} fourniture${nbF > 1 ? 's' : ''} · ${fmt(u.heures, 2)} h de main-d'œuvre / ${esc(l.unite)}${l.detail ? ' · <span title="' + esc(l.detail) + '">descriptif</span>' : ''}</div></td>
           <td class="num"><input data-qte="${i}" type="number" step="any" value="${esc(l.qte)}" style="width:80px" ${locked ? 'disabled' : ''} aria-label="Quantité"></td>
           <td>${esc(l.unite)}</td><td class="num">${eur(u.f)}</td><td class="num">${eur(u.mo)}</td><td class="num">${eur(u.f + u.mo)}</td><td class="num"><strong>${eur(Calc.ligneHT(l))}</strong></td>${del}</tr>`;
       }
-      const sub = subAfter[i] ? `<tr class="subtotal"><td></td><td colspan="6">Sous-total ${esc(subAfter[i].titre)}</td><td class="num">${eur(subAfter[i].total)}</td><td></td></tr>` : '';
+      const sub = (subAfter[i] || []).map(c => `<tr class="subtotal niv-${c.niveau}"><td></td><td></td><td colspan="6">Sous-total ${esc(c.titre)}</td><td class="num">${eur(c.total)}</td><td></td></tr>`).join('');
       return row + sub;
-    }).join('') || '<tr><td colspan="9" class="muted">Aucune ligne. Ajoutez un chapitre puis des ouvrages.</td></tr>'}
+    }).join('') || '<tr><td colspan="10" class="muted">Aucune ligne. Ajoutez un chapitre puis des ouvrages.</td></tr>'}
   </table></div>
-  ${locked ? '' : `<div class="toolbar no-print" style="margin-top:8px">
-    <button class="secondary" id="add-chap">+ Chapitre</button>
+  ${locked ? '' : `<div class="toolbar no-print add-bar" style="margin-top:8px">
+    <button class="secondary" data-add-chap="1">+ Chapitre</button>
+    <button class="secondary" data-add-chap="2">+ Sous-chapitre</button>
+    <button class="secondary" data-add-chap="3">+ Sous-sous-chapitre</button>
     <button id="add-ouv">+ Ouvrage</button>
+    <button class="secondary" id="add-libre" title="Fournitures et main-d'œuvre propres à ce devis, sans rien enregistrer dans les bibliothèques">+ Poste libre</button>
+    ${Store.all('ouvrages').length ? '<button class="secondary" id="add-type">+ Ouvrage type</button>' : ''}
+    <button class="secondary" id="add-texte">+ Texte</button>
+    <button class="secondary" id="add-image">+ Image</button>
+    <input type="file" id="img-file" accept="image/*" hidden>
   </div>`}
 
   <h2 class="no-print">Remises et majorations (sur l'ensemble des lignes)</h2>
@@ -243,15 +341,62 @@ Views.devis.bind = (root, params, query) => {
   root.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openOuvrage(d, +b.dataset.open));
   root.querySelectorAll('[data-qte]').forEach(inp => inp.onchange = () => { d.lignes[+inp.dataset.qte].qte = +inp.value; save(); });
   root.querySelectorAll('[data-titre]').forEach(inp => inp.onchange = () => { d.lignes[+inp.dataset.titre].titre = inp.value; save(); });
+  root.querySelectorAll('[data-niv]').forEach(sel => sel.onchange = () => { d.lignes[+sel.dataset.niv].niveau = +sel.value; save(); });
+  root.querySelectorAll('[data-texte]').forEach(t => t.onchange = () => { d.lignes[+t.dataset.texte].texte = t.value; save(); });
+  root.querySelectorAll('[data-legende]').forEach(t => t.onchange = () => { d.lignes[+t.dataset.legende].legende = t.value; save(); });
+  root.querySelectorAll('[data-largeur]').forEach(t => t.onchange = () => { d.lignes[+t.dataset.largeur].largeur = t.value; save(); });
   root.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { d.lignes.splice(+b.dataset.del, 1); save(); });
   const swap = (i, j) => { [d.lignes[i], d.lignes[j]] = [d.lignes[j], d.lignes[i]]; save(); };
   root.querySelectorAll('[data-up]').forEach(b => b.onclick = () => swap(+b.dataset.up, +b.dataset.up - 1));
   root.querySelectorAll('[data-down]').forEach(b => b.onclick = () => swap(+b.dataset.down, +b.dataset.down + 1));
-  on('#add-chap', 'onclick', async () => {
-    const titre = await askValue('Titre du chapitre', `Chapitre ${d.lignes.filter(l => l.type === 'chapitre').length + 1}`);
-    if (titre) { d.lignes.push({ type: 'chapitre', titre }); save(); }
+
+  // Numérotation : automatique (déplacement en tapant un N°) ou manuelle (rangement selon les N° saisis)
+  root.querySelectorAll('[data-num]').forEach(inp => inp.onchange = () => {
+    const i = +inp.dataset.num, v = inp.value.trim();
+    if (d.numAuto) {
+      const err = deplacerVers(d, i, v);
+      if (err) { notify(err); App.render(); return; }
+    } else {
+      const l = d.lignes[i], ancien = String(l.num || '');
+      if (l.type === 'chapitre' && ancien && v) { // le contenu du chapitre suit son nouveau N°
+        const c = Calc.chapitres(d).find(x => x.index === i);
+        for (let k = i + 1; c && k <= c.last; k++) { const x = d.lignes[k]; if (x.num && String(x.num).startsWith(ancien + '.')) x.num = v + String(x.num).slice(ancien.length); }
+      }
+      l.num = v;
+      rangerSelonNumeros(d);
+    }
+    save();
+  });
+  on('#num-auto', 'onchange', e => {
+    if (!e.target.checked) { const nums = Calc.numeros(d); d.lignes.forEach((l, i) => { if (nums[i]) l.num = nums[i]; }); } // on garde les N° affichés
+    d.numAuto = e.target.checked; save();
+  });
+  on('#ranger', 'onclick', () => { rangerSelonNumeros(d); save(); App.toast('Lignes rangées selon leurs numéros.'); });
+
+  root.querySelectorAll('[data-add-chap]').forEach(b => b.onclick = async () => {
+    const niveau = +b.dataset.addChap;
+    const titre = await askValue(`Titre du ${NIVEAUX_CHAPITRE[niveau - 1].toLowerCase()}`, `${NIVEAUX_CHAPITRE[niveau - 1]} ${d.lignes.filter(l => l.type === 'chapitre' && Calc.niveau(l) === niveau).length + 1}`);
+    if (titre) { d.lignes.push({ type: 'chapitre', niveau, titre }); save(); }
   });
   on('#add-ouv', 'onclick', () => openOuvrage(d, null));
+  on('#add-libre', 'onclick', () => openOuvrage(d, null, { libre: true }));
+  on('#add-type', 'onclick', () => choisirOuvrageType(d));
+  on('#add-texte', 'onclick', () => { d.lignes.push({ type: 'texte', texte: '' }); save(); const t = [...root.querySelectorAll('[data-texte]')].pop(); if (t) t.focus(); });
+  const fichier = root.querySelector('#img-file');
+  let cibleImage = null;
+  const choisirImage = i => { cibleImage = i; fichier.value = ''; fichier.click(); };
+  on('#add-image', 'onclick', () => choisirImage(null));
+  root.querySelectorAll('[data-img]').forEach(b => b.onclick = () => choisirImage(+b.dataset.img));
+  if (fichier) fichier.onchange = async () => {
+    const f = fichier.files[0];
+    if (!f) return;
+    try {
+      const { id: imageId } = await api('POST', '/api/files', { dataUrl: await compressImage(f, 1600, 0.82) });
+      if (cibleImage === null) d.lignes.push({ type: 'image', imageId, legende: '', largeur: 'moyenne' });
+      else d.lignes[cibleImage].imageId = imageId;
+      save();
+    } catch (e) { notify('Image illisible ou trop lourde.'); }
+  };
 
   // Remises / majorations
   const aj = i => d.ajustements[i];
@@ -310,24 +455,42 @@ function articleSelect(id) {
     `<optgroup label="${esc(f)}">${list.map(a => `<option value="${a.id}">${esc(a.ref)} – ${esc(a.designation)} (${eur(a.prixVente)}/${esc(a.unite)})</option>`).join('')}</optgroup>`).join('')}</select>`;
 }
 
-function openOuvrage(d, index) {
-  const locked = d.statut === 'Accepté';
-  const l = index === null ? { type: 'ouvrage', designation: '', unite: 'u', qte: 1, composants: [] } : JSON.parse(JSON.stringify(d.lignes[index]));
+// opts.libre : poste libre (fournitures et main-d'œuvre propres à ce devis, rien n'est enregistré en bibliothèque)
+// opts.initial : ouvrage de départ (ouvrage type) ; opts.enregistrer(l) : édition hors devis (bibliothèque d'ouvrages types)
+function openOuvrage(d, index, opts = {}) {
+  const locked = !!d && d.statut === 'Accepté', enBiblio = !!opts.enregistrer;
+  const nouveau = () => {
+    if (opts.initial) return { ...JSON.parse(JSON.stringify(opts.initial)), type: 'ouvrage', qte: 1 };
+    if (!opts.libre) return { type: 'ouvrage', designation: '', unite: 'u', qte: 1, composants: [] };
+    const m = moList()[0] || {};
+    return { type: 'ouvrage', libre: true, designation: '', detail: '', unite: 'forfait', qte: 1, composants: [
+      { type: 'f', designation: 'Fourniture', unite: '', qte: 1, pu: 0, cout: 0, poids: 0 },
+      { type: 'mo', moId: m.id || '', libelle: m.libelle || "Main-d'œuvre", heures: 1, taux: num(m.tauxVente), cout: num(m.tauxCout) }] };
+  };
+  const l = index === null ? nouveau() : JSON.parse(JSON.stringify(d.lignes[index]));
   if (!l.composants) { // ancienne ligne simple -> ouvrage avec une fourniture
     l.composants = [{ type: 'f', articleId: l.articleId || '', designation: l.designation, unite: l.unite, qte: 1, pu: num(l.pu), cout: num(l.cout), poids: num(l.poids) }];
     l.type = 'ouvrage';
   }
+  let premier = true;
   const render = () => {
+    // Fenêtre fermée : le « change » d'un champ qui perd le focus à la fermeture ne doit pas la rouvrir
+    if (!premier && document.getElementById('modal').classList.contains('hidden')) return;
+    premier = false;
     const u = Calc.unit(l);
     const F = l.composants.map((c, i) => ({ c, i })).filter(x => x.c.type !== 'mo');
     const M = l.composants.map((c, i) => ({ c, i })).filter(x => x.c.type === 'mo');
     const dis = locked ? 'disabled' : '';
-    const box = Modal.open(`<h2 style="margin-top:0">${index === null ? 'Nouvel ouvrage' : 'Ouvrage'}</h2>
+    const titre = enBiblio ? 'Ouvrage type' : l.libre ? (index === null ? 'Nouveau poste libre' : 'Poste libre') : index === null ? 'Nouvel ouvrage' : 'Ouvrage';
+    const box = Modal.open(`<h2 style="margin-top:0">${titre}</h2>
+      ${l.libre && !enBiblio ? '<p class="note">Poste propre à ce devis : saisissez librement fournitures et main-d\'œuvre, rien n\'est ajouté aux bibliothèques.</p>' : ''}
+      ${enBiblio ? '<p class="note">Ouvrage réutilisable : il s\'insère dans les devis par « + Ouvrage type », aux prix à jour des bibliothèques.</p>' : ''}
       <div class="grid2">
-        <div class="field"><label for="o-num">N° de prix (DPGF)</label><input id="o-num" value="${esc(l.num || '')}" ${dis}></div>
+        ${enBiblio ? `<div class="field"><label for="o-fam">Famille</label><input id="o-fam" value="${esc(l.famille || '')}" list="o-fams"><datalist id="o-fams">${[...new Set(Store.all('ouvrages').map(o => o.famille).filter(Boolean))].map(f => `<option value="${esc(f)}">`).join('')}</datalist></div>`
+          : `<div class="field"><label for="o-num">N° de prix (DPGF)</label><input id="o-num" value="${esc(l.num || '')}" ${dis} ${d && d.numAuto ? 'placeholder="automatique"' : ''}></div>`}
         <div class="field" style="grid-column:1/-1"><label for="o-des">Désignation (texte du devis)</label><input id="o-des" value="${esc(l.designation)}" ${dis}></div>
-        ${l.detail ? `<div class="field" style="grid-column:1/-1"><label for="o-detail">Descriptif</label><textarea id="o-detail" ${dis}>${esc(l.detail)}</textarea></div>` : ''}
-        <div class="field"><label for="o-qte">Quantité</label><input id="o-qte" type="number" step="any" value="${esc(l.qte)}" ${dis}></div>
+        <div class="field" style="grid-column:1/-1"><label for="o-detail">Descriptif <span class="muted small">(facultatif, imprimé sous la désignation)</span></label><textarea id="o-detail" rows="2" ${dis}>${esc(l.detail || '')}</textarea></div>
+        ${enBiblio ? '' : `<div class="field"><label for="o-qte">Quantité</label><input id="o-qte" type="number" step="any" value="${esc(l.qte)}" ${dis}></div>`}
         <div class="field"><label for="o-unite">Unité</label><select id="o-unite" ${dis}>${optionsStr([...new Set([...UNITES, l.unite])], l.unite)}</select></div>
       </div>
 
@@ -358,25 +521,28 @@ function openOuvrage(d, index) {
         <div><span class="label">${fmt(l.qte, 2)} ${esc(l.unite)}</span><strong>${eur(Calc.ligneHT(l))}</strong></div>
       </div>
       <p class="muted small">Coût unitaire ${eur(u.coutF + u.coutMO)} · marge ${marginBadge((u.f + u.mo) ? (u.f + u.mo - u.coutF - u.coutMO) / (u.f + u.mo) * 100 : 0)}</p>
-      <div class="modal-actions"><button class="secondary" id="o-cancel">${locked ? 'Fermer' : 'Annuler'}</button>${locked ? '' : '<button id="o-save">Enregistrer l\'ouvrage</button>'}</div>`, true);
+      <div class="modal-actions">${locked || enBiblio ? '' : `<button class="secondary" id="o-type" title="Pour le réutiliser dans d'autres devis">${l.ouvrageTypeId && Store.get('ouvrages', l.ouvrageTypeId) ? 'Mettre à jour l\'ouvrage type' : 'Enregistrer comme ouvrage type'}</button>`}<span class="spacer"></span><button class="secondary" id="o-cancel">${locked ? 'Fermer' : 'Annuler'}</button>${locked ? '' : `<button id="o-save">${enBiblio ? 'Enregistrer' : l.libre ? 'Enregistrer le poste' : 'Enregistrer l\'ouvrage'}</button>`}</div>`, true);
 
     const keep = () => {
-      l.designation = box.querySelector('#o-des').value; l.qte = num(box.querySelector('#o-qte').value); l.unite = box.querySelector('#o-unite').value;
-      l.num = box.querySelector('#o-num').value;
-      const det = box.querySelector('#o-detail'); if (det) l.detail = det.value;
+      const val = sel => { const el = box.querySelector(sel); return el ? el.value : undefined; };
+      l.designation = val('#o-des'); l.unite = val('#o-unite'); l.detail = val('#o-detail');
+      if (!enBiblio) { l.qte = num(val('#o-qte')); l.num = val('#o-num'); } else l.famille = val('#o-fam');
     };
-    box.querySelectorAll('#o-qte, #o-unite').forEach(el => el.onchange = () => { keep(); render(); });
-    box.querySelectorAll('[data-c]').forEach(el => el.onchange = () => {
-      keep();
+    const applique = el => {
       const c = l.composants[+el.dataset.c], k = el.dataset.k;
       if (k === 'moId') { const m = moOf(el.value); Object.assign(c, { moId: el.value, libelle: m.libelle, taux: num(m.tauxVente), cout: num(m.tauxCout) }); }
       else c[k] = k === 'designation' ? el.value : +el.value;
-      render();
-    });
-    box.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { keep(); l.composants.splice(+b.dataset.rm, 1); render(); });
+    };
+    // Les boutons ne prennent pas le focus : la saisie en cours est reprise par flush() au lieu de redessiner
+    // la fenêtre sous le pointeur (le clic sur « Enregistrer » juste après une saisie n'est plus perdu)
+    const flush = () => { keep(); const a = box.querySelector('[data-c]:focus'); if (a) applique(a); };
+    box.onmousedown = e => { if (e.target.closest('button')) e.preventDefault(); };
+    box.querySelectorAll('#o-qte, #o-unite').forEach(el => el.onchange = () => { keep(); render(); });
+    box.querySelectorAll('[data-c]').forEach(el => el.onchange = () => { keep(); applique(el); render(); });
+    box.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { flush(); l.composants.splice(+b.dataset.rm, 1); render(); });
     const addF = box.querySelector('#o-add-f');
     if (addF) addF.onclick = () => {
-      keep();
+      flush();
       const a = Store.get('articles', box.querySelector('#o-art').value);
       if (!a) { notify('Choisissez une fourniture dans la liste.'); return; }
       l.composants.push({ type: 'f', articleId: a.id, designation: a.designation, unite: a.unite, qte: num(box.querySelector('#o-art-q').value) || 1, pu: num(a.prixVente), cout: num(a.coutRevient), poids: num(a.poidsUnitaire) });
@@ -384,19 +550,29 @@ function openOuvrage(d, index) {
       render();
     };
     const addL = box.querySelector('#o-add-libre');
-    if (addL) addL.onclick = () => { keep(); l.composants.push({ type: 'f', designation: 'Fourniture ou sous-traitance', unite: '', qte: 1, pu: 0, cout: 0, poids: 0 }); render(); };
+    if (addL) addL.onclick = () => { flush(); l.composants.push({ type: 'f', designation: 'Fourniture ou sous-traitance', unite: '', qte: 1, pu: 0, cout: 0, poids: 0 }); render(); };
     const addMO = box.querySelector('#o-add-mo');
     if (addMO) addMO.onclick = () => {
-      keep();
+      flush();
       const m = moList()[0] || {};
       l.composants.push({ type: 'mo', moId: m.id || '', libelle: m.libelle || "Main-d'œuvre", heures: 1, taux: num(m.tauxVente), cout: num(m.tauxCout) });
       render();
     };
     box.querySelector('#o-cancel').onclick = Modal.close;
+    const ty = box.querySelector('#o-type');
+    if (ty) ty.onclick = () => {
+      flush();
+      if (!l.designation) { notify('Indiquez la désignation de l\'ouvrage.'); return; }
+      const t = Store.upsert('ouvrages', { ...(l.ouvrageTypeId ? Store.get('ouvrages', l.ouvrageTypeId) : {}), ...versOuvrageType(l) });
+      l.ouvrageTypeId = t.id; delete l.libre;
+      App.toast(`« ${l.designation} » est enregistré dans la bibliothèque d'ouvrages types.`, 4000);
+      render();
+    };
     const sv = box.querySelector('#o-save');
     if (sv) sv.onclick = () => {
-      keep();
+      flush();
       if (!l.designation) { notify('Indiquez la désignation de l\'ouvrage.'); return; }
+      if (enBiblio) { opts.enregistrer(l); Modal.close(); App.render(); return; }
       if (index === null) d.lignes.push(l); else d.lignes[index] = l;
       Store.upsert('devis', d);
       Modal.close(); App.render();
@@ -404,3 +580,51 @@ function openOuvrage(d, index) {
   };
   render();
 }
+
+/* ---------- Ouvrages types (bibliothèque d'ouvrages réutilisables) ---------- */
+const versOuvrageType = l => ({ designation: l.designation, detail: l.detail || '', unite: l.unite, famille: l.famille || '', composants: JSON.parse(JSON.stringify(l.composants || [])) });
+// Insertion dans un devis : prix des fournitures et taux de main-d'œuvre repris des bibliothèques actuelles
+function ouvrageAJour(t) {
+  const l = { ...versOuvrageType(t), type: 'ouvrage', qte: 1, ouvrageTypeId: t.id };
+  l.composants.forEach(c => {
+    const a = c.type !== 'mo' && c.articleId && Store.get('articles', c.articleId);
+    if (a) Object.assign(c, { designation: a.designation, unite: a.unite, pu: num(a.prixVente), cout: num(a.coutRevient), poids: num(a.poidsUnitaire) });
+    const m = c.type === 'mo' && c.moId && Store.get('mainoeuvre', c.moId);
+    if (m) Object.assign(c, { libelle: m.libelle, taux: num(m.tauxVente), cout: num(m.tauxCout) });
+  });
+  return l;
+}
+function choisirOuvrageType(d) {
+  const liste = Store.all('ouvrages').sort((a, b) => (a.famille || '').localeCompare(b.famille || '') || a.designation.localeCompare(b.designation));
+  const box = Modal.open(`<h2 style="margin-top:0">Ouvrage type</h2>
+    <input id="ot-q" type="search" placeholder="Rechercher…" aria-label="Rechercher">
+    <div class="table-wrap" style="margin-top:8px"><table><tr><th>Famille</th><th>Désignation</th><th>Unité</th><th class="num">PU HT</th></tr>
+    ${liste.map(t => `<tr class="clickable" data-ot="${t.id}" data-search="${esc([t.famille, t.designation].join(' ').toLowerCase())}"><td>${esc(t.famille || '')}</td><td>${esc(t.designation)}</td><td>${esc(t.unite)}</td><td class="num">${eur(Calc.pu(ouvrageAJour(t)))}</td></tr>`).join('')}</table></div>
+    <div class="modal-actions"><a class="btn secondary" href="#/ouvrages">Gérer la bibliothèque</a><span class="spacer"></span><button class="secondary" id="ot-x">Annuler</button></div>`, true);
+  box.querySelector('#ot-q').oninput = e => { const q = e.target.value.toLowerCase(); box.querySelectorAll('[data-search]').forEach(tr => { tr.style.display = tr.dataset.search.includes(q) ? '' : 'none'; }); };
+  box.querySelector('#ot-x').onclick = Modal.close;
+  box.querySelector('.modal-actions a').onclick = Modal.close;
+  box.querySelectorAll('[data-ot]').forEach(tr => tr.onclick = () => { Modal.close(); openOuvrage(d, null, { initial: ouvrageAJour(Store.get('ouvrages', tr.dataset.ot)) }); });
+}
+Views.ouvrages = () => {
+  const liste = Store.all('ouvrages').sort((a, b) => (a.famille || '').localeCompare(b.famille || '') || a.designation.localeCompare(b.designation));
+  return `<h1>Bibliothèque</h1>${biblioTabs('ouvrages')}
+  <p class="muted">Ouvrages réutilisés d'un devis à l'autre (« + Ouvrage type » dans le devis). Les prix sont repris des fournitures et de la main-d'œuvre à jour.
+    Pour un besoin ponctuel, utilisez plutôt « + Poste libre » dans le devis : rien n'est enregistré ici.</p>
+  <div class="toolbar"><button id="add">+ Ouvrage type</button><span class="spacer"></span><input id="search" type="search" placeholder="Rechercher…" style="width:auto;min-width:0;flex:1 1 160px;max-width:260px"></div>
+  ${liste.length ? `<div class="table-wrap"><table><tr><th>Famille</th><th>Désignation</th><th>Unité</th><th class="num">Fournitures</th><th class="num">Heures</th><th class="num">PU HT</th><th></th></tr>
+  ${liste.map(t => { const u = Calc.unit(ouvrageAJour(t)); return `<tr class="clickable" data-id="${t.id}" data-search="${esc([t.famille, t.designation].join(' ').toLowerCase())}"><td>${esc(t.famille || '')}</td><td>${esc(t.designation)}</td><td>${esc(t.unite)}</td>
+    <td class="num">${eur(u.f)}</td><td class="num">${fmt(u.heures, 2)} h</td><td class="num">${eur(u.f + u.mo)}</td><td><button class="small danger" data-del="${t.id}" aria-label="Supprimer">✕</button></td></tr>`; }).join('')}</table></div>`
+    : '<p class="muted">Aucun ouvrage type. Créez-en ici, ou depuis un devis avec « Enregistrer comme ouvrage type ».</p>'}`;
+};
+Views.ouvrages.bind = root => {
+  bindSearch(root);
+  const editer = t => openOuvrage(null, null, { initial: t ? ouvrageAJour(t) : { designation: '', unite: 'u', composants: [] },
+    enregistrer: l => Store.upsert('ouvrages', { ...(t || {}), ...versOuvrageType(l) }) });
+  root.querySelector('#add').onclick = () => editer(null);
+  root.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = e => { if (!e.target.closest('[data-del]')) editer(Store.get('ouvrages', tr.dataset.id)); });
+  root.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    const t = Store.get('ouvrages', b.dataset.del);
+    if (await ask(`Supprimer l'ouvrage type « ${t.designation} » ? Les devis existants ne changent pas.`, 'Supprimer')) Store.remove('ouvrages', t.id);
+  });
+};

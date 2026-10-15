@@ -30,7 +30,7 @@ function bar(p) {
 const Modal = {
   open(html, wide = false) {
     const box = document.getElementById('modal-box');
-    box.className = 'modal-box' + (wide ? ' wide' : '');
+    box.className = 'modal-box' + (wide ? ' wide' : ''); box.onmousedown = null;
     box.innerHTML = html;
     document.getElementById('modal').classList.remove('hidden');
     return box;

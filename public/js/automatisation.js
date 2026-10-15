@@ -2,7 +2,7 @@
 // (Power Automate, Make, Zapier, n8n, PowerShell, scripts, badgeuse, logiciel de dessin…).
 const COLL_LIB = { devis: 'Devis', affaires: 'Chantiers', factures: 'Factures et avoirs', situations: 'Situations (BL)', commandes: 'Commandes fournisseurs', achats: 'Factures fournisseurs',
   consultations: 'Consultations fournisseurs', temps: 'Pointages', frais: 'Notes de frais', rapports: 'Rapports et bons d\'intervention', receptions: 'PV de réception', reserves: 'Réserves',
-  entreprises: 'Entreprises', contacts: 'Contacts', articles: 'Fournitures (bibliothèque)', mainoeuvre: 'Main-d\'œuvre', efactures: 'Factures électroniques reçues', planning: 'Planning', envois: 'E-mails envoyés' };
+  entreprises: 'Entreprises', contacts: 'Contacts', articles: 'Fournitures (bibliothèque)', ouvrages: 'Ouvrages types', mainoeuvre: 'Main-d\'œuvre', efactures: 'Factures électroniques reçues', planning: 'Planning', envois: 'E-mails envoyés' };
 
 Views.api = () => {
   const admin = Store.can('admin'), base = location.origin.startsWith('http') ? location.origin : 'https://votre-serveur';

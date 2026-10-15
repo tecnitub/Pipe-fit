@@ -87,7 +87,7 @@ function importerDPGF(d) {
       const avecPU = !!(box.querySelector('#dp-pu') || {}).checked;
       const lignes = [];
       items().forEach(it => {
-        if (it.type === 'chapitre') lignes.push({ type: 'chapitre', num: it.num, titre: it.num && !it.designation.startsWith(it.num) ? `${it.num} – ${it.designation}` : it.designation });
+        if (it.type === 'chapitre') lignes.push({ type: 'chapitre', num: it.num, niveau: it.num ? Math.min(3, String(it.num).split('.').length) : 1, titre: titreSansNum(it.designation, it.num) });
         else if (it.type === 'ouvrage') lignes.push({ type: 'ouvrage', num: it.num, designation: it.designation, unite: it.unite || 'u', qte: it.qte === '' ? 0 : it.qte, dpgf: true,
           composants: avecPU && it.pu !== '' ? [{ type: 'f', designation: 'Prix forfaitaire (DPGF)', qte: 1, pu: it.pu, cout: 0, poids: 0 }] : [] });
         else if (it.type === 'texte') {
@@ -108,24 +108,8 @@ function importerDPGF(d) {
 // DPGF chiffré : même structure que le cadre (N°, désignation, unité, quantité), PU et montants remplis
 function exporterDPGF(d) {
   const t = Calc.doc(d), lignes = d.lignes || [];
-  // Sous-totaux hiérarchiques d'après les N° de prix (2 = 2.1 + 2.2…) ; sans numéros, un sous-total par chapitre
-  const sousTotaux = {};
-  const chapsNum = lignes.map((l, i) => ({ l, i })).filter(x => x.l.type === 'chapitre');
-  chapsNum.forEach(({ l, i }) => {
-    let last = i, total = 0, n = 0;
-    for (let k = i + 1; k < lignes.length; k++) {
-      const x = lignes[k];
-      const dedans = l.num ? (x.num ? String(x.num).startsWith(l.num + '.') : x.type !== 'chapitre' || false) : x.type !== 'chapitre';
-      if (!dedans) {
-        if (l.num && !x.num && x.type !== 'chapitre') { last = k; total += Calc.ligneHT(x); n++; continue; } // ligne sans numéro sous le chapitre
-        break;
-      }
-      last = k;
-      if (x.type !== 'chapitre') { total += Calc.ligneHT(x); n++; }
-    }
-    if (n) (sousTotaux[last] = sousTotaux[last] || []).push({ titre: l.titre, total, profondeur: String(l.num || '').split('.').length });
-  });
-  Object.values(sousTotaux).forEach(list => list.sort((a, b) => b.profondeur - a.profondeur));
+  // Sous-totaux hiérarchiques (chapitre ⊃ sous-chapitre ⊃ sous-sous-chapitre) et N° affichés sur le devis
+  const sousTotaux = Calc.sousTotauxApres(d), nums = Calc.numeros(d);
   const H = v => ({ v, s: 'head' });
   const rows = [
     [{ v: `${Store.data.settings.societe} – DPGF chiffré`, s: 'title' }],
@@ -134,9 +118,11 @@ function exporterDPGF(d) {
     ['N°', 'Désignation', 'Unité', 'Quantité', 'Prix unitaire HT', 'Montant HT'].map(H),
   ];
   lignes.forEach((l, i) => {
-    if (l.type === 'chapitre') rows.push([{ v: l.num || '', s: 'bold' }, { v: l.num && l.titre.startsWith(l.num) ? l.titre.slice(l.num.length).replace(/^\s*[–-]\s*/, '') : l.titre, s: 'bold' }]);
-    else rows.push([l.num || '', l.designation + (l.detail ? '\n' + l.detail : ''), l.unite, num(l.qte), { v: Calc.pu(l), s: 'eur' }, { v: Calc.ligneHT(l), s: 'eur' }]);
-    (sousTotaux[i] || []).forEach(st => rows.push([{ v: '', s: 'total' }, { v: `Sous-total ${st.titre}`, s: 'total' }, { v: '', s: 'total' }, { v: '', s: 'total' }, { v: '', s: 'total' }, { v: st.total, s: 'boldeur' }]));
+    if (l.type === 'chapitre') rows.push([{ v: nums[i], s: 'bold' }, { v: titreSansNum(l.titre, nums[i] || l.num), s: 'bold' }]);
+    else if (l.type === 'texte') rows.push(['', l.texte || '']);
+    else if (l.type === 'image') { if (l.legende) rows.push(['', { v: `[Image] ${l.legende}`, s: 'muted' }]); }
+    else rows.push([nums[i], l.designation + (l.detail ? '\n' + l.detail : ''), l.unite, num(l.qte), { v: Calc.pu(l), s: 'eur' }, { v: Calc.ligneHT(l), s: 'eur' }]);
+    (sousTotaux[i] || []).filter(st => st.n).forEach(st => rows.push([{ v: '', s: 'total' }, { v: `Sous-total ${st.titre}`, s: 'total' }, { v: '', s: 'total' }, { v: '', s: 'total' }, { v: '', s: 'total' }, { v: st.total, s: 'boldeur' }]));
   });
   rows.push([]);
   rows.push(['', { v: 'Total HT', s: 'bold' }, '', '', '', { v: t.brut, s: 'boldeur' }]);
@@ -149,5 +135,11 @@ function exporterDPGF(d) {
   download(nom, XLSX.build([{ name: 'DPGF', cols: [10, 70, 9, 11, 16, 16], freeze: 4, rows }]), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
 
+// Titre de chapitre sans le N° en tête (« 2.1 – Réseau » → « Réseau »), le N° ayant sa colonne
+const titreSansNum = (titre, numero) => {
+  const t = String(titre || ''), n = String(numero || '');
+  const m = n && t.startsWith(n) && /^(\s*[–-]\s*|\s+)/.exec(t.slice(n.length));
+  return m && t.slice(n.length + m[0].length) ? t.slice(n.length + m[0].length) : t;
+};
 // Ouvrages restant à chiffrer (aucun composant ou prix nul)
-const aChiffrer = l => l.type !== 'chapitre' && Calc.pu(l) === 0 && num(l.qte) !== 0;
+const aChiffrer = l => Calc.estPrix(l) && Calc.pu(l) === 0 && num(l.qte) !== 0;

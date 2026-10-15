@@ -323,7 +323,7 @@ Views.facture.bind = (root, params) => {
 
 // Avoir total (annule la facture) ou partiel (lignes et quantités choisies, ou montant libre)
 function creerAvoir(f) {
-  const lignes = (f.lignes || []).map((l, i) => ({ l, i })).filter(x => x.l.type !== 'chapitre');
+  const lignes = (f.lignes || []).map((l, i) => ({ l, i })).filter(x => Calc.estPrix(x.l));
   const deja = sumBy(Calc.avoirsDe(f), a => Calc.doc(a).netAPayer), net = Calc.doc(f).netAPayer;
   const box = Modal.open(`<h2 style="margin-top:0">Avoir sur la facture ${esc(f.numero || '')}</h2>
     <p class="muted small">Facture ${eur(net)} TTC${deja ? ` · déjà ${eur(deja)} en avoirs` : ''}. L'avoir reçoit son propre numéro dans la suite des avoirs ; la facture n'est ni modifiée ni supprimée.</p>
