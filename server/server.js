@@ -9,6 +9,8 @@ const { demoData, uid } = require('./demo');
 const M365 = require('./m365');
 const EF = require('./efacture');
 const API = require('./api');
+const Push = require('./push');
+const Notifs = require('./notifs');
 
 const PORT = +process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -19,6 +21,7 @@ const MAX_BODY = 10 * 1024 * 1024;
 
 const db = DB.open(DB_FILE);
 API.initTables(db);
+Push.initTables(db);
 
 /* ---------- Initialisation ---------- */
 if (!db.prepare('SELECT 1 FROM settings WHERE id = 1').get()) {
@@ -44,7 +47,7 @@ const isLocal = req => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.soc
 function canWrite(acc, col) {
   if (acc.role === 'admin') return true;
   if (acc.role === 'charge') return col !== 'users';
-  if (acc.role === 'atelier') return ['temps', 'frais', 'rapports', 'consommations'].includes(col);
+  if (acc.role === 'atelier') return ['temps', 'frais', 'rapports', 'consommations', 'notifications'].includes(col);
   return false;
 }
 function canDelete(acc, col, existing) {
@@ -83,6 +86,7 @@ function broadcast(event, payload) {
   try { API.emettre(DB, db, event, payload); } catch (e) { console.error('Webhook :', e.message); }
 }
 setInterval(() => { for (const res of clients) res.write(': ping\n\n'); }, 25000).unref();
+const NOTIFS = Notifs.creer({ DB, db, broadcast });
 
 /* ---------- Utilitaires HTTP ---------- */
 function send(res, status, body, headers = {}) {
@@ -319,6 +323,18 @@ async function api(req, res, url) {
     return send(res, 200, records);
   }
 
+  // Notifications sur les téléphones : clé publique VAPID, abonnement de l'appareil, essai
+  if (p[0] === 'push') {
+    if (p[1] === 'cle' && method === 'GET') return send(res, 200, { publicKey: Push.vapid(DB, db).publicKey, appareils: Push.abonnementsDe(db, [acc.id]).map(x => ({ appareil: x.appareil, depuis: x.created_at, dernier: x.last_ok })) });
+    if (p[1] === 'abonnement' && method === 'POST') { const b = await readBody(req); Push.abonner(db, acc.id, b.subscription, b.appareil); return send(res, 200, { ok: true }); }
+    if (p[1] === 'abonnement' && method === 'DELETE') { const b = await readBody(req); Push.desabonner(db, acc.id, b.endpoint); return send(res, 200, { ok: true }); }
+    if (p[1] === 'test' && method === 'POST') {
+      const r = await Push.envoyer(DB, db, [acc.id], { titre: 'Pipe-Fit', texte: 'Les notifications fonctionnent sur ce téléphone.', lien: '#/notifications', tag: 'test' });
+      return send(res, 200, { envois: r });
+    }
+    return fail(res, 404, 'Route inconnue');
+  }
+
   if (p[0] === 'records' && p[1] && p[2]) {
     const [, col, id] = p;
     if (!DB.COLLECTIONS.includes(col)) return fail(res, 404, 'Collection inconnue');
@@ -355,13 +371,14 @@ async function api(req, res, url) {
           ON CONFLICT(col, id) DO UPDATE SET data = excluded.data, version = excluded.version, updated_at = excluded.updated_at, updated_by = excluded.updated_by`)
           .run(col, id, JSON.stringify(obj), v, now, acc.nom || acc.login);
         DB.audit(db, acc.login, existing ? 'modification' : 'création', col, id, labelOf(obj));
-        return { record: DB.getRecord(db, col, id) };
+        return { record: DB.getRecord(db, col, id), avant: existing };
       });
       if (result.forbidden) return fail(res, 403, result.forbidden);
       if (result.conflict) {
         return fail(res, 409, `Modifié entre-temps par ${result.conflict._by || 'un autre utilisateur'}`, { record: result.conflict });
       }
       broadcast('change', { col, record: result.record, client: req.headers['x-client-id'] || null });
+      if (col === 'planning') NOTIFS.planningModifie(acc, result.avant, result.record);
       return send(res, 200, result.record);
     }
 
@@ -374,6 +391,7 @@ async function api(req, res, url) {
       db.prepare('DELETE FROM records WHERE col = ? AND id = ?').run(col, id);
       DB.audit(db, acc.login, 'suppression', col, id, labelOf(existing));
       broadcast('delete', { col, id, client: req.headers['x-client-id'] || null });
+      if (col === 'planning') NOTIFS.planningModifie(acc, existing, null);
       return send(res, 200, { ok: true });
     }
   }
@@ -591,7 +609,7 @@ async function api(req, res, url) {
 
 /* ---------- Fichiers statiques ---------- */
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
-  '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json' };
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webmanifest': 'application/manifest+json; charset=utf-8' };
 function serveStatic(req, res, url) {
   let rel = decodeURIComponent(url.pathname);
   if (rel === '/') rel = '/index.html';
@@ -626,4 +644,4 @@ if (require.main === module) {
     if (!hasAccounts()) console.log(`Première utilisation : ouvrez http://localhost:${PORT} sur ce poste pour créer le compte administrateur.`);
   });
 }
-module.exports = { server, db };
+module.exports = { server, db, NOTIFS };

@@ -2,9 +2,9 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v20';
+  const KEY = 'pipefit-crm-demo-v21';
   const ME_KEY = 'pipefit-crm-demo-me';
-  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages'];
+  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4] };
   const ACCOUNTS = [
     { id: 'acc-admin', login: 'admin', nom: 'Administrateur', role: 'admin', userId: null, email: 'admin@pipefit.example' },
@@ -44,7 +44,7 @@
   function canWrite(acc, col) {
     if (acc.role === 'admin') return true;
     if (acc.role === 'charge') return col !== 'users';
-    return acc.role === 'atelier' && ['temps', 'frais', 'rapports', 'consommations'].includes(col);
+    return acc.role === 'atelier' && ['temps', 'frais', 'rapports', 'consommations', 'notifications'].includes(col);
   }
   // Mêmes règles que le serveur : un opérateur saisit pour lui (et son équipe pour les pointages), rien de validé ne se modifie
   function atelierRefus(acc, col, obj, existing) {
@@ -57,6 +57,40 @@
     if (obj && ['Validé', 'Validée', 'Remboursée', 'Refusé', 'Refusée'].includes(obj.statut) && (!existing || existing.statut !== obj.statut)) return 'La validation est réservée aux chargés d\'affaires';
     return null;
   }
+  // Notifications de planning, comme le serveur (server/notifs.js) : changements regroupés, puis cloche du compagnon
+  // (ou de son chef d'équipe s'il n'a pas de compte). Pas de téléphone dans la démonstration.
+  const attenteNotif = new Map();
+  const isoLocal = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  function envoyerNotif(userId) {
+    const a = attenteNotif.get(userId);
+    attenteNotif.delete(userId);
+    const user = db.users.find(u => u.id === userId);
+    if (!a || !user) return;
+    clearTimeout(a.timer);
+    let dest = db.accounts.filter(x => x.userId === userId), pourChef = false;
+    if (!dest.length && user.chefId) { dest = db.accounts.filter(x => x.userId === user.chefId); pourChef = true; }
+    if (!dest.length) return;
+    const m = NotifPlanning.message({ user, jours: [...a.jours], planning: db.planning.filter(p => p.userId === userId), affaire: id => db.affaires.find(x => x.id === id), pourChef });
+    const rec = { id: 'nt' + DemoSeed.uid(), type: 'planning', userId: dest[0].userId, pour: userId, titre: m.titre, texte: m.texte, lien: m.lien, jours: m.jours,
+      date: new Date().toISOString(), lu: false, _v: 1, _at: new Date().toISOString(), _by: 'Pipe-Fit' };
+    db.notifications = db.notifications || [];
+    db.notifications.push(rec); save();
+    if (typeof Store !== 'undefined' && Store.data && Store.data.notifications) { Store._put('notifications', JSON.parse(JSON.stringify(rec))); if (typeof Notifs !== 'undefined') Notifs.recu(rec); }
+  }
+  function planningModifie(acc, avant, apres) {
+    if (typeof NotifPlanning === 'undefined' || !NotifPlanning.change(avant, apres)) return;
+    const auj = isoLocal(new Date());
+    [avant, apres].filter(Boolean).forEach(p => {
+      if (!p.userId || !p.date || p.date < auj || p.userId === acc.userId) return;
+      const a = attenteNotif.get(p.userId) || { jours: new Set() };
+      a.jours.add(p.date); clearTimeout(a.timer);
+      a.timer = setTimeout(() => envoyerNotif(p.userId), 1500);
+      attenteNotif.set(p.userId, a);
+    });
+  }
+  const viderNotifs = () => [...attenteNotif.keys()].forEach(envoyerNotif);
+  window.addEventListener('pagehide', viderNotifs);
+
   // Même numérotation que le serveur : factures et avoirs au format paramétré, suite continue
   const FORMATS = { facture: { prefixe: 'FA', separateur: '-', annee: 'AAAA', chiffres: 4 }, avoir: { prefixe: 'AV', separateur: '-', annee: 'AAAA', chiffres: 4 } };
   function racine(col, obj) {
@@ -189,6 +223,7 @@
         if (existing) db[col][i] = rec; else db[col].push(rec);
         audit(existing ? 'modification' : 'création', col, labelOf(rec));
         save();
+        if (col === 'planning') planningModifie(acc, existing, rec);
         return [200, JSON.parse(JSON.stringify(rec))];
       }
       if (method === 'DELETE') {
@@ -196,7 +231,7 @@
         const fige = existing && acc.role !== 'admin' && ((col === 'receptions' && existing.statut === 'Signé') || (col === 'reserves' && existing.pvId));
         const allowed = (col === 'factures' ? acc.role === 'admin' : canWrite(acc, col)) && !atelierRefus(acc, col, null, existing) && !fige;
         if (!allowed) return [403, { error: 'Droits insuffisants' }];
-        if (existing) { db[col].splice(i, 1); audit('suppression', col, labelOf(existing)); save(); }
+        if (existing) { db[col].splice(i, 1); audit('suppression', col, labelOf(existing)); save(); if (col === 'planning') planningModifie(acc, existing, null); }
         return [200, { ok: true }];
       }
     }
@@ -286,7 +321,7 @@
     <label>Voir en tant que <select id="demo-as">${db.accounts.map(a => `<option value="${a.id}" ${a.id === me().id ? 'selected' : ''}>${a.nom} (${{ admin: 'admin', charge: "chargé d'affaires", atelier: 'opérateur' }[a.role]})</option>`).join('')}</select></label>
     <button class="small secondary" id="demo-reset">Remettre les données de départ</button>`;
   document.querySelector('header').after(banner);
-  banner.querySelector('#demo-as').onchange = e => { storage.set(ME_KEY, e.target.value); location.hash = ''; location.reload(); };
+  banner.querySelector('#demo-as').onchange = e => { viderNotifs(); storage.set(ME_KEY, e.target.value); location.hash = ''; location.reload(); };
   banner.querySelector('#demo-reset').onclick = async () => {
     if (await ask('Effacer vos essais et revenir aux données de départ ?', 'Réinitialiser')) resetAll();
   };

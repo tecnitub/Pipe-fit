@@ -125,6 +125,7 @@ function demoData() {
     { id: 'af2', code: `CH-${Y}-` + '002', nom: 'Remplacement collecteur vapeur DN150', clientId: 'e1', contactId: 'k1', siteId: 's2', retenueGarantie: 5, caution: '', dateReception: d(-24), okFacturation: true, chargeId: 'u2', statut: 'Facturé', devisId: 'dv2', dateCreation: d(-110), heuresPrevues: 0, rex: { note: 3, positif: 'Préfabrication des tronçons en atelier, arrêt de l\'unité tenu en 5 jours.', negatif: '6 soudures reprises après contrôle RX (accès difficile en rack). Heures soudeurs dépassées.', actions: 'Prévoir 15 % de reprises sur les soudures en hauteur. Visite de site systématique avant chiffrage.' } },
     { id: 'af3', code: `CH-${Y}-` + '003', nom: 'Skid de dosage – bâtiment B', clientId: 'e3', contactId: 'k4', siteId: 's5', chargeId: 'u1', statut: 'Facturé', devisId: 'dv3', dateReception: d(-66), okFacturation: true, dateCreation: d(-85), heuresPrevues: 0, rex: { note: 4, positif: 'Skid préfabriqué à 90 % en atelier, montage en 3 jours.', negatif: 'Remise commerciale trop élevée.', actions: 'Plancher de remise à 8 % sur les skids.' } },
     // Interventions hors devis (travaux en régie sur demande du client)
+    { id: 'af4', code: `CH-${Y}-` + '004', nom: 'Résidence Les Tilleuls – rénovation de la chaufferie', clientId: 'e14', contactId: 'k12', siteId: 's18', chargeId: 'u2', statut: 'En préparation', devisId: 'dv7', dateCreation: d(-1), heuresPrevues: 0, rex: {} },
     { id: 'hd1', type: 'horsDevis', code: `HD-${Y}-` + '001', nom: 'Machine à papier PM2 – remplacement du collecteur de purge', clientId: 'e10', contactId: 'k10', siteId: 's14', chargeId: 'u1', statut: 'Terminé', dateCreation: d(-12),
       demande: 'Fuite sur le collecteur de purge DN50 de la sécherie : préfabriquer un collecteur neuf à l\'atelier et le poser pendant l\'arrêt du jeudi.', heuresPrevues: 0, rex: {} },
     { id: 'hd2', type: 'horsDevis', code: `HD-${Y}-` + '002', nom: 'Dépannage fuite vapeur ligne 3', clientId: 'e1', contactId: 'k1', siteId: 's2', chargeId: 'u2', statut: 'Ouvert', dateCreation: d(-1),
@@ -207,7 +208,7 @@ function demoData() {
         ouv('Épreuve hydraulique avec procès-verbal', 'forfait', 1, [F('a13', 1), MO('mo2', 6)]),
       ] },
     // Logements de plus de deux ans : TVA à 10 %, isolation et régulation de la chaufferie à 5,5 %
-    { id: 'dv7', numero: `DV-${Y}-` + '0007', objet: 'Résidence Les Tilleuls – rénovation de la chaufferie collective', ...head('', 'u2', 'e14', 'k12', 's18'), date: d(-2), validite: 60, statut: 'Brouillon', zoneId: 'z1', ajustements: [], numAuto: true,
+    { id: 'dv7', numero: `DV-${Y}-` + '0007', objet: 'Résidence Les Tilleuls – rénovation de la chaufferie collective', ...head('af4', 'u2', 'e14', 'k12', 's18'), date: d(-2), validite: 60, statut: 'Accepté', zoneId: 'z1', ajustements: [], numAuto: true,
       tauxTVA: 10, mentionTVA: 'Attestation simplifiée du client jointe au devis.',
       lignes: [
         chap('Remplacement des collecteurs'),
@@ -345,6 +346,19 @@ function demoData() {
   affecte('o4', 'hd2', 1, [1], 'Montage', 8, { note: 'Récupérer la manchette DN80 à l\'atelier avant le départ.' });
   affecte('o6', 'af1', 1, [3, 4], 'Études', 7, { note: 'Isométriques de recollement pour le DOE.' });
   planning.push({ id: uid(), affaireId: 'af1', userId: 'u1', semaine: w(0), heuresPrevues: 6, libelle: 'Suivi chantier' });
+  // Semaine prochaine : démarrage de la chaufferie des Tilleuls, dépannage, congés et formation
+  const reaffecte = (userId, sem, jours, fn) => jours.forEach(j => { for (let k = planning.length - 1; k >= 0; k--) if (planning[k].userId === userId && planning[k].date === jour(sem, j)) planning.splice(k, 1); fn(j); });
+  const RDV_TILLEULS = 'RDV 7h30 devant la chaufferie (clé à la loge du gardien). Prévoir les EPI amiante : flocage à proximité.';
+  ['o3', 'i1'].forEach(o => reaffecte(o, 1, [0, 1, 2], j => affecte(o, 'af4', 1, [j], 'Montage', 8, { note: RDV_TILLEULS })));
+  reaffecte('i2', 1, [0, 1, 2], j => affecte('i2', 'af4', 1, [j], 'Manutention', 8, { note: RDV_TILLEULS }));
+  reaffecte('o1', 1, [1, 2], j => affecte('o1', 'af4', 1, [j], 'Soudure', 8, { note: 'Soudure des collecteurs DN150 sur place.' }));
+  reaffecte('o2', 1, [1], j => affecte('o2', 'hd2', 1, [j], 'Soudure', 4));
+  reaffecte('o2', 1, [3, 4], j => planning.push({ id: uid(), date: jour(1, j), userId: 'o2', absence: 'Congés', affaireId: '', heuresPrevues: 0 }));
+  reaffecte('o5', 1, [0], j => planning.push({ id: uid(), date: jour(1, j), userId: 'o5', absence: 'Formation', affaireId: '', heuresPrevues: 0 }));
+  // Notification non lue de Kevin : son planning de la semaine prochaine a changé
+  const jc = n => new Date(`${jour(1, n)}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }).replace(/\.(?=\s|$)/g, '');
+  const notifications = [{ id: 'nt1', type: 'planning', userId: 'o1', pour: 'o1', titre: 'Votre planning a changé : 2 jours', lien: '#/pointage/planning', jours: [jour(1, 1), jour(1, 2)],
+    texte: `${jc(1)} : CH-${Y}-004 07:30–16:30 (Soudure)\n${jc(2)} : CH-${Y}-004 07:30–16:30 (Soudure)`, date: new Date(Date.now() - 25 * 60000).toISOString(), lu: false }];
 
   // Pointages des opérateurs (jours ouvrés uniquement) : arrivée, départ, pause
   const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
@@ -456,7 +470,7 @@ function demoData() {
         tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',
         types: { devis: { conditions: 'Acompte de 30 % à la commande. Travaux réalisés selon les normes EN 13480 et le DTU en vigueur. Hors génie civil, calorifuge et échafaudages sauf mention contraire.' },
           facture: { conditions: 'Paiement par virement à 45 jours fin de mois.' } } } },
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages,
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications,
   };
 }
 

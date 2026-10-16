@@ -1,7 +1,7 @@
 // Routeur (hash), connexion et démarrage.
 const ROLE_LABELS = { admin: 'Administrateur', charge: "Chargé d'affaires", atelier: 'Opérateur' };
 // Écrans accessibles au rôle atelier (saisie des heures + consultation du planning).
-const ATELIER_VIEWS = ['pointage', 'planning', 'parametres', 'bon'];
+const ATELIER_VIEWS = ['pointage', 'planning', 'parametres', 'bon', 'notifications'];
 // Anciennes adresses et sous-écrans -> écran et entrée de menu
 const ALIASES = { affaires: 'chantiers', affaire: 'chantier', temps: 'rh' };
 const MENU_OF = { api: 'parametres', consultations: 'commandes', chiffrages: 'devis', chiffrage: 'devis', familles: 'articles', ouvrages: 'articles', efactures: 'commandes', achats: 'commandes', compta: 'factures', mails: 'parametres', documents: 'parametres', bon: 'chantiers', reception: 'chantiers', pv: 'chantiers', situations: 'factures', chantier: 'chantiers', facture: 'factures', entreprise: 'contacts', mainoeuvre: 'articles', livraison: 'articles' };
@@ -29,6 +29,7 @@ const App = {
       a.classList.toggle('active', a.getAttribute('href') === `#/${section}`);
       a.hidden = Store.me.role === 'atelier' && !ATELIER_VIEWS.includes(a.getAttribute('href').slice(2));
     });
+    Notifs.majCloche();
   },
 
   // Modification faite par un autre utilisateur : on rafraîchit sauf si une saisie est en cours.
@@ -117,6 +118,7 @@ const App = {
     document.getElementById('remote-refresh').onclick = () => { Modal.close(); this.render(); };
     await Store.load();
     Store.listen();
+    Notifs.demarrer();
     this.render();
     window.addEventListener('hashchange', () => { Modal.close(); this.render(); });
   },

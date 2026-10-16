@@ -536,6 +536,8 @@ Views.parametres = () => {
     <a class="btn" href="#/mails">E-mails et Microsoft 365</a></div>
   <div class="card inline" style="justify-content:space-between;flex-wrap:wrap;margin-top:10px"><span>API et webhooks pour automatiser : Power Automate, Make, Zapier, scripts, badgeuse, logiciel de dessin, Power BI…</span>
     <a class="btn" href="#/api">API et automatisations</a></div>
+  <div class="card inline" style="justify-content:space-between;flex-wrap:wrap;margin-top:10px"><span>📲 Appli téléphone des compagnons : planning, pointage et notifications dès que leur planning change.</span>
+    <a class="btn" href="#/notifications?installer=1">Appli téléphone</a></div>
 
   ${numerotationCarte()}
 

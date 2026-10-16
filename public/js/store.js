@@ -1,5 +1,5 @@
 // Cache local des données serveur + synchronisation (API REST et événements temps réel).
-const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'zones', 'affaires', 'devis', 'factures', 'planning', 'temps', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages'];
+const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'zones', 'affaires', 'devis', 'factures', 'planning', 'temps', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications'];
 
 const CLIENT_ID = uid(); // identifie cet onglet, pour ignorer l'écho de nos propres modifications
 
@@ -129,6 +129,8 @@ const Store = {
       const local = this.get(p.col, p.record.id);
       if (local && local._v >= p.record._v) return;
       if (local) Object.assign(local, p.record); else this._put(p.col, p.record);
+      // Notification pour moi : cloche et message ; les autres ne dérangent personne
+      if (p.col === 'notifications') { if (!local) Notifs.recu(p.record); else Notifs.majCloche(); if (location.hash.startsWith('#/notifications')) App.remoteUpdate(); return; }
       App.remoteUpdate(`${p.record._by || 'Un utilisateur'} a modifié des données`);
     });
     es.addEventListener('delete', e => {
