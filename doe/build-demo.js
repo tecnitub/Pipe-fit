@@ -6,7 +6,8 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const out = path.resolve(process.argv[2] || path.join(root, 'dist', 'pipefit-doe-demo.html'));
 const read = f => fs.readFileSync(path.join(root, f), 'utf8');
-const inlineScript = code => `<script>\n${code.replace(/<\/script/gi, '<\\/script')}\n</script>`;
+// U+FFFD (présent dans pdf-lib, toujours dans des chaînes) est écrit en séquence d'échappement
+const inlineScript = code => `<script>\n${code.replace(/<\/script/gi, '<\\/script').replace(/\uFFFD/g, '\\uFFFD')}\n</script>`;
 const logo = `data:image/png;base64,${fs.readFileSync(path.join(__dirname, 'public', 'logo-tecnitub.png')).toString('base64')}`;
 const avecLogo = s => s.replace(/(["'])logo-tecnitub\.png\1/g, `$1${logo}$1`);
 
