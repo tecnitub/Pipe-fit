@@ -313,6 +313,7 @@
 
   // Interception des appels à l'API
   const realFetch = window.fetch.bind(window);
+window.PIPEFIT_DEMO = true;
   window.fetch = async (url, opts = {}) => {
     const u = typeof url === 'string' ? url : url.url;
     if (!u.startsWith('/api/')) return realFetch(url, opts);

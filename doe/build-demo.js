@@ -1,0 +1,35 @@
+// Construit la démonstration de l'application DOE en un seul fichier HTML (sans serveur), avec les chantiers de démo de Pipe-Fit.
+// Usage : node doe/build-demo.js [fichier-de-sortie]   (défaut : dist/pipefit-doe-demo.html)
+const fs = require('node:fs');
+const path = require('node:path');
+
+const root = path.join(__dirname, '..');
+const out = path.resolve(process.argv[2] || path.join(root, 'dist', 'pipefit-doe-demo.html'));
+const read = f => fs.readFileSync(path.join(root, f), 'utf8');
+const inlineScript = code => `<script>\n${code.replace(/<\/script/gi, '<\\/script')}\n</script>`;
+const logo = `data:image/png;base64,${fs.readFileSync(path.join(__dirname, 'public', 'logo-tecnitub.png')).toString('base64')}`;
+const avecLogo = s => s.replace(/(["'])logo-tecnitub\.png\1/g, `$1${logo}$1`);
+
+const html = read('doe/public/index.html');
+const body = html.slice(html.indexOf('>', html.indexOf('<body')) + 1, html.indexOf('</body>'));
+const scripts = [...body.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
+const fichier = s => (s === 'shared/pdf.js' ? 'public/js/pdf.js' : path.join('doe/public', s));
+const markup = body.replace(/<script src="[^"]+"><\/script>\s*/g, '').trim()
+  .replace('<div class="session">', '<div class="bandeau-demo">Démo — comptes : jacky, claire ou admin (mot de passe libre)</div><div class="session">');
+
+const page = [
+  '<title>Pipe-Fit DOE</title>',
+  `<link rel="icon" href="${logo}">`,
+  `<style>\n${read('doe/public/css/doe.css')}\n.bandeau-demo { font-size: 12px; background: #fde68a; color: #713f12; padding: 3px 10px; border-radius: 6px; }\n</style>`,
+  avecLogo(markup),
+  inlineScript("document.body.classList.add('deconnecte');"),
+  inlineScript(read('server/demo-images.js')),
+  inlineScript(`window.DemoSeed = (function (module) {\n${read('server/demo.js')}\nreturn module.exports;\n})({});`),
+  inlineScript(read('doe/config-defaut.js')),
+  inlineScript(read('doe/demo-backend.js')),
+  ...scripts.map(s => inlineScript(avecLogo(read(fichier(s))))),
+].join('\n');
+
+fs.mkdirSync(path.dirname(out), { recursive: true });
+fs.writeFileSync(out, page);
+console.log(`Démo DOE : ${out} (${Math.round(fs.statSync(out).size / 1024)} Ko)`);

@@ -132,8 +132,8 @@ const PDF = (() => {
   }
 
   // Coupures de page entre les lignes de tableau / paragraphes
-  function paginer(atomes, total) {
-    const H = PAGE_H - 2 * MARGE, pages = [];
+  function paginer(atomes, total, H = PAGE_H - 2 * MARGE) {
+    const pages = [];
     let debut = 0;
     while (debut < total - 1) {
       let fin = debut + H;
@@ -151,8 +151,10 @@ const PDF = (() => {
     return pages.length ? pages : [[0, total]];
   }
 
-  function assembler({ ops, atomes, images, hauteur }, titre, pj) {
-    const pages = paginer(atomes, hauteur);
+  // opts : margeHaut / margeBas en px (place pour un en-tête et un pied ajoutés ensuite), numeros: false (numérotation faite ailleurs)
+  function assembler({ ops, atomes, images, hauteur }, titre, pj, opts = {}) {
+    const MH = opts.margeHaut ?? MARGE, MB = opts.margeBas ?? MARGE;
+    const pages = paginer(atomes, hauteur, PAGE_H - MH - MB);
     const objets = [];
     const ajouter = corps => { objets.push(corps); return objets.length; };
     ajouter(''); ajouter(''); // 1 catalogue, 2 arbre des pages
@@ -167,8 +169,8 @@ const PDF = (() => {
     const ressources = `<< /Font << ${fontes.map((id, i) => `/F${i} ${id} 0 R`).join(' ')} >> /XObject << ${[...imgIds.values()].map(v => `/${v.nom} ${v.id} 0 R`).join(' ')} >> >>`;
     const kids = [];
     pages.forEach(([s, e], ip) => {
-      const X = x => n((MARGE + x) * K), Y = y => n((PAGE_H - MARGE - (y - s)) * K);
-      const cmd = [`q 0 ${n((PAGE_H - MARGE - (e - s)) * K)} ${n(PAGE_W * K)} ${n((e - s) * K)} re W n`];
+      const X = x => n((MARGE + x) * K), Y = y => n((PAGE_H - MH - (y - s)) * K);
+      const cmd = [`q 0 ${n((PAGE_H - MH - (e - s)) * K)} ${n(PAGE_W * K)} ${n((e - s) * K)} re W n`];
       ops.forEach(o => {
         if (o.t === 'txt') {
           if (o.top < s - 1 || o.top >= e - 1) return;
@@ -181,7 +183,7 @@ const PDF = (() => {
         }
       });
       cmd.push('Q');
-      if (pages.length > 1) {
+      if (pages.length > 1 && opts.numeros !== false) {
         const t = octets(`Page ${ip + 1} / ${pages.length}`), pt = 7.5;
         cmd.push(`BT /F0 ${pt} Tf 100 Tz 0.45 0.45 0.45 rg 1 0 0 1 ${n((PAGE_W - MARGE) * K - largeur(t, 0) * pt / 1000)} ${n(MARGE * K / 2)} Tm (${echapper(t)}) Tj ET`);
       }
@@ -211,7 +213,7 @@ const PDF = (() => {
   }
 
   return {
-    async depuisHTML(html, titre, pj) { return assembler(await relever(html), titre, pj); },
+    async depuisHTML(html, titre, pj, opts) { return assembler(await relever(html), titre, pj, opts); },
     async telecharger(html, nom) { download(nom, await this.depuisHTML(html, nom.replace(/\.pdf$/i, '')), 'application/pdf'); },
   };
 })();

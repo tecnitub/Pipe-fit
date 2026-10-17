@@ -28,6 +28,12 @@ Obtenir l'installateur : onglet **Actions** du dépôt GitHub → dernière exé
 avec un serveur simulé dans le navigateur (données sur l'appareil, sélecteur de profil
 admin / chargé d'affaires / atelier). Utile pour tester sur téléphone et itérer sur la conception.
 
+## Application DOE (dossier des ouvrages exécutés)
+
+Application séparée dans `doe/`, reliée à Pipe-Fit : voir [doe/README.md](doe/README.md).
+`npm run start:doe` la démarre sur le port 3100 ; `node doe/build-demo.js` produit sa démonstration
+`dist/pipefit-doe-demo.html`. Dans Pipe-Fit, l'onglet « 📘 DOE » de chaque chantier ouvre son dossier.
+
 ## Installation manuelle (Linux, Windows, macOS)
 
 Prérequis : **Node.js 22.13 ou plus récent** (aucune autre dépendance, la base SQLite est intégrée à Node.js).
@@ -212,6 +218,7 @@ server/api.js      clés d'API, webhooks sortants, description OpenAPI
 public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
 public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js : écrans métier
+doe/               application DOE séparée (serveur, interface, génération du dossier PDF)
 installer/         installateur Windows (NSIS) : build.sh, PipeFitCRM.nsi, lanceur et service
 ```
 

@@ -20,7 +20,14 @@ function chantierOnglets(a, actif) {
   const n = (a.documents || []).length;
   return `<div class="tabs no-print"><a href="#/chantier/${a.id}" class="${actif === 'apercu' ? 'active' : ''}">Vue d'ensemble</a>
     <a href="#/chantier/${a.id}/documents" class="${actif === 'documents' ? 'active' : ''}">📎 Documents <span class="count">${n}</span></a>
-    ${estHorsDevis(a) ? '' : `<a href="#/situations">Situations</a>`}</div>`;
+    ${estHorsDevis(a) ? '' : `<a href="#/situations">Situations</a>`}
+    ${estHorsDevis(a) || !lienDOE(a) ? '' : `<a href="${esc(lienDOE(a))}" target="_blank" rel="noopener" title="Dossier des ouvrages exécutés (application DOE)">📘 DOE ↗</a>`}</div>`;
+}
+// Lien vers le dossier DOE du chantier dans l'application DOE (bureau uniquement)
+function lienDOE(a) {
+  if (!Store.me || Store.me.role === 'atelier') return '';
+  const base = String((Store.data.settings || {}).doeUrl || (/^https?:$/.test(location.protocol) && !window.PIPEFIT_DEMO ? `${location.protocol}//${location.hostname}:3100` : '')).trim().replace(/\/+$/, '');
+  return /^https?:\/\//i.test(base) ? `${base}/#/chantier/${encodeURIComponent(a.id)}` : '';
 }
 
 // Envoi d'un fichier brut (jusqu'à 40 Mo) : renvoie { id, mime, taille }
