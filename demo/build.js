@@ -25,8 +25,15 @@ const page = [
 ].join('\n');
 
 // Le faux serveur doit être chargé avant l'application (après ui.js pour les dialogues).
-const withBackend = page.replace(inlineScript(read('public/js/store.js')),
+const withBackend = (inlineScript("window.OCR_MODELE_JS = 'fra-traineddata.js';") + '\n' + page).replace(inlineScript(read('public/js/store.js')),
   inlineScript(read('demo/backend.js')) + '\n' + inlineScript(read('public/js/store.js')));
+
+// Lecture des tickets (OCR) : fichiers publiés à côté de la page dans vendor/tesseract/ ; le modèle .gz, que l'hébergement
+// de la démo ne sert pas, devient un script (window.OCR_MODELE_B64)
+const ocrDir = path.join(path.dirname(out), 'vendor', 'tesseract');
+fs.mkdirSync(ocrDir, { recursive: true });
+['tesseract.min.js', 'worker.min.js', 'tesseract-core-simd-lstm.wasm.js'].forEach(f => fs.copyFileSync(path.join(root, 'public/vendor/tesseract', f), path.join(ocrDir, f)));
+fs.writeFileSync(path.join(ocrDir, 'fra-traineddata.js'), `window.OCR_MODELE_B64 = '${fs.readFileSync(path.join(root, 'public/vendor/tesseract/fra.traineddata.gz')).toString('base64')}';\n`);
 
 fs.mkdirSync(path.dirname(out), { recursive: true });
 fs.writeFileSync(out, withBackend);

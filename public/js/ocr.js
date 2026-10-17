@@ -6,9 +6,21 @@ const OCR = (() => {
   const chargerScript = src => new Promise((ok, ko) => {
     const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => ko(new Error('Module de lecture indisponible')); document.head.appendChild(s);
   });
+  const mettreEnCache = (cle, valeur) => new Promise((ok, ko) => {
+    const r = indexedDB.open('keyval-store');
+    r.onupgradeneeded = () => r.result.createObjectStore('keyval');
+    r.onerror = () => ko(new Error('Stockage du navigateur indisponible'));
+    r.onsuccess = () => { const t = r.result.transaction('keyval', 'readwrite'); t.objectStore('keyval').put(valeur, cle); t.oncomplete = () => { r.result.close(); ok(); }; t.onerror = () => ko(t.error); };
+  });
   async function preparer() {
     if (!window.Tesseract) await chargerScript(`${dossier()}tesseract.min.js`);
     if (!worker) {
+      // Démo en ligne : le modèle français est fourni dans un script (window.OCR_MODELE_JS) au lieu du fichier .gz,
+      // puis déposé dans le cache de Tesseract (IndexedDB « keyval-store », clé « ./fra.traineddata ») lu avant tout téléchargement
+      if (window.OCR_MODELE_JS) {
+        if (!window.OCR_MODELE_B64) await chargerScript(`${dossier()}${window.OCR_MODELE_JS}`);
+        await mettreEnCache('./fra.traineddata', Uint8Array.from(atob(window.OCR_MODELE_B64), c => c.charCodeAt(0)));
+      }
       worker = Tesseract.createWorker('fra', 1, {
         workerPath: `${dossier()}worker.min.js`, corePath: `${dossier()}tesseract-core-simd-lstm.wasm.js`, langPath: dossier().replace(/\/$/, ''),
         logger: m => { if (suivi && m.status === 'recognizing text') suivi(m.progress); },
