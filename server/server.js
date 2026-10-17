@@ -493,16 +493,17 @@ async function api(req, res, url) {
     return send(res, 200, { plateforme: c.plateforme || '', dossierEntree: c.dossierEntree || '', dossierSortie: c.dossierSortie || '', webhook: !!c.webhook, jeton: c.webhook ? c.jeton : '' });
   }
 
-  // Numérotation des factures et avoirs : état et reprise d'une numérotation existante
+  // Numérotation des factures, avoirs et situations : état et reprise d'une numérotation existante
   if (p[0] === 'numerotation') {
     if (method === 'GET') return send(res, 200, DB.etatNumerotation(db));
     if (method === 'PUT') {
       const b = await readBody(req);
       const prochain = parseInt(b.prochain, 10);
-      if (!['facture', 'avoir'].includes(b.cle) || !(prochain >= 1)) return fail(res, 400, 'Numéro invalide');
-      const r = DB.tx(db, () => DB.fixerProchain(db, 'factures', { type: b.cle === 'avoir' ? 'avoir' : '' }, prochain));
+      const cible = DB.NUMEROS_PARAMETRABLES[b.cle];
+      if (!cible || !(prochain >= 1)) return fail(res, 400, 'Numéro invalide');
+      const r = DB.tx(db, () => DB.fixerProchain(db, cible[0], cible[1], prochain));
       if (r.erreur) return fail(res, 400, r.erreur);
-      DB.audit(db, acc.login, 'numérotation', 'factures', null, `${b.cle} : prochain n° ${prochain}`);
+      DB.audit(db, acc.login, 'numérotation', cible[0], null, `${b.cle} : prochain n° ${prochain}`);
       return send(res, 200, DB.etatNumerotation(db));
     }
   }

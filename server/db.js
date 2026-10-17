@@ -106,7 +106,10 @@ function setConfig(db, key, value) { db.prepare('INSERT INTO config (key, value)
 // Numérotation séquentielle par année (DV-2026-0001, CH-2026-001…), attribuée dans la transaction d'écriture.
 // Les interventions hors devis ont leur propre numérotation (HD-AAAA-001) dans la liste des chantiers.
 // Factures et avoirs : format paramétrable (Paramètres → Numérotation), suite continue sans trou.
-const FORMATS_DEFAUT = { facture: { prefixe: 'FA', separateur: '-', annee: 'AAAA', chiffres: 4 }, avoir: { prefixe: 'AV', separateur: '-', annee: 'AAAA', chiffres: 4 } };
+const FORMATS_DEFAUT = { facture: { prefixe: 'FA', separateur: '-', annee: 'AAAA', chiffres: 4 }, avoir: { prefixe: 'AV', separateur: '-', annee: 'AAAA', chiffres: 4 },
+  situation: { prefixe: 'BL', separateur: '-', annee: 'AAAA', chiffres: 4 } };
+// Pièces à numérotation paramétrable : clé du format -> [liste, objet type]
+const NUMEROS_PARAMETRABLES = { facture: ['factures', { type: '' }], avoir: ['factures', { type: 'avoir' }], situation: ['situations', {}] };
 function formatNumero(db, cle) {
   const f = { ...FORMATS_DEFAUT[cle], ...(((getSettings(db) || {}).numerotation || {})[cle] || {}) };
   f.prefixe = String(f.prefixe ?? '').replace(/[^\w/.-]/g, '').slice(0, 12);
@@ -118,8 +121,8 @@ function formatNumero(db, cle) {
 // Racine du numéro (tout sauf le compteur) et nombre de chiffres
 function racineNumero(db, col, obj, date = new Date()) {
   const [, base, digits] = NUMBERING[col];
-  if (col === 'factures') {
-    const f = formatNumero(db, obj && obj.type === 'avoir' ? 'avoir' : 'facture');
+  if (col === 'factures' || col === 'situations') {
+    const f = formatNumero(db, col === 'situations' ? 'situation' : obj && obj.type === 'avoir' ? 'avoir' : 'facture');
     const an = f.annee === 'AAAA' ? String(date.getFullYear()) : f.annee === 'AA' ? String(date.getFullYear()).slice(2) : '';
     return { prefix: [f.prefixe, an].filter(Boolean).map(x => x + f.separateur).join(''), digits: f.chiffres };
   }
@@ -157,11 +160,11 @@ function fixerProchain(db, col, obj, prochain) {
 }
 function etatNumerotation(db) {
   const etat = cle => {
-    const obj = { type: cle === 'avoir' ? 'avoir' : '' }, { prefix, digits } = racineNumero(db, 'factures', obj);
-    const prochain = compteur(db, 'factures', prefix) + 1;
-    return { format: formatNumero(db, cle), racine: prefix, prochain, exemple: prefix + String(prochain).padStart(digits, '0'), dernier: maxUtilise(db, 'factures', prefix) };
+    const [col, obj] = NUMEROS_PARAMETRABLES[cle], { prefix, digits } = racineNumero(db, col, obj);
+    const prochain = compteur(db, col, prefix) + 1;
+    return { format: formatNumero(db, cle), racine: prefix, prochain, exemple: prefix + String(prochain).padStart(digits, '0'), dernier: maxUtilise(db, col, prefix) };
   };
-  return { facture: etat('facture'), avoir: etat('avoir') };
+  return Object.fromEntries(Object.keys(NUMEROS_PARAMETRABLES).map(cle => [cle, etat(cle)]));
 }
 
 function replaceAll(db, data, login) {
@@ -188,6 +191,6 @@ function audit(db, login, action, col, rid, label) {
 }
 
 module.exports = {
-  COLLECTIONS, NUMBERING, ROLES, open, tx, hashPassword, checkPassword, clean,
+  COLLECTIONS, NUMBERING, NUMEROS_PARAMETRABLES, ROLES, open, tx, hashPassword, checkPassword, clean,
   getRecord, allData, getSettings, setSettings, nextNumber, replaceAll, audit, getConfig, setConfig, fixerProchain, etatNumerotation,
 };

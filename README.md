@@ -161,9 +161,14 @@ Le PDF Factur-X contient le XML joint mais n'est pas certifié PDF/A-3 : si votr
    par semaine, paniers, notes de frais, salaire brut indicatif), intérimaires à part (rapprochement de la facture
    d'agence). **Récap Excel** du mois : une feuille de synthèse, une feuille par personne (détail jour par jour,
    total de chaque semaine et découpage des heures supplémentaires), une feuille des notes de frais.
-7. **Situations de travaux** : proposition d'avancement par ligne du devis à la maîtrise d'œuvre sous forme de
-   **BL numéroté** (`BL-AAAA-0001`, numérotation indépendante) ; BL accepté → facture de situation générée
-   (montant = cumul − situations précédentes). **Analyse** par chantier et par chargé d'affaires, REX.
+7. **Situations de travaux** (menu Situations) : vue par chantier (marché, facturé, reste, retenues) et liste de
+   toutes les situations. Avancement saisi ligne par ligne en **% cumulé, en quantités réalisées ou en montant** ;
+   lignes ou chapitres **cochés** pour leur appliquer un pourcentage (« mettre à 50 % », « ajouter 20 % »,
+   « solder », « rien cette fois »). **Retenue de garantie cochable** sur chaque situation (taux du chantier par
+   défaut, modifiable). Envoi par **e-mail pré-paramétré** (modèle « Situation de travaux ») → situation « envoyée » ;
+   dès qu'elle est **validée**, la facture est créée (montant = cumul − situations précédentes, retenue déduite)
+   et son e-mail est préparé. **Numérotation par année paramétrable comme les factures** (`BL-AAAA-0001` par
+   défaut, préfixe, année, chiffres, reprise du prochain numéro). **Analyse** par chantier et par chargé d'affaires, REX.
 
 | Module | Contenu |
 |---|---|

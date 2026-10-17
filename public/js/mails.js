@@ -10,8 +10,8 @@ const MAIL_TYPES = {
     corps: 'Bonjour {contact},\n\nVeuillez trouver ci-joint notre facture {numero} relative au chantier {chantier}{ref_commande}.\nNet à payer : {montant_ttc} TTC, à régler avant le {echeance}.\n\nNous vous remercions de votre confiance.\n\nCordialement,\n\n{signature}' },
   avoir: { label: 'Avoir', objet: 'Avoir {numero} sur facture {facture_origine}',
     corps: 'Bonjour {contact},\n\nVeuillez trouver ci-joint notre avoir {numero} d\'un montant de {montant_ttc} TTC, établi sur la facture {facture_origine}{motif_phrase}.\n\nCordialement,\n\n{signature}' },
-  situation: { label: 'Situation de travaux (BL)', objet: 'Proposition de situation n° {rang} – {chantier}',
-    corps: 'Bonjour {contact},\n\nVeuillez trouver ci-joint notre proposition de situation n° {rang} (BL {numero}) arrêtée au {date} pour le chantier {chantier}, d\'un montant de {montant_ht} HT.\n\nMerci de nous retourner votre accord afin que nous puissions établir la facture correspondante.\n\nCordialement,\n\n{signature}' },
+  situation: { label: 'Situation de travaux', objet: 'Situation de travaux n° {rang} – {chantier}',
+    corps: 'Bonjour {contact},\n\nVeuillez trouver ci-joint notre situation de travaux n° {rang} ({numero}) arrêtée au {date} pour le chantier {chantier}, d\'un montant de {montant_ht} HT{retenue_phrase}.\n\nMerci de nous retourner votre validation : la facture correspondante vous sera adressée dès réception.\n\nCordialement,\n\n{signature}' },
   consultation: { label: 'Consultation fournisseurs (appel d\'offres)', objet: 'Demande de prix {numero} – {objet}',
     corps: 'Bonjour {contact},\n\nNous vous consultons pour les fournitures listées dans la demande ci-jointe (réf. {numero}, chantier {chantier}){date_livraison_phrase}.\nMerci de nous retourner votre meilleure offre avant le {date_limite}, de préférence en complétant le tableau Excel joint (prix unitaires HT, délais, frais de port).\n\nCordialement,\n\n{signature}' },
   demandePrix: { label: 'Demande de prix fournisseur', objet: 'Demande de prix – {chantier}',
@@ -28,7 +28,7 @@ const MAIL_TYPES = {
 const MAIL_VARIABLES = [
   ['contact', 'Formule d\'appel du destinataire (Madame Durand)'], ['numero', 'Numéro du document'], ['objet', 'Objet'], ['chantier', 'Chantier (code – nom)'],
   ['client', 'Entreprise destinataire'], ['date', 'Date du document'], ['montant_ht', 'Montant HT'], ['montant_ttc', 'Montant TTC / net à payer'],
-  ['echeance', 'Échéance (facture)'], ['validite', 'Validité (devis)'], ['rang', 'N° de situation'], ['ref_commande', '« , votre commande n° … »'],
+  ['echeance', 'Échéance (facture)'], ['validite', 'Validité (devis)'], ['rang', 'N° de situation'], ['retenue_phrase', '« , soit … TTC (retenue de garantie…, net à payer …) » (situation)'], ['ref_commande', '« , votre commande n° … »'],
   ['date_livraison_phrase', '« pour le … » (date de livraison)'], ['facture_origine', 'Facture d\'origine (avoir)'], ['date_limite', 'Date limite de remise des offres'], ['motif_phrase', '« (motif) » de l\'avoir'], ['adresse_livraison', 'Adresse de livraison'], ['signataire_phrase', '« , signé par … »'],
   ['societe', 'Votre société'], ['expediteur', 'Votre nom'], ['signature', 'Signature'],
 ];
@@ -80,8 +80,9 @@ function mailContexte(type, id) {
       const a = affaireOf(sit.affaireId), c = Calc.situation(sit);
       return { ref: { col: 'situations', id }, numero: sit.numero, entrepriseId: a.moeId || a.clientId, contactId: a.moeId ? a.moeContactId : a.contactId, chargeId: a.chargeId,
         fichier: `Situation ${situationRang(sit)} ${sit.numero || ''}`, html: () => premierRendu(Views.situations([id], new URLSearchParams())),
-        vars: { chantier: chantier(a), objet: a.nom, date: dateFr(sit.date), rang: situationRang(sit), montant_ht: eur(c.montant), montant_ttc: eur(c.montant + c.tva) },
-        apres: () => { if (sit.statut === 'Brouillon') { sit.statut = 'Proposée'; Store.upsert('situations', sit); } } };
+        vars: { chantier: chantier(a), objet: a.nom, date: dateFr(sit.date), rang: situationRang(sit), montant_ht: eur(c.montant), montant_ttc: eur(c.ttc),
+          retenue_phrase: c.retenue ? `, soit ${eur(c.ttc)} TTC (retenue de garantie de ${fmt(c.retenuePct, 1)} % : ${eur(c.retenue)} ; net à payer ${eur(c.netAPayer)})` : `, soit ${eur(c.ttc)} TTC` },
+        apres: () => { if (sit.statut === 'Brouillon') { Object.assign(sit, { statut: 'Proposée', dateEnvoi: isoDate(new Date()) }); Store.upsert('situations', sit); } } };
     }
     case 'commande': case 'demandePrix': {
       const c = Store.get('commandes', id); if (!c) return null;

@@ -2,7 +2,7 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v21';
+  const KEY = 'pipefit-crm-demo-v22';
   const ME_KEY = 'pipefit-crm-demo-me';
   const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4] };
@@ -92,11 +92,13 @@
   window.addEventListener('pagehide', viderNotifs);
 
   // Même numérotation que le serveur : factures et avoirs au format paramétré, suite continue
-  const FORMATS = { facture: { prefixe: 'FA', separateur: '-', annee: 'AAAA', chiffres: 4 }, avoir: { prefixe: 'AV', separateur: '-', annee: 'AAAA', chiffres: 4 } };
+  const FORMATS = { facture: { prefixe: 'FA', separateur: '-', annee: 'AAAA', chiffres: 4 }, avoir: { prefixe: 'AV', separateur: '-', annee: 'AAAA', chiffres: 4 }, situation: { prefixe: 'BL', separateur: '-', annee: 'AAAA', chiffres: 4 } };
+  const PARAMETRABLES = { facture: ['factures', { type: '' }], avoir: ['factures', { type: 'avoir' }], situation: ['situations', {}] };
   function racine(col, obj) {
     const [, base, digits] = NUMBERING[col], Y = String(new Date().getFullYear());
-    if (col === 'factures') {
-      const f = { ...FORMATS[obj && obj.type === 'avoir' ? 'avoir' : 'facture'], ...(((db.settings || {}).numerotation || {})[obj && obj.type === 'avoir' ? 'avoir' : 'facture'] || {}) };
+    if (col === 'factures' || col === 'situations') {
+      const cle = col === 'situations' ? 'situation' : obj && obj.type === 'avoir' ? 'avoir' : 'facture';
+      const f = { ...FORMATS[cle], ...(((db.settings || {}).numerotation || {})[cle] || {}) };
       const an = f.annee === 'AAAA' ? Y : f.annee === 'AA' ? Y.slice(2) : '';
       return { prefix: [f.prefixe, an].filter(Boolean).map(x => x + f.separateur).join(''), digits: Math.min(8, Math.max(3, +f.chiffres || 4)), format: f };
     }
@@ -110,9 +112,9 @@
     return prefix + String(v).padStart(digits, '0');
   }
   function etatNumerotation() {
-    const e = cle => { const obj = { type: cle === 'avoir' ? 'avoir' : '' }, r = racine('factures', obj), prochain = compteur('factures', r.prefix) + 1;
-      return { format: r.format, racine: r.prefix, prochain, exemple: r.prefix + String(prochain).padStart(r.digits, '0'), dernier: maxUtilise('factures', r.prefix) }; };
-    return { facture: e('facture'), avoir: e('avoir') };
+    const e = cle => { const [col, obj] = PARAMETRABLES[cle], r = racine(col, obj), prochain = compteur(col, r.prefix) + 1;
+      return { format: r.format, racine: r.prefix, prochain, exemple: r.prefix + String(prochain).padStart(r.digits, '0'), dernier: maxUtilise(col, r.prefix) }; };
+    return Object.fromEntries(Object.keys(PARAMETRABLES).map(cle => [cle, e(cle)]));
   }
 
   function handle(method, path, body) {
@@ -240,9 +242,11 @@
     if (p[0] === 'audit') return [200, db.audit];
     if (p[0] === 'numerotation') {
       if (method === 'GET') return [200, etatNumerotation()];
-      const { prefix } = racine('factures', { type: body.cle === 'avoir' ? 'avoir' : '' }), max = maxUtilise('factures', prefix), n = parseInt(body.prochain, 10);
+      const cible = PARAMETRABLES[body.cle];
+      if (!cible) return [400, { error: 'Numéro invalide' }];
+      const { prefix } = racine(cible[0], cible[1]), max = maxUtilise(cible[0], prefix), n = parseInt(body.prochain, 10);
       if (!(n > max)) return [400, { error: `Le numéro ${prefix}${max} est déjà attribué : le prochain numéro doit être supérieur à ${max}.` }];
-      db.counters[`factures:${prefix}`] = n - 1; save();
+      db.counters[`${cible[0]}:${prefix}`] = n - 1; save();
       return [200, etatNumerotation()];
     }
     if (p[0] === 'm365') {

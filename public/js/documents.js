@@ -16,7 +16,7 @@ const DOC_TYPES = {
     ['numeros', 'Colonne N° (numérotation des chapitres et des lignes)', true], ['quantites', 'Quantités et unités', true], ['prix', 'Prix unitaires et totaux par ligne', true],
     ['detail', 'Descriptifs sous les ouvrages', true], ['sousTotaux', 'Sous-totaux par chapitre', true], ['ajustements', 'Détail des remises et majorations', true],
     ['contact', 'Contact client (à l\'attention de)', true], ['lieu', 'Lieu d\'intervention', true], ['charge', 'Chargé d\'affaires', true], ['references', 'Référence de la facture d\'origine', true], ['mentions2026', 'Mentions de la réforme 2026 (SIREN du client, catégorie de l\'opération)', true]] },
-  situation: { label: 'Situation de travaux (BL)', titre: 'PROPOSITION DE SITUATION', conditions: '', options: [
+  situation: { label: 'Situation de travaux', titre: 'SITUATION DE TRAVAUX', conditions: '', options: [
     ['marche', 'Colonne montant du marché', true], ['precedent', 'Colonnes cumul et précédent', true], ['maitreOuvrage', 'Maître d\'ouvrage et site', true], ['signature', 'Cadre « Bon pour accord » de la maîtrise d\'œuvre', true]] },
   commande: { label: 'Bon de commande fournisseur', titre: 'BON DE COMMANDE', conditions: 'Merci de rappeler le numéro de commande sur le bon de livraison et la facture.', options: [
     ['prix', 'Prix (sinon : bon de commande non chiffré)', true], ['chantier', 'Chantier concerné', true], ['livraison', 'Adresse et date de livraison', true]] },

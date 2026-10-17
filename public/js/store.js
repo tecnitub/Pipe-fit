@@ -64,6 +64,12 @@ const Store = {
       .catch(err => { this._inflight.delete(key); this._onError(err, col, obj.id); });
   },
 
+  // Attend la réponse du serveur pour un élément (numéro attribué), au plus quelques secondes
+  attendre(col, id, max = 10000) {
+    const key = col + '/' + id, t0 = Date.now();
+    return new Promise(ok => { const f = () => (!this._inflight.has(key) || Date.now() - t0 > max ? ok(this.get(col, id)) : setTimeout(f, 50)); f(); });
+  },
+
   // Import groupé : une requête, puis mise à jour du cache
   async bulk(col, items) {
     const recs = await api('POST', `/api/bulk/${col}`, { items });

@@ -208,7 +208,7 @@ async function envoyerComptable(pieces, ecr, periode, titre, nomFichierCompta, a
 
 /* ---------- Paramètres : numérotation des factures et avoirs ---------- */
 function numerotationCarte() {
-  return `<h2>Numérotation des factures et avoirs</h2>
+  return `<h2>Numérotation des factures, avoirs et situations</h2>
   <div class="card" id="num-carte"><p class="muted small">Chargement…</p></div>`;
 }
 function bindNumerotation(root) {
@@ -225,8 +225,8 @@ function bindNumerotation(root) {
         <div class="field"><label>Aperçu</label><output class="num-apercu">${esc(e.exemple)}</output></div>
       </div>
       <p class="muted small">${e.dernier ? `Dernier numéro attribué avec ce format : ${esc(e.racine)}${String(e.dernier).padStart(f.chiffres, '0')}.` : 'Aucun numéro encore attribué avec ce format.'} Reprise d'un autre logiciel : indiquez le prochain numéro à utiliser.</p></fieldset>`; };
-    carte.innerHTML = `<p class="muted small" style="margin-top:0">Numéros attribués par le serveur, dans l'ordre chronologique et sans trou (aucune facture ne peut être supprimée). Un changement de format s'applique aux prochaines pièces.</p>
-      ${bloc('facture', 'Factures')}${bloc('avoir', 'Avoirs')}<div class="modal-actions"><button id="num-save">Enregistrer la numérotation</button></div>`;
+    carte.innerHTML = `<p class="muted small" style="margin-top:0">Numéros attribués par le serveur, dans l'ordre chronologique et sans trou (aucune facture ne peut être supprimée), remis à 1 chaque année si le numéro contient l'année. Un changement de format s'applique aux prochaines pièces.</p>
+      ${bloc('facture', 'Factures')}${bloc('avoir', 'Avoirs')}${etat.situation ? bloc('situation', 'Situations de travaux') : ''}<div class="modal-actions"><button id="num-save">Enregistrer la numérotation</button></div>`;
     const apercu = div => {
       const v = k => div.querySelector(`[data-k="${k}"]`).value, an = v('annee') === 'AAAA' ? String(new Date().getFullYear()) : v('annee') === 'AA' ? String(new Date().getFullYear()).slice(2) : '';
       div.querySelector('.num-apercu').textContent = [v('prefixe'), an].filter(Boolean).map(x => x + v('separateur')).join('') + String(Math.max(1, parseInt(v('prochain'), 10) || 1)).padStart(Math.min(8, Math.max(3, +v('chiffres') || 4)), '0');

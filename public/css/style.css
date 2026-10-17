@@ -565,3 +565,28 @@ details.preview > .doc-print, .doc-print.feuille { max-width: 794px; margin-left
 .pl-bulle-pt.plein { background: color-mix(in srgb, var(--c) 28%, var(--panel)); box-shadow: inset 0 0 0 2px var(--c); }
 .pl-jour.modifie { border-color: var(--warn); box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 30%, transparent); }
 .pl-abs-mobile { font-size: 16px; margin: 6px 0; }
+
+/* Situations de travaux */
+.sit-chantiers { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+.sit-ch { display: grid; gap: 6px; }
+.sit-ch-tete { display: grid; }
+.sit-ch-tete a { color: inherit; text-decoration: none; }
+.sit-ch-tete a:hover { color: var(--accent); }
+.sit-ch-chiffres { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
+.sit-etapes { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 0 0 12px; counter-reset: etape; }
+.sit-etapes li { padding: 6px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+.sit-etapes li.fait { background: color-mix(in srgb, #2f9e44 12%, var(--panel)); border-color: #2f9e44; color: var(--text); }
+.sit-etapes li.ici { border-color: var(--accent); color: var(--text); font-weight: 700; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+.sit-action { margin-bottom: 12px; border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.sit-rg, .sit-mode, .sit-sel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }
+.sit-rg .check { margin: 0; }
+.sit-rg input[type="number"] { width: 76px; }
+.sit-sel { padding: 8px 10px; border-radius: 8px; background: var(--panel-alt); border: 1px dashed var(--border); }
+.sit-sel .inline { gap: 4px; }
+.sit-sel input { padding: 4px 6px; }
+.sit-table .sit-saisie { white-space: nowrap; }
+.sit-table .sit-saisie input { width: 90px; padding: 4px 6px; text-align: right; }
+.sit-table tr.sit-facturee td { background: color-mix(in srgb, var(--accent) 5%, var(--panel)); }
+.sit-barre { position: relative; display: flex; height: 4px; border-radius: 2px; background: var(--head); overflow: hidden; margin-top: 3px; min-width: 60px; }
+.sit-barre span { display: block; height: 100%; background: color-mix(in srgb, var(--muted) 60%, var(--head)); }
+.sit-barre span.nouv { background: var(--accent); }

@@ -78,8 +78,8 @@ test('planning modifié : notification regroupée, chiffrée et signée', async 
 
   // Le bureau planifie Kevin sur deux jours (plusieurs enregistrements) : une seule notification
   const aff = (await call('GET', '/api/records/affaires/af1', null, claire)).body;
-  await call('PUT', '/api/records/planning/pn1', { data: { userId: 'o1', date: jour(1), affaireId: 'af1', debut: '07:30', fin: '16:30', pause: 60, heuresPrevues: 8, tache: 'Soudure' } }, claire);
-  await call('PUT', '/api/records/planning/pn2', { data: { userId: 'o1', date: jour(2), affaireId: 'af1', debut: '08:00', fin: '12:00', pause: 0, heuresPrevues: 4, tache: 'Montage' } }, claire);
+  await call('PUT', '/api/records/planning/pn1', { data: { userId: 'o1', date: jour(61), affaireId: 'af1', debut: '07:30', fin: '16:30', pause: 60, heuresPrevues: 8, tache: 'Soudure' } }, claire);
+  await call('PUT', '/api/records/planning/pn2', { data: { userId: 'o1', date: jour(62), affaireId: 'af1', debut: '08:00', fin: '12:00', pause: 0, heuresPrevues: 4, tache: 'Montage' } }, claire);
   // Journée passée : pas de notification
   await call('PUT', '/api/records/planning/pn0', { data: { userId: 'o1', date: jour(-3), affaireId: 'af1', heuresPrevues: 8 } }, claire);
   await attendre(300);
@@ -88,7 +88,7 @@ test('planning modifié : notification regroupée, chiffrée et signée', async 
   assert.strictEqual(notifs.length, 1);
   assert.match(notifs[0].titre, /^Votre planning a changé : 2 jours$/);
   assert.ok(notifs[0].texte.includes(`${aff.code} 07:30–16:30 (Soudure)`), notifs[0].texte);
-  assert.deepStrictEqual(notifs[0].jours, [jour(1), jour(2)]);
+  assert.deepStrictEqual(notifs[0].jours, [jour(61), jour(62)]);
 
   const pourKevin = recus.filter(r => r.url === 'https://push.test/kevin');
   assert.strictEqual(pourKevin.length, 1);
@@ -112,7 +112,7 @@ test('planning modifié : notification regroupée, chiffrée et signée', async 
   assert.match(n2.texte, /: libre$/);
 
   // Intérimaire sans compte (i2, équipe de Lucas) : le chef d'équipe est prévenu
-  await call('PUT', '/api/records/planning/pn3', { data: { userId: 'i2', date: jour(1), affaireId: 'af1', heuresPrevues: 7 } }, claire);
+  await call('PUT', '/api/records/planning/pn3', { data: { userId: 'i2', date: jour(61), affaireId: 'af1', heuresPrevues: 7 } }, claire);
   await attendre(200);
   const pourLucas = (await notifsDe('o3', claire));
   assert.strictEqual(pourLucas.length, 1); assert.match(pourLucas[0].titre, /^Planning de Damien modifié/);
@@ -120,7 +120,7 @@ test('planning modifié : notification regroupée, chiffrée et signée', async 
   // Le compagnon marque sa notification comme lue, pas celle d'un autre
   assert.strictEqual((await call('PUT', `/api/records/notifications/${notifs[0].id}`, { data: { ...notifs[0], lu: true }, version: notifs[0]._v }, kevin)).status, 200);
   assert.strictEqual((await call('PUT', `/api/records/notifications/${pourLucas[0].id}`, { data: { ...pourLucas[0], lu: true }, version: pourLucas[0]._v }, kevin)).status, 403);
-  assert.strictEqual((await call('PUT', '/api/records/planning/px', { data: { userId: 'o1', date: jour(1) } }, kevin)).status, 403);
+  assert.strictEqual((await call('PUT', '/api/records/planning/px', { data: { userId: 'o1', date: jour(61) } }, kevin)).status, 403);
 
   // Désabonnement du téléphone
   await call('DELETE', '/api/push/abonnement', { endpoint: sub.endpoint }, kevin);

@@ -164,11 +164,11 @@ const Calc = {
     const prev = Store.all('situations').filter(x => x.devisId === sit.devisId && x.id !== sit.id && x.statut === 'Acceptée' && ordre(x) < ordre(sit))
       .sort((a, b) => ordre(a).localeCompare(ordre(b))).pop();
     const av = sit.avancements || {}, pav = (prev && prev.avancements) || {};
-    const rows = [];
+    const rows = [], numeros = this.numeros(dv);
     (dv.lignes || []).forEach((l, i) => {
-      if (l.type === 'chapitre') { rows.push({ chap: true, titre: l.titre, niveau: this.niveau(l) }); return; }
+      if (l.type === 'chapitre') { rows.push({ chap: true, titre: l.titre, niveau: this.niveau(l), num: numeros[i] }); return; }
       if (!this.estPrix(l)) return;
-      rows.push({ key: String(i), designation: l.designation, tva: this.tauxLigne(dv, l), marche: this.ligneHT(l) * ratio, prec: num(pav[i]), cumul: av[i] === undefined ? num(pav[i]) : num(av[i]) });
+      rows.push({ key: String(i), num: numeros[i], designation: l.designation, qte: num(l.qte), unite: l.unite || '', tva: this.tauxLigne(dv, l), marche: this.ligneHT(l) * ratio, prec: num(pav[i]), cumul: av[i] === undefined ? num(pav[i]) : num(av[i]) });
     });
     if (t.livraison) rows.push({ key: 'liv', designation: 'Transport / livraison', tva: this.tauxDoc(dv), marche: t.livraison, prec: num(pav.liv), cumul: av.liv === undefined ? num(pav.liv) : num(av.liv) });
     let marche = 0, cumul = 0, precedent = 0;
@@ -176,8 +176,13 @@ const Calc = {
       r.montantCumul = r.marche * r.cumul / 100; r.montantPrec = r.marche * r.prec / 100; r.montant = r.montantCumul - r.montantPrec;
       marche += r.marche; cumul += r.montantCumul; precedent += r.montantPrec;
     });
-    const tva = sumBy(rows.filter(r => !r.chap), r => r.montant * num(r.tva) / 100);
-    return { rows, prev, marche, cumul, precedent, tva, autoliquidation: !!dv.autoliquidation, montant: cumul - precedent, pctCumul: marche ? cumul / marche * 100 : 0, pctPrec: marche ? precedent / marche * 100 : 0 };
+    const tva = sumBy(rows.filter(r => !r.chap), r => r.montant * num(r.tva) / 100), montant = cumul - precedent;
+    // Retenue de garantie : cochée sur la situation (taux repris du chantier par défaut, sauf caution bancaire)
+    const af = Store.get('affaires', sit.affaireId) || {};
+    const retenuePct = sit.retenue === undefined ? (af.caution ? 0 : num(af.retenueGarantie)) : sit.retenue ? num(sit.retenuePct) : 0;
+    const ttc = montant + tva, retenue = ttc * retenuePct / 100;
+    return { rows, prev, marche, cumul, precedent, tva, ttc, retenuePct, retenue, netAPayer: ttc - retenue, autoliquidation: !!dv.autoliquidation, montant,
+      pctCumul: marche ? cumul / marche * 100 : 0, pctPrec: marche ? precedent / marche * 100 : 0 };
   },
 
   // Intervention hors devis (régie) : heures pointées valorisées au taux de vente de la catégorie de chaque personne,
