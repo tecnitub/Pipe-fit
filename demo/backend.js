@@ -2,7 +2,7 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v24';
+  const KEY = 'pipefit-crm-demo-v25';
   const ME_KEY = 'pipefit-crm-demo-me';
   const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4] };
@@ -49,6 +49,7 @@
   // Mêmes règles que le serveur : un opérateur saisit pour lui (et son équipe pour les pointages), rien de validé ne se modifie
   function atelierRefus(acc, col, obj, existing) {
     if (acc.role !== 'atelier') return null;
+    if (col === 'temps') { const r = ReglesPointage.refusTemps(obj, existing, ReglesPointage.jourIso(new Date())); if (r) return r; }
     const allowed = col !== 'temps' ? [acc.userId] : [acc.userId, ...db.users.filter(u => u.chefId === acc.userId).map(u => u.id)];
     if (obj && !allowed.includes(obj.userId)) return 'Vous ne pouvez saisir que pour vous ou votre équipe';
     if (existing && !allowed.includes(existing.userId)) return 'Vous ne pouvez modifier que vos saisies ou celles de votre équipe';
@@ -225,12 +226,17 @@
       const i = db[col].findIndex(o => o.id === id);
       const existing = i >= 0 ? db[col][i] : null;
       if (method === 'PUT') {
-        if (!canWrite(acc, col)) return [403, { error: 'Droits insuffisants' }];
+        if (!canWrite(acc, col) && !(acc.role === 'atelier' && col === 'affaires')) return [403, { error: 'Droits insuffisants' }];
         if (existing && body.version !== existing._v) return [409, { error: `Modifié entre-temps par ${existing._by}`, record: existing }];
         let obj = { ...clean(body.data || {}), id };
         if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...clean(existing), statut: obj.statut, exportCompta: obj.exportCompta };
         if (col === 'factures') { obj.type = existing ? existing.type : (obj.type === 'avoir' ? 'avoir' : undefined); if (!obj.type) delete obj.type; }
-        const refus = atelierRefus(acc, col, obj, existing);
+        if (col === 'affaires' && acc.role === 'atelier') {
+          const hd = ReglesPointage.horsDevisCompagnon(obj, existing, acc.userId, ReglesPointage.jourIso(new Date()));
+          if (hd.refus) return [403, { error: hd.refus }];
+          obj = hd.obj;
+        }
+        const refus = col === 'affaires' ? null : atelierRefus(acc, col, obj, existing);
         if (refus) return [403, { error: refus }];
         if (col === 'frais' && obj.statut === 'Soumise' && NoteFrais.erreur(obj)) return [400, { error: NoteFrais.erreur(obj) }];
         if (col === 'rapports' && existing && existing.signatureClientId && acc.role !== 'admin') return [403, { error: 'Ce bon d\'intervention est signé par le client : il ne peut plus être modifié.' }];
@@ -248,6 +254,10 @@
         save();
         if (col === 'planning') planningModifie(acc, existing, rec);
         if (col === 'affaires') documentsModifies(existing, rec);
+        // Intervention ouverte par un compagnon : cloche des chargés d'affaires
+        if (col === 'affaires' && acc.role === 'atelier' && !existing) db.accounts.filter(a => ['admin', 'charge'].includes(a.role) && a.userId).forEach(a => db.notifications.push({ id: 'nt' + DemoSeed.uid(), type: 'horsDevis', userId: a.userId, affaireId: rec.id,
+          titre: `🛠️ Intervention hors devis ouverte : ${rec.code}`, texte: `${acc.nom} — ${rec.nom}. À compléter (client, site, chargé d'affaires).`, lien: `#/chantier/${rec.id}`, date: new Date().toISOString(), lu: false, _v: 1, _at: new Date().toISOString(), _by: 'Pipe-Fit' }));
+        if (col === 'affaires' && acc.role === 'atelier' && !existing) save();
         const rendu = acc.role === 'atelier' ? Compagnon.filtrer(col, JSON.parse(JSON.stringify(rec)), Compagnon.regles(db.settings), Compagnon.contexte(acc.userId, db.users, db.affaires)) : JSON.parse(JSON.stringify(rec));
         return [200, rendu || { id: rec.id, _v: rec._v }];
       }

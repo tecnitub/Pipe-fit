@@ -22,6 +22,8 @@ async function call(method, url, body, cookie) {
   });
   return { status: res.status, body: await res.json().catch(() => null), cookie: (res.headers.get('set-cookie') || '').split(';')[0] };
 }
+// Les compagnons ne pointent que sur la semaine en cours
+const aujourdhui = require('../public/js/pointage-regles').jourIso(new Date());
 async function login(l, p) { const r = await call('POST', '/api/login', { login: l, password: p }); assert.strictEqual(r.status, 200); return r.cookie; }
 
 test('accès refusé sans connexion, mauvais mot de passe refusé', async () => {
@@ -47,9 +49,9 @@ test('droits par rôle, conflits de version et numérotation', async () => {
   assert.ok(data.affaires.length > 0);
 
   // Atelier : heures oui, entreprises non
-  assert.strictEqual((await call('PUT', '/api/records/temps/t-test', { data: { affaireId: 'af1', userId: 'o1', date: '2026-10-01', heures: 4 } }, atelier)).status, 200);
+  assert.strictEqual((await call('PUT', '/api/records/temps/t-test', { data: { affaireId: 'af1', userId: 'o1', date: aujourdhui, heures: 4 } }, atelier)).status, 200);
   // ... mais pas pour un collègue
-  assert.strictEqual((await call('PUT', '/api/records/temps/t-autre', { data: { affaireId: 'af1', userId: 'o2', date: '2026-10-01', heures: 4 } }, atelier)).status, 403);
+  assert.strictEqual((await call('PUT', '/api/records/temps/t-autre', { data: { affaireId: 'af1', userId: 'o2', date: aujourdhui, heures: 4 } }, atelier)).status, 403);
   assert.strictEqual((await call('PUT', '/api/records/entreprises/c-test', { data: { nom: 'X' } }, atelier)).status, 403);
   // Chargé : pas les paramètres ni les comptes
   assert.strictEqual((await call('PUT', '/api/settings', { tva: 20 }, claire)).status, 403);
@@ -105,9 +107,9 @@ test('droits par rôle, conflits de version et numérotation', async () => {
   // Chef d'équipe : pointe pour ses intérimaires, pas pour les autres ; un pointage validé est verrouillé
   assert.strictEqual((await call('POST', '/api/accounts', { login: 'lucas', password: 'motdepasse3', role: 'atelier', userId: 'o3' }, admin)).status, 200);
   const lucas = await login('lucas', 'motdepasse3');
-  assert.strictEqual((await call('PUT', '/api/records/temps/t-i1', { data: { affaireId: 'af1', userId: 'i1', date: '2026-10-02', heures: 8 } }, lucas)).status, 200);
-  assert.strictEqual((await call('PUT', '/api/records/temps/t-o1', { data: { affaireId: 'af1', userId: 'o1', date: '2026-10-02', heures: 8 } }, lucas)).status, 403);
-  assert.strictEqual((await call('PUT', '/api/records/temps/t-i1b', { data: { affaireId: 'af1', userId: 'i1', date: '2026-10-02', heures: 8, statut: 'Validé' } }, lucas)).status, 403);
+  assert.strictEqual((await call('PUT', '/api/records/temps/t-i1', { data: { affaireId: 'af1', userId: 'i1', date: aujourdhui, heures: 8 } }, lucas)).status, 200);
+  assert.strictEqual((await call('PUT', '/api/records/temps/t-o1', { data: { affaireId: 'af1', userId: 'o1', date: aujourdhui, heures: 8 } }, lucas)).status, 403);
+  assert.strictEqual((await call('PUT', '/api/records/temps/t-i1b', { data: { affaireId: 'af1', userId: 'i1', date: aujourdhui, heures: 8, statut: 'Validé' } }, lucas)).status, 403);
   const ti = (await call('GET', '/api/data', null, claire)).body.temps.find(t => t.id === 't-i1');
   const val = await call('PUT', '/api/records/temps/t-i1', { data: { ...ti, statut: 'Validé' }, version: ti._v }, claire);
   assert.strictEqual(val.status, 200);

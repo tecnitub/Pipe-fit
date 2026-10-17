@@ -102,10 +102,23 @@ function creer({ DB, db, broadcast }) {
     attenteDocs.set(apres.id, a);
   }
 
+  /* ---------- Intervention hors devis ouverte par un compagnon : prévenir le bureau ---------- */
+  async function horsDevisOuvert(acc, a) {
+    const comptes = db.prepare("SELECT id, user_id FROM accounts WHERE role IN ('admin', 'charge')").all();
+    if (!comptes.length) return;
+    const client = a.clientId ? (lire('entreprises', a.clientId) || {}).nom : a.clientLibre;
+    const m = { titre: `🛠️ Intervention hors devis ouverte : ${a.code || ''}`, texte: `${acc.nom || acc.login} — ${a.nom}${client ? ` chez ${client}` : ''}. À compléter (client, site, chargé d'affaires).`,
+      lien: `#/chantier/${a.id}`, tag: `hd-${a.id}` };
+    purger();
+    [...new Set(comptes.map(c => c.user_id).filter(Boolean))].forEach(uid => enregistrer({ type: 'horsDevis', userId: uid, affaireId: a.id, titre: m.titre, texte: m.texte, lien: m.lien, date: new Date().toISOString(), lu: false }));
+    const doc = (DB.getSettings(db).doc || {});
+    await Push.envoyer(DB, db, comptes.map(c => c.id), m, doc.email ? `mailto:${doc.email}` : undefined).catch(e => console.error('Notification :', e.message));
+  }
+
   // Pour les tests et l'arrêt du serveur : envoie tout de suite ce qui attend
   const vider = () => Promise.all([...attente.keys()].map(u => { clearTimeout(attente.get(u).timer); return envoyer(u); }));
 
-  return { planningModifie, documentsModifies, vider, enregistrer };
+  return { planningModifie, documentsModifies, horsDevisOuvert, vider, enregistrer };
 }
 
 module.exports = { creer };

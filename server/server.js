@@ -13,6 +13,7 @@ const Push = require('./push');
 const Notifs = require('./notifs');
 const Compagnon = require('../public/js/compagnon');
 const NoteFrais = require('../public/js/frais');
+const ReglesPointage = require('../public/js/pointage-regles');
 
 const PORT = +process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -73,6 +74,7 @@ function pointablePour(acc) {
 // Règles opérateur : pointages pour soi ou son équipe, notes de frais pour soi, rien de validé ne se modifie
 function atelierRefus(acc, col, obj, existing) {
   if (acc.role !== 'atelier') return null;
+  if (col === 'temps') { const r = ReglesPointage.refusTemps(obj, existing, ReglesPointage.jourIso(new Date())); if (r) return r; }
   const allowed = col === 'temps' ? pointablePour(acc) : [acc.user_id];
   if (!allowed.includes(obj ? obj.userId : null) && obj) return 'Vous ne pouvez saisir que pour vous ou votre équipe';
   if (existing && !allowed.includes(existing.userId)) return 'Vous ne pouvez modifier que vos saisies ou celles de votre équipe';
@@ -383,7 +385,8 @@ async function api(req, res, url) {
     if (!DB.COLLECTIONS.includes(col)) return fail(res, 404, 'Collection inconnue');
 
     if (method === 'PUT') {
-      if (!canWrite(acc, col)) return fail(res, 403, 'Droits insuffisants');
+      // Un compagnon peut seulement ouvrir une intervention hors devis (règle appliquée plus bas)
+      if (!canWrite(acc, col) && !(estCompagnon(acc) && col === 'affaires')) return fail(res, 403, 'Droits insuffisants');
       const { data, version } = await readBody(req);
       if (!data || typeof data !== 'object') return fail(res, 400, 'Données manquantes');
       const result = DB.tx(db, () => {
@@ -401,7 +404,12 @@ async function api(req, res, url) {
         if (col === 'reserves' && existing && existing.pvId && acc.role !== 'admin') {
           obj = { ...DB.clean(existing), statut: obj.statut, dateLevee: obj.dateLevee, photoLeveeId: obj.photoLeveeId, commentaireLevee: obj.commentaireLevee, pvLeveeId: obj.pvLeveeId };
         }
-        const refus = atelierRefus(acc, col, obj, existing);
+        if (col === 'affaires' && estCompagnon(acc)) {
+          const hd = ReglesPointage.horsDevisCompagnon(obj, existing, acc.user_id, ReglesPointage.jourIso(new Date()));
+          if (hd.refus) return { forbidden: hd.refus };
+          obj = hd.obj;
+        }
+        const refus = col === 'affaires' ? null : atelierRefus(acc, col, obj, existing);
         if (refus) return { forbidden: refus };
         // Note de frais envoyée : restaurant -> noms des personnes présentes obligatoires
         if (col === 'frais' && obj.statut === 'Soumise' && NoteFrais.erreur(obj)) return { invalide: NoteFrais.erreur(obj) };
@@ -432,6 +440,7 @@ async function api(req, res, url) {
       broadcast('change', { col, record: result.record, client: req.headers['x-client-id'] || null });
       if (col === 'planning') NOTIFS.planningModifie(acc, result.avant, result.record);
       if (col === 'affaires') NOTIFS.documentsModifies(acc, result.avant, result.record);
+      if (col === 'affaires' && estCompagnon(acc) && !result.avant) NOTIFS.horsDevisOuvert(acc, result.record);
       return send(res, 200, pourCompagnon(acc, col, result.record) || { id: result.record.id, _v: result.record._v });
     }
 

@@ -43,6 +43,127 @@ function pointageTabs(active, uid) {
 // Sélection des personnes en mode équipe (conservée entre deux rafraîchissements)
 const equipeSel = { uid: null, ids: new Set(), filtre: 'tous' };
 
+/* ---------------- Chantier du pointage : prévus, hors devis, autres ; nouvelle intervention hors devis ---------------- */
+const NOUVELLE_HD = '__hd';
+let chantierChoisi = null; // intervention qui vient d'être ouverte : proposée pour pointer
+function optionsChantiers(uid, date, sel) {
+  const actifs = chantiersActifs(), prevus = new Set(planJour(uid, date).map(p => p.affaireId));
+  const garde = Store.get('affaires', sel); // chantier d'un pointage existant, même clos
+  const opt = a => `<option value="${a.id}" ${a.id === sel ? 'selected' : ''}>${esc(affaireLabel(a))}</option>`;
+  const groupe = (lib, l) => (l.length ? `<optgroup label="${esc(lib)}">${l.map(opt).join('')}</optgroup>` : '');
+  return groupe('Prévu au planning', actifs.filter(a => prevus.has(a.id)))
+    + groupe('Interventions hors devis (dépannage, régie)', actifs.filter(a => estHorsDevis(a) && !prevus.has(a.id)))
+    + groupe('Autres chantiers', actifs.filter(a => !estHorsDevis(a) && !prevus.has(a.id)))
+    + (garde && !actifs.includes(garde) ? opt(garde) : '')
+    + `<option value="${NOUVELLE_HD}">➕ Nouvelle intervention hors devis…</option>`;
+}
+// Choix « nouvelle intervention » dans une liste de chantiers : ouvre le formulaire, puis sélectionne l'intervention créée
+function brancherNouvelleHD(select, apres) {
+  let avant = select.value === NOUVELLE_HD ? '' : select.value;
+  select.addEventListener('change', () => {
+    if (select.value !== NOUVELLE_HD) { avant = select.value; return; }
+    select.value = avant;
+    nouvelleHDCompagnon(a => { if (apres) apres(a); else { select.insertAdjacentHTML('afterbegin', `<option value="${a.id}">${esc(affaireLabel(a))}</option>`); select.value = a.id; avant = a.id; } });
+  });
+}
+// Dépannage non planifié : le compagnon ouvre l'intervention, le bureau complète (client, site, chargé d'affaires) et facture
+function nouvelleHDCompagnon(fait) {
+  const clients = clientsList().filter(c => c.nom);
+  const box = Modal.open(`<h2 style="margin-top:0">🛠️ Nouvelle intervention hors devis</h2>
+    <p class="muted small">Dépannage ou travaux demandés sur place, sans planning ni devis. Le bureau complète ensuite le dossier.</p>
+    <div class="field"><label for="hd-nom">Objet de l'intervention</label><input id="hd-nom" placeholder="Ex. fuite vapeur ligne 3, remplacement vanne DN80…"></div>
+    <div class="field"><label for="hd-client">Client</label><select id="hd-client"><option value="">${clients.length ? 'Choisir…' : '—'}</option>${clients.map(c => `<option value="${c.id}">${esc(c.nom)}</option>`).join('')}<option value="autre">Autre / pas dans la liste</option></select></div>
+    <div class="field" id="hd-libre-f" ${clients.length ? 'hidden' : ''}><label for="hd-libre">Nom du client</label><input id="hd-libre" placeholder="Société et nom du demandeur"></div>
+    <div class="field"><label for="hd-lieu">Lieu (site, bâtiment, machine)</label><input id="hd-lieu"></div>
+    <div class="field"><label for="hd-demande">Demande du client</label><textarea id="hd-demande" rows="3" placeholder="Ce qui a été demandé, par qui"></textarea></div>
+    <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="hd-x">Annuler</button><button id="hd-ok">Ouvrir l'intervention</button></div>`);
+  const $ = s => box.querySelector(s);
+  $('#hd-client').onchange = () => { $('#hd-libre-f').hidden = $('#hd-client').value !== 'autre' && clients.length > 0; };
+  $('#hd-x').onclick = Modal.close;
+  $('#hd-ok').onclick = async () => {
+    const client = $('#hd-client').value;
+    const o = { type: 'horsDevis', code: '', statut: 'Ouvert', nom: $('#hd-nom').value.trim(), clientId: client && client !== 'autre' ? client : '', clientLibre: client && client !== 'autre' ? '' : $('#hd-libre').value.trim(),
+      lieu: $('#hd-lieu').value.trim(), demande: $('#hd-demande').value.trim(), dateCreation: isoDate(new Date()), heuresPrevues: 0, rex: {} };
+    if (!o.nom) return notify('Indiquez l\'objet de l\'intervention.');
+    if (!o.clientId && !o.clientLibre) return notify('Indiquez le client.');
+    if (Store.me.role !== 'atelier') o.chargeId = Store.me.userId || '';
+    const a = Store.upsert('affaires', o);
+    $('#hd-ok').disabled = true;
+    const rec = await Store.attendre('affaires', a.id);
+    Modal.close();
+    if (!rec || !Store.get('affaires', a.id)) return notify('Intervention non enregistrée : réessayez.');
+    App.toast(`Intervention ${rec.code || ''} ouverte : le bureau est prévenu`);
+    fait(rec);
+  };
+  setTimeout(() => $('#hd-nom').focus(), 50);
+}
+
+/* ---------------- Ma semaine : chaque jour de la semaine en cours, pour rattraper un oubli ---------------- */
+const JOURS_SEMAINE = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+function semaineCompagnon(u) {
+  const auj = isoDate(new Date()), jours = ReglesPointage.joursSemaine(auj);
+  const ts = Store.all('temps').filter(t => t.userId === u.id && jours.includes(t.date));
+  const total = sumBy(ts, t => num(t.heures)), base = num(Store.data.settings.dureeHebdo) || 35;
+  const cartes = jours.map((d, i) => {
+    const reel = ts.filter(t => t.date === d).sort((a, b) => (a.debut || '').localeCompare(b.debut || ''));
+    if (i === 6 && !reel.length) return '';
+    const plan = planJour(u.id, d), abs = absenceJour(u.id, d), futur = d > auj, h = sumBy(reel, t => num(t.heures));
+    const oubli = !futur && d < auj && !reel.length && !abs && (plan.length || i < 5);
+    const etat = abs ? `<span class="badge b-info">${esc(ICONES_ABSENCE[abs.absence] || '')} ${esc(abs.absence)}</span>` : oubli ? '<span class="badge b-warn">Oubli ?</span>' : d === auj ? '<span class="badge b-info">Aujourd\'hui</span>' : '';
+    return `<div class="jour-p ${futur ? 'futur' : ''} ${oubli ? 'oubli' : ''}">
+      <div class="jour-tete"><strong>${JOURS_SEMAINE[i]} ${jourDe(d).getDate()}</strong> ${etat}<span class="spacer"></span>${reel.length ? `<strong>${fmt(h, 2)} h</strong>` : ''}</div>
+      ${plan.length ? `<div class="small muted">Prévu : ${plan.map(p => `${esc(affaireOf(p.affaireId).code || '')} ${p.heuresPrevues ? `· ${fmt(p.heuresPrevues, 2)} h` : ''}`).join(' + ')}</div>` : ''}
+      ${reel.map(t => { const bloque = t.statut === 'Validé';
+        return `<button class="ligne-t" ${bloque ? 'disabled' : `data-edit="${t.id}"`}><span>${t.debut ? `${esc(t.debut)} – ${esc(t.fin || 'en cours')}` : 'saisie'} · <strong>${esc(affaireOf(t.affaireId).code || '?')}</strong>${t.tache ? ` · ${esc(t.tache)}` : ''}${t.panier ? ' · panier' : ''} ${statutTemps(t)}</span><span>${t.fin || !t.debut ? `${fmt(t.heures, 2)} h` : '…'}${bloque ? '' : ' ✎'}</span></button>`; }).join('')}
+      ${futur ? '' : `<div class="jour-actions"><button class="secondary small" data-ajout="${d}">+ Pointer</button>${plan.length && !reel.length && !abs ? `<button class="small" data-prevu="${d}">Comme prévu</button>` : ''}</div>`}
+    </div>`;
+  }).join('');
+  return `<h2>Ma semaine</h2>
+    <div class="card">
+      <div class="week-total"><strong>${fmt(total, 2)} h</strong><span class="muted"> / ${fmt(base)} h</span>${total > base ? ` <span class="badge b-warn">+${fmt(total - base, 2)} h sup.</span>` : ''} <span class="muted small">· ${ts.filter(t => t.panier).length} panier(s)</span></div>
+      ${gauge(total, base)}
+      <p class="small muted">Un oubli ? Touchez le jour pour pointer, ou un pointage pour le corriger (semaine en cours ; avant, voyez le bureau).</p>
+      <div class="semaine-p">${cartes}</div>
+    </div>`;
+}
+// Ajout ou correction d'un pointage d'un jour de la semaine
+function editerPointage({ t, date, uid, pour }) {
+  const d = t ? t.date : date, enCours = t && t.debut && !t.fin, src = t || {};
+  const prevu = planJour(uid, d)[0] || {};
+  const v = { affaireId: src.affaireId || prevu.affaireId || '', tache: src.tache || prevu.tache || TACHES[0], debut: src.debut || prevu.debut || '07:30', fin: t ? src.fin || '' : prevu.fin || '16:30', pause: src.pause ?? 60, panier: t ? !!src.panier : true };
+  const box = Modal.open(`<h2 style="margin-top:0">${t ? 'Corriger le pointage' : 'Pointer'} · ${esc(jourLong(d))}</h2>
+    ${!t && pour.length > 1 ? `<div class="field"><label for="ep-user">Pour</label><select id="ep-user">${options(pour, uid, undefined, false)}</select></div>` : ''}
+    <div class="field"><label for="ep-aff">Chantier</label><select id="ep-aff">${optionsChantiers(uid, d, v.affaireId)}</select></div>
+    <div class="grid2">
+      <div class="field"><label for="ep-tache">Tâche</label><input id="ep-tache" list="ep-taches" value="${esc(v.tache)}"><datalist id="ep-taches">${TACHES.map(x => `<option value="${esc(x)}">`).join('')}</datalist></div>
+      <div class="field"><label for="ep-pause">Pause (min)</label><input id="ep-pause" type="number" step="5" min="0" value="${esc(v.pause)}"></div>
+      <div class="field"><label for="ep-debut">Arrivée</label><input id="ep-debut" type="time" value="${esc(v.debut)}"></div>
+      <div class="field"><label for="ep-fin">Départ</label><input id="ep-fin" type="time" value="${esc(v.fin)}">${enCours ? '<span class="small muted">vide = toujours en cours</span>' : ''}</div>
+    </div>
+    <label class="check"><input type="checkbox" id="ep-panier" ${v.panier ? 'checked' : ''}> Panier repas</label>
+    <p id="ep-h" class="week-total"></p>
+    <div class="modal-actions">${t ? '<button class="danger" id="ep-del">Supprimer</button>' : ''}<span style="flex:1"></span><button class="secondary" id="ep-x">Annuler</button><button id="ep-ok">Enregistrer</button></div>`);
+  const $ = s => box.querySelector(s);
+  const maj = () => { $('#ep-h').innerHTML = $('#ep-fin').value ? `<strong>${fmt(dureeH($('#ep-debut').value, $('#ep-fin').value, $('#ep-pause').value), 2)} h</strong>` : '<span class="muted small">en cours</span>'; };
+  ['#ep-debut', '#ep-fin', '#ep-pause'].forEach(s => { $(s).oninput = maj; }); maj();
+  brancherNouvelleHD($('#ep-aff'));
+  $('#ep-x').onclick = Modal.close;
+  if (t) $('#ep-del').onclick = () => { Modal.close(); ask('Supprimer ce pointage ?', 'Supprimer').then(ok => { if (ok) { Store.remove('temps', t.id); App.render(); } }); };
+  $('#ep-ok').onclick = async () => {
+    const o = { ...src, userId: t ? t.userId : ($('#ep-user') || {}).value || uid, date: d, affaireId: $('#ep-aff').value, tache: $('#ep-tache').value, debut: $('#ep-debut').value, fin: $('#ep-fin').value,
+      pause: num($('#ep-pause').value), panier: $('#ep-panier').checked, statut: t && t.statut === 'Refusé' ? '' : src.statut || '', saisiPar: Store.me.userId || uid };
+    if (!o.affaireId || o.affaireId === NOUVELLE_HD || !o.debut) return notify('Renseignez le chantier et l\'heure d\'arrivée.');
+    if (!o.fin && !(enCours && d === isoDate(new Date()))) return notify('Renseignez l\'heure de départ.');
+    o.heures = o.fin ? dureeH(o.debut, o.fin, o.pause) : 0;
+    // Deux pointages qui se chevauchent le même jour : sans doute un doublon
+    const fin = x => (x.fin ? toMin(x.fin) + (toMin(x.fin) < toMin(x.debut) ? 1440 : 0) : 1440);
+    const chevauche = Store.all('temps').find(x => x.id !== o.id && x.userId === o.userId && x.date === d && x.debut && toMin(x.debut) < fin(o) && toMin(o.debut) < fin(x));
+    if (chevauche && !(await ask(`Ce pointage chevauche celui de ${chevauche.debut} – ${chevauche.fin || 'en cours'} (${affaireOf(chevauche.affaireId).code || ''}). Enregistrer quand même ?`, 'Enregistrer', false))) return;
+    Store.upsert('temps', o);
+    Modal.close(); App.render(); App.toast(o.fin ? `${fmt(o.heures, 2)} h enregistrées le ${dateFr(d)}` : 'Pointage mis à jour');
+  };
+}
+
 Views.pointage = (params, query) => {
   const uid = pointagePour(query);
   const u = Store.get('users', uid);
@@ -57,13 +178,13 @@ Views.pointage = (params, query) => {
   const week = isoWeek(new Date());
   const semaine = Store.all('temps').filter(t => t.userId === u.id && isoWeek(new Date(t.date)) === week)
     .sort((a, b) => (b.date + (b.debut || '')).localeCompare(a.date + (a.debut || '')));
-  const total = sumBy(semaine, t => num(t.heures));
-  const base = num(Store.data.settings.dureeHebdo) || 35;
   const dateLongue = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
   const prevu = planJour(u.id, today);
   // Chantier et tâche proposés : ceux du planning du jour, sinon ceux du dernier pointage
   const dernier = prevu[0] || semaine[0] || Store.all('temps').filter(t => t.userId === u.id).sort((a, b) => b.date.localeCompare(a.date))[0] || {};
-  const choixChantier = (id, sel) => `<select id="${id}" class="big-select" aria-label="Chantier">${options(chantiersActifs(), sel, affaireLabel, false)}</select>`;
+  const choixChantier = (id, sel) => `<select id="${id}" class="big-select" aria-label="Chantier">${optionsChantiers(u.id, today, Store.get('affaires', chantierChoisi) ? chantierChoisi : sel)}</select>`;
+  // Pas de planning aujourd'hui : dépannage possible sur une intervention hors devis
+  const sansPlanning = !prevu.length && !absenceJour(u.id, today) ? `<p class="hd-astuce small">📅 Rien de prévu aujourd'hui. Dépannage ou travaux demandés sur place ? Choisissez l'intervention hors devis, ou <button class="linklike small" id="p-hd">ouvrez-en une nouvelle</button>.</p>` : '';
   const chips = sel => `<div class="chips" role="radiogroup" aria-label="Tâche">${TACHES.map(t => `<label class="chip"><input type="radio" name="p-tache" value="${esc(t)}" ${(sel || TACHES[0]) === t ? 'checked' : ''}><span>${esc(t)}</span></label>`).join('')}</div>`;
   const panierBox = `<label class="check"><input type="checkbox" id="p-panier" checked> Panier repas</label>`;
 
@@ -82,6 +203,7 @@ Views.pointage = (params, query) => {
         return `<li><label><input type="checkbox" data-sel="${m.id}" ${equipeSel.ids.has(m.id) ? 'checked' : ''}> <span><strong>${esc(m.nom)}</strong>${m.id === u.id ? ' <span class="muted small">(moi)</span>' : ''} ${interimBadge(m)}<br>
           <span class="small ${ec ? 'pos' : 'muted'}">${ec ? `Au travail depuis ${esc(ec.debut)} · ${esc(affaireOf(ec.affaireId).code || '')}` : jour ? `${fmt(jour, 2)} h aujourd'hui` : 'Pas encore pointé'}</span></span></label></li>`;
       }).join('')}</ul>
+      ${sansPlanning}
       <div class="field"><label for="p-aff">Chantier</label>${choixChantier('p-aff', dernier.affaireId)}</div>
       ${chips(dernier.tache)}
       ${panierBox}
@@ -98,6 +220,7 @@ Views.pointage = (params, query) => {
         <button class="secondary" id="p-switch">Changer de chantier</button>
       </div>`
       : `<div class="card punch">
+ ${sansPlanning}
         <div class="field"><label for="p-aff">Chantier</label>${choixChantier('p-aff', dernier.affaireId)}</div>
         ${chips(dernier.tache)}
         ${panierBox}
@@ -105,7 +228,6 @@ Views.pointage = (params, query) => {
       </div>`;
   }
 
-  const pourOptions = [u, ...team];
   return `<div class="pointage">
     <h1>Pointage</h1>
     ${Store.me.role !== 'atelier' ? `<div class="field"><label for="p-pour">Pointer en tant que</label><select id="p-pour">${options(operateurs(), u.id, x => x.nom + (equipeDe(x.id).length ? ` (chef d'équipe, ${equipeDe(x.id).length} pers.)` : ''), false)}</select></div>` : ''}
@@ -117,28 +239,7 @@ Views.pointage = (params, query) => {
       <a class="small" href="#/pointage/planning${Store.me.role === 'atelier' ? '' : `?pour=${u.id}`}">Voir mon planning</a></div>` : ''}
     ${bloc}
 
-    <details class="card"><summary>Saisie manuelle (oubli de pointage)</summary>
-      <div class="grid2" style="margin-top:10px">
-        ${team.length ? `<div class="field"><label for="m-user">Pour</label><select id="m-user">${options(pourOptions, u.id, undefined, false)}</select></div>` : ''}
-        <div class="field"><label for="m-date">Date</label><input id="m-date" type="date" value="${today}"></div>
-        <div class="field"><label for="m-aff">Chantier</label><select id="m-aff">${options(Store.all('affaires'), dernier.affaireId, affaireLabel, false)}</select></div>
-        <div class="field"><label for="m-debut">Arrivée</label><input id="m-debut" type="time" value="07:30"></div>
-        <div class="field"><label for="m-fin">Départ</label><input id="m-fin" type="time" value="16:30"></div>
-        <div class="field"><label for="m-pause">Pause (min)</label><input id="m-pause" type="number" step="5" value="60"></div>
-        <div class="field"><label for="m-tache">Tâche</label><input id="m-tache" list="m-taches" value="${esc(dernier.tache || TACHES[0])}"><datalist id="m-taches">${TACHES.map(t => `<option value="${esc(t)}">`).join('')}</datalist></div>
-      </div>
-      <label class="check"><input type="checkbox" id="m-panier" checked> Panier repas</label>
-      <button id="m-save" style="margin-top:10px">Enregistrer</button>
-    </details>
-
-    <h2>Ma semaine</h2>
-    <div class="card">
-      <div class="week-total"><strong>${fmt(total, 2)} h</strong><span class="muted"> / ${fmt(base)} h</span>${total > base ? ` <span class="badge b-warn">+${fmt(total - base, 2)} h sup.</span>` : ''} <span class="muted small">· ${semaine.filter(t => t.panier).length} panier(s)</span></div>
-      ${gauge(total, base)}
-      <ul class="punch-list">${semaine.map(t => `<li><div><strong>${new Date(t.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' })}</strong> · ${esc(affaireOf(t.affaireId).code || '')} ${statutTemps(t)}<br>
-        <span class="muted small">${t.debut ? `${esc(t.debut)} – ${esc(t.fin || 'en cours')}${num(t.pause) ? ` · pause ${t.pause} min` : ''}` : 'saisie manuelle'}${t.tache ? ` · ${esc(t.tache)}` : ''}${t.panier ? ' · panier' : ''}${t.saisiPar && t.saisiPar !== t.userId ? ` · pointé par ${esc(userName(t.saisiPar))}` : ''}</span></div>
-        <div class="num"><strong>${t.fin || !t.debut ? fmt(t.heures, 2) + ' h' : '…'}</strong>${t.statut !== 'Validé' ? `<button class="icon" data-del="${t.id}" aria-label="Supprimer">✕</button>` : ''}</div></li>`).join('') || '<li class="muted">Aucun pointage cette semaine.</li>'}</ul>
-    </div>
+    ${semaineCompagnon(u)}
     ${team.length ? `<h2>Mon équipe cette semaine</h2><div class="card"><ul class="punch-list">${team.map(m => {
       const ts = Store.all('temps').filter(t => t.userId === m.id && isoWeek(new Date(t.date)) === week);
       return `<li><div><strong>${esc(m.nom)}</strong> ${interimBadge(m)}<br><span class="muted small">${ts.filter(t => t.panier).length} panier(s) · ${ts.filter(t => !t.statut).length} pointage(s) à valider</span></div><div class="num"><strong>${fmt(sumBy(ts, t => num(t.heures)), 2)} h</strong></div></li>`;
@@ -189,19 +290,17 @@ Views.pointage.bind = (root, params, query) => {
     const entries = visibles().map(enCoursDe).filter(Boolean);
     if (entries.length && await terminer(entries)) App.render();
   });
-  on('#m-save', () => {
-    const userSel = root.querySelector('#m-user');
-    const o = { userId: userSel ? userSel.value : uid, date: root.querySelector('#m-date').value, affaireId: root.querySelector('#m-aff').value,
-      debut: root.querySelector('#m-debut').value, fin: root.querySelector('#m-fin').value, pause: num(root.querySelector('#m-pause').value),
-      tache: root.querySelector('#m-tache').value, panier: root.querySelector('#m-panier').checked, statut: '', saisiPar };
-    if (!o.affaireId || !o.debut || !o.fin) { notify('Renseignez le chantier, l\'arrivée et le départ.'); return; }
-    o.heures = dureeH(o.debut, o.fin, o.pause);
-    Store.upsert('temps', o);
-    App.render(); App.toast(`${fmt(o.heures, 2)} h enregistrées`);
-  });
-  root.querySelectorAll('[data-del]').forEach(b => b.onclick = () => ask('Supprimer ce pointage ?', 'Supprimer').then(ok => {
-    if (ok) { Store.remove('temps', b.dataset.del); App.render(); }
-  }));
+  // Chantier : « nouvelle intervention hors devis » ouvre le formulaire
+  const aff = root.querySelector('#p-aff');
+  const choisie = a => { chantierChoisi = a.id; App.render(); };
+  if (aff) brancherNouvelleHD(aff, choisie);
+  on('#p-hd', () => nouvelleHDCompagnon(choisie));
+  // Semaine en cours : pointer un jour oublié, corriger un pointage, saisir un jour comme prévu
+  const equipe = [Store.get('users', uid), ...equipeDe(uid)].filter(Boolean);
+  root.querySelectorAll('[data-ajout]').forEach(b => b.onclick = () => editerPointage({ date: b.dataset.ajout, uid, pour: equipe }));
+  root.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editerPointage({ t: Store.get('temps', b.dataset.edit), uid, pour: equipe }));
+  root.querySelectorAll('[data-prevu]').forEach(b => b.onclick = () => saisirJournee(b.dataset.prevu, [uid]));
+
 };
 
 /* ---------------- Notes de frais (opérateur) ---------------- */

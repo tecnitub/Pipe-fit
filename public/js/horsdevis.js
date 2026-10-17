@@ -5,6 +5,8 @@ const STATUTS_HD = ['Ouvert', 'Terminé', 'Commande demandée', 'Facturé', 'Clo
 const estHorsDevis = a => a && a.type === 'horsDevis';
 const bonSigne = a => Store.all('rapports').find(r => r.affaireId === a.id && r.signatureClientId && r.termine);
 // Statut affiché : un bon signé « intervention terminée » fait passer l'intervention ouverte à « Terminé »
+// Intervention ouverte par un compagnon dont le bureau n'a pas encore renseigné le client ou le chargé d'affaires
+const aCompleterHD = a => estHorsDevis(a) && a.aCompleter && (!a.clientId || !a.chargeId);
 const statutHD = a => (a.statut === 'Ouvert' && bonSigne(a) ? 'Terminé' : a.statut);
 
 const hdFields = [
@@ -66,7 +68,8 @@ function horsDevisView(a) {
     ${st === 'Facturé' ? '<button class="secondary" id="hd-clore">Clore</button>' : ''}
     ${a.archive ? '' : `<button class="secondary" data-archiver="affaires|${a.id}">Archiver</button>`}</div>
   <h1>${esc(affaireLabel(a))} <span class="badge b-warn">Hors devis</span> ${badge(st)}</h1>${chantierOnglets(a, 'apercu')}${bandeauArchive(a, 'affaires')}
-  <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${a.clientId}">${esc(clientName(a.clientId))}</a>` : '—'}
+  ${aCompleterHD(a) ? `<p class="note warn-note">🛠️ Ouverte sur le téléphone par ${esc(userName(a.ouvertePar))} le ${dateFr(a.dateCreation)}${a.clientLibre ? ` · client indiqué : <strong>${esc(a.clientLibre)}</strong>` : ''}${a.lieu ? ` · lieu : ${esc(a.lieu)}` : ''}. À compléter : ${[!a.clientId && 'client', !a.chargeId && 'chargé d\'affaires'].filter(Boolean).join(', ')} (bouton Modifier).</p>` : ''}
+  <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${a.clientId}">${esc(clientName(a.clientId))}</a>` : a.clientLibre ? `${esc(a.clientLibre)} <span class="badge b-warn">à rattacher</span>` : '—'}${a.lieu ? ` · ${esc(a.lieu)}` : ''}
     ${a.contactId ? ` · Demandeur : ${esc(contactName(Store.get('contacts', a.contactId)))}` : ''}${a.siteId ? ` · ${esc(siteLabel(siteOf(a.clientId, a.siteId)))}` : ''}
     · Chargé d'affaires : ${esc(userName(a.chargeId))} · ouvert le ${dateFr(a.dateCreation)}${a.refCommande ? ` · <strong>commande client n° ${esc(a.refCommande)}</strong>` : ''}</p>
   ${envoisHtml('affaires', a.id)}

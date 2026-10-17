@@ -154,7 +154,11 @@ Le PDF Factur-X contient le XML joint mais n'est pas certifié PDF/A-3 : si votr
 3. **Commandes fournisseurs** (`CF-AAAA-0001`) affectées à un chantier ; elles peuvent reprendre
    automatiquement les fournitures prévues au devis et pas encore commandées. Leur montant est le coût
    réel des fournitures.
-4. **Pointage mobile** des opérateurs (arrivée / départ par chantier et tâche, pause, panier repas, saisie d'oubli).
+4. **Pointage mobile** des opérateurs (arrivée / départ par chantier et tâche, pause, panier repas).
+   « Ma semaine » montre chaque jour de la semaine en cours (prévu, pointé, oubli signalé) : le compagnon pointe un jour
+   oublié ou corrige un pointage non validé ; les semaines passées ne se corrigent qu'au bureau (règle du serveur).
+   Sans planning, il pointe sur une intervention hors devis ou en ouvre une depuis son téléphone (objet, client, lieu,
+   demande) : le bureau est prévenu et complète le dossier (client, chargé d'affaires) avant de facturer.
    Un **chef d'équipe** pointe en une fois les compagnons et **intérimaires** sous ses ordres (filtre « intérimaires »).
    Le coût réel de main-d'œuvre = heures pointées × coût horaire de chaque personne (taux agence pour les intérimaires).
    **Notes de frais** : photo du ticket prise avec le téléphone (raccourci « Note de frais » de l'appli),
