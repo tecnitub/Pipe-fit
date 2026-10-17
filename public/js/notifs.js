@@ -70,7 +70,7 @@ const Notifs = {
 };
 
 /* ---------- Écran « Notifications » ---------- */
-const iconeNotif = n => ({ planning: '📅' }[n.type] || '🔔');
+const iconeNotif = n => ({ planning: '📅', document: '📎' }[n.type] || '🔔');
 const ilYa = iso => {
   const m = Math.round((Date.now() - new Date(iso)) / 60000);
   if (m < 1) return 'à l\'instant';

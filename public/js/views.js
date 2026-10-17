@@ -130,6 +130,7 @@ Views.chantiers.bind = (root, params, query) => {
 Views.chantier = params => {
   const a = Store.get('affaires', params[0]);
   if (!a) return '<p>Chantier introuvable. <a href="#/chantiers">Retour aux chantiers</a></p>';
+  if (params[1] === 'documents') return documentsChantier(a);
   if (estHorsDevis(a)) return horsDevisView(a);
   const s = Calc.affaire(a);
   const devis = Store.all('devis').filter(d => d.affaireId === a.id);
@@ -153,7 +154,7 @@ Views.chantier = params => {
     <button class="secondary" onclick="location.hash='#/consultations/' + nouvelleConsultation({ affaireId: '${a.id}', objet: 'Fournitures ${esc(a.code || '')}' }).id">+ Consultation fournisseurs</button>
     ${dAcc ? '<button id="situation">+ Situation de travaux</button>' : ''}
     ${a.archive ? '' : `<button class="secondary" data-archiver="affaires|${a.id}">Archiver</button>`}</div>
-  <h1>${esc(affaireLabel(a))} ${badge(a.statut)} ${a.okFacturation ? '<span class="badge b-ok">Réceptionné · OK pour facturation</span>' : ''}</h1>${bandeauArchive(a, 'affaires')}
+  <h1>${esc(affaireLabel(a))} ${badge(a.statut)} ${a.okFacturation ? '<span class="badge b-ok">Réceptionné · OK pour facturation</span>' : ''}</h1>${chantierOnglets(a, 'apercu')}${bandeauArchive(a, 'affaires')}
   <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${a.clientId}">${esc(clientName(a.clientId))}</a>` : '—'}
     ${a.contactId ? ` · Contact : ${esc(contactName(Store.get('contacts', a.contactId)))}` : ''}
     ${a.siteId ? ` · Site : ${esc(siteLabel(siteOf(a.clientId, a.siteId)))}` : ''}
@@ -227,6 +228,7 @@ Views.chantier = params => {
 Views.chantier.bind = (root, params) => {
   const a = Store.get('affaires', params[0]);
   if (!a) return;
+  if (params[1] === 'documents') return bindDocumentsChantier(root, a);
   if (estHorsDevis(a)) return bindHorsDevis(root, a);
   root.querySelector('#edit').onclick = () => editModal({ title: `Chantier ${a.code}`, col: 'affaires', fields: chantierFields, obj: { ...a },
     onDelete: () => { location.hash = '#/chantiers'; } });
@@ -541,6 +543,8 @@ Views.parametres = () => {
 
   ${numerotationCarte()}
 
+  ${reglagesCompagnonCarte()}
+
   <h2>Comptes utilisateurs</h2>
   <p class="muted">Administrateur : tout. Chargé d'affaires : contacts, devis, chantiers, commandes, factures, planning, RH (pas de suppression de facture). Opérateur : pointage de ses propres heures et consultation du planning. Liez chaque compte opérateur à sa fiche dans « Équipe ».</p>
   <div class="toolbar"><button id="acc-add">+ Compte</button></div>
@@ -632,6 +636,7 @@ Views.parametres.bind = root => {
 
   if (!Store.can('admin')) return;
   bindNumerotation(root);
+  bindReglagesCompagnon(root);
   const loadAccounts = () => api('GET', '/api/accounts').then(list => {
     const t = root.querySelector('#accounts');
     if (!t) return;

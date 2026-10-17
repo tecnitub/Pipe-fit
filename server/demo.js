@@ -1,6 +1,20 @@
 // Données de démonstration chargées au premier démarrage (base vide).
 // Fichier partagé : utilisé par le serveur (Node.js) et par la version de démonstration en ligne (navigateur).
 const IMAGES = typeof DEMO_IMAGES !== 'undefined' ? DEMO_IMAGES : require('./demo-images');
+// Petit PDF d'une page (plans et fiches d'exemple des documents de chantier)
+function pdfExemple(titre, lignes) {
+  const t = x => String(x).replace(/[\\()]/g, m => '\\' + m).replace(/[^\x20-\x7e]/g, c => ({ 'é': 'e', 'è': 'e', 'ê': 'e', 'à': 'a', 'â': 'a', 'ô': 'o', 'î': 'i', 'ç': 'c', 'É': 'E', '–': '-', '’': "'", '°': ' ' }[c] || '?'));
+  const flux = ['BT /F1 18 Tf 60 780 Td (' + t(titre) + ') Tj ET', '0.6 0.2 0.1 RG 2 w 60 765 m 535 765 l S',
+    ...lignes.map((l, i) => `BT /F1 11 Tf 60 ${740 - i * 18} Td (${t(l)}) Tj ET`), '0.5 g BT /F1 9 Tf 60 40 Td (Pipe-Fit Industrie - document d\'exemple de la demonstration) Tj ET'].join('\n');
+  const objs = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>', `<< /Length ${flux.length} >>\nstream\n${flux}\nendstream`];
+  let out = '%PDF-1.4\n';
+  const offs = objs.map((o, i) => { const off = out.length; out += `${i + 1} 0 obj\n${o}\nendobj\n`; return off; });
+  const x = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offs.map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('')}trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${x}\n%%EOF\n`;
+  return 'data:application/pdf;base64,' + (typeof Buffer !== 'undefined' ? Buffer.from(out, 'latin1').toString('base64') : btoa(out));
+}
 const uid = () => Math.random().toString(36).slice(2, 12) + Date.now().toString(36).slice(-4);
 const isoDate = d => d.toISOString().slice(0, 10);
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
@@ -121,11 +135,18 @@ function demoData() {
   const ouv = (designation, unite, qte, composants) => ({ type: 'ouvrage', designation, unite, qte, composants });
 
   const affaires = [
-    { id: 'af1', code: `CH-${Y}-` + '001', nom: 'Ligne NEP inox – Usine de Rumilly', clientId: 'e2', contactId: 'k3', siteId: 's4', moeId: 'e9', moeContactId: 'k9', retenueGarantie: 5, caution: '', chargeId: 'u1', statut: 'En cours', devisId: 'dv1', dateCreation: d(-50), heuresPrevues: 0, rex: { note: '', positif: '', negatif: '', actions: '' } },
+    { id: 'af1', documents: [
+        { id: 'dc1', fichierId: 'pdf-iso', nom: 'Isométrique NEP aller – ISO-NEP-01.pdf', categorie: 'Plan', indice: 'B', note: 'Cotes de raccordement mises à jour après la visite du 12.', mime: 'application/pdf', taille: 2600, date: d(-6), par: 'Claire Martin', visible: true, anciens: [{ fichierId: 'pdf-iso-a', indice: 'A', date: d(-30) }] },
+        { id: 'dc2', fichierId: 'pdf-ft-vanne', nom: 'Fiche technique vanne papillon DN50.pdf', categorie: 'Fiche technique', indice: '', note: '', mime: 'application/pdf', taille: 2100, date: d(-20), par: 'Claire Martin', visible: true },
+        { id: 'dc3', fichierId: 'pdf-ppsps', nom: 'PPSPS Laiterie des Alpes.pdf', categorie: 'Sécurité / PPSPS', indice: '', note: 'À lire avant le premier jour sur site.', mime: 'application/pdf', taille: 2300, date: d(-40), par: 'Claire Martin', visible: true },
+        { id: 'dc4', fichierId: 'img-rack1', nom: 'Rack existant – relevé.jpg', categorie: 'Photo', indice: '', note: '', mime: 'image/png', taille: 3400, date: d(-35), par: 'Claire Martin', visible: true },
+        { id: 'dc5', fichierId: 'pdf-calcul', nom: 'Note de calcul supportage.pdf', categorie: 'Autre', indice: '', note: 'Usage bureau.', mime: 'application/pdf', taille: 2200, date: d(-25), par: 'Claire Martin', visible: false }],
+      code: `CH-${Y}-` + '001', nom: 'Ligne NEP inox – Usine de Rumilly', clientId: 'e2', contactId: 'k3', siteId: 's4', moeId: 'e9', moeContactId: 'k9', retenueGarantie: 5, caution: '', chargeId: 'u1', statut: 'En cours', devisId: 'dv1', dateCreation: d(-50), heuresPrevues: 0, rex: { note: '', positif: '', negatif: '', actions: '' } },
     { id: 'af2', code: `CH-${Y}-` + '002', nom: 'Remplacement collecteur vapeur DN150', clientId: 'e1', contactId: 'k1', siteId: 's2', retenueGarantie: 5, caution: '', dateReception: d(-24), okFacturation: true, chargeId: 'u2', statut: 'Facturé', devisId: 'dv2', dateCreation: d(-110), heuresPrevues: 0, rex: { note: 3, positif: 'Préfabrication des tronçons en atelier, arrêt de l\'unité tenu en 5 jours.', negatif: '6 soudures reprises après contrôle RX (accès difficile en rack). Heures soudeurs dépassées.', actions: 'Prévoir 15 % de reprises sur les soudures en hauteur. Visite de site systématique avant chiffrage.' } },
     { id: 'af3', code: `CH-${Y}-` + '003', nom: 'Skid de dosage – bâtiment B', clientId: 'e3', contactId: 'k4', siteId: 's5', chargeId: 'u1', statut: 'Facturé', devisId: 'dv3', dateReception: d(-66), okFacturation: true, dateCreation: d(-85), heuresPrevues: 0, rex: { note: 4, positif: 'Skid préfabriqué à 90 % en atelier, montage en 3 jours.', negatif: 'Remise commerciale trop élevée.', actions: 'Plancher de remise à 8 % sur les skids.' } },
     // Interventions hors devis (travaux en régie sur demande du client)
-    { id: 'af4', code: `CH-${Y}-` + '004', nom: 'Résidence Les Tilleuls – rénovation de la chaufferie', clientId: 'e14', contactId: 'k12', siteId: 's18', chargeId: 'u2', statut: 'En préparation', devisId: 'dv7', dateCreation: d(-1), heuresPrevues: 0, rex: {} },
+    { id: 'af4', documents: [{ id: 'dc6', fichierId: 'pdf-chaufferie', nom: 'Plan chaufferie existante.pdf', categorie: 'Plan', indice: 'A', note: '', mime: 'application/pdf', taille: 2400, date: d(-1), par: 'Julien Bernard', visible: true }],
+      code: `CH-${Y}-` + '004', nom: 'Résidence Les Tilleuls – rénovation de la chaufferie', clientId: 'e14', contactId: 'k12', siteId: 's18', chargeId: 'u2', statut: 'En préparation', devisId: 'dv7', dateCreation: d(-1), heuresPrevues: 0, rex: {} },
     { id: 'hd1', type: 'horsDevis', code: `HD-${Y}-` + '001', nom: 'Machine à papier PM2 – remplacement du collecteur de purge', clientId: 'e10', contactId: 'k10', siteId: 's14', chargeId: 'u1', statut: 'Terminé', dateCreation: d(-12),
       demande: 'Fuite sur le collecteur de purge DN50 de la sécherie : préfabriquer un collecteur neuf à l\'atelier et le poser pendant l\'arrêt du jeudi.', heuresPrevues: 0, rex: {} },
     { id: 'hd2', type: 'horsDevis', code: `HD-${Y}-` + '002', nom: 'Dépannage fuite vapeur ligne 3', clientId: 'e1', contactId: 'k1', siteId: 's2', chargeId: 'u2', statut: 'Ouvert', dateCreation: d(-1),
@@ -358,7 +379,8 @@ function demoData() {
   // Notification non lue de Kevin : son planning de la semaine prochaine a changé
   const jc = n => new Date(`${jour(1, n)}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }).replace(/\.(?=\s|$)/g, '');
   const notifications = [{ id: 'nt1', type: 'planning', userId: 'o1', pour: 'o1', titre: 'Votre planning a changé : 2 jours', lien: '#/pointage/planning', jours: [jour(1, 1), jour(1, 2)],
-    texte: `${jc(1)} : CH-${Y}-004 07:30–16:30 (Soudure)\n${jc(2)} : CH-${Y}-004 07:30–16:30 (Soudure)`, date: new Date(Date.now() - 25 * 60000).toISOString(), lu: false }];
+    texte: `${jc(1)} : CH-${Y}-004 07:30–16:30 (Soudure)\n${jc(2)} : CH-${Y}-004 07:30–16:30 (Soudure)`, date: new Date(Date.now() - 25 * 60000).toISOString(), lu: false },
+    { id: 'nt2', type: 'document', userId: 'o1', affaireId: 'af4', titre: `📎 Nouveau document : CH-${Y}-004`, texte: 'Plan : Plan chaufferie existante.pdf (indice A)', lien: '#/pointage/chantier/af4', date: new Date(Date.now() - 10 * 60000).toISOString(), lu: false }];
 
   // Pointages des opérateurs (jours ouvrés uniquement) : arrivée, départ, pause
   const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
@@ -463,7 +485,13 @@ function demoData() {
     envoi('env2', -2, 'situation', 'situations', 'sit4', `BL-${Y}-0004`, 'c.rousset@ipa.example', 'Proposition de situation n° 2 – CH-' + Y + '-001 – Ligne NEP inox – Usine de Rumilly', 'Claire Martin', 'c.martin@pipefit.example'),
   ];
   return {
-    files: { 'img-logo': IMAGES.logo, 'img-sig': IMAGES.signature, 'img-rack1': IMAGES.rack1, 'img-rack2': IMAGES.rack2 },
+    files: { 'img-logo': IMAGES.logo, 'img-sig': IMAGES.signature, 'img-rack1': IMAGES.rack1, 'img-rack2': IMAGES.rack2,
+      'pdf-iso': pdfExemple('Isometrique NEP aller - ISO-NEP-01 - indice B', ['Ligne NEP aller DN50 inox 316L', 'Longueur developpee : 61,8 m', '14 coudes 90 3D, 4 tes egaux, 4 brides PN16', 'Supportage tous les 2,5 m (colliers sur rail)', 'Indice B : cotes de raccordement mises a jour']),
+      'pdf-iso-a': pdfExemple('Isometrique NEP aller - ISO-NEP-01 - indice A', ['Premiere diffusion']),
+      'pdf-ft-vanne': pdfExemple('Fiche technique - vanne papillon DN50 PN16', ['Corps fonte GS, papillon inox 316', 'Manchette EPDM alimentaire', 'Commande par levier crante', 'Couple de serrage des boulons : 60 N.m']),
+      'pdf-ppsps': pdfExemple('PPSPS - Laiterie des Alpes, usine de Rumilly', ['Accueil securite au poste de garde (badge nominatif)', 'Permis de feu obligatoire pour toute soudure', 'EPI : casque, lunettes, chaussures, gants, bouchons', 'Point de rassemblement : parking visiteurs']),
+      'pdf-calcul': pdfExemple('Note de calcul du supportage', ['Usage interne au bureau']),
+      'pdf-chaufferie': pdfExemple('Plan de la chaufferie existante - indice A', ['Residence Les Tilleuls, Echirolles', 'Collecteurs depart / retour DN150 a remplacer', 'Acces par la porte cote parking (cle a la loge)']) },
     settings: { societe: 'Pipe-Fit Industrie', adresse: 'ZI des Forges – 69800 Saint-Priest', siret: '000 000 000 00000', tva: 20, tauxHoraireDefaut: 58, delaiPaiement: 45, dureeHebdo: 35, seuilHS50: 43, montantPanier: 10.5,
       compta: { journal: 'VT', journalLib: 'Ventes', compteClient: '411000', compteTravaux: '704000', compteLivraison: '708500', compteTVA: '445710', compteRG: '411700', auxiliaires: true, emailComptable: 'compta@cabinet-exemple.fr' },
       doc: { logoId: 'img-logo', masquerNom: true, logoHauteur: 56, couleur: '#8f2f1a', police: 'sans', tel: '04 72 00 00 00', email: 'contact@pipefit.example', web: 'www.pipefit.example',

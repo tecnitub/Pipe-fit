@@ -37,7 +37,7 @@ function pointagePour(query) {
 
 function pointageTabs(active, uid) {
   const q = Store.me.role === 'atelier' ? '' : `?pour=${uid}`;
-  return `<div class="tabs"><a href="#/pointage${q}" class="${active === 'heures' ? 'active' : ''}">Heures</a><a href="#/pointage/planning${q}" class="${active === 'planning' ? 'active' : ''}">Planning</a><a href="#/pointage/rapports${q}" class="${active === 'rapports' ? 'active' : ''}">Rapports</a><a href="#/pointage/frais${q}" class="${active === 'frais' ? 'active' : ''}">Notes de frais</a></div>`;
+  return `<div class="tabs"><a href="#/pointage${q}" class="${active === 'heures' ? 'active' : ''}">Heures</a><a href="#/pointage/planning${q}" class="${active === 'planning' ? 'active' : ''}">Planning</a><a href="#/pointage/chantiers${q}" class="${active === 'chantiers' ? 'active' : ''}">Chantiers</a><a href="#/pointage/rapports${q}" class="${active === 'rapports' ? 'active' : ''}">Rapports</a><a href="#/pointage/frais${q}" class="${active === 'frais' ? 'active' : ''}">Notes de frais</a></div>`;
 }
 
 // Sélection des personnes en mode équipe (conservée entre deux rafraîchissements)
@@ -50,6 +50,8 @@ Views.pointage = (params, query) => {
   if (params[0] === 'frais') return fraisView(u);
   if (params[0] === 'rapports') return rapportsView(u);
   if (params[0] === 'planning') return planningMobile(u, query);
+  if (params[0] === 'chantiers') return chantiersCompagnon(u);
+  if (params[0] === 'chantier') return ficheChantierCompagnon(u, params[1]);
   const today = isoDate(new Date());
   const team = equipeDe(u.id);
   const week = isoWeek(new Date());
@@ -151,6 +153,8 @@ Views.pointage.bind = (root, params, query) => {
   if (params[0] === 'frais') return bindFrais(root, uid);
   if (params[0] === 'rapports') return bindRapports(root, uid);
   if (params[0] === 'planning') return bindPlanningMobile(root, uid);
+  if (params[0] === 'chantier') return bindFicheChantierCompagnon(root, params[1]);
+  if (params[0] === 'chantiers') return;
   const on = (sel, fn) => { const el = root.querySelector(sel); if (el) el.onclick = fn; };
   const tache = () => (root.querySelector('input[name=p-tache]:checked') || {}).value || '';
   const panier = () => !!(root.querySelector('#p-panier') || {}).checked;

@@ -11,6 +11,7 @@ const EF = require('./efacture');
 const API = require('./api');
 const Push = require('./push');
 const Notifs = require('./notifs');
+const Compagnon = require('../public/js/compagnon');
 
 const PORT = +process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -18,6 +19,9 @@ const DB_FILE = process.env.DB_FILE || path.join(__dirname, '..', 'data', 'pipef
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const SESSION_DAYS = 30;
 const MAX_BODY = 10 * 1024 * 1024;
+const MAX_DOCUMENT = 40 * 1024 * 1024;
+const TYPES_DOCUMENTS = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', dwg: 'image/vnd.dwg', dxf: 'image/vnd.dxf',
+  ifc: 'application/x-step', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', zip: 'application/zip', txt: 'text/plain' };
 
 const db = DB.open(DB_FILE);
 API.initTables(db);
@@ -77,15 +81,33 @@ function atelierRefus(acc, col, obj, existing) {
   return null;
 }
 
+/* ---------- Vue des compagnons : données filtrées selon les réglages ---------- */
+const recordsDe = col => db.prepare('SELECT data FROM records WHERE col = ?').all(col).map(r => JSON.parse(r.data));
+const estCompagnon = acc => acc && acc.role === 'atelier';
+const reglesCompagnon = () => Compagnon.regles(DB.getSettings(db));
+const contexteCompagnon = acc => Compagnon.contexte(acc.user_id, recordsDe('users'), recordsDe('affaires'));
+const pourCompagnon = (acc, col, rec) => (estCompagnon(acc) ? Compagnon.filtrer(col, rec, reglesCompagnon(), contexteCompagnon(acc)) : rec);
+
 /* ---------- Temps réel (Server-Sent Events) ---------- */
-const clients = new Set();
+const clients = new Map(); // flux -> compte connecté
 function broadcast(event, payload) {
   const msg = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
-  for (const res of clients) res.write(msg);
+  let regles = null, ctx = null;
+  for (const [res, acc] of clients) {
+    if (!estCompagnon(acc)) { res.write(msg); continue; }
+    // Compagnon : chaque modification est filtrée ; un réglage modifié recharge ses données filtrées
+    if (event === 'settings') { res.write(`event: reload\ndata: ${JSON.stringify({ client: null })}\n\n`); continue; }
+    if (event !== 'change' || !payload || !payload.col) { res.write(msg); continue; }
+    regles = regles || reglesCompagnon();
+    if (!ctx || ctx.userId !== acc.user_id) ctx = Compagnon.contexte(acc.user_id, recordsDe('users'), recordsDe('affaires'));
+    const rec = Compagnon.filtrer(payload.col, payload.record, regles, ctx);
+    res.write(rec ? `event: change\ndata: ${JSON.stringify({ ...payload, record: rec })}\n\n`
+      : `event: delete\ndata: ${JSON.stringify({ col: payload.col, id: payload.record && payload.record.id, client: payload.client })}\n\n`);
+  }
   // Webhooks sortants (automatisations) : chaque création / modification / suppression
   try { API.emettre(DB, db, event, payload); } catch (e) { console.error('Webhook :', e.message); }
 }
-setInterval(() => { for (const res of clients) res.write(': ping\n\n'); }, 25000).unref();
+setInterval(() => { for (const res of clients.keys()) res.write(': ping\n\n'); }, 25000).unref();
 const NOTIFS = Notifs.creer({ DB, db, broadcast });
 
 /* ---------- Utilitaires HTTP ---------- */
@@ -179,7 +201,9 @@ async function api(req, res, url) {
     catch (e) { return fail(res, 422, e.message); }
   }
 
-  if (method !== 'GET' && !(req.headers['content-type'] || '').startsWith('application/json')) {
+  // Exception : envoi d'un document de chantier en fichier brut, avec l'en-tête X-PipeFit-Upload qu'un formulaire d'un autre site ne peut pas poser
+  const envoiDocument = p[0] === 'documents' && p[1] === 'fichier' && method === 'POST' && req.headers['x-pipefit-upload'] === '1';
+  if (method !== 'GET' && !envoiDocument && !(req.headers['content-type'] || '').startsWith('application/json')) {
     return fail(res, 415, 'Content-Type application/json requis');
   }
 
@@ -240,25 +264,25 @@ async function api(req, res, url) {
   if (p[0] === 'events' && method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
     res.write('retry: 3000\n\n');
-    clients.add(res);
+    clients.set(res, acc);
     req.on('close', () => clients.delete(res));
     return;
   }
 
-  if (p[0] === 'data' && method === 'GET') return send(res, 200, DB.allData(db));
+  if (p[0] === 'data' && method === 'GET') return send(res, 200, estCompagnon(acc) ? Compagnon.filtrerTout(DB.allData(db), reglesCompagnon(), contexteCompagnon(acc)) : DB.allData(db));
 
   // Lecture par l'API : liste filtrée d'une collection, ou un élément
   if (p[0] === 'records' && p[1] && method === 'GET') {
     if (!DB.COLLECTIONS.includes(p[1])) return fail(res, 404, 'Collection inconnue');
-    if (p[2]) { const r = DB.getRecord(db, p[1], p[2]); return r ? send(res, 200, r) : fail(res, 404, 'Élément introuvable'); }
+    if (p[2]) { const r = pourCompagnon(acc, p[1], DB.getRecord(db, p[1], p[2])); return r ? send(res, 200, r) : fail(res, 404, 'Élément introuvable'); }
     const depuis = url.searchParams.get('modifieDepuis') || '';
     const filtres = String(url.searchParams.get('filtre') || '').split(',').map(x => x.split(':')).filter(x => x[0] && x.length > 1).map(([k, ...v]) => [k, v.join(':')]);
     const limite = Math.min(5000, parseInt(url.searchParams.get('limite'), 10) || 5000);
     const rows = db.prepare(`SELECT id FROM records WHERE col = ?${depuis ? ' AND updated_at > ?' : ''} ORDER BY updated_at DESC`).all(...[p[1], ...(depuis ? [depuis] : [])]);
     const out = [];
     for (const r of rows) {
-      const rec = DB.getRecord(db, p[1], r.id);
-      if (filtres.every(([k, v]) => String(rec[k] ?? '') === v)) out.push(rec);
+      const rec = pourCompagnon(acc, p[1], DB.getRecord(db, p[1], r.id));
+      if (rec && filtres.every(([k, v]) => String(rec[k] ?? '') === v)) out.push(rec);
       if (out.length >= limite) break;
     }
     return send(res, 200, out);
@@ -295,10 +319,28 @@ async function api(req, res, url) {
   if (p[0] === 'files' && method === 'GET' && p[1]) {
     const f = db.prepare('SELECT mime, data FROM files WHERE id = ?').get(p[1]);
     if (!f) return fail(res, 404, 'Fichier introuvable');
-    // XML : téléchargé, jamais interprété par le navigateur
-    const xml = /xml/.test(f.mime);
-    res.writeHead(200, { 'Content-Type': f.mime, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff', ...(xml ? { 'Content-Disposition': 'attachment; filename="facture.xml"', 'Content-Security-Policy': 'sandbox' } : {}) });
+    // PDF et images affichés ; tout le reste (XML, DWG, Excel…) téléchargé, jamais interprété par le navigateur
+    const affiche = /^(image\/(jpeg|png|webp)|application\/pdf)$/.test(f.mime);
+    const nom = String(url.searchParams.get('nom') || (/xml/.test(f.mime) ? 'facture.xml' : 'document')).replace(/[^\w .()-]+/g, '_').slice(0, 120) || 'document';
+    res.writeHead(200, { 'Content-Type': f.mime, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff',
+      ...(affiche ? (url.searchParams.get('nom') ? { 'Content-Disposition': `inline; filename="${nom}"` } : {}) : { 'Content-Disposition': `attachment; filename="${nom}"`, 'Content-Security-Policy': 'sandbox' }) });
     return res.end(Buffer.from(f.data));
+  }
+
+  // Documents de chantier (plans, fiches techniques, notices…) : fichier brut jusqu'à 40 Mo
+  if (envoiDocument) {
+    if (!canWrite(acc, 'affaires')) return fail(res, 403, 'Droits insuffisants');
+    const nom = (() => { try { return decodeURIComponent(String(req.headers['x-filename'] || '')); } catch (e) { return ''; } })();
+    const ext = (/\.([a-z0-9]+)$/i.exec(nom) || [])[1];
+    const mime = TYPES_DOCUMENTS[String(ext || '').toLowerCase()];
+    if (!mime) return fail(res, 415, `Type de fichier non accepté (${Object.keys(TYPES_DOCUMENTS).join(', ')})`);
+    const buf = await readRaw(req, MAX_DOCUMENT);
+    if (!buf.length) return fail(res, 400, 'Fichier vide');
+    const magie = { 'application/pdf': [0x25, 0x50, 0x44, 0x46], 'image/png': [0x89, 0x50, 0x4e, 0x47], 'image/jpeg': [0xff, 0xd8, 0xff] }[mime];
+    if (magie && !magie.every((b, i) => buf[i] === b)) return fail(res, 415, 'Le contenu du fichier ne correspond pas à son extension');
+    const id = crypto.randomBytes(12).toString('hex');
+    db.prepare('INSERT INTO files (id, mime, data, created_by, created_at) VALUES (?, ?, ?, ?, ?)').run(id, mime, buf, acc.login, new Date().toISOString());
+    return send(res, 200, { id, mime, taille: buf.length });
   }
 
   // Import groupé (bibliothèque, entreprises, contacts depuis Excel) : une seule transaction
@@ -360,6 +402,12 @@ async function api(req, res, url) {
         }
         const refus = atelierRefus(acc, col, obj, existing);
         if (refus) return { forbidden: refus };
+        // Matériel saisi par un compagnon (qui ne voit pas forcément les prix) : prix de la bibliothèque, ou ceux déjà fixés par le bureau
+        if (col === 'consommations' && estCompagnon(acc)) {
+          const art = obj.articleId && DB.getRecord(db, 'articles', obj.articleId);
+          if (art) Object.assign(obj, { pu: Number(art.prixVente) || 0, cout: Number(art.coutRevient) || 0 });
+          else if (!reglesCompagnon().prix || existing) Object.assign(obj, { pu: existing ? existing.pu || 0 : 0, cout: existing ? existing.cout || 0 : 0 });
+        }
         const numbering = DB.NUMBERING[col];
         if (numbering) {
           const field = numbering[0];
@@ -375,11 +423,12 @@ async function api(req, res, url) {
       });
       if (result.forbidden) return fail(res, 403, result.forbidden);
       if (result.conflict) {
-        return fail(res, 409, `Modifié entre-temps par ${result.conflict._by || 'un autre utilisateur'}`, { record: result.conflict });
+        return fail(res, 409, `Modifié entre-temps par ${result.conflict._by || 'un autre utilisateur'}`, { record: pourCompagnon(acc, col, result.conflict) });
       }
       broadcast('change', { col, record: result.record, client: req.headers['x-client-id'] || null });
       if (col === 'planning') NOTIFS.planningModifie(acc, result.avant, result.record);
-      return send(res, 200, result.record);
+      if (col === 'affaires') NOTIFS.documentsModifies(acc, result.avant, result.record);
+      return send(res, 200, pourCompagnon(acc, col, result.record) || { id: result.record.id, _v: result.record._v });
     }
 
     if (method === 'DELETE') {

@@ -179,7 +179,7 @@ function replaceAll(db, data, login) {
     setSettings(db, data.settings || {});
     const insFile = db.prepare('INSERT OR REPLACE INTO files (id, mime, data, created_by, created_at) VALUES (?, ?, ?, ?, ?)');
     for (const [id, url] of Object.entries(data.files || {})) {
-      const m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(url);
+      const m = /^data:(image\/(?:jpeg|png|webp)|application\/pdf);base64,(.+)$/.exec(url);
       if (m) insFile.run(id, m[1], Buffer.from(m[2], 'base64'), login, now);
     }
   });

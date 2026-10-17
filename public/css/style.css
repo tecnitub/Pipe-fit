@@ -590,3 +590,32 @@ details.preview > .doc-print, .doc-print.feuille { max-width: 794px; margin-left
 .sit-barre { position: relative; display: flex; height: 4px; border-radius: 2px; background: var(--head); overflow: hidden; margin-top: 3px; min-width: 60px; }
 .sit-barre span { display: block; height: 100%; background: color-mix(in srgb, var(--muted) 60%, var(--head)); }
 .sit-barre span.nouv { background: var(--accent); }
+
+/* Documents du chantier (bureau) */
+.doc-depot { display: grid; gap: 4px; justify-items: center; text-align: center; padding: 18px; margin-bottom: 10px; border: 2px dashed var(--border); border-radius: 12px; background: var(--panel); cursor: pointer; }
+.doc-depot:hover, .doc-depot.survol { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
+.doc-depot input[type="checkbox"] { width: auto; vertical-align: middle; }
+.docs-table select { width: auto; max-width: 180px; }
+.doc-nom { font-weight: 600; text-decoration: none; }
+.nowrap { white-space: nowrap; }
+
+/* Téléphone du compagnon : chantiers, documents, matériel */
+.ch-carte { display: grid; gap: 3px; text-decoration: none; color: inherit; border-left: 5px solid hsl(var(--h) 60% 46%); margin-bottom: 10px; }
+.docs-mobile, .mat-liste { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+.docs-mobile a { display: flex; gap: 10px; align-items: center; padding: 10px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; text-decoration: none; color: inherit; }
+.docs-mobile a:active { background: var(--panel-alt); }
+.doc-ic { font-size: 24px; }
+.mat-liste li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
+.mat-liste li.mat-famille { background: transparent; border: 0; padding: 6px 2px 0; font-weight: 700; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.mat-q { text-align: right; white-space: nowrap; }
+.mat-ouvrages { display: grid; gap: 6px; margin-bottom: 12px; }
+.mat-chap { font-weight: 700; color: var(--accent); margin-top: 6px; }
+.mat-chap.niv-2 { padding-left: 10px; } .mat-chap.niv-3 { padding-left: 20px; font-weight: 600; }
+.mat-ouv { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+.mat-ouv ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; }
+.mat-ouv li { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; border-top: 1px dashed var(--border); padding-top: 3px; }
+
+/* Paramètres : ce que voient les compagnons */
+.cp-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 8px 20px; }
+.cp-opt { align-items: flex-start; }
+.cp-opt input { margin-top: 3px; }

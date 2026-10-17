@@ -5,6 +5,7 @@
 const crypto = require('node:crypto');
 const Push = require('./push');
 const NotifPlanning = require('../public/js/notif-planning');
+const Compagnon = require('../public/js/compagnon');
 
 const DELAI = () => Math.max(0, parseInt(process.env.NOTIF_DELAI_MS || '20000', 10));
 const CONSERVATION_JOURS = 60;
@@ -62,10 +63,49 @@ function creer({ DB, db, broadcast }) {
       attente.set(p.userId, a);
     });
   }
+  /* ---------- Documents transmis aux compagnons (plans, fiches techniques) ---------- */
+  const attenteDocs = new Map(); // affaireId -> { docs: Map(id -> doc), timer }
+  const cleDoc = d => `${d.nom}|${d.indice || ''}|${d.fichierId}`;
+  async function envoyerDocs(affaireId) {
+    const a = attenteDocs.get(affaireId);
+    attenteDocs.delete(affaireId);
+    const af = lire('affaires', affaireId);
+    if (!a || !af || !Compagnon.regles(DB.getSettings(db)).documents) return;
+    // Destinataires : les compagnons planifiés sur le chantier aujourd'hui ou plus tard (le chef d'équipe pour un intérimaire sans compte)
+    const auj = aujourdhui(), users = [...new Set(tous('planning').filter(p => p.affaireId === affaireId && p.date && p.date >= auj).map(p => p.userId))];
+    const dest = new Map();
+    users.forEach(uid => {
+      let comptes = comptesDe(uid);
+      if (!comptes.length) { const u = lire('users', uid); if (u && u.chefId) comptes = comptesDe(u.chefId); }
+      comptes.forEach(c => dest.set(c.id, c.user_id));
+    });
+    if (!dest.size) return;
+    const docs = [...a.docs.values()], n = docs.length;
+    const m = { titre: `📎 ${n > 1 ? `${n} nouveaux documents` : 'Nouveau document'} : ${af.code || af.nom}`,
+      texte: docs.map(d => `${d.categorie || 'Document'} : ${d.nom}${d.indice ? ` (indice ${d.indice})` : ''}`).join('\n'), lien: `#/pointage/chantier/${affaireId}`, tag: `docs-${affaireId}` };
+    purger();
+    [...new Set(dest.values())].forEach(uid => enregistrer({ type: 'document', userId: uid, affaireId, titre: m.titre, texte: m.texte, lien: m.lien, date: new Date().toISOString(), lu: false }));
+    const doc = (DB.getSettings(db).doc || {});
+    await Push.envoyer(DB, db, [...dest.keys()], m, doc.email ? `mailto:${doc.email}` : undefined).catch(e => console.error('Notification :', e.message));
+  }
+  // Appelé après chaque enregistrement d'un chantier : documents nouvellement transmis (ou nouvel indice)
+  function documentsModifies(acc, avant, apres) {
+    if (!apres) return;
+    const deja = new Set(((avant && avant.documents) || []).filter(d => d.visible).map(cleDoc));
+    const nouveaux = (apres.documents || []).filter(d => d.visible && !deja.has(cleDoc(d)));
+    if (!nouveaux.length) return;
+    const a = attenteDocs.get(apres.id) || { docs: new Map() };
+    nouveaux.forEach(d => a.docs.set(d.id, d));
+    clearTimeout(a.timer);
+    a.timer = setTimeout(() => envoyerDocs(apres.id).catch(e => console.error('Notification :', e.message)), DELAI());
+    if (a.timer.unref) a.timer.unref();
+    attenteDocs.set(apres.id, a);
+  }
+
   // Pour les tests et l'arrêt du serveur : envoie tout de suite ce qui attend
   const vider = () => Promise.all([...attente.keys()].map(u => { clearTimeout(attente.get(u).timer); return envoyer(u); }));
 
-  return { planningModifie, vider, enregistrer };
+  return { planningModifie, documentsModifies, vider, enregistrer };
 }
 
 module.exports = { creer };

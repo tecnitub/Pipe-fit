@@ -2,7 +2,7 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v22';
+  const KEY = 'pipefit-crm-demo-v23';
   const ME_KEY = 'pipefit-crm-demo-me';
   const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4] };
@@ -87,6 +87,20 @@
       a.timer = setTimeout(() => envoyerNotif(p.userId), 1500);
       attenteNotif.set(p.userId, a);
     });
+  }
+  // Documents transmis aux compagnons : prévenir ceux qui sont planifiés sur le chantier
+  function documentsModifies(avant, apres) {
+    const cle = d => `${d.nom}|${d.indice || ''}|${d.fichierId}`, deja = new Set(((avant && avant.documents) || []).filter(d => d.visible).map(cle));
+    const nouveaux = (apres.documents || []).filter(d => d.visible && !deja.has(cle(d)));
+    if (!nouveaux.length || !Compagnon.regles(db.settings).documents) return;
+    const auj = isoLocal(new Date()), users = [...new Set(db.planning.filter(p => p.affaireId === apres.id && p.date >= auj).map(p => p.userId))];
+    const dest = new Set();
+    users.forEach(uid => { let c = db.accounts.filter(x => x.userId === uid); if (!c.length) { const u = db.users.find(x => x.id === uid); if (u && u.chefId) c = db.accounts.filter(x => x.userId === u.chefId); } c.forEach(x => dest.add(x.userId)); });
+    const n = nouveaux.length, titre = `📎 ${n > 1 ? `${n} nouveaux documents` : 'Nouveau document'} : ${apres.code || apres.nom}`;
+    const texte = nouveaux.map(d => `${d.categorie || 'Document'} : ${d.nom}${d.indice ? ` (indice ${d.indice})` : ''}`).join('\n');
+    db.notifications = db.notifications || [];
+    dest.forEach(uid => db.notifications.push({ id: 'nt' + DemoSeed.uid(), type: 'document', userId: uid, affaireId: apres.id, titre, texte, lien: `#/pointage/chantier/${apres.id}`, date: new Date().toISOString(), lu: false, _v: 1, _at: new Date().toISOString(), _by: 'Pipe-Fit' }));
+    save();
   }
   const viderNotifs = () => [...attenteNotif.keys()].forEach(envoyerNotif);
   window.addEventListener('pagehide', viderNotifs);
@@ -202,7 +216,8 @@
     if (p[0] === 'data') {
       const out = { settings: db.settings };
       COLLECTIONS.forEach(c => { out[c] = JSON.parse(JSON.stringify(db[c])); });
-      return [200, out];
+      // Compagnon : mêmes données filtrées que sur le serveur (prix, montants, budgets d'heures…)
+      return [200, acc.role === 'atelier' ? Compagnon.filtrerTout(out, Compagnon.regles(db.settings), Compagnon.contexte(acc.userId, db.users, db.affaires)) : out];
     }
     if (p[0] === 'records') {
       const [, col, id] = p;
@@ -221,12 +236,19 @@
         if (col === 'receptions' && existing && existing.statut === 'Signé' && acc.role !== 'admin') return [403, { error: 'Ce procès-verbal est signé : il ne peut plus être modifié.' }];
         if (col === 'reserves' && existing && existing.pvId && acc.role !== 'admin') obj = { ...clean(existing), statut: obj.statut, dateLevee: obj.dateLevee, photoLeveeId: obj.photoLeveeId, commentaireLevee: obj.commentaireLevee, pvLeveeId: obj.pvLeveeId };
         if (NUMBERING[col]) { const f = NUMBERING[col][0]; obj[f] = existing ? existing[f] : nextNumber(col, obj); }
+        if (col === 'consommations' && acc.role === 'atelier') {
+          const art = obj.articleId && db.articles.find(x => x.id === obj.articleId);
+          if (art) Object.assign(obj, { pu: Number(art.prixVente) || 0, cout: Number(art.coutRevient) || 0 });
+          else if (!Compagnon.regles(db.settings).prix || existing) Object.assign(obj, { pu: existing ? existing.pu || 0 : 0, cout: existing ? existing.cout || 0 : 0 });
+        }
         const rec = { ...obj, _v: existing ? existing._v + 1 : 1, _at: new Date().toISOString(), _by: acc.nom };
         if (existing) db[col][i] = rec; else db[col].push(rec);
         audit(existing ? 'modification' : 'création', col, labelOf(rec));
         save();
         if (col === 'planning') planningModifie(acc, existing, rec);
-        return [200, JSON.parse(JSON.stringify(rec))];
+        if (col === 'affaires') documentsModifies(existing, rec);
+        const rendu = acc.role === 'atelier' ? Compagnon.filtrer(col, JSON.parse(JSON.stringify(rec)), Compagnon.regles(db.settings), Compagnon.contexte(acc.userId, db.users, db.affaires)) : JSON.parse(JSON.stringify(rec));
+        return [200, rendu || { id: rec.id, _v: rec._v }];
       }
       if (method === 'DELETE') {
         if (col === 'factures') return [403, { error: 'Une facture numérotée ne peut pas être supprimée (numérotation continue obligatoire) : établissez un avoir.' }];
@@ -295,13 +317,37 @@
     const u = typeof url === 'string' ? url : url.url;
     if (!u.startsWith('/api/')) return realFetch(url, opts);
     const method = (opts.method || 'GET').toUpperCase();
+    // Document de chantier envoyé en fichier brut : conservé sur l'appareil (taille limitée dans la démonstration)
+    if (u === '/api/documents/fichier') {
+      const f = opts.body;
+      if (me().role === 'atelier') return new Response(JSON.stringify({ error: 'Droits insuffisants' }), { status: 403 });
+      if (!f || f.size > 1.5 * 1024 * 1024) return new Response(JSON.stringify({ error: 'Démonstration : fichiers de 1,5 Mo au plus (40 Mo dans la version installée)' }), { status: 413 });
+      const dataUrl = await new Promise((ok, ko) => { const rd = new FileReader(); rd.onload = () => ok(rd.result); rd.onerror = ko; rd.readAsDataURL(f); });
+      const id = 'f' + DemoSeed.uid();
+      db.files = db.files || {}; db.files[id] = dataUrl;
+      try { save(); } catch (e) { return new Response(JSON.stringify({ error: 'Espace de la démonstration plein' }), { status: 507 }); }
+      return new Response(JSON.stringify({ id, mime: f.type || 'application/octet-stream', taille: f.size }), { status: 200 });
+    }
     let body = {};
     try { body = opts.body ? JSON.parse(opts.body) : {}; } catch (e) { body = {}; }
     const [status, data] = await handle(method, u.split('?')[0], body);
     return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
   };
   // Photos des justificatifs conservées sur l'appareil
-  window.FILE_URL = id => (db.files && db.files[id]) || '';
+  // Images en data URL ; PDF et autres documents en adresse blob (ouvrables dans un onglet)
+  const blobs = new Map();
+  window.FILE_URL = id => {
+    const d = (db.files && db.files[id]) || '';
+    if (!d || /^data:image\//.test(d)) return d;
+    if (!blobs.has(id)) {
+      const m = /^data:([^;,]+)?(;base64)?,(.*)$/.exec(d);
+      if (!m) return d;
+      const bin = m[2] ? atob(m[3]) : decodeURIComponent(m[3]), u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      blobs.set(id, URL.createObjectURL(new Blob([u8], { type: m[1] || 'application/octet-stream' })));
+    }
+    return blobs.get(id);
+  };
   // Téléchargements (récap Excel, CSV) : autorisation « downloads » de la page ; sinon les boutons sont masqués
   document.body.classList.add('no-dl');
   if (window.claude && window.claude.use) {
