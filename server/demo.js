@@ -417,10 +417,13 @@ function demoData() {
   pointe('hd2', 'o4', -1, 5, 'Dépannage');
 
   const frais = [
-    { id: 'nf1', numero: `NF-${Y}-` + '0001', userId: 'o3', affaireId: 'af1', date: d(-9), categorie: 'Repas', montantTTC: 68.4, tauxTVA: 10, description: 'Repas équipe montage (4 pers.)', photoId: '', statut: 'Validée' },
+    { id: 'nf1', numero: `NF-${Y}-` + '0001', userId: 'o3', affaireId: 'af1', date: d(-9), categorie: 'Repas', montantTTC: 68.4, tauxTVA: 10, description: 'Repas équipe montage (4 pers.)', photoId: '', statut: 'Validée',
+      convives: [{ nom: 'Lucas Petit', userId: 'o3' }, { nom: 'Kevin Roux', userId: 'o1' }, { nom: 'Ahmed Haddad', userId: 'o2' }, { nom: 'Yanis Morel', userId: 'i1' }] },
     { id: 'nf2', numero: `NF-${Y}-` + '0002', userId: 'o1', affaireId: 'af1', date: d(-3), categorie: 'Carburant', montantTTC: 72.15, tauxTVA: 20, description: 'Gasoil camionnette atelier → Rumilly', photoId: '', statut: 'Soumise' },
     { id: 'nf3', numero: `NF-${Y}-` + '0003', userId: 'o3', affaireId: 'af1', date: d(-2), categorie: 'Péage', montantTTC: 18.6, tauxTVA: 20, description: 'Péage A41 aller-retour', photoId: '', statut: 'Soumise' },
     { id: 'nf4', numero: `NF-${Y}-` + '0004', userId: 'o1', affaireId: 'af2', date: d(-100), categorie: 'Hôtel', montantTTC: 189, tauxTVA: 10, description: '2 nuits à Fos-sur-Mer pendant l\'arrêt', photoId: '', statut: 'Remboursée' },
+    { id: 'nf5', numero: `NF-${Y}-` + '0005', userId: 'o1', affaireId: 'af1', date: d(-1), categorie: 'Repas', montantTTC: 49.3, tauxTVA: 10, montantTVA: 4.48, description: 'Le Bistrot du Port — réunion de chantier', photoId: '', statut: 'Soumise',
+      convives: [{ nom: 'Kevin Roux', userId: 'o1' }, { nom: 'Hugo Faure', userId: 'o5' }, { nom: 'Thomas Girard', societe: 'Laiterie des Alpes', externe: true }], ticketLu: { montantTTC: 49.3, date: d(-1), couverts: 3 } },
   ];
 
   // Matériel utilisé sur les interventions hors devis (saisi sur téléphone, à facturer)

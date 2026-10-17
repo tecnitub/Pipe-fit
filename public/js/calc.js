@@ -153,7 +153,8 @@ const Calc = {
   },
 
   // Note de frais : montant HT imputé au chantier
-  fraisHT(f) { return num(f.montantTTC) / (1 + num(f.tauxTVA) / 100); },
+  // HT : TTC moins la TVA lue sur le ticket (plusieurs taux possibles), sinon déduit du taux
+  fraisHT(f) { return num(f.montantTVA) > 0 && num(f.montantTVA) < num(f.montantTTC) ? num(f.montantTTC) - num(f.montantTVA) : num(f.montantTTC) / (1 + num(f.tauxTVA) / 100); },
 
   // Situation de travaux (BL) : avancement cumulé par ligne du devis, comparé à la dernière situation acceptée.
   // Les montants tiennent compte des remises / majorations du devis ; la livraison est une ligne à part.

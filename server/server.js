@@ -12,6 +12,7 @@ const API = require('./api');
 const Push = require('./push');
 const Notifs = require('./notifs');
 const Compagnon = require('../public/js/compagnon');
+const NoteFrais = require('../public/js/frais');
 
 const PORT = +process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -402,6 +403,8 @@ async function api(req, res, url) {
         }
         const refus = atelierRefus(acc, col, obj, existing);
         if (refus) return { forbidden: refus };
+        // Note de frais envoyée : restaurant -> noms des personnes présentes obligatoires
+        if (col === 'frais' && obj.statut === 'Soumise' && NoteFrais.erreur(obj)) return { invalide: NoteFrais.erreur(obj) };
         // Matériel saisi par un compagnon (qui ne voit pas forcément les prix) : prix de la bibliothèque, ou ceux déjà fixés par le bureau
         if (col === 'consommations' && estCompagnon(acc)) {
           const art = obj.articleId && DB.getRecord(db, 'articles', obj.articleId);
@@ -422,6 +425,7 @@ async function api(req, res, url) {
         return { record: DB.getRecord(db, col, id), avant: existing };
       });
       if (result.forbidden) return fail(res, 403, result.forbidden);
+      if (result.invalide) return fail(res, 400, result.invalide);
       if (result.conflict) {
         return fail(res, 409, `Modifié entre-temps par ${result.conflict._by || 'un autre utilisateur'}`, { record: pourCompagnon(acc, col, result.conflict) });
       }

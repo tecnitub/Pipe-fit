@@ -157,7 +157,11 @@ Le PDF Factur-X contient le XML joint mais n'est pas certifié PDF/A-3 : si votr
 4. **Pointage mobile** des opérateurs (arrivée / départ par chantier et tâche, pause, panier repas, saisie d'oubli).
    Un **chef d'équipe** pointe en une fois les compagnons et **intérimaires** sous ses ordres (filtre « intérimaires »).
    Le coût réel de main-d'œuvre = heures pointées × coût horaire de chaque personne (taux agence pour les intérimaires).
-   **Notes de frais** : photo du justificatif prise avec le téléphone, imputée au chantier, validée puis remboursée.
+   **Notes de frais** : photo du ticket prise avec le téléphone (raccourci « Note de frais » de l'appli),
+   lue sur l'appareil (montant TTC, date, TVA, enseigne, catégorie, couverts : Tesseract, rien n'est envoyé à
+   l'extérieur), imputée au chantier, validée puis remboursée. Au restaurant, les noms des personnes présentes
+   sont obligatoires (collègues du chantier proposés, invités avec leur société) ; le bureau voit les écarts
+   avec le ticket (montant ou date corrigés, nombre de couverts).
    **Validation** des pointages par le chargé d'affaires (ses chantiers) avant la paie ; un pointage validé est verrouillé.
 5. **Pilotage du chantier** : budget du devis face au réel : heures prévues au devis face aux heures pointées par les compagnons
    (coût de chaque personne), fournitures au prix d'achat des commandes (au montant facturé une fois rapprochées) et des

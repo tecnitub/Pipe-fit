@@ -17,6 +17,7 @@
   "shortcuts": [
     { "name": "Mon planning", "url": "/#/pointage/planning", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
     { "name": "Pointer", "url": "/#/pointage", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Note de frais", "url": "/#/pointage/frais", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
     { "name": "Notifications", "url": "/#/notifications", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] }
   ]
 }

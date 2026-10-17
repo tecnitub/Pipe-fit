@@ -221,58 +221,154 @@ function compressImage(file, max = 1280, quality = 0.72) {
     img.src = url;
   });
 }
-let fraisPhoto = null; // data URL de la photo en attente d'envoi
+// Note en cours de saisie (gardée quand l'écran se redessine) : photo, champs, convives, lecture du ticket
+let fraisB = null;
+const tvaCategorie = cat => (CATEGORIES_FRAIS.find(c => c[0] === cat) || [0, 20])[1];
+function brouillonFrais(u, affaireId) {
+  if (!fraisB || fraisB.userId !== u.id) {
+    fraisB = { userId: u.id, affaireId: affaireId || '', categorie: CATEGORIES_FRAIS[0][0], montantTTC: '', tauxTVA: tvaCategorie(CATEGORIES_FRAIS[0][0]), date: isoDate(new Date()),
+      description: '', convives: [{ nom: u.nom, userId: u.id }], photo: null, ocr: null, lus: {}, saisis: {}, jeton: 0 };
+  }
+  return fraisB;
+}
+// Collègues proposés pour un repas : affectés au même chantier cette semaine-là (planning), puis les autres
+function collegues(b) {
+  const sem = isoWeek(jourDe(b.date || isoDate(new Date())));
+  const planifies = new Set(Store.all('planning').filter(p => p.affaireId === b.affaireId && !p.absence && (p.date === b.date || semaineDe(p) === sem)).map(p => p.userId));
+  const tous = Store.all('users').filter(x => x.id !== b.userId && !x.archive);
+  return { equipe: tous.filter(x => planifies.has(x.id)), autres: tous.filter(x => !planifies.has(x.id)) };
+}
+const LIBELLES_LUS = { montantTTC: 'montant', date: 'date', tauxTVA: 'TVA', categorie: 'catégorie', description: 'enseigne' };
+const lu = (b, k) => (b.lus[k] ? ' <span class="badge b-info lu" title="Lu sur le ticket : vérifiez">lu sur le ticket</span>' : '');
 
 function fraisView(u) {
   const mes = Store.all('frais').filter(f => f.userId === u.id).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const dernier = Store.all('temps').filter(t => t.userId === u.id).sort((a, b) => b.date.localeCompare(a.date))[0] || {};
+  const b = brouillonFrais(u, dernier.affaireId), o = b.ocr, repas = NoteFrais.convivesRequis(b);
+  const { equipe, autres } = repas ? collegues(b) : { equipe: [], autres: [] };
+  const internes = new Set(b.convives.filter(c => c.userId).map(c => c.userId));
+  const proposes = [u, ...equipe, ...autres.filter(x => internes.has(x.id))];
+  const externes = b.convives.map((c, i) => ({ c, i })).filter(x => !x.c.userId);
+  const nb = NoteFrais.nomsConvives(b).length;
   return `<div class="pointage">
     <h1>Pointage</h1>
     ${Store.me.role !== 'atelier' ? `<div class="field"><label for="p-pour">Pointer en tant que</label><select id="p-pour">${options(operateurs(), u.id, undefined, false)}</select></div>` : ''}
     ${pointageTabs('frais', u.id)}
     <div class="card punch">
-      <label class="photo-drop ${fraisPhoto ? 'has-photo' : ''}" for="f-photo">
-        ${fraisPhoto ? `<img src="${fraisPhoto}" alt="Justificatif">` : '<span class="photo-icon" aria-hidden="true">📷</span><span>Prendre en photo le justificatif</span>'}
+      <label class="photo-drop ${b.photo ? 'has-photo' : ''}" for="f-photo">
+        ${b.photo ? `<img src="${b.photo}" alt="Justificatif">` : '<span class="photo-icon" aria-hidden="true">📷</span><span>Prendre en photo le ticket</span><span class="small">montant, date et TVA sont lus automatiquement</span>'}
         <input id="f-photo" type="file" accept="image/*" capture="environment" hidden>
       </label>
-      <div class="field"><label for="f-aff">Chantier</label><select id="f-aff" class="big-select">${options(Store.all('affaires').filter(a => a.statut !== 'Clos'), dernier.affaireId, affaireLabel, false)}</select></div>
-      <div class="chips" role="radiogroup" aria-label="Catégorie">${CATEGORIES_FRAIS.map(([c], i) => `<label class="chip"><input type="radio" name="f-cat" value="${esc(c)}" ${i === 0 ? 'checked' : ''}><span>${esc(c)}</span></label>`).join('')}</div>
+      ${o && o.etat === 'lecture' ? `<div class="ocr-etat"><span>🔍 Lecture du ticket…</span><div class="ocr-barre"><span id="ocr-prog" style="width:${Math.round((o.p || 0) * 100)}%"></span></div></div>` : ''}
+      ${o && o.etat === 'ok' ? `<div class="ocr-etat ${Object.keys(b.lus).length ? 'ok' : 'warn'}">${Object.keys(b.lus).length ? `✓ Lu sur le ticket : ${Object.keys(b.lus).map(k => LIBELLES_LUS[k]).join(', ')}. Vérifiez avant d'envoyer.` : 'Ticket peu lisible : saisissez le montant (ou reprenez la photo bien à plat, sans reflet).'}</div>` : ''}
+      ${o && o.etat === 'echec' ? `<div class="ocr-etat warn">Lecture automatique indisponible (${esc(o.msg)}) : saisissez le montant.</div>` : ''}
+      <div class="field"><label for="f-aff">Chantier</label><select id="f-aff" class="big-select">${options(Store.all('affaires').filter(a => a.statut !== 'Clos'), b.affaireId, affaireLabel, false)}</select></div>
+      <div class="chips" role="radiogroup" aria-label="Catégorie">${CATEGORIES_FRAIS.map(([c]) => `<label class="chip"><input type="radio" name="f-cat" value="${esc(c)}" ${c === b.categorie ? 'checked' : ''}><span>${c === 'Repas' ? 'Restaurant' : esc(c)}</span></label>`).join('')}</div>
+      ${repas ? `<fieldset class="convives ${nb ? '' : 'manque'}"><legend>Personnes présentes au repas <span class="req">obligatoire</span></legend>
+        <div class="chips">${proposes.map(x => `<label class="chip"><input type="checkbox" data-conv="${x.id}" ${internes.has(x.id) ? 'checked' : ''}><span>${esc(x.nom)}</span></label>`).join('')}</div>
+        ${externes.map(({ c, i }) => `<div class="conv-ext"><input data-ext-nom="${i}" value="${esc(c.nom)}" placeholder="Nom et prénom" aria-label="Nom de l'invité"><input data-ext-soc="${i}" value="${esc(c.societe || '')}" placeholder="Société" aria-label="Société de l'invité"><button class="icon" data-ext-del="${i}" aria-label="Retirer">✕</button></div>`).join('')}
+        <div class="conv-actions">${autres.filter(x => !internes.has(x.id)).length ? `<select id="conv-coll" aria-label="Ajouter un collègue"><option value="">+ Un collègue…</option>${autres.filter(x => !internes.has(x.id)).map(x => `<option value="${x.id}">${esc(x.nom)}</option>`).join('')}</select>` : ''}
+          <button class="secondary small" id="conv-ext">+ Un invité (client, fournisseur…)</button></div>
+        <p class="small ${b.couverts && b.couverts !== nb ? 'warn-text' : 'muted'}">${nb} personne${nb > 1 ? 's' : ''}${b.couverts ? ` · le ticket indique ${b.couverts} couvert${b.couverts > 1 ? 's' : ''}` : ''}</p></fieldset>` : ''}
       <div class="grid2">
-        <div class="field"><label for="f-montant">Montant TTC (€)</label><input id="f-montant" type="number" step="0.01" min="0" inputmode="decimal"></div>
-        <div class="field"><label for="f-date">Date</label><input id="f-date" type="date" value="${isoDate(new Date())}"></div>
+        <div class="field"><label for="f-montant">Montant TTC (€)${lu(b, 'montantTTC')}</label><input id="f-montant" type="number" step="0.01" min="0" inputmode="decimal" value="${esc(b.montantTTC)}"></div>
+        <div class="field"><label for="f-date">Date${lu(b, 'date')}</label><input id="f-date" type="date" value="${esc(b.date)}"></div>
       </div>
-      <div class="field"><label for="f-desc">Description</label><input id="f-desc" placeholder="Ex. repas équipe, péage A43…"></div>
+      <div class="grid2">
+        <div class="field"><label for="f-desc">Description${lu(b, 'description')}</label><input id="f-desc" value="${esc(b.description)}" placeholder="${repas ? 'Ex. restaurant, motif du repas' : 'Ex. péage A43, plein camionnette…'}"></div>
+        <div class="field"><label for="f-tva">TVA${lu(b, 'tauxTVA')}</label><select id="f-tva">${[20, 10, 5.5, 0].map(t => `<option value="${t}" ${Number(b.tauxTVA) === t ? 'selected' : ''}>${String(t).replace('.', ',')} %</option>`).join('')}</select></div>
+      </div>
       <button class="big" id="f-save">Envoyer la note de frais</button>
+      ${b.photo || b.montantTTC ? '<button class="linklike small" id="f-raz">Effacer et recommencer</button>' : ''}
     </div>
     <h2>Mes notes de frais</h2>
     <div class="card"><ul class="punch-list">${mes.map(f => `<li><div class="frais-item">${f.photoId ? `<img class="thumb" src="${fileUrl(f.photoId)}" alt="">` : '<span class="thumb empty" aria-hidden="true"></span>'}
-      <div><strong>${esc(f.categorie)}</strong> · ${esc(affaireOf(f.affaireId).code || '')} ${badge(f.statut)}<br><span class="muted small">${dateFr(f.date)}${f.description ? ' · ' + esc(f.description) : ''}</span></div></div>
+      <div><strong>${f.categorie === 'Repas' ? 'Restaurant' : esc(f.categorie)}</strong> · ${esc(affaireOf(f.affaireId).code || '')} ${badge(f.statut)}<br><span class="muted small">${dateFr(f.date)}${f.description ? ' · ' + esc(f.description) : ''}</span>
+      ${f.convives && f.convives.length ? `<br><span class="small">👥 ${esc(NoteFrais.libelleConvives(f))}</span>` : ''}</div></div>
       <div class="num"><strong>${eur(f.montantTTC)}</strong>${f.statut === 'Soumise' ? `<button class="icon" data-del="${f.id}" aria-label="Supprimer">✕</button>` : ''}</div></li>`).join('') || '<li class="muted">Aucune note de frais.</li>'}</ul></div>
   </div>`;
 }
 
+// Reprend les valeurs lues sur le ticket, sans écraser ce que la personne a déjà saisi
+function appliquerTicket(b, r) {
+  const met = (k, v) => { if (v !== null && v !== undefined && v !== '' && !b.saisis[k]) { b[k] = v; b.lus[k] = true; } };
+  met('montantTTC', r.montantTTC ? r.montantTTC.toFixed(2) : '');
+  met('date', r.date);
+  if (r.categorie && !b.saisis.categorie) { b.categorie = r.categorie; b.lus.categorie = true; if (!b.saisis.tauxTVA) b.tauxTVA = tvaCategorie(r.categorie); }
+  met('tauxTVA', r.tauxTVA);
+  met('description', r.enseigne);
+  // Description déjà saisie : l'enseigne lue est ajoutée devant (« Le Bistrot du Port — réunion de chantier »)
+  if (r.enseigne && b.saisis.description && b.description && !b.description.toLowerCase().includes(r.enseigne.toLowerCase())) b.description = `${r.enseigne} — ${b.description}`;
+  b.montantTVA = r.montantTVA || null;
+  b.couverts = r.couverts || null;
+  b.ticketLu = { montantTTC: r.montantTTC || null, date: r.date || '', couverts: r.couverts || null };
+}
+
 function bindFrais(root, uid) {
+  const b = fraisB;
   const input = root.querySelector('#f-photo');
   input.onchange = async () => {
     const file = input.files[0];
     if (!file) return;
-    try { fraisPhoto = await compressImage(file); App.render(); } catch (e) { notify('Photo illisible : réessayez.'); }
+    const jeton = ++b.jeton;
+    try { b.photo = await compressImage(file); } catch (e) { notify('Photo illisible : réessayez.'); return; }
+    b.ocr = { etat: 'lecture', p: 0 }; b.lus = {};
+    App.render();
+    try {
+      const texte = await OCR.lire(await compressImage(file, 2000, 0.92), p => { b.ocr.p = p; const e = document.getElementById('ocr-prog'); if (e) e.style.width = `${Math.round(p * 100)}%`; });
+      if (jeton !== b.jeton || fraisB !== b) return;
+      appliquerTicket(b, NoteFrais.analyserTicket(texte, isoDate(new Date())));
+      b.ocr = { etat: 'ok' };
+    } catch (e) {
+      if (jeton !== b.jeton || fraisB !== b) return;
+      b.ocr = { etat: 'echec', msg: e.message || 'erreur' };
+    }
+    if (location.hash.startsWith('#/pointage/frais')) App.render();
   };
+  // Chaque champ modifié à la main n'est plus remplacé par la lecture du ticket
+  const champ = (sel, k, conv = v => v, rendu = false) => { const el = root.querySelector(sel); if (el) el[rendu ? 'onchange' : 'oninput'] = () => { b[k] = conv(el.value); b.saisis[k] = true; delete b.lus[k]; if (rendu) App.render(); }; };
+  champ('#f-montant', 'montantTTC'); champ('#f-desc', 'description'); champ('#f-tva', 'tauxTVA', Number, true);
+  champ('#f-date', 'date', v => v, true); champ('#f-aff', 'affaireId', v => v, true);
+  root.querySelectorAll('input[name=f-cat]').forEach(r => r.onchange = () => {
+    b.categorie = r.value; b.saisis.categorie = true; delete b.lus.categorie;
+    if (!b.lus.tauxTVA && !b.saisis.tauxTVA) b.tauxTVA = tvaCategorie(r.value);
+    App.render();
+  });
+  // Convives
+  const users = id => Store.get('users', id) || {};
+  root.querySelectorAll('[data-conv]').forEach(cb => cb.onchange = () => {
+    b.convives = cb.checked ? [...b.convives, { nom: users(cb.dataset.conv).nom, userId: cb.dataset.conv }] : b.convives.filter(c => c.userId !== cb.dataset.conv);
+    App.render();
+  });
+  const coll = root.querySelector('#conv-coll');
+  if (coll) coll.onchange = () => { if (coll.value) { b.convives.push({ nom: users(coll.value).nom, userId: coll.value }); App.render(); } };
+  const ext = root.querySelector('#conv-ext');
+  if (ext) ext.onclick = () => { b.convives.push({ nom: '', societe: '', externe: true }); App.render(); const l = root.querySelectorAll('[data-ext-nom]'); if (l.length) document.querySelector(`[data-ext-nom="${l[l.length - 1].dataset.extNom}"]`).focus(); };
+  root.querySelectorAll('[data-ext-nom]').forEach(el => el.oninput = () => { b.convives[+el.dataset.extNom].nom = el.value; });
+  root.querySelectorAll('[data-ext-soc]').forEach(el => el.oninput = () => { b.convives[+el.dataset.extSoc].societe = el.value; });
+  root.querySelectorAll('[data-ext-del]').forEach(el => el.onclick = () => { b.convives.splice(+el.dataset.extDel, 1); App.render(); });
+  const raz = root.querySelector('#f-raz');
+  if (raz) raz.onclick = () => { fraisB = null; App.render(); };
+
   root.querySelector('#f-save').onclick = async () => {
-    const montant = num(root.querySelector('#f-montant').value);
+    const montant = num(b.montantTTC);
     if (!montant) { notify('Indiquez le montant TTC.'); return; }
-    const cat = (root.querySelector('input[name=f-cat]:checked') || {}).value || 'Autre';
+    const convives = NoteFrais.convivesRequis(b) ? b.convives.map(c => ({ ...c, nom: String(c.nom || '').trim(), ...(c.societe !== undefined ? { societe: String(c.societe).trim() } : {}) })).filter(c => c.nom) : [];
+    const note = { numero: '', userId: uid, affaireId: b.affaireId, date: b.date, categorie: b.categorie, montantTTC: montant, tauxTVA: Number(b.tauxTVA),
+      ...(b.montantTVA && b.lus.tauxTVA && b.lus.montantTTC ? { montantTVA: b.montantTVA } : {}), description: b.description, convives, ...(b.ticketLu ? { ticketLu: b.ticketLu } : {}), statut: 'Soumise' };
+    const err = NoteFrais.erreur(note);
+    if (err) { notify(err); const f = root.querySelector('.convives'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+    if (b.couverts && b.couverts !== convives.length && !(await ask(`Le ticket indique ${b.couverts} couvert(s) mais ${convives.length} personne(s) sont nommées. Envoyer quand même ?`, 'Envoyer'))) return;
     const btn = root.querySelector('#f-save'); btn.disabled = true;
     let photoId = '';
-    try { if (fraisPhoto) photoId = (await api('POST', '/api/files', { dataUrl: fraisPhoto })).id; }
+    try { if (b.photo) photoId = (await api('POST', '/api/files', { dataUrl: b.photo })).id; }
     catch (e) { btn.disabled = false; notify('Envoi de la photo impossible : ' + e.message); return; }
-    Store.upsert('frais', { numero: '', userId: uid, affaireId: root.querySelector('#f-aff').value, date: root.querySelector('#f-date').value, categorie: cat,
-      montantTTC: montant, tauxTVA: (CATEGORIES_FRAIS.find(c => c[0] === cat) || [0, 20])[1], description: root.querySelector('#f-desc').value, photoId, statut: 'Soumise' });
-    fraisPhoto = null;
+    Store.upsert('frais', { ...note, photoId });
+    fraisB = null;
     App.render(); App.toast('Note de frais envoyée au chargé d\'affaires');
   };
-  root.querySelectorAll('[data-del]').forEach(b => b.onclick = () => ask('Supprimer cette note de frais ?', 'Supprimer').then(ok => {
-    if (ok) { Store.remove('frais', b.dataset.del); App.render(); }
+  root.querySelectorAll('[data-del]').forEach(x => x.onclick = () => ask('Supprimer cette note de frais ?', 'Supprimer').then(ok => {
+    if (ok) { Store.remove('frais', x.dataset.del); App.render(); }
   }));
 }
 
@@ -348,6 +444,15 @@ function rhValidation(query) {
 }
 
 /* Notes de frais : contrôle du justificatif, validation, remboursement */
+// Convives d'un repas et écarts avec le ticket lu (montant ou date corrigés, couverts différents)
+function fraisControle(f) {
+  const t = f.ticketLu || {}, alertes = [];
+  if (NoteFrais.convivesRequis(f) && !NoteFrais.nomsConvives(f).length) alertes.push('Noms des convives manquants');
+  if (t.montantTTC && Math.abs(t.montantTTC - num(f.montantTTC)) > 0.009) alertes.push(`Ticket lu : ${eur(t.montantTTC)}`);
+  if (t.date && t.date !== f.date) alertes.push(`Date du ticket : ${dateFr(t.date)}`);
+  if (t.couverts && f.convives && t.couverts !== NoteFrais.nomsConvives(f).length) alertes.push(`${t.couverts} couverts sur le ticket`);
+  return `${f.convives && f.convives.length ? `<div class="small">👥 ${esc(NoteFrais.libelleConvives(f))}</div>` : ''}${alertes.map(a => ` <span class="badge b-warn">${esc(a)}</span>`).join('')}`;
+}
 function rhFrais(query) {
   const fs = query.get('statut') || 'Soumise';
   const list = Store.all('frais').filter(f => !fs || f.statut === fs).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -355,7 +460,7 @@ function rhFrais(query) {
   <div class="toolbar"><span class="spacer"></span><select id="fs" style="width:auto"><option value="">Toutes</option>${optionsStr(['Soumise', 'Validée', 'Refusée', 'Remboursée'], fs)}</select></div>
   ${list.length ? `<div class="table-wrap"><table><tr><th>Justificatif</th><th>N°</th><th>Date</th><th>Personne</th><th>Chantier</th><th>Catégorie</th><th>Description</th><th class="num">TTC</th><th>Statut</th><th></th></tr>
   ${list.map(f => `<tr><td>${f.photoId ? `<button class="linklike" data-photo="${f.photoId}"><img class="thumb" src="${fileUrl(f.photoId)}" alt="Voir le justificatif"></button>` : '<span class="muted small">sans photo</span>'}</td>
-    <td>${esc(f.numero || '')}</td><td>${dateFr(f.date)}</td><td>${esc(userName(f.userId))}</td><td>${esc(affaireOf(f.affaireId).code || '')}</td><td>${esc(f.categorie)}</td><td>${esc(f.description)}</td>
+    <td>${esc(f.numero || '')}</td><td>${dateFr(f.date)}</td><td>${esc(userName(f.userId))}</td><td>${esc(affaireOf(f.affaireId).code || '')}</td><td>${f.categorie === 'Repas' ? 'Restaurant' : esc(f.categorie)}</td><td>${esc(f.description)}${fraisControle(f)}</td>
     <td class="num">${eur(f.montantTTC)}</td><td>${badge(f.statut)}</td>
     <td class="actions">${f.statut === 'Soumise' ? `<button class="small" data-st="Validée" data-f="${f.id}">Valider</button><button class="small danger" data-st="Refusée" data-f="${f.id}">Refuser</button>` : ''}${f.statut === 'Validée' ? `<button class="small secondary" data-st="Remboursée" data-f="${f.id}">Remboursée</button>` : ''}</td></tr>`).join('')}
   </table></div>` : '<p class="muted">Aucune note de frais.</p>'}`;
@@ -481,7 +586,7 @@ function recapExcel(mois) {
   });
   // Notes de frais du mois
   const frais = Store.all('frais').filter(f => (f.date || '').startsWith(mois)).sort((a, b) => a.date.localeCompare(b.date));
-  const fraisRows = [[{ v: `Notes de frais – ${libMois}`, s: 'title' }], [], ['N°', 'Date', 'Personne', 'Chantier', 'Catégorie', 'Description', 'TTC', 'TVA %', 'HT', 'Statut'].map(H),
-    ...frais.map(f => [f.numero || '', dateFr(f.date), userName(f.userId), affaireOf(f.affaireId).code || '', f.categorie, f.description || '', { v: num(f.montantTTC), s: 'eur' }, num(f.tauxTVA), { v: Calc.fraisHT(f), s: 'eur' }, f.statut])];
-  return XLSX.build([{ name: 'Synthèse', cols: [22, 12, 22, 22, 7, 14, 10, 9, 9, 8, 14, 14, 13, 14, 22, 18, 30], freeze: 4, rows: synth }, ...sheets, { name: 'Notes de frais', cols: [14, 11, 18, 14, 16, 34, 11, 7, 11, 12], freeze: 3, rows: fraisRows }]);
+  const fraisRows = [[{ v: `Notes de frais – ${libMois}`, s: 'title' }], [], ['N°', 'Date', 'Personne', 'Chantier', 'Catégorie', 'Description', 'Convives (restaurant)', 'TTC', 'TVA %', 'HT', 'Statut'].map(H),
+    ...frais.map(f => [f.numero || '', dateFr(f.date), userName(f.userId), affaireOf(f.affaireId).code || '', f.categorie === 'Repas' ? 'Restaurant' : f.categorie, f.description || '', NoteFrais.libelleConvives(f), { v: num(f.montantTTC), s: 'eur' }, num(f.tauxTVA), { v: Calc.fraisHT(f), s: 'eur' }, f.statut])];
+  return XLSX.build([{ name: 'Synthèse', cols: [22, 12, 22, 22, 7, 14, 10, 9, 9, 8, 14, 14, 13, 14, 22, 18, 30], freeze: 4, rows: synth }, ...sheets, { name: 'Notes de frais', cols: [14, 11, 18, 14, 16, 34, 40, 11, 7, 11, 12], freeze: 3, rows: fraisRows }]);
 }

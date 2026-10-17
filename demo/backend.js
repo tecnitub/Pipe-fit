@@ -2,7 +2,7 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v23';
+  const KEY = 'pipefit-crm-demo-v24';
   const ME_KEY = 'pipefit-crm-demo-me';
   const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4] };
@@ -232,6 +232,7 @@
         if (col === 'factures') { obj.type = existing ? existing.type : (obj.type === 'avoir' ? 'avoir' : undefined); if (!obj.type) delete obj.type; }
         const refus = atelierRefus(acc, col, obj, existing);
         if (refus) return [403, { error: refus }];
+        if (col === 'frais' && obj.statut === 'Soumise' && NoteFrais.erreur(obj)) return [400, { error: NoteFrais.erreur(obj) }];
         if (col === 'rapports' && existing && existing.signatureClientId && acc.role !== 'admin') return [403, { error: 'Ce bon d\'intervention est signé par le client : il ne peut plus être modifié.' }];
         if (col === 'receptions' && existing && existing.statut === 'Signé' && acc.role !== 'admin') return [403, { error: 'Ce procès-verbal est signé : il ne peut plus être modifié.' }];
         if (col === 'reserves' && existing && existing.pvId && acc.role !== 'admin') obj = { ...clean(existing), statut: obj.statut, dateLevee: obj.dateLevee, photoLeveeId: obj.photoLeveeId, commentaireLevee: obj.commentaireLevee, pvLeveeId: obj.pvLeveeId };
