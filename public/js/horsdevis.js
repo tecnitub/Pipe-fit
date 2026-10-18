@@ -92,7 +92,7 @@ function horsDevisView(a) {
     </table></div></details>` : '<p class="muted">Aucune heure pointée. Les équipes pointent sur cette intervention depuis leur téléphone.</p>'}
 
   <h2>Matériel à facturer</h2>
-  <div class="toolbar"><button class="secondary" id="hd-addmat">+ Matériel</button></div>
+  <div class="toolbar"><button id="hd-biblio">📦 Matériel de la bibliothèque</button><button class="secondary" id="hd-addmat">+ Matériel libre</button></div>
   ${v.consos.length ? `<div class="table-wrap"><table><tr><th>Date</th><th>Saisi par</th><th>Désignation</th><th class="num">Qté</th><th>Unité</th><th class="num">PU vente</th><th class="num">Montant HT</th><th class="num">Achat</th></tr>
     ${v.consos.sort((x, y) => (x.date || '').localeCompare(y.date || '')).map(c => `<tr class="clickable ${num(c.pu) ? '' : 'a-chiffrer'}" data-conso="${c.id}"><td>${dateFr(c.date)}</td><td>${esc(userName(c.userId))}</td><td>${esc(c.designation)}${num(c.pu) ? '' : ' <span class="badge b-warn">prix à saisir</span>'}</td>
       <td class="num">${fmt(c.qte, 2)}</td><td>${esc(c.unite)}</td><td class="num">${eur(c.pu)}</td><td class="num">${eur(num(c.qte) * num(c.pu))}</td><td class="num muted">${eur(num(c.qte) * num(c.cout))}</td></tr>`).join('')}
@@ -146,6 +146,11 @@ function bindHorsDevis(root, a) {
     location.hash = `#/facture/${f.id}`;
   });
   on('#hd-clore', () => { a.statut = 'Clos'; Store.upsert('affaires', a); App.render(); });
+  on('#hd-biblio', async () => {
+    const choix = await choisirMateriel({ titre: `Matériel · ${a.code || ''}`, affaireId: a.id, prix: true });
+    choix.forEach(m => Store.upsert('consommations', { ...m, affaireId: a.id, date: isoDate(new Date()), userId: Store.me.userId || '' }));
+    if (choix.length) { App.render(); App.toast(`${choix.length} ligne(s) de matériel ajoutée(s)`); }
+  });
   on('#hd-addmat', () => editModal({ title: 'Matériel', col: 'consommations', fields: consoFields, obj: { affaireId: a.id, date: isoDate(new Date()), unite: 'u', qte: 1, userId: Store.me.userId || '' } }));
   root.querySelectorAll('[data-conso]').forEach(tr => tr.onclick = () => editModal({ title: 'Matériel', col: 'consommations', fields: consoFields, obj: { ...Store.get('consommations', tr.dataset.conso) } }));
 }

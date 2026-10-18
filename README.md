@@ -159,6 +159,8 @@ Le PDF Factur-X contient le XML joint mais n'est pas certifié PDF/A-3 : si votr
    oublié ou corrige un pointage non validé ; les semaines passées ne se corrigent qu'au bureau (règle du serveur).
    Sans planning, il pointe sur une intervention hors devis ou en ouvre une depuis son téléphone (objet, client, lieu,
    demande) : le bureau est prévenu et complète le dossier (client, chargé d'affaires) avant de facturer.
+   Le matériel d'une intervention hors devis se choisit en plein écran : recherche, familles et sous-familles en
+   pastilles, « déjà utilisé ici », quantités + / −, matériel hors bibliothèque (même écran au bureau, avec les prix).
    Un **chef d'équipe** pointe en une fois les compagnons et **intérimaires** sous ses ordres (filtre « intérimaires »).
    Le coût réel de main-d'œuvre = heures pointées × coût horaire de chaque personne (taux agence pour les intérimaires).
    **Notes de frais** : photo du ticket prise avec le téléphone (raccourci « Note de frais » de l'appli),
@@ -187,7 +189,7 @@ Le PDF Factur-X contient le XML joint mais n'est pas certifié PDF/A-3 : si votr
 | Module | Contenu |
 |---|---|
 | **Contacts** | Entreprises client / fournisseur (SIRET, TVA, coordonnées) avec plusieurs sites ; personnes rattachées (chargé de travaux, acheteur…). |
-| **Bibliothèque** | Fournitures (prix d'achat, prix de vente, poids, fournisseur habituel), catégories de main-d'œuvre (taux de vente, coût moyen), zones de livraison. |
+| **Bibliothèque** | Fournitures (prix d'achat, prix de vente, poids, fournisseur habituel) rangées par famille et sous-famille : arbre cliquable avec les effectifs, rangement de plusieurs fournitures d'un coup, renommage d'une famille ou d'une sous-famille, révision des prix sur la famille affichée, colonne « Sous-famille » à l'import / export Excel. Recherche au fil de la frappe sur la référence, la désignation, la famille, la sous-famille et le fournisseur (mots dans le désordre, sans accents, « dn 50 » = « DN50 », « 50 » ne trouve pas DN150, une faute de frappe tolérée si rien d'exact) ; la même recherche filtre les listes de fournitures des devis, commandes et consultations. Catégories de main-d'œuvre (taux de vente, coût moyen), zones de livraison. |
 | **DPGF (marchés publics)** | Import du DPGF du dossier de consultation (.xlsx / .csv) dans un devis : N° de prix, chapitres et sous-chapitres, ouvrages avec unité et quantité, lignes descriptives rattachées à l'ouvrage, totaux ignorés, lignes « PM » conservées ; aperçu avec correction du type de chaque ligne. Repère « à chiffrer » sur chaque ouvrage, fourniture libre possible. Export du DPGF chiffré au même format avec sous-totaux hiérarchiques. |
 | **Rapports d'intervention** | Rédigés sur le téléphone par l'ouvrier ou le chef d'équipe : chantier, intervenants, travaux réalisés, observations, besoins, photos. Journal du chantier pour le chargé d'affaires. |
 | **Bon d'intervention signé** | Depuis le téléphone, le rapport d'intervention peut être signé au doigt par le client (nom, fonction, « intervention terminée ») avec le récapitulatif des heures et du matériel : il devient un bon d'intervention numéroté, imprimable, et n'est plus modifiable. |

@@ -41,7 +41,8 @@ const ECHANGES = {
     fields: [ID_FIELD,
       { key: 'ref', label: 'Référence', syn: ['ref', 'reference', 'code', 'code article', 'ref article', 'reference article', 'ref fournisseur'] },
       { key: 'designation', label: 'Désignation', required: true, syn: ['designation', 'libelle', 'description', 'article', 'nom', 'produit'] },
-      { key: 'famille', label: 'Famille', syn: ['categorie', 'groupe', 'famille article', 'sous famille'] },
+      { key: 'famille', label: 'Famille', syn: ['categorie', 'groupe', 'famille article'] },
+      { key: 'sousFamille', label: 'Sous-famille', syn: ['sous famille', 'sous-famille', 'sous categorie', 'sous groupe'] },
       { key: 'unite', label: 'Unité', syn: ['unite', 'u', 'unite de vente', 'uv', 'conditionnement'] },
       { key: 'coutRevient', label: "Prix d'achat HT", num: true, syn: ['prix achat', 'pa', 'achat', 'prix d achat', 'cout', 'prix net', 'pa ht', 'prix d achat ht', 'prix net ht'] },
       { key: 'prixVente', label: 'Prix de vente HT', num: true, syn: ['prix vente', 'pv', 'vente', 'prix public', 'prix public ht', 'pu public', 'pu public ht', 'tarif', 'tarif public', 'prix', 'pu', 'pu ht', 'pu vente', 'prix unitaire', 'prix unitaire ht', 'prix de vente', 'prix de vente ht'] },
@@ -52,15 +53,15 @@ const ECHANGES = {
     cle: v => normTxt(v.ref) || normTxt(v.designation),
     trouver: v => Store.all('articles').find(a => v.ref && normTxt(a.ref) === normTxt(v.ref)) || (!v.ref && Store.all('articles').find(a => normTxt(a.designation) === normTxt(v.designation))),
     appliquer(rec, v, ctx) {
-      ['ref', 'designation', 'famille', 'unite'].forEach(k => { if (v[k] !== '') rec[k] = v[k]; });
+      ['ref', 'designation', 'famille', 'sousFamille', 'unite'].forEach(k => { if (v[k] !== '') rec[k] = v[k]; });
       ['coutRevient', 'prixVente', 'poidsUnitaire'].forEach(k => { if (v[k] !== '') rec[k] = v[k]; });
       if (v.prixVente === '' && v.coutRevient !== '' && ctx.coef) rec.prixVente = Math.round(v.coutRevient * ctx.coef * 100) / 100;
       if (v.fournisseur) rec.fournisseurId = entrepriseParNom(v.fournisseur, ctx, 'Fournisseur');
       if (!rec.unite) rec.unite = 'u';
       return rec;
     },
-    ligne: a => [a.id, a.ref, a.designation, a.famille, a.unite, num(a.coutRevient), num(a.prixVente), num(a.coutRevient) ? Math.round(num(a.prixVente) / num(a.coutRevient) * 100) / 100 : '', num(a.poidsUnitaire), a.fournisseurId ? clientName(a.fournisseurId) : ''],
-    largeurs: [12, 16, 44, 16, 9, 14, 14, 11, 10, 28],
+    ligne: a => [a.id, a.ref, a.designation, a.famille, a.sousFamille || '', a.unite, num(a.coutRevient), num(a.prixVente), num(a.coutRevient) ? Math.round(num(a.prixVente) / num(a.coutRevient) * 100) / 100 : '', num(a.poidsUnitaire), a.fournisseurId ? clientName(a.fournisseurId) : ''],
+    largeurs: [12, 16, 44, 16, 18, 9, 14, 14, 11, 10, 28],
   },
   mainoeuvre: {
     titre: "taux de main-d'œuvre", col: 'mainoeuvre', fichier: 'bibliotheque-main-oeuvre', feuille: "Main-d'œuvre",

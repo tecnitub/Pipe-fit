@@ -25,7 +25,6 @@ const envoyerImage = async dataUrl => (await api('POST', '/api/files', { dataUrl
 
 /* ---------- Rapports d'intervention (application des équipes) ---------- */
 const brouillonRapport = { uid: null, affaireId: '', date: '', intervenants: null, travaux: '', observations: '', besoins: '', photos: [], materiel: [], signature: null, signNom: '', signQual: '', signOpen: false, termine: true };
-const libelleArticle = a => `${a.ref} – ${a.designation}`;
 
 function rapportsView(u) {
   const b = brouillonRapport;
@@ -54,9 +53,8 @@ function rapportsView(u) {
       <div class="field"><label for="r-besoins">Besoins (matériel, informations, accès)</label><textarea id="r-besoins" rows="2">${esc(b.besoins)}</textarea></div>
       ${hd ? `<fieldset class="materiel"><legend>Matériel utilisé (à facturer)</legend>
         ${af.demande ? `<p class="muted small pre">Demande : ${esc(af.demande)}</p>` : ''}
-        <ul class="mat-list">${b.materiel.map((m, i) => `<li><span>${esc(m.designation)}</span><strong>${fmt(m.qte, 2)} ${esc(m.unite)}</strong><button class="icon" data-rmmat="${i}" aria-label="Retirer">✕</button></li>`).join('') || '<li class="muted small">Aucun matériel ajouté pour ce rapport.</li>'}</ul>
-        <div class="mat-add"><input id="r-mat" list="r-mat-list" placeholder="Bibliothèque ou matériel libre" aria-label="Matériel"><datalist id="r-mat-list">${Store.all('articles').map(a => `<option value="${esc(libelleArticle(a))}">`).join('')}</datalist>
-          <input id="r-mat-q" type="number" step="any" value="1" inputmode="decimal" aria-label="Quantité"><button class="secondary" id="r-mat-add">Ajouter</button></div>
+        <ul class="mat-list">${b.materiel.map((m, i) => `<li><span>${esc(m.designation)}</span><input class="mat-q" data-matq="${i}" value="${esc(String(m.qte).replace('.', ','))}" inputmode="decimal" aria-label="Quantité"><span class="small">${esc(m.unite)}</span><button class="icon" data-rmmat="${i}" aria-label="Retirer">✕</button></li>`).join('') || '<li class="muted small">Aucun matériel ajouté pour ce rapport.</li>'}</ul>
+        <button class="big secondary" id="r-mat-choisir">📦 ${b.materiel.length ? 'Ajouter du matériel' : 'Choisir le matériel utilisé'}</button>
         <p class="muted small">Déjà sur cette intervention : ${fmt(v.heures, 2)} h pointées, ${v.consos.length} ligne(s) de matériel.</p></fieldset>` : ''}
       <div class="photos-grid">${b.photos.map((p, i) => `<div class="ph"><img src="${p}" alt="Photo ${i + 1}"><button class="icon" data-rmph="${i}" aria-label="Retirer la photo">✕</button></div>`).join('')}
         <label class="ph add" for="r-photo"><span aria-hidden="true">📷</span><span class="small">Ajouter une photo</span><input id="r-photo" type="file" accept="image/*" capture="environment" multiple hidden></label></div>
@@ -102,16 +100,15 @@ function bindRapports(root, uid) {
   initPad();
   root.querySelector('#r-pad-clear').onclick = () => { if (pad) pad.effacer(); b.signature = null; root.querySelector('#r-send').textContent = 'Envoyer le rapport'; };
   // Matériel (interventions hors devis)
-  const addMat = root.querySelector('#r-mat-add');
-  if (addMat) addMat.onclick = () => {
+  const choisir = root.querySelector('#r-mat-choisir');
+  if (choisir) choisir.onclick = async () => {
     garder();
-    const txt = root.querySelector('#r-mat').value.trim(), q = num(root.querySelector('#r-mat-q').value);
-    if (!txt || !q) { notify('Indiquez le matériel et la quantité.'); return; }
-    const a = Store.all('articles').find(x => libelleArticle(x) === txt);
-    b.materiel.push(a ? { articleId: a.id, designation: a.designation, unite: a.unite, qte: q, pu: num(a.prixVente), cout: num(a.coutRevient) }
-      : { articleId: '', designation: txt, unite: 'u', qte: q, pu: 0, cout: 0 });
-    App.render();
+    const choix = await choisirMateriel({ titre: `Matériel · ${affaireOf(b.affaireId).code || ''}`, affaireId: b.affaireId });
+    // Même article choisi deux fois : quantités additionnées
+    choix.forEach(m => { const x = m.articleId && b.materiel.find(y => y.articleId === m.articleId); if (x) x.qte = num(x.qte) + num(m.qte); else b.materiel.push(m); });
+    if (choix.length) App.render();
   };
+  root.querySelectorAll('[data-matq]').forEach(x => x.onchange = () => { const q = num(x.value.replace(',', '.')); if (q > 0) b.materiel[+x.dataset.matq].qte = q; else { garder(); b.materiel.splice(+x.dataset.matq, 1); App.render(); } });
   root.querySelectorAll('[data-rmmat]').forEach(x => x.onclick = () => { garder(); b.materiel.splice(+x.dataset.rmmat, 1); App.render(); });
   root.querySelector('#r-photo').onchange = async e => {
     garder();

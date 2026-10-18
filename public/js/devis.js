@@ -478,12 +478,24 @@ function facturerDevis(d) {
 }
 
 /* ---------- Ouvrage : fournitures + main-d'œuvre ---------- */
+// Liste des fournitures de la bibliothèque, rangées par famille › sous-famille, avec un champ de recherche qui la filtre
+const optionsArticles = (q = '') => {
+  const l = RechercheArticles.filtrer(Store.all('articles'), { q, fournisseurDe: a => (a.fournisseurId ? clientName(a.fournisseurId) : '') });
+  const groupe = a => `${RechercheArticles.familleDe(a)}${a.sousFamille ? ` › ${a.sousFamille}` : ''}`;
+  const opt = a => `<option value="${a.id}">${esc(a.ref)} – ${esc(a.designation)} (${eur(a.prixVente)}/${esc(a.unite)})</option>`;
+  if (q.trim()) return l.length ? l.map(opt).join('') : '<option value="">Aucune fourniture trouvée</option>';
+  const g = new Map(); l.forEach(a => { if (!g.has(groupe(a))) g.set(groupe(a), []); g.get(groupe(a)).push(a); });
+  return `<option value="">Choisir une fourniture…</option>${[...g.entries()].map(([f, list]) => `<optgroup label="${esc(f)}">${list.map(opt).join('')}</optgroup>`).join('')}`;
+};
 function articleSelect(id) {
-  const fam = {};
-  Store.all('articles').forEach(a => { (fam[a.famille || 'Divers'] = fam[a.famille || 'Divers'] || []).push(a); });
-  return `<select id="${id}" aria-label="Fourniture de la bibliothèque"><option value="">Choisir une fourniture…</option>${Object.entries(fam).map(([f, list]) =>
-    `<optgroup label="${esc(f)}">${list.map(a => `<option value="${a.id}">${esc(a.ref)} – ${esc(a.designation)} (${eur(a.prixVente)}/${esc(a.unite)})</option>`).join('')}</optgroup>`).join('')}</select>`;
+  return `<span class="art-pick"><input type="search" data-art-filtre="${id}" placeholder="Rechercher…" aria-label="Rechercher une fourniture" autocomplete="off"><select id="${id}" aria-label="Fourniture de la bibliothèque">${optionsArticles()}</select></span>`;
 }
+document.addEventListener('input', ev => {
+  const id = ev.target.dataset && ev.target.dataset.artFiltre;
+  if (!id) return;
+  const sel = document.getElementById(id);
+  if (sel) sel.innerHTML = optionsArticles(ev.target.value);
+});
 
 // opts.libre : poste libre (fournitures et main-d'œuvre propres à ce devis, rien n'est enregistré en bibliothèque)
 // opts.initial : ouvrage de départ (ouvrage type) ; opts.enregistrer(l) : édition hors devis (bibliothèque d'ouvrages types)

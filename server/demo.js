@@ -64,22 +64,22 @@ function demoData() {
   ];
   // Bibliothèque des fournitures : prix d'achat (coutRevient), prix de vente, fournisseur habituel
   const articles = [
-    { id: 'a1', ref: 'TUB-316-050', designation: 'Tube inox 316L DN50 sch10S', famille: 'Tubes', unite: 'ml', prixVente: 51, coutRevient: 41, poidsUnitaire: 4.1, fournisseurId: 'e5' },
-    { id: 'a2', ref: 'TUB-316-100', designation: 'Tube inox 316L DN100 sch10S', famille: 'Tubes', unite: 'ml', prixVente: 103, coutRevient: 82, poidsUnitaire: 8.4, fournisseurId: 'e5' },
-    { id: 'a3', ref: 'TUB-P235-150', designation: 'Tube acier P235GH DN150 ép. 4,5', famille: 'Tubes', unite: 'ml', prixVente: 57, coutRevient: 46, poidsUnitaire: 18.2, fournisseurId: 'e5' },
-    { id: 'a4', ref: 'COU-316-050', designation: 'Coude 90° 3D inox 316L DN50', famille: 'Raccords', unite: 'u', prixVente: 26, coutRevient: 21, poidsUnitaire: 0.6, fournisseurId: 'e5' },
-    { id: 'a5', ref: 'BRI-316-100', designation: 'Bride à collerette inox DN100 PN16', famille: 'Raccords', unite: 'u', prixVente: 82, coutRevient: 66, poidsUnitaire: 5.5, fournisseurId: 'e5' },
-    { id: 'a6', ref: 'COU-P235-150', designation: 'Coude 90° acier P235GH DN150', famille: 'Raccords', unite: 'u', prixVente: 67, coutRevient: 54, poidsUnitaire: 7.9, fournisseurId: 'e5' },
-    { id: 'a7', ref: 'VAN-PAP-050', designation: 'Vanne papillon DN50 PN16 à levier', famille: 'Robinetterie', unite: 'u', prixVente: 200, coutRevient: 160, poidsUnitaire: 3.2, fournisseurId: 'e6' },
-    { id: 'a8', ref: 'SUP-RACK', designation: 'Supportage et colliers', famille: 'Supportage', unite: 'ml', prixVente: 12, coutRevient: 9, poidsUnitaire: 1.5, fournisseurId: 'e5' },
-    { id: 'a14', ref: 'TEE-316-050', designation: 'Té égal inox 316L DN50 à souder', famille: 'Raccords', unite: 'u', prixVente: 38, coutRevient: 30, poidsUnitaire: 0.8, fournisseurId: 'e5' },
-    { id: 'a15', ref: 'RED-316-100', designation: 'Réduction concentrique inox 316L DN100×50', famille: 'Raccords', unite: 'u', prixVente: 44, coutRevient: 35, poidsUnitaire: 0.9, fournisseurId: 'e5' },
-    { id: 'a16', ref: 'BRI-316-050', designation: 'Bride à collerette inox DN50 PN16', famille: 'Raccords', unite: 'u', prixVente: 41, coutRevient: 33, poidsUnitaire: 2.1, fournisseurId: 'e5' },
-    { id: 'a17', ref: 'COU-316-100', designation: 'Coude 90° 3D inox 316L DN100', famille: 'Raccords', unite: 'u', prixVente: 74, coutRevient: 59, poidsUnitaire: 2.4, fournisseurId: 'e5' },
-    { id: 'a18', ref: 'TEE-316-100', designation: 'Té égal inox 316L DN100 à souder', famille: 'Raccords', unite: 'u', prixVente: 96, coutRevient: 77, poidsUnitaire: 2.9, fournisseurId: 'e5' },
-    { id: 'a11', ref: 'ECH-SEM', designation: 'Location échafaudage', famille: 'Location', unite: 'semaine', prixVente: 400, coutRevient: 320, poidsUnitaire: 0, fournisseurId: 'e7' },
-    { id: 'a12', ref: 'CTRL-RX', designation: 'Contrôle radiographique de soudure (sous-traité)', famille: 'Contrôles', unite: 'u', prixVente: 80, coutRevient: 60, poidsUnitaire: 0, fournisseurId: 'e7' },
-    { id: 'a13', ref: 'EPR-HYD', designation: 'Consommables épreuve hydraulique + PV', famille: 'Contrôles', unite: 'forfait', prixVente: 260, coutRevient: 120, poidsUnitaire: 0, fournisseurId: '' },
+    { id: 'a1', ref: 'TUB-316-050', designation: 'Tube inox 316L DN50 sch10S', famille: 'Tubes', sousFamille: 'Inox 316L', unite: 'ml', prixVente: 51, coutRevient: 41, poidsUnitaire: 4.1, fournisseurId: 'e5' },
+    { id: 'a2', ref: 'TUB-316-100', designation: 'Tube inox 316L DN100 sch10S', famille: 'Tubes', sousFamille: 'Inox 316L', unite: 'ml', prixVente: 103, coutRevient: 82, poidsUnitaire: 8.4, fournisseurId: 'e5' },
+    { id: 'a3', ref: 'TUB-P235-150', designation: 'Tube acier P235GH DN150 ép. 4,5', famille: 'Tubes', sousFamille: 'Acier P235GH', unite: 'ml', prixVente: 57, coutRevient: 46, poidsUnitaire: 18.2, fournisseurId: 'e5' },
+    { id: 'a4', ref: 'COU-316-050', designation: 'Coude 90° 3D inox 316L DN50', famille: 'Raccords', sousFamille: 'Coudes', unite: 'u', prixVente: 26, coutRevient: 21, poidsUnitaire: 0.6, fournisseurId: 'e5' },
+    { id: 'a5', ref: 'BRI-316-100', designation: 'Bride à collerette inox DN100 PN16', famille: 'Raccords', sousFamille: 'Brides', unite: 'u', prixVente: 82, coutRevient: 66, poidsUnitaire: 5.5, fournisseurId: 'e5' },
+    { id: 'a6', ref: 'COU-P235-150', designation: 'Coude 90° acier P235GH DN150', famille: 'Raccords', sousFamille: 'Coudes', unite: 'u', prixVente: 67, coutRevient: 54, poidsUnitaire: 7.9, fournisseurId: 'e5' },
+    { id: 'a7', ref: 'VAN-PAP-050', designation: 'Vanne papillon DN50 PN16 à levier', famille: 'Robinetterie', sousFamille: 'Vannes papillon', unite: 'u', prixVente: 200, coutRevient: 160, poidsUnitaire: 3.2, fournisseurId: 'e6' },
+    { id: 'a8', ref: 'SUP-RACK', designation: 'Supportage et colliers', famille: 'Supportage', sousFamille: 'Colliers et rails', unite: 'ml', prixVente: 12, coutRevient: 9, poidsUnitaire: 1.5, fournisseurId: 'e5' },
+    { id: 'a14', ref: 'TEE-316-050', designation: 'Té égal inox 316L DN50 à souder', famille: 'Raccords', sousFamille: 'Tés', unite: 'u', prixVente: 38, coutRevient: 30, poidsUnitaire: 0.8, fournisseurId: 'e5' },
+    { id: 'a15', ref: 'RED-316-100', designation: 'Réduction concentrique inox 316L DN100×50', famille: 'Raccords', sousFamille: 'Réductions', unite: 'u', prixVente: 44, coutRevient: 35, poidsUnitaire: 0.9, fournisseurId: 'e5' },
+    { id: 'a16', ref: 'BRI-316-050', designation: 'Bride à collerette inox DN50 PN16', famille: 'Raccords', sousFamille: 'Brides', unite: 'u', prixVente: 41, coutRevient: 33, poidsUnitaire: 2.1, fournisseurId: 'e5' },
+    { id: 'a17', ref: 'COU-316-100', designation: 'Coude 90° 3D inox 316L DN100', famille: 'Raccords', sousFamille: 'Coudes', unite: 'u', prixVente: 74, coutRevient: 59, poidsUnitaire: 2.4, fournisseurId: 'e5' },
+    { id: 'a18', ref: 'TEE-316-100', designation: 'Té égal inox 316L DN100 à souder', famille: 'Raccords', sousFamille: 'Tés', unite: 'u', prixVente: 96, coutRevient: 77, poidsUnitaire: 2.9, fournisseurId: 'e5' },
+    { id: 'a11', ref: 'ECH-SEM', designation: 'Location échafaudage', famille: 'Location', sousFamille: 'Échafaudages', unite: 'semaine', prixVente: 400, coutRevient: 320, poidsUnitaire: 0, fournisseurId: 'e7' },
+    { id: 'a12', ref: 'CTRL-RX', designation: 'Contrôle radiographique de soudure (sous-traité)', famille: 'Contrôles', sousFamille: 'Contrôles non destructifs', unite: 'u', prixVente: 80, coutRevient: 60, poidsUnitaire: 0, fournisseurId: 'e7' },
+    { id: 'a13', ref: 'EPR-HYD', designation: 'Consommables épreuve hydraulique + PV', famille: 'Contrôles', sousFamille: 'Épreuves', unite: 'forfait', prixVente: 260, coutRevient: 120, poidsUnitaire: 0, fournisseurId: '' },
   ];
   const site = (id, libelle, adresse, cp, ville, facturation = false) => ({ id, libelle, adresse, cp, ville, facturation });
   const entreprises = [
