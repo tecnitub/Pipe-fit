@@ -1,9 +1,10 @@
 // Documents du chantier (plans, fiches techniques, notices, sécurité…) déposés par le bureau et transmis aux compagnons,
 // et fiche chantier du compagnon sur son téléphone : documents, matériel prévu (sans prix ni heures, selon les réglages),
 // commandes et livraisons attendues.
-const CATEGORIES_DOC = [['Demande client', '📧'], ['Plan', '📐'], ['Fiche technique', '📄'], ['Notice', '📘'], ['Sécurité / PPSPS', '⛑️'], ['Photo', '🖼️'], ['Autre', '📁']];
+const CATEGORIES_DOC = [['Demande client', '📧'], ['Plan', '📐'], ['Fiche technique', '📄'], ['Notice', '📘'], ['Sécurité / PPSPS', '⛑️'], ['PGC', '🦺'], ['Plan de prévention', '🛡️'], ['Photo', '🖼️'], ['Autre', '📁']];
 const iconeDoc = c => (CATEGORIES_DOC.find(x => x[0] === c) || CATEGORIES_DOC[CATEGORIES_DOC.length - 1])[1];
-const categorieDevinee = nom => (/\.(eml|msg)$/i.test(nom) ? 'Demande client' : /\.(dwg|dxf|ifc)$|plan|iso(m[ée]trique)?\b|p&?id|implantation|coupe|synoptique/i.test(nom) ? 'Plan'
+const categorieDevinee = nom => (/\.(eml|msg)$/i.test(nom) ? 'Demande client' : /\bpgc\b|g[ée]n[ée]ral de coordination/i.test(nom) ? 'PGC'
+  : /plan.de.pr[ée]vention|\bpdp\b/i.test(nom) ? 'Plan de prévention' : /\.(dwg|dxf|ifc)$|plan|iso(m[ée]trique)?\b|p&?id|implantation|coupe|synoptique/i.test(nom) ? 'Plan'
   : /fiche|\bft\b|datasheet|technique|catalogue/i.test(nom) ? 'Fiche technique' : /notice|manuel|mode d.emploi/i.test(nom) ? 'Notice'
     : /ppsps|s[ée]curit|pr[ée]vention|amiante|permis/i.test(nom) ? 'Sécurité / PPSPS' : /\.(jpe?g|png|webp)$/i.test(nom) ? 'Photo' : 'Autre');
 const tailleLisible = o => (o > 1048576 ? `${fmt(o / 1048576, 1)} Mo` : `${Math.max(1, Math.round(o / 1024))} Ko`);
@@ -20,6 +21,7 @@ function chantierOnglets(a, actif) {
   const n = (a.documents || []).length;
   return `<div class="tabs no-print"><a href="#/chantier/${a.id}" class="${actif === 'apercu' ? 'active' : ''}">Vue d'ensemble</a>
     <a href="#/chantier/${a.id}/documents" class="${actif === 'documents' ? 'active' : ''}">📎 Documents <span class="count">${n}</span></a>
+    <a href="#/chantier/${a.id}/securite" class="${actif === 'securite' ? 'active' : ''}">⛑️ Sécurité${(a.documents || []).some(d => d.categorie === 'Sécurité / PPSPS') ? '' : ' <span class="count">à faire</span>'}</a>
     ${estHorsDevis(a) ? '' : `<a href="#/situations">Situations</a>`}
     ${estHorsDevis(a) || !lienDOE(a) ? '' : `<a href="${esc(lienDOE(a))}" target="_blank" rel="noopener" title="Dossier des ouvrages exécutés (application DOE)">📘 DOE ↗</a>`}</div>`;
 }
@@ -164,7 +166,7 @@ function ficheChantierCompagnon(u, id) {
   if (!a) return `<div class="pointage"><h1>Chantier</h1>${pointageTabs('chantiers', u.id)}<p class="muted">Chantier introuvable.</p></div>`;
   const R = reglesCompagnon(), site = siteOf(a.clientId, a.siteId), adr = site ? fullAddress(site) : '', contact = Store.get('contacts', a.contactId);
   const jours = Store.all('planning').filter(p => p.affaireId === a.id && p.userId === u.id && p.date >= isoDate(new Date())).sort((x, y) => x.date.localeCompare(y.date)).slice(0, 6);
-  const docs = documentsVisibles(a).sort((x, y) => CATEGORIES_DOC.findIndex(c => c[0] === x.categorie) - CATEGORIES_DOC.findIndex(c => c[0] === y.categorie));
+  const docs = documentsVisibles(a).filter(d => !Securite.estDocSecurite(d.categorie)).sort((x, y) => CATEGORIES_DOC.findIndex(c => c[0] === x.categorie) - CATEGORIES_DOC.findIndex(c => c[0] === y.categorie));
   const nouveaux = new Set(Notifs.nonLues().filter(n => n.type === 'document' && n.affaireId === a.id).flatMap(n => (n.texte || '').split('\n')));
   const m = R.materiel ? materielPrevu(a) : null;
   const commandes = R.commandes ? Store.all('commandes').filter(c => c.affaireId === a.id && c.statut !== 'Annulée').sort((x, y) => (x.dateLivraison || '').localeCompare(y.dateLivraison || '')) : [];
@@ -178,6 +180,7 @@ function ficheChantierCompagnon(u, id) {
       ${R.heuresBudget && num(a.heuresPrevues) ? `<div class="small">⏱️ ${fmt(a.heuresPrevues, 0)} h prévues sur le chantier</div>` : ''}
       ${jours.length ? `<div class="small">📅 Vous y êtes prévu : ${jours.map(p => esc(NotifPlanning.jourCourt(p.date))).join(', ')}</div>` : ''}
     </div>
+    ${securiteCompagnon(u, a)}
     ${R.documents ? `<h2>📎 Documents <span class="muted small">${docs.length}</span></h2>
       ${docs.length ? `<ul class="docs-mobile">${docs.map(d => `<li><a href="${lienDocument(d)}" target="_blank" rel="noopener"><span class="doc-ic">${iconeDoc(d.categorie)}</span>
         <span><strong>${esc(d.nom)}</strong>${[...nouveaux].some(t => t.includes(d.nom)) ? ' <span class="badge b-warn">nouveau</span>' : ''}<br><span class="small muted">${esc(d.categorie)}${d.indice ? ` · indice ${esc(d.indice)}` : ''} · ${dateFr(d.date)} · ${tailleLisible(num(d.taille))}</span></span></a></li>`).join('')}</ul>`

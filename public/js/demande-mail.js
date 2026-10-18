@@ -47,7 +47,8 @@ function appliquerMail(a, mail) {
 function demandeClientHtml(a) {
   const docs = (a.documents || []).filter(d => d.categorie === 'Demande client'), edit = Store.can('write', 'affaires');
   return `<div class="card demande-mail no-print"><div class="dm-tete"><strong>📧 Demande du client</strong>
-      ${edit ? '<span class="spacer"></span><button class="small secondary" id="dm-coller">Coller le texte du mail</button><label class="btn small" for="dm-f">Joindre le mail</label><input id="dm-f" type="file" accept=".msg,.eml,.pdf,.txt,image/*" multiple hidden>' : ''}</div>
+      ${edit ? '<span class="spacer"></span><label class="btn small secondary" for="dm-ph">📷 Photo</label><input id="dm-ph" type="file" accept="image/*" capture="environment" multiple hidden><button class="small secondary" id="dm-coller">Coller le texte du mail</button><label class="btn small" for="dm-f">Joindre le mail</label><input id="dm-f" type="file" accept=".msg,.eml,.pdf,.txt,image/*" multiple hidden>' : ''}</div>
+    ${(a.photosDemande || []).length ? `<div class="dm-mail"><strong class="small">Photos de la demande prises sur place</strong><div class="hd-photos">${a.photosDemande.map(id => `<a href="${fileUrl(id)}" target="_blank" rel="noopener"><img src="${fileUrl(id)}" alt="Photo de la demande"></a>`).join('')}</div></div>` : ''}
     ${docs.length ? docs.map(d => { const m = d.mail;
       return `<div class="dm-mail">${m ? `<div class="dm-entete"><div><strong>${esc(m.objet || '(sans objet)')}</strong><br><span class="small">De : ${esc(m.de || '')}${m.deEmail && m.deEmail !== m.de ? ` &lt;${esc(m.deEmail)}&gt;` : ''}${m.date ? ` · ${new Date(m.date).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}` : ''}</span></div>
           ${m.texte && edit ? `<button class="small secondary" data-dm-reprendre="${d.id}">Reprendre dans la demande</button>` : ''}</div>
@@ -55,7 +56,7 @@ function demandeClientHtml(a) {
         ${(m.pieces || []).length ? `<p class="small muted">📎 Pièces jointes du mail : ${m.pieces.map(esc).join(', ')} (dans le fichier d'origine)</p>` : ''}` : ''}
         <p class="small">${d.fichierId ? `<a href="${lienDocument(d)}" target="_blank" rel="noopener">${/\.(eml|msg)$/i.test(d.nom) ? '✉️' : '📎'} ${esc(d.nom)}</a>` : ''} <span class="muted">ajouté le ${dateFr(d.date)} par ${esc(d.par || '')}</span>
         ${edit ? ` <button class="icon" data-dm-retirer="${d.id}" aria-label="Retirer">✕</button>` : ''}</p></div>`; }).join('')
-      : `<div class="dm-depot" id="dm-depot">${edit ? 'Glissez ici l\'e-mail depuis Outlook (ou un .eml, un PDF, une capture), ou utilisez les boutons ci-dessus.' : 'Aucun e-mail de demande joint.'}</div>`}
+      : (a.photosDemande || []).length ? '' : `<div class="dm-depot" id="dm-depot">${edit ? 'Glissez ici l\'e-mail depuis Outlook (ou un .eml, un PDF, une capture), ou utilisez les boutons ci-dessus.' : 'Aucun e-mail de demande joint.'}</div>`}
   </div>`;
 }
 function bindDemandeClient(root, a) {
@@ -68,6 +69,8 @@ function bindDemandeClient(root, a) {
     const pris = [...new Set(ajoutes.flatMap(d => appliquerMail(a, d.mail)))];
     enreg(`${ajoutes.length} pièce(s) jointe(s) à la demande${pris.length ? ` · repris du mail : ${pris.join(', ')}` : ''}`);
   };
+  const ph = root.querySelector('#dm-ph');
+  if (ph) ph.onchange = () => ajouter([...ph.files]);
   const f = root.querySelector('#dm-f');
   if (f) f.onchange = () => ajouter([...f.files]);
   const zone = root.querySelector('.demande-mail');

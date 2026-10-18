@@ -531,12 +531,41 @@ function demoData() {
     { id: 'mi3', userId: 'i2', nom: 'Damien Leroy', nationalite: 'Portugaise', dateNaissance: '1989-11-03', sexe: 'M', qualification: 'Soudeur TIG N3P1', ...AG, numeroContrat: 'MAD-2026-03511', motif: 'remplacement',
       motifDetail: 'Remplacement de R. Blanc (arrêt maladie)', dateEntree: d(-40), finPrevue: d(-2), dateSortie: '', affaireIds: ['af1'], notes: '' },
   ];
+  // Produits dangereux transportés dans les véhicules et leurs FDS
+  const produits = [
+    { id: 'pr1', nom: 'Acétylène dissous', fabricant: 'Air Liquide', usage: 'Soudage et coupage oxyacétylénique', pictos: ['GHS02', 'GHS04'], mentionsH: 'H220, H230, H280', epi: 'Lunettes de soudage, gants cuir',
+      stockage: 'Bouteille debout, arrimée, robinet fermé ; véhicule ventilé', secours: 'Inhalation : air frais, repos. Brûlure : refroidir à l\'eau 15 min.', fdsFichierId: 'pdf-fds-acetylene', fdsNom: 'FDS Acétylène dissous.pdf', dateFds: d(-400) },
+    { id: 'pr2', nom: 'Oxygène comprimé', fabricant: 'Air Liquide', usage: 'Soudage et coupage oxyacétylénique', pictos: ['GHS03', 'GHS04'], mentionsH: 'H270, H280', epi: 'Gants propres, sans graisse',
+      stockage: 'Bouteille debout, arrimée ; aucune graisse sur le détendeur', secours: 'Brûlure : refroidir à l\'eau. Vêtements imprégnés : s\'éloigner de toute flamme.', fdsFichierId: 'pdf-fds-oxygene', fdsNom: 'FDS Oxygène.pdf', dateFds: d(-400) },
+    { id: 'pr3', nom: 'Argon (gaz de protection TIG)', fabricant: 'Linde', usage: 'Soudage TIG inox', pictos: ['GHS04'], mentionsH: 'H280', epi: '',
+      stockage: 'Bouteille arrimée', secours: 'Asphyxie en local confiné : sortir la victime à l\'air libre, appeler le 15.', fdsFichierId: 'pdf-fds-argon', fdsNom: 'FDS Argon.pdf', dateFds: d(-1500) },
+    { id: 'pr4', nom: 'Pâte de décapage inox', fabricant: 'Fabricant de démonstration', usage: 'Décapage et passivation des soudures inox', pictos: ['GHS05', 'GHS06', 'GHS08'], mentionsH: 'H300+H310+H330, H314, H373',
+      epi: 'Gants nitrile longs, lunettes étanches, tablier', stockage: 'Pot fermé, dans un bac de rétention', secours: 'Contact peau : rincer 15 min et appliquer le gel de gluconate de calcium. Appeler le 15.', fdsFichierId: 'pdf-fds-decapant', fdsNom: 'FDS Pâte de décapage.pdf', dateFds: d(-200) },
+    { id: 'pr5', nom: 'Colle PVC pression', fabricant: 'Fabricant de démonstration', usage: 'Collage des canalisations PVC', pictos: ['GHS02', 'GHS07'], mentionsH: 'H225, H319, H336', epi: 'Gants nitrile, lunettes',
+      stockage: 'Flacon fermé, à l\'abri de la chaleur', secours: 'Yeux : rincer 15 min à l\'eau.', fdsFichierId: 'pdf-fds-colle', fdsNom: 'FDS Colle PVC.pdf', dateFds: d(-300) },
+    { id: 'pr6', nom: 'Spray dégrippant', fabricant: 'Fabricant de démonstration', usage: 'Démontage de brides et boulonnerie', pictos: ['GHS02', 'GHS07'], mentionsH: 'H222, H229, H336', epi: 'Gants', stockage: 'Aérosol à l\'abri de la chaleur', secours: '' },
+  ];
+  materiels.find(m => m.id === 'pm1').produits = ['pr1', 'pr2', 'pr5'];
+  materiels.find(m => m.id === 'pm2').produits = ['pr3', 'pr4', 'pr6'];
+  // Plan de prévention annuel du client et préparation du PPSPS de la ligne NEP
+  entreprises.find(e => e.id === 'e2').plansPrevention = [{ id: 'pp1', nom: `Plan de prévention annuel ${new Date().getFullYear()} – Laiterie des Alpes`, fichierId: 'pdf-pdp-laiterie', debut: d(-280), fin: d(85), siteId: '', note: 'Inspection commune faite avec le responsable maintenance' }];
+  Object.assign(affaires.find(a => a.id === 'af1'), { securite: { coordonnateur: '', contraintes: 'Site agroalimentaire en production : accueil sécurité au poste de garde, badge nominatif. Permis de feu obligatoire pour toute soudure ou meulage. Travaux dans le rack à 4 m de hauteur depuis la nacelle. Coactivité avec l\'entreprise de calorifuge. Lignes NEP en service : consignation par la maintenance avant toute ouverture.',
+    risques: { feu: { mesures: 'Permis de feu délivré par la maintenance de la laiterie chaque matin. Extincteur CO2 au pied de la nacelle. Surveillance 2 h après la dernière soudure. Écran de soudage pour protéger les lignes voisines.', epi: 'Masque de soudeur, gants et tablier cuir' },
+      hauteur: { mesures: 'Travail dans le rack depuis la nacelle ciseaux (VGP à jour). Échafaudage roulant Layher vérifié avant mise en service.', epi: 'Harnais en nacelle, casque à jugulaire' },
+      chimique: { mesures: 'Décapage des soudures inox à la pâte : FDS dans le véhicule, bac de rétention, rinçage à l\'eau récupéré. Aucun contact avec les produits NEP de la laiterie.', epi: 'Gants nitrile longs, lunettes étanches' } },
+    urgences: { samu: '15', pompiers: '18', europe: '112', antipoison: '04 72 11 69 11' }, hopital: 'Centre hospitalier Annecy Genevois, 1 avenue de l\'Hôpital, Épagny Metz-Tessy', rassemblement: 'Parking visiteurs, devant le poste de garde', horaires: '7 h – 12 h · 13 h – 16 h, du lundi au vendredi' } });
   return {
     files: { 'img-logo': IMAGES.logo, 'img-sig': IMAGES.signature, 'img-rack1': IMAGES.rack1, 'img-rack2': IMAGES.rack2,
       'pdf-iso': pdfExemple('Isometrique NEP aller - ISO-NEP-01 - indice B', ['Ligne NEP aller DN50 inox 316L', 'Longueur developpee : 61,8 m', '14 coudes 90 3D, 4 tes egaux, 4 brides PN16', 'Supportage tous les 2,5 m (colliers sur rail)', 'Indice B : cotes de raccordement mises a jour']),
       'pdf-iso-a': pdfExemple('Isometrique NEP aller - ISO-NEP-01 - indice A', ['Premiere diffusion']),
       'pdf-ft-vanne': pdfExemple('Fiche technique - vanne papillon DN50 PN16', ['Corps fonte GS, papillon inox 316', 'Manchette EPDM alimentaire', 'Commande par levier crante', 'Couple de serrage des boulons : 60 N.m']),
       'pdf-ppsps': pdfExemple('PPSPS - Laiterie des Alpes, usine de Rumilly', ['Accueil securite au poste de garde (badge nominatif)', 'Permis de feu obligatoire pour toute soudure', 'EPI : casque, lunettes, chaussures, gants, bouchons', 'Point de rassemblement : parking visiteurs']),
+      'pdf-fds-acetylene': pdfExemple('FDS - Acetylene dissous', ['Rubrique 2 : H220 gaz extremement inflammable, H230, H280', 'Rubrique 4 : inhalation - air frais', 'Rubrique 7 : stocker debout, arrime, ventile', 'Document d\'exemple : utilisez la FDS de votre fournisseur']),
+      'pdf-fds-oxygene': pdfExemple('FDS - Oxygene comprime', ['H270 peut provoquer ou aggraver un incendie ; comburant', 'H280 gaz sous pression', 'Aucune graisse ni huile sur les raccords']),
+      'pdf-fds-argon': pdfExemple('FDS - Argon', ['H280 gaz sous pression', 'Risque d\'asphyxie en espace confine']),
+      'pdf-fds-decapant': pdfExemple('FDS - Pate de decapage inox', ['Contient acide fluorhydrique et acide nitrique', 'H300+H310+H330 mortel par ingestion, contact cutane, inhalation', 'H314 brulures graves de la peau et lesions oculaires', 'Premiers secours : gel de gluconate de calcium, appeler le 15']),
+      'pdf-fds-colle': pdfExemple('FDS - Colle PVC pression', ['H225 liquide et vapeurs tres inflammables', 'H319 irritation des yeux, H336 somnolence']),
+      'pdf-pdp-laiterie': pdfExemple('Plan de prevention annuel - Laiterie des Alpes', ['Entreprise utilisatrice : Laiterie des Alpes', 'Entreprise exterieure : Pipe-Fit Industrie', 'Inspection commune prealable realisee', 'Permis de feu et consignations delivres par la maintenance', 'Zones de production : charlotte et blouse obligatoires']),
       'pdf-calcul': pdfExemple('Note de calcul du supportage', ['Usage interne au bureau']),
       'pdf-chaufferie': pdfExemple('Plan de la chaufferie existante - indice A', ['Residence Les Tilleuls, Echirolles', 'Collecteurs depart / retour DN150 a remplacer', 'Acces par la porte cote parking (cle a la loge)']) },
     settings: { societe: 'Pipe-Fit Industrie', adresse: 'ZI des Forges – 69800 Saint-Priest', siret: '000 000 000 00000', tva: 20, tauxHoraireDefaut: 58, delaiPaiement: 45, dureeHebdo: 35, seuilHS50: 43, montantPanier: 10.5,
@@ -545,7 +574,7 @@ function demoData() {
         tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',
         types: { devis: { conditions: 'Acompte de 30 % à la commande. Travaux réalisés selon les normes EN 13480 et le DTU en vigueur. Hors génie civil, calorifuge et échafaudages sauf mention contraire.' },
           facture: { conditions: 'Paiement par virement à 45 jours fin de mois.' } } } },
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels, missions,
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels, missions, produits,
   };
 }
 

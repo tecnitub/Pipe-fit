@@ -788,3 +788,28 @@ fieldset.mi-titre[hidden] { display: none; }
 .dm-texte { max-height: 260px; overflow: auto; background: var(--panel-alt); padding: 8px 10px; border-radius: 6px; font-size: 13px; margin: 6px 0; }
 .dm-depot { display: block; border: 2px dashed var(--border); border-radius: 8px; padding: 14px; text-align: center; color: var(--muted); margin-top: 8px; cursor: pointer; }
 .dm-depot.grand { padding: 40px 14px; font-size: 16px; }
+.hd-photos { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; } .hd-photos img { width: 84px; height: 84px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); }
+
+/* Sécurité du chantier : PGC, plan de prévention, PPSPS, FDS */
+.ghs { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin: 1px 4px 1px 1px; border: 2px solid #c8102e; background: #fff; transform: rotate(45deg); font-size: 11px; line-height: 1; vertical-align: middle; }
+.ghs > i { transform: rotate(-45deg); font-style: normal; display: block; }
+.ghs-choix { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.ghs-choix .ghs { width: 18px; height: 18px; font-size: 9px; }
+.secu-docs { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 8px; }
+.secu-docs .card { margin: 0; }
+.secu-liste { margin: 6px 0 8px; padding-left: 18px; }
+.secu-liste li { margin: 3px 0; }
+.secu-form h3 { margin: 18px 0 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+.secu-form h3:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.secu-risques { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.secu-risque { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.secu-risque.on { border-color: var(--accent); background: var(--panel-alt); }
+.secu-risque textarea, .secu-risque input:not([type]) { margin-top: 6px; width: 100%; }
+.secu-mobile .small { margin: 3px 0; }
+.secu-urgences { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; margin-bottom: 8px; }
+.secu-urgences .btn { display: flex; flex-direction: column; align-items: center; padding: 8px; font-weight: 600; font-size: 1.05em; text-decoration: none; }
+.secu-urgences .btn .small { font-weight: normal; font-size: .72em; }
+.docs-mobile .fds-sans { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 10px; }
+.doc h3.doc-h, .doc-h { color: var(--doc-accent, #8f2f1a); font-size: 11pt; margin: 14px 0 6px; border-bottom: 1px solid currentColor; padding-bottom: 2px; }
+.ppsps-t th { text-align: left; width: 30%; font-weight: 600; vertical-align: top; }
+.ppsps-t td { vertical-align: top; white-space: pre-line; }

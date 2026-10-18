@@ -207,7 +207,7 @@ Views.entreprise = params => {
       <td>${esc(siteLabel(siteOf(e.id, c.siteId)))}</td><td>${esc(c.mobile || c.tel)}</td><td>${esc(c.email)}</td></tr>`).join('')}</table></div>`
   : '<p class="muted">Aucun contact rattaché.</p>'}
 
-  ${isClient(e) ? `<h2>Chantiers</h2>${chantierTable(affaires)}${relancesClient(e.id)}` : ''}`;
+  ${isClient(e) ? `${plansPreventionClient(e)}<h2>Chantiers</h2>${chantierTable(affaires)}${relancesClient(e.id)}` : ''}`;
 };
 Views.entreprise.bind = (root, params) => {
   const e = Store.get('entreprises', params[0]);
@@ -217,4 +217,5 @@ Views.entreprise.bind = (root, params) => {
   root.querySelector('#add-contact').onclick = () => openContact({ entrepriseId: e.id, siteId: (e.adresses || []).length === 1 ? e.adresses[0].id : '' });
   root.querySelectorAll('tr[data-site]').forEach(tr => tr.onclick = () => openSite(e, e.adresses.find(s => s.id === tr.dataset.site)));
   root.querySelectorAll('tr[data-contact]').forEach(tr => tr.onclick = () => openContact({ ...Store.get('contacts', tr.dataset.contact) }));
+  if (isClient(e)) bindPlansPrevention(root, e);
 };

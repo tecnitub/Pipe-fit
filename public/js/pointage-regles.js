@@ -37,6 +37,8 @@ const ReglesPointage = (() => {
     if (!obj.clientId && !String(obj.clientLibre || '').trim()) return { refus: 'Indiquez le client' };
     const propre = { id: obj.id, type: 'horsDevis', code: '', statut: 'Ouvert', dateCreation: auj, heuresPrevues: 0, rex: {}, ouvertePar: userId, aCompleter: true };
     CHAMPS_HD.forEach(k => { if (obj[k] !== undefined && obj[k] !== null) propre[k] = String(obj[k]).trim().slice(0, 500); });
+    // Photos de la demande (bon papier, note du client) : identifiants de fichiers déjà envoyés
+    if (Array.isArray(obj.photosDemande)) propre.photosDemande = obj.photosDemande.filter(x => /^[a-f0-9]{16,40}$/.test(String(x))).slice(0, 10);
     return { obj: propre };
   }
 

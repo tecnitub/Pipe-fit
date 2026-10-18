@@ -134,6 +134,7 @@ Views.chantier = params => {
   const a = Store.get('affaires', params[0]);
   if (!a) return '<p>Chantier introuvable. <a href="#/chantiers">Retour aux chantiers</a></p>';
   if (params[1] === 'documents') return documentsChantier(a);
+  if (params[1] === 'securite') return securiteChantier(a);
   if (estHorsDevis(a)) return horsDevisView(a);
   const s = Calc.affaire(a);
   const devis = Store.all('devis').filter(d => d.affaireId === a.id);
@@ -232,6 +233,7 @@ Views.chantier.bind = (root, params) => {
   const a = Store.get('affaires', params[0]);
   if (!a) return;
   if (params[1] === 'documents') return bindDocumentsChantier(root, a);
+  if (params[1] === 'securite') return bindSecuriteChantier(root, a);
   if (estHorsDevis(a)) return bindHorsDevis(root, a);
   root.querySelector('#edit').onclick = () => editModal({ title: `Chantier ${a.code}`, col: 'affaires', fields: chantierFields, obj: { ...a },
     onDelete: () => { location.hash = '#/chantiers'; } });

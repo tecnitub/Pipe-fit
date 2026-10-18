@@ -18,6 +18,8 @@ const Compagnon = (() => {
   const regles = settings => ({ ...DEFAUT, ...((settings && settings.compagnon) || {}) });
   // Listes jamais envoyées aux compagnons
   const MASQUEES = ['factures', 'situations', 'achats', 'efactures', 'consultations', 'chiffrages', 'envois', 'ouvrages', 'familles', 'zones', 'missions'];
+  // Documents de sécurité (PPSPS, PGC, plan de prévention) : toujours transmis s'ils sont cochés, même sans les autres documents
+  const SECURITE = ['Sécurité / PPSPS', 'PGC', 'Plan de prévention'];
   const sans = (o, cles) => { const r = { ...o }; cles.forEach(k => delete r[k]); return r; };
 
   // Devis accepté d'un chantier : désignations, quantités et fournitures, sans prix (ni heures sauf réglage)
@@ -45,8 +47,9 @@ const Compagnon = (() => {
       case 'articles': return R.prix ? sans(r, ['coutRevient']) : sans(r, ['prixVente', 'coutRevient']);
       case 'devis': return devis(r, R);
       case 'affaires': return { ...sans(r, ['retenueGarantie', 'caution', 'rex', 'okFacturation', 'factureId', 'retenueLiberee', ...(R.heuresBudget ? [] : ['heuresPrevues'])]),
-        clientId: r.clientId, documents: R.documents ? (r.documents || []).filter(d => d.visible) : [] };
-      case 'entreprises': return { id: r.id, nom: R.client || r.categorie !== 'Client' ? r.nom : '', categorie: r.categorie, adresses: r.adresses || [], _v: r._v, _at: r._at, _by: r._by };
+        clientId: r.clientId, documents: (r.documents || []).filter(d => d.visible && (R.documents || SECURITE.includes(d.categorie))) };
+      // Plans de prévention annuels du client : consultables sur le chantier
+      case 'entreprises': return { id: r.id, nom: R.client || r.categorie !== 'Client' ? r.nom : '', categorie: r.categorie, adresses: r.adresses || [], plansPrevention: r.plansPrevention || [], _v: r._v, _at: r._at, _by: r._by };
       case 'contacts': return R.contactSite && ctx.contacts.has(r.id) ? sans(r, ['email']) : null;
       case 'commandes': return R.commandes ? { ...sans(r, ['frais', 'port', 'conditions', 'pieceId', 'factureId']), lignes: (r.lignes || []).map(l => (R.prix ? l : sans(l, ['pu', 'cout', 'remise']))) } : null;
       case 'consommations': return R.prix ? r : sans(r, ['pu', 'cout']);

@@ -8,14 +8,15 @@ const alertesParc = (auj = isoDate(new Date())) => Store.all('materiels').filter
 const badgeEcheance = (e, auj) => { if (!e) return '<span class="muted small">—</span>'; const x = Echeances.etat(e.prochaine, auj, 30);
   return `<span class="badge ${x.etat === 'expire' ? 'b-bad' : x.etat === 'bientot' ? 'b-warn' : 'b-ok'}">${dateFr(e.prochaine)}</span> <span class="small">${esc(e.libelle)}</span>`; };
 
-Views.parc = () => {
+Views.parc = (params = []) => {
+  if (params[0] === 'produits') return produitsView();
   const auj = isoDate(new Date()), f = parcFiltre, peut = Store.can('write', 'materiels');
   const tous = Store.all('materiels').filter(m => !m.archive);
   const liste = tous.filter(m => (!f.type || (f.type === 'vehicule') === estVehicule(m))
     && (!f.q || RechercheArticles.norm([m.designation, m.immat, m.numeroSerie, m.categorie, m.marque, userName((m.affectation || {}).userId)].join(' ')).includes(RechercheArticles.norm(f.q))))
     .sort((a, b) => (estVehicule(b) - estVehicule(a)) || a.categorie.localeCompare(b.categorie) || a.designation.localeCompare(b.designation));
   const alertes = alertesParc(auj), exp = alertes.filter(a => a.etat === 'expire');
-  return `<h1>Parc véhicules et outillage</h1>
+  return `<h1>Parc véhicules et outillage</h1>${parcOnglets('parc')}
   <div class="cards">
     <div class="card"><div class="label">Véhicules</div><div class="value">${tous.filter(estVehicule).length}</div><div class="sub">${fmt(sumBy(tous.filter(estVehicule), m => num(m.km)))} km au compteur</div></div>
     <div class="card"><div class="label">Outillage et matériel</div><div class="value">${tous.filter(m => !estVehicule(m)).length}</div><div class="sub">${tous.filter(m => (m.affectation || {}).affaireId).length} sur chantier</div></div>
@@ -32,7 +33,8 @@ Views.parc = () => {
       <td class="actions" data-nocl>${peut ? `<button class="small secondary" data-affecter="${m.id}">Affecter</button>${estVehicule(m) ? `<button class="small secondary" data-km="${m.id}">Km</button>` : ''}` : ''}</td></tr>`).join('')}</table></div>`
     : '<p class="muted">Aucun véhicule ni matériel enregistré.</p>'}`;
 };
-Views.parc.bind = root => {
+Views.parc.bind = (root, params = []) => {
+  if (params[0] === 'produits') return bindProduits(root);
   root.querySelectorAll('[data-type]').forEach(b => b.onclick = () => { parcFiltre.type = b.dataset.type; App.render(); });
   const q = root.querySelector('#pm-q');
   q.onchange = () => { parcFiltre.q = q.value; App.render(); };
@@ -87,6 +89,7 @@ function editerMateriel(id) {
         <div class="field"><label for="pm-da">Date d'achat / mise en service</label><input id="pm-da" type="date" value="${esc(m.dateAchat || '')}"></div>
         <div class="field"><label for="pm-val">Valeur d'achat HT (€)</label><input id="pm-val" type="number" step="1" value="${esc(m.valeur ?? '')}"></div>
       </div>
+      ${Echeances.VEHICULES.includes(m.categorie) && Store.all('produits').some(p => !p.archive) ? `<div class="field"><span class="label">Produits dangereux à bord (FDS consultables par le conducteur)</span><div class="ghs-choix">${Store.all('produits').filter(p => !p.archive).sort((a, b) => a.nom.localeCompare(b.nom)).map(p => `<label class="check small"><input type="checkbox" data-prod="${p.id}" ${(m.produits || []).includes(p.id) ? 'checked' : ''}> ${esc(p.nom)} ${pictosHtml(p.pictos)}</label>`).join('')}</div></div>` : ''}
       <h3>Contrôles périodiques</h3>
       <div class="table-wrap"><table class="pm-ech"><tr><th>Contrôle</th><th>Dernier</th><th>Périodicité (mois)</th><th>Prochain</th><th></th></tr>
         ${m.echeances.map((e, i) => `<tr><td><input data-e="${i}|libelle" value="${esc(e.libelle)}"></td><td><input type="date" data-e="${i}|derniere" value="${esc(e.derniere || '')}"></td>
@@ -99,6 +102,7 @@ function editerMateriel(id) {
     const lire = () => {
       Object.assign(m, { designation: $('#pm-des').value.trim(), marque: $('#pm-mar').value.trim(), dateAchat: $('#pm-da').value, valeur: $('#pm-val').value === '' ? '' : num($('#pm-val').value), notes: $('#pm-notes').value });
       if ($('#pm-imm')) m.immat = $('#pm-imm').value.trim().toUpperCase(); if ($('#pm-ns')) m.numeroSerie = $('#pm-ns').value.trim();
+      if (box.querySelector('[data-prod]')) m.produits = [...box.querySelectorAll('[data-prod]:checked')].map(c => c.dataset.prod);
     };
     box.querySelectorAll('[data-e]').forEach(el => el.onchange = () => {
       const [i, k] = el.dataset.e.split('|'), e = m.echeances[+i];
@@ -135,5 +139,6 @@ function monMateriel(u) {
   const l = Store.all('materiels').filter(m => !m.archive && m.affectation && ids.includes(m.affectation.userId));
   if (!l.length) return '';
   return `<h2>Mon véhicule et mon outillage</h2><div class="card"><ul class="punch-list">${l.map(m => `<li><div><strong>${esc(m.designation)}</strong>${m.immat ? ` <span class="immat">${esc(m.immat)}</span>` : ''}${m.affectation.userId !== u.id ? ` <span class="muted small">(${esc(userName(m.affectation.userId))})</span>` : ''}
-    <br><span class="small">Prochain contrôle : ${badgeEcheance(prochaineEcheance(m), auj)}</span></div></li>`).join('')}</ul></div>`;
+    <br><span class="small">Prochain contrôle : ${badgeEcheance(prochaineEcheance(m), auj)}</span></div></li>`).join('')}</ul></div>
+    ${l.some(m => (m.produits || []).length) ? `<h2>🧪 Produits à bord : fiches de données de sécurité</h2>${fdsListe([...new Set(l.flatMap(m => m.produits || []))])}` : ''}`;
 }

@@ -285,6 +285,27 @@ puis pour chacun : ce qu'il a à faire (relances, devis à relancer après 15 jo
 à facturer ou à compléter, pointages et notes de frais à valider, commandes en brouillon, réserves) et ses chantiers qui
 dérapent (heures, fournitures, marge à terminaison inférieure de 3 points à la marge prévue).
 
+## Sécurité des chantiers : PPSPS, PGC, plans de prévention, FDS
+
+**Chantier → ⛑️ Sécurité** : le PGC du coordonnateur SPS et le plan de prévention spécifique au chantier se joignent en
+un clic ; le plan de prévention annuel du client (fiche client → Plans de prévention annuels, pour tous les sites ou un
+site, avec dates de validité) est repris automatiquement tant qu'il est valide. Le PPSPS se rédige sur la même page :
+renseignements généraux (dates et effectif tirés du planning), contraintes du PGC et du site, analyse des risques
+(bibliothèque du métier : points chauds, hauteur, levage, réseaux en service, produits chimiques, espace confiné, ATEX,
+amiante, électricité, fluides frigorigènes, réseaux enterrés, coactivité, bruit, circulation ; le bouton « Proposer les
+risques » les coche d'après les contraintes, l'objet du chantier et le devis), mesures et EPI modifiables, secours
+(numéros d'urgence, hôpital, point de rassemblement, SST planifiés), base vie. Les intervenants planifiés sont contrôlés :
+habilitations requises par les risques retenus, visite médicale. Le matériel du parc et les produits dangereux de
+l'équipe sont listés. « Générer le PPSPS » crée le PDF (indice A, B, C…) dans les documents du chantier.
+
+**Parc → Produits et FDS** : produits transportés dans les véhicules (gaz, décapants, colles…) avec pictogrammes CLP,
+mentions H, EPI, premiers secours et fiche de données de sécurité ; alerte si la FDS manque ou a plus de 3 ans.
+
+**Appli des compagnons** : la fiche du chantier affiche un bloc Sécurité (numéros d'urgence à composer d'un geste, point
+de rassemblement, SST, risques et EPI, PPSPS, PGC, plan de prévention annuel ou spécifique) et les FDS des produits de
+leur véhicule, aussi visibles dans « Mon véhicule ». Les documents de sécurité sont transmis même si l'affichage des
+autres documents est désactivé.
+
 ## Structure
 
 ```
@@ -296,7 +317,7 @@ server/efacture.js réception (dossier, adresse de dépôt) et dépôt des factu
 server/api.js      clés d'API, webhooks sortants, description OpenAPI
 public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
-public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js : écrans métier
+public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js, securite-ui.js, produits.js : écrans métier
 doe/               application DOE séparée (serveur, interface, génération du dossier PDF)
 installer/         installateur Windows (NSIS) : build.sh, PipeFitCRM.nsi, lanceur et service
 ```

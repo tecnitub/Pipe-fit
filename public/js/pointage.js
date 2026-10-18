@@ -85,7 +85,16 @@ function nouvelleHDCompagnon(fait) {
       <div class="field" id="hd-site-libre"><label for="hd-snom">Nom du site</label><input id="hd-snom" placeholder="Ex. Usine de Rumilly, Site de Fos" autocomplete="off"></div>
       <div class="field"><label for="hd-lieu">Précision (bâtiment, local, machine)</label><input id="hd-lieu" placeholder="Ex. bâtiment B, chaufferie, PM2"></div></fieldset>
     <div class="field"><label for="hd-demande">Demande du client</label><textarea data-dictee id="hd-demande" rows="3" placeholder="Ce qui a été demandé, par qui"></textarea></div>
+    <div class="field"><label class="btn secondary" for="hd-photo">📷 Photo de la demande (bon, mail imprimé, note)</label><input id="hd-photo" type="file" accept="image/*" capture="environment" multiple hidden>
+      <div id="hd-photos" class="hd-photos"></div></div>
     <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="hd-x">Annuler</button><button id="hd-ok">Ouvrir l'intervention</button></div>`);
+  const photos = [];
+  box.querySelector('#hd-photo').onchange = async e => {
+    for (const f of e.target.files) {
+      try { photos.push({ dataUrl: await compressImage(f, 1600, 0.8) }); } catch (err) { notify('Photo illisible'); }
+    }
+    box.querySelector('#hd-photos').innerHTML = photos.map(p => `<img src="${p.dataUrl}" alt="Photo de la demande">`).join('');
+  };
   const $ = s => box.querySelector(s);
   // Contacts et sites du client choisi ; « Autre » ou client hors liste : saisie libre
   const majClient = () => {
@@ -118,8 +127,10 @@ function nouvelleHDCompagnon(fait) {
     if (!o.contactId && !o.contactLibre && !(await ask('Aucun contact client indiqué (la personne qui a demandé l\'intervention). Ouvrir quand même ?', 'Ouvrir', false))) return;
     if (!o.siteId && !o.siteLibre) return notify('Indiquez le nom du site.');
     if (Store.me.role !== 'atelier') o.chargeId = Store.me.userId || '';
-    const a = Store.upsert('affaires', o);
     $('#hd-ok').disabled = true;
+    try { o.photosDemande = []; for (const p of photos) o.photosDemande.push((await api('POST', '/api/files', { dataUrl: p.dataUrl })).id); }
+    catch (e) { $('#hd-ok').disabled = false; return notify('Envoi de la photo impossible : ' + e.message); }
+    const a = Store.upsert('affaires', o);
     const rec = await Store.attendre('affaires', a.id);
     Modal.close();
     if (!rec || !Store.get('affaires', a.id)) return notify('Intervention non enregistrée : réessayez.');
