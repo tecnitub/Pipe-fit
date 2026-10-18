@@ -46,7 +46,7 @@ Views.dashboard = (params, query) => {
   const sitsProposees = Store.all('situations').filter(x => x.statut === 'Proposée' && surAff(x));
   const tempsSemaine = sumBy(Store.all('temps').filter(t => isoWeek(new Date(t.date)) === week && surAff(t)), t => num(t.heures));
   return `
-  <h1>Tableau de bord</h1>
+  <div class="toolbar"><h1 style="margin:0">Tableau de bord</h1><span class="spacer"></span>${['admin', 'charge'].includes(Store.me.role) ? `<a class="btn secondary" href="#/charges${Store.me.role === 'charge' && Store.me.userId ? '/' + Store.me.userId : ''}">📋 ${Store.me.role === 'charge' ? 'Mon tableau de bord' : 'Par chargé d\'affaires'}</a>${Store.me.role === 'admin' || Store.me.role === 'charge' ? ' <a class="btn secondary" href="#/tresorerie">💶 Trésorerie</a>' : ''}` : ''}</div>
   ${barreFiltres(fd, { clients: [...new Set(Store.all('affaires').map(a => a.clientId))], recherche: false, defauts: FILTRES_TDB })}
   <div class="cards">
     <div class="card"><div class="label">Devis en attente</div><div class="value">${eur(sumBy(enAttente, d => Calc.doc(d).totalHT))}</div><div class="sub">${enAttente.length} devis envoyés · transformation ${pct((acc + ref) ? acc / (acc + ref) * 100 : 0)}</div></div>
@@ -56,6 +56,8 @@ Views.dashboard = (params, query) => {
   </div>
   <div class="cards">
     <a class="card clickable-card" href="#/rh/validation"><div class="label">Pointages à valider</div><div class="value ${aValider ? 'warn-text' : ''}">${fmt(aValider, 1)} h</div><div class="sub">avant envoi en paie</div></a>
+    ${(() => { const h = alertesHabilitations(), p = alertesParc(), n = h.length + p.length, x = [...h, ...p].filter(a => a.etat === 'expire').length;
+      return n ? `<a class="card clickable-card" href="${h.length ? '#/rh/habilitations' : '#/parc'}"><div class="label">Échéances</div><div class="value ${x ? 'neg' : 'warn-text'}">${n}</div><div class="sub">${h.length} habilitation(s) / visite(s) médicale(s) · ${p.length} contrôle(s) du parc${x ? ` · ${x} dépassée(s)` : ''}</div></a>` : ''; })()}
     <a class="card clickable-card" href="#/rh/frais"><div class="label">Notes de frais à valider</div><div class="value">${fraisAValider.length}</div><div class="sub">${eur(sumBy(fraisAValider, f => num(f.montantTTC)))} TTC</div></a>
     <a class="card clickable-card" href="#/chantiers"><div class="label">Hors devis à facturer</div><div class="value">${hdAFacturer.length}</div><div class="sub">${eur(sumBy(hdAFacturer, a => Calc.horsDevis(a).total))} HT · ${Store.all('affaires').filter(a => estHorsDevis(a) && statutHD(a) === 'Ouvert').length} intervention(s) en cours</div></a>
     <div class="card"><div class="label">Terrain</div><div class="value">${rapportsJour} rapport(s)</div><div class="sub">reçus depuis hier · ${reservesOuv} réserve(s) ouverte(s) sur les chantiers</div></div>

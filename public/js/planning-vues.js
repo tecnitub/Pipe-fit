@@ -7,7 +7,7 @@ const capacite = u => num(u.capaciteHebdo) || num(Store.data.settings.dureeHebdo
 // Pastille d'une personne (couleur propre, initiales) ; glissable si elle porte une affectation
 function avatar(u, opts = {}) {
   const attrs = opts.d ? `data-av="${u.id}" data-d="${opts.d}" ${opts.pid ? `data-pid="${opts.pid}"` : ''} ${opts.drag ? 'draggable="true"' : ''}` : '';
-  return `<button type="button" class="av ${opts.taille || ''} ${opts.classe || ''}" style="--h:${teinte(u.id)}" title="${esc(u.nom)}${opts.titre ? ' · ' + esc(opts.titre) : ''}" ${attrs}>${esc(initiales(u.nom))}${opts.coin ? `<i>${opts.coin}</i>` : ''}</button>`;
+  return `<button type="button" class="av ${opts.taille || ''} ${opts.classe || ''}" style="--h:${teinte(u.id)}" title="${esc(u.nom)}${opts.titre ? ' · ' + esc(opts.titre) : ''}" ${attrs}>${esc(initiales(u.nom))}${opts.coin ? `<i>${opts.coin}</i>` : ''}${typeof signalHabilitation === 'function' && signalHabilitation(u.id) ? '<b class="av-hab" aria-label="Habilitation à vérifier">!</b>' : ''}</button>`;
 }
 // Anneau de charge : heures prévues / capacité de la semaine
 function anneau(u, hp, opts = {}) {
@@ -152,7 +152,7 @@ function planningPersonne(query) {
   <div class="pl-choix">${personnes.map(x => `<a href="#/planning/personne?u=${x.id}${m ? `&m=${m}` : ''}" class="${x.id === u.id ? 'on' : ''}">${avatar(x, { taille: 'petit' })}<span>${esc(prenomDe(x.nom))}</span></a>`).join('')}</div>
   <div class="card pl-profil">
     ${avatar(u, { taille: 'grand' })}
-    <div><h2 style="margin:0">${esc(u.nom)} ${interimBadge(u)}</h2>
+    <div><h2 style="margin:0">${esc(u.nom)}${signalHabilitation(u.id)} ${interimBadge(u)}</h2>
       <div class="muted small">${esc(moOf(u.categorieId).libelle || '')}${chef ? ` · équipe de ${esc(chef.nom)}` : ''}${equipe.length ? ` · chef d'équipe de ${equipe.map(x => esc(prenomDe(x.nom))).join(', ')}` : ''} · ${fmt(capacite(u))} h / semaine</div>
       <div class="pl-stats">
         <span class="pl-stat">📅 <strong>${tousJours.filter(d => bilans[d].plan.length).length}</strong> jours sur chantier</span>

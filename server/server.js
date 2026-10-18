@@ -702,6 +702,10 @@ const server = http.createServer(async (req, res) => {
 if (require.main === module) {
   // Relève du dossier de réception des factures électroniques toutes les 2 minutes
   setInterval(() => EF.scruterDossier(DB, db, broadcast).catch(e => console.error('Facturation électronique :', e.message)), 120000).unref();
+  // Échéances des habilitations, visites médicales et contrôles du parc : peu après le démarrage, puis toutes les 6 heures
+  const verifierEcheances = () => NOTIFS.echeances().catch(e => console.error('Échéances :', e.message));
+  setTimeout(verifierEcheances, 30000).unref();
+  setInterval(verifierEcheances, 6 * 3600000).unref();
   server.listen(PORT, HOST, () => {
     console.log(`Pipe-Fit CRM : http://localhost:${PORT}  (base : ${DB_FILE})`);
     if (!hasAccounts()) console.log(`Première utilisation : ouvrez http://localhost:${PORT} sur ce poste pour créer le compte administrateur.`);

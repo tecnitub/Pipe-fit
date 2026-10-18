@@ -126,7 +126,7 @@ function chantiersCompagnon(u) {
         ${R.client && clientName(a.clientId) ? `<div class="small muted">${esc(clientName(a.clientId))}</div>` : ''}
         ${site ? `<div class="small">📍 ${esc(site.libelle)} · ${esc(site.ville || '')}</div>` : ''}
         <div class="small">${prochain ? `📅 ${prochain === isoDate(new Date()) ? 'aujourd\'hui' : jourLong(prochain)}` : '<span class="muted">pas de date prévue</span>'}${R.documents ? ` · 📎 ${nd} document${nd > 1 ? 's' : ''}` : ''}${nv ? ' <span class="badge b-warn">nouveau</span>' : ''}</div></a>`;
-    }).join('') : '<p class="muted">Aucun chantier prévu pour vous en ce moment.</p>'}</div>`;
+    }).join('') : '<p class="muted">Aucun chantier prévu pour vous en ce moment.</p>'}${mesHabilitations(u)}${monMateriel(u)}</div>`;
 }
 
 // Matériel prévu au devis : total par article et détail par ouvrage (quantités selon les réglages)

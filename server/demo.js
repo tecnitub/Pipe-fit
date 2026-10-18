@@ -489,6 +489,38 @@ function demoData() {
     envoi('env1', -54, 'devis', 'devis', 'dv1', `DV-${Y}-0001`, 't.girard@laiterie-alpes.example', `Devis DV-${Y}-0001 – Ligne NEP inox – Usine de Rumilly`, 'Claire Martin', 'c.martin@pipefit.example'),
     envoi('env2', -2, 'situation', 'situations', 'sit4', `BL-${Y}-0004`, 'c.rousset@ipa.example', 'Proposition de situation n° 2 – CH-' + Y + '-001 – Ligne NEP inox – Usine de Rumilly', 'Claire Martin', 'c.martin@pipefit.example'),
   ];
+  // Habilitations et visites médicales (dates d'expiration autour d'aujourd'hui pour montrer les alertes)
+  const H = (id, userId, cle, obtenue, expire, niveau = '', numero = '') => ({ id, userId, cle, obtenue: d(obtenue), expire: d(expire), niveau, numero, fichierId: '' });
+  const habilitations = [
+    H('hb1', 'o1', 'visite', -600, 130, 'SIR, apte'), H('hb2', 'o1', 'qmos', -700, 25, '141 + 111, inox / P235GH', 'QMOS-2024-118'), H('hb3', 'o1', 'hauteur', -300, 400), H('hb4', 'o1', 'sst', -740, -12),
+    H('hb5', 'o2', 'visite', -30, 700, 'VIP, apte'), H('hb6', 'o2', 'fluides', -900, 900, 'Catégorie I'), H('hb7', 'o2', 'elec', -1050, 45, 'BR, B1V'),
+    H('hb8', 'o3', 'visite', -735, -5, 'SIR'), H('hb9', 'o3', 'caces_nacelle', -1200, 600, 'Catégories A et B'), H('hb10', 'o3', 'aipr', -1000, 800, 'Encadrant'), H('hb11', 'o3', 'sst', -400, 330),
+    H('hb12', 'o4', 'visite', -230, 500, 'SIR, apte'), H('hb13', 'o4', 'qmos', -430, 300, '141, inox'),
+    H('hb14', 'o5', 'visite', -530, 200, 'VIP'), H('hb15', 'o5', 'caces_chariot', -800, 1000, 'Catégorie 3'),
+    H('hb16', 'o6', 'visite', -380, 350, 'VIP'), H('hb17', 'o6', 'elec', -900, 200, 'B0, H0V'),
+    H('hb18', 'i1', 'visite', -580, 150, 'Visite agence intérim'), H('hb19', 'i1', 'hauteur', -1000, 90),
+  ];
+  // Parc : véhicules et outillage, affectations et contrôles périodiques
+  const E = (cle, libelle, derniere, prochaine, periodicite) => ({ cle, libelle, derniere: derniere === null ? '' : d(derniere), prochaine: d(prochaine), periodicite });
+  const materiels = [
+    { id: 'pm1', categorie: 'Véhicule utilitaire', designation: 'Renault Master L3H2', marque: 'Renault', immat: 'FX-482-QA', dateAchat: d(-1460), valeur: 32000, km: 84250, kmDate: d(-3),
+      affectation: { userId: 'o3', affaireId: '', depuis: d(-400) }, historique: [{ date: d(-400), userId: 'o3', affaireId: '', par: 'Administrateur' }],
+      echeances: [E('ct', 'Contrôle technique', -712, 18, 24), E('entretien', 'Entretien / vidange', -240, 120, 12), E('assurance', 'Échéance assurance', -165, 200, 12)], notes: 'Galerie + porte-tubes 6 m' },
+    { id: 'pm2', categorie: 'Véhicule utilitaire', designation: 'Peugeot Partner', marque: 'Peugeot', immat: 'GB-115-TR', dateAchat: d(-900), valeur: 21000, km: 56300, kmDate: d(-10),
+      affectation: { userId: 'o1', affaireId: '', depuis: d(-120) }, historique: [{ date: d(-120), userId: 'o1', affaireId: '', par: 'Administrateur' }],
+      echeances: [E('ct', 'Contrôle technique', null, 300, 24), E('entretien', 'Entretien / vidange', -373, -8, 12), E('assurance', 'Échéance assurance', -165, 200, 12)], notes: '' },
+    { id: 'pm3', categorie: 'Nacelle / PEMP', designation: 'Nacelle ciseaux Haulotte Compact 12', marque: 'Haulotte', numeroSerie: 'HC12-55871', dateAchat: d(-2000), valeur: 18500,
+      affectation: { userId: '', affaireId: 'af1', depuis: d(-30) }, historique: [{ date: d(-30), userId: '', affaireId: 'af1', par: 'Claire Martin' }],
+      echeances: [E('vgp', 'VGP (vérification générale périodique)', -170, 12, 6)], notes: '' },
+    { id: 'pm4', categorie: 'Poste à souder', designation: 'Poste TIG Fronius MagicWave 230i', marque: 'Fronius', numeroSerie: 'FR-30158822', dateAchat: d(-700), valeur: 6200,
+      affectation: { userId: 'o1', affaireId: '', depuis: d(-90) }, historique: [], echeances: [E('elec', 'Vérification électrique', -215, 150, 12)], notes: '' },
+    { id: 'pm5', categorie: 'Appareil de mesure', designation: 'Manomètre étalon 0-60 bar (épreuves hydrauliques)', marque: 'Wika', numeroSerie: 'WK-2209-17', dateAchat: d(-1100), valeur: 850,
+      affectation: { userId: '', affaireId: '', depuis: '' }, historique: [], echeances: [E('etalonnage', 'Étalonnage', -385, -20, 12)], notes: 'Rangé à l\'atelier, armoire métrologie' },
+    { id: 'pm6', categorie: 'Échafaudage', designation: 'Échafaudage roulant Layher Uni 8 m', marque: 'Layher', dateAchat: d(-1600), valeur: 3900,
+      affectation: { userId: '', affaireId: 'af1', depuis: d(-30) }, historique: [{ date: d(-30), userId: '', affaireId: 'af1', par: 'Claire Martin' }], echeances: [E('verif', 'Vérification avant mise en service / trimestrielle', -30, 60, 3)], notes: '' },
+    { id: 'pm7', categorie: 'Récupération fluides frigorigènes', designation: 'Station de récupération + balance électronique', marque: 'Refco', numeroSerie: 'RF-88120', dateAchat: d(-500), valeur: 2400,
+      affectation: { userId: 'o2', affaireId: '', depuis: d(-60) }, historique: [], echeances: [E('etalonnage', 'Contrôle / étalonnage (détecteur, balance)', -145, 220, 12)], notes: '' },
+  ];
   return {
     files: { 'img-logo': IMAGES.logo, 'img-sig': IMAGES.signature, 'img-rack1': IMAGES.rack1, 'img-rack2': IMAGES.rack2,
       'pdf-iso': pdfExemple('Isometrique NEP aller - ISO-NEP-01 - indice B', ['Ligne NEP aller DN50 inox 316L', 'Longueur developpee : 61,8 m', '14 coudes 90 3D, 4 tes egaux, 4 brides PN16', 'Supportage tous les 2,5 m (colliers sur rail)', 'Indice B : cotes de raccordement mises a jour']),
@@ -503,7 +535,7 @@ function demoData() {
         tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',
         types: { devis: { conditions: 'Acompte de 30 % à la commande. Travaux réalisés selon les normes EN 13480 et le DTU en vigueur. Hors génie civil, calorifuge et échafaudages sauf mention contraire.' },
           facture: { conditions: 'Paiement par virement à 45 jours fin de mois.' } } } },
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications,
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels,
   };
 }
 

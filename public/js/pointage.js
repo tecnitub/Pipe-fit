@@ -481,6 +481,7 @@ function rhTabs(active) {
     <a href="#/rh/validation" class="${active === 'validation' ? 'active' : ''}">Validation ${aValider ? `<span class="count">${aValider}</span>` : ''}</a>
     <a href="#/rh/frais" class="${active === 'frais' ? 'active' : ''}">Notes de frais ${fraisAValider ? `<span class="count">${fraisAValider}</span>` : ''}</a>
     <a href="#/rh/pointages" class="${active === 'pointages' ? 'active' : ''}">Tous les pointages</a>
+    <a href="#/rh/habilitations" class="${active === 'habilitations' ? 'active' : ''}">Habilitations ${(() => { const n = alertesHabilitations().length; return n ? `<span class="count">${n}</span>` : ''; })()}</a>
   </div>`;
 }
 
@@ -488,6 +489,7 @@ Views.rh = (params, query) => {
   if (params[0] === 'pointages') return rhPointages(query);
   if (params[0] === 'validation') return rhValidation(query);
   if (params[0] === 'frais') return rhFrais(query);
+  if (params[0] === 'habilitations') return rhHabilitations();
   const mois = query.get('mois') || isoDate(new Date()).slice(0, 7);
   const s = Store.data.settings;
   const actifs = Store.all('users').filter(u => Store.all('temps').some(t => t.userId === u.id && t.date.startsWith(mois)));
@@ -587,6 +589,7 @@ function rhPointages(query) {
 }
 
 Views.rh.bind = (root, params) => {
+  if (params[0] === 'habilitations') return; // cases gérées par un écouteur global (habilitations.js)
   const on = (sel, fn) => { const el = root.querySelector(sel); if (el) el.onclick = fn; };
   if (params[0] === 'pointages') {
     const upd = () => { location.hash = `#/rh/pointages?user=${root.querySelector('#fu').value}&chantier=${root.querySelector('#fa').value}&semaine=${root.querySelector('#fw').value}`; };

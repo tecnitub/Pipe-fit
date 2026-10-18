@@ -91,7 +91,7 @@ function planningEquipes(query) {
   <div class="table-wrap"><table class="pl-grid"><tr><th>Personne</th>${jours.map(d => `<th class="${d === today ? 'today' : ''}">${JOURS_COURTS[jourDe(d).getDay() - 1]} ${jourDe(d).getDate()}</th>`).join('')}<th class="num">Semaine</th></tr>
     ${personnes.map(u => {
       const hp = sumBy(jours, d => bilanJour(u.id, d).hp), hr = sumBy(jours, d => bilanJour(u.id, d).hr);
-      return `<tr class="${u.chefId && chefs.has(u.chefId) ? 'pl-membre' : ''}"><td><strong>${esc(u.nom)}</strong>${chefs.has(u.id) ? ' <span class="badge b-info">Chef d\'équipe</span>' : ''} ${interimBadge(u)}<br><span class="muted small">${esc(moOf(u.categorieId).libelle || '')}</span></td>
+      return `<tr class="${u.chefId && chefs.has(u.chefId) ? 'pl-membre' : ''}"><td><strong>${esc(u.nom)}</strong>${signalHabilitation(u.id)}${chefs.has(u.id) ? ' <span class="badge b-info">Chef d\'équipe</span>' : ''} ${interimBadge(u)}<br><span class="muted small">${esc(moOf(u.categorieId).libelle || '')}</span></td>
         ${jours.map(d => cellule(u, d)).join('')}<td class="num"><strong>${fmt(hp, 1)} h</strong><br><span class="muted small">pointé ${fmt(hr, 1)} h</span></td></tr>`;
     }).join('')}</table></div>
   <h2>Chantiers cette semaine</h2>
@@ -132,7 +132,7 @@ function editerJour(userId, date) {
     <div class="field"><label>Consigne pour l'équipe (lieu de RDV, accès, matériel…)</label><input data-k="note" value="${esc(p.note || '')}"></div>
     <button class="small danger" data-retirer="${i}" type="button">Retirer</button></div>`;
   const abs = absenceJour(userId, date);
-  const box = Modal.open(`<h2 style="margin-top:0">${esc(u.nom)} · ${esc(jourLong(date))}</h2>
+  const box = Modal.open(`<h2 style="margin-top:0">${esc(u.nom)}${signalHabilitation(u.id)} · ${esc(jourLong(date))}</h2>${alertesHabPlanning(u.id)}
     <div class="seg" role="group" aria-label="Type de journée" style="margin-bottom:10px"><button type="button" data-type="chantier" class="${abs ? '' : 'on'}">🏗️ Sur chantier</button><button type="button" data-type="absence" class="${abs ? 'on' : ''}">🏖️ Absence</button></div>
     <div data-pane="absence" ${abs ? '' : 'hidden'}><div class="chips">${MOTIFS_ABSENCE.map((m, i) => `<label class="chip"><input type="radio" name="pl-motif" value="${esc(m)}" ${(abs ? abs.absence === m : !i) ? 'checked' : ''}><span>${iconeAbsence(m)} ${esc(m)}</span></label>`).join('')}</div></div>
     <div data-pane="chantier" ${abs ? 'hidden' : ''}>

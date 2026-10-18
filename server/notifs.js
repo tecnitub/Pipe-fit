@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const Push = require('./push');
 const NotifPlanning = require('../public/js/notif-planning');
 const Compagnon = require('../public/js/compagnon');
+const Echeances = require('../public/js/echeances');
 
 const DELAI = () => Math.max(0, parseInt(process.env.NOTIF_DELAI_MS || '20000', 10));
 const CONSERVATION_JOURS = 60;
@@ -115,10 +116,51 @@ function creer({ DB, db, broadcast }) {
     await Push.envoyer(DB, db, comptes.map(c => c.id), m, doc.email ? `mailto:${doc.email}` : undefined).catch(e => console.error('Notification :', e.message));
   }
 
+  /* ---------- Échéances : habilitations, visites médicales, contrôles du parc ---------- */
+  // Chaque alerte part une fois à « bientôt » (60 j, 30 j pour le parc) et une fois à l'expiration :
+  // un résumé pour le bureau, et un message à la personne concernée (ou à son chef d'équipe).
+  async function echeances() {
+    const auj = aujourdhui(), lu = db.prepare("SELECT value FROM config WHERE key = 'alertes-echeances'").get();
+    const deja = lu ? JSON.parse(lu.value) : {}, nouvelles = [];
+    tous('habilitations').forEach(h => Echeances.alertesPersonne([h], auj).forEach(a => {
+      const cle = `h:${h.id}:${h.expire}:${a.etat}`;
+      if (!deja[cle]) nouvelles.push({ cle, type: 'hab', userId: h.userId, texte: `${a.libelle} : ${Echeances.texte(a)}`, etat: a.etat });
+    }));
+    tous('materiels').filter(m => !m.archive).forEach(m => Echeances.alertesMateriel(m, auj).forEach(a => {
+      const cle = `m:${m.id}:${a.cle}:${a.expire}:${a.etat}`;
+      if (!deja[cle]) nouvelles.push({ cle, type: 'parc', userId: m.affectation && m.affectation.userId, texte: `${m.designation}${m.immat ? ` (${m.immat})` : ''} – ${a.libelle} : ${Echeances.texte(a)}`, etat: a.etat });
+    }));
+    if (!nouvelles.length) return 0;
+    purger();
+    const doc = (DB.getSettings(db).doc || {}), sujet = doc.email ? `mailto:${doc.email}` : undefined;
+    // Bureau : un résumé
+    const bureau = db.prepare("SELECT id, user_id FROM accounts WHERE role IN ('admin', 'charge')").all();
+    const nh = nouvelles.filter(n => n.type === 'hab'), np = nouvelles.filter(n => n.type === 'parc');
+    const titre = `⏰ Échéances : ${[nh.length && `${nh.length} habilitation(s) / visite(s) médicale(s)`, np.length && `${np.length} contrôle(s) du parc`].filter(Boolean).join(', ')}`;
+    const texte = nouvelles.map(n => `${n.type === 'hab' ? `${(lire('users', n.userId) || {}).nom || ''} : ` : ''}${n.texte}`).join('\n');
+    const lien = nh.length ? '#/rh/habilitations' : '#/parc';
+    [...new Set(bureau.map(c => c.user_id).filter(Boolean))].forEach(uid => enregistrer({ type: 'echeance', userId: uid, titre, texte, lien, date: new Date().toISOString(), lu: false }));
+    await Push.envoyer(DB, db, bureau.map(c => c.id), { titre, texte, lien, tag: 'echeances' }, sujet).catch(e => console.error('Notification :', e.message));
+    // Personnes concernées (compagnon, ou son chef d'équipe s'il n'a pas de compte)
+    const parPersonne = new Map();
+    nouvelles.filter(n => n.userId).forEach(n => { if (!parPersonne.has(n.userId)) parPersonne.set(n.userId, []); parPersonne.get(n.userId).push(n); });
+    for (const [uid, l] of parPersonne) {
+      let dest = comptesDe(uid), pour = uid;
+      if (!dest.length) { const u = lire('users', uid); if (u && u.chefId) { dest = comptesDe(u.chefId); pour = u.chefId; } }
+      if (!dest.length || bureau.some(c => c.user_id === pour)) continue;
+      const m = { titre: l.some(n => n.etat === 'expire') ? '⛔ Habilitation ou contrôle expiré' : '⚠ À renouveler bientôt', texte: l.map(n => n.texte).join('\n'), lien: '#/pointage/chantiers', tag: 'echeances' };
+      enregistrer({ type: 'echeance', userId: pour, titre: m.titre, texte: m.texte, lien: m.lien, date: new Date().toISOString(), lu: false });
+      await Push.envoyer(DB, db, dest.map(c => c.id), m, sujet).catch(e => console.error('Notification :', e.message));
+    }
+    nouvelles.forEach(n => { deja[n.cle] = auj; });
+    db.prepare("INSERT INTO config (key, value) VALUES ('alertes-echeances', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(deja));
+    return nouvelles.length;
+  }
+
   // Pour les tests et l'arrêt du serveur : envoie tout de suite ce qui attend
   const vider = () => Promise.all([...attente.keys()].map(u => { clearTimeout(attente.get(u).timer); return envoyer(u); }));
 
-  return { planningModifie, documentsModifies, horsDevisOuvert, vider, enregistrer };
+  return { planningModifie, documentsModifies, horsDevisOuvert, echeances, vider, enregistrer };
 }
 
 module.exports = { creer };

@@ -235,6 +235,35 @@ se notent (📞) ; tout l'historique apparaît sur la facture et sur la fiche cl
 Retenues de garantie : date de libération (réception + 1 an), demande de libération par e-mail avec le récapitulatif
 des retenues, puis « Libérée ».
 
+## Habilitations, visites médicales, parc
+
+**RH → Habilitations** : tableau personne × habilitation (visite médicale, QMOS soudeur, fluides frigorigènes,
+électrique, CACES nacelle et chariot, travail en hauteur, SST, AIPR, amiante SS4, ATEX) avec date d'obtention, date
+d'expiration (proposée selon la validité usuelle), niveau et justificatif photo ou PDF. Vert / orange (moins de 60 jours) /
+rouge (expirée). Le planning signale ⚠ / ⛔ les personnes concernées.
+
+**Parc** : véhicules et outillage (nacelles, postes à souder, appareils de mesure, échafaudages, station fluides…),
+affectation à une personne ou à un chantier avec historique, kilométrage, contrôles périodiques proposés selon la
+catégorie (contrôle technique, entretien, assurance, VGP, étalonnage, vérification électrique), bouton « ✓ Fait ».
+Les compagnons voient leurs habilitations et le matériel qui leur est confié dans l'appli (onglet Chantiers).
+
+Le serveur vérifie les échéances toutes les 6 heures : un résumé au bureau, un message à la personne concernée (ou à
+son chef d'équipe), une fois 60 jours avant (30 jours pour le parc) puis une fois à l'expiration. Rappel sur le tableau de bord.
+
+## Trésorerie prévisionnelle et tableau de bord par chargé d'affaires
+
+**Facturation → Trésorerie** : solde de fin de semaine sur 13 semaines à partir du solde bancaire saisi. Encaissements :
+factures clients non soldées (retards supposés encaissés sous 2 semaines, désactivable), situations proposées ou
+acceptées non facturées, retenues de garantie libérables. Décaissements : factures fournisseurs à payer, commandes pas
+encore facturées (délai fournisseurs réglable), salaires chargés (estimés depuis l'équipe ou saisis), notes de frais
+validées, charges fixes mensuelles. Courbe avec les semaines négatives, détail de chaque semaine avec lien vers la pièce.
+
+**Tableau de bord → Par chargé d'affaires** (« Mon tableau de bord » pour un chargé) : comparatif (chantiers en cours,
+carnet, facturé de l'année, marge à terminaison, devis en attente, transformation sur 12 mois, retards de paiement),
+puis pour chacun : ce qu'il a à faire (relances, devis à relancer après 15 jours, situations en attente, interventions
+à facturer ou à compléter, pointages et notes de frais à valider, commandes en brouillon, réserves) et ses chantiers qui
+dérapent (heures, fournitures, marge à terminaison inférieure de 3 points à la marge prévue).
+
 ## Structure
 
 ```
