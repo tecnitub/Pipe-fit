@@ -157,8 +157,10 @@ Le PDF Factur-X contient le XML joint mais n'est pas certifié PDF/A-3 : si votr
 4. **Pointage mobile** des opérateurs (arrivée / départ par chantier et tâche, pause, panier repas).
    « Ma semaine » montre chaque jour de la semaine en cours (prévu, pointé, oubli signalé) : le compagnon pointe un jour
    oublié ou corrige un pointage non validé ; les semaines passées ne se corrigent qu'au bureau (règle du serveur).
-   Sans planning, il pointe sur une intervention hors devis ou en ouvre une depuis son téléphone (objet, client, lieu,
-   demande) : le bureau est prévenu et complète le dossier (client, chargé d'affaires) avant de facturer.
+   Sans planning, il pointe sur une intervention hors devis ou en ouvre une depuis son téléphone : objet, client,
+   contact client (choisi parmi les contacts connus ou saisi avec son téléphone), nom du site (sites du client ou saisi),
+   précision du lieu, demande. Le bureau est prévenu ; un client, un contact ou un site saisi à la main se crée en un clic
+   dans les contacts depuis la fiche de l'intervention, puis le bureau désigne le chargé d'affaires et facture.
    Le matériel d'une intervention hors devis se choisit en plein écran : recherche, familles et sous-familles en
    pastilles, « déjà utilisé ici », quantités + / −, matériel hors bibliothèque (même écran au bureau, avec les prix).
    **Dictée d'une liste de matériel** (« 🎤 Dicter », dans le devis, le rapport d'intervention et la fiche hors devis) :

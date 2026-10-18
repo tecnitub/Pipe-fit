@@ -29,7 +29,7 @@ const ReglesPointage = (() => {
   }
 
   // Intervention hors devis ouverte par un compagnon : création seulement, champs limités, à compléter par le bureau
-  const CHAMPS_HD = ['nom', 'clientId', 'clientLibre', 'siteId', 'lieu', 'demande'];
+  const CHAMPS_HD = ['nom', 'clientId', 'clientLibre', 'contactId', 'contactLibre', 'contactTel', 'siteId', 'siteLibre', 'lieu', 'demande'];
   function horsDevisCompagnon(obj, existing, userId, auj) {
     if (existing) return { refus: 'Seul le bureau peut modifier un chantier ou une intervention' };
     if (!obj || obj.type !== 'horsDevis') return { refus: 'Seul le bureau peut créer un chantier' };

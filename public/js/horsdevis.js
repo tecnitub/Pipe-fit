@@ -12,8 +12,8 @@ const statutHD = a => (a.statut === 'Ouvert' && bonSigne(a) ? 'Terminé' : a.sta
 const hdFields = [
   { key: 'nom', label: "Objet de l'intervention (ex. machine à papier PM2 – collecteur de purge)" },
   { key: 'clientId', label: 'Client', type: 'select', options: v => options(clientsList(), v) },
-  { key: 'contactId', label: 'Demandeur (contact client)', type: 'select', dynamic: true, options: (v, o) => contactOptions(o.clientId, v) },
-  { key: 'siteId', label: "Site d'intervention", type: 'select', dynamic: true, options: (v, o) => siteOptions(o.clientId, v) },
+  { key: 'contactId', label: 'Contact client (demandeur)', type: 'select', dynamic: true, options: (v, o) => contactOptions(o.clientId, v) },
+  { key: 'siteId', label: 'Nom du site', type: 'select', dynamic: true, options: (v, o) => siteOptions(o.clientId, v) },
   { key: 'chargeId', label: "Chargé d'affaires", type: 'select', options: v => options(charges(), v) },
   { key: 'statut', label: 'Statut', type: 'select', options: v => optionsStr(STATUTS_HD, v || 'Ouvert') },
   { key: 'refCommande', label: 'N° de commande du client' },
@@ -68,8 +68,12 @@ function horsDevisView(a) {
     ${st === 'Facturé' ? '<button class="secondary" id="hd-clore">Clore</button>' : ''}
     ${a.archive ? '' : `<button class="secondary" data-archiver="affaires|${a.id}">Archiver</button>`}</div>
   <h1>${esc(affaireLabel(a))} <span class="badge b-warn">Hors devis</span> ${badge(st)}</h1>${chantierOnglets(a, 'apercu')}${bandeauArchive(a, 'affaires')}
-  ${aCompleterHD(a) ? `<p class="note warn-note">🛠️ Ouverte sur le téléphone par ${esc(userName(a.ouvertePar))} le ${dateFr(a.dateCreation)}${a.clientLibre ? ` · client indiqué : <strong>${esc(a.clientLibre)}</strong>` : ''}${a.lieu ? ` · lieu : ${esc(a.lieu)}` : ''}. À compléter : ${[!a.clientId && 'client', !a.chargeId && 'chargé d\'affaires'].filter(Boolean).join(', ')} (bouton Modifier).</p>` : ''}
-  <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${a.clientId}">${esc(clientName(a.clientId))}</a>` : a.clientLibre ? `${esc(a.clientLibre)} <span class="badge b-warn">à rattacher</span>` : '—'}${a.lieu ? ` · ${esc(a.lieu)}` : ''}
+  ${aCompleterHD(a) || a.clientLibre || a.contactLibre || a.siteLibre ? `<div class="note warn-note">${a.ouvertePar ? `🛠️ Ouverte sur le téléphone par ${esc(userName(a.ouvertePar))} le ${dateFr(a.dateCreation)}.` : ''}
+    ${a.clientLibre ? `<br>Client indiqué : <strong>${esc(a.clientLibre)}</strong> <button class="small" data-hd-creer="client">Créer ce client</button> ou le choisir avec « Modifier »` : ''}
+    ${a.contactLibre ? `<br>Contact indiqué : <strong>${esc(a.contactLibre)}</strong>${a.contactTel ? ` (${esc(a.contactTel)})` : ''} ${a.clientId ? '<button class="small" data-hd-creer="contact">Ajouter au client</button>' : '<span class="small">(créez d\'abord le client)</span>'}` : ''}
+    ${a.siteLibre ? `<br>Site indiqué : <strong>${esc(a.siteLibre)}</strong> ${a.clientId ? '<button class="small" data-hd-creer="site">Ajouter au client</button>' : '<span class="small">(créez d\'abord le client)</span>'}` : ''}
+    ${!a.chargeId ? '<br>Chargé d\'affaires à désigner (bouton Modifier).' : ''}</div>` : ''}
+  <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${a.clientId}">${esc(clientName(a.clientId))}</a>` : a.clientLibre ? `${esc(a.clientLibre)} <span class="badge b-warn">à rattacher</span>` : '—'}${!a.contactId && a.contactLibre ? ` · Contact : ${esc(a.contactLibre)}${a.contactTel ? ` (${esc(a.contactTel)})` : ''}` : ''}${!a.siteId && a.siteLibre ? ` · Site : ${esc(a.siteLibre)}` : ''}${a.lieu ? ` · ${esc(a.lieu)}` : ''}
     ${a.contactId ? ` · Demandeur : ${esc(contactName(Store.get('contacts', a.contactId)))}` : ''}${a.siteId ? ` · ${esc(siteLabel(siteOf(a.clientId, a.siteId)))}` : ''}
     · Chargé d'affaires : ${esc(userName(a.chargeId))} · ouvert le ${dateFr(a.dateCreation)}${a.refCommande ? ` · <strong>commande client n° ${esc(a.refCommande)}</strong>` : ''}</p>
   ${envoisHtml('affaires', a.id)}
@@ -146,6 +150,23 @@ function bindHorsDevis(root, a) {
     location.hash = `#/facture/${f.id}`;
   });
   on('#hd-clore', () => { a.statut = 'Clos'; Store.upsert('affaires', a); App.render(); });
+  // Client, contact ou site saisis sur le téléphone : créés en un clic dans les contacts
+  root.querySelectorAll('[data-hd-creer]').forEach(b => b.onclick = async () => {
+    const quoi = b.dataset.hdCreer;
+    if (quoi === 'client') {
+      const e = Store.upsert('entreprises', { nom: a.clientLibre, categorie: 'Client', adresses: a.siteLibre ? [{ id: uid(), libelle: a.siteLibre, adresse: '', cp: '', ville: '', facturation: true }] : [] });
+      Object.assign(a, { clientId: e.id, clientLibre: '', ...(a.siteLibre ? { siteId: e.adresses[0].id, siteLibre: '' } : {}) });
+    } else if (quoi === 'contact') {
+      const k = Store.upsert('contacts', { entrepriseId: a.clientId, nom: a.contactLibre, mobile: a.contactTel || '' });
+      Object.assign(a, { contactId: k.id, contactLibre: '', contactTel: '' });
+    } else if (quoi === 'site') {
+      const e = { ...entreprise(a.clientId) }, sid = uid();
+      e.adresses = [...(e.adresses || []), { id: sid, libelle: a.siteLibre, adresse: '', cp: '', ville: '', facturation: !(e.adresses || []).length }];
+      Store.upsert('entreprises', e);
+      Object.assign(a, { siteId: sid, siteLibre: '' });
+    }
+    Store.upsert('affaires', a); App.render(); App.toast(quoi === 'client' ? 'Client créé : complétez sa fiche (adresse, SIRET…)' : quoi === 'contact' ? 'Contact ajouté au client' : 'Site ajouté au client');
+  });
   on('#hd-dicter', async () => {
     const choix = await dicterMateriel({ titre: `Dicter du matériel · ${a.code || ''}`, prix: true, cible: 'au matériel à facturer de l\'intervention' });
     choix.forEach(m => Store.upsert('consommations', { articleId: m.articleId, designation: m.designation, unite: m.unite, qte: m.qte, pu: m.pu, cout: m.cout, affaireId: a.id, date: isoDate(new Date()), userId: Store.me.userId || '' }));

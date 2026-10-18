@@ -776,3 +776,4 @@ table.registre tr.incomplet td:first-child { box-shadow: inset 3px 0 0 var(--war
 fieldset.mi-titre { border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; margin: 8px 0; }
 fieldset.mi-titre[hidden] { display: none; }
 .registre-doc th, .registre-doc td { font-size: 8pt; vertical-align: top; }
+.hd-bloc { border: 1px solid var(--border); border-radius: 6px; padding: 4px 12px 2px; margin: 8px 0; min-width: 0; } .hd-bloc legend { font-weight: 600; padding: 0 4px; } .hd-bloc [hidden] { display: none; }

@@ -73,19 +73,50 @@ function nouvelleHDCompagnon(fait) {
     <p class="muted small">Dépannage ou travaux demandés sur place, sans planning ni devis. Le bureau complète ensuite le dossier.</p>
     <div class="field"><label for="hd-nom">Objet de l'intervention</label><input id="hd-nom" placeholder="Ex. fuite vapeur ligne 3, remplacement vanne DN80…"></div>
     <div class="field"><label for="hd-client">Client</label><select id="hd-client"><option value="">${clients.length ? 'Choisir…' : '—'}</option>${clients.map(c => `<option value="${c.id}">${esc(c.nom)}</option>`).join('')}<option value="autre">Autre / pas dans la liste</option></select></div>
-    <div class="field" id="hd-libre-f" ${clients.length ? 'hidden' : ''}><label for="hd-libre">Nom du client</label><input id="hd-libre" placeholder="Société et nom du demandeur"></div>
-    <div class="field"><label for="hd-lieu">Lieu (site, bâtiment, machine)</label><input id="hd-lieu"></div>
+    <div class="field" id="hd-libre-f" ${clients.length ? 'hidden' : ''}><label for="hd-libre">Nom du client (société)</label><input id="hd-libre" placeholder="Ex. Papeterie du Rhône"></div>
+    <fieldset class="hd-bloc"><legend>Contact client</legend>
+      <div class="field" id="hd-contact-f" hidden><select id="hd-contact" aria-label="Contact client"></select></div>
+      <div class="grid2" id="hd-contact-libre">
+        <div class="field"><label for="hd-cnom">Nom du contact</label><input id="hd-cnom" placeholder="Ex. M. Durand, chef d'atelier" autocomplete="off"></div>
+        <div class="field"><label for="hd-ctel">Téléphone</label><input id="hd-ctel" type="tel" inputmode="tel" autocomplete="off"></div>
+      </div></fieldset>
+    <fieldset class="hd-bloc"><legend>Site</legend>
+      <div class="field" id="hd-site-f" hidden><select id="hd-site" aria-label="Site"></select></div>
+      <div class="field" id="hd-site-libre"><label for="hd-snom">Nom du site</label><input id="hd-snom" placeholder="Ex. Usine de Rumilly, Site de Fos" autocomplete="off"></div>
+      <div class="field"><label for="hd-lieu">Précision (bâtiment, local, machine)</label><input id="hd-lieu" placeholder="Ex. bâtiment B, chaufferie, PM2"></div></fieldset>
     <div class="field"><label for="hd-demande">Demande du client</label><textarea data-dictee id="hd-demande" rows="3" placeholder="Ce qui a été demandé, par qui"></textarea></div>
     <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="hd-x">Annuler</button><button id="hd-ok">Ouvrir l'intervention</button></div>`);
   const $ = s => box.querySelector(s);
-  $('#hd-client').onchange = () => { $('#hd-libre-f').hidden = $('#hd-client').value !== 'autre' && clients.length > 0; };
+  // Contacts et sites du client choisi ; « Autre » ou client hors liste : saisie libre
+  const majClient = () => {
+    const cid = $('#hd-client').value, connu = cid && cid !== 'autre';
+    $('#hd-libre-f').hidden = $('#hd-client').value !== 'autre' && clients.length > 0;
+    const contacts = connu ? contactsOf(cid) : [], sites = connu ? (entreprise(cid).adresses || []) : [];
+    $('#hd-contact').innerHTML = `<option value="">Choisir…</option>${contacts.map(c => `<option value="${c.id}">${esc(contactName(c))}${c.fonction ? ` · ${esc(c.fonction)}` : ''}</option>`).join('')}<option value="autre">Autre contact</option>`;
+    $('#hd-site').innerHTML = `${sites.map(x => `<option value="${x.id}">${esc(x.libelle || x.ville || '')}${x.ville && x.libelle ? ` · ${esc(x.ville)}` : ''}</option>`).join('')}<option value="autre">Autre site</option>`;
+    $('#hd-contact-f').hidden = !contacts.length; $('#hd-site-f').hidden = !sites.length;
+    majLibres();
+  };
+  const majLibres = () => {
+    $('#hd-contact-libre').hidden = !$('#hd-contact-f').hidden && $('#hd-contact').value !== 'autre';
+    $('#hd-site-libre').hidden = !$('#hd-site-f').hidden && $('#hd-site').value !== 'autre';
+  };
+  $('#hd-client').onchange = majClient;
+  $('#hd-contact').onchange = majLibres; $('#hd-site').onchange = majLibres;
+  majClient();
   $('#hd-x').onclick = Modal.close;
   $('#hd-ok').onclick = async () => {
-    const client = $('#hd-client').value;
-    const o = { type: 'horsDevis', code: '', statut: 'Ouvert', nom: $('#hd-nom').value.trim(), clientId: client && client !== 'autre' ? client : '', clientLibre: client && client !== 'autre' ? '' : $('#hd-libre').value.trim(),
+    const client = $('#hd-client').value, connu = client && client !== 'autre';
+    const contact = $('#hd-contact-f').hidden ? '' : $('#hd-contact').value, site = $('#hd-site-f').hidden ? '' : $('#hd-site').value;
+    const contactLibre = !contact || contact === 'autre', siteLibre = !site || site === 'autre';
+    const o = { type: 'horsDevis', code: '', statut: 'Ouvert', nom: $('#hd-nom').value.trim(), clientId: connu ? client : '', clientLibre: connu ? '' : $('#hd-libre').value.trim(),
+      contactId: contactLibre ? '' : contact, contactLibre: contactLibre ? $('#hd-cnom').value.trim() : '', contactTel: contactLibre ? $('#hd-ctel').value.trim() : '',
+      siteId: siteLibre ? '' : site, siteLibre: siteLibre ? $('#hd-snom').value.trim() : '',
       lieu: $('#hd-lieu').value.trim(), demande: $('#hd-demande').value.trim(), dateCreation: isoDate(new Date()), heuresPrevues: 0, rex: {} };
     if (!o.nom) return notify('Indiquez l\'objet de l\'intervention.');
     if (!o.clientId && !o.clientLibre) return notify('Indiquez le client.');
+    if (!o.contactId && !o.contactLibre && !(await ask('Aucun contact client indiqué (la personne qui a demandé l\'intervention). Ouvrir quand même ?', 'Ouvrir', false))) return;
+    if (!o.siteId && !o.siteLibre) return notify('Indiquez le nom du site.');
     if (Store.me.role !== 'atelier') o.chargeId = Store.me.userId || '';
     const a = Store.upsert('affaires', o);
     $('#hd-ok').disabled = true;
