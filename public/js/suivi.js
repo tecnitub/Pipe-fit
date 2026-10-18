@@ -54,7 +54,7 @@ function rapportsView(u) {
       ${hd ? `<fieldset class="materiel"><legend>Matériel utilisé (à facturer)</legend>
         ${af.demande ? `<p class="muted small pre">Demande : ${esc(af.demande)}</p>` : ''}
         <ul class="mat-list">${b.materiel.map((m, i) => `<li><span>${esc(m.designation)}</span><input class="mat-q" data-matq="${i}" value="${esc(String(m.qte).replace('.', ','))}" inputmode="decimal" aria-label="Quantité"><span class="small">${esc(m.unite)}</span><button class="icon" data-rmmat="${i}" aria-label="Retirer">✕</button></li>`).join('') || '<li class="muted small">Aucun matériel ajouté pour ce rapport.</li>'}</ul>
-        <button class="big secondary" id="r-mat-choisir">📦 ${b.materiel.length ? 'Ajouter du matériel' : 'Choisir le matériel utilisé'}</button>
+        <div class="mat-boutons"><button class="big secondary" id="r-mat-choisir">📦 ${b.materiel.length ? 'Ajouter du matériel' : 'Choisir le matériel'}</button><button class="big secondary" id="r-mat-dicter">🎤 Dicter</button></div>
         <p class="muted small">Déjà sur cette intervention : ${fmt(v.heures, 2)} h pointées, ${v.consos.length} ligne(s) de matériel.</p></fieldset>` : ''}
       <div class="photos-grid">${b.photos.map((p, i) => `<div class="ph"><img src="${p}" alt="Photo ${i + 1}"><button class="icon" data-rmph="${i}" aria-label="Retirer la photo">✕</button></div>`).join('')}
         <label class="ph add" for="r-photo"><span aria-hidden="true">📷</span><span class="small">Ajouter une photo</span><input id="r-photo" type="file" accept="image/*" capture="environment" multiple hidden></label></div>
@@ -100,6 +100,9 @@ function bindRapports(root, uid) {
   initPad();
   root.querySelector('#r-pad-clear').onclick = () => { if (pad) pad.effacer(); b.signature = null; root.querySelector('#r-send').textContent = 'Envoyer le rapport'; };
   // Matériel (interventions hors devis)
+  const ajouterMat = choix => { choix.forEach(m => { const x = m.articleId && b.materiel.find(y => y.articleId === m.articleId); if (x) x.qte = num(x.qte) + num(m.qte); else b.materiel.push(m); }); if (choix.length) App.render(); };
+  const dicter = root.querySelector('#r-mat-dicter');
+  if (dicter) dicter.onclick = async () => { garder(); ajouterMat(await dicterMateriel({ titre: `Dicter le matériel · ${affaireOf(b.affaireId).code || ''}` })); };
   const choisir = root.querySelector('#r-mat-choisir');
   if (choisir) choisir.onclick = async () => {
     garder();

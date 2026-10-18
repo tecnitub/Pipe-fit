@@ -161,6 +161,11 @@ Le PDF Factur-X contient le XML joint mais n'est pas certifié PDF/A-3 : si votr
    demande) : le bureau est prévenu et complète le dossier (client, chargé d'affaires) avant de facturer.
    Le matériel d'une intervention hors devis se choisit en plein écran : recherche, familles et sous-familles en
    pastilles, « déjà utilisé ici », quantités + / −, matériel hors bibliothèque (même écran au bureau, avec les prix).
+   **Dictée d'une liste de matériel** (« 🎤 Dicter », dans le devis, le rapport d'intervention et la fiche hors devis) :
+   « 3 coudes de 50, 2 brides DN100 et 12 mètres de tube inox 50 » donne une ligne par article, rapprochée de la
+   bibliothèque (trouvé / à choisir / hors bibliothèque), à vérifier avant l'ajout. Quantités en chiffres ou en lettres,
+   unités (mètres, pièces, kg…), DN dit « de 50 » ou « DN 50 », pouces convertis en DN. Reconnaissance vocale du
+   navigateur (Chrome, Edge, Safari) ou micro du clavier du téléphone.
    Un **chef d'équipe** pointe en une fois les compagnons et **intérimaires** sous ses ordres (filtre « intérimaires »).
    Le coût réel de main-d'œuvre = heures pointées × coût horaire de chaque personne (taux agence pour les intérimaires).
    **Notes de frais** : photo du ticket prise avec le téléphone (raccourci « Note de frais » de l'appli),

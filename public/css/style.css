@@ -701,3 +701,27 @@ body.selecteur-ouvert { overflow: hidden; }
 .arbre nav { display: block; }
 .sel-barre[hidden] { display: none; }
 table.articles td:nth-child(2) { white-space: nowrap; }
+
+/* Dictée d'une liste de matériel */
+.dc-zone textarea { font-size: 17px; }
+.dc-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.dc-actions button.big { flex: 1 1 200px; width: auto; }
+.dc-ligne { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-top: 8px; display: grid; gap: 6px; }
+.dc-ligne.trouve { border-left: 4px solid var(--ok); }
+.dc-ligne.choix { border-left: 4px solid var(--warn); }
+.dc-ligne.absent { border-left: 4px solid var(--border); }
+.dc-tete { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; align-items: center; gap: 6px 8px; }
+.dc-q { width: 70px; text-align: center; font-weight: 700; font-size: 16px; }
+.dc-dit { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 600px) {
+  .dc-tete { grid-template-columns: auto auto 1fr auto; }
+  .dc-dit { grid-column: 1 / -1; grid-row: 2; white-space: normal; }
+  .dc-choix input { flex: 1 1 100%; }
+}
+.dc-choix { display: flex; gap: 6px; flex-wrap: wrap; }
+.dc-choix select { flex: 1 1 260px; min-width: 0; }
+.dc-choix input { flex: 0 1 160px; min-width: 100px; }
+.mat-boutons { display: flex; gap: 8px; }
+.mat-boutons button.big { flex: 1; width: auto; }
+.dc-tete .badge { justify-self: start; }
+@media (max-width: 600px) { .dc-choix input { flex: 1 1 100%; } }

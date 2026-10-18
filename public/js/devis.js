@@ -309,6 +309,7 @@ function devisEditor(id) {
     <button id="add-ouv">+ Ouvrage</button>
     <button class="secondary" id="add-libre" title="Fournitures et main-d'œuvre propres à ce devis, sans rien enregistrer dans les bibliothèques">+ Poste libre</button>
     ${Store.all('ouvrages').length ? '<button class="secondary" id="add-type">+ Ouvrage type</button>' : ''}
+    <button class="secondary" id="add-dictee" title="Dicter ou taper une liste de matériel : les articles de la bibliothèque sont reconnus">🎤 Dicter du matériel</button>
     <button class="secondary" id="add-texte">+ Texte</button>
     <button class="secondary" id="add-image">+ Image</button>
     <input type="file" id="img-file" accept="image/*" hidden>
@@ -411,6 +412,14 @@ Views.devis.bind = (root, params, query) => {
   on('#add-ouv', 'onclick', () => openOuvrage(d, null));
   on('#add-libre', 'onclick', () => openOuvrage(d, null, { libre: true }));
   on('#add-type', 'onclick', () => choisirOuvrageType(d));
+  // Liste de matériel dictée : un ouvrage par article (bibliothèque, ou poste libre à chiffrer)
+  on('#add-dictee', 'onclick', async () => {
+    const choix = await dicterMateriel({ titre: 'Dicter du matériel', prix: true, cible: 'à la fin du devis, une ligne par article' });
+    choix.forEach(m => d.lignes.push(m.articleId
+      ? { type: 'ouvrage', designation: m.designation, unite: m.unite, qte: m.qte, composants: [{ type: 'f', articleId: m.articleId, designation: m.designation, unite: m.unite, qte: 1, pu: m.pu, cout: m.cout, poids: m.poids }] }
+      : { type: 'ouvrage', libre: true, designation: m.designation, unite: m.unite, qte: m.qte, composants: [{ type: 'f', articleId: '', designation: m.designation, unite: m.unite, qte: 1, pu: 0, cout: 0 }] }));
+    if (choix.length) { save(); const libres = choix.filter(m => !m.articleId).length; App.toast(`${choix.length} ligne(s) ajoutée(s)${libres ? ` dont ${libres} à chiffrer (hors bibliothèque)` : ''}`, 4000); }
+  });
   on('#add-texte', 'onclick', () => { d.lignes.push({ type: 'texte', texte: '' }); save(); const t = [...root.querySelectorAll('[data-texte]')].pop(); if (t) t.focus(); });
   const fichier = root.querySelector('#img-file');
   let cibleImage = null;
