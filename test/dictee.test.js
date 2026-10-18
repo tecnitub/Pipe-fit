@@ -29,3 +29,9 @@ test('rapprochement avec la bibliothèque', () => {
   const r = D.rapprocher(D.analyser('coude soudé inox 50')[0], articles);
   assert.deepStrictEqual([r.statut, r.article.ref], ['choix', 'COU-316-050']);
 });
+
+test('texte libre dicté : ponctuation et majuscules', () => {
+  assert.strictEqual(D.ponctuer('pose de 40 mètres de DN50 virgule soudure de 18 joints point essais OK à la ligne reste le calorifuge point'),
+    'Pose de 40 mètres de DN50, soudure de 18 joints. Essais OK.\nReste le calorifuge.');
+  assert.strictEqual(D.ponctuer('contrôle au point de soudure numéro 3 point d\'interrogation'), 'Contrôle au point de soudure numéro 3 ?');
+});

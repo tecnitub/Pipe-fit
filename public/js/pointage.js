@@ -75,7 +75,7 @@ function nouvelleHDCompagnon(fait) {
     <div class="field"><label for="hd-client">Client</label><select id="hd-client"><option value="">${clients.length ? 'Choisir…' : '—'}</option>${clients.map(c => `<option value="${c.id}">${esc(c.nom)}</option>`).join('')}<option value="autre">Autre / pas dans la liste</option></select></div>
     <div class="field" id="hd-libre-f" ${clients.length ? 'hidden' : ''}><label for="hd-libre">Nom du client</label><input id="hd-libre" placeholder="Société et nom du demandeur"></div>
     <div class="field"><label for="hd-lieu">Lieu (site, bâtiment, machine)</label><input id="hd-lieu"></div>
-    <div class="field"><label for="hd-demande">Demande du client</label><textarea id="hd-demande" rows="3" placeholder="Ce qui a été demandé, par qui"></textarea></div>
+    <div class="field"><label for="hd-demande">Demande du client</label><textarea data-dictee id="hd-demande" rows="3" placeholder="Ce qui a été demandé, par qui"></textarea></div>
     <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="hd-x">Annuler</button><button id="hd-ok">Ouvrir l'intervention</button></div>`);
   const $ = s => box.querySelector(s);
   $('#hd-client').onchange = () => { $('#hd-libre-f').hidden = $('#hd-client').value !== 'autre' && clients.length > 0; };
@@ -95,6 +95,7 @@ function nouvelleHDCompagnon(fait) {
     App.toast(`Intervention ${rec.code || ''} ouverte : le bureau est prévenu`);
     fait(rec);
   };
+  brancherDicteeTexte(box);
   setTimeout(() => $('#hd-nom').focus(), 50);
 }
 

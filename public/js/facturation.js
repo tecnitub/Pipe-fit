@@ -13,6 +13,7 @@ function facturationTabs(active) {
   return `<div class="tabs">
     <a href="#/situations" class="${active === 'situations' ? 'active' : ''}">Situations de travaux ${attente ? `<span class="count">${attente} en attente</span>` : ''}</a>
     <a href="#/factures" class="${active === 'factures' ? 'active' : ''}">Factures et avoirs <span class="count">${Store.all('factures').length}</span></a>
+    <a href="#/relances" class="${active === 'relances' ? 'active' : ''}">Relances ${(() => { const n = nbARelancer(); return n ? `<span class="count">${n} à relancer</span>` : ''; })()}</a>
     <a href="#/compta" class="${active === 'compta' ? 'active' : ''}">Comptabilité ${(() => { const n = Store.all('factures').filter(f => f.numero && !f.exportCompta).length; return n ? `<span class="count">${n} à transmettre</span>` : ''; })()}</a>
   </div>`;
 }

@@ -84,7 +84,7 @@ function commandeEditor(id) {
       <td class="num">${eur(num(l.qte) * num(l.pu))}</td><td><button class="small danger" data-del="${i}" aria-label="Retirer">✕</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Aucune ligne.</td></tr>'}
     <tr class="subtotal"><td colspan="4">Total HT</td><td class="num">${eur(total)}</td><td></td></tr>
   </table></div>
-  <div class="toolbar no-print" style="margin-top:8px">${articleSelect('c-art')}<input id="c-art-q" type="number" step="any" value="1" style="width:90px" aria-label="Quantité"><button class="secondary" id="c-add">Ajouter</button><button class="secondary" id="c-free">Ligne libre</button></div>
+  <div class="toolbar no-print" style="margin-top:8px">${articleSelect('c-art')}<input id="c-art-q" type="number" step="any" value="1" style="width:90px" aria-label="Quantité"><button class="secondary" id="c-add">Ajouter</button><button class="secondary" id="c-free">Ligne libre</button><button class="secondary" id="c-dicter">🎤 Dicter du matériel</button></div>
 
   <details class="no-print preview"><summary>Aperçu du bon de commande</summary><div class="doc-print">${commandeDocument(c)}</div></details>
   <div class="print-only doc-print">${commandeDocument(c)}</div>`;
@@ -120,6 +120,12 @@ Views.commandes.bind = (root, params, query) => {
     c.lignes.push(ligne(a, num(root.querySelector('#c-art-q').value) || 1));
     if (!c.fournisseurId && a.fournisseurId) c.fournisseurId = a.fournisseurId;
     save();
+  };
+  // Liste dictée : prix d'achat de la bibliothèque, prix à demander pour le matériel hors bibliothèque
+  root.querySelector('#c-dicter').onclick = async () => {
+    const choix = await dicterMateriel({ titre: `Dicter la commande ${c.numero || ''}`, cible: 'à la commande, au prix d\'achat de la bibliothèque' });
+    choix.forEach(m => { const a = m.articleId && Store.get('articles', m.articleId); c.lignes.push(a ? ligne(a, m.qte) : { articleId: '', designation: m.designation, unite: m.unite, qte: m.qte, pu: 0 }); if (a && !c.fournisseurId && a.fournisseurId) c.fournisseurId = a.fournisseurId; });
+    if (choix.length) save();
   };
   root.querySelector('#c-free').onclick = () => { c.lignes.push({ designation: 'Fourniture', unite: 'u', qte: 1, pu: 0 }); save(); };
   const rep = root.querySelector('#reprendre');

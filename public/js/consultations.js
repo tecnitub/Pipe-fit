@@ -72,7 +72,7 @@ function consultationEditeur(id) {
     ${lignes.map((l, i) => `<tr data-i="${i}"><td>${i + 1}</td><td><input data-k="designation" value="${esc(l.designation)}" ${ouverte ? '' : 'disabled'}></td><td><input data-k="unite" value="${esc(l.unite || '')}" style="width:70px" ${ouverte ? '' : 'disabled'}></td>
       <td class="num"><input data-k="qte" type="number" step="any" value="${esc(l.qte)}" style="width:90px" ${ouverte ? '' : 'disabled'}></td><td class="num muted">${l.articleId ? eur((Store.get('articles', l.articleId) || {}).coutRevient) : ''}</td>
       <td>${ouverte ? `<button class="small danger" data-ldel="${i}" aria-label="Retirer">✕</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Aucune ligne.</td></tr>'}</table></div>
-  ${ouverte ? `<div class="toolbar">${articleSelect('cs-art')}<input id="cs-q" type="number" step="any" value="1" style="width:80px" aria-label="Quantité"><button class="secondary" id="cs-add">Ajouter</button><button class="secondary" id="cs-libre">Ligne libre</button>
+  ${ouverte ? `<div class="toolbar">${articleSelect('cs-art')}<input id="cs-q" type="number" step="any" value="1" style="width:80px" aria-label="Quantité"><button class="secondary" id="cs-add">Ajouter</button><button class="secondary" id="cs-libre">Ligne libre</button><button class="secondary" id="cs-dicter">🎤 Dicter</button>
     ${sources.length ? `<select id="cs-src" style="width:auto"><option value="">Reprendre…</option>${sources.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}</select>` : ''}</div>` : ''}
 
   <h2>Fournisseurs consultés</h2>
@@ -203,6 +203,11 @@ Views.consultations.bind = (root, params, query) => {
   root.querySelectorAll('.cs-lignes tr[data-i] [data-k]').forEach(el => el.onchange = () => { c.lignes[+el.closest('tr').dataset.i][el.dataset.k] = el.dataset.k === 'qte' ? num(el.value) : el.value; save(false); });
   root.querySelectorAll('[data-ldel]').forEach(b => b.onclick = () => { c.lignes.splice(+b.dataset.ldel, 1); save(); });
   on('#cs-add', () => { const a = Store.get('articles', q('#cs-art').value); if (!a) return; c.lignes.push({ articleId: a.id, designation: a.designation, unite: a.unite, qte: num(q('#cs-q').value) || 1 }); save(); });
+  on('#cs-dicter', async () => {
+    const choix = await dicterMateriel({ titre: 'Dicter les fournitures à consulter', cible: 'à la demande de prix' });
+    choix.forEach(m => c.lignes.push({ articleId: m.articleId, designation: m.designation, unite: m.unite, qte: m.qte }));
+    if (choix.length) save();
+  });
   on('#cs-libre', () => { c.lignes.push({ articleId: '', designation: '', unite: 'u', qte: 1 }); save(); });
   const src = q('#cs-src');
   if (src) src.onchange = () => {

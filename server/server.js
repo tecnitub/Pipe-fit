@@ -393,8 +393,8 @@ async function api(req, res, url) {
         const existing = DB.getRecord(db, col, id);
         if (existing && version !== existing._v) return { conflict: existing };
         let obj = { ...DB.clean(data), id };
-        // Une facture émise n'est plus modifiable, sauf son statut de paiement (admin excepté).
-        if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...DB.clean(existing), statut: obj.statut, exportCompta: obj.exportCompta };
+        // Une facture émise n'est plus modifiable, sauf son paiement et son suivi (relances, notes d'appel) (admin excepté).
+        if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...DB.clean(existing), statut: obj.statut, exportCompta: obj.exportCompta, datePaiement: obj.datePaiement, relances: obj.relances };
         if (col === 'factures') obj.type = existing ? existing.type : (obj.type === 'avoir' ? 'avoir' : undefined);
         // Bon d'intervention signé par le client : figé (sauf administrateur)
         if (col === 'rapports' && existing && existing.signatureClientId && acc.role !== 'admin') return { forbidden: 'Ce bon d\'intervention est signé par le client : il ne peut plus être modifié.' };

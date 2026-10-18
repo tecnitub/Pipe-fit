@@ -275,7 +275,7 @@ function demoData() {
     return sit;
   };
   situation('sit1', '0001', 'dv2', d(-24), () => 100, 'Acceptée', '0001', d(-20), d(25), 'Payée');
-  situation('sit2', '0002', 'dv3', d(-38), () => 100, 'Acceptée', '0002', d(-35), d(10), 'Émise');
+  situation('sit2', '0002', 'dv3', d(-68), () => 100, 'Acceptée', '0002', d(-65), d(-20), 'Émise');
   // Ligne NEP : situation 1 acceptée et facturée, situation 2 proposée à la maîtrise d'œuvre
   const nep1 = (l, i) => ({ 1: 100, 3: 30, 4: 20, 6: 0, 7: 0, 9: 0, 10: 0, liv: 50 }[i] ?? 0);
   const nep2 = (l, i) => ({ 1: 100, 3: 55, 4: 45, 6: 15, 7: 0, 9: 0, 10: 0, liv: 100 }[i] ?? 0);
@@ -286,6 +286,8 @@ function demoData() {
   if (fa2) factures.push({ ...fa2, id: 'av0001', type: 'avoir', numero: `AV-${Y}-0001`, factureId: 'fa0002', situationId: '', date: d(-8), echeance: '', statut: 'Imputé',
     motif: 'Réfaction suite à réserve (calorifuge repris par le client)', objet: `Avoir sur facture FA-${Y}-0002 – ${fa2.objet}`,
     lignes: [{ designation: 'Réfaction : reprise du calorifuge par le client', unite: 'forfait', qte: 1, pu: 650 }] });
+  // Facture de la situation 2 en retard : un rappel déjà envoyé, un appel noté
+  if (fa2) fa2.relances = [{ niveau: 'relance1', date: d(-18), par: 'Claire Martin', libelle: '1re relance' }, { niveau: 'note', date: d(-10), par: 'Claire Martin', libelle: 'Appel compta client : paiement prévu fin du mois' }];
   factures.filter(f => f.statut === 'Payée').forEach(f => { f.exportCompta = { date: d(-15), par: 'Administrateur', lot: 'Excel' }; });
   // Commandes fournisseurs affectées aux chantiers
   const CL = (aid, qte, pu) => { const a = articles.find(x => x.id === aid); return { articleId: aid, designation: a.designation, unite: a.unite, qte, pu: pu ?? a.coutRevient }; };

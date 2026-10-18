@@ -166,6 +166,9 @@ Le PDF Factur-X contient le XML joint mais n'est pas certifié PDF/A-3 : si votr
    bibliothèque (trouvé / à choisir / hors bibliothèque), à vérifier avant l'ajout. Quantités en chiffres ou en lettres,
    unités (mètres, pièces, kg…), DN dit « de 50 » ou « DN 50 », pouces convertis en DN. Reconnaissance vocale du
    navigateur (Chrome, Edge, Safari) ou micro du clavier du téléphone.
+   La même dictée remplit les bons de commande fournisseurs (au prix d'achat) et les demandes de prix ; dans le rapport
+   d'intervention, « 🎤 Dicter » sous chaque champ (travaux, observations, besoins) écrit le texte dicté, ponctuation
+   dite comprise (« virgule », « point », « à la ligne »).
    Un **chef d'équipe** pointe en une fois les compagnons et **intérimaires** sous ses ordres (filtre « intérimaires »).
    Le coût réel de main-d'œuvre = heures pointées × coût horaire de chaque personne (taux agence pour les intérimaires).
    **Notes de frais** : photo du ticket prise avec le téléphone (raccourci « Note de frais » de l'appli),
@@ -220,6 +223,17 @@ Le PDF Factur-X contient le XML joint mais n'est pas certifié PDF/A-3 : si votr
 | **API et automatisations** | Paramètres → API et automatisations : clés personnelles (`Authorization: Bearer pf_…`, droits du compte, révocables), lecture filtrée (`/api/records/{liste}?modifieDepuis=…&filtre=champ:valeur`), création / modification, import groupé, dépôt de factures électroniques, envoi d'e-mails. Webhooks sortants signés (HMAC SHA-256) à chaque création / modification / suppression dans les listes choisies, pour Power Automate, Make, Zapier, n8n… Description OpenAPI sur `/api/openapi.json` pour créer un connecteur. |
 | **Filtres et archives** | Devis, chantiers, factures, situations et tableau de bord filtrables par client, chargé d'affaires, statut et recherche (n°, objet, client) ; filtres mémorisés par écran sur chaque poste. Par défaut, seuls les devis en cours (brouillons, envoyés) et les chantiers non clos s'affichent. Devis « Refusé » en un clic avec motif (prix, délai, concurrent…) et archivage ; chantiers et devis archivables à l'unité, par sélection multiple ou en lot (clos, refusés) : masqués des listes, du tableau de bord, du pointage et du planning, toujours consultables (filtre « Archivés ») et comptés dans les analyses (motifs de refus). |
 | **Rôles** | Administrateur ; chargé d'affaires ; opérateur (pointe uniquement ses propres heures). |
+
+## Relances des factures impayées
+
+Facturation → **Relances** (et rappel sur le tableau de bord) : factures en retard avec leur nombre de jours, montant
+restant dû, dernière action et prochaine étape. Quatre niveaux, envoyés par e-mail avec la copie de la facture
+(Microsoft 365 ou brouillon Outlook) : rappel courtois à J+1 après l'échéance, 2e relance à J+15, dernière relance à J+30,
+mise en demeure à J+45 (lettre PDF à envoyer aussi en recommandé). Délais réglables sur l'écran, textes dans
+Paramètres → E-mails ; deux relances sont toujours espacées d'au moins 7 jours. Les appels et promesses de paiement
+se notent (📞) ; tout l'historique apparaît sur la facture et sur la fiche client (« Factures et relances »).
+Retenues de garantie : date de libération (réception + 1 an), demande de libération par e-mail avec le récapitulatif
+des retenues, puis « Libérée ».
 
 ## Structure
 

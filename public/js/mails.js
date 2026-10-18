@@ -22,6 +22,16 @@ const MAIL_TYPES = {
     corps: 'Bonjour {contact},\n\nSuite à votre demande, nous sommes intervenus pour : {objet}.\nVeuillez trouver ci-joint l\'attachement des travaux réalisés, d\'un montant de {montant_ht} HT.\n\nMerci de nous transmettre votre bon de commande afin que nous puissions établir la facture.\n\nCordialement,\n\n{signature}' },
   bon: { label: 'Bon d\'intervention', objet: 'Bon d\'intervention {numero} – {objet}',
     corps: 'Bonjour {contact},\n\nVeuillez trouver ci-joint le bon d\'intervention {numero} du {date}{signataire_phrase}.\n\nCordialement,\n\n{signature}' },
+  relance1: { label: 'Relance 1 – rappel courtois', objet: 'Rappel : facture {numero} arrivée à échéance',
+    corps: 'Bonjour {contact},\n\nSauf erreur de notre part, la facture {numero} du {date} ({chantier}{ref_commande}), d\'un montant restant dû de {reste_du} TTC, était payable le {echeance}.\n\nS\'il s\'agit d\'un oubli, nous vous remercions de bien vouloir procéder à son règlement. Si votre paiement est déjà parti, merci de ne pas tenir compte de ce message.\n\nVous trouverez ci-joint une copie de la facture.\n\nCordialement,\n\n{signature}' },
+  relance2: { label: 'Relance 2', objet: '2e relance : facture {numero} impayée',
+    corps: 'Bonjour {contact},\n\nMalgré notre précédent rappel, nous n\'avons pas reçu le règlement de la facture {numero} du {date} ({chantier}), échue depuis le {echeance} ({jours_retard} jours de retard). Le montant restant dû est de {reste_du} TTC.\n\nMerci de nous indiquer la date de paiement prévue, ou de nous signaler toute difficulté (contestation, pièce manquante) afin que nous puissions la traiter rapidement.\n\nCopie de la facture ci-jointe.\n\nCordialement,\n\n{signature}' },
+  relance3: { label: 'Relance 3 – dernière relance', objet: 'Dernière relance avant mise en demeure : facture {numero}',
+    corps: 'Bonjour {contact},\n\nLa facture {numero} du {date} ({chantier}) reste impayée {jours_retard} jours après son échéance du {echeance}, malgré nos relances. Montant restant dû : {reste_du} TTC.\n\nSans règlement de votre part sous 8 jours, nous serons contraints de vous adresser une mise en demeure. Nous vous rappelons que tout retard de paiement entraîne de plein droit des pénalités de retard et une indemnité forfaitaire de 40 € pour frais de recouvrement (art. L441-10 du Code de commerce).\n\nCordialement,\n\n{signature}' },
+  demeure: { label: 'Mise en demeure de payer', objet: 'Mise en demeure : facture {numero} – {reste_du} TTC',
+    corps: 'Madame, Monsieur,\n\nVeuillez trouver ci-joint notre mise en demeure de payer la facture {numero} du {date} ({chantier}), échue depuis le {echeance}, pour un montant restant dû de {reste_du} TTC.\n\nCe courrier vous est également adressé par lettre recommandée avec accusé de réception.\n\n{signature}' },
+  liberationRG: { label: 'Demande de libération de la retenue de garantie', objet: 'Libération de la retenue de garantie – {chantier}',
+    corps: 'Bonjour {contact},\n\nLa réception des travaux du chantier {chantier} a été prononcée le {date_reception}. Le délai de garantie d\'un an étant écoulé, nous vous remercions de bien vouloir procéder à la libération de la retenue de garantie, soit {montant_ttc} TTC.\n\nVous trouverez ci-joint le récapitulatif des retenues pratiquées sur nos factures.\n\nCordialement,\n\n{signature}' },
   pv: { label: 'PV de réception', objet: 'Procès-verbal {numero} – {chantier}',
     corps: 'Bonjour {contact},\n\nVeuillez trouver ci-joint le procès-verbal {numero} du {date} relatif au chantier {chantier}.\n\nCordialement,\n\n{signature}' },
 };
@@ -30,6 +40,7 @@ const MAIL_VARIABLES = [
   ['client', 'Entreprise destinataire'], ['date', 'Date du document'], ['montant_ht', 'Montant HT'], ['montant_ttc', 'Montant TTC / net à payer'],
   ['echeance', 'Échéance (facture)'], ['validite', 'Validité (devis)'], ['rang', 'N° de situation'], ['retenue_phrase', '« , soit … TTC (retenue de garantie…, net à payer …) » (situation)'], ['ref_commande', '« , votre commande n° … »'],
   ['date_livraison_phrase', '« pour le … » (date de livraison)'], ['facture_origine', 'Facture d\'origine (avoir)'], ['date_limite', 'Date limite de remise des offres'], ['motif_phrase', '« (motif) » de l\'avoir'], ['adresse_livraison', 'Adresse de livraison'], ['signataire_phrase', '« , signé par … »'],
+  ['reste_du', 'Montant restant dû TTC (relances)'], ['jours_retard', 'Nombre de jours de retard (relances)'], ['date_reception', 'Date de réception des travaux (retenue de garantie)'],
   ['societe', 'Votre société'], ['expediteur', 'Votre nom'], ['signature', 'Signature'],
 ];
 
@@ -120,6 +131,23 @@ function mailContexte(type, id) {
         vars: { objet: c.objet || a.nom || '', chantier: chantier(a) || 'notre atelier', date: dateFr(c.date), date_limite: dateFr(c.dateLimite) || 'dès que possible',
           date_livraison_phrase: c.dateLivraison ? ` pour le ${dateFr(c.dateLivraison)}` : '' },
         apres: () => { const f = (c.fournisseurs || []).find(x => x.entrepriseId === eid); if (f && f.statut === 'À consulter') { f.statut = 'Consulté'; f.envoyeLe = isoDate(new Date()); Store.upsert('consultations', c); } } };
+    }
+    case 'relance1': case 'relance2': case 'relance3': case 'demeure': {
+      const f = Store.get('factures', id); if (!f) return null;
+      const a = affaireOf(f.affaireId), t = Calc.doc(f), auj = isoDate(new Date()), n = Relances.NIVEAUX.find(x => x.cle === type);
+      return { ref: { col: 'factures', id }, numero: f.numero, entrepriseId: docClientId(f), contactId: f.contactId, chargeId: docChargeId(f),
+        fichier: type === 'demeure' ? `Mise en demeure ${f.numero || ''}` : `Facture ${f.numero || ''}`, html: () => (type === 'demeure' ? lettreDemeure(f) : factureDocument(f)),
+        vars: { objet: f.objet || a.nom || '', chantier: chantier(a), date: dateFr(f.date), montant_ht: eur(t.totalHT), montant_ttc: eur(t.retenue ? t.netAPayer : t.totalTTC),
+          echeance: dateFr(f.echeance), reste_du: eur(Calc.resteDu(f)), jours_retard: Relances.joursRetard(f, auj), ref_commande: f.refCommande ? `, votre commande n° ${f.refCommande}` : '' },
+        apres: () => { f.relances = [...(f.relances || []), { niveau: type, date: auj, par: Store.me.nom || Store.me.login, libelle: n.lib }]; Store.upsert('factures', f); } };
+    }
+    case 'liberationRG': {
+      const a = Store.get('affaires', id); if (!a) return null;
+      const rg = retenuesChantier(a);
+      return { ref: { col: 'affaires', id }, numero: a.code, entrepriseId: a.moeId || a.clientId, contactId: a.moeId ? a.moeContactId : a.contactId, chargeId: a.chargeId,
+        fichier: `Retenue de garantie ${a.code || ''}`, html: () => lettreRetenue(a),
+        vars: { chantier: chantier(a), objet: a.nom, date: dateFr(isoDate(new Date())), date_reception: dateFr(a.dateReception), montant_ttc: eur(rg.total) },
+        apres: () => { a.rgDemandee = isoDate(new Date()); Store.upsert('affaires', a); } };
     }
     case 'pv': {
       const pv = Store.get('receptions', id); if (!pv) return null;
@@ -312,7 +340,8 @@ Views.mails = () => {
 };
 
 function apercuMail(type, c) {
-  const pick = { consultation: ['consultations', c => (c.fournisseurs || []).length], devis: ['devis'], facture: ['factures', f => f.type !== 'avoir'], avoir: ['factures', f => f.type === 'avoir'], situation: ['situations'], commande: ['commandes'], demandePrix: ['commandes'], attachement: ['affaires', estHorsDevis], bon: ['rapports', r => r.signatureClientId], pv: ['receptions'] }[type];
+  const pick = { consultation: ['consultations', c => (c.fournisseurs || []).length], devis: ['devis'], facture: ['factures', f => f.type !== 'avoir'], avoir: ['factures', f => f.type === 'avoir'], situation: ['situations'], commande: ['commandes'], demandePrix: ['commandes'], attachement: ['affaires', estHorsDevis], bon: ['rapports', r => r.signatureClientId], pv: ['receptions'],
+    relance1: ['factures', f => f.type !== 'avoir'], relance2: ['factures', f => f.type !== 'avoir'], relance3: ['factures', f => f.type !== 'avoir'], demeure: ['factures', f => f.type !== 'avoir'], liberationRG: ['affaires', a => num(a.retenueGarantie)] }[type];
   const doc = Store.all(pick[0]).filter(pick[1] || (() => true)).slice(-1)[0];
   if (!doc) return '<p class="muted">Aucun document de ce type pour l\'aperçu.</p>';
   const ctx = mailContexte(type, type === 'consultation' ? `${doc.id}~${doc.fournisseurs[0].entrepriseId}` : doc.id), contact = Store.get('contacts', ctx.contactId);

@@ -19,6 +19,32 @@ const Micro = {
   },
 };
 
+// Dictée dans un champ de texte (rapport d'intervention, demande du client…) : bouton 🎤 ajouté sous chaque textarea[data-dictee].
+// Ponctuation dite : « point », « virgule », « à la ligne ».
+const ponctuer = t => DicteeMateriel.ponctuer(t);
+function brancherDicteeTexte(root) {
+  if (!Micro.dispo() || !root) return;
+  root.querySelectorAll('textarea[data-dictee]:not([data-dictee-ok])').forEach(ta => {
+    ta.dataset.dicteeOk = '1';
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'secondary small micro-ta'; b.textContent = '🎤 Dicter';
+    b.setAttribute('aria-label', `Dicter : ${ta.getAttribute('aria-label') || (ta.labels && ta.labels[0] ? ta.labels[0].textContent : 'texte')}`);
+    ta.insertAdjacentElement('afterend', b);
+    let arret = null;
+    b.onclick = () => {
+      if (arret) { arret(); return; }
+      b.textContent = '⏹ Arrêter la dictée'; b.classList.add('danger');
+      arret = Micro.ecouter((final, prov) => {
+        b.title = prov;
+        if (!final) return;
+        const avant = ta.value.replace(/\s+$/, ''), txt = ponctuer(final);
+        ta.value = avant ? `${avant}${/[.!?\n]$/.test(avant) ? ' ' : ' '}${/[.!?\n]$/.test(avant) || !avant ? txt.charAt(0).toUpperCase() + txt.slice(1) : txt}` : txt.charAt(0).toUpperCase() + txt.slice(1);
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+      }, msg => { arret = null; b.textContent = '🎤 Dicter'; b.classList.remove('danger'); b.title = ''; if (msg) notify(msg); });
+    };
+  });
+}
+
 function dicterMateriel({ titre = 'Dicter du matériel', prix = false, cible = '' } = {}) {
   return new Promise(resolve => {
     const articles = Store.all('articles'), fournisseurDe = a => (a.fournisseurId ? clientName(a.fournisseurId) : '');

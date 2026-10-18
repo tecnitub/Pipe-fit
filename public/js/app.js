@@ -21,6 +21,7 @@ const App = {
     const root = document.getElementById('app');
     root.innerHTML = view(params, query);
     if (view.bind) view.bind(root, params, query);
+    if (typeof brancherDicteeTexte === 'function') brancherDicteeTexte(root);
     this.pendingRemote = false;
     document.getElementById('remote-banner').classList.add('hidden');
 

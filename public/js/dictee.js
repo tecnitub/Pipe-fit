@@ -133,6 +133,16 @@ const DicteeMateriel = (() => {
     const net = liste.length === 1 || s[0] > s[1];
     return { statut: net && !partiel ? 'trouve' : 'choix', candidats: liste.slice(0, 8), article: liste[0] };
   }
-  return { analyser, rapprocher, lireNombre: (s, i = 0) => lireNombre(mots(s), i), mots };
+  // Texte libre dicté : ponctuation dite (« virgule », « point », « à la ligne », « point d'interrogation ») et majuscules
+  function ponctuer(t) {
+    return String(t || '')
+      .replace(/\s*(?:^|\s)(?:point à la ligne|à la ligne|nouvelle ligne|nouveau paragraphe)(?=\s|$)\s*/gi, '.\n')
+      .replace(/\s+point d'interrogation(?=\s|$)/gi, ' ?').replace(/\s+point d'exclamation(?=\s|$)/gi, ' !')
+      .replace(/\s+virgule(?=\s|$)/gi, ',').replace(/\s+deux points(?=\s|$)/gi, ' :')
+      .replace(/\s+point(?=\s+(?!de\s|d')|$)/gi, '.')
+      .replace(/\.{2,}/g, '.').replace(/ +\n/g, '\n')
+      .replace(/(^|[.?!]\s+|\n)(\p{Ll})/gu, (m, a, l) => a + l.toUpperCase()).trim();
+  }
+  return { analyser, rapprocher, ponctuer, lireNombre: (s, i = 0) => lireNombre(mots(s), i), mots };
 })();
 if (typeof module !== 'undefined') module.exports = DicteeMateriel;

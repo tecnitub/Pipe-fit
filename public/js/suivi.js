@@ -48,9 +48,9 @@ function rapportsView(u) {
         <div class="field"><label for="r-date">Date</label><input id="r-date" type="date" value="${esc(b.date)}"></div>
       </div>
       ${team.length ? `<fieldset class="intervenants"><legend>Intervenants</legend>${[u, ...team].map(m => `<label class="check"><input type="checkbox" data-int="${m.id}" ${b.intervenants.includes(m.id) ? 'checked' : ''}> ${esc(m.nom)} ${interimBadge(m)}</label>`).join('')}</fieldset>` : ''}
-      <div class="field"><label for="r-travaux">Travaux réalisés *</label><textarea id="r-travaux" rows="5" placeholder="Ex. pose de 40 ml de DN50 inox rack nord, soudure de 18 joints, essais…">${esc(b.travaux)}</textarea></div>
-      <div class="field"><label for="r-obs">Observations, difficultés, incidents</label><textarea id="r-obs" rows="3">${esc(b.observations)}</textarea></div>
-      <div class="field"><label for="r-besoins">Besoins (matériel, informations, accès)</label><textarea id="r-besoins" rows="2">${esc(b.besoins)}</textarea></div>
+      <div class="field"><label for="r-travaux">Travaux réalisés *</label><textarea data-dictee id="r-travaux" rows="5" placeholder="Ex. pose de 40 ml de DN50 inox rack nord, soudure de 18 joints, essais…">${esc(b.travaux)}</textarea></div>
+      <div class="field"><label for="r-obs">Observations, difficultés, incidents</label><textarea data-dictee id="r-obs" rows="3">${esc(b.observations)}</textarea></div>
+      <div class="field"><label for="r-besoins">Besoins (matériel, informations, accès)</label><textarea data-dictee id="r-besoins" rows="2">${esc(b.besoins)}</textarea></div>
       ${hd ? `<fieldset class="materiel"><legend>Matériel utilisé (à facturer)</legend>
         ${af.demande ? `<p class="muted small pre">Demande : ${esc(af.demande)}</p>` : ''}
         <ul class="mat-list">${b.materiel.map((m, i) => `<li><span>${esc(m.designation)}</span><input class="mat-q" data-matq="${i}" value="${esc(String(m.qte).replace('.', ','))}" inputmode="decimal" aria-label="Quantité"><span class="small">${esc(m.unite)}</span><button class="icon" data-rmmat="${i}" aria-label="Retirer">✕</button></li>`).join('') || '<li class="muted small">Aucun matériel ajouté pour ce rapport.</li>'}</ul>

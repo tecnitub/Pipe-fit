@@ -51,7 +51,7 @@ Views.dashboard = (params, query) => {
   <div class="cards">
     <div class="card"><div class="label">Devis en attente</div><div class="value">${eur(sumBy(enAttente, d => Calc.doc(d).totalHT))}</div><div class="sub">${enAttente.length} devis envoyés · transformation ${pct((acc + ref) ? acc / (acc + ref) * 100 : 0)}</div></div>
     <div class="card"><div class="label">Carnet de commandes</div><div class="value">${eur(carnet)}</div><div class="sub">${actifs.length} chantiers en cours, reste à facturer</div></div>
-    <div class="card"><div class="label">CA facturé HT</div><div class="value">${eur(caFacture)}</div><div class="sub">Restant dû ${eur(impayes)} TTC${retenuesALiberer ? ` · retenues de garantie à libérer ${eur(retenuesALiberer)}` : ''}</div></div>
+    <div class="card"><div class="label">CA facturé HT</div><div class="value">${eur(caFacture)}</div><div class="sub">Restant dû ${eur(impayes)} TTC${retenuesALiberer ? ` · retenues de garantie à libérer ${eur(retenuesALiberer)}` : ''}${(() => { const n = nbARelancer(); return n ? ` · <a href="#/relances"><strong>${n} facture${n > 1 ? 's' : ''} à relancer</strong></a>` : ''; })()}</div></div>
     <div class="card"><div class="label">Heures pointées (${week.replace('-W', ' S')})</div><div class="value">${fmt(tempsSemaine, 1)} h</div><div class="sub">${commandesAttente.length} commande(s) fournisseur en attente de livraison</div></div>
   </div>
   <div class="cards">
@@ -290,7 +290,7 @@ Views.facture = params => {
     ${['admin', 'charge'].includes(Store.me.role) ? `<button class="secondary" data-efacture="${f.id}">Facture électronique</button>` : ''}
     ${!av && f.statut !== 'Annulée' && Store.can('write', 'factures') ? '<button class="secondary" id="avoir">Créer un avoir</button>' : ''}
   </div>
-  <h1 class="no-print">${av ? 'Avoir' : 'Facture'} ${esc(f.numero || '')} ${badge(statutFacture(f))}${f.exportCompta ? ` <span class="badge b-ok">Transmis au comptable le ${dateFr(f.exportCompta.date)}</span>` : ''}</h1>${envoisHtml('factures', f.id)}
+  <h1 class="no-print">${av ? 'Avoir' : 'Facture'} ${esc(f.numero || '')} ${badge(statutFacture(f))}${f.exportCompta ? ` <span class="badge b-ok">Transmis au comptable le ${dateFr(f.exportCompta.date)}</span>` : ''}</h1>${envoisHtml('factures', f.id)}${relancesFacture(f)}
   ${avoirs.length ? `<div class="card no-print avoirs-card"><strong>Avoirs sur cette facture</strong>
     <ul>${avoirs.map(a => `<li><a href="#/facture/${a.id}">${esc(a.numero || '…')}</a> du ${dateFr(a.date)} · ${eur(Calc.doc(a).netAPayer)} TTC${a.motif ? ` · ${esc(a.motif)}` : ''} ${badge(a.statut)}</li>`).join('')}</ul>
     <div class="small">Facture ${eur(Calc.doc(f).netAPayer)} − avoirs ${eur(dejaCredite)} = <strong>reste dû ${eur(reste)}</strong></div></div>` : ''}
