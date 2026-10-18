@@ -61,6 +61,7 @@ docker run -d -p 3000:3000 -v pipefit-data:/data -e ADMIN_PASSWORD=MonMotDePasse
 | `HOST` | `0.0.0.0` | Interface d'écoute |
 | `DB_FILE` | `data/pipefit.db` | Fichier de base de données |
 | `ADMIN_PASSWORD` | — | Crée directement le compte `admin` (sinon : écran de première configuration) |
+| `DOCUMENTS_DIR` | `<dossier de la base>/Documents` | Répertoire des documents synchronisé avec l'appli (sinon : Paramètres) |
 | `SEED_DEMO` | `1` | Données de démo initiales (l'écran de première configuration permet de partir d'une base vide) |
 
 **Accès depuis l'extérieur de l'entreprise** : placer le serveur derrière un reverse proxy HTTPS
@@ -306,6 +307,39 @@ de rassemblement, SST, risques et EPI, PPSPS, PGC, plan de prévention annuel ou
 leur véhicule, aussi visibles dans « Mon véhicule ». Les documents de sécurité sont transmis même si l'affichage des
 autres documents est désactivé.
 
+## Répertoire des documents sur le serveur
+
+Les documents des chantiers sont aussi enregistrés dans un répertoire du serveur, synchronisé avec l'appli dans les deux
+sens (par défaut `Documents` à côté de la base, sous Windows `C:\ProgramData\PipeFitCRM\data\Documents` ; chemin,
+activation et fréquence dans **Paramètres → Répertoire des documents sur le serveur**, ou variable `DOCUMENTS_DIR`) :
+
+```
+Documents\Chantiers\CH-2026-001 - Ligne NEP inox – Usine de Rumilly\
+    Plan\  Fiche technique\  Notice\  Sécurité - PPSPS\  PGC\  Plan de prévention\  Photo\  Demande client\  Autre\
+    _Indices précédents\
+Documents\_Corbeille\
+```
+
+- Déposé dans l'appli → écrit dans le dossier de sa catégorie (quelques secondes après). Nouvel indice : l'ancien
+  fichier est rangé dans `_Indices précédents`.
+- Copié dans le dossier d'un chantier → apparaît dans l'appli (vérification toutes les 30 s, ou « 🔄 Synchroniser »
+  dans l'onglet Documents) : dans un dossier de catégorie, il en prend la catégorie ; à la racine du chantier, la
+  catégorie est devinée d'après le nom et le fichier y est rangé ; dans un autre sous-dossier, il y reste. Les fichiers
+  ajoutés ainsi sont transmis aux compagnons (réglable).
+- Remplacé dans le répertoire (même nom), ou recopié à la racine avec le nom d'un document existant → nouvel indice ;
+  copie identique → ignorée. Renommé ou déplacé → le document suit. Chantier renommé → son dossier aussi.
+- Supprimé dans l'appli → fichier déplacé dans `_Corbeille`. Supprimé du répertoire → retiré de l'appli, sauf si plus de
+  la moitié des fichiers d'un chantier disparaissent d'un coup (partage débranché, mauvaise manipulation) : rien n'est
+  retiré et les fichiers sont réécrits ; une alerte s'affiche dans les Paramètres.
+- Modifié des deux côtés en même temps : la version de l'appli l'emporte, celle du serveur est gardée dans
+  `_Indices précédents`.
+- Types acceptés : PDF, images, DWG/DXF/DWF, IFC/STEP, Word, Excel, PowerPoint, CSV, ZIP, texte, e-mails ; 40 Mo au plus.
+  Les autres fichiers sont ignorés (listés dans les Paramètres), comme les fichiers temporaires d'Office (`~$…`).
+
+Pour y accéder depuis les postes du bureau, partagez ce répertoire sur le réseau (Windows : clic droit → Propriétés →
+Partage) avec les droits de lecture et d'écriture pour les personnes du bureau. Les fichiers restent aussi dans la base :
+l'appli fonctionne même si le répertoire est indisponible, et la sauvegarde de la base suffit.
+
 ## Structure
 
 ```
@@ -315,9 +349,10 @@ server/demo.js     données de démonstration
 server/m365.js     envoi des e-mails par Microsoft Graph
 server/efacture.js réception (dossier, adresse de dépôt) et dépôt des factures électroniques
 server/api.js      clés d'API, webhooks sortants, description OpenAPI
+server/dossier-documents.js  répertoire des documents synchronisé avec l'appli
 public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
-public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js, securite-ui.js, produits.js : écrans métier
+public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js, securite-ui.js, produits.js, dossier-documents.js : écrans métier
 doe/               application DOE séparée (serveur, interface, génération du dossier PDF)
 installer/         installateur Windows (NSIS) : build.sh, PipeFitCRM.nsi, lanceur et service
 ```

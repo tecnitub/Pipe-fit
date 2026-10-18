@@ -8,6 +8,7 @@ const DB = require('./db');
 const { demoData, uid } = require('./demo');
 const M365 = require('./m365');
 const EF = require('./efacture');
+const DossierDocuments = require('./dossier-documents');
 const API = require('./api');
 const Push = require('./push');
 const Notifs = require('./notifs');
@@ -24,7 +25,9 @@ const MAX_BODY = 10 * 1024 * 1024;
 const MAX_DOCUMENT = 40 * 1024 * 1024;
 const TYPES_DOCUMENTS = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', dwg: 'image/vnd.dwg', dxf: 'image/vnd.dxf',
   ifc: 'application/x-step', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', zip: 'application/zip', txt: 'text/plain',
-  eml: 'message/rfc822', msg: 'application/vnd.ms-outlook' }; // e-mails de demande du client (toujours téléchargés, jamais affichés)
+  eml: 'message/rfc822', msg: 'application/vnd.ms-outlook', // e-mails de demande du client
+  doc: 'application/msword', xls: 'application/vnd.ms-excel', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', csv: 'text/csv',
+  dwf: 'model/vnd.dwf', stp: 'model/step', step: 'model/step' }; // hors PDF et images : toujours téléchargés, jamais affichés
 
 const db = DB.open(DB_FILE);
 API.initTables(db);
@@ -113,6 +116,9 @@ function broadcast(event, payload) {
 }
 setInterval(() => { for (const res of clients.keys()) res.write(': ping\n\n'); }, 25000).unref();
 const NOTIFS = Notifs.creer({ DB, db, broadcast });
+// Répertoire des documents sur le serveur, synchronisé avec les documents des chantiers
+const DOSSIER = DossierDocuments.creer({ DB, db, broadcast, uid, TYPES: TYPES_DOCUMENTS, MAX: MAX_DOCUMENT, dossierDefaut: path.join(path.dirname(DB_FILE), 'Documents'),
+  notifier: (avant, apres) => NOTIFS.documentsModifies({ login: 'Répertoire serveur', nom: 'Répertoire serveur' }, avant, apres) });
 
 /* ---------- Utilitaires HTTP ---------- */
 function send(res, status, body, headers = {}) {
@@ -331,6 +337,22 @@ async function api(req, res, url) {
     return res.end(Buffer.from(f.data));
   }
 
+  // Répertoire des documents sur le serveur : réglage (administrateur), état et synchronisation immédiate (bureau)
+  if (p[0] === 'documents' && p[1] === 'dossier') {
+    if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Droits insuffisants');
+    if (p[2] === 'synchro' && method === 'POST') return send(res, 200, { ...(await DOSSIER.synchroniser()), config: DOSSIER.config() });
+    if (method === 'PUT') {
+      if (acc.role !== 'admin') return fail(res, 403, 'Réservé à l\'administrateur');
+      const b = await readBody(req);
+      if (b.chemin && !path.isAbsolute(String(b.chemin).trim())) return fail(res, 400, 'Indiquez un chemin complet (ex. D:\\PipeFit\\Documents ou /srv/pipefit/documents)');
+      const c = DOSSIER.enregistrerConfig(b);
+      DB.audit(db, acc.login, 'configuration du répertoire des documents', null, null, c.chemin);
+      DOSSIER.synchroniser().catch(() => {});
+      return send(res, 200, { config: c, ...DOSSIER.etat() });
+    }
+    return send(res, 200, { config: DOSSIER.config(), ...DOSSIER.etat(), sep: path.sep });
+  }
+
   // Documents de chantier (plans, fiches techniques, notices…) : fichier brut jusqu'à 40 Mo
   if (envoiDocument) {
     if (!canWrite(acc, 'affaires')) return fail(res, 403, 'Droits insuffisants');
@@ -443,7 +465,7 @@ async function api(req, res, url) {
       }
       broadcast('change', { col, record: result.record, client: req.headers['x-client-id'] || null });
       if (col === 'planning') NOTIFS.planningModifie(acc, result.avant, result.record);
-      if (col === 'affaires') NOTIFS.documentsModifies(acc, result.avant, result.record);
+      if (col === 'affaires') { NOTIFS.documentsModifies(acc, result.avant, result.record); DOSSIER.signaler(); }
       if (col === 'affaires' && estCompagnon(acc) && !result.avant) NOTIFS.horsDevisOuvert(acc, result.record);
       return send(res, 200, pourCompagnon(acc, col, result.record) || { id: result.record.id, _v: result.record._v });
     }
@@ -710,9 +732,10 @@ if (require.main === module) {
   const verifierEcheances = () => NOTIFS.echeances().catch(e => console.error('Échéances :', e.message));
   setTimeout(verifierEcheances, 30000).unref();
   setInterval(verifierEcheances, 6 * 3600000).unref();
+  DOSSIER.demarrer();
   server.listen(PORT, HOST, () => {
     console.log(`Pipe-Fit CRM : http://localhost:${PORT}  (base : ${DB_FILE})`);
     if (!hasAccounts()) console.log(`Première utilisation : ouvrez http://localhost:${PORT} sur ce poste pour créer le compte administrateur.`);
   });
 }
-module.exports = { server, db, NOTIFS };
+module.exports = { server, db, NOTIFS, DOSSIER };

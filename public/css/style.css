@@ -813,3 +813,7 @@ fieldset.mi-titre[hidden] { display: none; }
 .doc h3.doc-h, .doc-h { color: var(--doc-accent, #8f2f1a); font-size: 11pt; margin: 14px 0 6px; border-bottom: 1px solid currentColor; padding-bottom: 2px; }
 .ppsps-t th { text-align: left; width: 30%; font-weight: 600; vertical-align: top; }
 .ppsps-t td { vertical-align: top; white-space: pre-line; }
+
+/* Répertoire des documents sur le serveur */
+.dossier-serveur { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 10px; padding: 8px 10px; background: var(--panel-alt); border: 1px solid var(--border); border-radius: 8px; }
+.dossier-serveur code.chemin { word-break: break-all; background: var(--panel); padding: 2px 6px; border-radius: 4px; }

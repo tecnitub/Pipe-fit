@@ -3,10 +3,7 @@
 // commandes et livraisons attendues.
 const CATEGORIES_DOC = [['Demande client', '📧'], ['Plan', '📐'], ['Fiche technique', '📄'], ['Notice', '📘'], ['Sécurité / PPSPS', '⛑️'], ['PGC', '🦺'], ['Plan de prévention', '🛡️'], ['Photo', '🖼️'], ['Autre', '📁']];
 const iconeDoc = c => (CATEGORIES_DOC.find(x => x[0] === c) || CATEGORIES_DOC[CATEGORIES_DOC.length - 1])[1];
-const categorieDevinee = nom => (/\.(eml|msg)$/i.test(nom) ? 'Demande client' : /\bpgc\b|g[ée]n[ée]ral de coordination/i.test(nom) ? 'PGC'
-  : /plan.de.pr[ée]vention|\bpdp\b/i.test(nom) ? 'Plan de prévention' : /\.(dwg|dxf|ifc)$|plan|iso(m[ée]trique)?\b|p&?id|implantation|coupe|synoptique/i.test(nom) ? 'Plan'
-  : /fiche|\bft\b|datasheet|technique|catalogue/i.test(nom) ? 'Fiche technique' : /notice|manuel|mode d.emploi/i.test(nom) ? 'Notice'
-    : /ppsps|s[ée]curit|pr[ée]vention|amiante|permis/i.test(nom) ? 'Sécurité / PPSPS' : /\.(jpe?g|png|webp)$/i.test(nom) ? 'Photo' : 'Autre');
+const categorieDevinee = Classement.categorieDevinee;
 const tailleLisible = o => (o > 1048576 ? `${fmt(o / 1048576, 1)} Mo` : `${Math.max(1, Math.round(o / 1024))} Ko`);
 const reglesCompagnon = () => Compagnon.regles(Store.data.settings);
 // Lien d'ouverture : PDF et images affichés, le reste téléchargé avec son nom
@@ -50,8 +47,9 @@ function documentsChantier(a) {
   <h1>${esc(affaireLabel(a))} ${badge(a.statut)}</h1>${chantierOnglets(a, 'documents')}
   <p class="muted">Plans, fiches techniques, notices, documents de sécurité… Cochez « Transmettre aux compagnons » : ils les retrouvent dans la fiche du chantier sur leur téléphone${planifies.length ? ` et les ${planifies.length} personne(s) planifiée(s) à venir sont prévenues (${planifies.map(id => esc(prenomDe(userName(id)))).join(', ')})` : ''}.
     ${R.documents ? '' : '<span class="warn-text">L\'affichage des documents est désactivé pour les compagnons (Paramètres → Appli des compagnons).</span>'}</p>
-  ${edit ? `<label class="doc-depot" id="doc-depot"><input type="file" id="doc-fichiers" multiple hidden accept=".pdf,.jpg,.jpeg,.png,.webp,.dwg,.dxf,.ifc,.xlsx,.docx,.zip,.txt">
-    <strong>📤 Déposer des documents</strong><span class="small muted">Glissez les fichiers ici ou cliquez · PDF, images, DWG/DXF, IFC, Excel, Word, ZIP · 40 Mo maximum par fichier</span>
+  ${bandeauDossierChantier(a)}
+  ${edit ? `<label class="doc-depot" id="doc-depot"><input type="file" id="doc-fichiers" multiple hidden accept=".pdf,.jpg,.jpeg,.png,.webp,.dwg,.dxf,.dwf,.ifc,.stp,.step,.xlsx,.xls,.docx,.doc,.pptx,.csv,.zip,.txt,.eml,.msg">
+    <strong>📤 Déposer des documents</strong><span class="small muted">Glissez les fichiers ici ou cliquez · PDF, images, DWG/DXF, IFC, STEP, Excel, Word, ZIP, e-mails · 40 Mo maximum par fichier</span>
     <span class="small"><input type="checkbox" id="doc-transmettre" checked onclick="event.stopPropagation()"> Transmettre aux compagnons</span></label>
     <div id="doc-progres" class="small muted"></div>` : ''}
   ${docs.length ? `<div class="table-wrap"><table class="docs-table"><tr><th>Document</th><th>Catégorie</th><th>Indice</th><th>Ajouté</th><th class="num">Taille</th><th>Compagnons</th>${edit ? '<th></th>' : ''}</tr>
@@ -66,6 +64,7 @@ function documentsChantier(a) {
 }
 
 function bindDocumentsChantier(root, a) {
+  bindDossierChantier(root, a);
   const enreg = () => { Store.upsert('affaires', a); App.render(); };
   const indiceSuivant = i => (/^[A-Y]$/i.test(i || '') ? String.fromCharCode(i.toUpperCase().charCodeAt(0) + 1) : /^\d+$/.test(i || '') ? String(+i + 1) : i ? `${i}+` : 'B');
   const deposer = async files => {

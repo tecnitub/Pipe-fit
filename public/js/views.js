@@ -550,6 +550,7 @@ Views.parametres = () => {
   ${numerotationCarte()}
 
   ${reglagesCompagnonCarte()}
+  ${reglagesDossierCarte()}
 
   <h2>Comptes utilisateurs</h2>
   <p class="muted">Administrateur : tout. Chargé d'affaires : contacts, devis, chantiers, commandes, factures, planning, RH (pas de suppression de facture). Opérateur : pointage de ses propres heures et consultation du planning. Liez chaque compte opérateur à sa fiche dans « Équipe ».</p>
@@ -643,6 +644,7 @@ Views.parametres.bind = root => {
   if (!Store.can('admin')) return;
   bindNumerotation(root);
   bindReglagesCompagnon(root);
+  bindReglagesDossier(root);
   const loadAccounts = () => api('GET', '/api/accounts').then(list => {
     const t = root.querySelector('#accounts');
     if (!t) return;
