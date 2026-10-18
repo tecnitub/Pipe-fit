@@ -112,7 +112,7 @@ Views.chantiers = (params, query) => {
   const statuts = [['', 'En cours (hors clos)'], ['tous', 'Tous (hors archivés)'], ...[...new Set([...STATUTS_CHANTIER, ...STATUTS_HD])].map(s => [s, s]), ['archives', 'Archivés']];
   return `<h1>Chantiers</h1>
   <p class="muted">Un chantier est créé lorsqu'un devis est accepté : le devis devient son budget (fournitures et main-d'œuvre). Archivez les chantiers terminés pour alléger les listes.</p>
-  <div class="toolbar"><button id="add-hd">+ Intervention hors devis</button><span class="spacer"></span>
+  <div class="toolbar"><button id="add-hd">+ Intervention hors devis</button><button class="secondary" id="add-hd-mail" title="Créer l'intervention à partir de l'e-mail du client (glisser depuis Outlook)">📧 Depuis un mail</button><span class="spacer"></span>
     ${archivables.length && f.statut !== 'archives' ? `<button class="secondary" id="arch-clos">Archiver les ${archivables.length} chantier(s) clos</button>` : ''}</div>
   ${barreFiltres(f, { clients: [...new Set(Store.all('affaires').map(a => a.clientId))], statuts, defauts: FILTRES_CHANTIERS })}
   <div class="toolbar sel-bar hidden" id="sel-bar"><span id="sel-n"></span><button class="secondary" id="sel-arch">${f.statut === 'archives' ? 'Sortir des archives' : 'Archiver la sélection'}</button></div>
@@ -123,6 +123,7 @@ Views.chantiers.bind = (root, params, query) => {
   const f = lireFiltres('chantiers', query, FILTRES_CHANTIERS);
   bindFiltres(root, 'chantiers', f, FILTRES_CHANTIERS);
   root.querySelector('#add-hd').onclick = nouvelleInterventionHD;
+  root.querySelector('#add-hd-mail').onclick = nouvelleHDDepuisMail;
   const sel = selectionListe(root, ids => { root.querySelector('#sel-bar').classList.toggle('hidden', !ids.length); root.querySelector('#sel-n').textContent = `${ids.length} sélectionné(s)`; });
   root.querySelector('#sel-arch').onclick = () => archiver('affaires', sel().map(id => Store.get('affaires', id)), f.statut !== 'archives');
   const ac = root.querySelector('#arch-clos');

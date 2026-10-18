@@ -78,6 +78,7 @@ function horsDevisView(a) {
     · Chargé d'affaires : ${esc(userName(a.chargeId))} · ouvert le ${dateFr(a.dateCreation)}${a.refCommande ? ` · <strong>commande client n° ${esc(a.refCommande)}</strong>` : ''}</p>
   ${envoisHtml('affaires', a.id)}
   ${a.demande ? `<p class="note pre">${esc(a.demande)}</p>` : ''}
+  ${demandeClientHtml(a)}
   ${bon ? `<p class="note">Bon d'intervention signé par ${esc(bon.signataireNom)} le ${dateFr(bon.date)} : <a href="#/bon/${bon.id}">voir le bon</a>. ${a.refCommande ? 'Commande reçue : vous pouvez facturer.' : 'Demandez la commande au client ou facturez directement.'}</p>` : ''}
 
   <div class="cards">
@@ -119,7 +120,7 @@ function attachementHD(a, v) {
   return `${Doc.entete('attachement', o.titre, `Intervention ${esc(a.code || '')} du ${dateFr(a.dateCreation)}${a.refCommande ? `<br>Votre commande n° ${esc(a.refCommande)}` : ''}`)}
     <div class="doc-parties"><div><strong>${esc(clientName(a.clientId))}</strong>${site ? `<br>${esc(site.libelle)}<br>${esc(fullAddress(site))}` : ''}</div>
     <div>${contact && o.contact ? `Demandeur : <strong>${esc(contactName(contact))}</strong>${contact.fonction ? `, ${esc(contact.fonction)}` : ''}` : ''}${bon ? `${contact && o.contact ? '<br>' : ''}Bon d'intervention signé le ${dateFr(bon.date)} par ${esc(bon.signataireNom)}` : ''}</div></div>
-    <p class="doc-objet"><strong>Objet :</strong> ${esc(a.nom)}</p>
+    <p class="doc-objet"><strong>Objet :</strong> ${esc(a.nom)}${(() => { const m = ((a.documents || []).find(d => d.categorie === 'Demande client' && d.mail && d.mail.date) || {}).mail; return m ? ` · <span class="small">suite à votre demande du ${dateFr(m.date.slice(0, 10))}${m.objet ? ` (« ${esc(m.objet)} »)` : ''}</span>` : ''; })()}</p>
     ${a.demande && o.demande ? `<p class="pre">${esc(a.demande)}</p>` : ''}${Doc.intro('attachement')}
     <div class="table-wrap"><table class="doc-lines${o.prix ? '' : ' compact'}"><tr><th>Désignation</th><th class="num">Qté</th><th>Unité</th>${o.prix ? '<th class="num">PU HT</th><th class="num">Montant HT</th>' : ''}</tr>
       ${v.mo.length ? `<tr class="chap"><td colspan="${n}">Main-d'œuvre</td></tr>${v.mo.map(g => ligne(g.libelle, g.heures, 'h', g.taux, g.montant)).join('')}` : ''}
@@ -167,6 +168,7 @@ function bindHorsDevis(root, a) {
     }
     Store.upsert('affaires', a); App.render(); App.toast(quoi === 'client' ? 'Client créé : complétez sa fiche (adresse, SIRET…)' : quoi === 'contact' ? 'Contact ajouté au client' : 'Site ajouté au client');
   });
+  bindDemandeClient(root, a);
   on('#hd-dicter', async () => {
     const choix = await dicterMateriel({ titre: `Dicter du matériel · ${a.code || ''}`, prix: true, cible: 'au matériel à facturer de l\'intervention' });
     choix.forEach(m => Store.upsert('consommations', { articleId: m.articleId, designation: m.designation, unite: m.unite, qte: m.qte, pu: m.pu, cout: m.cout, affaireId: a.id, date: isoDate(new Date()), userId: Store.me.userId || '' }));

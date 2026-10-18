@@ -161,6 +161,12 @@ Le PDF Factur-X contient le XML joint mais n'est pas certifié PDF/A-3 : si votr
    contact client (choisi parmi les contacts connus ou saisi avec son téléphone), nom du site (sites du client ou saisi),
    précision du lieu, demande. Le bureau est prévenu ; un client, un contact ou un site saisi à la main se crée en un clic
    dans les contacts depuis la fiche de l'intervention, puis le bureau désigne le chargé d'affaires et facture.
+   **Demande du client par e-mail** : sur la fiche de l'intervention, l'espace « 📧 Demande du client » reçoit l'e-mail
+   glissé depuis Outlook (.msg), un .eml, un PDF ou une capture, ou le texte collé. L'e-mail est lu dans le navigateur
+   (expéditeur, date, objet, texte, noms des pièces jointes), l'original est gardé dans les documents (non transmis aux
+   compagnons) et pré-remplit ce qui est vide : client et contact reconnus par l'adresse de l'expéditeur, site habituel du
+   contact, objet, demande. « 📧 Depuis un mail » (Chantiers) crée directement l'intervention à partir de l'e-mail.
+   L'attachement envoyé au client rappelle « suite à votre demande du … ».
    Le matériel d'une intervention hors devis se choisit en plein écran : recherche, familles et sous-familles en
    pastilles, « déjà utilisé ici », quantités + / −, matériel hors bibliothèque (même écran au bureau, avec les prix).
    **Dictée d'une liste de matériel** (« 🎤 Dicter », dans le devis, le rapport d'intervention et la fiche hors devis) :

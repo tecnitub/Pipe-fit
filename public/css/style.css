@@ -777,3 +777,14 @@ fieldset.mi-titre { border: 1px solid var(--border); border-radius: 6px; padding
 fieldset.mi-titre[hidden] { display: none; }
 .registre-doc th, .registre-doc td { font-size: 8pt; vertical-align: top; }
 .hd-bloc { border: 1px solid var(--border); border-radius: 6px; padding: 4px 12px 2px; margin: 8px 0; min-width: 0; } .hd-bloc legend { font-weight: 600; padding: 0 4px; } .hd-bloc [hidden] { display: none; }
+
+/* Demande du client (e-mail) */
+.demande-mail { margin: 10px 0; }
+.demande-mail.survol, .dm-depot.survol { outline: 2px dashed var(--accent); outline-offset: 2px; }
+.dm-tete { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dm-tete .spacer { flex: 1; }
+.dm-mail { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; }
+.dm-entete { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+.dm-texte { max-height: 260px; overflow: auto; background: var(--panel-alt); padding: 8px 10px; border-radius: 6px; font-size: 13px; margin: 6px 0; }
+.dm-depot { display: block; border: 2px dashed var(--border); border-radius: 8px; padding: 14px; text-align: center; color: var(--muted); margin-top: 8px; cursor: pointer; }
+.dm-depot.grand { padding: 40px 14px; font-size: 16px; }

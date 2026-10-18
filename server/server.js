@@ -23,7 +23,8 @@ const SESSION_DAYS = 30;
 const MAX_BODY = 10 * 1024 * 1024;
 const MAX_DOCUMENT = 40 * 1024 * 1024;
 const TYPES_DOCUMENTS = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', dwg: 'image/vnd.dwg', dxf: 'image/vnd.dxf',
-  ifc: 'application/x-step', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', zip: 'application/zip', txt: 'text/plain' };
+  ifc: 'application/x-step', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', zip: 'application/zip', txt: 'text/plain',
+  eml: 'message/rfc822', msg: 'application/vnd.ms-outlook' }; // e-mails de demande du client (toujours téléchargés, jamais affichés)
 
 const db = DB.open(DB_FILE);
 API.initTables(db);

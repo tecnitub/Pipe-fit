@@ -1,9 +1,9 @@
 // Documents du chantier (plans, fiches techniques, notices, sécurité…) déposés par le bureau et transmis aux compagnons,
 // et fiche chantier du compagnon sur son téléphone : documents, matériel prévu (sans prix ni heures, selon les réglages),
 // commandes et livraisons attendues.
-const CATEGORIES_DOC = [['Plan', '📐'], ['Fiche technique', '📄'], ['Notice', '📘'], ['Sécurité / PPSPS', '⛑️'], ['Photo', '🖼️'], ['Autre', '📁']];
+const CATEGORIES_DOC = [['Demande client', '📧'], ['Plan', '📐'], ['Fiche technique', '📄'], ['Notice', '📘'], ['Sécurité / PPSPS', '⛑️'], ['Photo', '🖼️'], ['Autre', '📁']];
 const iconeDoc = c => (CATEGORIES_DOC.find(x => x[0] === c) || CATEGORIES_DOC[CATEGORIES_DOC.length - 1])[1];
-const categorieDevinee = nom => (/\.(dwg|dxf|ifc)$|plan|iso(m[ée]trique)?\b|p&?id|implantation|coupe|synoptique/i.test(nom) ? 'Plan'
+const categorieDevinee = nom => (/\.(eml|msg)$/i.test(nom) ? 'Demande client' : /\.(dwg|dxf|ifc)$|plan|iso(m[ée]trique)?\b|p&?id|implantation|coupe|synoptique/i.test(nom) ? 'Plan'
   : /fiche|\bft\b|datasheet|technique|catalogue/i.test(nom) ? 'Fiche technique' : /notice|manuel|mode d.emploi/i.test(nom) ? 'Notice'
     : /ppsps|s[ée]curit|pr[ée]vention|amiante|permis/i.test(nom) ? 'Sécurité / PPSPS' : /\.(jpe?g|png|webp)$/i.test(nom) ? 'Photo' : 'Autre');
 const tailleLisible = o => (o > 1048576 ? `${fmt(o / 1048576, 1)} Mo` : `${Math.max(1, Math.round(o / 1024))} Ko`);
