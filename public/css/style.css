@@ -769,3 +769,10 @@ tr.neg-ligne td { background: var(--bad-bg); }
 .a-faire { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 6px; }
 .charges-cols { align-items: start; margin-bottom: 8px; }
 table.charges td { vertical-align: top; }
+
+/* Intérim */
+table.registre td { vertical-align: top; font-size: 13px; }
+table.registre tr.incomplet td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+fieldset.mi-titre { border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; margin: 8px 0; }
+fieldset.mi-titre[hidden] { display: none; }
+.registre-doc th, .registre-doc td { font-size: 8pt; vertical-align: top; }

@@ -385,9 +385,12 @@ async function api(req, res, url) {
     if (!DB.COLLECTIONS.includes(col)) return fail(res, 404, 'Collection inconnue');
 
     if (method === 'PUT') {
-      // Un compagnon peut seulement ouvrir une intervention hors devis (règle appliquée plus bas)
-      if (!canWrite(acc, col) && !(estCompagnon(acc) && col === 'affaires')) return fail(res, 403, 'Droits insuffisants');
       const { data, version } = await readBody(req);
+      // Un compagnon peut seulement ouvrir une intervention hors devis (règle appliquée plus bas) ;
+      // un chargé d'affaires crée et modifie les fiches des intérimaires (pas celles des salariés)
+      const fiche = col === 'users' && DB.getRecord(db, 'users', id);
+      const interimaire = acc.role === 'charge' && col === 'users' && data && data.type === 'interimaire' && (!fiche || fiche.type === 'interimaire');
+      if (!canWrite(acc, col) && !(estCompagnon(acc) && col === 'affaires') && !interimaire) return fail(res, 403, 'Droits insuffisants');
       if (!data || typeof data !== 'object') return fail(res, 400, 'Données manquantes');
       const result = DB.tx(db, () => {
         const existing = DB.getRecord(db, col, id);

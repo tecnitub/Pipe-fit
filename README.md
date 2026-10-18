@@ -250,6 +250,19 @@ Les compagnons voient leurs habilitations et le matériel qui leur est confié d
 Le serveur vérifie les échéances toutes les 6 heures : un résumé au bureau, un message à la personne concernée (ou à
 son chef d'équipe), une fois 60 jours avant (30 jours pour le parc) puis une fois à l'expiration. Rappel sur le tableau de bord.
 
+## Intérim : entrées, sorties et registre du personnel
+
+**RH → Intérim** : intérimaires présents (agence, entrée, fin prévue, chantier, heures pointées), « + Entrée d'un
+intérimaire » (fiche de l'équipe créée à la première mission, reprise des informations d'une mission précédente),
+« Prolonger » (avenant de renouvellement gardé en historique) et « Sortie » (date et motif). Registre du personnel
+intérimaire dans l'ordre des entrées avec les mentions obligatoires (nom, nationalité, date de naissance, sexe, emploi
+et qualification, dates d'entrée et de sortie, mention « salarié temporaire », nom et adresse de l'entreprise de travail
+temporaire, plus le n° du contrat de mise à disposition et le motif de recours ; type et n° du titre autorisant à
+travailler pour les nationalités hors UE / EEE / Suisse), filtre par année et agence, export Excel et PDF A4.
+Alertes : registre incomplet, fin de mission prévue dépassée sans sortie, durée maximale du motif dépassée, titre de
+séjour expiré ou expirant sous 60 jours. Un chargé d'affaires peut créer et modifier les fiches des intérimaires
+(pas celles des salariés) ; les compagnons n'ont pas accès au registre.
+
 ## Trésorerie prévisionnelle et tableau de bord par chargé d'affaires
 
 **Facturation → Trésorerie** : solde de fin de semaine sur 13 semaines à partir du solde bancaire saisi. Encaissements :

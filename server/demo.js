@@ -521,6 +521,16 @@ function demoData() {
     { id: 'pm7', categorie: 'Récupération fluides frigorigènes', designation: 'Station de récupération + balance électronique', marque: 'Refco', numeroSerie: 'RF-88120', dateAchat: d(-500), valeur: 2400,
       affectation: { userId: 'o2', affaireId: '', depuis: d(-60) }, historique: [], echeances: [E('etalonnage', 'Contrôle / étalonnage (détecteur, balance)', -145, 220, 12)], notes: '' },
   ];
+  // Missions d'intérim (registre du personnel : entrées et sorties des salariés temporaires)
+  const AG = { agenceId: 'e8' };
+  const missions = [
+    { id: 'mi1', userId: 'i1', nom: 'Yanis Morel', nationalite: 'Française', dateNaissance: '1996-04-12', sexe: 'M', qualification: 'Tuyauteur N2P2', ...AG, numeroContrat: 'MAD-2026-02114', motif: 'accroissement',
+      motifDetail: 'Chantier skid de dosage', dateEntree: d(-300), finPrevue: d(-250), dateSortie: d(-250), finMotif: 'Fin de mission', affaireIds: ['af3'], notes: '' },
+    { id: 'mi2', userId: 'i1', nom: 'Yanis Morel', nationalite: 'Française', dateNaissance: '1996-04-12', sexe: 'M', qualification: 'Tuyauteur N2P2', ...AG, numeroContrat: 'MAD-2026-03390', motif: 'accroissement',
+      motifDetail: 'Ligne NEP Rumilly', dateEntree: d(-90), finPrevue: d(30), dateSortie: '', affaireIds: ['af1'], notes: '' },
+    { id: 'mi3', userId: 'i2', nom: 'Damien Leroy', nationalite: 'Portugaise', dateNaissance: '1989-11-03', sexe: 'M', qualification: 'Soudeur TIG N3P1', ...AG, numeroContrat: 'MAD-2026-03511', motif: 'remplacement',
+      motifDetail: 'Remplacement de R. Blanc (arrêt maladie)', dateEntree: d(-40), finPrevue: d(-2), dateSortie: '', affaireIds: ['af1'], notes: '' },
+  ];
   return {
     files: { 'img-logo': IMAGES.logo, 'img-sig': IMAGES.signature, 'img-rack1': IMAGES.rack1, 'img-rack2': IMAGES.rack2,
       'pdf-iso': pdfExemple('Isometrique NEP aller - ISO-NEP-01 - indice B', ['Ligne NEP aller DN50 inox 316L', 'Longueur developpee : 61,8 m', '14 coudes 90 3D, 4 tes egaux, 4 brides PN16', 'Supportage tous les 2,5 m (colliers sur rail)', 'Indice B : cotes de raccordement mises a jour']),
@@ -535,7 +545,7 @@ function demoData() {
         tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',
         types: { devis: { conditions: 'Acompte de 30 % à la commande. Travaux réalisés selon les normes EN 13480 et le DTU en vigueur. Hors génie civil, calorifuge et échafaudages sauf mention contraire.' },
           facture: { conditions: 'Paiement par virement à 45 jours fin de mois.' } } } },
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels,
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels, missions,
   };
 }
 

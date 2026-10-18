@@ -17,7 +17,7 @@ const Compagnon = (() => {
   const DEFAUT = Object.fromEntries(OPTIONS.map(o => [o[0], o[2]]));
   const regles = settings => ({ ...DEFAUT, ...((settings && settings.compagnon) || {}) });
   // Listes jamais envoyées aux compagnons
-  const MASQUEES = ['factures', 'situations', 'achats', 'efactures', 'consultations', 'chiffrages', 'envois', 'ouvrages', 'familles', 'zones'];
+  const MASQUEES = ['factures', 'situations', 'achats', 'efactures', 'consultations', 'chiffrages', 'envois', 'ouvrages', 'familles', 'zones', 'missions'];
   const sans = (o, cles) => { const r = { ...o }; cles.forEach(k => delete r[k]); return r; };
 
   // Devis accepté d'un chantier : désignations, quantités et fournitures, sans prix (ni heures sauf réglage)
