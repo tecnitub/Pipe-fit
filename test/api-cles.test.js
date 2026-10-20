@@ -77,7 +77,7 @@ test('clés d\'API, lectures filtrées, webhooks signés', async () => {
   // La clé d'un opérateur garde ses droits limités ; révocation immédiate
   const ko = (await call('POST', '/api/cles', { nom: 'badgeuse' }, { cookie: op })).body;
   assert.strictEqual((await call('PUT', '/api/records/entreprises/e-x', { data: { nom: 'X' } }, { cle: ko.cle })).status, 403);
-  assert.strictEqual((await call('PUT', '/api/records/temps/t-badge', { data: { userId: 'o1', affaireId: 'af1', date: '2026-10-14', heures: 8 } }, { cle: ko.cle })).status, 200);
+  assert.strictEqual((await call('PUT', '/api/records/temps/t-badge', { data: { userId: 'o1', affaireId: 'af1', date: new Date().toISOString().slice(0, 10), heures: 8 } }, { cle: ko.cle })).status, 200);
   assert.strictEqual((await call('GET', '/api/cles', null, { cookie: admin })).body.length, 2);
   assert.strictEqual((await call('DELETE', `/api/cles/${ko.id}`, {}, { cookie: claire })).status, 404);
   assert.strictEqual((await call('DELETE', `/api/cles/${k.id}`, {}, { cookie: claire })).status, 200);

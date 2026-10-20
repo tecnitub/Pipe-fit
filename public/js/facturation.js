@@ -94,9 +94,9 @@ Views.situations = (params, query) => {
   ${list.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Chantier</th><th>Client</th><th>Statut</th><th class="num">Avancement cumulé</th><th class="num">Situation HT</th><th class="num">Retenue</th><th class="num">Net à payer TTC</th><th>Facture</th></tr>
   ${list.map(s => {
     const c = Calc.situation(s), a = affaireOf(s.affaireId), fa = Store.get('factures', s.factureId);
-    return `<tr class="clickable" onclick="location.hash='#/situations/${s.id}'"><td><strong>${esc(s.numero || '…')}</strong> <span class="muted small">n° ${situationRang(s)}</span></td><td>${dateFr(s.date)}</td>
+    return `<tr class="clickable" data-go="#/situations/${s.id}"><td><strong>${esc(s.numero || '…')}</strong> <span class="muted small">n° ${situationRang(s)}</span></td><td>${dateFr(s.date)}</td>
       <td>${esc(affaireLabel(a))}</td><td>${esc(clientName(a.clientId))}</td><td>${badgeSituation(s)}</td><td class="num">${pct(c.pctCumul)}</td><td class="num">${eur(c.montant)}</td>
-      <td class="num">${c.retenue ? `${fmt(c.retenuePct, 1)} %` : '—'}</td><td class="num">${eur(c.netAPayer)}</td><td>${fa ? `<a href="#/facture/${fa.id}" onclick="event.stopPropagation()">${esc(fa.numero || '…')}</a>` : ''}</td></tr>`;
+      <td class="num">${c.retenue ? `${fmt(c.retenuePct, 1)} %` : '—'}</td><td class="num">${eur(c.netAPayer)}</td><td>${fa ? `<a href="#/facture/${fa.id}">${esc(fa.numero || '…')}</a>` : ''}</td></tr>`;
   }).join('')}</table></div>` : '<p class="muted">Aucune situation.</p>'}`;
 };
 const badgeSituation = s => (s.statut === 'Acceptée' ? `<span class="badge b-ok">Validée${s.factureId ? ' · facturée' : ''}</span>` : badge(s.statut));
@@ -129,9 +129,9 @@ function situationEditor(id) {
   };
   return `<div class="toolbar">
     <a href="#/situations" class="btn secondary">← Situations</a>
-    <a href="#/chantier/${sit.affaireId}" class="btn secondary">Chantier ${esc(a.code || '')}</a>
+    <a href="#/chantier/${esc(sit.affaireId)}" class="btn secondary">Chantier ${esc(a.code || '')}</a>
     <span class="spacer"></span>
-    <button class="secondary print-btn" onclick="window.print()">Imprimer</button>${boutonsEnvoi('situation', sit.id, 'Envoyer la situation')}
+    <button class="secondary print-btn" data-print>Imprimer</button>${boutonsEnvoi('situation', sit.id, 'Envoyer la situation')}
     ${f ? `<a class="btn secondary" href="#/facture/${f.id}">Facture ${esc(f.numero || '…')}</a>` : ''}
     ${sit.statut !== 'Acceptée' ? '<button class="danger" id="del">Supprimer</button>' : ''}
   </div>

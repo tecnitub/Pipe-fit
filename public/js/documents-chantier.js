@@ -50,7 +50,7 @@ function documentsChantier(a) {
   ${bandeauDossierChantier(a)}
   ${edit ? `<label class="doc-depot" id="doc-depot"><input type="file" id="doc-fichiers" multiple hidden accept=".pdf,.jpg,.jpeg,.png,.webp,.dwg,.dxf,.dwf,.ifc,.stp,.step,.xlsx,.xls,.docx,.doc,.pptx,.csv,.zip,.txt,.eml,.msg">
     <strong>📤 Déposer des documents</strong><span class="small muted">Glissez les fichiers ici ou cliquez · PDF, images, DWG/DXF, IFC, STEP, Excel, Word, ZIP, e-mails · 40 Mo maximum par fichier</span>
-    <span class="small"><input type="checkbox" id="doc-transmettre" checked onclick="event.stopPropagation()"> Transmettre aux compagnons</span></label>
+    <span class="small"><input type="checkbox" id="doc-transmettre" checked> Transmettre aux compagnons</span></label>
     <div id="doc-progres" class="small muted"></div>` : ''}
   ${docs.length ? `<div class="table-wrap"><table class="docs-table"><tr><th>Document</th><th>Catégorie</th><th>Indice</th><th>Ajouté</th><th class="num">Taille</th><th>Compagnons</th>${edit ? '<th></th>' : ''}</tr>
     ${docs.map(d => `<tr data-doc="${d.id}">

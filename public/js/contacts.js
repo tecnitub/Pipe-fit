@@ -136,7 +136,7 @@ Views.contacts = (params, query) => {
   ${list.map(e => {
     const b = billingSite(e.id);
     const nbAff = Store.all('affaires').filter(a => a.clientId === e.id).length;
-    return `<tr class="clickable" data-search="${esc([e.nom, e.secteur, b && b.ville, e.siret].join(' ').toLowerCase())}" onclick="location.hash='#/entreprise/${e.id}'">
+    return `<tr class="clickable" data-search="${esc([e.nom, e.secteur, b && b.ville, e.siret].join(' ').toLowerCase())}" data-go="#/entreprise/${e.id}">
       <td><strong>${esc(e.nom)}</strong></td><td>${categoryBadge(e.categorie)}</td><td>${esc(e.secteur)}</td><td>${esc(b ? b.ville : '')}</td><td>${esc(e.tel)}</td>
       <td class="num">${(e.adresses || []).length}</td><td class="num">${contactsOf(e.id).length}</td><td class="num">${nbAff || ''}</td></tr>`;
   }).join('')}</table></div>` : '<p class="muted">Aucune entreprise. Ajoutez vos clients et fournisseurs avec « + Entreprise ».</p>'}`;

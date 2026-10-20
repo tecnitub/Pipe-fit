@@ -27,6 +27,17 @@ DONNÉES ET SAUVEGARDE
 MISE À JOUR
   Lancez simplement le nouveau PipeFitCRM-Setup.exe : les données sont conservées.
 
+HTTPS (connexion chiffrée)
+  Indispensable pour l'appli des compagnons et pour tout accès depuis l'extérieur.
+  Déposez le certificat de l'entreprise (émis par une autorité reconnue) dans :
+      C:\ProgramData\PipeFitCRM\data\tls
+  soit cert.pem + key.pem, soit certificat.pfx ; dans ce cas créez le fichier
+  C:\ProgramData\PipeFitCRM\config.cmd contenant :
+      set "TLS_PASSPHRASE=mot de passe du PFX"
+  puis redémarrez le PC. Adresse pour les collègues : https://NOM-DU-SERVEUR:3000
+  (les anciennes adresses http:// sont renvoyées automatiquement vers https://).
+  L'état du certificat est affiché dans Paramètres > Sécurité.
+
 CHANGER DE PORT
   Créer le fichier C:\ProgramData\PipeFitCRM\config.cmd contenant :
       set "PORT=8080"

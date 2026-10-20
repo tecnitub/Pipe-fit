@@ -133,3 +133,35 @@ test('appli -> répertoire -> appli : dépôt, nouvel indice, rangement, renomma
   const etat = await call('GET', '/api/documents/dossier', null, admin);
   assert.strictEqual(etat.body.config.chemin, racine); assert.strictEqual(etat.body.config.impose, true);
 });
+
+test('répertoire : ni écriture hors du répertoire, ni lecture au travers d\'un lien symbolique', async () => {
+  const admin = (await call('POST', '/api/login', { login: 'admin', password: 'admin-test-pw' })).cookie;
+  const get = async () => (await call('GET', '/api/data', null, admin)).body.affaires.find(a => a.id === 'af2');
+  let af2 = await get();
+  await DOSSIER.synchroniser();
+  const ch = path.join(racine, 'Chantiers', Classement.dossierChantier(af2));
+  // Un document dont le « sous-dossier » tente de remonter hors du répertoire
+  const up = await call('POST', '/api/documents/fichier', pdf('piège'), admin, { 'X-PipeFit-Upload': '1', 'X-Filename': 'p.pdf', 'Content-Type': 'application/pdf' });
+  af2.documents = [...(af2.documents || []), { id: 'piege', fichierId: up.body.id, nom: 'piege.pdf', categorie: 'Autre', dossier: '../../../../evasion', visible: false, date: '2026-10-20' }];
+  await call('PUT', '/api/records/affaires/af2', { data: af2, version: af2._v }, admin);
+  await DOSSIER.synchroniser();
+  assert.ok(!fs.existsSync(path.join(dir, 'evasion')) && !fs.existsSync(path.join(racine, 'evasion')));
+  assert.ok(fs.existsSync(path.join(ch, 'evasion', 'piege.pdf')), 'rangé dans le dossier du chantier');
+  // Lien symbolique vers un fichier du serveur : jamais importé
+  const secret = path.join(dir, 'secret.pdf'); fs.writeFileSync(secret, pdf('secret du serveur'));
+  fs.mkdirSync(path.join(ch, 'Plan'), { recursive: true });
+  fs.symlinkSync(secret, path.join(ch, 'Plan', 'lien.pdf'));
+  fs.symlinkSync(dir, path.join(ch, 'Dossier lié'));
+  let r = await DOSSIER.synchroniser();
+  af2 = await get();
+  assert.ok(!af2.documents.some(d => d.nom === 'lien.pdf' || d.nom === 'secret.pdf' || d.nom === 'test.db'));
+  // Fichier suivi remplacé par un lien symbolique : ni lu, ni écrasé au travers du lien
+  fs.rmSync(path.join(ch, 'evasion', 'piege.pdf'));
+  fs.symlinkSync(secret, path.join(ch, 'evasion', 'piege.pdf'));
+  af2 = await get();
+  const up2 = await call('POST', '/api/documents/fichier', pdf('nouvel indice'), admin, { 'X-PipeFit-Upload': '1', 'X-Filename': 'p.pdf', 'Content-Type': 'application/pdf' });
+  af2.documents = af2.documents.map(d => (d.id === 'piege' ? { ...d, fichierId: up2.body.id, indice: 'B' } : d));
+  await call('PUT', '/api/records/affaires/af2', { data: af2, version: af2._v }, admin);
+  r = await DOSSIER.synchroniser();
+  assert.match(fs.readFileSync(secret, 'latin1'), /secret du serveur/, 'fichier du serveur intact');
+});

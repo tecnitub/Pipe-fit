@@ -605,7 +605,7 @@ function rhFrais(query) {
   return `<h1>RH</h1>${rhTabs('frais')}
   <div class="toolbar"><span class="spacer"></span><select id="fs" style="width:auto"><option value="">Toutes</option>${optionsStr(['Soumise', 'Validée', 'Refusée', 'Remboursée'], fs)}</select></div>
   ${list.length ? `<div class="table-wrap"><table><tr><th>Justificatif</th><th>N°</th><th>Date</th><th>Personne</th><th>Chantier</th><th>Catégorie</th><th>Description</th><th class="num">TTC</th><th>Statut</th><th></th></tr>
-  ${list.map(f => `<tr><td>${f.photoId ? `<button class="linklike" data-photo="${f.photoId}"><img class="thumb" src="${fileUrl(f.photoId)}" alt="Voir le justificatif"></button>` : '<span class="muted small">sans photo</span>'}</td>
+  ${list.map(f => `<tr><td>${f.photoId ? `<button class="linklike" data-photo="${esc(f.photoId)}"><img class="thumb" src="${fileUrl(f.photoId)}" alt="Voir le justificatif"></button>` : '<span class="muted small">sans photo</span>'}</td>
     <td>${esc(f.numero || '')}</td><td>${dateFr(f.date)}</td><td>${esc(userName(f.userId))}</td><td>${esc(affaireOf(f.affaireId).code || '')}</td><td>${f.categorie === 'Repas' ? 'Restaurant' : esc(f.categorie)}</td><td>${esc(f.description)}${fraisControle(f)}</td>
     <td class="num">${eur(f.montantTTC)}</td><td>${badge(f.statut)}</td>
     <td class="actions">${f.statut === 'Soumise' ? `<button class="small" data-st="Validée" data-f="${f.id}">Valider</button><button class="small danger" data-st="Refusée" data-f="${f.id}">Refuser</button>` : ''}${f.statut === 'Validée' ? `<button class="small secondary" data-st="Remboursée" data-f="${f.id}">Remboursée</button>` : ''}</td></tr>`).join('')}

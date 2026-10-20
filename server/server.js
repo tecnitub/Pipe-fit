@@ -1,6 +1,5 @@
 // Serveur multi-utilisateurs : API REST + temps réel (SSE) + fichiers statiques.
 // Aucune dépendance externe : Node.js >= 22.13 (module node:sqlite).
-const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -9,6 +8,7 @@ const { demoData, uid } = require('./demo');
 const M365 = require('./m365');
 const EF = require('./efacture');
 const DossierDocuments = require('./dossier-documents');
+const HS = require('./http-securite');
 const API = require('./api');
 const Push = require('./push');
 const Notifs = require('./notifs');
@@ -38,6 +38,14 @@ if (!db.prepare('SELECT 1 FROM settings WHERE id = 1').get()) {
   if (process.env.SEED_DEMO === '0') DB.setSettings(db, demoData().settings);
   else { DB.replaceAll(db, demoData(), 'système'); console.log('Base initialisée avec les données de démonstration.'); }
 }
+// Sessions ouvertes avant le chiffrement des jetons : remplacées une fois par leur empreinte (personne n'est déconnecté)
+if (!DB.getConfig(db, 'sessions-empreintes')) {
+  DB.tx(db, () => {
+    const maj = db.prepare('UPDATE sessions SET token = ? WHERE token = ?');
+    db.prepare('SELECT token FROM sessions').all().forEach(x => maj.run(crypto.createHash('sha256').update(x.token).digest('hex'), x.token));
+    DB.setConfig(db, 'sessions-empreintes', { depuis: new Date().toISOString() });
+  });
+}
 const hasAccounts = () => !!db.prepare('SELECT 1 FROM accounts LIMIT 1').get();
 function createAccount(login, nom, role, userId, password) {
   const id = uid();
@@ -50,7 +58,8 @@ if (!hasAccounts() && process.env.ADMIN_PASSWORD) {
   createAccount('admin', 'Administrateur', 'admin', null, process.env.ADMIN_PASSWORD);
   console.log("Compte administrateur 'admin' créé avec le mot de passe ADMIN_PASSWORD.");
 }
-const isLocal = req => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
+// Sur le serveur lui-même (pas au travers d'un reverse proxy installé sur la même machine)
+const isLocal = HS.estLocal;
 
 /* ---------- Droits ---------- */
 // admin : tout. charge : données métier (hors ressources/paramètres). atelier : saisie des heures uniquement.
@@ -158,19 +167,52 @@ function readBody(req) {
 function cookies(req) {
   return Object.fromEntries((req.headers.cookie || '').split(';').map(s => s.trim().split('=')).filter(p => p[0]).map(([k, ...v]) => [k, decodeURIComponent(v.join('='))]));
 }
-const isHttps = req => req.socket.encrypted || req.headers['x-forwarded-proto'] === 'https';
+const isHttps = HS.estHttps;
 function sessionCookie(req, token, maxAge) {
   return `sid=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${isHttps(req) ? '; Secure' : ''}`;
 }
 
+// Jeton de session : seule son empreinte est enregistrée (une copie de la base ne permet pas de reprendre une session)
+const empreinte = t => crypto.createHash('sha256').update(String(t)).digest('hex');
+function ouvrirSession(req, accountId) {
+  const token = crypto.randomBytes(32).toString('hex');
+  db.prepare('INSERT INTO sessions (token, account_id, expires) VALUES (?, ?, ?)').run(empreinte(token), accountId, Date.now() + SESSION_DAYS * 86400000);
+  return sessionCookie(req, token, SESSION_DAYS * 86400);
+}
 function currentAccount(req) {
   const token = cookies(req).sid;
   // Clé d'API (automatisations) : les droits sont ceux du compte propriétaire de la clé
   if (!token) { const a = API.compteDeCle(db, req.headers.authorization); return a ? { ...a, token: null, cleApi: true } : null; }
-  const s = db.prepare('SELECT * FROM sessions WHERE token = ?').get(token);
+  const h = empreinte(token);
+  const s = db.prepare('SELECT * FROM sessions WHERE token = ?').get(h);
   if (!s || s.expires < Date.now()) return null;
   const a = db.prepare('SELECT id, login, nom, role, user_id, email FROM accounts WHERE id = ?').get(s.account_id);
-  return a ? { ...a, token } : null;
+  return a ? { ...a, token: h } : null;
+}
+// Mot de passe : 10 caractères au moins, ni l'identifiant, ni un mot de passe courant
+const COURANTS = new Set(['123456789', '1234567890', '12345678910', 'azertyuiop', 'qwertyuiop', 'motdepasse', 'password', 'password1', 'password123', 'administrateur', 'administrator',
+  'azerty1234', 'azerty12345', 'soleil1234', 'bonjour123', '0123456789', '1111111111', 'aaaaaaaaaa', 'pipefit123', 'pipe-fit123', 'tecnitub123', 'changeme123', 'motdepasse123']);
+function motDePasseRefuse(pw, login) {
+  const x = String(pw || '');
+  if (x.length < 10) return 'Mot de passe : 10 caractères au moins';
+  if (x.length > 200) return 'Mot de passe trop long';
+  const n = x.toLowerCase();
+  if (COURANTS.has(n) || /^(.)\1+$/.test(x)) return 'Mot de passe trop courant : choisissez-en un autre (une phrase courte, par exemple)';
+  if (login && n.includes(String(login).toLowerCase()) && String(login).length >= 3) return 'Le mot de passe ne doit pas contenir l\'identifiant';
+  return null;
+}
+// Identifiants : lettres, chiffres, « _ », « - », « . » (ceux de l'appli et des imports) ; tout autre caractère
+// (guillemet, apostrophe, chevron…) est refusé, aussi dans les références (clientId, photoId…) et les sous-éléments
+const ID = /^[A-Za-z0-9_.-]{1,64}$/;
+function referenceInvalide(o, prof = 0) {
+  if (!o || typeof o !== 'object' || prof > 8) return null;
+  if (Array.isArray(o)) { for (const x of o) { const e = referenceInvalide(x, prof + 1); if (e) return e; } return null; }
+  for (const [k, v] of Object.entries(o)) {
+    if ((k === 'id' || /Id$/.test(k)) && typeof v === 'string' && v !== '' && !ID.test(v)) return k;
+    if (/Ids$/.test(k) && Array.isArray(v) && v.some(x => typeof x === 'string' && x !== '' && !ID.test(x))) return k;
+    if (v && typeof v === 'object') { const e = referenceInvalide(v, prof + 1); if (e) return e; }
+  }
+  return null;
 }
 const publicAccount = a => ({ id: a.id, login: a.login, nom: a.nom, role: a.role, userId: a.user_id, email: a.email || '' });
 const EMAIL = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/;
@@ -178,18 +220,22 @@ const m365Pret = () => { const c = DB.getConfig(db, 'm365'); return !!(c && c.ac
 const MAIL_COLS = ['devis', 'factures', 'situations', 'commandes', 'affaires', 'rapports', 'receptions', 'consultations'];
 const labelOf = o => o.numero || o.code || o.ref || o.nom || o.designation || o.tache || '';
 
-// Limitation des tentatives de connexion (10 échecs / 15 min par adresse IP).
+// Limitation des tentatives de connexion : 10 échecs / 15 min par adresse IP, 20 par identifiant (attaque répartie)
 const failures = new Map();
-function tooManyFailures(ip) {
-  const f = failures.get(ip);
+const LIMITES = { ip: 10, login: 20 };
+function tooManyFailures(cle, type = 'ip') {
+  const f = failures.get(cle);
   if (!f) return false;
-  if (Date.now() - f.first > 15 * 60 * 1000) { failures.delete(ip); return false; }
-  return f.count >= 10;
+  if (Date.now() - f.first > 15 * 60 * 1000) { failures.delete(cle); return false; }
+  return f.count >= LIMITES[type];
 }
-function recordFailure(ip) {
-  const f = failures.get(ip) || { count: 0, first: Date.now() };
-  f.count++; failures.set(ip, f);
+function recordFailure(cle) {
+  const f = failures.get(cle) || { count: 0, first: Date.now() };
+  f.count++; failures.set(cle, f);
+  if (failures.size > 10000) for (const [k, v] of failures) if (Date.now() - v.first > 15 * 60 * 1000) failures.delete(k);
 }
+// Empreinte factice : un identifiant inconnu prend le même temps qu'un mauvais mot de passe (pas de devinette des comptes)
+const FACTICE = DB.hashPassword(crypto.randomBytes(16).toString('hex'));
 
 /* ---------- API ---------- */
 async function api(req, res, url) {
@@ -211,6 +257,9 @@ async function api(req, res, url) {
     catch (e) { return fail(res, 422, e.message); }
   }
 
+  // Écriture depuis la page d'un autre site : refusée
+  if (HS.origineRefusee(req)) return fail(res, 403, 'Origine de la requête refusée');
+
   // Exception : envoi d'un document de chantier en fichier brut, avec l'en-tête X-PipeFit-Upload qu'un formulaire d'un autre site ne peut pas poser
   const envoiDocument = p[0] === 'documents' && p[1] === 'fichier' && method === 'POST' && req.headers['x-pipefit-upload'] === '1';
   if (method !== 'GET' && !envoiDocument && !(req.headers['content-type'] || '').startsWith('application/json')) {
@@ -223,7 +272,9 @@ async function api(req, res, url) {
     if (method === 'POST') {
       if (!isLocal(req)) return fail(res, 403, 'La première configuration doit être faite sur le serveur (http://localhost)');
       const { login, nom, password, demo } = await readBody(req);
-      if (!login || String(password || '').length < 8) return fail(res, 400, 'Identifiant requis et mot de passe de 8 caractères minimum');
+      if (!login) return fail(res, 400, 'Identifiant requis');
+      const faible = motDePasseRefuse(password, login);
+      if (faible) return fail(res, 400, faible);
       const id = DB.tx(db, () => (hasAccounts() ? null : createAccount(String(login), nom, 'admin', null, String(password))));
       if (!id) return fail(res, 409, 'Le compte administrateur existe déjà');
       if (!demo) {
@@ -231,23 +282,25 @@ async function api(req, res, url) {
         DB.replaceAll(db, { settings: d.settings, zones: d.zones }, 'système');
       }
       DB.audit(db, String(login), 'première configuration', null, null, demo ? 'avec démo' : 'base vide');
-      const token = crypto.randomBytes(32).toString('hex');
-      db.prepare('INSERT INTO sessions (token, account_id, expires) VALUES (?, ?, ?)').run(token, id, Date.now() + SESSION_DAYS * 86400000);
-      return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(req, token, SESSION_DAYS * 86400) });
+      return send(res, 200, { ok: true }, { 'Set-Cookie': ouvrirSession(req, id) });
     }
   }
 
   if (p[0] === 'login' && method === 'POST') {
-    const ip = req.socket.remoteAddress;
-    if (tooManyFailures(ip)) return fail(res, 429, 'Trop de tentatives, réessayez dans 15 minutes.');
+    const ip = HS.ipClient(req);
     const { login, password } = await readBody(req);
-    const a = db.prepare('SELECT * FROM accounts WHERE login = ?').get(String(login || ''));
-    if (!a || !DB.checkPassword(String(password || ''), a.pass)) { recordFailure(ip); return fail(res, 401, 'Identifiant ou mot de passe incorrect'); }
-    failures.delete(ip);
-    const token = crypto.randomBytes(32).toString('hex');
-    db.prepare('INSERT INTO sessions (token, account_id, expires) VALUES (?, ?, ?)').run(token, a.id, Date.now() + SESSION_DAYS * 86400000);
-    DB.audit(db, a.login, 'connexion');
-    return send(res, 200, publicAccount(a), { 'Set-Cookie': sessionCookie(req, token, SESSION_DAYS * 86400) });
+    const cleLogin = `login:${String(login || '').toLowerCase().slice(0, 100)}`;
+    if (tooManyFailures(ip) || tooManyFailures(cleLogin, 'login')) return fail(res, 429, 'Trop de tentatives, réessayez dans 15 minutes.');
+    const a = db.prepare('SELECT * FROM accounts WHERE login = ?').get(String(login || '').slice(0, 100));
+    const ok = DB.checkPassword(String(password || '').slice(0, 200), a ? a.pass : FACTICE);
+    if (!a || !ok) {
+      recordFailure(ip); recordFailure(cleLogin);
+      DB.audit(db, String(login || '').slice(0, 100), 'échec de connexion', null, null, ip);
+      return fail(res, 401, 'Identifiant ou mot de passe incorrect');
+    }
+    failures.delete(ip); failures.delete(cleLogin);
+    DB.audit(db, a.login, 'connexion', null, null, ip);
+    return send(res, 200, publicAccount(a), { 'Set-Cookie': ouvrirSession(req, a.id) });
   }
 
   // Description OpenAPI (création d'un connecteur Power Automate / Make…)
@@ -265,10 +318,21 @@ async function api(req, res, url) {
     const { current, next } = await readBody(req);
     const a = db.prepare('SELECT pass FROM accounts WHERE id = ?').get(acc.id);
     if (!DB.checkPassword(String(current || ''), a.pass)) return fail(res, 400, 'Mot de passe actuel incorrect');
-    if (String(next || '').length < 8) return fail(res, 400, 'Le nouveau mot de passe doit faire au moins 8 caractères');
+    const faible = motDePasseRefuse(next, acc.login);
+    if (faible) return fail(res, 400, faible);
     db.prepare('UPDATE accounts SET pass = ? WHERE id = ?').run(DB.hashPassword(next), acc.id);
     db.prepare('DELETE FROM sessions WHERE account_id = ? AND token <> ?').run(acc.id, acc.token);
+    DB.audit(db, acc.login, 'changement de mot de passe');
     return send(res, 200, { ok: true });
+  }
+  // Mes appareils connectés : nombre, et déconnexion de tous les autres (téléphone perdu…)
+  if (p[0] === 'me' && p[1] === 'sessions') {
+    if (method === 'GET') return send(res, 200, { autres: db.prepare('SELECT COUNT(*) n FROM sessions WHERE account_id = ? AND token <> ? AND expires > ?').get(acc.id, acc.token || '', Date.now()).n });
+    if (method === 'DELETE') {
+      const n = db.prepare('DELETE FROM sessions WHERE account_id = ? AND token <> ?').run(acc.id, acc.token || '').changes;
+      DB.audit(db, acc.login, 'déconnexion des autres appareils', null, null, String(n));
+      return send(res, 200, { deconnectes: n });
+    }
   }
 
   if (p[0] === 'events' && method === 'GET') {
@@ -376,6 +440,8 @@ async function api(req, res, url) {
     if (!canWrite(acc, col)) return fail(res, 403, 'Droits insuffisants');
     const { items } = await readBody(req);
     if (!Array.isArray(items) || items.length > 20000) return fail(res, 400, 'Liste invalide');
+    const inv = items.map(it => referenceInvalide(it)).find(Boolean);
+    if (inv) return fail(res, 400, `Identifiant invalide (${inv})`);
     const records = DB.tx(db, () => {
       const now = new Date().toISOString();
       const up = db.prepare(`INSERT INTO records (col, id, data, version, updated_at, updated_by) VALUES (?, ?, ?, 1, ?, ?)
@@ -406,6 +472,7 @@ async function api(req, res, url) {
   if (p[0] === 'records' && p[1] && p[2]) {
     const [, col, id] = p;
     if (!DB.COLLECTIONS.includes(col)) return fail(res, 404, 'Collection inconnue');
+    if (!ID.test(id)) return fail(res, 400, 'Identifiant invalide');
 
     if (method === 'PUT') {
       const { data, version } = await readBody(req);
@@ -414,7 +481,9 @@ async function api(req, res, url) {
       const fiche = col === 'users' && DB.getRecord(db, 'users', id);
       const interimaire = acc.role === 'charge' && col === 'users' && data && data.type === 'interimaire' && (!fiche || fiche.type === 'interimaire');
       if (!canWrite(acc, col) && !(estCompagnon(acc) && col === 'affaires') && !interimaire) return fail(res, 403, 'Droits insuffisants');
-      if (!data || typeof data !== 'object') return fail(res, 400, 'Données manquantes');
+      if (!data || typeof data !== 'object' || Array.isArray(data)) return fail(res, 400, 'Données manquantes');
+      const inv = referenceInvalide(data);
+      if (inv) return fail(res, 400, `Identifiant invalide (${inv})`);
       const result = DB.tx(db, () => {
         const existing = DB.getRecord(db, col, id);
         if (existing && version !== existing._v) return { conflict: existing };
@@ -639,7 +708,7 @@ async function api(req, res, url) {
     }
     const body = method === 'DELETE' ? {} : await readBody(req);
     if (body.role && !DB.ROLES.includes(body.role)) return fail(res, 400, 'Rôle invalide');
-    if (body.password && String(body.password).length < 8) return fail(res, 400, 'Mot de passe : 8 caractères minimum');
+    if (body.password) { const target0 = p[1] && db.prepare('SELECT login FROM accounts WHERE id = ?').get(p[1]); const faible = motDePasseRefuse(body.password, body.login || (target0 && target0.login)); if (faible) return fail(res, 400, faible); }
     if (body.email && !EMAIL.test(String(body.email).trim())) return fail(res, 400, 'Adresse e-mail invalide');
 
     if (method === 'POST') {
@@ -674,6 +743,20 @@ async function api(req, res, url) {
     }
   }
 
+  // État de la sécurité (Paramètres → Sécurité)
+  if (p[0] === 'securite' && method === 'GET') {
+    const jour = new Date(Date.now() - 86400000).toISOString();
+    const echecs = db.prepare("SELECT login, label AS ip, at FROM audit WHERE action = 'échec de connexion' AND at > ? ORDER BY id DESC LIMIT 50").all(jour);
+    return send(res, 200, {
+      https: { requete: isHttps(req), natif: SERVEUR.etat.https, certificat: SERVEUR.etat.certificat, recharge: SERVEUR.etat.recharge, redirection: +process.env.HTTP_REDIRECT_PORT || null },
+      proxy: { detecte: !!req.headers['x-forwarded-for'], confiance: HS.proxyDeConfiance(req), ip: HS.ipClient(req) },
+      sessions: db.prepare('SELECT COUNT(*) n FROM sessions WHERE expires > ?').get(Date.now()).n, dureeSessionJours: SESSION_DAYS,
+      cles: db.prepare('SELECT COUNT(*) n FROM api_keys').get().n, webhooksHttp: API.webhooks(DB, db).filter(w => w.actif && /^http:/i.test(w.url)).length,
+      admins: db.prepare("SELECT COUNT(*) n FROM accounts WHERE role = 'admin'").get().n,
+      echecs24h: echecs.length, derniersEchecs: echecs.slice(0, 10), m365: m365Pret(),
+    });
+  }
+
   if (p[0] === 'audit' && method === 'GET') {
     return send(res, 200, db.prepare('SELECT * FROM audit ORDER BY id DESC LIMIT 200').all());
   }
@@ -700,7 +783,9 @@ async function api(req, res, url) {
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webmanifest': 'application/manifest+json; charset=utf-8' };
 function serveStatic(req, res, url) {
-  let rel = decodeURIComponent(url.pathname);
+  let rel;
+  try { rel = decodeURIComponent(url.pathname); } catch (e) { res.writeHead(400); return res.end(); }
+  if (!['GET', 'HEAD'].includes(req.method)) { res.writeHead(405, { Allow: 'GET, HEAD' }); return res.end(); }
   if (rel === '/') rel = '/index.html';
   const file = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR + path.sep)) { res.writeHead(403); return res.end(); }
@@ -711,11 +796,10 @@ function serveStatic(req, res, url) {
   });
 }
 
-const server = http.createServer(async (req, res) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'same-origin');
-  const url = new URL(req.url, 'http://localhost');
+// HTTP, ou HTTPS si un certificat est fourni (voir server/http-securite.js) ; en-têtes de sécurité sur toutes les réponses
+const SERVEUR = HS.creerServeur(async (req, res) => {
+  let url;
+  try { url = new URL(req.url, 'http://localhost'); } catch (e) { res.writeHead(400); return res.end(); }
   try {
     if (url.pathname.startsWith('/api/')) await api(req, res, url);
     else serveStatic(req, res, url);
@@ -723,7 +807,8 @@ const server = http.createServer(async (req, res) => {
     if (!res.headersSent) fail(res, e.status || 500, e.status ? e.message : 'Erreur serveur');
     if (!e.status) console.error(e);
   }
-});
+}, { dossierDonnees: path.dirname(DB_FILE), nom: 'Pipe-Fit CRM' });
+const server = SERVEUR.server;
 
 if (require.main === module) {
   // Relève du dossier de réception des factures électroniques toutes les 2 minutes
@@ -733,9 +818,17 @@ if (require.main === module) {
   setTimeout(verifierEcheances, 30000).unref();
   setInterval(verifierEcheances, 6 * 3600000).unref();
   DOSSIER.demarrer();
+  // Sessions expirées effacées toutes les heures
+  setInterval(() => db.prepare('DELETE FROM sessions WHERE expires < ?').run(Date.now()), 3600000).unref();
+  SERVEUR.surveiller();
+  const schema = SERVEUR.etat.https ? 'https' : 'http';
+  if (SERVEUR.etat.https && process.env.HTTP_REDIRECT_PORT) SERVEUR.redirection(+process.env.HTTP_REDIRECT_PORT, HOST, PORT);
   server.listen(PORT, HOST, () => {
-    console.log(`Pipe-Fit CRM : http://localhost:${PORT}  (base : ${DB_FILE})`);
-    if (!hasAccounts()) console.log(`Première utilisation : ouvrez http://localhost:${PORT} sur ce poste pour créer le compte administrateur.`);
+    console.log(`Pipe-Fit CRM : ${schema}://localhost:${PORT}  (base : ${DB_FILE})`);
+    const c = SERVEUR.etat.certificat;
+    if (c) console.log(`HTTPS : certificat ${c.sujet}, expire le ${c.expire.slice(0, 10)} (${c.joursRestants} j)${c.autoSigne ? ' — auto-signé : les téléphones le refuseront' : ''}`);
+    else console.log('HTTPS non configuré : ajoutez un certificat (data/tls) ou placez le serveur derrière un reverse proxy HTTPS avant tout accès depuis l\'extérieur.');
+    if (!hasAccounts()) console.log(`Première utilisation : ouvrez ${schema}://localhost:${PORT} sur ce poste pour créer le compte administrateur.`);
   });
 }
 module.exports = { server, db, NOTIFS, DOSSIER };

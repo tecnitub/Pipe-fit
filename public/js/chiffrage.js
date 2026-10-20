@@ -190,7 +190,7 @@ Views.chiffrages = () => `<h1>Devis</h1>${devisTabs('chiffrages')}
   <div class="toolbar"><button id="ch-new">+ Nouveau chiffrage</button><a class="btn secondary" href="#/familles">Familles CAO (${Store.all('familles').length})</a></div>
   ${Store.all('chiffrages').length ? `<div class="table-wrap"><table><tr><th>Chiffrage</th><th>Devis</th><th>Client</th><th class="num">Éléments</th><th class="num">Pouces atelier / chantier</th><th class="num">Total HT</th><th class="num">Marge</th></tr>
     ${Store.all('chiffrages').map(ch => { const r = calculerChiffrage(ch), d = Store.get('devis', ch.devisId) || {};
-      return `<tr class="clickable" onclick="location.hash='#/chiffrage/${ch.id}'"><td>${esc(ch.nom || 'Sans titre')}${r.tot.manquants ? ` <span class="badge b-warn">${r.tot.manquants} à relier</span>` : ''}</td><td>${esc(d.numero || '')}</td><td>${esc(clientName(docClientId(d)))}</td>
+      return `<tr class="clickable" data-go="#/chiffrage/${ch.id}"><td>${esc(ch.nom || 'Sans titre')}${r.tot.manquants ? ` <span class="badge b-warn">${r.tot.manquants} à relier</span>` : ''}</td><td>${esc(d.numero || '')}</td><td>${esc(clientName(docClientId(d)))}</td>
         <td class="num">${(ch.lignes || []).length}</td><td class="num">${fmt(r.tot.poucesA, 0)} / ${fmt(r.tot.poucesC, 0)}</td><td class="num">${eur(r.tot.total)}</td><td class="num">${r.tot.total ? marginBadge((r.tot.total - r.tot.cout) / r.tot.total * 100) : '—'}</td></tr>`; }).join('')}</table></div>`
   : '<p class="muted">Aucun chiffrage. Créez-en un, ou ouvrez un devis et cliquez sur « Chiffrage depuis plan ».</p>'}`;
 Views.chiffrages.bind = root => { root.querySelector('#ch-new').onclick = () => { const ch = nouveauChiffrage(''); location.hash = `#/chiffrage/${ch.id}`; }; };

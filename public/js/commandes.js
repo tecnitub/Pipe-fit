@@ -33,7 +33,7 @@ Views.commandes = (params, query) => {
     <select id="fs" style="width:auto"><option value="">Tous statuts</option>${optionsStr(STATUTS_COMMANDE, fs)}</select>
   </div>
   ${list.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Fournisseur</th><th>Chantier</th><th>Livraison prévue</th><th>Statut</th><th class="num">Montant HT</th></tr>
-  ${list.map(c => `<tr class="clickable" onclick="location.hash='#/commandes/${c.id}'"><td>${esc(c.numero || '…')}</td><td>${dateFr(c.date)}</td><td>${esc(clientName(c.fournisseurId))}</td>
+  ${list.map(c => `<tr class="clickable" data-go="#/commandes/${c.id}"><td>${esc(c.numero || '…')}</td><td>${dateFr(c.date)}</td><td>${esc(clientName(c.fournisseurId))}</td>
     <td>${c.affaireId ? esc(affaireLabel(affaireOf(c.affaireId))) : '<span class="muted">Stock / frais généraux</span>'}</td><td>${dateFr(c.dateLivraison)}</td><td>${badge(c.statut)}</td><td class="num">${eur(Calc.commande(c).total)}</td></tr>`).join('')}
   <tr class="subtotal"><td colspan="6">Total (hors annulées)</td><td class="num">${eur(total)}</td></tr></table></div>`
   : '<p class="muted">Aucune commande.</p>'}`;
@@ -51,9 +51,9 @@ function commandeEditor(id) {
   return `
   <div class="toolbar">
     <a href="#/commandes" class="btn secondary">← Commandes</a>
-    ${c.affaireId ? `<a href="#/chantier/${c.affaireId}" class="btn secondary">Chantier ${esc(af.code || '')}</a>` : ''}
+    ${c.affaireId ? `<a href="#/chantier/${esc(c.affaireId)}" class="btn secondary">Chantier ${esc(af.code || '')}</a>` : ''}
     <span class="spacer"></span>
-    <button class="secondary print-btn" onclick="window.print()">Imprimer</button>${boutonsEnvoi('demandePrix', c.id, 'Demande de prix', false)}${boutonsEnvoi('commande', c.id, 'Envoyer la commande')}
+    <button class="secondary print-btn" data-print>Imprimer</button>${boutonsEnvoi('demandePrix', c.id, 'Demande de prix', false)}${boutonsEnvoi('commande', c.id, 'Envoyer la commande')}
     <button class="danger" id="del">Supprimer</button>
   </div>
   <h1 class="no-print">Commande ${esc(c.numero || '')} ${badge(c.statut)}</h1>${envoisHtml('commandes', c.id)}

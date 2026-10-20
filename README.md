@@ -62,11 +62,38 @@ docker run -d -p 3000:3000 -v pipefit-data:/data -e ADMIN_PASSWORD=MonMotDePasse
 | `DB_FILE` | `data/pipefit.db` | Fichier de base de données |
 | `ADMIN_PASSWORD` | — | Crée directement le compte `admin` (sinon : écran de première configuration) |
 | `DOCUMENTS_DIR` | `<dossier de la base>/Documents` | Répertoire des documents synchronisé avec l'appli (sinon : Paramètres) |
+| `TLS_DIR` | `<dossier de la base>/tls` | Dossier du certificat HTTPS : `cert.pem` + `key.pem`, ou `certificat.pfx` |
+| `TLS_CERT`, `TLS_KEY` / `TLS_PFX`, `TLS_PASSPHRASE` | — | Certificat HTTPS ailleurs que dans `TLS_DIR` |
+| `HTTP_REDIRECT_PORT` | — | Port HTTP (ex. `80`) renvoyé vers HTTPS |
+| `TRUST_PROXY` | — | `1` : reverse proxy installé sur une autre machine (adresse réelle des clients) |
 | `SEED_DEMO` | `1` | Données de démo initiales (l'écran de première configuration permet de partir d'une base vide) |
 
-**Accès depuis l'extérieur de l'entreprise** : placer le serveur derrière un reverse proxy HTTPS
-(Nginx, Caddy, IIS…) qui transmet l'en-tête `X-Forwarded-Proto` ; les cookies passent alors en `Secure`.
-Ne pas exposer le port 3000 en HTTP simple sur Internet.
+**HTTPS** (indispensable avant tout accès depuis l'extérieur et pour l'appli des compagnons) — deux façons :
+
+1. *Certificat dans Pipe-Fit* : déposer le certificat de l'entreprise dans `data/tls` (`cert.pem` + `key.pem`
+   avec la chaîne complète, ou `certificat.pfx` et `TLS_PASSPHRASE`), puis redémarrer. Le même port sert alors
+   en HTTPS (TLS 1.2 minimum) ; les adresses `http://` venant du réseau sont renvoyées vers `https://`, et celles
+   venant du serveur lui-même restent servies (raccourci du poste serveur, application DOE). Un certificat
+   renouvelé est rechargé sans redémarrer ; un certificat illisible empêche le démarrage (jamais de repli
+   silencieux en HTTP). Le certificat doit être émis par une autorité reconnue (Let's Encrypt, autorité de
+   l'entreprise) : un certificat auto-signé est refusé par les téléphones.
+2. *Reverse proxy* (Caddy, Nginx, IIS…) qui obtient le certificat et transmet `X-Forwarded-Proto` et
+   `X-Forwarded-For` ; s'il est sur une autre machine, définir `TRUST_PROXY=1`. Exemple Caddy (certificat
+   Let's Encrypt automatique) : `crm.tecnitub.fr { reverse_proxy localhost:3000 }`.
+
+Ne jamais exposer le port 3000 en HTTP simple sur Internet. L'état (certificat, échéance, proxy, tentatives
+refusées) est affiché dans **Paramètres → Sécurité**.
+
+**Mesures de sécurité en place** : mots de passe chiffrés (scrypt), 10 caractères au moins, refus des mots de passe
+courants ou contenant l'identifiant ; jetons de session enregistrés sous forme d'empreinte (SHA-256) ; cookies
+`HttpOnly`, `SameSite=Lax`, `Secure` en HTTPS ; blocage 15 min après 10 échecs de connexion par adresse ou 20 par
+identifiant, échecs inscrits au journal ; « Déconnecter mes autres appareils » (Paramètres) ; écritures refusées si
+elles viennent d'une page d'un autre site (en-tête `Origin`) et uniquement en JSON ; politique de sécurité du contenu
+(CSP) sans script externe ni script inline, HSTS en HTTPS, anti-cadre, permissions du navigateur limitées
+(caméra, micro, position) ; identifiants d'enregistrements et références contrôlés ; documents hors PDF et images
+toujours téléchargés, jamais affichés ; répertoire des documents protégé contre les chemins `..` et les liens
+symboliques ; première configuration possible uniquement sur le serveur lui-même (pas au travers d'un proxy) ;
+droits par rôle vérifiés par le serveur, données filtrées avant l'envoi aux compagnons.
 
 **Appli téléphone des compagnons** : c'est la même application, ouverte à l'adresse du serveur sur le
 téléphone puis ajoutée à l'écran d'accueil (Android : Chrome → « Installer l'application » ; iPhone, iOS 16.4

@@ -85,7 +85,7 @@ const App = {
       <p class="muted" style="margin:0">Créez le compte administrateur. Vous pourrez ensuite créer les comptes de vos collègues dans Paramètres.</p>
       <div class="field"><label>Identifiant</label><input name="login" value="admin" required autocomplete="username"></div>
       <div class="field"><label>Nom affiché</label><input name="nom" value="Administrateur"></div>
-      <div class="field"><label>Mot de passe (8 caractères min.)</label><input name="password" type="password" minlength="8" required autocomplete="new-password"></div>
+      <div class="field"><label>Mot de passe (10 caractères min.)</label><input name="password" type="password" minlength="10" required autocomplete="new-password"></div>
       <div class="field"><label>Confirmer le mot de passe</label><input name="confirm" type="password" required autocomplete="new-password"></div>
       <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="demo" style="width:auto"> Charger des données de démonstration (pour découvrir l'outil)</label>
       ${error ? `<p class="neg">${esc(error)}</p>` : ''}
@@ -126,4 +126,17 @@ const App = {
 };
 
 document.getElementById('modal').addEventListener('click', e => { if (e.target.id === 'modal') Modal.close(); });
+// Liens et actions déclarés en attributs (aucun gestionnaire inline : la politique de sécurité du contenu les bloque)
+document.addEventListener('click', e => {
+  const go = e.target.closest('[data-go]');
+  if (go) {
+    // Clic sur un lien, un bouton ou un champ placé dans une ligne cliquable : c'est lui qui compte
+    const ctrl = e.target.closest('a, button, input, select, textarea, label');
+    if (!ctrl || ctrl === go || !go.contains(ctrl)) location.hash = go.dataset.go;
+    return;
+  }
+  if (e.target.closest('[data-print]')) { window.print(); return; }
+  const ch = e.target.closest('[data-chiffrage]');
+  if (ch) ouvrirChiffrage(ch.dataset.chiffrage);
+});
 App.start();

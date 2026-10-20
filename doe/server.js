@@ -2,11 +2,11 @@
 // Sa propre base (dossiers DOE, pièces jointes), son propre port ; elle lit les données des chantiers dans Pipe-Fit
 // avec le compte de l'utilisateur (même identifiant et mot de passe, mêmes droits ; réservée au bureau).
 // Aucune dépendance externe : Node.js >= 22.13 (node:sqlite).
-const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
+const HS = require('../server/http-securite');
 
 const PORT = +process.env.DOE_PORT || 3100;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -29,6 +29,12 @@ db.exec(`PRAGMA journal_mode = WAL;
 
 // Identité de l'entreprise sur les pièces du DOE (charte TECNITUB), modifiable dans Réglages
 const CONFIG_DEFAUT = require('./config-defaut');
+// Sessions ouvertes avant le chiffrement des identifiants : remplacées une fois par leur empreinte
+if (!db.prepare("SELECT 1 FROM config WHERE key = 'sessions-empreintes'").get()) {
+  const maj = db.prepare('UPDATE sessions SET sid = ? WHERE sid = ?');
+  db.prepare('SELECT sid FROM sessions').all().forEach(x => maj.run(crypto.createHash('sha256').update(x.sid).digest('hex'), x.sid));
+  db.prepare("INSERT INTO config (key, value) VALUES ('sessions-empreintes', ?)").run(new Date().toISOString());
+}
 const lireConfig = () => { const r = db.prepare("SELECT value FROM config WHERE key = 'doe'").get(); const c = r ? JSON.parse(r.value) : {}; return { ...CONFIG_DEFAUT, ...c, societe: { ...CONFIG_DEFAUT.societe, ...(c.societe || {}) } }; };
 
 /* ---------- Outils HTTP ---------- */
@@ -51,14 +57,16 @@ async function lireJSON(req) {
   try { return JSON.parse(b.toString('utf8')); } catch (e) { throw Object.assign(new Error('JSON invalide'), { status: 400 }); }
 }
 const cookies = req => Object.fromEntries(String(req.headers.cookie || '').split(';').map(c => c.trim().split('=')).filter(x => x[0]).map(([k, ...v]) => [k, v.join('=')]));
-const estHttps = req => req.socket.encrypted || req.headers['x-forwarded-proto'] === 'https';
+const estHttps = HS.estHttps;
+// Seule l'empreinte de l'identifiant de session est enregistrée
+const empreinte = sid => crypto.createHash('sha256').update(String(sid)).digest('hex');
 const cookieSession = (req, sid, age) => `doe_sid=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${estHttps(req) ? '; Secure' : ''}`;
 function session(req) {
   const sid = cookies(req).doe_sid;
   if (!sid) return null;
-  const s = db.prepare('SELECT * FROM sessions WHERE sid = ?').get(sid);
+  const s = db.prepare('SELECT * FROM sessions WHERE sid = ?').get(empreinte(sid));
   if (!s) return null;
-  if (Date.now() - new Date(s.created_at) > SESSION_JOURS * 86400000) { db.prepare('DELETE FROM sessions WHERE sid = ?').run(sid); return null; }
+  if (Date.now() - new Date(s.created_at) > SESSION_JOURS * 86400000) { db.prepare('DELETE FROM sessions WHERE sid = ?').run(s.sid); return null; }
   return s;
 }
 
@@ -76,11 +84,13 @@ async function api(req, res, url) {
   // Protection CSRF : écritures en JSON, ou envoi de fichier avec l'en-tête X-Doe-Upload (impossible depuis un autre site)
   const envoiFichier = p[0] === 'fichiers' && !p[1] && method === 'POST' && req.headers['x-doe-upload'] === '1';
   if (method !== 'GET' && !envoiFichier && !(req.headers['content-type'] || '').startsWith('application/json')) return fail(res, 415, 'Content-Type application/json requis');
+  if (HS.origineRefusee(req)) return fail(res, 403, 'Origine de la requête refusée');
 
   if (p[0] === 'login' && method === 'POST') {
     const { login, password } = await lireJSON(req);
     let r;
-    try { r = await fetch(`${PIPEFIT}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ login, password }), signal: AbortSignal.timeout(15000) }); }
+    // Adresse du client transmise : Pipe-Fit limite les tentatives par personne et non pour tout le serveur DOE
+    try { r = await fetch(`${PIPEFIT}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': HS.ipClient(req) }, body: JSON.stringify({ login, password }), signal: AbortSignal.timeout(15000) }); }
     catch (e) { return fail(res, 502, `Pipe-Fit est injoignable (${PIPEFIT}) : vérifiez l'adresse PIPEFIT_URL.`); }
     const j = await r.json().catch(() => ({}));
     if (!r.ok) return fail(res, r.status === 401 ? 401 : 502, j.error || 'Identifiant ou mot de passe incorrect');
@@ -88,7 +98,7 @@ async function api(req, res, url) {
     const me = await (await fetch(`${PIPEFIT}/api/me`, { headers: { Cookie: pf } })).json().catch(() => ({}));
     if (!ROLES_DOE.includes(me.role)) return fail(res, 403, 'L\'application DOE est réservée au bureau (administrateur ou chargé d\'affaires).');
     const sid = crypto.randomBytes(24).toString('base64url');
-    db.prepare('INSERT INTO sessions (sid, login, nom, role, pf_cookie, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(sid, me.login, me.nom, me.role, pf, new Date().toISOString());
+    db.prepare('INSERT INTO sessions (sid, login, nom, role, pf_cookie, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(empreinte(sid), me.login, me.nom, me.role, pf, new Date().toISOString());
     return send(res, 200, { login: me.login, nom: me.nom, role: me.role }, { 'Set-Cookie': cookieSession(req, sid, SESSION_JOURS * 86400) });
   }
   const s = session(req);
@@ -177,7 +187,8 @@ async function api(req, res, url) {
 /* ---------- Fichiers statiques ---------- */
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.md': 'text/plain; charset=utf-8' };
 function statique(req, res, url) {
-  let rel = decodeURIComponent(url.pathname);
+  let rel;
+  try { rel = decodeURIComponent(url.pathname); } catch (e) { res.writeHead(400); return res.end(); }
   const file = rel === '/shared/pdf.js' ? PDF_MOTEUR : path.normalize(path.join(PUBLIC_DIR, rel === '/' ? '/index.html' : rel));
   if (file !== PDF_MOTEUR && !file.startsWith(PUBLIC_DIR + path.sep)) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, buf) => {
@@ -187,11 +198,10 @@ function statique(req, res, url) {
   });
 }
 
-const server = http.createServer(async (req, res) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'same-origin');
-  const url = new URL(req.url, 'http://localhost');
+// HTTP, ou HTTPS avec le certificat de TLS_DIR / TLS_CERT… (le même que Pipe-Fit), sinon <dossier de la base DOE>/tls ; en-têtes de sécurité
+const SERVEUR = HS.creerServeur(async (req, res) => {
+  let url;
+  try { url = new URL(req.url, 'http://localhost'); } catch (e) { res.writeHead(400); return res.end(); }
   try {
     if (url.pathname.startsWith('/api/')) await api(req, res, url);
     else statique(req, res, url);
@@ -199,7 +209,11 @@ const server = http.createServer(async (req, res) => {
     if (!res.headersSent) fail(res, e.status || 500, e.status ? e.message : 'Erreur serveur');
     if (!e.status) console.error(e);
   }
-});
+}, { dossierDonnees: path.dirname(DB_FILE), nom: 'Pipe-Fit DOE' });
+const server = SERVEUR.server;
 
-if (require.main === module) server.listen(PORT, HOST, () => console.log(`Pipe-Fit DOE : http://localhost:${PORT}  (Pipe-Fit : ${PIPEFIT}, base : ${DB_FILE})`));
+if (require.main === module) {
+  SERVEUR.surveiller();
+  server.listen(PORT, HOST, () => console.log(`Pipe-Fit DOE : ${SERVEUR.etat.https ? 'https' : 'http'}://localhost:${PORT}  (Pipe-Fit : ${PIPEFIT}, base : ${DB_FILE})`));
+}
 module.exports = { server, db };

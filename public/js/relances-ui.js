@@ -85,7 +85,7 @@ Views.relances = () => {
         ${e.prochaine && e.prochaine.cle === 'demeure' ? `<button class="small secondary" data-pdf="demeure|${f.id}" title="Lettre à envoyer en recommandé">PDF</button>` : ''}</td></tr>`).join('')}</table></div>`
     : `<p class="muted">${f0 === 'arelancer' ? 'Aucune facture à relancer aujourd\'hui.' : 'Aucune facture en retard.'}</p>`}
   ${d.bientot.length ? `<h2>Échéances dans les 7 jours</h2><div class="table-wrap"><table><tr><th>Facture</th><th>Client</th><th>Échéance</th><th class="num">Restant dû</th></tr>
-    ${d.bientot.map(f => `<tr class="clickable" onclick="location.hash='#/facture/${f.id}'"><td>${esc(f.numero)}</td><td>${esc(clientName(docClientId(f)))}</td><td>${dateFr(f.echeance)}</td><td class="num">${eur(Calc.resteDu(f))}</td></tr>`).join('')}</table></div>` : ''}
+    ${d.bientot.map(f => `<tr class="clickable" data-go="#/facture/${f.id}"><td>${esc(f.numero)}</td><td>${esc(clientName(docClientId(f)))}</td><td>${dateFr(f.echeance)}</td><td class="num">${eur(Calc.resteDu(f))}</td></tr>`).join('')}</table></div>` : ''}
   <h2>Retenues de garantie</h2>
   ${d.retenues.length ? `<div class="table-wrap"><table><tr><th>Chantier</th><th>Client</th><th>Réception</th><th>Libérable le</th><th class="num">Retenu TTC</th><th>État</th><th></th></tr>
     ${d.retenues.map(({ a, rg, r }) => `<tr><td><a href="#/chantier/${a.id}">${esc(a.code || '')}</a> ${esc(a.nom || '')}</td><td>${esc(clientName(a.clientId))}</td><td>${a.dateReception ? dateFr(a.dateReception) : '—'}</td>

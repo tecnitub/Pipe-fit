@@ -28,7 +28,7 @@ Views.achats = (params, query) => {
   <p class="muted small">${list.length} facture(s) · ${eur(sumBy(list, x => Calc.achat(x).ht))} HT · imputé aux chantiers ${eur(sumBy(list, x => Calc.achat(x).impute))}</p>
   ${list.length ? `<div class="table-wrap"><table><tr><th>Réf.</th><th>Date</th><th>Fournisseur</th><th>N° facture</th><th>Chantiers</th><th class="num">HT</th><th class="num">Imputé</th><th>Ventilation</th><th>Paiement</th></tr>
     ${list.map(x => { const t = Calc.achat(x), [cls, lib] = etatVentilation(x); const chs = [...new Set((x.imputations || []).map(l => affaireOf(l.affaireId).code).filter(Boolean))];
-      return `<tr class="clickable" onclick="location.hash='#/achats/${x.id}'"><td>${esc(x.ref || '…')}</td><td>${dateFr(x.date)}</td><td>${esc(clientName(x.fournisseurId))}</td><td>${esc(x.numeroFournisseur || '')}</td>
+      return `<tr class="clickable" data-go="#/achats/${x.id}"><td>${esc(x.ref || '…')}</td><td>${dateFr(x.date)}</td><td>${esc(clientName(x.fournisseurId))}</td><td>${esc(x.numeroFournisseur || '')}</td>
         <td>${chs.map(c => esc(c)).join(', ')}</td><td class="num">${eur(t.ht)}</td><td class="num">${eur(t.impute)}</td><td><span class="badge ${cls}">${lib}</span></td><td>${badge(x.statut)}</td></tr>`; }).join('')}</table></div>` : '<p class="muted">Aucune facture fournisseur pour ces critères.</p>'}`;
 };
 
@@ -145,10 +145,10 @@ function achatsChantierHtml(a) {
   return `<h2>Achats et factures fournisseurs</h2>
   <div class="toolbar"><a class="btn secondary small" href="#/achats/new?chantier=${a.id}">+ Facture fournisseur</a><a class="btn secondary small" href="#/achats?chantier=${a.id}&q=&fournisseur=&statut=">Toutes les factures du chantier</a></div>
   <div class="table-wrap"><table><tr><th>Origine</th><th>Fournisseur</th><th>Désignation</th><th class="num">Commandé</th><th class="num">Facturé</th><th class="num">Retenu pour la rentabilité</th></tr>
-    ${d.commandes.map(x => `<tr class="clickable" onclick="location.hash='#/commandes/${x.c.id}'"><td>Commande ${esc(x.c.numero || '…')} ${badge(x.c.statut)}</td><td>${esc(clientName(x.c.fournisseurId))}</td>
+    ${d.commandes.map(x => `<tr class="clickable" data-go="#/commandes/${x.c.id}"><td>Commande ${esc(x.c.numero || '…')} ${badge(x.c.statut)}</td><td>${esc(clientName(x.c.fournisseurId))}</td>
       <td class="small">${x.liees.length ? x.liees.map(l => `facture ${esc(l.achat.numeroFournisseur || l.achat.ref || '')}`).join(', ') : '<span class="muted">pas encore facturée</span>'}</td>
       <td class="num">${eur(x.commande)}</td><td class="num ${x.liees.length && Math.abs(x.facture - x.commande) > 0.01 ? 'warn-text' : ''}">${x.liees.length ? eur(x.facture) : '—'}</td><td class="num">${eur(x.cout)}</td></tr>`).join('')}
-    ${d.horsCommande.map(l => `<tr class="clickable" onclick="location.hash='#/achats/${l.achat.id}'"><td>Hors commande <span class="muted small">${dateFr(l.achat.date)}</span></td><td>${esc(clientName(l.achat.fournisseurId))}</td>
+    ${d.horsCommande.map(l => `<tr class="clickable" data-go="#/achats/${l.achat.id}"><td>Hors commande <span class="muted small">${dateFr(l.achat.date)}</span></td><td>${esc(clientName(l.achat.fournisseurId))}</td>
       <td class="small">${esc(l.libelle || '')} · facture ${esc(l.achat.numeroFournisseur || l.achat.ref || '')}</td><td class="num">—</td><td class="num">${eur(l.montantHT)}</td><td class="num">${eur(l.montantHT)}</td></tr>`).join('')}
     ${d.commandes.length || d.horsCommande.length ? `<tr class="subtotal"><td colspan="5">Total des achats (commandes ${eur(d.totalCommandes)} + hors commande ${eur(d.totalHorsCommande)})</td><td class="num">${eur(d.totalCommandes + d.totalHorsCommande)}</td></tr>` : '<tr><td colspan="6" class="muted">Aucun achat. Passez une commande ou imputez une facture fournisseur sur ce chantier.</td></tr>'}
   </table></div>

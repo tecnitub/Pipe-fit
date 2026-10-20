@@ -54,8 +54,24 @@ function creer({ DB, db, broadcast, notifier, TYPES, MAX, dossierDefaut, uid }) 
     }
     return out;
   }
-  const ecrire = (dir, rel, buf) => { const f = path.join(dir, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, buf); return fs.statSync(f).mtimeMs; };
-  const deplacer = (de, vers) => { fs.mkdirSync(path.dirname(vers), { recursive: true }); fs.renameSync(de, vers); };
+  // Sécurité : jamais d'écriture ni de lecture hors du répertoire des documents, ni au travers d'un lien symbolique
+  // (un lien posé sur le partage réseau ne doit pas permettre de lire ou d'écraser un fichier du serveur)
+  let racineReelle = '';
+  function verifier(f, creer) {
+    const parent = path.dirname(f);
+    if (creer) fs.mkdirSync(parent, { recursive: true });
+    const reel = fs.realpathSync(parent);
+    if (reel !== racineReelle && !reel.startsWith(racineReelle + path.sep)) throw new Error(`chemin hors du répertoire des documents refusé (${path.basename(f)})`);
+    let st = null;
+    try { st = fs.lstatSync(f); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    if (st && !st.isFile()) throw new Error(`lien symbolique ou élément spécial refusé (${path.basename(f)})`);
+    return f;
+  }
+  const lire = f => fs.readFileSync(verifier(f, false));
+  const ecrire = (dir, rel, buf) => { const f = verifier(path.join(dir, rel), true); fs.writeFileSync(f, buf); return fs.statSync(f).mtimeMs; };
+  const deplacer = (de, vers) => { verifier(de, false); fs.renameSync(de, verifier(vers, true)); };
+  // Sous-dossier libre enregistré dans l'appli : noms assainis, jamais de « .. » ni de chemin absolu
+  const sousDossierSur = d => String(d || '').split(/[\\/]+/).map(x => x.trim()).filter(x => x && x !== '.' && x !== '..').slice(0, 3).map(x => Classement.propre(x)).join('/');
   const libre = (dir, rel, pris) => {
     // Nom unique dans le dossier : « plan.pdf », « plan (2).pdf »…
     const ext = path.posix.extname(rel), b = rel.slice(0, rel.length - ext.length);
@@ -95,7 +111,7 @@ function creer({ DB, db, broadcast, notifier, TYPES, MAX, dossierDefaut, uid }) 
     for (const d of docs) {
       const l = parDoc.get(d.id);
       // Catégorie changée dans l'appli : le document quitte son sous-dossier libre pour celui de sa catégorie
-      const sousDossier = d.dossier && (!l || l.categorie === d.categorie) ? d.dossier : Classement.dossierCategorie(d.categorie);
+      const sousDossier = sousDossierSur(d.dossier) && (!l || l.categorie === d.categorie) ? sousDossierSur(d.dossier) : Classement.dossierCategorie(d.categorie);
       const relAttendu = libre(dir, relPosix(sousDossier, Classement.propre(d.nom)), pris);
       if (l) {
         const f = fichiers.get(l.rel);
@@ -103,7 +119,7 @@ function creer({ DB, db, broadcast, notifier, TYPES, MAX, dossierDefaut, uid }) 
         let hashDisque = l.hash;
         const modifDisque = f.taille !== l.taille || Math.abs(f.mtime - l.mtime) > 1;
         if (modifDisque && maintenant - f.mtime < 3000) { pris.add(l.rel.toLowerCase()); continue; } // copie en cours
-        if (modifDisque) hashDisque = sha1(fs.readFileSync(path.join(dir, l.rel)));
+        if (modifDisque) hashDisque = sha1(lire(path.join(dir, l.rel)));
         const changeDisque = hashDisque !== l.hash, changeAppli = d.fichierId !== l.fichier_id;
         let rel = l.rel;
         if (changeAppli) {
@@ -120,7 +136,7 @@ function creer({ DB, db, broadcast, notifier, TYPES, MAX, dossierDefaut, uid }) 
           bilan.exportes++;
         } else if (changeDisque) {
           // Fichier remplacé sur le serveur : nouvel indice dans l'appli
-          const buf = fs.readFileSync(path.join(dir, rel));
+          const buf = lire(path.join(dir, rel));
           if (buf.length > MAX) { bilan.ignores.push(`${a.code}/${rel} (plus de ${Math.round(MAX / 1048576)} Mo)`); pris.add(rel.toLowerCase()); continue; }
           const id = nouveauBlob(d.mime || mimeDe(rel) || 'application/octet-stream', buf);
           const auj = new Date().toISOString().slice(0, 10);
@@ -141,7 +157,7 @@ function creer({ DB, db, broadcast, notifier, TYPES, MAX, dossierDefaut, uid }) 
         const h = sha1(b.data);
         let rel = relAttendu;
         const f = fichiers.get(rel);
-        if (f && !suivis.has(rel) && f.taille === b.data.length && sha1(fs.readFileSync(path.join(dir, rel))) === h) { /* déjà présent */ }
+        if (f && !suivis.has(rel) && f.taille === b.data.length && sha1(lire(path.join(dir, rel))) === h) { /* déjà présent */ }
         else {
           if (f) rel = libre(dir, rel, new Set([...pris, ...[...fichiers.keys()].map(k => k.toLowerCase())]));
           ecrire(dir, rel, b.data); bilan.exportes++;
@@ -162,7 +178,7 @@ function creer({ DB, db, broadcast, notifier, TYPES, MAX, dossierDefaut, uid }) 
       if (!mime) { bilan.ignores.push(`${a.code}/${rel} (type non accepté)`); continue; }
       if (f.taille > MAX) { bilan.ignores.push(`${a.code}/${rel} (plus de ${Math.round(MAX / 1048576)} Mo)`); continue; }
       if (!f.taille) continue;
-      const buf = fs.readFileSync(path.join(dir, rel)), h = sha1(buf);
+      const buf = lire(path.join(dir, rel)), h = sha1(buf);
       // Déplacé ou renommé dans le répertoire : même contenu qu'un document disparu de son emplacement
       const k = disparus.findIndex(x => x.l.hash === h);
       if (k >= 0) {
@@ -255,6 +271,7 @@ function creer({ DB, db, broadcast, notifier, TYPES, MAX, dossierDefaut, uid }) 
         if (!c.actif) return Object.assign(etat, { erreur: '', actif: false });
         const racineCh = path.join(c.chemin, 'Chantiers');
         fs.mkdirSync(racineCh, { recursive: true });
+        racineReelle = fs.realpathSync(c.chemin);
         const noms = fs.readdirSync(racineCh, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name);
         const affaires = db.prepare("SELECT id FROM records WHERE col = 'affaires'").all().map(r => DB.getRecord(db, 'affaires', r.id));
         for (const a of affaires) {

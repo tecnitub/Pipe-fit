@@ -50,7 +50,7 @@ Views.charges = params => {
   return `<div class="toolbar"><a href="#/dashboard" class="btn secondary">← Tableau de bord</a></div>
   <h1>Chargés d'affaires</h1>
   <div class="table-wrap"><table class="charges"><tr><th>Chargé d'affaires</th><th class="num">Chantiers en cours</th><th class="num">Carnet (reste à facturer)</th><th class="num">Facturé ${new Date().getFullYear()}</th><th class="num">Marge à terminaison</th><th class="num">Devis en attente</th><th class="num">Transformation 12 mois</th><th class="num">En retard de paiement</th><th class="num">Chantiers qui dérapent</th><th class="num">À faire</th></tr>
-    ${lignes.map(({ u, st }) => `<tr class="clickable" onclick="location.hash='#/charges/${u.id}'"><td><strong>${esc(u.nom)}</strong></td><td class="num">${st.enCours.length}</td><td class="num">${eur(st.carnet)}</td><td class="num">${eur(st.factureAnnee)}</td>
+    ${lignes.map(({ u, st }) => `<tr class="clickable" data-go="#/charges/${u.id}"><td><strong>${esc(u.nom)}</strong></td><td class="num">${st.enCours.length}</td><td class="num">${eur(st.carnet)}</td><td class="num">${eur(st.factureAnnee)}</td>
       <td class="num">${eur(st.margeFin)}<br>${marginBadge(st.margeFinPct)}</td><td class="num">${eur(st.attente)}<br><span class="muted small">${st.envoyes.length} devis</span></td>
       <td class="num">${st.transfo === null ? '—' : `${fmt(st.transfo, 0)} %`}<br><span class="muted small">${st.accRef[0]} acceptés / ${st.accRef[1]} refusés</span></td>
       <td class="num ${st.enRetard ? 'neg' : ''}">${st.enRetard ? eur(st.enRetard) : '—'}</td><td class="num">${st.derives.length ? `<span class="badge b-warn">${st.derives.length}</span>` : '—'}</td><td class="num">${st.aFaire.length || '—'}</td></tr>`).join('')}
@@ -75,7 +75,7 @@ function ficheCharge(uid, liste) {
   </div>
   <h2>Ses chantiers en cours</h2>
   ${st.enCours.length ? `<div class="table-wrap"><table><tr><th>Chantier</th><th>Client</th><th class="num">Montant du marché</th><th>Facturé</th><th>Heures passées / prévues</th><th class="num">Marge prévue</th><th class="num">Marge à terminaison</th></tr>
-    ${st.enCours.sort((a, b) => a.s.margeFinPct - a.s.margePrevPct - (b.s.margeFinPct - b.s.margePrevPct)).map(({ a, s }) => `<tr class="clickable" onclick="location.hash='#/chantier/${a.id}'"><td><strong>${esc(a.code)}</strong> ${esc(a.nom)}<br>${badge(a.statut)}</td><td>${esc(clientName(a.clientId))}</td>
+    ${st.enCours.sort((a, b) => a.s.margeFinPct - a.s.margePrevPct - (b.s.margeFinPct - b.s.margePrevPct)).map(({ a, s }) => `<tr class="clickable" data-go="#/chantier/${a.id}"><td><strong>${esc(a.code)}</strong> ${esc(a.nom)}<br>${badge(a.statut)}</td><td>${esc(clientName(a.clientId))}</td>
       <td class="num">${eur(s.caDevis)}</td><td>${gauge(s.caFacture, s.caDevis)}<span class="small muted">${eur(s.caFacture)}</span></td>
       <td>${gauge(s.heuresPassees, s.heuresPrevues)}<span class="small">${fmt(s.heuresPassees, 0)} / ${fmt(s.heuresPrevues, 0)} h</span></td>
       <td class="num">${pct(s.margePrevPct)}</td><td class="num">${marginBadge(s.margeFinPct)}<br><span class="small ${s.margeFinPct < s.margePrevPct - 3 ? 'neg' : 'muted'}">${s.margeFinPct >= s.margePrevPct ? '+' : ''}${fmt(s.margeFinPct - s.margePrevPct, 1)} pt</span></td></tr>`).join('')}</table></div>`

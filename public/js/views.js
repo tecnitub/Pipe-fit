@@ -65,7 +65,7 @@ Views.dashboard = (params, query) => {
   </div>
   <h2>Chantiers à surveiller</h2>
   ${alertes.length ? `<div class="table-wrap"><table><tr><th>Chantier</th><th>Chargé</th><th>Heures</th><th>Fournitures</th><th class="num">Marge prévue</th><th class="num">À terminaison</th></tr>
-    ${alertes.map(({ a, s }) => `<tr class="clickable" onclick="location.hash='#/chantier/${a.id}'"><td>${esc(affaireLabel(a))}</td><td>${esc(userName(a.chargeId))}</td>
+    ${alertes.map(({ a, s }) => `<tr class="clickable" data-go="#/chantier/${a.id}"><td>${esc(affaireLabel(a))}</td><td>${esc(userName(a.chargeId))}</td>
       <td>${gauge(s.heuresPassees, s.heuresPrevues)}</td><td>${gauge(s.achats, s.budgetF)}</td><td class="num">${pct(s.margePrevPct)}</td><td class="num">${marginBadge(s.margeFinPct)}</td></tr>`).join('')}
   </table></div>` : '<p class="muted">Aucun chantier en dérive.</p>'}
   <h2>Chantiers en cours</h2>
@@ -95,7 +95,7 @@ function chantierTable(list, selection = false) {
   return `<div class="table-wrap"><table><tr>${selection ? '<th class="sel-cell"><input type="checkbox" data-sel-tout aria-label="Tout sélectionner"></th>' : ''}<th>Chantier</th><th>Client</th><th>Chargé</th><th>Statut</th><th class="num">Montant HT</th><th>Heures</th><th>Fournitures</th><th class="num">Marge à terminaison</th></tr>
   ${list.map(a => {
     const s = Calc.affaire(a);
-    return `<tr class="clickable ${a.archive ? 'archive' : ''}" onclick="location.hash='#/chantier/${a.id}'">${selection ? `<td class="sel-cell"><input type="checkbox" data-sel-id="${a.id}" aria-label="Sélectionner ${esc(a.code || '')}"></td>` : ''}<td><strong>${esc(a.code || '…')}</strong>${estHorsDevis(a) ? ` <span class="badge b-warn">Hors devis</span>${aCompleterHD(a) ? ' <span class="badge b-bad">À compléter</span>' : ''}` : ''}${a.archive ? ' <span class="badge">Archivé</span>' : ''}<br>${esc(a.nom)}</td><td>${esc(a.clientId ? clientName(a.clientId) : a.clientLibre || '')}</td><td>${esc(userName(a.chargeId))}</td><td>${badge(estHorsDevis(a) ? statutHD(a) : a.statut)}</td>
+    return `<tr class="clickable ${a.archive ? 'archive' : ''}" data-go="#/chantier/${a.id}">${selection ? `<td class="sel-cell"><input type="checkbox" data-sel-id="${a.id}" aria-label="Sélectionner ${esc(a.code || '')}"></td>` : ''}<td><strong>${esc(a.code || '…')}</strong>${estHorsDevis(a) ? ` <span class="badge b-warn">Hors devis</span>${aCompleterHD(a) ? ' <span class="badge b-bad">À compléter</span>' : ''}` : ''}${a.archive ? ' <span class="badge">Archivé</span>' : ''}<br>${esc(a.nom)}</td><td>${esc(a.clientId ? clientName(a.clientId) : a.clientLibre || '')}</td><td>${esc(userName(a.chargeId))}</td><td>${badge(estHorsDevis(a) ? statutHD(a) : a.statut)}</td>
       <td class="num">${eur(s.caDevis)}</td><td>${gauge(s.heuresPassees, s.heuresPrevues)}<span class="muted small">${fmt(s.heuresPassees)} / ${fmt(s.heuresPrevues)} h</span></td>
       <td>${gauge(s.achats, s.budgetF)}</td><td class="num">${s.caDevis ? marginBadge(s.margeFinPct) : '—'}</td></tr>`;
   }).join('')}</table></div>`;
@@ -155,11 +155,11 @@ Views.chantier = params => {
     <button id="edit" class="secondary">Modifier</button>
     <a class="btn secondary" href="#/reception/${a.id}">Réserves et réception</a>
     <a class="btn secondary" href="#/commandes/new?chantier=${a.id}">+ Commande fournisseur</a>
-    <button class="secondary" onclick="location.hash='#/consultations/' + nouvelleConsultation({ affaireId: '${a.id}', objet: 'Fournitures ${esc(a.code || '')}' }).id">+ Consultation fournisseurs</button>
+    <button class="secondary" id="ch-consultation">+ Consultation fournisseurs</button>
     ${dAcc ? '<button id="situation">+ Situation de travaux</button>' : ''}
     ${a.archive ? '' : `<button class="secondary" data-archiver="affaires|${a.id}">Archiver</button>`}</div>
   <h1>${esc(affaireLabel(a))} ${badge(a.statut)} ${a.okFacturation ? '<span class="badge b-ok">Réceptionné · OK pour facturation</span>' : ''}</h1>${chantierOnglets(a, 'apercu')}${bandeauArchive(a, 'affaires')}
-  <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${a.clientId}">${esc(clientName(a.clientId))}</a>` : '—'}
+  <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${esc(a.clientId)}">${esc(clientName(a.clientId))}</a>` : '—'}
     ${a.contactId ? ` · Contact : ${esc(contactName(Store.get('contacts', a.contactId)))}` : ''}
     ${a.siteId ? ` · Site : ${esc(siteLabel(siteOf(a.clientId, a.siteId)))}` : ''}
     ${a.moeId ? ` · Maîtrise d'œuvre : ${esc(clientName(a.moeId))}${a.moeContactId ? ` (${esc(contactName(Store.get('contacts', a.moeContactId)))})` : ''}` : ''}
@@ -211,7 +211,7 @@ Views.chantier = params => {
 
   <h2>Situations de travaux et factures</h2>
   ${sits.length ? `<div class="table-wrap"><table><tr><th>Situation</th><th>Date</th><th>Statut</th><th class="num">Avancement cumulé</th><th class="num">Montant HT</th><th>Facture</th></tr>
-    ${sits.map(x => { const c = Calc.situation(x), f = Store.get('factures', x.factureId); return `<tr class="clickable" onclick="location.hash='#/situations/${x.id}'"><td>n° ${situationRang(x)} · ${esc(x.numero || '…')}</td><td>${dateFr(x.date)}</td><td>${badge(x.statut)}</td><td class="num">${pct(c.pctCumul)}</td><td class="num">${eur(c.montant)}</td><td>${f ? `${esc(f.numero)} ${badge(f.statut)}` : ''}</td></tr>`; }).join('')}</table></div>`
+    ${sits.map(x => { const c = Calc.situation(x), f = Store.get('factures', x.factureId); return `<tr class="clickable" data-go="#/situations/${x.id}"><td>n° ${situationRang(x)} · ${esc(x.numero || '…')}</td><td>${dateFr(x.date)}</td><td>${badge(x.statut)}</td><td class="num">${pct(c.pctCumul)}</td><td class="num">${eur(c.montant)}</td><td>${f ? `${esc(f.numero)} ${badge(f.statut)}` : ''}</td></tr>`; }).join('')}</table></div>`
   : '<p class="muted">Aucune situation. Utilisez « + Situation de travaux » pour proposer l\'avancement à la maîtrise d\'œuvre.</p>'}
 
   <h2>Notes de frais imputées</h2>
@@ -235,6 +235,7 @@ Views.chantier.bind = (root, params) => {
   if (params[1] === 'documents') return bindDocumentsChantier(root, a);
   if (params[1] === 'securite') return bindSecuriteChantier(root, a);
   if (estHorsDevis(a)) return bindHorsDevis(root, a);
+  root.querySelector('#ch-consultation').onclick = () => { location.hash = '#/consultations/' + nouvelleConsultation({ affaireId: a.id, objet: `Fournitures ${a.code || ''}` }).id; };
   root.querySelector('#edit').onclick = () => editModal({ title: `Chantier ${a.code}`, col: 'affaires', fields: chantierFields, obj: { ...a },
     onDelete: () => { location.hash = '#/chantiers'; } });
   root.querySelectorAll('[data-rapport]').forEach(tr => tr.onclick = () => voirRapport(Store.get('rapports', tr.dataset.rapport)));
@@ -272,7 +273,7 @@ Views.factures = (params, query) => {
   ${list.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Échéance</th><th>Chantier</th><th>Client</th><th>Statut</th><th class="num">Total HT</th><th class="num">Total TTC</th><th class="num">Reste dû</th><th>Compta</th></tr>
   ${list.map(f => {
     const a = affaireOf(f.affaireId), t = Calc.facture(f), orig = estAvoir(f) && Store.get('factures', f.factureId);
-    return `<tr class="clickable ${estAvoir(f) ? 'ligne-avoir' : ''}" onclick="location.hash='#/facture/${f.id}'"><td>${esc(f.numero || '…')}${estAvoir(f) ? ` <span class="badge b-warn">Avoir</span>${orig ? `<br><span class="muted small">sur ${esc(orig.numero || '')}</span>` : ''}` : ''}</td><td>${dateFr(f.date)}</td><td>${estAvoir(f) ? '' : dateFr(f.echeance)}</td><td>${esc(a.code || '')}</td><td>${esc(clientName(docClientId(f)))}</td>
+    return `<tr class="clickable ${estAvoir(f) ? 'ligne-avoir' : ''}" data-go="#/facture/${f.id}"><td>${esc(f.numero || '…')}${estAvoir(f) ? ` <span class="badge b-warn">Avoir</span>${orig ? `<br><span class="muted small">sur ${esc(orig.numero || '')}</span>` : ''}` : ''}</td><td>${dateFr(f.date)}</td><td>${estAvoir(f) ? '' : dateFr(f.echeance)}</td><td>${esc(a.code || '')}</td><td>${esc(clientName(docClientId(f)))}</td>
       <td>${badge(statutFacture(f))}${!estAvoir(f) && Calc.avoirsDe(f).length ? `<br><span class="muted small">${Calc.avoirsDe(f).length} avoir(s)</span>` : ''}</td><td class="num">${eur(t.ht)}</td><td class="num">${eur(t.ttc)}</td>
       <td class="num">${estAvoir(f) ? '' : eur(Calc.resteDu(f))}${t.retenue ? `<br><span class="muted small">RG ${eur(t.retenueS)}</span>` : ''}</td><td>${f.exportCompta ? `<span class="badge b-ok" title="Transmis le ${dateFr(f.exportCompta.date)}">Transmis</span>` : ''}</td></tr>`;
   }).join('')}</table></div>` : '<p class="muted">Aucune facture pour ces critères.</p>'}`;
@@ -287,11 +288,11 @@ Views.facture = params => {
   const reste = Calc.resteDu(f), dejaCredite = sumBy(avoirs, a => Calc.doc(a).netAPayer);
   return `<div class="toolbar">
     <a href="#/factures" class="btn secondary">← Factures</a>
-    ${f.affaireId ? `<a href="#/chantier/${f.affaireId}" class="btn secondary">Chantier</a>` : ''}
+    ${f.affaireId ? `<a href="#/chantier/${esc(f.affaireId)}" class="btn secondary">Chantier</a>` : ''}
     ${orig ? `<a href="#/facture/${orig.id}" class="btn secondary">Facture ${esc(orig.numero || '')}</a>` : ''}
     <span class="spacer"></span>
     <select id="f-statut" style="width:auto" aria-label="Statut">${optionsStr(av ? STATUTS_AVOIR : STATUTS_FACTURE, f.statut)}</select>
-    <button class="secondary print-btn" onclick="window.print()">Imprimer</button>${boutonsEnvoi(av ? 'avoir' : 'facture', f.id)}
+    <button class="secondary print-btn" data-print>Imprimer</button>${boutonsEnvoi(av ? 'avoir' : 'facture', f.id)}
     ${['admin', 'charge'].includes(Store.me.role) ? `<button class="secondary" data-efacture="${f.id}">Facture électronique</button>` : ''}
     ${!av && f.statut !== 'Annulée' && Store.can('write', 'factures') ? '<button class="secondary" id="avoir">Créer un avoir</button>' : ''}
   </div>
@@ -397,9 +398,9 @@ function planningCharge(query) {
 
   return `<h1>Planning</h1>${planningTabs('charge')}
   <div class="toolbar">
-    <button class="secondary" onclick="location.hash='#/planning/charge?o=${offset - 4}'">◀ 4 sem.</button>
-    <button class="secondary" onclick="location.hash='#/planning/charge'">Aujourd'hui</button>
-    <button class="secondary" onclick="location.hash='#/planning/charge?o=${offset + 4}'">4 sem. ▶</button>
+    <button class="secondary" data-go="#/planning/charge?o=${offset - 4}">◀ 4 sem.</button>
+    <button class="secondary" data-go="#/planning/charge">Aujourd'hui</button>
+    <button class="secondary" data-go="#/planning/charge?o=${offset + 4}">4 sem. ▶</button>
     <span class="spacer"></span>
     <span class="badge load-ok">≤ 85 %</span><span class="badge load-high">85–100 %</span><span class="badge load-over">&gt; 100 %</span>
   </div>
@@ -413,7 +414,7 @@ function planningCharge(query) {
     const reste = s.heuresPrevues - s.heuresPassees;
     const futur = sumBy(plan.filter(p => p.affaireId === a.id && (p.date ? p.date > isoDate(new Date()) : p.semaine > current)), p => num(p.heuresPrevues));
     const aPlanifier = reste - futur;
-    return `<tr class="clickable" onclick="location.hash='#/chantier/${a.id}'"><td>${esc(affaireLabel(a))}</td><td class="num">${fmt(s.heuresPrevues)} h</td><td class="num">${fmt(s.heuresPassees, 1)} h</td>
+    return `<tr class="clickable" data-go="#/chantier/${a.id}"><td>${esc(affaireLabel(a))}</td><td class="num">${fmt(s.heuresPrevues)} h</td><td class="num">${fmt(s.heuresPassees, 1)} h</td>
       <td class="num ${reste < 0 ? 'neg' : ''}">${fmt(reste, 1)} h</td><td>${gauge(s.heuresPassees, s.heuresPrevues)}</td><td class="num">${fmt(futur)} h</td><td class="num ${aPlanifier > 0 ? 'neg' : ''}">${aPlanifier > 0 ? fmt(aPlanifier, 1) + ' h' : '—'}</td></tr>`;
   }).join('')}</table></div>`;
 }
@@ -462,12 +463,12 @@ Views.analyse = (params, query) => {
   <div class="table-wrap"><table><tr><th>Chargé d'affaires</th><th class="num">Devis</th><th class="num">En attente</th><th class="num">Transfo.</th><th class="num">Chantiers</th><th class="num">CA</th><th class="num">Marge à term.</th><th class="num">Marge %</th><th class="num">Heures pointé / prévu</th><th class="num">Écart heures</th><th class="num">Note REX</th></tr>
   ${charges().filter(u => !fc || u.id === fc).map(u => {
     const c = Calc.charge(u.id);
-    return `<tr class="clickable" onclick="location.hash='#/analyse?charge=${u.id}'"><td>${esc(u.nom)}</td><td class="num">${c.nbDevis}</td><td class="num">${eur(c.enAttente)}</td><td class="num">${pct(c.transfo)}</td><td class="num">${c.nbAffaires}</td><td class="num">${eur(c.ca)}</td><td class="num ${signClass(c.marge)}">${eur(c.marge)}</td><td class="num">${marginBadge(c.margePct)}</td><td class="num">${fmt(c.hPass)} / ${fmt(c.hPrev)} h</td><td class="num ${c.ecartPct > 0 ? 'neg' : 'pos'}">${c.ecartPct > 0 ? '+' : ''}${pct(c.ecartPct)}</td><td class="num">${c.noteMoy ? fmt(c.noteMoy, 1) + ' / 5' : '—'}</td></tr>`;
+    return `<tr class="clickable" data-go="#/analyse?charge=${u.id}"><td>${esc(u.nom)}</td><td class="num">${c.nbDevis}</td><td class="num">${eur(c.enAttente)}</td><td class="num">${pct(c.transfo)}</td><td class="num">${c.nbAffaires}</td><td class="num">${eur(c.ca)}</td><td class="num ${signClass(c.marge)}">${eur(c.marge)}</td><td class="num">${marginBadge(c.margePct)}</td><td class="num">${fmt(c.hPass)} / ${fmt(c.hPrev)} h</td><td class="num ${c.ecartPct > 0 ? 'neg' : 'pos'}">${c.ecartPct > 0 ? '+' : ''}${pct(c.ecartPct)}</td><td class="num">${c.noteMoy ? fmt(c.noteMoy, 1) + ' / 5' : '—'}</td></tr>`;
   }).join('')}</table></div>
 
   <h2>Par chantier (du moins rentable au plus rentable)</h2>
   <div class="table-wrap"><table><tr><th>Chantier</th><th>Chargé</th><th>Statut</th><th class="num">Montant</th><th class="num">Fournitures budget / réel</th><th class="num">MO budget / réel</th><th class="num">Écart heures</th><th class="num">Marge prévue</th><th class="num">À terminaison</th></tr>
-  ${rows.map(({ a, s }) => `<tr class="clickable" onclick="location.hash='#/chantier/${a.id}'"><td>${esc(affaireLabel(a))}</td><td>${esc(userName(a.chargeId))}</td><td>${badge(a.statut)}</td><td class="num">${eur(s.caDevis)}</td>
+  ${rows.map(({ a, s }) => `<tr class="clickable" data-go="#/chantier/${a.id}"><td>${esc(affaireLabel(a))}</td><td>${esc(userName(a.chargeId))}</td><td>${badge(a.statut)}</td><td class="num">${eur(s.caDevis)}</td>
     <td class="num">${eur(s.budgetF)}<br><span class="${s.coutFFin > s.budgetF ? 'neg' : 'muted'}">${eur(s.coutFFin)}</span></td><td class="num">${eur(s.budgetMO)}<br><span class="${s.coutMOFin > s.budgetMO ? 'neg' : 'muted'}">${eur(s.coutMOFin)}</span></td>
     <td class="num ${s.ecartHeures > 0 ? 'neg' : 'pos'}">${s.heuresPrevues ? (s.ecartHeures > 0 ? '+' : '') + pct(s.ecartHeuresPct) : '—'}</td><td class="num">${pct(s.margePrevPct)}</td><td class="num">${marginBadge(s.margeFinPct)}</td></tr>`).join('')}
   </table></div>
@@ -484,7 +485,7 @@ Views.analyse = (params, query) => {
 
   <h2>Capitalisation des retours d'expérience</h2>
   ${rex.length ? `<div class="table-wrap"><table><tr><th>Chantier</th><th>Chargé</th><th>Note</th><th>Points positifs</th><th>Points négatifs</th><th>Actions</th></tr>
-    ${rex.map(a => `<tr class="clickable" onclick="location.hash='#/chantier/${a.id}'"><td>${esc(affaireLabel(a))}</td><td>${esc(userName(a.chargeId))}</td><td>${a.rex.note ? esc(a.rex.note) + '/5' : '—'}</td><td>${esc(a.rex.positif)}</td><td>${esc(a.rex.negatif)}</td><td>${esc(a.rex.actions)}</td></tr>`).join('')}
+    ${rex.map(a => `<tr class="clickable" data-go="#/chantier/${a.id}"><td>${esc(affaireLabel(a))}</td><td>${esc(userName(a.chargeId))}</td><td>${a.rex.note ? esc(a.rex.note) + '/5' : '—'}</td><td>${esc(a.rex.positif)}</td><td>${esc(a.rex.negatif)}</td><td>${esc(a.rex.actions)}</td></tr>`).join('')}
   </table></div>` : '<p class="muted">Aucun REX saisi.</p>'}`;
 };
 Views.analyse.bind = root => {
@@ -529,10 +530,12 @@ Views.parametres = () => {
     <p class="muted" style="margin-top:0">Connecté en tant que <strong>${esc(Store.me.login)}</strong> (${esc(ROLE_LABELS[Store.me.role])}).</p>
     <div class="grid2">
       <div class="field"><label>Mot de passe actuel</label><input id="pw-cur" type="password" autocomplete="current-password"></div>
-      <div class="field"><label>Nouveau mot de passe (8 caractères min.)</label><input id="pw-new" type="password" autocomplete="new-password"></div>
+      <div class="field"><label>Nouveau mot de passe (10 caractères min.)</label><input id="pw-new" type="password" autocomplete="new-password"></div>
       <div class="field"><label>&nbsp;</label><button id="pw-save">Changer le mot de passe</button></div>
     </div>
+    <p class="small muted" style="margin-bottom:0">Téléphone perdu ou ordinateur partagé ? <button class="small secondary" id="me-sessions">Déconnecter mes autres appareils</button> <span id="me-sessions-n"></span></p>
   </div>
+  ${admin ? reglagesSecuriteCarte() : ''}
   ${admin ? `
   <h2>Société</h2>
   <div class="card">${formFields(settingsFields, Store.data.settings)}<div class="modal-actions"><button id="s-save">Enregistrer</button></div></div>
@@ -587,7 +590,7 @@ function accountModal(acc, onDone) {
       <div class="field"><label>Rôle</label><select id="a-role">${Object.entries(ROLE_LABELS).map(([k, v]) => `<option value="${k}" ${k === acc.role ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
       <div class="field"><label>Fiche de la personne (pointage, planning)</label><select id="a-user">${options(Store.all('users'), acc.userId)}</select></div>
       <div class="field"><label>Adresse Microsoft 365 (expéditeur des e-mails)</label><input id="a-email" type="email" value="${esc(acc.email || '')}" autocomplete="off"></div>
-      <div class="field"><label>${isNew ? 'Mot de passe (8 caractères min.)' : 'Nouveau mot de passe (laisser vide pour ne pas changer)'}</label><input id="a-pw" type="password" autocomplete="new-password"></div>
+      <div class="field"><label>${isNew ? 'Mot de passe (10 caractères min.)' : 'Nouveau mot de passe (laisser vide pour ne pas changer)'}</label><input id="a-pw" type="password" autocomplete="new-password"></div>
     </div>
     <div class="modal-actions">
       ${!isNew && acc.id !== Store.me.id ? '<button class="danger" id="a-del">Supprimer</button>' : ''}
@@ -614,6 +617,13 @@ function accountModal(acc, onDone) {
 
 Views.parametres.bind = root => {
   const on = (sel, fn) => { const el = root.querySelector(sel); if (el) el.onclick = fn; };
+  on('#me-sessions', async () => {
+    if (!(await ask('Déconnecter tous vos autres appareils (téléphones, autres ordinateurs) ? Celui-ci reste connecté.', 'Déconnecter', false))) return;
+    const r = await api('DELETE', '/api/me/sessions', {}).catch(e => notify(e.message));
+    if (r) { App.toast(`${r.deconnectes} appareil(s) déconnecté(s)`); root.querySelector('#me-sessions-n').textContent = ''; }
+  });
+  api('GET', '/api/me/sessions').then(r => { const el = root.querySelector('#me-sessions-n'); if (el && r) el.textContent = r.autres ? `(${r.autres} autre(s) session(s) ouverte(s))` : '(aucune autre session)'; }).catch(() => {});
+  bindReglagesSecurite(root);
   on('#pw-save', async () => {
     try {
       await api('POST', '/api/me/password', { current: root.querySelector('#pw-cur').value, next: root.querySelector('#pw-new').value });

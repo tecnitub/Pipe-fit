@@ -176,7 +176,9 @@ function brouillonEML({ to, cc, subject, html, nom, pdf, pieces }) {
   const lignes = s => s.replace(/.{1,76}/g, '$&\r\n');
   const pj = (pieces || [{ nom, bytes: pdf, type: 'application/pdf' }]).flatMap(p => [`--${b}`, `Content-Type: ${p.type}; name="${ascii(p.nom)}"`, `Content-Disposition: attachment; filename="${ascii(p.nom)}"`,
     'Content-Transfer-Encoding: base64', '', lignes(enBase64(p.bytes))]);
-  return ['X-Unsent: 1', `To: ${to.join(', ')}`, cc.length ? `Cc: ${cc.join(', ')}` : '', `Subject: =?UTF-8?B?${b64utf8(subject)}?=`, 'MIME-Version: 1.0',
+  // Adresses venant de la base (fournisseur créé depuis une facture électronique reçue…) : aucun saut de ligne, donc aucun en-tête ajouté
+  const adr = l => l.map(x => String(x).replace(/[\r\n]+/g, ' ').trim()).join(', ');
+  return ['X-Unsent: 1', `To: ${adr(to)}`, cc.length ? `Cc: ${adr(cc)}` : '', `Subject: =?UTF-8?B?${b64utf8(subject)}?=`, 'MIME-Version: 1.0',
     `Content-Type: multipart/mixed; boundary="${b}"`, '', `--${b}`, 'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '',
     lignes(b64utf8(`<html><body>${html}</body></html>`)), ...pj, `--${b}--`, ''].filter((l, i) => l !== '' || i > 4).join('\r\n');
 }

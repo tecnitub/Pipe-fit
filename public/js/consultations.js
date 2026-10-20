@@ -40,7 +40,7 @@ Views.consultations = (params, query) => {
   ${barreFiltres(f, { recherche: 'Rechercher (n°, objet, chantier, fournisseur…)', statuts: [['En cours', 'En cours'], ['Attribuée', 'Attribuées'], ['', 'Toutes']], defauts: FILTRES_CONSULT })}
   ${list.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Objet</th><th>Chantier</th><th class="num">Lignes</th><th>Fournisseurs</th><th>Offres</th><th>Réponse avant</th><th>Statut</th></tr>
     ${list.map(c => { const fs = c.fournisseurs || [], recues = fs.filter(x => x.statut === 'Offre reçue').length;
-      return `<tr class="clickable" onclick="location.hash='#/consultations/${c.id}'"><td>${esc(c.ref || '…')}</td><td>${dateFr(c.date)}</td><td>${esc(c.objet || '')}</td><td>${esc(affaireOf(c.affaireId).code || '')}</td><td class="num">${(c.lignes || []).length}</td>
+      return `<tr class="clickable" data-go="#/consultations/${c.id}"><td>${esc(c.ref || '…')}</td><td>${dateFr(c.date)}</td><td>${esc(c.objet || '')}</td><td>${esc(affaireOf(c.affaireId).code || '')}</td><td class="num">${(c.lignes || []).length}</td>
         <td class="small">${fs.map(x => esc(clientName(x.entrepriseId))).join(', ')}</td><td>${recues}/${fs.length}</td><td class="${c.dateLimite && c.dateLimite < isoDate(new Date()) && c.statut === 'En cours' ? 'warn-text' : ''}">${dateFr(c.dateLimite)}</td><td>${badge(c.statut)}</td></tr>`; }).join('')}</table></div>`
   : '<p class="muted">Aucune consultation pour ces critères.</p>'}`;
 };
@@ -57,7 +57,7 @@ function consultationEditeur(id) {
   if (c.affaireId) sources.push(['chantier', 'Fournitures du devis du chantier pas encore commandées']);
   Store.all('chiffrages').slice(0, 8).forEach(x => sources.push([`chiffrage:${x.id}`, `Fournitures du chiffrage « ${x.nom} »`]));
   const totOffre = eid => an.offres.find(o => o.f.entrepriseId === eid);
-  return `<div class="toolbar"><a href="#/consultations" class="btn secondary">← Consultations</a>${c.affaireId ? `<a class="btn secondary" href="#/chantier/${c.affaireId}">Chantier ${esc(affaireOf(c.affaireId).code || '')}</a>` : ''}<span class="spacer"></span>
+  return `<div class="toolbar"><a href="#/consultations" class="btn secondary">← Consultations</a>${c.affaireId ? `<a class="btn secondary" href="#/chantier/${esc(c.affaireId)}">Chantier ${esc(affaireOf(c.affaireId).code || '')}</a>` : ''}<span class="spacer"></span>
     <button class="danger" id="cs-del">Supprimer</button></div>
   <h1>Consultation ${esc(c.ref || '')} ${badge(c.statut)}</h1>${envoisHtml('consultations', c.id)}
   <div class="card"><div class="grid2">

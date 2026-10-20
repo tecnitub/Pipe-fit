@@ -60,9 +60,9 @@ function planningSemaine(query) {
   const complet = stats.libres === 0 && stats.planifies > 0;
   return `<h1>Planning</h1>${planningTabs('semaine')}
   <div class="toolbar">
-    <button class="secondary" onclick="location.hash='#/planning?s=${s - 1}'" aria-label="Semaine précédente">◀</button>
-    <button class="secondary" onclick="location.hash='#/planning'">Cette semaine</button>
-    <button class="secondary" onclick="location.hash='#/planning?s=${s + 1}'" aria-label="Semaine suivante">▶</button>
+    <button class="secondary" data-go="#/planning?s=${s - 1}" aria-label="Semaine précédente">◀</button>
+    <button class="secondary" data-go="#/planning">Cette semaine</button>
+    <button class="secondary" data-go="#/planning?s=${s + 1}" aria-label="Semaine suivante">▶</button>
     <strong>Semaine ${isoWeek(lundi).split('-W')[1]} · du ${jourDe(jours[0]).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}</strong>
     <span class="spacer"></span>
     ${edit ? `<button class="secondary" id="pl-copier">Copier la semaine précédente</button>` : ''}

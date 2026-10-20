@@ -61,7 +61,7 @@ function horsDevisView(a) {
   const doc = attachementHD(a, v);
   return `<div class="toolbar"><a href="#/chantiers" class="btn secondary">← Chantiers</a><span class="spacer"></span>
     <button class="secondary" id="hd-edit">Modifier</button>
-    <button class="secondary print-btn" onclick="window.print()">Imprimer l'attachement</button>${boutonsEnvoi('attachement', a.id, 'Envoyer l\'attachement')}
+    <button class="secondary print-btn" data-print>Imprimer l'attachement</button>${boutonsEnvoi('attachement', a.id, 'Envoyer l\'attachement')}
     ${['Ouvert', 'Terminé'].includes(st) ? '<button class="secondary" id="hd-cde">Demander une commande au client</button>' : ''}
     ${['Ouvert', 'Terminé', 'Commande demandée'].includes(st) && !f ? '<button id="hd-fact">Facturer</button>' : ''}
     ${f ? `<a class="btn secondary" href="#/facture/${f.id}">Facture ${esc(f.numero || '')}</a>` : ''}
@@ -73,7 +73,7 @@ function horsDevisView(a) {
     ${a.contactLibre ? `<br>Contact indiqué : <strong>${esc(a.contactLibre)}</strong>${a.contactTel ? ` (${esc(a.contactTel)})` : ''} ${a.clientId ? '<button class="small" data-hd-creer="contact">Ajouter au client</button>' : '<span class="small">(créez d\'abord le client)</span>'}` : ''}
     ${a.siteLibre ? `<br>Site indiqué : <strong>${esc(a.siteLibre)}</strong> ${a.clientId ? '<button class="small" data-hd-creer="site">Ajouter au client</button>' : '<span class="small">(créez d\'abord le client)</span>'}` : ''}
     ${!a.chargeId ? '<br>Chargé d\'affaires à désigner (bouton Modifier).' : ''}</div>` : ''}
-  <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${a.clientId}">${esc(clientName(a.clientId))}</a>` : a.clientLibre ? `${esc(a.clientLibre)} <span class="badge b-warn">à rattacher</span>` : '—'}${!a.contactId && a.contactLibre ? ` · Contact : ${esc(a.contactLibre)}${a.contactTel ? ` (${esc(a.contactTel)})` : ''}` : ''}${!a.siteId && a.siteLibre ? ` · Site : ${esc(a.siteLibre)}` : ''}${a.lieu ? ` · ${esc(a.lieu)}` : ''}
+  <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${esc(a.clientId)}">${esc(clientName(a.clientId))}</a>` : a.clientLibre ? `${esc(a.clientLibre)} <span class="badge b-warn">à rattacher</span>` : '—'}${!a.contactId && a.contactLibre ? ` · Contact : ${esc(a.contactLibre)}${a.contactTel ? ` (${esc(a.contactTel)})` : ''}` : ''}${!a.siteId && a.siteLibre ? ` · Site : ${esc(a.siteLibre)}` : ''}${a.lieu ? ` · ${esc(a.lieu)}` : ''}
     ${a.contactId ? ` · Demandeur : ${esc(contactName(Store.get('contacts', a.contactId)))}` : ''}${a.siteId ? ` · ${esc(siteLabel(siteOf(a.clientId, a.siteId)))}` : ''}
     · Chargé d'affaires : ${esc(userName(a.chargeId))} · ouvert le ${dateFr(a.dateCreation)}${a.refCommande ? ` · <strong>commande client n° ${esc(a.refCommande)}</strong>` : ''}</p>
   ${envoisHtml('affaires', a.id)}

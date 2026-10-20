@@ -137,7 +137,7 @@ Views.devis = (params, query) => {
   ${list.length ? `<div class="table-wrap"><table><tr><th class="sel-cell"><input type="checkbox" data-sel-tout aria-label="Tout sélectionner"></th><th>N°</th><th>Date</th><th>Objet</th><th>Client</th><th>Contact</th><th>Chargé</th><th>Statut</th><th class="num">Total HT</th><th class="num">Part MO</th><th class="num">Marge prév.</th><th></th></tr>
   ${list.map(d => {
     const t = Calc.doc(d), ct = Store.get('contacts', d.contactId);
-    return `<tr class="clickable ${d.archive ? 'archive' : ''}" onclick="location.hash='#/devis/${d.id}'"><td class="sel-cell"><input type="checkbox" data-sel-id="${d.id}" aria-label="Sélectionner ${esc(d.numero || '')}"></td><td>${esc(d.numero || '…')}</td><td>${dateFr(d.date)}</td><td>${esc(d.objet)}</td><td>${esc(clientName(docClientId(d)))}</td>
+    return `<tr class="clickable ${d.archive ? 'archive' : ''}" data-go="#/devis/${d.id}"><td class="sel-cell"><input type="checkbox" data-sel-id="${d.id}" aria-label="Sélectionner ${esc(d.numero || '')}"></td><td>${esc(d.numero || '…')}</td><td>${dateFr(d.date)}</td><td>${esc(d.objet)}</td><td>${esc(clientName(docClientId(d)))}</td>
       <td>${ct ? esc(contactName(ct)) : ''}</td><td>${esc(userName(docChargeId(d)))}</td><td>${badge(d.statut)}${d.affaireId ? ' <span class="badge b-ok">Chantier</span>' : ''}${d.statut === 'Refusé' && d.motifRefus ? `<br><span class="muted small">${esc(d.motifRefus)}</span>` : ''}</td>
       <td class="num">${eur(t.totalHT)}</td><td class="num">${pct(t.partMOPct)}</td><td class="num">${marginBadge(t.margePrevPct)}</td>
       <td>${['Brouillon', 'Envoyé'].includes(d.statut) ? `<button class="small secondary" data-refuser="${d.id}" title="Marquer refusé">✕ Refusé</button>` : ''}</td></tr>`;
@@ -231,13 +231,13 @@ function devisEditor(id) {
   return `
   <div class="toolbar">
     <a href="#/devis" class="btn secondary">← Devis</a>
-    ${d.affaireId ? `<a href="#/chantier/${d.affaireId}" class="btn secondary">Chantier ${esc(affaireOf(d.affaireId).code || '')}</a>` : ''}
+    ${d.affaireId ? `<a href="#/chantier/${esc(d.affaireId)}" class="btn secondary">Chantier ${esc(affaireOf(d.affaireId).code || '')}</a>` : ''}
     <span class="spacer"></span>
     ${!locked ? '<button class="secondary" id="dpgf-imp">Importer un DPGF</button>' : ''}
     <button class="secondary dl-btn" id="dpgf-exp">Exporter le DPGF chiffré</button>
-    <button class="secondary" onclick="ouvrirChiffrage('${d.id}')">Chiffrage depuis plan</button>
+    <button class="secondary" data-chiffrage="${esc(d.id)}">Chiffrage depuis plan</button>
     <button class="secondary" id="dup">Dupliquer</button>
-    <button class="secondary print-btn" onclick="window.print()">Imprimer</button>${boutonsEnvoi('devis', d.id)}
+    <button class="secondary print-btn" data-print>Imprimer</button>${boutonsEnvoi('devis', d.id)}
     ${!d.affaireId && d.statut !== 'Refusé' ? '<button id="accept">Accepté : créer le chantier</button>' : ''}
     ${['Brouillon', 'Envoyé'].includes(d.statut) ? `<button class="secondary" data-refuser="${d.id}">Refusé…</button>` : ''}
     ${d.archive ? '' : `<button class="secondary" data-archiver="devis|${d.id}">Archiver</button>`}

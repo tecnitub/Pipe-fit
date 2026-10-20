@@ -74,9 +74,9 @@ function planningEquipes(query) {
   const nb = st => semaine.filter(b => b.statut === st).length;
   return `<h1>Planning</h1>${planningTabs('equipes')}
   <div class="toolbar">
-    <button class="secondary" onclick="location.hash='#/planning/tableau?s=${s - 1}'">◀</button>
-    <button class="secondary" onclick="location.hash='#/planning/tableau'">Cette semaine</button>
-    <button class="secondary" onclick="location.hash='#/planning/tableau?s=${s + 1}'">▶</button>
+    <button class="secondary" data-go="#/planning/tableau?s=${s - 1}">◀</button>
+    <button class="secondary" data-go="#/planning/tableau">Cette semaine</button>
+    <button class="secondary" data-go="#/planning/tableau?s=${s + 1}">▶</button>
     <strong>Semaine du ${jourDe(jours[0]).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}</strong>
     <span class="spacer"></span>
     ${edit ? '<button class="secondary" id="pl-copier">Copier la semaine précédente</button>' : ''}
@@ -96,7 +96,7 @@ function planningEquipes(query) {
     }).join('')}</table></div>
   <h2>Chantiers cette semaine</h2>
   ${Object.keys(parChantier).length ? `<div class="table-wrap"><table><tr><th>Chantier</th><th class="num">Prévu</th><th class="num">Pointé</th><th class="num">Reste à faire (budget)</th></tr>
-    ${Object.entries(parChantier).map(([id, v]) => { const a = affaireOf(id), c = Calc.affaire(a); return `<tr class="clickable" onclick="location.hash='#/chantier/${id}'"><td>${puceChantier(a)} ${esc(a.nom || '')}</td><td class="num">${fmt(v.prevu, 1)} h</td><td class="num">${fmt(v.reel, 1)} h</td><td class="num ${c.heuresPrevues - c.heuresPassees < 0 ? 'neg' : ''}">${c.heuresPrevues ? fmt(c.heuresPrevues - c.heuresPassees, 1) + ' h' : '—'}</td></tr>`; }).join('')}</table></div>` : '<p class="muted">Rien de planifié cette semaine.</p>'}`;
+    ${Object.entries(parChantier).map(([id, v]) => { const a = affaireOf(id), c = Calc.affaire(a); return `<tr class="clickable" data-go="#/chantier/${id}"><td>${puceChantier(a)} ${esc(a.nom || '')}</td><td class="num">${fmt(v.prevu, 1)} h</td><td class="num">${fmt(v.reel, 1)} h</td><td class="num ${c.heuresPrevues - c.heuresPassees < 0 ? 'neg' : ''}">${c.heuresPrevues ? fmt(c.heuresPrevues - c.heuresPassees, 1) + ' h' : '—'}</td></tr>`; }).join('')}</table></div>` : '<p class="muted">Rien de planifié cette semaine.</p>'}`;
 }
 
 function bindPlanningEquipes(root, query) {
@@ -250,7 +250,7 @@ function bandeauSemaine(u, jours, today, modifies) {
     : p0 ? `Aujourd'hui : <strong>${esc(a0.code || '')}</strong> ${esc(a0.nom || '')}${p0.debut ? ` · ${esc(p0.debut)}–${esc(p0.fin || '')}` : ''} · ${iconeTache(p0.tache)} ${esc(p0.tache || '')}` : 'Rien de prévu aujourd\'hui.'}</div>` : '';
   return `${salut}<div class="pl-bulles">${jours.map(d => {
     const b = bilanJour(u.id, d), p = b.plan[0];
-    return `<a href="javascript:void 0" data-aller="${d}" class="pl-bulle ${d === today ? 'today' : ''} ${modifies.has(d) ? 'modifie' : ''}" style="--h:${p ? teinte(p.affaireId) : 0}" title="${esc(jourLong(d))}">
+    return `<a href="#" role="button" data-aller="${d}" class="pl-bulle ${d === today ? 'today' : ''} ${modifies.has(d) ? 'modifie' : ''}" style="--h:${p ? teinte(p.affaireId) : 0}" title="${esc(jourLong(d))}">
       <span class="small">${JOURS_COURTS[jourDe(d).getDay() - 1]}</span><strong>${jourDe(d).getDate()}</strong>
       <span class="pl-bulle-pt ${p ? 'plein' : ''}">${b.statut === 'absent' ? iconeAbsence(b.absence.absence) : p ? iconeTache(p.tache) : '·'}</span>
       <span class="small">${b.statut === 'absent' ? '' : b.hp ? fmt(b.hp, 1) + ' h' : ''}</span></a>`;
@@ -259,7 +259,7 @@ function bandeauSemaine(u, jours, today, modifies) {
 
 function bindPlanningMobile(root, uid) {
   root.querySelectorAll('[data-plmode]').forEach(b => b.onclick = () => { planningMobileSel.mode = b.dataset.plmode; App.render(); });
-  root.querySelectorAll('[data-aller]').forEach(a => a.onclick = () => { const c = root.querySelector(`#jour-${a.dataset.aller}`); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+  root.querySelectorAll('[data-aller]').forEach(a => a.onclick = ev => { ev.preventDefault(); const c = root.querySelector(`#jour-${a.dataset.aller}`); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
   // Le compagnon a vu son planning : ses notifications de planning passent en « lues » (la mise en avant reste jusqu'au prochain affichage)
   if (uid === Store.me.userId) Notifs.nonLues().filter(n => n.type === 'planning').forEach(n => Notifs.marquerLue(n));
   root.querySelectorAll('[data-saisir]').forEach(b => b.onclick = () => saisirJournee(b.dataset.saisir, b.dataset.ids.split(',')));

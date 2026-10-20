@@ -177,7 +177,7 @@ Views.reception = params => {
 
   <h2>Réserves <span class="muted small">${ouvertes.length} ouverte(s) sur ${res.length}</span></h2>
   <div class="table-wrap"><table><tr><th>N°</th><th>Localisation</th><th>Description</th><th>Responsable</th><th>Échéance</th><th>Photo</th><th>Statut</th><th></th></tr>
-    ${res.map(r => `<tr><td>${r.numero}</td><td>${esc(r.localisation)}</td><td>${esc(r.description)}${r.commentaireLevee ? `<br><span class="small pos">Levée : ${esc(r.commentaireLevee)}</span>` : ''}</td><td>${esc(r.responsable)}</td>
+    ${res.map(r => `<tr><td>${esc(r.numero)}</td><td>${esc(r.localisation)}</td><td>${esc(r.description)}${r.commentaireLevee ? `<br><span class="small pos">Levée : ${esc(r.commentaireLevee)}</span>` : ''}</td><td>${esc(r.responsable)}</td>
       <td class="${r.statut !== 'Levée' && r.echeance && r.echeance < isoDate(new Date()) ? 'neg' : ''}">${dateFr(r.echeance)}</td>
       <td>${r.photoId ? `<a href="${fileUrl(r.photoId)}" target="_blank" rel="noopener"><img class="thumb" src="${fileUrl(r.photoId)}" alt="Photo de la réserve"></a>` : ''}${r.photoLeveeId ? `<a href="${fileUrl(r.photoLeveeId)}" target="_blank" rel="noopener"><img class="thumb" src="${fileUrl(r.photoLeveeId)}" alt="Photo après levée"></a>` : ''}</td>
       <td>${r.statut === 'Levée' ? `<span class="badge b-ok">Levée le ${dateFr(r.dateLevee)}</span>` : '<span class="badge b-warn">Ouverte</span>'}${r.pvId ? ' <span class="badge" title="Figée par le procès-verbal">PV</span>' : ''}</td>
@@ -283,7 +283,7 @@ Views.reception.bind = (root, params) => {
 function leverReserve(r) {
   let photo = null;
   const render = () => {
-    const box = Modal.open(`<h2 style="margin-top:0">Lever la réserve n° ${r.numero}</h2>
+    const box = Modal.open(`<h2 style="margin-top:0">Lever la réserve n° ${esc(r.numero)}</h2>
       <p>${esc(r.description)} <span class="muted">· ${esc(r.localisation)}</span></p>
       <div class="grid2"><div class="field"><label for="lv-date">Date de levée</label><input id="lv-date" type="date" value="${isoDate(new Date())}"></div>
         <div class="field"><label for="lv-com">Travaux réalisés</label><input id="lv-com" placeholder="Ex. calorifuge posé"></div></div>
@@ -309,7 +309,7 @@ Views.pv = params => {
   const titre = pv.type === 'levee' ? 'PROCÈS-VERBAL DE LEVÉE DES RÉSERVES' : 'PROCÈS-VERBAL DE RÉCEPTION DES TRAVAUX';
   const coche = v => (pv.decision === v ? '☒' : '☐');
   return `<div class="toolbar"><a href="#/reception/${a.id}" class="btn secondary">← Réception</a><a href="#/chantier/${a.id}" class="btn secondary">Chantier</a><span class="spacer"></span>
-    <button class="secondary print-btn" onclick="window.print()">Imprimer</button>${boutonsEnvoi('pv', pv.id)}</div>
+    <button class="secondary print-btn" data-print>Imprimer</button>${boutonsEnvoi('pv', pv.id)}</div>
   <h1 class="no-print">${pv.type === 'levee' ? 'PV de levée des réserves' : 'PV de réception'} ${esc(pv.numero || '')} <span class="badge ${pv.statut === 'Signé' ? 'b-ok' : 'b-warn'}">${esc(pv.statut)}</span></h1>${envoisHtml('receptions', pv.id)}
   <div class="doc-print">
     ${Doc.entete('pv', titre, `N° ${esc(pv.numero || '')} du ${dateFr(pv.date)}${pv.lieu ? `<br>Lieu : ${esc(pv.lieu)}` : ''}`)}
@@ -320,7 +320,7 @@ Views.pv = params => {
       <p class="pv-decision">${coche('Sans réserve')} prononcer la réception sans réserve<br>${coche('Avec réserves')} prononcer la réception avec les réserves listées ci-dessous<br>${coche('Refusée')} refuser la réception</p>`
     : `<p>Le maître d'ouvrage constate la levée des réserves suivantes, formulées lors de la réception :</p>`}
     ${(pv.reservesSnapshot || []).length ? `<div class="table-wrap"><table class="doc-lines"><tr><th>N°</th><th>Localisation</th><th>Réserve</th><th>Responsable</th><th>${pv.type === 'levee' ? 'Levée le' : 'À lever avant le'}</th></tr>
-      ${pv.reservesSnapshot.map(r => `<tr><td>${r.numero}</td><td>${esc(r.localisation)}</td><td>${esc(r.description)}</td><td>${esc(r.responsable)}</td><td>${dateFr(pv.type === 'levee' ? r.dateLevee : r.echeance)}</td></tr>`).join('')}</table></div>` : ''}
+      ${pv.reservesSnapshot.map(r => `<tr><td>${esc(r.numero)}</td><td>${esc(r.localisation)}</td><td>${esc(r.description)}</td><td>${esc(r.responsable)}</td><td>${dateFr(pv.type === 'levee' ? r.dateLevee : r.echeance)}</td></tr>`).join('')}</table></div>` : ''}
     ${pv.commentaire && Doc.t('pv').observations ? `<p><strong>Observations :</strong> ${esc(pv.commentaire)}</p>` : ''}
     <div class="signatures signed">
       <div>Pour le maître d'ouvrage<br><strong>${esc(pv.signataireNom)}</strong>${pv.signataireQualite ? `, ${esc(pv.signataireQualite)}` : ''}${pv.signatureClientId ? `<img src="${fileUrl(pv.signatureClientId)}" alt="Signature du client">` : ''}</div>
@@ -340,7 +340,7 @@ Views.bon = params => {
   const tempsBon = hd ? v.temps.filter(t => !r.signeLe || t.date <= r.date) : Store.all('temps').filter(t => t.affaireId === a.id && t.date === r.date && (r.intervenants || []).includes(t.userId));
   const consos = hd ? v.consos.filter(c => !r.signeLe || (c.date || '') <= r.date) : [];
   const retour = Store.me.role === 'atelier' ? '#/pointage/rapports' : `#/chantier/${a.id}`, o = Doc.t('bon');
-  return `<div class="toolbar"><a href="${retour}" class="btn secondary">← Retour</a><span class="spacer"></span><button class="secondary print-btn" onclick="window.print()">Imprimer</button>${boutonsEnvoi('bon', r.id)}</div>
+  return `<div class="toolbar"><a href="${retour}" class="btn secondary">← Retour</a><span class="spacer"></span><button class="secondary print-btn" data-print>Imprimer</button>${boutonsEnvoi('bon', r.id)}</div>
   <h1 class="no-print">Bon d'intervention ${esc(r.numero || '')} ${r.signatureClientId ? '<span class="badge b-ok">Signé</span>' : '<span class="badge b-warn">Non signé</span>'}</h1>${envoisHtml('rapports', r.id)}
   <div class="doc-print">
     ${Doc.entete('bon', o.titre, `N° ${esc(r.numero || '')} du ${dateFr(r.date)}<br>${hd ? 'Intervention hors devis' : 'Chantier'} ${esc(a.code || '')}${a.refCommande ? `<br>Commande n° ${esc(a.refCommande)}` : ''}`)}

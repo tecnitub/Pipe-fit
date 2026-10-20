@@ -138,7 +138,7 @@ Views.efactures = (params, query) => {
   ${barreFiltres(f, { recherche: 'Rechercher (fournisseur, n°, commande…)', statuts: [['Reçue', 'À traiter'], ['Intégrée', 'Intégrées'], ['Rejetée', 'Rejetées'], ['', 'Toutes']], defauts: FILTRES_EF })}
   ${list.length ? `<div class="table-wrap"><table><tr><th>Reçue le</th><th>Fournisseur</th><th>N°</th><th>Date</th><th>Références</th><th class="num">HT</th><th class="num">TTC</th><th>Format</th><th>Statut</th></tr>
     ${list.map(x => { const four = fournisseurDe(x.vendeur || {});
-      return `<tr class="clickable" onclick="location.hash='#/efactures/${x.id}'"><td>${new Date(x.recueLe).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}<br><span class="muted small">${esc(x.origine || '')}</span></td>
+      return `<tr class="clickable" data-go="#/efactures/${x.id}"><td>${new Date(x.recueLe).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}<br><span class="muted small">${esc(x.origine || '')}</span></td>
         <td>${esc((x.vendeur || {}).nom || '')}${four ? '' : ' <span class="badge b-warn">nouveau</span>'}</td><td>${esc(x.numero)}${x.type === 'avoir' ? ' <span class="badge b-warn">Avoir</span>' : ''}</td><td>${dateFr(x.date)}</td>
         <td class="small">${esc([x.refCommande, x.refAcheteur].filter(Boolean).join(' · '))}</td><td class="num">${eur(x.totalHT)}</td><td class="num">${eur(x.totalTTC)}</td><td>${esc(x.format)}${x.pdfId ? ' + PDF' : ''}</td><td><span class="badge ${STATUTS_EF[x.statut] || ''}">${esc(x.statut)}</span></td></tr>`; }).join('')}</table></div>`
   : '<p class="muted">Aucune facture électronique pour ces critères.</p>'}
