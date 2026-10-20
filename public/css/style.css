@@ -821,3 +821,23 @@ fieldset.mi-titre[hidden] { display: none; }
 .secu-etat li { padding-left: 2px; }
 .secu-etat li.pos { color: inherit; }
 .secu-etat li.neg { color: var(--neg, #b3261e); }
+
+/* Fluides frigorigènes */
+.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)); gap: 10px 16px; }
+.fiche-fluide .big-select { font-size: 1rem; }
+.ff-fuite { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.ff-fuite input:not([type]) { flex: 1; min-width: 0; }
+.fl-attestation { margin: 0 0 10px; }
+.doc-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 16px; }
+.doc-signature { max-height: 70px; max-width: 220px; }
+
+/* Rapprochement des factures fournisseurs */
+.rp-table input:not([type]) { min-width: 160px; }
+.rp-table tr.rp-ko td { background: color-mix(in srgb, var(--neg, #b3261e) 6%, transparent); }
+.rp-table tr.rp-hc td { background: color-mix(in srgb, #c98a00 7%, transparent); }
+.rp-verdict.ok { border-left: 4px solid #2e7d32; }
+.rp-verdict.ko { border-left: 4px solid var(--neg, #b3261e); }
+
+/* Hors connexion */
+.hors-ligne { background: #fff3cd; color: #5c4400; border: 1px solid #e0c060; border-radius: 999px; padding: 3px 10px; font-weight: 600; }
+.hors-ligne.off { background: #3b3b3b; color: #fff; border-color: #3b3b3b; }

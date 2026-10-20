@@ -339,7 +339,15 @@ function demoData() {
     xmlId: '', pdfId: '' }];
   // Facture de la commande CF-0001 : 2,5 % au-dessus du montant commandé
   const cf1 = commandes.find(c => c.id === 'cf1');
-  if (cf1) { const tot = cf1.lignes.reduce((t, l) => t + l.qte * l.pu, 0) * 1.025; achats[0].montantHT = Math.round(tot * 100) / 100; achats[0].imputations[0].montantHT = achats[0].montantHT; }
+  if (cf1) {
+    // Livraison : un reliquat de 20 ml de tube DN100 ; facture : hausse de 6 % sur le tube DN50, DN100 facturé en entier, frais de port
+    cf1.lignes.forEach(l => { l.qteRecue = l.articleId === 'a2' ? l.qte - 20 : l.qte; });
+    cf1.receptions = [{ date: d(-38), bl: 'BL-IDRA-55120', note: 'Reliquat de 20 ml de tube DN100 annoncé', photoId: '', lignes: cf1.lignes.map((l, i) => ({ i, qte: l.qteRecue })), par: 'Kevin Roux' }];
+    achats[0].lignes = [...cf1.lignes.map(l => ({ designation: l.designation.toUpperCase(), reference: (articles.find(a => a.id === l.articleId) || {}).ref || '', qte: l.qte, unite: l.unite,
+      pu: l.articleId === 'a1' ? Math.round(l.pu * 1.06 * 100) / 100 : l.pu })), { designation: 'Participation frais de port', qte: 1, unite: 'u', pu: 85 }];
+    achats[0].lignes.forEach(l => { l.montantHT = Math.round(l.qte * l.pu * 100) / 100; });
+    achats[0].montantHT = Math.round(achats[0].lignes.reduce((t, l) => t + l.montantHT, 0) * 100) / 100; achats[0].imputations[0].montantHT = achats[0].montantHT;
+  }
   const planning = [];
   const temps = [];
   // Planning : charge hebdomadaire au-delà, détail jour par jour (semaine dernière, en cours, prochaine)
@@ -531,6 +539,28 @@ function demoData() {
     { id: 'mi3', userId: 'i2', nom: 'Damien Leroy', nationalite: 'Portugaise', dateNaissance: '1989-11-03', sexe: 'M', qualification: 'Soudeur TIG N3P1', ...AG, numeroContrat: 'MAD-2026-03511', motif: 'remplacement',
       motifDetail: 'Remplacement de R. Blanc (arrêt maladie)', dateEntree: d(-40), finPrevue: d(-2), dateSortie: '', affaireIds: ['af1'], notes: '' },
   ];
+  // Registre des fluides frigorigènes : équipements des clients, bouteilles, fiches d'intervention
+  const equipementsFrigo = [
+    { id: 'eqf1', clientId: 'e2', siteId: 's4', designation: 'Groupe froid chambre négative', localisation: 'Toiture bât. expédition', fluide: 'R449A', charge: 45, marque: 'Bitzer', modele: 'LH124E', numeroSerie: 'BZ-2017-55410', miseEnService: d(-2900), detectionPermanente: false },
+    { id: 'eqf2', clientId: 'e2', siteId: 's4', designation: 'Climatisation salle de conditionnement', localisation: 'Local technique 2', fluide: 'R410A', charge: 12.5, marque: 'Daikin', modele: 'RZQG140', numeroSerie: 'DK-140-88213', miseEnService: d(-1800) },
+    { id: 'eqf3', clientId: 'e3', siteId: 's5', designation: 'Groupe d\'eau glacée process', localisation: 'Bâtiment utilités', fluide: 'R134a', charge: 380, marque: 'Carrier', modele: '30XW', numeroSerie: 'CA-30XW-1021', miseEnService: d(-3200), detectionPermanente: true },
+    { id: 'eqf4', clientId: 'e3', designation: 'Ancienne armoire de climatisation', localisation: 'Salle informatique', fluide: 'R22', charge: 6, marque: 'Airwell', modele: 'CRS', miseEnService: d(-8000) },
+    { id: 'eqf5', clientId: 'e1', siteId: 's2', designation: 'Pompe à chaleur bureaux', localisation: 'Façade nord', fluide: 'R32', charge: 3.2, marque: 'Mitsubishi', modele: 'PUZ-ZM100', miseEnService: d(-400) },
+  ];
+  const bouteilles = [
+    { id: 'bt1', numero: 'R449A-8812', fluide: 'R449A', type: 'neuve', contenance: 10, masseInitiale: 10, userId: 'o2', fournisseurId: '' },
+    { id: 'bt2', numero: 'REC-4471', fluide: 'R449A', type: 'recuperation', contenance: 27, masseInitiale: 0, userId: 'o2', fournisseurId: '' },
+    { id: 'bt3', numero: 'R410A-3021', fluide: 'R410A', type: 'neuve', contenance: 11.3, masseInitiale: 11.3, userId: 'o2', fournisseurId: '' },
+  ];
+  const ff = (id, numero, eq, j, nature, extra) => ({ id, numero, equipementId: eq, clientId: (equipementsFrigo.find(e => e.id === eq) || {}).clientId, date: d(j), nature, userId: 'o2', detecteur: 'Détecteur électronique Testo 316-4 (contrôlé le ' + d(-120).split('-').reverse().join('/') + ')',
+    fuites: [], statut: 'Signée', signataireNom: 'Thomas Girard', signataireQualite: 'Chargé de travaux', signeLe: new Date(today.getTime() + j * 86400000).toISOString(), ...extra });
+  const fichesFluides = [
+    ff('ffi1', `FI-${Y}-0001`, 'eqf1', -200, 'controlePeriodique', {}),
+    ff('ffi2', `FI-${Y}-0002`, 'eqf1', -20, 'maintenance', { fuites: [{ localisation: 'Raccord flare détendeur évaporateur 2', reparee: true }], chargeVierge: 3.4, bouteilleCharge: 'bt1', observations: 'Raccord refait, recharge après tirage au vide.' }),
+    ff('ffi3', `FI-${Y}-0003`, 'eqf2', -340, 'controlePeriodique', {}),
+    ff('ffi5', `FI-${Y}-0005`, 'eqf3', -190, 'controlePeriodique', { signataireNom: 'Service maintenance', signataireQualite: 'Pharmasynth' }),
+    ff('ffi4', `FI-${Y}-0004`, 'eqf4', -60, 'demantelement', { recupTraitement: 5.6, bouteilleRecup: 'bt2', signataireNom: 'Service maintenance', signataireQualite: 'Pharmasynth', observations: 'Armoire R22 déposée, fluide récupéré pour destruction.' }),
+  ];
   // Produits dangereux transportés dans les véhicules et leurs FDS
   const produits = [
     { id: 'pr1', nom: 'Acétylène dissous', fabricant: 'Air Liquide', usage: 'Soudage et coupage oxyacétylénique', pictos: ['GHS02', 'GHS04'], mentionsH: 'H220, H230, H280', epi: 'Lunettes de soudage, gants cuir',
@@ -568,13 +598,13 @@ function demoData() {
       'pdf-pdp-laiterie': pdfExemple('Plan de prevention annuel - Laiterie des Alpes', ['Entreprise utilisatrice : Laiterie des Alpes', 'Entreprise exterieure : Pipe-Fit Industrie', 'Inspection commune prealable realisee', 'Permis de feu et consignations delivres par la maintenance', 'Zones de production : charlotte et blouse obligatoires']),
       'pdf-calcul': pdfExemple('Note de calcul du supportage', ['Usage interne au bureau']),
       'pdf-chaufferie': pdfExemple('Plan de la chaufferie existante - indice A', ['Residence Les Tilleuls, Echirolles', 'Collecteurs depart / retour DN150 a remplacer', 'Acces par la porte cote parking (cle a la loge)']) },
-    settings: { societe: 'Pipe-Fit Industrie', adresse: 'ZI des Forges – 69800 Saint-Priest', siret: '000 000 000 00000', tva: 20, tauxHoraireDefaut: 58, delaiPaiement: 45, dureeHebdo: 35, seuilHS50: 43, montantPanier: 10.5,
+    settings: { fluides: { numero: 'FR-ATT-2024-01587', categorie: 'I', organisme: 'Organisme agréé (démonstration)', validite: d(800) }, societe: 'Pipe-Fit Industrie', adresse: 'ZI des Forges – 69800 Saint-Priest', siret: '000 000 000 00000', tva: 20, tauxHoraireDefaut: 58, delaiPaiement: 45, dureeHebdo: 35, seuilHS50: 43, montantPanier: 10.5,
       compta: { journal: 'VT', journalLib: 'Ventes', compteClient: '411000', compteTravaux: '704000', compteLivraison: '708500', compteTVA: '445710', compteRG: '411700', auxiliaires: true, emailComptable: 'compta@cabinet-exemple.fr' },
       doc: { logoId: 'img-logo', masquerNom: true, logoHauteur: 56, couleur: '#8f2f1a', police: 'sans', tel: '04 72 00 00 00', email: 'contact@pipefit.example', web: 'www.pipefit.example',
         tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',
         types: { devis: { conditions: 'Acompte de 30 % à la commande. Travaux réalisés selon les normes EN 13480 et le DTU en vigueur. Hors génie civil, calorifuge et échafaudages sauf mention contraire.' },
           facture: { conditions: 'Paiement par virement à 45 jours fin de mois.' } } } },
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels, missions, produits,
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels, missions, produits, equipementsFrigo, fichesFluides, bouteilles,
   };
 }
 

@@ -186,6 +186,7 @@ function integrerEFacture(x) {
     adresses: v.ville || v.cp ? [{ id: Math.random().toString(36).slice(2, 10), libelle: 'Siège', adresse: v.adresse || '', cp: v.cp || '', ville: v.ville || '', facturation: true }] : [] });
   const sens = x.type === 'avoir' ? -1 : 1;
   const achat = Store.upsert('achats', { ref: '', fournisseurId: four.id, numeroFournisseur: x.numero, date: x.date, echeance: x.echeance || '', montantHT: sens * Math.abs(x.totalHT), montantTVA: sens * Math.abs(x.totalTVA),
+    lignes: (x.lignes || []).map(l => ({ designation: l.designation || '', reference: l.reference || '', qte: sens * Math.abs(num(l.qte)), unite: l.unite || '', pu: num(l.pu), montantHT: sens * Math.abs(num(l.montantHT)) })),
     statut: 'À payer', notes: `Reçue par facturation électronique (${x.format}${x.refCommande ? `, commande ${x.refCommande}` : ''}).`, pieceId: x.pdfId || '', pieceType: x.pdfId ? 'pdf' : '', efactureId: x.id, imputations: imputationProposee(x) });
   Object.assign(x, { statut: 'Intégrée', achatId: achat.id, integreeLe: isoDate(new Date()), integreePar: Store.me.nom });
   Store.upsert('efactures', x);

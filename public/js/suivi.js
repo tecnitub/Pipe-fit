@@ -21,7 +21,8 @@ function signaturePad(canvas, onEnd) {
   const charger = url => { const img = new Image(); img.onload = () => { const r = canvas.getBoundingClientRect(); ctx.drawImage(img, 0, 0, r.width, r.height); vide = false; }; img.src = url; };
   return { vide: () => vide, effacer: ajuster, image: () => canvas.toDataURL('image/png'), charger };
 }
-const envoyerImage = async dataUrl => (await api('POST', '/api/files', { dataUrl })).id;
+// Photo ou signature : envoyée tout de suite, ou mise en attente sans réseau (hors-ligne.js)
+const envoyerImage = dataUrl => HorsLigne.envoyerImage(dataUrl);
 
 /* ---------- Rapports d'intervention (application des équipes) ---------- */
 const brouillonRapport = { uid: null, affaireId: '', date: '', intervenants: null, travaux: '', observations: '', besoins: '', photos: [], materiel: [], signature: null, signNom: '', signQual: '', signOpen: false, termine: true };

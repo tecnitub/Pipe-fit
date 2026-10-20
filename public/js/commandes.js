@@ -75,6 +75,7 @@ function commandeEditor(id) {
     <ul class="besoins">${besoins.map(x => `<li>${esc(x.a.designation)} : ${fmt(x.q, 2)} ${esc(x.a.unite)}</li>`).join('')}</ul>
     <button id="reprendre">Ajouter ces fournitures à la commande</button></div>` : ''}
 
+  ${receptionsCommandeHtml(c)}
   <h2 class="no-print">Lignes</h2>
   <div class="table-wrap no-print"><table>
     <tr><th>Désignation</th><th class="num">Qté</th><th>Unité</th><th class="num">PU achat HT</th><th class="num">Total HT</th><th></th></tr>
@@ -113,6 +114,7 @@ Views.commandes.bind = (root, params, query) => {
     save();
   });
   root.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { c.lignes.splice(+b.dataset.del, 1); save(); });
+  const recep = root.querySelector('#c-recep'); if (recep) recep.onclick = () => receptionnerCommande(c);
   const ligne = (a, q) => ({ articleId: a.id, designation: a.designation, unite: a.unite, qte: q, pu: num(a.coutRevient) });
   root.querySelector('#c-add').onclick = () => {
     const a = Store.get('articles', root.querySelector('#c-art').value);

@@ -535,6 +535,7 @@ Views.parametres = () => {
     </div>
     <p class="small muted" style="margin-bottom:0">Téléphone perdu ou ordinateur partagé ? <button class="small secondary" id="me-sessions">Déconnecter mes autres appareils</button> <span id="me-sessions-n"></span></p>
   </div>
+  ${agendaCartes()}
   ${admin ? reglagesSecuriteCarte() : ''}
   ${admin ? `
   <h2>Société</h2>
@@ -624,6 +625,7 @@ Views.parametres.bind = root => {
   });
   api('GET', '/api/me/sessions').then(r => { const el = root.querySelector('#me-sessions-n'); if (el && r) el.textContent = r.autres ? `(${r.autres} autre(s) session(s) ouverte(s))` : '(aucune autre session)'; }).catch(() => {});
   bindReglagesSecurite(root);
+  bindAgenda(root);
   on('#pw-save', async () => {
     try {
       await api('POST', '/api/me/password', { current: root.querySelector('#pw-cur').value, next: root.querySelector('#pw-new').value });

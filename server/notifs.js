@@ -7,6 +7,7 @@ const Push = require('./push');
 const NotifPlanning = require('../public/js/notif-planning');
 const Compagnon = require('../public/js/compagnon');
 const Echeances = require('../public/js/echeances');
+const Fluides = require('../public/js/fluides');
 
 const DELAI = () => Math.max(0, parseInt(process.env.NOTIF_DELAI_MS || '20000', 10));
 const CONSERVATION_JOURS = 60;
@@ -130,15 +131,26 @@ function creer({ DB, db, broadcast }) {
       const cle = `m:${m.id}:${a.cle}:${a.expire}:${a.etat}`;
       if (!deja[cle]) nouvelles.push({ cle, type: 'parc', userId: m.affectation && m.affectation.userId, texte: `${m.designation}${m.immat ? ` (${m.immat})` : ''} – ${a.libelle} : ${Echeances.texte(a)}`, etat: a.etat });
     }));
+    // Contrôles d'étanchéité des équipements frigorifiques des clients (registre des fluides)
+    const fiches = tous('fichesFluides');
+    tous('equipementsFrigo').filter(e => !e.archive).forEach(e => {
+      const p = Fluides.prochainControle(e, fiches);
+      if (!p) return;
+      const x = Echeances.etat(p.date, auj, 30);
+      if (x.etat !== 'expire' && x.etat !== 'bientot') return;
+      const cle = `f:${e.id}:${p.date}:${x.etat}`;
+      const client = (lire('entreprises', e.clientId) || {}).nom || '';
+      if (!deja[cle]) nouvelles.push({ cle, type: 'fluide', texte: `${client ? `${client} – ` : ''}${e.designation} (${e.fluide}) : ${p.suiviFuite ? 'contrôle de suivi après fuite' : 'contrôle d\'étanchéité'} ${Echeances.texte({ ...x, expire: p.date })}`, etat: x.etat });
+    });
     if (!nouvelles.length) return 0;
     purger();
     const doc = (DB.getSettings(db).doc || {}), sujet = doc.email ? `mailto:${doc.email}` : undefined;
     // Bureau : un résumé
     const bureau = db.prepare("SELECT id, user_id FROM accounts WHERE role IN ('admin', 'charge')").all();
-    const nh = nouvelles.filter(n => n.type === 'hab'), np = nouvelles.filter(n => n.type === 'parc');
-    const titre = `⏰ Échéances : ${[nh.length && `${nh.length} habilitation(s) / visite(s) médicale(s)`, np.length && `${np.length} contrôle(s) du parc`].filter(Boolean).join(', ')}`;
+    const nh = nouvelles.filter(n => n.type === 'hab'), np = nouvelles.filter(n => n.type === 'parc'), nf = nouvelles.filter(n => n.type === 'fluide');
+    const titre = `⏰ Échéances : ${[nh.length && `${nh.length} habilitation(s) / visite(s) médicale(s)`, np.length && `${np.length} contrôle(s) du parc`, nf.length && `${nf.length} contrôle(s) d'étanchéité`].filter(Boolean).join(', ')}`;
     const texte = nouvelles.map(n => `${n.type === 'hab' ? `${(lire('users', n.userId) || {}).nom || ''} : ` : ''}${n.texte}`).join('\n');
-    const lien = nh.length ? '#/rh/habilitations' : '#/parc';
+    const lien = nh.length ? '#/rh/habilitations' : np.length ? '#/parc' : '#/fluides';
     [...new Set(bureau.map(c => c.user_id).filter(Boolean))].forEach(uid => enregistrer({ type: 'echeance', userId: uid, titre, texte, lien, date: new Date().toISOString(), lu: false }));
     await Push.envoyer(DB, db, bureau.map(c => c.id), { titre, texte, lien, tag: 'echeances' }, sujet).catch(e => console.error('Notification :', e.message));
     // Personnes concernées (compagnon, ou son chef d'équipe s'il n'a pas de compte)

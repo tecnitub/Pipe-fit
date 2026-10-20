@@ -8,6 +8,7 @@ const { demoData, uid } = require('./demo');
 const M365 = require('./m365');
 const EF = require('./efacture');
 const DossierDocuments = require('./dossier-documents');
+const AgendaSync = require('./agenda');
 const HS = require('./http-securite');
 const API = require('./api');
 const Push = require('./push');
@@ -15,6 +16,7 @@ const Notifs = require('./notifs');
 const Compagnon = require('../public/js/compagnon');
 const NoteFrais = require('../public/js/frais');
 const ReglesPointage = require('../public/js/pointage-regles');
+const Fluides = require('../public/js/fluides');
 
 const PORT = +process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -66,7 +68,7 @@ const isLocal = HS.estLocal;
 function canWrite(acc, col) {
   if (acc.role === 'admin') return true;
   if (acc.role === 'charge') return col !== 'users';
-  if (acc.role === 'atelier') return ['temps', 'frais', 'rapports', 'consommations', 'notifications'].includes(col);
+  if (acc.role === 'atelier') return ['temps', 'frais', 'rapports', 'consommations', 'notifications', 'fichesFluides', 'equipementsFrigo'].includes(col);
   return false;
 }
 function canDelete(acc, col, existing) {
@@ -128,6 +130,9 @@ const NOTIFS = Notifs.creer({ DB, db, broadcast });
 // Répertoire des documents sur le serveur, synchronisé avec les documents des chantiers
 const DOSSIER = DossierDocuments.creer({ DB, db, broadcast, uid, TYPES: TYPES_DOCUMENTS, MAX: MAX_DOCUMENT, dossierDefaut: path.join(path.dirname(DB_FILE), 'Documents'),
   notifier: (avant, apres) => NOTIFS.documentsModifies({ login: 'Répertoire serveur', nom: 'Répertoire serveur' }, avant, apres) });
+
+// Planning dans les agendas (Outlook via Microsoft 365, lien d'abonnement iCal)
+const AGENDA = AgendaSync.creer({ DB, db, M365 });
 
 /* ---------- Utilitaires HTTP ---------- */
 function send(res, status, body, headers = {}) {
@@ -306,8 +311,37 @@ async function api(req, res, url) {
   // Description OpenAPI (création d'un connecteur Power Automate / Make…)
   if (p[0] === 'openapi.json' && method === 'GET') return send(res, 200, API.openapi(DB, `${isHttps(req) ? 'https' : 'http'}://${req.headers.host}`));
 
+  // Lien d'abonnement iCal : authentifié par son jeton secret (les applications d'agenda n'ont pas de session)
+  if (p[0] === 'agenda' && /^[A-Za-z0-9_-]+\.ics$/.test(p[1] || '') && method === 'GET') {
+    const c = AGENDA.calendrier(p[1].slice(0, -4));
+    if (!c) return fail(res, 404, 'Lien d\'agenda inconnu ou révoqué');
+    res.writeHead(200, { 'Content-Type': 'text/calendar; charset=utf-8', 'Cache-Control': 'private, max-age=900', 'Content-Disposition': 'inline; filename="planning.ics"' });
+    return res.end(c.ics);
+  }
+
   const acc = currentAccount(req);
   if (!acc) return fail(res, 401, 'Non connecté');
+
+  // Mon lien d'agenda (iCal) et, pour l'administrateur, le planning dans Outlook
+  if (p[0] === 'agenda' && p[1] === 'lien') {
+    if (acc.cleApi) return fail(res, 403, 'Indisponible avec une clé d\'API');
+    const base = `${isHttps(req) ? 'https' : 'http'}://${req.headers.host}`;
+    if (method === 'GET') return send(res, 200, { actif: AGENDA.aUnLien(acc.id), relie: !!acc.user_id });
+    if (method === 'POST') { const j = AGENDA.nouveauLien(acc.id); DB.audit(db, acc.login, 'lien d\'agenda créé'); return send(res, 200, { url: `${base}/api/agenda/${j}.ics`, webcal: `${base.replace(/^https?/, 'webcal')}/api/agenda/${j}.ics` }); }
+    if (method === 'DELETE') { AGENDA.revoquer(acc.id); DB.audit(db, acc.login, 'lien d\'agenda révoqué'); return send(res, 200, { ok: true }); }
+  }
+  if (p[0] === 'agenda' && p[1] === 'outlook') {
+    if (acc.role !== 'admin') return fail(res, 403, 'Réservé à l\'administrateur');
+    if (p[2] === 'synchro' && method === 'POST') return send(res, 200, { ...(await AGENDA.synchroniser()), config: AGENDA.config(), m365: m365Pret() });
+    if (method === 'PUT') {
+      const b = await readBody(req), cfg = DB.getConfig(db, 'm365') || {};
+      cfg.agenda = { actif: !!b.actif, categorie: String(b.categorie ?? 'Pipe-Fit').slice(0, 60), rappel: Math.max(0, Math.min(1440, parseInt(b.rappel, 10) || 0)) };
+      DB.setConfig(db, 'm365', cfg);
+      DB.audit(db, acc.login, 'configuration du planning dans Outlook', null, null, cfg.agenda.actif ? 'actif' : 'arrêté');
+      AGENDA.synchroniser().catch(() => {});
+    }
+    return send(res, 200, { config: AGENDA.config(), m365: m365Pret(), ...AGENDA.etat() });
+  }
 
   if (p[0] === 'logout' && method === 'POST') {
     db.prepare('DELETE FROM sessions WHERE token = ?').run(acc.token);
@@ -383,11 +417,18 @@ async function api(req, res, url) {
 
   // Justificatifs (photos de notes de frais) : envoyés en data URL, servis en binaire
   if (p[0] === 'files' && method === 'POST' && !p[1]) {
-    const { dataUrl } = await readBody(req);
+    const { dataUrl, id: choisi } = await readBody(req);
     const m = /^data:(image\/(?:jpeg|png|webp)|application\/pdf);base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
     if (!m) return fail(res, 400, 'Fichier invalide (JPEG, PNG, WebP ou PDF attendu)');
-    const id = crypto.randomBytes(12).toString('hex');
-    db.prepare('INSERT INTO files (id, mime, data, created_by, created_at) VALUES (?, ?, ?, ?, ?)').run(id, m[1], Buffer.from(m[2], 'base64'), acc.login, new Date().toISOString());
+    const buf = Buffer.from(m[2], 'base64');
+    // Photo prise hors connexion : identifiant choisi par le téléphone (24 caractères hexadécimaux) ; renvoi identique accepté
+    if (choisi !== undefined) {
+      if (!/^[a-f0-9]{24}$/.test(String(choisi))) return fail(res, 400, 'Identifiant de fichier invalide');
+      const ex = db.prepare('SELECT data, created_by FROM files WHERE id = ?').get(choisi);
+      if (ex) return Buffer.from(ex.data).equals(buf) && ex.created_by === acc.login ? send(res, 200, { id: choisi }) : fail(res, 409, 'Identifiant de fichier déjà utilisé');
+    }
+    const id = choisi || crypto.randomBytes(12).toString('hex');
+    db.prepare('INSERT INTO files (id, mime, data, created_by, created_at) VALUES (?, ?, ?, ?, ?)').run(id, m[1], buf, acc.login, new Date().toISOString());
     return send(res, 200, { id });
   }
   if (p[0] === 'files' && method === 'GET' && p[1]) {
@@ -493,6 +534,8 @@ async function api(req, res, url) {
         if (col === 'factures') obj.type = existing ? existing.type : (obj.type === 'avoir' ? 'avoir' : undefined);
         // Bon d'intervention signé par le client : figé (sauf administrateur)
         if (col === 'rapports' && existing && existing.signatureClientId && acc.role !== 'admin') return { forbidden: 'Ce bon d\'intervention est signé par le client : il ne peut plus être modifié.' };
+        // Fiche d'intervention fluides signée : figée (registre réglementaire), sauf administrateur
+        if (col === 'fichesFluides' && existing && existing.statut === 'Signée' && acc.role !== 'admin') return { forbidden: 'Cette fiche d\'intervention est signée : elle ne peut plus être modifiée.' };
         // PV de réception signé : figé
         if (col === 'receptions' && existing && existing.statut === 'Signé' && acc.role !== 'admin') return { forbidden: 'Ce procès-verbal est signé : il ne peut plus être modifié.' };
         // Réserve figée par le PV : seule sa levée peut être renseignée
@@ -506,6 +549,8 @@ async function api(req, res, url) {
         }
         const refus = col === 'affaires' ? null : atelierRefus(acc, col, obj, existing);
         if (refus) return { forbidden: refus };
+        // Fiche d'intervention fluides envoyée ou signée : rubriques réglementaires complètes
+        if (col === 'fichesFluides' && obj.statut !== 'Brouillon') { const e = Fluides.erreur(obj, obj.equipementId && DB.getRecord(db, 'equipementsFrigo', obj.equipementId)); if (e) return { invalide: e }; }
         // Note de frais envoyée : restaurant -> noms des personnes présentes obligatoires
         if (col === 'frais' && obj.statut === 'Soumise' && NoteFrais.erreur(obj)) return { invalide: NoteFrais.erreur(obj) };
         // Matériel saisi par un compagnon (qui ne voit pas forcément les prix) : prix de la bibliothèque, ou ceux déjà fixés par le bureau
@@ -533,7 +578,7 @@ async function api(req, res, url) {
         return fail(res, 409, `Modifié entre-temps par ${result.conflict._by || 'un autre utilisateur'}`, { record: pourCompagnon(acc, col, result.conflict) });
       }
       broadcast('change', { col, record: result.record, client: req.headers['x-client-id'] || null });
-      if (col === 'planning') NOTIFS.planningModifie(acc, result.avant, result.record);
+      if (col === 'planning') { NOTIFS.planningModifie(acc, result.avant, result.record); AGENDA.signaler(); }
       if (col === 'affaires') { NOTIFS.documentsModifies(acc, result.avant, result.record); DOSSIER.signaler(); }
       if (col === 'affaires' && estCompagnon(acc) && !result.avant) NOTIFS.horsDevisOuvert(acc, result.record);
       return send(res, 200, pourCompagnon(acc, col, result.record) || { id: result.record.id, _v: result.record._v });
@@ -548,7 +593,7 @@ async function api(req, res, url) {
       db.prepare('DELETE FROM records WHERE col = ? AND id = ?').run(col, id);
       DB.audit(db, acc.login, 'suppression', col, id, labelOf(existing));
       broadcast('delete', { col, id, client: req.headers['x-client-id'] || null });
-      if (col === 'planning') NOTIFS.planningModifie(acc, existing, null);
+      if (col === 'planning') { NOTIFS.planningModifie(acc, existing, null); AGENDA.signaler(); }
       return send(res, 200, { ok: true });
     }
   }
@@ -818,6 +863,7 @@ if (require.main === module) {
   setTimeout(verifierEcheances, 30000).unref();
   setInterval(verifierEcheances, 6 * 3600000).unref();
   DOSSIER.demarrer();
+  AGENDA.demarrer();
   // Sessions expirées effacées toutes les heures
   setInterval(() => db.prepare('DELETE FROM sessions WHERE expires < ?').run(Date.now()), 3600000).unref();
   SERVEUR.surveiller();
@@ -831,4 +877,4 @@ if (require.main === module) {
     if (!hasAccounts()) console.log(`Première utilisation : ouvrez ${schema}://localhost:${PORT} sur ce poste pour créer le compte administrateur.`);
   });
 }
-module.exports = { server, db, NOTIFS, DOSSIER };
+module.exports = { server, db, NOTIFS, DOSSIER, AGENDA };

@@ -9,7 +9,7 @@ async function api(method, url, body) {
     credentials: 'same-origin',
     headers: method !== 'GET' ? { 'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID } : {},
     body: body !== undefined ? JSON.stringify(body) : (method !== 'GET' ? '{}' : undefined),
-  });
+  }).catch(() => { throw Object.assign(new Error('Pas de connexion au serveur'), { reseau: true }); });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(data.error || `Erreur ${res.status}`), { status: res.status, data });
   return data;
@@ -19,8 +19,18 @@ const Store = {
   data: null,
   me: null,
 
+  // Hors connexion : données gardées sur le téléphone (compagnons), voir hors-ligne.js
+  horsLigne: false,
   async load() {
-    this.data = await api('GET', '/api/data');
+    try {
+      this.data = await api('GET', '/api/data');
+      this.horsLigne = false;
+      HorsLigne.sauverDonnees();
+    } catch (e) {
+      const c = HorsLigne.estReseau(e) && await HorsLigne.lireDonnees();
+      if (!c || !this.me || c.me.id !== this.me.id) throw e;
+      this.data = c.data; this.horsLigne = true;
+    }
     COLLECTIONS.forEach(c => { if (!this.data[c]) this.data[c] = []; });
   },
 
@@ -38,6 +48,8 @@ const Store = {
   upsert(col, obj) {
     if (!obj.id) obj.id = uid();
     this._put(col, obj);
+    // Sans réseau, ou d'autres saisies de cet élément attendent déjà : file d'attente (envoi dans l'ordre au retour du réseau)
+    if (!HorsLigne.enLigne() || HorsLigne.enAttente(col, obj.id)) { HorsLigne.ajouter({ type: 'put', col, id: obj.id, obj: JSON.parse(JSON.stringify(obj)) }); HorsLigne.sauverDonnees(); return obj; }
     const key = col + '/' + obj.id;
     const state = this._inflight.get(key);
     if (state) state.pending = obj; else this._send(col, obj, key);
@@ -59,9 +71,15 @@ const Store = {
         const numeroChanged = rec.numero !== obj.numero || rec.code !== obj.code || rec.ref !== obj.ref;
         Object.assign(obj, rec);
         this._put(col, obj);
+        HorsLigne.sauverDonnees();
         if (numeroChanged || col === 'factures') App.render();
       })
-      .catch(err => { this._inflight.delete(key); this._onError(err, col, obj.id); });
+      .catch(err => {
+        this._inflight.delete(key);
+        // Coupure réseau pendant l'envoi : la dernière version part dans la file d'attente
+        if (HorsLigne.estReseau(err)) { const o = state.pending || obj; HorsLigne.ajouter({ type: 'put', col, id: o.id, obj: JSON.parse(JSON.stringify(o)) }); HorsLigne.sauverDonnees(); return; }
+        this._onError(err, col, obj.id);
+      });
   },
 
   // Attend la réponse du serveur pour un élément (numéro attribué), au plus quelques secondes
@@ -80,7 +98,9 @@ const Store = {
   remove(col, id) {
     const prev = this.get(col, id);
     this.data[col] = this.data[col].filter(x => x.id !== id);
+    if (!HorsLigne.enLigne() || HorsLigne.enAttente(col, id)) { HorsLigne.ajouter({ type: 'delete', col, id }); return; }
     api('DELETE', `/api/records/${col}/${encodeURIComponent(id)}`).catch(err => {
+      if (HorsLigne.estReseau(err)) { HorsLigne.ajouter({ type: 'delete', col, id }); return; }
       if (prev) this._put(col, prev);
       this._onError(err, col, id);
     });
@@ -135,6 +155,7 @@ const Store = {
       const local = this.get(p.col, p.record.id);
       if (local && local._v >= p.record._v) return;
       if (local) Object.assign(local, p.record); else this._put(p.col, p.record);
+      HorsLigne.sauverDonnees();
       // Notification pour moi : cloche et message ; les autres ne dérangent personne
       if (p.col === 'notifications') { if (!local) Notifs.recu(p.record); else Notifs.majCloche(); if (location.hash.startsWith('#/notifications')) App.remoteUpdate(); return; }
       App.remoteUpdate(`${p.record._by || 'Un utilisateur'} a modifié des données`);
@@ -153,7 +174,7 @@ const Store = {
     // Après une coupure réseau, on resynchronise tout.
     let wasDown = false;
     es.onerror = () => { wasDown = true; };
-    es.onopen = () => { if (wasDown) { wasDown = false; this.load().then(() => App.remoteUpdate()); } };
+    es.onopen = () => { if (wasDown) { wasDown = false; HorsLigne.envoyer().then(() => this.load()).then(() => App.remoteUpdate()).catch(() => {}); } };
   },
 };
 

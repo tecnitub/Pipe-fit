@@ -334,6 +334,47 @@ de rassemblement, SST, risques et EPI, PPSPS, PGC, plan de prévention annuel ou
 leur véhicule, aussi visibles dans « Mon véhicule ». Les documents de sécurité sont transmis même si l'affichage des
 autres documents est désactivé.
 
+## Registre des fluides frigorigènes
+
+**Fluides** : équipements des clients (fluide, charge, tonnes équivalent CO2 calculées avec le PRG, détection
+permanente, équipement hermétique), périodicité du contrôle d'étanchéité (règlement F-Gas : 12, 6 ou 3 mois selon les
+seuils de 5, 50 et 500 t éq. CO2, doublée avec un système de détection ; seuils en kg pour les HCFC), contrôle de suivi
+sous un mois après une fuite réparée, alertes (notifications du bureau). Fiches d'intervention reprenant les rubriques du
+Cerfa n° 15497 (opérateur et attestation de capacité, intervenant et attestation d'aptitude, détenteur, nature, détecteur,
+fuites, fluide chargé vierge / recyclé / régénéré, récupéré, bouteilles), saisies au bureau ou sur le téléphone du
+frigoriste avec la signature du client, numérotées (FI-AAAA-0001), figées une fois signées, PDF. Bouteilles (fluide
+dedans = départ + récupérations − charges). Bilan annuel par fluide (Excel, PDF) pour la déclaration à l'organisme agréé.
+Recharge en HCFC refusée. Les valeurs proposées sont à vérifier par l'opérateur : la fiche signée fait foi.
+
+## Rapprochement des factures fournisseurs
+
+Sur la commande : **Réceptionner une livraison** (quantités reçues par ligne, n° de BL, photo, remarque), statut
+« réceptionnée partiellement » ou « réceptionnée ». Sur la facture fournisseur rapprochée d'une commande : lignes de la
+facture (reprises automatiquement d'une facture électronique, ou de la commande puis corrigées), comparées ligne à ligne
+(même article, même référence ou désignation proche, sans confondre DN50 / DN100 ni 90° / 45°) : prix différent de la
+commande (tolérance 1 %), quantité au-delà de la livraison ou de la commande (en tenant compte des autres factures), ligne
+non commandée (frais de port…), total des lignes différent du montant HT. Décision : **bon à payer** (avec le motif d'un
+écart accepté) ou **litige fournisseur**. Colonne « Rapprochement » dans la liste des factures.
+
+## Planning dans les agendas
+
+- **Mon lien d'agenda** (Paramètres, pour chacun, compagnons compris) : abonnement iCal personnel au planning (chantier,
+  horaires, adresse du site, accès, contact, consigne, absences ; celui de l'équipe pour un chef d'équipe), dans
+  l'agenda du téléphone, d'Outlook ou de Google Agenda. Lien secret, révocable.
+- **Planning dans Outlook** (Paramètres, administrateur) : chaque journée planifiée (7 jours passés, 90 à venir) est créée
+  dans le calendrier Microsoft 365 de la personne (adresse de son compte, sinon de sa fiche), mise à jour ou supprimée
+  quand le planning change (quelques secondes après, et toutes les 15 minutes). L'application Entra ID doit avoir
+  l'autorisation **Calendars.ReadWrite** (en plus de Mail.Send), avec consentement administrateur.
+
+## Appli des compagnons sans réseau
+
+Sur le téléphone, l'appli (installée ou ouverte une première fois avec du réseau) démarre et fonctionne hors connexion :
+données du compagnon gardées sur le téléphone, pointages, rapports, notes de frais, fiches fluides, photos et signatures
+mis en file d'attente (bandeau « Hors ligne · n saisie(s) en attente ») et envoyés dans l'ordre au retour du réseau ; les
+numéros (NF-, RI-, FI-) sont attribués à l'envoi. Une saisie refusée par le serveur (modifiée entre-temps par le bureau,
+semaine close…) est signalée. Les données gardées et la file sont effacées à la déconnexion (avec un avertissement s'il
+reste des envois).
+
 ## Répertoire des documents sur le serveur
 
 Les documents des chantiers sont aussi enregistrés dans un répertoire du serveur, synchronisé avec l'appli dans les deux
@@ -377,9 +418,10 @@ server/m365.js     envoi des e-mails par Microsoft Graph
 server/efacture.js réception (dossier, adresse de dépôt) et dépôt des factures électroniques
 server/api.js      clés d'API, webhooks sortants, description OpenAPI
 server/dossier-documents.js  répertoire des documents synchronisé avec l'appli
+server/agenda.js   planning dans Outlook (Microsoft Graph) et lien iCal
 public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
-public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js, securite-ui.js, produits.js, dossier-documents.js : écrans métier
+public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js, securite-ui.js, produits.js, dossier-documents.js, fluides-ui.js, rapprochement-ui.js, agenda-ui.js, hors-ligne.js : écrans métier
 doe/               application DOE séparée (serveur, interface, génération du dossier PDF)
 installer/         installateur Windows (NSIS) : build.sh, PipeFitCRM.nsi, lanceur et service
 ```

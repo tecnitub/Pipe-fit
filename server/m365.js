@@ -41,4 +41,21 @@ async function envoyer(cfg, expediteur, msg) {
   throw new Error(`Microsoft 365 : ${detail}`);
 }
 
-module.exports = { jeton, envoyer, oublier: () => jetons.clear() };
+// Calendrier d'une boîte (planning) : création, mise à jour, suppression d'un événement
+// Prérequis : autorisation d'application Calendars.ReadWrite (consentement administrateur).
+async function evenement(cfg, boite, methode, id, corps) {
+  const token = await jeton(cfg);
+  const url = `${GRAPH()}/v1.0/users/${encodeURIComponent(boite)}/events${id ? `/${encodeURIComponent(id)}` : ''}`;
+  const res = await fetch(url, { method: methode, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: corps ? JSON.stringify(corps) : undefined })
+    .catch(e => { throw new Error(`Microsoft 365 injoignable (${e.message}).`); });
+  if (res.status === 204) return {};
+  const r = await res.json().catch(() => ({}));
+  if (res.ok) return r;
+  const detail = (r.error && r.error.message) || res.status;
+  const err = new Error(res.status === 401 || res.status === 403 ? `Agenda de ${boite} refusé : l'application doit avoir l'autorisation Calendars.ReadWrite (consentement administrateur). (${detail})`
+    : res.status === 404 ? `Introuvable dans Microsoft 365 (${boite}) : ${detail}` : `Microsoft 365 : ${detail}`);
+  err.status = res.status;
+  throw err;
+}
+
+module.exports = { jeton, envoyer, evenement, oublier: () => jetons.clear() };

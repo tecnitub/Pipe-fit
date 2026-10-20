@@ -14,7 +14,7 @@ const equipeDe = uid => Store.all('users').filter(u => u.chefId === uid);
 const enCoursDe = uid => Store.all('temps').find(t => t.userId === uid && t.debut && !t.fin);
 const statutTemps = t => t.statut === 'Validé' ? '<span class="badge b-ok">Validé</span>' : t.statut === 'Refusé' ? `<span class="badge b-bad" title="${esc(t.motifRefus || '')}">Refusé</span>` : (t.debut && !t.fin) ? '<span class="badge b-info">En cours</span>' : '<span class="badge b-warn">À valider</span>';
 const interimBadge = u => u.type === 'interimaire' ? `<span class="badge b-warn">Intérim${u.agenceId ? ' · ' + esc(clientName(u.agenceId)) : ''}</span>` : '';
-const fileUrl = id => (window.FILE_URL ? window.FILE_URL(id) : `/api/files/${encodeURIComponent(id)}`);
+const fileUrl = id => (HorsLigne.urlLocale(id) || (window.FILE_URL ? window.FILE_URL(id) : `/api/files/${encodeURIComponent(id)}`));
 
 const tempsFields = [
   { key: 'date', label: 'Date', type: 'date' },
@@ -37,7 +37,7 @@ function pointagePour(query) {
 
 function pointageTabs(active, uid) {
   const q = Store.me.role === 'atelier' ? '' : `?pour=${uid}`;
-  return `<div class="tabs"><a href="#/pointage${q}" class="${active === 'heures' ? 'active' : ''}">Heures</a><a href="#/pointage/planning${q}" class="${active === 'planning' ? 'active' : ''}">Planning</a><a href="#/pointage/chantiers${q}" class="${active === 'chantiers' ? 'active' : ''}">Chantiers</a><a href="#/pointage/rapports${q}" class="${active === 'rapports' ? 'active' : ''}">Rapports</a><a href="#/pointage/frais${q}" class="${active === 'frais' ? 'active' : ''}">Notes de frais</a></div>`;
+  return `<div class="tabs"><a href="#/pointage${q}" class="${active === 'heures' ? 'active' : ''}">Heures</a><a href="#/pointage/planning${q}" class="${active === 'planning' ? 'active' : ''}">Planning</a><a href="#/pointage/chantiers${q}" class="${active === 'chantiers' ? 'active' : ''}">Chantiers</a><a href="#/pointage/rapports${q}" class="${active === 'rapports' ? 'active' : ''}">Rapports</a><a href="#/pointage/frais${q}" class="${active === 'frais' ? 'active' : ''}">Notes de frais</a>${voitFluides(Store.get('users', uid) || { id: uid }) ? `<a href="#/pointage/fluides${q}" class="${active === 'fluides' ? 'active' : ''}">Fluides</a>` : ''}</div>`;
 }
 
 // Sélection des personnes en mode équipe (conservée entre deux rafraîchissements)
@@ -128,7 +128,7 @@ function nouvelleHDCompagnon(fait) {
     if (!o.siteId && !o.siteLibre) return notify('Indiquez le nom du site.');
     if (Store.me.role !== 'atelier') o.chargeId = Store.me.userId || '';
     $('#hd-ok').disabled = true;
-    try { o.photosDemande = []; for (const p of photos) o.photosDemande.push((await api('POST', '/api/files', { dataUrl: p.dataUrl })).id); }
+    try { o.photosDemande = []; for (const p of photos) o.photosDemande.push(await envoyerImage(p.dataUrl)); }
     catch (e) { $('#hd-ok').disabled = false; return notify('Envoi de la photo impossible : ' + e.message); }
     const a = Store.upsert('affaires', o);
     const rec = await Store.attendre('affaires', a.id);
@@ -216,6 +216,7 @@ Views.pointage = (params, query) => {
   if (params[0] === 'planning') return planningMobile(u, query);
   if (params[0] === 'chantiers') return chantiersCompagnon(u);
   if (params[0] === 'chantier') return ficheChantierCompagnon(u, params[1]);
+  if (params[0] === 'fluides') return fluidesCompagnon(u, params[1]);
   const today = isoDate(new Date());
   const team = equipeDe(u.id);
   const week = isoWeek(new Date());
@@ -298,6 +299,7 @@ Views.pointage.bind = (root, params, query) => {
   if (params[0] === 'rapports') return bindRapports(root, uid);
   if (params[0] === 'planning') return bindPlanningMobile(root, uid);
   if (params[0] === 'chantier') return bindFicheChantierCompagnon(root, params[1]);
+  if (params[0] === 'fluides') return bindFluidesCompagnon(root, Store.get('users', uid), params[1]);
   if (params[0] === 'chantiers') return;
   const on = (sel, fn) => { const el = root.querySelector(sel); if (el) el.onclick = fn; };
   const tache = () => (root.querySelector('input[name=p-tache]:checked') || {}).value || '';
@@ -503,7 +505,7 @@ function bindFrais(root, uid) {
     if (b.couverts && b.couverts !== convives.length && !(await ask(`Le ticket indique ${b.couverts} couvert(s) mais ${convives.length} personne(s) sont nommées. Envoyer quand même ?`, 'Envoyer'))) return;
     const btn = root.querySelector('#f-save'); btn.disabled = true;
     let photoId = '';
-    try { if (b.photo) photoId = (await api('POST', '/api/files', { dataUrl: b.photo })).id; }
+    try { if (b.photo) photoId = await envoyerImage(b.photo); }
     catch (e) { btn.disabled = false; notify('Envoi de la photo impossible : ' + e.message); return; }
     Store.upsert('frais', { ...note, photoId });
     fraisB = null;

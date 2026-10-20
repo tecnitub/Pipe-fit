@@ -106,6 +106,9 @@ const App = {
     try {
       Store.me = await api('GET', '/api/me');
     } catch (e) {
+      // Sans réseau : démarrage avec les données gardées sur le téléphone
+      const c = HorsLigne.estReseau(e) && await HorsLigne.lireDonnees();
+      if (c) { Store.me = c.me; return this.demarrerSession(); }
       if (e.status === 401) {
         const setup = await api('GET', '/api/setup').catch(() => ({}));
         return setup.needed ? this.showSetup(setup.local) : this.showLogin();
@@ -113,14 +116,23 @@ const App = {
       document.getElementById('app').innerHTML = `<p class="neg">Serveur injoignable : ${esc(e.message)}</p>`;
       return;
     }
+    return this.demarrerSession();
+  },
+  async demarrerSession() {
     document.body.classList.remove('logged-out');
     document.getElementById('whoami').textContent = `${Store.me.nom} · ${ROLE_LABELS[Store.me.role] || ''}`;
-    document.getElementById('logout').onclick = async () => { await api('POST', '/api/logout'); location.hash = ''; location.reload(); };
+    document.getElementById('logout').onclick = async () => {
+      if (HorsLigne.nombre() && !(await ask(`${HorsLigne.nombre()} saisie(s) faite(s) hors connexion n'ont pas encore été envoyées : elles seront perdues. Se déconnecter quand même ?`, 'Se déconnecter'))) return;
+      try { await api('POST', '/api/logout'); } catch (e) { if (!HorsLigne.estReseau(e)) throw e; }
+      await HorsLigne.effacer(); location.hash = ''; location.reload();
+    };
     document.getElementById('remote-refresh').onclick = () => { Modal.close(); this.render(); };
     await Store.load();
     Store.listen();
     Notifs.demarrer();
+    await HorsLigne.demarrer();
     this.render();
+    if (Store.horsLigne) this.toast('Hors connexion : vous travaillez avec les données gardées sur ce téléphone. Vos saisies partiront au retour du réseau.', 6000);
     window.addEventListener('hashchange', () => { Modal.close(); this.render(); });
   },
 };

@@ -26,10 +26,10 @@ Views.achats = (params, query) => {
     extra: `<select data-f="fournisseur" aria-label="Fournisseur"><option value="">Tous les fournisseurs</option>${fournisseurs.map(e => `<option value="${esc(e.id)}" ${e.id === f.fournisseur ? 'selected' : ''}>${esc(e.nom)}</option>`).join('')}</select>
       <select data-f="chantier" aria-label="Chantier"><option value="">Tous les chantiers</option>${options(Store.all('affaires').filter(a => !a.archive || a.id === f.chantier), f.chantier, affaireLabel, false)}</select>` })}
   <p class="muted small">${list.length} facture(s) · ${eur(sumBy(list, x => Calc.achat(x).ht))} HT · imputé aux chantiers ${eur(sumBy(list, x => Calc.achat(x).impute))}</p>
-  ${list.length ? `<div class="table-wrap"><table><tr><th>Réf.</th><th>Date</th><th>Fournisseur</th><th>N° facture</th><th>Chantiers</th><th class="num">HT</th><th class="num">Imputé</th><th>Ventilation</th><th>Paiement</th></tr>
+  ${list.length ? `<div class="table-wrap"><table><tr><th>Réf.</th><th>Date</th><th>Fournisseur</th><th>N° facture</th><th>Chantiers</th><th class="num">HT</th><th class="num">Imputé</th><th>Ventilation</th><th>Rapprochement</th><th>Paiement</th></tr>
     ${list.map(x => { const t = Calc.achat(x), [cls, lib] = etatVentilation(x); const chs = [...new Set((x.imputations || []).map(l => affaireOf(l.affaireId).code).filter(Boolean))];
       return `<tr class="clickable" data-go="#/achats/${x.id}"><td>${esc(x.ref || '…')}</td><td>${dateFr(x.date)}</td><td>${esc(clientName(x.fournisseurId))}</td><td>${esc(x.numeroFournisseur || '')}</td>
-        <td>${chs.map(c => esc(c)).join(', ')}</td><td class="num">${eur(t.ht)}</td><td class="num">${eur(t.impute)}</td><td><span class="badge ${cls}">${lib}</span></td><td>${badge(x.statut)}</td></tr>`; }).join('')}</table></div>` : '<p class="muted">Aucune facture fournisseur pour ces critères.</p>'}`;
+        <td>${chs.map(c => esc(c)).join(', ')}</td><td class="num">${eur(t.ht)}</td><td class="num">${eur(t.impute)}</td><td><span class="badge ${cls}">${lib}</span></td><td>${badgeRapprochement(x)}</td><td>${badge(x.statut)}</td></tr>`; }).join('')}</table></div>` : '<p class="muted">Aucune facture fournisseur pour ces critères.</p>'}`;
 };
 
 function achatEditeur(id, query) {
@@ -81,7 +81,8 @@ function achatEditeur(id, query) {
     ${t.reste > 0.005 ? '<button class="secondary" id="ac-solde">Imputer le reste</button>' : ''}
     ${nonFacturees.length ? `<select id="ac-cde" style="width:auto"><option value="">Rapprocher une commande…</option>${nonFacturees.map(c => `<option value="${c.id}">${esc(c.numero || '…')} · ${esc(affaireOf(c.affaireId).code || 'stock')} · ${eur(Calc.commande(c).total - dejaFacture(c.id))}</option>`).join('')}</select>` : ''}
     <label class="check small"><input type="checkbox" id="ac-fg" ${x.fraisGeneraux ? 'checked' : ''}> Le reste est en frais généraux / stock (ne plus le signaler à ventiler)</label>
-  </div>`;
+  </div>
+  ${rapprochementAchatHtml(x)}`;
 }
 
 Views.achats.bind = (root, params, query) => {
@@ -125,6 +126,7 @@ Views.achats.bind = (root, params, query) => {
     save();
   };
   q('#ac-fg').onchange = e => { x.fraisGeneraux = e.target.checked; save(); };
+  bindRapprochementAchat(root, x, save);
   q('#ac-file').onchange = async e => {
     const file = e.target.files[0];
     if (!file) return;

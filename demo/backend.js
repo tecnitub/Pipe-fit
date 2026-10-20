@@ -2,10 +2,10 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v31';
+  const KEY = 'pipefit-crm-demo-v32';
   const ME_KEY = 'pipefit-crm-demo-me';
-  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications', 'habilitations', 'materiels', 'missions', 'produits'];
-  const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4] };
+  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications', 'habilitations', 'materiels', 'missions', 'produits', 'equipementsFrigo', 'fichesFluides', 'bouteilles'];
+  const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4], fichesFluides: ['numero', 'FI', 4] };
   const ACCOUNTS = [
     { id: 'acc-admin', login: 'admin', nom: 'Administrateur', role: 'admin', userId: null, email: 'admin@pipefit.example' },
     { id: 'acc-claire', login: 'claire', nom: 'Claire Martin', role: 'charge', userId: 'u1', email: 'c.martin@pipefit.example' },
@@ -44,7 +44,7 @@
   function canWrite(acc, col) {
     if (acc.role === 'admin') return true;
     if (acc.role === 'charge') return col !== 'users';
-    return acc.role === 'atelier' && ['temps', 'frais', 'rapports', 'consommations', 'notifications'].includes(col);
+    return acc.role === 'atelier' && ['temps', 'frais', 'rapports', 'consommations', 'notifications', 'fichesFluides', 'equipementsFrigo'].includes(col);
   }
   // Mêmes règles que le serveur : un opérateur saisit pour lui (et son équipe pour les pointages), rien de validé ne se modifie
   function atelierRefus(acc, col, obj, existing) {
@@ -209,7 +209,7 @@
       return [200, JSON.parse(JSON.stringify(rec))];
     }
     if (p[0] === 'files' && method === 'POST') {
-      const id = 'f' + DemoSeed.uid();
+      const id = /^[a-f0-9]{24}$/.test(String(body.id || '')) ? body.id : 'f' + DemoSeed.uid();
       db.files = db.files || {};
       db.files[id] = body.dataUrl; save();
       return [200, { id }];
@@ -239,8 +239,10 @@
         }
         const refus = col === 'affaires' ? null : atelierRefus(acc, col, obj, existing);
         if (refus) return [403, { error: refus }];
+        if (col === 'fichesFluides' && obj.statut !== 'Brouillon') { const e = Fluides.erreur(obj, db.equipementsFrigo.find(x => x.id === obj.equipementId)); if (e) return [400, { error: e }]; }
         if (col === 'frais' && obj.statut === 'Soumise' && NoteFrais.erreur(obj)) return [400, { error: NoteFrais.erreur(obj) }];
         if (col === 'rapports' && existing && existing.signatureClientId && acc.role !== 'admin') return [403, { error: 'Ce bon d\'intervention est signé par le client : il ne peut plus être modifié.' }];
+        if (col === 'fichesFluides' && existing && existing.statut === 'Signée' && acc.role !== 'admin') return [403, { error: 'Cette fiche d\'intervention est signée : elle ne peut plus être modifiée.' }];
         if (col === 'receptions' && existing && existing.statut === 'Signé' && acc.role !== 'admin') return [403, { error: 'Ce procès-verbal est signé : il ne peut plus être modifié.' }];
         if (col === 'reserves' && existing && existing.pvId && acc.role !== 'admin') obj = { ...clean(existing), statut: obj.statut, dateLevee: obj.dateLevee, photoLeveeId: obj.photoLeveeId, commentaireLevee: obj.commentaireLevee, pvLeveeId: obj.pvLeveeId };
         if (NUMBERING[col]) { const f = NUMBERING[col][0]; obj[f] = existing ? existing[f] : nextNumber(col, obj); }
@@ -336,7 +338,7 @@ window.PIPEFIT_DEMO = true;
       if (me().role === 'atelier') return new Response(JSON.stringify({ error: 'Droits insuffisants' }), { status: 403 });
       if (!f || f.size > 1.5 * 1024 * 1024) return new Response(JSON.stringify({ error: 'Démonstration : fichiers de 1,5 Mo au plus (40 Mo dans la version installée)' }), { status: 413 });
       const dataUrl = await new Promise((ok, ko) => { const rd = new FileReader(); rd.onload = () => ok(rd.result); rd.onerror = ko; rd.readAsDataURL(f); });
-      const id = 'f' + DemoSeed.uid();
+      const id = /^[a-f0-9]{24}$/.test(String(body.id || '')) ? body.id : 'f' + DemoSeed.uid();
       db.files = db.files || {}; db.files[id] = dataUrl;
       try { save(); } catch (e) { return new Response(JSON.stringify({ error: 'Espace de la démonstration plein' }), { status: 507 }); }
       return new Response(JSON.stringify({ id, mime: f.type || 'application/octet-stream', taille: f.size }), { status: 200 });
