@@ -56,6 +56,8 @@ const Compagnon = (() => {
       case 'planning': return R.collegues || ctx.equipe.includes(r.userId) ? r : null;
       // Habilitations et visites médicales : les siennes (et celles de son équipe pour un chef d'équipe)
       case 'habilitations': return ctx.equipe.includes(r.userId) ? r : null;
+      // Enlèvements au comptoir : les siens et ceux de son équipe
+      case 'enlevements': return ctx.equipe.includes(r.userId) ? r : null;
       // Véhicule et outillage confiés à soi ou à son équipe, sans valeur d'achat
       case 'materiels': return r.affectation && ctx.equipe.includes(r.affectation.userId) ? sans(r, ['valeur', 'historique']) : null;
       default: return r;

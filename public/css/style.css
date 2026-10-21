@@ -849,3 +849,7 @@ fieldset.mi-titre[hidden] { display: none; }
 .proposition { border-left: 4px solid #2e7d32; }
 .proposition ul { margin: 6px 0; padding-left: 18px; }
 .lo-table tr.lo-verifier td { background: color-mix(in srgb, #c98a00 14%, transparent); }
+
+/* Historique des prix d'achat */
+.px-table th.triable { cursor: pointer; user-select: none; white-space: nowrap; }
+.px-table th.triable:hover { text-decoration: underline; }

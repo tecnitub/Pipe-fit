@@ -7,7 +7,9 @@ function achatsTabs(actif) {
   const aVentiler = Store.all('achats').filter(f => Calc.achat(f).reste > 0.005 && !f.fraisGeneraux).length;
   return `<div class="tabs"><a href="#/consultations" class="${actif === 'consultations' ? 'active' : ''}">Consultations ${consultationsTab() ? `<span class="count">${consultationsTab()} en cours</span>` : ''}</a><a href="#/commandes" class="${actif === 'commandes' ? 'active' : ''}">Commandes</a>
     <a href="#/achats" class="${actif === 'achats' ? 'active' : ''}">Factures fournisseurs ${aVentiler ? `<span class="count">${aVentiler} à ventiler</span>` : ''}</a>
-    <a href="#/efactures" class="${actif === 'efactures' ? 'active' : ''}">Factures électroniques ${(() => { const n = Store.all('efactures').filter(e => e.statut === 'Reçue').length; return n ? `<span class="count">${n} à traiter</span>` : ''; })()}</a></div>`;
+    <a href="#/efactures" class="${actif === 'efactures' ? 'active' : ''}">Factures électroniques ${(() => { const n = Store.all('efactures').filter(e => e.statut === 'Reçue').length; return n ? `<span class="count">${n} à traiter</span>` : ''; })()}</a>
+    <a href="#/comptoir" class="${actif === 'comptoir' ? 'active' : ''}">Comptoir ${(() => { const n = Store.all('enlevements').filter(e => e.statut === 'Déclaré').length; return n ? `<span class="count">${n}</span>` : ''; })()}</a>
+    <a href="#/prixAchats" class="${actif === 'prix' ? 'active' : ''}">Historique des prix</a></div>`;
 }
 const etatVentilation = f => { const t = Calc.achat(f); return t.reste <= 0.005 ? (t.reste < -0.005 ? ['b-bad', 'Sur-imputée'] : ['b-ok', 'Ventilée']) : f.fraisGeneraux ? ['', 'Frais généraux'] : t.impute ? ['b-warn', 'Partielle'] : ['b-warn', 'À ventiler']; };
 
@@ -58,7 +60,9 @@ function achatEditeur(id, query) {
     </div>
     <div class="field"><label for="ac-notes">Notes</label><input id="ac-notes" value="${esc(x.notes || '')}" placeholder="Relevé mensuel, tickets comptoir n°…"></div>
     <div class="ac-piece">${piece ? (x.pieceType === 'pdf' ? `<a class="btn secondary small" href="${piece}" target="_blank" rel="noopener">📄 Voir la facture (PDF)</a>` : `<a href="${piece}" target="_blank" rel="noopener"><img class="thumb" src="${piece}" alt="Facture"></a>`) : ''}
-      <label class="btn secondary small">${piece ? 'Remplacer la pièce' : '📎 Joindre la facture (photo ou PDF)'}<input type="file" id="ac-file" accept="image/*,application/pdf" hidden></label></div>
+      <label class="btn secondary small">${piece ? 'Remplacer la pièce' : '📎 Joindre la facture (photo ou PDF)'}<input type="file" id="ac-file" accept="image/*,application/pdf" hidden></label>
+      <label class="btn small" title="Relevé mensuel des bons de livraison (achats au comptoir) : ventilation automatique par chantier">📄 Importer le relevé des BL (PDF, Excel)<input type="file" id="ac-releve" accept=".pdf,.xlsx,.csv,image/*" hidden></label>
+      ${x.releve ? `<span class="small muted">Relevé ${esc(x.releve.fichier)} : ${x.releve.bls} BL, le ${dateFr(x.releve.date)}</span>` : ''}</div>
   </div>
 
   <h2>Ventilation sur les chantiers</h2>
@@ -126,6 +130,7 @@ Views.achats.bind = (root, params, query) => {
     save();
   };
   q('#ac-fg').onchange = e => { x.fraisGeneraux = e.target.checked; save(); };
+  q('#ac-releve').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; if (!x.fournisseurId) return notify('Choisissez d\'abord le fournisseur.'); importerReleve(x, f); };
   bindRapprochementAchat(root, x, save);
   q('#ac-file').onchange = async e => {
     const file = e.target.files[0];
@@ -154,5 +159,6 @@ function achatsChantierHtml(a) {
       <td class="small">${esc(l.libelle || '')} · facture ${esc(l.achat.numeroFournisseur || l.achat.ref || '')}</td><td class="num">—</td><td class="num">${eur(l.montantHT)}</td><td class="num">${eur(l.montantHT)}</td></tr>`).join('')}
     ${d.commandes.length || d.horsCommande.length ? `<tr class="subtotal"><td colspan="5">Total des achats (commandes ${eur(d.totalCommandes)} + hors commande ${eur(d.totalHorsCommande)})</td><td class="num">${eur(d.totalCommandes + d.totalHorsCommande)}</td></tr>` : '<tr><td colspan="6" class="muted">Aucun achat. Passez une commande ou imputez une facture fournisseur sur ce chantier.</td></tr>'}
   </table></div>
+  ${comptoirChantierHtml(a)}
   ${Math.abs(d.ecartFactures) > 0.01 ? `<p class="small ${d.ecartFactures > 0 ? 'warn-text' : 'pos'}">Écart factures / commandes rapprochées : ${d.ecartFactures > 0 ? '+' : ''}${eur(d.ecartFactures)}</p>` : ''}`;
 }

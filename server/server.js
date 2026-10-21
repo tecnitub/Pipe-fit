@@ -68,7 +68,7 @@ const isLocal = HS.estLocal;
 function canWrite(acc, col) {
   if (acc.role === 'admin') return true;
   if (acc.role === 'charge') return col !== 'users';
-  if (acc.role === 'atelier') return ['temps', 'frais', 'rapports', 'consommations', 'notifications', 'fichesFluides', 'equipementsFrigo'].includes(col);
+  if (acc.role === 'atelier') return ['temps', 'frais', 'rapports', 'consommations', 'notifications', 'fichesFluides', 'equipementsFrigo', 'enlevements'].includes(col);
   return false;
 }
 function canDelete(acc, col, existing) {
@@ -534,6 +534,11 @@ async function api(req, res, url) {
         if (col === 'factures') obj.type = existing ? existing.type : (obj.type === 'avoir' ? 'avoir' : undefined);
         // Bon d'intervention signé par le client : figé (sauf administrateur)
         if (col === 'rapports' && existing && existing.signatureClientId && acc.role !== 'admin') return { forbidden: 'Ce bon d\'intervention est signé par le client : il ne peut plus être modifié.' };
+        // Enlèvement au comptoir déclaré par un compagnon : modifiable tant que le relevé du fournisseur ne l'a pas rapproché
+        if (col === 'enlevements' && estCompagnon(acc)) {
+          if (existing && existing.statut !== 'Déclaré') return { forbidden: 'Cet enlèvement est déjà rapproché du relevé du fournisseur : voyez le bureau.' };
+          obj.statut = 'Déclaré'; delete obj.achatId;
+        }
         // Fiche d'intervention fluides signée : figée (registre réglementaire), sauf administrateur
         if (col === 'fichesFluides' && existing && existing.statut === 'Signée' && acc.role !== 'admin') return { forbidden: 'Cette fiche d\'intervention est signée : elle ne peut plus être modifiée.' };
         // PV de réception signé : figé

@@ -4,7 +4,7 @@ const ROLE_LABELS = { admin: 'Administrateur', charge: "Chargé d'affaires", ate
 const ATELIER_VIEWS = ['pointage', 'planning', 'parametres', 'bon', 'notifications'];
 // Anciennes adresses et sous-écrans -> écran et entrée de menu
 const ALIASES = { affaires: 'chantiers', affaire: 'chantier', temps: 'rh' };
-const MENU_OF = { api: 'parametres', consultations: 'commandes', chiffrages: 'devis', chiffrage: 'devis', familles: 'articles', ouvrages: 'articles', efactures: 'commandes', achats: 'commandes', compta: 'factures', mails: 'parametres', documents: 'parametres', bon: 'chantiers', reception: 'chantiers', pv: 'chantiers', chantier: 'chantiers', facture: 'factures', entreprise: 'contacts', mainoeuvre: 'articles', livraison: 'articles' };
+const MENU_OF = { api: 'parametres', consultations: 'commandes', chiffrages: 'devis', chiffrage: 'devis', familles: 'articles', ouvrages: 'articles', efactures: 'commandes', achats: 'commandes', comptoir: 'commandes', prixAchats: 'commandes', compta: 'factures', mails: 'parametres', documents: 'parametres', bon: 'chantiers', reception: 'chantiers', pv: 'chantiers', chantier: 'chantiers', facture: 'factures', entreprise: 'contacts', mainoeuvre: 'articles', livraison: 'articles' };
 
 const App = {
   render() {
@@ -21,6 +21,8 @@ const App = {
     const root = document.getElementById('app');
     root.innerHTML = view(params, query);
     if (view.bind) view.bind(root, params, query);
+    // Onglets plus larges que l'écran (téléphone) : l'onglet actif reste visible
+    root.querySelectorAll('.tabs a.active').forEach(a => { const t = a.parentElement; if (t.scrollWidth > t.clientWidth) t.scrollLeft = a.offsetLeft - t.offsetLeft - (t.clientWidth - a.offsetWidth) / 2; });
     if (typeof brancherDicteeTexte === 'function') brancherDicteeTexte(root);
     this.pendingRemote = false;
     document.getElementById('remote-banner').classList.add('hidden');

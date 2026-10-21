@@ -37,7 +37,7 @@ function pointagePour(query) {
 
 function pointageTabs(active, uid) {
   const q = Store.me.role === 'atelier' ? '' : `?pour=${uid}`;
-  return `<div class="tabs"><a href="#/pointage${q}" class="${active === 'heures' ? 'active' : ''}">Heures</a><a href="#/pointage/planning${q}" class="${active === 'planning' ? 'active' : ''}">Planning</a><a href="#/pointage/chantiers${q}" class="${active === 'chantiers' ? 'active' : ''}">Chantiers</a><a href="#/pointage/rapports${q}" class="${active === 'rapports' ? 'active' : ''}">Rapports</a><a href="#/pointage/frais${q}" class="${active === 'frais' ? 'active' : ''}">Notes de frais</a>${voitFluides(Store.get('users', uid) || { id: uid }) ? `<a href="#/pointage/fluides${q}" class="${active === 'fluides' ? 'active' : ''}">Fluides</a>` : ''}</div>`;
+  return `<div class="tabs"><a href="#/pointage${q}" class="${active === 'heures' ? 'active' : ''}">Heures</a><a href="#/pointage/planning${q}" class="${active === 'planning' ? 'active' : ''}">Planning</a><a href="#/pointage/chantiers${q}" class="${active === 'chantiers' ? 'active' : ''}">Chantiers</a><a href="#/pointage/rapports${q}" class="${active === 'rapports' ? 'active' : ''}">Rapports</a><a href="#/pointage/frais${q}" class="${active === 'frais' ? 'active' : ''}">Notes de frais</a><a href="#/pointage/comptoir${q}" class="${active === 'comptoir' ? 'active' : ''}">Comptoir</a>${voitFluides(Store.get('users', uid) || { id: uid }) ? `<a href="#/pointage/fluides${q}" class="${active === 'fluides' ? 'active' : ''}">Fluides</a>` : ''}</div>`;
 }
 
 // Sélection des personnes en mode équipe (conservée entre deux rafraîchissements)
@@ -217,6 +217,7 @@ Views.pointage = (params, query) => {
   if (params[0] === 'chantiers') return chantiersCompagnon(u);
   if (params[0] === 'chantier') return ficheChantierCompagnon(u, params[1]);
   if (params[0] === 'fluides') return fluidesCompagnon(u, params[1]);
+  if (params[0] === 'comptoir') return comptoirCompagnon(u);
   const today = isoDate(new Date());
   const team = equipeDe(u.id);
   const week = isoWeek(new Date());
@@ -300,6 +301,7 @@ Views.pointage.bind = (root, params, query) => {
   if (params[0] === 'planning') return bindPlanningMobile(root, uid);
   if (params[0] === 'chantier') return bindFicheChantierCompagnon(root, params[1]);
   if (params[0] === 'fluides') return bindFluidesCompagnon(root, Store.get('users', uid), params[1]);
+  if (params[0] === 'comptoir') return bindComptoirCompagnon(root, Store.get('users', uid));
   if (params[0] === 'chantiers') return;
   const on = (sel, fn) => { const el = root.querySelector(sel); if (el) el.onclick = fn; };
   const tache = () => (root.querySelector('input[name=p-tache]:checked') || {}).value || '';

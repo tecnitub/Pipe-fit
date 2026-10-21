@@ -2,9 +2,9 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v32';
+  const KEY = 'pipefit-crm-demo-v33';
   const ME_KEY = 'pipefit-crm-demo-me';
-  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications', 'habilitations', 'materiels', 'missions', 'produits', 'equipementsFrigo', 'fichesFluides', 'bouteilles'];
+  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications', 'habilitations', 'materiels', 'missions', 'produits', 'equipementsFrigo', 'fichesFluides', 'bouteilles', 'enlevements'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4], fichesFluides: ['numero', 'FI', 4] };
   const ACCOUNTS = [
     { id: 'acc-admin', login: 'admin', nom: 'Administrateur', role: 'admin', userId: null, email: 'admin@pipefit.example' },
@@ -44,7 +44,7 @@
   function canWrite(acc, col) {
     if (acc.role === 'admin') return true;
     if (acc.role === 'charge') return col !== 'users';
-    return acc.role === 'atelier' && ['temps', 'frais', 'rapports', 'consommations', 'notifications', 'fichesFluides', 'equipementsFrigo'].includes(col);
+    return acc.role === 'atelier' && ['temps', 'frais', 'rapports', 'consommations', 'notifications', 'fichesFluides', 'equipementsFrigo', 'enlevements'].includes(col);
   }
   // Mêmes règles que le serveur : un opérateur saisit pour lui (et son équipe pour les pointages), rien de validé ne se modifie
   function atelierRefus(acc, col, obj, existing) {
@@ -242,6 +242,7 @@
         if (col === 'fichesFluides' && obj.statut !== 'Brouillon') { const e = Fluides.erreur(obj, db.equipementsFrigo.find(x => x.id === obj.equipementId)); if (e) return [400, { error: e }]; }
         if (col === 'frais' && obj.statut === 'Soumise' && NoteFrais.erreur(obj)) return [400, { error: NoteFrais.erreur(obj) }];
         if (col === 'rapports' && existing && existing.signatureClientId && acc.role !== 'admin') return [403, { error: 'Ce bon d\'intervention est signé par le client : il ne peut plus être modifié.' }];
+        if (col === 'enlevements' && acc.role === 'atelier') { if (existing && existing.statut !== 'Déclaré') return [403, { error: 'Cet enlèvement est déjà rapproché du relevé du fournisseur : voyez le bureau.' }]; obj.statut = 'Déclaré'; delete obj.achatId; }
         if (col === 'fichesFluides' && existing && existing.statut === 'Signée' && acc.role !== 'admin') return [403, { error: 'Cette fiche d\'intervention est signée : elle ne peut plus être modifiée.' }];
         if (col === 'receptions' && existing && existing.statut === 'Signé' && acc.role !== 'admin') return [403, { error: 'Ce procès-verbal est signé : il ne peut plus être modifié.' }];
         if (col === 'reserves' && existing && existing.pvId && acc.role !== 'admin') obj = { ...clean(existing), statut: obj.statut, dateLevee: obj.dateLevee, photoLeveeId: obj.photoLeveeId, commentaireLevee: obj.commentaireLevee, pvLeveeId: obj.pvLeveeId };

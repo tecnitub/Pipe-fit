@@ -299,6 +299,18 @@ function demoData() {
     { id: 'cf4', numero: `CF-${Y}-` + '0004', fournisseurId: 'e5', affaireId: 'af3', date: d(-80), dateLivraison: d(-74), statut: 'Réceptionnée', lignes: [CL('a1', 170), CL('a4', 72)] },
     { id: 'cf5', numero: `CF-${Y}-` + '0005', fournisseurId: 'e6', affaireId: 'af3', date: d(-80), dateLivraison: d(-70), statut: 'Réceptionnée', lignes: [CL('a7', 12, 165)] },
   ];
+  // Historique d'achats sur deux ans (plusieurs négoces, prix qui varient) : analyse des prix mini / moyen / maxi
+  const HC = (id, fournisseurId, affaireId, jours, lignes) => ({ id, numero: `CF-${id.toUpperCase()}`, fournisseurId, affaireId, date: d(jours), dateLivraison: d(jours + 6), statut: 'Réceptionnée', lignes });
+  commandes.push(
+    HC('h01', 'e5', 'af2', -620, [CL('a1', 240, 41.2), CL('a4', 60, 18.9), CL('a16', 12, 29.5)]),
+    HC('h02', 'e11', 'af2', -560, [CL('a1', 120, 39.8), CL('a4', 40, 19.6), CL('a14', 10, 27.9)]),
+    HC('h03', 'e12', 'af3', -470, [CL('a1', 80, 43.5), CL('a7', 6, 149)]),
+    HC('h04', 'e5', 'af3', -400, [CL('a2', 90, 78.4), CL('a17', 20, 52.3), CL('a5', 8, 44)]),
+    HC('h05', 'e11', 'af1', -330, [CL('a1', 300, 42.1), CL('a4', 80, 19.2), CL('a16', 20, 30.8)]),
+    HC('h06', 'e6', 'af1', -300, [CL('a7', 10, 152)]),
+    HC('h07', 'e12', 'af1', -210, [CL('a2', 60, 82.9), CL('a17', 12, 55.6), CL('a14', 16, 30.4)]),
+    HC('h08', 'e11', 'af4', -150, [CL('a1', 140, 44.8), CL('a4', 50, 20.4), CL('a7', 4, 161)]),
+    HC('h09', 'e12', 'af4', -60, [CL('a1', 90, 46.2), CL('a16', 10, 31.9), CL('a14', 8, 31.5)]));
   // Consultation fournisseurs en cours : 3 négoces consultés, 2 offres reçues
   const consultations = [{ id: 'cs1', ref: `CS-${Y}-0001`, objet: 'Raccords inox DN50 / DN100 – complément ligne NEP', affaireId: 'af1', date: d(-6), dateLimite: d(2), dateLivraison: d(14), statut: 'En cours',
     lignes: [{ articleId: 'a4', designation: 'Coude 90° 3D inox 316L DN50', unite: 'u', qte: 40 }, { articleId: 'a14', designation: 'Té égal inox 316L DN50 à souder', unite: 'u', qte: 12 },
@@ -328,6 +340,15 @@ function demoData() {
         { affaireId: 'af3', commandeId: '', libelle: 'Vannes à boisseau DN25 (ticket 4402)', montantHT: 389 }] },
     { id: 'ff3', ref: `FF-${Y}-0003`, fournisseurId: 'e12', numeroFournisseur: 'TV-77120', date: d(-4), echeance: d(41), montantHT: 268.35, montantTVA: '', statut: 'À payer',
       notes: 'Comptoir de Voiron, intervention PM2.', imputations: [] },
+  ];
+  // Enlèvements au comptoir déclarés par les compagnons (n° de chantier donné au magasin) : le relevé de Descours & Cabot
+  // les a facturés (FF-0002) ; deux enlèvements du mois attendent le prochain relevé
+  const enlevements = [
+    { id: 'en1', userId: 'o1', date: d(-41), fournisseurId: 'e11', affaireId: 'af1', bl: '4512', montant: 212.4, note: 'Raccords inox DN50, joints', photoId: '', statut: 'Facturé', achatId: 'ff2', montantFacture: 212.4 },
+    { id: 'en2', userId: 'o2', date: d(-33), fournisseurId: 'e11', affaireId: 'af1', bl: '4538', montant: 274, note: 'Colliers et tiges filetées', photoId: '', statut: 'Facturé', achatId: 'ff2', montantFacture: 274 },
+    { id: 'en3', userId: 'o3', date: d(-27), fournisseurId: 'e11', affaireId: 'hd2', bl: '4561', montant: '', note: 'Joints graphite, boulonnerie inox', photoId: '', statut: 'Facturé', achatId: 'ff2', montantFacture: 124.8 },
+    { id: 'en4', userId: 'o1', date: d(-6), fournisseurId: 'e11', affaireId: 'af1', bl: '4697', montant: 86.5, note: 'Coudes DN50 manquants', photoId: '', statut: 'Déclaré' },
+    { id: 'en5', userId: 'o4', date: d(-2), fournisseurId: 'e12', affaireId: 'af4', bl: '77304', montant: 142.3, note: 'Vannes d\'isolement 1"', photoId: '', statut: 'Déclaré' },
   ];
   // Facture électronique reçue de la plateforme : vannes de la commande CF-0002 (rapprochement automatique)
   const efactures = [{ id: 'ef1', cle: '445666777|RIA-F-26-3317', statut: 'Reçue', recueLe: d(-1) + 'T06:42:00', origine: 'plateforme', nomFichier: 'RIA-F-26-3317.xml', format: 'CII', type: 'facture', typeCode: '380',
@@ -604,7 +625,7 @@ function demoData() {
         tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',
         types: { devis: { conditions: 'Acompte de 30 % à la commande. Travaux réalisés selon les normes EN 13480 et le DTU en vigueur. Hors génie civil, calorifuge et échafaudages sauf mention contraire.' },
           facture: { conditions: 'Paiement par virement à 45 jours fin de mois.' } } } },
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels, missions, produits, equipementsFrigo, fichesFluides, bouteilles,
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels, missions, produits, equipementsFrigo, fichesFluides, bouteilles, enlevements,
   };
 }
 

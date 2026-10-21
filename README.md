@@ -374,6 +374,33 @@ commande (tolérance 1 %), quantité au-delà de la livraison ou de la commande 
 non commandée (frais de port…), total des lignes différent du montant HT. Décision : **bon à payer** (avec le motif d'un
 écart accepté) ou **litige fournisseur**. Colonne « Rapprochement » dans la liste des factures.
 
+## Achats au comptoir et relevé mensuel du fournisseur
+
+Matériel pris au magasin d'un négoce sans commande. Au comptoir, le compagnon donne le **n° de chantier** (affiché sur
+son téléphone sous le chantier choisi) puis le déclare dans **Pointage → Comptoir** : fournisseur, chantier, n° du bon,
+montant s'il est indiqué, ce qui a été pris, photo du bon (fonctionne aussi sans réseau). Il ne voit que ses
+déclarations ; une fois rapprochées par le bureau, il ne peut plus les modifier.
+
+Bureau : **Achats → Comptoir** liste les enlèvements « en attente du relevé ». À réception du relevé mensuel, créer la
+facture du fournisseur puis **Importer le relevé des BL** (PDF, scan, Excel ou CSV ; relevé détaillé avec les articles
+ou une ligne par BL). Pour chaque BL : date, référence donnée au comptoir et chantier retrouvé (code complet, fin du code
+« 001 » ou « 26-001 » en tenant compte de l'année du BL, nom du chantier ou du site), montant, et la déclaration du
+compagnon correspondante (même n° de BL, sinon même chantier, date à ±3 jours et montant à ±5 %). Une référence
+illisible prend le chantier de la déclaration ; un BL sans chantier part en frais généraux / stock. Le chantier reste
+modifiable avant de **Ventiler la facture** : une imputation par chantier (« Comptoir : BL 4512, 4538 »), les lignes
+d'articles enregistrées pour l'historique des prix, les déclarations passées « facturé ». Les déclarations absentes du
+relevé sont signalées (relevé suivant ?) et la fiche chantier rappelle les enlèvements pas encore facturés.
+
+## Historique des achats et des prix
+
+**Achats → Historique des prix** : tout ce qui a été acheté, article par article (bibliothèque, sinon référence du
+fournisseur, sinon désignation) : nombre d'achats, quantité, montant, **prix mini, moyen (pondéré par les quantités) et
+maxi**, écart maxi / mini, dernier prix et son évolution depuis le premier achat de la période, meilleur fournisseur et
+économie possible. Filtres par **année** et par **fournisseur**, recherche, tri sur chaque colonne ; le détail d'un
+article montre les prix par fournisseur et chaque achat (date, pièce, chantier). Sources : commandes envoyées, lignes des
+factures fournisseurs (prix réellement payés ; la commande n'est alors pas recomptée) et relevés du comptoir. Frais de
+port exclus. Export Excel (articles, achats, fournisseurs).
+
 ## Planning dans les agendas
 
 - **Mon lien d'agenda** (Paramètres, pour chacun, compagnons compris) : abonnement iCal personnel au planning (chantier,
@@ -439,7 +466,7 @@ server/dossier-documents.js  répertoire des documents synchronisé avec l'appli
 server/agenda.js   planning dans Outlook (Microsoft Graph) et lien iCal
 public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
-public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js, securite-ui.js, produits.js, dossier-documents.js, fluides-ui.js, rapprochement-ui.js, agenda-ui.js, hors-ligne.js, offres-pdf.js : écrans métier
+public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js, securite-ui.js, produits.js, dossier-documents.js, fluides-ui.js, rapprochement-ui.js, agenda-ui.js, hors-ligne.js, offres-pdf.js, comptoir.js, prix-achats.js : écrans métier
 doe/               application DOE séparée (serveur, interface, génération du dossier PDF)
 installer/         installateur Windows (NSIS) : build.sh, PipeFitCRM.nsi, lanceur et service
 ```
