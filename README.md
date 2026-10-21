@@ -187,6 +187,16 @@ Le PDF Factur-X contient le XML joint mais n'est pas certifié PDF/A-3 : si votr
   pas de doublon, même si deux devis sont créés au même instant.
 - **Historique** : connexions, créations, modifications et suppressions (Paramètres, administrateur).
 
+### Affichage par accès
+
+**Paramètres → Affichage par accès** (administrateur) : cases à cocher, par accès, des menus du bureau (Direction,
+Facturation, RH, Analyse…), des écrans et onglets (Trésorerie, Comptabilité, Factures reçues, Historique des prix…) et
+des onglets de l'appli des compagnons (Notes de frais, Comptoir, Fluides, PV d'épreuve, mise en service, équilibrage…).
+Un compte peut recevoir son propre réglage (« Personnaliser un compte… », ✕ pour revenir à celui de son rôle).
+L'administrateur voit toujours tout ; Paramètres et notifications restent accessibles. Un écran masqué disparaît des
+menus et des onglets, et son adresse ramène au premier écran affiché. Ce réglage organise l'affichage : les données
+envoyées aux compagnons se règlent dans « Appli des compagnons : ce qu'ils voient » (filtrées par le serveur).
+
 ## Processus métier
 
 1. **Devis** : client, contact client (chargé de travaux), site d'intervention et chargé d'affaires interne.

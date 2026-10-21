@@ -882,3 +882,9 @@ fieldset.mi-titre[hidden] { display: none; }
 .derive-note ul { margin: 6px 0 0; padding-left: 18px; }
 .derive-note li { margin: 2px 0; }
 .derive-grave { border-left: 4px solid var(--neg, #b42318); }
+
+/* Affichage par accès */
+.tabs a[hidden], .essais-boutons a[hidden] { display: none; }
+.acces-table td.center, .acces-table th { text-align: center; }
+.acces-table td:first-child { text-align: left; }
+.acces-groupe td { background: var(--panel-alt); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }

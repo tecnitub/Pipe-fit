@@ -557,6 +557,7 @@ Views.parametres = () => {
 
   ${numerotationCarte()}
 
+  ${accesCarte()}
   ${reglagesDeriveCarte()}
   ${reglagesCompagnonCarte()}
   ${reglagesDossierCarte()}
@@ -662,6 +663,7 @@ Views.parametres.bind = root => {
   bindNumerotation(root);
   bindReglagesCompagnon(root);
   bindReglagesDerive(root);
+  bindAcces(root);
   bindReglagesDossier(root);
   const loadAccounts = () => api('GET', '/api/accounts').then(list => {
     const t = root.querySelector('#accounts');

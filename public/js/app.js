@@ -13,6 +13,9 @@ const App = {
     let [name, ...params] = path.split('/');
     name = ALIASES[name] || name;
     if (Store.me.role === 'atelier' && !ATELIER_VIEWS.includes(name)) name = 'pointage';
+    // Écran masqué pour cet accès (Paramètres → Affichage par accès) : premier écran affiché
+    const masques = accesMasques();
+    if (Acces.routeMasquee(name, params, masques, MENU_OF, Store.me.role)) { location.hash = `#/${Acces.accueil(masques, Store.me.role)}`; return; }
     const query = new URLSearchParams(qs || '');
     const view = Views[name] || Views.dashboard;
     if (name !== 'documents') Doc.draft = null;
@@ -23,6 +26,7 @@ const App = {
     if (view.bind) view.bind(root, params, query);
     // Onglets plus larges que l'écran (téléphone) : l'onglet actif reste visible
     root.querySelectorAll('.tabs a.active').forEach(a => { const t = a.parentElement; if (t.scrollWidth > t.clientWidth) t.scrollLeft = a.offsetLeft - t.offsetLeft - (t.clientWidth - a.offsetWidth) / 2; });
+    masquerLiensAcces(root);
     if (typeof brancherDicteeTexte === 'function') brancherDicteeTexte(root);
     this.pendingRemote = false;
     document.getElementById('remote-banner').classList.add('hidden');
@@ -30,7 +34,7 @@ const App = {
     const section = MENU_OF[name] || name;
     document.querySelectorAll('#nav a').forEach(a => {
       a.classList.toggle('active', a.getAttribute('href') === `#/${section}`);
-      a.hidden = Store.me.role === 'atelier' && !ATELIER_VIEWS.includes(a.getAttribute('href').slice(2));
+      a.hidden = (Store.me.role === 'atelier' && !ATELIER_VIEWS.includes(a.getAttribute('href').slice(2))) || Acces.routeMasquee(a.getAttribute('href').slice(2), [], masques, MENU_OF, Store.me.role);
     });
     Notifs.majCloche();
   },
