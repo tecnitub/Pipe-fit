@@ -101,6 +101,32 @@ const Fluides = (() => {
       teqCharge: teqCO2(x.fluide, x.chargeVierge + x.chargeRecycle + x.chargeRegenere) })).sort((a, b) => a.fluide.localeCompare(b.fluide));
   }
 
-  return { LISTE, info, prg, famille, teqCO2, periodicite, detectionObligatoire, NATURES, libelleNature, CONTROLE, prochainControle, masseBouteille, erreur, bilan, plusMois };
+  // Plaque signalétique (texte lu sur la photo) : fluide, charge, marque, modèle, n° de série
+  const MARQUES = ['Daikin', 'Mitsubishi Electric', 'Mitsubishi Heavy Industries', 'Mitsubishi', 'Toshiba', 'Panasonic', 'LG', 'Samsung', 'Fujitsu', 'Atlantic', 'Hitachi', 'Carrier', 'Trane', 'Lennox',
+    'Airwell', 'CIAT', 'Clivet', 'Aermec', 'Systemair', 'Climaveneta', 'Gree', 'Midea', 'Haier', 'Hisense', 'Viessmann', 'De Dietrich', 'Bosch', 'Vaillant', 'Saunier Duval', 'Thermor', 'York', 'Johnson Controls',
+    'Zanotti', 'Tecumseh', 'Bitzer', 'Copeland', 'Sanyo', 'Riello', 'Swegon', 'Blue Star', 'Profroid', 'Hiref', 'Mitsubishi'];
+  function lirePlaque(lignes) {
+    const t = (lignes || []).map(l => String(l || '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const out = { fluide: '', charge: '', marque: '', modele: '', numeroSerie: '' };
+    const code = f => f.split(' ')[0].toUpperCase().replace('-', '');
+    const kg = l => { const m = /(\d+(?:[.,]\d+)?)\s*kg\b/i.exec(l); return m ? Number(m[1].replace(',', '.')) : null; };
+    let ligneFluide = -1;
+    t.forEach((l, i) => {
+      if (!out.fluide) {
+        const m = /\bR\s?-?\s?(\d{2,4}[A-Z]{0,2}(?:yf|ze|zd)?)\b/i.exec(l);
+        if (m) { const c = `R${m[1]}`.toUpperCase(), f = LISTE.find(x => code(x[0]) === c); if (f) { out.fluide = f[0]; ligneFluide = i; } }
+      }
+      if (!out.modele) { const m = /(?:mod[eè]le|model(?:\s*name)?|type|mod\.)\s*(?:n[°o])?\s*[:.]?\s*([A-Z0-9][\w\-/.]{2,})/i.exec(l); if (m && !/^(R\d|kg)/i.test(m[1])) out.modele = m[1]; }
+      if (!out.numeroSerie) { const m = /(?:s\/n|serial(?:\s*(?:no\.?|number|n[°o]))?|n[°o]\s*(?:de\s*)?s[ée]rie|num[ée]ro\s*de\s*s[ée]rie|ser\.?\s*no\.?|fabr\.?\s*n[°o])\s*[:.]?\s*([A-Z0-9][\w\-/]{3,})/i.exec(l); if (m) out.numeroSerie = m[1]; }
+      if (!out.marque) { const lo = l.toLowerCase(); const mq = MARQUES.find(b => new RegExp(`\\b${b.toLowerCase().replace(/ /g, '\\s')}\\b`).test(lo)); if (mq) out.marque = mq; }
+    });
+    // Charge : kg sur la ligne du fluide ou juste après, sinon ligne « charge / quantité / amount »
+    const autour = ligneFluide >= 0 ? [t[ligneFluide], t[ligneFluide + 1] || ''] : [];
+    const c = autour.map(kg).find(x => x !== null) ?? t.filter(l => /charge|quantit|amount|f[uü]llmenge|refrig/i.test(l)).map(kg).find(x => x !== null);
+    if (c !== null && c !== undefined && c > 0 && c < 5000) out.charge = c;
+    return out;
+  }
+
+  return { LISTE, info, prg, famille, teqCO2, periodicite, detectionObligatoire, NATURES, libelleNature, CONTROLE, prochainControle, masseBouteille, erreur, bilan, plusMois, lirePlaque };
 })();
 if (typeof module !== 'undefined') module.exports = Fluides;

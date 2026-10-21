@@ -853,3 +853,12 @@ fieldset.mi-titre[hidden] { display: none; }
 /* Historique des prix d'achat */
 .px-table th.triable { cursor: pointer; user-select: none; white-space: nowrap; }
 .px-table th.triable:hover { text-decoration: underline; }
+
+/* PV d'épreuve hydraulique et photos dans les documents */
+.ep-res { margin: 8px 0; }
+.doc-photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; break-inside: avoid; }
+.doc-photos figure { margin: 0; break-inside: avoid; }
+.doc-photos img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid #ccc; border-radius: 4px; display: block; }
+.doc-photos figcaption { font-size: 10px; color: #555; margin-top: 2px; }
+.eq-plaque { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+.eq-plaque img { max-width: 140px; max-height: 100px; border-radius: 4px; border: 1px solid var(--border); }

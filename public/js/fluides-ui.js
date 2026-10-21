@@ -50,7 +50,7 @@ Views.fluides.bind = (root, params = []) => {
   if (q) q.onchange = () => { fluidesFiltre.q = q.value; App.render(); };
   const cl = root.querySelector('#fl-client');
   if (cl) cl.onchange = () => { fluidesFiltre.client = cl.value; App.render(); };
-  root.querySelectorAll('[data-eq]').forEach(el => el.onclick = () => editerEquipement(el.dataset.eq));
+  root.querySelectorAll('[data-eq]').forEach(el => el.onclick = ev => { if (!ev.target.closest('[data-nocl]')) editerEquipement(el.dataset.eq); });
   root.querySelectorAll('[data-fiche]').forEach(el => el.onclick = () => voirFiche(el.dataset.fiche));
   root.querySelectorAll('[data-bt]').forEach(el => el.onclick = () => editerBouteille(el.dataset.bt));
   root.querySelectorAll('[data-nouvelle-fiche]').forEach(b => b.onclick = ev => { ev.stopPropagation(); nouvelleFicheBureau(b.dataset.nouvelleFiche || ''); });
@@ -73,7 +73,7 @@ function fluidesEquipements(ctrl, auj) {
   ${liste.length ? `<div class="table-wrap"><table><tr><th>Client · site</th><th>Équipement</th><th>Fluide</th><th class="num">Charge</th><th class="num">t éq. CO2</th><th>Contrôle</th><th>Dernier</th><th>Prochain</th><th></th></tr>
     ${liste.map(({ e, p }) => { const s = siteOf(e.clientId, e.siteId);
       return `<tr class="clickable" data-eq="${esc(e.id)}"><td>${esc(clientName(e.clientId))}${s ? `<br><span class="muted small">${esc(s.libelle)}</span>` : ''}</td>
-      <td><strong>${esc(e.designation)}</strong><br><span class="muted small">${esc([e.marque, e.modele, e.numeroSerie && `n° ${e.numeroSerie}`].filter(Boolean).join(' · '))}</span>${e.aValider ? ' <span class="badge b-warn">créé sur chantier</span>' : ''}</td>
+      <td><strong>${esc(e.designation)}</strong>${e.photoPlaqueId ? ` <a href="${fileUrl(e.photoPlaqueId)}" target="_blank" rel="noopener" title="Plaque signalétique" data-nocl>📷</a>` : ''}<br><span class="muted small">${esc([e.marque, e.modele, e.numeroSerie && `n° ${e.numeroSerie}`].filter(Boolean).join(' · '))}</span>${e.aValider ? ' <span class="badge b-warn">créé sur chantier</span>' : ''}</td>
       <td>${esc(e.fluide)}${Fluides.famille(e.fluide) === 'HCFC' ? ' <span class="badge b-bad" title="Recharge interdite">HCFC</span>' : ''}</td><td class="num">${quantite(e.charge)}</td><td class="num">${fmt(Fluides.teqCO2(e.fluide, e.charge), 2)}</td>
       <td class="small">${Fluides.periodicite(e) ? `tous les ${Fluides.periodicite(e)} mois${e.detectionPermanente ? ' (détection)' : ''}` : 'non soumis'}${Fluides.detectionObligatoire(e) && !e.detectionPermanente ? '<br><span class="neg">détection permanente obligatoire</span>' : ''}</td>
       <td>${p && p.dernier ? dateFr(p.dernier) : '<span class="muted">—</span>'}</td><td>${badgeControle(p, auj)}</td>
@@ -153,7 +153,11 @@ async function editerAttestation() {
 }
 
 function champsEquipement(e) {
-  return `<div class="grid2">
+  const ph = e._plaque || (e.photoPlaqueId ? fileUrl(e.photoPlaqueId) : '');
+  return `<div class="eq-plaque">${ph ? `<a href="${ph}" target="_blank" rel="noopener"><img src="${ph}" alt="Plaque signalétique"></a>` : ''}
+    <label class="btn secondary">📷 ${ph ? 'Reprendre la photo de la plaque' : 'Photo de la plaque signalétique'}<input type="file" id="eq-ph" accept="image/*" capture="environment" hidden></label>
+    <span class="small muted" id="eq-ph-etat">${ph ? '' : 'La plaque est lue : fluide, charge, marque, modèle et n° de série sont remplis.'}</span></div>
+  <div class="grid2">
     <div class="field"><label for="eq-cl">Client (détenteur de l'équipement)</label><select id="eq-cl">${options(clientsList(), e.clientId)}</select></div>
     <div class="field"><label for="eq-si">Site</label><select id="eq-si">${options((entreprise(e.clientId).adresses || []), e.siteId, s => s.libelle)}</select></div>
     <div class="field"><label for="eq-de">Désignation</label><input id="eq-de" value="${esc(e.designation || '')}" placeholder="Groupe froid chambre négative, PAC air/eau…"></div>
@@ -181,6 +185,28 @@ function brancherEquipement(box, e) {
   box.querySelector('#eq-cl').onchange = () => { box.querySelector('#eq-si').innerHTML = options(entreprise(box.querySelector('#eq-cl').value).adresses || [], '', s => s.libelle); };
   ['#eq-fl', '#eq-ch', '#eq-det', '#eq-her'].forEach(s => { box.querySelector(s).addEventListener('change', calc); box.querySelector(s).addEventListener('input', calc); });
   calc();
+  // Photo de la plaque signalétique : gardée avec l'équipement et lue pour pré-remplir les champs vides
+  box.querySelector('#eq-ph').onchange = async ev => {
+    const fichier = ev.target.files[0], etat = box.querySelector('#eq-ph-etat');
+    if (!fichier) return;
+    try { e._plaque = await compressImage(fichier, 1600, 0.8); } catch (err) { notify('Photo illisible.'); return; }
+    const bloc = box.querySelector('.eq-plaque'), img = bloc.querySelector('img') || bloc.insertBefore(document.createElement('img'), bloc.firstChild);
+    img.src = e._plaque; img.alt = 'Plaque signalétique';
+    etat.textContent = 'Lecture de la plaque…';
+    try {
+      const p = Fluides.lirePlaque((await PdfLecture.lire(fichier)).lignes), lus = [];
+      const mettre = (sel, v, lib) => { const el = box.querySelector(sel); if (v !== '' && v !== undefined && (!el.value || sel === '#eq-fl')) { el.value = v; lus.push(lib); } };
+      mettre('#eq-fl', p.fluide, `fluide ${p.fluide}`); mettre('#eq-ch', p.charge, `charge ${p.charge} kg`); mettre('#eq-ma', p.marque, p.marque);
+      mettre('#eq-mo', p.modele, `modèle ${p.modele}`); mettre('#eq-ns', p.numeroSerie, `n° ${p.numeroSerie}`);
+      etat.textContent = lus.length ? `Lu sur la plaque : ${lus.join(', ')}. Vérifiez.` : 'Plaque non lue : complétez les champs (la photo est gardée).';
+      calc();
+    } catch (err) { etat.textContent = 'Lecture impossible : complétez les champs (la photo est gardée).'; }
+  };
+}
+// Photo de plaque prise : envoyée avec l'équipement
+async function enregistrerPlaque(e) {
+  if (e._plaque) e.photoPlaqueId = await envoyerImage(e._plaque);
+  delete e._plaque;
 }
 function editerEquipement(id) {
   const e = id ? JSON.parse(JSON.stringify(Store.get('equipementsFrigo', id))) : { clientId: fluidesFiltre.client || '', fluide: 'R32' };
@@ -192,10 +218,11 @@ function editerEquipement(id) {
   box.querySelectorAll('[data-f]').forEach(b => b.onclick = () => voirFiche(b.dataset.f));
   box.querySelector('#eq-x').onclick = Modal.close;
   if (box.querySelector('#eq-arch')) box.querySelector('#eq-arch').onclick = async () => { if (await ask('Retirer cet équipement du registre (démonté, remplacé) ? Ses fiches restent dans l\'historique.', 'Retirer')) { Store.upsert('equipementsFrigo', { ...e, archive: true }); Modal.close(); App.render(); } };
-  box.querySelector('#eq-ok').onclick = () => {
+  box.querySelector('#eq-ok').onclick = async () => {
     lireEquipement(box, e);
     if (!e.clientId || !e.designation) return notify('Indiquez le client et la désignation de l\'équipement.');
     delete e.aValider;
+    try { await enregistrerPlaque(e); } catch (err) { return notify(err.message); }
     Store.upsert('equipementsFrigo', e); Modal.close(); App.render();
   };
 }
@@ -312,15 +339,17 @@ function bindFicheForm(root, f, apres) {
 }
 // Équipement absent du registre : créé sur place (le bureau le vérifie ensuite)
 function nouvelEquipementTerrain(f, apres) {
-  const e = { clientId: f.clientId, fluide: 'R32', userId: Store.me.role === 'atelier' ? Store.me.userId : undefined };
-  const box = Modal.open(`<h2 style="margin-top:0">Nouvel équipement</h2>${champsEquipement(e)}
+  const e = { clientId: f.clientId, fluide: 'R32', userId: Store.me.role === 'atelier' ? Store.me.userId : undefined, miseEnService: f.nature === 'miseEnService' ? f.date : '' };
+  const box = Modal.open(`<h2 style="margin-top:0">${f.nature === 'miseEnService' ? 'Mise en service : nouvel équipement' : 'Nouvel équipement'}</h2>${f.nature === 'miseEnService' ? '<p class="small muted">Commencez par la photo de la plaque signalétique : les champs se remplissent tout seuls.</p>' : ''}${champsEquipement(e)}
     <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="eq-x">Annuler</button><button id="eq-ok">Ajouter</button></div>`, true);
   brancherEquipement(box, e);
   box.querySelector('#eq-x').onclick = () => { Modal.close(); apres(); };
-  box.querySelector('#eq-ok').onclick = () => {
+  box.querySelector('#eq-ok').onclick = async () => {
     lireEquipement(box, e);
     if (!e.clientId || !e.designation || !num(e.charge)) return notify('Indiquez le client, la désignation et la charge.');
     if (Store.me.role === 'atelier') e.aValider = true;
+    if (f.nature === 'miseEnService' && !e.miseEnService) e.miseEnService = f.date;
+    try { await enregistrerPlaque(e); } catch (err) { return notify(err.message); }
     const r = Store.upsert('equipementsFrigo', e);
     Object.assign(f, { equipementId: r.id, clientId: r.clientId });
     Modal.close(); apres();
@@ -374,12 +403,14 @@ function ficheFluideDocument(f) {
     <div class="doc-signatures"><div><strong>L'opérateur</strong><br>${esc(userName(f.userId))}</div>
       <div><strong>Le détenteur</strong><br>${f.signatureClientId ? `<img class="doc-signature" src="${fileUrl(f.signatureClientId)}" alt="Signature"><br>${esc(f.signataireNom || '')}${f.signataireQualite ? `, ${esc(f.signataireQualite)}` : ''}<br><span class="small">${f.signeLe ? new Date(f.signeLe).toLocaleString('fr-FR') : ''}</span>` : '<br><br>'}</div></div>
     <p class="small">Fiche à conserver au moins 5 ans par l'opérateur et par le détenteur.</p>
+    ${e.photoPlaqueId ? `<h3 class="doc-h">Plaque signalétique de l'équipement</h3><div class="doc-photos"><figure><img src="${fileUrl(e.photoPlaqueId)}" alt="Plaque signalétique"><figcaption>${esc([e.marque, e.modele, e.numeroSerie && `n° ${e.numeroSerie}`].filter(Boolean).join(' · '))}</figcaption></figure></div>` : ''}
     <div class="doc-pied">${esc(Doc.piedLegal())}</div>`;
 }
 
 /* ---------- Appli des compagnons : mes fiches d'intervention ---------- */
 const voitFluides = u => Store.me.role !== 'atelier' || !!aptitudeFluides(u.id) || Store.all('fichesFluides').some(f => f.userId === u.id);
 function fluidesCompagnon(u, sous) {
+  if (sous === 'miseEnService') { ficheBrouillon.f = { ...ficheVide(''), userId: u.id, nature: 'miseEnService', ouvrirEquipement: true }; sous = 'nouvelle'; }
   if (sous === 'nouvelle') {
     if (!ficheBrouillon.f || ficheBrouillon.f.userId !== u.id) ficheBrouillon.f = { ...ficheVide(''), userId: u.id };
     ficheBrouillon.modal = null;
@@ -392,13 +423,20 @@ function fluidesCompagnon(u, sous) {
   const mesBt = Store.all('bouteilles').filter(b => !b.archive && b.userId === u.id);
   return `<div class="pointage"><h1>Fluides frigorigènes</h1>${pointageTabs('fluides', u.id)}
     <a class="btn big" href="#/pointage/fluides/nouvelle" style="display:block;text-align:center">+ Nouvelle fiche d'intervention</a>
+    <a class="btn secondary big" href="#/pointage/fluides/miseEnService" style="display:block;text-align:center;margin-top:8px">❄️ Mise en service d'un équipement (photo de la plaque + Cerfa)</a>
     ${aFaire.length ? `<h2>Contrôles d'étanchéité à faire</h2><ul class="mat-liste">${aFaire.map(({ e, p }) => `<li><span><strong>${esc(clientName(e.clientId))}</strong><br><span class="small">${esc(equipementLabel(e))} · ${esc(e.fluide)}</span></span><span>${badgeControle(p, auj)}</span></li>`).join('')}</ul>` : ''}
     ${mesBt.length ? `<h2>Mes bouteilles</h2><ul class="mat-liste">${mesBt.map(b => `<li><span><strong>${esc(b.numero)}</strong> · ${esc(b.fluide)}${b.type === 'recuperation' ? ' (récupération)' : ''}</span><span>${fmt(Fluides.masseBouteille(b, Store.all('fichesFluides')), 1)} kg</span></li>`).join('')}</ul>` : ''}
     <h2>Mes fiches</h2>${miennes.length ? `<ul class="mat-liste">${miennes.map(f => { const e = Store.get('equipementsFrigo', f.equipementId) || {}; return `<li data-fiche="${esc(f.id)}" class="clickable"><span><strong>${esc(f.numero || (f.statut === 'Brouillon' ? 'brouillon' : 'n° attribué à l\'envoi'))}</strong> · ${dateFr(f.date)}<br><span class="small">${esc(clientName(e.clientId))} · ${esc(equipementLabel(e))}</span></span><span>${badge(f.statut)}</span></li>`; }).join('')}</ul>` : '<p class="muted">Aucune fiche.</p>'}
   </div>`;
 }
 function bindFluidesCompagnon(root, u, sous) {
-  if (sous === 'nouvelle') return bindFicheForm(root, ficheBrouillon.f, () => { location.hash = '#/pointage/fluides'; });
+  if (sous === 'nouvelle' || sous === 'miseEnService') {
+    bindFicheForm(root, ficheBrouillon.f, () => { location.hash = '#/pointage/fluides'; });
+    // Mise en service : l'équipement est créé d'abord (photo de la plaque), puis la fiche Cerfa est complétée
+    if (ficheBrouillon.f.ouvrirEquipement) { delete ficheBrouillon.f.ouvrirEquipement; nouvelEquipementTerrain(ficheBrouillon.f, () => App.render()); }
+    if (sous === 'miseEnService') history.replaceState(null, '', '#/pointage/fluides/nouvelle');
+    return;
+  }
   root.querySelectorAll('[data-fiche]').forEach(el => el.onclick = () => {
     const f = Store.get('fichesFluides', el.dataset.fiche);
     if (f && f.statut === 'Brouillon') { ficheBrouillon.f = JSON.parse(JSON.stringify(f)); location.hash = '#/pointage/fluides/nouvelle'; } else voirFiche(el.dataset.fiche);

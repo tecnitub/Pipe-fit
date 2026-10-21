@@ -53,7 +53,7 @@ test('alertes envoyées une seule fois au bureau et aux personnes concernées ; 
   assert.match(nk[0].texte, /Peugeot Partner/); // son véhicule
   // Le compagnon ne voit que ses habilitations et son matériel, sans valeur d'achat ; il ne peut rien modifier
   assert.deepStrictEqual([...new Set(dk.habilitations.map(h => h.userId))], ['o1']);
-  assert.ok(dk.materiels.length && dk.materiels.every(m => m.affectation.userId === 'o1' && m.valeur === undefined));
+  assert.ok(dk.materiels.length && dk.materiels.every(m => (m.affectation.userId === 'o1' || /mesure/i.test(m.categorie)) && m.valeur === undefined)); // les siens, et les appareils de mesure (manomètre des épreuves)
   assert.strictEqual((await call('PUT', '/api/records/habilitations/hbx', { data: { userId: 'o1', cle: 'sst', expire: '2030-01-01' } }, k)).status, 403);
   assert.strictEqual((await call('PUT', '/api/records/materiels/pm2', { data: { designation: 'x' } }, k)).status, 403);
   // Le bureau renouvelle : nouvelle alerte seulement à la prochaine échéance

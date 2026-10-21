@@ -149,6 +149,14 @@ function mailContexte(type, id) {
         vars: { chantier: chantier(a), objet: a.nom, date: dateFr(isoDate(new Date())), date_reception: dateFr(a.dateReception), montant_ttc: eur(rg.total) },
         apres: () => { a.rgDemandee = isoDate(new Date()); Store.upsert('affaires', a); } };
     }
+    case 'epreuve': {
+      const e = Store.get('epreuves', id); if (!e) return null;
+      const a = affaireOf(e.affaireId);
+      x = { ref: { col: 'epreuves', id }, numero: e.numero, entrepriseId: a.moeId || a.clientId, contactId: a.moeId ? a.moeContactId : a.contactId, chargeId: a.chargeId,
+        fichier: `PV epreuve ${e.numero || ''}`, html: () => premierRendu(Views.epreuve([id], new URLSearchParams())),
+        vars: { chantier: chantier(a), objet: `Épreuve du réseau ${e.reseau}`, date: dateFr(e.date) } };
+      return x;
+    }
     case 'pv': {
       const pv = Store.get('receptions', id); if (!pv) return null;
       const a = affaireOf(pv.affaireId);

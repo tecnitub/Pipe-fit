@@ -368,6 +368,24 @@ frigoriste avec la signature du client, numérotées (FI-AAAA-0001), figées une
 dedans = départ + récupérations − charges). Bilan annuel par fluide (Excel, PDF) pour la déclaration à l'organisme agréé.
 Recharge en HCFC refusée. Les valeurs proposées sont à vérifier par l'opérateur : la fiche signée fait foi.
 
+**Plaque signalétique et mise en service** : sur chaque équipement, photo de la plaque signalétique, lue automatiquement
+(fluide, charge, marque, modèle, n° de série remplis dans les champs vides, à vérifier) ; la photo figure en annexe de la
+fiche d'intervention. Sur le téléphone : **Fluides → Mise en service d'un équipement** enchaîne la création de
+l'équipement (photo de la plaque d'abord) et la fiche Cerfa de mise en service, signée par le client.
+
+## PV d'épreuve hydraulique
+
+Sur le téléphone (**Pointage → Rapports → PV d'épreuve hydraulique**) ou sur la fiche chantier : formulaire pré-rempli
+(chantier du jour, client, technicien, date et heure, manomètre du parc avec son étalonnage, alerte s'il est dépassé).
+Le technicien indique le nom du réseau, la nature, la pression de service (la pression d'épreuve est proposée à 1,5 fois,
+modifiable selon le CCTP), la durée de maintien, la chute admissible, les heures et pressions de début et de fin : le
+résultat (conforme / non conforme) se calcule tout seul. Photos du manomètre, signature du technicien et du client.
+Signé, le PV est numéroté (EP-AAAA-0001), figé, imprimable avec l'attestation du technicien, envoyé en PDF par e-mail ;
+« Dupliquer pour un autre réseau » reprend les conditions pour le réseau suivant. Liste des épreuves sur la fiche chantier.
+
+**PV de réception** (Chantier → Réserves et réception) : réserves avec photo, signature du client et de l'entreprise sur
+l'écran ; le PV imprimé reprend les photos des réserves (et après levée pour le PV de levée).
+
 ## Offres fournisseurs : lecture des PDF et meilleure proposition
 
 **Consultation** (Achats → Consultations) : « Importer l'offre (PDF, Excel) » sur la ligne d'un fournisseur lit son devis
@@ -489,7 +507,7 @@ server/agenda.js   planning dans Outlook (Microsoft Graph) et lien iCal
 server/mail-factures.js  boîte e-mail des factures fournisseurs (Microsoft Graph)
 public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
-public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js, securite-ui.js, produits.js, dossier-documents.js, fluides-ui.js, rapprochement-ui.js, agenda-ui.js, hors-ligne.js, offres-pdf.js, comptoir.js, prix-achats.js : écrans métier
+public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js, securite-ui.js, produits.js, dossier-documents.js, fluides-ui.js, rapprochement-ui.js, agenda-ui.js, hors-ligne.js, offres-pdf.js, comptoir.js, prix-achats.js, epreuves-ui.js : écrans métier
 doe/               application DOE séparée (serveur, interface, génération du dossier PDF)
 installer/         installateur Windows (NSIS) : build.sh, PipeFitCRM.nsi, lanceur et service
 ```

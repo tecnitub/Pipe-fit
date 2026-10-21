@@ -350,6 +350,12 @@ function demoData() {
     { id: 'en4', userId: 'o1', date: d(-6), fournisseurId: 'e11', affaireId: 'af1', bl: '4697', montant: 86.5, note: 'Coudes DN50 manquants', photoId: '', statut: 'Déclaré' },
     { id: 'en5', userId: 'o4', date: d(-2), fournisseurId: 'e12', affaireId: 'af4', bl: '77304', montant: 142.3, note: 'Vannes d\'isolement 1"', photoId: '', statut: 'Déclaré' },
   ];
+  // PV d'épreuve hydraulique signé sur la ligne NEP (manomètre étalon du parc)
+  const epreuves = [{ id: 'ep1', numero: `EP-${Y}-0001`, affaireId: 'af1', userId: 'o1', technicien: 'Kevin Roux', date: d(-25), heureDebut: '08:30', heureFin: '10:30', reseau: 'NEP aller DN50 – rack nord',
+    nature: 'Eau industrielle / process', description: 'Inox 316L DN50, isométrique ISO-NEP-01 indice B', fluideEssai: 'Eau', pressionService: 6, pressionEpreuve: 9, dureePrevue: 120, chuteAdmissible: 0,
+    pressionDebut: 9.1, pressionFin: 9.1, chute: 0, dureeReelle: 120, temperature: 14, manometreId: 'pm5', manometre: 'Manomètre étalon 0-60 bar (épreuves hydrauliques) · n° WK-2209-17',
+    observations: 'Réseau isolé par les vannes V12 et V18, purgé aux points hauts. Aucune fuite constatée.', photos: [], resultat: 'Conforme', signataireNom: 'Thomas Girard', signataireQualite: 'Responsable maintenance',
+    signatureTechId: 'img-sig', signatureClientId: 'img-sig', signeLe: `${d(-25)}T10:42:00.000Z`, statut: 'Signé' }];
   // Facture électronique reçue de la plateforme : vannes de la commande CF-0002 (rapprochement automatique)
   const efactures = [{ id: 'ef1', cle: '445666777|RIA-F-26-3317', statut: 'Reçue', recueLe: d(-1) + 'T06:42:00', origine: 'plateforme', nomFichier: 'RIA-F-26-3317.xml', format: 'CII', type: 'facture', typeCode: '380',
     numero: 'RIA-F-26-3317', date: d(-2), echeance: d(43), devise: 'EUR', refCommande: `CF-${Y}-0002`, refAcheteur: `CH-${Y}-001`, refFacture: '', iban: 'FR7600000000000000000000000',
@@ -490,7 +496,7 @@ function demoData() {
     { id: 'rs1', affaireId: 'af1', numero: 1, localisation: 'Local CIP – rack nord', description: 'Calorifuge manquant sur 3 m de ligne retour', responsable: 'Pipe-Fit', echeance: d(10), photoId: 'img-rack1', statut: 'Ouverte', pvId: '' },
     { id: 'rs2', affaireId: 'af1', numero: 2, localisation: 'Toutes lignes', description: 'Repérage des lignes (étiquettes sens de circulation) à compléter', responsable: 'Pipe-Fit', echeance: d(10), photoId: '', statut: 'Ouverte', pvId: '' },
     { id: 'rs3', affaireId: 'af3', numero: 1, localisation: 'Skid de dosage', description: 'Suintement sur raccord clamp de la vanne V3', responsable: 'Pipe-Fit', echeance: d(-60), photoId: '', statut: 'Levée', dateLevee: d(-62), commentaireLevee: 'Joint remplacé, essai d\'étanchéité OK', pvId: 'pv2' },
-    { id: 'rs4', affaireId: 'af3', numero: 2, localisation: 'Bâtiment B – supports', description: 'Retouches de peinture sur les supports du skid', responsable: 'Pipe-Fit', echeance: d(-50), photoId: '', statut: 'Ouverte', pvId: 'pv2' },
+    { id: 'rs4', affaireId: 'af3', numero: 2, localisation: 'Bâtiment B – supports', description: 'Retouches de peinture sur les supports du skid', responsable: 'Pipe-Fit', echeance: d(-50), photoId: 'img-rack2', statut: 'Ouverte', pvId: 'pv2' },
   ];
   const snap = r => ({ numero: r.numero, localisation: r.localisation, description: r.description, responsable: r.responsable, echeance: r.echeance });
   const receptions = [
@@ -625,7 +631,7 @@ function demoData() {
         tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',
         types: { devis: { conditions: 'Acompte de 30 % à la commande. Travaux réalisés selon les normes EN 13480 et le DTU en vigueur. Hors génie civil, calorifuge et échafaudages sauf mention contraire.' },
           facture: { conditions: 'Paiement par virement à 45 jours fin de mois.' } } } },
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels, missions, produits, equipementsFrigo, fichesFluides, bouteilles, enlevements,
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels, missions, produits, equipementsFrigo, fichesFluides, bouteilles, enlevements, epreuves,
   };
 }
 

@@ -42,6 +42,7 @@ function rapportsView(u) {
     <h1>Pointage</h1>
     ${Store.me.role !== 'atelier' ? `<div class="field"><label for="p-pour">Pointer en tant que</label><select id="p-pour">${options(operateurs(), u.id, undefined, false)}</select></div>` : ''}
     ${pointageTabs('rapports', u.id)}
+    ${epreuvesCompagnonHtml(u, b.affaireId)}
     <div class="card punch">
       <strong>Rapport d'intervention</strong>
       <div class="grid2">
@@ -262,7 +263,7 @@ Views.reception.bind = (root, params) => {
     const btn = root.querySelector('#pv-sign'); btn.disabled = true; btn.textContent = 'Enregistrement…';
     try {
       const [sc, se] = [await envoyerImage(padC.image()), await envoyerImage(padE.image())];
-      const snap = r => ({ numero: r.numero, localisation: r.localisation, description: r.description, responsable: r.responsable, echeance: r.echeance, dateLevee: r.dateLevee || '' });
+      const snap = r => ({ numero: r.numero, localisation: r.localisation, description: r.description, responsable: r.responsable, echeance: r.echeance, dateLevee: r.dateLevee || '', photoId: r.photoId || '', photoLeveeId: r.photoLeveeId || '' });
       const liste = type === 'reception' ? (decision === 'Avec réserves' ? ouvertes : []) : reservesDe(a.id).filter(r => r.pvId === pvRec.id);
       const pv = Store.upsert('receptions', {
         numero: '', affaireId: a.id, type, date: root.querySelector('#pv-date').value, lieu: root.querySelector('#pv-lieu').value, presents: root.querySelector('#pv-presents').value,
@@ -322,6 +323,7 @@ Views.pv = params => {
     : `<p>Le maître d'ouvrage constate la levée des réserves suivantes, formulées lors de la réception :</p>`}
     ${(pv.reservesSnapshot || []).length ? `<div class="table-wrap"><table class="doc-lines"><tr><th>N°</th><th>Localisation</th><th>Réserve</th><th>Responsable</th><th>${pv.type === 'levee' ? 'Levée le' : 'À lever avant le'}</th></tr>
       ${pv.reservesSnapshot.map(r => `<tr><td>${esc(r.numero)}</td><td>${esc(r.localisation)}</td><td>${esc(r.description)}</td><td>${esc(r.responsable)}</td><td>${dateFr(pv.type === 'levee' ? r.dateLevee : r.echeance)}</td></tr>`).join('')}</table></div>` : ''}
+    ${pvPhotosHtml(pv)}
     ${pv.commentaire && Doc.t('pv').observations ? `<p><strong>Observations :</strong> ${esc(pv.commentaire)}</p>` : ''}
     <div class="signatures signed">
       <div>Pour le maître d'ouvrage<br><strong>${esc(pv.signataireNom)}</strong>${pv.signataireQualite ? `, ${esc(pv.signataireQualite)}` : ''}${pv.signatureClientId ? `<img src="${fileUrl(pv.signatureClientId)}" alt="Signature du client">` : ''}</div>
@@ -331,6 +333,17 @@ Views.pv = params => {
     ${Doc.pied('pv')}
   </div>`;
 };
+
+// Photos des réserves dans le PV (PV antérieurs : photos retrouvées par le n° de la réserve)
+function pvPhotosHtml(pv) {
+  const res = reservesDe(pv.affaireId);
+  const ph = (pv.reservesSnapshot || []).flatMap(r => {
+    const x = res.find(y => num(y.numero) === num(r.numero)) || {};
+    const avant = r.photoId ?? x.photoId, apres = r.photoLeveeId ?? x.photoLeveeId;
+    return [avant && { id: avant, lib: `Réserve n° ${r.numero}${r.localisation ? ` · ${r.localisation}` : ''}` }, pv.type === 'levee' && apres && { id: apres, lib: `Réserve n° ${r.numero} après levée` }].filter(Boolean);
+  });
+  return ph.length ? `<h3 class="doc-h">Photos des réserves</h3><div class="doc-photos">${ph.map(p => `<figure><img src="${fileUrl(p.id)}" alt="${esc(p.lib)}"><figcaption>${esc(p.lib)}</figcaption></figure>`).join('')}</div>` : '';
+}
 
 /* ---------- Bon d'intervention (rapport signé par le client) ---------- */
 Views.bon = params => {
