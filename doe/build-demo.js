@@ -14,7 +14,7 @@ const avecLogo = s => s.replace(/(["'])logo-tecnitub\.png\1/g, `$1${logo}$1`);
 const html = read('doe/public/index.html');
 const body = html.slice(html.indexOf('>', html.indexOf('<body')) + 1, html.indexOf('</body>'));
 const scripts = [...body.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
-const fichier = s => (s === 'shared/pdf.js' ? 'public/js/pdf.js' : path.join('doe/public', s));
+const fichier = s => (s.startsWith('shared/') ? `public/js/${s.slice(7)}` : path.join('doe/public', s));
 const markup = body.replace(/<script src="[^"]+"><\/script>\s*/g, '').trim()
   .replace('<div class="session">', '<div class="bandeau-demo">Démo — comptes : jacky, claire ou admin (mot de passe libre)</div><div class="session">');
 

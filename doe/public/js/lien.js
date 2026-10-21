@@ -82,3 +82,32 @@ const familleProposee = x => (/tube|tuyau|raccord|coude|bride|t[ée]\b|r[ée]duc
 function receptionPF(affaireId) {
   return { pv: PF.all('receptions').filter(p => p.affaireId === affaireId).sort((x, y) => (x.date || '').localeCompare(y.date || '')), reserves: PF.all('reserves').filter(r => r.affaireId === affaireId).sort((x, y) => (x.numero || 0) - (y.numero || 0)) };
 }
+
+// PV d'essais signés dans Pipe-Fit (épreuves, mises en service, équilibrages, fiches d'intervention fluides du chantier)
+function essaisPF(affaireId) {
+  const signes = col => PF.all(col).filter(r => r.affaireId === affaireId && r.statut === 'Signé').sort((x, y) => `${x.date}${x.numero || ''}`.localeCompare(`${y.date}${y.numero || ''}`));
+  return { epreuves: signes('epreuves'), mes: signes('misesEnService'), equilibrages: signes('equilibrages'),
+    cerfa: PF.all('fichesFluides').filter(f => f.affaireId === affaireId && ['Signée', 'Envoyée'].includes(f.statut)).sort((x, y) => (x.date || '').localeCompare(y.date || '')) };
+}
+// Pièces des listes de contrôle (sections 5 et 6) couvertes par un PV de Pipe-Fit : cochées et jointes automatiquement
+const aeraulique = q => q.type !== 'Hydraulique', frigo = m => ['pac', 'split'].includes(m.type), process = x => /process|vapeur/i.test(x.nature || '');
+const REGLES_PF = [
+  ['5.1', /mise en service TFP/i, e => e.mes.some(frigo)], ['5.1', /CERFA/, e => e.cerfa.length > 0],
+  ['5.1', /paramètres de fonctionnement/i, e => e.mes.some(m => frigo(m) && (m.mesures || []).some(v => !vide(v.valeur)))],
+  ['5.2', /remplissage et mise en pression/i, e => e.epreuves.length > 0], ['5.2', /équilibrage des radiateurs|équilibrage VC/i, e => e.equilibrages.some(q => !aeraulique(q))],
+  ['5.3', /équilibrage aéraulique par CTA/i, e => e.equilibrages.some(q => aeraulique(q) && !/vmc/i.test(q.installation))], ['5.3', /équilibrage VMC/i, e => e.equilibrages.some(q => aeraulique(q) && /vmc/i.test(q.installation))],
+  ['5.3', /désenfumage/i, e => e.mes.some(m => m.type === 'desenfumage')],
+  ['6.1', /pression des réseaux hydrauliques/i, e => e.epreuves.some(x => !process(x))], ['6.1', /circuits frigorigènes/i, e => e.cerfa.length > 0],
+  ['6.2', /équilibrage aéraulique/i, e => e.equilibrages.some(aeraulique)], ['6.3', /épreuve hydraulique des tuyauteries/i, e => e.epreuves.some(process)],
+];
+const couvertParPF = (doe, k, libelle) => { const e = essaisPF(doe.affaireId); return REGLES_PF.some(([c, re, t]) => c === k && re.test(libelle) && t(e)); };
+// Pièces générées depuis Pipe-Fit : annexe F (mise en service), annexe G (essais et mesures)
+function piecesPF(doe) {
+  if (doe.sansEssaisPF) return { F: [], G: [] };
+  const e = essaisPF(doe.affaireId), p = (genere, r, libelle) => ({ libelle: `${r.numero || ''} — ${libelle}`, present: true, genere, ref: r });
+  const cerfa = f => p('cerfa', f, `Fiche d'intervention fluides (Cerfa 15497) — ${(PF.get('equipementsFrigo', f.equipementId) || {}).designation || ''}`);
+  return { F: [...e.mes.map(m => p('mes', m, `PV de mise en service — ${m.equipement}`)), ...e.cerfa.filter(f => f.nature === 'miseEnService').map(cerfa),
+      ...e.equilibrages.filter(q => !aeraulique(q)).map(q => p('equilibrage', q, `Relevé d'équilibrage hydraulique — ${q.installation}`))],
+    G: [...e.epreuves.map(x => p('epreuve', x, `PV d'épreuve hydraulique — ${x.reseau}`)), ...e.equilibrages.filter(aeraulique).map(q => p('equilibrage', q, `Relevé d'équilibrage aéraulique — ${q.installation}`)),
+      ...e.cerfa.filter(f => f.nature !== 'miseEnService').map(cerfa)] };
+}

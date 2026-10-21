@@ -197,6 +197,7 @@ Views.chantier = params => {
   : '<p class="muted">Aucun rapport. Les équipes les rédigent depuis leur téléphone (Pointage › Rapports).</p>'}
 
   ${epreuvesChantierHtml(a)}
+  ${essaisChantierHtml(a)}
 
   <h2>Réserves et réception</h2>
   <div class="card reception-card">
@@ -582,7 +583,7 @@ Views.parametres = () => {
   ${admin ? `<h2>Historique des modifications</h2><div class="table-wrap"><table id="audit"><tr><td class="muted">Chargement…</td></tr></table></div>` : ''}`;
 };
 
-const COL_LABELS = { consommations: 'Matériel', rapports: "Rapport d'intervention", reserves: 'Réserve', receptions: 'PV de réception', epreuves: "PV d'épreuve", situations: 'Situation', frais: 'Note de frais', users: 'Personne', entreprises: 'Entreprise', contacts: 'Contact', articles: 'Fourniture', mainoeuvre: "Main-d'œuvre", zones: 'Zone', affaires: 'Chantier', devis: 'Devis', commandes: 'Commande', factures: 'Facture', planning: 'Planning', temps: 'Pointage' };
+const COL_LABELS = { consommations: 'Matériel', rapports: "Rapport d'intervention", reserves: 'Réserve', receptions: 'PV de réception', epreuves: "PV d'épreuve", misesEnService: 'PV de mise en service', equilibrages: "Relevé d'équilibrage", situations: 'Situation', frais: 'Note de frais', users: 'Personne', entreprises: 'Entreprise', contacts: 'Contact', articles: 'Fourniture', mainoeuvre: "Main-d'œuvre", zones: 'Zone', affaires: 'Chantier', devis: 'Devis', commandes: 'Commande', factures: 'Facture', planning: 'Planning', temps: 'Pointage' };
 
 function accountModal(acc, onDone) {
   const isNew = !acc.id;

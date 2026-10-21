@@ -14,6 +14,8 @@ const PIPEFIT = String(process.env.PIPEFIT_URL || 'http://localhost:3000').repla
 const DB_FILE = process.env.DOE_DB_FILE || path.join(__dirname, 'data', 'doe.db');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const PDF_MOTEUR = path.join(__dirname, '..', 'public', 'js', 'pdf.js');
+// Modules de Pipe-Fit servis tels quels : moteur PDF, mise en page des PV d'essais
+const PARTAGES = { '/shared/pdf.js': PDF_MOTEUR, '/shared/essais.js': path.join(__dirname, '..', 'public', 'js', 'essais.js'), '/shared/essais-doc.js': path.join(__dirname, '..', 'public', 'js', 'essais-doc.js') };
 const MAX_JSON = 5 * 1024 * 1024, MAX_FICHIER = 60 * 1024 * 1024, SESSION_JOURS = 14;
 const TYPES = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', dwg: 'image/vnd.dwg', dxf: 'image/vnd.dxf',
   ifc: 'application/x-step', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', zip: 'application/zip' };
@@ -189,8 +191,8 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=u
 function statique(req, res, url) {
   let rel;
   try { rel = decodeURIComponent(url.pathname); } catch (e) { res.writeHead(400); return res.end(); }
-  const file = rel === '/shared/pdf.js' ? PDF_MOTEUR : path.normalize(path.join(PUBLIC_DIR, rel === '/' ? '/index.html' : rel));
-  if (file !== PDF_MOTEUR && !file.startsWith(PUBLIC_DIR + path.sep)) { res.writeHead(403); return res.end(); }
+  const file = PARTAGES[rel] || path.normalize(path.join(PUBLIC_DIR, rel === '/' ? '/index.html' : rel));
+  if (!PARTAGES[rel] && !file.startsWith(PUBLIC_DIR + path.sep)) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, buf) => {
     if (err) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Introuvable'); }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });

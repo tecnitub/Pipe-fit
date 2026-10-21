@@ -42,7 +42,7 @@ function sectionsHtml(doe) {
         f.champs.map((c, j) => ((e.champs || [])[j] ? `${esc(c)} : ${esc(e.champs[j])}` : '')).filter(Boolean).join('<br>') || '—', esc(e.quantite || ''), val(e.localisation), val(e.serie)]));
     return `<h3>${fid} ${esc(f.titre)}</h3>${corps}${fin('Fiches techniques constructeurs et notices de montage jointes en annexe B.')}`;
   }).join('') || `<p>${AC}</p>`);
-  const ctl = cles => cles.map(k => `<h3>${k} ${esc(TRAME.controles[k].titre)}</h3>${tableau(['N°', 'Document / pièce', 'Présent'], (doe.controles[k] || TRAME.controles[k].items.map(l => ({ libelle: l }))).map((it, i) => [String(i + 1), esc(it.libelle), coche(it.present || (it.fichiers || []).length)]))}`).join('');
+  const ctl = cles => cles.map(k => `<h3>${k} ${esc(TRAME.controles[k].titre)}</h3>${tableau(['N°', 'Document / pièce', 'Présent'], (doe.controles[k] || TRAME.controles[k].items.map(l => ({ libelle: l }))).map((it, i) => [String(i + 1), esc(it.libelle), coche(presentCtl(doe, k, it))]))}`).join('');
   s('s5', '5. RAPPORTS DE MISE EN SERVICE', `${ctl(controlesActifs(doe).filter(k => k[0] === '5')) || `<p>${AC}</p>`}${fin('Tous les PV signés par le technicien et le responsable de chantier sont joints en annexe F.')}`);
   s('s6', '6. ESSAIS, CONTRÔLES ET MESURES', ctl(controlesActifs(doe).filter(k => k[0] === '6')) + fin('Procès-verbaux d\'essais et rapports de contrôle joints en annexe G.'));
   s('s7', '7. MAINTENANCE ET EXPLOITATION', `<h3>7.1 Carnet de maintenance préventive</h3>${doe.maintenance.length ? tableau(['Équipement', 'Opération', 'Fréquence', 'Intervenant'], doe.maintenance.map(l => l.map(val))) : `<p>${AC}</p>`}
@@ -65,6 +65,25 @@ function htmlReception(doe) {
   return `<div class="doe-doc"><h2>PV DE RÉCEPTION ET LEVÉE DES RÉSERVES</h2><p class="petit">Repris de Pipe-Fit (chantier ${esc((PF.get('affaires', doe.affaireId) || {}).code || '')}).</p>
     ${r.pv.map(p => `<h3>${esc(p.numero || 'PV')} — ${esc(p.type === 'reception' ? 'Procès-verbal de réception' : 'Procès-verbal de levée des réserves')}</h3>${lignes2([['Date', dateFr(p.date)], ['Lieu', val(p.lieu)], ['Décision', val(p.decision)], ['Présents', val(p.presents)], ['Signataire (maître d\'ouvrage)', `${esc(p.signataireNom || '')}${p.signataireQualite ? `, ${esc(p.signataireQualite)}` : ''}`], ['Statut', `${esc(p.statut || '')}${p.signeLe ? ` le ${new Date(p.signeLe).toLocaleDateString('fr-FR')}` : ''}`]])}`).join('') || '<p>Aucun PV de réception enregistré.</p>'}
     <h3>Réserves</h3>${r.reserves.length ? tableau(['N°', 'Localisation', 'Description', 'Statut', 'Levée le'], r.reserves.map(x => [String(x.numero || ''), esc(x.localisation || ''), esc(x.description || ''), esc(x.statut || ''), x.dateLevee ? dateFr(x.dateLevee) : '—'])) : '<p>Aucune réserve.</p>'}</div>`;
+}
+// PV signé dans Pipe-Fit (même mise en page que dans Pipe-Fit, sous l'en-tête du DOE)
+function htmlEssaiPF(doe, p) {
+  const r = p.ref, a = PF.get('affaires', doe.affaireId) || {};
+  const x = { img: id => fichierUrl({ src: 'pf', id }), societe: S.config.societe.raison, chantier: { code: a.code, nom: a.nom }, technicien: r.technicien || (PF.get('users', r.userId) || {}).nom || '' };
+  const titres = { epreuve: 'PROCÈS-VERBAL D\'ÉPREUVE HYDRAULIQUE', mes: 'PROCÈS-VERBAL DE MISE EN SERVICE', equilibrage: 'RELEVÉ D\'ÉQUILIBRAGE', cerfa: 'FICHE D\'INTERVENTION — FLUIDES FRIGORIGÈNES' };
+  const corps = p.genere === 'epreuve' ? EssaisDoc.epreuve(r, x) : p.genere === 'mes' ? EssaisDoc.miseEnService(r, x) : p.genere === 'equilibrage' ? EssaisDoc.equilibrage(r, x) : htmlCerfa(r, x);
+  return `<div class="doe-doc pv-pf"><h2>${titres[p.genere]}</h2><p class="petit">N° ${esc(r.numero || '—')} du ${dateFr(r.date)} · chantier ${esc(a.code || '')} — ${esc(a.nom || '')} · repris de Pipe-Fit</p>${corps}</div>`;
+}
+// Fiche d'intervention fluides (rubriques du Cerfa n° 15497), version DOE
+function htmlCerfa(f, x) {
+  const e = PF.get('equipementsFrigo', f.equipementId) || {}, kg = v => `${(Number(v) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg`;
+  const natures = { assemblage: 'Assemblage', miseEnService: 'Mise en service', modification: 'Modification', maintenance: 'Maintenance', controlePeriodique: 'Contrôle d\'étanchéité périodique', controleNonPeriodique: 'Contrôle d\'étanchéité non périodique', demantelement: 'Démantèlement', autre: 'Autre' };
+  return `${lignes2([['Opérateur', esc(x.societe)], ['Intervenant', esc(x.technicien)], ['Équipement', esc([e.designation, e.localisation, e.marque, e.modele, e.numeroSerie && `n° de série ${e.numeroSerie}`].filter(Boolean).join(' · '))],
+    ['Fluide', esc(`${e.fluide || ''} · charge totale ${kg(e.charge)}`)], ['Nature de l\'intervention', esc(natures[f.nature] || f.nature || '')], ['Détecteur de fuites', esc(f.detecteur || '—')],
+    ['Fuites constatées', (f.fuites || []).length ? f.fuites.map(y => `${esc(y.localisation)} : ${y.reparee ? 'réparée' : 'non réparée'}`).join('<br>') : 'aucune'],
+    ['Fluide chargé', `vierge ${kg(f.chargeVierge)} · recyclé ${kg(f.chargeRecycle)} · régénéré ${kg(f.chargeRegenere)}`], ['Fluide récupéré', `traitement ${kg(f.recupTraitement)} · réutilisation ${kg(f.recupReutilisation)}`],
+    ...(f.observations ? [['Observations', esc(f.observations)]] : []), ['Détenteur (signature)', `${esc(f.signataireNom || '')}${f.signatureClientId ? `<br><img class="sig" src="${x.img(f.signatureClientId)}" alt="Signature">` : ''}`]])}
+    ${e.photoPlaqueId ? `<div class="doc-photos"><figure><img src="${x.img(e.photoPlaqueId)}" alt="Plaque signalétique"><figcaption>Plaque signalétique</figcaption></figure></div>` : ''}`;
 }
 const htmlSommaire = (entrees, doe) => `<div class="doe-doc"><h2>SOMMAIRE</h2><table class="sommaire">${entrees.map(e => `<tr class="${e.annexe ? 'annexe' : ''}"><td>${esc(e.titre)}</td><td class="pts"></td><td class="num">${e.page}</td></tr>`).join('')}</table>
   <p class="petit">DOE lot n°${esc(doe.lot || '…')} — ${esc(doe.operation)} — indice ${esc(doe.indice)}</p></div>`;
@@ -96,7 +115,7 @@ async function genererDOE(doe) {
       a.pieces.filter(p => p.fichier && !integrable(p.fichier)).forEach(p => nonIntegres.add(p.fichier));
       parties.push({ titre: `Annexe ${a.lettre} — ${a.titre}`, bytes: await PDF.depuisHTML(htmlIntercalaire(a, nonIntegres), a.titre, null, opts), entete: true, sommaire: true, annexe: true });
       for (const p of a.pieces) {
-        if (p.genere && a.lettre === 'R') { parties.push({ bytes: await PDF.depuisHTML(htmlReception(doe), 'Réception', null, opts), entete: true }); continue; }
+        if (p.genere) { parties.push({ bytes: await PDF.depuisHTML(p.genere === true ? htmlReception(doe) : htmlEssaiPF(doe, p), p.libelle || 'Réception', null, opts), entete: true }); continue; }
         if (!p.fichier || nonIntegres.has(p.fichier)) continue;
         try {
           const r = await fetch(fichierUrl(p.fichier));

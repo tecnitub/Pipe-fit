@@ -356,6 +356,23 @@ function demoData() {
     pressionDebut: 9.1, pressionFin: 9.1, chute: 0, dureeReelle: 120, temperature: 14, manometreId: 'pm5', manometre: 'Manomètre étalon 0-60 bar (épreuves hydrauliques) · n° WK-2209-17',
     observations: 'Réseau isolé par les vannes V12 et V18, purgé aux points hauts. Aucune fuite constatée.', photos: [], resultat: 'Conforme', signataireNom: 'Thomas Girard', signataireQualite: 'Responsable maintenance',
     signatureTechId: 'img-sig', signatureClientId: 'img-sig', signeLe: `${d(-25)}T10:42:00.000Z`, statut: 'Signé' }];
+  // Chaufferie des Tilleuls : épreuve du réseau, mise en service de la chaudière, équilibrage des radiateurs (repris dans le DOE)
+  const signe = (jours, h) => ({ signatureTechId: 'img-sig', signatureClientId: 'img-sig', signataireNom: 'Gardien de la résidence', signataireQualite: 'Habitat Dauphiné', signeLe: `${d(jours)}T${h}:00.000Z`, statut: 'Signé' });
+  epreuves.push({ id: 'ep2', numero: `EP-${Y}-0002`, affaireId: 'af4', userId: 'o2', technicien: 'Ahmed Haddad', date: d(-12), heureDebut: '08:00', heureFin: '10:00', reseau: 'Collecteurs départ / retour chauffage DN150',
+    nature: 'Chauffage (eau chaude)', description: 'Acier noir DN150 soudé, plan chaufferie indice B', fluideEssai: 'Eau', pressionService: 3, pressionEpreuve: 6, dureePrevue: 120, chuteAdmissible: 0, pressionDebut: 6, pressionFin: 6,
+    chute: 0, dureeReelle: 120, temperature: 15, manometreId: 'pm5', manometre: 'Manomètre étalon 0-60 bar · n° WK-2209-17', observations: 'Aucune fuite sur les soudures ni les brides.', photos: [], resultat: 'Conforme', ...signe(-12, '10:20') });
+  const misesEnService = [{ id: 'ms1', numero: `MS-${Y}-0001`, affaireId: 'af4', userId: 'o2', technicien: 'Ahmed Haddad', date: d(-6), heure: '09:30', type: 'chaudiere', equipement: 'Chaudière gaz à condensation 2 × 150 kW', repere: 'CH1 / CH2',
+    localisation: 'Chaufferie sous-sol', marque: 'De Dietrich', modele: 'C 330-280 Eco', numeroSerie: 'DD-77812-01', controles: [
+      { libelle: 'Étanchéité du raccordement gaz', etat: 'OK', obs: '' }, { libelle: 'Évacuation des fumées et amenée d\'air conformes', etat: 'OK', obs: '' }, { libelle: 'Remplissage, purge et pression du circuit', etat: 'OK', obs: '' },
+      { libelle: 'Sécurités (manque d\'eau, surchauffe, flamme) testées', etat: 'OK', obs: '' }, { libelle: 'Régulation paramétrée', etat: 'OK', obs: '' }],
+    mesures: [{ libelle: 'CO2', unite: '%', valeur: '9.1' }, { libelle: 'CO', unite: 'ppm', valeur: '18' }, { libelle: 'Température des fumées', unite: '°C', valeur: '52' }, { libelle: 'Rendement de combustion', unite: '%', valeur: '97.8' },
+      { libelle: 'Pression gaz', unite: 'mbar', valeur: '20' }, { libelle: 'Température départ', unite: '°C', valeur: '70' }, { libelle: 'Température retour', unite: '°C', valeur: '52' }],
+    reglages: 'Loi d\'eau : 70 °C à -10 °C extérieur, 30 °C à +18 °C. Réduit de nuit 22 h – 5 h.', observations: '', photos: [], resultat: 'Mis en service', ...signe(-6, '11:05') }];
+  const equilibrages = [{ id: 'eq1', numero: `EQ-${Y}-0001`, affaireId: 'af4', userId: 'o2', technicien: 'Ahmed Haddad', date: d(-5), heure: '08:30', installation: 'Circuit radiateurs bâtiment A', type: 'Hydraulique', unite: 'l/h', tolerance: 10,
+    appareil: 'Valise d\'équilibrage hydraulique', lignes: [
+      { repere: 'V1', local: 'Colonne A1', type: 'Vanne d\'équilibrage', theorique: 1850, mesure: 1810, reglage: '3,2 tours' }, { repere: 'V2', local: 'Colonne A2', type: 'Vanne d\'équilibrage', theorique: 1650, mesure: 1700, reglage: '2,8 tours' },
+      { repere: 'V3', local: 'Colonne A3', type: 'Vanne d\'équilibrage', theorique: 1420, mesure: 1395, reglage: '2,4 tours' }, { repere: 'V4', local: 'Colonne A4', type: 'Vanne d\'équilibrage', theorique: 1200, mesure: 1240, reglage: '2,1 tours' }],
+    observations: 'Pompe réglée en pression différentielle constante 4,5 mCE.', photos: [], resultat: 'Conforme', ...signe(-5, '12:00') }];
   // Facture électronique reçue de la plateforme : vannes de la commande CF-0002 (rapprochement automatique)
   const efactures = [{ id: 'ef1', cle: '445666777|RIA-F-26-3317', statut: 'Reçue', recueLe: d(-1) + 'T06:42:00', origine: 'plateforme', nomFichier: 'RIA-F-26-3317.xml', format: 'CII', type: 'facture', typeCode: '380',
     numero: 'RIA-F-26-3317', date: d(-2), echeance: d(43), devise: 'EUR', refCommande: `CF-${Y}-0002`, refAcheteur: `CH-${Y}-001`, refFacture: '', iban: 'FR7600000000000000000000000',
@@ -631,7 +648,7 @@ function demoData() {
         tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',
         types: { devis: { conditions: 'Acompte de 30 % à la commande. Travaux réalisés selon les normes EN 13480 et le DTU en vigueur. Hors génie civil, calorifuge et échafaudages sauf mention contraire.' },
           facture: { conditions: 'Paiement par virement à 45 jours fin de mois.' } } } },
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels, missions, produits, equipementsFrigo, fichesFluides, bouteilles, enlevements, epreuves,
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels, missions, produits, equipementsFrigo, fichesFluides, bouteilles, enlevements, epreuves, misesEnService, equilibrages,
   };
 }
 

@@ -60,6 +60,8 @@ const majEtatEnregistrement = t => { const e = document.getElementById('etat-enr
 
 /* ---------- Ce qui reste à compléter ---------- */
 const familleDe = id => TRAME.familles.find(f => f.id === id);
+// Pièce de liste de contrôle fournie : cochée, jointe, ou couverte par un PV signé dans Pipe-Fit
+const presentCtl = (doe, k, it) => !!(it.present || (it.fichiers || []).length || couvertParPF(doe, k, it.libelle));
 function controlesActifs(doe) {
   return Object.entries(TRAME.controles).filter(([k, c]) => k !== '8.2' && (!c.familles.length || c.familles.some(f => doe.familles.includes(f)))).map(([k]) => k);
 }
@@ -80,7 +82,7 @@ function manquesDOE(doe) {
     eqs.forEach(e => ['repere', 'marque', 'reference', 'serie'].forEach(k => verif('s3', !vide(e[k]), `${e.repere || e.designation || 'Équipement'} : ${{ repere: 'repère', marque: 'marque', reference: 'référence', serie: 'n° de série' }[k]}`)));
     verif('s3', doe.fiches.some(x => x.famille === fid), `${fid} : aucune fiche technique jointe`);
   });
-  controlesActifs(doe).forEach(k => (doe.controles[k] || TRAME.controles[k].items.map(l => ({ libelle: l }))).forEach(it => verif(k[0] === '5' ? 's5' : 's6', it.present || (it.fichiers || []).length, `${k} ${it.libelle}`)));
+  controlesActifs(doe).forEach(k => (doe.controles[k] || TRAME.controles[k].items.map(l => ({ libelle: l }))).forEach(it => verif(k[0] === '5' ? 's5' : 's6', presentCtl(doe, k, it), `${k} ${it.libelle}`)));
   verif('s7', doe.maintenance.length > 0, 'Carnet de maintenance vide');
   verif('s7', doe.notices.length > 0, 'Aucune notice d\'exploitation');
   doe.formation.forEach(f => verif('s8', !vide(f[3]), `Formation « ${f[0]} » : formateur`));
@@ -321,7 +323,7 @@ function importerMateriel(doe) {
 function controlesHtml(doe, cles) {
   return cles.map(k => { const c = TRAME.controles[k], items = itemsControle(doe, k);
     return `<h3>${k} ${esc(c.titre)} <span class="muted petit">annexe ${c.annexe}</span></h3><table class="edit controle"><tr><th>N°</th><th>Document / pièce</th><th>Présent</th><th>Pièces jointes</th><th></th></tr>
-      ${items.map((it, i) => `<tr><td>${i + 1}</td><td><input data-ctl="${k}.${i}.libelle" value="${esc(it.libelle)}"></td><td><input type="checkbox" data-ctl="${k}.${i}.present" ${it.present || (it.fichiers || []).length ? 'checked' : ''} ${(it.fichiers || []).length ? 'disabled' : ''} title="Cochez si la pièce est fournie (papier) sans fichier"></td>
+      ${items.map((it, i) => `<tr><td>${i + 1}</td><td><input data-ctl="${k}.${i}.libelle" value="${esc(it.libelle)}"></td><td><input type="checkbox" data-ctl="${k}.${i}.present" ${presentCtl(doe, k, it) ? 'checked' : ''} ${(it.fichiers || []).length || couvertParPF(doe, k, it.libelle) ? 'disabled' : ''} title="Cochez si la pièce est fournie (papier) sans fichier">${couvertParPF(doe, k, it.libelle) ? ' <span class="muted petit">Pipe-Fit</span>' : ''}</td>
         <td>${(it.fichiers || []).map((f, j) => `<div>${lienFichier(f)} <button class="icone" data-ctl-sup="${k}.${i}.${j}">✕</button></div>`).join('')}<button class="secondaire petit" data-ctl-joindre="${k}.${i}">Joindre</button></td><td><button class="icone" data-ctl-ret="${k}.${i}">✕</button></td></tr>`).join('')}</table>
       <button class="secondaire petit" data-ctl-ajout="${k}">+ Pièce</button>`; }).join('');
 }
@@ -380,15 +382,18 @@ const integrable = f => /pdf|image\/(jpeg|png)/.test(f.mime || '') || /\.(pdf|jp
 
 // Annexes : lettre, titre, pièces (fichier ou page générée)
 function annexesDOE(doe) {
+  // Pièce couverte seulement par Pipe-Fit : remplacée par les PV générés (listés plus bas dans la même annexe)
   const piecesCtl = lettre => [...controlesActifs(doe), '8.2'].filter(k => TRAME.controles[k].annexe === lettre)
-    .map(k => doe.controles[k] || TRAME.controles[k].items.map(l => ({ libelle: l, present: false, fichiers: [] })))
-    .flatMap(items => items.flatMap(it => ((it.fichiers || []).length ? it.fichiers.map(f => ({ libelle: it.libelle, fichier: f, present: true })) : [{ libelle: it.libelle, present: !!it.present }])));
+    .map(k => [k, doe.controles[k] || TRAME.controles[k].items.map(l => ({ libelle: l, present: false, fichiers: [] }))])
+    .flatMap(([k, items]) => items.flatMap(it => ((it.fichiers || []).length ? it.fichiers.map(f => ({ libelle: it.libelle, fichier: f, present: true }))
+      : !it.present && couvertParPF(doe, k, it.libelle) ? [] : [{ libelle: it.libelle, present: !!it.present }])));
+  const pf = piecesPF(doe);
   const coupeFeu = piecesCtl('G').filter(p => /coupe-feu/i.test(p.libelle));
   const out = [
     { lettre: 'A', titre: 'Plans de recollement', pieces: doe.plans.map(p => ({ libelle: `${p.numero || ''} ${p.designation}`, fichier: p.fichier, present: !!p.fichier })) },
     { lettre: 'B', titre: 'Fiches techniques constructeurs et notices', pieces: [...doe.fiches.slice().sort((x, y) => (x.famille || '9').localeCompare(y.famille || '9')).map(f => ({ libelle: f.designation, fichier: f.fichier, present: true })), ...doe.notices.map(n => ({ libelle: n.libelle, fichier: n.fichier, present: true }))] },
-    { lettre: 'F', titre: 'Rapports de mise en service', pieces: piecesCtl('F') },
-    { lettre: 'G', titre: 'Essais, contrôles et mesures', pieces: piecesCtl('G').filter(p => !coupeFeu.includes(p)) },
+    { lettre: 'F', titre: 'Rapports de mise en service', pieces: [...piecesCtl('F'), ...pf.F] },
+    { lettre: 'G', titre: 'Essais, contrôles et mesures', pieces: [...piecesCtl('G').filter(p => !coupeFeu.includes(p)), ...pf.G] },
     { lettre: 'H', titre: 'Formation des exploitants', pieces: piecesCtl('H') },
     { lettre: 'O', titre: 'Attestation de rebouchage coupe-feu', pieces: coupeFeu },
   ];

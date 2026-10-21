@@ -251,7 +251,8 @@ function editerBouteille(id) {
 const ficheBrouillon = { f: null };
 function ficheVide(equipementId) {
   const e = equipementId && Store.get('equipementsFrigo', equipementId);
-  return { equipementId: equipementId || '', clientId: e ? e.clientId : '', date: isoDate(new Date()), nature: 'controlePeriodique', userId: Store.me.userId || '', fuites: [], statut: 'Brouillon',
+  const prevu = Store.me.userId && planJour(Store.me.userId, isoDate(new Date()))[0];
+  return { equipementId: equipementId || '', clientId: e ? e.clientId : '', affaireId: prevu ? prevu.affaireId : '', date: isoDate(new Date()), nature: 'controlePeriodique', userId: Store.me.userId || '', fuites: [], statut: 'Brouillon',
     detecteur: (Store.all('materiels').find(m => !m.archive && /détecteur|fuite|récupération/i.test(`${m.designation} ${m.categorie}`) && m.affectation && m.affectation.userId === Store.me.userId) || {}).designation || '' };
 }
 function ficheFormHtml(f) {
@@ -265,6 +266,7 @@ function ficheFormHtml(f) {
     <fieldset class="hd-bloc"><legend>Équipement</legend>
       <div class="field"><label for="ff-cl">Client (détenteur)</label><select id="ff-cl" class="big-select"><option value="">Choisir…</option>${clients.map(c => `<option value="${esc(c.id)}" ${c.id === f.clientId ? 'selected' : ''}>${esc(c.nom)}</option>`).join('')}</select></div>
       <div class="field"><label for="ff-eq">Équipement</label><select id="ff-eq" class="big-select"><option value="">Choisir…</option>${eqs.map(x => `<option value="${esc(x.id)}" ${x.id === f.equipementId ? 'selected' : ''}>${esc(equipementLabel(x))} · ${esc(x.fluide)} ${fmt(num(x.charge), 2)} kg</option>`).join('')}<option value="__nouveau">+ Nouvel équipement…</option></select></div>
+      <div class="field"><label for="ff-aff">Chantier (pour le DOE, facultatif)</label><select id="ff-aff" data-ff="affaireId"><option value="">— aucun (maintenance) —</option>${chantiersActifs().concat(f.affaireId && !chantiersActifs().some(a => a.id === f.affaireId) && Store.get('affaires', f.affaireId) ? [Store.get('affaires', f.affaireId)] : []).map(a => `<option value="${esc(a.id)}" ${a.id === f.affaireId ? 'selected' : ''}>${esc(affaireLabel(a))}</option>`).join('')}</select></div>
       ${e ? `<p class="small">${esc(e.fluide)} · charge ${quantite(e.charge)} · ${fmt(Fluides.teqCO2(e.fluide, e.charge), 2)} t éq. CO2 · ${Fluides.periodicite(e) ? `contrôle tous les ${Fluides.periodicite(e)} mois` : 'non soumis au contrôle périodique'}${e.detectionPermanente ? ' · détection permanente' : ''}${Fluides.famille(e.fluide) === 'HCFC' ? ' · <strong class="neg">HCFC : recharge interdite</strong>' : ''}</p>` : ''}
     </fieldset>
     <fieldset class="hd-bloc"><legend>Intervention</legend>

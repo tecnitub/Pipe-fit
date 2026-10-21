@@ -18,6 +18,7 @@ const Compagnon = require('../public/js/compagnon');
 const NoteFrais = require('../public/js/frais');
 const ReglesPointage = require('../public/js/pointage-regles');
 const Epreuve = require('../public/js/epreuve');
+const Essais = require('../public/js/essais');
 const Fluides = require('../public/js/fluides');
 
 const PORT = +process.env.PORT || 3000;
@@ -70,7 +71,7 @@ const isLocal = HS.estLocal;
 function canWrite(acc, col) {
   if (acc.role === 'admin') return true;
   if (acc.role === 'charge') return col !== 'users';
-  if (acc.role === 'atelier') return ['temps', 'frais', 'rapports', 'consommations', 'notifications', 'fichesFluides', 'equipementsFrigo', 'enlevements', 'epreuves'].includes(col);
+  if (acc.role === 'atelier') return ['temps', 'frais', 'rapports', 'consommations', 'notifications', 'fichesFluides', 'equipementsFrigo', 'enlevements', 'epreuves', 'misesEnService', 'equilibrages'].includes(col);
   return false;
 }
 function canDelete(acc, col, existing) {
@@ -224,7 +225,7 @@ function referenceInvalide(o, prof = 0) {
 const publicAccount = a => ({ id: a.id, login: a.login, nom: a.nom, role: a.role, userId: a.user_id, email: a.email || '' });
 const EMAIL = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/;
 const m365Pret = () => { const c = DB.getConfig(db, 'm365'); return !!(c && c.actif && c.tenantId && c.clientId && c.clientSecret); };
-const MAIL_COLS = ['devis', 'factures', 'situations', 'commandes', 'affaires', 'rapports', 'receptions', 'consultations', 'epreuves'];
+const MAIL_COLS = ['devis', 'factures', 'situations', 'commandes', 'affaires', 'rapports', 'receptions', 'consultations', 'epreuves', 'misesEnService', 'equilibrages'];
 const labelOf = o => o.numero || o.code || o.ref || o.nom || o.designation || o.tache || '';
 
 // Limitation des tentatives de connexion : 10 échecs / 15 min par adresse IP, 20 par identifiant (attaque répartie)
@@ -546,6 +547,9 @@ async function api(req, res, url) {
         // PV d'épreuve signé : figé, sauf administrateur ; complet pour être signé
         if (col === 'epreuves' && existing && existing.statut === 'Signé' && acc.role !== 'admin') return { forbidden: 'Ce PV d\'épreuve est signé : il ne peut plus être modifié.' };
         if (col === 'epreuves' && obj.statut === 'Signé') { const m = Epreuve.manques(obj); if (m.length) return { invalide: `PV d'épreuve incomplet : ${m.join(', ')}` }; }
+        // PV de mise en service et relevé d'équilibrage signés : figés, sauf administrateur ; complets pour être signés
+        if (['misesEnService', 'equilibrages'].includes(col) && existing && existing.statut === 'Signé' && acc.role !== 'admin') return { forbidden: 'Ce procès-verbal est signé : il ne peut plus être modifié.' };
+        if (['misesEnService', 'equilibrages'].includes(col) && obj.statut === 'Signé') { const m = col === 'misesEnService' ? Essais.manquesMES(obj) : Essais.manquesEQ(obj); if (m.length) return { invalide: `Procès-verbal incomplet : ${m.join(', ')}` }; }
         // PV de réception signé : figé
         if (col === 'receptions' && existing && existing.statut === 'Signé' && acc.role !== 'admin') return { forbidden: 'Ce procès-verbal est signé : il ne peut plus être modifié.' };
         // Réserve figée par le PV : seule sa levée peut être renseignée

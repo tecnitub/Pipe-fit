@@ -34,6 +34,12 @@ Application séparée dans `doe/`, reliée à Pipe-Fit : voir [doe/README.md](do
 `npm run start:doe` la démarre sur le port 3100 ; `node doe/build-demo.js` produit sa démonstration
 `dist/pipefit-doe-demo.html`. Dans Pipe-Fit, l'onglet « 📘 DOE » de chaque chantier ouvre son dossier.
 
+**DOE automatique** : les procès-verbaux signés dans Pipe-Fit pour le chantier sont repris tout seuls dans le DOE, avec
+la même mise en page : PV de mise en service, fiches fluides de mise en service (Cerfa) et relevés d'équilibrage
+hydraulique en annexe F ; PV d'épreuve hydraulique, relevés d'équilibrage aéraulique et autres fiches fluides en annexe G.
+Les pièces correspondantes des listes de contrôle des sections 5 et 6 sont cochées (« Pipe-Fit »). Avec les plans,
+fiches techniques, notices et le PV de réception déjà repris, « Générer le DOE » produit le dossier complet en un clic.
+
 ## Installation manuelle (Linux, Windows, macOS)
 
 Prérequis : **Node.js 22.13 ou plus récent** (aucune autre dépendance, la base SQLite est intégrée à Node.js).
@@ -383,6 +389,23 @@ résultat (conforme / non conforme) se calcule tout seul. Photos du manomètre, 
 Signé, le PV est numéroté (EP-AAAA-0001), figé, imprimable avec l'attestation du technicien, envoyé en PDF par e-mail ;
 « Dupliquer pour un autre réseau » reprend les conditions pour le réseau suivant. Liste des épreuves sur la fiche chantier.
 
+## PV de mise en service et relevés d'équilibrage
+
+Sur le téléphone (**Pointage → Rapports**) ou sur la fiche chantier, à côté du PV d'épreuve :
+
+- **PV de mise en service** : type d'équipement (PAC / groupe froid, climatisation, chaudière, CTA, VMC, pompes,
+  désenfumage, ECS, régulation / GTB…) avec ses points de contrôle (OK, non conforme avec observation, sans objet ;
+  « Tout OK ») et ses mesures (pressions HP / BP, surchauffe, températures, CO2, débits, intensités…). Photo de la
+  plaque signalétique lue automatiquement (marque, modèle, n° de série, fluide et charge). Conclusion proposée :
+  mis en service, avec réserves (point non conforme) ou non mis en service. Équipement frigorifique : lien vers la
+  fiche fluides (Cerfa).
+- **Relevé d'équilibrage** aéraulique (bouche par bouche) ou hydraulique (par organe) : débits théoriques (saisis ou
+  importés d'Excel / CSV : repère, local, débit), débits mesurés, réglage, écart et conformité calculés selon la
+  tolérance (± 10 % par défaut), totaux et résultat.
+
+Signés par le technicien (et le client), ils sont numérotés (MS-AAAA-0001, EQ-AAAA-0001), figés, imprimables avec
+l'attestation, envoyés en PDF, copiables pour l'équipement ou l'installation suivante, et repris dans le DOE.
+
 **PV de réception** (Chantier → Réserves et réception) : réserves avec photo, signature du client et de l'entreprise sur
 l'écran ; le PV imprimé reprend les photos des réserves (et après levée pour le PV de levée).
 
@@ -507,7 +530,7 @@ server/agenda.js   planning dans Outlook (Microsoft Graph) et lien iCal
 server/mail-factures.js  boîte e-mail des factures fournisseurs (Microsoft Graph)
 public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
-public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js, securite-ui.js, produits.js, dossier-documents.js, fluides-ui.js, rapprochement-ui.js, agenda-ui.js, hors-ligne.js, offres-pdf.js, comptoir.js, prix-achats.js, epreuves-ui.js : écrans métier
+public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js, securite-ui.js, produits.js, dossier-documents.js, fluides-ui.js, rapprochement-ui.js, agenda-ui.js, hors-ligne.js, offres-pdf.js, comptoir.js, prix-achats.js, epreuves-ui.js, essais-ui.js : écrans métier
 doe/               application DOE séparée (serveur, interface, génération du dossier PDF)
 installer/         installateur Windows (NSIS) : build.sh, PipeFitCRM.nsi, lanceur et service
 ```

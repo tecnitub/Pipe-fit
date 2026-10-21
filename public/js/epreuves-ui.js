@@ -167,34 +167,17 @@ function epreuveVue(e) {
   <div class="doc-print">${epreuveDocument(e)}</div>`;
 }
 
-// Document : procès-verbal et attestation d'épreuve
-function epreuveDocument(e) {
-  const a = affaireOf(e.affaireId), s = Store.data.settings, site = siteOf(a.clientId, a.siteId);
-  const l = (k, v) => `<tr><th>${esc(k)}</th><td>${v}</td></tr>`, bar = v => (v === '' || v === undefined || v === null ? '—' : `${fmt(num(v), 2)} bar`);
-  const conf = e.resultat === 'Conforme', tech = e.technicien || userName(e.userId);
-  return `${Doc.entete('pv', 'PROCÈS-VERBAL D\'ÉPREUVE HYDRAULIQUE', `N° ${esc(e.numero || '—')} du ${dateFr(e.date)}`)}
+// Document d'un PV d'essai : en-tête, parties, corps commun avec l'application DOE (essais-doc.js), pied
+const ctxEssai = r => ({ img: fileUrl, societe: Store.data.settings.societe || '', chantier: affaireOf(r.affaireId), technicien: r.technicien || userName(r.userId) });
+function documentEssai(titre, r, corps) {
+  const a = affaireOf(r.affaireId), site = siteOf(a.clientId, a.siteId);
+  return `${Doc.entete('pv', titre, `N° ${esc(r.numero || '—')} du ${dateFr(r.date)}`)}
     <div class="doc-parties"><div>Maître d'ouvrage : <strong>${esc(clientName(a.clientId))}</strong>${site ? `<br>${esc(site.libelle)}<br>${esc(fullAddress(site))}` : ''}</div>
       <div>Chantier : <strong>${esc(a.code || '')} – ${esc(a.nom || '')}</strong>${a.moeId ? `<br>Maîtrise d'œuvre : ${esc(clientName(a.moeId))}` : ''}</div></div>
-    <h3 class="doc-h">Réseau éprouvé</h3><table class="doc-lines compact ppsps-t">
-      ${l('Réseau', `<strong>${esc(e.reseau)}</strong>`)}${l('Nature', esc(e.nature || ''))}${e.description ? l('Matériaux, diamètres, repérage', esc(e.description)) : ''}</table>
-    <h3 class="doc-h">Conditions d'épreuve</h3><table class="doc-lines compact ppsps-t">
-      ${l('Fluide d\'essai', esc(e.fluideEssai || 'Eau'))}${l('Pression de service', bar(e.pressionService))}${l('Pression d\'épreuve', `<strong>${bar(e.pressionEpreuve)}</strong>`)}
-      ${l('Durée de maintien prévue', e.dureePrevue ? `${num(e.dureePrevue)} min` : '—')}${l('Chute de pression admissible', bar(e.chuteAdmissible || 0))}
-      ${e.temperature !== '' && e.temperature !== undefined ? l('Température du fluide', `${fmt(num(e.temperature), 1)} °C`) : ''}${l('Manomètre', `${esc(e.manometre || '—')}${e.etalonnage ? ` · étalonnage valable jusqu'au ${dateFr(e.etalonnage)}` : ''}`)}</table>
-    <h3 class="doc-h">Mesures</h3><table class="doc-lines compact ppsps-t">
-      ${l('Date et heures', `${dateFr(e.date)}, de ${esc(e.heureDebut || '')} à ${esc(e.heureFin || '')}${e.dureeReelle ? ` (${e.dureeReelle} min)` : ''}`)}
-      ${l('Pression au début', bar(e.pressionDebut))}${l('Pression à la fin', bar(e.pressionFin))}${l('Chute constatée', bar(e.chute))}
-      ${e.observations ? l('Observations', esc(e.observations)) : ''}</table>
-    <p class="pv-decision">${conf ? '☒' : '☐'} Épreuve <strong>conforme</strong> : aucune fuite, pression maintenue<br>${conf ? '☐' : '☒'} Épreuve <strong>non conforme</strong> : réseau à reprendre et à éprouver de nouveau</p>
-    <p><strong>Attestation.</strong> Je soussigné ${esc(tech)}, technicien de ${esc(s.societe || '')}, atteste avoir réalisé le ${dateFr(e.date)}, de ${esc(e.heureDebut || '')} à ${esc(e.heureFin || '')}, l'épreuve hydraulique du réseau « ${esc(e.reseau)} » du chantier ${esc(a.code || '')} sous une pression de ${bar(e.pressionEpreuve)} (${esc((e.fluideEssai || 'eau').toLowerCase())}), avec le résultat indiqué ci-dessus.</p>
-    ${(e.photos || []).length ? `<div class="doc-photos">${e.photos.map((p, i) => `<figure><img src="${fileUrl(p)}" alt="Photo ${i + 1}"><figcaption>Photo ${i + 1}</figcaption></figure>`).join('')}</div>` : ''}
-    <div class="signatures signed">
-      <div>Le technicien<br><strong>${esc(tech)}</strong>${e.signatureTechId ? `<img src="${fileUrl(e.signatureTechId)}" alt="Signature du technicien">` : ''}</div>
-      <div>Pour le client${e.signataireNom ? `<br><strong>${esc(e.signataireNom)}</strong>${e.signataireQualite ? `, ${esc(e.signataireQualite)}` : ''}` : ''}${e.signatureClientId ? `<img src="${fileUrl(e.signatureClientId)}" alt="Signature du client">` : '<br><span class="small">(non signé)</span>'}</div>
-    </div>
-    ${e.signeLe ? `<p class="muted small">Signé sur écran le ${new Date(e.signeLe).toLocaleString('fr-FR')}.</p>` : ''}
+    ${corps(r, ctxEssai(r))}
     <div class="doc-pied">${esc(Doc.piedLegal())}</div>`;
 }
+const epreuveDocument = e => documentEssai('PROCÈS-VERBAL D\'ÉPREUVE HYDRAULIQUE', e, EssaisDoc.epreuve);
 
 // Fiche chantier : épreuves des réseaux
 function epreuvesChantierHtml(a) {
@@ -206,10 +189,12 @@ function epreuvesChantierHtml(a) {
       <td class="num">${e.chute !== undefined && e.chute !== null && e.chute !== '' ? `${fmt(num(e.chute), 2)} bar` : ''}</td><td>${esc(userName(e.userId))}</td><td>${e.statut === 'Signé' ? `<span class="badge ${e.resultat === 'Conforme' ? 'b-ok' : 'b-bad'}">${esc(e.resultat)}</span>` : '<span class="badge b-warn">Brouillon</span>'}</td></tr>`).join('')}</table></div>`
   : '<p class="muted">Aucune épreuve. Le technicien la saisit sur place (Pointage › Rapports › PV d\'épreuve) ou depuis ici.</p>'}`;
 }
-// Téléphone du compagnon (onglet Rapports) : bouton et derniers PV
+// Téléphone du compagnon (onglet Rapports) : PV d'essais et derniers PV
 function epreuvesCompagnonHtml(u, affaireId) {
-  const l = Store.all('epreuves').filter(e => e.userId === u.id).sort((a, b) => `${b.date}${b.heureDebut}`.localeCompare(`${a.date}${a.heureDebut}`)).slice(0, 8);
-  return `<a class="btn secondary big" href="#/epreuve/new?chantier=${esc(affaireId || '')}" style="display:block;text-align:center;margin-bottom:12px">🧪 PV d'épreuve hydraulique</a>
-    ${l.length ? `<ul class="mat-liste">${l.map(e => `<li class="clickable" data-go="#/epreuve/${esc(e.id)}"><span><strong>${esc(e.reseau)}</strong><br><span class="small">${esc(affaireOf(e.affaireId).code || '')} · ${dateFr(e.date)} · ${e.pressionEpreuve ? `${fmt(num(e.pressionEpreuve), 1)} bar` : ''}</span></span>
-      <span>${e.statut === 'Signé' ? `<span class="badge ${e.resultat === 'Conforme' ? 'b-ok' : 'b-bad'}">${esc(e.resultat)}</span>` : '<span class="badge b-warn">Brouillon</span>'}</span></li>`).join('')}</ul>` : ''}`;
+  const q = `?chantier=${esc(affaireId || '')}`, badgeR = r => (r.statut === 'Signé' ? `<span class="badge ${/^(Conforme|Mis en service)$/.test(r.resultat || '') ? 'b-ok' : 'b-bad'}">${esc(r.resultat || '')}</span>` : '<span class="badge b-warn">Brouillon</span>');
+  const l = [...Store.all('epreuves').map(r => ['epreuve', r, r.reseau, r.pressionEpreuve ? `${fmt(num(r.pressionEpreuve), 1)} bar` : '']), ...Store.all('misesEnService').map(r => ['mes', r, r.equipement, 'mise en service']),
+    ...Store.all('equilibrages').map(r => ['equilibrage', r, r.installation, 'équilibrage'])].filter(x => x[1].userId === u.id)
+    .sort((x, y) => `${y[1].date}${y[1].heureDebut || y[1].heure || ''}`.localeCompare(`${x[1].date}${x[1].heureDebut || x[1].heure || ''}`)).slice(0, 8);
+  return `<div class="essais-boutons"><a class="btn secondary" href="#/epreuve/new${q}">🧪 PV d'épreuve</a><a class="btn secondary" href="#/mes/new${q}">⚙️ Mise en service</a><a class="btn secondary" href="#/equilibrage/new${q}">🌬️ Équilibrage</a></div>
+    ${l.length ? `<ul class="mat-liste">${l.map(([k, r, nom, sub]) => `<li class="clickable" data-go="#/${k}/${esc(r.id)}"><span><strong>${esc(nom || '')}</strong><br><span class="small">${esc(affaireOf(r.affaireId).code || '')} · ${dateFr(r.date)} · ${esc(sub)}</span></span><span>${badgeR(r)}</span></li>`).join('')}</ul>` : ''}`;
 }
