@@ -116,5 +116,7 @@ test('réception par la plateforme, import, dossiers de dépôt', async () => {
   assert.strictEqual(em.status, 200);
   assert.deepStrictEqual(fs.readdirSync(outbox).sort(), ['Facture-FA-2026-0001.pdf', 'Facture-FA-2026-0001.xml']);
   assert.strictEqual((await call('POST', '/api/efacture/emettre', { nom: 'x', xml: 'pas du xml' }, claire)).status, 400);
-  assert.deepStrictEqual((await call('GET', '/api/efacture/etat', null, claire)).body, { plateforme: 'Plateforme test', entree: true, sortie: true, webhook: true });
+  const etat = (await call('GET', '/api/efacture/etat', null, claire)).body;
+  assert.deepStrictEqual({ ...etat, mail: undefined }, { plateforme: 'Plateforme test', entree: true, sortie: true, webhook: true, mail: undefined });
+  assert.strictEqual(etat.mail.actif, false);
 });

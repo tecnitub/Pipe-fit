@@ -7,7 +7,7 @@ function achatsTabs(actif) {
   const aVentiler = Store.all('achats').filter(f => Calc.achat(f).reste > 0.005 && !f.fraisGeneraux).length;
   return `<div class="tabs"><a href="#/consultations" class="${actif === 'consultations' ? 'active' : ''}">Consultations ${consultationsTab() ? `<span class="count">${consultationsTab()} en cours</span>` : ''}</a><a href="#/commandes" class="${actif === 'commandes' ? 'active' : ''}">Commandes</a>
     <a href="#/achats" class="${actif === 'achats' ? 'active' : ''}">Factures fournisseurs ${aVentiler ? `<span class="count">${aVentiler} à ventiler</span>` : ''}</a>
-    <a href="#/efactures" class="${actif === 'efactures' ? 'active' : ''}">Factures électroniques ${(() => { const n = Store.all('efactures').filter(e => e.statut === 'Reçue').length; return n ? `<span class="count">${n} à traiter</span>` : ''; })()}</a>
+    <a href="#/efactures" class="${actif === 'efactures' ? 'active' : ''}">Factures reçues ${(() => { const n = Store.all('efactures').filter(e => e.statut === 'Reçue').length; return n ? `<span class="count">${n} à traiter</span>` : ''; })()}</a>
     <a href="#/comptoir" class="${actif === 'comptoir' ? 'active' : ''}">Comptoir ${(() => { const n = Store.all('enlevements').filter(e => e.statut === 'Déclaré').length; return n ? `<span class="count">${n}</span>` : ''; })()}</a>
     <a href="#/prixAchats" class="${actif === 'prix' ? 'active' : ''}">Historique des prix</a></div>`;
 }

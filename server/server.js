@@ -7,6 +7,7 @@ const DB = require('./db');
 const { demoData, uid } = require('./demo');
 const M365 = require('./m365');
 const EF = require('./efacture');
+const MAILF = require('./mail-factures');
 const DossierDocuments = require('./dossier-documents');
 const AgendaSync = require('./agenda');
 const HS = require('./http-securite');
@@ -640,10 +641,26 @@ async function api(req, res, url) {
   }
 
   // Facturation électronique (bureaux) : état, import manuel, relève du dossier, dépôt d'une facture émise
-  if (p[0] === 'efacture' && ['etat', 'import', 'emettre', 'scruter'].includes(p[1])) {
+  if (p[0] === 'efacture' && ['etat', 'import', 'emettre', 'scruter', 'mail', 'prevenir'].includes(p[1])) {
     if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Droits insuffisants');
-    const c = EF.config(DB, db);
-    if (p[1] === 'etat' && method === 'GET') return send(res, 200, { plateforme: c.plateforme || '', entree: !!c.dossierEntree, sortie: !!c.dossierSortie, webhook: !!c.webhook });
+    const c = EF.config(DB, db), mc = MAILF.config(DB, db);
+    if (p[1] === 'etat' && method === 'GET') return send(res, 200, { plateforme: c.plateforme || '', entree: !!c.dossierEntree, sortie: !!c.dossierSortie, webhook: !!c.webhook,
+      mail: { actif: mc.actif && !!mc.adresse, adresse: mc.adresse, m365: m365Pret(), dernier: MAILF.etat.dernier, erreur: MAILF.etat.erreur, resultat: MAILF.etat.resultat } });
+    // Relève immédiate de la boîte des factures
+    if (p[1] === 'mail' && method === 'POST') {
+      if (!mc.actif || !mc.adresse) return fail(res, 400, 'Aucune boîte aux lettres de factures n\'est configurée.');
+      try { return send(res, 200, await MAILF.relever(DB, db, broadcast)); } catch (e) { return fail(res, 502, e.message); }
+    }
+    // Refus d'une facture reçue par e-mail : le fournisseur est prévenu à l'adresse qui l'a envoyée
+    if (p[1] === 'prevenir' && method === 'POST') {
+      const b = await readBody(req), x = DB.getRecord(db, 'efactures', String(b.id || ''));
+      if (!x) return fail(res, 404, 'Facture introuvable');
+      const motif = String(b.motif || '').trim().slice(0, 500);
+      if (!motif) return fail(res, 400, 'Motif du refus requis');
+      try { await MAILF.prevenirRefus(DB, db, x, motif, (DB.getSettings(db) || {}).societe || ''); } catch (e) { return fail(res, 502, e.message); }
+      DB.audit(db, acc.login, 'refus de facture envoyé au fournisseur', 'efactures', x.id, `${x.mail.deEmail} : ${motif}`);
+      return send(res, 200, { ok: true, a: x.mail.deEmail });
+    }
     if (p[1] === 'import' && method === 'POST') {
       const b = await readBody(req);
       try { const r = await EF.recevoir(DB, db, Buffer.from(String(b.base64 || ''), 'base64'), String(b.nom || 'import'), acc.login, broadcast); return send(res, 200, { ...r.record, doublon: !!r.doublon }); }
@@ -693,11 +710,17 @@ async function api(req, res, url) {
     if (method === 'PUT') {
       const b = await readBody(req), champ = v => String(v || '').trim().slice(0, 300);
       Object.assign(c, { plateforme: champ(b.plateforme), dossierEntree: champ(b.dossierEntree), dossierSortie: champ(b.dossierSortie), webhook: !!b.webhook });
+      if (b.mail) {
+        const adresse = String(b.mail.adresse || '').trim().toLowerCase().slice(0, 200);
+        if (adresse && !EMAIL.test(adresse)) return fail(res, 400, 'Adresse de la boîte des factures invalide');
+        if (b.mail.actif && !adresse) return fail(res, 400, 'Indiquez l\'adresse de la boîte des factures.');
+        c.mail = { actif: !!b.mail.actif, adresse, dossier: champ(b.mail.dossier).replace(/[\\/]/g, '-').slice(0, 80) || 'Factures traitées' };
+      }
       if (b.nouveauJeton || (c.webhook && !c.jeton)) c.jeton = crypto.randomBytes(24).toString('hex');
       DB.setConfig(db, 'efacture', c);
       DB.audit(db, acc.login, 'configuration facturation électronique');
     }
-    return send(res, 200, { plateforme: c.plateforme || '', dossierEntree: c.dossierEntree || '', dossierSortie: c.dossierSortie || '', webhook: !!c.webhook, jeton: c.webhook ? c.jeton : '' });
+    return send(res, 200, { plateforme: c.plateforme || '', dossierEntree: c.dossierEntree || '', dossierSortie: c.dossierSortie || '', webhook: !!c.webhook, jeton: c.webhook ? c.jeton : '', mail: MAILF.config(DB, db), m365: m365Pret() });
   }
 
   // Numérotation des factures, avoirs et situations : état et reprise d'une numérotation existante
@@ -863,6 +886,7 @@ const server = SERVEUR.server;
 if (require.main === module) {
   // Relève du dossier de réception des factures électroniques toutes les 2 minutes
   setInterval(() => EF.scruterDossier(DB, db, broadcast).catch(e => console.error('Facturation électronique :', e.message)), 120000).unref();
+  setInterval(() => MAILF.relever(DB, db, broadcast).catch(e => console.error('Boîte des factures :', e.message)), 120000).unref();
   // Échéances des habilitations, visites médicales et contrôles du parc : peu après le démarrage, puis toutes les 6 heures
   const verifierEcheances = () => NOTIFS.echeances().catch(e => console.error('Échéances :', e.message));
   setTimeout(verifierEcheances, 30000).unref();

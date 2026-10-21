@@ -125,13 +125,35 @@ recommandé de la limiter aux boîtes des utilisateurs du CRM par une *stratégi
 joindre `login.microsoftonline.com` et `graph.microsoft.com` en HTTPS. Sans Microsoft 365, l'envoi prépare un
 brouillon Outlook (.eml) avec le PDF joint : une fois envoyé depuis Outlook, il apparaît aussi dans les éléments envoyés.
 
-## Facturation électronique (plateforme agréée)
+## Factures fournisseurs reçues : plateforme agréée et boîte e-mail
 
-Dans **Achats → Factures électroniques → Configuration** (administrateur) :
+Toutes les factures des fournisseurs arrivent dans **Achats → Factures reçues** : factures électroniques de la
+plateforme agréée (Factur-X, CII, UBL) et factures PDF envoyées par e-mail à une adresse dédiée. Chaque PDF est lu
+dès son arrivée (texte, ou reconnaissance du scan) : fournisseur (SIRET / TVA, sinon adresse de l'expéditeur), n°,
+date, échéance, totaux HT / TVA / TTC, IBAN, commande (CF-…) ou chantier (CH-… / HD-…) cité, lignes d'articles. Les
+champs restent modifiables. La même facture reçue deux fois (par e-mail et par la plateforme, ou déjà saisie) est
+signalée « doublon ? ». Ensuite :
+
+- **Accepter** : la facture fournisseur est créée avec le PDF, rapprochée de la commande citée (ou imputée au chantier
+  cité, sinon « à ventiler ») ; le contrôle prix / quantités de la commande s'y fait comme d'habitude.
+- **Refuser** : motif obligatoire (liste de motifs courants). Facture reçue par e-mail : le fournisseur peut être
+  prévenu automatiquement, depuis la boîte des factures, avec le motif. Facture de la plateforme : signaler le refus
+  sur la plateforme, qui en informe le fournisseur.
+
+**Boîte des factures** (administrateur, **Achats → Factures reçues → Configuration**) : adresse Microsoft 365
+dédiée (ex. `factures@votre-domaine.fr`), relevée toutes les 2 minutes (bouton « Relever » pour le faire tout de
+suite). Chaque pièce jointe PDF ou XML devient une facture à traiter ; l'e-mail est marqué lu et rangé dans un
+sous-dossier (« Factures traitées » par défaut). Un e-mail dont une pièce n'a pas pu être lue reste non lu dans la
+boîte de réception. Prérequis : la connexion Microsoft 365 de **Paramètres → E-mails**, avec en plus l'autorisation
+d'application **`Mail.ReadWrite`** (consentement administrateur) ; limitez-la à cette boîte par une stratégie d'accès
+d'application Exchange. Autre messagerie : une règle de transfert vers une boîte Microsoft 365, ou un outil qui enregistre
+les pièces jointes dans le dossier de réception ci-dessous (les PDF simples y sont acceptés aussi).
+
+### Plateforme agréée
 
 - **Dossier de réception** : dossier du serveur où la plateforme (ou son outil de synchronisation : SFTP, OneDrive,
-  connecteur fourni par la plateforme) dépose les factures reçues (.xml ou .pdf Factur-X). Les fichiers traités sont
-  rangés dans `traites`, ceux qui ne sont pas des factures électroniques dans `erreurs` (avec la raison).
+  connecteur fourni par la plateforme) dépose les factures reçues (.xml, .pdf Factur-X ou PDF simple). Les fichiers
+  traités sont rangés dans `traites`, ceux qui ne sont pas lisibles dans `erreurs` (avec la raison).
 - **Adresse de dépôt sécurisée** : URL à jeton (`/api/efacture/depot/<jeton>`) à laquelle la plateforme envoie
   directement chaque facture (corps XML ou PDF, ou JSON `{ nom, base64 }`). Le serveur doit alors être joignable
   par la plateforme (reverse proxy HTTPS). Le jeton se change en un clic.
@@ -464,6 +486,7 @@ server/efacture.js réception (dossier, adresse de dépôt) et dépôt des factu
 server/api.js      clés d'API, webhooks sortants, description OpenAPI
 server/dossier-documents.js  répertoire des documents synchronisé avec l'appli
 server/agenda.js   planning dans Outlook (Microsoft Graph) et lien iCal
+server/mail-factures.js  boîte e-mail des factures fournisseurs (Microsoft Graph)
 public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
 public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js, securite-ui.js, produits.js, dossier-documents.js, fluides-ui.js, rapprochement-ui.js, agenda-ui.js, hors-ligne.js, offres-pdf.js, comptoir.js, prix-achats.js : écrans métier

@@ -2,7 +2,7 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v33';
+  const KEY = 'pipefit-crm-demo-v34';
   const ME_KEY = 'pipefit-crm-demo-me';
   const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications', 'habilitations', 'materiels', 'missions', 'produits', 'equipementsFrigo', 'fichesFluides', 'bouteilles', 'enlevements'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4], fichesFluides: ['numero', 'FI', 4] };
@@ -157,18 +157,34 @@
     // Facturation électronique : pas de serveur dans la démonstration, l'import manuel est traité dans le navigateur
     if (p[0] === 'efacture') {
       db.efconfig = db.efconfig || { plateforme: '', dossierEntree: '', dossierSortie: '', webhook: false };
-      if (p[1] === 'etat') return [200, { plateforme: db.efconfig.plateforme, entree: false, sortie: false, webhook: false }];
+      if (p[1] === 'etat') return [200, { plateforme: db.efconfig.plateforme, entree: false, sortie: false, webhook: false, mail: { actif: false, adresse: '', m365: false } }];
+      if (p[1] === 'mail') return [400, { error: 'Démonstration : la boîte des factures est relevée sur l\'installation serveur (Microsoft 365). Essayez « Recevoir un e-mail de facture d\'exemple ».' }];
+      if (p[1] === 'prevenir') return [400, { error: 'Démonstration : pas d\'envoi d\'e-mail.' }];
       if (p[1] === 'scruter') return [200, { traites: 0, erreur: 'Démonstration : le dossier de la plateforme est relevé sur l\'installation serveur.' }];
       if (p[1] === 'emettre') return [400, { error: 'Démonstration : le dépôt vers la plateforme se fait sur l\'installation serveur. Téléchargez le XML ou le PDF Factur-X.' }];
       if (p[1] === 'config') {
         if (acc.role !== 'admin') return [403, { error: 'Réservé aux administrateurs' }];
         if (method === 'PUT') { Object.assign(db.efconfig, { plateforme: body.plateforme || '', dossierEntree: body.dossierEntree || '', dossierSortie: body.dossierSortie || '', webhook: !!body.webhook }); save(); }
-        return [200, { ...db.efconfig, jeton: db.efconfig.webhook ? 'demo-jeton-non-fonctionnel' : '' }];
+        if (method === 'PUT' && body.mail) db.efconfig.mail = { actif: !!body.mail.actif, adresse: String(body.mail.adresse || ''), dossier: String(body.mail.dossier || 'Factures traitées') };
+        return [200, { ...db.efconfig, jeton: db.efconfig.webhook ? 'demo-jeton-non-fonctionnel' : '', mail: db.efconfig.mail || { actif: false, adresse: '', dossier: 'Factures traitées' }, m365: false }];
       }
       if (p[1] === 'import') return (async () => {
         try {
           const bin = atob(body.base64 || ''), bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
           const inflate = async b => new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer());
+          // PDF simple (reçu par e-mail) : enregistré « à lire » ; e-mail simulé par la démonstration
+          const simple = bytes[0] === 0x25 && bytes[1] === 0x50 && !(await FacturX.xmlDuPDF(bytes, inflate).catch(() => ''));
+          const mail = body.mail ? { de: String(body.mail.de || ''), deEmail: String(body.mail.deEmail || ''), objet: String(body.mail.objet || ''), recuLe: body.mail.recuLe || new Date().toISOString() } : null;
+          if (simple) {
+            const cle = `pdf|${body.base64.length}|${body.base64.slice(-64)}`, ex = db.efactures.find(r => r.cle === cle);
+            if (ex) return [200, { ...ex, doublon: true }];
+            const id = 'ef' + DemoSeed.uid(), pdfId = 'f' + DemoSeed.uid();
+            db.files[pdfId] = 'data:application/pdf;base64,' + body.base64;
+            const rec = { id, cle, statut: 'Reçue', recueLe: new Date().toISOString(), origine: mail ? 'e-mail' : acc.login, nomFichier: body.nom || '', format: 'PDF', type: 'facture', numero: '', date: '', echeance: '',
+              vendeur: { nom: mail ? mail.de : '', email: mail ? mail.deEmail : '' }, lignes: [], notes: [], totalHT: 0, totalTVA: 0, totalTTC: 0, xmlId: '', pdfId, aLire: true, ...(mail ? { mail } : {}), _v: 1, _at: new Date().toISOString(), _by: acc.nom };
+            db.efactures.push(rec); save();
+            return [200, JSON.parse(JSON.stringify(rec))];
+          }
           const { facture, xml, pdf } = await FacturX.lireFichier(bytes, inflate);
           const cle = `${facture.vendeur.siren || facture.vendeur.tva || facture.vendeur.nom}|${facture.numero}`;
           const ex = db.efactures.find(r => r.cle === cle);

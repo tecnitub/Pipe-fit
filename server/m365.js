@@ -58,4 +58,20 @@ async function evenement(cfg, boite, methode, id, corps) {
   throw err;
 }
 
-module.exports = { jeton, envoyer, evenement, oublier: () => jetons.clear() };
+// Appel Graph générique sur une boîte aux lettres (relève des factures reçues par e-mail).
+// Prérequis : autorisation d'application Mail.ReadWrite (consentement administrateur).
+async function boite(cfg, adresse, methode, chemin, corps) {
+  const token = await jeton(cfg);
+  const res = await fetch(`${GRAPH()}/v1.0/users/${encodeURIComponent(adresse)}${chemin}`, { method: methode, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: corps ? JSON.stringify(corps) : undefined })
+    .catch(e => { throw new Error(`Microsoft 365 injoignable (${e.message}).`); });
+  if (res.status === 204) return {};
+  const r = await res.json().catch(() => ({}));
+  if (res.ok) return r;
+  const detail = (r.error && r.error.message) || res.status;
+  const err = new Error(res.status === 401 || res.status === 403 ? `Boîte ${adresse} refusée : l'application doit avoir l'autorisation Mail.ReadWrite (consentement administrateur). (${detail})`
+    : res.status === 404 ? `Boîte aux lettres ${adresse} introuvable dans Microsoft 365. (${detail})` : `Microsoft 365 : ${detail}`);
+  err.status = res.status;
+  throw err;
+}
+
+module.exports = { jeton, envoyer, evenement, boite, oublier: () => jetons.clear() };
