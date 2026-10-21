@@ -346,6 +346,24 @@ frigoriste avec la signature du client, numérotées (FI-AAAA-0001), figées une
 dedans = départ + récupérations − charges). Bilan annuel par fluide (Excel, PDF) pour la déclaration à l'organisme agréé.
 Recharge en HCFC refusée. Les valeurs proposées sont à vérifier par l'opérateur : la fiche signée fait foi.
 
+## Offres fournisseurs : lecture des PDF et meilleure proposition
+
+**Consultation** (Achats → Consultations) : « Importer l'offre (PDF, Excel) » sur la ligne d'un fournisseur lit son devis
+PDF (ou une photo, ou un PDF scanné) sur l'appareil, sans rien envoyer à l'extérieur (pdf.js dans `public/vendor/pdfjs`,
+OCR pour les scans) : lignes d'articles retrouvées en vérifiant quantité × prix (− remise) = montant, référence
+fournisseur, prix net, remise, désignation sur plusieurs lignes, port, total HT (contrôle de cohérence), validité et délai.
+Chaque ligne est rattachée à la fourniture demandée (même référence, sinon désignation la plus proche, sans confondre les
+diamètres) ; tout est vérifiable et corrigeable avant l'enregistrement, les valeurs déduites d'un scan sont signalées.
+**Meilleure proposition** : toutes les solutions sont chiffrées port compris (tout chez un fournisseur, partagé entre deux,
+ligne par ligne) ; sont écartées celles qui livrent après la date souhaitée ou dont la validité est dépassée ; à moins de
+2 % (ou 150 €) d'écart, la solution avec le moins de fournisseurs est préférée (moins de commandes, de ports et de
+réceptions). « Retenir cette proposition » puis « Créer les commandes » : lignes avec la référence du fournisseur, devis
+joint, « Suivant votre devis n° … » sur le bon de commande.
+
+**Commande** : « Charger le devis du fournisseur » remplit la commande depuis le PDF (référence, désignation, quantité,
+unité, prix net, port) ; les lignes déjà présentes sont mises à jour, l'article de la bibliothèque est retrouvé, son prix
+d'achat et la référence du fournisseur peuvent être mis à jour.
+
 ## Rapprochement des factures fournisseurs
 
 Sur la commande : **Réceptionner une livraison** (quantités reçues par ligne, n° de BL, photo, remarque), statut
@@ -421,7 +439,7 @@ server/dossier-documents.js  répertoire des documents synchronisé avec l'appli
 server/agenda.js   planning dans Outlook (Microsoft Graph) et lien iCal
 public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
-public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js, securite-ui.js, produits.js, dossier-documents.js, fluides-ui.js, rapprochement-ui.js, agenda-ui.js, hors-ligne.js : écrans métier
+public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js, securite-ui.js, produits.js, dossier-documents.js, fluides-ui.js, rapprochement-ui.js, agenda-ui.js, hors-ligne.js, offres-pdf.js : écrans métier
 doe/               application DOE séparée (serveur, interface, génération du dossier PDF)
 installer/         installateur Windows (NSIS) : build.sh, PipeFitCRM.nsi, lanceur et service
 ```

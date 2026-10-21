@@ -79,13 +79,15 @@ function commandeEditor(id) {
   <h2 class="no-print">Lignes</h2>
   <div class="table-wrap no-print"><table>
     <tr><th>Désignation</th><th class="num">Qté</th><th>Unité</th><th class="num">PU achat HT</th><th class="num">Total HT</th><th></th></tr>
-    ${(c.lignes || []).map((l, i) => `<tr><td><input data-i="${i}" data-k="designation" value="${esc(l.designation)}" aria-label="Désignation"></td>
+    ${(c.lignes || []).map((l, i) => `<tr><td><input data-i="${i}" data-k="designation" value="${esc(l.designation)}" aria-label="Désignation">${l.refFournisseur ? `<span class="small muted">réf. fournisseur ${esc(l.refFournisseur)}</span>` : ''}</td>
       <td class="num"><input data-i="${i}" data-k="qte" type="number" step="any" value="${esc(l.qte)}" style="width:90px" aria-label="Quantité"></td><td>${esc(l.unite)}</td>
       <td class="num"><input data-i="${i}" data-k="pu" type="number" step="0.01" value="${esc(l.pu)}" style="width:100px" aria-label="Prix unitaire"></td>
       <td class="num">${eur(num(l.qte) * num(l.pu))}</td><td><button class="small danger" data-del="${i}" aria-label="Retirer">✕</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Aucune ligne.</td></tr>'}
     <tr class="subtotal"><td colspan="4">Total HT</td><td class="num">${eur(total)}</td><td></td></tr>
   </table></div>
-  <div class="toolbar no-print" style="margin-top:8px">${articleSelect('c-art')}<input id="c-art-q" type="number" step="any" value="1" style="width:90px" aria-label="Quantité"><button class="secondary" id="c-add">Ajouter</button><button class="secondary" id="c-free">Ligne libre</button><button class="secondary" id="c-dicter">🎤 Dicter du matériel</button></div>
+  <div class="toolbar no-print" style="margin-top:8px">${articleSelect('c-art')}<input id="c-art-q" type="number" step="any" value="1" style="width:90px" aria-label="Quantité"><button class="secondary" id="c-add">Ajouter</button><button class="secondary" id="c-free">Ligne libre</button><button class="secondary" id="c-dicter">🎤 Dicter du matériel</button>
+    <label class="btn" title="Lit les lignes du devis du fournisseur : référence, désignation, quantité, prix unitaire">📄 Charger le devis du fournisseur<input type="file" id="c-devis" accept=".pdf,image/*" hidden></label>
+    ${c.devisFournisseurId ? `<a class="btn secondary small" href="${fileUrl(c.devisFournisseurId)}" target="_blank" rel="noopener">Devis ${esc(c.devisFournisseurRef || c.devisFournisseurNom || 'fournisseur')}</a>` : ''}</div>
 
   <details class="no-print preview"><summary>Aperçu du bon de commande</summary><div class="doc-print">${commandeDocument(c)}</div></details>
   <div class="print-only doc-print">${commandeDocument(c)}</div>`;
@@ -129,6 +131,7 @@ Views.commandes.bind = (root, params, query) => {
     choix.forEach(m => { const a = m.articleId && Store.get('articles', m.articleId); c.lignes.push(a ? ligne(a, m.qte) : { articleId: '', designation: m.designation, unite: m.unite, qte: m.qte, pu: 0 }); if (a && !c.fournisseurId && a.fournisseurId) c.fournisseurId = a.fournisseurId; });
     if (choix.length) save();
   };
+  root.querySelector('#c-devis').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) chargerDevisFournisseur(c, f); };
   root.querySelector('#c-free').onclick = () => { c.lignes.push({ designation: 'Fourniture', unite: 'u', qte: 1, pu: 0 }); save(); };
   const rep = root.querySelector('#reprendre');
   if (rep) rep.onclick = () => {
@@ -148,9 +151,9 @@ function commandeDocument(c, type = 'commande') {
   return `${Doc.entete(type, `${o.titre} ${type === 'commande' ? c.numero || '' : ''}`, `${type === 'commande' ? '' : `Référence ${esc(c.numero || '')}<br>`}Date : ${dateFr(type === 'commande' ? c.date : isoDate(new Date()))}${af.code && o.chantier ? `<br>Chantier : ${esc(af.code)} – ${esc(af.nom)}` : ''}${c.dateLivraison && o.livraison ? `<br>Livraison souhaitée : ${dateFr(c.dateLivraison)}` : ''}`)}
     <div class="doc-parties"><div><strong>${esc(f.nom || '—')}</strong>${fSite ? `<br>${esc(fullAddress(fSite))}` : ''}${f.email ? `<br>${esc(f.email)}` : ''}</div>
     <div>${!o.livraison ? '' : livSite ? `Livraison : <strong>${esc(clientName(af.clientId))} – ${esc(livSite.libelle)}</strong><br>${esc(fullAddress(livSite))}${livSite.acces ? `<br>${esc(livSite.acces)}` : ''}` : `Livraison à notre atelier : ${esc(s.adresse)}`}</div></div>
-    ${Doc.intro(type)}
-    <div class="table-wrap"><table class="doc-lines${o.prix ? '' : ' compact'}"><tr><th>Désignation</th><th class="num">Qté</th><th>Unité</th>${o.prix ? '<th class="num">PU HT</th><th class="num">Total HT</th>' : ''}</tr>
-    ${(c.lignes || []).map(l => `<tr><td>${esc(l.designation)}</td><td class="num">${fmt(l.qte, 2)}</td><td>${esc(l.unite)}</td>${o.prix ? `<td class="num">${eur(l.pu)}</td><td class="num">${eur(num(l.qte) * num(l.pu))}</td>` : ''}</tr>`).join('')}
+    ${Doc.intro(type)}${type === 'commande' && c.devisFournisseurRef ? `<p class="doc-objet">Suivant votre devis n° ${esc(c.devisFournisseurRef)}</p>` : ''}
+    <div class="table-wrap"><table class="doc-lines${o.prix ? '' : ' compact'}"><tr>${(c.lignes || []).some(l => l.refFournisseur) ? '<th>Votre réf.</th>' : ''}<th>Désignation</th><th class="num">Qté</th><th>Unité</th>${o.prix ? '<th class="num">PU HT</th><th class="num">Total HT</th>' : ''}</tr>
+    ${(c.lignes || []).map(l => `<tr>${(c.lignes || []).some(x => x.refFournisseur) ? `<td>${esc(l.refFournisseur || '')}</td>` : ''}<td>${esc(l.designation)}</td><td class="num">${fmt(l.qte, 2)}</td><td>${esc(l.unite)}</td>${o.prix ? `<td class="num">${eur(l.pu)}</td><td class="num">${eur(num(l.qte) * num(l.pu))}</td>` : ''}</tr>`).join('')}
     </table></div>${o.prix ? `<table class="totals"><tr class="grand"><td>Total HT</td><td class="num">${eur(total)}</td></tr></table>` : ''}
     ${Doc.pied(type)}`;
 }

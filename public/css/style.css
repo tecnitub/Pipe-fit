@@ -841,3 +841,11 @@ fieldset.mi-titre[hidden] { display: none; }
 /* Hors connexion */
 .hors-ligne { background: #fff3cd; color: #5c4400; border: 1px solid #e0c060; border-radius: 999px; padding: 3px 10px; font-weight: 600; }
 .hors-ligne.off { background: #3b3b3b; color: #fff; border-color: #3b3b3b; }
+
+/* Offres fournisseurs en PDF */
+.lo-table input:not([type]), .lo-table select { min-width: 0; width: 100%; }
+.lo-table tr.lo-manque td { background: color-mix(in srgb, #c98a00 8%, transparent); }
+.lo-texte { max-height: 220px; overflow: auto; white-space: pre-wrap; font-size: 11px; background: var(--panel-alt); padding: 8px; border-radius: 6px; }
+.proposition { border-left: 4px solid #2e7d32; }
+.proposition ul { margin: 6px 0; padding-left: 18px; }
+.lo-table tr.lo-verifier td { background: color-mix(in srgb, #c98a00 14%, transparent); }

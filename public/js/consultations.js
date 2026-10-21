@@ -75,18 +75,19 @@ function consultationEditeur(id) {
   ${ouverte ? `<div class="toolbar">${articleSelect('cs-art')}<input id="cs-q" type="number" step="any" value="1" style="width:80px" aria-label="Quantité"><button class="secondary" id="cs-add">Ajouter</button><button class="secondary" id="cs-libre">Ligne libre</button><button class="secondary" id="cs-dicter">🎤 Dicter</button>
     ${sources.length ? `<select id="cs-src" style="width:auto"><option value="">Reprendre…</option>${sources.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}</select>` : ''}</div>` : ''}
 
+  ${window.PIPEFIT_DEMO && fs.some(f => f.statut !== 'Offre reçue') ? '<p class="note small">Démonstration : <button class="linklike" id="cs-exemple">téléchargez le devis d\'exemple de Téréva (PDF)</button>, puis « Importer l\'offre (PDF, Excel) » sur la ligne de Téréva : les lignes, références, prix nets, port, délai et validité sont repris automatiquement.</p>' : ''}
   <h2>Fournisseurs consultés</h2>
   <div class="table-wrap"><table><tr><th>Fournisseur</th><th>Statut</th><th>Envoyée le</th><th class="num">Offre nette HT</th><th>Délai</th><th></th></tr>
     ${fs.map(f => { const o = totOffre(f.entrepriseId), off = f.offre || {}; const id = `${c.id}~${f.entrepriseId}`;
       return `<tr><td><strong>${esc(clientName(f.entrepriseId))}</strong>${off.remarques ? `<br><span class="muted small">${esc(off.remarques)}</span>` : ''}</td><td><select data-fstatut="${esc(f.entrepriseId)}" style="width:auto">${optionsStr(STATUTS_CONSULT_F, f.statut)}</select></td>
         <td>${dateFr(f.envoyeLe)}</td><td class="num">${o ? `${eur(o.t.net)}${o.t.complet ? '' : `<br><span class="warn-text small">${o.t.nb}/${lignes.length} lignes</span>`}` : ''}</td><td>${off.delai ? `${esc(off.delai)} j` : ''}</td>
         <td class="nowrap"><button class="small secondary" data-pdf="consultation|${esc(id)}">PDF</button><button class="small secondary" data-xls="${esc(f.entrepriseId)}">Excel</button>${['admin', 'charge'].includes(Store.me.role) ? `<button class="small" data-mail="consultation|${esc(id)}">✉ Envoyer</button>` : ''}
-          <button class="small secondary" data-offre="${esc(f.entrepriseId)}">${f.statut === 'Offre reçue' ? 'Modifier l\'offre' : 'Saisir l\'offre'}</button><label class="btn small secondary">Importer l'offre<input type="file" data-import="${esc(f.entrepriseId)}" accept=".xlsx,.csv" hidden></label>
+          <button class="small secondary" data-offre="${esc(f.entrepriseId)}">${f.statut === 'Offre reçue' ? 'Modifier l\'offre' : 'Saisir l\'offre'}</button><label class="btn small secondary" title="PDF ou photo du devis du fournisseur, ou tableau Excel complété">Importer l'offre (PDF, Excel)<input type="file" data-import="${esc(f.entrepriseId)}" accept=".pdf,.xlsx,.csv,image/*" hidden></label>
           ${off.pieceId ? `<a class="btn small secondary" href="${fileUrl(off.pieceId)}" target="_blank" rel="noopener">📄</a>` : ''}${ouverte && f.statut === 'À consulter' ? `<button class="small danger" data-fdel="${esc(f.entrepriseId)}" aria-label="Retirer">✕</button>` : ''}</td></tr>`; }).join('') || '<tr><td colspan="6" class="muted">Ajoutez les fournisseurs à consulter.</td></tr>'}</table></div>
   ${ouverte ? `<div class="toolbar"><select id="cs-four" style="width:auto"><option value="">+ Ajouter un fournisseur…</option>${fournisseursList().filter(e => !fs.some(f => f.entrepriseId === e.id)).map(e => `<option value="${e.id}">${esc(e.nom)}</option>`).join('')}</select>
     ${(() => { const hab = [...new Set(lignes.map(l => (Store.get('articles', l.articleId) || {}).fournisseurId).filter(x => x && !fs.some(f => f.entrepriseId === x)))]; return hab.length ? `<button class="secondary small" id="cs-hab">Ajouter les fournisseurs habituels (${hab.length})</button>` : ''; })()}</div>` : ''}
 
-  ${an.offres.length ? `<h2>Analyse des offres</h2>
+  ${an.offres.length ? `<h2>Analyse des offres</h2>${propositionHtml(c)}
   <div class="cards">
     ${an.classement[0] ? `<div class="card"><div class="label">Mieux-disant (offre complète)</div><div class="value" style="font-size:17px">${esc(clientName(an.classement[0].f.entrepriseId))}</div><div class="sub">${eur(an.classement[0].t.net)} HT${an.classement[1] ? ` · ${eur(an.classement[1].t.net - an.classement[0].t.net)} de moins que le 2e` : ''}</div></div>` : '<div class="card"><div class="label">Mieux-disant</div><div class="value" style="font-size:16px">—</div><div class="sub">aucune offre complète</div></div>'}
     <div class="card"><div class="label">Optimum ligne par ligne</div><div class="value">${eur(an.optimum)}</div><div class="sub">${an.fournisseursOpt.length} fournisseur(s), ports compris${an.classement[0] ? ` · gain ${eur(an.classement[0].t.net - an.optimum)}` : ''}</div></div>
@@ -231,6 +232,7 @@ Views.consultations.bind = (root, params, query) => {
   root.querySelectorAll('[data-import]').forEach(inp => inp.onchange = async e => {
     const file = e.target.files[0]; e.target.value = '';
     if (!file) return;
+    if (/\.pdf$/i.test(file.name) || /^image\//.test(file.type)) return importerOffrePdf(c, inp.dataset.import, file);
     try {
       const buf = await file.arrayBuffer(), sheets = /\.csv$/i.test(file.name) ? XLSX.readCSV(buf) : await XLSX.read(buf);
       const offre = lireOffreExcel(sheets[0], c), f = c.fournisseurs.find(x => x.entrepriseId === inp.dataset.import);
@@ -242,6 +244,8 @@ Views.consultations.bind = (root, params, query) => {
   const an = analyseOffres(c);
   on('#cs-tout', () => { const eid = an.classement[0].f.entrepriseId; c.attribution = Object.fromEntries(c.lignes.map((l, i) => [i, eid])); save(); });
   on('#cs-opt', () => { c.attribution = { ...an.parLigne }; save(); });
+  bindProposition(root, c, save);
+  on('#cs-exemple', () => PDF.telecharger(devisExempleHtml(), 'devis-tereva-exemple.pdf').catch(e => notify(e.message)));
   on('#cs-cmd', async () => {
     const parF = {};
     Object.entries(c.attribution || {}).forEach(([i, eid]) => { if (eid) (parF[eid] = parF[eid] || []).push(+i); });
@@ -249,10 +253,11 @@ Views.consultations.bind = (root, params, query) => {
     const maj = q('#cs-maj').checked;
     c.commandeIds = Object.entries(parF).map(([eid, idx]) => {
       const f = c.fournisseurs.find(x => x.entrepriseId === eid), t = offreTotaux(c, f);
-      const lignes = idx.map(i => { const l = c.lignes[i]; return { articleId: l.articleId || '', designation: l.designation, unite: l.unite, qte: num(l.qte), pu: Math.round(t.pu(i) * 100) / 100 }; });
+      const lignes = idx.map(i => { const l = c.lignes[i]; return { articleId: l.articleId || '', refFournisseur: ((f.offre || {}).refs || {})[i] || '', designation: l.designation, unite: l.unite, qte: num(l.qte), pu: Math.round(t.pu(i) * 100) / 100 }; });
       if (num(f.offre.port)) lignes.push({ articleId: '', designation: 'Frais de port', unite: 'forfait', qte: 1, pu: num(f.offre.port) });
       if (maj) lignes.forEach(l => { const a = Store.get('articles', l.articleId); if (a && l.pu && Math.abs(num(a.coutRevient) - l.pu) > 0.005) { a.coutRevient = l.pu; a.fournisseurId = eid; Store.upsert('articles', a); } });
-      return Store.upsert('commandes', { numero: '', fournisseurId: eid, affaireId: c.affaireId || '', date: isoDate(new Date()), dateLivraison: c.dateLivraison || '', statut: 'Brouillon', lignes, consultationId: c.id }).id;
+      return Store.upsert('commandes', { numero: '', fournisseurId: eid, affaireId: c.affaireId || '', date: isoDate(new Date()), dateLivraison: c.dateLivraison || '', statut: 'Brouillon', lignes, consultationId: c.id,
+        devisFournisseurId: (f.offre || {}).pieceId || '', devisFournisseurRef: (f.offre || {}).reference || '' }).id;
     });
     c.statut = 'Attribuée'; save();
     App.toast(`${c.commandeIds.length} commande(s) créée(s) en brouillon`, 4000);

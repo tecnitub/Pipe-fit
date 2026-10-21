@@ -35,6 +35,11 @@ fs.mkdirSync(ocrDir, { recursive: true });
 ['tesseract.min.js', 'worker.min.js', 'tesseract-core-simd-lstm.wasm.js'].forEach(f => fs.copyFileSync(path.join(root, 'public/vendor/tesseract', f), path.join(ocrDir, f)));
 fs.writeFileSync(path.join(ocrDir, 'fra-traineddata.js'), `window.OCR_MODELE_B64 = '${fs.readFileSync(path.join(root, 'public/vendor/tesseract/fra.traineddata.gz')).toString('base64')}';\n`);
 
+// Lecture des offres et devis fournisseurs (pdf.js) : publiés à côté de la page dans vendor/pdfjs/
+const pdfDir = path.join(path.dirname(out), 'vendor', 'pdfjs');
+fs.mkdirSync(pdfDir, { recursive: true });
+['pdf.min.js', 'pdf.worker.min.js'].forEach(f => fs.copyFileSync(path.join(root, 'public/vendor/pdfjs', f), path.join(pdfDir, f)));
+
 fs.mkdirSync(path.dirname(out), { recursive: true });
 fs.writeFileSync(out, withBackend);
 console.log(`Démo : ${out} (${Math.round(withBackend.length / 1024)} Ko)`);
