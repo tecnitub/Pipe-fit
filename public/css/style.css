@@ -871,3 +871,14 @@ fieldset.mi-titre[hidden] { display: none; }
 @media (max-width: 560px) { .mes-ctl { grid-template-columns: 1fr; } }
 .eq-table input, .eq-table select { min-width: 70px; padding: 4px 6px; }
 .eq-table input.num { width: 80px; text-align: right; }
+
+/* Tableau de bord du dirigeant et dérive des chantiers */
+.direction .tuiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.direction .tuile { display: block; color: inherit; text-decoration: none; }
+.direction .tuile .value { font-size: 24px; }
+.direction .tuile-alerte { border-color: var(--neg, #b42318); box-shadow: inset 4px 0 0 var(--neg, #b42318); }
+.direction .derive-l { display: block; color: var(--muted); margin-top: 2px; }
+@media (max-width: 560px) { .direction .tuiles { grid-template-columns: 1fr 1fr; } .direction .tuile .value { font-size: 18px; } .direction .tuile .sub { font-size: 11px; } }
+.derive-note ul { margin: 6px 0 0; padding-left: 18px; }
+.derive-note li { margin: 2px 0; }
+.derive-grave { border-left: 4px solid var(--neg, #b42318); }

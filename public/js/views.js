@@ -159,6 +159,7 @@ Views.chantier = params => {
     ${dAcc ? '<button id="situation">+ Situation de travaux</button>' : ''}
     ${a.archive ? '' : `<button class="secondary" data-archiver="affaires|${a.id}">Archiver</button>`}</div>
   <h1>${esc(affaireLabel(a))} ${badge(a.statut)} ${a.okFacturation ? '<span class="badge b-ok">Réceptionné · OK pour facturation</span>' : ''}</h1>${chantierOnglets(a, 'apercu')}${bandeauArchive(a, 'affaires')}
+  ${deriveChantierHtml(a, s)}
   <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${esc(a.clientId)}">${esc(clientName(a.clientId))}</a>` : '—'}
     ${a.contactId ? ` · Contact : ${esc(contactName(Store.get('contacts', a.contactId)))}` : ''}
     ${a.siteId ? ` · Site : ${esc(siteLabel(siteOf(a.clientId, a.siteId)))}` : ''}
@@ -556,6 +557,7 @@ Views.parametres = () => {
 
   ${numerotationCarte()}
 
+  ${reglagesDeriveCarte()}
   ${reglagesCompagnonCarte()}
   ${reglagesDossierCarte()}
 
@@ -659,6 +661,7 @@ Views.parametres.bind = root => {
   if (!Store.can('admin')) return;
   bindNumerotation(root);
   bindReglagesCompagnon(root);
+  bindReglagesDerive(root);
   bindReglagesDossier(root);
   const loadAccounts = () => api('GET', '/api/accounts').then(list => {
     const t = root.querySelector('#accounts');

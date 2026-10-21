@@ -8,6 +8,19 @@ const NotifPlanning = require('../public/js/notif-planning');
 const Compagnon = require('../public/js/compagnon');
 const Echeances = require('../public/js/echeances');
 const Fluides = require('../public/js/fluides');
+const Derive = require('../public/js/derive');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+// Calculs de chantier du navigateur (calc.js), exécutés à part sur une copie des données
+const CALC_SRC = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'calc.js'), 'utf8') + '\nthis.Calc = Calc;';
+function calcSur(tous, settings) {
+  const cache = {}, Store = { data: { settings }, all: c => cache[c] || (cache[c] = tous(c)), get: (c, id) => Store.all(c).find(x => x.id === id) };
+  const ctx = vm.createContext({ Store });
+  vm.runInContext(CALC_SRC, ctx);
+  return ctx.Calc;
+}
 
 const DELAI = () => Math.max(0, parseInt(process.env.NOTIF_DELAI_MS || '20000', 10));
 const CONSERVATION_JOURS = 60;
@@ -169,10 +182,47 @@ function creer({ DB, db, broadcast }) {
     return nouvelles.length;
   }
 
+  /* ---------- Dérive des chantiers : heures, achats, marge à terminaison ---------- */
+  // Chaque alerte part une fois par chantier, poste et niveau (attention, dépassement…) au chargé d'affaires du
+  // chantier (à défaut, aux administrateurs), dans la cloche et sur son téléphone.
+  async function derives() {
+    const settings = DB.getSettings(db), r = Derive.cfg(settings.derives);
+    if (!r.actif) return 0;
+    const lu = db.prepare("SELECT value FROM config WHERE key = 'alertes-derives'").get(), deja = lu ? JSON.parse(lu.value) : {};
+    const Calc = calcSur(tous, settings), parCharge = new Map();
+    tous('affaires').forEach(a => {
+      let l;
+      try { l = Derive.alertes(a, Calc.affaire(a), r); } catch (e) { console.error('Dérive', a.code, e.message); return; }
+      const nouvelles = l.filter(x => !deja[`${a.id}:${x.cle}:${x.niveau}`]);
+      if (!nouvelles.length) return;
+      nouvelles.forEach(x => { deja[`${a.id}:${x.cle}:${x.niveau}`] = aujourdhui(); });
+      const k = a.chargeId || '';
+      if (!parCharge.has(k)) parCharge.set(k, []);
+      parCharge.get(k).push({ a, l: nouvelles });
+    });
+    if (!parCharge.size) return 0;
+    purger();
+    const doc = settings.doc || {}, sujet = doc.email ? `mailto:${doc.email}` : undefined;
+    const admins = db.prepare("SELECT id, user_id FROM accounts WHERE role = 'admin'").all();
+    let n = 0;
+    for (const [chargeId, liste] of parCharge) {
+      const dest = chargeId && comptesDe(chargeId).length ? comptesDe(chargeId) : admins;
+      const grave = liste.some(x => x.l.some(y => y.niveau === 'depassement'));
+      const titre = liste.length === 1 ? `${grave ? '🔴' : '🟠'} Dérive du chantier ${liste[0].a.code || ''}` : `${grave ? '🔴' : '🟠'} ${liste.length} chantiers en dérive`;
+      const texte = liste.map(x => `${x.a.code || ''} ${x.a.nom || ''}\n${x.l.map(y => `– ${y.texte}`).join('\n')}`).join('\n');
+      const lien = liste.length === 1 ? `#/chantier/${liste[0].a.id}` : '#/direction';
+      [...new Set(dest.map(c => c.user_id).filter(Boolean))].forEach(uid => enregistrer({ type: 'derive', userId: uid, titre, texte, lien, date: new Date().toISOString(), lu: false }));
+      await Push.envoyer(DB, db, dest.map(c => c.id), { titre, texte, lien, tag: 'derive' }, sujet).catch(e => console.error('Notification :', e.message));
+      n += liste.length;
+    }
+    db.prepare("INSERT INTO config (key, value) VALUES ('alertes-derives', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(deja));
+    return n;
+  }
+
   // Pour les tests et l'arrêt du serveur : envoie tout de suite ce qui attend
   const vider = () => Promise.all([...attente.keys()].map(u => { clearTimeout(attente.get(u).timer); return envoyer(u); }));
 
-  return { planningModifie, documentsModifies, horsDevisOuvert, echeances, vider, enregistrer };
+  return { planningModifie, documentsModifies, horsDevisOuvert, echeances, derives, vider, enregistrer };
 }
 
 module.exports = { creer };

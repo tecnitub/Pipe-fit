@@ -32,6 +32,7 @@ const entrepriseFields = [
   { key: 'tvaIntra', label: 'N° TVA intracommunautaire' },
   { key: 'regimeTVA', label: 'TVA des devis et factures', type: 'select', options: v => `<option value="">Taux habituel (${fmt(Store.data.settings.tva, 1)} %)</option>${REGIMES_TVA.map(([k, l]) => `<option value="${k}" ${v === k ? 'selected' : ''}>${l}</option>`).join('')}` },
   { key: 'compteComptable', label: 'Compte comptable (auxiliaire, donné par le comptable)' },
+  { key: 'compteCharge', label: 'Compte de charge par défaut de ce fournisseur (ex. 611000 sous-traitance, 621100 intérim)' },
   { key: 'tel', label: 'Téléphone standard', type: 'tel' },
   { key: 'email', label: 'E-mail', type: 'email' },
   { key: 'web', label: 'Site web' },

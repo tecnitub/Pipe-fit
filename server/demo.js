@@ -103,7 +103,7 @@ function demoData() {
     // Bailleur social : travaux dans des logements de plus de deux ans, TVA à 10 %
     { id: 'e14', nom: 'Habitat Dauphiné', categorie: 'Client', secteur: 'Bailleur social', siret: '275 380 000 00028', tvaIntra: 'FR93275380000', regimeTVA: '10', tel: '04 76 60 60 60', email: 'patrimoine@habitat-dauphine.example', web: '', zoneId: 'z1',
       adresses: [site('s17', 'Siège', '5 place Grenette', '38000', 'Grenoble', true), site('s18', 'Résidence Les Tilleuls – chaufferie', '20 rue des Tilleuls', '38130', 'Échirolles')] },
-    { id: 'e8', nom: 'Intérim Industrie Rhône', categorie: 'Fournisseur', secteur: 'Travail temporaire', siret: '611 222 333 00019', tvaIntra: 'FR40611222333', tel: '04 72 44 44 44', email: 'lyon@interim-ir.example', web: '', zoneId: '',
+    { id: 'e8', nom: 'Intérim Industrie Rhône', compteCharge: '621100', categorie: 'Fournisseur', secteur: 'Travail temporaire', siret: '611 222 333 00019', tvaIntra: 'FR40611222333', tel: '04 72 44 44 44', email: 'lyon@interim-ir.example', web: '', zoneId: '',
       adresses: [site('s11', 'Agence de Lyon 7e', '5 avenue Jean Jaurès', '69007', 'Lyon', true)] },
     { id: 'e11', nom: 'Descours & Cabot', categorie: 'Fournisseur', secteur: 'Négoce tubes et raccords', siret: '957 200 000 01234', tvaIntra: 'FR10957200000', tel: '04 72 66 66 66', email: 'agence.lyon@descours-cabot.example', web: '', zoneId: '',
       adresses: [site('s15', 'Agence de Saint-Priest', 'Rue de l\'Industrie', '69800', 'Saint-Priest', true)] },
@@ -111,7 +111,7 @@ function demoData() {
       adresses: [site('s16', 'Agence de Voiron', 'ZA de Centr\'Alp', '38500', 'Voiron', true)] },
     { id: 'e9', nom: 'Ingénierie Process Alpes', categorie: "Maîtrise d'œuvre", secteur: 'Ingénierie', siret: '723 555 666 00031', tvaIntra: 'FR62723555666', tel: '04 50 55 55 55', email: 'contact@ipa.example', web: '', zoneId: '',
       adresses: [site('s12', 'Bureau d\'Annecy', '9 rue des Ingénieurs', '74000', 'Annecy', true)] },
-    { id: 'e7', nom: 'Services Industriels Rhône', categorie: 'Fournisseur', secteur: 'Sous-traitance', siret: '512 333 444 00027', tvaIntra: 'FR55512333444', tel: '04 78 33 33 33', email: 'planning@sir.example', web: '', zoneId: '',
+    { id: 'e7', nom: 'Services Industriels Rhône', compteCharge: '611000', categorie: 'Fournisseur', secteur: 'Sous-traitance', siret: '512 333 444 00027', tvaIntra: 'FR55512333444', tel: '04 78 33 33 33', email: 'planning@sir.example', web: '', zoneId: '',
       adresses: [site('s10', 'Agence de Saint-Fons', '22 rue de la Chimie', '69190', 'Saint-Fons', true)] },
   ];
   const contacts = [
@@ -309,8 +309,8 @@ function demoData() {
     HC('h05', 'e11', 'af1', -330, [CL('a1', 300, 42.1), CL('a4', 80, 19.2), CL('a16', 20, 30.8)]),
     HC('h06', 'e6', 'af1', -300, [CL('a7', 10, 152)]),
     HC('h07', 'e12', 'af1', -210, [CL('a2', 60, 82.9), CL('a17', 12, 55.6), CL('a14', 16, 30.4)]),
-    HC('h08', 'e11', 'af4', -150, [CL('a1', 140, 44.8), CL('a4', 50, 20.4), CL('a7', 4, 161)]),
-    HC('h09', 'e12', 'af4', -60, [CL('a1', 90, 46.2), CL('a16', 10, 31.9), CL('a14', 8, 31.5)]));
+    HC('h08', 'e11', '', -150, [CL('a1', 140, 44.8), CL('a4', 50, 20.4), CL('a7', 4, 161)]),
+    HC('h09', 'e12', '', -60, [CL('a1', 90, 46.2), CL('a16', 10, 31.9), CL('a14', 8, 31.5)]));
   // Consultation fournisseurs en cours : 3 négoces consultés, 2 offres reçues
   const consultations = [{ id: 'cs1', ref: `CS-${Y}-0001`, objet: 'Raccords inox DN50 / DN100 – complément ligne NEP', affaireId: 'af1', date: d(-6), dateLimite: d(2), dateLivraison: d(14), statut: 'En cours',
     lignes: [{ articleId: 'a4', designation: 'Coude 90° 3D inox 316L DN50', unite: 'u', qte: 40 }, { articleId: 'a14', designation: 'Té égal inox 316L DN50 à souder', unite: 'u', qte: 12 },
@@ -642,7 +642,7 @@ function demoData() {
       'pdf-pdp-laiterie': pdfExemple('Plan de prevention annuel - Laiterie des Alpes', ['Entreprise utilisatrice : Laiterie des Alpes', 'Entreprise exterieure : Pipe-Fit Industrie', 'Inspection commune prealable realisee', 'Permis de feu et consignations delivres par la maintenance', 'Zones de production : charlotte et blouse obligatoires']),
       'pdf-calcul': pdfExemple('Note de calcul du supportage', ['Usage interne au bureau']),
       'pdf-chaufferie': pdfExemple('Plan de la chaufferie existante - indice A', ['Residence Les Tilleuls, Echirolles', 'Collecteurs depart / retour DN150 a remplacer', 'Acces par la porte cote parking (cle a la loge)']) },
-    settings: { fluides: { numero: 'FR-ATT-2024-01587', categorie: 'I', organisme: 'Organisme agréé (démonstration)', validite: d(800) }, societe: 'Pipe-Fit Industrie', adresse: 'ZI des Forges – 69800 Saint-Priest', siret: '000 000 000 00000', tva: 20, tauxHoraireDefaut: 58, delaiPaiement: 45, dureeHebdo: 35, seuilHS50: 43, montantPanier: 10.5,
+    settings: { tresorerie: { solde: 315000, dateSolde: d(-1), chargesFixes: 9500, delaiFournisseurs: 45, tauxCharges: 45, retards: true }, fluides: { numero: 'FR-ATT-2024-01587', categorie: 'I', organisme: 'Organisme agréé (démonstration)', validite: d(800) }, societe: 'Pipe-Fit Industrie', adresse: 'ZI des Forges – 69800 Saint-Priest', siret: '000 000 000 00000', tva: 20, tauxHoraireDefaut: 58, delaiPaiement: 45, dureeHebdo: 35, seuilHS50: 43, montantPanier: 10.5,
       compta: { journal: 'VT', journalLib: 'Ventes', compteClient: '411000', compteTravaux: '704000', compteLivraison: '708500', compteTVA: '445710', compteRG: '411700', auxiliaires: true, emailComptable: 'compta@cabinet-exemple.fr' },
       doc: { logoId: 'img-logo', masquerNom: true, logoHauteur: 56, couleur: '#8f2f1a', police: 'sans', tel: '04 72 00 00 00', email: 'contact@pipefit.example', web: 'www.pipefit.example',
         tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',

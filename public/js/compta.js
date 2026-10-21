@@ -2,7 +2,7 @@
 // par chantier = section analytique), exportés au format du logiciel du comptable (Excel, CSV, FEC),
 // suivi des pièces transmises et envoi par e-mail ; numérotation des factures et avoirs.
 const COMPTA_DEFAUT = { journal: 'VT', journalLib: 'Ventes', compteClient: '411000', compteTravaux: '704000', compteLivraison: '708500', compteTVA: '445710', compteTVA10: '', compteTVA55: '', compteTravauxAL: '', compteRG: '411700',
-  journalAchats: 'HA', journalAchatsLib: 'Achats', compteFournisseur: '401000', compteAchats: '601000', compteTVADed: '445660', auxiliaires: true, emailComptable: '' };
+  journalAchats: 'HA', journalAchatsLib: 'Achats', compteFournisseur: '401000', compteAchats: '601000', compteTVADed: '445660', comptesFamilles: {}, auxiliaires: true, emailComptable: '' };
 const comptaCfg = () => ({ ...COMPTA_DEFAUT, ...(Store.data.settings.compta || {}) });
 // Compte auxiliaire : celui de la fiche entreprise, sinon C (client) ou F (fournisseur) + 7 premières lettres du nom
 const compteAuxiliaire = (eid, lettre = 'C') => { const e = entreprise(eid); return (e.compteComptable || (lettre + normRecherche(e.nom).replace(/[^a-z0-9]/g, '').slice(0, 7)).toUpperCase()); };
@@ -30,16 +30,19 @@ function ecrituresDe(f) {
   return l.map(e => ({ ...e, analytique: e.analytique || '', debit: arrondi2(avoir ? e.c || 0 : e.d || 0), credit: arrondi2(avoir ? e.d || 0 : e.c || 0) }));
 }
 
-// Écritures d'une facture fournisseur : une ligne d'achat par chantier imputé (section analytique = n° de chantier),
-// le reste non ventilé sans section, la TVA déductible et le fournisseur (montant négatif = avoir fournisseur, sens inverse)
+// Écritures d'une facture fournisseur : lignes d'achat par chantier imputé (section analytique = n° de chantier) et par
+// compte de charge (famille des articles, compte du fournisseur, sinon compte d'achats), le reste non ventilé sans
+// section, la TVA déductible et le fournisseur (montant négatif = avoir fournisseur, sens inverse)
 function ecrituresAchat(x) {
   const c = comptaCfg(), t = Calc.achat(x), four = clientName(x.fournisseurId);
   const lib = `Fact. ${x.numeroFournisseur || x.ref || ''} ${four}`.slice(0, 60);
   const aux = c.auxiliaires ? compteAuxiliaire(x.fournisseurId, 'F') : '';
   const base = { journal: c.journalAchats, journalLib: c.journalAchatsLib, date: x.date, piece: x.ref || '', echeance: x.echeance || '', col: 'achats', docId: x.id, tiersLib: four, analytique: '' };
-  const lignes = (x.imputations || []).filter(l => num(l.montantHT)).map(l => ({ ...base, compte: c.compteAchats, aux: '', analytique: affaireOf(l.affaireId).code || '', libelle: `${lib} ${l.libelle || ''}`.trim().slice(0, 60), m: arrondi2(num(l.montantHT)) }));
+  const ctx = { achat: x, articles: Store.all('articles'), comptesFamilles: c.comptesFamilles, compteFournisseur: entreprise(x.fournisseurId).compteCharge || '', compteAchats: c.compteAchats };
+  const lignes = (x.imputations || []).filter(l => num(l.montantHT)).flatMap(l => ComptesCharges.comptes(num(l.montantHT), l, { ...ctx, commande: l.commandeId ? Store.get('commandes', l.commandeId) : null })
+    .map(r => ({ ...base, compte: r.compte, aux: '', analytique: affaireOf(l.affaireId).code || '', libelle: `${lib} ${l.libelle || ''}`.trim().slice(0, 60), m: r.montant })));
   const ht = arrondi2(t.ht), tva = arrondi2(t.tva), reste = arrondi2(ht - sumBy(lignes, l => l.m));
-  if (Math.abs(reste) > 0.004) lignes.push({ ...base, compte: c.compteAchats, aux: '', libelle: `${lib} non ventilé`.slice(0, 60), m: reste });
+  if (Math.abs(reste) > 0.004) ComptesCharges.comptes(reste, null, ctx).forEach(r => lignes.push({ ...base, compte: r.compte, aux: '', libelle: `${lib} non ventilé`.slice(0, 60), m: r.montant }));
   if (tva) lignes.push({ ...base, compte: c.compteTVADed, aux: '', libelle: `${lib} TVA déductible`.slice(0, 60), m: tva });
   lignes.push({ ...base, compte: c.compteFournisseur, aux, libelle: lib, m: -arrondi2(ht + tva) });
   // m > 0 : débit (charge, TVA), m < 0 : crédit (fournisseur)
@@ -64,7 +67,7 @@ function exportFEC(ecr) {
   const net = s => String(s ?? '').replace(/[\t\r\n|]/g, ' ');
   const tri = [...ecr].sort((a, b) => a.journal.localeCompare(b.journal) || (a.date || '').localeCompare(b.date || ''));
   return [['JournalCode', 'JournalLib', 'EcritureNum', 'EcritureDate', 'CompteNum', 'CompteLib', 'CompAuxNum', 'CompAuxLib', 'PieceRef', 'PieceDate', 'EcritureLib', 'Debit', 'Credit', 'EcritureLet', 'DateLet', 'ValidDate', 'Montantdevise', 'Idevise'],
-    ...tri.map(e => [e.journal, e.journalLib, numero(e), ymd(e.date), e.compte, libCompte[e.compte] || '', e.aux, e.aux ? e.tiersLib : '', e.piece, ymd(e.date), e.libelle, nombreFR(e.debit), nombreFR(e.credit), '', '', auj, '', ''])]
+    ...tri.map(e => [e.journal, e.journalLib, numero(e), ymd(e.date), e.compte, libCompte[e.compte] || ComptesCharges.libelle(e.compte), e.aux, e.aux ? e.tiersLib : '', e.piece, ymd(e.date), e.libelle, nombreFR(e.debit), nombreFR(e.credit), '', '', auj, '', ''])]
     .map(r => r.map(net).join('\t')).join('\r\n');
 }
 function exportXLSX(ecr, titre) {
@@ -131,6 +134,9 @@ Views.compta = (params, query) => {
     <h3>Achats</h3>
     <div class="grid2">${[['journalAchats', 'Code journal'], ['journalAchatsLib', 'Libellé du journal'], ['compteFournisseur', 'Compte fournisseurs (collectif)'], ['compteAchats', 'Compte d\'achats (matières et fournitures)'], ['compteTVADed', 'Compte TVA déductible']]
       .map(([k, l]) => `<div class="field"><label for="cc-${k}">${l}</label><input id="cc-${k}" data-cc="${k}" value="${esc(c[k])}" ${admin ? '' : 'disabled'}></div>`).join('')}</div>
+    <h3>Comptes de charges par famille d'articles</h3>
+    <p class="muted small">Chaque achat est réparti selon la famille des articles (lignes de la commande rapprochée ou de la facture). Vide : compte proposé (location 613, sous-traitance et contrôles 611, outillage 606, transport 624), sinon compte de charge de la fiche fournisseur, sinon compte d'achats.</p>
+    <div class="grid3">${[...new Set(Store.all('articles').map(a => a.famille).filter(Boolean))].sort().map(fa => `<div class="field"><label>${esc(fa)}</label><input data-ccf="${esc(fa)}" value="${esc((c.comptesFamilles || {})[fa] || '')}" placeholder="${esc(ComptesCharges.propose(fa) || c.compteAchats)}" aria-label="Compte de la famille ${esc(fa)}" ${admin ? '' : 'disabled'}></div>`).join('') || '<p class="muted small">Aucune famille dans la bibliothèque.</p>'}</div>
     <div class="field"><label for="cc-emailComptable">E-mail du cabinet comptable</label><input id="cc-emailComptable" data-cc="emailComptable" value="${esc(c.emailComptable)}" ${admin ? '' : 'disabled'}></div>
     <label class="check"><input type="checkbox" id="cc-aux" ${c.auxiliaires ? 'checked' : ''} ${admin ? '' : 'disabled'}> Comptes auxiliaires clients et fournisseurs (compte de la fiche entreprise, sinon généré : C… / F…)</label>
     ${admin ? '<div class="modal-actions"><button id="cc-save">Enregistrer</button></div>' : ''}
@@ -164,6 +170,8 @@ Views.compta.bind = (root, params, query) => {
   on('#cc-save', async () => {
     const cfg = { ...comptaCfg(), auxiliaires: q('#cc-aux').checked };
     root.querySelectorAll('[data-cc]').forEach(el => { cfg[el.dataset.cc] = el.value.trim(); });
+    cfg.comptesFamilles = {};
+    root.querySelectorAll('[data-ccf]').forEach(el => { if (el.value.trim()) cfg.comptesFamilles[el.dataset.ccf] = el.value.trim(); });
     try { await Store.saveSettings({ ...Store.data.settings, compta: cfg }); App.render(); App.toast('Paramètres comptables enregistrés'); }
     catch (e) { notify(e.message); }
   });

@@ -685,6 +685,12 @@ async function api(req, res, url) {
     }
   }
 
+  // Dérive des chantiers : contrôle immédiat (bureau)
+  if (p[0] === 'derives' && p[1] === 'verifier' && method === 'POST') {
+    if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Droits insuffisants');
+    return send(res, 200, { alertes: await NOTIFS.derives() });
+  }
+
   /* --- Administration --- */
   if (acc.role !== 'admin') return fail(res, 403, 'Réservé aux administrateurs');
 
@@ -899,6 +905,10 @@ if (require.main === module) {
   const verifierEcheances = () => NOTIFS.echeances().catch(e => console.error('Échéances :', e.message));
   setTimeout(verifierEcheances, 30000).unref();
   setInterval(verifierEcheances, 6 * 3600000).unref();
+  // Dérive des chantiers : contrôlée toutes les 2 heures (heures pointées, achats, factures)
+  const verifierDerives = () => NOTIFS.derives().catch(e => console.error('Dérive des chantiers :', e.message));
+  setTimeout(verifierDerives, 60000).unref();
+  setInterval(verifierDerives, 2 * 3600000).unref();
   DOSSIER.demarrer();
   AGENDA.demarrer();
   // Sessions expirées effacées toutes les heures
