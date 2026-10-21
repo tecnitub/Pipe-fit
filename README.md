@@ -194,8 +194,20 @@ Facturation, RH, Analyse…), des écrans et onglets (Trésorerie, Comptabilité
 des onglets de l'appli des compagnons (Notes de frais, Comptoir, Fluides, PV d'épreuve, mise en service, équilibrage…).
 Un compte peut recevoir son propre réglage (« Personnaliser un compte… », ✕ pour revenir à celui de son rôle).
 L'administrateur voit toujours tout ; Paramètres et notifications restent accessibles. Un écran masqué disparaît des
-menus et des onglets, et son adresse ramène au premier écran affiché. Ce réglage organise l'affichage : les données
-envoyées aux compagnons se règlent dans « Appli des compagnons : ce qu'ils voient » (filtrées par le serveur).
+menus et des onglets, et son adresse ramène au premier écran affiché.
+
+**Contrôle par le serveur** : les données d'un écran masqué ne partent plus vers ce compte (chargement, lecture par
+l'API, flux temps réel) et toute modification est refusée (403). Selon l'écran :
+
+- données retirées : Facturation (factures, réglages comptables et de trésorerie), Achats (factures fournisseurs, factures
+  reçues, comptoir, consultations), Parc, Fluides, habilitations (RH), Factures reçues, Comptoir… ; côté compagnons :
+  notes de frais, rapports, planning, PV d'essais, fluides, comptoir, documents des chantiers ;
+- lecture seule, quand d'autres écrans en ont besoin : contacts, devis, chantiers, bibliothèque, planning, situations,
+  commandes, fiches du personnel et notes de frais (RH, sans les salaires horaires) ;
+- affichage seulement pour les écrans de synthèse sans données propres (Tableau de bord, Direction, Analyse, Pointage
+  du bureau, Historique des prix), signalés « (affichage) » dans le tableau.
+
+Les pièces jointes restent accessibles par leur lien (identifiant aléatoire non devinable) à qui l'a déjà reçu.
 
 ## Processus métier
 

@@ -2,7 +2,7 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v38';
+  const KEY = 'pipefit-crm-demo-v39';
   const ME_KEY = 'pipefit-crm-demo-me';
   const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications', 'habilitations', 'materiels', 'missions', 'produits', 'equipementsFrigo', 'fichesFluides', 'bouteilles', 'enlevements', 'epreuves', 'misesEnService', 'equilibrages'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4], fichesFluides: ['numero', 'FI', 4], epreuves: ['numero', 'EP', 4], misesEnService: ['numero', 'MS', 4], equilibrages: ['numero', 'EQ', 4] };
@@ -236,11 +236,13 @@
       const out = { settings: db.settings };
       COLLECTIONS.forEach(c => { out[c] = JSON.parse(JSON.stringify(db[c])); });
       // Compagnon : mêmes données filtrées que sur le serveur (prix, montants, budgets d'heures…)
-      return [200, acc.role === 'atelier' ? Compagnon.filtrerTout(out, Compagnon.regles(db.settings), Compagnon.contexte(acc.userId, db.users, db.affaires)) : out];
+      const r = Acces.restrictions(Acces.masques(acc, db.settings.acces)); // affichage par accès : même contrôle que le serveur
+      return [200, Acces.filtrerTout(r, acc.role === 'atelier' ? Compagnon.filtrerTout(out, Compagnon.regles(db.settings), Compagnon.contexte(acc.userId, db.users, db.affaires)) : out)];
     }
     if (p[0] === 'records') {
       const [, col, id] = p;
       if (!COLLECTIONS.includes(col)) return [404, { error: 'Collection inconnue' }];
+      if (['PUT', 'DELETE'].includes(method) && Acces.ecritureRefusee(Acces.restrictions(Acces.masques(acc, db.settings.acces)), col)) return [403, { error: 'Accès non autorisé pour votre compte (Paramètres → Affichage par accès)' }];
       const i = db[col].findIndex(o => o.id === id);
       const existing = i >= 0 ? db[col][i] : null;
       if (method === 'PUT') {

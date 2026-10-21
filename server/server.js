@@ -19,6 +19,7 @@ const NoteFrais = require('../public/js/frais');
 const ReglesPointage = require('../public/js/pointage-regles');
 const Epreuve = require('../public/js/epreuve');
 const Essais = require('../public/js/essais');
+const Acces = require('../public/js/acces');
 const Fluides = require('../public/js/fluides');
 
 const PORT = +process.env.PORT || 3000;
@@ -107,21 +108,33 @@ const recordsDe = col => db.prepare('SELECT data FROM records WHERE col = ?').al
 const estCompagnon = acc => acc && acc.role === 'atelier';
 const reglesCompagnon = () => Compagnon.regles(DB.getSettings(db));
 const contexteCompagnon = acc => Compagnon.contexte(acc.user_id, recordsDe('users'), recordsDe('affaires'));
-const pourCompagnon = (acc, col, rec) => (estCompagnon(acc) ? Compagnon.filtrer(col, rec, reglesCompagnon(), contexteCompagnon(acc)) : rec);
+// Affichage par accès (Paramètres) : données des écrans masqués à ce compte, retirées ou en lecture seule
+const restrictionsDe = (acc, settings) => Acces.restrictions(Acces.masques(acc && { id: acc.id, role: acc.role }, (settings || DB.getSettings(db)).acces));
+const REFUS_ACCES = 'Accès non autorisé pour votre compte (Paramètres → Affichage par accès)';
+const pourCompagnon = (acc, col, rec) => Acces.filtrer(restrictionsDe(acc), col, estCompagnon(acc) ? Compagnon.filtrer(col, rec, reglesCompagnon(), contexteCompagnon(acc)) : rec);
 
 /* ---------- Temps réel (Server-Sent Events) ---------- */
 const clients = new Map(); // flux -> compte connecté
 function broadcast(event, payload) {
   const msg = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
-  let regles = null, ctx = null;
+  let regles = null, ctx = null, settings = null;
   for (const [res, acc] of clients) {
-    if (!estCompagnon(acc)) { res.write(msg); continue; }
+    // Compte dont des écrans sont masqués : données de ces écrans retirées du flux
+    settings = settings || DB.getSettings(db);
+    const r = restrictionsDe(acc, settings);
+    if (!estCompagnon(acc) && r.vide) { res.write(msg); continue; }
+    if (!estCompagnon(acc)) {
+      if (event === 'settings') { res.write(`event: settings\ndata: ${JSON.stringify({ ...payload, settings: Acces.filtrerReglages(r, payload.settings) })}\n\n`); continue; }
+      if ((event === 'change' || event === 'delete') && payload && r.cacher.has(payload.col)) continue;
+      if (event === 'change' && payload && payload.col) { res.write(`event: change\ndata: ${JSON.stringify({ ...payload, record: Acces.filtrer(r, payload.col, payload.record) })}\n\n`); continue; }
+      res.write(msg); continue;
+    }
     // Compagnon : chaque modification est filtrée ; un réglage modifié recharge ses données filtrées
     if (event === 'settings') { res.write(`event: reload\ndata: ${JSON.stringify({ client: null })}\n\n`); continue; }
     if (event !== 'change' || !payload || !payload.col) { res.write(msg); continue; }
     regles = regles || reglesCompagnon();
     if (!ctx || ctx.userId !== acc.user_id) ctx = Compagnon.contexte(acc.user_id, recordsDe('users'), recordsDe('affaires'));
-    const rec = Compagnon.filtrer(payload.col, payload.record, regles, ctx);
+    const rec = Acces.filtrer(r, payload.col, Compagnon.filtrer(payload.col, payload.record, regles, ctx));
     res.write(rec ? `event: change\ndata: ${JSON.stringify({ ...payload, record: rec })}\n\n`
       : `event: delete\ndata: ${JSON.stringify({ col: payload.col, id: payload.record && payload.record.id, client: payload.client })}\n\n`);
   }
@@ -380,11 +393,12 @@ async function api(req, res, url) {
     return;
   }
 
-  if (p[0] === 'data' && method === 'GET') return send(res, 200, estCompagnon(acc) ? Compagnon.filtrerTout(DB.allData(db), reglesCompagnon(), contexteCompagnon(acc)) : DB.allData(db));
+  if (p[0] === 'data' && method === 'GET') return send(res, 200, Acces.filtrerTout(restrictionsDe(acc), estCompagnon(acc) ? Compagnon.filtrerTout(DB.allData(db), reglesCompagnon(), contexteCompagnon(acc)) : DB.allData(db)));
 
   // Lecture par l'API : liste filtrée d'une collection, ou un élément
   if (p[0] === 'records' && p[1] && method === 'GET') {
     if (!DB.COLLECTIONS.includes(p[1])) return fail(res, 404, 'Collection inconnue');
+    if (restrictionsDe(acc).cacher.has(p[1])) return fail(res, 403, REFUS_ACCES);
     if (p[2]) { const r = pourCompagnon(acc, p[1], DB.getRecord(db, p[1], p[2])); return r ? send(res, 200, r) : fail(res, 404, 'Élément introuvable'); }
     const depuis = url.searchParams.get('modifieDepuis') || '';
     const filtres = String(url.searchParams.get('filtre') || '').split(',').map(x => x.split(':')).filter(x => x[0] && x.length > 1).map(([k, ...v]) => [k, v.join(':')]);
@@ -517,6 +531,7 @@ async function api(req, res, url) {
     const [, col, id] = p;
     if (!DB.COLLECTIONS.includes(col)) return fail(res, 404, 'Collection inconnue');
     if (!ID.test(id)) return fail(res, 400, 'Identifiant invalide');
+    if (['PUT', 'DELETE'].includes(method) && Acces.ecritureRefusee(restrictionsDe(acc), col)) return fail(res, 403, REFUS_ACCES);
 
     if (method === 'PUT') {
       const { data, version } = await readBody(req);
@@ -635,6 +650,7 @@ async function api(req, res, url) {
     }
     if (poids > 3 * 1024 * 1024) return fail(res, 400, 'Pièces jointes trop volumineuses (3 Mo maximum)');
     const ref = b.ref && MAIL_COLS.includes(b.ref.col) ? { col: b.ref.col, id: String(b.ref.id || '') } : null;
+    if (ref && restrictionsDe(acc).cacher.has(ref.col)) return fail(res, 403, REFUS_ACCES);
     try {
       await M365.envoyer(cfg, acc.email, { to, cc, bcc, subject, html, attachments: pieces.map(a => ({ name: a.name, base64: a.base64, contentType: TYPES_PJ[a.name.split('.').pop().toLowerCase()] })) });
     } catch (e) { return fail(res, 502, e.message); }
@@ -651,6 +667,9 @@ async function api(req, res, url) {
   // Facturation électronique (bureaux) : état, import manuel, relève du dossier, dépôt d'une facture émise
   if (p[0] === 'efacture' && ['etat', 'import', 'emettre', 'scruter', 'mail', 'prevenir'].includes(p[1])) {
     if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Droits insuffisants');
+    // Dépôt de nos factures : écran Facturation ; réception : écran Factures reçues
+    const rEf = restrictionsDe(acc);
+    if (p[1] === 'emettre' ? rEf.cacher.has('factures') : p[1] !== 'etat' && rEf.cacher.has('efactures')) return fail(res, 403, REFUS_ACCES);
     const c = EF.config(DB, db), mc = MAILF.config(DB, db);
     if (p[1] === 'etat' && method === 'GET') return send(res, 200, { plateforme: c.plateforme || '', entree: !!c.dossierEntree, sortie: !!c.dossierSortie, webhook: !!c.webhook,
       mail: { actif: mc.actif && !!mc.adresse, adresse: mc.adresse, m365: m365Pret(), dernier: MAILF.etat.dernier, erreur: MAILF.etat.erreur, resultat: MAILF.etat.resultat } });
