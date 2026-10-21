@@ -888,3 +888,6 @@ fieldset.mi-titre[hidden] { display: none; }
 .acces-table td.center, .acces-table th { text-align: center; }
 .acces-table td:first-child { text-align: left; }
 .acces-groupe td { background: var(--panel-alt); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+
+/* Commande : ajout à la bibliothèque */
+.na-table select[data-k="action"] { min-width: 160px; }

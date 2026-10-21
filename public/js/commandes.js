@@ -77,9 +77,10 @@ function commandeEditor(id) {
 
   ${receptionsCommandeHtml(c)}
   <h2 class="no-print">Lignes</h2>
+  ${horsBiblio(c).length ? `<p class="note no-print small">${horsBiblio(c).length} fourniture(s) hors bibliothèque. <button class="small secondary" id="c-biblio">📚 Les ajouter à la bibliothèque</button></p>` : ''}
   <div class="table-wrap no-print"><table>
     <tr><th>Désignation</th><th class="num">Qté</th><th>Unité</th><th class="num">PU achat HT</th><th class="num">Total HT</th><th></th></tr>
-    ${(c.lignes || []).map((l, i) => `<tr><td><input data-i="${i}" data-k="designation" value="${esc(l.designation)}" aria-label="Désignation">${l.refFournisseur ? `<span class="small muted">réf. fournisseur ${esc(l.refFournisseur)}</span>` : ''}</td>
+    ${(c.lignes || []).map((l, i) => `<tr><td><input data-i="${i}" data-k="designation" value="${esc(l.designation)}" aria-label="Désignation">${l.refFournisseur ? `<span class="small muted">réf. fournisseur ${esc(l.refFournisseur)}</span>` : ''}${l.articleId ? '' : ` <button class="linklike small" data-biblio="${i}" title="Créer la fiche dans la bibliothèque des fournitures">+ bibliothèque</button>`}</td>
       <td class="num"><input data-i="${i}" data-k="qte" type="number" step="any" value="${esc(l.qte)}" style="width:90px" aria-label="Quantité"></td><td>${esc(l.unite)}</td>
       <td class="num"><input data-i="${i}" data-k="pu" type="number" step="0.01" value="${esc(l.pu)}" style="width:100px" aria-label="Prix unitaire"></td>
       <td class="num">${eur(num(l.qte) * num(l.pu))}</td><td><button class="small danger" data-del="${i}" aria-label="Retirer">✕</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Aucune ligne.</td></tr>'}
@@ -109,7 +110,14 @@ Views.commandes.bind = (root, params, query) => {
   if (!c) return;
   const save = () => { Store.upsert('commandes', c); App.render(); };
   const field = (sel, key) => { root.querySelector(sel).onchange = e => { c[key] = e.target.value; save(); }; };
-  field('#c-four', 'fournisseurId'); field('#c-aff', 'affaireId'); field('#c-date', 'date'); field('#c-liv', 'dateLivraison'); field('#c-statut', 'statut');
+  field('#c-four', 'fournisseurId'); field('#c-aff', 'affaireId'); field('#c-date', 'date'); field('#c-liv', 'dateLivraison');
+  // Commande envoyée avec des fournitures hors bibliothèque : proposition de les y ajouter
+  root.querySelector('#c-statut').onchange = async e => {
+    c.statut = e.target.value; save();
+    if (c.statut === 'Envoyée' && horsBiblio(c).length && await ask(`${horsBiblio(c).length} fourniture(s) de cette commande ne sont pas dans la bibliothèque. Les y ajouter (prix d'achat, fournisseur, famille) ?`, 'Ajouter', false)) ajouterBibliotheque(c, horsBiblio(c));
+  };
+  root.querySelectorAll('[data-biblio]').forEach(b => b.onclick = () => ajouterBibliotheque(c, [+b.dataset.biblio]));
+  const cb = root.querySelector('#c-biblio'); if (cb) cb.onclick = () => ajouterBibliotheque(c, horsBiblio(c));
   root.querySelectorAll('[data-i]').forEach(el => el.onchange = () => {
     const l = c.lignes[+el.dataset.i];
     l[el.dataset.k] = el.dataset.k === 'designation' ? el.value : +el.value;
@@ -142,6 +150,39 @@ Views.commandes.bind = (root, params, query) => {
     if (ok) { Store.remove('commandes', c.id); location.hash = '#/commandes'; }
   });
 };
+
+// Lignes de commande sans fiche dans la bibliothèque (indices)
+const horsBiblio = c => (c.lignes || []).map((l, i) => (!l.articleId && String(l.designation || '').trim() && String(l.designation).trim() !== 'Fourniture' ? i : -1)).filter(i => i >= 0);
+// Ajout à la bibliothèque, sur demande : une fiche par ligne (pré-remplie, modifiable), ou rattachement à l'article déjà présent
+function ajouterBibliotheque(c, indices) {
+  const props = indices.map(i => ({ i, p: NouvelArticle.proposer(c.lignes[i], Store.all('articles'), Rapprochement.ressemblance, c.fournisseurId) }));
+  const champ = (i, k, v, extra = '') => `<input data-na="${i}" data-k="${k}" value="${esc(v ?? '')}" ${extra} aria-label="${k}">`;
+  const box = Modal.open(`<h2 style="margin-top:0">Ajouter à la bibliothèque</h2>
+    <p class="muted small">Fiches pré-remplies depuis la commande ${esc(c.numero || '')} : prix d'achat, fournisseur ${esc(clientName(c.fournisseurId) || '—')}, famille devinée, prix de vente au coefficient habituel de la famille. Modifiez si besoin.</p>
+    <datalist id="na-fam">${famillesArticles().map(f => `<option value="${esc(f)}">`).join('')}</datalist>
+    <div class="table-wrap"><table class="compact na-table"><tr><th></th><th>Désignation</th><th>Réf.</th><th>Unité</th><th>Famille</th><th>Sous-famille</th><th class="num">Achat HT</th><th class="num">Vente HT</th></tr>
+      ${props.map(({ i, p }) => `<tr><td>${p.existant ? `<select data-na="${i}" data-k="action" aria-label="Action"><option value="lier">Relier à l'existant</option><option value="creer">Créer</option><option value="">Ignorer</option></select>` : `<input type="checkbox" data-na="${i}" data-k="action" checked aria-label="Créer la fiche">`}</td>
+        <td>${champ(i, 'designation', p.designation)}${p.existant ? `<br><span class="small warn-text">Déjà présent ? ${esc(p.existant.designation)} (${p.existant.score} %)</span>` : ''}</td><td>${champ(i, 'ref', p.ref, 'style="width:110px"')}</td>
+        <td><select data-na="${i}" data-k="unite">${optionsStr([...new Set([...UNITES, p.unite || 'u'])], p.unite || 'u')}</select></td><td>${champ(i, 'famille', p.famille, 'list="na-fam" style="width:120px"')}</td><td>${champ(i, 'sousFamille', p.sousFamille, 'style="width:110px"')}</td>
+        <td class="num">${champ(i, 'coutRevient', p.coutRevient, 'type="number" step="0.01" style="width:85px"')}</td><td class="num">${champ(i, 'prixVente', p.prixVente, 'type="number" step="0.01" style="width:85px"')}</td></tr>`).join('')}</table></div>
+    <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="na-x">Annuler</button><button id="na-ok">Enregistrer dans la bibliothèque</button></div>`, true);
+  box.querySelector('#na-x').onclick = Modal.close;
+  box.querySelector('#na-ok').onclick = () => {
+    let crees = 0, lies = 0;
+    props.forEach(({ i, p }) => {
+      const v = k => { const el = box.querySelector(`[data-na="${i}"][data-k="${k}"]`); return el.type === 'checkbox' ? (el.checked ? 'creer' : '') : el.value.trim(); };
+      const action = v('action'), l = c.lignes[i];
+      if (action === 'lier') { l.articleId = p.existant.id; lies++; return; }
+      if (action !== 'creer' || !v('designation')) return;
+      const a = Store.upsert('articles', { ref: v('ref'), refFournisseur: p.refFournisseur || v('ref'), designation: v('designation'), unite: v('unite'), famille: v('famille'), sousFamille: v('sousFamille'),
+        coutRevient: num(v('coutRevient')), prixVente: num(v('prixVente')), fournisseurId: c.fournisseurId || '', creeDepuis: c.numero || '' });
+      Object.assign(l, { articleId: a.id, designation: a.designation, unite: a.unite });
+      crees++;
+    });
+    Store.upsert('commandes', c); Modal.close(); App.render();
+    if (crees || lies) App.toast(`${crees} fiche(s) créée(s) dans la bibliothèque${lies ? `, ${lies} ligne(s) reliée(s) à un article existant` : ''}`, 4000);
+  };
+}
 
 // Bon de commande ou demande de prix (même document, sans prix pour la demande)
 function commandeDocument(c, type = 'commande') {

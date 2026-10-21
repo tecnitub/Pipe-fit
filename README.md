@@ -432,6 +432,16 @@ l'attestation, envoyés en PDF, copiables pour l'équipement ou l'installation s
 **PV de réception** (Chantier → Réserves et réception) : réserves avec photo, signature du client et de l'entreprise sur
 l'écran ; le PV imprimé reprend les photos des réserves (et après levée pour le PV de levée).
 
+## Fournitures commandées hors bibliothèque
+
+Sur une commande, chaque ligne qui n'est pas dans la bibliothèque (ligne libre, dictée, lue dans le devis PDF du
+fournisseur) porte un lien « + bibliothèque », et le bouton « Les ajouter à la bibliothèque » les reprend toutes ; en
+passant la commande en « Envoyée », l'appli le propose aussi. Les fiches sont pré-remplies : désignation, référence du
+fournisseur, unité, prix d'achat, fournisseur habituel, famille devinée (article le plus ressemblant, sinon mots-clés :
+tube, coude, vanne, collier, joint…), prix de vente au coefficient médian de la famille. Si un article très proche existe
+déjà (même référence ou même désignation, mêmes dimensions), l'appli propose de relier la ligne à cet article plutôt que
+de créer un doublon. La ligne de commande est ensuite rattachée à sa fiche (historique des prix, besoins du chantier).
+
 ## Offres fournisseurs : lecture des PDF et meilleure proposition
 
 **Consultation** (Achats → Consultations) : « Importer l'offre (PDF, Excel) » sur la ligne d'un fournisseur lit son devis
