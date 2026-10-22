@@ -158,3 +158,21 @@ test('schéma de principe hydraulique : débits, bouteille, cascade et dessin', 
   assert.ok(N.calculer('pid', { ...base, circuits: [{ rep: 'X', emetteur: 'radiateurs', P: 50, regime: '90/70', regulation: '3v', L: 10 }] }).alertes.some(a => /plus chaud/.test(a.texte)));
   assert.ok(!/<script/i.test(N.calculer('pid', { ...base, titreInstallation: '<script>x</script>' }).schema), 'textes échappés dans le SVG');
 });
+
+test('schéma : réglementation selon la puissance et liste des points de régulation', () => {
+  require('../etudes/public/js/schema');
+  const items = (r, titre) => r.onglets[0].blocs.flatMap(b => b.items || []).map(i => i.texte).join(' | ');
+  const petit = N.calculer('pid', { nGen: '1', Pgen: 60, circuits: [{ rep: 'R', emetteur: 'radiateurs', P: 50, regime: '', regulation: '3v', L: 20 }] });
+  assert.ok(!/chaufferie en local dédié/.test(items(petit)) && !/inspection périodique tous les 5 ans/.test(items(petit)));
+  const moyen = N.calculer('pid', { nGen: '2', Pgen: 350 });
+  assert.match(items(moyen), /chaufferie en local dédié/); assert.match(items(moyen), /manque d'eau/); assert.match(items(moyen), /BACS/);
+  assert.doesNotMatch(items(moyen), /ICPE \(rubrique 2910\)|classée ICPE/);
+  const gros = N.calculer('pid', { nGen: '3', Pgen: 450 });
+  assert.match(items(gros), /efficacité énergétique tous les 2 ans/); assert.match(items(gros), /rubrique 2910/);
+  const froid = N.calculer('pid', { reseau: 'eg-7-12', generateur: 'gf-air', nGen: '1', Pgen: 300, fluideFrigo: 'R410A', chargeFrigo: 120,
+    circuits: [{ rep: 'V', emetteur: 'ventilo', P: 250, regime: '', regulation: '2v', L: 50 }] });
+  assert.match(items(froid), /250,6 t éq\. CO₂/); assert.match(items(froid), /tous les 6 mois/); assert.doesNotMatch(items(froid), /rubrique 1185/);
+  const reg = moyen.onglets[1].blocs, pts = reg[1].tableau.lignes, recap = reg[2].tableau.lignes;
+  assert.strictEqual(recap[recap.length - 1][1], String(pts.length), 'récapitulatif = nombre de points');
+  assert.ok(pts.some(p => p[0] === 'MDE') && pts.some(p => p[0] === 'PG2') && reg[0].liste.some(t => /Permutation/.test(t)));
+});

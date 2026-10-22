@@ -32,6 +32,10 @@ function htmlNotePdf(n, i) {
     ${lignes2(r.resume.map(([k, v]) => [k, esc(v)]))}
     ${r.tableaux.map(x => `<p class="sous">${esc(x.titre)}</p>${tableauPdf(x.entetes, x.lignes, x.surligne, x.total)}`).join('')}
     <h3>4. Conclusions</h3><ul class="conclusions">${r.alertes.map(a => `<li class="${a.niveau}">${esc({ ok: 'Résultat', attention: 'Point d\'attention', erreur: 'Non conforme' }[a.niveau])} : ${esc(a.texte)}</li>`).join('')}</ul>
+    ${(r.onglets || []).map((o, j) => `<h3>${5 + j}. ${esc(o.titre)}</h3>${o.blocs.map(bl => `${bl.titre ? `<h4>${esc(bl.titre)}</h4>` : ''}
+      ${bl.items ? `<ul class="exigences">${bl.items.map(it => `<li class="${it.niveau}"><strong>${esc({ obligatoire: 'Obligatoire', conseil: 'Conseillé', info: 'Information' }[it.niveau])}</strong> : ${esc(it.texte)}${it.ref ? ` <em>(${esc(it.ref)})</em>` : ''}</li>`).join('')}</ul>` : ''}
+      ${bl.liste ? `<ul>${bl.liste.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+      ${bl.tableau ? tableauPdf(bl.tableau.entetes, bl.tableau.lignes, -1, bl.tableau.total) : ''}${(bl.texte || []).map(t => `<p class="petit">${esc(t)}</p>`).join('')}`).join('')}`).join('')}
     ${n.commentaire ? `<h3>Commentaire</h3><p class="pre">${esc(n.commentaire)}</p>` : ''}</div>`;
 }
 function htmlGardeNdc(et, logo, entrees) {
