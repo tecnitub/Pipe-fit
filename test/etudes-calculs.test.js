@@ -140,3 +140,21 @@ test('bilan thermique d\'un local : déperditions, apports de process, été', (
   assert.strictEqual(N.calculer('bilan', { ...base, climat: 'strasbourg' }).valeurs.Te, -15);
   assert.ok(N.calculer('bilan', { ...base, Svitrage: 1000 }).alertes.some(a => a.niveau === 'erreur'));
 });
+
+test('schéma de principe hydraulique : débits, bouteille, cascade et dessin', () => {
+  require('../etudes/public/js/schema');
+  const base = { reseau: 'ch-70-50', generateur: 'chaudiere-cond', nGen: '2', Pgen: 100, bouteille: 'oui',
+    circuits: [{ rep: 'Radiateurs', emetteur: 'radiateurs', P: 80, regime: '', regulation: '3v', L: 50 }, { rep: 'Plancher', emetteur: 'plancher', P: 40, regime: '40/30', regulation: '3v', L: 30 }] };
+  const r = N.calculer('pid', base), w = C.eau(60), q = (P, dT) => P * 1000 / (w.rho * w.cp * dT) * 3600;
+  proche(r.valeurs.Qg, q(100, 20), 1e-9); proche(r.valeurs.Qp, 2 * q(100, 20), 1e-9);
+  proche(r.valeurs.circuits[1].Q, q(40, 10), 1e-9);
+  proche(r.valeurs.circuits[1].Qcoll, q(40, 40), 1e-9, 'circuit mélangé : appel au collecteur sur 70 − 30 K');
+  proche(r.valeurs.Qs, q(80, 20) + q(40, 40), 1e-9);
+  assert.ok(r.valeurs.bouteille && r.schema.startsWith('<svg') && /Bouteille de/.test(r.schema) && (r.schema.match(/>G\d</g) || []).length === 2);
+  const sans = N.calculer('pid', { ...base, bouteille: 'non', nGen: '1', Pgen: 150 });
+  assert.ok(!/Bouteille de/.test(sans.schema) && sans.valeurs.bouteille === null);
+  assert.ok(N.calculer('pid', { ...base, Pgen: 50 }).alertes.some(a => a.niveau === 'erreur' && /insuffisante/.test(a.texte)));
+  assert.ok(N.calculer('pid', { ...base, reseau: 'eg-7-12' }).alertes.some(a => /incompatible/.test(a.texte)), 'chaudière sur eau glacée');
+  assert.ok(N.calculer('pid', { ...base, circuits: [{ rep: 'X', emetteur: 'radiateurs', P: 50, regime: '90/70', regulation: '3v', L: 10 }] }).alertes.some(a => /plus chaud/.test(a.texte)));
+  assert.ok(!/<script/i.test(N.calculer('pid', { ...base, titreInstallation: '<script>x</script>' }).schema), 'textes échappés dans le SVG');
+});

@@ -19,6 +19,7 @@ avec indice, rédacteur et vérificateur ; elle s'édite en **note de calcul PDF
 | Aéraulique | Réseau aéraulique et ventilateur | Tronçons (Ø ou a × b, ou automatique), Σζ, composants (filtres, batteries…), pression du ventilateur, puissance, SFP |
 | Thermique | Bilan chauffage et climatisation d'un local | Local simple (L × l × H), site (température de base), murs, toiture, plancher, fenêtres, lanterneaux et portes au choix dans des listes de compositions courantes (ou U saisi), ponts thermiques, infiltrations, ventilation, extraction de process : déperditions et puissance de chauffage ; apports d'été (soleil, occupants, éclairage, air) et puissance frigorifique ; apports de process (machines, fours…) ajoutés en été et déduits ou non du chauffage |
 | Thermique | Isolation des tuyauteries | Déperditions, température de surface, point de rosée (eau glacée), épaisseur commerciale retenue, énergie annuelle |
+| Schémas | Schéma de principe hydraulique (P&ID) | Réseau d'eau chaude ou d'eau glacée : générateur unique ou cascade (pompe et clapet par générateur, ou pompe commune et vannes motorisées), avec ou sans bouteille de découplage, circuits vers les émetteurs (radiateurs, plancher, CTA, ventilo-convecteurs, ECS, process…) à vanne 3 voies, 2 voies ou en direct. Schéma dessiné automatiquement (SVG téléchargeable, repris dans la note de calcul), débits, diamètres, Kvs, pompes, collecteurs et bouteille dimensionnés, contrôles de cohérence |
 | Mécanique | Dilatation | Allongement, bras flexible (L, Z), lyre, course des compensateurs ; règles fabricants pour les plastiques |
 | Mécanique | Épaisseur sous pression (NF EN 13480-3) | P235GH, P265GH, 304L, 316L : épaisseur requise, vérification de la série, P maxi admissible, pression d'épreuve |
 | Mécanique | Portée entre supports | Tube, fluide, isolant : portée limitée par la flèche et par la contrainte, tableau pour toute la série |
@@ -60,6 +61,7 @@ etudes/server.js             serveur : connexion via Pipe-Fit, affaires, études
 etudes/public/js/donnees.js  données de référence : tubes, matériaux, fluides, vapeur, ζ, isolants, aciers
 etudes/public/js/calculs.js  moteur physique (Darcy-Weisbach/Colebrook, compressible, isolation, EN 12828, EN 13480-3…)
 etudes/public/js/notes.js    types de calcul : champs de saisie, calcul, résultats, hypothèses, alertes
+etudes/public/js/schema.js   schéma de principe hydraulique (P&ID) : dimensionnement et dessin SVG
 etudes/public/js/app.js      écrans : études, calculateurs, calculs rapides, données de référence, réglages
 etudes/public/js/note-pdf.js note de calcul PDF (moteur PDF de Pipe-Fit + pdf-lib de l'application DOE)
 etudes/build-demo.js         démonstration en un fichier (etudes/demo-backend.js simule le serveur)

@@ -100,11 +100,25 @@ function resultatsHtml(r) {
     <details class="hypotheses"><summary>Hypothèses et méthode</summary><ul>${r.hypotheses.map(h => `<li>${esc(h)}</li>`).join('')}</ul></details>`;
 }
 // Calculateur : formulaire et résultats ; changer() est appelé après chaque modification des entrées
+// Schéma dessiné par le calcul (P&ID), sur toute la largeur sous la saisie
+const schemaHtml = r => (r.schema ? `<div class="barre"><h2>Schéma de principe</h2><span class="espace"></span><button class="secondaire petit" data-dl-schema>Télécharger le schéma (SVG)</button></div><div class="schema">${r.schema}</div>` : '');
 function calculateurHtml(type, e) {
-  return `<div class="calc"><div class="calc-saisie">${formulaireHtml(type, e)}</div><div class="calc-resultats carte" id="resultats">${resultatsHtml(Notes.calculer(type, e))}</div></div>`;
+  const r = Notes.calculer(type, e);
+  return `<div class="calc"><div class="calc-saisie">${formulaireHtml(type, e)}</div><div class="calc-resultats carte" id="resultats">${resultatsHtml(r)}</div></div>
+    <div class="carte schema-carte" id="schema" ${r.schema ? '' : 'hidden'}>${schemaHtml(r)}</div>`;
 }
 function lierCalculateur(root, type, e, changer) {
-  const recalculer = () => { root.querySelector('#resultats').innerHTML = resultatsHtml(Notes.calculer(type, e)); changer(false); };
+  const recalculer = () => {
+    const r = Notes.calculer(type, e), z = root.querySelector('#schema');
+    root.querySelector('#resultats').innerHTML = resultatsHtml(r);
+    z.innerHTML = schemaHtml(r); z.hidden = !r.schema;
+    changer(false);
+  };
+  root.querySelector('#schema').onclick = ev => {
+    if (!ev.target.closest('[data-dl-schema]')) return;
+    const r = Notes.calculer(type, e), nom = `Schema_${String(e.titreInstallation || 'principe').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w]+/g, '_')}.svg`;
+    telecharger(nom, new TextEncoder().encode(r.schema), 'image/svg+xml');
+  };
   const redessiner = () => { changer(true); };
   root.querySelectorAll('[data-k]').forEach(el => {
     if (el.tagName === 'SELECT') el.onchange = () => { e[el.dataset.k] = el.value; redessiner(); };

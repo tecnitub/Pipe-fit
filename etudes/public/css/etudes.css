@@ -54,7 +54,14 @@ section { margin-bottom: 18px; }
   .calc-resultats { position: static; max-height: none; }
 }
 
+/* Schéma de principe : dessin sur fond blanc (lisible en thème sombre), défilement horizontal si large */
+.schema-carte { margin-bottom: 16px; }
+.schema-carte .barre { margin-bottom: 6px; }
+.schema { overflow: auto; background: #fff; border: 1px solid var(--bord); border-radius: 8px; }
+.schema svg { display: block; max-width: none; height: auto; }
+
 /* Note de calcul (pages mises en page par le moteur PDF) */
+.doe-doc.ndc img.schema-pdf { width: 100%; height: auto; border: 1px solid #b7c0d0; margin: 4px 0 10px; }
 .doe-doc.ndc h4 { color: #1F3864; font-size: 12.5px; margin: 10px 0 4px; }
 .doe-doc.ndc .sous { font-weight: 700; font-size: 12px; margin: 10px 0 2px; color: #1F3864; }
 .doe-doc.ndc table.tn td, .doe-doc.ndc table.tn th { font-size: 10.5px; padding: 3px 5px; }
