@@ -434,8 +434,8 @@ const Notes = ((D, C) => {
   // Humidité absolue (kg d'eau / kg d'air sec) à la pression atmosphérique
   const humiditeAbsolue = (T, HR) => { const pv = HR / 100 * 610.94 * Math.exp(17.625 * T / (T + 243.04)); return 0.622 * pv / (101325 - pv); };
   TYPES.bilan = {
-    titre: 'Bilan thermique d\'un local : déperditions de chauffage et apports', icone: '🏭', famille: 'Thermique',
-    description: 'Local simple (longueur × largeur × hauteur) : déperditions par les parois et le renouvellement d\'air, puissance de chauffage, apports d\'été et apports de process.',
+    titre: 'Bilan chauffage et climatisation d\'un local', icone: '🏭', famille: 'Thermique',
+    description: 'Local simple (longueur × largeur × hauteur) : puissance de chauffage (déperditions des parois et de l\'air) et puissance de climatisation (soleil, occupants, éclairage, air), avec les apports de process.',
     champs: [{ g: 'Local' }, { k: 'nom', l: 'Désignation du local', t: 't', d: 'Atelier de production' },
       { k: 'L', l: 'Longueur', u: 'm', d: 40 }, { k: 'l', l: 'Largeur', u: 'm', d: 25 }, { k: 'H', l: 'Hauteur sous toiture', u: 'm', d: 8 },
       { k: 'facades', l: 'Façades sur l\'extérieur', t: 's', o: [['4', '4 façades (bâtiment isolé)'], ['3', '3 façades (un pignon mitoyen chauffé)'], ['2', '2 façades (longueur + largeur)'], ['1', '1 façade (longueur)']], d: '4' },
