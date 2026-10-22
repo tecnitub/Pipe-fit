@@ -20,12 +20,20 @@ function chantierOnglets(a, actif) {
     <a href="#/chantier/${a.id}/documents" class="${actif === 'documents' ? 'active' : ''}">📎 Documents <span class="count">${n}</span></a>
     <a href="#/chantier/${a.id}/securite" class="${actif === 'securite' ? 'active' : ''}">⛑️ Sécurité${(a.documents || []).some(d => d.categorie === 'Sécurité / PPSPS') ? '' : ' <span class="count">à faire</span>'}</a>
     ${estHorsDevis(a) ? '' : `<a href="#/situations">Situations</a>`}
-    ${estHorsDevis(a) || !lienDOE(a) ? '' : `<a href="${esc(lienDOE(a))}" target="_blank" rel="noopener" title="Dossier des ouvrages exécutés (application DOE)">📘 DOE ↗</a>`}</div>`;
+    ${estHorsDevis(a) || !lienDOE(a) ? '' : `<a href="${esc(lienDOE(a))}" target="_blank" rel="noopener" title="Dossier des ouvrages exécutés (application DOE)">📘 DOE ↗</a>`}
+    ${estHorsDevis(a) || !lienEtudes(a) ? '' : `<a href="${esc(lienEtudes(a))}" target="_blank" rel="noopener" title="Notes de calcul du bureau d'études (application Études)">📐 Études ↗</a>`}</div>`;
 }
 // Lien vers le dossier DOE du chantier dans l'application DOE (bureau uniquement)
 function lienDOE(a) {
   if (!Store.me || Store.me.role === 'atelier') return '';
   const base = String((Store.data.settings || {}).doeUrl || (/^https?:$/.test(location.protocol) && !window.PIPEFIT_DEMO ? `${location.protocol}//${location.hostname}:3100` : '')).trim().replace(/\/+$/, '');
+  return /^https?:\/\//i.test(base) ? `${base}/#/chantier/${encodeURIComponent(a.id)}` : '';
+}
+
+// Lien vers les études (notes de calcul) du chantier dans l'application Études (bureau uniquement)
+function lienEtudes(a) {
+  if (!Store.me || Store.me.role === 'atelier') return '';
+  const base = String((Store.data.settings || {}).etudesUrl || (/^https?:$/.test(location.protocol) && !window.PIPEFIT_DEMO ? `${location.protocol}//${location.hostname}:3200` : '')).trim().replace(/\/+$/, '');
   return /^https?:\/\//i.test(base) ? `${base}/#/chantier/${encodeURIComponent(a.id)}` : '';
 }
 

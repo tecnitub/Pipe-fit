@@ -40,6 +40,15 @@ hydraulique en annexe F ; PV d'épreuve hydraulique, relevés d'équilibrage aé
 Les pièces correspondantes des listes de contrôle des sections 5 et 6 sont cochées (« Pipe-Fit »). Avec les plans,
 fiches techniques, notices et le PV de réception déjà repris, « Générer le DOE » produit le dossier complet en un clic.
 
+## Application Études (bureau d'études fluides)
+
+Application séparée dans `etudes/`, reliée à Pipe-Fit : voir [etudes/README.md](etudes/README.md).
+Notes de calcul CVC et tuyauterie industrielle : diamètres et pertes de charge (eau, eau glycolée, vapeur, air comprimé,
+gaines), HMT de pompe et ventilateur, vannes de régulation, vases d'expansion, isolation, dilatation, épaisseur sous
+pression et portées entre supports, avec note de calcul PDF. `npm run start:etudes` la démarre sur le port 3200 ;
+`node etudes/build-demo.js` produit sa démonstration `dist/pipefit-etudes-demo.html`. Dans Pipe-Fit, l'onglet
+« 📐 Études » de chaque chantier ouvre ses études.
+
 ## Installation manuelle (Linux, Windows, macOS)
 
 Prérequis : **Node.js 22.13 ou plus récent** (aucune autre dépendance, la base SQLite est intégrée à Node.js).
@@ -577,6 +586,7 @@ public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
 public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js, securite-ui.js, produits.js, dossier-documents.js, fluides-ui.js, rapprochement-ui.js, agenda-ui.js, hors-ligne.js, offres-pdf.js, comptoir.js, prix-achats.js, epreuves-ui.js, essais-ui.js : écrans métier
 doe/               application DOE séparée (serveur, interface, génération du dossier PDF)
+etudes/            application Études séparée (calculs du bureau d'études fluides, notes de calcul PDF)
 installer/         installateur Windows (NSIS) : build.sh, PipeFitCRM.nsi, lanceur et service
 ```
 
