@@ -39,6 +39,16 @@
   const rep = (status, obj) => new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
   const err = (status, error, extra) => rep(status, { error, ...(extra || {}) });
 
+  // Téléchargement du PDF : autorisation « downloads » de la page publiée ; sinon téléchargement classique du navigateur
+  if (window.claude && window.claude.use) {
+    window.claude.use('downloads').then(dl => {
+      if (!dl) return;
+      window.SAVE_FILE = (filename, data) => dl.save({ filename, data: new Blob([data], { type: 'application/pdf' }) })
+        .then(() => toast('Fichier enregistré'))
+        .catch(e => { if (e && e.code !== 'declined') toast(`Téléchargement impossible : ${e.message || e.code}`, 5000); });
+    }).catch(() => {});
+  }
+
   const vraiFetch = window.fetch.bind(window);
   window.fetch = async (url, opts = {}) => {
     const u = String(url);
