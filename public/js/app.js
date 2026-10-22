@@ -36,6 +36,7 @@ const App = {
       a.classList.toggle('active', a.getAttribute('href') === `#/${section}`);
       a.hidden = (Store.me.role === 'atelier' && !ATELIER_VIEWS.includes(a.getAttribute('href').slice(2))) || Acces.routeMasquee(a.getAttribute('href').slice(2), [], masques, MENU_OF, Store.me.role);
     });
+    document.getElementById('recherche-globale').hidden = Store.me.role === 'atelier';
     Notifs.majCloche();
   },
 

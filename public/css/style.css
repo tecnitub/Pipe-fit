@@ -891,3 +891,14 @@ fieldset.mi-titre[hidden] { display: none; }
 
 /* Commande : ajout à la bibliothèque */
 .na-table select[data-k="action"] { min-width: 160px; }
+
+/* Recherche globale */
+#recherche-globale[hidden] { display: none; }
+.rg-modal { align-self: flex-start; margin-top: 8vh; width: min(680px, 100%); }
+.rg #rg-q { width: 100%; font-size: 17px; padding: 10px 12px; }
+.rg-res { max-height: 60vh; overflow-y: auto; margin-top: 8px; }
+.rg-type { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 10px 0 2px; }
+.rg-item { display: flex; flex-direction: column; padding: 7px 10px; border-radius: 6px; color: inherit; text-decoration: none; }
+.rg-item.sel, .rg-item:hover { background: var(--panel-alt); }
+.rg-aide { margin: 8px 0 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+@media (max-width: 560px) { .rg-lib { display: none; } .rg-modal { margin-top: 0; } }

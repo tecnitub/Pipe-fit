@@ -209,6 +209,16 @@ l'API, flux temps réel) et toute modification est refusée (403). Selon l'écra
 
 Les pièces jointes restent accessibles par leur lien (identifiant aléatoire non devinable) à qui l'a déjà reçu.
 
+### Recherche globale
+
+Bouton 🔍 en haut de l'écran (ou Ctrl+K, ou « / ») : une seule barre pour retrouver un chantier, un client, un
+fournisseur ou un contact, un devis, une facture, une situation, une commande, une facture fournisseur ou reçue, une
+fourniture, un PV d'épreuve / de mise en service / d'équilibrage, une personne, un matériel du parc, un équipement
+frigorifique. Tous les mots tapés doivent se retrouver (accents et majuscules ignorés) ; un n° ou un code passe en
+tête, même incomplet (« dv-0007 » trouve DV-2026-0007, « 0002 » la fin d'un n°). Résultats groupés par type, flèches et
+Entrée pour ouvrir. Seuls les écrans accessibles au compte sont proposés (affichage par accès) ; pas sur l'appli des
+compagnons.
+
 ## Processus métier
 
 1. **Devis** : client, contact client (chargé de travaux), site d'intervention et chargé d'affaires interne.
