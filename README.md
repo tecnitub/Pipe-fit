@@ -44,7 +44,8 @@ fiches techniques, notices et le PV de réception déjà repris, « Générer le
 
 Application séparée dans `etudes/`, reliée à Pipe-Fit : voir [etudes/README.md](etudes/README.md).
 Notes de calcul CVC et tuyauterie industrielle : diamètres et pertes de charge (eau, eau glycolée, vapeur, air comprimé,
-gaines), HMT de pompe et ventilateur, vannes de régulation, vases d'expansion, isolation, dilatation, épaisseur sous
+gaines), HMT de pompe et ventilateur, vannes de régulation, vases d'expansion, bilan thermique d'un local (déperditions de
+chauffage, apports d'été et de process), isolation, dilatation, épaisseur sous
 pression et portées entre supports, avec note de calcul PDF. `npm run start:etudes` la démarre sur le port 3200 ;
 `node etudes/build-demo.js` produit sa démonstration `dist/pipefit-etudes-demo.html`. Dans Pipe-Fit, l'onglet
 « 📐 Études » de chaque chantier ouvre ses études.

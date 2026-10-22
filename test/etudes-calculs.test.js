@@ -126,3 +126,17 @@ test('entrées invalides : messages d\'erreur et valeurs par défaut protégées
   assert.ok(Object.values(D.SERIES).every(s => s.tubes.every(([, de, ep]) => de > 2 * ep)));
   assert.strictEqual(N.num('1,5'), 1.5); assert.strictEqual(N.num('', 7), 7);
 });
+
+test('bilan thermique d\'un local : déperditions, apports de process, été', () => {
+  const base = { L: 20, l: 10, H: 5, facades: '4', Ti: 20, climat: 'perso', Te: -10, TeEte: 32, HRete: 40, mur: 'perso', Umur: 0.5, toit: 'perso', Utoit: 0.3,
+    plancher: 'etage', Svitrage: 0, Slanterneau: 0, Sporte: 0, ponts: '0', infiltration: 'standard', qv: 0, qext: 0, relance: '0', process: [] };
+  const r = N.calculer('bilan', base);
+  // Murs 60 m × 5 m × 0,5 + toiture 200 m² × 0,3 = 210 W/K ; air 0,34 × 0,5 × 1 000 m³ = 170 W/K ; ΔT = 30 K
+  proche(r.valeurs.Htr, 210, 1e-9); proche(r.valeurs.Hve, 170, 1e-9); proche(r.valeurs.Pchauf, 380 * 30, 1e-6);
+  const avec = N.calculer('bilan', { ...base, process: [{ nom: 'Four', P: 10, simult: 50, sensible: 100 }], processHiver: '100' });
+  proche(avec.valeurs.deduit, 5000, 1e-9); proche(avec.valeurs.Pchauf, 380 * 30 - 5000, 1e-6);
+  assert.ok(avec.valeurs.Ss > r.valeurs.Ss + 4999, 'process ajouté aux apports d\'été');
+  assert.strictEqual(N.calculer('bilan', { ...base, facades: '2' }).valeurs.Htr, 30 * 5 * 0.5 + 60, 'deux façades exposées');
+  assert.strictEqual(N.calculer('bilan', { ...base, climat: 'strasbourg' }).valeurs.Te, -15);
+  assert.ok(N.calculer('bilan', { ...base, Svitrage: 1000 }).alertes.some(a => a.niveau === 'erreur'));
+});

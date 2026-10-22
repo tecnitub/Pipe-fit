@@ -101,6 +101,50 @@ const Donnees = (() => {
     '1.4404': { libelle: 'X2CrNiMo17-12-2 / 1.4404 (316L)', austenitique: true, Rm: 490, Rp: [[20, 225], [100, 199], [150, 181], [200, 167], [250, 157], [300, 145], [350, 139], [400, 135]] },
   };
 
-  return { SERIES, MATERIAUX, CP_EAU, GLYCOLS, VAPEUR, SINGULARITES, ISOLANTS, REVETEMENTS, GAINES_RONDES, RUGOSITE_GAINE, SINGULARITES_AIR, PVAP, VASES, KVS, ACIERS_PRESSION };
+  // Enveloppe de bâtiment : compositions courantes [libellé, U (W/m²·K), …]. Valeurs moyennes d'ordre de grandeur
+  // (règles Th-U, bâtiments existants) : à remplacer par la valeur du DPE ou de l'étude thermique quand elle existe.
+  const MURS = {
+    'bardage-simple': ['Bardage simple peau acier, non isolé', 5.5], 'bardage-double-60': ['Bardage double peau, laine 60 mm', 0.6],
+    'bardage-double-120': ['Bardage double peau, laine 120 mm', 0.33], 'sandwich-80': ['Panneau sandwich 80 mm', 0.30],
+    'parpaing-nu': ['Parpaing 20 cm non isolé', 2.2], 'parpaing-iso': ['Parpaing 20 cm + isolant 10 cm', 0.35], 'beton-nu': ['Béton banché 18 cm non isolé', 3.0],
+    'brique-nu': ['Brique creuse 20 cm non isolée', 1.5], pierre: ['Mur ancien en pierre 50 cm', 1.9], recent: ['Mur isolé performant (construction récente)', 0.20],
+  };
+  const TOITURES = {
+    'bac-nu': ['Bac acier non isolé', 6.0], fibro: ['Plaques fibres-ciment non isolées', 5.0], 'bac-80': ['Bac acier + isolant 80 mm', 0.45],
+    'bac-160': ['Bac acier + isolant 160 mm', 0.23], 'sandwich-100': ['Panneau sandwich de toiture 100 mm', 0.22], 'terrasse-nu': ['Toiture terrasse béton non isolée', 2.5],
+    'terrasse-iso': ['Toiture terrasse béton + isolant 12 cm', 0.28], combles: ['Combles isolés 30 cm', 0.14], etage: ['Plafond sous local chauffé', 0],
+  };
+  // Planchers bas : [libellé, U équivalent, coefficient b de réduction de l'écart de température]
+  const PLANCHERS = {
+    'dallage-nu': ['Dallage sur terre-plein non isolé (grande surface)', 0.45, 1], 'dallage-iso': ['Dallage sur terre-plein isolé', 0.25, 1],
+    vs: ['Plancher sur vide sanitaire non isolé', 1.0, 0.8], 'vs-iso': ['Plancher sur vide sanitaire isolé', 0.30, 0.8],
+    'local-nc': ['Plancher sur local non chauffé (sous-sol, parking)', 1.5, 0.5], etage: ['Plancher sur local chauffé', 0, 0],
+  };
+  // Parois vitrées : [libellé, Uw, facteur solaire g]
+  const VITRAGES = {
+    simple: ['Simple vitrage, châssis métal', 5.8, 0.85], 'double-ancien': ['Double vitrage ancien, alu sans rupture', 3.5, 0.75],
+    'double-recent': ['Double vitrage récent, rupture thermique', 1.6, 0.6], triple: ['Triple vitrage', 1.0, 0.5],
+    polycarbonate: ['Polycarbonate alvéolaire 16 mm', 2.4, 0.6], translucide: ['Plaques translucides simples (polyester)', 5.5, 0.8],
+  };
+  const PORTES = {
+    'sectionnelle-nu': ['Porte sectionnelle non isolée', 5.0], 'sectionnelle-40': ['Porte sectionnelle isolée 40 mm', 1.1], acier: ['Porte acier pleine', 3.5],
+    rapide: ['Porte souple à enroulement rapide', 5.8], vitree: ['Porte vitrée aluminium', 3.0],
+  };
+  // Renouvellement d'air par infiltrations (vol/h)
+  const INFILTRATIONS = { etanche: ['Bâtiment récent, étanche', 0.2], standard: ['Bâtiment courant', 0.5], ancien: ['Bâtiment ancien, peu étanche', 1.0], portes: ['Atelier avec portes souvent ouvertes', 2.0] };
+  // Températures extérieures de base (hiver, NF EN 12831 / annexe nationale, altitude de la ville) et conditions d'été [libellé, Tbase hiver, T été, HR été %]
+  const CLIMATS = {
+    annonay: ['Annonay, Ardèche nord (Davezieux)', -10, 32, 40], lyon: ['Lyon', -10, 33, 40], 'st-etienne': ['Saint-Étienne', -10, 31, 40], valence: ['Valence', -6, 34, 35],
+    grenoble: ['Grenoble', -10, 32, 40], chambery: ['Chambéry, Annecy', -10, 31, 40], clermont: ['Clermont-Ferrand', -8, 32, 40], dijon: ['Dijon', -10, 31, 40],
+    paris: ['Paris', -7, 32, 40], lille: ['Lille', -9, 29, 45], strasbourg: ['Strasbourg', -15, 31, 40], nancy: ['Nancy', -15, 31, 40], limoges: ['Limoges', -8, 31, 40],
+    nantes: ['Nantes', -5, 30, 45], rennes: ['Rennes', -5, 29, 45], brest: ['Brest', -4, 26, 55], bordeaux: ['Bordeaux', -5, 33, 40], toulouse: ['Toulouse', -5, 34, 35],
+    montpellier: ['Montpellier', -5, 33, 45], marseille: ['Marseille', -5, 32, 45], nice: ['Nice', -2, 31, 55],
+  };
+  // Occupants : apports [sensible, latent] W par personne selon l'activité
+  const ACTIVITES = { bureau: ['Bureau, travail assis', 75, 55], leger: ['Travail léger debout (montage, contrôle)', 90, 95], moyen: ['Travail moyen (atelier, manutention légère)', 105, 175], lourd: ['Travail lourd', 170, 255] };
+  // Apports solaires de pointe à travers 1 m² de vitrage clair (W/m²), avant facteur solaire
+  const SOLAIRE = { nord: ['Nord', 120], est: ['Est', 500], sud: ['Sud', 400], ouest: ['Ouest', 500], horizontal: ['Horizontal (lanterneaux)', 750] };
+
+  return { MURS, TOITURES, PLANCHERS, VITRAGES, PORTES, INFILTRATIONS, CLIMATS, ACTIVITES, SOLAIRE, SERIES, MATERIAUX, CP_EAU, GLYCOLS, VAPEUR, SINGULARITES, ISOLANTS, REVETEMENTS, GAINES_RONDES, RUGOSITE_GAINE, SINGULARITES_AIR, PVAP, VASES, KVS, ACIERS_PRESSION };
 })();
 if (typeof module !== 'undefined') module.exports = Donnees;

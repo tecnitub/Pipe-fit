@@ -428,7 +428,120 @@ const Notes = ((D, C) => {
     },
   };
 
-  /* ---------- 10. Dilatation thermique ---------- */
+  /* ---------- 10. Bilan thermique d'un local : déperditions de chauffage, apports de climatisation ---------- */
+  const optU = (table, avecPerso = true) => [...Object.entries(table).map(([k, v]) => [k, `${v[0]} — U ${nf(v[1], 2)}`]), ...(avecPerso ? [['perso', 'Autre (U saisi)']] : [])];
+  const optListe = table => Object.entries(table).map(([k, v]) => [k, v[0]]);
+  // Humidité absolue (kg d'eau / kg d'air sec) à la pression atmosphérique
+  const humiditeAbsolue = (T, HR) => { const pv = HR / 100 * 610.94 * Math.exp(17.625 * T / (T + 243.04)); return 0.622 * pv / (101325 - pv); };
+  TYPES.bilan = {
+    titre: 'Bilan thermique d\'un local : déperditions de chauffage et apports', icone: '🏭', famille: 'Thermique',
+    description: 'Local simple (longueur × largeur × hauteur) : déperditions par les parois et le renouvellement d\'air, puissance de chauffage, apports d\'été et apports de process.',
+    champs: [{ g: 'Local' }, { k: 'nom', l: 'Désignation du local', t: 't', d: 'Atelier de production' },
+      { k: 'L', l: 'Longueur', u: 'm', d: 40 }, { k: 'l', l: 'Largeur', u: 'm', d: 25 }, { k: 'H', l: 'Hauteur sous toiture', u: 'm', d: 8 },
+      { k: 'facades', l: 'Façades sur l\'extérieur', t: 's', o: [['4', '4 façades (bâtiment isolé)'], ['3', '3 façades (un pignon mitoyen chauffé)'], ['2', '2 façades (longueur + largeur)'], ['1', '1 façade (longueur)']], d: '4' },
+      { k: 'Ti', l: 'Température intérieure en hiver', u: '°C', d: 17 }, { k: 'TiEte', l: 'Température intérieure en été (local climatisé)', u: '°C', d: 26 },
+      { g: 'Climat' }, { k: 'climat', l: 'Site', t: 's', o: [...optListe(D.CLIMATS), ['perso', 'Autre (températures saisies)']], d: 'annonay' },
+      { k: 'Te', l: 'Température extérieure de base en hiver', u: '°C', d: -10, si: e => e.climat === 'perso' },
+      { k: 'TeEte', l: 'Température extérieure en été', u: '°C', d: 32, si: e => e.climat === 'perso' }, { k: 'HRete', l: 'Humidité relative extérieure en été', u: '%', d: 40, si: e => e.climat === 'perso' },
+      { g: 'Enveloppe' }, { k: 'mur', l: 'Murs', t: 's', o: optU(D.MURS), d: 'bardage-double-60' }, { k: 'Umur', l: 'U des murs', u: 'W/m²·K', d: 0.5, si: e => e.mur === 'perso' },
+      { k: 'toit', l: 'Toiture', t: 's', o: optU(D.TOITURES), d: 'bac-80' }, { k: 'Utoit', l: 'U de la toiture', u: 'W/m²·K', d: 0.4, si: e => e.toit === 'perso' },
+      { k: 'teinte', l: 'Teinte de la toiture (été)', t: 's', o: [['claire', 'Claire'], ['foncee', 'Foncée']], d: 'claire' },
+      { k: 'plancher', l: 'Plancher bas', t: 's', o: optU(D.PLANCHERS), d: 'dallage-nu' }, { k: 'Uplancher', l: 'U du plancher', u: 'W/m²·K', d: 0.5, si: e => e.plancher === 'perso' },
+      { k: 'vitrage', l: 'Fenêtres en façade', t: 's', o: optU(D.VITRAGES), d: 'double-ancien' }, { k: 'Uvitrage', l: 'U des fenêtres', u: 'W/m²·K', d: 2, si: e => e.vitrage === 'perso' },
+      { k: 'Svitrage', l: 'Surface des fenêtres', u: 'm²', d: 30 }, { k: 'orientation', l: 'Orientation principale des fenêtres', t: 's', o: optListe(D.SOLAIRE).filter(([k]) => k !== 'horizontal'), d: 'sud' },
+      { k: 'protection', l: 'Protection solaire', t: 's', o: [['1', 'Aucune'], ['0.6', 'Store intérieur'], ['0.3', 'Brise-soleil, store extérieur']], d: '1' },
+      { k: 'lanterneau', l: 'Lanterneaux, éclairement zénithal', t: 's', o: optU(D.VITRAGES), d: 'polycarbonate' }, { k: 'Slanterneau', l: 'Surface des lanterneaux', u: 'm²', d: 60 },
+      { k: 'porte', l: 'Portes', t: 's', o: optU(D.PORTES), d: 'sectionnelle-nu' }, { k: 'Uporte', l: 'U des portes', u: 'W/m²·K', d: 3, si: e => e.porte === 'perso' },
+      { k: 'Sporte', l: 'Surface des portes', u: 'm²', d: 32 },
+      { k: 'ponts', l: 'Ponts thermiques (majoration des parois)', t: 's', o: [['0', 'Négligés'], ['10', '+ 10 % (bâtiment isolé courant)'], ['20', '+ 20 % (isolation intérieure, nombreuses liaisons)'], ['30', '+ 30 % (bâtiment ancien)']], d: '10' },
+      { g: 'Renouvellement d\'air' }, { k: 'infiltration', l: 'Infiltrations', t: 's', o: Object.entries(D.INFILTRATIONS).map(([k, v]) => [k, `${v[0]} — ${nf(v[1], 1)} vol/h`]), d: 'standard' },
+      { k: 'qv', l: 'Ventilation mécanique (air neuf)', u: 'm³/h', d: 0 }, { k: 'recup', l: 'Efficacité de la récupération de chaleur (0 : simple flux)', u: '%', d: 0 },
+      { k: 'qext', l: 'Extraction de process compensée par de l\'air extérieur (fumées de soudage, cabines…)', u: 'm³/h', d: 0 },
+      { g: 'Apports internes (été)' }, { k: 'occupants', l: 'Nombre de personnes', d: 10 }, { k: 'activite', l: 'Activité', t: 's', o: optListe(D.ACTIVITES), d: 'moyen' },
+      { k: 'eclairage', l: 'Éclairage', u: 'W/m²', d: 8 },
+      { g: 'Apports de process (machines, fours, compresseurs…)' },
+      { k: 'process', l: 'Équipements de process (puissance dissipée dans le local)', t: 'lignes', d: [],
+        colonnes: [{ k: 'nom', l: 'Équipement', t: 't' }, { k: 'P', l: 'Puissance dissipée (kW)' }, { k: 'simult', l: 'Simultanéité (%)' }, { k: 'sensible', l: 'Part sensible (%)' }] },
+      { k: 'processHiver', l: 'Apports de process déduits du chauffage', t: 's', o: [['0', 'Aucun (chauffage dimensionné à l\'arrêt de la production)'], ['50', '50 % des apports'], ['100', '100 % des apports (production permanente)']], d: '0' },
+      { g: 'Puissances' }, { k: 'relance', l: 'Majoration pour relance (chauffage intermittent)', t: 's', o: [['0', 'Aucune (chauffage continu)'], ['10', '+ 10 %'], ['20', '+ 20 % (arrêt le week-end)']], d: '10' },
+      { k: 'marge', l: 'Marge de sécurité sur la climatisation', u: '%', d: 10 }],
+    calcul(e) {
+      const L = num(e.L), l = num(e.l), H = num(e.H), Sol = L * l, V = Sol * H, f = num(e.facades, 4), alertes = [];
+      const c = D.CLIMATS[e.climat], Te = c ? c[1] : num(e.Te, -10), TeEte = c ? c[2] : num(e.TeEte, 32), HRete = c ? c[3] : num(e.HRete, 40);
+      const Ti = num(e.Ti, 17), TiEte = num(e.TiEte, 26), dT = Ti - Te, dTete = TeEte - TiEte;
+      const U = (table, cle, perso) => (cle === 'perso' ? [num(perso), 1] : [table[cle][1], table[cle].length > 2 && table === D.PLANCHERS ? table[cle][2] : 1]);
+      const lib = (table, cle) => (cle === 'perso' ? 'U saisi' : table[cle][0]);
+      // Surfaces : façades exposées selon le nombre de côtés sur l'extérieur, déduction des menuiseries
+      const perimetre = { 4: 2 * (L + l), 3: 2 * Math.max(L, l) + Math.min(L, l), 2: L + l, 1: Math.max(L, l) }[f] || 2 * (L + l);
+      const Sv = num(e.Svitrage), Sp = num(e.Sporte), Sl = Math.min(num(e.Slanterneau), Sol), Smur = Math.max(0, perimetre * H - Sv - Sp);
+      if (Sv + Sp > perimetre * H) alertes.push(alerte('erreur', 'Fenêtres et portes plus grandes que les façades exposées.'));
+      const [Uv, gv] = e.vitrage === 'perso' ? [num(e.Uvitrage), 0.6] : D.VITRAGES[e.vitrage].slice(1), [Ul, gl] = D.VITRAGES[e.lanterneau].slice(1);
+      const maj = 1 + num(e.ponts) / 100;
+      const parois = [
+        ['Murs', lib(D.MURS, e.mur), Smur, ...U(D.MURS, e.mur, e.Umur), 5],
+        ['Toiture', lib(D.TOITURES, e.toit), Sol - Sl, ...U(D.TOITURES, e.toit, e.Utoit), e.teinte === 'foncee' ? 20 : 10],
+        ['Plancher bas', lib(D.PLANCHERS, e.plancher), Sol, ...U(D.PLANCHERS, e.plancher, e.Uplancher), null],
+        ['Fenêtres', lib(D.VITRAGES, e.vitrage), Sv, Uv, 1, 0],
+        ['Lanterneaux', D.VITRAGES[e.lanterneau][0], Sl, Ul, 1, 0],
+        ['Portes', lib(D.PORTES, e.porte), Sp, ...U(D.PORTES, e.porte, e.Uporte), 5],
+      ].filter(p => p[2] > 0).map(([paroi, compo, A, u, b, dTeq]) => ({ paroi, compo, A, U: u, b, H: A * u * b * maj, dTeq }));
+      const Htr = parois.reduce((a, p) => a + p.H, 0), Ptr = Htr * dT;
+      // Air : 0,34 Wh/m³·K (ρ·cp de l'air) ; ventilation diminuée de la récupération de chaleur
+      const n = D.INFILTRATIONS[e.infiltration][1], qInf = n * V, qVent = num(e.qv) * (1 - num(e.recup) / 100), qExt = num(e.qext);
+      const air = [['Infiltrations', qInf], ['Ventilation mécanique', qVent], ['Extraction de process', qExt]].filter(x => x[1] > 0).map(([poste, q]) => ({ poste, q, H: 0.34 * q }));
+      const Hve = air.reduce((a, x) => a + x.H, 0), Pve = Hve * dT;
+      const Pbrut = (Ptr + Pve) * (1 + num(e.relance) / 100);
+      const process = (e.process || []).map(x => { const P = num(x.P) * num(x.simult, 100) / 100; return { nom: x.nom || 'Équipement', P, sens: P * num(x.sensible, 100) / 100 }; });
+      const procSens = process.reduce((a, x) => a + x.sens, 0) * 1000, procLat = process.reduce((a, x) => a + x.P - x.sens, 0) * 1000;
+      const deduit = procSens * num(e.processHiver) / 100, Pchauf = Math.max(0, Pbrut - deduit);
+      // Été : transmission avec écart équivalent d'ensoleillement des parois opaques, apports solaires des vitrages, internes, process, air
+      const etePar = parois.filter(p => p.dTeq !== null).map(p => ({ poste: `Transmission ${p.paroi.toLowerCase()}`, s: p.H * (dTete + p.dTeq), l: 0 }));
+      const sol = [{ poste: 'Soleil par les fenêtres', s: Sv * D.SOLAIRE[e.orientation][1] * gv * num(e.protection, 1), l: 0 }, { poste: 'Soleil par les lanterneaux', s: Sl * D.SOLAIRE.horizontal[1] * gl, l: 0 }].filter(x => x.s > 0);
+      const act = D.ACTIVITES[e.activite], nb = num(e.occupants);
+      const dx = Math.max(0, humiditeAbsolue(TeEte, HRete) - humiditeAbsolue(TiEte, 50)), qAir = qInf + qVent + qExt;
+      const ete = [...etePar, ...sol, { poste: 'Occupants', s: nb * act[1], l: nb * act[2] }, { poste: 'Éclairage', s: num(e.eclairage) * Sol, l: 0 },
+        ...process.map(x => ({ poste: x.nom, s: x.sens * 1000, l: (x.P - x.sens) * 1000 })),
+        { poste: 'Air extérieur (infiltrations, ventilation, extraction)', s: 0.34 * qAir * dTete, l: 1.2 * qAir / 3600 * 2501e3 * dx }].filter(x => Math.abs(x.s) + x.l > 0.5);
+      const Ss = ete.reduce((a, x) => a + x.s, 0), Sla = ete.reduce((a, x) => a + x.l, 0), marge = 1 + num(e.marge, 10) / 100, Pfroid = (Ss + Sla) * marge;
+      const k = v => nf(v / 1000, 1);
+      if (!(V > 0)) alertes.push(alerte('erreur', 'Dimensions du local à renseigner.'));
+      alertes.push(alerte('ok', `Chauffage : ${k(Pchauf)} kW (${nf(Pchauf / Math.max(Sol, 1), 0)} W/m², ${nf(Pchauf / Math.max(V, 1), 1)} W/m³) pour ${nf(Ti, 0)} °C intérieur par ${nf(Te, 0)} °C extérieur.`));
+      if (deduit > 0 && deduit >= Pbrut) alertes.push(alerte('attention', 'Les apports de process couvrent les déperditions : prévoir tout de même un chauffage hors gel ou de relance pour les arrêts de production.'));
+      else if (deduit > 0) alertes.push(alerte('attention', `${k(deduit)} kW d'apports de process déduits : en cas d'arrêt de la production, la puissance nécessaire remonte à ${k(Pbrut)} kW.`));
+      if (Pve > Ptr) alertes.push(alerte('attention', 'Le renouvellement d\'air pèse plus que les parois : sas, portes rapides, rideaux d\'air ou récupération de chaleur sont les premiers leviers.'));
+      if (H >= 6) alertes.push(alerte('attention', `Grande hauteur (${nf(H, 1)} m) : stratification de l'air chaud ; privilégier tubes radiants ou panneaux rayonnants, ou déstratificateurs avec des aérothermes.`));
+      const nonIsole = parois.filter(p => p.U >= 3 && p.A > 0 && p.paroi !== 'Portes' && p.paroi !== 'Fenêtres').map(p => p.paroi.toLowerCase());
+      if (nonIsole.length) alertes.push(alerte('attention', `Parois non isolées (${nonIsole.join(', ')}) : l'isolation réduirait fortement la puissance et la consommation.`));
+      alertes.push(alerte('ok', `Climatisation : ${k(Pfroid)} kW avec marge (sensible ${k(Ss)} kW, latent ${k(Sla)} kW) pour ${nf(TiEte, 0)} °C intérieur par ${nf(TeEte, 0)} °C extérieur.`));
+      return {
+        valeurs: { Sol, V, Htr, Ptr, Hve, Pve, Pbrut, deduit, Pchauf, Ss, Sla, Pfroid, Te, TeEte },
+        resume: [['Local', `${e.nom || '—'} : ${nf(L, 1)} × ${nf(l, 1)} × ${nf(H, 1)} m`], ['Surface au sol / volume', `${nf(Sol, 0)} m² / ${nf(V, 0)} m³`],
+          ['Températures de base (hiver / été)', `${nf(Te, 0)} °C / ${nf(TeEte, 0)} °C${c ? ` — ${c[0]}` : ''}`],
+          ['Déperditions par les parois', `${k(Ptr)} kW (${nf(Htr, 0)} W/K)`], ['Déperditions par le renouvellement d\'air', `${k(Pve)} kW (${nf(Hve, 0)} W/K)`],
+          ['Puissance brute avec relance', `${k(Pbrut)} kW`], ...(deduit > 0 ? [['Apports de process déduits', `− ${k(deduit)} kW`]] : []),
+          ['Puissance de chauffage', `${k(Pchauf)} kW`], ['Ratios de chauffage', `${nf(Pchauf / Math.max(Sol, 1), 0)} W/m² · ${nf(Pchauf / Math.max(V, 1), 1)} W/m³`],
+          ['Apports de process (sensible / latent)', `${k(procSens)} / ${k(procLat)} kW`], ['Puissance frigorifique avec marge', `${k(Pfroid)} kW (${nf(Pfroid / Math.max(Sol, 1), 0)} W/m²)`]],
+        tableaux: [{ titre: 'Déperditions de chauffage', entetes: ['Poste', 'Composition', 'Surface (m²) / débit (m³/h)', 'U (W/m²·K)', 'b', 'H (W/K)', 'Puissance (kW)'],
+          lignes: [...parois.map(p => [p.paroi, p.compo, nf(p.A, 1), nf(p.U, 2), nf(p.b, 1), nf(p.H, 0), k(p.H * dT)]),
+            ...air.map(x => [x.poste, x.poste === 'Infiltrations' ? `${nf(n, 1)} vol/h` : x.poste === 'Ventilation mécanique' && num(e.recup) ? `récupération ${nf(num(e.recup), 0)} %` : '', nf(x.q, 0), '', '', nf(x.H, 0), k(x.H * dT)]),
+            ...(num(e.relance) ? [['Relance', `+ ${num(e.relance)} %`, '', '', '', '', k((Ptr + Pve) * num(e.relance) / 100)]] : []),
+            ...(deduit > 0 ? [['Apports de process', `${num(e.processHiver)} % déduits`, '', '', '', '', `− ${k(deduit)}`]] : []),
+            ['Puissance de chauffage', '', '', '', '', nf(Htr + Hve, 0), k(Pchauf)]], total: true },
+        { titre: 'Apports d\'été (climatisation)', entetes: ['Poste', 'Sensible (kW)', 'Latent (kW)'],
+          lignes: [...ete.map(x => [x.poste, nf(x.s / 1000, 2), nf(x.l / 1000, 2)]), [`Total avec marge de ${nf(num(e.marge, 10), 0)} %`, nf(Ss * marge / 1000, 2), nf(Sla * marge / 1000, 2)]], total: true }],
+        alertes,
+        hypotheses: ['Méthode simplifiée de la NF EN 12831 : Φ = (Σ U · A · b · (1 + ponts thermiques) + 0,34 · qv) · (θint − θbase), majorée pour la relance.',
+          `Façades exposées : périmètre de ${nf(perimetre, 1)} m sur ${nf(H, 1)} m de hauteur, fenêtres et portes déduites ; toiture déduite des lanterneaux.`,
+          'Coefficients U : ordres de grandeur des compositions courantes (à remplacer par les valeurs d\'un DPE ou d\'une étude thermique si elles existent).',
+          'Renouvellement d\'air : 0,34 Wh/m³·K ; infiltrations exprimées en volumes par heure du local ; extraction de process compensée par de l\'air extérieur non préchauffé.',
+          'Été : écart de température équivalent d\'ensoleillement (murs + 5 K, toiture + 10 ou + 20 K), apports solaires de pointe des vitrages × facteur solaire × protection, occupants et éclairage, latent de l\'air neuf calculé pour 50 % HR intérieur.',
+          'Apports de process : puissance dissipée dans le local × simultanéité ; part latente pour les dégagements de vapeur (bains, lavage, cuisson).'],
+        synthese: `${e.nom || 'Local'} · chauffage ${k(Pchauf)} kW · froid ${k(Pfroid)} kW`,
+      };
+    },
+  };
+
+  /* ---------- 11. Dilatation thermique ---------- */
   TYPES.dilatation = {
     titre: 'Dilatation thermique et compensation', icone: '↔️', famille: 'Mécanique',
     description: 'Allongement entre points fixes, longueur du bras flexible (L, Z), lyre et course des compensateurs.',
@@ -465,7 +578,7 @@ const Notes = ((D, C) => {
     },
   };
 
-  /* ---------- 11. Épaisseur sous pression ---------- */
+  /* ---------- 12. Épaisseur sous pression ---------- */
   TYPES.epaisseur = {
     titre: 'Épaisseur des tubes sous pression (NF EN 13480-3)', icone: '🧪', famille: 'Mécanique',
     description: 'Épaisseur minimale requise, vérification des tubes de la série, pression maximale admissible et pression d\'épreuve.',
@@ -499,7 +612,7 @@ const Notes = ((D, C) => {
     },
   };
 
-  /* ---------- 12. Supportage ---------- */
+  /* ---------- 13. Supportage ---------- */
   TYPES.supportage = {
     titre: 'Portée entre supports', icone: '🏗️', famille: 'Mécanique',
     description: 'Espacement maximal des supports d\'une tuyauterie métallique horizontale (poids propre, fluide, isolant).',
