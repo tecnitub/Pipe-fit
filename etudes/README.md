@@ -34,6 +34,18 @@ note vanne de régulation, et une note vase d'expansion (volume d'eau estimé d'
 bouteille). Les valeurs reprises sont recalculées à chaque modification de la note d'origine et affichées verrouillées ;
 « Détacher » les transforme en valeurs saisies.
 
+**Catalogues de pompes et de vannes** : les calculs de réseau, de vanne et le schéma proposent un modèle d'après le point
+de fonctionnement (pompe couvrant le point avec 10 % de réserve, vitesse réduite estimée ; vanne au Kvs normalisé).
+Sans catalogue, une gamme générique d'exemple est utilisée ; les catalogues fournisseurs s'importent en CSV dans les
+Réglages (modèle de fichier téléchargeable).
+
+**Modèles d'études** : six installations types (chaufferie en cascade, eau glacée, atelier avec bilan et aérothermes,
+sous-station, PAC en change-over, distribution vapeur) et toute étude enregistrée comme modèle (« ⭐ Enregistrer comme
+modèle ») servent de point de départ dans « Nouvelle étude », calculs et liens compris.
+
+**Comparaison de variantes** : cocher deux calculs ou plus d'une étude (par exemple un calcul et sa copie modifiée)
+puis « Comparer la sélection » : résultats et données d'entrée côte à côte, différences surlignées, export PDF.
+
 Les résultats sont recalculés à chaque frappe. Chaque calcul affiche ses hypothèses, ses formules et des alertes
 (non-conformité, point d'attention). Les **calculs rapides** (page d'accueil) se font sans rien enregistrer, puis se versent
 dans une étude. Les valeurs sont des données de pré-dimensionnement : les documents des fabricants et les normes font foi.
@@ -70,6 +82,8 @@ etudes/public/js/notes.js    types de calcul : champs de saisie, calcul, résult
 etudes/public/js/schema.js   schéma de principe hydraulique (P&ID) : dimensionnement et dessin SVG
 etudes/public/js/liens.js    liens entre calculs d'une étude (valeurs reprises, notes créées depuis un schéma)
 etudes/public/js/dxf.js      export DXF (AutoCAD R12, Windows-1252) des schémas SVG
+etudes/public/js/catalogue.js catalogues de pompes et de vannes (gamme générique, import CSV), choix au point de fonctionnement
+etudes/public/js/modeles.js  modèles d'études intégrés et instanciation des modèles enregistrés
 etudes/public/js/app.js      écrans : études, calculateurs, calculs rapides, données de référence, réglages
 etudes/public/js/note-pdf.js note de calcul PDF (moteur PDF de Pipe-Fit + pdf-lib de l'application DOE)
 etudes/build-demo.js         démonstration en un fichier (etudes/demo-backend.js simule le serveur)

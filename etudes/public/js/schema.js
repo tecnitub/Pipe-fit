@@ -56,7 +56,9 @@ const Schema = ((D, C, N) => {
       if (different && reg !== '3v') alertes.push(alerte('attention', `${rep} : régime ${rc[0]}/${rc[1]} °C différent du réseau sans vanne 3 voies de mélange.`));
       if (reg === '3v' && (chaud ? rc[0] > Tsd : rc[0] < Tsd)) alertes.push(alerte('erreur', `${rep} : départ du circuit (${rc[0]} °C) ${chaud ? 'plus chaud' : 'plus froid'} que le départ ${echangeur ? 'du secondaire de l\'échangeur' : 'du réseau'} (${Tsd} °C).`));
       if (em[2] !== 'mixte' && em[2] !== (chaud ? 'chaud' : 'froid')) alertes.push(alerte('attention', `${rep} : ${em[0].toLowerCase()} sur un réseau d'${chaud ? 'eau chaude' : 'eau glacée'}.`));
-      return { rep, em, emetteur: c.emetteur, reg, rc, P, Q, Qcoll, t, v: x.v, hmt, kvs, dpV, L: num(c.L) };
+      const Cat = typeof Catalogue !== 'undefined' ? Catalogue : require('./catalogue');
+      const pompe = Cat.pompesPour(Q, hmt)[0] || null, vanne = reg === 'direct' ? null : Cat.vannePour(C.kv(Q, dpV, f.rho), reg);
+      return { rep, em, emetteur: c.emetteur, reg, rc, P, Q, Qcoll, t, v: x.v, hmt, kvs, dpV, L: num(c.L), pompe, vanne };
     });
     // Production
     const n = Math.max(1, Math.min(6, Math.round(num(e.nGen, 1)))), Pg = num(e.Pgen), Pprod = n * Pg, gen = GENERATEURS[e.generateur] || GENERATEURS['chaudiere-cond'];
@@ -470,6 +472,8 @@ const Schema = ((D, C, N) => {
           lignes: d.circuits.map(c => [c.rep, c.em[0], `${nf(c.P, 0)} / ${nf(c.Pf, 0)}`, `${nf(c.Qc, 2)} / ${nf(c.Qf, 2)}`, c.t.nom, nf(c.v, 2), REGULATIONS[c.reg], c.kvs ? nf(c.kvs, c.kvs < 1 ? 2 : 1) : '—', `${nf(c.Q, 2)} × ${nf(c.hmt, 1)}`]) }
           : { titre: 'Circuits de distribution', entetes: ['Circuit', 'Émetteur', 'P (kW)', 'Régime (°C)', 'Débit (m³/h)', 'Tube', 'v (m/s)', 'Régulation', 'Kvs', 'Pompe (m³/h × mCE)'],
           lignes: d.circuits.map(c => [c.rep, c.em[0], nf(c.P, 0), `${c.rc[0]}/${c.rc[1]}`, nf(c.Q, 2), c.t.nom, nf(c.v, 2), REGULATIONS[c.reg], c.kvs ? nf(c.kvs, c.kvs < 1 ? 2 : 1) : '—', `${nf(c.Q, 2)} × ${nf(c.hmt, 1)}`]) },
+        { titre: 'Matériel proposé (catalogue)', entetes: ['Circuit', 'Pompe', 'Vanne de régulation'],
+          lignes: d.circuits.map(c => [c.rep, c.pompe ? N.libPompe(c.pompe) : 'aucune pompe du catalogue', c.reg === 'direct' ? '—' : c.vanne ? N.libVanne(c.vanne) : 'aucune vanne du catalogue']) },
         { titre: 'Production', entetes: ['Générateur', 'P (kW)', 'Débit (m³/h)', 'Raccordement', 'Pompe primaire'],
           lignes: Array.from({ length: d.n }, (_, i) => [`${d.co ? 'PAC' : d.chaud ? 'G' : 'GF'}${i + 1} — ${d.gen[0]}`, d.co ? `${nf(d.co.dC.Pg, 0)} / ${nf(d.co.dF.Pg, 0)}` : nf(d.Pg, 0), nf(d.Qg, 2), d.tg.nom,
             d.pompesInd && (d.bouteille || d.echangeur || d.n > 1) ? `${nf(d.Qg, 2)} m³/h, avec clapet` : d.n > 1 && d.bouteille ? `pompe commune ${nf(d.Qp, 2)} m³/h, vanne motorisée` : d.n > 1 ? 'vanne motorisée (pompes des circuits)' : 'sans (pompes des circuits)'] ) }],

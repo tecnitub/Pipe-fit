@@ -55,6 +55,16 @@ section { margin-bottom: 18px; }
   .calc-resultats { position: static; max-height: none; }
 }
 
+/* Comparaison de variantes */
+table.comparaison { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table.comparaison th, table.comparaison td { border-bottom: 1px solid var(--bord); padding: 6px 8px; text-align: left; vertical-align: top; }
+table.comparaison thead th { background: #1F3864; color: #fff; }
+table.comparaison tbody th { color: var(--muted); font-weight: 500; width: 24%; }
+table.comparaison tr.diff td { background: var(--att-fond); color: var(--att-texte); font-weight: 600; }
+table.comparaison tr.synthese td { font-weight: 700; }
+.note-actions .case { margin-right: 8px; color: var(--muted); }
+.doe-doc.ndc table.comparaison tr.diff td { background: #fff3d6; font-weight: 700; }
+
 /* Valeurs reprises d'une autre note */
 .bandeau-lien { background: var(--bleu-clair); color: var(--bleu); border-radius: 8px; padding: 8px 12px; margin: 0 0 12px; font-size: 13.5px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 input[data-verrou], select[data-verrou] { background: var(--bleu-clair); color: var(--bleu); border-style: dashed; opacity: 1; }

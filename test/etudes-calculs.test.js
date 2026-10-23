@@ -232,3 +232,36 @@ test('schéma : change-over, échangeur, ballon tampon, Tichelmann et export DXF
   assert.ok(p.includes('Été') && p.includes('72'));
   assert.deepStrictEqual([...Dxf.octets('Été ≈ 3')], [0xc9, 0x74, 0xe9, 0x20, ...[...'\\U+2248'].map(c => c.charCodeAt(0)), 0x20, 0x33]);
 });
+
+test('catalogue de pompes et de vannes : choix au point de fonctionnement, import CSV', () => {
+  const Cat = require('../etudes/public/js/catalogue');
+  Cat.utiliser(null);
+  const p = Cat.pompesPour(12, 8)[0];
+  assert.ok(p && 0.9 * p.Qmax >= 12 && p.Hmax * (1 - (12 / p.Qmax) ** 2) >= 8.8, 'point couvert avec réserve');
+  proche(p.Hmax * Cat.vitesse(p, 12, 8) ** 2 - p.Hmax * (12 / p.Qmax) ** 2, 8, 1e-9, 'vitesse réduite passant par le point');
+  assert.deepStrictEqual(Cat.pompesPour(500, 50), []);
+  assert.strictEqual(Cat.vannePour(19.4, '3v').Kvs, 25);
+  const csv = 'fabricant;modele;type;DN;Hmax_m;Qmax_m3h;P1_W\nAcme;A-40;Circulateur;40;10;20;400\nAcme;mauvaise;;;;;\n';
+  const { liste, rejets } = Cat.lireCsv(csv, 'pompes');
+  assert.strictEqual(liste.length, 1); assert.deepStrictEqual(rejets, [3]);
+  Cat.utiliser({ pompes: liste });
+  assert.strictEqual(Cat.pompesPour(8, 5)[0].modele, 'A-40'); assert.ok(!Cat.generique().pompes && Cat.generique().vannes);
+  assert.match(N.calculer('reseau', { troncons: [{ rep: 'A', Q: 8, tube: '', L: 10, zeta: 1 }], composants: [{ nom: 'X', dp: 20 }] }).resume.find(r => r[0] === 'Pompe proposée')[1], /Acme A-40/);
+  const v = Cat.lireCsv('Acme;V3-50;3v;50;40', 'vannes'); assert.strictEqual(v.liste[0].type, '3v');
+  Cat.utiliser(null);
+});
+
+test('modèles d\'études : instanciation, liens reportés, modèles enregistrés', () => {
+  const M = require('../etudes/public/js/modeles'), L = require('../etudes/public/js/liens');
+  let k = 0; const uid = () => `m${++k}`;
+  for (const m of M.INTEGRES) {
+    const notes = M.instancier(m, uid), et = { notes };
+    assert.ok(notes.length >= m.notes.length && new Set(notes.map(n => n.id)).size === notes.length, m.id);
+    notes.forEach(n => assert.deepStrictEqual(L.calculer(et, n).alertes.filter(a => a.niveau === 'erreur'), [], `${m.id} : ${n.titre}`));
+  }
+  const atelier = M.instancier(M.INTEGRES.find(m => m.id === 'atelier'), uid), bilan = atelier.find(n => n.type === 'bilan'), pid = atelier.find(n => n.type === 'pid');
+  assert.strictEqual(pid.entrees.circuits[0].bilan, bilan.id, 'circuit relié au bilan de la nouvelle étude');
+  // Étude enregistrée comme modèle : nouveaux identifiants, liens reportés
+  const copie = M.instancier({ modele: true, notes: atelier }, uid), b2 = copie.find(n => n.type === 'bilan'), p2 = copie.find(n => n.type === 'pid');
+  assert.ok(b2.id !== bilan.id && p2.entrees.circuits[0].bilan === b2.id && copie.filter(n => n.lien).every(n => n.lien.note === p2.id));
+});

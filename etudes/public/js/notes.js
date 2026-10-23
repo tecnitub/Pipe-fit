@@ -4,6 +4,10 @@ const Notes = ((D, C) => {
   const nf = (v, d = 2) => (Number.isFinite(v) ? v.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—');
   const num = (v, def = 0) => { const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? n : def; };
   const alerte = (niveau, texte) => ({ niveau, texte });
+  // Catalogue de pompes et de vannes (gamme générique ou catalogues fournisseurs importés)
+  const Cat = () => (typeof Catalogue !== 'undefined' ? Catalogue : require('./catalogue'));
+  const libPompe = p => `${p.fabricant === 'Gamme générique' ? '' : `${p.fabricant} `}${p.modele}${p.dn ? ` (DN ${p.dn})` : ''}, vitesse ≈ ${nf(Math.min(1, p.vitesse) * 100, 0)} %`;
+  const libVanne = v => `${v.fabricant === 'Gamme générique' ? '' : `${v.fabricant} `}${v.modele}${v.dn && !/DN/.test(v.modele) ? ` (DN ${v.dn})` : ''}`;
 
   /* ---------- Listes de choix ---------- */
   const optFluides = [['eau', 'Eau'], ...Object.entries(D.GLYCOLS).map(([k, g]) => [k, g.libelle]), ['perso', 'Autre fluide (propriétés saisies)']];
@@ -121,17 +125,22 @@ const Notes = ((D, C) => {
       const Hgeo = e.circuit === 'ouvert' ? num(e.Hgeo) : 0, dpTot = dpRes + dpComp + Hgeo * f.rho * C.G;
       const marge = num(e.marge, 10), HMT = dpTot * (1 + marge / 100) / (f.rho * C.G), Qp = tr.reduce((a, x) => Math.max(a, x.Q), 0);
       const Ph = Qp / 3600 * HMT * f.rho * C.G, Pabs = Ph / (num(e.rendement, 55) / 100);
+      const choixPompes = Cat().pompesPour(Qp, HMT);
       if (!tr.length) alertes.push(alerte('erreur', 'Ajouter au moins un tronçon.'));
-      else alertes.push(alerte('ok', `Pompe : ${nf(Qp, 2)} m³/h sous ${nf(HMT, 2)} mCE (${nf(HMT * f.rho * C.G / 1000, 1)} kPa), puissance absorbée ≈ ${nf(Pabs / 1000, 2)} kW.`));
+      else if (!choixPompes.length) alertes.push(alerte('attention', `Aucune pompe du catalogue ${Cat().generique().pompes ? 'générique ' : ''}ne couvre ${nf(Qp, 2)} m³/h sous ${nf(HMT, 2)} mCE : pompes en parallèle ou gamme plus puissante.`));
+      if (tr.length) alertes.push(alerte('ok', `Pompe : ${nf(Qp, 2)} m³/h sous ${nf(HMT, 2)} mCE (${nf(HMT * f.rho * C.G / 1000, 1)} kPa), puissance absorbée ≈ ${nf(Pabs / 1000, 2)} kW.`));
       return {
         valeurs: { dpReseau: dpRes, dpComposants: dpComp, dpTotal: dpTot, HMT, Qpompe: Qp, Ph, Pabs },
         resume: [['Pertes de charge des tuyauteries', `${nf(dpRes / 1000, 2)} kPa`], ['Pertes de charge des équipements', `${nf(dpComp / 1000, 2)} kPa`],
           ...(Hgeo ? [['Hauteur géométrique', `${nf(Hgeo, 2)} m`]] : []), ['Perte de charge totale', `${nf(dpTot / 1000, 2)} kPa (${nf(dpTot / (f.rho * C.G), 2)} mCE)`],
-          ['Débit de la pompe', `${nf(Qp, 2)} m³/h`], [`HMT avec marge de ${nf(marge, 0)} %`, `${nf(HMT, 2)} mCE`], ['Puissance hydraulique', `${nf(Ph / 1000, 3)} kW`], ['Puissance absorbée estimée', `${nf(Pabs / 1000, 2)} kW`]],
+          ['Débit de la pompe', `${nf(Qp, 2)} m³/h`], [`HMT avec marge de ${nf(marge, 0)} %`, `${nf(HMT, 2)} mCE`], ['Puissance hydraulique', `${nf(Ph / 1000, 3)} kW`], ['Puissance absorbée estimée', `${nf(Pabs / 1000, 2)} kW`],
+          ['Pompe proposée', choixPompes.length ? libPompe(choixPompes[0]) : '—']],
         tableaux: [{ titre: 'Tronçons', entetes: ['Repère', 'Q (m³/h)', 'Tube', 'L (m)', 'v (m/s)', 'R (Pa/m)', 'ΔP lin. (kPa)', 'Σζ', 'ΔP sing. (kPa)', 'ΔP (kPa)'],
           lignes: [...tr.map(x => [x.rep, nf(x.Q, 2), `${x.t.nom}${x.auto ? ' (auto)' : ''}`, nf(x.L, 1), nf(x.v), nf(x.R, 0), nf(x.dpl / 1000, 2), nf(x.zeta, 1), nf(x.dps / 1000, 2), nf(x.dp / 1000, 2)]),
             ['Total tuyauteries', '', '', '', '', '', '', '', '', nf(dpRes / 1000, 2)]], total: true },
-          ...(comp.length ? [{ titre: 'Équipements', entetes: ['Équipement', 'ΔP (kPa)'], lignes: [...comp.map(c => [c.nom, nf(c.dp / 1000, 2)]), ['Total équipements', nf(dpComp / 1000, 2)]], total: true }] : [])],
+          ...(comp.length ? [{ titre: 'Équipements', entetes: ['Équipement', 'ΔP (kPa)'], lignes: [...comp.map(c => [c.nom, nf(c.dp / 1000, 2)]), ['Total équipements', nf(dpComp / 1000, 2)]], total: true }] : []),
+          ...(choixPompes.length ? [{ titre: `Pompes du catalogue adaptées (${Cat().generique().pompes ? 'gamme générique : importer le catalogue fournisseur dans les Réglages' : 'catalogue importé'})`,
+            entetes: ['Modèle', 'Type', 'DN', 'Hmax (m)', 'Qmax (m³/h)', 'Vitesse au point', 'P1 maxi (W)'], lignes: choixPompes.slice(0, 5).map(p => [`${p.fabricant === 'Gamme générique' ? '' : `${p.fabricant} `}${p.modele}`, p.type, String(p.dn || '—'), nf(p.Hmax, 1), nf(p.Qmax, 1), `${nf(Math.min(1, p.vitesse) * 100, 0)} %`, p.P1 ? nf(p.P1, 0) : '—']), surligne: 0 }] : [])],
         alertes,
         hypotheses: [libelleFluide(e, f), `${s.libelle}, rugosité ${nf(s.rugosite, 3)} mm. Tube « auto » : plus petit diamètre avec v ≤ ${nf(vmax)} m/s et R ≤ ${nf(Rmax, 0)} Pa/m.`, ...HYP_DARCY,
           'Les tronçons décrivent le circuit le plus défavorisé, aller et retour. Débit de la pompe : débit du tronçon le plus chargé.',
@@ -163,11 +172,12 @@ const Notes = ((D, C) => {
         if (Number.isFinite(autorite) && autorite < 0.5) alertes.push(alerte('attention', `Autorité ${nf(autorite, 2)} < 0,5 : régulation imprécise, choisir le Kvs inférieur si la pression disponible le permet.`));
         if (dpReel > 100) alertes.push(alerte('attention', 'Perte de charge supérieure à 100 kPa : vérifier le bruit et la pression différentielle de fermeture.'));
       }
-      const voisins = D.KVS.filter(k => k >= Kv / 3 && k <= Kv * 3);
+      const voisins = D.KVS.filter(k => k >= Kv / 3 && k <= Kv * 3), modele = Cat().vannePour(Kv, e.type === '3v' ? '3v' : '2v');
       return {
         valeurs: { Q, Kv, Kvs, dpReel, autorite },
         resume: [['Débit', `${nf(Q, 2)} m³/h`], ['Perte de charge visée', `${nf(dpVise, 1)} kPa`], ['Kv calculé', `${nf(Kv, 2)} m³/h`], ['Kvs retenu', Kvs ? `${nf(Kvs, Kvs < 1 ? 2 : 1)} m³/h` : '—'],
-          ['Perte de charge réelle', `${nf(dpReel, 1)} kPa`], ...(Number.isFinite(autorite) ? [['Autorité réelle', nf(autorite, 2)]] : [])],
+          ['Perte de charge réelle', `${nf(dpReel, 1)} kPa`], ...(Number.isFinite(autorite) ? [['Autorité réelle', nf(autorite, 2)]] : []),
+          ['Vanne proposée', modele ? libVanne(modele) : 'Aucune vanne du catalogue']],
         tableaux: [{ titre: 'Kvs normalisés voisins', entetes: ['Kvs (m³/h)', 'ΔP vanne (kPa)', ...(e.methode === 'dp' ? [] : ['Autorité'])],
           lignes: voisins.map(k => { const d = C.dpVanne(Q, k, f.rho); return [nf(k, k < 1 ? 2 : 1), nf(d, 1), ...(e.methode === 'dp' ? [] : [nf(d / (d + dpCirc), 2)])]; }), surligne: voisins.indexOf(Kvs) }],
         alertes,
@@ -657,6 +667,6 @@ const Notes = ((D, C) => {
     try { return T.calcul(e); } catch (err) { return { valeurs: {}, resume: [], tableaux: [], alertes: [alerte('erreur', `Calcul impossible : ${err.message}`)], hypotheses: [], synthese: 'Erreur de calcul' }; }
   }
   const familles = () => [...new Set(Object.values(TYPES).map(t => t.famille))];
-  return { TYPES, defauts, calculer, familles, nf, num };
+  return { TYPES, defauts, calculer, familles, nf, num, libPompe, libVanne };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'));
 if (typeof module !== 'undefined') module.exports = Notes;
