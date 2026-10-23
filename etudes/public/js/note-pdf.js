@@ -10,7 +10,7 @@ const winAnsi = t => String(t).replace(/[^\x20-\x7e -ÿ€‚ƒ„…†‡ˆ‰
 const GREC = { 'Σζ': 'somme zeta', 'ΔP': 'Delta P', 'ΔL': 'Delta L', 'ΔT': 'Delta T', 'Δ': 'Delta ', 'ζ': 'zeta', 'λ': 'lambda', 'ρ': 'rho', 'μ': 'mu', 'σ': 'sigma', 'α': 'alpha', 'β': 'beta',
   'η': 'eta', 'π': 'pi', 'ε': 'epsilon', 'Σ': 'somme ', '√': 'racine', '≈': '~', '⁴': '^4', '⁻⁶': '^-6', '⁻': '-' };
 const pourPdf = html => html.replace(/Σζ|Δ[PLT]|[ΔζλρμσαβηπεΣ√≈⁴]|⁻⁶|⁻/g, m => GREC[m]);
-const sansAccents = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w]+/g, '_').replace(/^_|_$/g, '');
+const sansAccents = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_').replace(/^_|_$/g, '');
 
 // Données d'entrée lisibles (libellés des listes, unités, tableaux de lignes)
 function entreesHtml(type, e) {
@@ -74,7 +74,7 @@ async function genererNoteCalcul(et, ids) {
     for (const d of [g, ...parties.map(pt => pt.doc)]) (await out.copyPages(d, d.getPageIndices())).forEach(pg => out.addPage(pg));
     etape('En-têtes et numérotation…', 93);
     const police = await out.embedFont(StandardFonts.Helvetica), gras = await out.embedFont(StandardFonts.HelveticaBold);
-    const logoBuf = new Uint8Array(await (await fetch('logo-tecnitub.png')).arrayBuffer()), logo = await out.embedPng(logoBuf);
+    const logo = await out.embedPng(await octetsDe('logo-tecnitub.png'));
     const total = out.getPageCount(), gris = rgb(0.4, 0.4, 0.4), soc = S.config.societe, a = affaireDe(et.affaireId);
     const titre = 'NOTE DE CALCUL', sous = winAnsi(pourPdf([a && a.code, et.objet, `indice ${et.indice}`].filter(Boolean).join(' — ')).slice(0, 95)), pied = winAnsi(`${soc.raison} — ${soc.adresse}`);
     out.getPages().forEach((pg, i) => {
@@ -95,11 +95,32 @@ async function genererNoteCalcul(et, ids) {
       <div class="actions"><button class="secondaire" id="gen-fermer">Fermer</button><button id="gen-dl">Télécharger le PDF</button></div>`;
     window.DERNIERE_NOTE = { nom, bytes, pages: total };
     box.querySelector('#gen-fermer').onclick = Modal.close;
-    box.querySelector('#gen-dl').onclick = () => telecharger(nom, bytes, 'application/pdf');
+    box.querySelector('#gen-dl').onclick = () => enregistrerFichier(box, nom, bytes, 'application/pdf');
   } catch (e) {
     console.error(e);
     box.innerHTML = `<h2>Génération impossible</h2><p class="erreur">${esc(e.message)}</p><div class="actions"><button id="gen-fermer">Fermer</button></div>`;
     box.querySelector('#gen-fermer').onclick = Modal.close;
+  }
+}
+// Octets d'une image : décodage direct d'une adresse data: (la page publiée peut interdire fetch sur data:)
+async function octetsDe(url) {
+  if (url.startsWith('data:')) { const bin = atob(url.slice(url.indexOf(',') + 1)), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8; }
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`Logo introuvable (${r.status})`);
+  return new Uint8Array(await r.arrayBuffer());
+}
+// Téléchargement avec compte rendu dans la fenêtre : enregistré, refusé, ou lien d'ouverture si le téléchargement est impossible
+async function enregistrerFichier(box, nom, data, type) {
+  let etat = box.querySelector('.etat-dl');
+  if (!etat) { etat = document.createElement('p'); etat.className = 'etat-dl petit'; box.querySelector('.actions').before(etat); }
+  etat.className = 'etat-dl petit'; etat.textContent = 'Enregistrement…';
+  try {
+    const r = await telecharger(nom, data, type);
+    etat.textContent = r === 'refuse' ? 'Téléchargement annulé.' : 'Fichier enregistré (dossier Téléchargements, ou partage sur téléphone).';
+  } catch (e) {
+    const url = URL.createObjectURL(new Blob([data], { type }));
+    etat.className = 'etat-dl petit erreur';
+    etat.innerHTML = `${esc(e.message || 'Téléchargement impossible ici.')} <a href="${url}" target="_blank" rel="noopener" download="${esc(nom)}">Ouvrir le PDF</a>`;
   }
 }
 function telecharger(nom, data, type) {

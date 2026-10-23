@@ -40,13 +40,18 @@
   const err = (status, error, extra) => rep(status, { error, ...(extra || {}) });
 
   // Téléchargement du PDF : autorisation « downloads » de la page publiée ; sinon téléchargement classique du navigateur
+  // Défini dès le chargement : l'autorisation est demandée au moment du clic (pas de clic sans effet si elle arrive tard)
   if (window.claude && window.claude.use) {
-    window.claude.use('downloads').then(dl => {
-      if (!dl) return;
-      window.SAVE_FILE = (filename, data) => dl.save({ filename, data: new Blob([data], { type: 'application/pdf' }) })
-        .then(() => toast('Fichier enregistré'))
-        .catch(e => { if (e && e.code !== 'declined') toast(`Téléchargement impossible : ${e.message || e.code}`, 5000); });
-    }).catch(() => {});
+    const dlPromesse = window.claude.use('downloads').catch(() => null);
+    window.SAVE_FILE = async (filename, data) => {
+      const dl = await dlPromesse;
+      if (!dl) throw new Error('Le téléchargement n\'est pas autorisé dans cette vue.');
+      try { await dl.save({ filename, data: data instanceof Uint8Array ? data.slice(0) : data }); return 'ok'; }
+      catch (e) {
+        if (e && e.code === 'declined') return 'refuse';
+        throw new Error(e && e.code === 'rate_limited' ? 'Une demande de téléchargement est déjà ouverte : réessayez dans un instant.' : `Téléchargement impossible (${(e && (e.message || e.code)) || 'erreur inconnue'}).`);
+      }
+    };
   }
 
   const vraiFetch = window.fetch.bind(window);

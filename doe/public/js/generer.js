@@ -118,9 +118,7 @@ async function genererDOE(doe) {
         if (p.genere) { parties.push({ bytes: await PDF.depuisHTML(p.genere === true ? htmlReception(doe) : htmlEssaiPF(doe, p), p.libelle || 'Réception', null, opts), entete: true }); continue; }
         if (!p.fichier || nonIntegres.has(p.fichier)) continue;
         try {
-          const r = await fetch(fichierUrl(p.fichier));
-          if (!r.ok) throw new Error(`fichier indisponible (${r.status})`);
-          const buf = new Uint8Array(await r.arrayBuffer()), type = r.headers.get('content-type') || p.fichier.mime || '';
+          const { octets: buf, mime } = await lireFichier(p.fichier), type = mime || p.fichier.mime || '';
           if (/pdf/.test(type) || /\.pdf$/i.test(p.fichier.nom || '')) parties.push({ bytes: buf, entete: false, externe: true });
           else parties.push({ image: buf, png: /png/.test(type) || /\.png$/i.test(p.fichier.nom || ''), nom: p.fichier.nom, entete: false, externe: true });
         } catch (e) { erreurs.push(`${p.fichier.nom} : ${e.message}`); }
@@ -158,7 +156,7 @@ async function genererDOE(doe) {
     // En-tête (logo + titre + filet) sur les pages du dossier, pied de page et numérotation continue partout
     etape('En-têtes et numérotation…', 93);
     const police = await out.embedFont(StandardFonts.Helvetica), gras = await out.embedFont(StandardFonts.HelveticaBold);
-    const logoBuf = new Uint8Array(await (await fetch(logoUrl)).arrayBuffer());
+    const logoBuf = S.config.logoFichierId ? (await lireFichier({ src: 'doe', id: S.config.logoFichierId })).octets : octetsDataUrl(logoUrl) || (await lireFichier(null, logoUrl)).octets;
     const logo = logoBuf[0] === 0x89 ? await out.embedPng(logoBuf) : await out.embedJpg(logoBuf);
     const total = out.getPageCount(), gris = rgb(0.4, 0.4, 0.4), soc = S.config.societe;
     const pied = winAnsi(`${soc.raison} — ${soc.adresse} — SIRET ${soc.siret}`), titreEntete = 'DOSSIER DES OUVRAGES EXÉCUTÉS', sousEntete = winAnsi(`Lot n°${doe.lot || '…'} — ${doe.operation || ''}`.slice(0, 80));
@@ -187,11 +185,33 @@ async function genererDOE(doe) {
       <div class="actions"><button class="secondaire" id="gen-fermer">Fermer</button><button id="gen-dl">Télécharger le PDF</button></div>`;
     window.DERNIER_DOE = { nom, bytes, pages: total };
     box.querySelector('#gen-fermer').onclick = Modal.close;
-    box.querySelector('#gen-dl').onclick = () => telecharger(nom, bytes, 'application/pdf');
+    box.querySelector('#gen-dl').onclick = () => enregistrerFichier(box, nom, bytes, 'application/pdf');
   } catch (e) {
     console.error(e);
     box.innerHTML = `<h2>Génération impossible</h2><p class="erreur">${esc(e.message)}</p><div class="actions"><button id="gen-fermer">Fermer</button></div>`;
     box.querySelector('#gen-fermer').onclick = Modal.close;
+  }
+}
+// Octets d'une pièce : fournis directement par la démo (la page publiée interdit fetch sur data: et blob:), sinon lus sur le serveur
+const octetsDataUrl = url => { if (!String(url).startsWith('data:')) return null; const bin = atob(url.slice(url.indexOf(',') + 1)), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8; };
+async function lireFichier(f, url) {
+  if (f && window.FICHIER_OCTETS) { const x = window.FICHIER_OCTETS(f); if (!x) throw new Error('fichier indisponible'); return x; }
+  const r = await fetch(url || fichierUrl(f));
+  if (!r.ok) throw new Error(`fichier indisponible (${r.status})`);
+  return { octets: new Uint8Array(await r.arrayBuffer()), mime: r.headers.get('content-type') || '' };
+}
+// Téléchargement avec compte rendu dans la fenêtre : enregistré, refusé, ou lien d'ouverture si le téléchargement est impossible
+async function enregistrerFichier(box, nom, data, type) {
+  let etat = box.querySelector('.etat-dl');
+  if (!etat) { etat = document.createElement('p'); etat.className = 'etat-dl petit'; box.querySelector('.actions').before(etat); }
+  etat.className = 'etat-dl petit'; etat.textContent = 'Enregistrement…';
+  try {
+    const r = await telecharger(nom, data, type);
+    etat.textContent = r === 'refuse' ? 'Téléchargement annulé.' : 'Fichier enregistré (dossier Téléchargements, ou partage sur téléphone).';
+  } catch (e) {
+    const url = URL.createObjectURL(new Blob([data], { type }));
+    etat.className = 'etat-dl petit erreur';
+    etat.innerHTML = `${esc(e.message || 'Téléchargement impossible ici.')} <a href="${url}" target="_blank" rel="noopener" download="${esc(nom)}">Ouvrir le PDF</a>`;
   }
 }
 function telecharger(nom, data, type) {

@@ -76,6 +76,28 @@
     return blobs.get(dataUrl);
   };
   window.FICHIER_URL = f => versBlobUrl(f.src === 'pf' ? (seed.files || {})[f.id] : (db.fichiers[f.id] || {}).dataUrl);
+  // Octets d'une pièce jointe pour l'assemblage du DOE, sans fetch (interdit sur data: et blob: dans la page publiée)
+  window.FICHIER_OCTETS = f => {
+    const dataUrl = f.src === 'pf' ? (seed.files || {})[f.id] : (db.fichiers[f.id] || {}).dataUrl;
+    if (!dataUrl) return null;
+    const [tete, b64] = dataUrl.split(','), mime = (/data:([^;,]+)/.exec(tete) || [])[1] || '', base64 = /;base64/.test(tete);
+    const bin = base64 ? atob(b64) : decodeURIComponent(b64), octets = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) octets[i] = bin.charCodeAt(i);
+    return { octets, mime };
+  };
+  // Téléchargement : autorisation « downloads » de la page publiée, demandée au moment du clic
+  if (window.claude && window.claude.use) {
+    const dlPromesse = window.claude.use('downloads').catch(() => null);
+    window.SAVE_FILE = async (filename, data) => {
+      const dl = await dlPromesse;
+      if (!dl) throw new Error('Le téléchargement n\'est pas autorisé dans cette vue.');
+      try { await dl.save({ filename, data: data instanceof Uint8Array ? data.slice(0) : data }); return 'ok'; }
+      catch (e) {
+        if (e && e.code === 'declined') return 'refuse';
+        throw new Error(e && e.code === 'rate_limited' ? 'Une demande de téléchargement est déjà ouverte : réessayez dans un instant.' : `Téléchargement impossible (${(e && (e.message || e.code)) || 'erreur inconnue'}).`);
+      }
+    };
+  }
   window.ENVOI_FICHIER = file => new Promise((res, rej) => {
     if (file.size > 8 * 1048576) return rej(new Error('Fichier trop volumineux pour la démo (8 Mo max)'));
     const r = new FileReader();

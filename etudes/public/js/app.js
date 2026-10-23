@@ -134,8 +134,8 @@ function lierCalculateur(root, type, e, changer) {
   };
   root.querySelector('#schema').onclick = ev => {
     if (!ev.target.closest('[data-dl-schema]')) return;
-    const r = Notes.calculer(type, e), nom = `Schema_${String(e.titreInstallation || 'principe').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w]+/g, '_')}.svg`;
-    telecharger(nom, new TextEncoder().encode(r.schema), 'image/svg+xml');
+    const r = Notes.calculer(type, e), nom = `Schema_${String(e.titreInstallation || 'principe').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_')}.svg`;
+    Promise.resolve(telecharger(nom, new TextEncoder().encode(r.schema), 'image/svg+xml')).then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : 'Schéma enregistré')).catch(er => toast(er.message, 6000));
   };
   const redessiner = () => { changer(true); };
   root.querySelectorAll('[data-k]').forEach(el => {
