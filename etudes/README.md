@@ -28,6 +28,12 @@ Fluides : eau (0–150 °C), eau + monoéthylène ou monopropylène glycol (20, 
 Séries de tubes : acier EN 10255 (noir et galvanisé) et EN 10216/10217, inox ISO 1127 et à sertir, cuivre EN 1057,
 PEHD SDR 11 / 17, multicouche. L'écran « Données de référence » affiche toutes les tables utilisées.
 
+**Calculs reliés** : dans une étude, la puissance d'un circuit du schéma de principe peut être reprise d'un bilan chauffage
+et climatisation ; le bouton « Créer les notes liées » du schéma crée pour chaque circuit une note réseau et pompe et une
+note vanne de régulation, et une note vase d'expansion (volume d'eau estimé d'après les tubes, émetteurs, générateurs et
+bouteille). Les valeurs reprises sont recalculées à chaque modification de la note d'origine et affichées verrouillées ;
+« Détacher » les transforme en valeurs saisies.
+
 Les résultats sont recalculés à chaque frappe. Chaque calcul affiche ses hypothèses, ses formules et des alertes
 (non-conformité, point d'attention). Les **calculs rapides** (page d'accueil) se font sans rien enregistrer, puis se versent
 dans une étude. Les valeurs sont des données de pré-dimensionnement : les documents des fabricants et les normes font foi.
@@ -62,6 +68,7 @@ etudes/public/js/donnees.js  données de référence : tubes, matériaux, fluide
 etudes/public/js/calculs.js  moteur physique (Darcy-Weisbach/Colebrook, compressible, isolation, EN 12828, EN 13480-3…)
 etudes/public/js/notes.js    types de calcul : champs de saisie, calcul, résultats, hypothèses, alertes
 etudes/public/js/schema.js   schéma de principe hydraulique (P&ID) : dimensionnement et dessin SVG
+etudes/public/js/liens.js    liens entre calculs d'une étude (valeurs reprises, notes créées depuis un schéma)
 etudes/public/js/app.js      écrans : études, calculateurs, calculs rapides, données de référence, réglages
 etudes/public/js/note-pdf.js note de calcul PDF (moteur PDF de Pipe-Fit + pdf-lib de l'application DOE)
 etudes/build-demo.js         démonstration en un fichier (etudes/demo-backend.js simule le serveur)

@@ -23,9 +23,9 @@ function entreesHtml(type, e) {
     return `${r.titre ? `<h4>${esc(r.titre)}</h4>` : ''}${simples.length ? lignes2(simples) : ''}${listes}`;
   }).join('');
 }
-function htmlNotePdf(n, i) {
-  const t = Notes.TYPES[n.type], e = { ...Notes.defauts(n.type), ...n.entrees }, r = Notes.calculer(n.type, e);
-  return `<div class="doe-doc ndc"><h2>N${i + 1} — ${esc(n.titre)}</h2><p class="petit">${esc(t.description)}</p>
+function htmlNotePdf(et, n, i) {
+  const t = Notes.TYPES[n.type], e = Liens.resoudre(et, n).entrees, r = Liens.calculer(et, n), lien = Liens.description(et, n);
+  return `<div class="doe-doc ndc"><h2>N${i + 1} — ${esc(n.titre)}</h2><p class="petit">${esc(t.description)}</p>${lien ? `<p class="petit"><em>${esc(lien)}</em></p>` : ''}
     <h3>1. Données d'entrée</h3>${entreesHtml(n.type, e)}
     <h3>2. Hypothèses et méthode</h3><ul>${r.hypotheses.map(h => `<li>${esc(h)}</li>`).join('')}</ul>
     <h3>3. Résultats</h3>${r.schema ? `<p class="sous">Schéma de principe</p><img class="schema-pdf" alt="Schéma de principe" src="data:image/svg+xml;base64,${btoa(String.fromCharCode(...new TextEncoder().encode(r.schema)))}">` : ''}
@@ -52,6 +52,7 @@ function htmlGardeNdc(et, logo, entrees) {
 async function genererNoteCalcul(et, ids) {
   if (typeof PDFLib === 'undefined') return toast('Module PDF indisponible', 5000);
   const notes = ids ? et.notes.filter(n => ids.includes(n.id)) : et.notes;
+  contexteEtude = S.etudes.includes(et) ? et : null;
   if (!notes.length) return toast('Aucun calcul dans cette étude.');
   const box = Modal.open(`<h2>Note de calcul</h2><p id="gen-etape">Préparation…</p><div class="barre-prog"><span id="gen-prog" style="width:0%"></span></div>`);
   const etape = (t, p) => { box.querySelector('#gen-etape').textContent = t; box.querySelector('#gen-prog').style.width = `${p}%`; };
@@ -61,7 +62,7 @@ async function genererNoteCalcul(et, ids) {
     const opts = { numeros: false, margeHaut: 96, margeBas: 60 }, parties = [];
     for (const [k, n] of notes.entries()) {
       etape(`Mise en page : ${n.titre}…`, 10 + 70 * k / notes.length);
-      const doc = await PDFDocument.load(await PDF.depuisHTML(pourPdf(htmlNotePdf(n, et.notes.indexOf(n) >= 0 ? et.notes.indexOf(n) : k)), n.titre, null, opts));
+      const doc = await PDFDocument.load(await PDF.depuisHTML(pourPdf(htmlNotePdf(et, n, et.notes.indexOf(n) >= 0 ? et.notes.indexOf(n) : k)), n.titre, null, opts));
       parties.push({ n, doc, pages: doc.getPageCount() });
     }
     // Page de garde avec sommaire paginé (recalculé si elle déborde sur plusieurs pages)

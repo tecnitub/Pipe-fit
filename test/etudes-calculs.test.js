@@ -5,6 +5,7 @@ const assert = require('node:assert');
 const C = require('../etudes/public/js/calculs');
 const N = require('../etudes/public/js/notes');
 const D = require('../etudes/public/js/donnees');
+const Schema = require('../etudes/public/js/schema');
 
 const proche = (v, ref, tol, msg) => assert.ok(Math.abs(v - ref) <= tol, `${msg || ''} ${v} ≠ ${ref} ± ${tol}`);
 
@@ -175,4 +176,33 @@ test('schéma : réglementation selon la puissance et liste des points de régul
   const reg = moyen.onglets[1].blocs, pts = reg[1].tableau.lignes, recap = reg[2].tableau.lignes;
   assert.strictEqual(recap[recap.length - 1][1], String(pts.length), 'récapitulatif = nombre de points');
   assert.ok(pts.some(p => p[0] === 'MDE') && pts.some(p => p[0] === 'PG2') && reg[0].liste.some(t => /Permutation/.test(t)));
+});
+
+test('liens entre calculs : bilan → schéma → réseaux, vannes, vase', () => {
+  const L = require('../etudes/public/js/liens');
+  let k = 0; const uid = () => `x${++k}`;
+  const bilan = { id: 'b1', type: 'bilan', titre: 'Bilan atelier', entrees: {} };
+  const pid = { id: 'p1', type: 'pid', titre: 'Schéma', entrees: { ...N.defauts('pid'), circuits: [
+    { rep: 'Aérothermes atelier', emetteur: 'aerotherme', P: 1, bilan: 'b1', regime: '', regulation: '3v', L: 80 },
+    { rep: 'Ballon ECS', emetteur: 'ecs', P: 40, regime: '', regulation: 'direct', L: 20 }] } };
+  const et = { notes: [bilan, pid] };
+  const Pch = N.calculer('bilan', {}).valeurs.Pchauf / 1000, r = L.resoudre(et, pid);
+  proche(r.entrees.circuits[0].P, Pch, 0.05); assert.ok(r.verrous['circuits.0.P'] && !r.verrous['circuits.1.P']);
+  assert.strictEqual(pid.entrees.circuits[0].P, 1, 'la saisie d\'origine n\'est pas modifiée');
+  const nv = L.notesDepuisSchema(et, pid, uid);
+  assert.deepStrictEqual(nv.map(n => n.type), ['reseau', 'vanne', 'reseau', 'vase']);
+  et.notes.push(...nv);
+  assert.strictEqual(L.notesDepuisSchema(et, pid, uid).length, 0, 'pas de doublon');
+  const reseau = nv[0], d = Schema.dimensionner(r.entrees);
+  proche(L.resoudre(et, reseau).entrees.troncons[0].Q, d.circuits[0].Q, 0.01);
+  // Lien vivant : allonger le circuit dans le schéma met à jour la note réseau
+  pid.entrees.circuits[0].L = 200;
+  assert.strictEqual(L.resoudre(et, reseau).entrees.troncons[0].L, 200);
+  const vase = L.resoudre(et, nv[3]);
+  assert.ok(vase.entrees.Vinst > 100 && vase.verrous.Vinst && vase.entrees.Tmax === 70);
+  assert.ok(N.calculer('pid', r.entrees).valeurs.volume > 0);
+  // Détacher : valeurs figées, plus de verrou ; source supprimée : alerte
+  L.detacher(et, reseau); assert.ok(!reseau.lien && reseau.entrees.troncons[0].L === 200);
+  et.notes.splice(et.notes.indexOf(bilan), 1);
+  assert.ok(L.calculer(et, pid).alertes.some(a => /supprimé/.test(a.texte)));
 });

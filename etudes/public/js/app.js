@@ -64,7 +64,9 @@ function enregistrer(etude) {
 const majEtatEnregistrement = t => { const e = document.getElementById('etat-enreg'); if (e) e.textContent = t; };
 
 /* ---------- Calculateur générique ---------- */
-const optionsDe = (c, e) => (typeof c.o === 'function' ? c.o(e) : c.o);
+// Étude affichée : contexte des listes qui proposent les autres notes (puissance reprise d'un bilan…)
+let contexteEtude = null;
+const optionsDe = (c, e) => (typeof c.o === 'function' ? c.o(e, contexteEtude) : c.o);
 const optionsHtml = (opts, v) => opts.map(([k, l]) => `<option value="${esc(k)}" ${String(k) === String(v ?? '') ? 'selected' : ''}>${esc(l)}</option>`).join('');
 const valeurChamp = v => (typeof v === 'number' ? String(v).replace('.', ',') : v ?? '');
 // Champs groupés par rubrique (« g »), sans ceux masqués par leur condition
@@ -77,19 +79,21 @@ function rubriques(type, e) {
   });
   return out.filter(r => r.champs.length);
 }
-function formulaireHtml(type, e) {
+// verrous : champs repris d'une autre note (« champ » ou « liste.ligne.colonne » → libellé de la source), affichés non modifiables
+const verrou = (v, cle) => (v[cle] ? ` disabled data-verrou title="Repris de ${esc(v[cle])}"` : '');
+function formulaireHtml(type, e, v = {}) {
   return rubriques(type, e).map(r => `<fieldset>${r.titre ? `<legend>${esc(r.titre)}</legend>` : ''}<div class="grille-champs">${r.champs.map(c => {
     if (c.t === 'lignes') {
       const lignes = e[c.k] || [];
       return `<div class="large"><div class="petit muted">${esc(c.l)}</div><div class="defile-x"><table class="edit"><thead><tr>${c.colonnes.map(col => `<th>${esc(col.l)}</th>`).join('')}<th></th></tr></thead>
-        <tbody>${lignes.map((l, i) => `<tr>${c.colonnes.map(col => `<td>${col.t === 's' ? `<select data-l="${c.k}.${i}.${col.k}">${optionsHtml(optionsDe(col, e), l[col.k])}</select>`
-          : `<input data-l="${c.k}.${i}.${col.k}" value="${esc(valeurChamp(l[col.k]))}" ${col.t === 't' ? '' : 'inputmode="decimal" class="nombre"'}>`}</td>`).join('')}
+        <tbody>${lignes.map((l, i) => `<tr>${c.colonnes.map(col => `<td>${col.t === 's' ? `<select data-l="${c.k}.${i}.${col.k}"${verrou(v, `${c.k}.${i}.${col.k}`)}>${optionsHtml(optionsDe(col, e), l[col.k])}</select>`
+          : `<input data-l="${c.k}.${i}.${col.k}" value="${esc(valeurChamp(l[col.k]))}" ${col.t === 't' ? '' : 'inputmode="decimal" class="nombre"'}${verrou(v, `${c.k}.${i}.${col.k}`)}>`}</td>`).join('')}
           <td><button class="icone" data-suppr-ligne="${c.k}.${i}" title="Supprimer la ligne">✕</button></td></tr>`).join('')}</tbody></table></div>
         <button class="secondaire petit" data-ajout-ligne="${c.k}">+ Ajouter une ligne</button></div>`;
     }
     const lib = `<span>${esc(c.l)}${c.u ? ` <span class="unite">(${esc(c.u)})</span>` : ''}</span>`;
-    if (c.t === 's') return `<label>${lib}<select data-k="${c.k}">${optionsHtml(optionsDe(c, e), e[c.k])}</select></label>`;
-    return `<label>${lib}<input data-k="${c.k}" value="${esc(valeurChamp(e[c.k]))}" ${c.t === 't' ? '' : 'inputmode="decimal" class="nombre"'}></label>`;
+    if (c.t === 's') return `<label>${lib}<select data-k="${c.k}"${verrou(v, c.k)}>${optionsHtml(optionsDe(c, e), e[c.k])}</select></label>`;
+    return `<label>${lib}<input data-k="${c.k}" value="${esc(valeurChamp(e[c.k]))}" ${c.t === 't' ? '' : 'inputmode="decimal" class="nombre"'}${verrou(v, c.k)}></label>`;
   }).join('')}</div></fieldset>`).join('');
 }
 // Onglets complémentaires d'un calcul (réglementation, régulation…) : blocs d'exigences, listes, tableaux, textes
@@ -116,25 +120,28 @@ function resultatsPrincipaux(r) {
 // Calculateur : formulaire et résultats ; changer() est appelé après chaque modification des entrées
 // Schéma dessiné par le calcul (P&ID), sur toute la largeur sous la saisie
 const schemaHtml = r => (r.schema ? `<div class="barre"><h2>Schéma de principe</h2><span class="espace"></span><button class="secondaire petit" data-dl-schema>Télécharger le schéma (SVG)</button></div><div class="schema">${r.schema}</div>` : '');
-function calculateurHtml(type, e) {
-  const r = Notes.calculer(type, e);
-  return `<div class="calc"><div class="calc-saisie">${formulaireHtml(type, e)}</div><div class="calc-resultats carte" id="resultats">${resultatsHtml(r)}</div></div>
+// ctx : entrées effectives (avec les valeurs reprises d'autres notes) et calcul ; par défaut, la saisie seule
+const ctxSimple = (type, e) => ({ effectives: () => ({ entrees: e, verrous: {} }), calcul: () => Notes.calculer(type, e) });
+const ctxEtude = (et, n) => ({ effectives: () => Liens.resoudre(et, n), calcul: () => Liens.calculer(et, n) });
+function calculateurHtml(type, e, ctx = ctxSimple(type, e)) {
+  const r = ctx.calcul(), eff = ctx.effectives();
+  return `<div class="calc"><div class="calc-saisie">${formulaireHtml(type, eff.entrees, eff.verrous)}</div><div class="calc-resultats carte" id="resultats">${resultatsHtml(r)}</div></div>
     <div class="carte schema-carte" id="schema" ${r.schema ? '' : 'hidden'}>${schemaHtml(r)}</div>`;
 }
-function lierCalculateur(root, type, e, changer) {
+function lierCalculateur(root, type, e, changer, ctx = ctxSimple(type, e)) {
   const recalculer = () => {
-    const r = Notes.calculer(type, e), z = root.querySelector('#schema');
+    const r = ctx.calcul(), z = root.querySelector('#schema');
     root.querySelector('#resultats').innerHTML = resultatsHtml(r);
     z.innerHTML = schemaHtml(r); z.hidden = !r.schema;
     changer(false);
   };
   root.querySelector('#resultats').onclick = ev => {
     const o = ev.target.closest('[data-onglet]');
-    if (o) { ongletActif = o.dataset.onglet; root.querySelector('#resultats').innerHTML = resultatsHtml(Notes.calculer(type, e)); }
+    if (o) { ongletActif = o.dataset.onglet; root.querySelector('#resultats').innerHTML = resultatsHtml(ctx.calcul()); }
   };
   root.querySelector('#schema').onclick = ev => {
     if (!ev.target.closest('[data-dl-schema]')) return;
-    const r = Notes.calculer(type, e), nom = `Schema_${String(e.titreInstallation || 'principe').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_')}.svg`;
+    const r = ctx.calcul(), nom = `Schema_${String(e.titreInstallation || 'principe').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_')}.svg`;
     Promise.resolve(telecharger(nom, new TextEncoder().encode(r.schema), 'image/svg+xml')).then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : 'Schéma enregistré')).catch(er => toast(er.message, 6000));
   };
   const redessiner = () => { changer(true); };
@@ -144,8 +151,9 @@ function lierCalculateur(root, type, e, changer) {
   });
   root.querySelectorAll('[data-l]').forEach(el => {
     const [k, i, col] = el.dataset.l.split('.');
-    const maj = () => { e[k][+i][col] = el.value; recalculer(); };
-    if (el.tagName === 'SELECT') el.onchange = maj; else el.oninput = maj;
+    const ecrire = () => { const l = e[k] || (e[k] = []); (l[+i] || (l[+i] = {}))[col] = el.value; };
+    // Une liste peut changer les champs verrouillés (puissance reprise d'un bilan) : formulaire redessiné
+    if (el.tagName === 'SELECT') el.onchange = () => { ecrire(); redessiner(); }; else el.oninput = () => { ecrire(); recalculer(); };
   });
   root.querySelectorAll('[data-ajout-ligne]').forEach(b => b.onclick = () => {
     const k = b.dataset.ajoutLigne, c = Notes.TYPES[type].champs.find(x => x.k === k), l = e[k] || (e[k] = []);
@@ -276,8 +284,8 @@ Vues.etude = {
           ${et.historique.length ? `<span class="petit muted">Historique : ${et.historique.map(h => `${esc(h.indice)} du ${dateFr(h.date)}${h.motif ? ` (${esc(h.motif)})` : ''}`).join(' · ')}</span>` : ''}
           <span class="espace"></span><button class="secondaire petit" id="dupliquer">Dupliquer l'étude</button><button class="secondaire petit" id="supprimer">Supprimer</button></div></div>
       <div class="barre"><h2>Calculs <span class="compte">${et.notes.length}</span></h2><button id="ajout">+ Ajouter un calcul</button></div>
-      ${et.notes.length ? `<div class="notes">${et.notes.map((n, i) => { const t = Notes.TYPES[n.type], r = Notes.calculer(n.type, n.entrees), err = r.alertes.filter(x => x.niveau === 'erreur').length, att = r.alertes.filter(x => x.niveau === 'attention').length;
-        return `<div class="carte note"><a href="#/etude/${et.id}/${n.id}" class="note-lien"><span class="ico">${t.icone}</span><span><span class="muted petit">N${i + 1} · ${esc(t.famille)}</span><strong>${esc(n.titre)}</strong>
+      ${et.notes.length ? `<div class="notes">${et.notes.map((n, i) => { const t = Notes.TYPES[n.type], r = Liens.calculer(et, n), err = r.alertes.filter(x => x.niveau === 'erreur').length, att = r.alertes.filter(x => x.niveau === 'attention').length;
+        return `<div class="carte note"><a href="#/etude/${et.id}/${n.id}" class="note-lien"><span class="ico">${t.icone}</span><span><span class="muted petit">N${i + 1} · ${esc(t.famille)}${n.lien || (n.entrees.circuits || []).some(c => c.bilan) ? ' · 🔗 lié' : ''}</span><strong>${esc(n.titre)}</strong>
           <span class="petit">${esc(r.synthese)}</span></span></a><span class="note-etat">${err ? `<span class="badge erreur">${err} erreur(s)</span>` : att ? `<span class="badge">${att} point(s) d'attention</span>` : '<span class="badge ok">Conforme</span>'}</span>
           <span class="note-actions"><button class="icone" data-monter="${i}" title="Monter" ${i ? '' : 'disabled'}>▲</button><button class="icone" data-descendre="${i}" title="Descendre" ${i < et.notes.length - 1 ? '' : 'disabled'}>▼</button></span></div>`; }).join('')}</div>`
         : '<p class="muted">Aucun calcul : ajoutez-en un ou versez un calcul rapide dans cette étude.</p>'}`;
@@ -305,7 +313,9 @@ Vues.etude = {
     root.querySelector('#dupliquer').onclick = () => {
       const c = { ...copie(et), id: uidE(), objet: `${et.objet} (copie)`, indice: 'A', historique: [], date: aujourdhui(), auteur: S.me.nom || S.me.login };
       ['_v', '_at', '_by'].forEach(k => delete c[k]);
-      c.notes.forEach(n => { n.id = uidE(); });
+      // Nouveaux identifiants, liens entre notes reportés sur les copies
+      const ids = new Map(c.notes.map(n => [n.id, uidE()]));
+      c.notes.forEach(n => { n.id = ids.get(n.id); if (n.lien) n.lien.note = ids.get(n.lien.note) || n.lien.note; (n.entrees.circuits || []).forEach(x => { if (x.bilan) x.bilan = ids.get(x.bilan) || x.bilan; }); });
       enregistrer(c); location.hash = `#/etude/${c.id}`;
     };
     root.querySelector('#supprimer').onclick = async () => {
@@ -327,17 +337,29 @@ Vues.note = {
     if (!n) return `<p class="erreur">Calcul introuvable.</p><p><a href="#/etude/${et.id}">Retour à l'étude</a></p>`;
     const t = Notes.TYPES[n.type], i = et.notes.indexOf(n);
     n.entrees = completer(n.type, n.entrees || {});
+    contexteEtude = et;
+    const lien = Liens.description(et, n), ctx = ctxEtude(et, n);
     return `<div class="barre"><a href="#/etude/${et.id}" class="secondaire btn petit">← ${esc(et.objet)}</a><span class="ico-titre">${t.icone}</span><span class="muted">N${i + 1}</span>
         <input class="titre-note" data-n="titre" value="${esc(n.titre)}" aria-label="Titre du calcul"><span class="muted petit" id="etat-enreg"></span></div>
       <p class="muted petit">${esc(t.description)}</p>
-      ${calculateurHtml(n.type, n.entrees)}
+      ${lien ? `<div class="bandeau-lien">🔗 ${esc(lien)} <button class="secondaire petit" id="detacher">Détacher</button></div>` : ''}
+      ${calculateurHtml(n.type, n.entrees, ctx)}
       <div class="carte"><label class="champ-libre">Commentaire (repris dans la note de calcul)<textarea data-n="commentaire" rows="3">${esc(n.commentaire)}</textarea></label>
-      <div class="actions-ligne"><button id="pdf-note">📄 PDF de ce calcul</button><button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="dupliquer">Dupliquer</button><span class="espace"></span><button class="secondaire" id="supprimer">Supprimer ce calcul</button></div></div>`;
+      <div class="actions-ligne"><button id="pdf-note">📄 PDF de ce calcul</button><button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="dupliquer">Dupliquer</button>
+        ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}<span class="espace"></span><button class="secondaire" id="supprimer">Supprimer ce calcul</button></div></div>`;
   },
   bind: (root, et, noteId) => {
     const n = et.notes.find(x => x.id === noteId);
     if (!n) return;
-    lierCalculateur(root, n.type, n.entrees, redessin => { enregistrer(et); if (redessin) avecFocus(App.render); });
+    lierCalculateur(root, n.type, n.entrees, redessin => { enregistrer(et); if (redessin) avecFocus(App.render); }, ctxEtude(et, n));
+    const det = root.querySelector('#detacher');
+    if (det) det.onclick = async () => { if (await confirmer('Détacher ce calcul ? Les valeurs reprises deviennent des valeurs saisies et ne suivront plus la note d\'origine.', 'Détacher')) { Liens.detacher(et, n); enregistrer(et); App.render(); } };
+    const liees = root.querySelector('#notes-liees');
+    if (liees) liees.onclick = () => {
+      const nv = Liens.notesDepuisSchema(et, n, uidE);
+      if (!nv.length) return toast('Les notes liées existent déjà pour tous les circuits.');
+      et.notes.splice(et.notes.indexOf(n) + 1, 0, ...nv); enregistrer(et); toast(`${nv.length} note(s) créée(s), reliées au schéma`); location.hash = `#/etude/${et.id}`;
+    };
     root.querySelectorAll('[data-n]').forEach(el => el.oninput = () => { n[el.dataset.n] = el.value; enregistrer(et); });
     root.querySelector('#pdf-note').onclick = () => genererNoteCalcul(et, [n.id]);
     root.querySelector('#defauts').onclick = async () => { if (await confirmer('Remplacer toutes les données saisies par les valeurs par défaut ?', 'Remplacer')) { n.entrees = Notes.defauts(n.type); enregistrer(et); App.render(); } };
@@ -353,6 +375,7 @@ const memoRapide = (type, e) => { try { sessionStorage.setItem(cleRapide(type), 
 Vues.rapide = {
   html: ([type]) => {
     const t = Notes.TYPES[type];
+    contexteEtude = null;
     if (!t) return '<p class="erreur">Calcul inconnu.</p>';
     return `<div class="barre"><a href="#/" class="secondaire btn petit">← Accueil</a><span class="ico-titre">${t.icone}</span><h1>${esc(t.titre)}</h1><span class="espace"></span>
       <button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="pdf">📄 PDF</button><button id="verser">Enregistrer dans une étude…</button></div>
@@ -360,6 +383,7 @@ Vues.rapide = {
   },
   bind: (root, [type]) => {
     if (!Notes.TYPES[type]) return;
+    contexteEtude = null;
     const e = entreesRapide(type);
     lierCalculateur(root, type, e, redessin => { memoRapide(type, e); if (redessin) avecFocus(App.render); });
     root.querySelector('#defauts').onclick = () => { memoRapide(type, Notes.defauts(type)); App.render(); };

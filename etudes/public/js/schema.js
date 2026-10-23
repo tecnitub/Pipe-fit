@@ -82,6 +82,19 @@ const Schema = ((D, C, N) => {
     return { Td, Tr, chaud, dT, f, s, n, Pg, Pprod, Pdem, gen, Qg, tg, Qp, Qs, bouteille, pompesInd, Qcoll, tc, tb, Db, circuits, alertes, regime: e.reseau === 'perso' ? `Régime ${Td}/${Tr} °C` : r[0] };
   }
 
+  /* ---------- Volume d'eau de l'installation (pour le vase d'expansion) ---------- */
+  // Contenance des émetteurs (L/kW) et des générateurs (L/kW) : ordres de grandeur, à remplacer par les données constructeur
+  const CONTENANCE = { radiateurs: 10, plancher: 15, cta: 1, ventilo: 2, aerotherme: 1.5, radiant: 2, plafond: 3, ecs: 2, process: 2, sousstation: 2 };
+  const CONTENANCE_GEN = g => (/^chaudiere-(fioul|bois)/.test(g) ? 1 : /^chaudiere/.test(g) ? 0.4 : /echangeur/.test(g) ? 0.1 : 0.3);
+  function volumeEau(d, generateur) {
+    const sec = di => Math.PI * (di / 1000) ** 2 / 4 * 1000; // L/m
+    const tubes = d.circuits.reduce((a, c) => a + sec(c.t.di) * c.L, 0), emet = d.circuits.reduce((a, c) => a + (CONTENANCE[c.emetteur] || 2) * c.P, 0);
+    const coll = sec(d.tc.di) * 2 * (d.circuits.length + 2), prod = d.n * d.Pg * CONTENANCE_GEN(generateur || '') + sec(d.tg.di) * d.n * 6;
+    const bout = d.tb ? sec(d.tb.di) * 1.2 : 0;
+    const postes = [['Tuyauteries des circuits', tubes], ['Émetteurs', emet], ['Collecteurs', coll], ['Générateurs et raccordements', prod], ...(bout ? [['Bouteille de découplage', bout]] : [])];
+    return { total: postes.reduce((a, [, v]) => a + v, 0), postes };
+  }
+
   /* ---------- Dessin ---------- */
   function dessiner(d, e) {
     const nG = d.n, nC = Math.max(d.circuits.length, 1), Y1 = 330, Y2 = 380, H = 720;
@@ -354,6 +367,7 @@ const Schema = ((D, C, N) => {
         { rep: 'Plancher vestiaires', emetteur: 'plancher', P: 30, regime: '40/32', regulation: '3v', L: 40 },
         { rep: 'Ballon ECS', emetteur: 'ecs', P: 40, regime: '', regulation: 'direct', L: 20 }],
       colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'emetteur', l: 'Émetteur', t: 's', o: optListe(EMETTEURS) }, { k: 'P', l: 'Puissance (kW)' },
+        { k: 'bilan', l: 'Puissance reprise de', t: 's', o: (e, ctx) => [['', 'Saisie'], ...((ctx && ctx.notes) || []).map((n, i) => [n, i]).filter(([n]) => n.type === 'bilan').map(([n, i]) => [n.id, `N${i + 1} — ${n.titre}`])] },
         { k: 'regime', l: 'Régime (°C)', t: 't' }, { k: 'regulation', l: 'Régulation', t: 's', o: optListe(REGULATIONS) }, { k: 'L', l: 'Longueur aller + retour (m)' }] },
       { k: 'foisonnement', l: 'Coefficient de simultanéité des besoins', u: '%', d: 100 },
       { g: 'Réglementation' }, { k: 'usage', l: 'Usage du bâtiment', t: 's', o: [['tertiaire', 'Tertiaire (bureaux, commerces…)'], ['erp', 'Établissement recevant du public'], ['habitation', 'Habitation collective'], ['industrie', 'Industriel (locaux de production)']], d: 'tertiaire' },
@@ -368,14 +382,14 @@ const Schema = ((D, C, N) => {
       { k: 'desemboueur', l: 'Pot à boue / désemboueur', t: 's', o: [['oui', 'Représenté'], ['non', 'Non représenté']], d: 'oui' },
       { k: 'compteurs', l: 'Compteurs d\'énergie par circuit', t: 's', o: [['non', 'Non'], ['oui', 'Oui']], d: 'non' }],
     calcul(e) {
-      const d = dimensionner(e), alertes = [...d.alertes];
+      const d = dimensionner(e), alertes = [...d.alertes], vol = volumeEau(d, e.generateur);
       if (!alertes.some(a => a.niveau === 'erreur')) alertes.unshift(alerte('ok', `${d.n > 1 ? `Cascade de ${d.n} × ${nf(d.Pg, 0)} kW` : `Générateur de ${nf(d.Pg, 0)} kW`} pour ${nf(d.Pdem, 0)} kW de besoins ; débit primaire ${nf(d.Qp, 2)} m³/h, secondaire ${nf(d.Qs, 2)} m³/h${d.bouteille && d.tb ? `, bouteille ${d.tb.nom}` : ''}.`));
       return {
-        valeurs: { Pprod: d.Pprod, Pdem: d.Pdem, Qp: d.Qp, Qs: d.Qs, Qg: d.Qg, bouteille: d.tb ? d.tb.cle : null, Db: d.Db, collecteur: d.tc.cle, circuits: d.circuits.map(c => ({ rep: c.rep, Q: c.Q, Qcoll: c.Qcoll, tube: c.t.cle, hmt: c.hmt, kvs: c.kvs })) },
+        valeurs: { volume: vol.total, Pprod: d.Pprod, Pdem: d.Pdem, Qp: d.Qp, Qs: d.Qs, Qg: d.Qg, bouteille: d.tb ? d.tb.cle : null, Db: d.Db, collecteur: d.tc.cle, circuits: d.circuits.map(c => ({ rep: c.rep, Q: c.Q, Qcoll: c.Qcoll, tube: c.t.cle, hmt: c.hmt, kvs: c.kvs })) },
         resume: [['Réseau', `${d.regime} — ${d.f.libelle}`], ['Production', `${d.n} × ${d.gen[0].toLowerCase()} de ${nf(d.Pg, 0)} kW = ${nf(d.Pprod, 0)} kW`],
           ['Besoins (avec simultanéité)', `${nf(d.Pdem, 0)} kW`], ['Débit par générateur', `${nf(d.Qg, 2)} m³/h — ${d.tg.nom}`], ['Débit primaire total', `${nf(d.Qp, 2)} m³/h`],
           ['Débit appelé par les circuits', `${nf(d.Qs, 2)} m³/h`], ['Collecteurs', `${d.tc.nom} (${nf(d.Qcoll, 2)} m³/h)`],
-          ['Bouteille de découplage', d.bouteille ? `${d.tb ? d.tb.nom : '—'} (Ø intérieur mini ${nf(d.Db, 0)} mm)` : 'Sans']],
+          ['Bouteille de découplage', d.bouteille ? `${d.tb ? d.tb.nom : '—'} (Ø intérieur mini ${nf(d.Db, 0)} mm)` : 'Sans'], ['Volume d\'eau estimé', `${nf(vol.total, 0)} L`]],
         tableaux: [{ titre: 'Circuits de distribution', entetes: ['Circuit', 'Émetteur', 'P (kW)', 'Régime (°C)', 'Débit (m³/h)', 'Tube', 'v (m/s)', 'Régulation', 'Kvs', 'Pompe (m³/h × mCE)'],
           lignes: d.circuits.map(c => [c.rep, c.em[0], nf(c.P, 0), `${c.rc[0]}/${c.rc[1]}`, nf(c.Q, 2), c.t.nom, nf(c.v, 2), REGULATIONS[c.reg], c.kvs ? nf(c.kvs, c.kvs < 1 ? 2 : 1) : '—', `${nf(c.Q, 2)} × ${nf(c.hmt, 1)}`]) },
         { titre: 'Production', entetes: ['Générateur', 'P (kW)', 'Débit (m³/h)', 'Raccordement', 'Pompe primaire'],
@@ -393,6 +407,6 @@ const Schema = ((D, C, N) => {
       };
     },
   };
-  return { REGIMES, GENERATEURS, EMETTEURS, REGULATIONS, FLUIDES_FRIGO, dimensionner, dessiner, reglementation, regulation };
+  return { REGIMES, GENERATEURS, EMETTEURS, REGULATIONS, FLUIDES_FRIGO, CONTENANCE, volumeEau, dimensionner, dessiner, reglementation, regulation };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Notes !== 'undefined' ? Notes : require('./notes'));
 if (typeof module !== 'undefined') module.exports = Schema;
