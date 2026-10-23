@@ -237,7 +237,9 @@ const Calc = {
       return { c, commande, facture, liees, cout: liees.length ? facture : commande };
     });
     const horsCommande = imp.filter(l => l.affaireId === afId && !l.commandeId);
-    return { commandes, horsCommande, totalCommandes: sumBy(commandes, x => x.cout), totalHorsCommande: sumBy(horsCommande, l => num(l.montantHT)),
+    // Achats au comptoir déclarés avec le montant du BL : comptés tout de suite, jusqu'à la facture du fournisseur
+    const comptoir = Store.all('enlevements').filter(e => e.affaireId === afId && e.statut === 'Déclaré' && !e.achatId && num(e.montant) > 0);
+    return { commandes, horsCommande, comptoir, totalComptoir: sumBy(comptoir, e => num(e.montant)), totalCommandes: sumBy(commandes, x => x.cout), totalHorsCommande: sumBy(horsCommande, l => num(l.montantHT)),
       ecartFactures: sumBy(commandes.filter(x => x.liees.length), x => x.facture - x.commande) };
   },
   // Facture fournisseur : montants et part restant à imputer (frais généraux / stock)
@@ -269,7 +271,7 @@ const Calc = {
     const heuresPassees = sumBy(temps, t => num(t.heures));
     const coutMO = sumBy(temps, t => num(t.heures) * this.tauxUser(t.userId));
     const ach = this.achatsChantier(af.id);
-    const achats = ach.totalCommandes + ach.totalHorsCommande + consoCout;
+    const achats = ach.totalCommandes + ach.totalHorsCommande + ach.totalComptoir + consoCout;
     const marge = ca - achats - coutMO - budgetLiv - coutFrais;
     const margePrev = sumBy(T, t => t.margePrev);
     // Projection à terminaison : reste d'heures au coût moyen du devis, fournitures au plus haut du budget et de l'engagé

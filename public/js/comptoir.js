@@ -11,11 +11,11 @@ function fournisseursComptoir() {
 }
 
 /* ---------- Téléphone du compagnon ---------- */
-const comptoirBrouillon = { uid: null, photo: null };
+const comptoirBrouillon = { uid: null, photo: null, lu: null };
 function comptoirCompagnon(u) {
   const auj = isoDate(new Date()), prevu = planJour(u.id, auj)[0];
   const miens = Store.all('enlevements').filter(e => e.userId === u.id).sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 30);
-  if (comptoirBrouillon.uid !== u.id) Object.assign(comptoirBrouillon, { uid: u.id, photo: null });
+  if (comptoirBrouillon.uid !== u.id) Object.assign(comptoirBrouillon, { uid: u.id, photo: null, lu: null });
   return `<div class="pointage"><h1>Achat au comptoir</h1>${pointageTabs('comptoir', u.id)}
     <p class="muted small">Matériel pris au magasin d'un fournisseur sans commande : donnez le n° de chantier au comptoir, puis déclarez-le ici avec la photo du bon. Le bureau le retrouve sur le relevé du fournisseur.</p>
     <div class="card">
@@ -25,7 +25,8 @@ function comptoirCompagnon(u) {
       <div class="grid2"><div class="field"><label for="ct-bl">N° du bon / ticket</label><input id="ct-bl" inputmode="numeric" placeholder="Ex. 4512"></div>
         <div class="field"><label for="ct-m">Montant HT (si indiqué)</label><input id="ct-m" type="number" inputmode="decimal" step="0.01" min="0"></div></div>
       <div class="field"><label for="ct-n">Ce qui a été pris</label><input id="ct-n" data-dictee placeholder="Raccords inox DN50, joints, colliers…"></div>
-      <label class="btn secondary big" style="display:block;text-align:center">📷 Photo du bon<input type="file" id="ct-ph" accept="image/*" capture="environment" hidden></label>
+      <label class="btn secondary big" style="display:block;text-align:center">📷 Photo du bon (chiffré si possible)<input type="file" id="ct-ph" accept="image/*" capture="environment" hidden></label>
+      <p class="small muted" id="ct-lecture">Le bon est lu : n° et montant HT sont remplis, le coût compte tout de suite dans la rentabilité du chantier.</p>
       <div id="ct-apercu">${comptoirBrouillon.photo ? `<img class="thumb" src="${comptoirBrouillon.photo}" alt="Bon">` : ''}</div>
       <button class="big" id="ct-ok" style="width:100%;margin-top:10px">Déclarer l'enlèvement</button>
     </div>
@@ -41,7 +42,18 @@ function bindComptoirCompagnon(root, u) {
   $('#ct-ph').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
     comptoirBrouillon.photo = await compressImage(f, 1600, 0.75);
+    comptoirBrouillon.lu = null;
     $('#ct-apercu').innerHTML = `<img class="thumb" src="${comptoirBrouillon.photo}" alt="Bon">`;
+    // Lecture du bon chiffré : n° et montant HT remplis s'ils sont vides (à vérifier)
+    const etat = $('#ct-lecture');
+    etat.textContent = 'Lecture du bon…';
+    try {
+      const lu = BlLecture.analyser((await PdfLecture.lire(f)).lignes);
+      comptoirBrouillon.lu = lu;
+      if (lu.bl && !$('#ct-bl').value.trim()) $('#ct-bl').value = lu.bl;
+      if (lu.montant && $('#ct-m').value === '') $('#ct-m').value = lu.montant;
+      etat.textContent = lu.montant || lu.bl ? `Lu sur le bon : ${[lu.bl && `BL ${lu.bl}`, lu.lignes.length && `${lu.lignes.length} article(s)`, lu.montant && `${eur(lu.montant)} HT`].filter(Boolean).join(' · ')}${lu.coherent ? '' : ' (total à vérifier)'}. Vérifiez avant d'envoyer.` : 'Bon non lu : saisissez le n° et le montant HT (la photo est gardée).';
+    } catch (err) { etat.textContent = 'Lecture impossible : saisissez le n° et le montant HT (la photo est gardée).'; }
   };
   $('#ct-ok').onclick = async () => {
     if (!$('#ct-f').value) return notify('Choisissez le fournisseur.');
@@ -51,8 +63,9 @@ function bindComptoirCompagnon(root, u) {
     try {
       const photoId = comptoirBrouillon.photo ? await envoyerImage(comptoirBrouillon.photo) : '';
       Store.upsert('enlevements', { userId: u.id, date: isoDate(new Date()), fournisseurId: $('#ct-f').value, affaireId: $('#ct-a').value, bl: $('#ct-bl').value.trim(),
-        montant: $('#ct-m').value === '' ? '' : num($('#ct-m').value), note: $('#ct-n').value.trim(), photoId, statut: 'Déclaré' });
-      comptoirBrouillon.photo = null;
+        montant: $('#ct-m').value === '' ? '' : num($('#ct-m').value), note: $('#ct-n').value.trim(), photoId, statut: 'Déclaré',
+        ...(comptoirBrouillon.lu && comptoirBrouillon.lu.lignes.length ? { lignes: comptoirBrouillon.lu.lignes, montantLu: comptoirBrouillon.lu.montant } : {}) });
+      Object.assign(comptoirBrouillon, { photo: null, lu: null });
       App.toast('Enlèvement déclaré'); App.render();
     } catch (err) { $('#ct-ok').disabled = false; notify(err.message); }
   };
@@ -97,6 +110,8 @@ function editerEnlevement(id) {
       <div class="field"><label for="en-m">Montant HT déclaré</label><input id="en-m" type="number" step="0.01" value="${esc(e.montant ?? '')}"></div></div>
     <div class="field"><label for="en-n">Matériel</label><input id="en-n" value="${esc(e.note || '')}"></div>
     ${e.photoId ? `<p><a href="${fileUrl(e.photoId)}" target="_blank" rel="noopener"><img class="thumb" src="${fileUrl(e.photoId)}" alt="Bon"></a></p>` : ''}
+    ${(e.lignes || []).length ? `<p class="small muted">Lu sur la photo du bon${e.montantLu ? ` : ${eur(e.montantLu)} HT` : ''}</p><div class="table-wrap"><table class="compact"><tr><th>Réf.</th><th>Désignation</th><th class="num">Qté</th><th class="num">PU HT</th><th class="num">Montant HT</th></tr>
+      ${e.lignes.map(l => `<tr><td>${esc(l.ref || '')}</td><td>${esc(l.designation)}</td><td class="num">${fmt(l.qte, 2)}</td><td class="num">${eur(l.pu)}</td><td class="num">${eur(l.montant)}</td></tr>`).join('')}</table></div>` : ''}
     <div class="modal-actions">${id ? '<button class="danger" id="en-del">Supprimer</button>' : ''}<span style="flex:1"></span><button class="secondary" id="en-x">Annuler</button><button id="en-ok">Enregistrer</button></div>`);
   const v = s => box.querySelector(s).value;
   box.querySelector('#en-x').onclick = Modal.close;
@@ -152,9 +167,9 @@ async function importerReleve(x, fichier) {
 
 // Fiche chantier : enlèvements déclarés pas encore facturés (coût à venir)
 function comptoirChantierHtml(a) {
-  const l = Store.all('enlevements').filter(e => e.affaireId === a.id && e.statut === 'Déclaré');
+  const l = Store.all('enlevements').filter(e => e.affaireId === a.id && e.statut === 'Déclaré' && !(num(e.montant) > 0));
   if (!l.length) return '';
-  return `<p class="small warn-text">Comptoir : ${l.length} enlèvement(s) déclaré(s) pas encore facturé(s)${sumBy(l, e => num(e.montant)) ? ` (${eur(sumBy(l, e => num(e.montant)))} HT déclarés)` : ''} : ${l.map(e => `${dateFr(e.date)} ${esc(clientName(e.fournisseurId))}${e.bl ? ` BL ${esc(e.bl)}` : ''}`).join(', ')}.</p>`;
+  return `<p class="small warn-text">Comptoir : ${l.length} enlèvement(s) déclaré(s) sans montant (non compté(s) dans la rentabilité tant que le relevé n'est pas arrivé) : ${l.map(e => `${dateFr(e.date)} ${esc(clientName(e.fournisseurId))}${e.bl ? ` BL ${esc(e.bl)}` : ''}`).join(', ')}.</p>`;
 }
 
 /* ---------- Démonstration : relevé mensuel d'exemple à importer ---------- */

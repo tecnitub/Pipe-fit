@@ -496,7 +496,10 @@ non commandée (frais de port…), total des lignes différent du montant HT. D�
 
 Matériel pris au magasin d'un négoce sans commande. Au comptoir, le compagnon donne le **n° de chantier** (affiché sur
 son téléphone sous le chantier choisi) puis le déclare dans **Pointage → Comptoir** : fournisseur, chantier, n° du bon,
-montant s'il est indiqué, ce qui a été pris, photo du bon (fonctionne aussi sans réseau). Il ne voit que ses
+montant s'il est indiqué, ce qui a été pris, photo du bon (fonctionne aussi sans réseau). La photo d'un BL chiffré est lue :
+n° du bon et montant HT remplis (articles gardés), à vérifier avant l'envoi. **Le montant compte tout de suite dans la
+rentabilité du chantier** (« comptoir sur BL, facture à venir » dans ses achats, dans la Direction et les alertes de dérive) ;
+quand le relevé du fournisseur est rapproché, c'est le montant de la facture qui le remplace (pas de double compte). Il ne voit que ses
 déclarations ; une fois rapprochées par le bureau, il ne peut plus les modifier.
 
 Bureau : **Achats → Comptoir** liste les enlèvements « en attente du relevé ». À réception du relevé mensuel, créer la
