@@ -79,14 +79,16 @@ function rubriques(type, e) {
   });
   return out.filter(r => r.champs.length);
 }
+// Colonnes d'une liste de lignes, sans celles masquées par leur condition (puissance froid hors change-over…)
+const colonnesDe = (c, e) => c.colonnes.filter(col => !col.si || col.si(e));
 // verrous : champs repris d'une autre note (« champ » ou « liste.ligne.colonne » → libellé de la source), affichés non modifiables
 const verrou = (v, cle) => (v[cle] ? ` disabled data-verrou title="Repris de ${esc(v[cle])}"` : '');
 function formulaireHtml(type, e, v = {}) {
   return rubriques(type, e).map(r => `<fieldset>${r.titre ? `<legend>${esc(r.titre)}</legend>` : ''}<div class="grille-champs">${r.champs.map(c => {
     if (c.t === 'lignes') {
-      const lignes = e[c.k] || [];
-      return `<div class="large"><div class="petit muted">${esc(c.l)}</div><div class="defile-x"><table class="edit"><thead><tr>${c.colonnes.map(col => `<th>${esc(col.l)}</th>`).join('')}<th></th></tr></thead>
-        <tbody>${lignes.map((l, i) => `<tr>${c.colonnes.map(col => `<td>${col.t === 's' ? `<select data-l="${c.k}.${i}.${col.k}"${verrou(v, `${c.k}.${i}.${col.k}`)}>${optionsHtml(optionsDe(col, e), l[col.k])}</select>`
+      const lignes = e[c.k] || [], cols = colonnesDe(c, e);
+      return `<div class="large"><div class="petit muted">${esc(c.l)}</div><div class="defile-x"><table class="edit"><thead><tr>${cols.map(col => `<th>${esc(col.l)}</th>`).join('')}<th></th></tr></thead>
+        <tbody>${lignes.map((l, i) => `<tr>${cols.map(col => `<td>${col.t === 's' ? `<select data-l="${c.k}.${i}.${col.k}"${verrou(v, `${c.k}.${i}.${col.k}`)}>${optionsHtml(optionsDe(col, e), l[col.k])}</select>`
           : `<input data-l="${c.k}.${i}.${col.k}" value="${esc(valeurChamp(l[col.k]))}" ${col.t === 't' ? '' : 'inputmode="decimal" class="nombre"'}${verrou(v, `${c.k}.${i}.${col.k}`)}>`}</td>`).join('')}
           <td><button class="icone" data-suppr-ligne="${c.k}.${i}" title="Supprimer la ligne">✕</button></td></tr>`).join('')}</tbody></table></div>
         <button class="secondaire petit" data-ajout-ligne="${c.k}">+ Ajouter une ligne</button></div>`;
@@ -119,7 +121,7 @@ function resultatsPrincipaux(r) {
 }
 // Calculateur : formulaire et résultats ; changer() est appelé après chaque modification des entrées
 // Schéma dessiné par le calcul (P&ID), sur toute la largeur sous la saisie
-const schemaHtml = r => (r.schema ? `<div class="barre"><h2>Schéma de principe</h2><span class="espace"></span><button class="secondaire petit" data-dl-schema>Télécharger le schéma (SVG)</button></div><div class="schema">${r.schema}</div>` : '');
+const schemaHtml = r => (r.schema ? `<div class="barre"><h2>Schéma de principe</h2><span class="espace"></span><button class="secondaire petit" data-dl-schema>Télécharger (SVG)</button><button class="secondaire petit" data-dl-dxf>Télécharger pour AutoCAD (DXF)</button></div><div class="schema">${r.schema}</div>` : '');
 // ctx : entrées effectives (avec les valeurs reprises d'autres notes) et calcul ; par défaut, la saisie seule
 const ctxSimple = (type, e) => ({ effectives: () => ({ entrees: e, verrous: {} }), calcul: () => Notes.calculer(type, e) });
 const ctxEtude = (et, n) => ({ effectives: () => Liens.resoudre(et, n), calcul: () => Liens.calculer(et, n) });
@@ -140,9 +142,11 @@ function lierCalculateur(root, type, e, changer, ctx = ctxSimple(type, e)) {
     if (o) { ongletActif = o.dataset.onglet; root.querySelector('#resultats').innerHTML = resultatsHtml(ctx.calcul()); }
   };
   root.querySelector('#schema').onclick = ev => {
-    if (!ev.target.closest('[data-dl-schema]')) return;
-    const r = ctx.calcul(), nom = `Schema_${String(e.titreInstallation || 'principe').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_')}.svg`;
-    Promise.resolve(telecharger(nom, new TextEncoder().encode(r.schema), 'image/svg+xml')).then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : 'Schéma enregistré')).catch(er => toast(er.message, 6000));
+    const svg = ev.target.closest('[data-dl-schema]'), dxf = ev.target.closest('[data-dl-dxf]');
+    if (!svg && !dxf) return;
+    const r = ctx.calcul(), nom = `Schema_${String(e.titreInstallation || 'principe').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_')}`;
+    const [fichier, data, mime] = dxf ? [`${nom}.dxf`, Dxf.depuisSvg(r.schema).octets, 'application/dxf'] : [`${nom}.svg`, new TextEncoder().encode(r.schema), 'image/svg+xml'];
+    Promise.resolve(telecharger(fichier, data, mime)).then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : 'Schéma enregistré')).catch(er => toast(er.message, 6000));
   };
   const redessiner = () => { changer(true); };
   root.querySelectorAll('[data-k]').forEach(el => {

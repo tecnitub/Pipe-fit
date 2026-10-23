@@ -206,3 +206,29 @@ test('liens entre calculs : bilan → schéma → réseaux, vannes, vase', () =>
   et.notes.splice(et.notes.indexOf(bilan), 1);
   assert.ok(L.calculer(et, pid).alertes.some(a => /supprimé/.test(a.texte)));
 });
+
+test('schéma : change-over, échangeur, ballon tampon, Tichelmann et export DXF', () => {
+  const Dxf = require('../etudes/public/js/dxf');
+  const co = N.calculer('pid', { reseau: 'co', generateur: 'pac-rev', nGen: '2', Pgen: 120, PgenF: 110, tampon: 'oui', ratioTampon: 15, tichelmann: 'oui', pompesPrim: 'commune',
+    circuits: [{ rep: 'Ventilos', emetteur: 'ventilo', P: 120, Pf: 150, regime: '', regulation: '2v', L: 150 }] });
+  const w = C.eau(42.5), wf = C.eau(9.5), qc = 120000 / (w.rho * w.cp * 5) * 3600, qf = 150000 / (wf.rho * wf.cp * 5) * 3600;
+  proche(co.valeurs.circuits[0].Q, Math.max(qc, qf), 1e-6, 'débit retenu : le plus fort des deux saisons');
+  assert.match(co.schema, /Ballon tampon/); assert.match(co.schema, /Tichelmann/); assert.match(co.synthese, /Change-over/);
+  assert.ok(N.calculer('pid', { reseau: 'co', generateur: 'chaudiere-cond' }).alertes.some(a => a.niveau === 'erreur' && /Change-over/.test(a.texte)));
+  const ech = N.calculer('pid', { bouteille: 'echangeur', pincement: 5, reseau: 'ch-80-60', nGen: '1', Pgen: 300 });
+  assert.match(ech.schema, /Échangeur/); assert.match(ech.resume.find(r => /Échangeur/.test(r[0]))[1], /secondaire 75\/55/);
+  assert.ok(ech.onglets[0].blocs[0].items.some(i => /primaire et secondaire séparés/.test(i.texte)));
+  const peu = N.calculer('pid', { tampon: 'oui', ratioTampon: 1 });
+  assert.match(peu.resume.find(r => r[0] === 'Ballon tampon')[1], /Non nécessaire/);
+  // DXF : calques, coordonnées retournées, textes accentués
+  const dxf = Dxf.depuisSvg(ech.schema), t = dxf.texte;
+  assert.ok(dxf.entites > 100 && /\r\nENTITIES\r\n/.test(t) && t.trim().endsWith('EOF'));
+  assert.match(t, /\r\nLAYER\r\n {0}2\r\nDEPART/); assert.match(t, /Échangeur/); assert.ok(dxf.octets.includes(0xc9), 'É écrit en Windows-1252');
+  const svg = '<svg width="100" height="50" data-depart="#c62828" data-retour="#1565c0"><line x1="10" y1="10" x2="90" y2="10" stroke="#c62828"/><g transform="translate(5 5)"><path d="M0 0 h10 v10 Z" fill="#fff" stroke="#222"/></g><text x="20" y="30" font-size="10" text-anchor="middle">Été</text></svg>';
+  const p = Dxf.depuisSvg(svg).texte.split('\r\n');
+  const i = p.indexOf('LINE');
+  assert.deepStrictEqual([p[i + 2], p[i + 6], p[i + 8]], ['DEPART', '10', '40']);
+  assert.strictEqual(p.filter(x => x === 'LINE').length, 1 + 3, 'ligne + triangle fermé');
+  assert.ok(p.includes('Été') && p.includes('72'));
+  assert.deepStrictEqual([...Dxf.octets('Été ≈ 3')], [0xc9, 0x74, 0xe9, 0x20, ...[...'\\U+2248'].map(c => c.charCodeAt(0)), 0x20, 0x33]);
+});

@@ -19,7 +19,7 @@ function entreesHtml(type, e) {
       const v = c.t === 's' ? ((optionsDe(c, e).find(([k]) => String(k) === String(e[c.k] ?? '')) || [])[1] || '—') : e[c.k] === '' || e[c.k] === undefined ? '—' : `${valeurChamp(e[c.k])}${c.u ? ` ${c.u}` : ''}`;
       return [c.l, esc(v)];
     });
-    const listes = r.champs.filter(c => c.t === 'lignes').map(c => `<p class="sous">${esc(c.l)}</p>${tableauPdf(c.colonnes.map(x => x.l), (e[c.k] || []).map(l => c.colonnes.map(col => (col.t === 's' ? ((optionsDe(col, e).find(([k]) => String(k) === String(l[col.k] ?? '')) || [])[1] || '') : valeurChamp(l[col.k])))))}`).join('');
+    const listes = r.champs.filter(c => c.t === 'lignes').map(c => `<p class="sous">${esc(c.l)}</p>${tableauPdf(colonnesDe(c, e).map(x => x.l), (e[c.k] || []).map(l => colonnesDe(c, e).map(col => (col.t === 's' ? ((optionsDe(col, e).find(([k]) => String(k) === String(l[col.k] ?? '')) || [])[1] || '') : valeurChamp(l[col.k])))))}`).join('');
     return `${r.titre ? `<h4>${esc(r.titre)}</h4>` : ''}${simples.length ? lignes2(simples) : ''}${listes}`;
   }).join('');
 }
@@ -28,7 +28,7 @@ function htmlNotePdf(et, n, i) {
   return `<div class="doe-doc ndc"><h2>N${i + 1} — ${esc(n.titre)}</h2><p class="petit">${esc(t.description)}</p>${lien ? `<p class="petit"><em>${esc(lien)}</em></p>` : ''}
     <h3>1. Données d'entrée</h3>${entreesHtml(n.type, e)}
     <h3>2. Hypothèses et méthode</h3><ul>${r.hypotheses.map(h => `<li>${esc(h)}</li>`).join('')}</ul>
-    <h3>3. Résultats</h3>${r.schema ? `<p class="sous">Schéma de principe</p><img class="schema-pdf" alt="Schéma de principe" src="data:image/svg+xml;base64,${btoa(String.fromCharCode(...new TextEncoder().encode(r.schema)))}">` : ''}
+    <h3>3. Résultats</h3>${r.schema ? '<p class="sous">Schéma de principe : en fin de chapitre, sur une page au format paysage.</p>' : ''}
     ${lignes2(r.resume.map(([k, v]) => [k, esc(v)]))}
     ${r.tableaux.map(x => `<p class="sous">${esc(x.titre)}</p>${tableauPdf(x.entetes, x.lignes, x.surligne, x.total)}`).join('')}
     <h3>4. Conclusions</h3><ul class="conclusions">${r.alertes.map(a => `<li class="${a.niveau}">${esc({ ok: 'Résultat', attention: 'Point d\'attention', erreur: 'Non conforme' }[a.niveau])} : ${esc(a.texte)}</li>`).join('')}</ul>
@@ -62,7 +62,10 @@ async function genererNoteCalcul(et, ids) {
     const opts = { numeros: false, margeHaut: 96, margeBas: 60 }, parties = [];
     for (const [k, n] of notes.entries()) {
       etape(`Mise en page : ${n.titre}…`, 10 + 70 * k / notes.length);
-      const doc = await PDFDocument.load(await PDF.depuisHTML(pourPdf(htmlNotePdf(et, n, et.notes.indexOf(n) >= 0 ? et.notes.indexOf(n) : k)), n.titre, null, opts));
+      const num = et.notes.indexOf(n) >= 0 ? et.notes.indexOf(n) : k;
+      const doc = await PDFDocument.load(await PDF.depuisHTML(pourPdf(htmlNotePdf(et, n, num)), n.titre, null, opts));
+      const r = Liens.calculer(et, n);
+      if (r.schema) await pageSchema(doc, r.schema, `N${num + 1} — ${n.titre}`);
       parties.push({ n, doc, pages: doc.getPageCount() });
     }
     // Page de garde avec sommaire paginé (recalculé si elle déborde sur plusieurs pages)
@@ -102,6 +105,24 @@ async function genererNoteCalcul(et, ids) {
     box.innerHTML = `<h2>Génération impossible</h2><p class="erreur">${esc(e.message)}</p><div class="actions"><button id="gen-fermer">Fermer</button></div>`;
     box.querySelector('#gen-fermer').onclick = Modal.close;
   }
+}
+// Schéma sur une page A4 paysage : rendu en image haute définition (le moteur PDF met en page en portrait)
+const base64 = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+async function svgEnPng(svg, largeur = 3200) {
+  const img = new Image();
+  img.src = `data:image/svg+xml;base64,${base64(new TextEncoder().encode(svg))}`;
+  await img.decode();
+  const cv = document.createElement('canvas'), k = largeur / img.naturalWidth;
+  cv.width = largeur; cv.height = Math.round(img.naturalHeight * k);
+  const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(img, 0, 0, cv.width, cv.height);
+  return octetsDe(cv.toDataURL('image/png'));
+}
+async function pageSchema(doc, svg, titre) {
+  const { StandardFonts, rgb } = PDFLib, png = await doc.embedPng(await svgEnPng(svg)), W = 841.89, H = 595.28, pg = doc.addPage([W, H]);
+  const gras = await doc.embedFont(StandardFonts.HelveticaBold), t = winAnsi(pourPdf(`Schéma de principe — ${titre}`)).slice(0, 110);
+  pg.drawText(t, { x: 31, y: H - 76, size: 10, font: gras, color: rgb(0.12, 0.22, 0.39) });
+  const bx = 31, by = 34, bw = W - 62, bh = H - 92 - by, k = Math.min(bw / png.width, bh / png.height);
+  pg.drawImage(png, { x: bx + (bw - png.width * k) / 2, y: by + (bh - png.height * k) / 2, width: png.width * k, height: png.height * k });
 }
 // Octets d'une image : décodage direct d'une adresse data: (la page publiée peut interdire fetch sur data:)
 async function octetsDe(url) {

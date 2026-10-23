@@ -40,12 +40,26 @@
   const err = (status, error, extra) => rep(status, { error, ...(extra || {}) });
 
   // Téléchargement du PDF : autorisation « downloads » de la page publiée ; sinon téléchargement classique du navigateur
+  // Archive ZIP minimale (un fichier, sans compression)
+  function zipUnFichier(nom, octets) {
+    const crc = (() => { let c = ~0; for (const b of octets) { c ^= b; for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1)); } return ~c >>> 0; })();
+    const n = new TextEncoder().encode(nom), en = (taille, champs) => { const v = new DataView(new ArrayBuffer(taille)); champs.forEach(([o, val, l]) => (l === 4 ? v.setUint32(o, val, true) : v.setUint16(o, val, true))); return new Uint8Array(v.buffer); };
+    const local = en(30, [[0, 0x04034b50, 4], [4, 20, 2], [6, 0x800, 2], [12, 0x21, 2], [14, crc, 4], [18, octets.length, 4], [22, octets.length, 4], [26, n.length, 2]]);
+    const central = en(46, [[0, 0x02014b50, 4], [4, 20, 2], [6, 20, 2], [8, 0x800, 2], [14, 0x21, 2], [16, crc, 4], [20, octets.length, 4], [24, octets.length, 4], [28, n.length, 2]]);
+    const debutCentral = local.length + n.length + octets.length, fin = en(22, [[0, 0x06054b50, 4], [8, 1, 2], [10, 1, 2], [12, central.length + n.length, 4], [16, debutCentral, 4]]);
+    const out = new Uint8Array(debutCentral + central.length + n.length + fin.length);
+    let p = 0; for (const part of [local, n, octets, central, n, fin]) { out.set(part, p); p += part.length; }
+    return out;
+  }
+  window.ZIP_UN_FICHIER = zipUnFichier;
   // Défini dès le chargement : l'autorisation est demandée au moment du clic (pas de clic sans effet si elle arrive tard)
   if (window.claude && window.claude.use) {
     const dlPromesse = window.claude.use('downloads').catch(() => null);
     window.SAVE_FILE = async (filename, data) => {
       const dl = await dlPromesse;
       if (!dl) throw new Error('Le téléchargement n\'est pas autorisé dans cette vue.');
+      // Formats non acceptés par la page publiée (DXF…) : remis dans une archive ZIP
+      if (!/\.(pdf|svg|png|jpe?g|csv|xlsx|zip|txt|json|html|docx)$/i.test(filename)) { data = zipUnFichier(filename, data instanceof Uint8Array ? data : new TextEncoder().encode(String(data))); filename = filename.replace(/\.[^.]+$/, '') + '.zip'; }
       try { await dl.save({ filename, data: data instanceof Uint8Array ? data.slice(0) : data }); return 'ok'; }
       catch (e) {
         if (e && e.code === 'declined') return 'refuse';

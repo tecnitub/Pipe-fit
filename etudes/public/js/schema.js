@@ -12,7 +12,7 @@ const Schema = ((D, C, N) => {
     'ch-80-60': ['Eau chaude 80/60 °C', 80, 60], 'ch-70-50': ['Eau chaude 70/50 °C', 70, 50], 'ch-55-45': ['Eau chaude 55/45 °C (condensation, PAC haute température)', 55, 45],
     'ch-45-35': ['Eau chaude 45/35 °C (PAC)', 45, 35], 'ch-35-30': ['Eau chaude 35/30 °C (plancher chauffant)', 35, 30],
     'eg-7-12': ['Eau glacée 7/12 °C', 7, 12], 'eg-6-12': ['Eau glacée 6/12 °C', 6, 12], 'eg-10-15': ['Eau glacée 10/15 °C (froid sensible)', 10, 15],
-    'eg-14-17': ['Eau froide 14/17 °C (plafonds et poutres froides)', 14, 17], perso: ['Autre régime (températures saisies)'],
+    'eg-14-17': ['Eau froide 14/17 °C (plafonds et poutres froides)', 14, 17], co: ['Change-over 2 tubes : eau chaude l\'hiver, eau glacée l\'été'], perso: ['Autre régime (températures saisies)'],
   };
   // Générateurs [libellé, usage : chaud, froid ou les deux]
   const GENERATEURS = {
@@ -31,7 +31,7 @@ const Schema = ((D, C, N) => {
 
   /* ---------- Calcul ---------- */
   const regimeCircuit = txt => { const m = /^\s*(-?\d+(?:[.,]\d+)?)\s*\/\s*(-?\d+(?:[.,]\d+)?)\s*$/.exec(String(txt || '')); return m ? [num(m[1]), num(m[2])] : null; };
-  function dimensionner(e) {
+  function dimensionnerRegime(e) {
     const r = REGIMES[e.reseau] || REGIMES['ch-70-50'], Td = e.reseau === 'perso' ? num(e.Tdep, 70) : r[1], Tr = e.reseau === 'perso' ? num(e.Tret, 50) : r[2];
     const chaud = Td > Tr, dT = Math.abs(Td - Tr), f = C.liquide(e.fluide || 'eau', (Td + Tr) / 2), s = D.SERIES[e.serie] || D.SERIES['acier-10216'];
     const vmax = num(e.vmax, 1.5), Rmax = num(e.Rmax, 150), tubes = C.tubes(e.serie || 'acier-10216'), alertes = [];
@@ -39,19 +39,22 @@ const Schema = ((D, C, N) => {
     const choisir = (Q, v = vmax) => tubes.find(t => { const x = C.ecoulement(Q / 3600, t.di / 1000, f.rho, f.mu, s.rugosite); return x.v <= v && x.R <= Rmax; }) || tubes[tubes.length - 1];
     const ecoul = (Q, t) => C.ecoulement(Q / 3600, t.di / 1000, f.rho, f.mu, s.rugosite);
     if (dT <= 0) alertes.push(alerte('erreur', 'Les températures de départ et de retour doivent être différentes.'));
+    // Échangeur à plaques : le secondaire est décalé du pincement (contre-courant)
+    const bouteille = e.bouteille === 'oui', echangeur = e.bouteille === 'echangeur', pinc = Math.max(0.5, num(e.pincement, 3));
+    const Tsd = echangeur ? (chaud ? Td - pinc : Td + pinc) : Td, Tsr = echangeur ? (chaud ? Tr - pinc : Tr + pinc) : Tr;
 
     // Circuits de distribution
     const circuits = (e.circuits || []).map((c, i) => {
       const em = EMETTEURS[c.emetteur] || EMETTEURS.radiateurs, reg = REGULATIONS[c.regulation] ? c.regulation : '3v';
-      const rc = regimeCircuit(c.regime) || [Td, Tr], dTc = Math.abs(rc[0] - rc[1]), P = num(c.P), rep = c.rep || `C${i + 1}`;
+      const rc = regimeCircuit(c.regime) || [Tsd, Tsr], dTc = Math.abs(rc[0] - rc[1]), P = num(c.P), rep = c.rep || `C${i + 1}`;
       const Q = debit(P, dTc), t = choisir(Q), x = ecoul(Q, t);
       // Débit appelé sur le collecteur : un circuit mélangé reprend l'écart entre le départ du réseau et son propre retour
-      const Qcoll = reg === '3v' ? debit(P, Math.abs(Td - rc[1])) : Q;
+      const Qcoll = reg === '3v' ? debit(P, Math.abs(Tsd - rc[1])) : Q;
       const dpEm = em[1], dpV = reg === 'direct' ? 0 : Math.max(dpEm, 10), dpL = x.R * num(c.L) * 1.3 / 1000;
       const hmt = (dpL + dpEm + dpV + 5) * 1000 / (f.rho * C.G), kvs = reg === 'direct' ? null : D.KVS.find(k => k >= C.kv(Q, dpV, f.rho) * 0.97) || null;
-      const different = Math.abs(rc[0] - Td) > 0.5 || Math.abs(rc[1] - Tr) > 0.5;
+      const different = Math.abs(rc[0] - Tsd) > 0.5 || Math.abs(rc[1] - Tsr) > 0.5;
       if (different && reg !== '3v') alertes.push(alerte('attention', `${rep} : régime ${rc[0]}/${rc[1]} °C différent du réseau sans vanne 3 voies de mélange.`));
-      if (reg === '3v' && (chaud ? rc[0] > Td : rc[0] < Td)) alertes.push(alerte('erreur', `${rep} : départ du circuit (${rc[0]} °C) ${chaud ? 'plus chaud' : 'plus froid'} que le départ du réseau (${Td} °C).`));
+      if (reg === '3v' && (chaud ? rc[0] > Tsd : rc[0] < Tsd)) alertes.push(alerte('erreur', `${rep} : départ du circuit (${rc[0]} °C) ${chaud ? 'plus chaud' : 'plus froid'} que le départ ${echangeur ? 'du secondaire de l\'échangeur' : 'du réseau'} (${Tsd} °C).`));
       if (em[2] !== 'mixte' && em[2] !== (chaud ? 'chaud' : 'froid')) alertes.push(alerte('attention', `${rep} : ${em[0].toLowerCase()} sur un réseau d'${chaud ? 'eau chaude' : 'eau glacée'}.`));
       return { rep, em, emetteur: c.emetteur, reg, rc, P, Q, Qcoll, t, v: x.v, hmt, kvs, dpV, L: num(c.L) };
     });
@@ -59,8 +62,10 @@ const Schema = ((D, C, N) => {
     const n = Math.max(1, Math.min(6, Math.round(num(e.nGen, 1)))), Pg = num(e.Pgen), Pprod = n * Pg, gen = GENERATEURS[e.generateur] || GENERATEURS['chaudiere-cond'];
     const Qg = debit(Pg, dT), tg = choisir(Qg), Qp = n * Qg;
     const Pdem = circuits.reduce((a, c) => a + c.P, 0) * num(e.foisonnement, 100) / 100, Qs = circuits.reduce((a, c) => a + c.Qcoll, 0);
-    const bouteille = e.bouteille === 'oui', pompesInd = n === 1 || e.pompesPrim !== 'commune';
-    const Qcoll = Math.max(bouteille ? Qs : Math.max(Qs, Qp), 0.01), tc = choisir(Qcoll, Math.min(vmax, 1.0));
+    const pompesInd = n === 1 || e.pompesPrim !== 'commune', tichelmann = n > 1 && e.tichelmann === 'oui';
+    const Qcoll = Math.max(bouteille || echangeur ? Qs : Math.max(Qs, Qp), 0.01), tc = choisir(Qcoll, Math.min(vmax, 1.0));
+    // Échangeur : puissance des besoins, surface indicative avec U ≈ 4 000 W/m²·K (eau / eau, plaques)
+    const Aech = echangeur ? Pdem * 1000 / (4000 * pinc) : 0, Qech = echangeur ? debit(Pdem, dT) : 0;
     // Bouteille de découplage : vitesse verticale ≤ 0,2 m/s et diamètre ≥ 3 fois le plus gros piquage
     let tb = null, Db = 0;
     if (bouteille) {
@@ -75,11 +80,37 @@ const Schema = ((D, C, N) => {
     if (n > 1 && Pdem > 0 && Pprod - Pg < Pdem * 0.6) alertes.push(alerte('attention', `Secours : un générateur à l'arrêt, il reste ${nf(Pprod - Pg, 0)} kW (${nf((Pprod - Pg) / Pdem * 100, 0)} % des besoins).`));
     if (bouteille && Qp < Qs) alertes.push(alerte('attention', `Débit primaire (${nf(Qp, 2)} m³/h) inférieur au débit secondaire (${nf(Qs, 2)} m³/h) : le retour se recycle dans la bouteille et ${chaud ? 'abaisse' : 'relève'} la température de départ.`));
     if (bouteille && Qp > 1.25 * Qs && /condensation|pac/i.test(gen[0] + e.generateur)) alertes.push(alerte('attention', 'Débit primaire nettement supérieur au secondaire : le départ se recycle vers le retour et dégrade la condensation ou le COP ; pompes primaires à vitesse variable conseillées.'));
-    if (!bouteille && n > 1) alertes.push(alerte('attention', 'Cascade sans bouteille de découplage : pompes primaires et secondaires en série interagissent ; à réserver à des générateurs acceptant un débit variable, avec vannes d\'isolement motorisées.'));
-    if (!bouteille && circuits.some(c => c.reg === '2v')) alertes.push(alerte('attention', 'Circuits à vanne 2 voies sans bouteille : prévoir une soupape différentielle ou un by-pass pour garantir le débit minimal des générateurs.'));
-    if (!chaud || /pac/.test(e.generateur)) alertes.push(alerte('attention', 'Vérifier le volume d\'eau minimal exigé par le constructeur (anti-courts-cycles) : ballon tampon si le réseau est trop court.'));
+    if (echangeur) alertes.push(alerte('attention', `Échangeur à plaques : deux circuits hydrauliques séparés, chacun avec vase d'expansion, soupape et remplissage ; secondaire au régime ${Tsd}/${Tsr} °C.`));
+    if (n > 1 && !pompesInd && !tichelmann) alertes.push(alerte('attention', 'Cascade à pompe commune raccordée en direct : les générateurs les plus proches reçoivent plus de débit ; raccordement en Tichelmann ou vannes d\'équilibrage par générateur conseillés.'));
+    if (e.bouteille === 'non' && n > 1) alertes.push(alerte('attention', 'Cascade sans bouteille de découplage : pompes primaires et secondaires en série interagissent ; à réserver à des générateurs acceptant un débit variable, avec vannes d\'isolement motorisées.'));
+    if (e.bouteille === 'non' && circuits.some(c => c.reg === '2v')) alertes.push(alerte('attention', 'Circuits à vanne 2 voies sans bouteille : prévoir une soupape différentielle ou un by-pass pour garantir le débit minimal des générateurs.'));
+    if ((!chaud || /pac/.test(e.generateur)) && e.tampon !== 'oui') alertes.push(alerte('attention', 'Vérifier le volume d\'eau minimal exigé par le constructeur (anti-courts-cycles) : ballon tampon si le réseau est trop court.'));
     if (bouteille && chaud === false && Qp < Qs) alertes.push(alerte('attention', 'En eau glacée, un débit secondaire supérieur au primaire réchauffe le départ : prévoir des pompes secondaires à vitesse variable.'));
-    return { Td, Tr, chaud, dT, f, s, n, Pg, Pprod, Pdem, gen, Qg, tg, Qp, Qs, bouteille, pompesInd, Qcoll, tc, tb, Db, circuits, alertes, regime: e.reseau === 'perso' ? `Régime ${Td}/${Tr} °C` : r[0] };
+    const d = { Td, Tr, Tsd, Tsr, chaud, dT, f, s, n, Pg, Pprod, Pdem, gen, Qg, tg, Qp, Qs, bouteille, echangeur, pinc, Aech, Qech, pompesInd, tichelmann, Qcoll, tc, tb, Db, circuits, alertes, regime: e.reseau === 'perso' ? `Régime ${Td}/${Tr} °C` : r[0] };
+    // Ballon tampon : volume d'eau minimal exigé (L/kW de production) diminué du volume de l'installation
+    if (e.tampon === 'oui') {
+      const Vmin = num(e.ratioTampon, 10) * Pprod, Vres = volumeEau(d, e.generateur).total, Vreq = Math.max(0, Vmin - Vres);
+      const choisi = num(e.Vtampon) > 0 ? num(e.Vtampon) : Vreq <= 0 ? 0 : TAMPONS.find(v => v >= Vreq) || Math.ceil(Vreq / 500) * 500;
+      d.tampon = { Vmin, Vres, Vreq, V: choisi };
+      if (num(e.Vtampon) > 0 && num(e.Vtampon) < Vreq) alertes.push(alerte('attention', `Ballon tampon de ${nf(num(e.Vtampon), 0)} L inférieur au volume nécessaire (${nf(Vreq, 0)} L).`));
+    }
+    return d;
+  }
+  const TAMPONS = [100, 200, 300, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000, 5000];
+  // Change-over 2 tubes : dimensionnement au régime chaud et au régime froid, diamètres retenus au débit le plus fort
+  function dimensionner(e) {
+    if (e.reseau !== 'co') return dimensionnerRegime(e);
+    const base = { ...e, reseau: 'perso' };
+    const dC = dimensionnerRegime({ ...base, Tdep: num(e.TdepC, 45), Tret: num(e.TretC, 40) });
+    const dF = dimensionnerRegime({ ...base, Tdep: num(e.TdepF, 7), Tret: num(e.TretF, 12), Pgen: num(e.PgenF, num(e.Pgen)), circuits: (e.circuits || []).map(c => ({ ...c, P: c.Pf, regime: '' })) });
+    const circuits = dC.circuits.map((cC, i) => { const cF = dF.circuits[i], g = cF.Q >= cC.Q ? cF : cC; return { ...g, P: cC.P, Pf: cF.P, Qc: cC.Q, Qf: cF.Q, rcC: cC.rc, rcF: cF.rc, hmt: Math.max(cC.hmt, cF.hmt), gouverne: g === cF ? 'froid' : 'chaud' }; });
+    const prim = dF.Qp >= dC.Qp ? dF : dC, coll = dF.Qcoll >= dC.Qcoll ? dF : dC, bt = dF.Db >= dC.Db ? dF : dC, vus = new Set();
+    const alertes = [...dC.alertes, ...dF.alertes].filter(a => !vus.has(a.texte) && vus.add(a.texte));
+    const sansFroid = (e.circuits || []).filter(c => !(num(c.Pf) > 0)).map(c => c.rep);
+    if (sansFroid.length) alertes.unshift(alerte('attention', `Change-over : puissance froid à renseigner pour ${sansFroid.join(', ')} (colonne « Puissance froid »).`));
+    if (!/pac-rev|echangeur/.test(e.generateur || '')) alertes.unshift(alerte('erreur', 'Change-over : choisir une PAC réversible ou un échangeur (réseaux de chaleur et de froid).'));
+    return { ...prim, circuits, tc: coll.tc, Qcoll: coll.Qcoll, Qs: Math.max(dC.Qs, dF.Qs), tb: bt.tb, Db: bt.Db, tampon: dF.tampon || dC.tampon, alertes, co: { dC, dF },
+      Pprod: dC.Pprod, Pdem: dC.Pdem, regime: `Change-over : chaud ${dC.Td}/${dC.Tr} °C, froid ${dF.Td}/${dF.Tr} °C` };
   }
 
   /* ---------- Volume d'eau de l'installation (pour le vase d'expansion) ---------- */
@@ -91,16 +122,17 @@ const Schema = ((D, C, N) => {
     const tubes = d.circuits.reduce((a, c) => a + sec(c.t.di) * c.L, 0), emet = d.circuits.reduce((a, c) => a + (CONTENANCE[c.emetteur] || 2) * c.P, 0);
     const coll = sec(d.tc.di) * 2 * (d.circuits.length + 2), prod = d.n * d.Pg * CONTENANCE_GEN(generateur || '') + sec(d.tg.di) * d.n * 6;
     const bout = d.tb ? sec(d.tb.di) * 1.2 : 0;
-    const postes = [['Tuyauteries des circuits', tubes], ['Émetteurs', emet], ['Collecteurs', coll], ['Générateurs et raccordements', prod], ...(bout ? [['Bouteille de découplage', bout]] : [])];
+    const postes = [['Tuyauteries des circuits', tubes], ['Émetteurs', emet], ['Collecteurs', coll], ['Générateurs et raccordements', prod], ...(bout ? [['Bouteille de découplage', bout]] : []), ...(d.tampon && d.tampon.V > 0 ? [['Ballon tampon', d.tampon.V]] : [])];
     return { total: postes.reduce((a, [, v]) => a + v, 0), postes };
   }
 
   /* ---------- Dessin ---------- */
   function dessiner(d, e) {
     const nG = d.n, nC = Math.max(d.circuits.length, 1), Y1 = 330, Y2 = 380, H = 720;
-    const xG0 = 150, pasG = 150, xB = xG0 + nG * pasG + 90, xS0 = d.bouteille ? xB + 110 : xG0 + nG * pasG + 110, pasC = 175;
+    const decouple = d.bouteille || d.echangeur, extra = d.tampon && d.tampon.V > 0 ? 90 : 0, G = d.co ? 'PAC' : d.chaud ? 'G' : 'GF';
+    const xG0 = 150, pasG = 150, xB = xG0 + nG * pasG + 90 + extra, xS0 = decouple ? xB + 110 : xG0 + nG * pasG + 110 + extra, pasC = 175;
     const W = Math.max(xS0 + nC * pasC + 150, 900);
-    const cD = d.chaud ? '#c62828' : '#1565c0', cR = d.chaud ? '#1565c0' : '#2e7d32', out = [], masques = [], dessus = [];
+    const cD = d.co ? '#6a1b9a' : d.chaud ? '#c62828' : '#1565c0', cR = d.co ? '#00838f' : d.chaud ? '#1565c0' : '#2e7d32', out = [], masques = [], dessus = [];
     const ligne = (x1, y1, x2, y2, c, ep = 3) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="${ep}" stroke-linecap="round"/>`;
     const texte = (x, y, t, o = {}) => `<text x="${x}" y="${y}" font-size="${o.fs || 11}" font-family="Arial, Helvetica, sans-serif" fill="${o.c || '#222'}" text-anchor="${o.a || 'start'}"${o.b ? ' font-weight="700"' : ''}${o.rot ? ` transform="rotate(${o.rot} ${x} ${y})"` : ''}>${xe(t)}</text>`;
     const point = (x, y, c) => `<circle cx="${x}" cy="${y}" r="4" fill="${c}"/>`;
@@ -122,11 +154,22 @@ const Schema = ((D, C, N) => {
 
     out.push(`<rect width="${W}" height="${H}" fill="#fff"/>`);
     out.push(texte(20, 26, `Schéma de principe hydraulique — ${d.regime}`, { fs: 15, b: true, c: '#1F3864' }));
-    out.push(texte(20, 44, `${e.titreInstallation || ''}${e.titreInstallation ? ' · ' : ''}Production ${nf(d.Pprod, 0)} kW${d.n > 1 ? ` (cascade ${d.n} × ${nf(d.Pg, 0)} kW)` : ''} · besoins ${nf(d.Pdem, 0)} kW · ${d.bouteille ? 'avec' : 'sans'} bouteille de découplage`, { fs: 11, c: '#555' }));
+    out.push(texte(20, 44, `${e.titreInstallation || ''}${e.titreInstallation ? ' · ' : ''}Production ${nf(d.Pprod, 0)} kW${d.n > 1 ? ` (cascade ${d.n} × ${nf(d.Pg, 0)} kW)` : ''} · besoins ${nf(d.Pdem, 0)} kW${d.co ? ` (froid ${nf(d.co.dF.Pdem, 0)} kW)` : ''} · ${d.echangeur ? 'échangeur à plaques' : d.bouteille ? 'bouteille de découplage' : 'sans découplage'}${d.tichelmann ? ' · cascade en Tichelmann' : ''}`, { fs: 11, c: '#555' }));
 
     // Collecteurs
     const xFinD = d.circuits.length ? xS0 + (d.circuits.length - 1) * pasC + 50 : xS0 + 50, xFinR = d.circuits.length ? xS0 + (d.circuits.length - 1) * pasC + 120 : xS0 + 120;
-    if (d.bouteille) {
+    if (d.echangeur) {
+      // Échangeur à plaques : primaire à gauche, secondaire à droite, circuits séparés
+      out.push(ligne(xG0 + 40, Y1, xB, Y1, cD), ligne(40, Y2, xB, Y2, cR), ligne(xB + 50, Y1, xFinD, Y1, cD), ligne(xB + 50, Y2, xFinR, Y2, cR));
+      out.push(`<rect x="${xB}" y="${Y1 - 40}" width="50" height="${Y2 - Y1 + 80}" rx="4" fill="#fff" stroke="#222" stroke-width="1.6"/>`,
+        `<path d="M${xB + 6} ${Y1 - 30} ${Array.from({ length: 9 }, (_, k) => `L${xB + (k % 2 ? 44 : 6)} ${Y1 - 30 + (k + 1) * (Y2 - Y1 + 60) / 9}`).join(' ')}" fill="none" stroke="#666" stroke-width="1.2"/>`);
+      out.push(texte(xB + 25, Y2 + 62, 'Échangeur', { fs: 10, a: 'middle', b: true }), texte(xB + 25, Y2 + 75, 'à plaques', { fs: 10, a: 'middle', b: true }),
+        texte(xB + 25, Y2 + 89, `${nf(d.Pdem, 0)} kW · ≈ ${nf(d.Aech, 1)} m²`, { fs: 9, a: 'middle' }), texte(xB + 25, Y2 + 102, `secondaire ${d.Tsd}/${d.Tsr} °C`, { fs: 9, a: 'middle' }));
+      // Vase et soupape du circuit secondaire
+      const xv = xB + 85;
+      out.push(ligne(xv, Y2, xv, Y2 + 120, cR, 2), `<path d="M${xv - 18} ${Y2 + 124} q18 -12 36 0 v46 q-18 12 -36 0 Z" fill="#f1f1f1" stroke="#222" stroke-width="1.4"/>`);
+      dessus.push(point(xv, Y2, cR), vanne(xv, Y2 + 30), texte(xv + 24, Y2 + 150, 'Vase', { fs: 8.5 }), texte(xv + 24, Y2 + 161, 'secondaire', { fs: 8.5 }));
+    } else if (d.bouteille) {
       out.push(ligne(xG0 + 40, Y1, xB, Y1, cD), ligne(40, Y2, xB, Y2, cR), ligne(xB + 50, Y1, xFinD, Y1, cD), ligne(xB + 50, Y2, xFinR, Y2, cR));
       out.push(`<rect x="${xB}" y="${Y1 - 60}" width="50" height="${Y2 - Y1 + 120}" rx="10" fill="#eef2f8" stroke="#222" stroke-width="1.6"/>`);
       out.push(ligne(xB + 25, Y1 - 60, xB + 25, Y1 - 75, '#222', 1.4), `<path d="M${xB + 19} ${Y1 - 75} h12 v-8 h-12 Z" fill="#fff" stroke="#222" stroke-width="1.2"/>`, texte(xB + 37, Y1 - 75, 'Purgeur', { fs: 9 }));
@@ -141,25 +184,39 @@ const Schema = ((D, C, N) => {
     out.push(fleche(xS0 - 30, Y1, 'droite', cD), fleche(xS0 - 30, Y2, 'gauche', cR));
 
     out.push(`<circle cx="30" cy="72" r="10" fill="#fff" stroke="#222" stroke-width="1.3"/>`, texte(30, 76, 'TE', { fs: 8, a: 'middle', b: true }), texte(46, 76, 'Sonde extérieure', { fs: 9 }));
+    // Cascade en Tichelmann : le retour longe les générateurs depuis le premier (retour inversé, longueurs égales)
+    const Y3 = Y2 + 45, xTi = xG0 + 15;
+    if (d.tichelmann) {
+      out.push(ligne(xTi, Y2, xTi, Y3, cR), ligne(xTi, Y3, xG0 + (nG - 1) * pasG + 100, Y3, cR));
+      dessus.push(point(xTi, Y2, cR), texte(xG0 + (nG - 1) * pasG + 108, Y3 + 4, 'Retour en Tichelmann', { fs: 8.5, c: cR }));
+    }
+    // Ballon tampon sur le retour primaire
+    if (d.tampon && d.tampon.V > 0) {
+      const xT = (decouple ? xB : xS0) - 145;
+      out.push(`<rect x="${xT - 22}" y="${Y2 - 40}" width="44" height="110" rx="14" fill="#f1f1f1" stroke="#222" stroke-width="1.6"/>`);
+      dessus.push(texte(xT, Y2 + 86, 'Ballon tampon', { fs: 9, a: 'middle', b: true }), texte(xT, Y2 + 98, `${nf(d.tampon.V, 0)} L`, { fs: 9, a: 'middle' }));
+    }
     // Générateurs
     const yGen = 560;
     for (let i = 0; i < nG; i++) {
       const x = xG0 + i * pasG, xd = x + 40, xr = x + 100;
       out.push(`<rect x="${x + 10}" y="${yGen}" width="120" height="70" rx="6" fill="${d.chaud ? '#fdecea' : '#e3f0ff'}" stroke="#222" stroke-width="1.6"/>`);
       const lib = d.gen[0].split(/ (?=[a-z(])/);
-      out.push(texte(x + 70, yGen + 18, `${d.chaud ? 'G' : 'GF'}${i + 1}`, { fs: 11, a: 'middle', b: true }), texte(x + 70, yGen + 33, lib[0], { fs: 9, a: 'middle' }),
-        texte(x + 70, yGen + 45, lib.slice(1).join(' ').slice(0, 26), { fs: 9, a: 'middle' }), texte(x + 70, yGen + 61, `${nf(d.Pg, 0)} kW · ${nf(d.Qg, 2)} m³/h`, { fs: 9.5, a: 'middle', b: true }));
-      out.push(ligne(xd, yGen, xd, Y1, cD), ligne(xr, Y2, xr, yGen, cR));
-      croisement(xd, Y2);
-      dessus.push(point(xd, Y1, cD), point(xr, Y2, cR), vanne(xd, Y2 + 30), vanne(xr, Y2 + 30), thermo(xd, yGen - 30));
-      if (d.pompesInd && (d.bouteille || nG > 1)) dessus.push(pompe(xr, Y2 + 75, false), texte(xr + 16, Y2 + 79, `P${d.chaud ? 'G' : 'GF'}${i + 1}`, { fs: 9 }), clapet(xr, Y2 + 110, false));
-      else if (nG > 1) dessus.push(vanne2v(xr, Y2 + 85), texte(xr + 12, Y2 + 89, 'Vanne motorisée', { fs: 8.5 }));
+      out.push(texte(x + 70, yGen + 18, `${G}${i + 1}`, { fs: 11, a: 'middle', b: true }), texte(x + 70, yGen + 33, lib[0], { fs: 9, a: 'middle' }),
+        texte(x + 70, yGen + 45, lib.slice(1).join(' ').slice(0, 26), { fs: 9, a: 'middle' }), texte(x + 70, yGen + 61, d.co ? `${nf(d.co.dC.Pg, 0)} / ${nf(d.co.dF.Pg, 0)} kW` : `${nf(d.Pg, 0)} kW · ${nf(d.Qg, 2)} m³/h`, { fs: 9.5, a: 'middle', b: true }));
+      const yRet = d.tichelmann ? Y3 : Y2;
+      out.push(ligne(xd, yGen, xd, Y1, cD), ligne(xr, yRet, xr, yGen, cR));
+      croisement(xd, Y2); if (d.tichelmann) croisement(xd, Y3);
+      dessus.push(point(xd, Y1, cD), point(xr, yRet, cR), vanne(xd, Y2 + 30), vanne(xr, yRet + 25), thermo(xd, yGen - 30));
+      const yP = yRet + (d.tichelmann ? 60 : 75);
+      if (d.pompesInd && (decouple || nG > 1)) dessus.push(pompe(xr, yP, false), texte(xr + 16, yP + 4, `P${G}${i + 1}`, { fs: 9 }), clapet(xr, yP + 35, false));
+      else if (nG > 1) dessus.push(vanne2v(xr, yP + 10), texte(xr + 12, yP + 14, 'Vanne motorisée', { fs: 8.5 }));
       dessus.push(`<line x1="${xd}" y1="${yGen - 55}" x2="${xd - 22}" y2="${yGen - 55}" stroke="#222" stroke-width="1.2"/><path d="M${xd - 22} ${yGen - 62} l-12 7 l12 7 Z" fill="#fff" stroke="#222" stroke-width="1.2"/>`,
         texte(xd - 30, yGen - 66, 'Soupape', { fs: 8.5, a: 'middle' }));
       dessus.push(texte(xd + 6, yGen - 8, d.tg.nom.replace(/ \(.*/, ''), { fs: 9, c: cD }));
       if (d.chaud && d.Pg > 300) dessus.push(`<line x1="${xd}" y1="${yGen - 95}" x2="${xd - 18}" y2="${yGen - 95}" stroke="#222" stroke-width="1"/><circle cx="${xd - 26}" cy="${yGen - 95}" r="8" fill="#fff" stroke="#222" stroke-width="1.2"/>`, texte(xd - 26, yGen - 92, 'PS', { fs: 7, a: 'middle', b: true }), texte(xd - 36, yGen - 92, 'Manque d\'eau', { fs: 8, a: 'end' }));
     }
-    if (!d.pompesInd && nG > 1 && d.bouteille) dessus.push(pompeH(xB - 45, Y1), texte(xB - 45, Y1 - 18, 'Pompe primaire', { fs: 8.5, a: 'middle' }));
+    if (!d.pompesInd && nG > 1 && decouple) dessus.push(pompeH(xB - 45, Y1), texte(xB - 45, Y1 - 18, 'Pompe primaire', { fs: 8.5, a: 'middle' }));
     // Accessoires du primaire : vase d'expansion, remplissage, désemboueur
     if (e.vase !== 'non') {
       out.push(ligne(40, Y2, 40, 470, cR, 2.5), `<path d="M15 475 q25 -18 50 0 v70 q-25 18 -50 0 Z" fill="#f1f1f1" stroke="#222" stroke-width="1.5"/>`);
@@ -168,7 +225,7 @@ const Schema = ((D, C, N) => {
         texte(88, 424, 'D', { fs: 9, a: 'middle', b: true }), texte(100, 424, 'Remplissage (disconnecteur)', { fs: 8.5 }));
     }
     if (e.desemboueur !== 'non') {
-      const xd = (d.bouteille ? xB : xS0) - 60;
+      const xd = (decouple ? xB : xS0) - 60;
       dessus.push(`<rect x="${xd - 14}" y="${Y2 - 12}" width="28" height="34" rx="4" fill="#fff" stroke="#222" stroke-width="1.4"/>`, texte(xd, Y2 + 36, 'Pot à boue', { fs: 8.5, a: 'middle' }),
         texte(xd, Y2 + 46, 'désemboueur', { fs: 8.5, a: 'middle' }));
     }
@@ -180,7 +237,8 @@ const Schema = ((D, C, N) => {
       croisement(xr, Y1);
       out.push(`<rect x="${x + 20}" y="${yE}" width="130" height="70" rx="6" fill="#fff" stroke="#222" stroke-width="1.6"/>`);
       out.push(texte(x + 85, yE + 16, c.rep.slice(0, 24), { fs: 10.5, a: 'middle', b: true }), texte(x + 85, yE + 30, c.em[0].split(' (')[0].slice(0, 28), { fs: 9, a: 'middle' }),
-        texte(x + 85, yE + 45, `${nf(c.P, 0)} kW · ${c.rc[0]}/${c.rc[1]} °C`, { fs: 9.5, a: 'middle' }), texte(x + 85, yE + 60, `${nf(c.Q, 2)} m³/h`, { fs: 9.5, a: 'middle', b: true }));
+        texte(x + 85, yE + 45, d.co ? `ch. ${nf(c.P, 0)} / fr. ${nf(c.Pf, 0)} kW` : `${nf(c.P, 0)} kW · ${c.rc[0]}/${c.rc[1]} °C`, { fs: 9.5, a: 'middle' }),
+        texte(x + 85, yE + 60, d.co ? `${nf(c.Qc, 1)} / ${nf(c.Qf, 1)} m³/h` : `${nf(c.Q, 2)} m³/h`, { fs: 9.5, a: 'middle', b: true }));
       dessus.push(point(xd, Y1, cD), point(xr, Y2, cR), vanne(xd, Y1 - 22), vanne(xr, Y1 - 22));
       dessus.push(pompe(xd, 255), texte(xd - 16, 259, `PC${i + 1}`, { fs: 8.5, a: 'end' }), clapet(xd, 285));
       if (c.reg === '3v') { dessus.push(`<line x1="${xd + 14}" y1="200" x2="${xr}" y2="200" stroke="${cR}" stroke-width="2.5"/>`, point(xr, 200, cR), vanne3v(xd, 200), texte(xd + 14, 192, 'V3V', { fs: 8.5 })); }
@@ -192,14 +250,14 @@ const Schema = ((D, C, N) => {
     });
 
     // Légende
-    const yl = H - 34, lg = [[`<line x1="0" y1="0" x2="26" y2="0" stroke="${cD}" stroke-width="3"/>`, `Départ ${d.Td} °C`], [`<line x1="0" y1="0" x2="26" y2="0" stroke="${cR}" stroke-width="3"/>`, `Retour ${d.Tr} °C`],
+    const yl = H - 34, lg = [[`<line x1="0" y1="0" x2="26" y2="0" stroke="${cD}" stroke-width="3"/>`, d.co ? `Départ ${d.co.dC.Td} °C / ${d.co.dF.Td} °C` : `Départ ${d.Td} °C`], [`<line x1="0" y1="0" x2="26" y2="0" stroke="${cR}" stroke-width="3"/>`, d.co ? `Retour ${d.co.dC.Tr} °C / ${d.co.dF.Tr} °C` : `Retour ${d.Tr} °C`],
       [pompeH(13, 0), 'Pompe'], [vanneH(13, 0), 'Vanne d\'isolement'], [`${vanne(13, 0)}<path d="M13 0 L27 -7 L27 7 Z" fill="#fff" stroke="#222" stroke-width="1.4"/>`, 'Vanne 3 voies'],
       [equilibrage(13, 0), 'Vanne d\'équilibrage'], [clapet(13, 0), 'Clapet anti-retour'], [compteur(13, 0), 'Compteur d\'énergie']];
     out.push(`<line x1="20" y1="${yl - 22}" x2="${W - 20}" y2="${yl - 22}" stroke="#ccc" stroke-width="1"/>`);
     let xl = 20;
     lg.forEach(([sym, lib]) => { out.push(`<g transform="translate(${xl} ${yl})">${sym}</g>`, texte(xl + 34, yl + 4, lib, { fs: 9.5 })); xl += 40 + lib.length * 5.6; });
     out.push(texte(W - 20, H - 8, 'Schéma de principe — ne vaut pas plan d\'exécution', { fs: 8.5, a: 'end', c: '#888' }));
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${out.join('')}${masques.join('')}${dessus.join('')}</svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" data-depart="${cD}" data-retour="${cR}">${out.join('')}${masques.join('')}${dessus.join('')}</svg>`;
   }
 
   /* ---------- Réglementation selon la puissance (synthèse indicative) ---------- */
@@ -220,6 +278,7 @@ const Schema = ((D, C, N) => {
     if (d.chaud && Pg > 300) sec.push(exigence('obligatoire', `Générateurs de plus de 300 kW : limiteur de pression maximale et sécurité de manque d'eau (pressostat, limiteur de niveau ou de débit) sur chaque générateur.`, 'NF EN 12828'));
     if (d.Td > 105) sec.push(exigence('obligatoire', 'Départ au-delà de 105 °C : eau surchauffée hors NF EN 12828, soumise à la réglementation des équipements sous pression (conception et suivi en service).', 'Directive 2014/68/UE, arrêté du 20 novembre 2017'));
     if (g === 'echangeur-vapeur') sec.push(exigence('obligatoire', 'Échangeur alimenté en vapeur : équipement sous pression (déclaration, requalification selon PS·V) ; sécurité de surchauffe coupant la vapeur côté primaire.', 'Directive 2014/68/UE, arrêté du 20 novembre 2017'));
+    if (d.echangeur) sec.push(exigence('obligatoire', 'Circuits primaire et secondaire séparés par l\'échangeur : vase d\'expansion, soupape de sécurité et remplissage sur chacun.', 'NF EN 12828'));
     sec.push(exigence('conseil', 'Désemboueur et traitement d\'eau conformes aux prescriptions des constructeurs (dureté, pH, oxygène).', 'Constructeurs, VDI 2035'));
     blocs.push({ titre: 'Sécurité de l\'installation', items: sec });
     // Local et combustible
@@ -285,21 +344,25 @@ const Schema = ((D, C, N) => {
   function regulation(d, e) {
     const Tb = num(e.Tbase, -10), red = num(e.reduit, 3), perm = num(e.permutation, 168), af = [], pts = [];
     const pt = (rep, des, type, rem = '') => pts.push([rep, des, type, rem]);
-    const G = d.chaud ? 'G' : 'GF';
+    const G = d.co ? 'PAC' : d.chaud ? 'G' : 'GF';
     pt('TE', 'Température extérieure', 'EA', 'Façade nord, à l\'abri du soleil');
     // Production
     af.push(d.chaud ? `Production : la consigne de départ ${d.bouteille ? 'mesurée en aval de la bouteille de découplage (sonde de départ commun)' : 'mesurée sur le collecteur de départ'} est égale à la demande la plus élevée des circuits majorée de 5 K, plafonnée à ${d.Td} °C.`
       : `Production : consigne de départ d'eau glacée ${d.Td} °C ${d.bouteille ? 'en aval de la bouteille de découplage' : 'sur le collecteur'}, relevée jusqu'à ${d.Td + 3} °C par temps doux ou faible hygrométrie.`);
+    if (d.co) af.push(`Change-over : basculement chauffage / climatisation selon la température extérieure moyenne sur 24 h (chaud sous 15 °C, froid au-dessus de 22 °C, réglables) ou par commande manuelle ; temporisation d'au moins 2 h entre deux inversions, consignes et lois d'eau propres à chaque saison, inversion des vannes des émetteurs.`);
+    if (d.co) pt('CO', 'Commande de la saison (chaud / froid)', 'STOR', 'Inversion PAC et émetteurs');
+    if (d.echangeur) { af.push(`Échangeur à plaques : la consigne de départ secondaire (${d.Tsd} °C au maximum) est tenue par la production ; sécurité de surchauffe du secondaire coupant la production.`); pt('TS2', 'Température de départ secondaire de l\'échangeur', 'EA'); pt('PI2', 'Pression du circuit secondaire', 'EA'); }
+    if (d.tampon && d.tampon.V > 0) { af.push(`Ballon tampon de ${nf(d.tampon.V, 0)} L : les générateurs démarrent sur la sonde haute et s'arrêtent sur la sonde basse du ballon (anti-courts-cycles).`); pt('TT1', 'Température haute du ballon tampon', 'EA'); pt('TT2', 'Température basse du ballon tampon', 'EA'); }
     if (d.n > 1) af.push(e.cascadeMode === 'parallele'
       ? `Cascade de ${d.n} générateurs en modulation parallèle : les générateurs en service modulent ensemble au-dessus de leur taux de charge minimal (meilleur rendement${/cond|pac/.test(g(e)) ? ' et condensation' : ''}) ; un générateur supplémentaire démarre lorsque les autres dépassent 80 % de charge.`
       : `Cascade de ${d.n} générateurs en séquence : le générateur suivant démarre lorsque la consigne n'est pas atteinte après une temporisation (10 min réglable) avec le précédent au-delà de 90 % de charge ; arrêt dans l'ordre inverse.`);
     if (d.n > 1) af.push(`Permutation de l'ordre de priorité toutes les ${nf(perm, 0)} h de fonctionnement et basculement automatique sur le générateur suivant en cas de défaut (secours).`);
     for (let i = 1; i <= d.n; i++) {
       pt(`${G}${i}`, `Autorisation de marche du générateur ${i}`, 'STOR'); pt(`${G}${i}`, `Consigne ou modulation du générateur ${i}`, 'SA', '0-10 V ou bus constructeur'); pt(`${G}${i}`, `État de marche du générateur ${i}`, 'ETOR'); pt(`${G}${i}`, `Défaut du générateur ${i}`, 'ETOR');
-      if (d.pompesInd && (d.bouteille || d.n > 1)) { pt(`P${G}${i}`, `Commande de la pompe primaire ${i}`, 'STOR', 'Post-circulation 5 min'); pt(`P${G}${i}`, `Défaut de la pompe primaire ${i}`, 'ETOR'); }
+      if (d.pompesInd && (d.bouteille || d.echangeur || d.n > 1)) { pt(`P${G}${i}`, `Commande de la pompe primaire ${i}`, 'STOR', 'Post-circulation 5 min'); pt(`P${G}${i}`, `Défaut de la pompe primaire ${i}`, 'ETOR'); }
       else if (d.n > 1) { pt(`VM${i}`, `Vanne d'isolement motorisée du générateur ${i}`, 'STOR'); pt(`VM${i}`, `Fin de course de la vanne ${i}`, 'ETOR'); }
     }
-    if (d.pompesInd && (d.bouteille || d.n > 1)) af.push(`Pompes primaires asservies à leur générateur, avec post-circulation de 5 min à l'arrêt${d.bouteille && /cond|pac/.test(g(e)) ? ' ; vitesse variable pour limiter le débit primaire et garder un retour froid' : ''}.`);
+    if (d.pompesInd && (d.bouteille || d.echangeur || d.n > 1)) af.push(`Pompes primaires asservies à leur générateur, avec post-circulation de 5 min à l'arrêt${d.bouteille && /cond|pac/.test(g(e)) ? ' ; vitesse variable pour limiter le débit primaire et garder un retour froid' : ''}.`);
     if (!d.pompesInd && d.n > 1) { af.push('Vannes d\'isolement motorisées : ouverture avant le démarrage du générateur, fermeture après sa post-circulation ; un générateur à l\'arrêt n\'est pas irrigué.'); if (d.bouteille) { pt('PP', 'Commande de la pompe primaire commune', 'STOR'); pt('PP', 'Défaut de la pompe primaire commune', 'ETOR'); pt('PP', 'Vitesse de la pompe primaire commune', 'SA'); } }
     pt('TD', d.bouteille ? 'Température de départ commun (aval bouteille)' : 'Température du collecteur de départ', 'EA'); pt('TR', d.bouteille ? 'Température de retour commun (amont bouteille)' : 'Température du collecteur de retour', 'EA');
     pt('PI', 'Pression de l\'installation', 'EA', `Alarme basse sous ${nf(1, 1)} bar (réglable)`);
@@ -352,14 +415,22 @@ const Schema = ((D, C, N) => {
     champs: [{ g: 'Réseau' }, { k: 'titreInstallation', l: 'Installation', t: 't', d: 'Chaufferie bâtiment A' },
       { k: 'reseau', l: 'Régime', t: 's', o: optListe(REGIMES), d: 'ch-70-50' },
       { k: 'Tdep', l: 'Température de départ', u: '°C', d: 70, si: e => e.reseau === 'perso' }, { k: 'Tret', l: 'Température de retour', u: '°C', d: 50, si: e => e.reseau === 'perso' },
+      { k: 'TdepC', l: 'Chauffage : départ', u: '°C', d: 45, si: e => e.reseau === 'co' }, { k: 'TretC', l: 'Chauffage : retour', u: '°C', d: 40, si: e => e.reseau === 'co' },
+      { k: 'TdepF', l: 'Climatisation : départ', u: '°C', d: 7, si: e => e.reseau === 'co' }, { k: 'TretF', l: 'Climatisation : retour', u: '°C', d: 12, si: e => e.reseau === 'co' },
       { k: 'fluide', l: 'Fluide', t: 's', o: [['eau', 'Eau'], ...Object.entries(D.GLYCOLS).map(([k, g]) => [k, g.libelle])], d: 'eau' },
       { k: 'serie', l: 'Série de tubes', t: 's', o: Object.entries(D.SERIES).map(([k, s]) => [k, s.libelle]), d: 'acier-10216' },
       { k: 'vmax', l: 'Vitesse maximale', u: 'm/s', d: 1.5 }, { k: 'Rmax', l: 'Perte de charge linéique maximale', u: 'Pa/m', d: 150 },
       { g: 'Production' }, { k: 'generateur', l: 'Générateur', t: 's', o: optListe(GENERATEURS), d: 'chaudiere-cond' },
       { k: 'nGen', l: 'Nombre de générateurs', t: 's', o: [['1', '1 générateur (sans cascade)'], ['2', '2 en cascade'], ['3', '3 en cascade'], ['4', '4 en cascade'], ['5', '5 en cascade'], ['6', '6 en cascade']], d: '2' },
-      { k: 'Pgen', l: 'Puissance unitaire', u: 'kW', d: 150 },
+      { k: 'Pgen', l: 'Puissance unitaire (chauffage en change-over)', u: 'kW', d: 150 },
+      { k: 'PgenF', l: 'Puissance frigorifique unitaire', u: 'kW', d: 130, si: e => e.reseau === 'co' },
       { k: 'pompesPrim', l: 'Pompes de la cascade', t: 's', o: [['individuelles', 'Une pompe et un clapet par générateur'], ['commune', 'Pompe primaire commune et vannes motorisées']], d: 'individuelles', si: e => num(e.nGen, 1) > 1 },
-      { k: 'bouteille', l: 'Bouteille de découplage', t: 's', o: [['oui', 'Avec bouteille de découplage'], ['non', 'Sans bouteille (raccordement direct)']], d: 'oui' },
+      { k: 'tichelmann', l: 'Raccordement des générateurs', t: 's', o: [['non', 'Direct'], ['oui', 'En Tichelmann (retour inversé)']], d: 'non', si: e => num(e.nGen, 1) > 1 },
+      { k: 'bouteille', l: 'Découplage production / distribution', t: 's', o: [['oui', 'Bouteille de découplage'], ['echangeur', 'Échangeur à plaques (circuits séparés)'], ['non', 'Aucun (raccordement direct)']], d: 'oui' },
+      { k: 'pincement', l: 'Pincement de l\'échangeur', u: 'K', d: 3, si: e => e.bouteille === 'echangeur' },
+      { k: 'tampon', l: 'Ballon tampon', t: 's', o: [['non', 'Sans'], ['oui', 'Avec ballon tampon sur le retour']], d: 'non' },
+      { k: 'ratioTampon', l: 'Volume d\'eau minimal exigé par le constructeur', u: 'L/kW', d: 10, si: e => e.tampon === 'oui' },
+      { k: 'Vtampon', l: 'Volume du ballon imposé (vide : calculé)', u: 'L', d: '', si: e => e.tampon === 'oui' },
       { g: 'Distribution' },
       { k: 'circuits', l: 'Circuits (régime : « 45/35 » si différent du réseau, vide = régime du réseau)', t: 'lignes', d: [
         { rep: 'Radiateurs bureaux', emetteur: 'radiateurs', P: 90, regime: '', regulation: '3v', L: 120 },
@@ -367,6 +438,7 @@ const Schema = ((D, C, N) => {
         { rep: 'Plancher vestiaires', emetteur: 'plancher', P: 30, regime: '40/32', regulation: '3v', L: 40 },
         { rep: 'Ballon ECS', emetteur: 'ecs', P: 40, regime: '', regulation: 'direct', L: 20 }],
       colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'emetteur', l: 'Émetteur', t: 's', o: optListe(EMETTEURS) }, { k: 'P', l: 'Puissance (kW)' },
+        { k: 'Pf', l: 'Puissance froid (kW)', si: e => e.reseau === 'co' },
         { k: 'bilan', l: 'Puissance reprise de', t: 's', o: (e, ctx) => [['', 'Saisie'], ...((ctx && ctx.notes) || []).map((n, i) => [n, i]).filter(([n]) => n.type === 'bilan').map(([n, i]) => [n.id, `N${i + 1} — ${n.titre}`])] },
         { k: 'regime', l: 'Régime (°C)', t: 't' }, { k: 'regulation', l: 'Régulation', t: 's', o: optListe(REGULATIONS) }, { k: 'L', l: 'Longueur aller + retour (m)' }] },
       { k: 'foisonnement', l: 'Coefficient de simultanéité des besoins', u: '%', d: 100 },
@@ -382,28 +454,38 @@ const Schema = ((D, C, N) => {
       { k: 'desemboueur', l: 'Pot à boue / désemboueur', t: 's', o: [['oui', 'Représenté'], ['non', 'Non représenté']], d: 'oui' },
       { k: 'compteurs', l: 'Compteurs d\'énergie par circuit', t: 's', o: [['non', 'Non'], ['oui', 'Oui']], d: 'non' }],
     calcul(e) {
-      const d = dimensionner(e), alertes = [...d.alertes], vol = volumeEau(d, e.generateur);
+      const d = dimensionner(e), alertes = [...d.alertes], vol = volumeEau(d, e.generateur), dr = d.co ? d.co.dC : d;
       if (!alertes.some(a => a.niveau === 'erreur')) alertes.unshift(alerte('ok', `${d.n > 1 ? `Cascade de ${d.n} × ${nf(d.Pg, 0)} kW` : `Générateur de ${nf(d.Pg, 0)} kW`} pour ${nf(d.Pdem, 0)} kW de besoins ; débit primaire ${nf(d.Qp, 2)} m³/h, secondaire ${nf(d.Qs, 2)} m³/h${d.bouteille && d.tb ? `, bouteille ${d.tb.nom}` : ''}.`));
       return {
         valeurs: { volume: vol.total, Pprod: d.Pprod, Pdem: d.Pdem, Qp: d.Qp, Qs: d.Qs, Qg: d.Qg, bouteille: d.tb ? d.tb.cle : null, Db: d.Db, collecteur: d.tc.cle, circuits: d.circuits.map(c => ({ rep: c.rep, Q: c.Q, Qcoll: c.Qcoll, tube: c.t.cle, hmt: c.hmt, kvs: c.kvs })) },
         resume: [['Réseau', `${d.regime} — ${d.f.libelle}`], ['Production', `${d.n} × ${d.gen[0].toLowerCase()} de ${nf(d.Pg, 0)} kW = ${nf(d.Pprod, 0)} kW`],
           ['Besoins (avec simultanéité)', `${nf(d.Pdem, 0)} kW`], ['Débit par générateur', `${nf(d.Qg, 2)} m³/h — ${d.tg.nom}`], ['Débit primaire total', `${nf(d.Qp, 2)} m³/h`],
           ['Débit appelé par les circuits', `${nf(d.Qs, 2)} m³/h`], ['Collecteurs', `${d.tc.nom} (${nf(d.Qcoll, 2)} m³/h)`],
-          ['Bouteille de découplage', d.bouteille ? `${d.tb ? d.tb.nom : '—'} (Ø intérieur mini ${nf(d.Db, 0)} mm)` : 'Sans'], ['Volume d\'eau estimé', `${nf(vol.total, 0)} L`]],
-        tableaux: [{ titre: 'Circuits de distribution', entetes: ['Circuit', 'Émetteur', 'P (kW)', 'Régime (°C)', 'Débit (m³/h)', 'Tube', 'v (m/s)', 'Régulation', 'Kvs', 'Pompe (m³/h × mCE)'],
+          ...(d.co ? [['Climatisation', `${d.n} × ${nf(d.co.dF.Pg, 0)} kW = ${nf(d.co.dF.Pprod, 0)} kW pour ${nf(d.co.dF.Pdem, 0)} kW de besoins ; débit ${nf(d.co.dF.Qp, 2)} m³/h`]] : []),
+          d.echangeur ? ['Échangeur à plaques', `${nf(d.Pdem, 0)} kW, primaire ${d.Td}/${d.Tr} °C, secondaire ${d.Tsd}/${d.Tsr} °C, surface ≈ ${nf(d.Aech, 1)} m²`]
+            : ['Bouteille de découplage', d.bouteille ? `${d.tb ? d.tb.nom : '—'} (Ø intérieur mini ${nf(d.Db, 0)} mm)` : 'Sans'],
+          ...(d.tampon ? [['Ballon tampon', d.tampon.V > 0 ? `${nf(d.tampon.V, 0)} L (minimum ${nf(d.tampon.Vmin, 0)} L − installation ${nf(d.tampon.Vres, 0)} L)` : `Non nécessaire : l'installation contient ${nf(d.tampon.Vres, 0)} L pour ${nf(d.tampon.Vmin, 0)} L exigés`]] : []),
+          ['Volume d\'eau estimé', `${nf(vol.total, 0)} L`]],
+        tableaux: [d.co ? { titre: 'Circuits de distribution (change-over : diamètre au débit le plus fort)', entetes: ['Circuit', 'Émetteur', 'P chaud / froid (kW)', 'Débit chaud / froid (m³/h)', 'Tube', 'v (m/s)', 'Régulation', 'Kvs', 'Pompe (m³/h × mCE)'],
+          lignes: d.circuits.map(c => [c.rep, c.em[0], `${nf(c.P, 0)} / ${nf(c.Pf, 0)}`, `${nf(c.Qc, 2)} / ${nf(c.Qf, 2)}`, c.t.nom, nf(c.v, 2), REGULATIONS[c.reg], c.kvs ? nf(c.kvs, c.kvs < 1 ? 2 : 1) : '—', `${nf(c.Q, 2)} × ${nf(c.hmt, 1)}`]) }
+          : { titre: 'Circuits de distribution', entetes: ['Circuit', 'Émetteur', 'P (kW)', 'Régime (°C)', 'Débit (m³/h)', 'Tube', 'v (m/s)', 'Régulation', 'Kvs', 'Pompe (m³/h × mCE)'],
           lignes: d.circuits.map(c => [c.rep, c.em[0], nf(c.P, 0), `${c.rc[0]}/${c.rc[1]}`, nf(c.Q, 2), c.t.nom, nf(c.v, 2), REGULATIONS[c.reg], c.kvs ? nf(c.kvs, c.kvs < 1 ? 2 : 1) : '—', `${nf(c.Q, 2)} × ${nf(c.hmt, 1)}`]) },
         { titre: 'Production', entetes: ['Générateur', 'P (kW)', 'Débit (m³/h)', 'Raccordement', 'Pompe primaire'],
-          lignes: Array.from({ length: d.n }, (_, i) => [`${d.chaud ? 'G' : 'GF'}${i + 1} — ${d.gen[0]}`, nf(d.Pg, 0), nf(d.Qg, 2), d.tg.nom,
-            d.pompesInd && (d.bouteille || d.n > 1) ? `${nf(d.Qg, 2)} m³/h, avec clapet` : d.n > 1 && d.bouteille ? `pompe commune ${nf(d.Qp, 2)} m³/h, vanne motorisée` : d.n > 1 ? 'vanne motorisée (pompes des circuits)' : 'sans (pompes des circuits)'] ) }],
+          lignes: Array.from({ length: d.n }, (_, i) => [`${d.co ? 'PAC' : d.chaud ? 'G' : 'GF'}${i + 1} — ${d.gen[0]}`, d.co ? `${nf(d.co.dC.Pg, 0)} / ${nf(d.co.dF.Pg, 0)}` : nf(d.Pg, 0), nf(d.Qg, 2), d.tg.nom,
+            d.pompesInd && (d.bouteille || d.echangeur || d.n > 1) ? `${nf(d.Qg, 2)} m³/h, avec clapet` : d.n > 1 && d.bouteille ? `pompe commune ${nf(d.Qp, 2)} m³/h, vanne motorisée` : d.n > 1 ? 'vanne motorisée (pompes des circuits)' : 'sans (pompes des circuits)'] ) }],
         alertes,
         hypotheses: ['Débits : Q = P / (ρ · cp · ΔT) au régime de chaque circuit ; un circuit à vanne 3 voies mélangeuse appelle sur le collecteur P / (ρ · cp · (départ réseau − retour circuit)).',
           'Diamètres : plus petit tube de la série respectant la vitesse et la perte de charge linéique maximales ; collecteurs limités à 1 m/s.',
           'Pompes de circuit : HMT estimée = pertes linéiques × 1,3 (singularités) + émetteur (valeur usuelle) + vanne de régulation (autorité ≈ 0,5) + équilibrage 5 kPa. À confirmer par le calcul de réseau.',
           'Bouteille de découplage : vitesse verticale ≤ 0,2 m/s et diamètre ≥ 3 fois le plus gros piquage ; piquages départ en partie haute, retours en partie basse.',
+          ...(d.echangeur ? ['Échangeur à plaques à contre-courant : secondaire décalé du pincement, surface indicative avec U ≈ 4 000 W/m²·K (à confirmer par le fabricant).'] : []),
+          ...(d.tampon ? ['Ballon tampon : volume d\'eau minimal exigé (L/kW × puissance installée) diminué du volume estimé de l\'installation, arrondi au volume commercial.'] : []),
+          ...(d.tichelmann ? ['Cascade en Tichelmann : le premier générateur alimenté au départ est le dernier au retour, longueurs de circuit égales et débits répartis sans organe d\'équilibrage.'] : []),
+          ...(d.co ? ['Change-over : chaque circuit est calculé au régime chaud et au régime froid ; le diamètre retenu est celui du débit le plus fort (en général le froid, à plus faible écart de température).'] : []),
           'Schéma de principe : ne remplace pas le plan d\'exécution (organes de sécurité, vidanges, purges et appareils de mesure à compléter selon le CCTP).'],
-        synthese: `${d.n > 1 ? `Cascade ${d.n} × ${nf(d.Pg, 0)} kW` : `${nf(d.Pg, 0)} kW`} · ${d.circuits.length} circuit(s) · ${d.bouteille ? 'bouteille' : 'sans bouteille'} · ${nf(d.Qs, 1)} m³/h`,
+        synthese: `${d.co ? 'Change-over · ' : ''}${d.n > 1 ? `Cascade ${d.n} × ${nf(d.Pg, 0)} kW` : `${nf(d.Pg, 0)} kW`} · ${d.circuits.length} circuit(s) · ${d.echangeur ? 'échangeur' : d.bouteille ? 'bouteille' : 'sans découplage'}${d.tampon && d.tampon.V > 0 ? ` · tampon ${nf(d.tampon.V, 0)} L` : ''} · ${nf(d.Qs, 1)} m³/h`,
         schema: dessiner(d, e),
-        onglets: [{ titre: 'Réglementation', blocs: reglementation(d, e) }, { titre: 'Régulation', blocs: regulation(d, e) }],
+        onglets: [{ titre: 'Réglementation', blocs: reglementation({ ...dr, Pprod: Math.max(d.Pprod, d.co ? d.co.dF.Pprod : 0), circuits: d.circuits, echangeur: d.echangeur }, e) }, { titre: 'Régulation', blocs: regulation({ ...dr, circuits: dr.circuits, co: d.co }, e) }],
       };
     },
   };
