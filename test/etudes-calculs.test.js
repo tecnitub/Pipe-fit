@@ -265,3 +265,32 @@ test('modèles d\'études : instanciation, liens reportés, modèles enregistré
   const copie = M.instancier({ modele: true, notes: atelier }, uid), b2 = copie.find(n => n.type === 'bilan'), p2 = copie.find(n => n.type === 'pid');
   assert.ok(b2.id !== bilan.id && p2.entrees.circuits[0].bilan === b2.id && copie.filter(n => n.lien).every(n => n.lien.note === p2.id));
 });
+
+test('métré et chiffrage : quantités, rapprochement avec la bibliothèque, lignes de devis', () => {
+  const Me = require('../etudes/public/js/metre');
+  const articles = [{ id: 'a1', designation: 'Tube inox 316L DN50 sch10S', famille: 'Tubes', unite: 'ml', prixVente: 51, coutRevient: 41 },
+    { id: 'a4', designation: 'Coude 90° 3D inox 316L DN50', famille: 'Raccords', unite: 'u', prixVente: 26, coutRevient: 21 },
+    { id: 'a8', designation: 'Supportage et colliers', famille: 'Supportage', unite: 'ml', prixVente: 12, coutRevient: 9 },
+    { id: 'a9', designation: 'Tube acier P235GH DN150 ép. 4,5', famille: 'Tubes', unite: 'ml', prixVente: 57, coutRevient: 46 }];
+  const mo = [{ id: 'mo2', code: 'MONT', libelle: 'Tuyauteur monteur', tauxVente: 48, tauxCout: 34 }, { id: 'mo4', code: 'BE', libelle: 'Bureau d\'études', tauxVente: 62, tauxCout: 45 }];
+  const et = { notes: [
+    { id: 'r1', type: 'reseau', titre: 'R', entrees: { serie: 'inox-1127', troncons: [{ rep: 'A', Q: 6, tube: '60.3x2', L: 40, zeta: 2 }, { rep: 'B', Q: 6, tube: '60.3x2', L: 25, zeta: 2 }], composants: [] } },
+    { id: 'i1', type: 'isolation', titre: 'I', entrees: { serie: 'inox-1127', tube: '60.3x2', Tf: 80, Ta: 20, L: 65, isolant: 'laine-roche' } }] };
+  const postes = Me.rapprocher(Me.metre(et), articles, mo), tube = postes.find(p => /Tuyauterie inox DN 50/.test(p.designation));
+  assert.strictEqual(tube.qte, 65, 'longueurs cumulées par diamètre');
+  assert.strictEqual(tube.articleId, 'a1'); assert.deepStrictEqual(tube.accessoires.map(x => x.article && x.article.id), ['a4', 'a8']); assert.strictEqual(tube.moId, 'mo2');
+  assert.ok(postes.some(p => p.chapitre === 'Calorifuge' && p.qte === 65 && !p.articleId));
+  assert.strictEqual(postes.find(p => p.chapitre === 'Études').moId, 'mo4');
+  const lignes = Me.lignesDevis(postes, articles, mo), ouv = lignes.find(l => l.designation === tube.designation);
+  assert.deepStrictEqual(lignes.filter(l => l.type === 'chapitre').map(l => l.titre), ['Études', 'Tuyauteries', 'Calorifuge']);
+  assert.deepStrictEqual(ouv.composants.map(c => c.articleId || c.moId), ['a1', 'a4', 'a8', 'mo2']);
+  assert.ok(lignes.find(l => /Calorifuge/.test(l.designation || '')).libre, 'poste hors bibliothèque');
+  proche(Me.prixPoste(tube, articles, mo).unitaire, 51 * 1.05 + 26 * 0.2 + 12 + 48 * tube.heures, 1e-9);
+  assert.match(Me.csv(postes), /Tuyauterie inox DN 50/);
+  // Notes créées depuis un schéma : comptées une seule fois (par le schéma)
+  let k = 0; const pid = { id: 'p1', type: 'pid', titre: 'S', entrees: N.defauts('pid') }, et2 = { notes: [pid] };
+  et2.notes.push(...require('../etudes/public/js/liens').notesDepuisSchema(et2, pid, () => `z${++k}`));
+  const total = Me.metre(et2).filter(p => p.unite === 'ml' && p.chapitre === 'Tuyauteries').reduce((s, p) => s + p.qte, 0);
+  const attendu = Schema.dimensionner(pid.entrees).circuits.reduce((s, c) => s + c.L, 0) + 2 * (4 * 1.5 + 2) + 2 * 6;
+  proche(total, attendu, 1e-6);
+});

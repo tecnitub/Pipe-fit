@@ -18,7 +18,7 @@ const toast = (msg, ms = 3000) => {
   const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; z.appendChild(t); setTimeout(() => t.remove(), ms);
 };
 const Modal = {
-  open(html) { const m = document.getElementById('modal'); m.querySelector('.modal-box').innerHTML = html; m.hidden = false; return m.querySelector('.modal-box'); },
+  open(html) { const m = document.getElementById('modal'), b = m.querySelector('.modal-box'); b.className = 'modal-box'; b.innerHTML = html; m.hidden = false; return b; },
   close() { document.getElementById('modal').hidden = true; },
 };
 const confirmer = (msg, ok = 'Confirmer') => new Promise(res => {
@@ -289,7 +289,7 @@ Vues.etude = {
     if (noteId) return Vues.note.html(et, noteId);
     const a = affaireDe(et.affaireId);
     return `<div class="barre"><a href="#/" class="secondaire btn petit">← Études</a><h1 class="titre-etude">${esc(et.objet)}</h1><span class="badge pf">${et.modele ? 'Modèle' : `Indice ${esc(et.indice)}`}</span>
-        <span class="espace"></span><span class="muted petit" id="etat-enreg"></span><button id="pdf">📄 Note de calcul PDF</button></div>
+        <span class="espace"></span><span class="muted petit" id="etat-enreg"></span><button class="secondaire" id="chiffrer">💶 Métré et chiffrage</button><button id="pdf">📄 Note de calcul PDF</button></div>
       <div class="carte"><div class="grille-champs">
         <label class="large">Objet<input data-e="objet" value="${esc(et.objet)}"></label>
         <label>Affaire Pipe-Fit<select data-e="affaireId">${optionsAffaires(et.affaireId)}</select></label>
@@ -322,6 +322,7 @@ Vues.etude = {
       };
     });
     root.querySelector('#pdf').onclick = () => genererNoteCalcul(et);
+    root.querySelector('#chiffrer').onclick = () => dialogueChiffrage(et);
     root.querySelector('#ajout').onclick = () => dialogueAjoutCalcul(et);
     root.querySelector('#indice').onclick = () => {
       const b = Modal.open(`<h2>Nouvel indice ${esc(suivantIndice(et.indice))}</h2><label>Motif de la révision<input id="motif" placeholder="Ex. : prise en compte des remarques du BET"></label>
@@ -367,6 +368,52 @@ Vues.etude = {
   },
 };
 const suivantIndice = i => (/^[A-Y]$/.test(i) ? String.fromCharCode(i.charCodeAt(0) + 1) : /^\d+$/.test(i) ? String(+i + 1) : `${i}'`);
+
+// Métré de l'étude, rapprochement avec la bibliothèque de prix Pipe-Fit et création d'un devis brouillon
+function dialogueChiffrage(et) {
+  const arts = S.pf.articles || [], mos = S.pf.mainoeuvre || [], a = affaireDe(et.affaireId);
+  const postes = Metre.rapprocher(Metre.metre(et), arts, mos);
+  if (!postes.length) return toast('Aucune quantité à chiffrer : ajouter des calculs de réseau, de schéma ou d\'isolation.', 5000);
+  const ligneArt = (p, i) => `<select data-art="${i}"><option value="">Hors bibliothèque (prix à saisir)</option>${[...p.candidats, ...(p.articleId && !p.candidats.some(c => c.id === p.articleId) ? [arts.find(x => x.id === p.articleId)] : [])].filter(Boolean)
+    .map(c => `<option value="${esc(c.id)}" ${c.id === p.articleId ? 'selected' : ''}>${esc(c.ref ? `${c.ref} — ` : '')}${esc(c.designation)} (${Notes.nf(Number(c.prixVente) || 0, 2)} €)</option>`).join('')}</select>`;
+  const total = () => postes.filter(p => p.inclus !== false).reduce((s, p) => { const x = Metre.prixPoste(p, arts, mos); return { ht: s.ht + x.total, h: s.h + x.heures }; }, { ht: 0, h: 0 });
+  const rendu = () => {
+    const t = total(), hors = postes.filter(p => p.inclus !== false && !p.articleId && p.recherche.type !== 'aucune').length;
+    return `<h2>Métré et chiffrage</h2>
+      <p class="muted petit">Quantités tirées des calculs de l'étude (les notes créées depuis le schéma ne sont pas comptées deux fois), rapprochées de la bibliothèque de prix de Pipe-Fit. Les postes sans article deviennent des ouvrages « hors bibliothèque » à prix nul, à compléter dans le devis.</p>
+      <div class="defile metre"><table class="liste compact"><thead><tr><th></th><th>Poste</th><th>Qté</th><th>Unité</th><th>Article de la bibliothèque</th><th>h / unité</th><th>Total estimé (€ HT)</th></tr></thead><tbody>
+      ${Metre.CHAPITRES.map(ch => { const ps = postes.map((p, i) => [p, i]).filter(([p]) => p.chapitre === ch); return ps.length ? `<tr class="total"><td colspan="7">${esc(ch)}</td></tr>${ps.map(([p, i]) => `<tr>
+        <td><input type="checkbox" data-inc="${i}" ${p.inclus === false ? '' : 'checked'} aria-label="Inclure"></td><td>${esc(p.designation)}<div class="muted petit">${esc(p.sources.join(', '))}</div></td>
+        <td><input class="nombre qte" data-qte="${i}" value="${esc(String(p.qte).replace('.', ','))}"></td><td>${esc(p.unite)}</td><td>${p.recherche.type === 'aucune' ? '<span class="muted petit">main-d\'œuvre seule</span>' : ligneArt(p, i)}</td>
+        <td><input class="nombre qte" data-h="${i}" value="${esc(String(Math.round(p.heures * 100) / 100).replace('.', ','))}"></td><td>${Notes.nf(Metre.prixPoste(p, arts, mos).total, 0)}</td></tr>`).join('')}` : ''; }).join('')}
+      </tbody></table></div>
+      <p><strong>Total estimé : ${Notes.nf(t.ht, 0)} € HT</strong> · ${Notes.nf(t.h, 1)} h de main-d'œuvre${hors ? ` · <span class="manque">${hors} poste(s) hors bibliothèque à chiffrer</span>` : ''}${arts.length ? '' : ' · <span class="manque">bibliothèque de prix Pipe-Fit indisponible</span>'}</p>
+      ${a ? `<p class="petit">Le devis brouillon sera créé dans Pipe-Fit pour <strong>${esc(libelleAffaire(a))}</strong> (${esc(clientDe(a))}).</p>` : '<p class="petit manque">Rattacher l\'étude à une affaire Pipe-Fit pour créer le devis.</p>'}
+      <div class="actions"><button class="secondaire" id="ch-fermer">Fermer</button><button class="secondaire" id="ch-csv">Télécharger le métré (CSV)</button>${a ? '<button id="ch-devis">Créer le devis brouillon dans Pipe-Fit</button>' : ''}</div>`;
+  };
+  const box = Modal.open(rendu());
+  box.classList.add('large');
+  const lier = () => {
+    box.querySelector('#ch-fermer').onclick = () => { box.classList.remove('large'); Modal.close(); };
+    const maj = () => { box.innerHTML = rendu(); lier(); };
+    box.querySelectorAll('[data-inc]').forEach(x => x.onchange = () => { postes[+x.dataset.inc].inclus = x.checked; maj(); });
+    box.querySelectorAll('[data-art]').forEach(x => x.onchange = () => { postes[+x.dataset.art].articleId = x.value; maj(); });
+    box.querySelectorAll('[data-qte]').forEach(x => x.onchange = () => { postes[+x.dataset.qte].qte = Notes.num(x.value); maj(); });
+    box.querySelectorAll('[data-h]').forEach(x => x.onchange = () => { postes[+x.dataset.h].heures = Notes.num(x.value); maj(); });
+    box.querySelector('#ch-csv').onclick = () => enregistrerFichier(box, `Metre_${String(et.objet).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_').slice(0, 40)}.csv`, new TextEncoder().encode(`\uFEFF${Metre.csv(postes)}`), 'text/csv');
+    const bd = box.querySelector('#ch-devis');
+    if (bd) bd.onclick = async () => {
+      bd.disabled = true; bd.textContent = 'Création…';
+      try {
+        const r = await api('POST', '/api/pf/devis', { affaireId: et.affaireId, etudeId: et.id, objet: `${et.objet} — chiffrage bureau d'études`, lignes: Metre.lignesDevis(postes, arts, mos) });
+        const pf = S.me.pipefit || (/^https?:$/.test(location.protocol) ? `${location.protocol}//${location.hostname}:3000` : '');
+        bd.outerHTML = `<span class="badge ok">Devis ${esc(r.numero || '')} créé en brouillon</span>${pf ? `<a class="btn" href="${esc(pf)}/#/devis/${encodeURIComponent(r.id)}" target="_blank" rel="noopener">Ouvrir dans Pipe-Fit ↗</a>` : ''}`;
+        et.devisPF = [...(et.devisPF || []), { id: r.id, numero: r.numero, date: aujourdhui() }]; enregistrer(et);
+      } catch (e) { bd.disabled = false; bd.textContent = 'Créer le devis brouillon dans Pipe-Fit'; toast(e.message, 6000); }
+    };
+  };
+  lier();
+}
 
 // Comparaison de variantes : résultats et données d'entrée côte à côte
 function comparaisonHtml(et, notes) {

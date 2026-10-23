@@ -54,6 +54,16 @@ dans une étude. Les valeurs sont des données de pré-dimensionnement : les doc
 
 - **Connexion** : mêmes identifiants que Pipe-Fit, réservée au bureau (administrateur, chargé d'affaires).
 - **Affaires** : la liste des affaires et des clients est lue dans Pipe-Fit (lecture seule, rien d'autre n'est transmis).
+- **Bibliothèque de prix et main-d'œuvre** : lues dans Pipe-Fit pour le chiffrage.
+- **Métré et chiffrage** (« 💶 Métré et chiffrage » sur une étude) : quantités tirées des calculs — tuyauteries par série
+  et diamètre (raccords, supports et heures de pose compris), calorifuge, gaines, équipements du schéma (générateurs,
+  pompes et vannes du catalogue, équilibrage, isolement, bouteille, vase, tampon…), heures d'études — rapprochées de la
+  bibliothèque de prix ; article modifiable poste par poste, export CSV, puis **devis brouillon créé dans Pipe-Fit** pour
+  l'affaire (client, contact, site, TVA du client, ouvrages fournitures + main-d'œuvre, postes sans article « hors
+  bibliothèque » à prix nul).
+- **Note de calcul déposée dans le chantier** : depuis la fenêtre de la note PDF, « 📤 Déposer dans le chantier Pipe-Fit »
+  (catégorie « Note de calcul », réservée au bureau ; un nouveau dépôt de la même étude crée un nouvel indice et garde
+  l'ancien). L'application DOE la reprend en **annexe C — Notes de calcul**.
 - Dans Pipe-Fit, l'onglet « 📐 Études » de chaque chantier ouvre ses études. L'adresse de l'application se règle dans
   Paramètres → Société (« Adresse de l'application Études ») ; vide, c'est le même serveur sur le port 3200.
 
@@ -84,6 +94,7 @@ etudes/public/js/liens.js    liens entre calculs d'une étude (valeurs reprises,
 etudes/public/js/dxf.js      export DXF (AutoCAD R12, Windows-1252) des schémas SVG
 etudes/public/js/catalogue.js catalogues de pompes et de vannes (gamme générique, import CSV), choix au point de fonctionnement
 etudes/public/js/modeles.js  modèles d'études intégrés et instanciation des modèles enregistrés
+etudes/public/js/metre.js    métré, rapprochement avec la bibliothèque de prix Pipe-Fit, lignes de devis
 etudes/public/js/app.js      écrans : études, calculateurs, calculs rapides, données de référence, réglages
 etudes/public/js/note-pdf.js note de calcul PDF (moteur PDF de Pipe-Fit + pdf-lib de l'application DOE)
 etudes/build-demo.js         démonstration en un fichier (etudes/demo-backend.js simule le serveur)

@@ -49,8 +49,9 @@ test('affaires de Pipe-Fit : seules les informations utiles sont transmises', as
   const c = await connexion('jacky');
   const d = (await call(base, 'GET', '/api/pf/affaires', null, c)).body;
   assert.ok(d.affaires.length && d.entreprises.length);
-  assert.ok(Object.keys(d.affaires[0]).every(k => ['clientId', 'code', 'id', 'nom', 'statut', 'type'].includes(k)) && d.affaires[0].id);
-  assert.deepStrictEqual(Object.keys(d.entreprises[0]).sort(), ['id', 'nom']);
+  assert.ok(Object.keys(d.affaires[0]).every(k => ['clientId', 'contactId', 'siteId', 'chargeId', 'code', 'id', 'nom', 'statut', 'type'].includes(k)) && d.affaires[0].id);
+  assert.ok(Object.keys(d.entreprises[0]).every(k => ['id', 'nom', 'regimeTVA'].includes(k)));
+  assert.ok(d.articles.every(a => !('fournisseurId' in a)), 'pas de données fournisseurs inutiles');
 });
 
 test('études versionnées : création, conflit, suppression', async () => {
@@ -95,4 +96,30 @@ test('fichiers statiques et modules partagés', async () => {
     assert.ok((r.headers.get('content-type') || '').includes(type), u);
   }
   assert.strictEqual((await fetch(`${base}/..%2fserver.js`)).status, 403);
+});
+
+test('lien avec Pipe-Fit : devis brouillon et note de calcul dans les documents du chantier', async () => {
+  const c = await connexion('jacky');
+  const d = (await call(base, 'GET', '/api/pf/affaires', null, c)).body;
+  assert.ok(d.articles.length && d.mainoeuvre.length && d.affaires[0].contactId !== undefined);
+  const af = d.affaires.find(a => a.id === 'af1');
+  // Devis brouillon : client et site de l'affaire, lignes du métré, numérotation par Pipe-Fit
+  const lignes = [{ type: 'chapitre', titre: 'Tuyauteries' }, { type: 'ouvrage', designation: 'Tuyauterie inox DN 50', unite: 'ml', qte: 120, composants: [{ type: 'f', articleId: 'a1', designation: 'Tube', unite: 'ml', qte: 1.05, pu: 51, cout: 41 }, { type: 'mo', moId: 'mo2', libelle: 'Monteur', heures: 0.8, taux: 48, cout: 34 }] }];
+  assert.strictEqual((await call(base, 'POST', '/api/pf/devis', { affaireId: 'af1', lignes: [] }, c)).status, 400);
+  const r = await call(base, 'POST', '/api/pf/devis', { affaireId: 'af1', etudeId: 'e9', objet: 'Chiffrage BE', lignes }, c);
+  assert.strictEqual(r.status, 200); assert.match(r.body.numero, /^DV-/);
+  const pfc = (await call(pfBase, 'POST', '/api/login', { login: 'jacky', password: 'motdepasse1' })).cookie;
+  const dv = (await call(pfBase, 'GET', `/api/records/devis/${r.body.id}`, null, pfc)).body;
+  assert.deepStrictEqual([dv.statut, dv.affaireId, dv.clientId, dv.siteId, dv.lignes.length], ['Brouillon', 'af1', af.clientId, af.siteId, 2]);
+  // Note de calcul : dépôt, puis nouvel indice pour la même étude (ancien fichier conservé)
+  const pdf = Buffer.from('%PDF-1.4\n%test\n').toString('base64');
+  assert.strictEqual((await call(base, 'POST', '/api/pf/document', { affaireId: 'af1', nom: 'note.pdf', base64: Buffer.from('pas un pdf').toString('base64') }, c)).status, 400);
+  const n1 = await call(base, 'POST', '/api/pf/document', { affaireId: 'af1', etudeId: 'e9', nom: 'NDC_CH_e9_IndA.pdf', indice: 'A', base64: pdf }, c);
+  assert.strictEqual(n1.status, 200);
+  const n2 = await call(base, 'POST', '/api/pf/document', { affaireId: 'af1', etudeId: 'e9', nom: 'NDC_CH_e9_IndB.pdf', indice: 'B', base64: pdf }, c);
+  assert.deepStrictEqual([n2.body.docId, n2.body.indice], [n1.body.docId, 'B']);
+  const docs = (await call(pfBase, 'GET', '/api/records/affaires/af1', null, pfc)).body.documents.filter(x => x.categorie === 'Note de calcul');
+  assert.strictEqual(docs.length, 1); assert.strictEqual(docs[0].anciens.length, 1); assert.strictEqual(docs[0].visible, false);
+  const f = await call(pfBase, 'GET', `/api/files/${docs[0].fichierId}`, null, pfc);
+  assert.strictEqual(f.body.subarray(0, 4).toString(), '%PDF');
 });

@@ -130,7 +130,7 @@ const Notes = ((D, C) => {
       else if (!choixPompes.length) alertes.push(alerte('attention', `Aucune pompe du catalogue ${Cat().generique().pompes ? 'générique ' : ''}ne couvre ${nf(Qp, 2)} m³/h sous ${nf(HMT, 2)} mCE : pompes en parallèle ou gamme plus puissante.`));
       if (tr.length) alertes.push(alerte('ok', `Pompe : ${nf(Qp, 2)} m³/h sous ${nf(HMT, 2)} mCE (${nf(HMT * f.rho * C.G / 1000, 1)} kPa), puissance absorbée ≈ ${nf(Pabs / 1000, 2)} kW.`));
       return {
-        valeurs: { dpReseau: dpRes, dpComposants: dpComp, dpTotal: dpTot, HMT, Qpompe: Qp, Ph, Pabs },
+        valeurs: { dpReseau: dpRes, dpComposants: dpComp, dpTotal: dpTot, HMT, Qpompe: Qp, Ph, Pabs, pompe: choixPompes[0] || null, troncons: tr.map(x => ({ rep: x.rep, serie: e.serie, tube: x.t.cle, dn: x.t.dn, L: x.L })) },
         resume: [['Pertes de charge des tuyauteries', `${nf(dpRes / 1000, 2)} kPa`], ['Pertes de charge des équipements', `${nf(dpComp / 1000, 2)} kPa`],
           ...(Hgeo ? [['Hauteur géométrique', `${nf(Hgeo, 2)} m`]] : []), ['Perte de charge totale', `${nf(dpTot / 1000, 2)} kPa (${nf(dpTot / (f.rho * C.G), 2)} mCE)`],
           ['Débit de la pompe', `${nf(Qp, 2)} m³/h`], [`HMT avec marge de ${nf(marge, 0)} %`, `${nf(HMT, 2)} mCE`], ['Puissance hydraulique', `${nf(Ph / 1000, 3)} kW`], ['Puissance absorbée estimée', `${nf(Pabs / 1000, 2)} kW`],
@@ -174,7 +174,7 @@ const Notes = ((D, C) => {
       }
       const voisins = D.KVS.filter(k => k >= Kv / 3 && k <= Kv * 3), modele = Cat().vannePour(Kv, e.type === '3v' ? '3v' : '2v');
       return {
-        valeurs: { Q, Kv, Kvs, dpReel, autorite },
+        valeurs: { Q, Kv, Kvs, dpReel, autorite, vanne: modele },
         resume: [['Débit', `${nf(Q, 2)} m³/h`], ['Perte de charge visée', `${nf(dpVise, 1)} kPa`], ['Kv calculé', `${nf(Kv, 2)} m³/h`], ['Kvs retenu', Kvs ? `${nf(Kvs, Kvs < 1 ? 2 : 1)} m³/h` : '—'],
           ['Perte de charge réelle', `${nf(dpReel, 1)} kPa`], ...(Number.isFinite(autorite) ? [['Autorité réelle', nf(autorite, 2)]] : []),
           ['Vanne proposée', modele ? libVanne(modele) : 'Aucune vanne du catalogue']],
@@ -374,7 +374,7 @@ const Notes = ((D, C) => {
       if (!tr.length) alertes.push(alerte('erreur', 'Ajouter au moins un tronçon.'));
       else alertes.push(alerte('ok', `Ventilateur : ${nf(Qv, 0)} m³/h sous ${nf(pVent, 0)} Pa, puissance absorbée ≈ ${nf(Pabs / 1000, 2)} kW (SFP ≈ ${nf(Pabs / (Qv / 3600) / 1000, 2)} kW/(m³/s)).`));
       return {
-        valeurs: { dpReseau: dpRes, dpComposants: dpComp, dpTotal: dpTot, pVentilateur: pVent, Qv, Pabs },
+        valeurs: { dpReseau: dpRes, dpComposants: dpComp, dpTotal: dpTot, pVentilateur: pVent, Qv, Pabs, troncons: tr.map(x => ({ rep: x.rep, nom: x.nom, L: num(x.x.L) })) },
         resume: [['Pertes de charge des gaines', `${nf(dpRes, 0)} Pa`], ['Pertes de charge des composants', `${nf(dpComp, 0)} Pa`], ['Perte de charge totale', `${nf(dpTot, 0)} Pa`],
           ['Débit du ventilateur', `${nf(Qv, 0)} m³/h`], [`Pression totale avec marge de ${nf(marge, 0)} %`, `${nf(pVent, 0)} Pa`], ['Puissance absorbée estimée', `${nf(Pabs / 1000, 2)} kW`],
           ['Puissance spécifique (SFP)', `${nf(Pabs / Math.max(Qv / 3600, 1e-9) / 1000, 2)} kW/(m³/s)`]],

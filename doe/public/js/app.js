@@ -392,6 +392,7 @@ function annexesDOE(doe) {
   const out = [
     { lettre: 'A', titre: 'Plans de recollement', pieces: doe.plans.map(p => ({ libelle: `${p.numero || ''} ${p.designation}`, fichier: p.fichier, present: !!p.fichier })) },
     { lettre: 'B', titre: 'Fiches techniques constructeurs et notices', pieces: [...doe.fiches.slice().sort((x, y) => (x.famille || '9').localeCompare(y.famille || '9')).map(f => ({ libelle: f.designation, fichier: f.fichier, present: true })), ...doe.notices.map(n => ({ libelle: n.libelle, fichier: n.fichier, present: true }))] },
+    { lettre: 'C', titre: 'Notes de calcul', pieces: (doe.notesCalcul || []).map(x => ({ libelle: x.libelle, fichier: x.fichier, present: true })) },
     { lettre: 'F', titre: 'Rapports de mise en service', pieces: [...piecesCtl('F'), ...pf.F] },
     { lettre: 'G', titre: 'Essais, contrôles et mesures', pieces: [...piecesCtl('G').filter(p => !coupeFeu.includes(p)), ...pf.G] },
     { lettre: 'H', titre: 'Formation des exploitants', pieces: piecesCtl('H') },

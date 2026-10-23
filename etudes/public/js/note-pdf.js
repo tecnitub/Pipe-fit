@@ -96,9 +96,18 @@ async function genererNoteCalcul(et, ids) {
     const nom = `NDC_${sansAccents(a && a.code) || 'ETUDE'}_${sansAccents(et.objet).slice(0, 40) || 'note'}${notes.length === 1 && et.notes.length > 1 ? `_N${et.notes.indexOf(notes[0]) + 1}` : ''}_Ind${sansAccents(et.indice) || 'A'}.pdf`;
     etape('Terminé', 100);
     box.innerHTML = `<h2>Note de calcul générée</h2><p><strong>${esc(nom)}</strong> · ${total} page(s) · ${notes.length} calcul(s)</p>
-      <div class="actions"><button class="secondaire" id="gen-fermer">Fermer</button><button id="gen-dl">Télécharger le PDF</button></div>`;
+      ${S.etudes.includes(et) && et.affaireId && affaireDe(et.affaireId) ? `<p class="petit muted">Le PDF peut être déposé dans les documents du chantier ${esc(libelleAffaire(affaireDe(et.affaireId)))} (catégorie « Note de calcul », reprise dans le DOE en annexe C).</p>` : ''}
+      <div class="actions"><button class="secondaire" id="gen-fermer">Fermer</button>${S.etudes.includes(et) && et.affaireId && affaireDe(et.affaireId) ? '<button class="secondaire" id="gen-pf">📤 Déposer dans le chantier Pipe-Fit</button>' : ''}<button id="gen-dl">Télécharger le PDF</button></div>`;
     window.DERNIERE_NOTE = { nom, bytes, pages: total };
     box.querySelector('#gen-fermer').onclick = Modal.close;
+    const bpf = box.querySelector('#gen-pf');
+    if (bpf) bpf.onclick = async () => {
+      bpf.disabled = true; bpf.textContent = 'Envoi…';
+      try {
+        const r = await api('POST', '/api/pf/document', { affaireId: et.affaireId, etudeId: et.id, nom, indice: et.indice, note: `${et.objet} — ${notes.length} calcul(s)`, base64: base64(bytes) });
+        bpf.textContent = `✓ Déposé (indice ${r.indice})`; toast('Note de calcul déposée dans les documents du chantier');
+      } catch (e) { bpf.disabled = false; bpf.textContent = '📤 Déposer dans le chantier Pipe-Fit'; toast(e.message, 6000); }
+    };
     box.querySelector('#gen-dl').onclick = () => enregistrerFichier(box, nom, bytes, 'application/pdf');
   } catch (e) {
     console.error(e);

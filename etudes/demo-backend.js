@@ -14,8 +14,10 @@
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* stockage indisponible */ } },
   };
   const seed = DemoSeed.demoData();
-  const pf = { affaires: (seed.affaires || []).map(a => ({ id: a.id, code: a.code, nom: a.nom, clientId: a.clientId, statut: a.statut, type: a.type })),
-    entreprises: (seed.entreprises || []).map(e => ({ id: e.id, nom: e.nom })) };
+  const pf = { affaires: (seed.affaires || []).map(a => ({ id: a.id, code: a.code, nom: a.nom, clientId: a.clientId, contactId: a.contactId, siteId: a.siteId, chargeId: a.chargeId, statut: a.statut, type: a.type })),
+    entreprises: (seed.entreprises || []).map(e => ({ id: e.id, nom: e.nom, regimeTVA: e.regimeTVA })),
+    articles: (seed.articles || []).map(a => ({ id: a.id, ref: a.ref, designation: a.designation, famille: a.famille, sousFamille: a.sousFamille, unite: a.unite, prixVente: a.prixVente, coutRevient: a.coutRevient, poidsUnitaire: a.poidsUnitaire })),
+    mainoeuvre: (seed.mainoeuvre || []).map(m => ({ id: m.id, code: m.code, libelle: m.libelle, tauxVente: m.tauxVente, tauxCout: m.tauxCout })) };
   const af = pf.affaires.find(a => a.type !== 'horsDevis') || {};
   // Étude d'exemple : distribution vapeur et eau chaude d'un atelier
   const exemple = () => ({
@@ -85,6 +87,19 @@
     if (p[0] === 'logout') { storage.del(ME_KEY); return rep(200, { ok: true }); }
     if (p[0] === 'me') return rep(200, { ...s, pipefit: '' });
     if (p[0] === 'pf' && p[1] === 'affaires') return rep(200, pf);
+    // Démo : dépôt de note et devis simulés (pas de Pipe-Fit derrière), mémorisés sur l'appareil
+    if (p[0] === 'pf' && p[1] === 'document' && method === 'POST') {
+      const b = body(); db.envoisPF = db.envoisPF || [];
+      const ex = db.envoisPF.find(x => x.genre === 'document' && x.etudeId === b.etudeId);
+      if (ex) { ex.indice = b.indice; ex.date = new Date().toISOString(); } else db.envoisPF.push({ genre: 'document', etudeId: b.etudeId, affaireId: b.affaireId, nom: b.nom, indice: b.indice, date: new Date().toISOString() });
+      save(); return rep(200, { ok: true, docId: 'demo', indice: b.indice || 'A' });
+    }
+    if (p[0] === 'pf' && p[1] === 'devis' && method === 'POST') {
+      const b = body(); db.envoisPF = db.envoisPF || [];
+      const numero = `DV-${new Date().getFullYear()}-${String(90 + db.envoisPF.filter(x => x.genre === 'devis').length).padStart(4, '0')}`;
+      db.envoisPF.push({ genre: 'devis', etudeId: b.etudeId, affaireId: b.affaireId, numero, lignes: (b.lignes || []).length, date: new Date().toISOString() }); save();
+      return rep(200, { id: `demo-${numero}`, numero });
+    }
     if (p[0] === 'etudes' && !p[1]) return rep(200, db.etudes.slice().sort((x, y) => y._at.localeCompare(x._at)));
     if (p[0] === 'etudes') {
       const i = db.etudes.findIndex(d => d.id === p[1]), exist = db.etudes[i];

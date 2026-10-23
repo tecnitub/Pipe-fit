@@ -2,8 +2,8 @@
 // du répertoire synchronisé sur le serveur (<racine>/Chantiers/<code> - <nom>/<catégorie>/<fichier>).
 // Module commun navigateur / serveur / tests.
 const Classement = (() => {
-  const CATEGORIES = ['Demande client', 'Plan', 'Fiche technique', 'Notice', 'Sécurité / PPSPS', 'PGC', 'Plan de prévention', 'Photo', 'Autre'];
-  const categorieDevinee = nom => (/\.(eml|msg)$/i.test(nom) ? 'Demande client' : /\bpgc\b|g[ée]n[ée]ral de coordination/i.test(nom) ? 'PGC'
+  const CATEGORIES = ['Demande client', 'Plan', 'Fiche technique', 'Notice', 'Note de calcul', 'Sécurité / PPSPS', 'PGC', 'Plan de prévention', 'Photo', 'Autre'];
+  const categorieDevinee = nom => (/\.(eml|msg)$/i.test(nom) ? 'Demande client' : /note.de.calcul|^ndc[_ -]/i.test(nom) ? 'Note de calcul' : /\bpgc\b|g[ée]n[ée]ral de coordination/i.test(nom) ? 'PGC'
     : /plan.de.pr[ée]vention|\bpdp\b/i.test(nom) ? 'Plan de prévention' : /\.(dwg|dxf|ifc)$|plan|iso(m[ée]trique)?\b|p&?id|implantation|coupe|synoptique/i.test(nom) ? 'Plan'
       : /fiche|\bft\b|datasheet|technique|catalogue/i.test(nom) ? 'Fiche technique' : /notice|manuel|mode d.emploi/i.test(nom) ? 'Notice'
         : /ppsps|s[ée]curit|pr[ée]vention|amiante|permis/i.test(nom) ? 'Sécurité / PPSPS' : /\.(jpe?g|png|webp)$/i.test(nom) ? 'Photo' : 'Autre');

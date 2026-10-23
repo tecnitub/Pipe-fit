@@ -55,6 +55,12 @@ section { margin-bottom: 18px; }
   .calc-resultats { position: static; max-height: none; }
 }
 
+/* Métré et chiffrage */
+.modal-box.large { width: min(1180px, 100%); }
+.metre { max-height: 58vh; }
+.metre input.qte { width: 80px; min-width: 70px; }
+.metre select { max-width: 360px; }
+
 /* Comparaison de variantes */
 table.comparaison { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 table.comparaison th, table.comparaison td { border-bottom: 1px solid var(--bord); padding: 6px 8px; text-align: left; vertical-align: top; }
