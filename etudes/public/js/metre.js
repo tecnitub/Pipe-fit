@@ -34,6 +34,8 @@ const Metre = ((N, C, D, L, Sc) => {
         (v.vannes || []).forEach(x => equip(`equil|${x.dn}`, 'Équipements hydrauliques', `Vanne d'équilibrage DN ${x.dn}`, 1, 1, { type: 'equilibrage', dn: x.dn }, src));
         if (v.pompe) equip(`pompe|${v.pompe.modele}`, 'Équipements hydrauliques', `Pompe ${N.libPompe(v.pompe).replace(/, vitesse.*/, '')}`, 1, 3, { type: 'pompe', modele: v.pompe.modele, dn: v.pompe.dn }, src);
       }
+      if (n.type === 'cta' && v.Pchaud !== undefined) equip(`cta|${num(e.Qs)}`, 'Aéraulique', `Centrale de traitement d'air ${nf(num(e.Qs), 0)} m³/h (batterie chaude ${nf(v.Pchaud, 0)} kW${v.Pfroid ? `, froide ${nf(v.Pfroid, 0)} kW` : ''})`, 1, 16, { type: 'cta' }, src);
+      if (n.type === 'bouches') (v.bouches || []).forEach(b => equip(`bouche|${b.type}|${b.taille}`, 'Aéraulique', `${b.type} ${b.taille}, plénum et raccordement`, b.n, 0.75, { type: 'bouche', taille: b.taille }, src));
       if (n.type === 'tuyauterie' && v.choix) tube(e.serie, v.choix, num(e.L), src);
       if (n.type === 'vapeur' && v.choix) { tube(e.serie, v.choix, num(e.L), src); if (v.condensats) tube(e.serie, v.condensats, num(e.L), src); }
       if (n.type === 'air' && v.choix) tube(e.serie, v.choix, num(e.L), src);
@@ -89,6 +91,8 @@ const Metre = ((N, C, D, L, Sc) => {
       case 'isolement': return /vanne|robinet/.test(t) && /papillon|boisseau|opercule|1\/4|isolement/.test(t) && tailleOk(t, r.dn) ? 3 : 0;
       case 'equilibrage': return /equilibr/.test(t) && tailleOk(t, r.dn) ? 3 : 0;
       case 'pompe': return /pompe|circulateur|accelerateur/.test(t) ? (r.modele && t.includes(norm(r.modele).replace(/^(circulateur|in-line) /, '')) ? 4 : r.dn && tailleOk(t, r.dn) ? 2 : 0) : 0;
+      case 'cta': return /centrale|\bcta\b|traitement d.air/.test(t) ? 2 : 0;
+      case 'bouche': return /diffuseur|grille|bouche/.test(t) ? 2 + (r.taille && t.includes(norm(r.taille).replace(/^col /, '')) ? 1 : 0) : 0;
       case 'soupape': return /soupape/.test(t) ? 2 : 0;
       case 'vase': return /vase/.test(t) && new RegExp(`\\b${r.volume} ?l\\b`).test(t) ? 3 : 0;
       case 'tampon': return /tampon/.test(t) && new RegExp(`\\b${r.volume} ?l\\b`).test(t) ? 3 : 0;

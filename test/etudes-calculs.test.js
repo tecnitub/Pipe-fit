@@ -8,6 +8,7 @@ const D = require('../etudes/public/js/donnees');
 const Schema = require('../etudes/public/js/schema');
 const I = require('../etudes/public/js/industriel');
 const Eq = require('../etudes/public/js/equilibrage');
+const Cta = require('../etudes/public/js/cta');
 
 const proche = (v, ref, tol, msg) => assert.ok(Math.abs(v - ref) <= tol, `${msg || ''} ${v} ≠ ${ref} ± ${tol}`);
 
@@ -360,4 +361,28 @@ test('réseau arborescent : débits cumulés, circuit le plus défavorisé, vann
   assert.ok(Eq.vannePour(10).dn === 32);
   const err = N.calculer('arbo', { troncons: [{ rep: 'X', amont: 'Y', L: 5, P: 10, dpEm: 5 }, { rep: 'Y', amont: 'X', L: 5 }] });
   assert.ok(err.alertes.some(a => a.niveau === 'erreur'));
+});
+
+test('aéraulique : psychrométrie de la CTA, bouches, bilan acoustique', () => {
+  // x à 20 °C / 50 % ≈ 7,3 g/kg ; h ≈ 38,6 kJ/kg
+  const x = Cta.xDe(20, 50);
+  assert.ok(Math.abs(x * 1000 - 7.3) < 0.1 && Math.abs(Cta.hDe(20, x) - 38.6) < 0.5);
+  assert.ok(Math.abs(Cta.HRde(20, x) - 50) < 1e-6);
+  const r = N.calculer('cta', {}), v = r.valeurs, Qs = 6000;
+  // Récupérateur 75 % : −7 → −7 + 0,75 × 27 = 13,25 °C
+  assert.ok(Math.abs(v.hiver[1].T - 13.25) < 1e-9);
+  // Batterie chaude = m · Δh
+  const m = Qs / 3600 * 101325 / (287.05 * (v.hiver[1].T + 273.15));
+  assert.ok(Math.abs(v.Pchaud - m * (v.hiver[2].h - v.hiver[1].h)) < 1e-9);
+  assert.ok(v.Pfroid > 0 && v.condensats > 0 && r.schema.includes('Batterie froide'));
+  assert.ok(Math.abs(v.sfp - (v.PvS + v.PvR) / (Qs / 3600)) < 1e-9);
+  assert.ok(N.calculer('cta', { recup: 'glycol', eta: 50 }).alertes.some(a => /1253\/2014/.test(a.texte)));
+  // Bouches : vitesse au col sous le maxi ; une seule taille trop petite → bouches plus grandes
+  const b = N.calculer('bouches', {}).valeurs.bouches;
+  assert.strictEqual(b.length, 5);
+  const gros = N.calculer('bouches', { locaux: [{ local: 'L', S: 50, Q: 600, n: 1, type: 'plafond', LpMax: 45 }] }).valeurs.bouches[0];
+  assert.strictEqual(gros.taille, 'col Ø 250'); // 600 m³/h : 3,4 m/s au col (Ø 200 : 5,3 m/s)
+  // Acoustique : chaque dB d'atténuation retire 1 dB dans le local quand le réseau domine
+  const a1 = N.calculer('acoustique', { source: 'fabricant', LwFab: 90, LwBouches: 0 }).valeurs, a2 = N.calculer('acoustique', { source: 'fabricant', LwFab: 80, LwBouches: 0 }).valeurs;
+  assert.ok(Math.abs(a1.Lp - a2.Lp - 10) < 0.05);
 });
