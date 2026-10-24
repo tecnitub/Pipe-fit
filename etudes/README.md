@@ -74,6 +74,11 @@ dans une étude. Les valeurs sont des données de pré-dimensionnement : les doc
   bibliothèque de prix ; article modifiable poste par poste, export CSV, puis **devis brouillon créé dans Pipe-Fit** pour
   l'affaire (client, contact, site, TVA du client, ouvrages fournitures + main-d'œuvre, postes sans article « hors
   bibliothèque » à prix nul).
+- **Ratios du métré et calage sur le REX** (Réglages, administrateur) : heures de pose par mètre (a + b × DN) par
+  matériau, calorifuge, gaines, heures par équipement, raccords et supports par mètre, chutes, forfait d'études ;
+  « Caler sur le REX Pipe-Fit » lit les chantiers terminés (heures prévues aux devis acceptés et heures pointées, par
+  catégorie de main-d'œuvre), laisse écarter les chantiers atypiques et applique un coefficient par main-d'œuvre
+  (monteurs, calorifugeurs, bureau d'études).
 - **Note de calcul déposée dans le chantier** : depuis la fenêtre de la note PDF, « 📤 Déposer dans le chantier Pipe-Fit »
   (catégorie « Note de calcul », réservée au bureau ; un nouveau dépôt de la même étude crée un nouvel indice et garde
   l'ancien). L'application DOE la reprend en **annexe C — Notes de calcul**.
@@ -107,7 +112,11 @@ etudes/public/js/liens.js    liens entre calculs d'une étude (valeurs reprises,
 etudes/public/js/dxf.js      export DXF (AutoCAD R12, Windows-1252) des schémas SVG
 etudes/public/js/catalogue.js catalogues de pompes et de vannes (gamme générique, import CSV), choix au point de fonctionnement
 etudes/public/js/modeles.js  modèles d'études intégrés et instanciation des modèles enregistrés
-etudes/public/js/metre.js    métré, rapprochement avec la bibliothèque de prix Pipe-Fit, lignes de devis
+etudes/public/js/metre.js    métré, rapprochement avec la bibliothèque de prix Pipe-Fit, lignes de devis, ratios réglables et calage
+etudes/public/js/industriel.js condensats, gaz, ventilation de chaufferie, NPSH, coup de bélier, ECS
+etudes/public/js/equilibrage.js réseau arborescent, circuit le plus défavorisé, réglage des vannes d'équilibrage
+etudes/public/js/cta.js      centrale de traitement d'air (psychrométrie, schéma), bouches, bilan acoustique
+etudes/rex.js                retour d'expérience Pipe-Fit (heures prévues / pointées) pour le calage du métré
 etudes/public/js/app.js      écrans : études, calculateurs, calculs rapides, données de référence, réglages
 etudes/public/js/note-pdf.js note de calcul PDF (moteur PDF de Pipe-Fit + pdf-lib de l'application DOE)
 etudes/build-demo.js         démonstration en un fichier (etudes/demo-backend.js simule le serveur)

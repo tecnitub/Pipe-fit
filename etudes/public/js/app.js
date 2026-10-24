@@ -568,6 +568,21 @@ Vues.reglages = {
         <label>Valable jusqu'au<input type="date" id="rg-val" value="${esc((c.reglementation || {}).validite || '')}" ${dis}></label>
         <label class="large">Exigences complémentaires de l'entreprise (une par ligne)<textarea id="rg-comp" rows="3" ${dis}>${esc((c.reglementation || {}).complements || '')}</textarea></label></div>
       <div class="actions-ligne">${(c.reglementation || {}).date ? `<span class="badge ok">Visée le ${dateFr(c.reglementation.date)}</span>` : '<span class="badge">Non visée</span>'}${admin ? '<button class="petit" id="rg-viser">Enregistrer le visa</button>' : ''}</div></div>
+    <div class="carte" id="metre-ratios"><h2>Métré et chiffrage : ratios</h2>
+      <p class="muted petit">Heures de pose utilisées par le métré des études (avant les coefficients de calage). Pour les tubes et le calorifuge : heures par mètre = a + b × DN. Les coefficients de calage multiplient les heures de chaque main-d'œuvre ; ils se calculent sur les chantiers terminés de Pipe-Fit (heures pointées face aux heures prévues aux devis).</p>
+      ${(() => { const r = Metre.ratios(), inp = (ch, v, pas = '0.001', st = '') => `<input type="number" min="0" step="${pas}" data-mr="${ch}" value="${v}" ${st ? `style="${st}"` : ''} ${dis}>`;
+        const MAT = { acier: 'Acier soudé', galva: 'Acier galvanisé', inox: 'Inox', cuivre: 'Cuivre', pehd: 'PEHD', multicouche: 'Multicouche' };
+        return `<div class="deux-col"><table class="liste compact"><thead><tr><th>Tuyauterie (h/ml)</th><th>a</th><th>b (par DN)</th></tr></thead><tbody>
+          ${Object.entries(MAT).map(([k, l]) => `<tr><td>${l}</td><td>${inp(`tube.${k}.0`, r.tube[k][0])}</td><td>${inp(`tube.${k}.1`, r.tube[k][1], '0.0001')}</td></tr>`).join('')}
+          <tr><td>Calorifuge</td><td>${inp('calorifuge.0', r.calorifuge[0])}</td><td>${inp('calorifuge.1', r.calorifuge[1], '0.0001')}</td></tr>
+          <tr><td>Études (forfait + par note)</td><td>${inp('be.0', r.be[0], '0.5')}</td><td>${inp('be.1', r.be[1], '0.5')}</td></tr></tbody></table>
+          <table class="liste compact"><thead><tr><th>Équipement (h/u)</th><th>Heures</th></tr></thead><tbody>
+          ${Object.entries(Metre.LIBELLES_EQUIP).map(([k, l]) => `<tr><td>${esc(l)}</td><td>${Array.isArray(r.equip[k]) ? `<span style="white-space:nowrap">${inp(`equip.${k}.0`, r.equip[k][0], '0.001', 'width:6em;display:inline-block')} + ${inp(`equip.${k}.1`, r.equip[k][1], '0.0001', 'width:6em;display:inline-block')} × DN</span>` : inp(`equip.${k}`, r.equip[k], '0.05')}</td></tr>`).join('')}</tbody></table></div>
+          <div class="grille-champs"><label>Gaine (h/ml)${inp('gaine', r.gaine, '0.05')}</label><label>Coudes par mètre de tube${inp('coudesParMl', r.coudesParMl, '0.05')}</label>
+            <label>Supports par mètre de tube${inp('supportsParMl', r.supportsParMl, '0.05')}</label><label>Chutes sur les tubes (%)${inp('chute', r.chute, '0.5')}</label></div>
+          <h3>Coefficients de calage</h3><div class="grille-champs">${[['monteur', 'Monteurs, tuyauteurs, soudeurs'], ['calorifugeur', 'Calorifugeurs'], ['be', 'Bureau d\'études']].map(([k, l]) => `<label>${l}${inp(`coefs.${k}`, r.coefs[k], '0.01')}</label>`).join('')}</div>
+          <div class="actions-ligne">${(S.config.metre || {}).calage ? `<span class="badge ok">Calé le ${dateFr(S.config.metre.calage.date)} sur ${S.config.metre.calage.n} chantier(s)</span>` : '<span class="badge">Coefficients non calés</span>'}
+          ${admin ? '<button class="petit" id="mr-enreg">Enregistrer les ratios</button><button class="secondaire petit" id="mr-rex">Caler sur le REX Pipe-Fit…</button><button class="secondaire petit" id="mr-defaut">Valeurs par défaut</button>' : ''}</div>`; })()}</div>
     <div class="carte"><h2>Catalogues de pompes et de vannes</h2>
       <p class="muted petit">Les calculs proposent un modèle d'après le point de fonctionnement. Sans catalogue importé, une gamme générique d'exemple est utilisée (ordres de grandeur, aucune marque). Import au format CSV (séparateur « ; »).</p>
       ${['pompes', 'vannes'].map(g => { const cat = (c.catalogues || {})[g] || []; return `<div class="actions-ligne"><strong>${g === 'pompes' ? 'Pompes' : 'Vannes de régulation'}</strong>
@@ -575,7 +590,7 @@ Vues.reglages = {
         <button class="secondaire petit" data-csv-modele="${g}">Modèle CSV</button>${admin ? `<button class="petit" data-csv-import="${g}">Importer un CSV…</button>${cat.length ? `<button class="secondaire petit" data-csv-vider="${g}">Revenir à la gamme générique</button>` : ''}` : ''}</div>`; }).join('')}</div>`; },
   bind: root => {
     root.querySelectorAll('[data-cfg]').forEach(el => el.onchange = async () => { const c = copie(S.config); ecrireChemin(c, el.dataset.cfg, el.value); S.config = await api('PUT', '/api/config', c); toast('Réglages enregistrés'); });
-    const majConfig = async c => { S.config = await api('PUT', '/api/config', c); Catalogue.utiliser(S.config.catalogues); Calculs.utiliserFluides(S.config.fluides); Schema.utiliserReglementation(S.config.reglementation); App.render(); };
+    const majConfig = async c => { S.config = await api('PUT', '/api/config', c); Catalogue.utiliser(S.config.catalogues); Calculs.utiliserFluides(S.config.fluides); Schema.utiliserReglementation(S.config.reglementation); Metre.utiliser(S.config.metre); App.render(); };
     const fichierTexte = (accept, suite) => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = accept; inp.onchange = async () => { const f = inp.files[0]; if (!f) return; const brut = new Uint8Array(await f.arrayBuffer()); let t = new TextDecoder('utf-8').decode(brut); if (t.includes('\uFFFD')) t = new TextDecoder('windows-1252').decode(brut); suite(t); }; inp.click(); };
     const flm = root.querySelector('#fl-modele');
     if (flm) flm.onclick = () => Promise.resolve(telecharger('fluides-caloporteurs.csv', new TextEncoder().encode('fluide;concentration_%;T_C;rho_kg_m3;cp_kJ_kgK;mu_mPa_s;gel_C\nNom du fluide (exemple de format, valeurs à remplacer par la fiche);30;0;1000;3,8;5;-15\nNom du fluide (exemple de format, valeurs à remplacer par la fiche);30;80;980;3,9;0,8;-15\n'), 'text/csv')).catch(e => toast(e.message, 6000));
@@ -594,6 +609,29 @@ Vues.reglages = {
       const v = { relecteur: root.querySelector('#rg-qui').value.trim(), date: root.querySelector('#rg-date').value, validite: root.querySelector('#rg-val').value, complements: root.querySelector('#rg-comp').value };
       if (!v.relecteur || !v.date) return toast('Indiquer le relecteur et la date de relecture.');
       await majConfig({ ...S.config, reglementation: v }); toast('Visa de la synthèse réglementaire enregistré');
+    };
+    const lireRatios = () => { const r = copie(Metre.ratios()); root.querySelectorAll('[data-mr]').forEach(el => { const k = el.dataset.mr.split('.'), v = parseFloat(el.value); if (!Number.isFinite(v) || v < 0) return; k.slice(0, -1).reduce((o, x) => o[x], r)[k[k.length - 1]] = v; }); return r; };
+    const enregistrerMetre = async (m, msg) => { await majConfig({ ...S.config, metre: m }); toast(msg); };
+    const mre = root.querySelector('#mr-enreg');
+    if (mre) mre.onclick = () => enregistrerMetre({ ...lireRatios(), calage: (S.config.metre || {}).calage || null }, 'Ratios du métré enregistrés');
+    const mrd = root.querySelector('#mr-defaut');
+    if (mrd) mrd.onclick = async () => { if (await confirmer('Revenir aux ratios et coefficients par défaut ?', 'Revenir')) await enregistrerMetre({}, 'Ratios par défaut rétablis'); };
+    const mrr = root.querySelector('#mr-rex');
+    if (mrr) mrr.onclick = async () => {
+      let rex;
+      try { rex = await api('GET', '/api/pf/rex'); } catch (e) { return toast(`REX Pipe-Fit indisponible : ${e.message}`, 6000); }
+      if (!rex.affaires.length) return toast('Aucun chantier terminé avec des heures prévues au devis et des heures pointées dans Pipe-Fit.', 6000);
+      const b = Modal.open(`<h2>Calage sur le retour d'expérience</h2><p class="muted petit">Chantiers terminés de Pipe-Fit : heures prévues aux devis acceptés et heures pointées. Décocher les chantiers atypiques (aléas, travaux supplémentaires).</p>
+        <table class="liste compact"><thead><tr><th></th><th>Chantier</th><th>Prévues (h)</th><th>Pointées (h)</th><th>Écart</th></tr></thead><tbody>${rex.affaires.map(a => `<tr><td><input type="checkbox" data-rex="${esc(a.id)}" checked></td><td>${esc(`${a.code} — ${a.nom}`)}</td><td>${Notes.nf(a.prevues, 0)}</td><td>${Notes.nf(a.passees, 0)}</td><td>${a.passees >= a.prevues ? '+' : ''}${Notes.nf((a.passees / a.prevues - 1) * 100, 0)} %</td></tr>`).join('')}</tbody></table>
+        <div id="rex-res"></div><div class="actions"><button class="secondaire" data-fermer>Annuler</button><button id="rex-ok">Appliquer les coefficients</button></div>`);
+      const calc = () => { const ids = [...b.querySelectorAll('[data-rex]:checked')].map(x => x.dataset.rex), c = Metre.calage(rex, ids), noms = { monteur: 'Monteurs, tuyauteurs, soudeurs', calorifugeur: 'Calorifugeurs', be: 'Bureau d\'études' };
+        b.querySelector('#rex-res').innerHTML = `<table class="liste compact"><thead><tr><th>Main-d'œuvre</th><th>Prévues (h)</th><th>Pointées (h)</th><th>Coefficient</th></tr></thead><tbody>${Object.entries(c.groupes).map(([k, g]) => `<tr><td>${noms[k]}</td><td>${Notes.nf(g.prevues, 0)}</td><td>${Notes.nf(g.passees, 0)}</td><td><strong>${c.coefs[k] === null ? 'inchangé' : Notes.nf(c.coefs[k], 2)}</strong></td></tr>`).join('')}</tbody></table>
+          <p class="muted petit">Coefficient = heures pointées / heures prévues, borné entre 0,3 et 3 ; « inchangé » faute de données.</p>`; return { ids, c }; };
+      calc(); b.querySelectorAll('[data-rex]').forEach(x => x.onchange = calc);
+      b.querySelector('[data-fermer]').onclick = () => Modal.close();
+      b.querySelector('#rex-ok').onclick = async () => { const { ids, c } = calc(); if (!ids.length) return toast('Cocher au moins un chantier.');
+        const r = lireRatios(); Object.entries(c.coefs).forEach(([k, v]) => { if (v !== null) r.coefs[k] = v; });
+        Modal.close(); await enregistrerMetre({ ...r, calage: { date: aujourdhui(), n: ids.length, affaires: ids } }, 'Coefficients calés sur le REX Pipe-Fit'); };
     };
     const enregistrerCatalogue = async (genre, liste) => {
       const cat = { ...(S.config.catalogues || {}), [genre]: liste };
@@ -632,7 +670,7 @@ async function demarrer() {
   // Les affaires Pipe-Fit sont facultatives : l'application reste utilisable si Pipe-Fit ne répond pas
   try { S.pf = await api('GET', '/api/pf/affaires'); } catch (e) { toast(`Affaires Pipe-Fit indisponibles : ${e.message}`, 5000); }
   S.etudes.forEach(et => { et.notes = et.notes || []; et.historique = et.historique || []; });
-  Catalogue.utiliser(S.config.catalogues); Calculs.utiliserFluides(S.config.fluides); Schema.utiliserReglementation(S.config.reglementation);
+  Catalogue.utiliser(S.config.catalogues); Calculs.utiliserFluides(S.config.fluides); Schema.utiliserReglementation(S.config.reglementation); Metre.utiliser(S.config.metre);
   App.render();
   window.addEventListener('hashchange', () => { Modal.close(); App.render(); });
 }

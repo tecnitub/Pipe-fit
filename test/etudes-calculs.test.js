@@ -386,3 +386,27 @@ test('aéraulique : psychrométrie de la CTA, bouches, bilan acoustique', () => 
   const a1 = N.calculer('acoustique', { source: 'fabricant', LwFab: 90, LwBouches: 0 }).valeurs, a2 = N.calculer('acoustique', { source: 'fabricant', LwFab: 80, LwBouches: 0 }).valeurs;
   assert.ok(Math.abs(a1.Lp - a2.Lp - 10) < 0.05);
 });
+
+test('métré : ratios réglables, coefficients calés sur le retour d\'expérience Pipe-Fit', () => {
+  const Me = require('../etudes/public/js/metre'), Rex = require('../etudes/rex');
+  const et = { notes: [{ id: 'a', type: 'tuyauterie', entrees: { ...N.defauts('tuyauterie'), L: 100 } }] };
+  const tube = () => Me.metre(et).find(p => p.chapitre === 'Tuyauteries');
+  Me.utiliser({});
+  const h0 = tube().heures, dn = tube().recherche.dn;
+  assert.ok(Math.abs(h0 - (0.3 + 0.012 * dn)) < 1e-9);
+  Me.utiliser({ tube: { acier: [0.5, 0.012] }, coefs: { monteur: 1.2 }, chute: 10, equip: { pompe: 'x' } });
+  assert.ok(Math.abs(tube().heures - (0.5 + 0.012 * dn) * 1.2) < 1e-9);
+  assert.strictEqual(Me.ratios().equip.pompe, 3); // valeur invalide ignorée
+  assert.strictEqual(Me.lignesDevis(Me.metre(et)).find(l => l.unite === 'ml').composants[0].qte, 1.1);
+  // REX : heures prévues aux devis acceptés des chantiers terminés face aux heures pointées
+  const d = { affaires: [{ id: 'A', code: 'C1', nom: 'x', statut: 'Facturé' }, { id: 'B', statut: 'En cours' }],
+    devis: [{ affaireId: 'A', statut: 'Accepté', lignes: [{ type: 'chapitre' }, { type: 'ouvrage', qte: 10, composants: [{ type: 'mo', moId: 'm1', heures: 2 }, { type: 'mo', moId: 'm2', heures: 0.5 }] }] }],
+    temps: [{ affaireId: 'A', userId: 'u1', heures: 25 }, { affaireId: 'A', userId: 'u2', heures: 4 }, { affaireId: 'A', userId: 'u1', heures: 99, statut: 'Refusé' }, { affaireId: 'B', userId: 'u1', heures: 7 }],
+    users: [{ id: 'u1', categorieId: 'm1' }, { id: 'u2', categorieId: 'm2' }], mainoeuvre: [{ id: 'm1', libelle: 'Tuyauteur monteur' }, { id: 'm2', libelle: 'Bureau d\'études' }] };
+  const r = Rex(d);
+  assert.strictEqual(r.affaires.length, 1);
+  assert.deepStrictEqual(r.affaires[0].parMo, { m1: { prevues: 20, passees: 25 }, m2: { prevues: 5, passees: 4 } });
+  const c = Me.calage(r);
+  assert.deepStrictEqual(c.coefs, { monteur: 1.25, calorifugeur: null, be: 0.8 });
+  Me.utiliser({});
+});

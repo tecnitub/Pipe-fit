@@ -87,6 +87,7 @@
     if (p[0] === 'logout') { storage.del(ME_KEY); return rep(200, { ok: true }); }
     if (p[0] === 'me') return rep(200, { ...s, pipefit: '' });
     if (p[0] === 'pf' && p[1] === 'affaires') return rep(200, pf);
+    if (p[0] === 'pf' && p[1] === 'rex') return rep(200, RexPF(seed));
     // Démo : dépôt de note et devis simulés (pas de Pipe-Fit derrière), mémorisés sur l'appareil
     if (p[0] === 'pf' && p[1] === 'document' && method === 'POST') {
       const b = body(); db.envoisPF = db.envoisPF || [];

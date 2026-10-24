@@ -98,6 +98,14 @@ test('fichiers statiques et modules partagés', async () => {
   assert.strictEqual((await fetch(`${base}/..%2fserver.js`)).status, 403);
 });
 
+test('retour d\'expérience Pipe-Fit pour le calage du métré', async () => {
+  const c = await connexion('jacky');
+  const r = await call(base, 'GET', '/api/pf/rex', null, c);
+  assert.strictEqual(r.status, 200);
+  assert.ok(r.body.affaires.length && r.body.affaires.every(a => ['Terminé', 'Facturé', 'Clos'].includes(a.statut) && a.prevues > 0 && a.passees > 0));
+  assert.ok(r.body.mainoeuvre.length && Object.keys(r.body.mainoeuvre[0]).every(k => ['id', 'code', 'libelle'].includes(k)));
+});
+
 test('lien avec Pipe-Fit : devis brouillon et note de calcul dans les documents du chantier', async () => {
   const c = await connexion('jacky');
   const d = (await call(base, 'GET', '/api/pf/affaires', null, c)).body;

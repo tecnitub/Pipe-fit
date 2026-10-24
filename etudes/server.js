@@ -7,6 +7,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 const HS = require('../server/http-securite');
+const RexPF = require('./rex');
 
 const PORT = +process.env.ETUDES_PORT || 3200;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -130,6 +131,13 @@ async function api(req, res, url) {
     const data = extraitPF(await r.json());
     cacheDonnees.set(s.sid, { t: Date.now(), data });
     return send(res, 200, data);
+  }
+
+  // Retour d'expérience pour caler le métré : chantiers terminés, heures prévues (devis acceptés) et heures pointées par main-d'œuvre
+  if (p[0] === 'pf' && p[1] === 'rex' && method === 'GET') {
+    const r = await pipefit(s, '/api/data');
+    if (!r.ok) return fail(res, 502, 'Lecture des données Pipe-Fit impossible');
+    return send(res, 200, RexPF(await r.json()));
   }
 
   // Note de calcul déposée dans les documents du chantier (catégorie « Note de calcul », nouvel indice si déjà déposée pour cette étude)

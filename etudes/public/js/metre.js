@@ -8,8 +8,32 @@ const Metre = ((N, C, D, L, Sc) => {
   // Mots-clés de matériau par série de tubes
   const MATIERE = { acier: ['acier', 'p235', 'p265', 'noir', 'e235', 'st37'], galva: ['galva'], inox: ['inox', '316', '304', '1.44', '1.43'], cuivre: ['cuivre'], pehd: ['pehd', 'pe100', 'polyethylene'], multicouche: ['multicouche', 'per-al', 'pert'] };
   const matiereDe = serie => (/galva/.test(serie) ? 'galva' : /inox/.test(serie) ? 'inox' : /cuivre/.test(serie) ? 'cuivre' : /pehd/.test(serie) ? 'pehd' : /multicouche/.test(serie) ? 'multicouche' : 'acier');
-  // Heures de pose par mètre (tube, raccords, supports) selon la technique d'assemblage
-  const heuresMl = (serie, dn) => ({ acier: 0.3 + 0.012 * dn, galva: 0.3 + 0.01 * dn, inox: 0.25 + 0.009 * dn, cuivre: 0.2 + 0.008 * dn, pehd: 0.25 + 0.008 * dn, multicouche: 0.15 + 0.006 * dn }[matiereDe(serie)]);
+  // Ratios de métré réglables dans les Réglages : heures = a + b · DN (tubes au mètre, calorifuge), heures par équipement
+  // (nombre, ou [a, b] selon le DN), raccords et supports par mètre, chutes ; coefficients de calage par main-d'œuvre (REX Pipe-Fit)
+  const DEFAUTS = {
+    tube: { acier: [0.3, 0.012], galva: [0.3, 0.01], inox: [0.25, 0.009], cuivre: [0.2, 0.008], pehd: [0.25, 0.008], multicouche: [0.15, 0.006] },
+    calorifuge: [0.15, 0.004], gaine: 0.5, coudesParMl: 0.2, supportsParMl: 1, chute: 5, be: [4, 2],
+    equip: { generateur: 16, soupape: 0.5, bouteille: 6, echangeur: 8, tampon: 6, desemboueur: 3, pompe: 3, vanne: 2, equilibrage: 1, isolement: [0.3, 0.01], compteur: 2, vase: 3, cta: 16, bouche: 0.75 },
+    coefs: { monteur: 1, calorifugeur: 1, be: 1 },
+  };
+  const LIBELLES_EQUIP = { generateur: 'Générateur', soupape: 'Soupape de sécurité', bouteille: 'Bouteille de découplage', echangeur: 'Échangeur à plaques', tampon: 'Ballon tampon',
+    desemboueur: 'Pot à boue / désemboueur', pompe: 'Pompe', vanne: 'Vanne de régulation motorisée', equilibrage: 'Vanne d\'équilibrage', isolement: 'Vanne d\'isolement (a + b · DN)',
+    compteur: 'Compteur d\'énergie', vase: 'Vase d\'expansion', cta: 'Centrale de traitement d\'air', bouche: 'Bouche de soufflage ou d\'extraction' };
+  const copie = o => JSON.parse(JSON.stringify(o));
+  let R = copie(DEFAUTS);
+  // Fusion prudente : seules les valeurs numériques valides remplacent les valeurs par défaut
+  function utiliser(cfg) {
+    R = copie(DEFAUTS);
+    const fusion = (cible, src) => { for (const k of Object.keys(cible)) { const v = src && src[k]; if (v === undefined || v === null || v === '') continue;
+      if (Array.isArray(cible[k])) { if (Array.isArray(v) && v.length === 2 && v.every(x => Number.isFinite(+x) && +x >= 0)) cible[k] = v.map(Number); else if (Number.isFinite(+v) && !Array.isArray(v) && +v >= 0 && k !== 'be' && !(k in DEFAUTS.tube)) cible[k] = +v; }
+      else if (typeof cible[k] === 'object') fusion(cible[k], v);
+      else if (Number.isFinite(+v) && +v >= 0) cible[k] = +v; } };
+    fusion(R, cfg || {});
+    return R;
+  }
+  const ratios = () => R;
+  const lin = (v, dn) => (Array.isArray(v) ? v[0] + v[1] * (dn || 0) : v);
+  const heuresMl = (serie, dn) => lin(R.tube[matiereDe(serie)], dn);
 
   /* ---------- Métré ---------- */
   // Postes : { cle, chapitre, designation, unite, qte, recherche: { mots, taille }, heures (par unité), mo: 'monteur'|'calorifugeur'|'be', source }
@@ -20,9 +44,9 @@ const Metre = ((N, C, D, L, Sc) => {
       if (!t || !(Lm > 0)) return;
       const mat = matiereDe(serie), court = { acier: 'acier', galva: 'acier galvanisé', inox: 'inox', cuivre: 'cuivre', pehd: 'PEHD', multicouche: 'multicouche' }[mat];
       ajouter(`tube|${serie}|${cle}`, { chapitre: 'Tuyauteries', designation: `Tuyauterie ${court} ${t.nom}, raccords et supports compris`, unite: 'ml', qte: Lm, heures: heuresMl(serie, t.dn), mo: 'monteur', source,
-        recherche: { type: 'tube', matiere: mat, dn: t.dn, de: t.de }, accessoires: [{ type: 'coude', matiere: mat, dn: t.dn, de: t.de, qte: 0.2 }, { type: 'support', qte: 1 }] });
+        recherche: { type: 'tube', matiere: mat, dn: t.dn, de: t.de }, accessoires: [{ type: 'coude', matiere: mat, dn: t.dn, de: t.de, qte: R.coudesParMl }, { type: 'support', qte: R.supportsParMl }] });
     };
-    const equip = (cle, chapitre, designation, qte, heures, recherche, source) => { if (qte > 0) ajouter(cle, { chapitre, designation, unite: 'u', qte, heures, mo: 'monteur', recherche, source }); };
+    const equip = (cle, chapitre, designation, qte, heures, recherche, source) => { const r = R.equip[recherche.type]; if (qte > 0) ajouter(cle, { chapitre, designation, unite: 'u', qte, heures: r === undefined ? heures : lin(r, recherche.dn), mo: 'monteur', recherche, source }); };
     const notes = etude.notes || [], titre = n => `N${notes.indexOf(n) + 1}`;
     notes.forEach(n => {
       const e = L.resoudre(etude, n).entrees, r = N.calculer(n.type, e), v = r.valeurs || {}, src = titre(n);
@@ -41,11 +65,11 @@ const Metre = ((N, C, D, L, Sc) => {
       if (n.type === 'air' && v.choix) tube(e.serie, v.choix, num(e.L), src);
       if (n.type === 'isolation' && v.choix) {
         const t = C.tube(e.serie, e.tube) || C.tubes(e.serie)[0], iso = D.ISOLANTS[e.isolant];
-        ajouter(`iso|${e.isolant}|${v.choix}|${t.cle}`, { chapitre: 'Calorifuge', designation: `Calorifuge ${iso.libelle.toLowerCase()} ép. ${v.choix} mm sur ${t.nom}`, unite: 'ml', qte: num(e.L), heures: 0.15 + 0.004 * t.dn, mo: 'calorifugeur', source: src,
+        ajouter(`iso|${e.isolant}|${v.choix}|${t.cle}`, { chapitre: 'Calorifuge', designation: `Calorifuge ${iso.libelle.toLowerCase()} ép. ${v.choix} mm sur ${t.nom}`, unite: 'ml', qte: num(e.L), heures: lin(R.calorifuge, t.dn), mo: 'calorifugeur', source: src,
           recherche: { type: 'calorifuge', isolant: e.isolant, ep: v.choix, dn: t.dn, de: t.de } });
       }
-      if (n.type === 'gaine' && v.choix) ajouter(`gaine|${v.choix}`, { chapitre: 'Aéraulique', designation: `Gaine ${v.choix} mm galvanisée, supports compris`, unite: 'ml', qte: num(e.L), heures: 0.5, mo: 'monteur', source: src, recherche: { type: 'gaine', nom: v.choix } });
-      if (n.type === 'aeraulique') (v.troncons || []).forEach(t => ajouter(`gaine|${t.nom}`, { chapitre: 'Aéraulique', designation: `Gaine ${t.nom} mm galvanisée, supports compris`, unite: 'ml', qte: t.L, heures: 0.5, mo: 'monteur', source: src, recherche: { type: 'gaine', nom: t.nom } }));
+      if (n.type === 'gaine' && v.choix) ajouter(`gaine|${v.choix}`, { chapitre: 'Aéraulique', designation: `Gaine ${v.choix} mm galvanisée, supports compris`, unite: 'ml', qte: num(e.L), heures: R.gaine, mo: 'monteur', source: src, recherche: { type: 'gaine', nom: v.choix } });
+      if (n.type === 'aeraulique') (v.troncons || []).forEach(t => ajouter(`gaine|${t.nom}`, { chapitre: 'Aéraulique', designation: `Gaine ${t.nom} mm galvanisée, supports compris`, unite: 'ml', qte: t.L, heures: R.gaine, mo: 'monteur', source: src, recherche: { type: 'gaine', nom: t.nom } }));
       if (n.type === 'vase' && v.choisi) equip(`vase|${v.choisi}`, 'Équipements hydrauliques', `Vase d'expansion ${v.choisi} L, gonflé à ${nf(v.p0, 1)} bar`, 1, 3, { type: 'vase', volume: v.choisi }, src);
       if (n.type === 'vanne' && v.vanne) equip(`vanne|${v.vanne.type}|${v.vanne.dn}|${v.vanne.Kvs}`, 'Équipements hydrauliques', `${N.libVanne(v.vanne)} motorisée`, 1, 2, { type: 'vanne', sorte: v.vanne.type, dn: v.vanne.dn, kvs: v.vanne.Kvs }, src);
       if (n.type === 'pid') {
@@ -71,8 +95,8 @@ const Metre = ((N, C, D, L, Sc) => {
       }
     });
     const nCalc = notes.filter(n => !n.lien).length;
-    if (nCalc) ajouter('be', { chapitre: 'Études', designation: 'Études d\'exécution, notes de calcul et schémas', unite: 'forfait', qte: 1, heures: 2 * nCalc + 4, mo: 'be', source: 'étude', recherche: { type: 'aucune' } });
-    return [...postes.values()].map(p => ({ ...p, qte: Math.round(p.qte * 100) / 100, sources: [...p.sources] }))
+    if (nCalc) ajouter('be', { chapitre: 'Études', designation: 'Études d\'exécution, notes de calcul et schémas', unite: 'forfait', qte: 1, heures: lin(R.be, nCalc), mo: 'be', source: 'étude', recherche: { type: 'aucune' } });
+    return [...postes.values()].map(p => ({ ...p, qte: Math.round(p.qte * 100) / 100, heures: p.heures * (R.coefs[p.mo] ?? 1), sources: [...p.sources] }))
       .sort((a, b) => CHAPITRES.indexOf(a.chapitre) - CHAPITRES.indexOf(b.chapitre) || a.designation.localeCompare(b.designation, 'fr'));
   }
 
@@ -129,7 +153,7 @@ const Metre = ((N, C, D, L, Sc) => {
       out.push({ type: 'chapitre', titre: ch });
       ps.forEach(p => {
         const a = art(p.articleId), m = mo(p.moId), composants = [];
-        if (p.recherche.type !== 'aucune') composants.push(F(a, p.unite === 'ml' ? 1.05 : 1, p.designation, p.unite));
+        if (p.recherche.type !== 'aucune') composants.push(F(a, p.unite === 'ml' ? 1 + R.chute / 100 : 1, p.designation, p.unite));
         (p.accessoires || []).forEach(x => { if (x.article) composants.push(F(x.article, x.qte)); });
         if (m && p.heures > 0) composants.push({ type: 'mo', moId: m.id, libelle: m.libelle, heures: Math.round(p.heures * 100) / 100, taux: num(m.tauxVente), cout: num(m.tauxCout) });
         out.push({ type: 'ouvrage', designation: p.designation, unite: p.unite, qte: p.qte, composants, ...(a || p.recherche.type === 'aucune' ? {} : { libre: true }) });
@@ -140,12 +164,26 @@ const Metre = ((N, C, D, L, Sc) => {
   // Estimation du prix de vente d'un poste (fourniture + main-d'œuvre), pour l'aperçu
   function prixPoste(p, articles = [], mainoeuvre = []) {
     const a = articles.find(x => x.id === p.articleId), m = mainoeuvre.find(x => x.id === p.moId);
-    const fourn = (a ? num(a.prixVente) * (p.unite === 'ml' ? 1.05 : 1) : 0) + (p.accessoires || []).reduce((s, x) => s + (x.article ? num(x.article.prixVente) * x.qte : 0), 0);
+    const fourn = (a ? num(a.prixVente) * (p.unite === 'ml' ? 1 + R.chute / 100 : 1) : 0) + (p.accessoires || []).reduce((s, x) => s + (x.article ? num(x.article.prixVente) * x.qte : 0), 0);
     return { unitaire: fourn + (m ? num(m.tauxVente) * p.heures : 0), total: p.qte * (fourn + (m ? num(m.tauxVente) * p.heures : 0)), heures: p.qte * p.heures };
+  }
+  // Calage sur le retour d'expérience : chantiers terminés de Pipe-Fit, heures prévues au devis face aux heures pointées,
+  // regroupées par genre de main-d'œuvre du métré (monteur, calorifugeur, bureau d'études)
+  function calage(rex, retenus) {
+    const mo = rex.mainoeuvre || [], genre = id => { const m = mo.find(x => x.id === id); if (!m) return 'monteur'; const t = norm(`${m.libelle} ${m.code}`); return /calorif/.test(t) ? 'calorifugeur' : /etude|bureau|dessin/.test(t) ? 'be' : 'monteur'; };
+    const g = { monteur: { prevues: 0, passees: 0, n: 0 }, calorifugeur: { prevues: 0, passees: 0, n: 0 }, be: { prevues: 0, passees: 0, n: 0 } };
+    (rex.affaires || []).filter(a => !retenus || retenus.includes(a.id)).forEach(a => {
+      const vus = new Set();
+      Object.entries(a.parMo || {}).forEach(([id, h]) => { const k = genre(id); if (!(h.prevues > 0)) return; g[k].prevues += h.prevues; g[k].passees += h.passees; vus.add(k); });
+      vus.forEach(k => g[k].n++);
+    });
+    const coefs = {};
+    for (const [k, v] of Object.entries(g)) coefs[k] = v.prevues > 0 && v.n ? Math.round(Math.min(3, Math.max(0.3, v.passees / v.prevues)) * 100) / 100 : null;
+    return { groupes: g, coefs };
   }
   const csv = postes => ['Chapitre;Désignation;Unité;Quantité;Heures par unité;Article Pipe-Fit;Sources',
     ...postes.filter(p => p.inclus !== false).map(p => [p.chapitre, p.designation, p.unite, String(p.qte).replace('.', ','), String(p.heures).replace('.', ','), p.articleId || 'hors bibliothèque', p.sources.join(' ')].map(x => `"${String(x).replace(/"/g, '""')}"`).join(';'))].join('\r\n');
-  return { metre, rapprocher, lignesDevis, prixPoste, csv, score, CHAPITRES };
+  return { metre, rapprocher, lignesDevis, prixPoste, csv, score, CHAPITRES, DEFAUTS, LIBELLES_EQUIP, utiliser, ratios, calage, moPour };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Donnees !== 'undefined' ? Donnees : require('./donnees'),
   typeof Liens !== 'undefined' ? Liens : require('./liens'), typeof Schema !== 'undefined' ? Schema : require('./schema'));
 if (typeof module !== 'undefined') module.exports = Metre;

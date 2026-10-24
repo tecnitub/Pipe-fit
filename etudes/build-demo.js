@@ -28,6 +28,7 @@ const page = [
   inlineScript(read('server/demo-images.js')),
   inlineScript(`window.DemoSeed = (function (module) {\n${read('server/demo.js')}\nreturn module.exports;\n})({});`),
   inlineScript(read('doe/config-defaut.js')),
+  inlineScript(read('etudes/rex.js')),
   inlineScript(read('etudes/demo-backend.js')),
   ...scripts.map(s => inlineScript(avecLogo(read(PARTAGES[s] || path.join('etudes/public', s))))),
 ].join('\n');
