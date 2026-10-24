@@ -557,6 +557,17 @@ Vues.reglages = {
     <div class="carte"><h2>Entreprise (en-tête des notes de calcul)</h2><div class="grille-champs">${[['raison', 'Raison sociale'], ['activite', 'Activité'], ['adresse', 'Adresse'], ['tel', 'Téléphone'], ['siret', 'SIRET'], ['email', 'E-mail']]
       .map(([k, l]) => `<label>${l}<input data-cfg="societe.${k}" value="${esc(c.societe[k])}" ${dis}></label>`).join('')}
       <label>Couleur de la charte<input data-cfg="couleur" type="color" value="${esc(c.couleur)}" ${dis}></label></div></div>
+    <div class="carte"><h2>Fluides caloporteurs (fiches fabricants)</h2>
+      <p class="muted petit">Les mélanges glycolés de référence sont des valeurs moyennes. Importer la fiche du fabricant du fluide installé (une ligne par température, au moins deux) : le fluide apparaît dans les listes de tous les calculs.</p>
+      <div class="actions-ligne"><span class="badge ${(c.fluides || []).length ? 'ok' : ''}">${(c.fluides || []).length ? `${c.fluides.length} fluide(s) importé(s) : ${esc(c.fluides.map(f => f.libelle.replace(' (fiche fabricant)', '')).join(', '))}` : 'aucune fiche importée'}</span>
+        <button class="secondaire petit" id="fl-modele">Modèle CSV</button>${admin ? `<button class="petit" id="fl-import">Importer un CSV…</button>${(c.fluides || []).length ? '<button class="secondaire petit" id="fl-vider">Retirer les fiches</button>' : ''}` : ''}</div></div>
+    <div class="carte"><h2>Réglementation (onglet du schéma de principe)</h2>
+      <p class="muted petit">La synthèse réglementaire est indicative tant qu'elle n'a pas été relue. Le visa (relecteur, date, validité) et les exigences complémentaires de l'entreprise figurent dans l'onglet et dans les notes de calcul.</p>
+      <div class="grille-champs"><label>Relue par<input id="rg-qui" value="${esc((c.reglementation || {}).relecteur || S.me.nom || '')}" ${dis}></label>
+        <label>Le<input type="date" id="rg-date" value="${esc((c.reglementation || {}).date || aujourdhui())}" ${dis}></label>
+        <label>Valable jusqu'au<input type="date" id="rg-val" value="${esc((c.reglementation || {}).validite || '')}" ${dis}></label>
+        <label class="large">Exigences complémentaires de l'entreprise (une par ligne)<textarea id="rg-comp" rows="3" ${dis}>${esc((c.reglementation || {}).complements || '')}</textarea></label></div>
+      <div class="actions-ligne">${(c.reglementation || {}).date ? `<span class="badge ok">Visée le ${dateFr(c.reglementation.date)}</span>` : '<span class="badge">Non visée</span>'}${admin ? '<button class="petit" id="rg-viser">Enregistrer le visa</button>' : ''}</div></div>
     <div class="carte"><h2>Catalogues de pompes et de vannes</h2>
       <p class="muted petit">Les calculs proposent un modèle d'après le point de fonctionnement. Sans catalogue importé, une gamme générique d'exemple est utilisée (ordres de grandeur, aucune marque). Import au format CSV (séparateur « ; »).</p>
       ${['pompes', 'vannes'].map(g => { const cat = (c.catalogues || {})[g] || []; return `<div class="actions-ligne"><strong>${g === 'pompes' ? 'Pompes' : 'Vannes de régulation'}</strong>
@@ -564,6 +575,26 @@ Vues.reglages = {
         <button class="secondaire petit" data-csv-modele="${g}">Modèle CSV</button>${admin ? `<button class="petit" data-csv-import="${g}">Importer un CSV…</button>${cat.length ? `<button class="secondaire petit" data-csv-vider="${g}">Revenir à la gamme générique</button>` : ''}` : ''}</div>`; }).join('')}</div>`; },
   bind: root => {
     root.querySelectorAll('[data-cfg]').forEach(el => el.onchange = async () => { const c = copie(S.config); ecrireChemin(c, el.dataset.cfg, el.value); S.config = await api('PUT', '/api/config', c); toast('Réglages enregistrés'); });
+    const majConfig = async c => { S.config = await api('PUT', '/api/config', c); Catalogue.utiliser(S.config.catalogues); Calculs.utiliserFluides(S.config.fluides); Schema.utiliserReglementation(S.config.reglementation); App.render(); };
+    const fichierTexte = (accept, suite) => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = accept; inp.onchange = async () => { const f = inp.files[0]; if (!f) return; const brut = new Uint8Array(await f.arrayBuffer()); let t = new TextDecoder('utf-8').decode(brut); if (t.includes('\uFFFD')) t = new TextDecoder('windows-1252').decode(brut); suite(t); }; inp.click(); };
+    const flm = root.querySelector('#fl-modele');
+    if (flm) flm.onclick = () => Promise.resolve(telecharger('fluides-caloporteurs.csv', new TextEncoder().encode('fluide;concentration_%;T_C;rho_kg_m3;cp_kJ_kgK;mu_mPa_s;gel_C\nNom du fluide (exemple de format, valeurs à remplacer par la fiche);30;0;1000;3,8;5;-15\nNom du fluide (exemple de format, valeurs à remplacer par la fiche);30;80;980;3,9;0,8;-15\n'), 'text/csv')).catch(e => toast(e.message, 6000));
+    const fli = root.querySelector('#fl-import');
+    if (fli) fli.onclick = () => fichierTexte('.csv,text/csv,text/plain', async t => {
+      const { liste, rejets, incomplets } = Calculs.lireFluidesCsv(t);
+      if (!liste.length) return toast('Aucun fluide valide : au moins deux températures par fluide (voir « Modèle CSV »).', 6000);
+      const autres = (S.config.fluides || []).filter(f => !liste.some(x => x.cle === f.cle));
+      await majConfig({ ...S.config, fluides: [...autres, ...liste] });
+      toast(`${liste.length} fluide(s) importé(s)${rejets.length ? `, lignes ignorées : ${rejets.slice(0, 8).join(', ')}` : ''}${incomplets.length ? `, incomplets : ${incomplets.join(', ')}` : ''}`, 6000);
+    });
+    const flv = root.querySelector('#fl-vider');
+    if (flv) flv.onclick = async () => { if (await confirmer('Retirer les fiches de fluides importées ? Les calculs qui les utilisent reviendront à l\'eau.', 'Retirer')) await majConfig({ ...S.config, fluides: [] }); };
+    const rgv = root.querySelector('#rg-viser');
+    if (rgv) rgv.onclick = async () => {
+      const v = { relecteur: root.querySelector('#rg-qui').value.trim(), date: root.querySelector('#rg-date').value, validite: root.querySelector('#rg-val').value, complements: root.querySelector('#rg-comp').value };
+      if (!v.relecteur || !v.date) return toast('Indiquer le relecteur et la date de relecture.');
+      await majConfig({ ...S.config, reglementation: v }); toast('Visa de la synthèse réglementaire enregistré');
+    };
     const enregistrerCatalogue = async (genre, liste) => {
       const cat = { ...(S.config.catalogues || {}), [genre]: liste };
       S.config = await api('PUT', '/api/config', { ...S.config, catalogues: cat }); Catalogue.utiliser(S.config.catalogues); App.render();
@@ -601,7 +632,7 @@ async function demarrer() {
   // Les affaires Pipe-Fit sont facultatives : l'application reste utilisable si Pipe-Fit ne répond pas
   try { S.pf = await api('GET', '/api/pf/affaires'); } catch (e) { toast(`Affaires Pipe-Fit indisponibles : ${e.message}`, 5000); }
   S.etudes.forEach(et => { et.notes = et.notes || []; et.historique = et.historique || []; });
-  Catalogue.utiliser(S.config.catalogues);
+  Catalogue.utiliser(S.config.catalogues); Calculs.utiliserFluides(S.config.fluides); Schema.utiliserReglementation(S.config.reglementation);
   App.render();
   window.addEventListener('hashchange', () => { Modal.close(); App.render(); });
 }

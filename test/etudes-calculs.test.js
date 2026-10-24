@@ -217,7 +217,7 @@ test('schéma : change-over, échangeur, ballon tampon, Tichelmann et export DXF
   assert.ok(N.calculer('pid', { reseau: 'co', generateur: 'chaudiere-cond' }).alertes.some(a => a.niveau === 'erreur' && /Change-over/.test(a.texte)));
   const ech = N.calculer('pid', { bouteille: 'echangeur', pincement: 5, reseau: 'ch-80-60', nGen: '1', Pgen: 300 });
   assert.match(ech.schema, /Échangeur/); assert.match(ech.resume.find(r => /Échangeur/.test(r[0]))[1], /secondaire 75\/55/);
-  assert.ok(ech.onglets[0].blocs[0].items.some(i => /primaire et secondaire séparés/.test(i.texte)));
+  assert.ok(ech.onglets[0].blocs.flatMap(b => b.items || []).some(i => /primaire et secondaire séparés/.test(i.texte)));
   const peu = N.calculer('pid', { tampon: 'oui', ratioTampon: 1 });
   assert.match(peu.resume.find(r => r[0] === 'Ballon tampon')[1], /Non nécessaire/);
   // DXF : calques, coordonnées retournées, textes accentués
@@ -293,4 +293,27 @@ test('métré et chiffrage : quantités, rapprochement avec la bibliothèque, li
   const total = Me.metre(et2).filter(p => p.unite === 'ml' && p.chapitre === 'Tuyauteries').reduce((s, p) => s + p.qte, 0);
   const attendu = Schema.dimensionner(pid.entrees).circuits.reduce((s, c) => s + c.L, 0) + 2 * (4 * 1.5 + 2) + 2 * 6;
   proche(total, attendu, 1e-6);
+});
+
+test('données : séries ASME, fluides de fiches fabricants, visa de la réglementation', () => {
+  const t = C.tube('acier-sch40', '60.3x3.91'); proche(t.di, 52.48, 0.01); assert.strictEqual(C.tubes('inox-sch10s').length, 14);
+  assert.ok(N.TYPES.epaisseur.champs.find(c => c.k === 'serie').o.some(([k]) => k === 'acier-sch80'));
+  const ep = N.calculer('epaisseur', { serie: 'acier-sch80', PS: 100, TS: 200 }); assert.ok(ep.valeurs.lignes.every(l => l.ok), 'Sch 80 tient 100 bar à 200 °C');
+  const csv = 'fluide;c;T;rho;cp;mu;gel\nFluide A;30;0;1040;3,7;6;-15\nFluide A;30;60;1010;3,9;1,2;-15\nFluide B;;20;900;2;10;\n';
+  const { liste, incomplets } = C.lireFluidesCsv(csv);
+  assert.strictEqual(liste.length, 1); assert.deepStrictEqual(incomplets, ['Fluide B (fiche fabricant)']);
+  C.utiliserFluides(liste);
+  const f = C.liquide(liste[0].cle, 30); proche(f.rho, 1025, 1e-9); proche(f.cp, 3800, 1e-9); proche(f.mu * 1000, Math.sqrt(6 * 1.2), 1e-9);
+  assert.ok(N.TYPES.tuyauterie.champs.find(c => c.k === 'fluide').o().some(([k]) => k === liste[0].cle));
+  assert.ok(N.calculer('tuyauterie', { fluide: liste[0].cle, T: -2 }).alertes.some(a => /congélation|fiche fabricant/.test(a.texte)));
+  C.utiliserFluides([]);
+  assert.strictEqual(N.calculer('tuyauterie', { fluide: liste[0].cle }).resume[0][0], 'Débit volumique', 'fluide retiré : retour à l\'eau');
+  const Sc = require('../etudes/public/js/schema'), regl = () => N.calculer('pid', {}).onglets[0].blocs;
+  assert.match(regl()[0].items[0].texte, /non encore relue/);
+  Sc.utiliserReglementation({ relecteur: 'J. Martin', date: '2026-01-10', validite: '2099-01-01', complements: 'Clapet anti-thermosiphon sur chaque générateur\n' });
+  assert.match(regl()[0].items[0].texte, /relue le 10\/01\/2026 par J\. Martin/);
+  assert.ok(regl().some(b => /complémentaires/.test(b.titre) && b.items[0].ref === 'Règle interne'));
+  Sc.utiliserReglementation({ relecteur: 'J. Martin', date: '2020-01-10', validite: '2021-01-10' });
+  assert.match(regl()[0].items[0].texte, /expirée/);
+  Sc.utiliserReglementation(null);
 });

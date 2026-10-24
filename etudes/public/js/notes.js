@@ -10,7 +10,8 @@ const Notes = ((D, C) => {
   const libVanne = v => `${v.fabricant === 'Gamme générique' ? '' : `${v.fabricant} `}${v.modele}${v.dn && !/DN/.test(v.modele) ? ` (DN ${v.dn})` : ''}`;
 
   /* ---------- Listes de choix ---------- */
-  const optFluides = [['eau', 'Eau'], ...Object.entries(D.GLYCOLS).map(([k, g]) => [k, g.libelle]), ['perso', 'Autre fluide (propriétés saisies)']];
+  // Fluides : eau, mélanges glycolés de référence, fiches fabricants importées (Réglages), propriétés saisies
+  const optFluides = () => [['eau', 'Eau'], ...Object.entries(D.GLYCOLS).map(([k, g]) => [k, g.libelle]), ...C.fluidesFabricant().map(f => [f.cle, f.libelle]), ['perso', 'Autre fluide (propriétés saisies)']];
   const optSeries = (filtre = () => true) => Object.entries(D.SERIES).filter(([k, s]) => filtre(k, s)).map(([k, s]) => [k, s.libelle]);
   const optTubes = e => C.tubes(e.serie || 'acier-10216').map(t => [t.cle, t.nom]);
   const optMateriaux = Object.entries(D.MATERIAUX).map(([k, m]) => [k, m.libelle]);
@@ -26,7 +27,7 @@ const Notes = ((D, C) => {
   const alertesFluide = (e, f) => {
     const out = [];
     if (f.gel !== null && f.gel !== undefined && num(e.T) < f.gel + 3) out.push(alerte('erreur', `Température proche ou en dessous du point de congélation du fluide (${nf(f.gel, 1)} °C).`));
-    if (f.horsPlage) out.push(alerte('attention', 'Température hors de la plage des données du mélange glycolé : propriétés extrapolées.'));
+    if (f.horsPlage) out.push(alerte('attention', `Température hors de la plage des données ${f.fabricant ? 'de la fiche fabricant' : 'du mélange glycolé'} : propriétés extrapolées.`));
     if ((!e.fluide || e.fluide === 'eau') && (num(e.T) > 150 || num(e.T) < 0)) out.push(alerte('attention', 'Propriétés de l\'eau valables de 0 à 150 °C (eau liquide sous pression au-delà de 100 °C).'));
     return out;
   };
@@ -192,7 +193,7 @@ const Notes = ((D, C) => {
   TYPES.vase = {
     titre: 'Vase d\'expansion fermé (NF EN 12828)', icone: '🫙', famille: 'Hydraulique',
     description: 'Volume d\'expansion, réserve d\'eau, pressions de gonflage et de remplissage, volume nominal du vase.',
-    champs: [{ g: 'Installation' }, { k: 'fluide', l: 'Fluide', t: 's', o: optFluides.filter(([k]) => k !== 'perso'), d: 'eau' },
+    champs: [{ g: 'Installation' }, { k: 'fluide', l: 'Fluide', t: 's', o: () => optFluides().filter(([k]) => k !== 'perso'), d: 'eau' },
       { k: 'modeV', l: 'Volume d\'eau de l\'installation', t: 's', o: [['saisi', 'Volume connu'], ['estime', 'Estimation d\'après la puissance']], d: 'estime' },
       { k: 'Vinst', l: 'Volume de l\'installation', u: 'L', d: 1500, si: e => e.modeV !== 'estime' },
       { k: 'P', l: 'Puissance installée', u: 'kW', d: 200, si: e => e.modeV === 'estime' },
@@ -236,7 +237,7 @@ const Notes = ((D, C) => {
     champs: [{ g: 'Vapeur' }, { k: 'p', l: 'Pression de service', u: 'bar rel.', d: 7 },
       { k: 'mode', l: 'Saisie du débit', t: 's', o: [['debit', 'Débit massique'], ['puissance', 'Puissance thermique de l\'utilisateur']], d: 'debit' },
       { k: 'm', l: 'Débit de vapeur', u: 'kg/h', d: 1500, si: e => e.mode !== 'puissance' }, { k: 'P', l: 'Puissance', u: 'kW', d: 800, si: e => e.mode === 'puissance' },
-      { g: 'Tuyauterie' }, { k: 'serie', l: 'Série de tubes', t: 's', o: optSeries(k => /acier-10216|inox-1127/.test(k)), d: 'acier-10216' },
+      { g: 'Tuyauterie' }, { k: 'serie', l: 'Série de tubes', t: 's', o: optSeries(k => /acier-10216|acier-sch|inox-1127|inox-sch/.test(k)), d: 'acier-10216' },
       { k: 'L', l: 'Longueur développée', u: 'm', d: 80 }, { k: 'zeta', l: 'Somme des coefficients singuliers Σζ', d: 8 },
       { g: 'Critères' }, { k: 'vmax', l: 'Vitesse maximale', u: 'm/s', d: 25 }, { k: 'dpmax', l: 'Perte de charge maximale', u: 'bar', d: 0.5 },
       { g: 'Condensats' }, { k: 'pc', l: 'Pression du réseau de retour des condensats', u: 'bar rel.', d: 0 }, { k: 'vflash', l: 'Vitesse maximale de la vapeur de revaporisation', u: 'm/s', d: 15 }],
@@ -594,7 +595,7 @@ const Notes = ((D, C) => {
     description: 'Épaisseur minimale requise, vérification des tubes de la série, pression maximale admissible et pression d\'épreuve.',
     champs: [{ g: 'Conditions de calcul' }, { k: 'PS', l: 'Pression maximale admissible PS', u: 'bar', d: 16 }, { k: 'TS', l: 'Température de calcul', u: '°C', d: 120 },
       { g: 'Tube' }, { k: 'nuance', l: 'Nuance', t: 's', o: Object.entries(D.ACIERS_PRESSION).map(([k, m]) => [k, m.libelle]), d: 'P235GH' },
-      { k: 'serie', l: 'Série de tubes', t: 's', o: optSeries(k => /acier-10216|acier-10255|inox-1127/.test(k)), d: 'acier-10216' },
+      { k: 'serie', l: 'Série de tubes', t: 's', o: optSeries(k => /acier-10216|acier-10255|acier-sch|inox-1127|inox-sch/.test(k)), d: 'acier-10216' },
       { k: 'z', l: 'Coefficient de joint de soudure z', t: 's', o: [['1', '1 — tube sans soudure ou soudure contrôlée à 100 %'], ['0.85', '0,85 — contrôle par sondage'], ['0.7', '0,7 — contrôle visuel seul']], d: '1' },
       { k: 'c0', l: 'Surépaisseur de corrosion c0', u: 'mm', d: 1 }, { k: 'tol', l: 'Tolérance négative sur l\'épaisseur', u: '%', d: 12.5 }],
     calcul(e) {
@@ -667,6 +668,6 @@ const Notes = ((D, C) => {
     try { return T.calcul(e); } catch (err) { return { valeurs: {}, resume: [], tableaux: [], alertes: [alerte('erreur', `Calcul impossible : ${err.message}`)], hypotheses: [], synthese: 'Erreur de calcul' }; }
   }
   const familles = () => [...new Set(Object.values(TYPES).map(t => t.famille))];
-  return { TYPES, defauts, calculer, familles, nf, num, libPompe, libVanne };
+  return { TYPES, defauts, calculer, familles, nf, num, libPompe, libVanne, optFluides };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'));
 if (typeof module !== 'undefined') module.exports = Notes;

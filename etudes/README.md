@@ -24,8 +24,11 @@ avec indice, rédacteur et vérificateur ; elle s'édite en **note de calcul PDF
 | Mécanique | Épaisseur sous pression (NF EN 13480-3) | P235GH, P265GH, 304L, 316L : épaisseur requise, vérification de la série, P maxi admissible, pression d'épreuve |
 | Mécanique | Portée entre supports | Tube, fluide, isolant : portée limitée par la flèche et par la contrainte, tableau pour toute la série |
 
-Fluides : eau (0–150 °C), eau + monoéthylène ou monopropylène glycol (20, 30, 40 %), fluide aux propriétés saisies.
-Séries de tubes : acier EN 10255 (noir et galvanisé) et EN 10216/10217, inox ISO 1127 et à sertir, cuivre EN 1057,
+Fluides : eau (0–150 °C), eau + monoéthylène ou monopropylène glycol (20, 30, 40 %, valeurs moyennes), fiches des
+fabricants importées en CSV dans les Réglages (propriétés interpolées en température), fluide aux propriétés saisies.
+La synthèse réglementaire du schéma porte le visa de relecture de l'entreprise (relecteur, date, validité, exigences
+complémentaires), saisi dans les Réglages et repris dans l'onglet et la note de calcul.
+Séries de tubes : acier EN 10255 (noir et galvanisé), EN 10216/10217 et ASME B36.10 Sch 40 / Sch 80, inox ISO 1127, ASME B36.19 Sch 5S / 10S / 40S et à sertir, cuivre EN 1057,
 PEHD SDR 11 / 17, multicouche. L'écran « Données de référence » affiche toutes les tables utilisées.
 
 **Calculs reliés** : dans une étude, la puissance d'un circuit du schéma de principe peut être reprise d'un bilan chauffage

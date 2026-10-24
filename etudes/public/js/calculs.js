@@ -30,10 +30,38 @@ const Calculs = (D => {
       const p = perso || {}, rho = +p.rho || 1000, mu = (+p.mu || 1) / 1000;
       return { rho, cp: (+p.cp || 4.18) * 1000, mu, nu: mu / rho, gel: p.gel !== undefined && p.gel !== '' ? +p.gel : null, libelle: 'Fluide défini par l\'utilisateur' };
     }
+    // Fluide d'une fiche fabricant importée : points [T, ρ, cp, μ] interpolés (viscosité en logarithme)
+    const fab = FLUIDES_FAB[fluide];
+    if (fab) {
+      const t = fab.points, rho = interp(t, T, 1), mu = interp(t, T, 3, true) / 1000;
+      return { rho, cp: interp(t, T, 2) * 1000, mu, nu: mu / rho, gel: fab.gel, libelle: fab.libelle, horsPlage: horsTable(t, T), fabricant: true };
+    }
     const g = D.GLYCOLS[fluide];
     if (!g) throw new Error(`Fluide inconnu : ${fluide}`);
     const rho = g.rho20 + g.drho * (T - 20), mu = interp(g.mu, T, 1, true) / 1000;
     return { rho, cp: (g.cp20 + g.dcp * (T - 20)) * 1000, mu, nu: mu / rho, gel: g.gel, libelle: g.libelle, horsPlage: horsTable(g.mu, T) };
+  }
+  // Fluides caloporteurs des fiches fabricants (Réglages) : { cle: { libelle, gel, points: [[T, ρ, cp kJ/kg·K, μ mPa·s]] } }
+  let FLUIDES_FAB = {};
+  const utiliserFluides = liste => { FLUIDES_FAB = Object.fromEntries((liste || []).map(f => [f.cle, f])); };
+  const fluidesFabricant = () => Object.values(FLUIDES_FAB);
+  // Import CSV : fluide;concentration %;T °C;ρ kg/m³;cp kJ/kg·K;μ mPa·s;gel °C — une ligne par température
+  function lireFluidesCsv(texte) {
+    const n = v => parseFloat(String(v || '').replace(',', '.').trim());
+    const lignes = String(texte || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean), sep = (lignes[0] || '').includes(';') ? ';' : ',';
+    const groupes = new Map(), rejets = [];
+    lignes.forEach((l, i) => {
+      const c = l.split(sep).map(x => x.trim().replace(/^"|"$/g, ''));
+      if (i === 0 && /fluide/i.test(l)) return;
+      const [nom, conc, T, rho, cp, mu, gel] = [c[0], n(c[1]), n(c[2]), n(c[3]), n(c[4]), n(c[5]), n(c[6])];
+      if (!nom || ![T, rho, cp, mu].every(Number.isFinite) || rho <= 0 || cp <= 0 || mu <= 0) return rejets.push(i + 1);
+      const cle = `fab:${nom.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-')}${Number.isFinite(conc) ? `-${conc}` : ''}`;
+      const g = groupes.get(cle) || { cle, libelle: `${nom}${Number.isFinite(conc) ? ` ${conc} %` : ''} (fiche fabricant)`, gel: null, points: [] };
+      g.points.push([T, rho, cp, mu]); if (Number.isFinite(gel)) g.gel = gel;
+      groupes.set(cle, g);
+    });
+    const liste = [...groupes.values()].filter(g => g.points.length >= 2).map(g => ({ ...g, points: g.points.sort((a, b) => a[0] - b[0]) }));
+    return { liste, rejets, incomplets: [...groupes.values()].filter(g => g.points.length < 2).map(g => g.libelle) };
   }
   // Air (ou gaz assimilé) : masse volumique à la pression absolue p (Pa) et viscosité de Sutherland
   const R_AIR = 287.05;
@@ -53,7 +81,7 @@ const Calculs = (D => {
   }
 
   /* ---------- Tubes ---------- */
-  const parDN = cle => /^(acier|inox-1127)/.test(cle);
+  const parDN = cle => /^(acier|inox-1127|inox-sch)/.test(cle);
   const tubes = cle => {
     const s = D.SERIES[cle];
     if (!s) throw new Error(`Série de tubes inconnue : ${cle}`);
@@ -188,7 +216,7 @@ const Calculs = (D => {
   const kv = (Q, dpKpa, rho = 1000) => Q * Math.sqrt(rho / 1000 / (dpKpa / 100)); // Q m³/h, ΔP kPa
   const dpVanne = (Q, Kvs, rho = 1000) => 100 * (rho / 1000) * (Q / Kvs) ** 2; // kPa
 
-  return { G, interp, eau, liquide, air, vapeurSat, pressionVapeurEau, pointRosee, tubes, tube, nomTube, parDN, frottement, colebrook, regime, ecoulement,
+  return { G, interp, eau, liquide, utiliserFluides, fluidesFabricant, lireFluidesCsv, air, vapeurSat, pressionVapeurEau, pointRosee, tubes, tube, nomTube, parDN, frottement, colebrook, regime, ecoulement,
     compressible, gaine, diametreHydraulique, diametreEquivalent, lireDimension, isolation, vaseExpansion, contrainteNominale, epaisseurMini, pressionMaxi, portee, kv, dpVanne };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'));
 if (typeof module !== 'undefined') module.exports = Calculs;

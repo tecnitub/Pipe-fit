@@ -266,6 +266,16 @@ const Schema = ((D, C, N) => {
   // Fluides frigorigènes : potentiel de réchauffement planétaire (PRP, règlement UE 2024/573)
   const FLUIDES_FRIGO = { R32: 675, R410A: 2088, R134a: 1430, R513A: 631, R454B: 466, R1234ze: 7, R290: 3, R744: 1 };
   const exigence = (niveau, texte, ref = '') => ({ niveau, texte, ref });
+  // Relecture de la synthèse par l'entreprise (Réglages) : relecteur, date, validité, exigences complémentaires
+  let visaRegl = null;
+  const utiliserReglementation = v => { visaRegl = v && v.date ? v : null; };
+  const jour = () => new Date().toISOString().slice(0, 10), dateFr = iso => (iso ? iso.split('-').reverse().join('/') : '');
+  function blocVisa() {
+    if (!visaRegl) return { titre: 'Validité de la synthèse', items: [exigence('conseil', 'Synthèse non encore relue par l\'entreprise : à faire viser dans les Réglages (relecteur, date, validité) avant d\'en faire une exigence contractuelle.')] };
+    const ok = !visaRegl.validite || visaRegl.validite >= jour();
+    return { titre: 'Validité de la synthèse', items: [exigence(ok ? 'info' : 'conseil', ok ? `Synthèse relue le ${dateFr(visaRegl.date)} par ${visaRegl.relecteur || '—'}${visaRegl.validite ? `, valable jusqu'au ${dateFr(visaRegl.validite)}` : ''}.`
+      : `Relecture du ${dateFr(visaRegl.date)} expirée le ${dateFr(visaRegl.validite)} : textes à revérifier.`)] };
+  }
   function reglementation(d, e) {
     const g = e.generateur, P = d.Pprod, Pg = d.Pg, comb = /^chaudiere/.test(g), gaz = /^chaudiere-(cond|gaz)$/.test(g), thermo = /^(pac|gf)/.test(g);
     const usage = e.usage || 'tertiaire', tertiaire = usage === 'tertiaire' || usage === 'erp', blocs = [];
@@ -338,8 +348,10 @@ const Schema = ((D, C, N) => {
     const seuils = [[70, 'Chaufferie dédiée (générateurs à combustion)', comb, P], [70, 'Inspection périodique des systèmes (5 ans)', true, P], [70, 'BACS / GTB en tertiaire (2027)', tertiaire, P], [290, 'BACS / GTB en tertiaire (2025)', tertiaire, P],
       [300, 'Sécurité manque d\'eau, pression maxi (par générateur)', d.chaud, Pg], [400, 'Contrôle d\'efficacité énergétique, livret de chaufferie (par chaudière)', comb, Pg], [1000, 'ICPE 2910 (puissance thermique de combustion)', comb, P / 0.92]].filter(s => s[2]);
     blocs.push({ titre: 'Seuils de puissance', tableau: { entetes: ['Seuil', 'Exigence', 'Situation'], lignes: seuils.map(([s, lib, , ref]) => [`${nf(s, 0)} kW`, lib, ref > s ? `Concerné (${nf(ref, 0)} kW)` : `Non concerné (${nf(ref, 0)} kW)`]) } });
-    blocs.push({ titre: '', texte: ['Synthèse indicative établie d\'après la puissance, le type de générateur et l\'usage du bâtiment : vérifier les textes en vigueur, le CCTP et les exigences du bureau de contrôle.'] });
-    return blocs;
+    const complements = String((visaRegl && visaRegl.complements) || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+    if (complements.length) blocs.push({ titre: 'Exigences complémentaires de l\'entreprise', items: complements.map(t => exigence('obligatoire', t, 'Règle interne')) });
+    blocs.push({ titre: '', texte: ['Synthèse établie d\'après la puissance, le type de générateur et l\'usage du bâtiment : vérifier les textes en vigueur, le CCTP et les exigences du bureau de contrôle.'] });
+    return [blocVisa(), ...blocs];
   }
 
   /* ---------- Régulation : analyse fonctionnelle et liste des points ---------- */
@@ -419,7 +431,7 @@ const Schema = ((D, C, N) => {
       { k: 'Tdep', l: 'Température de départ', u: '°C', d: 70, si: e => e.reseau === 'perso' }, { k: 'Tret', l: 'Température de retour', u: '°C', d: 50, si: e => e.reseau === 'perso' },
       { k: 'TdepC', l: 'Chauffage : départ', u: '°C', d: 45, si: e => e.reseau === 'co' }, { k: 'TretC', l: 'Chauffage : retour', u: '°C', d: 40, si: e => e.reseau === 'co' },
       { k: 'TdepF', l: 'Climatisation : départ', u: '°C', d: 7, si: e => e.reseau === 'co' }, { k: 'TretF', l: 'Climatisation : retour', u: '°C', d: 12, si: e => e.reseau === 'co' },
-      { k: 'fluide', l: 'Fluide', t: 's', o: [['eau', 'Eau'], ...Object.entries(D.GLYCOLS).map(([k, g]) => [k, g.libelle])], d: 'eau' },
+      { k: 'fluide', l: 'Fluide', t: 's', o: () => N.optFluides().filter(([k]) => k !== 'perso'), d: 'eau' },
       { k: 'serie', l: 'Série de tubes', t: 's', o: Object.entries(D.SERIES).map(([k, s]) => [k, s.libelle]), d: 'acier-10216' },
       { k: 'vmax', l: 'Vitesse maximale', u: 'm/s', d: 1.5 }, { k: 'Rmax', l: 'Perte de charge linéique maximale', u: 'Pa/m', d: 150 },
       { g: 'Production' }, { k: 'generateur', l: 'Générateur', t: 's', o: optListe(GENERATEURS), d: 'chaudiere-cond' },
@@ -493,6 +505,6 @@ const Schema = ((D, C, N) => {
       };
     },
   };
-  return { REGIMES, GENERATEURS, EMETTEURS, REGULATIONS, FLUIDES_FRIGO, CONTENANCE, volumeEau, dimensionner, dessiner, reglementation, regulation };
+  return { REGIMES, GENERATEURS, EMETTEURS, REGULATIONS, FLUIDES_FRIGO, CONTENANCE, volumeEau, utiliserReglementation, dimensionner, dessiner, reglementation, regulation };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Notes !== 'undefined' ? Notes : require('./notes'));
 if (typeof module !== 'undefined') module.exports = Schema;
