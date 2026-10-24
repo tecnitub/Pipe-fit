@@ -21,7 +21,7 @@ const page = [
   // Données de démo isolées dans leur propre portée (mêmes noms de fonctions que l'application)
   inlineScript(read('server/demo-images.js')),
   inlineScript(`window.DemoSeed = (function (module) {\n${read('server/demo.js')}\nreturn module.exports;\n})({});`),
-  ...scripts.map(s => inlineScript(read(path.join('public', s)))),
+  ...scripts.map(s => inlineScript(read(s.startsWith('js/etudes/') ? path.join('etudes/public/js', s.slice(10)) : path.join('public', s)))),
 ].join('\n');
 
 // Le faux serveur doit être chargé avant l'application (après ui.js pour les dialogues).

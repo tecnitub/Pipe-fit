@@ -410,3 +410,18 @@ test('métré : ratios réglables, coefficients calés sur le retour d\'expérie
   assert.deepStrictEqual(c.coefs, { monteur: 1.25, calorifugeur: null, be: 0.8 });
   Me.utiliser({});
 });
+
+test('calculs de chantier des compagnons : même moteur que les Études', () => {
+  global.Donnees = D; global.Calculs = C;
+  const CC = require('../public/js/calculs-chantier');
+  const r = CC.debit({ sens: 'puissance', P: 50, dT: 20, fluide: 'eau', T: 60 });
+  assert.ok(Math.abs(r.Q - 50 * 1000 / (r.f.rho * r.f.cp * 20) * 3600) < 1e-9 && Math.abs(CC.debit({ sens: 'debit', Q: r.Q, dT: 20, fluide: 'eau', T: 60 }).P - 50) < 1e-9);
+  const p = CC.pdc({ Q: 6, serie: 'acier-10255', tube: '', L: 30, zeta: 5, fluide: 'eau', T: 60 });
+  assert.ok(p.v <= 1.5 && p.R <= 150 && p.t === p.conseille);
+  const v = CC.vase({ V: 500, Tmin: 10, Tmax: 80, Hst: 10, Psv: 3, fluide: 'eau' });
+  assert.strictEqual(v.choisi, C.vaseExpansion({ Vinst: 500, Tmin: 10, Tmax: 80, Hst: 10, Psv: 3 }).choisi);
+  assert.ok(CC.vase({ V: 0 }).erreur);
+  const d = CC.dilatation({ serie: 'acier-10255', tube: '', L: 30, Tpose: 10, Tmax: 90 });
+  assert.ok(Math.abs(d.dL - 12e-6 * 30000 * 80) < 1e-9);
+  delete global.Donnees; delete global.Calculs;
+});

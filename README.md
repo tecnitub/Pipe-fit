@@ -493,6 +493,13 @@ commande (tolérance 1 %), quantité au-delà de la livraison ou de la commande 
 non commandée (frais de port…), total des lignes différent du montant HT. Décision : **bon à payer** (avec le motif d'un
 écart accepté) ou **litige fournisseur**. Colonne « Rapprochement » dans la liste des factures.
 
+## Calculs de chantier sur le téléphone
+
+Onglet « Calculs » de l'appli des compagnons (masquable dans Paramètres → Affichage par accès) : débit ↔ puissance,
+perte de charge et diamètre conseillé d'un tube, vase d'expansion (volume, gonflage, remplissage), dilatation et bras
+flexible. Mêmes données et même moteur de calcul que l'application Études (`etudes/public/js/donnees.js` et
+`calculs.js`, servis en `js/etudes/`) ; disponibles sans réseau sur le chantier (copie du service worker).
+
 ## Achats au comptoir et relevé mensuel du fournisseur
 
 Matériel pris au magasin d'un négoce sans commande. Au comptoir, le compagnon donne le **n° de chantier** (affiché sur
