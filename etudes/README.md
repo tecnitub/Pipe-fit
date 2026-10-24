@@ -15,6 +15,12 @@ avec indice, rédacteur et vérificateur ; elle s'édite en **note de calcul PDF
 | Hydraulique | Vase d'expansion (NF EN 12828) | Volume (saisi ou estimé selon les émetteurs), dilatation du fluide, réserve, p0, pe, volume nominal, vase du commerce, pression de remplissage |
 | Industriel | Vapeur saturée et condensats | Écoulement compressible par tranches, vitesse entrée/sortie, ΔP, revaporisation et conduite de condensats |
 | Industriel | Air comprimé | Débit d'air libre, pression de service, chute de pression et vitesse par diamètre |
+| Industriel | Purgeurs et condensats | Type de purgeur conseillé selon l'application, capacité avec coefficient de sécurité, pression différentielle disponible (contre-pression et relevage), taux de revaporisation, retour diphasique ou pompé dimensionné, pompe de relevage |
+| Industriel | Gaz basse et moyenne pression | Gaz naturel H/B ou propane, appareils et simultanéité, débit normalisé, perte de pression admissible, diamètre par écoulement compressible, prescriptions (NF DTU 61.1, NF EN 15001) |
+| Industriel | NPSH d'une pompe | Pression de vapeur du liquide, altitude, pertes d'aspiration, NPSH disponible et température limite de cavitation |
+| Industriel | Coup de bélier | Célérité de l'onde selon le tube, fermeture brusque (Joukowsky) ou lente (Michaud), pression maximale, temps de fermeture minimal pour rester sous la PN |
+| Thermique | Ventilation de chaufferie | Air de combustion et de ventilation, sections basse et haute, sections usuelles indicatives selon la puissance (à vérifier dans le texte applicable) |
+| Thermique | Production d'ECS par accumulation | Besoins par usage (logements, bureaux, douches, restauration, hôtellerie), pointe, volume de stockage, temps de réchauffage, échangeur à plaques |
 | Aéraulique | Gaine | Gaine ronde (diamètres normalisés) ou rectangulaire (hauteur imposée), diamètre équivalent |
 | Aéraulique | Réseau aéraulique et ventilateur | Tronçons (Ø ou a × b, ou automatique), Σζ, composants (filtres, batteries…), pression du ventilateur, puissance, SFP |
 | Thermique | Bilan chauffage et climatisation d'un local | Local simple (L × l × H), site (température de base), murs, toiture, plancher, fenêtres, lanterneaux et portes au choix dans des listes de compositions courantes (ou U saisi), ponts thermiques, infiltrations, ventilation, extraction de process : déperditions et puissance de chauffage ; apports d'été (soleil, occupants, éclairage, air) et puissance frigorifique ; apports de process (machines, fours…) ajoutés en été et déduits ou non du chauffage |

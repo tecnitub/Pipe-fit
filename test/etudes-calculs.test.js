@@ -6,6 +6,7 @@ const C = require('../etudes/public/js/calculs');
 const N = require('../etudes/public/js/notes');
 const D = require('../etudes/public/js/donnees');
 const Schema = require('../etudes/public/js/schema');
+const I = require('../etudes/public/js/industriel');
 
 const proche = (v, ref, tol, msg) => assert.ok(Math.abs(v - ref) <= tol, `${msg || ''} ${v} ≠ ${ref} ± ${tol}`);
 
@@ -316,4 +317,27 @@ test('données : séries ASME, fluides de fiches fabricants, visa de la régleme
   Sc.utiliserReglementation({ relecteur: 'J. Martin', date: '2020-01-10', validite: '2021-01-10' });
   assert.match(regl()[0].items[0].texte, /expirée/);
   Sc.utiliserReglementation(null);
+});
+
+test('calculs industriels : condensats, gaz, NPSH, coup de bélier, ECS', () => {
+  assert.ok(Math.abs(I.psat(100) - 101325) < 500);
+  assert.ok(Math.abs(I.patmAltitude(0) - 101325) < 10);
+  // Flash : (h'(7 bar abs) − h'(1,2 bar abs)) / r ≈ 11 %
+  const c = N.calculer('condensats', {}).valeurs;
+  assert.ok(c.x > 0.09 && c.x < 0.13, String(c.x));
+  assert.strictEqual(c.capacite, 1600);
+  // Gaz naturel : Qn = ΣP / PCI
+  const g = N.calculer('gaz', {}).valeurs;
+  assert.ok(Math.abs(g.Qn - 340 / I.GAZ.g20[1]) < 1e-9);
+  assert.ok(g.dp <= g.dpmax);
+  // Coup de bélier : Joukowsky ρ·a·v en fermeture brusque, Michaud 2ρLv/tf sinon
+  const b = N.calculer('belier', { tf: 0.1 }).valeurs, b2 = N.calculer('belier', {}).valeurs;
+  assert.ok(b.brusque && b.a > 1100 && b.a < 1400);
+  assert.ok(Math.abs(b.dP - 998 * b.a * b.v / 1e5) < 0.1);
+  assert.ok(!b2.brusque && Math.abs(b2.dP - 2 * 998 * 300 * b2.v / 2 / 1e5) < 0.05);
+  // NPSH : baisse quand la température monte
+  assert.ok(N.calculer('npsh', { T: 90 }).valeurs.npshd < N.calculer('npsh', { T: 60 }).valeurs.npshd);
+  // ECS : stock = (pointe − production pendant la pointe) / 80 %
+  const e = N.calculer('ecs', {}).valeurs;
+  assert.ok(Math.abs(e.Vb - (e.Vp - e.Vprod) / 0.8) < 1 && e.choisi >= e.Vb);
 });
