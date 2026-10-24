@@ -11,6 +11,7 @@ avec indice, rédacteur et vérificateur ; elle s'édite en **note de calcul PDF
 |---|---|---|
 | Hydraulique | Dimensionnement de tuyauterie | Débit (ou puissance et ΔT), comparaison de tous les diamètres de la série : vitesse, perte linéique, Reynolds, ΔP du tronçon ; diamètre retenu selon v max et R max |
 | Hydraulique | Réseau hydraulique et pompe | Tronçons du circuit le plus défavorisé (tube imposé ou automatique), Σζ, équipements, circuit fermé ou ouvert (hauteur géométrique), HMT avec marge, puissance absorbée |
+| Hydraulique | Réseau arborescent et équilibrage | Arborescence collecteur → antennes → émetteurs (chaque tronçon désigne son tronçon amont), débits cumulés depuis les puissances des émetteurs, diamètres automatiques ou imposés, circuit le plus défavorisé, HMT et pompe ; réglage des vannes d'équilibrage sur les émetteurs, ou aussi au pied des antennes (vannes partenaires) : ΔP à dissiper, Kv de réglage, DN et ouverture ; ΔP disponible à l'entrée de chaque tronçon pour la mise en service ; schéma unifilaire départ / retour (SVG, DXF, PDF) ; tubes, vannes et pompe repris dans le métré |
 | Hydraulique | Vanne de régulation | Kv, Kvs normalisé, ΔP réelle, autorité (deux ou trois voies) |
 | Hydraulique | Vase d'expansion (NF EN 12828) | Volume (saisi ou estimé selon les émetteurs), dilatation du fluide, réserve, p0, pe, volume nominal, vase du commerce, pression de remplissage |
 | Industriel | Vapeur saturée et condensats | Écoulement compressible par tranches, vitesse entrée/sortie, ΔP, revaporisation et conduite de condensats |

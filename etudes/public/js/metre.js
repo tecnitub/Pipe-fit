@@ -29,6 +29,11 @@ const Metre = ((N, C, D, L, Sc) => {
       // Notes créées depuis un schéma : déjà comptées par le schéma (pas de double compte)
       if (n.lien && n.lien.note && notes.some(x => x.id === n.lien.note) && n.lien.role !== 'vase') return;
       if (n.type === 'reseau') (v.troncons || []).forEach(t => tube(t.serie, t.tube, t.L, src));
+      if (n.type === 'arbo') {
+        (v.troncons || []).forEach(t => tube(t.serie, t.tube, t.L, src));
+        (v.vannes || []).forEach(x => equip(`equil|${x.dn}`, 'Équipements hydrauliques', `Vanne d'équilibrage DN ${x.dn}`, 1, 1, { type: 'equilibrage', dn: x.dn }, src));
+        if (v.pompe) equip(`pompe|${v.pompe.modele}`, 'Équipements hydrauliques', `Pompe ${N.libPompe(v.pompe).replace(/, vitesse.*/, '')}`, 1, 3, { type: 'pompe', modele: v.pompe.modele, dn: v.pompe.dn }, src);
+      }
       if (n.type === 'tuyauterie' && v.choix) tube(e.serie, v.choix, num(e.L), src);
       if (n.type === 'vapeur' && v.choix) { tube(e.serie, v.choix, num(e.L), src); if (v.condensats) tube(e.serie, v.condensats, num(e.L), src); }
       if (n.type === 'air' && v.choix) tube(e.serie, v.choix, num(e.L), src);

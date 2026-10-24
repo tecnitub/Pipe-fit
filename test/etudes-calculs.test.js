@@ -7,6 +7,7 @@ const N = require('../etudes/public/js/notes');
 const D = require('../etudes/public/js/donnees');
 const Schema = require('../etudes/public/js/schema');
 const I = require('../etudes/public/js/industriel');
+const Eq = require('../etudes/public/js/equilibrage');
 
 const proche = (v, ref, tol, msg) => assert.ok(Math.abs(v - ref) <= tol, `${msg || ''} ${v} ≠ ${ref} ± ${tol}`);
 
@@ -340,4 +341,23 @@ test('calculs industriels : condensats, gaz, NPSH, coup de bélier, ECS', () => 
   // ECS : stock = (pointe − production pendant la pointe) / 80 %
   const e = N.calculer('ecs', {}).valeurs;
   assert.ok(Math.abs(e.Vb - (e.Vp - e.Vprod) / 0.8) < 1 && e.choisi >= e.Vb);
+});
+
+test('réseau arborescent : débits cumulés, circuit le plus défavorisé, vannes d\'équilibrage', () => {
+  for (const methode of ['emetteurs', 'antennes']) {
+    const r = N.calculer('arbo', { methode }), v = r.valeurs, n = Object.fromEntries(v.noeuds.map(x => [x.rep, x]));
+    assert.ok(Math.abs(n.C.Q - (n.A1.Q + n.A2.Q + n.A3.Q)) < 1e-9);
+    assert.ok(Math.abs(v.Ptot - 175) < 1e-9 && r.schema.startsWith('<svg'));
+    // Chaque émetteur reçoit exactement sa perte de charge : ΔP dispo − tuyauterie − vanne = ΔP émetteur
+    const dpEm = { 'A1.1': 15, 'A1.2': 15, 'A2.1': 20, 'A2.2': 10, A3: 25 };
+    for (const [rep, d] of Object.entries(dpEm)) assert.ok(Math.abs(n[rep].dispo - n[rep].dp - n[rep].dpV - d * 1000) < 1, `${methode} ${rep}`);
+    // La vanne du circuit le plus défavorisé reste au minimum
+    assert.ok(Math.abs(n[v.defavorise].dpV - 3000) < 1e-6);
+    v.vannes.forEach(x => assert.ok(x.Kv <= x.Kvs + 1e-9));
+    assert.strictEqual(methode === 'antennes', v.vannes.some(x => x.rep === 'A1'));
+    assert.ok(!v.vannes.some(x => x.rep === 'C'));
+  }
+  assert.ok(Eq.vannePour(10).dn === 32);
+  const err = N.calculer('arbo', { troncons: [{ rep: 'X', amont: 'Y', L: 5, P: 10, dpEm: 5 }, { rep: 'Y', amont: 'X', L: 5 }] });
+  assert.ok(err.alertes.some(a => a.niveau === 'erreur'));
 });
