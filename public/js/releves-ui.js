@@ -13,7 +13,7 @@ const nomClientReleve = r => (clientReleve(r) ? clientName(clientReleve(r)) : r.
 const srcPhoto = p => (String(p.photoId || '').startsWith('data:') ? p.photoId : fileUrl(p.photoId));
 const STATUT_BADGE = { Brouillon: 'b-warn', Relevé: 'b-info', Terminé: 'b-ok' };
 const badgeReleve = r => `<span class="badge ${STATUT_BADGE[r.statut] || 'b-warn'}">${esc(r.statut || 'Brouillon')}</span>`;
-const LIB_EL = { tube: '▬ Tube', coude: '↱ Coude 3D', devoie: '⟋ Dévoiement', te: '┳ Té', reduc: '▷ Réduction', vanne: '⋈ Vanne', v3v: '⋔ Vanne 3 voies', brides: '‖ Brides', raccord: '⊡ Raccord', fond: '◗ Fond' };
+const LIB_EL = { tube: '▬ Tube', coude: '↱ Coude 3D', devoie: '⟋ Dévoiement', te: '┳ Té', reduc: '▷ Réduction', vanne: '⋈ Vanne', v3v: '⋔ Vanne 3 voies', instrument: '🌡 Instrument', brides: '‖ Brides', raccord: '⊡ Raccord', fond: '◗ Fond' };
 const dirDe = v => Object.keys(Tuyauterie.DIRS).find(k => Tuyauterie.DIRS[k].every((x, i) => Math.abs(x - v[i]) < 1e-6)) || '';
 const dirLib = v => { const k = dirDe(v); return k ? Tuyauterie.DIRS_LIB[k] : 'oblique'; };
 
@@ -161,6 +161,8 @@ function editeurListeHtml(r, pl) {
         ${(el.rac || 'bride') === 'bride' ? sel('typeBride', el.typeBride === 'tournante' ? 'tournante' : 'collerette', i, 'contre-brides', { collerette: 'à collerette', tournante: 'tournantes + collets' }) : ''}
         ${Tuyauterie.VANNES[el.type || 'boisseau'].commande ? dirSel('tige', el.tige || dirDe(pc.tige || []) || 'H', i, 'Commande vers') : ''}${mm('l', el.l, i, 'Face à face', String(pc.ftf ? Math.round(pc.ftf) : ''))}`;
       case 'raccord': return sel('type', el.type || 'union', i, '', Tuyauterie.RACCORDS);
+      case 'instrument': return `${sel('type', el.type || 'thermometre', i, '', { thermometre: 'Thermomètre', sonde_t: 'Sonde de température', sonde_p: 'Sonde de pression' })}${dirSel('vers', el.vers || dirDe(pc.tige || []) || 'H', i, 'tige vers')}
+        <label class="rl-p">plage <input data-el="${i}" data-k="plage" value="${esc(el.plage || '')}" placeholder="${el.type === 'sonde_p' ? '0-10 bar' : '0-120 °C'}" class="rl-mm"></label>`;
       case 'brides': return sel('typeBride', el.typeBride || r.typeBride || 'collerette', i, '', Tuyauterie.BRIDES_TYPES);
       default: return '';
     }
@@ -328,6 +330,11 @@ Views.releve.bind = (root, params) => {
     const v = el.value.replace(',', '.');
     cible[k] = ['dn', 'dn2', 'dnB', 'dnDepart', 'angle'].includes(k) ? +v : k === 'auto' ? !!v : ['l', 'cote', 'dec', 'dec2', 'af'].includes(k) ? v : el.value;
     // Changement de DN : les éléments suivants de même DN suivent (jusqu'à la prochaine réduction)
+    // Filtre, disconnecteur : raccordement imposé par le DN (taraudé jusqu'au DN50, à brides au-delà)
+    if (i >= 0 && cible.t === 'vanne' && ['type', 'dn'].includes(k)) {
+      const racs = (Tuyauterie.VANNES[cible.type] || {}).racs, ok = rc => racs[rc] && cible.dn >= racs[rc][0] && cible.dn <= racs[rc][1];
+      if (racs && !ok(cible.rac || 'bride')) cible.rac = ok('taraude') ? 'taraude' : 'bride';
+    }
     if (k === 'dn' && i >= 0) { const l = courante(); for (let j = i + 1; j < l.length && l[j].t !== 'reduc'; j++) l[j].dn = +v; }
     if (k === 'dn2' && i >= 0) { const l = courante(); for (let j = i + 1; j < l.length && l[j].t !== 'reduc'; j++) l[j].dn = +v; }
     if (k === 'dnDepart') { const l = r.elements; for (let j = 0; j < l.length && l[j].t !== 'reduc'; j++) l[j].dn = +v; }
@@ -351,6 +358,7 @@ Views.releve.bind = (root, params) => {
     if (t === 'vanne') Object.assign(el, { type: 'boisseau', rac: racDefaut, typeBride: r.typeBride === 'tournante' ? 'tournante' : 'collerette' });
     if (t === 'brides') el.typeBride = r.typeBride || 'collerette';
     if (t === 'raccord') el.type = 'union';
+    if (t === 'instrument') Object.assign(el, { type: 'thermometre', vers: vertical ? 'E' : 'H' });
     courante().push(el);
     b.cam.sel = `${b.chemin ? `${b.chemin}.b.` : ''}${courante().length - 1}`;
     App.render();

@@ -59,7 +59,9 @@ saisie sur l'élément les remplace.
   avec dérivation (elle-même construite pièce par pièce), réductions concentriques ou excentriques, robinetterie (vanne à
   boisseau sphérique BS, papillon, clapet anti-retour, vanne d'équilibrage avec prises de pression, vanne 2 voies motorisée,
   **vanne 3 voies** dont la voie B se raccorde comme une dérivation, manchon de dilatation, robinet-vanne, robinet à soupape,
-  filtre en Y ; à brides, à souder ou taraudée), paires de brides, raccords union et manchons, fonds bombés. Vue isométrique, de dessus, de face, de côté ; rotation au doigt, zoom par pincement ; toucher une pièce la retrouve
+  filtre à tamis en Y taraudé FF du DN15 au DN50 ou à brides du DN50 au DN300, disconnecteur BA ; à brides, à souder ou
+  taraudée), **instruments sur piquage** (thermomètre, sonde de température avec doigt de gant, sonde de pression ; piquage ½"
+  soudé ou té à sertir), paires de brides, raccords union et manchons, fonds bombés. Vue isométrique, de dessus, de face, de côté ; rotation au doigt, zoom par pincement ; toucher une pièce la retrouve
   dans la liste ;
 - **isométrique coté** : cotes à l'axe d'un nœud au suivant (départ, centre des coudes 3D et des tés, extrémité), repères,
   longueurs de coupe au choix, **annotations** libres sur le départ et sur chaque pièce (ex. « début filetage sur existant »),

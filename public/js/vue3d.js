@@ -2,7 +2,7 @@
 // orthogonale (isométrique ISO 6412 par défaut), ombrage simple, rotation au doigt ou à la souris, zoom (molette, pincement),
 // déplacement (deux doigts, clic droit ou Maj), sélection d'une pièce au toucher, cotes affichées, image pour la fiche.
 const Vue3D = (() => {
-  const COUL = { tube: [150, 160, 170], raccord: [118, 130, 142], bride: [96, 108, 120], vanne: [192, 57, 43], clapet: [41, 98, 160], filtre: [39, 120, 90], commande: [230, 126, 34], volant: [44, 62, 80], tournante: [74, 104, 150], equilibrage: [196, 40, 40], moteur: [62, 72, 80], dilatation: [176, 186, 196], sel: [243, 156, 18] };
+  const COUL = { tube: [150, 160, 170], raccord: [118, 130, 142], bride: [96, 108, 120], vanne: [192, 57, 43], clapet: [41, 98, 160], filtre: [39, 120, 90], commande: [230, 126, 34], volant: [44, 62, 80], tournante: [74, 104, 150], equilibrage: [196, 40, 40], moteur: [62, 72, 80], dilatation: [176, 186, 196], disconnecteur: [181, 140, 72], cadran: [235, 238, 240], sonde: [52, 98, 150], sel: [243, 156, 18] };
   const BLEU = '#1e6fd9', COTE = '#14286e', NOTE = '#7a2e12';
   // Isométrique : observateur au sud-est, Nord vers la droite en haut, Est vers la droite en bas
   const ISO = { yaw: -Math.PI / 4, pitch: Math.atan(1 / Math.SQRT2) };
@@ -93,6 +93,7 @@ const Vue3D = (() => {
         }
         case 'vanne': vanne(out, pc); break;
         case 'v3v': vanne3v(out, pc); break;
+        case 'instrument': instrument(out, pc); break;
         default: break;
       }
     });
@@ -109,7 +110,7 @@ const Vue3D = (() => {
   }
   function vanne(out, pc) {
     const r = pc.de / 2, id = pc.id, d = pc.dir, type = pc.el.type || 'boisseau', v = Tuyauterie.VANNES[type] || Tuyauterie.VANNES.boisseau;
-    const coul = type === 'clapet' ? COUL.clapet : type === 'filtre' ? COUL.filtre : type === 'equilibrage' ? COUL.equilibrage : type === 'dilatation' ? COUL.dilatation : COUL.vanne;
+    const coul = type === 'disconnecteur' ? COUL.disconnecteur : type === 'clapet' ? COUL.clapet : type === 'filtre' ? COUL.filtre : type === 'equilibrage' ? COUL.equilibrage : type === 'dilatation' ? COUL.dilatation : COUL.vanne;
     let a = pc.p0, b = pc.p1;
     if (pc.brides) {
       const [D, h] = Tuyauterie.BRIDE[pc.dn];
@@ -123,6 +124,13 @@ const Vue3D = (() => {
     }
     const L = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]), m = add(a, d, L / 2);
     if (type === 'papillon') cylindre(out, a, b, r * 1.7, r * 1.7, coul, id, true);
+    else if (type === 'disconnecteur') {
+      // Trois chambres et entonnoir de vidange vers le bas
+      cylindre(out, a, b, r * 1.35, r * 1.35, coul, id, true);
+      cylindre(out, add(a, d, L * 0.35), add(a, d, L * 0.65), r * 1.75, r * 1.75, coul, id, true);
+      const bas = Math.abs(d[2]) > 0.5 ? unit(cross(d, [0, 1, 0])) : [0, 0, -1];
+      cylindre(out, add(m, bas, r * 1.6), add(m, bas, r * 2.6), r * 0.35, r * 0.9, COUL.bride, id, true);
+    }
     else if (type === 'dilatation') {
       // Soufflet : ondes successives
       const nb = 7;
@@ -156,6 +164,26 @@ const Vue3D = (() => {
     } else if (type === 'clapet') boite(out, add(m, t, r * 1.5), [d, cross(t, d), t], [L * 0.22, r * 0.9, r * 0.3], coul, id);
   }
 
+  // Instrument sur piquage : thermomètre à cadran, sonde de température (tête de raccordement), capteur de pression
+  function instrument(out, pc) {
+    const id = pc.id, t = pc.tige, r = pc.de / 2, d = pc.dir, q = pc.piquage, type = pc.el.type || 'thermometre';
+    if (pc.L > 1) { cylindre(out, pc.p0, pc.p1, r * 1.15, r * 1.15, COUL.raccord, id, true); cylindre(out, pc.centre, add(pc.centre, t, r * 1.3), r * 0.5, r * 0.5, COUL.raccord, id, true); }
+    cylindre(out, q, add(q, t, 22), 9, 9, COUL.bride, id, true);
+    if (type === 'thermometre') {
+      cylindre(out, add(q, t, 22), add(q, t, 70), 5, 5, COUL.raccord, id, true);
+      // Cadran perpendiculaire à la tige et à la ligne
+      const cr = cross(t, d), face = Math.hypot(...cr) > 1e-6 ? unit(cr) : d;
+      const c = add(q, t, 70 + 40);
+      cylindre(out, add(c, face, -9), add(c, face, 9), 42, 42, COUL.cadran, id, true);
+      cylindre(out, add(c, face, 9), add(c, face, 11), 36, 36, [40, 40, 40], id, true);
+    } else if (type === 'sonde_t') {
+      cylindre(out, add(q, t, 22), add(q, t, 60), 6, 6, COUL.raccord, id, true);
+      boite(out, add(q, t, 85), [t, ...base(t)], [25, 28, 28], COUL.sonde, id);
+    } else {
+      cylindre(out, add(q, t, 22), add(q, t, 45), 12, 12, COUL.commande, id, true);
+      cylindre(out, add(q, t, 45), add(q, t, 120), 22, 22, COUL.sonde, id, true);
+    }
+  }
   // Servomoteur de vanne de régulation : arcade, boîtier
   function servomoteur(out, m, t, d, r, id) {
     cylindre(out, add(m, t, r * 1.4), add(m, t, r * 2.6), r * 0.25 + 2, r * 0.25 + 2, COUL.bride, id, true);

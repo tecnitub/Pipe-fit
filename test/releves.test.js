@@ -119,6 +119,23 @@ test('types de tube : acier T10, inox soudé, inox à sertir (diamètres, cotes 
   assert.deepStrictEqual(T.manques({ userId: 'u1', date: '2026-10-25', ligne: 'L1', clientLibre: 'Prospect', cotes: [{ valeur: '100' }] }), [], 'visite commerciale : client sans chantier');
 });
 
+test('accessoires : thermomètre et sondes sur piquage, disconnecteur, filtre à tamis taraudé FF ou à brides selon le DN', () => {
+  const r = { dnDepart: 25, dirDepart: 'E', matiere: 'Acier P235GH', elements: [{ t: 'tube', dn: 25, auto: true, cote: 1000 }, { t: 'instrument', dn: 25, type: 'thermometre', plage: '0-120 °C' },
+    { t: 'vanne', dn: 25, type: 'filtre', rac: 'taraude' }, { t: 'vanne', dn: 25, type: 'disconnecteur', rac: 'taraude' }, { t: 'tube', dn: 25, l: 300 }, { t: 'instrument', dn: 25, type: 'sonde_p' }] };
+  const p = T.placer(r);
+  assert.deepStrictEqual(p.erreurs, []);
+  assert.strictEqual(T.debit(p)[0].coupe, 1000 - 95 - 200 - 300, 'instrument sans encombrement ; filtre FF 95, disconnecteur 200, tube 300 du même tronçon');
+  assert.deepStrictEqual(T.bilanSoudures(p).parDN, { 15: 2, 25: 1 }, 'deux piquages ½" soudés et le départ ; rien sur le taraudé');
+  const nom = T.nomenclature(r, p).map(l => l.designation);
+  assert.ok(nom.includes('Filtre à tamis en Y taraudé FF DN25 PN16') && nom.includes('Thermomètre à cadran avec doigt de gant 0-120 °C') && nom.includes('Manchon à souder ½" (piquage)'));
+  const err = (type, rac, dn) => T.placer({ dnDepart: dn, dirDepart: 'E', elements: [{ t: 'vanne', dn, type, rac }] }).erreurs.map(e => e.msg);
+  assert.deepStrictEqual([err('filtre', 'taraude', 80), err('filtre', 'bride', 25), err('filtre', 'bride', 50), err('filtre', 'taraude', 50)],
+    [['Filtre à tamis en Y taraudé FF : du DN15 au DN50'], ['Filtre à tamis en Y à brides : du DN50 au DN300'], [], []]);
+  assert.strictEqual(err('filtre', 'souder', 50)[0], 'Filtre à tamis en Y : taraudé FF DN15 à DN50, à brides DN50 à DN300');
+  const l = T.lignesChiffrage(r).map(x => x.famille);
+  assert.ok(['Thermomètre', 'Doigt de gant', 'Sonde de pression', 'Piquage ½"', 'Disconnecteur BA', 'Filtre à tamis en Y'].every(f => l.includes(f)));
+});
+
 test('liste du matériel pour le chiffrage : familles CAO, tube en mètres par DN, brides des vannes, CSV', () => {
   const l = T.lignesChiffrage({ ...ligne(), ligne: 'EG-01' }), q = (f, dn) => l.filter(x => x.famille === f && x.dn === dn);
   assert.deepStrictEqual(q('Tube acier', 80).map(x => [x.longueur, x.qte, x.systeme]), [[3.272, 1, 'EG-01']]);
