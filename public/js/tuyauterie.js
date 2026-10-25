@@ -160,10 +160,10 @@ const Tuyauterie = (() => {
     const coter = (a, b, chemin) => { const v = Math.round(len(add(b, a, -1))); if (v >= 1) cotes.push({ a, b, valeur: v, chemin }); };
     const marcher = (liste, p, d, dn, chemin, debutNoeud, noeud = p) => {
       const { res, erreurs: ec } = coupes(liste, debutNoeud, dn);
-      ec.forEach(e => erreurs.push({ chemin: `${chemin}${e.i}`, msg: e.msg }));
+      ec.forEach(e => erreurs.push({ chemin: `${chemin}${liste[e.i] && liste[e.i]._i !== undefined ? liste[e.i]._i : e.i}`, msg: e.msg }));
       let ferme = false;
       liste.forEach((el, i) => {
-        const id = `${chemin}${i}`, dnEl = dnOk(el.dn || dn);
+        const id = `${chemin}${el._i !== undefined ? el._i : i}`, dnEl = dnOk(el.dn || dn);
         if (ferme) { erreurs.push({ chemin: id, msg: 'Élément placé après un fond bombé' }); return; }
         const base = { id, el, t: el.t, dn: dnEl, de: sys.de[dnEl] || DE[dnEl], p0: p, dir: d };
         if (el.t === 'coude') {
@@ -281,10 +281,12 @@ const Tuyauterie = (() => {
     };
     // Copie des éléments avec le DN de chacun et les cotes des raccords du type de tube (sauf longueur saisie)
     const sys = systeme(rel);
+    // Changement de diamètre sans réduction saisie : réduction concentrique ISO ajoutée devant l'élément (repère « n-r »)
     const prep = (liste, dn0) => {
       let dnc = dnOk(dn0);
-      return (liste || []).map(e => {
-        const x = { ...e, dn: dnOk(e.dn || dnc) }, dn = x.dn, af = n(e.af);
+      return (liste || []).flatMap((e, i) => {
+        const x = { ...e, dn: dnOk(e.dn || dnc), _i: i }, dn = x.dn, af = n(e.af);
+        const auto = dn !== dnc ? [{ t: 'reduc', dn: dnc, dn2: dn, exc: '', auto: true, _i: `${i}-r`, l: sys.reduc ? sys.reduc[Math.max(dn, dnc)] : '' }] : [];
         if (x.t === 'coude' || x.t === 'devoie') {
           const th = x.t === 'coude' ? angle(x) : angleDev(x);
           if (af > 0 && x.t === 'coude') x.rayon = af / Math.tan((th * Math.PI) / 360);
@@ -299,7 +301,7 @@ const Tuyauterie = (() => {
         if ((x.t === 'vanne' || x.t === 'v3v') && x.rac === 'sertir' && !n(x.l) && sys.vanne) x.l = x.type === 'dilatation' ? DILAT[dn] : sys.vanne[dn];
         if (aBranche(x)) x.branche = prep(x.branche, x.t === 'te' ? (e.dnB || dn) : dn);
         dnc = x.t === 'reduc' ? dnOk(x.dn2 || dn) : dn;
-        return x;
+        return [...auto, x];
       });
     };
     const fin = marcher(prep(rel.elements, rel.dnDepart || 50), [0, 0, 0], DIRS[rel.dirDepart] || DIRS.E, dnOk(rel.dnDepart || 50), '', 0);
@@ -373,7 +375,7 @@ const Tuyauterie = (() => {
         return [s.sertir ? `Tube ${m} à sertir ${dim}` : `Tube ${m}${s.abrege && !m.includes(s.abrege) ? ` ${s.abrege}` : ''} DN${pc.dn} (${dim})`, s.normeTube]; }
       case 'coude': return [s.sertir ? `Coude ${angle(el)}° à sertir ${m} ${T(pc.dn)}` : `Coude ${angle(el)}° 3D ${m} ${T(pc.dn)}`, nr];
       case 'te': return [pc.dnB !== pc.dn ? `Té réduit${k} ${m} ${T(pc.dn)} × ${T(pc.dnB)}` : `Té égal${k} ${m} ${T(pc.dn)}`, nr];
-      case 'reduc': return [`Réduction ${s.sertir ? 'à sertir' : el.exc ? 'excentrique' : 'concentrique'} ${m} ${T(pc.dn)} × ${T(pc.dn2)}`, nr];
+      case 'reduc': return [`Réduction ${s.sertir ? 'à sertir' : el.exc ? 'excentrique' : 'concentrique'} ${m} ${T(Math.max(pc.dn, pc.dn2))} × ${T(Math.min(pc.dn, pc.dn2))}`, nr];
       case 'vanne': { const v = VANNES[el.type] || VANNES.boisseau; return [`${v.lib} ${el.rac === 'taraude' && v.libTaraude ? v.libTaraude : RACCORDEMENTS[el.rac || 'bride']} ${T(pc.dn)} ${pn}`, el.rac === 'taraude' ? 'ISO 7-1 (filetage)' : el.rac === 'sertir' ? nr : `${v.serie} / ISO 5752`]; }
       case 'v3v': return [`Vanne 3 voies motorisée ${RACCORDEMENTS[el.rac || 'bride']} ${T(pc.dn)} ${pn}`, el.rac === 'sertir' ? nr : 'EN 558 série 1 / ISO 5752'];
       case 'brides': return pc.flanges && pc.flanges[0] === 'tournante' && pc.flanges[1] === 'tournante' ? [`Paire de brides tournantes sur collets DN${pc.dn} ${pn}`, 'EN 1092-1 type 02 / 35']

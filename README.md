@@ -68,6 +68,9 @@ saisie sur l'élément les remplace.
   **point bleu** sur chaque assemblage à brides ;
 - **brides** à collerette (EN 1092-1 type 11), tournantes sur collet à souder (type 02 + collet type 35) ou assemblage mixte
   collerette + tournante, réglées pour la ligne et modifiables pièce par pièce (contre-brides des vannes comprises) ;
+- **réductions ISO automatiques** : un changement de diamètre entre deux éléments ajoute une réduction concentrique
+  (ISO 3419 / EN 10253, ou à sertir), déduite des coupes et comptée dans la nomenclature, repérée « DN80×DN50 » sur
+  l'isométrique ; « Modifier » la remplace par une réduction saisie (excentrique, longueur du fabricant) ;
 - **longueurs de coupe calculées** : on saisit la cote axe à axe relevée entre deux coudes ou tés, l'appli retire les cotes
   axe-face et l'encombrement des accessoires du tronçon ;
 - **nomenclature** (tubes au mètre par DN, raccords, robinetterie, brides, joints et boulonnerie) et **fiche imprimable / PDF**

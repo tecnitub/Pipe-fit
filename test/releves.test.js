@@ -136,6 +136,18 @@ test('accessoires : thermomètre et sondes sur piquage, disconnecteur, filtre à
   assert.ok(['Thermomètre', 'Doigt de gant', 'Sonde de pression', 'Piquage ½"', 'Disconnecteur BA', 'Filtre à tamis en Y'].every(f => l.includes(f)));
 });
 
+test('changement de diamètre : réduction concentrique ISO ajoutée et déduite des coupes', () => {
+  const r = { dnDepart: 80, dirDepart: 'E', matiere: 'Acier P235GH', elements: [{ t: 'tube', dn: 80, auto: true, cote: 1500 }, { t: 'coude', dn: 80, vers: 'N' },
+    { t: 'tube', dn: 50, auto: true, cote: 1000 }, { t: 'vanne', dn: 50, rac: 'bride' }, { t: 'tube', dn: 80, l: 300 }] };
+  const p = T.placer(r);
+  assert.deepStrictEqual(p.pieces.filter(x => x.t === 'reduc').map(x => [x.id, x.dn, x.dn2, x.L]), [['2-r', 80, 50, 89], ['4-r', 50, 80, 89]]);
+  // 1000 - coude DN80 114 - réduction 89 - vanne à brides DN50 324 - réduction 89 - tube 300
+  assert.strictEqual(T.debit(p).find(d => d.id === '2').coupe, 84);
+  assert.strictEqual(T.nomenclature(r, p).find(l => /^Réduction concentrique/.test(l.designation)).quantite, 2);
+  assert.strictEqual(T.placer({ ...r, elements: [{ t: 'tube', dn: 80, l: 100 }, { t: 'reduc', dn: 80, dn2: 50 }, { t: 'tube', dn: 50, l: 100 }] }).pieces.filter(x => x.t === 'reduc').length, 1, 'réduction saisie : pas de doublon');
+  assert.strictEqual(T.placer({ dnDepart: 50, dirDepart: 'E', systeme: 'inoxSertir', elements: [{ t: 'tube', dn: 50, l: 100 }, { t: 'tube', dn: 40, l: 100 }] }).pieces[1].L, 40, 'réduction à sertir Ø54 × Ø42');
+});
+
 test('liste du matériel pour le chiffrage : familles CAO, tube en mètres par DN, brides des vannes, CSV', () => {
   const l = T.lignesChiffrage({ ...ligne(), ligne: 'EG-01' }), q = (f, dn) => l.filter(x => x.famille === f && x.dn === dn);
   assert.deepStrictEqual(q('Tube acier', 80).map(x => [x.longueur, x.qte, x.systeme]), [[3.272, 1, 'EG-01']]);

@@ -210,7 +210,9 @@ const Vue3D = (() => {
     const notes = placement.pieces.filter(pc => String(pc.el.note || '').trim()).map(pc => ({ pos: milieu(pc), txt: String(pc.el.note).trim(), id: pc.id }));
     if (placement.depart && placement.depart.note) notes.unshift({ pos: placement.depart.p, txt: placement.depart.note, id: 'depart' });
     return {
-      reperes: placement.pieces.filter(pc => pc.t === 'tube' || pc.el.repere).map(pc => ({ pos: milieu(pc), repere: pc.el.repere || '', coupe: pc.t === 'tube' ? Math.round(pc.coupe || 0) : null, r: pc.de / 2, id: pc.id })),
+      // Réductions : repère « DN80×DN50 » (« Ø54×Ø42 » en tube à sertir), comme sur un isométrique
+      reperes: placement.pieces.filter(pc => pc.t === 'tube' || pc.t === 'reduc' || pc.el.repere).map(pc => ({ pos: milieu(pc),
+        repere: pc.el.repere || (pc.t === 'reduc' ? (placement.sertir ? `Ø${pc.de}×Ø${pc.de2}` : `DN${pc.dn}×DN${pc.dn2}`) : ''), coupe: pc.t === 'tube' ? Math.round(pc.coupe || 0) : null, r: pc.de / 2, id: pc.id })),
       cotes: placement.cotes || [], notes, triangles: placement.triangles || [],
       soudures: (placement.soudures || []).map(s => s.p), sertissages: (placement.sertissages || []).map(s => s.p), joints: placement.pieces.flatMap(pc => pc.joints || []),
     };

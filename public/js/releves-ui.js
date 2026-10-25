@@ -134,7 +134,7 @@ function erreursReleveHtml(pl) {
   return pl.erreurs.length ? `<ul class="neg small rl-errs">${pl.erreurs.map(e => `<li>Élément ${esc(numeroEl(e.chemin))} : ${esc(e.msg)}</li>`).join('')}</ul>` : '';
 }
 // « 4.b.2 » -> « 5 › 3 » (numérotation à partir de 1, dérivation après le té)
-const numeroEl = chemin => String(chemin).split('.b.').map(x => +x + 1).join(' › ');
+const numeroEl = chemin => String(chemin).split('.b.').map(x => (/-r$/.test(x) ? `réduction avant ${+x.slice(0, -2) + 1}` : +x + 1)).join(' › ');
 
 function editeurListeHtml(r, pl) {
   const b = releveBrouillon, chemin = b.chemin, liste = Tuyauterie.listeDe(r, chemin) || [];
@@ -182,7 +182,11 @@ function editeurListeHtml(r, pl) {
     <div class="rl-fil">${chemin ? `<button class="small secondary" data-chemin="${esc(parent)}">← ${parent ? 'Dérivation précédente' : 'Ligne principale'}</button> <strong>${te && te.el.t === 'v3v' ? 'Voie B de la vanne 3 voies' : 'Dérivation du té'} n° ${esc(numeroEl(chemin))}</strong> (DN${esc(te && (te.el.dnB || te.el.dn))})`
       : `<strong>Ligne principale</strong> · départ ${dnSel('dnDepart', r.dnDepart, '-1', 'DN')} ${dirSel('dirDepart', r.dirDepart, '-1', 'vers')}
         <input data-el="-1" data-k="noteDepart" value="${esc(r.noteDepart || '')}" placeholder="Annotation du départ (ex. départ sur existant, piquage…)" aria-label="Annotation du départ" class="rl-note">`}</div>
-    <ol class="rl-liste">${liste.map((el, i) => { const id = `${chemin ? `${chemin}.b.` : ''}${i}`; return `<li class="rl-el ${b.cam.sel === id ? 'sel' : ''}" data-elid="${esc(id)}">
+    <ol class="rl-liste">${liste.map((el, i) => { const id = `${chemin ? `${chemin}.b.` : ''}${i}`, red = pl.pieces.find(pc => pc.id === `${id}-r`); return `${red ? `<li class="rl-el rl-auto ${b.cam.sel === red.id ? 'sel' : ''}" data-elid="${esc(red.id)}">
+      <span class="rl-num" data-pick="${esc(red.id)}">↳</span><span class="rl-type" data-pick="${esc(red.id)}">▷ Réduction ISO</span>
+      <span class="small">concentrique ${esc(Tuyauterie.taille(r, red.dn))} → ${esc(Tuyauterie.taille(r, red.dn2))}, ajoutée au changement de diamètre</span>
+      <button class="small secondary" data-fixred="${i}" title="La remplacer par une réduction modifiable (excentrique, longueur du fabricant…)">Modifier</button>
+      <span class="rl-enc small">${fmt(red.L, 0)} mm</span></li>` : ''}<li class="rl-el ${b.cam.sel === id ? 'sel' : ''}" data-elid="${esc(id)}">
       <span class="rl-num" data-pick="${esc(id)}">${i + 1}</span><span class="rl-type" data-pick="${esc(id)}">${LIB_EL[el.t] || esc(el.t)}</span>
       ${dnSel('dn', el.dn, i)}
       ${params(el, i)}
@@ -373,6 +377,13 @@ Views.releve.bind = (root, params) => {
   root.querySelectorAll('[data-mv]').forEach(x => x.onclick = () => {
     const [i, s] = x.dataset.mv.split('|').map(Number), l = courante();
     [l[i], l[i + s]] = [l[i + s], l[i]]; b.cam.sel = null; App.render();
+  });
+  // Réduction automatique remplacée par une réduction saisie (même diamètres)
+  root.querySelectorAll('[data-fixred]').forEach(x => x.onclick = () => {
+    const l = courante(), i = +x.dataset.fixred, red = Tuyauterie.placer(r).pieces.find(pc => pc.id === `${b.chemin ? `${b.chemin}.b.` : ''}${i}-r`);
+    if (!red) return;
+    l.splice(i, 0, { t: 'reduc', dn: red.dn, dn2: red.dn2, exc: '' });
+    b.cam.sel = `${b.chemin ? `${b.chemin}.b.` : ''}${i}`; App.render();
   });
   root.querySelectorAll('[data-branche]').forEach(x => x.onclick = () => { b.chemin = `${b.chemin ? `${b.chemin}.b.` : ''}${x.dataset.branche}`; b.cam.sel = null; App.render(); });
   root.querySelectorAll('[data-chemin]').forEach(x => x.onclick = () => { b.chemin = x.dataset.chemin; b.cam.sel = null; App.render(); });
