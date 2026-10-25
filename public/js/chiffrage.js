@@ -180,7 +180,7 @@ function lignesDevisDepuis(ch) {
 
 /* ---------- Écrans ---------- */
 function devisTabs(actif) {
-  return `<div class="tabs"><a href="#/devis" class="${actif === 'devis' ? 'active' : ''}">Devis</a><a href="#/chiffrages" class="${actif === 'chiffrages' ? 'active' : ''}">Chiffrage depuis plan <span class="count">${Store.all('chiffrages').length}</span></a></div>`;
+  return `<div class="tabs"><a href="#/devis" class="${actif === 'devis' ? 'active' : ''}">Devis</a><a href="#/chiffrages" class="${actif === 'chiffrages' ? 'active' : ''}">Chiffrage depuis plan <span class="count">${Store.all('chiffrages').length}</span></a><a href="#/visites" class="${actif === 'visites' ? 'active' : ''}">📐 Visites (prises de cotes) <span class="count">${(Store.all('releves') || []).filter(r => !r.affaireId).length}</span></a></div>`;
 }
 Views.chiffrages = () => `<h1>Devis</h1>${devisTabs('chiffrages')}
   <p class="muted">Importez la nomenclature exportée de votre logiciel de dessin (Revit : Exporter → Rapports → Nomenclature, fichier .txt ; ou .csv / .xlsx) :
@@ -342,7 +342,7 @@ Views.chiffrage.bind = (root, params) => {
     const lignes = lignesDevisDepuis(ch), t = calculerChiffrage(ch).tot;
     if (t.manquants && !await ask(`${t.manquants} élément(s) ne sont pas reliés à la bibliothèque : ils seront « à chiffrer » dans le devis. Continuer ?`, 'Générer', false)) return;
     let d = Store.get('devis', ch.devisId);
-    if (!d) { d = newDevis({ objet: ch.nom }); ch.devisId = d.id; }
+    if (!d) { d = newDevis({ objet: ch.nom, ...(ch.clientId ? { clientId: ch.clientId } : {}) }); ch.devisId = d.id; }
     if (d.statut === 'Accepté') return notify('Ce devis est accepté : dupliquez-le pour chiffrer un avenant.');
     d.lignes = [...lignes, ...(d.lignes || []).filter(l => l.plan !== ch.id)];
     Store.upsert('devis', d); save(false);

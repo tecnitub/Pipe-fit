@@ -53,8 +53,8 @@ test('placement 3D : directions, dérivation du té, réduction excentrique, err
 
 test('nomenclature : tubes au mètre par DN, accessoires, brides et joints des vannes à brides', () => {
   const nom = T.nomenclature(ligne()), q = d => (nom.find(l => l.designation === d) || {}).quantite;
-  assert.strictEqual(q('Tube Acier P235GH DN80 (Ø88.9)'), 3.3);
-  assert.strictEqual(q('Tube Acier P235GH DN50 (Ø60.3)'), 1.1);
+  assert.strictEqual(q('Tube Acier P235GH DN80 (Ø88,9 × 3,2)'), 3.3);
+  assert.strictEqual(q('Tube Acier P235GH DN50 (Ø60,3 × 2,9)'), 1.1);
   assert.strictEqual(q('Bride à collerette DN80 PN16'), 2);
   assert.strictEqual(q('Joint plat DN80 PN16'), 2);
   assert.strictEqual(q('Té réduit Acier P235GH DN80 × DN50'), 1);
@@ -101,15 +101,31 @@ test('soudures bout à bout : raccords, brides, tube contre tube, départ sur l\
   assert.strictEqual(T.bilanSoudures(p).nombre, p.soudures.length);
 });
 
+test('types de tube : acier T10, inox soudé, inox à sertir (diamètres, cotes des raccords, sertissages sans soudure)', () => {
+  const ligneS = systeme => ({ systeme, dnDepart: 50, dirDepart: 'E', matiere: T.SYSTEMES[systeme].matiere, elements: [{ t: 'tube', dn: 50, auto: true, cote: 1000 }, { t: 'coude', dn: 50, vers: 'N' }, { t: 'tube', dn: 50, l: 500 }, { t: 'raccord', dn: 50, type: 'manchon' }] });
+  const s = T.placer(ligneS('inoxSertir'));
+  assert.strictEqual(s.pieces[0].de, 54, 'DN50 à sertir = Ø54');
+  assert.strictEqual(T.debit(s)[0].coupe, 1000 - 58, 'coude à sertir Ø54 : cote axe – butée 58');
+  assert.deepStrictEqual([s.soudures.length, s.sertissages.length], [0, 4], 'coude et manchon : deux sertissages chacun, aucune soudure');
+  assert.match(T.nomenclature(ligneS('inoxSertir')).find(l => l.unite === 'm').designation, /à sertir Ø54 × 1,5/);
+  assert.ok(T.lignesChiffrage(ligneS('inoxSertir')).some(l => l.famille === 'Coude à sertir' && l.taille === 'Ø54 DN50'));
+  const t10 = T.placer(ligneS('t10'));
+  assert.deepStrictEqual([t10.pieces[0].de, T.debit(t10)[0].coupe, t10.soudures.length], [60.3, 1000 - 76, 3], 'T10 : coude 3D à souder');
+  assert.match(T.nomenclature(ligneS('t10')).find(l => l.unite === 'm').designation, /T10 DN50 \(Ø60,3 × 2,9\)/);
+  assert.strictEqual(T.lignesChiffrage(ligneS('inoxSoude'))[0].famille, 'Tube inox soudé');
+  assert.strictEqual(T.cleSysteme({ matiere: 'Inox 316L' }), 'inoxSoude', 'ancien relevé inox : inox soudé');
+  assert.deepStrictEqual(T.manques({ userId: 'u1', date: '2026-10-25', ligne: 'L1', clientLibre: 'Prospect', cotes: [{ valeur: '100' }] }), [], 'visite commerciale : client sans chantier');
+});
+
 test('liste du matériel pour le chiffrage : familles CAO, tube en mètres par DN, brides des vannes, CSV', () => {
   const l = T.lignesChiffrage({ ...ligne(), ligne: 'EG-01' }), q = (f, dn) => l.filter(x => x.famille === f && x.dn === dn);
-  assert.deepStrictEqual(q('Tuyau', 80).map(x => [x.longueur, x.qte, x.systeme]), [[3.272, 1, 'EG-01']]);
-  assert.deepStrictEqual([q('Coude', 80)[0].qte, q('Bride à collerette', 80)[0].qte, q('Joint plat', 80)[0].qte], [1, 2, 2]);
-  assert.deepStrictEqual(q('Réduction', 80).map(x => x.taille), ['DN80-DN50']);
+  assert.deepStrictEqual(q('Tube acier', 80).map(x => [x.longueur, x.qte, x.systeme]), [[3.272, 1, 'EG-01']]);
+  assert.deepStrictEqual([q('Coude acier', 80)[0].qte, q('Bride à collerette', 80)[0].qte, q('Joint plat', 80)[0].qte], [1, 2, 2]);
+  assert.deepStrictEqual(q('Réduction acier', 80).map(x => x.taille), ['DN80-DN50']);
   assert.ok(q('Vanne à boisseau sphérique', 80).length, 'famille sans l\'abréviation (BS)');
   const csv = T.csvChiffrage(l).split('\r\n');
   assert.strictEqual(csv[0], 'Réseau;Famille;Type;Taille;Longueur (m);Nombre');
-  assert.ok(csv.includes('EG-01;Tuyau;Acier P235GH;DN80;3,272;1'));
+  assert.ok(csv.includes('EG-01;Tube acier;Acier P235GH;DN80;3,272;1'));
 });
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipefit-releves-'));

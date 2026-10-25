@@ -42,7 +42,15 @@ fiches techniques, notices et le PV de réception déjà repris, « Générer le
 
 ## Prise de cotes tuyauterie (photos avant / après, isométrique 3D)
 
-Depuis un chantier (« + Prise de cotes ») ou sur le téléphone du compagnon (Pointage › Rapports › 📐 Prise de cotes) :
+Depuis un chantier (« + Prise de cotes »), sur le téléphone du compagnon (Pointage › Rapports › 📐 Prise de cotes), ou **en visite
+commerciale** sans chantier (Devis › 📐 Visites, ou la fiche du client) : le relevé est rattaché au client ou à un prospect, le prix
+se calcule sur place et « → Chiffrage » crée le devis au nom du client.
+
+**Types de tube** : acier à souder (ISO 4200), acier noir T10 (NF A 49-145), inox soudé (EN 10217-7 / ISO 1127) et inox à sertir
+(EN 10312, Ø15 à Ø108, raccords à sertir : cotes axe – butée des coudes et tés, sertissages comptés à la place des soudures).
+Épaisseurs et cotes des raccords à sertir indicatives (variables selon le fabricant) ; une longueur ou une cote axe-face
+saisie sur l'élément les remplace.
+
 
 - **Photos avant travaux** et **après travaux**, légendées, avec un comparatif avant / après côte à côte ;
 - **cotes relevées** (repère, désignation, cote en mm, remarque) ;

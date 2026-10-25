@@ -23,7 +23,7 @@ test('rapprochement avec la bibliothèque', () => {
   assert.deepStrictEqual(ref('3 coudes de 50, 2 brides de 100, 12 mètres de tube inox 50, une réduction 100 50'), ['3 COU-316-050', '2 BRI-316-100', '12 ml TUB-316-050', '1 RED-316-100']);
   const coude = D.rapprocher(D.analyser('2 coudes')[0], articles);
   assert.strictEqual(coude.statut, 'choix'); // plusieurs coudes : à choisir
-  assert.strictEqual(coude.candidats.length, 3);
+  assert.ok(coude.candidats.length > 1, 'plusieurs coudes proposés');
   assert.strictEqual(D.rapprocher(D.analyser('2 raccords union laiton')[0], articles).statut, 'absent');
   // Mot en trop (« soudé ») : trouvé quand même, mais à vérifier
   const r = D.rapprocher(D.analyser('coude soudé inox 50')[0], articles);

@@ -80,6 +80,15 @@ function demoData() {
     { id: 'a11', ref: 'ECH-SEM', designation: 'Location échafaudage', famille: 'Location', sousFamille: 'Échafaudages', unite: 'semaine', prixVente: 400, coutRevient: 320, poidsUnitaire: 0, fournisseurId: 'e7' },
     { id: 'a12', ref: 'CTRL-RX', designation: 'Contrôle radiographique de soudure (sous-traité)', famille: 'Contrôles', sousFamille: 'Contrôles non destructifs', unite: 'u', prixVente: 80, coutRevient: 60, poidsUnitaire: 0, fournisseurId: 'e7' },
     { id: 'a13', ref: 'EPR-HYD', designation: 'Consommables épreuve hydraulique + PV', famille: 'Contrôles', sousFamille: 'Épreuves', unite: 'forfait', prixVente: 260, coutRevient: 120, poidsUnitaire: 0, fournisseurId: '' },
+    // Acier noir T10 (chauffage) et inox à sertir (eau potable, ECS) : prix de démonstration
+    ...[[20, 6.5, 2.5], [25, 8.8, 3.2], [32, 11, 4.5], [40, 13, 5.5], [50, 17.5, 7.5]].flatMap(([dn, t, c]) => [
+      { id: `at10-${dn}`, ref: `TUB-T10-${dn}`, designation: `Tube acier noir T10 DN${dn}`, famille: 'Tubes', sousFamille: 'Acier T10', unite: 'ml', prixVente: t, coutRevient: Math.round(t * 80) / 100, fournisseurId: 'e5' },
+      { id: `cac-${dn}`, ref: `COU-AC-${dn}`, designation: `Coude 90° 3D acier à souder DN${dn}`, famille: 'Raccords', sousFamille: 'Coudes acier', unite: 'u', prixVente: c, coutRevient: Math.round(c * 80) / 100, fournisseurId: 'e5' }]),
+    ...[[20, 22, 17, 12, 16, 8], [25, 28, 22, 15, 20, 10], [32, 35, 30, 24, 32, 15], [40, 42, 36, 32, 42, 20], [50, 54, 48, 45, 60, 28]].flatMap(([dn, d, t, c, te, m]) => [
+      { id: `tsx-${dn}`, ref: `TUB-SX-${d}`, designation: `Tube inox 316L à sertir Ø${d}`, famille: 'Tubes', sousFamille: 'Inox à sertir', unite: 'ml', prixVente: t, coutRevient: Math.round(t * 80) / 100, fournisseurId: 'e5' },
+      { id: `csx-${dn}`, ref: `COU-SX-${d}`, designation: `Coude 90° inox à sertir Ø${d}`, famille: 'Raccords', sousFamille: 'Inox à sertir', unite: 'u', prixVente: c, coutRevient: Math.round(c * 80) / 100, fournisseurId: 'e5' },
+      { id: `esx-${dn}`, ref: `TEE-SX-${d}`, designation: `Té égal inox à sertir Ø${d}`, famille: 'Raccords', sousFamille: 'Inox à sertir', unite: 'u', prixVente: te, coutRevient: Math.round(te * 80) / 100, fournisseurId: 'e5' },
+      { id: `msx-${dn}`, ref: `MAN-SX-${d}`, designation: `Manchon inox à sertir Ø${d}`, famille: 'Raccords', sousFamille: 'Inox à sertir', unite: 'u', prixVente: m, coutRevient: Math.round(m * 80) / 100, fournisseurId: 'e5' }]),
   ];
   const site = (id, libelle, adresse, cp, ville, facturation = false) => ({ id, libelle, adresse, cp, ville, facturation });
   const entreprises = [
@@ -327,6 +336,12 @@ function demoData() {
     { id: 'fa4', nom: 'Bride à collerette', alias: 'Bride', categorie: 'raccord', unite: 'u', soudures: 1, tempsPrefab: 0.1, tempsPose: 0.3, declinaisons: [{ dn: 50, articleId: 'a16' }, { dn: 100, articleId: 'a5' }] },
     { id: 'fa5', nom: 'Réduction concentrique', alias: 'Réduction', categorie: 'raccord', unite: 'u', soudures: 2, tempsPrefab: 0.1, tempsPose: 0, declinaisons: [{ dn: 100, articleId: 'a15', soudures: 2 }] },
     { id: 'fa6', nom: 'Vanne papillon', alias: 'Robinet papillon', categorie: 'robinetterie', unite: 'u', soudures: 0, tempsPrefab: 0, tempsPose: 0, declinaisons: [{ dn: 50, articleId: 'a7' }] },
+    { id: 'fa8', nom: 'Tube acier T10', alias: 'Tube acier noir T10', categorie: 'tube', unite: 'ml', soudures: 0, tempsPrefab: 0, tempsPose: 0, declinaisons: [20, 25, 32, 40, 50].map(dn => ({ dn, articleId: `at10-${dn}` })) },
+    { id: 'fa9', nom: 'Coude acier', alias: 'Coude acier à souder', categorie: 'raccord', unite: 'u', soudures: 2, tempsPrefab: 0.08, tempsPose: 0, declinaisons: [20, 25, 32, 40, 50].map(dn => ({ dn, articleId: `cac-${dn}` })) },
+    { id: 'fa10', nom: 'Tube inox à sertir', alias: 'Tube inox sertir', categorie: 'tube', unite: 'ml', soudures: 0, tempsPrefab: 0, tempsPose: 0, declinaisons: [20, 25, 32, 40, 50].map(dn => ({ dn, articleId: `tsx-${dn}` })) },
+    { id: 'fa11', nom: 'Coude à sertir', alias: 'Coude inox à sertir', categorie: 'raccord', unite: 'u', soudures: 0, tempsPrefab: 0, tempsPose: 0.15, declinaisons: [20, 25, 32, 40, 50].map(dn => ({ dn, articleId: `csx-${dn}` })) },
+    { id: 'fa12', nom: 'Té à sertir', alias: 'Té inox à sertir', categorie: 'raccord', unite: 'u', soudures: 0, tempsPrefab: 0, tempsPose: 0.22, declinaisons: [20, 25, 32, 40, 50].map(dn => ({ dn, articleId: `esx-${dn}` })) },
+    { id: 'fa13', nom: 'Manchon à sertir', alias: 'Manchon inox à sertir', categorie: 'raccord', unite: 'u', soudures: 0, tempsPrefab: 0, tempsPose: 0.15, declinaisons: [20, 25, 32, 40, 50].map(dn => ({ dn, articleId: `msx-${dn}` })) },
     { id: 'fa7', nom: 'Support de tuyauterie', alias: 'Supportage, Collier', categorie: 'autre', unite: 'ml', soudures: 0, tempsPrefab: 0.1, tempsPose: 0.2, declinaisons: [{ dn: 0, articleId: 'a8' }] },
   ];
   // Factures fournisseurs : rapprochement de commandes et achats au comptoir imputés aux chantiers
@@ -387,7 +402,17 @@ function demoData() {
     elements: [{ t: 'tube', dn: 50, auto: true, cote: 1100, repere: 'T1' }, { t: 'coude', dn: 50, angle: 90, vers: 'H' }, { t: 'tube', dn: 50, auto: true, cote: 850, repere: 'T2' },
       { t: 'coude', dn: 50, angle: 90, vers: 'E' }, { t: 'tube', dn: 50, l: 400, repere: 'T3', note: 'Raccord sur existant après la vanne' }, { t: 'brides', dn: 50, repere: 'vers purgeur' }],
     cotes: [{ repere: 'A', libelle: 'Longueur percée à remplacer', valeur: '2300', remarque: 'corrosion sous calorifuge' }], photosAvant: [{ photoId: 'img-rack1', legende: 'Fuite sous calorifuge', date: d(-1) }], photosApres: [],
-    observations: 'Calorifuge à refaire sur 3 m (hors intervention).' }];
+    observations: 'Calorifuge à refaire sur 3 m (hors intervention).' },
+  // Visite commerciale chez un client, sans chantier : bouclage ECS en inox à sertir, à chiffrer pour le devis
+  { id: 'rc4', numero: `RC-${Y}-0004`, affaireId: '', clientId: 'e2', visite: true, userId: 'u1', technicien: 'Claire Martin', date: d(-3), ligne: 'Bouclage ECS local NEP (remplacement du galva)', fluide: 'Eau chaude sanitaire 60 °C',
+    systeme: 'inoxSertir', matiere: 'Inox 316L', pn: 'PN16', typeBride: 'collerette', dnDepart: 50, dirDepart: 'E', noteDepart: 'Départ sur nourrice existante (vanne conservée)', statut: 'Relevé', longueurTube: 0,
+    elements: [{ t: 'vanne', dn: 50, type: 'boisseau', rac: 'sertir', repere: 'V1' }, { t: 'tube', dn: 50, auto: true, cote: 1600, repere: 'T1' }, { t: 'coude', dn: 50, angle: 90, vers: 'N' },
+      { t: 'tube', dn: 50, auto: true, cote: 2400, repere: 'T2' }, { t: 'te', dn: 50, vers: 'H', dnB: 32, branche: [{ t: 'tube', dn: 32, auto: true, cote: 700, repere: 'T5' }, { t: 'vanne', dn: 32, type: 'boisseau', rac: 'sertir', repere: 'V2' }, { t: 'fond', dn: 32 }] },
+      { t: 'tube', dn: 50, auto: true, cote: 1300, repere: 'T3' }, { t: 'reduc', dn: 50, dn2: 40 }, { t: 'tube', dn: 40, l: 900, repere: 'T4' }, { t: 'coude', dn: 40, angle: 90, vers: 'B' },
+      { t: 'tube', dn: 40, l: 500, repere: 'T6', note: 'Raccord sur ballon existant' }, { t: 'raccord', dn: 40, type: 'manchon' }],
+    cotes: [{ repere: 'A', libelle: 'Nourrice → mur du fond', valeur: '2450', remarque: '' }, { repere: 'B', libelle: 'Hauteur sous plafond', valeur: '2800', remarque: 'faux plafond démontable' }],
+    photosAvant: [{ photoId: 'img-rack1', legende: 'Réseau galva existant à remplacer', date: d(-3) }], photosApres: [],
+    observations: 'Client demande le chiffrage avec et sans calorifuge. Accès par la porte de service.' }];
   // Chaufferie des Tilleuls : épreuve du réseau, mise en service de la chaudière, équilibrage des radiateurs (repris dans le DOE)
   const signe = (jours, h) => ({ signatureTechId: 'img-sig', signatureClientId: 'img-sig', signataireNom: 'Gardien de la résidence', signataireQualite: 'Habitat Dauphiné', signeLe: `${d(jours)}T${h}:00.000Z`, statut: 'Signé' });
   epreuves.push({ id: 'ep2', numero: `EP-${Y}-0002`, affaireId: 'af4', userId: 'o2', technicien: 'Ahmed Haddad', date: d(-12), heureDebut: '08:00', heureFin: '10:00', reseau: 'Collecteurs départ / retour chauffage DN150',

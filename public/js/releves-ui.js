@@ -5,7 +5,11 @@
 
 const releveBrouillon = { cle: null, r: null, chemin: '', cam: null, vue: null };
 const relevesDe = affaireId => Store.all('releves').filter(r => r.affaireId === affaireId).sort((a, b) => `${b.date}${b.numero || ''}`.localeCompare(`${a.date}${a.numero || ''}`));
-const retourReleve = r => (Store.me.role === 'atelier' ? '#/pointage/rapports' : `#/chantier/${r.affaireId}`);
+// Retour : chantier, ou visite commerciale (client, sinon liste des visites)
+const retourReleve = r => (Store.me.role === 'atelier' ? '#/pointage/rapports' : r.affaireId ? `#/chantier/${r.affaireId}` : r.clientId ? `#/entreprise/${r.clientId}` : '#/visites');
+const libRetourReleve = r => (Store.me.role === 'atelier' ? 'Rapports' : r.affaireId ? 'Chantier' : r.clientId ? 'Client' : 'Visites');
+const clientReleve = r => (r.affaireId ? affaireOf(r.affaireId).clientId : r.clientId) || '';
+const nomClientReleve = r => (clientReleve(r) ? clientName(clientReleve(r)) : r.clientLibre || '');
 const srcPhoto = p => (String(p.photoId || '').startsWith('data:') ? p.photoId : fileUrl(p.photoId));
 const STATUT_BADGE = { Brouillon: 'b-warn', Relevé: 'b-info', Terminé: 'b-ok' };
 const badgeReleve = r => `<span class="badge ${STATUT_BADGE[r.statut] || 'b-warn'}">${esc(r.statut || 'Brouillon')}</span>`;
@@ -16,7 +20,9 @@ const dirLib = v => { const k = dirDe(v); return k ? Tuyauterie.DIRS_LIB[k] : 'o
 function nouveauReleve(query) {
   const me = Store.me.userId || '';
   const prevu = me && typeof planJour === 'function' && planJour(me, isoDate(new Date()))[0];
-  return { affaireId: query.get('chantier') || (prevu ? prevu.affaireId : ''), userId: me, date: isoDate(new Date()), ligne: '', fluide: '', matiere: Tuyauterie.MATIERES[0], pn: 'PN16',
+  // Visite commerciale : relevé rattaché au client (ou à un prospect), sans chantier, pour chiffrer le devis
+  const visite = query.get('visite') === '1' || !!query.get('client');
+  return { affaireId: visite ? '' : query.get('chantier') || (prevu ? prevu.affaireId : ''), clientId: query.get('client') || '', clientLibre: '', visite, systeme: 'acier', userId: me, date: isoDate(new Date()), ligne: '', fluide: '', matiere: Tuyauterie.MATIERES[0], pn: 'PN16',
     dnDepart: 50, dirDepart: 'E', elements: [], cotes: [{ repere: 'A', libelle: '', valeur: '', remarque: '' }], photosAvant: [], photosApres: [], observations: '', statut: 'Brouillon' };
 }
 
@@ -46,20 +52,26 @@ function releveForm(r) {
   const lignes = [...new Set(Store.all('releves').filter(x => x.affaireId === r.affaireId).map(x => x.ligne).filter(Boolean))];
   const f = (k, lib, type = 'text', extra = '') => `<div class="field"><label for="rl-${k}">${lib}</label><input id="rl-${k}" data-rl="${k}" type="${type}" value="${esc(r[k] ?? '')}" ${extra}></div>`;
   const deja = relevesDe(r.affaireId).filter(x => x.id !== r.id);
-  return `<div class="toolbar no-print"><a href="${retourReleve(r)}" class="btn secondary">← ${Store.me.role === 'atelier' ? 'Rapports' : 'Chantier'}</a><span class="spacer"></span>
+  const S = Tuyauterie.systeme(r);
+  return `<div class="toolbar no-print"><a href="${retourReleve(r)}" class="btn secondary">← ${libRetourReleve(r)}</a><span class="spacer"></span>
     ${r.id && Store.get('releves', r.id) ? `<a class="btn secondary" href="#/releve/${esc(r.id)}/fiche">Fiche imprimable</a>` : ''}</div>
-  <h1>Prise de cotes${r.numero ? ` ${esc(r.numero)}` : ''} ${badgeReleve(r)}</h1>
+  <h1>Prise de cotes${r.numero ? ` ${esc(r.numero)}` : ''} ${badgeReleve(r)}${r.affaireId ? '' : ' <span class="badge b-info">Visite commerciale</span>'}</h1>
   <div class="card releve-form">
     <fieldset class="hd-bloc"><legend>Ligne relevée</legend>
       <div class="grid2">
-        <div class="field"><label for="rl-aff">Chantier</label><select id="rl-aff" class="big-select">${options(chantiersActifs().concat(a.id && !chantiersActifs().includes(a) ? [a] : []), r.affaireId, affaireLabel)}</select></div>
+        <div class="field"><label for="rl-aff">Chantier ou visite</label><select id="rl-aff" class="big-select">${Store.me.role === 'atelier' ? '' : `<option value="" ${r.affaireId ? '' : 'selected'}>Visite commerciale (sans chantier, pour chiffrer)</option>`}${options(chantiersActifs().concat(a.id && !chantiersActifs().includes(a) ? [a] : []), r.affaireId, affaireLabel, false)}</select></div>
         <div class="field"><label for="rl-ligne">Repère de la ligne *</label><input id="rl-ligne" data-rl="ligne" list="rl-lignes" value="${esc(r.ligne)}" placeholder="Ex. EG-DN80-012, by-pass pompe P2, collecteur départ…">
           <datalist id="rl-lignes">${lignes.map(x => `<option>${esc(x)}</option>`).join('')}</datalist></div>
       </div>
+      ${r.affaireId ? '' : `<div class="grid2">
+        <div class="field"><label for="rl-client">Client</label><select id="rl-client" data-rl="clientId"><option value="">Prospect (saisir son nom)</option>${options(clientsList(), r.clientId, undefined, false)}</select></div>
+        ${r.clientId ? '<div></div>' : f('clientLibre', 'Nom du prospect', 'text', 'placeholder="Ex. Fromagerie du Val – M. Durand"')}
+      </div>`}
       <div class="grid3">
-        <div class="field"><label for="rl-userId">Technicien</label><select id="rl-userId" data-rl="userId">${options(Store.all('users').filter(u => !u.archive), r.userId)}</select></div>
+        <div class="field"><label for="rl-userId">${r.affaireId ? 'Technicien' : 'Relevé par'}</label><select id="rl-userId" data-rl="userId">${options(Store.all('users').filter(u => !u.archive), r.userId)}</select></div>
         ${f('date', 'Date', 'date')}
         ${f('fluide', 'Fluide véhiculé', 'text', 'placeholder="Eau glacée, vapeur, air comprimé…"')}
+        <div class="field"><label for="rl-systeme">Type de tube</label><select id="rl-systeme">${Object.entries(Tuyauterie.SYSTEMES).map(([k, s]) => `<option value="${k}" ${Tuyauterie.cleSysteme(r) === k ? 'selected' : ''}>${esc(s.lib)}</option>`).join('')}</select></div>
         <div class="field"><label for="rl-matiere">Matière</label><select id="rl-matiere" data-rl="matiere">${optionsStr(Tuyauterie.MATIERES, r.matiere)}</select></div>
         <div class="field"><label for="rl-pn">Pression nominale</label><select id="rl-pn" data-rl="pn">${optionsStr(Tuyauterie.PN, r.pn)}</select></div>
         <div class="field"><label for="rl-typeBride">Brides de la ligne</label><select id="rl-typeBride" data-rl="typeBride">${Object.entries(Tuyauterie.BRIDES_TYPES).map(([k, l]) => `<option value="${k}" ${(r.typeBride || 'collerette') === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
@@ -84,7 +96,7 @@ function releveForm(r) {
     <fieldset class="hd-bloc"><legend>Isométrique 3D et accessoires</legend>
       <div class="rl-3d-bar">${[['iso', 'Iso'], ['dessus', 'Dessus'], ['face', 'Face'], ['cote', 'Côté']].map(([k, l]) => `<button class="small secondary" data-vue="${k}">${l}</button>`).join('')}
         <span class="rl-3d-opts">${[['cotes', 'Cotes à l\'axe'], ['coupes', 'Longueurs de coupe'], ['notes', 'Annotations']].map(([k, l]) => `<label class="check small"><input type="checkbox" data-opt3d="${k}" ${b.cam[k] !== false && (k !== 'coupes' || b.cam.coupes) ? 'checked' : ''}> ${l}</label>`).join('')}</span>
-        <span class="small muted"><span class="rl-pt-bleu" aria-hidden="true"></span> soudure</span></div>
+        <span class="small muted">${S.sertir ? '<span class="rl-pt-bleu rl-pt-vert" aria-hidden="true"></span> sertissage' : '<span class="rl-pt-bleu" aria-hidden="true"></span> soudure'}</span></div>
       <canvas class="rl-3d" id="rl-3d" aria-label="Vue 3D de la ligne"></canvas>
       <p class="small muted">Tournez avec le doigt ou la souris, pincez ou molette pour zoomer, deux doigts ou clic droit pour déplacer ; touchez une pièce pour la retrouver dans la liste.</p>
       <div id="rl-erreurs">${erreursReleveHtml(pl)}</div>
@@ -126,7 +138,8 @@ const numeroEl = chemin => String(chemin).split('.b.').map(x => +x + 1).join(' �
 
 function editeurListeHtml(r, pl) {
   const b = releveBrouillon, chemin = b.chemin, liste = Tuyauterie.listeDe(r, chemin) || [];
-  const dnSel = (k, v, i, lib = 'DN') => `<label class="rl-p">${lib} <select data-el="${i}" data-k="${k}">${Tuyauterie.DN.map(d => `<option value="${d}" ${+v === d ? 'selected' : ''}>${d}</option>`).join('')}</select></label>`;
+  const S = Tuyauterie.systeme(r);
+  const dnSel = (k, v, i, lib = S.sertir ? 'Ø' : 'DN') => `<label class="rl-p">${lib} <select data-el="${i}" data-k="${k}">${S.dns.map(d => `<option value="${d}" ${+v === d ? 'selected' : ''}>${S.sertir ? `${String(S.de[d]).replace('.', ',')}` : d}</option>`).join('')}</select></label>`;
   const dirSel = (k, v, i, lib) => `<label class="rl-p">${lib} <select data-el="${i}" data-k="${k}">${Object.entries(Tuyauterie.DIRS_LIB).map(([d, l]) => `<option value="${d}" ${v === d ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
   const sel = (k, v, i, lib, opts) => `<label class="rl-p">${lib} <select data-el="${i}" data-k="${k}">${Object.entries(opts).map(([o, l]) => `<option value="${esc(o)}" ${String(v ?? '') === o ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
   const mm = (k, v, i, lib, ph = '') => `<label class="rl-p">${lib} <input data-el="${i}" data-k="${k}" value="${esc(String(v ?? '').replace('.', ','))}" inputmode="decimal" placeholder="${esc(ph)}" class="rl-mm"> mm</label>`;
@@ -186,7 +199,7 @@ function calculsReleveHtml(r, pl) {
   const parDN = {};
   deb.forEach(d => { parDN[d.dn] = (parDN[d.dn] || 0) + d.coupe; });
   return `<div class="table-wrap"><table class="compact"><tr><th>Élément</th><th>Repère</th><th>DN</th><th class="num">Ø ext.</th><th class="num">Cote axe à axe</th><th class="num">Longueur de coupe</th></tr>
-    ${deb.map(d => `<tr><td>${esc(numeroEl(d.id))}</td><td>${esc(d.repere)}</td><td>DN${d.dn}</td><td class="num">${fmt(d.de, 1)}</td><td class="num">${d.cote !== null ? `${fmt(d.cote)} mm` : '—'}</td><td class="num"><strong>${fmt(d.coupe)} mm</strong></td></tr>`).join('')}
+    ${deb.map(d => `<tr><td>${esc(numeroEl(d.id))}</td><td>${esc(d.repere)}</td><td>${esc(Tuyauterie.taille(r, d.dn))}</td><td class="num">${fmt(d.de, 1)}</td><td class="num">${d.cote !== null ? `${fmt(d.cote)} mm` : '—'}</td><td class="num"><strong>${fmt(d.coupe)} mm</strong></td></tr>`).join('')}
     <tr class="total"><td colspan="5">Total tube ${Object.entries(parDN).map(([dn, l]) => `DN${dn} : ${fmt(l / 1000, 2)} m`).join(' · ')}</td><td class="num">${fmt(deb.reduce((s, d) => s + d.coupe, 0) / 1000, 2)} m</td></tr></table></div>
   ${souduresHtml(pl)}
   <div class="table-wrap"><table class="compact"><tr><th>Désignation</th><th>Norme</th><th class="num">Qté</th></tr>
@@ -196,6 +209,7 @@ function calculsReleveHtml(r, pl) {
 }
 // Soudures bout à bout (points bleus de l'isométrique)
 function souduresHtml(pl) {
+  if (pl.sertir) { const s = Tuyauterie.bilanSoudures(pl, 'sertissages'); return s.nombre ? `<p class="small"><span class="rl-pt-bleu rl-pt-vert" aria-hidden="true"></span> <strong>${s.nombre} sertissage(s)</strong> : ${Object.entries(s.parDN).map(([dn, k]) => `Ø${String(Tuyauterie.SYSTEMES.inoxSertir.de[dn]).replace('.', ',')} × ${k}`).join(' · ')} · aucune soudure</p>` : ''; }
   const s = Tuyauterie.bilanSoudures(pl);
   return s.nombre ? `<p class="small"><span class="rl-pt-bleu" aria-hidden="true"></span> <strong>${s.nombre} soudure(s) bout à bout</strong> : ${Object.entries(s.parDN).map(([dn, k]) => `DN${dn} × ${k}`).join(' · ')} · ${fmt(s.pouces, 1)} pouces-diamètre</p>` : '';
 }
@@ -270,7 +284,17 @@ Views.releve.bind = (root, params) => {
     r[el.dataset.rl] = el.value;
     if (el.dataset.rl === 'typeBride') App.render(); else if (['matiere', 'pn'].includes(el.dataset.rl)) majCalculs();
   }));
-  $('#rl-aff').onchange = () => { r.affaireId = $('#rl-aff').value; App.render(); };
+  $('#rl-aff').onchange = () => { r.affaireId = $('#rl-aff').value; r.visite = !r.affaireId; App.render(); };
+  if ($('#rl-client')) $('#rl-client').onchange = () => { r.clientId = $('#rl-client').value; App.render(); };
+  // Type de tube : matière proposée, diamètres ramenés à ceux du système (tube à sertir jusqu'au Ø108)
+  $('#rl-systeme').onchange = () => {
+    const S = Tuyauterie.SYSTEMES[$('#rl-systeme').value];
+    r.systeme = $('#rl-systeme').value; r.matiere = S.matiere;
+    const borne = d => (S.dns.includes(+d) ? +d : S.dns.reduce((x, y) => (Math.abs(y - d) < Math.abs(x - d) ? y : x)));
+    const fixer = l => (l || []).forEach(e => { ['dn', 'dn2', 'dnB'].forEach(k => { if (e[k]) e[k] = borne(+e[k]); }); if (S.sertir && ['vanne', 'v3v'].includes(e.t) && e.rac === 'souder') e.rac = 'sertir'; if (!S.sertir && e.rac === 'sertir') e.rac = 'bride'; fixer(e.branche); });
+    r.dnDepart = borne(+r.dnDepart || 50); fixer(r.elements);
+    App.render();
+  };
   // Cotes relevées
   root.querySelectorAll('[data-cote]').forEach(el => el.addEventListener('input', () => { const c = r.cotes[+el.dataset.cote]; c[el.dataset.k] = el.dataset.k === 'valeur' ? el.value.replace(',', '.') : el.value; }));
   root.querySelectorAll('[data-rmcote]').forEach(x => x.onclick = () => { r.cotes.splice(+x.dataset.rmcote, 1); App.render(); });
@@ -319,10 +343,11 @@ Views.releve.bind = (root, params) => {
     if (t === 'tube') Object.assign(el, { auto: true, cote: '' });
     if (t === 'coude') Object.assign(el, { angle: 90, vers: perpendiculaire(d, vertical ? ['E', 'N'] : ['N', 'E', 'H']) });
     if (t === 'devoie') Object.assign(el, { angle: 45, vers: perpendiculaire(d, vertical ? ['E', 'N'] : ['H', 'N', 'E']), dec: '' });
-    if (t === 'v3v') Object.assign(el, { vers: perpendiculaire(d, vertical ? ['E', 'N'] : ['B', 'N', 'E']), rac: 'bride', typeBride: r.typeBride === 'tournante' ? 'tournante' : 'collerette', branche: [] });
+    const racDefaut = Tuyauterie.systeme(r).sertir ? 'sertir' : 'bride';
+    if (t === 'v3v') Object.assign(el, { vers: perpendiculaire(d, vertical ? ['E', 'N'] : ['B', 'N', 'E']), rac: racDefaut, typeBride: r.typeBride === 'tournante' ? 'tournante' : 'collerette', branche: [] });
     if (t === 'te') Object.assign(el, { vers: perpendiculaire(d, vertical ? ['E', 'N'] : ['H', 'N', 'E']), dnB: fin.dn, branche: [] });
     if (t === 'reduc') el.dn2 = Tuyauterie.DN[Math.max(0, Tuyauterie.DN.indexOf(fin.dn) - 1)];
-    if (t === 'vanne') Object.assign(el, { type: 'boisseau', rac: 'bride', typeBride: r.typeBride === 'tournante' ? 'tournante' : 'collerette' });
+    if (t === 'vanne') Object.assign(el, { type: 'boisseau', rac: racDefaut, typeBride: r.typeBride === 'tournante' ? 'tournante' : 'collerette' });
     if (t === 'brides') el.typeBride = r.typeBride || 'collerette';
     if (t === 'raccord') el.type = 'union';
     courante().push(el);
@@ -383,14 +408,14 @@ function releveDocument(r) {
   const l = (k, v) => `<tr><th>${esc(k)}</th><td>${v}</td></tr>`;
   const cotes = (r.cotes || []).filter(c => c.libelle || c.valeur !== '');
   return `${Doc.entete('pv', 'RELEVÉ DE COTES TUYAUTERIE', `N° ${esc(r.numero || '—')} du ${dateFr(r.date)}`)}
-    <div class="doc-parties"><div>Client : <strong>${esc(clientName(a.clientId))}</strong>${site ? `<br>${esc(site.libelle)}<br>${esc(fullAddress(site))}` : ''}</div>
-      <div>Chantier : <strong>${esc(a.code || '')} – ${esc(a.nom || '')}</strong></div></div>
-    <table class="doc-lines compact ppsps-t">${[l('Ligne', `<strong>${esc(r.ligne)}</strong>`), r.fluide ? l('Fluide', esc(r.fluide)) : '', l('Matière, pression nominale', esc(`${r.matiere || ''} · ${r.pn || ''}`)),
+    <div class="doc-parties"><div>Client : <strong>${esc(nomClientReleve(r))}</strong>${site ? `<br>${esc(site.libelle)}<br>${esc(fullAddress(site))}` : ''}</div>
+      <div>${r.affaireId ? `Chantier : <strong>${esc(a.code || '')} – ${esc(a.nom || '')}</strong>` : '<strong>Visite commerciale</strong> (relevé pour chiffrage)'}</div></div>
+    <table class="doc-lines compact ppsps-t">${[l('Ligne', `<strong>${esc(r.ligne)}</strong>`), r.fluide ? l('Fluide', esc(r.fluide)) : '', l('Type de tube', esc(Tuyauterie.systeme(r).lib)), l('Matière, pression nominale', esc(`${r.matiere || ''} · ${r.pn || ''}`)),
       l('Relevé par', esc(r.technicien || userName(r.userId))), l('État', esc(r.statut || ''))].join('')}</table>
     ${pl.pieces.length ? `<h3 class="doc-h">Isométrique</h3><div class="rl-iso"><img src="${Vue3D.image(pl)}" alt="Isométrique de la ligne"></div><p class="small">Repère : Nord vers la droite en haut, Est vers la droite en bas. Cotes à l'axe en mm, d'un nœud au suivant (départ, centre des coudes 3D et des tés, extrémité). Point bleu : soudure bout à bout. Triangles hachurés : dévoiements (avance et décalages cotés).</p>` : ''}
     ${annotationsHtml(r, pl)}${souduresHtml(pl)}
     ${deb.length ? `<h3 class="doc-h">Fiche de débit</h3><table class="doc-lines compact"><tr><th>Élément</th><th>Repère</th><th>DN</th><th class="num">Ø ext.</th><th class="num">Cote axe à axe</th><th class="num">Longueur de coupe</th></tr>
-      ${deb.map(d => `<tr><td>${esc(numeroEl(d.id))}</td><td>${esc(d.repere)}</td><td>DN${d.dn}</td><td class="num">${fmt(d.de, 1)}</td><td class="num">${d.cote !== null ? fmt(d.cote) : '—'}</td><td class="num"><strong>${fmt(d.coupe)}</strong></td></tr>`).join('')}</table>` : ''}
+      ${deb.map(d => `<tr><td>${esc(numeroEl(d.id))}</td><td>${esc(d.repere)}</td><td>${esc(Tuyauterie.taille(r, d.dn))}</td><td class="num">${fmt(d.de, 1)}</td><td class="num">${d.cote !== null ? fmt(d.cote) : '—'}</td><td class="num"><strong>${fmt(d.coupe)}</strong></td></tr>`).join('')}</table>` : ''}
     ${nom.length ? `<h3 class="doc-h">Nomenclature</h3><table class="doc-lines compact"><tr><th>Désignation</th><th>Norme</th><th class="num">Quantité</th></tr>
       ${nom.map(x => `<tr><td>${esc(x.designation)}</td><td>${esc(x.norme)}</td><td class="num">${fmt(x.quantite, x.unite === 'm' ? 2 : 0)} ${esc(x.unite)}</td></tr>`).join('')}</table>` : ''}
     ${cotes.length ? `<h3 class="doc-h">Cotes relevées</h3><table class="doc-lines compact"><tr><th>Repère</th><th>Désignation</th><th class="num">Cote (mm)</th><th>Remarque</th></tr>
@@ -437,7 +462,9 @@ async function envoyerAuChiffrage(r) {
   });
   if (!choix) return;
   let ch = choix.id && Store.get('chiffrages', choix.id);
-  if (!ch) { ch = nouveauChiffrage(''); ch.nom = `${a.code ? `${a.code} – ` : ''}${r.ligne || 'Prise de cotes'}`; }
+  if (!ch) { ch = nouveauChiffrage(''); ch.nom = `${a.code ? `${a.code} – ` : nomClientReleve(r) ? `${nomClientReleve(r)} – ` : ''}${r.ligne || 'Prise de cotes'}`; }
+  // Client du devis qui sera créé : celui du chantier ou de la visite
+  if (!ch.clientId && clientReleve(r)) ch.clientId = clientReleve(r);
   const deja = (ch.lignes || []).some(l => l.releveId === cle);
   ch.lignes = [...(ch.lignes || []).filter(l => l.releveId !== cle), ...lignes.map(l => ({ ...l, releveId: cle }))];
   ch.fichier = ch.fichier || `Prise de cotes ${r.numero || r.ligne || ''}`.trim();
@@ -450,4 +477,21 @@ async function envoyerAuChiffrage(r) {
 function annotationsHtml(r, pl) {
   const l = [...(pl.depart && pl.depart.note ? [['Départ', pl.depart.note]] : []), ...pl.pieces.filter(pc => String(pc.el.note || '').trim()).map(pc => [`${numeroEl(pc.id)} · ${(LIB_EL[pc.t] || pc.t).replace(/^\S+ /, '')}${pc.el.repere ? ` ${pc.el.repere}` : ''}`, pc.el.note.trim()])];
   return l.length ? `<h3 class="doc-h">Annotations</h3><table class="doc-lines compact"><tr><th>Élément</th><th>Annotation</th></tr>${l.map(([e, n]) => `<tr><td>${esc(e)}</td><td>${esc(n)}</td></tr>`).join('')}</table>` : '';
+}
+
+// Visites commerciales : prises de cotes sans chantier (Devis › Visites), pour chiffrer le devis
+function relevesVisiteHtml(liste, nouveau) {
+  return `<div class="toolbar"><a class="btn${liste.length ? ' secondary' : ''}" href="${nouveau}">+ Prise de cotes de visite</a></div>
+  ${liste.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Client ou prospect</th><th>Ligne</th><th>Type de tube</th><th class="num">Tube</th><th>Chiffrage / devis</th><th>Relevé par</th></tr>
+    ${liste.map(r => { const ch = Store.all('chiffrages').find(c => (c.lignes || []).some(l => l.releveId === r.id)), d = ch && Store.get('devis', ch.devisId);
+      return `<tr class="clickable" data-go="#/releve/${esc(r.id)}"><td>${esc(r.numero || '')}</td><td>${dateFr(r.date)}</td><td>${esc(nomClientReleve(r) || '—')}</td><td>${esc(r.ligne)}</td><td class="small">${esc(Tuyauterie.systeme(r).lib)}</td>
+      <td class="num">${r.longueurTube ? `${fmt(r.longueurTube / 1000, 2)} m` : ''}</td><td>${d ? `<a href="#/devis/${esc(d.id)}">Devis ${esc(d.numero || '…')}</a>` : ch ? `<a href="#/chiffrage/${esc(ch.id)}">Chiffrage</a>` : '<span class="muted small">à chiffrer</span>'}</td><td>${esc(userName(r.userId))}</td></tr>`; }).join('')}</table></div>`
+  : '<p class="muted">Aucune prise de cotes de visite. Lors d\'une visite chez un client ou un prospect, dessinez la ligne sur la tablette : le prix se calcule tout de suite, et « → Chiffrage » crée le devis.</p>'}`;
+}
+const relevesVisite = () => Store.all('releves').filter(r => !r.affaireId).sort((a, b) => `${b.date}${b.numero || ''}`.localeCompare(`${a.date}${a.numero || ''}`));
+Views.visites = () => `<h1>Devis</h1>${devisTabs('visites')}${relevesVisiteHtml(relevesVisite(), '#/releve/new?visite=1')}`;
+// Fiche du client : ses prises de cotes de visite
+function relevesClientHtml(e) {
+  const l = relevesVisite().filter(r => r.clientId === e.id);
+  return `<h2>Prises de cotes de visite <span class="muted small">${l.length}</span></h2>${relevesVisiteHtml(l, `#/releve/new?client=${esc(e.id)}`)}`;
 }

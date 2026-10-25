@@ -184,7 +184,7 @@ const Vue3D = (() => {
     return {
       reperes: placement.pieces.filter(pc => pc.t === 'tube' || pc.el.repere).map(pc => ({ pos: milieu(pc), repere: pc.el.repere || '', coupe: pc.t === 'tube' ? Math.round(pc.coupe || 0) : null, r: pc.de / 2, id: pc.id })),
       cotes: placement.cotes || [], notes, triangles: placement.triangles || [],
-      soudures: (placement.soudures || []).map(s => s.p), joints: placement.pieces.flatMap(pc => pc.joints || []),
+      soudures: (placement.soudures || []).map(s => s.p), sertissages: (placement.sertissages || []).map(s => s.p), joints: placement.pieces.flatMap(pc => pc.joints || []),
     };
   }
   // Étiquette encadrée centrée sur (x, y), tournée de a
@@ -262,6 +262,8 @@ const Vue3D = (() => {
       ctx.stroke(); ctx.restore();
     });
     // Points bleus : soudures
+    // Points verts : sertissages (tube à sertir)
+    (labels.sertissages || []).forEach(j => { const P = proj(j); ctx.beginPath(); ctx.arc(P[0], P[1], 3.5 * s, 0, Math.PI * 2); ctx.fillStyle = '#1f9d55'; ctx.fill(); ctx.lineWidth = 1.5 * s; ctx.strokeStyle = '#fff'; ctx.stroke(); });
     labels.soudures.forEach(j => { const P = proj(j); ctx.beginPath(); ctx.arc(P[0], P[1], 4 * s, 0, Math.PI * 2); ctx.fillStyle = BLEU; ctx.fill(); ctx.lineWidth = 1.5 * s; ctx.strokeStyle = '#fff'; ctx.stroke(); });
     if (etat.cotes) labels.cotes.forEach(c => cote(ctx, proj(c.a), proj(c.b), c.valeur, s));
     labels.reperes.forEach(l => {

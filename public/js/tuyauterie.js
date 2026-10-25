@@ -37,9 +37,31 @@ const Tuyauterie = (() => {
     filtre: { lib: 'Filtre à tamis en Y', serie: 'EN 558 série 1', table: SERIE_1, commande: '' },
   };
   const ANGLES_DEVOIEMENT = [45, 30, 60, 90];
-  const RACCORDEMENTS = { bride: 'à brides', souder: 'à souder', taraude: 'taraudé' };
+  const RACCORDEMENTS = { bride: 'à brides', souder: 'à souder', taraude: 'taraudé', sertir: 'à sertir' };
+  // Types de tube : diamètres, épaisseurs, raccords (à souder ou à sertir) et familles du chiffrage. Valeurs indicatives
+  // (épaisseurs courantes, cotes d'emboîtement des raccords à sertir variables selon le fabricant : Viega, Geberit…).
+  const tableDN = f => Object.fromEntries(DN.map(d => [d, f(d)]));
+  const SERTIR_DN = [15, 20, 25, 32, 40, 50, 65, 80, 100];
+  const SYSTEMES = {
+    acier: { lib: 'Acier à souder (ISO 4200)', dns: DN, de: DE, ep: { 15: 2.0, 20: 2.3, 25: 2.6, 32: 2.6, 40: 2.6, 50: 2.9, 65: 2.9, 80: 3.2, 100: 3.6, 125: 4.0, 150: 4.5, 200: 6.3, 250: 6.3, 300: 7.1 },
+      matiere: 'Acier P235GH', normeTube: 'ISO 4200 / EN 10220', normeRaccords: 'ISO 3419 / EN 10253-1', familleTube: 'Tube acier', suffixe: 'acier' },
+    t10: { lib: 'Acier noir T10 (NF A 49-145)', dns: DN, de: DE, ep: { 15: 2.3, 20: 2.3, 25: 2.9, 32: 2.9, 40: 2.9, 50: 2.9, 65: 2.9, 80: 3.2, 100: 3.6, 125: 4.0, 150: 4.5, 200: 5.9, 250: 6.3, 300: 7.1 },
+      matiere: 'Acier noir T10', normeTube: 'NF A 49-145 (T10)', normeRaccords: 'ISO 3419 / EN 10253-1', familleTube: 'Tube acier T10', suffixe: 'acier', abrege: 'T10' },
+    inoxSoude: { lib: 'Inox soudé (EN 10217-7)', dns: DN, de: DE, ep: tableDN(d => (d <= 100 ? 2.0 : d <= 200 ? 2.6 : 3.0)),
+      matiere: 'Inox 304L', normeTube: 'EN 10217-7 / ISO 1127', normeRaccords: 'ISO 5251 / EN 10253-4', familleTube: 'Tube inox soudé', suffixe: 'inox' },
+    inoxSertir: { lib: 'Inox à sertir (EN 10312)', dns: SERTIR_DN, sertir: true, de: { 15: 18, 20: 22, 25: 28, 32: 35, 40: 42, 50: 54, 65: 76.1, 80: 88.9, 100: 108 },
+      ep: { 15: 1.0, 20: 1.2, 25: 1.2, 32: 1.5, 40: 1.5, 50: 1.5, 65: 2.0, 80: 2.0, 100: 2.0 }, matiere: 'Inox 316L', normeTube: 'EN 10312', normeRaccords: 'DVGW W 534 (raccords à sertir)',
+      familleTube: 'Tube inox à sertir', suffixe: 'à sertir',
+      // Cote axe – butée du tube (z) des raccords à sertir : coude 90°, té ; encombrement des réductions, manchons, bouchons, vannes
+      rayon: { 15: 20, 20: 23, 25: 28, 32: 36, 40: 45, 50: 58, 65: 85, 80: 100, 100: 120 }, te: { 15: 16, 20: 18, 25: 21, 32: 25, 40: 30, 50: 36, 65: 52, 80: 60, 100: 72 },
+      reduc: { 15: 20, 20: 22, 25: 26, 32: 30, 40: 34, 50: 40, 65: 55, 80: 60, 100: 70 }, manchon: { 15: 8, 20: 8, 25: 8, 32: 10, 40: 10, 50: 12, 65: 16, 80: 16, 100: 18 },
+      fond: { 15: 12, 20: 14, 25: 16, 32: 18, 40: 20, 50: 24, 65: 30, 80: 34, 100: 38 }, vanne: { 15: 60, 20: 70, 25: 80, 32: 95, 40: 110, 50: 130, 65: 180, 80: 200, 100: 230 } },
+  };
+  // Type de tube d'un relevé (ancien relevé sans type : d'après la matière)
+  const systeme = rel => SYSTEMES[rel && rel.systeme] || (/^inox/i.test((rel && rel.matiere) || '') ? SYSTEMES.inoxSoude : SYSTEMES.acier);
+  const cleSysteme = rel => Object.keys(SYSTEMES).find(k => SYSTEMES[k] === systeme(rel));
   const RACCORDS = { union: 'Raccord union (3 pièces)', manchon: 'Manchon' };
-  const MATIERES = ['Acier P235GH', 'Acier galvanisé', 'Inox 304L', 'Inox 316L', 'Acier S235 (noir)', 'Autre'];
+  const MATIERES = ['Acier P235GH', 'Acier noir T10', 'Acier galvanisé', 'Inox 304L', 'Inox 316L', 'Acier S235 (noir)', 'Autre'];
   const PN = ['PN10', 'PN16', 'PN25', 'PN40'];
   const TYPES = { tube: 'Tube', coude: 'Coude', devoie: 'Dévoiement', te: 'Té', v3v: 'Vanne 3 voies', reduc: 'Réduction', vanne: 'Robinetterie', brides: 'Paire de brides', raccord: 'Raccord', fond: 'Fond bombé' };
   // Directions : X = Est, Y = Nord, Z = Haut (repère de l'isométrique, ISO 6412)
@@ -74,7 +96,7 @@ const Tuyauterie = (() => {
   const axeFaceV3V = el => r1((n(el.l) || SERIE_1[dnOk(el.dn)]) / 2 + (el.rac === 'bride' || !el.rac ? BRIDE[dnOk(el.dn)][1] + JOINT : 0));
   // Dévoiement : deux coudes de l'angle choisi ; cote axe-face de chacun
   const angleDev = el => (ANGLES_DEVOIEMENT.includes(+el.angle) ? +el.angle : 45);
-  const axeFaceDev = el => axeFaceCoude({ dn: el.dn, angle: angleDev(el) });
+  const axeFaceDev = el => axeFaceCoude({ dn: el.dn, angle: angleDev(el), rayon: el.rayon });
   // Cotes axe-face d'un nœud (coude, té, vanne 3 voies, dévoiement) à l'entrée et à la sortie
   const axeFaceNoeud = el => (el.t === 'coude' ? axeFaceCoude(el) : el.t === 'te' ? axeFaceTe(el) : el.t === 'v3v' ? axeFaceV3V(el) : axeFaceDev(el));
   const aBranche = el => el && (el.t === 'te' || el.t === 'v3v');
@@ -134,7 +156,7 @@ const Tuyauterie = (() => {
       liste.forEach((el, i) => {
         const id = `${chemin}${i}`, dnEl = dnOk(el.dn || dn);
         if (ferme) { erreurs.push({ chemin: id, msg: 'Élément placé après un fond bombé' }); return; }
-        const base = { id, el, t: el.t, dn: dnEl, de: DE[dnEl], p0: p, dir: d };
+        const base = { id, el, t: el.t, dn: dnEl, de: sys.de[dnEl] || DE[dnEl], p0: p, dir: d };
         if (el.t === 'coude') {
           const v = DIRS[el.vers] || DIRS.N, perp = add(v, d, -dot(v, d));
           if (len(perp) < 1e-6) { erreurs.push({ chemin: id, msg: 'Coude : la direction de sortie doit être différente de la direction d\'arrivée' }); return; }
@@ -151,7 +173,7 @@ const Tuyauterie = (() => {
           const comp = (k, v) => { const w = DIRS[k]; if (!w || !(n(v) > 0)) return null; const q = add(w, d, -dot(w, d)); return len(q) > 1e-6 && Math.abs(dot(w, d)) < 1e-6 ? w.map(x => x * n(v)) : null; };
           const o1 = comp(el.vers, el.dec), o2 = comp(el.vers2, el.dec2) || [0, 0, 0], o = add(o1 || [0, 0, 0], o2), lo = len(o);
           if (!o1 || lo < 1e-6) { erreurs.push({ chemin: id, msg: 'Dévoiement : direction (perpendiculaire à la ligne) et décalage à saisir' }); return; }
-          const th = angleDev(el), a = (th * Math.PI) / 180, run = th === 90 ? 0 : lo / Math.tan(a), c = axeFaceDev({ ...el, dn: dnEl }), R = RAYON_3D[dnEl];
+          const th = angleDev(el), a = (th * Math.PI) / 180, run = th === 90 ? 0 : lo / Math.tan(a), c = axeFaceDev({ ...el, dn: dnEl }), R = rayon({ ...el, dn: dnEl });
           const A = add(p, d, c), B = add(add(A, d, run), o), obl = len(add(B, A, -1)), u = unit(o), dObl = unit(add(B, A, -1));
           const tube = r1(obl - 2 * c);
           if (tube <= 0) erreurs.push({ chemin: id, msg: `Dévoiement : décalage trop court pour des coudes à ${th}° (minimum ${Math.ceil(2 * c * Math.sin(a))} mm)` });
@@ -192,7 +214,7 @@ const Tuyauterie = (() => {
         if (el.t === 'te') {
           const c = axeFaceTe({ ...el, dn: dnEl }), centre = add(p, d, c), p1 = add(p, d, 2 * c);
           const v = DIRS[el.vers] || DIRS.H, perp = add(v, d, -dot(v, d));
-          pieces.push({ ...base, p1, centre, axeFace: c, dnB: dnOk(el.dnB || dnEl) });
+          pieces.push({ ...base, p1, centre, axeFace: c, dnB: dnOk(el.dnB || dnEl), deB: sys.de[dnOk(el.dnB || dnEl)] || DE[dnOk(el.dnB || dnEl)] });
           coter(noeud, centre, chemin); noeud = centre;
           if (len(perp) < 1e-6) erreurs.push({ chemin: id, msg: 'Té : la dérivation doit partir perpendiculairement à la ligne' });
           else {
@@ -210,9 +232,9 @@ const Tuyauterie = (() => {
         if (el.t === 'tube') piece.coupe = L;
         if (el.t === 'reduc') {
           dnSortie = dnOk(el.dn2 || dnEl);
-          piece.dn2 = dnSortie; piece.de2 = DE[dnSortie];
+          piece.dn2 = dnSortie; piece.de2 = sys.de[dnSortie] || DE[dnSortie];
           // Excentrique : génératrice plate en haut (aspiration de pompe) ou en bas ; l'axe aval se décale
-          if (el.exc && Math.abs(d[2]) < 0.5) { const k = (DE[dnEl] - DE[dnSortie]) / 2; p1 = add(p1, [0, 0, el.exc === 'haut' ? -k : k]); piece.p1 = p1; }
+          if (el.exc && Math.abs(d[2]) < 0.5) { const k = (piece.de - piece.de2) / 2; p1 = add(p1, [0, 0, el.exc === 'haut' ? -k : k]); piece.p1 = p1; }
         }
         // Assemblages à brides : un point par joint (repéré en bleu sur l'isométrique) et le type de chaque bride
         const typeB = t => (BRIDES_TYPES[t] ? t : BRIDES_TYPES[rel.typeBride] ? rel.typeBride : 'collerette');
@@ -239,8 +261,30 @@ const Tuyauterie = (() => {
       if (liste.length) coter(noeud, p, chemin);
       return { p, d, dn };
     };
-    const fin = marcher(rel.elements || [], [0, 0, 0], DIRS[rel.dirDepart] || DIRS.E, dnOk(rel.dnDepart || 50), '', 0);
-    return { pieces, erreurs, fin, cotes, triangles, soudures: soudures(pieces, rel), depart: { p: [0, 0, 0], note: String(rel.noteDepart || '').trim() } };
+    // Copie des éléments avec le DN de chacun et les cotes des raccords du type de tube (sauf longueur saisie)
+    const sys = systeme(rel);
+    const prep = (liste, dn0) => {
+      let dnc = dnOk(dn0);
+      return (liste || []).map(e => {
+        const x = { ...e, dn: dnOk(e.dn || dnc) }, dn = x.dn, af = n(e.af);
+        if (x.t === 'coude' || x.t === 'devoie') {
+          const th = x.t === 'coude' ? angle(x) : angleDev(x);
+          if (af > 0 && x.t === 'coude') x.rayon = af / Math.tan((th * Math.PI) / 360);
+          else if (!n(x.rayon) && sys.rayon) x.rayon = sys.rayon[dn];
+        }
+        if (x.t === 'te' && !n(x.l)) x.l = af > 0 ? af : sys.te ? sys.te[dn] : '';
+        if (x.t === 'reduc' && !n(x.l) && sys.reduc) x.l = sys.reduc[Math.max(dn, dnOk(x.dn2 || dn))];
+        if (x.t === 'fond' && !n(x.l) && sys.fond) x.l = sys.fond[dn];
+        if (x.t === 'raccord' && !n(x.l) && sys.manchon) x.l = sys.manchon[dn];
+        if ((x.t === 'vanne' || x.t === 'v3v') && x.rac === 'sertir' && !n(x.l) && sys.vanne) x.l = x.type === 'dilatation' ? DILAT[dn] : sys.vanne[dn];
+        if (aBranche(x)) x.branche = prep(x.branche, x.t === 'te' ? (e.dnB || dn) : dn);
+        dnc = x.t === 'reduc' ? dnOk(x.dn2 || dn) : dn;
+        return x;
+      });
+    };
+    const fin = marcher(prep(rel.elements, rel.dnDepart || 50), [0, 0, 0], DIRS[rel.dirDepart] || DIRS.E, dnOk(rel.dnDepart || 50), '', 0);
+    const asm = sys.sertir ? sertissages(pieces) : [];
+    return { pieces, erreurs, fin, cotes, triangles, soudures: sys.sertir ? [] : soudures(pieces, rel), sertissages: asm, sertir: !!sys.sertir, depart: { p: [0, 0, 0], note: String(rel.noteDepart || '').trim() } };
   }
   // Soudures bout à bout : extrémités des raccords à souder (coudes, tés, réductions, fonds), collerettes et collets des
   // brides, vannes à souder, tube contre tube, raccordement du départ sur l'existant. Les assemblages filetés n'en ont pas.
@@ -262,12 +306,24 @@ const Tuyauterie = (() => {
     if (premier && premier.id === '0' && ['tube', 'coude', 'te', 'reduc'].includes(premier.t) && !rel.departFilete) ajoute(premier.p0, premier.dn);
     return [...out.values()];
   }
+  // Sertissages (tube inox à sertir) : une sertie à chaque emboîture de raccord, de vanne à sertir ou de raccord à bride
+  function sertissages(pieces) {
+    const out = [], ajoute = (p, dn) => out.push({ p, dn });
+    pieces.forEach(pc => {
+      if (['coude', 'te', 'reduc', 'raccord', 'brides', 'v3v'].includes(pc.t) || (pc.t === 'vanne' && pc.el.rac !== 'taraude')) {
+        ajoute(pc.p0, pc.dn); ajoute(pc.p1, pc.t === 'reduc' ? pc.dn2 : pc.dn);
+        if (pc.pb) ajoute(pc.pb, pc.dnB || pc.dn);
+      }
+      if (pc.t === 'fond') ajoute(pc.p0, pc.dn);
+    });
+    return out;
+  }
   // Pouces-diamètre des soudures (cadence de soudage)
   const POUCES = { 15: 0.5, 20: 0.75, 25: 1, 32: 1.25, 40: 1.5, 50: 2, 65: 2.5, 80: 3, 100: 4, 125: 5, 150: 6, 200: 8, 250: 10, 300: 12 };
-  function bilanSoudures(placement) {
+  function bilanSoudures(placement, quoi = 'soudures') {
     const parDN = {};
-    placement.soudures.forEach(s => { parDN[s.dn] = (parDN[s.dn] || 0) + 1; });
-    return { nombre: placement.soudures.length, parDN, pouces: Object.entries(parDN).reduce((t, [dn, k]) => t + k * (POUCES[dn] || dn / 25), 0) };
+    (placement[quoi] || []).forEach(s => { parDN[s.dn] = (parDN[s.dn] || 0) + 1; });
+    return { nombre: (placement[quoi] || []).length, parDN, pouces: Object.entries(parDN).reduce((t, [dn, k]) => t + k * (POUCES[dn] || dn / 25), 0) };
   }
   // Élément désigné par son chemin (« 3 », « 2.b.0 ») et la liste qui le contient
   function trouver(rel, chemin) {
@@ -285,19 +341,23 @@ const Tuyauterie = (() => {
   }
 
   // Désignation et norme d'un élément placé
+  // Taille affichée : « Ø22 » pour le tube à sertir, « DN50 » sinon
+  const taille = (rel, dn) => { const s = systeme(rel); return s.sertir ? `Ø${s.de[dn] || dn}` : `DN${dn}`; };
   function designation(pc, rel) {
-    const el = pc.el, m = rel.matiere || '', pn = rel.pn || 'PN16';
+    const el = pc.el, m = rel.matiere || '', pn = rel.pn || 'PN16', s = systeme(rel), T = dn => taille(rel, dn), nr = s.normeRaccords;
+    const k = s.sertir ? ' à sertir' : '';
     switch (pc.t) {
-      case 'tube': return [`Tube ${m} DN${pc.dn} (Ø${pc.de})`, 'ISO 4200 / EN 10220'];
-      case 'coude': return [`Coude ${angle(el)}° 3D ${m} DN${pc.dn}`, 'ISO 3419 / EN 10253'];
-      case 'te': return [pc.dnB !== pc.dn ? `Té réduit ${m} DN${pc.dn} × DN${pc.dnB}` : `Té égal ${m} DN${pc.dn}`, 'ISO 3419 / EN 10253'];
-      case 'reduc': return [`Réduction ${el.exc ? 'excentrique' : 'concentrique'} ${m} DN${pc.dn} × DN${pc.dn2}`, 'ISO 3419 / EN 10253'];
-      case 'vanne': { const v = VANNES[el.type] || VANNES.boisseau; return [`${v.lib} ${RACCORDEMENTS[el.rac || 'bride']} DN${pc.dn} ${pn}`, el.rac === 'taraude' ? 'ISO 7-1 (filetage)' : `${v.serie} / ISO 5752`]; }
-      case 'v3v': return [`Vanne 3 voies motorisée ${RACCORDEMENTS[el.rac || 'bride']} DN${pc.dn} ${pn}`, 'EN 558 série 1 / ISO 5752'];
+      case 'tube': { const ep = String(s.ep[pc.dn] || '').replace('.', ','), dim = `Ø${String(pc.de).replace('.', ',')}${ep ? ` × ${ep}` : ''}`;
+        return [s.sertir ? `Tube ${m} à sertir ${dim}` : `Tube ${m}${s.abrege && !m.includes(s.abrege) ? ` ${s.abrege}` : ''} DN${pc.dn} (${dim})`, s.normeTube]; }
+      case 'coude': return [s.sertir ? `Coude ${angle(el)}° à sertir ${m} ${T(pc.dn)}` : `Coude ${angle(el)}° 3D ${m} ${T(pc.dn)}`, nr];
+      case 'te': return [pc.dnB !== pc.dn ? `Té réduit${k} ${m} ${T(pc.dn)} × ${T(pc.dnB)}` : `Té égal${k} ${m} ${T(pc.dn)}`, nr];
+      case 'reduc': return [`Réduction ${s.sertir ? 'à sertir' : el.exc ? 'excentrique' : 'concentrique'} ${m} ${T(pc.dn)} × ${T(pc.dn2)}`, nr];
+      case 'vanne': { const v = VANNES[el.type] || VANNES.boisseau; return [`${v.lib} ${RACCORDEMENTS[el.rac || 'bride']} ${T(pc.dn)} ${pn}`, el.rac === 'taraude' ? 'ISO 7-1 (filetage)' : el.rac === 'sertir' ? nr : `${v.serie} / ISO 5752`]; }
+      case 'v3v': return [`Vanne 3 voies motorisée ${RACCORDEMENTS[el.rac || 'bride']} ${T(pc.dn)} ${pn}`, el.rac === 'sertir' ? nr : 'EN 558 série 1 / ISO 5752'];
       case 'brides': return pc.flanges && pc.flanges[0] === 'tournante' && pc.flanges[1] === 'tournante' ? [`Paire de brides tournantes sur collets DN${pc.dn} ${pn}`, 'EN 1092-1 type 02 / 35']
         : pc.flanges && pc.flanges[0] !== pc.flanges[1] ? [`Assemblage bride à collerette + bride tournante DN${pc.dn} ${pn}`, 'EN 1092-1 type 11 / 02'] : [`Paire de brides à collerette DN${pc.dn} ${pn}`, 'EN 1092-1 type 11 / ISO 7005-1'];
-      case 'raccord': return [`${RACCORDS[el.type] || RACCORDS.union} DN${pc.dn}`, 'ISO 49 / EN 10242'];
-      case 'fond': return [`Fond bombé ${m} DN${pc.dn}`, 'ISO 3419 / EN 10253'];
+      case 'raccord': return s.sertir ? [`${el.type === 'union' ? 'Raccord union' : 'Manchon'} à sertir ${T(pc.dn)}`, nr] : [`${RACCORDS[el.type] || RACCORDS.union} DN${pc.dn}`, 'ISO 49 / EN 10242'];
+      case 'fond': return s.sertir ? [`Bouchon à sertir ${T(pc.dn)}`, nr] : [`Fond bombé ${m} DN${pc.dn}`, nr];
       default: return [TYPES[pc.t] || pc.t, ''];
     }
   }
@@ -312,7 +372,8 @@ const Tuyauterie = (() => {
       // Brides comptées une à une (collerettes, tournantes et leurs collets), joints et boulonnerie par assemblage
       if (pc.t !== 'brides') ajoute(des, norme, 1);
       (pc.flanges || []).forEach(t => {
-        if (t === 'tournante') { ajoute(`Bride tournante DN${pc.dn} ${pn}`, 'EN 1092-1 type 02', 1); ajoute(`Collet à souder DN${pc.dn} ${pn}`, 'EN 1092-1 type 35', 1); }
+        if (systeme(rel).sertir) ajoute(`Bride à sertir (raccord à bride) ${taille(rel, pc.dn)} ${pn}`, `${systeme(rel).normeRaccords} / EN 1092-1`, 1);
+        else if (t === 'tournante') { ajoute(`Bride tournante DN${pc.dn} ${pn}`, 'EN 1092-1 type 02', 1); ajoute(`Collet à souder DN${pc.dn} ${pn}`, 'EN 1092-1 type 35', 1); }
         else ajoute(`Bride à collerette DN${pc.dn} ${pn}`, 'EN 1092-1 type 11 / ISO 7005-1', 1);
       });
       (pc.joints || []).forEach(() => { ajoute(`Joint plat DN${pc.dn} ${pn}`, 'EN 1514-1', 1); ajoute(`Jeu de boulonnerie DN${pc.dn} ${pn}`, 'ISO 4014 / ISO 4032', 1); });
@@ -322,24 +383,25 @@ const Tuyauterie = (() => {
   // Lignes pour le chiffrage depuis plan (même format qu'une nomenclature importée de Revit : réseau, famille, type, taille,
   // longueur en m, nombre), reconnues par les familles CAO de la bibliothèque (Tuyau, Coude, Té, Bride, Réduction, Vanne…)
   function lignesChiffrage(rel, placement = placer(rel)) {
-    const out = new Map(), sys = String(rel.ligne || '').trim(), pn = rel.pn || 'PN16', m = rel.matiere || '';
-    const ajoute = (famille, type, dn, qte, longueur = 0, taille = `DN${dn}`) => {
+    const out = new Map(), sys = String(rel.ligne || '').trim(), pn = rel.pn || 'PN16', m = rel.matiere || '', S = systeme(rel), suf = ` ${S.suffixe}`;
+    // Taille lue par le chiffrage : « DN50 », ou « Ø22 DN20 » pour le tube à sertir
+    const ajoute = (famille, type, dn, qte, longueur = 0, taille = S.sertir ? `Ø${S.de[dn]} DN${dn}` : `DN${dn}`) => {
       const k = `${famille}|${type}|${taille}`, l = out.get(k) || { systeme: sys, famille, type, taille, dn, longueur: 0, qte: longueur ? 1 : 0 };
       if (longueur) l.longueur = Math.round((l.longueur + longueur) * 1000) / 1000; else l.qte += qte;
       out.set(k, l);
     };
     // Brides une à une (une tournante va avec son collet), un joint et une boulonnerie par assemblage
     const brides = pc => {
-      (pc.flanges || []).forEach(t => { if (t === 'tournante') { ajoute('Bride tournante', `${pn} EN 1092-1 type 02`, pc.dn, 1); ajoute('Collet à souder', `${m} EN 1092-1 type 35`.trim(), pc.dn, 1); } else ajoute('Bride à collerette', `${pn} EN 1092-1 type 11`, pc.dn, 1); });
+      (pc.flanges || []).forEach(t => { if (S.sertir) ajoute('Bride à sertir', `${pn} raccord à bride`, pc.dn, 1); else if (t === 'tournante') { ajoute('Bride tournante', `${pn} EN 1092-1 type 02`, pc.dn, 1); ajoute('Collet à souder', `${m} EN 1092-1 type 35`.trim(), pc.dn, 1); } else ajoute('Bride à collerette', `${pn} EN 1092-1 type 11`, pc.dn, 1); });
       (pc.joints || []).forEach(() => { ajoute('Joint plat', `${pn} EN 1514-1`, pc.dn, 1); ajoute('Boulonnerie', `Jeu ${pn}`, pc.dn, 1); });
     };
     placement.pieces.forEach(pc => {
       const el = pc.el;
       switch (pc.t) {
-        case 'tube': if (pc.coupe > 0) ajoute('Tuyau', m, pc.dn, 1, pc.coupe / 1000); break;
-        case 'coude': ajoute('Coude', `${angle(el)}° 3D ${m}`.trim(), pc.dn, 1); break;
-        case 'te': ajoute('Té', pc.dnB !== pc.dn ? `réduit DN${pc.dn} × DN${pc.dnB} ${m}`.trim() : `égal ${m}`.trim(), pc.dn, 1); break;
-        case 'reduc': ajoute('Réduction', `${el.exc ? 'excentrique' : 'concentrique'} ${m}`.trim(), Math.max(pc.dn, pc.dn2), 1, 0, `DN${pc.dn}-DN${pc.dn2}`); break;
+        case 'tube': if (pc.coupe > 0) ajoute(S.familleTube, m, pc.dn, 1, pc.coupe / 1000); break;
+        case 'coude': ajoute(`Coude${suf}`, `${angle(el)}°${S.sertir ? '' : ' 3D'} ${m}`.trim(), pc.dn, 1); break;
+        case 'te': ajoute(`Té${suf}`, pc.dnB !== pc.dn ? `réduit ${taille(rel, pc.dn)} × ${taille(rel, pc.dnB)} ${m}`.trim() : `égal ${m}`.trim(), pc.dn, 1); break;
+        case 'reduc': ajoute(`Réduction${suf}`, `${S.sertir ? '' : el.exc ? 'excentrique ' : 'concentrique '}${m}`.trim(), Math.max(pc.dn, pc.dn2), 1, 0, S.sertir ? `Ø${S.de[pc.dn]}-Ø${S.de[pc.dn2]} DN${Math.max(pc.dn, pc.dn2)}` : `DN${pc.dn}-DN${pc.dn2}`); break;
         case 'vanne': {
           const v = VANNES[el.type] || VANNES.boisseau;
           ajoute(v.lib.replace(/ \([^)]*\)$/, ''), `${RACCORDEMENTS[el.rac || 'bride']} ${pn}`, pc.dn, 1);
@@ -348,8 +410,8 @@ const Tuyauterie = (() => {
         }
         case 'brides': brides(pc); break;
         case 'v3v': ajoute('Vanne 3 voies motorisée', `${RACCORDEMENTS[el.rac || 'bride']} ${pn}`, pc.dn, 1); brides(pc); break;
-        case 'raccord': ajoute(el.type === 'manchon' ? 'Manchon' : 'Raccord union', m, pc.dn, 1); break;
-        case 'fond': ajoute('Fond bombé', m, pc.dn, 1); break;
+        case 'raccord': ajoute(`${el.type === 'manchon' ? 'Manchon' : 'Raccord union'}${S.sertir ? suf : ''}`, m, pc.dn, 1); break;
+        case 'fond': ajoute(S.sertir ? `Bouchon${suf}` : `Fond bombé${suf}`, m, pc.dn, 1); break;
         default: break;
       }
     });
@@ -366,11 +428,11 @@ const Tuyauterie = (() => {
   }
   // Ce qui manque pour valider le relevé
   function manques(r) {
-    return [!r.affaireId && 'chantier', !String(r.ligne || '').trim() && 'repère de la ligne', !r.userId && 'technicien', !r.date && 'date',
+    return [!r.affaireId && !r.clientId && !String(r.clientLibre || '').trim() && 'chantier ou client (visite)', !String(r.ligne || '').trim() && 'repère de la ligne', !r.userId && 'technicien', !r.date && 'date',
       !((r.elements || []).length || (r.cotes || []).some(c => n(c.valeur) !== null)) && 'au moins une cote ou un élément de tuyauterie'].filter(Boolean);
   }
   const STATUTS = ['Brouillon', 'Relevé', 'Terminé'];
-  return { DN, DE, RAYON_3D, TE, REDUC, FOND, BRIDE, BRIDES_TYPES, VANNES, ANGLES_DEVOIEMENT, aBranche, axeFaceV3V, axeFaceDev, RACCORDEMENTS, RACCORDS, MATIERES, PN, TYPES, DIRS, DIRS_LIB, STATUTS,
+  return { DN, DE, SYSTEMES, systeme, cleSysteme, taille, RAYON_3D, TE, REDUC, FOND, BRIDE, BRIDES_TYPES, VANNES, ANGLES_DEVOIEMENT, aBranche, axeFaceV3V, axeFaceDev, RACCORDEMENTS, RACCORDS, MATIERES, PN, TYPES, DIRS, DIRS_LIB, STATUTS,
     lire, angle, axeFaceCoude, axeFaceTe, longueur, coupes, placer, trouver, listeDe, designation, nomenclature, bilanSoudures, lignesChiffrage, csvChiffrage, debit, manques };
 })();
 if (typeof module !== 'undefined') module.exports = Tuyauterie;
