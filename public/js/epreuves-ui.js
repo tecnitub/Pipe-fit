@@ -191,10 +191,10 @@ function epreuvesChantierHtml(a) {
 }
 // Téléphone du compagnon (onglet Rapports) : PV d'essais et derniers PV
 function epreuvesCompagnonHtml(u, affaireId) {
-  const q = `?chantier=${esc(affaireId || '')}`, badgeR = r => (r.statut === 'Signé' ? `<span class="badge ${/^(Conforme|Mis en service)$/.test(r.resultat || '') ? 'b-ok' : 'b-bad'}">${esc(r.resultat || '')}</span>` : '<span class="badge b-warn">Brouillon</span>');
+  const q = `?chantier=${esc(affaireId || '')}`, badgeR = r => (r.ligne !== undefined ? badgeReleve(r) : r.statut === 'Signé' ? `<span class="badge ${/^(Conforme|Mis en service)$/.test(r.resultat || '') ? 'b-ok' : 'b-bad'}">${esc(r.resultat || '')}</span>` : '<span class="badge b-warn">Brouillon</span>');
   const l = [...Store.all('epreuves').map(r => ['epreuve', r, r.reseau, r.pressionEpreuve ? `${fmt(num(r.pressionEpreuve), 1)} bar` : '']), ...Store.all('misesEnService').map(r => ['mes', r, r.equipement, 'mise en service']),
-    ...Store.all('equilibrages').map(r => ['equilibrage', r, r.installation, 'équilibrage'])].filter(x => x[1].userId === u.id)
+    ...Store.all('equilibrages').map(r => ['equilibrage', r, r.installation, 'équilibrage']), ...(Store.all('releves') || []).map(r => ['releve', r, r.ligne, 'prise de cotes'])].filter(x => x[1].userId === u.id)
     .sort((x, y) => `${y[1].date}${y[1].heureDebut || y[1].heure || ''}`.localeCompare(`${x[1].date}${x[1].heureDebut || x[1].heure || ''}`)).slice(0, 8);
-  return `<div class="essais-boutons"><a class="btn secondary" href="#/epreuve/new${q}">🧪 PV d'épreuve</a><a class="btn secondary" href="#/mes/new${q}">⚙️ Mise en service</a><a class="btn secondary" href="#/equilibrage/new${q}">🌬️ Équilibrage</a></div>
+  return `<div class="essais-boutons"><a class="btn secondary" href="#/epreuve/new${q}">🧪 PV d'épreuve</a><a class="btn secondary" href="#/mes/new${q}">⚙️ Mise en service</a><a class="btn secondary" href="#/equilibrage/new${q}">🌬️ Équilibrage</a><a class="btn secondary" href="#/releve/new${q}">📐 Prise de cotes</a></div>
     ${l.length ? `<ul class="mat-liste">${l.map(([k, r, nom, sub]) => `<li class="clickable" data-go="#/${k}/${esc(r.id)}"><span><strong>${esc(nom || '')}</strong><br><span class="small">${esc(affaireOf(r.affaireId).code || '')} · ${dateFr(r.date)} · ${esc(sub)}</span></span><span>${badgeR(r)}</span></li>`).join('')}</ul>` : ''}`;
 }

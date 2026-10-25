@@ -356,6 +356,18 @@ function demoData() {
     pressionDebut: 9.1, pressionFin: 9.1, chute: 0, dureeReelle: 120, temperature: 14, manometreId: 'pm5', manometre: 'Manomètre étalon 0-60 bar (épreuves hydrauliques) · n° WK-2209-17',
     observations: 'Réseau isolé par les vannes V12 et V18, purgé aux points hauts. Aucune fuite constatée.', photos: [], resultat: 'Conforme', signataireNom: 'Thomas Girard', signataireQualite: 'Responsable maintenance',
     signatureTechId: 'img-sig', signatureClientId: 'img-sig', signeLe: `${d(-25)}T10:42:00.000Z`, statut: 'Signé' }];
+  // Prise de cotes du by-pass de la ligne NEP : photos avant / après, ligne en 3D, longueurs de coupe et nomenclature
+  const releves = [{ id: 'rc1', numero: `RC-${Y}-0001`, affaireId: 'af1', userId: 'o1', technicien: 'Kevin Roux', date: d(-40), ligne: 'NEP-DN50-07 by-pass vanne V12', fluide: 'Solution de NEP (soude 2 %)',
+    matiere: 'Inox 316L', pn: 'PN16', dnDepart: 50, dirDepart: 'E', statut: 'Terminé', longueurTube: 2558,
+    elements: [{ t: 'tube', dn: 50, auto: true, cote: 1200, repere: 'T1' }, { t: 'vanne', dn: 50, type: 'boisseau', rac: 'bride', repere: 'V12' }, { t: 'coude', dn: 50, angle: 90, vers: 'N' },
+      { t: 'tube', dn: 50, auto: true, cote: 900, repere: 'T2' },
+      { t: 'te', dn: 50, vers: 'H', dnB: 25, branche: [{ t: 'tube', dn: 25, auto: true, cote: 350, repere: 'T5' }, { t: 'vanne', dn: 25, type: 'boisseau', rac: 'taraude', repere: 'V13 purge' }, { t: 'fond', dn: 25 }] },
+      { t: 'tube', dn: 50, auto: true, cote: 600, repere: 'T3' }, { t: 'coude', dn: 50, angle: 90, vers: 'B' }, { t: 'tube', dn: 50, l: 450, repere: 'T4' }, { t: 'brides', dn: 50, repere: 'raccordement cuve' }],
+    cotes: [{ repere: 'A', libelle: 'Axe collecteur → nu du mur nord', valeur: '640', remarque: '' }, { repere: 'B', libelle: 'Axe ligne → dessus du rack', valeur: '185', remarque: 'rack à 3,20 m' },
+      { repere: 'C', libelle: 'Entraxe piquage existant → bride cuve', valeur: '2100', remarque: 'bride cuve DN50 PN16' }],
+    photosAvant: [{ photoId: 'img-rack1', legende: 'Ligne existante, vue depuis le rack nord', date: d(-40) }],
+    photosApres: [{ photoId: 'img-rack2', legende: 'By-pass posé, vanne V12 et purge V13', date: d(-30) }],
+    observations: 'Supportage existant réutilisable sur le rack. Calorifuge à déposer sur 2 m avant découpe.' }];
   // Chaufferie des Tilleuls : épreuve du réseau, mise en service de la chaudière, équilibrage des radiateurs (repris dans le DOE)
   const signe = (jours, h) => ({ signatureTechId: 'img-sig', signatureClientId: 'img-sig', signataireNom: 'Gardien de la résidence', signataireQualite: 'Habitat Dauphiné', signeLe: `${d(jours)}T${h}:00.000Z`, statut: 'Signé' });
   epreuves.push({ id: 'ep2', numero: `EP-${Y}-0002`, affaireId: 'af4', userId: 'o2', technicien: 'Ahmed Haddad', date: d(-12), heureDebut: '08:00', heureFin: '10:00', reseau: 'Collecteurs départ / retour chauffage DN150',
@@ -648,7 +660,7 @@ function demoData() {
         tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',
         types: { devis: { conditions: 'Acompte de 30 % à la commande. Travaux réalisés selon les normes EN 13480 et le DTU en vigueur. Hors génie civil, calorifuge et échafaudages sauf mention contraire.' },
           facture: { conditions: 'Paiement par virement à 45 jours fin de mois.' } } } },
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels, missions, produits, equipementsFrigo, fichesFluides, bouteilles, enlevements, epreuves, misesEnService, equilibrages,
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels, missions, produits, equipementsFrigo, fichesFluides, bouteilles, enlevements, epreuves, releves, misesEnService, equilibrages,
   };
 }
 

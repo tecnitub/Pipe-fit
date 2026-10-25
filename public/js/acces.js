@@ -9,7 +9,7 @@ const Acces = (() => {
     { id: 'ecrans', titre: 'Écrans et onglets du bureau', roles: ['charge'], elements: [['consultations', 'Achats › Consultations fournisseurs'], ['efactures', 'Achats › Factures reçues'], ['comptoir', 'Achats › Comptoir'],
       ['prixAchats', 'Achats › Historique des prix'], ['relances', 'Facturation › Relances'], ['tresorerie', 'Facturation › Trésorerie'], ['compta', 'Facturation › Comptabilité'], ['charges', 'Tableau par chargé d\'affaires']] },
     { id: 'compagnon', titre: 'Appli des compagnons (téléphone)', roles: ['atelier'], elements: [['pointage/heures', 'Heures'], ['pointage/planning', 'Planning'], ['pointage/chantiers', 'Chantiers et documents'],
-      ['pointage/rapports', 'Rapports'], ['epreuve', 'PV d\'épreuve hydraulique'], ['mes', 'PV de mise en service'], ['equilibrage', 'Relevé d\'équilibrage'], ['pointage/frais', 'Notes de frais'], ['pointage/comptoir', 'Achats au comptoir'], ['pointage/fluides', 'Fluides frigorigènes']] },
+      ['pointage/rapports', 'Rapports'], ['releve', 'Prise de cotes tuyauterie'], ['epreuve', 'PV d\'épreuve hydraulique'], ['mes', 'PV de mise en service'], ['equilibrage', 'Relevé d\'équilibrage'], ['pointage/frais', 'Notes de frais'], ['pointage/comptoir', 'Achats au comptoir'], ['pointage/fluides', 'Fluides frigorigènes']] },
   ];
   const ROLES = { charge: 'Chargés d\'affaires', atelier: 'Compagnons' };
   // Éléments masqués pour un compte : son réglage propre, sinon celui de son rôle ; rien pour l'administrateur
@@ -35,7 +35,7 @@ const Acces = (() => {
   // reglages = rubriques des réglages retirées. Sans entrée : affichage seulement (écran de synthèse, sans données propres).
   const DONNEES = {
     contacts: { lecture: ['entreprises', 'contacts'] }, devis: { lecture: ['devis', 'chiffrages'] },
-    chantiers: { lecture: ['affaires', 'reserves', 'receptions', 'rapports', 'epreuves', 'misesEnService', 'equilibrages'] },
+    chantiers: { lecture: ['affaires', 'reserves', 'receptions', 'rapports', 'releves', 'epreuves', 'misesEnService', 'equilibrages'] },
     commandes: { cacher: ['achats', 'efactures', 'enlevements', 'consultations'], lecture: ['commandes'] }, situations: { lecture: ['situations'] },
     factures: { cacher: ['factures'], reglages: ['compta', 'tresorerie'] }, articles: { lecture: ['articles', 'familles', 'ouvrages', 'mainoeuvre', 'zones'] },
     planning: { lecture: ['planning', 'missions'] }, rh: { cacher: ['habilitations'], lecture: ['users', 'frais'], champs: { users: ['salaireHoraire'] } },
@@ -43,7 +43,7 @@ const Acces = (() => {
     consultations: { cacher: ['consultations'] }, efactures: { cacher: ['efactures'] }, comptoir: { cacher: ['enlevements'] },
     tresorerie: { reglages: ['tresorerie'] }, compta: { reglages: ['compta'] },
     'pointage/heures': { lecture: ['temps'] }, 'pointage/planning': { cacher: ['planning'] }, 'pointage/chantiers': { champs: { affaires: ['documents'] } },
-    'pointage/rapports': { cacher: ['rapports'] }, epreuve: { cacher: ['epreuves'] }, mes: { cacher: ['misesEnService'] }, equilibrage: { cacher: ['equilibrages'] },
+    'pointage/rapports': { cacher: ['rapports'] }, releve: { cacher: ['releves'] }, epreuve: { cacher: ['epreuves'] }, mes: { cacher: ['misesEnService'] }, equilibrage: { cacher: ['equilibrages'] },
     'pointage/frais': { cacher: ['frais'] }, 'pointage/comptoir': { cacher: ['enlevements'] }, 'pointage/fluides': { cacher: ['fichesFluides', 'equipementsFrigo', 'bouteilles'] },
   };
   function restrictions(m) {

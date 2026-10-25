@@ -18,6 +18,7 @@ const Compagnon = require('../public/js/compagnon');
 const NoteFrais = require('../public/js/frais');
 const ReglesPointage = require('../public/js/pointage-regles');
 const Epreuve = require('../public/js/epreuve');
+const Tuyauterie = require('../public/js/tuyauterie');
 const Essais = require('../public/js/essais');
 const Acces = require('../public/js/acces');
 const Fluides = require('../public/js/fluides');
@@ -72,7 +73,7 @@ const isLocal = HS.estLocal;
 function canWrite(acc, col) {
   if (acc.role === 'admin') return true;
   if (acc.role === 'charge') return col !== 'users';
-  if (acc.role === 'atelier') return ['temps', 'frais', 'rapports', 'consommations', 'notifications', 'fichesFluides', 'equipementsFrigo', 'enlevements', 'epreuves', 'misesEnService', 'equilibrages'].includes(col);
+  if (acc.role === 'atelier') return ['temps', 'frais', 'rapports', 'consommations', 'notifications', 'fichesFluides', 'equipementsFrigo', 'enlevements', 'epreuves', 'misesEnService', 'equilibrages', 'releves'].includes(col);
   return false;
 }
 function canDelete(acc, col, existing) {
@@ -562,6 +563,8 @@ async function api(req, res, url) {
         // PV d'épreuve signé : figé, sauf administrateur ; complet pour être signé
         if (col === 'epreuves' && existing && existing.statut === 'Signé' && acc.role !== 'admin') return { forbidden: 'Ce PV d\'épreuve est signé : il ne peut plus être modifié.' };
         if (col === 'epreuves' && obj.statut === 'Signé') { const m = Epreuve.manques(obj); if (m.length) return { invalide: `PV d'épreuve incomplet : ${m.join(', ')}` }; }
+        // Prise de cotes validée : ligne identifiée et au moins une cote
+        if (col === 'releves' && obj.statut && obj.statut !== 'Brouillon') { const m = Tuyauterie.manques(obj); if (m.length) return { invalide: `Relevé incomplet : ${m.join(', ')}` }; }
         // PV de mise en service et relevé d'équilibrage signés : figés, sauf administrateur ; complets pour être signés
         if (['misesEnService', 'equilibrages'].includes(col) && existing && existing.statut === 'Signé' && acc.role !== 'admin') return { forbidden: 'Ce procès-verbal est signé : il ne peut plus être modifié.' };
         if (['misesEnService', 'equilibrages'].includes(col) && obj.statut === 'Signé') { const m = col === 'misesEnService' ? Essais.manquesMES(obj) : Essais.manquesEQ(obj); if (m.length) return { invalide: `Procès-verbal incomplet : ${m.join(', ')}` }; }

@@ -902,3 +902,41 @@ fieldset.mi-titre[hidden] { display: none; }
 .rg-item.sel, .rg-item:hover { background: var(--panel-alt); }
 .rg-aide { margin: 8px 0 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 @media (max-width: 560px) { .rg-lib { display: none; } .rg-modal { margin-top: 0; } }
+
+/* Prise de cotes tuyauterie : vue 3D, éditeur de la ligne, photos avant / après */
+.rl-3d { width: 100%; height: 420px; display: block; touch-action: none; border: 1px solid var(--border); border-radius: 8px; background: linear-gradient(#fbfcfd, #e9eef2); cursor: grab; }
+.rl-3d:active { cursor: grabbing; }
+.rl-3d-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 6px; }
+.rl-3d-bar .check { margin-left: auto; }
+.rl-errs { margin: 6px 0; padding-left: 18px; }
+.rl-fil { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
+.rl-liste { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.rl-el { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+.rl-el.sel { border-color: #f39c12; box-shadow: 0 0 0 2px rgba(243, 156, 18, .35); }
+.rl-num { font-weight: 700; min-width: 1.6em; cursor: pointer; }
+.rl-type { font-weight: 600; min-width: 7.5em; cursor: pointer; }
+.rl-p { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; white-space: nowrap; }
+.rl-p select, .rl-p input, .rl-el > input { width: auto; padding: 4px 6px; }
+.rl-mm { width: 6.5em !important; text-align: right; }
+.rl-repel { width: 6em !important; }
+.rl-enc { margin-left: auto; color: var(--muted); white-space: nowrap; }
+.rl-act { display: inline-flex; gap: 2px; }
+.rl-ajouts { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.rl-cotes { display: grid; gap: 4px; margin-bottom: 6px; }
+.rl-cote { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rl-cote input { padding: 5px 6px; }
+.rl-cote .rl-rep { width: 4.5em; }
+.rl-cote .rl-lib { flex: 1 1 160px; min-width: 0; }
+.rl-val { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.rl-val input { width: 6.5em; text-align: right; }
+.photos-grid.rl-photos { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.releve-form .rl-comparatif { max-width: 640px; }
+.rl-photos .ph .rl-leg { width: 100%; margin-top: 4px; padding: 4px 6px; font-size: 13px; }
+.rl-comparatif { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.rl-comparatif figure { margin: 0; }
+.rl-comparatif img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); display: block; }
+.rl-comparatif figcaption { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.rl-iso img { width: 100%; max-height: 520px; object-fit: contain; border: 1px solid #ccc; }
+.doc-print .rl-comparatif { break-inside: auto; }
+.doc-print .rl-comparatif figure { break-inside: avoid; }
+@media (max-width: 640px) { .rl-3d { height: 320px; } .rl-enc { margin-left: 0; } }

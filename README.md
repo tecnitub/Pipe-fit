@@ -40,6 +40,27 @@ hydraulique en annexe F ; PV d'épreuve hydraulique, relevés d'équilibrage aé
 Les pièces correspondantes des listes de contrôle des sections 5 et 6 sont cochées (« Pipe-Fit »). Avec les plans,
 fiches techniques, notices et le PV de réception déjà repris, « Générer le DOE » produit le dossier complet en un clic.
 
+## Prise de cotes tuyauterie (photos avant / après, isométrique 3D)
+
+Depuis un chantier (« + Prise de cotes ») ou sur le téléphone du compagnon (Pointage › Rapports › 📐 Prise de cotes) :
+
+- **Photos avant travaux** et **après travaux**, légendées, avec un comparatif avant / après côte à côte ;
+- **cotes relevées** (repère, désignation, cote en mm, remarque) ;
+- **ligne en 3D** construite pièce par pièce depuis le départ : tubes, coudes 90° / 45° (3D), tés avec dérivation (elle-même
+  construite pièce par pièce), réductions concentriques ou excentriques, robinetterie (tournant sphérique, papillon, opercule,
+  soupape, clapet anti-retour, filtre en Y ; à brides, à souder ou taraudée), paires de brides, raccords union et manchons, fonds
+  bombés. Vue isométrique, de dessus, de face, de côté ; rotation au doigt, zoom par pincement ; toucher une pièce la retrouve
+  dans la liste ;
+- **longueurs de coupe calculées** : on saisit la cote axe à axe relevée entre deux coudes ou tés, l'appli retire les cotes
+  axe-face et l'encombrement des accessoires du tronçon ;
+- **nomenclature** (tubes au mètre par DN, raccords, robinetterie, brides, joints et boulonnerie) et **fiche imprimable / PDF**
+  avec l'isométrique.
+
+Dimensions des accessoires : ISO 4200 / EN 10220 (tubes), ISO 3419 / EN 10253 (raccords à souder), EN 1092-1 / ISO 7005-1
+(brides PN16), EN 558 / ISO 5752 (face à face de la robinetterie), ISO 49 (raccords filetés). Ce sont des valeurs nominales
+indicatives : une longueur saisie sur l'élément remplace la valeur de la norme (à confirmer avec la fiche technique du fabricant).
+Calculs dans `public/js/tuyauterie.js` (commun navigateur / serveur / tests), vue 3D sans bibliothèque dans `public/js/vue3d.js`.
+
 ## Installation manuelle (Linux, Windows, macOS)
 
 Prérequis : **Node.js 22.13 ou plus récent** (aucune autre dépendance, la base SQLite est intégrée à Node.js).

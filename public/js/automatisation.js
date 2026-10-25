@@ -1,7 +1,7 @@
 // API et automatisations : clés personnelles, webhooks sortants, documentation et exemples
 // (Power Automate, Make, Zapier, n8n, PowerShell, scripts, badgeuse, logiciel de dessin…).
 const COLL_LIB = { devis: 'Devis', affaires: 'Chantiers', factures: 'Factures et avoirs', situations: 'Situations (BL)', commandes: 'Commandes fournisseurs', achats: 'Factures fournisseurs',
-  consultations: 'Consultations fournisseurs', temps: 'Pointages', frais: 'Notes de frais', rapports: 'Rapports et bons d\'intervention', receptions: 'PV de réception', reserves: 'Réserves', epreuves: 'PV d\'épreuve hydraulique', misesEnService: 'PV de mise en service', equilibrages: 'Relevés d\'équilibrage',
+  consultations: 'Consultations fournisseurs', temps: 'Pointages', frais: 'Notes de frais', rapports: 'Rapports et bons d\'intervention', receptions: 'PV de réception', reserves: 'Réserves', releves: 'Prises de cotes tuyauterie', epreuves: 'PV d\'épreuve hydraulique', misesEnService: 'PV de mise en service', equilibrages: 'Relevés d\'équilibrage',
   entreprises: 'Entreprises', contacts: 'Contacts', articles: 'Fournitures (bibliothèque)', ouvrages: 'Ouvrages types', mainoeuvre: 'Main-d\'œuvre', efactures: 'Factures électroniques reçues', planning: 'Planning', envois: 'E-mails envoyés' };
 
 Views.api = () => {

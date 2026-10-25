@@ -6,11 +6,11 @@ const RechercheGlobale = (() => {
   const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9@.+-]+/g, ' ').trim();
   const compact = s => norm(s).replace(/[\s.-]+/g, '');
   const TYPES = [['affaires', 'Chantiers'], ['entreprises', 'Clients et fournisseurs'], ['contacts', 'Contacts'], ['devis', 'Devis'], ['factures', 'Factures'], ['situations', 'Situations'],
-    ['commandes', 'Commandes'], ['achats', 'Factures fournisseurs'], ['efactures', 'Factures reçues'], ['articles', 'Fournitures'], ['epreuves', 'PV d\'épreuve'], ['misesEnService', 'Mises en service'],
+    ['commandes', 'Commandes'], ['achats', 'Factures fournisseurs'], ['efactures', 'Factures reçues'], ['articles', 'Fournitures'], ['releves', 'Prises de cotes'], ['epreuves', 'PV d\'épreuve'], ['misesEnService', 'Mises en service'],
     ['equilibrages', 'Équilibrages'], ['users', 'Personnel'], ['materiels', 'Parc'], ['equipementsFrigo', 'Équipements frigorifiques']];
   // Route d'un type (pour l'affichage par accès)
   const ROUTE = { affaires: 'chantier', entreprises: 'entreprise', contacts: 'contacts', devis: 'devis', factures: 'facture', situations: 'situations', commandes: 'commandes', achats: 'achats',
-    efactures: 'efactures', articles: 'articles', epreuves: 'epreuve', misesEnService: 'mes', equilibrages: 'equilibrage', users: 'rh', materiels: 'parc', equipementsFrigo: 'fluides' };
+    efactures: 'efactures', articles: 'articles', releves: 'releve', epreuves: 'epreuve', misesEnService: 'mes', equilibrages: 'equilibrage', users: 'rh', materiels: 'parc', equipementsFrigo: 'fluides' };
 
   // data : { col: [...] } ; nomDe(id) : nom d'une entreprise ; affaire(id) : chantier
   function indexer(data, { nomDe = () => '', affaire = () => ({}) } = {}) {
@@ -28,6 +28,7 @@ const RechercheGlobale = (() => {
     all('achats').forEach(x => ajoute('achats', x, [x.ref, x.numeroFournisseur], `${x.ref || 'Facture fournisseur'} ${x.numeroFournisseur || ''}`.trim(), [nomDe(x.fournisseurId), x.statut], `#/achats/${x.id}`));
     all('efactures').forEach(x => ajoute('efactures', x, [x.numero], `Facture reçue ${x.numero || x.nomFichier || ''}`.trim(), [(x.vendeur || {}).nom, x.mail && x.mail.deEmail, x.statut], `#/efactures/${x.id}`));
     all('articles').forEach(a => ajoute('articles', a, [a.ref, a.refFournisseur], a.designation, [a.ref, a.famille, a.sousFamille], `#/articles?q=${encodeURIComponent(a.ref || a.designation)}`));
+    all('releves').forEach(r => ajoute('releves', r, [r.numero], `Prise de cotes ${r.numero || ''} ${r.ligne || ''}`.trim(), [ch(r.affaireId), r.matiere, r.statut], `#/releve/${r.id}`));
     all('epreuves').forEach(e => ajoute('epreuves', e, [e.numero], `PV d'épreuve ${e.numero || ''} ${e.reseau || ''}`.trim(), [ch(e.affaireId), e.resultat], `#/epreuve/${e.id}`));
     all('misesEnService').forEach(m => ajoute('misesEnService', m, [m.numero, m.numeroSerie], `Mise en service ${m.numero || ''} ${m.equipement || ''}`.trim(), [ch(m.affaireId), m.marque, m.modele], `#/mes/${m.id}`));
     all('equilibrages').forEach(q => ajoute('equilibrages', q, [q.numero], `Équilibrage ${q.numero || ''} ${q.installation || ''}`.trim(), [ch(q.affaireId), q.type], `#/equilibrage/${q.id}`));
