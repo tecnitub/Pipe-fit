@@ -62,6 +62,17 @@ test('nomenclature : tubes au mètre par DN, accessoires, brides et joints des v
   assert.deepStrictEqual(T.manques({ affaireId: 'af1', userId: 'o1', date: '2026-10-25', ligne: ' ', cotes: [{ valeur: '' }] }), ['repère de la ligne', 'au moins une cote ou un élément de tuyauterie']);
 });
 
+test('cotes à l\'axe nœud à nœud, brides à collerette ou tournantes, points des assemblages', () => {
+  const p = T.placer({ ...ligne(), noteDepart: 'Départ sur existant' });
+  assert.deepStrictEqual(p.cotes.map(c => [c.chemin, c.valeur]), [['', 1500], ['', 2000], ['4.b.', 800], ['4.b.', 414], ['', 875]], 'les cotes saisies se retrouvent à l\'axe');
+  assert.strictEqual(p.depart.note, 'Départ sur existant');
+  assert.strictEqual(p.pieces.find(x => x.id === '1').joints.length, 2, 'vanne à brides : deux assemblages');
+  const r = { dnDepart: 50, dirDepart: 'E', typeBride: 'tournante', pn: 'PN16', matiere: 'Inox 316L', elements: [{ t: 'tube', dn: 50, l: 500 }, { t: 'brides', dn: 50 }, { t: 'brides', dn: 50, typeBride: 'mixte' }, { t: 'vanne', dn: 50, rac: 'bride', typeBride: 'collerette' }] };
+  const nom = T.nomenclature(r), q = d => (nom.find(l => l.designation === d) || {}).quantite;
+  assert.deepStrictEqual([q('Bride tournante DN50 PN16'), q('Collet à souder DN50 PN16'), q('Bride à collerette DN50 PN16'), q('Joint plat DN50 PN16')], [3, 3, 3, 4]);
+  assert.deepStrictEqual(T.lignesChiffrage(r).filter(l => /Bride|Collet/.test(l.famille)).map(l => [l.famille, l.qte]), [['Bride tournante', 3], ['Collet à souder', 3], ['Bride à collerette', 3]]);
+});
+
 test('liste du matériel pour le chiffrage : familles CAO, tube en mètres par DN, brides des vannes, CSV', () => {
   const l = T.lignesChiffrage({ ...ligne(), ligne: 'EG-01' }), q = (f, dn) => l.filter(x => x.famille === f && x.dn === dn);
   assert.deepStrictEqual(q('Tuyau', 80).map(x => [x.longueur, x.qte, x.systeme]), [[3.272, 1, 'EG-01']]);

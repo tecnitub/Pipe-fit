@@ -358,11 +358,11 @@ function demoData() {
     signatureTechId: 'img-sig', signatureClientId: 'img-sig', signeLe: `${d(-25)}T10:42:00.000Z`, statut: 'Signé' }];
   // Prise de cotes du by-pass de la ligne NEP : photos avant / après, ligne en 3D, longueurs de coupe et nomenclature
   const releves = [{ id: 'rc1', numero: `RC-${Y}-0001`, affaireId: 'af1', userId: 'o1', technicien: 'Kevin Roux', date: d(-40), ligne: 'NEP-DN50-07 by-pass vanne V12', fluide: 'Solution de NEP (soude 2 %)',
-    matiere: 'Inox 316L', pn: 'PN16', dnDepart: 50, dirDepart: 'E', statut: 'Terminé', longueurTube: 2558,
+    matiere: 'Inox 316L', pn: 'PN16', typeBride: 'collerette', dnDepart: 50, dirDepart: 'E', noteDepart: 'Départ sur collecteur existant (coupe et chanfrein sur place)', statut: 'Terminé', longueurTube: 2558,
     elements: [{ t: 'tube', dn: 50, auto: true, cote: 1200, repere: 'T1' }, { t: 'vanne', dn: 50, type: 'boisseau', rac: 'bride', repere: 'V12' }, { t: 'coude', dn: 50, angle: 90, vers: 'N' },
       { t: 'tube', dn: 50, auto: true, cote: 900, repere: 'T2' },
-      { t: 'te', dn: 50, vers: 'H', dnB: 25, branche: [{ t: 'tube', dn: 25, auto: true, cote: 350, repere: 'T5' }, { t: 'vanne', dn: 25, type: 'boisseau', rac: 'taraude', repere: 'V13 purge' }, { t: 'fond', dn: 25 }] },
-      { t: 'tube', dn: 50, auto: true, cote: 600, repere: 'T3' }, { t: 'coude', dn: 50, angle: 90, vers: 'B' }, { t: 'tube', dn: 50, l: 450, repere: 'T4' }, { t: 'brides', dn: 50, repere: 'raccordement cuve' }],
+      { t: 'te', dn: 50, vers: 'H', dnB: 25, branche: [{ t: 'tube', dn: 25, auto: true, cote: 350, repere: 'T5' }, { t: 'vanne', dn: 25, type: 'boisseau', rac: 'taraude', repere: 'V13 purge', note: 'Début filetage sur existant' }, { t: 'fond', dn: 25 }] },
+      { t: 'tube', dn: 50, auto: true, cote: 600, repere: 'T3' }, { t: 'coude', dn: 50, angle: 90, vers: 'B' }, { t: 'tube', dn: 50, l: 450, repere: 'T4' }, { t: 'brides', dn: 50, typeBride: 'mixte', repere: 'raccordement cuve', note: 'Bride tournante côté cuve existante' }],
     cotes: [{ repere: 'A', libelle: 'Axe collecteur → nu du mur nord', valeur: '640', remarque: '' }, { repere: 'B', libelle: 'Axe ligne → dessus du rack', valeur: '185', remarque: 'rack à 3,20 m' },
       { repere: 'C', libelle: 'Entraxe piquage existant → bride cuve', valeur: '2100', remarque: 'bride cuve DN50 PN16' }],
     photosAvant: [{ photoId: 'img-rack1', legende: 'Ligne existante, vue depuis le rack nord', date: d(-40) }],

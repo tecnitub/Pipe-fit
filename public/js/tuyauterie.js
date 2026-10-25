@@ -16,6 +16,9 @@ const Tuyauterie = (() => {
   // Bride à collerette EN 1092-1 type 11 (ISO 7005-1) PN16 : diamètre extérieur et hauteur (valeurs indicatives)
   const BRIDE = { 15: [95, 35], 20: [105, 38], 25: [115, 38], 32: [140, 40], 40: [150, 42], 50: [165, 45], 65: [185, 45], 80: [200, 50], 100: [220, 52], 125: [250, 55], 150: [285, 55], 200: [340, 62], 250: [405, 70], 300: [460, 78] };
   const JOINT = 2; // joint plat EN 1514-1 comprimé (mm)
+  // Types de brides : à collerette à souder en bout (EN 1092-1 type 11), tournante sur collet à souder (type 02 + collet type 35).
+  // « mixte » : assemblage d'une bride à collerette et d'une bride tournante. Même encombrement retenu (valeurs indicatives).
+  const BRIDES_TYPES = { collerette: 'À collerette (type 11)', tournante: 'Tournante + collet (type 02 / 35)', mixte: 'Collerette + tournante' };
   // Robinetterie à brides : longueur face à face EN 558 / ISO 5752 (série de base)
   const SERIE_1 = { 15: 130, 20: 150, 25: 160, 32: 180, 40: 200, 50: 230, 65: 290, 80: 310, 100: 350, 125: 400, 150: 480, 200: 600, 250: 730, 300: 850 };
   const SERIE_14 = { 50: 150, 65: 170, 80: 180, 100: 190, 125: 200, 150: 210, 200: 230, 250: 250, 300: 270 };
@@ -105,8 +108,10 @@ const Tuyauterie = (() => {
 
   // Placement en 3D : pièces avec leur géométrie (points en mm), erreurs de saisie, encombrement total
   function placer(rel) {
-    const pieces = [], erreurs = [];
-    const marcher = (liste, p, d, dn, chemin, debutNoeud) => {
+    const pieces = [], erreurs = [], cotes = [];
+    // Cotes à l'axe : d'un nœud au suivant (départ, centre des coudes et des tés, extrémité)
+    const coter = (a, b, chemin) => { const v = Math.round(len(add(b, a, -1))); if (v >= 1) cotes.push({ a, b, valeur: v, chemin }); };
+    const marcher = (liste, p, d, dn, chemin, debutNoeud, noeud = p) => {
       const { res, erreurs: ec } = coupes(liste, debutNoeud, dn);
       ec.forEach(e => erreurs.push({ chemin: `${chemin}${e.i}`, msg: e.msg }));
       let ferme = false;
@@ -121,6 +126,7 @@ const Tuyauterie = (() => {
           const d1 = unit(add(d.map(x => x * Math.cos(a)), u, Math.sin(a)));
           const centre = add(p, d, c), p1 = add(centre, d1, c);
           pieces.push({ ...base, p1, d1, u, R, a, centre, axeFace: c });
+          coter(noeud, centre, chemin); noeud = centre;
           p = p1; d = d1; dn = dnEl;
           return;
         }
@@ -128,11 +134,12 @@ const Tuyauterie = (() => {
           const c = axeFaceTe({ ...el, dn: dnEl }), centre = add(p, d, c), p1 = add(p, d, 2 * c);
           const v = DIRS[el.vers] || DIRS.H, perp = add(v, d, -dot(v, d));
           pieces.push({ ...base, p1, centre, axeFace: c, dnB: dnOk(el.dnB || dnEl) });
+          coter(noeud, centre, chemin); noeud = centre;
           if (len(perp) < 1e-6) erreurs.push({ chemin: id, msg: 'Té : la dérivation doit partir perpendiculairement à la ligne' });
           else {
             const vb = unit(perp), pb = add(centre, vb, c);
             pieces[pieces.length - 1].pb = pb; pieces[pieces.length - 1].vb = vb;
-            marcher(el.branche || [], pb, vb, dnOk(el.dnB || dnEl), `${id}.b.`, c);
+            marcher(el.branche || [], pb, vb, dnOk(el.dnB || dnEl), `${id}.b.`, c, centre);
           }
           p = p1; dn = dnEl;
           return;
@@ -148,20 +155,33 @@ const Tuyauterie = (() => {
           // Excentrique : génératrice plate en haut (aspiration de pompe) ou en bas ; l'axe aval se décale
           if (el.exc && Math.abs(d[2]) < 0.5) { const k = (DE[dnEl] - DE[dnSortie]) / 2; p1 = add(p1, [0, 0, el.exc === 'haut' ? -k : k]); piece.p1 = p1; }
         }
+        // Assemblages à brides : un point par joint (repéré en bleu sur l'isométrique) et le type de chaque bride
+        const typeB = t => (BRIDES_TYPES[t] ? t : BRIDES_TYPES[rel.typeBride] ? rel.typeBride : 'collerette');
+        if (el.t === 'brides') {
+          const t = typeB(el.typeBride), mid = add(p, d, L / 2);
+          piece.joints = [mid];
+          piece.flanges = t === 'mixte' ? ['collerette', 'tournante'] : [t, t];
+        }
         if (el.t === 'vanne') {
           const v = DIRS[el.tige] || (Math.abs(d[2]) > 0.5 ? DIRS.E : DIRS.H), perp = add(v, d, -dot(v, d));
           piece.tige = len(perp) < 1e-6 ? (Math.abs(d[0]) > 0.5 ? [0, 1, 0] : [1, 0, 0]) : unit(perp);
           piece.brides = el.rac === 'bride' || !el.rac;
           piece.ftf = piece.brides ? L - 2 * (BRIDE[dnEl][1] + JOINT) : L;
+          if (piece.brides) {
+            const t = typeB(el.typeBride) === 'tournante' ? 'tournante' : 'collerette', h = BRIDE[dnEl][1] + JOINT / 2;
+            piece.joints = [add(p, d, h), add(p1, d, -h)];
+            piece.flanges = [t, t];
+          }
         }
         if (el.t === 'fond') ferme = true;
         pieces.push(piece);
         p = p1; dn = dnSortie;
       });
+      if (liste.length) coter(noeud, p, chemin);
       return { p, d, dn };
     };
     const fin = marcher(rel.elements || [], [0, 0, 0], DIRS[rel.dirDepart] || DIRS.E, dnOk(rel.dnDepart || 50), '', 0);
-    return { pieces, erreurs, fin };
+    return { pieces, erreurs, fin, cotes, depart: { p: [0, 0, 0], note: String(rel.noteDepart || '').trim() } };
   }
   // Élément désigné par son chemin (« 3 », « 2.b.0 ») et la liste qui le contient
   function trouver(rel, chemin) {
@@ -187,7 +207,8 @@ const Tuyauterie = (() => {
       case 'te': return [pc.dnB !== pc.dn ? `Té réduit ${m} DN${pc.dn} × DN${pc.dnB}` : `Té égal ${m} DN${pc.dn}`, 'ISO 3419 / EN 10253'];
       case 'reduc': return [`Réduction ${el.exc ? 'excentrique' : 'concentrique'} ${m} DN${pc.dn} × DN${pc.dn2}`, 'ISO 3419 / EN 10253'];
       case 'vanne': { const v = VANNES[el.type] || VANNES.boisseau; return [`${v.lib} ${RACCORDEMENTS[el.rac || 'bride']} DN${pc.dn} ${pn}`, el.rac === 'taraude' ? 'ISO 7-1 (filetage)' : `${v.serie} / ISO 5752`]; }
-      case 'brides': return [`Bride à collerette DN${pc.dn} ${pn}`, 'EN 1092-1 type 11 / ISO 7005-1'];
+      case 'brides': return pc.flanges && pc.flanges[0] === 'tournante' && pc.flanges[1] === 'tournante' ? [`Paire de brides tournantes sur collets DN${pc.dn} ${pn}`, 'EN 1092-1 type 02 / 35']
+        : pc.flanges && pc.flanges[0] !== pc.flanges[1] ? [`Assemblage bride à collerette + bride tournante DN${pc.dn} ${pn}`, 'EN 1092-1 type 11 / 02'] : [`Paire de brides à collerette DN${pc.dn} ${pn}`, 'EN 1092-1 type 11 / ISO 7005-1'];
       case 'raccord': return [`${RACCORDS[el.type] || RACCORDS.union} DN${pc.dn}`, 'ISO 49 / EN 10242'];
       case 'fond': return [`Fond bombé ${m} DN${pc.dn}`, 'ISO 3419 / EN 10253'];
       default: return [TYPES[pc.t] || pc.t, ''];
@@ -201,12 +222,13 @@ const Tuyauterie = (() => {
     placement.pieces.forEach(pc => {
       const [des, norme] = designation(pc, rel);
       if (pc.t === 'tube') { ajoute(des, norme, (pc.coupe || 0) / 1000, 'm'); return; }
-      ajoute(des, norme, pc.t === 'brides' ? 2 : 1);
-      if (pc.t === 'brides' || (pc.t === 'vanne' && pc.brides)) {
-        if (pc.t === 'vanne') ajoute(`Bride à collerette DN${pc.dn} ${pn}`, 'EN 1092-1 type 11 / ISO 7005-1', 2);
-        ajoute(`Joint plat DN${pc.dn} ${pn}`, 'EN 1514-1', pc.t === 'vanne' ? 2 : 1);
-        ajoute(`Jeu de boulonnerie DN${pc.dn} ${pn}`, 'ISO 4014 / ISO 4032', pc.t === 'vanne' ? 2 : 1);
-      }
+      // Brides comptées une à une (collerettes, tournantes et leurs collets), joints et boulonnerie par assemblage
+      if (pc.t !== 'brides') ajoute(des, norme, 1);
+      (pc.flanges || []).forEach(t => {
+        if (t === 'tournante') { ajoute(`Bride tournante DN${pc.dn} ${pn}`, 'EN 1092-1 type 02', 1); ajoute(`Collet à souder DN${pc.dn} ${pn}`, 'EN 1092-1 type 35', 1); }
+        else ajoute(`Bride à collerette DN${pc.dn} ${pn}`, 'EN 1092-1 type 11 / ISO 7005-1', 1);
+      });
+      (pc.joints || []).forEach(() => { ajoute(`Joint plat DN${pc.dn} ${pn}`, 'EN 1514-1', 1); ajoute(`Jeu de boulonnerie DN${pc.dn} ${pn}`, 'ISO 4014 / ISO 4032', 1); });
     });
     return [...lignes.values()].sort((a, b) => (a.unite === 'm' ? 0 : 1) - (b.unite === 'm' ? 0 : 1) || a.designation.localeCompare(b.designation, 'fr'));
   }
@@ -219,8 +241,11 @@ const Tuyauterie = (() => {
       if (longueur) l.longueur = Math.round((l.longueur + longueur) * 1000) / 1000; else l.qte += qte;
       out.set(k, l);
     };
-    // n assemblages à brides : 2 brides par paire, 1 contre-bride par côté de vanne ; un joint et une boulonnerie par assemblage
-    const brides = (dn, n, nb = 2 * n) => { ajoute('Bride à collerette', `${pn} EN 1092-1 type 11`, dn, nb); ajoute('Joint plat', `${pn} EN 1514-1`, dn, n); ajoute('Boulonnerie', `Jeu ${pn}`, dn, n); };
+    // Brides une à une (une tournante va avec son collet), un joint et une boulonnerie par assemblage
+    const brides = pc => {
+      (pc.flanges || []).forEach(t => { if (t === 'tournante') { ajoute('Bride tournante', `${pn} EN 1092-1 type 02`, pc.dn, 1); ajoute('Collet à souder', `${m} EN 1092-1 type 35`.trim(), pc.dn, 1); } else ajoute('Bride à collerette', `${pn} EN 1092-1 type 11`, pc.dn, 1); });
+      (pc.joints || []).forEach(() => { ajoute('Joint plat', `${pn} EN 1514-1`, pc.dn, 1); ajoute('Boulonnerie', `Jeu ${pn}`, pc.dn, 1); });
+    };
     placement.pieces.forEach(pc => {
       const el = pc.el;
       switch (pc.t) {
@@ -231,10 +256,10 @@ const Tuyauterie = (() => {
         case 'vanne': {
           const v = VANNES[el.type] || VANNES.boisseau;
           ajoute(v.lib.replace(/ \(entre brides\)$/, ''), `${RACCORDEMENTS[el.rac || 'bride']} ${pn}`, pc.dn, 1);
-          if (pc.brides) brides(pc.dn, 2, 2);
+          brides(pc);
           break;
         }
-        case 'brides': brides(pc.dn, 1); break;
+        case 'brides': brides(pc); break;
         case 'raccord': ajoute(el.type === 'manchon' ? 'Manchon' : 'Raccord union', m, pc.dn, 1); break;
         case 'fond': ajoute('Fond bombé', m, pc.dn, 1); break;
         default: break;
@@ -257,7 +282,7 @@ const Tuyauterie = (() => {
       !((r.elements || []).length || (r.cotes || []).some(c => n(c.valeur) !== null)) && 'au moins une cote ou un élément de tuyauterie'].filter(Boolean);
   }
   const STATUTS = ['Brouillon', 'Relevé', 'Terminé'];
-  return { DN, DE, RAYON_3D, TE, REDUC, FOND, BRIDE, VANNES, RACCORDEMENTS, RACCORDS, MATIERES, PN, TYPES, DIRS, DIRS_LIB, STATUTS,
+  return { DN, DE, RAYON_3D, TE, REDUC, FOND, BRIDE, BRIDES_TYPES, VANNES, RACCORDEMENTS, RACCORDS, MATIERES, PN, TYPES, DIRS, DIRS_LIB, STATUTS,
     lire, angle, axeFaceCoude, axeFaceTe, longueur, coupes, placer, trouver, listeDe, designation, nomenclature, lignesChiffrage, csvChiffrage, debit, manques };
 })();
 if (typeof module !== 'undefined') module.exports = Tuyauterie;

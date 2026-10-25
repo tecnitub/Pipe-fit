@@ -9,7 +9,7 @@ const retourReleve = r => (Store.me.role === 'atelier' ? '#/pointage/rapports' :
 const srcPhoto = p => (String(p.photoId || '').startsWith('data:') ? p.photoId : fileUrl(p.photoId));
 const STATUT_BADGE = { Brouillon: 'b-warn', Relevé: 'b-info', Terminé: 'b-ok' };
 const badgeReleve = r => `<span class="badge ${STATUT_BADGE[r.statut] || 'b-warn'}">${esc(r.statut || 'Brouillon')}</span>`;
-const LIB_EL = { tube: '▬ Tube', coude: '↱ Coude', te: '┳ Té', reduc: '▷ Réduction', vanne: '⋈ Vanne', brides: '‖ Brides', raccord: '⊡ Raccord', fond: '◗ Fond' };
+const LIB_EL = { tube: '▬ Tube', coude: '↱ Coude 3D', te: '┳ Té', reduc: '▷ Réduction', vanne: '⋈ Vanne', brides: '‖ Brides', raccord: '⊡ Raccord', fond: '◗ Fond' };
 const dirDe = v => Object.keys(Tuyauterie.DIRS).find(k => Tuyauterie.DIRS[k].every((x, i) => Math.abs(x - v[i]) < 1e-6)) || '';
 const dirLib = v => { const k = dirDe(v); return k ? Tuyauterie.DIRS_LIB[k] : 'oblique'; };
 
@@ -62,6 +62,7 @@ function releveForm(r) {
         ${f('fluide', 'Fluide véhiculé', 'text', 'placeholder="Eau glacée, vapeur, air comprimé…"')}
         <div class="field"><label for="rl-matiere">Matière</label><select id="rl-matiere" data-rl="matiere">${optionsStr(Tuyauterie.MATIERES, r.matiere)}</select></div>
         <div class="field"><label for="rl-pn">Pression nominale</label><select id="rl-pn" data-rl="pn">${optionsStr(Tuyauterie.PN, r.pn)}</select></div>
+        <div class="field"><label for="rl-typeBride">Brides de la ligne</label><select id="rl-typeBride" data-rl="typeBride">${Object.entries(Tuyauterie.BRIDES_TYPES).map(([k, l]) => `<option value="${k}" ${(r.typeBride || 'collerette') === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
       </div>
       ${deja.length ? `<p class="small muted">Déjà relevé sur ce chantier : ${deja.map(x => `<a href="#/releve/${esc(x.id)}">${esc(x.ligne)}</a> (${dateFr(x.date)})`).join(' · ')}</p>` : ''}
     </fieldset>
@@ -82,7 +83,8 @@ function releveForm(r) {
 
     <fieldset class="hd-bloc"><legend>Isométrique 3D et accessoires</legend>
       <div class="rl-3d-bar">${[['iso', 'Iso'], ['dessus', 'Dessus'], ['face', 'Face'], ['cote', 'Côté']].map(([k, l]) => `<button class="small secondary" data-vue="${k}">${l}</button>`).join('')}
-        <label class="check small"><input type="checkbox" id="rl-cotes3d" ${b.cam.cotes ? 'checked' : ''}> Longueurs de coupe</label></div>
+        <span class="rl-3d-opts">${[['cotes', 'Cotes à l\'axe'], ['coupes', 'Longueurs de coupe'], ['notes', 'Annotations']].map(([k, l]) => `<label class="check small"><input type="checkbox" data-opt3d="${k}" ${b.cam[k] !== false && (k !== 'coupes' || b.cam.coupes) ? 'checked' : ''}> ${l}</label>`).join('')}</span>
+        <span class="small muted"><span class="rl-pt-bleu" aria-hidden="true"></span> assemblage à brides</span></div>
       <canvas class="rl-3d" id="rl-3d" aria-label="Vue 3D de la ligne"></canvas>
       <p class="small muted">Tournez avec le doigt ou la souris, pincez ou molette pour zoomer, deux doigts ou clic droit pour déplacer ; touchez une pièce pour la retrouver dans la liste.</p>
       <div id="rl-erreurs">${erreursReleveHtml(pl)}</div>
@@ -137,8 +139,10 @@ function editeurListeHtml(r, pl) {
       case 'te': return `${dirSel('vers', el.vers, i, 'Dérivation vers')}${dnSel('dnB', el.dnB || el.dn, i, 'DN dériv.')}<button class="small" data-branche="${i}">Dérivation (${(el.branche || []).length}) ›</button>`;
       case 'reduc': return `${dnSel('dn2', el.dn2, i, 'vers DN')}${sel('exc', el.exc || '', i, '', { '': 'Concentrique', haut: 'Excentrique plat dessus', bas: 'Excentrique plat dessous' })}`;
       case 'vanne': return `${sel('type', el.type || 'boisseau', i, '', Object.fromEntries(Object.entries(Tuyauterie.VANNES).map(([k, v]) => [k, v.lib])))}${sel('rac', el.rac || 'bride', i, '', Tuyauterie.RACCORDEMENTS)}
+        ${(el.rac || 'bride') === 'bride' ? sel('typeBride', el.typeBride === 'tournante' ? 'tournante' : 'collerette', i, 'contre-brides', { collerette: 'à collerette', tournante: 'tournantes + collets' }) : ''}
         ${Tuyauterie.VANNES[el.type || 'boisseau'].commande ? dirSel('tige', el.tige || dirDe(pc.tige || []) || 'H', i, 'Commande vers') : ''}${mm('l', el.l, i, 'Face à face', String(pc.ftf ? Math.round(pc.ftf) : ''))}`;
       case 'raccord': return sel('type', el.type || 'union', i, '', Tuyauterie.RACCORDS);
+      case 'brides': return sel('typeBride', el.typeBride || r.typeBride || 'collerette', i, '', Tuyauterie.BRIDES_TYPES);
       default: return '';
     }
   };
@@ -154,12 +158,14 @@ function editeurListeHtml(r, pl) {
   const fin = finListe(r, chemin, pl);
   return `<div class="rl-editeur">
     <div class="rl-fil">${chemin ? `<button class="small secondary" data-chemin="${esc(parent)}">← ${parent ? 'Dérivation précédente' : 'Ligne principale'}</button> <strong>Dérivation du té n° ${esc(numeroEl(chemin))}</strong> (DN${esc(te && (te.el.dnB || te.el.dn))})`
-      : `<strong>Ligne principale</strong> · départ ${dnSel('dnDepart', r.dnDepart, '-1', 'DN')} ${dirSel('dirDepart', r.dirDepart, '-1', 'vers')}`}</div>
+      : `<strong>Ligne principale</strong> · départ ${dnSel('dnDepart', r.dnDepart, '-1', 'DN')} ${dirSel('dirDepart', r.dirDepart, '-1', 'vers')}
+        <input data-el="-1" data-k="noteDepart" value="${esc(r.noteDepart || '')}" placeholder="Annotation du départ (ex. départ sur existant, piquage…)" aria-label="Annotation du départ" class="rl-note">`}</div>
     <ol class="rl-liste">${liste.map((el, i) => { const id = `${chemin ? `${chemin}.b.` : ''}${i}`; return `<li class="rl-el ${b.cam.sel === id ? 'sel' : ''}" data-elid="${esc(id)}">
       <span class="rl-num" data-pick="${esc(id)}">${i + 1}</span><span class="rl-type" data-pick="${esc(id)}">${LIB_EL[el.t] || esc(el.t)}</span>
       ${dnSel('dn', el.dn, i)}
       ${params(el, i)}
       <input data-el="${i}" data-k="repere" value="${esc(el.repere || '')}" placeholder="Repère" aria-label="Repère de l'élément" class="rl-repel">
+      <input data-el="${i}" data-k="note" value="${esc(el.note || '')}" placeholder="Annotation (ex. début filetage sur existant)" aria-label="Annotation sur l'isométrique" class="rl-note">
       <span class="rl-enc small" data-enc="${i}">${encombrement(el, i)}</span>
       <span class="rl-act"><button class="icon" data-mv="${i}|-1" aria-label="Monter" ${i ? '' : 'disabled'}>↑</button><button class="icon" data-mv="${i}|1" aria-label="Descendre" ${i < liste.length - 1 ? '' : 'disabled'}>↓</button><button class="icon" data-rmel="${i}" aria-label="Retirer">✕</button></span></li>`; }).join('')
       || '<li class="muted small">Aucun élément : ajoutez les pièces dans l\'ordre de la ligne, depuis le départ.</li>'}</ol>
@@ -204,7 +210,7 @@ Views.releve.bind = (root, params) => {
   };
   root.querySelectorAll('[data-rl]').forEach(el => el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
     r[el.dataset.rl] = el.value;
-    if (['matiere', 'pn'].includes(el.dataset.rl)) majCalculs();
+    if (el.dataset.rl === 'typeBride') App.render(); else if (['matiere', 'pn'].includes(el.dataset.rl)) majCalculs();
   }));
   $('#rl-aff').onchange = () => { r.affaireId = $('#rl-aff').value; App.render(); };
   // Cotes relevées
@@ -226,10 +232,10 @@ Views.releve.bind = (root, params) => {
   brancherChiffrageReleve(root, () => r);
   // Vue 3D
   root.querySelectorAll('[data-vue]').forEach(x => x.onclick = () => b.vue.vue(x.dataset.vue));
-  $('#rl-cotes3d').onchange = e => { b.cam.cotes = e.target.checked; b.vue.rendu(); };
+  root.querySelectorAll('[data-opt3d]').forEach(x => x.onchange = () => { b.cam[x.dataset.opt3d] = x.checked; b.vue.rendu(); });
   // Éléments de la ligne
   const courante = () => Tuyauterie.listeDe(r, b.chemin) || [];
-  const STRUCTURE = ['auto', 'angle', 'vers', 'type', 'rac', 'dn', 'dn2', 'dnB', 'exc', 'tige', 'dnDepart', 'dirDepart'];
+  const STRUCTURE = ['auto', 'angle', 'vers', 'type', 'rac', 'dn', 'dn2', 'dnB', 'exc', 'tige', 'typeBride', 'dnDepart', 'dirDepart'];
   root.querySelectorAll('[data-el]').forEach(el => el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
     const k = el.dataset.k, i = +el.dataset.el, cible = i < 0 ? r : courante()[i];
     if (!cible) return;
@@ -253,7 +259,8 @@ Views.releve.bind = (root, params) => {
     if (t === 'coude') Object.assign(el, { angle: 90, vers: perpendiculaire(d, vertical ? ['E', 'N'] : ['N', 'E', 'H']) });
     if (t === 'te') Object.assign(el, { vers: perpendiculaire(d, vertical ? ['E', 'N'] : ['H', 'N', 'E']), dnB: fin.dn, branche: [] });
     if (t === 'reduc') el.dn2 = Tuyauterie.DN[Math.max(0, Tuyauterie.DN.indexOf(fin.dn) - 1)];
-    if (t === 'vanne') Object.assign(el, { type: 'boisseau', rac: 'bride' });
+    if (t === 'vanne') Object.assign(el, { type: 'boisseau', rac: 'bride', typeBride: r.typeBride === 'tournante' ? 'tournante' : 'collerette' });
+    if (t === 'brides') el.typeBride = r.typeBride || 'collerette';
     if (t === 'raccord') el.type = 'union';
     courante().push(el);
     b.cam.sel = `${b.chemin ? `${b.chemin}.b.` : ''}${courante().length - 1}`;
@@ -317,7 +324,8 @@ function releveDocument(r) {
       <div>Chantier : <strong>${esc(a.code || '')} – ${esc(a.nom || '')}</strong></div></div>
     <table class="doc-lines compact ppsps-t">${[l('Ligne', `<strong>${esc(r.ligne)}</strong>`), r.fluide ? l('Fluide', esc(r.fluide)) : '', l('Matière, pression nominale', esc(`${r.matiere || ''} · ${r.pn || ''}`)),
       l('Relevé par', esc(r.technicien || userName(r.userId))), l('État', esc(r.statut || ''))].join('')}</table>
-    ${pl.pieces.length ? `<h3 class="doc-h">Isométrique</h3><div class="rl-iso"><img src="${Vue3D.image(pl)}" alt="Isométrique de la ligne"></div><p class="small">Repère : Nord vers la droite en haut, Est vers la droite en bas, cotes en mm (longueurs de coupe des tubes).</p>` : ''}
+    ${pl.pieces.length ? `<h3 class="doc-h">Isométrique</h3><div class="rl-iso"><img src="${Vue3D.image(pl)}" alt="Isométrique de la ligne"></div><p class="small">Repère : Nord vers la droite en haut, Est vers la droite en bas. Cotes à l'axe en mm, d'un nœud au suivant (départ, centre des coudes 3D et des tés, extrémité). Point bleu : assemblage à brides.</p>` : ''}
+    ${annotationsHtml(r, pl)}
     ${deb.length ? `<h3 class="doc-h">Fiche de débit</h3><table class="doc-lines compact"><tr><th>Élément</th><th>Repère</th><th>DN</th><th class="num">Ø ext.</th><th class="num">Cote axe à axe</th><th class="num">Longueur de coupe</th></tr>
       ${deb.map(d => `<tr><td>${esc(numeroEl(d.id))}</td><td>${esc(d.repere)}</td><td>DN${d.dn}</td><td class="num">${fmt(d.de, 1)}</td><td class="num">${d.cote !== null ? fmt(d.cote) : '—'}</td><td class="num"><strong>${fmt(d.coupe)}</strong></td></tr>`).join('')}</table>` : ''}
     ${nom.length ? `<h3 class="doc-h">Nomenclature</h3><table class="doc-lines compact"><tr><th>Désignation</th><th>Norme</th><th class="num">Quantité</th></tr>
@@ -373,4 +381,10 @@ async function envoyerAuChiffrage(r) {
   Store.upsert('chiffrages', ch);
   App.toast(`${lignes.length} ligne(s) ${deja ? 'mises à jour' : 'ajoutées'} dans le chiffrage « ${ch.nom} »`, 4000);
   location.hash = `#/chiffrage/${ch.id}`;
+}
+
+// Annotations portées sur l'isométrique (départ et éléments)
+function annotationsHtml(r, pl) {
+  const l = [...(pl.depart && pl.depart.note ? [['Départ', pl.depart.note]] : []), ...pl.pieces.filter(pc => String(pc.el.note || '').trim()).map(pc => [`${numeroEl(pc.id)} · ${(LIB_EL[pc.t] || pc.t).replace(/^\S+ /, '')}${pc.el.repere ? ` ${pc.el.repere}` : ''}`, pc.el.note.trim()])];
+  return l.length ? `<h3 class="doc-h">Annotations</h3><table class="doc-lines compact"><tr><th>Élément</th><th>Annotation</th></tr>${l.map(([e, n]) => `<tr><td>${esc(e)}</td><td>${esc(n)}</td></tr>`).join('')}</table>` : '';
 }

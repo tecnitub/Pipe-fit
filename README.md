@@ -51,6 +51,11 @@ Depuis un chantier (« + Prise de cotes ») ou sur le téléphone du compagnon (
   soupape, clapet anti-retour, filtre en Y ; à brides, à souder ou taraudée), paires de brides, raccords union et manchons, fonds
   bombés. Vue isométrique, de dessus, de face, de côté ; rotation au doigt, zoom par pincement ; toucher une pièce la retrouve
   dans la liste ;
+- **isométrique coté** : cotes à l'axe d'un nœud au suivant (départ, centre des coudes 3D et des tés, extrémité), repères,
+  longueurs de coupe au choix, **annotations** libres sur le départ et sur chaque pièce (ex. « début filetage sur existant »),
+  **point bleu** sur chaque assemblage à brides ;
+- **brides** à collerette (EN 1092-1 type 11), tournantes sur collet à souder (type 02 + collet type 35) ou assemblage mixte
+  collerette + tournante, réglées pour la ligne et modifiables pièce par pièce (contre-brides des vannes comprises) ;
 - **longueurs de coupe calculées** : on saisit la cote axe à axe relevée entre deux coudes ou tés, l'appli retire les cotes
   axe-face et l'encombrement des accessoires du tronçon ;
 - **nomenclature** (tubes au mètre par DN, raccords, robinetterie, brides, joints et boulonnerie) et **fiche imprimable / PDF**
