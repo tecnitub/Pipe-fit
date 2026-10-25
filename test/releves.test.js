@@ -114,6 +114,8 @@ test('types de tube : acier T10, inox soudé, inox à sertir (diamètres, cotes 
   assert.match(T.nomenclature(ligneS('t10')).find(l => l.unite === 'm').designation, /T10 DN50 \(Ø60,3 × 2,9\)/);
   assert.strictEqual(T.lignesChiffrage(ligneS('inoxSoude'))[0].famille, 'Tube inox soudé');
   assert.strictEqual(T.cleSysteme({ matiere: 'Inox 316L' }), 'inoxSoude', 'ancien relevé inox : inox soudé');
+  const af = T.placer({ dnDepart: 50, dirDepart: 'E', elements: [{ t: 'tube', dn: 50, auto: true, cote: 1000 }, { t: 'coude', dn: 50, vers: 'N', af: '90' }, { t: 'tube', dn: 50, l: 100 }] });
+  assert.deepStrictEqual([T.debit(af)[0].coupe, af.pieces[1].axeFace], [910, 90], 'cote axe-face du fabricant saisie sur le coude');
   assert.deepStrictEqual(T.manques({ userId: 'u1', date: '2026-10-25', ligne: 'L1', clientLibre: 'Prospect', cotes: [{ valeur: '100' }] }), [], 'visite commerciale : client sans chantier');
 });
 

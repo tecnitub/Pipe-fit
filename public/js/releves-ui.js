@@ -148,13 +148,14 @@ function editeurListeHtml(r, pl) {
     const pc = piece(i) || {};
     switch (el.t) {
       case 'tube': return `${sel('auto', el.auto ? '1' : '', i, '', { '': 'Longueur de coupe', 1: 'Cote axe à axe' })}${el.auto ? mm('cote', el.cote, i, 'cote', 'axe à axe') : mm('l', el.l, i, '', 'longueur')}`;
-      case 'coude': return `${sel('angle', String(el.angle || 90), i, 'Angle', { 90: '90°', 45: '45°' })}${dirSel('vers', el.vers, i, 'vers')}`;
+      // Cote axe-face : celle de la norme (ou du raccord à sertir) proposée, remplacée par celle du fabricant si saisie
+      case 'coude': return `${sel('angle', String(el.angle || 90), i, 'Angle', { 90: '90°', 45: '45°' })}${dirSel('vers', el.vers, i, 'vers')}${mm('af', el.af, i, 'axe-face', pc.axeFace && !el.af ? String(pc.axeFace).replace('.', ',') : '')}`;
       case 'devoie': return `${sel('angle', String(Tuyauterie.ANGLES_DEVOIEMENT.includes(+el.angle) ? +el.angle : 45), i, 'Coudes', Object.fromEntries(Tuyauterie.ANGLES_DEVOIEMENT.map(a => [a, `${a}°`])))}${dirSel('vers', el.vers, i, 'vers')}${mm('dec', el.dec, i, 'décalage', 'mm')}
         <label class="rl-p">puis <select data-el="${i}" data-k="vers2"><option value="">— (simple)</option>${Object.entries(Tuyauterie.DIRS_LIB).map(([d, l]) => `<option value="${d}" ${el.vers2 === d ? 'selected' : ''}>${l}</option>`).join('')}</select></label>${el.vers2 ? mm('dec2', el.dec2, i, 'décalage', 'mm') : ''}`;
       case 'v3v': return `${dirSel('vers', el.vers, i, 'Voie B vers')}${sel('rac', el.rac || 'bride', i, '', Tuyauterie.RACCORDEMENTS)}
         ${(el.rac || 'bride') === 'bride' ? sel('typeBride', el.typeBride === 'tournante' ? 'tournante' : 'collerette', i, 'contre-brides', { collerette: 'à collerette', tournante: 'tournantes + collets' }) : ''}
         ${dirSel('tige', el.tige || dirDe(pc.tige || []) || 'H', i, 'Moteur vers')}${mm('l', el.l, i, 'Face à face', String(pc.ftf ? Math.round(pc.ftf) : ''))}<button class="small" data-branche="${i}">Voie B (${(el.branche || []).length}) ›</button>`;
-      case 'te': return `${dirSel('vers', el.vers, i, 'Dérivation vers')}${dnSel('dnB', el.dnB || el.dn, i, 'DN dériv.')}<button class="small" data-branche="${i}">Dérivation (${(el.branche || []).length}) ›</button>`;
+      case 'te': return `${dirSel('vers', el.vers, i, 'Dérivation vers')}${dnSel('dnB', el.dnB || el.dn, i, S.sertir ? 'Ø dériv.' : 'DN dériv.')}${mm('af', el.af, i, 'axe-face', pc.axeFace && !el.af ? String(pc.axeFace).replace('.', ',') : '')}<button class="small" data-branche="${i}">Dérivation (${(el.branche || []).length}) ›</button>`;
       case 'reduc': return `${dnSel('dn2', el.dn2, i, 'vers DN')}${sel('exc', el.exc || '', i, '', { '': 'Concentrique', haut: 'Excentrique plat dessus', bas: 'Excentrique plat dessous' })}`;
       case 'vanne': return `${sel('type', el.type || 'boisseau', i, '', Object.fromEntries(Object.entries(Tuyauterie.VANNES).map(([k, v]) => [k, v.lib])))}${sel('rac', el.rac || 'bride', i, '', Tuyauterie.RACCORDEMENTS)}
         ${(el.rac || 'bride') === 'bride' ? sel('typeBride', el.typeBride === 'tournante' ? 'tournante' : 'collerette', i, 'contre-brides', { collerette: 'à collerette', tournante: 'tournantes + collets' }) : ''}
@@ -325,7 +326,7 @@ Views.releve.bind = (root, params) => {
     const k = el.dataset.k, i = +el.dataset.el, cible = i < 0 ? r : courante()[i];
     if (!cible) return;
     const v = el.value.replace(',', '.');
-    cible[k] = ['dn', 'dn2', 'dnB', 'dnDepart', 'angle'].includes(k) ? +v : k === 'auto' ? !!v : ['l', 'cote', 'dec', 'dec2'].includes(k) ? v : el.value;
+    cible[k] = ['dn', 'dn2', 'dnB', 'dnDepart', 'angle'].includes(k) ? +v : k === 'auto' ? !!v : ['l', 'cote', 'dec', 'dec2', 'af'].includes(k) ? v : el.value;
     // Changement de DN : les éléments suivants de même DN suivent (jusqu'à la prochaine réduction)
     if (k === 'dn' && i >= 0) { const l = courante(); for (let j = i + 1; j < l.length && l[j].t !== 'reduc'; j++) l[j].dn = +v; }
     if (k === 'dn2' && i >= 0) { const l = courante(); for (let j = i + 1; j < l.length && l[j].t !== 'reduc'; j++) l[j].dn = +v; }
