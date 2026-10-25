@@ -84,14 +84,14 @@ function releveForm(r) {
     <fieldset class="hd-bloc"><legend>Isométrique 3D et accessoires</legend>
       <div class="rl-3d-bar">${[['iso', 'Iso'], ['dessus', 'Dessus'], ['face', 'Face'], ['cote', 'Côté']].map(([k, l]) => `<button class="small secondary" data-vue="${k}">${l}</button>`).join('')}
         <span class="rl-3d-opts">${[['cotes', 'Cotes à l\'axe'], ['coupes', 'Longueurs de coupe'], ['notes', 'Annotations']].map(([k, l]) => `<label class="check small"><input type="checkbox" data-opt3d="${k}" ${b.cam[k] !== false && (k !== 'coupes' || b.cam.coupes) ? 'checked' : ''}> ${l}</label>`).join('')}</span>
-        <span class="small muted"><span class="rl-pt-bleu" aria-hidden="true"></span> assemblage à brides</span></div>
+        <span class="small muted"><span class="rl-pt-bleu" aria-hidden="true"></span> soudure</span></div>
       <canvas class="rl-3d" id="rl-3d" aria-label="Vue 3D de la ligne"></canvas>
       <p class="small muted">Tournez avec le doigt ou la souris, pincez ou molette pour zoomer, deux doigts ou clic droit pour déplacer ; touchez une pièce pour la retrouver dans la liste.</p>
       <div id="rl-erreurs">${erreursReleveHtml(pl)}</div>
       ${editeurListeHtml(r, pl)}
     </fieldset>
 
-    <fieldset class="hd-bloc"><legend>Fiche de débit et nomenclature</legend>${pl.pieces.length ? `<div class="toolbar">${boutonsChiffrageReleve(r)}</div>` : ''}<div id="rl-calc">${calculsReleveHtml(r, pl)}</div></fieldset>
+    <fieldset class="hd-bloc"><legend>Fiche de débit, nomenclature et prix</legend>${pl.pieces.length ? `<div class="toolbar">${boutonsChiffrageReleve(r)}</div>` : ''}<div id="rl-calc">${calculsReleveHtml(r, pl)}</div></fieldset>
 
     <fieldset class="hd-bloc"><legend>Photos après travaux <span class="muted small">${r.photosApres.length}</span></legend>
       ${photosReleveHtml(r.photosApres, 'apres')}
@@ -188,9 +188,61 @@ function calculsReleveHtml(r, pl) {
   return `<div class="table-wrap"><table class="compact"><tr><th>Élément</th><th>Repère</th><th>DN</th><th class="num">Ø ext.</th><th class="num">Cote axe à axe</th><th class="num">Longueur de coupe</th></tr>
     ${deb.map(d => `<tr><td>${esc(numeroEl(d.id))}</td><td>${esc(d.repere)}</td><td>DN${d.dn}</td><td class="num">${fmt(d.de, 1)}</td><td class="num">${d.cote !== null ? `${fmt(d.cote)} mm` : '—'}</td><td class="num"><strong>${fmt(d.coupe)} mm</strong></td></tr>`).join('')}
     <tr class="total"><td colspan="5">Total tube ${Object.entries(parDN).map(([dn, l]) => `DN${dn} : ${fmt(l / 1000, 2)} m`).join(' · ')}</td><td class="num">${fmt(deb.reduce((s, d) => s + d.coupe, 0) / 1000, 2)} m</td></tr></table></div>
+  ${souduresHtml(pl)}
   <div class="table-wrap"><table class="compact"><tr><th>Désignation</th><th>Norme</th><th class="num">Qté</th></tr>
     ${nom.map(l => `<tr><td>${esc(l.designation)}</td><td class="small">${esc(l.norme)}</td><td class="num">${fmt(l.quantite, l.unite === 'm' ? 2 : 0)} ${esc(l.unite)}</td></tr>`).join('')}</table></div>
-  <p class="small muted">Dimensions des accessoires : valeurs nominales des normes (ISO 3419 / EN 10253 pour les raccords à souder, EN 1092-1 pour les brides PN16, EN 558 pour la robinetterie). À confirmer avec les fiches techniques des fabricants avant découpe ; une longueur saisie remplace la valeur de la norme.</p>`;
+  <p class="small muted">Dimensions des accessoires : valeurs nominales des normes (ISO 3419 / EN 10253 pour les raccords à souder, EN 1092-1 pour les brides PN16, EN 558 pour la robinetterie). À confirmer avec les fiches techniques des fabricants avant découpe ; une longueur saisie remplace la valeur de la norme.</p>
+  ${prixReleveHtml(r)}`;
+}
+// Soudures bout à bout (points bleus de l'isométrique)
+function souduresHtml(pl) {
+  const s = Tuyauterie.bilanSoudures(pl);
+  return s.nombre ? `<p class="small"><span class="rl-pt-bleu" aria-hidden="true"></span> <strong>${s.nombre} soudure(s) bout à bout</strong> : ${Object.entries(s.parDN).map(([dn, k]) => `DN${dn} × ${k}`).join(' · ')} · ${fmt(s.pouces, 1)} pouces-diamètre</p>` : '';
+}
+
+// Prix du relevé, calculé comme un chiffrage depuis plan : familles CAO et articles de la bibliothèque, cadences de soudage,
+// barèmes de pose, niveau de complexité (paramètres du dernier chiffrage). Bureau seulement (les compagnons ne voient pas les prix).
+function prixReleve(r) {
+  const dernier = Store.all('chiffrages').slice(-1)[0], p = { ...((dernier && dernier.params) || {}) };
+  if (r.niveau !== undefined && r.niveau !== '') p.niveau = +r.niveau;
+  return calculerChiffrage({ lignes: Tuyauterie.lignesChiffrage(r), extras: [], params: { ...p, regroupement: '' } });
+}
+function prixReleveHtml(r) {
+  const hd = estHorsDevis(affaireOf(r.affaireId));
+  if (Store.me.role === 'atelier') return hd && (r.elements || []).length ? `<div class="toolbar"><button id="rl-hd">📦 Ajouter le matériel à l'intervention</button></div>` : '';
+  const res = prixReleve(r), t = res.tot;
+  if (!res.liste.length) return '';
+  const marge = t.total ? ((t.total - t.cout) / t.total) * 100 : 0;
+  return `<h3>Prix estimé <span class="muted small">comme un devis depuis plan</span> ${t.manquants ? `<span class="badge b-warn">${t.manquants} élément(s) sans prix</span>` : '<span class="badge b-ok">tout est chiffré</span>'}</h3>
+  <div class="toolbar"><label class="inline small" for="rl-niveau">Complexité</label><select id="rl-niveau" style="width:auto">${res.p.niveaux.map((x, i) => `<option value="${i}" ${+res.p.niveau === i ? 'selected' : ''}>${esc(x.nom)} (× ${fmt(x.coef, 2)})</option>`).join('')}</select>
+    ${hd ? '<button id="rl-hd">📦 Ajouter le matériel à l\'intervention</button>' : ''}</div>
+  <div class="table-wrap"><table class="compact"><tr><th>Élément</th><th>DN</th><th class="num">Qté</th><th>Article</th><th class="num">PU vente</th><th class="num">Fournitures</th><th class="num">h préfab</th><th class="num">h pose</th></tr>
+    ${res.liste.map(g => `<tr class="${g.statut !== 'ok' ? 'a-chiffrer' : ''}"><td>${esc(g.fam ? g.fam.nom : g.brut)}</td><td>${g.dn || ''}</td><td class="num">${fmt(g.qte, 2)} ${esc(g.unite)}</td>
+      <td class="small">${g.a ? esc(g.a.designation) : `<span class="badge b-warn">${g.statut === 'famille' ? 'famille à créer' : `article DN${g.dn} à choisir`}</span>`}</td><td class="num">${g.a ? eur(g.pu) : '—'}</td><td class="num">${g.a ? eur(g.pu * g.qte) : '—'}</td>
+      <td class="num">${fmt(g.hA * g.qte, 2)}</td><td class="num">${fmt(g.hC * g.qte, 2)}</td></tr>`).join('')}</table></div>
+  <div class="cards rl-prix">
+    <div class="card"><div class="label">Fournitures</div><div class="value">${eur(t.fournitures)}</div><div class="sub">achat ${eur(t.achats)} · marge ${fmt(res.niv.marge, 0)} %</div></div>
+    <div class="card"><div class="label">Préfabrication atelier</div><div class="value">${eur(t.prefab - t.fournitures)}</div><div class="sub">${fmt(t.hA, 1)} h à ${eur(res.A.vente)}/h</div></div>
+    <div class="card"><div class="label">Pose sur site</div><div class="value">${eur(t.pose)}</div><div class="sub">${fmt(t.hC, 1)} h à ${eur(res.C.vente)}/h</div></div>
+    <div class="card"><div class="label">Total HT</div><div class="value">${eur(t.total)}</div><div class="sub">${marginBadge(marge)} marge</div></div>
+  </div>
+  <p class="small muted">Cadences, taux et barèmes de pose du dernier chiffrage depuis plan. ${t.manquants ? 'Les éléments sans prix se relient à la bibliothèque dans le chiffrage (« → Chiffrage »), qui crée aussi le devis.' : '« → Chiffrage » crée le devis avec ces lignes.'}${hd ? ' Intervention hors devis : le matériel s\'ajoute à facturer, les heures restent celles pointées.' : ''}</p>`;
+}
+// Intervention hors devis : le matériel du relevé passe dans le matériel à facturer (un nouvel envoi remplace le précédent)
+async function ajouterMaterielHD(r) {
+  const a = affaireOf(r.affaireId);
+  if (!estHorsDevis(a)) return;
+  if (!r.id) r.id = uid();
+  const res = prixReleve(r), anciens = Store.all('consommations').filter(c => c.releveId === r.id);
+  if (!res.liste.length) return notify('Aucun élément de tuyauterie dans ce relevé.');
+  // Le compagnon ne remplace que ses propres lignes : celles du bureau restent (il le prévient)
+  if (Store.me.role === 'atelier' && anciens.some(c => c.userId !== Store.me.userId)) return notify('Le matériel de ce relevé est déjà sur l\'intervention (ajouté par le bureau).');
+  if (anciens.length && !(await ask(`Remplacer les ${anciens.length} ligne(s) déjà ajoutées depuis ce relevé ?`, 'Remplacer', false))) return;
+  anciens.forEach(c => Store.remove('consommations', c.id));
+  res.liste.forEach(g => Store.upsert('consommations', { articleId: g.a ? g.a.id : '', designation: g.a ? g.a.designation : `${g.fam ? g.fam.nom : g.brut} DN${g.dn}`, unite: g.a ? g.a.unite : g.unite,
+    qte: g.qte, pu: g.a ? g.pu : 0, cout: g.a ? g.cout : 0, affaireId: a.id, date: isoDate(new Date()), userId: Store.me.userId || '', releveId: r.id }));
+  App.toast(`${res.liste.length} ligne(s) de matériel ajoutée(s) à l'intervention ${a.code || ''}`, 4000);
+  if (Store.me.role !== 'atelier') location.hash = `#/chantier/${a.id}`;
 }
 
 Views.releve.bind = (root, params) => {
@@ -236,6 +288,9 @@ Views.releve.bind = (root, params) => {
   root.querySelectorAll('[data-rmph]').forEach(x => x.onclick = () => { const [c, i] = x.dataset.rmph.split('|'); liste(c).splice(+i, 1); App.render(); });
   root.querySelectorAll('[data-leg]').forEach(x => x.addEventListener('input', () => { const [c, i] = x.dataset.leg.split('|'); liste(c)[+i].legende = x.value; }));
   brancherChiffrageReleve(root, () => r);
+  // Prix et matériel de l'intervention : zone redessinée à chaque modification de la ligne, d'où la délégation
+  $('#rl-calc').addEventListener('change', e => { if (e.target.id === 'rl-niveau') { r.niveau = +e.target.value; majCalculs(); } });
+  $('#rl-calc').addEventListener('click', e => { if (e.target.closest('#rl-hd')) ajouterMaterielHD(r); });
   // Vue 3D
   root.querySelectorAll('[data-vue]').forEach(x => x.onclick = () => b.vue.vue(x.dataset.vue));
   root.querySelectorAll('[data-opt3d]').forEach(x => x.onchange = () => { b.cam[x.dataset.opt3d] = x.checked; b.vue.rendu(); });
@@ -317,7 +372,7 @@ function releveFicheVue(r) {
   const bureau = Store.me.role !== 'atelier';
   return `<div class="toolbar no-print"><a href="${retourReleve(r)}" class="btn secondary">← ${bureau ? 'Chantier' : 'Rapports'}</a><span class="spacer"></span>
     <a class="btn secondary" href="#/releve/${esc(r.id)}">${r.statut === 'Terminé' ? 'Modifier' : 'Compléter (photos après…)'}</a>
-    ${boutonsChiffrageReleve(r)}<button class="secondary print-btn" data-print>Imprimer</button><button class="secondary" id="rl-pdf">PDF</button></div>
+    ${boutonsChiffrageReleve(r)}<button class="secondary print-btn" data-print>Imprimer</button><button class="secondary dl-btn" id="rl-pdf">PDF</button></div>
   <h1 class="no-print">Prise de cotes ${esc(r.numero || '')} · ${esc(r.ligne)} ${badgeReleve(r)}</h1>
   <div class="doc-print">${releveDocument(r)}</div>`;
 }
@@ -332,8 +387,8 @@ function releveDocument(r) {
       <div>Chantier : <strong>${esc(a.code || '')} – ${esc(a.nom || '')}</strong></div></div>
     <table class="doc-lines compact ppsps-t">${[l('Ligne', `<strong>${esc(r.ligne)}</strong>`), r.fluide ? l('Fluide', esc(r.fluide)) : '', l('Matière, pression nominale', esc(`${r.matiere || ''} · ${r.pn || ''}`)),
       l('Relevé par', esc(r.technicien || userName(r.userId))), l('État', esc(r.statut || ''))].join('')}</table>
-    ${pl.pieces.length ? `<h3 class="doc-h">Isométrique</h3><div class="rl-iso"><img src="${Vue3D.image(pl)}" alt="Isométrique de la ligne"></div><p class="small">Repère : Nord vers la droite en haut, Est vers la droite en bas. Cotes à l'axe en mm, d'un nœud au suivant (départ, centre des coudes 3D et des tés, extrémité). Point bleu : assemblage à brides. Triangles hachurés : dévoiements (avance et décalages cotés).</p>` : ''}
-    ${annotationsHtml(r, pl)}
+    ${pl.pieces.length ? `<h3 class="doc-h">Isométrique</h3><div class="rl-iso"><img src="${Vue3D.image(pl)}" alt="Isométrique de la ligne"></div><p class="small">Repère : Nord vers la droite en haut, Est vers la droite en bas. Cotes à l'axe en mm, d'un nœud au suivant (départ, centre des coudes 3D et des tés, extrémité). Point bleu : soudure bout à bout. Triangles hachurés : dévoiements (avance et décalages cotés).</p>` : ''}
+    ${annotationsHtml(r, pl)}${souduresHtml(pl)}
     ${deb.length ? `<h3 class="doc-h">Fiche de débit</h3><table class="doc-lines compact"><tr><th>Élément</th><th>Repère</th><th>DN</th><th class="num">Ø ext.</th><th class="num">Cote axe à axe</th><th class="num">Longueur de coupe</th></tr>
       ${deb.map(d => `<tr><td>${esc(numeroEl(d.id))}</td><td>${esc(d.repere)}</td><td>DN${d.dn}</td><td class="num">${fmt(d.de, 1)}</td><td class="num">${d.cote !== null ? fmt(d.cote) : '—'}</td><td class="num"><strong>${fmt(d.coupe)}</strong></td></tr>`).join('')}</table>` : ''}
     ${nom.length ? `<h3 class="doc-h">Nomenclature</h3><table class="doc-lines compact"><tr><th>Désignation</th><th>Norme</th><th class="num">Quantité</th></tr>
@@ -359,7 +414,7 @@ function relevesChantierHtml(a) {
 }
 
 // Liste du matériel vers le chiffrage depuis plan (bureau) et en fichier .csv (Excel, logiciel de chiffrage, fournisseur)
-const boutonsChiffrageReleve = r => `${Store.can('write', 'chiffrages') && Store.me.role !== 'atelier' ? '<button class="secondary" id="rl-chiffrage">→ Chiffrage</button>' : ''}<button class="secondary" id="rl-csv">Liste matériel (.csv)</button>`;
+const boutonsChiffrageReleve = r => `${Store.can('write', 'chiffrages') && Store.me.role !== 'atelier' ? '<button class="secondary" id="rl-chiffrage">→ Chiffrage</button>' : ''}<button class="secondary dl-btn" id="rl-csv">Liste matériel (.csv)</button>`;
 function brancherChiffrageReleve(root, releve) {
   const csv = root.querySelector('#rl-csv'), ch = root.querySelector('#rl-chiffrage');
   if (csv) csv.onclick = () => { const r = releve(); download(`Liste-materiel-${r.numero || r.ligne || 'releve'}.csv`.replace(/[^\w.-]+/g, '_'), `\ufeff${Tuyauterie.csvChiffrage(Tuyauterie.lignesChiffrage(r))}`, 'text/csv'); };

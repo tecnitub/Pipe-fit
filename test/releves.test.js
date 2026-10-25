@@ -91,6 +91,16 @@ test('dévoiements simple et double (triangles, coupe de l\'oblique), vanne 3 vo
   assert.ok(T.lignesChiffrage(r).some(l => l.famille === 'Manchon de dilatation') && T.lignesChiffrage(r).some(l => l.famille === 'Vanne 3 voies motorisée'));
 });
 
+test('soudures bout à bout : raccords, brides, tube contre tube, départ sur l\'existant ; rien sur le fileté', () => {
+  const s = r => T.bilanSoudures(T.placer({ dnDepart: 50, dirDepart: 'E', ...r }));
+  assert.deepStrictEqual(s({ elements: [{ t: 'tube', dn: 50, l: 500 }, { t: 'coude', dn: 50, vers: 'N' }, { t: 'tube', dn: 50, l: 300 }, { t: 'tube', dn: 50, l: 300 }, { t: 'brides', dn: 50 }] }),
+    { nombre: 6, parDN: { 50: 6 }, pouces: 12 }, 'départ, 2 extrémités du coude, tube contre tube, 2 brides');
+  assert.strictEqual(s({ elements: [{ t: 'tube', dn: 50, l: 500 }, { t: 'vanne', dn: 50, rac: 'taraude' }, { t: 'tube', dn: 50, l: 300 }] }).nombre, 1, 'vanne taraudée : seulement le départ');
+  assert.deepStrictEqual(s({ elements: [{ t: 'reduc', dn: 50, dn2: 25 }, { t: 'tube', dn: 25, l: 300 }] }).parDN, { 25: 1, 50: 1 });
+  const p = T.placer(ligne());
+  assert.strictEqual(T.bilanSoudures(p).nombre, p.soudures.length);
+});
+
 test('liste du matériel pour le chiffrage : familles CAO, tube en mètres par DN, brides des vannes, CSV', () => {
   const l = T.lignesChiffrage({ ...ligne(), ligne: 'EG-01' }), q = (f, dn) => l.filter(x => x.famille === f && x.dn === dn);
   assert.deepStrictEqual(q('Tuyau', 80).map(x => [x.longueur, x.qte, x.systeme]), [[3.272, 1, 'EG-01']]);

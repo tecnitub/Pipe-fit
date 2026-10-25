@@ -184,7 +184,7 @@ const Vue3D = (() => {
     return {
       reperes: placement.pieces.filter(pc => pc.t === 'tube' || pc.el.repere).map(pc => ({ pos: milieu(pc), repere: pc.el.repere || '', coupe: pc.t === 'tube' ? Math.round(pc.coupe || 0) : null, r: pc.de / 2, id: pc.id })),
       cotes: placement.cotes || [], notes, triangles: placement.triangles || [],
-      joints: placement.pieces.flatMap(pc => pc.joints || []),
+      soudures: (placement.soudures || []).map(s => s.p), joints: placement.pieces.flatMap(pc => pc.joints || []),
     };
   }
   // Étiquette encadrée centrée sur (x, y), tournée de a
@@ -261,8 +261,8 @@ const Vue3D = (() => {
       for (let x = x0 - (y1 - y0); x < x1; x += 6 * s) { ctx.moveTo(x, y1); ctx.lineTo(x + (y1 - y0), y0); }
       ctx.stroke(); ctx.restore();
     });
-    // Points bleus : assemblages à brides
-    labels.joints.forEach(j => { const P = proj(j); ctx.beginPath(); ctx.arc(P[0], P[1], 4.5 * s, 0, Math.PI * 2); ctx.fillStyle = BLEU; ctx.fill(); ctx.lineWidth = 1.5 * s; ctx.strokeStyle = '#fff'; ctx.stroke(); });
+    // Points bleus : soudures
+    labels.soudures.forEach(j => { const P = proj(j); ctx.beginPath(); ctx.arc(P[0], P[1], 4 * s, 0, Math.PI * 2); ctx.fillStyle = BLEU; ctx.fill(); ctx.lineWidth = 1.5 * s; ctx.strokeStyle = '#fff'; ctx.stroke(); });
     if (etat.cotes) labels.cotes.forEach(c => cote(ctx, proj(c.a), proj(c.b), c.valeur, s));
     labels.reperes.forEach(l => {
       const txt = [l.repere, etat.coupes && l.coupe !== null ? `coupe ${fmtMm(l.coupe)}` : ''].filter(Boolean).join(' · ');
@@ -303,7 +303,7 @@ const Vue3D = (() => {
 
   // Vue interactive dans un canevas. etat (conservé d'un affichage à l'autre) : angles, zoom, décalage, sélection, cotes
   function creer(canvas, etat, { onPick } = {}) {
-    let faces = [], labels = { reperes: [], cotes: [], notes: [], joints: [], triangles: [] }, cadre = null;
+    let faces = [], labels = { reperes: [], cotes: [], notes: [], joints: [], soudures: [], triangles: [] }, cadre = null;
     const ctx = canvas.getContext('2d');
     const taille = () => { const r = canvas.getBoundingClientRect(), k = window.devicePixelRatio || 1; canvas.width = Math.max(1, r.width * k); canvas.height = Math.max(1, r.height * k); ctx.setTransform(k, 0, 0, k, 0, 0); return r; };
     let r = taille();

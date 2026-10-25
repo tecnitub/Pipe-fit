@@ -99,9 +99,11 @@ function horsDevisView(a) {
   <h2>Matériel à facturer</h2>
   <div class="toolbar"><button id="hd-biblio">📦 Matériel de la bibliothèque</button><button class="secondary" id="hd-dicter">🎤 Dicter du matériel</button><button class="secondary" id="hd-addmat">+ Matériel libre</button></div>
   ${v.consos.length ? `<div class="table-wrap"><table><tr><th>Date</th><th>Saisi par</th><th>Désignation</th><th class="num">Qté</th><th>Unité</th><th class="num">PU vente</th><th class="num">Montant HT</th><th class="num">Achat</th></tr>
-    ${v.consos.sort((x, y) => (x.date || '').localeCompare(y.date || '')).map(c => `<tr class="clickable ${num(c.pu) ? '' : 'a-chiffrer'}" data-conso="${c.id}"><td>${dateFr(c.date)}</td><td>${esc(userName(c.userId))}</td><td>${esc(c.designation)}${num(c.pu) ? '' : ' <span class="badge b-warn">prix à saisir</span>'}</td>
+    ${v.consos.sort((x, y) => (x.date || '').localeCompare(y.date || '')).map(c => `<tr class="clickable ${num(c.pu) ? '' : 'a-chiffrer'}" data-conso="${c.id}"><td>${dateFr(c.date)}</td><td>${esc(userName(c.userId))}</td><td>${esc(c.designation)}${c.releveId ? ` <a class="small" href="#/releve/${esc(c.releveId)}" title="Matériel issu de la prise de cotes">📐 relevé</a>` : ''}${num(c.pu) ? '' : ' <span class="badge b-warn">prix à saisir</span>'}</td>
       <td class="num">${fmt(c.qte, 2)}</td><td>${esc(c.unite)}</td><td class="num">${eur(c.pu)}</td><td class="num">${eur(num(c.qte) * num(c.pu))}</td><td class="num muted">${eur(num(c.qte) * num(c.cout))}</td></tr>`).join('')}
     <tr class="subtotal"><td colspan="6">Total</td><td class="num">${eur(v.totalMat)}</td><td class="num">${eur(v.coutMat)}</td></tr></table></div>` : '<p class="muted">Aucun matériel saisi.</p>'}
+
+  ${relevesChantierHtml(a)}
 
   <h2>Rapports et bons d'intervention</h2>
   ${rapports.length ? `<div class="table-wrap"><table><tr><th>Date</th><th>Par</th><th>Travaux réalisés</th><th>Signature client</th><th></th></tr>

@@ -62,6 +62,11 @@ Depuis un chantier (« + Prise de cotes ») ou sur le téléphone du compagnon (
   axe-face et l'encombrement des accessoires du tronçon ;
 - **nomenclature** (tubes au mètre par DN, raccords, robinetterie, brides, joints et boulonnerie) et **fiche imprimable / PDF**
   avec l'isométrique.
+- **soudures bout à bout** repérées par un point bleu sur l'isométrique et comptées (par DN, en pouces-diamètre) ;
+- **prix estimé comme un devis depuis plan** (bureau) : fournitures de la bibliothèque, préfabrication et pose selon les
+  cadences et barèmes du dernier chiffrage, niveau de complexité au choix ;
+- **intervention hors devis** : « Ajouter le matériel à l'intervention » passe le matériel du relevé dans le matériel à
+  facturer (un nouvel envoi remplace le précédent) ; les prises de cotes apparaissent sur la fiche de l'intervention ;
 - **export vers le chiffrage** (« → Chiffrage ») : la liste du matériel part dans un chiffrage depuis plan, nouveau ou existant,
   au même format qu'une nomenclature Revit (réseau, famille, type, taille, longueur, nombre), reliée aux familles CAO de la
   bibliothèque ; un nouvel envoi du même relevé remplace ses lignes. Aussi en fichier « Liste matériel (.csv) » pour Excel.

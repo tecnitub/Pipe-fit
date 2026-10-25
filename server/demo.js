@@ -380,7 +380,14 @@ function demoData() {
       { t: 'vanne', dn: 80, type: 'clapet', rac: 'bride', repere: 'CL1' }, { t: 'brides', dn: 80, repere: 'raccord réseau existant', typeBride: 'mixte' }],
     cotes: [{ repere: 'A', libelle: 'Axe collecteur → sol fini', valeur: '1450', remarque: '' }, { repere: 'B', libelle: 'Dessous de poutre', valeur: '2350', remarque: 'dévoiement de 500 pour passer dessus' }],
     photosAvant: [{ photoId: 'img-rack1', legende: 'Collecteur existant, piquage à créer', date: d(-20) }], photosApres: [],
-    observations: 'Vanne 3 voies motorisée fournie par le lot régulation : longueur face à face à confirmer avant préfabrication.' }];
+    observations: 'Vanne 3 voies motorisée fournie par le lot régulation : longueur face à face à confirmer avant préfabrication.' },
+  // Dépannage hors devis : reprise d'un tronçon vapeur percé (le matériel relevé passe à facturer sur l'intervention)
+  { id: 'rc3', numero: `RC-${Y}-0003`, affaireId: 'hd2', userId: 'o1', technicien: 'Kevin Roux', date: d(-1), ligne: 'VAP-L3 tronçon percé après détendeur', fluide: 'Vapeur 6 bar',
+    matiere: 'Acier P235GH', pn: 'PN16', typeBride: 'collerette', dnDepart: 50, dirDepart: 'E', noteDepart: 'Coupe sur tube existant sain', statut: 'Relevé', longueurTube: 2122,
+    elements: [{ t: 'tube', dn: 50, auto: true, cote: 1100, repere: 'T1' }, { t: 'coude', dn: 50, angle: 90, vers: 'H' }, { t: 'tube', dn: 50, auto: true, cote: 850, repere: 'T2' },
+      { t: 'coude', dn: 50, angle: 90, vers: 'E' }, { t: 'tube', dn: 50, l: 400, repere: 'T3', note: 'Raccord sur existant après la vanne' }, { t: 'brides', dn: 50, repere: 'vers purgeur' }],
+    cotes: [{ repere: 'A', libelle: 'Longueur percée à remplacer', valeur: '2300', remarque: 'corrosion sous calorifuge' }], photosAvant: [{ photoId: 'img-rack1', legende: 'Fuite sous calorifuge', date: d(-1) }], photosApres: [],
+    observations: 'Calorifuge à refaire sur 3 m (hors intervention).' }];
   // Chaufferie des Tilleuls : épreuve du réseau, mise en service de la chaudière, équilibrage des radiateurs (repris dans le DOE)
   const signe = (jours, h) => ({ signatureTechId: 'img-sig', signatureClientId: 'img-sig', signataireNom: 'Gardien de la résidence', signataireQualite: 'Habitat Dauphiné', signeLe: `${d(jours)}T${h}:00.000Z`, statut: 'Signé' });
   epreuves.push({ id: 'ep2', numero: `EP-${Y}-0002`, affaireId: 'af4', userId: 'o2', technicien: 'Ahmed Haddad', date: d(-12), heureDebut: '08:00', heureFin: '10:00', reseau: 'Collecteurs départ / retour chauffage DN150',

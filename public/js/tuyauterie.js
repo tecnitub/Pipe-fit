@@ -240,7 +240,34 @@ const Tuyauterie = (() => {
       return { p, d, dn };
     };
     const fin = marcher(rel.elements || [], [0, 0, 0], DIRS[rel.dirDepart] || DIRS.E, dnOk(rel.dnDepart || 50), '', 0);
-    return { pieces, erreurs, fin, cotes, triangles, depart: { p: [0, 0, 0], note: String(rel.noteDepart || '').trim() } };
+    return { pieces, erreurs, fin, cotes, triangles, soudures: soudures(pieces, rel), depart: { p: [0, 0, 0], note: String(rel.noteDepart || '').trim() } };
+  }
+  // Soudures bout à bout : extrémités des raccords à souder (coudes, tés, réductions, fonds), collerettes et collets des
+  // brides, vannes à souder, tube contre tube, raccordement du départ sur l'existant. Les assemblages filetés n'en ont pas.
+  function soudures(pieces, rel) {
+    const out = new Map(), ajoute = (p, dn) => { const k = p.map(x => Math.round(x)).join(','); if (!out.has(k)) out.set(k, { p, dn }); };
+    let precTube = null;
+    pieces.forEach(pc => {
+      const filete = pc.el.rac === 'taraude';
+      if (pc.t === 'tube') { if (precTube && Math.hypot(...precTube.p1.map((x, i) => x - pc.p0[i])) < 1) ajoute(pc.p0, pc.dn); precTube = pc; return; }
+      precTube = null;
+      if (['coude', 'te', 'reduc', 'brides'].includes(pc.t) || (['vanne', 'v3v'].includes(pc.t) && !filete)) {
+        ajoute(pc.p0, pc.dn); ajoute(pc.p1, pc.t === 'reduc' ? pc.dn2 : pc.dn);
+        if (pc.pb) ajoute(pc.pb, pc.dnB || pc.dn);
+      }
+      if (pc.t === 'fond') ajoute(pc.p0, pc.dn);
+    });
+    // Départ piqué ou soudé sur l'existant
+    const premier = pieces[0];
+    if (premier && premier.id === '0' && ['tube', 'coude', 'te', 'reduc'].includes(premier.t) && !rel.departFilete) ajoute(premier.p0, premier.dn);
+    return [...out.values()];
+  }
+  // Pouces-diamètre des soudures (cadence de soudage)
+  const POUCES = { 15: 0.5, 20: 0.75, 25: 1, 32: 1.25, 40: 1.5, 50: 2, 65: 2.5, 80: 3, 100: 4, 125: 5, 150: 6, 200: 8, 250: 10, 300: 12 };
+  function bilanSoudures(placement) {
+    const parDN = {};
+    placement.soudures.forEach(s => { parDN[s.dn] = (parDN[s.dn] || 0) + 1; });
+    return { nombre: placement.soudures.length, parDN, pouces: Object.entries(parDN).reduce((t, [dn, k]) => t + k * (POUCES[dn] || dn / 25), 0) };
   }
   // Élément désigné par son chemin (« 3 », « 2.b.0 ») et la liste qui le contient
   function trouver(rel, chemin) {
@@ -344,6 +371,6 @@ const Tuyauterie = (() => {
   }
   const STATUTS = ['Brouillon', 'Relevé', 'Terminé'];
   return { DN, DE, RAYON_3D, TE, REDUC, FOND, BRIDE, BRIDES_TYPES, VANNES, ANGLES_DEVOIEMENT, aBranche, axeFaceV3V, axeFaceDev, RACCORDEMENTS, RACCORDS, MATIERES, PN, TYPES, DIRS, DIRS_LIB, STATUTS,
-    lire, angle, axeFaceCoude, axeFaceTe, longueur, coupes, placer, trouver, listeDe, designation, nomenclature, lignesChiffrage, csvChiffrage, debit, manques };
+    lire, angle, axeFaceCoude, axeFaceTe, longueur, coupes, placer, trouver, listeDe, designation, nomenclature, bilanSoudures, lignesChiffrage, csvChiffrage, debit, manques };
 })();
 if (typeof module !== 'undefined') module.exports = Tuyauterie;
