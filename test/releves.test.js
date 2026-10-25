@@ -73,12 +73,30 @@ test('cotes à l\'axe nœud à nœud, brides à collerette ou tournantes, points
   assert.deepStrictEqual(T.lignesChiffrage(r).filter(l => /Bride|Collet/.test(l.famille)).map(l => [l.famille, l.qte]), [['Bride tournante', 3], ['Collet à souder', 3], ['Bride à collerette', 3]]);
 });
 
+test('dévoiements simple et double (triangles, coupe de l\'oblique), vanne 3 voies avec voie B, nouvelle robinetterie', () => {
+  const r = { dnDepart: 50, dirDepart: 'E', pn: 'PN16', matiere: 'Acier P235GH', elements: [{ t: 'tube', dn: 50, auto: true, cote: 1000 }, { t: 'devoie', dn: 50, angle: 45, vers: 'H', dec: 400 },
+    { t: 'tube', dn: 50, auto: true, cote: 800 }, { t: 'devoie', dn: 50, angle: 45, vers: 'N', dec: 300, vers2: 'B', dec2: 200 },
+    { t: 'v3v', dn: 50, vers: 'S', branche: [{ t: 'tube', dn: 50, auto: true, cote: 500 }] }, { t: 'vanne', dn: 50, type: 'dilatation', rac: 'bride' }] };
+  const p = T.placer(r);
+  assert.deepStrictEqual(p.erreurs, []);
+  // coude 45° DN50 : axe-face 76 × tan 22,5° = 31,5 ; oblique 400 √2 = 565,7
+  assert.deepStrictEqual(T.debit(p).map(d => [d.id, d.coupe]), [['0', 968.5], ['1', 502.7], ['2', 737], ['3', 446.9], ['4.b.0', 338]]);
+  assert.deepStrictEqual(p.triangles.map(t => t.chemin), ['1', '3', '3'], 'un triangle pour le dévoiement simple, deux pour le double');
+  assert.ok(proche(p.pieces.filter(x => x.id === '1')[2].centre, [1400, 0, 400]), 'second coude : avance 400 (45°), 400 plus haut');
+  assert.strictEqual(T.nomenclature(r, p).find(l => /^Coude 45/.test(l.designation)).quantite, 4);
+  assert.strictEqual(p.pieces.find(x => x.t === 'v3v').joints.length, 3, 'trois voies à brides');
+  assert.match(T.placer({ dnDepart: 50, dirDepart: 'E', elements: [{ t: 'devoie', dn: 50, angle: 45, vers: 'H', dec: 30 }] }).erreurs[0].msg, /décalage trop court/);
+  assert.match(T.placer({ dnDepart: 50, dirDepart: 'E', elements: [{ t: 'devoie', dn: 50, vers: 'E', dec: 300 }] }).erreurs[0].msg, /perpendiculaire/);
+  assert.deepStrictEqual(['equilibrage', 'v2v', 'dilatation', 'clapet', 'papillon', 'boisseau'].map(k => !!T.VANNES[k]), [true, true, true, true, true, true]);
+  assert.ok(T.lignesChiffrage(r).some(l => l.famille === 'Manchon de dilatation') && T.lignesChiffrage(r).some(l => l.famille === 'Vanne 3 voies motorisée'));
+});
+
 test('liste du matériel pour le chiffrage : familles CAO, tube en mètres par DN, brides des vannes, CSV', () => {
   const l = T.lignesChiffrage({ ...ligne(), ligne: 'EG-01' }), q = (f, dn) => l.filter(x => x.famille === f && x.dn === dn);
   assert.deepStrictEqual(q('Tuyau', 80).map(x => [x.longueur, x.qte, x.systeme]), [[3.272, 1, 'EG-01']]);
   assert.deepStrictEqual([q('Coude', 80)[0].qte, q('Bride à collerette', 80)[0].qte, q('Joint plat', 80)[0].qte], [1, 2, 2]);
   assert.deepStrictEqual(q('Réduction', 80).map(x => x.taille), ['DN80-DN50']);
-  assert.ok(q('Robinet à tournant sphérique', 80).length);
+  assert.ok(q('Vanne à boisseau sphérique', 80).length, 'famille sans l\'abréviation (BS)');
   const csv = T.csvChiffrage(l).split('\r\n');
   assert.strictEqual(csv[0], 'Réseau;Famille;Type;Taille;Longueur (m);Nombre');
   assert.ok(csv.includes('EG-01;Tuyau;Acier P235GH;DN80;3,272;1'));

@@ -23,19 +23,25 @@ const Tuyauterie = (() => {
   const SERIE_1 = { 15: 130, 20: 150, 25: 160, 32: 180, 40: 200, 50: 230, 65: 290, 80: 310, 100: 350, 125: 400, 150: 480, 200: 600, 250: 730, 300: 850 };
   const SERIE_14 = { 50: 150, 65: 170, 80: 180, 100: 190, 125: 200, 150: 210, 200: 230, 250: 250, 300: 270 };
   const SERIE_20 = { 50: 43, 65: 46, 80: 46, 100: 52, 125: 56, 150: 56, 200: 60, 250: 68, 300: 78 };
+  // Manchon de dilatation (compensateur à brides) : longueur courante, très variable selon le fabricant (valeurs indicatives)
+  const DILAT = { 15: 150, 20: 150, 25: 160, 32: 160, 40: 170, 50: 180, 65: 200, 80: 210, 100: 230, 125: 250, 150: 270, 200: 300, 250: 330, 300: 360 };
   const VANNES = {
-    boisseau: { lib: 'Robinet à tournant sphérique', serie: 'EN 558 série 1', table: SERIE_1, commande: 'levier' },
+    boisseau: { lib: 'Vanne à boisseau sphérique (BS)', serie: 'EN 558 série 1', table: SERIE_1, commande: 'levier' },
     papillon: { lib: 'Vanne papillon (entre brides)', serie: 'EN 558 série 20', table: SERIE_20, commande: 'levier' },
+    clapet: { lib: 'Clapet anti-retour', serie: 'EN 558 série 1', table: SERIE_1, commande: '' },
+    equilibrage: { lib: 'Vanne d\'équilibrage', serie: 'EN 558 série 1', table: SERIE_1, commande: 'volant', prises: true },
+    v2v: { lib: 'Vanne 2 voies motorisée', serie: 'EN 558 série 1', table: SERIE_1, commande: 'moteur' },
+    dilatation: { lib: 'Manchon de dilatation', serie: 'EN 14917 (longueur du fabricant)', table: DILAT, commande: '' },
     opercule: { lib: 'Robinet-vanne à opercule', serie: 'EN 558 série 14', table: SERIE_14, commande: 'volant' },
     soupape: { lib: 'Robinet à soupape', serie: 'EN 558 série 1', table: SERIE_1, commande: 'volant' },
-    clapet: { lib: 'Clapet anti-retour', serie: 'EN 558 série 1', table: SERIE_1, commande: '' },
     filtre: { lib: 'Filtre à tamis en Y', serie: 'EN 558 série 1', table: SERIE_1, commande: '' },
   };
+  const ANGLES_DEVOIEMENT = [45, 30, 60, 90];
   const RACCORDEMENTS = { bride: 'à brides', souder: 'à souder', taraude: 'taraudé' };
   const RACCORDS = { union: 'Raccord union (3 pièces)', manchon: 'Manchon' };
   const MATIERES = ['Acier P235GH', 'Acier galvanisé', 'Inox 304L', 'Inox 316L', 'Acier S235 (noir)', 'Autre'];
   const PN = ['PN10', 'PN16', 'PN25', 'PN40'];
-  const TYPES = { tube: 'Tube', coude: 'Coude', te: 'Té', reduc: 'Réduction', vanne: 'Robinetterie', brides: 'Paire de brides', raccord: 'Raccord', fond: 'Fond bombé' };
+  const TYPES = { tube: 'Tube', coude: 'Coude', devoie: 'Dévoiement', te: 'Té', v3v: 'Vanne 3 voies', reduc: 'Réduction', vanne: 'Robinetterie', brides: 'Paire de brides', raccord: 'Raccord', fond: 'Fond bombé' };
   // Directions : X = Est, Y = Nord, Z = Haut (repère de l'isométrique, ISO 6412)
   const DIRS = { E: [1, 0, 0], O: [-1, 0, 0], N: [0, 1, 0], S: [0, -1, 0], H: [0, 0, 1], B: [0, 0, -1] };
   const DIRS_LIB = { E: 'Est', O: 'Ouest', N: 'Nord', S: 'Sud', H: 'Haut', B: 'Bas' };
@@ -45,6 +51,7 @@ const Tuyauterie = (() => {
   const add = (a, b, k = 1) => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   const len = a => Math.sqrt(dot(a, a));
+  const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
   const unit = a => { const l = len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
   const dnOk = d => (DE[d] ? +d : 50);
   // Valeur d'une table pour un DN, sinon celle du DN le plus proche (et l'indication qu'elle est à vérifier)
@@ -63,9 +70,18 @@ const Tuyauterie = (() => {
     const v = VANNES[el.type] || VANNES.boisseau, ftf = n(el.l) || lire(v.table, dnOk(el.dn)).v;
     return el.rac === 'bride' || !el.rac ? ftf + 2 * (BRIDE[dnOk(el.dn)][1] + JOINT) : ftf;
   }
+  // Vanne 3 voies : cote axe-face = demi face à face (+ contre-bride et joint si à brides) sur les trois voies
+  const axeFaceV3V = el => r1((n(el.l) || SERIE_1[dnOk(el.dn)]) / 2 + (el.rac === 'bride' || !el.rac ? BRIDE[dnOk(el.dn)][1] + JOINT : 0));
+  // Dévoiement : deux coudes de l'angle choisi ; cote axe-face de chacun
+  const angleDev = el => (ANGLES_DEVOIEMENT.includes(+el.angle) ? +el.angle : 45);
+  const axeFaceDev = el => axeFaceCoude({ dn: el.dn, angle: angleDev(el) });
+  // Cotes axe-face d'un nœud (coude, té, vanne 3 voies, dévoiement) à l'entrée et à la sortie
+  const axeFaceNoeud = el => (el.t === 'coude' ? axeFaceCoude(el) : el.t === 'te' ? axeFaceTe(el) : el.t === 'v3v' ? axeFaceV3V(el) : axeFaceDev(el));
+  const aBranche = el => el && (el.t === 'te' || el.t === 'v3v');
   function longueur(el) {
     switch (el.t) {
-      case 'coude': return 0;
+      case 'coude': case 'devoie': return 0;
+      case 'v3v': return 2 * axeFaceV3V(el);
       case 'te': return 2 * axeFaceTe(el);
       case 'reduc': return n(el.l) || REDUC[Math.max(dnOk(el.dn), dnOk(el.dn2))];
       case 'vanne': return vanneLong(el);
@@ -75,7 +91,7 @@ const Tuyauterie = (() => {
       default: return n(el.l) || 0;
     }
   }
-  const estNoeud = el => el.t === 'coude' || el.t === 'te';
+  const estNoeud = el => ['coude', 'te', 'v3v', 'devoie'].includes(el.t);
 
   // Longueurs de coupe des tubes « à la cote » d'une liste (ligne principale ou dérivation) : la cote est relevée axe à axe
   // entre deux nœuds (coude, té, départ de dérivation) ou une extrémité ; on retire les cotes axe-face des nœuds et
@@ -92,7 +108,7 @@ const Tuyauterie = (() => {
       const troncon = liste.slice(i, j), autos = troncon.filter(e => e.t === 'tube' && e.auto);
       if (autos.length > 1) erreurs.push({ i: liste.indexOf(autos[1]), msg: 'Un seul tube « à la cote » par tronçon entre deux coudes ou tés' });
       if (autos.length) {
-        const a = autos[0], suiv = j < liste.length ? (liste[j].t === 'coude' ? axeFaceCoude(liste[j]) : axeFaceTe(liste[j])) : 0;
+        const a = autos[0], suiv = j < liste.length ? axeFaceNoeud(liste[j]) : 0;
         const autres = troncon.filter(e => e !== a).reduce((s, e) => s + longueur(e), 0);
         const c = n(a.cote), l = c === null ? null : r1(c - prec - suiv - autres);
         if (c === null) erreurs.push({ i: liste.indexOf(a), msg: 'Cote axe à axe à saisir' });
@@ -100,7 +116,7 @@ const Tuyauterie = (() => {
         res.set(liste.indexOf(a), l > 0 ? l : 0);
       }
       if (j >= liste.length) break;
-      prec = liste[j].t === 'coude' ? axeFaceCoude(liste[j]) : axeFaceTe(liste[j]);
+      prec = axeFaceNoeud(liste[j]);
       i = j + 1;
     }
     return { res, erreurs };
@@ -108,7 +124,7 @@ const Tuyauterie = (() => {
 
   // Placement en 3D : pièces avec leur géométrie (points en mm), erreurs de saisie, encombrement total
   function placer(rel) {
-    const pieces = [], erreurs = [], cotes = [];
+    const pieces = [], erreurs = [], cotes = [], triangles = [];
     // Cotes à l'axe : d'un nœud au suivant (départ, centre des coudes et des tés, extrémité)
     const coter = (a, b, chemin) => { const v = Math.round(len(add(b, a, -1))); if (v >= 1) cotes.push({ a, b, valeur: v, chemin }); };
     const marcher = (liste, p, d, dn, chemin, debutNoeud, noeud = p) => {
@@ -128,6 +144,49 @@ const Tuyauterie = (() => {
           pieces.push({ ...base, p1, d1, u, R, a, centre, axeFace: c });
           coter(noeud, centre, chemin); noeud = centre;
           p = p1; d = d1; dn = dnEl;
+          return;
+        }
+        // Dévoiement (simple ou double) : coude, tube oblique, coude ; décalages perpendiculaires à la ligne, triangles de l'isométrique
+        if (el.t === 'devoie') {
+          const comp = (k, v) => { const w = DIRS[k]; if (!w || !(n(v) > 0)) return null; const q = add(w, d, -dot(w, d)); return len(q) > 1e-6 && Math.abs(dot(w, d)) < 1e-6 ? w.map(x => x * n(v)) : null; };
+          const o1 = comp(el.vers, el.dec), o2 = comp(el.vers2, el.dec2) || [0, 0, 0], o = add(o1 || [0, 0, 0], o2), lo = len(o);
+          if (!o1 || lo < 1e-6) { erreurs.push({ chemin: id, msg: 'Dévoiement : direction (perpendiculaire à la ligne) et décalage à saisir' }); return; }
+          const th = angleDev(el), a = (th * Math.PI) / 180, run = th === 90 ? 0 : lo / Math.tan(a), c = axeFaceDev({ ...el, dn: dnEl }), R = RAYON_3D[dnEl];
+          const A = add(p, d, c), B = add(add(A, d, run), o), obl = len(add(B, A, -1)), u = unit(o), dObl = unit(add(B, A, -1));
+          const tube = r1(obl - 2 * c);
+          if (tube <= 0) erreurs.push({ chemin: id, msg: `Dévoiement : décalage trop court pour des coudes à ${th}° (minimum ${Math.ceil(2 * c * Math.sin(a))} mm)` });
+          const e1 = add(A, dObl, c), s2 = add(B, dObl, -c), p1 = add(B, d, c), elC = { t: 'coude', dn: dnEl, angle: th, repere: '' };
+          pieces.push({ ...base, t: 'coude', el: { ...elC, note: el.note, repere: el.repere }, p1: e1, d1: dObl, u, R, a, centre: A, axeFace: c, dev: true });
+          pieces.push({ ...base, t: 'tube', el: { t: 'tube', auto: true, cote: r1(obl) }, p0: e1, p1: s2, dir: dObl, L: Math.max(0, tube), coupe: Math.max(0, tube), dev: true });
+          pieces.push({ ...base, t: 'coude', el: elC, p0: s2, dir: dObl, p1, d1: d, u: unit(add(d, dObl, -dot(d, dObl))), R, a, centre: B, axeFace: c, dev: true });
+          // Triangles : décalage dans un plan (un triangle) ou dévoiement double (deux triangles)
+          const C1 = add(A, d, run), C2 = add(C1, o1);
+          if (run > 0.5) triangles.push({ pts: [A, C1, len(o2) > 0.5 ? C2 : B], chemin: id });
+          if (len(o2) > 0.5) triangles.push({ pts: [run > 0.5 ? A : add(A, o1, 0), C2, B], chemin: id });
+          coter(noeud, A, chemin);
+          if (run > 0.5) cotes.push({ a: A, b: C1, valeur: Math.round(run), chemin, dev: true });
+          cotes.push({ a: C1, b: C2, valeur: Math.round(n(el.dec)), chemin, dev: true });
+          if (len(o2) > 0.5) cotes.push({ a: C2, b: B, valeur: Math.round(n(el.dec2)), chemin, dev: true });
+          noeud = B; p = p1; dn = dnEl;
+          return;
+        }
+        // Vanne 3 voies : corps sur la ligne, troisième voie (B) raccordée comme une dérivation de té
+        if (el.t === 'v3v') {
+          const c = axeFaceV3V({ ...el, dn: dnEl }), centre = add(p, d, c), p1 = add(p, d, 2 * c);
+          const v = DIRS[el.vers] || DIRS.B, perp = add(v, d, -dot(v, d)), brides = el.rac === 'bride' || !el.rac;
+          const t = (BRIDES_TYPES[el.typeBride] ? el.typeBride : rel.typeBride) === 'tournante' ? 'tournante' : 'collerette', h = BRIDE[dnEl][1] + JOINT / 2;
+          const tg = DIRS[el.tige] || (Math.abs(d[2]) > 0.5 ? DIRS.E : DIRS.H);
+          const piece = { ...base, p1, centre, axeFace: c, dnB: dnEl, brides, ftf: 2 * c - (brides ? 2 * (BRIDE[dnEl][1] + JOINT) : 0) };
+          pieces.push(piece);
+          coter(noeud, centre, chemin); noeud = centre;
+          if (len(perp) < 1e-6) erreurs.push({ chemin: id, msg: 'Vanne 3 voies : la voie B doit partir perpendiculairement à la ligne' });
+          else {
+            const vb = unit(perp), pb = add(centre, vb, c), tq = add(tg, vb, -dot(tg, vb)), tq2 = add(tq, d, -dot(tq, d));
+            Object.assign(piece, { pb, vb, tige: len(tq2) > 1e-6 ? unit(tq2) : unit(cross3(d, vb)) });
+            if (brides) { piece.joints = [add(p, d, h), add(p1, d, -h), add(pb, vb, -h)]; piece.flanges = [t, t, t]; }
+            marcher(el.branche || [], pb, vb, dnEl, `${id}.b.`, c, centre);
+          }
+          p = p1; dn = dnEl;
           return;
         }
         if (el.t === 'te') {
@@ -181,13 +240,13 @@ const Tuyauterie = (() => {
       return { p, d, dn };
     };
     const fin = marcher(rel.elements || [], [0, 0, 0], DIRS[rel.dirDepart] || DIRS.E, dnOk(rel.dnDepart || 50), '', 0);
-    return { pieces, erreurs, fin, cotes, depart: { p: [0, 0, 0], note: String(rel.noteDepart || '').trim() } };
+    return { pieces, erreurs, fin, cotes, triangles, depart: { p: [0, 0, 0], note: String(rel.noteDepart || '').trim() } };
   }
   // Élément désigné par son chemin (« 3 », « 2.b.0 ») et la liste qui le contient
   function trouver(rel, chemin) {
     const parts = String(chemin).split('.b.').map(Number);
     let liste = rel.elements || [];
-    for (let k = 0; k < parts.length - 1; k++) { const te = liste[parts[k]]; if (!te || te.t !== 'te') return null; liste = te.branche = te.branche || []; }
+    for (let k = 0; k < parts.length - 1; k++) { const te = liste[parts[k]]; if (!aBranche(te)) return null; liste = te.branche = te.branche || []; }
     const i = parts[parts.length - 1];
     return liste[i] ? { el: liste[i], liste, i } : null;
   }
@@ -195,7 +254,7 @@ const Tuyauterie = (() => {
   function listeDe(rel, chemin) {
     if (!chemin) return rel.elements = rel.elements || [];
     const t = trouver(rel, chemin);
-    return t && t.el.t === 'te' ? (t.el.branche = t.el.branche || []) : null;
+    return t && aBranche(t.el) ? (t.el.branche = t.el.branche || []) : null;
   }
 
   // Désignation et norme d'un élément placé
@@ -207,6 +266,7 @@ const Tuyauterie = (() => {
       case 'te': return [pc.dnB !== pc.dn ? `Té réduit ${m} DN${pc.dn} × DN${pc.dnB}` : `Té égal ${m} DN${pc.dn}`, 'ISO 3419 / EN 10253'];
       case 'reduc': return [`Réduction ${el.exc ? 'excentrique' : 'concentrique'} ${m} DN${pc.dn} × DN${pc.dn2}`, 'ISO 3419 / EN 10253'];
       case 'vanne': { const v = VANNES[el.type] || VANNES.boisseau; return [`${v.lib} ${RACCORDEMENTS[el.rac || 'bride']} DN${pc.dn} ${pn}`, el.rac === 'taraude' ? 'ISO 7-1 (filetage)' : `${v.serie} / ISO 5752`]; }
+      case 'v3v': return [`Vanne 3 voies motorisée ${RACCORDEMENTS[el.rac || 'bride']} DN${pc.dn} ${pn}`, 'EN 558 série 1 / ISO 5752'];
       case 'brides': return pc.flanges && pc.flanges[0] === 'tournante' && pc.flanges[1] === 'tournante' ? [`Paire de brides tournantes sur collets DN${pc.dn} ${pn}`, 'EN 1092-1 type 02 / 35']
         : pc.flanges && pc.flanges[0] !== pc.flanges[1] ? [`Assemblage bride à collerette + bride tournante DN${pc.dn} ${pn}`, 'EN 1092-1 type 11 / 02'] : [`Paire de brides à collerette DN${pc.dn} ${pn}`, 'EN 1092-1 type 11 / ISO 7005-1'];
       case 'raccord': return [`${RACCORDS[el.type] || RACCORDS.union} DN${pc.dn}`, 'ISO 49 / EN 10242'];
@@ -255,11 +315,12 @@ const Tuyauterie = (() => {
         case 'reduc': ajoute('Réduction', `${el.exc ? 'excentrique' : 'concentrique'} ${m}`.trim(), Math.max(pc.dn, pc.dn2), 1, 0, `DN${pc.dn}-DN${pc.dn2}`); break;
         case 'vanne': {
           const v = VANNES[el.type] || VANNES.boisseau;
-          ajoute(v.lib.replace(/ \(entre brides\)$/, ''), `${RACCORDEMENTS[el.rac || 'bride']} ${pn}`, pc.dn, 1);
+          ajoute(v.lib.replace(/ \([^)]*\)$/, ''), `${RACCORDEMENTS[el.rac || 'bride']} ${pn}`, pc.dn, 1);
           brides(pc);
           break;
         }
         case 'brides': brides(pc); break;
+        case 'v3v': ajoute('Vanne 3 voies motorisée', `${RACCORDEMENTS[el.rac || 'bride']} ${pn}`, pc.dn, 1); brides(pc); break;
         case 'raccord': ajoute(el.type === 'manchon' ? 'Manchon' : 'Raccord union', m, pc.dn, 1); break;
         case 'fond': ajoute('Fond bombé', m, pc.dn, 1); break;
         default: break;
@@ -282,7 +343,7 @@ const Tuyauterie = (() => {
       !((r.elements || []).length || (r.cotes || []).some(c => n(c.valeur) !== null)) && 'au moins une cote ou un élément de tuyauterie'].filter(Boolean);
   }
   const STATUTS = ['Brouillon', 'Relevé', 'Terminé'];
-  return { DN, DE, RAYON_3D, TE, REDUC, FOND, BRIDE, BRIDES_TYPES, VANNES, RACCORDEMENTS, RACCORDS, MATIERES, PN, TYPES, DIRS, DIRS_LIB, STATUTS,
+  return { DN, DE, RAYON_3D, TE, REDUC, FOND, BRIDE, BRIDES_TYPES, VANNES, ANGLES_DEVOIEMENT, aBranche, axeFaceV3V, axeFaceDev, RACCORDEMENTS, RACCORDS, MATIERES, PN, TYPES, DIRS, DIRS_LIB, STATUTS,
     lire, angle, axeFaceCoude, axeFaceTe, longueur, coupes, placer, trouver, listeDe, designation, nomenclature, lignesChiffrage, csvChiffrage, debit, manques };
 })();
 if (typeof module !== 'undefined') module.exports = Tuyauterie;

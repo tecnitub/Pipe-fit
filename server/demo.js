@@ -367,7 +367,20 @@ function demoData() {
       { repere: 'C', libelle: 'Entraxe piquage existant → bride cuve', valeur: '2100', remarque: 'bride cuve DN50 PN16' }],
     photosAvant: [{ photoId: 'img-rack1', legende: 'Ligne existante, vue depuis le rack nord', date: d(-40) }],
     photosApres: [{ photoId: 'img-rack2', legende: 'By-pass posé, vanne V12 et purge V13', date: d(-30) }],
-    observations: 'Supportage existant réutilisable sur le rack. Calorifuge à déposer sur 2 m avant découpe.' }];
+    observations: 'Supportage existant réutilisable sur le rack. Calorifuge à déposer sur 2 m avant découpe.' },
+  // Chaufferie des Tilleuls : départ circuit radiateurs (vanne 3 voies, équilibrage, dilatation, dévoiements)
+  { id: 'rc2', numero: `RC-${Y}-0002`, affaireId: 'af4', userId: 'o2', technicien: 'Ahmed Haddad', date: d(-20), ligne: 'CH-DEP-R1 départ radiateurs bât. A', fluide: 'Eau chaude chauffage 70/50 °C',
+    matiere: 'Acier S235 (noir)', pn: 'PN16', typeBride: 'collerette', dnDepart: 80, dirDepart: 'E', noteDepart: 'Piquage sur collecteur départ existant DN150', statut: 'Relevé', longueurTube: 5308,
+    elements: [{ t: 'vanne', dn: 80, type: 'papillon', rac: 'bride', repere: 'V1' }, { t: 'tube', dn: 80, auto: true, cote: 900, repere: 'T1' },
+      { t: 'v3v', dn: 80, vers: 'B', rac: 'bride', repere: 'V3V-R1', branche: [{ t: 'tube', dn: 80, auto: true, cote: 600, repere: 'T6' }, { t: 'coude', dn: 80, angle: 90, vers: 'O' }, { t: 'tube', dn: 80, l: 300, repere: 'T7', note: 'Retour vers collecteur (by-pass de mélange)' }] },
+      { t: 'tube', dn: 80, auto: true, cote: 1800, repere: 'T2' }, { t: 'vanne', dn: 80, type: 'dilatation', rac: 'bride', repere: 'MD1' },
+      { t: 'tube', dn: 80, l: 500, repere: 'T3' }, { t: 'devoie', dn: 80, angle: 45, vers: 'H', dec: 500, repere: 'passage poutre' },
+      { t: 'tube', dn: 80, auto: true, cote: 1200, repere: 'T4' }, { t: 'devoie', dn: 80, angle: 45, vers: 'N', dec: 400, vers2: 'B', dec2: 300 },
+      { t: 'tube', dn: 80, auto: true, cote: 1600, repere: 'T5' }, { t: 'vanne', dn: 80, type: 'equilibrage', rac: 'bride', repere: 'VE1', note: 'Prises de pression accessibles côté allée' },
+      { t: 'vanne', dn: 80, type: 'clapet', rac: 'bride', repere: 'CL1' }, { t: 'brides', dn: 80, repere: 'raccord réseau existant', typeBride: 'mixte' }],
+    cotes: [{ repere: 'A', libelle: 'Axe collecteur → sol fini', valeur: '1450', remarque: '' }, { repere: 'B', libelle: 'Dessous de poutre', valeur: '2350', remarque: 'dévoiement de 500 pour passer dessus' }],
+    photosAvant: [{ photoId: 'img-rack1', legende: 'Collecteur existant, piquage à créer', date: d(-20) }], photosApres: [],
+    observations: 'Vanne 3 voies motorisée fournie par le lot régulation : longueur face à face à confirmer avant préfabrication.' }];
   // Chaufferie des Tilleuls : épreuve du réseau, mise en service de la chaudière, équilibrage des radiateurs (repris dans le DOE)
   const signe = (jours, h) => ({ signatureTechId: 'img-sig', signatureClientId: 'img-sig', signataireNom: 'Gardien de la résidence', signataireQualite: 'Habitat Dauphiné', signeLe: `${d(jours)}T${h}:00.000Z`, statut: 'Signé' });
   epreuves.push({ id: 'ep2', numero: `EP-${Y}-0002`, affaireId: 'af4', userId: 'o2', technicien: 'Ahmed Haddad', date: d(-12), heureDebut: '08:00', heureFin: '10:00', reseau: 'Collecteurs départ / retour chauffage DN150',

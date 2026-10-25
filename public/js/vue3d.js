@@ -2,7 +2,7 @@
 // orthogonale (isométrique ISO 6412 par défaut), ombrage simple, rotation au doigt ou à la souris, zoom (molette, pincement),
 // déplacement (deux doigts, clic droit ou Maj), sélection d'une pièce au toucher, cotes affichées, image pour la fiche.
 const Vue3D = (() => {
-  const COUL = { tube: [150, 160, 170], raccord: [118, 130, 142], bride: [96, 108, 120], vanne: [192, 57, 43], clapet: [41, 98, 160], filtre: [39, 120, 90], commande: [230, 126, 34], volant: [44, 62, 80], tournante: [74, 104, 150], sel: [243, 156, 18] };
+  const COUL = { tube: [150, 160, 170], raccord: [118, 130, 142], bride: [96, 108, 120], vanne: [192, 57, 43], clapet: [41, 98, 160], filtre: [39, 120, 90], commande: [230, 126, 34], volant: [44, 62, 80], tournante: [74, 104, 150], equilibrage: [196, 40, 40], moteur: [62, 72, 80], dilatation: [176, 186, 196], sel: [243, 156, 18] };
   const BLEU = '#1e6fd9', COTE = '#14286e', NOTE = '#7a2e12';
   // Isométrique : observateur au sud-est, Nord vers la droite en haut, Est vers la droite en bas
   const ISO = { yaw: -Math.PI / 4, pitch: Math.atan(1 / Math.SQRT2) };
@@ -92,6 +92,7 @@ const Vue3D = (() => {
           break;
         }
         case 'vanne': vanne(out, pc); break;
+        case 'v3v': vanne3v(out, pc); break;
         default: break;
       }
     });
@@ -108,7 +109,7 @@ const Vue3D = (() => {
   }
   function vanne(out, pc) {
     const r = pc.de / 2, id = pc.id, d = pc.dir, type = pc.el.type || 'boisseau', v = Tuyauterie.VANNES[type] || Tuyauterie.VANNES.boisseau;
-    const coul = type === 'clapet' ? COUL.clapet : type === 'filtre' ? COUL.filtre : COUL.vanne;
+    const coul = type === 'clapet' ? COUL.clapet : type === 'filtre' ? COUL.filtre : type === 'equilibrage' ? COUL.equilibrage : type === 'dilatation' ? COUL.dilatation : COUL.vanne;
     let a = pc.p0, b = pc.p1;
     if (pc.brides) {
       const [D, h] = Tuyauterie.BRIDE[pc.dn];
@@ -122,6 +123,12 @@ const Vue3D = (() => {
     }
     const L = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]), m = add(a, d, L / 2);
     if (type === 'papillon') cylindre(out, a, b, r * 1.7, r * 1.7, coul, id, true);
+    else if (type === 'dilatation') {
+      // Soufflet : ondes successives
+      const nb = 7;
+      for (let k = 0; k < nb; k++) cylindre(out, add(a, d, (L * k) / nb), add(a, d, (L * (k + 0.5)) / nb), r * 1.12, r * 1.45, coul, id, k === 0);
+      for (let k = 0; k < nb; k++) cylindre(out, add(a, d, (L * (k + 0.5)) / nb), add(a, d, (L * (k + 1)) / nb), r * 1.45, r * 1.12, coul, id, k === nb - 1);
+    }
     else if (type === 'filtre') {
       cylindre(out, a, b, r * 1.3, r * 1.3, coul, id, true);
       const bas = unit(add(d.map(x => x * 0.6), pc.tige, -1));
@@ -132,7 +139,9 @@ const Vue3D = (() => {
       cylindre(out, add(a, d, L * 0.75), b, r * 1.6, r * 1.15, coul, id, true);
     }
     const t = pc.tige;
-    if (v.commande === 'levier') {
+    if (v.prises) [-1, 1].forEach(s => cylindre(out, add(add(m, d, s * L * 0.3), t, r * 1.2), add(add(m, d, s * L * 0.3), t, r * 2.1), r * 0.16 + 2, r * 0.16 + 2, COUL.commande, id, true));
+    if (v.commande === 'moteur') servomoteur(out, m, t, d, r, id);
+    else if (v.commande === 'levier') {
       const haut = add(m, t, r * 2.1);
       cylindre(out, add(m, t, r * 1.5), haut, r * 0.22, r * 0.22, COUL.commande, id, true);
       const [u] = base(t), sens = Math.abs(dot(u, d)) > 0.5 ? u : d;
@@ -147,15 +156,34 @@ const Vue3D = (() => {
     } else if (type === 'clapet') boite(out, add(m, t, r * 1.5), [d, cross(t, d), t], [L * 0.22, r * 0.9, r * 0.3], coul, id);
   }
 
+  // Servomoteur de vanne de régulation : arcade, boîtier
+  function servomoteur(out, m, t, d, r, id) {
+    cylindre(out, add(m, t, r * 1.4), add(m, t, r * 2.6), r * 0.25 + 2, r * 0.25 + 2, COUL.bride, id, true);
+    const s = Math.max(r * 1.2, 45);
+    boite(out, add(m, t, r * 2.6 + s * 0.9), [d, cross(t, d), t], [s, s * 0.75, s * 0.9], COUL.moteur, id);
+  }
+  // Vanne 3 voies : corps, trois voies (contre-brides si à brides), servomoteur
+  function vanne3v(out, pc) {
+    const r = pc.de / 2, id = pc.id, d = pc.dir, [D, h] = Tuyauterie.BRIDE[pc.dn], t = (pc.flanges || [])[0];
+    const voies = [[pc.p0, d.map(x => -x)], [pc.p1, d]].concat(pc.pb ? [[pc.pb, pc.vb]] : []);
+    voies.forEach(([q, dir]) => {
+      let face = q;
+      if (pc.brides) { bride(out, add(q, dir, -h), dir, pc.de, D, h, id, t); face = add(q, dir, -h - 2); }
+      cylindre(out, pc.centre, face, r * 1.15, r * 1.15, COUL.vanne, id, true);
+    });
+    cylindre(out, add(pc.centre, d, -r * 1.6), add(pc.centre, d, r * 1.6), r * 1.8, r * 1.8, COUL.vanne, id, true);
+    if (pc.tige) servomoteur(out, pc.centre, pc.tige, d, r, id);
+  }
+
   // Habillage de l'isométrique : cotes à l'axe (nœud à nœud), repères et longueurs de coupe, annotations libres,
   // points bleus des assemblages à brides
   function etiquettes(placement) {
-    const milieu = pc => (pc.t === 'coude' || pc.t === 'te' ? pc.centre : add(pc.p0, add(pc.p1, pc.p0, -1), 0.5));
+    const milieu = pc => (pc.centre ? pc.centre : add(pc.p0, add(pc.p1, pc.p0, -1), 0.5));
     const notes = placement.pieces.filter(pc => String(pc.el.note || '').trim()).map(pc => ({ pos: milieu(pc), txt: String(pc.el.note).trim(), id: pc.id }));
     if (placement.depart && placement.depart.note) notes.unshift({ pos: placement.depart.p, txt: placement.depart.note, id: 'depart' });
     return {
       reperes: placement.pieces.filter(pc => pc.t === 'tube' || pc.el.repere).map(pc => ({ pos: milieu(pc), repere: pc.el.repere || '', coupe: pc.t === 'tube' ? Math.round(pc.coupe || 0) : null, r: pc.de / 2, id: pc.id })),
-      cotes: placement.cotes || [], notes,
+      cotes: placement.cotes || [], notes, triangles: placement.triangles || [],
       joints: placement.pieces.flatMap(pc => pc.joints || []),
     };
   }
@@ -223,6 +251,16 @@ const Vue3D = (() => {
     etat.ecran = proj2;
     const s = (opts.police || 12) / 12;
     ctx.font = `${opts.police || 12}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    // Triangles hachurés des dévoiements (ISO 6412)
+    labels.triangles.forEach(tr => {
+      const P = tr.pts.map(proj);
+      ctx.save(); ctx.beginPath(); ctx.moveTo(P[0][0], P[0][1]); P.slice(1).forEach(q => ctx.lineTo(q[0], q[1])); ctx.closePath();
+      ctx.fillStyle = 'rgba(20,40,110,0.06)'; ctx.fill(); ctx.strokeStyle = COTE; ctx.lineWidth = 1 * s; ctx.globalAlpha = 0.8; ctx.stroke(); ctx.clip();
+      const xs = P.map(q => q[0]), ys = P.map(q => q[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+      ctx.globalAlpha = 0.45; ctx.lineWidth = 0.8 * s; ctx.beginPath();
+      for (let x = x0 - (y1 - y0); x < x1; x += 6 * s) { ctx.moveTo(x, y1); ctx.lineTo(x + (y1 - y0), y0); }
+      ctx.stroke(); ctx.restore();
+    });
     // Points bleus : assemblages à brides
     labels.joints.forEach(j => { const P = proj(j); ctx.beginPath(); ctx.arc(P[0], P[1], 4.5 * s, 0, Math.PI * 2); ctx.fillStyle = BLEU; ctx.fill(); ctx.lineWidth = 1.5 * s; ctx.strokeStyle = '#fff'; ctx.stroke(); });
     if (etat.cotes) labels.cotes.forEach(c => cote(ctx, proj(c.a), proj(c.b), c.valeur, s));
@@ -265,7 +303,7 @@ const Vue3D = (() => {
 
   // Vue interactive dans un canevas. etat (conservé d'un affichage à l'autre) : angles, zoom, décalage, sélection, cotes
   function creer(canvas, etat, { onPick } = {}) {
-    let faces = [], labels = { reperes: [], cotes: [], notes: [], joints: [] }, cadre = null;
+    let faces = [], labels = { reperes: [], cotes: [], notes: [], joints: [], triangles: [] }, cadre = null;
     const ctx = canvas.getContext('2d');
     const taille = () => { const r = canvas.getBoundingClientRect(), k = window.devicePixelRatio || 1; canvas.width = Math.max(1, r.width * k); canvas.height = Math.max(1, r.height * k); ctx.setTransform(k, 0, 0, k, 0, 0); return r; };
     let r = taille();
