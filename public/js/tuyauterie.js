@@ -210,6 +210,43 @@ const Tuyauterie = (() => {
     });
     return [...lignes.values()].sort((a, b) => (a.unite === 'm' ? 0 : 1) - (b.unite === 'm' ? 0 : 1) || a.designation.localeCompare(b.designation, 'fr'));
   }
+  // Lignes pour le chiffrage depuis plan (même format qu'une nomenclature importée de Revit : réseau, famille, type, taille,
+  // longueur en m, nombre), reconnues par les familles CAO de la bibliothèque (Tuyau, Coude, Té, Bride, Réduction, Vanne…)
+  function lignesChiffrage(rel, placement = placer(rel)) {
+    const out = new Map(), sys = String(rel.ligne || '').trim(), pn = rel.pn || 'PN16', m = rel.matiere || '';
+    const ajoute = (famille, type, dn, qte, longueur = 0, taille = `DN${dn}`) => {
+      const k = `${famille}|${type}|${taille}`, l = out.get(k) || { systeme: sys, famille, type, taille, dn, longueur: 0, qte: longueur ? 1 : 0 };
+      if (longueur) l.longueur = Math.round((l.longueur + longueur) * 1000) / 1000; else l.qte += qte;
+      out.set(k, l);
+    };
+    // n assemblages à brides : 2 brides par paire, 1 contre-bride par côté de vanne ; un joint et une boulonnerie par assemblage
+    const brides = (dn, n, nb = 2 * n) => { ajoute('Bride à collerette', `${pn} EN 1092-1 type 11`, dn, nb); ajoute('Joint plat', `${pn} EN 1514-1`, dn, n); ajoute('Boulonnerie', `Jeu ${pn}`, dn, n); };
+    placement.pieces.forEach(pc => {
+      const el = pc.el;
+      switch (pc.t) {
+        case 'tube': if (pc.coupe > 0) ajoute('Tuyau', m, pc.dn, 1, pc.coupe / 1000); break;
+        case 'coude': ajoute('Coude', `${angle(el)}° 3D ${m}`.trim(), pc.dn, 1); break;
+        case 'te': ajoute('Té', pc.dnB !== pc.dn ? `réduit DN${pc.dn} × DN${pc.dnB} ${m}`.trim() : `égal ${m}`.trim(), pc.dn, 1); break;
+        case 'reduc': ajoute('Réduction', `${el.exc ? 'excentrique' : 'concentrique'} ${m}`.trim(), Math.max(pc.dn, pc.dn2), 1, 0, `DN${pc.dn}-DN${pc.dn2}`); break;
+        case 'vanne': {
+          const v = VANNES[el.type] || VANNES.boisseau;
+          ajoute(v.lib.replace(/ \(entre brides\)$/, ''), `${RACCORDEMENTS[el.rac || 'bride']} ${pn}`, pc.dn, 1);
+          if (pc.brides) brides(pc.dn, 2, 2);
+          break;
+        }
+        case 'brides': brides(pc.dn, 1); break;
+        case 'raccord': ajoute(el.type === 'manchon' ? 'Manchon' : 'Raccord union', m, pc.dn, 1); break;
+        case 'fond': ajoute('Fond bombé', m, pc.dn, 1); break;
+        default: break;
+      }
+    });
+    return [...out.values()];
+  }
+  // Liste du matériel en CSV (séparateur « ; », ouvrable dans Excel) : mêmes colonnes que l'import du chiffrage
+  function csvChiffrage(lignes) {
+    const c = v => { const s = String(v ?? ''); return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    return ['Réseau;Famille;Type;Taille;Longueur (m);Nombre', ...lignes.map(l => [l.systeme, l.famille, l.type, l.taille, l.longueur ? String(l.longueur).replace('.', ',') : '', l.qte].map(c).join(';'))].join('\r\n');
+  }
   // Fiche de débit : longueurs de coupe des tubes, dans l'ordre de la ligne
   function debit(placement) {
     return placement.pieces.filter(pc => pc.t === 'tube').map(pc => ({ id: pc.id, dn: pc.dn, de: pc.de, coupe: pc.coupe || 0, auto: !!pc.el.auto, cote: pc.el.auto ? n(pc.el.cote) : null, repere: pc.el.repere || '' }));
@@ -221,6 +258,6 @@ const Tuyauterie = (() => {
   }
   const STATUTS = ['Brouillon', 'Relevé', 'Terminé'];
   return { DN, DE, RAYON_3D, TE, REDUC, FOND, BRIDE, VANNES, RACCORDEMENTS, RACCORDS, MATIERES, PN, TYPES, DIRS, DIRS_LIB, STATUTS,
-    lire, angle, axeFaceCoude, axeFaceTe, longueur, coupes, placer, trouver, listeDe, designation, nomenclature, debit, manques };
+    lire, angle, axeFaceCoude, axeFaceTe, longueur, coupes, placer, trouver, listeDe, designation, nomenclature, lignesChiffrage, csvChiffrage, debit, manques };
 })();
 if (typeof module !== 'undefined') module.exports = Tuyauterie;

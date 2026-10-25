@@ -55,6 +55,9 @@ Depuis un chantier (« + Prise de cotes ») ou sur le téléphone du compagnon (
   axe-face et l'encombrement des accessoires du tronçon ;
 - **nomenclature** (tubes au mètre par DN, raccords, robinetterie, brides, joints et boulonnerie) et **fiche imprimable / PDF**
   avec l'isométrique.
+- **export vers le chiffrage** (« → Chiffrage ») : la liste du matériel part dans un chiffrage depuis plan, nouveau ou existant,
+  au même format qu'une nomenclature Revit (réseau, famille, type, taille, longueur, nombre), reliée aux familles CAO de la
+  bibliothèque ; un nouvel envoi du même relevé remplace ses lignes. Aussi en fichier « Liste matériel (.csv) » pour Excel.
 
 Dimensions des accessoires : ISO 4200 / EN 10220 (tubes), ISO 3419 / EN 10253 (raccords à souder), EN 1092-1 / ISO 7005-1
 (brides PN16), EN 558 / ISO 5752 (face à face de la robinetterie), ISO 49 (raccords filetés). Ce sont des valeurs nominales

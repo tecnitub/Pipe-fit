@@ -89,7 +89,7 @@ function releveForm(r) {
       ${editeurListeHtml(r, pl)}
     </fieldset>
 
-    <fieldset class="hd-bloc"><legend>Fiche de débit et nomenclature</legend><div id="rl-calc">${calculsReleveHtml(r, pl)}</div></fieldset>
+    <fieldset class="hd-bloc"><legend>Fiche de débit et nomenclature</legend>${pl.pieces.length ? `<div class="toolbar">${boutonsChiffrageReleve(r)}</div>` : ''}<div id="rl-calc">${calculsReleveHtml(r, pl)}</div></fieldset>
 
     <fieldset class="hd-bloc"><legend>Photos après travaux <span class="muted small">${r.photosApres.length}</span></legend>
       ${photosReleveHtml(r.photosApres, 'apres')}
@@ -185,6 +185,7 @@ Views.releve.bind = (root, params) => {
   if (params[1] === 'fiche') {
     const rec = Store.get('releves', params[0]), pdf = root.querySelector('#rl-pdf');
     if (pdf && rec) pdf.onclick = () => PDF.telecharger(releveDocument(rec), `Releve-cotes-${rec.numero || rec.id}.pdf`).catch(err => notify(err.message));
+    if (rec) brancherChiffrageReleve(root, () => rec);
     return;
   }
   const b = releveBrouillon, r = b.r, $ = s => root.querySelector(s);
@@ -222,6 +223,7 @@ Views.releve.bind = (root, params) => {
   });
   root.querySelectorAll('[data-rmph]').forEach(x => x.onclick = () => { const [c, i] = x.dataset.rmph.split('|'); liste(c).splice(+i, 1); App.render(); });
   root.querySelectorAll('[data-leg]').forEach(x => x.addEventListener('input', () => { const [c, i] = x.dataset.leg.split('|'); liste(c)[+i].legende = x.value; }));
+  brancherChiffrageReleve(root, () => r);
   // Vue 3D
   root.querySelectorAll('[data-vue]').forEach(x => x.onclick = () => b.vue.vue(x.dataset.vue));
   $('#rl-cotes3d').onchange = e => { b.cam.cotes = e.target.checked; b.vue.rendu(); };
@@ -300,7 +302,7 @@ function releveFicheVue(r) {
   const bureau = Store.me.role !== 'atelier';
   return `<div class="toolbar no-print"><a href="${retourReleve(r)}" class="btn secondary">← ${bureau ? 'Chantier' : 'Rapports'}</a><span class="spacer"></span>
     <a class="btn secondary" href="#/releve/${esc(r.id)}">${r.statut === 'Terminé' ? 'Modifier' : 'Compléter (photos après…)'}</a>
-    <button class="secondary print-btn" data-print>Imprimer</button><button class="secondary" id="rl-pdf">PDF</button></div>
+    ${boutonsChiffrageReleve(r)}<button class="secondary print-btn" data-print>Imprimer</button><button class="secondary" id="rl-pdf">PDF</button></div>
   <h1 class="no-print">Prise de cotes ${esc(r.numero || '')} · ${esc(r.ligne)} ${badgeReleve(r)}</h1>
   <div class="doc-print">${releveDocument(r)}</div>`;
 }
@@ -338,4 +340,37 @@ function relevesChantierHtml(a) {
       <td class="num">${r.longueurTube ? `${fmt(r.longueurTube / 1000, 2)} m` : ''}</td><td>${[...(r.photosAvant || []).slice(0, 2), ...(r.photosApres || []).slice(0, 2)].map(p => `<img class="thumb" src="${fileUrl(p.photoId)}" alt="">`).join('')}</td>
       <td>${esc(userName(r.userId))}</td><td>${badgeReleve(r)}</td></tr>`).join('')}</table></div>`
   : '<p class="muted">Aucune prise de cotes. Le technicien la fait sur place (Pointage › Rapports › Prise de cotes) ou depuis ici.</p>'}`;
+}
+
+// Liste du matériel vers le chiffrage depuis plan (bureau) et en fichier .csv (Excel, logiciel de chiffrage, fournisseur)
+const boutonsChiffrageReleve = r => `${Store.can('write', 'chiffrages') && Store.me.role !== 'atelier' ? '<button class="secondary" id="rl-chiffrage">→ Chiffrage</button>' : ''}<button class="secondary" id="rl-csv">Liste matériel (.csv)</button>`;
+function brancherChiffrageReleve(root, releve) {
+  const csv = root.querySelector('#rl-csv'), ch = root.querySelector('#rl-chiffrage');
+  if (csv) csv.onclick = () => { const r = releve(); download(`Liste-materiel-${r.numero || r.ligne || 'releve'}.csv`.replace(/[^\w.-]+/g, '_'), `\ufeff${Tuyauterie.csvChiffrage(Tuyauterie.lignesChiffrage(r))}`, 'text/csv'); };
+  if (ch) ch.onclick = () => envoyerAuChiffrage(releve());
+}
+// Ajoute les lignes du relevé à un chiffrage (nouveau ou existant) ; un nouvel envoi du même relevé remplace ses lignes
+async function envoyerAuChiffrage(r) {
+  const lignes = Tuyauterie.lignesChiffrage(r);
+  if (!lignes.length) return notify('Aucun élément de tuyauterie dans ce relevé.');
+  if (!r.id) r.id = uid(); // relevé pas encore enregistré : son identifiant relie déjà les lignes envoyées
+  const a = affaireOf(r.affaireId), cle = r.id;
+  const chs = Store.all('chiffrages').slice().reverse();
+  const choix = await dialog(`<form><h3 style="margin-top:0">Envoyer la liste du matériel au chiffrage</h3>
+      <p class="small muted">${lignes.length} ligne(s) : tubes en mètres par DN, raccords, robinetterie, brides, joints. Elles sont reliées aux familles CAO de la bibliothèque comme une nomenclature importée.</p>
+      <label class="field"><span>Chiffrage</span><select id="dlg-ch"><option value="">Nouveau chiffrage</option>${chs.map(c => `<option value="${esc(c.id)}">${esc(c.nom || 'Chiffrage')} · ${(c.lignes || []).length} ligne(s)</option>`).join('')}</select></label>
+      <div class="modal-actions"><button type="button" class="secondary" data-cancel>Annuler</button><button type="submit">Envoyer</button></div></form>`,
+  (wrap, done) => {
+    wrap.querySelector('[data-cancel]').onclick = () => done(null);
+    wrap.querySelector('form').onsubmit = e => { e.preventDefault(); done({ id: wrap.querySelector('#dlg-ch').value }); };
+  });
+  if (!choix) return;
+  let ch = choix.id && Store.get('chiffrages', choix.id);
+  if (!ch) { ch = nouveauChiffrage(''); ch.nom = `${a.code ? `${a.code} – ` : ''}${r.ligne || 'Prise de cotes'}`; }
+  const deja = (ch.lignes || []).some(l => l.releveId === cle);
+  ch.lignes = [...(ch.lignes || []).filter(l => l.releveId !== cle), ...lignes.map(l => ({ ...l, releveId: cle }))];
+  ch.fichier = ch.fichier || `Prise de cotes ${r.numero || r.ligne || ''}`.trim();
+  Store.upsert('chiffrages', ch);
+  App.toast(`${lignes.length} ligne(s) ${deja ? 'mises à jour' : 'ajoutées'} dans le chiffrage « ${ch.nom} »`, 4000);
+  location.hash = `#/chiffrage/${ch.id}`;
 }

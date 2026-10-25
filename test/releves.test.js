@@ -62,6 +62,17 @@ test('nomenclature : tubes au mètre par DN, accessoires, brides et joints des v
   assert.deepStrictEqual(T.manques({ affaireId: 'af1', userId: 'o1', date: '2026-10-25', ligne: ' ', cotes: [{ valeur: '' }] }), ['repère de la ligne', 'au moins une cote ou un élément de tuyauterie']);
 });
 
+test('liste du matériel pour le chiffrage : familles CAO, tube en mètres par DN, brides des vannes, CSV', () => {
+  const l = T.lignesChiffrage({ ...ligne(), ligne: 'EG-01' }), q = (f, dn) => l.filter(x => x.famille === f && x.dn === dn);
+  assert.deepStrictEqual(q('Tuyau', 80).map(x => [x.longueur, x.qte, x.systeme]), [[3.272, 1, 'EG-01']]);
+  assert.deepStrictEqual([q('Coude', 80)[0].qte, q('Bride à collerette', 80)[0].qte, q('Joint plat', 80)[0].qte], [1, 2, 2]);
+  assert.deepStrictEqual(q('Réduction', 80).map(x => x.taille), ['DN80-DN50']);
+  assert.ok(q('Robinet à tournant sphérique', 80).length);
+  const csv = T.csvChiffrage(l).split('\r\n');
+  assert.strictEqual(csv[0], 'Réseau;Famille;Type;Taille;Longueur (m);Nombre');
+  assert.ok(csv.includes('EG-01;Tuyau;Acier P235GH;DN80;3,272;1'));
+});
+
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipefit-releves-'));
 process.env.DB_FILE = path.join(dir, 'test.db');
 process.env.ADMIN_PASSWORD = 'admin-test-pw';
