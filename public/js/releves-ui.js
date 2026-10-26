@@ -134,7 +134,7 @@ function erreursReleveHtml(pl) {
   return pl.erreurs.length ? `<ul class="neg small rl-errs">${pl.erreurs.map(e => `<li>Élément ${esc(numeroEl(e.chemin))} : ${esc(e.msg)}</li>`).join('')}</ul>` : '';
 }
 // « 4.b.2 » -> « 5 › 3 » (numérotation à partir de 1, dérivation après le té)
-const numeroEl = chemin => String(chemin).split('.b.').map(x => (/-r$/.test(x) ? `réduction avant ${+x.slice(0, -2) + 1}` : +x + 1)).join(' › ');
+const numeroEl = chemin => String(chemin).split('.b.').map(x => (/-r$/.test(x) ? `réduction avant ${+x.slice(0, -2) + 1}` : /-c$/.test(x) ? `coude avant ${+x.slice(0, -2) + 1}` : +x + 1)).join(' › ');
 
 function editeurListeHtml(r, pl) {
   const b = releveBrouillon, chemin = b.chemin, liste = Tuyauterie.listeDe(r, chemin) || [];
@@ -147,7 +147,8 @@ function editeurListeHtml(r, pl) {
   const params = (el, i) => {
     const pc = piece(i) || {};
     switch (el.t) {
-      case 'tube': return `${sel('auto', el.auto ? '1' : '', i, '', { '': 'Longueur de coupe', 1: 'Cote axe à axe' })}${el.auto ? mm('cote', el.cote, i, 'cote', 'axe à axe') : mm('l', el.l, i, '', 'longueur')}`;
+      // Direction du tube : une autre direction que celle de la ligne place un coude automatiquement
+      case 'tube': return `${dirSel('vers', el.vers || dirDe(pc.dir || []) || '', i, 'vers')}${sel('auto', el.auto ? '1' : '', i, '', { '': 'Longueur de coupe', 1: 'Cote axe à axe' })}${el.auto ? mm('cote', el.cote, i, 'cote', 'axe à axe') : mm('l', el.l, i, '', 'longueur')}`;
       // Cote axe-face : celle de la norme (ou du raccord à sertir) proposée, remplacée par celle du fabricant si saisie
       case 'coude': return `${sel('angle', String(el.angle || 90), i, 'Angle', { 90: '90°', 45: '45°' })}${dirSel('vers', el.vers, i, 'vers')}${mm('af', el.af, i, 'axe-face', pc.axeFace && !el.af ? String(pc.axeFace).replace('.', ',') : '')}`;
       case 'devoie': return `${sel('angle', String(Tuyauterie.ANGLES_DEVOIEMENT.includes(+el.angle) ? +el.angle : 45), i, 'Coudes', Object.fromEntries(Tuyauterie.ANGLES_DEVOIEMENT.map(a => [a, `${a}°`])))}${dirSel('vers', el.vers, i, 'vers')}${mm('dec', el.dec, i, 'décalage', 'mm')}
@@ -182,7 +183,12 @@ function editeurListeHtml(r, pl) {
     <div class="rl-fil">${chemin ? `<button class="small secondary" data-chemin="${esc(parent)}">← ${parent ? 'Dérivation précédente' : 'Ligne principale'}</button> <strong>${te && te.el.t === 'v3v' ? 'Voie B de la vanne 3 voies' : 'Dérivation du té'} n° ${esc(numeroEl(chemin))}</strong> (DN${esc(te && (te.el.dnB || te.el.dn))})`
       : `<strong>Ligne principale</strong> · départ ${dnSel('dnDepart', r.dnDepart, '-1', 'DN')} ${dirSel('dirDepart', r.dirDepart, '-1', 'vers')}
         <input data-el="-1" data-k="noteDepart" value="${esc(r.noteDepart || '')}" placeholder="Annotation du départ (ex. départ sur existant, piquage…)" aria-label="Annotation du départ" class="rl-note">`}</div>
-    <ol class="rl-liste">${liste.map((el, i) => { const id = `${chemin ? `${chemin}.b.` : ''}${i}`, red = pl.pieces.find(pc => pc.id === `${id}-r`); return `${red ? `<li class="rl-el rl-auto ${b.cam.sel === red.id ? 'sel' : ''}" data-elid="${esc(red.id)}">
+    <ol class="rl-liste">${liste.map((el, i) => { const id = `${chemin ? `${chemin}.b.` : ''}${i}`, red = pl.pieces.find(pc => pc.id === `${id}-r`), cd = pl.pieces.find(pc => pc.id === `${id}-c`); return `${cd ? `<li class="rl-el rl-auto ${b.cam.sel === cd.id ? 'sel' : ''}" data-elid="${esc(cd.id)}">
+      <span class="rl-num" data-pick="${esc(cd.id)}">↳</span><span class="rl-type" data-pick="${esc(cd.id)}">↱ Coude 3D</span>
+      <span class="small">${cd.el.angle}° vers ${esc(Tuyauterie.DIRS_LIB[cd.el.vers] || '')} ${esc(Tuyauterie.taille(r, cd.dn))}, ajouté au changement de direction</span>
+      <button class="small secondary" data-fixcoude="${i}" title="Le remplacer par un coude modifiable (angle, cote axe-face du fabricant…)">Coude modifiable</button>
+      <button class="small secondary" data-tecoude="${i}" title="Un té à la place du coude : la suite de la ligne part dans sa dérivation, l'autre extrémité reste libre">Changer en té</button>
+      <span class="rl-enc small">axe-face ${fmt(cd.axeFace, 1)} mm</span></li>` : ''}${red ? `<li class="rl-el rl-auto ${b.cam.sel === red.id ? 'sel' : ''}" data-elid="${esc(red.id)}">
       <span class="rl-num" data-pick="${esc(red.id)}">↳</span><span class="rl-type" data-pick="${esc(red.id)}">▷ Réduction ISO</span>
       <span class="small">concentrique ${esc(Tuyauterie.taille(r, red.dn))} → ${esc(Tuyauterie.taille(r, red.dn2))}, ajoutée au changement de diamètre</span>
       <button class="small secondary" data-fixred="${i}" title="La remplacer par une réduction modifiable (excentrique, longueur du fabricant…)">Modifier</button>
@@ -377,6 +383,23 @@ Views.releve.bind = (root, params) => {
   root.querySelectorAll('[data-mv]').forEach(x => x.onclick = () => {
     const [i, s] = x.dataset.mv.split('|').map(Number), l = courante();
     [l[i], l[i + s]] = [l[i + s], l[i]]; b.cam.sel = null; App.render();
+  });
+  // Coude automatique : remplacé par un coude saisi, ou par un té dont la dérivation reprend la suite de la ligne
+  const coudeAuto = i => Tuyauterie.placer(r).pieces.find(pc => pc.id === `${b.chemin ? `${b.chemin}.b.` : ''}${i}-c`);
+  root.querySelectorAll('[data-fixcoude]').forEach(x => x.onclick = () => {
+    const i = +x.dataset.fixcoude, cd = coudeAuto(i);
+    if (!cd) return;
+    courante().splice(i, 0, { t: 'coude', dn: cd.dn, angle: cd.el.angle, vers: cd.el.vers });
+    b.cam.sel = `${b.chemin ? `${b.chemin}.b.` : ''}${i}`; App.render();
+  });
+  root.querySelectorAll('[data-tecoude]').forEach(x => x.onclick = () => {
+    const i = +x.dataset.tecoude, cd = coudeAuto(i), l = courante();
+    if (!cd) return;
+    if (cd.el.angle !== 90) return notify('Un té remplace un coude à 90° seulement.');
+    const suite = l.splice(i);
+    l.push({ t: 'te', dn: cd.dn, vers: cd.el.vers, dnB: cd.dn, branche: suite });
+    b.cam.sel = `${b.chemin ? `${b.chemin}.b.` : ''}${i}`; App.render();
+    App.toast('Té placé : la suite de la ligne est dans sa dérivation ; l\'extrémité droite du té reste libre (ajoutez-y des éléments ou un fond).', 6000);
   });
   // Réduction automatique remplacée par une réduction saisie (même diamètres)
   root.querySelectorAll('[data-fixred]').forEach(x => x.onclick = () => {

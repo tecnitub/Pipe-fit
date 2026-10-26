@@ -68,6 +68,9 @@ saisie sur l'élément les remplace.
   **point bleu** sur chaque assemblage à brides ;
 - **brides** à collerette (EN 1092-1 type 11), tournantes sur collet à souder (type 02 + collet type 35) ou assemblage mixte
   collerette + tournante, réglées pour la ligne et modifiables pièce par pièce (contre-brides des vannes comprises) ;
+- **coudes automatiques** : chaque tube a sa direction ; une autre direction que celle de la ligne place un coude 3D (90°, ou
+  45° depuis une oblique), déduit des coupes ; « Coude modifiable » le remplace par un coude saisi, « Changer en té » met un té
+  dont la dérivation reprend la suite de la ligne (l'autre extrémité du té reste libre) ;
 - **réductions ISO automatiques** : un changement de diamètre entre deux éléments ajoute une réduction concentrique
   (ISO 3419 / EN 10253, ou à sertir), déduite des coupes et comptée dans la nomenclature, repérée « DN80×DN50 » sur
   l'isométrique ; « Modifier » la remplace par une réduction saisie (excentrique, longueur du fabricant) ;

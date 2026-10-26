@@ -148,6 +148,22 @@ test('changement de diamètre : réduction concentrique ISO ajoutée et déduite
   assert.strictEqual(T.placer({ dnDepart: 50, dirDepart: 'E', systeme: 'inoxSertir', elements: [{ t: 'tube', dn: 50, l: 100 }, { t: 'tube', dn: 40, l: 100 }] }).pieces[1].L, 40, 'réduction à sertir Ø54 × Ø42');
 });
 
+test('changement de direction d\'un tube : coude 3D automatique, avant la réduction ; demi-tour refusé', () => {
+  const r = { dnDepart: 80, dirDepart: 'E', elements: [{ t: 'tube', dn: 80, auto: true, cote: 1500 }, { t: 'tube', dn: 80, auto: true, cote: 1000, vers: 'N' }, { t: 'tube', dn: 50, l: 300, vers: 'H' }] };
+  const p = T.placer(r);
+  assert.deepStrictEqual(p.erreurs, []);
+  assert.deepStrictEqual(p.pieces.map(x => x.id), ['0', '1-c', '1', '2-c', '2-r', '2']);
+  assert.deepStrictEqual(T.debit(p).map(d => d.coupe), [1500 - 114, 1000 - 114 - 114, 300]);
+  assert.deepStrictEqual(p.cotes.map(c => c.valeur).slice(0, 2), [1500, 1000], 'les cotes saisies se retrouvent à l\'axe des coudes automatiques');
+  const rien = T.placer({ ...r, elements: [{ t: 'tube', dn: 80, l: 500, vers: 'E' }, { t: 'coude', dn: 80, vers: 'N' }, { t: 'tube', dn: 80, l: 500, vers: 'N' }] });
+  assert.ok(!rien.pieces.some(x => /-c$/.test(x.id)), 'même direction ou coude déjà saisi : rien d\'ajouté');
+  const qt = T.placer({ ...r, elements: [{ t: 'coude', dn: 80, angle: 45, vers: 'N' }, { t: 'tube', dn: 80, l: 500, vers: 'N' }] });
+  assert.strictEqual(qt.pieces.find(x => x.id === '1-c').el.angle, 45, 'depuis une oblique à 45° : coude à 45°');
+  assert.match(T.placer({ ...r, elements: [{ t: 'tube', dn: 80, l: 500, vers: 'O' }] }).erreurs[0].msg, /Demi-tour/);
+  const te = T.placer({ ...r, elements: [{ t: 'tube', dn: 80, l: 500 }, { t: 'te', dn: 80, vers: 'N', branche: [{ t: 'tube', dn: 80, l: 400, vers: 'N' }] }] });
+  assert.ok(!te.pieces.some(x => /-c$/.test(x.id)), 'tube dans la direction de la dérivation : pas de coude');
+});
+
 test('liste du matériel pour le chiffrage : familles CAO, tube en mètres par DN, brides des vannes, CSV', () => {
   const l = T.lignesChiffrage({ ...ligne(), ligne: 'EG-01' }), q = (f, dn) => l.filter(x => x.famille === f && x.dn === dn);
   assert.deepStrictEqual(q('Tube acier', 80).map(x => [x.longueur, x.qte, x.systeme]), [[3.272, 1, 'EG-01']]);

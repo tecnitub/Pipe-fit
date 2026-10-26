@@ -165,6 +165,7 @@ const Tuyauterie = (() => {
       liste.forEach((el, i) => {
         const id = `${chemin}${el._i !== undefined ? el._i : i}`, dnEl = dnOk(el.dn || dn);
         if (ferme) { erreurs.push({ chemin: id, msg: 'Élément placé après un fond bombé' }); return; }
+        if (el._erreur) erreurs.push({ chemin: id, msg: el._erreur });
         const base = { id, el, t: el.t, dn: dnEl, de: sys.de[dnEl] || DE[dnEl], p0: p, dir: d };
         if (el.t === 'coude') {
           const v = DIRS[el.vers] || DIRS.N, perp = add(v, d, -dot(v, d));
@@ -281,12 +282,24 @@ const Tuyauterie = (() => {
     };
     // Copie des éléments avec le DN de chacun et les cotes des raccords du type de tube (sauf longueur saisie)
     const sys = systeme(rel);
-    // Changement de diamètre sans réduction saisie : réduction concentrique ISO ajoutée devant l'élément (repère « n-r »)
-    const prep = (liste, dn0) => {
-      let dnc = dnOk(dn0);
+    // Changement de diamètre sans réduction saisie : réduction concentrique ISO ajoutée devant l'élément (repère « n-r »).
+    // Tube orienté dans une autre direction que celle de la ligne : coude 3D (90° ou 45°) ajouté devant lui (repère « n-c »).
+    const tourner = (d, v, deg) => { const q = add(v, d, -dot(v, d)); if (len(q) < 1e-6) return null; const a = (deg * Math.PI) / 180; return unit(add(d.map(z => z * Math.cos(a)), unit(q), Math.sin(a))); };
+    const prep = (liste, dn0, d0) => {
+      let dnc = dnOk(dn0), d = d0;
       return (liste || []).flatMap((e, i) => {
         const x = { ...e, dn: dnOk(e.dn || dnc), _i: i }, dn = x.dn, af = n(e.af);
-        const auto = dn !== dnc ? [{ t: 'reduc', dn: dnc, dn2: dn, exc: '', auto: true, _i: `${i}-r`, l: sys.reduc ? sys.reduc[Math.max(dn, dnc)] : '' }] : [];
+        const auto = [];
+        if (x.t === 'tube' && DIRS[x.vers]) {
+          const v = DIRS[x.vers], c = Math.max(-1, Math.min(1, dot(d, v))), deg = (Math.acos(c) * 180) / Math.PI;
+          if (deg > 0.5) {
+            const ang = [90, 45].find(a => Math.abs(a - deg) < 0.5);
+            if (ang) { auto.push({ t: 'coude', dn: dnc, angle: ang, vers: x.vers, auto: true, _i: `${i}-c`, rayon: sys.rayon ? sys.rayon[dnc] : '' }); d = v; }
+            else x._erreur = deg > 179.5 ? 'Demi-tour : ajoutez deux coudes (ou un dévoiement)' : `Changement de direction de ${Math.round(deg)}° : coudes à 90° ou 45° seulement`;
+          }
+        }
+        if (dn !== dnc) auto.push({ t: 'reduc', dn: dnc, dn2: dn, exc: '', auto: true, _i: `${i}-r`, l: sys.reduc ? sys.reduc[Math.max(dn, dnc)] : '' });
+        if (x.t === 'coude') d = tourner(d, DIRS[x.vers] || DIRS.N, angle(x)) || d;
         if (x.t === 'coude' || x.t === 'devoie') {
           const th = x.t === 'coude' ? angle(x) : angleDev(x);
           if (af > 0 && x.t === 'coude') x.rayon = af / Math.tan((th * Math.PI) / 360);
@@ -299,12 +312,12 @@ const Tuyauterie = (() => {
         if (x.t === 'instrument' && sys.sertir) x.l = 2 * sys.te[dn];
         if (x.t === 'instrument' && !sys.sertir) x.l = 0;
         if ((x.t === 'vanne' || x.t === 'v3v') && x.rac === 'sertir' && !n(x.l) && sys.vanne) x.l = x.type === 'dilatation' ? DILAT[dn] : sys.vanne[dn];
-        if (aBranche(x)) x.branche = prep(x.branche, x.t === 'te' ? (e.dnB || dn) : dn);
+        if (aBranche(x)) { const v = DIRS[x.vers] || (x.t === 'te' ? DIRS.H : DIRS.B), q = add(v, d, -dot(v, d)); x.branche = prep(x.branche, x.t === 'te' ? (e.dnB || dn) : dn, len(q) > 1e-6 ? unit(q) : v); }
         dnc = x.t === 'reduc' ? dnOk(x.dn2 || dn) : dn;
         return [...auto, x];
       });
     };
-    const fin = marcher(prep(rel.elements, rel.dnDepart || 50), [0, 0, 0], DIRS[rel.dirDepart] || DIRS.E, dnOk(rel.dnDepart || 50), '', 0);
+    const fin = marcher(prep(rel.elements, rel.dnDepart || 50, DIRS[rel.dirDepart] || DIRS.E), [0, 0, 0], DIRS[rel.dirDepart] || DIRS.E, dnOk(rel.dnDepart || 50), '', 0);
     const asm = sys.sertir ? sertissages(pieces) : [];
     return { pieces, erreurs, fin, cotes, triangles, soudures: sys.sertir ? [] : soudures(pieces, rel), sertissages: asm, sertir: !!sys.sertir, depart: { p: [0, 0, 0], note: String(rel.noteDepart || '').trim() } };
   }
