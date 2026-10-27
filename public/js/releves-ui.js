@@ -457,12 +457,12 @@ function releveDocument(r) {
       l('Relevé par', esc(r.technicien || userName(r.userId))), l('État', esc(r.statut || ''))].join('')}</table>
     ${pl.pieces.length ? `<h3 class="doc-h">Isométrique</h3><div class="rl-iso"><img src="${Vue3D.image(pl)}" alt="Isométrique de la ligne"></div><p class="small">Repère : Nord vers la droite en haut, Est vers la droite en bas. Cotes à l'axe en mm, d'un nœud au suivant (départ, centre des coudes 3D et des tés, extrémité). Point bleu : soudure bout à bout. Triangles hachurés : dévoiements (avance et décalages cotés).</p>` : ''}
     ${annotationsHtml(r, pl)}${souduresHtml(pl)}
-    ${deb.length ? `<h3 class="doc-h">Fiche de débit</h3><table class="doc-lines compact"><tr><th>Élément</th><th>Repère</th><th>DN</th><th class="num">Ø ext.</th><th class="num">Cote axe à axe</th><th class="num">Longueur de coupe</th></tr>
-      ${deb.map(d => `<tr><td>${esc(numeroEl(d.id))}</td><td>${esc(d.repere)}</td><td>${esc(Tuyauterie.taille(r, d.dn))}</td><td class="num">${fmt(d.de, 1)}</td><td class="num">${d.cote !== null ? fmt(d.cote) : '—'}</td><td class="num"><strong>${fmt(d.coupe)}</strong></td></tr>`).join('')}</table>` : ''}
-    ${nom.length ? `<h3 class="doc-h">Nomenclature</h3><table class="doc-lines compact"><tr><th>Désignation</th><th>Norme</th><th class="num">Quantité</th></tr>
-      ${nom.map(x => `<tr><td>${esc(x.designation)}</td><td>${esc(x.norme)}</td><td class="num">${fmt(x.quantite, x.unite === 'm' ? 2 : 0)} ${esc(x.unite)}</td></tr>`).join('')}</table>` : ''}
-    ${cotes.length ? `<h3 class="doc-h">Cotes relevées</h3><table class="doc-lines compact"><tr><th>Repère</th><th>Désignation</th><th class="num">Cote (mm)</th><th>Remarque</th></tr>
-      ${cotes.map(c => `<tr><td>${esc(c.repere)}</td><td>${esc(c.libelle)}</td><td class="num">${c.valeur !== '' ? fmt(num(c.valeur), String(c.valeur).includes('.') ? 1 : 0) : ''}</td><td>${esc(c.remarque || '')}</td></tr>`).join('')}</table>` : ''}
+    ${deb.length ? `<h3 class="doc-h">Fiche de débit</h3><div class="table-wrap"><table class="doc-lines compact"><tr><th>Élément</th><th>Repère</th><th>DN</th><th class="num">Ø ext.</th><th class="num">Cote axe à axe</th><th class="num">Longueur de coupe</th></tr>
+      ${deb.map(d => `<tr><td>${esc(numeroEl(d.id))}</td><td>${esc(d.repere)}</td><td>${esc(Tuyauterie.taille(r, d.dn))}</td><td class="num">${fmt(d.de, 1)}</td><td class="num">${d.cote !== null ? fmt(d.cote) : '—'}</td><td class="num"><strong>${fmt(d.coupe)}</strong></td></tr>`).join('')}</table></div>` : ''}
+    ${nom.length ? `<h3 class="doc-h">Nomenclature</h3><div class="table-wrap"><table class="doc-lines compact"><tr><th>Désignation</th><th>Norme</th><th class="num">Quantité</th></tr>
+      ${nom.map(x => `<tr><td>${esc(x.designation)}</td><td>${esc(x.norme)}</td><td class="num">${fmt(x.quantite, x.unite === 'm' ? 2 : 0)} ${esc(x.unite)}</td></tr>`).join('')}</table></div>` : ''}
+    ${cotes.length ? `<h3 class="doc-h">Cotes relevées</h3><div class="table-wrap"><table class="doc-lines compact"><tr><th>Repère</th><th>Désignation</th><th class="num">Cote (mm)</th><th>Remarque</th></tr>
+      ${cotes.map(c => `<tr><td>${esc(c.repere)}</td><td>${esc(c.libelle)}</td><td class="num">${c.valeur !== '' ? fmt(num(c.valeur), String(c.valeur).includes('.') ? 1 : 0) : ''}</td><td>${esc(c.remarque || '')}</td></tr>`).join('')}</table></div>` : ''}
     ${(r.photosAvant || []).length || (r.photosApres || []).length ? `<h3 class="doc-h">Photos avant / après travaux</h3>${comparatifHtml({ photosAvant: r.photosAvant || [], photosApres: r.photosApres || [] }, p => fileUrl(p.photoId))}` : ''}
     ${r.observations ? `<h3 class="doc-h">Observations</h3><p class="pre">${esc(r.observations)}</p>` : ''}
     <p class="small">Dimensions des accessoires selon ISO 4200 / EN 10220 (tubes), ISO 3419 / EN 10253 (raccords à souder), EN 1092-1 / ISO 7005-1 (brides), EN 558 / ISO 5752 (robinetterie) : valeurs nominales, à confirmer avec les fiches techniques des fabricants.</p>
@@ -519,7 +519,7 @@ async function envoyerAuChiffrage(r) {
 // Annotations portées sur l'isométrique (départ et éléments)
 function annotationsHtml(r, pl) {
   const l = [...(pl.depart && pl.depart.note ? [['Départ', pl.depart.note]] : []), ...pl.pieces.filter(pc => String(pc.el.note || '').trim()).map(pc => [`${numeroEl(pc.id)} · ${(LIB_EL[pc.t] || pc.t).replace(/^\S+ /, '')}${pc.el.repere ? ` ${pc.el.repere}` : ''}`, pc.el.note.trim()])];
-  return l.length ? `<h3 class="doc-h">Annotations</h3><table class="doc-lines compact"><tr><th>Élément</th><th>Annotation</th></tr>${l.map(([e, n]) => `<tr><td>${esc(e)}</td><td>${esc(n)}</td></tr>`).join('')}</table>` : '';
+  return l.length ? `<h3 class="doc-h">Annotations</h3><div class="table-wrap"><table class="doc-lines compact"><tr><th>Élément</th><th>Annotation</th></tr>${l.map(([e, n]) => `<tr><td>${esc(e)}</td><td>${esc(n)}</td></tr>`).join('')}</table></div>` : '';
 }
 
 // Visites commerciales : prises de cotes sans chantier (Devis › Visites), pour chiffrer le devis

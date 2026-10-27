@@ -304,13 +304,13 @@ function devisEditor(id) {
       } else {
         const u = Calc.unit(l);
         const nbF = (l.composants || []).filter(c => c.type !== 'mo').length;
-        row = `<tr class="${aChiffrer(l) ? 'a-chiffrer' : ''}">${move}${numCell}<td><button class="linklike" data-open="${i}">${esc(l.designation || 'Ouvrage sans titre')}</button>
+        row = `<tr class="ligne-prix ${aChiffrer(l) ? 'a-chiffrer' : ''}">${move}${numCell}<td class="des"><button class="linklike" data-open="${i}">${esc(l.designation || 'Ouvrage sans titre')}</button>
             ${l.libre ? '<span class="badge">poste libre</span>' : ''}${!videTVA(l.tva) && !d.autoliquidation && num(l.tva) !== Calc.tauxDoc(d) ? `<span class="badge b-info">TVA ${libTaux(num(l.tva))}</span>` : ''}${aChiffrer(l) ? '<span class="badge b-warn">à chiffrer</span>' : ''}
             <div class="muted small">${nbF} fourniture${nbF > 1 ? 's' : ''} · ${fmt(u.heures, 2)} h de main-d'œuvre / ${esc(l.unite)}${l.detail ? ' · <span title="' + esc(l.detail) + '">descriptif</span>' : ''}</div></td>
-          <td class="num"><input data-qte="${i}" type="number" step="any" value="${esc(l.qte)}" style="width:80px" ${locked ? 'disabled' : ''} aria-label="Quantité"></td>
-          <td>${esc(l.unite)}</td><td class="num">${eur(u.f)}</td><td class="num">${eur(u.mo)}</td><td class="num">${eur(u.f + u.mo)}</td>
-          <td class="num"><input data-remise="${i}" type="number" step="0.5" min="0" max="100" value="${num(l.remise) ? esc(l.remise) : ''}" placeholder="0" style="width:64px" ${locked ? 'disabled' : ''} aria-label="Remise commerciale en %"></td>
-          <td class="num"><strong>${eur(Calc.ligneHT(l))}</strong>${num(l.remise) ? `<div class="muted small">avant remise ${eur(Calc.ligneBrute(l))}</div>` : ''}</td>${del}</tr>`;
+          <td class="num" data-l="Qté"><input data-qte="${i}" type="number" step="any" value="${esc(l.qte)}" style="width:80px" ${locked ? 'disabled' : ''} aria-label="Quantité"></td>
+          <td data-l="Unité">${esc(l.unite)}</td><td class="num" data-l="PU fournit.">${eur(u.f)}</td><td class="num" data-l="PU MO">${eur(u.mo)}</td><td class="num" data-l="PU HT">${eur(u.f + u.mo)}</td>
+          <td class="num" data-l="Remise %"><input data-remise="${i}" type="number" step="0.5" min="0" max="100" value="${num(l.remise) ? esc(l.remise) : ''}" placeholder="0" style="width:64px" ${locked ? 'disabled' : ''} aria-label="Remise commerciale en %"></td>
+          <td class="num" data-l="Total HT"><strong>${eur(Calc.ligneHT(l))}</strong>${num(l.remise) ? `<div class="muted small">avant remise ${eur(Calc.ligneBrute(l))}</div>` : ''}</td>${del}</tr>`;
       }
       const sub = (subAfter[i] || []).map(c => `<tr class="subtotal niv-${c.niveau}"><td></td><td></td><td colspan="7">Sous-total ${esc(c.titre)}</td><td class="num">${eur(c.total)}</td><td></td></tr>`).join('');
       return row + sub;

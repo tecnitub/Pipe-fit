@@ -948,3 +948,20 @@ fieldset.mi-titre[hidden] { display: none; }
 .retenue-card { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 12px; }
 .retenue-card > div { flex-basis: 100%; }
 .totals tr.interne td { color: var(--muted); font-style: italic; font-size: 0.9em; }
+
+/* Lignes du devis sur téléphone : une fiche par ligne (désignation en haut, prix libellés en dessous) */
+@media (max-width: 720px) {
+  .table-wrap > table.edit-lines { min-width: 0; }
+  .edit-lines, .edit-lines tbody { display: block; width: 100%; }
+  .edit-lines .chap-edit { flex-wrap: wrap; }
+  .edit-lines .chap-edit select { flex: 1 1 100%; }
+  .edit-lines tr:first-child { display: none; }
+  .edit-lines tr { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 6px; border-bottom: 1px solid var(--border); }
+  .edit-lines td { display: block; border: 0; padding: 0; }
+  .edit-lines td[colspan], .edit-lines tr.ligne-prix td.des { flex: 1 1 100%; min-width: 0; }
+  .edit-lines tr.ligne-prix td.des { order: -1; }
+  .edit-lines td[data-l] { text-align: left; }
+  .edit-lines td[data-l]::before { content: attr(data-l); display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+  .edit-lines tr.subtotal { justify-content: flex-end; }
+  .edit-lines tr.subtotal td:empty { display: none; }
+}

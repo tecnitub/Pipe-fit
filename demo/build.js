@@ -15,6 +15,8 @@ const markup = body.replace(/<script src="[^"]+"><\/script>\s*/g, '').trim();
 
 const page = [
   '<title>Pipe-Fit CRM</title>',
+  // Téléphone : largeur réelle de l'écran (sinon la page s'affiche comme sur un ordinateur, en tout petit)
+  '<meta name="viewport" content="width=device-width, initial-scale=1">',
   `<style>\n${read('public/css/style.css')}\n</style>`,
   markup,
   inlineScript("document.body.classList.add('logged-out');"),
