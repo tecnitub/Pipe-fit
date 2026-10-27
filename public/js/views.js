@@ -305,10 +305,24 @@ Views.facture = params => {
   ${avoirs.length ? `<div class="card no-print avoirs-card"><strong>Avoirs sur cette facture</strong>
     <ul>${avoirs.map(a => `<li><a href="#/facture/${a.id}">${esc(a.numero || '…')}</a> du ${dateFr(a.date)} · ${eur(Calc.doc(a).netAPayer)} TTC${a.motif ? ` · ${esc(a.motif)}` : ''} ${badge(a.statut)}</li>`).join('')}</ul>
     <div class="small">Facture ${eur(Calc.doc(f).netAPayer)} − avoirs ${eur(dejaCredite)} = <strong>reste dû ${eur(reste)}</strong></div></div>` : ''}
+  ${retenueFactureHtml(f)}
   <div class="doc-print feuille">
     ${factureDocument(f)}
   </div>`;
 };
+// Retenue de garantie : case et taux, tant que la facture n'est ni transmise, ni déposée, ni payée, ni envoyée au client
+const factureEnvoyee = f => Store.all('envois').some(e => e.ref && e.ref.col === 'factures' && e.ref.id === f.id);
+function retenueFactureHtml(f) {
+  if (estAvoir(f) || !Store.can('write', 'factures')) return '';
+  const t = Calc.doc(f), a = affaireOf(f.affaireId), pct = num(f.retenuePct), defaut = (a.caution ? 0 : num(a.retenueGarantie)) || Retenue.PLAFOND;
+  const ok = Retenue.modifiable(f) && !factureEnvoyee(f);
+  return `<div class="card no-print retenue-card">
+    <label class="check"><input type="checkbox" id="f-rg" ${pct ? 'checked' : ''} ${ok ? '' : 'disabled'}> <strong>Retenue de garantie</strong></label>
+    <input id="f-rgpct" type="number" min="0" max="10" step="0.5" value="${esc(pct || defaut)}" ${ok && pct ? '' : 'disabled'} aria-label="Taux de retenue de garantie" style="width:80px"> % du TTC
+    ${pct ? `<span class="small">· retenue ${eur(t.retenue)} · <strong>net à payer ${eur(t.netAPayer)} TTC</strong></span>` : ''}
+    <div class="muted small">${ok ? `Cochée, elle est déduite du net à payer et écrite sur la facture (5 % maximum par la loi du 16 juillet 1971).${a.caution ? ' Ce chantier est couvert par une caution bancaire : normalement sans retenue.' : ''}`
+      : 'Facture déjà envoyée, transmise au comptable, déposée ou payée : la retenue ne se modifie plus (faites un avoir au besoin).'}</div></div>`;
+}
 // Mentions obligatoires des factures depuis la réforme de la facturation électronique (2026)
 function mentionsReforme(f, o) {
   if (!o.mentions2026) return '';
@@ -332,6 +346,14 @@ Views.facture.bind = (root, params) => {
   root.querySelector('#f-statut').onchange = e => { f.statut = e.target.value; Store.upsert('factures', f); App.toast('Statut mis à jour'); App.render(); };
   const b = root.querySelector('#avoir');
   if (b) b.onclick = () => creerAvoir(f);
+  const rg = root.querySelector('#f-rg'), rgp = root.querySelector('#f-rgpct');
+  const majRG = () => {
+    const v = Retenue.taux(rgp.value);
+    if (rg.checked && v > Retenue.PLAFOND) App.toast('Au-delà de 5 %, la retenue de garantie n\'est pas conforme à la loi du 16 juillet 1971.', 5000);
+    f.retenuePct = rg.checked ? v || Retenue.PLAFOND : 0;
+    Store.upsert('factures', f); App.render();
+  };
+  if (rg) { rg.onchange = majRG; rgp.onchange = majRG; }
 };
 
 // Avoir total (annule la facture) ou partiel (lignes et quantités choisies, ou montant libre)

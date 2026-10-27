@@ -18,6 +18,7 @@ const Compagnon = require('../public/js/compagnon');
 const NoteFrais = require('../public/js/frais');
 const ReglesPointage = require('../public/js/pointage-regles');
 const Epreuve = require('../public/js/epreuve');
+const Retenue = require('../public/js/retenue');
 const Tuyauterie = require('../public/js/tuyauterie');
 const Essais = require('../public/js/essais');
 const Acces = require('../public/js/acces');
@@ -549,7 +550,9 @@ async function api(req, res, url) {
         if (existing && version !== existing._v) return { conflict: existing };
         let obj = { ...DB.clean(data), id };
         // Une facture émise n'est plus modifiable, sauf son paiement et son suivi (relances, notes d'appel) (admin excepté).
-        if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...DB.clean(existing), statut: obj.statut, exportCompta: obj.exportCompta, datePaiement: obj.datePaiement, relances: obj.relances };
+        // (et la retenue de garantie tant que la facture n'est ni transmise, ni déposée, ni payée)
+        if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...DB.clean(existing), statut: obj.statut, exportCompta: obj.exportCompta, datePaiement: obj.datePaiement, relances: obj.relances,
+          retenuePct: Retenue.modifiable(existing) ? Retenue.taux(obj.retenuePct) : existing.retenuePct };
         if (col === 'factures') obj.type = existing ? existing.type : (obj.type === 'avoir' ? 'avoir' : undefined);
         // Bon d'intervention signé par le client : figé (sauf administrateur)
         if (col === 'rapports' && existing && existing.signatureClientId && acc.role !== 'admin') return { forbidden: 'Ce bon d\'intervention est signé par le client : il ne peut plus être modifié.' };

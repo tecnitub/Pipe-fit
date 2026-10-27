@@ -41,12 +41,23 @@ const Calc = {
   },
   pu(l) { const u = this.unit(l); return u.f + u.mo; },
   ligneHT(l) { return num(l.qte) * this.pu(l) * (1 - num(l.remise) / 100); },
+  // Montant de la ligne avant sa remise commerciale
+  ligneBrute(l) { return num(l.qte) * this.pu(l); },
 
-  // Remises (pourcentage négatif) et majorations (positif) appliquées à l'ensemble des lignes.
+  // Remises (négatives) et majorations (positives) sur l'ensemble des lignes, en pourcentage (pct) ou en euros
+  // (mode « eur », montant signé). Les majorations masquées ne figurent pas sur les documents du client : elles sont
+  // réparties dans les prix des lignes (coefficient coefMasque). Seules les autres sont listées ici.
   ajustements(doc) {
-    const list = (doc.ajustements || []).map(a => ({ ...a }));
+    const list = (doc.ajustements || []).filter(a => !a.masque).map(a => ({ ...a }));
     if (num(doc.remiseGlobale)) list.unshift({ libelle: 'Remise', pct: -num(doc.remiseGlobale) });
     return list;
+  },
+  montantAjustement(a, base) { return a.mode === 'eur' ? num(a.montant) : base * num(a.pct) / 100; },
+  // Coefficient appliqué aux prix des lignes sur les documents du client : 1 + majorations masquées / total des lignes
+  coefMasque(doc) {
+    const base = sumBy((doc.lignes || []).filter(l => this.estPrix(l)), l => this.ligneHT(l));
+    const maj = sumBy((doc.ajustements || []).filter(a => a.masque), a => this.montantAjustement(a, base));
+    return base > 0 ? Math.max(0, 1 + maj / base) : 1;
   },
 
   // Lignes chiffrées (ouvrages, postes libres) : hors chapitres, textes et images
@@ -56,7 +67,8 @@ const Calc = {
 
   // Sous-totaux hiérarchiques : un chapitre court jusqu'au chapitre suivant de même niveau ou de niveau supérieur.
   // { index, titre, niveau, total, last (dernière ligne couverte), n (lignes chiffrées) }
-  chapitres(doc) {
+  // montant(l) : montant d'une ligne chiffrée (par défaut après sa remise, au prix interne)
+  chapitres(doc, montant = l => this.ligneHT(l)) {
     const res = [], ouverts = [];
     (doc.lignes || []).forEach((l, i) => {
       if (l.type === 'chapitre') {
@@ -66,7 +78,7 @@ const Calc = {
         const c = { index: i, titre: l.titre, niveau: n, total: 0, last: i, n: 0 };
         res.push(c); ouverts.push(c); return;
       }
-      const prix = this.estPrix(l), ht = prix ? this.ligneHT(l) : 0;
+      const prix = this.estPrix(l), ht = prix ? montant(l) : 0;
       ouverts.forEach(c => { c.last = i; if (prix) { c.total += ht; c.n++; } });
     });
     return res;
@@ -78,9 +90,9 @@ const Calc = {
     return lignes.filter((l, i) => l.type !== 'chapitre' || garder.has(i));
   },
   // Sous-totaux à afficher après chaque ligne (les plus profonds d'abord)
-  sousTotauxApres(doc) {
+  sousTotauxApres(doc, montant) {
     const out = {};
-    this.chapitres(doc).forEach(c => { if (c.last > c.index) (out[c.last] = out[c.last] || []).push(c); });
+    this.chapitres(doc, montant).forEach(c => { if (c.last > c.index) (out[c.last] = out[c.last] || []).push(c); });
     Object.values(out).forEach(list => list.sort((a, b) => b.niveau - a.niveau));
     return out;
   },
@@ -115,21 +127,23 @@ const Calc = {
   },
 
   doc(doc) {
-    let venteF = 0, venteMO = 0, coutF = 0, coutMO = 0, heures = 0, poids = 0;
+    let venteF = 0, venteMO = 0, coutF = 0, coutMO = 0, heures = 0, poids = 0, avantRemise = 0;
     const hByMo = {}, parTaux = {};
     for (const l of doc.lignes || []) {
       if (!this.estPrix(l)) continue;
       const q = num(l.qte), r = 1 - num(l.remise) / 100, u = this.unit(l);
-      venteF += q * u.f * r; venteMO += q * u.mo * r;
+      venteF += q * u.f * r; venteMO += q * u.mo * r; avantRemise += q * (u.f + u.mo);
       const tx = this.tauxLigne(doc, l); parTaux[tx] = (parTaux[tx] || 0) + q * (u.f + u.mo) * r;
       coutF += q * u.coutF; coutMO += q * u.coutMO; heures += q * u.heures; poids += q * u.poids;
       for (const k in u.hByMo) hByMo[k] = (hByMo[k] || 0) + q * u.hByMo[k];
     }
-    const brut = venteF + venteMO;
-    const ajust = this.ajustements(doc).map(a => ({ ...a, montant: brut * num(a.pct) / 100 }));
+    // Lignes au prix du client : majorations masquées réparties (coefficient k) ; remises commerciales des lignes à part
+    const lignesHT = venteF + venteMO, k = this.coefMasque(doc);
+    const brut = lignesHT * k, brutAvantRemise = avantRemise * k, remiseLignes = brutAvantRemise - brut, majorationMasquee = brut - lignesHT;
+    const ajust = this.ajustements(doc).map(a => ({ ...a, montant: this.montantAjustement(a, brut) }));
     const totalAjust = sumBy(ajust, a => a.montant);
     const net = brut + totalAjust;
-    const ratio = brut ? net / brut : 1;
+    const ratio = lignesHT ? net / lignesHT : 1;
     const livraison = this.livraison(doc, poids);
     const totalHT = net + livraison;
     // Ventilation de la TVA par taux : remises / majorations au prorata, livraison au taux du document
@@ -145,7 +159,7 @@ const Calc = {
     const retenue = (totalHT + tva) * num(doc.retenuePct) / 100;
     return {
       ventilation, autoliquidation: !!doc.autoliquidation, tauxDoc: tDoc,
-      brut, ajust, totalAjust, net, venteF: venteF * ratio, venteMO: venteMO * ratio,
+      brut, brutAvantRemise, remiseLignes, majorationMasquee, k, ratio, ajust, totalAjust, net, venteF: venteF * ratio, venteMO: venteMO * ratio,
       coutF, coutMO, heures, hByMo, poids, livraison, totalHT, tva, totalTTC: totalHT + tva, retenue, netAPayer: totalHT + tva - retenue,
       coutLivraison, margePrev, margePrevPct: totalHT ? margePrev / totalHT * 100 : 0,
       partMOPct: net ? venteMO * ratio / net * 100 : 0,
@@ -160,7 +174,7 @@ const Calc = {
   // Les montants tiennent compte des remises / majorations du devis ; la livraison est une ligne à part.
   situation(sit) {
     const dv = Store.get('devis', sit.devisId) || { lignes: [] };
-    const t = this.doc(dv), ratio = t.brut ? t.net / t.brut : 1;
+    const t = this.doc(dv), ratio = t.ratio;
     const ordre = x => (x.numero || '~') + (x.date || '');
     const prev = Store.all('situations').filter(x => x.devisId === sit.devisId && x.id !== sit.id && x.statut === 'Acceptée' && ordre(x) < ordre(sit))
       .sort((a, b) => ordre(a).localeCompare(ordre(b))).pop();

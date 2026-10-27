@@ -40,6 +40,18 @@ hydraulique en annexe F ; PV d'épreuve hydraulique, relevés d'équilibrage aé
 Les pièces correspondantes des listes de contrôle des sections 5 et 6 sont cochées (« Pipe-Fit »). Avec les plans,
 fiches techniques, notices et le PV de réception déjà repris, « Générer le DOE » produit le dossier complet en un clic.
 
+## Remises, majorations et retenue de garantie
+
+- **Devis** : remise commerciale **par ligne** (colonne « Remise % ») ; sur le devis du client, les lignes gardent leur prix,
+  la remise figure dans la ligne et en bas (« Total des travaux HT », « Remise commerciale », « Nouveau montant après
+  remise »). **Remise globale** en % ou en € HT, affichée sur le devis. **Majoration** en % ou en € HT **non visible du
+  client** : elle est répartie dans les prix des lignes (devis, factures, export DPGF, facture électronique) et rappelée
+  seulement sur l'écran interne du devis.
+- **Factures** : case « Retenue de garantie » et taux (5 % par défaut, celui du chantier s'il est renseigné) à la
+  facturation d'une intervention hors devis, sur les situations, et sur toute facture tant qu'elle n'est ni envoyée, ni
+  transmise au comptable, ni déposée en facture électronique, ni payée. La retenue est déduite du net à payer et la
+  facture porte la mention de la loi n° 71-584 du 16 juillet 1971.
+
 ## Prise de cotes tuyauterie (photos avant / après, isométrique 3D)
 
 Depuis un chantier (« + Prise de cotes »), sur le téléphone du compagnon (Pointage › Rapports › 📐 Prise de cotes), ou **en visite

@@ -36,7 +36,7 @@ function nouvelleInterventionHD() {
     onSave: () => { const a = Store.all('affaires').filter(estHorsDevis).slice(-1)[0]; location.hash = `#/chantier/${a.id}`; } });
 }
 
-function facturerHD(a) {
+function facturerHD(a, retenuePct = 0) {
   const v = Calc.horsDevis(a), s = Store.data.settings;
   const lignes = [];
   if (v.mo.length) { lignes.push({ type: 'chapitre', titre: "Main-d'œuvre" }); v.mo.forEach(g => lignes.push({ designation: g.libelle, unite: 'h', qte: Math.round(g.heures * 100) / 100, pu: g.taux })); }
@@ -44,7 +44,7 @@ function facturerHD(a) {
   const f = Store.upsert('factures', {
     numero: '', affaireId: a.id, clientId: a.clientId, contactId: a.contactId || '', siteId: a.siteId || '', chargeId: a.chargeId || '',
     objet: `Intervention ${a.code} – ${a.nom}`, refCommande: a.refCommande || '', date: isoDate(new Date()), echeance: isoDate(addDays(new Date(), num(s.delaiPaiement))),
-    statut: 'Émise', lignes, ajustements: [], zoneId: '', ...tvaDuClient(a.clientId),
+    statut: 'Émise', lignes, ajustements: [], zoneId: '', retenuePct, ...tvaDuClient(a.clientId),
   });
   Object.assign(a, { statut: 'Facturé', factureId: f.id });
   Store.upsert('affaires', a);
@@ -148,8 +148,19 @@ function bindHorsDevis(root, a) {
     const v = Calc.horsDevis(a);
     if (!v.total) { notify('Rien à facturer : aucune heure ni matériel valorisé.'); return; }
     const avert = [v.aValider ? `${fmt(v.aValider, 2)} h ne sont pas encore validées` : '', v.consos.some(c => !num(c.pu)) ? 'du matériel n\'a pas de prix' : '', !bonSigne(a) ? 'aucun bon d\'intervention n\'est signé' : ''].filter(Boolean);
-    if (!await ask(`Facturer ${eur(v.total)} HT${a.refCommande ? ` (commande n° ${a.refCommande})` : ''} ?${avert.length ? ' Attention : ' + avert.join(', ') + '.' : ''}`, 'Facturer', false)) return;
-    const f = facturerHD(a);
+    // Confirmation, avec la retenue de garantie à cocher (taux du chantier, sinon 5 %)
+    const rgDefaut = (a.caution ? 0 : num(a.retenueGarantie)) || Retenue.PLAFOND;
+    const rgPct = await dialog(`<form><p>Facturer ${eur(v.total)} HT${a.refCommande ? ` (commande n° ${esc(a.refCommande)})` : ''} ?${avert.length ? ` Attention : ${esc(avert.join(', '))}.` : ''}</p>
+      <p><label class="check"><input type="checkbox" id="dlg-rg" ${num(a.retenueGarantie) && !a.caution ? 'checked' : ''}> Retenue de garantie</label>
+        <input id="dlg-rgpct" type="number" min="0" max="10" step="0.5" value="${esc(rgDefaut)}" style="width:80px" aria-label="Taux de retenue"> % du TTC</p>
+      <div class="modal-actions"><button type="button" class="secondary" data-cancel>Annuler</button><button type="submit">Facturer</button></div></form>`,
+    (wrap, done) => {
+      wrap.querySelector('[data-cancel]').onclick = () => done(null);
+      wrap.querySelector('form').onsubmit = e => { e.preventDefault(); done(wrap.querySelector('#dlg-rg').checked ? Retenue.taux(wrap.querySelector('#dlg-rgpct').value) || Retenue.PLAFOND : 0); };
+    });
+    if (rgPct === null) return;
+    if (rgPct > Retenue.PLAFOND) App.toast('Au-delà de 5 %, la retenue de garantie n\'est pas conforme à la loi du 16 juillet 1971.', 5000);
+    const f = facturerHD(a, rgPct);
     location.hash = `#/facture/${f.id}`;
   });
   on('#hd-clore', () => { a.statut = 'Clos'; Store.upsert('affaires', a); App.render(); });

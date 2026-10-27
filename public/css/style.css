@@ -945,3 +945,6 @@ fieldset.mi-titre[hidden] { display: none; }
 .rl-note { flex: 1 1 220px; min-width: 0; font-style: italic; padding: 4px 6px; }
 .rl-pt-vert { background: #1f9d55; box-shadow: 0 0 0 1px #1f9d55; }
 .rl-el.rl-auto { background: var(--panel-alt); border-style: dashed; }
+.retenue-card { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 12px; }
+.retenue-card > div { flex-basis: 100%; }
+.totals tr.interne td { color: var(--muted); font-style: italic; font-size: 0.9em; }

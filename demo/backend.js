@@ -250,7 +250,8 @@
         if (!canWrite(acc, col) && !(acc.role === 'atelier' && col === 'affaires') && !interimaire) return [403, { error: 'Droits insuffisants' }];
         if (existing && body.version !== existing._v) return [409, { error: `Modifié entre-temps par ${existing._by}`, record: existing }];
         let obj = { ...clean(body.data || {}), id };
-        if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...clean(existing), statut: obj.statut, exportCompta: obj.exportCompta, datePaiement: obj.datePaiement, relances: obj.relances };
+        if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...clean(existing), statut: obj.statut, exportCompta: obj.exportCompta, datePaiement: obj.datePaiement, relances: obj.relances,
+          retenuePct: Retenue.modifiable(existing) ? Retenue.taux(obj.retenuePct) : existing.retenuePct };
         if (col === 'factures') { obj.type = existing ? existing.type : (obj.type === 'avoir' ? 'avoir' : undefined); if (!obj.type) delete obj.type; }
         if (col === 'affaires' && acc.role === 'atelier') {
           const hd = ReglesPointage.horsDevisCompagnon(obj, existing, acc.userId, ReglesPointage.jourIso(new Date()));

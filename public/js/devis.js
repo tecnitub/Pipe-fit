@@ -18,6 +18,8 @@ function newDevis(fields = {}) {
 }
 
 /* ---------- Rendu du document client (devis / facture) ---------- */
+// Sens d'une remise globale ou d'une majoration : −1 remise, +1 majoration (0 si la valeur est nulle)
+const ajSigne = a => Math.sign(num(a.mode === 'eur' ? a.montant : a.pct)) || (a.masque ? 1 : 0);
 function docHeader(doc, type) {
   const a = affaireOf(doc.affaireId), cid = docClientId(doc), c = entreprise(cid), o = Doc.t(type);
   const bill = billingSite(cid), contact = Store.get('contacts', doc.contactId), site = siteOf(cid, doc.siteId);
@@ -37,19 +39,21 @@ function docHeader(doc, type) {
 const LARGEURS_IMAGE = [['petite', 'Petite'], ['moyenne', 'Moyenne'], ['pleine', 'Pleine largeur']];
 function docLinesClient(doc, type) {
   const o = type ? Doc.t(type) : { numeros: true, quantites: true, prix: true, detail: true, sousTotaux: true };
-  const subAfter = Calc.sousTotauxApres(doc), numeros = Calc.numeros(doc);
+  // Prix du client : majorations masquées réparties (k) ; lignes avant remise commerciale, remise en colonne et en bas
+  const k = Calc.coefMasque(doc), remises = o.prix && (doc.lignes || []).some(l => Calc.estPrix(l) && num(l.remise));
+  const subAfter = Calc.sousTotauxApres(doc, l => Calc.ligneBrute(l) * k), numeros = Calc.numeros(doc);
   const nums = o.numeros && numeros.some(Boolean);
-  const n = (nums ? 1 : 0) + 1 + (o.quantites ? 2 : 0) + (o.prix ? 2 : 0);
+  const n = (nums ? 1 : 0) + 1 + (o.quantites ? 2 : 0) + (o.prix ? 2 : 0) + (remises ? 1 : 0);
   const sousTotal = o.sousTotaux || !o.prix;
   const pleine = html => (nums ? `<td></td><td colspan="${n - 1}">${html}</td>` : `<td colspan="${n}">${html}</td>`);
   const ligne = (l, i) => {
     if (l.type === 'chapitre') return `<tr class="chap niv-${Calc.niveau(l)}">${nums ? `<td>${esc(numeros[i])}</td><td colspan="${n - 1}">${esc(titreSansNum(l.titre, numeros[i]))}</td>` : `<td colspan="${n}">${esc(l.titre)}</td>`}</tr>`;
     if (l.type === 'texte') return l.texte ? `<tr class="doc-texte">${pleine(`<div class="pre">${esc(l.texte)}</div>`)}</tr>` : '';
     if (l.type === 'image') return l.imageId ? `<tr class="doc-image">${pleine(`<div class="doc-fig fig-${esc(l.largeur || 'moyenne')}"><img src="${fileUrl(l.imageId)}" alt="${esc(l.legende || 'Illustration')}">${l.legende ? `<div class="muted small">${esc(l.legende)}</div>` : ''}</div>`)}</tr>` : '';
-    return `<tr>${nums ? `<td>${esc(numeros[i])}</td>` : ''}<td>${esc(l.designation)}${l.detail && o.detail ? `<div class="muted small pre">${esc(l.detail)}</div>` : ''}</td>${o.quantites ? `<td class="num">${fmt(l.qte, 2)}</td><td>${esc(l.unite)}</td>` : ''}${o.prix ? `<td class="num">${eur(Calc.pu(l))}</td><td class="num">${eur(Calc.ligneHT(l))}</td>` : ''}</tr>`;
+    return `<tr>${nums ? `<td>${esc(numeros[i])}</td>` : ''}<td>${esc(l.designation)}${l.detail && o.detail ? `<div class="muted small pre">${esc(l.detail)}</div>` : ''}</td>${o.quantites ? `<td class="num">${fmt(l.qte, 2)}</td><td>${esc(l.unite)}</td>` : ''}${o.prix ? `<td class="num">${eur(Calc.pu(l) * k)}</td>${remises ? `<td class="num">${num(l.remise) ? `− ${fmt(num(l.remise), num(l.remise) % 1 ? 1 : 0)} %` : ''}</td>` : ''}<td class="num">${eur(Calc.ligneBrute(l) * k)}</td>` : ''}</tr>`;
   };
   return `<div class="table-wrap"><table class="doc-lines${o.prix && o.quantites ? '' : ' compact'}">
-    <thead><tr>${nums ? '<th>N°</th>' : ''}<th>Désignation</th>${o.quantites ? '<th class="num">Qté</th><th>Unité</th>' : ''}${o.prix ? '<th class="num">PU HT</th><th class="num">Total HT</th>' : ''}</tr></thead>
+    <thead><tr>${nums ? '<th>N°</th>' : ''}<th>Désignation</th>${o.quantites ? '<th class="num">Qté</th><th>Unité</th>' : ''}${o.prix ? `<th class="num">PU HT</th>${remises ? '<th class="num">Remise</th>' : ''}<th class="num">Total HT</th>` : ''}</tr></thead>
     ${(doc.lignes || []).map((l, i) => ligne(l, i)
       + (sousTotal ? (subAfter[i] || []).filter(c => c.n).map(c => `<tr class="subtotal niv-${c.niveau}"><td colspan="${Math.max(1, n - 1)}">${o.prix ? 'Sous-total' : 'Total'} ${esc(c.titre)}</td><td class="num">${eur(c.total)}</td></tr>`).join('') : '')).join('')}
   </table></div>`;
@@ -82,17 +86,25 @@ function totalsTable(doc, type) {
   const t = Calc.doc(doc), z = Store.get('zones', doc.zoneId), o = type ? Doc.t(type) : { ajustements: true };
   const lignesTVA = t.autoliquidation ? `<tr><td>TVA autoliquidée par le preneur</td><td class="num">${eur(0)}</td></tr>`
     : t.ventilation.map(v => `<tr><td>TVA ${libTaux(v.taux)}${t.ventilation.length > 1 ? ` sur ${eur(v.base)}` : ''}</td><td class="num">${eur(v.tva)}</td></tr>`).join('');
+  // Remise commerciale des lignes, puis remises globales (en % ou en €) et majorations visibles ; les majorations masquées
+  // sont déjà dans les prix (rappelées sur l'écran interne seulement, type absent)
+  const libAj = a => `${esc(a.libelle || (a.montant < 0 ? 'Remise' : 'Majoration'))}${a.mode === 'eur' ? '' : ` ${a.pct > 0 ? '+' : '−'}${fmt(Math.abs(a.pct), 1)} %`}`;
+  const detail = o.ajustements || !t.ajust.length;
   return `<table class="totals">
-    ${o.ajustements || !t.ajust.length ? `<tr><td>Total des travaux</td><td class="num">${eur(t.brut)}</td></tr>
-    ${t.ajust.map(a => `<tr><td>${esc(a.libelle || (a.pct < 0 ? 'Remise' : 'Majoration'))} ${a.pct > 0 ? '+' : ''}${fmt(a.pct, 1)} %</td><td class="num">${a.montant < 0 ? '− ' : '+ '}${eur(Math.abs(a.montant))}</td></tr>`).join('')}
-    ${t.ajust.length ? `<tr><td>Total après ajustements</td><td class="num">${eur(t.net)}</td></tr>` : ''}` : `<tr><td>Total des travaux</td><td class="num">${eur(t.net)}</td></tr>`}
+    ${!type && t.majorationMasquee ? `<tr class="interne"><td>dont majorations non visibles du client (réparties dans les prix)</td><td class="num">+ ${eur(t.majorationMasquee)}</td></tr>` : ''}
+    ${t.remiseLignes > 0.005 ? `<tr><td>Total des travaux HT</td><td class="num">${eur(t.brutAvantRemise)}</td></tr>
+    <tr><td>Remise commerciale</td><td class="num">− ${eur(t.remiseLignes)}</td></tr>` : ''}
+    ${detail ? `${t.remiseLignes > 0.005 ? '' : `<tr><td>Total des travaux</td><td class="num">${eur(t.brut)}</td></tr>`}
+    ${t.ajust.map(a => `<tr><td>${libAj(a)}</td><td class="num">${a.montant < 0 ? '− ' : '+ '}${eur(Math.abs(a.montant))}</td></tr>`).join('')}
+    ${t.ajust.length || t.remiseLignes > 0.005 ? `<tr class="sous-total"><td>${t.ajust.some(a => a.montant > 0) ? 'Total après remises et majorations' : 'Nouveau montant après remise'}</td><td class="num">${eur(t.net)}</td></tr>` : ''}`
+    : `<tr><td>${t.remiseLignes > 0.005 ? 'Nouveau montant après remise' : 'Total des travaux'}</td><td class="num">${eur(t.net)}</td></tr>`}
     ${t.livraison || z ? `<tr><td>Livraison ${z ? `(${esc(z.nom)}, ${fmt(t.poids / 1000, 2)} t)` : ''}</td><td class="num">${eur(t.livraison)}</td></tr>` : ''}
     <tr><td>Total HT</td><td class="num">${eur(t.totalHT)}</td></tr>
     ${lignesTVA}
     <tr class="${t.retenue ? '' : 'grand'}"><td>Total TTC</td><td class="num">${eur(t.totalTTC)}</td></tr>
     ${t.retenue ? `<tr><td>Retenue de garantie ${fmt(doc.retenuePct, 1)} %</td><td class="num">− ${eur(t.retenue)}</td></tr>
     <tr class="grand"><td>Net à payer TTC</td><td class="num">${eur(t.netAPayer)}</td></tr>` : ''}
-  </table>${mentionsTVA(doc)}`;
+  </table>${t.retenue ? `<p class="doc-conditions">Retenue de garantie de ${fmt(doc.retenuePct, 1)} % du montant TTC (${eur(t.retenue)}), conformément à la loi n° 71-584 du 16 juillet 1971 : elle sera libérée un an après la réception des travaux, sauf réserves notifiées, ou remplacée par une caution bancaire.</p>` : ''}${mentionsTVA(doc)}`;
 }
 
 // Devis client complet (aperçu et impression)
@@ -273,7 +285,7 @@ function devisEditor(id) {
     <span class="muted small">${locked ? '' : d.numAuto ? 'Tapez un autre N° pour déplacer la ligne ou le chapitre (avec son contenu) à cette place.' : 'Saisissez les N° : les lignes se rangent dans l\'ordre des numéros, sous le chapitre correspondant.'}</span>
   </div>
   <div class="table-wrap no-print"><table class="edit-lines">
-    <tr><th></th><th>N°</th><th>Désignation</th><th class="num">Qté</th><th>Unité</th><th class="num">PU fournit.</th><th class="num">PU MO</th><th class="num">PU HT</th><th class="num">Total HT</th><th></th></tr>
+    <tr><th></th><th>N°</th><th>Désignation</th><th class="num">Qté</th><th>Unité</th><th class="num">PU fournit.</th><th class="num">PU MO</th><th class="num">PU HT</th><th class="num" title="Remise commerciale sur la ligne : elle figure sur le devis, avec le total des remises en bas">Remise %</th><th class="num">Total HT</th><th></th></tr>
     ${lines.map((l, i) => {
       const move = locked ? '<td></td>' : `<td class="move"><button class="icon" data-up="${i}" aria-label="Monter" ${i === 0 ? 'disabled' : ''}>▲</button><button class="icon" data-down="${i}" aria-label="Descendre" ${i === lines.length - 1 ? 'disabled' : ''}>▼</button></td>`;
       const del = locked ? '<td></td>' : `<td><button class="small danger" data-del="${i}" aria-label="Supprimer la ligne">✕</button></td>`;
@@ -281,11 +293,11 @@ function devisEditor(id) {
       let row;
       if (l.type === 'chapitre') {
         const niv = Calc.niveau(l);
-        row = `<tr class="chap niv-${niv}">${move}${numCell}<td colspan="6"><div class="chap-edit"><select data-niv="${i}" aria-label="Niveau" ${locked ? 'disabled' : ''}>${NIVEAUX_CHAPITRE.map((x, k) => `<option value="${k + 1}" ${niv === k + 1 ? 'selected' : ''}>${x}</option>`).join('')}</select><input data-titre="${i}" value="${esc(l.titre)}" ${locked ? 'disabled' : ''} aria-label="Titre du chapitre"></div></td><td></td>${del}</tr>`;
+        row = `<tr class="chap niv-${niv}">${move}${numCell}<td colspan="7"><div class="chap-edit"><select data-niv="${i}" aria-label="Niveau" ${locked ? 'disabled' : ''}>${NIVEAUX_CHAPITRE.map((x, k) => `<option value="${k + 1}" ${niv === k + 1 ? 'selected' : ''}>${x}</option>`).join('')}</select><input data-titre="${i}" value="${esc(l.titre)}" ${locked ? 'disabled' : ''} aria-label="Titre du chapitre"></div></td><td></td>${del}</tr>`;
       } else if (l.type === 'texte') {
-        row = `<tr class="ligne-texte">${move}<td></td><td colspan="7"><textarea data-texte="${i}" rows="2" placeholder="Texte libre (conditions, précisions, exclusions…)" ${locked ? 'disabled' : ''} aria-label="Texte">${esc(l.texte || '')}</textarea></td>${del}</tr>`;
+        row = `<tr class="ligne-texte">${move}<td></td><td colspan="8"><textarea data-texte="${i}" rows="2" placeholder="Texte libre (conditions, précisions, exclusions…)" ${locked ? 'disabled' : ''} aria-label="Texte">${esc(l.texte || '')}</textarea></td>${del}</tr>`;
       } else if (l.type === 'image') {
-        row = `<tr class="ligne-image">${move}<td></td><td colspan="7"><div class="img-edit">${l.imageId ? `<img src="${fileUrl(l.imageId)}" alt="">` : '<span class="muted">Aucune image</span>'}
+        row = `<tr class="ligne-image">${move}<td></td><td colspan="8"><div class="img-edit">${l.imageId ? `<img src="${fileUrl(l.imageId)}" alt="">` : '<span class="muted">Aucune image</span>'}
           <input data-legende="${i}" value="${esc(l.legende || '')}" placeholder="Légende (facultatif)" ${locked ? 'disabled' : ''} aria-label="Légende">
           <select data-largeur="${i}" ${locked ? 'disabled' : ''} aria-label="Largeur">${LARGEURS_IMAGE.map(([k, x]) => `<option value="${k}" ${(l.largeur || 'moyenne') === k ? 'selected' : ''}>${x}</option>`).join('')}</select>
           ${locked ? '' : `<button class="secondary small" data-img="${i}">Remplacer</button>`}</div></td>${del}</tr>`;
@@ -296,11 +308,13 @@ function devisEditor(id) {
             ${l.libre ? '<span class="badge">poste libre</span>' : ''}${!videTVA(l.tva) && !d.autoliquidation && num(l.tva) !== Calc.tauxDoc(d) ? `<span class="badge b-info">TVA ${libTaux(num(l.tva))}</span>` : ''}${aChiffrer(l) ? '<span class="badge b-warn">à chiffrer</span>' : ''}
             <div class="muted small">${nbF} fourniture${nbF > 1 ? 's' : ''} · ${fmt(u.heures, 2)} h de main-d'œuvre / ${esc(l.unite)}${l.detail ? ' · <span title="' + esc(l.detail) + '">descriptif</span>' : ''}</div></td>
           <td class="num"><input data-qte="${i}" type="number" step="any" value="${esc(l.qte)}" style="width:80px" ${locked ? 'disabled' : ''} aria-label="Quantité"></td>
-          <td>${esc(l.unite)}</td><td class="num">${eur(u.f)}</td><td class="num">${eur(u.mo)}</td><td class="num">${eur(u.f + u.mo)}</td><td class="num"><strong>${eur(Calc.ligneHT(l))}</strong></td>${del}</tr>`;
+          <td>${esc(l.unite)}</td><td class="num">${eur(u.f)}</td><td class="num">${eur(u.mo)}</td><td class="num">${eur(u.f + u.mo)}</td>
+          <td class="num"><input data-remise="${i}" type="number" step="0.5" min="0" max="100" value="${num(l.remise) ? esc(l.remise) : ''}" placeholder="0" style="width:64px" ${locked ? 'disabled' : ''} aria-label="Remise commerciale en %"></td>
+          <td class="num"><strong>${eur(Calc.ligneHT(l))}</strong>${num(l.remise) ? `<div class="muted small">avant remise ${eur(Calc.ligneBrute(l))}</div>` : ''}</td>${del}</tr>`;
       }
-      const sub = (subAfter[i] || []).map(c => `<tr class="subtotal niv-${c.niveau}"><td></td><td></td><td colspan="6">Sous-total ${esc(c.titre)}</td><td class="num">${eur(c.total)}</td><td></td></tr>`).join('');
+      const sub = (subAfter[i] || []).map(c => `<tr class="subtotal niv-${c.niveau}"><td></td><td></td><td colspan="7">Sous-total ${esc(c.titre)}</td><td class="num">${eur(c.total)}</td><td></td></tr>`).join('');
       return row + sub;
-    }).join('') || '<tr><td colspan="10" class="muted">Aucune ligne. Ajoutez un chapitre puis des ouvrages.</td></tr>'}
+    }).join('') || '<tr><td colspan="11" class="muted">Aucune ligne. Ajoutez un chapitre puis des ouvrages.</td></tr>'}
   </table></div>
   ${locked ? '' : `<div class="toolbar no-print add-bar" style="margin-top:8px">
     <button class="secondary" data-add-chap="1">+ Chapitre</button>
@@ -315,15 +329,18 @@ function devisEditor(id) {
     <input type="file" id="img-file" accept="image/*" hidden>
   </div>`}
 
-  <h2 class="no-print">Remises et majorations (sur l'ensemble des lignes)</h2>
+  <h2 class="no-print">Remise globale et majoration (sur l'ensemble des lignes)</h2>
   <div class="card no-print">
-    ${(d.ajustements || []).map((a, i) => `<div class="ajust-row">
-      <select data-aj-type="${i}" aria-label="Type" ${locked ? 'disabled' : ''}><option value="-" ${num(a.pct) < 0 ? 'selected' : ''}>Remise</option><option value="+" ${num(a.pct) >= 0 ? 'selected' : ''}>Majoration</option></select>
+    ${(d.ajustements || []).map((a, i) => { const signe = ajSigne(a), base = a.masque ? t.brut - t.majorationMasquee : t.brut; return `<div class="ajust-row">
+      <select data-aj-type="${i}" aria-label="Type" ${locked ? 'disabled' : ''}><option value="-" ${signe < 0 ? 'selected' : ''}>Remise</option><option value="+" ${signe > 0 ? 'selected' : ''}>Majoration</option></select>
       <input data-aj-lib="${i}" value="${esc(a.libelle)}" placeholder="Libellé" aria-label="Libellé" ${locked ? 'disabled' : ''}>
-      <input data-aj-pct="${i}" type="number" step="0.5" min="0" value="${esc(Math.abs(num(a.pct)))}" aria-label="Pourcentage" style="width:90px" ${locked ? 'disabled' : ''}><span>%</span>
-      <span class="num ${num(a.pct) < 0 ? 'neg' : ''}">${eur(t.brut * num(a.pct) / 100)}</span>
-      ${locked ? '' : `<button class="small danger" data-aj-del="${i}" aria-label="Supprimer">✕</button>`}</div>`).join('') || '<p class="muted" style="margin:0">Aucune remise ni majoration.</p>'}
-    ${locked ? '' : `<div class="toolbar" style="margin:10px 0 0"><button class="secondary small" id="add-remise">+ Remise</button><button class="secondary small" id="add-maj">+ Majoration</button></div>`}
+      <input data-aj-val="${i}" type="number" step="${a.mode === 'eur' ? '10' : '0.5'}" min="0" value="${esc(Math.abs(num(a.mode === 'eur' ? a.montant : a.pct)))}" aria-label="Valeur" style="width:100px" ${locked ? 'disabled' : ''}>
+      <select data-aj-mode="${i}" aria-label="Unité" style="width:auto" ${locked ? 'disabled' : ''}><option value="pct" ${a.mode !== 'eur' ? 'selected' : ''}>%</option><option value="eur" ${a.mode === 'eur' ? 'selected' : ''}>€ HT</option></select>
+      <span class="num ${signe < 0 ? 'neg' : ''}">${signe < 0 ? '− ' : '+ '}${eur(Math.abs(Calc.montantAjustement(a, base)))}</span>
+      ${signe > 0 ? `<label class="check small" title="Majoration masquée : répartie dans les prix des lignes, elle n'apparaît nulle part sur le devis ni sur la facture"><input type="checkbox" data-aj-vis="${i}" ${a.masque ? '' : 'checked'} ${locked ? 'disabled' : ''}> visible par le client</label>${a.masque ? '<span class="badge b-info">non visible du client</span>' : ''}` : ''}
+      ${locked ? '' : `<button class="small danger" data-aj-del="${i}" aria-label="Supprimer">✕</button>`}</div>`; }).join('') || '<p class="muted" style="margin:0">Aucune remise ni majoration.</p>'}
+    ${locked ? '' : `<div class="toolbar" style="margin:10px 0 0"><button class="secondary small" id="add-remise">+ Remise globale</button><button class="secondary small" id="add-maj">+ Majoration (non visible du client)</button></div>`}
+    <p class="muted small" style="margin:8px 0 0">Remise en % ou en € sur le total des lignes, affichée sur le devis. Majoration : répartie dans les prix des lignes, le client ne voit que les prix majorés. Remise par ligne : colonne « Remise % » ci-dessus.</p>
   </div>
   <div class="no-print">${totalsTable(d)}</div>
 
@@ -371,6 +388,7 @@ Views.devis.bind = (root, params, query) => {
   // Lignes
   root.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openOuvrage(d, +b.dataset.open));
   root.querySelectorAll('[data-qte]').forEach(inp => inp.onchange = () => { d.lignes[+inp.dataset.qte].qte = +inp.value; save(); });
+  root.querySelectorAll('[data-remise]').forEach(inp => inp.onchange = () => { const v = Math.min(100, Math.max(0, num(inp.value))); if (v) d.lignes[+inp.dataset.remise].remise = v; else delete d.lignes[+inp.dataset.remise].remise; save(); });
   root.querySelectorAll('[data-titre]').forEach(inp => inp.onchange = () => { d.lignes[+inp.dataset.titre].titre = inp.value; save(); });
   root.querySelectorAll('[data-niv]').forEach(sel => sel.onchange = () => { d.lignes[+sel.dataset.niv].niveau = +sel.value; save(); });
   root.querySelectorAll('[data-texte]').forEach(t => t.onchange = () => { d.lignes[+t.dataset.texte].texte = t.value; save(); });
@@ -438,13 +456,17 @@ Views.devis.bind = (root, params, query) => {
   };
 
   // Remises / majorations
+  // Remise globale / majoration : signe, valeur en % ou en €, majoration masquée au client (par défaut)
   const aj = i => d.ajustements[i];
-  root.querySelectorAll('[data-aj-type]').forEach(s => s.onchange = () => { const a = aj(+s.dataset.ajType); a.pct = (s.value === '-' ? -1 : 1) * Math.abs(num(a.pct)); save(); });
+  const poser = (a, signe, val) => { if (a.mode === 'eur') { a.montant = signe * Math.abs(num(val)); a.pct = 0; } else { a.pct = signe * Math.abs(num(val)); delete a.montant; } if (signe < 0) delete a.masque; };
+  root.querySelectorAll('[data-aj-type]').forEach(s => s.onchange = () => { const a = aj(+s.dataset.ajType), signe = s.value === '-' ? -1 : 1; poser(a, signe, a.mode === 'eur' ? a.montant : a.pct); if (signe > 0 && a.masque === undefined) a.masque = true; save(); });
   root.querySelectorAll('[data-aj-lib]').forEach(s => s.onchange = () => { aj(+s.dataset.ajLib).libelle = s.value; save(); });
-  root.querySelectorAll('[data-aj-pct]').forEach(s => s.onchange = () => { const a = aj(+s.dataset.ajPct); a.pct = (num(a.pct) < 0 ? -1 : 1) * Math.abs(+s.value); save(); });
+  root.querySelectorAll('[data-aj-val]').forEach(s => s.onchange = () => { const a = aj(+s.dataset.ajVal); poser(a, ajSigne(a) || -1, s.value); save(); });
+  root.querySelectorAll('[data-aj-mode]').forEach(s => s.onchange = () => { const a = aj(+s.dataset.ajMode), signe = ajSigne(a) || -1; a.mode = s.value === 'eur' ? 'eur' : 'pct'; poser(a, signe, 0); save(); });
+  root.querySelectorAll('[data-aj-vis]').forEach(c => c.onchange = () => { aj(+c.dataset.ajVis).masque = !c.checked; save(); });
   root.querySelectorAll('[data-aj-del]').forEach(b => b.onclick = () => { d.ajustements.splice(+b.dataset.ajDel, 1); save(); });
-  on('#add-remise', 'onclick', () => { (d.ajustements = d.ajustements || []).push({ libelle: 'Remise commerciale', pct: -5 }); save(); });
-  on('#add-maj', 'onclick', () => { (d.ajustements = d.ajustements || []).push({ libelle: 'Majoration', pct: 5 }); save(); });
+  on('#add-remise', 'onclick', () => { (d.ajustements = d.ajustements || []).push({ libelle: 'Remise globale', mode: 'pct', pct: -5 }); save(); });
+  on('#add-maj', 'onclick', () => { (d.ajustements = d.ajustements || []).push({ libelle: 'Majoration', mode: 'pct', pct: 5, masque: true }); save(); });
 
   on('#accept', 'onclick', () => acceptDevis(d));
   on('#dpgf-imp', 'onclick', () => importerDPGF(d));

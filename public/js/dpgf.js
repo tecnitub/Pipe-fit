@@ -109,7 +109,8 @@ function importerDPGF(d) {
 function exporterDPGF(d) {
   const t = Calc.doc(d), lignes = d.lignes || [];
   // Sous-totaux hiérarchiques (chapitre ⊃ sous-chapitre ⊃ sous-sous-chapitre) et N° affichés sur le devis
-  const sousTotaux = Calc.sousTotauxApres(d), nums = Calc.numeros(d);
+  // Prix du client : majorations masquées réparties, remise de ligne comprise dans le prix unitaire net
+  const k = t.k, sousTotaux = Calc.sousTotauxApres(d, l => Calc.ligneHT(l) * k), nums = Calc.numeros(d);
   const H = v => ({ v, s: 'head' });
   const rows = [
     [{ v: `${Store.data.settings.societe} – DPGF chiffré`, s: 'title' }],
@@ -121,12 +122,12 @@ function exporterDPGF(d) {
     if (l.type === 'chapitre') rows.push([{ v: nums[i], s: 'bold' }, { v: titreSansNum(l.titre, nums[i] || l.num), s: 'bold' }]);
     else if (l.type === 'texte') rows.push(['', l.texte || '']);
     else if (l.type === 'image') { if (l.legende) rows.push(['', { v: `[Image] ${l.legende}`, s: 'muted' }]); }
-    else rows.push([nums[i], l.designation + (l.detail ? '\n' + l.detail : ''), l.unite, num(l.qte), { v: Calc.pu(l), s: 'eur' }, { v: Calc.ligneHT(l), s: 'eur' }]);
+    else rows.push([nums[i], l.designation + (l.detail ? '\n' + l.detail : ''), l.unite, num(l.qte), { v: Calc.pu(l) * k * (1 - num(l.remise) / 100), s: 'eur' }, { v: Calc.ligneHT(l) * k, s: 'eur' }]);
     (sousTotaux[i] || []).filter(st => st.n).forEach(st => rows.push([{ v: '', s: 'total' }, { v: `Sous-total ${st.titre}`, s: 'total' }, { v: '', s: 'total' }, { v: '', s: 'total' }, { v: '', s: 'total' }, { v: st.total, s: 'boldeur' }]));
   });
   rows.push([]);
   rows.push(['', { v: 'Total HT', s: 'bold' }, '', '', '', { v: t.brut, s: 'boldeur' }]);
-  t.ajust.forEach(a => rows.push(['', `${a.libelle || (a.pct < 0 ? 'Remise' : 'Majoration')} ${a.pct > 0 ? '+' : ''}${fmt(a.pct, 1)} %`, '', '', '', { v: a.montant, s: 'eur' }]));
+  t.ajust.forEach(a => rows.push(['', `${a.libelle || (a.montant < 0 ? 'Remise' : 'Majoration')}${a.mode === 'eur' ? '' : ` ${a.pct > 0 ? '+' : ''}${fmt(a.pct, 1)} %`}`, '', '', '', { v: a.montant, s: 'eur' }]));
   if (t.livraison) rows.push(['', 'Transport / livraison', '', '', '', { v: t.livraison, s: 'eur' }]);
   if (t.ajust.length || t.livraison) rows.push(['', { v: t.ajust.length ? 'Total HT après remises / majorations' : 'Total HT y compris transport', s: 'bold' }, '', '', '', { v: t.totalHT, s: 'boldeur' }]);
   if (t.autoliquidation) rows.push(['', 'TVA autoliquidée par le preneur (art. 283-2 nonies du CGI)', '', '', '', { v: 0, s: 'eur' }]);
