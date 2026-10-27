@@ -133,7 +133,7 @@ Views.contacts = (params, query) => {
     <select id="fc" style="width:auto"><option value="">Clients et fournisseurs</option>
       <option value="Client" ${fc === 'Client' ? 'selected' : ''}>Clients</option><option value="Fournisseur" ${fc === 'Fournisseur' ? 'selected' : ''}>Fournisseurs</option><option value="MOE" ${fc === 'MOE' ? 'selected' : ''}>Maîtrise d'œuvre</option></select>
   </div>
-  ${list.length ? `<div class="table-wrap"><table><tr><th>Entreprise</th><th>Catégorie</th><th>Secteur</th><th>Ville</th><th>Téléphone</th><th class="num">Sites</th><th class="num">Contacts</th><th class="num">Affaires</th></tr>
+  ${list.length ? `<div class="table-wrap"><table data-colonnes="entreprises"><tr><th>Entreprise</th><th>Catégorie</th><th>Secteur</th><th>Ville</th><th>Téléphone</th><th class="num">Sites</th><th class="num">Contacts</th><th class="num">Affaires</th></tr>
   ${list.map(e => {
     const b = billingSite(e.id);
     const nbAff = Store.all('affaires').filter(a => a.clientId === e.id).length;
@@ -163,7 +163,7 @@ function personnesView(query) {
     <input id="search" type="search" placeholder="Rechercher…" style="width:auto;min-width:0;flex:1 1 160px;max-width:260px">
     <select id="fe" style="width:auto"><option value="">Toutes les entreprises</option>${options(Store.all('entreprises').slice().sort((a, b) => a.nom.localeCompare(b.nom)), fe, undefined, false)}</select>
   </div>
-  ${list.length ? `<div class="table-wrap"><table><tr><th>Nom</th><th>Fonction</th><th>Entreprise</th><th>Site</th><th>Téléphone</th><th>E-mail</th></tr>
+  ${list.length ? `<div class="table-wrap"><table data-colonnes="contacts"><tr><th>Nom</th><th>Fonction</th><th>Entreprise</th><th>Site</th><th>Téléphone</th><th>E-mail</th></tr>
   ${list.map(c => {
     const e = entreprise(c.entrepriseId);
     return `<tr class="clickable" data-id="${c.id}" data-search="${esc([c.prenom, c.nom, c.fonction, e.nom].join(' ').toLowerCase())}">

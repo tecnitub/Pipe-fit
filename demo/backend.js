@@ -136,7 +136,8 @@
     const p = path.replace(/^\/api\/?/, '').split('/').filter(Boolean);
     const acc = me();
     if (p[0] === 'setup') return [200, { needed: false, local: true }];
-    if (p[0] === 'me' && !p[1]) return [200, { ...acc, m365: !!(db.m365 || {}).actif }];
+    if (p[0] === 'me' && !p[1]) return [200, { ...acc, m365: !!(db.m365 || {}).actif, prefs: (db.prefs || {})[acc.id] || {} }];
+    if (p[0] === 'me' && p[1] === 'preferences') { db.prefs = { ...(db.prefs || {}), [acc.id]: body || {} }; save(); return [200, body || {}]; }
     if (p[0] === 'me' && p[1] === 'password') return [200, { ok: true }];
     if (p[0] === 'logout' || p[0] === 'login') return [200, acc];
     if (p[0] === 'bulk' && method === 'POST') {

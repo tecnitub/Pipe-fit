@@ -27,6 +27,7 @@ const App = {
     // Onglets plus larges que l'écran (téléphone) : l'onglet actif reste visible
     root.querySelectorAll('.tabs a.active').forEach(a => { const t = a.parentElement; if (t.scrollWidth > t.clientWidth) t.scrollLeft = a.offsetLeft - t.offsetLeft - (t.clientWidth - a.offsetWidth) / 2; });
     masquerLiensAcces(root);
+    Colonnes.appliquer(root);
     if (typeof brancherDicteeTexte === 'function') brancherDicteeTexte(root);
     this.pendingRemote = false;
     document.getElementById('remote-banner').classList.add('hidden');

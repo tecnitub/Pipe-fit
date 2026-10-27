@@ -32,7 +32,7 @@ Views.commandes = (params, query) => {
     <select id="ff" style="width:auto"><option value="">Tous les fournisseurs</option>${options(fournisseursList(), ff, undefined, false)}</select>
     <select id="fs" style="width:auto"><option value="">Tous statuts</option>${optionsStr(STATUTS_COMMANDE, fs)}</select>
   </div>
-  ${list.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Fournisseur</th><th>Chantier</th><th>Livraison prévue</th><th>Statut</th><th class="num">Montant HT</th></tr>
+  ${list.length ? `<div class="table-wrap"><table data-colonnes="commandes"><tr><th>N°</th><th>Date</th><th>Fournisseur</th><th>Chantier</th><th>Livraison prévue</th><th>Statut</th><th class="num">Montant HT</th></tr>
   ${list.map(c => `<tr class="clickable" data-go="#/commandes/${c.id}"><td>${esc(c.numero || '…')}</td><td>${dateFr(c.date)}</td><td>${esc(clientName(c.fournisseurId))}</td>
     <td>${c.affaireId ? esc(affaireLabel(affaireOf(c.affaireId))) : '<span class="muted">Stock / frais généraux</span>'}</td><td>${dateFr(c.dateLivraison)}</td><td>${badge(c.statut)}</td><td class="num">${eur(Calc.commande(c).total)}</td></tr>`).join('')}
   <tr class="subtotal"><td colspan="6">Total (hors annulées)</td><td class="num">${eur(total)}</td></tr></table></div>`

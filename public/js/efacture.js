@@ -160,7 +160,7 @@ Views.efactures = (params, query) => {
   </div>
   <p class="small muted" id="ef-etat"></p>
   ${barreFiltres(f, { recherche: 'Rechercher (fournisseur, n°, commande, expéditeur…)', statuts: [['Reçue', 'À traiter'], ['Intégrée', 'Acceptées'], ['Rejetée', 'Refusées'], ['', 'Toutes']], defauts: FILTRES_EF })}
-  ${list.length ? `<div class="table-wrap"><table><tr><th>Reçue le</th><th>Fournisseur</th><th>N°</th><th>Date</th><th>Références</th><th class="num">HT</th><th class="num">TTC</th><th>Format</th><th>Statut</th></tr>
+  ${list.length ? `<div class="table-wrap"><table data-colonnes="efactures"><tr><th>Reçue le</th><th>Fournisseur</th><th>N°</th><th>Date</th><th>Références</th><th class="num">HT</th><th class="num">TTC</th><th>Format</th><th>Statut</th></tr>
     ${list.map(x => { const four = fournisseurEF(x), dbl = x.statut === 'Reçue' && doublonsEF(x).length;
       return `<tr class="clickable" data-go="#/efactures/${x.id}"><td>${new Date(x.recueLe).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}<br><span class="muted small">${esc(origineEF(x))}</span></td>
         <td>${esc(four ? four.nom : (x.vendeur || {}).nom || (x.mail || {}).de || '')}${four ? '' : ' <span class="badge b-warn">à identifier</span>'}${x.mail && x.mail.objet ? `<br><span class="muted small">${esc(x.mail.objet)}</span>` : ''}</td>

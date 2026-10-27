@@ -92,7 +92,7 @@ const chantierFields = [
 
 function chantierTable(list, selection = false) {
   if (!list.length) return '<p class="muted">Aucun chantier pour ces critères.</p>';
-  return `<div class="table-wrap"><table><tr>${selection ? '<th class="sel-cell"><input type="checkbox" data-sel-tout aria-label="Tout sélectionner"></th>' : ''}<th>Chantier</th><th>Client</th><th>Chargé</th><th>Statut</th><th class="num">Montant HT</th><th>Heures</th><th>Fournitures</th><th class="num">Marge à terminaison</th></tr>
+  return `<div class="table-wrap"><table data-colonnes="chantiers"><tr>${selection ? '<th class="sel-cell"><input type="checkbox" data-sel-tout aria-label="Tout sélectionner"></th>' : ''}<th>Chantier</th><th>Client</th><th>Chargé</th><th>Statut</th><th class="num">Montant HT</th><th>Heures</th><th>Fournitures</th><th class="num">Marge à terminaison</th></tr>
   ${list.map(a => {
     const s = Calc.affaire(a);
     return `<tr class="clickable ${a.archive ? 'archive' : ''}" data-go="#/chantier/${a.id}">${selection ? `<td class="sel-cell"><input type="checkbox" data-sel-id="${a.id}" aria-label="Sélectionner ${esc(a.code || '')}"></td>` : ''}<td><strong>${esc(a.code || '…')}</strong>${estHorsDevis(a) ? ` <span class="badge b-warn">Hors devis</span>${aCompleterHD(a) ? ' <span class="badge b-bad">À compléter</span>' : ''}` : ''}${a.archive ? ' <span class="badge">Archivé</span>' : ''}<br>${esc(a.nom)}</td><td>${esc(a.clientId ? clientName(a.clientId) : a.clientLibre || '')}</td><td>${esc(userName(a.chargeId))}</td><td>${badge(estHorsDevis(a) ? statutHD(a) : a.statut)}</td>
@@ -275,7 +275,7 @@ Views.factures = (params, query) => {
   <p class="muted">Les factures de situation sont générées quand un BL est accepté par la maîtrise d'œuvre. Une facture n'est jamais supprimée : pour l'annuler ou la corriger, établissez un avoir depuis la facture.</p>
   ${barreFiltres(f0, { clients: [...new Set(Store.all('factures').map(docClientId))], statuts, defauts: FILTRES_FACTURES })}
   <p class="muted small">${list.length} document(s) · ${eur(sumBy(list, f => Calc.facture(f).ht))} HT (avoirs déduits) · reste dû ${eur(sumBy(list, f => Calc.resteDu(f)))} TTC</p>
-  ${list.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Échéance</th><th>Chantier</th><th>Client</th><th>Statut</th><th class="num">Total HT</th><th class="num">Total TTC</th><th class="num">Reste dû</th><th>Compta</th></tr>
+  ${list.length ? `<div class="table-wrap"><table data-colonnes="factures"><tr><th>N°</th><th>Date</th><th>Échéance</th><th>Chantier</th><th>Client</th><th>Statut</th><th class="num">Total HT</th><th class="num">Total TTC</th><th class="num">Reste dû</th><th>Compta</th></tr>
   ${list.map(f => {
     const a = affaireOf(f.affaireId), t = Calc.facture(f), orig = estAvoir(f) && Store.get('factures', f.factureId);
     return `<tr class="clickable ${estAvoir(f) ? 'ligne-avoir' : ''}" data-go="#/facture/${f.id}"><td>${esc(f.numero || '…')}${estAvoir(f) ? ` <span class="badge b-warn">Avoir</span>${orig ? `<br><span class="muted small">sur ${esc(orig.numero || '')}</span>` : ''}` : ''}</td><td>${dateFr(f.date)}</td><td>${estAvoir(f) ? '' : dateFr(f.echeance)}</td><td>${esc(a.code || '')}</td><td>${esc(clientName(docClientId(f)))}</td>
@@ -593,7 +593,7 @@ Views.parametres = () => {
   ${Store.can('write', 'users') ? `
   <h2>Équipe</h2>
   <div class="toolbar"><button id="u-add">+ Personne</button></div>
-  <div class="table-wrap"><table><tr><th>Nom</th><th>Rôle</th><th>Statut</th><th>Chef d'équipe</th><th>Catégorie</th><th class="num">Coût horaire</th><th class="num">Salaire brut</th><th class="num">Capacité / sem.</th></tr>
+  <div class="table-wrap"><table data-colonnes="personnel"><tr><th>Nom</th><th>Rôle</th><th>Statut</th><th>Chef d'équipe</th><th>Catégorie</th><th class="num">Coût horaire</th><th class="num">Salaire brut</th><th class="num">Capacité / sem.</th></tr>
   ${Store.all('users').map(u => `<tr class="clickable" data-id="${u.id}"><td>${esc(u.nom)}</td><td>${u.role === 'charge' ? "Chargé d'affaires" : 'Opérateur'}</td><td>${u.type === 'interimaire' ? `<span class="badge b-warn">Intérimaire</span> ${esc(u.agenceId ? clientName(u.agenceId) : '')}` : 'Salarié'}</td><td>${u.chefId ? esc(userName(u.chefId)) : ''}</td><td>${esc(moOf(u.categorieId).libelle || '')}</td><td class="num">${eur(u.tauxHoraire)}</td><td class="num">${num(u.salaireHoraire) ? eur(u.salaireHoraire) : '—'}</td><td class="num">${fmt(u.capaciteHebdo)} h</td></tr>`).join('')}
   </table></div>` : ''}
 

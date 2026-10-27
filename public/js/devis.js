@@ -127,9 +127,10 @@ function pilotageDevis(t) {
 }
 
 /* ---------- Liste ---------- */
-const FILTRES_DEVIS = { q: '', client: '', charge: '', statut: '' };
-const devisFiltre = (d, f) => (!f.client || docClientId(d) === f.client) && (!f.charge || docChargeId(d) === f.charge)
-  && correspond(f.q, d.numero, d.objet, clientName(docClientId(d)))
+const FILTRES_DEVIS = { q: '', client: '', contact: '', charge: '', statut: '' };
+// Contact : la personne de l'entreprise cliente (chargé de travaux, acheteur…) à qui le devis est adressé
+const devisFiltre = (d, f) => (!f.client || docClientId(d) === f.client) && (!f.contact || d.contactId === f.contact) && (!f.charge || docChargeId(d) === f.charge)
+  && correspond(f.q, d.numero, d.objet, clientName(docClientId(d)), contactName(Store.get('contacts', d.contactId)))
   && (f.statut === 'archives' ? d.archive : !d.archive && (f.statut === 'tous' || (f.statut ? d.statut === f.statut : ['Brouillon', 'Envoyé'].includes(d.statut))));
 Views.devis = (params, query) => {
   if (params[0]) return devisEditor(params[0]);
@@ -143,10 +144,10 @@ Views.devis = (params, query) => {
     <span class="spacer"></span>
     ${refusesActifs.length && f.statut !== 'archives' ? `<button class="secondary" id="arch-refuses">Archiver les ${refusesActifs.length} devis refusé(s)</button>` : ''}
   </div>
-  ${barreFiltres(f, { clients: [...new Set(Store.all('devis').map(docClientId))], statuts, defauts: FILTRES_DEVIS })}
+  ${barreFiltres(f, { clients: [...new Set(Store.all('devis').map(docClientId))], statuts, defauts: FILTRES_DEVIS, recherche: 'Rechercher (n°, objet, client, contact…)', extra: filtreContactDevis(f) })}
   <div class="toolbar sel-bar hidden" id="sel-bar"><span id="sel-n"></span><button class="secondary" id="sel-arch">${f.statut === 'archives' ? 'Sortir des archives' : 'Archiver la sélection'}</button></div>
   <p class="muted small">${list.length} devis · ${eur(sumBy(list, d => Calc.doc(d).totalHT))} HT</p>
-  ${list.length ? `<div class="table-wrap"><table><tr><th class="sel-cell"><input type="checkbox" data-sel-tout aria-label="Tout sélectionner"></th><th>N°</th><th>Date</th><th>Objet</th><th>Client</th><th>Contact</th><th>Chargé</th><th>Statut</th><th class="num">Total HT</th><th class="num">Part MO</th><th class="num">Marge prév.</th><th></th></tr>
+  ${list.length ? `<div class="table-wrap"><table data-colonnes="devis"><tr><th class="sel-cell"><input type="checkbox" data-sel-tout aria-label="Tout sélectionner"></th><th>N°</th><th>Date</th><th>Objet</th><th>Client</th><th>Contact</th><th>Chargé</th><th>Statut</th><th class="num">Total HT</th><th class="num">Part MO</th><th class="num">Marge prév.</th><th></th></tr>
   ${list.map(d => {
     const t = Calc.doc(d), ct = Store.get('contacts', d.contactId);
     return `<tr class="clickable ${d.archive ? 'archive' : ''}" data-go="#/devis/${d.id}"><td class="sel-cell"><input type="checkbox" data-sel-id="${d.id}" aria-label="Sélectionner ${esc(d.numero || '')}"></td><td>${esc(d.numero || '…')}</td><td>${dateFr(d.date)}</td><td>${esc(d.objet)}</td><td>${esc(clientName(docClientId(d)))}</td>
@@ -155,6 +156,14 @@ Views.devis = (params, query) => {
       <td>${['Brouillon', 'Envoyé'].includes(d.statut) ? `<button class="small secondary" data-refuser="${d.id}" title="Marquer refusé">✕ Refusé</button>` : ''}</td></tr>`;
   }).join('')}</table></div>` : '<p class="muted">Aucun devis pour ces critères.</p>'}`;
 };
+
+// Contacts des entreprises clientes présents sur les devis (ceux du client choisi s'il y en a un)
+function filtreContactDevis(f) {
+  const ids = [...new Set(Store.all('devis').filter(d => d.contactId && (!f.client || docClientId(d) === f.client)).map(d => d.contactId))];
+  const cts = ids.map(id => Store.get('contacts', id)).filter(Boolean).sort((a, b) => contactName(a).localeCompare(contactName(b), 'fr'));
+  if (f.contact && !ids.includes(f.contact)) { const c = Store.get('contacts', f.contact); if (c) cts.unshift(c); }
+  return `<select data-f="contact" aria-label="Contact du client"><option value="">Tous les contacts client</option>${cts.map(c => `<option value="${esc(c.id)}" ${c.id === f.contact ? 'selected' : ''}>${esc(contactName(c))}${f.client ? '' : ` · ${esc(clientName(c.entrepriseId))}`}${c.fonction ? ` (${esc(c.fonction)})` : ''}</option>`).join('')}</select>`;
+}
 
 /* ---------- Structure : chapitres, sous-chapitres, numéros ---------- */
 const NIVEAUX_CHAPITRE = ['Chapitre', 'Sous-chapitre', 'Sous-sous-chapitre'];

@@ -91,7 +91,7 @@ Views.situations = (params, query) => {
     && correspond(f.q, s.numero, a.code, a.nom, clientName(a.clientId)); }).sort((a, b) => (b.numero || '~').localeCompare(a.numero || '~'));
   return `<h1>Situations de travaux</h1>${situationsTabs('liste')}
   ${barreFiltres(f, { clients: [...new Set(Store.all('situations').map(s => affaireOf(s.affaireId).clientId))], statuts: [['', 'Tous statuts'], ...STATUTS_SITUATION.map(s => [s, s === 'Acceptée' ? 'Validée' : s])], defauts: FILTRES_SITUATIONS })}
-  ${list.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Chantier</th><th>Client</th><th>Statut</th><th class="num">Avancement cumulé</th><th class="num">Situation HT</th><th class="num">Retenue</th><th class="num">Net à payer TTC</th><th>Facture</th></tr>
+  ${list.length ? `<div class="table-wrap"><table data-colonnes="situations"><tr><th>N°</th><th>Date</th><th>Chantier</th><th>Client</th><th>Statut</th><th class="num">Avancement cumulé</th><th class="num">Situation HT</th><th class="num">Retenue</th><th class="num">Net à payer TTC</th><th>Facture</th></tr>
   ${list.map(s => {
     const c = Calc.situation(s), a = affaireOf(s.affaireId), fa = Store.get('factures', s.factureId);
     return `<tr class="clickable" data-go="#/situations/${s.id}"><td><strong>${esc(s.numero || '…')}</strong> <span class="muted small">n° ${situationRang(s)}</span></td><td>${dateFr(s.date)}</td>

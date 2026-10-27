@@ -57,7 +57,7 @@ function listeArticles() {
     <tr class="clickable" data-id="${a.id}"><td class="sel-cell" data-nocl><input type="checkbox" data-sel-art="${a.id}" ${e.sel.has(a.id) ? 'checked' : ''} aria-label="Sélectionner ${esc(a.ref)}"></td><td>${esc(a.ref)}</td><td>${esc(a.designation)}</td>
     <td class="small">${esc(a.famille || '')}${a.sousFamille ? `<br><span class="muted">${esc(a.sousFamille)}</span>` : ''}</td><td>${esc(a.unite)}</td>
     <td class="num">${eur(a.coutRevient)}</td><td class="num">${eur(a.prixVente)}</td><td class="num">${num(a.coutRevient) ? fmt(num(a.prixVente) / num(a.coutRevient), 2) : '—'}</td><td>${esc(fournisseurArticle(a))}</td></tr>`).join('');
-  return { n: list.length, html: list.length ? `<div class="table-wrap"><table class="articles"><tr><th class="sel-cell"><input type="checkbox" id="sel-tout" aria-label="Tout sélectionner"></th><th>Réf.</th><th>Désignation</th><th>Famille</th><th>Unité</th><th class="num">Achat</th><th class="num">Vente</th><th class="num">Coef.</th><th>Fournisseur</th></tr>${lignes}</table></div>`
+  return { n: list.length, html: list.length ? `<div class="table-wrap"><table data-colonnes="articles" class="articles"><tr><th class="sel-cell"><input type="checkbox" id="sel-tout" aria-label="Tout sélectionner"></th><th>Réf.</th><th>Désignation</th><th>Famille</th><th>Unité</th><th class="num">Achat</th><th class="num">Vente</th><th class="num">Coef.</th><th>Fournisseur</th></tr>${lignes}</table></div>`
     : `<p class="muted">Aucune fourniture ne correspond${e.q ? ` à « ${esc(e.q)} »` : ''}.</p>` };
 }
 

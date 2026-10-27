@@ -965,3 +965,13 @@ fieldset.mi-titre[hidden] { display: none; }
   .edit-lines tr.subtotal { justify-content: flex-end; }
   .edit-lines tr.subtotal td:empty { display: none; }
 }
+
+/* Colonnes des tableaux choisies par chacun : barre de pastilles, poignée de largeur */
+.col-barre { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 6px; }
+.col-puces { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.col-puces[hidden] { display: none; }
+.col-puce { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel); color: var(--muted); text-decoration: line-through; cursor: pointer; }
+.col-puce.on { background: var(--info-bg); color: var(--info); border-color: transparent; text-decoration: none; }
+th.col-th { position: relative; }
+.col-poignee { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; touch-action: none; z-index: 1; }
+.col-poignee:hover, .col-poignee:active { background: var(--accent); opacity: .35; }

@@ -26,7 +26,7 @@ Views.parc = (params = []) => {
   <div class="toolbar">${peut ? '<button id="pm-add">+ Véhicule ou matériel</button>' : ''}
     <div class="seg" role="group" aria-label="Type">${[['', 'Tout'], ['vehicule', 'Véhicules'], ['outil', 'Outillage']].map(([k, l]) => `<button class="${f.type === k ? 'on' : ''}" data-type="${k}">${l}</button>`).join('')}</div>
     <span class="spacer"></span><input id="pm-q" type="search" value="${esc(f.q)}" placeholder="Rechercher (immatriculation, n° de série, personne…)" style="width:auto;min-width:0;flex:1 1 200px;max-width:320px"></div>
-  ${liste.length ? `<div class="table-wrap"><table><tr><th>Désignation</th><th>Catégorie</th><th>Affecté à</th><th>Prochain contrôle</th><th class="num">Kilométrage</th><th></th></tr>
+  ${liste.length ? `<div class="table-wrap"><table data-colonnes="parc"><tr><th>Désignation</th><th>Catégorie</th><th>Affecté à</th><th>Prochain contrôle</th><th class="num">Kilométrage</th><th></th></tr>
     ${liste.map(m => `<tr class="clickable" data-pm="${m.id}"><td><strong>${esc(m.designation)}</strong>${m.immat ? `<br><span class="immat">${esc(m.immat)}</span>` : m.numeroSerie ? `<br><span class="muted small">n° ${esc(m.numeroSerie)}</span>` : ''}</td>
       <td>${esc(m.categorie)}</td><td>${affectationTxt(m)}</td><td>${badgeEcheance(prochaineEcheance(m), auj)}</td>
       <td class="num">${estVehicule(m) ? `${fmt(m.km)} km<br><span class="muted small">${m.kmDate ? dateFr(m.kmDate) : ''}</span>` : ''}</td>

@@ -40,6 +40,17 @@ hydraulique en annexe F ; PV d'épreuve hydraulique, relevés d'équilibrage aé
 Les pièces correspondantes des listes de contrôle des sections 5 et 6 sont cochées (« Pipe-Fit »). Avec les plans,
 fiches techniques, notices et le PV de réception déjà repris, « Générer le DOE » produit le dossier complet en un clic.
 
+## Colonnes des tableaux, au choix de chacun
+
+Au-dessus des tableaux de gestion (devis, chantiers, factures, situations, commandes, factures fournisseurs, consultations,
+factures reçues, contacts, entreprises, bibliothèque, personnel, parc, chiffrages, prises de cotes et visites), le bouton
+**☰ Colonnes** ouvre une barre de pastilles : on touche une colonne pour l'afficher ou la masquer, et on tire le bord droit
+d'un en-tête pour régler sa largeur (double-clic : largeur automatique). Les réglages sont propres à chaque compte et le
+suivent sur tous ses appareils ; « Tout réafficher » revient à l'affichage d'origine.
+
+La liste des devis se filtre aussi par **contact du client** (chargé de travaux, acheteur…), en plus du client, du chargé
+d'affaires et du statut ; la recherche trouve aussi le nom du contact.
+
 ## Remises, majorations et retenue de garantie
 
 - **Devis** : remise commerciale **par ligne** (colonne « Remise % ») ; sur le devis du client, les lignes gardent leur prix,

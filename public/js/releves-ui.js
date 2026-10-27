@@ -474,7 +474,7 @@ function relevesChantierHtml(a) {
   const l = relevesDe(a.id);
   return `<h2>Prises de cotes <span class="muted small">${l.length}</span></h2>
   <div class="toolbar"><a class="btn secondary small" href="#/releve/new?chantier=${esc(a.id)}">+ Prise de cotes</a></div>
-  ${l.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Ligne</th><th>Matière</th><th class="num">Tube</th><th>Photos</th><th>Relevé par</th><th>État</th></tr>
+  ${l.length ? `<div class="table-wrap"><table data-colonnes="releves"><tr><th>N°</th><th>Date</th><th>Ligne</th><th>Matière</th><th class="num">Tube</th><th>Photos</th><th>Relevé par</th><th>État</th></tr>
     ${l.map(r => `<tr class="clickable" data-go="#/releve/${esc(r.id)}${r.statut === 'Brouillon' ? '' : '/fiche'}"><td>${esc(r.numero || '')}</td><td>${dateFr(r.date)}</td><td>${esc(r.ligne)}</td><td>${esc(r.matiere || '')}</td>
       <td class="num">${r.longueurTube ? `${fmt(r.longueurTube / 1000, 2)} m` : ''}</td><td>${[...(r.photosAvant || []).slice(0, 2), ...(r.photosApres || []).slice(0, 2)].map(p => `<img class="thumb" src="${fileUrl(p.photoId)}" alt="">`).join('')}</td>
       <td>${esc(userName(r.userId))}</td><td>${badgeReleve(r)}</td></tr>`).join('')}</table></div>`
@@ -525,7 +525,7 @@ function annotationsHtml(r, pl) {
 // Visites commerciales : prises de cotes sans chantier (Devis › Visites), pour chiffrer le devis
 function relevesVisiteHtml(liste, nouveau) {
   return `<div class="toolbar"><a class="btn${liste.length ? ' secondary' : ''}" href="${nouveau}">+ Prise de cotes de visite</a></div>
-  ${liste.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Client ou prospect</th><th>Ligne</th><th>Type de tube</th><th class="num">Tube</th><th>Chiffrage / devis</th><th>Relevé par</th></tr>
+  ${liste.length ? `<div class="table-wrap"><table data-colonnes="visites"><tr><th>N°</th><th>Date</th><th>Client ou prospect</th><th>Ligne</th><th>Type de tube</th><th class="num">Tube</th><th>Chiffrage / devis</th><th>Relevé par</th></tr>
     ${liste.map(r => { const ch = Store.all('chiffrages').find(c => (c.lignes || []).some(l => l.releveId === r.id)), d = ch && Store.get('devis', ch.devisId);
       return `<tr class="clickable" data-go="#/releve/${esc(r.id)}"><td>${esc(r.numero || '')}</td><td>${dateFr(r.date)}</td><td>${esc(nomClientReleve(r) || '—')}</td><td>${esc(r.ligne)}</td><td class="small">${esc(Tuyauterie.systeme(r).lib)}</td>
       <td class="num">${r.longueurTube ? `${fmt(r.longueurTube / 1000, 2)} m` : ''}</td><td>${d ? `<a href="#/devis/${esc(d.id)}">Devis ${esc(d.numero || '…')}</a>` : ch ? `<a href="#/chiffrage/${esc(ch.id)}">Chiffrage</a>` : '<span class="muted small">à chiffrer</span>'}</td><td>${esc(userName(r.userId))}</td></tr>`; }).join('')}</table></div>`

@@ -365,7 +365,15 @@ async function api(req, res, url) {
     db.prepare('DELETE FROM sessions WHERE token = ?').run(acc.token);
     return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(req, '', 0) });
   }
-  if (p[0] === 'me' && !p[1] && method === 'GET') return send(res, 200, { ...publicAccount(acc), m365: m365Pret() });
+  if (p[0] === 'me' && !p[1] && method === 'GET') return send(res, 200, { ...publicAccount(acc), m365: m365Pret(), prefs: DB.getConfig(db, `prefs:${acc.id}`) || {} });
+  // Préférences d'affichage propres au compte (colonnes des tableaux : affichées, largeurs), sur tous ses appareils
+  if (p[0] === 'me' && p[1] === 'preferences' && method === 'PUT') {
+    const b = await readBody(req);
+    const prefs = b && typeof b === 'object' && !Array.isArray(b) ? b : null;
+    if (!prefs || JSON.stringify(prefs).length > 50000) return fail(res, 400, 'Préférences invalides');
+    DB.setConfig(db, `prefs:${acc.id}`, prefs);
+    return send(res, 200, prefs);
+  }
   if (p[0] === 'me' && p[1] === 'password' && method === 'POST') {
     const { current, next } = await readBody(req);
     const a = db.prepare('SELECT pass FROM accounts WHERE id = ?').get(acc.id);
