@@ -342,6 +342,13 @@ Views.efactures.bind = (root, params, query) => {
         <div class="field"><label for="efc-mdo">Ranger les e-mails traités dans</label><input id="efc-mdo" value="${esc(mc.dossier || 'Factures traitées')}"></div>
       </div>
       <label class="check"><input type="checkbox" id="efc-mac" ${mc.actif ? 'checked' : ''}> Relever cette boîte automatiquement</label>
+      <h3>Boîte aux lettres des offres fournisseurs</h3>
+      <p class="muted small">Adresse dédiée (ex. offres@votre-domaine.fr) : les fournisseurs y répondent à vos demandes de prix (elle est mise en adresse de réponse), et vous y transférez les offres reçues ailleurs. Toutes les 2 minutes, la consultation est reconnue (son n° dans l'objet, sinon le code du chantier), le fournisseur aussi (adresse, domaine, nom), et le PDF, la photo ou le tableau Excel joint se range dans son offre, « à lire ». Même autorisation Mail.ReadWrite que la boîte des factures.</p>
+      <div class="grid2">
+        <div class="field"><label for="efc-oad">Adresse de la boîte des offres</label><input id="efc-oad" type="email" value="${esc((c.offres || {}).adresse || '')}" placeholder="offres@votre-domaine.fr"></div>
+        <div class="field"><label for="efc-odo">Ranger les e-mails traités dans</label><input id="efc-odo" value="${esc((c.offres || {}).dossier || 'Offres traitées')}"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="efc-oac" ${(c.offres || {}).actif ? 'checked' : ''}> Relever cette boîte automatiquement</label>
       <h3>Plateforme agréée (factures électroniques)</h3>
       <div class="grid2">
         <div class="field"><label for="efc-pf">Plateforme agréée (PA)</label><input id="efc-pf" value="${esc(c.plateforme)}" placeholder="Nom de votre plateforme (logiciel comptable, banque, opérateur…)"></div>
@@ -354,7 +361,8 @@ Views.efactures.bind = (root, params, query) => {
       <div class="modal-actions">${c.webhook ? '<button class="secondary" id="efc-jeton">Changer l\'adresse de dépôt</button>' : ''}<button id="efc-save">Enregistrer</button></div>`;
     const val = s => carte.querySelector(s).value;
     const lire = extra => ({ plateforme: val('#efc-pf'), dossierEntree: val('#efc-in'), dossierSortie: val('#efc-out'), webhook: carte.querySelector('#efc-wh').checked,
-      mail: { actif: carte.querySelector('#efc-mac').checked, adresse: val('#efc-mad'), dossier: val('#efc-mdo') }, ...extra });
+      mail: { actif: carte.querySelector('#efc-mac').checked, adresse: val('#efc-mad'), dossier: val('#efc-mdo') },
+      offres: { actif: carte.querySelector('#efc-oac').checked, adresse: val('#efc-oad'), dossier: val('#efc-odo') }, ...extra });
     carte.querySelector('#efc-save').onclick = () => api('PUT', '/api/efacture/config', lire()).then(() => { App.toast('Configuration enregistrée'); App.render(); }).catch(e => notify(e.message));
     const j = carte.querySelector('#efc-jeton');
     if (j) j.onclick = () => ask('Générer une nouvelle adresse de dépôt ? L\'ancienne cessera de fonctionner : pensez à mettre à jour la plateforme.', 'Changer', false).then(ok => ok && api('PUT', '/api/efacture/config', lire({ nouveauJeton: true })).then(() => App.render()));

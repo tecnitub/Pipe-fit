@@ -2,7 +2,7 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v46';
+  const KEY = 'pipefit-crm-demo-v47';
   const ME_KEY = 'pipefit-crm-demo-me';
   const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications', 'habilitations', 'materiels', 'missions', 'produits', 'equipementsFrigo', 'fichesFluides', 'bouteilles', 'enlevements', 'epreuves', 'misesEnService', 'equilibrages', 'releves'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4], fichesFluides: ['numero', 'FI', 4], epreuves: ['numero', 'EP', 4], misesEnService: ['numero', 'MS', 4], equilibrages: ['numero', 'EQ', 4], releves: ['numero', 'RC', 4] };
@@ -32,6 +32,8 @@
   try { db = JSON.parse(storage.get(KEY)); } catch (e) { db = null; }
   if (!db || !db.settings) db = fresh();
   const save = () => storage.set(KEY, JSON.stringify(db));
+  // Boîte des offres de la démonstration : active par défaut pour montrer le transfert d'offres
+  const offresDemo = () => ((db.efconfig || {}).offres || { actif: true, adresse: 'offres@tecnitub.example', dossier: 'Offres traitées' });
   save();
 
   const me = () => db.accounts.find(a => a.id === storage.get(ME_KEY)) || db.accounts[0];
@@ -158,6 +160,12 @@
     // Facturation électronique : pas de serveur dans la démonstration, l'import manuel est traité dans le navigateur
     // Dérive des chantiers : les alertes sont envoyées par le serveur (pas dans la démonstration)
     if (p[0] === 'derives') return [200, { alertes: 0 }];
+    // Offres fournisseurs par e-mail : la boîte est relevée par le serveur ; la démonstration simule un e-mail transféré
+    if (p[0] === 'offres') {
+      if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Accès refusé' }];
+      if (p[1] === 'etat') return [200, { ...offresDemo(), m365: false, demo: true, dernier: null, erreur: '', nonReconnues: [] }];
+      if (p[1] === 'relever') return [400, { error: 'Démonstration : la boîte des offres est relevée sur l\'installation serveur (Microsoft 365). Essayez « Simuler un e-mail d\'offre transféré » dans une consultation.' }];
+    }
     if (p[0] === 'efacture') {
       db.efconfig = db.efconfig || { plateforme: '', dossierEntree: '', dossierSortie: '', webhook: false };
       if (p[1] === 'etat') return [200, { plateforme: db.efconfig.plateforme, entree: false, sortie: false, webhook: false, mail: { actif: false, adresse: '', m365: false } }];
@@ -169,7 +177,8 @@
         if (acc.role !== 'admin') return [403, { error: 'Réservé aux administrateurs' }];
         if (method === 'PUT') { Object.assign(db.efconfig, { plateforme: body.plateforme || '', dossierEntree: body.dossierEntree || '', dossierSortie: body.dossierSortie || '', webhook: !!body.webhook }); save(); }
         if (method === 'PUT' && body.mail) db.efconfig.mail = { actif: !!body.mail.actif, adresse: String(body.mail.adresse || ''), dossier: String(body.mail.dossier || 'Factures traitées') };
-        return [200, { ...db.efconfig, jeton: db.efconfig.webhook ? 'demo-jeton-non-fonctionnel' : '', mail: db.efconfig.mail || { actif: false, adresse: '', dossier: 'Factures traitées' }, m365: false }];
+        if (method === 'PUT' && body.offres) db.efconfig.offres = { actif: !!body.offres.actif, adresse: String(body.offres.adresse || ''), dossier: String(body.offres.dossier || 'Offres traitées') };
+        return [200, { ...db.efconfig, jeton: db.efconfig.webhook ? 'demo-jeton-non-fonctionnel' : '', mail: db.efconfig.mail || { actif: false, adresse: '', dossier: 'Factures traitées' }, offres: offresDemo(), m365: false }];
       }
       if (p[1] === 'import') return (async () => {
         try {

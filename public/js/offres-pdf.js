@@ -25,7 +25,7 @@ async function lireOffreFichier(fichier) {
 }
 
 /* ---------- Consultation : offre d'un fournisseur lue dans son PDF ---------- */
-async function importerOffrePdf(c, eid, fichier) {
+async function importerOffrePdf(c, eid, fichier, { pieceDeja = '' } = {}) {
   let lu;
   try { lu = await lireOffreFichier(fichier); } catch (e) { return notify(`Lecture impossible : ${e.message}`); }
   if (!lu.lignes.length) return notify(`Aucune ligne de prix reconnue dans ${fichier.name}${lu.ocr ? ' (document scanné : lecture moins fiable)' : ''}. Saisissez l'offre avec « Saisir l'offre ».`);
@@ -65,10 +65,12 @@ async function importerOffrePdf(c, eid, fichier) {
       if (ref) refs[i] = ref;
     });
     let pieceId = '';
-    try { pieceId = await joindrePiece(fichier); } catch (e) { notify(`Offre enregistrée sans le PDF : ${e.message}`); }
+    // Offre reçue par e-mail : le fichier est déjà enregistré
+    if (pieceDeja) pieceId = pieceDeja;
+    else try { pieceId = await joindrePiece(fichier); } catch (e) { notify(`Offre enregistrée sans le PDF : ${e.message}`); }
     const f = c.fournisseurs.find(x => x.entrepriseId === eid);
     const v = s => box.querySelector(s).value;
-    f.offre = { ...(f.offre || {}), prix, refs, port: v('#lo-port'), remise: v('#lo-rem'), delai: v('#lo-del'), validite: v('#lo-val'), pieceId: pieceId || (f.offre || {}).pieceId || '', pieceNom: pieceId ? fichier.name : (f.offre || {}).pieceNom || '',
+    f.offre = { ...(f.offre || {}), prix, refs, port: v('#lo-port'), remise: v('#lo-rem'), delai: v('#lo-del'), validite: v('#lo-val'), pieceId: pieceId || (f.offre || {}).pieceId || '', pieceNom: pieceId ? fichier.name : (f.offre || {}).pieceNom || '', aLire: false,
       reference: lu.reference || '', date: isoDate(new Date()), lecture: { fichier: fichier.name, lignes: lu.lignes.length, ocr: lu.ocr, coherent: lu.coherent } };
     f.statut = 'Offre reçue';
     Store.upsert('consultations', c); Modal.close(); App.render();

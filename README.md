@@ -51,6 +51,17 @@ fiches techniques, notices et le PV de réception déjà repris, « Générer le
   de commande (« Suivant votre devis n° … (copie jointe) ») et **jointe à l'envoi par e-mail** (case décochable).
 - **Commande directe** : « 📄 Charger le devis du fournisseur » lit ses lignes et le joint ; « 📎 Joindre l'offre du
   fournisseur » le joint tel quel (PDF, photo, Excel), avec son numéro ; « Retirer » l'enlève.
+- **Offres reçues par e-mail** : transférez l'e-mail du fournisseur (ou faites-le répondre) à la **boîte des offres**
+  (ex. `offres@votre-domaine.fr`, réglée par l'administrateur dans **Achats → Factures reçues → Configuration**, même
+  prérequis Microsoft 365 que la boîte des factures). Relevée toutes les 2 minutes (« Relever maintenant » sur l'écran
+  des consultations) : la **consultation** est reconnue par son **n° (CS-…) dans l'objet** ou le message, sinon par le
+  **code du chantier** (consultations en cours) ; le **fournisseur** par son adresse, le domaine de son entreprise ou son
+  nom, y compris dans le message transféré (l'adresse du collègue qui transfère est ignorée). Les pièces jointes (PDF,
+  photo, Excel) se rangent dans son offre, **« reçue par e-mail · à lire »** : « Lire l'offre » en reprend les lignes et
+  les prix. Fournisseur non identifié : l'offre attend dans « Offres reçues à classer ». E-mail sans n° ni code de
+  chantier, ou sans pièce : laissé non lu dans la boîte et signalé. Les demandes de prix envoyées depuis l'appli ont la
+  boîte des offres comme **adresse de réponse** ; une offre arrivée par erreur dans la boîte des factures (n° CS-… dans
+  l'objet) est aussi rangée dans sa consultation.
 
 ## Colonnes des tableaux, au choix de chacun
 

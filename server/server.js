@@ -8,6 +8,7 @@ const { demoData, uid } = require('./demo');
 const M365 = require('./m365');
 const EF = require('./efacture');
 const MAILF = require('./mail-factures');
+const MAILO = require('./mail-offres');
 const DossierDocuments = require('./dossier-documents');
 const AgendaSync = require('./agenda');
 const HS = require('./http-securite');
@@ -666,7 +667,9 @@ async function api(req, res, url) {
     const ref = b.ref && MAIL_COLS.includes(b.ref.col) ? { col: b.ref.col, id: String(b.ref.id || '') } : null;
     if (ref && restrictionsDe(acc).cacher.has(ref.col)) return fail(res, 403, REFUS_ACCES);
     try {
-      await M365.envoyer(cfg, acc.email, { to, cc, bcc, subject, html, attachments: pieces.map(a => ({ name: a.name, base64: a.base64, contentType: TYPES_PJ[a.name.split('.').pop().toLowerCase()] })) });
+      // Demande de prix : les fournisseurs répondent directement dans la boîte des offres (si elle est relevée)
+      const oc = MAILO.config(DB, db), replyTo = String(b.type || '') === 'consultation' && oc.actif && oc.adresse ? [oc.adresse] : [];
+      await M365.envoyer(cfg, acc.email, { to, cc, bcc, replyTo, subject, html, attachments: pieces.map(a => ({ name: a.name, base64: a.base64, contentType: TYPES_PJ[a.name.split('.').pop().toLowerCase()] })) });
     } catch (e) { return fail(res, 502, e.message); }
     const id = uid(), now = new Date().toISOString();
     const envoi = { id, date: now, type: String(b.type || ''), col: ref && ref.col, docId: ref && ref.id, numero: String(b.numero || ''), to, cc, objet: subject,
@@ -676,6 +679,18 @@ async function api(req, res, url) {
     const record = DB.getRecord(db, 'envois', id);
     broadcast('change', { col: 'envois', record, client: req.headers['x-client-id'] || null });
     return send(res, 200, record);
+  }
+
+  // Boîte des offres fournisseurs : état (écran des consultations) et relève immédiate
+  if (p[0] === 'offres' && ['etat', 'relever'].includes(p[1])) {
+    if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Droits insuffisants');
+    if (restrictionsDe(acc).cacher.has('consultations')) return fail(res, 403, REFUS_ACCES);
+    const oc = MAILO.config(DB, db);
+    if (p[1] === 'etat' && method === 'GET') return send(res, 200, { actif: oc.actif && !!oc.adresse, adresse: oc.adresse, m365: m365Pret(), dernier: MAILO.etat.dernier, erreur: MAILO.etat.erreur, resultat: MAILO.etat.resultat, nonReconnues: MAILO.etat.nonReconnues });
+    if (p[1] === 'relever' && method === 'POST') {
+      if (!oc.actif || !oc.adresse) return fail(res, 400, 'Aucune boîte des offres n\'est configurée (Achats › Factures reçues › Configuration).');
+      try { return send(res, 200, await MAILO.relever(DB, db, broadcast)); } catch (e) { return fail(res, 502, e.message); }
+    }
   }
 
   // Facturation électronique (bureaux) : état, import manuel, relève du dossier, dépôt d'une facture émise
@@ -763,11 +778,18 @@ async function api(req, res, url) {
         if (b.mail.actif && !adresse) return fail(res, 400, 'Indiquez l\'adresse de la boîte des factures.');
         c.mail = { actif: !!b.mail.actif, adresse, dossier: champ(b.mail.dossier).replace(/[\\/]/g, '-').slice(0, 80) || 'Factures traitées' };
       }
+      // Boîte des offres fournisseurs (réponses aux demandes de prix, offres transférées)
+      if (b.offres) {
+        const adresse = String(b.offres.adresse || '').trim().toLowerCase().slice(0, 200);
+        if (adresse && !EMAIL.test(adresse)) return fail(res, 400, 'Adresse de la boîte des offres invalide');
+        if (b.offres.actif && !adresse) return fail(res, 400, 'Indiquez l\'adresse de la boîte des offres.');
+        c.offres = { actif: !!b.offres.actif, adresse, dossier: champ(b.offres.dossier).replace(/[\\/]/g, '-').slice(0, 80) || 'Offres traitées' };
+      }
       if (b.nouveauJeton || (c.webhook && !c.jeton)) c.jeton = crypto.randomBytes(24).toString('hex');
       DB.setConfig(db, 'efacture', c);
       DB.audit(db, acc.login, 'configuration facturation électronique');
     }
-    return send(res, 200, { plateforme: c.plateforme || '', dossierEntree: c.dossierEntree || '', dossierSortie: c.dossierSortie || '', webhook: !!c.webhook, jeton: c.webhook ? c.jeton : '', mail: MAILF.config(DB, db), m365: m365Pret() });
+    return send(res, 200, { plateforme: c.plateforme || '', dossierEntree: c.dossierEntree || '', dossierSortie: c.dossierSortie || '', webhook: !!c.webhook, jeton: c.webhook ? c.jeton : '', mail: MAILF.config(DB, db), offres: MAILO.config(DB, db), m365: m365Pret() });
   }
 
   // Numérotation des factures, avoirs et situations : état et reprise d'une numérotation existante
@@ -934,6 +956,7 @@ if (require.main === module) {
   // Relève du dossier de réception des factures électroniques toutes les 2 minutes
   setInterval(() => EF.scruterDossier(DB, db, broadcast).catch(e => console.error('Facturation électronique :', e.message)), 120000).unref();
   setInterval(() => MAILF.relever(DB, db, broadcast).catch(e => console.error('Boîte des factures :', e.message)), 120000).unref();
+  setInterval(() => MAILO.relever(DB, db, broadcast).catch(e => console.error('Boîte des offres :', e.message)), 120000).unref();
   // Échéances des habilitations, visites médicales et contrôles du parc : peu après le démarrage, puis toutes les 6 heures
   const verifierEcheances = () => NOTIFS.echeances().catch(e => console.error('Échéances :', e.message));
   setTimeout(verifierEcheances, 30000).unref();

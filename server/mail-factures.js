@@ -31,6 +31,14 @@ async function relever(DB, db, broadcast) {
       res.messages++;
       const from = (msg.from && msg.from.emailAddress) || {};
       const mail = { de: from.name || from.address || '', deEmail: from.address || '', objet: msg.subject || '', recuLe: msg.receivedDateTime || '' };
+      // Offre transférée par erreur dans la boîte des factures (n° de consultation dans l'objet) : rangée dans la consultation
+      const MAILO = require('./mail-offres');
+      if (msg.hasAttachments && /\bCS[-\s]?\d/i.test(mail.objet)) {
+        try {
+          const r = MAILO.recevoir(DB, db, MAILO.mailDe(msg), await MAILO.piecesDe(m, c.adresse, msg), broadcast);
+          if (r) { res.offres = (res.offres || 0) + 1; await M365.boite(m, c.adresse, 'PATCH', `/messages/${encodeURIComponent(msg.id)}`, { isRead: true }); continue; }
+        } catch (e) { res.erreurs.push(`${mail.objet} : ${e.message}`); continue; }
+      }
       let pieces = 0, echec = false;
       if (msg.hasAttachments) {
         const pj = await M365.boite(m, c.adresse, 'GET', `/messages/${encodeURIComponent(msg.id)}/attachments`);

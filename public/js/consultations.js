@@ -14,7 +14,8 @@ function offreTotaux(c, f) {
 }
 // Analyse : meilleur prix par ligne, classement des offres complètes, combinaison optimale ligne par ligne
 function analyseOffres(c) {
-  const offres = (c.fournisseurs || []).filter(f => f.statut === 'Offre reçue').map(f => ({ f, t: offreTotaux(c, f) }));
+  // Offres reçues et chiffrées (une offre reçue par e-mail compte une fois lue)
+  const offres = (c.fournisseurs || []).filter(f => f.statut === 'Offre reçue').map(f => ({ f, t: offreTotaux(c, f) })).filter(o => o.t.nb);
   const meilleurs = (c.lignes || []).map((l, i) => {
     const cands = offres.map(o => ({ eid: o.f.entrepriseId, pu: o.t.pu(i) })).filter(x => x.pu !== null).sort((a, b) => a.pu - b.pu);
     return cands[0] || null;
@@ -37,6 +38,7 @@ Views.consultations = (params, query) => {
   return `<h1>Achats</h1>${achatsTabs('consultations')}
   <p class="muted">Consultez plusieurs fournisseurs pour les mêmes fournitures : la demande de prix part avec un tableau Excel à compléter, les offres reviennent (saisie ou import du tableau rempli), le comparatif désigne le mieux-disant global et ligne par ligne, puis les commandes sont créées en un clic.</p>
   <div class="toolbar"><button id="cs-new">+ Nouvelle consultation</button></div>
+  <div id="cs-boite" class="small muted"></div>
   ${barreFiltres(f, { recherche: 'Rechercher (n°, objet, chantier, fournisseur…)', statuts: [['En cours', 'En cours'], ['Attribuée', 'Attribuées'], ['', 'Toutes']], defauts: FILTRES_CONSULT })}
   ${list.length ? `<div class="table-wrap"><table data-colonnes="consultations"><tr><th>N°</th><th>Date</th><th>Objet</th><th>Chantier</th><th class="num">Lignes</th><th>Fournisseurs</th><th>Offres</th><th>Réponse avant</th><th>Statut</th></tr>
     ${list.map(c => { const fs = c.fournisseurs || [], recues = fs.filter(x => x.statut === 'Offre reçue').length;
@@ -86,9 +88,11 @@ function consultationEditeur(id) {
 
   ${window.PIPEFIT_DEMO && fs.some(f => f.statut !== 'Offre reçue') ? '<p class="note small">Démonstration : <button class="linklike" id="cs-exemple">téléchargez le devis d\'exemple de Téréva (PDF)</button>, puis « Importer l\'offre (PDF, Excel) » sur la ligne de Téréva : les lignes, références, prix nets, port, délai et validité sont repris automatiquement.</p>' : ''}
   <h2>Fournisseurs consultés</h2>
+  <div id="cs-boite" class="small muted"></div>
+  ${offresAClasserHtml(c)}
   <div class="table-wrap"><table><tr><th>Fournisseur</th><th>Statut</th><th>Envoyée le</th><th class="num">Offre nette HT</th><th>Délai</th><th></th></tr>
     ${fs.map(f => { const o = totOffre(f.entrepriseId), off = f.offre || {}; const id = `${c.id}~${f.entrepriseId}`;
-      return `<tr><td><strong>${esc(clientName(f.entrepriseId))}</strong>${off.remarques ? `<br><span class="muted small">${esc(off.remarques)}</span>` : ''}</td><td><select data-fstatut="${esc(f.entrepriseId)}" style="width:auto">${optionsStr(STATUTS_CONSULT_F, f.statut)}</select></td>
+      return `<tr><td><strong>${esc(clientName(f.entrepriseId))}</strong>${off.remarques ? `<br><span class="muted small">${esc(off.remarques)}</span>` : ''}${off.mail ? `<br><span class="small">📧 reçue par e-mail le ${new Date(off.mail.recuLe).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}${off.aLire ? ' · <span class="badge b-warn">à lire</span>' : ''}</span>` : ''}${off.aLire && off.pieceId ? ` <button class="small" data-lire="${esc(f.entrepriseId)}">Lire l'offre</button>` : ''}</td><td><select data-fstatut="${esc(f.entrepriseId)}" style="width:auto">${optionsStr(STATUTS_CONSULT_F, f.statut)}</select></td>
         <td>${dateFr(f.envoyeLe)}</td><td class="num">${o ? `${eur(o.t.net)}${o.t.complet ? '' : `<br><span class="warn-text small">${o.t.nb}/${lignes.length} lignes</span>`}` : ''}</td><td>${off.delai ? `${esc(off.delai)} j` : ''}</td>
         <td class="nowrap"><button class="small secondary" data-pdf="consultation|${esc(id)}">PDF</button><button class="small secondary" data-xls="${esc(f.entrepriseId)}">Excel</button>${['admin', 'charge'].includes(Store.me.role) ? `<button class="small" data-mail="consultation|${esc(id)}">✉ Envoyer</button>` : ''}
           <button class="small secondary" data-offre="${esc(f.entrepriseId)}">${f.statut === 'Offre reçue' ? 'Modifier l\'offre' : 'Saisir l\'offre'}</button><label class="btn small secondary" title="PDF ou photo du devis du fournisseur, ou tableau Excel complété">Importer l'offre (PDF, Excel)<input type="file" data-import="${esc(f.entrepriseId)}" accept=".pdf,.xlsx,.csv,image/*" hidden></label>
@@ -188,7 +192,7 @@ function saisirOffre(c, eid) {
   box.querySelector('#of-ok').onclick = () => {
     const prix = {};
     box.querySelectorAll('[data-pi]').forEach(el => { if (el.value !== '') prix[el.dataset.pi] = num(el.value); });
-    f.offre = { ...o, prix, remise: box.querySelector('#of-rem').value, port: box.querySelector('#of-port').value, delai: box.querySelector('#of-del').value, validite: box.querySelector('#of-val').value, remarques: box.querySelector('#of-rq').value, pieceId, pieceNom, date: isoDate(new Date()) };
+    f.offre = { ...o, prix, remise: box.querySelector('#of-rem').value, port: box.querySelector('#of-port').value, delai: box.querySelector('#of-del').value, validite: box.querySelector('#of-val').value, remarques: box.querySelector('#of-rq').value, pieceId, pieceNom, aLire: false, date: isoDate(new Date()) };
     f.statut = 'Offre reçue';
     Store.upsert('consultations', c); Modal.close(); App.render();
   };
@@ -199,6 +203,7 @@ Views.consultations.bind = (root, params, query) => {
     const f = lireFiltres('consultations', query, FILTRES_CONSULT);
     bindFiltres(root, 'consultations', f, FILTRES_CONSULT);
     root.querySelector('#cs-new').onclick = () => { const c = nouvelleConsultation(); location.hash = `#/consultations/${c.id}`; };
+    boiteOffres(root);
     return;
   }
   const c = Store.get('consultations', params[0]);
@@ -245,6 +250,26 @@ Views.consultations.bind = (root, params, query) => {
   root.querySelectorAll('[data-fstatut]').forEach(el => el.onchange = () => { const f = c.fournisseurs.find(x => x.entrepriseId === el.dataset.fstatut); f.statut = el.value; save(); });
   root.querySelectorAll('[data-xls]').forEach(b => b.onclick = () => download(`Offre ${c.ref || ''} ${clientName(b.dataset.xls)}.xlsx`, excelConsultation(c, b.dataset.xls), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'));
   root.querySelectorAll('[data-offre]').forEach(b => b.onclick = () => saisirOffre(c, b.dataset.offre));
+  boiteOffres(root, c);
+  // Offre reçue par e-mail : lecture de la pièce (PDF, photo ou tableau Excel) comme une offre importée
+  root.querySelectorAll('[data-lire]').forEach(b => b.onclick = async () => {
+    const f = c.fournisseurs.find(x => x.entrepriseId === b.dataset.lire), o = f.offre || {};
+    try {
+      const file = await fichierDepuisPiece(o.pieceId, o.pieceNom);
+      if (/\.(xlsx|xls|csv)$/i.test(file.name)) {
+        const buf = await file.arrayBuffer(), sheets = /\.csv$/i.test(file.name) ? XLSX.readCSV(buf) : await XLSX.read(buf);
+        f.offre = { ...o, ...lireOffreExcel(sheets[0], c), aLire: false }; save();
+      } else importerOffrePdf(c, f.entrepriseId, file, { pieceDeja: o.pieceId });
+    } catch (err) { notify(err.message); }
+  });
+  root.querySelectorAll('[data-classer]').forEach(b => b.onclick = () => {
+    const i = +b.dataset.classer, eid = root.querySelector(`[data-classer-f="${i}"]`).value, o = c.offresAClasser[i];
+    if (!eid) return notify('Choisissez le fournisseur.');
+    c.offresAClasser.splice(i, 1);
+    OffreMail.appliquer(c, eid, o.pieces, o.mail); save();
+    App.toast(`Offre rangée chez ${clientName(eid)} : « Lire l'offre » pour reprendre ses prix`, 4000);
+  });
+  root.querySelectorAll('[data-classer-x]').forEach(b => b.onclick = async () => { if (await ask('Retirer cette offre reçue par e-mail ?', 'Retirer')) { c.offresAClasser.splice(+b.dataset.classerX, 1); save(); } });
   root.querySelectorAll('[data-import]').forEach(inp => inp.onchange = async e => {
     const file = e.target.files[0]; e.target.value = '';
     if (!file) return;
@@ -255,7 +280,7 @@ Views.consultations.bind = (root, params, query) => {
       // Le tableau rempli par le fournisseur est gardé comme pièce de son offre (repris dans la commande)
       let piece = null;
       try { piece = await joindreOffre(file); } catch (err) { notify(`Offre importée sans garder le fichier : ${err.message}`); }
-      f.offre = { ...(f.offre || {}), ...offre, ...(piece ? { pieceId: piece.id, pieceNom: piece.nom } : {}), date: isoDate(new Date()) }; f.statut = 'Offre reçue';
+      f.offre = { ...(f.offre || {}), ...offre, ...(piece ? { pieceId: piece.id, pieceNom: piece.nom } : {}), aLire: false, date: isoDate(new Date()) }; f.statut = 'Offre reçue';
       save(); App.toast(`Offre importée : ${Object.keys(offre.prix).length}/${c.lignes.length} ligne(s) chiffrée(s)`, 4000);
     } catch (err) { notify(err.message); }
   });
@@ -284,3 +309,56 @@ Views.consultations.bind = (root, params, query) => {
   });
   on('#cs-del', () => ask(`Supprimer la consultation ${c.ref || ''} ?`, 'Supprimer').then(ok => { if (ok) { Store.remove('consultations', c.id); location.hash = '#/consultations'; } }));
 };
+
+/* ---------- Offres reçues par e-mail ---------- */
+// Offres dont le fournisseur n'a pas été reconnu : à classer d'un clic
+function offresAClasserHtml(c) {
+  const l = c.offresAClasser || [];
+  if (!l.length) return '';
+  const fs = c.fournisseurs || [];
+  return `<div class="card note-card"><strong>📧 ${l.length} offre(s) reçue(s) par e-mail à classer</strong>
+    <p class="small muted" style="margin:4px 0">Le n° de la consultation a été reconnu, pas le fournisseur : choisissez-le.</p>
+    ${l.map((o, i) => `<div class="ajust-row"><span class="small"><strong>${esc(o.mail.de || o.mail.deEmail)}</strong> · « ${esc(o.mail.objet)} » · ${new Date(o.mail.recuLe).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}<br>
+      ${o.pieces.map(p => `<a href="${fileUrl(p.id)}?nom=${encodeURIComponent(p.nom)}" target="_blank" rel="noopener">📎 ${esc(p.nom)}</a>`).join(' ')}</span>
+      <select data-classer-f="${i}" style="width:auto"><option value="">Fournisseur…</option>${fs.map(f => `<option value="${esc(f.entrepriseId)}">${esc(clientName(f.entrepriseId))}</option>`).join('')}</select>
+      <button class="small" data-classer="${i}">Classer</button><button class="small danger" data-classer-x="${i}" aria-label="Supprimer">✕</button></div>`).join('')}</div>`;
+}
+// État de la boîte des offres (adresse, dernière relève, e-mails non reconnus) et relève immédiate
+function boiteOffres(root, c) {
+  const el = root.querySelector('#cs-boite');
+  if (!el || !['admin', 'charge'].includes(Store.me.role)) return;
+  api('GET', '/api/offres/etat').then(e => {
+    if (!e.actif) { el.innerHTML = 'Offres par e-mail : configurez une boîte dédiée (Achats › Factures reçues › Configuration) pour y transférer les offres des fournisseurs.'; return; }
+    const r = e.resultat || {};
+    el.innerHTML = `📧 Transférez les offres reçues à <strong>${esc(e.adresse)}</strong> (n° de consultation ou code du chantier dans l'objet) : elles se rangent dans l'offre du fournisseur. Les demandes de prix envoyées depuis l'appli y font répondre les fournisseurs.
+      ${e.dernier ? ` Relevée le ${new Date(e.dernier).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}${r.offres ? ` · ${r.offres} offre(s) rangée(s)` : ''}.` : ''}${e.erreur ? ` <span class="neg">${esc(e.erreur)}</span>` : ''}
+      ${e.demo ? (c && (c.fournisseurs || []).some(f => f.statut !== 'Offre reçue') ? '<button class="small secondary" id="cs-simuler">Simuler un e-mail d\'offre transféré</button>' : '') : '<button class="small secondary" id="cs-relever">Relever maintenant</button>'}
+      ${(e.nonReconnues || []).length ? `<br><span class="warn-text">Non reconnus (restés dans la boîte) : ${e.nonReconnues.map(x => `« ${esc(x.objet)} » de ${esc(x.de)} – ${esc(x.motif)}`).join(' · ')}</span>` : ''}`;
+    if (e.demo) { const b = el.querySelector('#cs-simuler'); if (b) b.onclick = () => simulerOffreMail(c).catch(err => notify(err.message)); return; }
+    el.querySelector('#cs-relever').onclick = () => api('POST', '/api/offres/relever').then(x => { App.toast(`${x.messages} e-mail(s) : ${x.offres} offre(s) rangée(s)${x.aClasser ? `, ${x.aClasser} à classer` : ''}${x.nonReconnues ? `, ${x.nonReconnues} non reconnu(s)` : ''}`, 5000); App.render(); }).catch(err => notify(err.message));
+  }).catch(() => { el.textContent = ''; });
+}
+// Démonstration : un collègue transfère à la boîte des offres l'e-mail d'un fournisseur consulté (n° de consultation dans l'objet)
+async function simulerOffreMail(c) {
+  const f = c.fournisseurs.find(x => x.entrepriseId === 'e12' && x.statut !== 'Offre reçue') || c.fournisseurs.find(x => x.statut !== 'Offre reçue');
+  const ent = Store.get('entreprises', f.entrepriseId) || {}, aff = Store.get('affaires', c.affaireId) || {};
+  const nom = `Offre ${ent.nom || 'fournisseur'}.pdf`;
+  const id = await joindrePiece(new File([await PDF.depuisHTML(devisExempleHtml(), nom.replace(/\.pdf$/, ''))], nom, { type: 'application/pdf' }));
+  const mail = { de: 'Service achats', deEmail: 'achats@pipefit.example', objet: `TR: Votre demande de prix ${c.ref || ''}${aff.code ? ` – chantier ${aff.code}` : ''}`, recuLe: new Date().toISOString(),
+    texte: `---------- Message transféré ----------\nDe : ${ent.nom || ''} <${ent.email || 'commercial@fournisseur.example'}>\nObjet : RE: Demande de prix ${c.ref || ''}\nBonjour, veuillez trouver ci-joint notre meilleure offre.` };
+  const rec = OffreMail.reconnaitre(mail, { consultations: Store.all('consultations'), entreprises: Store.all('entreprises'), contacts: Store.all('contacts'), affaires: Store.all('affaires'),
+    internes: ['pipefit.example', (Store.data.settings.doc || {}).email].filter(Boolean) });
+  if (!rec) throw new Error('E-mail non reconnu');
+  const cible = rec.consultation;
+  OffreMail.appliquer(cible, rec.fournisseurId, [{ id, nom }], mail);
+  Store.upsert('consultations', cible);
+  App.toast(`E-mail « ${mail.objet} » reconnu (${rec.raison}) : offre rangée chez ${rec.fournisseurId ? clientName(rec.fournisseurId) : 'les offres à classer'}.`, 6000);
+  App.render();
+}
+// Pièce enregistrée relue comme un fichier (lecture de l'offre reçue par e-mail)
+async function fichierDepuisPiece(id, nom) {
+  const r = await fetch(fileUrl(id), { credentials: 'same-origin' });
+  if (!r.ok) throw new Error('Pièce introuvable');
+  const b = await r.blob();
+  return new File([b], nom || 'offre.pdf', { type: b.type || 'application/pdf' });
+}

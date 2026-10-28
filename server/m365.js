@@ -27,7 +27,7 @@ async function envoyer(cfg, expediteur, msg) {
     body: JSON.stringify({
       message: {
         subject: msg.subject, body: { contentType: 'HTML', content: msg.html },
-        toRecipients: adr(msg.to), ccRecipients: adr(msg.cc), bccRecipients: adr(msg.bcc),
+        toRecipients: adr(msg.to), ccRecipients: adr(msg.cc), bccRecipients: adr(msg.bcc), ...(msg.replyTo && msg.replyTo.length ? { replyTo: adr(msg.replyTo) } : {}),
         attachments: (msg.attachments || []).map(a => ({ '@odata.type': '#microsoft.graph.fileAttachment', name: a.name, contentType: a.contentType || 'application/pdf', contentBytes: a.base64 })),
       },
       saveToSentItems: true,
