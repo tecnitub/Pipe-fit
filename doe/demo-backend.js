@@ -14,12 +14,19 @@
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* stockage indisponible */ } },
   };
   const seed = DemoSeed.demoData();
-  const pf = Object.fromEntries(Object.entries(seed).filter(([k, v]) => Array.isArray(v) || k === 'settings'));
+  // Ouverte depuis la démo du CRM (même appareil) : les chantiers tels que modifiés dans le CRM, et son compte connecté
+  const crm = () => { try { const c = window.PIPEFIT_CRM_KEY && JSON.parse(storage.get(window.PIPEFIT_CRM_KEY)); return c && c.settings ? c : null; } catch (e) { return null; } };
+  const donneesPf = () => { const src = crm() || seed; return Object.fromEntries(Object.entries(src).filter(([k, v]) => (Array.isArray(v) && k !== 'accounts' && k !== 'audit') || k === 'settings')); };
+  const compteCrm = () => {
+    const c = crm(); if (!c) return null;
+    const a = (c.accounts || []).find(x => x.id === storage.get('pipefit-crm-demo-me')) || (c.accounts || [])[0];
+    return a && ['admin', 'charge'].includes(a.role) ? { login: a.login, nom: a.nom, role: a.role } : null;
+  };
   let db;
   try { db = JSON.parse(storage.get(KEY)); } catch (e) { db = null; }
   if (!db || !Array.isArray(db.does)) db = { does: [], fichiers: {}, config: {} };
   const save = () => { if (!storage.set(KEY, JSON.stringify(db))) console.warn('Stockage local plein : les pièces jointes restent en mémoire.'); };
-  const me = () => COMPTES.find(c => c.login === storage.get(ME_KEY));
+  const me = () => COMPTES.find(c => c.login === storage.get(ME_KEY)) || (storage.get(ME_KEY) === 'deconnecte' ? null : compteCrm());
   const config = () => ({ ...CONFIG_DEFAUT, ...db.config, societe: { ...CONFIG_DEFAUT.societe, ...(db.config.societe || {}) } });
   const rep = (status, obj) => new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
   const err = (status, error, extra) => rep(status, { error, ...(extra || {}) });
@@ -38,9 +45,9 @@
     }
     const s = me();
     if (!s) return err(401, 'Non connecté');
-    if (p[0] === 'logout') { storage.del(ME_KEY); return rep(200, { ok: true }); }
-    if (p[0] === 'me') return rep(200, { ...s, pipefit: '' });
-    if (p[0] === 'pf' && p[1] === 'donnees') return rep(200, pf);
+    if (p[0] === 'logout') { storage.set(ME_KEY, 'deconnecte'); return rep(200, { ok: true }); }
+    if (p[0] === 'me') return rep(200, { ...s, pipefit: window.parent === window ? window.PIPEFIT_CRM_URL || '' : '' });
+    if (p[0] === 'pf' && p[1] === 'donnees') return rep(200, donneesPf());
     if (p[0] === 'does' && !p[1]) return rep(200, db.does.slice().sort((x, y) => y._at.localeCompare(x._at)));
     if (p[0] === 'does') {
       const i = db.does.findIndex(d => d.id === p[1]), exist = db.does[i];
@@ -75,7 +82,7 @@
     }
     return blobs.get(dataUrl);
   };
-  window.FICHIER_URL = f => versBlobUrl(f.src === 'pf' ? (seed.files || {})[f.id] : (db.fichiers[f.id] || {}).dataUrl);
+  window.FICHIER_URL = f => versBlobUrl(f.src === 'pf' ? ((crm() || {}).files || seed.files || {})[f.id] : (db.fichiers[f.id] || {}).dataUrl);
   window.ENVOI_FICHIER = file => new Promise((res, rej) => {
     if (file.size > 8 * 1048576) return rej(new Error('Fichier trop volumineux pour la démo (8 Mo max)'));
     const r = new FileReader();
@@ -84,4 +91,15 @@
     r.onerror = () => rej(new Error('Lecture du fichier impossible'));
     r.readAsDataURL(file);
   });
+  // PDF du DOE : dans le cadre de la démo du CRM, enregistré par la page du CRM (autorisation « downloads ») ;
+  // ouverte seule, par l'autorisation de cette page si elle l'a, sinon lien de téléchargement du navigateur
+  if (window.parent !== window) {
+    window.SAVE_FILE = async (nom, data) => {
+      const octets = data instanceof Blob ? await data.arrayBuffer() : typeof data === 'string' ? new TextEncoder().encode(data).buffer : data.buffer ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data;
+      window.parent.postMessage({ type: 'pipefit-doe-enregistrer', nom: String(nom), data: octets }, '*', [octets]);
+    };
+  }
+  if (!window.SAVE_FILE && window.claude && window.claude.use) {
+    window.claude.use('downloads').then(dl => { if (dl) window.SAVE_FILE = (filename, data) => dl.save({ filename, data: new Blob([data]) }).catch(() => {}); }).catch(() => {});
+  }
 })();

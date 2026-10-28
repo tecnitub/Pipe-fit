@@ -425,7 +425,7 @@ async function demarrer() {
   document.getElementById('qui').textContent = S.me.nom || S.me.login;
   document.getElementById('deconnexion').onclick = async () => { await api('POST', '/api/logout', {}).catch(() => {}); location.reload(); };
   const pf = S.me.pipefit || (/^https?:$/.test(location.protocol) ? `${location.protocol}//${location.hostname}:3000` : '');
-  if (pf) { const a = document.getElementById('lien-pf'); a.href = pf; a.hidden = false; }
+  if (pf) { const a = document.getElementById('lien-pf'); a.href = pf; a.hidden = false; if (window.PIPEFIT_CRM_URL) a.removeAttribute('target'); }
   document.getElementById('app').innerHTML = '<p class="muted">Chargement des chantiers Pipe-Fit…</p>';
   try { [S.config, S.does] = await Promise.all([api('GET', '/api/config'), api('GET', '/api/does'), PF.charger()]); }
   catch (e) { document.getElementById('app').innerHTML = `<p class="erreur">${esc(e.message)}</p>`; return; }

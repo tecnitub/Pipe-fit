@@ -35,6 +35,8 @@ Obtenir l'installateur : onglet **Actions** du dépôt GitHub → dernière exé
 `node demo/build.js` produit `dist/pipefit-crm-demo.html` : l'application complète en un seul fichier,
 avec un serveur simulé dans le navigateur (données sur l'appareil, sélecteur de profil
 admin / chargé d'affaires / atelier). Utile pour tester sur téléphone et itérer sur la conception.
+L'application DOE est construite à côté (`doe.html`) et s'ouvre par l'onglet « 📘 DOE » d'un chantier, dans la page :
+mêmes chantiers (y compris les modifications faites dans la démo), même compte, PDF du DOE enregistré par la démo.
 
 ## Application DOE (dossier des ouvrages exécutés)
 

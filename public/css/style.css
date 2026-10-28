@@ -1040,3 +1040,5 @@ th.col-th { position: relative; }
 .pc-lib { font-size: 11px; color: var(--muted); margin-top: 3px; font-variant-numeric: tabular-nums; }
 .pc-leg { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -2px; margin: 0 4px 0 10px; }
 .pc-leg-cap { display: inline-block; width: 16px; border-top: 2px dashed var(--text); vertical-align: 3px; margin: 0 4px 0 10px; }
+/* Démonstration : application DOE dans un cadre de la page */
+.doe-cadre { display: block; width: 100%; height: max(560px, calc(100vh - 230px)); border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }

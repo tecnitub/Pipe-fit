@@ -21,11 +21,13 @@ function chantierOnglets(a, actif) {
     <a href="#/chantier/${a.id}/securite" class="${actif === 'securite' ? 'active' : ''}">⛑️ Sécurité${(a.documents || []).some(d => d.categorie === 'Sécurité / PPSPS') ? '' : ' <span class="count">à faire</span>'}</a>
     ${estHorsDevis(a) ? '' : `<a href="#/chantier/${a.id}/gantt" class="${actif === 'gantt' ? 'active' : ''}">📊 Gantt${(a.phases || []).length ? '' : ' <span class="count">à faire</span>'}</a>`}
     ${estHorsDevis(a) ? '' : `<a href="#/situations">Situations</a>`}
-    ${estHorsDevis(a) || !lienDOE(a) ? '' : `<a href="${esc(lienDOE(a))}" target="_blank" rel="noopener" title="Dossier des ouvrages exécutés (application DOE)">📘 DOE ↗</a>`}</div>`;
+    ${estHorsDevis(a) || !lienDOE(a) ? '' : `<a href="${esc(lienDOE(a))}" ${window.PIPEFIT_DEMO ? '' : 'target="_blank" rel="noopener"'} title="Dossier des ouvrages exécutés (application DOE)">📘 DOE${window.PIPEFIT_DEMO ? '' : ' ↗'}</a>`}</div>`;
 }
 // Lien vers le dossier DOE du chantier dans l'application DOE (bureau uniquement)
 function lienDOE(a) {
   if (!Store.me || Store.me.role === 'atelier') return '';
+  // Démonstration : application DOE publiée à côté de la page (doe.html), ouverte dans un cadre de la page (voir Views.doe)
+  if (window.PIPEFIT_DEMO) return `#/doe/${encodeURIComponent(a.id)}`;
   const base = String((Store.data.settings || {}).doeUrl || (/^https?:$/.test(location.protocol) && !window.PIPEFIT_DEMO ? `${location.protocol}//${location.hostname}:3100` : '')).trim().replace(/\/+$/, '');
   return /^https?:\/\//i.test(base) ? `${base}/#/chantier/${encodeURIComponent(a.id)}` : '';
 }
@@ -220,3 +222,22 @@ function bindReglagesCompagnon(root) {
   carte.querySelector('#cp-chantier').onclick = () => enregistrer({ ...Compagnon.DEFAUT, client: false, contactSite: true, materiel: true, quantites: true, commandes: true, documents: true, collegues: true, heuresBudget: false, prix: false });
   carte.querySelector('#cp-defaut').onclick = () => enregistrer({ ...Compagnon.DEFAUT });
 }
+
+// Démonstration : l'application DOE (doe.html, construite à côté de la page) dans un cadre, reliée aux chantiers de la démo
+Views.doe = params => {
+  const a = Store.get('affaires', params[0]);
+  if (!window.PIPEFIT_DEMO || !a) return '<p>Application DOE : voir Paramètres → Société (adresse de l\'application DOE).</p>';
+  return `<div class="toolbar"><a class="btn secondary" href="#/chantier/${esc(a.id)}">← ${esc(a.code || 'Chantier')}</a><span class="muted small">Application DOE de démonstration : mêmes chantiers et même compte que la démo du CRM.</span></div>
+    <iframe class="doe-cadre" src="doe.html#/chantier/${encodeURIComponent(a.id)}" title="Application DOE"></iframe>`;
+};
+Views.doe.bind = root => {
+  const cadre = root.querySelector('.doe-cadre');
+  if (!cadre) return;
+  // PDF généré dans le cadre : enregistré par cette page (autorisation de téléchargement de la démo)
+  if (window.__doeEcoute) window.removeEventListener('message', window.__doeEcoute);
+  window.__doeEcoute = e => {
+    if (e.source !== cadre.contentWindow || !e.data || e.data.type !== 'pipefit-doe-enregistrer' || !(e.data.data instanceof ArrayBuffer)) return;
+    download(String(e.data.nom).replace(/[\\/:*?"<>|]+/g, '-').slice(0, 150) || 'DOE.pdf', new Uint8Array(e.data.data), 'application/pdf');
+  };
+  window.addEventListener('message', window.__doeEcoute);
+};
