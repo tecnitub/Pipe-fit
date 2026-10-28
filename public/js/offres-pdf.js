@@ -8,6 +8,11 @@ async function joindrePiece(fichier) {
   if (dataUrl.length > 9.5 * 1024 * 1024) throw new Error('Fichier trop volumineux (7 Mo maximum)');
   return (await api('POST', '/api/files', { dataUrl })).id;
 }
+// Offre du fournisseur gardée telle que reçue : PDF ou photo (compressée), tableau Excel ou CSV (fichier brut)
+async function joindreOffre(fichier) {
+  const id = /\.(xlsx|xls|csv)$/i.test(fichier.name) ? (await envoyerFichierDocument(fichier)).id : await joindrePiece(fichier);
+  return { id, nom: fichier.name };
+}
 // Lecture avec une fenêtre de progression ; renvoie l'analyse de l'offre
 async function lireOffreFichier(fichier) {
   const box = Modal.open(`<h2 style="margin-top:0">Lecture de ${esc(fichier.name)}</h2><p class="muted" id="lo-etat">Lecture du document…</p><progress id="lo-p" max="1" value="0" style="width:100%"></progress>`);
@@ -63,7 +68,7 @@ async function importerOffrePdf(c, eid, fichier) {
     try { pieceId = await joindrePiece(fichier); } catch (e) { notify(`Offre enregistrée sans le PDF : ${e.message}`); }
     const f = c.fournisseurs.find(x => x.entrepriseId === eid);
     const v = s => box.querySelector(s).value;
-    f.offre = { ...(f.offre || {}), prix, refs, port: v('#lo-port'), remise: v('#lo-rem'), delai: v('#lo-del'), validite: v('#lo-val'), pieceId: pieceId || (f.offre || {}).pieceId || '',
+    f.offre = { ...(f.offre || {}), prix, refs, port: v('#lo-port'), remise: v('#lo-rem'), delai: v('#lo-del'), validite: v('#lo-val'), pieceId: pieceId || (f.offre || {}).pieceId || '', pieceNom: pieceId ? fichier.name : (f.offre || {}).pieceNom || '',
       reference: lu.reference || '', date: isoDate(new Date()), lecture: { fichier: fichier.name, lignes: lu.lignes.length, ocr: lu.ocr, coherent: lu.coherent } };
     f.statut = 'Offre reçue';
     Store.upsert('consultations', c); Modal.close(); App.render();

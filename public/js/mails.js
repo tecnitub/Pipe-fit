@@ -104,6 +104,9 @@ function mailContexte(type, id) {
         fichier: `${type === 'commande' ? 'Commande' : 'Demande de prix'} ${c.numero || ''}`, html: () => commandeDocument(c, type),
         vars: { chantier: chantier(a) || 'stock atelier', objet: a.nom || '', date: dateFr(c.date), montant_ht: eur(Calc.commande(c).total),
           date_livraison_phrase: c.dateLivraison ? ` pour le ${dateFr(c.dateLivraison)}` : '', adresse_livraison: liv ? `${clientName(a.clientId)} – ${liv.libelle}, ${fullAddress(liv)}` : `notre atelier, ${s.adresse}` },
+        // Commande : l'offre du fournisseur jointe d'office (décochable dans la fenêtre d'envoi)
+        ...(type === 'commande' && c.devisFournisseurId ? { libellePiecesSup: `votre offre${c.devisFournisseurRef ? ` n° ${c.devisFournisseurRef}` : ''} (${c.devisFournisseurNom || 'offre du fournisseur'})`, piecesSupOption: true,
+          piecesSup: async () => [await pieceDepuisFichier(c.devisFournisseurId, `Offre ${clientName(c.fournisseurId)}${c.devisFournisseurRef ? ` ${c.devisFournisseurRef}` : ''}`, c.devisFournisseurNom)] } : {}),
         apres: type === 'commande' ? () => { if (c.statut === 'Brouillon') { c.statut = 'Envoyée'; Store.upsert('commandes', c); } } : null };
     }
     case 'attachement': {
@@ -240,7 +243,7 @@ async function envoyerParMail(type, id) {
       </fieldset>
       <div class="field"><label for="ml-objet">Objet</label><input id="ml-objet"></div>
       <div class="field"><label for="ml-corps">Message</label><textarea id="ml-corps" rows="12"></textarea></div>
-      <p class="mail-piece">📎 <strong>${esc(nomFichier(ctx.fichier))}</strong>${ctx.piecesSup ? ` + <strong>${esc(ctx.libellePiecesSup || 'pièces jointes')}</strong>` : ''} <button class="small secondary" id="ml-pdf" type="button">Voir le PDF</button></p>
+      <p class="mail-piece">📎 <strong>${esc(nomFichier(ctx.fichier))}</strong>${ctx.piecesSup ? (ctx.piecesSupOption ? ` <label class="check"><input type="checkbox" id="ml-sup" checked> + <strong>${esc(ctx.libellePiecesSup)}</strong></label>` : ` + <strong>${esc(ctx.libellePiecesSup || 'pièces jointes')}</strong>`) : ''} <button class="small secondary" id="ml-pdf" type="button">Voir le PDF</button></p>
       <fieldset class="mail-mode"><legend>Envoi</legend>
         <label class="check"><input type="radio" name="ml-mode" value="m365" ${st.mode === 'm365' ? 'checked' : ''} ${me.m365 && me.email ? '' : 'disabled'}>
           <span>Microsoft 365, depuis ${me.email ? `<strong>${esc(me.email)}</strong>` : 'votre boîte'} : envoi immédiat, le message est enregistré dans vos « Éléments envoyés »</span></label>
@@ -282,7 +285,7 @@ async function envoyerParMail(type, id) {
     try {
       const nom = nomFichier(ctx.fichier), pdf = await PDF.depuisHTML(ctx.html(), nom.replace(/\.pdf$/, ''));
       const html = Mails.html(corps);
-      const sup = ctx.piecesSup ? await ctx.piecesSup() : [];
+      const sup = ctx.piecesSup && !(q('#ml-sup') && !q('#ml-sup').checked) ? await ctx.piecesSup() : [];
       const uniques = l => [...new Set(l.map(a => a.toLowerCase()))];
       const dest = { to: uniques(to), cc: uniques(cc).filter(a => !uniques(to).includes(a)) };
       if (st.mode === 'm365') {
@@ -415,3 +418,14 @@ Views.mails.bind = root => {
     catch (e) { notify(e.message); }
   };
 };
+
+// Pièce jointe depuis un fichier enregistré (offre d'un fournisseur…) : nom sans accents, extension d'après le type
+async function pieceDepuisFichier(id, base, nomOrigine = '') {
+  const r = await fetch(fileUrl(id), { credentials: 'same-origin' });
+  if (!r.ok) throw new Error('Offre du fournisseur introuvable');
+  const bytes = new Uint8Array(await r.arrayBuffer()), type = (r.headers.get('content-type') || '').split(';')[0];
+  const ext = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'text/csv': 'csv', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx' }[type]
+    || ((/\.(pdf|jpe?g|png|webp|csv|xlsx)$/i.exec(nomOrigine) || [])[1] || 'pdf').toLowerCase().replace('jpeg', 'jpg');
+  const propre = String(base).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w .,()'&+-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100) || 'Offre';
+  return { nom: `${propre}.${ext}`, bytes, type: type || 'application/pdf' };
+}

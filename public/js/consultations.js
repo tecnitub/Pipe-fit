@@ -45,6 +45,13 @@ Views.consultations = (params, query) => {
   : '<p class="muted">Aucune consultation pour ces critères.</p>'}`;
 };
 
+// Rapports d'intervention du chantier où les compagnons ont noté des besoins (les 30 derniers jours)
+function besoinsRapports(affaireId) {
+  if (!affaireId) return [];
+  const depuis = isoDate(addDays(new Date(), -30));
+  return Store.all('rapports').filter(r => r.affaireId === affaireId && String(r.besoins || '').trim() && (r.date || '') >= depuis).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+}
+
 function nouvelleConsultation(base = {}) {
   return Store.upsert('consultations', { ref: '', objet: '', affaireId: '', date: isoDate(new Date()), dateLimite: isoDate(addDays(new Date(), 7)), dateLivraison: '', statut: 'En cours', lignes: [], fournisseurs: [], ...base });
 }
@@ -55,6 +62,8 @@ function consultationEditeur(id) {
   const an = analyseOffres(c), fs = c.fournisseurs || [], lignes = c.lignes || [], ouverte = c.statut === 'En cours';
   const sources = [];
   if (c.affaireId) sources.push(['chantier', 'Fournitures du devis du chantier pas encore commandées']);
+  const besoinsCompagnons = besoinsRapports(c.affaireId);
+  if (besoinsCompagnons.length) sources.push(['compagnons', `Matériel demandé par les compagnons (${besoinsCompagnons.length} rapport${besoinsCompagnons.length > 1 ? 's' : ''})`]);
   Store.all('chiffrages').slice(0, 8).forEach(x => sources.push([`chiffrage:${x.id}`, `Fournitures du chiffrage « ${x.nom} »`]));
   const totOffre = eid => an.offres.find(o => o.f.entrepriseId === eid);
   return `<div class="toolbar"><a href="#/consultations" class="btn secondary">← Consultations</a>${c.affaireId ? `<a class="btn secondary" href="#/chantier/${esc(c.affaireId)}">Chantier ${esc(affaireOf(c.affaireId).code || '')}</a>` : ''}<span class="spacer"></span>
@@ -83,7 +92,7 @@ function consultationEditeur(id) {
         <td>${dateFr(f.envoyeLe)}</td><td class="num">${o ? `${eur(o.t.net)}${o.t.complet ? '' : `<br><span class="warn-text small">${o.t.nb}/${lignes.length} lignes</span>`}` : ''}</td><td>${off.delai ? `${esc(off.delai)} j` : ''}</td>
         <td class="nowrap"><button class="small secondary" data-pdf="consultation|${esc(id)}">PDF</button><button class="small secondary" data-xls="${esc(f.entrepriseId)}">Excel</button>${['admin', 'charge'].includes(Store.me.role) ? `<button class="small" data-mail="consultation|${esc(id)}">✉ Envoyer</button>` : ''}
           <button class="small secondary" data-offre="${esc(f.entrepriseId)}">${f.statut === 'Offre reçue' ? 'Modifier l\'offre' : 'Saisir l\'offre'}</button><label class="btn small secondary" title="PDF ou photo du devis du fournisseur, ou tableau Excel complété">Importer l'offre (PDF, Excel)<input type="file" data-import="${esc(f.entrepriseId)}" accept=".pdf,.xlsx,.csv,image/*" hidden></label>
-          ${off.pieceId ? `<a class="btn small secondary" href="${fileUrl(off.pieceId)}" target="_blank" rel="noopener">📄</a>` : ''}${ouverte && f.statut === 'À consulter' ? `<button class="small danger" data-fdel="${esc(f.entrepriseId)}" aria-label="Retirer">✕</button>` : ''}</td></tr>`; }).join('') || '<tr><td colspan="6" class="muted">Ajoutez les fournisseurs à consulter.</td></tr>'}</table></div>
+          ${off.pieceId ? `<a class="btn small secondary" href="${fileUrl(off.pieceId)}${off.pieceNom ? `?nom=${encodeURIComponent(off.pieceNom)}` : ''}" target="_blank" rel="noopener" title="Offre reçue, reprise d'office dans la commande et jointe à son envoi">📎 Offre</a>` : ''}${ouverte && f.statut === 'À consulter' ? `<button class="small danger" data-fdel="${esc(f.entrepriseId)}" aria-label="Retirer">✕</button>` : ''}</td></tr>`; }).join('') || '<tr><td colspan="6" class="muted">Ajoutez les fournisseurs à consulter.</td></tr>'}</table></div>
   ${ouverte ? `<div class="toolbar"><select id="cs-four" style="width:auto"><option value="">+ Ajouter un fournisseur…</option>${fournisseursList().filter(e => !fs.some(f => f.entrepriseId === e.id)).map(e => `<option value="${e.id}">${esc(e.nom)}</option>`).join('')}</select>
     ${(() => { const hab = [...new Set(lignes.map(l => (Store.get('articles', l.articleId) || {}).fournisseurId).filter(x => x && !fs.some(f => f.entrepriseId === x)))]; return hab.length ? `<button class="secondary small" id="cs-hab">Ajouter les fournisseurs habituels (${hab.length})</button>` : ''; })()}</div>` : ''}
 
@@ -168,21 +177,18 @@ function saisirOffre(c, eid) {
       <div class="field"><label for="of-val">Offre valable jusqu'au</label><input id="of-val" type="date" value="${esc(o.validite || '')}"></div>
     </div>
     <div class="field"><label for="of-rq">Remarques</label><input id="of-rq" value="${esc(o.remarques || '')}"></div>
-    <label class="btn small secondary">${o.pieceId ? 'Remplacer le PDF de l\'offre' : '📎 Joindre l\'offre (PDF ou photo)'}<input type="file" id="of-file" accept="application/pdf,image/*" hidden></label> <span id="of-pj" class="small">${o.pieceId ? 'offre jointe' : ''}</span>
+    <label class="btn small secondary">${o.pieceId ? 'Remplacer l\'offre jointe' : '📎 Joindre l\'offre (PDF, photo ou Excel)'}<input type="file" id="of-file" accept="application/pdf,image/*,.xlsx,.xls,.csv" hidden></label> <span id="of-pj" class="small">${o.pieceId ? esc(o.pieceNom || 'offre jointe') : ''}</span>
     <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="of-annuler">Annuler</button><button id="of-ok">Enregistrer l'offre</button></div>`);
-  let pieceId = o.pieceId || '';
+  let pieceId = o.pieceId || '', pieceNom = o.pieceNom || '';
   box.querySelector('#of-file').onchange = async e => {
     const file = e.target.files[0]; if (!file) return;
-    try {
-      const dataUrl = file.type === 'application/pdf' ? await new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = ko; r.readAsDataURL(file); }) : await compressImage(file, 1800, 0.8);
-      pieceId = (await api('POST', '/api/files', { dataUrl })).id; box.querySelector('#of-pj').textContent = file.name;
-    } catch (err) { notify(err.message); }
+    try { ({ id: pieceId, nom: pieceNom } = await joindreOffre(file)); box.querySelector('#of-pj').textContent = file.name; } catch (err) { notify(err.message); }
   };
   box.querySelector('#of-annuler').onclick = Modal.close;
   box.querySelector('#of-ok').onclick = () => {
     const prix = {};
     box.querySelectorAll('[data-pi]').forEach(el => { if (el.value !== '') prix[el.dataset.pi] = num(el.value); });
-    f.offre = { prix, remise: box.querySelector('#of-rem').value, port: box.querySelector('#of-port').value, delai: box.querySelector('#of-del').value, validite: box.querySelector('#of-val').value, remarques: box.querySelector('#of-rq').value, pieceId, date: isoDate(new Date()) };
+    f.offre = { ...o, prix, remise: box.querySelector('#of-rem').value, port: box.querySelector('#of-port').value, delai: box.querySelector('#of-del').value, validite: box.querySelector('#of-val').value, remarques: box.querySelector('#of-rq').value, pieceId, pieceNom, date: isoDate(new Date()) };
     f.statut = 'Offre reçue';
     Store.upsert('consultations', c); Modal.close(); App.render();
   };
@@ -213,6 +219,16 @@ Views.consultations.bind = (root, params, query) => {
   const src = q('#cs-src');
   if (src) src.onchange = () => {
     const v = src.value; let ajout = [];
+    if (v === 'compagnons') {
+      // Besoins notés dans les rapports d'intervention : texte repris, matériel reconnu dans la bibliothèque, vérifié avant ajout
+      const rs = besoinsRapports(c.affaireId);
+      src.value = '';
+      return dicterMateriel({ titre: 'Matériel demandé par les compagnons', cible: 'à la demande de prix', texte: rs.map(r => r.besoins.trim()).join('\n') }).then(choix => {
+        choix.forEach(m => c.lignes.push({ articleId: m.articleId, designation: m.designation, unite: m.unite, qte: m.qte }));
+        c.rapportsRepris = [...new Set([...(c.rapportsRepris || []), ...rs.map(r => r.id)])];
+        if (choix.length) { save(); App.toast(`${choix.length} fourniture(s) reprise(s) des rapports de ${[...new Set(rs.map(r => userName(r.userId)))].join(', ')}`, 4000); }
+      });
+    }
     if (v === 'chantier') ajout = besoinsChantier(c.affaireId).map(x => ({ articleId: x.a.id, designation: x.a.designation, unite: x.a.unite, qte: x.q }));
     else if (v.startsWith('chiffrage:')) {
       const ch = Store.get('chiffrages', v.slice(10));
@@ -236,7 +252,10 @@ Views.consultations.bind = (root, params, query) => {
     try {
       const buf = await file.arrayBuffer(), sheets = /\.csv$/i.test(file.name) ? XLSX.readCSV(buf) : await XLSX.read(buf);
       const offre = lireOffreExcel(sheets[0], c), f = c.fournisseurs.find(x => x.entrepriseId === inp.dataset.import);
-      f.offre = { ...(f.offre || {}), ...offre, date: isoDate(new Date()) }; f.statut = 'Offre reçue';
+      // Le tableau rempli par le fournisseur est gardé comme pièce de son offre (repris dans la commande)
+      let piece = null;
+      try { piece = await joindreOffre(file); } catch (err) { notify(`Offre importée sans garder le fichier : ${err.message}`); }
+      f.offre = { ...(f.offre || {}), ...offre, ...(piece ? { pieceId: piece.id, pieceNom: piece.nom } : {}), date: isoDate(new Date()) }; f.statut = 'Offre reçue';
       save(); App.toast(`Offre importée : ${Object.keys(offre.prix).length}/${c.lignes.length} ligne(s) chiffrée(s)`, 4000);
     } catch (err) { notify(err.message); }
   });
@@ -257,7 +276,8 @@ Views.consultations.bind = (root, params, query) => {
       if (num(f.offre.port)) lignes.push({ articleId: '', designation: 'Frais de port', unite: 'forfait', qte: 1, pu: num(f.offre.port) });
       if (maj) lignes.forEach(l => { const a = Store.get('articles', l.articleId); if (a && l.pu && Math.abs(num(a.coutRevient) - l.pu) > 0.005) { a.coutRevient = l.pu; a.fournisseurId = eid; Store.upsert('articles', a); } });
       return Store.upsert('commandes', { numero: '', fournisseurId: eid, affaireId: c.affaireId || '', date: isoDate(new Date()), dateLivraison: c.dateLivraison || '', statut: 'Brouillon', lignes, consultationId: c.id,
-        devisFournisseurId: (f.offre || {}).pieceId || '', devisFournisseurRef: (f.offre || {}).reference || '' }).id;
+        devisFournisseurId: (f.offre || {}).pieceId || '', devisFournisseurRef: (f.offre || {}).reference || '',
+        devisFournisseurNom: (f.offre || {}).pieceNom || ((f.offre || {}).lecture || {}).fichier || ((f.offre || {}).pieceId ? `Offre ${clientName(eid)}` : '') }).id;
     });
     c.statut = 'Attribuée'; save();
     App.toast(`${c.commandeIds.length} commande(s) créée(s) en brouillon`, 4000);

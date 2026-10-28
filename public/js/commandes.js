@@ -87,11 +87,24 @@ function commandeEditor(id) {
     <tr class="subtotal"><td colspan="4">Total HT</td><td class="num">${eur(total)}</td><td></td></tr>
   </table></div>
   <div class="toolbar no-print" style="margin-top:8px">${articleSelect('c-art')}<input id="c-art-q" type="number" step="any" value="1" style="width:90px" aria-label="Quantité"><button class="secondary" id="c-add">Ajouter</button><button class="secondary" id="c-free">Ligne libre</button><button class="secondary" id="c-dicter">🎤 Dicter du matériel</button>
-    <label class="btn" title="Lit les lignes du devis du fournisseur : référence, désignation, quantité, prix unitaire">📄 Charger le devis du fournisseur<input type="file" id="c-devis" accept=".pdf,image/*" hidden></label>
-    ${c.devisFournisseurId ? `<a class="btn secondary small" href="${fileUrl(c.devisFournisseurId)}" target="_blank" rel="noopener">Devis ${esc(c.devisFournisseurRef || c.devisFournisseurNom || 'fournisseur')}</a>` : ''}</div>
+    <label class="btn" title="Lit les lignes du devis du fournisseur : référence, désignation, quantité, prix unitaire ; le devis reste joint à la commande">📄 Charger le devis du fournisseur<input type="file" id="c-devis" accept=".pdf,image/*" hidden></label></div>
+  ${offreCommandeHtml(c)}
 
   <details class="no-print preview"><summary>Aperçu du bon de commande</summary><div class="doc-print">${commandeDocument(c)}</div></details>
   <div class="print-only doc-print">${commandeDocument(c)}</div>`;
+}
+
+// Offre du fournisseur jointe à la commande (reprise de la consultation, lue avec « Charger le devis », ou jointe telle quelle)
+function offreCommandeHtml(c) {
+  const lien = c.devisFournisseurId ? `<a href="${fileUrl(c.devisFournisseurId)}${c.devisFournisseurNom ? `?nom=${encodeURIComponent(c.devisFournisseurNom)}` : ''}" target="_blank" rel="noopener">${esc(c.devisFournisseurNom || 'offre du fournisseur')}</a>` : '';
+  return `<div class="card no-print offre-cmd">
+    ${c.devisFournisseurId ? `📎 <strong>Offre du fournisseur jointe</strong> : ${lien}${c.devisFournisseurRef ? ` (n° ${esc(c.devisFournisseurRef)})` : ''}${c.consultationId ? ' · reprise de la consultation' : ''}
+      <div class="small muted">Rappelée sur le bon de commande et jointe d'office à son envoi par e-mail.</div>`
+    : '<span class="muted">Aucune offre du fournisseur jointe à cette commande.</span>'}
+    <div class="toolbar" style="margin:6px 0 0">
+      <label class="btn small secondary" title="Joint le fichier tel quel, sans lire ses lignes">📎 ${c.devisFournisseurId ? 'Remplacer l\'offre' : 'Joindre l\'offre du fournisseur'} (PDF, photo, Excel)<input type="file" id="c-offre-pj" accept="application/pdf,image/*,.xlsx,.xls,.csv" hidden></label>
+      <input id="c-offre-ref" value="${esc(c.devisFournisseurRef || '')}" placeholder="N° de l'offre (facultatif)" aria-label="Numéro de l'offre du fournisseur" style="width:200px">
+      ${c.devisFournisseurId ? '<button class="small secondary" id="c-offre-rm" type="button">Retirer</button>' : ''}</div></div>`;
 }
 
 Views.commandes.bind = (root, params, query) => {
@@ -140,6 +153,15 @@ Views.commandes.bind = (root, params, query) => {
     if (choix.length) save();
   };
   root.querySelector('#c-devis').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) chargerDevisFournisseur(c, f); };
+  // Commande directe : offre du fournisseur jointe telle quelle, retirée, numéro de l'offre
+  root.querySelector('#c-offre-pj').onchange = async e => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    try { const p = await joindreOffre(f); Object.assign(c, { devisFournisseurId: p.id, devisFournisseurNom: p.nom }); save(); App.toast('Offre jointe : elle partira avec la commande'); } catch (err) { notify(err.message); }
+  };
+  root.querySelector('#c-offre-ref').onchange = e => { c.devisFournisseurRef = e.target.value.trim(); save(); };
+  const rmOffre = root.querySelector('#c-offre-rm');
+  if (rmOffre) rmOffre.onclick = () => { Object.assign(c, { devisFournisseurId: '', devisFournisseurNom: '' }); save(); };
   root.querySelector('#c-free').onclick = () => { c.lignes.push({ designation: 'Fourniture', unite: 'u', qte: 1, pu: 0 }); save(); };
   const rep = root.querySelector('#reprendre');
   if (rep) rep.onclick = () => {
@@ -192,7 +214,7 @@ function commandeDocument(c, type = 'commande') {
   return `${Doc.entete(type, `${o.titre} ${type === 'commande' ? c.numero || '' : ''}`, `${type === 'commande' ? '' : `Référence ${esc(c.numero || '')}<br>`}Date : ${dateFr(type === 'commande' ? c.date : isoDate(new Date()))}${af.code && o.chantier ? `<br>Chantier : ${esc(af.code)} – ${esc(af.nom)}` : ''}${c.dateLivraison && o.livraison ? `<br>Livraison souhaitée : ${dateFr(c.dateLivraison)}` : ''}`)}
     <div class="doc-parties"><div><strong>${esc(f.nom || '—')}</strong>${fSite ? `<br>${esc(fullAddress(fSite))}` : ''}${f.email ? `<br>${esc(f.email)}` : ''}</div>
     <div>${!o.livraison ? '' : livSite ? `Livraison : <strong>${esc(clientName(af.clientId))} – ${esc(livSite.libelle)}</strong><br>${esc(fullAddress(livSite))}${livSite.acces ? `<br>${esc(livSite.acces)}` : ''}` : `Livraison à notre atelier : ${esc(s.adresse)}`}</div></div>
-    ${Doc.intro(type)}${type === 'commande' && c.devisFournisseurRef ? `<p class="doc-objet">Suivant votre devis n° ${esc(c.devisFournisseurRef)}</p>` : ''}
+    ${Doc.intro(type)}${type === 'commande' && (c.devisFournisseurRef || c.devisFournisseurId) ? `<p class="doc-objet">Suivant votre ${c.devisFournisseurRef ? `devis n° ${esc(c.devisFournisseurRef)}` : 'offre'}${c.devisFournisseurId ? ' (copie jointe)' : ''}</p>` : ''}
     <div class="table-wrap"><table class="doc-lines${o.prix ? '' : ' compact'}"><tr>${(c.lignes || []).some(l => l.refFournisseur) ? '<th>Votre réf.</th>' : ''}<th>Désignation</th><th class="num">Qté</th><th>Unité</th>${o.prix ? '<th class="num">PU HT</th><th class="num">Total HT</th>' : ''}</tr>
     ${(c.lignes || []).map(l => `<tr>${(c.lignes || []).some(x => x.refFournisseur) ? `<td>${esc(l.refFournisseur || '')}</td>` : ''}<td>${esc(l.designation)}</td><td class="num">${fmt(l.qte, 2)}</td><td>${esc(l.unite)}</td>${o.prix ? `<td class="num">${eur(l.pu)}</td><td class="num">${eur(num(l.qte) * num(l.pu))}</td>` : ''}</tr>`).join('')}
     </table></div>${o.prix ? `<table class="totals"><tr class="grand"><td>Total HT</td><td class="num">${eur(total)}</td></tr></table>` : ''}

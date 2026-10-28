@@ -656,10 +656,10 @@ async function api(req, res, url) {
     const html = String(b.html || '');
     if (!subject || html.length > 300000) return fail(res, 400, 'Objet manquant ou message trop long');
     const pieces = Array.isArray(b.attachments) ? b.attachments.slice(0, 20) : [];
-    const TYPES_PJ = { pdf: 'application/pdf', csv: 'text/csv', txt: 'text/plain', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+    const TYPES_PJ = { pdf: 'application/pdf', csv: 'text/csv', txt: 'text/plain', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
     let poids = 0;
     for (const a of pieces) {
-      if (!a || !/^[\w .,()'°&+-]{1,120}\.(pdf|csv|txt|xlsx)$/i.test(String(a.name || '')) || !/^[A-Za-z0-9+/=]+$/.test(String(a.base64 || ''))) return fail(res, 400, 'Pièce jointe invalide (PDF, CSV, TXT ou XLSX attendu)');
+      if (!a || !/^[\w .,()'°&+-]{1,120}\.(pdf|csv|txt|xlsx|jpg|png|webp)$/i.test(String(a.name || '')) || !/^[A-Za-z0-9+/=]+$/.test(String(a.base64 || ''))) return fail(res, 400, 'Pièce jointe invalide (PDF, CSV, TXT, XLSX ou photo attendu)');
       poids += a.base64.length * 3 / 4;
     }
     if (poids > 3 * 1024 * 1024) return fail(res, 400, 'Pièces jointes trop volumineuses (3 Mo maximum)');

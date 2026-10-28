@@ -45,7 +45,7 @@ function brancherDicteeTexte(root) {
   });
 }
 
-function dicterMateriel({ titre = 'Dicter du matériel', prix = false, cible = '' } = {}) {
+function dicterMateriel({ titre = 'Dicter du matériel', prix = false, cible = '', texte = '' } = {}) {
   return new Promise(resolve => {
     const articles = Store.all('articles'), fournisseurDe = a => (a.fournisseurId ? clientName(a.fournisseurId) : '');
     let lignes = [], arret = null;
@@ -53,7 +53,7 @@ function dicterMateriel({ titre = 'Dicter du matériel', prix = false, cible = '
       <div id="dc-saisie">
         <p class="muted small">Dites ou tapez la liste, par exemple : « 3 coudes de 50, 2 brides DN100 et 12 mètres de tube inox 50 ».
         Les articles de la bibliothèque sont reconnus ; les autres restent en matériel hors bibliothèque.${cible ? ` Ils seront ajoutés ${esc(cible)}.` : ''}</p>
-        <div class="dc-zone"><textarea id="dc-texte" rows="5" placeholder="Touchez 🎤 et parlez, ou utilisez le micro du clavier"></textarea><span id="dc-prov" class="muted small"></span></div>
+        <div class="dc-zone"><textarea id="dc-texte" rows="5" placeholder="Touchez 🎤 et parlez, ou utilisez le micro du clavier">${esc(texte)}</textarea><span id="dc-prov" class="muted small"></span></div>
         <div class="dc-actions">${Micro.dispo() ? '<button class="big" id="dc-micro">🎤 Dicter</button>' : '<p class="small muted">Dictée : utilisez le micro du clavier de votre téléphone.</p>'}
           <button class="big secondary" id="dc-analyser">Reconnaître le matériel</button></div>
       </div>

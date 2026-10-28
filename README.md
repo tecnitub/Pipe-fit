@@ -40,6 +40,18 @@ hydraulique en annexe F ; PV d'épreuve hydraulique, relevés d'équilibrage aé
 Les pièces correspondantes des listes de contrôle des sections 5 et 6 sont cochées (« Pipe-Fit »). Avec les plans,
 fiches techniques, notices et le PV de réception déjà repris, « Générer le DOE » produit le dossier complet en un clic.
 
+## Demandes de prix, offres des fournisseurs et commandes
+
+- **Lignes de la consultation** : fournitures du devis du chantier pas encore commandées, d'un chiffrage depuis plan, de la
+  bibliothèque, dictées ou saisies, ou **matériel demandé par les compagnons** dans leurs rapports d'intervention (30 derniers
+  jours ; texte repris, articles reconnus dans la bibliothèque et vérifiés avant ajout).
+- **Offres reçues** : importées (PDF ou photo lus, tableau Excel complété) ou saisies ; le fichier de l'offre est **toujours
+  gardé** avec l'offre (PDF, photo ou Excel), lien « 📎 Offre » sur la ligne du fournisseur.
+- **Commande** créée depuis la consultation : l'offre du fournisseur retenu y est **reprise d'office**, rappelée sur le bon
+  de commande (« Suivant votre devis n° … (copie jointe) ») et **jointe à l'envoi par e-mail** (case décochable).
+- **Commande directe** : « 📄 Charger le devis du fournisseur » lit ses lignes et le joint ; « 📎 Joindre l'offre du
+  fournisseur » le joint tel quel (PDF, photo, Excel), avec son numéro ; « Retirer » l'enlève.
+
 ## Colonnes des tableaux, au choix de chacun
 
 Au-dessus des tableaux de gestion (devis, chantiers, factures, situations, commandes, factures fournisseurs, consultations,
