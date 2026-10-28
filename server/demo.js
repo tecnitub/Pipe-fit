@@ -487,6 +487,22 @@ function demoData() {
   reaffecte('o2', 1, [1], j => affecte('o2', 'hd2', 1, [j], 'Soudure', 4));
   reaffecte('o2', 1, [3, 4], j => planning.push({ id: uid(), date: jour(1, j), userId: 'o2', absence: 'Congés', affaireId: '', heuresPrevues: 0 }));
   reaffecte('o5', 1, [0], j => planning.push({ id: uid(), date: jour(1, j), userId: 'o5', absence: 'Formation', affaireId: '', heuresPrevues: 0 }));
+  // Gantt des chantiers en cours : phases reliées aux tâches du planning (dates recalées sur les affectations)
+  const phase = (id, libelle, tache, duree, heures, apres, extra = {}) => ({ id, libelle, tache, duree, heures, apres: apres ? [apres] : [], decalage: 0, termine: false, ...extra });
+  affaires.find(a => a.id === 'af1').phases = [
+    phase('ph1', 'Études et approvisionnements', 'Études', 10, 70, '', { debut: d(-45), termine: true }),
+    phase('ph2', 'Préfabrication atelier', 'Préfabrication', 20, 340, 'ph1'),
+    phase('ph3', 'Soudure orbitale', 'Soudure', 20, 480, 'ph1', { decalage: 5 }),
+    phase('ph4', 'Montage sur site', 'Montage', 25, 520, 'ph2'),
+    phase('ph5', 'Contrôles et essais', 'Contrôles / essais', 4, 70, 'ph4'),
+    phase('ph6', 'Réception et DOE', '', 3, 35, 'ph5'),
+  ];
+  affaires.find(a => a.id === 'af4').phases = [
+    phase('pt1', 'Préparation et commandes', 'Études', 5, 20, '', { debut: d(0) }),
+    phase('pt2', 'Dépose et montage chaufferie', 'Montage', 12, 380, 'pt1'),
+    phase('pt3', 'Raccordements soudés', 'Soudure', 6, 120, 'pt1'),
+    phase('pt4', 'Essais et mise en service', 'Contrôles / essais', 3, 40, 'pt2'),
+  ];
   // Notification non lue de Kevin : son planning de la semaine prochaine a changé
   const jc = n => new Date(`${jour(1, n)}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }).replace(/\.(?=\s|$)/g, '');
   const notifications = [{ id: 'nt1', type: 'planning', userId: 'o1', pour: 'o1', titre: 'Votre planning a changé : 2 jours', lien: '#/pointage/planning', jours: [jour(1, 1), jour(1, 2)],

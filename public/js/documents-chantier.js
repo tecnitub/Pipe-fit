@@ -19,6 +19,7 @@ function chantierOnglets(a, actif) {
   return `<div class="tabs no-print"><a href="#/chantier/${a.id}" class="${actif === 'apercu' ? 'active' : ''}">Vue d'ensemble</a>
     <a href="#/chantier/${a.id}/documents" class="${actif === 'documents' ? 'active' : ''}">📎 Documents <span class="count">${n}</span></a>
     <a href="#/chantier/${a.id}/securite" class="${actif === 'securite' ? 'active' : ''}">⛑️ Sécurité${(a.documents || []).some(d => d.categorie === 'Sécurité / PPSPS') ? '' : ' <span class="count">à faire</span>'}</a>
+    ${estHorsDevis(a) ? '' : `<a href="#/chantier/${a.id}/gantt" class="${actif === 'gantt' ? 'active' : ''}">📊 Gantt${(a.phases || []).length ? '' : ' <span class="count">à faire</span>'}</a>`}
     ${estHorsDevis(a) ? '' : `<a href="#/situations">Situations</a>`}
     ${estHorsDevis(a) || !lienDOE(a) ? '' : `<a href="${esc(lienDOE(a))}" target="_blank" rel="noopener" title="Dossier des ouvrages exécutés (application DOE)">📘 DOE ↗</a>`}</div>`;
 }

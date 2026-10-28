@@ -639,6 +639,21 @@ article montre les prix par fournisseur et chaque achat (date, pièce, chantier)
 factures fournisseurs (prix réellement payés ; la commande n'est alors pas recomptée) et relevés du comptoir. Frais de
 port exclus. Export Excel (articles, achats, fournisseurs).
 
+## Gantt des chantiers et plan de charge
+
+- **Gantt d'un chantier** (onglet « 📊 Gantt » du chantier) : phases avec tâche du planning, date au plus tôt, durée en
+  jours ouvrés, heures, phase précédente et décalage. « Phases types » propose préparation, préfabrication, montage,
+  essais et réception à partir du budget d'heures. Une barre se glisse à la souris (nouvelle date), son bord droit change
+  la durée ; les phases suivantes se décalent.
+- **Relié au planning** (case « Recaler sur le planning des équipes », cochée par défaut) : une phase suit les jours où sa
+  tâche est planifiée ou pointée sur le chantier (début au premier jour, fin au dernier, durée prévue au minimum) ; une
+  phase pas commencée à sa date glisse à aujourd'hui ; les phases qui en dépendent se décalent d'autant. Une phase
+  terminée n'est plus déplacée par les affectations futures.
+- **Gantt global** (Planning → « 📊 Gantt et plan de charge ») : tous les chantiers en cours sur 8 à 52 semaines, par
+  chantier ou regroupés par chargé d'affaires (filtre par chargé d'affaires), retards signalés.
+- **Plan de charge à venir** : par semaine, heures restantes des phases (réparties sur leurs jours ouvrés), heures déjà
+  affectées au planning et capacité des compagnons (absences déduites), taux de charge et détail par chargé d'affaires.
+
 ## Planning dans les agendas
 
 - **Mon lien d'agenda** (Paramètres, pour chacun, compagnons compris) : abonnement iCal personnel au planning (chantier,

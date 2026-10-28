@@ -51,7 +51,7 @@ function personnesPlanning() {
 }
 
 function planningTabs(actif) {
-  return `<div class="tabs">${[['semaine', '#/planning', '🗓️ Semaine'], ['personne', '#/planning/personne', '🧑‍🔧 Par personne'], ['equipes', '#/planning/tableau', 'Tableau jour par jour'], ['charge', '#/planning/charge', 'Charge par semaine']]
+  return `<div class="tabs">${[['semaine', '#/planning', '🗓️ Semaine'], ['personne', '#/planning/personne', '🧑‍🔧 Par personne'], ['equipes', '#/planning/tableau', 'Tableau jour par jour'], ['charge', '#/planning/charge', 'Charge par semaine'], ['gantt', '#/planning/gantt', '📊 Gantt et plan de charge']]
     .map(([k, h, l]) => `<a href="${h}" class="${actif === k ? 'active' : ''}">${l}</a>`).join('')}</div>`;
 }
 
@@ -315,6 +315,7 @@ function saisirJournee(date, ids) {
 Views.planning = (params, query) => {
   if (Store.me.role === 'atelier') return Views.pointage(['planning'], query);
   if (params[0] === 'charge') return planningCharge(query);
+  if (params[0] === 'gantt') return planningGantt(query);
   if (params[0] === 'tableau') return planningEquipes(query);
   if (params[0] === 'personne') return planningPersonne(query);
   return planningSemaine(query);
@@ -322,6 +323,7 @@ Views.planning = (params, query) => {
 Views.planning.bind = (root, params, query) => {
   if (Store.me.role === 'atelier') return Views.pointage.bind(root, ['planning'], query);
   if (params[0] === 'charge') return bindPlanningCharge(root);
+  if (params[0] === 'gantt') return bindPlanningGantt(root, query);
   if (params[0] === 'tableau') return bindPlanningEquipes(root, query);
   if (params[0] === 'personne') return bindPlanningPersonne(root, query);
   return bindPlanningSemaine(root, query);

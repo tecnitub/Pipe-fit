@@ -977,3 +977,66 @@ fieldset.mi-titre[hidden] { display: none; }
 th.col-th { position: relative; }
 .col-poignee { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; touch-action: none; z-index: 1; }
 .col-poignee:hover, .col-poignee:active { background: var(--accent); opacity: .35; }
+
+/* ---------- Gantt d'un chantier : noms des phases à gauche, frise des jours défilante à droite ---------- */
+.gt-cadre { display: grid; grid-template-columns: minmax(150px, 230px) minmax(0, 1fr); border: 1px solid var(--border); border-radius: 6px; background: var(--panel); margin: 10px 0 6px; }
+.gt-noms { border-right: 1px solid var(--border); min-width: 0; }
+.gt-nom { height: 40px; padding: 3px 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; justify-content: center; overflow: hidden; white-space: nowrap; }
+.gt-nom strong { overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.gt-nom .badge { font-size: 10px; padding: 0 5px; }
+.gt-tete { height: 40px; position: relative; background: var(--head); font-size: 11px; color: var(--muted); }
+.gt-noms > .gt-tete { display: flex; align-items: center; padding: 0 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+.gt-defile { overflow-x: auto; min-width: 0; }
+.gt-zone { position: relative; }
+.gt-sem { position: absolute; top: 2px; padding-left: 4px; border-left: 1px solid var(--border); white-space: nowrap; font-weight: 600; }
+.gt-j { position: absolute; top: 22px; text-align: center; font-variant-numeric: tabular-nums; }
+.gt-j.we { opacity: .5; }
+.gt-fond { position: absolute; inset: 40px 0 0 0; pointer-events: none; }
+.gt-we { position: absolute; top: 0; bottom: 0; background: var(--panel-alt); }
+.gt-auj { position: absolute; top: -40px; bottom: 0; width: 2px; background: var(--accent); opacity: .7; z-index: 2; }
+.gt-ligne { position: relative; height: 40px; border-top: 1px solid var(--border); }
+.gt-barre { position: absolute; top: 9px; height: 22px; border-radius: 4px; background: hsl(var(--h) 60% 84%); border: 1px solid hsl(var(--h) 45% 55%); color: hsl(var(--h) 55% 18%);
+  overflow: hidden; cursor: grab; touch-action: none; z-index: 1; display: flex; align-items: center; }
+.gt-barre.planifiee { background: hsl(var(--h) 55% 70%); }
+.gt-barre.etat-en-retard { border: 2px solid var(--bad); }
+.gt-barre.etat-terminée { opacity: .55; }
+.gt-barre.glisse { cursor: grabbing; box-shadow: 0 2px 8px var(--overlay); z-index: 3; }
+.gt-av { position: absolute; left: 0; top: 0; bottom: 0; background: hsl(var(--h) 50% 45% / .45); }
+.gt-txt { position: relative; padding: 0 6px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.gt-poignee { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; cursor: ew-resize; background: hsl(var(--h) 45% 45% / .35); }
+.gt-jour { position: absolute; top: 33px; width: 6px; height: 6px; border-radius: 50%; background: var(--text); opacity: .55; }
+.gt-table input:not([type=checkbox]), .gt-table select { min-width: 0; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .gt-barre, :root:not([data-theme="light"]) .gg-ph { background: hsl(var(--h) 35% 30%); border-color: hsl(var(--h) 45% 50%); color: hsl(var(--h) 70% 88%); }
+  :root:not([data-theme="light"]) .gt-barre.planifiee { background: hsl(var(--h) 40% 38%); } }
+:root[data-theme="dark"] .gt-barre, :root[data-theme="dark"] .gg-ph { background: hsl(var(--h) 35% 30%); border-color: hsl(var(--h) 45% 50%); color: hsl(var(--h) 70% 88%); }
+:root[data-theme="dark"] .gt-barre.planifiee { background: hsl(var(--h) 40% 38%); }
+
+/* ---------- Gantt global : une piste par chantier sur l'horizon choisi ---------- */
+.gg-cadre { border: 1px solid var(--border); border-radius: 6px; background: var(--panel); overflow-x: auto; }
+.gg-rang { display: grid; grid-template-columns: minmax(170px, 260px) minmax(420px, 1fr); border-top: 1px solid var(--border); cursor: pointer; }
+.gg-rang:hover { background: var(--panel-alt); }
+.gg-tete { border-top: 0; background: var(--head); cursor: default; }
+.gg-tete:hover { background: var(--head); }
+.gg-nom { padding: 5px 10px; border-right: 1px solid var(--border); min-width: 0; overflow: hidden; line-height: 1.3; }
+.gg-piste { position: relative; min-height: 38px; }
+.gg-sem { position: absolute; top: 4px; font-size: 11px; padding-left: 3px; border-left: 1px solid var(--border); line-height: 1.25; white-space: nowrap; overflow: hidden; }
+.gg-auj { position: absolute; top: 0; bottom: -2000px; width: 2px; background: var(--accent); opacity: .6; pointer-events: none; }
+.gg-ph { position: absolute; top: 11px; height: 11px; border-radius: 3px; background: hsl(var(--h) 60% 80%); border: 1px solid hsl(var(--h) 45% 55%); }
+.gg-ph.etat-en-cours { background: hsl(var(--h) 55% 62%); }
+.gg-ph.etat-en-retard { border: 2px solid var(--bad); }
+.gg-ph.etat-terminée { opacity: .45; }
+.gg-jour { position: absolute; top: 15px; width: 7px; height: 7px; border-radius: 50%; background: hsl(var(--h) 50% 50%); }
+.gg-groupe { padding: 6px 10px; background: var(--panel-alt); border-top: 1px solid var(--border); position: sticky; left: 0; }
+
+/* ---------- Plan de charge : colonnes par semaine, trait de capacité ---------- */
+.pc-graphe { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(26px, 1fr); gap: 4px; align-items: end; height: 180px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); overflow-x: auto; }
+.pc-col { display: flex; flex-direction: column; align-items: center; height: 100%; min-width: 0; }
+.pc-barres { position: relative; flex: 1; width: 100%; display: flex; align-items: flex-end; justify-content: center; gap: 2px; }
+.pc-b { width: 40%; border-radius: 2px 2px 0 0; min-height: 1px; }
+.pc-gantt { background: var(--info); }
+.pc-sur { background: var(--bad); }
+.pc-affecte { background: var(--ok); opacity: .75; }
+.pc-cap { position: absolute; left: 0; right: 0; height: 0; border-top: 2px dashed var(--text); opacity: .6; }
+.pc-lib { font-size: 11px; color: var(--muted); margin-top: 3px; font-variant-numeric: tabular-nums; }
+.pc-leg { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -2px; margin: 0 4px 0 10px; }
+.pc-leg-cap { display: inline-block; width: 16px; border-top: 2px dashed var(--text); vertical-align: 3px; margin: 0 4px 0 10px; }
