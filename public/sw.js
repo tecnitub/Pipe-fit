@@ -1,6 +1,6 @@
 // Service worker de l'appli téléphone : notifications du planning (Web Push), ouverture de l'appli
 // au bon écran quand on touche la notification, et dernière version de l'appli disponible sans réseau.
-const CACHE = 'pipefit-appli-v2';
+const CACHE = 'pipefit-appli-v3';
 // Installation : toute l'appli (page, styles, scripts, icônes) est copiée pour démarrer sans réseau sur le chantier
 self.addEventListener('install', e => e.waitUntil((async () => {
   const c = await caches.open(CACHE);

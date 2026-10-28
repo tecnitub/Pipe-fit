@@ -46,6 +46,13 @@ function prefillDepuisPF(doe) {
   if (['Terminé', 'Facturé', 'Clos'].includes(a.statut) || receptionDe(a)) si(doe.dates, 'fin', temps[temps.length - 1]);
   si(doe.dates, 'gpa', ajouterAns(doe.dates.reception, 1));
   // Documents du chantier : plans -> section 2, fiches techniques -> annexe B, notices -> 7.2
+  // Notes de calcul (application Études) : annexe C, fichier mis à jour à chaque nouvel indice
+  doe.notesCalcul = doe.notesCalcul || [];
+  (a.documents || []).filter(d => d.categorie === 'Note de calcul').forEach(d => {
+    const f = { src: 'pf', id: d.fichierId, nom: d.nom, mime: d.mime }, ex = doe.notesCalcul.find(x => x.pfDocId === d.id), libelle = `${d.nom.replace(/\.[a-z0-9]+$/i, '')}${d.indice ? ` — indice ${d.indice}` : ''}`;
+    if (!ex) { doe.notesCalcul.push({ id: uidD(), pfDocId: d.id, libelle, fichier: f }); n++; }
+    else if (ex.fichier.id !== d.fichierId) { Object.assign(ex, { libelle, fichier: f }); n++; }
+  });
   const deja = new Set([...doe.plans, ...doe.fiches, ...doe.notices].map(x => x.pfDocId).filter(Boolean));
   (a.documents || []).filter(d => !deja.has(d.id)).forEach(d => {
     const f = { src: 'pf', id: d.fichierId, nom: d.nom, mime: d.mime };

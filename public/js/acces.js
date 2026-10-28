@@ -9,7 +9,7 @@ const Acces = (() => {
     { id: 'ecrans', titre: 'Écrans et onglets du bureau', roles: ['charge'], elements: [['consultations', 'Achats › Consultations fournisseurs'], ['efactures', 'Achats › Factures reçues'], ['comptoir', 'Achats › Comptoir'],
       ['prixAchats', 'Achats › Historique des prix'], ['relances', 'Facturation › Relances'], ['tresorerie', 'Facturation › Trésorerie'], ['compta', 'Facturation › Comptabilité'], ['charges', 'Tableau par chargé d\'affaires']] },
     { id: 'compagnon', titre: 'Appli des compagnons (téléphone)', roles: ['atelier'], elements: [['pointage/heures', 'Heures'], ['pointage/planning', 'Planning'], ['pointage/chantiers', 'Chantiers et documents'],
-      ['pointage/rapports', 'Rapports'], ['releve', 'Prise de cotes tuyauterie'], ['epreuve', 'PV d\'épreuve hydraulique'], ['mes', 'PV de mise en service'], ['equilibrage', 'Relevé d\'équilibrage'], ['pointage/frais', 'Notes de frais'], ['pointage/comptoir', 'Achats au comptoir'], ['pointage/fluides', 'Fluides frigorigènes']] },
+      ['pointage/rapports', 'Rapports'], ['releve', 'Prise de cotes tuyauterie'], ['epreuve', 'PV d\'épreuve hydraulique'], ['mes', 'PV de mise en service'], ['equilibrage', 'Relevé d\'équilibrage'], ['pointage/frais', 'Notes de frais'], ['pointage/comptoir', 'Achats au comptoir'], ['pointage/fluides', 'Fluides frigorigènes'], ['pointage/calculs', 'Calculs de chantier (débit, perte de charge, vase, dilatation)']] },
   ];
   const ROLES = { charge: 'Chargés d\'affaires', atelier: 'Compagnons' };
   // Éléments masqués pour un compte : son réglage propre, sinon celui de son rôle ; rien pour l'administrateur
@@ -26,7 +26,7 @@ const Acces = (() => {
   }
   // Première adresse affichée (après une adresse masquée)
   function accueil(m, role) {
-    if (role === 'atelier') { const t = ['pointage/heures', 'pointage/rapports', 'pointage/chantiers', 'pointage/planning', 'pointage/frais', 'pointage/comptoir', 'pointage/fluides'].find(k => !m.includes(k)); return t ? (t === 'pointage/heures' ? 'pointage' : t) : 'parametres'; }
+    if (role === 'atelier') { const t = ['pointage/heures', 'pointage/rapports', 'pointage/chantiers', 'pointage/planning', 'pointage/frais', 'pointage/comptoir', 'pointage/fluides', 'pointage/calculs'].find(k => !m.includes(k)); return t ? (t === 'pointage/heures' ? 'pointage' : t) : 'parametres'; }
     const e = GROUPES[0].elements.find(([k]) => !m.includes(k));
     return e ? e[0] : 'parametres';
   }

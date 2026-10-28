@@ -991,8 +991,14 @@ function serveStatic(req, res, url) {
   try { rel = decodeURIComponent(url.pathname); } catch (e) { res.writeHead(400); return res.end(); }
   if (!['GET', 'HEAD'].includes(req.method)) { res.writeHead(405, { Allow: 'GET, HEAD' }); return res.end(); }
   if (rel === '/') rel = '/index.html';
+  // Moteur de calcul de l'application Études, partagé avec l'onglet « Calculs » de l'appli des compagnons
+  if (PARTAGES_ETUDES[rel]) return envoyerFichier(res, PARTAGES_ETUDES[rel]);
   const file = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR + path.sep)) { res.writeHead(403); return res.end(); }
+  envoyerFichier(res, file);
+}
+const PARTAGES_ETUDES = Object.fromEntries(['donnees.js', 'calculs.js'].map(f => [`/js/etudes/${f}`, path.join(__dirname, '..', 'etudes', 'public', 'js', f)]));
+function envoyerFichier(res, file) {
   fs.readFile(file, (err, buf) => {
     if (err) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Introuvable'); }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });

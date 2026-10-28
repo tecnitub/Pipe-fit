@@ -50,6 +50,17 @@ hydraulique en annexe F ; PV d'épreuve hydraulique, relevés d'équilibrage aé
 Les pièces correspondantes des listes de contrôle des sections 5 et 6 sont cochées (« Pipe-Fit »). Avec les plans,
 fiches techniques, notices et le PV de réception déjà repris, « Générer le DOE » produit le dossier complet en un clic.
 
+## Application Études (bureau d'études fluides)
+
+Application séparée dans `etudes/`, reliée à Pipe-Fit : voir [etudes/README.md](etudes/README.md).
+Notes de calcul CVC et tuyauterie industrielle : diamètres et pertes de charge (eau, eau glycolée, vapeur, air comprimé,
+gaines), HMT de pompe et ventilateur, vannes de régulation, vases d'expansion, bilan chauffage et climatisation d'un local
+(avec apports de process), schéma de principe hydraulique (P&ID) eau chaude / eau glacée, isolation, dilatation, épaisseur sous
+pression et portées entre supports, avec note de calcul PDF. `npm run start:etudes` la démarre sur le port 3200 ;
+`node etudes/build-demo.js` produit sa démonstration `dist/pipefit-etudes-demo.html`. Dans Pipe-Fit, l'onglet
+« 📐 Études » de chaque chantier ouvre ses études ; l'application Études y crée des devis brouillons à partir de son
+métré (bibliothèque de prix) et y dépose ses notes de calcul (catégorie « Note de calcul », reprise dans le DOE en annexe C).
+
 ## Demandes de prix, offres des fournisseurs et commandes
 
 - **Lignes de la consultation** : fournitures du devis du chantier pas encore commandées, d'un chiffrage depuis plan, de la
@@ -611,6 +622,13 @@ commande (tolérance 1 %), quantité au-delà de la livraison ou de la commande 
 non commandée (frais de port…), total des lignes différent du montant HT. Décision : **bon à payer** (avec le motif d'un
 écart accepté) ou **litige fournisseur**. Colonne « Rapprochement » dans la liste des factures.
 
+## Calculs de chantier sur le téléphone
+
+Onglet « Calculs » de l'appli des compagnons (masquable dans Paramètres → Affichage par accès) : débit ↔ puissance,
+perte de charge et diamètre conseillé d'un tube, vase d'expansion (volume, gonflage, remplissage), dilatation et bras
+flexible. Mêmes données et même moteur de calcul que l'application Études (`etudes/public/js/donnees.js` et
+`calculs.js`, servis en `js/etudes/`) ; disponibles sans réseau sur le chantier (copie du service worker).
+
 ## Achats au comptoir et relevé mensuel du fournisseur
 
 Matériel pris au magasin d'un négoce sans commande. Au comptoir, le compagnon donne le **n° de chantier** (affiché sur
@@ -770,6 +788,7 @@ public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
 public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js, securite-ui.js, produits.js, dossier-documents.js, fluides-ui.js, rapprochement-ui.js, agenda-ui.js, hors-ligne.js, offres-pdf.js, comptoir.js, prix-achats.js, epreuves-ui.js, essais-ui.js : écrans métier
 doe/               application DOE séparée (serveur, interface, génération du dossier PDF)
+etudes/            application Études séparée (calculs du bureau d'études fluides, notes de calcul PDF)
 installer/         installateur Windows (NSIS) : build.sh, PipeFitCRM.nsi, lanceurs CRM et DOE, service
 deploy/            pack de déploiement : pack.sh, Windows, Linux (systemd), Docker, Microsoft 365, guide HTML
 docs/              mode d'emploi d'installation

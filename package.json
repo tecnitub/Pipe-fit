@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server/server.js",
     "start:doe": "node --disable-warning=ExperimentalWarning doe/server.js",
+    "start:etudes": "node --disable-warning=ExperimentalWarning etudes/server.js",
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
   },
   "engines": {

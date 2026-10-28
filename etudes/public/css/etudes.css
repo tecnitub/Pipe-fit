@@ -1,0 +1,114 @@
+/* Pipe-Fit Études — complète la feuille de style commune de l'application DOE (charte TECNITUB) */
+:root { --ok-fond: #dcf3e2; --ok-texte: #1d6b31; --att-fond: #fff3d6; --att-texte: #7a4b00; --err-fond: #fde2e2; --err-texte: #9b1c1c; --retenu: #e3f0ff; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ok-fond: #183a24; --ok-texte: #8fdca6; --att-fond: #3d2f10; --att-texte: #f3cf7a; --err-fond: #451b1b; --err-texte: #f4a5a5; --retenu: #1d3150; } }
+:root[data-theme="dark"] { --ok-fond: #183a24; --ok-texte: #8fdca6; --att-fond: #3d2f10; --att-texte: #f3cf7a; --err-fond: #451b1b; --err-texte: #f4a5a5; --retenu: #1d3150; }
+.unite { color: var(--muted); font-size: 11.5px; }
+input.nombre { font-variant-numeric: tabular-nums; }
+.large { grid-column: 1 / -1; }
+.calc { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 16px; align-items: start; margin-bottom: 16px; }
+.calc-saisie { display: grid; gap: 12px; min-width: 0; }
+.calc-resultats { position: sticky; top: 10px; max-height: calc(100vh - 20px); overflow: auto; min-width: 0; }
+.calc-resultats h3 { margin-top: 14px; }
+.alerte { border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; font-size: 14px; }
+.alerte.ok { background: var(--ok-fond); color: var(--ok-texte); }
+.alerte.attention { background: var(--att-fond); color: var(--att-texte); }
+.alerte.erreur { background: var(--err-fond); color: var(--err-texte); }
+table.resume { width: 100%; border-collapse: collapse; margin: 8px 0; }
+table.resume th { text-align: left; font-weight: 500; color: var(--muted); padding: 5px 8px 5px 0; border-bottom: 1px solid var(--bord); font-size: 13.5px; width: 52%; }
+table.resume td { padding: 5px 0; border-bottom: 1px solid var(--bord); font-weight: 600; font-variant-numeric: tabular-nums; }
+table.liste.compact td, table.liste.compact th { padding: 4px 7px; font-size: 13px; font-variant-numeric: tabular-nums; }
+table.liste tr.retenu td { background: var(--retenu); font-weight: 700; }
+table.liste tr.total td { font-weight: 700; border-top: 2px solid var(--bord); }
+table.liste tr.cliquable { cursor: pointer; }
+table.liste tr.cliquable:hover td { background: var(--bleu-clair); }
+.defile-x { overflow-x: auto; max-width: 100%; }
+table.edit td { padding: 3px 4px; }
+table.edit input, table.edit select { min-width: 70px; }
+table.edit select { min-width: 150px; }
+table.edit td:first-child input { min-width: 160px; }
+details.hypotheses { margin-top: 12px; font-size: 13px; color: var(--muted); }
+details.hypotheses summary { cursor: pointer; color: var(--bleu); font-weight: 600; }
+.types { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 10px; }
+.carte.type { display: flex; gap: 12px; align-items: flex-start; text-decoration: none; color: inherit; text-align: left; font: inherit; padding: 12px 14px; }
+.carte.type:hover { border-color: var(--bleu); filter: none; }
+.carte.type strong, .note-lien strong { display: block; }
+.carte.type .petit { display: block; margin-top: 2px; }
+.ico { font-size: 24px; line-height: 1; flex: 0 0 auto; }
+.ico-titre { font-size: 22px; }
+button.carte.type { background: var(--panneau); color: var(--texte); border: 1px solid var(--bord); border-radius: 12px; width: 100%; }
+.modal-box .types { grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); }
+.notes { display: grid; gap: 8px; }
+.carte.note { display: flex; align-items: center; gap: 12px; padding: 10px 14px; flex-wrap: wrap; }
+.note-lien { display: flex; gap: 12px; align-items: center; text-decoration: none; color: inherit; flex: 1 1 300px; min-width: 0; }
+.note-lien > span:last-child { display: grid; min-width: 0; }
+.note-actions { display: flex; }
+.badge.erreur { background: var(--err-fond); color: var(--err-texte); }
+.titre-note { font-size: 17px; font-weight: 700; max-width: 640px; flex: 1 1 260px; }
+.titre-etude { overflow-wrap: anywhere; }
+.champ-libre { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.deux-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 12px; }
+details.carte summary { cursor: pointer; }
+details.carte[open] summary { margin-bottom: 8px; }
+section { margin-bottom: 18px; }
+@media (max-width: 960px) {
+  .calc { grid-template-columns: 1fr; }
+  .calc-resultats { position: static; max-height: none; }
+}
+
+/* Métré et chiffrage */
+.modal-box.large { width: min(1180px, 100%); }
+.metre { max-height: 58vh; }
+.metre input.qte { width: 80px; min-width: 70px; }
+.metre select { max-width: 360px; }
+
+/* Comparaison de variantes */
+table.comparaison { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table.comparaison th, table.comparaison td { border-bottom: 1px solid var(--bord); padding: 6px 8px; text-align: left; vertical-align: top; }
+table.comparaison thead th { background: #1F3864; color: #fff; }
+table.comparaison tbody th { color: var(--muted); font-weight: 500; width: 24%; }
+table.comparaison tr.diff td { background: var(--att-fond); color: var(--att-texte); font-weight: 600; }
+table.comparaison tr.synthese td { font-weight: 700; }
+.note-actions .case { margin-right: 8px; color: var(--muted); }
+.doe-doc.ndc table.comparaison tr.diff td { background: #fff3d6; font-weight: 700; }
+
+/* Valeurs reprises d'une autre note */
+.bandeau-lien { background: var(--bleu-clair); color: var(--bleu); border-radius: 8px; padding: 8px 12px; margin: 0 0 12px; font-size: 13.5px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+input[data-verrou], select[data-verrou] { background: var(--bleu-clair); color: var(--bleu); border-style: dashed; opacity: 1; }
+
+/* Onglets du panneau des résultats (réglementation, régulation) */
+.onglets { display: flex; gap: 4px; border-bottom: 2px solid var(--bord); margin: -4px 0 12px; flex-wrap: wrap; }
+.onglet { background: transparent; color: var(--muted); border-radius: 8px 8px 0 0; padding: 7px 14px; font-weight: 600; margin-bottom: -2px; border-bottom: 2px solid transparent; }
+.onglet:hover { color: var(--bleu); filter: none; }
+.onglet.actif { color: var(--bleu); border-bottom-color: var(--bleu); }
+ul.exigences { list-style: none; padding: 0; margin: 4px 0 10px; display: grid; gap: 8px; }
+ul.exigences li { font-size: 13.5px; line-height: 1.45; padding-left: 10px; border-left: 3px solid var(--bord); }
+ul.exigences li.obligatoire { border-left-color: var(--rouge); }
+ul.exigences li.conseil { border-left-color: var(--alerte); }
+ul.exigences .ref { display: block; color: var(--muted); font-size: 12px; font-style: italic; }
+.badge.obligatoire { background: var(--err-fond); color: var(--err-texte); }
+.badge.conseil { background: var(--att-fond); color: var(--att-texte); }
+.badge.info { background: var(--bleu-clair); color: var(--bleu); }
+ul.af { padding-left: 18px; font-size: 13.5px; display: grid; gap: 6px; }
+
+/* Schéma de principe : dessin sur fond blanc (lisible en thème sombre), défilement horizontal si large */
+.schema-carte { margin-bottom: 16px; }
+.schema-carte .barre { margin-bottom: 6px; }
+.schema { overflow: auto; background: #fff; border: 1px solid var(--bord); border-radius: 8px; }
+.schema svg { display: block; max-width: none; height: auto; }
+
+/* Note de calcul (pages mises en page par le moteur PDF) */
+.doe-doc.ndc img.schema-pdf { width: 100%; height: auto; border: 1px solid #b7c0d0; margin: 4px 0 10px; }
+.doe-doc.ndc ul.exigences li.obligatoire strong { color: #9b1c1c; }
+.doe-doc.ndc ul.exigences li em { color: #6b7280; }
+.doe-doc.ndc h4 { color: #1F3864; font-size: 12.5px; margin: 10px 0 4px; }
+.doe-doc.ndc .sous { font-weight: 700; font-size: 12px; margin: 10px 0 2px; color: #1F3864; }
+.doe-doc.ndc table.tn td, .doe-doc.ndc table.tn th { font-size: 10.5px; padding: 3px 5px; }
+.doe-doc.ndc tr.retenu td { background: #e3f0ff; font-weight: 700; }
+.doe-doc.ndc tr.total td { font-weight: 700; background: #eef2f8; }
+.doe-doc.ndc ul { font-size: 11.5px; }
+.doe-doc.ndc .conclusions li.ok { color: #1d6b31; }
+.doe-doc.ndc .conclusions li.attention { color: #7a4b00; }
+.doe-doc.ndc .conclusions li.erreur { color: #9b1c1c; font-weight: 700; }
+.doe-doc.garde.ndc .garde-logo { width: 300px; margin: 0 auto 24px; }
+.doe-doc.garde.ndc .t2, .doe-doc.garde.ndc .visa, .doe-doc.garde.ndc .sommaire, .doe-doc.garde.ndc h3, .doe-doc.garde.ndc .petit { text-align: left; }
+.doe-doc.ndc .sommaire td { border: 0; border-bottom: 1px dotted #b7c0d0; }

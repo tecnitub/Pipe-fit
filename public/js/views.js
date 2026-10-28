@@ -540,6 +540,7 @@ const settingsFields = [
   { key: 'seuilHS50', label: 'Heures sup. majorées à 50 % au-delà de (h/semaine)', type: 'number', step: '0.5' },
   { key: 'montantPanier', label: 'Montant du panier repas (€)', type: 'number', step: '0.01' },
   { key: 'doeUrl', label: "Adresse de l'application DOE (vide : même serveur, port 3100)", type: 'url' },
+  { key: 'etudesUrl', label: "Adresse de l'application Études (vide : même serveur, port 3200)", type: 'url' },
 ];
 const userFields = [
   { key: 'nom', label: 'Nom' },

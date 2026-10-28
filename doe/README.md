@@ -13,6 +13,7 @@ selon le plan de classement TECNITUB, puis générer le dossier complet en un se
   - documents du chantier : plans → section 2 / annexe A, fiches techniques → annexe B, notices → 7.2 ;
   - matériel du devis accepté et des commandes → équipements de la section 3 (au choix, avec la famille proposée) ;
   - PV de réception et réserves → annexe R.
+  - notes de calcul déposées par l'application Études (catégorie « Note de calcul ») → annexe C, fichier mis à jour à chaque nouvel indice.
   - PV signés dans Pipe-Fit pour le chantier, mis en page comme dans Pipe-Fit : PV de mise en service, fiches
     fluides de mise en service (Cerfa) et équilibrages hydrauliques → annexe F ; PV d'épreuve hydraulique, équilibrages
     aérauliques et autres fiches fluides → annexe G. Les pièces des listes de contrôle 5.x et 6.x qu'ils couvrent sont

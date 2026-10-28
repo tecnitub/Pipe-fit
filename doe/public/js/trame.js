@@ -61,7 +61,7 @@ function doeVide(affaireId, config) {
     affaireId, statut: 'En cours', lot: config.lotDefaut || '', discipline: config.disciplineDefaut || 'GÉNIE CLIMATIQUE / PLOMBERIE', operation: '', adresse: '', phase: 'Phase unique',
     phasage: 'Travaux réalisés en une phase unique.', intervenants: {}, affaireBet: '', cctp: { indice: '', date: '', dossier: '', bet: '' },
     dates: { debut: '', fin: '', reception: '', gpa: '' }, indice: 'A', indiceLib: 'Version initiale', historique: [],
-    familles: [], plans: [], equipements: [], fiches: [], controles: {}, maintenance: [], notices: [], pieces: [], formation: TRAME.formation.map(f => [...f]),
+    familles: [], plans: [], equipements: [], fiches: [], controles: {}, maintenance: [], notices: [], notesCalcul: [], pieces: [], formation: TRAME.formation.map(f => [...f]),
     garantiesConstructeurs: [], signatures: { date: '' }, pf: {},
   };
 }
