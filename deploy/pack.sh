@@ -9,7 +9,8 @@ NOM="PipeFit-Pack-$VERSION"
 OUT="dist/$NOM"
 rm -rf "$OUT" "dist/$NOM.zip"
 mkdir -p "$OUT"
-cp -r server public doe deploy docs package.json Dockerfile README.md "$OUT/"
+npm ci --omit=dev --no-audit --no-fund >/dev/null
+cp -r server public doe deploy docs node_modules package.json package-lock.json Dockerfile README.md "$OUT/"
 rm -rf "$OUT/doe/data" "$OUT/deploy/pack.sh"
 node deploy/guide-html.js docs/INSTALLATION.md "$OUT/docs/guide-installation.html" >/dev/null
 if [ -f "dist/PipeFitCRM-Setup-$VERSION.exe" ]; then cp "dist/PipeFitCRM-Setup-$VERSION.exe" "$OUT/"

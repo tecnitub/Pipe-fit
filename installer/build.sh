@@ -22,7 +22,9 @@ fi
 rm -rf build
 mkdir -p build/node build/app
 cp "$NODE_EXE" build/node/node.exe
-cp -r ../server ../public ../doe ../package.json build/app/
+# Modules de l'application (assistant : SDK Anthropic, JavaScript pur, identique sous Windows)
+(cd .. && npm ci --omit=dev --no-audit --no-fund)
+cp -r ../server ../public ../doe ../package.json ../node_modules build/app/
 rm -rf build/app/doe/data
 
 makensis -V2 -DVERSION="$VERSION" PipeFitCRM.nsi

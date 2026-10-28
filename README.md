@@ -641,6 +641,21 @@ article montre les prix par fournisseur et chaque achat (date, pièce, chantier)
 factures fournisseurs (prix réellement payés ; la commande n'est alors pas recomptée) et relevés du comptoir. Frais de
 port exclus. Export Excel (articles, achats, fournisseurs).
 
+## Assistant (IA)
+
+Bouton ✨ sur chaque écran (et l'écran « Assistant », sur ordinateur et téléphone, avec dictée) : on confie une tâche en
+langage courant, l'assistant (Claude, API Anthropic) utilise les actions de Pipe-Fit avec les droits de la personne :
+
+- **Bureau** : retrouve chantier, fournisseur, articles et derniers prix payés ; **prépare la commande ou la demande de prix
+  en brouillon** (carte « Ouvrir et vérifier » / « Valider et envoyer… », qui ouvre l'envoi habituel) ; point sur un chantier
+  (heures, commandes, demandes de prix, prochaines affectations) ; planning d'une personne.
+- **Compagnons**, uniquement les actions cochées dans **Paramètres → Assistant** : demande de matériel (brouillon transmis au
+  chargé d'affaires du chantier par notification, sans prix), son planning, infos du chantier, signalement au bureau,
+  recherche d'articles.
+- Rien n'est envoyé sans validation ; chaque demande et ce qui a été préparé sont inscrits à l'historique.
+- Réglages (administrateur) : clé API (jamais renvoyée aux navigateurs, ou variable `ANTHROPIC_API_KEY`), modèle
+  (Claude Opus 5.5 par défaut), activation, coches des compagnons. Démonstration : assistant simulé, sans IA.
+
 ## Étude d'exécution et DOE à partir du CCTP
 
 Le CCTP déposé dans les documents d'un chantier (catégorie « CCTP », reconnue d'après le nom du fichier) est repris par

@@ -587,6 +587,7 @@ Views.parametres = () => {
   ${reglagesCompagnonCarte()}
   ${reglagesDossierCarte()}
   ${reglagesReseauCarte()}
+  ${reglagesAssistantCarte()}
 
   <h2>Comptes utilisateurs</h2>
   <p class="muted">Administrateur : tout. Chargé d'affaires : contacts, devis, chantiers, commandes, factures, planning, RH (pas de suppression de facture). Opérateur : pointage de ses propres heures et consultation du planning. Liez chaque compte opérateur à sa fiche dans « Équipe ».</p>
@@ -692,6 +693,7 @@ Views.parametres.bind = root => {
   bindAcces(root);
   bindReglagesDossier(root);
   bindReglagesReseau(root);
+  bindReglagesAssistant(root);
   const loadAccounts = () => api('GET', '/api/accounts').then(list => {
     const t = root.querySelector('#accounts');
     if (!t) return;

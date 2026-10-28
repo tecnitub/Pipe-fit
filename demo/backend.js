@@ -2,7 +2,7 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v48';
+  const KEY = 'pipefit-crm-demo-v49';
   const ME_KEY = 'pipefit-crm-demo-me';
   const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications', 'habilitations', 'materiels', 'missions', 'produits', 'equipementsFrigo', 'fichesFluides', 'bouteilles', 'enlevements', 'epreuves', 'misesEnService', 'equilibrages', 'releves'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4], fichesFluides: ['numero', 'FI', 4], epreuves: ['numero', 'EP', 4], misesEnService: ['numero', 'MS', 4], equilibrages: ['numero', 'EQ', 4], releves: ['numero', 'RC', 4] };
@@ -32,6 +32,17 @@
   try { db = JSON.parse(storage.get(KEY)); } catch (e) { db = null; }
   if (!db || !db.settings) db = fresh();
   const save = () => storage.set(KEY, JSON.stringify(db));
+  // Assistant de la démonstration : actif par défaut, compagnons ouverts aux demandes de matériel et au planning
+  const DROITS_ASSISTANT = [['materiel', 'Demander du matériel (demande de commande transmise au bureau, à valider)'], ['planning', 'Consulter son planning'],
+    ['chantier', 'Consulter les informations du chantier (adresse, contact, consignes)'], ['signaler', 'Signaler un problème ou une réserve au bureau'], ['articles', 'Rechercher un article dans la bibliothèque (sans les prix)']];
+  const configAssistant = () => db.assistant || { actif: true, modele: 'claude-opus-5-5', compagnons: { actif: true, droits: { materiel: true, planning: true, signaler: true } } };
+  const accesAssistant = a => {
+    const c = configAssistant();
+    if (!c.actif) return { actif: false, droits: [] };
+    if (['admin', 'charge'].includes(a.role)) return { actif: true, bureau: true, droits: ['bureau'] };
+    const d = c.compagnons.actif ? DROITS_ASSISTANT.map(x => x[0]).filter(k => c.compagnons.droits[k]) : [];
+    return { actif: d.length > 0, bureau: false, droits: d };
+  };
   // Boîte des offres de la démonstration : active par défaut pour montrer le transfert d'offres
   const offresDemo = () => ((db.efconfig || {}).offres || { actif: true, adresse: 'offres@tecnitub.example', dossier: 'Offres traitées' });
   save();
@@ -138,7 +149,31 @@
     const p = path.replace(/^\/api\/?/, '').split('/').filter(Boolean);
     const acc = me();
     if (p[0] === 'setup') return [200, { needed: false, local: true }];
-    if (p[0] === 'me' && !p[1]) return [200, { ...acc, m365: !!(db.m365 || {}).actif, prefs: (db.prefs || {})[acc.id] || {}, adressesEnvoi: db.adressesEnvoi || {} }];
+    if (p[0] === 'me' && !p[1]) return [200, { ...acc, m365: !!(db.m365 || {}).actif, prefs: (db.prefs || {})[acc.id] || {}, adressesEnvoi: db.adressesEnvoi || {}, assistant: accesAssistant(acc) }];
+    // Assistant simulé (sans IA) : mêmes droits et mêmes réglages que le vrai
+    if (p[0] === 'assistant') {
+      const cfg = configAssistant();
+      if (p[1] === 'config') {
+        if (acc.role !== 'admin') return [403, { error: 'Réservé à l\'administrateur' }];
+        if (method === 'PUT') { db.assistant = { actif: !!body.actif, modele: body.modele || cfg.modele, compagnons: { actif: !!(body.compagnons || {}).actif, droits: { ...((body.compagnons || {}).droits || {}) } } }; save(); }
+        const c = configAssistant();
+        return [200, { ...c, cleDefinie: false, cleEnv: false, modeles: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'], droitsCompagnon: DROITS_ASSISTANT }];
+      }
+      if (p[1] === 'conversations') return [200, p[2] ? (db.assistantConv || {})[p[2]] || {} : []];
+      if (p[1] === 'message' && method === 'POST') {
+        const ac = accesAssistant(acc);
+        if (!ac.actif) return [403, { error: 'L\'assistant n\'est pas activé pour votre compte (Paramètres → Assistant).' }];
+        db.assistantConv = db.assistantConv || {};
+        const conv = db.assistantConv[body.conversationId] || { id: 'cv' + DemoSeed.uid(), fil: [] };
+        conv.fil.push({ role: 'user', texte: String(body.texte || ''), date: new Date().toISOString() });
+        const creer = (col, obj) => { const rec = { ...obj, id: col.slice(0, 2) + DemoSeed.uid(), _v: 1, _at: new Date().toISOString(), _by: `Assistant (${acc.login})` }; const n = NUMBERING[col]; if (n) rec[n[0]] = nextNumber(col, rec); db[col].push(rec); return rec; };
+        const notifier = obj => db.notifications.push({ ...obj, id: 'nt' + DemoSeed.uid(), _v: 1, _at: new Date().toISOString(), _by: 'Pipe-Fit' });
+        const r = AssistantSimule.repondre({ db, acc, acces: ac, texte: String(body.texte || ''), creer, notifier });
+        conv.fil.push({ role: 'assistant', texte: r.texte, actions: r.actions, date: new Date().toISOString() });
+        db.assistantConv[conv.id] = conv; save();
+        return [200, { conversationId: conv.id, fil: conv.fil, actions: r.actions }];
+      }
+    }
     if (p[0] === 'me' && p[1] === 'preferences') { db.prefs = { ...(db.prefs || {}), [acc.id]: body || {} }; save(); return [200, body || {}]; }
     if (p[0] === 'me' && p[1] === 'password') return [200, { ok: true }];
     if (p[0] === 'logout' || p[0] === 'login') return [200, acc];

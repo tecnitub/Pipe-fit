@@ -152,6 +152,8 @@ const DOSSIER = DossierDocuments.creer({ DB, db, broadcast, uid, TYPES: TYPES_DO
   notifier: (avant, apres) => NOTIFS.documentsModifies({ login: 'Répertoire serveur', nom: 'Répertoire serveur' }, avant, apres) });
 // Copie des pièces jointes sur le réseau (sens unique) et sauvegarde quotidienne de la base
 const PJRESEAU = require('./pj-reseau').creer({ DB, db, racineDocuments: () => DOSSIER.config().chemin });
+// Assistant (Claude) : tâches confiées en langage courant, préparées en brouillon avec les droits de la personne
+const ASSISTANT = require('./assistant').creer({ DB, db, broadcast, notifier: obj => NOTIFS.enregistrer(obj) });
 const SAUVEGARDE = require('./sauvegarde').creer({ DB, db, dossierDefaut: path.join(path.dirname(DB_FILE), 'Sauvegardes'),
   autres: [{ prefixe: 'doe', fichier: process.env.DOE_DB_FILE || path.join(__dirname, '..', 'doe', 'data', 'doe.db') }] });
 
@@ -372,7 +374,7 @@ async function api(req, res, url) {
     return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(req, '', 0) });
   }
   if (p[0] === 'me' && !p[1] && method === 'GET') return send(res, 200, { ...publicAccount(acc), m365: m365Pret(), prefs: DB.getConfig(db, `prefs:${acc.id}`) || {},
-    ...(['admin', 'charge'].includes(acc.role) ? { adressesEnvoi: DB.getConfig(db, 'mail-adresses') || {} } : {}) });
+    ...(['admin', 'charge'].includes(acc.role) ? { adressesEnvoi: DB.getConfig(db, 'mail-adresses') || {} } : {}), assistant: ASSISTANT.acces(acc) });
   // Préférences d'affichage propres au compte (colonnes des tableaux : affichées, largeurs), sur tous ses appareils
   if (p[0] === 'me' && p[1] === 'preferences' && method === 'PUT') {
     const b = await readBody(req);
@@ -490,6 +492,23 @@ async function api(req, res, url) {
       return send(res, 200, { config: c, ...DOSSIER.etat() });
     }
     return send(res, 200, { config: DOSSIER.config(), ...DOSSIER.etat(), sep: path.sep });
+  }
+
+  // Assistant : réglages (administrateur), conversations et messages (comptes autorisés)
+  if (p[0] === 'assistant') {
+    if (p[1] === 'config') {
+      if (acc.role !== 'admin') return fail(res, 403, 'Réservé à l\'administrateur');
+      if (method === 'GET') return send(res, 200, ASSISTANT.config());
+      if (method === 'PUT') {
+        try { const c = ASSISTANT.enregistrerConfig(await readBody(req)); DB.audit(db, acc.login, 'réglage de l\'assistant', null, null, `${c.actif ? 'activé' : 'désactivé'} · ${c.modele} · compagnons ${c.compagnons.actif ? 'oui' : 'non'}`); return send(res, 200, c); }
+        catch (e) { return fail(res, 400, e.message); }
+      }
+    }
+    if (p[1] === 'conversations' && method === 'GET') return send(res, 200, p[2] ? (ASSISTANT.conversation(acc, p[2]) || {}) : ASSISTANT.liste(acc));
+    if (p[1] === 'message' && method === 'POST') {
+      try { return send(res, 200, await ASSISTANT.message(acc, await readBody(req))); }
+      catch (e) { return fail(res, e.status || 500, e.message); }
+    }
   }
 
   // Réseau : pièces jointes recopiées dans l'arborescence du serveur, sauvegardes de la base (administrateur)

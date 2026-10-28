@@ -259,6 +259,24 @@ calendrier Outlook de la personne.
 ✅ Envoyer un devis test (depuis la boîte prévue), une commande test (depuis `achats@`), transférer un e-mail
 d'offre à `offres@` avec le n° de consultation dans l'objet : il apparaît dans la consultation sous 2 minutes.
 
+### 5.6 Assistant (IA)
+
+L'assistant prépare le travail à partir d'une demande écrite ou dictée (« commande chez Téréva pour Rumilly : 20 coudes
+3D inox DN50, livraison jeudi »). Il retrouve le chantier, le fournisseur, les articles et les derniers prix, puis crée la
+commande ou la demande de prix **en brouillon** : rien ne part sans validation.
+
+1. Créer un compte sur la console Anthropic (console.anthropic.com), ajouter un moyen de paiement et créer une **clé API**.
+2. **Paramètres → Assistant** : coller la clé, choisir le modèle (Claude Opus 5.5 recommandé), cocher « Activer ».
+   Variante : variable d'environnement `ANTHROPIC_API_KEY` sur le serveur.
+3. **Compagnons** : cocher « Ouvrir l'assistant aux compagnons » puis les actions permises (demande de matériel au bureau,
+   planning, infos du chantier, signalement, recherche d'articles). Une demande de matériel arrive au chargé d'affaires
+   du chantier, qui choisit le fournisseur, valide et envoie.
+4. Le serveur doit joindre `api.anthropic.com` en HTTPS. Chaque demande est facturée par Anthropic (selon le modèle et
+   la longueur de l'échange) ; les éléments utiles à la demande (chantier, articles, prix) sont transmis au service.
+
+✅ Bouton ✨ en bas à droite : « Commande chez … pour … : 10 … » prépare un brouillon ; « Valider et envoyer » ouvre l'envoi
+habituel. Un compagnon test obtient son planning et transmet une demande de matériel.
+
 ## 6. Répertoire réseau : documents et pièces jointes
 
 Pipe-Fit écrit tout dans une arborescence lisible depuis l'explorateur Windows :
@@ -328,6 +346,7 @@ ouvrir quelques devis et factures.
 - [ ] Une facture fournisseur envoyée à `factures@` arrive dans Factures reçues
 - [ ] Une offre transférée à `offres@` se range dans sa consultation
 - [ ] Le planning apparaît dans Outlook et dans l'agenda du téléphone
+- [ ] L'assistant prépare une commande en brouillon ; un compagnon transmet une demande de matériel
 - [ ] Un plan déposé dans l'appli apparaît dans le partage réseau, et inversement
 - [ ] Les pièces jointes sont recopiées dans `Pièces jointes`
 - [ ] Une sauvegarde a été faite et restaurée sur un poste de test
@@ -347,6 +366,7 @@ récent ; Docker, `docker compose up -d --build`. Les données et les réglages 
 | « Boîte aux lettres introuvable » | adresse de la boîte partagée exacte, licence ou boîte partagée créée |
 | Répertoire « inaccessible » | NAS monté, compte de service avec droits d'écriture, chemin complet |
 | Sauvegarde « impossible » | même chose pour le dossier des sauvegardes ; place disponible |
+| « Clé API Anthropic refusée » | clé recopiée en entier, compte Anthropic approvisionné, Paramètres → Assistant |
 | Le secret Microsoft 365 a expiré | relancer `configurer-microsoft365.ps1` (nouveau secret), le saisir dans Paramètres |
 
 Journaux : Windows `C:\ProgramData\PipeFitCRM\logs\` ; Linux `journalctl -u pipefit` ; Docker `docker compose logs`.
@@ -366,5 +386,6 @@ Les actions importantes (envois, sauvegardes, réglages) sont aussi dans l'**His
 | `TRUST_PROXY` | reverse proxy sur une autre machine | — |
 | `ADMIN_PASSWORD` | crée le compte `admin` au premier démarrage | — |
 | `SEED_DEMO` | `0` : base vide | `1` |
+| `ANTHROPIC_API_KEY` | clé de l'assistant (sinon : Paramètres → Assistant) | — |
 | `DOE_PORT`, `DOE_DB_FILE` | application DOE | 3100, `doe/data/doe.db` |
 | `PIPEFIT_URL`, `PIPEFIT_PUBLIC_URL` | adresse du CRM vue par le DOE | `http://localhost:3000` |

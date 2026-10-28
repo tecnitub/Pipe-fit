@@ -64,8 +64,11 @@ if systemctl is-active --quiet pipefit 2>/dev/null; then
   [ -f "$DB" ] && runuser -u pipefit -- node -e "const {DatabaseSync}=require('node:sqlite');new DatabaseSync(process.argv[1]).exec(\"VACUUM INTO '\"+process.argv[2]+\"'\")" "$DB" "$DB.avant-mise-a-jour-$(date +%Y%m%d-%H%M).db" 2>/dev/null && ok "base copiée avant mise à jour"
   systemctl stop pipefit-doe pipefit 2>/dev/null || true
 fi
-rm -rf /opt/pipefit/server /opt/pipefit/public /opt/pipefit/doe
+rm -rf /opt/pipefit/server /opt/pipefit/public /opt/pipefit/doe /opt/pipefit/node_modules
 cp -r "$PACK/server" "$PACK/public" "$PACK/doe" "$PACK/package.json" /opt/pipefit/
+# Modules (assistant) : fournis par le pack, sinon installés depuis le registre npm
+if [ -d "$PACK/node_modules" ]; then cp -r "$PACK/node_modules" /opt/pipefit/
+else cp "$PACK/package-lock.json" /opt/pipefit/ 2>/dev/null; (cd /opt/pipefit && npm ci --omit=dev --no-audit --no-fund); fi
 rm -rf /opt/pipefit/doe/data
 chown -R root:root /opt/pipefit; chmod -R a+rX /opt/pipefit
 ok "application copiée dans /opt/pipefit ($(node -p "require('/opt/pipefit/package.json').version"))"

@@ -31,7 +31,7 @@ const page = [
 
 // Le faux serveur doit être chargé avant l'application (après ui.js pour les dialogues).
 const withBackend = (inlineScript("window.OCR_MODELE_JS = 'fra-traineddata.js';") + '\n' + page).replace(inlineScript(read('public/js/store.js')),
-  inlineScript(read('demo/backend.js')) + '\n' + inlineScript(read('public/js/store.js')));
+  inlineScript(read('demo/assistant-simule.js')) + '\n' + inlineScript(read('demo/backend.js')) + '\n' + inlineScript(read('public/js/store.js')));
 
 // Lecture des tickets (OCR) : fichiers publiés à côté de la page dans vendor/tesseract/ ; le modèle .gz, que l'hébergement
 // de la démo ne sert pas, devient un script (window.OCR_MODELE_B64)
