@@ -1,4 +1,4 @@
-# Caddy : HTTPS automatique (Let's Encrypt) devant Pipe-Fit et l'application DOE.
+# Caddy : HTTPS automatique (Let's Encrypt) devant Pipe-Fit et les applications DOE et Études.
 # Prérequis : les noms DNS pointent vers l'adresse publique du serveur, ports 80 et 443 redirigés par la box / le pare-feu.
 # Linux : /etc/caddy/Caddyfile puis « sudo systemctl reload caddy ».  Windows : caddy.exe run --config Caddyfile
 crm.votre-domaine.fr {
@@ -9,4 +9,9 @@ crm.votre-domaine.fr {
 doe.votre-domaine.fr {
 	encode gzip
 	reverse_proxy localhost:3100
+}
+
+etudes.votre-domaine.fr {
+	encode gzip
+	reverse_proxy localhost:3200
 }

@@ -6,9 +6,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
-const MOTIF = /^(?:pipefit|doe)-(\d{4}-\d{2}-\d{2})_(\d{4})\.db$/;
+const MOTIF = /^(?:pipefit|doe|etudes)-(\d{4}-\d{2}-\d{2})_(\d{4})\.db$/;
 
-// autres : bases sauvegardées avec celle de Pipe-Fit (application DOE), [{ prefixe, fichier }]
+// autres : bases sauvegardées avec celle de Pipe-Fit (applications DOE et Études), [{ prefixe, fichier }]
 function creer({ DB, db, dossierDefaut, autres = [] }) {
   const etat = { dernier: null, fichier: '', taille: 0, duree: 0, erreur: '', enCours: false };
   let enCours = null;
@@ -52,7 +52,7 @@ function creer({ DB, db, dossierDefaut, autres = [] }) {
           v.prepare('SELECT COUNT(*) n FROM records').get();
         } finally { v.close(); }
         fs.renameSync(tmp, f);
-        // Bases associées (application DOE) : même copie vérifiée, si elles existent sur ce serveur
+        // Bases associées (applications DOE et Études) : même copie vérifiée, si elles existent sur ce serveur
         for (const a of autres) {
           if (!fs.existsSync(a.fichier)) continue;
           const fa = path.join(c.chemin, nom.replace(/^pipefit-/, `${a.prefixe}-`)), ta = `${fa}.part`;

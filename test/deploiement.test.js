@@ -37,3 +37,21 @@ test('PJ_DIR et BACKUP_DIR imposent les dossiers (réglage des Paramètres ignor
   const pj = require('../server/pj-reseau').creer({ DB, db, racineDocuments: () => path.join(path.sep, 'docs') }).config();
   assert.deepStrictEqual([pj.actif, pj.chemin], [false, path.resolve('/ailleurs')]);
 });
+
+test('application Études dans tous les modes d\'installation (pack, Linux, Docker, Windows, sauvegarde)', () => {
+  const lire = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+  assert.match(lire('deploy/pack.sh'), /cp -r server public doe etudes /);
+  assert.match(lire('deploy/linux/pipefit-etudes.service'), /\/opt\/pipefit\/etudes\/server\.js/);
+  const inst = lire('deploy/linux/installer.sh');
+  assert.ok(inst.includes('"$PACK/etudes"') && inst.includes('pipefit-etudes.service') && inst.includes('--domaine-etudes'));
+  assert.match(lire('deploy/linux/pipefit.env.exemple'), /^ETUDES_DB_FILE=/m);
+  assert.match(lire('deploy/docker/docker-compose.yml'), /etudes\/server\.js/);
+  assert.match(lire('deploy/docker/Caddyfile'), /reverse_proxy etudes:3200/);
+  assert.match(lire('Dockerfile'), /COPY etudes \.\/etudes/);
+  assert.match(lire('installer/build.sh'), /\.\.\/etudes /);
+  assert.match(lire('installer/PipeFitCRM.nsi'), /files\/start-etudes\.cmd/);
+  assert.match(lire('installer/files/service.ps1'), /start-etudes\.cmd/);
+  assert.match(lire('installer/files/start-etudes.cmd'), /app\\etudes\\server\.js/);
+  assert.ok(lire('installer/files/start-etudes.cmd').includes('\r\n'), 'fichier de commandes Windows en CRLF');
+  assert.match(lire('server/server.js'), /prefixe: 'etudes', fichier: process\.env\.ETUDES_DB_FILE/);
+});

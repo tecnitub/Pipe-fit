@@ -6,7 +6,7 @@
 #   2. partage réseau du dossier des documents pour les postes du bureau (droits lecture / écriture) ;
 #   3. certificat HTTPS de l'entreprise (.pfx) pour l'appli des compagnons et l'accès extérieur ;
 #   4. compte de service (obligatoire si les dossiers sont sur un NAS) ;
-#   5. écriture de C:\ProgramData\PipeFitCRM\config.cmd, puis redémarrage de Pipe-Fit et de l'application DOE.
+#   5. écriture de C:\ProgramData\PipeFitCRM\config.cmd, puis redémarrage de Pipe-Fit et des applications DOE et Études.
 #
 # Exemples :
 #   .\configurer-serveur.ps1                               (questions posées une par une)
@@ -111,7 +111,7 @@ if (-not $CompteService -and ($surReseau -or -not $SansQuestion)) { $CompteServi
 if ($CompteService) {
   $cred = Get-Credential -UserName $CompteService -Message 'Mot de passe du compte de service Pipe-Fit'
   icacls $CrmHome /grant "$($CompteService):(OI)(CI)M" /T /Q | Out-Null
-  foreach ($t in @('PipeFitCRM', 'PipeFitDOE')) {
+  foreach ($t in @('PipeFitCRM', 'PipeFitDOE', 'PipeFitEtudes')) {
     if (Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue) {
       Set-ScheduledTask -TaskName $t -User $cred.UserName -Password $cred.GetNetworkCredential().Password | Out-Null
       Write-Host "  OK  tâche $t lancée sous $($cred.UserName)" -ForegroundColor Green
@@ -127,14 +127,14 @@ foreach ($k in $reglages.Keys) { $lignes += "set `"$k=$($reglages[$k])`"" }
 $oem = [Text.Encoding]::GetEncoding([Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage)
 [IO.File]::WriteAllLines($Config, $lignes, $oem)
 Write-Host "  OK  $Config" -ForegroundColor Green
-foreach ($t in @('PipeFitCRM', 'PipeFitDOE')) {
+foreach ($t in @('PipeFitCRM', 'PipeFitDOE', 'PipeFitEtudes')) {
   if (Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue) {
     Stop-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue
     Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*PipeFitCRM*' } | Stop-Process -Force -ErrorAction SilentlyContinue
   }
 }
 Start-Sleep -Seconds 1
-foreach ($t in @('PipeFitCRM', 'PipeFitDOE')) { if (Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue) { Start-ScheduledTask -TaskName $t } }
+foreach ($t in @('PipeFitCRM', 'PipeFitDOE', 'PipeFitEtudes')) { if (Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue) { Start-ScheduledTask -TaskName $t } }
 $schema = if ($reglages['TLS_PASSPHRASE']) { 'https' } else { 'http' }
 $p = if ($reglages['PORT']) { $reglages['PORT'] } else { '3000' }
 $adresse = if (($schema -eq 'https' -and $p -eq '443') -or ($schema -eq 'http' -and $p -eq '80')) { "${schema}://$env:COMPUTERNAME" } else { "${schema}://$env:COMPUTERNAME`:$p" }

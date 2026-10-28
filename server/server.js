@@ -156,7 +156,8 @@ const PJRESEAU = require('./pj-reseau').creer({ DB, db, racineDocuments: () => D
 const LIENS = require('./liens-apps').creer({ db, broadcast });
 const ASSISTANT = require('./assistant').creer({ DB, db, broadcast, notifier: obj => NOTIFS.enregistrer(obj) });
 const SAUVEGARDE = require('./sauvegarde').creer({ DB, db, dossierDefaut: path.join(path.dirname(DB_FILE), 'Sauvegardes'),
-  autres: [{ prefixe: 'doe', fichier: process.env.DOE_DB_FILE || path.join(__dirname, '..', 'doe', 'data', 'doe.db') }] });
+  autres: [{ prefixe: 'doe', fichier: process.env.DOE_DB_FILE || path.join(__dirname, '..', 'doe', 'data', 'doe.db') },
+    { prefixe: 'etudes', fichier: process.env.ETUDES_DB_FILE || path.join(__dirname, '..', 'etudes', 'data', 'etudes.db') }] });
 
 // Planning dans les agendas (Outlook via Microsoft 365, lien d'abonnement iCal)
 const AGENDA = AgendaSync.creer({ DB, db, M365 });

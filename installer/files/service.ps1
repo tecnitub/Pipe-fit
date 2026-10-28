@@ -3,17 +3,21 @@ param(
   [Parameter(Mandatory = $true)][ValidateSet('install', 'stop', 'uninstall')][string]$Action,
   [Parameter(Mandatory = $true)][string]$InstallDir,
   [int]$Port = 3000,
-  [int]$DoePort = 3100
+  [int]$DoePort = 3100,
+  [int]$EtudesPort = 3200
 )
 $ErrorActionPreference = 'Continue'
 $TaskName = 'PipeFitCRM'
 $RuleName = 'Pipe-Fit CRM'
 $DoeTask = 'PipeFitDOE'
 $DoeRule = 'Pipe-Fit DOE'
+$EtudesTask = 'PipeFitEtudes'
+$EtudesRule = 'Pipe-Fit Etudes'
 
 function Stop-Crm {
   Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
   Stop-ScheduledTask -TaskName $DoeTask -ErrorAction SilentlyContinue
+  Stop-ScheduledTask -TaskName $EtudesTask -ErrorAction SilentlyContinue
   Get-Process node -ErrorAction SilentlyContinue |
     Where-Object { $_.Path -and $_.Path.StartsWith($InstallDir, [StringComparison]::OrdinalIgnoreCase) } |
     Stop-Process -Force -ErrorAction SilentlyContinue
@@ -26,8 +30,10 @@ switch ($Action) {
     Stop-Crm
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName $DoeTask -Confirm:$false -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $EtudesTask -Confirm:$false -ErrorAction SilentlyContinue
     Remove-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue
     Remove-NetFirewallRule -DisplayName $DoeRule -ErrorAction SilentlyContinue
+    Remove-NetFirewallRule -DisplayName $EtudesRule -ErrorAction SilentlyContinue
   }
   'install' {
     Stop-Crm
@@ -55,9 +61,20 @@ switch ($Action) {
       New-NetFirewallRule -DisplayName $DoeRule -Direction Inbound -Action Allow -Protocol TCP `
         -LocalPort $DoePort -Profile Domain, Private | Out-Null
     }
+    # Application Etudes (notes de calcul du bureau d'etudes), meme compte et memes reglages
+    $etudesCmd = Join-Path $InstallDir 'start-etudes.cmd'
+    if (Test-Path $etudesCmd) {
+      $etudesAction = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/c `"$etudesCmd`"" -WorkingDirectory $InstallDir
+      Register-ScheduledTask -TaskName $EtudesTask -Description 'Application Etudes de Pipe-Fit' -Action $etudesAction `
+        -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+      Remove-NetFirewallRule -DisplayName $EtudesRule -ErrorAction SilentlyContinue
+      New-NetFirewallRule -DisplayName $EtudesRule -Direction Inbound -Action Allow -Protocol TCP `
+        -LocalPort $EtudesPort -Profile Domain, Private | Out-Null
+    }
 
     Start-ScheduledTask -TaskName $TaskName
     if (Test-Path $doeCmd) { Start-ScheduledTask -TaskName $DoeTask }
+    if (Test-Path $etudesCmd) { Start-ScheduledTask -TaskName $EtudesTask }
     # Attente du demarrage du serveur (30 s max)
     for ($i = 0; $i -lt 60; $i++) {
       try { Invoke-WebRequest -UseBasicParsing "http://localhost:$Port/api/setup" -TimeoutSec 2 | Out-Null; break }

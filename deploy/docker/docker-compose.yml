@@ -1,4 +1,4 @@
-# Pipe-Fit CRM + application DOE + Caddy (HTTPS automatique) — à lancer depuis le pack décompressé :
+# Pipe-Fit CRM + applications DOE et Études + Caddy (HTTPS automatique) — à lancer depuis le pack décompressé :
 #   cd deploy/docker && cp .env.exemple .env   (puis renseigner le domaine et les chemins)
 #   docker compose up -d --build
 services:
@@ -32,6 +32,18 @@ services:
       - pipefit-data:/data
     expose: ["3100"]
 
+  etudes:
+    image: pipefit-crm
+    restart: unless-stopped
+    depends_on: [pipefit]
+    command: ["node", "--disable-warning=ExperimentalWarning", "etudes/server.js"]
+    environment:
+      PIPEFIT_URL: http://pipefit:3000
+      PIPEFIT_PUBLIC_URL: https://${DOMAINE}
+    volumes:
+      - pipefit-data:/data
+    expose: ["3200"]
+
   caddy:
     image: caddy:2
     restart: unless-stopped
@@ -39,6 +51,7 @@ services:
     environment:
       DOMAINE: ${DOMAINE}
       DOMAINE_DOE: ${DOMAINE_DOE}
+      DOMAINE_ETUDES: ${DOMAINE_ETUDES}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

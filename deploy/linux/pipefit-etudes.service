@@ -1,0 +1,21 @@
+# Application Études de Pipe-Fit (systemd) — installée par deploy/linux/installer.sh
+[Unit]
+Description=Pipe-Fit Études (notes de calcul du bureau d'études)
+After=pipefit.service
+Wants=pipefit.service
+
+[Service]
+Type=simple
+User=pipefit
+Group=pipefit
+WorkingDirectory=/opt/pipefit
+EnvironmentFile=/etc/pipefit/pipefit.env
+ExecStart=/usr/bin/env node --disable-warning=ExperimentalWarning /opt/pipefit/etudes/server.js
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

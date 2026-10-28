@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Construit dist/PipeFit-Pack-<version>.zip : tout ce qu'il faut pour installer Pipe-Fit (CRM + DOE) sur un serveur
+# Construit dist/PipeFit-Pack-<version>.zip : tout ce qu'il faut pour installer Pipe-Fit (CRM + DOE + Études) sur un serveur
 # Windows (installateur, s'il a été construit avant par installer/build.sh), Linux ou Docker, les scripts de
 # configuration (serveur Windows, Microsoft 365) et le mode d'emploi pas à pas (Markdown + page HTML hors ligne).
 set -euo pipefail
@@ -10,8 +10,8 @@ OUT="dist/$NOM"
 rm -rf "$OUT" "dist/$NOM.zip"
 mkdir -p "$OUT"
 npm ci --omit=dev --no-audit --no-fund >/dev/null
-cp -r server public doe deploy docs node_modules package.json package-lock.json Dockerfile README.md "$OUT/"
-rm -rf "$OUT/doe/data" "$OUT/deploy/pack.sh"
+cp -r server public doe etudes deploy docs node_modules package.json package-lock.json Dockerfile README.md "$OUT/"
+rm -rf "$OUT/doe/data" "$OUT/etudes/data" "$OUT/deploy/pack.sh"
 node deploy/guide-html.js docs/INSTALLATION.md "$OUT/docs/guide-installation.html" >/dev/null
 if [ -f "dist/PipeFitCRM-Setup-$VERSION.exe" ]; then cp "dist/PipeFitCRM-Setup-$VERSION.exe" "$OUT/"
 else echo "Attention : installateur Windows absent (bash installer/build.sh pour l'inclure)." >&2; fi

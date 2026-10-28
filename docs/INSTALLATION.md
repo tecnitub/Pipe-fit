@@ -1,6 +1,6 @@
 # Mode d'emploi d'installation Pipe-Fit
 
-Ce guide met en service, pas à pas, tout l'ensemble Pipe-Fit pour l'entreprise : le serveur (CRM et application DOE),
+Ce guide met en service, pas à pas, tout l'ensemble Pipe-Fit pour l'entreprise : le serveur (CRM, applications DOE et Études),
 l'appli des compagnons sur téléphone, les e-mails Microsoft 365 (devis, factures, commandes, demandes de prix, boîtes
 des factures et des offres), le répertoire réseau des documents et des pièces jointes, et les sauvegardes.
 
@@ -13,7 +13,7 @@ Comptez une demi-journée avec le prestataire informatique. Chaque étape se ter
 | Élément | Exemple | Qui |
 |---|---|---|
 | Un serveur allumé en permanence | PC ou serveur Windows 10/11/Server 2019+ 64 bits, ou Linux (Debian 12, Ubuntu 22.04+), 8 Go de RAM, 100 Go libres, onduleur | Informatique |
-| Un nom de domaine et un nom pour le CRM | `crm.tecnitub.fr` (et `doe.tecnitub.fr`) | Gérant / registrar |
+| Un nom de domaine et un nom pour le CRM | `crm.tecnitub.fr` (et `doe.tecnitub.fr`, `etudes.tecnitub.fr`) | Gérant / registrar |
 | L'accès à la box ou au pare-feu | redirection des ports 80 et 443 vers le serveur | Informatique |
 | Un compte administrateur Microsoft 365 | administrateur global du locataire | Informatique |
 | Un NAS ou un second disque | `\\NAS\PipeFit` pour les documents et les sauvegardes | Informatique |
@@ -24,13 +24,13 @@ Comptez une demi-journée avec le prestataire informatique. Chaque étape se ter
 Le pack `PipeFit-Pack-x.y.z.zip` contient :
 
 ```
-PipeFitCRM-Setup-x.y.z.exe       installateur Windows (CRM + DOE + Node.js, démarrage automatique)
+PipeFitCRM-Setup-x.y.z.exe       installateur Windows (CRM + DOE + Études + Node.js, démarrage automatique)
 deploy/windows/                   configurer-serveur.ps1 : dossiers, partage réseau, HTTPS, compte de service
 deploy/microsoft365/              configurer-microsoft365.ps1 : application Entra ID, boîtes partagées, stratégie d'accès
 deploy/linux/                     installer.sh, services systemd, réglages, exemple Caddy (HTTPS)
-deploy/docker/                    docker-compose.yml (CRM + DOE + Caddy), Caddyfile, .env.exemple
+deploy/docker/                    docker-compose.yml (CRM + DOE + Études + Caddy), Caddyfile, .env.exemple
 docs/                             ce guide (Markdown et page HTML)
-server/  public/  doe/            l'application (installations Linux et Docker)
+server/  public/  doe/  etudes/   l'application (installations Linux et Docker)
 ```
 
 Il se télécharge dans l'onglet **Actions** du dépôt GitHub (dernière exécution « Installateur Windows » →
@@ -49,9 +49,9 @@ Il se télécharge dans l'onglet **Actions** du dépôt GitHub (dernière exécu
    L'installateur :
    - copie l'application dans `C:\Program Files\PipeFitCRM` (Node.js inclus, rien d'autre à installer) ;
    - crée deux tâches planifiées qui démarrent avec Windows, même sans session ouverte : **PipeFitCRM** (port 3000)
-     et **PipeFitDOE** (port 3100) ;
+     **PipeFitDOE** (port 3100) et **PipeFitEtudes** (port 3200) ;
    - ouvre le pare-feu Windows sur ces ports (réseaux Domaine et Privé) ;
-   - place les icônes « Pipe-Fit CRM » (bureau) et « Pipe-Fit DOE » (menu Démarrer).
+   - place les icônes « Pipe-Fit CRM » (bureau) et « Pipe-Fit DOE » et « Pipe-Fit Études » (menu Démarrer).
 3. Le navigateur s'ouvre sur `http://localhost:3000` : **créer le compte administrateur** et choisir **base vide**
    (les données de démonstration servent seulement à essayer).
 4. Ouvrir une console **PowerShell en administrateur** dans le dossier du pack et lancer :
@@ -76,8 +76,8 @@ Il se télécharge dans l'onglet **Actions** du dépôt GitHub (dernière exécu
 **Paramètres**, les cartes « Répertoire des documents » et « Pièces jointes et sauvegardes sur le réseau » montrent les
 bons chemins, sans message rouge.
 
-**Données sous Windows** : `C:\ProgramData\PipeFitCRM\data` (base `pipefit.db`, base DOE `doe\doe.db`, certificat
-`tls\`). Journaux : `C:\ProgramData\PipeFitCRM\logs\serveur.log` et `doe.log`.
+**Données sous Windows** : `C:\ProgramData\PipeFitCRM\data` (base `pipefit.db`, base DOE `doe\doe.db`, base Études `etudes\etudes.db`, certificat
+`tls\`). Journaux : `C:\ProgramData\PipeFitCRM\logs\serveur.log`, `doe.log` et `etudes.log`.
 
 ## 1B. Installer le serveur sous Linux
 
@@ -85,14 +85,14 @@ bons chemins, sans message rouge.
 
    ```bash
    cd PipeFit-Pack-x.y.z
-   sudo bash deploy/linux/installer.sh --domaine crm.tecnitub.fr --domaine-doe doe.tecnitub.fr
+   sudo bash deploy/linux/installer.sh --domaine crm.tecnitub.fr --domaine-doe doe.tecnitub.fr --domaine-etudes etudes.tecnitub.fr
    ```
 
    Le script installe Node.js 22 si besoin (binaire officiel vérifié), crée le compte système `pipefit`, copie
    l'application dans `/opt/pipefit`, crée `/etc/pipefit/pipefit.env`, démarre les services **pipefit** et
-   **pipefit-doe**, et avec `--domaine` installe **Caddy** qui obtient le certificat HTTPS tout seul.
+   **pipefit-doe**, **pipefit-etudes**, et avec `--domaine` installe **Caddy** qui obtient le certificat HTTPS tout seul.
 2. Relire `/etc/pipefit/pipefit.env` (dossiers des documents, pièces jointes, sauvegardes), puis
-   `sudo systemctl restart pipefit pipefit-doe`.
+   `sudo systemctl restart pipefit pipefit-doe pipefit-etudes`.
 3. **NAS** : le monter avant, par exemple dans `/etc/fstab` :
 
    ```
@@ -104,7 +104,7 @@ bons chemins, sans message rouge.
    serveur sans écran, mettre `ADMIN_PASSWORD=…` dans `pipefit.env`, redémarrer, se connecter avec `admin`, changer
    le mot de passe (Paramètres), puis retirer la ligne.
 
-✅ `systemctl status pipefit pipefit-doe` affiche *active (running)* ; `https://crm.tecnitub.fr` répond.
+✅ `systemctl status pipefit pipefit-doe pipefit-etudes` affiche *active (running)* ; `https://crm.tecnitub.fr` répond.
 Journal : `journalctl -u pipefit -f`. **Mise à jour** : relancer `installer.sh` depuis un pack plus récent
 (la base est copiée avant, les réglages sont conservés).
 
@@ -116,7 +116,7 @@ cp .env.exemple .env      # domaine, dossiers de l'hôte, mot de passe admin
 docker compose up -d --build
 ```
 
-Trois conteneurs : **pipefit** (CRM), **doe** (même image) et **caddy** (HTTPS automatique). Les données sont dans
+Quatre conteneurs : **pipefit** (CRM), **doe** et **etudes** (même image) et **caddy** (HTTPS automatique). Les données sont dans
 le volume `pipefit-data` ; documents et sauvegardes dans les dossiers de l'hôte indiqués dans `.env`.
 
 ✅ `docker compose ps` montre trois services *running* ; `https://crm.votre-domaine.fr` répond. Se connecter avec
@@ -136,7 +136,7 @@ et pour tout accès hors du bureau. Trois façons, de la plus simple à la plus 
 
 Côté réseau :
 
-- **DNS** : enregistrement `A` de `crm.tecnitub.fr` (et `doe.tecnitub.fr`) vers l'adresse IP publique du bureau.
+- **DNS** : enregistrement `A` de `crm.tecnitub.fr` (et `doe.tecnitub.fr`, `etudes.tecnitub.fr`) vers l'adresse IP publique du bureau.
 - **Box / pare-feu** : rediriger les ports **443** (et **80** pour Let's Encrypt) vers le serveur. Ne jamais
   exposer le port 3000 en HTTP simple sur Internet.
 - **Au bureau** : si la box ne gère pas le « NAT loopback », ajouter `crm.tecnitub.fr` dans le DNS interne
@@ -146,8 +146,11 @@ Côté réseau :
 ✅ **Paramètres → Sécurité** : certificat valide, échéance affichée, HTTPS actif. Depuis un téléphone en 4G,
 `https://crm.tecnitub.fr` s'ouvre avec le cadenas.
 
-**Lien CRM ↔ DOE** : Paramètres → Société → « Adresse de l'application DOE » = `https://doe.tecnitub.fr` (vide :
-même serveur, port 3100).
+**Lien CRM ↔ DOE et Études** : Paramètres → Société → « Adresse de l'application DOE » = `https://doe.tecnitub.fr`
+et « Adresse de l'application Études » = `https://etudes.tecnitub.fr` (vides : même serveur, ports 3100 et 3200).
+Chaque enregistrement d'une étude ou d'un dossier met à jour la vue d'ensemble du chantier dans le CRM (cartes
+« Études du bureau d'études » et « Étude d'exécution et DOE ») ; une fiche technique visée arrive dans les documents du
+chantier. Rien à régler de plus : les deux applications écrivent dans le CRM avec le compte de la personne connectée.
 
 ## 3. Comptes et premiers réglages
 
@@ -323,7 +326,7 @@ Trois niveaux, à mettre en place tous les trois :
 
 1. **Sauvegarde quotidienne de la base** (automatique, intégrée) : **Paramètres → Pièces jointes et sauvegardes sur
    le réseau**. Chaque jour à l'heure choisie (21 h par défaut), copie complète et vérifiée de la base (données,
-   comptes, pièces jointes, réglages) et de la base DOE, dans le dossier choisi (`BACKUP_DIR`), gardée 30 jours.
+   comptes, pièces jointes, réglages) et des bases DOE et Études, dans le dossier choisi (`BACKUP_DIR`), gardée 30 jours.
    Bouton « 💾 Sauvegarder maintenant ».
 2. **Copie hors site** : le NAS réplique le dossier des sauvegardes vers un cloud ou un second NAS (Synology Hyper
    Backup, QNAP HBS, ou une copie hebdomadaire sur disque externe emporté).
@@ -331,9 +334,9 @@ Trois niveaux, à mettre en place tous les trois :
 
 **Restaurer** :
 
-1. Arrêter Pipe-Fit (Windows : Gestionnaire des tâches → Services / `Stop-ScheduledTask PipeFitCRM, PipeFitDOE` ;
-   Linux : `sudo systemctl stop pipefit pipefit-doe` ; Docker : `docker compose stop`).
-2. Copier la sauvegarde voulue à la place de `pipefit.db` (et `doe-….db` à la place de `doe\doe.db`).
+1. Arrêter Pipe-Fit (Windows : Gestionnaire des tâches → Services / `Stop-ScheduledTask PipeFitCRM, PipeFitDOE, PipeFitEtudes` ;
+   Linux : `sudo systemctl stop pipefit pipefit-doe pipefit-etudes` ; Docker : `docker compose stop`).
+2. Copier la sauvegarde voulue à la place de `pipefit.db` (et `doe-….db` à la place de `doe\doe.db`, `etudes-….db` à la place de `etudes\etudes.db`).
 3. Redémarrer.
 
 ✅ Une fois par trimestre : restaurer la dernière sauvegarde sur un poste de test (installation Windows à part) et
@@ -343,6 +346,7 @@ ouvrir quelques devis et factures.
 
 - [ ] Le CRM s'ouvre depuis tous les postes du bureau et en 4G sur `https://…` (cadenas valide)
 - [ ] L'application DOE s'ouvre et retrouve un chantier du CRM
+- [ ] L'application Études s'ouvre ; une étude enregistrée sur un chantier apparaît sur sa vue d'ensemble dans le CRM
 - [ ] Comptes créés pour tout le monde, adresses Microsoft 365 renseignées
 - [ ] Un compagnon a installé l'appli, pointé hors ligne, reçu une notification
 - [ ] Test Microsoft 365 réussi ; devis, facture, commande envoyés depuis les bonnes boîtes ; copies dans Outlook
@@ -391,4 +395,5 @@ Les actions importantes (envois, sauvegardes, réglages) sont aussi dans l'**His
 | `SEED_DEMO` | `0` : base vide | `1` |
 | `ANTHROPIC_API_KEY` | clé de l'assistant (sinon : Paramètres → Assistant) | — |
 | `DOE_PORT`, `DOE_DB_FILE` | application DOE | 3100, `doe/data/doe.db` |
-| `PIPEFIT_URL`, `PIPEFIT_PUBLIC_URL` | adresse du CRM vue par le DOE | `http://localhost:3000` |
+| `ETUDES_PORT`, `ETUDES_DB_FILE` | application Études | 3200, `etudes/data/etudes.db` |
+| `PIPEFIT_URL`, `PIPEFIT_PUBLIC_URL` | adresse du CRM vue par le DOE et les Études | `http://localhost:3000` |

@@ -24,8 +24,8 @@ mkdir -p build/node build/app
 cp "$NODE_EXE" build/node/node.exe
 # Modules de l'application (assistant : SDK Anthropic, JavaScript pur, identique sous Windows)
 (cd .. && npm ci --omit=dev --no-audit --no-fund)
-cp -r ../server ../public ../doe ../package.json ../node_modules build/app/
-rm -rf build/app/doe/data
+cp -r ../server ../public ../doe ../etudes ../package.json ../node_modules build/app/
+rm -rf build/app/doe/data build/app/etudes/data
 
 makensis -V2 -DVERSION="$VERSION" PipeFitCRM.nsi
 ls -lh "../dist/PipeFitCRM-Setup-$VERSION.exe"

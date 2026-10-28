@@ -1,4 +1,4 @@
-﻿; Installateur Windows de Pipe-Fit CRM (NSIS 3).
+﻿﻿; Installateur Windows de Pipe-Fit CRM (NSIS 3).
 ; Construit par installer/build.sh, qui prépare le dossier build/ (node.exe + application).
 Unicode true
 !include "MUI2.nsh"
@@ -95,6 +95,7 @@ Section "Installer"
   File /r "build/*"
   File "files/start-server.cmd"
   File "files/start-doe.cmd"
+  File "files/start-etudes.cmd"
   File "files/service.ps1"
   File "files/LISEZMOI.txt"
   File "files/pipefit.ico"
@@ -102,6 +103,7 @@ Section "Installer"
   CreateDirectory "$COMMONPROGRAMDATA\PipeFitCRM\data"
   CreateDirectory "$COMMONPROGRAMDATA\PipeFitCRM\logs"
   CreateDirectory "$COMMONPROGRAMDATA\PipeFitCRM\data\doe"
+  CreateDirectory "$COMMONPROGRAMDATA\PipeFitCRM\data\etudes"
 
   ; Raccourcis pour tous les utilisateurs
   SetShellVarContext all
@@ -112,6 +114,7 @@ Section "Installer"
   CreateDirectory "$SMPROGRAMS\${APPNAME}"
   CopyFiles /SILENT "$INSTDIR\Pipe-Fit CRM.url" "$SMPROGRAMS\${APPNAME}"
   WriteINIStr "$SMPROGRAMS\${APPNAME}\Pipe-Fit DOE.url" "InternetShortcut" "URL" "http://localhost:3100/"
+  WriteINIStr "$SMPROGRAMS\${APPNAME}\Pipe-Fit Études.url" "InternetShortcut" "URL" "http://localhost:3200/"
   CreateShortcut "$SMPROGRAMS\${APPNAME}\Données et sauvegarde.lnk" "$COMMONPROGRAMDATA\PipeFitCRM"
   CreateShortcut "$SMPROGRAMS\${APPNAME}\Mode d'emploi.lnk" "$INSTDIR\LISEZMOI.txt"
   CreateShortcut "$SMPROGRAMS\${APPNAME}\Désinstaller.lnk" "$INSTDIR\Desinstaller.exe"

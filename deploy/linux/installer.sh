@@ -1,21 +1,22 @@
 #!/usr/bin/env bash
 # Pipe-Fit CRM — installation ou mise à jour sur un serveur Linux (Debian 12+, Ubuntu 22.04+, RHEL / Rocky / Alma 9+).
-# À lancer depuis le pack décompressé :  sudo bash deploy/linux/installer.sh [--domaine crm.votre-domaine.fr] [--domaine-doe doe.votre-domaine.fr]
+# À lancer depuis le pack décompressé :  sudo bash deploy/linux/installer.sh [--domaine crm.votre-domaine.fr] [--domaine-doe doe.votre-domaine.fr] [--domaine-etudes etudes.votre-domaine.fr]
 #
 #   - Node.js 22 (binaire officiel vérifié) s'il manque ou s'il est trop ancien ;
 #   - compte système « pipefit », application dans /opt/pipefit, données dans /var/lib/pipefit ;
 #   - réglages dans /etc/pipefit/pipefit.env (créé au premier passage, jamais écrasé) ;
-#   - services systemd « pipefit » et « pipefit-doe » (démarrage automatique, redémarrage en cas d'arrêt) ;
+#   - services systemd « pipefit », « pipefit-doe » et « pipefit-etudes » (démarrage automatique, redémarrage en cas d'arrêt) ;
 #   - avec --domaine : Caddy en reverse proxy HTTPS (certificat Let's Encrypt automatique).
 # Mise à jour : relancer le script avec un pack plus récent (données et réglages conservés, sauvegarde faite avant).
 set -euo pipefail
 
 NODE_VERSION="${NODE_VERSION:-22.22.0}"
-DOMAINE="" DOMAINE_DOE=""
+DOMAINE="" DOMAINE_DOE="" DOMAINE_ETUDES=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --domaine) DOMAINE="$2"; shift 2 ;;
     --domaine-doe) DOMAINE_DOE="$2"; shift 2 ;;
+    --domaine-etudes) DOMAINE_ETUDES="$2"; shift 2 ;;
     -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
     *) echo "Option inconnue : $1" >&2; exit 1 ;;
   esac
@@ -42,7 +43,7 @@ fi
 
 etape "2. Compte et dossiers"
 id pipefit >/dev/null 2>&1 || useradd --system --home-dir /var/lib/pipefit --shell /usr/sbin/nologin pipefit
-mkdir -p /etc/pipefit /var/lib/pipefit/doe /opt/pipefit
+mkdir -p /etc/pipefit /var/lib/pipefit/doe /var/lib/pipefit/etudes /opt/pipefit
 if [ ! -f /etc/pipefit/pipefit.env ]; then
   cp "$PACK/deploy/linux/pipefit.env.exemple" /etc/pipefit/pipefit.env
   ok "réglages créés : /etc/pipefit/pipefit.env (à relire)"
@@ -62,24 +63,25 @@ if systemctl is-active --quiet pipefit 2>/dev/null; then
   # Mise à jour : copie de la base avant de remplacer l'application
   DB="$(sed -n 's/^DB_FILE=//p' /etc/pipefit/pipefit.env | tail -1)"; DB="${DB:-/var/lib/pipefit/pipefit.db}"
   [ -f "$DB" ] && runuser -u pipefit -- node -e "const {DatabaseSync}=require('node:sqlite');new DatabaseSync(process.argv[1]).exec(\"VACUUM INTO '\"+process.argv[2]+\"'\")" "$DB" "$DB.avant-mise-a-jour-$(date +%Y%m%d-%H%M).db" 2>/dev/null && ok "base copiée avant mise à jour"
-  systemctl stop pipefit-doe pipefit 2>/dev/null || true
+  systemctl stop pipefit-etudes pipefit-doe pipefit 2>/dev/null || true
 fi
-rm -rf /opt/pipefit/server /opt/pipefit/public /opt/pipefit/doe /opt/pipefit/node_modules
-cp -r "$PACK/server" "$PACK/public" "$PACK/doe" "$PACK/package.json" /opt/pipefit/
+rm -rf /opt/pipefit/server /opt/pipefit/public /opt/pipefit/doe /opt/pipefit/etudes /opt/pipefit/node_modules
+cp -r "$PACK/server" "$PACK/public" "$PACK/doe" "$PACK/etudes" "$PACK/package.json" /opt/pipefit/
 # Modules (assistant) : fournis par le pack, sinon installés depuis le registre npm
 if [ -d "$PACK/node_modules" ]; then cp -r "$PACK/node_modules" /opt/pipefit/
 else cp "$PACK/package-lock.json" /opt/pipefit/ 2>/dev/null; (cd /opt/pipefit && npm ci --omit=dev --no-audit --no-fund); fi
-rm -rf /opt/pipefit/doe/data
+rm -rf /opt/pipefit/doe/data /opt/pipefit/etudes/data
 chown -R root:root /opt/pipefit; chmod -R a+rX /opt/pipefit
 ok "application copiée dans /opt/pipefit ($(node -p "require('/opt/pipefit/package.json').version"))"
 
 etape "4. Services"
-cp "$PACK/deploy/linux/pipefit.service" "$PACK/deploy/linux/pipefit-doe.service" /etc/systemd/system/
+cp "$PACK/deploy/linux/pipefit.service" "$PACK/deploy/linux/pipefit-doe.service" "$PACK/deploy/linux/pipefit-etudes.service" /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now pipefit pipefit-doe >/dev/null 2>&1
+systemctl enable --now pipefit pipefit-doe pipefit-etudes >/dev/null 2>&1
 sleep 2
 systemctl is-active --quiet pipefit && ok "pipefit démarré" || { echo "Le service pipefit ne démarre pas : journalctl -u pipefit -n 50" >&2; exit 1; }
 systemctl is-active --quiet pipefit-doe && ok "pipefit-doe démarré" || echo "  Attention : pipefit-doe ne démarre pas (journalctl -u pipefit-doe -n 50)"
+systemctl is-active --quiet pipefit-etudes && ok "pipefit-etudes démarré" || echo "  Attention : pipefit-etudes ne démarre pas (journalctl -u pipefit-etudes -n 50)"
 
 PORT="$(sed -n 's/^PORT=//p' /etc/pipefit/pipefit.env | tail -1)"; PORT="${PORT:-3000}"
 if [ -n "$DOMAINE" ]; then
@@ -92,15 +94,16 @@ if [ -n "$DOMAINE" ]; then
   command -v caddy >/dev/null || { echo "Installez Caddy (https://caddyserver.com/docs/install) puis relancez avec --domaine." >&2; exit 1; }
   {
     printf '%s {\n\tencode gzip\n\treverse_proxy localhost:%s\n}\n' "$DOMAINE" "$PORT"
-    [ -n "$DOMAINE_DOE" ] && printf '\n%s {\n\tencode gzip\n\treverse_proxy localhost:3100\n}\n' "$DOMAINE_DOE"
+    if [ -n "$DOMAINE_DOE" ]; then printf '\n%s {\n\tencode gzip\n\treverse_proxy localhost:3100\n}\n' "$DOMAINE_DOE"; fi
+    if [ -n "$DOMAINE_ETUDES" ]; then printf '\n%s {\n\tencode gzip\n\treverse_proxy localhost:3200\n}\n' "$DOMAINE_ETUDES"; fi
   } > /etc/caddy/Caddyfile
   grep -q '^PIPEFIT_PUBLIC_URL=' /etc/pipefit/pipefit.env || echo "PIPEFIT_PUBLIC_URL=https://$DOMAINE" >> /etc/pipefit/pipefit.env
   systemctl enable --now caddy >/dev/null 2>&1; systemctl reload caddy
-  systemctl restart pipefit-doe
+  systemctl restart pipefit-doe pipefit-etudes
   ok "https://$DOMAINE (certificat obtenu automatiquement si le DNS et les ports 80/443 sont en place)"
 fi
 if command -v ufw >/dev/null && ufw status | grep -q active; then
-  if [ -n "$DOMAINE" ]; then ufw allow 80/tcp >/dev/null; ufw allow 443/tcp >/dev/null; else ufw allow "$PORT"/tcp >/dev/null; ufw allow 3100/tcp >/dev/null; fi
+  if [ -n "$DOMAINE" ]; then ufw allow 80/tcp >/dev/null; ufw allow 443/tcp >/dev/null; else ufw allow "$PORT"/tcp >/dev/null; ufw allow 3100/tcp >/dev/null; ufw allow 3200/tcp >/dev/null; fi
   ok "pare-feu (ufw) ouvert"
 fi
 

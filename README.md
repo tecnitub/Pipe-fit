@@ -688,13 +688,22 @@ numérote les équipements, contrôle article par article que rien n'est oublié
 (bordereau d'envoi en PDF). À la fin des travaux, l'étude devient le DOE, déjà rempli hors attestations et PV. Détails :
 [doe/README.md](doe/README.md).
 
-Dans la démonstration, l'étude est reliée au CRM : la vue d'ensemble du chantier montre une carte « Étude d'exécution et
-DOE » (avancement, CCTP lu, équipements repérés, fiches soumises / visées / refusées, points à compléter) avec
-« Démarrer l'étude » ou « Ouvrir l'étude ». Chaque enregistrement de l'étude met la carte à jour ; une fiche visée est
-ajoutée aux documents du chantier (catégorie « Fiche technique », transmise aux compagnons) et une fiche refusée n'y est
-plus transmise. « Consulter les fournisseurs sur ces équipements » prépare une demande de prix avec les équipements de
-l'étude pas encore choisis (repère, désignation, prescription du CCTP), aussi proposée dans « Reprendre… » d'une
-consultation du chantier.
+**Liaison avec le CRM** (version installée et démonstration) : à chaque enregistrement, les applications DOE et Études
+envoient l'état de leurs dossiers à Pipe-Fit (`/api/liens`, avec le compte de la personne connectée ; lecture réservée au
+bureau, mise à jour en temps réel). La vue d'ensemble du chantier montre :
+- **Études du bureau d'études** : objet, indice, nombre de calculs, contrôles (non-conformités, points d'attention),
+  rédacteur et vérificateur, note de calcul déposée (indice), devis brouillons créés depuis le métré, équipements
+  dimensionnés ; « Démarrer une étude » / « Ouvrir les études » ;
+- **Étude d'exécution et DOE** : avancement, CCTP lu, équipements repérés, fiches soumises / visées / refusées, points à
+  compléter ; « Démarrer l'étude » ou « Ouvrir l'étude ».
+
+Une fiche technique visée est ajoutée aux documents du chantier (catégorie « Fiche technique », transmise aux
+compagnons) par le serveur DOE ; une fiche refusée n'y est plus transmise. « Consulter les fournisseurs sur ces
+équipements » prépare une demande de prix avec les équipements de l'étude d'exécution pas encore choisis (aussi dans
+« Reprendre… » d'une consultation du chantier). Dans l'étude d'exécution, les équipements dimensionnés par le bureau
+d'études (pompes, vannes, vases, générateurs…) se reprennent en un clic, numérotés, pour recevoir leur fiche technique.
+Dans la démonstration, les deux applications s'ouvrent dans un cadre de la page du CRM, qui enregistre leurs devis, notes
+de calcul et états comme le feraient leurs serveurs.
 
 ## Gantt des chantiers et plan de charge
 

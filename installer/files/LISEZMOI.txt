@@ -1,4 +1,4 @@
-﻿PIPE-FIT CRM - Mode d'emploi rapide
+﻿﻿PIPE-FIT CRM - Mode d'emploi rapide
 ====================================
 
 INSTALLATION
@@ -22,6 +22,10 @@ LE SERVEUR
 APPLICATION DOE
   Installée avec le CRM (tâche planifiée « PipeFitDOE ») : http://NOM-DU-SERVEUR:3100
   Journal : C:\ProgramData\PipeFitCRM\logs\doe.log
+
+APPLICATION ÉTUDES (notes de calcul du bureau d'études)
+  Installée avec le CRM (tâche planifiée « PipeFitEtudes ») : http://NOM-DU-SERVEUR:3200
+  Journal : C:\ProgramData\PipeFitCRM\logs\etudes.log
 
 DONNÉES ET SAUVEGARDE
   Toutes les données sont dans : C:\ProgramData\PipeFitCRM\data
