@@ -150,8 +150,34 @@ SECTIONS.cctp = {
 };
 
 /* ---------- Section : étude, fiches techniques et visas ---------- */
+// Équipements dimensionnés dans l'application Études pour ce chantier (pompes, vannes, vases, générateurs…), lus dans
+// Pipe-Fit ; repris dans l'étude d'exécution pour recevoir repère et fiche technique
+const etudesBE = new Map(); // affaireId -> [{ id, resume }]
+function chargerEtudesBE(affaireId) {
+  if (etudesBE.has(affaireId)) return;
+  etudesBE.set(affaireId, null);
+  api('GET', `/api/pf/liens?affaireId=${encodeURIComponent(affaireId)}`).then(l => { etudesBE.set(affaireId, (l || []).filter(x => x.app === 'etudes')); App.render(); }).catch(() => etudesBE.set(affaireId, []));
+}
+const cleBE = (et, e) => `be:${et.id}:${e.designation}`;
+function equipementsBE(doe) {
+  return (etudesBE.get(doe.affaireId) || []).flatMap(et => ((et.resume || {}).equipements || []).map(e => ({ et, e, deja: doe.equipements.some(x => (x.origines || []).includes(cleBE(et, e))) })));
+}
+function ajouterEquipementsBE(doe) {
+  const nouveaux = equipementsBE(doe).filter(x => !x.deja);
+  nouveaux.forEach(({ et, e }) => {
+    const t = CctpLecture.typeDe(e.designation) || [null, '3.7', ''];
+    doe.equipements.push({ id: uidD(), famille: t[1], repere: '', designation: e.designation, marque: '', reference: '', serie: '', quantite: e.qte > 1 ? String(e.qte) : '', localisation: '', champs: [],
+      garantie: '', sav: '', refCctp: '', prescrit: `Note de calcul « ${(et.resume || {}).objet || ''} » indice ${(et.resume || {}).indice || ''}`.trim(), caract: '', origines: [cleBE(et, e)] });
+    if (!doe.familles.includes(t[1])) doe.familles.push(t[1]);
+  });
+  CctpLecture.numeroter(doe.equipements);
+  return nouveaux.length;
+}
+
 SECTIONS.etude = {
   html: doe => {
+    chargerEtudesBE(doe.affaireId);
+    const be = equipementsBE(doe), beManquants = be.filter(x => !x.deja).length;
     const eqs = doe.equipements.filter(e => doe.familles.includes(e.famille) || e.refCctp), fiches = doe.fiches;
     const nb = v => fiches.filter(f => (f.visa || 'À soumettre') === v).length;
     const reps = f => (f.equipements || []).map(id => (doe.equipements.find(e => e.id === id) || {}).repere || '').filter(Boolean).join(', ');
@@ -161,6 +187,11 @@ SECTIONS.etude = {
         : '<div class="actions-ligne"><span class="muted">Suivez ici les visas des fiches techniques (étude d\'exécution).</span><button class="secondaire" id="etude-activer">Suivre les visas</button></div>'}
     <p class="muted">Chaque équipement repéré reçoit sa fiche technique, soumise au visa du maître d'œuvre / BET. Une fois les fiches visées, le DOE est rempli : il ne restera que les attestations, PV et essais.</p>
     <p class="petit">${VISAS.map(v => `<span class="badge ${classeVisa(v)}">${nb(v)} ${v.toLowerCase()}</span>`).join(' ')}</p>
+    ${be.length ? `<h3>Équipements dimensionnés par le bureau d'études <span class="compte">${be.length}</span></h3>
+      <p class="muted petit">Notes de calcul de l'application Études pour ce chantier : à reprendre dans l'étude pour leur donner un repère et leur fiche technique.</p>
+      <table class="liste"><tr><th>Équipement</th><th>Qté</th><th>Note de calcul</th><th>Dans l'étude</th></tr>
+      ${be.map(({ et, e, deja }) => `<tr><td>${esc(e.designation)}</td><td>${esc(e.qte)}</td><td class="petit">${esc((et.resume || {}).objet || '')} · ind. ${esc((et.resume || {}).indice || '')}</td><td>${deja ? '<span class="badge ok">✓</span>' : '<span class="badge refus">à reprendre</span>'}</td></tr>`).join('')}</table>
+      ${beManquants ? `<div class="actions-ligne"><button id="etude-be">Reprendre ${beManquants} équipement(s) dans l'étude (numérotés)</button></div>` : ''}` : ''}
     <h3>Équipements et fiches techniques <span class="compte">${eqs.length}</span></h3>
     ${eqs.length ? `<table class="liste"><tr><th>Repère</th><th>Équipement</th><th>Art. CCTP</th><th>Fiche(s)</th><th></th></tr>
       ${eqs.map(e => { const fs = fiches.filter(f => (f.equipements || []).includes(e.id)); const autres = fiches.filter(f => !(f.equipements || []).includes(e.id));
@@ -181,6 +212,7 @@ SECTIONS.etude = {
   bind: (root, doe) => {
     const on = (s, fn) => { const el = root.querySelector(s); if (el) el.onclick = fn; };
     on('#etude-activer', () => { doe.etude = true; enregistrer(doe); App.render(); });
+    on('#etude-be', () => { const n = ajouterEquipementsBE(doe); enregistrer(doe); App.render(); toast(`${n} équipement(s) du bureau d'études repris et numérotés`); });
     on('#etude-doe', async () => { if (!await confirmer('Passer le dossier en DOE ? L\'étude reste consultable ici.', 'Passer en DOE')) return; doe.statut = 'En cours'; doe.etude = true; enregistrer(doe); App.render(); });
     root.querySelectorAll('[data-fiche-eq]').forEach(b => b.onclick = async () => {
       const e = doe.equipements.find(x => x.id === b.dataset.ficheEq), fs = await choisirFichiers(true, '.pdf,.jpg,.jpeg,.png');
@@ -202,11 +234,11 @@ SECTIONS.etude = {
 async function creerEtude(affaireId) {
   const doe = { ...doeVide(affaireId, S.config), id: uidD(), statut: 'Étude', etude: true };
   const n = prefillDepuisPF(doe);
-  let r = await api('PUT', `/api/does/${doe.id}`, { data: doe });
+  let r = await api('PUT', `/api/does/${doe.id}`, corpsDOE(doe));
   S.does.unshift(r);
   if (r.cctp.fichier) {
     toast('Lecture du CCTP du chantier…', 2500);
-    try { await lireCctp(r); ajouterEquipementsCctp(r); r = Object.assign(r, await api('PUT', `/api/does/${r.id}`, { data: r, version: r._v })); toast(`Étude créée : CCTP lu (${r.cctpLu.equipements.length} équipement(s)), ${n} information(s) reprises du chantier`, 5000); }
+    try { await lireCctp(r); ajouterEquipementsCctp(r); r = Object.assign(r, await api('PUT', `/api/does/${r.id}`, corpsDOE(r, r._v))); toast(`Étude créée : CCTP lu (${r.cctpLu.equipements.length} équipement(s)), ${n} information(s) reprises du chantier`, 5000); }
     catch (e) { toast(`Étude créée ; CCTP non lu : ${e.message}`, 6000); }
   } else toast(`Étude créée : ${n} information(s) reprises du chantier. Chargez le CCTP pour la compléter.`, 5000);
   location.hash = `#/doe/${r.id}/cctp`;

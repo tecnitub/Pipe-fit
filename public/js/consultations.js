@@ -64,6 +64,7 @@ function consultationEditeur(id) {
   const an = analyseOffres(c), fs = c.fournisseurs || [], lignes = c.lignes || [], ouverte = c.statut === 'En cours';
   const sources = [];
   if (c.affaireId) sources.push(['chantier', 'Fournitures du devis du chantier pas encore commandées']);
+  if (c.affaireId && !liensChantier.has(c.affaireId)) chargerLiens(c.affaireId).then(l => { if (l.length && location.hash.includes(c.id)) App.render(); });
   if (lignesEtude(Store.get('affaires', c.affaireId)).length) sources.push(['etude', 'Équipements de l\'étude d\'exécution (CCTP)']);
   const besoinsCompagnons = besoinsRapports(c.affaireId);
   if (besoinsCompagnons.length) sources.push(['compagnons', `Matériel demandé par les compagnons (${besoinsCompagnons.length} rapport${besoinsCompagnons.length > 1 ? 's' : ''})`]);

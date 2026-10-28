@@ -7,6 +7,8 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 const HS = require('../server/http-securite');
+const PF = require('../server/pf-client');
+const LienEtude = require('../public/js/lien-etude');
 
 const PORT = +process.env.DOE_PORT || 3100;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -85,6 +87,34 @@ async function pipefit(s, chemin, opts = {}) {
 }
 const cacheDonnees = new Map(); // sid -> { t, data }
 
+// Étude et DOE ↔ fiche chantier de Pipe-Fit, en arrière-plan après chaque enregistrement (un dossier à la fois) :
+// état du dossier (avancement, CCTP, équipements, visas) et fiches visées ajoutées aux documents du chantier
+const filesPF = new Map(); // id du dossier -> dernière synchronisation en cours
+function synchroniserPF(s, rec, resume) {
+  const appel = (chemin, opts) => pipefit(s, chemin, opts);
+  const suite = (filesPF.get(rec.id) || Promise.resolve()).then(async () => {
+    if (resume && typeof resume === 'object') await PF.publierEtat(appel, 'doe', rec.id, rec.affaireId, resume);
+    const fiches = (rec.fiches || []).filter(f => f.visa);
+    if (!fiches.length) return;
+    const ra = await appel(`/api/records/affaires/${encodeURIComponent(rec.affaireId)}`);
+    if (!ra.ok) return;
+    const { aEnvoyer } = LienEtude.appliquer(JSON.parse(JSON.stringify((await ra.json()).documents || [])), fiches);
+    const nouveaux = [];
+    for (const f of aEnvoyer) {
+      const fi = db.prepare('SELECT nom, mime, data FROM fichiers WHERE id = ?').get(f.fichier.id);
+      if (!fi) continue;
+      const nom = String(fi.nom || f.fichier.nom || 'fiche.pdf').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 150);
+      nouveaux.push(LienEtude.documentFiche(f, await PF.envoyerFichierPF(appel, nom, fi.mime, Buffer.from(fi.data)), nom, s.nom || s.login, PF.idPF()));
+    }
+    await PF.modifierPF(appel, 'affaires', rec.affaireId, a => {
+      const docs = a.documents || [], { change } = LienEtude.appliquer(docs, fiches), ajout = nouveaux.filter(d => !docs.some(x => x.etudeFicheId === d.etudeFicheId));
+      return change || ajout.length ? { ...a, documents: [...docs, ...ajout] } : null;
+    });
+  }).catch(e => console.warn(`DOE → Pipe-Fit : ${e.message}`));
+  filesPF.set(rec.id, suite);
+  suite.then(() => { if (filesPF.get(rec.id) === suite) filesPF.delete(rec.id); });
+}
+
 async function api(req, res, url) {
   const p = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean), method = req.method;
   // Protection CSRF : écritures en JSON, ou envoi de fichier avec l'en-tête X-Doe-Upload (impossible depuis un autre site)
@@ -126,6 +156,11 @@ async function api(req, res, url) {
     cacheDonnees.set(s.sid, { t: Date.now(), data });
     return send(res, 200, data);
   }
+  // Études du bureau d'études et état des dossiers du chantier enregistrés dans Pipe-Fit (application Études)
+  if (p[0] === 'pf' && p[1] === 'liens' && method === 'GET') {
+    const r = await pipefit(s, `/api/liens?affaireId=${encodeURIComponent(url.searchParams.get('affaireId') || '')}`);
+    return r.ok ? send(res, 200, await r.json()) : fail(res, 502, 'Lecture Pipe-Fit impossible');
+  }
   if (p[0] === 'pf' && p[1] === 'fichier' && p[2] && method === 'GET') {
     const r = await pipefit(s, `/api/files/${encodeURIComponent(p[2])}`);
     if (!r.ok) return fail(res, 404, 'Fichier Pipe-Fit introuvable');
@@ -141,7 +176,7 @@ async function api(req, res, url) {
     const exist = db.prepare('SELECT * FROM does WHERE id = ?').get(p[1]);
     if (method === 'GET') return exist ? send(res, 200, ligne(exist)) : fail(res, 404, 'Dossier introuvable');
     if (method === 'PUT') {
-      const { data, version } = await lireJSON(req);
+      const { data, version, resume } = await lireJSON(req);
       if (!data || typeof data !== 'object' || !data.affaireId) return fail(res, 400, 'Données manquantes');
       if (exist && version !== exist.version) return fail(res, 409, `Modifié entre-temps par ${exist.updated_by}`, { record: ligne(exist) });
       if (!exist && db.prepare('SELECT 1 FROM does WHERE affaire_id = ?').get(data.affaireId)) return fail(res, 409, 'Ce chantier a déjà un DOE');
@@ -150,9 +185,15 @@ async function api(req, res, url) {
       db.prepare(`INSERT INTO does (id, affaire_id, data, version, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET data = excluded.data, version = excluded.version, updated_at = excluded.updated_at, updated_by = excluded.updated_by`)
         .run(p[1], data.affaireId, JSON.stringify(propre), v, now, s.nom || s.login);
-      return send(res, 200, ligne(db.prepare('SELECT * FROM does WHERE id = ?').get(p[1])));
+      const rec = ligne(db.prepare('SELECT * FROM does WHERE id = ?').get(p[1]));
+      synchroniserPF(s, rec, resume);
+      return send(res, 200, rec);
     }
-    if (method === 'DELETE') { db.prepare('DELETE FROM does WHERE id = ?').run(p[1]); return send(res, 200, { ok: true }); }
+    if (method === 'DELETE') {
+      db.prepare('DELETE FROM does WHERE id = ?').run(p[1]);
+      if (exist) PF.publierEtat((chemin, opts) => pipefit(s, chemin, opts), 'doe', p[1], '', null).catch(e => console.warn(`DOE → Pipe-Fit : ${e.message}`));
+      return send(res, 200, { ok: true });
+    }
   }
 
   // Pièces jointes du DOE (plans, fiches techniques, PV, notices, attestations…)

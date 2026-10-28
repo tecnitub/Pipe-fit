@@ -243,8 +243,7 @@ Views.chantier.bind = (root, params) => {
   if (params[1] === 'securite') return bindSecuriteChantier(root, a);
   if (params[1] === 'gantt') return bindGanttChantier(root, a);
   if (estHorsDevis(a)) return bindHorsDevis(root, a);
-  const ec = root.querySelector('#etude-consultation');
-  if (ec) ec.onclick = () => { location.hash = '#/consultations/' + nouvelleConsultation({ affaireId: a.id, objet: `Équipements ${a.code || ''} (étude d'exécution)`, lignes: lignesEtude(a) }).id; };
+  bindEtudeChantier(root, a);
   root.querySelector('#ch-consultation').onclick = () => { location.hash = '#/consultations/' + nouvelleConsultation({ affaireId: a.id, objet: `Fournitures ${a.code || ''}` }).id; };
   root.querySelector('#edit').onclick = () => editModal({ title: `Chantier ${a.code}`, col: 'affaires', fields: chantierFields, obj: { ...a },
     onDelete: () => { location.hash = '#/chantiers'; } });

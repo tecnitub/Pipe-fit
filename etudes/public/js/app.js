@@ -39,6 +39,19 @@ const nouvelleEtude = (affaireId = '') => {
 // Entrées complétées par les valeurs par défaut (calcul créé vide, champ ajouté depuis)
 const completer = (type, e) => { Object.entries(Notes.defauts(type)).forEach(([k, v]) => { if (e[k] === undefined) e[k] = v; }); return e; };
 const nouvelleNote = (type, entrees) => ({ id: uidE(), type, titre: Notes.TYPES[type].titre, entrees: entrees ? copie(entrees) : Notes.defauts(type), commentaire: '' });
+// Résumé de l'étude pour la fiche chantier de Pipe-Fit : calculs et contrôles, équipements dimensionnés (métré), devis créés
+function resumePF(et) {
+  const notes = (et.notes || []).map(n => {
+    let al = [];
+    try { al = Liens.calculer(et, n).alertes || []; } catch (e) { al = [{ niveau: 'erreur' }]; }
+    return { titre: n.titre || (Notes.TYPES[n.type] || {}).titre || n.type, type: n.type, erreurs: al.filter(a => a.niveau === 'erreur').length, attention: al.filter(a => a.niveau === 'attention').length };
+  });
+  let equipements = [];
+  try { equipements = Metre.metre(et).filter(p => p.unite === 'u' && p.chapitre !== 'Études').slice(0, 150).map(p => ({ chapitre: p.chapitre, designation: p.designation, qte: p.qte, sources: p.sources })); } catch (e) { equipements = []; }
+  return { objet: et.objet, indice: et.indice, date: et.date, auteur: et.auteur || '', verificateur: et.verificateur || '', description: String(et.description || '').slice(0, 500),
+    notes, erreurs: notes.reduce((s, n) => s + n.erreurs, 0), attention: notes.reduce((s, n) => s + n.attention, 0), equipements, devis: (et.devisPF || []).slice(-10) };
+}
+const corpsEtude = et => { let resume; try { resume = et.modele || !et.affaireId ? undefined : resumePF(et); } catch (e) { resume = undefined; } return { data: et, version: et._v, resume }; };
 // Enregistrement différé (une requête à la fois par étude, contrôle de version)
 function enregistrer(etude) {
   if (!S.etudes.includes(etude)) S.etudes.unshift(etude);
@@ -48,7 +61,7 @@ function enregistrer(etude) {
     if (st.vol) { st.encore = true; return; }
     st.vol = true;
     try {
-      const r = await api('PUT', `/api/etudes/${etude.id}`, { data: etude, version: etude._v });
+      const r = await api('PUT', `/api/etudes/${etude.id}`, corpsEtude(etude));
       Object.assign(etude, { _v: r._v, _at: r._at, _by: r._by });
       majEtatEnregistrement('Enregistré');
     } catch (e) {

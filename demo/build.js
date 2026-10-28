@@ -1,6 +1,6 @@
 // Construit la version de démonstration en un seul fichier HTML (sans serveur).
 // Usage : node demo/build.js [fichier-de-sortie] [--lien <adresse de la page publiée>]   (défaut : dist/pipefit-crm-demo.html)
-// L'application DOE est construite à côté (doe.html), reliée à cette démo : mêmes chantiers, même compte.
+// Les applications DOE et Études sont construites à côté (doe.html, etudes.html), reliées à cette démo : mêmes chantiers, même compte.
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -50,4 +50,6 @@ fs.writeFileSync(out, withBackend);
 // Application DOE de démonstration, ouverte par l'onglet « DOE » des chantiers
 const cle = /const KEY = '([^']+)'/.exec(read('demo/backend.js'))[1];
 require('node:child_process').execFileSync(process.execPath, [path.join(root, 'doe/build-demo.js'), path.join(path.dirname(out), 'doe.html'), '--crm', cle, `${lienCrm}#/chantiers`], { stdio: 'inherit' });
+// Application Études de démonstration, ouverte par l'onglet « Études » des chantiers
+require('node:child_process').execFileSync(process.execPath, [path.join(root, 'etudes/build-demo.js'), path.join(path.dirname(out), 'etudes.html'), '--crm', cle], { stdio: 'inherit' });
 console.log(`Démo : ${out} (${Math.round(withBackend.length / 1024)} Ko)`);

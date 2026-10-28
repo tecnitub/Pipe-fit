@@ -166,6 +166,8 @@ const Store = {
       this.data[p.col] = this.data[p.col].filter(x => x.id !== p.id);
       App.remoteUpdate('Des données ont été supprimées par un autre utilisateur');
     });
+    // Une étude ou un DOE a été enregistré dans son application : carte du chantier mise à jour
+    es.addEventListener('liens', e => { try { const p = JSON.parse(e.data); if (typeof liensModifies === 'function') liensModifies(p.affaireId); } catch (err) { /* message incomplet */ } });
     es.addEventListener('settings', e => { this.data.settings = JSON.parse(e.data).settings; App.remoteUpdate(); });
     es.addEventListener('reload', e => {
       try { if (JSON.parse(e.data).client === CLIENT_ID) return; } catch (err) { /* ancien format */ }

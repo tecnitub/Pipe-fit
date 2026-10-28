@@ -8,6 +8,7 @@ const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 const HS = require('../server/http-securite');
 const RexPF = require('./rex');
+const PF = require('../server/pf-client');
 
 const PORT = +process.env.ETUDES_PORT || 3200;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -76,22 +77,13 @@ const extraitPF = d => ({
   articles: (d.articles || []).map(a => ({ id: a.id, ref: a.ref, designation: a.designation, famille: a.famille, sousFamille: a.sousFamille, unite: a.unite, prixVente: a.prixVente, coutRevient: a.coutRevient, poidsUnitaire: a.poidsUnitaire })),
   mainoeuvre: (d.mainoeuvre || []).map(m => ({ id: m.id, code: m.code, libelle: m.libelle, tauxVente: m.tauxVente, tauxCout: m.tauxCout })),
 });
-const idPF = () => crypto.randomBytes(10).toString('hex');
-// Fiche Pipe-Fit lue puis réécrite avec contrôle de version (une nouvelle tentative si elle a changé entre-temps)
-async function modifierPF(s, col, id, modifier) {
-  for (let essai = 0; essai < 2; essai++) {
-    const r = await pipefit(s, `/api/records/${col}/${encodeURIComponent(id)}`);
-    if (!r.ok) throw Object.assign(new Error(r.status === 404 ? 'Fiche introuvable dans Pipe-Fit' : 'Lecture Pipe-Fit impossible'), { status: r.status === 404 ? 404 : 502 });
-    const rec = await r.json(), version = rec._v, data = modifier(Object.fromEntries(Object.entries(rec).filter(([k]) => !k.startsWith('_'))));
-    const w = await pipefit(s, `/api/records/${col}/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data, version }) });
-    if (w.status === 409 && !essai) continue;
-    const j = await w.json().catch(() => ({}));
-    if (!w.ok) throw Object.assign(new Error(j.error || `Écriture Pipe-Fit refusée (${w.status})`), { status: w.status === 403 ? 403 : 502 });
-    return j;
-  }
-  throw Object.assign(new Error('Fiche modifiée entre-temps dans Pipe-Fit : réessayer.'), { status: 409 });
-}
+const { idPF, envoyerFichierPF, publierEtat } = PF;
+const modifierPF = (s, col, id, modifier) => PF.modifierPF((chemin, opts) => pipefit(s, chemin, opts), col, id, modifier);
 const cacheDonnees = new Map(); // sid -> { t, data }
+
+// Envoi en arrière-plan : une étude s'enregistre même si Pipe-Fit est momentanément injoignable
+const signalerPF = (s, id, affaireId, resume) => publierEtat((chemin, opts) => pipefit(s, chemin, opts), 'etudes', id, affaireId, resume && typeof resume === 'object' ? resume : { objet: '' })
+  .catch(e => console.warn(`Études → Pipe-Fit : ${e.message}`));
 
 async function api(req, res, url) {
   const p = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean), method = req.method;
@@ -146,9 +138,7 @@ async function api(req, res, url) {
     if (!b.affaireId || !/\.pdf$/i.test(nom) || !b.base64) return fail(res, 400, 'Affaire, nom de fichier PDF et contenu requis');
     const buf = Buffer.from(String(b.base64), 'base64');
     if (buf.subarray(0, 4).toString() !== '%PDF') return fail(res, 400, 'Le contenu n\'est pas un PDF');
-    const up = await pipefit(s, '/api/documents/fichier', { method: 'POST', body: buf, headers: { 'X-PipeFit-Upload': '1', 'X-Filename': encodeURIComponent(nom), 'Content-Type': 'application/pdf' } });
-    const f = await up.json().catch(() => ({}));
-    if (!up.ok) return fail(res, up.status === 403 ? 403 : 502, f.error || 'Envoi du fichier à Pipe-Fit impossible');
+    const f = await envoyerFichierPF((chemin, opts) => pipefit(s, chemin, opts), nom, 'application/pdf', buf);
     let docId = '', indice = '';
     await modifierPF(s, 'affaires', b.affaireId, a => {
       const docs = a.documents || [], ex = b.etudeId && docs.find(d => d.categorie === 'Note de calcul' && d.etudeId === b.etudeId), date = new Date().toISOString().slice(0, 10);
@@ -189,7 +179,7 @@ async function api(req, res, url) {
     const exist = db.prepare('SELECT * FROM etudes WHERE id = ?').get(p[1]);
     if (method === 'GET') return exist ? send(res, 200, ligne(exist)) : fail(res, 404, 'Étude introuvable');
     if (method === 'PUT') {
-      const { data, version } = await lireJSON(req);
+      const { data, version, resume } = await lireJSON(req);
       if (!data || typeof data !== 'object' || !String(data.objet || '').trim() || !Array.isArray(data.notes)) return fail(res, 400, 'Données manquantes (objet de l\'étude, notes)');
       if (exist && version !== exist.version) return fail(res, 409, `Modifiée entre-temps par ${exist.updated_by}`, { record: ligne(exist) });
       const propre = Object.fromEntries(Object.entries(data).filter(([k]) => !k.startsWith('_') && k !== 'id'));
@@ -197,9 +187,12 @@ async function api(req, res, url) {
       db.prepare(`INSERT INTO etudes (id, affaire_id, data, version, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET affaire_id = excluded.affaire_id, data = excluded.data, version = excluded.version, updated_at = excluded.updated_at, updated_by = excluded.updated_by`)
         .run(p[1], data.affaireId || '', JSON.stringify(propre), v, now, s.nom || s.login);
+      // État de l'étude sur la fiche chantier de Pipe-Fit (rattachée à un chantier, modèles exclus) ; retiré d'un chantier quitté
+      const affaireId = data.modele ? '' : String(data.affaireId || '');
+      if (affaireId || (exist && exist.affaire_id)) signalerPF(s, p[1], affaireId, resume);
       return send(res, 200, ligne(db.prepare('SELECT * FROM etudes WHERE id = ?').get(p[1])));
     }
-    if (method === 'DELETE') { db.prepare('DELETE FROM etudes WHERE id = ?').run(p[1]); return send(res, 200, { ok: true }); }
+    if (method === 'DELETE') { db.prepare('DELETE FROM etudes WHERE id = ?').run(p[1]); if (exist && exist.affaire_id) signalerPF(s, p[1], '', null); return send(res, 200, { ok: true }); }
   }
 
   // Réglages : identité de l'entreprise sur les notes de calcul

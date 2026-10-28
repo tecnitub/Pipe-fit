@@ -148,12 +148,23 @@
     return Object.fromEntries(Object.keys(PARAMETRABLES).map(cle => [cle, e(cle)]));
   }
 
-  function handle(method, path, body) {
+  function handle(method, path, body, query = new URLSearchParams()) {
     const p = path.replace(/^\/api\/?/, '').split('/').filter(Boolean);
     const acc = me();
     if (p[0] === 'setup') return [200, { needed: false, local: true }];
     if (p[0] === 'me' && !p[1]) return [200, { ...acc, m365: !!(db.m365 || {}).actif, prefs: (db.prefs || {})[acc.id] || {}, adressesEnvoi: db.adressesEnvoi || {}, assistant: accesAssistant(acc) }];
     // Assistant simulé (sans IA) : mêmes droits et mêmes réglages que le vrai
+    // État des applications Études et DOE par chantier (envoyé par leurs cadres dans la démonstration)
+    if (p[0] === 'liens') {
+      if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Réservé au bureau' }];
+      db.liens = db.liens || [];
+      if (!p[1] && method === 'GET') { const q = query.get('affaireId') || ''; return [200, db.liens.filter(l => !q || l.affaireId === q).sort((x, y) => y.maj.localeCompare(x.maj))]; }
+      if (['etudes', 'doe'].includes(p[1]) && p[2]) {
+        db.liens = db.liens.filter(l => !(l.app === p[1] && l.id === p[2]));
+        if (method === 'PUT' && body.affaireId && body.resume) db.liens.push({ app: p[1], id: p[2], affaireId: String(body.affaireId), resume: body.resume, maj: new Date().toISOString(), par: acc.nom });
+        save(); return [200, { ok: true }];
+      }
+    }
     if (p[0] === 'assistant') {
       const cfg = configAssistant();
       if (p[1] === 'config') {
@@ -443,7 +454,7 @@ window.PIPEFIT_DEMO = true;
     }
     let body = {};
     try { body = opts.body ? JSON.parse(opts.body) : {}; } catch (e) { body = {}; }
-    const [status, data] = await handle(method, u.split('?')[0], body);
+    const [status, data] = await handle(method, u.split('?')[0], body, new URLSearchParams(u.split('?')[1] || ''));
     return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
   };
   // Photos des justificatifs conservées sur l'appareil

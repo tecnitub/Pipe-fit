@@ -14,10 +14,32 @@
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* stockage indisponible */ } },
   };
   const seed = DemoSeed.demoData();
-  const pf = { affaires: (seed.affaires || []).map(a => ({ id: a.id, code: a.code, nom: a.nom, clientId: a.clientId, contactId: a.contactId, siteId: a.siteId, chargeId: a.chargeId, statut: a.statut, type: a.type })),
-    entreprises: (seed.entreprises || []).map(e => ({ id: e.id, nom: e.nom, regimeTVA: e.regimeTVA })),
-    articles: (seed.articles || []).map(a => ({ id: a.id, ref: a.ref, designation: a.designation, famille: a.famille, sousFamille: a.sousFamille, unite: a.unite, prixVente: a.prixVente, coutRevient: a.coutRevient, poidsUnitaire: a.poidsUnitaire })),
-    mainoeuvre: (seed.mainoeuvre || []).map(m => ({ id: m.id, code: m.code, libelle: m.libelle, tauxVente: m.tauxVente, tauxCout: m.tauxCout })) };
+  // Ouverte depuis la démo du CRM (même appareil) : affaires et bibliothèque telles que modifiées dans le CRM, son compte
+  // connecté ; devis, notes de calcul et état des études transmis à la page du CRM, qui les enregistre comme son serveur
+  const crm = () => { try { const c = window.PIPEFIT_CRM_KEY && JSON.parse(storage.get(window.PIPEFIT_CRM_KEY)); return c && c.settings ? c : null; } catch (e) { return null; } };
+  const dansCrm = window.parent !== window && !!window.PIPEFIT_CRM_KEY;
+  const compteCrm = () => {
+    const c = crm(); if (!c) return null;
+    const a = (c.accounts || []).find(x => x.id === storage.get('pipefit-crm-demo-me')) || (c.accounts || [])[0];
+    return a && ['admin', 'charge'].includes(a.role) ? { login: a.login, nom: a.nom, role: a.role } : null;
+  };
+  const attentes = new Map();
+  if (dansCrm) window.addEventListener('message', e => {
+    if (e.source !== window.parent || !e.data || e.data.type !== 'pipefit-etudes-reponse' || !attentes.has(e.data.rid)) return;
+    attentes.get(e.data.rid)(e.data); attentes.delete(e.data.rid);
+  });
+  const demanderCrm = (msg, transfert) => new Promise(ok => {
+    const rid = Math.random().toString(36).slice(2);
+    attentes.set(rid, ok);
+    window.parent.postMessage({ ...msg, rid }, '*', transfert || []);
+    setTimeout(() => { if (attentes.has(rid)) { attentes.delete(rid); ok({ ok: false, error: 'La page du CRM ne répond pas' }); } }, 20000);
+  });
+  const signalerCrm = (id, affaireId, resume) => { if (dansCrm) window.parent.postMessage({ type: 'pipefit-etudes-etat', id, affaireId: affaireId || '', resume: resume || null }, '*'); };
+  const src = crm() || seed;
+  const pf = { affaires: (src.affaires || []).map(a => ({ id: a.id, code: a.code, nom: a.nom, clientId: a.clientId, contactId: a.contactId, siteId: a.siteId, chargeId: a.chargeId, statut: a.statut, type: a.type })),
+    entreprises: (src.entreprises || []).map(e => ({ id: e.id, nom: e.nom, regimeTVA: e.regimeTVA })),
+    articles: (src.articles || []).map(a => ({ id: a.id, ref: a.ref, designation: a.designation, famille: a.famille, sousFamille: a.sousFamille, unite: a.unite, prixVente: a.prixVente, coutRevient: a.coutRevient, poidsUnitaire: a.poidsUnitaire })),
+    mainoeuvre: (src.mainoeuvre || []).map(m => ({ id: m.id, code: m.code, libelle: m.libelle, tauxVente: m.tauxVente, tauxCout: m.tauxCout })) };
   const af = pf.affaires.find(a => a.type !== 'horsDevis') || {};
   // Étude d'exemple : distribution vapeur et eau chaude d'un atelier
   const exemple = () => ({
@@ -36,7 +58,7 @@
   try { db = JSON.parse(storage.get(KEY)); } catch (e) { db = null; }
   if (!db || !Array.isArray(db.etudes)) db = { etudes: [exemple()], config: {} };
   const save = () => { if (!storage.set(KEY, JSON.stringify(db))) console.warn('Stockage local indisponible : les études restent en mémoire.'); };
-  const me = () => COMPTES.find(c => c.login === storage.get(ME_KEY));
+  const me = () => COMPTES.find(c => c.login === storage.get(ME_KEY)) || (storage.get(ME_KEY) === 'deconnecte' ? null : compteCrm());
   const config = () => ({ ...CONFIG_DEFAUT, ...db.config, societe: { ...CONFIG_DEFAUT.societe, ...(db.config.societe || {}) } });
   const rep = (status, obj) => new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
   const err = (status, error, extra) => rep(status, { error, ...(extra || {}) });
@@ -55,7 +77,14 @@
   }
   window.ZIP_UN_FICHIER = zipUnFichier;
   // Défini dès le chargement : l'autorisation est demandée au moment du clic (pas de clic sans effet si elle arrive tard)
-  if (window.claude && window.claude.use) {
+  // Dans le cadre de la démo du CRM : fichier enregistré par la page du CRM (son autorisation de téléchargement)
+  if (dansCrm) {
+    window.SAVE_FILE = async (nom, data) => {
+      const octets = data instanceof Blob ? await data.arrayBuffer() : typeof data === 'string' ? new TextEncoder().encode(data).buffer : data.buffer ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data;
+      window.parent.postMessage({ type: 'pipefit-doe-enregistrer', nom: String(nom), data: octets }, '*', [octets]);
+      return 'ok';
+    };
+  } else if (window.claude && window.claude.use) {
     const dlPromesse = window.claude.use('downloads').catch(() => null);
     window.SAVE_FILE = async (filename, data) => {
       const dl = await dlPromesse;
@@ -84,10 +113,23 @@
     }
     const s = me();
     if (!s) return err(401, 'Non connecté');
-    if (p[0] === 'logout') { storage.del(ME_KEY); return rep(200, { ok: true }); }
+    if (p[0] === 'logout') { if (crm()) storage.set(ME_KEY, 'deconnecte'); else storage.del(ME_KEY); return rep(200, { ok: true }); }
     if (p[0] === 'me') return rep(200, { ...s, pipefit: '' });
     if (p[0] === 'pf' && p[1] === 'affaires') return rep(200, pf);
-    if (p[0] === 'pf' && p[1] === 'rex') return rep(200, RexPF(seed));
+    if (p[0] === 'pf' && p[1] === 'rex') return rep(200, RexPF(crm() || seed));
+    // Reliée au CRM : devis et note de calcul créés par la page du CRM
+    if (dansCrm && p[0] === 'pf' && ['document', 'devis'].includes(p[1]) && method === 'POST') {
+      const b = body();
+      if (p[1] === 'document') {
+        const bin = atob(String(b.base64 || '')), octets = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) octets[i] = bin.charCodeAt(i);
+        delete b.base64;
+        const r = await demanderCrm({ type: 'pipefit-etudes-document', ...b, data: octets.buffer }, [octets.buffer]);
+        return r.ok ? rep(200, r.data) : err(502, r.error || 'Dépôt refusé par le CRM');
+      }
+      const r = await demanderCrm({ type: 'pipefit-etudes-devis', ...b });
+      return r.ok ? rep(200, r.data) : err(502, r.error || 'Devis refusé par le CRM');
+    }
     // Démo : dépôt de note et devis simulés (pas de Pipe-Fit derrière), mémorisés sur l'appareil
     if (p[0] === 'pf' && p[1] === 'document' && method === 'POST') {
       const b = body(); db.envoisPF = db.envoisPF || [];
@@ -101,17 +143,20 @@
       db.envoisPF.push({ genre: 'devis', etudeId: b.etudeId, affaireId: b.affaireId, numero, lignes: (b.lignes || []).length, date: new Date().toISOString() }); save();
       return rep(200, { id: `demo-${numero}`, numero });
     }
+    // Études déjà sur l'appareil (étude d'exemple comprise) : état transmis à la page du CRM après l'affichage
+    if (dansCrm && p[0] === 'etudes' && !p[1]) setTimeout(() => db.etudes.filter(e => !e.modele && e.affaireId).forEach(e => { try { signalerCrm(e.id, e.affaireId, resumePF(e)); } catch (er) { /* calcul incomplet */ } }), 800);
     if (p[0] === 'etudes' && !p[1]) return rep(200, db.etudes.slice().sort((x, y) => y._at.localeCompare(x._at)));
     if (p[0] === 'etudes') {
       const i = db.etudes.findIndex(d => d.id === p[1]), exist = db.etudes[i];
       if (method === 'GET') return exist ? rep(200, exist) : err(404, 'Étude introuvable');
-      if (method === 'DELETE') { if (exist) db.etudes.splice(i, 1); save(); return rep(200, { ok: true }); }
-      const { data, version } = body();
+      if (method === 'DELETE') { if (exist) { db.etudes.splice(i, 1); signalerCrm(exist.id, '', null); } save(); return rep(200, { ok: true }); }
+      const { data, version, resume } = body();
       if (!data || !String(data.objet || '').trim() || !Array.isArray(data.notes)) return err(400, 'Données manquantes (objet de l\'étude, notes)');
       if (exist && version !== exist._v) return err(409, `Modifiée entre-temps par ${exist._by}`, { record: exist });
       const propre = Object.fromEntries(Object.entries(data).filter(([k]) => !k.startsWith('_') && k !== 'id'));
       const rec = { ...propre, id: p[1], _v: exist ? exist._v + 1 : 1, _at: new Date().toISOString(), _by: s.nom };
       if (exist) db.etudes[i] = rec; else db.etudes.push(rec);
+      if (!rec.modele && (rec.affaireId || (exist && exist.affaireId))) signalerCrm(rec.id, rec.modele ? '' : rec.affaireId, resume);
       save(); return rep(200, rec);
     }
     if (p[0] === 'config') {

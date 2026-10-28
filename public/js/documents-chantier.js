@@ -36,6 +36,8 @@ function lienDOE(a) {
 // Lien vers les études (notes de calcul) du chantier dans l'application Études (bureau uniquement)
 function lienEtudes(a) {
   if (!Store.me || Store.me.role === 'atelier') return '';
+  // Démonstration : application Études publiée à côté de la page (etudes.html), ouverte dans un cadre (voir Views.etudes)
+  if (window.PIPEFIT_DEMO) return `#/etudes/${encodeURIComponent(a.id)}`;
   const base = String((Store.data.settings || {}).etudesUrl || (/^https?:$/.test(location.protocol) && !window.PIPEFIT_DEMO ? `${location.protocol}//${location.hostname}:3200` : '')).trim().replace(/\/+$/, '');
   return /^https?:\/\//i.test(base) ? `${base}/#/chantier/${encodeURIComponent(a.id)}` : '';
 }
@@ -239,6 +241,7 @@ Views.doe = params => {
   return `<div class="toolbar"><a class="btn secondary" href="#/chantier/${esc(a.id)}">← ${esc(a.code || 'Chantier')}</a><span class="muted small">Application DOE de démonstration : mêmes chantiers et même compte que la démo du CRM. L'avancement de l'étude et les fiches visées remontent sur la fiche du chantier.</span></div>
     <iframe class="doe-cadre" src="doe.html#/${params[1] === 'etude' ? 'etude' : 'chantier'}/${encodeURIComponent(a.id)}" title="Application DOE"></iframe>`;
 };
+Views.doe.garder = true;
 Views.doe.bind = root => {
   const cadre = root.querySelector('.doe-cadre');
   if (!cadre) return;
@@ -253,16 +256,94 @@ Views.doe.bind = root => {
   window.addEventListener('message', window.__doeEcoute);
 };
 
-/* ---------- Étude d'exécution ↔ chantier ---------- */
-const ficheVisee = f => ['Visée', 'Visée avec observations'].includes(f.visa);
-const noteVisa = f => `Étude d'exécution : ${f.visa.toLowerCase()}${f.dateVisa ? ` le ${dateFr(f.dateVisa)}` : ''}${f.obs ? ` — ${f.obs}` : ''}`;
+// Démonstration : l'application Études (etudes.html) dans un cadre ; #/etudes/<id> ouvre les études du chantier,
+// #/etudes/<id>/<étude> une étude. Ses devis, notes de calcul et états sont enregistrés ici comme le ferait son serveur.
+Views.etudes = params => {
+  const a = Store.get('affaires', params[0]);
+  if (!window.PIPEFIT_DEMO || !a) return '<p>Application Études : voir Paramètres → Société (adresse de l\'application Études).</p>';
+  return `<div class="toolbar"><a class="btn secondary" href="#/chantier/${esc(a.id)}">← ${esc(a.code || 'Chantier')}</a><span class="muted small">Application Études de démonstration : mêmes chantiers et même compte que la démo du CRM. Ses devis et notes de calcul arrivent dans le chantier, l'état des études sur sa vue d'ensemble.</span></div>
+    <iframe class="doe-cadre" src="etudes.html#/${params[1] ? `etude/${encodeURIComponent(params[1])}` : `chantier/${encodeURIComponent(a.id)}`}" title="Application Études"></iframe>`;
+};
+Views.etudes.garder = true;
+Views.etudes.bind = root => {
+  const cadre = root.querySelector('.doe-cadre');
+  if (!cadre) return;
+  if (window.__etudesEcoute) window.removeEventListener('message', window.__etudesEcoute);
+  window.__etudesEcoute = async e => {
+    const m = e.data;
+    if (e.source !== cadre.contentWindow || !m) return;
+    if (m.type === 'pipefit-doe-enregistrer' && m.data instanceof ArrayBuffer) {
+      const nom = String(m.nom).replace(/[\\/:*?"<>|]+/g, '-').slice(0, 150) || 'note.pdf', ext = (/\.([a-z0-9]+)$/i.exec(nom) || [])[1] || '';
+      return download(nom, new Uint8Array(m.data), { pdf: 'application/pdf', svg: 'image/svg+xml', csv: 'text/csv', zip: 'application/zip' }[ext.toLowerCase()] || 'application/octet-stream');
+    }
+    if (m.type === 'pipefit-etudes-etat') {
+      await api(m.affaireId ? 'PUT' : 'DELETE', `/api/liens/etudes/${encodeURIComponent(m.id)}`, m.affaireId ? { affaireId: m.affaireId, resume: m.resume || { objet: '' } } : {}).catch(() => {});
+      [...liensChantier.keys()].forEach(id => liensModifies(id));
+      if (m.affaireId) liensModifies(m.affaireId);
+      return;
+    }
+    if (m.type !== 'pipefit-etudes-devis' && m.type !== 'pipefit-etudes-document') return;
+    const repondre = (ok, data, error) => cadre.contentWindow.postMessage({ type: 'pipefit-etudes-reponse', rid: m.rid, ok, data, error }, '*');
+    try { repondre(true, m.type === 'pipefit-etudes-devis' ? await devisDepuisEtude(m) : await noteDepuisEtude(m)); } catch (er) { repondre(false, null, er.message); }
+  };
+  window.addEventListener('message', window.__etudesEcoute);
+};
+// Devis brouillon à partir du métré d'une étude (comme le serveur Études : client, contact, site, TVA du client)
+async function devisDepuisEtude(m) {
+  const a = Store.get('affaires', String(m.affaireId || ''));
+  if (!a || !Array.isArray(m.lignes) || !m.lignes.length) throw new Error('Affaire et lignes du devis requises');
+  if (!Store.can('write', 'devis')) throw new Error('Droits insuffisants pour créer un devis');
+  const client = Store.get('entreprises', a.clientId) || {};
+  const tva = client.regimeTVA === 'AL' ? { autoliquidation: true } : { autoliquidation: false, tauxTVA: client.regimeTVA ? Number(client.regimeTVA) : '' };
+  const d = Store.upsert('devis', { numero: '', objet: String(m.objet || a.nom || 'Chiffrage bureau d\'études').slice(0, 200), clientId: a.clientId || '', contactId: a.contactId || '', siteId: a.siteId || '', chargeId: a.chargeId || '',
+    affaireId: a.id, date: isoDate(new Date()), validite: 30, statut: 'Brouillon', zoneId: '', ajustements: [], lignes: m.lignes, numAuto: true, ...tva,
+    notes: `Métré établi par le bureau d'études (application Études${m.etudeId ? `, étude ${m.etudeId}` : ''}) : quantités et prix à vérifier.` });
+  const r = await Store.attendre('devis', d.id);
+  App.toast(`Devis ${(r || d).numero || ''} créé en brouillon depuis l'étude`, 4000);
+  return { id: d.id, numero: (r || d).numero || '' };
+}
+// Note de calcul déposée dans les documents du chantier (nouvel indice si déjà déposée pour cette étude)
+async function noteDepuisEtude(m) {
+  const a = Store.get('affaires', String(m.affaireId || '')), nom = String(m.nom || '').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 150);
+  if (!a || !/\.pdf$/i.test(nom) || !(m.data instanceof ArrayBuffer)) throw new Error('Affaire, nom de fichier PDF et contenu requis');
+  const f = await envoyerFichierDocument(new File([m.data], nom, { type: 'application/pdf' }));
+  const docs = a.documents || (a.documents = []), ex = m.etudeId && docs.find(d => d.categorie === 'Note de calcul' && d.etudeId === m.etudeId), date = isoDate(new Date());
+  let doc;
+  if (ex) {
+    ex.anciens = [...(ex.anciens || []), { fichierId: ex.fichierId, indice: ex.indice || 'A', date: ex.date }];
+    Object.assign(ex, { fichierId: f.id, nom, mime: f.mime, taille: f.taille, indice: String(m.indice || ex.indice || 'A'), date, par: Store.me.nom, note: String(m.note || ex.note || '') });
+    doc = ex;
+  } else {
+    doc = { id: uid(), fichierId: f.id, nom, categorie: 'Note de calcul', indice: String(m.indice || 'A'), note: String(m.note || ''), mime: f.mime, taille: f.taille, date, par: Store.me.nom, visible: false, etudeId: String(m.etudeId || '') };
+    docs.push(doc);
+  }
+  Store.upsert('affaires', a);
+  App.toast(`Note de calcul déposée dans les documents de ${a.code} (indice ${doc.indice})`, 4000);
+  return { ok: true, docId: doc.id, indice: doc.indice };
+}
+
+/* ---------- Applications Études et DOE ↔ chantier ---------- */
+// État envoyé par les applications à chaque enregistrement (serveur : /api/liens ; démo : cadre ci-dessus), lu à l'affichage
+const liensChantier = new Map(); // affaireId -> [{ app, id, resume, maj, par }]
+async function chargerLiens(affaireId) {
+  if (!Store.me || Store.me.role === 'atelier' || !affaireId) return [];
+  try { liensChantier.set(affaireId, await api('GET', `/api/liens?affaireId=${encodeURIComponent(affaireId)}`)); } catch (e) { if (!liensChantier.has(affaireId)) liensChantier.set(affaireId, []); }
+  return liensChantier.get(affaireId);
+}
+const lienDoeDe = affaireId => (liensChantier.get(affaireId) || []).find(l => l.app === 'doe');
+// Une application a enregistré : carte du chantier affiché mise à jour
+function liensModifies(affaireId) {
+  if (!liensChantier.has(affaireId) && !location.hash.includes(affaireId)) return;
+  chargerLiens(affaireId).then(() => { const z = document.querySelector(`#liens-apps[data-affaire="${CSS.escape(affaireId)}"]`); if (z) { z.innerHTML = liensAppsHtml(Store.get('affaires', affaireId)); bindLiensApps(z, Store.get('affaires', affaireId)); } });
+}
+
+// Démonstration : état envoyé par l'application DOE du cadre, enregistré comme le ferait son serveur ; fiches visées
+// demandées au cadre puis ajoutées aux documents du chantier
 const fichesDemandees = new Set();
-// État envoyé par l'application DOE à chaque enregistrement : conservé sur le chantier, fiches visées reprises dans ses documents
-function recevoirEtatEtude(affaireId, resume, cadre) {
+async function recevoirEtatEtude(affaireId, resume, cadre) {
   const a = Store.get('affaires', affaireId);
   if (!a || estHorsDevis(a)) return;
-  const avant = a.etudeDoe || null, cle = r => (r ? JSON.stringify({ ...r, maj: '', par: '' }) : '');
-  let change = cle(avant) !== cle(resume);
+  const avant = (lienDoeDe(affaireId) || (await chargerLiens(affaireId), lienDoeDe(affaireId)) || {}).resume;
   if (resume && avant) {
     const visaAvant = id => ((avant.fiches || []).find(f => f.id === id) || {}).visa;
     const nouvelles = v => resume.fiches.filter(f => f.visa === v && visaAvant(f.id) !== v).length;
@@ -270,49 +351,82 @@ function recevoirEtatEtude(affaireId, resume, cadre) {
     if (n.refus) App.toast(`${a.code} : ${n.refus} fiche(s) technique(s) refusée(s) par la maîtrise d'œuvre`, 5000);
     else if (n.vise) App.toast(`${a.code} : ${n.vise} fiche(s) technique(s) visée(s)`, 4000);
   }
-  // Documents du chantier liés à une fiche : visa repris ; une fiche refusée n'est plus transmise aux compagnons
-  const docs = a.documents || [];
-  ((resume || {}).fiches || []).forEach(f => {
-    const d = docs.find(x => x.etudeFicheId === f.id) || (f.fichier && f.fichier.src === 'pf' && docs.find(x => x.fichierId === f.fichier.id));
-    if (d) {
-      if (d.visa !== f.visa || (d.etudeFicheId && d.note !== noteVisa(f))) { d.visa = f.visa; if (d.etudeFicheId) { d.note = noteVisa(f); d.visible = f.visa !== 'Refusée'; } change = true; }
-    } else if (ficheVisee(f) && f.fichier && f.fichier.src !== 'pf' && !fichesDemandees.has(f.id)) {
-      fichesDemandees.add(f.id);
-      cadre.postMessage({ type: 'pipefit-crm-fiche', doeId: resume.doeId, ficheId: f.id }, '*');
-    }
-  });
-  if (!change) return;
-  a.etudeDoe = resume;
-  Store.upsert('affaires', a);
+  const cle = r => (r ? JSON.stringify({ ...r, maj: '', par: '' }) : '');
+  if (cle(avant) !== cle(resume)) {
+    const id = (resume && resume.doeId) || ((lienDoeDe(affaireId) || {}).id);
+    if (id) await api(resume ? 'PUT' : 'DELETE', `/api/liens/doe/${encodeURIComponent(id)}`, resume ? { affaireId, resume } : {}).catch(() => {});
+    liensModifies(affaireId);
+  }
+  if (!resume) return;
+  const { change, aEnvoyer } = LienEtude.appliquer(a.documents || (a.documents = []), resume.fiches);
+  if (change) Store.upsert('affaires', a);
+  aEnvoyer.filter(f => !fichesDemandees.has(f.id)).forEach(f => { fichesDemandees.add(f.id); cadre.postMessage({ type: 'pipefit-crm-fiche', doeId: resume.doeId, ficheId: f.id }, '*'); });
 }
 async function ajouterFicheVisee(m) {
-  const a = Store.get('affaires', String(m.affaireId || '')), f = a && ((a.etudeDoe || {}).fiches || []).find(x => x.id === m.ficheId);
+  const a = Store.get('affaires', String(m.affaireId || '')), f = a && (((lienDoeDe(a.id) || {}).resume || {}).fiches || []).find(x => x.id === m.ficheId);
   if (!f || (a.documents || []).some(d => d.etudeFicheId === f.id)) return;
   const nom = String(m.nom || 'fiche.pdf').replace(/[\\/:*?"<>|]+/g, '-').slice(0, 150);
   try {
     const r = await envoyerFichierDocument(new File([m.data], nom, { type: m.mime || 'application/pdf' }));
-    a.documents = [...(a.documents || []), { id: uid(), fichierId: r.id, nom, categorie: 'Fiche technique', indice: f.indice || '', note: noteVisa(f), mime: r.mime, taille: r.taille,
-      date: isoDate(new Date()), par: Store.me.nom, visible: true, etudeFicheId: f.id, visa: f.visa }];
+    a.documents = [...(a.documents || []), LienEtude.documentFiche(f, r, nom, Store.me.nom, uid())];
     Store.upsert('affaires', a);
     App.toast(`Fiche visée « ${f.designation || nom} » ajoutée aux documents de ${a.code} et transmise aux compagnons`, 4000);
   } catch (e) { fichesDemandees.delete(f.id); notify(`Fiche « ${nom} » : ${e.message}`); }
 }
 
-// Carte de la vue d'ensemble du chantier : avancement de l'étude et du DOE (bureau)
+// Vue d'ensemble du chantier (bureau) : études du bureau d'études et étude d'exécution / DOE, remplies après lecture
 function etudeChantierHtml(a) {
-  if (!lienDOE(a) || estHorsDevis(a)) return '';
-  const r = a.etudeDoe, lien = window.PIPEFIT_DEMO ? `#/doe/${encodeURIComponent(a.id)}/etude` : lienDOE(a), cible = window.PIPEFIT_DEMO ? '' : 'target="_blank" rel="noopener"';
+  if (estHorsDevis(a) || !Store.me || Store.me.role === 'atelier' || (!lienDOE(a) && !lienEtudes(a))) return '';
+  return `<div id="liens-apps" data-affaire="${esc(a.id)}">${liensChantier.has(a.id) ? liensAppsHtml(a) : '<p class="muted small">Études et DOE : lecture…</p>'}</div>`;
+}
+function bindEtudeChantier(root, a) {
+  const z = root.querySelector('#liens-apps');
+  if (!z) return;
+  bindLiensApps(z, a);
+  chargerLiens(a.id).then(() => { const n = document.querySelector(`#liens-apps[data-affaire="${CSS.escape(a.id)}"]`); if (n) { n.innerHTML = liensAppsHtml(a); bindLiensApps(n, a); } });
+}
+function bindLiensApps(z, a) {
+  const ec = z.querySelector('#etude-consultation');
+  if (ec) ec.onclick = () => { location.hash = '#/consultations/' + nouvelleConsultation({ affaireId: a.id, objet: `Équipements ${a.code || ''} (étude d'exécution)`, lignes: lignesEtude(a) }).id; };
+}
+const lienExterne = () => (window.PIPEFIT_DEMO ? '' : 'target="_blank" rel="noopener"');
+const quandMaj = l => (l.maj ? `Mis à jour le ${new Date(l.maj).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}${l.par ? ` par ${esc(l.par)}` : ''}` : '');
+function liensAppsHtml(a) {
+  const liens = liensChantier.get(a.id) || [];
+  return `${lienEtudes(a) ? etudesBeHtml(a, liens.filter(l => l.app === 'etudes')) : ''}${lienDOE(a) ? etudeExecutionHtml(a, liens.find(l => l.app === 'doe')) : ''}`;
+}
+// Études du bureau d'études (application Études) : calculs, contrôles, notes déposées, devis, équipements dimensionnés
+function etudesBeHtml(a, liens) {
+  const base = lienEtudes(a), nouvelle = base;
+  const notesDeposees = (a.documents || []).filter(d => d.categorie === 'Note de calcul');
+  return `<h2>Études du bureau d'études <span class="muted small">${liens.length}</span></h2><div class="card etude-card">
+    <div class="etude-tete"><span class="muted">Notes de calcul (réseaux, pompes, vannes, vases, bilans, schémas de principe…) faites dans l'application Études pour ce chantier.</span>
+      <span class="spacer"></span><a class="btn small" href="${esc(nouvelle)}" ${lienExterne()}>${liens.length ? 'Ouvrir les études' : 'Démarrer une étude'}</a></div>
+    ${liens.length ? `<div class="table-wrap"><table><tr><th>Étude</th><th>Indice</th><th>Calculs</th><th>Contrôles</th><th>Rédacteur / vérificateur</th><th>Note de calcul</th><th>Devis</th></tr>
+      ${liens.map(l => { const r = l.resume || {}, nd = notesDeposees.find(d => d.etudeId === l.id);
+        return `<tr><td><a href="${esc(window.PIPEFIT_DEMO ? `#/etudes/${encodeURIComponent(a.id)}/${encodeURIComponent(l.id)}` : base.replace(/#\/chantier\/.*$/, `#/etude/${encodeURIComponent(l.id)}`))}" ${lienExterne()}><strong>${esc(r.objet || 'Étude')}</strong></a>
+          ${(r.equipements || []).length ? `<div class="muted small">${r.equipements.slice(0, 4).map(e => `${fmt(e.qte)} × ${esc(e.designation)}`).join(' · ')}${r.equipements.length > 4 ? ` · +${r.equipements.length - 4}` : ''}</div>` : ''}<div class="muted small">${quandMaj(l)}</div></td>
+          <td>${esc(r.indice || '')}</td><td>${(r.notes || []).length}</td>
+          <td>${r.erreurs ? `<span class="badge b-bad">${r.erreurs} non-conformité(s)</span>` : r.attention ? `<span class="badge b-warn">${r.attention} point(s) d'attention</span>` : (r.notes || []).length ? '<span class="badge b-ok">Conforme</span>' : ''}</td>
+          <td>${esc(r.auteur || '')}${r.verificateur ? ` / ${esc(r.verificateur)}` : ' <span class="muted small">(à vérifier)</span>'}</td>
+          <td>${nd ? `<a href="${lienDocument(nd)}" target="_blank" rel="noopener">🧮 indice ${esc(nd.indice || 'A')}</a>` : '<span class="muted small">pas déposée</span>'}</td>
+          <td>${(r.devis || []).map(d => Store.get('devis', d.id) ? `<a href="#/devis/${esc(d.id)}">${esc(Store.get('devis', d.id).numero || d.numero || 'brouillon')}</a>` : esc(d.numero || '')).join(', ')}</td></tr>`; }).join('')}</table></div>`
+    : '<p class="muted small">Aucune étude pour l\'instant.</p>'}</div>`;
+}
+// Étude d'exécution et DOE (application DOE)
+function etudeExecutionHtml(a, l) {
+  const r = l && l.resume, lien = window.PIPEFIT_DEMO ? `#/doe/${encodeURIComponent(a.id)}/etude` : lienDOE(a);
   if (!r) {
     return `<h2>Étude d'exécution et DOE</h2><div class="card etude-card"><p class="muted">Pas encore d'étude : le CCTP du chantier est lu, les équipements à mettre en place sont repérés et numérotés,
       les fiches techniques soumises au visa. À la fin des travaux, l'étude devient le DOE (il ne reste que les attestations, PV et essais).</p>
-      <a class="btn" href="${esc(lien)}" ${cible}>Démarrer l'étude</a></div>`;
+      <a class="btn" href="${esc(lien)}" ${lienExterne()}>Démarrer l'étude</a></div>`;
   }
   const v = r.visas || {}, nb = k => v[k] || 0, vises = nb('Visée') + nb('Visée avec observations'), fiches = (r.fiches || []).length;
   const refusees = (r.fiches || []).filter(f => f.visa === 'Refusée'), eqs = r.equipements || [];
   const phase = r.statut === 'Remis' ? '<span class="badge b-ok">DOE remis</span>' : r.etude ? '<span class="badge b-info">Étude en cours</span>' : '<span class="badge b-warn">DOE en cours</span>';
   return `<h2>Étude d'exécution et DOE</h2><div class="card etude-card">
     <div class="etude-tete">${phase} <strong>${r.pct}%</strong> complété · ${r.aFaire} point(s) à compléter${r.indice ? ` · indice ${esc(r.indice)}` : ''}
-      <span class="spacer"></span><a class="btn small" href="${esc(lien)}" ${cible}>Ouvrir l'étude</a>
+      <span class="spacer"></span><a class="btn small" href="${esc(lien)}" ${lienExterne()}>Ouvrir l'étude</a>
       ${eqs.length && Store.can('write', 'consultations') ? '<button class="small secondary" id="etude-consultation">Consulter les fournisseurs sur ces équipements</button>' : ''}</div>
     ${gauge(r.pct, 100)}
     <div class="etude-lignes">
@@ -321,10 +435,10 @@ function etudeChantierHtml(a) {
       <div><span class="label">Fiches techniques</span>${fiches ? `${vises}/${fiches} visée(s) · ${nb('Soumise')} soumise(s) · ${nb('À soumettre')} à soumettre${refusees.length ? ` · <span class="neg">${refusees.length} refusée(s) : ${refusees.map(f => esc(f.designation)).join(', ')}</span>` : ''}` : 'aucune'}${vises ? ' <span class="muted small">(les fiches visées sont dans les documents du chantier, transmises aux compagnons)</span>' : ''}</div>
       ${(r.manques || []).length ? `<div><span class="label">À compléter</span>${r.manques.slice(0, 4).map(esc).join(' · ')}${r.aFaire > 4 ? ` · <span class="muted">et ${r.aFaire - 4} autre(s)</span>` : ''}</div>` : ''}
     </div>
-    ${r.maj ? `<div class="muted small">Mis à jour le ${new Date(r.maj).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}${r.par ? ` par ${esc(r.par)}` : ''}</div>` : ''}</div>`;
+    <div class="muted small">${quandMaj(l)}</div></div>`;
 }
-// Lignes de consultation : équipements de l'étude pas encore choisis (sans marque ni référence), sinon tous
+// Lignes de consultation : équipements de l'étude d'exécution pas encore choisis (sans marque ni référence), sinon tous
 function lignesEtude(a) {
-  const eqs = ((a || {}).etudeDoe || {}).equipements || [], libres = eqs.filter(e => !e.marque && !e.reference);
+  const eqs = ((lienDoeDe((a || {}).id) || {}).resume || {}).equipements || [], libres = eqs.filter(e => !e.marque && !e.reference);
   return (libres.length ? libres : eqs).map(e => ({ articleId: '', designation: [e.repere, e.designation].filter(Boolean).join(' — ') + (e.prescrit ? ` (CCTP : ${e.prescrit})` : e.refCctp ? ` (CCTP art. ${e.refCctp})` : ''), unite: 'u', qte: num(e.quantite) || 1 }));
 }

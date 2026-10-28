@@ -59,6 +59,7 @@
     if (p[0] === 'logout') { storage.set(ME_KEY, 'deconnecte'); return rep(200, { ok: true }); }
     if (p[0] === 'me') return rep(200, { ...s, pipefit: window.parent === window ? window.PIPEFIT_CRM_URL || '' : '' });
     if (p[0] === 'pf' && p[1] === 'donnees') return rep(200, donneesPf());
+    if (p[0] === 'pf' && p[1] === 'liens') { const q = new URLSearchParams(u.split('?')[1] || '').get('affaireId'); return rep(200, ((crm() || {}).liens || []).filter(l => !q || l.affaireId === q)); }
     if (p[0] === 'does' && !p[1]) { setTimeout(() => db.does.forEach(d => signaler(d.affaireId, d)), 700); }
     if (p[0] === 'does' && !p[1]) return rep(200, db.does.slice().sort((x, y) => y._at.localeCompare(x._at)));
     if (p[0] === 'does') {

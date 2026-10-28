@@ -153,6 +153,7 @@ const DOSSIER = DossierDocuments.creer({ DB, db, broadcast, uid, TYPES: TYPES_DO
 // Copie des pièces jointes sur le réseau (sens unique) et sauvegarde quotidienne de la base
 const PJRESEAU = require('./pj-reseau').creer({ DB, db, racineDocuments: () => DOSSIER.config().chemin });
 // Assistant (Claude) : tâches confiées en langage courant, préparées en brouillon avec les droits de la personne
+const LIENS = require('./liens-apps').creer({ db, broadcast });
 const ASSISTANT = require('./assistant').creer({ DB, db, broadcast, notifier: obj => NOTIFS.enregistrer(obj) });
 const SAUVEGARDE = require('./sauvegarde').creer({ DB, db, dossierDefaut: path.join(path.dirname(DB_FILE), 'Sauvegardes'),
   autres: [{ prefixe: 'doe', fichier: process.env.DOE_DB_FILE || path.join(__dirname, '..', 'doe', 'data', 'doe.db') }] });
@@ -492,6 +493,18 @@ async function api(req, res, url) {
       return send(res, 200, { config: c, ...DOSSIER.etat() });
     }
     return send(res, 200, { config: DOSSIER.config(), ...DOSSIER.etat(), sep: path.sep });
+  }
+
+  // État des applications Études et DOE par chantier (envoyé par leurs serveurs avec le compte de la personne ; bureau)
+  if (p[0] === 'liens') {
+    if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
+    if (!p[1] && method === 'GET') return send(res, 200, LIENS.liste(url.searchParams.get('affaireId') || ''));
+    if (p[1] && p[2]) {
+      try {
+        if (method === 'PUT') return send(res, 200, LIENS.enregistrer(p[1], p[2], await readBody(req), acc.nom || acc.login) || { ok: true });
+        if (method === 'DELETE') { LIENS.supprimer(p[1], p[2]); return send(res, 200, { ok: true }); }
+      } catch (e) { return fail(res, e.status || 500, e.message); }
+    }
   }
 
   // Assistant : réglages (administrateur), conversations et messages (comptes autorisés)

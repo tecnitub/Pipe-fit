@@ -35,6 +35,8 @@ const confirmer = (msg, ok = 'Confirmer') => new Promise(res => {
 /* ---------- Données : dossiers DOE ---------- */
 const S = { me: null, config: null, does: [], enCours: new Map() };
 const doeDe = affaireId => S.does.find(d => d.affaireId === affaireId);
+// Corps d'un enregistrement : le dossier et son résumé pour la fiche chantier de Pipe-Fit (avancement, CCTP, visas)
+const corpsDOE = (doe, version) => { let resume; try { resume = typeof resumeEtude === 'function' ? resumeEtude(doe) : undefined; } catch (e) { resume = undefined; } return { data: doe, version, resume }; };
 // Enregistrement différé (une requête à la fois par dossier, contrôle de version)
 function enregistrer(doe) {
   const st = S.enCours.get(doe.id) || {};
@@ -43,7 +45,7 @@ function enregistrer(doe) {
     if (st.vol) { st.encore = true; return; }
     st.vol = true;
     try {
-      const r = await api('PUT', `/api/does/${doe.id}`, { data: doe, version: doe._v });
+      const r = await api('PUT', `/api/does/${doe.id}`, corpsDOE(doe, doe._v));
       Object.assign(doe, { _v: r._v, _at: r._at, _by: r._by });
       majEtatEnregistrement('Enregistré');
     } catch (e) {
@@ -156,7 +158,7 @@ Vues.accueil = {
 async function creerDOE(affaireId) {
   const doe = { ...doeVide(affaireId, S.config), id: uidD() };
   const n = prefillDepuisPF(doe);
-  const r = await api('PUT', `/api/does/${doe.id}`, { data: doe });
+  const r = await api('PUT', `/api/does/${doe.id}`, corpsDOE(doe));
   S.does.unshift(r);
   toast(`DOE créé : ${n} information(s) reprises du chantier`);
   location.hash = `#/doe/${r.id}/garde`;

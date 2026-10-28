@@ -22,6 +22,9 @@ const App = {
     if (name !== 'mails') mailEdit.draft = null;
     Doc.appliquer();
     const root = document.getElementById('app');
+    // Application ouverte dans un cadre (DOE, Études) : pas rechargée par un nouvel affichage de la même page
+    if (view.garder && root.dataset.vue === hash && root.querySelector('iframe.doe-cadre')) return;
+    root.dataset.vue = hash;
     root.innerHTML = view(params, query);
     if (view.bind) view.bind(root, params, query);
     // Onglets plus larges que l'écran (téléphone) : l'onglet actif reste visible
