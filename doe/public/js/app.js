@@ -170,6 +170,18 @@ Vues.chantier = {
   bind: (root, p) => { const b = root.querySelector('#creer'), e = root.querySelector('#etude'); if (b) b.onclick = () => creerDOE(p[0]); if (e) e.onclick = () => creerEtude(p[0]); },
 };
 
+// Depuis la fiche chantier du CRM : #/etude/<id> ouvre l'étude du chantier, ou la démarre
+let etudeEnCreation = '';
+Vues.etude = {
+  html: p => {
+    const d = doeDe(p[0]);
+    if (d) { setTimeout(() => { location.hash = `#/doe/${d.id}/${enEtude(d) || d.statut === 'Étude' ? 'etude' : 'garde'}`; }); return ''; }
+    if (!PF.get('affaires', p[0])) return '<p>Chantier introuvable dans Pipe-Fit.</p>';
+    if (etudeEnCreation !== p[0]) { etudeEnCreation = p[0]; setTimeout(() => creerEtude(p[0]).catch(e => toast(e.message, 6000))); }
+    return '<p class="muted">Création de l\'étude du chantier…</p>';
+  },
+};
+
 /* ---------- Éditeur d'un dossier ---------- */
 const champ = (lib, chemin, val, opts = {}) => `<label class="${opts.large ? 'large' : ''}">${esc(lib)}${opts.zone ? `<textarea data-ch="${chemin}" rows="${opts.rows || 3}">${esc(val)}</textarea>`
   : `<input data-ch="${chemin}" value="${esc(val)}" ${opts.type ? `type="${opts.type}"` : ''} placeholder="${esc(opts.ph || A_COMPLETER)}">`}</label>`;

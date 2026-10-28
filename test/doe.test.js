@@ -89,3 +89,24 @@ test('lecture du CCTP : scripts de lecture et lecteur PDF servis à l\'applicati
   const html = await (await fetch(`${base}/`)).text();
   assert.ok(['shared/cctp-lecture.js', 'shared/pdf-lecture.js', 'js/etude.js'].every(s => html.includes(s)));
 });
+
+// Démo : résumé de l'étude transmis à la fiche chantier du CRM
+test('résumé de l\'étude pour le CRM : avancement, CCTP, équipements, visas', () => {
+  const vm = require('node:vm');
+  const ctx = vm.createContext({ SECTIONS: {}, manquesDOE: () => ({ pct: 40, manques: [{ libelle: 'Fiche « Vase » : refusée' }, { libelle: 'Date de réception' }] }) });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../doe/public/js/etude.js'), 'utf8'), ctx);
+  const doe = { id: 'd1', statut: 'Étude', indice: 'A', _at: '2026-10-28T10:00:00Z', _by: 'Jacky',
+    cctpLu: { nom: 'CCTP.pdf', articles: [{ num: '3.1' }, { num: '3.2' }], equipements: [{ article: '3.1', repere: 'PAC-01' }, { article: '3.2', repere: 'VE-01' }] },
+    equipements: [{ id: 'e1', repere: 'PAC-01', designation: 'Pompe à chaleur', refCctp: '3.1', quantite: '1' }],
+    fiches: [{ id: 'f1', designation: 'PAC Daikin', visa: 'Visée', equipements: ['e1'], fichier: { src: 'doe', id: 'x', nom: 'pac.pdf' } }, { id: 'f2', designation: 'Vase', visa: 'Refusée' }, { id: 'f3', designation: 'Filtre' }] };
+  const r = vm.runInContext('resumeEtude', ctx)(doe);
+  assert.strictEqual(r.etude, true);
+  assert.strictEqual(r.pct, 40);
+  assert.strictEqual(r.aFaire, 2);
+  assert.deepStrictEqual({ ...r.cctp }, { nom: 'CCTP.pdf', le: '', articles: 2, equipements: 2, manquants: 1 });
+  assert.strictEqual(r.equipements[0].visa, 'Visée');
+  assert.deepStrictEqual({ ...r.visas }, { 'Visée': 1, 'Refusée': 1, 'À soumettre': 1 });
+  assert.strictEqual(r.fiches[0].fichier.src, 'doe');
+  assert.strictEqual(r.fiches[1].fichier, null);
+  assert.strictEqual(r.par, 'Jacky');
+});

@@ -161,6 +161,7 @@ Views.chantier = params => {
     ${a.archive ? '' : `<button class="secondary" data-archiver="affaires|${a.id}">Archiver</button>`}</div>
   <h1>${esc(affaireLabel(a))} ${badge(a.statut)} ${a.okFacturation ? '<span class="badge b-ok">Réceptionné · OK pour facturation</span>' : ''}</h1>${chantierOnglets(a, 'apercu')}${bandeauArchive(a, 'affaires')}
   ${deriveChantierHtml(a, s)}
+  ${etudeChantierHtml(a)}
   <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${esc(a.clientId)}">${esc(clientName(a.clientId))}</a>` : '—'}
     ${a.contactId ? ` · Contact : ${esc(contactName(Store.get('contacts', a.contactId)))}` : ''}
     ${a.siteId ? ` · Site : ${esc(siteLabel(siteOf(a.clientId, a.siteId)))}` : ''}
@@ -242,6 +243,8 @@ Views.chantier.bind = (root, params) => {
   if (params[1] === 'securite') return bindSecuriteChantier(root, a);
   if (params[1] === 'gantt') return bindGanttChantier(root, a);
   if (estHorsDevis(a)) return bindHorsDevis(root, a);
+  const ec = root.querySelector('#etude-consultation');
+  if (ec) ec.onclick = () => { location.hash = '#/consultations/' + nouvelleConsultation({ affaireId: a.id, objet: `Équipements ${a.code || ''} (étude d'exécution)`, lignes: lignesEtude(a) }).id; };
   root.querySelector('#ch-consultation').onclick = () => { location.hash = '#/consultations/' + nouvelleConsultation({ affaireId: a.id, objet: `Fournitures ${a.code || ''}` }).id; };
   root.querySelector('#edit').onclick = () => editModal({ title: `Chantier ${a.code}`, col: 'affaires', fields: chantierFields, obj: { ...a },
     onDelete: () => { location.hash = '#/chantiers'; } });

@@ -64,6 +64,7 @@ function consultationEditeur(id) {
   const an = analyseOffres(c), fs = c.fournisseurs || [], lignes = c.lignes || [], ouverte = c.statut === 'En cours';
   const sources = [];
   if (c.affaireId) sources.push(['chantier', 'Fournitures du devis du chantier pas encore commandées']);
+  if (lignesEtude(Store.get('affaires', c.affaireId)).length) sources.push(['etude', 'Équipements de l\'étude d\'exécution (CCTP)']);
   const besoinsCompagnons = besoinsRapports(c.affaireId);
   if (besoinsCompagnons.length) sources.push(['compagnons', `Matériel demandé par les compagnons (${besoinsCompagnons.length} rapport${besoinsCompagnons.length > 1 ? 's' : ''})`]);
   Store.all('chiffrages').slice(0, 8).forEach(x => sources.push([`chiffrage:${x.id}`, `Fournitures du chiffrage « ${x.nom} »`]));
@@ -234,13 +235,14 @@ Views.consultations.bind = (root, params, query) => {
         if (choix.length) { save(); App.toast(`${choix.length} fourniture(s) reprise(s) des rapports de ${[...new Set(rs.map(r => userName(r.userId)))].join(', ')}`, 4000); }
       });
     }
-    if (v === 'chantier') ajout = besoinsChantier(c.affaireId).map(x => ({ articleId: x.a.id, designation: x.a.designation, unite: x.a.unite, qte: x.q }));
+    if (v === 'etude') ajout = lignesEtude(Store.get('affaires', c.affaireId));
+    else if (v === 'chantier') ajout = besoinsChantier(c.affaireId).map(x => ({ articleId: x.a.id, designation: x.a.designation, unite: x.a.unite, qte: x.q }));
     else if (v.startsWith('chiffrage:')) {
       const ch = Store.get('chiffrages', v.slice(10));
       ajout = calculerChiffrage(ch).liste.filter(g => g.a).reduce((acc, g) => { const ex = acc.find(x => x.articleId === g.a.id); if (ex) ex.qte = Math.round((ex.qte + g.qte) * 100) / 100; else acc.push({ articleId: g.a.id, designation: g.a.designation, unite: g.a.unite, qte: g.qte }); return acc; }, []);
       if (!c.objet && ch) c.objet = ch.nom;
     }
-    ajout.forEach(x => { const ex = c.lignes.find(l => l.articleId && l.articleId === x.articleId); if (ex) ex.qte = x.qte; else c.lignes.push(x); });
+    ajout.forEach(x => { const ex = c.lignes.find(l => (l.articleId && l.articleId === x.articleId) || (!x.articleId && l.designation === x.designation)); if (ex) ex.qte = x.qte; else c.lignes.push(x); });
     save(); App.toast(`${ajout.length} fourniture(s) reprise(s)`);
   };
   const four = q('#cs-four');

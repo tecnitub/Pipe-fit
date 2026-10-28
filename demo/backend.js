@@ -298,7 +298,7 @@
       return [200, JSON.parse(JSON.stringify(rec))];
     }
     if (p[0] === 'files' && method === 'POST') {
-      const id = /^[a-f0-9]{24}$/.test(String(body.id || '')) ? body.id : 'f' + DemoSeed.uid();
+      const id = 'f' + DemoSeed.uid();
       db.files = db.files || {};
       db.files[id] = body.dataUrl; save();
       return [200, { id }];
@@ -436,7 +436,7 @@ window.PIPEFIT_DEMO = true;
       if (me().role === 'atelier') return new Response(JSON.stringify({ error: 'Droits insuffisants' }), { status: 403 });
       if (!f || f.size > 1.5 * 1024 * 1024) return new Response(JSON.stringify({ error: 'Démonstration : fichiers de 1,5 Mo au plus (40 Mo dans la version installée)' }), { status: 413 });
       const dataUrl = await new Promise((ok, ko) => { const rd = new FileReader(); rd.onload = () => ok(rd.result); rd.onerror = ko; rd.readAsDataURL(f); });
-      const id = /^[a-f0-9]{24}$/.test(String(body.id || '')) ? body.id : 'f' + DemoSeed.uid();
+      const id = 'f' + DemoSeed.uid();
       db.files = db.files || {}; db.files[id] = dataUrl;
       try { save(); } catch (e) { return new Response(JSON.stringify({ error: 'Espace de la démonstration plein' }), { status: 507 }); }
       return new Response(JSON.stringify({ id, mime: f.type || 'application/octet-stream', taille: f.size }), { status: 200 });

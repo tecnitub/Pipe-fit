@@ -30,6 +30,17 @@
   const config = () => ({ ...CONFIG_DEFAUT, ...db.config, societe: { ...CONFIG_DEFAUT.societe, ...(db.config.societe || {}) } });
   const rep = (status, obj) => new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
   const err = (status, error, extra) => rep(status, { error, ...(extra || {}) });
+  // Ouverte dans la démo du CRM : l'état de l'étude et du dossier remonte sur la fiche du chantier (après l'affichage,
+  // l'avancement dépendant des données du chantier chargées par l'application)
+  const dansCrm = window.parent !== window;
+  const signaler = (affaireId, rec) => {
+    if (!dansCrm) return;
+    setTimeout(() => {
+      let resume = null;
+      try { resume = rec && typeof resumeEtude === 'function' ? resumeEtude(rec) : null; } catch (e) { return; }
+      window.parent.postMessage({ type: 'pipefit-doe-etat', affaireId, resume }, '*');
+    }, 300);
+  };
 
   const vraiFetch = window.fetch.bind(window);
   window.fetch = async (url, opts = {}) => {
@@ -48,11 +59,12 @@
     if (p[0] === 'logout') { storage.set(ME_KEY, 'deconnecte'); return rep(200, { ok: true }); }
     if (p[0] === 'me') return rep(200, { ...s, pipefit: window.parent === window ? window.PIPEFIT_CRM_URL || '' : '' });
     if (p[0] === 'pf' && p[1] === 'donnees') return rep(200, donneesPf());
+    if (p[0] === 'does' && !p[1]) { setTimeout(() => db.does.forEach(d => signaler(d.affaireId, d)), 700); }
     if (p[0] === 'does' && !p[1]) return rep(200, db.does.slice().sort((x, y) => y._at.localeCompare(x._at)));
     if (p[0] === 'does') {
       const i = db.does.findIndex(d => d.id === p[1]), exist = db.does[i];
       if (method === 'GET') return exist ? rep(200, exist) : err(404, 'Dossier introuvable');
-      if (method === 'DELETE') { if (exist) db.does.splice(i, 1); save(); return rep(200, { ok: true }); }
+      if (method === 'DELETE') { if (exist) { db.does.splice(i, 1); signaler(exist.affaireId, null); } save(); return rep(200, { ok: true }); }
       const { data, version } = body();
       if (!data || !data.affaireId) return err(400, 'Données manquantes');
       if (exist && version !== exist._v) return err(409, `Modifié entre-temps par ${exist._by}`, { record: exist });
@@ -60,7 +72,7 @@
       const propre = Object.fromEntries(Object.entries(data).filter(([k]) => !k.startsWith('_') && k !== 'id'));
       const rec = { ...propre, id: p[1], _v: exist ? exist._v + 1 : 1, _at: new Date().toISOString(), _by: s.nom };
       if (exist) db.does[i] = rec; else db.does.push(rec);
-      save(); return rep(200, rec);
+      save(); signaler(rec.affaireId, rec); return rep(200, rec);
     }
     if (p[0] === 'config') {
       if (method === 'GET') return rep(200, config());
@@ -90,6 +102,15 @@
       db.fichiers[id] = { nom: file.name, mime: file.type, dataUrl: r.result }; save(); res({ src: 'doe', id, nom: file.name, mime: file.type || '' }); };
     r.onerror = () => rej(new Error('Lecture du fichier impossible'));
     r.readAsDataURL(file);
+  });
+  // Fiche technique visée demandée par le CRM (pour les documents du chantier transmis aux compagnons)
+  if (dansCrm) window.addEventListener('message', e => {
+    if (e.source !== window.parent || !e.data || e.data.type !== 'pipefit-crm-fiche') return;
+    const d = db.does.find(x => x.id === e.data.doeId), f = d && d.fiches.find(x => x.id === e.data.ficheId), fi = f && f.fichier && db.fichiers[f.fichier.id];
+    if (!fi || !fi.dataUrl) return;
+    const bin = atob(fi.dataUrl.split(',')[1] || ''), octets = new Uint8Array(bin.length);
+    for (let k = 0; k < bin.length; k++) octets[k] = bin.charCodeAt(k);
+    window.parent.postMessage({ type: 'pipefit-doe-fiche', affaireId: d.affaireId, ficheId: f.id, nom: fi.nom || f.fichier.nom || 'fiche.pdf', mime: fi.mime || 'application/pdf', data: octets.buffer }, '*', [octets.buffer]);
   });
   // PDF du DOE : dans le cadre de la démo du CRM, enregistré par la page du CRM (autorisation « downloads ») ;
   // ouverte seule, par l'autorisation de cette page si elle l'a, sinon lien de téléchargement du navigateur

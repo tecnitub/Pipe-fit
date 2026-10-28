@@ -223,21 +223,100 @@ function bindReglagesCompagnon(root) {
   carte.querySelector('#cp-defaut').onclick = () => enregistrer({ ...Compagnon.DEFAUT });
 }
 
-// Démonstration : l'application DOE (doe.html, construite à côté de la page) dans un cadre, reliée aux chantiers de la démo
+// Démonstration : l'application DOE (doe.html, construite à côté de la page) dans un cadre, reliée aux chantiers de la démo.
+// #/doe/<id> ouvre le dossier du chantier, #/doe/<id>/etude son étude d'exécution (créée au besoin).
 Views.doe = params => {
   const a = Store.get('affaires', params[0]);
   if (!window.PIPEFIT_DEMO || !a) return '<p>Application DOE : voir Paramètres → Société (adresse de l\'application DOE).</p>';
-  return `<div class="toolbar"><a class="btn secondary" href="#/chantier/${esc(a.id)}">← ${esc(a.code || 'Chantier')}</a><span class="muted small">Application DOE de démonstration : mêmes chantiers et même compte que la démo du CRM.</span></div>
-    <iframe class="doe-cadre" src="doe.html#/chantier/${encodeURIComponent(a.id)}" title="Application DOE"></iframe>`;
+  return `<div class="toolbar"><a class="btn secondary" href="#/chantier/${esc(a.id)}">← ${esc(a.code || 'Chantier')}</a><span class="muted small">Application DOE de démonstration : mêmes chantiers et même compte que la démo du CRM. L'avancement de l'étude et les fiches visées remontent sur la fiche du chantier.</span></div>
+    <iframe class="doe-cadre" src="doe.html#/${params[1] === 'etude' ? 'etude' : 'chantier'}/${encodeURIComponent(a.id)}" title="Application DOE"></iframe>`;
 };
 Views.doe.bind = root => {
   const cadre = root.querySelector('.doe-cadre');
   if (!cadre) return;
-  // PDF généré dans le cadre : enregistré par cette page (autorisation de téléchargement de la démo)
   if (window.__doeEcoute) window.removeEventListener('message', window.__doeEcoute);
   window.__doeEcoute = e => {
-    if (e.source !== cadre.contentWindow || !e.data || e.data.type !== 'pipefit-doe-enregistrer' || !(e.data.data instanceof ArrayBuffer)) return;
-    download(String(e.data.nom).replace(/[\\/:*?"<>|]+/g, '-').slice(0, 150) || 'DOE.pdf', new Uint8Array(e.data.data), 'application/pdf');
+    if (e.source !== cadre.contentWindow || !e.data) return;
+    // PDF généré dans le cadre : enregistré par cette page (autorisation de téléchargement de la démo)
+    if (e.data.type === 'pipefit-doe-enregistrer' && e.data.data instanceof ArrayBuffer) download(String(e.data.nom).replace(/[\\/:*?"<>|]+/g, '-').slice(0, 150) || 'DOE.pdf', new Uint8Array(e.data.data), 'application/pdf');
+    if (e.data.type === 'pipefit-doe-etat') recevoirEtatEtude(String(e.data.affaireId || ''), e.data.resume || null, cadre.contentWindow);
+    if (e.data.type === 'pipefit-doe-fiche' && e.data.data instanceof ArrayBuffer) ajouterFicheVisee(e.data);
   };
   window.addEventListener('message', window.__doeEcoute);
 };
+
+/* ---------- Étude d'exécution ↔ chantier ---------- */
+const ficheVisee = f => ['Visée', 'Visée avec observations'].includes(f.visa);
+const noteVisa = f => `Étude d'exécution : ${f.visa.toLowerCase()}${f.dateVisa ? ` le ${dateFr(f.dateVisa)}` : ''}${f.obs ? ` — ${f.obs}` : ''}`;
+const fichesDemandees = new Set();
+// État envoyé par l'application DOE à chaque enregistrement : conservé sur le chantier, fiches visées reprises dans ses documents
+function recevoirEtatEtude(affaireId, resume, cadre) {
+  const a = Store.get('affaires', affaireId);
+  if (!a || estHorsDevis(a)) return;
+  const avant = a.etudeDoe || null, cle = r => (r ? JSON.stringify({ ...r, maj: '', par: '' }) : '');
+  let change = cle(avant) !== cle(resume);
+  if (resume && avant) {
+    const visaAvant = id => ((avant.fiches || []).find(f => f.id === id) || {}).visa;
+    const nouvelles = v => resume.fiches.filter(f => f.visa === v && visaAvant(f.id) !== v).length;
+    const n = { refus: nouvelles('Refusée'), vise: nouvelles('Visée') + nouvelles('Visée avec observations') };
+    if (n.refus) App.toast(`${a.code} : ${n.refus} fiche(s) technique(s) refusée(s) par la maîtrise d'œuvre`, 5000);
+    else if (n.vise) App.toast(`${a.code} : ${n.vise} fiche(s) technique(s) visée(s)`, 4000);
+  }
+  // Documents du chantier liés à une fiche : visa repris ; une fiche refusée n'est plus transmise aux compagnons
+  const docs = a.documents || [];
+  ((resume || {}).fiches || []).forEach(f => {
+    const d = docs.find(x => x.etudeFicheId === f.id) || (f.fichier && f.fichier.src === 'pf' && docs.find(x => x.fichierId === f.fichier.id));
+    if (d) {
+      if (d.visa !== f.visa || (d.etudeFicheId && d.note !== noteVisa(f))) { d.visa = f.visa; if (d.etudeFicheId) { d.note = noteVisa(f); d.visible = f.visa !== 'Refusée'; } change = true; }
+    } else if (ficheVisee(f) && f.fichier && f.fichier.src !== 'pf' && !fichesDemandees.has(f.id)) {
+      fichesDemandees.add(f.id);
+      cadre.postMessage({ type: 'pipefit-crm-fiche', doeId: resume.doeId, ficheId: f.id }, '*');
+    }
+  });
+  if (!change) return;
+  a.etudeDoe = resume;
+  Store.upsert('affaires', a);
+}
+async function ajouterFicheVisee(m) {
+  const a = Store.get('affaires', String(m.affaireId || '')), f = a && ((a.etudeDoe || {}).fiches || []).find(x => x.id === m.ficheId);
+  if (!f || (a.documents || []).some(d => d.etudeFicheId === f.id)) return;
+  const nom = String(m.nom || 'fiche.pdf').replace(/[\\/:*?"<>|]+/g, '-').slice(0, 150);
+  try {
+    const r = await envoyerFichierDocument(new File([m.data], nom, { type: m.mime || 'application/pdf' }));
+    a.documents = [...(a.documents || []), { id: uid(), fichierId: r.id, nom, categorie: 'Fiche technique', indice: f.indice || '', note: noteVisa(f), mime: r.mime, taille: r.taille,
+      date: isoDate(new Date()), par: Store.me.nom, visible: true, etudeFicheId: f.id, visa: f.visa }];
+    Store.upsert('affaires', a);
+    App.toast(`Fiche visée « ${f.designation || nom} » ajoutée aux documents de ${a.code} et transmise aux compagnons`, 4000);
+  } catch (e) { fichesDemandees.delete(f.id); notify(`Fiche « ${nom} » : ${e.message}`); }
+}
+
+// Carte de la vue d'ensemble du chantier : avancement de l'étude et du DOE (bureau)
+function etudeChantierHtml(a) {
+  if (!lienDOE(a) || estHorsDevis(a)) return '';
+  const r = a.etudeDoe, lien = window.PIPEFIT_DEMO ? `#/doe/${encodeURIComponent(a.id)}/etude` : lienDOE(a), cible = window.PIPEFIT_DEMO ? '' : 'target="_blank" rel="noopener"';
+  if (!r) {
+    return `<h2>Étude d'exécution et DOE</h2><div class="card etude-card"><p class="muted">Pas encore d'étude : le CCTP du chantier est lu, les équipements à mettre en place sont repérés et numérotés,
+      les fiches techniques soumises au visa. À la fin des travaux, l'étude devient le DOE (il ne reste que les attestations, PV et essais).</p>
+      <a class="btn" href="${esc(lien)}" ${cible}>Démarrer l'étude</a></div>`;
+  }
+  const v = r.visas || {}, nb = k => v[k] || 0, vises = nb('Visée') + nb('Visée avec observations'), fiches = (r.fiches || []).length;
+  const refusees = (r.fiches || []).filter(f => f.visa === 'Refusée'), eqs = r.equipements || [];
+  const phase = r.statut === 'Remis' ? '<span class="badge b-ok">DOE remis</span>' : r.etude ? '<span class="badge b-info">Étude en cours</span>' : '<span class="badge b-warn">DOE en cours</span>';
+  return `<h2>Étude d'exécution et DOE</h2><div class="card etude-card">
+    <div class="etude-tete">${phase} <strong>${r.pct}%</strong> complété · ${r.aFaire} point(s) à compléter${r.indice ? ` · indice ${esc(r.indice)}` : ''}
+      <span class="spacer"></span><a class="btn small" href="${esc(lien)}" ${cible}>Ouvrir l'étude</a>
+      ${eqs.length && Store.can('write', 'consultations') ? '<button class="small secondary" id="etude-consultation">Consulter les fournisseurs sur ces équipements</button>' : ''}</div>
+    ${gauge(r.pct, 100)}
+    <div class="etude-lignes">
+      <div><span class="label">CCTP</span>${r.cctp ? `${esc(r.cctp.nom)} · ${r.cctp.articles} article(s), ${r.cctp.equipements} équipement(s) prévus${r.cctp.manquants ? ` · <span class="neg">${r.cctp.manquants} pas encore dans l'étude</span>` : ' · tous repris'}` : r.sansCctp ? 'Pas de CCTP pour ce chantier' : '<span class="neg">pas encore chargé</span>'}</div>
+      <div><span class="label">Équipements</span>${eqs.length} repéré(s)${eqs.length ? ` : ${eqs.slice(0, 10).map(e => `<span class="etude-rep" title="${esc([e.designation, e.marque, e.reference].filter(Boolean).join(' · '))}">${esc(e.repere || e.designation)}</span>`).join(' ')}${eqs.length > 10 ? ` +${eqs.length - 10}` : ''}` : ''}</div>
+      <div><span class="label">Fiches techniques</span>${fiches ? `${vises}/${fiches} visée(s) · ${nb('Soumise')} soumise(s) · ${nb('À soumettre')} à soumettre${refusees.length ? ` · <span class="neg">${refusees.length} refusée(s) : ${refusees.map(f => esc(f.designation)).join(', ')}</span>` : ''}` : 'aucune'}${vises ? ' <span class="muted small">(les fiches visées sont dans les documents du chantier, transmises aux compagnons)</span>' : ''}</div>
+      ${(r.manques || []).length ? `<div><span class="label">À compléter</span>${r.manques.slice(0, 4).map(esc).join(' · ')}${r.aFaire > 4 ? ` · <span class="muted">et ${r.aFaire - 4} autre(s)</span>` : ''}</div>` : ''}
+    </div>
+    ${r.maj ? `<div class="muted small">Mis à jour le ${new Date(r.maj).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}${r.par ? ` par ${esc(r.par)}` : ''}</div>` : ''}</div>`;
+}
+// Lignes de consultation : équipements de l'étude pas encore choisis (sans marque ni référence), sinon tous
+function lignesEtude(a) {
+  const eqs = ((a || {}).etudeDoe || {}).equipements || [], libres = eqs.filter(e => !e.marque && !e.reference);
+  return (libres.length ? libres : eqs).map(e => ({ articleId: '', designation: [e.repere, e.designation].filter(Boolean).join(' — ') + (e.prescrit ? ` (CCTP : ${e.prescrit})` : e.refCctp ? ` (CCTP art. ${e.refCctp})` : ''), unite: 'u', qte: num(e.quantite) || 1 }));
+}

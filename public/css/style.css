@@ -1077,3 +1077,9 @@ th.col-th { position: relative; }
 .as-barres span { flex: 1; min-width: 3px; background: var(--info); border-radius: 2px 2px 0 0; }
 .as-barres span.vide { background: var(--border); }
 .as-axe { display: flex; justify-content: space-between; margin-top: -6px; }
+/* Étude d'exécution (application DOE) sur la fiche chantier */
+.etude-card .etude-tete { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.etude-card .etude-lignes { display: grid; gap: 6px; margin: 8px 0; }
+.etude-card .etude-lignes .label { display: inline-block; min-width: 150px; font-weight: 600; color: var(--muted); }
+.etude-rep { display: inline-block; padding: 1px 7px; border: 1px solid var(--border); border-radius: 10px; font-size: 12px; margin: 1px 0; }
+@media (max-width: 640px) { .etude-card .etude-lignes .label { display: block; min-width: 0; } }

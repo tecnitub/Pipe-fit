@@ -670,6 +670,14 @@ numérote les équipements, contrôle article par article que rien n'est oublié
 (bordereau d'envoi en PDF). À la fin des travaux, l'étude devient le DOE, déjà rempli hors attestations et PV. Détails :
 [doe/README.md](doe/README.md).
 
+Dans la démonstration, l'étude est reliée au CRM : la vue d'ensemble du chantier montre une carte « Étude d'exécution et
+DOE » (avancement, CCTP lu, équipements repérés, fiches soumises / visées / refusées, points à compléter) avec
+« Démarrer l'étude » ou « Ouvrir l'étude ». Chaque enregistrement de l'étude met la carte à jour ; une fiche visée est
+ajoutée aux documents du chantier (catégorie « Fiche technique », transmise aux compagnons) et une fiche refusée n'y est
+plus transmise. « Consulter les fournisseurs sur ces équipements » prépare une demande de prix avec les équipements de
+l'étude pas encore choisis (repère, désignation, prescription du CCTP), aussi proposée dans « Reprendre… » d'une
+consultation du chantier.
+
 ## Gantt des chantiers et plan de charge
 
 - **Gantt d'un chantier** (onglet « 📊 Gantt » du chantier) : phases avec tâche du planning, date au plus tôt, durée en

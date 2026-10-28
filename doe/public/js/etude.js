@@ -211,3 +211,22 @@ async function creerEtude(affaireId) {
   } else toast(`Étude créée : ${n} information(s) reprises du chantier. Chargez le CCTP pour la compléter.`, 5000);
   location.hash = `#/doe/${r.id}/cctp`;
 }
+
+// Résumé de l'étude et du dossier pour la fiche chantier du CRM (démonstration : transmis à la page du CRM à chaque
+// enregistrement) : avancement, CCTP, équipements repérés, fiches techniques et leurs visas
+function resumeEtude(doe) {
+  const m = manquesDOE(doe), lu = doe.cctpLu, visas = {};
+  doe.fiches.forEach(f => { const v = f.visa || 'À soumettre'; visas[v] = (visas[v] || 0) + 1; });
+  const ficheDe = e => doe.fiches.find(f => (f.equipements || []).includes(e.id));
+  return {
+    doeId: doe.id, statut: doe.statut || 'En cours', etude: enEtude(doe), indice: doe.indice || '', pct: m.pct, aFaire: m.manques.length,
+    manques: m.manques.slice(0, 6).map(x => x.libelle),
+    cctp: lu ? { nom: lu.nom || '', le: lu.le || '', articles: (lu.articles || []).length, equipements: (lu.equipements || []).length, manquants: equipementsCctpManquants(doe).length } : null,
+    sansCctp: !!doe.sansCctp,
+    equipements: doe.equipements.slice(0, 300).map(e => ({ repere: e.repere || '', designation: e.designation || '', quantite: e.quantite || '', famille: e.famille || '', refCctp: e.refCctp || '',
+      prescrit: e.prescrit || '', marque: e.marque || '', reference: e.reference || '', visa: (ficheDe(e) || {}).visa || '' })),
+    fiches: doe.fiches.map(f => ({ id: f.id, designation: f.designation || '', visa: f.visa || 'À soumettre', dateVisa: f.dateVisa || '', obs: f.obs || '', indice: f.indice || '',
+      fichier: f.fichier ? { src: f.fichier.src || 'doe', id: f.fichier.id, nom: f.fichier.nom || '', mime: f.fichier.mime || '' } : null })),
+    visas, maj: doe._at || '', par: doe._by || '',
+  };
+}
