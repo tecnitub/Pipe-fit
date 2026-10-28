@@ -10,7 +10,7 @@ const http = require('node:http');
 // Faux service : chaque requête reçue est gardée, la réponse suivante du script est renvoyée
 const recues = [], script = [];
 const tour = (content, stop = 'tool_use') => ({ id: `msg_${recues.length}`, type: 'message', role: 'assistant', model: 'claude-opus-5-5', content, stop_reason: stop, stop_sequence: null,
-  usage: { input_tokens: 10, output_tokens: 10 } });
+  usage: { input_tokens: 10000, output_tokens: 1000, cache_read_input_tokens: 5000, cache_creation_input_tokens: 0 } });
 const appel = (name, input, id = `tu_${name}`) => ({ type: 'tool_use', id, name, input });
 const faux = http.createServer((req, res) => {
   let corps = ''; req.on('data', c => { corps += c; });
@@ -103,6 +103,34 @@ test('compagnons : seules les actions cochées ; demande de matériel transmise 
   assert.ok(!/prix|pu|€/i.test(res[1].content));
   const notif = (await call('GET', '/api/data', null, admin)).body.notifications.find(n => n.type === 'assistant');
   assert.deepStrictEqual([notif.userId, notif.lien.startsWith('#/commandes/')], ['u1', true]);
+});
+
+test('consommation : coût de chaque demande compté, modèle des compagnons, plafond mensuel qui met en pause', async () => {
+  const C = require('../server/assistant');
+  // 10 000 tokens lus + 1 000 écrits + 5 000 lus en cache au tarif d'Opus 5.5 : 0,04 + 0,02 + 0,001 = 0,061 $ par appel
+  assert.ok(Math.abs(C.coutAppel('claude-opus-5-5', { input_tokens: 10000, output_tokens: 1000, cache_read_input_tokens: 5000 }) - 0.061) < 1e-9);
+  assert.ok(Math.abs(C.coutAppel('claude-haiku-5-5', { input_tokens: 10000, output_tokens: 1000, cache_creation_input_tokens: 4000 }) - 0.002) < 1e-9);
+  assert.strictEqual((await call('GET', '/api/assistant/consommation', null, claire)).status, 403);
+  let s = (await call('GET', '/api/assistant/consommation', null, admin)).body;
+  // Demandes précédentes : claire (4 appels puis 1), kevin (2 appels), chacun au tarif d'Opus 5.5
+  assert.deepStrictEqual([s.mois.demandes, Math.round(s.mois.cout * 1000)], [3, 427]);
+  assert.deepStrictEqual(s.parPersonne.map(p => [p.login, p.demandes, p.profil]), [['claire', 2, 'bureau'], ['kevin', 1, 'compagnon']]);
+  // Modèle des compagnons
+  await call('PUT', '/api/assistant/config', { actif: true, modele: 'claude-opus-5-5', modeleCompagnons: 'claude-sonnet-5-5', compagnons: { actif: true, droits: { planning: true } } }, admin);
+  recues.length = 0; script.push({ ...tour([{ type: 'text', text: 'Demain : Rumilly.' }], 'end_turn'), model: 'claude-sonnet-5-5' });
+  await call('POST', '/api/assistant/message', { texte: 'Où je suis demain ?' }, kevin);
+  assert.strictEqual(recues[0].body.model, 'claude-sonnet-5-5');
+  s = (await call('GET', '/api/assistant/consommation', null, admin)).body;
+  assert.ok(s.parModele.some(m => m.modele === 'claude-sonnet-5-5' && Math.abs(m.cout - 0.031) < 1e-9));
+  // Plafond : dépassé, l'assistant se met en pause et les administrateurs sont prévenus
+  const c = (await call('PUT', '/api/assistant/config', { actif: true, plafond: '0,40' }, admin)).body;
+  assert.strictEqual(c.plafond, 0.4);
+  assert.strictEqual((await call('GET', '/api/me', null, claire)).body.assistant.pause, true);
+  recues.length = 0;
+  const r = await call('POST', '/api/assistant/message', { texte: 'Point sur Rumilly' }, claire);
+  assert.deepStrictEqual([r.status, /plafond/.test(r.body.error), recues.length], [429, true, 0]);
+  await call('PUT', '/api/assistant/config', { actif: true, plafond: 0 }, admin);
+  assert.strictEqual((await call('GET', '/api/me', null, claire)).body.assistant.pause, undefined);
 });
 
 test('erreur du service : message clair, la question reste dans le fil', async () => {

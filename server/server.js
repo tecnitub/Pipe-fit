@@ -504,6 +504,7 @@ async function api(req, res, url) {
         catch (e) { return fail(res, 400, e.message); }
       }
     }
+    if (p[1] === 'consommation' && method === 'GET') { if (acc.role !== 'admin') return fail(res, 403, 'Réservé à l\'administrateur'); return send(res, 200, ASSISTANT.consommation()); }
     if (p[1] === 'conversations' && method === 'GET') return send(res, 200, p[2] ? (ASSISTANT.conversation(acc, p[2]) || {}) : ASSISTANT.liste(acc));
     if (p[1] === 'message' && method === 'POST') {
       try { return send(res, 200, await ASSISTANT.message(acc, await readBody(req))); }

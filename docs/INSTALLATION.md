@@ -266,8 +266,11 @@ L'assistant prépare le travail à partir d'une demande écrite ou dictée (« c
 commande ou la demande de prix **en brouillon** : rien ne part sans validation.
 
 1. Créer un compte sur la console Anthropic (console.anthropic.com), ajouter un moyen de paiement et créer une **clé API**.
-2. **Paramètres → Assistant** : coller la clé, choisir le modèle (Claude Opus 5.5 recommandé), cocher « Activer ».
-   Variante : variable d'environnement `ANTHROPIC_API_KEY` sur le serveur.
+2. **Paramètres → Assistant** : coller la clé, choisir le modèle du bureau (Claude Opus 5.5 recommandé) et celui des
+   compagnons (Sonnet 5.5, deux fois moins cher, suffit pour les demandes de matériel), fixer un **plafond mensuel** (ex.
+   150 $ : au-delà, l'assistant se met en pause et les administrateurs sont prévenus), cocher « Activer ».
+   Variante pour la clé : variable d'environnement `ANTHROPIC_API_KEY` sur le serveur. La consommation (jour, mois, par
+   personne, par modèle) s'affiche sur la même carte.
 3. **Compagnons** : cocher « Ouvrir l'assistant aux compagnons » puis les actions permises (demande de matériel au bureau,
    planning, infos du chantier, signalement, recherche d'articles). Une demande de matériel arrive au chargé d'affaires
    du chantier, qui choisit le fournisseur, valide et envoie.

@@ -17,21 +17,39 @@ const DROITS_COMPAGNON = [
   ['articles', 'Rechercher un article dans la bibliothèque (sans les prix)'],
 ];
 const ITERATIONS_MAX = 10;
+// Tarifs Anthropic en dollars par million de tokens : entrée, sortie, lecture du cache (écriture du cache : 1,25 × entrée).
+// Modèles de repli possibles en cas de refus compris. Servent au compteur et au plafond : la facture d'Anthropic fait foi.
+const TARIFS = {
+  'claude-opus-5-5': [4, 20, 0.2], 'claude-sonnet-5-5': [2, 10, 0.2], 'claude-haiku-5-5': [0.1, 0.5, 0.01],
+  'claude-opus-5': [5, 25, 0.5], 'claude-opus-4-8': [5, 25, 0.5], 'claude-sonnet-5': [2, 10, 0.2], 'claude-fable-5-1': [10, 50, 0.25],
+};
+// Coût d'un appel d'après les tokens facturés
+function coutAppel(modele, u = {}) {
+  const t = TARIFS[modele] || TARIFS[Object.keys(TARIFS).find(k => String(modele).startsWith(k))] || TARIFS[MODELE_DEFAUT];
+  return ((u.input_tokens || 0) * t[0] + (u.output_tokens || 0) * t[1] + (u.cache_creation_input_tokens || 0) * t[0] * 1.25 + (u.cache_read_input_tokens || 0) * t[2]) / 1e6;
+}
 
 function creer({ DB, db, broadcast, notifier }) {
-  db.exec('CREATE TABLE IF NOT EXISTS assistant_conv (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, titre TEXT, messages TEXT NOT NULL, fil TEXT NOT NULL, updated_at TEXT NOT NULL)');
+  db.exec(`CREATE TABLE IF NOT EXISTS assistant_conv (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, titre TEXT, messages TEXT NOT NULL, fil TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS assistant_usage (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, account_id TEXT, login TEXT, nom TEXT, profil TEXT, modele TEXT,
+      appels INTEGER, entree INTEGER, sortie INTEGER, cache_ecriture INTEGER, cache_lecture INTEGER, cout REAL NOT NULL)`);
 
   /* ---------- Réglages ---------- */
   function config() {
     const c = DB.getConfig(db, 'assistant') || {}, comp = c.compagnons || {};
-    return { actif: !!c.actif, cleApi: c.cleApi || process.env.ANTHROPIC_API_KEY || '', modele: MODELES.includes(c.modele) ? c.modele : MODELE_DEFAUT,
+    const modele = MODELES.includes(c.modele) ? c.modele : MODELE_DEFAUT;
+    return { actif: !!c.actif, cleApi: c.cleApi || process.env.ANTHROPIC_API_KEY || '', modele,
+      // Modèle des compagnons : le même que le bureau sauf choix contraire ; plafond mensuel en dollars (0 = aucun)
+      modeleCompagnons: MODELES.includes(c.modeleCompagnons) ? c.modeleCompagnons : modele, plafond: Math.max(0, Number(c.plafond) || 0),
       compagnons: { actif: !!comp.actif, droits: Object.fromEntries(DROITS_COMPAGNON.map(([k]) => [k, !!(comp.droits || {})[k]])) } };
   }
-  const publique = () => { const c = config(); return { actif: c.actif, cleDefinie: !!c.cleApi, cleEnv: !(DB.getConfig(db, 'assistant') || {}).cleApi && !!process.env.ANTHROPIC_API_KEY, modele: c.modele, modeles: MODELES, compagnons: c.compagnons, droitsCompagnon: DROITS_COMPAGNON }; };
+  const publique = () => { const c = config(); return { actif: c.actif, cleDefinie: !!c.cleApi, cleEnv: !(DB.getConfig(db, 'assistant') || {}).cleApi && !!process.env.ANTHROPIC_API_KEY, modele: c.modele, modeleCompagnons: c.modeleCompagnons, plafond: c.plafond, modeles: MODELES, tarifs: TARIFS, compagnons: c.compagnons, droitsCompagnon: DROITS_COMPAGNON }; };
   function enregistrerConfig(b) {
     const c = DB.getConfig(db, 'assistant') || {};
     c.actif = !!b.actif;
     if (MODELES.includes(b.modele)) c.modele = b.modele;
+    if (MODELES.includes(b.modeleCompagnons)) c.modeleCompagnons = b.modeleCompagnons;
+    if (b.plafond !== undefined) c.plafond = Math.max(0, Math.min(100000, Math.round((Number(String(b.plafond).replace(',', '.')) || 0) * 100) / 100));
     if (typeof b.cleApi === 'string' && b.cleApi.trim()) c.cleApi = b.cleApi.trim().slice(0, 300);
     if (b.effacerCle) delete c.cleApi;
     if (b.compagnons) c.compagnons = { actif: !!b.compagnons.actif, droits: Object.fromEntries(DROITS_COMPAGNON.map(([k]) => [k, !!(b.compagnons.droits || {})[k]])) };
@@ -43,8 +61,9 @@ function creer({ DB, db, broadcast, notifier }) {
   function acces(acc) {
     const c = config();
     if (!c.actif || !c.cleApi) return { actif: false, droits: [] };
-    if (['admin', 'charge'].includes(acc.role)) return { actif: true, bureau: true, droits: ['bureau'] };
-    if (acc.role === 'atelier' && c.compagnons.actif) { const d = Object.keys(c.compagnons.droits).filter(k => c.compagnons.droits[k]); return { actif: d.length > 0, bureau: false, droits: d }; }
+    const pause = c.plafond > 0 && coutMois() >= c.plafond;
+    if (['admin', 'charge'].includes(acc.role)) return { actif: true, bureau: true, droits: ['bureau'], ...(pause ? { pause: true } : {}) };
+    if (acc.role === 'atelier' && c.compagnons.actif) { const d = Object.keys(c.compagnons.droits).filter(k => c.compagnons.droits[k]); return { actif: d.length > 0, bureau: false, droits: d, ...(pause ? { pause: true } : {}) }; }
     return { actif: false, droits: [] };
   }
 
@@ -182,6 +201,32 @@ function creer({ DB, db, broadcast, notifier }) {
       '- Réponds en français, brièvement, avec un récapitulatif clair (n° du brouillon, fournisseur, chantier, lignes, total HT au bureau).'].join('\n');
   }
 
+  /* ---------- Consommation : compteur et plafond ---------- */
+  const moisCourant = () => new Date().toISOString().slice(0, 7);
+  const coutMois = (mois = moisCourant()) => db.prepare('SELECT COALESCE(SUM(cout), 0) s FROM assistant_usage WHERE substr(date, 1, 7) = ?').get(mois).s;
+  function consommation() {
+    const jour = new Date().toISOString().slice(0, 10), mois = moisCourant(), c = config();
+    const somme = (cond, v) => db.prepare(`SELECT COUNT(*) demandes, COALESCE(SUM(cout), 0) cout FROM assistant_usage WHERE ${cond}`).get(v);
+    const parPersonne = db.prepare('SELECT nom, login, profil, COUNT(*) demandes, SUM(cout) cout FROM assistant_usage WHERE substr(date, 1, 7) = ? GROUP BY login ORDER BY cout DESC').all(mois);
+    const parModele = db.prepare('SELECT modele, COUNT(*) demandes, SUM(cout) cout FROM assistant_usage WHERE substr(date, 1, 7) = ? GROUP BY modele ORDER BY cout DESC').all(mois);
+    const parJour = db.prepare('SELECT substr(date, 1, 10) jour, COUNT(*) demandes, SUM(cout) cout FROM assistant_usage WHERE date >= ? GROUP BY jour ORDER BY jour').all(new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
+    const m = somme('substr(date, 1, 7) = ?', mois), j = somme('substr(date, 1, 10) = ?', jour), prec = somme('substr(date, 1, 7) = ?', new Date(new Date().getFullYear(), new Date().getMonth() - 1, 15).toISOString().slice(0, 7));
+    return { jour: j, mois: m, moisPrecedent: prec, plafond: c.plafond, atteint: c.plafond > 0 && m.cout >= c.plafond, parPersonne, parModele, parJour };
+  }
+  // Plafond du mois atteint : l'assistant se met en pause ; les administrateurs sont prévenus une fois par mois
+  function plafondAtteint() {
+    const c = config();
+    if (!(c.plafond > 0) || coutMois() < c.plafond) return false;
+    const etat = DB.getConfig(db, 'assistant-plafond') || {};
+    if (etat.mois !== moisCourant() && notifier) {
+      db.prepare("SELECT user_id FROM accounts WHERE role = 'admin' AND user_id IS NOT NULL").all().forEach(a => notifier({ type: 'assistant', userId: a.user_id, titre: 'Assistant en pause : plafond mensuel atteint',
+        texte: `Le plafond de ${c.plafond} $ du mois est atteint : l'assistant reprendra le mois prochain, ou relevez le plafond dans Paramètres → Assistant.`, lien: '#/parametres', date: new Date().toISOString(), lu: false }));
+      DB.setConfig(db, 'assistant-plafond', { mois: moisCourant() });
+      DB.audit(db, 'Assistant', 'plafond mensuel atteint', null, null, `${c.plafond} $`);
+    }
+    return true;
+  }
+
   /* ---------- Conversation ---------- */
   function conversation(acc, id) {
     const r = id && db.prepare('SELECT * FROM assistant_conv WHERE id = ? AND account_id = ?').get(String(id), acc.id);
@@ -196,6 +241,7 @@ function creer({ DB, db, broadcast, notifier }) {
     if (!ac.actif) throw Object.assign(new Error('L\'assistant n\'est pas activé pour votre compte (Paramètres → Assistant).'), { status: 403 });
     const t = String(texte || '').trim().slice(0, 4000);
     if (!t) throw Object.assign(new Error('Message vide'), { status: 400 });
+    if (plafondAtteint()) throw Object.assign(new Error('L\'assistant est en pause : le plafond de dépense du mois est atteint. L\'administrateur peut le relever dans Paramètres → Assistant.'), { status: 429 });
     let Anthropic;
     try { Anthropic = require('@anthropic-ai/sdk').Anthropic; } catch (e) { throw new Error('Module de l\'assistant absent du serveur : relancez l\'installation (npm ci).'); }
     const cfg = config(), client = new Anthropic({ apiKey: cfg.cleApi, ...(process.env.ASSISTANT_API_URL ? { baseURL: process.env.ASSISTANT_API_URL } : {}), maxRetries: 2, timeout: 120000 });
@@ -204,15 +250,20 @@ function creer({ DB, db, broadcast, notifier }) {
     // Date du jour dans le message (pas dans le système, qui reste identique d'une demande à l'autre)
     conv.messages.push({ role: 'user', content: `[${new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}] ${t}` });
     conv.fil.push({ role: 'user', texte: t, date: new Date().toISOString() });
-    const actions = [];
+    const actions = [], modele = ac.bureau ? cfg.modele : cfg.modeleCompagnons;
+    const conso = { appels: 0, entree: 0, sortie: 0, ecriture: 0, lecture: 0, cout: 0 };
     let reponse = '';
     try {
       for (let n = 0; n < ITERATIONS_MAX; n++) {
         const r = await client.beta.messages.create({
-          model: cfg.modele, max_tokens: 16000, system: systeme(ac), tools: defs, messages: conv.messages,
+          model: modele, max_tokens: 16000, system: systeme(ac), tools: defs, messages: conv.messages,
           output_config: { effort: 'medium' }, cache_control: { type: 'ephemeral' },
-          ...(cfg.modele === 'claude-haiku-5-5' ? {} : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }),
+          ...(modele === 'claude-haiku-5-5' ? {} : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }),
         });
+        // Consommation : tokens facturés de cet appel, au tarif du modèle qui a répondu (repli compris)
+        const u = r.usage || {};
+        Object.assign(conso, { appels: conso.appels + 1, entree: conso.entree + (u.input_tokens || 0), sortie: conso.sortie + (u.output_tokens || 0),
+          ecriture: conso.ecriture + (u.cache_creation_input_tokens || 0), lecture: conso.lecture + (u.cache_read_input_tokens || 0), cout: conso.cout + coutAppel(r.model || modele, u) });
         // Conversation conservée telle quelle (blocs de réflexion compris), sans retouche
         conv.messages.push({ role: 'assistant', content: r.content });
         const textes = r.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
@@ -234,6 +285,7 @@ function creer({ DB, db, broadcast, notifier }) {
         if (n === ITERATIONS_MAX - 1) reponse = textes || 'Je n\'ai pas pu terminer : reformulez la demande plus simplement.';
       }
     } catch (e) {
+      enregistrerConso(acc, ac, modele, conso);
       // Échec de l'appel : la question reste dans le fil, la conversation API repart sans elle
       conv.messages = conv.messages.slice(0, conv.messages.findLastIndex(m => m.role === 'user' && typeof m.content === 'string'));
       conv.fil.push({ role: 'assistant', texte: messageErreur(e, Anthropic), erreur: true, actions, date: new Date().toISOString() });
@@ -242,8 +294,14 @@ function creer({ DB, db, broadcast, notifier }) {
     }
     conv.fil.push({ role: 'assistant', texte: reponse || 'C\'est fait.', actions, date: new Date().toISOString() });
     sauver(acc, conv);
+    enregistrerConso(acc, ac, modele, conso);
     DB.audit(db, acc.login, 'assistant', null, null, `${t.slice(0, 120)}${actions.length ? ` → ${actions.map(a => `${a.type} ${a.numero || ''}`).join(', ')}` : ''}`);
     return { conversationId: conv.id, fil: conv.fil, actions };
+  }
+  function enregistrerConso(acc, ac, modele, c) {
+    if (!c.appels) return;
+    db.prepare('INSERT INTO assistant_usage (date, account_id, login, nom, profil, modele, appels, entree, sortie, cache_ecriture, cache_lecture, cout) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(new Date().toISOString(), acc.id, acc.login, acc.nom || acc.login, ac.bureau ? 'bureau' : 'compagnon', modele, c.appels, c.entree, c.sortie, c.ecriture, c.lecture, Math.round(c.cout * 1e6) / 1e6);
   }
   function messageErreur(e, Anthropic) {
     if (Anthropic && e instanceof Anthropic.AuthenticationError) return 'Clé API Anthropic refusée : vérifiez-la dans Paramètres → Assistant.';
@@ -254,7 +312,7 @@ function creer({ DB, db, broadcast, notifier }) {
     return `Erreur : ${e.message}`;
   }
 
-  return { config: publique, enregistrerConfig, acces, message, conversation: (acc, id) => { const c = conversation(acc, id); return c && { id: c.id, titre: c.titre, fil: c.fil }; }, liste, DROITS_COMPAGNON, OUTILS };
+  return { config: publique, enregistrerConfig, acces, message, consommation, conversation: (acc, id) => { const c = conversation(acc, id); return c && { id: c.id, titre: c.titre, fil: c.fil }; }, liste, DROITS_COMPAGNON, OUTILS };
 }
 
-module.exports = { creer, DROITS_COMPAGNON, MODELES };
+module.exports = { creer, DROITS_COMPAGNON, MODELES, TARIFS, coutAppel };

@@ -29,6 +29,7 @@ Views.assistant = () => {
   const ac = Store.me.assistant, fil = (Assistant.conv && Assistant.conv.fil) || [];
   const exemples = ac.bureau ? EXEMPLES_ASSISTANT.bureau : ac.droits.map(d => EXEMPLES_ASSISTANT[d]).filter(Boolean);
   return `<div class="toolbar"><h1 style="margin:0">✨ Assistant</h1><span class="spacer"></span>${fil.length ? '<button class="secondary small" id="as-nouveau">Nouvelle demande</button>' : ''}</div>
+  ${ac.pause ? '<p class="note warn-text">L\'assistant est en pause : le plafond de dépense du mois est atteint. Il reprendra le mois prochain, ou quand l\'administrateur relèvera le plafond.</p>' : ''}
   <p class="muted small">${ac.bureau ? 'Confiez-lui une tâche : il retrouve le chantier, le fournisseur, les articles et les derniers prix, puis prépare la commande ou la demande de prix <strong>en brouillon</strong>. Rien n\'est envoyé sans votre validation.'
     : 'Demandez ce dont vous avez besoin : vos demandes sont transmises au bureau, qui valide.'}${window.PIPEFIT_DEMO ? ' <strong>Démonstration : assistant simulé (sans IA), il comprend surtout les commandes et les demandes de matériel.</strong>' : ''}</p>
   <div class="as-fil" id="as-fil">${fil.map(m => `<div class="as-msg ${m.role === 'user' ? 'as-moi' : 'as-lui'} ${m.erreur ? 'as-erreur' : ''}"><div class="as-bulle">${esc(m.texte).replace(/\n/g, '<br>')}</div>${(m.actions || []).map(carteAction).join('')}</div>`).join('')
@@ -89,17 +90,47 @@ function bindReglagesAssistant(root) {
       Il utilise l'IA Claude (API Anthropic) : les éléments utiles à chaque demande (chantier, articles, prix) sont transmis au service pour être traités ; chaque demande est facturée par Anthropic selon le modèle.${window.PIPEFIT_DEMO ? ' <strong>Démonstration : assistant simulé, sans clé ni IA.</strong>' : ''}</p>
       <label class="check"><input type="checkbox" id="as-actif" ${c.actif ? 'checked' : ''}> Activer l'assistant (bureau : administrateurs et chargés d'affaires)</label>
       <div class="grid2"><div class="field"><label for="as-cle">Clé API Anthropic ${c.cleDefinie ? (c.cleEnv ? '(fournie par la variable ANTHROPIC_API_KEY)' : '(enregistrée, laisser vide pour la garder)') : ''}</label><input id="as-cle" type="password" autocomplete="new-password" placeholder="${c.cleDefinie ? '••••••••' : 'sk-ant-…'}"></div>
-        <div class="field"><label for="as-modele">Modèle</label><select id="as-modele">${c.modeles.map(m => `<option value="${m}" ${m === c.modele ? 'selected' : ''}>${{ 'claude-opus-5-5': 'Claude Opus 5.5 (recommandé)', 'claude-sonnet-5-5': 'Claude Sonnet 5.5 (plus économique)', 'claude-haiku-5-5': 'Claude Haiku 5.5 (le plus économique)' }[m] || m}</option>`).join('')}</select></div></div>
+        <div class="field"><label for="as-modele">Modèle du bureau</label><select id="as-modele">${optionsModeles(c, c.modele)}</select></div>
+        <div class="field"><label for="as-modele-comp">Modèle des compagnons</label><select id="as-modele-comp">${optionsModeles(c, c.modeleCompagnons)}</select></div>
+        <div class="field"><label for="as-plafond">Plafond de dépense par mois ($, 0 = sans plafond)</label><input id="as-plafond" type="number" min="0" step="10" value="${esc(c.plafond || 0)}">
+          <span class="small muted">Atteint : l'assistant se met en pause jusqu'au mois suivant et les administrateurs sont prévenus.</span></div></div>
+      <div id="as-conso" class="as-conso"><p class="muted small">Consommation…</p></div>
       <fieldset class="adr-groupe"><legend>Compagnons (appli téléphone)</legend>
         <label class="check"><input type="checkbox" id="as-comp" ${c.compagnons.actif ? 'checked' : ''}> Ouvrir l'assistant aux compagnons, pour les actions cochées :</label>
         ${c.droitsCompagnon.map(([k, l]) => `<label class="check" style="margin-left:22px"><input type="checkbox" data-as-droit="${k}" ${c.compagnons.droits[k] ? 'checked' : ''}> ${esc(l)}</label>`).join('')}
         <p class="muted small">Un compagnon ne passe jamais de commande : sa demande de matériel arrive au chargé d'affaires du chantier (notification), qui choisit le fournisseur, valide et envoie.</p></fieldset>
       <div class="toolbar" style="margin:10px 0 0"><button id="as-save">Enregistrer</button>${c.cleDefinie && !c.cleEnv ? '<button class="secondary" id="as-effacer">Effacer la clé</button>' : ''}</div>`;
     const $ = s => carte.querySelector(s);
-    const lire = () => ({ actif: $('#as-actif').checked, cleApi: $('#as-cle').value, modele: $('#as-modele').value,
+    consommationAssistant($('#as-conso'));
+    const lire = () => ({ actif: $('#as-actif').checked, cleApi: $('#as-cle').value, modele: $('#as-modele').value, modeleCompagnons: $('#as-modele-comp').value, plafond: $('#as-plafond').value,
       compagnons: { actif: $('#as-comp').checked, droits: Object.fromEntries([...carte.querySelectorAll('[data-as-droit]')].map(x => [x.dataset.asDroit, x.checked])) } });
     const apres = async msg => { App.toast(msg); Store.me = await api('GET', '/api/me').catch(() => Store.me); boutonAssistant(); bindReglagesAssistant(root); };
     $('#as-save').onclick = () => api('PUT', '/api/assistant/config', lire()).then(() => apres('Assistant enregistré')).catch(e => notify(e.message));
     if ($('#as-effacer')) $('#as-effacer').onclick = async () => { if (await ask('Effacer la clé API ? L\'assistant sera désactivé.', 'Effacer')) api('PUT', '/api/assistant/config', { ...lire(), actif: false, effacerCle: true }).then(() => apres('Clé effacée')).catch(e => notify(e.message)); };
   }).catch(e => { carte.innerHTML = `<p class="neg">${esc(e.message)}</p>`; });
+}
+
+// Modèles proposés, avec leur tarif (dollars par million de tokens lus / écrits)
+const optionsModeles = (c, sel) => c.modeles.map(m => `<option value="${m}" ${m === sel ? 'selected' : ''}>${{ 'claude-opus-5-5': 'Claude Opus 5.5 (recommandé)', 'claude-sonnet-5-5': 'Claude Sonnet 5.5 (≈ 2 fois moins cher)', 'claude-haiku-5-5': 'Claude Haiku 5.5 (≈ 40 fois moins cher, questions simples)' }[m] || m}${c.tarifs && c.tarifs[m] ? ` — ${c.tarifs[m][0]} $ / ${c.tarifs[m][1]} $` : ''}</option>`).join('');
+const dollars = v => `${(Number(v) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
+// Consommation : jour, mois face au plafond, mois précédent, par personne et par modèle, 30 derniers jours
+function consommationAssistant(el) {
+  if (!el) return;
+  api('GET', '/api/assistant/consommation').then(s => {
+    if (!el.isConnected) return;
+    const pct = s.plafond ? Math.min(100, s.mois.cout / s.plafond * 100) : 0, max = Math.max(0.01, ...s.parJour.map(j => j.cout));
+    el.innerHTML = `<h3 style="margin:14px 0 6px">Consommation</h3>
+      <div class="as-chiffres"><div><span class="small muted">Aujourd'hui</span><strong>${dollars(s.jour.cout)}</strong><span class="small muted">${s.jour.demandes} demande(s)</span></div>
+        <div><span class="small muted">Ce mois-ci</span><strong class="${s.atteint ? 'neg' : ''}">${dollars(s.mois.cout)}</strong><span class="small muted">${s.mois.demandes} demande(s)${s.plafond ? ` · plafond ${dollars(s.plafond)}` : ''}</span>
+          ${s.plafond ? `<span class="as-jauge"><i style="width:${pct}%" class="${pct >= 100 ? 'plein' : pct >= 80 ? 'haut' : ''}"></i></span>` : ''}</div>
+        <div><span class="small muted">Mois précédent</span><strong>${dollars(s.moisPrecedent.cout)}</strong><span class="small muted">${s.moisPrecedent.demandes} demande(s)</span></div>
+        <div><span class="small muted">Coût moyen</span><strong>${dollars(s.mois.demandes ? s.mois.cout / s.mois.demandes : 0)}</strong><span class="small muted">par demande ce mois-ci</span></div></div>
+      ${s.atteint ? '<p class="neg small">Plafond atteint : l\'assistant est en pause jusqu\'au mois prochain (relevez le plafond pour le relancer).</p>' : ''}
+      ${s.parJour.length ? `<div class="as-barres" role="img" aria-label="Coût par jour sur les 30 derniers jours">${Array.from({ length: 30 }, (_, i) => { const d = isoDate(addDays(new Date(), i - 29)), j = s.parJour.find(x => x.jour === d) || { cout: 0, demandes: 0 };
+        return `<span class="${j.demandes ? '' : 'vide'}" title="${dateFr(d)} : ${dollars(j.cout)} (${j.demandes} demande(s))" style="height:${j.demandes ? Math.max(4, j.cout / max * 100) : 2}%"></span>`; }).join('')}</div><div class="small muted as-axe"><span>il y a 30 jours</span><span>aujourd'hui</span></div>` : ''}
+      ${s.parPersonne.length ? `<div class="table-wrap"><table><tr><th>Ce mois-ci</th><th>Profil</th><th class="num">Demandes</th><th class="num">Coût</th></tr>
+        ${s.parPersonne.map(p => `<tr><td>${esc(p.nom || p.login)}</td><td>${p.profil === 'bureau' ? 'Bureau' : 'Compagnon'}</td><td class="num">${p.demandes}</td><td class="num">${dollars(p.cout)}</td></tr>`).join('')}
+        ${s.parModele.map(m => `<tr class="muted"><td colspan="2">${esc(m.modele)}</td><td class="num">${m.demandes}</td><td class="num">${dollars(m.cout)}</td></tr>`).join('')}</table></div>` : '<p class="muted small">Aucune demande ce mois-ci.</p>'}
+      <p class="muted small">${window.PIPEFIT_DEMO ? 'Démonstration : coûts simulés (coût moyen estimé d\'une demande pour chaque modèle).' : 'Estimation d\'après les tokens facturés et le tarif public de chaque modèle ; la facture de la console Anthropic fait foi.'}</p>`;
+  }).catch(() => { el.innerHTML = ''; });
 }

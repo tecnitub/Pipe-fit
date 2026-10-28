@@ -2,7 +2,7 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v49';
+  const KEY = 'pipefit-crm-demo-v50';
   const ME_KEY = 'pipefit-crm-demo-me';
   const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications', 'habilitations', 'materiels', 'missions', 'produits', 'equipementsFrigo', 'fichesFluides', 'bouteilles', 'enlevements', 'epreuves', 'misesEnService', 'equilibrages', 'releves'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4], fichesFluides: ['numero', 'FI', 4], epreuves: ['numero', 'EP', 4], misesEnService: ['numero', 'MS', 4], equilibrages: ['numero', 'EQ', 4], releves: ['numero', 'RC', 4] };
@@ -35,13 +35,16 @@
   // Assistant de la démonstration : actif par défaut, compagnons ouverts aux demandes de matériel et au planning
   const DROITS_ASSISTANT = [['materiel', 'Demander du matériel (demande de commande transmise au bureau, à valider)'], ['planning', 'Consulter son planning'],
     ['chantier', 'Consulter les informations du chantier (adresse, contact, consignes)'], ['signaler', 'Signaler un problème ou une réserve au bureau'], ['articles', 'Rechercher un article dans la bibliothèque (sans les prix)']];
-  const configAssistant = () => db.assistant || { actif: true, modele: 'claude-opus-5-5', compagnons: { actif: true, droits: { materiel: true, planning: true, signaler: true } } };
+  const TARIFS_ASSISTANT = { 'claude-opus-5-5': [4, 20, 0.2], 'claude-sonnet-5-5': [2, 10, 0.2], 'claude-haiku-5-5': [0.1, 0.5, 0.01] };
+  const COUT_DEMANDE_SIMULE = { 'claude-opus-5-5': 0.09, 'claude-sonnet-5-5': 0.045, 'claude-haiku-5-5': 0.004 };
+  const configAssistant = () => ({ actif: true, modele: 'claude-opus-5-5', modeleCompagnons: 'claude-sonnet-5-5', plafond: 150, compagnons: { actif: true, droits: { materiel: true, planning: true, signaler: true } }, ...(db.assistant || {}) });
   const accesAssistant = a => {
     const c = configAssistant();
     if (!c.actif) return { actif: false, droits: [] };
-    if (['admin', 'charge'].includes(a.role)) return { actif: true, bureau: true, droits: ['bureau'] };
+    const mois = new Date().toISOString().slice(0, 7), pause = c.plafond > 0 && (db.assistantUsage || []).filter(x => x.date.startsWith(mois)).reduce((s, x) => s + x.cout, 0) >= c.plafond;
+    if (['admin', 'charge'].includes(a.role)) return { actif: true, bureau: true, droits: ['bureau'], ...(pause ? { pause } : {}) };
     const d = c.compagnons.actif ? DROITS_ASSISTANT.map(x => x[0]).filter(k => c.compagnons.droits[k]) : [];
-    return { actif: d.length > 0, bureau: false, droits: d };
+    return { actif: d.length > 0, bureau: false, droits: d, ...(pause ? { pause } : {}) };
   };
   // Boîte des offres de la démonstration : active par défaut pour montrer le transfert d'offres
   const offresDemo = () => ((db.efconfig || {}).offres || { actif: true, adresse: 'offres@tecnitub.example', dossier: 'Offres traitées' });
@@ -155,14 +158,25 @@
       const cfg = configAssistant();
       if (p[1] === 'config') {
         if (acc.role !== 'admin') return [403, { error: 'Réservé à l\'administrateur' }];
-        if (method === 'PUT') { db.assistant = { actif: !!body.actif, modele: body.modele || cfg.modele, compagnons: { actif: !!(body.compagnons || {}).actif, droits: { ...((body.compagnons || {}).droits || {}) } } }; save(); }
+        if (method === 'PUT') { db.assistant = { actif: !!body.actif, modele: body.modele || cfg.modele, modeleCompagnons: body.modeleCompagnons || cfg.modeleCompagnons, plafond: Math.max(0, Number(body.plafond) || 0),
+          compagnons: { actif: !!(body.compagnons || {}).actif, droits: { ...((body.compagnons || {}).droits || {}) } } }; save(); }
         const c = configAssistant();
-        return [200, { ...c, cleDefinie: false, cleEnv: false, modeles: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'], droitsCompagnon: DROITS_ASSISTANT }];
+        return [200, { ...c, cleDefinie: false, cleEnv: false, modeles: Object.keys(TARIFS_ASSISTANT), tarifs: TARIFS_ASSISTANT, droitsCompagnon: DROITS_ASSISTANT }];
+      }
+      // Consommation simulée : coût moyen estimé d'une demande selon le modèle
+      if (p[1] === 'consommation') {
+        const u = db.assistantUsage || [], jour = new Date().toISOString().slice(0, 10), mois = jour.slice(0, 7), moisP = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 15).toISOString().slice(0, 7);
+        const somme = f => { const l = u.filter(f); return { demandes: l.length, cout: l.reduce((s, x) => s + x.cout, 0) }; };
+        const grouper = (l, k) => Object.values(l.reduce((o, x) => { const g = o[x[k]] = o[x[k]] || { ...x, demandes: 0, cout: 0 }; g.demandes++; g.cout += x.cout; return o; }, {}));
+        const duMois = u.filter(x => x.date.startsWith(mois)), m = somme(x => x.date.startsWith(mois));
+        return [200, { jour: somme(x => x.date.startsWith(jour)), mois: m, moisPrecedent: somme(x => x.date.startsWith(moisP)), plafond: cfg.plafond || 0, atteint: cfg.plafond > 0 && m.cout >= cfg.plafond,
+          parPersonne: grouper(duMois, 'login').sort((a, b) => b.cout - a.cout), parModele: grouper(duMois, 'modele'), parJour: grouper(u.filter(x => x.date >= new Date(Date.now() - 30 * 86400000).toISOString()).map(x => ({ ...x, jour: x.date.slice(0, 10) })), 'jour').sort((a, b) => a.jour.localeCompare(b.jour)) }];
       }
       if (p[1] === 'conversations') return [200, p[2] ? (db.assistantConv || {})[p[2]] || {} : []];
       if (p[1] === 'message' && method === 'POST') {
         const ac = accesAssistant(acc);
         if (!ac.actif) return [403, { error: 'L\'assistant n\'est pas activé pour votre compte (Paramètres → Assistant).' }];
+        if (ac.pause) return [429, { error: 'L\'assistant est en pause : le plafond de dépense du mois est atteint. L\'administrateur peut le relever dans Paramètres → Assistant.' }];
         db.assistantConv = db.assistantConv || {};
         const conv = db.assistantConv[body.conversationId] || { id: 'cv' + DemoSeed.uid(), fil: [] };
         conv.fil.push({ role: 'user', texte: String(body.texte || ''), date: new Date().toISOString() });
@@ -170,7 +184,10 @@
         const notifier = obj => db.notifications.push({ ...obj, id: 'nt' + DemoSeed.uid(), _v: 1, _at: new Date().toISOString(), _by: 'Pipe-Fit' });
         const r = AssistantSimule.repondre({ db, acc, acces: ac, texte: String(body.texte || ''), creer, notifier });
         conv.fil.push({ role: 'assistant', texte: r.texte, actions: r.actions, date: new Date().toISOString() });
-        db.assistantConv[conv.id] = conv; save();
+        db.assistantConv[conv.id] = conv;
+        const modele = ac.bureau ? cfg.modele : (cfg.modeleCompagnons || cfg.modele);
+        db.assistantUsage = [...(db.assistantUsage || []), { date: new Date().toISOString(), login: acc.login, nom: acc.nom, profil: ac.bureau ? 'bureau' : 'compagnon', modele, cout: COUT_DEMANDE_SIMULE[modele] || 0.09 }];
+        save();
         return [200, { conversationId: conv.id, fil: conv.fil, actions: r.actions }];
       }
     }

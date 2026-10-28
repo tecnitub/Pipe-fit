@@ -653,8 +653,14 @@ langage courant, l'assistant (Claude, API Anthropic) utilise les actions de Pipe
   chargé d'affaires du chantier par notification, sans prix), son planning, infos du chantier, signalement au bureau,
   recherche d'articles.
 - Rien n'est envoyé sans validation ; chaque demande et ce qui a été préparé sont inscrits à l'historique.
-- Réglages (administrateur) : clé API (jamais renvoyée aux navigateurs, ou variable `ANTHROPIC_API_KEY`), modèle
-  (Claude Opus 5.5 par défaut), activation, coches des compagnons. Démonstration : assistant simulé, sans IA.
+- Réglages (administrateur) : clé API (jamais renvoyée aux navigateurs, ou variable `ANTHROPIC_API_KEY`), **modèle du
+  bureau** et **modèle des compagnons** (Claude Opus 5.5 par défaut ; Sonnet 5.5 ou Haiku 5.5 pour réduire le coût),
+  activation, coches des compagnons. Démonstration : assistant simulé, sans IA.
+- **Consommation** (même carte) : coût du jour, du mois et du mois précédent, coût moyen par demande, 30 derniers jours,
+  détail par personne et par modèle — calculé d'après les tokens facturés de chaque appel et le tarif public du modèle qui a
+  répondu (la facture Anthropic fait foi).
+- **Plafond mensuel** (en dollars) : une fois atteint, l'assistant se met en pause jusqu'au mois suivant (ou jusqu'à ce que
+  le plafond soit relevé) et les administrateurs reçoivent une notification.
 
 ## Étude d'exécution et DOE à partir du CCTP
 
