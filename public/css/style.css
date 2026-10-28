@@ -380,6 +380,8 @@ fieldset.doc-opts { border: 1px solid var(--border); border-radius: 6px; padding
 .mail-contacts .seg { flex-shrink: 0; }
 .mail-mode .check { align-items: flex-start; margin: 4px 0; }
 .mail-mode .check input { margin-top: 3px; }
+.adr-groupe { border: 1px solid var(--border, #ddd); border-radius: 6px; padding: 6px 10px 2px; margin: 8px 0; }
+.adr-groupe legend { font-weight: 600; font-size: .9em; padding: 0 4px; }
 .mail-piece { margin: 0 0 12px; }
 .mail-apercu { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; background: var(--panel); overflow-wrap: anywhere; }
 .chips-vars { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }

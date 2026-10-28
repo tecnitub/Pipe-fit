@@ -9,6 +9,7 @@ const M365 = require('./m365');
 const EF = require('./efacture');
 const MAILF = require('./mail-factures');
 const MAILO = require('./mail-offres');
+const AdressesEnvoi = require('../public/js/adresses-envoi');
 const DossierDocuments = require('./dossier-documents');
 const AgendaSync = require('./agenda');
 const HS = require('./http-securite');
@@ -149,6 +150,9 @@ const NOTIFS = Notifs.creer({ DB, db, broadcast });
 // Répertoire des documents sur le serveur, synchronisé avec les documents des chantiers
 const DOSSIER = DossierDocuments.creer({ DB, db, broadcast, uid, TYPES: TYPES_DOCUMENTS, MAX: MAX_DOCUMENT, dossierDefaut: path.join(path.dirname(DB_FILE), 'Documents'),
   notifier: (avant, apres) => NOTIFS.documentsModifies({ login: 'Répertoire serveur', nom: 'Répertoire serveur' }, avant, apres) });
+// Copie des pièces jointes sur le réseau (sens unique) et sauvegarde quotidienne de la base
+const PJRESEAU = require('./pj-reseau').creer({ DB, db, racineDocuments: () => DOSSIER.config().chemin });
+const SAUVEGARDE = require('./sauvegarde').creer({ DB, db, dossierDefaut: path.join(path.dirname(DB_FILE), 'Sauvegardes') });
 
 // Planning dans les agendas (Outlook via Microsoft 365, lien d'abonnement iCal)
 const AGENDA = AgendaSync.creer({ DB, db, M365 });
@@ -366,7 +370,8 @@ async function api(req, res, url) {
     db.prepare('DELETE FROM sessions WHERE token = ?').run(acc.token);
     return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(req, '', 0) });
   }
-  if (p[0] === 'me' && !p[1] && method === 'GET') return send(res, 200, { ...publicAccount(acc), m365: m365Pret(), prefs: DB.getConfig(db, `prefs:${acc.id}`) || {} });
+  if (p[0] === 'me' && !p[1] && method === 'GET') return send(res, 200, { ...publicAccount(acc), m365: m365Pret(), prefs: DB.getConfig(db, `prefs:${acc.id}`) || {},
+    ...(['admin', 'charge'].includes(acc.role) ? { adressesEnvoi: DB.getConfig(db, 'mail-adresses') || {} } : {}) });
   // Préférences d'affichage propres au compte (colonnes des tableaux : affichées, largeurs), sur tous ses appareils
   if (p[0] === 'me' && p[1] === 'preferences' && method === 'PUT') {
     const b = await readBody(req);
@@ -484,6 +489,24 @@ async function api(req, res, url) {
       return send(res, 200, { config: c, ...DOSSIER.etat() });
     }
     return send(res, 200, { config: DOSSIER.config(), ...DOSSIER.etat(), sep: path.sep });
+  }
+
+  // Réseau : pièces jointes recopiées dans l'arborescence du serveur, sauvegardes de la base (administrateur)
+  if (p[0] === 'reseau') {
+    if (acc.role !== 'admin') return fail(res, 403, 'Réservé à l\'administrateur');
+    const etatReseau = () => ({ pj: { config: PJRESEAU.config(), ...PJRESEAU.etat() }, sauvegarde: { config: SAUVEGARDE.config(), ...SAUVEGARDE.etat(), fichiers: SAUVEGARDE.liste().slice(0, 40) }, sep: path.sep });
+    if (!p[1] && method === 'GET') return send(res, 200, etatReseau());
+    if (!p[1] && method === 'PUT') {
+      const b = await readBody(req);
+      for (const x of [b.pj, b.sauvegarde]) if (x && x.chemin && !path.isAbsolute(String(x.chemin).trim())) return fail(res, 400, 'Indiquez un chemin complet (ex. \\\\NAS\\PipeFit\\Sauvegardes, D:\\Sauvegardes ou /mnt/nas/pipefit)');
+      if (b.pj) PJRESEAU.enregistrerConfig(b.pj);
+      if (b.sauvegarde) SAUVEGARDE.enregistrerConfig(b.sauvegarde);
+      DB.audit(db, acc.login, 'réglage des pièces jointes et sauvegardes sur le réseau', null, null, `${PJRESEAU.config().chemin} ; ${SAUVEGARDE.config().chemin}`);
+      PJRESEAU.copier().catch(() => {});
+      return send(res, 200, etatReseau());
+    }
+    if (p[1] === 'pj' && method === 'POST') { await PJRESEAU.copier({ toutRevoir: true }); return send(res, 200, etatReseau()); }
+    if (p[1] === 'sauvegarde' && method === 'POST') { await SAUVEGARDE.sauvegarder(`à la demande (${acc.login})`); return send(res, 200, etatReseau()); }
   }
 
   // Documents de chantier (plans, fiches techniques, notices…) : fichier brut jusqu'à 40 Mo
@@ -642,15 +665,33 @@ async function api(req, res, url) {
     }
   }
 
-  // Envoi d'un document par e-mail via Microsoft 365 (copie dans les éléments envoyés de l'expéditeur)
-  if (p[0] === 'mail' && method === 'POST') {
+  // Adresses d'envoi par type de document (boîtes partagées, adresse de réponse, copie d'archive)
+  if (p[0] === 'mail' && p[1] === 'adresses') {
+    if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Droits insuffisants');
+    if (method === 'GET') return send(res, 200, DB.getConfig(db, 'mail-adresses') || {});
+    if (method === 'PUT') {
+      if (acc.role !== 'admin') return fail(res, 403, 'Réservé à l\'administrateur');
+      let c;
+      try { c = AdressesEnvoi.normaliser(await readBody(req)); } catch (e) { return fail(res, 400, e.message); }
+      DB.setConfig(db, 'mail-adresses', c);
+      DB.audit(db, acc.login, 'adresses d\'envoi des e-mails', null, null, Object.entries(c).map(([k, v]) => `${k}: ${v.expediteur || 'boîte de l\'utilisateur'}`).join(', '));
+      return send(res, 200, c);
+    }
+  }
+
+  // Envoi d'un document par e-mail via Microsoft 365 (copie dans les éléments envoyés de l'expéditeur : boîte de
+  // l'utilisateur, ou boîte partagée réglée pour ce type de document)
+  if (p[0] === 'mail' && method === 'POST' && !p[1]) {
     if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Droits insuffisants');
     const cfg = DB.getConfig(db, 'm365');
     if (!m365Pret()) return fail(res, 400, "L'envoi par Microsoft 365 n'est pas configuré (Paramètres → E-mails).");
-    if (!acc.email) return fail(res, 400, "Votre compte n'a pas d'adresse Microsoft 365 : demandez à l'administrateur de la renseigner (Paramètres → Comptes).");
     const b = await readBody(req);
+    const envoi_ = AdressesEnvoi.pour(DB.getConfig(db, 'mail-adresses'), String(b.type || ''), acc.email);
+    if (!envoi_.expediteur) return fail(res, 400, "Votre compte n'a pas d'adresse Microsoft 365 : demandez à l'administrateur de la renseigner (Paramètres → Comptes).");
     const liste = l => (Array.isArray(l) ? l : []).map(x => String(x).trim()).filter(Boolean);
-    const to = liste(b.to), cc = liste(b.cc), bcc = liste(b.bcc);
+    const to = liste(b.to), cc = liste(b.cc), bcc0 = liste(b.bcc);
+    const deja = new Set([...to, ...cc].map(x => x.toLowerCase()));
+    const bcc = [...new Set([...bcc0, ...envoi_.bcc].map(x => x.toLowerCase()))].filter(x => !deja.has(x));
     if (!to.length) return fail(res, 400, 'Aucun destinataire');
     if (to.length + cc.length + bcc.length > 30 || [...to, ...cc, ...bcc].some(x => !EMAIL.test(x))) return fail(res, 400, 'Adresse e-mail invalide');
     const subject = String(b.subject || '').slice(0, 255);
@@ -668,12 +709,12 @@ async function api(req, res, url) {
     if (ref && restrictionsDe(acc).cacher.has(ref.col)) return fail(res, 403, REFUS_ACCES);
     try {
       // Demande de prix : les fournisseurs répondent directement dans la boîte des offres (si elle est relevée)
-      const oc = MAILO.config(DB, db), replyTo = String(b.type || '') === 'consultation' && oc.actif && oc.adresse ? [oc.adresse] : [];
-      await M365.envoyer(cfg, acc.email, { to, cc, bcc, replyTo, subject, html, attachments: pieces.map(a => ({ name: a.name, base64: a.base64, contentType: TYPES_PJ[a.name.split('.').pop().toLowerCase()] })) });
+      const oc = MAILO.config(DB, db), replyTo = envoi_.repondreA ? [envoi_.repondreA] : String(b.type || '') === 'consultation' && oc.actif && oc.adresse ? [oc.adresse] : [];
+      await M365.envoyer(cfg, envoi_.expediteur, { to, cc, bcc, replyTo, subject, html, attachments: pieces.map(a => ({ name: a.name, base64: a.base64, contentType: TYPES_PJ[a.name.split('.').pop().toLowerCase()] })) });
     } catch (e) { return fail(res, 502, e.message); }
     const id = uid(), now = new Date().toISOString();
     const envoi = { id, date: now, type: String(b.type || ''), col: ref && ref.col, docId: ref && ref.id, numero: String(b.numero || ''), to, cc, objet: subject,
-      pieces: pieces.map(a => a.name), mode: 'Microsoft 365', expediteur: acc.email, par: acc.nom || acc.login };
+      pieces: pieces.map(a => a.name), mode: 'Microsoft 365', expediteur: envoi_.expediteur, par: acc.nom || acc.login };
     db.prepare('INSERT INTO records (col, id, data, version, updated_at, updated_by) VALUES (?, ?, ?, 1, ?, ?)').run('envois', id, JSON.stringify(envoi), now, acc.nom || acc.login);
     DB.audit(db, acc.login, 'envoi e-mail', 'envois', id, `${envoi.numero} → ${to.join(', ')}`);
     const record = DB.getRecord(db, 'envois', id);
@@ -966,6 +1007,8 @@ if (require.main === module) {
   setTimeout(verifierDerives, 60000).unref();
   setInterval(verifierDerives, 2 * 3600000).unref();
   DOSSIER.demarrer();
+  PJRESEAU.demarrer();
+  SAUVEGARDE.demarrer();
   AGENDA.demarrer();
   // Sessions expirées effacées toutes les heures
   setInterval(() => db.prepare('DELETE FROM sessions WHERE expires < ?').run(Date.now()), 3600000).unref();

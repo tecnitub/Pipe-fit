@@ -138,7 +138,7 @@
     const p = path.replace(/^\/api\/?/, '').split('/').filter(Boolean);
     const acc = me();
     if (p[0] === 'setup') return [200, { needed: false, local: true }];
-    if (p[0] === 'me' && !p[1]) return [200, { ...acc, m365: !!(db.m365 || {}).actif, prefs: (db.prefs || {})[acc.id] || {} }];
+    if (p[0] === 'me' && !p[1]) return [200, { ...acc, m365: !!(db.m365 || {}).actif, prefs: (db.prefs || {})[acc.id] || {}, adressesEnvoi: db.adressesEnvoi || {} }];
     if (p[0] === 'me' && p[1] === 'preferences') { db.prefs = { ...(db.prefs || {}), [acc.id]: body || {} }; save(); return [200, body || {}]; }
     if (p[0] === 'me' && p[1] === 'password') return [200, { ok: true }];
     if (p[0] === 'logout' || p[0] === 'login') return [200, acc];
@@ -226,13 +226,22 @@
       if (p[2] === 'test') return [200, { statut: 'démonstration : aucun envoi (disponible sur l\'installation serveur)' }];
     }
     // Microsoft 365 simulé : l'envoi est enregistré dans l'historique, aucun e-mail ne part
+    if (p[0] === 'mail' && p[1] === 'adresses') {
+      if (method === 'PUT') {
+        if (acc.role !== 'admin') return [403, { error: 'Réservé à l\'administrateur' }];
+        try { db.adressesEnvoi = AdressesEnvoi.normaliser(body); } catch (e) { return [400, { error: e.message }]; }
+        save();
+      }
+      return [200, db.adressesEnvoi || {}];
+    }
     if (p[0] === 'mail' && method === 'POST') {
       if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Droits insuffisants' }];
       if (!(db.m365 || {}).actif) return [400, { error: "L'envoi par Microsoft 365 n'est pas configuré (Paramètres → E-mails)." }];
-      if (!acc.email) return [400, { error: "Votre compte n'a pas d'adresse Microsoft 365." }];
+      const envoi = AdressesEnvoi.pour(db.adressesEnvoi, body.type, acc.email);
+      if (!envoi.expediteur) return [400, { error: "Votre compte n'a pas d'adresse Microsoft 365." }];
       if (!(body.to || []).length) return [400, { error: 'Aucun destinataire' }];
       const rec = { id: 'env' + DemoSeed.uid(), date: new Date().toISOString(), type: body.type, col: body.ref && body.ref.col, docId: body.ref && body.ref.id, numero: body.numero || '',
-        to: body.to, cc: body.cc || [], objet: body.subject, pieces: (body.attachments || []).map(a => a.name), mode: 'Microsoft 365', expediteur: acc.email, par: acc.nom, _v: 1, _at: new Date().toISOString(), _by: acc.nom };
+        to: body.to, cc: body.cc || [], objet: body.subject, pieces: (body.attachments || []).map(a => a.name), mode: 'Microsoft 365', expediteur: envoi.expediteur, par: acc.nom, _v: 1, _at: new Date().toISOString(), _by: acc.nom };
       db.envois.push(rec); audit('envoi e-mail', 'envois', `${rec.numero} → ${rec.to.join(', ')} (démo : non envoyé)`); save();
       return [200, JSON.parse(JSON.stringify(rec))];
     }

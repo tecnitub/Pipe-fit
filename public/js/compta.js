@@ -180,7 +180,7 @@ Views.compta.bind = (root, params, query) => {
 // Envoi au cabinet comptable : écritures (Excel + CSV) et, au choix, les pièces (PDF des factures, factures fournisseurs jointes)
 async function envoyerComptable(pieces, ecr, periode, titre, nomFichierCompta, apres) {
   const me = await api('GET', '/api/me').catch(() => Store.me), c = comptaCfg();
-  const m365 = me.m365 && me.email;
+  const exp = AdressesEnvoi.pour(me.adressesEnvoi, 'compta', me.email), m365 = me.m365 && exp.expediteur;
   const ventes = pieces.filter(p => p.col === 'factures').map(p => p.doc), achats = pieces.filter(p => p.col === 'achats').map(p => p.doc);
   const pjAchats = achats.filter(x => x.pieceId);
   const box = Modal.open(`<h2 style="margin-top:0">Envoyer au comptable</h2>
@@ -189,7 +189,7 @@ async function envoyerComptable(pieces, ecr, periode, titre, nomFichierCompta, a
     <div class="field"><label for="ec-corps">Message</label><textarea id="ec-corps" rows="8">${esc(`Bonjour,\n\nVeuillez trouver ci-joint les écritures du ${periode} :\n${ventes.length ? `- ventes : ${ventes.length} pièce(s) (${ventes.filter(estAvoir).length} avoir(s)), ${eur(sumBy(ventes, x => Calc.facture(x).ht))} HT\n` : ''}${achats.length ? `- achats : ${achats.length} facture(s) fournisseur, ${eur(sumBy(achats, x => Calc.achat(x).ht))} HT (section analytique = n° de chantier)\n` : ''}\nCordialement,\n${me.nom || ''}`)}</textarea></div>
     ${ventes.length ? `<label class="check"><input type="checkbox" id="ec-pdf" ${ventes.length <= 15 ? 'checked' : ''}> Joindre les PDF des ${ventes.length} facture(s) et avoir(s)${ventes.length > 15 ? ' (volumineux)' : ''}</label>` : ''}
     ${pjAchats.length ? `<label class="check"><input type="checkbox" id="ec-pja" ${pjAchats.length <= 10 ? 'checked' : ''}> Joindre les ${pjAchats.length} facture(s) fournisseur numérisée(s)</label>` : ''}
-    <p class="muted small">${m365 ? `Envoi par Microsoft 365 depuis ${esc(me.email)} (copie dans vos éléments envoyés).` : 'Brouillon Outlook avec les pièces jointes (Microsoft 365 non configuré).'}</p>
+    <p class="muted small">${m365 ? `Envoi par Microsoft 365 depuis ${esc(exp.expediteur)} (copie dans ses éléments envoyés).` : 'Brouillon Outlook avec les pièces jointes (Microsoft 365 non configuré).'}</p>
     <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="ec-annuler">Annuler</button><button id="ec-ok">Envoyer</button></div>`);
   box.querySelector('#ec-annuler').onclick = Modal.close;
   box.querySelector('#ec-ok').onclick = async () => {

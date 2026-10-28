@@ -216,7 +216,9 @@ async function envoyerParMail(type, id) {
   const me = await api('GET', '/api/me').catch(() => Store.me);
   const moi = Store.get('users', me.userId) || {};
   const charge = Store.get('users', ctx.chargeId) || {};
-  const st = { entrepriseId: ctx.entrepriseId, roles: {}, modifie: false, mode: me.m365 && me.email ? 'm365' : 'outlook' };
+  // Expéditeur : boîte partagée réglée pour ce type de document, sinon la boîte de l'utilisateur
+  const exp = AdressesEnvoi.pour(me.adressesEnvoi, type, me.email);
+  const st = { entrepriseId: ctx.entrepriseId, roles: {}, modifie: false, mode: me.m365 && exp.expediteur ? 'm365' : 'outlook' };
   const contacts = () => contactsOf(st.entrepriseId).filter(c => c.email);
   const initRoles = () => {
     st.roles = {};
@@ -245,9 +247,9 @@ async function envoyerParMail(type, id) {
       <div class="field"><label for="ml-corps">Message</label><textarea id="ml-corps" rows="12"></textarea></div>
       <p class="mail-piece">📎 <strong>${esc(nomFichier(ctx.fichier))}</strong>${ctx.piecesSup ? (ctx.piecesSupOption ? ` <label class="check"><input type="checkbox" id="ml-sup" checked> + <strong>${esc(ctx.libellePiecesSup)}</strong></label>` : ` + <strong>${esc(ctx.libellePiecesSup || 'pièces jointes')}</strong>`) : ''} <button class="small secondary" id="ml-pdf" type="button">Voir le PDF</button></p>
       <fieldset class="mail-mode"><legend>Envoi</legend>
-        <label class="check"><input type="radio" name="ml-mode" value="m365" ${st.mode === 'm365' ? 'checked' : ''} ${me.m365 && me.email ? '' : 'disabled'}>
-          <span>Microsoft 365, depuis ${me.email ? `<strong>${esc(me.email)}</strong>` : 'votre boîte'} : envoi immédiat, le message est enregistré dans vos « Éléments envoyés »</span></label>
-        ${!me.m365 ? '<p class="muted small">Microsoft 365 n\'est pas encore configuré (Paramètres → E-mails).</p>' : !me.email ? '<p class="muted small">Votre compte n\'a pas d\'adresse Microsoft 365 : l\'administrateur peut la renseigner dans Paramètres → Comptes.</p>' : ''}
+        <label class="check"><input type="radio" name="ml-mode" value="m365" ${st.mode === 'm365' ? 'checked' : ''} ${me.m365 && exp.expediteur ? '' : 'disabled'}>
+          <span>Microsoft 365, depuis ${exp.expediteur ? `<strong>${esc(exp.expediteur)}</strong>` : 'votre boîte'} : envoi immédiat, ${exp.partage ? 'enregistré dans les « Éléments envoyés » de cette boîte partagée (visibles dans Outlook par tous ceux qui y ont accès)' : 'le message est enregistré dans vos « Éléments envoyés »'}${exp.repondreA ? ` ; réponses vers ${esc(exp.repondreA)}` : ''}</span></label>
+        ${!me.m365 ? '<p class="muted small">Microsoft 365 n\'est pas encore configuré (Paramètres → E-mails).</p>' : !exp.expediteur ? '<p class="muted small">Votre compte n\'a pas d\'adresse Microsoft 365 : l\'administrateur peut la renseigner dans Paramètres → Comptes.</p>' : ''}
         <label class="check"><input type="radio" name="ml-mode" value="outlook" ${st.mode === 'outlook' ? 'checked' : ''}>
           <span>Brouillon Outlook : un fichier s'ouvre dans Outlook avec le PDF joint, vous relisez et cliquez sur Envoyer</span></label>
       </fieldset>
@@ -295,7 +297,7 @@ async function envoyerParMail(type, id) {
         App.toast(`E-mail envoyé à ${dest.to.join(', ')}`, 3500);
       } else {
         download(nom.replace(/\.pdf$/, '.eml'), brouillonEML({ ...dest, subject, html, pieces: [{ nom, bytes: pdf, type: 'application/pdf' }, ...sup] }), 'message/rfc822');
-        Store.upsert('envois', { date: new Date().toISOString(), type, col: ctx.ref.col, docId: ctx.ref.id, numero: ctx.numero || '', ...dest, objet: subject, pieces: [nom, ...sup.map(p => p.nom)], mode: 'Brouillon Outlook', expediteur: me.email || '', par: me.nom });
+        Store.upsert('envois', { date: new Date().toISOString(), type, col: ctx.ref.col, docId: ctx.ref.id, numero: ctx.numero || '', ...dest, objet: subject, pieces: [nom, ...sup.map(p => p.nom)], mode: 'Brouillon Outlook', expediteur: exp.expediteur || '', par: me.nom });
         App.toast('Brouillon téléchargé : ouvrez-le dans Outlook pour l\'envoyer.', 4500);
       }
       if (ctx.apres) ctx.apres();
@@ -342,6 +344,7 @@ Views.mails = () => {
   <div class="doc-config">
     <div class="doc-form">
       <div class="card" id="mm-365"><strong>Connexion Microsoft 365</strong><p class="muted small">Chargement…</p></div>
+      <div class="card" id="mm-adr"><strong>Adresses d'envoi par type de document</strong><p class="muted small">Chargement…</p></div>
       <div class="card"><div class="field"><label for="mm-sign">Signature (commune à tous les modèles, variable {signature})</label>
         <textarea id="mm-sign" rows="5" ${dis}>${esc(c.signature || SIGNATURE_DEFAUT)}</textarea></div>
         <p class="muted small">Votre adresse d'envoi : <strong>${esc(Store.me.email || 'non renseignée')}</strong>.</p></div>
@@ -400,6 +403,7 @@ Views.mails.bind = root => {
       catch (e) { notify(e.message); }
     };
   }).catch(e => { carte.innerHTML = `<p class="neg">${esc(e.message)}</p>`; });
+  adressesEnvoiCarte(q('#mm-adr'));
   if (!Store.can('admin')) return;
   let dernier = q('#mm-corps');
   q('#mm-objet').onfocus = q('#mm-corps').onfocus = e => { dernier = e.target; };
@@ -428,4 +432,28 @@ async function pieceDepuisFichier(id, base, nomOrigine = '') {
     || ((/\.(pdf|jpe?g|png|webp|csv|xlsx)$/i.exec(nomOrigine) || [])[1] || 'pdf').toLowerCase().replace('jpeg', 'jpg');
   const propre = String(base).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w .,()'&+-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100) || 'Offre';
   return { nom: `${propre}.${ext}`, bytes, type: type || 'application/pdf' };
+}
+
+// Adresses d'envoi par famille de documents : boîte partagée (expéditeur), adresse de réponse, copie cachée d'archive
+function adressesEnvoiCarte(carte) {
+  if (!carte) return;
+  const admin = Store.can('admin'), dis = admin ? '' : 'disabled';
+  api('GET', '/api/mail/adresses').then(c => {
+    if (!carte.isConnected) return;
+    carte.innerHTML = `<strong>Adresses d'envoi par type de document</strong>
+      <p class="muted small">Laissez « Expéditeur » vide pour envoyer depuis la boîte de l'utilisateur. Avec une boîte partagée (ex. achats@), le message part de cette boîte
+      et s'enregistre dans ses « Éléments envoyés » : toute l'équipe le retrouve dans Outlook. La boîte doit exister dans Microsoft 365 et être autorisée pour l'application (Mail.Send).</p>
+      ${AdressesEnvoi.GROUPES.map(g => { const v = c[g.id] || {}; return `<fieldset class="adr-groupe" data-g="${g.id}"><legend>${esc(g.label)}</legend>
+        <div class="grid2"><div class="field"><label>Expéditeur</label><input type="email" data-k="expediteur" value="${esc(v.expediteur || '')}" placeholder="boîte de l'utilisateur (ex. ${esc(g.exemple)})" ${dis}></div>
+        <div class="field"><label>Répondre à</label><input type="email" data-k="repondreA" value="${esc(v.repondreA || '')}" placeholder="${g.id === 'consultations' ? 'boîte des offres si elle est active' : 'l\'expéditeur'}" ${dis}></div>
+        <div class="field"><label>Copie cachée d'archive (Cci)</label><input type="email" data-k="cci" value="${esc(v.cci || '')}" placeholder="aucune" ${dis}></div>
+        <label class="check" style="align-self:end"><input type="checkbox" data-k="copieMoi" ${v.copieMoi ? 'checked' : ''} ${dis}> Copie cachée à l'utilisateur qui envoie (boîte partagée)</label></div></fieldset>`; }).join('')}
+      ${admin ? '<div class="toolbar" style="margin:8px 0 0"><button class="secondary" id="adr-save">Enregistrer les adresses</button></div>' : ''}`;
+    const b = carte.querySelector('#adr-save');
+    if (b) b.onclick = () => {
+      const corps = {};
+      carte.querySelectorAll('.adr-groupe').forEach(f => { corps[f.dataset.g] = Object.fromEntries([...f.querySelectorAll('[data-k]')].map(i => [i.dataset.k, i.type === 'checkbox' ? i.checked : i.value.trim()])); });
+      api('PUT', '/api/mail/adresses', corps).then(r => { Store.me.adressesEnvoi = r; App.toast('Adresses d\'envoi enregistrées'); }).catch(e => notify(e.message));
+    };
+  }).catch(e => { carte.innerHTML = `<p class="neg">${esc(e.message)}</p>`; });
 }
