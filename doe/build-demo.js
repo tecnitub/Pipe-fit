@@ -37,5 +37,6 @@ const page = [
 ].join('\n');
 
 fs.mkdirSync(path.dirname(out), { recursive: true });
-fs.writeFileSync(out, page);
+// Reliée au CRM, elle est publiée à côté de sa page comme fichier servi tel quel : document HTML complet
+fs.writeFileSync(out, crm ? `<!doctype html>\n<html lang="fr">\n<head>\n<meta charset="utf-8">\n</head>\n<body>\n${page}\n</body>\n</html>\n` : page);
 console.log(`Démo DOE : ${out} (${Math.round(fs.statSync(out).size / 1024)} Ko)`);
