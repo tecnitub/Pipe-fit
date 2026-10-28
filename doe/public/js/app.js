@@ -89,6 +89,7 @@ function manquesDOE(doe) {
   (doe.controles['8.2'] || TRAME.controles['8.2'].items.map(l => ({ libelle: l }))).forEach(it => verif('s8', it.present || (it.fichiers || []).length, `8.2 ${it.libelle}`));
   doe.equipements.filter(e => doe.familles.includes(e.famille)).forEach(e => { verif('s9', !vide(e.garantie), `${e.repere || e.designation} : durée de garantie`); verif('s9', !vide(e.sav), `${e.repere || e.designation} : contact SAV`); });
   verif('signatures', !vide(doe.signatures.date), 'Date de remise (« Fait à …, le … »)');
+  if (typeof manquesEtude === 'function') manquesEtude(doe, verif);
   return { manques: m, total: m.length + ok.length, pct: Math.round(ok.length / Math.max(1, m.length + ok.length) * 100) };
 }
 
@@ -133,22 +134,23 @@ Vues.accueil = {
     const sans = chantiersPF().filter(x => !doeDe(x.a.id) && (!q || `${x.a.code} ${x.a.nom}`.toLowerCase().includes(q)));
     return `<div class="barre"><h1>Dossiers des ouvrages exécutés</h1><input type="search" id="q" placeholder="Rechercher un chantier…" value="${esc(q)}"></div>
     <section><h2>Dossiers <span class="compte">${dossiers.length}</span></h2>
-      ${dossiers.length ? `<div class="grille">${dossiers.map(({ d, a, m }) => `<a class="carte dossier" href="#/doe/${d.id}/garde">
+      ${dossiers.length ? `<div class="grille">${dossiers.map(({ d, a, m }) => `<a class="carte dossier" href="#/doe/${d.id}/${d.statut === 'Étude' ? 'etude' : 'garde'}">
         <div class="anneau" style="--p:${m.pct}"><span>${m.pct}%</span></div>
         <div><strong>${esc(a.code || '')}</strong> ${esc(d.operation || a.nom || '')}<div class="muted petit">${esc((d.intervenants.mo || {}).raison || '')}</div>
-          <div class="petit">Lot ${esc(d.lot || '?')} · indice ${esc(d.indice)} · ${d.statut === 'Remis' ? `<span class="badge ok">Remis le ${dateFr(d.dateRemise)}</span>` : `<span class="badge">${m.manques.length} à compléter</span>`}</div>
+          <div class="petit">Lot ${esc(d.lot || '?')} · indice ${esc(d.indice)} · ${d.statut === 'Remis' ? `<span class="badge ok">Remis le ${dateFr(d.dateRemise)}</span>` : `${d.statut === 'Étude' ? '<span class="badge pf">Étude</span> ' : ''}<span class="badge">${m.manques.length} à compléter</span>`}</div>
           <div class="muted petit">Modifié ${d._at ? new Date(d._at).toLocaleDateString('fr-FR') : ''} par ${esc(d._by || '')}</div></div></a>`).join('')}</div>`
         : '<p class="muted">Aucun dossier pour l\'instant. Créez-en un à partir d\'un chantier ci-dessous.</p>'}</section>
-    <section><h2>Chantiers Pipe-Fit sans DOE <span class="compte">${sans.length}</span></h2>
+    <section><h2>Chantiers Pipe-Fit sans dossier <span class="compte">${sans.length}</span></h2>
       ${sans.length ? `<table class="liste"><tr><th>Chantier</th><th>Client</th><th>Statut</th><th>Réception</th><th></th></tr>
         ${sans.map(({ a, reception }) => `<tr><td><strong>${esc(a.code || '')}</strong> ${esc(a.nom || '')}</td><td>${esc(entrepriseDe(a.clientId).nom || '')}</td><td>${esc(a.statut || '')}</td>
-          <td>${reception ? `<span class="badge ok">${dateFr(reception)}</span>` : '<span class="muted">—</span>'}</td><td><button class="petit" data-creer="${a.id}">Créer le DOE</button></td></tr>`).join('')}</table>`
+          <td>${reception ? `<span class="badge ok">${dateFr(reception)}</span>` : '<span class="muted">—</span>'}</td><td class="nowrap"><button class="petit" data-etude="${a.id}">Démarrer l'étude</button> <button class="petit secondaire" data-creer="${a.id}">Créer le DOE</button></td></tr>`).join('')}</table>`
         : '<p class="muted">Tous les chantiers ont leur DOE.</p>'}</section>`;
   },
   bind: root => {
     const q = root.querySelector('#q');
     q.oninput = () => { sessionStorage.setItem('doe-q', q.value); const pos = q.selectionStart; App.render(); const n = document.getElementById('q'); n.focus(); n.setSelectionRange(pos, pos); };
     root.querySelectorAll('[data-creer]').forEach(b => b.onclick = () => creerDOE(b.dataset.creer));
+    root.querySelectorAll('[data-etude]').forEach(b => b.onclick = () => creerEtude(b.dataset.etude));
   },
 };
 async function creerDOE(affaireId) {
@@ -161,9 +163,11 @@ async function creerDOE(affaireId) {
 }
 // Lien direct depuis Pipe-Fit : #/chantier/<id> ouvre (ou propose de créer) le DOE du chantier
 Vues.chantier = {
-  html: p => { const d = doeDe(p[0]), a = PF.get('affaires', p[0]); if (d) { setTimeout(() => { location.hash = `#/doe/${d.id}/garde`; }); return ''; }
-    return a ? `<div class="carte"><h1>${esc(a.code || '')} ${esc(a.nom || '')}</h1><p>Ce chantier n'a pas encore de DOE.</p><button id="creer">Créer le DOE</button> <a href="#/">Retour</a></div>` : '<p>Chantier introuvable dans Pipe-Fit.</p>'; },
-  bind: (root, p) => { const b = root.querySelector('#creer'); if (b) b.onclick = () => creerDOE(p[0]); },
+  html: p => { const d = doeDe(p[0]), a = PF.get('affaires', p[0]); if (d) { setTimeout(() => { location.hash = `#/doe/${d.id}/${d.statut === 'Étude' ? 'etude' : 'garde'}`; }); return ''; }
+    return a ? `<div class="carte"><h1>${esc(a.code || '')} ${esc(a.nom || '')}</h1><p>Ce chantier n'a pas encore de dossier.</p>
+      <p class="muted petit">L'étude d'exécution (CCTP lu, équipements repérés, fiches techniques visées) devient le DOE à la fin des travaux.</p>
+      <div class="actions-ligne"><button id="etude">Démarrer l'étude</button><button class="secondaire" id="creer">Créer directement le DOE</button> <a href="#/">Retour</a></div></div>` : '<p>Chantier introuvable dans Pipe-Fit.</p>'; },
+  bind: (root, p) => { const b = root.querySelector('#creer'), e = root.querySelector('#etude'); if (b) b.onclick = () => creerDOE(p[0]); if (e) e.onclick = () => creerEtude(p[0]); },
 };
 
 /* ---------- Éditeur d'un dossier ---------- */
@@ -391,7 +395,7 @@ function annexesDOE(doe) {
   const coupeFeu = piecesCtl('G').filter(p => /coupe-feu/i.test(p.libelle));
   const out = [
     { lettre: 'A', titre: 'Plans de recollement', pieces: doe.plans.map(p => ({ libelle: `${p.numero || ''} ${p.designation}`, fichier: p.fichier, present: !!p.fichier })) },
-    { lettre: 'B', titre: 'Fiches techniques constructeurs et notices', pieces: [...doe.fiches.slice().sort((x, y) => (x.famille || '9').localeCompare(y.famille || '9')).map(f => ({ libelle: f.designation, fichier: f.fichier, present: true })), ...doe.notices.map(n => ({ libelle: n.libelle, fichier: n.fichier, present: true }))] },
+    { lettre: 'B', titre: 'Fiches techniques constructeurs et notices', pieces: [...doe.fiches.filter(f => f.visa !== 'Refusée').slice().sort((x, y) => (x.famille || '9').localeCompare(y.famille || '9')).map(f => ({ libelle: f.designation, fichier: f.fichier, present: true })), ...doe.notices.map(n => ({ libelle: n.libelle, fichier: n.fichier, present: true }))] },
     { lettre: 'F', titre: 'Rapports de mise en service', pieces: [...piecesCtl('F'), ...pf.F] },
     { lettre: 'G', titre: 'Essais, contrôles et mesures', pieces: [...piecesCtl('G').filter(p => !coupeFeu.includes(p)), ...pf.G] },
     { lettre: 'H', titre: 'Formation des exploitants', pieces: piecesCtl('H') },
@@ -424,7 +428,7 @@ async function demarrer() {
   document.body.classList.remove('deconnecte');
   document.getElementById('qui').textContent = S.me.nom || S.me.login;
   document.getElementById('deconnexion').onclick = async () => { await api('POST', '/api/logout', {}).catch(() => {}); location.reload(); };
-  const pf = S.me.pipefit || (/^https?:$/.test(location.protocol) ? `${location.protocol}//${location.hostname}:3000` : '');
+  const pf = S.me.pipefit || (!window.PIPEFIT_CRM_KEY && /^https?:$/.test(location.protocol) ? `${location.protocol}//${location.hostname}:3000` : '');
   if (pf) { const a = document.getElementById('lien-pf'); a.href = pf; a.hidden = false; if (window.PIPEFIT_CRM_URL) a.removeAttribute('target'); }
   document.getElementById('app').innerHTML = '<p class="muted">Chargement des chantiers Pipe-Fit…</p>';
   try { [S.config, S.does] = await Promise.all([api('GET', '/api/config'), api('GET', '/api/does'), PF.charger()]); }

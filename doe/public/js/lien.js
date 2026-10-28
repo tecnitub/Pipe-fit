@@ -50,9 +50,15 @@ function prefillDepuisPF(doe) {
   (a.documents || []).filter(d => !deja.has(d.id)).forEach(d => {
     const f = { src: 'pf', id: d.fichierId, nom: d.nom, mime: d.mime };
     if (d.categorie === 'Plan') { doe.plans.push({ id: uidD(), pfDocId: d.id, section: sousPlanDe(d.nom), numero: '', designation: d.nom.replace(/\.[a-z0-9]+$/i, ''), echelle: '', indice: d.indice || '', fichier: f }); n++; }
+    else if (d.categorie === 'CCTP') { /* lu dans la section CCTP */ }
     else if (d.categorie === 'Fiche technique') { doe.fiches.push({ id: uidD(), pfDocId: d.id, famille: familleProposee({ famillePF: '', designation: d.nom }), designation: d.nom.replace(/\.[a-z0-9]+$/i, ''), fichier: f }); n++; }
     else if (d.categorie === 'Notice') { doe.notices.push({ id: uidD(), pfDocId: d.id, libelle: d.nom.replace(/\.[a-z0-9]+$/i, ''), fichier: f }); n++; }
   });
+  // CCTP déposé dans les documents du chantier (le plus récent) : chargé s'il n'y en a pas encore, lu dans la section CCTP
+  const cctp = (a.documents || []).filter(d => d.categorie === 'CCTP' || /\bcctp\b|clauses techniques/i.test(d.nom || '')).sort((x, y) => String(y.date || y.ajouteLe || '').localeCompare(String(x.date || x.ajouteLe || '')))[0];
+  if (cctp && !(doe.cctp.fichier && doe.cctp.fichier.pfDocId === cctp.id) && (!doe.cctp.fichier || doe.cctp.fichier.src === 'pf')) {
+    doe.cctp.fichier = { src: 'pf', id: cctp.fichierId, nom: cctp.nom, mime: cctp.mime || 'application/pdf', pfDocId: cctp.id }; n++;
+  }
   doe.pf = { ...(doe.pf || {}), devisId: dv ? dv.id : '', code: a.code, maj: new Date().toISOString() };
   return n;
 }

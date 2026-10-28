@@ -37,6 +37,10 @@ const page = [
 ].join('\n');
 
 fs.mkdirSync(path.dirname(out), { recursive: true });
+// Lecteur de PDF (lecture du CCTP) : publié à côté de la page, dans vendor/pdfjs/
+const pdfDir = path.join(path.dirname(out), 'vendor', 'pdfjs');
+fs.mkdirSync(pdfDir, { recursive: true });
+['pdf.min.js', 'pdf.worker.min.js'].forEach(f => fs.copyFileSync(path.join(root, 'public/vendor/pdfjs', f), path.join(pdfDir, f)));
 // Reliée au CRM, elle est publiée à côté de sa page comme fichier servi tel quel : document HTML complet
 fs.writeFileSync(out, crm ? `<!doctype html>\n<html lang="fr">\n<head>\n<meta charset="utf-8">\n</head>\n<body>\n${page}\n</body>\n</html>\n` : page);
 console.log(`Démo DOE : ${out} (${Math.round(fs.statSync(out).size / 1024)} Ko)`);

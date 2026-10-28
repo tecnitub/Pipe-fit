@@ -15,7 +15,11 @@ const DB_FILE = process.env.DOE_DB_FILE || path.join(__dirname, 'data', 'doe.db'
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const PDF_MOTEUR = path.join(__dirname, '..', 'public', 'js', 'pdf.js');
 // Modules de Pipe-Fit servis tels quels : moteur PDF, mise en page des PV d'essais
-const PARTAGES = { '/shared/pdf.js': PDF_MOTEUR, '/shared/essais.js': path.join(__dirname, '..', 'public', 'js', 'essais.js'), '/shared/essais-doc.js': path.join(__dirname, '..', 'public', 'js', 'essais-doc.js') };
+const PF_PUBLIC = path.join(__dirname, '..', 'public');
+const PARTAGES = { '/shared/pdf.js': PDF_MOTEUR, '/shared/essais.js': path.join(PF_PUBLIC, 'js', 'essais.js'), '/shared/essais-doc.js': path.join(PF_PUBLIC, 'js', 'essais-doc.js'),
+  // Lecture du CCTP : texte du PDF (pdf.js) et analyse des articles et équipements
+  '/shared/pdf-lecture.js': path.join(PF_PUBLIC, 'js', 'pdf-lecture.js'), '/shared/cctp-lecture.js': path.join(PF_PUBLIC, 'js', 'cctp-lecture.js'),
+  '/vendor/pdfjs/pdf.min.js': path.join(PF_PUBLIC, 'vendor', 'pdfjs', 'pdf.min.js'), '/vendor/pdfjs/pdf.worker.min.js': path.join(PF_PUBLIC, 'vendor', 'pdfjs', 'pdf.worker.min.js') };
 const MAX_JSON = 5 * 1024 * 1024, MAX_FICHIER = 60 * 1024 * 1024, SESSION_JOURS = 14;
 const TYPES = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', dwg: 'image/vnd.dwg', dxf: 'image/vnd.dxf',
   ifc: 'application/x-step', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', zip: 'application/zip' };

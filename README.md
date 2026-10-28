@@ -641,6 +641,14 @@ article montre les prix par fournisseur et chaque achat (date, pièce, chantier)
 factures fournisseurs (prix réellement payés ; la commande n'est alors pas recomptée) et relevés du comptoir. Frais de
 port exclus. Export Excel (articles, achats, fournisseurs).
 
+## Étude d'exécution et DOE à partir du CCTP
+
+Le CCTP déposé dans les documents d'un chantier (catégorie « CCTP », reconnue d'après le nom du fichier) est repris par
+l'application DOE : l'étude d'exécution lit ses références et ses équipements (repères, quantités, prescriptions),
+numérote les équipements, contrôle article par article que rien n'est oublié et suit le visa des fiches techniques
+(bordereau d'envoi en PDF). À la fin des travaux, l'étude devient le DOE, déjà rempli hors attestations et PV. Détails :
+[doe/README.md](doe/README.md).
+
 ## Gantt des chantiers et plan de charge
 
 - **Gantt d'un chantier** (onglet « 📊 Gantt » du chantier) : phases avec tâche du planning, date au plus tôt, durée en

@@ -3,7 +3,7 @@
 const A_COMPLETER = 'À compléter';
 const TRAME = {
   sections: [
-    ['garde', 'Page de garde et intervenants'], ['s1', '1. Documents administratifs'], ['s2', '2. Plans de recollement'],
+    ['cctp', 'CCTP : lecture et contrôle'], ['etude', 'Étude : fiches techniques et visas'], ['garde', 'Page de garde et intervenants'], ['s1', '1. Documents administratifs'], ['s2', '2. Plans de recollement'],
     ['s3', '3. Fiches techniques des équipements'], ['s5', '5. Rapports de mise en service'], ['s6', '6. Essais, contrôles et mesures'],
     ['s7', '7. Maintenance et exploitation'], ['s8', '8. Formation des exploitants'], ['s9', '9. Garanties et assurances'],
     ['s10', '10. Annexes'], ['signatures', 'Signatures de remise'],

@@ -80,3 +80,12 @@ test('données du chantier, dossiers versionnés, un seul DOE par chantier, fich
   assert.strictEqual((await call(base, 'DELETE', '/api/does/d1', {}, c)).status, 200);
   assert.strictEqual((await call(base, 'GET', '/api/does', null, c)).body.length, 0);
 });
+
+test('lecture du CCTP : scripts de lecture et lecteur PDF servis à l\'application DOE', async () => {
+  for (const u of ['/shared/cctp-lecture.js', '/shared/pdf-lecture.js', '/vendor/pdfjs/pdf.min.js', '/vendor/pdfjs/pdf.worker.min.js', '/js/etude.js']) {
+    const r = await fetch(base + u);
+    assert.deepStrictEqual([u, r.status, r.headers.get('content-type')], [u, 200, 'text/javascript; charset=utf-8']);
+  }
+  const html = await (await fetch(`${base}/`)).text();
+  assert.ok(['shared/cctp-lecture.js', 'shared/pdf-lecture.js', 'js/etude.js'].every(s => html.includes(s)));
+});

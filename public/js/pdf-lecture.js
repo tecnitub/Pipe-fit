@@ -81,21 +81,22 @@ const PdfLecture = (() => {
     return String(await OCR.lire(dataUrl, progression)).split(/\r?\n/);
   }
 
-  // Fichier (PDF ou image) -> { lignes, ocr, pages }
-  async function lire(fichier, progression = () => {}) {
+  // Fichier (PDF ou image) -> { lignes, ocr, pages } ; opts : pagesMax (12 par défaut), ocr (false : pages scannées ignorées)
+  async function lire(fichier, progression = () => {}, opts = {}) {
     if (/^image\//.test(fichier.type) || /\.(jpe?g|png|webp)$/i.test(fichier.name || '')) {
       const dataUrl = await new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = ko; r.readAsDataURL(fichier); });
       return { lignes: await ocrImage(dataUrl, progression), ocr: true, pages: 1 };
     }
     const lib = await charger();
     const doc = await lib.getDocument({ data: new Uint8Array(await fichier.arrayBuffer()), isEvalSupported: false, disableFontFace: true, useSystemFonts: false }).promise;
-    const n = Math.min(doc.numPages, 12), lignes = [];
+    const n = Math.min(doc.numPages, opts.pagesMax || 12), lignes = [];
     let ocr = false;
     for (let p = 1; p <= n; p++) {
       progression((p - 1) / n);
       const page = await doc.getPage(p);
       const l = enLignes((await page.getTextContent()).items);
       if (l.join('').replace(/\s/g, '').length > 40) { lignes.push(...l); continue; }
+      if (opts.ocr === false) continue;
       // Page sans texte (scan) : rendue en image puis lue
       ocr = true;
       const vue = page.getViewport({ scale: 2 }), c = document.createElement('canvas');

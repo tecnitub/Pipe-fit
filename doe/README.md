@@ -21,6 +21,27 @@ selon le plan de classement TECNITUB, puis générer le dossier complet en un se
 - Dans Pipe-Fit, l'onglet « 📘 DOE » d'un chantier ouvre son dossier. L'adresse de l'application se règle dans
   Paramètres → Société (« Adresse de l'application DOE ») ; vide, c'est le même serveur sur le port 3100.
 
+## De l'étude au DOE : CCTP, repérage, visas
+
+Un dossier peut commencer dès l'**étude d'exécution** (« Démarrer l'étude ») et devenir le DOE à la fin des travaux
+(« Travaux terminés : passer en DOE ») ; il ne reste alors que les attestations, PV et essais à joindre.
+
+- **CCTP** (section « CCTP : lecture et contrôle ») : repris des documents du chantier dans Pipe-Fit (catégorie
+  « CCTP ») ou chargé ici, lu sur l'appareil (PDF avec texte ; un scan n'est pas lisible). Sont repris :
+  - lot, intitulé du lot, indice et date, n° d'affaire, BET, maître d'ouvrage → page de garde et section 1 (champs vides) ;
+  - **équipements à mettre en place** d'après les titres des articles (PAC, chaudières, CTA, VMC, circulateurs, vases,
+    ballons, disconnecteurs, radiateurs…), avec les **repères du CCTP** (PAC-01, CTA-1, P-02…), la quantité, la famille
+    du DOE et la prescription (« marque … type … ou équivalent », kW, m³/h) ; « Créer les équipements manquants » les ajoute
+    en section 3 ;
+  - « Numéroter les équipements sans repère » : suite par type (PAC-02, P-05, VC-01…) après les repères existants.
+- **Contrôle article par article** : un article d'équipement sans équipement dans le dossier est signalé (« à compléter ») ;
+  les articles d'essais renvoient aux sections 5 et 6 ; les autres sont marqués « vérifié » ou « non concerné ».
+- **Fiches techniques et visas** (section « Étude ») : une fiche par équipement repéré (« Joindre la fiche » ou « Lier une
+  fiche »), statut À soumettre / Soumise / Visée / Visée avec observations / Refusée, dates d'envoi et de visa,
+  observations. « Bordereau d'envoi pour visa » produit un PDF (bordereau de transmission + fiches jointes) et passe les
+  fiches en « Soumise ». Les fiches refusées ne vont pas en annexe B ; les fiches non visées et les équipements sans fiche
+  restent dans « À compléter ».
+
 ## Contenu du DOE généré
 
 Page de garde, sommaire paginé, sections 1, 2, 3, 5, 6, 7, 8, 9, 10 (pas de section 4), signatures de remise,

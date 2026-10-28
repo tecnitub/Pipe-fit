@@ -102,4 +102,32 @@
   if (!window.SAVE_FILE && window.claude && window.claude.use) {
     window.claude.use('downloads').then(dl => { if (dl) window.SAVE_FILE = (filename, data) => dl.save({ filename, data: new Blob([data]) }).catch(() => {}); }).catch(() => {});
   }
+  // CCTP d'exemple (démonstration) : PDF fabriqué sur l'appareil pour essayer la lecture du CCTP et l'étude
+  window.CCTP_EXEMPLE = async () => {
+    const a = (donneesPf().affaires || []).find(x => location.hash.includes(x.id)) || {};
+    const p = t => `<p>${t}</p>`;
+    const html = [
+      `<h1>${a.nom || 'Résidence Les Tilleuls – rénovation de la chaufferie'}</h1>`, p('CAHIER DES CLAUSES TECHNIQUES PARTICULIÈRES'), p('LOT N° 14 – CHAUFFAGE VENTILATION PLOMBERIE'),
+      p('Indice B du 12/03/2026'), p('Affaire n° 26-118'), p(`Maître d'ouvrage : ${((donneesPf().entreprises || []).find(e => e.id === a.clientId) || {}).nom || 'Office public de l\'habitat'}`), p('BET Fluides : Ingérop Conseil'),
+      p('1.1 Objet du présent CCTP'), p('Le présent document définit les travaux du lot chauffage, ventilation, plomberie.'),
+      p('1.2 Normes et réglementation'), p('Les travaux sont conformes aux DTU 65.11, 60.1 et 68.3.'),
+      p('3.1 Pompe à chaleur air / eau'), p('Fourniture et pose d\'une pompe à chaleur repère PAC-01 de marque Daikin type EWYT 045 ou équivalent, puissance calorifique 45 kW.'),
+      p('3.2 Chaudières gaz à condensation'), p('Deux chaudières CH-01 et CH-02 de marque Viessmann type Vitocrossal 200 ou équivalent, 90 kW chacune.'),
+      p('3.3 Circulateurs'), p('Circulateurs à vitesse variable repères P-01, P-02, P-03 et P-04, marque Grundfos type Magna3 ou équivalent.'),
+      p('3.4 Vase d\'expansion'), p('Vase d\'expansion à membrane VE-01, 300 litres.'),
+      p('3.5 Pot de décantation et filtre magnétique'), p('Désembouage du circuit primaire, quantité : 1.'),
+      p('3.6 Radiateurs'), p('Remplacement des radiateurs des parties communes, 24 unités, robinets thermostatiques.'),
+      p('4.1 Ventilation mécanique contrôlée'), p('Caisson d\'extraction VMC-01 basse consommation, débit 2 400 m3/h, marque Aldes ou équivalent.'),
+      p('5.1 Production d\'eau chaude sanitaire'), p('Ballon de stockage BAL-01 de 1 000 litres avec échangeur.'),
+      p('5.2 Disconnecteur'), p('Disconnecteur à zone de pression réduite contrôlable DIS-01 sur l\'appoint.'),
+      p('6.1 Calorifugeage'), p('Calorifugeage des réseaux en chaufferie, classe 4.'),
+      p('7.1 Essais et mise en service'), p('Essais de pression des réseaux à 1,5 fois la pression de service, équilibrage, mise en service des générateurs.'),
+      p('7.2 Dossier des ouvrages exécutés'), p('Remise du DOE en trois exemplaires papier et un exemplaire numérique.'),
+    ].join('');
+    const bytes = await PDF.depuisHTML(html, 'CCTP lot 14');
+    let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    const id = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('');
+    db.fichiers[id] = { nom: 'CCTP lot 14 indice B.pdf', mime: 'application/pdf', dataUrl: `data:application/pdf;base64,${btoa(bin)}` }; save();
+    return { src: 'doe', id, nom: 'CCTP lot 14 indice B.pdf', mime: 'application/pdf' };
+  };
 })();

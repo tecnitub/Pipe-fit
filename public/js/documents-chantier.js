@@ -1,7 +1,7 @@
 // Documents du chantier (plans, fiches techniques, notices, sécurité…) déposés par le bureau et transmis aux compagnons,
 // et fiche chantier du compagnon sur son téléphone : documents, matériel prévu (sans prix ni heures, selon les réglages),
 // commandes et livraisons attendues.
-const CATEGORIES_DOC = [['Demande client', '📧'], ['Plan', '📐'], ['Fiche technique', '📄'], ['Notice', '📘'], ['Sécurité / PPSPS', '⛑️'], ['PGC', '🦺'], ['Plan de prévention', '🛡️'], ['Photo', '🖼️'], ['Autre', '📁']];
+const CATEGORIES_DOC = [['Demande client', '📧'], ['CCTP', '📑'], ['Plan', '📐'], ['Fiche technique', '📄'], ['Notice', '📘'], ['Sécurité / PPSPS', '⛑️'], ['PGC', '🦺'], ['Plan de prévention', '🛡️'], ['Photo', '🖼️'], ['Autre', '📁']];
 const iconeDoc = c => (CATEGORIES_DOC.find(x => x[0] === c) || CATEGORIES_DOC[CATEGORIES_DOC.length - 1])[1];
 const categorieDevinee = Classement.categorieDevinee;
 const tailleLisible = o => (o > 1048576 ? `${fmt(o / 1048576, 1)} Mo` : `${Math.max(1, Math.round(o / 1024))} Ko`);
