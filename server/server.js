@@ -152,7 +152,8 @@ const DOSSIER = DossierDocuments.creer({ DB, db, broadcast, uid, TYPES: TYPES_DO
   notifier: (avant, apres) => NOTIFS.documentsModifies({ login: 'Répertoire serveur', nom: 'Répertoire serveur' }, avant, apres) });
 // Copie des pièces jointes sur le réseau (sens unique) et sauvegarde quotidienne de la base
 const PJRESEAU = require('./pj-reseau').creer({ DB, db, racineDocuments: () => DOSSIER.config().chemin });
-const SAUVEGARDE = require('./sauvegarde').creer({ DB, db, dossierDefaut: path.join(path.dirname(DB_FILE), 'Sauvegardes') });
+const SAUVEGARDE = require('./sauvegarde').creer({ DB, db, dossierDefaut: path.join(path.dirname(DB_FILE), 'Sauvegardes'),
+  autres: [{ prefixe: 'doe', fichier: process.env.DOE_DB_FILE || path.join(__dirname, '..', 'doe', 'data', 'doe.db') }] });
 
 // Planning dans les agendas (Outlook via Microsoft 365, lien d'abonnement iCal)
 const AGENDA = AgendaSync.creer({ DB, db, M365 });

@@ -19,10 +19,19 @@ LE SERVEUR
   Si les collègues n'arrivent pas à se connecter : vérifier que le réseau du
   serveur est en « Privé » (Paramètres Windows > Réseau).
 
+APPLICATION DOE
+  Installée avec le CRM (tâche planifiée « PipeFitDOE ») : http://NOM-DU-SERVEUR:3100
+  Journal : C:\ProgramData\PipeFitCRM\logs\doe.log
+
 DONNÉES ET SAUVEGARDE
   Toutes les données sont dans : C:\ProgramData\PipeFitCRM\data
-  Sauvegardez ce dossier régulièrement (copie sur un disque réseau, NAS...).
+  Sauvegarde automatique chaque soir : Paramètres > Pièces jointes et sauvegardes
+  sur le réseau (choisir un dossier sur un autre disque ou un NAS).
   Journal du serveur : C:\ProgramData\PipeFitCRM\logs\serveur.log
+
+CONFIGURATION DU SERVEUR (dossiers réseau, partage, HTTPS, compte de service)
+  Script deploy\windows\configurer-serveur.ps1 du pack de déploiement.
+  Mode d'emploi complet : docs\guide-installation.html du pack.
 
 MISE À JOUR
   Lancez simplement le nouveau PipeFitCRM-Setup.exe : les données sont conservées.

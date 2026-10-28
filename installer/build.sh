@@ -22,7 +22,8 @@ fi
 rm -rf build
 mkdir -p build/node build/app
 cp "$NODE_EXE" build/node/node.exe
-cp -r ../server ../public ../package.json build/app/
+cp -r ../server ../public ../doe ../package.json build/app/
+rm -rf build/app/doe/data
 
 makensis -V2 -DVERSION="$VERSION" PipeFitCRM.nsi
 ls -lh "../dist/PipeFitCRM-Setup-$VERSION.exe"

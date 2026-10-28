@@ -94,12 +94,14 @@ Section "Installer"
   RMDir /r "$INSTDIR\app"
   File /r "build/*"
   File "files/start-server.cmd"
+  File "files/start-doe.cmd"
   File "files/service.ps1"
   File "files/LISEZMOI.txt"
   File "files/pipefit.ico"
 
   CreateDirectory "$COMMONPROGRAMDATA\PipeFitCRM\data"
   CreateDirectory "$COMMONPROGRAMDATA\PipeFitCRM\logs"
+  CreateDirectory "$COMMONPROGRAMDATA\PipeFitCRM\data\doe"
 
   ; Raccourcis pour tous les utilisateurs
   SetShellVarContext all
@@ -109,6 +111,7 @@ Section "Installer"
   CopyFiles /SILENT "$INSTDIR\Pipe-Fit CRM.url" "$DESKTOP"
   CreateDirectory "$SMPROGRAMS\${APPNAME}"
   CopyFiles /SILENT "$INSTDIR\Pipe-Fit CRM.url" "$SMPROGRAMS\${APPNAME}"
+  WriteINIStr "$SMPROGRAMS\${APPNAME}\Pipe-Fit DOE.url" "InternetShortcut" "URL" "http://localhost:3100/"
   CreateShortcut "$SMPROGRAMS\${APPNAME}\Données et sauvegarde.lnk" "$COMMONPROGRAMDATA\PipeFitCRM"
   CreateShortcut "$SMPROGRAMS\${APPNAME}\Mode d'emploi.lnk" "$INSTDIR\LISEZMOI.txt"
   CreateShortcut "$SMPROGRAMS\${APPNAME}\Désinstaller.lnk" "$INSTDIR\Desinstaller.exe"

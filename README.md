@@ -7,6 +7,14 @@ analyse de rentabilité et retour d'expérience (REX) par affaire et par chargé
 
 Plusieurs personnes travaillent en même temps sur les mêmes données, depuis leur navigateur.
 
+## Installation
+
+**Mode d'emploi complet pas à pas : [docs/INSTALLATION.md](docs/INSTALLATION.md)** (serveur Windows, Linux ou Docker,
+HTTPS, appli des compagnons, Microsoft 365 et adresses d'envoi, répertoire réseau, sauvegardes, recette).
+Le **pack de déploiement** `PipeFit-Pack-x.y.z.zip` (onglet Actions → Artifacts, ou `bash deploy/pack.sh`) réunit
+l'installateur Windows, les scripts `deploy/` (configuration du serveur Windows, installation Linux, Docker Compose,
+préparation de Microsoft 365) et ce guide en page HTML lisible hors ligne.
+
 ## Installation en un clic (Windows)
 
 1. Sur le PC qui servira de serveur (allumé en permanence, Windows 10/11 64 bits),
@@ -14,8 +22,8 @@ Plusieurs personnes travaillent en même temps sur les mêmes données, depuis l
 2. Le navigateur s'ouvre : créer le compte administrateur (avec ou sans données de démonstration).
 3. Les collègues ouvrent `http://NOM-DU-SERVEUR:3000` dans leur navigateur : rien à installer sur leurs postes.
 
-L'installateur embarque Node.js, crée le démarrage automatique avec Windows (tâche planifiée
-`PipeFitCRM`, sans session ouverte), ouvre le pare-feu (port 3000, réseaux Domaine/Privé) et place
+L'installateur embarque Node.js et l'application DOE, crée le démarrage automatique avec Windows (tâches planifiées
+`PipeFitCRM` et `PipeFitDOE`, sans session ouverte), ouvre le pare-feu (port 3000, réseaux Domaine/Privé) et place
 une icône sur le bureau. Données : `C:\ProgramData\PipeFitCRM\data` (à sauvegarder).
 **Mise à jour** : relancer un Setup plus récent, les données sont conservées.
 
@@ -166,6 +174,8 @@ docker run -d -p 3000:3000 -v pipefit-data:/data -e ADMIN_PASSWORD=MonMotDePasse
 | `DB_FILE` | `data/pipefit.db` | Fichier de base de données |
 | `ADMIN_PASSWORD` | — | Crée directement le compte `admin` (sinon : écran de première configuration) |
 | `DOCUMENTS_DIR` | `<dossier de la base>/Documents` | Répertoire des documents synchronisé avec l'appli (sinon : Paramètres) |
+| `PJ_DIR` | `<répertoire des documents>/Pièces jointes` | Copie des pièces jointes en arborescence (sinon : Paramètres) |
+| `BACKUP_DIR` | `<dossier de la base>/Sauvegardes` | Sauvegardes quotidiennes de la base (sinon : Paramètres) |
 | `TLS_DIR` | `<dossier de la base>/tls` | Dossier du certificat HTTPS : `cert.pem` + `key.pem`, ou `certificat.pfx` |
 | `TLS_CERT`, `TLS_KEY` / `TLS_PFX`, `TLS_PASSPHRASE` | — | Certificat HTTPS ailleurs que dans `TLS_DIR` |
 | `HTTP_REDIRECT_PORT` | — | Port HTTP (ex. `80`) renvoyé vers HTTPS |
@@ -208,8 +218,10 @@ téléphones : le serveur doit pouvoir joindre en HTTPS `fcm.googleapis.com` (An
 démarrage ; `NOTIF_DELAI_MS` (défaut 20000) règle le regroupement des changements avant l'envoi.
 Paramètres → « Appli téléphone » rappelle les étapes ; chaque compagnon a un compte « Opérateur » relié à sa personne.
 
-**Sauvegarde** : copier régulièrement le dossier `data/` (ou le volume Docker), ou utiliser
-**Paramètres → Exporter (JSON)**.
+**Sauvegarde** : automatique chaque jour (**Paramètres → Pièces jointes et sauvegardes sur le réseau** : dossier local
+ou NAS, heure, nombre de jours gardés, « Sauvegarder maintenant ») : copie complète et vérifiée de la base (données,
+comptes, pièces jointes, réglages) et de la base DOE, faite par SQLite pendant que l'on travaille. Restaurer : arrêter
+Pipe-Fit, remplacer `pipefit.db` par la sauvegarde choisie, redémarrer. En plus : **Paramètres → Exporter (JSON)**.
 
 ## Envoi des e-mails par Microsoft 365
 
@@ -221,6 +233,13 @@ Paramètres → « Appli téléphone » rappelle les étapes ; chaque compagnon 
 4. Dans le CRM (administrateur) : **Paramètres → E-mails et Microsoft 365** : ID de l'annuaire (locataire),
    ID d'application, secret, cocher « Activer », puis « Tester » (un e-mail de test est envoyé à votre adresse).
 5. **Paramètres → Comptes** : renseigner l'adresse Microsoft 365 de chaque utilisateur (c'est l'expéditeur de ses envois).
+6. **Adresses d'envoi par type de document** (même écran) : devis, factures et relances, commandes, demandes de prix,
+   documents de chantier peuvent partir d'une **boîte partagée** (ex. `commercial@`, `comptabilite@`, `achats@`) : le
+   message s'enregistre dans ses éléments envoyés, que toute l'équipe retrouve dans Outlook. Adresse de réponse et copie
+   cachée d'archive au choix ; demandes de prix : réponses vers la boîte des offres par défaut.
+
+Le script `deploy/microsoft365/configurer-microsoft365.ps1` fait les étapes 1 à 3 (et crée les boîtes partagées et la
+stratégie d'accès) en une fois.
 
 Le secret est stocké sur le serveur uniquement (jamais renvoyé aux navigateurs ni inclus dans l'export JSON).
 L'autorisation `Mail.Send` d'application permet d'envoyer depuis n'importe quelle boîte du locataire : il est
@@ -668,6 +687,12 @@ Documents\_Corbeille\
 - Types acceptés : PDF, images, DWG/DXF/DWF, IFC/STEP, Word, Excel, PowerPoint, CSV, ZIP, texte, e-mails ; 40 Mo au plus.
   Les autres fichiers sont ignorés (listés dans les Paramètres), comme les fichiers temporaires d'Office (`~$…`).
 
+**Pièces jointes** : toutes les pièces jointes des enregistrements (offres et factures des fournisseurs, commandes,
+photos des rapports, prises de cotes, réserves, notes de frais, PV…) sont en plus recopiées, en sens unique, dans
+`Pièces jointes\Chantiers\<code> - <nom>\<rubrique>\<n° du document> - <fichier>` (hors chantier :
+`Hors chantier\<rubrique>\<année>`, `Entreprises\<nom>`, `Bibliothèque\FDS`). Rien n'y est effacé ni relu ; une
+copie effacée à la main est réécrite dans l'heure (réglage : Paramètres → Pièces jointes et sauvegardes sur le réseau).
+
 Pour y accéder depuis les postes du bureau, partagez ce répertoire sur le réseau (Windows : clic droit → Propriétés →
 Partage) avec les droits de lecture et d'écriture pour les personnes du bureau. Les fichiers restent aussi dans la base :
 l'appli fonctionne même si le répertoire est indisponible, et la sauvegarde de la base suffit.
@@ -684,11 +709,16 @@ server/api.js      clés d'API, webhooks sortants, description OpenAPI
 server/dossier-documents.js  répertoire des documents synchronisé avec l'appli
 server/agenda.js   planning dans Outlook (Microsoft Graph) et lien iCal
 server/mail-factures.js  boîte e-mail des factures fournisseurs (Microsoft Graph)
+server/mail-offres.js    boîte e-mail des offres fournisseurs (Microsoft Graph)
+server/pj-reseau.js      copie des pièces jointes dans l'arborescence du serveur
+server/sauvegarde.js     sauvegarde quotidienne de la base
 public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
 public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js, securite-ui.js, produits.js, dossier-documents.js, fluides-ui.js, rapprochement-ui.js, agenda-ui.js, hors-ligne.js, offres-pdf.js, comptoir.js, prix-achats.js, epreuves-ui.js, essais-ui.js : écrans métier
 doe/               application DOE séparée (serveur, interface, génération du dossier PDF)
-installer/         installateur Windows (NSIS) : build.sh, PipeFitCRM.nsi, lanceur et service
+installer/         installateur Windows (NSIS) : build.sh, PipeFitCRM.nsi, lanceurs CRM et DOE, service
+deploy/            pack de déploiement : pack.sh, Windows, Linux (systemd), Docker, Microsoft 365, guide HTML
+docs/              mode d'emploi d'installation
 ```
 
 ## Évolutions possibles

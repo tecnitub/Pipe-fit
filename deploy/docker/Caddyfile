@@ -1,0 +1,10 @@
+# HTTPS automatique (Let's Encrypt) : DOMAINE et DOMAINE_DOE viennent du fichier .env
+{$DOMAINE} {
+	encode gzip
+	reverse_proxy pipefit:3000
+}
+
+{$DOMAINE_DOE} {
+	encode gzip
+	reverse_proxy doe:3100
+}

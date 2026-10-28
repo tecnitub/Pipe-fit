@@ -1,0 +1,48 @@
+# Pipe-Fit CRM + application DOE + Caddy (HTTPS automatique) — à lancer depuis le pack décompressé :
+#   cd deploy/docker && cp .env.exemple .env   (puis renseigner le domaine et les chemins)
+#   docker compose up -d --build
+services:
+  pipefit:
+    build: ../..
+    image: pipefit-crm
+    restart: unless-stopped
+    environment:
+      SEED_DEMO: "0"
+      TRUST_PROXY: "1"
+      # Compte « admin » créé au premier démarrage (la page de première configuration n'est pas accessible au travers du proxy)
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      DOCUMENTS_DIR: /documents
+      PJ_DIR: /documents/Pièces jointes
+      BACKUP_DIR: /sauvegardes
+    volumes:
+      - pipefit-data:/data
+      - ${DOSSIER_DOCUMENTS:-./documents}:/documents
+      - ${DOSSIER_SAUVEGARDES:-./sauvegardes}:/sauvegardes
+    expose: ["3000"]
+
+  doe:
+    image: pipefit-crm
+    restart: unless-stopped
+    depends_on: [pipefit]
+    command: ["node", "--disable-warning=ExperimentalWarning", "doe/server.js"]
+    environment:
+      PIPEFIT_URL: http://pipefit:3000
+      PIPEFIT_PUBLIC_URL: https://${DOMAINE}
+    volumes:
+      - pipefit-data:/data
+    expose: ["3100"]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAINE: ${DOMAINE}
+      DOMAINE_DOE: ${DOMAINE_DOE}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+
+volumes:
+  pipefit-data:
+  caddy-data:

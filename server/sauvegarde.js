@@ -6,9 +6,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
-const MOTIF = /^pipefit-(\d{4}-\d{2}-\d{2})_(\d{4})\.db$/;
+const MOTIF = /^(?:pipefit|doe)-(\d{4}-\d{2}-\d{2})_(\d{4})\.db$/;
 
-function creer({ DB, db, dossierDefaut }) {
+// autres : bases sauvegardées avec celle de Pipe-Fit (application DOE), [{ prefixe, fichier }]
+function creer({ DB, db, dossierDefaut, autres = [] }) {
   const etat = { dernier: null, fichier: '', taille: 0, duree: 0, erreur: '', enCours: false };
   let enCours = null;
 
@@ -51,6 +52,15 @@ function creer({ DB, db, dossierDefaut }) {
           v.prepare('SELECT COUNT(*) n FROM records').get();
         } finally { v.close(); }
         fs.renameSync(tmp, f);
+        // Bases associées (application DOE) : même copie vérifiée, si elles existent sur ce serveur
+        for (const a of autres) {
+          if (!fs.existsSync(a.fichier)) continue;
+          const fa = path.join(c.chemin, nom.replace(/^pipefit-/, `${a.prefixe}-`)), ta = `${fa}.part`;
+          fs.rmSync(ta, { force: true });
+          const src = new DatabaseSync(a.fichier);
+          try { src.exec(`VACUUM INTO '${ta.replace(/'/g, "''")}'`); } finally { src.close(); }
+          fs.renameSync(ta, fa);
+        }
         // Rotation : les sauvegardes les plus anciennes au-delà du nombre de jours gardés
         const limite = Date.now() - c.conserver * 86400000;
         liste(c.chemin).slice(1).forEach(x => { const m = MOTIF.exec(x.nom); if (m && new Date(`${m[1]}T00:00:00`).getTime() < limite) fs.rmSync(path.join(c.chemin, x.nom), { force: true }); });

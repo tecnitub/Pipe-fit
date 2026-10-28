@@ -1,5 +1,6 @@
-# Tests + construction de l'installateur Windows à chaque envoi.
-# Le fichier PipeFitCRM-Setup-x.y.z.exe est téléchargeable dans l'onglet Actions > exécution > Artifacts.
+# Tests + construction de l'installateur Windows et du pack de déploiement à chaque envoi.
+# PipeFitCRM-Setup-x.y.z.exe et PipeFit-Pack-x.y.z.zip (installateur + scripts Linux / Docker / Microsoft 365 +
+# mode d'emploi) sont téléchargeables dans l'onglet Actions > exécution > Artifacts.
 name: Installateur Windows
 
 on:
@@ -21,3 +22,8 @@ jobs:
         with:
           name: PipeFitCRM-Setup
           path: dist/*.exe
+      - run: bash deploy/pack.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PipeFit-Pack
+          path: dist/PipeFit-Pack-*.zip
