@@ -87,11 +87,12 @@ function canDelete(acc, col, existing) {
   return canWrite(acc, col);
 }
 
-// Personnes pour lesquelles un opérateur peut pointer : lui-même et son équipe (chef d'équipe -> intérimaires, compagnons)
+// Personnes pour lesquelles un opérateur peut pointer : lui-même, son équipe (chef d'équipe -> intérimaires, compagnons)
+// et les intérimaires (sans accès, pointés par le compagnon avec qui ils ont travaillé)
 function pointablePour(acc) {
   if (!acc.user_id) return [];
   const team = db.prepare("SELECT id, data FROM records WHERE col = 'users'").all()
-    .filter(r => JSON.parse(r.data).chefId === acc.user_id).map(r => r.id);
+    .filter(r => { const u = JSON.parse(r.data); return u.chefId === acc.user_id || u.type === 'interimaire'; }).map(r => r.id);
   return [acc.user_id, ...team];
 }
 // Règles opérateur : pointages pour soi ou son équipe, notes de frais pour soi, rien de validé ne se modifie
@@ -494,6 +495,27 @@ async function api(req, res, url) {
       return send(res, 200, { config: c, ...DOSSIER.etat() });
     }
     return send(res, 200, { config: DOSSIER.config(), ...DOSSIER.etat(), sep: path.sep });
+  }
+
+  // Intérimaire pas encore connu, déclaré depuis le pointage (compagnon ou bureau) : fiche et mission à compléter
+  if (p[0] === 'pointage' && p[1] === 'interimaire' && method === 'POST') {
+    if (!acc.user_id && acc.role === 'atelier') return fail(res, 403, 'Compte non relié à une fiche de l\'équipe');
+    const b = await readBody(req), qui = acc.nom || acc.login;
+    const d = ReglesPointage.interimaireDeclare(b, { user: uid(), mission: uid() }, qui, ReglesPointage.jourIso(new Date()));
+    if (d.refus) return fail(res, 400, d.refus);
+    const now = new Date().toISOString();
+    DB.tx(db, () => {
+      for (const [col, o] of [['users', d.user], ['missions', d.mission]]) {
+        const { id, ...data } = o;
+        db.prepare('INSERT INTO records (col, id, data, version, updated_at, updated_by) VALUES (?, ?, ?, 1, ?, ?)').run(col, id, JSON.stringify({ ...data, id }), now, qui);
+        DB.audit(db, acc.login, 'création', col, id, `${o.nom} (intérimaire déclaré au pointage)`);
+      }
+    });
+    const user = DB.getRecord(db, 'users', d.user.id), mission = DB.getRecord(db, 'missions', d.mission.id);
+    broadcast('change', { col: 'users', record: user, client: req.headers['x-client-id'] || null });
+    broadcast('change', { col: 'missions', record: mission, client: req.headers['x-client-id'] || null });
+    NOTIFS.interimaireDeclare(acc, user).catch(e => console.error('Notification :', e.message));
+    return send(res, 200, { user: pourCompagnon(acc, 'users', user), mission: estCompagnon(acc) ? null : mission });
   }
 
   // État des applications Études et DOE par chantier (envoyé par leurs serveurs avec le compte de la personne ; bureau)

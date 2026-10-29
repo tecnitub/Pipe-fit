@@ -265,51 +265,8 @@ function bindPlanningMobile(root, uid) {
   root.querySelectorAll('[data-saisir]').forEach(b => b.onclick = () => saisirJournee(b.dataset.saisir, b.dataset.ids.split(',')));
 }
 
-// Saisie d'une journée à partir du planning : horaires prévus pré-remplis, corrigés par le compagnon
-function saisirJournee(date, ids) {
-  const lignes = ids.flatMap(uid => {
-    const plan = planJour(uid, date), deja = reelJour(uid, date);
-    return (plan.length ? plan : [{ affaireId: (chantiersActifs()[0] || {}).id, tache: TACHES[0], debut: '07:30', fin: '16:30', pause: 60 }])
-      .map(p => ({ uid, p, deja: sumBy(deja, t => num(t.heures)) }));
-  });
-  const box = Modal.open(`<h2 style="margin-top:0">${ids.length > 1 ? 'Journée de l\'équipe' : 'Ma journée'} · ${esc(jourLong(date))}</h2>
-    <p class="muted small">Horaires prévus au planning : corrigez-les avec les heures réellement faites.</p>
-    <datalist id="sj-taches">${TACHES.map(t => `<option value="${esc(t)}">`).join('')}</datalist>
-    ${lignes.map(({ uid, p, deja }, i) => `<div class="card sj-ligne" data-i="${i}">
-      <label class="check"><input type="checkbox" data-k="ok" ${deja ? '' : 'checked'}> <strong>${esc(userName(uid))}</strong>${deja ? ` <span class="badge b-warn">déjà ${fmt(deja, 2)} h pointées</span>` : ''}</label>
-      <div class="grid2">
-        <div class="field"><label>Chantier</label><select data-k="affaireId">${options(Store.all('affaires').filter(a => chantiersActifs().includes(a) || a.id === p.affaireId), p.affaireId, affaireLabel, false)}</select></div>
-        <div class="field"><label>Tâche</label><input data-k="tache" list="sj-taches" value="${esc(p.tache || '')}"></div>
-        <div class="field"><label>Arrivée</label><input data-k="debut" type="time" value="${esc(p.debut || '07:30')}"></div>
-        <div class="field"><label>Départ</label><input data-k="fin" type="time" value="${esc(p.fin || '16:30')}"></div>
-        <div class="field"><label>Pause (min)</label><input data-k="pause" type="number" step="5" value="${esc(p.pause ?? 60)}"></div>
-        <div class="field"><label>Heures</label><output data-k="h" class="sj-h"></output></div>
-      </div>
-      <label class="check"><input type="checkbox" data-k="panier" checked> Panier repas</label></div>`).join('')}
-    <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="sj-annuler">Annuler</button><button id="sj-ok">Enregistrer</button></div>`);
-  const val = (div, k) => div.querySelector(`[data-k="${k}"]`);
-  const maj = div => {
-    const h = dureeH(val(div, 'debut').value, val(div, 'fin').value, val(div, 'pause').value), p = lignes[+div.dataset.i].p;
-    const ecart = num(p.heuresPrevues) ? h - num(p.heuresPrevues) : 0;
-    val(div, 'h').innerHTML = `<strong>${fmt(h, 2)} h</strong>${Math.abs(ecart) > 0.01 ? ` <span class="small warn-text">(${ecart > 0 ? '+' : '−'}${fmt(Math.abs(ecart), 2)} h / prévu)</span>` : ''}`;
-  };
-  box.querySelectorAll('.sj-ligne').forEach(div => { maj(div); ['debut', 'fin', 'pause'].forEach(k => { val(div, k).oninput = () => maj(div); }); });
-  box.querySelector('#sj-annuler').onclick = Modal.close;
-  box.querySelector('#sj-ok').onclick = () => {
-    const saisiPar = Store.me.userId || ids[0];
-    const ok = [...box.querySelectorAll('.sj-ligne')].filter(div => val(div, 'ok').checked);
-    if (!ok.length) return notify('Cochez au moins une ligne.');
-    for (const div of ok) if (!val(div, 'affaireId').value || !val(div, 'debut').value || !val(div, 'fin').value) return notify('Renseignez le chantier, l\'arrivée et le départ.');
-    let total = 0;
-    ok.forEach(div => {
-      const o = { userId: lignes[+div.dataset.i].uid, date, affaireId: val(div, 'affaireId').value, tache: val(div, 'tache').value, debut: val(div, 'debut').value, fin: val(div, 'fin').value,
-        pause: num(val(div, 'pause').value), panier: val(div, 'panier').checked, statut: '', saisiPar };
-      o.heures = dureeH(o.debut, o.fin, o.pause); total += o.heures;
-      Store.upsert('temps', o);
-    });
-    Modal.close(); App.render(); App.toast(`${fmt(total, 2)} h enregistrées`);
-  };
-}
+// Saisie d'une journée à partir du planning : voir journee-ui.js (plusieurs chantiers, intérimaire, journée remplacée)
+const saisirJournee = (date, ids) => journeeCompagnon(date, ids);
 
 /* ---------- Routage de l'écran Planning ---------- */
 Views.planning = (params, query) => {

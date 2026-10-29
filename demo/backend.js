@@ -66,7 +66,7 @@
   function atelierRefus(acc, col, obj, existing) {
     if (acc.role !== 'atelier') return null;
     if (col === 'temps') { const r = ReglesPointage.refusTemps(obj, existing, ReglesPointage.jourIso(new Date())); if (r) return r; }
-    const allowed = col !== 'temps' ? [acc.userId] : [acc.userId, ...db.users.filter(u => u.chefId === acc.userId).map(u => u.id)];
+    const allowed = col !== 'temps' ? [acc.userId] : [acc.userId, ...db.users.filter(u => u.chefId === acc.userId || u.type === 'interimaire').map(u => u.id)];
     if (obj && !allowed.includes(obj.userId)) return 'Vous ne pouvez saisir que pour vous ou votre équipe';
     if (existing && !allowed.includes(existing.userId)) return 'Vous ne pouvez modifier que vos saisies ou celles de votre équipe';
     if (existing && (existing.verrouille || (col === 'rapports' && existing.signatureClientId))) return 'Ce bon d\'intervention est signé par le client : il ne peut plus être modifié';
@@ -154,6 +154,18 @@
     if (p[0] === 'setup') return [200, { needed: false, local: true }];
     if (p[0] === 'me' && !p[1]) return [200, { ...acc, m365: !!(db.m365 || {}).actif, prefs: (db.prefs || {})[acc.id] || {}, adressesEnvoi: db.adressesEnvoi || {}, assistant: accesAssistant(acc) }];
     // Assistant simulé (sans IA) : mêmes droits et mêmes réglages que le vrai
+    // Intérimaire déclaré depuis le pointage : fiche et mission à compléter, bureau prévenu
+    if (p[0] === 'pointage' && p[1] === 'interimaire' && method === 'POST') {
+      const d = ReglesPointage.interimaireDeclare(body, { user: 'u' + DemoSeed.uid(), mission: 'mi' + DemoSeed.uid() }, acc.nom, ReglesPointage.jourIso(new Date()));
+      if (d.refus) return [400, { error: d.refus }];
+      const now = new Date().toISOString(), meta = { _v: 1, _at: now, _by: acc.nom };
+      db.users.push({ ...d.user, ...meta }); db.missions = db.missions || []; db.missions.push({ ...d.mission, ...meta });
+      const agence = d.user.agenceId ? ((db.entreprises.find(e => e.id === d.user.agenceId) || {}).nom || '') : d.user.agenceLibre;
+      db.accounts.filter(a => ['admin', 'charge'].includes(a.role) && a.userId).forEach(a => db.notifications.push({ id: 'nt' + DemoSeed.uid(), type: 'interim', userId: a.userId, titre: `👷 Intérimaire déclaré : ${d.user.nom}`,
+        texte: `${acc.nom} l'a pointé avec lui${agence ? ` (agence ${agence})` : ''}. Mission à compléter dans RH → Intérim (contrat, motif, état civil).`, lien: '#/rh/interim', date: now, lu: false, ...meta }));
+      save();
+      return [200, { user: JSON.parse(JSON.stringify(db.users[db.users.length - 1])), mission: acc.role === 'atelier' ? null : db.missions[db.missions.length - 1] }];
+    }
     // État des applications Études et DOE par chantier (envoyé par leurs cadres dans la démonstration)
     if (p[0] === 'liens') {
       if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Réservé au bureau' }];

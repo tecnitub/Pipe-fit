@@ -1,6 +1,8 @@
 // Règles du pointage des compagnons, communes au serveur, au navigateur et à la démo :
 // - un oubli se rattrape sur les jours de la semaine en cours (jusqu'à aujourd'hui) ; au-delà, c'est le bureau qui corrige ;
-// - un compagnon non planifié peut ouvrir une intervention hors devis (dépannage) depuis son téléphone : le bureau la complète.
+// - un compagnon non planifié peut ouvrir une intervention hors devis (dépannage) depuis son téléphone : le bureau la complète ;
+// - un intérimaire n'a pas d'accès : le compagnon avec qui il a travaillé le pointe, et le déclare s'il n'est pas encore connu
+//   (fiche et mission créées « à compléter », le bureau est prévenu).
 const ReglesPointage = (() => {
   const jourIso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   // Semaine ISO « 2026-W42 » d'une date « AAAA-MM-JJ »
@@ -42,6 +44,20 @@ const ReglesPointage = (() => {
     return { obj: propre };
   }
 
-  return { semaine, jourIso, jourModifiable, joursSemaine, refusTemps, horsDevisCompagnon };
+  // Intérimaire déclaré par un compagnon : fiche de l'équipe (sans accès) et mission à compléter par le bureau (registre)
+  function interimaireDeclare(b, ids, declarePar, auj) {
+    const t = (v, n = 120) => String(v || '').trim().slice(0, n);
+    const nom = t(b && b.nom);
+    if (nom.length < 3) return { refus: 'Indiquez le nom et le prénom de l\'intérimaire' };
+    if (!b.agenceId && !t(b.agenceLibre)) return { refus: 'Indiquez l\'agence d\'intérim' };
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || '')) && b.date <= auj ? b.date : auj;
+    const commun = { nom, agenceId: t(b.agenceId, 40), agenceLibre: b.agenceId ? '' : t(b.agenceLibre), qualification: t(b.qualification) };
+    const user = { id: ids.user, ...commun, role: 'atelier', type: 'interimaire', categorieId: t(b.categorieId, 40), chefId: '', capaciteHebdo: 35, declarePar, aCompleter: true };
+    const mission = { id: ids.mission, userId: ids.user, ...commun, dateEntree: date, finPrevue: '', dateSortie: '', motif: '', numeroContrat: '', affaireIds: b.affaireId ? [t(b.affaireId, 40)] : [],
+      notes: `Déclaré par ${declarePar} depuis le pointage : dossier à compléter (contrat de mise à disposition, motif, état civil).`, declarePar, aCompleter: true };
+    return { user, mission };
+  }
+
+  return { semaine, jourIso, jourModifiable, joursSemaine, refusTemps, horsDevisCompagnon, interimaireDeclare };
 })();
 if (typeof module !== 'undefined') module.exports = ReglesPointage;

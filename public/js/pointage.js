@@ -13,7 +13,7 @@ function dureeH(debut, fin, pause) {
 const equipeDe = uid => Store.all('users').filter(u => u.chefId === uid);
 const enCoursDe = uid => Store.all('temps').find(t => t.userId === uid && t.debut && !t.fin);
 const statutTemps = t => t.statut === 'Validé' ? '<span class="badge b-ok">Validé</span>' : t.statut === 'Refusé' ? `<span class="badge b-bad" title="${esc(t.motifRefus || '')}">Refusé</span>` : (t.debut && !t.fin) ? '<span class="badge b-info">En cours</span>' : '<span class="badge b-warn">À valider</span>';
-const interimBadge = u => u.type === 'interimaire' ? `<span class="badge b-warn">Intérim${u.agenceId ? ' · ' + esc(clientName(u.agenceId)) : ''}</span>` : '';
+const interimBadge = u => u.type === 'interimaire' ? `<span class="badge b-warn">Intérim${u.agenceId || u.agenceLibre ? ' · ' + esc(u.agenceId ? clientName(u.agenceId) : u.agenceLibre) : ''}${u.aCompleter ? ' · à compléter' : ''}</span>` : '';
 const fileUrl = id => (HorsLigne.urlLocale(id) || (window.FILE_URL ? window.FILE_URL(id) : `/api/files/${encodeURIComponent(id)}`));
 
 const tempsFields = [
@@ -53,7 +53,7 @@ function optionsChantiers(uid, date, sel) {
   const groupe = (lib, l) => (l.length ? `<optgroup label="${esc(lib)}">${l.map(opt).join('')}</optgroup>` : '');
   return groupe('Prévu au planning', actifs.filter(a => prevus.has(a.id)))
     + groupe('Interventions hors devis (dépannage, régie)', actifs.filter(a => estHorsDevis(a) && !prevus.has(a.id)))
-    + groupe('Autres chantiers', actifs.filter(a => !estHorsDevis(a) && !prevus.has(a.id)))
+    + groupe('Autres chantiers (sur devis)', actifs.filter(a => !estHorsDevis(a) && !prevus.has(a.id)))
     + (garde && !actifs.includes(garde) ? opt(garde) : '')
     + `<option value="${NOUVELLE_HD}">➕ Nouvelle intervention hors devis…</option>`;
 }
@@ -67,7 +67,8 @@ function brancherNouvelleHD(select, apres) {
   });
 }
 // Dépannage non planifié : le compagnon ouvre l'intervention, le bureau complète (client, site, chargé d'affaires) et facture
-function nouvelleHDCompagnon(fait) {
+// (annule : rappelé si la fenêtre est fermée sans rien ouvrir, pour revenir à la fenêtre d'où l'on venait)
+function nouvelleHDCompagnon(fait, annule) {
   const clients = clientsList().filter(c => c.nom);
   const box = Modal.open(`<h2 style="margin-top:0">🛠️ Nouvelle intervention hors devis</h2>
     <p class="muted small">Dépannage ou travaux demandés sur place, sans planning ni devis. Le bureau complète ensuite le dossier.</p>
@@ -113,7 +114,7 @@ function nouvelleHDCompagnon(fait) {
   $('#hd-client').onchange = majClient;
   $('#hd-contact').onchange = majLibres; $('#hd-site').onchange = majLibres;
   majClient();
-  $('#hd-x').onclick = Modal.close;
+  $('#hd-x').onclick = () => { Modal.close(); if (annule) annule(); };
   $('#hd-ok').onclick = async () => {
     const client = $('#hd-client').value, connu = client && client !== 'autre';
     const contact = $('#hd-contact-f').hidden ? '' : $('#hd-contact').value, site = $('#hd-site-f').hidden ? '' : $('#hd-site').value;
@@ -158,14 +159,14 @@ function semaineCompagnon(u) {
       ${plan.length ? `<div class="small muted">Prévu : ${plan.map(p => `${esc(affaireOf(p.affaireId).code || '')} ${p.heuresPrevues ? `· ${fmt(p.heuresPrevues, 2)} h` : ''}`).join(' + ')}</div>` : ''}
       ${reel.map(t => { const bloque = t.statut === 'Validé';
         return `<button class="ligne-t" ${bloque ? 'disabled' : `data-edit="${t.id}"`}><span>${t.debut ? `${esc(t.debut)} – ${esc(t.fin || 'en cours')}` : 'saisie'} · <strong>${esc(affaireOf(t.affaireId).code || '?')}</strong>${t.tache ? ` · ${esc(t.tache)}` : ''}${t.panier ? ' · panier' : ''} ${statutTemps(t)}</span><span>${t.fin || !t.debut ? `${fmt(t.heures, 2)} h` : '…'}${bloque ? '' : ' ✎'}</span></button>`; }).join('')}
-      ${futur ? '' : `<div class="jour-actions"><button class="secondary small" data-ajout="${d}">+ Pointer</button>${plan.length && !reel.length && !abs ? `<button class="small" data-prevu="${d}">Comme prévu</button>` : ''}</div>`}
+      ${futur ? '' : `<div class="jour-actions"><button class="secondary small" data-ajout="${d}">${reel.length ? 'Modifier la journée' : '+ Pointer'}</button>${plan.length && !reel.length && !abs ? `<button class="small" data-prevu="${d}">Comme prévu</button>` : ''}</div>`}
     </div>`;
   }).join('');
   return `<h2>Ma semaine</h2>
     <div class="card">
       <div class="week-total"><strong>${fmt(total, 2)} h</strong><span class="muted"> / ${fmt(base)} h</span>${total > base ? ` <span class="badge b-warn">+${fmt(total - base, 2)} h sup.</span>` : ''} <span class="muted small">· ${ts.filter(t => t.panier).length} panier(s)</span></div>
       ${gauge(total, base)}
-      <p class="small muted">Un oubli ? Touchez le jour pour pointer, ou un pointage pour le corriger (semaine en cours ; avant, voyez le bureau).</p>
+      <p class="small muted">Un oubli, plusieurs chantiers dans la journée, un intérimaire avec vous ? « + Pointer » ou « Modifier la journée » (semaine en cours ; avant, voyez le bureau).</p>
       <div class="semaine-p">${cartes}</div>
     </div>`;
 }
@@ -238,7 +239,7 @@ Views.pointage = (params, query) => {
   if (team.length) {
     // Mode chef d'équipe
     if (equipeSel.uid !== u.id) { equipeSel.uid = u.id; equipeSel.ids = new Set([u.id, ...team.map(x => x.id)]); equipeSel.filtre = 'tous'; }
-    const membres = [u, ...team].filter(m => equipeSel.filtre === 'tous' || (equipeSel.filtre === 'interim' ? m.type === 'interimaire' : m.type !== 'interimaire'));
+    const membres = [u, ...team, ...avecMoi(u.id, today).filter(id => !team.some(x => x.id === id)).map(id => Store.get('users', id))].filter(m => equipeSel.filtre === 'tous' || (equipeSel.filtre === 'interim' ? m.type === 'interimaire' : m.type !== 'interimaire'));
     const enCours = membres.filter(m => equipeSel.ids.has(m.id) && enCoursDe(m.id));
     const aDemarrer = membres.filter(m => equipeSel.ids.has(m.id) && !enCoursDe(m.id));
     bloc = `<div class="card punch">
@@ -249,6 +250,7 @@ Views.pointage = (params, query) => {
         return `<li><label><input type="checkbox" data-sel="${m.id}" ${equipeSel.ids.has(m.id) ? 'checked' : ''}> <span><strong>${esc(m.nom)}</strong>${m.id === u.id ? ' <span class="muted small">(moi)</span>' : ''} ${interimBadge(m)}<br>
           <span class="small ${ec ? 'pos' : 'muted'}">${ec ? `Au travail depuis ${esc(ec.debut)} · ${esc(affaireOf(ec.affaireId).code || '')}` : jour ? `${fmt(jour, 2)} h aujourd'hui` : 'Pas encore pointé'}</span></span></label></li>`;
       }).join('')}</ul>
+      <button class="secondary small" id="p-interim">+ Intérimaire avec nous aujourd'hui</button>
       ${sansPlanning}
       <div class="field"><label for="p-aff">Chantier</label>${choixChantier('p-aff', dernier.affaireId)}</div>
       ${chips(dernier.tache)}
@@ -258,11 +260,16 @@ Views.pointage = (params, query) => {
     </div>`;
   } else {
     const ec = enCoursDe(u.id), af = ec && affaireOf(ec.affaireId);
+    // Intérimaire avec moi aujourd'hui : commencé et terminé en même temps que moi
+    const avec = avecMoi(u.id, today);
+    const avecHtml = `<div class="avec-moi">${avec.map(id => `<span class="chip-avec">👷 ${esc(userName(id))}${enCoursDe(id) ? ' <span class="small pos">au travail</span>' : ''} <button class="icon" data-sansavec="${id}" aria-label="Retirer ${esc(userName(id))}">✕</button></span>`).join('')}
+      <button class="secondary small" id="p-interim">+ Intérimaire avec moi aujourd'hui</button></div>`;
     bloc = ec ? `<div class="card punch running">
         <div class="label">Au travail depuis ${esc(ec.debut)}${ec.date !== today ? ` (le ${dateFr(ec.date)})` : ''}</div>
         <div class="punch-site">${esc(af.code || '')} – ${esc(af.nom || 'Chantier')}</div>
         ${ec.tache ? `<div class="muted">${esc(ec.tache)}${ec.panier ? ' · panier' : ''}</div>` : ''}
-        <button class="big danger" id="p-stop">Terminer</button>
+        ${avecHtml}
+        <button class="big danger" id="p-stop">Terminer${avec.length ? ` pour ${avec.length + 1} personnes` : ''}</button>
         <button class="secondary" id="p-switch">Changer de chantier</button>
       </div>`
       : `<div class="card punch">
@@ -270,7 +277,8 @@ Views.pointage = (params, query) => {
         <div class="field"><label for="p-aff">Chantier</label>${choixChantier('p-aff', dernier.affaireId)}</div>
         ${chips(dernier.tache)}
         ${panierBox}
-        <button class="big" id="p-start" ${chantiersActifs().length ? '' : 'disabled'}>Commencer</button>
+        ${avecHtml}
+        <button class="big" id="p-start" ${chantiersActifs().length ? '' : 'disabled'}>Commencer${avec.length ? ` pour ${avec.length + 1} personnes` : ''}</button>
       </div>`;
   }
 
@@ -284,6 +292,7 @@ Views.pointage = (params, query) => {
       ${!reelJour(u.id, today).length ? '<button class="secondary" id="p-journee">Saisir ma journée comme prévu (heures modifiables)</button>' : ''}
       <a class="small" href="#/pointage/planning${Store.me.role === 'atelier' ? '' : `?pour=${u.id}`}">Voir mon planning</a></div>` : ''}
     ${bloc}
+    <button class="secondary jr-ouvrir" id="p-journee2">📝 ${reelJour(u.id, today).length ? 'Modifier ma journée' : 'Saisir ma journée'} : plusieurs chantiers, journée différente du planning, intérimaire</button>
 
     ${semaineCompagnon(u)}
     ${team.length ? `<h2>Mon équipe cette semaine</h2><div class="card"><ul class="punch-list">${team.map(m => {
@@ -324,10 +333,24 @@ Views.pointage.bind = (root, params, query) => {
     return true;
   };
 
-  on('#p-start', () => { demarrer([uid]); App.render(); App.toast('Bonne journée !'); });
-  on('#p-journee', () => saisirJournee(isoDate(new Date()), [uid]));
-  on('#p-stop', async () => { if (await terminer([enCoursDe(uid)])) App.render(); });
-  on('#p-switch', async () => { if (await terminer([enCoursDe(uid)])) App.render(); });
+  const auj = isoDate(new Date()), avec = () => avecMoi(uid, auj);
+  on('#p-start', () => { const ids = [uid, ...avec().filter(id => !enCoursDe(id))]; demarrer(ids); App.render(); App.toast(ids.length > 1 ? `${ids.length} personnes pointées` : 'Bonne journée !'); });
+  on('#p-journee', () => saisirJournee(auj, [uid]));
+  on('#p-journee2', () => journeeCompagnon(auj, [uid]));
+  const lesMiens = () => [enCoursDe(uid), ...avec().map(enCoursDe)].filter(Boolean);
+  on('#p-stop', async () => { if (await terminer(lesMiens())) App.render(); });
+  on('#p-switch', async () => { if (await terminer(lesMiens())) App.render(); });
+  on('#p-interim', async () => {
+    const u = await choisirInterimaire({ date: auj, affaireId: (root.querySelector('#p-aff') || {}).value || (enCoursDe(uid) || {}).affaireId, exclure: [uid, ...avec(), ...equipeDe(uid).map(x => x.id)] });
+    if (!u) return;
+    majAvecMoi(uid, auj, [...avec(), u.id]);
+    if (equipeDe(uid).length) equipeSel.ids.add(u.id);
+    // Déjà au travail : l'intérimaire commence maintenant sur le même chantier
+    const ec = !equipeDe(uid).length && enCoursDe(uid);
+    if (ec && !enCoursDe(u.id)) { Store.upsert('temps', { userId: u.id, affaireId: ec.affaireId, date: auj, debut: nowHHMM(), fin: '', pause: 0, heures: 0, tache: ec.tache, panier: ec.panier, statut: '', saisiPar }); App.toast(`${u.nom} pointé avec vous depuis ${nowHHMM()}`); }
+    App.render();
+  });
+  root.querySelectorAll('[data-sansavec]').forEach(b => b.onclick = () => { majAvecMoi(uid, auj, avec().filter(id => id !== b.dataset.sansavec)); App.render(); });
   root.querySelectorAll('[data-filtre]').forEach(b => b.onclick = () => { equipeSel.filtre = b.dataset.filtre; App.render(); });
   root.querySelectorAll('[data-sel]').forEach(cb => cb.onchange = () => { cb.checked ? equipeSel.ids.add(cb.dataset.sel) : equipeSel.ids.delete(cb.dataset.sel); App.render(); });
   const visibles = () => [...root.querySelectorAll('[data-sel]')].filter(cb => cb.checked).map(cb => cb.dataset.sel);
@@ -346,9 +369,9 @@ Views.pointage.bind = (root, params, query) => {
   on('#p-hd', () => nouvelleHDCompagnon(choisie));
   // Semaine en cours : pointer un jour oublié, corriger un pointage, saisir un jour comme prévu
   const equipe = [Store.get('users', uid), ...equipeDe(uid)].filter(Boolean);
-  root.querySelectorAll('[data-ajout]').forEach(b => b.onclick = () => editerPointage({ date: b.dataset.ajout, uid, pour: equipe }));
+  root.querySelectorAll('[data-ajout]').forEach(b => b.onclick = () => journeeCompagnon(b.dataset.ajout, [uid]));
   root.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editerPointage({ t: Store.get('temps', b.dataset.edit), uid, pour: equipe }));
-  root.querySelectorAll('[data-prevu]').forEach(b => b.onclick = () => saisirJournee(b.dataset.prevu, [uid]));
+  root.querySelectorAll('[data-prevu]').forEach(b => b.onclick = () => journeeCompagnon(b.dataset.prevu, [uid]));
 
 };
 
@@ -589,7 +612,7 @@ function rhValidation(query) {
     return `<div class="table-wrap val-group"><table>
       <tr class="val-head"><td colspan="8"><label><input type="checkbox" data-grp="${k}"> <strong>${esc(u.nom)}</strong> ${interimBadge(u)} · semaine ${wk.split('-W')[1]} · ${fmt(totalSem, 2)} h sur la semaine${totalSem > (num(Store.data.settings.dureeHebdo) || 35) ? ` <span class="badge b-warn">+${fmt(totalSem - (num(Store.data.settings.dureeHebdo) || 35), 2)} h sup.</span>` : ''}</label></td></tr>
       ${ts.map(t => `<tr><td><input type="checkbox" data-v="${t.id}" data-g="${k}" ${valSel.has(t.id) ? 'checked' : ''} aria-label="Sélectionner"></td><td>${new Date(t.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}</td>
-        <td>${esc(affaireOf(t.affaireId).code || '')}</td><td>${esc(t.tache)}</td><td>${t.debut ? `${esc(t.debut)} – ${esc(t.fin)}` : 'manuel'}${num(t.pause) ? ` · ${t.pause} min` : ''}</td>
+        <td>${esc(affaireOf(t.affaireId).code || '')}${t.horsPlanning ? ' <span class="badge b-warn" title="Chantier non prévu au planning ce jour-là">hors planning</span>' : ''}</td><td>${esc(t.tache)}</td><td>${t.debut ? `${esc(t.debut)} – ${esc(t.fin)}` : 'manuel'}${num(t.pause) ? ` · ${t.pause} min` : ''}</td>
         <td>${t.panier ? 'Panier' : ''}</td><td class="muted small">${t.saisiPar && t.saisiPar !== t.userId ? 'par ' + esc(userName(t.saisiPar)) : ''}</td><td class="num"><strong>${fmt(t.heures, 2)} h</strong></td></tr>`).join('')}
     </table></div>`;
   }).join('') : '<p class="muted">Aucun pointage à valider.</p>'}`;

@@ -375,6 +375,15 @@ compagnons.
 4. **Pointage mobile** des opérateurs (arrivée / départ par chantier et tâche, pause, panier repas).
    « Ma semaine » montre chaque jour de la semaine en cours (prévu, pointé, oubli signalé) : le compagnon pointe un jour
    oublié ou corrige un pointage non validé ; les semaines passées ne se corrigent qu'au bureau (règle du serveur).
+   **Ma journée** (« 📝 Saisir ma journée », « + Pointer » ou « Modifier la journée ») : plusieurs chantiers dans la même
+   journée, chacun avec ses horaires (chantiers prévus au planning, interventions hors devis, autres chantiers sur devis,
+   ou nouvelle intervention hors devis ouverte sur place) ; « Comme prévu » reprend le planning, « Journée différente »
+   le remplace entièrement. Les chantiers non prévus sont marqués « hors planning » pour le bureau (validation des
+   heures). Une ligne par personne et par chantier : le chef d'équipe ajoute un équipier, et chacun peut ajouter
+   **l'intérimaire qui a travaillé avec lui ce jour-là** (« Mêmes chantiers que moi » recopie ses lignes). Un
+   intérimaire n'a pas d'accès au CRM : il est choisi dans la liste des intérimaires, ou déclaré s'il n'y est pas (nom,
+   agence, métier) — fiche et mission créées « à compléter », le bureau est prévenu (RH → Intérim). Sur l'écran
+   « Commencer / Terminer », « + Intérimaire avec moi aujourd'hui » le fait commencer et terminer en même temps.
    Sans planning, il pointe sur une intervention hors devis ou en ouvre une depuis son téléphone : objet, client,
    contact client (choisi parmi les contacts connus ou saisi avec son téléphone), nom du site (sites du client ou saisi),
    précision du lieu, demande. Le bureau est prévenu ; un client, un contact ou un site saisi à la main se crée en un clic

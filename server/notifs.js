@@ -130,6 +130,19 @@ function creer({ DB, db, broadcast }) {
     await Push.envoyer(DB, db, comptes.map(c => c.id), m, doc.email ? `mailto:${doc.email}` : undefined).catch(e => console.error('Notification :', e.message));
   }
 
+  // Intérimaire déclaré depuis le pointage : le bureau complète la mission (registre du personnel, contrat, motif)
+  async function interimaireDeclare(acc, u) {
+    const comptes = db.prepare("SELECT id, user_id FROM accounts WHERE role IN ('admin', 'charge')").all();
+    if (!comptes.length) return;
+    const agence = u.agenceId ? (lire('entreprises', u.agenceId) || {}).nom : u.agenceLibre;
+    const m = { titre: `👷 Intérimaire déclaré : ${u.nom}`, texte: `${acc.nom || acc.login} l'a pointé avec lui${agence ? ` (agence ${agence})` : ''}. Mission à compléter dans RH → Intérim (contrat, motif, état civil).`,
+      lien: '#/rh/interim', tag: `interim-${u.id}` };
+    purger();
+    [...new Set(comptes.map(c => c.user_id).filter(Boolean))].forEach(id => enregistrer({ type: 'interim', userId: id, titre: m.titre, texte: m.texte, lien: m.lien, date: new Date().toISOString(), lu: false }));
+    const doc = (DB.getSettings(db).doc || {});
+    await Push.envoyer(DB, db, comptes.map(c => c.id), m, doc.email ? `mailto:${doc.email}` : undefined).catch(e => console.error('Notification :', e.message));
+  }
+
   /* ---------- Échéances : habilitations, visites médicales, contrôles du parc ---------- */
   // Chaque alerte part une fois à « bientôt » (60 j, 30 j pour le parc) et une fois à l'expiration :
   // un résumé pour le bureau, et un message à la personne concernée (ou à son chef d'équipe).
@@ -222,7 +235,7 @@ function creer({ DB, db, broadcast }) {
   // Pour les tests et l'arrêt du serveur : envoie tout de suite ce qui attend
   const vider = () => Promise.all([...attente.keys()].map(u => { clearTimeout(attente.get(u).timer); return envoyer(u); }));
 
-  return { planningModifie, documentsModifies, horsDevisOuvert, echeances, derives, vider, enregistrer };
+  return { planningModifie, documentsModifies, horsDevisOuvert, interimaireDeclare, echeances, derives, vider, enregistrer };
 }
 
 module.exports = { creer };
