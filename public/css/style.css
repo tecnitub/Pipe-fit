@@ -1086,7 +1086,7 @@ th.col-th { position: relative; }
 /* Ma journée : plusieurs chantiers, personnes de la journée, intérimaire */
 .jr .jr-pers { margin: 10px 0; }
 .jr .jr-tete { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.jr .jr-ligne { display: grid; grid-template-columns: minmax(180px, 2fr) minmax(110px, 1fr) auto; gap: 6px; align-items: center; padding: 6px 0; border-top: 1px dashed var(--border); }
+.jr .jr-ligne { display: grid; grid-template-columns: minmax(220px, 2fr) minmax(110px, 1fr) auto; gap: 6px; align-items: center; padding: 6px 0; border-top: 1px dashed var(--border); }
 .jr .jr-ligne.bloque { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); }
 .jr .jr-ligne .field { margin: 0; }
 .jr .jr-ch .badge { margin-top: 3px; }
@@ -1114,3 +1114,12 @@ th.col-th { position: relative; }
 .rc-ligne { margin-top: 4px; }
 .dialog-box:has(.rc) { width: min(640px, 100%); }
 .rc-ligne span { white-space: normal; overflow-wrap: anywhere; min-width: 0; }
+/* Champ chantier du pointage : bouton qui ouvre la recherche, raccourcis prévus / récents */
+.choix-ch { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 8px; text-align: left; padding: 9px 10px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-weight: 400; }
+.choix-ch.gros { padding: 14px 12px; font-size: 16px; }
+.choix-ch.vide > span:first-child { color: var(--muted); }
+.choix-ch span { min-width: 0; overflow-wrap: anywhere; }
+.choix-ch-act { flex: none; color: var(--accent); font-weight: 600; font-size: 14px; }
+.rac-ch { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chip-ch { padding: 5px 10px; border-radius: 16px; background: var(--panel-alt); color: var(--text); border: 1px solid var(--border); font-weight: 600; font-size: 13px; }
+.chip-ch .small { font-weight: 400; color: var(--muted); }

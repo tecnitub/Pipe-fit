@@ -75,7 +75,7 @@ function journeeCompagnon(date, ids) {
     const prevu = prevusDe(p.uid).includes(l.affaireId), af = Store.get('affaires', l.affaireId);
     if (l.bloque) return `<div class="jr-ligne bloque"><span>${esc(l.debut || '')}${l.debut ? ' – ' + esc(l.fin) : 'saisie'} · <strong>${esc((af || {}).code || '?')}</strong> ${esc(l.tache || '')}</span><span class="badge b-ok">Validé · ${fmt(Journee.heuresLigne(l), 2)} h</span></div>`;
     return `<div class="jr-ligne" data-p="${pi}" data-l="${li}">
-      <div class="field jr-ch"><div class="choix-chantier"><select data-k="affaireId" aria-label="Chantier">${l.affaireId ? '' : '<option value="">Chantier…</option>'}${optionsChantiers(p.uid, date, l.affaireId)}</select><button type="button" class="secondary" data-cherche="${pi}:${li}" aria-label="Rechercher un chantier" title="Rechercher un chantier">🔍</button></div>
+      <div class="field jr-ch">${champChantier({ id: `jr-aff-${pi}-${li}`, uid: p.uid, date, sel: l.affaireId, raccourcis: !l.affaireId })}
         ${l.affaireId && !prevu ? `<span class="badge b-warn">non prévu${af && estHorsDevis(af) ? ' · hors devis' : ''}</span>` : ''}</div>
       <input data-k="tache" list="jr-taches" value="${esc(l.tache || '')}" placeholder="Tâche" aria-label="Tâche">
       <div class="jr-heures"><input data-k="debut" type="time" value="${esc(l.debut)}" aria-label="Arrivée"><span>–</span><input data-k="fin" type="time" value="${esc(l.fin)}" aria-label="Départ">
@@ -110,24 +110,16 @@ function journeeCompagnon(date, ids) {
       const l = pers[+div.dataset.p].lignes[+div.dataset.l];
       div.querySelectorAll('[data-k]').forEach(el => {
         const k = el.dataset.k;
-        el.addEventListener(k === 'affaireId' ? 'change' : 'input', () => {
-          if (k === 'affaireId') {
-            if (el.value === CHERCHER) {
-              el.value = l.affaireId;
-              return choisirChantier({ uid: pers[+div.dataset.p].uid, date }).then(r => { if (r === NOUVELLE_HD) nouvelleHDCompagnon(a => { l.affaireId = a.id; ouvrir(); }, ouvrir); else if (r) { l.affaireId = r; rendre(); } });
-            }
-            if (el.value === NOUVELLE_HD) { el.value = l.affaireId; return nouvelleHDCompagnon(a => { l.affaireId = a.id; ouvrir(); }, ouvrir); }
-            l.affaireId = el.value; return rendre();
-          }
+        el.addEventListener('input', () => {
           l[k] = k === 'pause' ? num(el.value) : el.value;
           if (k === 'fin' && l.fin) l.enCours = false;
           div.querySelector('.jr-h').textContent = l.enCours && !l.fin ? 'en cours' : `${fmt(Journee.heuresLigne(l), 2)} h`;
         });
       });
     });
-    zone.querySelectorAll('[data-cherche]').forEach(b => b.onclick = async () => {
-      const [pi, li] = b.dataset.cherche.split(':').map(Number), l = pers[pi].lignes[li], r = await choisirChantier({ uid: pers[pi].uid, date });
-      if (r === NOUVELLE_HD) nouvelleHDCompagnon(a => { l.affaireId = a.id; ouvrir(); }, ouvrir); else if (r) { l.affaireId = r; rendre(); }
+    zone.querySelectorAll('.jr-ligne[data-p]').forEach(div => {
+      const p = pers[+div.dataset.p], l = p.lignes[+div.dataset.l];
+      brancherChampChantier(div, `jr-aff-${div.dataset.p}-${div.dataset.l}`, { uid: p.uid, date, onChange: a => { l.affaireId = a.id; rendre(); }, onHD: a => { l.affaireId = a.id; ouvrir(); }, annuleHD: ouvrir });
     });
     zone.querySelectorAll('[data-retirer]').forEach(b => b.onclick = () => { const [pi, li] = b.dataset.retirer.split(':').map(Number); pers[pi].lignes.splice(li, 1); rendre(); });
     zone.querySelectorAll('[data-plus]').forEach(b => b.onclick = () => {
