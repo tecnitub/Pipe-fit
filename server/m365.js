@@ -74,4 +74,13 @@ async function boite(cfg, adresse, methode, chemin, corps) {
   throw err;
 }
 
-module.exports = { jeton, envoyer, evenement, boite, oublier: () => jetons.clear() };
+// Message complet au format MIME (.eml) : /messages/{id}/$value ne renvoie pas du JSON
+async function mime(cfg, adresse, id) {
+  const token = await jeton(cfg);
+  const res = await fetch(`${GRAPH()}/v1.0/users/${encodeURIComponent(adresse)}/messages/${encodeURIComponent(id)}/$value`, { headers: { Authorization: `Bearer ${token}` } })
+    .catch(e => { throw new Error(`Microsoft 365 injoignable (${e.message}).`); });
+  if (!res.ok) throw new Error(`Message illisible dans la boîte ${adresse} (${res.status}) : l'application doit avoir l'autorisation Mail.ReadWrite.`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+module.exports = { jeton, envoyer, evenement, boite, mime, oublier: () => jetons.clear() };

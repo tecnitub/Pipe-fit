@@ -9,6 +9,7 @@ const M365 = require('./m365');
 const EF = require('./efacture');
 const MAILF = require('./mail-factures');
 const DossierDocuments = require('./dossier-documents');
+const TriMails = require('./tri-mails');
 const AgendaSync = require('./agenda');
 const HS = require('./http-securite');
 const API = require('./api');
@@ -146,6 +147,9 @@ const NOTIFS = Notifs.creer({ DB, db, broadcast });
 // Répertoire des documents sur le serveur, synchronisé avec les documents des chantiers
 const DOSSIER = DossierDocuments.creer({ DB, db, broadcast, uid, TYPES: TYPES_DOCUMENTS, MAX: MAX_DOCUMENT, dossierDefaut: path.join(path.dirname(DB_FILE), 'Documents'),
   notifier: (avant, apres) => NOTIFS.documentsModifies({ login: 'Répertoire serveur', nom: 'Répertoire serveur' }, avant, apres) });
+
+// Agent IA de tri des e-mails : rangement par chantier, documents enregistrés, brouillons de réponse
+const TRI = TriMails.creer({ DB, db, broadcast, uid, M365, DOSSIER, TYPES: TYPES_DOCUMENTS, MAX: MAX_DOCUMENT });
 
 // Planning dans les agendas (Outlook via Microsoft 365, lien d'abonnement iCal)
 const AGENDA = AgendaSync.creer({ DB, db, M365 });
@@ -704,6 +708,24 @@ async function api(req, res, url) {
     }
   }
 
+  // Tri des e-mails par l'agent IA : journal (sa boîte pour un chargé d'affaires), relève immédiate, configuration (administrateur)
+  if (p[0] === 'tri-mails') {
+    if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Droits insuffisants');
+    if (acc.cleApi) return fail(res, 403, 'Indisponible avec une clé d\'API');
+    const etatTri = () => ({ ...(acc.role === 'admin' ? { config: TRI.config() } : { actif: TRI.config().actif }), m365: m365Pret(), etat: TRI.etat(), journal: TRI.journal(acc) });
+    if (!p[1] && method === 'GET') return send(res, 200, etatTri());
+    if (!p[1] && method === 'PUT') {
+      if (acc.role !== 'admin') return fail(res, 403, 'Réservé aux administrateurs');
+      try { TRI.enregistrerConfig(await readBody(req)); } catch (e) { return fail(res, 400, e.message); }
+      DB.audit(db, acc.login, 'configuration du tri des e-mails', null, null, TRI.config().actif ? 'actif' : 'arrêté');
+      return send(res, 200, etatTri());
+    }
+    if (p[1] === 'relever' && method === 'POST') {
+      if (!TRI.config().actif) return fail(res, 400, 'Le tri des e-mails n\'est pas activé (Paramètres → E-mails).');
+      try { const r = await TRI.relever(); return send(res, 200, { resultat: r, ...etatTri() }); } catch (e) { return fail(res, 502, e.message); }
+    }
+  }
+
   // Dérive des chantiers : contrôle immédiat (bureau)
   if (p[0] === 'derives' && p[1] === 'verifier' && method === 'POST') {
     if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Droits insuffisants');
@@ -930,6 +952,7 @@ if (require.main === module) {
   setInterval(verifierDerives, 2 * 3600000).unref();
   DOSSIER.demarrer();
   AGENDA.demarrer();
+  TRI.demarrer();
   // Sessions expirées effacées toutes les heures
   setInterval(() => db.prepare('DELETE FROM sessions WHERE expires < ?').run(Date.now()), 3600000).unref();
   SERVEUR.surveiller();
@@ -943,4 +966,4 @@ if (require.main === module) {
     if (!hasAccounts()) console.log(`Première utilisation : ouvrez ${schema}://localhost:${PORT} sur ce poste pour créer le compte administrateur.`);
   });
 }
-module.exports = { server, db, NOTIFS, DOSSIER, AGENDA };
+module.exports = { server, db, NOTIFS, DOSSIER, AGENDA, TRI };

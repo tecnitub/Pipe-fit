@@ -354,7 +354,8 @@ Views.mails = () => {
       </div>
       <div class="card"><div class="label muted small">Aperçu sur un document réel</div><div id="mm-apercu" class="mail-apercu"></div></div>
     </div>
-  </div>`;
+  </div>
+  ${triMailsCarte()}`;
 };
 
 function apercuMail(type, c) {
@@ -378,6 +379,7 @@ Views.mails.bind = root => {
   const apercu = () => { q('#mm-apercu').innerHTML = apercuMail(mailEdit.type, c); };
   apercu();
   q('#mm-type').onchange = e => { mailEdit.type = e.target.value; App.render(); };
+  bindTriMails(root);
   // Connexion Microsoft 365 (administrateur)
   const carte = q('#mm-365');
   if (!Store.can('admin')) carte.innerHTML = `<strong>Connexion Microsoft 365</strong><p class="small">${Store.me.m365 ? 'Active : les e-mails partent de votre boîte Microsoft 365 et apparaissent dans vos éléments envoyés.' : 'Non configurée : les e-mails sont préparés comme brouillons Outlook.'}</p>`;

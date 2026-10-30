@@ -131,6 +131,36 @@ recommandé de la limiter aux boîtes des utilisateurs du CRM par une *stratégi
 joindre `login.microsoftonline.com` et `graph.microsoft.com` en HTTPS. Sans Microsoft 365, l'envoi prépare un
 brouillon Outlook (.eml) avec le PDF joint : une fois envoyé depuis Outlook, il apparaît aussi dans les éléments envoyés.
 
+## Tri des e-mails par IA (par chantier, avec réponses préparées)
+
+**Paramètres → E-mails → Tri des e-mails par IA** (administrateur). Toutes les 5 minutes, chaque nouvel e-mail de la
+boîte de réception des boîtes Microsoft 365 indiquées est lu par Claude (API Anthropic), qui reconnaît le **chantier**
+(code CH-/HD- cité, expéditeur connu dans les contacts, client ou maître d'œuvre, site, ville, objet des travaux), la
+nature du message (demande client, commande, devis, facture, planning, plan, réclamation/SAV, administratif,
+fournisseur, publicité…) et son urgence. Ensuite :
+
+- **Rangement Outlook** : `Boîte de réception/Chantiers/<code> - <nom>` (nom du dossier réglable), publicités dans
+  « Publicités » ; catégorie Outlook « Pipe-Fit · <nature> » et code du chantier, drapeau si urgent. Un e-mail dont le
+  chantier n'est pas reconnu avec certitude reste dans la boîte de réception (catégorisé).
+- **Enregistrement dans le chantier** : l'e-mail (.eml, avec son résumé) et ses pièces jointes sont ajoutés aux
+  documents du chantier, donc aussi au répertoire du serveur (`Chantiers/<code> - <nom>/E-mails/`, pièces jointes dans
+  le dossier de leur catégorie). Non visibles des compagnons par défaut.
+- **Réponse préparée** : quand l'e-mail appelle une réponse, elle est créée en **brouillon** (dossier Brouillons, en
+  réponse au message, signée du nom du compte qui a cette adresse et de la société). Rien n'est envoyé
+  automatiquement : on relit, complète les passages entre crochets (`[date à confirmer]`) et on envoie depuis Outlook.
+  Des consignes de rédaction (vouvoiement, délais habituels, ne jamais confirmer un prix…) peuvent être données.
+- **Journal** sur le même écran (chantier, nature, résumé, urgence, brouillon, erreurs), bouton « Trier maintenant » ;
+  un chargé d'affaires y voit les e-mails de sa propre boîte.
+
+Prérequis : la connexion Microsoft 365 ci-dessus avec l'autorisation d'application **`Mail.ReadWrite`** (consentement
+administrateur, à limiter aux boîtes concernées par une stratégie d'accès d'application Exchange), et une **clé d'API
+Anthropic** (console.anthropic.com, ou variable `ANTHROPIC_API_KEY` du serveur ; la clé reste sur le serveur). Le
+serveur doit joindre `api.anthropic.com` en HTTPS. Modèle au choix : Claude Opus 5.5 (défaut, le plus précis), Sonnet
+5.5 ou Haiku 5.5 (le plus économique). Le texte des e-mails et la liste des chantiers ouverts (code, nom, client, site,
+contact, chargé d'affaires) sont transmis à l'API Anthropic pour l'analyse. À la première activation, seuls les e-mails
+des dernières 24 heures sont triés ; chaque e-mail n'est trié qu'une fois (3 essais en cas d'erreur). Les messages
+envoyés par la boîte elle-même sont ignorés, et le contenu des e-mails n'est jamais traité comme une instruction.
+
 ## Factures fournisseurs reçues : plateforme agréée et boîte e-mail
 
 Toutes les factures des fournisseurs arrivent dans **Achats → Factures reçues** : factures électroniques de la
@@ -586,6 +616,7 @@ server/api.js      clés d'API, webhooks sortants, description OpenAPI
 server/dossier-documents.js  répertoire des documents synchronisé avec l'appli
 server/agenda.js   planning dans Outlook (Microsoft Graph) et lien iCal
 server/mail-factures.js  boîte e-mail des factures fournisseurs (Microsoft Graph)
+server/tri-mails.js      agent IA de tri des e-mails par chantier (Microsoft Graph + API Anthropic)
 public/            interface web (HTML/CSS/JS sans framework)
 test/              tests de l'API (npm test)
 public/js/devis.js, commandes.js, pointage.js, suivi.js, horsdevis.js, documents.js, pdf.js, mails.js, equipes.js, filtres.js, compta.js, achats.js, facturx.js, efacture.js, chiffrage.js, consultations.js, automatisation.js, biblio.js, contacts.js, securite-ui.js, produits.js, dossier-documents.js, fluides-ui.js, rapprochement-ui.js, agenda-ui.js, hors-ligne.js, offres-pdf.js, comptoir.js, prix-achats.js, epreuves-ui.js, essais-ui.js : écrans métier
