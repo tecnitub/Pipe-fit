@@ -1104,3 +1104,13 @@ th.col-th { position: relative; }
 .ci-nouveau summary { cursor: pointer; padding: 6px 0; }
 @media (max-width: 640px) { .jr .jr-ligne { grid-template-columns: 1fr; } }
 .jr button.icon, .chip-avec button.icon { font-size: 16px; padding: 4px 8px; }
+/* Recherche d'un chantier pour pointer */
+.choix-chantier { display: flex; gap: 6px; align-items: stretch; }
+.choix-chantier select { flex: 1; min-width: 0; }
+.rc #rc-q { width: 100%; font-size: 17px; padding: 10px; }
+.rc-filtres { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.rc-filtres select { width: auto; max-width: 100%; }
+.rc-res { max-height: 55vh; overflow: auto; }
+.rc-ligne { margin-top: 4px; }
+.dialog-box:has(.rc) { width: min(640px, 100%); }
+.rc-ligne span { white-space: normal; overflow-wrap: anywhere; min-width: 0; }

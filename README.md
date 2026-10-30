@@ -384,6 +384,11 @@ compagnons.
    intérimaire n'a pas d'accès au CRM : il est choisi dans la liste des intérimaires, ou déclaré s'il n'y est pas (nom,
    agence, métier) — fiche et mission créées « à compléter », le bureau est prévenu (RH → Intérim). Sur l'écran
    « Commencer / Terminer », « + Intérimaire avec moi aujourd'hui » le fait commencer et terminer en même temps.
+   **Rechercher un chantier** (🔍 à côté du choix du chantier, ou « 🔍 Rechercher un chantier » dans la liste) pour un
+   chantier non planifié : mots cherchés dans le code, le nom, le client, le chargé d'affaires, le site et la ville (sans
+   tenir compte des accents), filtre « Chantiers (devis) » / « Hors devis », par client et par chargé d'affaires ; les
+   chantiers prévus ce jour-là puis ceux pointés ces 30 derniers jours passent devant. Le nom des clients n'est cherché que
+   si les compagnons peuvent le voir (Paramètres → Appli des compagnons).
    Sans planning, il pointe sur une intervention hors devis ou en ouvre une depuis son téléphone : objet, client,
    contact client (choisi parmi les contacts connus ou saisi avec son téléphone), nom du site (sites du client ou saisi),
    précision du lieu, demande. Le bureau est prévenu ; un client, un contact ou un site saisi à la main se crée en un clic

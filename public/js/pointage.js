@@ -44,7 +44,7 @@ function pointageTabs(active, uid) {
 const equipeSel = { uid: null, ids: new Set(), filtre: 'tous' };
 
 /* ---------------- Chantier du pointage : prévus, hors devis, autres ; nouvelle intervention hors devis ---------------- */
-const NOUVELLE_HD = '__hd';
+const NOUVELLE_HD = '__hd', CHERCHER = '__cherche';
 let chantierChoisi = null; // intervention qui vient d'être ouverte : proposée pour pointer
 function optionsChantiers(uid, date, sel) {
   const actifs = chantiersActifs(), prevus = new Set(planJour(uid, date).map(p => p.affaireId));
@@ -55,15 +55,65 @@ function optionsChantiers(uid, date, sel) {
     + groupe('Interventions hors devis (dépannage, régie)', actifs.filter(a => estHorsDevis(a) && !prevus.has(a.id)))
     + groupe('Autres chantiers (sur devis)', actifs.filter(a => !estHorsDevis(a) && !prevus.has(a.id)))
     + (garde && !actifs.includes(garde) ? opt(garde) : '')
+    + `<option value="${CHERCHER}">🔍 Rechercher un chantier (client, chargé d'affaires, nom…)</option>`
     + `<option value="${NOUVELLE_HD}">➕ Nouvelle intervention hors devis…</option>`;
 }
 // Choix « nouvelle intervention » dans une liste de chantiers : ouvre le formulaire, puis sélectionne l'intervention créée
-function brancherNouvelleHD(select, apres) {
-  let avant = select.value === NOUVELLE_HD ? '' : select.value;
-  select.addEventListener('change', () => {
-    if (select.value !== NOUVELLE_HD) { avant = select.value; return; }
+function brancherNouvelleHD(select, apres, uid, date) {
+  let avant = [NOUVELLE_HD, CHERCHER].includes(select.value) ? '' : select.value;
+  const choisir = a => { if (apres) apres(a); else { if (!select.querySelector(`option[value="${a.id}"]`)) select.insertAdjacentHTML('beforeend', `<option value="${a.id}">${esc(affaireLabel(a))}</option>`); select.value = a.id; avant = a.id; select.dispatchEvent(new Event('input')); } };
+  select.addEventListener('change', async () => {
+    if (![NOUVELLE_HD, CHERCHER].includes(select.value)) { avant = select.value; return; }
+    const v = select.value;
     select.value = avant;
-    nouvelleHDCompagnon(a => { if (apres) apres(a); else { select.insertAdjacentHTML('afterbegin', `<option value="${a.id}">${esc(affaireLabel(a))}</option>`); select.value = a.id; avant = a.id; } });
+    const r = v === CHERCHER ? await choisirChantier({ uid, date }) : NOUVELLE_HD;
+    if (r === NOUVELLE_HD) nouvelleHDCompagnon(choisir);
+    else if (r) choisir(Store.get('affaires', r));
+  });
+}
+
+// Recherche d'un chantier non planifié : mots (code, nom, client, chargé d'affaires, site), type, client, chargé d'affaires.
+// Renvoie l'identifiant du chantier, NOUVELLE_HD, ou null. Fenêtre par-dessus (la journée en cours de saisie reste ouverte).
+const rechercheSel = { type: 'tous', clientId: '', chargeId: '' };
+function choisirChantier({ uid, date } = {}) {
+  // Le type choisi est gardé d'une recherche à l'autre ; client et chargé d'affaires repartent de « tous »
+  Object.assign(rechercheSel, { clientId: '', chargeId: '' });
+  const actifs = chantiersActifs(), j = date || isoDate(new Date());
+  const prevus = new Set(uid ? planJour(uid, j).map(p => p.affaireId) : []);
+  const depuis = isoDate(addDays(new Date(), -30));
+  const recents = new Set(Store.all('temps').filter(t => (!uid || t.userId === uid) && t.date >= depuis).map(t => t.affaireId));
+  const nomClient = a => (a.clientId ? (entreprise(a.clientId) || {}).nom || '' : '');
+  const ctx = { client: nomClient, charge: a => (a.chargeId ? userName(a.chargeId) : ''), site: a => siteLabel(a.clientId && siteOf(a.clientId, a.siteId)), prevus, recents };
+  const clients = [...new Set(actifs.map(a => a.clientId).filter(Boolean))].map(id => ({ id, nom: nomClient({ clientId: id }) })).filter(c => c.nom).sort((x, y) => x.nom.localeCompare(y.nom));
+  const chargesL = [...new Set(actifs.map(a => a.chargeId).filter(Boolean))].map(id => ({ id, nom: userName(id) })).sort((x, y) => x.nom.localeCompare(y.nom));
+  return dialog(`<div class="rc"><h2 style="margin-top:0">🔍 Rechercher un chantier</h2>
+    <input id="rc-q" type="search" placeholder="Nom, code, client, chargé d'affaires, ville…" autocomplete="off" enterkeyhint="search">
+    <div class="rc-filtres"><div class="seg" role="group" aria-label="Type de chantier">${[['tous', 'Tous'], ['devis', 'Chantiers (devis)'], ['hd', 'Hors devis']].map(([k, l]) => `<button type="button" data-type="${k}" class="${rechercheSel.type === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      ${clients.length ? `<select id="rc-client" aria-label="Client"><option value="">Tous les clients</option>${clients.map(c => `<option value="${c.id}" ${c.id === rechercheSel.clientId ? 'selected' : ''}>${esc(c.nom)}</option>`).join('')}</select>` : ''}
+      ${chargesL.length ? `<select id="rc-charge" aria-label="Chargé d'affaires"><option value="">Tous les chargés d'affaires</option>${chargesL.map(c => `<option value="${c.id}" ${c.id === rechercheSel.chargeId ? 'selected' : ''}>${esc(c.nom)}</option>`).join('')}</select>` : ''}</div>
+    <div id="rc-res" class="rc-res" role="listbox"></div>
+    <div class="modal-actions"><button type="button" class="secondary" id="rc-hd">➕ Nouvelle intervention hors devis</button><span style="flex:1"></span><button type="button" class="secondary" id="rc-x">Annuler</button></div></div>`,
+  (wrap, done) => {
+    const $ = s => wrap.querySelector(s), q = $('#rc-q');
+    const maj = () => {
+      const res = RechercheChantier.filtrer(actifs, { q: q.value, ...rechercheSel }, ctx);
+      $('#rc-res').innerHTML = res.length ? res.slice(0, 60).map(({ a, prevu, recent }) => `<button type="button" class="ligne-t rc-ligne" data-aff="${a.id}" role="option">
+        <span><strong>${esc(a.code || '')}</strong> ${esc(a.nom || '')}${estHorsDevis(a) ? ' <span class="badge b-warn">Hors devis</span>' : ''}${prevu ? ' <span class="badge b-info">prévu</span>' : recent ? ' <span class="badge">récent</span>' : ''}
+          <br><span class="small muted">${esc(nomClient(a) || a.clientLibre || '')}${a.chargeId ? ` · ${esc(userName(a.chargeId))}` : ''}${ctx.site(a) || a.siteLibre ? ` · ${esc(ctx.site(a) || a.siteLibre)}` : ''}</span></span></button>`).join('')
+        + (res.length > 60 ? `<p class="small muted">${res.length - 60} autre(s) : précisez la recherche.</p>` : '')
+        : '<p class="muted">Aucun chantier en cours ne correspond. Dépannage sur place ? Ouvrez une intervention hors devis.</p>';
+      wrap.querySelectorAll('[data-aff]').forEach(b => b.onclick = () => done(b.dataset.aff));
+    };
+    q.oninput = maj;
+    q.onkeydown = e => { if (e.key === 'Enter') { const b = wrap.querySelector('[data-aff]'); if (b) done(b.dataset.aff); } if (e.key === 'Escape') done(null); };
+    wrap.querySelectorAll('[data-type]').forEach(b => b.onclick = () => { rechercheSel.type = b.dataset.type; wrap.querySelectorAll('[data-type]').forEach(x => x.classList.toggle('on', x === b)); maj(); });
+    const c = $('#rc-client'), ch = $('#rc-charge');
+    if (c) c.onchange = () => { rechercheSel.clientId = c.value; maj(); };
+    if (ch) ch.onchange = () => { rechercheSel.chargeId = ch.value; maj(); };
+    $('#rc-hd').onclick = () => done(NOUVELLE_HD);
+    $('#rc-x').onclick = () => done(null);
+    maj();
+    setTimeout(() => q.focus(), 50);
   });
 }
 // Dépannage non planifié : le compagnon ouvre l'intervention, le bureau complète (client, site, chargé d'affaires) et facture
@@ -190,7 +240,7 @@ function editerPointage({ t, date, uid, pour }) {
   const $ = s => box.querySelector(s);
   const maj = () => { $('#ep-h').innerHTML = $('#ep-fin').value ? `<strong>${fmt(dureeH($('#ep-debut').value, $('#ep-fin').value, $('#ep-pause').value), 2)} h</strong>` : '<span class="muted small">en cours</span>'; };
   ['#ep-debut', '#ep-fin', '#ep-pause'].forEach(s => { $(s).oninput = maj; }); maj();
-  brancherNouvelleHD($('#ep-aff'));
+  brancherNouvelleHD($('#ep-aff'), null, uid, d);
   $('#ep-x').onclick = Modal.close;
   if (t) $('#ep-del').onclick = () => { Modal.close(); ask('Supprimer ce pointage ?', 'Supprimer').then(ok => { if (ok) { Store.remove('temps', t.id); App.render(); } }); };
   $('#ep-ok').onclick = async () => {
@@ -229,7 +279,8 @@ Views.pointage = (params, query) => {
   const prevu = planJour(u.id, today);
   // Chantier et tâche proposés : ceux du planning du jour, sinon ceux du dernier pointage
   const dernier = prevu[0] || semaine[0] || Store.all('temps').filter(t => t.userId === u.id).sort((a, b) => b.date.localeCompare(a.date))[0] || {};
-  const choixChantier = (id, sel) => `<select id="${id}" class="big-select" aria-label="Chantier">${optionsChantiers(u.id, today, Store.get('affaires', chantierChoisi) ? chantierChoisi : sel)}</select>`;
+  const choixChantier = (id, sel) => `<div class="choix-chantier"><select id="${id}" class="big-select" aria-label="Chantier">${optionsChantiers(u.id, today, Store.get('affaires', chantierChoisi) ? chantierChoisi : sel)}</select>
+    <button type="button" class="secondary" id="p-cherche" title="Rechercher un chantier (client, chargé d'affaires, nom, hors devis)" aria-label="Rechercher un chantier">🔍</button></div>`;
   // Pas de planning aujourd'hui : dépannage possible sur une intervention hors devis
   const sansPlanning = !prevu.length && !absenceJour(u.id, today) ? `<p class="hd-astuce small">📅 Rien de prévu aujourd'hui. Dépannage ou travaux demandés sur place ? Choisissez l'intervention hors devis, ou <button class="linklike small" id="p-hd">ouvrez-en une nouvelle</button>.</p>` : '';
   const chips = sel => `<div class="chips" role="radiogroup" aria-label="Tâche">${TACHES.map(t => `<label class="chip"><input type="radio" name="p-tache" value="${esc(t)}" ${(sel || TACHES[0]) === t ? 'checked' : ''}><span>${esc(t)}</span></label>`).join('')}</div>`;
@@ -365,7 +416,8 @@ Views.pointage.bind = (root, params, query) => {
   // Chantier : « nouvelle intervention hors devis » ouvre le formulaire
   const aff = root.querySelector('#p-aff');
   const choisie = a => { chantierChoisi = a.id; App.render(); };
-  if (aff) brancherNouvelleHD(aff, choisie);
+  if (aff) brancherNouvelleHD(aff, choisie, uid, isoDate(new Date()));
+  on('#p-cherche', async () => { const r = await choisirChantier({ uid, date: isoDate(new Date()) }); if (r === NOUVELLE_HD) nouvelleHDCompagnon(choisie); else if (r) choisie(Store.get('affaires', r)); });
   on('#p-hd', () => nouvelleHDCompagnon(choisie));
   // Semaine en cours : pointer un jour oublié, corriger un pointage, saisir un jour comme prévu
   const equipe = [Store.get('users', uid), ...equipeDe(uid)].filter(Boolean);
