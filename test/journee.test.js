@@ -69,9 +69,10 @@ test('serveur : le compagnon pointe un intérimaire hors de son équipe, en déc
   await call('POST', '/api/accounts', { login: 'claire', password: 'motdepasse1', role: 'charge', nom: 'Claire', userId: 'u1' }, admin);
   const k = (await call('POST', '/api/login', { login: 'kevin', password: 'motdepasse1' })).cookie;
   const auj = R.jourIso(new Date());
-  // Intérimaire connu (équipe de Lucas) : Kevin peut le pointer ; un salarié d'une autre équipe : non
+  // Pas de différence chef d'équipe / compagnon : Kevin pointe un intérimaire et un collègue d'une autre équipe ; pas le bureau
   assert.strictEqual((await call('PUT', '/api/records/temps/tj1', { data: { userId: 'i1', affaireId: 'af1', date: auj, debut: '07:30', fin: '12:00', heures: 4.5, saisiPar: 'o1' } }, k)).status, 200);
-  assert.strictEqual((await call('PUT', '/api/records/temps/tj2', { data: { userId: 'o2', affaireId: 'af1', date: auj, debut: '07:30', fin: '12:00', heures: 4.5 } }, k)).status, 403);
+  assert.strictEqual((await call('PUT', '/api/records/temps/tj2', { data: { userId: 'o2', affaireId: 'af1', date: auj, debut: '07:30', fin: '12:00', heures: 4.5 } }, k)).status, 200);
+  assert.strictEqual((await call('PUT', '/api/records/temps/tj4', { data: { userId: 'u1', affaireId: 'af1', date: auj, debut: '07:30', fin: '12:00', heures: 4.5 } }, k)).status, 403);
   // Nouvel intérimaire déclaré, puis pointé
   assert.strictEqual((await call('POST', '/api/pointage/interimaire', { nom: 'Lu' }, k)).status, 400);
   const d = await call('POST', '/api/pointage/interimaire', { nom: 'Sami Benali', agenceLibre: 'Adecco Annecy', qualification: 'Soudeur', affaireId: 'af1' }, k);
@@ -88,4 +89,38 @@ test('serveur : le compagnon pointe un intérimaire hors de son équipe, en déc
   assert.match(n[0].texte, /Kevin l'a pointé avec lui \(agence Adecco Annecy\)/);
   // Sans accès : l'intérimaire déclaré n'a pas de compte
   assert.ok(!(await call('GET', '/api/accounts', null, admin)).body.some(a => a.userId === d.body.user.id));
+});
+
+test('hors devis : doublons chez le même client (atelier et chantier), traçabilité de la création', async () => {
+  const affaires = [
+    { id: 'h1', type: 'horsDevis', code: 'HD-1', nom: 'Remplacement vanne DN80 ligne 3', clientId: 'c1', statut: 'Ouvert', dateCreation: R.jourIso(new Date()), creePar: 'Lucas' },
+    { id: 'h2', type: 'horsDevis', code: 'HD-2', nom: 'Fuite chaufferie', clientId: 'c1', statut: 'Facturé', dateCreation: R.jourIso(new Date()) },
+    { id: 'h3', type: 'horsDevis', code: 'HD-3', nom: 'Vanne DN80 ligne 3', clientId: 'c2', statut: 'Ouvert', dateCreation: R.jourIso(new Date()) },
+  ];
+  const d = R.doublonsHD({ type: 'horsDevis', nom: 'vanne dn80 ligne 3 préfa', clientId: 'c1' }, affaires);
+  assert.deepStrictEqual(d.map(x => [x.a.id, x.fort]), [['h1', true]]); // facturée et autre client exclues
+  assert.deepStrictEqual(R.doublonsHD({ nom: 'Calorifuge réseau ECS', clientId: 'c1' }, affaires).map(x => x.fort), [false]);
+  // Client saisi à la main reconnu par son nom
+  assert.strictEqual(R.doublonsHD({ nom: 'Vanne DN80 ligne 3', clientLibre: 'Papeterie du rhone' }, affaires, { nomClient: id => (id === 'c1' ? 'Papeterie du Rhône' : '') })[0].a.id, 'h1');
+  const refus = R.horsDevisCompagnon({ type: 'horsDevis', nom: 'Vanne DN80 ligne 3', clientId: 'c1' }, null, 'o1', '2026-10-30', { nom: 'Kevin', affaires });
+  assert.strictEqual(refus.doublon, 'h1');
+  assert.match(refus.refus, /HD-1.*ouverte par Lucas/);
+  const ok = R.horsDevisCompagnon({ type: 'horsDevis', nom: 'Vanne DN80 ligne 3', clientId: 'c1', confirmeDoublon: true }, null, 'o1', '2026-10-30', { nom: 'Kevin', affaires, maintenant: new Date('2026-10-30T08:15:00Z') });
+  assert.deepStrictEqual([ok.obj.creePar, ok.obj.creeParId, ok.obj.creeLe, ok.obj.doublonConfirme], ['Kevin', 'o1', '2026-10-30T08:15:00.000Z', true]);
+
+  // Serveur : le compagnon reçoit 409 avec l'intervention existante ; le bureau voit qui a créé et quand
+  const k = (await call('POST', '/api/login', { login: 'kevin', password: 'motdepasse1' })).cookie;
+  const h = await call('PUT', '/api/records/affaires/hdx1', { data: { type: 'horsDevis', nom: 'Fuite bride échangeur E2', clientLibre: 'Brasserie du Lac' } }, k);
+  assert.strictEqual(h.status, 200);
+  assert.strictEqual(h.body.creePar, 'Kevin');
+  assert.ok(h.body.creeLe);
+  const dbl = await call('PUT', '/api/records/affaires/hdx2', { data: { type: 'horsDevis', nom: 'Fuite bride échangeur E2 (préfa)', clientLibre: 'brasserie du lac' } }, k);
+  assert.strictEqual(dbl.status, 409);
+  assert.strictEqual(dbl.body.doublon.id, 'hdx1');
+  assert.strictEqual((await call('PUT', '/api/records/affaires/hdx2', { data: { type: 'horsDevis', nom: 'Fuite bride échangeur E2 (préfa)', clientLibre: 'brasserie du lac', confirmeDoublon: true } }, k)).status, 200);
+  const c = (await call('POST', '/api/login', { login: 'claire', password: 'motdepasse1' })).cookie;
+  const ch = await call('PUT', '/api/records/affaires/chx', { data: { nom: 'Chantier test', clientId: 'e1', statut: 'En préparation' } }, c);
+  assert.strictEqual(ch.body.creePar, 'Claire');
+  const modif = await call('PUT', '/api/records/affaires/chx', { data: { ...ch.body, creePar: 'Autre', nom: 'Chantier test 2' }, version: ch.body._v }, c);
+  assert.strictEqual(modif.body.creePar, 'Claire', 'la création ne se réécrit pas');
 });

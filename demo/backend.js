@@ -2,7 +2,7 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v50';
+  const KEY = 'pipefit-crm-demo-v51';
   const ME_KEY = 'pipefit-crm-demo-me';
   const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications', 'habilitations', 'materiels', 'missions', 'produits', 'equipementsFrigo', 'fichesFluides', 'bouteilles', 'enlevements', 'epreuves', 'misesEnService', 'equilibrages', 'releves'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4], fichesFluides: ['numero', 'FI', 4], epreuves: ['numero', 'EP', 4], misesEnService: ['numero', 'MS', 4], equilibrages: ['numero', 'EQ', 4], releves: ['numero', 'RC', 4] };
@@ -66,7 +66,7 @@
   function atelierRefus(acc, col, obj, existing) {
     if (acc.role !== 'atelier') return null;
     if (col === 'temps') { const r = ReglesPointage.refusTemps(obj, existing, ReglesPointage.jourIso(new Date())); if (r) return r; }
-    const allowed = col !== 'temps' ? [acc.userId] : [acc.userId, ...db.users.filter(u => u.chefId === acc.userId || u.type === 'interimaire').map(u => u.id)];
+    const allowed = col !== 'temps' ? [acc.userId] : [acc.userId, ...db.users.filter(u => !['charge', 'admin'].includes(u.role)).map(u => u.id)];
     if (obj && !allowed.includes(obj.userId)) return 'Vous ne pouvez saisir que pour vous ou votre équipe';
     if (existing && !allowed.includes(existing.userId)) return 'Vous ne pouvez modifier que vos saisies ou celles de votre équipe';
     if (existing && (existing.verrouille || (col === 'rapports' && existing.signatureClientId))) return 'Ce bon d\'intervention est signé par le client : il ne peut plus être modifié';
@@ -348,10 +348,15 @@
           retenuePct: Retenue.modifiable(existing) ? Retenue.taux(obj.retenuePct) : existing.retenuePct };
         if (col === 'factures') { obj.type = existing ? existing.type : (obj.type === 'avoir' ? 'avoir' : undefined); if (!obj.type) delete obj.type; }
         if (col === 'affaires' && acc.role === 'atelier') {
-          const hd = ReglesPointage.horsDevisCompagnon(obj, existing, acc.userId, ReglesPointage.jourIso(new Date()));
+          const hd = ReglesPointage.horsDevisCompagnon(obj, existing, acc.userId, ReglesPointage.jourIso(new Date()),
+            { nom: acc.nom, affaires: db.affaires, nomClient: cid => (db.entreprises.find(e => e.id === cid) || {}).nom || '' });
+          if (hd.doublon) return [409, { error: hd.refus, doublon: db.affaires.find(a => a.id === hd.doublon) }];
           if (hd.refus) return [403, { error: hd.refus }];
           obj = hd.obj;
         }
+        // Traçabilité : qui a créé le chantier ou l'intervention, et quand
+        if (col === 'affaires' && !existing && !obj.creeLe) Object.assign(obj, { creePar: acc.nom, creeParId: acc.userId || '', creeLe: new Date().toISOString() });
+        if (col === 'affaires' && existing) ['creePar', 'creeParId', 'creeLe'].forEach(k => { if (existing[k]) obj[k] = existing[k]; });
         const refus = col === 'affaires' ? null : atelierRefus(acc, col, obj, existing);
         if (refus) return [403, { error: refus }];
         if (col === 'fichesFluides' && obj.statut !== 'Brouillon') { const e = Fluides.erreur(obj, db.equipementsFrigo.find(x => x.id === obj.equipementId)); if (e) return [400, { error: e }]; }

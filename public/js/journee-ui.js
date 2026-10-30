@@ -4,8 +4,10 @@
 
 /* ---------- Intérimaires avec moi aujourd'hui (pointage « Commencer / Terminer ») ---------- */
 const cleAvec = (uid, date) => `pf-avec:${uid}:${date}`;
+// Par défaut (rien de choisi ce jour-là) : les personnes habituellement avec lui (fiche « équipe » des Paramètres)
 function avecMoi(uid, date) {
-  try { return (JSON.parse(localStorage.getItem(cleAvec(uid, date))) || []).filter(id => Store.get('users', id)); } catch (e) { return []; }
+  try { const v = localStorage.getItem(cleAvec(uid, date)); if (v !== null) return (JSON.parse(v) || []).filter(id => Store.get('users', id)); } catch (e) { /* stockage indisponible */ }
+  return equipeDe(uid).map(u => u.id);
 }
 function majAvecMoi(uid, date, ids) {
   try { localStorage.setItem(cleAvec(uid, date), JSON.stringify([...new Set(ids)])); } catch (e) { /* stockage indisponible : pour cet affichage seulement */ }
@@ -57,6 +59,23 @@ function choisirInterimaire({ date, affaireId, exclure = [] }) {
   });
 }
 
+// Collègue de travail (tout compagnon, pas seulement son équipe) : recherche par nom ; fenêtre par-dessus
+function choisirCollegue({ exclure = [] } = {}) {
+  const liste = operateurs().filter(u => u.type !== 'interimaire' && !exclure.includes(u.id)).sort((a, b) => a.nom.localeCompare(b.nom));
+  return dialog(`<h2 style="margin-top:0">👷 Collègue avec moi</h2>
+    <p class="muted small">Vous pointez ses heures avec les vôtres (il peut aussi pointer lui-même).</p>
+    <input id="cc-q" type="search" placeholder="Nom…" autocomplete="off" style="width:100%">
+    <div class="rc-res">${liste.map(u => `<button type="button" class="ligne-t" data-cc="${u.id}" data-txt="${esc(RechercheChantier.norm(u.nom))}"><span><strong>${esc(u.nom)}</strong> <span class="small muted">${esc(moOf(u.categorieId).libelle || '')}</span></span></button>`).join('') || '<p class="muted">Aucun autre compagnon.</p>'}</div>
+    <div class="modal-actions"><span style="flex:1"></span><button type="button" class="secondary" id="cc-x">Annuler</button></div>`,
+  (wrap, done) => {
+    const q = wrap.querySelector('#cc-q');
+    q.oninput = () => wrap.querySelectorAll('[data-cc]').forEach(b => { b.hidden = !b.dataset.txt.includes(RechercheChantier.norm(q.value.trim())); });
+    wrap.querySelectorAll('[data-cc]').forEach(b => b.onclick = () => done(Store.get('users', b.dataset.cc)));
+    wrap.querySelector('#cc-x').onclick = () => done(null);
+    setTimeout(() => q.focus(), 50);
+  });
+}
+
 /* ---------- Ma journée ---------- */
 function journeeCompagnon(date, ids) {
   const moi = ids[0], auj = date === isoDate(new Date());
@@ -99,8 +118,7 @@ function journeeCompagnon(date, ids) {
         <div class="jr-actions"><button class="secondary small" data-plus="${pi}">+ Chantier</button>
           ${pi ? `<button class="secondary small" data-copie="${pi}">Mêmes chantiers que ${esc(prenomDe(userName(moi)))}</button>` : ''}
           <label class="check"><input type="checkbox" data-panier="${pi}" ${p.panier ? 'checked' : ''}> Panier repas</label></div></div>`; }).join('')}
-      <button class="secondary" id="jr-interim">+ Intérimaire avec moi ce jour-là</button>
-      ${equipeDe(moi).filter(u => !pers.some(p => p.uid === u.id)).length ? `<select id="jr-equipier" style="width:auto"><option value="">+ Un équipier…</option>${equipeDe(moi).filter(u => !pers.some(p => p.uid === u.id)).map(u => `<option value="${u.id}">${esc(u.nom)}</option>`).join('')}</select>` : ''}
+      <div class="jr-actions"><button class="secondary" id="jr-collegue">+ Collègue avec moi ce jour-là</button><button class="secondary" id="jr-interim">+ Intérimaire avec moi ce jour-là</button></div>
       <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="jr-x">Annuler</button><button id="jr-ok">Enregistrer</button></div>`;
     brancher();
   };
@@ -146,8 +164,14 @@ function journeeCompagnon(date, ids) {
       if (!p.existants.length) { p.lignes = pers[0].lignes.filter(l => !l.bloque).map(({ tid, bloque, enCours, ...l }) => ({ ...l })); p.panier = pers[0].panier; }
       pers.push(p); journeeRouvrir();
     };
-    const eq = $('#jr-equipier');
-    if (eq) eq.onchange = () => { if (eq.value) { pers.push(nouvellePersonne(eq.value)); rendre(); } };
+    $('#jr-collegue').onclick = async () => {
+      const u = await choisirCollegue({ exclure: pers.map(p => p.uid) });
+      if (!u) return;
+      majAvecMoi(moi, date, [...avecMoi(moi, date), u.id]);
+      const p = nouvellePersonne(u.id);
+      if (!p.existants.length) { p.lignes = pers[0].lignes.filter(l => !l.bloque).map(({ tid, bloque, enCours, ...l }) => ({ ...l })); p.panier = pers[0].panier; }
+      pers.push(p); rendre();
+    };
     $('#jr-x').onclick = Modal.close;
     $('#jr-ok').onclick = enregistrer;
   };

@@ -7,6 +7,8 @@ const bonSigne = a => Store.all('rapports').find(r => r.affaireId === a.id && r.
 // Statut affiché : un bon signé « intervention terminée » fait passer l'intervention ouverte à « Terminé »
 // Intervention ouverte par un compagnon dont le bureau n'a pas encore renseigné le client ou le chargé d'affaires
 const aCompleterHD = a => estHorsDevis(a) && a.aCompleter && (!a.clientId || !a.chargeId);
+// Une intervention couvre la préfabrication à l'atelier et le travail sur le chantier : séparées par la tâche pointée
+const estPrefa = t => /pr[ée]fa/i.test(t.tache || '');
 const statutHD = a => (a.statut === 'Ouvert' && bonSigne(a) ? 'Terminé' : a.statut);
 
 const hdFields = [
@@ -75,14 +77,15 @@ function horsDevisView(a) {
     ${!a.chargeId ? '<br>Chargé d\'affaires à désigner (bouton Modifier).' : ''}</div>` : ''}
   <p class="muted">Client : ${a.clientId ? `<a href="#/entreprise/${esc(a.clientId)}">${esc(clientName(a.clientId))}</a>` : a.clientLibre ? `${esc(a.clientLibre)} <span class="badge b-warn">à rattacher</span>` : '—'}${!a.contactId && a.contactLibre ? ` · Contact : ${esc(a.contactLibre)}${a.contactTel ? ` (${esc(a.contactTel)})` : ''}` : ''}${!a.siteId && a.siteLibre ? ` · Site : ${esc(a.siteLibre)}` : ''}${a.lieu ? ` · ${esc(a.lieu)}` : ''}
     ${a.contactId ? ` · Demandeur : ${esc(contactName(Store.get('contacts', a.contactId)))}` : ''}${a.siteId ? ` · ${esc(siteLabel(siteOf(a.clientId, a.siteId)))}` : ''}
-    · Chargé d'affaires : ${esc(userName(a.chargeId))} · ouvert le ${dateFr(a.dateCreation)}${a.refCommande ? ` · <strong>commande client n° ${esc(a.refCommande)}</strong>` : ''}</p>
+    · Chargé d'affaires : ${esc(userName(a.chargeId))} · ${traceHD(a)}${a.doublonConfirme ? ' <span class="badge b-warn" title="Ouverte alors qu\'une intervention semblable existait (confirmé par la personne)">doublon confirmé</span>' : ''}${a.refCommande ? ` · <strong>commande client n° ${esc(a.refCommande)}</strong>` : ''}</p>
   ${envoisHtml('affaires', a.id)}
   ${a.demande ? `<p class="note pre">${esc(a.demande)}</p>` : ''}
   ${demandeClientHtml(a)}
   ${bon ? `<p class="note">Bon d'intervention signé par ${esc(bon.signataireNom)} le ${dateFr(bon.date)} : <a href="#/bon/${bon.id}">voir le bon</a>. ${a.refCommande ? 'Commande reçue : vous pouvez facturer.' : 'Demandez la commande au client ou facturez directement.'}</p>` : ''}
 
   <div class="cards">
-    <div class="card"><div class="label">Heures pointées</div><div class="value">${fmt(v.heures, 2)} h</div><div class="sub">${v.aValider ? `<span class="warn-text">${fmt(v.aValider, 2)} h à valider</span> · ` : ''}${eur(v.totalMO)} HT</div></div>
+    <div class="card"><div class="label">Heures pointées</div><div class="value">${fmt(v.heures, 2)} h</div><div class="sub">${v.aValider ? `<span class="warn-text">${fmt(v.aValider, 2)} h à valider</span> · ` : ''}${eur(v.totalMO)} HT</div>
+      ${v.heures ? `<div class="sub">Préfabrication atelier ${fmt(sumBy(v.temps.filter(estPrefa), t => num(t.heures)), 2)} h · chantier ${fmt(sumBy(v.temps.filter(t => !estPrefa(t)), t => num(t.heures)), 2)} h</div>` : ''}</div>
     <div class="card"><div class="label">Matériel</div><div class="value">${eur(v.totalMat)}</div><div class="sub">${v.consos.length} ligne(s) saisie(s) par les équipes</div></div>
     <div class="card"><div class="label">À facturer</div><div class="value">${eur(v.total)}</div><div class="sub">HT, soit ${eur(v.total * (1 + Calc.tauxDoc(tvaDuClient(a.clientId)) / 100))} TTC</div></div>
     <div class="card"><div class="label">Marge</div><div class="value ${signClass(s.margeFin)}">${eur(s.margeFin)}</div><div class="sub">${marginBadge(s.margeFinPct)} coût réel ${eur(v.coutMO + v.coutMat + s.coutFrais)}</div></div>

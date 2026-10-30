@@ -32,12 +32,47 @@ const ReglesPointage = (() => {
 
   // Intervention hors devis ouverte par un compagnon : création seulement, champs limités, à compléter par le bureau
   const CHAMPS_HD = ['nom', 'clientId', 'clientLibre', 'contactId', 'contactLibre', 'contactTel', 'siteId', 'siteLibre', 'lieu', 'demande'];
-  function horsDevisCompagnon(obj, existing, userId, auj) {
+
+  // Doublons : une même intervention peut être ouverte par l'atelier (préfabrication) et par l'équipe sur le chantier.
+  // Interventions encore ouvertes du même client, ouvertes ces 30 derniers jours, dont l'objet ou le site se ressemblent.
+  const norm = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const VIDES = new Set(['pour', 'avec', 'dans', 'sur', 'des', 'les', 'une', 'du', 'de', 'la', 'le', 'et', 'en', 'au', 'aux']);
+  const mots = t => new Set(norm(t).split(/[^a-z0-9]+/).filter(m => m.length >= 3 && !VIDES.has(m)));
+  function ressemblance(x, y) {
+    const a = mots(x), b = mots(y);
+    if (!a.size || !b.size) return 0;
+    let n = 0; a.forEach(m => { if (b.has(m)) n++; });
+    return n / Math.min(a.size, b.size);
+  }
+  const OUVERTS = ['Ouvert', 'Terminé', 'Commande demandée'];
+  // ctx : { nomClient(id), maintenant (Date) } ; renvoie les interventions semblables, la plus probable d'abord (fort : même objet)
+  function doublonsHD(obj, affaires, ctx = {}) {
+    const maintenant = ctx.maintenant || new Date(), depuis = new Date(maintenant.getTime() - 30 * 86400000).toISOString().slice(0, 10);
+    const client = a => norm(a.clientId ? (ctx.nomClient ? ctx.nomClient(a.clientId) : a.clientId) : a.clientLibre).trim();
+    const c = client(obj);
+    if (!c) return [];
+    return (affaires || []).filter(a => a.type === 'horsDevis' && a.id !== obj.id && !a.archive && OUVERTS.includes(a.statut) && (a.dateCreation || '') >= depuis
+      && ((obj.clientId && a.clientId === obj.clientId) || client(a) === c))
+      .map(a => {
+        const objet = ressemblance(obj.nom, a.nom), site = (obj.siteId && obj.siteId === a.siteId) || (obj.siteLibre && norm(obj.siteLibre) === norm(a.siteLibre)) ? 1 : 0;
+        return { a, score: objet * 2 + site + ressemblance(obj.lieu, a.lieu) * 0.5, fort: objet >= 0.6 };
+      })
+      .sort((x, y) => y.score - x.score || String(y.a.dateCreation || '').localeCompare(String(x.a.dateCreation || '')));
+  }
+
+  // trace : { nom (de la personne), maintenant (Date), affaires (pour les doublons), nomClient }
+  function horsDevisCompagnon(obj, existing, userId, auj, trace = {}) {
     if (existing) return { refus: 'Seul le bureau peut modifier un chantier ou une intervention' };
     if (!obj || obj.type !== 'horsDevis') return { refus: 'Seul le bureau peut créer un chantier' };
     if (!String(obj.nom || '').trim()) return { refus: 'Indiquez l\'objet de l\'intervention' };
     if (!obj.clientId && !String(obj.clientLibre || '').trim()) return { refus: 'Indiquez le client' };
-    const propre = { id: obj.id, type: 'horsDevis', code: '', statut: 'Ouvert', dateCreation: auj, heuresPrevues: 0, rex: {}, ouvertePar: userId, aCompleter: true };
+    // Même intervention déjà ouverte (par l'atelier ou une autre équipe) : refusée, sauf confirmation explicite
+    const d = !obj.confirmeDoublon && doublonsHD(obj, trace.affaires, trace).find(x => x.fort);
+    if (d) return { refus: `Cette intervention semble déjà ouverte : ${d.a.code || ''} « ${d.a.nom} »${d.a.creePar ? `, ouverte par ${d.a.creePar}` : ''} le ${String(d.a.dateCreation || '').split('-').reverse().join('/')}. Pointez dessus, ou confirmez qu'il s'agit d'une autre intervention.`, doublon: d.a.id };
+    const maintenant = trace.maintenant || new Date();
+    const propre = { id: obj.id, type: 'horsDevis', code: '', statut: 'Ouvert', dateCreation: auj, heuresPrevues: 0, rex: {}, ouvertePar: userId, aCompleter: true,
+      creePar: String(trace.nom || '').slice(0, 120), creeParId: userId || '', creeLe: maintenant.toISOString() };
+    if (obj.confirmeDoublon) propre.doublonConfirme = true;
     CHAMPS_HD.forEach(k => { if (obj[k] !== undefined && obj[k] !== null) propre[k] = String(obj[k]).trim().slice(0, 500); });
     // Photos de la demande (bon papier, note du client) : identifiants de fichiers déjà envoyés
     if (Array.isArray(obj.photosDemande)) propre.photosDemande = obj.photosDemande.filter(x => /^[a-f0-9]{16,40}$/.test(String(x))).slice(0, 10);
@@ -58,6 +93,6 @@ const ReglesPointage = (() => {
     return { user, mission };
   }
 
-  return { semaine, jourIso, jourModifiable, joursSemaine, refusTemps, horsDevisCompagnon, interimaireDeclare };
+  return { semaine, jourIso, jourModifiable, joursSemaine, refusTemps, horsDevisCompagnon, interimaireDeclare, doublonsHD, ressemblance };
 })();
 if (typeof module !== 'undefined') module.exports = ReglesPointage;

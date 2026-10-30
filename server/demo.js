@@ -156,9 +156,9 @@ function demoData() {
     // Interventions hors devis (travaux en régie sur demande du client)
     { id: 'af4', documents: [{ id: 'dc6', fichierId: 'pdf-chaufferie', nom: 'Plan chaufferie existante.pdf', categorie: 'Plan', indice: 'A', note: '', mime: 'application/pdf', taille: 2400, date: d(-1), par: 'Julien Bernard', visible: true }],
       code: `CH-${Y}-` + '004', nom: 'Résidence Les Tilleuls – rénovation de la chaufferie', clientId: 'e14', contactId: 'k12', siteId: 's18', chargeId: 'u2', statut: 'En préparation', devisId: 'dv7', dateCreation: d(-1), heuresPrevues: 0, rex: {} },
-    { id: 'hd1', type: 'horsDevis', code: `HD-${Y}-` + '001', nom: 'Machine à papier PM2 – remplacement du collecteur de purge', clientId: 'e10', contactId: 'k10', siteId: 's14', chargeId: 'u1', statut: 'Terminé', dateCreation: d(-12),
+    { id: 'hd1', type: 'horsDevis', code: `HD-${Y}-` + '001', nom: 'Machine à papier PM2 – remplacement du collecteur de purge', clientId: 'e10', contactId: 'k10', siteId: 's14', chargeId: 'u1', statut: 'Terminé', dateCreation: d(-12), creePar: 'Claire Martin', creeParId: 'u1', creeLe: `${d(-12)}T07:42:00.000Z`,
       demande: 'Fuite sur le collecteur de purge DN50 de la sécherie : préfabriquer un collecteur neuf à l\'atelier et le poser pendant l\'arrêt du jeudi.', heuresPrevues: 0, rex: {} },
-    { id: 'hd2', type: 'horsDevis', code: `HD-${Y}-` + '002', nom: 'Dépannage fuite vapeur ligne 3', clientId: 'e1', contactId: 'k1', siteId: 's2', chargeId: 'u2', statut: 'Ouvert', dateCreation: d(-1),
+    { id: 'hd2', type: 'horsDevis', code: `HD-${Y}-` + '002', nom: 'Dépannage fuite vapeur ligne 3', clientId: 'e1', contactId: 'k1', siteId: 's2', chargeId: 'u2', statut: 'Ouvert', dateCreation: d(-1), creePar: 'Lucas Petit', creeParId: 'o3', ouvertePar: 'o3', creeLe: `${d(-1)}T06:15:00.000Z`,
       demande: 'Fuite sur bride DN100 de la ligne vapeur 3, intervention demandée par M. Durand.', heuresPrevues: 0, rex: {} },
   ];
   const head = (af, chargeId, clientId, contactId, siteId) => ({ affaireId: af, chargeId, clientId, contactId, siteId });

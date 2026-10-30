@@ -22,8 +22,9 @@ test('jours modifiables : semaine en cours, jusqu\'à aujourd\'hui', () => {
 });
 
 test('intervention hors devis d\'un compagnon : champs limités, à compléter par le bureau', () => {
-  const r = R.horsDevisCompagnon({ id: 'x', type: 'horsDevis', nom: ' Fuite ', clientLibre: 'Papeterie', statut: 'Facturé', chargeId: 'u1', heuresPrevues: 99 }, null, 'o1', '2026-10-17');
-  assert.deepStrictEqual(r.obj, { id: 'x', type: 'horsDevis', code: '', statut: 'Ouvert', dateCreation: '2026-10-17', heuresPrevues: 0, rex: {}, ouvertePar: 'o1', aCompleter: true, nom: 'Fuite', clientLibre: 'Papeterie' });
+  const r = R.horsDevisCompagnon({ id: 'x', type: 'horsDevis', nom: ' Fuite ', clientLibre: 'Papeterie', statut: 'Facturé', chargeId: 'u1', heuresPrevues: 99 }, null, 'o1', '2026-10-17', { nom: 'Kevin', maintenant: new Date('2026-10-17T07:00:00Z') });
+  assert.deepStrictEqual(r.obj, { id: 'x', type: 'horsDevis', code: '', statut: 'Ouvert', dateCreation: '2026-10-17', heuresPrevues: 0, rex: {}, ouvertePar: 'o1', aCompleter: true,
+    creePar: 'Kevin', creeParId: 'o1', creeLe: '2026-10-17T07:00:00.000Z', nom: 'Fuite', clientLibre: 'Papeterie' });
   const c = R.horsDevisCompagnon({ type: 'horsDevis', nom: 'Fuite', clientId: 'e2', contactLibre: 'M. Durand', contactTel: '06 10 00 00 01', siteLibre: 'Site de Fos', lieu: 'Unité 3', chargeId: 'u9' }, null, 'o1', '2026-10-17').obj;
   assert.deepStrictEqual([c.contactLibre, c.contactTel, c.siteLibre, c.lieu, c.chargeId], ['M. Durand', '06 10 00 00 01', 'Site de Fos', 'Unité 3', undefined]);
   assert.ok(R.horsDevisCompagnon({ type: 'horsDevis', nom: 'Fuite' }, null, 'o1', '2026-10-17').refus); // sans client

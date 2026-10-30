@@ -379,11 +379,18 @@ compagnons.
    journée, chacun avec ses horaires (chantiers prévus au planning, interventions hors devis, autres chantiers sur devis,
    ou nouvelle intervention hors devis ouverte sur place) ; « Comme prévu » reprend le planning, « Journée différente »
    le remplace entièrement. Les chantiers non prévus sont marqués « hors planning » pour le bureau (validation des
-   heures). Une ligne par personne et par chantier : le chef d'équipe ajoute un équipier, et chacun peut ajouter
-   **l'intérimaire qui a travaillé avec lui ce jour-là** (« Mêmes chantiers que moi » recopie ses lignes). Un
+   heures). Une ligne par personne et par chantier : **aucune différence entre chef d'équipe et compagnon**, chacun ajoute
+   le **collègue** (tout compagnon, recherche par nom) ou **l'intérimaire qui a travaillé avec lui ce jour-là** (« Mêmes chantiers que moi » recopie ses lignes). Un
    intérimaire n'a pas d'accès au CRM : il est choisi dans la liste des intérimaires, ou déclaré s'il n'y est pas (nom,
    agence, métier) — fiche et mission créées « à compléter », le bureau est prévenu (RH → Intérim). Sur l'écran
-   « Commencer / Terminer », « + Intérimaire avec moi aujourd'hui » le fait commencer et terminer en même temps.
+   « Commencer / Terminer », « + Collègue avec moi » et « + Intérimaire avec moi » les ajoutent : les personnes cochées
+   commencent et terminent ensemble (l'équipe enregistrée dans Paramètres est proposée par défaut). Le bureau valide.
+   **Intervention hors devis : traçabilité et doublons**. Chaque chantier ou intervention garde qui l'a créé et quand
+   (date et heure, affichées sur la fiche et dans la recherche). Une même intervention sert à l'atelier (préfabrication)
+   et à l'équipe sur le chantier — la fiche sépare les heures « préfabrication atelier » et « chantier » d'après la tâche
+   pointée. À l'ouverture, les interventions encore ouvertes du même client (30 derniers jours) s'affichent avec qui
+   les a ouvertes et les heures déjà pointées : « Pointer dessus » évite le doublon. Si l'objet est semblable, il faut
+   confirmer qu'il s'agit d'une autre intervention (le serveur refuse sinon) ; la fiche porte alors « doublon confirmé ».
    **Choix du chantier par recherche** (jamais une longue liste) : le champ « Chantier » montre le chantier choisi et
    « 🔍 Changer » ; en dessous, les chantiers prévus ce jour-là (📅) et les derniers pointés en un toucher. La recherche
    s'ouvre sur ces mêmes chantiers ; pour un chantier non planifié, mots cherchés dans le code, le nom, le client, le chargé d'affaires, le site et la ville (sans

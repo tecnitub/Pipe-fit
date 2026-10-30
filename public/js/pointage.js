@@ -40,8 +40,8 @@ function pointageTabs(active, uid) {
   return `<div class="tabs"><a href="#/pointage${q}" class="${active === 'heures' ? 'active' : ''}">Heures</a><a href="#/pointage/planning${q}" class="${active === 'planning' ? 'active' : ''}">Planning</a><a href="#/pointage/chantiers${q}" class="${active === 'chantiers' ? 'active' : ''}">Chantiers</a><a href="#/pointage/rapports${q}" class="${active === 'rapports' ? 'active' : ''}">Rapports</a><a href="#/pointage/frais${q}" class="${active === 'frais' ? 'active' : ''}">Notes de frais</a><a href="#/pointage/comptoir${q}" class="${active === 'comptoir' ? 'active' : ''}">Comptoir</a><a href="#/pointage/calculs${q}" class="${active === 'calculs' ? 'active' : ''}">Calculs</a>${voitFluides(Store.get('users', uid) || { id: uid }) ? `<a href="#/pointage/fluides${q}" class="${active === 'fluides' ? 'active' : ''}">Fluides</a>` : ''}</div>`;
 }
 
-// Sélection des personnes en mode équipe (conservée entre deux rafraîchissements)
-const equipeSel = { uid: null, ids: new Set(), filtre: 'tous' };
+// Personnes cochées pour Commencer / Terminer (conservées entre deux rafraîchissements)
+const equipeSel = { uid: null, ids: new Set(), vus: new Set() };
 
 /* ---------------- Chantier du pointage : prévus, hors devis, autres ; nouvelle intervention hors devis ---------------- */
 const NOUVELLE_HD = '__hd';
@@ -107,7 +107,7 @@ function choisirChantier({ uid, date } = {}) {
       $('#rc-res').innerHTML = (vide ? `<p class="small muted">${res.length ? 'Prévus et récents. ' : ''}Tapez un nom, un client, un chargé d'affaires ou une ville pour chercher parmi les ${actifs.length} chantiers en cours.</p>` : '')
         + (res.length ? res.slice(0, 60).map(({ a, prevu, recent }) => `<button type="button" class="ligne-t rc-ligne" data-aff="${a.id}" role="option">
         <span><strong>${esc(a.code || '')}</strong> ${esc(a.nom || '')}${estHorsDevis(a) ? ' <span class="badge b-warn">Hors devis</span>' : ''}${prevu ? ' <span class="badge b-info">prévu</span>' : recent ? ' <span class="badge">récent</span>' : ''}
-          <br><span class="small muted">${esc(nomClient(a) || a.clientLibre || '')}${a.chargeId ? ` · ${esc(userName(a.chargeId))}` : ''}${ctx.site(a) || a.siteLibre ? ` · ${esc(ctx.site(a) || a.siteLibre)}` : ''}</span></span></button>`).join('')
+          <br><span class="small muted">${esc(nomClient(a) || a.clientLibre || '')}${a.chargeId ? ` · ${esc(userName(a.chargeId))}` : ''}${ctx.site(a) || a.siteLibre ? ` · ${esc(ctx.site(a) || a.siteLibre)}` : ''}${estHorsDevis(a) ? ` · ${traceHD(a)}` : ''}</span></span></button>`).join('')
         + (res.length > 60 ? `<p class="small muted">${res.length - 60} autre(s) : précisez la recherche.</p>` : '')
         : vide ? '' : '<p class="muted">Aucun chantier en cours ne correspond. Dépannage sur place ? Ouvrez une intervention hors devis.</p>');
       wrap.querySelectorAll('[data-aff]').forEach(b => b.onclick = () => done(b.dataset.aff));
@@ -124,12 +124,15 @@ function choisirChantier({ uid, date } = {}) {
     setTimeout(() => q.focus(), 50);
   });
 }
+// Traçabilité d'une intervention : qui l'a ouverte et quand
+const traceHD = (a, html = true) => `ouverte${a.creePar || a.ouvertePar ? ` par ${(html ? esc : x => x)(a.creePar || userName(a.ouvertePar))}` : ''} le ${a.creeLe ? `${dateFr(a.creeLe.slice(0, 10))} à ${new Date(a.creeLe).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : dateFr(a.dateCreation)}`;
+const heuresAffaire = id => sumBy(Store.all('temps').filter(t => t.affaireId === id), t => num(t.heures));
 // Dépannage non planifié : le compagnon ouvre l'intervention, le bureau complète (client, site, chargé d'affaires) et facture
 // (annule : rappelé si la fenêtre est fermée sans rien ouvrir, pour revenir à la fenêtre d'où l'on venait)
 function nouvelleHDCompagnon(fait, annule) {
   const clients = clientsList().filter(c => c.nom);
   const box = Modal.open(`<h2 style="margin-top:0">🛠️ Nouvelle intervention hors devis</h2>
-    <p class="muted small">Dépannage ou travaux demandés sur place, sans planning ni devis. Le bureau complète ensuite le dossier.</p>
+    <p class="muted small">Dépannage ou travaux demandés sur place, sans planning ni devis. Une seule intervention pour l'atelier (préfabrication) et le chantier : vérifiez qu'elle n'est pas déjà ouverte. Le bureau complète ensuite le dossier.</p>
     <div class="field"><label for="hd-nom">Objet de l'intervention</label><input id="hd-nom" placeholder="Ex. fuite vapeur ligne 3, remplacement vanne DN80…"></div>
     <div class="field"><label for="hd-client">Client</label><select id="hd-client"><option value="">${clients.length ? 'Choisir…' : '—'}</option>${clients.map(c => `<option value="${c.id}">${esc(c.nom)}</option>`).join('')}<option value="autre">Autre / pas dans la liste</option></select></div>
     <div class="field" id="hd-libre-f" ${clients.length ? 'hidden' : ''}><label for="hd-libre">Nom du client (société)</label><input id="hd-libre" placeholder="Ex. Papeterie du Rhône"></div>
@@ -143,6 +146,7 @@ function nouvelleHDCompagnon(fait, annule) {
       <div class="field" id="hd-site-f" hidden><select id="hd-site" aria-label="Site"></select></div>
       <div class="field" id="hd-site-libre"><label for="hd-snom">Nom du site</label><input id="hd-snom" placeholder="Ex. Usine de Rumilly, Site de Fos" autocomplete="off"></div>
       <div class="field"><label for="hd-lieu">Précision (bâtiment, local, machine)</label><input id="hd-lieu" placeholder="Ex. bâtiment B, chaufferie, PM2"></div></fieldset>
+    <div id="hd-doublons"></div>
     <div class="field"><label for="hd-demande">Demande du client</label><textarea data-dictee id="hd-demande" rows="3" placeholder="Ce qui a été demandé, par qui"></textarea></div>
     <div class="field"><label class="btn secondary" for="hd-photo">📷 Photo de la demande (bon, mail imprimé, note)</label><input id="hd-photo" type="file" accept="image/*" capture="environment" multiple hidden>
       <div id="hd-photos" class="hd-photos"></div></div>
@@ -169,6 +173,19 @@ function nouvelleHDCompagnon(fait, annule) {
     $('#hd-contact-libre').hidden = !$('#hd-contact-f').hidden && $('#hd-contact').value !== 'autre';
     $('#hd-site-libre').hidden = !$('#hd-site-f').hidden && $('#hd-site').value !== 'autre';
   };
+  // Interventions déjà ouvertes chez ce client (par l'atelier ou une autre équipe) : on pointe dessus plutôt qu'en ouvrir une autre
+  const brouillon = () => { const c = $('#hd-client').value, connu = c && c !== 'autre'; return { type: 'horsDevis', nom: $('#hd-nom').value, clientId: connu ? c : '', clientLibre: connu ? '' : $('#hd-libre').value,
+    siteId: $('#hd-site-f').hidden || ['', 'autre'].includes($('#hd-site').value) ? '' : $('#hd-site').value, siteLibre: $('#hd-snom').value, lieu: $('#hd-lieu').value }; };
+  const doublons = () => ReglesPointage.doublonsHD(brouillon(), Store.all('affaires'), { nomClient: id => (entreprise(id) || {}).nom || '' });
+  const majDoublons = () => {
+    const d = doublons().slice(0, 4);
+    $('#hd-doublons').innerHTML = d.length ? `<div class="note warn-note hd-doublons"><strong>Déjà ouverte${d.length > 1 ? 's' : ''} chez ce client</strong> — c'est la même ? Pointez dessus :
+      ${d.map(({ a, fort }) => `<button type="button" class="ligne-t" data-existante="${a.id}"><span><strong>${esc(a.code || '')}</strong> ${esc(a.nom)}${fort ? ' <span class="badge b-bad">semblable</span>' : ''}<br>
+        <span class="small muted">${traceHD(a)}${heuresAffaire(a.id) ? ` · ${fmt(heuresAffaire(a.id), 1)} h pointées` : ''}</span></span><span>Pointer dessus</span></button>`).join('')}</div>` : '';
+    box.querySelectorAll('[data-existante]').forEach(b => b.onclick = () => { Modal.close(); fait(Store.get('affaires', b.dataset.existante)); });
+  };
+  ['#hd-nom', '#hd-libre', '#hd-snom', '#hd-lieu'].forEach(sel => $(sel).addEventListener('input', majDoublons));
+  ['#hd-client', '#hd-site'].forEach(sel => $(sel).addEventListener('change', majDoublons));
   $('#hd-client').onchange = majClient;
   $('#hd-contact').onchange = majLibres; $('#hd-site').onchange = majLibres;
   majClient();
@@ -185,6 +202,11 @@ function nouvelleHDCompagnon(fait, annule) {
     if (!o.clientId && !o.clientLibre) return notify('Indiquez le client.');
     if (!o.contactId && !o.contactLibre && !(await ask('Aucun contact client indiqué (la personne qui a demandé l\'intervention). Ouvrir quand même ?', 'Ouvrir', false))) return;
     if (!o.siteId && !o.siteLibre) return notify('Indiquez le nom du site.');
+    const fort = ReglesPointage.doublonsHD(o, Store.all('affaires'), { nomClient: id => (entreprise(id) || {}).nom || '' }).find(x => x.fort);
+    if (fort) {
+      if (!(await ask(`« ${fort.a.nom} » (${fort.a.code || ''}) est déjà ouverte chez ce client : ${traceHD(fort.a, false)}. Ouvrir quand même une autre intervention ?`, 'Oui, c\'est une autre intervention', false))) return;
+      o.confirmeDoublon = true;
+    }
     if (Store.me.role !== 'atelier') o.chargeId = Store.me.userId || '';
     $('#hd-ok').disabled = true;
     try { o.photosDemande = []; for (const p of photos) o.photosDemande.push(await envoyerImage(p.dataUrl)); }
@@ -280,7 +302,6 @@ Views.pointage = (params, query) => {
   if (params[0] === 'comptoir') return comptoirCompagnon(u);
   if (params[0] === 'calculs') return CalculsChantier.ecran(u, params[1]);
   const today = isoDate(new Date());
-  const team = equipeDe(u.id);
   const week = isoWeek(new Date());
   const semaine = Store.all('temps').filter(t => t.userId === u.id && isoWeek(new Date(t.date)) === week)
     .sort((a, b) => (b.date + (b.debut || '')).localeCompare(a.date + (a.debut || '')));
@@ -294,56 +315,35 @@ Views.pointage = (params, query) => {
   const chips = sel => `<div class="chips" role="radiogroup" aria-label="Tâche">${TACHES.map(t => `<label class="chip"><input type="radio" name="p-tache" value="${esc(t)}" ${(sel || TACHES[0]) === t ? 'checked' : ''}><span>${esc(t)}</span></label>`).join('')}</div>`;
   const panierBox = `<label class="check"><input type="checkbox" id="p-panier" checked> Panier repas</label>`;
 
-  let bloc;
-  if (team.length) {
-    // Mode chef d'équipe
-    if (equipeSel.uid !== u.id) { equipeSel.uid = u.id; equipeSel.ids = new Set([u.id, ...team.map(x => x.id)]); equipeSel.filtre = 'tous'; }
-    const membres = [u, ...team, ...avecMoi(u.id, today).filter(id => !team.some(x => x.id === id)).map(id => Store.get('users', id))].filter(m => equipeSel.filtre === 'tous' || (equipeSel.filtre === 'interim' ? m.type === 'interimaire' : m.type !== 'interimaire'));
-    const enCours = membres.filter(m => equipeSel.ids.has(m.id) && enCoursDe(m.id));
-    const aDemarrer = membres.filter(m => equipeSel.ids.has(m.id) && !enCoursDe(m.id));
-    bloc = `<div class="card punch">
-      <div class="team-head"><strong>Mon équipe</strong>
-        <div class="seg" role="group" aria-label="Filtrer l'équipe">${[['tous', 'Tous'], ['salaries', 'Salariés'], ['interim', 'Intérimaires']].map(([k, l]) => `<button class="${equipeSel.filtre === k ? 'on' : ''}" data-filtre="${k}">${l}</button>`).join('')}</div></div>
+  // Un seul écran pour tous : moi et les personnes avec moi aujourd'hui (collègues, intérimaires), cochées pour Commencer / Terminer
+  const avec = avecMoi(u.id, today).filter(id => id !== u.id);
+  const membres = [u, ...avec.map(id => Store.get('users', id)).filter(Boolean)];
+  // Coches gardées entre deux affichages ; une personne ajoutée est cochée
+  if (equipeSel.uid !== `${u.id}|${today}`) Object.assign(equipeSel, { uid: `${u.id}|${today}`, ids: new Set(membres.map(m => m.id)), vus: new Set(membres.map(m => m.id)) });
+  membres.forEach(m => { if (!equipeSel.vus.has(m.id)) { equipeSel.vus.add(m.id); equipeSel.ids.add(m.id); } });
+  const coches = membres.filter(m => equipeSel.ids.has(m.id));
+  const enCours = coches.filter(m => enCoursDe(m.id)), aDemarrer = coches.filter(m => !enCoursDe(m.id));
+  const plusieurs = membres.length > 1;
+  const bloc = `<div class="card punch ${enCoursDe(u.id) ? 'running' : ''}">
       <ul class="team-list">${membres.map(m => {
         const ec = enCoursDe(m.id), jour = sumBy(Store.all('temps').filter(t => t.userId === m.id && t.date === today), t => num(t.heures));
-        return `<li><label><input type="checkbox" data-sel="${m.id}" ${equipeSel.ids.has(m.id) ? 'checked' : ''}> <span><strong>${esc(m.nom)}</strong>${m.id === u.id ? ' <span class="muted small">(moi)</span>' : ''} ${interimBadge(m)}<br>
-          <span class="small ${ec ? 'pos' : 'muted'}">${ec ? `Au travail depuis ${esc(ec.debut)} · ${esc(affaireOf(ec.affaireId).code || '')}` : jour ? `${fmt(jour, 2)} h aujourd'hui` : 'Pas encore pointé'}</span></span></label></li>`;
+        return `<li><label>${plusieurs ? `<input type="checkbox" data-sel="${m.id}" ${equipeSel.ids.has(m.id) ? 'checked' : ''}> ` : ''}<span><strong>${esc(m.nom)}</strong>${m.id === u.id ? ' <span class="muted small">(moi)</span>' : ''} ${interimBadge(m)}<br>
+          <span class="small ${ec ? 'pos' : 'muted'}">${ec ? `Au travail depuis ${esc(ec.debut)}${ec.date !== today ? ` (le ${dateFr(ec.date)})` : ''} · ${esc(affaireOf(ec.affaireId).code || '')} ${esc(affaireOf(ec.affaireId).nom || '')}` : jour ? `${fmt(jour, 2)} h aujourd'hui` : 'Pas encore pointé'}</span></span></label>
+          ${m.id === u.id ? '' : `<button class="icon" data-sansavec="${m.id}" title="Retirer de mon pointage" aria-label="Retirer ${esc(m.nom)}">✕</button>`}</li>`;
       }).join('')}</ul>
-      <button class="secondary small" id="p-interim">+ Intérimaire avec nous aujourd'hui</button>
-      ${sansPlanning}
-      <div class="field"><label>Chantier</label>${choixChantier('p-aff', dernier.affaireId)}</div>
-      ${chips(dernier.tache)}
-      ${panierBox}
-      <button class="big" id="p-start-team" ${aDemarrer.length && chantiersActifs().length ? '' : 'disabled'}>Commencer pour ${aDemarrer.length} personne${aDemarrer.length > 1 ? 's' : ''}</button>
-      <button class="big danger" id="p-stop-team" ${enCours.length ? '' : 'disabled'}>Terminer pour ${enCours.length} personne${enCours.length > 1 ? 's' : ''}</button>
-    </div>`;
-  } else {
-    const ec = enCoursDe(u.id), af = ec && affaireOf(ec.affaireId);
-    // Intérimaire avec moi aujourd'hui : commencé et terminé en même temps que moi
-    const avec = avecMoi(u.id, today);
-    const avecHtml = `<div class="avec-moi">${avec.map(id => `<span class="chip-avec">👷 ${esc(userName(id))}${enCoursDe(id) ? ' <span class="small pos">au travail</span>' : ''} <button class="icon" data-sansavec="${id}" aria-label="Retirer ${esc(userName(id))}">✕</button></span>`).join('')}
-      <button class="secondary small" id="p-interim">+ Intérimaire avec moi aujourd'hui</button></div>`;
-    bloc = ec ? `<div class="card punch running">
-        <div class="label">Au travail depuis ${esc(ec.debut)}${ec.date !== today ? ` (le ${dateFr(ec.date)})` : ''}</div>
-        <div class="punch-site">${esc(af.code || '')} – ${esc(af.nom || 'Chantier')}</div>
-        ${ec.tache ? `<div class="muted">${esc(ec.tache)}${ec.panier ? ' · panier' : ''}</div>` : ''}
-        ${avecHtml}
-        <button class="big danger" id="p-stop">Terminer${avec.length ? ` pour ${avec.length + 1} personnes` : ''}</button>
-        <button class="secondary" id="p-switch">Changer de chantier</button>
-      </div>`
-      : `<div class="card punch">
- ${sansPlanning}
+      <div class="avec-moi"><button class="secondary small" id="p-collegue">+ Collègue avec moi</button><button class="secondary small" id="p-interim">+ Intérimaire avec moi</button></div>
+      ${aDemarrer.length ? `${sansPlanning}
         <div class="field"><label>Chantier</label>${choixChantier('p-aff', dernier.affaireId)}</div>
         ${chips(dernier.tache)}
         ${panierBox}
-        ${avecHtml}
-        <button class="big" id="p-start" ${chantiersActifs().length ? '' : 'disabled'}>Commencer${avec.length ? ` pour ${avec.length + 1} personnes` : ''}</button>
-      </div>`;
-  }
+        <button class="big" id="p-start" ${chantiersActifs().length ? '' : 'disabled'}>Commencer${aDemarrer.length > 1 ? ` pour ${aDemarrer.length} personnes` : ''}</button>` : ''}
+      ${enCours.length ? `<button class="big danger" id="p-stop">Terminer${enCours.length > 1 ? ` pour ${enCours.length} personnes` : ''}</button>
+        <button class="secondary" id="p-switch">Changer de chantier</button>` : ''}
+    </div>`;
 
   return `<div class="pointage">
     <h1>Pointage</h1>
-    ${Store.me.role !== 'atelier' ? `<div class="field"><label for="p-pour">Pointer en tant que</label><select id="p-pour">${options(operateurs(), u.id, x => x.nom + (equipeDe(x.id).length ? ` (chef d'équipe, ${equipeDe(x.id).length} pers.)` : ''), false)}</select></div>` : ''}
+    ${Store.me.role !== 'atelier' ? `<div class="field"><label for="p-pour">Pointer en tant que</label><select id="p-pour">${options(operateurs(), u.id, x => x.nom, false)}</select></div>` : ''}
     ${pointageTabs('heures', u.id)}
     <p class="hello">Bonjour ${esc(u.nom.split(' ')[0])} · ${esc(dateLongue)}</p>
     ${prevu.length ? `<div class="card pl-aujourdhui"><div class="label">Prévu aujourd'hui</div>
@@ -354,10 +354,6 @@ Views.pointage = (params, query) => {
     <button class="secondary jr-ouvrir" id="p-journee2">📝 ${reelJour(u.id, today).length ? 'Modifier ma journée' : 'Saisir ma journée'} : plusieurs chantiers, journée différente du planning, intérimaire</button>
 
     ${semaineCompagnon(u)}
-    ${team.length ? `<h2>Mon équipe cette semaine</h2><div class="card"><ul class="punch-list">${team.map(m => {
-      const ts = Store.all('temps').filter(t => t.userId === m.id && isoWeek(new Date(t.date)) === week);
-      return `<li><div><strong>${esc(m.nom)}</strong> ${interimBadge(m)}<br><span class="muted small">${ts.filter(t => t.panier).length} panier(s) · ${ts.filter(t => !t.statut).length} pointage(s) à valider</span></div><div class="num"><strong>${fmt(sumBy(ts, t => num(t.heures)), 2)} h</strong></div></li>`;
-    }).join('')}</ul></div>` : ''}
   </div>`;
 };
 
@@ -393,36 +389,27 @@ Views.pointage.bind = (root, params, query) => {
     return true;
   };
 
-  const auj = isoDate(new Date()), avec = () => avecMoi(uid, auj);
-  on('#p-start', () => { if (!chantierOk()) return; const ids = [uid, ...avec().filter(id => !enCoursDe(id))]; demarrer(ids); App.render(); App.toast(ids.length > 1 ? `${ids.length} personnes pointées` : 'Bonne journée !'); });
+  const auj = isoDate(new Date()), avec = () => avecMoi(uid, auj).filter(id => id !== uid);
+  const coches = () => [uid, ...avec()].filter(id => equipeSel.ids.has(id));
+  on('#p-start', () => { if (!chantierOk()) return; const ids = coches().filter(id => !enCoursDe(id)); demarrer(ids); App.render(); App.toast(ids.length > 1 ? `${ids.length} personnes pointées` : 'Bonne journée !'); });
   on('#p-journee', () => saisirJournee(auj, [uid]));
   on('#p-journee2', () => journeeCompagnon(auj, [uid]));
-  const lesMiens = () => [enCoursDe(uid), ...avec().map(enCoursDe)].filter(Boolean);
-  on('#p-stop', async () => { if (await terminer(lesMiens())) App.render(); });
-  on('#p-switch', async () => { if (await terminer(lesMiens())) App.render(); });
-  on('#p-interim', async () => {
-    const u = await choisirInterimaire({ date: auj, affaireId: (root.querySelector('#p-aff') || {}).value || (enCoursDe(uid) || {}).affaireId, exclure: [uid, ...avec(), ...equipeDe(uid).map(x => x.id)] });
+  const enCoursCoches = () => coches().map(enCoursDe).filter(Boolean);
+  on('#p-stop', async () => { if (await terminer(enCoursCoches())) App.render(); });
+  on('#p-switch', async () => { if (await terminer(enCoursCoches())) App.render(); });
+  // Ajout d'une personne : si je suis déjà au travail, elle commence maintenant sur le même chantier (sauf si elle a déjà pointé)
+  const ajouter = u => {
     if (!u) return;
-    majAvecMoi(uid, auj, [...avec(), u.id]);
-    if (equipeDe(uid).length) equipeSel.ids.add(u.id);
-    // Déjà au travail : l'intérimaire commence maintenant sur le même chantier
-    const ec = !equipeDe(uid).length && enCoursDe(uid);
-    if (ec && !enCoursDe(u.id)) { Store.upsert('temps', { userId: u.id, affaireId: ec.affaireId, date: auj, debut: nowHHMM(), fin: '', pause: 0, heures: 0, tache: ec.tache, panier: ec.panier, statut: '', saisiPar }); App.toast(`${u.nom} pointé avec vous depuis ${nowHHMM()}`); }
+    majAvecMoi(uid, auj, [...avec(), u.id]); equipeSel.ids.add(u.id);
+    const ec = enCoursDe(uid);
+    if (ec && !reelJour(u.id, auj).length) { Store.upsert('temps', { userId: u.id, affaireId: ec.affaireId, date: auj, debut: nowHHMM(), fin: '', pause: 0, heures: 0, tache: ec.tache, panier: ec.panier, statut: '', saisiPar }); App.toast(`${u.nom} pointé avec vous depuis ${nowHHMM()}`); }
     App.render();
-  });
+  };
+  const affaireCourante = () => (root.querySelector('#p-aff') || {}).value || (enCoursDe(uid) || {}).affaireId;
+  on('#p-interim', async () => ajouter(await choisirInterimaire({ date: auj, affaireId: affaireCourante(), exclure: [uid, ...avec()] })));
+  on('#p-collegue', async () => ajouter(await choisirCollegue({ date: auj, exclure: [uid, ...avec()] })));
   root.querySelectorAll('[data-sansavec]').forEach(b => b.onclick = () => { majAvecMoi(uid, auj, avec().filter(id => id !== b.dataset.sansavec)); App.render(); });
-  root.querySelectorAll('[data-filtre]').forEach(b => b.onclick = () => { equipeSel.filtre = b.dataset.filtre; App.render(); });
   root.querySelectorAll('[data-sel]').forEach(cb => cb.onchange = () => { cb.checked ? equipeSel.ids.add(cb.dataset.sel) : equipeSel.ids.delete(cb.dataset.sel); App.render(); });
-  const visibles = () => [...root.querySelectorAll('[data-sel]')].filter(cb => cb.checked).map(cb => cb.dataset.sel);
-  on('#p-start-team', () => {
-    if (!chantierOk()) return;
-    const ids = visibles().filter(id => !enCoursDe(id));
-    demarrer(ids); App.render(); App.toast(`${ids.length} personne(s) pointée(s)`);
-  });
-  on('#p-stop-team', async () => {
-    const entries = visibles().map(enCoursDe).filter(Boolean);
-    if (entries.length && await terminer(entries)) App.render();
-  });
   // Chantier : « nouvelle intervention hors devis » ouvre le formulaire
   const aff = root.querySelector('#p-aff');
   const choisie = a => { chantierChoisi = a.id; App.render(); };

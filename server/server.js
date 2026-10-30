@@ -87,13 +87,13 @@ function canDelete(acc, col, existing) {
   return canWrite(acc, col);
 }
 
-// Personnes pour lesquelles un opérateur peut pointer : lui-même, son équipe (chef d'équipe -> intérimaires, compagnons)
-// et les intérimaires (sans accès, pointés par le compagnon avec qui ils ont travaillé)
+// Personnes pour lesquelles un opérateur peut pointer : lui-même, ses collègues de chantier et les intérimaires (sans accès)
 function pointablePour(acc) {
   if (!acc.user_id) return [];
-  const team = db.prepare("SELECT id, data FROM records WHERE col = 'users'").all()
-    .filter(r => { const u = JSON.parse(r.data); return u.chefId === acc.user_id || u.type === 'interimaire'; }).map(r => r.id);
-  return [acc.user_id, ...team];
+  // Tout compagnon peut pointer un collègue ou un intérimaire qui a travaillé avec lui (pas le bureau) ; le bureau valide
+  const autres = db.prepare("SELECT id, data FROM records WHERE col = 'users'").all()
+    .filter(r => { const u = JSON.parse(r.data); return !['charge', 'admin'].includes(u.role); }).map(r => r.id);
+  return [acc.user_id, ...autres];
 }
 // Règles opérateur : pointages pour soi ou son équipe, notes de frais pour soi, rien de validé ne se modifie
 function atelierRefus(acc, col, obj, existing) {
@@ -667,10 +667,15 @@ async function api(req, res, url) {
           obj = { ...DB.clean(existing), statut: obj.statut, dateLevee: obj.dateLevee, photoLeveeId: obj.photoLeveeId, commentaireLevee: obj.commentaireLevee, pvLeveeId: obj.pvLeveeId };
         }
         if (col === 'affaires' && estCompagnon(acc)) {
-          const hd = ReglesPointage.horsDevisCompagnon(obj, existing, acc.user_id, ReglesPointage.jourIso(new Date()));
+          const hd = ReglesPointage.horsDevisCompagnon(obj, existing, acc.user_id, ReglesPointage.jourIso(new Date()),
+            { nom: acc.nom || acc.login, affaires: recordsDe('affaires'), nomClient: id => (DB.getRecord(db, 'entreprises', id) || {}).nom || '' });
+          if (hd.doublon) return { doublon: hd.refus, id: hd.doublon };
           if (hd.refus) return { forbidden: hd.refus };
           obj = hd.obj;
         }
+        // Traçabilité : qui a créé le chantier ou l'intervention, et quand
+        if (col === 'affaires' && !existing && !obj.creeLe) Object.assign(obj, { creePar: acc.nom || acc.login, creeParId: acc.user_id || '', creeLe: new Date().toISOString() });
+        if (col === 'affaires' && existing) ['creePar', 'creeParId', 'creeLe'].forEach(k => { if (existing[k]) obj[k] = existing[k]; });
         const refus = col === 'affaires' ? null : atelierRefus(acc, col, obj, existing);
         if (refus) return { forbidden: refus };
         // Fiche d'intervention fluides envoyée ou signée : rubriques réglementaires complètes
@@ -697,6 +702,7 @@ async function api(req, res, url) {
         return { record: DB.getRecord(db, col, id), avant: existing };
       });
       if (result.forbidden) return fail(res, 403, result.forbidden);
+      if (result.doublon) return fail(res, 409, result.doublon, { doublon: pourCompagnon(acc, 'affaires', DB.getRecord(db, 'affaires', result.id)) });
       if (result.invalide) return fail(res, 400, result.invalide);
       if (result.conflict) {
         return fail(res, 409, `Modifié entre-temps par ${result.conflict._by || 'un autre utilisateur'}`, { record: pourCompagnon(acc, col, result.conflict) });
