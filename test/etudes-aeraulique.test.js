@@ -150,3 +150,27 @@ test('débits théoriques bouche par bouche (relevé d\'équilibrage) et type de
   const M = require('../public/js/materiel-retenu');
   assert.deepStrictEqual(['aero|cta-df|3000', 'aero|extraction|900', 'gen|chaudiere-cond|150', 'gen|pac-air|80', 'pompe|x', 'vanne|2v|25|10'].map(M.typeMes), ['cta', 'vmc', 'chaudiere', 'pac', 'pompes', 'autre']);
 });
+
+test('réseau aéraulique arborescent : antennes et ramifications, débits cumulés, registres, chemin défavorisé', () => {
+  const e = { ...N.defauts('aero'), structure: 'arborescence' }, r = N.calculer('aero', e), v = r.valeurs;
+  assert.deepStrictEqual([v.Qs, v.Qr], [3000, 2900], 'débits cumulés depuis les bouches');
+  const arbre = r.tableaux.find(t => /Arborescence du réseau de soufflage/.test(t.titre)).lignes;
+  const ligne = rep => arbre.find(l => l[0].startsWith(`${rep} —`));
+  assert.deepStrictEqual([ligne('S')[2], ligne('S1')[2], ligne('S2')[2]].map(x => x.replace(/\s/g, '')), ['3000', '1600', '1400']);
+  assert.strictEqual(ligne('S1.1')[1], 'S1');
+  // Registres : un par branche terminale ; la plus défavorisée ne dissipe que le minimum
+  assert.strictEqual(v.registres.length, 7);
+  assert.ok(v.registres.some(x => Math.round(x.dp) === 10), 'branche la plus défavorisée : 10 Pa');
+  assert.ok(v.registres.every(x => x.dp >= 10));
+  // Pression du ventilateur = besoin à l'entrée de la gaine principale + composants, avec la marge
+  assert.ok(Math.abs(v.dpReseauS - Number(ligne('S')[8].replace(/\s/g, ''))) <= 1);
+  // Métré : chaque tronçon une seule fois (pas d'antenne ajoutée en double)
+  assert.strictEqual(v.troncons.length, 12);
+  assert.deepStrictEqual(r.schemas.map(s => s.titre), ['Arborescence du réseau de soufflage', 'Arborescence du réseau de reprise']);
+  // Partenaires au pied des antennes : registres supplémentaires
+  assert.ok(N.calculer('aero', { ...e, registres: 'antennes' }).valeurs.registres.length > 7);
+  // Erreurs : amont inconnu, boucle
+  const err = N.calculer('aero', { ...e, troncons: [{ rep: 'A', reseau: 'soufflage', amont: 'X', L: 5, n: 2, Q: 300 }, { rep: 'B', reseau: 'soufflage', amont: 'C', L: 5 }, { rep: 'C', reseau: 'soufflage', amont: 'B', L: 5 }] });
+  const t = err.alertes.map(a => a.texte).join(' | ');
+  assert.match(t, /A : tronçon amont « X » introuvable/); assert.match(t, /boucle/);
+});
