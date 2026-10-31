@@ -1126,3 +1126,9 @@ th.col-th { position: relative; }
 .team-list li { display: flex; align-items: flex-start; gap: 6px; }
 .team-list li > label { flex: 1; min-width: 0; }
 .team-list li > button.icon { font-size: 18px; padding: 4px 10px; }
+/* Choix des fournisseurs à consulter */
+.cf-ligne { align-items: flex-start; justify-content: flex-start; cursor: pointer; }
+.cf-ligne input { width: 20px; height: 20px; flex: none; margin-top: 2px; }
+.cf-ligne span { white-space: normal; min-width: 0; }
+label.cf-ligne { display: flex; gap: 10px; width: 100%; margin-top: 6px; padding: 8px 10px; background: var(--panel-alt); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-weight: 400; }
+.dialog-box:has(.rc) { width: min(680px, 100%); max-width: 680px; }

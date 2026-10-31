@@ -63,6 +63,10 @@ métré (bibliothèque de prix) et y dépose ses notes de calcul (catégorie « 
 
 ## Demandes de prix, offres des fournisseurs et commandes
 
+- **Fournisseurs à consulter** (« 🔍 Ajouter des fournisseurs… ») : recherche par mots (nom, secteur, ville, département,
+  contact, familles d'articles livrées d'après la bibliothèque), filtres secteur / famille / département / « déjà commandé
+  (12 mois) », plusieurs cochés d'un coup. Les fournisseurs habituels des articles de la demande, puis les plus commandés,
+  passent devant ; chaque ligne montre ses commandes de l'année et l'absence d'e-mail.
 - **Lignes de la consultation** : fournitures du devis du chantier pas encore commandées, d'un chiffrage depuis plan, de la
   bibliothèque, dictées ou saisies, ou **matériel demandé par les compagnons** dans leurs rapports d'intervention (30 derniers
   jours ; texte repris, articles reconnus dans la bibliothèque et vérifiés avant ajout).

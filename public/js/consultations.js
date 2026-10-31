@@ -54,6 +54,49 @@ function besoinsRapports(affaireId) {
   return Store.all('rapports').filter(r => r.affaireId === affaireId && String(r.besoins || '').trim() && (r.date || '') >= depuis).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 }
 
+// Choix des fournisseurs à consulter : recherche (nom, secteur, ville, contact, familles livrées), filtres, plusieurs à la fois.
+// Les fournisseurs habituels des articles de la demande puis les plus commandés (12 mois) passent devant.
+const filtresFourn = { secteur: '', famille: '', dep: '', dejaCommande: false };
+function choisirFournisseurs(c) {
+  const deja = new Set((c.fournisseurs || []).map(f => f.entrepriseId));
+  const fiches = RechercheFournisseurs.indexer({ fournisseurs: fournisseursList().filter(e => e.categorie !== 'Maîtrise d\'œuvre' && !deja.has(e.id)), articles: Store.all('articles'),
+    commandes: Store.all('commandes'), contacts: Store.all('contacts'), depuis: isoDate(addDays(new Date(), -365)) });
+  const artsDemande = (c.lignes || []).map(l => l.articleId).filter(Boolean);
+  const famillesDemande = [...new Set(artsDemande.map(id => (Store.get('articles', id) || {}).famille).filter(Boolean))];
+  const secteurs = [...new Set(fiches.map(f => f.e.secteur).filter(Boolean))].sort();
+  const familles = [...new Set([...famillesDemande, ...fiches.flatMap(f => f.familles)])];
+  const deps = [...new Set(fiches.flatMap(f => f.deps))].sort();
+  if (filtresFourn.famille && !familles.includes(filtresFourn.famille)) filtresFourn.famille = '';
+  const choisis = new Set();
+  const sel = (id, lib, liste, v) => (liste.length ? `<select id="${id}" aria-label="${lib}"><option value="">${lib}</option>${liste.map(x => `<option value="${esc(x)}" ${x === v ? 'selected' : ''}>${esc(x)}${famillesDemande.includes(x) && id === 'cf-fam' ? ' (dans la demande)' : ''}</option>`).join('')}</select>` : '');
+  return dialog(`<div class="rc"><h2 style="margin-top:0">🔍 Fournisseurs à consulter</h2>
+    <input id="cf-q" type="search" placeholder="Nom, secteur, ville, contact, famille d'articles…" autocomplete="off">
+    <div class="rc-filtres">${sel('cf-sect', 'Tous les secteurs', secteurs, filtresFourn.secteur)}${sel('cf-fam', 'Toutes les familles', familles, filtresFourn.famille)}${sel('cf-dep', 'Tous les départements', deps, filtresFourn.dep)}
+      <label class="check"><input type="checkbox" id="cf-cde" ${filtresFourn.dejaCommande ? 'checked' : ''}> Déjà commandé (12 mois)</label></div>
+    <div id="cf-res" class="rc-res"></div>
+    <div class="modal-actions"><span id="cf-n" class="muted small"></span><span style="flex:1"></span><button type="button" class="secondary" id="cf-x">Annuler</button><button type="button" id="cf-ok" disabled>Ajouter</button></div></div>`,
+  (wrap, done) => {
+    const $ = s => wrap.querySelector(s), q = $('#cf-q');
+    const majBouton = () => { $('#cf-ok').disabled = !choisis.size; $('#cf-ok').textContent = choisis.size ? `Ajouter ${choisis.size} fournisseur${choisis.size > 1 ? 's' : ''}` : 'Ajouter'; };
+    const maj = () => {
+      const res = RechercheFournisseurs.filtrer(fiches, { q: q.value, ...filtresFourn }, artsDemande);
+      $('#cf-n').textContent = `${res.length} fournisseur(s) sur ${fiches.length}`;
+      $('#cf-res').innerHTML = res.slice(0, 80).map(f => `<label class="ligne-t cf-ligne"><input type="checkbox" data-cf="${f.e.id}" ${choisis.has(f.e.id) ? 'checked' : ''}>
+        <span><strong>${esc(f.e.nom)}</strong>${f.habituel ? ` <span class="badge b-ok">habituel · ${f.habituel} article(s) de la demande</span>` : ''}
+          <br><span class="small muted">${[f.e.secteur, f.villes.slice(0, 2).join(', '), f.familles.slice(0, 4).join(', ')].filter(Boolean).map(esc).join(' · ')}${f.nbCommandes ? ` · ${f.nbCommandes} commande(s), dernière le ${dateFr(f.derniere)}` : ''}${f.e.email ? '' : ' · <span class="warn-text">pas d\'e-mail</span>'}</span></span></label>`).join('')
+        + (res.length > 80 ? `<p class="small muted">${res.length - 80} autre(s) : précisez la recherche.</p>` : '') || '<p class="muted">Aucun fournisseur ne correspond.</p>';
+      wrap.querySelectorAll('[data-cf]').forEach(cb => cb.onchange = () => { cb.checked ? choisis.add(cb.dataset.cf) : choisis.delete(cb.dataset.cf); majBouton(); });
+    };
+    q.oninput = maj;
+    [['#cf-sect', 'secteur'], ['#cf-fam', 'famille'], ['#cf-dep', 'dep']].forEach(([s, k]) => { const el = $(s); if (el) el.onchange = () => { filtresFourn[k] = el.value; maj(); }; });
+    $('#cf-cde').onchange = () => { filtresFourn.dejaCommande = $('#cf-cde').checked; maj(); };
+    $('#cf-x').onclick = () => done(null);
+    $('#cf-ok').onclick = () => done([...choisis]);
+    maj(); majBouton();
+    setTimeout(() => q.focus(), 50);
+  });
+}
+
 function nouvelleConsultation(base = {}) {
   return Store.upsert('consultations', { ref: '', objet: '', affaireId: '', date: isoDate(new Date()), dateLimite: isoDate(addDays(new Date(), 7)), dateLivraison: '', statut: 'En cours', lignes: [], fournisseurs: [], ...base });
 }
@@ -99,7 +142,7 @@ function consultationEditeur(id) {
         <td class="nowrap"><button class="small secondary" data-pdf="consultation|${esc(id)}">PDF</button><button class="small secondary" data-xls="${esc(f.entrepriseId)}">Excel</button>${['admin', 'charge'].includes(Store.me.role) ? `<button class="small" data-mail="consultation|${esc(id)}">✉ Envoyer</button>` : ''}
           <button class="small secondary" data-offre="${esc(f.entrepriseId)}">${f.statut === 'Offre reçue' ? 'Modifier l\'offre' : 'Saisir l\'offre'}</button><label class="btn small secondary" title="PDF ou photo du devis du fournisseur, ou tableau Excel complété">Importer l'offre (PDF, Excel)<input type="file" data-import="${esc(f.entrepriseId)}" accept=".pdf,.xlsx,.csv,image/*" hidden></label>
           ${off.pieceId ? `<a class="btn small secondary" href="${fileUrl(off.pieceId)}${off.pieceNom ? `?nom=${encodeURIComponent(off.pieceNom)}` : ''}" target="_blank" rel="noopener" title="Offre reçue, reprise d'office dans la commande et jointe à son envoi">📎 Offre</a>` : ''}${ouverte && f.statut === 'À consulter' ? `<button class="small danger" data-fdel="${esc(f.entrepriseId)}" aria-label="Retirer">✕</button>` : ''}</td></tr>`; }).join('') || '<tr><td colspan="6" class="muted">Ajoutez les fournisseurs à consulter.</td></tr>'}</table></div>
-  ${ouverte ? `<div class="toolbar"><select id="cs-four" style="width:auto"><option value="">+ Ajouter un fournisseur…</option>${fournisseursList().filter(e => !fs.some(f => f.entrepriseId === e.id)).map(e => `<option value="${e.id}">${esc(e.nom)}</option>`).join('')}</select>
+  ${ouverte ? `<div class="toolbar"><button id="cs-four">🔍 Ajouter des fournisseurs…</button>
     ${(() => { const hab = [...new Set(lignes.map(l => (Store.get('articles', l.articleId) || {}).fournisseurId).filter(x => x && !fs.some(f => f.entrepriseId === x)))]; return hab.length ? `<button class="secondary small" id="cs-hab">Ajouter les fournisseurs habituels (${hab.length})</button>` : ''; })()}</div>` : ''}
 
   ${an.offres.length ? `<h2>Analyse des offres</h2>${propositionHtml(c)}
@@ -246,8 +289,12 @@ Views.consultations.bind = (root, params, query) => {
     ajout.forEach(x => { const ex = c.lignes.find(l => (l.articleId && l.articleId === x.articleId) || (!x.articleId && l.designation === x.designation)); if (ex) ex.qte = x.qte; else c.lignes.push(x); });
     save(); App.toast(`${ajout.length} fourniture(s) reprise(s)`);
   };
-  const four = q('#cs-four');
-  if (four) four.onchange = () => { if (four.value) { c.fournisseurs.push({ entrepriseId: four.value, statut: 'À consulter' }); save(); } };
+  on('#cs-four', async () => {
+    const ids = await choisirFournisseurs(c);
+    if (!ids || !ids.length) return;
+    ids.forEach(eid => { if (!c.fournisseurs.some(f => f.entrepriseId === eid)) c.fournisseurs.push({ entrepriseId: eid, statut: 'À consulter' }); });
+    save(); App.toast(`${ids.length} fournisseur(s) ajouté(s) à la demande de prix`);
+  });
   on('#cs-hab', () => { [...new Set(c.lignes.map(l => (Store.get('articles', l.articleId) || {}).fournisseurId).filter(Boolean))].forEach(eid => { if (!c.fournisseurs.some(f => f.entrepriseId === eid)) c.fournisseurs.push({ entrepriseId: eid, statut: 'À consulter' }); }); save(); });
   root.querySelectorAll('[data-fdel]').forEach(b => b.onclick = () => { c.fournisseurs = c.fournisseurs.filter(f => f.entrepriseId !== b.dataset.fdel); save(); });
   root.querySelectorAll('[data-fstatut]').forEach(el => el.onchange = () => { const f = c.fournisseurs.find(x => x.entrepriseId === el.dataset.fstatut); f.statut = el.value; save(); });
