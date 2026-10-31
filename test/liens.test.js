@@ -165,3 +165,23 @@ test('étude sans chantier : visible dans le CRM, reliée au chantier ou au devi
   await call(etBase, 'DELETE', '/api/etudes/et-av3', {}, c);
   assert.ok(await attendre(async () => !(await call(pfBase, 'GET', '/api/liens?app=etudes', null, pfJacky)).body.some(x => x.id === 'et-av3')));
 });
+
+test('matériel retenu des études : visible sur le chantier par les compagnons, refusés écartés, réglage respecté', async () => {
+  const materiel = [
+    { cle: 'aero|cta-df|3000', chapitre: 'Aéraulique', designation: 'Centrale de traitement d\'air 3 000 m³/h double flux', qte: 1, fabricant: 'France Air', reference: 'CTA-X 3000 DF', statut: 'Validé', dateValidation: '2026-10-30' },
+    { cle: 'bouche|plafond|160', chapitre: 'Aéraulique', designation: 'Diffuseur plafond col Ø 160', qte: 8, fabricant: 'Aldes', reference: 'DFC 160', statut: 'Soumis au client' },
+    { cle: 'pompe|x', chapitre: 'Équipements hydrauliques', designation: 'Pompe', qte: 1, fabricant: 'Wilo', reference: 'Stratos 40/1-8', statut: 'Refusé' },
+  ];
+  assert.strictEqual((await call(pfBase, 'PUT', '/api/liens/etudes/et-mat', { affaireId: 'af-mat', resume: { objet: 'CTA bureaux', materiel } }, pfJacky)).status, 200);
+  const r = await call(pfBase, 'GET', '/api/liens/materiel?affaireId=af-mat', null, pfMarc);
+  assert.strictEqual(r.status, 200, 'compagnon autorisé');
+  assert.deepStrictEqual(r.body.map(m => [m.reference, m.valide]), [['CTA-X 3000 DF', true], ['DFC 160', false]]);
+  assert.strictEqual(r.body[0].etude, 'CTA bureaux');
+  // Réglage « matériel » décoché pour les compagnons : rien ; le bureau voit toujours
+  const admin = (await call(pfBase, 'POST', '/api/login', { login: 'admin', password: 'admin-test-pw' })).cookie;
+  const s = (await call(pfBase, 'GET', '/api/data', null, admin)).body.settings || {};
+  await call(pfBase, 'PUT', '/api/settings', { ...s, compagnon: { ...(s.compagnon || {}), materiel: false } }, admin);
+  assert.deepStrictEqual((await call(pfBase, 'GET', '/api/liens/materiel?affaireId=af-mat', null, pfMarc)).body, []);
+  assert.strictEqual((await call(pfBase, 'GET', '/api/liens/materiel?affaireId=af-mat', null, pfJacky)).body.length, 2);
+  await call(pfBase, 'PUT', '/api/settings', s, admin);
+});

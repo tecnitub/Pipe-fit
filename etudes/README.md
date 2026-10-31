@@ -87,6 +87,15 @@ les équipements de l'étude ». Un CCTP scanné (sans texte) ne se lit pas : de
   bibliothèque de prix ; article modifiable poste par poste, export CSV, puis **devis brouillon créé dans Pipe-Fit** pour
   l'affaire (client, contact, site, TVA du client, ouvrages fournitures + main-d'œuvre, postes sans article « hors
   bibliothèque » à prix nul).
+- **Matériel retenu** (« 🏷️ Matériel retenu » sur une étude) : pour chaque équipement dimensionné (CTA, caissons,
+  bouches, générateurs, pompes, vannes, vases…) et pour le matériel ajouté à la main, le **fabricant et la référence
+  exacte** choisis, puis le statut de validation par le client ou la maîtrise d'œuvre (à choisir, à soumettre, soumis
+  au client, validé, validé avec réserves, refusé), dates, observations et lien vers la fiche technique. **Liste à faire
+  valider** en PDF (une case d'avis par ligne, cadre de visa « bon pour accord ») et en CSV. Une nouvelle référence
+  repasse « à soumettre » ; un équipement dont la dimension change garde son ancienne saisie, signalée « à reprendre ».
+  La référence complète la désignation du métré, donc du devis. Dans Pipe-Fit, la fiche du chantier (bureau) et l'appli
+  des compagnons affichent le matériel retenu : ce qu'il faut poser, validé ou en attente de validation (refusés
+  écartés ; réglage « Matériel prévu au devis » des compagnons).
 - **Ratios du métré et calage sur le REX** (Réglages, administrateur) : heures de pose par mètre (a + b × DN) par
   matériau, calorifuge, gaines, heures par équipement, raccords et supports par mètre, chutes, forfait d'études ;
   « Caler sur le REX Pipe-Fit » lit les chantiers terminés (heures prévues aux devis acceptés et heures pointées, par
@@ -135,6 +144,7 @@ etudes/public/js/equilibrage.js réseau arborescent, circuit le plus défavoris�
 etudes/public/js/inventaire.js  inventaire de l'étude d'après le CCTP et le DPGF (lecture, vérification, préremplissage) ; reconnaissance dans public/js/inventaire-cvc.js
 etudes/public/js/cables.js     dimensionnement des câbles (courant admissible, chute de tension cumulée, longueur protégée)
 etudes/public/js/electricite.js alimentation électrique (attentes, armoires CVC, départs, bilan), régulation (points, analyse fonctionnelle), schéma unifilaire
+etudes/public/js/materiel.js  matériel retenu (fabricant, référence exacte, validation du client, liste PDF) ; règles dans public/js/materiel-retenu.js
 etudes/public/js/aeraulique-schema.js schéma de principe aéraulique (CTA ou caisson, gaines, bouches, ventilateurs)
 etudes/public/js/cta.js      centrale de traitement d'air (psychrométrie, schéma), bouches, bilan acoustique
 etudes/rex.js                retour d'expérience Pipe-Fit (heures prévues / pointées) pour le calage du métré

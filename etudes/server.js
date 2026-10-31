@@ -20,7 +20,7 @@ const PARTAGES = { '/shared/pdf.js': path.join(__dirname, '..', 'public', 'js', 
   '/shared/pdf-lib.min.js': path.join(__dirname, '..', 'doe', 'public', 'vendor', 'pdf-lib-1.17.1.min.js'),
   '/logo-tecnitub.png': path.join(__dirname, '..', 'doe', 'public', 'logo-tecnitub.png'),
   // Lecture du CCTP et du DPGF (inventaire des producteurs et émetteurs) : texte des PDF, classeurs Excel
-  ...Object.fromEntries(['pdf-lecture.js', 'cctp-lecture.js', 'xlsx.js', 'inventaire-cvc.js'].map(f => [`/shared/${f}`, path.join(__dirname, '..', 'public', 'js', f)])),
+  ...Object.fromEntries(['pdf-lecture.js', 'cctp-lecture.js', 'xlsx.js', 'inventaire-cvc.js', 'materiel-retenu.js'].map(f => [`/shared/${f}`, path.join(__dirname, '..', 'public', 'js', f)])),
   ...Object.fromEntries(['pdf.min.js', 'pdf.worker.min.js'].map(f => [`/vendor/pdfjs/${f}`, path.join(__dirname, '..', 'public', 'vendor', 'pdfjs', f)])) };
 const MAX_JSON = 25 * 1024 * 1024, SESSION_JOURS = 14; // note de calcul PDF transmise en JSON (base64)
 const ROLES_ETUDES = ['admin', 'charge'];

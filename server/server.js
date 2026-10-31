@@ -17,6 +17,7 @@ const API = require('./api');
 const Push = require('./push');
 const Notifs = require('./notifs');
 const Compagnon = require('../public/js/compagnon');
+const MaterielRetenu = require('../public/js/materiel-retenu');
 const NoteFrais = require('../public/js/frais');
 const ReglesPointage = require('../public/js/pointage-regles');
 const Epreuve = require('../public/js/epreuve');
@@ -520,6 +521,12 @@ async function api(req, res, url) {
 
   // État des applications Études et DOE par chantier (envoyé par leurs serveurs avec le compte de la personne ; bureau)
   if (p[0] === 'liens') {
+    // Matériel retenu par les études du chantier (fabricant, référence, validation) : aussi pour les compagnons, sans prix
+    if (p[1] === 'materiel' && !p[2] && method === 'GET') {
+      if (estCompagnon(acc) && !reglesCompagnon().materiel) return send(res, 200, []);
+      const affaireId = url.searchParams.get('affaireId') || '';
+      return send(res, 200, affaireId ? MaterielRetenu.pourChantier(LIENS.liste({ affaireId, app: 'etudes' })) : []);
+    }
     if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
     const q = k => url.searchParams.get(k) || '';
     if (!p[1] && method === 'GET') return send(res, 200, LIENS.liste({ affaireId: q('affaireId'), app: q('app'), sansChantier: q('sansChantier') === '1', devisId: q('devisId'), clientId: q('clientId') }));

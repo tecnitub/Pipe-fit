@@ -197,6 +197,7 @@ function ficheChantierCompagnon(u, id) {
       ${docs.length ? `<ul class="docs-mobile">${docs.map(d => `<li><a href="${lienDocument(d)}" target="_blank" rel="noopener"><span class="doc-ic">${iconeDoc(d.categorie)}</span>
         <span><strong>${esc(d.nom)}</strong>${[...nouveaux].some(t => t.includes(d.nom)) ? ' <span class="badge b-warn">nouveau</span>' : ''}<br><span class="small muted">${esc(d.categorie)}${d.indice ? ` · indice ${esc(d.indice)}` : ''} · ${dateFr(d.date)} · ${tailleLisible(num(d.taille))}</span></span></a></li>`).join('')}</ul>`
         : '<p class="muted small">Aucun document transmis pour ce chantier.</p>'}` : ''}
+    ${R.materiel ? `<div id="mat-retenu" data-affaire="${esc(a.id)}">${materielRetenuHtml(materielChantier.get(a.id), true)}</div>` : ''}
     ${m ? `<h2>🔩 Matériel prévu</h2>
       <div class="seg" role="group" aria-label="Affichage du matériel" style="margin-bottom:8px">${[['article', 'Total par article'], ['ouvrage', 'Par ouvrage']].map(([k, l]) => `<button type="button" data-matmode="${k}" class="${ficheCompagnonSel.mode === k ? 'on' : ''}">${l}</button>`).join('')}</div>
       ${ficheCompagnonSel.mode === 'article' ? `<ul class="mat-liste">${m.total.map((x, i, t) => `${i === 0 || t[i - 1].famille !== x.famille ? `<li class="mat-famille">${esc(x.famille)}</li>` : ''}<li><span>${esc(x.designation)}${x.ref ? ` <span class="muted small">${esc(x.ref)}</span>` : ''}</span>
@@ -209,6 +210,7 @@ function ficheChantierCompagnon(u, id) {
   </div>`;
 }
 function bindFicheChantierCompagnon(root, id) {
+  chargerMaterielRetenu(root, id);
   root.querySelectorAll('[data-matmode]').forEach(b => b.onclick = () => { ficheCompagnonSel.mode = b.dataset.matmode; App.render(); });
   // Documents vus : les notifications du chantier passent en « lues » (le badge « nouveau » reste jusqu'au prochain affichage)
   Notifs.nonLues().filter(n => n.type === 'document' && n.affaireId === id).forEach(n => Notifs.marquerLue(n));
@@ -416,7 +418,27 @@ function etudesBeHtml(a, liens) {
           <td>${esc(r.auteur || '')}${r.verificateur ? ` / ${esc(r.verificateur)}` : ' <span class="muted small">(à vérifier)</span>'}</td>
           <td>${nd ? `<a href="${lienDocument(nd)}" target="_blank" rel="noopener">🧮 indice ${esc(nd.indice || 'A')}</a>` : '<span class="muted small">pas déposée</span>'}</td>
           <td>${(r.devis || []).map(d => Store.get('devis', d.id) ? `<a href="#/devis/${esc(d.id)}">${esc(Store.get('devis', d.id).numero || d.numero || 'brouillon')}</a>` : esc(d.numero || '')).join(', ')}</td></tr>`; }).join('')}</table></div>`
-    : '<p class="muted small">Aucune étude pour l\'instant.</p>'}</div>`;
+    : '<p class="muted small">Aucune étude pour l\'instant.</p>'}${materielRetenuHtml(MaterielRetenu.pourChantier(liens), false)}</div>`;
+}
+// Matériel retenu par les études (fabricant, référence exacte, validation du client) : bureau et appli des compagnons
+const BADGE_MAT = { Validé: 'b-ok', 'Validé avec réserves': 'b-ok', 'Soumis au client': 'b-info', 'À soumettre': 'b-warn' };
+function materielRetenuHtml(ms, mobile) {
+  if (!ms || !ms.length) return mobile ? '' : '';
+  const nv = ms.filter(m => m.valide).length;
+  const ligne = m => `<span><strong>${esc(m.designation)}</strong>${m.qte ? ` <span class="muted small">× ${fmt(m.qte, 0)}</span>` : ''}<br><span class="mat-ref">${esc([m.fabricant, m.reference].filter(Boolean).join(' — '))}</span>${m.obs ? `<br><span class="small muted">${esc(m.obs)}</span>` : ''}${m.fiche ? ` <a class="small" href="${esc(m.fiche)}" target="_blank" rel="noopener">fiche technique</a>` : ''}</span>
+    <span><span class="badge ${BADGE_MAT[m.statut] || ''}">${m.valide ? '✓ ' : ''}${esc(m.statut === 'Soumis au client' || m.statut === 'À soumettre' ? 'en attente de validation' : m.statut)}</span></span>`;
+  return `<h${mobile ? 2 : 3}>🏷️ Matériel retenu <span class="muted small">${nv}/${ms.length} validé(s) par le client</span></h${mobile ? 2 : 3}>
+    ${mobile && nv < ms.length ? '<p class="small muted">Ce qui est « en attente de validation » ne se commande ni ne se pose sans l\'accord du chargé d\'affaires.</p>' : ''}
+    <ul class="mat-liste">${ms.map((m, i) => `${i === 0 || ms[i - 1].chapitre !== m.chapitre ? `<li class="mat-famille">${esc(m.chapitre || 'Équipements')}</li>` : ''}<li>${ligne(m)}</li>`).join('')}</ul>`;
+}
+// Appli des compagnons : chargé à l'affichage de la fiche du chantier
+const materielChantier = new Map();
+async function chargerMaterielRetenu(root, affaireId) {
+  const z = root.querySelector('#mat-retenu');
+  if (!z) return;
+  try { materielChantier.set(affaireId, await api('GET', `/api/liens/materiel?affaireId=${encodeURIComponent(affaireId)}`)); } catch (e) { if (!materielChantier.has(affaireId)) return; }
+  const n = document.querySelector(`#mat-retenu[data-affaire="${CSS.escape(affaireId)}"]`);
+  if (n) n.innerHTML = materielRetenuHtml(materielChantier.get(affaireId), true);
 }
 // Étude d'exécution et DOE (application DOE)
 function etudeExecutionHtml(a, l) {

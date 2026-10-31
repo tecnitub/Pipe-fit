@@ -103,7 +103,10 @@ const Metre = ((N, C, D, L, Sc) => {
     });
     const nCalc = notes.filter(n => !n.lien).length;
     if (nCalc) ajouter('be', { chapitre: 'Études', designation: 'Études d\'exécution, notes de calcul et schémas', unite: 'forfait', qte: 1, heures: lin(R.be, nCalc), mo: 'be', source: 'étude', recherche: { type: 'aucune' } });
-    return [...postes.values()].map(p => ({ ...p, qte: Math.round(p.qte * 100) / 100, heures: p.heures * (R.coefs[p.mo] ?? 1), sources: [...p.sources] }))
+    // Matériel retenu (fabricant et référence exacte choisis) : repris dans la désignation, donc dans le devis
+    const retenu = etude.materiel || {}, refDe = cle => { const x = retenu[cle]; return x && String(x.reference || '').trim() ? [x.fabricant, x.reference].map(v => String(v || '').trim()).filter(Boolean).join(' ') : ''; };
+    return [...postes.entries()].map(([cle, p]) => ({ ...p, cle, designationBase: p.designation, ...(p.unite === 'u' && refDe(cle) ? { designation: `${p.designation} — ${refDe(cle)}`, fabricant: String(retenu[cle].fabricant || '').trim(), reference: String(retenu[cle].reference).trim() } : {}),
+      qte: Math.round(p.qte * 100) / 100, heures: p.heures * (R.coefs[p.mo] ?? 1), sources: [...p.sources] }))
       .sort((a, b) => CHAPITRES.indexOf(a.chapitre) - CHAPITRES.indexOf(b.chapitre) || a.designation.localeCompare(b.designation, 'fr'));
   }
 

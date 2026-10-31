@@ -168,6 +168,10 @@
     }
     // État des applications Études et DOE par chantier (envoyé par leurs cadres dans la démonstration)
     if (p[0] === 'liens') {
+      if (p[1] === 'materiel' && !p[2] && method === 'GET') {
+        if (acc.role === 'atelier' && !Compagnon.regles(db.settings).materiel) return [200, []];
+        return [200, MaterielRetenu.pourChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === (query.get('affaireId') || '')))];
+      }
       if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Réservé au bureau' }];
       db.liens = db.liens || [];
       const g = k => query.get(k) || '';
