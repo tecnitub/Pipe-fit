@@ -88,7 +88,7 @@ const MaterielRetenu = (() => {
     (liens || []).filter(l => l.app === 'etudes').forEach(l => ((l.resume || {}).materiel || []).forEach(m => {
       if (!m || !m.reference || m.statut === 'Refusé') return;
       const s = parCle.get(`${l.id}|${m.cle}`) || {};
-      out.push({ etude: txt((l.resume || {}).objet, 120), etudeId: l.id, cle: txt(m.cle, 200), chapitre: txt(m.chapitre, 60), designation: txt(m.designation), qte: Number(m.qte) || 0, fabricant: txt(m.fabricant, 80), reference: txt(m.reference, 120),
+      out.push({ etude: txt((l.resume || {}).objet, 120), etudeId: l.id, affaireId: txt(l.affaireId, 64), cle: txt(m.cle, 200), chapitre: txt(m.chapitre, 60), designation: txt(m.designation), qte: Number(m.qte) || 0, fabricant: txt(m.fabricant, 80), reference: txt(m.reference, 120),
         statut: STATUTS.includes(m.statut) ? m.statut : 'À soumettre', valide: VALIDES.includes(m.statut), dateValidation: txt(m.dateValidation, 10), obs: txt(m.obs, 500), fiche: /^https?:\/\//.test(m.fiche || '') ? txt(m.fiche, 500) : '',
         soumisLe: txt(s.soumisLe || m.dateSoumission, 10), relances: s.relances || [], poseLe: txt(s.poseLe, 10), posePar: txt(s.posePar, 80), mesLe: txt(s.mesLe, 10), mesPar: txt(s.mesPar, 80), photos: s.photos || [] });
     }));
@@ -107,6 +107,13 @@ const MaterielRetenu = (() => {
     });
     return n;
   }
-  return { STATUTS, VALIDES, ACTIONS, ACTIONS_COMPAGNON, statutDe, estValide, libelleRef, lignes, saisir, bilan, pourCrm, pourChantier, csv, appliquerSuivi, aRelancer, reprendreSuivi };
+  // Type de PV de mise en service (module Essais) d'après la clé du matériel
+  const typeMes = cle => { const [k, a] = String(cle || '').split('|'); return k === 'aero' ? (/^cta/.test(a || '') ? 'cta' : 'vmc') : k === 'cta' ? 'cta' : k === 'gen' ? (/^(pac|gf)/.test(a || '') ? 'pac' : 'chaudiere') : k === 'pompe' ? 'pompes' : 'autre'; };
+  // Débits théoriques des études d'un chantier, pour les relevés d'équilibrage : [{ etude, installation, type, unite, lignes }]
+  const NUM = v => (Number.isFinite(Number(v)) ? Number(v) : '');
+  const debitsChantier = liens => (liens || []).filter(l => l.app === 'etudes').flatMap(l => ((l.resume || {}).debits || []).slice(0, 30).map(d => ({
+    etude: txt((l.resume || {}).objet, 120), installation: txt(d.installation, 120), type: d.type === 'Hydraulique' ? 'Hydraulique' : 'Aéraulique', unite: ['m³/h', 'l/s', 'l/h'].includes(d.unite) ? d.unite : 'm³/h',
+    lignes: (d.lignes || []).slice(0, 500).map(x => ({ repere: txt(x.repere, 40), local: txt(x.local, 80), type: txt(x.type, 40), theorique: NUM(x.theorique) })) })));
+  return { debitsChantier, typeMes, STATUTS, VALIDES, ACTIONS, ACTIONS_COMPAGNON, statutDe, estValide, libelleRef, lignes, saisir, bilan, pourCrm, pourChantier, csv, appliquerSuivi, aRelancer, reprendreSuivi };
 })();
 if (typeof module !== 'undefined') module.exports = MaterielRetenu;

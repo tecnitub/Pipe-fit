@@ -172,6 +172,7 @@
         if (acc.role === 'atelier' && !Compagnon.regles(db.settings).materiel) return [200, []];
         return [200, MaterielRetenu.pourChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === (query.get('affaireId') || '')), (db.materielSuivi || []).filter(s => s.affaireId === (query.get('affaireId') || '')))];
       }
+      if (p[1] === 'debits' && !p[2] && method === 'GET') return [200, MaterielRetenu.debitsChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === (query.get('affaireId') || '')))];
       if (p[1] === 'materiel' && p[2] === 'suivi') {
         db.materielSuivi = db.materielSuivi || [];
         if (method === 'GET') return ['admin', 'charge'].includes(acc.role) ? [200, db.materielSuivi.filter(s => (query.get('etudeId') && s.etudeId === query.get('etudeId')) || (query.get('affaireId') && s.affaireId === query.get('affaireId')))] : [403, { error: 'Réservé au bureau' }];

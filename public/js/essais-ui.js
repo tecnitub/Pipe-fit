@@ -85,6 +85,11 @@ function bindEssai(root, kind, e, { manques, calc, maj }) {
         Object.assign(o, { statut: 'Signé', signeLe: new Date().toISOString() });
       } else o.statut = 'Brouillon';
       const r = Store.upsert(conf.col, o);
+      // PV de mise en service signé pour un matériel retenu : la ligne passe « mise en service » (fiche chantier, étude)
+      if (signer && kind === 'mes' && o.materiel && o.affaireId && /^Mis en service$/.test(o.resultat || '')) {
+        const [etudeId, ...cle] = String(o.materiel).split('|');
+        api('POST', '/api/liens/materiel/suivi', { affaireId: o.affaireId, action: 'mes', lignes: [{ etudeId, cle: cle.join('|') }] }).catch(() => {});
+      }
       Object.assign(essaiBrouillon[kind], { cle: null, e: null });
       App.toast(signer ? `${conf.court} signé` : 'Brouillon enregistré', 4000);
       location.hash = signer ? `#/${kind}/${r.id}` : retourEssai(o);
@@ -107,7 +112,9 @@ const bindEssaiVue = (root, kind, r) => { const b = root.querySelector('#es-pdf'
 
 /* ---------- PV de mise en service ---------- */
 Views.mes = (params, query) => {
-  const b = brouillonEssai('mes', params, query, base => ({ ...base, type: 'pac', equipement: '', repere: '', localisation: '', marque: '', modele: '', numeroSerie: '', fluide: '', charge: '', reglages: '', resultat: '', ...Essais.modele('pac') }));
+  // Ouvert depuis le matériel retenu d'une étude : type, équipement, marque et modèle préremplis
+  const q0 = k => String(query.get(k) || '').slice(0, 200), typeQ = Essais.TYPES[q0('type')] ? q0('type') : 'pac';
+  const b = brouillonEssai('mes', params, query, base => ({ ...base, type: typeQ, equipement: q0('equipement'), repere: q0('repere'), localisation: '', marque: q0('marque'), modele: q0('modele'), numeroSerie: '', fluide: '', charge: '', reglages: '', resultat: '', ...(q0('materiel') ? { materiel: q0('materiel') } : {}), ...Essais.modele(typeQ) }));
   if (b.introuvable) return '<p>Procès-verbal introuvable.</p>';
   if (b.signe) return essaiVue('mes', b.signe);
   const e = b.e, t = Essais.TYPES[e.type] || Essais.TYPES.autre, ph = e._plaque || (e.photoPlaqueId ? fileUrl(e.photoPlaqueId) : '');
@@ -194,7 +201,8 @@ Views.equilibrage = (params, query) => {
       <div class="field"><label for="es-appareil">Appareil de mesure</label><input id="es-appareil" data-k="appareil" list="es-appareils" value="${esc(q.appareil || '')}"><datalist id="es-appareils">${appareilsMesure().map(m => `<option>${esc(libelleManometre(m))}</option>`).join('')}<option>Balomètre</option><option>Anémomètre à hélice</option><option>Valise d'équilibrage hydraulique</option></datalist></div>
     </div></fieldset>
     <fieldset class="hd-bloc"><legend>Débits ${q.type === 'Hydraulique' ? 'par organe' : 'bouche par bouche'}</legend>
-      <div class="toolbar" style="margin-top:0"><label class="btn small secondary">Importer les débits théoriques (Excel, CSV)<input type="file" id="es-import" accept=".xlsx,.csv" hidden></label></div>
+      <div class="toolbar" style="margin-top:0"><label class="btn small secondary">Importer les débits théoriques (Excel, CSV)<input type="file" id="es-import" accept=".xlsx,.csv" hidden></label>
+        ${q.affaireId ? '<button type="button" class="small secondary" id="es-etude">📐 Débits théoriques de l\'étude</button>' : ''}</div>
       <div class="table-wrap"><table class="eq-table"><tr><th>Repère</th><th>Local</th><th>Type</th><th class="num">Théorique</th><th class="num">Mesuré</th><th>Réglage</th><th class="num">Écart</th><th></th></tr>
         ${q.lignes.map((l, i) => `<tr><td><input data-l="${i}|repere" value="${esc(l.repere)}" aria-label="Repère"></td><td><input data-l="${i}|local" value="${esc(l.local)}" aria-label="Local"></td>
           <td><select data-l="${i}|type" aria-label="Type">${optionsStr(TYPES_BOUCHE, l.type || 'Soufflage')}</select></td>
@@ -220,6 +228,19 @@ Views.equilibrage.bind = (root, params) => {
   }));
   root.querySelectorAll('[data-rml]').forEach(b => b.onclick = () => { q.lignes.splice(+b.dataset.rml, 1); App.render(); });
   $('#es-add-ligne').onclick = () => { const d = q.lignes[q.lignes.length - 1] || {}; q.lignes.push({ repere: '', local: d.local || '', type: d.type || 'Soufflage', theorique: '', mesure: '', reglage: '' }); App.render(); };
+  // Débits théoriques des études du chantier (schéma aéraulique : bouche par bouche ; réseau arborescent : par vanne)
+  const be = $('#es-etude');
+  if (be) be.onclick = async () => {
+    let installs;
+    try { installs = await api('GET', `/api/liens/debits?affaireId=${encodeURIComponent(q.affaireId)}`); } catch (err) { return notify(err.message); }
+    const voulues = installs.filter(x => (x.type === 'Hydraulique') === (q.type === 'Hydraulique'));
+    if (!voulues.length) return notify(`Aucun débit ${q.type === 'Hydraulique' ? 'hydraulique' : 'aéraulique'} dans les études de ce chantier.`);
+    const choisir = voulues.length === 1 ? voulues[0] : voulues[(await askValue(`Installation (1 à ${voulues.length}) : ${voulues.map((x, i) => `${i + 1}. ${x.installation}`).join(' · ')}`, '1') | 0) - 1];
+    if (!choisir) return;
+    q.installation = q.installation || choisir.installation; q.unite = choisir.unite || q.unite;
+    q.lignes = [...q.lignes.filter(x => x.repere || x.local || x.theorique !== ''), ...choisir.lignes.map(l => ({ repere: l.repere, local: l.local, type: TYPES_BOUCHE.includes(l.type) ? l.type : 'Autre', theorique: l.theorique, mesure: '', reglage: '' }))];
+    App.render(); App.toast(`${choisir.lignes.length} débit(s) théorique(s) repris de l'étude « ${choisir.etude} »`, 4000);
+  };
   $('#es-import').onchange = async ev => {
     const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
     try {

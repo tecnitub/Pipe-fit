@@ -54,8 +54,16 @@ function resumePF(et) {
     // Matériel retenu : fabricant, référence exacte et validation du client (fiche du chantier, appli des compagnons)
     if (typeof MaterielRetenu !== 'undefined') materiel = MaterielRetenu.pourCrm(MaterielRetenu.lignes(postes, et.materiel));
   } catch (e) { equipements = []; }
+  // Débits théoriques pour les relevés d'équilibrage : schémas aérauliques (bouche par bouche), réseaux arborescents (par vanne)
+  const debits = [];
+  (et.notes || []).forEach(n => {
+    try {
+      if (n.type === 'aero') { const r = Liens.calculer(et, n), v = r.valeurs || {}; if ((v.debits || []).length) debits.push({ installation: Liens.resoudre(et, n).entrees.titreInstallation || n.titre, type: 'Aéraulique', unite: 'm³/h', lignes: v.debits.slice(0, 500) }); }
+      if (n.type === 'arbo') { const v = Liens.calculer(et, n).valeurs || {}; if ((v.vannes || []).length) debits.push({ installation: n.titre, type: 'Hydraulique', unite: 'm³/h', lignes: v.vannes.map(x => ({ repere: x.rep, local: '', type: 'Vanne d\'équilibrage', theorique: Math.round(x.Q * 100) / 100 })) }); }
+    } catch (e) { /* calcul incomplet : pas de débits */ }
+  });
   return { objet: et.objet, client: et.client || '', clientId: et.clientId || '', devisId: et.devisId || '', indice: et.indice, date: et.date, auteur: et.auteur || '', verificateur: et.verificateur || '', description: String(et.description || '').slice(0, 500),
-    notes, erreurs: notes.reduce((s, n) => s + n.erreurs, 0), attention: notes.reduce((s, n) => s + n.attention, 0), equipements, materiel, devis: (et.devisPF || []).slice(-10) };
+    notes, erreurs: notes.reduce((s, n) => s + n.erreurs, 0), attention: notes.reduce((s, n) => s + n.attention, 0), equipements, materiel, debits, devis: (et.devisPF || []).slice(-10) };
 }
 const corpsEtude = et => { let resume; try { resume = et.modele ? undefined : resumePF(et); } catch (e) { resume = undefined; } return { data: et, version: et._v, resume }; };
 // Enregistrement différé (une requête à la fois par étude, contrôle de version)

@@ -207,3 +207,13 @@ test('suivi du matériel : soumission par le bureau, pose / mise en service / ph
   const s = (await call(etBase, 'GET', '/api/pf/materiel-suivi?etudeId=et-suivi', null, c)).body;
   assert.deepStrictEqual(s.map(x => x.cle).sort(), ['bouche|y', 'pompe|x']);
 });
+
+test('débits théoriques des études pour les relevés d\'équilibrage (compagnons compris)', async () => {
+  const debits = [{ installation: 'CTA bureaux', type: 'Aéraulique', unite: 'm³/h', lignes: [{ repere: 'Z1.1', local: 'Bureaux', type: 'Soufflage', theorique: 200 }, { repere: 'Z1.2', local: 'Bureaux', type: 'Soufflage', theorique: 200 }] },
+    { installation: 'Réseau radiateurs', type: 'Hydraulique', unite: 'm³/h', lignes: [{ repere: 'A1.1', type: 'Vanne d\'équilibrage', theorique: 1.2 }] }];
+  await call(pfBase, 'PUT', '/api/liens/etudes/et-debits', { affaireId: 'af-debits', resume: { objet: 'Étude débits', debits } }, pfJacky);
+  const r = await call(pfBase, 'GET', '/api/liens/debits?affaireId=af-debits', null, pfMarc);
+  assert.strictEqual(r.status, 200);
+  assert.deepStrictEqual(r.body.map(d => [d.etude, d.installation, d.type, d.lignes.length]), [['Étude débits', 'CTA bureaux', 'Aéraulique', 2], ['Étude débits', 'Réseau radiateurs', 'Hydraulique', 1]]);
+  assert.strictEqual(r.body[0].lignes[0].theorique, 200);
+});

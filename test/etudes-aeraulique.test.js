@@ -141,3 +141,12 @@ test('chaufferie / sous-station reliée aux réseaux annexes : régime vers le r
   assert.strictEqual(pid.entrees.circuits[0].annexe, ''); assert.strictEqual(pid.entrees.circuits[0].P, c[0].P);
   assert.strictEqual(Liens.circuitDeAnnexe(et.notes, arbo), null);
 });
+
+test('débits théoriques bouche par bouche (relevé d\'équilibrage) et type de PV de mise en service', () => {
+  const v = N.calculer('aero', N.defauts('aero')).valeurs;
+  const z1 = v.debits.filter(d => d.local === 'Bureaux R+1');
+  assert.strictEqual(z1.length, 8); assert.ok(z1.every(d => d.theorique === 200 && d.type === 'Soufflage'));
+  assert.strictEqual(v.debits.reduce((s, d) => s + d.theorique, 0), v.Qs + v.Qr);
+  const M = require('../public/js/materiel-retenu');
+  assert.deepStrictEqual(['aero|cta-df|3000', 'aero|extraction|900', 'gen|chaudiere-cond|150', 'gen|pac-air|80', 'pompe|x', 'vanne|2v|25|10'].map(M.typeMes), ['cta', 'vmc', 'chaudiere', 'pac', 'pompes', 'autre']);
+});

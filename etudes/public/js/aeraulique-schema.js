@@ -84,7 +84,9 @@ const SchemaAir = ((D, C, N, Cta) => {
       valeurs: { Qs: rS.Q, Qr: rR.Q, pS, pR, PvS, PvR, sfp, dpReseauS: rS.dp, dpReseauR: rR.dp, cta: e.cta || '',
         troncons: [...rS.troncons, ...rR.troncons].map(t => ({ rep: t.rep, nom: t.nom, L: t.L })).concat([...rS.zones, ...rR.zones].map(x => ({ rep: `Antenne ${x.rep}`, nom: x.antenne.nom, L: num(x.L, 5) }))),
         producteur: e.producteur || 'cta-df',
-        bouches: [...rS.zones, ...rR.zones].map(x => ({ local: x.rep, type: x.bouche.b.libelle, taille: x.bouche.nom, n: x.n })) },
+        bouches: [...rS.zones, ...rR.zones].map(x => ({ local: x.rep, type: x.bouche.b.libelle, taille: x.bouche.nom, n: x.n })),
+        // Débits théoriques bouche par bouche (relevé d'équilibrage sur le chantier)
+        debits: [...rS.zones, ...rR.zones].flatMap((x, i) => Array.from({ length: x.n }, (_, k) => ({ repere: `Z${i + 1}.${k + 1}`, local: x.rep, type: RESEAUX[x.reseau], theorique: Math.round(x.Q / x.n) }))) },
       resume: [['Producteur', P[0]], ...(souffle ? [[`${titreS}`, `${nf(rS.Q, 0)} m³/h · ${nf(pS, 0)} Pa · ${nf(PvS / 1000, 2)} kW`]] : []),
         ...(aspire ? [[dfx || e.producteur === 'cta-melange' ? 'Reprise' : 'Extraction', `${nf(rR.Q, 0)} m³/h · ${nf(pR, 0)} Pa · ${nf(PvR / 1000, 2)} kW`]] : []),
         ['Puissance spécifique (SFP)', `${nf(sfp, 2)} kW/(m³/s)`], ['Bouches', `${[...rS.zones, ...rR.zones].reduce((s, x) => s + x.n, 0)} dans ${zones.length} zone(s)`],

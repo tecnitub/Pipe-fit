@@ -527,6 +527,11 @@ async function api(req, res, url) {
       const affaireId = url.searchParams.get('affaireId') || '';
       return send(res, 200, affaireId ? MaterielRetenu.pourChantier(LIENS.liste({ affaireId, app: 'etudes' }), LIENS.suivis({ affaireId })) : []);
     }
+    // Débits théoriques des études du chantier (relevés d'équilibrage, bureau et compagnons)
+    if (p[1] === 'debits' && !p[2] && method === 'GET') {
+      const affaireId = url.searchParams.get('affaireId') || '';
+      return send(res, 200, affaireId ? MaterielRetenu.debitsChantier(LIENS.liste({ affaireId, app: 'etudes' })) : []);
+    }
     // Suivi d'une ligne : soumission au client (bureau), pose / mise en service / photo de la plaque (bureau et compagnons)
     if (p[1] === 'materiel' && p[2] === 'suivi') {
       if (method === 'GET') { if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau'); return send(res, 200, LIENS.suivis({ etudeId: url.searchParams.get('etudeId') || '', affaireId: url.searchParams.get('affaireId') || '' })); }
