@@ -516,7 +516,8 @@ Vues.note = {
       <div class="carte"><label class="champ-libre">Commentaire (repris dans la note de calcul)<textarea data-n="commentaire" rows="3">${esc(n.commentaire)}</textarea></label>
       <div class="actions-ligne"><button id="pdf-note">📄 PDF de ce calcul</button><button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="dupliquer">Dupliquer</button>
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
-        ${n.type === 'elec' ? '<button id="elec-reprendre">⚡ Reprendre les équipements de l\'étude</button>' : ''}<span class="espace"></span><button class="secondaire" id="supprimer">Supprimer ce calcul</button></div></div>`;
+        ${n.type === 'elec' ? '<button id="elec-reprendre">⚡ Reprendre les équipements de l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button>' : ''}
+        ${n.type === 'cable' ? '<button id="cable-reprendre">🔌 Reprendre les liaisons de l\'alimentation électrique</button>' : ''}<span class="espace"></span><button class="secondaire" id="supprimer">Supprimer ce calcul</button></div></div>`;
   },
   bind: (root, et, noteId) => {
     const n = et.notes.find(x => x.id === noteId);
@@ -529,6 +530,26 @@ Vues.note = {
       const nv = Liens.notesDepuisSchema(et, n, uidE);
       if (!nv.length) return toast('Les notes liées existent déjà pour tous les circuits.');
       et.notes.splice(et.notes.indexOf(n) + 1, 0, ...nv); enregistrer(et); toast(`${nv.length} note(s) créée(s), reliées au schéma`); location.hash = `#/etude/${et.id}`;
+    };
+    // Câbles : liaisons à notre charge reprises du calcul d'alimentation électrique (alimentation des armoires, départs éloignés)
+    // Les liaisons d'exemple sont remplacées ; des liaisons déjà saisies sont complétées (pose, isolant… gardés)
+    const versCables = (cible, elec) => {
+      const ex = (cible.entrees || {}).liaisons || [], exemples = JSON.stringify(ex) === JSON.stringify(Notes.defauts('cable').liaisons);
+      cible.entrees = { ...Notes.defauts('cable'), ...(cible.entrees || {}), liaisons: Cables.depuisElectricite(Liens.resoudre(et, elec).entrees, exemples ? [] : ex) };
+    };
+    const cr = root.querySelector('#cable-reprendre');
+    if (cr) cr.onclick = () => {
+      const elec = et.notes.find(x => x.type === 'elec');
+      if (!elec) return toast('Ajoutez d\'abord le calcul « Alimentation électrique et régulation » à l\'étude, ou saisissez les liaisons.', 6000);
+      versCables(n, elec); enregistrer(et); App.render();
+      toast(`${n.entrees.liaisons.length} liaison(s) : alimentation des armoires depuis le TGBT et départs dont la longueur est saisie. Complétez le mode de pose et les longueurs.`, 7000);
+    };
+    const ec = root.querySelector('#elec-cables');
+    if (ec) ec.onclick = () => {
+      let c = et.notes.find(x => x.type === 'cable');
+      if (!c) { c = nouvelleNote('cable'); c.entrees.liaisons = []; c.commentaire = 'Liaisons à la charge du lot CVC reprises du calcul d\'alimentation électrique. Note à soumettre au bureau d\'études électricité pour validation.'; et.notes.splice(et.notes.indexOf(n) + 1, 0, c); }
+      versCables(c, n); enregistrer(et);
+      location.hash = `#/etude/${et.id}/${c.id}`;
     };
     // Alimentation électrique : équipements repris des autres calculs (schéma, réseaux, CTA…), choix déjà faits conservés
     const rep = root.querySelector('#elec-reprendre');
