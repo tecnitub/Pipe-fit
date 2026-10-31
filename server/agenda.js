@@ -113,6 +113,8 @@ function creer({ DB, db, M365 }) {
     return { ics: Agenda.ical(evts, { nom: `Planning Pipe-Fit – ${acc.nom || ''}`.trim() }) };
   }
 
-  return { synchroniser, demarrer, signaler, config, etat: () => ({ ...etat }), pret, nouveauLien, aUnLien, revoquer, calendrier };
+  // Fin de la synchronisation en cours (aucune : tout de suite)
+  const attendre = () => (enCours ? enCours.catch(() => {}) : Promise.resolve());
+  return { synchroniser, attendre, demarrer, signaler, config, etat: () => ({ ...etat }), pret, nouveauLien, aUnLien, revoquer, calendrier };
 }
 module.exports = { creer };

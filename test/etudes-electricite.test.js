@@ -3,7 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const N = require('../etudes/public/js/notes');
-require('../etudes/public/js/cta'); require('../etudes/public/js/equilibrage'); require('../etudes/public/js/industriel');
+require('../etudes/public/js/cta'); require('../etudes/public/js/equilibrage'); require('../etudes/public/js/industriel'); require('../etudes/public/js/aeraulique-schema');
 const E = require('../etudes/public/js/electricite');
 const Liens = require('../etudes/public/js/liens');
 
@@ -136,8 +136,11 @@ test('courts-circuits, sélectivité et puissance électrique reprise du catalog
   const icc = Number(cc[1].replace(',', '.'));
   assert.ok(icc > 0.5 && icc < 10, `Icc ${icc} kA`); assert.match(cc[2], /^(6|10) kA$/);
   assert.ok(a.cal >= 1.6 * 16, 'tête sélective avec le départ de 16 A');
-  // 400 m en 1,5 mm² sous 2 A D : Icc mini trop faible pour le déclenchement magnétique
-  assert.ok(r.alertes.some(x => /P2 : Icc mini en bout de ligne/.test(x.texte)) || r.alertes.some(x => /P2 : chute de tension/.test(x.texte)));
+  // Pompe de 2 kW en 16 A courbe D à 40 m : Icc mini ≈ 225 A sous le seuil magnétique de 320 A (20 In)
+  const loin = N.calculer('elec', { armoires: [{ rep: 'AR1', L: 30, ks: 100, reserve: 0 }], iccTgbt: 10, equipements: [{ rep: 'P1', type: 'pompe', P: 2, alim: 'AR1', L: 40 }] });
+  assert.ok(loin.alertes.some(x => x.niveau === 'erreur' && /P1 : Icc mini en bout de ligne .* < seuil magnétique 320 A/.test(x.texte)));
+  // À 20 m la même pompe est protégée
+  assert.ok(!r.alertes.some(x => /P1 : Icc mini/.test(x.texte)));
   // Puissance électrique du modèle choisi au catalogue : remplace l'estimation, partagée entre les ventilateurs de la CTA
   const aero = { id: 'a', type: 'aero', titre: 'CTA', entrees: N.defauts('aero') };
   const et = { notes: [aero], materiel: {} };

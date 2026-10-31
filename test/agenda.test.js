@@ -58,16 +58,18 @@ test('planning envoyé dans Outlook : création, mise à jour, suppression', asy
   const admin = (await call('POST', '/api/login', { login: 'admin', password: 'admin-test-pw' })).cookie;
   await call('POST', '/api/accounts', { login: 'kevin', password: 'tuyau-inox-316L', role: 'atelier', userId: 'o1', email: 'kevin.roux@tecnitub.example' }, admin);
   assert.strictEqual((await call('PUT', '/api/m365', { tenantId: 't', clientId: 'c', clientSecret: 's', actif: true }, admin)).status, 200);
+  // L'activation lance une synchronisation : ses appels à Microsoft 365 sont comptés une fois terminée
+  appels.length = 0;
   let r = await call('PUT', '/api/agenda/outlook', { actif: true, categorie: 'Pipe-Fit', rappel: 30 }, admin);
   assert.strictEqual(r.body.config.actif, true);
   const kevin = (await call('POST', '/api/login', { login: 'kevin', password: 'tuyau-inox-316L' })).cookie;
   assert.strictEqual((await call('PUT', '/api/agenda/outlook', { actif: false }, kevin)).status, 403);
-  appels.length = 0;
-  r = await AGENDA.synchroniser();
+  await AGENDA.attendre();
+  r = AGENDA.etat();
   const posts = appels.filter(a => a.m === 'POST' && a.u.includes('/events'));
   assert.ok(posts.length >= 5, `événements créés : ${posts.length}`);
   assert.ok(posts.every(a => a.u.includes(encodeURIComponent('kevin.roux@tecnitub.example'))), 'dans la boîte de Kevin uniquement');
-  assert.match(posts[0].b.subject, /CH-\d{4}-001/); assert.strictEqual(posts[0].b.reminderMinutesBeforeStart, 30);
+  assert.ok(posts.some(a => /CH-\d{4}-001/.test(a.b.subject)), 'sujet : code et nom du chantier'); assert.strictEqual(posts[0].b.reminderMinutesBeforeStart, 30);
   assert.strictEqual(r.crees, posts.length);
   // Rien n'a changé : aucun appel
   appels.length = 0; await AGENDA.synchroniser();
