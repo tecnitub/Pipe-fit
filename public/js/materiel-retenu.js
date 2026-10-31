@@ -28,7 +28,7 @@ const MaterielRetenu = (() => {
     });
     return out;
   }
-  const champs = x => ({ fabricant: txt(x.fabricant, 80), reference: txt(x.reference, 120), dateSoumission: txt(x.dateSoumission, 10), dateValidation: txt(x.dateValidation, 10), obs: txt(x.obs, 500), fiche: txt(x.fiche, 500) });
+  const champs = x => ({ fabricant: txt(x.fabricant, 80), reference: txt(x.reference, 120), dateSoumission: txt(x.dateSoumission, 10), dateValidation: txt(x.dateValidation, 10), obs: txt(x.obs, 500), fiche: txt(x.fiche, 500), pElec: Number.isFinite(Number(x.pElec)) && x.pElec !== '' ? Number(x.pElec) : null });
 
   // Saisie d'un champ (modifie saisies) : le statut suit (référence effacée → « à choisir » ; validé → date du jour)
   function saisir(saisies, ligne, champ, valeur, aujourdhui) {

@@ -683,8 +683,8 @@ Vues.reglages = {
           ${admin ? '<button class="petit" id="mr-enreg">Enregistrer les ratios</button><button class="secondaire petit" id="mr-rex">Caler sur le REX Pipe-Fit…</button><button class="secondaire petit" id="mr-defaut">Valeurs par défaut</button>' : ''}</div>`; })()}</div>
     <div class="carte"><h2>Catalogues de pompes et de vannes</h2>
       <p class="muted petit">Les calculs proposent un modèle d'après le point de fonctionnement. Sans catalogue importé, une gamme générique d'exemple est utilisée (ordres de grandeur, aucune marque). Import au format CSV (séparateur « ; »).</p>
-      ${['pompes', 'vannes'].map(g => { const cat = (c.catalogues || {})[g] || []; return `<div class="actions-ligne"><strong>${g === 'pompes' ? 'Pompes' : 'Vannes de régulation'}</strong>
-        <span class="badge ${cat.length ? 'ok' : ''}">${cat.length ? `${cat.length} modèle(s) importé(s)` : 'gamme générique'}</span>
+      ${['pompes', 'vannes', 'materiel'].map(g => { const cat = (c.catalogues || {})[g] || []; return `<div class="actions-ligne"><strong>${{ pompes: 'Pompes', vannes: 'Vannes de régulation', materiel: 'Matériel des fabricants (bouches, CTA, caissons, générateurs, PAC…) — CSV ou Excel, proposé dans « Matériel retenu »' }[g]}</strong>
+        <span class="badge ${cat.length ? 'ok' : ''}">${cat.length ? `${cat.length} modèle(s) importé(s)${g === 'materiel' ? ` (${[...new Set(cat.map(x => x.fabricant))].slice(0, 6).join(', ')})` : ''}` : g === 'materiel' ? 'aucun catalogue' : 'gamme générique'}</span>
         <button class="secondaire petit" data-csv-modele="${g}">Modèle CSV</button>${admin ? `<button class="petit" data-csv-import="${g}">Importer un CSV…</button>${cat.length ? `<button class="secondaire petit" data-csv-vider="${g}">Revenir à la gamme générique</button>` : ''}` : ''}</div>`; }).join('')}</div>`; },
   bind: root => {
     root.querySelectorAll('[data-cfg]').forEach(el => el.onchange = async () => { const c = copie(S.config); ecrireChemin(c, el.dataset.cfg, el.value); S.config = await api('PUT', '/api/config', c); toast('Réglages enregistrés'); });
@@ -735,12 +735,23 @@ Vues.reglages = {
       const cat = { ...(S.config.catalogues || {}), [genre]: liste };
       S.config = await api('PUT', '/api/config', { ...S.config, catalogues: cat }); Catalogue.utiliser(S.config.catalogues); App.render();
     };
-    root.querySelectorAll('[data-csv-modele]').forEach(b => b.onclick = () => Promise.resolve(telecharger(`catalogue-${b.dataset.csvModele}.csv`, new TextEncoder().encode(Catalogue.modeleCsv(b.dataset.csvModele)), 'text/csv')).catch(e => toast(e.message, 6000)));
+    root.querySelectorAll('[data-csv-modele]').forEach(b => b.onclick = () => Promise.resolve(telecharger(`catalogue-${b.dataset.csvModele}.csv`, new TextEncoder().encode(b.dataset.csvModele === 'materiel' ? `\uFEFF${CatalogueMateriel.modeleCsv()}` : Catalogue.modeleCsv(b.dataset.csvModele)), 'text/csv')).catch(e => toast(e.message, 6000)));
     root.querySelectorAll('[data-csv-vider]').forEach(b => b.onclick = async () => { if (await confirmer('Revenir à la gamme générique pour ce catalogue ?', 'Revenir')) { await enregistrerCatalogue(b.dataset.csvVider, []); toast('Gamme générique rétablie'); } });
     root.querySelectorAll('[data-csv-import]').forEach(b => b.onclick = () => {
-      const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.csv,text/csv,text/plain';
+      const inp = document.createElement('input'); inp.type = 'file'; inp.accept = b.dataset.csvImport === 'materiel' ? '.csv,.xlsx,text/csv' : '.csv,text/csv,text/plain';
       inp.onchange = async () => {
         const f = inp.files[0]; if (!f) return;
+        // Catalogue matériel : CSV ou classeur Excel (première feuille la plus remplie), colonnes reconnues par leur en-tête
+        if (b.dataset.csvImport === 'materiel') {
+          try {
+            const buf = await f.arrayBuffer(), feuilles = /\.xlsx$/i.test(f.name) ? await XLSX.read(buf) : XLSX.readCSV(buf);
+            const { liste, rejets } = CatalogueMateriel.lireLignes(feuilles.sort((x, y) => y.rows.length - x.rows.length)[0].rows);
+            if (!liste.length) return toast('Aucune ligne valide : il faut au moins le fabricant et la référence (bouton « Modèle CSV »).', 7000);
+            await enregistrerCatalogue('materiel', liste);
+            toast(`${liste.length} modèle(s) importé(s)${rejets.length ? `, lignes ignorées : ${rejets.slice(0, 8).join(', ')}` : ''}`, 6000);
+          } catch (e) { toast(e.message, 6000); }
+          return;
+        }
         const brut = new Uint8Array(await f.arrayBuffer());
         let texte = new TextDecoder('utf-8').decode(brut);
         if (texte.includes('\uFFFD')) texte = new TextDecoder('windows-1252').decode(brut); // export Excel

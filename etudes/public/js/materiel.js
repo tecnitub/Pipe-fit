@@ -34,14 +34,15 @@ function dialogueMateriel(et) {
   const fermer = () => { box.classList.remove('large'); Modal.close(); App.render(); };
   const rendu = () => {
     const ls = lignesMateriel(et), b = MaterielRetenu.bilan(ls), chapitres = [...new Set(ls.map(l => l.chapitre))], suivi = new Map((suiviChantier.get(et.id) || []).map(s => [s.cle, s]));
-    const relance = ls.filter(l => MaterielRetenu.aRelancer(l, aujourdhui()));
+    const relance = ls.filter(l => MaterielRetenu.aRelancer(l, aujourdhui())), catalogue = ((S.config || {}).catalogues || {}).materiel || [];
     box.innerHTML = `<h2>🏷️ Matériel retenu</h2>
       <p class="muted petit">Pour chaque équipement dimensionné par l'étude : le fabricant et la <strong>référence exacte</strong> choisis. La liste se fait valider par le client ou la maîtrise d'œuvre (PDF), le statut est suivi ligne par ligne. Les références passent dans le métré et le devis, et sur la fiche du chantier dans Pipe-Fit (bureau et appli des compagnons : les gars voient ce qu'ils doivent poser et si c'est validé).</p>
       <p class="petit">${b.total - b.aChoisir}/${b.total} référence(s) choisie(s) · ${b.valides} validée(s) · ${b.soumis} soumise(s) · ${b.aSoumettre} à soumettre${b.refuses ? ` · <span class="manque">${b.refuses} refusée(s) : choisir une autre référence</span>` : ''}${relance.length ? ` · <span class="manque">${relance.length} sans réponse depuis plus de 15 jours : relancer (depuis la fiche du chantier dans Pipe-Fit, « ✉️ Envoyer au client »)</span>` : ''}</p>
-      <div class="defile metre"><table class="liste compact"><thead><tr><th>Équipement</th><th>Qté</th><th>Fabricant</th><th>Référence exacte</th><th>Statut</th><th>Soumis le</th><th>Validé le</th><th>Observations du client</th><th>Fiche technique (lien)</th><th>Chantier</th><th></th></tr></thead><tbody>
-      ${chapitres.map(ch => `<tr class="total"><td colspan="11">${esc(ch || 'Équipements')}</td></tr>${ls.map((l, i) => [l, i]).filter(([l]) => l.chapitre === ch).map(([l, i]) => `<tr data-ligne="${i}">
+      <div class="defile metre"><table class="liste compact"><thead><tr><th>Équipement</th><th>Qté</th>${catalogue.length ? '<th>Catalogue</th>' : ''}<th>Fabricant</th><th>Référence exacte</th><th>Statut</th><th>Soumis le</th><th>Validé le</th><th>Observations du client</th><th>Fiche technique (lien)</th><th>Chantier</th><th></th></tr></thead><tbody>
+      ${chapitres.map(ch => `<tr class="total"><td colspan="${catalogue.length ? 12 : 11}">${esc(ch || 'Équipements')}</td></tr>${ls.map((l, i) => [l, i]).filter(([l]) => l.chapitre === ch).map(([l, i]) => `<tr data-ligne="${i}">
         <td>${l.libre ? `<input data-m="designation" value="${esc(l.designation)}" placeholder="Désignation">` : `${esc(l.designation)}${l.orphelin ? '<div class="manque petit">plus dans l\'étude (dimension changée) : reprendre la référence sur la nouvelle ligne puis supprimer</div>' : `<div class="muted petit">${esc(l.sources.join(', '))}</div>`}`}</td>
         <td>${l.libre ? `<input class="nombre qte" data-m="qte" value="${esc(String(l.qte).replace('.', ','))}">` : Notes.nf(l.qte, 0)}</td>
+        ${catalogue.length ? `<td>${(() => { const cs = l.libre ? catalogue.slice(0, 0) : CatalogueMateriel.candidats(l, catalogue); return cs.length ? `<select data-cat="${i}" style="max-width:220px"><option value="">${cs.length} modèle(s) adapté(s)…</option>${cs.map((p, k) => `<option value="${k}" ${p.fabricant === l.fabricant && p.reference === l.reference ? 'selected' : ''}>${esc(CatalogueMateriel.libelle(p))}</option>`).join('')}</select>` : '<span class="muted petit">aucun modèle</span>'; })()}${l.pElec != null ? `<div class="muted petit">${Notes.nf(l.pElec, 2)} kW élec.</div>` : ''}</td>` : ''}
         <td><input style="min-width:110px" data-m="fabricant" value="${esc(l.fabricant)}" placeholder="Fabricant" list="ml-fab"></td>
         <td><input style="min-width:170px;font-weight:600" data-m="reference" value="${esc(l.reference)}" placeholder="Réf. catalogue exacte"></td>
         <td><select style="min-width:150px" data-m="statut" ${l.reference ? '' : 'disabled'}>${MaterielRetenu.STATUTS.filter(s => s !== 'À choisir' || !l.reference).map(s => `<option ${s === l.statut ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></td>
@@ -64,10 +65,23 @@ function dialogueMateriel(et) {
         el.onchange = () => {
           const k = el.dataset.m, v = k === 'qte' ? Notes.num(el.value) : el.value;
           MaterielRetenu.saisir(et.materiel, l, k, v, aujourdhui());
+          if (k === 'reference' || k === 'fabricant') et.materiel[l.cle].pElec = null; // saisie libre : puissance du catalogue plus valable
           enregistrer(et);
           if (['reference', 'fabricant', 'statut', 'qte'].includes(k)) rendu();
         };
       });
+    });
+    // Modèle choisi dans le catalogue : fabricant, référence, fiche technique et puissance électrique
+    const catalogue = ((S.config || {}).catalogues || {}).materiel || [];
+    box.querySelectorAll('[data-cat]').forEach(sel => sel.onchange = () => {
+      const l = ls[+sel.dataset.cat], p = CatalogueMateriel.candidats(l, catalogue)[+sel.value];
+      if (!p) return;
+      MaterielRetenu.saisir(et.materiel, l, 'fabricant', p.fabricant, aujourdhui());
+      MaterielRetenu.saisir(et.materiel, l, 'reference', p.reference, aujourdhui());
+      const x = et.materiel[l.cle];
+      if (p.fiche && !x.fiche) x.fiche = p.fiche;
+      x.pElec = Number.isFinite(p.Pelec) ? p.Pelec : null;
+      enregistrer(et); rendu();
     });
     box.querySelectorAll('[data-suppr]').forEach(x => x.onclick = () => { delete et.materiel[ls[+x.dataset.suppr].cle]; enregistrer(et); rendu(); });
     box.querySelector('#ml-ajout').onclick = () => { et.materiel[`libre|${uidE()}`] = { libre: true, designation: '', qte: 1, chapitre: 'Autres équipements' }; enregistrer(et); rendu(); };

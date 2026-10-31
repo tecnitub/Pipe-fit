@@ -80,3 +80,24 @@ test('suivi : soumission (relance), pose, mise en service, photo ; à relancer a
   assert.strictEqual(M.reprendreSuivi(saisies, ls, [{ cle: 'a', soumisLe: '2026-10-05' }], '2026-10-06'), 1);
   assert.deepStrictEqual([M.statutDe(saisies.a), saisies.a.dateSoumission], ['Soumis au client', '2026-10-05']);
 });
+
+test('catalogue fabricants : import CSV / Excel par en-têtes, familles, modèles proposés au débit', () => {
+  const CM = require('../etudes/public/js/catalogue-materiel');
+  // En-têtes dans un ordre libre, famille déduite de la désignation, lignes sans référence écartées
+  const { liste, rejets } = CM.lireLignes([
+    ['Marque', 'Code article', 'Désignation', 'Débit mini (m3/h)', 'Débit maxi (m3/h)', 'Puissance absorbée (kW)', 'Fiche'],
+    ['France Air', 'CTA-2500', 'Centrale de traitement d\'air double flux', '1500', '2800', '1,8', 'https://fa.fr/cta.pdf'],
+    ['France Air', 'CTA-4000', 'Centrale de traitement d\'air double flux', '2500', '4500', '3,1', ''],
+    ['Aldes', 'DFC 160', 'Diffuseur plafond carré 4 directions', '80', '250', '', ''],
+    ['Aldes', '', 'Sans référence', '', '', '', ''],
+  ]);
+  assert.deepStrictEqual(liste.map(p => [p.reference, p.famille]), [['CTA-2500', 'cta'], ['CTA-4000', 'cta'], ['DFC 160', 'bouche']]);
+  assert.deepStrictEqual([liste[0].Qmin, liste[0].Qmax, liste[0].Pelec, liste[0].fiche], [1500, 2800, 1.8, 'https://fa.fr/cta.pdf']);
+  assert.deepStrictEqual(rejets, [5]);
+  assert.strictEqual(CM.lireCsv(CM.modeleCsv()).liste.length, 3);
+  // CTA de 3 000 m³/h : seule la CTA-4000 couvre le débit
+  assert.deepStrictEqual(CM.candidats({ cle: 'aero|cta-df|3000', designation: 'Centrale' }, liste).map(p => p.reference), ['CTA-4000']);
+  assert.strictEqual(CM.familleDe('bouche|Diffuseur plafond carré 4 directions|col Ø 160'), 'bouche');
+  assert.deepStrictEqual(CM.candidats({ cle: 'bouche|Diffuseur plafond carré 4 directions|col Ø 160', designation: 'Diffuseur plafond carré 4 directions col Ø 160' }, liste).map(p => p.reference), ['DFC 160']);
+  assert.strictEqual(CM.familleDe('gen|pac-air|80'), 'pac');
+});

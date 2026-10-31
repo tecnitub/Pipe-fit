@@ -64,7 +64,16 @@
   if (!db || !Array.isArray(db.etudes)) db = { etudes: [exemple()], config: {} };
   const save = () => { if (!storage.set(KEY, JSON.stringify(db))) console.warn('Stockage local indisponible : les études restent en mémoire.'); };
   const me = () => COMPTES.find(c => c.login === storage.get(ME_KEY)) || (storage.get(ME_KEY) === 'deconnecte' ? null : compteCrm());
-  const config = () => ({ ...CONFIG_DEFAUT, ...db.config, societe: { ...CONFIG_DEFAUT.societe, ...(db.config.societe || {}) } });
+  // Démo : petit catalogue matériel d'exemple (marques fictives) tant qu'aucun catalogue n'est importé
+  const CATALOGUE_DEMO = [
+    ['Exemplair', 'DF4-160', 'bouche', 'Diffuseur plafond carré 4 directions', '160', 80, 260, '', 22], ['Exemplair', 'DF4-200', 'bouche', 'Diffuseur plafond carré 4 directions', '200', 150, 400, '', 25],
+    ['Exemplair', 'HEL-300', 'bouche', 'Diffuseur à jet hélicoïdal', '300', 150, 400, '', 30], ['Exemplair', 'GDD-400', 'bouche', 'Grille murale de soufflage double déflexion', '400', 120, 350, '', 20],
+    ['Exemplair', 'BEX-125', 'bouche', 'Grille ou bouche d\'extraction', '125', 30, 120, '', 40], ['Exemplair', 'BEX-200', 'bouche', 'Grille ou bouche d\'extraction', '200', 80, 300, '', 35],
+    ['Ventilia', 'CTA-DF 3000', 'cta', 'Centrale double flux à roue, régulation intégrée', '', 1800, 3400, 2.4, ''], ['Ventilia', 'CTA-DF 4500', 'cta', 'Centrale double flux à roue, régulation intégrée', '', 3000, 5000, 3.6, ''],
+    ['Ventilia', 'CTA-DF 6500', 'cta', 'Centrale double flux à plaques', '', 4500, 7500, 5.2, ''], ['Ventilia', 'CE-1200', 'caisson', 'Caisson d\'extraction basse consommation', '', 300, 1300, 0.3, ''],
+    ['Thermexemple', 'CHC-150', 'generateur', 'Chaudière gaz à condensation 150 kW', '', '', '', 0.35, ''],
+  ].map(([fabricant, reference, famille, designation, taille, Qmin, Qmax, Pelec, dp]) => ({ fabricant, reference, famille, designation, taille, ...(Qmin ? { Qmin, Qmax } : {}), ...(Pelec ? { Pelec } : {}), ...(dp ? { dp } : {}), ...(famille === 'generateur' ? { P: 150 } : {}) }));
+  const config = () => { const c = { ...CONFIG_DEFAUT, ...db.config, societe: { ...CONFIG_DEFAUT.societe, ...(db.config.societe || {}) } }; c.catalogues = { ...(c.catalogues || {}), materiel: ((c.catalogues || {}).materiel || []).length ? c.catalogues.materiel : CATALOGUE_DEMO }; return c; };
   const rep = (status, obj) => new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
   const err = (status, error, extra) => rep(status, { error, ...(extra || {}) });
 
