@@ -123,6 +123,32 @@ const Electricite = ((N, Sc) => {
       if (a.desequilibre > 0.3 && a.Ib > 10) alertes.push(alerte('attention', `Armoire ${a.rep} : phases déséquilibrées de ${nf(a.desequilibre * 100, 0)} % (répartissez les charges monophasées).`));
       if (!a.eqs.length) alertes.push(alerte('attention', `Armoire ${a.rep} : aucun équipement alimenté.`));
     });
+    // Courts-circuits (méthode des impédances, pré-dimensionnement) : Icc maxi au jeu de barres de chaque armoire
+    // (pouvoir de coupure des appareils), Icc mini en bout de chaque départ (déclenchement magnétique), sélectivité
+    const iccT = Math.max(1, num(e.iccTgbt, 10)) * 1000, Zs = 400 / (Math.sqrt(3) * iccT), XL = 0.00008, RHO0 = 0.01851, RHOC = RHO0 * 1.25;
+    const PDC = [6, 10, 15, 25, 36, 50, 70], IM = { B: 5, C: 10, D: 20 }, ccLignes = [];
+    const iccMin = (Ramont, Xamont, L, S) => 0.95 * 230 / Math.hypot(Ramont + 2 * RHOC * L / S, Xamont + 2 * XL * L);
+    arm.forEach(a => {
+      // Sélectivité ampèremétrique avec le plus gros départ : la protection en tête (et son câble) est relevée si besoin
+      const dep = a.eqs.filter(q => q.d.cal), maxDep = dep.reduce((m, q) => Math.max(m, q.d.cal), 0), tete = CALIBRES.find(c => c >= 1.6 * maxDep) || CALIBRES[CALIBRES.length - 1];
+      a.selectif = !maxDep || a.cal >= 1.6 * maxDep;
+      if (!a.selectif) {
+        alertes.push(alerte('attention', `Armoire ${a.rep} : protection en tête ${a.cal} A pour un départ de ${maxDep} A — sélectivité ampèremétrique non assurée (rapport < 1,6) : portée à ${tete} A au TGBT (câble d'alimentation adapté), ou sélectivité vérifiée sur les tables du constructeur.`));
+        a.calInitial = a.cal; a.cal = tete; a.S = Math.max(a.S, SECTION_CAL[a.cal] || a.S);
+      }
+      const L = num(a.L), Rc = RHO0 * L / a.S;
+      a.Icc = 400 / (Math.sqrt(3) * Math.hypot(Rc, Zs + XL * L)); a.pdc = PDC.find(k => k * 1000 >= a.Icc) || 70;
+      ccLignes.push([`Armoire ${a.rep} (jeu de barres)`, nf(a.Icc / 1000, 1), `${a.pdc} kA`, `${a.cal} A en tête`, maxDep ? `${maxDep} A` : '—', a.selectif ? 'Oui (≥ 1,6)' : `Portée de ${a.calInitial} à ${a.cal} A`]);
+      dep.forEach(q => {
+        q.Icc = a.Icc; q.pdc = a.pdc;
+        q.IccMin = iccMin(2 * RHOC * L / a.S, Zs + 2 * XL * L, num(q.L), q.d.S);
+        q.Ia = q.d.cal * (IM[q.d.courbe] || 10);
+        if (num(q.L) && q.IccMin < q.Ia) alertes.push(alerte('erreur', `${q.rep} : Icc mini en bout de ligne ${nf(q.IccMin, 0)} A < seuil magnétique ${nf(q.Ia, 0)} A (${q.d.cal} A courbe ${q.d.courbe}) : section supérieure, courbe plus basse ou longueur réduite.`));
+      });
+    });
+    eqs.filter(q => q.alim === 'elec' && q.d.cal).forEach(q => { q.Icc = iccT; q.pdc = PDC.find(k => k * 1000 >= iccT) || 70; q.IccMin = iccMin(0, Zs, num(q.L), q.d.S); q.Ia = q.d.cal * (IM[q.d.courbe] || 10); });
+    const ccDeparts = eqs.filter(q => q.d.cal && num(q.L)).map(q => [q.rep, q.alim === 'elec' ? 'TGBT' : q.alim, `${q.d.cal} A ${q.d.courbe}`, q.d.cable, `${num(q.L)} m`, nf(q.IccMin, 0), nf(q.Ia, 0), q.IccMin >= q.Ia ? 'Oui' : 'Non']);
+
     // Points automate par armoire (régulation de chaque équipement)
     const pts = [];
     eqs.forEach(q => {
@@ -153,11 +179,11 @@ const Electricite = ((N, Sc) => {
       const lignes = new Map(), add = (famille, des, carac, qte = 1) => { const k = `${famille}|${des}|${carac}`, x = lignes.get(k); if (x) x[3] += qte; else lignes.set(k, [famille, des, carac, qte]); };
       const puiss = a.eqs.filter(q => q.tension !== '24V'), b24 = a.eqs.filter(q => q.tension === '24V');
       add('Arrivée', 'Interrupteur-sectionneur général 4P cadenassable', `${a.cal} A`);
-      add('Arrivée', 'Parafoudre type 2 + protection', '400 V');
+      add('Arrivée', 'Parafoudre type 2 + protection', `400 V, Icc ${nf(a.Icc / 1000, 1)} kA`);
       let modules = 8, bornesP = 0, variateurs = 0;
       puiss.forEach(q => {
         const tri = q.d.tri, pol = tri ? '3P' : '1P+N';
-        add('Protection', q.moteur ? 'Disjoncteur moteur magnéto-thermique' : 'Disjoncteur', `${pol} ${q.d.cal} A courbe ${q.d.courbe}`);
+        add('Protection', q.moteur ? 'Disjoncteur moteur magnéto-thermique' : 'Disjoncteur', `${pol} ${q.d.cal} A courbe ${q.d.courbe}, PdC ≥ ${a.pdc} kA`);
         modules += tri ? 3 : 2; bornesP += tri ? 5 : 3;
         if (q.km) { add('Commande', 'Contacteur bobine 24 V', `${tri ? '3P' : '2P'} ${q.d.cal} A (AC-3)`); modules += tri ? 3 : 2; }
         if (q.depart === 'variateur') { add('Variation', 'Variateur de vitesse', `${nf(num(q.P), 2)} kW ${tri ? '400 V tri' : '230 V mono'}, entrée 0-10 V, relais de défaut`); add('Protection', 'Interrupteur différentiel 30 mA type B ou F', `${tri ? '4P' : '2P'} ${q.d.cal} A`); variateurs++; modules += tri ? 4 : 2; }
@@ -260,6 +286,9 @@ const Electricite = ((N, Sc) => {
         { titre: 'Bilan de puissance', blocs: [
           { titre: 'Bilan de puissance au TGBT (lot CVC)', tableau: tableauBilan },
           { titre: `Attentes à demander au ${lot}`, tableau: { entetes: ['Pour', 'Local', 'Tension', 'P (kW)', 'Ib (A)', 'Protection en tête', 'Câble indicatif', 'À prévoir'], lignes: demandes } },
+          { titre: 'Courts-circuits et sélectivité', tableau: { entetes: ['Point', 'Icc maxi (kA)', 'Pouvoir de coupure mini', 'Protection en tête', 'Plus gros départ', 'Sélectivité ampèremétrique'], lignes: ccLignes } },
+          ...(ccDeparts.length ? [{ titre: 'Déclenchement en bout de ligne (Icc mini)', tableau: { entetes: ['Départ', 'Depuis', 'Protection', 'Câble', 'Longueur', 'Icc mini (A)', 'Seuil magnétique (A)', 'Protégé'], lignes: ccDeparts } }] : []),
+          { texte: [`Icc au TGBT pris égal à ${nf(iccT / 1000, 1)} kA (à confirmer par le lot électricité) ; impédance amont réactive, câbles cuivre (ρ ${RHO0} Ω·mm²/m à 20 °C pour l'Icc maxi, × 1,25 pour l'Icc mini), réactance 0,08 mΩ/m ; Icc mini phase-neutre à 0,95 · 230 V ; seuil magnétique 5, 10 ou 20 In (courbes B, C, D).`] },
           { texte: [`Puissance installée ${nf(Ptot, 1)} kW ; appelée ${nf(Pappel, 1)} kW (${nf(Sappel, 1)} kVA), foisonnement de chaque armoire puis simultanéité ${nf(ksT * 100, 0)} % au TGBT. À transmettre au ${lot} pour le bilan général et l'abonnement.`] }] },
         { titre: 'Régulation', blocs: [
           { titre: 'Analyse fonctionnelle', liste: af },
@@ -332,12 +361,12 @@ const Electricite = ((N, Sc) => {
         const G = Sc.GENERATEURS[es.generateur] || ['Générateur'], pac = /^(pac|gf)/.test(es.generateur || '');
         for (let i = 1; i <= d.n; i++) {
           if (/^echangeur/.test(es.generateur || '')) continue;
-          ajout(`gen${i}`, { rep: `${pac ? 'PAC' : 'G'}${i}`, designation: `${G[0]} ${i}`, type: pac ? 'pac' : 'generateur', P: pac ? Math.round(d.Pg / 3 * 10) / 10 : Math.max(0.2, Math.round(d.Pg * 0.003 * 10) / 10), tension: pac || d.Pg > 300 ? 'tri' : 'mono', regulation: pac ? 'bus' : 'mod' });
+          ajout(`gen${i}`, { metre: `gen|${es.generateur}|${d.Pg}`, rep: `${pac ? 'PAC' : 'G'}${i}`, designation: `${G[0]} ${i}`, type: pac ? 'pac' : 'generateur', P: pac ? Math.round(d.Pg / 3 * 10) / 10 : Math.max(0.2, Math.round(d.Pg * 0.003 * 10) / 10), tension: pac || d.Pg > 300 ? 'tri' : 'mono', regulation: pac ? 'bus' : 'mod' });
           if (d.pompesInd && (d.bouteille || d.echangeur || d.n > 1)) ajout(`pp${i}`, { rep: `PP${i}`, designation: `Pompe primaire ${i}`, type: 'pompe', P: Math.max(0.05, Math.round(d.Qg * 8 / 367 / 0.45 * 100) / 100), tension: 'mono', regulation: 'tor' });
         }
         d.circuits.forEach((c, i) => {
           const k = i + 1;
-          ajout(`pc${k}`, { rep: `PC${k}`, designation: `Pompe ${c.rep}`, type: 'pompe', P: c.pompe && c.pompe.P1 ? kW(c.pompe.P1) : Math.max(0.05, Math.round(c.Q * Math.max(2, c.hmt) / 367 / 0.45 * 100) / 100), tension: 'mono',
+          ajout(`pc${k}`, { ...(c.pompe ? { metre: `pompe|${c.pompe.modele}` } : {}), rep: `PC${k}`, designation: `Pompe ${c.rep}`, type: 'pompe', P: c.pompe && c.pompe.P1 ? kW(c.pompe.P1) : Math.max(0.05, Math.round(c.Q * Math.max(2, c.hmt) / 367 / 0.45 * 100) / 100), tension: 'mono',
             regulation: c.reg === '2v' || c.emetteur === 'ventilo' ? 'var' : 'tor', depart: c.reg === '2v' || c.emetteur === 'ventilo' ? 'variateur' : undefined });
           if (c.reg !== 'direct') ajout(`v${k}`, { rep: `V${k}`, designation: `Vanne de régulation ${c.rep}`, type: 'vanne', P: 0.01, tension: '24V', regulation: 'v010' });
           ajout(`td${k}`, { rep: `TD${k}`, designation: `Sonde de départ ${c.rep}`, type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
@@ -364,13 +393,23 @@ const Electricite = ((N, Sc) => {
       // Schéma aéraulique : ventilateurs du producteur (soufflage / insufflation, reprise / extraction)
       if (n.type === 'aero' && !(es.cta && notes.some(x => x.id === es.cta && x.type === 'cta'))) {
         const cta = /^cta/.test(v.producteur || ''), nom = es.titreInstallation || titre;
-        if (v.Qs > 0 && Number.isFinite(v.PvS)) ajout('vs', { rep: `${cta ? 'VS' : 'VI'}-N${ni + 1}`, designation: `Ventilateur de ${cta ? 'soufflage' : 'insufflation'} — ${nom}`, type: 'ventilateur', P: Math.max(0.1, kW(v.PvS * 1.15)), tension: v.PvS > 2200 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur' });
-        if (v.Qr > 0 && Number.isFinite(v.PvR)) ajout('vr', { rep: `${cta ? 'VR' : 'VE'}-N${ni + 1}`, designation: `Ventilateur ${cta ? 'de reprise' : 'd\'extraction'} — ${nom}`, type: 'ventilateur', P: Math.max(0.1, kW(v.PvR * 1.15)), tension: v.PvR > 2200 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur' });
+        const cleAero = `aero|${v.producteur}|${Math.round(Math.max(v.Qs || 0, v.Qr || 0))}`;
+        if (v.Qs > 0 && Number.isFinite(v.PvS)) ajout('vs', { metre: cleAero, rep: `${cta ? 'VS' : 'VI'}-N${ni + 1}`, designation: `Ventilateur de ${cta ? 'soufflage' : 'insufflation'} — ${nom}`, type: 'ventilateur', P: Math.max(0.1, kW(v.PvS * 1.15)), tension: v.PvS > 2200 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur' });
+        if (v.Qr > 0 && Number.isFinite(v.PvR)) ajout('vr', { metre: cleAero, rep: `${cta ? 'VR' : 'VE'}-N${ni + 1}`, designation: `Ventilateur ${cta ? 'de reprise' : 'd\'extraction'} — ${nom}`, type: 'ventilateur', P: Math.max(0.1, kW(v.PvR * 1.15)), tension: v.PvR > 2200 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur' });
       }
       if (n.type === 'cta' && Number.isFinite(v.PvS)) {
-        ajout('vs', { rep: `VS-N${ni + 1}`, designation: `Ventilateur de soufflage — ${titre}`, type: 'ventilateur', P: Math.max(0.1, kW(v.PvS * 1.15)), tension: v.PvS > 2200 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur' });
-        if (Number.isFinite(v.PvR) && v.PvR > 0) ajout('vr', { rep: `VR-N${ni + 1}`, designation: `Ventilateur de reprise — ${titre}`, type: 'ventilateur', P: Math.max(0.1, kW(v.PvR * 1.15)), tension: v.PvR > 2200 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur' });
+        ajout('vs', { metre: `cta|${num(es.Qs)}`, rep: `VS-N${ni + 1}`, designation: `Ventilateur de soufflage — ${titre}`, type: 'ventilateur', P: Math.max(0.1, kW(v.PvS * 1.15)), tension: v.PvS > 2200 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur' });
+        if (Number.isFinite(v.PvR) && v.PvR > 0) ajout('vr', { metre: `cta|${num(es.Qs)}`, rep: `VR-N${ni + 1}`, designation: `Ventilateur de reprise — ${titre}`, type: 'ventilateur', P: Math.max(0.1, kW(v.PvR * 1.15)), tension: v.PvR > 2200 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur' });
       }
+    });
+    // Matériel retenu choisi dans le catalogue des fabricants : sa puissance électrique remplace l'estimation
+    // (par appareil ; partagée entre les ventilateurs de soufflage et de reprise d'une même centrale)
+    const retenu = etude.materiel || {}, groupes = new Map();
+    out.forEach(o => { const m = o.metre && retenu[o.metre]; if (m && String(m.reference || '').trim() && m.pElec != null && Number.isFinite(Number(m.pElec))) { if (!groupes.has(o.metre)) groupes.set(o.metre, []); groupes.get(o.metre).push(o); } });
+    groupes.forEach((ls, k) => {
+      const m = retenu[k], pe = Number(m.pElec), ref = [m.fabricant, m.reference].map(x => String(x || '').trim()).filter(Boolean).join(' ');
+      const partage = ls.length > 1 && ls.every(o => o.type === 'ventilateur'), tot = ls.reduce((s, o) => s + (num(o.P) || 0), 0) || ls.length;
+      ls.forEach(o => { o.P = Math.round((partage ? pe * (num(o.P) || 1) / tot : pe) * 100) / 100; o.designation = `${o.designation} — ${ref}`; o.catalogue = ref; });
     });
     return out;
   }
@@ -404,6 +443,7 @@ const Electricite = ((N, Sc) => {
       { g: 'Lots et supervision' },
       { k: 'lotElec', l: 'Lot électricité (destinataire des demandes d\'attentes)', t: 't', d: 'Lot électricité' },
       { k: 'ksTgbt', l: 'Simultanéité des départs CVC au TGBT', u: '%', d: 90 },
+      { k: 'iccTgbt', l: 'Courant de court-circuit au TGBT (donnée du lot électricité)', u: 'kA', d: 10 },
       { k: 'gtb', l: 'Supervision / GTB', t: 's', o: [['aucune', 'Aucune (interface en façade)'], ['BACnet/IP', 'BACnet/IP'], ['Modbus TCP', 'Modbus TCP'], ['KNX', 'KNX'], ['LON', 'LON']], d: 'BACnet/IP' },
     ],
     calcul: calculer,

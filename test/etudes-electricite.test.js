@@ -38,7 +38,9 @@ test('armoire CVC : phases équilibrées, foisonnement, réserve, demandes au lo
   proche(v.Ptot, 32.6, 0.001, 'équipements + 0,3 kW de commande de l\'armoire'); proche(v.Pelec, 30.8, 0.001);
   proche(a.P, 1.8, 0.001, 'trois pompes + 0,3 kW de commande');
   // Une pompe par phase : 0,5 / (230 × 0,85) = 2,56 A, + commande 1,3 A sur une phase ; × 0,8 × 1,2
-  proche(a.Ib, (2.557 + 1.304) * 0.8 * 1.2, 0.05); assert.strictEqual(a.cal, 4);
+  proche(a.Ib, (2.557 + 1.304) * 0.8 * 1.2, 0.05);
+  // 4 A suffiraient, mais sélectivité avec les départs de 4 A (rapport 1,6) : 10 A en tête
+  assert.strictEqual(a.cal, 10); assert.ok(r.alertes.some(x => /sélectivité ampèremétrique non assurée.*portée à 10 A/.test(x.texte)));
   const eq = r.tableaux[0].lignes;
   assert.deepStrictEqual(eq.map(l => l[4]), ['Armoire AR1 (L1)', 'Armoire AR1 (L2)', 'Armoire AR1 (L3)', 'Armoire AR1', 'Attente Lot 13 Électricité', 'Attente Lot 13 Électricité']);
   const dem = r.tableaux[2];
@@ -58,7 +60,7 @@ test('armoire CVC : phases équilibrées, foisonnement, réserve, demandes au lo
   // Cahier des charges et schéma unifilaire
   const cc = r.onglets.find(o => o.titre === 'Cahier des charges armoires');
   assert.ok(cc.blocs.some(b => b.titre === 'Départs de l\'armoire AR1' && b.tableau.lignes.length === 4));
-  assert.match(r.schema, /^<svg/); assert.match(r.schema, /QG 4 A/); assert.match(r.schema, />P1</); assert.match(r.schema, /Automate/);
+  assert.match(r.schema, /^<svg/); assert.match(r.schema, /QG 10 A/); assert.match(r.schema, />P1</); assert.match(r.schema, /Automate/);
   assert.strictEqual(r.titreSchema, 'Schéma unifilaire des armoires CVC');
 });
 
@@ -123,4 +125,26 @@ test('chaufferie : sécurités reprises, bilan de puissance au TGBT, plan d\'adr
   // Le classeur se construit
   const X = require('../public/js/xlsx');
   assert.ok(X.build(r.valeurs.feuilles.map(f => ({ name: f.name, rows: [f.entetes, ...f.lignes] }))).length > 1000);
+});
+
+test('courts-circuits, sélectivité et puissance électrique reprise du catalogue', () => {
+  const r = N.calculer('elec', { armoires: [{ rep: 'AR1', L: 30, ks: 100, reserve: 0 }], iccTgbt: 10, equipements: [
+    { rep: 'P1', type: 'pompe', P: 2, alim: 'AR1', L: 20 }, { rep: 'P2', type: 'pompe', P: 0.3, alim: 'AR1', L: 400 }] });
+  const cc = r.onglets.find(o => o.titre === 'Bilan de puissance').blocs.find(b => b.titre === 'Courts-circuits et sélectivité').tableau.lignes[0];
+  const a = r.valeurs.armoires[0];
+  // Icc au jeu de barres < Icc du TGBT ; pouvoir de coupure normalisé au-dessus
+  const icc = Number(cc[1].replace(',', '.'));
+  assert.ok(icc > 0.5 && icc < 10, `Icc ${icc} kA`); assert.match(cc[2], /^(6|10) kA$/);
+  assert.ok(a.cal >= 1.6 * 16, 'tête sélective avec le départ de 16 A');
+  // 400 m en 1,5 mm² sous 2 A D : Icc mini trop faible pour le déclenchement magnétique
+  assert.ok(r.alertes.some(x => /P2 : Icc mini en bout de ligne/.test(x.texte)) || r.alertes.some(x => /P2 : chute de tension/.test(x.texte)));
+  // Puissance électrique du modèle choisi au catalogue : remplace l'estimation, partagée entre les ventilateurs de la CTA
+  const aero = { id: 'a', type: 'aero', titre: 'CTA', entrees: N.defauts('aero') };
+  const et = { notes: [aero], materiel: {} };
+  const v = N.calculer('aero', aero.entrees).valeurs, cle = `aero|${v.producteur}|${Math.round(Math.max(v.Qs, v.Qr))}`;
+  et.materiel[cle] = { fabricant: 'Ventilia', reference: 'CTA-DF 3000', pElec: 2.4 };
+  const ls = E.equipementsEtude(et, Liens).filter(x => x.type === 'ventilateur');
+  assert.strictEqual(ls.length, 2);
+  proche(ls.reduce((s, x) => s + x.P, 0), 2.4, 0.011);
+  assert.ok(ls.every(x => /Ventilia CTA-DF 3000/.test(x.designation)));
 });
