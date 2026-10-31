@@ -93,3 +93,34 @@ test('reprise des équipements d\'une étude : schéma de principe, réseau, CTA
   const r = N.calculer('elec', { ...N.defauts('elec'), equipements: deux.lignes });
   assert.ok(!r.alertes.some(a => a.niveau === 'erreur'), r.alertes.map(a => a.texte).join(' | '));
 });
+
+test('chaufferie : sécurités reprises, bilan de puissance au TGBT, plan d\'adressage, nomenclature, classeur', () => {
+  const pid = { id: 'p', type: 'pid', titre: 'Chaufferie', entrees: { ...N.defauts('pid'), compteurs: 'oui' } };
+  const eqs = E.fusionner([], E.equipementsEtude({ notes: [pid] }, Liens)).lignes, reps = eqs.map(q => q.rep);
+  ['TE', 'TDG', 'PR', 'PMQ', 'AU', 'DG', 'EVG', 'CE1'].forEach(r => assert.ok(reps.includes(r), r));
+  const r = N.calculer('elec', { ...N.defauts('elec'), equipements: eqs, ksTgbt: 90 });
+  const ar = r.valeurs.armoires[0];
+  // Points : électrovanne gaz (commande + fin de course), sécurités en ETOR, compteurs par impulsions
+  const pts = r.onglets.find(o => o.titre === 'Régulation').blocs[1].tableau.lignes;
+  assert.ok(pts.some(p => p[0] === 'EVG' && p[2] === 'STOR') && pts.some(p => p[0] === 'EVG' && p[2] === 'ETOR'));
+  assert.ok(['AU', 'DG', 'PMQ', 'CE1'].every(x => pts.some(p => p[0] === x && p[2] === 'ETOR')));
+  // Cartes avec 20 % de réserve, adresses uniques et bornes X2 deux par deux
+  const n = t => pts.filter(p => p[2] === t).length;
+  Object.entries(E.CARTES).forEach(([t, [cap]]) => assert.strictEqual(ar.cartes[t], n(t) ? Math.ceil(Math.ceil(n(t) * 1.2) / cap) : 0, t));
+  const adr = r.onglets.find(o => o.titre === 'Régulation').blocs.find(b => /Plan d'adressage/.test(b.titre)).tableau.lignes.filter(l => l[2] !== '—' && !/^Bus/.test(l[0]));
+  assert.strictEqual(new Set(adr.map(l => l[0])).size, adr.length);
+  assert.deepStrictEqual(adr.slice(0, 2).map(l => l[1]), ['X2:1-2', 'X2:3-4']);
+  // Nomenclature : interrupteur général au calibre, contacteurs des pompes commandées, cartes, enveloppe
+  const cc = r.onglets.find(o => o.titre === 'Cahier des charges armoires').blocs.find(b => /Nomenclature/.test(b.titre)).tableau.lignes;
+  assert.ok(cc.some(l => /Interrupteur-sectionneur/.test(l[1]) && l[2] === `${ar.cal} A`));
+  assert.ok(cc.some(l => /Contacteur/.test(l[1])) && cc.some(l => /Carte 16 ETOR/.test(l[1])) && cc.some(l => /Armoire métallique IP 54/.test(l[1])));
+  // Bilan : puissance appelée = Σ foisonnée × simultanéité
+  const bil = r.onglets.find(o => o.titre === 'Bilan de puissance').blocs[0].tableau.lignes;
+  assert.match(bil[bil.length - 1][0], /Total CVC au TGBT/);
+  assert.ok(Math.abs(r.valeurs.Pappel - (ar.P * 0.8 + r.valeurs.Pelec) * 0.9) < 0.01);
+  assert.match(r.schema, />KM</, 'contacteur des pompes commandées en marche / arrêt');
+  assert.deepStrictEqual(r.valeurs.feuilles.map(f => f.name), ['Bilan de puissance', 'Attentes lot élec', 'Équipements', 'Liste des points', 'E-S AR-CVC-01', 'Nomenclature AR-CVC-01']);
+  // Le classeur se construit
+  const X = require('../public/js/xlsx');
+  assert.ok(X.build(r.valeurs.feuilles.map(f => ({ name: f.name, rows: [f.entetes, ...f.lignes] }))).length > 1000);
+});

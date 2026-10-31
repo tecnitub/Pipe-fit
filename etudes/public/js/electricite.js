@@ -23,6 +23,8 @@ const Electricite = ((N, Sc) => {
     vanne: ['Vanne motorisée, servomoteur', false, '24V', 'equipement', 'v010', 'VM'],
     regulateur: ['Régulateur terminal, thermostat', false, '24V', 'equipement', 'regul', 'RT'],
     sonde: ['Sonde, capteur, compteur', false, '24V', 'equipement', 'sonde', 'S'],
+    securite: ['Sécurité (arrêt d\'urgence, détection gaz, pressostat, thermostat)', false, '24V', 'equipement', 'securite', 'SEC'],
+    electrovanne: ['Électrovanne gaz / vanne de police', false, 'mono', 'equipement', 'evGaz', 'EVG'],
     autre: ['Autre équipement', false, 'mono', 'direct', 'tor', 'EQ'],
   };
   const TENSIONS = { mono: '230 V mono', tri: '400 V tri', '24V': '24 V (depuis l\'armoire)' };
@@ -38,9 +40,14 @@ const Electricite = ((N, Sc) => {
     v010: ['Vanne 0-10 V', [['', 'Commande 0-10 V', 'SA']], 'positionnée par l\'automate (0-10 V) pour tenir la consigne de température'],
     v010r: ['Vanne 0-10 V avec recopie', [['', 'Commande 0-10 V', 'SA'], ['', 'Recopie de position', 'EA']], 'positionnée par l\'automate (0-10 V) avec contrôle de la recopie de position'],
     sonde: ['Mesure (sonde, capteur)', [['', 'Mesure', 'EA']], 'mesure transmise à l\'automate (régulation et historiques)'],
+    securite: ['Sécurité câblée, report d\'alarme', [['', 'Alarme / déclenchement', 'ETOR']], 'câblé en dur dans la chaîne de sécurité (coupure indépendante de l\'automate) ; déclenchement reporté à l\'automate et à la GTB'],
+    evGaz: ['Électrovanne normalement fermée', [['', 'Commande d\'ouverture', 'STOR'], ['', 'Position fermée (fin de course)', 'ETOR']], 'ouverte par l\'automate quand la chaufferie est autorisée ; refermée en dur par l\'arrêt d\'urgence et la détection gaz ; position contrôlée'],
+    impulsion: ['Comptage par impulsions', [['', 'Impulsions de comptage', 'ETOR']], 'comptage relevé par l\'automate (historiques, bilans d\'énergie)'],
     regul: ['Régulation propre, report à la GTB', [['', 'Défaut / état', 'ETOR']], 'régulé par son régulateur propre (consigne locale ou par bus) ; état et défaut reportés'],
     bus: ['Communication par bus (Modbus / BACnet)', [['', 'États, défauts, consignes, mesures', 'Bus']], 'piloté par bus (marche, consignes) ; états, défauts et mesures remontés par la communication'],
   };
+  // Cartes d'entrées / sorties de l'automate : voies par carte et signal câblé
+  const CARTES = { EA: [8, 'PT1000 / 0-10 V / 4-20 mA'], SA: [8, '0-10 V'], ETOR: [16, 'Contact sec 24 V DC'], STOR: [16, 'Relais 24 V DC / 230 V AC'] };
   const CALIBRES = [2, 4, 6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 320, 400, 500, 630];
   const SECTIONS = [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240];
   // Section mini (mm², cuivre, PVC, pose sur chemin de câbles) selon le calibre de la protection
@@ -80,6 +87,9 @@ const Electricite = ((N, Sc) => {
       if (q.alim !== 'elec' && !parRep.has(q.alim)) { alertes.push(alerte('attention', `${rep} : armoire « ${q.alim} » inconnue, équipement compté en attente électrique.`)); q.alim = 'elec'; }
       if (q.tension === '24V' && q.alim === 'elec') alertes.push(alerte('attention', `${rep} : un équipement en 24 V est alimenté depuis une armoire (choisissez l'armoire).`));
       q.d = q.tension === '24V' ? { Ib: 0, cal: 0, S: 0, du: 0, cable: '' } : depart(q);
+      q.cosphi = Math.min(1, Math.max(0.5, num(q.cos, q.moteur ? 0.85 : 0.95)));
+      // Contacteur : départ à contacteur ou démarreur, ou départ direct commandé en marche / arrêt par l'automate
+      q.km = q.tension !== '24V' && (['contacteur', 'etoile'].includes(q.depart) || (q.depart === 'direct' && ['tor', 'torRetour'].includes(q.regulation)));
       if (q.d.du > 3) alertes.push(alerte('attention', `${rep} : chute de tension ${nf(q.d.du, 1)} % même en ${nf(q.d.S, 1)} mm² (longueur ${num(q.L)} m) — à vérifier par le lot électricité.`));
       if (q.tension !== '24V' && !num(q.P)) alertes.push(alerte('attention', `${rep} : puissance électrique à renseigner.`));
       if (q.depart === 'variateur' && q.tension !== '24V') q.diff = 'Différentiel 30 mA / 300 mA type B ou F (variateur)';
@@ -124,6 +134,63 @@ const Electricite = ((N, Sc) => {
     arm.forEach(a => { (a.sondes || '').split(/[;\n]+/).map(s => s.trim()).filter(Boolean).forEach(s => { const p = [`S-${a.rep}`, s, 'EA', a.rep]; pts.push(p); a.pts.push(p); }); });
     const TYPES_PTS = ['EA', 'SA', 'ETOR', 'STOR', 'Bus'], LIB_PTS = { EA: 'Entrées analogiques (EA)', SA: 'Sorties analogiques (SA)', ETOR: 'Entrées TOR (ETOR)', STOR: 'Sorties TOR (STOR)', Bus: 'Points par bus' };
     const compte = l => TYPES_PTS.map(t => [t, l.filter(p => p[2] === t).length]);
+    const gtb = e.gtb && e.gtb !== 'aucune' ? e.gtb : '';
+    // Plan d'adressage : points rangés par type sur les cartes de l'automate (20 % de réserve), bornier X2 (2 bornes par point)
+    arm.forEach(a => {
+      a.cartes = {}; a.adresses = [];
+      let borne = 1;
+      ['EA', 'SA', 'ETOR', 'STOR'].forEach(t => {
+        const l = a.pts.filter(p => p[2] === t), [cap, signal] = CARTES[t], nb = l.length ? Math.ceil(Math.ceil(l.length * 1.2) / cap) : 0;
+        a.cartes[t] = nb;
+        l.forEach((p, i) => { a.adresses.push([`${t}${Math.floor(i / cap) + 1}.${String(i % cap).padStart(2, '0')}`, `X2:${borne}-${borne + 1}`, p[0], p[1], t, signal]); borne += 2; });
+        if (nb * cap > l.length) a.adresses.push([`${t}${Math.floor(l.length / cap) + 1}.${String(l.length % cap).padStart(2, '0')} …`, '', '—', `Réserve : ${nb * cap - l.length} voie(s) libre(s)`, t, signal]);
+      });
+      a.pts.filter(p => p[2] === 'Bus').forEach(p => a.adresses.push([`Bus ${gtb || 'Modbus'}`, '', p[0], p[1], 'Bus', 'Communication']));
+      a.bornesES = borne - 1;
+    });
+    // Nomenclature de l'appareillage de chaque armoire (pour le tableautier)
+    arm.forEach(a => {
+      const lignes = new Map(), add = (famille, des, carac, qte = 1) => { const k = `${famille}|${des}|${carac}`, x = lignes.get(k); if (x) x[3] += qte; else lignes.set(k, [famille, des, carac, qte]); };
+      const puiss = a.eqs.filter(q => q.tension !== '24V'), b24 = a.eqs.filter(q => q.tension === '24V');
+      add('Arrivée', 'Interrupteur-sectionneur général 4P cadenassable', `${a.cal} A`);
+      add('Arrivée', 'Parafoudre type 2 + protection', '400 V');
+      let modules = 8, bornesP = 0, variateurs = 0;
+      puiss.forEach(q => {
+        const tri = q.d.tri, pol = tri ? '3P' : '1P+N';
+        add('Protection', q.moteur ? 'Disjoncteur moteur magnéto-thermique' : 'Disjoncteur', `${pol} ${q.d.cal} A courbe ${q.d.courbe}`);
+        modules += tri ? 3 : 2; bornesP += tri ? 5 : 3;
+        if (q.km) { add('Commande', 'Contacteur bobine 24 V', `${tri ? '3P' : '2P'} ${q.d.cal} A (AC-3)`); modules += tri ? 3 : 2; }
+        if (q.depart === 'variateur') { add('Variation', 'Variateur de vitesse', `${nf(num(q.P), 2)} kW ${tri ? '400 V tri' : '230 V mono'}, entrée 0-10 V, relais de défaut`); add('Protection', 'Interrupteur différentiel 30 mA type B ou F', `${tri ? '4P' : '2P'} ${q.d.cal} A`); variateurs++; modules += tri ? 4 : 2; }
+        if (q.depart === 'etoile') add('Commande', 'Démarreur progressif (ou étoile-triangle)', `${nf(num(q.P), 2)} kW`);
+        if (q.moteur && (q.km || q.depart === 'variateur')) { add('Façade', 'Commutateur arrêt / auto / manu', '3 positions'); add('Façade', 'Voyants marche (vert) et défaut (rouge)', 'LED 24 V', 2); }
+      });
+      const n24 = b24.length, nVannes = b24.filter(q => ['vanne', 'regulateur'].includes(q.type)).length;
+      add('Commande', 'Disjoncteur du circuit de commande', '1P+N 2 A');
+      add('Commande', 'Alimentation 24 V DC (automate, entrées, sondes)', `${nf(Math.max(2.5, Math.ceil((0.8 + n24 * 0.05 + a.pts.length * 0.01) * 2) / 2), 1)} A`);
+      if (nVannes) add('Commande', 'Transformateur 230 / 24 V AC (servomoteurs)', `${Math.max(63, Math.ceil((nVannes * 12 + 20) / 25) * 25)} VA`);
+      add('Automatisme', `Automate programmable (unité centrale)${gtb ? ` + communication ${gtb}` : ''}`, 'Horloge, historiques, serveur web');
+      Object.entries(a.cartes).forEach(([t, n]) => { if (n) add('Automatisme', `Carte ${CARTES[t][0]} ${t}`, CARTES[t][1], n); });
+      if (a.pts.some(p => p[2] === 'Bus')) add('Automatisme', 'Passerelle / port de communication des équipements', 'Modbus RTU ou BACnet MS/TP');
+      add('Raccordement', 'Bornes de puissance (bornier X1)', 'Section selon départ', bornesP + 5);
+      add('Raccordement', 'Bornes d\'entrées / sorties (bornier X2), sectionnables pour les mesures', '2,5 mm²', a.bornesES + Math.ceil(a.bornesES * 0.2));
+      add('Enveloppe', 'Éclairage intérieur, prise de service 2P+T, porte-plans', '');
+      modules += 8 + Object.values(a.cartes).reduce((s, n) => s + 2 * n, 0);
+      const rangees = Math.max(2, Math.ceil(modules * 1.2 / 24)), H = Math.min(2000, Math.ceil((rangees * 150 + 300 + (variateurs ? 400 : 0)) / 200) * 200), L = variateurs > 2 || rangees > 8 ? 800 : 600;
+      add('Enveloppe', 'Armoire métallique IP 54 (estimation)', `≈ ${H} × ${L} × 300 mm, ${rangees} rangées DIN de 24 modules${variateurs ? ` + ${variateurs} variateur(s) sur plaque` : ''}, 20 % de réserve`);
+      a.nomenclature = [...lignes.values()];
+      a.enveloppe = { H, L, rangees, variateurs };
+    });
+    // Bilan de puissance jusqu'au TGBT : armoires CVC (foisonnées) et attentes directes du lot électricité
+    const ksT = num(e.ksTgbt, 90) / 100;
+    const ligneBilan = (nom, alim, P, ks, S, Ib) => [nom, alim, nf(P, 2), `${nf(ks * 100, 0)} %`, nf(P * ks, 2), S ? nf(P / S, 2) : '—', nf(S * ks, 2), nf(Ib, 1)];
+    const bilan = [
+      ...arm.map(a => { const S = a.eqs.reduce((s, q) => s + num(q.P) / q.cosphi, 0) + 0.3; return { nom: `Armoire ${a.rep}${a.local ? ` (${a.local})` : ''}`, alim: '400 V tri', P: a.P, ks: a.ks, S, Ib: a.Ib }; }),
+      ...eqs.filter(q => q.alim === 'elec' && q.tension !== '24V').map(q => ({ nom: `${q.rep} — ${q.designation || q.t[0]}`, alim: TENSIONS[q.tension], P: num(q.P), ks: 1, S: num(q.P) / q.cosphi, Ib: q.d.Ib })),
+    ];
+    const Pappel = bilan.reduce((s, x) => s + x.P * x.ks, 0) * ksT, Sappel = bilan.reduce((s, x) => s + x.S * x.ks, 0) * ksT, Itgbt = Sappel * 1000 / (Math.sqrt(3) * 400);
+    const tableauBilan = { entetes: ['Départ du TGBT', 'Alimentation', 'P installée (kW)', 'Foisonnement', 'P appelée (kW)', 'cos φ', 'S appelée (kVA)', 'Ib (A, phase la plus chargée)'],
+      lignes: [...bilan.map(x => ligneBilan(x.nom, x.alim, x.P, x.ks, x.S, x.Ib)),
+        ['Total CVC au TGBT', `simultanéité ${nf(ksT * 100, 0)} %`, nf(bilan.reduce((s, x) => s + x.P, 0), 2), '', nf(Pappel, 2), Sappel ? nf(Pappel / Sappel, 2) : '—', nf(Sappel, 2), `${nf(Itgbt, 1)} (phases équilibrées)`]], total: true };
     // Analyse fonctionnelle : une phrase par équipement, puis les principes communs
     const af = eqs.map(q => `${q.rep} — ${q.designation || q.t[0]}${q.regulation !== 'aucune' ? '' : ''} : ${(REGULS[q.regulation] || REGULS.aucune)[2]}${q.fonctionnement ? `. ${String(q.fonctionnement).trim().replace(/\.$/, '')}` : ''}${q.pilote ? ` (automate de l'armoire ${q.pilote.rep})` : q.regulation === 'aucune' ? '' : ' (régulation autonome)'}.`);
     af.push(`Modes de marche de chaque départ : arrêt / automatique / marche forcée (commutateur en façade ou forçage depuis la ${e.gtb && e.gtb !== 'aucune' ? `GTB (${e.gtb})` : 'supervision'}) ; voyants de marche et de défaut.`);
@@ -149,21 +216,31 @@ const Electricite = ((N, Sc) => {
           `Interrupteur-sectionneur général ${a.cal} A cadenassable en façade, parafoudre, protection différentielle des départs selon le schéma de liaison à la terre${a.regime ? ` (${a.regime})` : ''}.`,
           `${a.eqs.filter(q => q.tension !== '24V').length} départ(s) de puissance (voir le tableau), chaque départ repéré, avec commutateur arrêt / auto / manu et voyants marche / défaut pour les moteurs.`,
           `Circuit de commande : transformateur ou alimentation 24 V, protection dédiée, alimentation de l'automate et des organes 24 V (${a.eqs.filter(q => q.tension === '24V').length} équipement(s) : vannes, sondes, régulateurs).`,
-          `Automate programmable : ${nb('EA')} EA, ${nb('SA')} SA, ${nb('ETOR')} ETOR, ${nb('STOR')} STOR${nb('Bus') ? `, ${nb('Bus')} équipement(s) par bus` : ''}, plus 20 % de réserve câblée ; ${e.gtb && e.gtb !== 'aucune' ? `communication ${e.gtb} vers la GTB` : 'interface opérateur en façade'}.`,
-          `Enveloppe : IP 54 minimum, ventilation adaptée aux variateurs, 20 % de place disponible, éclairage et prise de service, porte-plans ; schémas et programme remis au DOE.`] },
+          `Automate programmable : ${nb('EA')} EA, ${nb('SA')} SA, ${nb('ETOR')} ETOR, ${nb('STOR')} STOR${nb('Bus') ? `, ${nb('Bus')} équipement(s) par bus` : ''}, plus 20 % de réserve câblée, soit ${Object.entries(a.cartes).filter(([, n]) => n).map(([t, n]) => `${n} carte(s) ${CARTES[t][0]} ${t}`).join(', ') || 'aucune carte'} ; ${e.gtb && e.gtb !== 'aucune' ? `communication ${e.gtb} vers la GTB` : 'interface opérateur en façade'}.`,
+          `Enveloppe : IP 54 minimum (≈ ${a.enveloppe.H} × ${a.enveloppe.L} × 300 mm estimés), ventilation adaptée aux variateurs, 20 % de place disponible, éclairage et prise de service, porte-plans ; schémas, plan d'adressage et programme remis au DOE.`] },
+        { titre: `Nomenclature de l'appareillage — armoire ${a.rep}`, tableau: { entetes: ['Famille', 'Désignation', 'Caractéristiques', 'Qté'], lignes: a.nomenclature.map(x => [x[0], x[1], x[2], String(x[3])]) } },
         { titre: `Départs de l'armoire ${a.rep}`, tableau: { entetes: ['Repère', 'Équipement', 'P (kW)', 'Tension', 'Phase', 'Départ', 'Ib (A)', 'Protection', 'Câble'],
           lignes: a.eqs.map(q => [q.rep, q.designation || q.t[0], nf(num(q.P), 2), TENSIONS[q.tension] || q.tension, q.phase || '24 V', DEPARTS[q.depart] || q.depart, q.d.Ib ? nf(q.d.Ib, 1) : '—', q.d.cal ? `${q.d.cal} A ${q.d.courbe}` : '—', q.d.cable || '—']) } },
         { titre: `Bilan de puissance de l'armoire ${a.rep}`, tableau: { entetes: ['Puissance installée (kW)', 'Foisonnée (kW)', 'L1 (A)', 'L2 (A)', 'L3 (A)', 'Ib avec réserve (A)', 'Interrupteur général'],
           lignes: [[nf(a.P, 2), nf(a.Pf, 2), ...a.phases.map(v => nf(v * a.ks, 1)), nf(a.Ib, 1), `${a.cal} A`]] } },
-        { titre: `Points automate de l'armoire ${a.rep}`, tableau: { entetes: ['Repère', 'Désignation', 'Type'], lignes: a.pts.map(p => p.slice(0, 3)) } },
+        { titre: `Plan d'adressage des entrées / sorties — armoire ${a.rep}`, tableau: { entetes: ['Adresse', 'Bornes', 'Repère', 'Désignation', 'Type', 'Signal'], lignes: a.adresses } },
       ];
     };
     return {
-      valeurs: { Ptot, PCvc, Pelec, armoires: arm.map(a => ({ rep: a.rep, P: a.P, Ib: a.Ib, cal: a.cal })), points: pts.length },
+      valeurs: { Ptot, PCvc, Pelec, Pappel, Sappel, Itgbt, armoires: arm.map(a => ({ rep: a.rep, P: a.P, Ib: a.Ib, cal: a.cal, cartes: a.cartes, enveloppe: a.enveloppe })), points: pts.length,
+        // Classeur Excel : bilan, attentes, équipements, points, puis adressage et nomenclature de chaque armoire
+        feuilles: [
+          { name: 'Bilan de puissance', entetes: tableauBilan.entetes, lignes: tableauBilan.lignes },
+          { name: 'Attentes lot élec', entetes: ['Pour', 'Local', 'Tension', 'P (kW)', 'Ib (A)', 'Protection en tête', 'Câble indicatif', 'À prévoir'], lignes: demandes },
+          { name: 'Équipements', entetes: ['Repère', 'Équipement', 'P (kW)', 'Tension', 'Alimenté par', 'Départ', 'Ib (A)', 'Protection', 'Câble', 'Régulation'], lignes: eqs.map(ligneEq) },
+          { name: 'Liste des points', entetes: ['Repère', 'Désignation', 'Type', 'Armoire'], lignes: pts },
+          ...arm.flatMap(a => [{ name: `E-S ${a.rep}`, entetes: ['Adresse', 'Bornes', 'Repère', 'Désignation', 'Type', 'Signal'], lignes: a.adresses },
+            { name: `Nomenclature ${a.rep}`, entetes: ['Famille', 'Désignation', 'Caractéristiques', 'Qté'], lignes: a.nomenclature }])] },
       resume: [['Équipements', `${eqs.length} (${eqs.filter(q => q.alim === 'elec').length} sur attente électrique, ${eqs.filter(q => q.alim !== 'elec').length} sur armoire CVC)`],
         ['Puissance électrique installée', `${nf(Ptot, 1)} kW`], ['Dont armoires CVC (lot CVC, commande comprise)', `${nf(PCvc, 1)} kW`], ['Dont attentes du lot électricité', `${nf(Pelec, 1)} kW`],
         ...arm.map(a => [`Armoire ${a.rep}`, `${nf(a.P, 1)} kW installés, Ib ${nf(a.Ib, 1)} A → interrupteur ${a.cal} A, alimentation 5G${String(a.S).replace('.', ',')}`]),
-        ['Points automate', `${pts.length} (${compte(pts).filter(x => x[1]).map(([t, n]) => `${n} ${t}`).join(', ')})`]],
+        ['Points automate', `${pts.length} (${compte(pts).filter(x => x[1]).map(([t, n]) => `${n} ${t}`).join(', ')})`],
+        ['Puissance appelée au TGBT (CVC)', `${nf(Pappel, 1)} kW · ${nf(Sappel, 1)} kVA · ${nf(Itgbt, 1)} A sous 400 V`]],
       tableaux: [
         { titre: 'Équipements : alimentation et régulation', entetes: ['Repère', 'Équipement', 'P (kW)', 'Tension', 'Alimenté par', 'Départ', 'Ib (A)', 'Protection', 'Câble', 'Régulation'], lignes: eqs.map(ligneEq) },
         { titre: 'Bilan par armoire CVC', entetes: ['Armoire', 'Équipements', 'P installée (kW)', 'P foisonnée (kW)', 'L1 / L2 / L3 (A)', 'Ib (A)', 'Interrupteur', 'Alimentation'],
@@ -180,11 +257,16 @@ const Electricite = ((N, Sc) => {
       schema: unifilaire(arm, lot),
       titreSchema: 'Schéma unifilaire des armoires CVC',
       onglets: [
+        { titre: 'Bilan de puissance', blocs: [
+          { titre: 'Bilan de puissance au TGBT (lot CVC)', tableau: tableauBilan },
+          { titre: `Attentes à demander au ${lot}`, tableau: { entetes: ['Pour', 'Local', 'Tension', 'P (kW)', 'Ib (A)', 'Protection en tête', 'Câble indicatif', 'À prévoir'], lignes: demandes } },
+          { texte: [`Puissance installée ${nf(Ptot, 1)} kW ; appelée ${nf(Pappel, 1)} kW (${nf(Sappel, 1)} kVA), foisonnement de chaque armoire puis simultanéité ${nf(ksT * 100, 0)} % au TGBT. À transmettre au ${lot} pour le bilan général et l'abonnement.`] }] },
         { titre: 'Régulation', blocs: [
           { titre: 'Analyse fonctionnelle', liste: af },
           { titre: 'Liste des points (automate / GTB)', tableau: { entetes: ['Repère', 'Désignation', 'Type', 'Armoire'], lignes: pts } },
           { titre: 'Entrées / sorties par armoire', tableau: { entetes: ['Armoire', ...TYPES_PTS.map(t => LIB_PTS[t]), 'Total avec 20 % de réserve'],
-            lignes: arm.map(a => { const io = compte(a.pts); return [a.rep, ...io.map(([, n]) => String(n)), String(io.filter(([t]) => t !== 'Bus').reduce((s, [, n]) => s + Math.ceil(n * 1.2), 0))]; }) } }] },
+            lignes: arm.map(a => { const io = compte(a.pts); return [a.rep, ...io.map(([, n]) => String(n)), String(io.filter(([t]) => t !== 'Bus').reduce((s, [, n]) => s + Math.ceil(n * 1.2), 0))]; }) } },
+          ...arm.map(a => ({ titre: `Plan d'adressage — armoire ${a.rep} (${Object.entries(a.cartes).filter(([, n]) => n).map(([t, n]) => `${n} × ${CARTES[t][0]} ${t}`).join(', ') || 'aucune carte'})`, tableau: { entetes: ['Adresse', 'Bornes', 'Repère', 'Désignation', 'Type', 'Signal'], lignes: a.adresses } }))] },
         { titre: 'Cahier des charges armoires', blocs: [{ titre: 'Objet', liste: [`Réalisation des armoires CVC (lot CVC) : puissance, commande et automatisme, d'après le schéma unifilaire et la liste des points ci-dessous. Les attentes électriques des armoires et des équipements alimentés directement sont dues par le ${lot}.`] },
           ...arm.flatMap(ccArmoire)] },
       ],
@@ -194,7 +276,7 @@ const Electricite = ((N, Sc) => {
   /* ---------- Schéma unifilaire (SVG) ---------- */
   function unifilaire(arm, lot) {
     if (!arm.length) return '';
-    const pas = 112, haut = 330, marge = 24, larg = Math.max(...arm.map(a => a.eqs.length + 2)) * pas + 60, out = [];
+    const pas = 112, haut = 330, marge = 24, larg = Math.max(...arm.map(a => a.eqs.filter(q => q.tension !== '24V').length + 2)) * pas + 60, out = [];
     const t = (x, y, s, o = {}) => out.push(`<text x="${x}" y="${y}" font-size="${o.fs || 10}" text-anchor="${o.a || 'middle'}"${o.b ? ' font-weight="bold"' : ''} fill="#222">${String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</text>`);
     const l = (x1, y1, x2, y2, w = 1.4) => out.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#222" stroke-width="${w}"/>`);
     const r = (x, y, w, h) => out.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff" stroke="#222" stroke-width="1.2"/>`);
@@ -216,7 +298,7 @@ const Electricite = ((N, Sc) => {
         let y = y0 + 146;
         l(x, y, x, y + 14); y += 14;
         if (q.commande) { out.push(`<circle cx="${x}" cy="${y + 8}" r="8" fill="#fff" stroke="#222"/>`, `<circle cx="${x}" cy="${y + 18}" r="8" fill="#fff" stroke="#222"/>`); t(x + 16, y + 16, 'T 230/24 V', { a: 'start', fs: 8 }); y += 26; }
-        else if (q.depart === 'contacteur' || q.depart === 'etoile') { r(x - 12, y, 24, 18); t(x, y + 13, 'KM', { fs: 8 }); y += 18; }
+        else if (q.km) { r(x - 12, y, 24, 18); t(x, y + 13, q.depart === 'etoile' ? 'DEM' : 'KM', { fs: 8 }); y += 18; }
         else if (q.depart === 'variateur') { r(x - 16, y, 32, 22); t(x, y + 14, 'VAR', { fs: 8 }); l(x - 14, y + 20, x + 14, y + 2, 0.8); y += 22; }
         l(x, y, x, y + 40); y += 40;
         if (!q.commande) { t(x - 4, y - 24, q.d.cable, { a: 'end', fs: 8 }); if (num(q.L)) t(x - 4, y - 14, `${num(q.L)} m`, { a: 'end', fs: 8 }); }
@@ -259,11 +341,23 @@ const Electricite = ((N, Sc) => {
             regulation: c.reg === '2v' || c.emetteur === 'ventilo' ? 'var' : 'tor', depart: c.reg === '2v' || c.emetteur === 'ventilo' ? 'variateur' : undefined });
           if (c.reg !== 'direct') ajout(`v${k}`, { rep: `V${k}`, designation: `Vanne de régulation ${c.rep}`, type: 'vanne', P: 0.01, tension: '24V', regulation: 'v010' });
           ajout(`td${k}`, { rep: `TD${k}`, designation: `Sonde de départ ${c.rep}`, type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
+          if (es.compteurs === 'oui') ajout(`ce${k}`, { rep: `CE${k}`, designation: `Compteur d'énergie ${c.rep}`, type: 'sonde', P: 0, tension: '24V', regulation: 'impulsion' });
           const annexe = ((es.circuits || [])[i] || {}).annexe, ctaReliee = annexe && (etude.notes || []).some(x => x.id === annexe && x.type === 'cta');
           const em = ctaReliee ? null : { aerotherme: ['aerotherme', 0.5], ventilo: ['ventilo', 0.1], cta: ['cta', 3] }[c.emetteur];
           if (em) ajout(`em${k}`, { rep: `E${k}`, designation: `${(Sc.EMETTEURS[c.emetteur] || [''])[0]} — ${c.rep} (puissance à préciser)`, type: em[0], P: em[1], tension: 'mono', regulation: em[0] === 'aerotherme' ? 'tor' : 'regul' });
         });
         ajout('te', { rep: 'TE', designation: 'Sonde de température extérieure', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
+        // Mesures et sécurités de la chaufferie / sous-station
+        const gen = es.generateur || '', gaz = /^chaudiere-(cond|gaz)/.test(gen), fioul = gen === 'chaudiere-fioul', combustion = gaz || fioul || gen === 'chaudiere-bois';
+        ajout('tdg', { rep: 'TDG', designation: 'Sonde de départ général (après découplage)', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
+        ajout('pr', { rep: 'PR', designation: 'Capteur de pression du réseau', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
+        ajout('pmq', { rep: 'PMQ', designation: 'Pressostat manque d\'eau', type: 'securite', P: 0, tension: '24V', regulation: 'securite' });
+        if (combustion) ajout('au', { rep: 'AU', designation: 'Arrêt d\'urgence de la chaufferie (coup de poing à l\'extérieur du local)', type: 'securite', P: 0, tension: '24V', regulation: 'securite' });
+        if (gaz) {
+          ajout('dg', { rep: 'DG', designation: 'Centrale de détection gaz et capteurs', type: 'securite', P: 0.03, tension: 'mono', regulation: 'securite' });
+          ajout('evg', { rep: 'EVG', designation: 'Électrovanne gaz normalement fermée (coupure de la chaufferie)', type: 'electrovanne', P: 0.02, tension: 'mono', regulation: 'evGaz' });
+        }
+        if (fioul) ajout('evg', { rep: 'EVF', designation: 'Vanne de police fioul (coupure de la chaufferie)', type: 'electrovanne', P: 0.02, tension: 'mono', regulation: 'evGaz' });
       }
       if ((n.type === 'reseau' || n.type === 'arbo') && Number.isFinite(v.Pabs) && !(n.lien && n.lien.note) && !(Liens.circuitDeAnnexe && Liens.circuitDeAnnexe(etude.notes || [], n))) ajout('pompe', { rep: `P-N${ni + 1}`, designation: `Pompe — ${titre}`, type: 'pompe', P: pompeP(v.pompe, v.Pabs), tension: 'mono', regulation: 'tor' });
       if (n.type === 'aeraulique' && Number.isFinite(v.Pabs) && !(es.cta && notes.some(x => x.id === es.cta && x.type === 'cta'))) ajout('vent', { rep: `V-N${ni + 1}`, designation: `Ventilateur — ${titre}`, type: 'ventilateur', P: Math.max(0.1, kW(v.Pabs * 1.15)), tension: v.Pabs > 2200 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur' });
@@ -309,11 +403,12 @@ const Electricite = ((N, Sc) => {
           { k: 'local', l: 'Local', t: 't' }, { k: 'fonctionnement', l: 'Fonctionnement particulier (analyse fonctionnelle)', t: 't' }] },
       { g: 'Lots et supervision' },
       { k: 'lotElec', l: 'Lot électricité (destinataire des demandes d\'attentes)', t: 't', d: 'Lot électricité' },
+      { k: 'ksTgbt', l: 'Simultanéité des départs CVC au TGBT', u: '%', d: 90 },
       { k: 'gtb', l: 'Supervision / GTB', t: 's', o: [['aucune', 'Aucune (interface en façade)'], ['BACnet/IP', 'BACnet/IP'], ['Modbus TCP', 'Modbus TCP'], ['KNX', 'KNX'], ['LON', 'LON']], d: 'BACnet/IP' },
     ],
     calcul: calculer,
   };
 
-  return { TYPES_EQ, TENSIONS, DEPARTS, REGULS, depart, calculer, unifilaire, equipementsEtude, fusionner };
+  return { TYPES_EQ, TENSIONS, DEPARTS, REGULS, CARTES, depart, calculer, unifilaire, equipementsEtude, fusionner };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'), typeof Schema !== 'undefined' ? Schema : require('./schema'));
 if (typeof module !== 'undefined') module.exports = Electricite;

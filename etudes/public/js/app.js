@@ -525,7 +525,7 @@ Vues.note = {
       <div class="actions-ligne"><button id="pdf-note">📄 PDF de ce calcul</button><button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="dupliquer">Dupliquer</button>
         ${n.type === 'cta' ? `<button class="secondaire" id="cta-reseau">🌬️ ${Liens.reseauxDeCta(et.notes, n).some(x => x.type === 'aero') ? 'Ouvrir le schéma aéraulique relié' : 'Créer le schéma aéraulique relié (gaines, bouches)'}</button>` : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
-        ${n.type === 'elec' ? '<button id="elec-reprendre">⚡ Reprendre les équipements de l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button>' : ''}
+        ${n.type === 'elec' ? '<button id="elec-reprendre">⚡ Reprendre les équipements de l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button>' : ''}
         ${n.type === 'cable' ? '<button id="cable-reprendre">🔌 Reprendre les liaisons de l\'alimentation électrique</button>' : ''}<span class="espace"></span><button class="secondaire" id="supprimer">Supprimer ce calcul</button></div></div>`;
   },
   bind: (root, et, noteId) => {
@@ -559,6 +559,17 @@ Vues.note = {
       if (!elec) return toast('Ajoutez d\'abord le calcul « Alimentation électrique et régulation » à l\'étude, ou saisissez les liaisons.', 6000);
       versCables(n, elec); enregistrer(et); App.render();
       toast(`${n.entrees.liaisons.length} liaison(s) : alimentation des armoires depuis le TGBT et départs dont la longueur est saisie. Complétez le mode de pose et les longueurs.`, 7000);
+    };
+    // Classeur Excel pour le lot électricité, le tableautier et l'automaticien
+    const ex = root.querySelector('#elec-excel');
+    if (ex) ex.onclick = () => {
+      const r = Liens.calculer(et, n), f = (r.valeurs || {}).feuilles || [];
+      if (!f.length || typeof XLSX === 'undefined') return toast('Classeur indisponible.', 5000);
+      const H = v => ({ v, s: 'head' }), val = v => { const s = String(v ?? ''); return /^-?\d+(,\d+)?$/.test(s) ? Number(s.replace(',', '.')) : s; };
+      const octets = XLSX.build(f.map(x => ({ name: x.name, freeze: 3, cols: x.entetes.map((h, i) => (i === 1 || /Désignation|Équipement|Pour|À prévoir/.test(h) ? 44 : 16)),
+        rows: [[{ v: `${x.name} — ${et.objet} (indice ${et.indice})`, s: 'title' }], [], x.entetes.map(H), ...x.lignes.map(l => l.map(val))] })));
+      Promise.resolve(telecharger(`Electricite_${sansAccents(et.objet).slice(0, 40)}_Ind${sansAccents(et.indice) || 'A'}.xlsx`, octets, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'))
+        .then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : `Classeur enregistré : ${f.length} feuilles`)).catch(er => toast(er.message, 6000));
     };
     const ec = root.querySelector('#elec-cables');
     if (ec) ec.onclick = () => {
