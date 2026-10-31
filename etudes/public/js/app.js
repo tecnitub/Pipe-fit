@@ -343,7 +343,7 @@ Vues.etude = {
       <div class="barre"><h2>Calculs <span class="compte">${et.notes.length}</span></h2><button id="ajout">+ Ajouter un calcul</button><span class="espace"></span>
         ${et.notes.length > 1 ? '<button class="secondaire" id="comparer" disabled title="Cocher au moins deux calculs">⚖️ Comparer la sélection</button>' : ''}</div>
       ${et.notes.length ? `<div class="notes">${et.notes.map((n, i) => { const t = Notes.TYPES[n.type], r = Liens.calculer(et, n), err = r.alertes.filter(x => x.niveau === 'erreur').length, att = r.alertes.filter(x => x.niveau === 'attention').length;
-        return `<div class="carte note"><a href="#/etude/${et.id}/${n.id}" class="note-lien"><span class="ico">${t.icone}</span><span><span class="muted petit">N${i + 1} · ${esc(t.famille)}${n.lien || n.entrees.cta || (n.type === 'cta' && Liens.reseauxDeCta(et.notes, n).length) || (n.entrees.circuits || []).some(c => c.bilan) ? ' · 🔗 lié' : ''}</span><strong>${esc(n.titre)}</strong>
+        return `<div class="carte note"><a href="#/etude/${et.id}/${n.id}" class="note-lien"><span class="ico">${t.icone}</span><span><span class="muted petit">N${i + 1} · ${esc(t.famille)}${n.lien || n.entrees.cta || (n.type === 'cta' && Liens.reseauxDeCta(et.notes, n).length) || Liens.circuitDeAnnexe(et.notes, n) || (n.entrees.circuits || []).some(c => c.bilan || c.annexe) ? ' · 🔗 lié' : ''}</span><strong>${esc(n.titre)}</strong>
           <span class="petit">${esc(r.synthese)}</span></span></a><span class="note-etat">${err ? `<span class="badge erreur">${err} erreur(s)</span>` : att ? `<span class="badge">${att} point(s) d'attention</span>` : '<span class="badge ok">Conforme</span>'}</span>
           <span class="note-actions"><label class="case petit" title="Sélectionner pour comparer"><input type="checkbox" data-comparer="${n.id}"> comparer</label><button class="icone" data-monter="${i}" title="Monter" ${i ? '' : 'disabled'}>▲</button><button class="icone" data-descendre="${i}" title="Descendre" ${i < et.notes.length - 1 ? '' : 'disabled'}>▼</button></span></div>`; }).join('')}</div>`
         : '<p class="muted">Aucun calcul : ajoutez-en un ou versez un calcul rapide dans cette étude.</p>'}`;
@@ -381,7 +381,7 @@ Vues.etude = {
       ['_v', '_at', '_by'].forEach(k => delete c[k]);
       // Nouveaux identifiants, liens entre notes reportés sur les copies
       const ids = new Map(c.notes.map(n => [n.id, uidE()]));
-      c.notes.forEach(n => { n.id = ids.get(n.id); if (n.lien) n.lien.note = ids.get(n.lien.note) || n.lien.note; if (n.entrees.cta) n.entrees.cta = ids.get(n.entrees.cta) || ''; (n.entrees.circuits || []).forEach(x => { if (x.bilan) x.bilan = ids.get(x.bilan) || x.bilan; }); });
+      c.notes.forEach(n => { n.id = ids.get(n.id); if (n.lien) n.lien.note = ids.get(n.lien.note) || n.lien.note; if (n.entrees.cta) n.entrees.cta = ids.get(n.entrees.cta) || ''; (n.entrees.circuits || []).forEach(x => { if (x.bilan) x.bilan = ids.get(x.bilan) || x.bilan; if (x.annexe) x.annexe = ids.get(x.annexe) || ''; }); });
       enregistrer(c); location.hash = `#/etude/${c.id}`;
     };
     const bm = root.querySelector('#modele');

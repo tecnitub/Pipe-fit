@@ -103,3 +103,41 @@ test('réseau et ventilateur relié à la CTA : pertes de charge de la centrale 
   assert.strictEqual(ec.dpReseauR, Math.round(vr.dpReseau + 25));
   assert.ok(!E.equipementsEtude(et, Liens).some(x => /^V-N/.test(x.rep)), 'ventilateurs comptés par la CTA');
 });
+
+test('chaufferie / sous-station reliée aux réseaux annexes : régime vers le réseau, puissance et pertes de charge vers le circuit', () => {
+  require('../etudes/public/js/equilibrage');
+  const pid = { id: 'p', type: 'pid', titre: 'Sous-station', entrees: N.defauts('pid') };
+  pid.entrees.circuits[0].annexe = 'a'; pid.entrees.circuits[1].annexe = 'c'; pid.entrees.circuits[2].annexe = 'r';
+  const arbo = { id: 'a', type: 'arbo', titre: 'Réseau bâtiment A', entrees: { ...N.defauts('arbo'), dT: 15 } };
+  const cta = { id: 'c', type: 'cta', titre: 'CTA atelier', entrees: N.defauts('cta') };
+  const res = { id: 'r', type: 'reseau', titre: 'Réseau plancher', entrees: N.defauts('reseau') };
+  const et = { notes: [pid, arbo, cta, res] };
+  const rp = Liens.resoudre(et, pid), c = rp.entrees.circuits;
+  // Réseau arborescent : puissance des émetteurs, pertes de charge au régime du circuit (70/50 : ΔT 20 K)
+  const ra = Liens.resoudre(et, arbo), va = N.calculer('arbo', ra.entrees).valeurs;
+  assert.deepStrictEqual([ra.entrees.T, ra.entrees.dT, ra.entrees.serie], [60, 20, pid.entrees.serie]);
+  assert.strictEqual(c[0].P, Math.round(va.Ptot * 10) / 10);
+  assert.ok(Math.abs(c[0].dpAnnexe - va.Hres / 1000) < 0.06, `${c[0].dpAnnexe} ≠ ${va.Hres / 1000}`);
+  assert.strictEqual(c[0].L, 0); assert.ok(rp.verrous['circuits.0.P'] && rp.verrous['circuits.0.L']);
+  const vp = Liens.calculer(et, pid).valeurs;
+  assert.ok(Math.abs(vp.circuits[0].Q - va.Qp) < 0.01, 'même débit des deux côtés');
+  // Le côté production renvoyé au réseau : sa pompe a la même HMT que celle du circuit, à la marge près
+  const dpProd = ra.entrees.dpGen;
+  assert.ok(Math.abs((va.Hres / 1000 + dpProd) - vp.circuits[0].hmt * 9.81 * 0.983) < 1.5);
+  // CTA : puissance de la batterie chaude vers le circuit, régime du circuit vers la CTA
+  const vc = Liens.calculer(et, cta).valeurs;
+  assert.strictEqual(c[1].P, Math.round(vc.Pchaud * 10) / 10);
+  assert.deepStrictEqual([Liens.resoudre(et, cta).entrees.TcAller, Liens.resoudre(et, cta).entrees.TcRetour], [70, 50]);
+  // Réseau et pompe : son débit donne la puissance du circuit (même débit), ses équipements de production signalés
+  const rr = Liens.calculer(et, res);
+  assert.ok(Math.abs(vp.circuits[2].Q - rr.valeurs.Qpompe) < 0.05);
+  assert.ok(rr.alertes.some(a => /Déjà comptés par le circuit/.test(a.texte)));
+  assert.match(Liens.description(et, arbo), /circuit « Radiateurs bureaux »/);
+  // Une seule pompe par circuit (métré, électricité) ; pas de réseau créé en double depuis le schéma
+  assert.ok(!E.equipementsEtude(et, Liens).some(x => /^P-N/.test(x.rep)));
+  assert.ok(!Liens.notesDepuisSchema(et, pid, () => 'x').some(n => n.type === 'reseau' && /Radiateurs|CTA atelier|Plancher/.test(n.titre)));
+  // Détacher le réseau : le circuit garde puissance et pertes de charge, sans lien
+  Liens.detacher(et, arbo);
+  assert.strictEqual(pid.entrees.circuits[0].annexe, ''); assert.strictEqual(pid.entrees.circuits[0].P, c[0].P);
+  assert.strictEqual(Liens.circuitDeAnnexe(et.notes, arbo), null);
+});

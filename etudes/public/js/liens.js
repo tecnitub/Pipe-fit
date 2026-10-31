@@ -3,7 +3,10 @@
 //  - schéma de principe : puissance d'un circuit reprise d'un bilan chauffage et climatisation ;
 //  - notes créées depuis un schéma : réseau et pompe ou vanne de régulation d'un circuit, vase d'expansion de l'installation ;
 //  - réseau aéraulique (schéma aéraulique ou réseau et ventilateur) relié à un calcul de CTA : type, récupérateur, batteries
-//    et pertes de charge de la centrale repris dans le réseau ; débits et pertes de charge du réseau repris dans la CTA.
+//    et pertes de charge de la centrale repris dans le réseau ; débits et pertes de charge du réseau repris dans la CTA ;
+//  - circuit d'une chaufferie ou d'une sous-station (schéma de principe) relié à un réseau annexe (réseau arborescent,
+//    réseau et pompe, batteries d'une CTA) : fluide, régime et pertes de charge côté production vers le réseau ;
+//    puissance (ou débit) et pertes de charge du réseau vers le circuit, dont la pompe est dimensionnée en conséquence.
 const Liens = ((N, Sc) => {
   const nf = N.nf, num = N.num;
   const copie = o => JSON.parse(JSON.stringify(o));
@@ -28,8 +31,8 @@ const Liens = ((N, Sc) => {
       });
     }
     // Réseau aéraulique relié à une CTA (et CTA alimentée par ses réseaux)
-    const air = lienAir(etude, note, e, verrous, alertes, libelle);
-    if (air) return { entrees: e, verrous, alertes, source: air };
+    const air = lienAir(etude, note, e, verrous, alertes, libelle), eau = note.lien ? null : lienHydro(etude, note, e, verrous, alertes, libelle, pile);
+    if (air || eau) return { entrees: e, verrous, alertes, source: air && eau ? { ...air, libelle: `${air.libelle}, ${eau.libelle}`, texte: `${air.texte} ${eau.texte}` } : air || eau };
     // Note créée depuis un schéma : valeurs du circuit (ou de l'installation) recalculées
     const lien = note.lien;
     if (lien && lien.note) {
@@ -108,6 +111,76 @@ const Liens = ((N, Sc) => {
     return null;
   }
 
+  /* ---------- Chaufferie / sous-station ↔ réseaux annexes ---------- */
+  const ANNEXES = ['arbo', 'reseau', 'cta'];
+  // Circuit du schéma qui alimente une note : { pid, i } (premier trouvé)
+  function circuitDeAnnexe(notes, note) {
+    for (const pid of notes.filter(n => n.type === 'pid')) {
+      const i = ((pid.entrees || {}).circuits || []).findIndex(c => c && c.annexe === note.id);
+      if (i >= 0) return { pid, i };
+    }
+    return null;
+  }
+  function lienHydro(etude, note, e, verrous, alertes, libelle, pile) {
+    const notes = (etude && etude.notes) || [];
+    const imposer = (vals, lib) => Object.entries(vals).forEach(([k, v]) => { e[k] = v; verrous[k] = lib; });
+    // Schéma : chaque circuit relié prend la puissance et les pertes de charge de son réseau annexe
+    if (note.type === 'pid') {
+      // Régimes des circuits (indépendants des réseaux annexes) : le réseau annexe est calculé au régime de son circuit
+      let d0 = null;
+      if ((e.circuits || []).some(c => c && c.annexe)) { try { d0 = Sc.dimensionner(e); } catch (err) { d0 = null; } }
+      (e.circuits || []).forEach((c, i) => {
+        if (!c.annexe) return;
+        const src = notes.find(n => n.id === c.annexe && ANNEXES.includes(n.type)), rep = c.rep || `Circuit ${i + 1}`;
+        if (!src) { alertes.push({ niveau: 'attention', texte: `${rep} : le réseau annexe relié a été supprimé, valeurs saisies conservées.` }); delete c.annexe; return; }
+        const dc = d0 && d0.circuits[i], rc = dc && (dc.rc || dc.rcC), regime = rc && src.type !== 'cta' ? { fluide: e.fluide, T: Math.round((rc[0] + rc[1]) / 2 * 10) / 10, serie: e.serie, ...(src.type === 'arbo' ? { dT: Math.abs(rc[0] - rc[1]) } : {}) } : {};
+        const lib = libelle(src), v = N.calculer(src.type, { ...brut(src), ...regime }).valeurs || {}, lock = k => { verrous[`circuits.${i}.${k}`] = lib; };
+        if (src.type === 'cta') {
+          const co = e.reseau === 'co', froid = (() => { const r = Sc.REGIMES[e.reseau]; return e.reseau === 'perso' ? num(e.Tdep) < num(e.Tret) : r && r[1] < r[2]; })();
+          if (!c.bilan) { c.P = Math.round((co || !froid ? v.Pchaud : v.Pfroid) * 10) / 10; lock('P'); }
+          if (co) { c.Pf = Math.round(v.Pfroid * 10) / 10; lock('Pf'); }
+          if (c.emetteur !== 'cta') { c.emetteur = 'cta'; lock('emetteur'); }
+          return;
+        }
+        // Réseau arborescent ou réseau et pompe : il décrit la distribution depuis le collecteur (longueur du circuit à 0)
+        c.L = 0; lock('L');
+        if (src.type === 'arbo') {
+          c.dpAnnexe = Math.round(v.Hres / 100) / 10;
+          if (!c.bilan) { c.P = Math.round(v.Ptot * 10) / 10; lock('P'); }
+        } else {
+          c.dpAnnexe = Math.round(v.dpTotal / 100) / 10;
+          if (!c.bilan && v.Qpompe > 0 && d0) {
+            const f = d0.f;
+            c.P = Math.round(v.Qpompe / 3600 * f.rho * f.cp * Math.abs(rc[0] - rc[1]) / 100) / 10; lock('P');
+          }
+        }
+      });
+      return null;
+    }
+    if (!ANNEXES.includes(note.type)) return null;
+    const ref = circuitDeAnnexe(notes, note);
+    if (!ref) return null;
+    const lib = libelle(ref.pid), es = resoudre(etude, ref.pid, pile).entrees;
+    let d;
+    try { d = Sc.dimensionner(es); } catch (err) { return null; }
+    const c = d.circuits[ref.i];
+    if (!c) return null;
+    const rc = c.rc || c.rcC, Tm = Math.round((rc[0] + rc[1]) / 2 * 10) / 10, rep = c.rep;
+    if (note.type === 'arbo') imposer({ fluide: es.fluide, T: Tm, dT: Math.abs(rc[0] - rc[1]), serie: es.serie, dpGen: Math.round((c.dpL + c.dpV + 5) * 10) / 10 }, lib);
+    if (note.type === 'reseau') {
+      imposer({ fluide: es.fluide, T: Tm, serie: es.serie, circuit: 'ferme' }, lib);
+      const doublons = (e.composants || []).filter(x => /vanne de r[ée]gulation|g[ée]n[ée]rateur|[ée]changeur|chaudi[eè]re/i.test(x.nom || '') && num(x.dp) > 0);
+      if (doublons.length) alertes.push({ niveau: 'attention', texte: `Déjà comptés par le circuit « ${rep} » du schéma (vanne de régulation, production) : ${doublons.map(x => x.nom).join(', ')} — à retirer des équipements de ce réseau.` });
+    }
+    if (note.type === 'cta') {
+      if (c.rcC) imposer({ TcAller: c.rcC[0], TcRetour: c.rcC[1], TfAller: c.rcF[0], TfRetour: c.rcF[1] }, lib);
+      else if (d.chaud) imposer({ TcAller: rc[0], TcRetour: rc[1] }, lib);
+      else imposer({ TfAller: rc[0], TfRetour: rc[1], froid: 'oui' }, lib);
+    }
+    const quoi = note.type === 'cta' ? 'régime d\'eau des batteries' : note.type === 'arbo' ? 'fluide, régime, série de tubes et pertes de charge côté production' : 'fluide, température et série de tubes';
+    return { note: ref.pid, libelle: lib, texte: `Alimenté par le circuit « ${rep} » de ${lib} (${quoi} repris) ; ${note.type === 'cta' ? 'puissances des batteries' : 'puissance et pertes de charge de ce réseau'} renvoyées au circuit, dont la pompe est dimensionnée en conséquence. Mise à jour automatique.` };
+  }
+
   // Résultat d'une note dans son étude (entrées effectives, alertes de lien en tête)
   function calculer(etude, note) {
     const r = resoudre(etude, note), res = N.calculer(note.type, r.entrees);
@@ -119,6 +192,7 @@ const Liens = ((N, Sc) => {
     const es = resoudre(etude, pid).entrees, d = Sc.dimensionner(es), existe = (role, circuit) => etude.notes.some(n => n.lien && n.lien.note === pid.id && n.lien.role === role && n.lien.circuit === circuit);
     const nouvelles = [], cree = (type, role, circuit, titre, entrees) => { if (!existe(role, circuit)) nouvelles.push({ id: uid(), type, titre, entrees: { ...N.defauts(type), ...entrees }, commentaire: '', lien: { note: pid.id, role, circuit } }); };
     d.circuits.forEach((c, i) => {
+      if ((es.circuits[i] || {}).annexe) return; // circuit déjà relié à un réseau annexe
       cree('reseau', 'reseau', i, `Réseau et pompe — ${c.rep}`, {
         vmax: es.vmax, Rmax: es.Rmax, marge: 10, rendement: 50,
         troncons: [{ rep: `${c.rep} — aller + retour`, Q: c.Q, tube: c.t.cle, L: c.L, zeta: 10 }],
@@ -136,6 +210,10 @@ const Liens = ((N, Sc) => {
     note.entrees = r.entrees;
     delete note.lien;
     if (note.entrees.cta) note.entrees.cta = '';
+    // Réseau annexe détaché de son circuit ; schéma détaché de ses réseaux annexes (valeurs conservées)
+    const ref = ANNEXES.includes(note.type) && circuitDeAnnexe(etude.notes || [], note);
+    if (ref) ref.pid.entrees.circuits[ref.i] = { ...resoudre(etude, ref.pid).entrees.circuits[ref.i], annexe: '' };
+    if (note.type === 'pid') (note.entrees.circuits || []).forEach(c => { delete c.annexe; });
     if (note.type === 'cta') reseauxDeCta(etude.notes || [], note).forEach(n => { n.entrees = resoudre(etude, n).entrees; n.entrees.cta = ''; });
     if (note.type === 'pid') (note.entrees.circuits || []).forEach(c => { delete c.bilan; });
   }
@@ -145,6 +223,6 @@ const Liens = ((N, Sc) => {
     if (r.source.texte) return r.source.texte;
     return `Données reprises de ${r.source.libelle}${r.source.circuit ? ` (circuit « ${r.source.circuit} »)` : ''} pour ce ${ROLES[note.lien.role] || 'calcul'} : mises à jour automatiquement.`;
   };
-  return { resoudre, calculer, notesDepuisSchema, detacher, description, reseauxDeCta, nf };
+  return { resoudre, calculer, notesDepuisSchema, detacher, description, reseauxDeCta, circuitDeAnnexe, nf };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'), typeof Schema !== 'undefined' ? Schema : require('./schema'));
 if (typeof module !== 'undefined') module.exports = Liens;

@@ -50,7 +50,8 @@ const Schema = ((D, C, N) => {
       const Q = debit(P, dTc), t = choisir(Q), x = ecoul(Q, t);
       // Débit appelé sur le collecteur : un circuit mélangé reprend l'écart entre le départ du réseau et son propre retour
       const Qcoll = reg === '3v' ? debit(P, Math.abs(Tsd - rc[1])) : Q;
-      const dpEm = em[1], dpV = reg === 'direct' ? 0 : Math.max(dpEm, 10), dpL = x.R * num(c.L) * 1.3 / 1000;
+      // Réseau annexe relié (réseau arborescent, réseau et pompe) : ses pertes de charge remplacent celle de l'émetteur
+      const dpAnnexe = num(c.dpAnnexe) > 0 ? num(c.dpAnnexe) : 0, dpEm = dpAnnexe || em[1], dpV = reg === 'direct' ? 0 : Math.max(em[1], 10), dpL = x.R * num(c.L) * 1.3 / 1000;
       const hmt = (dpL + dpEm + dpV + 5) * 1000 / (f.rho * C.G), kvs = reg === 'direct' ? null : D.KVS.find(k => k >= C.kv(Q, dpV, f.rho) * 0.97) || null;
       const different = Math.abs(rc[0] - Tsd) > 0.5 || Math.abs(rc[1] - Tsr) > 0.5;
       if (different && reg !== '3v') alertes.push(alerte('attention', `${rep} : régime ${rc[0]}/${rc[1]} °C différent du réseau sans vanne 3 voies de mélange.`));
@@ -58,7 +59,8 @@ const Schema = ((D, C, N) => {
       if (em[2] !== 'mixte' && em[2] !== (chaud ? 'chaud' : 'froid')) alertes.push(alerte('attention', `${rep} : ${em[0].toLowerCase()} sur un réseau d'${chaud ? 'eau chaude' : 'eau glacée'}.`));
       const Cat = typeof Catalogue !== 'undefined' ? Catalogue : require('./catalogue');
       const pompe = Cat.pompesPour(Q, hmt)[0] || null, vanne = reg === 'direct' ? null : Cat.vannePour(C.kv(Q, dpV, f.rho), reg);
-      return { rep, em, emetteur: c.emetteur, reg, rc, P, Q, Qcoll, t, v: x.v, hmt, kvs, dpV, L: num(c.L), pompe, vanne };
+      if (dpAnnexe) alertes.push(alerte('ok', `${rep} : pompe dimensionnée sur le réseau annexe (${nf(dpAnnexe, 1)} kPa) + vanne ${nf(dpV, 1)} kPa + liaison et collecteur ${nf(dpL + 5, 1)} kPa = ${nf(hmt, 2)} mCE.`));
+      return { rep, em, emetteur: c.emetteur, reg, rc, P, Q, Qcoll, t, v: x.v, hmt, kvs, dpV, dpL, dpAnnexe, L: num(c.L), pompe, vanne };
     });
     // Production
     const n = Math.max(1, Math.min(6, Math.round(num(e.nGen, 1)))), Pg = num(e.Pgen), Pprod = n * Pg, gen = GENERATEURS[e.generateur] || GENERATEURS['chaudiere-cond'];
@@ -454,6 +456,7 @@ const Schema = ((D, C, N) => {
       colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'emetteur', l: 'Émetteur', t: 's', o: optListe(EMETTEURS) }, { k: 'P', l: 'Puissance (kW)' },
         { k: 'Pf', l: 'Puissance froid (kW)', si: e => e.reseau === 'co' },
         { k: 'bilan', l: 'Puissance reprise de', t: 's', o: (e, ctx) => [['', 'Saisie'], ...((ctx && ctx.notes) || []).map((n, i) => [n, i]).filter(([n]) => n.type === 'bilan').map(([n, i]) => [n.id, `N${i + 1} — ${n.titre}`])] },
+        { k: 'annexe', l: 'Réseau annexe relié', t: 's', o: (e, ctx) => [['', '—'], ...((ctx && ctx.notes) || []).map((n, i) => [n, i]).filter(([n]) => ['arbo', 'reseau', 'cta'].includes(n.type) && !n.lien).map(([n, i]) => [n.id, `N${i + 1} — ${n.titre}`])] },
         { k: 'regime', l: 'Régime (°C)', t: 't' }, { k: 'regulation', l: 'Régulation', t: 's', o: optListe(REGULATIONS) }, { k: 'L', l: 'Longueur aller + retour (m)' }] },
       { k: 'foisonnement', l: 'Coefficient de simultanéité des besoins', u: '%', d: 100 },
       { g: 'Réglementation' }, { k: 'usage', l: 'Usage du bâtiment', t: 's', o: [['tertiaire', 'Tertiaire (bureaux, commerces…)'], ['erp', 'Établissement recevant du public'], ['habitation', 'Habitation collective'], ['industrie', 'Industriel (locaux de production)']], d: 'tertiaire' },
