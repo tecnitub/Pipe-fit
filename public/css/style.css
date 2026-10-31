@@ -1132,3 +1132,10 @@ th.col-th { position: relative; }
 .cf-ligne span { white-space: normal; min-width: 0; }
 label.cf-ligne { display: flex; gap: 10px; width: 100%; margin-top: 6px; padding: 8px 10px; background: var(--panel-alt); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-weight: 400; }
 .dialog-box:has(.rc) { width: min(680px, 100%); max-width: 680px; }
+/* RH : période du … au …, réglages de la paie */
+.periode-rh { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.periode-rh input[type=date] { width: auto; }
+.rh-releve { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.rh-reglages { margin: 10px 0; }
+.rh-reglages summary { cursor: pointer; }
+.rg-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 12px; }

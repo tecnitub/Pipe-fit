@@ -433,10 +433,21 @@ compagnons.
    (coût de chaque personne), fournitures au prix d'achat des commandes (au montant facturé une fois rapprochées) et des
    factures fournisseurs imputées hors commande, notes de frais,
    marge prévue et **marge à terminaison** (projection du reste à faire).
-6. **RH** : synthèse mensuelle des heures **validées** (heures normales, supplémentaires à 25 % / 50 % calculées
-   par semaine, paniers, notes de frais, salaire brut indicatif), intérimaires à part (rapprochement de la facture
-   d'agence). **Récap Excel** du mois : une feuille de synthèse, une feuille par personne (détail jour par jour,
-   total de chaque semaine et découpage des heures supplémentaires), une feuille des notes de frais.
+6. **RH** : synthèse des heures **validées** sur une **période libre** (du … au …, raccourcis « Ce mois », « Mois
+   dernier », « Cette semaine », « Semaine dernière ») : heures normales, supplémentaires à 25 % / 50 % calculées par
+   semaine (les jours de la semaine avant la période comptent pour le seuil), paniers, notes de frais, absences du
+   planning, salaire brut indicatif ; intérimaires à part (rapprochement de la facture d'agence) ; « Seulement ceux qui
+   ont des heures à valider ». **Tous les pointages** et **Validation** se filtrent par période, et par statut (à
+   valider, validés, refusés, en cours), personne et chantier.
+   **Réglages de la paie** (administrateur, depuis RH) : durée hebdomadaire, seuil des heures à 50 %, prix du panier
+   repas ; durée du contrat et matricule par personne (Paramètres → Équipe). **Colonnes du tableau du comptable** à
+   cocher (matricule, statut, agence, catégorie, contrat, jours, heures, normales, HS 25 / 50 %, paniers, montant,
+   frais, absences, brut, à valider, déplacements, primes, observations) et contenu du fichier (intérimaires, feuille
+   par personne, notes de frais, totaux).
+   Deux exports Excel : **Tableau paie pour le comptable** (colonnes choisies, totaux, détail par personne avec
+   normales / HS de chaque semaine) et **Relevé d'heures détaillé** pour les compagnons, pour tous (une feuille chacun)
+   ou une personne : chaque jour, chantier, tâche, horaires, pause, panier, statut, totaux par semaine et de la période,
+   sans salaire.
 7. **Situations de travaux** (menu Situations) : vue par chantier (marché, facturé, reste, retenues) et liste de
    toutes les situations. Avancement saisi ligne par ligne en **% cumulé, en quantités réalisées ou en montant** ;
    lignes ou chapitres **cochés** pour leur appliquer un pourcentage (« mettre à 50 % », « ajouter 20 % »,

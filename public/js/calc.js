@@ -339,39 +339,8 @@ const Calc = {
     };
   },
 
-  // Paie : heures VALIDÉES découpées en normales / supplémentaires (25 %, 50 %) semaine par semaine,
-  // puis rattachées au mois de chaque jour. Paniers et notes de frais du mois en plus.
-  paie(userId, mois) {
-    const s = Store.data.settings;
-    const base = num(s.dureeHebdo) || 35, seuil50 = num(s.seuil50 || s.seuilHS50) || 43;
-    const parJour = {}, paniers = new Set();
-    let attente = 0;
-    Store.all('temps').filter(t => t.userId === userId && num(t.heures)).forEach(t => {
-      if (t.statut === 'Validé') {
-        parJour[t.date] = (parJour[t.date] || 0) + num(t.heures);
-        if (t.panier && t.date.startsWith(mois)) paniers.add(t.date);
-      } else if (t.statut !== 'Refusé' && t.date.startsWith(mois)) attente += num(t.heures);
-    });
-    const cumul = {}, semaines = {};
-    const res = { jours: 0, total: 0, normales: 0, hs25: 0, hs50: 0, attente, semaines };
-    Object.keys(parJour).sort().forEach(date => {
-      const wk = isoWeek(new Date(date)), h = parJour[date];
-      const avant = cumul[wk] || 0, apres = avant + h;
-      cumul[wk] = apres;
-      if (!date.startsWith(mois)) return;
-      const n = Math.max(0, Math.min(apres, base) - avant);
-      const h25 = Math.max(0, Math.min(apres, seuil50) - Math.max(avant, base));
-      const h50 = Math.max(0, apres - Math.max(avant, seuil50));
-      res.jours++; res.total += h; res.normales += n; res.hs25 += h25; res.hs50 += h50;
-      const w = semaines[wk] = semaines[wk] || { total: 0, normales: 0, hs25: 0, hs50: 0 };
-      w.total += h; w.normales += n; w.hs25 += h25; w.hs50 += h50;
-    });
-    for (const wk in semaines) semaines[wk].semaineComplete = cumul[wk]; // total de la semaine entière (à cheval sur deux mois)
-    const u = Store.get('users', userId) || {};
-    res.paniers = paniers.size;
-    res.montantPaniers = paniers.size * num(s.montantPanier);
-    res.frais = sumBy(Store.all('frais').filter(f => f.userId === userId && ['Validée', 'Remboursée'].includes(f.statut) && (f.date || '').startsWith(mois)), f => num(f.montantTTC));
-    res.brut = num(u.salaireHoraire) * (res.normales + res.hs25 * 1.25 + res.hs50 * 1.5);
-    return res;
+  // Paie d'une personne sur un mois (« AAAA-MM ») ou une période { du, au } : voir paie.js
+  paie(userId, periode) {
+    return Paie.calculer({ user: Store.get('users', userId) || { id: userId }, temps: Store.all('temps'), frais: Store.all('frais'), planning: Store.all('planning'), settings: Store.data.settings, periode });
   },
 };

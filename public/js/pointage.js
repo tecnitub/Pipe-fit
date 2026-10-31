@@ -611,29 +611,7 @@ Views.rh = (params, query) => {
   if (params[0] === 'frais') return rhFrais(query);
   if (params[0] === 'habilitations') return rhHabilitations();
   if (params[0] === 'interim') return rhInterim();
-  const mois = query.get('mois') || isoDate(new Date()).slice(0, 7);
-  const s = Store.data.settings;
-  const actifs = Store.all('users').filter(u => Store.all('temps').some(t => t.userId === u.id && t.date.startsWith(mois)));
-  const rows = actifs.map(u => ({ u, p: Calc.paie(u.id, mois) }));
-  const sal = rows.filter(r => r.u.type !== 'interimaire'), inter = rows.filter(r => r.u.type === 'interimaire');
-  const libMois = new Date(mois + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
-  const attente = sumBy(rows, r => r.p.attente);
-  const ligne = ({ u, p }, interim) => `<tr class="clickable" data-u="${u.id}"><td><strong>${esc(u.nom)}</strong>${interim ? `<br><span class="muted small">${esc(clientName(u.agenceId))}</span>` : ''}</td><td>${esc(moOf(u.categorieId).libelle || (u.role === 'charge' ? "Chargé d'affaires" : ''))}</td>
-    <td class="num">${p.jours}</td><td class="num">${fmt(p.total, 2)}</td><td class="num">${fmt(p.normales, 2)}</td><td class="num ${p.hs25 ? 'warn-text' : ''}">${fmt(p.hs25, 2)}</td><td class="num ${p.hs50 ? 'neg' : ''}">${fmt(p.hs50, 2)}</td>
-    <td class="num">${p.paniers}</td>${interim ? '' : `<td class="num">${eur(p.montantPaniers + p.frais)}</td><td class="num">${num(u.salaireHoraire) ? eur(p.brut) : '—'}</td>`}<td class="num ${p.attente ? 'warn-text' : 'muted'}">${p.attente ? fmt(p.attente, 2) + ' h' : '—'}</td></tr>`;
-  return `<h1>RH</h1>${rhTabs('paie')}
-  <div class="toolbar">
-    <label class="inline">Mois <input id="mois" type="month" value="${esc(mois)}" style="width:auto"></label>
-    <span class="spacer"></span><button class="dl-btn" id="xlsx">Récap Excel du mois</button>
-  </div>
-  ${attente ? `<p class="note">${fmt(attente, 2)} h pointées en ${esc(libMois)} ne sont pas encore validées : elles n'entrent pas dans la paie. <a href="#/rh/validation">Valider les pointages</a></p>` : ''}
-  <p class="muted">Heures validées. Heures supplémentaires calculées par semaine : au-delà de ${fmt(num(s.dureeHebdo) || 35)} h à 25 %, au-delà de ${fmt(num(s.seuilHS50) || 43)} h à 50 %. Panier : ${eur(s.montantPanier)}. Salaire brut indicatif, hors primes et absences.</p>
-  <h2>Salariés</h2>
-  <div class="table-wrap"><table><tr><th>Salarié</th><th>Catégorie</th><th class="num">Jours</th><th class="num">Heures</th><th class="num">Normales</th><th class="num">Sup. 25 %</th><th class="num">Sup. 50 %</th><th class="num">Paniers</th><th class="num">Paniers + frais</th><th class="num">Brut estimé</th><th class="num">À valider</th></tr>
-  ${sal.map(r => ligne(r, false)).join('') || '<tr><td colspan="11" class="muted">Aucune heure ce mois-ci.</td></tr>'}</table></div>
-  ${inter.length ? `<h2>Intérimaires <span class="muted small">(relevé d'heures à rapprocher de la facture de l'agence)</span></h2>
-  <div class="table-wrap"><table><tr><th>Intérimaire</th><th>Catégorie</th><th class="num">Jours</th><th class="num">Heures</th><th class="num">Normales</th><th class="num">Sup. 25 %</th><th class="num">Sup. 50 %</th><th class="num">Paniers</th><th class="num">À valider</th></tr>
-  ${inter.map(r => ligne(r, true)).join('')}</table></div>` : ''}`;
+  return rhPaie(query);
 };
 
 /* Validation des pointages par le chargé d'affaires (ses chantiers) ou l'administrateur */
@@ -641,12 +619,15 @@ const valSel = new Set();
 function rhValidation(query) {
   const tous = query.get('tous') === '1' || Store.me.role === 'admin' || !Store.me.userId;
   const mesChantiers = new Set(Store.all('affaires').filter(a => tous || a.chargeId === Store.me.userId).map(a => a.id));
-  const list = Store.all('temps').filter(t => !t.statut && !(t.debut && !t.fin) && mesChantiers.has(t.affaireId))
+  // Période : toutes les dates par défaut (rien d'oublié), ou du … au …
+  const p = query.get('du') ? periodeRH(query) : { du: '', au: '' };
+  const list = Store.all('temps').filter(t => !t.statut && !(t.debut && !t.fin) && mesChantiers.has(t.affaireId) && (!p.du || Paie.dans(t.date, p)))
     .sort((a, b) => (userName(a.userId) + a.date + (a.debut || '')).localeCompare(userName(b.userId) + b.date + (b.debut || '')));
   const groupes = {};
   list.forEach(t => { const k = t.userId + '|' + isoWeek(new Date(t.date)); (groupes[k] = groupes[k] || []).push(t); });
   return `<h1>RH</h1>${rhTabs('validation')}
   <p class="muted">Contrôlez les pointages ${tous ? 'de tous les chantiers' : 'de vos chantiers'} avant leur envoi en paie. Un pointage validé n'est plus modifiable par l'opérateur.</p>
+  <div class="toolbar">${barrePeriode(p.du ? p : { du: '', au: '' }, '#/rh/validation', tous && Store.me.role === 'charge' ? { tous: 1 } : {})}${p.du ? ' <a class="btn small secondary" href="#/rh/validation">Toutes les dates</a>' : ''}</div>
   <div class="toolbar">
     <button id="v-all" class="secondary">Tout sélectionner</button>
     <button id="v-ok">Valider la sélection</button>
@@ -689,33 +670,40 @@ function rhFrais(query) {
   </table></div>` : '<p class="muted">Aucune note de frais.</p>'}`;
 }
 
+// Statut d'un pointage pour les filtres : à valider, validé, refusé, en cours
+const etatTemps = t => (t.statut === 'Validé' ? 'valide' : t.statut === 'Refusé' ? 'refuse' : t.debut && !t.fin ? 'encours' : 'avalider');
+const ETATS_TEMPS = [['', 'Tous les statuts'], ['avalider', 'À valider'], ['valide', 'Validés'], ['refuse', 'Refusés'], ['encours', 'En cours']];
 function rhPointages(query) {
-  const fu = query.get('user') || '', fa = query.get('chantier') || '', fw = query.get('semaine') || '';
-  const list = Store.all('temps').filter(t => (!fu || t.userId === fu) && (!fa || t.affaireId === fa) && (!fw || isoWeek(new Date(t.date)) === fw))
-    .sort((a, b) => (b.date + (b.debut || '')).localeCompare(a.date + (a.debut || ''))).slice(0, 400);
-  const weeks = [...new Set(Store.all('temps').map(t => isoWeek(new Date(t.date))))].sort().reverse().slice(0, 16);
+  const fu = query.get('user') || '', fa = query.get('chantier') || '', fs = query.get('statut') || '', p = periodeRH(query);
+  const tous = Store.all('temps').filter(t => (!fu || t.userId === fu) && (!fa || t.affaireId === fa) && (!fs || etatTemps(t) === fs) && Paie.dans(t.date, p))
+    .sort((a, b) => (b.date + (b.debut || '')).localeCompare(a.date + (a.debut || '')));
+  const list = tous.slice(0, 500);
   return `<h1>RH</h1>${rhTabs('pointages')}
+  <div class="toolbar">${barrePeriode(p, '#/rh/pointages', { user: fu, chantier: fa, statut: fs })}</div>
   <div class="toolbar">
     <button id="add">+ Pointage</button>
     <span class="spacer"></span>
     <select id="fu" style="width:auto"><option value="">Toute l'équipe</option>${options(Store.all('users'), fu, undefined, false)}</select>
     <select id="fa" style="width:auto"><option value="">Tous les chantiers</option>${options(Store.all('affaires'), fa, affaireLabel, false)}</select>
-    <select id="fw" style="width:auto"><option value="">Toutes les semaines</option>${optionsStr(weeks, fw)}</select>
+    <select id="fs" style="width:auto">${ETATS_TEMPS.map(([k, l]) => `<option value="${k}" ${k === fs ? 'selected' : ''}>${l}</option>`).join('')}</select>
   </div>
-  <p><strong>${fmt(sumBy(list, t => num(t.heures)), 2)} h</strong> <span class="muted">sur ${list.length} pointage(s)</span></p>
+  <p><strong>${fmt(sumBy(tous, t => num(t.heures)), 2)} h</strong> <span class="muted">sur ${tous.length} pointage(s) ${esc(libellePeriode(p))}${tous.length > list.length ? ` (les ${list.length} plus récents affichés)` : ''}</span>
+    ${fs === 'avalider' && tous.length && Store.me.role !== 'atelier' ? ` · <a href="#/rh/validation?du=${p.du}&au=${p.au}">Les valider</a>` : ''}</p>
   <div class="table-wrap"><table><tr><th>Date</th><th>Personne</th><th>Chantier</th><th>Tâche</th><th>Arrivée – départ</th><th class="num">Pause</th><th>Panier</th><th class="num">Heures</th><th>Statut</th></tr>
-  ${list.map(t => `<tr class="clickable" data-t="${t.id}"><td>${dateFr(t.date)}</td><td>${esc(userName(t.userId))}</td><td>${esc(affaireOf(t.affaireId).code || '')}</td><td>${esc(t.tache)}</td>
-    <td>${t.debut ? `${esc(t.debut)} – ${esc(t.fin || 'en cours')}` : '<span class="muted">manuel</span>'}</td><td class="num">${num(t.pause) ? t.pause + ' min' : ''}</td><td>${t.panier ? 'Oui' : ''}</td><td class="num">${fmt(t.heures, 2)}</td><td>${statutTemps(t)}</td></tr>`).join('')}
+  ${list.map(t => `<tr class="clickable" data-t="${t.id}"><td>${dateFr(t.date)}</td><td>${esc(userName(t.userId))}</td><td>${esc(affaireOf(t.affaireId).code || '')}${t.horsPlanning ? ' <span class="badge b-warn">hors planning</span>' : ''}</td><td>${esc(t.tache)}</td>
+    <td>${t.debut ? `${esc(t.debut)} – ${esc(t.fin || 'en cours')}` : '<span class="muted">manuel</span>'}</td><td class="num">${num(t.pause) ? t.pause + ' min' : ''}</td><td>${t.panier ? 'Oui' : ''}</td><td class="num">${fmt(t.heures, 2)}</td><td>${statutTemps(t)}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">Aucun pointage.</td></tr>'}
   </table></div>`;
 }
 
-Views.rh.bind = (root, params) => {
+Views.rh.bind = (root, params, query = new URLSearchParams()) => {
   if (params[0] === 'habilitations') return; // cases gérées par un écouteur global (habilitations.js)
   if (params[0] === 'interim') return bindInterim(root);
   const on = (sel, fn) => { const el = root.querySelector(sel); if (el) el.onclick = fn; };
   if (params[0] === 'pointages') {
-    const upd = () => { location.hash = `#/rh/pointages?user=${root.querySelector('#fu').value}&chantier=${root.querySelector('#fa').value}&semaine=${root.querySelector('#fw').value}`; };
-    ['#fu', '#fa', '#fw'].forEach(s => { root.querySelector(s).onchange = upd; });
+    const filtres = () => ({ user: root.querySelector('#fu').value, chantier: root.querySelector('#fa').value, statut: root.querySelector('#fs').value });
+    const p = periodeRH(query), upd = () => { location.hash = `#/rh/pointages?${new URLSearchParams({ ...filtres(), du: p.du, au: p.au })}`; };
+    ['#fu', '#fa', '#fs'].forEach(s => { root.querySelector(s).onchange = upd; });
+    bindPeriode(root, '#/rh/pointages', filtres);
     on('#add', () => editModal({ title: 'Nouveau pointage', col: 'temps', fields: tempsFields, beforeSave: beforeSaveTemps,
       obj: { date: isoDate(new Date()), userId: (operateurs()[0] || {}).id, pause: 60, debut: '07:30', fin: '16:30', panier: '1', statut: '' } }));
     root.querySelectorAll('tr[data-t]').forEach(tr => tr.onclick = () => {
@@ -726,7 +714,9 @@ Views.rh.bind = (root, params) => {
   }
   if (params[0] === 'validation') {
     const tous = root.querySelector('#v-tous');
-    if (tous) tous.onchange = () => { location.hash = `#/rh/validation?tous=${tous.checked ? 1 : 0}`; };
+    const pv = { du: query.get('du') || '', au: query.get('au') || '' }, garde = () => Object.fromEntries(Object.entries(pv).filter(([, v]) => v));
+    if (tous) tous.onchange = () => { location.hash = `#/rh/validation?${new URLSearchParams({ ...garde(), tous: tous.checked ? 1 : 0 })}`; };
+    bindPeriode(root, '#/rh/validation', () => (tous && tous.checked ? { tous: 1 } : {}));
     root.querySelectorAll('[data-v]').forEach(cb => cb.onchange = () => { cb.checked ? valSel.add(cb.dataset.v) : valSel.delete(cb.dataset.v); });
     root.querySelectorAll('[data-grp]').forEach(g => g.onchange = () => root.querySelectorAll(`[data-g="${g.dataset.grp}"]`).forEach(cb => { cb.checked = g.checked; cb.onchange(); }));
     on('#v-all', () => root.querySelectorAll('[data-v], [data-grp]').forEach(cb => { cb.checked = true; if (cb.dataset.v) valSel.add(cb.dataset.v); }));
@@ -753,65 +743,6 @@ Views.rh.bind = (root, params) => {
     });
     return;
   }
-  root.querySelector('#mois').onchange = e => { location.hash = `#/rh?mois=${e.target.value}`; };
-  const mois = root.querySelector('#mois').value;
-  root.querySelectorAll('tr[data-u]').forEach(tr => tr.onclick = () => { location.hash = `#/rh/pointages?user=${tr.dataset.u}`; });
-  on('#xlsx', () => download(`recap-heures-${mois}.xlsx`, recapExcel(mois), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'));
+  bindRhPaie(root, query);
 };
 
-/* Récapitulatif Excel du mois : une feuille de synthèse + une feuille détaillée par personne,
-   avec le total des heures de chaque semaine et le découpage en heures supplémentaires. */
-function recapExcel(mois) {
-  const s = Store.data.settings;
-  const libMois = new Date(mois + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
-  const personnes = Store.all('users').filter(u => Store.all('temps').some(t => t.userId === u.id && t.date.startsWith(mois)))
-    .sort((a, b) => (a.type === 'interimaire') - (b.type === 'interimaire') || a.nom.localeCompare(b.nom));
-  const H = v => ({ v, s: 'head' });
-  const synth = [
-    [{ v: `Récapitulatif des heures – ${libMois}`, s: 'title' }],
-    [{ v: `${s.societe} · heures validées · semaine de ${fmt(num(s.dureeHebdo) || 35)} h · HS 50 % au-delà de ${fmt(num(s.seuilHS50) || 43)} h · panier ${fmt(num(s.montantPanier), 2)} €`, s: 'muted' }],
-    [],
-    ['Nom', 'Statut', 'Agence', 'Catégorie', 'Jours', 'Heures validées', 'Normales', 'HS 25 %', 'HS 50 %', 'Paniers', 'Montant paniers', 'Notes de frais', 'Brut estimé', 'Heures à valider', 'Déplacements (à compléter)', 'Primes (à compléter)', 'Observations'].map(H),
-  ];
-  const sheets = [];
-  personnes.forEach(u => {
-    const p = Calc.paie(u.id, mois);
-    const interim = u.type === 'interimaire';
-    synth.push([{ v: u.nom, s: 'bold' }, interim ? 'Intérimaire' : 'Salarié', interim ? clientName(u.agenceId) : '', moOf(u.categorieId).libelle || '', p.jours, p.total, p.normales, p.hs25, p.hs50, p.paniers,
-      { v: p.montantPaniers, s: 'eur' }, { v: p.frais, s: 'eur' }, interim || !num(u.salaireHoraire) ? '' : { v: p.brut, s: 'eur' }, p.attente || '']);
-
-    // Feuille détaillée
-    const rows = [
-      [{ v: `${u.nom} – ${libMois}`, s: 'title' }],
-      [{ v: `${interim ? `Intérimaire (${clientName(u.agenceId)})` : 'Salarié'} · ${moOf(u.categorieId).libelle || ''}${num(u.salaireHoraire) ? ` · taux brut ${fmt(u.salaireHoraire, 2)} €/h` : ''}`, s: 'muted' }],
-      [],
-      ['Semaine', 'Date', 'Jour', 'Chantier', 'Tâche', 'Arrivée', 'Départ', 'Pause (min)', 'Heures', 'Panier', 'Statut', 'Normales', 'HS 25 %', 'HS 50 %'].map(H),
-    ];
-    const entries = Store.all('temps').filter(t => t.userId === u.id && t.date.startsWith(mois)).sort((a, b) => (a.date + (a.debut || '')).localeCompare(b.date + (b.debut || '')));
-    const semaines = [...new Set(entries.map(t => isoWeek(new Date(t.date))))];
-    semaines.forEach(wk => {
-      entries.filter(t => isoWeek(new Date(t.date)) === wk).forEach(t => {
-        const a = affaireOf(t.affaireId);
-        rows.push([wk.replace('-W', ' S'), dateFr(t.date), new Date(t.date).toLocaleDateString('fr-FR', { weekday: 'long' }), `${a.code || ''} ${a.nom || ''}`.trim(), t.tache || '',
-          t.debut || '', t.fin || '', num(t.pause) || '', num(t.heures), t.panier ? 'Oui' : '', t.statut || 'À valider']);
-      });
-      const w = p.semaines[wk] || { total: 0, normales: 0, hs25: 0, hs50: 0 };
-      const complete = w.semaineComplete !== undefined && Math.abs(w.semaineComplete - w.total) > 0.001 ? ` (semaine complète : ${fmt(w.semaineComplete, 2)} h)` : '';
-      rows.push([{ v: `Total semaine ${wk.split('-W')[1]}${complete}`, s: 'bold' }, { v: '', s: 'total' }, { v: '', s: 'total' }, { v: '', s: 'total' }, { v: '', s: 'total' }, { v: '', s: 'total' }, { v: '', s: 'total' }, { v: '', s: 'total' },
-        { v: w.total, s: 'total' }, { v: '', s: 'total' }, { v: 'validées', s: 'total' }, { v: w.normales, s: 'total' }, { v: w.hs25, s: 'total' }, { v: w.hs50, s: 'total' }]);
-      rows.push([]);
-    });
-    rows.push([{ v: 'Total du mois (heures validées)', s: 'bold' }, '', '', '', '', '', '', '', { v: p.total, s: 'boldnum' }, '', '', { v: p.normales, s: 'boldnum' }, { v: p.hs25, s: 'boldnum' }, { v: p.hs50, s: 'boldnum' }]);
-    rows.push(['Jours travaillés', p.jours]);
-    rows.push(['Paniers repas', p.paniers, { v: p.montantPaniers, s: 'eur' }]);
-    rows.push(['Notes de frais validées (TTC)', '', { v: p.frais, s: 'eur' }]);
-    if (!interim && num(u.salaireHoraire)) rows.push(['Salaire brut estimé', '', { v: p.brut, s: 'boldeur' }]);
-    if (p.attente) rows.push([{ v: `Attention : ${fmt(p.attente, 2)} h pointées ne sont pas encore validées et ne sont pas comptées.`, s: 'muted' }]);
-    sheets.push({ name: u.nom, cols: [16, 11, 11, 34, 16, 8, 8, 10, 9, 8, 10, 10, 9, 9], freeze: 4, rows });
-  });
-  // Notes de frais du mois
-  const frais = Store.all('frais').filter(f => (f.date || '').startsWith(mois)).sort((a, b) => a.date.localeCompare(b.date));
-  const fraisRows = [[{ v: `Notes de frais – ${libMois}`, s: 'title' }], [], ['N°', 'Date', 'Personne', 'Chantier', 'Catégorie', 'Description', 'Convives (restaurant)', 'TTC', 'TVA %', 'HT', 'Statut'].map(H),
-    ...frais.map(f => [f.numero || '', dateFr(f.date), userName(f.userId), affaireOf(f.affaireId).code || '', f.categorie === 'Repas' ? 'Restaurant' : f.categorie, f.description || '', NoteFrais.libelleConvives(f), { v: num(f.montantTTC), s: 'eur' }, num(f.tauxTVA), { v: Calc.fraisHT(f), s: 'eur' }, f.statut])];
-  return XLSX.build([{ name: 'Synthèse', cols: [22, 12, 22, 22, 7, 14, 10, 9, 9, 8, 14, 14, 13, 14, 22, 18, 30], freeze: 4, rows: synth }, ...sheets, { name: 'Notes de frais', cols: [14, 11, 18, 14, 16, 34, 40, 11, 7, 11, 12], freeze: 3, rows: fraisRows }]);
-}
