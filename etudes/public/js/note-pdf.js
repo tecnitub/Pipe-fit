@@ -28,7 +28,7 @@ function htmlNotePdf(et, n, i) {
   return `<div class="doe-doc ndc"><h2>N${i + 1} — ${esc(n.titre)}</h2><p class="petit">${esc(t.description)}</p>${lien ? `<p class="petit"><em>${esc(lien)}</em></p>` : ''}
     <h3>1. Données d'entrée</h3>${entreesHtml(n.type, e)}
     <h3>2. Hypothèses et méthode</h3><ul>${r.hypotheses.map(h => `<li>${esc(h)}</li>`).join('')}</ul>
-    <h3>3. Résultats</h3>${r.schema ? '<p class="sous">Schéma de principe : en fin de chapitre, sur une page au format paysage.</p>' : ''}
+    <h3>3. Résultats</h3>${r.schema ? `<p class="sous">${esc(r.titreSchema || 'Schéma de principe')} : en fin de chapitre, sur une page au format paysage.</p>` : ''}
     ${lignes2(r.resume.map(([k, v]) => [k, esc(v)]))}
     ${r.tableaux.map(x => `<p class="sous">${esc(x.titre)}</p>${tableauPdf(x.entetes, x.lignes, x.surligne, x.total)}`).join('')}
     <h3>4. Conclusions</h3><ul class="conclusions">${r.alertes.map(a => `<li class="${a.niveau}">${esc({ ok: 'Résultat', attention: 'Point d\'attention', erreur: 'Non conforme' }[a.niveau])} : ${esc(a.texte)}</li>`).join('')}</ul>

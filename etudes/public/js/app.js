@@ -136,7 +136,7 @@ function resultatsPrincipaux(r) {
 }
 // Calculateur : formulaire et résultats ; changer() est appelé après chaque modification des entrées
 // Schéma dessiné par le calcul (P&ID), sur toute la largeur sous la saisie
-const schemaHtml = r => (r.schema ? `<div class="barre"><h2>Schéma de principe</h2><span class="espace"></span><button class="secondaire petit" data-dl-schema>Télécharger (SVG)</button><button class="secondaire petit" data-dl-dxf>Télécharger pour AutoCAD (DXF)</button></div><div class="schema">${r.schema}</div>` : '');
+const schemaHtml = r => (r.schema ? `<div class="barre"><h2>${esc(r.titreSchema || 'Schéma de principe')}</h2><span class="espace"></span><button class="secondaire petit" data-dl-schema>Télécharger (SVG)</button><button class="secondaire petit" data-dl-dxf>Télécharger pour AutoCAD (DXF)</button></div><div class="schema">${r.schema}</div>` : '');
 // ctx : entrées effectives (avec les valeurs reprises d'autres notes) et calcul ; par défaut, la saisie seule
 const ctxSimple = (type, e) => ({ effectives: () => ({ entrees: e, verrous: {} }), calcul: () => Notes.calculer(type, e) });
 const ctxEtude = (et, n) => ({ effectives: () => Liens.resoudre(et, n), calcul: () => Liens.calculer(et, n) });
@@ -510,7 +510,8 @@ Vues.note = {
       ${calculateurHtml(n.type, n.entrees, ctx)}
       <div class="carte"><label class="champ-libre">Commentaire (repris dans la note de calcul)<textarea data-n="commentaire" rows="3">${esc(n.commentaire)}</textarea></label>
       <div class="actions-ligne"><button id="pdf-note">📄 PDF de ce calcul</button><button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="dupliquer">Dupliquer</button>
-        ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}<span class="espace"></span><button class="secondaire" id="supprimer">Supprimer ce calcul</button></div></div>`;
+        ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
+        ${n.type === 'elec' ? '<button id="elec-reprendre">⚡ Reprendre les équipements de l\'étude</button>' : ''}<span class="espace"></span><button class="secondaire" id="supprimer">Supprimer ce calcul</button></div></div>`;
   },
   bind: (root, et, noteId) => {
     const n = et.notes.find(x => x.id === noteId);
@@ -523,6 +524,14 @@ Vues.note = {
       const nv = Liens.notesDepuisSchema(et, n, uidE);
       if (!nv.length) return toast('Les notes liées existent déjà pour tous les circuits.');
       et.notes.splice(et.notes.indexOf(n) + 1, 0, ...nv); enregistrer(et); toast(`${nv.length} note(s) créée(s), reliées au schéma`); location.hash = `#/etude/${et.id}`;
+    };
+    // Alimentation électrique : équipements repris des autres calculs (schéma, réseaux, CTA…), choix déjà faits conservés
+    const rep = root.querySelector('#elec-reprendre');
+    if (rep) rep.onclick = () => {
+      const r = Electricite.fusionner((n.entrees || {}).equipements, Electricite.equipementsEtude(et, Liens));
+      if (!r.ajoutees && !r.majs) return toast('Aucun nouvel équipement : ajoutez un schéma de principe, un réseau, une CTA… à l\'étude, ou saisissez les équipements.', 6000);
+      n.entrees = { ...(n.entrees || {}), equipements: r.lignes }; enregistrer(et); App.render();
+      toast(`${r.ajoutees} équipement(s) ajouté(s)${r.majs ? `, ${r.majs} mis à jour` : ''} : choisissez pour chacun son alimentation et sa régulation.`, 6000);
     };
     root.querySelectorAll('[data-n]').forEach(el => el.oninput = () => { n[el.dataset.n] = el.value; enregistrer(et); });
     root.querySelector('#pdf-note').onclick = () => genererNoteCalcul(et, [n.id]);
