@@ -50,7 +50,9 @@ test('affaires de Pipe-Fit : seules les informations utiles sont transmises', as
   const d = (await call(base, 'GET', '/api/pf/affaires', null, c)).body;
   assert.ok(d.affaires.length && d.entreprises.length);
   assert.ok(Object.keys(d.affaires[0]).every(k => ['clientId', 'contactId', 'siteId', 'chargeId', 'code', 'id', 'nom', 'statut', 'type'].includes(k)) && d.affaires[0].id);
-  assert.ok(Object.keys(d.entreprises[0]).every(k => ['id', 'nom', 'regimeTVA'].includes(k)));
+  assert.ok(Object.keys(d.entreprises[0]).every(k => ['id', 'nom', 'regimeTVA', 'categorie'].includes(k)));
+  // Devis : de quoi relier une étude faite avant la commande, sans les montants
+  assert.ok(d.devis.length && Object.keys(d.devis[0]).every(k => ['id', 'numero', 'objet', 'clientId', 'statut', 'affaireId'].includes(k)));
   assert.ok(d.articles.every(a => !('fournisseurId' in a)), 'pas de données fournisseurs inutiles');
 });
 

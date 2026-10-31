@@ -73,7 +73,9 @@ async function pipefit(s, chemin, opts = {}) {
 // Seules les informations utiles aux études sont transmises au navigateur : affaires, clients, bibliothèque de prix, main-d'œuvre
 const extraitPF = d => ({
   affaires: (d.affaires || []).map(a => ({ id: a.id, code: a.code, nom: a.nom, clientId: a.clientId, contactId: a.contactId, siteId: a.siteId, chargeId: a.chargeId, statut: a.statut, type: a.type })),
-  entreprises: (d.entreprises || []).map(e => ({ id: e.id, nom: e.nom, regimeTVA: e.regimeTVA })),
+  entreprises: (d.entreprises || []).map(e => ({ id: e.id, nom: e.nom, regimeTVA: e.regimeTVA, categorie: e.categorie })),
+  // Devis (étude faite avant la commande, reliée à son devis)
+  devis: (d.devis || []).map(x => ({ id: x.id, numero: x.numero, objet: x.objet, clientId: x.clientId, statut: x.statut, affaireId: x.affaireId || '' })),
   articles: (d.articles || []).map(a => ({ id: a.id, ref: a.ref, designation: a.designation, famille: a.famille, sousFamille: a.sousFamille, unite: a.unite, prixVente: a.prixVente, coutRevient: a.coutRevient, poidsUnitaire: a.poidsUnitaire })),
   mainoeuvre: (d.mainoeuvre || []).map(m => ({ id: m.id, code: m.code, libelle: m.libelle, tauxVente: m.tauxVente, tauxCout: m.tauxCout })),
 });
@@ -82,8 +84,24 @@ const modifierPF = (s, col, id, modifier) => PF.modifierPF((chemin, opts) => pip
 const cacheDonnees = new Map(); // sid -> { t, data }
 
 // Envoi en arrière-plan : une étude s'enregistre même si Pipe-Fit est momentanément injoignable
-const signalerPF = (s, id, affaireId, resume) => publierEtat((chemin, opts) => pipefit(s, chemin, opts), 'etudes', id, affaireId, resume && typeof resume === 'object' ? resume : { objet: '' })
+// (affaireId vide : étude sans chantier, visible dans le CRM pour être reliée ; null : retirée)
+const signalerPF = (s, id, affaireId, resume, extra) => publierEtat((chemin, opts) => pipefit(s, chemin, opts), 'etudes', id, affaireId, resume && typeof resume === 'object' ? resume : { objet: '' }, extra)
   .catch(e => console.warn(`Études → Pipe-Fit : ${e.message}`));
+// Études sans chantier reliées depuis le CRM (commande reçue) : le chantier est repris dans l'étude
+async function reprendreLiens(s) {
+  const r = await pipefit(s, '/api/liens?app=etudes').catch(() => null);
+  if (!r || !r.ok) return;
+  const liens = await r.json().catch(() => []), now = new Date().toISOString();
+  for (const l of liens.filter(x => x.affaireId)) {
+    const e = db.prepare("SELECT * FROM etudes WHERE id = ? AND affaire_id = ''").get(l.id);
+    if (!e) continue;
+    const data = JSON.parse(e.data);
+    if (data.modele) continue;
+    data.affaireId = l.affaireId;
+    db.prepare('UPDATE etudes SET affaire_id = ?, data = ?, version = version + 1, updated_at = ?, updated_by = ? WHERE id = ?')
+      .run(l.affaireId, JSON.stringify(data), now, `${(l.relie || {}).par || 'Pipe-Fit'} (relié dans Pipe-Fit)`, e.id);
+  }
+}
 
 async function api(req, res, url) {
   const p = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean), method = req.method;
@@ -157,13 +175,18 @@ async function api(req, res, url) {
   // Devis brouillon créé dans Pipe-Fit à partir du métré de l'étude (client, contact et site de l'affaire)
   if (p[0] === 'pf' && p[1] === 'devis' && method === 'POST') {
     const b = await lireJSON(req);
-    if (!b.affaireId || !Array.isArray(b.lignes) || !b.lignes.length) return fail(res, 400, 'Affaire et lignes du devis requises');
-    const ra = await pipefit(s, `/api/records/affaires/${encodeURIComponent(b.affaireId)}`);
-    if (!ra.ok) return fail(res, ra.status === 404 ? 404 : 502, 'Affaire introuvable dans Pipe-Fit');
-    const a = await ra.json(), rc = a.clientId ? await pipefit(s, `/api/records/entreprises/${encodeURIComponent(a.clientId)}`) : null, client = rc && rc.ok ? await rc.json() : {};
+    if ((!b.affaireId && !b.clientId) || !Array.isArray(b.lignes) || !b.lignes.length) return fail(res, 400, 'Affaire (ou client) et lignes du devis requises');
+    // Étude sans chantier : devis pour le client (le chantier naîtra de son acceptation)
+    let a = { id: '', clientId: String(b.clientId || ''), nom: '' };
+    if (b.affaireId) {
+      const ra = await pipefit(s, `/api/records/affaires/${encodeURIComponent(b.affaireId)}`);
+      if (!ra.ok) return fail(res, ra.status === 404 ? 404 : 502, 'Affaire introuvable dans Pipe-Fit');
+      a = await ra.json();
+    }
+    const rc = a.clientId ? await pipefit(s, `/api/records/entreprises/${encodeURIComponent(a.clientId)}`) : null, client = rc && rc.ok ? await rc.json() : {};
     const tva = client.regimeTVA === 'AL' ? { autoliquidation: true } : { autoliquidation: false, tauxTVA: client.regimeTVA ? Number(client.regimeTVA) : '' };
     const id = idPF(), data = { numero: '', objet: String(b.objet || a.nom || 'Chiffrage bureau d\'études').slice(0, 200), clientId: a.clientId || '', contactId: a.contactId || '', siteId: a.siteId || '', chargeId: a.chargeId || '',
-      affaireId: a.id, date: new Date().toISOString().slice(0, 10), validite: 30, statut: 'Brouillon', zoneId: '', ajustements: [], lignes: b.lignes, numAuto: true, ...tva,
+      affaireId: a.id || '', date: new Date().toISOString().slice(0, 10), validite: 30, statut: 'Brouillon', zoneId: '', ajustements: [], lignes: b.lignes, numAuto: true, ...tva,
       notes: `Métré établi par le bureau d'études (application Études${b.etudeId ? `, étude ${b.etudeId}` : ''}) : quantités et prix à vérifier.` };
     const w = await pipefit(s, `/api/records/devis/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data }) });
     const j = await w.json().catch(() => ({}));
@@ -173,6 +196,7 @@ async function api(req, res, url) {
 
   // Études : en-tête (affaire, objet, indice) et notes de calcul ; contrôle de version à l'enregistrement
   const ligne = r => ({ ...JSON.parse(r.data), id: r.id, _v: r.version, _at: r.updated_at, _by: r.updated_by });
+  if (p[0] === 'etudes' && !p[1] && method === 'GET') await reprendreLiens(s);
   if (p[0] === 'etudes' && !p[1] && method === 'GET') return send(res, 200, db.prepare('SELECT * FROM etudes ORDER BY updated_at DESC').all().map(ligne));
   if (p[0] === 'etudes' && p[1]) {
     if (!/^[\w-]{1,64}$/.test(p[1])) return fail(res, 400, 'Identifiant invalide');
@@ -182,17 +206,22 @@ async function api(req, res, url) {
       const { data, version, resume } = await lireJSON(req);
       if (!data || typeof data !== 'object' || !String(data.objet || '').trim() || !Array.isArray(data.notes)) return fail(res, 400, 'Données manquantes (objet de l\'étude, notes)');
       if (exist && version !== exist.version) return fail(res, 409, `Modifiée entre-temps par ${exist.updated_by}`, { record: ligne(exist) });
+      // Étude sans chantier déjà reliée dans le CRM : le chantier est repris
+      if (!data.modele && !data.affaireId) {
+        const l = await PF.lienEtude((chemin, opts) => pipefit(s, chemin, opts), p[1]).catch(() => null);
+        if (l && l.affaireId) data.affaireId = l.affaireId;
+      }
       const propre = Object.fromEntries(Object.entries(data).filter(([k]) => !k.startsWith('_') && k !== 'id'));
       const v = exist ? exist.version + 1 : 1, now = new Date().toISOString();
       db.prepare(`INSERT INTO etudes (id, affaire_id, data, version, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET affaire_id = excluded.affaire_id, data = excluded.data, version = excluded.version, updated_at = excluded.updated_at, updated_by = excluded.updated_by`)
         .run(p[1], data.affaireId || '', JSON.stringify(propre), v, now, s.nom || s.login);
-      // État de l'étude sur la fiche chantier de Pipe-Fit (rattachée à un chantier, modèles exclus) ; retiré d'un chantier quitté
-      const affaireId = data.modele ? '' : String(data.affaireId || '');
-      if (affaireId || (exist && exist.affaire_id)) signalerPF(s, p[1], affaireId, resume);
+      // État de l'étude dans Pipe-Fit (avec ou sans chantier ; un modèle n'y figure pas)
+      if (data.modele) { if (exist) signalerPF(s, p[1], null, null); }
+      else signalerPF(s, p[1], String(data.affaireId || ''), resume, { clientId: String(data.clientId || ''), devisId: String(data.devisId || '') });
       return send(res, 200, ligne(db.prepare('SELECT * FROM etudes WHERE id = ?').get(p[1])));
     }
-    if (method === 'DELETE') { db.prepare('DELETE FROM etudes WHERE id = ?').run(p[1]); if (exist && exist.affaire_id) signalerPF(s, p[1], '', null); return send(res, 200, { ok: true }); }
+    if (method === 'DELETE') { db.prepare('DELETE FROM etudes WHERE id = ?').run(p[1]); if (exist) signalerPF(s, p[1], null, null); return send(res, 200, { ok: true }); }
   }
 
   // Réglages : identité de l'entreprise sur les notes de calcul

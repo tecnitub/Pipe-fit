@@ -191,7 +191,7 @@ async function api(req, res, url) {
     }
     if (method === 'DELETE') {
       db.prepare('DELETE FROM does WHERE id = ?').run(p[1]);
-      if (exist) PF.publierEtat((chemin, opts) => pipefit(s, chemin, opts), 'doe', p[1], '', null).catch(e => console.warn(`DOE → Pipe-Fit : ${e.message}`));
+      if (exist) PF.publierEtat((chemin, opts) => pipefit(s, chemin, opts), 'doe', p[1], null, null).catch(e => console.warn(`DOE → Pipe-Fit : ${e.message}`));
       return send(res, 200, { ok: true });
     }
   }

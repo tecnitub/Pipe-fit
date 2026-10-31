@@ -726,6 +726,13 @@ numérote les équipements, contrôle article par article que rien n'est oublié
 (bordereau d'envoi en PDF). À la fin des travaux, l'étude devient le DOE, déjà rempli hors attestations et PV. Détails :
 [doe/README.md](doe/README.md).
 
+**Étude avant la commande** : une étude peut être faite sans chantier, pour un client et éventuellement son devis.
+Dans le CRM, Devis → « 📐 Études du bureau d'études » (ou « 📐 Études » sur un devis) liste toutes les études, avec ou
+sans chantier, et « + Nouvelle étude » l'ouvre dans l'application Études avec le client et le devis déjà choisis.
+Quand la commande arrive, « Relier… » la rattache au chantier (recherche) ; reliée à un devis, elle suit toute seule le
+chantier créé à l'acceptation du devis. L'application Études reprend le chantier à la prochaine ouverture ; un devis
+brouillon peut aussi être créé depuis le métré d'une étude sans chantier (pour le client), et l'étude suit alors ce devis.
+
 **Liaison avec le CRM** (version installée et démonstration) : à chaque enregistrement, les applications DOE et Études
 envoient l'état de leurs dossiers à Pipe-Fit (`/api/liens`, avec le compte de la personne connectée ; lecture réservée au
 bureau, mise à jour en temps réel). La vue d'ensemble du chantier montre :

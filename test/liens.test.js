@@ -131,3 +131,37 @@ test('Visas reportés sur les documents (module commun)', () => {
   assert.deepStrictEqual([docs[1].visible, docs[1].note], [false, 'Étude d\'exécution : refusée — débit insuffisant']);
   assert.strictEqual(L.appliquer(docs, [{ id: 'f3', visa: 'Refusée', obs: 'débit insuffisant' }]).change, false);
 });
+
+test('étude sans chantier : visible dans le CRM, reliée au chantier ou au devis, reprise par l\'application Études', async () => {
+  const c = (await call(etBase, 'POST', '/api/login', { login: 'jacky', password: 'motdepasse1' })).cookie;
+  // Étude faite avant la commande, pour un client
+  const r = await call(etBase, 'PUT', '/api/etudes/et-av1', { data: { objet: 'Avant-projet chaufferie', affaireId: '', clientId: 'e1', notes: [] }, resume: { objet: 'Avant-projet chaufferie', clientId: 'e1' } }, c);
+  assert.strictEqual(r.status, 200);
+  const sans = await attendre(async () => (await call(pfBase, 'GET', '/api/liens?app=etudes&sansChantier=1', null, pfJacky)).body.find(x => x.id === 'et-av1'));
+  assert.ok(sans, 'étude sans chantier visible dans Pipe-Fit');
+  assert.strictEqual(sans.clientId, 'e1');
+  // Reliée au chantier dans le CRM (commande reçue) : un nouvel enregistrement sans chantier ne la délie pas
+  assert.strictEqual((await call(pfBase, 'POST', '/api/liens/etudes/et-av1/relier', { affaireId: 'inconnu' }, pfJacky)).status, 400);
+  const rel = await call(pfBase, 'POST', '/api/liens/etudes/et-av1/relier', { affaireId: 'af2' }, pfJacky);
+  assert.deepStrictEqual([rel.status, rel.body.affaireId, rel.body.relie.par], [200, 'af2', 'jacky']);
+  // L'application Études reprend le chantier : à l'enregistrement…
+  const r2 = await call(etBase, 'PUT', '/api/etudes/et-av1', { data: { objet: 'Avant-projet chaufferie', affaireId: '', clientId: 'e1', notes: [] }, version: 1, resume: { objet: 'Avant-projet chaufferie' } }, c);
+  assert.strictEqual(r2.body.affaireId, 'af2');
+  // … et à l'ouverture de la liste
+  await call(etBase, 'PUT', '/api/etudes/et-av2', { data: { objet: 'Étude réseau', affaireId: '', notes: [] }, resume: { objet: 'Étude réseau' } }, c);
+  await attendre(async () => (await call(pfBase, 'GET', '/api/liens?app=etudes', null, pfJacky)).body.find(x => x.id === 'et-av2'));
+  await call(pfBase, 'POST', '/api/liens/etudes/et-av2/relier', { affaireId: 'af4' }, pfJacky);
+  assert.strictEqual((await call(etBase, 'GET', '/api/etudes', null, c)).body.find(x => x.id === 'et-av2').affaireId, 'af4');
+
+  // Reliée à un devis : le chantier créé à son acceptation la reprend tout seul
+  await call(etBase, 'PUT', '/api/etudes/et-av3', { data: { objet: 'Étude devis', affaireId: '', clientId: 'e1', devisId: 'dv-et', notes: [] }, resume: { objet: 'Étude devis' } }, c);
+  const admin = (await call(pfBase, 'POST', '/api/login', { login: 'admin', password: 'admin-test-pw' })).cookie;
+  await call(pfBase, 'PUT', '/api/records/devis/dv-et', { data: { clientId: 'e1', objet: 'Chaufferie', statut: 'Envoyé', lignes: [] } }, admin);
+  assert.strictEqual((await attendre(async () => (await call(pfBase, 'GET', '/api/liens?devisId=dv-et', null, pfJacky)).body[0])).affaireId, '');
+  await call(pfBase, 'PUT', '/api/records/affaires/af-et', { data: { nom: 'Chaufferie', clientId: 'e1', devisId: 'dv-et', statut: 'En préparation' } }, admin);
+  const l = (await call(pfBase, 'GET', '/api/liens?devisId=dv-et', null, pfJacky)).body[0];
+  assert.deepStrictEqual([l.id, l.affaireId], ['et-av3', 'af-et']);
+  // Supprimée dans l'application : retirée
+  await call(etBase, 'DELETE', '/api/etudes/et-av3', {}, c);
+  assert.ok(await attendre(async () => !(await call(pfBase, 'GET', '/api/liens?app=etudes', null, pfJacky)).body.some(x => x.id === 'et-av3')));
+});

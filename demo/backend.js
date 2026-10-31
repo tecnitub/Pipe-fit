@@ -170,11 +170,29 @@
     if (p[0] === 'liens') {
       if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Réservé au bureau' }];
       db.liens = db.liens || [];
-      if (!p[1] && method === 'GET') { const q = query.get('affaireId') || ''; return [200, db.liens.filter(l => !q || l.affaireId === q).sort((x, y) => y.maj.localeCompare(x.maj))]; }
+      const g = k => query.get(k) || '';
+      if (!p[1] && method === 'GET') return [200, db.liens.filter(l => (!g('affaireId') || l.affaireId === g('affaireId')) && (!g('app') || l.app === g('app')) && (g('sansChantier') !== '1' || !l.affaireId)
+        && (!g('devisId') || l.devisId === g('devisId')) && (!g('clientId') || l.clientId === g('clientId'))).sort((x, y) => y.maj.localeCompare(x.maj))];
       if (['etudes', 'doe'].includes(p[1]) && p[2]) {
-        db.liens = db.liens.filter(l => !(l.app === p[1] && l.id === p[2]));
-        if (method === 'PUT' && body.affaireId && body.resume) db.liens.push({ app: p[1], id: p[2], affaireId: String(body.affaireId), resume: body.resume, maj: new Date().toISOString(), par: acc.nom });
-        save(); return [200, { ok: true }];
+        const i = db.liens.findIndex(l => l.app === p[1] && l.id === p[2]), avant = db.liens[i];
+        if (method === 'GET') return avant ? [200, avant] : [404, { error: 'Inconnu' }];
+        // Rattachement fait dans le CRM : chantier et / ou devis
+        if (p[3] === 'relier' && method === 'POST') {
+          if (!avant) return [404, { error: 'Étude inconnue de Pipe-Fit : enregistrez-la une fois dans l\'application Études' }];
+          if (body.affaireId !== undefined) avant.affaireId = String(body.affaireId || '');
+          if (body.devisId !== undefined) avant.devisId = String(body.devisId || '');
+          avant.relie = { par: acc.nom, le: new Date().toISOString() };
+          save(); return [200, avant];
+        }
+        if (method === 'DELETE' || (!body.affaireId && p[1] !== 'etudes')) { if (i >= 0) db.liens.splice(i, 1); save(); return [200, { ok: true }]; }
+        if (method === 'PUT' && body.resume) {
+          // Un chantier relié dans le CRM reste tant que l'étude ne l'a pas repris
+          const affaireId = String(body.affaireId || '') || (avant && avant.relie ? avant.affaireId : '');
+          const l = { app: p[1], id: p[2], affaireId, devisId: String(body.devisId || (avant && avant.devisId) || ''), clientId: String(body.clientId || (avant && avant.clientId) || ''),
+            resume: body.resume, maj: new Date().toISOString(), par: acc.nom, relie: avant ? avant.relie || null : null };
+          if (i >= 0) db.liens[i] = l; else db.liens.push(l);
+          save(); return [200, l];
+        }
       }
     }
     if (p[0] === 'assistant') {
@@ -383,6 +401,8 @@
         save();
         if (col === 'planning') planningModifie(acc, existing, rec);
         if (col === 'affaires') documentsModifies(existing, rec);
+        // Chantier créé depuis un devis : les études faites pour ce devis y sont reliées
+        if (col === 'affaires' && rec.devisId && (!existing || existing.devisId !== rec.devisId)) (db.liens || []).filter(l => l.devisId === rec.devisId && !l.affaireId).forEach(l => { l.affaireId = rec.id; l.relie = { par: acc.nom, le: new Date().toISOString() }; save(); });
         // Intervention ouverte par un compagnon : cloche des chargés d'affaires
         if (col === 'affaires' && acc.role === 'atelier' && !existing) db.accounts.filter(a => ['admin', 'charge'].includes(a.role) && a.userId).forEach(a => db.notifications.push({ id: 'nt' + DemoSeed.uid(), type: 'horsDevis', userId: a.userId, affaireId: rec.id,
           titre: `🛠️ Intervention hors devis ouverte : ${rec.code}`, texte: `${acc.nom} — ${rec.nom}. À compléter (client, site, chargé d'affaires).`, lien: `#/chantier/${rec.id}`, date: new Date().toISOString(), lu: false, _v: 1, _at: new Date().toISOString(), _by: 'Pipe-Fit' }));

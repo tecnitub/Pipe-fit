@@ -521,9 +521,19 @@ async function api(req, res, url) {
   // État des applications Études et DOE par chantier (envoyé par leurs serveurs avec le compte de la personne ; bureau)
   if (p[0] === 'liens') {
     if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
-    if (!p[1] && method === 'GET') return send(res, 200, LIENS.liste(url.searchParams.get('affaireId') || ''));
+    const q = k => url.searchParams.get(k) || '';
+    if (!p[1] && method === 'GET') return send(res, 200, LIENS.liste({ affaireId: q('affaireId'), app: q('app'), sansChantier: q('sansChantier') === '1', devisId: q('devisId'), clientId: q('clientId') }));
     if (p[1] && p[2]) {
       try {
+        if (method === 'GET' && !p[3]) { const l = LIENS.un(p[1], p[2]); return l ? send(res, 200, l) : fail(res, 404, 'Inconnu'); }
+        if (p[3] === 'relier' && method === 'POST') {
+          const b = await readBody(req);
+          if (b.affaireId && !DB.getRecord(db, 'affaires', String(b.affaireId))) return fail(res, 400, 'Chantier introuvable');
+          if (b.devisId && !DB.getRecord(db, 'devis', String(b.devisId))) return fail(res, 400, 'Devis introuvable');
+          const l = LIENS.relier(p[1], p[2], b, acc.nom || acc.login);
+          DB.audit(db, acc.login, 'étude reliée', 'affaires', l.affaireId || null, `${(l.resume || {}).objet || p[2]}${l.affaireId ? ` → ${(DB.getRecord(db, 'affaires', l.affaireId) || {}).code || ''}` : ''}${l.devisId ? ` (devis ${(DB.getRecord(db, 'devis', l.devisId) || {}).numero || ''})` : ''}`);
+          return send(res, 200, l);
+        }
         if (method === 'PUT') return send(res, 200, LIENS.enregistrer(p[1], p[2], await readBody(req), acc.nom || acc.login) || { ok: true });
         if (method === 'DELETE') { LIENS.supprimer(p[1], p[2]); return send(res, 200, { ok: true }); }
       } catch (e) { return fail(res, e.status || 500, e.message); }
@@ -710,6 +720,8 @@ async function api(req, res, url) {
       broadcast('change', { col, record: result.record, client: req.headers['x-client-id'] || null });
       if (col === 'planning') { NOTIFS.planningModifie(acc, result.avant, result.record); AGENDA.signaler(); }
       if (col === 'affaires') { NOTIFS.documentsModifies(acc, result.avant, result.record); DOSSIER.signaler(); }
+      // Chantier créé depuis un devis : les études faites pour ce devis (avant la commande) y sont reliées
+      if (col === 'affaires' && result.record.devisId && (!result.avant || result.avant.devisId !== result.record.devisId)) LIENS.relierDevis(result.record.devisId, result.record.id, acc.nom || acc.login);
       if (col === 'affaires' && estCompagnon(acc) && !result.avant) NOTIFS.horsDevisOuvert(acc, result.record);
       return send(res, 200, pourCompagnon(acc, col, result.record) || { id: result.record.id, _v: result.record._v });
     }

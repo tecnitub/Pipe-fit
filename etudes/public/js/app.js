@@ -27,7 +27,7 @@ const confirmer = (msg, ok = 'Confirmer') => new Promise(res => {
 });
 
 /* ---------- Données ---------- */
-const S = { me: null, config: null, etudes: [], pf: { affaires: [], entreprises: [] }, enCours: new Map() };
+const S = { me: null, config: null, etudes: [], pf: { affaires: [], entreprises: [], devis: [] }, enCours: new Map() };
 const etudeDe = id => S.etudes.find(e => e.id === id);
 const affaireDe = id => S.pf.affaires.find(a => a.id === id);
 const clientDe = a => (a ? (S.pf.entreprises.find(e => e.id === a.clientId) || {}).nom || '' : '');
@@ -48,10 +48,10 @@ function resumePF(et) {
   });
   let equipements = [];
   try { equipements = Metre.metre(et).filter(p => p.unite === 'u' && p.chapitre !== 'Études').slice(0, 150).map(p => ({ chapitre: p.chapitre, designation: p.designation, qte: p.qte, sources: p.sources })); } catch (e) { equipements = []; }
-  return { objet: et.objet, indice: et.indice, date: et.date, auteur: et.auteur || '', verificateur: et.verificateur || '', description: String(et.description || '').slice(0, 500),
+  return { objet: et.objet, client: et.client || '', clientId: et.clientId || '', devisId: et.devisId || '', indice: et.indice, date: et.date, auteur: et.auteur || '', verificateur: et.verificateur || '', description: String(et.description || '').slice(0, 500),
     notes, erreurs: notes.reduce((s, n) => s + n.erreurs, 0), attention: notes.reduce((s, n) => s + n.attention, 0), equipements, devis: (et.devisPF || []).slice(-10) };
 }
-const corpsEtude = et => { let resume; try { resume = et.modele || !et.affaireId ? undefined : resumePF(et); } catch (e) { resume = undefined; } return { data: et, version: et._v, resume }; };
+const corpsEtude = et => { let resume; try { resume = et.modele ? undefined : resumePF(et); } catch (e) { resume = undefined; } return { data: et, version: et._v, resume }; };
 // Enregistrement différé (une requête à la fois par étude, contrôle de version)
 function enregistrer(etude) {
   if (!S.etudes.includes(etude)) S.etudes.unshift(etude);
@@ -63,6 +63,8 @@ function enregistrer(etude) {
     try {
       const r = await api('PUT', `/api/etudes/${etude.id}`, corpsEtude(etude));
       Object.assign(etude, { _v: r._v, _at: r._at, _by: r._by });
+      // Chantier relié depuis Pipe-Fit (commande reçue) : repris dans l'étude
+      if (r.affaireId && r.affaireId !== etude.affaireId) { etude.affaireId = r.affaireId; etude.client = etude.client || clientDe(affaireDe(r.affaireId)); toast(`Étude reliée au chantier ${libelleAffaire(affaireDe(r.affaireId))} dans Pipe-Fit`, 5000); App.render(); }
       majEtatEnregistrement('Enregistré');
     } catch (e) {
       if (e.status === 409 && e.data.record) { Object.assign(etude, e.data.record); toast(`${e.message} : version la plus récente rechargée.`, 5000); App.render(); }
@@ -265,13 +267,13 @@ Vues.chantier = {
 const optionsAffaires = sel => `<option value="">— Sans affaire —</option>${S.pf.affaires.filter(a => a.type !== 'horsDevis').slice().sort((x, y) => String(y.code || '').localeCompare(String(x.code || '')))
   .map(a => `<option value="${esc(a.id)}" ${a.id === sel ? 'selected' : ''}>${esc(libelleAffaire(a))}</option>`).join('')}`;
 const modeleDe = id => Modeles.INTEGRES.find(m => m.id === id) || S.etudes.find(x => x.modele && x.id === id);
-function dialogueNouvelleEtude(affaireId = '', apres, modeleId = '') {
+function dialogueNouvelleEtude(affaireId = '', apres, modeleId = '', opts = {}) {
   const perso = S.etudes.filter(x => x.modele), m0 = modeleDe(modeleId);
   const b = Modal.open(`<h2>Nouvelle étude</h2><form id="f-etude" class="grille-champs">
     ${apres ? '' : `<label class="large">Partir de<select name="modele"><option value="">Étude vide</option><optgroup label="Modèles intégrés">${Modeles.INTEGRES.map(m => `<option value="${m.id}" ${m.id === modeleId ? 'selected' : ''}>${esc(m.nom)}</option>`).join('')}</optgroup>
       ${perso.length ? `<optgroup label="Modèles enregistrés">${perso.map(m => `<option value="${m.id}" ${m.id === modeleId ? 'selected' : ''}>${esc(m.objet)}</option>`).join('')}</optgroup>` : ''}</select></label>`}
-    <label class="large">Objet de l'étude<input name="objet" required placeholder="Ex. : réseau eau glacée CTA bâtiment B" value="${esc(m0 ? m0.objet : '')}"></label>
-    <label class="large">Affaire Pipe-Fit<select name="affaireId">${optionsAffaires(affaireId)}</select></label>
+    <label class="large">Objet de l'étude<input name="objet" required placeholder="Ex. : réseau eau glacée CTA bâtiment B" value="${esc(m0 ? m0.objet : opts.objet || '')}"></label>
+    <label class="large">Affaire Pipe-Fit<select name="affaireId">${optionsAffaires(affaireId)}</select><span class="muted petit">Pas encore de commande : « Sans affaire » ; l'étude se relie au chantier plus tard (ici ou dans Pipe-Fit).</span></label>
     <div class="actions large"><button type="button" class="secondaire" id="annuler">Annuler</button><button>Créer</button></div></form>`);
   b.querySelector('#annuler').onclick = Modal.close;
   const sel = b.querySelector('[name="modele"]');
@@ -282,6 +284,7 @@ function dialogueNouvelleEtude(affaireId = '', apres, modeleId = '') {
     et.objet = ev.target.objet.value.trim();
     if (m) { et.notes = Modeles.instancier(m, uidE); if (m.description && !m.modele) et.description = m.description; }
     if (apres) apres(et);
+    if (opts.preparer) opts.preparer(et);
     enregistrer(et); Modal.close();
     location.hash = `#/etude/${et.id}${et.notes.length ? `/${et.notes[et.notes.length - 1].id}` : ''}`;
   };
@@ -292,6 +295,19 @@ function dialogueAjoutCalcul(et) {
   b.querySelector('#annuler').onclick = Modal.close;
   b.querySelectorAll('[data-type]').forEach(x => x.onclick = () => { const n = nouvelleNote(x.dataset.type); et.notes.push(n); enregistrer(et); Modal.close(); location.hash = `#/etude/${et.id}/${n.id}`; });
 }
+
+// Depuis Pipe-Fit : #/nouvelle?client=<id>&devis=<id>&objet=… ouvre « Nouvelle étude » sans chantier, client et devis repris
+Vues.nouvelle = {
+  html: () => '<p class="muted">Nouvelle étude…</p>',
+  bind: () => {
+    const q = new URLSearchParams((location.hash.split('?')[1] || '')), clientId = q.get('client') || '', devisId = q.get('devis') || '', affaireId = q.get('chantier') || '';
+    history.replaceState(null, '', '#/');
+    App.render();
+    dialogueNouvelleEtude(affaireDe(affaireId) ? affaireId : '', null, '', {
+      objet: q.get('objet') || '',
+      preparer: et => { if (!et.affaireId) { et.clientId = clientId; et.devisId = devisId; et.client = (S.pf.entreprises.find(e => e.id === clientId) || {}).nom || et.client; } } });
+  },
+};
 
 // Étude : en-tête, indices, liste des notes de calcul
 Vues.etude = {
@@ -306,6 +322,8 @@ Vues.etude = {
       <div class="carte"><div class="grille-champs">
         <label class="large">Objet<input data-e="objet" value="${esc(et.objet)}"></label>
         <label>Affaire Pipe-Fit<select data-e="affaireId">${optionsAffaires(et.affaireId)}</select></label>
+        ${et.modele || et.affaireId ? '' : `<label>Client Pipe-Fit (étude sans chantier)<select data-e="clientId"><option value="">—</option>${S.pf.entreprises.filter(e => e.categorie !== 'Fournisseur').slice().sort((x, y) => x.nom.localeCompare(y.nom)).map(e => `<option value="${esc(e.id)}" ${e.id === et.clientId ? 'selected' : ''}>${esc(e.nom)}</option>`).join('')}</select></label>
+          <label>Devis Pipe-Fit (relie le chantier à son acceptation)<select data-e="devisId"><option value="">—</option>${S.pf.devis.filter(d => !et.clientId || d.clientId === et.clientId).map(d => `<option value="${esc(d.id)}" ${d.id === et.devisId ? 'selected' : ''}>${esc(d.numero || 'brouillon')} — ${esc(d.objet || '')} (${esc(d.statut || '')})</option>`).join('')}</select></label>`}
         <label>Client / maître d'ouvrage<input data-e="client" value="${esc(et.client)}" placeholder="${esc(clientDe(a))}"></label>
         <label>Date<input type="date" data-e="date" value="${esc(et.date)}"></label>
         <label>Rédacteur<input data-e="auteur" value="${esc(et.auteur)}"></label><label>Vérificateur<input data-e="verificateur" value="${esc(et.verificateur)}"></label>
@@ -330,6 +348,8 @@ Vues.etude = {
       el.onchange = el.oninput = () => {
         et[el.dataset.e] = el.value;
         if (el.dataset.e === 'affaireId') { et.client = clientDe(affaireDe(el.value)) || et.client; enregistrer(et); return App.render(); }
+        if (el.dataset.e === 'clientId') { et.client = (S.pf.entreprises.find(e => e.id === el.value) || {}).nom || et.client; if (et.devisId && (S.pf.devis.find(d => d.id === et.devisId) || {}).clientId !== el.value) et.devisId = ''; enregistrer(et); return App.render(); }
+        if (el.dataset.e === 'devisId') { enregistrer(et); return; }
         if (el.dataset.e === 'objet') root.querySelector('.titre-etude').textContent = el.value;
         if (String(et.objet).trim()) enregistrer(et);
       };
@@ -402,7 +422,7 @@ function dialogueChiffrage(et) {
       </tbody></table></div>
       <p><strong>Total estimé : ${Notes.nf(t.ht, 0)} € HT</strong> · ${Notes.nf(t.h, 1)} h de main-d'œuvre${hors ? ` · <span class="manque">${hors} poste(s) hors bibliothèque à chiffrer</span>` : ''}${arts.length ? '' : ' · <span class="manque">bibliothèque de prix Pipe-Fit indisponible</span>'}</p>
       ${a ? `<p class="petit">Le devis brouillon sera créé dans Pipe-Fit pour <strong>${esc(libelleAffaire(a))}</strong> (${esc(clientDe(a))}).</p>` : '<p class="petit manque">Rattacher l\'étude à une affaire Pipe-Fit pour créer le devis.</p>'}
-      <div class="actions"><button class="secondaire" id="ch-fermer">Fermer</button><button class="secondaire" id="ch-csv">Télécharger le métré (CSV)</button>${a ? '<button id="ch-devis">Créer le devis brouillon dans Pipe-Fit</button>' : ''}</div>`;
+      <div class="actions"><button class="secondaire" id="ch-fermer">Fermer</button><button class="secondaire" id="ch-csv">Télécharger le métré (CSV)</button>${a || et.clientId ? `<button id="ch-devis">Créer le devis brouillon dans Pipe-Fit${a ? '' : ' (pour le client)'}</button>` : ''}</div>`;
   };
   const box = Modal.open(rendu());
   box.classList.add('large');
@@ -418,10 +438,13 @@ function dialogueChiffrage(et) {
     if (bd) bd.onclick = async () => {
       bd.disabled = true; bd.textContent = 'Création…';
       try {
-        const r = await api('POST', '/api/pf/devis', { affaireId: et.affaireId, etudeId: et.id, objet: `${et.objet} — chiffrage bureau d'études`, lignes: Metre.lignesDevis(postes, arts, mos) });
+        const r = await api('POST', '/api/pf/devis', { affaireId: et.affaireId, clientId: et.clientId || '', etudeId: et.id, objet: `${et.objet} — chiffrage bureau d'études`, lignes: Metre.lignesDevis(postes, arts, mos) });
         const pf = S.me.pipefit || (/^https?:$/.test(location.protocol) ? `${location.protocol}//${location.hostname}:3000` : '');
         bd.outerHTML = `<span class="badge ok">Devis ${esc(r.numero || '')} créé en brouillon</span>${pf ? `<a class="btn" href="${esc(pf)}/#/devis/${encodeURIComponent(r.id)}" target="_blank" rel="noopener">Ouvrir dans Pipe-Fit ↗</a>` : ''}`;
-        et.devisPF = [...(et.devisPF || []), { id: r.id, numero: r.numero, date: aujourdhui() }]; enregistrer(et);
+        et.devisPF = [...(et.devisPF || []), { id: r.id, numero: r.numero, date: aujourdhui() }];
+        // Sans chantier : l'étude suit ce devis (le chantier créé à son acceptation y sera relié)
+        if (!et.affaireId) { et.devisId = r.id; S.pf.devis.push({ id: r.id, numero: r.numero, objet: '', clientId: et.clientId, statut: 'Brouillon' }); }
+        enregistrer(et);
       } catch (e) { bd.disabled = false; bd.textContent = 'Créer le devis brouillon dans Pipe-Fit'; toast(e.message, 6000); }
     };
   };

@@ -25,11 +25,18 @@ async function envoyerFichierPF(appel, nom, mime, buf) {
   if (!up.ok) throw Object.assign(new Error(f.error || 'Envoi du fichier à Pipe-Fit impossible'), { status: up.status === 403 ? 403 : 502 });
   return f;
 }
-// État d'une étude ou d'un dossier sur la fiche chantier (affaireId vide : retiré)
-async function publierEtat(appel, app, id, affaireId, resume) {
-  const r = await appel(`/api/liens/${app}/${encodeURIComponent(id)}`, affaireId
-    ? { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ affaireId, resume }) }
+// État d'une étude ou d'un dossier dans Pipe-Fit (affaireId null : retiré ; vide : étude sans chantier).
+// extra : { clientId, devisId } d'une étude faite avant la commande. Renvoie l'état enregistré (chantier relié dans le CRM).
+async function publierEtat(appel, app, id, affaireId, resume, extra = {}) {
+  const r = await appel(`/api/liens/${app}/${encodeURIComponent(id)}`, affaireId !== null
+    ? { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ affaireId, resume, ...extra }) }
     : { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   if (!r.ok) throw new Error(`État non transmis à Pipe-Fit (${r.status})`);
+  return r.json().catch(() => null);
 }
-module.exports = { idPF, modifierPF, envoyerFichierPF, publierEtat };
+// Rattachement d'une étude fait dans le CRM (chantier), à reprendre par l'application
+async function lienEtude(appel, id) {
+  const r = await appel(`/api/liens/etudes/${encodeURIComponent(id)}`);
+  return r.ok ? r.json() : null;
+}
+module.exports = { idPF, modifierPF, envoyerFichierPF, publierEtat, lienEtude };

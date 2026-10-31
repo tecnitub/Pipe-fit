@@ -34,11 +34,15 @@
     window.parent.postMessage({ ...msg, rid }, '*', transfert || []);
     setTimeout(() => { if (attentes.has(rid)) { attentes.delete(rid); ok({ ok: false, error: 'La page du CRM ne répond pas' }); } }, 20000);
   });
-  const signalerCrm = (id, affaireId, resume) => { if (dansCrm) window.parent.postMessage({ type: 'pipefit-etudes-etat', id, affaireId: affaireId || '', resume: resume || null }, '*'); };
+  const signalerCrm = (id, affaireId, resume, supprime = false) => { if (dansCrm) window.parent.postMessage({ type: 'pipefit-etudes-etat', id, affaireId: affaireId || '', resume: resume || null, supprime }, '*'); };
+  // Chantier relié dans le CRM (étude faite avant la commande) : repris dans l'étude, comme le fait le serveur Études
+  const lienCrm = id => ((crm() || {}).liens || []).find(l => l.app === 'etudes' && l.id === id && l.affaireId);
+  const reprendreLiens = () => db.etudes.filter(e => !e.modele && !e.affaireId).forEach(e => { const l = lienCrm(e.id); if (l) { e.affaireId = l.affaireId; e._v += 1; e._at = new Date().toISOString(); } });
   const src = crm() || seed;
   const pf = { affaires: (src.affaires || []).map(a => ({ id: a.id, code: a.code, nom: a.nom, clientId: a.clientId, contactId: a.contactId, siteId: a.siteId, chargeId: a.chargeId, statut: a.statut, type: a.type })),
     entreprises: (src.entreprises || []).map(e => ({ id: e.id, nom: e.nom, regimeTVA: e.regimeTVA })),
     articles: (src.articles || []).map(a => ({ id: a.id, ref: a.ref, designation: a.designation, famille: a.famille, sousFamille: a.sousFamille, unite: a.unite, prixVente: a.prixVente, coutRevient: a.coutRevient, poidsUnitaire: a.poidsUnitaire })),
+    devis: (src.devis || []).map(x => ({ id: x.id, numero: x.numero, objet: x.objet, clientId: x.clientId, statut: x.statut, affaireId: x.affaireId || '' })),
     mainoeuvre: (src.mainoeuvre || []).map(m => ({ id: m.id, code: m.code, libelle: m.libelle, tauxVente: m.tauxVente, tauxCout: m.tauxCout })) };
   const af = pf.affaires.find(a => a.type !== 'horsDevis') || {};
   // Étude d'exemple : distribution vapeur et eau chaude d'un atelier
@@ -144,19 +148,20 @@
       return rep(200, { id: `demo-${numero}`, numero });
     }
     // Études déjà sur l'appareil (étude d'exemple comprise) : état transmis à la page du CRM après l'affichage
-    if (dansCrm && p[0] === 'etudes' && !p[1]) setTimeout(() => db.etudes.filter(e => !e.modele && e.affaireId).forEach(e => { try { signalerCrm(e.id, e.affaireId, resumePF(e)); } catch (er) { /* calcul incomplet */ } }), 800);
+    if (dansCrm && p[0] === 'etudes' && !p[1]) { reprendreLiens(); save(); setTimeout(() => db.etudes.filter(e => !e.modele).forEach(e => { try { signalerCrm(e.id, e.affaireId, resumePF(e)); } catch (er) { /* calcul incomplet */ } }), 800); }
     if (p[0] === 'etudes' && !p[1]) return rep(200, db.etudes.slice().sort((x, y) => y._at.localeCompare(x._at)));
     if (p[0] === 'etudes') {
       const i = db.etudes.findIndex(d => d.id === p[1]), exist = db.etudes[i];
       if (method === 'GET') return exist ? rep(200, exist) : err(404, 'Étude introuvable');
-      if (method === 'DELETE') { if (exist) { db.etudes.splice(i, 1); signalerCrm(exist.id, '', null); } save(); return rep(200, { ok: true }); }
+      if (method === 'DELETE') { if (exist) { db.etudes.splice(i, 1); signalerCrm(exist.id, '', null, true); } save(); return rep(200, { ok: true }); }
       const { data, version, resume } = body();
       if (!data || !String(data.objet || '').trim() || !Array.isArray(data.notes)) return err(400, 'Données manquantes (objet de l\'étude, notes)');
       if (exist && version !== exist._v) return err(409, `Modifiée entre-temps par ${exist._by}`, { record: exist });
       const propre = Object.fromEntries(Object.entries(data).filter(([k]) => !k.startsWith('_') && k !== 'id'));
+      if (!propre.modele && !propre.affaireId && lienCrm(p[1])) propre.affaireId = lienCrm(p[1]).affaireId;
       const rec = { ...propre, id: p[1], _v: exist ? exist._v + 1 : 1, _at: new Date().toISOString(), _by: s.nom };
       if (exist) db.etudes[i] = rec; else db.etudes.push(rec);
-      if (!rec.modele && (rec.affaireId || (exist && exist.affaireId))) signalerCrm(rec.id, rec.modele ? '' : rec.affaireId, resume);
+      if (rec.modele) { if (exist) signalerCrm(rec.id, '', null, true); } else signalerCrm(rec.id, rec.affaireId, resume || (() => { try { return resumePF(rec); } catch (e) { return null; } })());
       save(); return rep(200, rec);
     }
     if (p[0] === 'config') {

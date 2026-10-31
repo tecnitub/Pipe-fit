@@ -79,6 +79,10 @@ dans une étude. Les valeurs sont des données de pré-dimensionnement : les doc
   « Caler sur le REX Pipe-Fit » lit les chantiers terminés (heures prévues aux devis acceptés et heures pointées, par
   catégorie de main-d'œuvre), laisse écarter les chantiers atypiques et applique un coefficient par main-d'œuvre
   (monteurs, calorifugeurs, bureau d'études).
+- **Étude sans chantier** (avant la commande) : client et devis Pipe-Fit choisis sur l'étude ; elle figure dans le CRM
+  (Devis → Études), qui la relie au chantier quand la commande arrive (ou tout seul à l'acceptation du devis) ; le
+  chantier est repris ici à la prochaine ouverture. Le métré d'une étude sans chantier crée un devis brouillon pour le
+  client. `#/nouvelle?client=…&devis=…&objet=…` ouvre « Nouvelle étude » préremplie (lien du CRM).
 - **Note de calcul déposée dans le chantier** : depuis la fenêtre de la note PDF, « 📤 Déposer dans le chantier Pipe-Fit »
   (catégorie « Note de calcul », réservée au bureau ; un nouveau dépôt de la même étude crée un nouvel indice et garde
   l'ancien). L'application DOE la reprend en **annexe C — Notes de calcul**.

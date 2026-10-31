@@ -3,8 +3,8 @@ const ROLE_LABELS = { admin: 'Administrateur', charge: "Chargé d'affaires", ate
 // Écrans accessibles au rôle atelier (saisie des heures + consultation du planning).
 const ATELIER_VIEWS = ['pointage', 'planning', 'parametres', 'bon', 'notifications', 'epreuve', 'mes', 'equilibrage', 'releve', 'assistant'];
 // Anciennes adresses et sous-écrans -> écran et entrée de menu
-const ALIASES = { affaires: 'chantiers', affaire: 'chantier', temps: 'rh' };
-const MENU_OF = { api: 'parametres', consultations: 'commandes', chiffrages: 'devis', chiffrage: 'devis', visites: 'devis', familles: 'articles', ouvrages: 'articles', efactures: 'commandes', achats: 'commandes', comptoir: 'commandes', prixAchats: 'commandes', compta: 'factures', tresorerie: 'factures', relances: 'factures', mails: 'parametres', documents: 'parametres', bon: 'chantiers', reception: 'chantiers', pv: 'chantiers', epreuve: 'chantiers', releve: 'chantiers', mes: 'chantiers', equilibrage: 'chantiers', chantier: 'chantiers', facture: 'factures', entreprise: 'contacts', mainoeuvre: 'articles', livraison: 'articles' };
+const ALIASES = { 'etudes-be': 'etudesBe', affaires: 'chantiers', affaire: 'chantier', temps: 'rh' };
+const MENU_OF = { etudesBe: 'devis', api: 'parametres', consultations: 'commandes', chiffrages: 'devis', chiffrage: 'devis', visites: 'devis', familles: 'articles', ouvrages: 'articles', efactures: 'commandes', achats: 'commandes', comptoir: 'commandes', prixAchats: 'commandes', compta: 'factures', tresorerie: 'factures', relances: 'factures', mails: 'parametres', documents: 'parametres', bon: 'chantiers', reception: 'chantiers', pv: 'chantiers', epreuve: 'chantiers', releve: 'chantiers', mes: 'chantiers', equilibrage: 'chantiers', chantier: 'chantiers', facture: 'factures', entreprise: 'contacts', mainoeuvre: 'articles', livraison: 'articles' };
 
 const App = {
   render() {

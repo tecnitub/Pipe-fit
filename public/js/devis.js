@@ -140,7 +140,7 @@ Views.devis = (params, query) => {
   const refusesActifs = Store.all('devis').filter(d => d.statut === 'Refusé' && !d.archive);
   return `<h1>Devis</h1>${devisTabs('devis')}
   <div class="toolbar">
-    <button id="add">+ Nouveau devis</button>
+    <button id="add">+ Nouveau devis</button>${urlEtudes('') ? '<a class="btn secondary" href="#/etudes-be">📐 Études du bureau d\'études</a>' : ''}
     <span class="spacer"></span>
     ${refusesActifs.length && f.statut !== 'archives' ? `<button class="secondary" id="arch-refuses">Archiver les ${refusesActifs.length} devis refusé(s)</button>` : ''}
   </div>
@@ -257,6 +257,7 @@ function devisEditor(id) {
     ${!locked ? '<button class="secondary" id="dpgf-imp">Importer un DPGF</button>' : ''}
     <button class="secondary dl-btn" id="dpgf-exp">Exporter le DPGF chiffré</button>
     <button class="secondary" data-chiffrage="${esc(d.id)}">Chiffrage depuis plan</button>
+    ${urlEtudes('') ? `<a class="btn secondary" href="#/etudes-be?devis=${esc(d.id)}" title="Notes de calcul faites pour ce devis (avant la commande)">📐 Études</a>` : ''}
     <button class="secondary" id="dup">Dupliquer</button>
     <button class="secondary print-btn" data-print>Imprimer</button>${boutonsEnvoi('devis', d.id)}
     ${!d.affaireId && d.statut !== 'Refusé' ? '<button id="accept">Accepté : créer le chantier</button>' : ''}

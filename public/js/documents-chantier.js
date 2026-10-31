@@ -258,11 +258,13 @@ Views.doe.bind = root => {
 
 // Démonstration : l'application Études (etudes.html) dans un cadre ; #/etudes/<id> ouvre les études du chantier,
 // #/etudes/<id>/<étude> une étude. Ses devis, notes de calcul et états sont enregistrés ici comme le ferait son serveur.
-Views.etudes = params => {
-  const a = Store.get('affaires', params[0]);
-  if (!window.PIPEFIT_DEMO || !a) return '<p>Application Études : voir Paramètres → Société (adresse de l\'application Études).</p>';
-  return `<div class="toolbar"><a class="btn secondary" href="#/chantier/${esc(a.id)}">← ${esc(a.code || 'Chantier')}</a><span class="muted small">Application Études de démonstration : mêmes chantiers et même compte que la démo du CRM. Ses devis et notes de calcul arrivent dans le chantier, l'état des études sur sa vue d'ensemble.</span></div>
-    <iframe class="doe-cadre" src="etudes.html#/${params[1] ? `etude/${encodeURIComponent(params[1])}` : `chantier/${encodeURIComponent(a.id)}`}" title="Application Études"></iframe>`;
+Views.etudes = (params, query = new URLSearchParams()) => {
+  // « _ » : sans chantier (liste des études, nouvelle étude pour un client ou un devis, étude ouverte depuis la liste)
+  const a = params[0] === '_' ? null : Store.get('affaires', params[0]);
+  if (!window.PIPEFIT_DEMO || (!a && params[0] !== '_')) return '<p>Application Études : voir Paramètres → Société (adresse de l\'application Études).</p>';
+  const chemin = a ? (params[1] ? `etude/${encodeURIComponent(params[1])}` : `chantier/${encodeURIComponent(a.id)}`) : `${params.slice(1).map(encodeURIComponent).join('/')}${[...query].length ? `?${query}` : ''}`;
+  return `<div class="toolbar">${a ? `<a class="btn secondary" href="#/chantier/${esc(a.id)}">← ${esc(a.code || 'Chantier')}</a>` : '<a class="btn secondary" href="#/etudes-be">← Études</a>'}<span class="muted small">Application Études de démonstration : mêmes chantiers et même compte que la démo du CRM. Ses devis et notes de calcul arrivent dans le CRM, l'état des études aussi (avec ou sans chantier).</span></div>
+    <iframe class="doe-cadre" src="etudes.html#/${chemin}" title="Application Études"></iframe>`;
 };
 Views.etudes.garder = true;
 Views.etudes.bind = root => {
@@ -277,7 +279,9 @@ Views.etudes.bind = root => {
       return download(nom, new Uint8Array(m.data), { pdf: 'application/pdf', svg: 'image/svg+xml', csv: 'text/csv', zip: 'application/zip' }[ext.toLowerCase()] || 'application/octet-stream');
     }
     if (m.type === 'pipefit-etudes-etat') {
-      await api(m.affaireId ? 'PUT' : 'DELETE', `/api/liens/etudes/${encodeURIComponent(m.id)}`, m.affaireId ? { affaireId: m.affaireId, resume: m.resume || { objet: '' } } : {}).catch(() => {});
+      // Comme le serveur Études : étude avec ou sans chantier enregistrée ; supprimée ou devenue modèle : retirée
+      await api(m.supprime ? 'DELETE' : 'PUT', `/api/liens/etudes/${encodeURIComponent(m.id)}`, m.supprime ? {} : { affaireId: m.affaireId || '', resume: m.resume || { objet: '' }, clientId: (m.resume || {}).clientId || '', devisId: (m.resume || {}).devisId || '' }).catch(() => {});
+      etudesBE = null;
       [...liensChantier.keys()].forEach(id => liensModifies(id));
       if (m.affaireId) liensModifies(m.affaireId);
       return;
@@ -290,8 +294,9 @@ Views.etudes.bind = root => {
 };
 // Devis brouillon à partir du métré d'une étude (comme le serveur Études : client, contact, site, TVA du client)
 async function devisDepuisEtude(m) {
-  const a = Store.get('affaires', String(m.affaireId || ''));
-  if (!a || !Array.isArray(m.lignes) || !m.lignes.length) throw new Error('Affaire et lignes du devis requises');
+  // Étude sans chantier : devis pour le client
+  const a = Store.get('affaires', String(m.affaireId || '')) || (m.clientId ? { id: '', clientId: String(m.clientId), nom: '' } : null);
+  if (!a || !Array.isArray(m.lignes) || !m.lignes.length) throw new Error('Affaire (ou client) et lignes du devis requises');
   if (!Store.can('write', 'devis')) throw new Error('Droits insuffisants pour créer un devis');
   const client = Store.get('entreprises', a.clientId) || {};
   const tva = client.regimeTVA === 'AL' ? { autoliquidation: true } : { autoliquidation: false, tauxTVA: client.regimeTVA ? Number(client.regimeTVA) : '' };
