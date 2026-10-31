@@ -28,7 +28,7 @@ function htmlNotePdf(et, n, i) {
   return `<div class="doe-doc ndc"><h2>N${i + 1} — ${esc(n.titre)}</h2><p class="petit">${esc(t.description)}</p>${lien ? `<p class="petit"><em>${esc(lien)}</em></p>` : ''}
     <h3>1. Données d'entrée</h3>${entreesHtml(n.type, e)}
     <h3>2. Hypothèses et méthode</h3><ul>${r.hypotheses.map(h => `<li>${esc(h)}</li>`).join('')}</ul>
-    <h3>3. Résultats</h3>${r.schema ? `<p class="sous">${esc(r.titreSchema || 'Schéma de principe')} : en fin de chapitre, sur une page au format paysage.</p>` : ''}
+    <h3>3. Résultats</h3>${tousSchemas(r).length ? `<p class="sous">${esc(tousSchemas(r).map(s => s.titre).join(', '))} : en fin de chapitre, chacun sur une page au format paysage.</p>` : ''}
     ${lignes2(r.resume.map(([k, v]) => [k, esc(v)]))}
     ${r.tableaux.map(x => `<p class="sous">${esc(x.titre)}</p>${tableauPdf(x.entetes, x.lignes, x.surligne, x.total)}`).join('')}
     <h3>4. Conclusions</h3><ul class="conclusions">${r.alertes.map(a => `<li class="${a.niveau}">${esc({ ok: 'Résultat', attention: 'Point d\'attention', erreur: 'Non conforme' }[a.niveau])} : ${esc(a.texte)}</li>`).join('')}</ul>
@@ -65,7 +65,7 @@ async function genererNoteCalcul(et, ids) {
       const num = et.notes.indexOf(n) >= 0 ? et.notes.indexOf(n) : k;
       const doc = await PDFDocument.load(await PDF.depuisHTML(pourPdf(htmlNotePdf(et, n, num)), n.titre, null, opts));
       const r = Liens.calculer(et, n);
-      if (r.schema) await pageSchema(doc, r.schema, `N${num + 1} — ${n.titre}`);
+      for (const s of tousSchemas(r)) await pageSchema(doc, s.svg, `${s.titre} — N${num + 1} — ${n.titre}`);
       parties.push({ n, doc, pages: doc.getPageCount() });
     }
     // Page de garde avec sommaire paginé (recalculé si elle déborde sur plusieurs pages)
@@ -128,7 +128,7 @@ async function svgEnPng(svg, largeur = 3200) {
 }
 async function pageSchema(doc, svg, titre) {
   const { StandardFonts, rgb } = PDFLib, png = await doc.embedPng(await svgEnPng(svg)), W = 841.89, H = 595.28, pg = doc.addPage([W, H]);
-  const gras = await doc.embedFont(StandardFonts.HelveticaBold), t = winAnsi(pourPdf(`Schéma de principe — ${titre}`)).slice(0, 110);
+  const gras = await doc.embedFont(StandardFonts.HelveticaBold), t = winAnsi(pourPdf(titre)).slice(0, 110);
   pg.drawText(t, { x: 31, y: H - 76, size: 10, font: gras, color: rgb(0.12, 0.22, 0.39) });
   const bx = 31, by = 34, bw = W - 62, bh = H - 92 - by, k = Math.min(bw / png.width, bh / png.height);
   pg.drawImage(png, { x: bx + (bw - png.width * k) / 2, y: by + (bh - png.height * k) / 2, width: png.width * k, height: png.height * k });

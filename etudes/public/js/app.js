@@ -142,20 +142,22 @@ function resultatsPrincipaux(r) {
 }
 // Calculateur : formulaire et résultats ; changer() est appelé après chaque modification des entrées
 // Schéma dessiné par le calcul (P&ID), sur toute la largeur sous la saisie
-const schemaHtml = r => (r.schema ? `<div class="barre"><h2>${esc(r.titreSchema || 'Schéma de principe')}</h2><span class="espace"></span><button class="secondaire petit" data-dl-schema>Télécharger (SVG)</button><button class="secondaire petit" data-dl-dxf>Télécharger pour AutoCAD (DXF)</button></div><div class="schema">${r.schema}</div>` : '');
+// Schémas d'un calcul : le principal, puis les folios complémentaires (commande, cartes de l'automate…)
+const tousSchemas = r => [...(r.schema ? [{ titre: r.titreSchema || 'Schéma de principe', svg: r.schema }] : []), ...(r.schemas || []).filter(s => s && s.svg)];
+const schemaHtml = r => tousSchemas(r).map((s, i) => `<div class="barre"><h2>${esc(s.titre)}</h2><span class="espace"></span><button class="secondaire petit" data-dl-schema="${i}">Télécharger (SVG)</button><button class="secondaire petit" data-dl-dxf="${i}">Télécharger pour AutoCAD (DXF)</button></div><div class="schema">${s.svg}</div>`).join('');
 // ctx : entrées effectives (avec les valeurs reprises d'autres notes) et calcul ; par défaut, la saisie seule
 const ctxSimple = (type, e) => ({ effectives: () => ({ entrees: e, verrous: {} }), calcul: () => Notes.calculer(type, e) });
 const ctxEtude = (et, n) => ({ effectives: () => Liens.resoudre(et, n), calcul: () => Liens.calculer(et, n) });
 function calculateurHtml(type, e, ctx = ctxSimple(type, e)) {
   const r = ctx.calcul(), eff = ctx.effectives();
   return `<div class="calc"><div class="calc-saisie">${formulaireHtml(type, eff.entrees, eff.verrous)}</div><div class="calc-resultats carte" id="resultats">${resultatsHtml(r)}</div></div>
-    <div class="carte schema-carte" id="schema" ${r.schema ? '' : 'hidden'}>${schemaHtml(r)}</div>`;
+    <div class="carte schema-carte" id="schema" ${tousSchemas(r).length ? '' : 'hidden'}>${schemaHtml(r)}</div>`;
 }
 function lierCalculateur(root, type, e, changer, ctx = ctxSimple(type, e)) {
   const recalculer = () => {
     const r = ctx.calcul(), z = root.querySelector('#schema');
     root.querySelector('#resultats').innerHTML = resultatsHtml(r);
-    z.innerHTML = schemaHtml(r); z.hidden = !r.schema;
+    z.innerHTML = schemaHtml(r); z.hidden = !tousSchemas(r).length;
     changer(false);
   };
   root.querySelector('#resultats').onclick = ev => {
@@ -165,8 +167,10 @@ function lierCalculateur(root, type, e, changer, ctx = ctxSimple(type, e)) {
   root.querySelector('#schema').onclick = ev => {
     const svg = ev.target.closest('[data-dl-schema]'), dxf = ev.target.closest('[data-dl-dxf]');
     if (!svg && !dxf) return;
-    const r = ctx.calcul(), nom = `Schema_${String(e.titreInstallation || 'principe').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_')}`;
-    const [fichier, data, mime] = dxf ? [`${nom}.dxf`, Dxf.depuisSvg(r.schema).octets, 'application/dxf'] : [`${nom}.svg`, new TextEncoder().encode(r.schema), 'image/svg+xml'];
+    const s = tousSchemas(ctx.calcul())[+(svg || dxf).dataset[svg ? 'dlSchema' : 'dlDxf'] || 0];
+    if (!s) return;
+    const nom = `${String(s.titre === 'Schéma de principe' ? `Schema_${e.titreInstallation || 'principe'}` : s.titre).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_')}`;
+    const [fichier, data, mime] = dxf ? [`${nom}.dxf`, Dxf.depuisSvg(s.svg).octets, 'application/dxf'] : [`${nom}.svg`, new TextEncoder().encode(s.svg), 'image/svg+xml'];
     Promise.resolve(telecharger(fichier, data, mime)).then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : 'Schéma enregistré')).catch(er => toast(er.message, 6000));
   };
   const redessiner = () => { changer(true); };

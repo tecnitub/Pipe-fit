@@ -206,6 +206,8 @@ const Electricite = ((N, Sc) => {
       a.nomenclature = [...lignes.values()];
       a.enveloppe = { H, L, rangees, variateurs };
     });
+    // Bornier de puissance : bornes numérotées à la suite, phases, neutre et terre par départ
+    const borniersX1 = a => { let n = 1; return a.eqs.filter(q => q.tension !== '24V').map(q => { const c = q.d.tri ? (q.neutre ? ['L1', 'L2', 'L3', 'N', 'PE'] : ['L1', 'L2', 'L3', 'PE']) : ['L', 'N', 'PE'], b = `X1:${n}-${n + c.length - 1}`; n += c.length; return [b, `Q-${q.rep}`, `${q.rep} — ${q.designation || q.t[0]}`, c.join(' · '), q.d.cable, q.local || ''] }); };
     // Bilan de puissance jusqu'au TGBT : armoires CVC (foisonnées) et attentes directes du lot électricité
     const ksT = num(e.ksTgbt, 90) / 100;
     const ligneBilan = (nom, alim, P, ks, S, Ib) => [nom, alim, nf(P, 2), `${nf(ks * 100, 0)} %`, nf(P * ks, 2), S ? nf(P / S, 2) : '—', nf(S * ks, 2), nf(Ib, 1)];
@@ -244,6 +246,7 @@ const Electricite = ((N, Sc) => {
           `Circuit de commande : transformateur ou alimentation 24 V, protection dédiée, alimentation de l'automate et des organes 24 V (${a.eqs.filter(q => q.tension === '24V').length} équipement(s) : vannes, sondes, régulateurs).`,
           `Automate programmable : ${nb('EA')} EA, ${nb('SA')} SA, ${nb('ETOR')} ETOR, ${nb('STOR')} STOR${nb('Bus') ? `, ${nb('Bus')} équipement(s) par bus` : ''}, plus 20 % de réserve câblée, soit ${Object.entries(a.cartes).filter(([, n]) => n).map(([t, n]) => `${n} carte(s) ${CARTES[t][0]} ${t}`).join(', ') || 'aucune carte'} ; ${e.gtb && e.gtb !== 'aucune' ? `communication ${e.gtb} vers la GTB` : 'interface opérateur en façade'}.`,
           `Enveloppe : IP 54 minimum (≈ ${a.enveloppe.H} × ${a.enveloppe.L} × 300 mm estimés), ventilation adaptée aux variateurs, 20 % de place disponible, éclairage et prise de service, porte-plans ; schémas, plan d'adressage et programme remis au DOE.`] },
+        { titre: `Bornier X1 (puissance) — armoire ${a.rep}`, tableau: { entetes: ['Bornes', 'Départ', 'Équipement', 'Conducteurs', 'Câble', 'Vers'], lignes: borniersX1(a) } },
         { titre: `Nomenclature de l'appareillage — armoire ${a.rep}`, tableau: { entetes: ['Famille', 'Désignation', 'Caractéristiques', 'Qté'], lignes: a.nomenclature.map(x => [x[0], x[1], x[2], String(x[3])]) } },
         { titre: `Départs de l'armoire ${a.rep}`, tableau: { entetes: ['Repère', 'Équipement', 'P (kW)', 'Tension', 'Phase', 'Départ', 'Ib (A)', 'Protection', 'Câble'],
           lignes: a.eqs.map(q => [q.rep, q.designation || q.t[0], nf(num(q.P), 2), TENSIONS[q.tension] || q.tension, q.phase || '24 V', DEPARTS[q.depart] || q.depart, q.d.Ib ? nf(q.d.Ib, 1) : '—', q.d.cal ? `${q.d.cal} A ${q.d.courbe}` : '—', q.d.cable || '—']) } },
@@ -281,6 +284,8 @@ const Electricite = ((N, Sc) => {
         'Pré-dimensionnement à confirmer par la note de calcul du lot électricité (NF C 15-100 : facteurs de correction, sélectivité, courts-circuits, schéma de liaison à la terre).'],
       synthese: `${eqs.length} équipement(s) · ${nf(Ptot, 1)} kW · ${arm.length} armoire(s) CVC · ${pts.length} point(s) automate`,
       schema: unifilaire(arm, lot),
+      // Folios complémentaires par armoire : commande (contacteurs, variateurs, chaîne de sécurité) et cartes de l'automate
+      schemas: arm.flatMap(a => [{ titre: `Folio de commande — armoire ${a.rep}`, svg: folioCommande(a) }, ...(a.adresses.some(x => x[2] !== '—' && !/^Bus/.test(x[0])) ? [{ titre: `Cartes d'entrées / sorties — armoire ${a.rep}`, svg: folioCartes(a) }] : [])]).filter(s => s.svg),
       titreSchema: 'Schéma unifilaire des armoires CVC',
       onglets: [
         { titre: 'Bilan de puissance', blocs: [
@@ -300,6 +305,73 @@ const Electricite = ((N, Sc) => {
           ...arm.flatMap(ccArmoire)] },
       ],
     };
+  }
+
+  /* ---------- Folios de commande et des cartes de l'automate (SVG) ---------- */
+  const echapper = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Schéma « à échelle » : rail 24 V à gauche, 0 V à droite ; une ligne par circuit de commande
+  function folioCommande(a) {
+    const adr = (rep, type) => (a.adresses.find(x => x[2] === rep && x[4] === type) || [])[0] || '';
+    const secu = a.pts.filter(p => p[2] === 'ETOR' && /Alarme \/ déclenchement/.test(p[1])).map(p => p[0]);
+    const lignes = [];
+    if (secu.length) lignes.push({ titre: 'Chaîne de sécurité (câblée en dur, indépendante de l\'automate)', el: secu.map(r => ({ t: 'NF', l: r })), fin: { t: 'bobine', l: 'KA1', s: 'Relais de sécurité' } });
+    a.eqs.forEach(q => {
+      if (q.regulation === 'evGaz') lignes.push({ titre: `${q.rep} — ${q.designation || q.t[0]}`, el: [...(secu.length ? [{ t: 'NO', l: 'KA1' }] : []), { t: 'NO', l: adr(q.rep, 'STOR'), s: 'automate' }], fin: { t: 'bobine', l: q.rep, s: 'électrovanne NF' } });
+      else if (q.regulation === 'mod' || (q.type === 'generateur' && q.regulation !== 'bus')) lignes.push({ titre: `${q.rep} — ${q.designation || q.t[0]}`, el: [...(secu.length ? [{ t: 'NO', l: 'KA1' }] : []), { t: 'NO', l: adr(q.rep, 'STOR'), s: 'automate' }], fin: { t: 'sortie', l: `${q.rep}`, s: 'autorisation (bornier du générateur)' } });
+      else if (q.km) lignes.push({ titre: `${q.rep} — ${q.designation || q.t[0]}`, el: [{ t: 'S3', l: `S-${q.rep}`, s: 'A / 0 / M' }, { t: 'NO', l: adr(q.rep, 'STOR'), s: 'automate' }, { t: 'NF', l: `Q-${q.rep}`, s: 'disj. moteur' }], fin: { t: 'bobine', l: `KM-${q.rep}`, s: `${q.d.cal} A` }, voyants: q.moteur });
+      else if (q.depart === 'variateur') lignes.push({ titre: `${q.rep} — ${q.designation || q.t[0]} (variateur)`, el: [{ t: 'S3', l: `S-${q.rep}`, s: 'A / 0 / M' }, { t: 'NO', l: adr(q.rep, 'STOR'), s: 'automate' }], fin: { t: 'sortie', l: `VAR-${q.rep}`, s: `marche ; vitesse ${adr(q.rep, 'SA') || '0-10 V'}` }, voyants: true });
+    });
+    if (!lignes.length) return '';
+    const pas = 58, W = 980, H = 70 + lignes.length * pas, out = [], xG = 40, xD = W - 40;
+    const tx = (x, y, s, o = {}) => out.push(`<text x="${x}" y="${y}" font-size="${o.fs || 10}" text-anchor="${o.a || 'middle'}"${o.b ? ' font-weight="bold"' : ''} fill="${o.c || '#222'}">${echapper(s)}</text>`);
+    const ln = (x1, y1, x2, y2, w = 1.2) => out.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#222" stroke-width="${w}"/>`);
+    tx(10, 18, `Armoire ${a.rep} — folio de commande 24 V`, { a: 'start', b: true, fs: 12 });
+    tx(xG, 40, '+24 V', { fs: 9 }); tx(xD, 40, '0 V', { fs: 9 });
+    ln(xG, 46, xG, H - 10, 2); ln(xD, 46, xD, H - 10, 2);
+    lignes.forEach((l, i) => {
+      const y = 70 + i * pas;
+      tx(xG + 8, y - 16, l.titre, { a: 'start', fs: 9, c: '#555' });
+      let x = xG;
+      l.el.forEach(c => {
+        ln(x, y, x + 30, y); x += 30;
+        if (c.t === 'NO' || c.t === 'NF') { ln(x, y - 9, x, y + 9); ln(x + 14, y - 9, x + 14, y + 9); if (c.t === 'NF') ln(x - 3, y + 8, x + 17, y - 8, 1); }
+        else { out.push(`<rect x="${x}" y="${y - 9}" width="14" height="18" fill="#fff" stroke="#222"/>`); ln(x + 3, y + 6, x + 11, y - 6, 1); }
+        tx(x + 7, y + 22, c.l, { fs: 8, b: true }); if (c.s) tx(x + 7, y + 32, c.s, { fs: 7, c: '#555' });
+        x += 14;
+      });
+      const xf = xD - 150;
+      ln(x, y, xf, y);
+      if (l.fin.t === 'bobine') { out.push(`<rect x="${xf}" y="${y - 10}" width="34" height="20" fill="#fff" stroke="#222" stroke-width="1.4"/>`); ln(xf + 34, y, xD, y); }
+      else { out.push(`<polygon points="${xf},${y - 9} ${xf + 26},${y} ${xf},${y + 9}" fill="#fff" stroke="#222"/>`); }
+      tx(xf + 17, y + 24, l.fin.l, { fs: 8, b: true }); tx(xf + 40, y - 12, l.fin.s, { a: 'start', fs: 8, c: '#555' });
+      if (l.voyants) { tx(xf - 60, y + 24, 'H vert : marche · H rouge : défaut', { fs: 7, c: '#555' }); }
+    });
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Arial, Helvetica, sans-serif"><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${out.join('')}</svg>`;
+  }
+  // Cartes de l'automate : une colonne par carte, une ligne par voie (adresse, bornes, repère, désignation)
+  function folioCartes(a) {
+    const cartes = new Map();
+    // Toutes les cartes prévues (réserve comprise), dans l'ordre EA, SA, ETOR, STOR
+    Object.entries(a.cartes).forEach(([t, n]) => { for (let k = 1; k <= n; k++) cartes.set(`${t}${k}`, []); });
+    a.adresses.filter(x => x[2] !== '—' && !/^Bus/.test(x[0])).forEach(x => { const c = x[0].split('.')[0]; if (!cartes.has(c)) cartes.set(c, []); cartes.get(c).push(x); });
+    [...cartes.keys()].forEach(c => { if (!cartes.get(c).length) cartes.get(c).type = c.replace(/\d+$/, ''); });
+    if (!cartes.size) return '';
+    const larg = 235, hl = 15, maxV = Math.max(...[...cartes.values()].map(l => (CARTES[l.length ? l[0][4] : l.type] || [16])[0])), W = 20 + cartes.size * (larg + 15), H = 70 + maxV * hl + 20, out = [];
+    const tx = (x, y, s, o = {}) => out.push(`<text x="${x}" y="${y}" font-size="${o.fs || 8}" text-anchor="${o.a || 'start'}"${o.b ? ' font-weight="bold"' : ''} fill="${o.c || '#222'}">${echapper(s)}</text>`);
+    tx(10, 18, `Armoire ${a.rep} — cartes d'entrées / sorties de l'automate (réserve en grisé)`, { b: true, fs: 12 });
+    [...cartes.entries()].forEach(([nom, l], k) => {
+      const x = 20 + k * (larg + 15), type = l.length ? l[0][4] : l.type, cap = (CARTES[type] || [16])[0];
+      out.push(`<rect x="${x}" y="34" width="${larg}" height="${30 + cap * hl}" fill="#fff" stroke="#222" stroke-width="1.4"/>`);
+      tx(x + 6, 50, `${nom} — ${cap} ${type}`, { b: true, fs: 10 }); tx(x + larg - 6, 50, (CARTES[type] || [, ''])[1], { a: 'end', fs: 7, c: '#555' });
+      for (let v = 0; v < cap; v++) {
+        const y = 70 + v * hl, p = l.find(z => z[0] === `${nom}.${String(v).padStart(2, '0')}`);
+        out.push(`<line x1="${x}" y1="${y - 11}" x2="${x + larg}" y2="${y - 11}" stroke="#ddd"/>`);
+        tx(x + 6, y, String(v).padStart(2, '0'), { c: p ? '#222' : '#aaa' });
+        if (p) { tx(x + 24, y, p[1], { c: '#555', fs: 7 }); tx(x + 72, y, p[2], { b: true }); tx(x + 112, y, String(p[3]).replace(/^[^—]*— /, '').slice(0, 26), { fs: 7 }); }
+        else tx(x + 24, y, 'réserve', { c: '#aaa', fs: 7 });
+      }
+    });
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Arial, Helvetica, sans-serif"><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${out.join('')}</svg>`;
   }
 
   /* ---------- Schéma unifilaire (SVG) ---------- */

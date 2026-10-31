@@ -151,3 +151,18 @@ test('courts-circuits, sélectivité et puissance électrique reprise du catalog
   proche(ls.reduce((s, x) => s + x.P, 0), 2.4, 0.011);
   assert.ok(ls.every(x => /Ventilia CTA-DF 3000/.test(x.designation)));
 });
+
+test('folios : commande (contacteurs, variateurs, chaîne de sécurité), cartes de l\'automate, bornier X1', () => {
+  const pid = { id: 'p', type: 'pid', titre: 'Chaufferie', entrees: N.defauts('pid') };
+  const eqs = E.fusionner([], E.equipementsEtude({ notes: [pid] }, Liens)).lignes;
+  const r = N.calculer('elec', { ...N.defauts('elec'), equipements: eqs });
+  assert.deepStrictEqual(r.schemas.map(s => s.titre), ['Folio de commande — armoire AR-CVC-01', 'Cartes d\'entrées / sorties — armoire AR-CVC-01']);
+  const [cmd, cartes] = r.schemas.map(s => s.svg);
+  assert.match(cmd, /Chaîne de sécurité/); assert.match(cmd, />KA1</); assert.match(cmd, />KM-PC1</); assert.match(cmd, />EVG</);
+  // Une carte dessinée par carte prévue (réserve comprise), voies libres marquées
+  const nb = Object.values(r.valeurs.armoires[0].cartes).reduce((s, n) => s + n, 0);
+  assert.strictEqual((cartes.match(/ — \d+ (EA|SA|ETOR|STOR)</g) || []).length, nb);
+  assert.match(cartes, />réserve</);
+  const x1 = r.onglets.find(o => /Cahier/.test(o.titre)).blocs.find(b => /Bornier X1/.test(b.titre)).tableau.lignes;
+  assert.deepStrictEqual(x1.slice(0, 2).map(l => l[0]), ['X1:1-3', 'X1:4-6']);
+});
