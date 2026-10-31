@@ -446,7 +446,8 @@ compagnons.
    par personne, notes de frais, totaux).
    Deux exports Excel : **Tableau paie pour le comptable** (colonnes choisies, totaux, détail par personne avec
    normales / HS de chaque semaine) et **Relevé d'heures détaillé** pour les compagnons, pour tous (une feuille chacun)
-   ou une personne : chaque jour, chantier, tâche, horaires, pause, panier, statut, totaux par semaine et de la période,
+   ou une personne : une ligne par chantier pointé (plusieurs chantiers le même jour : total de la journée en dessous),
+   tâche, horaires, pause, panier, statut, totaux par semaine et de la période, jours et paniers pointés,
    sans salaire.
 7. **Situations de travaux** (menu Situations) : vue par chantier (marché, facturé, reste, retenues) et liste de
    toutes les situations. Avancement saisi ligne par ligne en **% cumulé, en quantités réalisées ou en montant** ;

@@ -151,10 +151,15 @@ function feuilleReleve(u, p, { paie = false } = {}) {
   const vide = { v: '', s: 'total' };
   [...new Set(entries.map(t => Paie.semaine(t.date)))].forEach(wk => {
     const ts = entries.filter(t => Paie.semaine(t.date) === wk);
-    ts.forEach(t => {
-      const a = affaireOf(t.affaireId);
-      rows.push([wk.replace('-W', ' S'), dateFr(t.date), new Date(`${t.date}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long' }), `${a.code || ''} ${a.nom || ''}`.trim(), t.tache || '',
-        t.debut || '', t.fin || '', num(t.pause) || '', num(t.heures), t.panier ? 'Oui' : '', t.statut || (t.debut && !t.fin ? 'En cours' : 'À valider')]);
+    // Une ligne par chantier pointé ; plusieurs chantiers le même jour : total de la journée en dessous
+    [...new Set(ts.map(t => t.date))].forEach(date => {
+      const jour = ts.filter(t => t.date === date);
+      jour.forEach(t => {
+        const a = affaireOf(t.affaireId);
+        rows.push([wk.replace('-W', ' S'), dateFr(t.date), new Date(`${t.date}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long' }), `${a.code || ''} ${a.nom || ''}`.trim(), t.tache || '',
+          t.debut || '', t.fin || '', num(t.pause) || '', num(t.heures), t.panier ? 'Oui' : '', t.statut || (t.debut && !t.fin ? 'En cours' : 'À valider')]);
+      });
+      if (jour.length > 1) rows.push(['', '', { v: `Total du ${dateFr(date)} (${jour.length} chantiers)`, s: 'muted' }, '', '', '', '', '', { v: sumBy(jour.filter(t => t.statut !== 'Refusé'), t => num(t.heures)), s: 'boldnum' }]);
     });
     const w = r.semaines[wk] || { total: 0, normales: 0, hs25: 0, hs50: 0 }, toutes = sumBy(ts.filter(t => t.statut !== 'Refusé'), t => num(t.heures));
     const complete = w.semaineComplete !== undefined && Math.abs(w.semaineComplete - w.total) > 0.001 ? ` (semaine complète : ${fmt(w.semaineComplete, 2)} h)` : '';
@@ -165,8 +170,15 @@ function feuilleReleve(u, p, { paie = false } = {}) {
   const totalPointe = sumBy(entries.filter(t => t.statut !== 'Refusé'), t => num(t.heures));
   rows.push([{ v: paie ? 'Total (heures validées)' : 'Total des heures pointées', s: 'bold' }, '', '', '', '', '', '', '', { v: paie ? r.total : totalPointe, s: 'boldnum' }, '', '', ...(paie ? [{ v: r.normales, s: 'boldnum' }, { v: r.hs25, s: 'boldnum' }, { v: r.hs50, s: 'boldnum' }] : [])]);
   if (!paie) rows.push(['Dont validées', '', '', '', '', '', '', '', r.total]);
-  rows.push(['Jours travaillés', r.jours]);
-  rows.push(['Paniers repas', r.paniers, { v: r.montantPaniers, s: 'eur' }]);
+  if (paie) {
+    rows.push(['Jours travaillés', r.jours]);
+    rows.push(['Paniers repas', r.paniers, { v: r.montantPaniers, s: 'eur' }]);
+  } else {
+    // Relevé du compagnon : ce qu'il a pointé (validé ou non), le validé entre parenthèses
+    const pointes = entries.filter(t => t.statut !== 'Refusé'), jours = new Set(pointes.map(t => t.date)), paniers = new Set(pointes.filter(t => t.panier).map(t => t.date));
+    rows.push(['Jours travaillés', jours.size, { v: `dont ${r.jours} validé(s)`, s: 'muted' }]);
+    rows.push(['Paniers repas', paniers.size, { v: `dont ${r.paniers} validé(s)`, s: 'muted' }]);
+  }
   if (Object.keys(r.absences).length) rows.push(['Absences', Paie.libelleAbsences(r.absences)]);
   if (paie) {
     rows.push(['Notes de frais validées (TTC)', '', { v: r.frais, s: 'eur' }]);
