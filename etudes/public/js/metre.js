@@ -71,8 +71,9 @@ const Metre = ((N, C, D, L, Sc) => {
       if (n.type === 'gaine' && v.choix) ajouter(`gaine|${v.choix}`, { chapitre: 'Aéraulique', designation: `Gaine ${v.choix} mm galvanisée, supports compris`, unite: 'ml', qte: num(e.L), heures: R.gaine, mo: 'monteur', source: src, recherche: { type: 'gaine', nom: v.choix } });
       // Schéma aéraulique : CTA ou caisson, bouches, gaines principales et antennes
       if (n.type === 'aero') {
-        const cta = /^cta/.test(v.producteur || ''), Q = Math.max(v.Qs || 0, v.Qr || 0);
-        equip(`aero|${v.producteur}|${Math.round(Q)}`, 'Aéraulique', cta ? `Centrale de traitement d'air ${nf(Q, 0)} m³/h${v.Qr && v.Qs ? ' double flux' : ''}` : `Caisson ${v.Qs ? 'd\'insufflation' : 'd\'extraction'} ${nf(Q, 0)} m³/h`, 1, cta ? 16 : 6, { type: cta ? 'cta' : 'caisson' }, src);
+        const cta = /^cta/.test(v.producteur || ''), Q = Math.max(v.Qs || 0, v.Qr || 0), relie = e.cta && notes.some(x => x.id === e.cta && x.type === 'cta');
+        // Relié à un calcul de CTA : la centrale est comptée par ce calcul
+        if (!relie) equip(`aero|${v.producteur}|${Math.round(Q)}`, 'Aéraulique', cta ? `Centrale de traitement d'air ${nf(Q, 0)} m³/h${v.Qr && v.Qs ? ' double flux' : ''}` : `Caisson ${v.Qs ? 'd\'insufflation' : 'd\'extraction'} ${nf(Q, 0)} m³/h`, 1, cta ? 16 : 6, { type: cta ? 'cta' : 'caisson' }, src);
         (v.bouches || []).forEach(b => equip(`bouche|${b.type}|${b.taille}`, 'Aéraulique', `${b.type} ${b.taille}, plénum et raccordement`, b.n, 0.75, { type: 'bouche', taille: b.taille }, src));
         (v.troncons || []).forEach(t => ajouter(`gaine|${t.nom}`, { chapitre: 'Aéraulique', designation: `Gaine ${t.nom} mm galvanisée, supports compris`, unite: 'ml', qte: t.L, heures: R.gaine, mo: 'monteur', source: src, recherche: { type: 'gaine', nom: t.nom } }));
       }

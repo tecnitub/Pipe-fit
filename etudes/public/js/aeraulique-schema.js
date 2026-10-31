@@ -81,7 +81,7 @@ const SchemaAir = ((D, C, N, Cta) => {
     const ligneT = t => [t.rep, nf(t.Q, 0), t.nom, nf(t.L, 1), nf(t.v, 1), nf(t.R, 2), nf(t.dp, 0)];
     const titreS = { 'cta-df': 'Soufflage', 'cta-melange': 'Soufflage', 'cta-sf': 'Soufflage', insufflation: 'Insufflation' }[e.producteur] || 'Soufflage';
     return {
-      valeurs: { Qs: rS.Q, Qr: rR.Q, pS, pR, PvS, PvR, sfp,
+      valeurs: { Qs: rS.Q, Qr: rR.Q, pS, pR, PvS, PvR, sfp, dpReseauS: rS.dp, dpReseauR: rR.dp, cta: e.cta || '',
         troncons: [...rS.troncons, ...rR.troncons].map(t => ({ rep: t.rep, nom: t.nom, L: t.L })).concat([...rS.zones, ...rR.zones].map(x => ({ rep: `Antenne ${x.rep}`, nom: x.antenne.nom, L: num(x.L, 5) }))),
         producteur: e.producteur || 'cta-df',
         bouches: [...rS.zones, ...rR.zones].map(x => ({ local: x.rep, type: x.bouche.b.libelle, taille: x.bouche.nom, n: x.n })) },
@@ -167,7 +167,9 @@ const SchemaAir = ((D, C, N, Cta) => {
     titre: 'Schéma de principe aéraulique (CTA, extraction, bouches)', icone: '🌬️', famille: 'Schémas',
     description: 'Producteur (CTA double flux, simple flux, à mélange, caisson d\'extraction ou d\'insufflation) et émetteurs (bouches de soufflage, de reprise, d\'extraction par zone) : gaines dimensionnées, bouches choisies, chemin le plus défavorisé, pression et puissance des ventilateurs, schéma.',
     champs: [
-      { g: 'Producteur' }, { k: 'titreInstallation', l: 'Installation', t: 't', d: 'CTA bureaux' },
+      { g: 'Producteur' },
+      { k: 'cta', l: 'Calcul de CTA relié (type, récupérateur, batteries et pertes de charge repris ; débits et réseau renvoyés à la CTA)', t: 's', o: (e, ctx) => [['', 'Saisie (pas de calcul de CTA relié)'], ...((ctx && ctx.notes) || []).map((n, i) => [n, i]).filter(([n]) => n.type === 'cta').map(([n, i]) => [n.id, `N${i + 1} — ${n.titre}`])], d: '' },
+      { k: 'titreInstallation', l: 'Installation', t: 't', d: 'CTA bureaux' },
       { k: 'producteur', l: 'Producteur', t: 's', o: Object.entries(PRODUCTEURS).map(([k, v]) => [k, v[0]]), d: 'cta-df' },
       { k: 'recuperateur', l: 'Récupérateur de chaleur', t: 's', o: Object.entries(RECUPERATEURS).map(([k, v]) => [k, v[0]]), d: 'plaques', si: e => e.producteur === 'cta-df' },
       { k: 'batChaude', l: 'Batterie chaude', t: 's', o: [['oui', 'Oui'], ['non', 'Non']], d: 'oui', si: e => !['extraction'].includes(e.producteur) },

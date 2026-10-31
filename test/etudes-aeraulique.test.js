@@ -64,3 +64,42 @@ test('métré et alimentation électrique reprennent la CTA, les bouches, les ga
   assert.deepStrictEqual([vs.type, vs.depart, vs.regulation], ['ventilateur', 'variateur', 'var']);
   assert.ok(vs.P >= 0.9 && vs.P <= 1, `P ${vs.P}`);
 });
+
+test('CTA reliée au réseau aéraulique : composants vers le réseau, débits et pertes de charge vers la CTA', () => {
+  const cta = { id: 'c', type: 'cta', titre: 'CTA bureaux', entrees: { ...N.defauts('cta'), froid: 'non', recup: 'roue', dpRecup: 130 } };
+  const aero = { id: 'a', type: 'aero', titre: 'Réseau aéraulique', entrees: { ...N.defauts('aero'), cta: 'c', batFroide: 'oui', recuperateur: 'plaques' } };
+  const et = { notes: [cta, aero] };
+  const ra = Liens.resoudre(et, aero);
+  assert.deepStrictEqual([ra.entrees.producteur, ra.entrees.recuperateur, ra.entrees.batFroide, ra.entrees.dpRecup], ['cta-df', 'roue', 'non', 130]);
+  assert.strictEqual(ra.verrous.dpFiltreS, 'N1 — CTA bureaux');
+  const rc = Liens.resoudre(et, cta), va = N.calculer('aero', ra.entrees).valeurs;
+  assert.deepStrictEqual([rc.entrees.Qs, rc.entrees.Qr], [3000, 2900], 'débits des bouches');
+  assert.strictEqual(rc.entrees.dpReseauS, Math.round(va.dpReseauS));
+  assert.ok(rc.verrous.Qs && rc.verrous.dpReseauR);
+  // Même pression au ventilateur de soufflage des deux côtés, à la marge du réseau près
+  const vc = Liens.calculer(et, cta).valeurs;
+  assert.ok(Math.abs(va.pS - vc.dpS * 1.1) < 2, `${va.pS} ≠ ${vc.dpS} × 1,1`);
+  // Une seule CTA au métré et à l'alimentation électrique
+  assert.strictEqual(Me.metre(et).filter(p => /Centrale de traitement/.test(p.designation)).length, 1);
+  assert.strictEqual(E.equipementsEtude(et, Liens).filter(x => x.type === 'ventilateur').length, 2);
+  // Détacher la CTA : valeurs conservées, réseau délié
+  Liens.detacher(et, cta);
+  assert.strictEqual(cta.entrees.Qs, 3000); assert.strictEqual(aero.entrees.cta, '');
+  assert.strictEqual(Liens.resoudre(et, cta).source, null);
+});
+
+test('réseau et ventilateur relié à la CTA : pertes de charge de la centrale ajoutées, débit renvoyé', () => {
+  const cta = { id: 'c', type: 'cta', titre: 'CTA', entrees: N.defauts('cta') };
+  const s = { id: 's', type: 'aeraulique', titre: 'Soufflage', entrees: { ...N.defauts('aeraulique'), cta: 'c', ctaFlux: 'soufflage' } };
+  const r = { id: 'r', type: 'aeraulique', titre: 'Reprise', entrees: { ...N.defauts('aeraulique'), cta: 'c', ctaFlux: 'reprise', composants: [{ nom: 'Grille de reprise', dp: 25 }] } };
+  const et = { notes: [cta, s, r] }, c = N.defauts('cta');
+  const rs = Liens.resoudre(et, s);
+  assert.strictEqual(rs.entrees.dpCta, c.dpFiltreAN + c.dpRecup + c.dpBC + c.dpBF + c.dpDivers);
+  assert.ok(rs.alertes.some(a => /déjà comptés dans la CTA/.test(a.texte)), 'filtre et batteries en double signalés');
+  assert.ok(!Liens.resoudre(et, r).alertes.length);
+  const vs = Liens.calculer(et, s).valeurs, vr = Liens.calculer(et, r).valeurs, ec = Liens.resoudre(et, cta).entrees;
+  assert.strictEqual(ec.Qs, 6000); assert.strictEqual(ec.Qr, 6000);
+  assert.strictEqual(ec.dpReseauS, Math.round(vs.dpTotal - rs.entrees.dpCta));
+  assert.strictEqual(ec.dpReseauR, Math.round(vr.dpReseau + 25));
+  assert.ok(!E.equipementsEtude(et, Liens).some(x => /^V-N/.test(x.rep)), 'ventilateurs comptés par la CTA');
+});

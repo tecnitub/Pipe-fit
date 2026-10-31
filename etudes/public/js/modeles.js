@@ -42,6 +42,7 @@ const Modeles = ((N, L) => {
       return JSON.parse(JSON.stringify(modele.notes)).map(n => {
         n.id = ids.get(n.id);
         if (n.lien) n.lien.note = ids.get(n.lien.note) || n.lien.note;
+        if (n.entrees && n.entrees.cta) n.entrees.cta = ids.get(n.entrees.cta) || '';
         (n.entrees.circuits || []).forEach(c => { if (c.bilan) c.bilan = ids.get(c.bilan) || ''; });
         return n;
       });

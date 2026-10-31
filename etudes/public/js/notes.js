@@ -350,7 +350,11 @@ const Notes = ((D, C) => {
   TYPES.aeraulique = {
     titre: 'Réseau aéraulique et choix du ventilateur', icone: '🌀', famille: 'Aéraulique',
     description: 'Pertes de charge du réseau le plus défavorisé (gaines, singularités, composants) et point de fonctionnement du ventilateur.',
-    champs: [{ g: 'Réseau' }, { k: 'T', l: 'Température de l\'air', u: '°C', d: 20 }, { k: 'materiau', l: 'Matériau des gaines', t: 's', o: optRug, d: 'galva' },
+    champs: [{ g: 'Centrale de traitement d\'air' },
+      { k: 'cta', l: 'Calcul de CTA relié (pertes de charge de la centrale reprises ; débit et réseau renvoyés à la CTA)', t: 's', o: (e, ctx) => [['', 'Saisie (pas de calcul de CTA relié)'], ...((ctx && ctx.notes) || []).map((n, i) => [n, i]).filter(([n]) => n.type === 'cta').map(([n, i]) => [n.id, `N${i + 1} — ${n.titre}`])], d: '' },
+      { k: 'ctaFlux', l: 'Ce réseau est', t: 's', o: [['soufflage', 'Le réseau de soufflage'], ['reprise', 'Le réseau de reprise']], d: 'soufflage', si: e => !!e.cta },
+      { k: 'dpCta', l: 'Pertes de charge dans la CTA (filtres, récupérateur, batteries, caissons)', u: 'Pa', d: 0, si: e => !!e.cta || num(e.dpCta) > 0 },
+      { g: 'Réseau' }, { k: 'T', l: 'Température de l\'air', u: '°C', d: 20 }, { k: 'materiau', l: 'Matériau des gaines', t: 's', o: optRug, d: 'galva' },
       { k: 'vmax', l: 'Vitesse maximale (dimensionnement auto)', u: 'm/s', d: 5 }, { k: 'Rmax', l: 'Perte linéique maxi (dimensionnement auto)', u: 'Pa/m', d: 1 },
       { k: 'troncons', l: 'Tronçons (dimension : « 400 » pour Ø 400, « 600x300 » pour rectangulaire, vide = auto en circulaire)', t: 'lignes', d: [
         { rep: 'Soufflage CTA → plénum', Q: 6000, dim: '800x400', L: 6, zeta: 1.5 }, { rep: 'Gaine principale', Q: 4500, dim: '', L: 25, zeta: 0.8 },
@@ -369,7 +373,7 @@ const Notes = ((D, C) => {
         if (r.v > vmax * 1.001) alertes.push(alerte('attention', `${x.rep || `Tronçon ${i + 1}`} : vitesse ${nf(r.v)} m/s supérieure à ${nf(vmax)} m/s.`));
         return { x, rep: x.rep || `Tronçon ${i + 1}`, Q: num(x.Q), nom: dim.b ? `${dim.a} × ${dim.b}` : `Ø ${dim.a}`, auto, ...r, dpl, dps, dp: dpl + dps };
       });
-      const comp = (e.composants || []).map(c => ({ nom: c.nom || 'Composant', dp: num(c.dp) }));
+      const comp = [...(num(e.dpCta) > 0 ? [{ nom: 'Centrale de traitement d\'air (composants)', dp: num(e.dpCta) }] : []), ...(e.composants || []).map(c => ({ nom: c.nom || 'Composant', dp: num(c.dp) }))];
       const dpRes = tr.reduce((a, x) => a + x.dp, 0), dpComp = comp.reduce((a, x) => a + x.dp, 0), dpTot = dpRes + dpComp, marge = num(e.marge, 10);
       const pVent = dpTot * (1 + marge / 100), Qv = tr.reduce((a, x) => Math.max(a, x.Q), 0), Pabs = Qv / 3600 * pVent / (num(e.rendement, 60) / 100);
       if (!tr.length) alertes.push(alerte('erreur', 'Ajouter au moins un tronçon.'));

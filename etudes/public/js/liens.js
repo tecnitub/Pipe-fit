@@ -1,7 +1,9 @@
 // Liens entre les calculs d'une même étude : les valeurs reprises d'une autre note sont recalculées à chaque affichage
 // (liens vivants) et les champs correspondants sont verrouillés dans le formulaire.
 //  - schéma de principe : puissance d'un circuit reprise d'un bilan chauffage et climatisation ;
-//  - notes créées depuis un schéma : réseau et pompe ou vanne de régulation d'un circuit, vase d'expansion de l'installation.
+//  - notes créées depuis un schéma : réseau et pompe ou vanne de régulation d'un circuit, vase d'expansion de l'installation ;
+//  - réseau aéraulique (schéma aéraulique ou réseau et ventilateur) relié à un calcul de CTA : type, récupérateur, batteries
+//    et pertes de charge de la centrale repris dans le réseau ; débits et pertes de charge du réseau repris dans la CTA.
 const Liens = ((N, Sc) => {
   const nf = N.nf, num = N.num;
   const copie = o => JSON.parse(JSON.stringify(o));
@@ -25,6 +27,9 @@ const Liens = ((N, Sc) => {
         verrous[`circuits.${i}.P`] = libelle(src);
       });
     }
+    // Réseau aéraulique relié à une CTA (et CTA alimentée par ses réseaux)
+    const air = lienAir(etude, note, e, verrous, alertes, libelle);
+    if (air) return { entrees: e, verrous, alertes, source: air };
     // Note créée depuis un schéma : valeurs du circuit (ou de l'installation) recalculées
     const lien = note.lien;
     if (lien && lien.note) {
@@ -48,6 +53,59 @@ const Liens = ((N, Sc) => {
       return { entrees: e, verrous, alertes, source: { note: src, libelle: libelle(src), circuit: c ? c.rep : '' } };
     }
     return { entrees: e, verrous, alertes, source: null };
+  }
+
+  /* ---------- CTA ↔ réseau aéraulique ---------- */
+  // Les deux côtés lisent les entrées saisies de l'autre (pas de liens circulaires) : la CTA donne ses composants,
+  // le réseau donne ses débits et ses pertes de charge hors CTA.
+  const brut = n => ({ ...N.defauts(n.type), ...copie(n.entrees || {}) });
+  const TYPE_AIR = { double: 'cta-df', melange: 'cta-melange', simple: 'cta-sf' }, RECUP_AIR = { plaques: 'plaques', roue: 'roue', glycol: 'boucle', aucun: 'aucun' };
+  const reseauxDeCta = (notes, cta) => notes.filter(n => (n.type === 'aero' || n.type === 'aeraulique') && n.entrees && n.entrees.cta === cta.id);
+  function lienAir(etude, note, e, verrous, alertes, libelle) {
+    const notes = (etude && etude.notes) || [];
+    const imposer = (vals, lib) => Object.entries(vals).forEach(([k, v]) => { e[k] = v; verrous[k] = lib; });
+    if ((note.type === 'aero' || note.type === 'aeraulique') && e.cta) {
+      const src = notes.find(n => n.id === e.cta && n.type === 'cta');
+      if (!src) { alertes.push({ niveau: 'attention', texte: 'Le calcul de CTA relié a été supprimé : choisissez-en un autre ou « Saisie ».' }); return null; }
+      const c = brut(src), lib = libelle(src), recup = c.type === 'double' ? c.recup : 'aucun', froid = c.froid !== 'non';
+      if (note.type === 'aero') {
+        imposer({ producteur: TYPE_AIR[c.type] || 'cta-df', recuperateur: RECUP_AIR[recup] || 'aucun', batChaude: 'oui', batFroide: froid ? 'oui' : 'non',
+          dpFiltreS: num(c.dpFiltreAN), dpFiltreR: c.type === 'simple' ? 0 : num(c.dpFiltreR), dpRecup: recup !== 'aucun' ? num(c.dpRecup) : 0, dpBatC: num(c.dpBC) + (c.humid === 'vapeur' ? 30 : 0), dpBatF: froid ? num(c.dpBF) : 0,
+          // Caissons, silencieux et volets de la CTA : moitié à la prise d'air, moitié au silencieux (la reprise en compte la moitié)
+          dpPrise: num(c.dpDivers) / 2, dpSil: num(c.dpDivers) / 2, dpRejet: 0, rendement: num(c.rendement, 60) }, lib);
+        if (!String(e.titreInstallation || '').trim() || e.titreInstallation === N.defauts('aero').titreInstallation) e.titreInstallation = src.titre;
+      } else {
+        const reprise = e.ctaFlux === 'reprise' && c.type !== 'simple';
+        const dpCta = reprise ? num(c.dpFiltreR) + (recup !== 'aucun' ? num(c.dpRecup) : 0) + num(c.dpDivers) / 2
+          : num(c.dpFiltreAN) + (recup !== 'aucun' ? num(c.dpRecup) : 0) + num(c.dpBC) + (froid ? num(c.dpBF) : 0) + (c.humid === 'vapeur' ? 30 : 0) + num(c.dpDivers);
+        imposer({ dpCta: Math.round(dpCta) }, lib);
+        const doublons = (e.composants || []).filter(x => /filtre|batterie|recup|récup|echangeur|échangeur|roue/i.test(x.nom || '') && num(x.dp) > 0);
+        if (doublons.length) alertes.push({ niveau: 'attention', texte: `Composants déjà comptés dans la CTA (${doublons.map(x => x.nom).join(', ')}) : à retirer de la liste des composants du réseau.` });
+        if (e.ctaFlux === 'reprise' && c.type === 'simple') alertes.push({ niveau: 'attention', texte: `${lib} est une centrale en soufflage seul : pas de ventilateur de reprise.` });
+      }
+      return { note: src, libelle: lib, texte: `Centrale reprise de ${lib} (type, récupérateur, batteries, pertes de charge des composants) ; les débits et les pertes de charge de ce réseau sont repris par la CTA. Mise à jour automatique.` };
+    }
+    if (note.type === 'cta') {
+      const reseaux = reseauxDeCta(notes, note);
+      if (!reseaux.length) return null;
+      const libs = [], double = e.type !== 'simple';
+      const aero = reseaux.find(n => n.type === 'aero');
+      if (aero) {
+        const v = N.calculer('aero', brut(aero)).valeurs || {}, lib = libelle(aero);
+        if (v.Qs > 0) imposer({ Qs: Math.round(v.Qs), dpReseauS: Math.round(v.dpReseauS) }, lib);
+        if (double && v.Qr > 0) imposer({ Qr: Math.round(v.Qr), dpReseauR: Math.round(v.dpReseauR) }, lib);
+        libs.push(lib);
+      }
+      reseaux.filter(n => n.type === 'aeraulique').forEach(n => {
+        const v = N.calculer('aeraulique', { ...brut(n), dpCta: 0 }).valeurs || {}, lib = libelle(n), reprise = n.entrees.ctaFlux === 'reprise';
+        if (reprise && !double) return;
+        if (aero && (reprise ? verrous.Qr : verrous.Qs)) { alertes.push({ niveau: 'attention', texte: `${lib} et ${libelle(aero)} décrivent tous deux le ${reprise ? 'réseau de reprise' : 'réseau de soufflage'} : le schéma aéraulique est retenu.` }); return; }
+        imposer(reprise ? { Qr: Math.round(v.Qv), dpReseauR: Math.round(v.dpTotal) } : { Qs: Math.round(v.Qv), dpReseauS: Math.round(v.dpTotal) }, lib);
+        libs.push(lib);
+      });
+      return libs.length ? { note: null, libelle: libs.join(', '), texte: `Débits et pertes de charge des réseaux repris de ${libs.join(' et ')} (les composants de la centrale y sont repris) : mise à jour automatique.` } : null;
+    }
+    return null;
   }
 
   // Résultat d'une note dans son étude (entrées effectives, alertes de lien en tête)
@@ -77,13 +135,16 @@ const Liens = ((N, Sc) => {
     const r = resoudre(etude, note);
     note.entrees = r.entrees;
     delete note.lien;
+    if (note.entrees.cta) note.entrees.cta = '';
+    if (note.type === 'cta') reseauxDeCta(etude.notes || [], note).forEach(n => { n.entrees = resoudre(etude, n).entrees; n.entrees.cta = ''; });
     if (note.type === 'pid') (note.entrees.circuits || []).forEach(c => { delete c.bilan; });
   }
   const description = (etude, note) => {
     const r = resoudre(etude, note);
     if (!r.source) return '';
+    if (r.source.texte) return r.source.texte;
     return `Données reprises de ${r.source.libelle}${r.source.circuit ? ` (circuit « ${r.source.circuit} »)` : ''} pour ce ${ROLES[note.lien.role] || 'calcul'} : mises à jour automatiquement.`;
   };
-  return { resoudre, calculer, notesDepuisSchema, detacher, description, nf };
+  return { resoudre, calculer, notesDepuisSchema, detacher, description, reseauxDeCta, nf };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'), typeof Schema !== 'undefined' ? Schema : require('./schema'));
 if (typeof module !== 'undefined') module.exports = Liens;
