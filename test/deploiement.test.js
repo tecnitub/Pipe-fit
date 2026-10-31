@@ -55,3 +55,14 @@ test('application Études dans tous les modes d\'installation (pack, Linux, Dock
   assert.ok(lire('installer/files/start-etudes.cmd').includes('\r\n'), 'fichier de commandes Windows en CRLF');
   assert.match(lire('server/server.js'), /prefixe: 'etudes', fichier: process\.env\.ETUDES_DB_FILE/);
 });
+
+test('fichiers Windows de l\'installateur : au plus une marque BOM en tête (makensis refuse un BOM doublé)', () => {
+  const dir = path.join(__dirname, '..');
+  const fichiers = ['installer/PipeFitCRM.nsi', ...fs.readdirSync(path.join(dir, 'installer/files')).filter(f => /\.(cmd|ps1|txt)$/.test(f)).map(f => `installer/files/${f}`),
+    ...['deploy/windows', 'deploy/microsoft365'].flatMap(d => fs.readdirSync(path.join(dir, d)).filter(f => f.endsWith('.ps1')).map(f => `${d}/${f}`))];
+  for (const f of fichiers) {
+    const b = fs.readFileSync(path.join(dir, f));
+    assert.ok(!(b[0] === 0xef && b[3] === 0xef && b[4] === 0xbb && b[5] === 0xbf), `${f} : BOM doublé`);
+    assert.ok(!b.subarray(3).toString('utf8').includes('﻿'), `${f} : marque BOM au milieu du fichier`);
+  }
+});

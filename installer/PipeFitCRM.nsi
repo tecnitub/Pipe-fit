@@ -1,4 +1,4 @@
-﻿﻿; Installateur Windows de Pipe-Fit CRM (NSIS 3).
+﻿; Installateur Windows de Pipe-Fit CRM (NSIS 3).
 ; Construit par installer/build.sh, qui prépare le dossier build/ (node.exe + application).
 Unicode true
 !include "MUI2.nsh"
