@@ -170,7 +170,26 @@
     if (p[0] === 'liens') {
       if (p[1] === 'materiel' && !p[2] && method === 'GET') {
         if (acc.role === 'atelier' && !Compagnon.regles(db.settings).materiel) return [200, []];
-        return [200, MaterielRetenu.pourChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === (query.get('affaireId') || '')))];
+        return [200, MaterielRetenu.pourChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === (query.get('affaireId') || '')), (db.materielSuivi || []).filter(s => s.affaireId === (query.get('affaireId') || '')))];
+      }
+      if (p[1] === 'materiel' && p[2] === 'suivi') {
+        db.materielSuivi = db.materielSuivi || [];
+        if (method === 'GET') return ['admin', 'charge'].includes(acc.role) ? [200, db.materielSuivi.filter(s => (query.get('etudeId') && s.etudeId === query.get('etudeId')) || (query.get('affaireId') && s.affaireId === query.get('affaireId')))] : [403, { error: 'Réservé au bureau' }];
+        if (method === 'POST') {
+          if (acc.role === 'atelier' && (!Compagnon.regles(db.settings).materiel || !MaterielRetenu.ACTIONS_COMPAGNON.includes(body.action))) return [403, { error: 'Action réservée au bureau' }];
+          const affaireId = String(body.affaireId || ''), etudes = new Set((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === affaireId).map(l => l.id));
+          try {
+            const out = (Array.isArray(body.lignes) ? body.lignes : [body]).map(l => {
+              if (!etudes.has(String(l.etudeId || ''))) throw Object.assign(new Error('Étude non reliée à ce chantier'), { status: 400 });
+              let s = db.materielSuivi.find(x => x.etudeId === l.etudeId && x.cle === l.cle);
+              const data = MaterielRetenu.appliquerSuivi(s, body.action, acc.nom, new Date().toISOString().slice(0, 10), body);
+              const rec = { ...data, etudeId: l.etudeId, cle: l.cle, affaireId, maj: new Date().toISOString() };
+              if (s) Object.keys(s).forEach(k => delete s[k]), Object.assign(s, rec); else db.materielSuivi.push(s = rec);
+              return s;
+            });
+            save(); return [200, out];
+          } catch (e) { return [e.status || 500, { error: e.message }]; }
+        }
       }
       if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Réservé au bureau' }];
       db.liens = db.liens || [];

@@ -164,23 +164,29 @@ async function api(req, res, url) {
     return send(res, 200, RexPF(await r.json()));
   }
 
-  // Note de calcul déposée dans les documents du chantier (catégorie « Note de calcul », nouvel indice si déjà déposée pour cette étude)
+  // Suivi du matériel retenu sur le chantier (soumission, pose, mise en service) : lu dans Pipe-Fit
+  if (p[0] === 'pf' && p[1] === 'materiel-suivi' && method === 'GET') {
+    const r = await pipefit(s, `/api/liens/materiel/suivi?etudeId=${encodeURIComponent(url.searchParams.get('etudeId') || '')}`);
+    return r.ok ? send(res, 200, await r.json()) : send(res, 200, []);
+  }
+  // Note de calcul (ou liste du matériel à valider) déposée dans les documents du chantier, nouvel indice si déjà déposée pour cette étude
   if (p[0] === 'pf' && p[1] === 'document' && method === 'POST') {
     const b = await lireJSON(req), nom = String(b.nom || '').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 150);
+    const categorie = ['Note de calcul', 'Matériel à valider'].includes(b.categorie) ? b.categorie : 'Note de calcul';
     if (!b.affaireId || !/\.pdf$/i.test(nom) || !b.base64) return fail(res, 400, 'Affaire, nom de fichier PDF et contenu requis');
     const buf = Buffer.from(String(b.base64), 'base64');
     if (buf.subarray(0, 4).toString() !== '%PDF') return fail(res, 400, 'Le contenu n\'est pas un PDF');
     const f = await envoyerFichierPF((chemin, opts) => pipefit(s, chemin, opts), nom, 'application/pdf', buf);
     let docId = '', indice = '';
     await modifierPF(s, 'affaires', b.affaireId, a => {
-      const docs = a.documents || [], ex = b.etudeId && docs.find(d => d.categorie === 'Note de calcul' && d.etudeId === b.etudeId), date = new Date().toISOString().slice(0, 10);
+      const docs = a.documents || [], ex = b.etudeId && docs.find(d => d.categorie === categorie && d.etudeId === b.etudeId), date = new Date().toISOString().slice(0, 10);
       if (ex) {
         ex.anciens = [...(ex.anciens || []), { fichierId: ex.fichierId, indice: ex.indice || 'A', date: ex.date }];
         Object.assign(ex, { fichierId: f.id, nom, mime: f.mime, taille: f.taille, indice: String(b.indice || ex.indice || 'A'), date, par: s.nom || s.login, note: String(b.note || ex.note || '') });
         docId = ex.id; indice = ex.indice;
       } else {
         docId = idPF(); indice = String(b.indice || 'A');
-        docs.push({ id: docId, fichierId: f.id, nom, categorie: 'Note de calcul', indice, note: String(b.note || ''), mime: f.mime, taille: f.taille, date, par: s.nom || s.login, visible: false, etudeId: String(b.etudeId || '') });
+        docs.push({ id: docId, fichierId: f.id, nom, categorie, indice, note: String(b.note || ''), mime: f.mime, taille: f.taille, date, par: s.nom || s.login, visible: false, etudeId: String(b.etudeId || '') });
       }
       return { ...a, documents: docs };
     });

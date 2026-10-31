@@ -525,7 +525,27 @@ async function api(req, res, url) {
     if (p[1] === 'materiel' && !p[2] && method === 'GET') {
       if (estCompagnon(acc) && !reglesCompagnon().materiel) return send(res, 200, []);
       const affaireId = url.searchParams.get('affaireId') || '';
-      return send(res, 200, affaireId ? MaterielRetenu.pourChantier(LIENS.liste({ affaireId, app: 'etudes' })) : []);
+      return send(res, 200, affaireId ? MaterielRetenu.pourChantier(LIENS.liste({ affaireId, app: 'etudes' }), LIENS.suivis({ affaireId })) : []);
+    }
+    // Suivi d'une ligne : soumission au client (bureau), pose / mise en service / photo de la plaque (bureau et compagnons)
+    if (p[1] === 'materiel' && p[2] === 'suivi') {
+      if (method === 'GET') { if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau'); return send(res, 200, LIENS.suivis({ etudeId: url.searchParams.get('etudeId') || '', affaireId: url.searchParams.get('affaireId') || '' })); }
+      if (method === 'POST') {
+        const b = await readBody(req), lignes = Array.isArray(b.lignes) ? b.lignes.slice(0, 300) : [b];
+        if (estCompagnon(acc) && (!reglesCompagnon().materiel || !MaterielRetenu.ACTIONS_COMPAGNON.includes(b.action))) return fail(res, 403, 'Action réservée au bureau');
+        const affaireId = String(b.affaireId || '');
+        if (!affaireId || !DB.getRecord(db, 'affaires', affaireId)) return fail(res, 400, 'Chantier introuvable');
+        try {
+          const jour = new Date().toISOString().slice(0, 10), par = acc.nom || acc.login;
+          const etudes = new Set(LIENS.liste({ affaireId, app: 'etudes' }).map(l => l.id));
+          const out = lignes.map(l => {
+            if (!etudes.has(String(l.etudeId || ''))) throw Object.assign(new Error('Étude non reliée à ce chantier'), { status: 400 });
+            return LIENS.suivre(l.etudeId, l.cle, affaireId, d => MaterielRetenu.appliquerSuivi(d, b.action, par, jour, b));
+          });
+          if (b.action !== 'photo') DB.audit(db, acc.login, `matériel : ${MaterielRetenu.ACTIONS[b.action].toLowerCase()}`, 'affaires', affaireId, `${out.length} ligne(s)`);
+          return send(res, 200, out);
+        } catch (e) { return fail(res, e.status || 500, e.message); }
+      }
     }
     if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
     const q = k => url.searchParams.get(k) || '';

@@ -53,15 +53,44 @@ const MaterielRetenu = (() => {
 
   // Résumé envoyé au CRM avec l'étude (pas de prix) : lignes avec une référence
   const pourCrm = ls => ls.filter(l => l.reference && !l.orphelin).slice(0, 300)
-    .map(l => ({ cle: l.cle, chapitre: l.chapitre, designation: txt(l.designation), qte: l.qte, fabricant: l.fabricant, reference: l.reference, statut: l.statut, dateValidation: l.dateValidation, obs: l.obs, fiche: /^https?:\/\//.test(l.fiche) ? l.fiche : '' }));
+    .map(l => ({ cle: l.cle, chapitre: l.chapitre, designation: txt(l.designation), qte: l.qte, fabricant: l.fabricant, reference: l.reference, statut: l.statut, dateSoumission: l.dateSoumission, dateValidation: l.dateValidation, obs: l.obs, fiche: /^https?:\/\//.test(l.fiche) ? l.fiche : '' }));
 
-  // Pour le chantier (bureau et compagnons) : matériel de toutes les études liées, refusés écartés, validés d'abord
-  function pourChantier(liens) {
+  /* ---------- Suivi sur le chantier (Pipe-Fit) ---------- */
+  // Par ligne (étude + clé) : soumission au client, pose et mise en service par les compagnons, photos de la plaque
+  const ACTIONS = { soumis: 'Soumis au client', pose: 'Posé', mes: 'Mis en service', annulerPose: 'Pose annulée', annulerMes: 'Mise en service annulée', photo: 'Photo de la plaque' };
+  const ACTIONS_COMPAGNON = ['pose', 'mes', 'annulerPose', 'annulerMes', 'photo'];
+  function appliquerSuivi(data, action, par, date, extra = {}) {
+    const d = { ...(data || {}) }, qui = txt(par, 80), quand = txt(date, 10);
+    if (!ACTIONS[action]) throw Object.assign(new Error('Action inconnue'), { status: 400 });
+    if (action === 'soumis') Object.assign(d, { soumisLe: quand, soumisPar: qui, relances: d.soumisLe ? [...(d.relances || []), quand].slice(-10) : d.relances || [] });
+    if (action === 'pose') Object.assign(d, { poseLe: quand, posePar: qui });
+    if (action === 'mes') Object.assign(d, { mesLe: quand, mesPar: qui, poseLe: d.poseLe || quand, posePar: d.posePar || qui });
+    if (action === 'annulerPose') { delete d.poseLe; delete d.posePar; delete d.mesLe; delete d.mesPar; }
+    if (action === 'annulerMes') { delete d.mesLe; delete d.mesPar; }
+    if (action === 'photo') {
+      if (!/^[\w-]{1,64}$/.test(String(extra.fichierId || ''))) throw Object.assign(new Error('Photo manquante'), { status: 400 });
+      d.photos = [...(d.photos || []), { fichierId: String(extra.fichierId), le: quand, par: qui, nom: txt(extra.nom, 120) }].slice(-6);
+    }
+    return d;
+  }
+  // Soumis depuis plus de « jours » sans avis du client : à relancer
+  const aRelancer = (l, aujourdhui, jours = 15) => {
+    const soumis = l.soumisLe || l.dateSoumission;
+    if (l.statut !== 'Soumis au client' || !soumis || !aujourdhui) return false;
+    return (Date.parse(aujourdhui) - Date.parse(soumis)) / 864e5 > jours;
+  };
+
+  // Pour le chantier (bureau et compagnons) : matériel de toutes les études liées, refusés écartés, validés d'abord ;
+  // suivis : [{ etudeId, cle, soumisLe, poseLe, mesLe, photos… }]
+  function pourChantier(liens, suivis) {
+    const parCle = new Map((suivis || []).map(s => [`${s.etudeId}|${s.cle}`, s]));
     const out = [];
     (liens || []).filter(l => l.app === 'etudes').forEach(l => ((l.resume || {}).materiel || []).forEach(m => {
       if (!m || !m.reference || m.statut === 'Refusé') return;
-      out.push({ etude: txt((l.resume || {}).objet, 120), etudeId: l.id, chapitre: txt(m.chapitre, 60), designation: txt(m.designation), qte: Number(m.qte) || 0, fabricant: txt(m.fabricant, 80), reference: txt(m.reference, 120),
-        statut: STATUTS.includes(m.statut) ? m.statut : 'À soumettre', valide: VALIDES.includes(m.statut), dateValidation: txt(m.dateValidation, 10), obs: txt(m.obs, 500), fiche: /^https?:\/\//.test(m.fiche || '') ? txt(m.fiche, 500) : '' });
+      const s = parCle.get(`${l.id}|${m.cle}`) || {};
+      out.push({ etude: txt((l.resume || {}).objet, 120), etudeId: l.id, cle: txt(m.cle, 200), chapitre: txt(m.chapitre, 60), designation: txt(m.designation), qte: Number(m.qte) || 0, fabricant: txt(m.fabricant, 80), reference: txt(m.reference, 120),
+        statut: STATUTS.includes(m.statut) ? m.statut : 'À soumettre', valide: VALIDES.includes(m.statut), dateValidation: txt(m.dateValidation, 10), obs: txt(m.obs, 500), fiche: /^https?:\/\//.test(m.fiche || '') ? txt(m.fiche, 500) : '',
+        soumisLe: txt(s.soumisLe || m.dateSoumission, 10), relances: s.relances || [], poseLe: txt(s.poseLe, 10), posePar: txt(s.posePar, 80), mesLe: txt(s.mesLe, 10), mesPar: txt(s.mesPar, 80), photos: s.photos || [] });
     }));
     return out.sort((a, b) => Number(b.valide) - Number(a.valide) || a.chapitre.localeCompare(b.chapitre, 'fr') || a.designation.localeCompare(b.designation, 'fr'));
   }
@@ -69,6 +98,15 @@ const MaterielRetenu = (() => {
   const csv = ls => ['Chapitre;Désignation;Quantité;Fabricant;Référence;Statut;Soumis le;Validé le;Observations du client',
     ...ls.map(l => [l.chapitre, l.designation, String(l.qte ?? '').replace('.', ','), l.fabricant, l.reference, l.statut, l.dateSoumission, l.dateValidation, l.obs].map(x => `"${String(x ?? '').replace(/"/g, '""')}"`).join(';'))].join('\r\n');
 
-  return { STATUTS, VALIDES, statutDe, estValide, libelleRef, lignes, saisir, bilan, pourCrm, pourChantier, csv };
+  // Suivi du chantier reporté dans l'étude : une ligne « à soumettre » envoyée au client depuis Pipe-Fit passe « soumis »
+  function reprendreSuivi(saisies, ls, suivis, aujourdhui) {
+    let n = 0;
+    (suivis || []).forEach(s => {
+      const l = ls.find(x => x.cle === s.cle);
+      if (l && s.soumisLe && l.statut === 'À soumettre') { saisir(saisies, l, 'statut', 'Soumis au client', aujourdhui); saisies[l.cle].dateSoumission = s.soumisLe; n++; }
+    });
+    return n;
+  }
+  return { STATUTS, VALIDES, ACTIONS, ACTIONS_COMPAGNON, statutDe, estValide, libelleRef, lignes, saisir, bilan, pourCrm, pourChantier, csv, appliquerSuivi, aRelancer, reprendreSuivi };
 })();
 if (typeof module !== 'undefined') module.exports = MaterielRetenu;

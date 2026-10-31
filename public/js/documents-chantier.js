@@ -1,7 +1,7 @@
 // Documents du chantier (plans, fiches techniques, notices, sécurité…) déposés par le bureau et transmis aux compagnons,
 // et fiche chantier du compagnon sur son téléphone : documents, matériel prévu (sans prix ni heures, selon les réglages),
 // commandes et livraisons attendues.
-const CATEGORIES_DOC = [['Demande client', '📧'], ['CCTP', '📑'], ['Plan', '📐'], ['Fiche technique', '📄'], ['Notice', '📘'], ['Note de calcul', '🧮'], ['Sécurité / PPSPS', '⛑️'], ['PGC', '🦺'], ['Plan de prévention', '🛡️'], ['Photo', '🖼️'], ['Autre', '📁']];
+const CATEGORIES_DOC = [['Demande client', '📧'], ['CCTP', '📑'], ['Plan', '📐'], ['Fiche technique', '📄'], ['Notice', '📘'], ['Note de calcul', '🧮'], ['Matériel à valider', '🏷️'], ['Sécurité / PPSPS', '⛑️'], ['PGC', '🦺'], ['Plan de prévention', '🛡️'], ['Photo', '🖼️'], ['Autre', '📁']];
 const iconeDoc = c => (CATEGORIES_DOC.find(x => x[0] === c) || CATEGORIES_DOC[CATEGORIES_DOC.length - 1])[1];
 const categorieDevinee = Classement.categorieDevinee;
 const tailleLisible = o => (o > 1048576 ? `${fmt(o / 1048576, 1)} Mo` : `${Math.max(1, Math.round(o / 1024))} Ko`);
@@ -197,7 +197,7 @@ function ficheChantierCompagnon(u, id) {
       ${docs.length ? `<ul class="docs-mobile">${docs.map(d => `<li><a href="${lienDocument(d)}" target="_blank" rel="noopener"><span class="doc-ic">${iconeDoc(d.categorie)}</span>
         <span><strong>${esc(d.nom)}</strong>${[...nouveaux].some(t => t.includes(d.nom)) ? ' <span class="badge b-warn">nouveau</span>' : ''}<br><span class="small muted">${esc(d.categorie)}${d.indice ? ` · indice ${esc(d.indice)}` : ''} · ${dateFr(d.date)} · ${tailleLisible(num(d.taille))}</span></span></a></li>`).join('')}</ul>`
         : '<p class="muted small">Aucun document transmis pour ce chantier.</p>'}` : ''}
-    ${R.materiel ? `<div id="mat-retenu" data-affaire="${esc(a.id)}">${materielRetenuHtml(materielChantier.get(a.id), true)}</div>` : ''}
+    ${R.materiel ? `<div id="mat-retenu" data-mobile="1" data-affaire="${esc(a.id)}">${materielRetenuHtml(materielChantier.get(a.id), true)}</div>` : ''}
     ${m ? `<h2>🔩 Matériel prévu</h2>
       <div class="seg" role="group" aria-label="Affichage du matériel" style="margin-bottom:8px">${[['article', 'Total par article'], ['ouvrage', 'Par ouvrage']].map(([k, l]) => `<button type="button" data-matmode="${k}" class="${ficheCompagnonSel.mode === k ? 'on' : ''}">${l}</button>`).join('')}</div>
       ${ficheCompagnonSel.mode === 'article' ? `<ul class="mat-liste">${m.total.map((x, i, t) => `${i === 0 || t[i - 1].famille !== x.famille ? `<li class="mat-famille">${esc(x.famille)}</li>` : ''}<li><span>${esc(x.designation)}${x.ref ? ` <span class="muted small">${esc(x.ref)}</span>` : ''}</span>
@@ -314,18 +314,19 @@ async function noteDepuisEtude(m) {
   const a = Store.get('affaires', String(m.affaireId || '')), nom = String(m.nom || '').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 150);
   if (!a || !/\.pdf$/i.test(nom) || !(m.data instanceof ArrayBuffer)) throw new Error('Affaire, nom de fichier PDF et contenu requis');
   const f = await envoyerFichierDocument(new File([m.data], nom, { type: 'application/pdf' }));
-  const docs = a.documents || (a.documents = []), ex = m.etudeId && docs.find(d => d.categorie === 'Note de calcul' && d.etudeId === m.etudeId), date = isoDate(new Date());
+  const categorie = ['Note de calcul', 'Matériel à valider'].includes(m.categorie) ? m.categorie : 'Note de calcul';
+  const docs = a.documents || (a.documents = []), ex = m.etudeId && docs.find(d => d.categorie === categorie && d.etudeId === m.etudeId), date = isoDate(new Date());
   let doc;
   if (ex) {
     ex.anciens = [...(ex.anciens || []), { fichierId: ex.fichierId, indice: ex.indice || 'A', date: ex.date }];
     Object.assign(ex, { fichierId: f.id, nom, mime: f.mime, taille: f.taille, indice: String(m.indice || ex.indice || 'A'), date, par: Store.me.nom, note: String(m.note || ex.note || '') });
     doc = ex;
   } else {
-    doc = { id: uid(), fichierId: f.id, nom, categorie: 'Note de calcul', indice: String(m.indice || 'A'), note: String(m.note || ''), mime: f.mime, taille: f.taille, date, par: Store.me.nom, visible: false, etudeId: String(m.etudeId || '') };
+    doc = { id: uid(), fichierId: f.id, nom, categorie, indice: String(m.indice || 'A'), note: String(m.note || ''), mime: f.mime, taille: f.taille, date, par: Store.me.nom, visible: false, etudeId: String(m.etudeId || '') };
     docs.push(doc);
   }
   Store.upsert('affaires', a);
-  App.toast(`Note de calcul déposée dans les documents de ${a.code} (indice ${doc.indice})`, 4000);
+  App.toast(`${categorie} déposé(e) dans les documents de ${a.code} (indice ${doc.indice})`, 4000);
   return { ok: true, docId: doc.id, indice: doc.indice };
 }
 
@@ -393,6 +394,7 @@ function bindEtudeChantier(root, a) {
   chargerLiens(a.id).then(() => { const n = document.querySelector(`#liens-apps[data-affaire="${CSS.escape(a.id)}"]`); if (n) { n.innerHTML = liensAppsHtml(a); bindLiensApps(n, a); } });
 }
 function bindLiensApps(z, a) {
+  if (z.querySelector('#mat-retenu')) { bindMaterielRetenu(z.querySelector('#mat-retenu'), a.id); if (!materielChantier.has(a.id)) chargerMaterielRetenu(z, a.id); }
   const ec = z.querySelector('#etude-consultation');
   if (ec) ec.onclick = () => { location.hash = '#/consultations/' + nouvelleConsultation({ affaireId: a.id, objet: `Équipements ${a.code || ''} (étude d'exécution)`, lignes: lignesEtude(a) }).id; };
 }
@@ -418,27 +420,62 @@ function etudesBeHtml(a, liens) {
           <td>${esc(r.auteur || '')}${r.verificateur ? ` / ${esc(r.verificateur)}` : ' <span class="muted small">(à vérifier)</span>'}</td>
           <td>${nd ? `<a href="${lienDocument(nd)}" target="_blank" rel="noopener">🧮 indice ${esc(nd.indice || 'A')}</a>` : '<span class="muted small">pas déposée</span>'}</td>
           <td>${(r.devis || []).map(d => Store.get('devis', d.id) ? `<a href="#/devis/${esc(d.id)}">${esc(Store.get('devis', d.id).numero || d.numero || 'brouillon')}</a>` : esc(d.numero || '')).join(', ')}</td></tr>`; }).join('')}</table></div>`
-    : '<p class="muted small">Aucune étude pour l\'instant.</p>'}${materielRetenuHtml(MaterielRetenu.pourChantier(liens), false)}</div>`;
+    : '<p class="muted small">Aucune étude pour l\'instant.</p>'}<div id="mat-retenu" data-affaire="${esc(a.id)}">${materielRetenuHtml(materielChantier.get(a.id) || MaterielRetenu.pourChantier(liens), false)}</div></div>`;
 }
 // Matériel retenu par les études (fabricant, référence exacte, validation du client) : bureau et appli des compagnons
 const BADGE_MAT = { Validé: 'b-ok', 'Validé avec réserves': 'b-ok', 'Soumis au client': 'b-info', 'À soumettre': 'b-warn' };
+const etatPose = m => (m.mesLe ? `<span class="badge b-ok">✅ en service ${dateFr(m.mesLe)}</span>` : m.poseLe ? `<span class="badge b-info">🔧 posé ${dateFr(m.poseLe)}</span>` : '');
 function materielRetenuHtml(ms, mobile) {
-  if (!ms || !ms.length) return mobile ? '' : '';
-  const nv = ms.filter(m => m.valide).length;
-  const ligne = m => `<span><strong>${esc(m.designation)}</strong>${m.qte ? ` <span class="muted small">× ${fmt(m.qte, 0)}</span>` : ''}<br><span class="mat-ref">${esc([m.fabricant, m.reference].filter(Boolean).join(' — '))}</span>${m.obs ? `<br><span class="small muted">${esc(m.obs)}</span>` : ''}${m.fiche ? ` <a class="small" href="${esc(m.fiche)}" target="_blank" rel="noopener">fiche technique</a>` : ''}</span>
-    <span><span class="badge ${BADGE_MAT[m.statut] || ''}">${m.valide ? '✓ ' : ''}${esc(m.statut === 'Soumis au client' || m.statut === 'À soumettre' ? 'en attente de validation' : m.statut)}</span></span>`;
-  return `<h${mobile ? 2 : 3}>🏷️ Matériel retenu <span class="muted small">${nv}/${ms.length} validé(s) par le client</span></h${mobile ? 2 : 3}>
+  if (!ms || !ms.length) return '';
+  const nv = ms.filter(m => m.valide).length, auj = isoDate(new Date()), relance = ms.filter(m => MaterielRetenu.aRelancer(m, auj));
+  const nonValides = ms.filter(m => !m.valide).length, poses = ms.filter(m => m.poseLe).length;
+  const ligne = (m, i) => `<span><strong>${esc(m.designation)}</strong>${m.qte ? ` <span class="muted small">× ${fmt(m.qte, 0)}</span>` : ''}<br><span class="mat-ref">${esc([m.fabricant, m.reference].filter(Boolean).join(' — '))}</span>${m.obs ? `<br><span class="small muted">${esc(m.obs)}</span>` : ''}${m.fiche ? ` <a class="small" href="${esc(m.fiche)}" target="_blank" rel="noopener">fiche technique</a>` : ''}
+      ${(m.photos || []).length ? `<br>${m.photos.map(p => `<a class="small" href="${fileUrl(p.fichierId)}" target="_blank" rel="noopener">📷 plaque ${dateFr(p.le)}</a>`).join(' ')}` : ''}
+      ${mobile && m.valide ? `<span class="mat-actions">${m.poseLe ? `<button type="button" class="small secondary" data-mat="${i}" data-act="${m.mesLe ? 'annulerMes' : 'mes'}">${m.mesLe ? 'Annuler la mise en service' : '✅ Mis en service'}</button>${m.mesLe ? '' : `<button type="button" class="small secondary" data-mat="${i}" data-act="annulerPose">Annuler la pose</button>`}` : `<button type="button" class="small" data-mat="${i}" data-act="pose">🔧 Posé</button>`}
+        <label class="btn small secondary">📷 Plaque<input type="file" accept="image/*" capture="environment" data-photo="${i}" hidden></label></span>` : ''}</span>
+    <span><span class="badge ${BADGE_MAT[m.statut] || ''}">${m.valide ? '✓ ' : ''}${esc(m.statut === 'Soumis au client' || m.statut === 'À soumettre' ? 'en attente de validation' : m.statut)}</span>
+      ${!mobile && MaterielRetenu.aRelancer(m, auj) ? '<br><span class="badge b-bad">à relancer</span>' : ''}${etatPose(m) ? `<br>${etatPose(m)}` : ''}</span>`;
+  return `<h${mobile ? 2 : 3}>🏷️ Matériel retenu <span class="muted small">${nv}/${ms.length} validé(s) par le client${poses ? ` · ${poses} posé(s)` : ''}</span></h${mobile ? 2 : 3}>
     ${mobile && nv < ms.length ? '<p class="small muted">Ce qui est « en attente de validation » ne se commande ni ne se pose sans l\'accord du chargé d\'affaires.</p>' : ''}
-    <ul class="mat-liste">${ms.map((m, i) => `${i === 0 || ms[i - 1].chapitre !== m.chapitre ? `<li class="mat-famille">${esc(m.chapitre || 'Équipements')}</li>` : ''}<li>${ligne(m)}</li>`).join('')}</ul>`;
+    ${mobile ? '' : `<div class="toolbar" style="margin:4px 0 8px">${nonValides ? `<button class="small" id="mat-envoyer">✉️ ${relance.length ? `Relancer le client (${relance.length} sans réponse depuis 15 jours)` : `Envoyer au client pour validation (${nonValides})`}</button>` : ''}
+      ${nv && Store.can('write', 'consultations') ? `<button class="small secondary" id="mat-consulter">🛒 Consulter les fournisseurs sur le matériel validé (${nv})</button>` : ''}</div>`}
+    <ul class="mat-liste">${ms.map((m, i) => `${i === 0 || ms[i - 1].chapitre !== m.chapitre ? `<li class="mat-famille">${esc(m.chapitre || 'Équipements')}</li>` : ''}<li>${ligne(m, i)}</li>`).join('')}</ul>`;
 }
-// Appli des compagnons : chargé à l'affichage de la fiche du chantier
+// Chargé à l'affichage de la fiche du chantier (bureau et appli des compagnons), avec le suivi de chaque ligne
 const materielChantier = new Map();
 async function chargerMaterielRetenu(root, affaireId) {
-  const z = root.querySelector('#mat-retenu');
-  if (!z) return;
+  if (!root.querySelector('#mat-retenu')) return;
   try { materielChantier.set(affaireId, await api('GET', `/api/liens/materiel?affaireId=${encodeURIComponent(affaireId)}`)); } catch (e) { if (!materielChantier.has(affaireId)) return; }
   const n = document.querySelector(`#mat-retenu[data-affaire="${CSS.escape(affaireId)}"]`);
-  if (n) n.innerHTML = materielRetenuHtml(materielChantier.get(affaireId), true);
+  if (n) { n.innerHTML = materielRetenuHtml(materielChantier.get(affaireId), n.dataset.mobile === '1'); bindMaterielRetenu(n, affaireId); }
+}
+function bindMaterielRetenu(z, affaireId) {
+  const ms = materielChantier.get(affaireId) || [], a = Store.get('affaires', affaireId);
+  const env = z.querySelector('#mat-envoyer');
+  if (env) env.onclick = () => envoyerParMail('materiel', affaireId);
+  const cons = z.querySelector('#mat-consulter');
+  if (cons) cons.onclick = () => { location.hash = '#/consultations/' + nouvelleConsultation({ affaireId, objet: `Matériel validé ${(a || {}).code || ''} (bureau d'études)`, lignes: lignesMaterielValide(ms) }).id; };
+  // Compagnons : pose, mise en service, photo de la plaque signalétique
+  const suivre = (m, action, extra = {}) => api('POST', '/api/liens/materiel/suivi', { affaireId, action, lignes: [{ etudeId: m.etudeId, cle: m.cle }], ...extra })
+    .then(() => { App.toast(`${m.designation} : ${MaterielRetenu.ACTIONS[action].toLowerCase()}`); return chargerMaterielRetenu(document, affaireId); }).catch(e => notify(e.message));
+  z.querySelectorAll('[data-mat]').forEach(b => b.onclick = () => suivre(ms[+b.dataset.mat], b.dataset.act));
+  z.querySelectorAll('[data-photo]').forEach(inp => inp.onchange = async () => {
+    const f = inp.files && inp.files[0], m = ms[+inp.dataset.photo];
+    if (!f || !m) return;
+    try { const r = await api('POST', '/api/files', { dataUrl: await compressImage(f, 1600, 0.8) }); await suivre(m, 'photo', { fichierId: r.id, nom: f.name }); } catch (e) { notify(`Photo : ${e.message}`); }
+  });
+}
+// Lignes de consultation : matériel validé, avec fabricant et référence exacte
+const lignesMaterielValide = ms => ms.filter(m => m.valide).map(m => ({ articleId: '', designation: `${m.designation} — ${[m.fabricant, m.reference].filter(Boolean).join(' ')}${m.obs ? ` (${m.obs})` : ''}`, unite: 'u', qte: num(m.qte) || 1 }));
+// Liste envoyée au client (PDF joint à l'e-mail) : une case d'avis par ligne et un cadre de visa
+function materielDocument(a, ms) {
+  const chapitres = [...new Set(ms.map(m => m.chapitre))];
+  return `${Doc.entete('materiel', Doc.t('materiel').titre, `Chantier ${esc(a.code || '')} – ${esc(a.nom || '')}<br>Date : ${dateFr(isoDate(new Date()))}`)}
+    <p>Les équipements ci-dessous ont été dimensionnés par notre bureau d'études. Nous proposons les modèles indiqués : merci de porter votre avis sur chaque ligne et de nous retourner la liste visée avant commande.</p>
+    <table class="doc-lines compact"><tr><th>N°</th><th>Équipement</th><th class="num">Qté</th><th>Fabricant</th><th>Référence</th><th style="width:22%">Avis (V / VO / R) et observations</th></tr>
+    ${chapitres.map(ch => `<tr><td colspan="6"><strong>${esc(ch || 'Équipements')}</strong></td></tr>${ms.filter(m => m.chapitre === ch).map(m => `<tr><td>${ms.indexOf(m) + 1}</td><td>${esc(m.designation)}${m.fiche ? `<br><span class="small">${esc(m.fiche)}</span>` : ''}</td><td class="num">${fmt(m.qte, 0)}</td><td>${esc(m.fabricant)}</td><td><strong>${esc(m.reference)}</strong></td><td></td></tr>`).join('')}`).join('')}</table>
+    <p class="small">V : validé · VO : validé avec observations · R : refusé (merci de préciser le motif).</p>
+    ${Doc.pied('materiel', '', '<table class="doc-lines"><tr><th>Visa du client / de la maîtrise d\'œuvre</th><th>Nom et qualité</th><th>Date</th><th>Signature</th></tr><tr><td style="height:60px">Bon pour accord</td><td></td><td></td><td></td></tr></table>')}`;
 }
 // Étude d'exécution et DOE (application DOE)
 function etudeExecutionHtml(a, l) {

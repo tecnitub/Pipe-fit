@@ -128,6 +128,7 @@
       return vraiFetch(dataUrl);
     }
     if (p[0] === 'pf' && p[1] === 'rex') return rep(200, RexPF(crm() || seed));
+    if (p[0] === 'pf' && p[1] === 'materiel-suivi') return rep(200, ((crm() || {}).materielSuivi || []).filter(x => x.etudeId === new URL(url, 'http://x').searchParams.get('etudeId')));
     // Reliée au CRM : devis et note de calcul créés par la page du CRM
     if (dansCrm && p[0] === 'pf' && ['document', 'devis'].includes(p[1]) && method === 'POST') {
       const b = body();

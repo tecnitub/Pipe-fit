@@ -12,23 +12,34 @@ const badgeStatut = s => `<span class="badge ${BADGE_STATUT[s] || ''}">${esc(s)}
 function carteMateriel(et) {
   const ls = lignesMateriel(et);
   if (!ls.length) return '';
-  const b = MaterielRetenu.bilan(ls);
-  return `<div class="carte petit">🏷️ <strong>Matériel retenu</strong> : ${b.total - b.aChoisir}/${b.total} référence(s) choisie(s) · ${b.valides} validée(s) par le client${b.soumis ? ` · ${b.soumis} soumise(s)` : ''}${b.aSoumettre ? ` · ${b.aSoumettre} à soumettre` : ''}${b.refuses ? ` · <span class="manque">${b.refuses} refusée(s)</span>` : ''}${b.orphelins ? ` · <span class="manque">${b.orphelins} à reprendre</span>` : ''}
+  const b = MaterielRetenu.bilan(ls), relance = ls.filter(l => MaterielRetenu.aRelancer(l, aujourdhui())).length;
+  return `<div class="carte petit">🏷️ <strong>Matériel retenu</strong> : ${b.total - b.aChoisir}/${b.total} référence(s) choisie(s) · ${b.valides} validée(s) par le client${b.soumis ? ` · ${b.soumis} soumise(s)` : ''}${relance ? ` · <span class="manque">${relance} sans réponse depuis plus de 15 jours : relancer le client</span>` : ''}${b.aSoumettre ? ` · ${b.aSoumettre} à soumettre` : ''}${b.refuses ? ` · <span class="manque">${b.refuses} refusée(s)</span>` : ''}${b.orphelins ? ` · <span class="manque">${b.orphelins} à reprendre</span>` : ''}
     <button class="secondaire petit" id="materiel2">Choisir / faire valider</button></div>`;
 }
+
+// Suivi du chantier lu dans Pipe-Fit (soumission envoyée depuis le CRM, pose, mise en service, photos de la plaque)
+const suiviChantier = new Map();
+async function chargerSuivi(et) {
+  if (!et.affaireId) return [];
+  try { const s = await api('GET', `/api/pf/materiel-suivi?etudeId=${encodeURIComponent(et.id)}`); suiviChantier.set(et.id, s); return s; } catch (e) { return suiviChantier.get(et.id) || []; }
+}
+const chantierHtml = s => (s ? [s.mesLe ? `✅ en service le ${dateFr(s.mesLe)}` : s.poseLe ? `🔧 posé le ${dateFr(s.poseLe)}` : '', (s.photos || []).length ? `📷 ${s.photos.length}` : ''].filter(Boolean).join(' · ') : '');
 
 function dialogueMateriel(et) {
   et.materiel = et.materiel || {};
   const box = Modal.open('');
   box.classList.add('large');
+  // Suivi du chantier : les lignes envoyées au client depuis Pipe-Fit passent « soumis au client »
+  chargerSuivi(et).then(s => { const n = MaterielRetenu.reprendreSuivi(et.materiel, lignesMateriel(et), s, aujourdhui()); if (n) { enregistrer(et); toast(`${n} ligne(s) envoyée(s) au client depuis Pipe-Fit : passées « soumis au client »`, 5000); } if (box.isConnected) rendu(); });
   const fermer = () => { box.classList.remove('large'); Modal.close(); App.render(); };
   const rendu = () => {
-    const ls = lignesMateriel(et), b = MaterielRetenu.bilan(ls), chapitres = [...new Set(ls.map(l => l.chapitre))];
+    const ls = lignesMateriel(et), b = MaterielRetenu.bilan(ls), chapitres = [...new Set(ls.map(l => l.chapitre))], suivi = new Map((suiviChantier.get(et.id) || []).map(s => [s.cle, s]));
+    const relance = ls.filter(l => MaterielRetenu.aRelancer(l, aujourdhui()));
     box.innerHTML = `<h2>🏷️ Matériel retenu</h2>
       <p class="muted petit">Pour chaque équipement dimensionné par l'étude : le fabricant et la <strong>référence exacte</strong> choisis. La liste se fait valider par le client ou la maîtrise d'œuvre (PDF), le statut est suivi ligne par ligne. Les références passent dans le métré et le devis, et sur la fiche du chantier dans Pipe-Fit (bureau et appli des compagnons : les gars voient ce qu'ils doivent poser et si c'est validé).</p>
-      <p class="petit">${b.total - b.aChoisir}/${b.total} référence(s) choisie(s) · ${b.valides} validée(s) · ${b.soumis} soumise(s) · ${b.aSoumettre} à soumettre${b.refuses ? ` · <span class="manque">${b.refuses} refusée(s) : choisir une autre référence</span>` : ''}</p>
-      <div class="defile metre"><table class="liste compact"><thead><tr><th>Équipement</th><th>Qté</th><th>Fabricant</th><th>Référence exacte</th><th>Statut</th><th>Soumis le</th><th>Validé le</th><th>Observations du client</th><th>Fiche technique (lien)</th><th></th></tr></thead><tbody>
-      ${chapitres.map(ch => `<tr class="total"><td colspan="10">${esc(ch || 'Équipements')}</td></tr>${ls.map((l, i) => [l, i]).filter(([l]) => l.chapitre === ch).map(([l, i]) => `<tr data-ligne="${i}">
+      <p class="petit">${b.total - b.aChoisir}/${b.total} référence(s) choisie(s) · ${b.valides} validée(s) · ${b.soumis} soumise(s) · ${b.aSoumettre} à soumettre${b.refuses ? ` · <span class="manque">${b.refuses} refusée(s) : choisir une autre référence</span>` : ''}${relance.length ? ` · <span class="manque">${relance.length} sans réponse depuis plus de 15 jours : relancer (depuis la fiche du chantier dans Pipe-Fit, « ✉️ Envoyer au client »)</span>` : ''}</p>
+      <div class="defile metre"><table class="liste compact"><thead><tr><th>Équipement</th><th>Qté</th><th>Fabricant</th><th>Référence exacte</th><th>Statut</th><th>Soumis le</th><th>Validé le</th><th>Observations du client</th><th>Fiche technique (lien)</th><th>Chantier</th><th></th></tr></thead><tbody>
+      ${chapitres.map(ch => `<tr class="total"><td colspan="11">${esc(ch || 'Équipements')}</td></tr>${ls.map((l, i) => [l, i]).filter(([l]) => l.chapitre === ch).map(([l, i]) => `<tr data-ligne="${i}">
         <td>${l.libre ? `<input data-m="designation" value="${esc(l.designation)}" placeholder="Désignation">` : `${esc(l.designation)}${l.orphelin ? '<div class="manque petit">plus dans l\'étude (dimension changée) : reprendre la référence sur la nouvelle ligne puis supprimer</div>' : `<div class="muted petit">${esc(l.sources.join(', '))}</div>`}`}</td>
         <td>${l.libre ? `<input class="nombre qte" data-m="qte" value="${esc(String(l.qte).replace('.', ','))}">` : Notes.nf(l.qte, 0)}</td>
         <td><input style="min-width:110px" data-m="fabricant" value="${esc(l.fabricant)}" placeholder="Fabricant" list="ml-fab"></td>
@@ -37,6 +48,7 @@ function dialogueMateriel(et) {
         <td><input type="date" style="width:132px" data-m="dateSoumission" value="${esc(l.dateSoumission)}"></td><td><input type="date" style="width:132px" data-m="dateValidation" value="${esc(l.dateValidation)}"></td>
         <td><input data-m="obs" value="${esc(l.obs)}" placeholder="Réserves, remarques"></td>
         <td><input style="width:110px" data-m="fiche" value="${esc(l.fiche)}" placeholder="https://…"></td>
+        <td class="petit">${MaterielRetenu.aRelancer(l, aujourdhui()) ? '<span class="badge erreur">à relancer</span> ' : ''}${esc(chantierHtml(suivi.get(l.cle)))}</td>
         <td>${l.libre || l.orphelin ? `<button class="icone" data-suppr="${i}" title="Supprimer">✕</button>` : ''}</td></tr>`).join('')}`).join('')}
       </tbody></table></div>
       <datalist id="ml-fab">${[...new Set(ls.map(l => l.fabricant).filter(Boolean))].map(f => `<option value="${esc(f)}">`).join('')}</datalist>
@@ -87,8 +99,14 @@ async function pdfMateriel(et, ls) {
   try {
     const bytes = await PDF.depuisHTML(pourPdf(htmlMateriel(et, ls)), 'Liste du matériel proposé', null, { margeHaut: 42, margeBas: 42 });
     const a = affaireDe(et.affaireId), nom = `Materiel_a_valider_${sansAccents(a && a.code) || 'ETUDE'}_${sansAccents(et.objet).slice(0, 40)}_Ind${sansAccents(et.indice) || 'A'}.pdf`;
-    box.innerHTML = `<h2>Liste du matériel générée</h2><p><strong>${esc(nom)}</strong> · ${ls.length} équipement(s)</p><p class="petit muted">Après envoi au client, marquer les lignes « soumis au client » ; reporter son avis ligne par ligne au retour.</p>
+    box.innerHTML = `<h2>Liste du matériel générée</h2><p><strong>${esc(nom)}</strong> · ${ls.length} équipement(s)</p>
+      <p class="petit" id="ml-depot">${a ? 'Dépôt dans les documents du chantier…' : '<span class="muted">Étude sans chantier : la liste n\'est pas déposée (téléchargez-la).</span>'}</p>
+      <p class="petit muted">Envoi au client et relances : depuis la fiche du chantier dans Pipe-Fit (« ✉️ Envoyer au client »), les lignes passent alors « soumis au client » ici. Reporter son avis ligne par ligne au retour.</p>
       <div class="actions"><button class="secondaire" id="f">Fermer</button><button id="gen-dl">Télécharger le PDF</button></div>`;
+    // Dépôt automatique dans les documents du chantier (catégorie « Matériel à valider », nouvel indice à chaque dépôt)
+    if (a) api('POST', '/api/pf/document', { affaireId: et.affaireId, etudeId: et.id, categorie: 'Matériel à valider', nom, indice: et.indice, note: `${et.objet} — ${ls.length} équipement(s) à valider`, base64: base64(bytes) })
+      .then(r => { const z = box.querySelector('#ml-depot'); if (z) z.innerHTML = `✓ Déposée dans les documents du chantier ${esc(libelleAffaire(a))} (catégorie « Matériel à valider », indice ${esc(r.indice || '')}).`; })
+      .catch(er => { const z = box.querySelector('#ml-depot'); if (z) z.innerHTML = `<span class="erreur">Dépôt impossible : ${esc(er.message)}</span>`; });
     window.DERNIERE_NOTE = { nom, bytes };
     box.querySelector('#f').onclick = () => dialogueMateriel(et);
     box.querySelector('#gen-dl').onclick = () => enregistrerFichier(box, nom, bytes, 'application/pdf');

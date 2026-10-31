@@ -77,7 +77,28 @@ function creer({ db, broadcast }) {
     db.prepare('DELETE FROM liens_apps WHERE app = ? AND id = ?').run(app, id);
     signaler(app, r.affaire_id);
   }
-  return { APPS, liste, un, enregistrer, relier, relierDevis, supprimer };
+  /* ---------- Suivi du matériel retenu sur le chantier ---------- */
+  // Une ligne par (étude, clé du matériel) : soumission au client, pose, mise en service, photos de la plaque
+  db.exec(`CREATE TABLE IF NOT EXISTS materiel_suivi (etude_id TEXT NOT NULL, cle TEXT NOT NULL, affaire_id TEXT NOT NULL DEFAULT '', data TEXT NOT NULL,
+    updated_at TEXT NOT NULL, PRIMARY KEY (etude_id, cle)); CREATE INDEX IF NOT EXISTS materiel_suivi_affaire ON materiel_suivi (affaire_id);`);
+  const ligneSuivi = r => ({ etudeId: r.etude_id, cle: r.cle, affaireId: r.affaire_id, ...JSON.parse(r.data), maj: r.updated_at });
+  function suivis(f = {}) {
+    if (f.etudeId) return db.prepare('SELECT * FROM materiel_suivi WHERE etude_id = ?').all(String(f.etudeId)).map(ligneSuivi);
+    if (f.affaireId) return db.prepare('SELECT * FROM materiel_suivi WHERE affaire_id = ?').all(String(f.affaireId)).map(ligneSuivi);
+    return [];
+  }
+  // appliquer(data) : nouvelle donnée de la ligne (MaterielRetenu.appliquerSuivi)
+  function suivre(etudeId, cle, affaireId, appliquer) {
+    if (!/^[\w-]{1,64}$/.test(String(etudeId || ''))) throw Object.assign(new Error('Étude invalide'), { status: 400 });
+    if (!cle || String(cle).length > 200) throw Object.assign(new Error('Matériel invalide'), { status: 400 });
+    const r = db.prepare('SELECT * FROM materiel_suivi WHERE etude_id = ? AND cle = ?').get(String(etudeId), String(cle));
+    const data = appliquer(r ? JSON.parse(r.data) : {}), now = new Date().toISOString();
+    db.prepare(`INSERT INTO materiel_suivi (etude_id, cle, affaire_id, data, updated_at) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(etude_id, cle) DO UPDATE SET affaire_id = excluded.affaire_id, data = excluded.data, updated_at = excluded.updated_at`).run(String(etudeId), String(cle), String(affaireId || ''), JSON.stringify(data), now);
+    signaler('etudes', affaireId);
+    return ligneSuivi(db.prepare('SELECT * FROM materiel_suivi WHERE etude_id = ? AND cle = ?').get(String(etudeId), String(cle)));
+  }
+  return { APPS, liste, un, enregistrer, relier, relierDevis, supprimer, suivis, suivre };
 }
 
 module.exports = { creer, APPS };

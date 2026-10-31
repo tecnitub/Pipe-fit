@@ -62,3 +62,21 @@ test('vers le CRM et le chantier : références seulement, refusés écartés, v
   assert.deepStrictEqual(ch.map(x => [x.reference, x.valide]), [['X', true], ['DFC 160', false]]);
   assert.match(M.csv(ls).split('\r\n')[2], /"France Air";"X";"Validé"/);
 });
+
+test('suivi : soumission (relance), pose, mise en service, photo ; à relancer après 15 jours ; repris dans l\'étude', () => {
+  let d = M.appliquerSuivi({}, 'soumis', 'Jacky', '2026-10-01');
+  d = M.appliquerSuivi(d, 'soumis', 'Jacky', '2026-10-20');
+  assert.deepStrictEqual([d.soumisLe, d.relances], ['2026-10-20', ['2026-10-20']]);
+  d = M.appliquerSuivi(d, 'mes', 'Kevin', '2026-11-02');
+  assert.deepStrictEqual([d.poseLe, d.mesLe], ['2026-11-02', '2026-11-02'], 'mise en service : posé aussi');
+  d = M.appliquerSuivi(d, 'annulerPose', 'Kevin', '2026-11-03');
+  assert.ok(!d.poseLe && !d.mesLe);
+  assert.throws(() => M.appliquerSuivi({}, 'photo', 'K', '2026-11-03', { fichierId: '../x' }));
+  assert.throws(() => M.appliquerSuivi({}, 'supprimer', 'K', '2026-11-03'));
+  assert.ok(M.aRelancer({ statut: 'Soumis au client', soumisLe: '2026-10-01' }, '2026-10-20'));
+  assert.ok(!M.aRelancer({ statut: 'Soumis au client', soumisLe: '2026-10-10' }, '2026-10-20'));
+  assert.ok(!M.aRelancer({ statut: 'Validé', soumisLe: '2026-01-01' }, '2026-10-20'));
+  const saisies = { a: { reference: 'R1', statut: 'À soumettre' } }, ls = M.lignes([{ cle: 'a', designation: 'X', qte: 1 }], saisies);
+  assert.strictEqual(M.reprendreSuivi(saisies, ls, [{ cle: 'a', soumisLe: '2026-10-05' }], '2026-10-06'), 1);
+  assert.deepStrictEqual([M.statutDe(saisies.a), saisies.a.dateSoumission], ['Soumis au client', '2026-10-05']);
+});

@@ -185,3 +185,25 @@ test('matériel retenu des études : visible sur le chantier par les compagnons,
   assert.strictEqual((await call(pfBase, 'GET', '/api/liens/materiel?affaireId=af-mat', null, pfJacky)).body.length, 2);
   await call(pfBase, 'PUT', '/api/settings', s, admin);
 });
+
+test('suivi du matériel : soumission par le bureau, pose / mise en service / photo par les compagnons, repris par l\'étude', async () => {
+  const materiel = [{ cle: 'pompe|x', chapitre: 'Hydraulique', designation: 'Pompe', qte: 1, fabricant: 'Wilo', reference: 'Stratos', statut: 'Validé' },
+    { cle: 'bouche|y', chapitre: 'Aéraulique', designation: 'Diffuseur', qte: 8, fabricant: 'Aldes', reference: 'DFC 160', statut: 'À soumettre' }];
+  const admin = (await call(pfBase, 'POST', '/api/login', { login: 'admin', password: 'admin-test-pw' })).cookie;
+  await call(pfBase, 'PUT', '/api/records/affaires/af-suivi', { data: { nom: 'Suivi', statut: 'En cours' } }, admin);
+  await call(pfBase, 'PUT', '/api/liens/etudes/et-suivi', { affaireId: 'af-suivi', resume: { objet: 'Étude suivi', materiel } }, pfJacky);
+  // Compagnon : la soumission au client lui est refusée, la pose non
+  assert.strictEqual((await call(pfBase, 'POST', '/api/liens/materiel/suivi', { affaireId: 'af-suivi', action: 'soumis', lignes: [{ etudeId: 'et-suivi', cle: 'bouche|y' }] }, pfMarc)).status, 403);
+  assert.strictEqual((await call(pfBase, 'POST', '/api/liens/materiel/suivi', { affaireId: 'af-suivi', action: 'soumis', lignes: [{ etudeId: 'et-suivi', cle: 'bouche|y' }] }, pfJacky)).status, 200);
+  assert.strictEqual((await call(pfBase, 'POST', '/api/liens/materiel/suivi', { affaireId: 'af-suivi', action: 'pose', etudeId: 'et-suivi', cle: 'pompe|x' }, pfMarc)).status, 200);
+  assert.strictEqual((await call(pfBase, 'POST', '/api/liens/materiel/suivi', { affaireId: 'af-suivi', action: 'photo', etudeId: 'et-suivi', cle: 'pompe|x', fichierId: 'abc123' }, pfMarc)).status, 200);
+  assert.strictEqual((await call(pfBase, 'POST', '/api/liens/materiel/suivi', { affaireId: 'af-suivi', action: 'pose', etudeId: 'autre', cle: 'pompe|x' }, pfMarc)).status, 400, 'étude d\'un autre chantier');
+  const ms = (await call(pfBase, 'GET', '/api/liens/materiel?affaireId=af-suivi', null, pfMarc)).body;
+  const pompe = ms.find(m => m.cle === 'pompe|x'), bouche = ms.find(m => m.cle === 'bouche|y');
+  assert.ok(pompe.poseLe && pompe.posePar === 'marc' && pompe.photos[0].fichierId === 'abc123');
+  assert.ok(bouche.soumisLe);
+  // L'application Études lit le suivi par Pipe-Fit
+  const c = (await call(etBase, 'POST', '/api/login', { login: 'jacky', password: 'motdepasse1' })).cookie;
+  const s = (await call(etBase, 'GET', '/api/pf/materiel-suivi?etudeId=et-suivi', null, c)).body;
+  assert.deepStrictEqual(s.map(x => x.cle).sort(), ['bouche|y', 'pompe|x']);
+});

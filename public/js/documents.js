@@ -28,6 +28,7 @@ const DOC_TYPES = {
     ['heures', 'Tableau des heures', true], ['horaires', 'Horaires d\'arrivée et de départ', true], ['materiel', 'Matériel fourni', true],
     ['intervenants', 'Noms des intervenants', true], ['photos', 'Photos', true], ['observations', 'Observations', true]] },
   pv: { label: 'PV de réception', titre: '', conditions: '', options: [['presents', 'Liste des présents', true], ['observations', 'Observations', true]] },
+  materiel: { label: 'Matériel proposé à la validation', titre: 'MATÉRIEL PROPOSÉ À LA VALIDATION', conditions: '', options: [] },
 };
 
 const DOC_POLICES = { sans: 'Système (sans empattement)', serif: 'Classique (avec empattement)', mono: 'Technique (chasse fixe)' };

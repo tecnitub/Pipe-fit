@@ -32,6 +32,8 @@ const MAIL_TYPES = {
     corps: 'Madame, Monsieur,\n\nVeuillez trouver ci-joint notre mise en demeure de payer la facture {numero} du {date} ({chantier}), échue depuis le {echeance}, pour un montant restant dû de {reste_du} TTC.\n\nCe courrier vous est également adressé par lettre recommandée avec accusé de réception.\n\n{signature}' },
   liberationRG: { label: 'Demande de libération de la retenue de garantie', objet: 'Libération de la retenue de garantie – {chantier}',
     corps: 'Bonjour {contact},\n\nLa réception des travaux du chantier {chantier} a été prononcée le {date_reception}. Le délai de garantie d\'un an étant écoulé, nous vous remercions de bien vouloir procéder à la libération de la retenue de garantie, soit {montant_ttc} TTC.\n\nVous trouverez ci-joint le récapitulatif des retenues pratiquées sur nos factures.\n\nCordialement,\n\n{signature}' },
+  materiel: { label: 'Matériel proposé à la validation', objet: '{relance_objet}Matériel proposé à votre validation – {chantier}',
+    corps: 'Bonjour {contact},\n\n{relance_phrase}Veuillez trouver ci-joint la liste du matériel que nous proposons pour le chantier {chantier} ({nb_equipements} équipement(s) : fabricants et références).\nMerci de nous retourner votre avis ligne par ligne (validé, validé avec observations ou refusé) avant le {date_limite}, afin que nous puissions passer commande.\n\nCordialement,\n\n{signature}' },
   pv: { label: 'PV de réception', objet: 'Procès-verbal {numero} – {chantier}',
     corps: 'Bonjour {contact},\n\nVeuillez trouver ci-joint le procès-verbal {numero} du {date} relatif au chantier {chantier}.\n\nCordialement,\n\n{signature}' },
 };
@@ -41,6 +43,7 @@ const MAIL_VARIABLES = [
   ['echeance', 'Échéance (facture)'], ['validite', 'Validité (devis)'], ['rang', 'N° de situation'], ['retenue_phrase', '« , soit … TTC (retenue de garantie…, net à payer …) » (situation)'], ['ref_commande', '« , votre commande n° … »'],
   ['date_livraison_phrase', '« pour le … » (date de livraison)'], ['facture_origine', 'Facture d\'origine (avoir)'], ['date_limite', 'Date limite de remise des offres'], ['motif_phrase', '« (motif) » de l\'avoir'], ['adresse_livraison', 'Adresse de livraison'], ['signataire_phrase', '« , signé par … »'],
   ['reste_du', 'Montant restant dû TTC (relances)'], ['jours_retard', 'Nombre de jours de retard (relances)'], ['date_reception', 'Date de réception des travaux (retenue de garantie)'],
+  ['nb_equipements', 'Nombre d\'équipements proposés (matériel)'], ['relance_phrase', '« Pour rappel, … » si la liste a déjà été envoyée (matériel)'], ['relance_objet', '« Relance : » (matériel)'],
   ['societe', 'Votre société'], ['expediteur', 'Votre nom'], ['signature', 'Signature'],
 ];
 
@@ -62,6 +65,19 @@ function mailContexte(type, id) {
   const chantier = a => (a && a.code ? `${a.code} – ${a.nom}` : (a && a.nom) || '');
   let x;
   switch (type) {
+    // Matériel retenu par les études du chantier, à faire valider par le client ou la maîtrise d'œuvre (id : chantier)
+    case 'materiel': {
+      const a = Store.get('affaires', id), tout = (typeof materielChantier !== 'undefined' && materielChantier.get(id)) || [];
+      const ms = tout.filter(m => !m.valide).length ? tout.filter(m => !m.valide) : tout;
+      if (!a || !ms.length) return null;
+      const deja = ms.filter(m => m.soumisLe).map(m => m.soumisLe).sort()[0], limite = new Date(Date.now() + 15 * 864e5);
+      return { ref: { col: 'affaires', id }, numero: a.code || '', entrepriseId: a.moeId || a.clientId, contactId: a.moeId ? a.moeContactId : a.contactId, chargeId: a.chargeId,
+        fichier: `Matériel à valider ${a.code || ''}`, html: () => materielDocument(a, ms),
+        vars: { chantier: chantier(a), objet: a.nom, nb_equipements: String(ms.length), date_limite: dateFr(isoDate(limite)),
+          relance_phrase: deja ? `Pour rappel, cette liste vous a été adressée le ${dateFr(deja)} et nous n'avons pas encore votre retour. ` : '', relance_objet: deja ? 'Relance : ' : '' },
+        apres: () => api('POST', '/api/liens/materiel/suivi', { affaireId: id, action: 'soumis', lignes: ms.map(m => ({ etudeId: m.etudeId, cle: m.cle })) })
+          .then(() => { materielChantier.delete(id); liensModifies(id); }).catch(e => notify(e.message)) };
+    }
     case 'devis': {
       const d = Store.get('devis', id); if (!d) return null;
       const a = affaireOf(d.affaireId), t = Calc.doc(d);
