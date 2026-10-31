@@ -104,8 +104,11 @@ const CctpLecture = (() => {
       const q = /(?:quantit[ée]|nombre|qt[ée])\s*[:=]?\s*(\d{1,4})\b/i.exec(corps) || /\b(\d{1,3})\s*(?:unit[ée]s?|exemplaires?|ensembles?)\b/i.exec(corps);
       const marque = /marque\s*[:\-]?\s*([A-Z][\w&'\-]+(?:\s[A-Z][\w&'\-]+)?)/.exec(corps), type = /(?:type|mod[eè]le|gamme|s[ée]rie)\s*[:\-]?\s*([A-Z0-9][\w\-/+]{1,24}(?:\s[A-Z0-9][\w\-/+]{1,12})?)/.exec(corps);
       const caract = [...new Set([...corps.matchAll(/(\d+(?:[.,]\d+)?)\s*kW\b/g)].map(x => `${x[1]} kW`).slice(0, 2).concat([...corps.matchAll(/(\d[\d\s]{0,6}(?:[.,]\d+)?)\s*m(?:3|³)\s*\/\s*h/g)].map(x => `${x[1].replace(/\s/g, ' ').trim()} m³/h`).slice(0, 2)))].join(' · ');
+      // Régime de température cité (« régime 70/50 °C »), utile au schéma de principe de l'étude
+      const reg = /(\d{1,2})\s*\/\s*(\d{1,2})\s*°\s*C\b/.exec(corps);
+      const caractR = reg && !caract.includes(`${reg[1]}/${reg[2]} °C`) ? [caract, `${reg[1]}/${reg[2]} °C`].filter(Boolean).join(' · ') : caract;
       const prescrit = [marque && `marque ${marque[1]}`, type && `type ${type[1]}`].filter(Boolean).join(', ') + (/ou [ée]quivalent/i.test(corps) && (marque || type) ? ' ou équivalent' : '');
-      const base = { article: a.num, designation: a.titre, famille: t[1], prefixe: t[2], prescrit, caract };
+      const base = { article: a.num, designation: a.titre, famille: t[1], prefixe: t[2], prescrit, caract: caractR };
       if (reps.length) reps.forEach(rep => r.equipements.push({ ...base, repere: rep, quantite: 1 }));
       else r.equipements.push({ ...base, repere: '', quantite: q ? +q[1] : 1 });
     }

@@ -64,6 +64,15 @@ Les résultats sont recalculés à chaque frappe. Chaque calcul affiche ses hypo
 (non-conformité, point d'attention). Les **calculs rapides** (page d'accueil) se font sans rien enregistrer, puis se versent
 dans une étude. Les valeurs sont des données de pré-dimensionnement : les documents des fabricants et les normes font foi.
 
+**CCTP et DPGF** (« 📑 CCTP / DPGF » sur une étude) : le CCTP (PDF) et le DPGF (Excel, CSV ou PDF), chargés ici ou pris dans
+les documents du chantier Pipe-Fit (catégorie CCTP, ou « DPGF » dans le nom), sont lus sur le poste. Producteurs
+(chaudières, PAC, groupes froids, sous-stations), émetteurs (radiateurs, planchers, ventilo-convecteurs, aérothermes, CTA,
+ECS, splits) et auxiliaires (pompes, vannes, ventilation, régulation) sont reconnus et rapprochés : quantités du DPGF,
+repères, prescriptions et régime du CCTP, puissance de l'un ou de l'autre. L'inventaire se vérifie dans un tableau, puis
+« 🗺️ Créer le schéma de principe » (générateurs en cascade, régime, un circuit par émetteur) et « ⚡ Créer l'alimentation
+électrique » (un équipement par unité) préremplissent l'étude ; l'inventaire enregistré est aussi repris par « ⚡ Reprendre
+les équipements de l'étude ». Un CCTP scanné (sans texte) ne se lit pas : demander le PDF d'origine.
+
 ## Lien avec Pipe-Fit
 
 - **Connexion** : mêmes identifiants que Pipe-Fit, réservée au bureau (administrateur, chargé d'affaires).
@@ -120,6 +129,7 @@ etudes/public/js/modeles.js  modèles d'études intégrés et instanciation des 
 etudes/public/js/metre.js    métré, rapprochement avec la bibliothèque de prix Pipe-Fit, lignes de devis, ratios réglables et calage
 etudes/public/js/industriel.js condensats, gaz, ventilation de chaufferie, NPSH, coup de bélier, ECS
 etudes/public/js/equilibrage.js réseau arborescent, circuit le plus défavorisé, réglage des vannes d'équilibrage
+etudes/public/js/inventaire.js  inventaire de l'étude d'après le CCTP et le DPGF (lecture, vérification, préremplissage) ; reconnaissance dans public/js/inventaire-cvc.js
 etudes/public/js/electricite.js alimentation électrique (attentes, armoires CVC, départs, bilan), régulation (points, analyse fonctionnelle), schéma unifilaire
 etudes/public/js/cta.js      centrale de traitement d'air (psychrométrie, schéma), bouches, bilan acoustique
 etudes/rex.js                retour d'expérience Pipe-Fit (heures prévues / pointées) pour le calage du métré

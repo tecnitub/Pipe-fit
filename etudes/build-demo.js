@@ -14,7 +14,8 @@ const inlineScript = code => `<script>\n${code.replace(/<\/script/gi, '<\\/scrip
 const logo = `data:image/png;base64,${fs.readFileSync(path.join(root, 'doe', 'public', 'logo-tecnitub.png')).toString('base64')}`;
 const avecLogo = s => s.replace(/(["'])logo-tecnitub\.png\1/g, `$1${logo}$1`);
 // Fichiers partagés servis par le serveur Études (voir PARTAGES dans etudes/server.js)
-const PARTAGES = { 'shared/pdf.js': 'public/js/pdf.js', 'shared/pdf-lib.min.js': 'doe/public/vendor/pdf-lib-1.17.1.min.js' };
+const PARTAGES = { 'shared/pdf.js': 'public/js/pdf.js', 'shared/pdf-lib.min.js': 'doe/public/vendor/pdf-lib-1.17.1.min.js',
+  ...Object.fromEntries(['pdf-lecture.js', 'cctp-lecture.js', 'xlsx.js', 'inventaire-cvc.js'].map(f => [`shared/${f}`, `public/js/${f}`])) };
 
 const html = read('etudes/public/index.html');
 const body = html.slice(html.indexOf('>', html.indexOf('<body')) + 1, html.indexOf('</body>'));
@@ -39,6 +40,10 @@ const page = [
 ].join('\n');
 
 fs.mkdirSync(path.dirname(out), { recursive: true });
+// Lecteur de PDF (lecture du CCTP et du DPGF) : publié à côté de la page, dans vendor/pdfjs/
+const pdfDir = path.join(path.dirname(out), 'vendor', 'pdfjs');
+fs.mkdirSync(pdfDir, { recursive: true });
+['pdf.min.js', 'pdf.worker.min.js'].forEach(f => fs.copyFileSync(path.join(root, 'public/vendor/pdfjs', f), path.join(pdfDir, f)));
 // Reliée au CRM, elle est publiée à côté de sa page comme fichier servi tel quel : document HTML complet
 fs.writeFileSync(out, cleCrm ? `<!doctype html>\n<html lang="fr">\n<head>\n<meta charset="utf-8">\n</head>\n<body>\n${page}\n</body>\n</html>\n` : page);
 console.log(`Démo Études : ${out} (${Math.round(fs.statSync(out).size / 1024)} Ko)`);

@@ -49,11 +49,20 @@ test('affaires de Pipe-Fit : seules les informations utiles sont transmises', as
   const c = await connexion('jacky');
   const d = (await call(base, 'GET', '/api/pf/affaires', null, c)).body;
   assert.ok(d.affaires.length && d.entreprises.length);
-  assert.ok(Object.keys(d.affaires[0]).every(k => ['clientId', 'contactId', 'siteId', 'chargeId', 'code', 'id', 'nom', 'statut', 'type'].includes(k)) && d.affaires[0].id);
+  assert.ok(Object.keys(d.affaires[0]).every(k => ['clientId', 'contactId', 'siteId', 'chargeId', 'code', 'id', 'nom', 'statut', 'type', 'documents'].includes(k)) && d.affaires[0].id);
+  // Documents du chantier : seulement CCTP et DPGF (préremplissage de l'étude)
+  assert.ok(d.affaires.every(a => a.documents.every(x => x.categorie === 'CCTP' || /cctp|dpgf|dqe|bpu/i.test(x.nom))));
   assert.ok(Object.keys(d.entreprises[0]).every(k => ['id', 'nom', 'regimeTVA', 'categorie'].includes(k)));
   // Devis : de quoi relier une étude faite avant la commande, sans les montants
   assert.ok(d.devis.length && Object.keys(d.devis[0]).every(k => ['id', 'numero', 'objet', 'clientId', 'statut', 'affaireId'].includes(k)));
   assert.ok(d.articles.every(a => !('fournisseurId' in a)), 'pas de données fournisseurs inutiles');
+  // Fichier d'un document du chantier lu au travers de l'application (CCTP, DPGF)
+  const admin = (await call(pfBase, 'POST', '/api/login', { login: 'admin', password: 'admin-test-pw' })).cookie;
+  const doc = (await call(pfBase, 'GET', '/api/data', null, admin)).body.affaires.flatMap(a => a.documents || []).find(x => /pdf/.test(x.mime || ''));
+  const f = await call(base, 'GET', `/api/pf/fichier/${doc.fichierId}`, null, c);
+  assert.strictEqual(f.status, 200);
+  assert.strictEqual(f.body.subarray(0, 4).toString(), '%PDF');
+  assert.strictEqual((await call(base, 'GET', '/api/pf/fichier/inconnu', null, c)).status, 404);
 });
 
 test('études versionnées : création, conflit, suppression', async () => {

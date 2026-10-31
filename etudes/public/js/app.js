@@ -318,7 +318,7 @@ Vues.etude = {
     if (noteId) return Vues.note.html(et, noteId);
     const a = affaireDe(et.affaireId);
     return `<div class="barre"><a href="#/" class="secondaire btn petit">← Études</a><h1 class="titre-etude">${esc(et.objet)}</h1><span class="badge pf">${et.modele ? 'Modèle' : `Indice ${esc(et.indice)}`}</span>
-        <span class="espace"></span><span class="muted petit" id="etat-enreg"></span><button class="secondaire" id="chiffrer">💶 Métré et chiffrage</button><button id="pdf">📄 Note de calcul PDF</button></div>
+        <span class="espace"></span><span class="muted petit" id="etat-enreg"></span><button class="secondaire" id="inventaire">📑 CCTP / DPGF</button><button class="secondaire" id="chiffrer">💶 Métré et chiffrage</button><button id="pdf">📄 Note de calcul PDF</button></div>
       <div class="carte"><div class="grille-champs">
         <label class="large">Objet<input data-e="objet" value="${esc(et.objet)}"></label>
         <label>Affaire Pipe-Fit<select data-e="affaireId">${optionsAffaires(et.affaireId)}</select></label>
@@ -331,6 +331,8 @@ Vues.etude = {
         <div class="actions-ligne"><button class="secondaire petit" id="indice">Nouvel indice (${esc(suivantIndice(et.indice))})</button>
           ${et.historique.length ? `<span class="petit muted">Historique : ${et.historique.map(h => `${esc(h.indice)} du ${dateFr(h.date)}${h.motif ? ` (${esc(h.motif)})` : ''}`).join(' · ')}</span>` : ''}
           <span class="espace"></span><button class="secondaire petit" id="dupliquer">Dupliquer l'étude</button>${et.modele ? '' : '<button class="secondaire petit" id="modele">⭐ Enregistrer comme modèle</button>'}<button class="secondaire petit" id="supprimer">Supprimer</button></div></div>
+      ${(et.inventaire || []).length ? (() => { const inc = et.inventaire.filter(x => x.inclus !== false), nb = c => inc.filter(x => x.categorie === c).reduce((t, x) => t + (Notes.num(x.qte) || 1), 0), lignes = c => inc.filter(x => x.categorie === c).length;
+        return `<div class="carte petit">📑 <strong>Inventaire du dossier de consultation</strong> : ${nb('producteur')} producteur(s), ${lignes('emetteur')} type(s) d'émetteurs, ${lignes('auxiliaire')} type(s) d'auxiliaires — ${esc([...new Set(inc.map(x => InventaireCVC.GENRES[x.genre] && InventaireCVC.GENRES[x.genre].libelle).filter(Boolean))].join(', '))} <button class="secondaire petit" id="inventaire2">Voir / préremplir</button></div>`; })() : ''}
       <div class="barre"><h2>Calculs <span class="compte">${et.notes.length}</span></h2><button id="ajout">+ Ajouter un calcul</button><span class="espace"></span>
         ${et.notes.length > 1 ? '<button class="secondaire" id="comparer" disabled title="Cocher au moins deux calculs">⚖️ Comparer la sélection</button>' : ''}</div>
       ${et.notes.length ? `<div class="notes">${et.notes.map((n, i) => { const t = Notes.TYPES[n.type], r = Liens.calculer(et, n), err = r.alertes.filter(x => x.niveau === 'erreur').length, att = r.alertes.filter(x => x.niveau === 'attention').length;
@@ -356,6 +358,9 @@ Vues.etude = {
     });
     root.querySelector('#pdf').onclick = () => genererNoteCalcul(et);
     root.querySelector('#chiffrer').onclick = () => dialogueChiffrage(et);
+    root.querySelector('#inventaire').onclick = () => dialogueInventaire(et);
+    const inv2 = root.querySelector('#inventaire2');
+    if (inv2) inv2.onclick = () => tableauInventaire(et, et.inventaire.map(x => ({ ...x })), []);
     root.querySelector('#ajout').onclick = () => dialogueAjoutCalcul(et);
     root.querySelector('#indice').onclick = () => {
       const b = Modal.open(`<h2>Nouvel indice ${esc(suivantIndice(et.indice))}</h2><label>Motif de la révision<input id="motif" placeholder="Ex. : prise en compte des remarques du BET"></label>

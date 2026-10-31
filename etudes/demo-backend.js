@@ -39,7 +39,8 @@
   const lienCrm = id => ((crm() || {}).liens || []).find(l => l.app === 'etudes' && l.id === id && l.affaireId);
   const reprendreLiens = () => db.etudes.filter(e => !e.modele && !e.affaireId).forEach(e => { const l = lienCrm(e.id); if (l) { e.affaireId = l.affaireId; e._v += 1; e._at = new Date().toISOString(); } });
   const src = crm() || seed;
-  const pf = { affaires: (src.affaires || []).map(a => ({ id: a.id, code: a.code, nom: a.nom, clientId: a.clientId, contactId: a.contactId, siteId: a.siteId, chargeId: a.chargeId, statut: a.statut, type: a.type })),
+  const pf = { affaires: (src.affaires || []).map(a => ({ id: a.id, code: a.code, nom: a.nom, clientId: a.clientId, contactId: a.contactId, siteId: a.siteId, chargeId: a.chargeId, statut: a.statut, type: a.type,
+    documents: (a.documents || []).filter(x => x.categorie === 'CCTP' || /\b(cctp|dpgf|dqe|bpu)\b/i.test(x.nom || '')).map(x => ({ id: x.id, nom: x.nom, fichierId: x.fichierId, mime: x.mime, categorie: x.categorie })) })),
     entreprises: (src.entreprises || []).map(e => ({ id: e.id, nom: e.nom, regimeTVA: e.regimeTVA })),
     articles: (src.articles || []).map(a => ({ id: a.id, ref: a.ref, designation: a.designation, famille: a.famille, sousFamille: a.sousFamille, unite: a.unite, prixVente: a.prixVente, coutRevient: a.coutRevient, poidsUnitaire: a.poidsUnitaire })),
     devis: (src.devis || []).map(x => ({ id: x.id, numero: x.numero, objet: x.objet, clientId: x.clientId, statut: x.statut, affaireId: x.affaireId || '' })),
@@ -120,6 +121,12 @@
     if (p[0] === 'logout') { if (crm()) storage.set(ME_KEY, 'deconnecte'); else storage.del(ME_KEY); return rep(200, { ok: true }); }
     if (p[0] === 'me') return rep(200, { ...s, pipefit: '' });
     if (p[0] === 'pf' && p[1] === 'affaires') return rep(200, pf);
+    // Fichier d'un document du chantier (CCTP, DPGF) : celui de la démo du CRM
+    if (p[0] === 'pf' && p[1] === 'fichier' && p[2]) {
+      const dataUrl = ((crm() || {}).files || seed.files || {})[p[2]];
+      if (!dataUrl) return err(404, 'Fichier introuvable');
+      return vraiFetch(dataUrl);
+    }
     if (p[0] === 'pf' && p[1] === 'rex') return rep(200, RexPF(crm() || seed));
     // Reliée au CRM : devis et note de calcul créés par la page du CRM
     if (dansCrm && p[0] === 'pf' && ['document', 'devis'].includes(p[1]) && method === 'POST') {

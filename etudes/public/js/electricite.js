@@ -234,13 +234,17 @@ const Electricite = ((N, Sc) => {
   // Renvoie des lignes d'équipements { src, rep, designation, type, P (kW), tension, regulation } ; src identifie la source
   function equipementsEtude(etude, Liens) {
     const out = [], notes = (etude.notes || []).filter(n => n.type !== 'elec');
+    // Inventaire du dossier de consultation (CCTP / DPGF) : ses équipements d'abord ; ceux du schéma de même type sont alors écartés
+    const inv = typeof InventaireCVC !== 'undefined' && (etude.inventaire || []).length ? InventaireCVC.versElec(etude.inventaire) : [];
+    out.push(...inv);
+    const dejaInv = new Set(inv.map(x => x.type));
     const kW = w => Math.round(num(w) / 10) / 100;
     const pompeP = (pompe, Pabs) => kW(pompe && pompe.P1 ? pompe.P1 : Pabs);
     notes.forEach((n, ni) => {
       let es, r;
       try { es = Liens.resoudre(etude, n).entrees; r = N.calculer(n.type, es); } catch (err) { return; }
       const v = r.valeurs || {}, titre = n.titre || '';
-      const ajout = (cle, o) => out.push({ src: `${n.id}:${cle}`, ...o });
+      const ajout = (cle, o) => { if (!dejaInv.has(o.type) || o.type === 'sonde') out.push({ src: `${n.id}:${cle}`, ...o }); };
       if (n.type === 'pid') {
         let d; try { d = Sc.dimensionner(es); } catch (err) { return; }
         const G = Sc.GENERATEURS[es.generateur] || ['Générateur'], pac = /^(pac|gf)/.test(es.generateur || '');

@@ -18,7 +18,10 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 // Modules de Pipe-Fit et de l'application DOE servis tels quels : moteur PDF, feuille de style commune, logo
 const PARTAGES = { '/shared/pdf.js': path.join(__dirname, '..', 'public', 'js', 'pdf.js'), '/shared/doe.css': path.join(__dirname, '..', 'doe', 'public', 'css', 'doe.css'),
   '/shared/pdf-lib.min.js': path.join(__dirname, '..', 'doe', 'public', 'vendor', 'pdf-lib-1.17.1.min.js'),
-  '/logo-tecnitub.png': path.join(__dirname, '..', 'doe', 'public', 'logo-tecnitub.png') };
+  '/logo-tecnitub.png': path.join(__dirname, '..', 'doe', 'public', 'logo-tecnitub.png'),
+  // Lecture du CCTP et du DPGF (inventaire des producteurs et émetteurs) : texte des PDF, classeurs Excel
+  ...Object.fromEntries(['pdf-lecture.js', 'cctp-lecture.js', 'xlsx.js', 'inventaire-cvc.js'].map(f => [`/shared/${f}`, path.join(__dirname, '..', 'public', 'js', f)])),
+  ...Object.fromEntries(['pdf.min.js', 'pdf.worker.min.js'].map(f => [`/vendor/pdfjs/${f}`, path.join(__dirname, '..', 'public', 'vendor', 'pdfjs', f)])) };
 const MAX_JSON = 25 * 1024 * 1024, SESSION_JOURS = 14; // note de calcul PDF transmise en JSON (base64)
 const ROLES_ETUDES = ['admin', 'charge'];
 
@@ -72,7 +75,9 @@ async function pipefit(s, chemin, opts = {}) {
 }
 // Seules les informations utiles aux études sont transmises au navigateur : affaires, clients, bibliothèque de prix, main-d'œuvre
 const extraitPF = d => ({
-  affaires: (d.affaires || []).map(a => ({ id: a.id, code: a.code, nom: a.nom, clientId: a.clientId, contactId: a.contactId, siteId: a.siteId, chargeId: a.chargeId, statut: a.statut, type: a.type })),
+  affaires: (d.affaires || []).map(a => ({ id: a.id, code: a.code, nom: a.nom, clientId: a.clientId, contactId: a.contactId, siteId: a.siteId, chargeId: a.chargeId, statut: a.statut, type: a.type,
+    // CCTP et DPGF déposés dans les documents du chantier : lus pour préremplir l'étude
+    documents: (a.documents || []).filter(x => x.categorie === 'CCTP' || /\b(cctp|dpgf|dqe|bpu)\b/i.test(x.nom || '')).map(x => ({ id: x.id, nom: x.nom, fichierId: x.fichierId, mime: x.mime, categorie: x.categorie })) })),
   entreprises: (d.entreprises || []).map(e => ({ id: e.id, nom: e.nom, regimeTVA: e.regimeTVA, categorie: e.categorie })),
   // Devis (étude faite avant la commande, reliée à son devis)
   devis: (d.devis || []).map(x => ({ id: x.id, numero: x.numero, objet: x.objet, clientId: x.clientId, statut: x.statut, affaireId: x.affaireId || '' })),
@@ -141,6 +146,15 @@ async function api(req, res, url) {
     const data = extraitPF(await r.json());
     cacheDonnees.set(s.sid, { t: Date.now(), data });
     return send(res, 200, data);
+  }
+
+  // Fichier d'un document du chantier (CCTP, DPGF), lu par Pipe-Fit avec les droits de la personne
+  if (p[0] === 'pf' && p[1] === 'fichier' && p[2] && method === 'GET') {
+    const r = await pipefit(s, `/api/files/${encodeURIComponent(p[2])}`);
+    if (!r.ok) return fail(res, 404, 'Fichier Pipe-Fit introuvable');
+    const buf = Buffer.from(await r.arrayBuffer());
+    res.writeHead(200, { 'Content-Type': r.headers.get('content-type') || 'application/octet-stream', 'Cache-Control': 'private, max-age=600', 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': 'attachment' });
+    return res.end(buf);
   }
 
   // Retour d'expérience pour caler le métré : chantiers terminés, heures prévues (devis acceptés) et heures pointées par main-d'œuvre
