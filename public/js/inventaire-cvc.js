@@ -30,6 +30,9 @@ const InventaireCVC = (() => {
     [/circulateur|pompes?\b/, 'auxiliaire', 'pompe', 'Pompe'],
     [/vannes? (?:de regulation )?(?:3|trois) voies|\bv3v\b/, 'auxiliaire', 'vanne3v', 'Vanne 3 voies'],
     [/vannes? (?:de regulation )?(?:2|deux) voies|\bv2v\b/, 'auxiliaire', 'vanne2v', 'Vanne 2 voies'],
+    // Émetteurs aérauliques (avant la ventilation : « bouche VMC » est une bouche)
+    [/(?:bouches?|grilles?)[^.]*(?:extraction|reprise|vmc|hygro)|(?:extraction|reprise)[^.]*(?:bouches?|grilles?)/, 'emetteur', 'bouche-extraction', 'Bouches d\'extraction / reprise'],
+    [/(?:bouches?|grilles?)[^.]*soufflage|diffuseurs?|soufflage[^.]*(?:bouches?|grilles?)/, 'emetteur', 'bouche-soufflage', 'Bouches de soufflage'],
     [/desenfumage/, 'auxiliaire', 'desenfumage', 'Désenfumage'],
     [/\bvmc\b|caisson d'(?:extraction|insufflation)|extracteur|tourelle/, 'auxiliaire', 'ventilateur', 'Ventilation'],
     [/vase d'expansion/, 'auxiliaire', 'vase', 'Vase d\'expansion'],
@@ -46,6 +49,8 @@ const InventaireCVC = (() => {
   }
   // Puissance (kW) et régime (« 45/35 °C ») cités dans un texte
   const puissance = texte => { const m = /(\d+(?:[.,]\d+)?)\s*kw(?:c|f|th)?\b/i.exec(String(texte || '')); return m ? nombre(m[1]) : NaN; };
+  // Débit d'air cité (m³/h)
+  const debitAir = texte => { const m = /(\d[\d\s]{0,6}(?:[.,]\d+)?)\s*m(?:3|³)\s*\/\s*h/i.exec(String(texte || '')); return m ? nombre(m[1]) : NaN; };
   const regime = texte => { const m = /(\d{1,2})\s*\/\s*(\d{1,2})\s*°?\s*c\b/i.exec(String(texte || '')); return m ? `${m[1]}/${m[2]}` : ''; };
 
   /* ---------- CCTP ---------- */
@@ -55,7 +60,7 @@ const InventaireCVC = (() => {
       const c = classer(`${x.designation} ${x.caract || ''}`);
       if (!c) return null;
       const texte = `${x.designation} ${x.caract || ''} ${x.prescrit || ''}`;
-      return { ...c, designation: x.designation, qte: Math.max(1, nombre(x.quantite) || 1), P: puissance(texte), regime: regime(texte), repere: x.repere || '', prescrit: x.prescrit || '', sources: [`CCTP art. ${x.article}`] };
+      return { ...c, designation: x.designation, qte: Math.max(1, nombre(x.quantite) || 1), P: puissance(texte), regime: regime(texte), Q: debitAir(texte), repere: x.repere || '', prescrit: x.prescrit || '', sources: [`CCTP art. ${x.article}`] };
     }).filter(Boolean);
   }
 
@@ -76,7 +81,7 @@ const InventaireCVC = (() => {
       const des = String((r || [])[map.designation] ?? '').trim(), q = nombre((r || [])[map.qte]);
       if (!des || !(q > 0)) return;
       const c = classer(des);
-      if (c) items.push({ ...c, designation: des, qte: q, unite: String((r || [])[map.unite] ?? ''), P: puissance(des), regime: regime(des), repere: '', prescrit: '', sources: [`DPGF${map.num !== undefined && r[map.num] ? ` ${String(r[map.num]).trim()}` : ''}`] });
+      if (c) items.push({ ...c, designation: des, qte: q, unite: String((r || [])[map.unite] ?? ''), P: puissance(des), regime: regime(des), Q: debitAir(des), repere: '', prescrit: '', sources: [`DPGF${map.num !== undefined && r[map.num] ? ` ${String(r[map.num]).trim()}` : ''}`] });
     });
     return { items };
   }
@@ -87,7 +92,7 @@ const InventaireCVC = (() => {
       const m = /^\s*([\d.]+[a-z]?)?\s*(.+?)\s+(u|ens|ens\.|ensemble|unite|ml|m|m2|m²|ft|forfait|kg|nb|pce|pièces?)\.?\s+(\d+(?:[.,]\d+)?)(?:\s+[\d\s.,]+€?)*\s*$/i.exec(String(l));
       if (!m) return;
       const c = classer(m[2]);
-      if (c) items.push({ ...c, designation: m[2].trim(), qte: nombre(m[4]) || 1, unite: m[3], P: puissance(m[2]), regime: regime(m[2]), repere: '', prescrit: '', sources: [`DPGF${m[1] ? ` ${m[1]}` : ''}`] });
+      if (c) items.push({ ...c, designation: m[2].trim(), qte: nombre(m[4]) || 1, unite: m[3], P: puissance(m[2]), regime: regime(m[2]), Q: debitAir(m[2]), repere: '', prescrit: '', sources: [`DPGF${m[1] ? ` ${m[1]}` : ''}`] });
     });
     return { items };
   }
@@ -108,10 +113,10 @@ const InventaireCVC = (() => {
       // Même genre : la ligne la plus ressemblante (ou la seule de ce genre de chaque côté)
       const seule = memes.length === 1 && dpgf.filter(x => x.genre === d.genre).length === 1;
       const o = memes.map(m => [m, ressemblance(m.designation, d.designation)]).sort((a, b) => b[1] - a[1]).find(([, s]) => s >= 0.5 || seule);
-      if (o) { const m = o[0]; Object.assign(m, { qte: d.qte, P: Number.isFinite(m.P) ? m.P : d.P, regime: m.regime || d.regime, dpgf: true, sources: [...m.sources, ...d.sources] }); }
+      if (o) { const m = o[0]; Object.assign(m, { qte: d.qte, P: Number.isFinite(m.P) ? m.P : d.P, Q: Number.isFinite(m.Q) ? m.Q : d.Q, regime: m.regime || d.regime, dpgf: true, sources: [...m.sources, ...d.sources] }); }
       else out.push({ id: `d${i}`, ...d, dpgf: true });
     });
-    return out.map(({ dpgf: _, ...x }) => ({ ...x, P: Number.isFinite(x.P) ? x.P : '', inclus: true }));
+    return out.map(({ dpgf: _, ...x }) => ({ ...x, P: Number.isFinite(x.P) ? x.P : '', Q: Number.isFinite(x.Q) ? x.Q : '', inclus: true }));
   }
 
   /* ---------- Vers le schéma de principe ---------- */
@@ -151,12 +156,34 @@ const InventaireCVC = (() => {
     return { entrees: e, alertes };
   }
 
+  /* ---------- Vers le schéma aéraulique ---------- */
+  // Producteur : la CTA (double flux si citée ou s'il y a de la reprise), sinon le caisson d'extraction / d'insufflation ;
+  // émetteurs : une zone par ligne de bouches (débit cité par bouche, sinon 100 m³/h à vérifier)
+  function versSchemaAir(inventaire) {
+    const inc = inventaire.filter(x => x.inclus !== false), alertes = [];
+    const cta = inc.find(x => x.genre === 'cta'), caisson = inc.find(x => x.genre === 'ventilateur'), bS = inc.filter(x => x.genre === 'bouche-soufflage'), bE = inc.filter(x => x.genre === 'bouche-extraction');
+    const e = {};
+    if (cta) { e.producteur = /simple flux|air neuf seul/.test(norm(cta.designation)) && !bE.length ? 'cta-sf' : /melange|recycl/.test(norm(cta.designation)) ? 'cta-melange' : 'cta-df'; e.titreInstallation = cta.designation.slice(0, 60); }
+    else if (caisson) { e.producteur = /insuffl/.test(norm(caisson.designation)) ? 'insufflation' : 'extraction'; e.titreInstallation = caisson.designation.slice(0, 60); }
+    else { e.producteur = bS.length ? 'cta-df' : 'extraction'; alertes.push('Aucune CTA ni caisson reconnu : choisissez le producteur dans le schéma.'); }
+    const df = ['cta-df', 'cta-melange'].includes(e.producteur);
+    let d = 0;
+    e.zones = [...bS.map(x => [x, 'soufflage']), ...bE.map(x => [x, df ? 'reprise' : 'extraction'])].map(([x, reseau]) => {
+      const n = Math.max(1, Math.round(nombre(x.qte) || 1)), q = nombre(x.Q), t = norm(x.designation);
+      if (!(q > 0)) alertes.push(`${x.designation} : débit non trouvé, 100 m³/h par bouche à vérifier.`);
+      d += 10;
+      return { rep: x.designation.slice(0, 40), reseau, type: reseau === 'soufflage' ? (/helic/.test(t) ? 'helico' : /grille/.test(t) ? 'grille' : 'plafond') : 'extraction', n, Q: Math.round((q > 0 ? (q < 2000 && n > 1 ? q * n : q) : 100 * n)), distance: d, L: 6, zeta: 3 };
+    });
+    if (!e.zones.length) alertes.push('Aucune bouche reconnue : ajoutez les zones dans le schéma.');
+    return { entrees: e, alertes };
+  }
+
   /* ---------- Vers l'alimentation électrique ---------- */
   // Lignes d'équipements (format de Electricite.equipementsEtude) ; un équipement par unité jusqu'à 10, regroupé au-delà
   const ELEC = {
     'pac-air': ['pac', 'tri', 'bus'], 'pac-eau': ['pac', 'tri', 'bus'], 'pac-rev': ['pac', 'tri', 'bus'], 'gf-air': ['pac', 'tri', 'bus'],
     'chaudiere-cond': ['generateur', 'mono', 'mod'], 'chaudiere-gaz': ['generateur', 'mono', 'mod'], 'chaudiere-fioul': ['generateur', 'mono', 'mod'], 'chaudiere-bois': ['generateur', 'tri', 'mod'], echangeur: null,
-    cta: ['cta', 'tri', 'bus'], ventilo: ['ventilo', 'mono', 'regul'], aerotherme: ['aerotherme', 'mono', 'tor'], split: ['split', 'mono', 'regul'], ecs: null, radiateurs: null, plancher: null, radiant: null, plafond: null,
+    cta: ['cta', 'tri', 'bus'], 'bouche-soufflage': null, 'bouche-extraction': null, ventilo: ['ventilo', 'mono', 'regul'], aerotherme: ['aerotherme', 'mono', 'tor'], split: ['split', 'mono', 'regul'], ecs: null, radiateurs: null, plancher: null, radiant: null, plafond: null,
     pompe: ['pompe', 'mono', 'tor'], vanne3v: ['vanne', '24V', 'v010'], vanne2v: ['vanne', '24V', 'v010'], ventilateur: ['ventilateur', 'tri', 'var'], desenfumage: ['ventilateur', 'tri', 'torRetour'], vase: null, regulation: null,
   };
   const PELEC = { pac: P => (P > 0 ? Math.round(P / 3 * 10) / 10 : ''), generateur: P => (P > 0 ? Math.max(0.2, Math.round(P * 0.003 * 10) / 10) : 0.3), cta: () => '', ventilo: () => 0.1, aerotherme: () => 0.3, split: P => (P > 0 ? Math.round(P / 3.5 * 100) / 100 : ''), pompe: () => '', vanne: () => 0.01, ventilateur: () => '' };
@@ -175,6 +202,6 @@ const InventaireCVC = (() => {
     return out;
   }
 
-  return { REGLES, GENRES, classer, puissance, regime, depuisCctp, depuisDpgf, depuisDpgfTexte, fusionner, versSchema, versElec, norm };
+  return { REGLES, GENRES, classer, puissance, regime, debitAir, depuisCctp, depuisDpgf, depuisDpgfTexte, fusionner, versSchema, versSchemaAir, versElec, norm };
 })();
 if (typeof module !== 'undefined') module.exports = InventaireCVC;

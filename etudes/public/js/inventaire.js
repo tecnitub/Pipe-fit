@@ -64,22 +64,22 @@ function tableauInventaire(et, inv, erreurs) {
   const rendu = () => `<h2>📑 Inventaire du dossier de consultation <span class="compte">${inv.length}</span></h2>
     ${erreurs.length ? `<p class="erreur petit">${erreurs.map(esc).join('<br>')}</p>` : ''}
     <p class="muted petit">Décochez ce qui ne concerne pas l'étude, corrigez le genre, la quantité ou la puissance (puissance unitaire, kW). Les quantités viennent du DPGF, les repères et prescriptions du CCTP.</p>
-    <div class="defile-x"><table class="edit"><thead><tr><th></th><th>Genre</th><th>Désignation</th><th>Repère</th><th>Qté</th><th>P unit. (kW)</th><th>Régime</th><th>Source</th></tr></thead><tbody>
-    ${['producteur', 'emetteur', 'auxiliaire'].map(c => { const l = inv.map((x, i) => [x, i]).filter(([x]) => x.categorie === c); return l.length ? `<tr><th colspan="8" class="petit">${CAT[c]}</th></tr>${l.map(([x, i]) => `<tr>
+    <div class="defile-x"><table class="edit"><thead><tr><th></th><th>Genre</th><th>Désignation</th><th>Repère</th><th>Qté</th><th>P unit. (kW)</th><th>Débit (m³/h)</th><th>Régime</th><th>Source</th></tr></thead><tbody>
+    ${['producteur', 'emetteur', 'auxiliaire'].map(c => { const l = inv.map((x, i) => [x, i]).filter(([x]) => x.categorie === c); return l.length ? `<tr><th colspan="9" class="petit">${CAT[c]}</th></tr>${l.map(([x, i]) => `<tr>
       <td><input type="checkbox" data-i="${i}" data-k="inclus" ${x.inclus !== false ? 'checked' : ''} aria-label="Retenir"></td>
       <td><select data-i="${i}" data-k="genre">${Object.entries(G).map(([k, g]) => `<option value="${k}" ${k === x.genre ? 'selected' : ''}>${esc(g.libelle)}</option>`).join('')}</select></td>
       <td><input data-i="${i}" data-k="designation" value="${esc(x.designation)}"></td><td><input data-i="${i}" data-k="repere" value="${esc(x.repere || '')}" style="width:80px"></td>
-      <td><input data-i="${i}" data-k="qte" value="${esc(x.qte)}" class="nombre" style="width:60px"></td><td><input data-i="${i}" data-k="P" value="${esc(x.P)}" class="nombre" style="width:70px"></td>
+      <td><input data-i="${i}" data-k="qte" value="${esc(x.qte)}" class="nombre" style="width:60px"></td><td><input data-i="${i}" data-k="P" value="${esc(x.P)}" class="nombre" style="width:70px"></td><td><input data-i="${i}" data-k="Q" value="${esc(x.Q ?? '')}" class="nombre" style="width:70px" title="Débit d'air par bouche ou de l'équipement"></td>
       <td><input data-i="${i}" data-k="regime" value="${esc(x.regime || '')}" placeholder="70/50" style="width:70px"></td><td class="petit muted">${esc((x.sources || []).join(', '))}${x.prescrit ? `<br>${esc(x.prescrit)}` : ''}</td></tr>`).join('')}` : ''; }).join('')}
     </tbody></table></div>
     <div class="actions"><button class="secondaire" id="ti-x">Fermer</button><button class="secondaire" id="ti-ok">Enregistrer l'inventaire</button>
-      <button id="ti-pid">🗺️ Créer le schéma de principe</button><button id="ti-elec">⚡ Créer l'alimentation électrique</button></div>`;
+      <button id="ti-pid">🗺️ Créer le schéma de principe</button><button id="ti-aero">🌬️ Créer le schéma aéraulique</button><button id="ti-elec">⚡ Créer l'alimentation électrique</button></div>`;
   const b = Modal.open(rendu());
   b.classList.add('large');
   const lier = () => {
     b.querySelectorAll('[data-i]').forEach(el => el.onchange = () => {
       const x = inv[+el.dataset.i], k = el.dataset.k;
-      x[k] = k === 'inclus' ? el.checked : ['qte', 'P'].includes(k) ? (el.value === '' ? '' : Notes.num(el.value)) : el.value;
+      x[k] = k === 'inclus' ? el.checked : ['qte', 'P', 'Q'].includes(k) ? (el.value === '' ? '' : Notes.num(el.value)) : el.value;
       if (k === 'genre') { x.categorie = G[el.value].categorie; b.innerHTML = rendu(); lier(); }
     });
     b.querySelector('#ti-x').onclick = Modal.close;
@@ -94,6 +94,16 @@ function tableauInventaire(et, inv, erreurs) {
       et.notes.push(n); enregistrer(et); Modal.close();
       location.hash = `#/etude/${et.id}/${n.id}`;
       toast(alertes.length ? `Schéma créé. À vérifier : ${alertes[0]}${alertes.length > 1 ? ` (+${alertes.length - 1})` : ''}` : 'Schéma de principe créé d\'après le dossier.', 8000);
+    };
+    b.querySelector('#ti-aero').onclick = () => {
+      garder();
+      const { entrees, alertes } = InventaireCVC.versSchemaAir(inv);
+      const n = nouvelleNote('aero', { ...Notes.defauts('aero'), ...entrees, zones: entrees.zones.length ? entrees.zones : Notes.defauts('aero').zones });
+      n.titre = `Schéma aéraulique — ${entrees.titreInstallation || 'd\'après le CCTP / DPGF'}`;
+      n.commentaire = `Prérempli d'après le dossier de consultation (CCTP / DPGF) : vérifier les distances des zones au ventilateur et les longueurs d'antenne.${alertes.length ? ` À vérifier : ${alertes.join(' ')}` : ''}`;
+      et.notes.push(n); enregistrer(et); Modal.close();
+      location.hash = `#/etude/${et.id}/${n.id}`;
+      toast(alertes.length ? `Schéma aéraulique créé. À vérifier : ${alertes[0]}${alertes.length > 1 ? ` (+${alertes.length - 1})` : ''}` : 'Schéma aéraulique créé d\'après le dossier.', 8000);
     };
     b.querySelector('#ti-elec').onclick = () => {
       garder();

@@ -69,6 +69,13 @@ const Metre = ((N, C, D, L, Sc) => {
           recherche: { type: 'calorifuge', isolant: e.isolant, ep: v.choix, dn: t.dn, de: t.de } });
       }
       if (n.type === 'gaine' && v.choix) ajouter(`gaine|${v.choix}`, { chapitre: 'Aéraulique', designation: `Gaine ${v.choix} mm galvanisée, supports compris`, unite: 'ml', qte: num(e.L), heures: R.gaine, mo: 'monteur', source: src, recherche: { type: 'gaine', nom: v.choix } });
+      // Schéma aéraulique : CTA ou caisson, bouches, gaines principales et antennes
+      if (n.type === 'aero') {
+        const cta = /^cta/.test(v.producteur || ''), Q = Math.max(v.Qs || 0, v.Qr || 0);
+        equip(`aero|${v.producteur}|${Math.round(Q)}`, 'Aéraulique', cta ? `Centrale de traitement d'air ${nf(Q, 0)} m³/h${v.Qr && v.Qs ? ' double flux' : ''}` : `Caisson ${v.Qs ? 'd\'insufflation' : 'd\'extraction'} ${nf(Q, 0)} m³/h`, 1, cta ? 16 : 6, { type: cta ? 'cta' : 'caisson' }, src);
+        (v.bouches || []).forEach(b => equip(`bouche|${b.type}|${b.taille}`, 'Aéraulique', `${b.type} ${b.taille}, plénum et raccordement`, b.n, 0.75, { type: 'bouche', taille: b.taille }, src));
+        (v.troncons || []).forEach(t => ajouter(`gaine|${t.nom}`, { chapitre: 'Aéraulique', designation: `Gaine ${t.nom} mm galvanisée, supports compris`, unite: 'ml', qte: t.L, heures: R.gaine, mo: 'monteur', source: src, recherche: { type: 'gaine', nom: t.nom } }));
+      }
       if (n.type === 'aeraulique') (v.troncons || []).forEach(t => ajouter(`gaine|${t.nom}`, { chapitre: 'Aéraulique', designation: `Gaine ${t.nom} mm galvanisée, supports compris`, unite: 'ml', qte: t.L, heures: R.gaine, mo: 'monteur', source: src, recherche: { type: 'gaine', nom: t.nom } }));
       if (n.type === 'vase' && v.choisi) equip(`vase|${v.choisi}`, 'Équipements hydrauliques', `Vase d'expansion ${v.choisi} L, gonflé à ${nf(v.p0, 1)} bar`, 1, 3, { type: 'vase', volume: v.choisi }, src);
       if (n.type === 'vanne' && v.vanne) equip(`vanne|${v.vanne.type}|${v.vanne.dn}|${v.vanne.Kvs}`, 'Équipements hydrauliques', `${N.libVanne(v.vanne)} motorisée`, 1, 2, { type: 'vanne', sorte: v.vanne.type, dn: v.vanne.dn, kvs: v.vanne.Kvs }, src);
