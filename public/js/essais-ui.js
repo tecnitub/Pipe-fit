@@ -88,7 +88,7 @@ function bindEssai(root, kind, e, { manques, calc, maj }) {
       // PV de mise en service signé pour un matériel retenu : la ligne passe « mise en service » (fiche chantier, étude)
       if (signer && kind === 'mes' && o.materiel && o.affaireId && /^Mis en service$/.test(o.resultat || '')) {
         const [etudeId, ...cle] = String(o.materiel).split('|');
-        api('POST', '/api/liens/materiel/suivi', { affaireId: o.affaireId, action: 'mes', lignes: [{ etudeId, cle: cle.join('|') }] }).catch(() => {});
+        HorsLigne.appeler('POST', '/api/liens/materiel/suivi', { affaireId: o.affaireId, action: 'mes', lignes: [{ etudeId, cle: cle.join('|') }] }).catch(() => {});
       }
       Object.assign(essaiBrouillon[kind], { cle: null, e: null });
       App.toast(signer ? `${conf.court} signé` : 'Brouillon enregistré', 4000);

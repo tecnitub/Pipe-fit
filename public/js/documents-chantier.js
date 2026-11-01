@@ -434,7 +434,7 @@ function materielRetenuHtml(ms, mobile) {
       ${mobile && m.valide ? `<span class="mat-actions">${m.poseLe && !m.mesLe ? `<a class="btn small" href="#/mes/new?${new URLSearchParams({ chantier: m.affaireId || '', type: MaterielRetenu.typeMes(m.cle), equipement: m.designation, marque: m.fabricant, modele: m.reference, materiel: `${m.etudeId}|${m.cle}` })}">📋 PV de mise en service</a>` : ''}${m.poseLe ? `<button type="button" class="small secondary" data-mat="${i}" data-act="${m.mesLe ? 'annulerMes' : 'mes'}">${m.mesLe ? 'Annuler la mise en service' : '✅ Mis en service (sans PV)'}</button>${m.mesLe ? '' : `<button type="button" class="small secondary" data-mat="${i}" data-act="annulerPose">Annuler la pose</button>`}` : `<button type="button" class="small" data-mat="${i}" data-act="pose">🔧 Posé</button>`}
         <label class="btn small secondary">📷 Plaque<input type="file" accept="image/*" capture="environment" data-photo="${i}" hidden></label></span>` : ''}</span>
     <span><span class="badge ${BADGE_MAT[m.statut] || ''}">${m.valide ? '✓ ' : ''}${esc(m.statut === 'Soumis au client' || m.statut === 'À soumettre' ? 'en attente de validation' : m.statut)}</span>
-      ${!mobile && MaterielRetenu.aRelancer(m, auj) ? '<br><span class="badge b-bad">à relancer</span>' : ''}${etatPose(m) ? `<br>${etatPose(m)}` : ''}</span>`;
+      ${!mobile && MaterielRetenu.aRelancer(m, auj) ? '<br><span class="badge b-bad">à relancer</span>' : ''}${etatPose(m) ? `<br>${etatPose(m)}` : ''}${m.enAttente ? '<br><span class="badge b-warn">⏳ à envoyer</span>' : ''}</span>`;
   return `<h${mobile ? 2 : 3}>🏷️ Matériel retenu <span class="muted small">${nv}/${ms.length} validé(s) par le client${poses ? ` · ${poses} posé(s)` : ''}</span></h${mobile ? 2 : 3}>
     ${mobile && nv < ms.length ? '<p class="small muted">Ce qui est « en attente de validation » ne se commande ni ne se pose sans l\'accord du chargé d\'affaires.</p>' : ''}
     ${mobile ? '' : `<div class="toolbar" style="margin:4px 0 8px">${nonValides ? `<button class="small" id="mat-envoyer">✉️ ${relance.length ? `Relancer le client (${relance.length} sans réponse depuis 15 jours)` : `Envoyer au client pour validation (${nonValides})`}</button>` : ''}
@@ -443,11 +443,31 @@ function materielRetenuHtml(ms, mobile) {
 }
 // Chargé à l'affichage de la fiche du chantier (bureau et appli des compagnons), avec le suivi de chaque ligne
 const materielChantier = new Map();
-async function chargerMaterielRetenu(root, affaireId) {
-  if (!root.querySelector('#mat-retenu')) return;
-  try { materielChantier.set(affaireId, await api('GET', `/api/liens/materiel?affaireId=${encodeURIComponent(affaireId)}`)); } catch (e) { if (!materielChantier.has(affaireId)) return; }
+// Hors connexion : liste gardée sur le téléphone, actions en attente d'envoi appliquées à l'affichage (⏳)
+const CHEMIN_SUIVI = '/api/liens/materiel/suivi';
+function appliquerEnAttente(ms, affaireId) {
+  const jour = isoDate(new Date()), par = (Store.me && (Store.me.nom || Store.me.login)) || '';
+  (HorsLigne.appelsEnAttente(CHEMIN_SUIVI) || []).filter(o => o.corps && o.corps.affaireId === affaireId).forEach(o => (o.corps.lignes || []).forEach(l => {
+    const m = ms.find(x => x.etudeId === l.etudeId && x.cle === l.cle);
+    if (!m) return;
+    try { Object.assign(m, MaterielRetenu.appliquerSuivi(m, o.corps.action, par, jour, o.corps), { enAttente: true }); } catch (e) { /* action invalide : ignorée à l'affichage */ }
+    if (o.corps.action === 'annulerPose') { delete m.poseLe; delete m.mesLe; }
+    if (o.corps.action === 'annulerMes') delete m.mesLe;
+  }));
+  return ms;
+}
+function afficherMaterielRetenu(affaireId) {
   const n = document.querySelector(`#mat-retenu[data-affaire="${CSS.escape(affaireId)}"]`);
   if (n) { n.innerHTML = materielRetenuHtml(materielChantier.get(affaireId), n.dataset.mobile === '1'); bindMaterielRetenu(n, affaireId); }
+}
+async function chargerMaterielRetenu(root, affaireId) {
+  if (!root.querySelector('#mat-retenu')) return;
+  let ms = null;
+  try { ms = await api('GET', `/api/liens/materiel?affaireId=${encodeURIComponent(affaireId)}`); HorsLigne.garder(`materiel/${affaireId}`, ms); }
+  catch (e) { ms = materielChantier.get(affaireId) || await HorsLigne.relire(`materiel/${affaireId}`); }
+  if (!ms) return;
+  materielChantier.set(affaireId, appliquerEnAttente(JSON.parse(JSON.stringify(ms)), affaireId));
+  afficherMaterielRetenu(affaireId);
 }
 function bindMaterielRetenu(z, affaireId) {
   const ms = materielChantier.get(affaireId) || [], a = Store.get('affaires', affaireId);
@@ -456,13 +476,19 @@ function bindMaterielRetenu(z, affaireId) {
   const cons = z.querySelector('#mat-consulter');
   if (cons) cons.onclick = () => { location.hash = '#/consultations/' + nouvelleConsultation({ affaireId, objet: `Matériel validé ${(a || {}).code || ''} (bureau d'études)`, lignes: lignesMaterielValide(ms) }).id; };
   // Compagnons : pose, mise en service, photo de la plaque signalétique
-  const suivre = (m, action, extra = {}) => api('POST', '/api/liens/materiel/suivi', { affaireId, action, lignes: [{ etudeId: m.etudeId, cle: m.cle }], ...extra })
-    .then(() => { App.toast(`${m.designation} : ${MaterielRetenu.ACTIONS[action].toLowerCase()}`); return chargerMaterielRetenu(document, affaireId); }).catch(e => notify(e.message));
+  // Envoyé tout de suite, ou gardé sur le téléphone et envoyé au retour du réseau
+  const suivre = (m, action, extra = {}) => HorsLigne.appeler('POST', CHEMIN_SUIVI, { affaireId, action, lignes: [{ etudeId: m.etudeId, cle: m.cle }], ...extra })
+    .then(r => {
+      App.toast(`${m.designation} : ${MaterielRetenu.ACTIONS[action].toLowerCase()}${r.enAttente ? ' — enregistré sur le téléphone, envoyé au retour du réseau' : ''}`, r.enAttente ? 5000 : 2500);
+      if (r.enAttente) { appliquerEnAttente(materielChantier.get(affaireId) || [], affaireId); afficherMaterielRetenu(affaireId); return null; }
+      return chargerMaterielRetenu(document, affaireId);
+    }).catch(e => notify(e.message));
   z.querySelectorAll('[data-mat]').forEach(b => b.onclick = () => suivre(ms[+b.dataset.mat], b.dataset.act));
   z.querySelectorAll('[data-photo]').forEach(inp => inp.onchange = async () => {
     const f = inp.files && inp.files[0], m = ms[+inp.dataset.photo];
     if (!f || !m) return;
-    try { const r = await api('POST', '/api/files', { dataUrl: await compressImage(f, 1600, 0.8) }); await suivre(m, 'photo', { fichierId: r.id, nom: f.name }); } catch (e) { notify(`Photo : ${e.message}`); }
+    // Photo gardée sur le téléphone si pas de réseau (identifiant choisi ici, envoyée avant l'action qui la cite)
+    try { const id = await HorsLigne.envoyerImage(await compressImage(f, 1600, 0.8)); await suivre(m, 'photo', { fichierId: id, nom: f.name }); } catch (e) { notify(`Photo : ${e.message}`); }
   });
 }
 // Lignes de consultation : matériel validé, avec fabricant et référence exacte

@@ -28,6 +28,9 @@ const HorsLigne = (() => {
     attenteSauvegarde = setTimeout(() => sur(tx('cache', 'readwrite', s => s.put({ me: Store.me, data: Store.data, date: new Date().toISOString() }, 'donnees'))), 1500);
   }
   const lireDonnees = () => sur(tx('cache', 'readonly', s => s.get('donnees')));
+  // Petites listes lues par l'API (matériel retenu d'un chantier…) : gardées pour l'affichage hors connexion
+  const garder = (cle, valeur) => sur(tx('cache', 'readwrite', s => s.put({ valeur, date: new Date().toISOString() }, `liste/${cle}`)));
+  const relire = async cle => { const r = await sur(tx('cache', 'readonly', s => s.get(`liste/${cle}`))); return r ? r.valeur : null; };
 
   /* ---------- File des envois ---------- */
   async function charger() {
@@ -36,7 +39,7 @@ const HorsLigne = (() => {
     file.filter(o => o.type === 'fichier').forEach(o => locales.set(o.id, o.dataUrl));
     indicateur();
   }
-  const cleDe = o => (o.type === 'fichier' ? `f/${o.id}` : `r/${o.col}/${o.id}`);
+  const cleDe = o => (o.type === 'fichier' ? `f/${o.id}` : o.type === 'appel' ? `a/${o.id}` : `r/${o.col}/${o.id}`);
   async function ajouter(o) {
     o.cle = cleDe(o);
     const ancien = file.find(x => x.cle === o.cle);
@@ -62,6 +65,7 @@ const HorsLigne = (() => {
       for (const o of [...file]) {
         try {
           if (o.type === 'fichier') await api('POST', '/api/files', { dataUrl: o.dataUrl, id: o.id });
+          else if (o.type === 'appel') await api(o.methode, o.chemin, o.corps);
           else if (o.type === 'delete') await api('DELETE', `/api/records/${o.col}/${encodeURIComponent(o.id)}`);
           else {
             const rec = await api('PUT', `/api/records/${o.col}/${encodeURIComponent(o.id)}`, { data: o.obj, version: o.obj._v });
@@ -74,7 +78,7 @@ const HorsLigne = (() => {
           if (estReseau(e)) break;
           // Refusé par le serveur (version plus récente, droits, données invalides) : retiré de la file, signalé
           await retirer(o);
-          if (e.status === 409 && e.data && e.data.record) Store._put(o.col, e.data.record);
+          if (o.type !== 'appel' && e.status === 409 && e.data && e.data.record) Store._put(o.col, e.data.record);
           App.toast(`Une saisie faite hors connexion n'a pas pu être enregistrée : ${e.message}`, 8000);
         }
       }
@@ -98,6 +102,18 @@ const HorsLigne = (() => {
     await ajouter({ type: 'fichier', id, dataUrl });
     return id;
   }
+
+  // Action envoyée à l'API (suivi du matériel…) : tout de suite si possible, sinon mise en file après les photos
+  // en attente ; renvoie { enAttente } pour un affichage immédiat
+  async function appeler(methode, chemin, corps) {
+    if (enLigne() && !file.length) {
+      try { return { enAttente: false, reponse: await api(methode, chemin, corps) }; } catch (e) { if (!estReseau(e)) throw e; }
+    }
+    const a = new Uint8Array(8); crypto.getRandomValues(a);
+    await ajouter({ type: 'appel', id: Array.from(a, b => b.toString(16).padStart(2, '0')).join(''), methode, chemin, corps });
+    return { enAttente: true };
+  }
+  const appelsEnAttente = prefixe => file.filter(o => o.type === 'appel' && (!prefixe || o.chemin.startsWith(prefixe)));
 
   /* ---------- Bandeau ---------- */
   function indicateur() {
@@ -125,6 +141,6 @@ const HorsLigne = (() => {
   }
   async function effacer() { file = []; locales.clear(); await sur(tx('file', 'readwrite', s => s.clear())); await sur(tx('cache', 'readwrite', s => s.clear())); }
 
-  return { estReseau, enLigne, sauverDonnees, lireDonnees, ajouter, enAttente, envoyer, envoyerImage, demarrer, effacer, indicateur,
+  return { garder, relire, appeler, appelsEnAttente, estReseau, enLigne, sauverDonnees, lireDonnees, ajouter, enAttente, envoyer, envoyerImage, demarrer, effacer, indicateur,
     urlLocale: id => locales.get(id) || null, nombre: () => file.length };
 })();

@@ -202,6 +202,10 @@ test('suivi du matériel : soumission par le bureau, pose / mise en service / ph
   const pompe = ms.find(m => m.cle === 'pompe|x'), bouche = ms.find(m => m.cle === 'bouche|y');
   assert.ok(pompe.poseLe && pompe.posePar === 'marc' && pompe.photos[0].fichierId === 'abc123');
   assert.ok(bouche.soumisLe);
+  // L'application DOE lit le matériel retenu et son suivi par Pipe-Fit (report sur les équipements du DOE)
+  const cd = (await call(doeBase, 'POST', '/api/login', { login: 'jacky', password: 'motdepasse1' })).cookie;
+  const dm = (await call(doeBase, 'GET', '/api/pf/materiel?affaireId=af-suivi', null, cd)).body;
+  assert.ok(dm.find(m => m.cle === 'pompe|x' && m.poseLe && m.valide));
   // L'application Études lit le suivi par Pipe-Fit
   const c = (await call(etBase, 'POST', '/api/login', { login: 'jacky', password: 'motdepasse1' })).cookie;
   const s = (await call(etBase, 'GET', '/api/pf/materiel-suivi?etudeId=et-suivi', null, c)).body;

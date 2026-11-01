@@ -152,15 +152,41 @@ SECTIONS.cctp = {
 /* ---------- Section : étude, fiches techniques et visas ---------- */
 // Équipements dimensionnés dans l'application Études pour ce chantier (pompes, vannes, vases, générateurs…), lus dans
 // Pipe-Fit ; repris dans l'étude d'exécution pour recevoir repère et fiche technique
-const etudesBE = new Map(); // affaireId -> [{ id, resume }]
+const etudesBE = new Map(), materielBE = new Map(); // affaireId -> [{ id, resume }] ; affaireId -> matériel retenu et suivi
 function chargerEtudesBE(affaireId) {
   if (etudesBE.has(affaireId)) return;
   etudesBE.set(affaireId, null);
-  api('GET', `/api/pf/liens?affaireId=${encodeURIComponent(affaireId)}`).then(l => { etudesBE.set(affaireId, (l || []).filter(x => x.app === 'etudes')); App.render(); }).catch(() => etudesBE.set(affaireId, []));
+  Promise.all([api('GET', `/api/pf/liens?affaireId=${encodeURIComponent(affaireId)}`).catch(() => []), api('GET', `/api/pf/materiel?affaireId=${encodeURIComponent(affaireId)}`).catch(() => [])])
+    .then(([l, m]) => { etudesBE.set(affaireId, (l || []).filter(x => x.app === 'etudes')); materielBE.set(affaireId, m || []); App.render(); });
 }
-const cleBE = (et, e) => `be:${et.id}:${e.designation}`;
+// Clé d'un équipement de l'étude (stable même quand la référence choisie complète la désignation) ; ancienne clé par désignation reconnue
+const cleBE = (et, e) => `be:${et.id}:${e.cle || e.designation}`;
+const anciennesCles = (et, e) => [`be:${et.id}:${e.designation}`, `be:${et.id}:${String(e.designation || '').split(' — ')[0]}`];
 function equipementsBE(doe) {
-  return (etudesBE.get(doe.affaireId) || []).flatMap(et => ((et.resume || {}).equipements || []).map(e => ({ et, e, deja: doe.equipements.some(x => (x.origines || []).includes(cleBE(et, e))) })));
+  return (etudesBE.get(doe.affaireId) || []).flatMap(et => ((et.resume || {}).equipements || []).map(e => ({ et, e, deja: doe.equipements.some(x => [cleBE(et, e), ...anciennesCles(et, e)].some(k => (x.origines || []).includes(k))) })));
+}
+// Matériel retenu (référence validée par le client) et suivi du chantier reportés sur les équipements repris de l'étude :
+// marque et référence, dates de pose et de mise en service, photos de la plaque, n° de série lu dans le PV de mise en service signé.
+// Une marque ou une référence saisie à la main dans le DOE n'est jamais remplacée.
+function reporterMateriel(doe) {
+  const ms = materielBE.get(doe.affaireId) || [], pvs = typeof essaisPF === 'function' ? essaisPF(doe.affaireId).mes : [];
+  let n = 0;
+  const mettre = (e, k, v) => { if (v !== undefined && v !== '' && e[k] !== v) { e[k] = v; n++; } };
+  doe.equipements.forEach(e => {
+    const o = (e.origines || []).find(x => /^be:/.test(x));
+    if (!o) return;
+    const [, etId, ...reste] = o.split(':'), cle = reste.join(':');
+    const m = ms.find(x => x.etudeId === etId && (x.cle === cle || String(x.designation).split(' — ')[0] === cle.split(' — ')[0]));
+    if (!m) return;
+    if (m.valide && (!e.marque || e.marqueEtude)) { mettre(e, 'marque', m.fabricant); e.marqueEtude = true; }
+    if (m.valide && (!e.reference || e.referenceEtude)) { mettre(e, 'reference', m.reference); e.referenceEtude = true; }
+    mettre(e, 'pose', m.poseLe); mettre(e, 'miseEnService', m.mesLe);
+    const photos = (m.photos || []).map(p => p.fichierId);
+    if (photos.length && JSON.stringify(photos) !== JSON.stringify(e.photosPlaque || [])) { e.photosPlaque = photos; n++; }
+    const pv = pvs.find(r => r.materiel === `${m.etudeId}|${m.cle}`);
+    if (pv) { if (!e.serie && pv.numeroSerie) mettre(e, 'serie', pv.numeroSerie); mettre(e, 'pvMes', pv.numero || pv.id); }
+  });
+  return n;
 }
 function ajouterEquipementsBE(doe) {
   const nouveaux = equipementsBE(doe).filter(x => !x.deja);
@@ -177,6 +203,8 @@ function ajouterEquipementsBE(doe) {
 SECTIONS.etude = {
   html: doe => {
     chargerEtudesBE(doe.affaireId);
+    // Report automatique du matériel retenu et du suivi du chantier (enregistré seulement s'il change quelque chose)
+    if (materielBE.has(doe.affaireId) && reporterMateriel(doe)) setTimeout(() => enregistrer(doe), 0);
     const be = equipementsBE(doe), beManquants = be.filter(x => !x.deja).length;
     const eqs = doe.equipements.filter(e => doe.familles.includes(e.famille) || e.refCctp), fiches = doe.fiches;
     const nb = v => fiches.filter(f => (f.visa || 'À soumettre') === v).length;
@@ -195,7 +223,7 @@ SECTIONS.etude = {
     <h3>Équipements et fiches techniques <span class="compte">${eqs.length}</span></h3>
     ${eqs.length ? `<table class="liste"><tr><th>Repère</th><th>Équipement</th><th>Art. CCTP</th><th>Fiche(s)</th><th></th></tr>
       ${eqs.map(e => { const fs = fiches.filter(f => (f.equipements || []).includes(e.id)); const autres = fiches.filter(f => !(f.equipements || []).includes(e.id));
-        return `<tr><td><strong>${esc(e.repere || '—')}</strong></td><td>${esc(e.designation || '')}${e.prescrit ? `<div class="muted petit">${esc(e.prescrit)}</div>` : ''}</td><td>${esc(e.refCctp || '')}</td>
+        return `<tr><td><strong>${esc(e.repere || '—')}</strong></td><td>${esc(e.designation || '')}${e.prescrit ? `<div class="muted petit">${esc(e.prescrit)}</div>` : ''}${e.marque || e.reference ? `<div class="petit"><strong>${esc([e.marque, e.reference].filter(Boolean).join(' '))}</strong>${e.referenceEtude ? ' <span class="muted">(validée, matériel retenu)</span>' : ''}</div>` : ''}${e.pose || e.miseEnService || (e.photosPlaque || []).length ? `<div class="petit">${e.miseEnService ? `<span class="badge ok">en service ${esc(dateFr(e.miseEnService))}</span>` : e.pose ? `<span class="badge">posé ${esc(dateFr(e.pose))}</span>` : ''}${(e.photosPlaque || []).map(id => ` <a href="${fichierUrl({ src: 'pf', id })}" target="_blank" rel="noopener">📷 plaque</a>`).join('')}${e.serie ? ` · n° ${esc(e.serie)}` : ''}</div>` : ''}</td><td>${esc(e.refCctp || '')}</td>
           <td>${fs.map(f => `<div>${lienFichier(f.fichier)} <span class="badge ${classeVisa(f.visa)}">${esc(f.visa || 'À soumettre')}</span></div>`).join('') || '<span class="manque">aucune</span>'}</td>
           <td class="petit"><button class="secondaire petit" data-fiche-eq="${e.id}">Joindre la fiche</button>${autres.length ? `<select data-lier="${e.id}"><option value="">Lier une fiche…</option>${autres.map(f => `<option value="${f.id}">${esc(f.designation)}</option>`).join('')}</select>` : ''}</td></tr>`; }).join('')}</table>`
       : '<p class="muted">Aucun équipement : lisez le CCTP (créer les équipements), ou importez le matériel du chantier en section 3.</p>'}
