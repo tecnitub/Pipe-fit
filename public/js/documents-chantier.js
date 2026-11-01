@@ -198,6 +198,7 @@ function ficheChantierCompagnon(u, id) {
         <span><strong>${esc(d.nom)}</strong>${[...nouveaux].some(t => t.includes(d.nom)) ? ' <span class="badge b-warn">nouveau</span>' : ''}<br><span class="small muted">${esc(d.categorie)}${d.indice ? ` · indice ${esc(d.indice)}` : ''} · ${dateFr(d.date)} · ${tailleLisible(num(d.taille))}</span></span></a></li>`).join('')}</ul>`
         : '<p class="muted small">Aucun document transmis pour ce chantier.</p>'}` : ''}
     ${R.materiel ? `<div id="mat-retenu" data-mobile="1" data-affaire="${esc(a.id)}">${materielRetenuHtml(materielChantier.get(a.id), true)}</div>` : ''}
+    ${R.materiel ? `<div id="plan-mes" data-mobile="1" data-affaire="${esc(a.id)}">${planMesHtml(a, true)}</div>` : ''}
     ${m ? `<h2>🔩 Matériel prévu</h2>
       <div class="seg" role="group" aria-label="Affichage du matériel" style="margin-bottom:8px">${[['article', 'Total par article'], ['ouvrage', 'Par ouvrage']].map(([k, l]) => `<button type="button" data-matmode="${k}" class="${ficheCompagnonSel.mode === k ? 'on' : ''}">${l}</button>`).join('')}</div>
       ${ficheCompagnonSel.mode === 'article' ? `<ul class="mat-liste">${m.total.map((x, i, t) => `${i === 0 || t[i - 1].famille !== x.famille ? `<li class="mat-famille">${esc(x.famille)}</li>` : ''}<li><span>${esc(x.designation)}${x.ref ? ` <span class="muted small">${esc(x.ref)}</span>` : ''}</span>
@@ -211,6 +212,7 @@ function ficheChantierCompagnon(u, id) {
 }
 function bindFicheChantierCompagnon(root, id) {
   chargerMaterielRetenu(root, id);
+  chargerPlanMes(root, id);
   root.querySelectorAll('[data-matmode]').forEach(b => b.onclick = () => { ficheCompagnonSel.mode = b.dataset.matmode; App.render(); });
   // Documents vus : les notifications du chantier passent en « lues » (le badge « nouveau » reste jusqu'au prochain affichage)
   Notifs.nonLues().filter(n => n.type === 'document' && n.affaireId === id).forEach(n => Notifs.marquerLue(n));
@@ -477,6 +479,8 @@ function appliquerEnAttente(ms, affaireId) {
 function afficherMaterielRetenu(affaireId) {
   const n = document.querySelector(`#mat-retenu[data-affaire="${CSS.escape(affaireId)}"]`);
   if (n) { n.innerHTML = materielRetenuHtml(materielChantier.get(affaireId), n.dataset.mobile === '1'); bindMaterielRetenu(n, affaireId); }
+  // La liste des mises en service dépend du matériel retenu (posé, mis en service)
+  if (typeof afficherPlanMes === 'function') afficherPlanMes(affaireId);
 }
 async function chargerMaterielRetenu(root, affaireId) {
   if (!root.querySelector('#mat-retenu')) return;

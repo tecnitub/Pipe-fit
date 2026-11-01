@@ -19,7 +19,8 @@ function baseEssai(query) {
 }
 // Copie pour l'équipement ou l'installation suivante : mêmes réglages, nouvelles mesures
 function copieEssai(r) {
-  const { id, numero, _v, _at, _by, photos, signatureTechId, signatureClientId, signeLe, statut, photoPlaqueId, ...garde } = JSON.parse(JSON.stringify(r));
+  const { id, numero, _v, _at, _by, photos, signatureTechId, signatureClientId, signeLe, statut, photoPlaqueId, planCle, materiel, attendus, ...garde } = JSON.parse(JSON.stringify(r));
+  if (garde.mesures) garde.mesures = garde.mesures.map(({ attendu, ...m }) => m);
   return { ...garde, date: isoDate(new Date()), heure: heureMaintenant(), photos: [], statut: 'Brouillon', userId: Store.me.userId || garde.userId };
 }
 function brouillonEssai(kind, params, query, creer) {
@@ -111,10 +112,16 @@ function essaiVue(kind, r) {
 const bindEssaiVue = (root, kind, r) => { const b = root.querySelector('#es-pdf'); if (b) b.onclick = () => PDF.telecharger(documentEssai(ESSAIS[kind].titre, r, ESSAIS[kind].corps), `${kind === 'mes' ? 'PV-mise-en-service' : 'Releve-equilibrage'}-${r.numero || r.id}.pdf`).catch(err => notify(err.message)); };
 
 /* ---------- PV de mise en service ---------- */
+// Valeur attendue (étude) et écart de la mesure saisie
+const attenduHtml = m => { const e = PlanMes.ecart(m); return `attendu ${fmt(m.attendu, m.attendu % 1 ? 2 : 0)} ${esc(m.unite || '')}${e === null ? '' : ` · <span class="${Math.abs(e) <= 10 ? 'pos' : 'neg'}">écart ${e > 0 ? '+' : ''}${fmt(e, 1)} %</span>`}`; };
 Views.mes = (params, query) => {
   // Ouvert depuis le matériel retenu d'une étude : type, équipement, marque et modèle préremplis
   const q0 = k => String(query.get(k) || '').slice(0, 200), typeQ = Essais.TYPES[q0('type')] ? q0('type') : 'pac';
-  const b = brouillonEssai('mes', params, query, base => ({ ...base, type: typeQ, equipement: q0('equipement'), repere: q0('repere'), localisation: '', marque: q0('marque'), modele: q0('modele'), numeroSerie: '', fluide: '', charge: '', reglages: '', resultat: '', ...(q0('materiel') ? { materiel: q0('materiel') } : {}), ...Essais.modele(typeQ) }));
+  // Ouvert depuis la liste des mises en service : valeurs attendues de l'étude (débit, HMT, pressions…) à côté des mesures
+  const attendus = PlanMes.lireAttendus(query.get('att'));
+  const b = brouillonEssai('mes', params, query, base => { const m = Essais.modele(typeQ);
+    return { ...base, type: typeQ, equipement: q0('equipement'), repere: q0('repere'), localisation: '', marque: q0('marque'), modele: q0('modele'), numeroSerie: '', fluide: '', charge: '', reglages: '', resultat: '', ...(q0('materiel') ? { materiel: q0('materiel') } : {}),
+      ...(q0('plan') ? { planCle: q0('plan') } : {}), ...(attendus.length ? { attendus } : {}), controles: m.controles, mesures: PlanMes.avecAttendus(m.mesures, attendus) }; });
   if (b.introuvable) return '<p>Procès-verbal introuvable.</p>';
   if (b.signe) return essaiVue('mes', b.signe);
   const e = b.e, t = Essais.TYPES[e.type] || Essais.TYPES.autre, ph = e._plaque || (e.photoPlaqueId ? fileUrl(e.photoPlaqueId) : '');
@@ -135,7 +142,9 @@ Views.mes = (params, query) => {
       <button class="small secondary" id="es-tout-ok">Tout OK</button>
     </fieldset>
     <fieldset class="hd-bloc"><legend>Mesures et relevés</legend><div class="grid3">
-      ${e.mesures.map((m, i) => `<div class="field"><label for="es-m${i}">${esc(m.libelle)}${m.unite ? ` (${esc(m.unite)})` : ''}</label><input id="es-m${i}" data-mes="${i}" inputmode="decimal" value="${esc(m.valeur ?? '')}"></div>`).join('')}</div>
+      ${e.mesures.map((m, i) => `<div class="field"><label for="es-m${i}">${esc(m.libelle)}${m.unite ? ` (${esc(m.unite)})` : ''}</label><input id="es-m${i}" data-mes="${i}" inputmode="decimal" value="${esc(m.valeur ?? '')}"${m.attendu !== undefined ? ` placeholder="attendu ${esc(fmt(m.attendu, m.attendu % 1 ? 2 : 0))}"` : ''}>
+        ${m.attendu !== undefined ? `<span class="small muted" data-att="${i}">${attenduHtml(m)}</span>` : ''}</div>`).join('')}</div>
+      ${(e.attendus || []).length ? '<p class="small muted">Valeurs attendues reprises de l\'étude : l\'écart s\'affiche dès la saisie de la mesure.</p>' : ''}
       <button class="small secondary" id="es-add-mes">+ Autre mesure</button></fieldset>
     <div class="field"><label for="es-reglages">Réglages effectués</label><textarea id="es-reglages" data-k="reglages" data-dictee rows="2" placeholder="Consignes, lois d'eau, programmations, débits…">${esc(e.reglages || '')}</textarea></div>
     <div class="field"><label for="es-obs">Observations</label><textarea id="es-obs" data-k="observations" data-dictee rows="2">${esc(e.observations || '')}</textarea></div>
@@ -153,13 +162,13 @@ Views.mes.bind = (root, params) => {
   $('#es-type').onchange = () => {
     const vides = !e.controles.some(c => c.etat) && !e.mesures.some(m => m.valeur !== '');
     e.type = $('#es-type').value;
-    if (vides) Object.assign(e, Essais.modele(e.type));
+    if (vides) { const m = Essais.modele(e.type); Object.assign(e, { controles: m.controles, mesures: PlanMes.avecAttendus(m.mesures, e.attendus) }); }
     App.render();
   };
   root.querySelectorAll('[data-ctl]').forEach(b => b.onclick = () => { const c = e.controles[+b.dataset.ctl]; c.etat = c.etat === b.dataset.etat ? '' : b.dataset.etat; proposer(); App.render(); });
   root.querySelectorAll('[data-ctlobs]').forEach(el => el.oninput = () => { e.controles[+el.dataset.ctlobs].obs = el.value; });
   $('#es-tout-ok').onclick = () => { e.controles.forEach(c => { if (!c.etat) c.etat = 'OK'; }); proposer(); App.render(); };
-  root.querySelectorAll('[data-mes]').forEach(el => el.oninput = () => { e.mesures[+el.dataset.mes].valeur = el.value.trim(); });
+  root.querySelectorAll('[data-mes]').forEach(el => el.oninput = () => { const m = e.mesures[+el.dataset.mes]; m.valeur = el.value.trim(); const a = root.querySelector(`[data-att="${el.dataset.mes}"]`); if (a) a.innerHTML = attenduHtml(m); });
   $('#es-add-mes').onclick = async () => { const lib = await askValue('Mesure (ex. Débit d\'eau, m³/h)', ''); if (!lib) return; const [l, u] = lib.split(','); e.mesures.push({ libelle: l.trim(), unite: (u || '').trim(), valeur: '' }); App.render(); };
   $('#es-res').addEventListener('change', () => { e.resultatAuto = false; });
   // Plaque signalétique : photo gardée et lue pour remplir marque, modèle, n° de série (et fluide, charge)
@@ -187,7 +196,9 @@ function synthEquilibrageHtml(q) {
 const celluleEcart = (q, l) => { const e = Essais.ecart(l), c = Essais.conforme(l, q.tolerance); return e === null ? '' : `<span class="${c ? 'pos' : 'neg'}">${e > 0 ? '+' : ''}${fmt(e, 1)} %</span>`; };
 Views.equilibrage = (params, query) => {
   const app = appareilsMesure().find(m => !/manom/i.test(m.designation)); // anémomètre, balomètre, valise : pas le manomètre des épreuves
-  const b = brouillonEssai('equilibrage', params, query, base => ({ ...base, installation: '', type: 'Aéraulique', unite: 'm³/h', tolerance: 10, appareil: app ? libelleManometre(app) : '', lignes: [{ repere: '', local: '', type: 'Soufflage', theorique: '', mesure: '', reglage: '' }] }));
+  const qv = k => String(query.get(k) || '').slice(0, 200);
+  const b = brouillonEssai('equilibrage', params, query, base => ({ ...base, installation: qv('installation'), type: qv('type') === 'Hydraulique' ? 'Hydraulique' : 'Aéraulique', unite: ['m³/h', 'l/s', 'l/h'].includes(qv('unite')) ? qv('unite') : 'm³/h', tolerance: 10, appareil: app ? libelleManometre(app) : '',
+    ...(qv('plan') ? { planCle: qv('plan') } : {}), ...(qv('etude') && qv('installation') ? { _depuisEtude: true } : {}), lignes: [{ repere: '', local: '', type: 'Soufflage', theorique: '', mesure: '', reglage: '' }] }));
   if (b.introuvable) return '<p>Relevé introuvable.</p>';
   if (b.signe) return essaiVue('equilibrage', b.signe);
   const q = b.e;
@@ -235,12 +246,15 @@ Views.equilibrage.bind = (root, params) => {
     try { installs = await api('GET', `/api/liens/debits?affaireId=${encodeURIComponent(q.affaireId)}`); } catch (err) { return notify(err.message); }
     const voulues = installs.filter(x => (x.type === 'Hydraulique') === (q.type === 'Hydraulique'));
     if (!voulues.length) return notify(`Aucun débit ${q.type === 'Hydraulique' ? 'hydraulique' : 'aéraulique'} dans les études de ce chantier.`);
-    const choisir = voulues.length === 1 ? voulues[0] : voulues[(await askValue(`Installation (1 à ${voulues.length}) : ${voulues.map((x, i) => `${i + 1}. ${x.installation}`).join(' · ')}`, '1') | 0) - 1];
+    const nommee = voulues.find(x => PlanMes.norm(x.installation) === PlanMes.norm(q.installation));
+    const choisir = nommee || voulues.length === 1 ? nommee || voulues[0] : voulues[(await askValue(`Installation (1 à ${voulues.length}) : ${voulues.map((x, i) => `${i + 1}. ${x.installation}`).join(' · ')}`, '1') | 0) - 1];
     if (!choisir) return;
     q.installation = q.installation || choisir.installation; q.unite = choisir.unite || q.unite;
     q.lignes = [...q.lignes.filter(x => x.repere || x.local || x.theorique !== ''), ...choisir.lignes.map(l => ({ repere: l.repere, local: l.local, type: TYPES_BOUCHE.includes(l.type) ? l.type : 'Autre', theorique: l.theorique, mesure: '', reglage: '' }))];
     App.render(); App.toast(`${choisir.lignes.length} débit(s) théorique(s) repris de l'étude « ${choisir.etude} »`, 4000);
   };
+  // Ouvert depuis la liste des mises en service : débits théoriques de l'installation repris tout de suite
+  if (be && q._depuisEtude) { delete q._depuisEtude; be.onclick(); }
   $('#es-import').onchange = async ev => {
     const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
     try {
@@ -258,7 +272,8 @@ Views.equilibrage.bind = (root, params) => {
 function essaisChantierHtml(a) {
   const mes = essaisDe('misesEnService', a.id), eqs = essaisDe('equilibrages', a.id);
   const badgeEssai = r => (r.statut === 'Signé' ? `<span class="badge ${/^(Conforme|Mis en service)$/.test(r.resultat || '') ? 'b-ok' : 'b-bad'}">${esc(r.resultat || '')}</span>` : '<span class="badge b-warn">Brouillon</span>');
-  return `<h2>Mises en service et équilibrages <span class="muted small">${mes.length + eqs.length}</span></h2>
+  return `<div id="plan-mes" data-affaire="${esc(a.id)}">${planMesHtml(a, false)}</div>
+  <h2>Mises en service et équilibrages <span class="muted small">${mes.length + eqs.length}</span></h2>
   <div class="toolbar"><a class="btn secondary small" href="#/mes/new?chantier=${esc(a.id)}">+ PV de mise en service</a><a class="btn secondary small" href="#/equilibrage/new?chantier=${esc(a.id)}">+ Relevé d'équilibrage</a></div>
   ${mes.length || eqs.length ? `<div class="table-wrap"><table><tr><th>N°</th><th>Date</th><th>Document</th><th>Équipement / installation</th><th>Technicien</th><th>Résultat</th></tr>
     ${[...mes.map(r => ['mes', r, 'Mise en service', r.equipement]), ...eqs.map(r => ['equilibrage', r, `Équilibrage ${(r.type || '').toLowerCase()}`, `${r.installation} · ${Essais.synthese(r).nb} point(s)`])]

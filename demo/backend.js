@@ -265,6 +265,7 @@
         return [200, Object.fromEntries(ids.map(id => [id, Installe.avancement(Installe.suiviCommandes(MaterielRetenu.pourChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === id), (db.materielSuivi || []).filter(s => s.affaireId === id)),
           Installe.lignesCommandes(db.commandes || [], id, eid => ((db.entreprises || []).find(e => e.id === eid) || {}).nom || '')))]).filter(([, a]) => a.total))];
       }
+      if (p[1] === 'plan-mes' && method === 'GET') return [200, PlanMes.pointsChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === (query.get('affaireId') || '')))];
       if (p[1] === 'debits' && !p[2] && method === 'GET') return [200, MaterielRetenu.debitsChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === (query.get('affaireId') || '')))];
       if (p[1] === 'materiel' && p[2] === 'suivi') {
         db.materielSuivi = db.materielSuivi || [];

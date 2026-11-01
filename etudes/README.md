@@ -123,6 +123,10 @@ les équipements de l'étude ». Un CCTP scanné (sans texte) ne se lit pas : de
   bibliothèque de prix ; article modifiable poste par poste, export CSV, puis **devis brouillon créé dans Pipe-Fit** pour
   l'affaire (client, contact, site, TVA du client, ouvrages fournitures + main-d'œuvre, postes sans article « hors
   bibliothèque » à prix nul).
+- **Mises en service** : avec le résumé de l'étude, Pipe-Fit reçoit les points de mise en service tirés des calculs —
+  valeurs attendues des équipements (débit et HMT des pompes, gonflage, remplissage et soupape des vases, débits et
+  puissances des CTA et ventilateurs, ECS), réseaux à éprouver (PS, pression d'épreuve des calculs d'épaisseur et DESP),
+  contrôles réglementaires (DESP, gaz). La fiche chantier en fait la liste des mises en service, PV préremplis.
 - **Fiches techniques** : chaque ligne du matériel retenu retrouve sa fiche dans la bibliothèque de Pipe-Fit (fabricant +
   référence exacte, 📄 bibliothèque ; « pas de fiche dans la bibliothèque » sinon) ; la liste à faire valider (PDF) est suivie
   des fiches techniques, une fois chacune. Dans les Réglages, « 📥 Fiches dans la bibliothèque Pipe-Fit » fait télécharger par

@@ -19,6 +19,7 @@ const Notifs = require('./notifs');
 const Compagnon = require('../public/js/compagnon');
 const MaterielRetenu = require('../public/js/materiel-retenu');
 const Installe = require('../public/js/installe');
+const PlanMes = require('../public/js/plan-mes');
 const FT = require('../public/js/fiches-tech');
 // Lignes des commandes fournisseurs d'un chantier pour le suivi du matériel (fournisseur nommé, sans prix)
 const lignesCommandesPF = affaireId => Installe.lignesCommandes(recordsDe('commandes'), affaireId, id => (id ? (DB.getRecord(db, 'entreprises', String(id)) || {}).nom : '') || '', id => (id ? DB.getRecord(db, 'articles', String(id)) : null));
@@ -671,6 +672,11 @@ async function api(req, res, url) {
     if (p[1] === 'debits' && !p[2] && method === 'GET') {
       const affaireId = url.searchParams.get('affaireId') || '';
       return send(res, 200, affaireId ? MaterielRetenu.debitsChantier(LIENS.liste({ affaireId, app: 'etudes' })) : []);
+    }
+    // Points de mise en service des études du chantier (liste des mises en service, bureau et compagnons)
+    if (p[1] === 'plan-mes' && method === 'GET') {
+      const affaireId = url.searchParams.get('affaireId') || '';
+      return send(res, 200, affaireId ? PlanMes.pointsChantier(LIENS.liste({ affaireId, app: 'etudes' })) : []);
     }
     // Suivi d'une ligne : soumission au client (bureau), pose / mise en service / photo de la plaque (bureau et compagnons)
     if (p[1] === 'materiel' && p[2] === 'suivi') {

@@ -15,15 +15,17 @@ function nouvelleEpreuve(query) {
   const me = Store.me.userId || '';
   if (copie) {
     // Réseau suivant du même chantier : mêmes conditions, nouvelles mesures
-    const { id, numero, _v, _at, _by, reseau, pressionDebut, pressionFin, photos, signatureTechId, signatureClientId, signeLe, statut, heureDebut, heureFin, ...garde } = copie;
+    const { id, numero, _v, _at, _by, planCle, reseau, pressionDebut, pressionFin, photos, signatureTechId, signatureClientId, signeLe, statut, heureDebut, heureFin, ...garde } = copie;
     return { ...garde, reseau: '', date: isoDate(new Date()), heureDebut: heureMaintenant(), heureFin: '', pressionDebut: '', pressionFin: '', photos: [], statut: 'Brouillon', userId: me || copie.userId };
   }
   const prevu = me && planJour(me, isoDate(new Date()))[0];
   const affaireId = query.get('chantier') || (prevu ? prevu.affaireId : '');
   const a = Store.get('affaires', affaireId) || {}, ct = Store.get('contacts', a.contactId) || {};
   const mano = manometres().find(m => m.affectation && (m.affectation.userId === me || m.affectation.affaireId === affaireId)) || manometres()[0];
-  return { affaireId, userId: me, date: isoDate(new Date()), heureDebut: heureMaintenant(), heureFin: '', reseau: '', nature: Epreuve.NATURES[0], description: '', fluideEssai: 'Eau',
-    pressionService: '', pressionEpreuve: '', peAuto: true, dureePrevue: 120, chuteAdmissible: 0, pressionDebut: '', pressionFin: '', temperature: '', manometreId: mano ? mano.id : '', manometre: mano ? libelleManometre(mano) : '',
+  // Ouvert depuis la liste des mises en service : réseau, nature, PS et pression d'épreuve de l'étude
+  const qv = k => String(query.get(k) || '').slice(0, 200), nb = k => (Number(qv(k)) > 0 ? Number(qv(k)) : '');
+  return { affaireId, userId: me, date: isoDate(new Date()), heureDebut: heureMaintenant(), heureFin: '', reseau: qv('reseau'), nature: Epreuve.NATURES.includes(qv('nature')) ? qv('nature') : Epreuve.NATURES[0], description: '', fluideEssai: Epreuve.FLUIDES.includes(qv('fluide')) ? qv('fluide') : 'Eau',
+    ...(qv('plan') ? { planCle: qv('plan') } : {}), pressionService: nb('ps') || '', pressionEpreuve: nb('pt') || (nb('ps') ? Epreuve.pressionConseillee(nb('ps')) : ''), peAuto: !nb('pt'), dureePrevue: 120, chuteAdmissible: 0, pressionDebut: '', pressionFin: '', temperature: '', manometreId: mano ? mano.id : '', manometre: mano ? libelleManometre(mano) : '',
     observations: '', photos: [], signataireNom: ct.nom ? contactName(ct) : '', signataireQualite: ct.fonction || '', statut: 'Brouillon' };
 }
 

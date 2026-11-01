@@ -620,6 +620,25 @@ Sur le téléphone (**Pointage → Rapports**) ou sur la fiche chantier, à côt
 Signés par le technicien (et le client), ils sont numérotés (MS-AAAA-0001, EQ-AAAA-0001), figés, imprimables avec
 l'attestation, envoyés en PDF, copiables pour l'équipement ou l'installation suivante, et repris dans le DOE.
 
+**Mises en service à faire** (fiche chantier, au bureau et sur le téléphone des compagnons) : liste construite à partir
+des études reliées au chantier, sans rien ressaisir :
+
+- **Épreuves des réseaux** : un point par réseau calculé (hydraulique, vapeur, air comprimé, gaz, épaisseur, DESP), avec la
+  pression de service et la pression d'épreuve de l'étude quand elle la donne ; le PV d'épreuve s'ouvre prérempli (réseau,
+  nature, PS, pression d'épreuve).
+- **Équipements** : matériel retenu à mettre en service (générateurs, pompes, CTA, caissons, vases, échangeurs) et calculs sans
+  matériel, avec les **valeurs attendues** de l'étude (débit et HMT des pompes, gonflage et remplissage des vases, tarage de la
+  soupape, débits, pressions et puissances des CTA et ventilateurs…) ; le PV de mise en service s'ouvre avec le type, la
+  marque, le modèle et ces valeurs à côté des mesures (écart en % à la saisie, colonnes « attendu » et « écart » dans le PV).
+- **Équilibrages** : installations dont l'étude donne les débits théoriques ; le relevé s'ouvre avec les débits déjà chargés.
+- **Contrôles et réception** : contrôles réglementaires des calculs (DESP : marquage CE, organisme notifié, suivi en service ;
+  gaz : certificat de conformité), remplissage et traitement d'eau, essais de la régulation / GTB, formation de l'exploitant,
+  et tâches ajoutées à la main.
+
+Chaque point est coché par son PV (fait, avec réserves, non conforme, brouillon en cours) ; les contrôles sans PV se cochent
+au bureau (« ✓ Fait », avec la date et le nom) et tout point peut être déclaré « sans objet ». Barre d'avancement et **liste
+à imprimer (PDF)** à cocher sur le chantier. Type de PV ajouté : **vase d'expansion, soupapes et maintien de pression**.
+
 **PV de réception** (Chantier → Réserves et réception) : réserves avec photo, signature du client et de l'entreprise sur
 l'écran ; le PV imprimé reprend les photos des réserves (et après levée pour le PV de levée).
 

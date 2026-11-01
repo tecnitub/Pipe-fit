@@ -260,6 +260,7 @@ Views.chantier.bind = (root, params) => {
   if (params[1] === 'gantt') return bindGanttChantier(root, a);
   if (estHorsDevis(a)) return bindHorsDevis(root, a);
   bindEtudeChantier(root, a);
+  chargerPlanMes(root, a.id);
   root.querySelector('#ch-consultation').onclick = () => { location.hash = '#/consultations/' + nouvelleConsultation({ affaireId: a.id, objet: `Fournitures ${a.code || ''}` }).id; };
   root.querySelector('#edit').onclick = () => editModal({ title: `Chantier ${a.code}`, col: 'affaires', fields: chantierFields, obj: { ...a },
     onDelete: () => { location.hash = '#/chantiers'; } });

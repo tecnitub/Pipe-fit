@@ -1,7 +1,7 @@
 // Démo de l'application Études sans serveur : simule l'API (connexion par les comptes Pipe-Fit de démonstration,
 // affaires, études versionnées, réglages). Les études restent sur l'appareil (localStorage).
 (function () {
-  const KEY = 'pipefit-etudes-demo-v1', ME_KEY = 'pipefit-etudes-demo-me';
+  const KEY = 'pipefit-etudes-demo-v2', ME_KEY = 'pipefit-etudes-demo-me';
   const COMPTES = [
     { login: 'jacky', nom: 'Jacky (bureau d\'études)', role: 'charge' },
     { login: 'claire', nom: 'Claire Martin', role: 'charge' },
@@ -59,6 +59,7 @@
       { id: 'n3', type: 'vase', titre: 'Vase d\'expansion boucle eau chaude', entrees: {}, commentaire: '' },
       { id: 'n4', type: 'isolation', titre: 'Isolation de la ligne vapeur DN 80', entrees: { serie: 'acier-10216', tube: '88.9x3.2', Tf: 170, L: 95, heures: 4000, Ta: 15, HR: 60, vent: 0, isolant: 'laine-roche', revetement: 'alu', qmax: 60, TsMax: 50, margeRosee: 1 }, commentaire: '' },
       { id: 'n5', type: 'dilatation', titre: 'Lyres de la ligne vapeur', entrees: { serie: 'acier-10216', tube: '88.9x3.2', L: 45, Tpose: 10, Tmin: 5, Tmax: 170 }, commentaire: '' },
+      { id: 'n6', type: 'desp', titre: 'Classement DESP du collecteur vapeur', entrees: { equipement: 'tuyauterie', fluide: 'vapeur', PS: 12, TS: 190, DN: 100, nuance: 'P235GH', troncons: [{ rep: 'Antennes ateliers', fluide: '', DN: 50, PS: '', TS: '' }, { rep: 'Retour condensats', fluide: 'condensats', DN: 40, PS: 3, TS: 120 }] }, commentaire: '' },
     ], _v: 1, _at: new Date().toISOString(), _by: 'Jacky (bureau d\'études)',
   });
   let db;
