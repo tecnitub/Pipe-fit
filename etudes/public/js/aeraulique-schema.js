@@ -16,6 +16,14 @@ const SchemaAir = ((D, C, N, Cta) => {
   const RESEAUX = { soufflage: 'Soufflage', reprise: 'Reprise', extraction: 'Extraction' };
   const BOUCHES = Cta.BOUCHES;
 
+  // Σζ : singularités écrites en clair (« 2 coudes, piquage, registre ») si renseignées, sinon la valeur saisie
+  function zetaAir(x, rep, alertes, defaut) {
+    const s = String(x.sing || '').trim();
+    if (!s) return num(x.zeta, defaut);
+    const r = D.singularites(s, true);
+    if (r.inconnus.length) alertes.push(alerte('attention', `${rep} : singularité(s) non reconnue(s) « ${r.inconnus.join(', ')} », non comptée(s).`));
+    return r.zeta;
+  }
   // Gaine circulaire automatique (ou rectangulaire à hauteur imposée) respectant vmax et Rmax
   function choisirGaine(Q, e, vmax) {
     const qv = Q / 3600, T = num(e.T, 20), rug = (D.RUGOSITE_GAINE[e.materiau] || D.RUGOSITE_GAINE.galva)[1], Rmax = num(e.Rmax, 1), h = num(e.h, 300);
@@ -49,7 +57,8 @@ const SchemaAir = ((D, C, N, Cta) => {
     z.forEach(x => {
       x.bouche = choisirBouche(x.type, x.Q / x.n, rho);
       x.antenne = choisirGaine(x.Q, e, num(e.vmaxA, 4));
-      x.dpA = x.antenne.R * num(x.L, 5) + num(x.zeta, 3) * x.antenne.pd;
+      x.zetaA = zetaAir(x, x.rep, alertes, 3);
+      x.dpA = x.antenne.R * num(x.L, 5) + x.zetaA * x.antenne.pd;
       const k = troncons.findIndex(t => t.rep === `Principal → ${x.rep}`);
       x.dpPrincipal = k >= 0 ? amont[k] : amont[amont.length - 1] || 0;
       x.dpTotal = x.dpPrincipal + x.dpA + x.bouche.dp;
@@ -66,7 +75,7 @@ const SchemaAir = ((D, C, N, Cta) => {
   function reseauArbo(lignes, e, reseauNom) {
     const rho = C.air(num(e.T, 20)).rho, alertes = [], T = num(e.T, 20), rug = (D.RUGOSITE_GAINE[e.materiau] || D.RUGOSITE_GAINE.galva)[1];
     const dpMin = num(e.dpRegistre, 10), partenaires = e.registres === 'antennes';
-    const tr = lignes.map((x, i) => ({ x, rep: String(x.rep || `T${i + 1}`).trim(), amont: String(x.amont || '').trim(), nom: String(x.nom || '').trim(), L: Math.max(0, num(x.L)), zeta: num(x.zeta, 0.5),
+    const tr = lignes.map((x, i) => ({ x, rep: String(x.rep || `T${i + 1}`).trim(), amont: String(x.amont || '').trim(), nom: String(x.nom || '').trim(), L: Math.max(0, num(x.L)), zeta: zetaAir(x, String(x.rep || `T${i + 1}`), alertes, 0.5),
       Qsaisi: num(x.Q), n: Math.max(1, Math.round(num(x.n, 1))), type: BOUCHES[x.type] ? x.type : (reseauNom === 'soufflage' ? 'plafond' : 'extraction'), enfants: [] }));
     const parRep = new Map();
     tr.forEach(t => { if (parRep.has(t.rep)) alertes.push(alerte('erreur', `Repère ${t.rep} en double.`)); else parRep.set(t.rep, t); });
@@ -148,6 +157,8 @@ const SchemaAir = ((D, C, N, Cta) => {
         // Gaines (métré) : en arborescence chaque tronçon est déjà une gaine ; sinon gaine principale et antennes des zones
         troncons: [...rS.troncons, ...rR.troncons].map(t => ({ rep: t.rep, nom: t.nom, L: t.L })).concat(arbo ? [] : [...rS.zones, ...rR.zones].map(x => ({ rep: `Antenne ${x.rep}`, nom: x.antenne.nom, L: num(x.L, 5) }))),
         registres: [...(rS.registres || []), ...(rR.registres || [])].map(x => ({ rep: x.rep, gaine: x.nomGaine, Q: x.Q, dp: x.dpReg })),
+        // Éléments de gaine pour le métré : réseau, gaine, longueur, surface développée (m²), piquage, registre, singularités
+        elements: elementsMetre(arbo, rS, rR, souffle),
         producteur: e.producteur || 'cta-df',
         bouches: [...rS.zones, ...rR.zones].map(x => ({ local: x.rep, type: x.bouche.b.libelle, taille: x.bouche.nom, n: x.n })),
         // Débits théoriques bouche par bouche (relevé d'équilibrage sur le chantier)
@@ -183,6 +194,21 @@ const SchemaAir = ((D, C, N, Cta) => {
       schemas: arbo ? [[rS, titreS, '#1f6fb2'], [rR, dfx || e.producteur === 'cta-melange' ? 'Reprise' : 'Extraction', '#c2410c']].filter(([r]) => r.arbre && r.arbre.terminaux.length)
         .map(([r, nom, c]) => ({ titre: `Arborescence du réseau de ${nom.toLowerCase()}`, svg: dessinerArbre(r, nom, c) })) : [],
     };
+  }
+
+  // Surface développée d'une gaine (m² par m) d'après son nom (« Ø 450 », « 600 × 300 »)
+  const perimetre = nom => { const r = /Ø\s*(\d+)/.exec(nom || ''), q = /(\d+)\s*×\s*(\d+)/.exec(nom || ''); return r ? Math.PI * r[1] / 1000 : q ? 2 * (+q[1] + +q[2]) / 1000 : 0; };
+  const singDe = x => (String((x && x.sing) || '').trim() ? D.singularites(x.sing, true).detail : []);
+  function elementsMetre(arbo, rS, rR, souffle) {
+    const out = [], nomR = r => (r === rS && souffle ? 'soufflage' : 'reprise');
+    [rS, rR].forEach(r => {
+      if (arbo) (r.arbre ? r.arbre.actifs : []).forEach(t => out.push({ reseau: nomR(r), gaine: t.nomGaine, L: t.L, surface: perimetre(t.nomGaine) * t.L, piquage: !!t.amont, registre: t.dpReg !== undefined, sing: singDe(t.x) }));
+      else {
+        r.troncons.forEach(t => out.push({ reseau: nomR(r), gaine: t.nom, L: t.L, surface: perimetre(t.nom) * t.L, piquage: false, registre: false, sing: [] }));
+        r.zones.forEach(z => out.push({ reseau: nomR(r), gaine: z.antenne.nom, L: num(z.L, 5), surface: perimetre(z.antenne.nom) * num(z.L, 5), piquage: true, registre: true, sing: singDe(z) }));
+      }
+    });
+    return out;
   }
 
   /* ---------- Arborescence d'un réseau (comme le réseau hydraulique) ---------- */
@@ -305,7 +331,7 @@ const SchemaAir = ((D, C, N, Cta) => {
         { rep: 'R2.1', reseau: 'reprise', amont: 'R2', nom: 'Salle de réunion (reprise)', L: 5, zeta: 1.5, dim: '', type: 'extraction', n: 2, Q: 950 },
         { rep: 'R2.2', reseau: 'reprise', amont: 'R2', nom: 'Sanitaires', L: 8, zeta: 1.5, dim: '', type: 'extraction', n: 6, Q: 450 }],
         colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'reseau', l: 'Réseau', t: 's', o: Object.entries(RESEAUX) }, { k: 'amont', l: 'Amont', t: 't' }, { k: 'nom', l: 'Désignation', t: 't' },
-          { k: 'L', l: 'Longueur (m)' }, { k: 'zeta', l: 'Σζ' }, { k: 'dim', l: 'Gaine (mm)', t: 't' }, { k: 'type', l: 'Bouches', t: 's', o: Object.entries(BOUCHES).map(([k, b]) => [k, b.libelle]) },
+          { k: 'L', l: 'Longueur (m)' }, { k: 'zeta', l: 'Σζ' }, { k: 'sing', l: 'Singularités (ex. « 2 coudes, piquage, registre » : remplacent Σζ)', t: 't' }, { k: 'dim', l: 'Gaine (mm)', t: 't' }, { k: 'type', l: 'Bouches', t: 's', o: Object.entries(BOUCHES).map(([k, b]) => [k, b.libelle]) },
           { k: 'n', l: 'Nombre de bouches' }, { k: 'Q', l: 'Débit des bouches (m³/h)' }] },
       { k: 'registres', l: 'Registres d\'équilibrage', t: 's', o: [['bouches', 'Sur chaque branche terminale (bouches)'], ['antennes', 'Sur chaque branche et au pied des antennes (registres partenaires)']], d: 'bouches', si: e => e.structure === 'arborescence' },
       { k: 'dpRegistre', l: 'ΔP mini d\'un registre (réglage fiable)', u: 'Pa', d: 10, si: e => e.structure === 'arborescence' },
@@ -317,7 +343,7 @@ const SchemaAir = ((D, C, N, Cta) => {
         { rep: 'Sanitaires', reseau: 'extraction', type: 'extraction', n: 6, Q: 450, distance: 20, L: 8, zeta: 3 },
         { rep: 'Salle de réunion (reprise)', reseau: 'reprise', type: 'extraction', n: 2, Q: 950, distance: 25, L: 6, zeta: 3 }],
         colonnes: [{ k: 'rep', l: 'Zone', t: 't' }, { k: 'reseau', l: 'Réseau', t: 's', o: Object.entries(RESEAUX) }, { k: 'type', l: 'Bouches', t: 's', o: Object.entries(BOUCHES).map(([k, b]) => [k, b.libelle]) },
-          { k: 'n', l: 'Nombre de bouches' }, { k: 'Q', l: 'Débit de la zone (m³/h)' }, { k: 'distance', l: 'Distance au ventilateur (m)' }, { k: 'L', l: 'Longueur de l\'antenne (m)' }, { k: 'zeta', l: 'Σζ de l\'antenne' }] },
+          { k: 'n', l: 'Nombre de bouches' }, { k: 'Q', l: 'Débit de la zone (m³/h)' }, { k: 'distance', l: 'Distance au ventilateur (m)' }, { k: 'L', l: 'Longueur de l\'antenne (m)' }, { k: 'zeta', l: 'Σζ de l\'antenne' }, { k: 'sing', l: 'Singularités de l\'antenne (remplacent Σζ)', t: 't' }] },
       { g: 'Composants et ventilateurs' },
       { k: 'dpPrise', l: 'Prise d\'air neuf', u: 'Pa', d: 40, si: e => e.producteur !== 'extraction' }, { k: 'dpFiltreS', l: 'Filtre air neuf (mi-encrassement)', u: 'Pa', d: 150, si: e => e.producteur !== 'extraction' },
       { k: 'dpFiltreR', l: 'Filtre de reprise', u: 'Pa', d: 100, si: e => ['cta-df', 'cta-melange'].includes(e.producteur) },

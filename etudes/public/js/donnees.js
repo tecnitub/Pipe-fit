@@ -161,6 +161,28 @@ const Donnees = (() => {
   // Apports solaires de pointe à travers 1 m² de vitrage clair (W/m²), avant facteur solaire
   const SOLAIRE = { nord: ['Nord', 120], est: ['Est', 500], sud: ['Sud', 400], ouest: ['Ouest', 500], horizontal: ['Horizontal (lanterneaux)', 750] };
 
-  return { MURS, TOITURES, PLANCHERS, VITRAGES, PORTES, INFILTRATIONS, CLIMATS, ACTIVITES, SOLAIRE, SERIES, MATERIAUX, CP_EAU, GLYCOLS, VAPEUR, SINGULARITES, ISOLANTS, REVETEMENTS, GAINES_RONDES, RUGOSITE_GAINE, SINGULARITES_AIR, PVAP, VASES, KVS, ACIERS_PRESSION };
+  // Singularités écrites en clair (« 2 coudes, 1 té dérivation, registre ») : Σζ et détail ; mots reconnus dans l'ordre
+  // (le plus précis d'abord), nombre devant le mot (« 2 », « 2 x », « 2× ») ou 1 par défaut
+  const MOTS_SING = {
+    eau: [['coude90f', /coude.*(filet|sertir|sertis)/], ['coude45', /coude.*45/], ['courbe', /courbe|cintr/], ['coude90', /coude/], ['te-conf', /confluence|separation/], ['te-der', /derivation|piquage/],
+      ['te-dir', /\bte(s)?\b|passage direct/], ['elarg', /elargissement/], ['reduc', /reduction|reducteur|cone/], ['entree', /entree/], ['sortie', /sortie/], ['papillon', /papillon/], ['opercule', /opercule/],
+      ['soupape', /soupape/], ['clapet-ressort', /clapet.*ressort/], ['clapet', /clapet|anti.?retour/], ['filtre', /filtre|tamis/], ['compensateur', /compensateur|dilatation/], ['vanne-qt', /vanne|robinet|boisseau|quart de tour/]],
+    air: [['coude90s', /coude.*(sans aube|vif|angle vif)/], ['coude90q', /coude.*(aube|rect)/], ['coude45', /coude.*45/], ['coude90r', /coude/], ['te-der', /piquage|derivation/], ['te-dir', /\bte(s)?\b|passage direct/],
+      ['reduc', /reduction|elargissement|transformation|cone/], ['clapet-cf', /coupe.?feu|clapet/], ['registre', /registre|volet/], ['grille', /grille|prise d.air|persienne/], ['sortie', /sortie|rejet/]],
+  };
+  function singularites(texte, air) {
+    const table = new Map((air ? SINGULARITES_AIR : SINGULARITES).map(([k, l, z]) => [k, [l, z]])), mots = MOTS_SING[air ? 'air' : 'eau'];
+    const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+    const detail = [], inconnus = [];
+    String(texte || '').split(/[,;+\n]| et /).map(norm).filter(Boolean).forEach(morceau => {
+      const m = /^(\d+(?:[.,]\d+)?)\s*[x×*]?\s*(.*)$/.exec(morceau), n = m ? parseFloat(m[1].replace(',', '.')) : 1, mot = m ? m[2] : morceau;
+      const trouve = mots.find(([, re]) => re.test(mot));
+      if (!trouve || !table.has(trouve[0])) { inconnus.push(morceau); return; }
+      const [libelle, z] = table.get(trouve[0]), ex = detail.find(d => d.code === trouve[0]);
+      if (ex) ex.n += n; else detail.push({ code: trouve[0], libelle, n, z });
+    });
+    return { zeta: Math.round(detail.reduce((s, d) => s + d.n * d.z, 0) * 1000) / 1000, detail, inconnus };
+  }
+  return { singularites, MURS, TOITURES, PLANCHERS, VITRAGES, PORTES, INFILTRATIONS, CLIMATS, ACTIVITES, SOLAIRE, SERIES, MATERIAUX, CP_EAU, GLYCOLS, VAPEUR, SINGULARITES, ISOLANTS, REVETEMENTS, GAINES_RONDES, RUGOSITE_GAINE, SINGULARITES_AIR, PVAP, VASES, KVS, ACIERS_PRESSION };
 })();
 if (typeof module !== 'undefined') module.exports = Donnees;

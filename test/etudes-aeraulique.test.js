@@ -174,3 +174,40 @@ test('réseau aéraulique arborescent : antennes et ramifications, débits cumul
   const t = err.alertes.map(a => a.texte).join(' | ');
   assert.match(t, /A : tronçon amont « X » introuvable/); assert.match(t, /boucle/);
 });
+
+test('singularités écrites en clair : Σζ calculé (aéraulique, hydraulique, arborescence aller + retour), mots inconnus signalés', () => {
+  const D = require('../etudes/public/js/donnees');
+  const a = D.singularites('2 coudes, 1 té dérivation, registre, clapet coupe-feu', true);
+  assert.strictEqual(a.zeta, 2 * 0.25 + 1 + 0.5 + 0.6); assert.deepStrictEqual(a.inconnus, []);
+  const h = D.singularites('6 coudes; 2x vannes + té ; machin', false);
+  assert.strictEqual(h.zeta, 6 * 0.3 + 2 * 0.1 + 0.4); assert.deepStrictEqual(h.inconnus, ['machin']);
+  assert.strictEqual(D.singularites('coude 45, coude fileté, clapet à ressort', false).zeta, 0.2 + 1 + 4);
+  // Réseau hydraulique : la colonne remplace Σζ
+  const e = N.defauts('reseau'); e.troncons[0].sing = '4 coudes, 2 vannes, filtre, truc';
+  const r = N.calculer('reseau', e);
+  assert.strictEqual(r.tableaux[0].lignes[0][7], '4,4');
+  assert.ok(r.alertes.some(x => /singularité\(s\) non reconnue\(s\) « truc »/.test(x.texte)));
+  // Réseau arborescent hydraulique : singularités de l'aller comptées deux fois
+  require('../etudes/public/js/equilibrage');
+  const b = N.defauts('arbo'); b.troncons[0].sing = '2 coudes'; b.troncons[0].zeta = 99;
+  assert.strictEqual(N.calculer('arbo', b).tableaux[0].lignes[0][7], '1,2');
+  // Schéma aéraulique : antenne d'une zone
+  const z = N.defauts('aero'), sansSing = N.calculer('aero', z).valeurs.dpReseauS;
+  z.zones[1].sing = '6 coudes, 2 registres'; z.zones[1].zeta = 3; // salle de réunion (zone défavorisée) : Σζ 3 → 2,5
+  assert.ok(N.calculer('aero', z).valeurs.dpReseauS < sansSing);
+});
+
+test('métré aéraulique : piquages, registres, coudes et clapets des singularités, manchettes, calorifuge des gaines de soufflage', () => {
+  const e = { ...N.defauts('aero'), structure: 'arborescence' };
+  e.troncons[0].sing = '2 coudes, clapet coupe-feu';
+  const postes = Me.metre({ notes: [{ id: 'a', type: 'aero', titre: 'CTA', entrees: e }] }), q = re => postes.filter(p => re.test(p.designation)).reduce((s, p) => s + p.qte, 0);
+  assert.strictEqual(q(/^Piquage/), 10, 'un piquage par tronçon raccordé à un autre');
+  assert.strictEqual(q(/^Registre d'équilibrage/), 7);
+  assert.strictEqual(q(/^Coude 90° Ø 450/), 2); assert.strictEqual(q(/^Clapet coupe-feu Ø 450/), 1);
+  assert.strictEqual(q(/^Manchette souple/), 4, 'soufflage et reprise, côté réseau et côté air neuf / rejet');
+  const calo = postes.find(p => /Calorifuge .* gaines de soufflage/.test(p.designation));
+  assert.ok(calo && calo.unite === 'm²' && calo.qte > 50 && calo.qte < 120, calo && calo.qte);
+  // Accessoires au métré, mais pas dans le matériel retenu à faire valider (clapet coupe-feu : si)
+  const eq = postes.filter(Me.estEquipement).map(p => p.designation).join(' | ');
+  assert.ok(!/Piquage|Registre d'équilibrage|Manchette|Coude/.test(eq)); assert.match(eq, /Clapet coupe-feu/);
+});

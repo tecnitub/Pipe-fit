@@ -77,6 +77,18 @@ const Metre = ((N, C, D, L, Sc) => {
         if (!relie) equip(`aero|${v.producteur}|${Math.round(Q)}`, 'Aéraulique', cta ? `Centrale de traitement d'air ${nf(Q, 0)} m³/h${v.Qr && v.Qs ? ' double flux' : ''}` : `Caisson ${v.Qs ? 'd\'insufflation' : 'd\'extraction'} ${nf(Q, 0)} m³/h`, 1, cta ? 16 : 6, { type: cta ? 'cta' : 'caisson' }, src);
         (v.bouches || []).forEach(b => equip(`bouche|${b.type}|${b.taille}`, 'Aéraulique', `${b.type} ${b.taille}, plénum et raccordement`, b.n, 0.75, { type: 'bouche', taille: b.taille }, src));
         (v.troncons || []).forEach(t => ajouter(`gaine|${t.nom}`, { chapitre: 'Aéraulique', designation: `Gaine ${t.nom} mm galvanisée, supports compris`, unite: 'ml', qte: t.L, heures: R.gaine, mo: 'monteur', source: src, recherche: { type: 'gaine', nom: t.nom } }));
+        // Accessoires de gaine : piquages / tés, registres de réglage, coudes et clapets coupe-feu des singularités, manchettes souples
+        const LIB = { coude90r: 'Coude 90°', coude90q: 'Coude 90° à aubes', coude90s: 'Coude 90°', coude45: 'Coude 45°', 'te-dir': 'Té', reduc: 'Réduction / transformation', 'clapet-cf': 'Clapet coupe-feu', registre: 'Registre de réglage' };
+        (v.elements || []).forEach(x => {
+          if (x.piquage) equip(`piquage|${x.gaine}`, 'Aéraulique', `Piquage / té de dérivation ${x.gaine}`, 1, 0.5, { type: 'piquage', nom: x.gaine }, src);
+          if (x.registre) equip(`registre|${x.gaine}`, 'Aéraulique', `Registre d'équilibrage ${x.gaine}`, 1, 0.5, { type: 'registre', nom: x.gaine }, src);
+          (x.sing || []).forEach(s => { if (LIB[s.code] && !(s.code === 'registre' && x.registre)) equip(`${s.code === 'clapet-cf' ? 'cf' : 'acc'}|${LIB[s.code]}|${x.gaine}`, 'Aéraulique', `${LIB[s.code]} ${x.gaine}`, s.n, s.code === 'clapet-cf' ? 2 : 0.4, { type: s.code === 'clapet-cf' ? 'clapet-cf' : 'accessoire-gaine', nom: x.gaine }, src); });
+        });
+        const nFlux = (v.Qs > 0 ? 1 : 0) + (v.Qr > 0 ? 1 : 0);
+        if (nFlux) equip(`manchette|${v.producteur}|${Math.round(Q)}`, 'Aéraulique', `Manchette souple anti-vibratile (raccordement ${cta ? 'de la CTA' : 'du caisson'})`, 2 * nFlux, 0.5, { type: 'manchette' }, src);
+        // Calorifuge des gaines de soufflage d'air traité (CTA) : surface développée
+        const sCalo = cta && v.Qs > 0 ? (v.elements || []).filter(x => x.reseau === 'soufflage').reduce((s, x) => s + x.surface, 0) : 0;
+        if (sCalo > 0) ajouter('calo-gaine|25', { chapitre: 'Calorifuge', designation: 'Calorifuge laine minérale 25 mm revêtue aluminium sur gaines de soufflage', unite: 'm²', qte: sCalo, heures: 0.35, mo: 'calorifugeur', source: src, recherche: { type: 'calorifuge-gaine' } });
       }
       if (n.type === 'aeraulique') (v.troncons || []).forEach(t => ajouter(`gaine|${t.nom}`, { chapitre: 'Aéraulique', designation: `Gaine ${t.nom} mm galvanisée, supports compris`, unite: 'ml', qte: t.L, heures: R.gaine, mo: 'monteur', source: src, recherche: { type: 'gaine', nom: t.nom } }));
       if (n.type === 'vase' && v.choisi) equip(`vase|${v.choisi}`, 'Équipements hydrauliques', `Vase d'expansion ${v.choisi} L, gonflé à ${nf(v.p0, 1)} bar`, 1, 3, { type: 'vase', volume: v.choisi }, src);
@@ -136,6 +148,12 @@ const Metre = ((N, C, D, L, Sc) => {
       case 'desemboueur': return /desemboueur|pot a boue/.test(t) ? 2 + (tailleOk(t, r.dn) ? 1 : 0) : 0;
       case 'compteur': return /compteur/.test(t) && /energie|calorie/.test(t) ? 2 + (tailleOk(t, r.dn) ? 1 : 0) : 0;
       case 'echangeur': return /echangeur/.test(t) ? 2 : 0;
+      case 'piquage': return /piquage|derivation|\bte\b/.test(t) && t.includes(norm(r.nom).replace('o ', '')) ? 3 : /piquage/.test(t) ? 1 : 0;
+      case 'registre': return /registre/.test(t) ? 2 + (t.includes(norm(r.nom).replace('o ', '')) ? 1 : 0) : 0;
+      case 'accessoire-gaine': return /coude|reduction|transformation|\bte\b/.test(t) && t.includes(norm(r.nom).replace('o ', '')) ? 3 : 0;
+      case 'clapet-cf': return /coupe.?feu/.test(t) ? 2 + (t.includes(norm(r.nom).replace('o ', '')) ? 1 : 0) : 0;
+      case 'manchette': return /manchette|raccord souple|anti.?vibrat/.test(t) ? 2 : 0;
+      case 'calorifuge-gaine': return /calorif|isolant|laine/.test(t) && /gaine|m2|m²/.test(t) ? 2 : 0;
       case 'gaine': return /gaine|conduit/.test(t) && t.includes(norm(r.nom).replace(/\s+/g, ' ').replace('o ', '')) ? 3 : 0;
       case 'generateur': return norm(r.mots).split(' ').filter(m => m.length > 3).every(m => t.includes(m)) ? 2 : 0;
       default: return 0;
@@ -195,7 +213,11 @@ const Metre = ((N, C, D, L, Sc) => {
   }
   const csv = postes => ['Chapitre;Désignation;Unité;Quantité;Heures par unité;Article Pipe-Fit;Sources',
     ...postes.filter(p => p.inclus !== false).map(p => [p.chapitre, p.designation, p.unite, String(p.qte).replace('.', ','), String(p.heures).replace('.', ','), p.articleId || 'hors bibliothèque', p.sources.join(' ')].map(x => `"${String(x).replace(/"/g, '""')}"`).join(';'))].join('\r\n');
-  return { metre, rapprocher, lignesDevis, prixPoste, csv, score, CHAPITRES, DEFAUTS, LIBELLES_EQUIP, utiliser, ratios, calage, moPour };
+  // Équipement à choisir et faire valider (matériel retenu) : les accessoires de gaine (piquages, registres, coudes,
+  // manchettes) restent au métré sans référence de fabricant à soumettre
+  const ACCESSOIRES = ['piquage', 'registre', 'accessoire-gaine', 'manchette'];
+  const estEquipement = p => p.unite === 'u' && p.chapitre !== 'Études' && !ACCESSOIRES.includes((p.recherche || {}).type);
+  return { estEquipement, metre, rapprocher, lignesDevis, prixPoste, csv, score, CHAPITRES, DEFAUTS, LIBELLES_EQUIP, utiliser, ratios, calage, moPour };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Donnees !== 'undefined' ? Donnees : require('./donnees'),
   typeof Liens !== 'undefined' ? Liens : require('./liens'), typeof Schema !== 'undefined' ? Schema : require('./schema'));
 if (typeof module !== 'undefined') module.exports = Metre;

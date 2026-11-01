@@ -9,7 +9,7 @@ require('../etudes/public/js/aeraulique-schema');
 const Me = require('../etudes/public/js/metre');
 
 const etude = materiel => ({ notes: [{ id: 'a1', type: 'aero', titre: 'CTA bureaux', entrees: N.defauts('aero') }], materiel });
-const equipements = et => Me.metre(et).filter(p => p.unite === 'u' && p.chapitre !== 'Études');
+const equipements = et => Me.metre(et).filter(Me.estEquipement);
 
 test('liste : un équipement par poste du métré, statut selon la référence, saisie et validation', () => {
   const et = etude({}), ls = M.lignes(equipements(et), et.materiel);

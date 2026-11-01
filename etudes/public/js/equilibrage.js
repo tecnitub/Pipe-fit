@@ -25,7 +25,7 @@ const Equilibrage = ((D, C, N) => {
         { rep: 'A2.2', amont: 'A2', nom: 'Radiateurs R+1', L: 12, zeta: 4, tube: '', P: 20, dpEm: 10 },
         { rep: 'A3', amont: 'C', nom: 'CTA', L: 10, zeta: 6, tube: '', P: 60, dpEm: 25 }],
       colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'amont', l: 'Amont (vide = pompe)', t: 't' }, { k: 'nom', l: 'Désignation', t: 't' },
-        { k: 'L', l: 'Longueur aller (m)' }, { k: 'zeta', l: 'Σζ aller + retour' }, { k: 'tube', l: 'Tube', t: 's', o: e => [['', 'Auto'], ...optTubes(e)] },
+        { k: 'L', l: 'Longueur aller (m)' }, { k: 'zeta', l: 'Σζ aller + retour' }, { k: 'sing', l: 'Singularités de l\'aller (comptées aussi au retour ; remplacent Σζ)', t: 't' }, { k: 'tube', l: 'Tube', t: 's', o: e => [['', 'Auto'], ...optTubes(e)] },
         { k: 'P', l: 'Puissance émetteur (kW)' }, { k: 'dpEm', l: 'ΔP émetteur + vanne de régulation (kPa)' }] },
       { g: 'Équilibrage et pompe' },
       { k: 'methode', l: 'Vannes d\'équilibrage', t: 's', o: [['emetteurs', 'Sur chaque émetteur'], ['antennes', 'Sur chaque émetteur et au pied de chaque antenne (vannes partenaires)']], d: 'emetteurs' },
@@ -34,9 +34,11 @@ const Equilibrage = ((D, C, N) => {
       { k: 'marge', l: 'Marge de sécurité sur la HMT', u: '%', d: 10 }, { k: 'rendement', l: 'Rendement global de la pompe', u: '%', d: 55 }],
     calcul(e) {
       const f = C.liquide(e.fluide, num(e.T, 20)), s = D.SERIES[e.serie] || D.SERIES['acier-10216'], tubes = C.tubes(e.serie), alertes = [];
+      // Singularités écrites en clair : celles de l'aller, comptées deux fois (aller + retour)
+      const zetaSing = (x, rep) => { const s = String(x.sing || '').trim(); if (!s) return num(x.zeta); const r = D.singularites(s, false); if (r.inconnus.length) alertes.push(alerte('attention', `${rep} : singularité(s) non reconnue(s) « ${r.inconnus.join(', ')} », non comptée(s).`)); return 2 * r.zeta; };
       const vmax = num(e.vmax, 1.5), Rmax = num(e.Rmax, 150), dT = num(e.dT, 15), dpMin = num(e.dpMin, 3) * 1000, partenaires = e.methode === 'antennes';
       // Arbre des tronçons
-      const tr = (e.troncons || []).map((x, i) => ({ i, rep: String(x.rep || `T${i + 1}`).trim(), amont: String(x.amont || '').trim(), nom: x.nom || '', L: num(x.L), zeta: num(x.zeta), tubeImpose: x.tube, P: num(x.P), dpEm: num(x.dpEm) * 1000, enfants: [] }));
+      const tr = (e.troncons || []).map((x, i) => ({ i, rep: String(x.rep || `T${i + 1}`).trim(), amont: String(x.amont || '').trim(), nom: x.nom || '', L: num(x.L), zeta: zetaSing(x, `${x.rep || `T${i + 1}`}`), tubeImpose: x.tube, P: num(x.P), dpEm: num(x.dpEm) * 1000, enfants: [] }));
       const parRep = new Map();
       tr.forEach(t => { if (parRep.has(t.rep)) alertes.push(alerte('erreur', `Repère ${t.rep} en double.`)); else parRep.set(t.rep, t); });
       const racines = [];

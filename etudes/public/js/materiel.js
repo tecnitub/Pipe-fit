@@ -3,7 +3,7 @@
 // et dans le résumé envoyé à Pipe-Fit (fiche du chantier au bureau, appli des compagnons).
 function lignesMateriel(et) {
   let postes = [];
-  try { postes = Metre.metre(et).filter(p => p.unite === 'u' && p.chapitre !== 'Études'); } catch (e) { postes = []; }
+  try { postes = Metre.metre(et).filter(Metre.estEquipement); } catch (e) { postes = []; }
   return MaterielRetenu.lignes(postes, et.materiel);
 }
 const BADGE_STATUT = { 'À choisir': '', 'À soumettre': '', 'Soumis au client': 'info', Validé: 'ok', 'Validé avec réserves': 'ok', Refusé: 'erreur' };

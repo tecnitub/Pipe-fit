@@ -4,6 +4,14 @@ const Notes = ((D, C) => {
   const nf = (v, d = 2) => (Number.isFinite(v) ? v.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—');
   const num = (v, def = 0) => { const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? n : def; };
   const alerte = (niveau, texte) => ({ niveau, texte });
+  // Σζ d'un tronçon : singularités écrites en clair si renseignées (elles remplacent Σζ), sinon la valeur saisie
+  const zetaLigne = (x, air, alertes, rep, facteur = 1) => {
+    const s = String((x && x.sing) || '').trim();
+    if (!s) return num(x && x.zeta);
+    const r = D.singularites(s, air);
+    if (r.inconnus.length && alertes) alertes.push(alerte('attention', `${rep} : singularité(s) non reconnue(s) « ${r.inconnus.join(', ')} », non comptée(s) (liste dans Données de référence).`));
+    return r.zeta * facteur;
+  };
   // Catalogue de pompes et de vannes (gamme générique ou catalogues fournisseurs importés)
   const Cat = () => (typeof Catalogue !== 'undefined' ? Catalogue : require('./catalogue'));
   const libPompe = p => `${p.fabricant === 'Gamme générique' ? '' : `${p.fabricant} `}${p.modele}${p.dn ? ` (DN ${p.dn})` : ''}, vitesse ≈ ${nf(Math.min(1, p.vitesse) * 100, 0)} %`;
@@ -106,7 +114,7 @@ const Notes = ((D, C) => {
         { rep: 'T2 — collecteur → nourrice R+1', Q: 6, tube: '', L: 38, zeta: 4.5 },
         { rep: 'T3 — nourrice → CTA', Q: 3, tube: '', L: 16, zeta: 8 }],
       colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'Q', l: 'Débit (m³/h)' }, { k: 'tube', l: 'Tube', t: 's', o: e => [['', 'Auto'], ...optTubes(e)] },
-        { k: 'L', l: 'Longueur aller + retour (m)' }, { k: 'zeta', l: 'Σζ' }] },
+        { k: 'L', l: 'Longueur aller + retour (m)' }, { k: 'zeta', l: 'Σζ' }, { k: 'sing', l: 'Singularités aller + retour (ex. « 6 coudes, 2 tés dérivation, 2 vannes » : remplacent Σζ)', t: 't' }] },
       { k: 'composants', l: 'Équipements et accessoires (pertes de charge constructeur)', t: 'lignes', d: [
         { nom: 'Générateur / échangeur', dp: 15 }, { nom: 'Batterie CTA', dp: 20 }, { nom: 'Vanne de régulation', dp: 20 }, { nom: 'Vanne d\'équilibrage', dp: 5 }],
       colonnes: [{ k: 'nom', l: 'Équipement', t: 't' }, { k: 'dp', l: 'ΔP (kPa)' }] },
@@ -117,9 +125,9 @@ const Notes = ((D, C) => {
         const Q = num(x.Q), qv = Q / 3600;
         let t = x.tube ? tubes.find(y => y.cle === x.tube) : null, auto = false;
         if (!t) { auto = true; t = tubes.find(y => { const r = C.ecoulement(qv, y.di / 1000, f.rho, f.mu, s.rugosite); return r.v <= vmax && r.R <= Rmax; }) || tubes[tubes.length - 1]; }
-        const r = C.ecoulement(qv, t.di / 1000, f.rho, f.mu, s.rugosite), dpl = r.R * num(x.L), dps = num(x.zeta) * r.pd;
+        const zeta = zetaLigne(x, false, alertes, x.rep || `Tronçon ${i + 1}`), r = C.ecoulement(qv, t.di / 1000, f.rho, f.mu, s.rugosite), dpl = r.R * num(x.L), dps = zeta * r.pd;
         if (r.v > vmax * 1.001) alertes.push(alerte('attention', `${x.rep || `Tronçon ${i + 1}`} : vitesse ${nf(r.v)} m/s supérieure à ${nf(vmax)} m/s.`));
-        return { rep: x.rep || `Tronçon ${i + 1}`, Q, L: num(x.L), zeta: num(x.zeta), t, auto, ...r, dpl, dps, dp: dpl + dps };
+        return { rep: x.rep || `Tronçon ${i + 1}`, Q, L: num(x.L), zeta, t, auto, ...r, dpl, dps, dp: dpl + dps };
       });
       const comp = (e.composants || []).map(c => ({ nom: c.nom || 'Équipement', dp: num(c.dp) * 1000 }));
       const dpRes = tr.reduce((a, x) => a + x.dp, 0), dpComp = comp.reduce((a, x) => a + x.dp, 0);
@@ -359,7 +367,7 @@ const Notes = ((D, C) => {
       { k: 'troncons', l: 'Tronçons (dimension : « 400 » pour Ø 400, « 600x300 » pour rectangulaire, vide = auto en circulaire)', t: 'lignes', d: [
         { rep: 'Soufflage CTA → plénum', Q: 6000, dim: '800x400', L: 6, zeta: 1.5 }, { rep: 'Gaine principale', Q: 4500, dim: '', L: 25, zeta: 0.8 },
         { rep: 'Antenne bureaux', Q: 1200, dim: '', L: 18, zeta: 1.2 }, { rep: 'Piquage + bouche', Q: 300, dim: '200', L: 3, zeta: 1.3 }],
-      colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'Q', l: 'Débit (m³/h)' }, { k: 'dim', l: 'Dimension (mm)', t: 't' }, { k: 'L', l: 'Longueur (m)' }, { k: 'zeta', l: 'Σζ' }] },
+      colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'Q', l: 'Débit (m³/h)' }, { k: 'dim', l: 'Dimension (mm)', t: 't' }, { k: 'L', l: 'Longueur (m)' }, { k: 'zeta', l: 'Σζ' }, { k: 'sing', l: 'Singularités (ex. « 2 coudes, piquage, registre » : remplacent Σζ)', t: 't' }] },
       { k: 'composants', l: 'Composants (pertes de charge constructeur)', t: 'lignes', d: [
         { nom: 'Filtre F7 (encrassement moyen)', dp: 150 }, { nom: 'Batterie chaude', dp: 60 }, { nom: 'Batterie froide', dp: 110 }, { nom: 'Silencieux', dp: 40 }, { nom: 'Bouche de soufflage', dp: 30 }, { nom: 'Prise d\'air neuf', dp: 40 }],
       colonnes: [{ k: 'nom', l: 'Composant', t: 't' }, { k: 'dp', l: 'ΔP (Pa)' }] },
@@ -369,9 +377,9 @@ const Notes = ((D, C) => {
       const tr = (e.troncons || []).map((x, i) => {
         const qv = num(x.Q) / 3600; let dim = C.lireDimension(x.dim), auto = false;
         if (!dim) { auto = true; const d = D.GAINES_RONDES.find(d => { const r = C.gaine(qv, { a: d, b: 0 }, T, rug); return r.v <= vmax && r.R <= Rmax; }) || D.GAINES_RONDES[D.GAINES_RONDES.length - 1]; dim = { a: d, b: 0 }; }
-        const r = C.gaine(qv, dim, T, rug), dpl = r.R * num(x.L), dps = num(x.zeta) * r.pd;
+        const zeta = zetaLigne(x, true, alertes, x.rep || `Tronçon ${i + 1}`), r = C.gaine(qv, dim, T, rug), dpl = r.R * num(x.L), dps = zeta * r.pd;
         if (r.v > vmax * 1.001) alertes.push(alerte('attention', `${x.rep || `Tronçon ${i + 1}`} : vitesse ${nf(r.v)} m/s supérieure à ${nf(vmax)} m/s.`));
-        return { x, rep: x.rep || `Tronçon ${i + 1}`, Q: num(x.Q), nom: dim.b ? `${dim.a} × ${dim.b}` : `Ø ${dim.a}`, auto, ...r, dpl, dps, dp: dpl + dps };
+        return { x, rep: x.rep || `Tronçon ${i + 1}`, Q: num(x.Q), nom: dim.b ? `${dim.a} × ${dim.b}` : `Ø ${dim.a}`, auto, ...r, zeta, dpl, dps, dp: dpl + dps };
       });
       const comp = [...(num(e.dpCta) > 0 ? [{ nom: 'Centrale de traitement d\'air (composants)', dp: num(e.dpCta) }] : []), ...(e.composants || []).map(c => ({ nom: c.nom || 'Composant', dp: num(c.dp) }))];
       const dpRes = tr.reduce((a, x) => a + x.dp, 0), dpComp = comp.reduce((a, x) => a + x.dp, 0), dpTot = dpRes + dpComp, marge = num(e.marge, 10);
@@ -384,7 +392,7 @@ const Notes = ((D, C) => {
           ['Débit du ventilateur', `${nf(Qv, 0)} m³/h`], [`Pression totale avec marge de ${nf(marge, 0)} %`, `${nf(pVent, 0)} Pa`], ['Puissance absorbée estimée', `${nf(Pabs / 1000, 2)} kW`],
           ['Puissance spécifique (SFP)', `${nf(Pabs / Math.max(Qv / 3600, 1e-9) / 1000, 2)} kW/(m³/s)`]],
         tableaux: [{ titre: 'Tronçons', entetes: ['Repère', 'Q (m³/h)', 'Gaine (mm)', 'L (m)', 'v (m/s)', 'R (Pa/m)', 'ΔP lin. (Pa)', 'Σζ', 'ΔP sing. (Pa)', 'ΔP (Pa)'],
-          lignes: [...tr.map(x => [x.rep, nf(x.Q, 0), `${x.nom}${x.auto ? ' (auto)' : ''}`, nf(num(x.x.L), 1), nf(x.v), nf(x.R, 2), nf(x.dpl, 1), nf(num(x.x.zeta), 2), nf(x.dps, 1), nf(x.dp, 1)]),
+          lignes: [...tr.map(x => [x.rep, nf(x.Q, 0), `${x.nom}${x.auto ? ' (auto)' : ''}`, nf(num(x.x.L), 1), nf(x.v), nf(x.R, 2), nf(x.dpl, 1), nf(x.zeta, 2), nf(x.dps, 1), nf(x.dp, 1)]),
             ['Total gaines', '', '', '', '', '', '', '', '', nf(dpRes, 1)]], total: true },
         ...(comp.length ? [{ titre: 'Composants', entetes: ['Composant', 'ΔP (Pa)'], lignes: [...comp.map(c => [c.nom, nf(c.dp, 0)]), ['Total composants', nf(dpComp, 0)]], total: true }] : [])],
         alertes,

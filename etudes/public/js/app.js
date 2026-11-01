@@ -49,7 +49,7 @@ function resumePF(et) {
   let equipements = [];
   let materiel = [];
   try {
-    const postes = Metre.metre(et).filter(p => p.unite === 'u' && p.chapitre !== 'Études');
+    const postes = Metre.metre(et).filter(Metre.estEquipement);
     equipements = postes.slice(0, 150).map(p => ({ cle: p.cle, chapitre: p.chapitre, designation: p.designation, qte: p.qte, sources: p.sources, ...(p.reference ? { fabricant: p.fabricant, reference: p.reference } : {}) }));
     // Matériel retenu : fabricant, référence exacte et validation du client (fiche du chantier, appli des compagnons)
     if (typeof MaterielRetenu !== 'undefined') materiel = MaterielRetenu.pourCrm(MaterielRetenu.lignes(postes, et.materiel));
