@@ -139,7 +139,7 @@ const HorsLigne = (() => {
     programmer();
     if (file.length && enLigne()) envoyer();
   }
-  async function effacer() { file = []; locales.clear(); await sur(tx('file', 'readwrite', s => s.clear())); await sur(tx('cache', 'readwrite', s => s.clear())); }
+  async function effacer() { file = []; locales.clear(); if ('caches' in window) await sur(caches.delete('pipefit-fiches')); await sur(tx('file', 'readwrite', s => s.clear())); await sur(tx('cache', 'readwrite', s => s.clear())); }
 
   return { garder, relire, appeler, appelsEnAttente, estReseau, enLigne, sauverDonnees, lireDonnees, ajouter, enAttente, envoyer, envoyerImage, demarrer, effacer, indicateur,
     urlLocale: id => locales.get(id) || null, nombre: () => file.length };

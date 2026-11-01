@@ -1,6 +1,8 @@
 // Service worker de l'appli téléphone : notifications du planning (Web Push), ouverture de l'appli
 // au bon écran quand on touche la notification, et dernière version de l'appli disponible sans réseau.
 const CACHE = 'pipefit-appli-v3';
+// Fiches techniques du matériel des chantiers, gardées pour être lues sans réseau
+const FICHES = 'pipefit-fiches';
 // Installation : toute l'appli (page, styles, scripts, icônes) est copiée pour démarrer sans réseau sur le chantier
 self.addEventListener('install', e => e.waitUntil((async () => {
   const c = await caches.open(CACHE);
@@ -14,13 +16,19 @@ self.addEventListener('install', e => e.waitUntil((async () => {
   await self.skipWaiting();
 })()));
 self.addEventListener('activate', e => e.waitUntil((async () => {
-  for (const k of await caches.keys()) if (k !== CACHE) await caches.delete(k);
+  for (const k of await caches.keys()) if (k !== CACHE && k !== FICHES) await caches.delete(k);
   await self.clients.claim();
 })()));
 
 // Réseau d'abord (toujours la dernière version), copie de secours pour démarrer hors connexion ; jamais les données /api
 self.addEventListener('fetch', e => {
   const u = new URL(e.request.url);
+  // Fiche technique (lien « ?horsLigne=1 ») : réseau d'abord, copie gardée sur le téléphone
+  if (e.request.method === 'GET' && u.origin === self.location.origin && u.pathname.startsWith('/api/files/') && u.searchParams.get('horsLigne') === '1') {
+    e.respondWith(fetch(e.request).then(r => { if (r.ok) { const copie = r.clone(); caches.open(FICHES).then(c => c.put(e.request, copie)); } return r; })
+      .catch(() => caches.open(FICHES).then(c => c.match(e.request)).then(r => r || Response.error())));
+    return;
+  }
   if (e.request.method !== 'GET' || u.origin !== self.location.origin || u.pathname.startsWith('/api/')) return;
   e.respondWith(fetch(e.request)
     .then(r => { if (r.ok) { const copie = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copie)); } return r; })

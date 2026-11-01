@@ -298,7 +298,7 @@ SECTIONS.s3 = {
     <p class="muted">Cochez les familles d'équipements réellement présentes sur le chantier (seules celles-ci figurent dans le DOE).</p>
     <div class="familles">${TRAME.familles.map(f => `<label class="case"><input type="checkbox" data-famille="${f.id}" ${doe.familles.includes(f.id) ? 'checked' : ''}> <strong>${f.id}</strong> ${esc(f.titre)}</label>`).join('')}</div>
     ${blocInstalle(doe)}
-    <div class="actions-ligne"><button class="secondaire" id="import-pf">Importer le matériel du chantier (Pipe-Fit)</button><button class="secondaire" id="fiches-ajout">+ Joindre des fiches techniques</button></div>
+    <div class="actions-ligne"><button class="secondaire" id="import-pf">Importer le matériel du chantier (Pipe-Fit)</button><button class="secondaire" id="fiches-ajout">+ Joindre des fiches techniques</button><button class="secondaire" id="fiches-biblio" title="Fiche de chaque équipement (marque + référence) dans la bibliothèque Pipe-Fit, version en vigueur à la date de pose">📄 Fiches de la bibliothèque Pipe-Fit</button></div>
     ${doe.familles.slice().sort().map(fid => { const f = familleDe(fid), eqs = doe.equipements.map((e, i) => ({ e, i })).filter(x => x.e.famille === fid), fiches = doe.fiches.map((x, i) => ({ x, i })).filter(y => y.x.famille === fid);
       return `<div class="famille"><h3>${fid} ${esc(f.titre)}</h3>
         ${eqs.map(({ e, i }) => `<details class="equipement" ${vide(e.repere) || vide(e.serie) ? 'open' : ''}><summary><strong>${esc(e.repere || 'Repère ?')}</strong> ${esc(e.designation || '')} ${esc([e.marque, e.reference].filter(Boolean).join(' '))}${e.quantite ? ` <span class="muted">× ${esc(e.quantite)}</span>` : ''}${['repere', 'marque', 'reference', 'serie'].some(k => vide(e[k])) ? ' <span class="badge">à compléter</span>' : ''}</summary>
@@ -315,10 +315,36 @@ SECTIONS.s3 = {
     root.querySelectorAll('[data-eq-ajout]').forEach(b => b.onclick = () => { doe.equipements.push({ id: uidD(), famille: b.dataset.eqAjout, repere: '', designation: '', marque: '', reference: '', serie: '', quantite: '', localisation: '', champs: [], garantie: '', sav: '' }); enregistrer(doe); App.render(); });
     root.querySelector('#fiches-ajout').onclick = async () => { const fs = await choisirFichiers(true, '.pdf,.jpg,.jpeg,.png'); fs.forEach(f => doe.fiches.push({ id: uidD(), famille: doe.familles.length === 1 ? doe.familles[0] : '', designation: f.nom.replace(/\.[a-z0-9]+$/i, ''), fichier: f })); if (fs.length) { enregistrer(doe); App.render(); } };
     root.querySelector('#import-pf').onclick = () => importerMateriel(doe);
+    root.querySelector('#fiches-biblio').onclick = () => fichesBibliotheque(doe);
     bindInstalle(root, doe);
     bindRetirer(root, doe);
   },
 };
+// Fiches techniques de la bibliothèque Pipe-Fit : pour chaque équipement (marque + référence, celle de la commande quand
+// elle a été reprise), la fiche en vigueur à la date de pose est copiée dans le DOE et rangée dans sa famille (annexe B)
+async function fichesBibliotheque(doe) {
+  const eqs = doe.equipements.filter(e => !vide(e.reference));
+  if (!eqs.length) return toast('Aucun équipement avec une référence : complétez les références (ou importez le matériel du chantier).', 6000);
+  toast('Recherche des fiches dans la bibliothèque…', 2000);
+  // Date de pose relevée sur le chantier (matériel retenu des études)
+  const ms = await api('GET', `/api/pf/materiel?affaireId=${encodeURIComponent(doe.affaireId)}`).catch(() => []);
+  const pose = e => { const m = (ms || []).find(x => Installe.lienDe(e) && Installe.lienDe(e) === `${x.etudeId}|${x.cle}`); return (m && (m.poseLe || m.mesLe)) || ''; };
+  const r = await api('POST', '/api/pf/fiches/trouver', { demandes: eqs.map(e => ({ cle: e.id, fabricant: e.marque || '', reference: e.reference, date: pose(e) })) }).catch(() => []);
+  let ajoutees = 0, liees = 0;
+  const sans = [];
+  for (const e of eqs) {
+    const f = (r.find(x => x.cle === e.id) || {}).fiche;
+    if (!f) { sans.push(e); continue; }
+    const ex = doe.fiches.find(x => x.pfFichierId === f.fichierId);
+    if (ex) { if (!(ex.equipements || []).includes(e.id)) { ex.equipements = [...(ex.equipements || []), e.id]; liees++; } continue; }
+    // Fichier de Pipe-Fit (comme les plans du chantier) : lu et assemblé à la génération du DOE
+    const fichier = { src: 'pf', id: f.fichierId, nom: f.nom || `${e.reference}.pdf`, mime: 'application/pdf' };
+    doe.fiches.push({ id: uidD(), famille: e.famille, designation: `${[e.marque || f.fabricant, e.reference].filter(Boolean).join(' ')} — fiche technique${f.date ? ` (version du ${dateFr(f.date)})` : ''}`, fichier, equipements: [e.id], pfFichierId: f.fichierId, pfFicheId: f.id });
+    ajoutees++;
+  }
+  enregistrer(doe); App.render();
+  toast(`${ajoutees} fiche(s) ajoutée(s)${liees ? `, ${liees} équipement(s) rattaché(s) à une fiche déjà jointe` : ''}${sans.length ? ` · sans fiche dans la bibliothèque : ${sans.slice(0, 5).map(e => [e.marque, e.reference].filter(Boolean).join(' ')).join(', ')}${sans.length > 5 ? '…' : ''}` : ''}`, 9000);
+}
 // Rapprochement avec les commandes : la commande fait foi (c'est ce qui a été livré et posé)
 const ETATS_INSTALLE = { conforme: ['ok', 'conforme à la commande'], 'reference-differente': ['erreur', 'référence différente'], 'a-completer': ['', 'référence à reprendre'], 'non-commande': ['', 'pas dans les commandes'] };
 function blocInstalle(doe) {

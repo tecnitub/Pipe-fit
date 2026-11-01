@@ -705,6 +705,12 @@ function demoData() {
     files: { 'img-logo': IMAGES.logo, 'img-sig': IMAGES.signature, 'img-rack1': IMAGES.rack1, 'img-rack2': IMAGES.rack2,
       'pdf-iso': pdfExemple('Isometrique NEP aller - ISO-NEP-01 - indice B', ['Ligne NEP aller DN50 inox 316L', 'Longueur developpee : 61,8 m', '14 coudes 90 3D, 4 tes egaux, 4 brides PN16', 'Supportage tous les 2,5 m (colliers sur rail)', 'Indice B : cotes de raccordement mises a jour']),
       'pdf-iso-a': pdfExemple('Isometrique NEP aller - ISO-NEP-01 - indice A', ['Premiere diffusion']),
+      // Bibliothèque des fiches techniques (fabricants fictifs du catalogue de démonstration des études)
+      'ft-df4': pdfExemple('Exemplair - Diffuseur plafond carre DF4', ['References : DF4-160, DF4-200', 'Diffuseur 4 directions, plenum isole', 'Debit DF4-160 : 80 a 260 m3/h ; DF4-200 : 150 a 400 m3/h', 'Edition 03/2024']),
+      'ft-bex': pdfExemple('Exemplair - Bouche d extraction BEX', ['References : BEX-125, BEX-200', 'Debit BEX-125 : 30 a 120 m3/h', 'Edition 01/2023']),
+      'ft-cta-2022': pdfExemple('Ventilia - Centrale double flux CTA-DF 3000', ['Reference : CTA-DF 3000', 'Debit 1 800 a 3 400 m3/h, roue de recuperation', 'Edition 06/2022']),
+      'ft-cta-2025': pdfExemple('Ventilia - Centrale double flux CTA-DF 3000', ['Reference : CTA-DF 3000', 'Debit 1 800 a 3 400 m3/h, roue de recuperation, ventilateurs EC', 'Puissance absorbee 2,4 kW', 'Edition 02/2025']),
+      'ft-chc': pdfExemple('Thermexemple - Chaudiere gaz a condensation CHC-150', ['Reference : CHC-150', 'Puissance utile 150 kW', 'Edition 09/2024']),
       'pdf-ft-vanne': pdfExemple('Fiche technique - vanne papillon DN50 PN16', ['Corps fonte GS, papillon inox 316', 'Manchette EPDM alimentaire', 'Commande par levier crante', 'Couple de serrage des boulons : 60 N.m']),
       'pdf-ppsps': pdfExemple('PPSPS - Laiterie des Alpes, usine de Rumilly', ['Accueil securite au poste de garde (badge nominatif)', 'Permis de feu obligatoire pour toute soudure', 'EPI : casque, lunettes, chaussures, gants, bouchons', 'Point de rassemblement : parking visiteurs']),
       'pdf-fds-acetylene': pdfExemple('FDS - Acetylene dissous', ['Rubrique 2 : H220 gaz extremement inflammable, H230, H280', 'Rubrique 4 : inhalation - air frais', 'Rubrique 7 : stocker debout, arrime, ventile', 'Document d\'exemple : utilisez la FDS de votre fournisseur']),
@@ -721,6 +727,13 @@ function demoData() {
         tvaIntra: 'FR00000000000', formeJuridique: 'SAS', capital: '150 000 €', rcs: 'Lyon 000 000 000', ape: '4322B', banque: 'Banque de démonstration', iban: 'FR76 0000 0000 0000 0000 0000 000', bic: 'DEMOFRPPXXX',
         types: { devis: { conditions: 'Acompte de 30 % à la commande. Travaux réalisés selon les normes EN 13480 et le DTU en vigueur. Hors génie civil, calorifuge et échafaudages sauf mention contraire.' },
           facture: { conditions: 'Paiement par virement à 45 jours fin de mois.' } } } },
+    fichesTech: [
+      ['ftd1', 'Exemplair', ['DF4-160', 'DF4-200'], 'Diffuseur plafond carré 4 directions', 'bouche', '2024-03-01', 'ft-df4', 'Exemplair/DF4 diffuseur plafond.pdf'],
+      ['ftd2', 'Exemplair', ['BEX-125', 'BEX-200'], 'Bouche d\'extraction', 'bouche', '2023-01-01', 'ft-bex', 'Exemplair/BEX bouche extraction.pdf'],
+      ['ftd3', 'Ventilia', ['CTA-DF 3000'], 'Centrale double flux CTA-DF 3000', 'cta', '2022-06-01', 'ft-cta-2022', 'Ventilia/CTA-DF 3000 (2022).pdf', 'ftd4'],
+      ['ftd4', 'Ventilia', ['CTA-DF 3000'], 'Centrale double flux CTA-DF 3000', 'cta', '2025-02-01', 'ft-cta-2025', 'Ventilia/CTA-DF 3000.pdf'],
+      ['ftd5', 'Thermexemple', ['CHC-150'], 'Chaudière gaz à condensation 150 kW', 'generateur', '2024-09-01', 'ft-chc', 'Thermexemple/CHC-150.pdf'],
+    ].map(([id, fabricant, references, designation, famille, date, fichierId, chemin, remplaceePar]) => ({ id, fabricant, references, designation, famille, date, fichierId, nom: chemin.split('/')[1], chemin, source: 'dossier', verifiee: true, ...(remplaceePar ? { remplaceePar } : {}) })),
     users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels, missions, produits, equipementsFrigo, fichesFluides, bouteilles, enlevements, epreuves, releves, misesEnService, equilibrages,
   };
 }

@@ -20,7 +20,7 @@ const PDF_MOTEUR = path.join(__dirname, '..', 'public', 'js', 'pdf.js');
 const PF_PUBLIC = path.join(__dirname, '..', 'public');
 const PARTAGES = { '/shared/pdf.js': PDF_MOTEUR, '/shared/essais.js': path.join(PF_PUBLIC, 'js', 'essais.js'), '/shared/essais-doc.js': path.join(PF_PUBLIC, 'js', 'essais-doc.js'),
   // Lecture du CCTP : texte du PDF (pdf.js) et analyse des articles et équipements
-  '/shared/materiel-retenu.js': path.join(PF_PUBLIC, 'js', 'materiel-retenu.js'), '/shared/installe.js': path.join(PF_PUBLIC, 'js', 'installe.js'),
+  '/shared/materiel-retenu.js': path.join(PF_PUBLIC, 'js', 'materiel-retenu.js'), '/shared/installe.js': path.join(PF_PUBLIC, 'js', 'installe.js'), '/shared/fiches-tech.js': path.join(PF_PUBLIC, 'js', 'fiches-tech.js'),
   '/shared/pdf-lecture.js': path.join(PF_PUBLIC, 'js', 'pdf-lecture.js'), '/shared/cctp-lecture.js': path.join(PF_PUBLIC, 'js', 'cctp-lecture.js'),
   '/vendor/pdfjs/pdf.min.js': path.join(PF_PUBLIC, 'vendor', 'pdfjs', 'pdf.min.js'), '/vendor/pdfjs/pdf.worker.min.js': path.join(PF_PUBLIC, 'vendor', 'pdfjs', 'pdf.worker.min.js') };
 const MAX_JSON = 5 * 1024 * 1024, MAX_FICHIER = 60 * 1024 * 1024, SESSION_JOURS = 14;
@@ -166,6 +166,12 @@ async function api(req, res, url) {
   if (p[0] === 'pf' && p[1] === 'materiel' && method === 'GET') {
     const r = await pipefit(s, `/api/liens/materiel?affaireId=${encodeURIComponent(url.searchParams.get('affaireId') || '')}`);
     return r.ok ? send(res, 200, await r.json()) : send(res, 200, []);
+  }
+  // Bibliothèque des fiches techniques de Pipe-Fit : fiche de chaque équipement (fabricant, référence, date de pose)
+  if (p[0] === 'pf' && p[1] === 'fiches' && p[2] === 'trouver' && method === 'POST') {
+    const b = await lireJSON(req);
+    const r = await pipefit(s, '/api/fiches/trouver', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+    return send(res, 200, r.ok ? await r.json() : []);
   }
   if (p[0] === 'pf' && p[1] === 'fichier' && p[2] && method === 'GET') {
     const r = await pipefit(s, `/api/files/${encodeURIComponent(p[2])}`);

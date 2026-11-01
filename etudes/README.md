@@ -122,6 +122,10 @@ les équipements de l'étude ». Un CCTP scanné (sans texte) ne se lit pas : de
   bibliothèque de prix ; article modifiable poste par poste, export CSV, puis **devis brouillon créé dans Pipe-Fit** pour
   l'affaire (client, contact, site, TVA du client, ouvrages fournitures + main-d'œuvre, postes sans article « hors
   bibliothèque » à prix nul).
+- **Fiches techniques** : chaque ligne du matériel retenu retrouve sa fiche dans la bibliothèque de Pipe-Fit (fabricant +
+  référence exacte, 📄 bibliothèque ; « pas de fiche dans la bibliothèque » sinon) ; la liste à faire valider (PDF) est suivie
+  des fiches techniques, une fois chacune. Dans les Réglages, « 📥 Fiches dans la bibliothèque Pipe-Fit » fait télécharger par
+  Pipe-Fit les PDF des liens « fiche » du catalogue matériel.
 - **Matériel retenu contrôlé face au CCTP** : chaque ligne affiche l'équipement du dossier de consultation qui lui
   correspond (prescription, caractéristiques) ; le modèle choisi est comparé : marque imposée (⛔) ou « ou équivalent »
   (note d'équivalence à joindre), débit, puissance, volume, pression disponible, niveau sonore, puissance électrique.

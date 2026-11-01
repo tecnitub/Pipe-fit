@@ -31,6 +31,7 @@ function biblioTabs(active) {
     <a href="#/livraison" class="${active === 'livraison' ? 'active' : ''}">Livraison <span class="count">${Store.all('zones').length}</span></a>
     <a href="#/ouvrages" class="${active === 'ouvrages' ? 'active' : ''}">Ouvrages types <span class="count">${Store.all('ouvrages').length}</span></a>
     <a href="#/familles" class="${active === 'familles' ? 'active' : ''}">Familles CAO <span class="count">${Store.all('familles').length}</span></a>
+    <a href="#/fichesTech" class="${active === 'fiches' ? 'active' : ''}">📄 Fiches techniques <span class="count">${Store.all('fichesTech').filter(f => !f.remplaceePar && !f.absente).length}</span></a>
   </div>`;
 }
 

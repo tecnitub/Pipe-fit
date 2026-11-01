@@ -700,8 +700,15 @@ Vues.reglages = {
       <p class="muted petit">Les calculs proposent un modèle d'après le point de fonctionnement. Sans catalogue importé, une gamme générique d'exemple est utilisée (ordres de grandeur, aucune marque). Import au format CSV (séparateur « ; »).</p>
       ${['pompes', 'vannes', 'materiel'].map(g => { const cat = (c.catalogues || {})[g] || []; return `<div class="actions-ligne"><strong>${{ pompes: 'Pompes', vannes: 'Vannes de régulation', materiel: 'Matériel des fabricants (bouches, CTA, caissons, générateurs, PAC…) — CSV ou Excel, proposé dans « Matériel retenu »' }[g]}</strong>
         <span class="badge ${cat.length ? 'ok' : ''}">${cat.length ? `${cat.length} modèle(s) importé(s)${g === 'materiel' ? ` (${[...new Set(cat.map(x => x.fabricant))].slice(0, 6).join(', ')})` : ''}` : g === 'materiel' ? 'aucun catalogue' : 'gamme générique'}</span>
-        <button class="secondaire petit" data-csv-modele="${g}">Modèle CSV</button>${admin ? `<button class="petit" data-csv-import="${g}">Importer un CSV…</button>${cat.length ? `<button class="secondaire petit" data-csv-vider="${g}">Revenir à la gamme générique</button>` : ''}` : ''}</div>`; }).join('')}</div>`; },
+        <button class="secondaire petit" data-csv-modele="${g}">Modèle CSV</button>${admin ? `<button class="petit" data-csv-import="${g}">Importer un CSV…</button>${cat.length ? `<button class="secondaire petit" data-csv-vider="${g}">Revenir à la gamme générique</button>` : ''}` : ''}${g === 'materiel' && cat.some(x => x.fiche) ? `<button class="secondaire petit" id="cat-fiches" title="Les PDF des liens « fiche » du catalogue sont téléchargés par Pipe-Fit et gardés dans sa bibliothèque des fiches techniques">📥 Fiches dans la bibliothèque Pipe-Fit (${new Set(cat.filter(x => x.fiche).map(x => x.fiche)).size})</button>` : ''}</div>`; }).join('')}</div>`; },
   bind: root => {
+    // Liens « fiche » du catalogue matériel : PDF téléchargés et gardés dans la bibliothèque de Pipe-Fit
+    const cf = root.querySelector('#cat-fiches');
+    if (cf) cf.onclick = async () => {
+      const cat = ((S.config.catalogues || {}).materiel || []).filter(x => x.fiche);
+      try { const r = await api('POST', '/api/pf/fiches/catalogue', { lignes: cat.map(x => ({ fabricant: x.fabricant, reference: x.reference, designation: x.designation, url: x.fiche })) }); toast(`${r.total} fiche(s) en cours de téléchargement par Pipe-Fit (Bibliothèque → Fiches techniques : liens cassés signalés).`, 7000); }
+      catch (e) { toast(e.message, 6000); }
+    };
     // Corrections retenues de l'inventaire CCTP / DPGF (règles partagées)
     const zr = root.querySelector('#regles-inv');
     const rendreRegles = l => {

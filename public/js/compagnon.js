@@ -17,7 +17,7 @@ const Compagnon = (() => {
   const DEFAUT = Object.fromEntries(OPTIONS.map(o => [o[0], o[2]]));
   const regles = settings => ({ ...DEFAUT, ...((settings && settings.compagnon) || {}) });
   // Listes jamais envoyées aux compagnons
-  const MASQUEES = ['factures', 'situations', 'achats', 'efactures', 'consultations', 'chiffrages', 'envois', 'ouvrages', 'familles', 'zones', 'missions'];
+  const MASQUEES = ['factures', 'situations', 'achats', 'efactures', 'consultations', 'chiffrages', 'envois', 'ouvrages', 'familles', 'zones', 'missions', 'fichesTech'];
   // Documents de sécurité (PPSPS, PGC, plan de prévention) : toujours transmis s'ils sont cochés, même sans les autres documents
   const SECURITE = ['Sécurité / PPSPS', 'PGC', 'Plan de prévention'];
   const sans = (o, cles) => { const r = { ...o }; cles.forEach(k => delete r[k]); return r; };

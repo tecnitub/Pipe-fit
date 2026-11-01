@@ -430,7 +430,7 @@ function materielRetenuHtml(ms, mobile) {
   if (!ms || !ms.length) return '';
   const nv = ms.filter(m => m.valide).length, auj = isoDate(new Date()), relance = ms.filter(m => MaterielRetenu.aRelancer(m, auj));
   const nonValides = ms.filter(m => !m.valide).length, poses = ms.filter(m => m.poseLe).length;
-  const ligne = (m, i) => `<span><strong>${esc(m.designation)}</strong>${m.qte ? ` <span class="muted small">× ${fmt(m.qte, 0)}</span>` : ''}<br><span class="mat-ref">${esc([m.fabricant, m.reference].filter(Boolean).join(' — '))}</span>${m.obs ? `<br><span class="small muted">${esc(m.obs)}</span>` : ''}${m.fiche ? ` <a class="small" href="${esc(m.fiche)}" target="_blank" rel="noopener">fiche technique</a>` : ''}
+  const ligne = (m, i) => `<span><strong>${esc(m.designation)}</strong>${m.qte ? ` <span class="muted small">× ${fmt(m.qte, 0)}</span>` : ''}<br><span class="mat-ref">${esc([m.fabricant, m.reference].filter(Boolean).join(' — '))}</span>${m.obs ? `<br><span class="small muted">${esc(m.obs)}</span>` : ''}${m.ficheTech ? ` <a class="small" href="${esc(urlFicheTech(m.ficheTech))}" target="_blank" rel="noopener" title="${esc(`${m.ficheTech.nom || ''}${m.ficheTech.date ? ` — version du ${dateFr(m.ficheTech.date)}` : ''}`)}">📄 fiche technique${m.ficheTech.exacte ? '' : ' (gamme)'}</a>` : m.fiche ? ` <a class="small" href="${esc(m.fiche)}" target="_blank" rel="noopener">fiche technique</a>` : !mobile && m.reference ? ' <span class="small warn-text">pas de fiche dans la bibliothèque</span>' : ''}
       ${(m.photos || []).length ? `<br>${m.photos.map(p => `<a class="small" href="${fileUrl(p.fichierId)}" target="_blank" rel="noopener">📷 plaque ${dateFr(p.le)}</a>`).join(' ')}` : ''}
       ${mobile && m.valide ? `<span class="mat-actions">${m.poseLe && !m.mesLe ? `<a class="btn small" href="#/mes/new?${new URLSearchParams({ chantier: m.affaireId || '', type: MaterielRetenu.typeMes(m.cle), equipement: m.designation, marque: m.fabricant, modele: m.reference, materiel: `${m.etudeId}|${m.cle}` })}">📋 PV de mise en service</a>` : ''}${m.poseLe ? `<button type="button" class="small secondary" data-mat="${i}" data-act="${m.mesLe ? 'annulerMes' : 'mes'}">${m.mesLe ? 'Annuler la mise en service' : '✅ Mis en service (sans PV)'}</button>${m.mesLe ? '' : `<button type="button" class="small secondary" data-mat="${i}" data-act="annulerPose">Annuler la pose</button>`}` : `<button type="button" class="small" data-mat="${i}" data-act="pose">🔧 Posé</button>`}
         <label class="btn small secondary">📷 Plaque<input type="file" accept="image/*" capture="environment" data-photo="${i}" hidden></label></span>` : ''}</span>
@@ -451,6 +451,12 @@ function materielRetenuHtml(ms, mobile) {
       return g.length ? `<p class="small">🛡️ Garanties constructeur (${num((Store.data.settings || {}).garantieMois) || 24} mois après la mise en service) : ${g.length - finies.length} en cours${bientot.length ? ` · <span class="warn-text">${bientot.length} se termine(nt) sous 60 jours : ${bientot.map(x => `${esc(x.designation)} le ${dateFr(x.fin)}`).join(', ')}</span>` : ''}${finies.length ? ` · ${finies.length} terminée(s)` : ''}
         <button class="small secondary" id="mat-entretien">📋 Base du contrat d'entretien (CSV)</button></p>` : ''; })()}
     <ul class="mat-liste">${ms.map((m, i) => `${i === 0 || ms[i - 1].chapitre !== m.chapitre ? `<li class="mat-famille">${esc(m.chapitre || 'Équipements')}</li>` : ''}<li>${ligne(m, i)}</li>`).join('')}</ul>`;
+}
+// Fiche technique de la bibliothèque : gardée sur le téléphone (service worker) pour être lue sans réseau sur le chantier
+const urlFicheTech = f => { const u = fileUrl(f.fichierId); return u.startsWith('/api/') ? `${u}?horsLigne=1` : u; };
+function garderFichesTech(ms) {
+  if (!('caches' in window) || !navigator.serviceWorker || !navigator.serviceWorker.controller) return;
+  [...new Set((ms || []).filter(m => m.ficheTech && m.ficheTech.fichierId).map(m => urlFicheTech(m.ficheTech)).filter(u => u.startsWith('/api/')))].forEach(u => caches.open('pipefit-fiches').then(c => c.match(u).then(r => r || fetch(u, { credentials: 'same-origin' }).then(x => (x.ok ? c.put(u, x) : null)))).catch(() => {}));
 }
 // Chargé à l'affichage de la fiche du chantier (bureau et appli des compagnons), avec le suivi de chaque ligne
 const materielChantier = new Map();
@@ -474,7 +480,7 @@ function afficherMaterielRetenu(affaireId) {
 async function chargerMaterielRetenu(root, affaireId) {
   if (!root.querySelector('#mat-retenu')) return;
   let ms = null;
-  try { ms = await api('GET', `/api/liens/materiel?affaireId=${encodeURIComponent(affaireId)}`); HorsLigne.garder(`materiel/${affaireId}`, ms); }
+  try { ms = await api('GET', `/api/liens/materiel?affaireId=${encodeURIComponent(affaireId)}`); HorsLigne.garder(`materiel/${affaireId}`, ms); if (root.querySelector('#mat-retenu[data-mobile="1"]')) garderFichesTech(ms); }
   catch (e) { ms = materielChantier.get(affaireId) || await HorsLigne.relire(`materiel/${affaireId}`); }
   if (!ms) return;
   materielChantier.set(affaireId, appliquerEnAttente(JSON.parse(JSON.stringify(ms)), affaireId));

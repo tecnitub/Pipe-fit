@@ -20,7 +20,7 @@ const PARTAGES = { '/shared/pdf.js': path.join(__dirname, '..', 'public', 'js', 
   '/shared/pdf-lib.min.js': path.join(__dirname, '..', 'doe', 'public', 'vendor', 'pdf-lib-1.17.1.min.js'),
   '/logo-tecnitub.png': path.join(__dirname, '..', 'doe', 'public', 'logo-tecnitub.png'),
   // Lecture du CCTP et du DPGF (inventaire des producteurs et émetteurs) : texte des PDF, classeurs Excel
-  ...Object.fromEntries(['pdf-lecture.js', 'cctp-lecture.js', 'xlsx.js', 'inventaire-cvc.js', 'materiel-retenu.js'].map(f => [`/shared/${f}`, path.join(__dirname, '..', 'public', 'js', f)])),
+  ...Object.fromEntries(['pdf-lecture.js', 'cctp-lecture.js', 'xlsx.js', 'inventaire-cvc.js', 'materiel-retenu.js', 'fiches-tech.js'].map(f => [`/shared/${f}`, path.join(__dirname, '..', 'public', 'js', f)])),
   ...Object.fromEntries(['pdf.min.js', 'pdf.worker.min.js'].map(f => [`/vendor/pdfjs/${f}`, path.join(__dirname, '..', 'public', 'vendor', 'pdfjs', f)])) };
 const MAX_JSON = 25 * 1024 * 1024, SESSION_JOURS = 14; // note de calcul PDF transmise en JSON (base64)
 const ROLES_ETUDES = ['admin', 'charge'];
@@ -164,6 +164,13 @@ async function api(req, res, url) {
     return send(res, 200, RexPF(await r.json()));
   }
 
+  // Bibliothèque des fiches techniques de Pipe-Fit : recherche par fabricant + référence, liens d'un catalogue téléchargés
+  if (p[0] === 'pf' && p[1] === 'fiches' && ['trouver', 'catalogue'].includes(p[2]) && method === 'POST') {
+    const b = await lireJSON(req);
+    const r = await pipefit(s, `/api/fiches/${p[2]}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+    if (!r.ok) return p[2] === 'trouver' ? send(res, 200, []) : fail(res, r.status, ((await r.json().catch(() => ({}))).error) || 'Bibliothèque Pipe-Fit indisponible');
+    return send(res, 200, await r.json());
+  }
   // Suivi du matériel retenu sur le chantier (soumission, pose, mise en service) : lu dans Pipe-Fit
   if (p[0] === 'pf' && p[1] === 'materiel-suivi' && method === 'GET') {
     const r = await pipefit(s, `/api/liens/materiel/suivi?etudeId=${encodeURIComponent(url.searchParams.get('etudeId') || '')}`);

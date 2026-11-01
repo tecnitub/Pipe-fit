@@ -157,6 +157,8 @@ const DOSSIER = DossierDocuments.creer({ DB, db, broadcast, uid, TYPES: TYPES_DO
   notifier: (avant, apres) => NOTIFS.documentsModifies({ login: 'Répertoire serveur', nom: 'Répertoire serveur' }, avant, apres) });
 // Copie des pièces jointes sur le réseau (sens unique) et sauvegarde quotidienne de la base
 const PJRESEAU = require('./pj-reseau').creer({ DB, db, racineDocuments: () => DOSSIER.config().chemin });
+// Bibliothèque des fiches techniques (dossier du serveur lu régulièrement, dépôts, catalogues fournisseurs)
+const FICHES = require('./fiches-tech').creer({ DB, db, broadcast, racineDocuments: () => DOSSIER.config().chemin });
 // Assistant (Claude) : tâches confiées en langage courant, préparées en brouillon avec les droits de la personne
 const LIENS = require('./liens-apps').creer({ db, broadcast });
 const ASSISTANT = require('./assistant').creer({ DB, db, broadcast, notifier: obj => NOTIFS.enregistrer(obj) });
@@ -485,6 +487,35 @@ async function api(req, res, url) {
     return res.end(Buffer.from(f.data));
   }
 
+  // Bibliothèque des fiches techniques : recherche (tous, utilisée aussi par les applications Études et DOE), dépôt,
+  // catalogue, lecture du dossier et réglage (bureau)
+  if (p[0] === 'fiches') {
+    if (p[1] === 'trouver' && method === 'POST') { const b = await readBody(req); return send(res, 200, FICHES.trouver(Array.isArray(b.demandes) ? b.demandes : [])); }
+    if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
+    try {
+      if (p[1] === 'etat' && method === 'GET') return send(res, 200, { config: FICHES.config(), ...FICHES.etat(), sep: path.sep });
+      if (p[1] === 'config' && method === 'PUT') {
+        if (acc.role !== 'admin') return fail(res, 403, 'Réservé à l\'administrateur');
+        const b = await readBody(req);
+        if (b.chemin && !path.isAbsolute(String(b.chemin).trim())) return fail(res, 400, 'Indiquez un chemin complet (ex. \\\\serveur\\Fiches techniques ou D:\\Fiches techniques)');
+        const c = FICHES.enregistrerConfig(b);
+        DB.audit(db, acc.login, 'réglage de la bibliothèque des fiches techniques', null, null, c.chemin);
+        FICHES.synchroniser().catch(() => {});
+        return send(res, 200, { config: c, ...FICHES.etat() });
+      }
+      if (p[1] === 'synchro' && method === 'POST') { await FICHES.synchroniser(); return send(res, 200, { config: FICHES.config(), ...FICHES.etat() }); }
+      if (p[1] === 'analyser' && method === 'POST') { const b = await readBody(req); return send(res, 200, await FICHES.analyserFichier(b.fichierId, String(b.nom || ''))); }
+      if (p[1] === 'depot' && method === 'POST') {
+        const b = await readBody(req), l = Array.isArray(b.fiches) ? b.fiches.slice(0, 200) : [];
+        const out = l.map(f => FICHES.deposer(f, acc.nom || acc.login));
+        DB.audit(db, acc.login, 'dépôt de fiches techniques', 'fichesTech', null, `${out.length} fiche(s)`);
+        return send(res, 200, out);
+      }
+      if (p[1] === 'catalogue' && method === 'POST') { const b = await readBody(req); return send(res, 200, FICHES.catalogue(Array.isArray(b.lignes) ? b.lignes : [], acc.nom || acc.login)); }
+    } catch (e) { return fail(res, e.status || 500, e.message); }
+    return fail(res, 404, 'Route inconnue');
+  }
+
   // Répertoire des documents sur le serveur : réglage (administrateur), état et synchronisation immédiate (bureau)
   if (p[0] === 'documents' && p[1] === 'dossier') {
     if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Droits insuffisants');
@@ -531,7 +562,9 @@ async function api(req, res, url) {
       if (!affaireId) return send(res, 200, []);
       // Matériel retenu + suivi du chantier + commandes (commandé, substitution, livré) — sans prix
       const ms = MaterielRetenu.pourChantier(LIENS.liste({ affaireId, app: 'etudes' }), LIENS.suivis({ affaireId }));
-      return send(res, 200, Installe.suiviCommandes(ms, lignesCommandesPF(affaireId)));
+      // Fiche technique de la bibliothèque (référence retenue, sinon celle reçue à la livraison ; version en vigueur à la pose)
+      const ft = FICHES.trouver(ms.map((m, i) => ({ cle: i, fabricant: m.fabricant, reference: m.reference, date: m.poseLe || '' })));
+      return send(res, 200, Installe.suiviCommandes(ms, lignesCommandesPF(affaireId)).map((m, i) => (ft[i].fiche ? { ...m, ficheTech: ft[i].fiche } : m)));
     }
     // Avancement du matériel par chantier (liste des chantiers, bureau)
     if (p[1] === 'avancement' && method === 'GET') {
@@ -1134,6 +1167,7 @@ if (require.main === module) {
   setInterval(verifierDerives, 2 * 3600000).unref();
   DOSSIER.demarrer();
   PJRESEAU.demarrer();
+  FICHES.demarrer();
   SAUVEGARDE.demarrer();
   AGENDA.demarrer();
   // Sessions expirées effacées toutes les heures

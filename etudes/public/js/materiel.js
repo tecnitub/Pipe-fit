@@ -25,6 +25,19 @@ async function chargerSuivi(et) {
 }
 const chantierHtml = s => (s ? [s.mesLe ? `✅ en service le ${dateFr(s.mesLe)}` : s.poseLe ? `🔧 posé le ${dateFr(s.poseLe)}` : '', (s.photos || []).length ? `📷 ${s.photos.length}` : ''].filter(Boolean).join(' · ') : '');
 
+// Fiches techniques de la bibliothèque Pipe-Fit retrouvées d'après le fabricant et la référence exacte
+const fichesBiblio = new Map(); // étude → { sig, parCle: Map(cle → fiche) }
+async function chargerFichesBiblio(et, ls) {
+  const dem = ls.filter(l => l.reference && !l.orphelin).map(l => ({ cle: l.cle, fabricant: l.fabricant, reference: l.reference })), sig = JSON.stringify(dem);
+  const ex = fichesBiblio.get(et.id);
+  if (ex && ex.sig === sig) return false;
+  fichesBiblio.set(et.id, { sig, parCle: (ex || {}).parCle || new Map() });
+  if (!dem.length) return false;
+  try { const r = await api('POST', '/api/pf/fiches/trouver', { demandes: dem }); fichesBiblio.set(et.id, { sig, parCle: new Map(r.filter(x => x.fiche).map(x => [x.cle, x.fiche])) }); return true; } catch (e) { return false; }
+}
+const ficheDe = (et, l) => ((fichesBiblio.get(et.id) || {}).parCle || new Map()).get(l.cle) || null;
+const urlFicheBiblio = f => `/api/pf/fichier/${encodeURIComponent(f.fichierId)}`;
+
 function dialogueMateriel(et) {
   et.materiel = et.materiel || {};
   const box = Modal.open('');
@@ -46,7 +59,7 @@ function dialogueMateriel(et) {
     const nonConformes = ls.filter(l => !l.libre && (et.inventaire || []).length && CatalogueMateriel.controleCctp(l, et.inventaire, catalogue).alertes.some(a => a.niveau === 'erreur')).length;
     box.innerHTML = `<h2>🏷️ Matériel retenu</h2>
       <p class="muted petit">Pour chaque équipement dimensionné par l'étude : le fabricant et la <strong>référence exacte</strong> choisis. La liste se fait valider par le client ou la maîtrise d'œuvre (PDF), le statut est suivi ligne par ligne. Les références passent dans le métré et le devis, et sur la fiche du chantier dans Pipe-Fit (bureau et appli des compagnons : les gars voient ce qu'ils doivent poser et si c'est validé).</p>
-      <p class="petit">${b.total - b.aChoisir}/${b.total} référence(s) choisie(s) · ${b.valides} validée(s) · ${b.soumis} soumise(s) · ${b.aSoumettre} à soumettre${b.refuses ? ` · <span class="manque">${b.refuses} refusée(s) : choisir une autre référence</span>` : ''}${nonConformes ? ` · <span class="manque">⛔ ${nonConformes} non conforme(s) au CCTP</span>` : ''}${relance.length ? ` · <span class="manque">${relance.length} sans réponse depuis plus de 15 jours : relancer (depuis la fiche du chantier dans Pipe-Fit, « ✉️ Envoyer au client »)</span>` : ''}</p>
+      <p class="petit">${b.total - b.aChoisir}/${b.total} référence(s) choisie(s) · ${b.valides} validée(s) · ${b.soumis} soumise(s) · ${b.aSoumettre} à soumettre${b.refuses ? ` · <span class="manque">${b.refuses} refusée(s) : choisir une autre référence</span>` : ''}${nonConformes ? ` · <span class="manque">⛔ ${nonConformes} non conforme(s) au CCTP</span>` : ''}${(() => { const avec = ls.filter(l => l.reference && !l.orphelin), sans = avec.filter(l => !ficheDe(et, l) && !l.fiche).length; return avec.length ? ` · 📄 ${avec.length - sans}/${avec.length} fiche(s) technique(s)${sans ? ` <span class="avert">(${sans} à ajouter à la bibliothèque Pipe-Fit)</span>` : ''}` : ''; })()}${relance.length ? ` · <span class="manque">${relance.length} sans réponse depuis plus de 15 jours : relancer (depuis la fiche du chantier dans Pipe-Fit, « ✉️ Envoyer au client »)</span>` : ''}</p>
       <div class="defile metre"><table class="liste compact"><thead><tr><th>Équipement</th><th>Qté</th>${catalogue.length ? '<th>Catalogue</th>' : ''}<th>Fabricant</th><th>Référence exacte</th><th>Statut</th><th>Soumis le</th><th>Validé le</th><th>Observations du client</th><th>Fiche technique (lien)</th><th>Chantier</th><th></th></tr></thead><tbody>
       ${chapitres.map(ch => `<tr class="total"><td colspan="${catalogue.length ? 12 : 11}">${esc(ch || 'Équipements')}</td></tr>${ls.map((l, i) => [l, i]).filter(([l]) => l.chapitre === ch).map(([l, i]) => `<tr data-ligne="${i}">
         <td>${l.libre ? `<input data-m="designation" value="${esc(l.designation)}" placeholder="Désignation">` : `${esc(l.designation)}${l.orphelin ? '<div class="manque petit">plus dans l\'étude (dimension changée) : reprendre la référence sur la nouvelle ligne puis supprimer</div>' : `<div class="muted petit">${esc(l.sources.join(', '))}</div>`}`}${controleHtml(l)}</td>
@@ -57,7 +70,8 @@ function dialogueMateriel(et) {
         <td><select style="min-width:150px" data-m="statut" ${l.reference ? '' : 'disabled'}>${MaterielRetenu.STATUTS.filter(s => s !== 'À choisir' || !l.reference).map(s => `<option ${s === l.statut ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></td>
         <td><input type="date" style="width:132px" data-m="dateSoumission" value="${esc(l.dateSoumission)}"></td><td><input type="date" style="width:132px" data-m="dateValidation" value="${esc(l.dateValidation)}"></td>
         <td><input data-m="obs" value="${esc(l.obs)}" placeholder="Réserves, remarques"></td>
-        <td><input style="width:110px" data-m="fiche" value="${esc(l.fiche)}" placeholder="https://…"></td>
+        <td>${(f => (f ? `<a href="${urlFicheBiblio(f)}" target="_blank" rel="noopener" title="${esc(`${f.nom || ''}${f.date ? ` — version du ${dateFr(f.date)}` : ''}`)}">📄 bibliothèque${f.exacte ? '' : ' (gamme)'}</a>${f.remplacee ? ' <span class="petit avert">ancienne version</span>' : ''}`
+          : `<input style="width:110px" data-m="fiche" value="${esc(l.fiche)}" placeholder="https://…">${l.reference && !l.fiche ? '<div class="petit avert">pas de fiche dans la bibliothèque</div>' : ''}`))(ficheDe(et, l))}</td>
         <td class="petit">${MaterielRetenu.aRelancer(l, aujourdhui()) ? '<span class="badge erreur">à relancer</span> ' : ''}${esc(chantierHtml(suivi.get(l.cle)))}</td>
         <td>${l.libre || l.orphelin ? `<button class="icone" data-suppr="${i}" title="Supprimer">✕</button>` : ''}</td></tr>`).join('')}`).join('')}
       </tbody></table></div>
@@ -65,6 +79,7 @@ function dialogueMateriel(et) {
       <div class="actions"><button class="secondaire" id="ml-ajout">+ Ajouter un matériel</button><button class="secondaire" id="ml-soumis" ${b.aSoumettre ? '' : 'disabled'}>Marquer « soumis au client » (${b.aSoumettre})</button>
         <span class="espace"></span><button class="secondaire" id="ml-fermer">Fermer</button><button class="secondaire" id="ml-csv">CSV</button><button id="ml-pdf">📄 Liste à faire valider (PDF)</button></div>`;
     lier(ls);
+    chargerFichesBiblio(et, ls).then(ch => { if (ch && box.isConnected) rendu(); });
   };
   const lier = ls => {
     box.querySelector('#ml-fermer').onclick = fermer;
@@ -109,7 +124,7 @@ function htmlMateriel(et, ls) {
     <table class="tn"><tbody><tr><th>Affaire</th><td>${esc(libelleAffaire(a)) || '—'}</td><th>Client / maître d'ouvrage</th><td>${esc(et.client || clientDe(a)) || '—'}</td></tr>
       <tr><th>Étude</th><td>${esc(et.objet)} — indice ${esc(et.indice)}</td><th>Émise le</th><td>${dateFr(aujourdhui())} par ${esc(et.auteur || '')}</td></tr>
       <tr><th>Entreprise</th><td colspan="3">${esc(c.raison)} — ${esc(c.adresse)} — Tél. ${esc(c.tel)}</td></tr></tbody></table>
-    <p class="petit">Les équipements ci-dessous ont été dimensionnés par notre bureau d'études ; nous proposons les modèles indiqués (fiches techniques sur demande ou en lien). Merci de porter votre avis sur chaque ligne et de nous retourner la liste visée avant commande.</p>
+    <p class="petit">Les équipements ci-dessous ont été dimensionnés par notre bureau d'études ; nous proposons les modèles indiqués (fiches techniques jointes à la suite de cette liste, ou en lien). Merci de porter votre avis sur chaque ligne et de nous retourner la liste visée avant commande.</p>
     <table class="tn"><thead><tr><th>N°</th><th>Équipement</th><th>Qté</th><th>Fabricant</th><th>Référence</th><th>Statut</th><th style="width:16%">Avis du client (V / VO / R) et observations</th></tr></thead><tbody>
     ${chapitres.map(ch => `<tr><td colspan="7"><strong>${esc(ch || 'Équipements')}</strong></td></tr>${ls.filter(l => l.chapitre === ch).map(l => `<tr><td>${ls.indexOf(l) + 1}</td><td>${esc(l.designation)}</td><td class="num">${Notes.nf(l.qte, 0)}</td><td>${esc(l.fabricant)}</td><td><strong>${esc(l.reference)}</strong>${l.fiche ? `<br><span class="petit">${esc(l.fiche)}</span>` : ''}</td><td>${esc(l.statut)}${l.dateValidation ? ` le ${dateFr(l.dateValidation)}` : ''}</td><td>${esc(l.obs)}</td></tr>`).join('')}`).join('')}
     </tbody></table>
@@ -120,9 +135,20 @@ async function pdfMateriel(et, ls) {
   if (!ls.length) return toast('Saisir au moins une référence de fabricant.', 5000);
   const box = Modal.open('<h2>Liste du matériel</h2><p>Mise en page…</p>');
   try {
-    const bytes = await PDF.depuisHTML(pourPdf(htmlMateriel(et, ls)), 'Liste du matériel proposé', null, { margeHaut: 42, margeBas: 42 });
+    await chargerFichesBiblio(et, ls);
+    let bytes = await PDF.depuisHTML(pourPdf(htmlMateriel(et, ls)), 'Liste du matériel proposé', null, { margeHaut: 42, margeBas: 42 });
+    // Fiches techniques de la bibliothèque jointes à la suite de la liste (une fois chacune)
+    const fiches = [...new Map(ls.map(l => ficheDe(et, l)).filter(Boolean).map(f => [f.fichierId, f])).values()];
+    let jointes = 0;
+    if (fiches.length && typeof PDFLib !== 'undefined') {
+      const doc = await PDFLib.PDFDocument.load(bytes);
+      for (const f of fiches) {
+        try { const src = await PDFLib.PDFDocument.load(await (await fetch(urlFicheBiblio(f), { credentials: 'same-origin' })).arrayBuffer(), { ignoreEncryption: true }); (await doc.copyPages(src, src.getPageIndices())).forEach(pg => doc.addPage(pg)); jointes++; } catch (e) { /* fiche illisible : non jointe */ }
+      }
+      bytes = await doc.save();
+    }
     const a = affaireDe(et.affaireId), nom = `Materiel_a_valider_${sansAccents(a && a.code) || 'ETUDE'}_${sansAccents(et.objet).slice(0, 40)}_Ind${sansAccents(et.indice) || 'A'}.pdf`;
-    box.innerHTML = `<h2>Liste du matériel générée</h2><p><strong>${esc(nom)}</strong> · ${ls.length} équipement(s)</p>
+    box.innerHTML = `<h2>Liste du matériel générée</h2><p><strong>${esc(nom)}</strong> · ${ls.length} équipement(s)${jointes ? ` · ${jointes} fiche(s) technique(s) jointe(s)` : ''}${fiches.length > jointes ? ` · <span class="avert">${fiches.length - jointes} fiche(s) illisible(s) non jointe(s)</span>` : ''}</p>
       <p class="petit" id="ml-depot">${a ? 'Dépôt dans les documents du chantier…' : '<span class="muted">Étude sans chantier : la liste n\'est pas déposée (téléchargez-la).</span>'}</p>
       <p class="petit muted">Envoi au client et relances : depuis la fiche du chantier dans Pipe-Fit (« ✉️ Envoyer au client »), les lignes passent alors « soumis au client » ici. Reporter son avis ligne par ligne au retour.</p>
       <div class="actions"><button class="secondaire" id="f">Fermer</button><button id="gen-dl">Télécharger le PDF</button></div>`;

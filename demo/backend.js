@@ -2,9 +2,9 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v51';
+  const KEY = 'pipefit-crm-demo-v52';
   const ME_KEY = 'pipefit-crm-demo-me';
-  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications', 'habilitations', 'materiels', 'missions', 'produits', 'equipementsFrigo', 'fichesFluides', 'bouteilles', 'enlevements', 'epreuves', 'misesEnService', 'equilibrages', 'releves'];
+  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications', 'habilitations', 'materiels', 'missions', 'produits', 'equipementsFrigo', 'fichesFluides', 'bouteilles', 'enlevements', 'epreuves', 'misesEnService', 'equilibrages', 'releves', 'fichesTech'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4], fichesFluides: ['numero', 'FI', 4], epreuves: ['numero', 'EP', 4], misesEnService: ['numero', 'MS', 4], equilibrages: ['numero', 'EQ', 4], releves: ['numero', 'RC', 4] };
   const ACCOUNTS = [
     { id: 'acc-admin', login: 'admin', nom: 'Administrateur', role: 'admin', userId: null, email: 'admin@pipefit.example' },
@@ -166,12 +166,51 @@
       save();
       return [200, { user: JSON.parse(JSON.stringify(db.users[db.users.length - 1])), mission: acc.role === 'atelier' ? null : db.missions[db.missions.length - 1] }];
     }
+    // Bibliothèque des fiches techniques (démonstration : pas de dossier sur un serveur ; PDF lus dans le navigateur)
+    if (p[0] === 'fiches') {
+      db.fichesTech = db.fichesTech || [];
+      if (p[1] === 'trouver') return [200, FichesTech.trouver(db.fichesTech, body.demandes || [])];
+      if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Réservé au bureau' }];
+      const etat = () => ({ config: { chemin: 'Démonstration : dans la version installée, dossier du serveur (ex. \\\\serveur\\Fiches techniques)', actif: true, intervalle: 30, impose: true }, dernier: db.fichesDernier || null, ajoutees: 0, modifiees: 0, absentes: 0, erreurs: [], catalogue: db.fichesCatalogue || null, nombre: db.fichesTech.length });
+      const versions = () => FichesTech.versions(db.fichesTech).forEach(c => { const f = db.fichesTech.find(x => x.id === c.id); if (f) { f.remplaceePar = c.remplaceePar; f._v = (f._v || 1) + 1; } });
+      if (p[1] === 'etat') return [200, etat()];
+      if (p[1] === 'config') return [400, { error: 'Démonstration : le dossier des fiches se règle dans la version installée.' }];
+      if (p[1] === 'synchro') { db.fichesDernier = new Date().toISOString(); save(); return [200, etat()]; }
+      if (p[1] === 'analyser') {
+        return (async () => {
+          const d = (db.files || {})[body.fichierId];
+          if (!d) return [400, { error: 'Fichier introuvable' }];
+          let texte = '';
+          try { const blob = await (await realFetch(d)).blob(); texte = (await PdfLecture.lire(new File([blob], body.nom || 'fiche.pdf', { type: 'application/pdf' }), () => {}, { pagesMax: 3, ocr: false })).lignes.join('\n'); } catch (e) { texte = ''; }
+          const a = FichesTech.analyser({ nom: body.nom, chemin: body.nom, texte, fabricants: [...new Set(db.fichesTech.map(f => f.fabricant).filter(Boolean))] });
+          const ex = a.references.map(r => FichesTech.chercher(db.fichesTech, { fabricant: a.fabricant, reference: r })).find(x => x && x.exacte);
+          return [200, { ...a, existe: ex ? { id: ex.fiche.id, nom: ex.fiche.nom, date: ex.fiche.date || '' } : null }];
+        })();
+      }
+      if (p[1] === 'depot') {
+        const out = (body.fiches || []).map(f => {
+          const rec = { id: 'ft' + DemoSeed.uid(), fabricant: String(f.fabricant || '').trim(), references: String(f.references || '').split(/[\n;,]/).map(r => r.trim()).filter(Boolean), designation: f.designation || '', famille: f.famille || '', date: f.date || '',
+            fichierId: f.fichierId, nom: f.nom || '', chemin: `${FichesTech.nomFichier(f.fabricant || 'À classer')}/${f.nom || ''}`, source: 'depot', verifiee: true, _v: 1, _at: new Date().toISOString(), _by: acc.nom };
+          db.fichesTech.push(rec); return rec;
+        });
+        versions(); save();
+        return [200, out.map(r => JSON.parse(JSON.stringify(db.fichesTech.find(x => x.id === r.id))))];
+      }
+      if (p[1] === 'catalogue') {
+        const urls = [...new Set((body.lignes || []).map(l => l.url))];
+        db.fichesCatalogue = { enCours: false, total: urls.length, faits: urls.length, telechargees: 0, deja: 0, erreurs: urls.slice(0, 50).map(url => ({ url, reference: ((body.lignes || []).find(l => l.url === url) || {}).reference || '', erreur: 'démonstration : le téléchargement est fait par le serveur dans la version installée' })) };
+        save(); return [200, db.fichesCatalogue];
+      }
+      return [404, { error: 'Route inconnue' }];
+    }
     // État des applications Études et DOE par chantier (envoyé par leurs cadres dans la démonstration)
     if (p[0] === 'liens') {
       if (p[1] === 'materiel' && !p[2] && method === 'GET') {
         if (acc.role === 'atelier' && !Compagnon.regles(db.settings).materiel) return [200, []];
         const aff = query.get('affaireId') || '', lc = Installe.lignesCommandes(db.commandes || [], aff, id => ((db.entreprises || []).find(e => e.id === id) || {}).nom || '', id => (db.articles || []).find(a => a.id === id));
-        return [200, Installe.suiviCommandes(MaterielRetenu.pourChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === aff), (db.materielSuivi || []).filter(s => s.affaireId === aff)), lc)];
+        const ms = Installe.suiviCommandes(MaterielRetenu.pourChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === aff), (db.materielSuivi || []).filter(s => s.affaireId === aff)), lc);
+        const ft = FichesTech.trouver(db.fichesTech || [], ms.map((m, i) => ({ cle: i, fabricant: m.fabricant, reference: m.reference, date: m.poseLe || '' })));
+        return [200, ms.map((m, i) => (ft[i].fiche ? { ...m, ficheTech: ft[i].fiche } : m))];
       }
       if (p[1] === 'avancement' && method === 'GET') {
         if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Réservé au bureau' }];
