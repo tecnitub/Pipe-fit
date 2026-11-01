@@ -244,6 +244,19 @@ async function api(req, res, url) {
     if (method === 'DELETE') { db.prepare('DELETE FROM etudes WHERE id = ?').run(p[1]); if (exist) signalerPF(s, p[1], null, null); return send(res, 200, { ok: true }); }
   }
 
+  // Corrections de l'inventaire CCTP / DPGF retenues (règles partagées par le bureau d'études, enregistrées par tous)
+  if (p[0] === 'regles-inventaire') {
+    const r = db.prepare("SELECT value FROM config WHERE key = 'regles-inventaire'").get();
+    if (method === 'GET') return send(res, 200, r ? JSON.parse(r.value) : []);
+    if (method === 'PUT') {
+      const b = await lireJSON(req);
+      if (!Array.isArray(b)) return fail(res, 400, 'Liste de règles attendue');
+      const l = b.filter(x => x && typeof x.cle === 'string' && ['equipement', 'reseau'].includes(x.objet)).slice(-500)
+        .map(x => ({ objet: x.objet, cle: x.cle.slice(0, 120), ...(x.genre ? { genre: String(x.genre).slice(0, 40) } : {}), ...(x.inclus === false ? { inclus: false } : {}), ...(x.nature ? { nature: String(x.nature).slice(0, 40) } : {}), exemple: String(x.exemple || '').slice(0, 120), date: String(x.date || '').slice(0, 10) }));
+      db.prepare("INSERT INTO config (key, value) VALUES ('regles-inventaire', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(l));
+      return send(res, 200, l);
+    }
+  }
   // Réglages : identité de l'entreprise sur les notes de calcul
   if (p[0] === 'config') {
     if (method === 'GET') return send(res, 200, lireConfig());

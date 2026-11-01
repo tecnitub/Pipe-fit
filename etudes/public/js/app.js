@@ -693,12 +693,25 @@ Vues.reglages = {
           <h3>Coefficients de calage</h3><div class="grille-champs">${[['monteur', 'Monteurs, tuyauteurs, soudeurs'], ['calorifugeur', 'Calorifugeurs'], ['be', 'Bureau d\'études']].map(([k, l]) => `<label>${l}${inp(`coefs.${k}`, r.coefs[k], '0.01')}</label>`).join('')}</div>
           <div class="actions-ligne">${(S.config.metre || {}).calage ? `<span class="badge ok">Calé le ${dateFr(S.config.metre.calage.date)} sur ${S.config.metre.calage.n} chantier(s)</span>` : '<span class="badge">Coefficients non calés</span>'}
           ${admin ? '<button class="petit" id="mr-enreg">Enregistrer les ratios</button><button class="secondaire petit" id="mr-rex">Caler sur le REX Pipe-Fit…</button><button class="secondaire petit" id="mr-defaut">Valeurs par défaut</button>' : ''}</div>`; })()}</div>
+    <div class="carte"><h2>Lecture des CCTP et DPGF : corrections retenues</h2>
+      <p class="muted petit">Quand un genre est corrigé, une ligne écartée ou la nature d'un réseau changée dans l'inventaire d'une étude, la correction est retenue et appliquée aux dossiers suivants (même désignation, sans les dimensions). Supprimez une règle qui ne convient plus.</p>
+      <div id="regles-inv" class="petit muted">Chargement…</div></div>
     <div class="carte"><h2>Catalogues de pompes et de vannes</h2>
       <p class="muted petit">Les calculs proposent un modèle d'après le point de fonctionnement. Sans catalogue importé, une gamme générique d'exemple est utilisée (ordres de grandeur, aucune marque). Import au format CSV (séparateur « ; »).</p>
       ${['pompes', 'vannes', 'materiel'].map(g => { const cat = (c.catalogues || {})[g] || []; return `<div class="actions-ligne"><strong>${{ pompes: 'Pompes', vannes: 'Vannes de régulation', materiel: 'Matériel des fabricants (bouches, CTA, caissons, générateurs, PAC…) — CSV ou Excel, proposé dans « Matériel retenu »' }[g]}</strong>
         <span class="badge ${cat.length ? 'ok' : ''}">${cat.length ? `${cat.length} modèle(s) importé(s)${g === 'materiel' ? ` (${[...new Set(cat.map(x => x.fabricant))].slice(0, 6).join(', ')})` : ''}` : g === 'materiel' ? 'aucun catalogue' : 'gamme générique'}</span>
         <button class="secondaire petit" data-csv-modele="${g}">Modèle CSV</button>${admin ? `<button class="petit" data-csv-import="${g}">Importer un CSV…</button>${cat.length ? `<button class="secondaire petit" data-csv-vider="${g}">Revenir à la gamme générique</button>` : ''}` : ''}</div>`; }).join('')}</div>`; },
   bind: root => {
+    // Corrections retenues de l'inventaire CCTP / DPGF (règles partagées)
+    const zr = root.querySelector('#regles-inv');
+    const rendreRegles = l => {
+      if (!zr) return;
+      const G = InventaireCVC.GENRES, N = InventaireCVC.NATURE;
+      zr.innerHTML = l.length ? `<div class="defile-x"><table class="liste compact"><thead><tr><th>Désignation (exemple)</th><th>Correction</th><th>Le</th><th></th></tr></thead><tbody>${l.map((r, k) => `<tr><td>${esc(r.exemple || r.cle)}</td><td>${r.objet === 'reseau' ? `réseau : ${esc((N[r.nature] || {}).libelle || r.nature)}` : [r.genre && `genre : ${esc((G[r.genre] || {}).libelle || r.genre)}`, r.inclus === false && 'écartée'].filter(Boolean).join(', ')}</td><td>${esc(dateFr(r.date || ''))}</td><td><button class="icone" data-regle="${k}" title="Supprimer">✕</button></td></tr>`).join('')}</tbody></table></div>`
+        : 'Aucune correction retenue pour l\'instant.';
+      zr.querySelectorAll('[data-regle]').forEach(x => x.onclick = async () => { const n = l.filter((_, k) => k !== +x.dataset.regle); try { rendreRegles(await api('PUT', '/api/regles-inventaire', n)); } catch (e) { toast(e.message); } });
+    };
+    if (zr) api('GET', '/api/regles-inventaire').then(rendreRegles).catch(() => { zr.textContent = 'Indisponible.'; });
     root.querySelectorAll('[data-cfg]').forEach(el => el.onchange = async () => { const c = copie(S.config); ecrireChemin(c, el.dataset.cfg, el.value); S.config = await api('PUT', '/api/config', c); toast('Réglages enregistrés'); });
     const majConfig = async c => { S.config = await api('PUT', '/api/config', c); Catalogue.utiliser(S.config.catalogues); Calculs.utiliserFluides(S.config.fluides); Schema.utiliserReglementation(S.config.reglementation); Metre.utiliser(S.config.metre); App.render(); };
     const fichierTexte = (accept, suite) => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = accept; inp.onchange = async () => { const f = inp.files[0]; if (!f) return; const brut = new Uint8Array(await f.arrayBuffer()); let t = new TextDecoder('utf-8').decode(brut); if (t.includes('\uFFFD')) t = new TextDecoder('windows-1252').decode(brut); suite(t); }; inp.click(); };

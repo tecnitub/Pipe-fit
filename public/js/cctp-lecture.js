@@ -127,7 +127,7 @@ const CctpLecture = (() => {
 
     r.articles = articles(L).map(a => ({ num: a.num, titre: a.titre }));
     // Texte de chaque article (début) : nature, régime et équipements des réseaux décrits
-    r.articlesDetail = articles(L).map(a => ({ num: a.num, titre: a.titre, texte: a.corps.join(' ').slice(0, 1200) }));
+    r.articlesDetail = articles(L).map(a => ({ num: a.num, titre: a.titre, texte: a.corps.join(' ').slice(0, 6000) }));
     const CHAP_GENERAL = /dispositions? generales?|prescriptions?|generalites?|normes?|clauses? (?:administratives|generales)|presentation|conditions? generales?/;
     // Chapitres (« I DISPOSITIONS GENERALES », « III DESCRIPTION DES OUVRAGES ») : les équipements ne sont pris que hors
     // des chapitres de généralités et de prescriptions
@@ -154,7 +154,8 @@ const CctpLecture = (() => {
       const reg = /(\d{1,2})\s*\/\s*(\d{1,2})\s*°\s*C\b/.exec(corps);
       const caractR = reg && !caract.includes(`${reg[1]}/${reg[2]} °C`) ? [caract, `${reg[1]}/${reg[2]} °C`].filter(Boolean).join(' · ') : caract;
       const prescrit = [marque && `marque ${marque[1]}`, type && `type ${type[1]}`].filter(Boolean).join(', ') + (/ou [ée]quivalent/i.test(corps) && (marque || type) ? ' ou équivalent' : '');
-      const base = { article: a.num, designation: a.titre, famille: t[1], prefixe: t[2], prescrit, caract: caractR };
+      // Texte de l'article : caractéristiques techniques (puissances, débit, pression, fluide…) lues par l'inventaire
+      const base = { article: a.num, designation: a.titre, famille: t[1], prefixe: t[2], prescrit, caract: caractR, texte: corps.slice(0, 6000), quantiteLue: !!q };
       if (reps.length) reps.forEach(rep => r.equipements.push({ ...base, repere: rep, quantite: 1 }));
       else r.equipements.push({ ...base, repere: '', quantite: q ? +q[1] : 1 });
     }

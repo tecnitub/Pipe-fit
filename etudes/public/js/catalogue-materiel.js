@@ -87,6 +87,46 @@ const CatalogueMateriel = (() => {
     + 'MonFabricant;CTA-DF-3000;cta;Centrale double flux roue;;2000;3500;2,2;;\n'
     + 'MonFabricant;CB-1000;caisson;Caisson d\'extraction basse consommation;;400;1200;0,25;;\n';
   const libelle = p => `${p.fabricant} ${p.reference}${p.designation ? ` — ${p.designation}` : ''}${Number.isFinite(p.Qmin) || Number.isFinite(p.Qmax) ? ` (${Number.isFinite(p.Qmin) ? p.Qmin : '…'}-${Number.isFinite(p.Qmax) ? p.Qmax : '…'} m³/h)` : ''}${Number.isFinite(p.Pelec) ? ` · ${String(p.Pelec).replace('.', ',')} kW élec.` : ''}`;
-  return { FAMILLES, familleDe, besoin, candidats, lireLignes, lireCsv, modeleCsv, libelle };
+  /* ---------- Contrôle du matériel retenu face au CCTP ---------- */
+  // Équipement du dossier de consultation (inventaire CCTP / DPGF de l'étude) qui correspond à la ligne du matériel retenu :
+  // même famille, désignation la plus ressemblante ; puis la marque prescrite, le débit, la puissance, le volume et le
+  // niveau sonore demandés sont comparés au modèle choisi (fiche du catalogue)
+  const GENRES_FAMILLE = { cta: ['cta'], caisson: ['ventilateur', 'desenfumage'], pac: ['pac-air', 'pac-eau', 'pac-rev', 'gf-air', 'gf-eau'], generateur: ['chaudiere-cond', 'chaudiere-gaz', 'chaudiere-fioul', 'chaudiere-bois', 'echangeur'],
+    pompe: ['pompe'], bouche: ['bouche-soufflage', 'bouche-extraction'], ballon: ['ecs', 'tampon'], echangeur: ['echangeur', 'echangeur-aux'], vase: ['vase'], vanne: ['vanne2v', 'vanne3v'] };
+  const mots = t => new Set(norm(t).split(/[^a-z0-9]+/).filter(m => m.length >= 3));
+  const ressemble = (a, b) => { const x = mots(a), y = mots(b); if (!x.size || !y.size) return 0; let n = 0; x.forEach(m => { if (y.has(m)) n++; }); return n / Math.min(x.size, y.size); };
+  const num = v => (v === '' || v == null ? NaN : nombre(v));
+  function equipementCctp(ligne, inventaire) {
+    const g = GENRES_FAMILLE[familleDe(ligne.cle)] || [], cand = (inventaire || []).filter(x => g.includes(x.genre) && x.inclus !== false && !x.variante);
+    if (!cand.length) return null;
+    if (cand.length === 1) return cand[0];
+    const best = cand.map(x => [x, ressemble(`${x.designation} ${x.local || ''} ${x.chapitre || ''}`, ligne.designation)]).sort((a, b) => b[1] - a[1])[0];
+    return best[1] >= 0.34 ? best[0] : null;
+  }
+  function controleCctp(ligne, inventaire, catalogue = []) {
+    const x = equipementCctp(ligne, inventaire);
+    if (!x || !ligne.reference) return { equipement: x, alertes: [] };
+    const p = (catalogue || []).find(c => norm(c.fabricant) === norm(ligne.fabricant) && norm(c.reference) === norm(ligne.reference)) || null;
+    const a = [], c = x.carac || {};
+    // Marque prescrite : « ou équivalent » → fournir l'équivalence ; sans → non conforme
+    const marques = [...String(x.prescrit || '').matchAll(/marque\s+([A-Za-z][\w&'-]+(?:\s[A-Z][\w&'-]+)?)/g)].map(m => m[1]);
+    const cmp = t => norm(t).replace(/[^a-z0-9]/g, '');
+    if (marques.length && ligne.fabricant && !marques.some(m => cmp(ligne.fabricant).includes(cmp(m)) || cmp(m).includes(cmp(ligne.fabricant)))) {
+      a.push(/ou (?:techniquement )?[ée]quivalent/i.test(x.prescrit) ? { niveau: 'info', texte: `CCTP : ${marques.join(' / ')} ou équivalent — joindre la note d'équivalence de ${ligne.fabricant}.` } : { niveau: 'erreur', texte: `CCTP : marque ${marques.join(' / ')} imposée, ${ligne.fabricant} proposé.` });
+    }
+    if (p) {
+      const Q = num(x.Q), P = num(x.P), Pfr = num(x.Pfr);
+      if (Q > 0 && Number.isFinite(p.Qmax) && p.Qmax < Q) a.push({ niveau: 'erreur', texte: `Débit : ${Q} m³/h demandés au CCTP, ${p.Qmax} m³/h maxi pour ${p.reference}.` });
+      const Pd = familleDe(ligne.cle) === 'pac' && Pfr > 0 && !(P > 0) ? Pfr : P;
+      if (Pd > 0 && Number.isFinite(p.P) && p.P < Pd * 0.98) a.push({ niveau: 'erreur', texte: `Puissance : ${Pd} kW demandés au CCTP, ${p.P} kW pour ${p.reference}.` });
+      if (Number.isFinite(c.volume) && Number.isFinite(p.volume) && p.volume < c.volume) a.push({ niveau: 'erreur', texte: `Volume : ${c.volume} L au CCTP, ${p.volume} L pour ${p.reference}.` });
+      if (Number.isFinite(c.Lw) && Number.isFinite(p.Lw) && p.Lw > c.Lw) a.push({ niveau: 'alerte', texte: `Niveau sonore : Lw ${p.Lw} dB(A) pour ${p.reference}, ${c.Lw} dB(A) maxi au CCTP.` });
+      const Pel = num(x.Pel);
+      if (Pel > 0 && Number.isFinite(p.Pelec) && p.Pelec > Pel * 1.1 && familleDe(ligne.cle) !== 'cta') a.push({ niveau: 'info', texte: `Puissance électrique : ${p.Pelec} kW pour ${p.reference}, ${Pel} kW au CCTP (bilan électrique à revoir).` });
+      if (Number.isFinite(c.Pdispo) && Number.isFinite(p.dp) && ['cta', 'caisson'].includes(familleDe(ligne.cle)) && p.dp < c.Pdispo) a.push({ niveau: 'alerte', texte: `Pression disponible : ${c.Pdispo} Pa au CCTP, ${p.dp} Pa annoncés pour ${p.reference}.` });
+    }
+    return { equipement: x, produit: p, alertes: a };
+  }
+  return { FAMILLES, familleDe, besoin, candidats, lireLignes, lireCsv, modeleCsv, libelle, equipementCctp, controleCctp };
 })();
 if (typeof module !== 'undefined') module.exports = CatalogueMateriel;

@@ -181,6 +181,10 @@
       if (rec.modele) { if (exist) signalerCrm(rec.id, '', null, true); } else signalerCrm(rec.id, rec.affaireId, resume || (() => { try { return resumePF(rec); } catch (e) { return null; } })());
       save(); return rep(200, rec);
     }
+    if (p[0] === 'regles-inventaire') {
+      if (method === 'GET') return rep(200, db.regles || []);
+      db.regles = Array.isArray(body()) ? body().slice(-500) : []; save(); return rep(200, db.regles);
+    }
     if (p[0] === 'config') {
       if (method === 'GET') return rep(200, config());
       if (s.role !== 'admin') return err(403, 'Réservé à l\'administrateur');

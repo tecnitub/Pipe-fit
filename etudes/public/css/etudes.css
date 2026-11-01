@@ -43,6 +43,9 @@ button.carte.type { background: var(--panneau); color: var(--texte); border: 1px
 .note-lien > span:last-child { display: grid; min-width: 0; }
 .note-actions { display: flex; }
 .badge.erreur { background: var(--err-fond); color: var(--err-texte); }
+.manque { color: var(--err-texte); }
+.avert { color: var(--att-texte); }
+.ligne-auto { color: var(--att-texte); font-size: 12px; }
 .titre-note { font-size: 17px; font-weight: 700; max-width: 640px; flex: 1 1 260px; }
 .titre-etude { overflow-wrap: anywhere; }
 .champ-libre { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }

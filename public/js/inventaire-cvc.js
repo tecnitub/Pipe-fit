@@ -64,6 +64,86 @@ const InventaireCVC = (() => {
   const debitAir = texte => { const m = /(\d[\d\s]{0,6}(?:[.,]\d+)?)\s*m(?:3|³)\s*\/\s*h/i.exec(String(texte || '')); return m ? nombre(m[1]) : NaN; };
   const regime = texte => { const m = /(\d{1,2})\s*\/\s*(\d{1,2})\s*°?\s*c\b/i.exec(String(texte || '')); return m ? `${m[1]}/${m[2]}` : ''; };
 
+  /* ---------- Caractéristiques techniques lues dans le texte (CCTP, ligne du DPGF) ---------- */
+  // Puissances : chaque « N kW » prend le sens des mots qui le précèdent dans sa phrase — électrique (absorbée, moteur,
+  // batterie électrique), froid (frigorifique, rafraîchissement), chaud (calorifique, chauffage) ; sinon puissance seule
+  function puissances(texte) {
+    // « 2200W » compte aussi (en kW)
+    const t = String(texte || ''), out = {}, re = /(\d+(?:[.,]\d+)?)(?:\s*(?:à|-)\s*(\d+(?:[.,]\d+)?))?\s*(k?)w(c|f|th|e)?\b/gi;
+    let m;
+    while ((m = re.exec(t))) {
+      if (!m[3] && !/^\d{3,5}$/.test(m[1])) continue;
+      const v = Math.max(nombre(m[1]), m[2] ? nombre(m[2]) : 0) / (m[3] ? 1 : 1000);
+      // Mots qui précèdent dans la même phrase / le même membre (« Puissance froid : », « batterie électrique de »)
+      const avant = norm(t.slice(Math.max(0, m.index - 80), m.index)).split(/[.;|•]\s|,\s|\s-\s|\n/).pop();
+      const suf = String(m[4] || '').toLowerCase();
+      const k = suf === 'e' || /absorb|electri|moteur|ventilateur|consomm|\bp1\b|resistance|appoint|\belec\b/.test(avant) ? 'Pel'
+        : suf === 'f' || /froid|frigorifique|refroidissement|rafraichissement|eau glacee|climatisation|\bclim\b|sensible|latente/.test(avant) ? 'Pfr'
+          : /chaud|calorifique|chauffage|\bcalo\b|thermique|restitu|condensation/.test(avant) ? 'Pch' : 'P';
+      if (Number.isFinite(v) && v > 0 && out[k] === undefined) out[k] = v;
+    }
+    return out;
+  }
+  const nbr = s => nombre(String(s).replace(/\s/g, ''));
+  const FRIGO = /\br[ -]?(32|410a|454b|290|134a|513a|1234ze|1234yf|744|407c|452b|448a|449a|600a)\b/;
+  function caracteristiques(texte) {
+    const t = String(texte || ''), x = norm(t), c = puissances(t);
+    // Débit d'air annoncé « débit … » (le maxi d'une plage « 1490 / 2560 m³/h »), sinon le premier cité
+    let m = /debit[^0-9.]{0,40}?(\d[\d\s]{0,6}(?:[.,]\d+)?)(?:\s*\/\s*(\d[\d\s]{0,6}))?\s*m(?:3|³)\s*\/\s*h/.exec(x);
+    if (m) c.Q = nbr(m[2] || m[1]); else { const q = debitAir(t); if (Number.isFinite(q)) c.Q = q; }
+    m = /pression (?:disponible|statique(?: disponible| externe)?|utile|externe|totale disponible)[^0-9]{0,25}(\d{2,4})\s*pa\b/.exec(x); if (m) c.Pdispo = +m[1];
+    m = /(?:hmt|hauteur manometrique)[^0-9]{0,20}(\d+(?:[.,]\d+)?)\s*(mce|kpa|m\b)/.exec(x); if (m) c.HMT = m[2] === 'kpa' ? Math.round(nombre(m[1]) / 9.81 * 10) / 10 : nombre(m[1]);
+    const regs = [...t.matchAll(/(\d{1,2})\s*\/\s*(\d{1,2})\s*°?\s*c\b/gi)].map(r => [+r[1], +r[2]]);
+    const fr = regs.find(([a, b]) => a < b && a <= 15), ch = regs.find(([a, b]) => a > b && a >= 25);
+    if (fr) c.regimeFroid = `${fr[0]}/${fr[1]}`;
+    if (ch) c.regimeChaud = `${ch[0]}/${ch[1]}`;
+    m = FRIGO.exec(x); if (m) c.frigorigene = `R${m[1].toUpperCase()}`;
+    m = /puissance (?:acoustique|sonore)[^0-9]{0,30}(\d{2,3})(?:\s*\/\s*(\d{2,3}))?\s*db/.exec(x); if (m) c.Lw = +(m[2] || m[1]);
+    m = /(?:pression|niveau) (?:de pression )?(?:acoustique|sonore)[^0-9]{0,30}(\d{2,3})(?:\s*\/\s*(\d{2,3}))?\s*db/.exec(x); if (m) c.Lp = +(m[2] || m[1]);
+    ['scop', 'seer', 'cop', 'eer'].forEach(k => { const r = new RegExp(`\\b${k}\\b[^0-9a-z]{0,6}(\\d(?:[.,]\\d{1,2})?)`).exec(x); if (r && nombre(r[1]) > 1 && nombre(r[1]) < 10) c[k.toUpperCase()] = nombre(r[1]); });
+    m = /(?:efficacite|rendement)[^%]{0,40}?(\d{2})\s*%/.exec(x); if (m && +m[1] >= 50) c.rendement = +m[1];
+    if (/filtr/.test(x)) { const f = [...new Set([...t.matchAll(/\b(ePM(?:1|2[.,]5|10)\s*\d{2}\s*%|[GMF][4-9])\b/g)].map(r => r[1].replace(/\s+/g, ' ')))]; if (f.length) c.filtres = f.slice(0, 4).join(', '); }
+    if (/\b400\s*v\b|triphase|\btri\b/.test(x)) c.tension = '400 V'; else if (/\b230\s*v\b|monophase|\bmono\b/.test(x)) c.tension = '230 V';
+    // Volume : « 900 litres », « ballon … 150L », « capacité 200 L » (pas « inox 304L »)
+    m = /(\d{2,5})\s*litres?\b/.exec(x) || /(?:capacite|volume|contenance|ballon|stockage|cuve|tampon)[^0-9]{0,25}(\d{2,5})\s*l\b(?!\s*\/)/.exec(x); if (m) c.volume = +m[1];
+    return c;
+  }
+  const f1 = v => String(Math.round(v * 100) / 100).replace('.', ',');
+  // Résumé lisible : « 3 500 m³/h · 250 Pa · 0,82 kW élec. · R454B · froid 7/12 °C »
+  function caracTexte(c) {
+    if (!c) return '';
+    const sep = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    return [Number.isFinite(c.Q) && `${sep(c.Q)} m³/h`, Number.isFinite(c.Pdispo) && `${c.Pdispo} Pa dispo`, Number.isFinite(c.HMT) && `HMT ${f1(c.HMT)} mCE`,
+      Number.isFinite(c.Pch) && `${f1(c.Pch)} kW chaud`, Number.isFinite(c.Pfr) && `${f1(c.Pfr)} kW froid`, Number.isFinite(c.Pel) && `${f1(c.Pel)} kW élec.`,
+      c.regimeChaud && `chaud ${c.regimeChaud} °C`, c.regimeFroid && `froid ${c.regimeFroid} °C`, c.frigorigene, Number.isFinite(c.SCOP) && `SCOP ${f1(c.SCOP)}`, Number.isFinite(c.COP) && `COP ${f1(c.COP)}`,
+      Number.isFinite(c.EER) && `EER ${f1(c.EER)}`, Number.isFinite(c.SEER) && `SEER ${f1(c.SEER)}`, Number.isFinite(c.rendement) && `récupération ${c.rendement} %`, c.filtres && `filtres ${c.filtres}`,
+      Number.isFinite(c.Lw) && `Lw ${c.Lw} dB(A)`, Number.isFinite(c.Lp) && `Lp ${c.Lp} dB(A)`, c.tension, Number.isFinite(c.volume) && `${c.volume} L`].filter(Boolean).join(' · ');
+  }
+  // Puissances de l'équipement : chaud (P, puissance thermique utilisée par le schéma), froid, électrique
+  const puissancesItem = (c, genre) => {
+    const gf = /^gf/.test(genre || ''), P = Number.isFinite(c.Pch) ? c.Pch : Number.isFinite(c.P) && !gf && !Number.isFinite(c.Pfr) ? c.P : NaN;
+    return { P, Pfr: Number.isFinite(c.Pfr) ? c.Pfr : gf && Number.isFinite(c.P) ? c.P : NaN, Pel: Number.isFinite(c.Pel) ? c.Pel : NaN };
+  };
+
+  // Alimentation d'un émetteur : par quel fluide il est alimenté (texte de l'article, chapitres) — eau (batterie à eau,
+  // raccordé à la PAC), change-over, eau chaude, eau glacée ; ou électrique / solaire (ballon ECS autonome, CTA à batterie
+  // électrique seule) : ceux-là ne sont pas des circuits de la production
+  function alimentation(texte, genre) {
+    const x = norm(texte);
+    const eau = /batteries? (?:a eau|hydrauliques?|eau chaude|eau glacee|chaude a eau|froide a eau|change.?over)|raccorde\w* (?:a|au|sur) (?:la |le |l'|une |un )?(?:pac|pompe a chaleur|chaudiere|groupe|reseau|production|sous.?station)|accessoires? hydrauliques?|vannes? (?:2|3|deux|trois) voies|serpentin|echangeur (?:a plaques )?primaire|circuit primaire/;
+    if (genre === 'ecs') {
+      if (/solaire/.test(x) && !/raccorde\w* (?:a|au|sur) (?:la |le |l'|une |un )?(?:pac|pompe a chaleur|chaudiere|reseau|production)/.test(x)) return 'solaire';
+      if (eau.test(x)) return 'eau';
+      return /electrique|thermodynamique|instantane|resistance|chauffe.?eau/.test(x) ? 'electrique' : '';
+    }
+    const fr = /eau glacee|batteries? froides?|\b[67] ?\/ ?1[12]\b|rafraichissement/.test(x), ch = /eau chaude|batteries? chaudes?|\b(?:35|40|45|50|55|60|70|80|90) ?\/ ?\d{2} ?°?c/.test(x);
+    if (/change.?over|eau chaude ?\/ ?eau glacee|chauffage ?\/ ?(?:climatisation|rafraichissement)|2 tubes reversible/.test(x) || (fr && ch)) return 'change-over';
+    if (fr) return 'eau-glacee';
+    if (ch) return 'chauffage';
+    if (eau.test(x)) return 'eau';
+    return genre === 'cta' && /batteries? electriques?|resistances? electriques?/.test(x) ? 'electrique' : '';
+  }
+
   /* ---------- Réseaux (circuits hydrauliques, réseaux aérauliques) ---------- */
   // Un titre (chapitre du DPGF, article du CCTP) ou une ligne qui désigne un réseau : mot de réseau + nature reconnue
   const MOT_RESEAU = /\b(?:reseaux?|circuits?|distribution|departs?|antennes?|colonnes?|boucles?|bouclage|tuyauteries?|canalisations?|gaines?|conduits?|collecteurs?|nourrices?|alimentations? en eau|evacuations?|adduction)\b/;
@@ -129,24 +209,30 @@ const InventaireCVC = (() => {
   function depuisCctp(equipements, reseaux = [], articles = []) {
     const titres = new Map((articles || []).map(a => [a.num, a.titre]));
     const ancetres = num => { const p = String(num).split('.'), out = []; for (let k = p.length - 1; k >= 1; k--) { const t = titres.get(p.slice(0, k).join('.')); if (t) out.push(t); } return out; };
+    // Texte des articles enfants (accessoires hydrauliques, régulation…) : dit comment l'équipement est alimenté
+    const enfants = num => (articles || []).filter(a => String(a.num).startsWith(`${num}.`)).map(a => `${a.titre} ${a.texte || ''}`).join(' ');
     const out = [];
     (equipements || []).forEach(x => {
       // Réseau décrit (« Distribution ballon ECS jusqu'aux équipements ») : pas un équipement
       // Titre muet (« Compensation Cuisine », « Extraction hotte ») : le type lu par CctpLecture dans le texte
       const c = classer(`${x.designation} ${x.caract || ''}`) || PAR_PREFIXE[x.prefixe] || null;
       if (!c || (titreReseau(x.designation) && c.genre !== 'pompe')) return;
-      const texte = `${x.designation} ${x.caract || ''} ${x.prescrit || ''}`, r = reseauDeArticle(x.article, reseaux);
+      const texte = `${x.designation}. ${x.texte || x.caract || ''} ${x.prescrit || ''}`, r = reseauDeArticle(x.article, reseaux);
       const variante = /^(?:variantes?|options?|moins[- ]?values?|plus[- ]?values?|pse)\b/.test(norm(x.designation)) || ancetres(x.article).some(t => VARIANTE.test(norm(t)));
-      const e = { ...c, designation: x.designation, qte: Math.max(1, nombre(x.quantite) || 1), P: puissance(texte), regime: regime(texte) || (r ? r.regime : ''), Q: debitAir(texte), repere: x.repere || '', prescrit: x.prescrit || '', reseau: r ? r.id : '', sources: [`CCTP art. ${x.article}`], article: x.article };
+      const carac = caracteristiques(texte), pw = puissancesItem(carac, c.genre);
+      const e = { ...c, designation: x.designation, qte: Math.max(1, nombre(x.quantite) || 1), ...pw, regime: regime(texte) || (r ? r.regime : ''), Q: Number.isFinite(carac.Q) ? carac.Q : NaN, repere: x.repere || '', prescrit: x.prescrit || '', carac, reseau: r ? r.id : '', sources: [`CCTP art. ${x.article}`], article: x.article, _texte: texte };
+      if (x.quantiteLue && Number.isFinite(nombre(x.quantite))) e.qteCctp = nombre(x.quantite);
       if (variante) e.variante = true;
       const gros = c.categorie === 'producteur' || ['cta', 'ventilateur', 'desenfumage', 'ecs', 'split'].includes(c.genre);
       // Sous-article d'un gros équipement (« III.1.3.1 Centrale de traitement d'air » sous « III.1.3 CTA salle de
-      // restauration ») : le même équipement, décrit plus en détail — prescription, puissance et débit complétés
+      // restauration ») : le même équipement, décrit plus en détail — prescription, puissances, débit et caractéristiques complétés
       const pere = gros && out.find(o => o.genre === c.genre && !!o.variante === !!e.variante && !o.repere && !e.repere && String(x.article).startsWith(`${o.article}.`));
       if (pere) {
         if (e.prescrit && !pere.prescrit.includes(e.prescrit)) pere.prescrit = [pere.prescrit, e.prescrit].filter(Boolean).join(' ; ');
-        ['P', 'Q'].forEach(k => { if (!Number.isFinite(pere[k]) && Number.isFinite(e[k])) pere[k] = e[k]; });
+        ['P', 'Q', 'Pfr', 'Pel'].forEach(k => { if (!Number.isFinite(pere[k]) && Number.isFinite(e[k])) pere[k] = e[k]; });
+        Object.entries(carac).forEach(([k, v]) => { if (pere.carac[k] === undefined) pere.carac[k] = v; });
         pere.regime = pere.regime || e.regime;
+        pere._texte += ` ${texte}`;
         pere.sources.push(...e.sources);
         return;
       }
@@ -154,10 +240,15 @@ const InventaireCVC = (() => {
       if (gros) { const ch = ancetres(x.article)[0]; if (ch) e.chapitre = String(ch).slice(0, 80); }
       out.push(e);
     });
+    out.forEach(e => {
+      e.alim = alimentation(`${e._texte} ${enfants(e.article)} ${e.genre === 'ecs' ? ancetres(e.article).join(' ') : ''}`, e.genre);
+      // Ballon électrique : la « puissance » citée est électrique
+      if (e.genre === 'ecs' && e.alim === 'electrique' && !Number.isFinite(e.Pel) && Number.isFinite(e.carac.P)) { e.Pel = e.carac.P; e.P = NaN; }
+    });
     // Intitulés identiques (« Centrale double flux » dans deux chapitres) : nommés par leur chapitre
     const doubles = out.filter(e => e.chapitre && out.some(o => o !== e && norm(o.designation) === norm(e.designation)));
     doubles.forEach(e => { e.designation = `${e.designation} — ${e.chapitre}`; });
-    return out.map(({ article: _, ...e }) => e);
+    return out.map(({ article: _, _texte: __, ...e }) => e);
   }
 
   /* ---------- DPGF ---------- */
@@ -240,7 +331,8 @@ const InventaireCVC = (() => {
       const gros = GROS.includes(c.categorie) || GROS_GENRES.includes(c.genre);
       const marque = /\bde marque\s+([A-Za-z0-9][\w&'-]*(?:\s[A-Z0-9][\w&'-]*)?)/i.exec(des), marqueCol = map.marque !== undefined ? String((r || [])[map.marque] ?? '').trim() : '';
       const libelle = gros && ctxEq && /^fourniture/.test(x) ? `${ctxEq.titre}${marque ? ` (marque ${marque[1]})` : ''}` : des.replace(/\s*:\s*$/, '');
-      items.push({ ...c, designation: libelle, qte: q, unite, P: puissance(des), regime: regime(des) || (res ? res.regime : ''), Q: debitAir(des), repere: '', prescrit: [marque ? `marque ${marque[1]}` : '', marqueCol && !(marque && norm(marqueCol) === norm(marque[1])) ? `marque prévue au DPGF : ${marqueCol}` : ''].filter(Boolean).join(', '), reseau: res && !variante ? res.id : '',
+      const carac = caracteristiques(des), contexte = `${Object.keys(titres).sort((a, b) => a - b).map(k => titres[k]).join(' ')} ${des}`;
+      items.push({ ...c, designation: libelle, qte: q, unite, ...puissancesItem(carac, c.genre), carac, alim: alimentation(contexte, c.genre), regime: regime(des) || (res ? res.regime : ''), Q: Number.isFinite(carac.Q) ? carac.Q : NaN, repere: '', prescrit: [marque ? `marque ${marque[1]}` : '', marqueCol && !(marque && norm(marqueCol) === norm(marque[1])) ? `marque prévue au DPGF : ${marqueCol}` : ''].filter(Boolean).join(', '), reseau: res && !variante ? res.id : '',
         chapitre: ctxEq && gros ? ctxEq.titre : '', principal: gros && !variante, ...(variante ? { variante: true } : {}), sources: [`DPGF${num ? ` ${num}` : ''}`] });
     });
     // Réseaux vides (titres seuls, sans tuyauterie ni équipement) ou sans nature : écartés
@@ -266,9 +358,13 @@ const InventaireCVC = (() => {
   // Numéro d'article (CCTP) ou code de ligne (DPGF) : « III.1.3 », « III.1.3.5.34 »
   const codeDe = x => { const m = (x.sources || []).map(t => /^(?:CCTP art\.|DPGF) (\S+)/.exec(t)).find(Boolean); return m ? m[1] : ''; };
   const sousCode = (a, b) => !!a && !!b && (b === a || b.startsWith(`${a}.`));
+  // Caractéristiques d'un article valables pour chacune des lignes qui le détaillent (pas les puissances ni les débits)
+  const communs = c => Object.fromEntries(Object.entries(c || {}).filter(([k]) => ['regimeChaud', 'regimeFroid', 'frigorigene', 'tension', 'filtres'].includes(k)));
   function fusionner(cctp, dpgf) {
     const out = cctp.map((x, i) => ({ id: `c${i}`, ...x }));
-    const completer = (m, d) => Object.assign(m, { qte: d.qte, P: Number.isFinite(m.P) ? m.P : d.P, Q: Number.isFinite(m.Q) ? m.Q : d.Q, regime: m.regime || d.regime, reseau: m.reseau || d.reseau || '', dpgf: true, sources: [...m.sources, ...d.sources] });
+    const garder = (a, b) => (Number.isFinite(a) ? a : b);
+    const completer = (m, d) => Object.assign(m, { qteCctp: m.qteCctp, qte: d.qte, P: garder(m.P, d.P), Pfr: garder(m.Pfr, d.Pfr), Pel: garder(m.Pel, d.Pel), Q: garder(m.Q, d.Q), regime: m.regime || d.regime, reseau: m.reseau || d.reseau || '',
+      carac: { ...(d.carac || {}), ...(m.carac || {}) }, alim: m.alim || d.alim || '', prescritDpgf: d.prescrit || '', dpgf: true, sources: [...m.sources, ...d.sources] });
     // Numérotation commune (le DPGF reprend les articles du CCTP, cas le plus courant) : une ligne du DPGF va à l'article
     // du CCTP qui la contient, de même genre ; c'est plus sûr que la ressemblance des intitulés
     const commun = dpgf.filter(d => cctp.some(c => sousCode(codeDe(c), codeDe(d)))).length >= 3;
@@ -284,7 +380,7 @@ const InventaireCVC = (() => {
         // Une seule ligne : le même équipement. Plusieurs (« Unité extérieure » + « Unité intérieure », deux ballons) :
         // les lignes du DPGF détaillent l'article, qui est remplacé par elles (sa prescription reprise)
         if (p && enfants.get(p) === 1) { completer(p, d); return; }
-        if (p) { remplaces.add(p); out.push({ id: `d${i}`, ...d, prescrit: d.prescrit || p.prescrit || '', reseau: d.reseau || p.reseau || '', sources: [...p.sources, ...d.sources], dpgf: true }); return; }
+        if (p) { remplaces.add(p); out.push({ id: `d${i}`, ...d, prescrit: p.prescrit || d.prescrit || '', prescritDpgf: d.prescrit || '', reseau: d.reseau || p.reseau || '', alim: d.alim || p.alim || '', carac: { ...communs(p.carac), ...(d.carac || {}) }, sources: [...p.sources, ...d.sources], dpgf: true, detaille: true }); return; }
         out.push({ id: `d${i}`, ...d, dpgf: true });
         return;
       }
@@ -305,7 +401,8 @@ const InventaireCVC = (() => {
     remplaces.forEach(p => out.splice(out.indexOf(p), 1));
     // Gros équipements d'abord (production, CTA, caissons, ECS), puis émetteurs et auxiliaires ; variantes non retenues
     const rang = x => (x.variante ? 9 : x.categorie === 'producteur' ? 0 : ['cta', 'ventilateur', 'desenfumage', 'ecs', 'split'].includes(x.genre) ? 1 : x.categorie === 'emetteur' ? 2 : 3);
-    return out.map(({ dpgf: _, ...x }) => ({ ...x, principal: x.principal || rang(x) <= 1, P: Number.isFinite(x.P) ? x.P : '', Q: Number.isFinite(x.Q) ? x.Q : '', inclus: !x.variante }))
+    const vide = v => (Number.isFinite(v) ? v : '');
+    return out.map(({ dpgf: _, ...x }) => ({ ...x, principal: x.principal || rang(x) <= 1, P: vide(x.P), Pfr: vide(x.Pfr), Pel: vide(x.Pel), Q: vide(x.Q), inclus: !x.variante }))
       .map((x, k) => [x, k]).sort((a, b) => rang(a[0]) - rang(b[0]) || a[1] - b[1]).map(([x]) => x);
   }
 
@@ -323,6 +420,161 @@ const InventaireCVC = (() => {
     inventaire.forEach(x => { if (x.reseau && renomme.has(x.reseau)) x.reseau = renomme.get(x.reseau); });
     return out;
   }
+
+  /* ---------- Écarts entre le CCTP et le DPGF ---------- */
+  // Questions à poser pendant la consultation : équipement décrit au CCTP sans ligne au DPGF (non chiffré), ligne du DPGF
+  // sans article au CCTP (non décrit), quantité ou marque différente
+  const marquesDe = t => [...String(t || '').matchAll(/marque(?: prévue au DPGF :)?\s+([A-Za-z][\w&'-]+(?:\s[A-Z][\w&'-]+)?)/g)].map(m => norm(m[1]).replace(/[^a-z0-9]/g, '')).filter(m => m.length > 1);
+  function ecarts(inventaire, lus = { cctp: true, dpgf: true }) {
+    const out = [];
+    const art = x => ((x.sources || []).find(t => /^CCTP/.test(t)) || '').replace('CCTP art. ', 'art. ');
+    const lig = x => ((x.sources || []).find(t => /^DPGF/.test(t)) || '').replace('DPGF ', 'ligne ');
+    inventaire.filter(x => !x.variante && x.inclus !== false).forEach(x => {
+      const c = (x.sources || []).some(t => /^CCTP/.test(t)), d = (x.sources || []).some(t => /^DPGF/.test(t)), important = x.principal || x.categorie === 'producteur';
+      if (lus.dpgf && c && !d && (important || x.categorie === 'emetteur')) out.push({ type: 'absent-dpgf', designation: x.designation, texte: `Décrit au CCTP (${art(x)}) mais sans ligne au DPGF : à chiffrer quand même, ou à faire préciser (fourni par un autre lot ?).` });
+      if (lus.cctp && d && !c && important) out.push({ type: 'absent-cctp', designation: x.designation, texte: `Chiffré au DPGF (${lig(x)}) mais non décrit au CCTP : caractéristiques et marque attendues à demander.` });
+      if (c && d && Number.isFinite(x.qteCctp) && Number.isFinite(nombre(x.qte)) && x.qteCctp !== nombre(x.qte)) out.push({ type: 'quantite', designation: x.designation, texte: `Quantité : ${x.qteCctp} au CCTP (${art(x)}), ${x.qte} au DPGF (${lig(x)}).` });
+      // Marque du DPGF : sa colonne « Marque » d'abord (« marque prévue au DPGF »), sinon celle écrite dans la désignation
+      const col = /marque prévue au DPGF : (.+)$/.exec(x.prescritDpgf || ''), mc = marquesDe(x.prescrit), md = col ? [norm(col[1]).replace(/[^a-z0-9]/g, '')] : marquesDe(x.prescritDpgf);
+      if (mc.length && md.length && !md.some(m => mc.some(k => k.includes(m) || m.includes(k)))) out.push({ type: 'marque', designation: x.designation, texte: `Marque : « ${x.prescrit} » au CCTP, « ${col ? col[1] : x.prescritDpgf} » au DPGF.` });
+    });
+    return out;
+  }
+  const LIB_ECART = { 'absent-dpgf': 'Absent du DPGF', 'absent-cctp': 'Absent du CCTP', quantite: 'Quantité différente', marque: 'Marque différente' };
+  const ecartsTexte = l => l.map((e, i) => `${i + 1}. ${e.designation} — ${LIB_ECART[e.type]} : ${e.texte}`).join('\n');
+
+  /* ---------- Corrections mémorisées ---------- */
+  // Une correction faite dans le tableau (genre changé, ligne écartée, nature d'un réseau) devient une règle, appliquée
+  // aux dossiers suivants : la clé est la désignation sans nombres ni dimensions (« tronçon soufflage dbb rr z »)
+  const cleRegle = t => norm(t).replace(/\([^)]*\)/g, ' ').replace(/[^a-z ]+/g, ' ').split(' ').filter(m => m.length > 1 && !['de', 'du', 'des', 'la', 'le', 'les', 'et', 'en', 'pour', 'avec', 'compris', 'type', 'marque'].includes(m)).slice(0, 6).join(' ');
+  function appliquerRegles(items, reseaux, regles = []) {
+    const R = new Map((regles || []).map(r => [`${r.objet}|${r.cle}`, r]));
+    (items || []).forEach(x => {
+      const r = R.get(`equipement|${cleRegle(x.designation)}`);
+      if (!r) return;
+      if (r.genre && GENRES[r.genre]) Object.assign(x, { genre: r.genre, categorie: GENRES[r.genre].categorie });
+      if (r.inclus === false) x.inclus = false;
+      x.appris = true;
+    });
+    (reseaux || []).forEach(z => {
+      const r = R.get(`reseau|${cleRegle(z.nom)}`);
+      if (r && r.nature && NATURE[r.nature]) Object.assign(z, { nature: r.nature, hydro: NATURE[r.nature].hydro, appris: true });
+    });
+    return { items, reseaux };
+  }
+  // Règles tirées des différences entre la lecture automatique (x.auto) et le tableau enregistré ; fusionnées avec les anciennes
+  function apprendre(items, reseaux, regles = []) {
+    const out = new Map((regles || []).map(r => [`${r.objet}|${r.cle}`, r])), date = new Date().toISOString().slice(0, 10);
+    (items || []).forEach(x => {
+      const a = x.auto, cle = cleRegle(a ? a.designation : x.designation);
+      if (!a || !cle) return;
+      const r = {};
+      if (x.genre !== a.genre) r.genre = x.genre;
+      if (x.inclus === false && a.inclus !== false && !x.variante) r.inclus = false;
+      if (Object.keys(r).length) out.set(`equipement|${cle}`, { objet: 'equipement', cle, ...r, exemple: a.designation.slice(0, 80), date });
+    });
+    (reseaux || []).forEach(z => { const a = z.auto, cle = cleRegle(a ? a.nom : z.nom); if (a && cle && z.nature && z.nature !== a.nature) out.set(`reseau|${cle}`, { objet: 'reseau', cle, nature: z.nature, exemple: a.nom.slice(0, 80), date }); });
+    return [...out.values()].slice(-500);
+  }
+
+  /* ---------- Tableau d'équipements (annexe, carnet, tableau du CCTP) ---------- */
+  // Lignes d'un tableau (Excel, ou PDF : cellules séparées par des tabulations) : en-tête reconnue (repère, désignation,
+  // local, débit, puissance…), puis un équipement par repère avec son local, son débit et ses puissances
+  const COL_ANNEXE = [['repere', /^(?:rep(?:ere)?\.?|tag|n° ?(?:d'?)?(?:equipement|appareil)|code equipement|reference equipement|id)$/], ['designation', /designation|equipement|appareil|description|libelle|^type$|^nature$/],
+    ['local', /local|zone|piece|desserte|batiment|niveau|emplacement|secteur/], ['Q', /debit|m3 ?\/ ?h|m³ ?\/ ?h|soufflage|air neuf/], ['Pfr', /(?:puissance|p\.?) ?(?:froid|frigo)/],
+    ['Pel', /(?:puissance|p\.?) ?(?:elec|absorbee)|kw ?e\b/], ['P', /(?:puissance|p\.?) ?(?:chaud|calo|thermique)|^puissance|^p ?\(?kw|kw$/], ['marque', /marque|fabricant/], ['modele', /modele|reference|gamme|serie/], ['qte', /^(?:qte|quantite|nombre|nb)$/]];
+  const REPERE_ANNEXE = /^[A-Z]{1,5}[-_. ]?\d{1,3}[A-Z]?(?:[-_.]\d{1,2})?$/;
+  const PAR_PREFIXE_ANNEXE = { PAC: 'pac-air', GF: 'gf-air', CH: 'chaudiere-gaz', CTA: 'cta', VC: 'ventilo', VCV: 'ventilo', CAS: 'ventilo', AT: 'aerotherme', AER: 'aerotherme', RAD: 'radiateurs', R: 'radiateurs', UE: 'split', UI: 'split', SPL: 'split', VMC: 'ventilateur', EXT: 'ventilateur', CE: 'ventilateur', CI: 'ventilateur', TE: 'ventilateur', BAL: 'ecs', BECS: 'ecs', P: 'pompe', PO: 'pompe', CI2: 'pompe', DSF: 'desenfumage' };
+  function tableauEquipements(rows, source = 'Annexe') {
+    const out = [];
+    let map = null;
+    (rows || []).forEach(r => {
+      const cells = (r || []).map(c => String(c ?? '').trim());
+      if (!cells.some(Boolean)) return;
+      const tetes = cells.map(c => norm(c));
+      const m = {};
+      COL_ANNEXE.forEach(([k, re]) => { const i = tetes.findIndex((t, j) => t && t.length < 40 && re.test(t) && !Object.values(m).includes(j)); if (i >= 0) m[k] = i; });
+      // Nouvelle en-tête : au moins un repère ou une désignation, et deux autres colonnes reconnues
+      if ((m.repere !== undefined || m.designation !== undefined) && Object.keys(m).length >= 3 && !cells.some(c => REPERE_ANNEXE.test(c))) { map = m; return; }
+      if (!map) return;
+      const v = k => (map[k] === undefined ? '' : cells[map[k]] || '');
+      const rep = v('repere').toUpperCase().replace(/[_. ]/, '-'), des = v('designation');
+      if (!REPERE_ANNEXE.test(v('repere')) && !(des && nombre(v('qte')) > 0)) return;
+      const pre = (/^([A-Z]+)/.exec(rep) || [])[1];
+      const c = classer(`${des} ${v('modele')}`) || (PAR_PREFIXE_ANNEXE[pre] ? { categorie: GENRES[PAR_PREFIXE_ANNEXE[pre]].categorie, genre: PAR_PREFIXE_ANNEXE[pre] } : null);
+      if (!c) return;
+      const n = k => { const x = nbr(v(k)); return Number.isFinite(x) ? x : NaN; };
+      out.push({ ...c, designation: des || rep, repere: REPERE_ANNEXE.test(v('repere')) ? rep : '', local: v('local'), qte: n('qte') > 0 ? n('qte') : 1, Q: n('Q'), P: n('P'), Pfr: n('Pfr'), Pel: n('Pel'),
+        prescrit: [v('marque') && `marque ${v('marque')}`, v('modele') && `type ${v('modele')}`].filter(Boolean).join(', '), carac: {}, sources: [source], annexe: true });
+    });
+    return out;
+  }
+  // Équipements du tableau réunis à l'inventaire : un équipement de l'inventaire (« Ventilo-convecteurs ×6 ») est détaillé
+  // repère par repère (VC-01 bureau 1, VC-02…) ; repère déjà connu : débit, puissance et local complétés ; sinon ajouté
+  function fusionnerAnnexe(inventaire, annexe) {
+    const inv = (inventaire || []).slice(), garder = (a, b) => (Number.isFinite(nombre(a)) && a !== '' ? a : Number.isFinite(b) ? b : a);
+    const parGenre = new Map();
+    (annexe || []).forEach(a => {
+      // « CTA-1 » et « CTA-01 » : le même repère
+      const cleRep = r => String(r).toUpperCase().replace(/[-_ .]/g, '').replace(/([A-Z])0+(\d)/, '$1$2');
+      const memeRep = a.repere && inv.find(x => x.repere && cleRep(x.repere) === cleRep(a.repere));
+      if (memeRep) { Object.assign(memeRep, { Q: garder(memeRep.Q, a.Q), P: garder(memeRep.P, a.P), Pfr: garder(memeRep.Pfr, a.Pfr), Pel: garder(memeRep.Pel, a.Pel), local: memeRep.local || a.local, sources: [...memeRep.sources, ...a.sources] }); return; }
+      if (!parGenre.has(a.genre)) parGenre.set(a.genre, []);
+      parGenre.get(a.genre).push(a);
+    });
+    parGenre.forEach((liste, genre) => {
+      const cand = inv.filter(x => x.genre === genre && !x.variante && !x.repere);
+      const detailles = new Set();
+      liste.forEach(a => {
+        const base = cand.length === 1 ? cand[0] : cand.map(x => [x, ressemblance(`${x.designation} ${x.chapitre || ''}`, `${a.designation} ${a.local}`)]).sort((p, q) => q[1] - p[1]).filter(([, s]) => s >= 0.4).map(([x]) => x)[0];
+        const v = { id: `a${inv.length}`, ...(base ? { ...base, designation: a.designation && a.designation !== a.repere ? a.designation : base.designation, carac: { ...communs(base.carac) } } : { inclus: true }), ...a,
+          prescrit: a.prescrit || (base ? base.prescrit : ''), reseau: base ? base.reseau || '' : '', alim: base ? base.alim : '', principal: base ? base.principal : !!a.principal,
+          P: garder(a.P, base ? nombre(base.P) : NaN), Pfr: garder(a.Pfr, base ? nombre(base.Pfr) : NaN), Pel: a.Pel, Q: garder(a.Q, NaN), sources: [...(base ? base.sources : []), ...a.sources] };
+        ['P', 'Pfr', 'Pel', 'Q'].forEach(k => { if (!Number.isFinite(nombre(v[k])) || v[k] === '') v[k] = ''; });
+        inv.splice(base ? inv.indexOf(base) + 1 + [...detailles].filter(d => d.base === base).length : inv.length, 0, v);
+        if (base) detailles.add({ base, v });
+      });
+      // L'équipement détaillé repère par repère laisse la place à ses repères
+      new Set([...detailles].map(d => d.base)).forEach(b => inv.splice(inv.indexOf(b), 1));
+    });
+    return inv;
+  }
+
+  /* ---------- Équipements rattachés aux réseaux de la production ---------- */
+  // Émetteur hydraulique sans réseau : rattaché au réseau de distribution de la production quand son texte dit comment
+  // il est alimenté (change-over, eau glacée, batterie à eau, « raccordée à la PAC ») ou qu'il est décrit dans le même
+  // chapitre que la production (III.1.3 CTA sous III.1 avec la PAC III.1.1). Ballons ECS électriques ou solaires : hors schéma
+  const HYDRO_EM = ['cta', 'ventilo', 'aerotherme', 'radiateurs', 'plancher', 'radiant', 'plafond', 'ecs'];
+  function rattacher(inventaire, reseaux = []) {
+    const parId = new Map((reseaux || []).map(r => [r.id, r]));
+    const distrib = (reseaux || []).filter(r => r.hydro && ['change-over', 'chauffage', 'eau-glacee'].includes(r.nature));
+    const chapProd = inventaire.filter(x => x.categorie === 'producteur' && x.inclus !== false && !x.variante).map(x => codeDe(x).split('.').slice(0, 2).join('.')).filter(c => c.includes('.'));
+    inventaire.forEach(x => {
+      if (!HYDRO_EM.includes(x.genre) || x.variante) return;
+      delete x.horsSchema;
+      if (x.genre === 'ecs' && ['electrique', 'solaire'].includes(x.alim)) { x.horsSchema = x.alim === 'solaire' ? 'ECS solaire (hors production)' : 'ECS électrique'; return; }
+      const r = parId.get(x.reseau);
+      if (r && r.hydro) return;
+      const memeChap = chapProd.some(c => codeDe(x).startsWith(`${c}.`));
+      // CTA à batterie électrique seule, ou sans batterie à eau reconnue hors du chapitre de la production : pas un circuit
+      if (x.genre === 'cta' && (x.alim === 'electrique' || (!x.alim && !memeChap && distrib.length))) { x.horsSchema = x.alim === 'electrique' ? 'CTA à batterie électrique' : 'CTA sans batterie à eau reconnue (rattachez-la à un réseau si elle en a une)'; return; }
+      if (x.alim === 'electrique' || !distrib.length) return;
+      if (!x.alim && !memeChap) return;
+      const ordre = { 'change-over': ['change-over', 'chauffage', 'eau-glacee'], chauffage: ['chauffage', 'change-over'], 'eau-glacee': ['eau-glacee', 'change-over'] }[x.alim]
+        || (x.genre === 'ecs' ? ['chauffage', 'change-over'] : ['change-over', 'chauffage', 'eau-glacee']);
+      for (const n of ordre) {
+        const l = distrib.filter(z => z.nature === n);
+        if (!l.length) continue;
+        const cible = l.length === 1 ? l[0] : l.map(z => [z, ressemblance(`${z.nom} ${z.chapitre || ''}`, `${x.designation} ${x.chapitre || ''}`)]).sort((a, b) => b[1] - a[1])[0][0];
+        x.reseau = cible.id;
+        x.rattache = x.alim ? 'texte' : 'chapitre';
+        return;
+      }
+    });
+    return inventaire;
+  }
+  // Puissance thermique d'un émetteur pour le fluide du circuit : froid pour l'eau glacée, chaud sinon (l'autre à défaut)
+  const pTherm = (x, froid) => { const c = nombre(x.P), f = nombre(x.Pfr); return froid ? (Number.isFinite(f) ? f : c) : (Number.isFinite(c) ? c : f); };
 
   /* ---------- Vers le schéma de principe ---------- */
   // Entrées du schéma : générateur principal (le genre le plus représenté), nombre et puissance unitaire, un circuit par émetteur
@@ -349,19 +601,26 @@ const InventaireCVC = (() => {
       if (k) e.reseau = k[0]; else { e.reseau = 'perso'; e.Tdep = d; e.Tret = r; }
     } else if (principal && /^gf/.test(principal[0])) e.reseau = 'eg-7-12';
     else if (principal && principal[0] === 'pac-rev') e.reseau = 'co';
-    const em = inc.filter(x => x.categorie === 'emetteur' && Sc.EMETTEURS[x.genre]);
+    // Production réversible (PAC « chauffage / climatisation », régimes chaud et froid cités) : change-over
+    const pp = principal && prod.find(x => x.genre === principal[0]), rev = pp && /^pac/.test(pp.genre) && (pp.genre === 'pac-rev' || pp.alim === 'change-over' || ((pp.carac || {}).regimeChaud && (pp.carac || {}).regimeFroid));
+    if (rev) { e.reseau = 'co'; delete e.Tdep; delete e.Tret; }
+    // ECS électrique ou solaire : pas un circuit de la production
+    inc.filter(x => x.horsSchema).forEach(x => alertes.push(`${x.designation} : ${x.horsSchema}, hors schéma hydraulique${x.horsSchema === 'ECS électrique' ? ' (repris dans l\'alimentation électrique)' : ''}.`));
+    const em = inc.filter(x => x.categorie === 'emetteur' && Sc.EMETTEURS[x.genre] && !x.horsSchema);
     // Réseaux hydrauliques reconnus (hors plomberie, ECS sanitaire traitée comme un émetteur) : un circuit par réseau,
     // avec ses émetteurs (puissance cumulée), son régime et la longueur de ses tuyauteries
     // Réseaux du fluide de la production : eau chaude (et ECS) pour une chaudière ou une PAC, eau glacée pour un groupe
     // froid, les deux en change-over (PAC réversible)
-    const fluide = e.reseau === 'co' || (principal && principal[0] === 'pac-rev') ? ['chauffage', 'ecs', 'eau-glacee', 'change-over'] : (principal && /^gf/.test(principal[0])) || /^eg/.test(e.reseau || '') ? ['eau-glacee'] : ['chauffage', 'ecs', 'change-over'];
+    const fluide = e.reseau === 'co' || rev ? ['chauffage', 'ecs', 'eau-glacee', 'change-over'] : (principal && /^gf/.test(principal[0])) || /^eg/.test(e.reseau || '') ? ['eau-glacee'] : ['chauffage', 'ecs', 'change-over'];
     const parId = new Map((reseaux || []).map(r => [r.id, r])), hydro = (reseaux || []).filter(r => r.hydro && fluide.includes(r.nature));
     (reseaux || []).filter(r => r.hydro && r.nature !== 'vapeur' && !fluide.includes(r.nature)).forEach(r => alertes.push(`Réseau « ${r.nom} » (${(NATURE[r.nature] || {}).libelle || r.nature}) : autre fluide que la production principale, à traiter dans un second schéma.`));
-    const circuitsReseaux = hydro.map(r => {
+    // Réseau d'ECS sans ballon alimenté par la production (ballons électriques ou solaires) : pas un circuit
+    const circuitsReseaux = hydro.filter(r => r.nature !== 'ecs' || em.some(x => x.reseau === r.id) || !inc.some(x => x.genre === 'ecs' && x.horsSchema)).map(r => {
       const ems = em.filter(x => x.reseau === r.id);
       const dominant = ems.length ? ems.reduce((m, x) => ((nombre(x.qte) || 1) > (nombre(m.qte) || 1) ? x : m), ems[0]).genre : (classer(r.nom) || {}).genre;
       const emet = Sc.EMETTEURS[dominant] ? dominant : r.nature === 'ecs' ? 'ecs' : r.nature === 'eau-glacee' ? 'ventilo' : 'radiateurs';
-      const Ps = ems.map(x => { const P = nombre(x.P), q = nombre(x.qte) || 1; return Number.isFinite(P) && P > 0 ? P * q : NaN; });
+      const froid = r.nature === 'eau-glacee' || (r.nature === 'change-over' && principal && /^gf/.test(principal[0]));
+      const Ps = ems.map(x => { const P = pTherm(x, froid), q = nombre(x.qte) || 1; return Number.isFinite(P) && P > 0 ? P * q : NaN; });
       const P = Ps.length && Ps.every(Number.isFinite) ? Math.round(Ps.reduce((s, v) => s + v, 0) * 10) / 10 : '';
       if (P === '') alertes.push(`Réseau « ${r.nom} » : puissance ${ems.length ? 'de certains émetteurs' : 'des émetteurs'} non trouvée, à saisir dans le schéma.`);
       return { rep: r.nom.slice(0, 40), emetteur: emet, P, regime: r.regime && r.regime !== reg ? r.regime : '', regulation: emet === 'ecs' ? 'direct' : emet === 'ventilo' ? '2v' : '3v', L: r.L > 0 ? Math.round(r.L) : 50, reseau: r.id };
@@ -370,10 +629,10 @@ const InventaireCVC = (() => {
     const sansReseau = em.filter(x => !x.reseau || !parId.has(x.reseau) || (!parId.get(x.reseau).hydro && !['soufflage', 'reprise', 'extraction', 'air-neuf'].includes(parId.get(x.reseau).nature)));
     e.circuits = [...circuitsReseaux, ...sansReseau.map(x => {
       // Puissance citée = puissance unitaire (« aérotherme 25 kW », quantité 4 → circuit de 100 kW)
-      const P = nombre(x.P), q = nombre(x.qte) || 1, total = Number.isFinite(P) && P > 0 ? Math.round(P * q * 10) / 10 : '';
+      const P = pTherm(x, fluide.length === 1 && fluide[0] === 'eau-glacee'), q = nombre(x.qte) || 1, total = Number.isFinite(P) && P > 0 ? Math.round(P * q * 10) / 10 : '';
       return { rep: `${x.designation.slice(0, 40)}${q > 1 && !/^\d/.test(x.designation) ? ` (×${q})` : ''}`, emetteur: x.genre, P: total, regime: x.regime && x.regime !== reg ? x.regime : '', regulation: x.genre === 'ecs' ? 'direct' : x.genre === 'ventilo' ? '2v' : '3v', L: 50 };
     })];
-    sansReseau.filter(x => x.P === '' || !Number.isFinite(nombre(x.P))).forEach(x => alertes.push(`${x.designation} : puissance non trouvée, à saisir dans le schéma.`));
+    sansReseau.filter(x => !Number.isFinite(pTherm(x, false))).forEach(x => alertes.push(`${x.designation} : puissance non trouvée, à saisir dans le schéma.`));
     if (!em.length) alertes.push('Aucun émetteur hydraulique reconnu : ajoutez les circuits dans le schéma.');
     inc.filter(x => x.genre === 'split').forEach(x => alertes.push(`${x.designation} : détente directe, hors schéma hydraulique (repris dans l'alimentation électrique).`));
     return { entrees: e, alertes };
@@ -413,21 +672,26 @@ const InventaireCVC = (() => {
     pompe: ['pompe', 'mono', 'tor'], vanne3v: ['vanne', '24V', 'v010'], vanne2v: ['vanne', '24V', 'v010'], ventilateur: ['ventilateur', 'tri', 'var'], desenfumage: ['ventilateur', 'tri', 'torRetour'], vase: null, regulation: null,
   };
   const PELEC = { pac: P => (P > 0 ? Math.round(P / 3 * 10) / 10 : ''), generateur: P => (P > 0 ? Math.max(0.2, Math.round(P * 0.003 * 10) / 10) : 0.3), cta: () => '', ventilo: () => 0.1, aerotherme: () => 0.3, split: P => (P > 0 ? Math.round(P / 3.5 * 100) / 100 : ''), pompe: () => '', vanne: () => 0.01, ventilateur: () => '' };
-  const PREFIXES = { pac: 'PAC', generateur: 'G', cta: 'CTA', ventilo: 'VC', aerotherme: 'AT', split: 'SP', pompe: 'P', vanne: 'VM', ventilateur: 'V' };
+  const PREFIXES = { pac: 'PAC', generateur: 'G', cta: 'CTA', ventilo: 'VC', aerotherme: 'AT', split: 'SP', pompe: 'P', vanne: 'VM', ventilateur: 'V', resistance: 'BEC' };
   function versElec(inventaire) {
     const out = [];
-    inventaire.filter(x => x.inclus !== false && ELEC[x.genre]).forEach((x, i) => {
-      const [type, tension, regulation] = ELEC[x.genre], q = Math.max(1, Math.round(nombre(x.qte) || 1)), P = nombre(x.P);
-      const Pe = (PELEC[type] || (() => ''))(Number.isFinite(P) ? P : 0);
+    // Ballon ECS électrique : résistance (puissance électrique citée, sinon 2,4 kW jusqu'à 300 L)
+    const compteur = {};
+    const elecDe = x => (x.genre === 'ecs' && x.alim === 'electrique' ? ['resistance', nombre(x.Pel) > 3.5 ? 'tri' : 'mono', 'tor'] : ELEC[x.genre]);
+    inventaire.filter(x => x.inclus !== false && elecDe(x)).forEach((x, i) => {
+      const [type, tension0, regulation] = elecDe(x), q = Math.max(1, Math.round(nombre(x.qte) || 1)), P = nombre(x.P), Pel = nombre(x.Pel);
+      // Puissance électrique lue au CCTP (absorbée, moteur, batterie électrique), sinon estimée d'après la puissance thermique
+      const Pe = Number.isFinite(Pel) && Pel > 0 ? Pel : type === 'resistance' ? ((x.carac || {}).volume > 300 ? 3.6 : 2.4) : (PELEC[type] || (() => ''))(Number.isFinite(P) ? P : 0);
+      const tension = (x.carac || {}).tension === '400 V' && tension0 === 'mono' && type !== 'vanne' ? 'tri' : (x.carac || {}).tension === '230 V' && tension0 === 'tri' && !(Pe > 3) ? 'mono' : tension0;
       const base = { type, tension, regulation, designation: x.designation.slice(0, 60), depart: type === 'ventilateur' ? 'variateur' : undefined };
       // Repère : celui du CCTP, sinon préfixe du type numéroté (VC-01, VC-02…)
-      const pre = x.repere || PREFIXES[type] || 'EQ';
-      if (q <= 10) for (let k = 1; k <= q; k++) out.push({ src: `inv:${x.id || i}:${k}`, rep: x.repere && q === 1 ? x.repere : `${pre}-${String(k).padStart(2, '0')}`, ...base, P: Pe });
+      const pre = x.repere || PREFIXES[type] || 'EQ', suite = () => { compteur[pre] = (compteur[pre] || 0) + 1; return `${pre}-${String(compteur[pre]).padStart(2, '0')}`; };
+      if (q <= 10) for (let k = 1; k <= q; k++) out.push({ src: `inv:${x.id || i}:${k}`, rep: x.repere && q === 1 ? x.repere : x.repere ? `${pre}-${String(k).padStart(2, '0')}` : suite(), ...base, P: Pe });
       else out.push({ src: `inv:${x.id || i}`, rep: `${pre} ×${q}`, ...base, designation: `${base.designation} (×${q})`, P: Pe === '' ? '' : Math.round(Pe * q * 100) / 100 });
     });
     return out;
   }
 
-  return { NATURES, NATURE, natureReseau, estReseau, reseauxCctp, fusionnerReseaux, REGLES, GENRES, classer, puissance, regime, debitAir, depuisCctp, depuisDpgf, depuisDpgfTexte, fusionner, versSchema, versSchemaAir, versElec, norm };
+  return { ecarts, ecartsTexte, LIB_ECART, cleRegle, appliquerRegles, apprendre, tableauEquipements, fusionnerAnnexe, caracteristiques, caracTexte, puissances, alimentation, rattacher, NATURES, NATURE, natureReseau, estReseau, reseauxCctp, fusionnerReseaux, REGLES, GENRES, classer, puissance, regime, debitAir, depuisCctp, depuisDpgf, depuisDpgfTexte, fusionner, versSchema, versSchemaAir, versElec, norm };
 })();
 if (typeof module !== 'undefined') module.exports = InventaireCVC;

@@ -203,3 +203,93 @@ test('ligatures : réparées seulement quand le PDF en a perdu', () => {
   assert.deepStrictEqual(CL.reparer(['restauraƟon', 'hoƩe']), ['restauration', 'hotte']);
   assert.deepStrictEqual(r, ['Extraction', 'restauration', 'Dispositif', 'acoustique', 'cassettes', 'Climatisation', 'ainsi que', 'hotte']);
 });
+
+test('caractéristiques du CCTP : puissances chaud / froid / électrique, débit, pression, fluide, acoustique', () => {
+  const c = I.caracteristiques('Centrale de marque X. Débit d\'air : 3500 m3/h. Pression disponible : 250 Pa. Puissance absorbée : 0.82 kW. Batterie chaude 24 kW, batterie froide 18 kW. Régime 7/12 °C en été et 45/40°C en hiver. Fluide R454B. Puissance sonore min/max : 66/70 dB(A). Efficacité du récupérateur 85 %. Filtre F7 (ePM1 55%). Alimentation tri 400 V.');
+  assert.deepStrictEqual([c.Q, c.Pdispo, c.Pel, c.Pch, c.Pfr, c.regimeFroid, c.regimeChaud, c.frigorigene, c.Lw, c.rendement, c.tension], [3500, 250, 0.82, 24, 18, '7/12', '45/40', 'R454B', 70, 85, '400 V']);
+  assert.match(c.filtres, /F7/);
+  assert.deepStrictEqual(I.puissances('batterie électrique de 15 kW ; Puissance froid : 1 à 1.6 kW ; Puissance 2200W'), { Pel: 15, Pfr: 1.6, P: 2.2 });
+  // « inox 304L » n'est pas un volume ; « ballon 150L » en est un
+  assert.strictEqual(I.caracteristiques('caisson inox 304L').volume, undefined);
+  assert.strictEqual(I.caracteristiques('Ballon ECS - 150L').volume, 150);
+  assert.match(I.caracTexte(c), /3 500 m³\/h · 250 Pa dispo/);
+});
+
+test('alimentation et rattachement : CTA et cassettes au change-over de la PAC, ECS électrique et CTA à batterie électrique hors schéma', () => {
+  assert.strictEqual(I.alimentation('batterie hydraulique change-over raccordée à la PAC', 'cta'), 'change-over');
+  assert.strictEqual(I.alimentation('Régime : 7/12 °C en été et 45/40°C en hiver', 'ventilo'), 'change-over');
+  assert.strictEqual(I.alimentation('équipée d\'une batterie électrique de 9 kW', 'cta'), 'electrique');
+  assert.strictEqual(I.alimentation('Production ECS électrique Ballon 150L', 'ecs'), 'electrique');
+  assert.strictEqual(I.alimentation('Préparateur solaire 900 litres serpentin', 'ecs'), 'solaire');
+  const res = [{ id: 'co', nom: 'Circuit distribution chauffage/climatisation', nature: 'change-over', hydro: true, L: 160, regime: '' }];
+  const inv = [
+    { categorie: 'producteur', genre: 'pac-eau', designation: 'PAC eau/eau', qte: 1, P: 60, carac: { regimeChaud: '45/40', regimeFroid: '7/12' }, alim: 'change-over', sources: ['CCTP art. III.1.1'], inclus: true },
+    { categorie: 'emetteur', genre: 'cta', designation: 'CTA restaurant', qte: 1, P: 20, Pfr: 15, alim: '', sources: ['CCTP art. III.1.3'], inclus: true },
+    { categorie: 'emetteur', genre: 'ventilo', designation: 'Cassettes', qte: 4, P: '', Pfr: 2, alim: 'change-over', sources: ['DPGF III.1.4.2'], inclus: true },
+    { categorie: 'emetteur', genre: 'cta', designation: 'CTA double flux bureaux', qte: 1, P: '', Pel: 9, alim: 'electrique', sources: ['CCTP art. III.2.1'], inclus: true },
+    { categorie: 'emetteur', genre: 'ecs', designation: 'Ballon ECS 200L', qte: 1, alim: 'electrique', carac: { volume: 200 }, sources: ['DPGF III.6.4.1'], inclus: true }];
+  I.rattacher(inv, res);
+  assert.deepStrictEqual(inv.map(x => [x.reseau || '', x.rattache || '', x.horsSchema || '']), [['', '', ''], ['co', 'chapitre', ''], ['co', 'texte', ''], ['', '', 'CTA à batterie électrique'], ['', '', 'ECS électrique']]);
+  const { entrees, alertes } = I.versSchema(inv, Sc, res);
+  assert.strictEqual(entrees.reseau, 'co', 'PAC eau/eau réversible : change-over');
+  assert.deepStrictEqual(entrees.circuits.map(c => [c.reseau, c.P]), [['co', 28]], 'un circuit : CTA 20 kW + 4 cassettes de 2 kW (froid à défaut de chaud)');
+  assert.ok(alertes.some(a => /Ballon ECS 200L : ECS électrique/.test(a)));
+  // Bilan électrique : puissance électrique lue (9 kW), ballon électrique en résistance, numérotation continue
+  const l = I.versElec(inv);
+  assert.deepStrictEqual(l.filter(x => x.type === 'cta').map(x => [x.rep, x.P]), [['CTA-01', ''], ['CTA-02', 9]]);
+  assert.deepStrictEqual(l.filter(x => x.type === 'resistance').map(x => [x.P, x.tension]), [[2.4, 'mono']]);
+});
+
+test('écarts CCTP / DPGF : non chiffré, non décrit, quantité, marque', () => {
+  const inv = [
+    { categorie: 'producteur', genre: 'pac-eau', designation: 'PAC', principal: true, prescrit: 'marque EMICON', prescritDpgf: 'marque EMICON, marque prévue au DPGF : AUTREMARQUE', qte: 1, sources: ['CCTP art. 1.1', 'DPGF 1.1.1'] },
+    { categorie: 'emetteur', genre: 'cta', designation: 'CTA hall', principal: true, qte: 2, qteCctp: 3, sources: ['CCTP art. 1.2', 'DPGF 1.2.1'] },
+    { categorie: 'emetteur', genre: 'ventilo', designation: 'Ventilo-convecteurs', qte: 1, sources: ['CCTP art. 1.4'] },
+    { categorie: 'auxiliaire', genre: 'ventilateur', designation: 'Tourelle', principal: true, qte: 1, sources: ['DPGF 2.1.3'] },
+    { categorie: 'producteur', genre: 'pac-air', designation: 'Variante PAC air', variante: true, qte: 1, sources: ['DPGF 9.1'] }];
+  const e = I.ecarts(inv);
+  assert.deepStrictEqual(e.map(x => [x.type, x.designation]), [['marque', 'PAC'], ['quantite', 'CTA hall'], ['absent-dpgf', 'Ventilo-convecteurs'], ['absent-cctp', 'Tourelle']]);
+  assert.match(I.ecartsTexte(e), /^1\. PAC — Marque différente : .*AUTREMARQUE/);
+});
+
+test('corrections mémorisées : apprises du tableau, appliquées au dossier suivant', () => {
+  const items = [{ designation: 'Tronçon de soufflage DBB-RR-Z DN500 (longueur : 2000mm)', genre: 'bouche-extraction', categorie: 'emetteur', inclus: true },
+    { designation: 'Tourelle de désenfumage 4000 m3/h', genre: 'desenfumage', categorie: 'auxiliaire', inclus: true }];
+  items.forEach(x => { x.auto = { designation: x.designation, genre: x.genre, inclus: x.inclus }; });
+  const reseaux = [{ nom: 'Réseau de gaine d\'extraction', nature: 'extraction' }];
+  reseaux.forEach(z => { z.auto = { nom: z.nom, nature: z.nature }; });
+  items[0].genre = 'bouche-soufflage'; items[1].inclus = false; reseaux[0].nature = 'reprise';
+  const regles = I.apprendre(items, reseaux, []);
+  assert.strictEqual(regles.length, 3);
+  // Dossier suivant : autre longueur, autre débit — même règle
+  const suivant = [{ designation: 'Tronçon de soufflage DBB-RR-Z DN400 (longueur : 1000mm)', genre: 'bouche-extraction', categorie: 'emetteur', inclus: true }, { designation: 'Tourelle de désenfumage 6000 m3/h', genre: 'desenfumage', inclus: true }];
+  const rs = [{ nom: 'Réseau de gaine d\'extraction', nature: 'extraction', hydro: false }];
+  I.appliquerRegles(suivant, rs, regles);
+  assert.deepStrictEqual([suivant[0].genre, suivant[0].appris, suivant[1].inclus, rs[0].nature], ['bouche-soufflage', true, false, 'reprise']);
+});
+
+test('tableau d\'équipements en annexe : repères, locaux, débits, puissances ; inventaire détaillé repère par repère', () => {
+  const rows = [['Liste des équipements'], ['Repère', 'Désignation', 'Local', 'Débit (m3/h)', 'P froid (kW)', 'P chaud (kW)'],
+    ['VC-01', 'Ventilo-convecteur cassette', 'Bureau 1', '450', '2,1', '2,5'], ['VC-02', 'Ventilo-convecteur cassette', 'Bureau 2', '650', '3', '3,4'], ['CTA-1', 'Centrale de traitement d\'air', 'Toiture', '3 500', '', '']];
+  const a = I.tableauEquipements(rows, 'Annexe');
+  assert.deepStrictEqual(a.map(x => [x.repere, x.genre, x.local, x.Q, x.Pfr, x.P]), [['VC-01', 'ventilo', 'Bureau 1', 450, 2.1, 2.5], ['VC-02', 'ventilo', 'Bureau 2', 650, 3, 3.4], ['CTA-1', 'cta', 'Toiture', 3500, NaN, NaN]]);
+  // PDF : cellules séparées par des tabulations
+  assert.strictEqual(I.tableauEquipements(rows.map(r => r.join('\t').split('\t'))).length, 3);
+  const inv = [{ id: 'c0', categorie: 'emetteur', genre: 'ventilo', designation: 'Ventilo-convecteurs cassettes', qte: 2, prescrit: 'marque X', reseau: 'co', carac: { regimeFroid: '7/12' }, sources: ['CCTP art. 3.2'], inclus: true },
+    { id: 'c1', categorie: 'emetteur', genre: 'cta', designation: 'CTA', qte: 1, repere: 'CTA-01', sources: ['CCTP art. 3.1'], inclus: true }];
+  const f = I.fusionnerAnnexe(inv, a);
+  assert.deepStrictEqual(f.map(x => [x.repere, x.local || '', x.reseau || '', x.prescrit || '', x.qte]), [['VC-01', 'Bureau 1', 'co', 'marque X', 1], ['VC-02', 'Bureau 2', 'co', 'marque X', 1], ['CTA-01', 'Toiture', '', '', 1]]);
+  assert.strictEqual(f[2].Q, 3500, 'repère déjà connu (CTA-1 = CTA-01) : débit complété');
+});
+
+test('matériel retenu contrôlé face au CCTP : marque imposée, débit, puissance', () => {
+  const CM = require('../etudes/public/js/catalogue-materiel');
+  const inv = [{ categorie: 'emetteur', genre: 'cta', designation: 'CTA salle de restauration', prescrit: 'marque FLAKTGROUP, type CAIR', Q: 3500, P: '', carac: { Lw: 70 }, inclus: true },
+    { categorie: 'producteur', genre: 'pac-eau', designation: 'PAC eau/eau', prescrit: 'marque EMICON ou équivalent', P: 60, inclus: true }];
+  const cat = [{ fabricant: 'VIM', reference: 'CTA-3000', famille: 'cta', Qmin: 1000, Qmax: 3000, Lw: 75 }, { fabricant: 'Autre', reference: 'PAC-50', famille: 'pac', P: 50 }];
+  const r = CM.controleCctp({ cle: 'aero|cta-df|3500', designation: 'CTA double flux restauration', fabricant: 'VIM', reference: 'CTA-3000' }, inv, cat);
+  assert.deepStrictEqual(r.alertes.map(a => a.niveau), ['erreur', 'erreur', 'alerte']);
+  assert.match(r.alertes[1].texte, /3500 m³\/h demandés.*3000/);
+  const p = CM.controleCctp({ cle: 'gen|pac-eau|60', designation: 'PAC', fabricant: 'Autre', reference: 'PAC-50' }, inv, cat);
+  assert.deepStrictEqual(p.alertes.map(a => [a.niveau, /équivalence|Puissance/.exec(a.texte)[0]]), [['info', 'équivalence'], ['erreur', 'Puissance']]);
+});

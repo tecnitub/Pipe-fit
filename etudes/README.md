@@ -87,6 +87,24 @@ article (unité extérieure et intérieure, deux ballons) le détaillent et le r
 aussi à chapitres romains (III.1.1), numéro et titre sur deux lignes, en-têtes de page répétés écartés, ligatures des
 polices rétablies (« restauraƟon », « extrac on ») ; les chapitres de dispositions générales et de prescriptions ne
 donnent pas d'équipement.
+**Caractéristiques lues** pour chaque équipement (texte de l'article et de ses sous-articles, ligne du DPGF) : puissances
+**chaud**, **froid** et **électrique** distinguées par les mots qui les précèdent (« puissance absorbée », « batterie
+électrique », « puissance froid »…, « 2200W » compris), débit d'air, pression disponible, HMT, régimes chaud et froid,
+fluide frigorigène, COP / EER / SCOP / SEER, rendement du récupérateur, filtres, Lw / Lp, tension, volume ; affichées dans
+le tableau (colonnes P chaud / P froid / P élec. modifiables). Le schéma de principe prend la puissance chaude (froide pour
+l'eau glacée), l'alimentation électrique la puissance électrique lue (ballon électrique en résistance).
+**Rattachement aux réseaux de la production** : un émetteur sans réseau est rattaché au réseau de distribution quand son
+texte dit comment il est alimenté (change-over, eau glacée, batterie à eau, « raccordée à la PAC ») ou qu'il est décrit dans
+le chapitre de la production ; ballon ECS électrique ou solaire, CTA à batterie électrique seule : hors schéma hydraulique
+(avec la raison). Une PAC dont les régimes chaud et froid sont cités est traitée en change-over.
+**Écarts CCTP / DPGF** : équipement décrit mais sans ligne au DPGF, chiffré mais non décrit, quantité ou marque différente
+(colonne « Marque » du DPGF comprise) ; liste à copier (questions à poser pendant la consultation) ou en CSV.
+**Tableau d'équipements** (liste des repères, carnet d'équipements, en annexe PDF / Excel ou dans le CCTP) : en-tête reconnue
+(repère, désignation, local, débit, puissances, marque, modèle), un équipement par repère ; l'inventaire est détaillé repère
+par repère (VC-01 bureau 1, VC-02…) en gardant prescription, réseau et caractéristiques communes ; un repère déjà connu
+(« CTA-1 » = « CTA-01 ») est complété.
+**Corrections retenues** : un genre corrigé, une ligne écartée ou une nature de réseau changée dans le tableau devient une
+règle (désignation sans dimensions) appliquée aux dossiers suivants, marquée « ↺ » ; liste et suppression dans les Réglages.
 L'inventaire se vérifie dans un tableau (réseaux, nature modifiable, réseau de chaque équipement), puis
 « 🗺️ Créer le schéma de principe » (générateurs en cascade, régime, un circuit par réseau reconnu, sinon par émetteur), « 🌬️ Créer le schéma
 aéraulique » (CTA ou caisson, une zone par ligne de bouches de soufflage ou d'extraction, débits du DPGF) et « ⚡ Créer l'alimentation
@@ -104,6 +122,9 @@ les équipements de l'étude ». Un CCTP scanné (sans texte) ne se lit pas : de
   bibliothèque de prix ; article modifiable poste par poste, export CSV, puis **devis brouillon créé dans Pipe-Fit** pour
   l'affaire (client, contact, site, TVA du client, ouvrages fournitures + main-d'œuvre, postes sans article « hors
   bibliothèque » à prix nul).
+- **Matériel retenu contrôlé face au CCTP** : chaque ligne affiche l'équipement du dossier de consultation qui lui
+  correspond (prescription, caractéristiques) ; le modèle choisi est comparé : marque imposée (⛔) ou « ou équivalent »
+  (note d'équivalence à joindre), débit, puissance, volume, pression disponible, niveau sonore, puissance électrique.
 - **Matériel retenu** (« 🏷️ Matériel retenu » sur une étude) : pour chaque équipement dimensionné (CTA, caissons,
   bouches, générateurs, pompes, vannes, vases…) et pour le matériel ajouté à la main, le **fabricant et la référence
   exacte** choisis, puis le statut de validation par le client ou la maîtrise d'œuvre (à choisir, à soumettre, soumis

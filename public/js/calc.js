@@ -61,7 +61,8 @@ const Calc = {
   },
 
   // Lignes chiffrées (ouvrages, postes libres) : hors chapitres, textes et images
-  estPrix(l) { return !['chapitre', 'texte', 'image'].includes(l.type); },
+  // Ligne « option » (variante, moins-value d'un DPGF) : chiffrée mais hors total tant que le client ne l'a pas retenue
+  estPrix(l) { return !['chapitre', 'texte', 'image'].includes(l.type) && !l.option; },
   // Niveau d'un chapitre : 1 chapitre, 2 sous-chapitre, 3 sous-sous-chapitre (d'après le N° pour les anciens DPGF)
   niveau(l) { return Math.min(3, Math.max(1, Math.round(num(l.niveau)) || (l.num ? String(l.num).split('.').length : 1))); },
 

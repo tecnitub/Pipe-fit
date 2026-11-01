@@ -315,12 +315,12 @@ function devisEditor(id) {
         const u = Calc.unit(l);
         const nbF = (l.composants || []).filter(c => c.type !== 'mo').length;
         row = `<tr class="ligne-prix ${aChiffrer(l) ? 'a-chiffrer' : ''}">${move}${numCell}<td class="des"><button class="linklike" data-open="${i}">${esc(l.designation || 'Ouvrage sans titre')}</button>
-            ${l.libre ? '<span class="badge">poste libre</span>' : ''}${!videTVA(l.tva) && !d.autoliquidation && num(l.tva) !== Calc.tauxDoc(d) ? `<span class="badge b-info">TVA ${libTaux(num(l.tva))}</span>` : ''}${aChiffrer(l) ? '<span class="badge b-warn">à chiffrer</span>' : ''}
+            ${l.libre ? '<span class="badge">poste libre</span>' : ''}${!videTVA(l.tva) && !d.autoliquidation && num(l.tva) !== Calc.tauxDoc(d) ? `<span class="badge b-info">TVA ${libTaux(num(l.tva))}</span>` : ''}${aChiffrer(l) ? '<span class="badge b-warn">à chiffrer</span>' : ''}${l.option ? `<button class="badge b-info" data-option="${i}" title="Variante, option ou moins-value du DPGF : chiffrée mais non comprise dans le total. Cliquer pour l'intégrer au total (option retenue par le client)." ${locked ? 'disabled' : ''}>option — hors total</button>` : ''}${l.prixPropose && !l.prixVerifie ? `<button class="badge b-warn" data-prixok="${i}" title="Prix proposé d'après ${esc(l.prixPropose.source)} : « ${esc(l.prixPropose.designation)} » (ressemblance ${Math.round(num(l.prixPropose.score) * 100)} %). Cliquer une fois vérifié." ${locked ? 'disabled' : ''}>prix proposé (${esc(l.prixPropose.source)}) à vérifier</button>` : ''}
             <div class="muted small">${nbF} fourniture${nbF > 1 ? 's' : ''} · ${fmt(u.heures, 2)} h de main-d'œuvre / ${esc(l.unite)}${l.detail ? ' · <span title="' + esc(l.detail) + '">descriptif</span>' : ''}</div></td>
           <td class="num" data-l="Qté"><input data-qte="${i}" type="number" step="any" value="${esc(l.qte)}" style="width:80px" ${locked ? 'disabled' : ''} aria-label="Quantité"></td>
           <td data-l="Unité">${esc(l.unite)}</td><td class="num" data-l="PU fournit.">${eur(u.f)}</td><td class="num" data-l="PU MO">${eur(u.mo)}</td><td class="num" data-l="PU HT">${eur(u.f + u.mo)}</td>
           <td class="num" data-l="Remise %"><input data-remise="${i}" type="number" step="0.5" min="0" max="100" value="${num(l.remise) ? esc(l.remise) : ''}" placeholder="0" style="width:64px" ${locked ? 'disabled' : ''} aria-label="Remise commerciale en %"></td>
-          <td class="num" data-l="Total HT"><strong>${eur(Calc.ligneHT(l))}</strong>${num(l.remise) ? `<div class="muted small">avant remise ${eur(Calc.ligneBrute(l))}</div>` : ''}</td>${del}</tr>`;
+          <td class="num" data-l="Total HT">${l.option ? `<span class="muted">${eur(Calc.ligneHT(l))}</span>` : `<strong>${eur(Calc.ligneHT(l))}</strong>`}${num(l.remise) ? `<div class="muted small">avant remise ${eur(Calc.ligneBrute(l))}</div>` : ''}</td>${del}</tr>`;
       }
       const sub = (subAfter[i] || []).map(c => `<tr class="subtotal niv-${c.niveau}"><td></td><td></td><td colspan="7">Sous-total ${esc(c.titre)}</td><td class="num">${eur(c.total)}</td><td></td></tr>`).join('');
       return row + sub;
@@ -480,6 +480,9 @@ Views.devis.bind = (root, params, query) => {
 
   on('#accept', 'onclick', () => acceptDevis(d));
   on('#dpgf-imp', 'onclick', () => importerDPGF(d));
+  // Option du DPGF retenue par le client : intégrée au total ; prix proposé vérifié
+  root.querySelectorAll('[data-option]').forEach(b => b.onclick = async () => { const l = d.lignes[+b.dataset.option]; if (!await ask(`Intégrer « ${l.designation} » au total du devis (option retenue) ?`, 'Intégrer', false)) return; delete l.option; Store.upsert('devis', d); App.render(); });
+  root.querySelectorAll('[data-prixok]').forEach(b => b.onclick = () => { d.lignes[+b.dataset.prixok].prixVerifie = true; Store.upsert('devis', d); App.render(); });
   on('#dpgf-exp', 'onclick', () => exporterDPGF(d));
   on('#del', 'onclick', () => ask(`Supprimer le devis ${d.numero} ?${d.affaireId ? ' Le chantier associé sera conservé.' : ''}`, 'Supprimer').then(ok => {
     if (ok) { Store.remove('devis', d.id); location.hash = '#/devis'; }
