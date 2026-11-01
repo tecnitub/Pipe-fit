@@ -63,13 +63,15 @@ async function genererNoteCalcul(et, ids) {
   try {
     const { PDFDocument, StandardFonts, rgb } = PDFLib;
     const couleur = /^#[0-9a-f]{6}$/i.test(S.config.couleur) ? S.config.couleur : '#1F3864', bleu = rgb(...[1, 3, 5].map(i => parseInt(couleur.slice(i, i + 2), 16) / 255));
-    const opts = { numeros: false, margeHaut: 96, margeBas: 60 }, parties = [];
+    // Cartouche en pied de chaque page : indices de l'étude (historique + indice en cours) ; marge basse à sa hauteur
+    const emissions = emissionsEtude(et), hCartouche = 14 + 64 + (Math.min(3, emissions.length) + 1) * 10 + 8;
+    const opts = { numeros: false, margeHaut: 80, margeBas: Math.ceil(hCartouche / 0.75) + 10 }, parties = [];
     for (const [k, n] of notes.entries()) {
       etape(`Mise en page : ${n.titre}…`, 10 + 70 * k / notes.length);
       const num = et.notes.indexOf(n) >= 0 ? et.notes.indexOf(n) : k;
       const doc = await PDFDocument.load(await PDF.depuisHTML(pourPdf(htmlNotePdf(et, n, num)), n.titre, null, opts));
       const r = Liens.calculer(et, n);
-      for (const s of tousSchemas(r)) await pageSchema(doc, s.svg, `${s.titre} — N${num + 1} — ${n.titre}`);
+      for (const s of tousSchemas(r)) await pageSchema(doc, s.svg, `${s.titre} — N${num + 1} — ${n.titre}`, hCartouche);
       parties.push({ n, doc, pages: doc.getPageCount() });
     }
     // Page de garde avec sommaire paginé (recalculé si elle déborde sur plusieurs pages)
@@ -84,16 +86,15 @@ async function genererNoteCalcul(et, ids) {
     const police = await out.embedFont(StandardFonts.Helvetica), gras = await out.embedFont(StandardFonts.HelveticaBold);
     const logo = await out.embedPng(await octetsDe('logo-tecnitub.png'));
     const total = out.getPageCount(), gris = rgb(0.4, 0.4, 0.4), soc = S.config.societe, a = affaireDe(et.affaireId);
-    const titre = 'NOTE DE CALCUL', sous = winAnsi(pourPdf([a && a.code, et.objet, `indice ${et.indice}`].filter(Boolean).join(' — ')).slice(0, 95)), pied = winAnsi(`${soc.raison} — ${soc.adresse}`);
+    const numero = `${String((a && a.code) || 'ETU').replace(/\s+/g, '')}-NDC${notes.length === 1 && et.notes.length > 1 ? `-N${String(et.notes.indexOf(notes[0]) + 1).padStart(2, '0')}` : ''}`, courant = emissions[emissions.length - 1];
+    const infos = { societe: soc.raison, adresse: soc.adresse, contact: [soc.tel && `Tél. ${soc.tel}`, soc.email].filter(Boolean).join(' · '), affaire: libelleAffaire(a) || '—', client: et.client || clientDe(a) || '—', objet: et.description ? String(et.description).split('\n')[0] : '',
+      titre: notes.length === 1 && et.notes.length > 1 ? `N${et.notes.indexOf(notes[0]) + 1} — ${notes[0].titre}` : et.objet, typeDoc: `Note de calcul — ${notes.length} calcul(s)`, numero, indice: courant.indice, date: dateFr(courant.date), statut: courant.statut };
     out.getPages().forEach((pg, i) => {
-      const { width: W, height: H } = pg.getSize(), lh = 28, lw = logo.width * lh / logo.height;
-      pg.drawImage(logo, { x: 31, y: H - 22 - lh, width: lw, height: lh });
-      pg.drawText(titre, { x: W - 31 - gras.widthOfTextAtSize(titre, 10), y: H - 34, size: 10, font: gras, color: bleu });
-      pg.drawText(sous, { x: W - 31 - police.widthOfTextAtSize(sous, 7.5), y: H - 46, size: 7.5, font: police, color: gris });
-      pg.drawLine({ start: { x: 31, y: H - 58 }, end: { x: W - 31, y: H - 58 }, thickness: 1.4, color: bleu });
-      const num = `Page ${i + 1} / ${total}`;
-      pg.drawText(pied, { x: 31, y: 20, size: 7, font: police, color: gris, maxWidth: W - 120 });
-      pg.drawText(num, { x: W - 31 - police.widthOfTextAtSize(num, 8), y: 18, size: 8, font: police, color: gris });
+      const { width: W, height: H } = pg.getSize(), lh = 22, lw = logo.width * lh / logo.height, t = winAnsi(`NOTE DE CALCUL — ${numero} — indice ${courant.indice}`);
+      pg.drawImage(logo, { x: 31, y: H - 18 - lh, width: lw, height: lh });
+      pg.drawText(t, { x: W - 31 - gras.widthOfTextAtSize(t, 9), y: H - 32, size: 9, font: gras, color: bleu });
+      pg.drawLine({ start: { x: 31, y: H - 46 }, end: { x: W - 31, y: H - 46 }, thickness: 1.2, color: bleu });
+      dessinerCartouche(pg, { police, gras, logo, bleu, gris, infos, emissions, page: i + 1, total });
     });
     out.setTitle(winAnsi(`Note de calcul — ${et.objet} — indice ${et.indice}`)); out.setAuthor(winAnsi(et.auteur || soc.raison)); out.setCreator('Pipe-Fit Études'); out.setProducer('Pipe-Fit Études');
     const bytes = await out.save();
@@ -212,7 +213,9 @@ function dessinerCartouche(pg, { police, gras, logo, bleu, gris, infos, emission
   const xm = x0 + wG + 5;
   txt(`Affaire : ${infos.affaire}`, xm, y0 + hB - 11, 6.5, police, wM - 10); txt(`Client : ${infos.client}`, xm, y0 + hB - 20, 6.5, police, wM - 10);
   txt(infos.objet, xm, y0 + hB - 31, 7, gras, wM - 10);
-  txt(infos.titre, xm, y0 + 12, 9.5, gras, wM - 10, bleu); txt(infos.typeDoc, xm, y0 + 4, 6, police, wM - 10, gris);
+  // Titre long : police réduite plutôt que coupé
+  const tt = winAnsi(pourPdf(String(infos.titre || '').replace(/→/g, '->'))), tz = [9.5, 8.5, 7.5, 6.5].find(z => gras.widthOfTextAtSize(tt, z) <= wM - 10) || 6.5;
+  txt(infos.titre, xm, y0 + 12, tz, gras, wM - 10, bleu); txt(infos.typeDoc, xm, y0 + 4, 6, police, wM - 10, gris);
   const xd = x1 - wD, lig = (k, v, i, f = police, sz = 7) => { txt(k, xd + 4, y0 + hB - 10 - i * 11, 6, police, 52, gris); txt(v, xd + 56, y0 + hB - 10 - i * 11, sz, f, wD - 60); };
   lig('N° document', infos.numero, 0, gras); lig('Indice', infos.indice, 1, gras, 8.5); lig('Date', infos.date, 2); lig('Statut', infos.statut, 3, gras);
   lig('Page', `${page} / ${total}`, 4);
@@ -286,4 +289,10 @@ async function genererEmission(et, n, em, box) {
     box.innerHTML = `<h2>Émission impossible</h2><p class="erreur">${esc(e2.message)}</p><div class="actions"><button id="gen-fermer">Fermer</button></div>`;
     box.querySelector('#gen-fermer').onclick = Modal.close;
   }
+}
+
+// Indices de l'étude pour le cartouche de la note de calcul complète : historique, puis l'indice en cours
+function emissionsEtude(et) {
+  const h = (et.historique || []).map(x => ({ indice: x.indice, date: x.date, objet: x.motif || '', statut: x.statut || '', redige: x.redige || '', verifie: x.verifie || '', approuve: x.approuve || '' }));
+  return [...h, { indice: et.indice, date: et.date, objet: et.motifIndice || (h.length ? '' : 'Première émission'), statut: et.statut || 'Pour avis', redige: et.auteur || '', verifie: et.verificateur || '', approuve: et.approbateur || '' }];
 }

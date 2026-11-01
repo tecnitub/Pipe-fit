@@ -139,6 +139,8 @@ les équipements de l'étude ». Un CCTP scanné (sans texte) ne se lit pas : de
   des émissions et, dès qu'une donnée change, « modifié depuis l'indice X » (aussi dans la liste des calculs de l'étude).
   Le PDF émis se dépose dans les documents du chantier Pipe-Fit, un document par calcul (l'indice précédent est gardé).
   Une copie de calcul, d'étude ou un modèle repart sans émission ; « Brouillon PDF » reste disponible.
+  La **note de calcul complète** de l'étude porte le même cartouche sur chaque page (n° « CH-2026-001-NDC », indice de l'étude,
+  statut et approbateur saisis sur l'étude, historique des indices avec objet et visas), page de garde et schémas compris.
 - **Matériel retenu contrôlé face au CCTP** : chaque ligne affiche l'équipement du dossier de consultation qui lui
   correspond (prescription, caractéristiques) ; le modèle choisi est comparé : marque imposée (⛔) ou « ou équivalent »
   (note d'équivalence à joindre), débit, puissance, volume, pression disponible, niveau sonore, puissance électrique.

@@ -347,6 +347,8 @@ Vues.etude = {
         <label>Client / maître d'ouvrage<input data-e="client" value="${esc(et.client)}" placeholder="${esc(clientDe(a))}"></label>
         <label>Date<input type="date" data-e="date" value="${esc(et.date)}"></label>
         <label>Rédacteur<input data-e="auteur" value="${esc(et.auteur)}"></label><label>Vérificateur<input data-e="verificateur" value="${esc(et.verificateur)}"></label>
+        <label>Approbateur<input data-e="approbateur" value="${esc(et.approbateur || '')}"></label>
+        <label>Statut de l'indice ${esc(et.indice)}<select data-e="statut">${Revisions.STATUTS.map(x => `<option ${x === (et.statut || 'Pour avis') ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
         <label class="large">Objet détaillé, documents de référence (CCTP, plans, indices)<textarea data-e="description" rows="3">${esc(et.description)}</textarea></label></div>
         <div class="actions-ligne"><button class="secondaire petit" id="indice">Nouvel indice (${esc(suivantIndice(et.indice))})</button>
           ${et.historique.length ? `<span class="petit muted">Historique : ${et.historique.map(h => `${esc(h.indice)} du ${dateFr(h.date)}${h.motif ? ` (${esc(h.motif)})` : ''}`).join(' · ')}</span>` : ''}
@@ -388,7 +390,7 @@ Vues.etude = {
       const b = Modal.open(`<h2>Nouvel indice ${esc(suivantIndice(et.indice))}</h2><label>Motif de la révision<input id="motif" placeholder="Ex. : prise en compte des remarques du BET"></label>
         <div class="actions"><button class="secondaire" id="annuler">Annuler</button><button id="ok">Créer l'indice</button></div>`);
       b.querySelector('#annuler').onclick = Modal.close;
-      b.querySelector('#ok').onclick = () => { et.historique.push({ indice: et.indice, date: et.date, motif: et.motifIndice || '' }); et.indice = suivantIndice(et.indice); et.motifIndice = b.querySelector('#motif').value; et.date = aujourdhui(); enregistrer(et); Modal.close(); App.render(); };
+      b.querySelector('#ok').onclick = () => { et.historique.push({ indice: et.indice, date: et.date, motif: et.motifIndice || '', statut: et.statut || '', redige: et.auteur || '', verifie: et.verificateur || '', approuve: et.approbateur || '' }); et.indice = suivantIndice(et.indice); et.motifIndice = b.querySelector('#motif').value; et.date = aujourdhui(); enregistrer(et); Modal.close(); App.render(); };
     };
     root.querySelector('#dupliquer').onclick = () => {
       const c = { ...sansEmissions(copie(et)), id: uidE(), objet: `${et.objet} (copie)`, indice: 'A', historique: [], date: aujourdhui(), auteur: S.me.nom || S.me.login };
