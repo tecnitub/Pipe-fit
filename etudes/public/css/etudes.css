@@ -7,6 +7,9 @@ input.nombre { font-variant-numeric: tabular-nums; }
 .large { grid-column: 1 / -1; }
 .calc { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 16px; align-items: start; margin-bottom: 16px; }
 .calc-saisie { display: grid; gap: 12px; min-width: 0; }
+/* Cadres de saisie limités à leur colonne : un tableau large (zones, tronçons) défile dans son cadre au lieu de
+   pousser les champs sous les résultats (un fieldset prend sinon la largeur de son contenu) */
+.calc-saisie > *, .calc-saisie fieldset, .calc-saisie .grille-champs > *, .calc-saisie .defile-x { min-width: 0; max-width: 100%; }
 .calc-resultats { position: sticky; top: 10px; max-height: calc(100vh - 20px); overflow: auto; min-width: 0; }
 .calc-resultats h3 { margin-top: 14px; }
 .alerte { border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; font-size: 14px; }
