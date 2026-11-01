@@ -51,6 +51,8 @@ button.carte.type { background: var(--panneau); color: var(--texte); border: 1px
 .titre-note { font-size: 17px; font-weight: 700; max-width: 640px; flex: 1 1 260px; }
 .titre-etude { overflow-wrap: anywhere; }
 .champ-libre { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.schema-svg { background: #fff; border: 1px solid var(--bord, #ddd); border-radius: 6px; padding: 4px; overflow: auto; }
+.schema-svg svg { max-width: 100%; height: auto; display: block; }
 .deux-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 12px; }
 details.carte summary { cursor: pointer; }
 details.carte[open] summary { margin-bottom: 8px; }

@@ -356,6 +356,7 @@ Vues.etude = {
       ${(et.inventaire || []).length ? (() => { const inc = et.inventaire.filter(x => x.inclus !== false), nb = c => inc.filter(x => x.categorie === c).reduce((t, x) => t + (Notes.num(x.qte) || 1), 0), lignes = c => inc.filter(x => x.categorie === c).length;
         return `<div class="carte petit">📑 <strong>Inventaire du dossier de consultation</strong> : ${nb('producteur')} producteur(s), ${lignes('emetteur')} type(s) d'émetteurs, ${lignes('auxiliaire')} type(s) d'auxiliaires — ${esc([...new Set(inc.map(x => InventaireCVC.GENRES[x.genre] && InventaireCVC.GENRES[x.genre].libelle).filter(Boolean))].join(', '))} <button class="secondaire petit" id="inventaire2">Voir / préremplir</button></div>`; })() : ''}
       ${typeof carteMateriel === 'function' ? carteMateriel(et) : ''}
+      ${carteDocuments(et)}
       <div class="barre"><h2>Calculs <span class="compte">${et.notes.length}</span></h2><button id="ajout">+ Ajouter un calcul</button><span class="espace"></span>
         ${et.notes.length > 1 ? '<button class="secondaire" id="comparer" disabled title="Cocher au moins deux calculs">⚖️ Comparer la sélection</button>' : ''}</div>
       ${et.notes.length ? `<div class="notes">${et.notes.map((n, i) => { const t = Notes.TYPES[n.type], r = Liens.calculer(et, n), err = r.alertes.filter(x => x.niveau === 'erreur').length, att = r.alertes.filter(x => x.niveau === 'attention').length;
@@ -380,6 +381,7 @@ Vues.etude = {
       };
     });
     root.querySelector('#pdf').onclick = () => genererNoteCalcul(et);
+    bindDocuments(root, et);
     root.querySelector('#chiffrer').onclick = () => dialogueChiffrage(et);
     root.querySelectorAll('#materiel, #materiel2').forEach(b => { b.onclick = () => dialogueMateriel(et); });
     root.querySelector('#inventaire').onclick = () => dialogueInventaire(et);
@@ -606,6 +608,9 @@ Vues.note = {
     root.querySelectorAll('[data-n]').forEach(el => el.oninput = () => { n[el.dataset.n] = el.value; enregistrer(et); });
     root.querySelector('#pdf-note').onclick = () => genererNoteCalcul(et, [n.id]);
     root.querySelector('#emettre-note').onclick = () => emettreNote(et, n);
+    root.querySelectorAll('[data-retour]').forEach(b => b.onclick = () => dialogueRetour(et, n, b.dataset.retour));
+    const ci = root.querySelector('#comparer-indices'); if (ci) ci.onclick = () => dialogueComparerIndices(et, n);
+    const dn = root.querySelector('#diffuser-note'); if (dn) dn.onclick = () => dialogueDiffuser(et, [n.id]);
     root.querySelector('#defauts').onclick = async () => { if (await confirmer('Remplacer toutes les données saisies par les valeurs par défaut ?', 'Remplacer')) { n.entrees = Notes.defauts(n.type); enregistrer(et); App.render(); } };
     root.querySelector('#dupliquer').onclick = () => { const c = { ...copie(n), id: uidE(), titre: `${n.titre} (copie)`, emissions: [], indice: '' }; et.notes.splice(et.notes.indexOf(n) + 1, 0, c); enregistrer(et); location.hash = `#/etude/${et.id}/${c.id}`; };
     root.querySelector('#supprimer').onclick = async () => { if (await confirmer(`Supprimer le calcul « ${n.titre} » ?`, 'Supprimer')) { et.notes.splice(et.notes.indexOf(n), 1); enregistrer(et); location.hash = `#/etude/${et.id}`; } };
@@ -629,9 +634,13 @@ function emissionsHtml(et, n) {
     ${m.length || mr.length || modifCom ? `<div class="alerte attention petit">Modifié depuis l'indice ${esc(d.indice)} : ${m.length} donnée(s)${mr.length ? `, ${mr.length} résultat(s)` : ''}${modifCom ? ', commentaire' : ''} — à réémettre (indice ${esc(Revisions.prochainIndice(n))}).
       <details><summary>Voir les modifications</summary><table class="liste compact"><thead><tr><th>Donnée</th><th>Indice ${esc(d.indice)}</th><th>Maintenant</th></tr></thead>${[...m.map(x => [x.libelle, x.avant, x.apres]), ...mr.map(x => [`Résultat : ${x.libelle}`, x.avant, x.apres])].map(([a, b, c]) => `<tr><td>${esc(a)}</td><td>${esc(b)}</td><td><strong>${esc(c)}</strong></td></tr>`).join('')}</table></details></div>`
       : `<p class="petit ok-texte">✓ Conforme à l'indice ${esc(d.indice)} émis le ${dateFr(d.date)}.</p>`}
-    <div class="defile-x"><table class="liste compact"><thead><tr><th>Ind.</th><th>Date</th><th>Statut</th><th>Objet de la modification</th><th>Rédigé</th><th>Vérifié</th><th>Approuvé</th><th>Modifications</th></tr></thead>
+    ${(() => { const o = Revisions.observationsOuvertes(n); return o.length ? `<div class="alerte attention petit">📥 ${o.length} observation(s) du maître d'œuvre à lever : ${o.map(x => `<strong>${esc(x.avis)}</strong> ind. ${esc(x.indice)} : ${esc(x.texte)}`).join(' · ')}</div>` : ''; })()}
+    <div class="defile-x"><table class="liste compact"><thead><tr><th>Ind.</th><th>Date</th><th>Statut</th><th>Objet de la modification</th><th>Rédigé</th><th>Vérifié</th><th>Approuvé</th><th>Modifications</th><th>Retours du maître d'œuvre</th></tr></thead>
       ${l.slice().reverse().map(x => `<tr><td><strong>${esc(x.indice)}</strong></td><td>${dateFr(x.date)}</td><td>${esc(x.statut)}</td><td>${esc(x.objet)}</td><td>${esc(x.redige)}</td><td>${esc(x.verifie)}</td><td>${esc(x.approuve)}</td>
-        <td class="petit">${x.depuis ? ((x.modifs || []).length + (x.modifsResultats || []).length ? `<details><summary>${(x.modifs || []).length} donnée(s), ${(x.modifsResultats || []).length} résultat(s) depuis ${esc(x.depuis)}</summary><ul>${[...(x.modifs || []).map(y => `${y.libelle} : ${y.avant} → ${y.apres}`), ...(x.modifsResultats || []).map(y => `Résultat ${y.libelle} : ${y.avant} → ${y.apres}`)].map(t => `<li>${esc(t)}</li>`).join('')}</ul></details>` : 'aucune donnée') : 'première émission'}${x.deposeLe ? `<br>📤 déposé le ${dateFr(x.deposeLe)}` : ''}</td></tr>`).join('')}</table></div></div>`;
+        <td class="petit">${x.depuis ? ((x.modifs || []).length + (x.modifsResultats || []).length ? `<details><summary>${(x.modifs || []).length} donnée(s), ${(x.modifsResultats || []).length} résultat(s) depuis ${esc(x.depuis)}</summary><ul>${[...(x.modifs || []).map(y => `${y.libelle} : ${y.avant} → ${y.apres}`), ...(x.modifsResultats || []).map(y => `Résultat ${y.libelle} : ${y.avant} → ${y.apres}`)].map(t => `<li>${esc(t)}</li>`).join('')}</ul></details>` : 'aucune donnée') : 'première émission'}${x.deposeLe ? `<br>📤 déposé le ${dateFr(x.deposeLe)}` : ''}${x.fichier ? `<br><a href="${urlFichierEtude(x.fichier)}" target="_blank" rel="noopener">📄 PDF émis</a>` : ''}${(x.observationsLevees || []).length ? `<br>${x.observationsLevees.length} observation(s) levée(s)` : ''}</td>
+        <td class="petit">${(x.retours || []).map(rt => `<div><span class="badge ${{ VSO: 'ok', VAO: 'attention', REF: 'erreur' }[rt.avis] || ''}" title="${esc(Revisions.AVIS[rt.avis])}">${esc(rt.avis)}</span> ${dateFr(rt.date)}${rt.de ? ` — ${esc(rt.de)}` : ''}${rt.fichier ? ` <a href="${urlFichierEtude(rt.fichier)}" target="_blank" rel="noopener">📎</a>` : ''}${(rt.observations || []).map(o => `<br>${o.leveeIndice ? `✓ <s>${esc(o.texte)}</s> <span class="muted">levée ind. ${esc(o.leveeIndice)}</span>` : `• ${esc(o.texte)}`}`).join('')}</div>`).join('')}
+          <button class="petit secondaire" data-retour="${esc(x.indice)}">📥 Saisir un retour</button></td></tr>`).join('')}</table></div>
+    <div class="actions-ligne"><button class="secondaire petit" id="comparer-indices">⚖️ Comparer deux indices</button><button class="secondaire petit" id="diffuser-note">📨 Diffuser ce calcul</button></div></div>`;
 }
 
 // Calcul rapide : saisie conservée dans l'onglet, versement dans une étude

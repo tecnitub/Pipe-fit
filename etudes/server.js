@@ -30,7 +30,8 @@ const db = new DatabaseSync(DB_FILE);
 db.exec(`PRAGMA journal_mode = WAL;
   CREATE TABLE IF NOT EXISTS sessions (sid TEXT PRIMARY KEY, login TEXT, nom TEXT, role TEXT, pf_cookie TEXT, created_at TEXT);
   CREATE TABLE IF NOT EXISTS etudes (id TEXT PRIMARY KEY, affaire_id TEXT, data TEXT NOT NULL, version INTEGER NOT NULL, updated_at TEXT, updated_by TEXT);
-  CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT);`);
+  CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT);
+  CREATE TABLE IF NOT EXISTS fichiers (id TEXT PRIMARY KEY, nom TEXT, mime TEXT, data BLOB, taille INTEGER, created_by TEXT, created_at TEXT);`);
 
 // Identité de l'entreprise sur les notes de calcul (la même que pour les DOE), modifiable dans Réglages
 const CONFIG_DEFAUT = require('../doe/config-defaut');
@@ -164,6 +165,31 @@ async function api(req, res, url) {
     return send(res, 200, RexPF(await r.json()));
   }
 
+  // Pièces jointes des études (PDF annoté retourné par le maître d'œuvre, visa) : envoyées en JSON (base64)
+  if (p[0] === 'fichiers' && !p[1] && method === 'POST') {
+    const b = await lireJSON(req), nom = String(b.nom || '').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 150), ext = (/\.([a-z0-9]+)$/i.exec(nom) || [])[1] || '';
+    const mime = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' }[ext.toLowerCase()];
+    if (!mime) return fail(res, 415, 'PDF, JPG ou PNG attendu');
+    const buf = Buffer.from(String(b.base64 || ''), 'base64');
+    if (!buf.length || buf.length > 15 * 1024 * 1024) return fail(res, 400, 'Fichier vide ou de plus de 15 Mo');
+    if (mime === 'application/pdf' && buf.subarray(0, 4).toString() !== '%PDF') return fail(res, 415, 'Le contenu n\'est pas un PDF');
+    const id = crypto.randomBytes(12).toString('hex');
+    db.prepare('INSERT INTO fichiers (id, nom, mime, data, taille, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, nom, mime, buf, buf.length, s.login, new Date().toISOString());
+    return send(res, 200, { id, nom, mime, taille: buf.length });
+  }
+  if (p[0] === 'fichiers' && p[1] && method === 'GET') {
+    const f = db.prepare('SELECT nom, mime, data FROM fichiers WHERE id = ?').get(p[1]);
+    if (!f) return fail(res, 404, 'Fichier introuvable');
+    res.writeHead(200, { 'Content-Type': f.mime, 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': `inline; filename="${encodeURIComponent(f.nom)}"` });
+    return res.end(Buffer.from(f.data));
+  }
+  // Diffusion d'un document émis : e-mail envoyé par Pipe-Fit (Microsoft 365, adresse de la personne), PDF joints
+  if (p[0] === 'pf' && p[1] === 'mail' && method === 'POST') {
+    const b = await lireJSON(req);
+    const r = await pipefit(s, '/api/mail', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'etude', to: b.to, cc: b.cc || [], subject: b.subject, html: b.html, attachments: b.attachments || [] }) });
+    const j = await r.json().catch(() => ({}));
+    return r.ok ? send(res, 200, { ok: true }) : fail(res, r.status, j.error || 'Envoi refusé par Pipe-Fit');
+  }
   // Bibliothèque des fiches techniques de Pipe-Fit : recherche par fabricant + référence, liens d'un catalogue téléchargés
   if (p[0] === 'pf' && p[1] === 'fiches' && p[2] === 'catalogue-lignes' && method === 'GET') {
     const r = await pipefit(s, '/api/fiches/catalogue-lignes');

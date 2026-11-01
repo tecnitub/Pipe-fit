@@ -37,3 +37,24 @@ test('émissions successives : indices A, B, données figées, modifié depuis, 
   assert.strictEqual(R.suivant('Z'), "Z'");
   assert.strictEqual(R.numero('CH-2026-001', 3), 'CH-2026-001-NDC-N03');
 });
+
+test('documents émis, diffusion (indice reçu, périmé), retours du maître d\'œuvre et observations levées, schémas comparés', () => {
+  let k = 0; const uid = () => `u${++k}`;
+  const n1 = { id: 'n1', titre: 'Réseau', emissions: [{ indice: 'A', date: '2026-09-01', statut: 'Pour avis' }, { indice: 'B', date: '2026-10-01', statut: 'Bon pour exécution' }] };
+  const n2 = { id: 'n2', titre: 'Vase', emissions: [] };
+  const et = { objet: 'Chaufferie', indice: 'B', date: '2026-10-01', notes: [n1, n2], diffusion: [{ id: 'moe', nom: 'MOE' }, { id: 'bc', nom: 'BC' }],
+    diffusions: [{ date: '2026-09-02', destinataires: ['moe', 'bc'], documents: [{ cle: 'n1', indice: 'A' }] }, { date: '2026-10-02', destinataires: ['moe'], documents: [{ cle: 'n1', indice: 'B' }, { cle: 'etude', indice: 'B' }] }] };
+  const docs = R.documentsEtude(et, 'CH-1');
+  assert.deepStrictEqual(docs.map(d => [d.cle, d.numero, d.indice]), [['etude', 'CH-1-NDC', 'B'], ['n1', 'CH-1-NDC-N01', 'B']], 'calcul non émis absent');
+  const e = R.etatDiffusion(et, docs);
+  assert.deepStrictEqual(e.map(x => x.documents.map(d => (d.jamais ? '—' : `${d.recu.indice}${d.perime ? '!' : ''}`))), [['B', 'B'], ['—', 'A!']]);
+  // Retour VAO avec deux observations sur B, levées à l'indice C
+  const r = R.ajouterRetour(n1, 'B', { date: '2026-10-10', de: 'MOE', avis: 'VAO', observations: 'Ajouter le clapet\nVérifier la pente' }, uid);
+  assert.deepStrictEqual([r.avis, r.observations.length, R.observationsOuvertes(n1).length], ['VAO', 2, 2]);
+  assert.strictEqual(R.documentsEtude(et, 'CH-1')[1].avis, 'VAO');
+  assert.strictEqual(R.lever(n1, [r.observations[0].id], 'C'), 1);
+  assert.deepStrictEqual(R.observationsOuvertes(n1).map(o => o.texte), ['Vérifier la pente']);
+  assert.throws(() => R.ajouterRetour(n1, 'Z', { avis: 'VSO' }, uid), /non émis/);
+  const c = R.comparerSchemas('<svg><text>P1</text><text>CH1</text></svg>', '<svg><text>P2</text><text>CH1</text></svg>');
+  assert.deepStrictEqual([c.listeRetires, c.listeAjoutes, /fill="#2e7d32"[^>]*>P2/.test(c.apres)], [['P1'], ['P2'], true]);
+});

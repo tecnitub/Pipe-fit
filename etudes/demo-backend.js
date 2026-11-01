@@ -137,6 +137,17 @@
       return vraiFetch(dataUrl);
     }
     if (p[0] === 'pf' && p[1] === 'rex') return rep(200, RexPF(crm() || seed));
+    // Pièces des études (PDF émis, bordereaux, PDF annotés) : gardées sur l'appareil (taille limitée dans la démonstration)
+    if (p[0] === 'fichiers' && !p[1] && method === 'POST') {
+      const b = body(), nom = String(b.nom || 'fichier.pdf'), mime = /\.pdf$/i.test(nom) ? 'application/pdf' : /\.png$/i.test(nom) ? 'image/png' : 'image/jpeg';
+      if (String(b.base64 || '').length > 2.2 * 1024 * 1024) return err(413, 'Démonstration : fichiers de 1,5 Mo au plus');
+      const id = `fe${Math.random().toString(36).slice(2, 10)}`;
+      db.fichiers = db.fichiers || {}; db.fichiers[id] = { nom, mime, dataUrl: `data:${mime};base64,${b.base64}` };
+      if (!storage.set(KEY, JSON.stringify(db))) { delete db.fichiers[id]; return err(507, 'Espace de la démonstration plein'); }
+      return rep(200, { id, nom, mime });
+    }
+    if (p[0] === 'fichiers' && p[1] && method === 'GET') { const f = (db.fichiers || {})[p[1]]; return f ? vraiFetch(f.dataUrl) : err(404, 'Fichier introuvable'); }
+    if (p[0] === 'pf' && p[1] === 'mail' && method === 'POST') { const b = body(); db.envoisPF = db.envoisPF || []; db.envoisPF.push({ genre: 'mail', to: b.to, objet: b.subject, pieces: (b.attachments || []).map(a => a.name), date: new Date().toISOString() }); save(); return rep(200, { ok: true, demo: true }); }
     // Bibliothèque des fiches techniques de la démo du CRM
     if (p[0] === 'pf' && p[1] === 'fiches' && p[2] === 'trouver') return rep(200, typeof FichesTech === 'undefined' ? [] : FichesTech.trouver((crm() || seed).fichesTech || [], body().demandes || []));
     if (p[0] === 'pf' && p[1] === 'fiches' && p[2] === 'catalogue-lignes') return rep(200, ((crm() || seed).fichesTech || []).filter(f => !f.absente && !f.remplaceePar && (f.type || 'fiche') === 'fiche').flatMap(f => (f.references || []).map(r => { const c = (f.caracParRef || {})[String(r).toUpperCase().replace(/[^A-Z0-9]/g, '')] || f.carac || {}; return { fabricant: f.fabricant, reference: r, famille: f.famille || 'autre', designation: f.designation || '', ...(c.Q ? { Qmax: c.Q } : {}), ...(c.Pch || c.Pfr || c.P ? { P: c.Pch || c.Pfr || c.P } : {}), ...(c.Pel ? { Pelec: c.Pel } : {}) }; })));

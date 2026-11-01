@@ -64,9 +64,70 @@ const Revisions = (() => {
   // Émission : indice, date, objet, statut, visas, copies des données et des résultats, modifications relevées
   function emission(n, { indice, date, objet, statut, redige, verifie, approuve }, entrees, resultats, schema) {
     const d = derniere(n), modifs = d ? comparer(schema, d.entrees, entrees) : [], res = d ? comparerResultats(d.resultats, resultats) : [];
-    return { indice: indice || prochainIndice(n), date, objet: objet || (d ? resume(modifs, res) : 'Première émission'), statut: STATUTS.includes(statut) ? statut : STATUTS[0],
+    return { brutes: figer(n.entrees || {}), indice: indice || prochainIndice(n), date, objet: objet || (d ? resume(modifs, res) : 'Première émission'), statut: STATUTS.includes(statut) ? statut : STATUTS[0],
       redige: redige || '', verifie: verifie || '', approuve: approuve || '', entrees: figer(entrees), resultats: figer(resultats), commentaire: n.commentaire || '', titre: n.titre || '', modifs, modifsResultats: res, depuis: d ? d.indice : '' };
   }
-  return { STATUTS, suivant, derniere, prochainIndice, comparer, comparerResultats, resume, modifieDepuis, numero, emission, figer };
+  /* ---------- Documents de l'étude, diffusion, retours du maître d'œuvre ---------- */
+  // Rang d'un indice (A < B < … < Z < Z' ; 0 < 1 < 2) pour savoir si un destinataire a une version périmée
+  const rang = i => (/^\d+$/.test(i) ? +i : /^[A-Z]/.test(i) ? (i.charCodeAt(0) - 64) * 10 + (String(i).length - 1) : 0);
+  const AVIS = { VSO: 'Visa sans observation', VAO: 'Visa avec observations', REF: 'Refusé' };
+  // Documents de l'étude : la note de calcul complète (indice de l'étude) et chaque calcul émis (son dernier indice)
+  function documentsEtude(et, code) {
+    const out = [{ cle: 'etude', numero: `${String(code || 'ETU').replace(/\s+/g, '')}-NDC`, titre: `Note de calcul — ${et.objet || ''}`, indice: et.indice || 'A', date: et.date || '', statut: et.statut || 'Pour avis' }];
+    (et.notes || []).forEach((n, i) => {
+      const d = derniere(n);
+      if (!d) return;
+      const r = (d.retours || []).slice(-1)[0];
+      out.push({ cle: n.id, numero: numero(code, i + 1), titre: `N${i + 1} — ${n.titre}`, indice: d.indice, date: d.date, statut: d.statut, redige: d.redige, verifie: d.verifie, approuve: d.approuve, avis: r ? r.avis : '', avisLe: r ? r.date : '' });
+    });
+    return out;
+  }
+  // Qui a reçu quel indice : pour chaque destinataire de la liste de diffusion et chaque document, le dernier indice envoyé ;
+  // « périmé » quand un indice plus récent est en vigueur
+  function etatDiffusion(et, docs) {
+    const dest = et.diffusion || [], envois = et.diffusions || [];
+    return dest.map(d => ({ destinataire: d, documents: docs.map(doc => {
+      const recu = envois.filter(e => (e.destinataires || []).includes(d.id)).flatMap(e => (e.documents || []).filter(x => x.cle === doc.cle).map(x => ({ indice: x.indice, date: e.date })))
+        .sort((a, b) => rang(a.indice) - rang(b.indice) || String(a.date).localeCompare(String(b.date))).pop() || null;
+      return { cle: doc.cle, recu, perime: !!recu && rang(recu.indice) < rang(doc.indice), jamais: !recu };
+    }) }));
+  }
+  // Observations du maître d'œuvre encore à traiter sur un calcul (tous indices confondus)
+  const observationsOuvertes = n => (n.emissions || []).flatMap(em => (em.retours || []).flatMap(r => (r.observations || []).filter(o => !o.leveeIndice).map(o => ({ ...o, indice: em.indice, avis: r.avis, de: r.de, date: r.date }))));
+  // Retour reçu sur un indice : avis VSO / VAO / REF, observations (une par ligne), pièce jointe (PDF annoté)
+  function ajouterRetour(n, indice, { date, de, avis, observations, fichier }, uid) {
+    const em = (n.emissions || []).find(x => x.indice === indice);
+    if (!em) throw new Error(`Indice ${indice} non émis`);
+    if (!AVIS[avis]) throw new Error('Avis attendu : VSO, VAO ou REF');
+    const obs = (Array.isArray(observations) ? observations : String(observations || '').split(/\n+/)).map(t => String(t).trim()).filter(Boolean).map(texte => ({ id: uid(), texte, leveeIndice: '' }));
+    const r = { id: uid(), date: date || '', de: de || '', avis, observations: obs, ...(fichier ? { fichier } : {}) };
+    em.retours = [...(em.retours || []), r];
+    return r;
+  }
+  // Observations levées par une nouvelle émission
+  function lever(n, ids, indice) {
+    let k = 0;
+    (n.emissions || []).forEach(em => (em.retours || []).forEach(r => (r.observations || []).forEach(o => { if (ids.includes(o.id) && !o.leveeIndice) { o.leveeIndice = indice; k++; } })));
+    return k;
+  }
+  // Schémas de deux indices : textes (repères, équipements) présents d'un seul côté, colorés (vert : ajouté, rouge : retiré)
+  const textesSvg = svg => [...String(svg || '').matchAll(/<text\b[^>]*>([\s\S]*?)<\/text>/g)].map(m => m[1].replace(/<[^>]+>/g, '').trim()).filter(Boolean);
+  function marquerSvg(svg, autres, couleur) {
+    const set = new Set(autres);
+    let n = 0;
+    const out = String(svg || '').replace(/<text\b([^>]*)>([\s\S]*?)<\/text>/g, (tout, attrs, contenu) => {
+      const t = contenu.replace(/<[^>]+>/g, '').trim();
+      if (!t || set.has(t)) return tout;
+      n++;
+      return `<text${attrs.replace(/\s(fill|font-weight)="[^"]*"/g, '')} fill="${couleur}" font-weight="bold">${contenu}</text>`;
+    });
+    return { svg: out, marques: n };
+  }
+  function comparerSchemas(svgA, svgB) {
+    const ta = textesSvg(svgA), tb = textesSvg(svgB);
+    const a = marquerSvg(svgA, tb, '#c62828'), b = marquerSvg(svgB, ta, '#2e7d32');
+    return { avant: a.svg, apres: b.svg, retires: a.marques, ajoutes: b.marques, listeRetires: ta.filter(t => !tb.includes(t)), listeAjoutes: tb.filter(t => !ta.includes(t)) };
+  }
+  return { STATUTS, AVIS, suivant, derniere, prochainIndice, comparer, comparerResultats, resume, modifieDepuis, numero, emission, figer, rang, documentsEtude, etatDiffusion, observationsOuvertes, ajouterRetour, lever, textesSvg, marquerSvg, comparerSchemas };
 })();
 if (typeof module !== 'undefined') module.exports = Revisions;

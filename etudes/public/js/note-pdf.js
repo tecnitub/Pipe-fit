@@ -99,6 +99,8 @@ async function genererNoteCalcul(et, ids) {
     out.setTitle(winAnsi(`Note de calcul — ${et.objet} — indice ${et.indice}`)); out.setAuthor(winAnsi(et.auteur || soc.raison)); out.setCreator('Pipe-Fit Études'); out.setProducer('Pipe-Fit Études');
     const bytes = await out.save();
     const nom = `NDC_${sansAccents(a && a.code) || 'ETUDE'}_${sansAccents(et.objet).slice(0, 40) || 'note'}${notes.length === 1 && et.notes.length > 1 ? `_N${et.notes.indexOf(notes[0]) + 1}` : ''}_Ind${sansAccents(et.indice) || 'A'}.pdf`;
+    // Note complète de l'indice en cours : gardée pour la diffusion
+    if (!ids && S.etudes.includes(et)) garderPdf(nom, bytes).then(f => { if (f) { et.pdfEtude = { indice: et.indice, date: et.date, fichier: { id: f.id, nom } }; enregistrer(et); } });
     etape('Terminé', 100);
     box.innerHTML = `<h2>Note de calcul générée</h2><p><strong>${esc(nom)}</strong> · ${total} page(s) · ${notes.length} calcul(s)</p>
       ${S.etudes.includes(et) && et.affaireId && affaireDe(et.affaireId) ? `<p class="petit muted">Le PDF peut être déposé dans les documents du chantier ${esc(libelleAffaire(affaireDe(et.affaireId)))} (catégorie « Note de calcul », reprise dans le DOE en annexe C).</p>` : ''}
@@ -183,7 +185,8 @@ function suiviModifsHtml(n, em) {
     ${em.depuis ? (em.modifs.length || em.modifsResultats.length ? `<p class="sous">Modifications de l'indice ${esc(em.indice)} par rapport à l'indice ${esc(em.depuis)} (données repérées « » » dans le chapitre 1)</p>
       ${em.modifs.length ? tableauPdf(['Rubrique', 'Donnée', `Indice ${em.depuis}`, `Indice ${em.indice}`], em.modifs.map(m => [m.rubrique || '—', m.libelle, m.avant, m.apres])) : ''}
       ${em.modifsResultats.length ? `<p class="sous">Résultats modifiés</p>${tableauPdf(['Résultat', `Indice ${em.depuis}`, `Indice ${em.indice}`], em.modifsResultats.map(m => [m.libelle, m.avant, m.apres]))}` : ''}`
-      : `<p class="petit">Aucune donnée modifiée depuis l'indice ${esc(em.depuis)} : ${esc(em.objet)}.</p>`) : ''}`;
+      : `<p class="petit">Aucune donnée modifiée depuis l'indice ${esc(em.depuis)} : ${esc(em.objet)}.</p>`) : ''}
+    ${(em.observationsLevees || []).length ? `<p class="sous">Observations du maître d'œuvre levées par l'indice ${esc(em.indice)}</p>${tableauPdf(['Indice visé', 'Avis', 'Observation'], em.observationsLevees.map(o => [o.indice, o.avis, o.texte]))}` : ''}`;
 }
 // Texte réduit à une largeur (police standard du PDF)
 const ajuster = (t, font, size, max) => { let x = winAnsi(pourPdf(String(t || '').replace(/→/g, '->').replace(/[≤]/g, '<=').replace(/[≥]/g, '>='))); while (x.length > 1 && font.widthOfTextAtSize(x, size) > max) x = `${x.slice(0, -2)}…`.replace(/……$/, '…'); return winAnsi(x); };
@@ -235,6 +238,8 @@ function emettreNote(et, n) {
     ${d ? (apercu.modifs.length || apercu.modifsResultats.length ? `<details open><summary class="petit"><strong>${apercu.modifs.length} donnée(s) et ${apercu.modifsResultats.length} résultat(s) modifiés depuis l'indice ${esc(d.indice)}</strong></summary>
       <div class="defile-x"><table class="liste compact"><thead><tr><th>Donnée</th><th>Indice ${esc(d.indice)}</th><th>Maintenant</th></tr></thead>${[...apercu.modifs.map(m => [m.libelle, m.avant, m.apres]), ...apercu.modifsResultats.map(m => [`Résultat : ${m.libelle}`, m.avant, m.apres])].map(([x, y, z]) => `<tr><td>${esc(x)}</td><td>${esc(y)}</td><td><strong>${esc(z)}</strong></td></tr>`).join('')}</table></div></details>`
       : `<p class="petit avert">Aucune donnée modifiée depuis l'indice ${esc(d.indice)} : précisez l'objet de la nouvelle émission (changement de statut, visa…).</p>`) : ''}
+    ${(() => { const o = Revisions.observationsOuvertes(n); return o.length ? `<fieldset><legend>Observations du maître d'œuvre à lever (${o.length})</legend>${o.map(x => `<label class="case petit"><input type="checkbox" data-lever="${esc(x.id)}" checked> <strong>${esc(x.avis)}</strong> sur l'indice ${esc(x.indice)}${x.de ? ` (${esc(x.de)})` : ''} : ${esc(x.texte)}</label>`).join('')}</fieldset>` : ''; })()}
+    ${d && tousSchemas(r).length ? `<label class="case petit"><input type="checkbox" id="em-comp" ${apercu.modifs.length ? 'checked' : ''}> Joindre en annexe les schémas des indices ${esc(d.indice)} et ${esc(apercu.indice)} avec les différences colorées</label>` : ''}
     <div class="actions"><button class="secondaire" id="em-x">Annuler</button><button id="em-ok">Émettre l'indice et générer le PDF</button></div>`);
   box.querySelector('#em-x').onclick = Modal.close;
   box.querySelector('#em-ok').onclick = async () => {
@@ -242,46 +247,83 @@ function emettreNote(et, n) {
     if (!v('#em-ind')) return toast('Indiquez l\'indice.');
     if ((n.emissions || []).some(x => x.indice === v('#em-ind'))) return toast(`L'indice ${v('#em-ind')} est déjà émis : choisissez le suivant.`, 5000);
     const em = Revisions.emission(n, { indice: v('#em-ind'), date: v('#em-date') || aujourdhui(), objet: v('#em-objet'), statut: v('#em-statut'), redige: v('#em-red'), verifie: v('#em-ver'), approuve: v('#em-app') }, e, r.resume, schema);
-    await genererEmission(et, n, em, box);
+    const leves = [...box.querySelectorAll('[data-lever]:checked')].map(c => c.dataset.lever), comp = !!(box.querySelector('#em-comp') || {}).checked;
+    await genererEmission(et, n, em, box, { leves, comparaison: comp });
   };
 }
-async function genererEmission(et, n, em, box) {
-  const etape = t => { box.innerHTML = `<h2>Émission ${esc(em.indice)}</h2><p>${esc(t)}</p>`; };
+// PDF d'une émission : calcul, suivi des modifications (et observations levées), schémas, comparaison des schémas avec
+// l'indice précédent en annexe si demandé ; cartouche et en-tête sur chaque page
+async function pdfEmission(et, n, em, { comparaison = false } = {}) {
+  const { PDFDocument, StandardFonts, rgb } = PDFLib;
+  contexteEtude = S.etudes.includes(et) ? et : contexteEtude;
+  const couleur = /^#[0-9a-f]{6}$/i.test(S.config.couleur) ? S.config.couleur : '#1F3864', bleu = rgb(...[1, 3, 5].map(i => parseInt(couleur.slice(i, i + 2), 16) / 255)), gris = rgb(0.4, 0.4, 0.4);
+  const rang = et.notes.indexOf(n), a = affaireDe(et.affaireId), soc = S.config.societe, emissions = [...(n.emissions || []), em];
+  const hCartouche = 14 + 64 + (Math.min(3, emissions.length) + 1) * 10 + 8;
+  const doc = await PDFDocument.load(await PDF.depuisHTML(pourPdf(htmlNotePdf(et, n, rang, em)), n.titre, null, { numeros: false, margeHaut: 80, margeBas: Math.ceil(hCartouche / 0.75) + 10 }));
+  // Schémas en paysage, au-dessus du cartouche
+  const schemas = tousSchemas(Liens.calculer(et, n));
+  for (const sc of schemas) await pageSchema(doc, sc.svg, `${sc.titre} — N${rang + 1} — ${n.titre}`, hCartouche);
+  // Annexe : schémas de l'indice précédent et de celui-ci, différences colorées (rouge : retiré, vert : ajouté)
+  const prec = Revisions.derniere(n);
+  if (comparaison && prec) {
+    const anciens = tousSchemas(calculIndice(n, prec));
+    for (const [k, sc] of schemas.entries()) {
+      const old = anciens[k];
+      if (!old) continue;
+      const c = Revisions.comparerSchemas(old.svg, sc.svg);
+      await pageSchema(doc, c.avant, `Annexe — ${sc.titre} : indice ${prec.indice} (en rouge : retiré à l'indice ${em.indice})`, hCartouche);
+      await pageSchema(doc, c.apres, `Annexe — ${sc.titre} : indice ${em.indice} (en vert : ajouté depuis l'indice ${prec.indice})`, hCartouche);
+    }
+  }
+  const police = await doc.embedFont(StandardFonts.Helvetica), gras = await doc.embedFont(StandardFonts.HelveticaBold), logo = await doc.embedPng(await octetsDe('logo-tecnitub.png'));
+  const numero = Revisions.numero(a && a.code, rang + 1), total = doc.getPageCount();
+  const infos = { societe: soc.raison, adresse: soc.adresse, contact: [soc.tel && `Tél. ${soc.tel}`, soc.email].filter(Boolean).join(' · '), affaire: libelleAffaire(a) || '—', client: et.client || clientDe(a) || '—', objet: et.objet,
+    titre: `N${rang + 1} — ${n.titre}`, typeDoc: `Note de calcul — ${Notes.TYPES[n.type].titre}`, numero, indice: em.indice, date: dateFr(em.date), statut: em.statut };
+  doc.getPages().forEach((pg, i) => {
+    const { width: W, height: H } = pg.getSize(), lh = 22, lw = logo.width * lh / logo.height, t = winAnsi(`${numero} — indice ${em.indice}`);
+    pg.drawImage(logo, { x: 31, y: H - 18 - lh, width: lw, height: lh });
+    pg.drawText(t, { x: W - 31 - gras.widthOfTextAtSize(t, 9), y: H - 32, size: 9, font: gras, color: bleu });
+    pg.drawLine({ start: { x: 31, y: H - 46 }, end: { x: W - 31, y: H - 46 }, thickness: 1.2, color: bleu });
+    dessinerCartouche(pg, { police, gras, logo, bleu, gris, infos, emissions, page: i + 1, total });
+  });
+  doc.setTitle(winAnsi(`${numero} — ${n.titre} — indice ${em.indice}`)); doc.setAuthor(winAnsi(em.redige || soc.raison)); doc.setCreator('Pipe-Fit Études');
+  return { bytes: await doc.save(), nom: `${sansAccents(numero)}_${sansAccents(n.titre).slice(0, 40)}_Ind${sansAccents(em.indice)}.pdf`, total, numero };
+}
+// Résultats d'un indice émis (données figées) : schémas et tableaux de cet indice
+const calculIndice = (n, em) => { try { return Notes.calculer(n.type, Revisions.figer(em.entrees)); } catch (e) { return { schemas: [], resume: em.resultats || [], tableaux: [], alertes: [], hypotheses: [] }; } };
+// PDF émis gardé avec l'étude (diffusion par e-mail, liste des documents émis)
+async function garderPdf(nom, bytes) { try { return await api('POST', '/api/fichiers', { nom, base64: base64(bytes) }); } catch (e) { return null; } }
+// Émission enregistrée : observations levées, données figées, PDF gardé
+async function enregistrerEmission(et, n, em, bytes, nom, leves = []) {
+  if (leves.length) Revisions.lever(n, leves, em.indice);
+  const f = await garderPdf(nom, bytes);
+  if (f) em.fichier = { id: f.id, nom };
+  n.emissions = [...(n.emissions || []), em]; n.indice = em.indice; enregistrer(et);
+}
+async function deposerEmission(et, n, em, bytes, nom, numero) {
+  const rr = await api('POST', '/api/pf/document', { affaireId: et.affaireId, etudeId: et.id, noteId: n.id, nom, indice: em.indice, note: `${numero} — ${n.titre} — ${em.statut}${em.objet ? ` — ${em.objet}` : ''}`.slice(0, 300), base64: base64(bytes) });
+  em.deposeLe = aujourdhui(); enregistrer(et);
+  return rr;
+}
+async function genererEmission(et, n, em, box, opts = {}) {
+  box.innerHTML = `<h2>Émission ${esc(em.indice)}</h2><p>Mise en page…</p>`;
   try {
-    const { PDFDocument, StandardFonts, rgb } = PDFLib;
-    etape('Mise en page…');
-    const couleur = /^#[0-9a-f]{6}$/i.test(S.config.couleur) ? S.config.couleur : '#1F3864', bleu = rgb(...[1, 3, 5].map(i => parseInt(couleur.slice(i, i + 2), 16) / 255)), gris = rgb(0.4, 0.4, 0.4);
-    const rang = et.notes.indexOf(n), a = affaireDe(et.affaireId), soc = S.config.societe;
-    const doc = await PDFDocument.load(await PDF.depuisHTML(pourPdf(htmlNotePdf(et, n, rang, em)), n.titre, null, { numeros: false, margeHaut: 80, margeBas: 120 + 14 * (Math.min(3, (n.emissions || []).length + 1) + 1) }));
-    // Schémas en paysage, au-dessus du cartouche
-    const hCartouche = 14 + 64 + (Math.min(3, (n.emissions || []).length + 1) + 1) * 10 + 8;
-    for (const sc of tousSchemas(Liens.calculer(et, n))) await pageSchema(doc, sc.svg, `${sc.titre} — N${rang + 1} — ${n.titre}`, hCartouche);
-    const police = await doc.embedFont(StandardFonts.Helvetica), gras = await doc.embedFont(StandardFonts.HelveticaBold), logo = await doc.embedPng(await octetsDe('logo-tecnitub.png'));
-    const numero = Revisions.numero(a && a.code, rang + 1), total = doc.getPageCount(), emissions = [...(n.emissions || []), em];
-    const infos = { societe: soc.raison, adresse: soc.adresse, contact: [soc.tel && `Tél. ${soc.tel}`, soc.email].filter(Boolean).join(' · '), affaire: libelleAffaire(a) || '—', client: et.client || clientDe(a) || '—', objet: et.objet,
-      titre: `N${rang + 1} — ${n.titre}`, typeDoc: `Note de calcul — ${Notes.TYPES[n.type].titre}`, numero, indice: em.indice, date: dateFr(em.date), statut: em.statut };
-    doc.getPages().forEach((pg, i) => {
-      const { width: W, height: H } = pg.getSize(), lh = 22, lw = logo.width * lh / logo.height, t = winAnsi(`${numero} — indice ${em.indice}`);
-      pg.drawImage(logo, { x: 31, y: H - 18 - lh, width: lw, height: lh });
-      pg.drawText(t, { x: W - 31 - gras.widthOfTextAtSize(t, 9), y: H - 32, size: 9, font: gras, color: bleu });
-      pg.drawLine({ start: { x: 31, y: H - 46 }, end: { x: W - 31, y: H - 46 }, thickness: 1.2, color: bleu });
-      dessinerCartouche(pg, { police, gras, logo, bleu, gris, infos, emissions, page: i + 1, total });
-    });
-    doc.setTitle(winAnsi(`${numero} — ${n.titre} — indice ${em.indice}`)); doc.setAuthor(winAnsi(em.redige || soc.raison)); doc.setCreator('Pipe-Fit Études');
-    const bytes = await doc.save(), nom = `${sansAccents(numero)}_${sansAccents(n.titre).slice(0, 40)}_Ind${sansAccents(em.indice)}.pdf`;
-    // Émission enregistrée avec le calcul
-    n.emissions = emissions; n.indice = em.indice; enregistrer(et);
+    // Observations levées : notées avant la mise en page (elles figurent dans le suivi des modifications)
+    if ((opts.leves || []).length) em.observationsLevees = Revisions.observationsOuvertes(n).filter(o => opts.leves.includes(o.id)).map(o => ({ texte: o.texte, indice: o.indice, avis: o.avis }));
+    const { bytes, nom, total, numero } = await pdfEmission(et, n, em, opts);
+    await enregistrerEmission(et, n, em, bytes, nom, opts.leves || []);
     window.DERNIERE_NOTE = { nom, bytes, pages: total };
     const pf = S.etudes.includes(et) && et.affaireId && affaireDe(et.affaireId);
     box.innerHTML = `<h2>Indice ${esc(em.indice)} émis</h2><p><strong>${esc(nom)}</strong> · ${total} page(s) · ${esc(em.statut)}</p>
-      ${em.depuis ? `<p class="petit">${em.modifs.length} donnée(s) et ${em.modifsResultats.length} résultat(s) modifiés depuis l'indice ${esc(em.depuis)}, listés dans le suivi des modifications.</p>` : ''}
-      <div class="actions"><button class="secondaire" id="gen-fermer">Fermer</button>${pf ? '<button class="secondaire" id="gen-pf">📤 Déposer dans le chantier Pipe-Fit</button>' : ''}<button id="gen-dl">Télécharger le PDF</button></div>`;
+      ${em.depuis ? `<p class="petit">${em.modifs.length} donnée(s) et ${em.modifsResultats.length} résultat(s) modifiés depuis l'indice ${esc(em.depuis)}, listés dans le suivi des modifications${(em.observationsLevees || []).length ? ` ; ${em.observationsLevees.length} observation(s) du maître d'œuvre levée(s)` : ''}.</p>` : ''}
+      <div class="actions"><button class="secondaire" id="gen-fermer">Fermer</button>${pf ? '<button class="secondaire" id="gen-pf">📤 Déposer dans le chantier Pipe-Fit</button>' : ''}<button class="secondaire" id="gen-diff">📨 Diffuser</button><button id="gen-dl">Télécharger le PDF</button></div>`;
     box.querySelector('#gen-fermer').onclick = () => { Modal.close(); App.render(); };
     box.querySelector('#gen-dl').onclick = () => enregistrerFichier(box, nom, bytes, 'application/pdf');
+    box.querySelector('#gen-diff').onclick = () => dialogueDiffuser(et, [n.id]);
     const bpf = box.querySelector('#gen-pf');
     if (bpf) bpf.onclick = async () => {
       bpf.disabled = true; bpf.textContent = 'Envoi…';
-      try { const rr = await api('POST', '/api/pf/document', { affaireId: et.affaireId, etudeId: et.id, noteId: n.id, nom, indice: em.indice, note: `${numero} — ${n.titre} — ${em.statut}${em.objet ? ` — ${em.objet}` : ''}`.slice(0, 300), base64: base64(bytes) }); bpf.textContent = `✓ Déposé (indice ${rr.indice})`; em.deposeLe = aujourdhui(); enregistrer(et); }
+      try { const rr = await deposerEmission(et, n, em, bytes, nom, numero); bpf.textContent = `✓ Déposé (indice ${rr.indice})`; }
       catch (er) { bpf.disabled = false; bpf.textContent = '📤 Déposer dans le chantier Pipe-Fit'; toast(er.message, 6000); }
     };
   } catch (e2) {

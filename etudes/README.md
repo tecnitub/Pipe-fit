@@ -141,6 +141,23 @@ les équipements de l'étude ». Un CCTP scanné (sans texte) ne se lit pas : de
   Une copie de calcul, d'étude ou un modèle repart sans émission ; « Brouillon PDF » reste disponible.
   La **note de calcul complète** de l'étude porte le même cartouche sur chaque page (n° « CH-2026-001-NDC », indice de l'étude,
   statut et approbateur saisis sur l'étude, historique des indices avec objet et visas), page de garde et schémas compris.
+- **Documents émis et diffusion** (carte de l'étude) : liste des documents émis — note de calcul complète et chaque
+  calcul émis, avec n°, indice en vigueur, date, statut, visa du maître d'œuvre — et, par destinataire de la **liste de
+  diffusion** (maîtrise d'œuvre, bureau de contrôle, client, sous-traitants…), l'indice reçu, « ⚠ périmé » s'il a été
+  dépassé. **Diffuser** : bordereau de transmission numéroté (« CH-2026-001-BT-003 », PDF à cartouche, accusé de
+  réception) et envoi par e-mail depuis Pipe-Fit (Microsoft 365) avec les PDF émis joints, ou bordereau seul ; chaque
+  envoi est enregistré. **LDE** en Excel ou en PDF à cartouche (documents, visas, indices reçus, bordereaux), à déposer
+  dans le chantier (annexe C du DOE).
+- **Retours du maître d'œuvre** : sur chaque indice émis, avis VSO / VAO / REF, date, émetteur, observations (une par
+  ligne) et PDF annoté. Les observations ouvertes s'affichent sur le calcul ; à l'émission suivante on coche celles que
+  l'indice lève, reprises dans le suivi des modifications du PDF.
+- **Calculs à réémettre** : un calcul modifié, ou modifié **par répercussion** d'un calcul relié (schéma de principe,
+  CTA…) alors que ses propres données n'ont pas changé, est signalé ; « Réémettre ensemble » émet l'indice suivant de
+  chacun (objet commun + modifications propres, observations levées au besoin, nouvel indice de l'étude, dépôt dans le
+  chantier) puis propose la diffusion.
+- **Comparer deux indices** d'un calcul (ou un indice et l'état actuel) : données et résultats côte à côte, schémas avec
+  les éléments retirés en rouge et ajoutés en vert, PDF de la comparaison ; à l'émission, les schémas des deux indices
+  colorés peuvent être joints en annexe.
 - **Matériel retenu contrôlé face au CCTP** : chaque ligne affiche l'équipement du dossier de consultation qui lui
   correspond (prescription, caractéristiques) ; le modèle choisi est comparé : marque imposée (⛔) ou « ou équivalent »
   (note d'équivalence à joindre), débit, puissance, volume, pression disponible, niveau sonore, puissance électrique.
