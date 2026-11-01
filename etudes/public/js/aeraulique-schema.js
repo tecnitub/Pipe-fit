@@ -128,6 +128,37 @@ const SchemaAir = ((D, C, N, Cta) => {
       arbre: { racines, actifs, terminaux, defav }, registres };
   }
 
+  /* ---------- Acoustique par branche (niveau global pondéré A, méthode simplifiée du bilan acoustique) ---------- */
+  // Pour chaque zone (tronçon terminal) : puissance du ventilateur − silencieux − atténuations le long du chemin (gaine nue,
+  // coudes, dérivations) + bruit régénéré par le registre et par les bouches → niveau dans le local, comparé à l'objectif
+  const log10 = Math.log10, somme = l => 10 * log10(l.reduce((s, x) => s + (Number.isFinite(x) ? 10 ** (x / 10) : 0), 0) || 1e-9);
+  function acoustique(res, e, Q, p, LwFab, alertes, nomReseau) {
+    if (e.acoustique === 'non' || !res.zones.length || !(Q > 0)) return [];
+    const lw0 = Number.isFinite(parseFloat(LwFab)) && String(LwFab).trim() !== '' ? num(LwFab) : 40 + 10 * log10(Q / 3600) + 20 * log10(Math.max(p, 1)) - 7;
+    const Lw1 = lw0 - num(e.attSil, 20), FIN = 6, h = num(e.hLocal, 2.7), Tr = num(e.TrLocal, 0.6), rho = C.air(num(e.T, 20)).rho;
+    const obj = (Cta.OBJECTIFS[e.usageAcous] || Cta.OBJECTIFS.bureau)[1] || num(e.objectifAcous, 35);
+    const coudes = x => (String((x && x.sing) || '').trim() ? D.singularites(x.sing, true).detail.filter(d => /^coude90[rs]/.test(d.code)).reduce((s, d) => s + d.n, 0) : 0);
+    return res.zones.map(z => {
+      let att = 0;
+      if (res.arbre) {
+        const t = res.arbre.terminaux.find(x => x.rep === z.repTroncon), chemin = t ? t.chemin : [];
+        chemin.forEach((x, i) => { att += 0.15 * x.L + 2 * coudes(x.x); if (i > 0 && chemin[i - 1].Q > 0 && x.Q > 0) att += 10 * log10(chemin[i - 1].Q / x.Q); });
+      } else {
+        att = 0.15 * (z.d + num(z.L, 5)) + 2 * coudes(z) + (res.Q > 0 && z.Q > 0 ? 10 * log10(res.Q / z.Q) : 0);
+      }
+      // Plénum de la bouche et réflexion en bout de gaine : 6 dB sur le bruit arrivant par la gaine (ventilateur et registre)
+      const Lres = Lw1 - att - FIN;
+      // Registre d'équilibrage : bruit régénéré d'après sa perte de charge (ζ ramené à la vitesse de la gaine)
+      const tt = res.arbre ? res.arbre.terminaux.find(x => x.rep === z.repTroncon) : null;
+      const Lreg = tt && tt.dpReg > 0 && tt.g && tt.g.S ? Cta.lwBouche(tt.g.S, Math.max(0.1, tt.dpReg / Math.max(tt.g.pd, 0.01)), Math.max(tt.v, 0.1)) - FIN : NaN;
+      const Lb = z.bouche ? z.bouche.Lw + 10 * log10(z.n) : NaN;
+      const S = num(z.S, z.n * 20), loc = Cta.termeLocal(S, h, Tr), Lp = somme([Lres, Lreg, Lb]) + loc.d;
+      const statut = Lp > obj ? 'dépassé' : Lp > obj - 3 ? 'marge faible' : 'conforme';
+      if (Lp > obj) alertes.push(alerte('attention', `${z.rep} (${nomReseau}) : ${nf(Lp, 0)} dB(A) estimés pour ${nf(obj, 0)} dB(A) visés — ${Lres + loc.d > obj ? `ajouter ${nf(Math.ceil(Lres + loc.d - obj + 3), 0)} dB d'atténuation sur la branche (silencieux, gaine isolée)` : Number.isFinite(Lreg) && Lreg >= Math.max(Lres, Lb || -99) ? 'registre trop fermé : rééquilibrer les branches' : 'bouches trop bruyantes : en ajouter ou prendre la taille au-dessus'}.`));
+      return { zone: z.rep, reseau: nomReseau, lw0, att, Lres, Lreg, Lb, S, Lp, obj, statut };
+    });
+  }
+
   function calculer(e) {
     const P = PRODUCTEURS[e.producteur] || PRODUCTEURS['cta-df'], souffle = P[1], aspire = P[2], alertes = [];
     const zones = (e.zones || []).map((x, i) => ({ ...x, rep: String(x.rep || `Zone ${i + 1}`).trim(), reseau: RESEAUX[x.reseau] ? x.reseau : 'soufflage', type: BOUCHES[x.type] ? x.type : (x.reseau === 'soufflage' ? 'plafond' : 'extraction') }));
@@ -149,6 +180,8 @@ const SchemaAir = ((D, C, N, Cta) => {
     if (souffle && aspire && rS.Q && rR.Q && Math.abs(rS.Q - rR.Q) / rS.Q > 0.1) alertes.push(alerte('attention', `Débits soufflé ${nf(rS.Q, 0)} m³/h et repris ${nf(rR.Q, 0)} m³/h écartés de plus de 10 % : ${rS.Q > rR.Q ? 'locaux en surpression' : 'locaux en dépression'} (à justifier).`));
     if (!rS.Q && !rR.Q) alertes.push(alerte('erreur', 'Aucune zone avec un débit.'));
     if (sfp > 2.5) alertes.push(alerte('attention', `Puissance spécifique ${nf(sfp, 2)} kW/(m³/s) élevée (repère : ≤ 2 en double flux) : réduire les vitesses ou les pertes de charge.`));
+    const acS = acoustique(rS, e, rS.Q, pS, e.LwFabS, alertes, souffle ? 'soufflage' : ''), acR = acoustique(rR, e, rR.Q, pR, e.LwFabR, alertes, dfx || e.producteur === 'cta-melange' ? 'reprise' : 'extraction');
+    const ac = [...acS, ...acR];
     const ligneZ = x => [x.rep, RESEAUX[x.reseau], nf(x.Q, 0), `${x.n} × ${x.bouche.b.libelle} ${x.bouche.nom}`, nf(x.bouche.v, 1), nf(x.bouche.dp, 0), x.antenne.nom, nf(x.antenne.v, 1), nf(x.dpA, 0), nf(x.dpTotal, 0)];
     const ligneT = t => [t.rep, nf(t.Q, 0), t.nom, nf(t.L, 1), nf(t.v, 1), nf(t.R, 2), nf(t.dp, 0)];
     const titreS = { 'cta-df': 'Soufflage', 'cta-melange': 'Soufflage', 'cta-sf': 'Soufflage', insufflation: 'Insufflation' }[e.producteur] || 'Soufflage';
@@ -176,6 +209,8 @@ const SchemaAir = ((D, C, N, Cta) => {
           ...(r.registres.length ? [{ titre: `Registres d'équilibrage — ${r === rS ? titreS.toLowerCase() : 'reprise / extraction'}`, entetes: ['Registre', 'Gaine', 'Q (m³/h)', 'ΔP à dissiper (Pa)'], lignes: r.registres.map(x => [`${x.rep}${x.nom ? ` — ${x.nom}` : ''}`, x.nomGaine, nf(x.Q, 0), nf(x.dpReg, 0)]) }] : [])]) : []),
         ...(!arbo && rS.troncons.length ? [{ titre: `Gaine principale de ${titreS.toLowerCase()}`, entetes: ['Tronçon', 'Q (m³/h)', 'Gaine (mm)', 'L (m)', 'v (m/s)', 'R (Pa/m)', 'ΔP (Pa)'], lignes: rS.troncons.map(ligneT) }] : []),
         ...(!arbo && rR.troncons.length ? [{ titre: 'Gaine principale de reprise / extraction', entetes: ['Tronçon', 'Q (m³/h)', 'Gaine (mm)', 'L (m)', 'v (m/s)', 'R (Pa/m)', 'ΔP (Pa)'], lignes: rR.troncons.map(ligneT) }] : []),
+        ...(ac.length ? [{ titre: 'Acoustique par zone (niveau global dB(A), méthode simplifiée)', entetes: ['Zone', 'Réseau', 'Lw ventilateur', 'Atténuation silencieux + réseau', 'Lw arrivant par le réseau', 'Lw registre', 'Lw bouches', 'LpA local', 'Objectif', 'Statut'],
+          lignes: ac.map(a => [a.zone, a.reseau, nf(a.lw0, 0), nf(num(e.attSil, 20) + a.att + 6, 1), nf(a.Lres, 0), Number.isFinite(a.Lreg) ? nf(a.Lreg, 0) : '—', Number.isFinite(a.Lb) ? nf(a.Lb, 0) : '—', nf(a.Lp, 0), nf(a.obj, 0), a.statut]) }] : []),
         { titre: 'Ventilateurs', entetes: ['Ventilateur', 'Débit (m³/h)', 'Réseau (Pa)', 'Composants (Pa)', 'Pression avec marge (Pa)', 'Puissance absorbée (kW)'],
           lignes: [...(souffle ? [[titreS, nf(rS.Q, 0), nf(rS.dp, 0), `${nf(sum(compS), 0)} (${compS.map(c => c[0].toLowerCase()).join(', ')})`, nf(pS, 0), nf(PvS / 1000, 2)]] : []),
             ...(aspire ? [[dfx || e.producteur === 'cta-melange' ? 'Reprise' : 'Extraction', nf(rR.Q, 0), nf(rR.dp, 0), `${nf(sum(compR), 0)} (${compR.map(c => c[0].toLowerCase()).join(', ')})`, nf(pR, 0), nf(PvR / 1000, 2)]] : [])] },
@@ -186,7 +221,8 @@ const SchemaAir = ((D, C, N, Cta) => {
           : `Gaine principale : v ≤ ${nf(num(e.vmaxP, 6), 1)} m/s, antennes : v ≤ ${nf(num(e.vmaxA, 4), 1)} m/s, R ≤ ${nf(num(e.Rmax, 1), 2)} Pa/m ; principal découpé entre les piquages des zones, débit des zones en aval.`,
         'Bouches : gammes génériques, plus petite taille dont la vitesse au col reste sous la vitesse maximale de la gamme ; ΔP = ζ · ρv²/2 au col.',
         'Chemin le plus défavorisé : principal jusqu\'au piquage + antenne + bouche ; pression du ventilateur = réseau + composants de la CTA, avec la marge.',
-        'Pertes de charge des composants : valeurs usuelles modifiables (filtres à mi-encrassement) ; à remplacer par celles du constructeur.'],
+        'Pertes de charge des composants : valeurs usuelles modifiables (filtres à mi-encrassement) ; à remplacer par celles du constructeur.',
+        ...(ac.length ? ['Acoustique (niveau global pondéré A, à confirmer par bande d\'octave pour les locaux sensibles) : ventilateur Lw ≈ 40 + 10 · log Q + 20 · log Δp − 7 dB(A) (ou donnée du fabricant), silencieux saisi, gaine nue 0,15 dB/m, coude 2 dB, dérivation 10 · log(Q amont / Q branche), plénum et réflexion en bout de gaine 6 dB ; registre et bouches : bruit régénéré d\'après leur perte de charge ; local : A = 0,16 · V / Tr, surface du local saisie ou 20 m² par bouche.'] : [])],
       synthese: `${P[0].split(' (')[0]} · ${souffle ? `${nf(rS.Q, 0)} m³/h soufflés` : ''}${souffle && aspire ? ' · ' : ''}${aspire ? `${nf(rR.Q, 0)} m³/h ${dfx || e.producteur === 'cta-melange' ? 'repris' : 'extraits'}` : ''} · SFP ${nf(sfp, 2)}`,
       schema: dessiner(e, P, arbo ? { ...rS, troncons: [] } : rS, arbo ? { ...rR, troncons: [] } : rR, { compS, compR, recup: dfx ? recup[0] : '', pS, pR }),
       titreSchema: 'Schéma de principe aéraulique',
@@ -344,6 +380,13 @@ const SchemaAir = ((D, C, N, Cta) => {
         { rep: 'Salle de réunion (reprise)', reseau: 'reprise', type: 'extraction', n: 2, Q: 950, distance: 25, L: 6, zeta: 3 }],
         colonnes: [{ k: 'rep', l: 'Zone', t: 't' }, { k: 'reseau', l: 'Réseau', t: 's', o: Object.entries(RESEAUX) }, { k: 'type', l: 'Bouches', t: 's', o: Object.entries(BOUCHES).map(([k, b]) => [k, b.libelle]) },
           { k: 'n', l: 'Nombre de bouches' }, { k: 'Q', l: 'Débit de la zone (m³/h)' }, { k: 'distance', l: 'Distance au ventilateur (m)' }, { k: 'L', l: 'Longueur de l\'antenne (m)' }, { k: 'zeta', l: 'Σζ de l\'antenne' }, { k: 'sing', l: 'Singularités de l\'antenne (remplacent Σζ)', t: 't' }] },
+      { g: 'Acoustique des locaux' },
+      { k: 'acoustique', l: 'Estimer le niveau sonore dans chaque zone', t: 's', o: [['oui', 'Oui'], ['non', 'Non']], d: 'oui' },
+      { k: 'usageAcous', l: 'Objectif', t: 's', o: Object.entries(Cta.OBJECTIFS).filter(([k]) => k !== 'perso').map(([k, o]) => [k, `${o[0]} : ${o[1]} dB(A)`]), d: 'bureau', si: e => e.acoustique !== 'non' },
+      { k: 'attSil', l: 'Atténuation des silencieux (par réseau, donnée du fabricant)', u: 'dB(A)', d: 20, si: e => e.acoustique !== 'non' },
+      { k: 'LwFabS', l: 'Puissance acoustique du ventilateur de soufflage, côté gaine (vide : estimée)', u: 'dB(A)', d: '', si: e => e.acoustique !== 'non' && e.producteur !== 'extraction' },
+      { k: 'LwFabR', l: 'Puissance acoustique du ventilateur de reprise / extraction (vide : estimée)', u: 'dB(A)', d: '', si: e => e.acoustique !== 'non' && !['cta-sf', 'insufflation'].includes(e.producteur) },
+      { k: 'hLocal', l: 'Hauteur des locaux', u: 'm', d: 2.7, si: e => e.acoustique !== 'non' }, { k: 'TrLocal', l: 'Durée de réverbération des locaux', u: 's', d: 0.6, si: e => e.acoustique !== 'non' },
       { g: 'Composants et ventilateurs' },
       { k: 'dpPrise', l: 'Prise d\'air neuf', u: 'Pa', d: 40, si: e => e.producteur !== 'extraction' }, { k: 'dpFiltreS', l: 'Filtre air neuf (mi-encrassement)', u: 'Pa', d: 150, si: e => e.producteur !== 'extraction' },
       { k: 'dpFiltreR', l: 'Filtre de reprise', u: 'Pa', d: 100, si: e => ['cta-df', 'cta-melange'].includes(e.producteur) },

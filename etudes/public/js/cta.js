@@ -292,6 +292,6 @@ const Cta = ((D, C, N) => {
     },
   };
 
-  return { pws, xDe, hDe, HRde, etat, BOUCHES, lwBouche, termeLocal };
+  return { pws, xDe, hDe, HRde, etat, BOUCHES, lwBouche, termeLocal, OBJECTIFS };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Notes !== 'undefined' ? Notes : require('./notes'));
 if (typeof module !== 'undefined') module.exports = Cta;

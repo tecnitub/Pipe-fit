@@ -211,3 +211,24 @@ test('métré aéraulique : piquages, registres, coudes et clapets des singulari
   const eq = postes.filter(Me.estEquipement).map(p => p.designation).join(' | ');
   assert.ok(!/Piquage|Registre d'équilibrage|Manchette|Coude/.test(eq)); assert.match(eq, /Clapet coupe-feu/);
 });
+
+test('acoustique par branche : atténuations du chemin, registre, bouches, niveau du local comparé à l\'objectif', () => {
+  const e = { ...N.defauts('aero'), structure: 'arborescence' };
+  const t = r => r.tableaux.find(x => /Acoustique par zone/.test(x.titre));
+  const r = N.calculer('aero', e), lignes = t(r).lignes, ligne = z => lignes.find(l => l[0] === z);
+  assert.strictEqual(lignes.length, 7, 'une ligne par zone (tronçon terminal)');
+  const n = s => Number(String(s).replace(',', '.'));
+  // La branche la plus défavorisée a le registre le plus ouvert : le moins de bruit de registre
+  assert.ok(n(ligne('Salle de réunion')[5]) < n(ligne('Bureaux R+1 est')[5]));
+  // Plus de silencieux : niveau plus bas ; donnée du fabricant prise à la place de l'estimation
+  const plus = N.calculer('aero', { ...e, attSil: 35 });
+  assert.ok(n(ligne('Accueil')[7]) - n(t(plus).lignes.find(l => l[0] === 'Accueil')[7]) >= 3);
+  assert.strictEqual(t(N.calculer('aero', { ...e, LwFabS: 75 })).lignes[0][2], '75');
+  // Objectif dépassé : alerte avec la cause
+  assert.ok(r.alertes.some(a => /dB\(A\) estimés pour 35 dB\(A\) visés/.test(a.texte)));
+  // Désactivée : ni tableau ni alerte
+  const sans = N.calculer('aero', { ...e, acoustique: 'non' });
+  assert.ok(!t(sans) && !sans.alertes.some(a => /dB\(A\) estimés/.test(a.texte)));
+  // Structure à piquages : estimée aussi (sans registre)
+  assert.strictEqual(t(N.calculer('aero', N.defauts('aero'))).lignes.length, 6);
+});
