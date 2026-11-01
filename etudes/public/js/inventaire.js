@@ -10,7 +10,7 @@ async function lireDossier(fichier, nature, progression) {
     const { lignes } = await PdfLecture.lire(fichier, progression, { pagesMax: 250, ocr: false });
     if (lignes.join('').replace(/\s/g, '').length < 300) throw new Error(`${fichier.name} : pas de texte lisible (document scanné) ; demandez le PDF d'origine.`);
     const analyse = CctpLecture.analyser(lignes), reseaux = InventaireCVC.reseauxCctp(analyse);
-    return { items: InventaireCVC.depuisCctp(analyse.equipements, reseaux), reseaux };
+    return { items: InventaireCVC.depuisCctp(analyse.equipements, reseaux, analyse.articles), reseaux };
   }
   if (pdf) { const { lignes } = await PdfLecture.lire(fichier, progression, { pagesMax: 120, ocr: false }); return InventaireCVC.depuisDpgfTexte(lignes); }
   const buf = await fichier.arrayBuffer(), feuilles = /\.csv$/i.test(fichier.name) ? XLSX.readCSV(buf) : await XLSX.read(buf);
@@ -61,8 +61,14 @@ function dialogueInventaire(et) {
 }
 
 // Inventaire à vérifier : genre, désignation, quantité, puissance, régime ; puis création des calculs
+// Sources d'une ligne en bref : premier article du CCTP, première ligne du DPGF (le détail en infobulle)
+const sourcesCourtes = l => { const c = (l || []).find(x => /^CCTP/.test(x)), d = (l || []).find(x => /^DPGF/.test(x)); return [c, d].filter(Boolean).join(' · ').replace('CCTP art. ', 'CCTP ') || (l || []).join(', '); };
 function tableauInventaire(et, inv, erreurs, reseaux = []) {
-  const G = InventaireCVC.GENRES, CAT = { producteur: 'Producteurs', emetteur: 'Émetteurs', auxiliaire: 'Auxiliaires' }, NAT = InventaireCVC.NATURE;
+  const G = InventaireCVC.GENRES, NAT = InventaireCVC.NATURE;
+  // Gros équipements d'abord (production, CTA, caissons, ECS, splits), puis le reste ; variantes et moins-values à part
+  const GROUPES = [['Gros équipements — production, CTA, caissons, ECS', x => !x.variante && (x.categorie === 'producteur' || x.principal)],
+    ['Émetteurs', x => !x.variante && !x.principal && x.categorie === 'emetteur'], ['Auxiliaires', x => !x.variante && !x.principal && x.categorie === 'auxiliaire'],
+    ['Variantes, options et moins-values (non retenues par défaut)', x => !!x.variante]];
   const nb = r => inv.filter(x => x.reseau === r.id && x.inclus !== false).length;
   const optReseaux = v => `<option value="">—</option>${reseaux.map(r => `<option value="${esc(r.id)}" ${r.id === v ? 'selected' : ''}>${esc(r.nom.slice(0, 40))}</option>`).join('')}`;
   const rendu = () => `<h2>📑 Inventaire du dossier de consultation <span class="compte">${inv.length}</span></h2>
@@ -70,19 +76,19 @@ function tableauInventaire(et, inv, erreurs, reseaux = []) {
     <h3>Réseaux reconnus <span class="compte">${reseaux.length}</span></h3>
     ${reseaux.length ? `<p class="muted petit">Titres de chapitres du DPGF et articles du CCTP qui désignent un réseau ; les équipements écrits dessous y sont rattachés. Le schéma de principe crée un circuit par réseau hydraulique (puissance des émetteurs cumulée, longueur des tuyauteries du DPGF). Corrigez la nature si besoin.</p>
       <div class="defile-x"><table class="edit"><thead><tr><th>Réseau</th><th>Nature</th><th>Régime</th><th>Tuyauteries / gaines</th><th>Équipements</th><th>Source</th></tr></thead><tbody>
-      ${reseaux.map((r, k) => `<tr><td><input data-r="${k}" data-rk="nom" value="${esc(r.nom)}"></td>
+      ${reseaux.map((r, k) => `<tr><td><input data-r="${k}" data-rk="nom" value="${esc(r.nom)}">${r.chapitre ? `<br><span class="petit muted">${esc(r.chapitre)}</span>` : ''}</td>
         <td><select data-r="${k}" data-rk="nature"><option value="">— non reconnue —</option>${Object.entries(NAT).map(([n, x]) => `<option value="${n}" ${n === r.nature ? 'selected' : ''}>${esc(x.libelle)}</option>`).join('')}</select></td>
         <td><input data-r="${k}" data-rk="regime" value="${esc(r.regime || '')}" placeholder="70/50" style="width:70px"></td>
         <td class="petit">${r.L ? `${Notes.nf(r.L, 0)} ml${Number.isFinite(r.dnMax) ? ` · jusqu'au ${r.hydro ? 'DN' : 'Ø'} ${r.dnMax}` : ''}` : '<span class="muted">—</span>'}</td><td>${nb(r)}</td><td class="petit muted">${esc((r.sources || []).join(', '))}</td></tr>`).join('')}</tbody></table></div>`
       : '<p class="muted petit">Aucun réseau reconnu : les titres « Réseau … », « Circuit … », « Distribution … » ou « Gaines de soufflage … » du DPGF (lignes sans quantité) et les articles du CCTP qui en parlent sont attendus. Chaque émetteur fera son propre circuit.</p>'}
     <p class="muted petit">Décochez ce qui ne concerne pas l'étude, corrigez le genre, la quantité ou la puissance (puissance unitaire, kW). Les quantités viennent du DPGF, les repères et prescriptions du CCTP.</p>
     <div class="defile-x"><table class="edit"><thead><tr><th></th><th>Genre</th><th>Désignation</th><th>Repère</th><th>Qté</th><th>P unit. (kW)</th><th>Débit (m³/h)</th><th>Régime</th><th>Réseau</th><th>Source</th></tr></thead><tbody>
-    ${['producteur', 'emetteur', 'auxiliaire'].map(c => { const l = inv.map((x, i) => [x, i]).filter(([x]) => x.categorie === c); return l.length ? `<tr><th colspan="10" class="petit">${CAT[c]}</th></tr>${l.map(([x, i]) => `<tr>
+    ${GROUPES.map(([titre, f]) => { const l = inv.map((x, i) => [x, i]).filter(([x]) => f(x)); return l.length ? `<tr><th colspan="10" class="petit">${titre}</th></tr>${l.map(([x, i]) => `<tr${x.variante ? ' class="muted"' : ''}>
       <td><input type="checkbox" data-i="${i}" data-k="inclus" ${x.inclus !== false ? 'checked' : ''} aria-label="Retenir"></td>
       <td><select data-i="${i}" data-k="genre">${Object.entries(G).map(([k, g]) => `<option value="${k}" ${k === x.genre ? 'selected' : ''}>${esc(g.libelle)}</option>`).join('')}</select></td>
-      <td><input data-i="${i}" data-k="designation" value="${esc(x.designation)}"></td><td><input data-i="${i}" data-k="repere" value="${esc(x.repere || '')}" style="width:80px"></td>
+      <td><input data-i="${i}" data-k="designation" value="${esc(x.designation)}" style="min-width:300px" title="${esc(x.designation)}">${x.chapitre && !x.designation.includes(x.chapitre) ? `<br><span class="petit muted">${esc(x.chapitre)}</span>` : ''}</td><td><input data-i="${i}" data-k="repere" value="${esc(x.repere || '')}" style="width:80px"></td>
       <td><input data-i="${i}" data-k="qte" value="${esc(x.qte)}" class="nombre" style="width:60px"></td><td><input data-i="${i}" data-k="P" value="${esc(x.P)}" class="nombre" style="width:70px"></td><td><input data-i="${i}" data-k="Q" value="${esc(x.Q ?? '')}" class="nombre" style="width:70px" title="Débit d'air par bouche ou de l'équipement"></td>
-      <td><input data-i="${i}" data-k="regime" value="${esc(x.regime || '')}" placeholder="70/50" style="width:70px"></td><td><select data-i="${i}" data-k="reseau" style="max-width:170px">${optReseaux(x.reseau)}</select></td><td class="petit muted">${esc((x.sources || []).join(', '))}${x.prescrit ? `<br>${esc(x.prescrit)}` : ''}</td></tr>`).join('')}` : ''; }).join('')}
+      <td><input data-i="${i}" data-k="regime" value="${esc(x.regime || '')}" placeholder="70/50" style="width:70px"></td><td><select data-i="${i}" data-k="reseau" style="max-width:170px">${optReseaux(x.reseau)}</select></td><td class="petit muted" style="min-width:240px" title="${esc((x.sources || []).join(', '))}">${esc(sourcesCourtes(x.sources))}${x.prescrit ? `<br>${esc(x.prescrit)}` : ''}</td></tr>`).join('')}` : ''; }).join('')}
     </tbody></table></div>
     <div class="actions"><button class="secondaire" id="ti-x">Fermer</button><button class="secondaire" id="ti-ok">Enregistrer l'inventaire</button>
       <button id="ti-pid">🗺️ Créer le schéma de principe</button><button id="ti-aero">🌬️ Créer le schéma aéraulique</button><button id="ti-elec">⚡ Créer l'alimentation électrique</button></div>`;

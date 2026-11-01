@@ -76,6 +76,17 @@ du CCTP qui en parlent ; leur nature (chauffage, eau glacée, change-over, ECS, 
 air neuf, désenfumage, plomberie écartée), leur régime et la longueur et le plus gros diamètre de leurs tuyauteries ou
 gaines (lignes en ml) sont lus, et les équipements écrits dessous (ou dans les articles enfants du CCTP) y sont rattachés ;
 une grille sans précision sous un réseau de reprise devient une bouche de reprise. Réseaux du CCTP et du DPGF réunis.
+**Gros équipements en priorité** : production, CTA, caissons et tourelles, ECS et splits sont présentés en tête, avec leur
+chapitre ; leurs accessoires (« Accessoires PAC », « Supportage CTA », « Batterie électrique »…) ne sont jamais comptés comme
+l'équipement, et un sous-article (« Centrale de traitement d'air » sous « CTA salle de restauration ») complète l'équipement
+de son article (marque, type, débit) au lieu de le doubler. Un même réseau ou équipement dans deux chapitres (« Réseau de
+soufflage » des parties communes et de la cuisine) reste séparé et nommé par son chapitre. Les variantes, options et
+moins-values (chapitre « Variante », lignes « Moins value ») sont listées à part, non retenues. Quand le DPGF reprend la
+numérotation du CCTP (III.1.3 → III.1.3.1.30), chaque ligne va à l'article qui la contient ; plusieurs lignes pour un
+article (unité extérieure et intérieure, deux ballons) le détaillent et le remplacent, avec sa prescription. Le CCTP se lit
+aussi à chapitres romains (III.1.1), numéro et titre sur deux lignes, en-têtes de page répétés écartés, ligatures des
+polices rétablies (« restauraƟon », « extrac on ») ; les chapitres de dispositions générales et de prescriptions ne
+donnent pas d'équipement.
 L'inventaire se vérifie dans un tableau (réseaux, nature modifiable, réseau de chaque équipement), puis
 « 🗺️ Créer le schéma de principe » (générateurs en cascade, régime, un circuit par réseau reconnu, sinon par émetteur), « 🌬️ Créer le schéma
 aéraulique » (CTA ou caisson, une zone par ligne de bouches de soufflage ou d'extraction, débits du DPGF) et « ⚡ Créer l'alimentation

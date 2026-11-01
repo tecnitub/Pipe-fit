@@ -139,3 +139,67 @@ test('réseaux du CCTP : article de réseau, équipements des articles enfants, 
   assert.strictEqual(res[0].L, 90);
   assert.ok(inv.filter(x => x.genre === 'radiateurs').every(x => x.reseau === rc[0].id));
 });
+
+// Dossier type « bureau d'études » : chapitres romains, numéro d'article seul sur sa ligne, en-têtes de page répétés,
+// ligatures « ti » perdues par la police du PDF, chapitre de variante ; DPGF à la même numérotation
+test('gros équipements d\'abord : CCTP à chapitres romains rapproché du DPGF par la numérotation', () => {
+  const CL = require('../public/js/cctp-lecture');
+  const page = n => ['Atelier X – CCTP lot 11', 'DCE - Edition du 01/01/2026', `Page ${n}/9`];
+  const lignes = ['CCTP', 'Sommaire', 'I DISPOSITIONS GENERALES..........', 'I.2 OBJET DU PRESENT LOT..........', 'I.2.1 CHAUFFAGE / CLIMATISATION :..........', 'II PRESCRIPTIONS PARTICULIERES..........', 'III DESCRIPTION DES OUVRAGES..........',
+    'III.1.5 Chauffage/Clima sa on du local déchets..........', ...page(1),
+    'I.2.1 CHAUFFAGE / CLIMATISATION :', 'Une pompe à chaleur alimentera les CTA.', ...page(2),
+    'III.1', 'CHAUFFAGE CLIMATISATION DES LOCAUX', 'III.1.1', 'Pompe à chaleur EAU / EAU', 'Celle-ci sera de marque MARQUEA ou techniquement équivalent. Régime 7/12 °C.', ...page(3),
+    'III.1.1.1', 'Fourniture et pose de la pompe à chaleur eau/eau', 'Compris accessoires.',
+    'III.1.1.9', 'Circuit Pompe REJET PAC nappe phréatique', 'Pompe simple 12 m3/h.', 'III.1.1.13', 'Distribution tuyauterie', 'Réseaux du primaire (nappe) et du secondaire.',
+    'III.1.3', 'CTA salle de restaura on', 'Centrale de marque MARQUEB.', 'III.1.3.1', 'Centrale de traitement d\'air', 'Débit 3500 m3/h, marque MARQUEC type CTX.',
+    'III.1.5', ...page(4), 'Chauffage/Clima sa on du local déchets', 'Mono-split de marque MARQUED.',
+    'III.2', 'VENTILATION HYGIENIQUE PARTIES COMMUNES', 'III.2.1', 'Centrale double flux', 'Marque MARQUEE type DF.', 'III.2.2', 'Réseau de souﬄage / air neuf', 'Gaines galvanisées.',
+    'III.3', 'VENTILATION HYGIENIQUE CUISINE', 'III.3.1', 'Centrale double flux', 'Marque MARQUEE type DF.', 'III.3.2', 'Réseau de souﬄage / air neuf', 'Gaines galvanisées.',
+    'III.4', 'VENTILATION PROCESS CUISINE', 'III.4.4', 'Compensa on Cuisine', 'Mise en place d\'une CTA SF de compensation de marque MARQUEF.', ...page(5),
+    'III.4.6', 'Électricité / asservissement', 'Asservissement de la CTA à la hotte.', ...page(6), ...page(7), ...page(8),
+    'III.7', 'VARIANTE CHAUFFAGE / CLIMATISATION', 'III.7.1', 'PAC AIR / EAU', 'Pompe à chaleur air/eau.', 'III.7.1.5', 'Moins value : Fourniture et pose de la PAC eau/eau', ''];
+  const a = CL.analyser(lignes);
+  assert.strictEqual(a.chapitres.III, 'DESCRIPTION DES OUVRAGES');
+  assert.ok(a.articles.some(x => x.num === 'III.1.3' && x.titre === 'CTA salle de restauration'), 'ligature « ti » rétablie');
+  assert.strictEqual(a.articles.find(x => x.num === 'III.1.5').titre, 'Chauffage/Climatisation du local déchets', 'titre du sommaire, en-tête de page écarté');
+  assert.ok(!a.equipements.some(e => /^I\./.test(e.article)), 'chapitre de dispositions générales : pas d\'équipement');
+  const rc = I.reseauxCctp(a), ic = I.depuisCctp(a.equipements, rc, a.articles);
+  // Sous-article réuni à son équipement ; deux « Centrale double flux » nommées par leur chapitre ; titre muet reconnu au texte
+  assert.strictEqual(ic.filter(x => x.genre === 'pac-eau' && !x.variante).length, 1);
+  assert.match(ic.find(x => x.genre === 'cta' && /restauration/.test(x.designation)).prescrit, /MARQUEB.*MARQUEC/);
+  assert.deepStrictEqual(ic.filter(x => /^Centrale double flux/.test(x.designation)).map(x => x.designation), ['Centrale double flux — VENTILATION HYGIENIQUE PARTIES COMMUNES', 'Centrale double flux — VENTILATION HYGIENIQUE CUISINE']);
+  assert.ok(ic.some(x => x.genre === 'cta' && x.designation === 'Compensation Cuisine'));
+  assert.ok(!ic.some(x => /asservissement/i.test(x.designation)));
+  assert.ok(ic.filter(x => /PAC AIR|Moins value/.test(x.designation)).every(x => x.variante && !x.principal), 'chapitre de variante');
+  // Réseaux : même identifiant que le DPGF (« réseau @ chapitre »), texte qui ne tranche pas (primaire et secondaire) écarté
+  assert.deepStrictEqual(rc.map(r => [r.id, r.nature]), [['circuit pompe rejet pac nappe phreatique @ pompe a chaleur eau eau', 'captage'],
+    ['reseau de soufflage air neuf @ ventilation hygienique parties communes', 'soufflage'], ['reseau de soufflage air neuf @ ventilation hygienique cuisine', 'soufflage']]);
+  // DPGF à la même numérotation : une ligne par article = le même équipement ; deux lignes (unités extérieure et
+  // intérieure) détaillent l'article, qui est remplacé par elles avec sa prescription
+  const d = I.depuisDpgf([['NIV', 'Code', 'Désignation', 'U', 'Qté'], ['3', 'III.1.1', 'Pompe à chaleur EAU / EAU', '', ''], ['5', 'III.1.1.1.1', 'Fourniture et pose de la pompe à chaleur eau/eau', 'U', '1'],
+    ['3', 'III.1.3', 'CTA salle de restauration', '', ''], ['5', 'III.1.3.1.30', 'Centrale de traitement d\'air salle de restauration', 'U', '2'],
+    ['3', 'III.1.5', 'Chauffage/Climatisation du local déchets', '', ''], ['5', 'III.1.5.1.50', 'Unité extérieure : type UE20', 'U', '1'], ['5', 'III.1.5.1.52', 'Unité intérieure : murale type UI20', 'U', '1'],
+    ['3', 'III.2.1', 'Centrale double flux', '', ''], ['5', 'III.2.1.61', 'Centrale double flux parties communes', 'U', '1'],
+    ['3', 'III.3.1', 'Centrale double flux', '', ''], ['5', 'III.3.1.99', 'Centrale double flux cuisine', 'U', '1'],
+    ['3', 'III.2.3', 'Réseau d\'extraction / rejet', '', ''], ['5', 'III.2.3.91', 'Bouches d\'extraction', 'U', '18']]);
+  const inv = I.fusionner(ic, d.items);
+  assert.strictEqual(inv.filter(x => x.genre === 'pac-eau' && x.inclus).length, 1, 'PAC non dupliquée');
+  assert.strictEqual(inv.find(x => x.genre === 'cta' && /restauration/.test(x.designation)).qte, 2, 'quantité du DPGF');
+  assert.strictEqual(inv.filter(x => /^Centrale double flux/.test(x.designation)).length, 2);
+  const sp = inv.filter(x => x.genre === 'split');
+  assert.deepStrictEqual(sp.map(x => x.designation), ['Unité extérieure : type UE20', 'Unité intérieure : murale type UI20']);
+  assert.ok(sp.every(x => /MARQUED/.test(x.prescrit)));
+  // Ordre : production, gros équipements, émetteurs, auxiliaires ; variantes à la fin, non retenues
+  const rangs = inv.map(x => (x.variante ? 9 : x.categorie === 'producteur' ? 0 : x.principal ? 1 : 2));
+  assert.deepStrictEqual(rangs, [...rangs].sort((p, q) => p - q));
+  assert.strictEqual(inv[0].genre, 'pac-eau');
+  assert.ok(inv.filter(x => x.variante).every(x => x.inclus === false));
+});
+
+test('ligatures : réparées seulement quand le PDF en a perdu', () => {
+  const CL = require('../public/js/cctp-lecture');
+  assert.deepStrictEqual(CL.reparer(['ainsi que la hotte', 'si on veut']), ['ainsi que la hotte', 'si on veut']);
+  const r = CL.reparer(['Extrac on', 'restaura on', 'Disposi f', 'acous que', 'casse es', 'Clima sa on', 'ainsi que', 'ho e']);
+  assert.deepStrictEqual(CL.reparer(['restauraƟon', 'hoƩe']), ['restauration', 'hotte']);
+  assert.deepStrictEqual(r, ['Extraction', 'restauration', 'Dispositif', 'acoustique', 'cassettes', 'Climatisation', 'ainsi que', 'hotte']);
+});

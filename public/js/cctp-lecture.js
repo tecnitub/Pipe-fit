@@ -17,8 +17,8 @@ const CctpLecture = (() => {
   const TYPES = [
     [/thermofrigopompe|\btfp\b/, '3.1', 'TFP'], [/pompes? a chaleur|\bpac\b/, '3.1', 'PAC'], [/groupes? (?:de production )?(?:froid|d'eau glacee)|refroidisseur|chiller/, '3.1', 'GF'],
     [/rooftop/, '3.1', 'RT'], [/chaudiere/, '3.1', 'CH'],
-    [/centrales? de traitement d'air|\bcta\b/, '3.4', 'CTA'], [/desenfumage/, '3.6', 'DSF'],
-    [/\bvmc\b|ventilation mecanique|caisson d'(?:extraction|insufflation)/, '3.5', 'VMC'], [/extracteur/, '3.5', 'EXT'],
+    [/centrales? de traitement d'air|\bcta\b|centrales? (?:double flux|de soufflage)/, '3.4', 'CTA'], [/desenfumage/, '3.6', 'DSF'],
+    [/\bvmc\b|ventilation mecanique|caisson d'(?:extraction|insufflation)/, '3.5', 'VMC'], [/extracteur|tourelle|caisson (?:d'extraction|de ventilation)|hotte/, '3.5', 'EXT'],
     [/split|detente directe|unite (?:exterieure|interieure)|\b(?:drv|vrv)\b/, '3.3', 'SPL'],
     [/ventilo-?convecteur|cassette/, '3.2', 'VC'], [/radiateur/, '3.2', 'RAD'], [/aerotherme/, '3.2', 'AER'], [/plancher chauffant|plafond rayonnant|panneau rayonnant/, '3.2', 'EM'],
     [/circulateur|pompe (?:de circulation|double|simple|de relevage)|surpresseur|groupe de (?:surpression|maintien)/, '3.7', 'P'],
@@ -47,7 +47,37 @@ const CctpLecture = (() => {
   }
 
   // Titre d'article : « 3.2.1 Pompe à chaleur air / eau », « Article 4.1 – CTA », lignes du sommaire comprises (points et page)
-  const TITRE = /^\s*(?:art(?:icle)?\.?\s*)?(\d{1,2}(?:\.\d{1,2}){0,4})\s*[.)\-–]?\s+([A-Za-zÀ-ÿ'«"(].{2,150}?)\s*(?:\.{3,}\s*\d{1,3}|\t+\s*\d{1,3})?\s*$/;
+  // Numérotation décimale (3.2.1) ou à chapitre romain (III.1.1)
+  const TITRE = /^\s*(?:art(?:icle)?\.?\s*)?((?:[IVX]{1,5}\.)?\d{1,2}(?:\.\d{1,2}){0,4})\s*[.)\-–]?\s+([A-Za-zÀ-ÿ'«"(].{2,150}?)\s*(?:\.{3,}\s*\d{0,3}|\t+\s*\d{1,3})?\s*$/;
+  const NUMERO_SEUL = /^(?:art(?:icle)?\.?\s*)?(?:[IVX]{1,5}\.\d{1,2}(?:\.\d{1,2}){0,4}|\d{1,2}(?:\.\d{1,2}){1,4})\.?$/i;
+  // PDF dont la police perd les ligatures : « ﬂ », « ﬀ » (rendues par NFKC), « ti » rendu « Ɵ » ou disparu (« extrac on »)
+  const LIGATURE = /([A-Za-zÀ-ÿ]{2,}[aiuc]) (ons?)\b|([A-Za-zÀ-ÿ]{3,}i) (fs?)\b|([A-Za-zÀ-ÿ]+(?:ma|ous)) (ques?)\b|\b([Cc]ass|[Mm]anchet|[Bb]aguet|[Hh]o)e? (es?)\b/g;
+  const LIGATURE2 = /([A-Za-zÀ-ÿ]{3,}) sa (ons?)\b/g; // « Clima sa on » : deux « ti » perdus
+  function reparer(lignes) {
+    // « Ɵ », « Ʃ » : glyphes des ligatures « ti », « tt » de certaines polices, tel que pdf.js le rend (« restauraƟon »)
+    const L = lignes.map(x => String(x ?? '').normalize('NFKC').replace(/Ɵ/g, 'ti').replace(/Ʃ/g, 'tt'));
+    const n = L.reduce((s, l) => s + (l.match(LIGATURE) || []).length + (l.match(LIGATURE2) || []).length, 0);
+    if (n < 3) return L;
+    return L.map(l => l.replace(LIGATURE2, '$1tisati$2').replace(LIGATURE, (t, a, b, c, d, e, f, g, h) => (a ? `${a}ti${b}` : c ? `${c}ti${d}` : e ? `${e}ti${f}` : /^ho$/i.test(g) ? `${g}tt${h}` : `${g}ett${h}`)));
+  }
+  // Numéro d'article seul sur sa ligne, titre à la ligne suivante : réunis
+  // En-têtes et pieds de page (lignes courtes répétées sur beaucoup de pages, « Page 16/70 ») : retirés pour ne pas couper
+  // un titre d'article de son numéro
+  function sansEntetes(L) {
+    const n = new Map();
+    L.forEach(l => { const k = l.trim(); if (k && k.length < 120) n.set(k, (n.get(k) || 0) + 1); });
+    const pages = Math.max(1, L.filter(l => /^page \d+\s*\/\s*\d+$/i.test(l.trim())).length);
+    return L.filter(l => { const k = l.trim(); return !/^page \d+\s*\/\s*\d+$/i.test(k) && !(pages >= 5 && (n.get(k) || 0) >= Math.max(5, pages * 0.6) && !NUMERO_SEUL.test(k)); });
+  }
+  function joindre(L) {
+    L = sansEntetes(L);
+    const out = [];
+    for (let i = 0; i < L.length; i++) {
+      const l = L[i].trim(), s = (L[i + 1] || '').trim();
+      if (NUMERO_SEUL.test(l) && s && s.length < 150 && /^[A-Za-zÀ-ÿ'«"(]/.test(s)) { out.push(`${l.replace(/\.$/, '')} ${s}`); i++; } else out.push(L[i]);
+    }
+    return out;
+  }
   function articles(lignes) {
     const blocs = new Map();
     let courant = null;
@@ -58,10 +88,11 @@ const CctpLecture = (() => {
       // Article : numéro avec au moins un point (ou « Article 3 »), titre surtout en lettres
       if (m && (m[1].includes('.') || /^art/i.test(l)) && /[a-zà-ÿ]{3}/i.test(m[2]) && (m[2].match(/\d/g) || []).length < m[2].length / 3) {
         const num = m[1].replace(/\.$/, ''), titre = m[2].replace(/\s*\.{3,}.*$/, '').trim();
-        courant = { num, titre, corps: [] };
+        courant = { num, titre, corps: [], sommaire: /\.{3,}/.test(l) };
         const ex = blocs.get(num);
-        // Le sommaire puis le corps : on garde le titre du corps (même numéro), avec son texte
-        if (!ex || !ex.corps.length) blocs.set(num, courant); else courant = { num, titre, corps: [] };
+        // Le sommaire puis le corps : on garde le texte du corps ; le titre du sommaire (lignes pointillées) prime, celui du
+        // corps pouvant être déplacé par la mise en page du PDF (titre écrit plus bas que son numéro)
+        if (!ex || !ex.corps.length) { if (ex && ex.sommaire) courant.titre = ex.titre; blocs.set(num, courant); } else courant = { num, titre, corps: [] };
         continue;
       }
       if (courant) courant.corps.push(l);
@@ -71,7 +102,7 @@ const CctpLecture = (() => {
   }
 
   function analyser(lignes) {
-    const L = lignes.map(x => String(x).replace(/\t+/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const L = joindre(reparer(lignes).map(x => x.replace(/\t+/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean)).map(x => String(x).replace(/\t+/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean);
     const tete = L.slice(0, 120), tout = L.join('\n');
     const cherche = (re, src = tete) => { for (const l of src) { const m = re.exec(l); if (m) return m; } return null; };
     const r = { lot: '', lotLibelle: '', indice: '', date: '', dossier: '', bet: '', moa: '', moe: '', operation: '', articles: [], equipements: [] };
@@ -97,11 +128,24 @@ const CctpLecture = (() => {
     r.articles = articles(L).map(a => ({ num: a.num, titre: a.titre }));
     // Texte de chaque article (début) : nature, régime et équipements des réseaux décrits
     r.articlesDetail = articles(L).map(a => ({ num: a.num, titre: a.titre, texte: a.corps.join(' ').slice(0, 1200) }));
+    const CHAP_GENERAL = /dispositions? generales?|prescriptions?|generalites?|normes?|clauses? (?:administratives|generales)|presentation|conditions? generales?/;
+    // Chapitres (« I DISPOSITIONS GENERALES », « III DESCRIPTION DES OUVRAGES ») : les équipements ne sont pris que hors
+    // des chapitres de généralités et de prescriptions
+    const chapitres = {};
+    L.forEach(l => { const c = /^([IVX]{1,5}|\d{1,2})\.?\s+([A-ZÀ-Ý][A-ZÀ-Ý0-9 '’\-/,]{4,}?)\s*(?:\.{3,}.*)?$/.exec(l); if (c && !chapitres[c[1]]) chapitres[c[1]] = c[2].trim(); });
+    r.chapitres = chapitres;
+    // Articles des chapitres de généralités : ni équipements ni réseaux
+    r.articlesDetail.forEach(a => { if (CHAP_GENERAL.test(norm(chapitres[a.num.split('.')[0]] || ''))) a.general = true; });
+    // Titre de réseau, d'électricité ou de régulation : l'équipement cité dans son texte n'est pas l'objet de l'article
+    const PAS_EQUIPEMENT = /^(?:reseaux?|gaines?|distribution|electricite|regulation|raccordements?|dispositifs? de securite|vitesses?|traitement)/;
     // Équipements : articles d'équipement (titre reconnu), un par repère trouvé, sinon une ligne à numéroter
     for (const a of articles(L)) {
-      const t = typeDe(a.titre);
-      if (!t) continue;
+      if (CHAP_GENERAL.test(norm(chapitres[a.num.split('.')[0]] || ''))) continue;
       const corps = a.corps.join(' ');
+      // Titre non parlant (« Compensation Cuisine », « Extraction Locaux techniques ») : gros équipement nommé au début du texte
+      let t = typeDe(a.titre);
+      if (!t && a.num.split('.').length >= 3 && !PAS_EQUIPEMENT.test(norm(a.titre))) { const g = typeDe(corps.slice(0, 500)); if (g && ['3.1', '3.3', '3.4', '3.5', '3.6'].includes(g[1])) t = g; }
+      if (!t) continue;
       const reps = reperes(`${a.titre} ${corps}`).filter(x => x.split('-')[0] === t[2] || (t[2] === 'P' && /^(PO|CI)-/.test(x)) || (t[2] === 'SPL' && /^(UE|UI)-/.test(x)));
       const q = /(?:quantit[ée]|nombre|qt[ée])\s*[:=]?\s*(\d{1,4})\b/i.exec(corps) || /\b(\d{1,3})\s*(?:unit[ée]s?|exemplaires?|ensembles?)\b/i.exec(corps);
       const marque = /marque\s*[:\-]?\s*([A-Z][\w&'\-]+(?:\s[A-Z][\w&'\-]+)?)/.exec(corps), type = /(?:type|mod[eè]le|gamme|s[ée]rie)\s*[:\-]?\s*([A-Z0-9][\w\-/+]{1,24}(?:\s[A-Z0-9][\w\-/+]{1,12})?)/.exec(corps);
@@ -135,6 +179,6 @@ const CctpLecture = (() => {
     return n;
   }
 
-  return { analyser, articles, reperes, numeroter, prefixeDe, dateIso, typeDe };
+  return { analyser, reparer, joindre, articles, reperes, numeroter, prefixeDe, dateIso, typeDe };
 })();
 if (typeof module !== 'undefined') module.exports = CctpLecture;

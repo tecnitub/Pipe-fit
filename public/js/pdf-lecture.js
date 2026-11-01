@@ -94,7 +94,8 @@ const PdfLecture = (() => {
     for (let p = 1; p <= n; p++) {
       progression((p - 1) / n);
       const page = await doc.getPage(p);
-      const l = enLignes((await page.getTextContent()).items);
+      // Ligatures des polices : « ﬁ », « ﬂ » (NFKC) et « Ɵ » pour « ti » (« restauraƟon »), « Ʃ » pour « tt » (« hoƩe »)
+      const l = enLignes((await page.getTextContent()).items).map(x => String(x).normalize('NFKC').replace(/Ɵ/g, 'ti').replace(/Ʃ/g, 'tt'));
       if (l.join('').replace(/\s/g, '').length > 40) { lignes.push(...l); continue; }
       if (opts.ocr === false) continue;
       // Page sans texte (scan) : rendue en image puis lue
