@@ -1,7 +1,7 @@
 # Pipe-Fit Études — bureau d'études fluides (CVC, tuyauterie industrielle)
 
 Application séparée de Pipe-Fit pour les notes de calcul du bureau d'études : dimensionnement des réseaux hydrauliques,
-vapeur, air comprimé et aérauliques, isolation, vases d'expansion, dilatation, épaisseur sous pression et supportage.
+vapeur, air comprimé et aérauliques, isolation, vases d'expansion, dilatation, épaisseur sous pression, supportage et classement DESP des équipements sous pression.
 Une **étude** regroupe les calculs d'un même objet (réseau, chaufferie, sous-station…), rattachée à une affaire Pipe-Fit,
 avec indice, rédacteur et vérificateur ; elle s'édite en **note de calcul PDF** à l'en-tête de l'entreprise.
 
@@ -36,6 +36,7 @@ avec indice, rédacteur et vérificateur ; elle s'édite en **note de calcul PDF
 | Mécanique | Dilatation | Allongement, bras flexible (L, Z), lyre, course des compensateurs ; règles fabricants pour les plastiques |
 | Mécanique | Épaisseur sous pression (NF EN 13480-3) | P235GH, P265GH, 304L, 316L : épaisseur requise, vérification de la série, P maxi admissible, pression d'épreuve |
 | Mécanique | Portée entre supports | Tube, fluide, isolant : portée limitée par la flèche et par la contrainte, tableau pour toute la série |
+| Mécanique | Équipements sous pression (DESP 2014/68/UE) | Tuyauterie (réseau par tronçons), récipient ou générateur : fluide (état liquide/gaz à TS — eau au-delà de ≈ 111 °C traitée comme un gaz —, groupe 1 ou 2), PS, TS, DN ou volume → hors champ, article 4.3 ou catégorie I à IV (tableaux 1 à 9 de l'annexe II), exigences (marquage CE, organisme notifié, QMOS, certificats 3.1, CND), pression d'épreuve, rappel du suivi en service |
 
 Fluides : eau (0–150 °C), eau + monoéthylène ou monopropylène glycol (20, 30, 40 %, valeurs moyennes), fiches des
 fabricants importées en CSV dans les Réglages (propriétés interpolées en température), fluide aux propriétés saisies.

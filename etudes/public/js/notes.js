@@ -664,6 +664,76 @@ const Notes = ((D, C) => {
     },
   };
 
+  /* ---------- 14. Équipements sous pression (DESP) ---------- */
+  const Dp = () => (typeof Desp !== 'undefined' ? Desp : require('./desp'));
+  const optFluidesDesp = () => [...Object.entries(Dp().FLUIDES).map(([k, f]) => [k, f.libelle]), ['perso', 'Autre fluide (état et groupe saisis)']];
+  TYPES.desp = {
+    titre: 'Équipements sous pression (DESP 2014/68/UE) : soumis ou non', icone: '⚠️', famille: 'Mécanique',
+    description: 'Selon le fluide, PS, TS et le DN (ou le volume) : hors champ, article 4.3 ou catégorie I à IV, exigences de fabrication et pression d\'épreuve, réseau par tronçons.',
+    champs: [{ g: 'Équipement' },
+      { k: 'equipement', l: 'Type d\'équipement', t: 's', o: [['tuyauterie', 'Tuyauterie (réseau)'], ['recipient', 'Récipient (ballon, bouteille, réservoir, échangeur)'], ['generateur', 'Générateur de vapeur / d\'eau surchauffée > 110 °C']], d: 'tuyauterie' },
+      { k: 'fluide', l: 'Fluide', t: 's', o: optFluidesDesp, d: 'eau-surchauffee' },
+      { k: 'etat', l: 'État du fluide à TS', t: 's', o: [['liquide', 'Liquide (pression de vapeur ≤ 0,5 bar effectif à TS)'], ['gaz', 'Gaz, gaz liquéfié ou vapeur']], d: 'liquide', si: e => e.fluide === 'perso' },
+      { k: 'groupe', l: 'Groupe du fluide', t: 's', o: [['2', 'Groupe 2 (non dangereux)'], ['1', 'Groupe 1 (inflammable, toxique, comburant, explosible)']], d: '2', si: e => e.fluide === 'perso' },
+      { g: 'Conditions maximales admissibles' }, { k: 'PS', l: 'Pression maximale admissible PS', u: 'bar', d: 10 }, { k: 'TS', l: 'Température maximale admissible TS', u: '°C', d: 140 },
+      { k: 'DN', l: 'Diamètre nominal DN du réseau principal', u: 'DN', d: 150, si: e => !e.equipement || e.equipement === 'tuyauterie' },
+      { k: 'V', l: 'Volume intérieur V', u: 'L', d: 500, si: e => e.equipement === 'recipient' || e.equipement === 'generateur' },
+      { k: 'nuance', l: 'Nuance (correction f20/fTS de l\'épreuve)', t: 's', o: () => [['', 'Sans correction'], ...Object.entries(D.ACIERS_PRESSION).map(([k, m]) => [k, m.libelle])], d: 'P235GH' },
+      { k: 'troncons', l: 'Autres tronçons du réseau (fluide, PS et TS vides = valeurs du réseau principal)', t: 'lignes', si: e => !e.equipement || e.equipement === 'tuyauterie', d: [
+        { rep: 'Antenne sous-station', fluide: '', DN: 80, PS: '', TS: '' },
+        { rep: 'Purges et vidanges', fluide: '', DN: 25, PS: '', TS: '' },
+        { rep: 'Secondaire eau chaude', fluide: 'eau', DN: 100, PS: 6, TS: 90 }],
+      colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'fluide', l: 'Fluide', t: 's', o: () => [['', 'Idem réseau principal'], ...optFluidesDesp().filter(([k]) => k !== 'perso')] },
+        { k: 'DN', l: 'DN' }, { k: 'PS', l: 'PS (bar)' }, { k: 'TS', l: 'TS (°C)' }] }],
+    calcul(e) {
+      const P = Dp(), eq = e.equipement || 'tuyauterie', PS = num(e.PS), TS = num(e.TS, 20), perso = { etat: e.etat, groupe: e.groupe }, alertes = [];
+      const lib = r => r.libelle, etatLib = n => `${n.etat === 'gaz' ? 'Gaz' : 'Liquide'} — groupe ${n.groupe}`;
+      const principal = P.classer(eq, { fluide: e.fluide, PS, TS, DN: num(e.DN), V: num(e.V), perso });
+      const lignes = eq === 'tuyauterie' ? [{ rep: 'Réseau principal', fluide: e.fluide, DN: num(e.DN), PS, TS, r: principal },
+        ...(e.troncons || []).filter(l => String(l.rep || '').trim() || num(l.DN)).map(l => {
+          const fl = l.fluide || e.fluide, ps = num(l.PS, PS), ts = num(l.TS, TS), dn = num(l.DN);
+          return { rep: l.rep || '—', fluide: fl, DN: dn, PS: ps, TS: ts, r: P.classer('tuyauterie', { fluide: fl, PS: ps, TS: ts, DN: dn, perso }) };
+        })] : [];
+      const cmax = Math.max(principal.categorie, ...lignes.map(l => l.r.categorie));
+      let f20 = 1, fTS = 1;
+      if (e.nuance && D.ACIERS_PRESSION[e.nuance]) { try { const cn = C.contrainteNominale(e.nuance, TS); f20 = cn.f20; fTS = cn.f; if (cn.horsPlage) alertes.push(alerte('attention', 'TS hors des valeurs tabulées de la nuance : correction f20/fTS extrapolée.')); } catch (err) { /* nuance inconnue */ } }
+      const PT = P.epreuve(PS, f20, fTS), n = principal.nature;
+      if (n.raison) alertes.push(alerte('ok', `Fluide : ${n.raison}.`));
+      const soumis = eq === 'tuyauterie' ? lignes.filter(l => l.r.soumis) : principal.soumis ? [{ rep: 'Équipement', r: principal }] : [];
+      if (soumis.length) {
+        alertes.push(alerte('attention', `Soumis à la DESP : ${eq === 'tuyauterie' ? `${soumis.map(l => `${l.rep} (cat. ${P.ROMAIN[l.r.categorie]})`).join(', ')}` : principal.libelle} — marquage CE et déclaration UE de conformité${cmax >= 2 ? ', intervention d\'un organisme notifié' : ''}.`));
+        alertes.push(alerte('attention', 'Suivi en service (arrêté du 20 novembre 2017) : vérifier si l\'équipement relève de la déclaration, des inspections et requalifications périodiques.'));
+      } else alertes.push(alerte('ok', principal.categorie < 0 ? 'PS ≤ 0,5 bar : hors champ de la directive.' : 'Non soumis aux catégories DESP : article 4.3 (règles de l\'art), sans marquage CE.'));
+      const art43 = lignes.filter(l => l.r.categorie === 0);
+      if (soumis.length && art43.length) alertes.push(alerte('ok', `Relèvent de l'article 4.3 : ${art43.map(l => l.rep).join(', ')}.`));
+      if (eq === 'generateur' && TS <= 110) alertes.push(alerte('attention', 'TS ≤ 110 °C : un générateur à cette température se classe comme récipient.'));
+      if (n.instable) alertes.push(alerte('attention', 'Gaz instable : catégories I et II portées en catégorie III.'));
+      if (soumis.length) alertes.push(alerte('attention', 'Accessoires de sécurité (soupapes, pressostats de sécurité) : catégorie IV, sauf s\'ils sont fabriqués pour un équipement donné (même catégorie).'));
+      const resume = [['Équipement', { tuyauterie: 'Tuyauterie', recipient: 'Récipient', generateur: 'Générateur' }[eq]], ['Fluide', `${n.libelle} : ${etatLib(n)}`],
+        ['Conditions', `PS ${nf(PS, 1)} bar · TS ${nf(TS, 0)} °C${eq === 'tuyauterie' ? ` · DN ${nf(num(e.DN), 0)}` : ` · V ${nf(num(e.V), 0)} L`}`],
+        [eq === 'tuyauterie' ? 'Réseau principal' : 'Classement', `${lib(principal)}${principal.tableau ? ` (${principal.tableau})` : ''}`]];
+      if (lignes.length > 1) resume.push(['Catégorie la plus élevée du réseau', cmax > 0 ? `Catégorie ${P.ROMAIN[cmax]}` : cmax === 0 ? 'Article 4.3' : 'Hors champ']);
+      resume.push(['Pression d\'épreuve PT', principal.categorie > 0 ? `${nf(PT, 1)} bar` : `${nf(PT, 1)} bar (indicative, article 4.3 : selon CCTP)`]);
+      const tableaux = [];
+      if (lignes.length) tableaux.push({ titre: 'Classement des tronçons', entetes: ['Tronçon', 'Fluide', 'État / groupe', 'DN', 'PS (bar)', 'TS (°C)', 'PS·DN', 'Tableau', 'Classement'],
+        lignes: lignes.map(l => [l.rep, (P.FLUIDES[l.fluide] || { libelle: 'Fluide saisi' }).libelle.split(' (')[0], etatLib(l.r.nature), nf(l.DN, 0), nf(l.PS, 1), nf(l.TS, 0), nf(l.PS * l.DN, 0), l.r.tableau || '—', lib(l.r)]),
+        surligne: lignes.findIndex(l => l.r.categorie === cmax) });
+      tableaux.push({ titre: `Exigences — ${cmax > 0 ? `catégorie ${P.ROMAIN[cmax]}` : cmax === 0 ? 'article 4.3' : 'hors champ'}`, entetes: ['Exigence'], lignes: P.exigences(cmax).map(x => [x]) });
+      return {
+        valeurs: { categorie: principal.categorie, categorieMax: cmax, soumis: soumis.length > 0, PT, etat: n.etat, groupe: n.groupe, lignes: lignes.map(l => ({ rep: l.rep, categorie: l.r.categorie })) },
+        resume, tableaux, alertes,
+        hypotheses: ['Directive 2014/68/UE (Code de l\'environnement, art. R557-9) : PS et TS sont les valeurs maximales admissibles, PS en bar effectifs.',
+          `Un liquide dont la pression de vapeur à TS dépasse 0,5 bar effectif est traité comme un gaz (eau : au-delà de ≈ ${nf(P.T_EAU_GAZ, 0)} °C, pression de vapeur par l'équation d'Antoine).`,
+          'Groupe 1 : fluides inflammables, toxiques, comburants ou explosibles (règlement CLP) ; groupe 2 : tous les autres (eau, vapeur, air, azote, frigorigènes A1…).',
+          ...(eq === 'tuyauterie' ? [principal.regle] : [principal.regle]),
+          'Tuyauteries (art. 4.1.c) : gaz gr. 1 DN > 25 ; gaz gr. 2 DN > 32 et PS·DN > 1000 ; liquides gr. 1 DN > 25 et PS·DN > 2000 ; liquides gr. 2 PS > 10 bar, DN > 200 et PS·DN > 5000.',
+          'Pression d\'épreuve (annexe I § 7.4) : PT = max(1,25 · PS · f20 / fTS ; 1,43 · PS).',
+          'Classement indicatif à confirmer sur les tableaux de l\'annexe II et, pour les ensembles, selon l\'article 4.2 (catégorie la plus élevée des équipements).'],
+        synthese: `${n.libelle.split(' (')[0]} · PS ${nf(PS, 1)} bar · TS ${nf(TS, 0)} °C · ${cmax > 0 ? `soumis DESP, catégorie ${P.ROMAIN[cmax]}` : cmax === 0 ? 'non soumis (article 4.3)' : 'hors champ DESP'}`,
+      };
+    },
+  };
+
   /* ---------- Exécution ---------- */
   // Valeurs par défaut d'un type (copie profonde des listes)
   function defauts(type) {
