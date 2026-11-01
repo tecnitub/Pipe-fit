@@ -315,14 +315,14 @@ async function noteDepuisEtude(m) {
   if (!a || !/\.pdf$/i.test(nom) || !(m.data instanceof ArrayBuffer)) throw new Error('Affaire, nom de fichier PDF et contenu requis');
   const f = await envoyerFichierDocument(new File([m.data], nom, { type: 'application/pdf' }));
   const categorie = ['Note de calcul', 'Matériel à valider'].includes(m.categorie) ? m.categorie : 'Note de calcul';
-  const docs = a.documents || (a.documents = []), ex = m.etudeId && docs.find(d => d.categorie === categorie && d.etudeId === m.etudeId), date = isoDate(new Date());
+  const docs = a.documents || (a.documents = []), ex = m.etudeId && docs.find(d => d.categorie === categorie && d.etudeId === m.etudeId && (d.noteId || '') === String(m.noteId || '')), date = isoDate(new Date());
   let doc;
   if (ex) {
     ex.anciens = [...(ex.anciens || []), { fichierId: ex.fichierId, indice: ex.indice || 'A', date: ex.date }];
     Object.assign(ex, { fichierId: f.id, nom, mime: f.mime, taille: f.taille, indice: String(m.indice || ex.indice || 'A'), date, par: Store.me.nom, note: String(m.note || ex.note || '') });
     doc = ex;
   } else {
-    doc = { id: uid(), fichierId: f.id, nom, categorie, indice: String(m.indice || 'A'), note: String(m.note || ''), mime: f.mime, taille: f.taille, date, par: Store.me.nom, visible: false, etudeId: String(m.etudeId || '') };
+    doc = { id: uid(), fichierId: f.id, nom, categorie, indice: String(m.indice || 'A'), note: String(m.note || ''), mime: f.mime, taille: f.taille, date, par: Store.me.nom, visible: false, etudeId: String(m.etudeId || ''), ...(m.noteId ? { noteId: String(m.noteId) } : {}) };
     docs.push(doc);
   }
   Store.upsert('affaires', a);

@@ -6,6 +6,8 @@ const dateFr = iso => (iso ? new Date(`${String(iso).slice(0, 10)}T12:00:00`).to
 const aujourdhui = () => new Date().toISOString().slice(0, 10);
 const uidE = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('');
 const copie = o => JSON.parse(JSON.stringify(o));
+// Copie d'une étude (duplication, modèle) : les calculs repartent sans émission
+const sansEmissions = et => ({ ...et, notes: (et.notes || []).map(n => ({ ...n, emissions: [], indice: '' })) });
 async function api(method, url, body) {
   const r = await fetch(url, { method, headers: body !== undefined ? { 'Content-Type': 'application/json' } : {}, body: body !== undefined ? JSON.stringify(body) : undefined });
   const j = await r.json().catch(() => ({}));
@@ -356,7 +358,7 @@ Vues.etude = {
         ${et.notes.length > 1 ? '<button class="secondaire" id="comparer" disabled title="Cocher au moins deux calculs">⚖️ Comparer la sélection</button>' : ''}</div>
       ${et.notes.length ? `<div class="notes">${et.notes.map((n, i) => { const t = Notes.TYPES[n.type], r = Liens.calculer(et, n), err = r.alertes.filter(x => x.niveau === 'erreur').length, att = r.alertes.filter(x => x.niveau === 'attention').length;
         return `<div class="carte note"><a href="#/etude/${et.id}/${n.id}" class="note-lien"><span class="ico">${t.icone}</span><span><span class="muted petit">N${i + 1} · ${esc(t.famille)}${n.lien || n.entrees.cta || (n.type === 'cta' && Liens.reseauxDeCta(et.notes, n).length) || Liens.circuitDeAnnexe(et.notes, n) || (n.entrees.circuits || []).some(c => c.bilan || c.annexe) ? ' · 🔗 lié' : ''}</span><strong>${esc(n.titre)}</strong>
-          <span class="petit">${esc(r.synthese)}</span></span></a><span class="note-etat">${err ? `<span class="badge erreur">${err} erreur(s)</span>` : att ? `<span class="badge">${att} point(s) d'attention</span>` : '<span class="badge ok">Conforme</span>'}</span>
+          <span class="petit">${esc(r.synthese)}</span></span></a><span class="note-etat">${err ? `<span class="badge erreur">${err} erreur(s)</span>` : att ? `<span class="badge">${att} point(s) d'attention</span>` : '<span class="badge ok">Conforme</span>'}${etatEmission(et, n)}</span>
           <span class="note-actions"><label class="case petit" title="Sélectionner pour comparer"><input type="checkbox" data-comparer="${n.id}"> comparer</label><button class="icone" data-monter="${i}" title="Monter" ${i ? '' : 'disabled'}>▲</button><button class="icone" data-descendre="${i}" title="Descendre" ${i < et.notes.length - 1 ? '' : 'disabled'}>▼</button></span></div>`; }).join('')}</div>`
         : '<p class="muted">Aucun calcul : ajoutez-en un ou versez un calcul rapide dans cette étude.</p>'}`;
   },
@@ -389,7 +391,7 @@ Vues.etude = {
       b.querySelector('#ok').onclick = () => { et.historique.push({ indice: et.indice, date: et.date, motif: et.motifIndice || '' }); et.indice = suivantIndice(et.indice); et.motifIndice = b.querySelector('#motif').value; et.date = aujourdhui(); enregistrer(et); Modal.close(); App.render(); };
     };
     root.querySelector('#dupliquer').onclick = () => {
-      const c = { ...copie(et), id: uidE(), objet: `${et.objet} (copie)`, indice: 'A', historique: [], date: aujourdhui(), auteur: S.me.nom || S.me.login };
+      const c = { ...sansEmissions(copie(et)), id: uidE(), objet: `${et.objet} (copie)`, indice: 'A', historique: [], date: aujourdhui(), auteur: S.me.nom || S.me.login };
       ['_v', '_at', '_by'].forEach(k => delete c[k]);
       // Nouveaux identifiants, liens entre notes reportés sur les copies
       const ids = new Map(c.notes.map(n => [n.id, uidE()]));
@@ -404,7 +406,7 @@ Vues.etude = {
       b.querySelector('#ok').onclick = () => {
         const nom = b.querySelector('#nom-modele').value.trim();
         if (!nom) return;
-        const m = { ...copie(et), id: uidE(), modele: true, objet: nom, affaireId: '', client: '', indice: 'A', historique: [], motifIndice: '', verificateur: '' };
+        const m = { ...sansEmissions(copie(et)), id: uidE(), modele: true, objet: nom, affaireId: '', client: '', indice: 'A', historique: [], motifIndice: '', verificateur: '' };
         ['_v', '_at', '_by'].forEach(k => delete m[k]);
         enregistrer(m); Modal.close(); toast('Modèle enregistré : disponible dans « Nouvelle étude »');
       };
@@ -534,7 +536,8 @@ Vues.note = {
       ${lien ? `<div class="bandeau-lien">🔗 ${esc(lien)} <button class="secondaire petit" id="detacher">Détacher</button></div>` : ''}
       ${calculateurHtml(n.type, n.entrees, ctx)}
       <div class="carte"><label class="champ-libre">Commentaire (repris dans la note de calcul)<textarea data-n="commentaire" rows="3">${esc(n.commentaire)}</textarea></label>
-      <div class="actions-ligne"><button id="pdf-note">📄 PDF de ce calcul</button><button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="dupliquer">Dupliquer</button>
+      ${emissionsHtml(et, n)}
+      <div class="actions-ligne"><button id="emettre-note">🖋️ Émettre l'indice ${esc(Revisions.prochainIndice(n))} (PDF avec cartouche)</button><button class="secondaire" id="pdf-note">📄 Brouillon PDF</button><button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="dupliquer">Dupliquer</button>
         ${n.type === 'cta' ? `<button class="secondaire" id="cta-reseau">🌬️ ${Liens.reseauxDeCta(et.notes, n).some(x => x.type === 'aero') ? 'Ouvrir le schéma aéraulique relié' : 'Créer le schéma aéraulique relié (gaines, bouches)'}</button>` : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
         ${n.type === 'elec' ? '<button id="elec-reprendre">⚡ Reprendre les équipements de l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button>' : ''}
@@ -600,11 +603,34 @@ Vues.note = {
     };
     root.querySelectorAll('[data-n]').forEach(el => el.oninput = () => { n[el.dataset.n] = el.value; enregistrer(et); });
     root.querySelector('#pdf-note').onclick = () => genererNoteCalcul(et, [n.id]);
+    root.querySelector('#emettre-note').onclick = () => emettreNote(et, n);
     root.querySelector('#defauts').onclick = async () => { if (await confirmer('Remplacer toutes les données saisies par les valeurs par défaut ?', 'Remplacer')) { n.entrees = Notes.defauts(n.type); enregistrer(et); App.render(); } };
-    root.querySelector('#dupliquer').onclick = () => { const c = { ...copie(n), id: uidE(), titre: `${n.titre} (copie)` }; et.notes.splice(et.notes.indexOf(n) + 1, 0, c); enregistrer(et); location.hash = `#/etude/${et.id}/${c.id}`; };
+    root.querySelector('#dupliquer').onclick = () => { const c = { ...copie(n), id: uidE(), titre: `${n.titre} (copie)`, emissions: [], indice: '' }; et.notes.splice(et.notes.indexOf(n) + 1, 0, c); enregistrer(et); location.hash = `#/etude/${et.id}/${c.id}`; };
     root.querySelector('#supprimer').onclick = async () => { if (await confirmer(`Supprimer le calcul « ${n.titre} » ?`, 'Supprimer')) { et.notes.splice(et.notes.indexOf(n), 1); enregistrer(et); location.hash = `#/etude/${et.id}`; } };
   },
 };
+
+// Émissions d'un calcul : indice émis, modifié depuis (badge de la liste des calculs) ; historique avec les modifications
+function etatEmission(et, n) {
+  const d = Revisions.derniere(n);
+  if (!d) return ' <span class="badge" title="Jamais émis">non émis</span>';
+  contexteEtude = et;
+  const modif = Revisions.modifieDepuis(n, Liens.resoudre(et, n).entrees);
+  return ` <span class="badge pf" title="${esc(`Indice ${d.indice} du ${dateFr(d.date)} — ${d.statut}`)}">Ind. ${esc(d.indice)}</span>${modif ? ` <span class="badge attention" title="Données modifiées depuis l'émission de l'indice ${esc(d.indice)} : à réémettre">modifié depuis ${esc(d.indice)}</span>` : ''}`;
+}
+function emissionsHtml(et, n) {
+  const l = n.emissions || [], d = l[l.length - 1];
+  if (!d) return '<div class="carte petit">🖋️ <strong>Émissions</strong> : ce calcul n\'a pas encore été émis. « Émettre » produit le PDF avec cartouche (indice A) et fige ses données pour le suivi des modifications.</div>';
+  const e = Liens.resoudre(et, n).entrees, r = Liens.calculer(et, n), schema = schemaNote(n.type, e);
+  const m = Revisions.comparer(schema, d.entrees, e), mr = Revisions.comparerResultats(d.resultats, r.resume), modifCom = (n.commentaire || '') !== (d.commentaire || '');
+  return `<div class="carte"><h3>🖋️ Émissions et suivi des modifications</h3>
+    ${m.length || mr.length || modifCom ? `<div class="alerte attention petit">Modifié depuis l'indice ${esc(d.indice)} : ${m.length} donnée(s)${mr.length ? `, ${mr.length} résultat(s)` : ''}${modifCom ? ', commentaire' : ''} — à réémettre (indice ${esc(Revisions.prochainIndice(n))}).
+      <details><summary>Voir les modifications</summary><table class="liste compact"><thead><tr><th>Donnée</th><th>Indice ${esc(d.indice)}</th><th>Maintenant</th></tr></thead>${[...m.map(x => [x.libelle, x.avant, x.apres]), ...mr.map(x => [`Résultat : ${x.libelle}`, x.avant, x.apres])].map(([a, b, c]) => `<tr><td>${esc(a)}</td><td>${esc(b)}</td><td><strong>${esc(c)}</strong></td></tr>`).join('')}</table></details></div>`
+      : `<p class="petit ok-texte">✓ Conforme à l'indice ${esc(d.indice)} émis le ${dateFr(d.date)}.</p>`}
+    <div class="defile-x"><table class="liste compact"><thead><tr><th>Ind.</th><th>Date</th><th>Statut</th><th>Objet de la modification</th><th>Rédigé</th><th>Vérifié</th><th>Approuvé</th><th>Modifications</th></tr></thead>
+      ${l.slice().reverse().map(x => `<tr><td><strong>${esc(x.indice)}</strong></td><td>${dateFr(x.date)}</td><td>${esc(x.statut)}</td><td>${esc(x.objet)}</td><td>${esc(x.redige)}</td><td>${esc(x.verifie)}</td><td>${esc(x.approuve)}</td>
+        <td class="petit">${x.depuis ? ((x.modifs || []).length + (x.modifsResultats || []).length ? `<details><summary>${(x.modifs || []).length} donnée(s), ${(x.modifsResultats || []).length} résultat(s) depuis ${esc(x.depuis)}</summary><ul>${[...(x.modifs || []).map(y => `${y.libelle} : ${y.avant} → ${y.apres}`), ...(x.modifsResultats || []).map(y => `Résultat ${y.libelle} : ${y.avant} → ${y.apres}`)].map(t => `<li>${esc(t)}</li>`).join('')}</ul></details>` : 'aucune donnée') : 'première émission'}${x.deposeLe ? `<br>📤 déposé le ${dateFr(x.deposeLe)}` : ''}</td></tr>`).join('')}</table></div></div>`;
+}
 
 // Calcul rapide : saisie conservée dans l'onglet, versement dans une étude
 const cleRapide = type => `etudes-rapide-${type}`;

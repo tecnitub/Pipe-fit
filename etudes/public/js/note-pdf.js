@@ -13,20 +13,24 @@ const pourPdf = html => html.replace(/Σζ|Δ[PLT]|[ΔζλρμσαβηπεΣ√�
 const sansAccents = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_').replace(/^_|_$/g, '');
 
 // Données d'entrée lisibles (libellés des listes, unités, tableaux de lignes)
-function entreesHtml(type, e) {
+// marques : données modifiées depuis l'indice précédent (clés), repérées « » » et en gras dans le PDF émis
+function entreesHtml(type, e, marques = null) {
+  const marque = k => marques && [...marques].some(m => m === k || m.startsWith(`${k}.`));
   return rubriques(type, e).map(r => {
     const simples = r.champs.filter(c => c.t !== 'lignes').map(c => {
       const v = c.t === 's' ? ((optionsDe(c, e).find(([k]) => String(k) === String(e[c.k] ?? '')) || [])[1] || '—') : e[c.k] === '' || e[c.k] === undefined ? '—' : `${valeurChamp(e[c.k])}${c.u ? ` ${c.u}` : ''}`;
-      return [c.l, esc(v)];
+      return marque(c.k) ? [`» ${c.l}`, `<strong>${esc(v)}</strong>`] : [c.l, esc(v)];
     });
-    const listes = r.champs.filter(c => c.t === 'lignes').map(c => `<p class="sous">${esc(c.l)}</p>${tableauPdf(colonnesDe(c, e).map(x => x.l), (e[c.k] || []).map(l => colonnesDe(c, e).map(col => (col.t === 's' ? ((optionsDe(col, e).find(([k]) => String(k) === String(l[col.k] ?? '')) || [])[1] || '') : valeurChamp(l[col.k])))))}`).join('');
+    const listes = r.champs.filter(c => c.t === 'lignes').map(c => `<p class="sous">${marque(c.k) ? '» ' : ''}${esc(c.l)}${marque(c.k) ? ' (modifiée, voir le suivi des modifications)' : ''}</p>${tableauPdf(colonnesDe(c, e).map(x => x.l), (e[c.k] || []).map(l => colonnesDe(c, e).map(col => (col.t === 's' ? ((optionsDe(col, e).find(([k]) => String(k) === String(l[col.k] ?? '')) || [])[1] || '') : valeurChamp(l[col.k])))))}`).join('');
     return `${r.titre ? `<h4>${esc(r.titre)}</h4>` : ''}${simples.length ? lignes2(simples) : ''}${listes}`;
   }).join('');
 }
-function htmlNotePdf(et, n, i) {
+function htmlNotePdf(et, n, i, em = null) {
   const t = Notes.TYPES[n.type], e = Liens.resoudre(et, n).entrees, r = Liens.calculer(et, n), lien = Liens.description(et, n);
+  const marques = em && em.depuis ? new Set(em.modifs.map(m => m.cle)) : null;
   return `<div class="doe-doc ndc"><h2>N${i + 1} — ${esc(n.titre)}</h2><p class="petit">${esc(t.description)}</p>${lien ? `<p class="petit"><em>${esc(lien)}</em></p>` : ''}
-    <h3>1. Données d'entrée</h3>${entreesHtml(n.type, e)}
+    ${em ? suiviModifsHtml(n, em) : ''}
+    <h3>1. Données d'entrée</h3>${entreesHtml(n.type, e, marques)}
     <h3>2. Hypothèses et méthode</h3><ul>${r.hypotheses.map(h => `<li>${esc(h)}</li>`).join('')}</ul>
     <h3>3. Résultats</h3>${tousSchemas(r).length ? `<p class="sous">${esc(tousSchemas(r).map(s => s.titre).join(', '))} : en fin de chapitre, chacun sur une page au format paysage.</p>` : ''}
     ${lignes2(r.resume.map(([k, v]) => [k, esc(v)]))}
@@ -126,11 +130,11 @@ async function svgEnPng(svg, largeur = 3200) {
   const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(img, 0, 0, cv.width, cv.height);
   return octetsDe(cv.toDataURL('image/png'));
 }
-async function pageSchema(doc, svg, titre) {
+async function pageSchema(doc, svg, titre, bas = 34) {
   const { StandardFonts, rgb } = PDFLib, png = await doc.embedPng(await svgEnPng(svg)), W = 841.89, H = 595.28, pg = doc.addPage([W, H]);
   const gras = await doc.embedFont(StandardFonts.HelveticaBold), t = winAnsi(pourPdf(titre)).slice(0, 110);
   pg.drawText(t, { x: 31, y: H - 76, size: 10, font: gras, color: rgb(0.12, 0.22, 0.39) });
-  const bx = 31, by = 34, bw = W - 62, bh = H - 92 - by, k = Math.min(bw / png.width, bh / png.height);
+  const bx = 31, by = bas, bw = W - 62, bh = H - 92 - by, k = Math.min(bw / png.width, bh / png.height);
   pg.drawImage(png, { x: bx + (bw - png.width * k) / 2, y: by + (bh - png.height * k) / 2, width: png.width * k, height: png.height * k });
 }
 // Octets d'une image : décodage direct d'une adresse data: (la page publiée peut interdire fetch sur data:)
@@ -161,3 +165,125 @@ function telecharger(nom, data, type) {
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 const download = telecharger; // utilisé par le moteur PDF de Pipe-Fit
+
+/* ---------- Émissions d'un calcul : cartouche, indices, suivi des modifications ---------- */
+// Données d'un calcul décrites pour la comparaison d'un indice à l'autre (libellés, unités, listes de choix)
+function schemaNote(type, e) {
+  return rubriques(type, e).flatMap(r => r.champs.map(c => (c.t === 'lignes'
+    ? { k: c.k, l: c.l, t: 'lignes', rubrique: r.titre, colonnes: colonnesDe(c, e).map(col => ({ k: col.k, l: col.l, u: col.u, options: col.t === 's' ? optionsDe(col, e) : null })) }
+    : { k: c.k, l: c.l, u: c.u, rubrique: r.titre, options: c.t === 's' ? optionsDe(c, e) : null })));
+}
+// Tableau des indices et modifications de l'indice émis (en tête du calcul)
+function suiviModifsHtml(n, em) {
+  const toutes = [...(n.emissions || []), em];
+  return `<h3>Suivi des modifications</h3>
+    <table class="tn"><thead><tr><th>Ind.</th><th>Date</th><th>Objet de la modification</th><th>Statut</th><th>Rédigé</th><th>Vérifié</th><th>Approuvé</th></tr></thead>
+      ${toutes.slice().reverse().map(x => `<tr${x === em ? ' class="retenu"' : ''}><td><strong>${esc(x.indice)}</strong></td><td>${dateFr(x.date)}</td><td>${esc(x.objet)}</td><td>${esc(x.statut)}</td><td>${esc(x.redige)}</td><td>${esc(x.verifie)}</td><td>${esc(x.approuve)}</td></tr>`).join('')}</table>
+    ${em.depuis ? (em.modifs.length || em.modifsResultats.length ? `<p class="sous">Modifications de l'indice ${esc(em.indice)} par rapport à l'indice ${esc(em.depuis)} (données repérées « » » dans le chapitre 1)</p>
+      ${em.modifs.length ? tableauPdf(['Rubrique', 'Donnée', `Indice ${em.depuis}`, `Indice ${em.indice}`], em.modifs.map(m => [m.rubrique || '—', m.libelle, m.avant, m.apres])) : ''}
+      ${em.modifsResultats.length ? `<p class="sous">Résultats modifiés</p>${tableauPdf(['Résultat', `Indice ${em.depuis}`, `Indice ${em.indice}`], em.modifsResultats.map(m => [m.libelle, m.avant, m.apres]))}` : ''}`
+      : `<p class="petit">Aucune donnée modifiée depuis l'indice ${esc(em.depuis)} : ${esc(em.objet)}.</p>`) : ''}`;
+}
+// Texte réduit à une largeur (police standard du PDF)
+const ajuster = (t, font, size, max) => { let x = winAnsi(pourPdf(String(t || '').replace(/→/g, '->').replace(/[≤]/g, '<=').replace(/[≥]/g, '>='))); while (x.length > 1 && font.widthOfTextAtSize(x, size) > max) x = `${x.slice(0, -2)}…`.replace(/……$/, '…'); return winAnsi(x); };
+// Cartouche en pied de chaque page : entreprise, affaire et objet, titre du document, n°, indice, date, statut, page ;
+// au-dessus, les derniers indices (objet, statut, visas)
+function dessinerCartouche(pg, { police, gras, logo, bleu, gris, infos, emissions, page, total }) {
+  const { rgb } = PDFLib, { width: W } = pg.getSize(), x0 = 31, x1 = W - 31, l = x1 - x0, noir = rgb(0.15, 0.15, 0.15), trait = { thickness: 0.6, color: rgb(0.45, 0.45, 0.45) };
+  const y0 = 14, hB = 64, hRow = 10, revs = emissions.slice(-3).reverse(), hR = (revs.length + 1) * hRow, yR = y0 + hB;
+  const cadre = (x, y, w, h) => pg.drawRectangle({ x, y, width: w, height: h, borderColor: trait.color, borderWidth: trait.thickness });
+  const txt = (t, x, y, size, f = police, max = 200, c = noir) => pg.drawText(ajuster(t, f, size, max), { x, y, size, font: f, color: c });
+  // Indices
+  const cols = [[22, 'Ind.'], [44, 'Date'], [l - 22 - 44 - 70 - 3 * 58, 'Objet de la modification'], [70, 'Statut'], [58, 'Rédigé'], [58, 'Vérifié'], [58, 'Approuvé']];
+  cadre(x0, yR, l, hR);
+  let x = x0;
+  cols.forEach(([w, h], k) => { if (k) pg.drawLine({ start: { x, y: yR }, end: { x, y: yR + hR }, ...trait }); txt(h, x + 2, yR + hR - 7.5, 6, gras, w - 4, bleu); x += w; });
+  pg.drawLine({ start: { x: x0, y: yR + hR - hRow }, end: { x: x1, y: yR + hR - hRow }, ...trait });
+  revs.forEach((r, i) => {
+    const y = yR + hR - hRow * (i + 2) + 2.5; let xx = x0;
+    [r.indice, dateFr(r.date), r.objet, r.statut, r.redige, r.verifie, r.approuve].forEach((v, k) => { txt(v, xx + 2, y, 6, k === 0 ? gras : police, cols[k][0] - 4); xx += cols[k][0]; });
+  });
+  // Bloc principal
+  const wG = 150, wD = 165, wM = l - wG - wD;
+  cadre(x0, y0, wG, hB); cadre(x0 + wG, y0, wM, hB); cadre(x1 - wD, y0, wD, hB);
+  const lh = 20, lw = Math.min(wG - 10, logo.width * lh / logo.height);
+  pg.drawImage(logo, { x: x0 + 5, y: y0 + hB - lh - 5, width: lw, height: lh });
+  txt(infos.societe, x0 + 5, y0 + 22, 6.5, gras, wG - 10); txt(infos.adresse, x0 + 5, y0 + 14, 5.5, police, wG - 10, gris); txt(infos.contact, x0 + 5, y0 + 6, 5.5, police, wG - 10, gris);
+  const xm = x0 + wG + 5;
+  txt(`Affaire : ${infos.affaire}`, xm, y0 + hB - 11, 6.5, police, wM - 10); txt(`Client : ${infos.client}`, xm, y0 + hB - 20, 6.5, police, wM - 10);
+  txt(infos.objet, xm, y0 + hB - 31, 7, gras, wM - 10);
+  txt(infos.titre, xm, y0 + 12, 9.5, gras, wM - 10, bleu); txt(infos.typeDoc, xm, y0 + 4, 6, police, wM - 10, gris);
+  const xd = x1 - wD, lig = (k, v, i, f = police, sz = 7) => { txt(k, xd + 4, y0 + hB - 10 - i * 11, 6, police, 52, gris); txt(v, xd + 56, y0 + hB - 10 - i * 11, sz, f, wD - 60); };
+  lig('N° document', infos.numero, 0, gras); lig('Indice', infos.indice, 1, gras, 8.5); lig('Date', infos.date, 2); lig('Statut', infos.statut, 3, gras);
+  lig('Page', `${page} / ${total}`, 4);
+}
+
+// Émission d'un calcul : PDF du calcul avec cartouche sur chaque page, suivi des modifications ; l'émission est enregistrée
+function emettreNote(et, n) {
+  contexteEtude = S.etudes.includes(et) ? et : null;
+  const e = Liens.resoudre(et, n).entrees, r = Liens.calculer(et, n), schema = schemaNote(n.type, e), d = Revisions.derniere(n);
+  const apercu = Revisions.emission(n, {}, e, r.resume, schema), rang = et.notes.indexOf(n) + 1, a = affaireDe(et.affaireId);
+  const box = Modal.open(`<h2>🖋️ Émettre « ${esc(n.titre)} »</h2>
+    <p class="petit muted">Le PDF du calcul porte un cartouche sur chaque page (entreprise, affaire, titre, n° ${esc(Revisions.numero(a && a.code, rang))}, indice, date, statut, visas) et le suivi des modifications depuis l'indice précédent. L'émission fige les données : les suivantes seront comparées à celle-ci.</p>
+    <div class="grille-champs"><label>Indice<input id="em-ind" value="${esc(apercu.indice)}" style="width:80px"></label><label>Date<input id="em-date" type="date" value="${aujourdhui()}"></label>
+      <label>Statut<select id="em-statut">${Revisions.STATUTS.map(x => `<option ${x === (d ? d.statut : 'Pour avis') ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label></div>
+    <label class="champ-libre">Objet de la modification<textarea id="em-objet" rows="2">${esc(apercu.objet)}</textarea></label>
+    <div class="grille-champs"><label>Rédigé par<input id="em-red" value="${esc(S.me.nom || S.me.login)}"></label><label>Vérifié par<input id="em-ver" value="${esc(et.verificateur || '')}"></label><label>Approuvé par<input id="em-app" value=""></label></div>
+    ${d ? (apercu.modifs.length || apercu.modifsResultats.length ? `<details open><summary class="petit"><strong>${apercu.modifs.length} donnée(s) et ${apercu.modifsResultats.length} résultat(s) modifiés depuis l'indice ${esc(d.indice)}</strong></summary>
+      <div class="defile-x"><table class="liste compact"><thead><tr><th>Donnée</th><th>Indice ${esc(d.indice)}</th><th>Maintenant</th></tr></thead>${[...apercu.modifs.map(m => [m.libelle, m.avant, m.apres]), ...apercu.modifsResultats.map(m => [`Résultat : ${m.libelle}`, m.avant, m.apres])].map(([x, y, z]) => `<tr><td>${esc(x)}</td><td>${esc(y)}</td><td><strong>${esc(z)}</strong></td></tr>`).join('')}</table></div></details>`
+      : `<p class="petit avert">Aucune donnée modifiée depuis l'indice ${esc(d.indice)} : précisez l'objet de la nouvelle émission (changement de statut, visa…).</p>`) : ''}
+    <div class="actions"><button class="secondaire" id="em-x">Annuler</button><button id="em-ok">Émettre l'indice et générer le PDF</button></div>`);
+  box.querySelector('#em-x').onclick = Modal.close;
+  box.querySelector('#em-ok').onclick = async () => {
+    const v = id => box.querySelector(id).value.trim();
+    if (!v('#em-ind')) return toast('Indiquez l\'indice.');
+    if ((n.emissions || []).some(x => x.indice === v('#em-ind'))) return toast(`L'indice ${v('#em-ind')} est déjà émis : choisissez le suivant.`, 5000);
+    const em = Revisions.emission(n, { indice: v('#em-ind'), date: v('#em-date') || aujourdhui(), objet: v('#em-objet'), statut: v('#em-statut'), redige: v('#em-red'), verifie: v('#em-ver'), approuve: v('#em-app') }, e, r.resume, schema);
+    await genererEmission(et, n, em, box);
+  };
+}
+async function genererEmission(et, n, em, box) {
+  const etape = t => { box.innerHTML = `<h2>Émission ${esc(em.indice)}</h2><p>${esc(t)}</p>`; };
+  try {
+    const { PDFDocument, StandardFonts, rgb } = PDFLib;
+    etape('Mise en page…');
+    const couleur = /^#[0-9a-f]{6}$/i.test(S.config.couleur) ? S.config.couleur : '#1F3864', bleu = rgb(...[1, 3, 5].map(i => parseInt(couleur.slice(i, i + 2), 16) / 255)), gris = rgb(0.4, 0.4, 0.4);
+    const rang = et.notes.indexOf(n), a = affaireDe(et.affaireId), soc = S.config.societe;
+    const doc = await PDFDocument.load(await PDF.depuisHTML(pourPdf(htmlNotePdf(et, n, rang, em)), n.titre, null, { numeros: false, margeHaut: 80, margeBas: 120 + 14 * (Math.min(3, (n.emissions || []).length + 1) + 1) }));
+    // Schémas en paysage, au-dessus du cartouche
+    const hCartouche = 14 + 64 + (Math.min(3, (n.emissions || []).length + 1) + 1) * 10 + 8;
+    for (const sc of tousSchemas(Liens.calculer(et, n))) await pageSchema(doc, sc.svg, `${sc.titre} — N${rang + 1} — ${n.titre}`, hCartouche);
+    const police = await doc.embedFont(StandardFonts.Helvetica), gras = await doc.embedFont(StandardFonts.HelveticaBold), logo = await doc.embedPng(await octetsDe('logo-tecnitub.png'));
+    const numero = Revisions.numero(a && a.code, rang + 1), total = doc.getPageCount(), emissions = [...(n.emissions || []), em];
+    const infos = { societe: soc.raison, adresse: soc.adresse, contact: [soc.tel && `Tél. ${soc.tel}`, soc.email].filter(Boolean).join(' · '), affaire: libelleAffaire(a) || '—', client: et.client || clientDe(a) || '—', objet: et.objet,
+      titre: `N${rang + 1} — ${n.titre}`, typeDoc: `Note de calcul — ${Notes.TYPES[n.type].titre}`, numero, indice: em.indice, date: dateFr(em.date), statut: em.statut };
+    doc.getPages().forEach((pg, i) => {
+      const { width: W, height: H } = pg.getSize(), lh = 22, lw = logo.width * lh / logo.height, t = winAnsi(`${numero} — indice ${em.indice}`);
+      pg.drawImage(logo, { x: 31, y: H - 18 - lh, width: lw, height: lh });
+      pg.drawText(t, { x: W - 31 - gras.widthOfTextAtSize(t, 9), y: H - 32, size: 9, font: gras, color: bleu });
+      pg.drawLine({ start: { x: 31, y: H - 46 }, end: { x: W - 31, y: H - 46 }, thickness: 1.2, color: bleu });
+      dessinerCartouche(pg, { police, gras, logo, bleu, gris, infos, emissions, page: i + 1, total });
+    });
+    doc.setTitle(winAnsi(`${numero} — ${n.titre} — indice ${em.indice}`)); doc.setAuthor(winAnsi(em.redige || soc.raison)); doc.setCreator('Pipe-Fit Études');
+    const bytes = await doc.save(), nom = `${sansAccents(numero)}_${sansAccents(n.titre).slice(0, 40)}_Ind${sansAccents(em.indice)}.pdf`;
+    // Émission enregistrée avec le calcul
+    n.emissions = emissions; n.indice = em.indice; enregistrer(et);
+    window.DERNIERE_NOTE = { nom, bytes, pages: total };
+    const pf = S.etudes.includes(et) && et.affaireId && affaireDe(et.affaireId);
+    box.innerHTML = `<h2>Indice ${esc(em.indice)} émis</h2><p><strong>${esc(nom)}</strong> · ${total} page(s) · ${esc(em.statut)}</p>
+      ${em.depuis ? `<p class="petit">${em.modifs.length} donnée(s) et ${em.modifsResultats.length} résultat(s) modifiés depuis l'indice ${esc(em.depuis)}, listés dans le suivi des modifications.</p>` : ''}
+      <div class="actions"><button class="secondaire" id="gen-fermer">Fermer</button>${pf ? '<button class="secondaire" id="gen-pf">📤 Déposer dans le chantier Pipe-Fit</button>' : ''}<button id="gen-dl">Télécharger le PDF</button></div>`;
+    box.querySelector('#gen-fermer').onclick = () => { Modal.close(); App.render(); };
+    box.querySelector('#gen-dl').onclick = () => enregistrerFichier(box, nom, bytes, 'application/pdf');
+    const bpf = box.querySelector('#gen-pf');
+    if (bpf) bpf.onclick = async () => {
+      bpf.disabled = true; bpf.textContent = 'Envoi…';
+      try { const rr = await api('POST', '/api/pf/document', { affaireId: et.affaireId, etudeId: et.id, noteId: n.id, nom, indice: em.indice, note: `${numero} — ${n.titre} — ${em.statut}${em.objet ? ` — ${em.objet}` : ''}`.slice(0, 300), base64: base64(bytes) }); bpf.textContent = `✓ Déposé (indice ${rr.indice})`; em.deposeLe = aujourdhui(); enregistrer(et); }
+      catch (er) { bpf.disabled = false; bpf.textContent = '📤 Déposer dans le chantier Pipe-Fit'; toast(er.message, 6000); }
+    };
+  } catch (e2) {
+    console.error(e2);
+    box.innerHTML = `<h2>Émission impossible</h2><p class="erreur">${esc(e2.message)}</p><div class="actions"><button id="gen-fermer">Fermer</button></div>`;
+    box.querySelector('#gen-fermer').onclick = Modal.close;
+  }
+}

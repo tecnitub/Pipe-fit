@@ -158,8 +158,8 @@
     // Démo : dépôt de note et devis simulés (pas de Pipe-Fit derrière), mémorisés sur l'appareil
     if (p[0] === 'pf' && p[1] === 'document' && method === 'POST') {
       const b = body(); db.envoisPF = db.envoisPF || [];
-      const ex = db.envoisPF.find(x => x.genre === 'document' && x.etudeId === b.etudeId);
-      if (ex) { ex.indice = b.indice; ex.date = new Date().toISOString(); } else db.envoisPF.push({ genre: 'document', etudeId: b.etudeId, affaireId: b.affaireId, nom: b.nom, indice: b.indice, date: new Date().toISOString() });
+      const ex = db.envoisPF.find(x => x.genre === 'document' && x.etudeId === b.etudeId && (x.noteId || '') === String(b.noteId || ''));
+      if (ex) { ex.indice = b.indice; ex.date = new Date().toISOString(); } else db.envoisPF.push({ genre: 'document', etudeId: b.etudeId, noteId: b.noteId || '', affaireId: b.affaireId, nom: b.nom, indice: b.indice, date: new Date().toISOString() });
       save(); return rep(200, { ok: true, docId: 'demo', indice: b.indice || 'A' });
     }
     if (p[0] === 'pf' && p[1] === 'devis' && method === 'POST') {

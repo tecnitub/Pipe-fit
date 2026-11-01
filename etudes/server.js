@@ -190,14 +190,15 @@ async function api(req, res, url) {
     const f = await envoyerFichierPF((chemin, opts) => pipefit(s, chemin, opts), nom, 'application/pdf', buf);
     let docId = '', indice = '';
     await modifierPF(s, 'affaires', b.affaireId, a => {
-      const docs = a.documents || [], ex = b.etudeId && docs.find(d => d.categorie === categorie && d.etudeId === b.etudeId), date = new Date().toISOString().slice(0, 10);
+      // Un document par étude et par calcul émis (noteId) : un nouvel indice remplace le précédent (gardé dans « anciens »)
+      const docs = a.documents || [], ex = b.etudeId && docs.find(d => d.categorie === categorie && d.etudeId === b.etudeId && (d.noteId || '') === String(b.noteId || '')), date = new Date().toISOString().slice(0, 10);
       if (ex) {
         ex.anciens = [...(ex.anciens || []), { fichierId: ex.fichierId, indice: ex.indice || 'A', date: ex.date }];
         Object.assign(ex, { fichierId: f.id, nom, mime: f.mime, taille: f.taille, indice: String(b.indice || ex.indice || 'A'), date, par: s.nom || s.login, note: String(b.note || ex.note || '') });
         docId = ex.id; indice = ex.indice;
       } else {
         docId = idPF(); indice = String(b.indice || 'A');
-        docs.push({ id: docId, fichierId: f.id, nom, categorie, indice, note: String(b.note || ''), mime: f.mime, taille: f.taille, date, par: s.nom || s.login, visible: false, etudeId: String(b.etudeId || '') });
+        docs.push({ id: docId, fichierId: f.id, nom, categorie, indice, note: String(b.note || ''), mime: f.mime, taille: f.taille, date, par: s.nom || s.login, visible: false, etudeId: String(b.etudeId || ''), ...(b.noteId ? { noteId: String(b.noteId) } : {}) });
       }
       return { ...a, documents: docs };
     });

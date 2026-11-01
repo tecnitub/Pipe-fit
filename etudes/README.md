@@ -128,6 +128,17 @@ les équipements de l'étude ». Un CCTP scanné (sans texte) ne se lit pas : de
   Pipe-Fit les PDF des liens « fiche » du catalogue matériel ; « 📚 Compléter depuis les fiches de Pipe-Fit » ajoute au catalogue
   les modèles des fiches avec leurs caractéristiques lues (débit maxi, puissances, puissance électrique, Lw, volume, pression).
   Le contrôle face au CCTP utilise aussi ces caractéristiques quand le modèle choisi n'est pas au catalogue.
+- **Émission de chaque calcul (PDF avec cartouche, indices, suivi des modifications)** : sur chaque calcul, « 🖋️ Émettre
+  l'indice A / B / C… » produit le PDF du calcul avec un **cartouche** en pied de chaque page (entreprise, affaire, client,
+  objet de l'étude, titre du calcul, n° de document « CH-2026-001-NDC-N03 », indice, date, statut, page) surmonté des
+  derniers indices (date, objet de la modification, statut, rédigé / vérifié / approuvé), y compris sur les schémas en
+  paysage. L'émission fige les données et les résultats : à l'émission suivante, les **modifications** sont relevées donnée
+  par donnée (valeurs, listes de choix, lignes ajoutées / retirées / modifiées, résultats), proposées comme objet de la
+  modification, listées en tête du PDF (« Suivi des modifications ») et repérées « » » dans les données d'entrée. Statuts :
+  pour avis, pour validation, bon pour exécution, pour information, annule et remplace. L'écran du calcul affiche l'historique
+  des émissions et, dès qu'une donnée change, « modifié depuis l'indice X » (aussi dans la liste des calculs de l'étude).
+  Le PDF émis se dépose dans les documents du chantier Pipe-Fit, un document par calcul (l'indice précédent est gardé).
+  Une copie de calcul, d'étude ou un modèle repart sans émission ; « Brouillon PDF » reste disponible.
 - **Matériel retenu contrôlé face au CCTP** : chaque ligne affiche l'équipement du dossier de consultation qui lui
   correspond (prescription, caractéristiques) ; le modèle choisi est comparé : marque imposée (⛔) ou « ou équivalent »
   (note d'équivalence à joindre), débit, puissance, volume, pression disponible, niveau sonore, puissance électrique.

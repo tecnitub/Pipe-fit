@@ -43,6 +43,8 @@ button.carte.type { background: var(--panneau); color: var(--texte); border: 1px
 .note-lien > span:last-child { display: grid; min-width: 0; }
 .note-actions { display: flex; }
 .badge.erreur { background: var(--err-fond); color: var(--err-texte); }
+.badge.attention { background: var(--att-fond); color: var(--att-texte); }
+.ok-texte { color: var(--ok-texte); }
 .manque { color: var(--err-texte); }
 .avert { color: var(--att-texte); }
 .ligne-auto { color: var(--att-texte); font-size: 12px; }
