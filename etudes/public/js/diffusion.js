@@ -4,8 +4,80 @@
 // réémis ensemble ; comparaison de deux indices d'un calcul (données, résultats, schémas colorés).
 const ROLES_DIFFUSION = ['Maîtrise d\'œuvre', 'Bureau de contrôle', 'Client / maître d\'ouvrage', 'Sous-traitant', 'Entreprise', 'Interne', 'Autre'];
 const codeAffaire = et => (affaireDe(et.affaireId) || {}).code || '';
-const urlFichierEtude = f => `/api/fichiers/${encodeURIComponent(f.id)}`;
+// Fichier d'une pièce : gardé par l'application Études ({ id }) ou document de Pipe-Fit ({ pf })
+const urlFichierEtude = f => (f.pf ? `/api/pf/fichier/${encodeURIComponent(f.pf)}` : `/api/fichiers/${encodeURIComponent(f.id)}`);
 const octetsFichier = async f => new Uint8Array(await (await fetch(urlFichierEtude(f), { credentials: 'same-origin' })).arrayBuffer());
+
+/* ---------- Pièces jointes à l'étude : plans et documents du chantier, fiches techniques, matériel à valider ---------- */
+const typeDocChantier = d => (/plan|isom|sch[ée]ma|dwg|dxf/i.test(`${d.categorie} ${d.nom}`) ? 'plan' : /fiche|technique|notice/i.test(`${d.categorie} ${d.nom}`) ? 'fiche' : 'doc');
+// Indices suivis : plan remplacé dans Pipe-Fit, fiche technique remplacée dans la bibliothèque
+function synchroniserPieces(et) {
+  const a = affaireDe(et.affaireId), docs = (a && (a.tousDocuments || a.documents)) || [];
+  let n = 0;
+  (et.pieces || []).filter(x => !x.retiree && x.source && x.source.pfDocId).forEach(x => {
+    const d = docs.find(y => y.id === x.source.pfDocId);
+    if (d && Revisions.synchroniserPiece(x, { fichier: { pf: d.fichierId, nom: d.nom }, indice: d.indice ? String(d.indice) : '', date: d.date || '' })) n++;
+  });
+  if (n) enregistrer(et);
+  return n;
+}
+async function synchroniserFiches(et) {
+  const l = (et.pieces || []).filter(x => !x.retiree && x.type === 'fiche' && x.source && x.source.reference);
+  if (!l.length) return 0;
+  try {
+    const r = await api('POST', '/api/pf/fiches/trouver', { demandes: l.map(x => ({ cle: x.id, fabricant: x.source.fabricant, reference: x.source.reference })) });
+    let n = 0;
+    r.forEach(y => { const x = l.find(z => z.id === y.cle); if (x && y.fiche && Revisions.synchroniserPiece(x, { fichier: { pf: y.fiche.fichierId, nom: y.fiche.nom }, date: y.fiche.date || '' })) n++; });
+    if (n) enregistrer(et);
+    return n;
+  } catch (e) { return 0; }
+}
+function dialogueDocumentsChantier(et) {
+  const a = affaireDe(et.affaireId);
+  if (!a) return toast('Rattachez l\'étude à une affaire Pipe-Fit pour joindre ses documents.', 6000);
+  const deja = new Set((et.pieces || []).filter(x => !x.retiree).map(x => (x.source || {}).pfDocId));
+  const docs = (a.tousDocuments || a.documents || []).filter(d => !deja.has(d.id) && d.etudeId !== et.id).sort((x, y) => String(x.categorie).localeCompare(String(y.categorie)) || String(x.nom).localeCompare(String(y.nom)));
+  if (!docs.length) return toast('Aucun autre document dans le chantier Pipe-Fit.', 5000);
+  const box = Modal.open(`<h2>📎 Plans et documents du chantier ${esc(a.code || '')}</h2>
+    <p class="petit muted">Les documents cochés sont numérotés et suivis comme les calculs : LDE, diffusion, indice reçu par chaque destinataire. Un nouvel indice déposé dans Pipe-Fit devient automatiquement un nouvel indice ici.</p>
+    <div class="defile">${docs.map((d, i) => `<label class="case petit"><input type="checkbox" data-dc="${i}"> <span class="badge">${esc(d.categorie || 'Document')}</span> ${esc(d.nom)}${d.indice ? ` — indice ${esc(d.indice)}` : ''} <span class="muted">${dateFr(d.date || '')}</span></label>`).join('')}</div>
+    <div class="actions"><button class="secondaire" id="dc-x">Annuler</button><button id="dc-ok">Joindre à l'étude</button></div>`);
+  box.querySelector('#dc-x').onclick = Modal.close;
+  box.querySelector('#dc-ok').onclick = () => {
+    const choix = docs.filter((d, i) => box.querySelector(`[data-dc="${i}"]`).checked);
+    choix.forEach(d => Revisions.nouvellePiece(et, a.code, { type: typeDocChantier(d), titre: String(d.nom).replace(/\.[a-z0-9]+$/i, ''), source: { pfDocId: d.id, categorie: d.categorie || '' }, fichier: { pf: d.fichierId, nom: d.nom }, indice: d.indice ? String(d.indice) : 'A', date: d.date || aujourdhui() }));
+    enregistrer(et); Modal.close(); App.render(); if (choix.length) toast(`${choix.length} document(s) joint(s) à l'étude.`);
+  };
+}
+async function joindreFichesMateriel(et) {
+  const ls = (typeof lignesMateriel === 'function' ? lignesMateriel(et) : []).filter(l => l.reference && !l.orphelin);
+  if (!ls.length) return toast('Aucune référence dans le matériel retenu.', 5000);
+  try {
+    const r = await api('POST', '/api/pf/fiches/trouver', { demandes: ls.map(l => ({ cle: l.cle, fabricant: l.fabricant, reference: l.reference })) });
+    const deja = new Set((et.pieces || []).filter(x => !x.retiree && x.type === 'fiche').map(x => `${x.source.fabricant}|${x.source.reference}`.toLowerCase()));
+    let n = 0;
+    const sans = [];
+    ls.forEach(l => {
+      const f = (r.find(y => y.cle === l.cle) || {}).fiche, k = `${l.fabricant}|${l.reference}`.toLowerCase();
+      if (!f) { sans.push(`${l.fabricant || ''} ${l.reference}`.trim()); return; }
+      if (deja.has(k)) return;
+      deja.add(k);
+      Revisions.nouvellePiece(et, codeAffaire(et), { type: 'fiche', titre: `${l.fabricant || f.fabricant} ${l.reference} — fiche technique`, source: { fabricant: l.fabricant || f.fabricant, reference: l.reference, ficheId: f.id }, fichier: { pf: f.fichierId, nom: f.nom }, indice: 'A', date: f.date || aujourdhui() });
+      n++;
+    });
+    enregistrer(et); App.render();
+    toast(`${n} fiche(s) technique(s) jointe(s)${sans.length ? ` · sans fiche dans la bibliothèque : ${sans.slice(0, 5).join(', ')}${sans.length > 5 ? '…' : ''}` : ''}.`, 7000);
+  } catch (e) { toast(e.message, 6000); }
+}
+// Liste du matériel à valider (PDF généré) : pièce de l'étude, nouvel indice à chaque nouvelle liste
+async function enregistrerListeMateriel(et, nom, bytes) {
+  const f = await garderPdf(nom, bytes);
+  if (!f) return;
+  const fichier = { id: f.id, nom }, x = (et.pieces || []).find(p => !p.retiree && p.type === 'materiel');
+  if (x) Revisions.synchroniserPiece(x, { fichier, date: aujourdhui() });
+  else Revisions.nouvellePiece(et, codeAffaire(et), { type: 'materiel', titre: 'Liste du matériel proposé — à valider', source: { materiel: true }, fichier, indice: 'A', date: aujourdhui() });
+  enregistrer(et);
+}
 
 /* ---------- Calculs à réémettre : modifiés, ou modifiés par répercussion d'un autre calcul ---------- */
 function impactsEtude(et) {
@@ -24,18 +96,20 @@ function impactsEtude(et) {
 /* ---------- Carte de l'étude : documents émis et diffusion ---------- */
 function carteDocuments(et) {
   if (et.modele) return '';
+  synchroniserPieces(et);
   const docs = Revisions.documentsEtude(et, codeAffaire(et)), etat = Revisions.etatDiffusion(et, docs), imp = impactsEtude(et);
-  const emis = docs.filter(x => x.cle !== 'etude'), perimes = etat.reduce((s, d) => s + d.documents.filter(x => x.perime).length, 0);
+  const emis = docs.filter(x => x.type === 'calcul'), autres = docs.filter(x => x.piece).length, perimes = etat.reduce((s, d) => s + d.documents.filter(x => x.perime).length, 0);
   const AV = { VSO: 'ok', VAO: 'attention', REF: 'erreur' };
   return `<div class="carte"><h3>📨 Documents émis et diffusion</h3>
     ${imp.length ? `<div class="alerte attention petit">🔁 ${imp.length} calcul(s) à réémettre : ${imp.map(x => `<strong>${esc(x.n.titre)}</strong> (${x.cause === 'répercussion' ? `par répercussion${x.source ? ` — ${esc(x.source.slice(0, 80))}` : ''}` : `modifié depuis l'indice ${esc(x.d.indice)}`})`).join(' · ')}
       <button class="petit" id="doc-reemettre">Réémettre ensemble</button></div>` : ''}
-    <div class="defile-x"><table class="liste compact"><thead><tr><th>N° document</th><th>Titre</th><th>Ind.</th><th>Date</th><th>Statut</th><th>Visa MOE</th>${(et.diffusion || []).map(d => `<th title="${esc(d.role || '')} ${esc(d.email || '')}">${esc(d.nom || d.societe)}</th>`).join('')}</tr></thead>
-      ${docs.map((doc, k) => `<tr><td class="petit">${esc(doc.numero)}</td><td>${esc(doc.titre)}</td><td><strong>${esc(doc.indice)}</strong></td><td>${dateFr(doc.date)}</td><td class="petit">${esc(doc.statut || '')}</td>
+    <div class="defile-x"><table class="liste compact"><thead><tr><th>N° document</th><th>Type</th><th>Titre</th><th>Ind.</th><th>Date</th><th>Statut</th><th>Visa MOE</th>${(et.diffusion || []).map(d => `<th title="${esc(d.role || '')} ${esc(d.email || '')}">${esc(d.nom || d.societe)}</th>`).join('')}</tr></thead>
+      ${docs.map((doc, k) => `<tr><td class="petit">${esc(doc.numero)}</td><td class="petit">${esc(Revisions.TYPES_DOC[doc.type] || '')}</td><td>${esc(doc.titre)}${doc.piece ? ` <button class="icone" data-piece-retour="${esc(doc.cle)}" title="Saisir le visa reçu">📥</button><button class="icone" data-piece-retirer="${esc(doc.cle)}" title="Retirer de l'étude">✕</button>` : ''}</td><td><strong>${esc(doc.indice)}</strong></td><td>${dateFr(doc.date)}</td><td class="petit">${esc(doc.statut || '')}</td>
         <td>${doc.avis ? `<span class="badge ${AV[doc.avis] || ''}" title="${esc(Revisions.AVIS[doc.avis])} — ${dateFr(doc.avisLe)}">${esc(doc.avis)}</span>` : '<span class="muted petit">—</span>'}</td>
         ${etat.map(d => { const x = d.documents[k]; return `<td class="petit">${x.jamais ? '<span class="muted">—</span>' : `<span class="badge ${x.perime ? 'attention' : 'ok'}" title="Reçu le ${dateFr(x.recu.date)}">${esc(x.recu.indice)}${x.perime ? ' ⚠' : ''}</span>`}</td>`; }).join('')}</tr>`).join('')}</table></div>
-    <p class="petit muted">${emis.length} calcul(s) émis.${perimes ? ` <span class="avert">${perimes} envoi(s) périmé(s) : un destinataire travaille sur un indice dépassé.</span>` : ''} Cellules : indice reçu par chaque destinataire (⚠ : périmé).</p>
-    <div class="actions-ligne"><button class="secondaire petit" id="doc-liste">👥 Liste de diffusion (${(et.diffusion || []).length})</button><button class="petit" id="doc-diffuser" ${emis.length || et.pdfEtude ? '' : 'disabled'}>📨 Diffuser</button>
+    <p class="petit muted">${emis.length} calcul(s) émis${autres ? `, ${autres} autre(s) document(s) (plans, fiches, matériel)` : ''}.${perimes ? ` <span class="avert">${perimes} envoi(s) périmé(s) : un destinataire travaille sur un indice dépassé.</span>` : ''} Cellules : indice reçu par chaque destinataire (⚠ : périmé).</p>
+    <div class="actions-ligne"><button class="secondaire petit" id="doc-pieces">📎 Plans et documents du chantier</button><button class="secondaire petit" id="doc-fiches">📄 Fiches techniques du matériel retenu</button></div>
+    <div class="actions-ligne"><button class="secondaire petit" id="doc-liste">👥 Liste de diffusion (${(et.diffusion || []).length})</button><button class="petit" id="doc-diffuser" ${emis.length || et.pdfEtude || (et.pieces || []).some(x => !x.retiree) ? '' : 'disabled'}>📨 Diffuser</button>
       <button class="secondaire petit" id="doc-lde-xlsx">📋 LDE (Excel)</button><button class="secondaire petit" id="doc-lde-pdf">📋 LDE (PDF)</button>
       ${(et.diffusions || []).length ? `<span class="petit muted">Dernière diffusion le ${dateFr(et.diffusions[et.diffusions.length - 1].date)}</span>` : ''}</div></div>`;
 }
@@ -46,6 +120,12 @@ function bindDocuments(root, et) {
   on('#doc-reemettre', () => dialogueReemettre(et));
   on('#doc-lde-xlsx', () => ldeExcel(et));
   on('#doc-lde-pdf', () => ldePdf(et));
+  on('#doc-pieces', () => dialogueDocumentsChantier(et));
+  on('#doc-fiches', () => joindreFichesMateriel(et));
+  root.querySelectorAll('[data-piece-retirer]').forEach(b => b.onclick = async () => { const x = et.pieces.find(y => y.id === b.dataset.pieceRetirer); if (x && await confirmer(`Retirer « ${x.titre} » des documents de l'étude ? (son historique de diffusion est gardé)`, 'Retirer')) { x.retiree = true; enregistrer(et); App.render(); } });
+  root.querySelectorAll('[data-piece-retour]').forEach(b => b.onclick = () => { const x = et.pieces.find(y => y.id === b.dataset.pieceRetour); if (x) dialogueRetour(et, x, x.indice); });
+  // Fiches techniques remplacées dans la bibliothèque : nouvel indice
+  synchroniserFiches(et).then(n => { if (n) { toast(`${n} fiche(s) technique(s) mise(s) à jour dans la bibliothèque : nouvel indice.`); App.render(); } });
 }
 
 /* ---------- Liste de diffusion ---------- */
@@ -92,6 +172,7 @@ function piecesDiffusables(et) {
   const docs = Revisions.documentsEtude(et, codeAffaire(et));
   return docs.map(doc => {
     if (doc.cle === 'etude') return { ...doc, fichier: et.pdfEtude && et.pdfEtude.indice === et.indice ? et.pdfEtude.fichier : null };
+    if (doc.piece) { const x = et.pieces.find(y => y.id === doc.cle); return { ...doc, fichier: x && x.fichier ? x.fichier : null }; }
     const n = et.notes.find(x => x.id === doc.cle), d = Revisions.derniere(n);
     return { ...doc, fichier: d && d.fichier ? d.fichier : null };
   });
@@ -102,7 +183,7 @@ function htmlBordereau(et, envoi, pieces, dest) {
     <table class="tn"><tbody><tr><th>Affaire</th><td>${esc(libelleAffaire(a)) || '—'}</td><th>Date</th><td>${dateFr(envoi.date)}</td></tr><tr><th>Étude</th><td colspan="3">${esc(et.objet)}</td></tr>
       <tr><th>Émetteur</th><td colspan="3">${esc(S.config.societe.raison)} — ${esc(envoi.par)}</td></tr></tbody></table>
     <h3>Destinataires</h3>${tableauPdf(['Nom', 'Société', 'Rôle', 'E-mail'], dest.map(d => [d.nom || '—', d.societe || '—', d.role || '—', d.email || '—']))}
-    <h3>Documents transmis</h3>${tableauPdf(['N° document', 'Titre', 'Indice', 'Date', 'Statut'], pieces.map(p => [p.numero, p.titre, p.indice, dateFr(p.date), p.statut || '']))}
+    <h3>Documents transmis</h3>${tableauPdf(['N° document', 'Type', 'Titre', 'Indice', 'Date', 'Statut'], pieces.map(p => [p.numero, Revisions.TYPES_DOC[p.type] || '', p.titre, p.indice, dateFr(p.date), p.statut || '']))}
     <p class="petit">Objet : ${esc(envoi.objet || 'pour avis et visa')}.</p>${envoi.message ? `<p class="pre petit">${esc(envoi.message)}</p>` : ''}
     <p class="petit">Merci de nous retourner votre avis sur chaque document (VSO : visa sans observation ; VAO : visa avec observations ; REF : refusé) en rappelant son numéro et son indice.</p>
     <table class="tn visa"><thead><tr><th>Accusé de réception</th><th>Nom</th><th>Date</th><th>Signature</th></tr></thead><tbody><tr><td style="height:60px"></td><td></td><td></td><td></td></tr></tbody></table></div>`;
@@ -143,16 +224,27 @@ function dialogueDiffuser(et, cles = null) {
     try {
       const x = await preparer(), to = x.ds.filter(d => !d.copie && d.email).map(d => d.email), cc = x.ds.filter(d => d.copie && d.email).map(d => d.email);
       if (!to.length) throw new Error('Aucun destinataire principal avec une adresse e-mail.');
-      const pj = [{ name: x.nom, base64: base64(x.bytes) }];
-      for (const p of x.pcs.filter(y => y.fichier)) pj.push({ name: sansAccents(p.fichier.nom.replace(/\.pdf$/i, '')) + '.pdf', base64: base64(await octetsFichier(p.fichier)) });
-      const html = `<p>Bonjour,</p><p>Veuillez trouver ci-joint, ${esc(x.envoi.objet.toLowerCase())}, les documents suivants de l'affaire ${esc(libelleAffaire(affaireDe(et.affaireId)) || et.objet)} :</p><ul>${x.pcs.map(p => `<li>${esc(p.numero)} — ${esc(p.titre)} — indice ${esc(p.indice)}</li>`).join('')}</ul>${x.envoi.message ? `<p>${esc(x.envoi.message).replace(/\n/g, '<br>')}</p>` : ''}<p>Bordereau de transmission ${esc(x.envoi.numero)} joint. Merci de nous retourner votre avis (VSO / VAO / REF) en rappelant le numéro et l'indice de chaque document.</p><p>Cordialement,<br>${esc(x.envoi.par)}<br>${esc(S.config.societe.raison)}</p>`;
+      // PDF joints jusqu'à 2,8 Mo au total (limite de l'envoi) ; plans DWG et documents trop lourds : à transmettre autrement
+      const pj = [{ name: x.nom, base64: base64(x.bytes) }], nonJoints = [];
+      let poids = x.bytes.length;
+      for (const p of x.pcs.filter(y => y.fichier)) {
+        const ext = ((/\.([a-z0-9]+)$/i.exec(p.fichier.nom || '.pdf') || [])[1] || 'pdf').toLowerCase();
+        if (!['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(ext)) { nonJoints.push(`${p.numero} (${(/\.([a-z0-9]+)$/i.exec(p.fichier.nom) || [])[1] || 'fichier'})`); continue; }
+        const o = await octetsFichier(p.fichier);
+        if (poids + o.length > 2.8 * 1024 * 1024) { nonJoints.push(`${p.numero} (trop lourd)`); continue; }
+        poids += o.length;
+        pj.push({ name: `${sansAccents(p.numero)}_ind${sansAccents(p.indice)}.${ext === 'jpeg' ? 'jpg' : ext}`, base64: base64(o) });
+      }
+      x.envoi.nonJoints = nonJoints;
+      const html = `<p>Bonjour,</p><p>Veuillez trouver ci-joint, ${esc(x.envoi.objet.toLowerCase())}, les documents suivants de l'affaire ${esc(libelleAffaire(affaireDe(et.affaireId)) || et.objet)} :</p><ul>${x.pcs.map(p => `<li>${esc(p.numero)} — ${esc(p.titre)} — indice ${esc(p.indice)}</li>`).join('')}</ul>${x.envoi.message ? `<p>${esc(x.envoi.message).replace(/\n/g, '<br>')}</p>` : ''}${nonJoints.length ? `<p>Documents à vous transmettre par un autre moyen (format ou poids) : ${nonJoints.map(esc).join(', ')}.</p>` : ''}<p>Bordereau de transmission ${esc(x.envoi.numero)} joint. Merci de nous retourner votre avis (VSO / VAO / REF) en rappelant le numéro et l'indice de chaque document.</p><p>Cordialement,<br>${esc(x.envoi.par)}<br>${esc(S.config.societe.raison)}</p>`;
       await api('POST', '/api/pf/mail', { to, cc, subject: `${x.envoi.numero} — ${et.objet} — ${x.pcs.length} document(s)`, html, attachments: pj });
-      await conclure(x, 'e-mail'); toast(`Envoyé à ${to.length} destinataire(s)${cc.length ? ` (+${cc.length} en copie)` : ''} : bordereau ${x.envoi.numero}.`, 6000); Modal.close(); App.render();
+      await conclure(x, 'e-mail'); toast(`Envoyé à ${to.length} destinataire(s)${cc.length ? ` (+${cc.length} en copie)` : ''} : bordereau ${x.envoi.numero}${nonJoints.length ? ` ; non joints : ${nonJoints.join(', ')}` : ''}.`, 8000); Modal.close(); App.render();
     } catch (e) { bt.disabled = false; bt.textContent = '✉️ Envoyer par e-mail (bordereau + PDF)'; toast(e.message, 7000); }
   };
 }
 
 /* ---------- Retours du maître d'œuvre ---------- */
+// n : calcul émis, ou pièce jointe à l'étude (plan, fiche technique, liste du matériel)
 function dialogueRetour(et, n, indice) {
   const dest = (et.diffusion || []).filter(d => d.role !== 'Interne');
   const box = Modal.open(`<h2>📥 Retour sur l'indice ${esc(indice)} — ${esc(n.titre)}</h2>
@@ -169,7 +261,13 @@ function dialogueRetour(et, n, indice) {
       let fichier = null;
       const f = box.querySelector('#rt-pdf').files[0];
       if (f) { const u = new Uint8Array(await f.arrayBuffer()), r = await api('POST', '/api/fichiers', { nom: f.name, base64: base64(u) }); fichier = { id: r.id, nom: f.name }; }
-      const r = Revisions.ajouterRetour(n, indice, { date: box.querySelector('#rt-date').value, de: box.querySelector('#rt-de').value.trim(), avis: box.querySelector('#rt-avis').value, observations: box.querySelector('#rt-obs').value, fichier }, uidE);
+      const champs = { date: box.querySelector('#rt-date').value, de: box.querySelector('#rt-de').value.trim(), avis: box.querySelector('#rt-avis').value, observations: box.querySelector('#rt-obs').value, fichier };
+      if (n.emissions === undefined && n.numero) {
+        // Pièce jointe : visa gardé sur la pièce (indice visé)
+        n.retours = [...(n.retours || []), { id: uidE(), indice, ...champs, observations: String(champs.observations || '').split(/\n+/).map(t => t.trim()).filter(Boolean).map(texte => ({ id: uidE(), texte, leveeIndice: '' })) }];
+        enregistrer(et); Modal.close(); App.render(); toast(`${champs.avis} enregistré pour ${n.numero} indice ${indice}.`); return;
+      }
+      const r = Revisions.ajouterRetour(n, indice, champs, uidE);
       enregistrer(et); Modal.close(); App.render();
       toast(`${r.avis} enregistré${r.observations.length ? ` : ${r.observations.length} observation(s) à lever à l'indice ${Revisions.prochainIndice(n)}` : ''}.`, 6000);
     } catch (e) { toast(e.message, 6000); }
@@ -225,11 +323,12 @@ function dialogueReemettre(et) {
 /* ---------- Liste des documents émis (LDE) ---------- */
 function lignesLde(et) {
   const docs = Revisions.documentsEtude(et, codeAffaire(et)), dest = et.diffusion || [], etat = Revisions.etatDiffusion(et, docs);
-  return { docs, dest, etat, entetes: ['N° document', 'Titre', 'Indice', 'Date', 'Statut', 'Rédigé', 'Vérifié', 'Approuvé', 'Visa MOE', ...dest.map(d => d.nom || d.societe)],
-    lignes: docs.map((d, k) => [d.numero, d.titre, d.indice, dateFr(d.date), d.statut || '', d.redige || '', d.verifie || '', d.approuve || '', d.avis ? `${d.avis} ${dateFr(d.avisLe)}` : '', ...etat.map(x => { const c = x.documents[k]; return c.recu ? `${c.recu.indice}${c.perime ? ' (périmé)' : ''}` : ''; })]) };
+  return { docs, dest, etat, entetes: ['N° document', 'Type', 'Titre', 'Indice', 'Date', 'Statut', 'Rédigé', 'Vérifié', 'Approuvé', 'Visa MOE', ...dest.map(d => d.nom || d.societe)],
+    lignes: docs.map((d, k) => [d.numero, Revisions.TYPES_DOC[d.type] || '', d.titre, d.indice, dateFr(d.date), d.statut || '', d.redige || '', d.verifie || '', d.approuve || '', d.avis ? `${d.avis} ${dateFr(d.avisLe)}` : '', ...etat.map(x => { const c = x.documents[k]; return c.recu ? `${c.recu.indice}${c.perime ? ' (périmé)' : ''}` : ''; })]) };
 }
 function ldeExcel(et) {
   const l = lignesLde(et), H = v => ({ v, s: 'head' });
+  synchroniserPieces(et);
   const octets = XLSX.build([{ name: 'LDE', freeze: 3, cols: l.entetes.map((h, i) => (i === 1 ? 50 : 14)), rows: [[{ v: `Liste des documents émis — ${et.objet}`, s: 'title' }], [{ v: `${libelleAffaire(affaireDe(et.affaireId)) || ''} · ${dateFr(aujourdhui())}`, s: 'muted' }], l.entetes.map(H), ...l.lignes] }]);
   Promise.resolve(telecharger(`LDE_${sansAccents(codeAffaire(et) || et.objet).slice(0, 30)}.xlsx`, octets, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')).catch(e => toast(e.message, 6000));
 }
@@ -238,8 +337,8 @@ async function ldePdf(et) {
   try {
     const l = lignesLde(et), numero = `${codeAffaire(et) || 'ETU'}-LDE`;
     const html = `<div class="doe-doc ndc"><h2>LISTE DES DOCUMENTS ÉMIS</h2><p class="petit">${esc(et.objet)} — état au ${dateFr(aujourdhui())}</p>
-      ${tableauPdf(l.entetes.slice(0, 9), l.lignes.map(x => x.slice(0, 9)))}
-      ${l.dest.length ? `<h3>Diffusion : indice reçu par destinataire</h3>${tableauPdf(['N° document', 'Ind. en vigueur', ...l.dest.map(d => d.nom || d.societe)], l.lignes.map(x => [x[0], x[2], ...x.slice(9)]))}` : ''}
+      ${tableauPdf(l.entetes.slice(0, 10), l.lignes.map(x => x.slice(0, 10)))}
+      ${l.dest.length ? `<h3>Diffusion : indice reçu par destinataire</h3>${tableauPdf(['N° document', 'Ind. en vigueur', ...l.dest.map(d => d.nom || d.societe)], l.lignes.map(x => [x[0], x[3], ...x.slice(10)]))}` : ''}
       ${(et.diffusions || []).length ? `<h3>Bordereaux de transmission</h3>${tableauPdf(['N°', 'Date', 'Mode', 'Documents', 'Destinataires'], et.diffusions.map(e => [e.numero, dateFr(e.date), e.mode || '', e.documents.map(d => `${d.numero} ind. ${d.indice}`).join(', '), e.destinataires.map(id => ((l.dest.find(d => d.id === id) || {}).nom || '?')).join(', ')]))}` : ''}</div>`;
     const bytes = await pdfCartouche(et, html, 'Liste des documents émis', numero, 'LDE'), nom = `${sansAccents(numero)}_Liste_des_documents_emis.pdf`;
     const pf = et.affaireId && affaireDe(et.affaireId);

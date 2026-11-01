@@ -58,3 +58,23 @@ test('documents émis, diffusion (indice reçu, périmé), retours du maître d\
   const c = R.comparerSchemas('<svg><text>P1</text><text>CH1</text></svg>', '<svg><text>P2</text><text>CH1</text></svg>');
   assert.deepStrictEqual([c.listeRetires, c.listeAjoutes, /fill="#2e7d32"[^>]*>P2/.test(c.apres)], [['P1'], ['P2'], true]);
 });
+
+test('plans, fiches techniques et liste du matériel joints à l\'étude : numérotés, indicés, suivis, diffusés', () => {
+  const et = { objet: 'Chaufferie', indice: 'A', notes: [], diffusion: [{ id: 'moe', nom: 'MOE' }] };
+  const plan = R.nouvellePiece(et, 'CH-1', { type: 'plan', titre: 'Plan chaufferie', source: { pfDocId: 'd1' }, fichier: { pf: 'f1', nom: 'plan.pdf' }, indice: 'B', date: '2026-10-01' });
+  const fiche = R.nouvellePiece(et, 'CH-1', { type: 'fiche', titre: 'Aldes DFC 160 — fiche technique', fichier: { pf: 'f9' } });
+  const plan2 = R.nouvellePiece(et, 'CH-1', { type: 'plan', titre: 'Coupe', fichier: { pf: 'f2' } });
+  assert.deepStrictEqual([plan.numero, fiche.numero, plan2.numero, plan.indice, fiche.statut], ['CH-1-PLA-001', 'CH-1-FT-001', 'CH-1-PLA-002', 'B', 'Pour information']);
+  // Même fichier : rien ; nouveau fichier avec l'indice C de la source : C ; sans indice : suivant
+  assert.strictEqual(R.synchroniserPiece(plan, { fichier: { pf: 'f1', nom: 'plan.pdf' } }), false);
+  et.diffusions = [{ date: '2026-10-02', destinataires: ['moe'], documents: [{ cle: plan.id, indice: 'B' }] }];
+  assert.ok(R.synchroniserPiece(plan, { fichier: { pf: 'f3', nom: 'plan C.pdf' }, indice: 'C', date: '2026-10-20' }));
+  assert.ok(R.synchroniserPiece(fiche, { fichier: { pf: 'f10' } }));
+  assert.deepStrictEqual([plan.indice, plan.historique.map(h => h.indice), fiche.indice], ['C', ['B'], 'B']);
+  const docs = R.documentsEtude(et, 'CH-1');
+  assert.deepStrictEqual(docs.map(d => [d.type, d.numero, d.indice]), [['note', 'CH-1-NDC', 'A'], ['plan', 'CH-1-PLA-001', 'C'], ['fiche', 'CH-1-FT-001', 'B'], ['plan', 'CH-1-PLA-002', 'A']]);
+  const etat = R.etatDiffusion(et, docs)[0].documents.find(d => d.cle === plan.id);
+  assert.deepStrictEqual([etat.recu.indice, etat.perime], ['B', true], 'le MOE a le plan B, le C est en vigueur');
+  plan2.retiree = true;
+  assert.strictEqual(R.documentsEtude(et, 'CH-1').length, 3);
+});

@@ -73,14 +73,43 @@ const Revisions = (() => {
   const AVIS = { VSO: 'Visa sans observation', VAO: 'Visa avec observations', REF: 'Refusé' };
   // Documents de l'étude : la note de calcul complète (indice de l'étude) et chaque calcul émis (son dernier indice)
   function documentsEtude(et, code) {
-    const out = [{ cle: 'etude', numero: `${String(code || 'ETU').replace(/\s+/g, '')}-NDC`, titre: `Note de calcul — ${et.objet || ''}`, indice: et.indice || 'A', date: et.date || '', statut: et.statut || 'Pour avis' }];
+    const out = [{ cle: 'etude', type: 'note', numero: `${String(code || 'ETU').replace(/\s+/g, '')}-NDC`, titre: `Note de calcul — ${et.objet || ''}`, indice: et.indice || 'A', date: et.date || '', statut: et.statut || 'Pour avis' }];
     (et.notes || []).forEach((n, i) => {
       const d = derniere(n);
       if (!d) return;
       const r = (d.retours || []).slice(-1)[0];
-      out.push({ cle: n.id, numero: numero(code, i + 1), titre: `N${i + 1} — ${n.titre}`, indice: d.indice, date: d.date, statut: d.statut, redige: d.redige, verifie: d.verifie, approuve: d.approuve, avis: r ? r.avis : '', avisLe: r ? r.date : '' });
+      out.push({ cle: n.id, type: 'calcul', numero: numero(code, i + 1), titre: `N${i + 1} — ${n.titre}`, indice: d.indice, date: d.date, statut: d.statut, redige: d.redige, verifie: d.verifie, approuve: d.approuve, avis: r ? r.avis : '', avisLe: r ? r.date : '' });
+    });
+    // Autres documents joints à l'étude : plans et documents du chantier, fiches techniques, liste du matériel à valider
+    (et.pieces || []).filter(x => !x.retiree).forEach(x => {
+      const r = (x.retours || []).slice(-1)[0];
+      out.push({ cle: x.id, type: x.type, numero: x.numero, titre: x.titre, indice: x.indice, date: x.date, statut: x.statut || 'Pour information', piece: true, avis: r ? r.avis : '', avisLe: r ? r.date : '' });
     });
     return out;
+  }
+
+  /* ---------- Pièces jointes à l'étude (documents d'autres applications) ---------- */
+  const TYPES_PIECE = { plan: ['PLA', 'Plan'], fiche: ['FT', 'Fiche technique'], materiel: ['MAT', 'Liste du matériel à valider'], doc: ['DOC', 'Document'] };
+  const TYPES_DOC = { note: 'Note de calcul', calcul: 'Calcul', ...Object.fromEntries(Object.entries(TYPES_PIECE).map(([k, v]) => [k, v[1]])) };
+  // N° de la pièce : « CH-2026-001-PLA-003 », suite par type
+  function numeroPiece(et, code, type) {
+    const pre = `${String(code || 'ETU').replace(/\s+/g, '')}-${(TYPES_PIECE[type] || TYPES_PIECE.doc)[0]}`;
+    const deja = (et.pieces || []).filter(x => String(x.numero).startsWith(pre)).map(x => +String(x.numero).slice(pre.length + 1) || 0);
+    return `${pre}-${String(Math.max(0, ...deja) + 1).padStart(3, '0')}`;
+  }
+  // Pièce suivie : son fichier change (nouvel indice du plan, nouvelle version de la fiche, liste régénérée) → nouvel
+  // indice (celui de la source s'il est donné et différent, sinon l'indice suivant), l'ancien gardé dans l'historique
+  function nouvellePiece(et, code, { type, titre, source, fichier, indice, date, statut }) {
+    const x = { id: `pc${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, type, numero: numeroPiece(et, code, type), titre, source: source || {}, fichier, indice: indice || 'A', date: date || '', statut: statut || (type === 'materiel' ? 'Pour validation' : 'Pour information'), historique: [] };
+    et.pieces = [...(et.pieces || []), x];
+    return x;
+  }
+  function synchroniserPiece(x, { fichier, indice, date, titre }) {
+    if (!fichier || !x.fichier || JSON.stringify(fichier) === JSON.stringify(x.fichier)) return false;
+    x.historique = [...(x.historique || []), { indice: x.indice, date: x.date, fichier: x.fichier }];
+    x.indice = indice && indice !== x.indice && rang(indice) > rang(x.indice) ? indice : suivant(x.indice);
+    x.fichier = fichier; x.date = date || x.date; if (titre) x.titre = titre;
+    return true;
   }
   // Qui a reçu quel indice : pour chaque destinataire de la liste de diffusion et chaque document, le dernier indice envoyé ;
   // « périmé » quand un indice plus récent est en vigueur
@@ -128,6 +157,6 @@ const Revisions = (() => {
     const a = marquerSvg(svgA, tb, '#c62828'), b = marquerSvg(svgB, ta, '#2e7d32');
     return { avant: a.svg, apres: b.svg, retires: a.marques, ajoutes: b.marques, listeRetires: ta.filter(t => !tb.includes(t)), listeAjoutes: tb.filter(t => !ta.includes(t)) };
   }
-  return { STATUTS, AVIS, suivant, derniere, prochainIndice, comparer, comparerResultats, resume, modifieDepuis, numero, emission, figer, rang, documentsEtude, etatDiffusion, observationsOuvertes, ajouterRetour, lever, textesSvg, marquerSvg, comparerSchemas };
+  return { TYPES_PIECE, TYPES_DOC, numeroPiece, nouvellePiece, synchroniserPiece, STATUTS, AVIS, suivant, derniere, prochainIndice, comparer, comparerResultats, resume, modifieDepuis, numero, emission, figer, rang, documentsEtude, etatDiffusion, observationsOuvertes, ajouterRetour, lever, textesSvg, marquerSvg, comparerSchemas };
 })();
 if (typeof module !== 'undefined') module.exports = Revisions;

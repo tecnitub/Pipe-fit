@@ -157,6 +157,8 @@ async function pdfMateriel(et, ls) {
       .then(r => { const z = box.querySelector('#ml-depot'); if (z) z.innerHTML = `✓ Déposée dans les documents du chantier ${esc(libelleAffaire(a))} (catégorie « Matériel à valider », indice ${esc(r.indice || '')}).`; })
       .catch(er => { const z = box.querySelector('#ml-depot'); if (z) z.innerHTML = `<span class="erreur">Dépôt impossible : ${esc(er.message)}</span>`; });
     window.DERNIERE_NOTE = { nom, bytes };
+    // Liste gardée comme document de l'étude (LDE, diffusion avec les calculs et les plans)
+    if (S.etudes.includes(et)) enregistrerListeMateriel(et, nom, bytes).catch(() => {});
     box.querySelector('#f').onclick = () => dialogueMateriel(et);
     box.querySelector('#gen-dl').onclick = () => enregistrerFichier(box, nom, bytes, 'application/pdf');
   } catch (e) { box.innerHTML = `<h2>Génération impossible</h2><p class="erreur">${esc(e.message)}</p><div class="actions"><button id="f">Fermer</button></div>`; box.querySelector('#f').onclick = Modal.close; }

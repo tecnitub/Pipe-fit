@@ -148,6 +148,14 @@ les équipements de l'étude ». Un CCTP scanné (sans texte) ne se lit pas : de
   réception) et envoi par e-mail depuis Pipe-Fit (Microsoft 365) avec les PDF émis joints, ou bordereau seul ; chaque
   envoi est enregistré. **LDE** en Excel ou en PDF à cartouche (documents, visas, indices reçus, bordereaux), à déposer
   dans le chantier (annexe C du DOE).
+- **Autres documents dans la LDE et la diffusion** : « 📎 Plans et documents du chantier » joint à l'étude des documents
+  du chantier Pipe-Fit (plans, isométriques, fiches, relevés…), « 📄 Fiches techniques du matériel retenu » les fiches de la
+  bibliothèque, et chaque **liste du matériel à valider** générée s'ajoute d'elle-même. Chacun reçoit un n°
+  (« CH-2026-001-PLA-003 », « -FT- », « -MAT- », « -DOC- ») et un indice suivi : un nouvel indice déposé dans Pipe-Fit, une
+  fiche remplacée dans la bibliothèque ou une nouvelle liste donnent un nouvel indice (l'ancien gardé), et le destinataire
+  qui a l'ancien est signalé « périmé ». Un seul bordereau couvre tout l'envoi ; les PDF et photos sont joints au mail
+  jusqu'à 2,8 Mo, les plans DWG ou trop lourds sont listés « à transmettre par un autre moyen ». Visa reçu (📥) et retrait
+  (✕) par document ; colonne « Type » dans la LDE et le bordereau.
 - **Retours du maître d'œuvre** : sur chaque indice émis, avis VSO / VAO / REF, date, émetteur, observations (une par
   ligne) et PDF annoté. Les observations ouvertes s'affichent sur le calcul ; à l'émission suivante on coche celles que
   l'indice lève, reprises dans le suivi des modifications du PDF.
