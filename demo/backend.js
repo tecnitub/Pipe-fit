@@ -152,7 +152,7 @@
     const p = path.replace(/^\/api\/?/, '').split('/').filter(Boolean);
     const acc = me();
     if (p[0] === 'setup') return [200, { needed: false, local: true }];
-    if (p[0] === 'me' && !p[1]) return [200, { ...acc, m365: !!(db.m365 || {}).actif, prefs: (db.prefs || {})[acc.id] || {}, adressesEnvoi: db.adressesEnvoi || {}, assistant: accesAssistant(acc) }];
+    if (p[0] === 'me' && !p[1]) return [200, { ...acc, version: 'démonstration', m365: !!(db.m365 || {}).actif, prefs: (db.prefs || {})[acc.id] || {}, adressesEnvoi: db.adressesEnvoi || {}, assistant: accesAssistant(acc) }];
     // Assistant simulé (sans IA) : mêmes droits et mêmes réglages que le vrai
     // Intérimaire déclaré depuis le pointage : fiche et mission à compléter, bureau prévenu
     if (p[0] === 'pointage' && p[1] === 'interimaire' && method === 'POST') {

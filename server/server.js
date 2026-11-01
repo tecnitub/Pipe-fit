@@ -34,6 +34,8 @@ const Fluides = require('../public/js/fluides');
 
 const PORT = +process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
+// Version installée (Paramètres, mises à jour)
+const VERSION_APP = (() => { try { return require('../package.json').version; } catch (e) { return ''; } })();
 const DB_FILE = process.env.DB_FILE || path.join(__dirname, '..', 'data', 'pipefit.db');
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const SESSION_DAYS = 30;
@@ -434,7 +436,7 @@ async function api(req, res, url) {
     db.prepare('DELETE FROM sessions WHERE token = ?').run(acc.token);
     return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(req, '', 0) });
   }
-  if (p[0] === 'me' && !p[1] && method === 'GET') return send(res, 200, { ...publicAccount(acc), m365: m365Pret(), prefs: DB.getConfig(db, `prefs:${acc.id}`) || {},
+  if (p[0] === 'me' && !p[1] && method === 'GET') return send(res, 200, { ...publicAccount(acc), m365: m365Pret(), version: VERSION_APP, prefs: DB.getConfig(db, `prefs:${acc.id}`) || {},
     ...(['admin', 'charge'].includes(acc.role) ? { adressesEnvoi: DB.getConfig(db, 'mail-adresses') || {} } : {}), assistant: ASSISTANT.acces(acc) });
   // Préférences d'affichage propres au compte (colonnes des tableaux : affichées, largeurs), sur tous ses appareils
   if (p[0] === 'me' && p[1] === 'preferences' && method === 'PUT') {

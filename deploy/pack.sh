@@ -22,6 +22,7 @@ PIPE-FIT CRM $VERSION - PACK DE DÉPLOIEMENT
 Ouvrez d'abord le mode d'emploi : docs/guide-installation.html (dans le navigateur).
 
 Windows : PipeFitCRM-Setup-$VERSION.exe, puis deploy\\windows\\configurer-serveur.ps1
+Mise à jour Windows : deploy\\windows\\mettre-a-jour.ps1 (PowerShell administrateur, dans ce pack)
 Linux   : sudo bash deploy/linux/installer.sh --domaine crm.votre-domaine.fr
 Docker  : deploy/docker (cp .env.exemple .env, puis docker compose up -d --build)
 Microsoft 365 : deploy\\microsoft365\\configurer-microsoft365.ps1 -Domaine votre-domaine.fr

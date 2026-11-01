@@ -4,6 +4,7 @@ Unicode true
 !include "MUI2.nsh"
 !include "x64.nsh"
 !include "LogicLib.nsh"
+!include "WordFunc.nsh"
 
 !ifndef VERSION
   !define VERSION "1.0.0"
@@ -29,12 +30,14 @@ VIAddVersionKey /LANG=1036 "LegalCopyright" "Tecnitub"
 
 Var PCNAME
 Var PS
+Var OLDVER
+Var MSGMAJ
 
 !define MUI_ICON "files/pipefit.ico"
 !define MUI_UNICON "files/pipefit.ico"
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TITLE "Installation de ${APPNAME}"
-!define MUI_WELCOMEPAGE_TEXT "Cet assistant installe ${APPNAME} sur ce poste, qui servira de serveur pour toute l'équipe.$\r$\n$\r$\nLe serveur démarrera automatiquement avec Windows. Les autres postes n'ont rien à installer : ils utilisent simplement leur navigateur.$\r$\n$\r$\nCliquez sur Suivant pour continuer."
+!define MUI_WELCOMEPAGE_TEXT "$MSGMAJCet assistant installe ${APPNAME} sur ce poste, qui servira de serveur pour toute l'équipe.$\r$\n$\r$\nLe serveur démarrera automatiquement avec Windows. Les autres postes n'ont rien à installer : ils utilisent simplement leur navigateur.$\r$\n$\r$\nCliquez sur Suivant pour continuer."
 !define MUI_FINISHPAGE_TITLE "${APPNAME} est installé"
 !define MUI_FINISHPAGE_TEXT "Sur ce poste : icône « ${APPNAME} » du bureau.$\r$\n$\r$\nPour vos collègues, dans leur navigateur :$\r$\nhttp://$PCNAME:${PORT}$\r$\n$\r$\nÀ la première ouverture, créez le compte administrateur, puis les comptes de l'équipe dans Paramètres."
 !define MUI_FINISHPAGE_RUN
@@ -64,6 +67,17 @@ Function .onInit
   ${If} $0 != ""
     StrCpy $INSTDIR $0
   ${EndIf}
+  ; Mise à jour : version installée, avertissement si l'on installe une version plus ancienne
+  ReadRegStr $OLDVER HKLM "${UNINSTKEY}" "DisplayVersion"
+  StrCpy $MSGMAJ ""
+  ${If} $OLDVER != ""
+    ${VersionCompare} "$OLDVER" "${VERSION}" $1
+    ${If} $1 == 1
+      MessageBox MB_YESNO|MB_ICONEXCLAMATION "La version $OLDVER, plus récente, est déjà installée.$\r$\nInstaller quand même la version ${VERSION} (retour en arrière) ?" /SD IDYES IDYES +2
+      Abort
+    ${EndIf}
+    StrCpy $MSGMAJ "MISE À JOUR : version $OLDVER installée → version ${VERSION}.$\r$\nLe serveur s'arrête quelques minutes. Les données et les réglages sont conservés ; les bases sont d'abord copiées dans C:\ProgramData\PipeFitCRM\Sauvegardes-avant-mise-a-jour.$\r$\n$\r$\n"
+  ${EndIf}
 FunctionEnd
 
 Function un.onInit
@@ -82,9 +96,17 @@ FunctionEnd
 Section "Installer"
   !insertmacro FindPowerShell
   ; Arrêt du serveur s'il tourne déjà (mise à jour)
+  ; Script de service de CETTE version (celui déjà installé peut être plus ancien, sans la sauvegarde)
+  InitPluginsDir
+  SetOutPath "$PLUGINSDIR"
+  File "files/service.ps1"
   ${If} ${FileExists} "$INSTDIR\service.ps1"
     DetailPrint "Arrêt du serveur en cours d'exécution..."
-    nsExec::ExecToLog '"$PS" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\service.ps1" -Action stop -InstallDir "$INSTDIR"'
+    nsExec::ExecToLog '"$PS" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\service.ps1" -Action stop -InstallDir "$INSTDIR"'
+    Pop $0
+    ; Copie des bases avant de remplacer l'application (retour en arrière possible)
+    DetailPrint "Sauvegarde des données avant la mise à jour..."
+    nsExec::ExecToLog '"$PS" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\service.ps1" -Action backup -InstallDir "$INSTDIR" -Label "$OLDVER"'
     Pop $0
   ${EndIf}
   ${EnableX64FSRedirection}

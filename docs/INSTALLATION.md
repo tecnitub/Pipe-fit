@@ -26,6 +26,7 @@ Le pack `PipeFit-Pack-x.y.z.zip` contient :
 ```
 PipeFitCRM-Setup-x.y.z.exe       installateur Windows (CRM + DOE + Études + Node.js, démarrage automatique)
 deploy/windows/                   configurer-serveur.ps1 : dossiers, partage réseau, HTTPS, compte de service
+                                  mettre-a-jour.ps1 : mise à jour (et retour en arrière) avec un pack plus récent
 deploy/microsoft365/              configurer-microsoft365.ps1 : application Entra ID, boîtes partagées, stratégie d'accès
 deploy/linux/                     installer.sh, services systemd, réglages, exemple Caddy (HTTPS)
 deploy/docker/                    docker-compose.yml (CRM + DOE + Études + Caddy), Caddyfile, .env.exemple
@@ -361,8 +362,50 @@ ouvrir quelques devis et factures.
 
 ## 9. Mises à jour et dépannage
 
-**Mettre à jour** : Windows, relancer un `PipeFitCRM-Setup` plus récent ; Linux, `installer.sh` d'un pack plus
-récent ; Docker, `docker compose up -d --build`. Les données et les réglages sont conservés.
+### Mettre à jour (Windows)
+
+Les données ne sont jamais dans le dossier de l'application : elles restent dans `C:\ProgramData\PipeFitCRM` et une
+mise à jour ne fait que remplacer le programme.
+
+1. Choisir un moment calme (midi, fin de journée) et prévenir l'équipe : Pipe-Fit est indisponible 2 à 5 minutes. Les
+   téléphones gardent leurs pointages et rapports hors ligne et les envoient au retour du serveur.
+2. Par prudence, **Paramètres → Pièces jointes et sauvegardes → 💾 Sauvegarder maintenant**.
+3. Copier le nouveau pack `PipeFit-Pack-x.y.z.zip` sur le serveur et le décompresser à côté de l'ancien
+   (ex. `C:\Installation\PipeFit-1.1.0`) ; **garder l'ancien pack** (il sert au retour en arrière).
+4. Console **PowerShell en administrateur** dans le dossier du nouveau pack :
+
+   ```powershell
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\deploy\windows\mettre-a-jour.ps1
+   ```
+
+   Le script affiche la version installée et celle du pack, demande confirmation, puis lance l'installateur sans
+   fenêtre, qui :
+   - arrête le CRM, le DOE et les Études ;
+   - **copie les bases** (CRM, DOE, Études), le certificat et `config.cmd` dans
+     `C:\ProgramData\PipeFitCRM\Sauvegardes-avant-mise-a-jour\<ancienne version>_<date>` (les 5 dernières sont gardées) ;
+   - remplace l'application et redémarre. Les **réglages sont conservés** : `config.cmd` (dossiers, port, HTTPS), compte de
+     service des tâches planifiées, règles du pare-feu, comptes, Microsoft 365, assistant.
+
+   Il vérifie ensuite que les trois applications répondent (✓ en vert).
+
+   *Sans le script* : double-cliquer sur le nouveau `PipeFitCRM-Setup-x.y.z.exe` fait exactement la même chose (la page
+   d'accueil indique « MISE À JOUR : version installée → nouvelle version »).
+5. Sur les postes : actualiser la page (F5). La version installée s'affiche dans **Paramètres → Mon compte**.
+6. Contrôle rapide : ouvrir un devis, une facture, une étude et un DOE ; un compagnon ouvre l'appli.
+
+**Retour en arrière** (la nouvelle version pose problème) : à faire le jour même, car ce qui a été saisi depuis la
+mise à jour est perdu. Depuis le dossier du nouveau pack :
+
+```powershell
+.\deploy\windows\mettre-a-jour.ps1 -Revenir -Setup 'C:\Installation\PipeFit-1.0.0\PipeFitCRM-Setup-1.0.0.exe'
+```
+
+Le script réinstalle l'ancienne version puis remet les bases copiées juste avant la mise à jour.
+
+**Linux** : relancer `installer.sh` d'un pack plus récent. **Docker** : `docker compose up -d --build` dans le dossier
+du nouveau pack. Les données et les réglages sont conservés.
+
 
 | Symptôme | À vérifier |
 |---|---|

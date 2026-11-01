@@ -38,7 +38,11 @@ CONFIGURATION DU SERVEUR (dossiers réseau, partage, HTTPS, compte de service)
   Mode d'emploi complet : docs\guide-installation.html du pack.
 
 MISE À JOUR
-  Lancez simplement le nouveau PipeFitCRM-Setup.exe : les données sont conservées.
+  Lancez le nouveau PipeFitCRM-Setup.exe (ou deploy\windows\mettre-a-jour.ps1 du
+  nouveau pack) : les données et les réglages sont conservés. Les bases sont
+  d'abord copiées dans C:\ProgramData\PipeFitCRM\Sauvegardes-avant-mise-a-jour.
+  Retour en arrière : mettre-a-jour.ps1 -Revenir -Setup <ancien Setup.exe>.
+  Version installée : Pipe-Fit > Paramètres > Mon compte.
 
 HTTPS (connexion chiffrée)
   Indispensable pour l'appli des compagnons et pour tout accès depuis l'extérieur.

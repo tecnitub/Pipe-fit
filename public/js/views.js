@@ -578,7 +578,7 @@ Views.parametres = () => {
   return `<h1>Paramètres</h1>
   <h2>Mon compte</h2>
   <div class="card">
-    <p class="muted" style="margin-top:0">Connecté en tant que <strong>${esc(Store.me.login)}</strong> (${esc(ROLE_LABELS[Store.me.role])}).</p>
+    <p class="muted" style="margin-top:0">Connecté en tant que <strong>${esc(Store.me.login)}</strong> (${esc(ROLE_LABELS[Store.me.role])}).${Store.me.version ? ` Pipe-Fit version <strong>${esc(Store.me.version)}</strong>.` : ''}</p>
     <div class="grid2">
       <div class="field"><label>Mot de passe actuel</label><input id="pw-cur" type="password" autocomplete="current-password"></div>
       <div class="field"><label>Nouveau mot de passe (10 caractères min.)</label><input id="pw-new" type="password" autocomplete="new-password"></div>
