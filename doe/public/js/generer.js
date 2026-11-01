@@ -38,6 +38,7 @@ function sectionsHtml(doe) {
     const f = familleDe(fid), eqs = doe.equipements.filter(e => e.famille === fid);
     const corps = !eqs.length ? `<p>${AC}</p>` : f.fiche
       ? eqs.map(e => lignes2([['Repère', val(e.repere)], ['Désignation', val(e.designation)], ['Marque / référence', vide(e.marque) && vide(e.reference) ? AC : esc([e.marque, e.reference].filter(Boolean).join(' — '))], ...f.champs.map((c, j) => [c, val((e.champs || [])[j])]), ['N° de série', val(e.serie)], ['Localisation', val(e.localisation)],
+        ...(e.commande ? [['Commande', esc(`${e.commande.numero} du ${dateFr(e.commande.date)} — ${e.commande.fournisseur}${e.commande.livraison ? ` (${e.commande.livraison}${e.commande.dateLivraison ? ` le ${dateFr(e.commande.dateLivraison)}` : ''})` : ''}`)]] : []),
         ...(e.miseEnService || e.pose ? [['Mise en service', esc(e.miseEnService ? `le ${dateFr(e.miseEnService)}${e.pvMes ? ` (PV ${e.pvMes})` : ''}` : `posé le ${dateFr(e.pose)}, mise en service à venir`)]] : [])])).join('<div class="sep"></div>')
       : tableau(['Repère', 'Désignation', 'Marque / référence', 'Caractéristiques', 'Qté', 'Localisation', 'N° de série'], eqs.map(e => [val(e.repere), val(e.designation), vide(e.marque) && vide(e.reference) ? AC : esc([e.marque, e.reference].filter(Boolean).join(' ')),
         f.champs.map((c, j) => ((e.champs || [])[j] ? `${esc(c)} : ${esc(e.champs[j])}` : '')).filter(Boolean).join('<br>') || '—', esc(e.quantite || ''), val(e.localisation), val(e.serie)]));

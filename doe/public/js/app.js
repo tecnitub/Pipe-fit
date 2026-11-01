@@ -297,6 +297,7 @@ SECTIONS.s3 = {
   html: doe => `<h2>3. Fiches techniques des équipements</h2>
     <p class="muted">Cochez les familles d'équipements réellement présentes sur le chantier (seules celles-ci figurent dans le DOE).</p>
     <div class="familles">${TRAME.familles.map(f => `<label class="case"><input type="checkbox" data-famille="${f.id}" ${doe.familles.includes(f.id) ? 'checked' : ''}> <strong>${f.id}</strong> ${esc(f.titre)}</label>`).join('')}</div>
+    ${blocInstalle(doe)}
     <div class="actions-ligne"><button class="secondaire" id="import-pf">Importer le matériel du chantier (Pipe-Fit)</button><button class="secondaire" id="fiches-ajout">+ Joindre des fiches techniques</button></div>
     ${doe.familles.slice().sort().map(fid => { const f = familleDe(fid), eqs = doe.equipements.map((e, i) => ({ e, i })).filter(x => x.e.famille === fid), fiches = doe.fiches.map((x, i) => ({ x, i })).filter(y => y.x.famille === fid);
       return `<div class="famille"><h3>${fid} ${esc(f.titre)}</h3>
@@ -314,9 +315,45 @@ SECTIONS.s3 = {
     root.querySelectorAll('[data-eq-ajout]').forEach(b => b.onclick = () => { doe.equipements.push({ id: uidD(), famille: b.dataset.eqAjout, repere: '', designation: '', marque: '', reference: '', serie: '', quantite: '', localisation: '', champs: [], garantie: '', sav: '' }); enregistrer(doe); App.render(); });
     root.querySelector('#fiches-ajout').onclick = async () => { const fs = await choisirFichiers(true, '.pdf,.jpg,.jpeg,.png'); fs.forEach(f => doe.fiches.push({ id: uidD(), famille: doe.familles.length === 1 ? doe.familles[0] : '', designation: f.nom.replace(/\.[a-z0-9]+$/i, ''), fichier: f })); if (fs.length) { enregistrer(doe); App.render(); } };
     root.querySelector('#import-pf').onclick = () => importerMateriel(doe);
+    bindInstalle(root, doe);
     bindRetirer(root, doe);
   },
 };
+// Rapprochement avec les commandes : la commande fait foi (c'est ce qui a été livré et posé)
+const ETATS_INSTALLE = { conforme: ['ok', 'conforme à la commande'], 'reference-differente': ['erreur', 'référence différente'], 'a-completer': ['', 'référence à reprendre'], 'non-commande': ['', 'pas dans les commandes'] };
+function blocInstalle(doe) {
+  if (!PF.data || !PF.get('affaires', doe.affaireId)) return '';
+  if (reporterCommandes(doe)) setTimeout(() => enregistrer(doe), 0);
+  const r = installeDOE(doe), b = r.bilan, parId = new Map(doe.equipements.map(e => [e.id, e]));
+  if (!r.lignes.length) return '<div class="carte petit">🧾 <strong>Matériel installé</strong> : aucune commande fournisseur pour ce chantier dans Pipe-Fit ; les références du DOE ne peuvent pas être recoupées.</div>';
+  const ligne = x => { const e = parId.get(x.id), l = x.ligne, [cl, lib] = ETATS_INSTALLE[x.etat];
+    return `<tr><td><strong>${esc(e.repere || '—')}</strong> ${esc(String(e.designation || '').split(' — ')[0])}<div class="petit">${esc([e.marque, e.reference].filter(Boolean).join(' ') || 'sans référence')}</div></td>
+      <td>${l ? `${esc(l.designation)}${l.ref ? ` <span class="muted">${esc(l.ref)}</span>` : ''}<div class="muted petit">Commande ${esc(l.numero)} du ${dateFr(l.date)} · ${esc(l.fournisseur)}</div>` : '<span class="muted">—</span>'}</td>
+      <td>${l ? `<span class="badge ${l.livraison === 'livrée' ? 'ok' : l.livraison === 'non livrée' ? 'erreur' : ''}">${esc(l.livraison)}${l.dateLivraison ? ` ${dateFr(l.dateLivraison)}` : ''}</span>` : ''}</td>
+      <td><span class="badge ${cl}">${lib}</span>${x.etat === 'reference-differente' || x.etat === 'a-completer' ? `<div><button class="petit" data-inst-ref="${esc(x.id)}">Prendre la référence commandée</button></div>` : ''}</td></tr>`; };
+  return `<div class="carte"><h3>🧾 Matériel installé : rapprochement avec les commandes du chantier</h3>
+    <p class="muted petit">La commande fournisseur fait foi : c'est ce qui a été livré et posé. Chaque équipement du DOE est recherché dans les lignes des commandes (par sa référence, sinon par sa désignation).</p>
+    <p class="petit">${b.conformes} conforme(s)${b.differentes ? ` · <span class="manque">${b.differentes} référence(s) différente(s) de la commande</span>` : ''}${b.aCompleter ? ` · ${b.aCompleter} référence(s) à reprendre` : ''}${b.nonCommandes ? ` · ${b.nonCommandes} pas dans les commandes` : ''}${b.nonLivres ? ` · <span class="manque">${b.nonLivres} commandé(s) non livré(s)</span>` : ''}${b.nonDecrites ? ` · ${b.nonDecrites} ligne(s) commandée(s) absente(s) du DOE` : ''}</p>
+    ${r.resultats.length ? `<div class="defile-x"><table class="liste"><tr><th>Équipement du DOE</th><th>Ligne de commande</th><th>Livraison</th><th>État</th></tr>${r.resultats.map(ligne).join('')}</table></div>` : ''}
+    ${b.differentes + b.aCompleter > 1 ? '<div class="actions-ligne"><button class="secondaire petit" id="inst-tout">Prendre toutes les références commandées</button></div>' : ''}
+    ${r.nonDecrites.length ? `<h4>Commandé mais absent du DOE</h4><table class="liste"><tr><th>Ligne de commande</th><th>Commande</th><th>Livraison</th><th></th></tr>
+      ${r.nonDecrites.map(l => `<tr><td>${esc(l.designation)}${l.ref ? ` <span class="muted">${esc(l.ref)}</span>` : ''}</td><td class="petit">${esc(l.numero)} · ${esc(l.fournisseur)}</td><td><span class="badge ${l.livraison === 'livrée' ? 'ok' : ''}">${esc(l.livraison)}</span></td>
+        <td><button class="secondaire petit" data-inst-ajout="${esc(l.cle)}">Ajouter au DOE</button></td></tr>`).join('')}</table>` : ''}</div>`;
+}
+function bindInstalle(root, doe) {
+  const r = () => installeDOE(doe);
+  const prendre = x => { const e = doe.equipements.find(y => y.id === x.id); if (!e || !x.ligne) return; e.reference = Installe.referenceCommandee(x.ligne, e.marque); e.designationCommandee = x.ligne.designation; e.referenceEtude = false; e.commande = Installe.commandeDe(x.ligne); };
+  root.querySelectorAll('[data-inst-ref]').forEach(btn => btn.onclick = () => { const x = r().resultats.find(y => y.id === btn.dataset.instRef); prendre(x); enregistrer(doe); App.render(); toast('Référence de la commande reprise : c\'est ce qui est installé'); });
+  const tout = root.querySelector('#inst-tout');
+  if (tout) tout.onclick = () => { const l = r().resultats.filter(x => ['reference-differente', 'a-completer'].includes(x.etat)); l.forEach(prendre); enregistrer(doe); App.render(); toast(`${l.length} référence(s) reprise(s) des commandes`); };
+  root.querySelectorAll('[data-inst-ajout]').forEach(btn => btn.onclick = () => {
+    const l = r().nonDecrites.find(x => x.cle === btn.dataset.instAjout); if (!l) return;
+    const fam = familleProposee({ famillePF: '', designation: l.designation }) || '3.7';
+    doe.equipements.push({ id: uidD(), famille: fam, repere: '', designation: l.designation, marque: '', reference: l.ref || '', serie: '', quantite: l.qte ? String(l.qte) : '', localisation: '', champs: [], garantie: '', sav: '', commande: Installe.commandeDe(l), origines: [`Pipe-Fit : commande ${l.numero}`] });
+    if (!doe.familles.includes(fam)) doe.familles.push(fam);
+    enregistrer(doe); App.render(); toast('Équipement ajouté au DOE depuis la commande');
+  });
+}
 // Import du matériel prévu / commandé du chantier vers la section 3
 function importerMateriel(doe) {
   const liste = fournituresPF(doe.affaireId), deja = new Set(doe.equipements.map(e => e.cle).filter(Boolean));

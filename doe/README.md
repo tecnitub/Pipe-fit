@@ -12,6 +12,13 @@ selon le plan de classement TECNITUB, puis générer le dossier complet en un se
   - date de début (premier pointage), de fin et de réception (PV signé), fin de GPA (réception + 1 an) ;
   - documents du chantier : plans → section 2 / annexe A, fiches techniques → annexe B, notices → 7.2 ;
   - matériel du devis accepté et des commandes → équipements de la section 3 (au choix, avec la famille proposée) ;
+  - **matériel installé** (section 3) : chaque équipement du DOE est rapproché des lignes des commandes fournisseurs du
+    chantier (par sa référence, sinon par sa désignation et ses dimensions). La commande fait foi, c'est ce qui a été livré
+    et posé : équipement conforme, référence différente de la commande (« Prendre la référence commandée », une par une ou
+    toutes), commandé mais pas encore livré, absent des commandes ; les lignes commandées absentes du DOE (hors tubes,
+    raccords et consommables) s'ajoutent d'un clic. La commande (numéro, date, fournisseur, livraison) figure dans la
+    description de l'équipement du DOE. Marque, référence, pose, mise en service, photos de la plaque et n° de série
+    viennent aussi du matériel retenu des études et des PV signés ; une saisie manuelle n'est jamais remplacée ;
   - PV de réception et réserves → annexe R.
   - notes de calcul déposées par l'application Études (catégorie « Note de calcul ») → annexe C, fichier mis à jour à chaque nouvel indice.
   - PV signés dans Pipe-Fit pour le chantier, mis en page comme dans Pipe-Fit : PV de mise en service, fiches

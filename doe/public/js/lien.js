@@ -91,6 +91,24 @@ const familleProposee = x => (/tube|tuyau|raccord|coude|bride|t[ée]\b|r[ée]duc
     : /cta|centrale/i.test(x.designation) ? '3.4' : /vmc|extracteur/i.test(x.designation) ? '3.5' : /pac|pompe . chaleur|tfp|groupe froid/i.test(x.designation) ? '3.1' : /radiateur|ventilo|plancher chauffant|cassette/i.test(x.designation) ? '3.2'
               : /split|d[ée]tente directe/i.test(x.designation) ? '3.3' : /d[ée]senfum/i.test(x.designation) ? '3.6' : /lavabo|wc\b|douche|ballon|chauffe-eau|evier|évier/i.test(x.designation) ? '3.9' : '');
 
+// Matériel installé : équipements du DOE rapprochés des commandes fournisseurs du chantier (ce qui a été livré et posé)
+const equipementsDecrits = doe => doe.equipements.filter(e => doe.familles.includes(e.famille) || e.refCctp);
+function installeDOE(doe) {
+  const lignes = Installe.lignesCommandes(PF.all('commandes'), doe.affaireId, id => entrepriseDe(id).nom || '', id => PF.get('articles', id));
+  return { lignes, ...Installe.rapprocher(equipementsDecrits(doe), lignes) };
+}
+// Commande retrouvée enregistrée sur l'équipement (reprise dans le document) ; renvoie le nombre de changements
+function reporterCommandes(doe) {
+  if (!PF.data) return 0;
+  const r = installeDOE(doe);
+  let n = 0;
+  r.resultats.forEach(x => {
+    const e = doe.equipements.find(y => y.id === x.id), c = x.ligne ? Installe.commandeDe(x.ligne) : null;
+    if (e && JSON.stringify(e.commande || null) !== JSON.stringify(c)) { if (c) e.commande = c; else delete e.commande; n++; }
+  });
+  return n;
+}
+
 // PV de réception et réserves du chantier (annexe R)
 function receptionPF(affaireId) {
   return { pv: PF.all('receptions').filter(p => p.affaireId === affaireId).sort((x, y) => (x.date || '').localeCompare(y.date || '')), reserves: PF.all('reserves').filter(r => r.affaireId === affaireId).sort((x, y) => (x.numero || 0) - (y.numero || 0)) };
