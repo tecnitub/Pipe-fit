@@ -433,12 +433,22 @@ function materielRetenuHtml(ms, mobile) {
       ${(m.photos || []).length ? `<br>${m.photos.map(p => `<a class="small" href="${fileUrl(p.fichierId)}" target="_blank" rel="noopener">📷 plaque ${dateFr(p.le)}</a>`).join(' ')}` : ''}
       ${mobile && m.valide ? `<span class="mat-actions">${m.poseLe && !m.mesLe ? `<a class="btn small" href="#/mes/new?${new URLSearchParams({ chantier: m.affaireId || '', type: MaterielRetenu.typeMes(m.cle), equipement: m.designation, marque: m.fabricant, modele: m.reference, materiel: `${m.etudeId}|${m.cle}` })}">📋 PV de mise en service</a>` : ''}${m.poseLe ? `<button type="button" class="small secondary" data-mat="${i}" data-act="${m.mesLe ? 'annulerMes' : 'mes'}">${m.mesLe ? 'Annuler la mise en service' : '✅ Mis en service (sans PV)'}</button>${m.mesLe ? '' : `<button type="button" class="small secondary" data-mat="${i}" data-act="annulerPose">Annuler la pose</button>`}` : `<button type="button" class="small" data-mat="${i}" data-act="pose">🔧 Posé</button>`}
         <label class="btn small secondary">📷 Plaque<input type="file" accept="image/*" capture="environment" data-photo="${i}" hidden></label></span>` : ''}</span>
+    ${m.commande ? `<br><span class="small">🧾 Commandé : ${esc(m.commande.numero || 'brouillon')}${m.commande.fournisseur ? ` · ${esc(m.commande.fournisseur)}` : ''}${m.livraison ? ` · ${esc(m.livraison)}` : ''}</span>` : ''}
+      ${m.substitution ? `<br><span class="small neg">⚠️ ${m.commande.refRecue ? 'Livré' : 'Commandé'} : « ${esc(m.commande.refRecue || m.commande.designation)} » au lieu de « ${esc([m.fabricant, m.reference].filter(Boolean).join(' '))} »${m.substitutionDemandee ? ' — substitution en cours de validation' : ''}</span>
+        ${!mobile && !m.substitutionDemandee ? `<button type="button" class="small secondary" data-subst="${i}">Faire valider la substitution</button>` : ''}` : ''}
+      ${m.serie ? `<br><span class="small muted">N° de série ${esc(m.serie)}${m.serieLue ? ' (lu sur la plaque)' : ''}</span>` : ''}</span>
     <span><span class="badge ${BADGE_MAT[m.statut] || ''}">${m.valide ? '✓ ' : ''}${esc(m.statut === 'Soumis au client' || m.statut === 'À soumettre' ? 'en attente de validation' : m.statut)}</span>
       ${!mobile && MaterielRetenu.aRelancer(m, auj) ? '<br><span class="badge b-bad">à relancer</span>' : ''}${etatPose(m) ? `<br>${etatPose(m)}` : ''}${m.enAttente ? '<br><span class="badge b-warn">⏳ à envoyer</span>' : ''}</span>`;
+  const av = Installe.avancement(ms), aCommander = ms.filter(m => m.valide && !m.commande).length, pc = n => Math.round(n / Math.max(1, av.total) * 100);
   return `<h${mobile ? 2 : 3}>🏷️ Matériel retenu <span class="muted small">${nv}/${ms.length} validé(s) par le client${poses ? ` · ${poses} posé(s)` : ''}</span></h${mobile ? 2 : 3}>
+    <div class="mat-avancement" title="Avancement du matériel du chantier">${[['Validé', av.valides], ['Commandé', av.commandes], ['Livré', av.livres], ['Posé', av.poses], ['En service', av.enService]].map(([l, n]) => `<span><strong>${n}/${av.total}</strong> ${l.toLowerCase()}<i style="width:${pc(n)}%"></i></span>`).join('')}${av.substitutions ? `<span class="neg"><strong>${av.substitutions}</strong> substitution(s)</span>` : ''}</div>
     ${mobile && nv < ms.length ? '<p class="small muted">Ce qui est « en attente de validation » ne se commande ni ne se pose sans l\'accord du chargé d\'affaires.</p>' : ''}
     ${mobile ? '' : `<div class="toolbar" style="margin:4px 0 8px">${nonValides ? `<button class="small" id="mat-envoyer">✉️ ${relance.length ? `Relancer le client (${relance.length} sans réponse depuis 15 jours)` : `Envoyer au client pour validation (${nonValides})`}</button>` : ''}
+      ${aCommander && Store.can('write', 'commandes') ? `<button class="small" id="mat-commander">🧾 Commander le matériel validé (${aCommander})</button>` : ''}
       ${nv && Store.can('write', 'consultations') ? `<button class="small secondary" id="mat-consulter">🛒 Consulter les fournisseurs sur le matériel validé (${nv})</button>` : ''}</div>`}
+    ${mobile ? '' : (() => { const g = MaterielRetenu.garanties(ms, auj, num((Store.data.settings || {}).garantieMois) || 24), bientot = g.filter(x => x.etat === 'se termine bientôt'), finies = g.filter(x => x.etat === 'terminée');
+      return g.length ? `<p class="small">🛡️ Garanties constructeur (${num((Store.data.settings || {}).garantieMois) || 24} mois après la mise en service) : ${g.length - finies.length} en cours${bientot.length ? ` · <span class="warn-text">${bientot.length} se termine(nt) sous 60 jours : ${bientot.map(x => `${esc(x.designation)} le ${dateFr(x.fin)}`).join(', ')}</span>` : ''}${finies.length ? ` · ${finies.length} terminée(s)` : ''}
+        <button class="small secondary" id="mat-entretien">📋 Base du contrat d'entretien (CSV)</button></p>` : ''; })()}
     <ul class="mat-liste">${ms.map((m, i) => `${i === 0 || ms[i - 1].chapitre !== m.chapitre ? `<li class="mat-famille">${esc(m.chapitre || 'Équipements')}</li>` : ''}<li>${ligne(m, i)}</li>`).join('')}</ul>`;
 }
 // Chargé à l'affichage de la fiche du chantier (bureau et appli des compagnons), avec le suivi de chaque ligne
@@ -473,6 +483,33 @@ function bindMaterielRetenu(z, affaireId) {
   const ms = materielChantier.get(affaireId) || [], a = Store.get('affaires', affaireId);
   const env = z.querySelector('#mat-envoyer');
   if (env) env.onclick = () => envoyerParMail('materiel', affaireId);
+  const ent = z.querySelector('#mat-entretien');
+  if (ent) ent.onclick = () => download(`Base-entretien-${(a || {}).code || 'chantier'}.csv`.replace(/[^\w.-]+/g, '_'), `\ufeff${MaterielRetenu.csvEntretien(ms, [(a || {}).code, (a || {}).nom].filter(Boolean).join(' – '), num((Store.data.settings || {}).garantieMois) || 24)}`, 'text/csv');
+  // Commande fournisseur depuis le matériel validé : chaque ligne garde le lien avec l'équipement de l'étude
+  const cmd = z.querySelector('#mat-commander');
+  if (cmd) cmd.onclick = async () => {
+    const fs = Store.all('entreprises').filter(e => e.categorie === 'Fournisseur').sort((x, y) => x.nom.localeCompare(y.nom));
+    const box = Modal.open(`<h2 style="margin-top:0">Commander le matériel validé</h2><p class="small muted">Une commande brouillon est créée avec la référence exacte de chaque équipement ; elle reste liée au matériel retenu (substitutions, livraison, DOE).</p>
+      <div class="field"><label for="mc-f">Fournisseur</label><select id="mc-f"><option value="">— choisir —</option>${fs.map(f => `<option value="${esc(f.id)}">${esc(f.nom)}</option>`).join('')}</select></div>
+      <div class="table-wrap"><table>${ms.map((m, i) => (m.valide && !m.commande ? `<tr><td><input type="checkbox" data-mc="${i}" checked aria-label="Commander"></td><td>${esc(m.designation)}<br><span class="mat-ref">${esc([m.fabricant, m.reference].filter(Boolean).join(' '))}</span></td><td class="num">${fmt(m.qte, 0)}</td></tr>` : '')).join('')}</table></div>
+      <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="mc-x">Annuler</button><button id="mc-ok">Créer la commande</button></div>`, true);
+    box.querySelector('#mc-x').onclick = Modal.close;
+    box.querySelector('#mc-ok').onclick = () => {
+      const f = box.querySelector('#mc-f').value, choix = [...box.querySelectorAll('[data-mc]:checked')].map(c => ms[+c.dataset.mc]);
+      if (!f) return notify('Choisissez le fournisseur.');
+      if (!choix.length) return notify('Cochez au moins un équipement.');
+      const c = Store.upsert('commandes', { numero: '', fournisseurId: f, affaireId, date: isoDate(new Date()), dateLivraison: '', statut: 'Brouillon', lignes: lignesMaterielValide(choix).map(l => ({ ...l, pu: 0 })) });
+      Modal.close(); App.toast(`Commande brouillon créée (${choix.length} équipement(s)) : prix et délais à compléter`, 5000); location.hash = `#/commandes/${c.id}`;
+    };
+  };
+  // Substitution (commandé ou livré différent de la référence validée) : signalée à l'étude, la ligne repasse « à soumettre »
+  z.querySelectorAll('[data-subst]').forEach(b => b.onclick = async () => {
+    const m = ms[+b.dataset.subst], c = m.commande || {};
+    const ref = c.refRecue || Installe.referenceCommandee({ ref: c.ref, designation: c.designation }, m.fabricant);
+    if (!await ask(`Signaler la substitution « ${ref} » au bureau d'études ? La ligne repassera « à soumettre » au client avec cette référence.`, 'Signaler', false)) return;
+    HorsLigne.appeler('POST', CHEMIN_SUIVI, { affaireId, action: 'substitution', lignes: [{ etudeId: m.etudeId, cle: m.cle }], reference: ref, designation: c.refRecue || c.designation, commande: c.numero })
+      .then(() => { App.toast('Substitution signalée : à refaire valider par le client'); return chargerMaterielRetenu(document, affaireId); }).catch(e => notify(e.message));
+  });
   const cons = z.querySelector('#mat-consulter');
   if (cons) cons.onclick = () => { location.hash = '#/consultations/' + nouvelleConsultation({ affaireId, objet: `Matériel validé ${(a || {}).code || ''} (bureau d'études)`, lignes: lignesMaterielValide(ms) }).id; };
   // Compagnons : pose, mise en service, photo de la plaque signalétique
@@ -488,11 +525,19 @@ function bindMaterielRetenu(z, affaireId) {
     const f = inp.files && inp.files[0], m = ms[+inp.dataset.photo];
     if (!f || !m) return;
     // Photo gardée sur le téléphone si pas de réseau (identifiant choisi ici, envoyée avant l'action qui la cite)
-    try { const id = await HorsLigne.envoyerImage(await compressImage(f, 1600, 0.8)); await suivre(m, 'photo', { fichierId: id, nom: f.name }); } catch (e) { notify(`Photo : ${e.message}`); }
+    try {
+      const id = await HorsLigne.envoyerImage(await compressImage(f, 1600, 0.8));
+      // Lecture de la plaque (n° de série, marque, modèle) : remontée au DOE ; sans lecture, la photo est gardée
+      let serie = '';
+      try { if (typeof Fluides !== 'undefined' && typeof PdfLecture !== 'undefined') { App.toast('Lecture de la plaque…', 2500); const p = Fluides.lirePlaque((await PdfLecture.lire(f)).lignes); serie = p.numeroSerie || ''; } } catch (err) { serie = ''; }
+      await suivre(m, 'photo', { fichierId: id, nom: f.name, ...(serie ? { serie } : {}) });
+      if (serie) App.toast(`N° de série lu sur la plaque : ${serie} (à vérifier)`, 5000);
+    } catch (e) { notify(`Photo : ${e.message}`); }
   });
 }
 // Lignes de consultation : matériel validé, avec fabricant et référence exacte
-const lignesMaterielValide = ms => ms.filter(m => m.valide).map(m => ({ articleId: '', designation: `${m.designation} — ${[m.fabricant, m.reference].filter(Boolean).join(' ')}${m.obs ? ` (${m.obs})` : ''}`, unite: 'u', qte: num(m.qte) || 1 }));
+const lignesMaterielValide = ms => ms.filter(m => m.valide).map(m => ({ articleId: '', designation: `${m.designation} — ${[m.fabricant, m.reference].filter(Boolean).join(' ')}${m.obs ? ` (${m.obs})` : ''}`, unite: 'u', qte: num(m.qte) || 1,
+  materiel: { etudeId: m.etudeId, cle: m.cle, fabricant: m.fabricant, reference: m.reference } }));
 // Liste envoyée au client (PDF joint à l'e-mail) : une case d'avis par ligne et un cadre de visa
 function materielDocument(a, ms) {
   const chapitres = [...new Set(ms.map(m => m.chapitre))];

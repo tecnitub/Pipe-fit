@@ -90,14 +90,29 @@ const chantierFields = [
   { key: 'heuresPrevues', label: 'Heures prévues (vide = heures du devis)', type: 'number', step: '0.5' },
 ];
 
+// Avancement du matériel retenu par les études (validé → en service), lu une fois par affichage de la liste
+let avancementMateriel = null, avancementLu = 0;
+function chargerAvancementMateriel() {
+  if (!Store.me || !['admin', 'charge'].includes(Store.me.role) || Date.now() - avancementLu < 30000) return;
+  avancementLu = Date.now();
+  api('GET', '/api/liens/avancement').then(r => { avancementMateriel = r || {}; if (/^#\/chantiers/.test(location.hash)) App.render(); }).catch(() => {});
+}
+function avancementMaterielHtml(id) {
+  const x = avancementMateriel && avancementMateriel[id];
+  if (!x) return '';
+  const etape = x.enService === x.total ? ['en service', 'b-ok'] : x.poses ? ['posé', 'b-info'] : x.livres ? ['livré', 'b-info'] : x.commandes ? ['commandé', ''] : x.valides ? ['validé', ''] : ['à faire valider', 'b-warn'];
+  return `<span class="small" title="Matériel retenu : ${x.valides}/${x.total} validé, ${x.commandes} commandé, ${x.livres} livré, ${x.poses} posé, ${x.enService} en service">${gauge(x.enService, x.total)}<span class="badge ${etape[1]}">${x.enService}/${x.total} ${etape[0]}</span>${x.substitutions ? ' <span class="badge b-bad">substitution</span>' : ''}</span>`;
+}
 function chantierTable(list, selection = false) {
+  chargerAvancementMateriel();
   if (!list.length) return '<p class="muted">Aucun chantier pour ces critères.</p>';
-  return `<div class="table-wrap"><table data-colonnes="chantiers"><tr>${selection ? '<th class="sel-cell"><input type="checkbox" data-sel-tout aria-label="Tout sélectionner"></th>' : ''}<th>Chantier</th><th>Client</th><th>Chargé</th><th>Statut</th><th class="num">Montant HT</th><th>Heures</th><th>Fournitures</th><th class="num">Marge à terminaison</th></tr>
+  return `<div class="table-wrap"><table data-colonnes="chantiers"><tr>${selection ? '<th class="sel-cell"><input type="checkbox" data-sel-tout aria-label="Tout sélectionner"></th>' : ''}<th>Chantier</th><th>Client</th><th>Chargé</th><th>Statut</th><th class="num">Montant HT</th><th>Heures</th><th>Fournitures</th><th class="num">Marge à terminaison</th><th>Matériel</th></tr>
   ${list.map(a => {
     const s = Calc.affaire(a);
     return `<tr class="clickable ${a.archive ? 'archive' : ''}" data-go="#/chantier/${a.id}">${selection ? `<td class="sel-cell"><input type="checkbox" data-sel-id="${a.id}" aria-label="Sélectionner ${esc(a.code || '')}"></td>` : ''}<td><strong>${esc(a.code || '…')}</strong>${estHorsDevis(a) ? ` <span class="badge b-warn">Hors devis</span>${aCompleterHD(a) ? ' <span class="badge b-bad">À compléter</span>' : ''}` : ''}${a.archive ? ' <span class="badge">Archivé</span>' : ''}<br>${esc(a.nom)}</td><td>${esc(a.clientId ? clientName(a.clientId) : a.clientLibre || '')}</td><td>${esc(userName(a.chargeId))}</td><td>${badge(estHorsDevis(a) ? statutHD(a) : a.statut)}</td>
       <td class="num">${eur(s.caDevis)}</td><td>${gauge(s.heuresPassees, s.heuresPrevues)}<span class="muted small">${fmt(s.heuresPassees)} / ${fmt(s.heuresPrevues)} h</span></td>
-      <td>${gauge(s.achats, s.budgetF)}</td><td class="num">${s.caDevis ? marginBadge(s.margeFinPct) : '—'}</td></tr>`;
+      <td>${gauge(s.achats, s.budgetF)}</td><td class="num">${s.caDevis ? marginBadge(s.margeFinPct) : '—'}</td>
+      <td>${avancementMaterielHtml(a.id)}</td></tr>`;
   }).join('')}</table></div>`;
 }
 

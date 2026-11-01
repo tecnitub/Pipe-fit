@@ -42,3 +42,47 @@ test('une ligne de commande ne sert qu\'à un équipement ; les dimensions doive
   assert.deepStrictEqual(r.resultats.map(x => x.etat).sort(), ['a-completer', 'non-commande']);
   assert.strictEqual(I.rapprocher([{ id: 'v', designation: 'Vase d\'expansion 300 L' }], [lignes[4]]).resultats[0].etat, 'non-commande');
 });
+
+test('matériel retenu face aux commandes : lien exact, substitution à la commande ou à la livraison, avancement', () => {
+  const ms = [
+    { etudeId: 'et1', cle: 'aero|cta', designation: 'Centrale de traitement d\'air double flux', fabricant: 'Ventilia', reference: 'CTA-DF 3000', valide: true, poseLe: '2026-10-30' },
+    { etudeId: 'et1', cle: 'bouche|160', designation: 'Diffuseur plafond col Ø 160', fabricant: 'Exemplair', reference: 'DF4-160', valide: true },
+    { etudeId: 'et1', cle: 'pompe|x', designation: 'Pompe radiateurs', fabricant: 'Wilo', reference: 'Stratos 40/1-8', valide: false },
+  ];
+  const cmd = [{ id: 'k1', affaireId: 'af', numero: 'CF-10', statut: 'Réceptionnée', lignes: [
+    // Commandée depuis le matériel retenu, mais la désignation a été changée pour un autre modèle
+    { designation: 'Centrale Ventilia CTA-DF 4500', qte: 1, qteRecue: 1, materiel: { etudeId: 'et1', cle: 'aero|cta', reference: 'CTA-DF 3000' } },
+    // Bouches : commandées conformes, mais le BL porte une autre référence
+    { designation: 'Diffuseur plafond — Exemplair DF4-160', qte: 8, qteRecue: 8, refRecue: 'DF4-200', materiel: { etudeId: 'et1', cle: 'bouche|160', reference: 'DF4-160' } }] }];
+  const s = I.suiviCommandes(ms, I.lignesCommandes(cmd, 'af'));
+  const cta = s[0], bouche = s[1], pompe = s[2];
+  assert.ok(cta.lienExact && cta.substitution && cta.livraison === 'livrée');
+  assert.ok(bouche.lienExact && bouche.substitution, 'référence relevée sur le bon de livraison');
+  assert.strictEqual(pompe.commande, null);
+  assert.deepStrictEqual(I.avancement(s), { total: 3, valides: 2, commandes: 2, livres: 2, poses: 1, enService: 0, substitutions: 2 });
+  // Conforme quand la commande porte la référence validée
+  cmd[0].lignes[0].designation = 'Centrale Ventilia CTA-DF 3000';
+  assert.ok(!I.suiviCommandes(ms, I.lignesCommandes(cmd, 'af'))[0].substitution);
+  // DOE : l'équipement repris de l'étude retrouve sa ligne par le lien, même sans ressemblance de texte
+  const r = I.rapprocher([{ id: 'e', designation: 'CTA bureaux', reference: 'CTA-DF 3000', origines: ['be:et1:aero|cta'] }], I.lignesCommandes(cmd, 'af'));
+  assert.ok(r.resultats[0].exact); assert.strictEqual(r.resultats[0].etat, 'conforme');
+});
+
+test('substitution signalée reprise par l\'étude, n° de série lu, garanties et base d\'entretien', () => {
+  const M = require('../public/js/materiel-retenu');
+  let d = M.appliquerSuivi({}, 'substitution', 'Jacky', '2026-11-01', { reference: 'CTA-DF 4500', commande: 'CF-10' });
+  d = M.appliquerSuivi(d, 'photo', 'Kevin', '2026-11-02', { fichierId: 'abc', serie: 'SN-778' });
+  assert.deepStrictEqual([d.substitution.reference, d.serie], ['CTA-DF 4500', 'SN-778']);
+  assert.throws(() => M.appliquerSuivi({}, 'substitution', 'J', '2026-11-01', {}));
+  const saisies = { k: { reference: 'CTA-DF 3000', fabricant: 'Ventilia', statut: 'Validé', dateValidation: '2026-10-01' } };
+  const ls = M.lignes([{ cle: 'k', designation: 'CTA', qte: 1 }], saisies);
+  assert.strictEqual(M.reprendreSuivi(saisies, ls, [{ cle: 'k', substitution: d.substitution }], '2026-11-03'), 1);
+  assert.deepStrictEqual([saisies.k.reference, M.statutDe(saisies.k)], ['CTA-DF 4500', 'À soumettre']);
+  assert.match(saisies.k.obs, /Substitution \(commande CF-10\) : CTA-DF 3000 remplacé par CTA-DF 4500/);
+  assert.strictEqual(M.reprendreSuivi(saisies, M.lignes([{ cle: 'k', designation: 'CTA', qte: 1 }], saisies), [{ cle: 'k', substitution: d.substitution }], '2026-11-04'), 0, 'une seule fois');
+  // Garanties : 24 mois après la mise en service
+  const g = M.garanties([{ cle: 'aero|cta-df|3000', designation: 'CTA', mesLe: '2024-12-15' }, { cle: 'pompe|x', designation: 'Pompe', mesLe: '2026-10-01' }, { cle: 'x', designation: 'Non en service' }], '2026-11-01');
+  assert.deepStrictEqual(g.map(x => [x.fin, x.etat]), [['2026-12-15', 'se termine bientôt'], ['2028-10-01', 'en cours']]);
+  const csv = M.csvEntretien([{ cle: 'aero|cta-df|3000', designation: 'CTA', fabricant: 'Ventilia', reference: 'CTA-DF 3000', mesLe: '2026-10-01' }], 'CH-1');
+  assert.match(csv, /"Filtres";"remplacement ou nettoyage selon encrassement";"6";"2027-04-01"/);
+});

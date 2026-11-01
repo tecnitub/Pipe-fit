@@ -18,6 +18,9 @@ const Push = require('./push');
 const Notifs = require('./notifs');
 const Compagnon = require('../public/js/compagnon');
 const MaterielRetenu = require('../public/js/materiel-retenu');
+const Installe = require('../public/js/installe');
+// Lignes des commandes fournisseurs d'un chantier pour le suivi du matériel (fournisseur nommé, sans prix)
+const lignesCommandesPF = affaireId => Installe.lignesCommandes(recordsDe('commandes'), affaireId, id => (id ? (DB.getRecord(db, 'entreprises', String(id)) || {}).nom : '') || '', id => (id ? DB.getRecord(db, 'articles', String(id)) : null));
 const NoteFrais = require('../public/js/frais');
 const ReglesPointage = require('../public/js/pointage-regles');
 const Epreuve = require('../public/js/epreuve');
@@ -525,7 +528,17 @@ async function api(req, res, url) {
     if (p[1] === 'materiel' && !p[2] && method === 'GET') {
       if (estCompagnon(acc) && !reglesCompagnon().materiel) return send(res, 200, []);
       const affaireId = url.searchParams.get('affaireId') || '';
-      return send(res, 200, affaireId ? MaterielRetenu.pourChantier(LIENS.liste({ affaireId, app: 'etudes' }), LIENS.suivis({ affaireId })) : []);
+      if (!affaireId) return send(res, 200, []);
+      // Matériel retenu + suivi du chantier + commandes (commandé, substitution, livré) — sans prix
+      const ms = MaterielRetenu.pourChantier(LIENS.liste({ affaireId, app: 'etudes' }), LIENS.suivis({ affaireId }));
+      return send(res, 200, Installe.suiviCommandes(ms, lignesCommandesPF(affaireId)));
+    }
+    // Avancement du matériel par chantier (liste des chantiers, bureau)
+    if (p[1] === 'avancement' && method === 'GET') {
+      if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
+      const parAffaire = {};
+      LIENS.liste({ app: 'etudes' }).filter(l => l.affaireId).forEach(l => { (parAffaire[l.affaireId] = parAffaire[l.affaireId] || []).push(l); });
+      return send(res, 200, Object.fromEntries(Object.entries(parAffaire).map(([id, ls]) => [id, Installe.avancement(Installe.suiviCommandes(MaterielRetenu.pourChantier(ls, LIENS.suivis({ affaireId: id })), lignesCommandesPF(id)))]).filter(([, a]) => a.total)));
     }
     // Débits théoriques des études du chantier (relevés d'équilibrage, bureau et compagnons)
     if (p[1] === 'debits' && !p[2] && method === 'GET') {

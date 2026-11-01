@@ -19,13 +19,17 @@ const Installe = (() => {
       const derniere = (c.receptions || []).slice(-1)[0] || null;
       return { cle: `${c.id}:${i}`, commandeId: c.id, numero: c.numero || '', date: c.date || '', fournisseur: nomFournisseur(c.fournisseurId), statut: c.statut || '',
         designation: String(l.designation || (art && art.designation) || ''), ref: String((art && art.ref) || l.ref || ''), qte, qteRecue: recue,
-        livraison: livree ? 'livrée' : partielle ? 'livrée en partie' : 'non livrée', dateLivraison: derniere ? derniere.date || '' : '' };
+        livraison: livree ? 'livrée' : partielle ? 'livrée en partie' : 'non livrée', dateLivraison: derniere ? derniere.date || '' : '',
+        // Ligne créée depuis le matériel retenu d'une étude : lien exact ; référence relevée sur le bon de livraison si différente
+        materiel: l.materiel && l.materiel.etudeId ? { etudeId: String(l.materiel.etudeId), cle: String(l.materiel.cle || '') } : null,
+        refFournisseur: String(l.refFournisseur || ''), refRecue: String(l.refRecue || '') };
     }));
   }
 
   // Score d'une ligne de commande pour un équipement : 10 si la référence du DOE y figure, sinon ressemblance des désignations
   function score(e, l) {
-    const texte = `${l.designation} ${l.ref}`, ref = compact(e.reference);
+    // La référence relevée à la livraison prime : c'est ce qui est arrivé sur le chantier
+    const texte = l.refRecue ? l.refRecue : `${l.designation} ${l.ref} ${l.refFournisseur || ''}`, ref = compact(e.reference);
     if (ref.length >= 3 && compact(texte).includes(ref)) return { s: 10, parRef: true };
     const de = String(e.designation || '').split(' — ')[0], me = mots(de).filter(m => !/\d/.test(m)), ml = new Set(mots(texte));
     if (!me.length) return { s: 0 };
@@ -39,9 +43,16 @@ const Installe = (() => {
   }
 
   // Rapprochement : chaque ligne de commande sert à un seul équipement (le mieux placé)
+  // Clé matériel d'un équipement : { etudeId, cle } (DOE : origine « be:étude:clé » ; matériel retenu : champs directs)
+  const lienDe = e => { if (e.etudeId && e.cle) return `${e.etudeId}|${e.cle}`; const o = (e.origines || []).find(x => /^be:/.test(x)); if (!o) return ''; const [, et, ...c] = o.split(':'); return `${et}|${c.join(':')}`; };
   function rapprocher(equipements, lignes) {
     const paires = [];
-    (equipements || []).forEach(e => (lignes || []).forEach(l => { const r = score(e, l); if (r.s > 0) paires.push({ e, l, ...r }); }));
+    (equipements || []).forEach(e => (lignes || []).forEach(l => {
+      // Lien exact (commande passée depuis le matériel retenu) : toujours retenu, la référence dit si c'est une substitution
+      if (l.materiel && lienDe(e) && lienDe(e) === `${l.materiel.etudeId}|${l.materiel.cle}`) { const r = score(e, l); paires.push({ e, l, s: 100, parRef: r.parRef || !String(e.reference || '').trim(), exact: true }); return; }
+      if (l.materiel && lienDe(e)) return; // ligne liée à un autre équipement
+      const r = score(e, l); if (r.s > 0) paires.push({ e, l, ...r });
+    }));
     paires.sort((a, b) => b.s - a.s);
     const prisE = new Map(), prisL = new Set();
     paires.forEach(p => { if (!prisE.has(p.e.id) && !prisL.has(p.l.cle)) { prisE.set(p.e.id, p); prisL.add(p.l.cle); } });
@@ -53,7 +64,7 @@ const Installe = (() => {
       const texte = etat === 'conforme' ? 'Référence du DOE retrouvée dans la commande.'
         : etat === 'reference-differente' ? `La commande porte « ${l.designation}${l.ref ? ` (${l.ref})` : ''} » et non la référence « ${refDOE} » : c'est ce qui a été installé.`
           : 'Référence à reprendre de la commande.';
-      return { id: e.id, etat, texte, ligne: l, livraison: l.livraison };
+      return { id: e.id, etat, texte, ligne: l, livraison: l.livraison, exact: !!p.exact };
     });
     const nonDecrites = (lignes || []).filter(l => !prisL.has(l.cle) && !consommable(`${l.designation}`));
     return { resultats, nonDecrites, bilan: {
@@ -73,6 +84,20 @@ const Installe = (() => {
     return l.designation;
   };
 
-  return { norm, lignesCommandes, score, rapprocher, commandeDe, referenceCommandee, consommable };
+  // Matériel retenu d'un chantier face aux commandes : commande, substitution, livraison ; puis avancement
+  // ms : lignes du matériel retenu (pourChantier) ; lignes : lignesCommandes
+  function suiviCommandes(ms, lignes) {
+    const r = rapprocher((ms || []).map(m => ({ id: `${m.etudeId}|${m.cle}`, etudeId: m.etudeId, cle: m.cle, designation: m.designation, reference: m.reference })), lignes);
+    return (ms || []).map(m => {
+      const x = r.resultats.find(y => y.id === `${m.etudeId}|${m.cle}`) || {};
+      return { ...m, commande: x.ligne ? { numero: x.ligne.numero, statut: x.ligne.statut, designation: x.ligne.designation, ref: x.ligne.ref, refRecue: x.ligne.refRecue, fournisseur: x.ligne.fournisseur, commandeId: x.ligne.commandeId } : null,
+        lienExact: !!x.exact, substitution: x.etat === 'reference-differente', livraison: x.ligne ? x.livraison : '' };
+    });
+  }
+  function avancement(suivi) {
+    const n = f => suivi.filter(f).length;
+    return { total: suivi.length, valides: n(m => m.valide), commandes: n(m => m.commande), livres: n(m => m.livraison === 'livrée'), poses: n(m => m.poseLe), enService: n(m => m.mesLe), substitutions: n(m => m.substitution) };
+  }
+  return { lienDe, suiviCommandes, avancement, norm, lignesCommandes, score, rapprocher, commandeDe, referenceCommandee, consommable };
 })();
 if (typeof module !== 'undefined') module.exports = Installe;

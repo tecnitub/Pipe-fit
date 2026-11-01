@@ -75,6 +75,7 @@ function commandeEditor(id) {
     <ul class="besoins">${besoins.map(x => `<li>${esc(x.a.designation)} : ${fmt(x.q, 2)} ${esc(x.a.unite)}</li>`).join('')}</ul>
     <button id="reprendre">Ajouter ces fournitures à la commande</button></div>` : ''}
 
+  ${substitutionsCommandeHtml(c)}
   ${receptionsCommandeHtml(c)}
   <h2 class="no-print">Lignes</h2>
   ${horsBiblio(c).length ? `<p class="note no-print small">${horsBiblio(c).length} fourniture(s) hors bibliothèque. <button class="small secondary" id="c-biblio">📚 Les ajouter à la bibliothèque</button></p>` : ''}

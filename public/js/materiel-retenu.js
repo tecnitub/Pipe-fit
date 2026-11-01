@@ -57,7 +57,7 @@ const MaterielRetenu = (() => {
 
   /* ---------- Suivi sur le chantier (Pipe-Fit) ---------- */
   // Par ligne (étude + clé) : soumission au client, pose et mise en service par les compagnons, photos de la plaque
-  const ACTIONS = { soumis: 'Soumis au client', pose: 'Posé', mes: 'Mis en service', annulerPose: 'Pose annulée', annulerMes: 'Mise en service annulée', photo: 'Photo de la plaque' };
+  const ACTIONS = { soumis: 'Soumis au client', pose: 'Posé', mes: 'Mis en service', annulerPose: 'Pose annulée', annulerMes: 'Mise en service annulée', photo: 'Photo de la plaque', substitution: 'Substitution à faire valider' };
   const ACTIONS_COMPAGNON = ['pose', 'mes', 'annulerPose', 'annulerMes', 'photo'];
   function appliquerSuivi(data, action, par, date, extra = {}) {
     const d = { ...(data || {}) }, qui = txt(par, 80), quand = txt(date, 10);
@@ -70,6 +70,13 @@ const MaterielRetenu = (() => {
     if (action === 'photo') {
       if (!/^[\w-]{1,64}$/.test(String(extra.fichierId || ''))) throw Object.assign(new Error('Photo manquante'), { status: 400 });
       d.photos = [...(d.photos || []), { fichierId: String(extra.fichierId), le: quand, par: qui, nom: txt(extra.nom, 120) }].slice(-6);
+      // N° de série lu sur la plaque (photo)
+      if (txt(extra.serie, 60)) Object.assign(d, { serie: txt(extra.serie, 60), serieLue: true });
+    }
+    // Matériel commandé (ou livré) différent de la référence validée : à refaire valider par le client
+    if (action === 'substitution') {
+      if (!txt(extra.reference, 200)) throw Object.assign(new Error('Référence de substitution manquante'), { status: 400 });
+      d.substitution = { reference: txt(extra.reference, 200), designation: txt(extra.designation, 200), commande: txt(extra.commande, 40), le: quand, par: qui };
     }
     return d;
   }
@@ -90,7 +97,7 @@ const MaterielRetenu = (() => {
       const s = parCle.get(`${l.id}|${m.cle}`) || {};
       out.push({ etude: txt((l.resume || {}).objet, 120), etudeId: l.id, affaireId: txt(l.affaireId, 64), cle: txt(m.cle, 200), chapitre: txt(m.chapitre, 60), designation: txt(m.designation), qte: Number(m.qte) || 0, fabricant: txt(m.fabricant, 80), reference: txt(m.reference, 120),
         statut: STATUTS.includes(m.statut) ? m.statut : 'À soumettre', valide: VALIDES.includes(m.statut), dateValidation: txt(m.dateValidation, 10), obs: txt(m.obs, 500), fiche: /^https?:\/\//.test(m.fiche || '') ? txt(m.fiche, 500) : '',
-        soumisLe: txt(s.soumisLe || m.dateSoumission, 10), relances: s.relances || [], poseLe: txt(s.poseLe, 10), posePar: txt(s.posePar, 80), mesLe: txt(s.mesLe, 10), mesPar: txt(s.mesPar, 80), photos: s.photos || [] });
+        soumisLe: txt(s.soumisLe || m.dateSoumission, 10), relances: s.relances || [], poseLe: txt(s.poseLe, 10), posePar: txt(s.posePar, 80), mesLe: txt(s.mesLe, 10), mesPar: txt(s.mesPar, 80), photos: s.photos || [], serie: txt(s.serie, 60), substitutionDemandee: s.substitution || null });
     }));
     return out.sort((a, b) => Number(b.valide) - Number(a.valide) || a.chapitre.localeCompare(b.chapitre, 'fr') || a.designation.localeCompare(b.designation, 'fr'));
   }
@@ -104,6 +111,16 @@ const MaterielRetenu = (() => {
     (suivis || []).forEach(s => {
       const l = ls.find(x => x.cle === s.cle);
       if (l && s.soumisLe && l.statut === 'À soumettre') { saisir(saisies, l, 'statut', 'Soumis au client', aujourdhui); saisies[l.cle].dateSoumission = s.soumisLe; n++; }
+      // Substitution signalée sur le chantier (commande ou livraison différente) : nouvelle référence, à soumettre de nouveau
+      const sub = s.substitution;
+      if (l && sub && sub.reference && (saisies[l.cle] || {}).substitutionLe !== `${sub.le}|${sub.reference}`) {
+        const ancienne = l.reference;
+        saisir(saisies, l, 'reference', sub.reference, aujourdhui);
+        const x = saisies[l.cle];
+        Object.assign(x, { statut: 'À soumettre', dateSoumission: '', dateValidation: '', substitutionLe: `${sub.le}|${sub.reference}`, pElec: null,
+          obs: `Substitution${sub.commande ? ` (commande ${sub.commande})` : ''} : ${ancienne || '—'} remplacé par ${sub.reference}. ${x.obs || ''}`.trim().slice(0, 500) });
+        n++;
+      }
     });
     return n;
   }
@@ -114,6 +131,33 @@ const MaterielRetenu = (() => {
   const debitsChantier = liens => (liens || []).filter(l => l.app === 'etudes').flatMap(l => ((l.resume || {}).debits || []).slice(0, 30).map(d => ({
     etude: txt((l.resume || {}).objet, 120), installation: txt(d.installation, 120), type: d.type === 'Hydraulique' ? 'Hydraulique' : 'Aéraulique', unite: ['m³/h', 'l/s', 'l/h'].includes(d.unite) ? d.unite : 'm³/h',
     lignes: (d.lignes || []).slice(0, 500).map(x => ({ repere: txt(x.repere, 40), local: txt(x.local, 80), type: txt(x.type, 40), theorique: NUM(x.theorique) })) })));
-  return { debitsChantier, typeMes, STATUTS, VALIDES, ACTIONS, ACTIONS_COMPAGNON, statutDe, estValide, libelleRef, lignes, saisir, bilan, pourCrm, pourChantier, csv, appliquerSuivi, aRelancer, reprendreSuivi };
+  /* ---------- Garanties et entretien des équipements en service ---------- */
+  // Opérations d'entretien courantes par type d'équipement [opération, précision, périodicité en mois] — base d'un contrat,
+  // à adapter aux notices des fabricants
+  const ENTRETIEN = {
+    cta: [['Filtres', 'remplacement ou nettoyage selon encrassement', 6], ['Ventilateurs, courroies, batteries, bac à condensats, registres', 'contrôle et nettoyage', 12]],
+    vmc: [['Caisson et bouches', 'nettoyage, contrôle des débits et des dépressions', 12]],
+    chaudiere: [['Entretien annuel obligatoire', 'décret 2009-649 (chaudières de 4 à 400 kW), attestation remise au client', 12], ['Ramonage des conduits', '', 12]],
+    pac: [['Entretien et contrôle d\'étanchéité', 'périodicité selon la charge en tonnes équivalent CO2 (règlement F-gas)', 12], ['Échangeurs et bac à condensats', 'nettoyage', 12]],
+    pompes: [['Pompes', 'contrôle du fonctionnement, des garnitures et des intensités', 12]],
+    autre: [['Contrôle de fonctionnement', '', 12]],
+  };
+  const plusMois = (iso, n) => { if (!iso) return ''; const d = new Date(`${iso.slice(0, 10)}T12:00:00`), j = d.getDate(); d.setDate(1); d.setMonth(d.getMonth() + n); d.setDate(Math.min(j, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate())); return d.toISOString().slice(0, 10); };
+  // Garantie constructeur à partir de la mise en service (durée en mois, 24 par défaut) ; état à la date du jour
+  function garanties(ms, aujourdhui, mois = 24) {
+    return (ms || []).filter(m => m.mesLe).map(m => {
+      const fin = plusMois(m.mesLe, mois), j = Math.round((Date.parse(fin) - Date.parse(aujourdhui)) / 864e5);
+      return { etudeId: m.etudeId, cle: m.cle, designation: m.designation, fabricant: m.fabricant, reference: m.reference, serie: m.serie || '', mesLe: m.mesLe, fin, jours: j, etat: j < 0 ? 'terminée' : j <= 60 ? 'se termine bientôt' : 'en cours' };
+    });
+  }
+  // Base du contrat d'entretien (CSV) : équipements en service, opérations et prochaines échéances
+  function csvEntretien(ms, chantier, mois = 24) {
+    const lignes = [];
+    garanties(ms, new Date().toISOString().slice(0, 10), mois).forEach(g => (ENTRETIEN[typeMes(g.cle)] || ENTRETIEN.autre).forEach(([op, prec, per]) => lignes.push(
+      [chantier, g.designation, g.fabricant, g.reference, g.serie, g.mesLe, g.fin, op, prec, per, plusMois(g.mesLe, per)])));
+    return ['Chantier;Équipement;Fabricant;Référence;N° de série;Mis en service le;Fin de garantie;Opération;Précision;Périodicité (mois);Première échéance',
+      ...lignes.map(l => l.map(x => `"${String(x ?? '').replace(/"/g, '""')}"`).join(';'))].join('\r\n');
+  }
+  return { ENTRETIEN, garanties, csvEntretien, debitsChantier, typeMes, STATUTS, VALIDES, ACTIONS, ACTIONS_COMPAGNON, statutDe, estValide, libelleRef, lignes, saisir, bilan, pourCrm, pourChantier, csv, appliquerSuivi, aRelancer, reprendreSuivi };
 })();
 if (typeof module !== 'undefined') module.exports = MaterielRetenu;

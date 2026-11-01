@@ -221,3 +221,25 @@ test('débits théoriques des études pour les relevés d\'équilibrage (compagn
   assert.deepStrictEqual(r.body.map(d => [d.etude, d.installation, d.type, d.lignes.length]), [['Étude débits', 'CTA bureaux', 'Aéraulique', 2], ['Étude débits', 'Réseau radiateurs', 'Hydraulique', 1]]);
   assert.strictEqual(r.body[0].lignes[0].theorique, 200);
 });
+
+test('matériel du chantier : commande liée, substitution, livraison et avancement (serveur)', async () => {
+  const admin = (await call(pfBase, 'POST', '/api/login', { login: 'admin', password: 'admin-test-pw' })).cookie;
+  await call(pfBase, 'PUT', '/api/records/affaires/af-av', { data: { nom: 'Avancement', statut: 'En cours' } }, admin);
+  await call(pfBase, 'PUT', '/api/liens/etudes/et-av', { affaireId: 'af-av', resume: { objet: 'Étude', materiel: [
+    { cle: 'a', chapitre: 'Aéraulique', designation: 'CTA', qte: 1, fabricant: 'Ventilia', reference: 'CTA-DF 3000', statut: 'Validé' },
+    { cle: 'b', chapitre: 'Aéraulique', designation: 'Caisson', qte: 1, fabricant: 'Ventilia', reference: 'CE-1200', statut: 'Validé' }] } }, pfJacky);
+  await call(pfBase, 'PUT', '/api/records/commandes/k-av', { data: { numero: 'CF-AV', affaireId: 'af-av', statut: 'Réceptionnée', lignes: [
+    { designation: 'CTA Ventilia CTA-DF 4500', qte: 1, qteRecue: 1, pu: 1000, materiel: { etudeId: 'et-av', cle: 'a', reference: 'CTA-DF 3000' } }] } }, admin);
+  const ms = (await call(pfBase, 'GET', '/api/liens/materiel?affaireId=af-av', null, pfMarc)).body;
+  const cta = ms.find(m => m.cle === 'a');
+  assert.ok(cta.commande && cta.lienExact && cta.substitution && cta.livraison === 'livrée');
+  assert.ok(!('pu' in cta.commande), 'pas de prix');
+  assert.strictEqual(ms.find(m => m.cle === 'b').commande, null);
+  const av = (await call(pfBase, 'GET', '/api/liens/avancement', null, pfJacky)).body;
+  assert.deepStrictEqual(av['af-av'], { total: 2, valides: 2, commandes: 1, livres: 1, poses: 0, enService: 0, substitutions: 1 });
+  assert.strictEqual((await call(pfBase, 'GET', '/api/liens/avancement', null, pfMarc)).status, 403);
+  // Substitution signalée par le bureau (pas par un compagnon)
+  assert.strictEqual((await call(pfBase, 'POST', '/api/liens/materiel/suivi', { affaireId: 'af-av', action: 'substitution', etudeId: 'et-av', cle: 'a', reference: 'CTA-DF 4500' }, pfMarc)).status, 403);
+  assert.strictEqual((await call(pfBase, 'POST', '/api/liens/materiel/suivi', { affaireId: 'af-av', action: 'substitution', etudeId: 'et-av', cle: 'a', reference: 'CTA-DF 4500', commande: 'CF-AV' }, pfJacky)).status, 200);
+  assert.strictEqual((await call(pfBase, 'GET', '/api/liens/materiel?affaireId=af-av', null, pfJacky)).body.find(m => m.cle === 'a').substitutionDemandee.reference, 'CTA-DF 4500');
+});

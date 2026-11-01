@@ -2,6 +2,17 @@
 // avec les commandes et les livraisons (prix, quantités, lignes non commandées), validation « bon à payer » ou litige.
 // Calculs : public/js/rapprochement.js.
 
+/* ---------- Commande : lignes liées au matériel retenu d'une étude ---------- */
+// Désignation modifiée (autre modèle) ou référence reçue différente : substitution à faire valider par le client
+function substitutionsCommandeHtml(c) {
+  const ecarts = (c.lignes || []).filter(l => l.materiel && l.materiel.reference && Installe.score({ designation: '', reference: l.materiel.reference }, { designation: l.designation, ref: l.refFournisseur || '', refRecue: l.refRecue || '' }).s < 10);
+  const liees = (c.lignes || []).filter(l => l.materiel).length;
+  if (!liees) return '';
+  return `<div class="card no-print ${ecarts.length ? 'warn-card' : ''}"><strong>🏷️ ${liees} ligne(s) liée(s) au matériel retenu de l'étude</strong>
+    ${ecarts.length ? `<ul>${ecarts.map(l => `<li class="neg">⚠️ ${esc(l.refRecue ? `Reçu « ${l.refRecue} »` : `Commandé « ${l.designation} »`)} au lieu de la référence validée « ${esc([l.materiel.fabricant, l.materiel.reference].filter(Boolean).join(' '))} » : substitution à faire valider par le client (fiche du chantier → Matériel retenu).</li>`).join('')}</ul>`
+      : '<span class="small muted"> — références conformes au matériel validé par le client.</span>'}</div>`;
+}
+
 /* ---------- Commande : réceptions ---------- */
 function receptionsCommandeHtml(c) {
   const l = c.lignes || [], rec = c.receptions || [];
@@ -17,17 +28,23 @@ function receptionnerCommande(c) {
   const box = Modal.open(`<h2 style="margin-top:0">Livraison de la commande ${esc(c.numero || '')}</h2>
     <div class="grid2"><div class="field"><label for="rc-d">Date</label><input id="rc-d" type="date" value="${isoDate(new Date())}"></div>
       <div class="field"><label for="rc-bl">N° du bon de livraison</label><input id="rc-bl"></div></div>
-    <div class="table-wrap"><table><tr><th>Désignation</th><th class="num">Commandé</th><th class="num">Déjà reçu</th><th class="num">Reçu ce jour</th></tr>
-      ${l.map((x, i) => { const deja = Rapprochement.recue(c, x), reste = Math.max(0, num(x.qte) - deja);
-        return `<tr><td>${esc(x.designation)}</td><td class="num">${fmt(num(x.qte), 2).replace(/,00$/, '')} ${esc(x.unite || '')}</td><td class="num">${fmt(deja, 2).replace(/,00$/, '')}</td>
-          <td class="num"><input type="number" step="any" min="0" data-rq="${i}" value="${reste}" style="width:90px" aria-label="Quantité reçue"></td></tr>`; }).join('')}</table></div>
+    <p class="small muted">Contrôlez sur le bon de livraison la référence de chaque équipement : si elle diffère de la commande, notez celle reçue (substitution à faire valider).</p>
+    <div class="table-wrap"><table><tr><th>Désignation</th><th class="num">Commandé</th><th class="num">Déjà reçu</th><th class="num">Reçu ce jour</th><th>Référence reçue</th></tr>
+      ${l.map((x, i) => { const deja = Rapprochement.recue(c, x), reste = Math.max(0, num(x.qte) - deja), attendue = x.materiel ? [x.materiel.fabricant, x.materiel.reference].filter(Boolean).join(' ') : '';
+        return `<tr><td>${esc(x.designation)}${attendue ? `<div class="small muted">Référence validée : <strong>${esc(attendue)}</strong></div>` : ''}</td><td class="num">${fmt(num(x.qte), 2).replace(/,00$/, '')} ${esc(x.unite || '')}</td><td class="num">${fmt(deja, 2).replace(/,00$/, '')}</td>
+          <td class="num"><input type="number" step="any" min="0" data-rq="${i}" value="${reste}" style="width:90px" aria-label="Quantité reçue"></td>
+          <td>${Installe.consommable(x.designation) ? '' : `<label class="check small"><input type="checkbox" data-rconf="${i}" checked> conforme</label><input data-rref="${i}" placeholder="Réf. lue sur le BL" value="${esc(x.refRecue || '')}" style="width:150px;display:none" aria-label="Référence reçue">`}</td></tr>`; }).join('')}</table></div>
     <div class="field"><label for="rc-n">Remarque (casse, manquant, reliquat annoncé…)</label><input id="rc-n"></div>
     <label class="btn secondary small">📷 Photo du bon de livraison<input type="file" id="rc-ph" accept="image/*" capture="environment" hidden></label> <span id="rc-phn" class="small muted"></span>
     <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="rc-x">Annuler</button><button id="rc-ok">Enregistrer la livraison</button></div>`, true);
   let photo = null;
   box.querySelector('#rc-ph').onchange = async e => { const f = e.target.files[0]; if (f) { photo = await compressImage(f, 1600, 0.75); box.querySelector('#rc-phn').textContent = f.name; } };
   box.querySelector('#rc-x').onclick = Modal.close;
+  box.querySelectorAll('[data-rconf]').forEach(cb => cb.onchange = () => { box.querySelector(`[data-rref="${cb.dataset.rconf}"]`).style.display = cb.checked ? 'none' : ''; });
   box.querySelector('#rc-ok').onclick = async () => {
+    // Références non conformes : relevées sur la ligne (le matériel retenu et le DOE les reprennent)
+    const ecarts = [];
+    box.querySelectorAll('[data-rconf]').forEach(cb => { if (cb.checked) return; const i = +cb.dataset.rconf, v = box.querySelector(`[data-rref="${i}"]`).value.trim(); if (!v) return; c.lignes[i].refRecue = v; ecarts.push(`${c.lignes[i].designation} → ${v}`); });
     const lignes = [...box.querySelectorAll('[data-rq]')].map(el => ({ i: +el.dataset.rq, qte: num(el.value) })).filter(x => x.qte > 0);
     if (!lignes.length) return notify('Aucune quantité reçue.');
     let photoId = '';
@@ -36,7 +53,9 @@ function receptionnerCommande(c) {
     c.receptions = [...(c.receptions || []), { date: box.querySelector('#rc-d').value, bl: box.querySelector('#rc-bl').value.trim(), note: box.querySelector('#rc-n').value.trim(), photoId, lignes, par: Store.me.nom || '' }];
     const complet = c.lignes.every(x => num(x.qteRecue) >= num(x.qte) - 1e-9);
     c.statut = complet ? 'Réceptionnée' : 'Réceptionnée partiellement';
-    Store.upsert('commandes', c); Modal.close(); App.render(); App.toast(complet ? 'Commande entièrement livrée' : 'Livraison partielle enregistrée');
+    if (ecarts.length) c.receptions[c.receptions.length - 1].ecarts = ecarts;
+    Store.upsert('commandes', c); Modal.close(); App.render();
+    App.toast(ecarts.length ? `Livraison enregistrée — ${ecarts.length} référence(s) différente(s) de la commande : substitution à faire valider (fiche du chantier)` : complet ? 'Commande entièrement livrée' : 'Livraison partielle enregistrée', ecarts.length ? 7000 : 3000);
   };
 }
 

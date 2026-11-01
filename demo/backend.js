@@ -170,7 +170,14 @@
     if (p[0] === 'liens') {
       if (p[1] === 'materiel' && !p[2] && method === 'GET') {
         if (acc.role === 'atelier' && !Compagnon.regles(db.settings).materiel) return [200, []];
-        return [200, MaterielRetenu.pourChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === (query.get('affaireId') || '')), (db.materielSuivi || []).filter(s => s.affaireId === (query.get('affaireId') || '')))];
+        const aff = query.get('affaireId') || '', lc = Installe.lignesCommandes(db.commandes || [], aff, id => ((db.entreprises || []).find(e => e.id === id) || {}).nom || '', id => (db.articles || []).find(a => a.id === id));
+        return [200, Installe.suiviCommandes(MaterielRetenu.pourChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === aff), (db.materielSuivi || []).filter(s => s.affaireId === aff)), lc)];
+      }
+      if (p[1] === 'avancement' && method === 'GET') {
+        if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Réservé au bureau' }];
+        const ids = [...new Set((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId).map(l => l.affaireId))];
+        return [200, Object.fromEntries(ids.map(id => [id, Installe.avancement(Installe.suiviCommandes(MaterielRetenu.pourChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === id), (db.materielSuivi || []).filter(s => s.affaireId === id)),
+          Installe.lignesCommandes(db.commandes || [], id, eid => ((db.entreprises || []).find(e => e.id === eid) || {}).nom || '')))]).filter(([, a]) => a.total))];
       }
       if (p[1] === 'debits' && !p[2] && method === 'GET') return [200, MaterielRetenu.debitsChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === (query.get('affaireId') || '')))];
       if (p[1] === 'materiel' && p[2] === 'suivi') {

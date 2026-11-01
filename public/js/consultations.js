@@ -347,7 +347,7 @@ Views.consultations.bind = (root, params, query) => {
     const maj = q('#cs-maj').checked;
     c.commandeIds = Object.entries(parF).map(([eid, idx]) => {
       const f = c.fournisseurs.find(x => x.entrepriseId === eid), t = offreTotaux(c, f);
-      const lignes = idx.map(i => { const l = c.lignes[i]; return { articleId: l.articleId || '', refFournisseur: ((f.offre || {}).refs || {})[i] || '', designation: l.designation, unite: l.unite, qte: num(l.qte), pu: Math.round(t.pu(i) * 100) / 100 }; });
+      const lignes = idx.map(i => { const l = c.lignes[i]; return { articleId: l.articleId || '', refFournisseur: ((f.offre || {}).refs || {})[i] || '', designation: l.designation, unite: l.unite, qte: num(l.qte), pu: Math.round(t.pu(i) * 100) / 100, ...(l.materiel ? { materiel: l.materiel } : {}) }; });
       if (num(f.offre.port)) lignes.push({ articleId: '', designation: 'Frais de port', unite: 'forfait', qte: 1, pu: num(f.offre.port) });
       if (maj) lignes.forEach(l => { const a = Store.get('articles', l.articleId); if (a && l.pu && Math.abs(num(a.coutRevient) - l.pu) > 0.005) { a.coutRevient = l.pu; a.fournisseurId = eid; Store.upsert('articles', a); } });
       return Store.upsert('commandes', { numero: '', fournisseurId: eid, affaireId: c.affaireId || '', date: isoDate(new Date()), dateLivraison: c.dateLivraison || '', statut: 'Brouillon', lignes, consultationId: c.id,
