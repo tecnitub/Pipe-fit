@@ -701,6 +701,17 @@ function demoData() {
       hauteur: { mesures: 'Travail dans le rack depuis la nacelle ciseaux (VGP à jour). Échafaudage roulant Layher vérifié avant mise en service.', epi: 'Harnais en nacelle, casque à jugulaire' },
       chimique: { mesures: 'Décapage des soudures inox à la pâte : FDS dans le véhicule, bac de rétention, rinçage à l\'eau récupéré. Aucun contact avec les produits NEP de la laiterie.', epi: 'Gants nitrile longs, lunettes étanches' } },
     urgences: { samu: '15', pompiers: '18', europe: '112', antipoison: '04 72 11 69 11' }, hopital: 'Centre hospitalier Annecy Genevois, 1 avenue de l\'Hôpital, Épagny Metz-Tessy', rassemblement: 'Parking visiteurs, devant le poste de garde', horaires: '7 h – 12 h · 13 h – 16 h, du lundi au vendredi' } });
+  // Caractéristiques et texte des fiches d'exemple (lus dans le PDF dans la version installée)
+  const CARAC_DEMO = { ftd1: { carac: { Q: 260 }, parRef: { DF4160: { Q: 260 }, DF4200: { Q: 400 } } }, ftd2: { carac: { Q: 120 } }, ftd3: { carac: { Q: 3400 } }, ftd4: { carac: { Q: 3400, Pel: 2.4, filtres: 'ePM1 55%' } }, ftd5: { carac: { Pch: 150 } } };
+  const TEXTES_DEMO = {
+    ftd1: ['Exemplair - Diffuseur plafond carré DF4', 'Références : DF4-160, DF4-200', 'Débit DF4-160 : 80 à 260 m3/h ; DF4-200 : 150 à 400 m3/h', 'Plénum isolé, raccordement Ø 160 / Ø 200', 'Édition 03/2024'],
+    ftd2: ['Exemplair - Bouche d\'extraction BEX', 'Références : BEX-125, BEX-200', 'Débit BEX-125 : 30 à 120 m3/h', 'Édition 01/2023'],
+    ftd3: ['Ventilia - Centrale double flux CTA-DF 3000', 'Débit 1 800 à 3 400 m3/h, roue de récupération', 'Édition 06/2022'],
+    ftd4: ['Ventilia - Centrale double flux CTA-DF 3000', 'Débit 1 800 à 3 400 m3/h, roue de récupération, ventilateurs EC', 'Pression disponible 300 Pa', 'Filtres ePM1 55 % au soufflage, ePM10 50 % à la reprise', 'Puissance absorbée 2,4 kW, alimentation tri 400 V', 'Édition 02/2025'],
+    ftd5: ['Thermexemple - Chaudière gaz à condensation CHC-150', 'Puissance utile 150 kW, régime 70/50 °C', 'Édition 09/2024'],
+    ftd6: ['Ventilia - Notice d\'installation et de maintenance CTA-DF', 'Remplacement des filtres ePM1 55 % tous les 6 mois', 'Contrôle de la roue de récupération chaque année'],
+    ftd7: ['Ventilia - Déclaration UE de conformité CTA-DF', 'Directive machines 2006/42/CE, ErP 1253/2014'],
+  };
   return {
     files: { 'img-logo': IMAGES.logo, 'img-sig': IMAGES.signature, 'img-rack1': IMAGES.rack1, 'img-rack2': IMAGES.rack2,
       'pdf-iso': pdfExemple('Isometrique NEP aller - ISO-NEP-01 - indice B', ['Ligne NEP aller DN50 inox 316L', 'Longueur developpee : 61,8 m', '14 coudes 90 3D, 4 tes egaux, 4 brides PN16', 'Supportage tous les 2,5 m (colliers sur rail)', 'Indice B : cotes de raccordement mises a jour']),
@@ -710,6 +721,8 @@ function demoData() {
       'ft-bex': pdfExemple('Exemplair - Bouche d extraction BEX', ['References : BEX-125, BEX-200', 'Debit BEX-125 : 30 a 120 m3/h', 'Edition 01/2023']),
       'ft-cta-2022': pdfExemple('Ventilia - Centrale double flux CTA-DF 3000', ['Reference : CTA-DF 3000', 'Debit 1 800 a 3 400 m3/h, roue de recuperation', 'Edition 06/2022']),
       'ft-cta-2025': pdfExemple('Ventilia - Centrale double flux CTA-DF 3000', ['Reference : CTA-DF 3000', 'Debit 1 800 a 3 400 m3/h, roue de recuperation, ventilateurs EC', 'Puissance absorbee 2,4 kW', 'Edition 02/2025']),
+      'ft-cta-notice': pdfExemple('Ventilia - Notice d installation et de maintenance CTA-DF', ['References : CTA-DF 3000, CTA-DF 4500', 'Remplacement des filtres ePM1 55 % tous les 6 mois', 'Controle de la roue de recuperation chaque annee', 'Edition 01/2024']),
+      'ft-cta-dop': pdfExemple('Ventilia - Declaration UE de conformite CTA-DF', ['References : CTA-DF 3000, CTA-DF 4500', 'Directive machines 2006/42/CE, ErP 1253/2014', 'Edition 01/2024']),
       'ft-chc': pdfExemple('Thermexemple - Chaudiere gaz a condensation CHC-150', ['Reference : CHC-150', 'Puissance utile 150 kW', 'Edition 09/2024']),
       'pdf-ft-vanne': pdfExemple('Fiche technique - vanne papillon DN50 PN16', ['Corps fonte GS, papillon inox 316', 'Manchette EPDM alimentaire', 'Commande par levier crante', 'Couple de serrage des boulons : 60 N.m']),
       'pdf-ppsps': pdfExemple('PPSPS - Laiterie des Alpes, usine de Rumilly', ['Accueil securite au poste de garde (badge nominatif)', 'Permis de feu obligatoire pour toute soudure', 'EPI : casque, lunettes, chaussures, gants, bouchons', 'Point de rassemblement : parking visiteurs']),
@@ -733,7 +746,10 @@ function demoData() {
       ['ftd3', 'Ventilia', ['CTA-DF 3000'], 'Centrale double flux CTA-DF 3000', 'cta', '2022-06-01', 'ft-cta-2022', 'Ventilia/CTA-DF 3000 (2022).pdf', 'ftd4'],
       ['ftd4', 'Ventilia', ['CTA-DF 3000'], 'Centrale double flux CTA-DF 3000', 'cta', '2025-02-01', 'ft-cta-2025', 'Ventilia/CTA-DF 3000.pdf'],
       ['ftd5', 'Thermexemple', ['CHC-150'], 'Chaudière gaz à condensation 150 kW', 'generateur', '2024-09-01', 'ft-chc', 'Thermexemple/CHC-150.pdf'],
-    ].map(([id, fabricant, references, designation, famille, date, fichierId, chemin, remplaceePar]) => ({ id, fabricant, references, designation, famille, date, fichierId, nom: chemin.split('/')[1], chemin, source: 'dossier', verifiee: true, ...(remplaceePar ? { remplaceePar } : {}) })),
+      ['ftd6', 'Ventilia', ['CTA-DF 3000', 'CTA-DF 4500'], 'Notice d\'installation et de maintenance CTA-DF', 'cta', '2024-01-01', 'ft-cta-notice', 'Ventilia/Notices/Notice CTA-DF.pdf', '', 'notice'],
+      ['ftd7', 'Ventilia', ['CTA-DF 3000', 'CTA-DF 4500'], 'Déclaration UE de conformité CTA-DF', 'cta', '2024-01-01', 'ft-cta-dop', 'Ventilia/Certificats/DoP CTA-DF.pdf', '', 'dop'],
+    ].map(([id, fabricant, references, designation, famille, date, fichierId, chemin, remplaceePar, type]) => ({ id, type: type || 'fiche', fabricant, references, designation, famille, date, fichierId, nom: chemin.split('/').pop(), chemin, source: 'dossier', verifiee: true,
+      ...(remplaceePar ? { remplaceePar } : {}), ...(CARAC_DEMO[id] ? { carac: CARAC_DEMO[id].carac, ...(CARAC_DEMO[id].parRef ? { caracParRef: CARAC_DEMO[id].parRef } : {}) } : {}), texteDemo: TEXTES_DEMO[id] || [] })),
     users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels, missions, produits, equipementsFrigo, fichesFluides, bouteilles, enlevements, epreuves, releves, misesEnService, equilibrages,
   };
 }

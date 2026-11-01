@@ -700,8 +700,20 @@ Vues.reglages = {
       <p class="muted petit">Les calculs proposent un modèle d'après le point de fonctionnement. Sans catalogue importé, une gamme générique d'exemple est utilisée (ordres de grandeur, aucune marque). Import au format CSV (séparateur « ; »).</p>
       ${['pompes', 'vannes', 'materiel'].map(g => { const cat = (c.catalogues || {})[g] || []; return `<div class="actions-ligne"><strong>${{ pompes: 'Pompes', vannes: 'Vannes de régulation', materiel: 'Matériel des fabricants (bouches, CTA, caissons, générateurs, PAC…) — CSV ou Excel, proposé dans « Matériel retenu »' }[g]}</strong>
         <span class="badge ${cat.length ? 'ok' : ''}">${cat.length ? `${cat.length} modèle(s) importé(s)${g === 'materiel' ? ` (${[...new Set(cat.map(x => x.fabricant))].slice(0, 6).join(', ')})` : ''}` : g === 'materiel' ? 'aucun catalogue' : 'gamme générique'}</span>
-        <button class="secondaire petit" data-csv-modele="${g}">Modèle CSV</button>${admin ? `<button class="petit" data-csv-import="${g}">Importer un CSV…</button>${cat.length ? `<button class="secondaire petit" data-csv-vider="${g}">Revenir à la gamme générique</button>` : ''}` : ''}${g === 'materiel' && cat.some(x => x.fiche) ? `<button class="secondaire petit" id="cat-fiches" title="Les PDF des liens « fiche » du catalogue sont téléchargés par Pipe-Fit et gardés dans sa bibliothèque des fiches techniques">📥 Fiches dans la bibliothèque Pipe-Fit (${new Set(cat.filter(x => x.fiche).map(x => x.fiche)).size})</button>` : ''}</div>`; }).join('')}</div>`; },
+        <button class="secondaire petit" data-csv-modele="${g}">Modèle CSV</button>${admin ? `<button class="petit" data-csv-import="${g}">Importer un CSV…</button>${cat.length ? `<button class="secondaire petit" data-csv-vider="${g}">Revenir à la gamme générique</button>` : ''}` : ''}${g === 'materiel' && admin ? '<button class="secondaire petit" id="cat-biblio" title="Modèles des fiches techniques de la bibliothèque Pipe-Fit : débit, puissances, puissance électrique, niveau sonore, volume, pression lus dans les PDF">📚 Compléter depuis les fiches de Pipe-Fit</button>' : ''}${g === 'materiel' && cat.some(x => x.fiche) ? `<button class="secondaire petit" id="cat-fiches" title="Les PDF des liens « fiche » du catalogue sont téléchargés par Pipe-Fit et gardés dans sa bibliothèque des fiches techniques">📥 Fiches dans la bibliothèque Pipe-Fit (${new Set(cat.filter(x => x.fiche).map(x => x.fiche)).size})</button>` : ''}</div>`; }).join('')}</div>`; },
   bind: root => {
+    // Catalogue matériel complété par les fiches techniques de Pipe-Fit (modèles absents seulement)
+    const cb = root.querySelector('#cat-biblio');
+    if (cb) cb.onclick = async () => {
+      try {
+        const l = await api('GET', '/api/pf/fiches/catalogue-lignes'), cat = ((S.config.catalogues || {}).materiel || []).slice(), cle = p => `${String(p.fabricant).toLowerCase()}|${String(p.reference).toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+        const deja = new Set(cat.map(cle)), nouveaux = l.filter(p => !deja.has(cle(p))).map(({ ficheId: _, ...p }) => p);
+        if (!nouveaux.length) return toast('Le catalogue contient déjà tous les modèles des fiches de Pipe-Fit.');
+        if (!await confirmer(`${nouveaux.length} modèle(s) à ajouter au catalogue matériel, avec les caractéristiques lues dans leurs fiches (à vérifier : débit maxi, puissances, niveau sonore). Ajouter ?`, 'Ajouter')) return;
+        S.config = await api('PUT', '/api/config', { ...S.config, catalogues: { ...(S.config.catalogues || {}), materiel: [...cat, ...nouveaux] } }); Catalogue.utiliser(S.config.catalogues); App.render();
+        toast(`${nouveaux.length} modèle(s) ajouté(s) au catalogue matériel.`);
+      } catch (e) { toast(e.message, 6000); }
+    };
     // Liens « fiche » du catalogue matériel : PDF téléchargés et gardés dans la bibliothèque de Pipe-Fit
     const cf = root.querySelector('#cat-fiches');
     if (cf) cf.onclick = async () => {

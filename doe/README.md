@@ -13,7 +13,8 @@ selon le plan de classement TECNITUB, puis générer le dossier complet en un se
   - documents du chantier : plans → section 2 / annexe A, fiches techniques → annexe B, notices → 7.2 ;
   - bibliothèque des fiches techniques : « 📄 Fiches de la bibliothèque Pipe-Fit » (section 3) joint la fiche de chaque
     équipement (marque + référence, celle de la commande quand elle a été reprise), version en vigueur à la date de pose,
-    rangée dans sa famille et rattachée à l'équipement ;
+    rangée dans sa famille et rattachée à l'équipement ; notices du même matériel en 7.2, déclarations CE / DoP, certificats
+    et garanties en annexe D ;
   - matériel du devis accepté et des commandes → équipements de la section 3 (au choix, avec la famille proposée) ;
   - **matériel installé** (section 3) : chaque équipement du DOE est rapproché des lignes des commandes fournisseurs du
     chantier (par sa référence, sinon par sa désignation et ses dimensions). La commande fait foi, c'est ce qui a été livré

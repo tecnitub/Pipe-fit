@@ -103,10 +103,12 @@ const CatalogueMateriel = (() => {
     const best = cand.map(x => [x, ressemble(`${x.designation} ${x.local || ''} ${x.chapitre || ''}`, ligne.designation)]).sort((a, b) => b[1] - a[1])[0];
     return best[1] >= 0.34 ? best[0] : null;
   }
-  function controleCctp(ligne, inventaire, catalogue = []) {
+  // fiche : fiche technique de la bibliothèque (caractéristiques lues dans le PDF) quand le modèle n'est pas au catalogue
+  function controleCctp(ligne, inventaire, catalogue = [], fiche = null) {
     const x = equipementCctp(ligne, inventaire);
     if (!x || !ligne.reference) return { equipement: x, alertes: [] };
-    const p = (catalogue || []).find(c => norm(c.fabricant) === norm(ligne.fabricant) && norm(c.reference) === norm(ligne.reference)) || null;
+    const fc = fiche && fiche.carac, depuisFiche = fc ? { fabricant: ligne.fabricant, reference: `${ligne.reference} (fiche technique)`, ...(fc.Q ? { Qmax: fc.Q } : {}), ...(fc.Pch || fc.Pfr || fc.P ? { P: fc.Pch || fc.Pfr || fc.P } : {}), ...(fc.Lw ? { Lw: fc.Lw } : {}), ...(fc.volume ? { volume: fc.volume } : {}), ...(fc.Pel ? { Pelec: fc.Pel } : {}), ...(fc.Pdispo ? { dp: fc.Pdispo } : {}) } : null;
+    const p = (catalogue || []).find(c => norm(c.fabricant) === norm(ligne.fabricant) && norm(c.reference) === norm(ligne.reference)) || depuisFiche;
     const a = [], c = x.carac || {};
     // Marque prescrite : « ou équivalent » → fournir l'équivalence ; sans → non conforme
     const marques = [...String(x.prescrit || '').matchAll(/marque\s+([A-Za-z][\w&'-]+(?:\s[A-Z][\w&'-]+)?)/g)].map(m => m[1]);

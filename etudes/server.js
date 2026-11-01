@@ -165,6 +165,10 @@ async function api(req, res, url) {
   }
 
   // Bibliothèque des fiches techniques de Pipe-Fit : recherche par fabricant + référence, liens d'un catalogue téléchargés
+  if (p[0] === 'pf' && p[1] === 'fiches' && p[2] === 'catalogue-lignes' && method === 'GET') {
+    const r = await pipefit(s, '/api/fiches/catalogue-lignes');
+    return r.ok ? send(res, 200, await r.json()) : fail(res, r.status, 'Bibliothèque Pipe-Fit indisponible');
+  }
   if (p[0] === 'pf' && p[1] === 'fiches' && ['trouver', 'catalogue'].includes(p[2]) && method === 'POST') {
     const b = await lireJSON(req);
     const r = await pipefit(s, `/api/fiches/${p[2]}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });

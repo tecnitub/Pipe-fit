@@ -51,12 +51,12 @@ function dialogueMateriel(et) {
     // Contrôle face au CCTP (inventaire du dossier de consultation) : marque prescrite, débit, puissance, volume, acoustique
     const controleHtml = l => {
       if (!(et.inventaire || []).length || l.libre) return '';
-      const r = CatalogueMateriel.controleCctp(l, et.inventaire, catalogue);
+      const r = CatalogueMateriel.controleCctp(l, et.inventaire, catalogue, ficheDe(et, l));
       if (!r.equipement) return '';
       const cr = InventaireCVC.caracTexte(r.equipement.carac || {});
       return `<div class="petit muted" title="${esc(r.equipement.prescrit || '')}">CCTP : ${esc(r.equipement.designation.slice(0, 50))}${r.equipement.prescrit ? ` — ${esc(r.equipement.prescrit.slice(0, 80))}` : ''}${cr ? `<br>${esc(cr)}` : ''}</div>${r.alertes.map(a => `<div class="petit ${a.niveau === 'erreur' ? 'manque' : a.niveau === 'alerte' ? 'avert' : 'muted'}">${a.niveau === 'erreur' ? '⛔' : a.niveau === 'alerte' ? '⚠️' : 'ℹ️'} ${esc(a.texte)}</div>`).join('')}`;
     };
-    const nonConformes = ls.filter(l => !l.libre && (et.inventaire || []).length && CatalogueMateriel.controleCctp(l, et.inventaire, catalogue).alertes.some(a => a.niveau === 'erreur')).length;
+    const nonConformes = ls.filter(l => !l.libre && (et.inventaire || []).length && CatalogueMateriel.controleCctp(l, et.inventaire, catalogue, ficheDe(et, l)).alertes.some(a => a.niveau === 'erreur')).length;
     box.innerHTML = `<h2>🏷️ Matériel retenu</h2>
       <p class="muted petit">Pour chaque équipement dimensionné par l'étude : le fabricant et la <strong>référence exacte</strong> choisis. La liste se fait valider par le client ou la maîtrise d'œuvre (PDF), le statut est suivi ligne par ligne. Les références passent dans le métré et le devis, et sur la fiche du chantier dans Pipe-Fit (bureau et appli des compagnons : les gars voient ce qu'ils doivent poser et si c'est validé).</p>
       <p class="petit">${b.total - b.aChoisir}/${b.total} référence(s) choisie(s) · ${b.valides} validée(s) · ${b.soumis} soumise(s) · ${b.aSoumettre} à soumettre${b.refuses ? ` · <span class="manque">${b.refuses} refusée(s) : choisir une autre référence</span>` : ''}${nonConformes ? ` · <span class="manque">⛔ ${nonConformes} non conforme(s) au CCTP</span>` : ''}${(() => { const avec = ls.filter(l => l.reference && !l.orphelin), sans = avec.filter(l => !ficheDe(et, l) && !l.fiche).length; return avec.length ? ` · 📄 ${avec.length - sans}/${avec.length} fiche(s) technique(s)${sans ? ` <span class="avert">(${sans} à ajouter à la bibliothèque Pipe-Fit)</span>` : ''}` : ''; })()}${relance.length ? ` · <span class="manque">${relance.length} sans réponse depuis plus de 15 jours : relancer (depuis la fiche du chantier dans Pipe-Fit, « ✉️ Envoyer au client »)</span>` : ''}</p>

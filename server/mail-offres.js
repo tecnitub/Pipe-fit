@@ -60,7 +60,8 @@ async function dossierRangement(cfg, adresse, nom) {
   return (await M365.boite(cfg, adresse, 'POST', '/mailFolders/inbox/childFolders', { displayName: nom })).id;
 }
 
-async function relever(DB, db, broadcast) {
+// hooks.fiches(mail, fichiers) : réponse à une demande de fiches techniques (« [FT-xxxx] »), traitée à part
+async function relever(DB, db, broadcast, hooks = {}) {
   const m = DB.getConfig(db, 'm365') || {}, c = config(DB, db);
   if (enCours || !c.actif || !c.adresse) return { messages: 0, offres: 0 };
   if (!(m.actif && m.tenantId && m.clientId && m.clientSecret)) throw new Error('Connexion Microsoft 365 non configurée (Paramètres → E-mails).');
@@ -75,6 +76,15 @@ async function relever(DB, db, broadcast) {
       const mail = mailDe(msg);
       try {
         const fichiers = await piecesDe(m, c.adresse, msg);
+        // Réponse à une demande de fiches techniques : PDF rangés dans la bibliothèque (à vérifier)
+        const nf = hooks.fiches ? await hooks.fiches(mail, fichiers) : 0;
+        if (nf) {
+          res.fiches = (res.fiches || 0) + Math.max(0, nf);
+          await M365.boite(m, c.adresse, 'PATCH', `/messages/${encodeURIComponent(msg.id)}`, { isRead: true });
+          dossierId = dossierId || await dossierRangement(m, c.adresse, c.dossier);
+          await M365.boite(m, c.adresse, 'POST', `/messages/${encodeURIComponent(msg.id)}/move`, { destinationId: dossierId });
+          continue;
+        }
         if (!fichiers.length) { res.sansPiece++; nonReconnues.push({ objet: mail.objet, de: mail.deEmail, recuLe: mail.recuLe, motif: 'aucune pièce jointe (PDF, photo ou Excel)' }); continue; }
         const r = recevoir(DB, db, mail, fichiers, broadcast);
         // Non reconnu : laissé non lu dans la boîte, signalé aux bureaux

@@ -309,6 +309,7 @@ SECTIONS.s3 = {
           <div class="actions-ligne"><span class="muted petit">${esc((e.origines || []).join(', '))}</span><span class="espace"></span><button class="icone" data-retirer="equipements.${i}">Retirer</button></div></details>`).join('') || '<p class="muted">Aucun équipement.</p>'}
         <button class="secondaire petit" data-eq-ajout="${fid}">+ Équipement</button>
         <h4>Fiches techniques jointes (annexe B)</h4><ul class="pieces">${fiches.map(({ x, i }) => `<li>${lienFichier(x.fichier)} <input data-ch="fiches.${i}.designation" value="${esc(x.designation)}"><button class="icone" data-retirer="fiches.${i}">✕</button></li>`).join('') || '<li class="manque">Aucune fiche technique</li>'}</ul></div>`; }).join('')}
+    ${(doe.certificats || []).length ? `<h3>Déclarations CE / DoP, certificats et garanties (annexe D)</h3><ul class="pieces">${doe.certificats.map((x, i) => `<li>${lienFichier(x.fichier)} <input data-ch="certificats.${i}.libelle" value="${esc(x.libelle)}"><button class="icone" data-retirer="certificats.${i}">✕</button></li>`).join('')}</ul>` : ''}
     ${doe.fiches.some(x => !x.famille || !doe.familles.includes(x.famille)) ? `<h3>Fiches techniques à classer</h3><ul class="pieces">${doe.fiches.map((x, i) => ({ x, i })).filter(y => !y.x.famille || !doe.familles.includes(y.x.famille)).map(({ x, i }) => `<li>${lienFichier(x.fichier)} ${esc(x.designation)} <select data-ch="fiches.${i}.famille" data-rendu><option value="">Famille…</option>${doe.familles.map(f => `<option>${f}</option>`).join('')}</select></li>`).join('')}</ul>` : ''}`,
   bind: (root, doe) => {
     root.querySelectorAll('[data-famille]').forEach(cb => cb.onchange = () => { const f = cb.dataset.famille; doe.familles = cb.checked ? [...new Set([...doe.familles, f])] : doe.familles.filter(x => x !== f); enregistrer(doe); App.render(); });
@@ -330,10 +331,17 @@ async function fichesBibliotheque(doe) {
   const ms = await api('GET', `/api/pf/materiel?affaireId=${encodeURIComponent(doe.affaireId)}`).catch(() => []);
   const pose = e => { const m = (ms || []).find(x => Installe.lienDe(e) && Installe.lienDe(e) === `${x.etudeId}|${x.cle}`); return (m && (m.poseLe || m.mesLe)) || ''; };
   const r = await api('POST', '/api/pf/fiches/trouver', { demandes: eqs.map(e => ({ cle: e.id, fabricant: e.marque || '', reference: e.reference, date: pose(e) })) }).catch(() => []);
-  let ajoutees = 0, liees = 0;
+  let ajoutees = 0, liees = 0, autres = 0;
   const sans = [];
+  doe.certificats = doe.certificats || [];
   for (const e of eqs) {
-    const f = (r.find(x => x.cle === e.id) || {}).fiche;
+    const res = r.find(x => x.cle === e.id) || {}, f = res.fiche;
+    // Notices (7.2) ; déclarations CE / DoP, certificats et garanties (annexe D) du même matériel
+    (res.autres || []).forEach(d => {
+      const fichier = { src: 'pf', id: d.fichierId, nom: d.nom || 'document.pdf', mime: 'application/pdf' }, libelle = `${[e.marque || d.fabricant, e.reference].filter(Boolean).join(' ')} — ${{ notice: 'notice', dop: 'déclaration CE / DoP', garantie: 'garantie constructeur' }[d.type] || 'document'}${d.date ? ` (${dateFr(d.date)})` : ''}`;
+      const liste = d.type === 'notice' ? doe.notices : doe.certificats;
+      if (!liste.some(x => x.pfFichierId === d.fichierId)) { liste.push({ id: uidD(), libelle, fichier, pfFichierId: d.fichierId, type: d.type }); autres++; }
+    });
     if (!f) { sans.push(e); continue; }
     const ex = doe.fiches.find(x => x.pfFichierId === f.fichierId);
     if (ex) { if (!(ex.equipements || []).includes(e.id)) { ex.equipements = [...(ex.equipements || []), e.id]; liees++; } continue; }
@@ -343,7 +351,7 @@ async function fichesBibliotheque(doe) {
     ajoutees++;
   }
   enregistrer(doe); App.render();
-  toast(`${ajoutees} fiche(s) ajoutée(s)${liees ? `, ${liees} équipement(s) rattaché(s) à une fiche déjà jointe` : ''}${sans.length ? ` · sans fiche dans la bibliothèque : ${sans.slice(0, 5).map(e => [e.marque, e.reference].filter(Boolean).join(' ')).join(', ')}${sans.length > 5 ? '…' : ''}` : ''}`, 9000);
+  toast(`${ajoutees} fiche(s) ajoutée(s)${autres ? `, ${autres} notice(s) / certificat(s)` : ''}${liees ? `, ${liees} équipement(s) rattaché(s) à une fiche déjà jointe` : ''}${sans.length ? ` · sans fiche dans la bibliothèque : ${sans.slice(0, 5).map(e => [e.marque, e.reference].filter(Boolean).join(' ')).join(', ')}${sans.length > 5 ? '…' : ''}` : ''}`, 9000);
 }
 // Rapprochement avec les commandes : la commande fait foi (c'est ce qui a été livré et posé)
 const ETATS_INSTALLE = { conforme: ['ok', 'conforme à la commande'], 'reference-differente': ['erreur', 'référence différente'], 'a-completer': ['', 'référence à reprendre'], 'non-commande': ['', 'pas dans les commandes'] };
@@ -474,6 +482,7 @@ function annexesDOE(doe) {
     { lettre: 'A', titre: 'Plans de recollement', pieces: doe.plans.map(p => ({ libelle: `${p.numero || ''} ${p.designation}`, fichier: p.fichier, present: !!p.fichier })) },
     { lettre: 'B', titre: 'Fiches techniques constructeurs et notices', pieces: [...doe.fiches.filter(f => f.visa !== 'Refusée').slice().sort((x, y) => (x.famille || '9').localeCompare(y.famille || '9')).map(f => ({ libelle: f.designation, fichier: f.fichier, present: true })), ...doe.notices.map(n => ({ libelle: n.libelle, fichier: n.fichier, present: true }))] },
     { lettre: 'C', titre: 'Notes de calcul', pieces: (doe.notesCalcul || []).map(x => ({ libelle: x.libelle, fichier: x.fichier, present: true })) },
+    ...((doe.certificats || []).length ? [{ lettre: 'D', titre: 'Déclarations CE / DoP, certificats et garanties constructeur', pieces: doe.certificats.map(x => ({ libelle: x.libelle, fichier: x.fichier, present: true })) }] : []),
     { lettre: 'F', titre: 'Rapports de mise en service', pieces: [...piecesCtl('F'), ...pf.F] },
     { lettre: 'G', titre: 'Essais, contrôles et mesures', pieces: [...piecesCtl('G').filter(p => !coupeFeu.includes(p)), ...pf.G] },
     { lettre: 'H', titre: 'Formation des exploitants', pieces: piecesCtl('H') },

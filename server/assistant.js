@@ -29,7 +29,7 @@ function coutAppel(modele, u = {}) {
   return ((u.input_tokens || 0) * t[0] + (u.output_tokens || 0) * t[1] + (u.cache_creation_input_tokens || 0) * t[0] * 1.25 + (u.cache_read_input_tokens || 0) * t[2]) / 1e6;
 }
 
-function creer({ DB, db, broadcast, notifier }) {
+function creer({ DB, db, broadcast, notifier, fiches = null }) {
   db.exec(`CREATE TABLE IF NOT EXISTS assistant_conv (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, titre TEXT, messages TEXT NOT NULL, fil TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS assistant_usage (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, account_id TEXT, login TEXT, nom TEXT, profil TEXT, modele TEXT,
       appels INTEGER, entree INTEGER, sortie INTEGER, cache_ecriture INTEGER, cache_lecture INTEGER, cout REAL NOT NULL)`);
@@ -162,6 +162,13 @@ function creer({ DB, db, broadcast, notifier }) {
         return tous('planning').filter(p => p.userId === uid && p.date >= du && p.date <= au).sort((x, y) => x.date.localeCompare(y.date))
           .map(p => p.absence ? { date: p.date, absence: p.absence } : { date: p.date, chantier: (DB.getRecord(db, 'affaires', p.affaireId) || {}).code || '', tache: p.tache || '', debut: p.debut || '', fin: p.fin || '', note: p.note || '' });
       } },
+    // Bibliothèque des fiches techniques : recherche dans le texte des PDF, caractéristiques du matériel d'un chantier
+    ...(fiches ? [{ name: 'chercher_fiches_techniques', droit: 'chantier', description: 'Cherche dans le texte des fiches techniques, notices et certificats des fabricants (bibliothèque de l\'entreprise). Renvoie fabricant, références, type de document, page et extrait. Mots-clés précis : « ePM1 », « 400 Pa », « R32 », une référence.',
+      input_schema: S({ texte: { type: 'string' } }, ['texte']),
+      run: i => fiches.rechercher(i.texte, 12).map(r => ({ fabricant: r.fabricant, references: (r.references || []).slice(0, 5), type: r.type, document: r.nom, version: r.date, remplacee: r.remplacee, page: r.page, extrait: r.extrait })) },
+    { name: 'caracteristiques_materiel_chantier', droit: 'chantier', description: 'Matériel retenu d\'un chantier (fabricant, référence) avec les caractéristiques lues dans sa fiche technique : débit, pression disponible, puissances chaud / froid / électrique, fluide, niveau sonore, tension, volume.',
+      input_schema: S({ affaireId: { type: 'string' } }, ['affaireId']),
+      run: i => { chantierOuErreur(i.affaireId); return fiches.materiel(String(i.affaireId)).map(m => ({ designation: m.designation, fabricant: m.fabricant, reference: m.reference, statut: m.statut, ficheTechnique: m.ficheTech ? `${m.ficheTech.nom}${m.ficheTech.date ? ` (version du ${m.ficheTech.date})` : ''}` : 'aucune dans la bibliothèque', caracteristiques: (m.ficheTech && m.ficheTech.carac) || null })); } }] : []),
     { name: 'infos_chantier', droit: 'chantier', description: 'Informations pratiques d\'un chantier : adresse du site, contact sur place, chargé d\'affaires, consignes.',
       input_schema: S({ affaireId: { type: 'string' } }, ['affaireId']),
       run: i => { const a = chantierOuErreur(i.affaireId), k = DB.getRecord(db, 'contacts', a.contactId) || {}; return { code: a.code, nom: a.nom, site: adresse(siteDe(a)), contact: [k.prenom, k.nom].filter(Boolean).join(' '), telContact: k.mobile || k.tel || '', chargeAffaires: nomUser(a.chargeId), consignes: a.consignes || a.acces || '' }; } },

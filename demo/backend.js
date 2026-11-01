@@ -2,7 +2,7 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v52';
+  const KEY = 'pipefit-crm-demo-v53';
   const ME_KEY = 'pipefit-crm-demo-me';
   const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications', 'habilitations', 'materiels', 'missions', 'produits', 'equipementsFrigo', 'fichesFluides', 'bouteilles', 'enlevements', 'epreuves', 'misesEnService', 'equilibrages', 'releves', 'fichesTech'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4], fichesFluides: ['numero', 'FI', 4], epreuves: ['numero', 'EP', 4], misesEnService: ['numero', 'MS', 4], equilibrages: ['numero', 'EQ', 4], releves: ['numero', 'RC', 4] };
@@ -170,6 +170,18 @@
     if (p[0] === 'fiches') {
       db.fichesTech = db.fichesTech || [];
       if (p[1] === 'trouver') return [200, FichesTech.trouver(db.fichesTech, body.demandes || [])];
+      // Recherche dans le texte (texte lu au dépôt, ou celui des fiches d'exemple)
+      if (p[1] === 'recherche') {
+        const n = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(), mots = n(query.get('q')).split(/\s+/).filter(m => m.length >= 2);
+        const out = [];
+        db.fichesTech.filter(f => !f.absente).forEach(f => ((db.fichesTexte || {})[f.id] || [(f.texteDemo || []).join('\n')]).forEach((pg, i) => {
+          const x = n(pg), e = n(`${f.fabricant} ${(f.references || []).join(' ')} ${f.designation}`);
+          if (!mots.length || !mots.every(m => x.includes(m) || e.includes(m))) return;
+          const j = Math.max(0, x.indexOf(mots.find(m => x.includes(m)) || ''));
+          out.push({ id: f.id, fichierId: f.fichierId, type: f.type || 'fiche', fabricant: f.fabricant, references: f.references, designation: f.designation, nom: f.nom, date: f.date || '', remplacee: !!f.remplaceePar, page: i + 1, extrait: pg.slice(Math.max(0, j - 80), j + 160).replace(/\s+/g, ' ') });
+        }));
+        return [200, out.slice(0, 50)];
+      }
       if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Réservé au bureau' }];
       const etat = () => ({ config: { chemin: 'Démonstration : dans la version installée, dossier du serveur (ex. \\\\serveur\\Fiches techniques)', actif: true, intervalle: 30, impose: true }, dernier: db.fichesDernier || null, ajoutees: 0, modifiees: 0, absentes: 0, erreurs: [], catalogue: db.fichesCatalogue || null, nombre: db.fichesTech.length });
       const versions = () => FichesTech.versions(db.fichesTech).forEach(c => { const f = db.fichesTech.find(x => x.id === c.id); if (f) { f.remplaceePar = c.remplaceePar; f._v = (f._v || 1) + 1; } });
@@ -182,15 +194,50 @@
           if (!d) return [400, { error: 'Fichier introuvable' }];
           let texte = '';
           try { const blob = await (await realFetch(d)).blob(); texte = (await PdfLecture.lire(new File([blob], body.nom || 'fiche.pdf', { type: 'application/pdf' }), () => {}, { pagesMax: 3, ocr: false })).lignes.join('\n'); } catch (e) { texte = ''; }
+          if (texte.replace(/\s/g, '').length <= 40 && body.texte) texte = String(body.texte);
           const a = FichesTech.analyser({ nom: body.nom, chemin: body.nom, texte, fabricants: [...new Set(db.fichesTech.map(f => f.fabricant).filter(Boolean))] });
+          a.fabricant = FichesTech.fabricantRetenu(a.fabricant, db.fichesAlias || {});
           const ex = a.references.map(r => FichesTech.chercher(db.fichesTech, { fabricant: a.fabricant, reference: r })).find(x => x && x.exacte);
-          return [200, { ...a, existe: ex ? { id: ex.fiche.id, nom: ex.fiche.nom, date: ex.fiche.date || '' } : null }];
+          db.fichesTexteAttente = { ...(db.fichesTexteAttente || {}), [body.fichierId]: texte.slice(0, 20000) };
+          return [200, { ...a, type: FichesTech.typeDocument(body.nom, body.nom, texte), scan: !texte.replace(/\s/g, '').length, ocr: !!body.texte && texte === String(body.texte), existe: ex ? { id: ex.fiche.id, nom: ex.fiche.nom, date: ex.fiche.date || '' } : null }];
         })();
       }
+      if (p[1] === 'texte') { const f = db.fichesTech.find(x => x.id === body.id); if (!f) return [404, { error: 'Fiche introuvable' }]; db.fichesTexte = { ...(db.fichesTexte || {}), [f.id]: [String(body.texte || '')] }; Object.assign(f, { ocr: true, carac: InventaireCVC.caracteristiques(body.texte || ''), _v: (f._v || 1) + 1 }); save(); return [200, f]; }
+      if (p[1] === 'alias') { db.fichesAlias = db.fichesAlias || {}; (body.noms || []).forEach(x => { db.fichesAlias[FichesTech.cleFab(x)] = body.nom; }); let n = 0; db.fichesTech.forEach(f => { if ((body.noms || []).includes(f.fabricant) && f.fabricant !== body.nom) { f.fabricant = body.nom; f._v = (f._v || 1) + 1; n++; } }); versions(); save(); return [200, { modifiees: n }]; }
+      if (p[1] === 'sante') {
+        const court = f => ({ id: f.id, fabricant: f.fabricant, references: f.references, nom: f.nom, date: f.date || '', creeLe: f.creeLe || '', source: f.source || '', fichierId: f.fichierId });
+        const manq = new Map();
+        [...new Set((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId).map(l => l.affaireId))].forEach(aid => {
+          const a = db.affaires.find(x => x.id === aid) || {};
+          MaterielRetenu.pourChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === aid), (db.materielSuivi || []).filter(x => x.affaireId === aid)).filter(m => m.reference && !m.orphelin).forEach(m => {
+            if (FichesTech.trouver(db.fichesTech, [{ cle: 0, fabricant: m.fabricant, reference: m.reference }])[0].fiche) return;
+            const k = `${FichesTech.cleFab(m.fabricant)}|${FichesTech.cle(m.reference)}`, x = manq.get(k) || { fabricant: m.fabricant || '', reference: m.reference, designation: m.designation || '', chantiers: [], demande: null };
+            if (!x.chantiers.some(c => c.affaireId === aid)) x.chantiers.push({ affaireId: aid, code: a.code || '' });
+            const d = (db.fichesDemandes || []).find(y => y.statut !== 'close' && y.lignes.some(l => FichesTech.cle(l.reference) === FichesTech.cle(m.reference)));
+            if (d) x.demande = { id: d.id, envoyeeLe: d.envoyeeLe, fournisseur: d.fournisseur, statut: d.statut, relances: 0 };
+            manq.set(k, x);
+          });
+        });
+        return [200, { doublons: FichesTech.doublons(db.fichesTech).map(g => g.map(court)), fabricants: FichesTech.fabricantsProches(db.fichesTech.filter(f => !f.absente)), anciennes: FichesTech.anciennes(db.fichesTech, new Date().toISOString().slice(0, 10)).map(court),
+          scans: db.fichesTech.filter(f => f.scan && !f.ocr && !f.absente).map(court), aVerifier: db.fichesTech.filter(f => f.aVerifier && !f.absente).length, manquantes: [...manq.values()] }];
+      }
+      if (p[1] === 'catalogue-lignes') return [200, db.fichesTech.filter(f => !f.absente && !f.remplaceePar && (f.type || 'fiche') === 'fiche').flatMap(f => (f.references || []).map(r => { const c = (f.caracParRef || {})[FichesTech.cle(r)] || f.carac || {}; return { fabricant: f.fabricant, reference: r, famille: f.famille || 'autre', designation: f.designation || '', ...(c.Q ? { Qmax: c.Q } : {}), ...(c.Pch || c.Pfr || c.P ? { P: c.Pch || c.Pfr || c.P } : {}), ...(c.Pel ? { Pelec: c.Pel } : {}) }; }))];
+      if (p[1] === 'demandes' && !p[2]) return [200, (db.fichesDemandes || []).slice().reverse().map(d => ({ ...d, manquantes: d.lignes.filter(l => !FichesTech.trouver(db.fichesTech, [{ cle: 0, fabricant: l.fabricant, reference: l.reference }])[0].fiche).length }))];
+      if (p[1] === 'demande') {
+        const four = (db.entreprises.find(e => e.id === body.fournisseurId) || {}).nom || '';
+        const d = { id: DemoSeed.uid().slice(0, 8), to: [String(body.to || '')], fournisseurId: body.fournisseurId || '', fournisseur: four, lignes: body.lignes || [], envoyeeLe: new Date().toISOString(), relances: [], statut: 'envoyée', par: acc.nom, demo: true };
+        db.fichesDemandes = [...(db.fichesDemandes || []), d]; save();
+        return [200, d];
+      }
+      if (p[1] === 'demandes' && p[3] === 'relancer') { const d = (db.fichesDemandes || []).find(x => x.id === p[2]); if (d) { d.relances.push(new Date().toISOString()); save(); } return [200, d]; }
+      if (p[1] === 'demandes' && p[3] === 'close') { const d = (db.fichesDemandes || []).find(x => x.id === p[2]); if (d) { d.statut = 'close'; save(); } return [200, d]; }
       if (p[1] === 'depot') {
         const out = (body.fiches || []).map(f => {
           const rec = { id: 'ft' + DemoSeed.uid(), fabricant: String(f.fabricant || '').trim(), references: String(f.references || '').split(/[\n;,]/).map(r => r.trim()).filter(Boolean), designation: f.designation || '', famille: f.famille || '', date: f.date || '',
-            fichierId: f.fichierId, nom: f.nom || '', chemin: `${FichesTech.nomFichier(f.fabricant || 'À classer')}/${f.nom || ''}`, source: 'depot', verifiee: true, _v: 1, _at: new Date().toISOString(), _by: acc.nom };
+            fichierId: f.fichierId, nom: f.nom || '', chemin: `${FichesTech.nomFichier(f.fabricant || 'À classer')}/${f.nom || ''}`, source: 'depot', verifiee: true, type: f.type || 'fiche', _v: 1, _at: new Date().toISOString(), _by: acc.nom };
+          // Texte lu au dépôt (ou par reconnaissance de caractères) : recherche et caractéristiques
+          const t = String(f.texteOcr || (db.fichesTexteAttente || {})[f.fichierId] || '');
+          if (t) { db.fichesTexte = { ...(db.fichesTexte || {}), [rec.id]: [t] }; const c = InventaireCVC.caracteristiques(t); if (Object.keys(c).length) rec.carac = c; }
           db.fichesTech.push(rec); return rec;
         });
         versions(); save();

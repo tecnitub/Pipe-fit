@@ -87,7 +87,7 @@ const FichesTech = (() => {
     });
     return s && fabricant && f.fabricant ? s + 5 : s;
   }
-  const groupeDe = f => `${cleFab(f.fabricant)}|${cle((f.references || [])[0] || f.designation)}`;
+  const groupeDe = f => `${f.type || 'fiche'}|${cleFab(f.fabricant)}|${cle((f.references || [])[0] || f.designation)}`;
   // Version en vigueur à une date (dernière fiche datée au plus tard ce jour-là), sinon la plus récente
   function enVigueur(liste, date) {
     const l = (liste || []).filter(f => !f.absente).slice().sort((a, b) => String(a.date || a.creeLe || '').localeCompare(String(b.date || b.creeLe || '')));
@@ -96,8 +96,8 @@ const FichesTech = (() => {
     return l[l.length - 1];
   }
   // Fiche d'un matériel : la mieux placée, dans sa version en vigueur à la date demandée (pose) ; null si aucune
-  function chercher(fiches, { fabricant = '', reference = '', date = '' } = {}) {
-    const notes = (fiches || []).filter(f => !f.absente).map(f => [f, score(f, fabricant, reference)]).filter(([, s]) => s >= 60);
+  function chercher(fiches, { fabricant = '', reference = '', date = '', type = 'fiche' } = {}) {
+    const notes = (fiches || []).filter(f => !f.absente && (f.type || 'fiche') === type).map(f => [f, score(f, fabricant, reference)]).filter(([, s]) => s >= 60);
     if (!notes.length) return null;
     const best = Math.max(...notes.map(([, s]) => s)), top = notes.filter(([, s]) => s === best).map(([f]) => f);
     const fiche = enVigueur(top.filter(f => groupeDe(f) === groupeDe(top[0])), date) || top[0];
@@ -129,12 +129,74 @@ const FichesTech = (() => {
     return { lignes: lignes.slice(0, 5000) };
   }
   // Recherche groupée : [{ cle, fabricant, reference, date }] → [{ cle, fiche: { id, fichierId, nom, … } | null }]
+  // Référence de la fiche qui correspond le mieux à la référence demandée (caractéristiques propres à ce modèle)
+  const refCorrespondante = (f, reference) => { const k = cle(reference); return (f.references || []).map(r => [r, cle(r)]).sort((a, b) => (b[1] === k) - (a[1] === k) || (k.startsWith(b[1]) ? b[1].length : 0) - (k.startsWith(a[1]) ? a[1].length : 0))[0]; };
+  const resume = (f, r, reference) => {
+    const m = refCorrespondante(f, reference), carac = (m && f.caracParRef && f.caracParRef[m[1]]) || f.carac || null;
+    return { id: f.id, type: f.type || 'fiche', fichierId: f.fichierId, nom: f.nom, designation: f.designation, fabricant: f.fabricant, references: f.references, date: f.date || '', exacte: r.exacte, remplacee: !!f.remplaceePar, ...(carac ? { carac } : {}) };
+  };
+  // Recherche groupée : [{ cle, fabricant, reference, date }] → [{ cle, fiche | null, autres: [notice, déclaration CE, garantie] }]
   function trouver(fiches, demandes) {
     return (demandes || []).slice(0, 1000).map(d => {
       const r = d.reference ? chercher(fiches, { fabricant: d.fabricant, reference: d.reference, date: d.date }) : null;
-      return { cle: d.cle, fiche: r ? { id: r.fiche.id, fichierId: r.fiche.fichierId, nom: r.fiche.nom, designation: r.fiche.designation, fabricant: r.fiche.fabricant, references: r.fiche.references, date: r.fiche.date || '', exacte: r.exacte, remplacee: !!r.fiche.remplaceePar } : null };
+      const autres = d.reference ? ['notice', 'dop', 'garantie'].map(type => { const x = chercher(fiches, { fabricant: d.fabricant, reference: d.reference, date: d.date, type }); return x ? resume(x.fiche, x, d.reference) : null; }).filter(Boolean) : [];
+      return { cle: d.cle, fiche: r ? resume(r.fiche, r, d.reference) : null, ...(autres.length ? { autres } : {}) };
     });
   }
+
+  /* ---------- Types de documents ---------- */
+  const TYPES_DOC = { fiche: 'Fiche technique', notice: 'Notice (installation, maintenance)', dop: 'Déclaration CE / DoP / certificat', garantie: 'Garantie constructeur' };
+  // Type d'après le dossier (« Notices », « Certificats »), le nom du fichier, puis le titre du document
+  function typeDocument(nom = '', chemin = '', texte = '') {
+    const t = re => re.test(sansAccents(`${chemin} ${nom}`).toLowerCase()) || re.test(sansAccents(String(texte).slice(0, 400)).toLowerCase());
+    if (t(/declaration (?:ue |ce )?de (?:performances?|conformite)|\bdop\b|certificat|attestation de conformite|marquage ce|\bcertificats?\b/)) return 'dop';
+    if (t(/\bgaranties?\b|warranty/)) return 'garantie';
+    if (t(/\bnotices?\b|manuel|mode d'emploi|instructions? (?:d'installation|de montage|de maintenance)|guide d'(?:installation|utilisation)|installation et maintenance|maintenance manual|user manual/)) return 'notice';
+    return 'fiche';
+  }
+  // Texte autour d'une référence (caractéristiques du modèle dans une fiche de gamme) ; tout le texte si absente
+  function extraitPour(texte, reference, rayon = 700) {
+    const t = String(texte || ''), k = cle(reference);
+    if (!k) return t;
+    // Texte réduit aux lettres et chiffres, avec la position de chaque caractère dans le texte d'origine
+    let plat = '';
+    const pos = [];
+    for (let i = 0; i < t.length; i++) { const c = sansAccents(t[i]).toUpperCase(); if (/[A-Z0-9]/.test(c)) { plat += c; pos.push(i); } }
+    const j = plat.indexOf(k);
+    if (j < 0) return t;
+    const i0 = pos[j];
+    return t.slice(i0, i0 + rayon);
+  }
+
+  /* ---------- Bibliothèque propre ---------- */
+  // Doublons : même fichier (empreinte), ou même type, fabricant, référence principale et date
+  function doublons(fiches) {
+    const g = new Map();
+    (fiches || []).filter(f => !f.absente).forEach(f => {
+      [f.hash ? `h|${f.hash}` : '', (f.references || []).length && f.date ? `r|${groupeDe(f)}|${f.date}` : ''].filter(Boolean).forEach(k => { if (!g.has(k)) g.set(k, []); g.get(k).push(f); });
+    });
+    const vus = new Set(), out = [];
+    g.forEach(l => { if (l.length < 2) return; const k = l.map(f => f.id).sort().join(','); if (vus.has(k)) return; vus.add(k); out.push(l.slice().sort((a, b) => String(a.creeLe || '').localeCompare(String(b.creeLe || '')))); });
+    return out;
+  }
+  // Fabricants écrits de plusieurs façons (« France Air », « FRANCE-AIR », « Franceair ») : à uniformiser
+  function fabricantsProches(fiches) {
+    const noms = new Map();
+    (fiches || []).filter(f => f.fabricant).forEach(f => noms.set(f.fabricant, (noms.get(f.fabricant) || 0) + 1));
+    const l = [...noms.keys()], groupes = [], pris = new Set();
+    l.forEach(a => {
+      if (pris.has(a)) return;
+      const g = l.filter(b => !pris.has(b) && (b === a || memeFab(a, b)));
+      if (g.length > 1) { g.forEach(b => pris.add(b)); groupes.push(g.sort((x, y) => noms.get(y) - noms.get(x)).map(nom => ({ nom, nombre: noms.get(nom) }))); }
+    });
+    return groupes;
+  }
+  // Fiches de plus de N ans (version à redemander au fabricant)
+  const anciennes = (fiches, auj, ans = 5) => { const lim = `${Number(String(auj).slice(0, 4)) - ans}${String(auj).slice(4, 10)}`; return (fiches || []).filter(f => !f.absente && !f.remplaceePar && f.date && f.date < lim); };
+  // Fabricant d'après les alias enregistrés ({ cleFab: nom retenu })
+  const fabricantRetenu = (nom, alias) => (alias && alias[cleFab(nom)]) || nom;
+  // Réponse à une demande de fiches : repère « [FT-xxxx] » dans l'objet ou le message
+  const repereDemande = t => { const m = /\[FT-([0-9a-f]{6,16})\]/i.exec(String(t || '')); return m ? m[1].toLowerCase() : ''; };
   // PDF d'une page (texte en Helvetica) : fiches de la démonstration et des tests
   function pdfMinimal(lignes) {
     const tx = s => sansAccents(s).replace(/[()\\]/g, '').replace(/[^\x20-\x7e]/g, '');
@@ -148,6 +210,6 @@ const FichesTech = (() => {
   }
   // Nom de fichier propre (dossier réseau Windows / Linux)
   const nomFichier = s => sansAccents(s).replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim().slice(0, 120) || 'fiche';
-  return { trouver, pdfMinimal, cle, cleFab, memeFab, referencesDans, dateDans, familleDe, analyser, score, chercher, enVigueur, versions, lireCatalogue, nomFichier };
+  return { TYPES_DOC, typeDocument, extraitPour, doublons, fabricantsProches, anciennes, fabricantRetenu, repereDemande, trouver, pdfMinimal, cle, cleFab, memeFab, referencesDans, dateDans, familleDe, analyser, score, chercher, enVigueur, versions, lireCatalogue, nomFichier };
 })();
 if (typeof module !== 'undefined') module.exports = FichesTech;

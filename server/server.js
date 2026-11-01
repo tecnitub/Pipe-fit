@@ -19,6 +19,7 @@ const Notifs = require('./notifs');
 const Compagnon = require('../public/js/compagnon');
 const MaterielRetenu = require('../public/js/materiel-retenu');
 const Installe = require('../public/js/installe');
+const FT = require('../public/js/fiches-tech');
 // Lignes des commandes fournisseurs d'un chantier pour le suivi du matériel (fournisseur nommé, sans prix)
 const lignesCommandesPF = affaireId => Installe.lignesCommandes(recordsDe('commandes'), affaireId, id => (id ? (DB.getRecord(db, 'entreprises', String(id)) || {}).nom : '') || '', id => (id ? DB.getRecord(db, 'articles', String(id)) : null));
 const NoteFrais = require('../public/js/frais');
@@ -161,7 +162,57 @@ const PJRESEAU = require('./pj-reseau').creer({ DB, db, racineDocuments: () => D
 const FICHES = require('./fiches-tech').creer({ DB, db, broadcast, racineDocuments: () => DOSSIER.config().chemin });
 // Assistant (Claude) : tâches confiées en langage courant, préparées en brouillon avec les droits de la personne
 const LIENS = require('./liens-apps').creer({ db, broadcast });
-const ASSISTANT = require('./assistant').creer({ DB, db, broadcast, notifier: obj => NOTIFS.enregistrer(obj) });
+
+/* ---------- Fiches techniques : références du matériel retenu sans fiche, demandes aux fournisseurs ---------- */
+function fichesManquantes() {
+  const parAff = {}, out = new Map(), toutes = FICHES.fiches(), demandes = FICHES.demandes().filter(d => !['reçue', 'close'].includes(d.statut));
+  LIENS.liste({ app: 'etudes' }).filter(l => l.affaireId).forEach(l => { (parAff[l.affaireId] = parAff[l.affaireId] || []).push(l); });
+  Object.entries(parAff).forEach(([aid, ls]) => {
+    const a = DB.getRecord(db, 'affaires', aid);
+    if (!a) return;
+    Installe.suiviCommandes(MaterielRetenu.pourChantier(ls, LIENS.suivis({ affaireId: aid })), lignesCommandesPF(aid)).filter(m => m.reference && !m.orphelin).forEach(m => {
+      if (FT.trouver(toutes, [{ cle: 0, fabricant: m.fabricant, reference: m.reference }])[0].fiche) return;
+      const k = `${FT.cleFab(m.fabricant)}|${FT.cle(m.reference)}`, x = out.get(k) || { fabricant: m.fabricant || '', reference: m.reference, designation: m.designation || '', chantiers: [], fournisseurId: '', demande: null };
+      if (!x.chantiers.some(c => c.affaireId === aid)) x.chantiers.push({ affaireId: aid, code: a.code || '', nom: a.nom || '' });
+      if (!x.fournisseurId && m.commande && m.commande.commandeId) x.fournisseurId = (DB.getRecord(db, 'commandes', m.commande.commandeId) || {}).fournisseurId || '';
+      const d = demandes.find(y => (y.lignes || []).some(l => FT.cle(l.reference) === FT.cle(m.reference) && (!l.fabricant || !m.fabricant || FT.memeFab(l.fabricant, m.fabricant))));
+      if (d) x.demande = { id: d.id, envoyeeLe: d.envoyeeLe, fournisseur: d.fournisseur, statut: d.statut, relances: (d.relances || []).length };
+      out.set(k, x);
+    });
+  });
+  return [...out.values()].sort((a, b) => String(a.fabricant).localeCompare(String(b.fabricant)) || String(a.reference).localeCompare(String(b.reference)));
+}
+// Mail de demande (ou de relance) : objet repéré « [FT-xxxx] », réponse dans la boîte des offres si elle est relevée
+async function envoyerDemandeFiches(d, relance) {
+  const cfg = DB.getConfig(db, 'm365'), oc = MAILO.config(DB, db);
+  const lignes = relance ? FICHES.manquantesDe(d) : d.lignes;
+  const chantiers = [...new Set(lignes.map(l => l.chantier).filter(Boolean))];
+  const soc = (DB.getSettings(db) || {}).societe || '';
+  const html = `<p>Bonjour,</p><p>${relance ? 'Sauf erreur de notre part, nous n\'avons pas encore reçu les' : 'Pourriez-vous nous transmettre les'} <strong>fiches techniques</strong> (PDF) du matériel suivant${chantiers.length ? `, pour notre chantier ${chantiers.map(escHtml).join(', ')}` : ''} :</p>
+    <table border="1" cellpadding="4" style="border-collapse:collapse"><tr><th>Fabricant</th><th>Référence</th><th>Désignation</th></tr>${lignes.map(l => `<tr><td>${escHtml(l.fabricant || '')}</td><td><strong>${escHtml(l.reference)}</strong></td><td>${escHtml(l.designation || '')}</td></tr>`).join('')}</table>
+    ${d.message ? `<p>${escHtml(d.message).replace(/\n/g, '<br>')}</p>` : ''}<p>Merci de répondre à ce message en joignant les PDF (sans modifier l'objet).</p><p>Cordialement,<br>${escHtml(d.par || '')}${soc ? `<br>${escHtml(soc)}` : ''}</p>`;
+  await M365.envoyer(cfg, d.expediteur, { to: d.to, cc: [], bcc: [], replyTo: oc.actif && oc.adresse ? [oc.adresse] : [], subject: `${relance ? 'Relance : ' : ''}Fiches techniques${chantiers.length ? ` — ${chantiers.join(', ')}` : ''} [FT-${d.id}]`, html, attachments: [] });
+}
+const escHtml = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// Relance automatique : 7 jours sans les fiches, deux relances au plus ; demande soldée dès que toutes les fiches sont là
+async function relancerDemandesFiches() {
+  if (!m365Pret()) return;
+  const sept = Date.now() - 7 * 86400000;
+  for (const d of FICHES.demandes().filter(x => !['reçue', 'close', 'sans réponse'].includes(x.statut))) {
+    if (!FICHES.manquantesDe(d).length) { FICHES.majDemande(d.id, { statut: 'reçue' }); continue; }
+    const dernier = new Date((d.relances || []).slice(-1)[0] || d.envoyeeLe).getTime();
+    if (dernier > sept) continue;
+    if ((d.relances || []).length >= 2) { FICHES.majDemande(d.id, { statut: 'sans réponse' }); continue; }
+    try { await envoyerDemandeFiches(d, true); FICHES.majDemande(d.id, { relances: [...(d.relances || []), new Date().toISOString()] }); } catch (e) { console.error('Relance des fiches techniques :', e.message); }
+  }
+}
+// Matériel retenu d'un chantier avec sa fiche technique (version en vigueur à la pose)
+const materielAvecFiches = affaireId => {
+  const ms = Installe.suiviCommandes(MaterielRetenu.pourChantier(LIENS.liste({ affaireId, app: 'etudes' }), LIENS.suivis({ affaireId })), lignesCommandesPF(affaireId));
+  const ft = FICHES.trouver(ms.map((m, i) => ({ cle: i, fabricant: m.fabricant, reference: m.reference, date: m.poseLe || '' })));
+  return ms.map((m, i) => (ft[i].fiche ? { ...m, ficheTech: ft[i].fiche, ...(ft[i].autres ? { documentsFabricant: ft[i].autres } : {}) } : m));
+};
+const ASSISTANT = require('./assistant').creer({ DB, db, broadcast, notifier: obj => NOTIFS.enregistrer(obj), fiches: { rechercher: (q, n) => FICHES.rechercher(q, n), materiel: affaireId => materielAvecFiches(affaireId) } });
 const SAUVEGARDE = require('./sauvegarde').creer({ DB, db, dossierDefaut: path.join(path.dirname(DB_FILE), 'Sauvegardes'),
   autres: [{ prefixe: 'doe', fichier: process.env.DOE_DB_FILE || path.join(__dirname, '..', 'doe', 'data', 'doe.db') },
     { prefixe: 'etudes', fichier: process.env.ETUDES_DB_FILE || path.join(__dirname, '..', 'etudes', 'data', 'etudes.db') }] });
@@ -491,6 +542,7 @@ async function api(req, res, url) {
   // catalogue, lecture du dossier et réglage (bureau)
   if (p[0] === 'fiches') {
     if (p[1] === 'trouver' && method === 'POST') { const b = await readBody(req); return send(res, 200, FICHES.trouver(Array.isArray(b.demandes) ? b.demandes : [])); }
+    if (p[1] === 'recherche' && method === 'GET') return send(res, 200, FICHES.rechercher(String(url.searchParams.get('q') || '').slice(0, 120)));
     if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
     try {
       if (p[1] === 'etat' && method === 'GET') return send(res, 200, { config: FICHES.config(), ...FICHES.etat(), sep: path.sep });
@@ -504,7 +556,51 @@ async function api(req, res, url) {
         return send(res, 200, { config: c, ...FICHES.etat() });
       }
       if (p[1] === 'synchro' && method === 'POST') { await FICHES.synchroniser(); return send(res, 200, { config: FICHES.config(), ...FICHES.etat() }); }
-      if (p[1] === 'analyser' && method === 'POST') { const b = await readBody(req); return send(res, 200, await FICHES.analyserFichier(b.fichierId, String(b.nom || ''))); }
+      if (p[1] === 'analyser' && method === 'POST') { const b = await readBody(req); return send(res, 200, await FICHES.analyserFichier(b.fichierId, String(b.nom || ''), String(b.texte || '').slice(0, 200000))); }
+      // Texte d'une fiche scannée lu dans le navigateur (reconnaissance de caractères)
+      if (p[1] === 'texte' && method === 'POST') { const b = await readBody(req); return send(res, 200, FICHES.texteOcr(b.id, b.texte)); }
+      // État de la bibliothèque : doublons, fabricants à uniformiser, fiches anciennes, scans, références sans fiche
+      if (p[1] === 'sante' && method === 'GET') {
+        const l = FICHES.fiches(), court = f => ({ id: f.id, fabricant: f.fabricant, references: f.references, nom: f.nom, date: f.date || '', creeLe: f.creeLe || '', source: f.source || '', chemin: f.chemin || '', fichierId: f.fichierId });
+        return send(res, 200, { doublons: FT.doublons(l).map(g => g.map(court)), fabricants: FT.fabricantsProches(l.filter(f => !f.absente)), anciennes: FT.anciennes(l, new Date().toISOString().slice(0, 10)).map(court),
+          scans: l.filter(f => f.scan && !f.ocr && !f.absente).map(court), aVerifier: l.filter(f => f.aVerifier && !f.absente).length, manquantes: fichesManquantes() });
+      }
+      if (p[1] === 'alias' && method === 'PUT') { const b = await readBody(req); return send(res, 200, FICHES.uniformiser(Array.isArray(b.noms) ? b.noms.map(String) : [], b.nom, acc.nom || acc.login)); }
+      // Lignes du catalogue matériel des études tirées des fiches (débit, puissances, Lw, volume, pression)
+      if (p[1] === 'catalogue-lignes' && method === 'GET') {
+        const FAM = { bouche: 'bouche', cta: 'cta', caisson: 'caisson', pac: 'pac', generateur: 'generateur', pompe: 'pompe', vanne: 'vanne', vase: 'vase', echangeur: 'echangeur', ballon: 'ballon', regulation: 'regulation' };
+        const out = [];
+        FICHES.fiches().filter(f => !f.absente && !f.remplaceePar && (f.type || 'fiche') === 'fiche' && f.fabricant).forEach(f => (f.references || []).slice(0, 20).forEach(r => {
+          const c = (f.caracParRef || {})[FT.cle(r)] || f.carac || {};
+          out.push({ fabricant: f.fabricant, reference: r, famille: FAM[f.famille] || 'autre', designation: f.designation || '', ...(c.Q ? { Qmax: c.Q } : {}), ...(c.Pch || c.Pfr || c.P ? { P: c.Pch || c.Pfr || c.P } : {}),
+            ...(c.Pel ? { Pelec: c.Pel } : {}), ...(c.Pdispo ? { dp: c.Pdispo } : {}), ...(c.Lw ? { Lw: c.Lw } : {}), ...(c.volume ? { volume: c.volume } : {}), ficheId: f.id });
+        }));
+        return send(res, 200, out);
+      }
+      // Demandes de fiches aux fournisseurs (mail repéré, relances automatiques, réponses lues dans la boîte des offres)
+      if (p[1] === 'demandes' && method === 'GET') return send(res, 200, FICHES.demandes().slice().reverse().map(d => ({ ...d, manquantes: FICHES.manquantesDe(d).length })));
+      if (p[1] === 'demande' && method === 'POST') {
+        if (!m365Pret()) return fail(res, 400, "L'envoi par Microsoft 365 n'est pas configuré (Paramètres → E-mails).");
+        const b = await readBody(req), to = (Array.isArray(b.to) ? b.to : [b.to]).map(x => String(x || '').trim()).filter(Boolean);
+        if (!to.length || to.some(x => !EMAIL.test(x))) return fail(res, 400, 'Adresse e-mail du fournisseur invalide');
+        const lignes = (Array.isArray(b.lignes) ? b.lignes : []).slice(0, 100).map(l => ({ fabricant: String(l.fabricant || '').slice(0, 60), reference: String(l.reference || '').slice(0, 60), designation: String(l.designation || '').slice(0, 160), chantier: String(l.chantier || '').slice(0, 40) })).filter(l => l.reference);
+        if (!lignes.length) return fail(res, 400, 'Aucune référence à demander');
+        const exp = AdressesEnvoi.pour(DB.getConfig(db, 'mail-adresses'), 'consultation', acc.email).expediteur;
+        if (!exp) return fail(res, 400, "Votre compte n'a pas d'adresse Microsoft 365.");
+        const fournisseur = b.fournisseurId ? ((DB.getRecord(db, 'entreprises', String(b.fournisseurId)) || {}).nom || '') : '';
+        const d = { to, fournisseurId: String(b.fournisseurId || ''), fournisseur, lignes, message: String(b.message || '').slice(0, 2000), expediteur: exp, par: acc.nom || acc.login, envoyeeLe: new Date().toISOString() };
+        d.id = FICHES.ajouterDemande(d);
+        try { await envoyerDemandeFiches(d, false); } catch (e) { FICHES.majDemande(d.id, { statut: 'erreur', erreur: e.message }); return fail(res, 502, e.message); }
+        DB.audit(db, acc.login, 'demande de fiches techniques', null, null, `${fournisseur || to.join(', ')} : ${lignes.length} référence(s)`);
+        return send(res, 200, FICHES.demandes().find(x => x.id === d.id));
+      }
+      if (p[1] === 'demandes' && p[2] && p[3] === 'relancer' && method === 'POST') {
+        const d = FICHES.demandes().find(x => x.id === p[2]);
+        if (!d) return fail(res, 404, 'Demande introuvable');
+        await envoyerDemandeFiches(d, true);
+        return send(res, 200, FICHES.majDemande(d.id, { relances: [...(d.relances || []), new Date().toISOString()], statut: 'envoyée' }));
+      }
+      if (p[1] === 'demandes' && p[2] && p[3] === 'close' && method === 'POST') return send(res, 200, FICHES.majDemande(p[2], { statut: 'close' }));
       if (p[1] === 'depot' && method === 'POST') {
         const b = await readBody(req), l = Array.isArray(b.fiches) ? b.fiches.slice(0, 200) : [];
         const out = l.map(f => FICHES.deposer(f, acc.nom || acc.login));
@@ -561,10 +657,8 @@ async function api(req, res, url) {
       const affaireId = url.searchParams.get('affaireId') || '';
       if (!affaireId) return send(res, 200, []);
       // Matériel retenu + suivi du chantier + commandes (commandé, substitution, livré) — sans prix
-      const ms = MaterielRetenu.pourChantier(LIENS.liste({ affaireId, app: 'etudes' }), LIENS.suivis({ affaireId }));
-      // Fiche technique de la bibliothèque (référence retenue, sinon celle reçue à la livraison ; version en vigueur à la pose)
-      const ft = FICHES.trouver(ms.map((m, i) => ({ cle: i, fabricant: m.fabricant, reference: m.reference, date: m.poseLe || '' })));
-      return send(res, 200, Installe.suiviCommandes(ms, lignesCommandesPF(affaireId)).map((m, i) => (ft[i].fiche ? { ...m, ficheTech: ft[i].fiche } : m)));
+      // Fiche technique de la bibliothèque (version en vigueur à la pose), notices et certificats du fabricant
+      return send(res, 200, materielAvecFiches(affaireId));
     }
     // Avancement du matériel par chantier (liste des chantiers, bureau)
     if (p[1] === 'avancement' && method === 'GET') {
@@ -883,7 +977,7 @@ async function api(req, res, url) {
     if (p[1] === 'etat' && method === 'GET') return send(res, 200, { actif: oc.actif && !!oc.adresse, adresse: oc.adresse, m365: m365Pret(), dernier: MAILO.etat.dernier, erreur: MAILO.etat.erreur, resultat: MAILO.etat.resultat, nonReconnues: MAILO.etat.nonReconnues });
     if (p[1] === 'relever' && method === 'POST') {
       if (!oc.actif || !oc.adresse) return fail(res, 400, 'Aucune boîte des offres n\'est configurée (Achats › Factures reçues › Configuration).');
-      try { return send(res, 200, await MAILO.relever(DB, db, broadcast)); } catch (e) { return fail(res, 502, e.message); }
+      try { return send(res, 200, await MAILO.relever(DB, db, broadcast, { fiches: FICHES.recevoirMail })); } catch (e) { return fail(res, 502, e.message); }
     }
   }
 
@@ -1156,7 +1250,8 @@ if (require.main === module) {
   // Relève du dossier de réception des factures électroniques toutes les 2 minutes
   setInterval(() => EF.scruterDossier(DB, db, broadcast).catch(e => console.error('Facturation électronique :', e.message)), 120000).unref();
   setInterval(() => MAILF.relever(DB, db, broadcast).catch(e => console.error('Boîte des factures :', e.message)), 120000).unref();
-  setInterval(() => MAILO.relever(DB, db, broadcast).catch(e => console.error('Boîte des offres :', e.message)), 120000).unref();
+  setInterval(() => MAILO.relever(DB, db, broadcast, { fiches: FICHES.recevoirMail }).catch(e => console.error('Boîte des offres :', e.message)), 120000).unref();
+  setInterval(() => relancerDemandesFiches().catch(() => {}), 6 * 3600000).unref();
   // Échéances des habilitations, visites médicales et contrôles du parc : peu après le démarrage, puis toutes les 6 heures
   const verifierEcheances = () => NOTIFS.echeances().catch(e => console.error('Échéances :', e.message));
   setTimeout(verifierEcheances, 30000).unref();

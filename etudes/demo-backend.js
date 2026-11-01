@@ -139,6 +139,7 @@
     if (p[0] === 'pf' && p[1] === 'rex') return rep(200, RexPF(crm() || seed));
     // Bibliothèque des fiches techniques de la démo du CRM
     if (p[0] === 'pf' && p[1] === 'fiches' && p[2] === 'trouver') return rep(200, typeof FichesTech === 'undefined' ? [] : FichesTech.trouver((crm() || seed).fichesTech || [], body().demandes || []));
+    if (p[0] === 'pf' && p[1] === 'fiches' && p[2] === 'catalogue-lignes') return rep(200, ((crm() || seed).fichesTech || []).filter(f => !f.absente && !f.remplaceePar && (f.type || 'fiche') === 'fiche').flatMap(f => (f.references || []).map(r => { const c = (f.caracParRef || {})[String(r).toUpperCase().replace(/[^A-Z0-9]/g, '')] || f.carac || {}; return { fabricant: f.fabricant, reference: r, famille: f.famille || 'autre', designation: f.designation || '', ...(c.Q ? { Qmax: c.Q } : {}), ...(c.Pch || c.Pfr || c.P ? { P: c.Pch || c.Pfr || c.P } : {}), ...(c.Pel ? { Pelec: c.Pel } : {}) }; })));
     if (p[0] === 'pf' && p[1] === 'fiches' && p[2] === 'catalogue') return rep(200, { total: new Set((body().lignes || []).map(l => l.url)).size, demo: true });
     if (p[0] === 'pf' && p[1] === 'materiel-suivi') return rep(200, ((crm() || {}).materielSuivi || []).filter(x => x.etudeId === new URL(url, 'http://x').searchParams.get('etudeId')));
     // Reliée au CRM : devis et note de calcul créés par la page du CRM

@@ -89,7 +89,7 @@ const InventaireCVC = (() => {
   function caracteristiques(texte) {
     const t = String(texte || ''), x = norm(t), c = puissances(t);
     // Débit d'air annoncé « débit … » (le maxi d'une plage « 1490 / 2560 m³/h »), sinon le premier cité
-    let m = /debit[^0-9.]{0,40}?(\d[\d\s]{0,6}(?:[.,]\d+)?)(?:\s*\/\s*(\d[\d\s]{0,6}))?\s*m(?:3|³)\s*\/\s*h/.exec(x);
+    let m = /debit[^0-9.]{0,40}?(\d[\d\s]{0,6}(?:[.,]\d+)?)(?:\s*(?:\/|a|-)\s*(\d[\d\s]{0,6}))?\s*m(?:3|³)\s*\/\s*h/.exec(x);
     if (m) c.Q = nbr(m[2] || m[1]); else { const q = debitAir(t); if (Number.isFinite(q)) c.Q = q; }
     m = /pression (?:disponible|statique(?: disponible| externe)?|utile|externe|totale disponible)[^0-9]{0,25}(\d{2,4})\s*pa\b/.exec(x); if (m) c.Pdispo = +m[1];
     m = /(?:hmt|hauteur manometrique)[^0-9]{0,20}(\d+(?:[.,]\d+)?)\s*(mce|kpa|m\b)/.exec(x); if (m) c.HMT = m[2] === 'kpa' ? Math.round(nombre(m[1]) / 9.81 * 10) / 10 : nombre(m[1]);

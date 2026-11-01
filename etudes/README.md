@@ -125,7 +125,9 @@ les équipements de l'étude ». Un CCTP scanné (sans texte) ne se lit pas : de
 - **Fiches techniques** : chaque ligne du matériel retenu retrouve sa fiche dans la bibliothèque de Pipe-Fit (fabricant +
   référence exacte, 📄 bibliothèque ; « pas de fiche dans la bibliothèque » sinon) ; la liste à faire valider (PDF) est suivie
   des fiches techniques, une fois chacune. Dans les Réglages, « 📥 Fiches dans la bibliothèque Pipe-Fit » fait télécharger par
-  Pipe-Fit les PDF des liens « fiche » du catalogue matériel.
+  Pipe-Fit les PDF des liens « fiche » du catalogue matériel ; « 📚 Compléter depuis les fiches de Pipe-Fit » ajoute au catalogue
+  les modèles des fiches avec leurs caractéristiques lues (débit maxi, puissances, puissance électrique, Lw, volume, pression).
+  Le contrôle face au CCTP utilise aussi ces caractéristiques quand le modèle choisi n'est pas au catalogue.
 - **Matériel retenu contrôlé face au CCTP** : chaque ligne affiche l'équipement du dossier de consultation qui lui
   correspond (prescription, caractéristiques) ; le modèle choisi est comparé : marque imposée (⛔) ou « ou équivalent »
   (note d'équivalence à joindre), débit, puissance, volume, pression disponible, niveau sonore, puissance électrique.
