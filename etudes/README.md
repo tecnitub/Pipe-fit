@@ -70,8 +70,14 @@ dans une étude. Les valeurs sont des données de pré-dimensionnement : les doc
 les documents du chantier Pipe-Fit (catégorie CCTP, ou « DPGF » dans le nom), sont lus sur le poste. Producteurs
 (chaudières, PAC, groupes froids, sous-stations), émetteurs (radiateurs, planchers, ventilo-convecteurs, aérothermes, CTA,
 ECS, splits) et auxiliaires (pompes, vannes, ventilation, régulation) sont reconnus et rapprochés : quantités du DPGF,
-repères, prescriptions et régime du CCTP, puissance de l'un ou de l'autre. L'inventaire se vérifie dans un tableau, puis
-« 🗺️ Créer le schéma de principe » (générateurs en cascade, régime, un circuit par émetteur), « 🌬️ Créer le schéma
+repères, prescriptions et régime du CCTP, puissance de l'un ou de l'autre. Les **réseaux** sont reconnus aussi : titres de chapitres du DPGF sans quantité (« Réseau radiateurs bâtiment A »,
+« Circuit plancher chauffant », « Réseau eau glacée CTA », « Gaines de soufflage », « Réseau de reprise »…) et articles
+du CCTP qui en parlent ; leur nature (chauffage, eau glacée, change-over, ECS, vapeur, soufflage, reprise, extraction,
+air neuf, désenfumage, plomberie écartée), leur régime et la longueur et le plus gros diamètre de leurs tuyauteries ou
+gaines (lignes en ml) sont lus, et les équipements écrits dessous (ou dans les articles enfants du CCTP) y sont rattachés ;
+une grille sans précision sous un réseau de reprise devient une bouche de reprise. Réseaux du CCTP et du DPGF réunis.
+L'inventaire se vérifie dans un tableau (réseaux, nature modifiable, réseau de chaque équipement), puis
+« 🗺️ Créer le schéma de principe » (générateurs en cascade, régime, un circuit par réseau reconnu, sinon par émetteur), « 🌬️ Créer le schéma
 aéraulique » (CTA ou caisson, une zone par ligne de bouches de soufflage ou d'extraction, débits du DPGF) et « ⚡ Créer l'alimentation
 électrique » (un équipement par unité) préremplissent l'étude ; l'inventaire enregistré est aussi repris par « ⚡ Reprendre
 les équipements de l'étude ». Un CCTP scanné (sans texte) ne se lit pas : demander le PDF d'origine.

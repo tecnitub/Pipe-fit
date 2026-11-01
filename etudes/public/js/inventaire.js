@@ -9,14 +9,15 @@ async function lireDossier(fichier, nature, progression) {
     if (!pdf) throw new Error(`${fichier.name} : le CCTP se lit en PDF.`);
     const { lignes } = await PdfLecture.lire(fichier, progression, { pagesMax: 250, ocr: false });
     if (lignes.join('').replace(/\s/g, '').length < 300) throw new Error(`${fichier.name} : pas de texte lisible (document scanné) ; demandez le PDF d'origine.`);
-    return InventaireCVC.depuisCctp(CctpLecture.analyser(lignes).equipements);
+    const analyse = CctpLecture.analyser(lignes), reseaux = InventaireCVC.reseauxCctp(analyse);
+    return { items: InventaireCVC.depuisCctp(analyse.equipements, reseaux), reseaux };
   }
-  if (pdf) { const { lignes } = await PdfLecture.lire(fichier, progression, { pagesMax: 120, ocr: false }); return InventaireCVC.depuisDpgfTexte(lignes).items; }
+  if (pdf) { const { lignes } = await PdfLecture.lire(fichier, progression, { pagesMax: 120, ocr: false }); return InventaireCVC.depuisDpgfTexte(lignes); }
   const buf = await fichier.arrayBuffer(), feuilles = /\.csv$/i.test(fichier.name) ? XLSX.readCSV(buf) : await XLSX.read(buf);
   // Feuille qui donne le plus d'équipements
   const lus = feuilles.map(f => InventaireCVC.depuisDpgf(f.rows || [])).sort((a, b) => b.items.length - a.items.length);
   if (!lus.length || (!lus[0].items.length && lus[0].erreur)) throw new Error(`${fichier.name} : ${(lus[0] || {}).erreur || 'aucune feuille lisible'}`);
-  return lus[0].items;
+  return lus[0];
 }
 const natureDe = nom => (/dpgf|dqe|bpu|\.xlsx?$|\.csv$/i.test(nom) ? 'dpgf' : 'cctp');
 
@@ -32,7 +33,7 @@ function dialogueInventaire(et) {
   const etat = t => { const e = b.querySelector('#inv-etat'); if (e) e.textContent = t; };
   b.querySelector('#inv-x').onclick = Modal.close;
   const act = b.querySelector('#inv-actuel');
-  if (act) act.onclick = () => tableauInventaire(et, et.inventaire.map(x => ({ ...x })), []);
+  if (act) act.onclick = () => tableauInventaire(et, et.inventaire.map(x => ({ ...x })), [], (et.inventaireReseaux || []).map(r => ({ ...r })));
   b.querySelector('#inv-lire').onclick = async () => {
     const sources = [];
     for (const cb of b.querySelectorAll('[data-doc]:checked')) {
@@ -44,33 +45,44 @@ function dialogueInventaire(et) {
     if (fd) sources.push({ nature: 'dpgf', charger: async () => fd });
     if (!sources.length) return toast('Choisissez le CCTP et / ou le DPGF.');
     b.querySelector('#inv-lire').disabled = true;
-    const cctp = [], dpgf = [], erreurs = [];
+    const cctp = [], dpgf = [], resC = [], resD = [], erreurs = [];
     for (const s of sources) {
       try {
         const f = await s.charger();
         etat(`Lecture de ${f.name}…`);
-        (s.nature === 'cctp' ? cctp : dpgf).push(...await lireDossier(f, s.nature, p => etat(`Lecture de ${f.name}… ${typeof p === 'number' ? `${Math.round(p * 100)} %` : p || ''}`)));
+        const r = await lireDossier(f, s.nature, p => etat(`Lecture de ${f.name}… ${typeof p === 'number' ? `${Math.round(p * 100)} %` : p || ''}`));
+        (s.nature === 'cctp' ? cctp : dpgf).push(...r.items); (s.nature === 'cctp' ? resC : resD).push(...(r.reseaux || []));
       } catch (e) { erreurs.push(e.message); }
     }
-    const inv = InventaireCVC.fusionner(cctp, dpgf);
-    if (!inv.length) { b.querySelector('#inv-lire').disabled = false; return etat(erreurs.join(' · ') || 'Aucun producteur ni émetteur reconnu dans ces documents.'); }
-    tableauInventaire(et, inv, erreurs);
+    const inv = InventaireCVC.fusionner(cctp, dpgf), reseaux = InventaireCVC.fusionnerReseaux(resC, resD, inv);
+    if (!inv.length && !reseaux.length) { b.querySelector('#inv-lire').disabled = false; return etat(erreurs.join(' · ') || 'Aucun producteur ni émetteur reconnu dans ces documents.'); }
+    tableauInventaire(et, inv, erreurs, reseaux);
   };
 }
 
 // Inventaire à vérifier : genre, désignation, quantité, puissance, régime ; puis création des calculs
-function tableauInventaire(et, inv, erreurs) {
-  const G = InventaireCVC.GENRES, CAT = { producteur: 'Producteurs', emetteur: 'Émetteurs', auxiliaire: 'Auxiliaires' };
+function tableauInventaire(et, inv, erreurs, reseaux = []) {
+  const G = InventaireCVC.GENRES, CAT = { producteur: 'Producteurs', emetteur: 'Émetteurs', auxiliaire: 'Auxiliaires' }, NAT = InventaireCVC.NATURE;
+  const nb = r => inv.filter(x => x.reseau === r.id && x.inclus !== false).length;
+  const optReseaux = v => `<option value="">—</option>${reseaux.map(r => `<option value="${esc(r.id)}" ${r.id === v ? 'selected' : ''}>${esc(r.nom.slice(0, 40))}</option>`).join('')}`;
   const rendu = () => `<h2>📑 Inventaire du dossier de consultation <span class="compte">${inv.length}</span></h2>
     ${erreurs.length ? `<p class="erreur petit">${erreurs.map(esc).join('<br>')}</p>` : ''}
+    <h3>Réseaux reconnus <span class="compte">${reseaux.length}</span></h3>
+    ${reseaux.length ? `<p class="muted petit">Titres de chapitres du DPGF et articles du CCTP qui désignent un réseau ; les équipements écrits dessous y sont rattachés. Le schéma de principe crée un circuit par réseau hydraulique (puissance des émetteurs cumulée, longueur des tuyauteries du DPGF). Corrigez la nature si besoin.</p>
+      <div class="defile-x"><table class="edit"><thead><tr><th>Réseau</th><th>Nature</th><th>Régime</th><th>Tuyauteries / gaines</th><th>Équipements</th><th>Source</th></tr></thead><tbody>
+      ${reseaux.map((r, k) => `<tr><td><input data-r="${k}" data-rk="nom" value="${esc(r.nom)}"></td>
+        <td><select data-r="${k}" data-rk="nature"><option value="">— non reconnue —</option>${Object.entries(NAT).map(([n, x]) => `<option value="${n}" ${n === r.nature ? 'selected' : ''}>${esc(x.libelle)}</option>`).join('')}</select></td>
+        <td><input data-r="${k}" data-rk="regime" value="${esc(r.regime || '')}" placeholder="70/50" style="width:70px"></td>
+        <td class="petit">${r.L ? `${Notes.nf(r.L, 0)} ml${Number.isFinite(r.dnMax) ? ` · jusqu'au ${r.hydro ? 'DN' : 'Ø'} ${r.dnMax}` : ''}` : '<span class="muted">—</span>'}</td><td>${nb(r)}</td><td class="petit muted">${esc((r.sources || []).join(', '))}</td></tr>`).join('')}</tbody></table></div>`
+      : '<p class="muted petit">Aucun réseau reconnu : les titres « Réseau … », « Circuit … », « Distribution … » ou « Gaines de soufflage … » du DPGF (lignes sans quantité) et les articles du CCTP qui en parlent sont attendus. Chaque émetteur fera son propre circuit.</p>'}
     <p class="muted petit">Décochez ce qui ne concerne pas l'étude, corrigez le genre, la quantité ou la puissance (puissance unitaire, kW). Les quantités viennent du DPGF, les repères et prescriptions du CCTP.</p>
-    <div class="defile-x"><table class="edit"><thead><tr><th></th><th>Genre</th><th>Désignation</th><th>Repère</th><th>Qté</th><th>P unit. (kW)</th><th>Débit (m³/h)</th><th>Régime</th><th>Source</th></tr></thead><tbody>
-    ${['producteur', 'emetteur', 'auxiliaire'].map(c => { const l = inv.map((x, i) => [x, i]).filter(([x]) => x.categorie === c); return l.length ? `<tr><th colspan="9" class="petit">${CAT[c]}</th></tr>${l.map(([x, i]) => `<tr>
+    <div class="defile-x"><table class="edit"><thead><tr><th></th><th>Genre</th><th>Désignation</th><th>Repère</th><th>Qté</th><th>P unit. (kW)</th><th>Débit (m³/h)</th><th>Régime</th><th>Réseau</th><th>Source</th></tr></thead><tbody>
+    ${['producteur', 'emetteur', 'auxiliaire'].map(c => { const l = inv.map((x, i) => [x, i]).filter(([x]) => x.categorie === c); return l.length ? `<tr><th colspan="10" class="petit">${CAT[c]}</th></tr>${l.map(([x, i]) => `<tr>
       <td><input type="checkbox" data-i="${i}" data-k="inclus" ${x.inclus !== false ? 'checked' : ''} aria-label="Retenir"></td>
       <td><select data-i="${i}" data-k="genre">${Object.entries(G).map(([k, g]) => `<option value="${k}" ${k === x.genre ? 'selected' : ''}>${esc(g.libelle)}</option>`).join('')}</select></td>
       <td><input data-i="${i}" data-k="designation" value="${esc(x.designation)}"></td><td><input data-i="${i}" data-k="repere" value="${esc(x.repere || '')}" style="width:80px"></td>
       <td><input data-i="${i}" data-k="qte" value="${esc(x.qte)}" class="nombre" style="width:60px"></td><td><input data-i="${i}" data-k="P" value="${esc(x.P)}" class="nombre" style="width:70px"></td><td><input data-i="${i}" data-k="Q" value="${esc(x.Q ?? '')}" class="nombre" style="width:70px" title="Débit d'air par bouche ou de l'équipement"></td>
-      <td><input data-i="${i}" data-k="regime" value="${esc(x.regime || '')}" placeholder="70/50" style="width:70px"></td><td class="petit muted">${esc((x.sources || []).join(', '))}${x.prescrit ? `<br>${esc(x.prescrit)}` : ''}</td></tr>`).join('')}` : ''; }).join('')}
+      <td><input data-i="${i}" data-k="regime" value="${esc(x.regime || '')}" placeholder="70/50" style="width:70px"></td><td><select data-i="${i}" data-k="reseau" style="max-width:170px">${optReseaux(x.reseau)}</select></td><td class="petit muted">${esc((x.sources || []).join(', '))}${x.prescrit ? `<br>${esc(x.prescrit)}` : ''}</td></tr>`).join('')}` : ''; }).join('')}
     </tbody></table></div>
     <div class="actions"><button class="secondaire" id="ti-x">Fermer</button><button class="secondaire" id="ti-ok">Enregistrer l'inventaire</button>
       <button id="ti-pid">🗺️ Créer le schéma de principe</button><button id="ti-aero">🌬️ Créer le schéma aéraulique</button><button id="ti-elec">⚡ Créer l'alimentation électrique</button></div>`;
@@ -80,14 +92,19 @@ function tableauInventaire(et, inv, erreurs) {
     b.querySelectorAll('[data-i]').forEach(el => el.onchange = () => {
       const x = inv[+el.dataset.i], k = el.dataset.k;
       x[k] = k === 'inclus' ? el.checked : ['qte', 'P', 'Q'].includes(k) ? (el.value === '' ? '' : Notes.num(el.value)) : el.value;
-      if (k === 'genre') { x.categorie = G[el.value].categorie; b.innerHTML = rendu(); lier(); }
+      if (k === 'genre' || k === 'reseau') { if (k === 'genre') x.categorie = G[el.value].categorie; b.innerHTML = rendu(); lier(); }
+    });
+    b.querySelectorAll('[data-r]').forEach(el => el.onchange = () => {
+      const r = reseaux[+el.dataset.r], k = el.dataset.rk;
+      r[k] = el.value;
+      if (k === 'nature') { r.hydro = !!(NAT[el.value] || {}).hydro; b.innerHTML = rendu(); lier(); }
     });
     b.querySelector('#ti-x').onclick = Modal.close;
-    const garder = () => { et.inventaire = inv.map(x => ({ ...x })); enregistrer(et); };
+    const garder = () => { et.inventaire = inv.map(x => ({ ...x })); et.inventaireReseaux = reseaux.map(r => ({ ...r })); enregistrer(et); };
     b.querySelector('#ti-ok').onclick = () => { garder(); Modal.close(); App.render(); toast(`Inventaire enregistré : ${inv.filter(x => x.inclus !== false).length} équipement(s).`); };
     b.querySelector('#ti-pid').onclick = () => {
       garder();
-      const { entrees, alertes } = InventaireCVC.versSchema(inv, Schema);
+      const { entrees, alertes } = InventaireCVC.versSchema(inv, Schema, reseaux);
       const n = nouvelleNote('pid', { ...Notes.defauts('pid'), ...entrees, circuits: entrees.circuits.length ? entrees.circuits : Notes.defauts('pid').circuits });
       n.titre = `Schéma de principe — ${entrees.titreInstallation || 'd\'après le CCTP / DPGF'}`;
       n.commentaire = `Prérempli d'après le dossier de consultation (CCTP / DPGF).${alertes.length ? ` À vérifier : ${alertes.join(' ')}` : ''}`;
@@ -97,7 +114,7 @@ function tableauInventaire(et, inv, erreurs) {
     };
     b.querySelector('#ti-aero').onclick = () => {
       garder();
-      const { entrees, alertes } = InventaireCVC.versSchemaAir(inv);
+      const { entrees, alertes } = InventaireCVC.versSchemaAir(inv, reseaux);
       const n = nouvelleNote('aero', { ...Notes.defauts('aero'), ...entrees, zones: entrees.zones.length ? entrees.zones : Notes.defauts('aero').zones });
       n.titre = `Schéma aéraulique — ${entrees.titreInstallation || 'd\'après le CCTP / DPGF'}`;
       n.commentaire = `Prérempli d'après le dossier de consultation (CCTP / DPGF) : vérifier les distances des zones au ventilateur et les longueurs d'antenne.${alertes.length ? ` À vérifier : ${alertes.join(' ')}` : ''}`;

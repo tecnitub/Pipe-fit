@@ -85,3 +85,57 @@ test('DPGF en PDF : lignes « n° désignation unité quantité »', () => {
   const r = I.depuisDpgfTexte(['3.1 Chaudière gaz à condensation 150 kW u 2 0,00', '3.4 Radiateurs acier U 48', '5.1 Tuyauteries acier noir DN50 ml 120', 'Sous-total']);
   assert.deepStrictEqual(r.items.map(x => [x.genre, x.qte, x.sources[0]]), [['chaudiere-cond', 2, 'DPGF 3.1'], ['radiateurs', 48, 'DPGF 3.4']]);
 });
+
+test('réseaux du DPGF : chapitres reconnus, nature, longueurs, équipements rattachés, un circuit par réseau', () => {
+  const rows = [['N°', 'Désignation', 'U', 'Qté'],
+    ['3', 'PRODUCTION DE CHALEUR', '', ''], ['3.1', 'Chaudière gaz à condensation 150 kW', 'u', 2],
+    ['4', 'DISTRIBUTION', '', ''],
+    ['4.1', 'Réseau radiateurs bâtiment A (70/50 °C)', '', ''], ['4.1.1', 'Tube acier noir DN 40', 'ml', 120], ['4.1.2', 'Tube acier noir DN 25', 'ml', 80],
+    ['4.1.3', 'Robinetterie', '', ''], ['4.1.4', 'Radiateurs acier 1,2 kW', 'u', 24], ['4.1.5', 'Circulateur double', 'u', 1],
+    ['4.2', 'Circuit plancher chauffant vestiaires', '', ''], ['4.2.1', 'Tube PER 16', 'ml', 300], ['4.2.2', 'Plancher chauffant 30 kW', 'ens', 1],
+    ['4.3', 'Réseau eau glacée CTA', '', ''], ['4.3.1', 'Tube acier DN 50', 'ml', 60], ['4.3.2', 'Centrale de traitement d\'air 6000 m3/h', 'u', 1],
+    ['5', 'VENTILATION', '', ''], ['5.1', 'Gaines de soufflage', '', ''], ['5.1.1', 'Gaine galvanisée Ø 400', 'ml', 40], ['5.1.2', 'Diffuseurs plafond 300 m3/h', 'u', 10],
+    ['5.2', 'Réseau de reprise', '', ''], ['5.2.1', 'Grilles 250 m3/h', 'u', 8],
+    ['6', 'PLOMBERIE', '', ''], ['6.1', 'Réseau eau froide sanitaire', '', ''], ['6.1.1', 'Tube cuivre 22', 'ml', 50], ['6.1.2', 'Ballon d\'eau chaude 300 L', 'u', 1]];
+  const { items, reseaux } = I.depuisDpgf(rows);
+  const r = n => reseaux.find(x => x.nom.startsWith(n));
+  assert.deepStrictEqual(reseaux.map(x => [x.nom.slice(0, 22), x.nature, x.L]), [
+    ['Réseau radiateurs bâti', 'chauffage', 200], ['Circuit plancher chauf', 'chauffage', 300], ['Réseau eau glacée CTA', 'eau-glacee', 60],
+    ['Gaines de soufflage', 'soufflage', 40], ['Réseau de reprise', 'reprise', 0], ['Réseau eau froide sani', 'plomberie', 50]]);
+  assert.strictEqual(r('Réseau radiateurs').dnMax, 40); assert.strictEqual(r('Réseau radiateurs').regime, '70/50');
+  // « Robinetterie » (sous-titre) ne referme pas le réseau : radiateurs et circulateur y restent
+  const rad = items.find(x => x.genre === 'radiateurs'), pompe = items.find(x => x.genre === 'pompe');
+  assert.strictEqual(rad.reseau, r('Réseau radiateurs').id); assert.strictEqual(pompe.reseau, r('Réseau radiateurs').id);
+  assert.strictEqual(items.find(x => x.genre === 'chaudiere-cond').reseau, '', 'production : hors réseau');
+  // Grilles sans précision sous le réseau de reprise : bouches de reprise
+  assert.strictEqual(items.find(x => /^Grilles/.test(x.designation)).genre, 'bouche-extraction');
+  // Schéma : un circuit par réseau du fluide de la production (chauffage), puissance cumulée, longueur du DPGF
+  const Sc = require('../etudes/public/js/schema');
+  const inv = I.fusionner([], items), { entrees, alertes } = I.versSchema(inv, Sc, reseaux);
+  const circ = entrees.circuits.map(c => [c.rep.slice(0, 22), c.emetteur, c.P, c.L]);
+  assert.deepStrictEqual(circ.slice(0, 2), [['Réseau radiateurs bâti', 'radiateurs', 28.8, 200], ['Circuit plancher chauf', 'plancher', 30, 300]]);
+  assert.ok(!circ.some(c => /eau glacée/i.test(c[0])), 'réseau d\'eau glacée : autre fluide');
+  assert.ok(alertes.some(a => /Réseau eau glacée CTA.*second schéma/.test(a)));
+  assert.ok(circ.some(c => c[1] === 'ecs'), 'ballon d\'ECS de la plomberie : circuit à part');
+  // Schéma aéraulique : diffuseurs au soufflage, grilles à la reprise
+  const air = I.versSchemaAir(inv, reseaux).entrees;
+  assert.deepStrictEqual(air.zones.map(z => [z.reseau, z.n]), [['soufflage', 10], ['reprise', 8]]);
+});
+
+test('réseaux du CCTP : article de réseau, équipements des articles enfants, réunis avec le DPGF', () => {
+  const CL = require('../public/js/cctp-lecture');
+  const lignes = ['CAHIER DES CLAUSES TECHNIQUES PARTICULIÈRES', 'LOT 12 CHAUFFAGE',
+    '4.2 Réseau de chauffage radiateurs', 'Le réseau distribue l\'eau chaude au régime 70/50 °C vers les radiateurs du bâtiment A.',
+    '4.2.1 Radiateurs', 'Radiateurs acier panneaux, marque X ou équivalent, 24 unités.',
+    '4.3 Réseau eau glacée', 'Distribution d\'eau glacée 7/12 °C vers la CTA.', '4.3.1 Centrale de traitement d\'air', 'CTA double flux 6000 m3/h.'];
+  const a = CL.analyser(lignes), rc = I.reseauxCctp(a), eq = I.depuisCctp(a.equipements, rc);
+  assert.deepStrictEqual(rc.map(r => [r.article, r.nature, r.regime]), [['4.2', 'chauffage', '70/50'], ['4.3', 'eau-glacee', '7/12']]);
+  assert.strictEqual(eq.find(x => x.genre === 'radiateurs').reseau, rc[0].id);
+  assert.strictEqual(eq.find(x => x.genre === 'cta').reseau, rc[1].id);
+  // Même réseau au DPGF (nom ressemblant) : réuni, la longueur vient du DPGF
+  const d = I.depuisDpgf([['Désignation', 'Qté', 'U'], ['Réseau de chauffage radiateurs bât. A', '', ''], ['Tube acier DN 32', 90, 'ml'], ['Radiateurs acier 1 kW', 24, 'u']]);
+  const inv = I.fusionner(eq, d.items), res = I.fusionnerReseaux(rc, d.reseaux, inv);
+  assert.strictEqual(res.length, 2);
+  assert.strictEqual(res[0].L, 90);
+  assert.ok(inv.filter(x => x.genre === 'radiateurs').every(x => x.reseau === rc[0].id));
+});

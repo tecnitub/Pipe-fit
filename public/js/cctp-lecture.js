@@ -95,6 +95,8 @@ const CctpLecture = (() => {
     }
 
     r.articles = articles(L).map(a => ({ num: a.num, titre: a.titre }));
+    // Texte de chaque article (début) : nature, régime et équipements des réseaux décrits
+    r.articlesDetail = articles(L).map(a => ({ num: a.num, titre: a.titre, texte: a.corps.join(' ').slice(0, 1200) }));
     // Équipements : articles d'équipement (titre reconnu), un par repère trouvé, sinon une ligne à numéroter
     for (const a of articles(L)) {
       const t = typeDe(a.titre);
