@@ -18,7 +18,10 @@ selon le plan de classement TECNITUB, puis générer le dossier complet en un se
     toutes), commandé mais pas encore livré, absent des commandes ; les lignes commandées absentes du DOE (hors tubes,
     raccords et consommables) s'ajoutent d'un clic. La commande (numéro, date, fournisseur, livraison) figure dans la
     description de l'équipement du DOE. Marque, référence, pose, mise en service, photos de la plaque et n° de série
-    viennent aussi du matériel retenu des études et des PV signés ; une saisie manuelle n'est jamais remplacée ;
+    viennent aussi du matériel retenu des études et des PV signés ; une saisie manuelle n'est jamais remplacée. Une
+    commande passée depuis le matériel retenu est reliée exactement à l'équipement (même sans ressemblance de texte), et
+    la référence relevée sur le bon de livraison prime ; n° de série lu sur la photo de la plaque et garantie
+    (à compter de la mise en service) reportés ;
   - PV de réception et réserves → annexe R.
   - notes de calcul déposées par l'application Études (catégorie « Note de calcul ») → annexe C, fichier mis à jour à chaque nouvel indice.
   - PV signés dans Pipe-Fit pour le chantier, mis en page comme dans Pipe-Fit : PV de mise en service, fiches

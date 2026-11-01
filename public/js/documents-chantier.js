@@ -394,7 +394,8 @@ function bindEtudeChantier(root, a) {
   chargerLiens(a.id).then(() => { const n = document.querySelector(`#liens-apps[data-affaire="${CSS.escape(a.id)}"]`); if (n) { n.innerHTML = liensAppsHtml(a); bindLiensApps(n, a); } });
 }
 function bindLiensApps(z, a) {
-  if (z.querySelector('#mat-retenu')) { bindMaterielRetenu(z.querySelector('#mat-retenu'), a.id); if (!materielChantier.has(a.id)) chargerMaterielRetenu(z, a.id); }
+  // Matériel retenu relu à chaque affichage de la fiche (commandes, livraisons, pose : l'état change ailleurs)
+  if (z.querySelector('#mat-retenu')) { bindMaterielRetenu(z.querySelector('#mat-retenu'), a.id); chargerMaterielRetenu(z, a.id); }
   const ec = z.querySelector('#etude-consultation');
   if (ec) ec.onclick = () => { location.hash = '#/consultations/' + nouvelleConsultation({ affaireId: a.id, objet: `Équipements ${a.code || ''} (étude d'exécution)`, lignes: lignesEtude(a) }).id; };
 }

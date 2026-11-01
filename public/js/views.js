@@ -93,18 +93,18 @@ const chantierFields = [
 // Avancement du matériel retenu par les études (validé → en service), lu une fois par affichage de la liste
 let avancementMateriel = null, avancementLu = 0;
 function chargerAvancementMateriel() {
-  if (!Store.me || !['admin', 'charge'].includes(Store.me.role) || Date.now() - avancementLu < 30000) return;
+  if (!Store.me || !['admin', 'charge'].includes(Store.me.role) || Date.now() - avancementLu < 3000) return;
   avancementLu = Date.now();
   api('GET', '/api/liens/avancement').then(r => { avancementMateriel = r || {}; if (/^#\/chantiers/.test(location.hash)) App.render(); }).catch(() => {});
 }
 function avancementMaterielHtml(id) {
   const x = avancementMateriel && avancementMateriel[id];
   if (!x) return '';
-  const etape = x.enService === x.total ? ['en service', 'b-ok'] : x.poses ? ['posé', 'b-info'] : x.livres ? ['livré', 'b-info'] : x.commandes ? ['commandé', ''] : x.valides ? ['validé', ''] : ['à faire valider', 'b-warn'];
-  return `<span class="small" title="Matériel retenu : ${x.valides}/${x.total} validé, ${x.commandes} commandé, ${x.livres} livré, ${x.poses} posé, ${x.enService} en service">${gauge(x.enService, x.total)}<span class="badge ${etape[1]}">${x.enService}/${x.total} ${etape[0]}</span>${x.substitutions ? ' <span class="badge b-bad">substitution</span>' : ''}</span>`;
+  // Étape la plus avancée atteinte, avec son nombre d'équipements
+  const etape = x.enService ? ['en service', 'b-ok', x.enService] : x.poses ? ['posé', 'b-info', x.poses] : x.livres ? ['livré', 'b-info', x.livres] : x.commandes ? ['commandé', '', x.commandes] : x.valides ? ['validé', '', x.valides] : ['à faire valider', 'b-warn', x.total];
+  return `<span class="small" title="Matériel retenu : ${x.valides}/${x.total} validé, ${x.commandes} commandé, ${x.livres} livré, ${x.poses} posé, ${x.enService} en service"><span class="badge ${etape[1]}">${etape[2]}/${x.total} ${etape[0]}</span>${x.substitutions ? ' <span class="badge b-bad">substitution</span>' : ''}</span>`;
 }
 function chantierTable(list, selection = false) {
-  chargerAvancementMateriel();
   if (!list.length) return '<p class="muted">Aucun chantier pour ces critères.</p>';
   return `<div class="table-wrap"><table data-colonnes="chantiers"><tr>${selection ? '<th class="sel-cell"><input type="checkbox" data-sel-tout aria-label="Tout sélectionner"></th>' : ''}<th>Chantier</th><th>Client</th><th>Chargé</th><th>Statut</th><th class="num">Montant HT</th><th>Heures</th><th>Fournitures</th><th class="num">Marge à terminaison</th><th>Matériel</th></tr>
   ${list.map(a => {
@@ -135,6 +135,7 @@ Views.chantiers = (params, query) => {
   ${chantierTable(list, true)}`;
 };
 Views.chantiers.bind = (root, params, query) => {
+  chargerAvancementMateriel(); // relu à chaque ouverture de la liste (un nouvel affichage suit la réponse)
   const f = lireFiltres('chantiers', query, FILTRES_CHANTIERS);
   bindFiltres(root, 'chantiers', f, FILTRES_CHANTIERS);
   root.querySelector('#add-hd').onclick = nouvelleInterventionHD;
