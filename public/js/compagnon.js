@@ -60,7 +60,8 @@ const Compagnon = (() => {
       case 'enlevements': return ctx.equipe.includes(r.userId) ? r : null;
       // Véhicule et outillage confiés à soi ou à son équipe, sans valeur d'achat
       // Appareils de mesure (manomètre étalon pour les épreuves) : visibles de tous, avec leur étalonnage
-      case 'materiels': return (r.affectation && ctx.equipe.includes(r.affectation.userId)) || /mesure|manom/i.test(`${r.categorie} ${r.designation}`) ? sans(r, ['valeur', 'historique']) : null;
+      // Outillage étiqueté QR (sorti en scannant l'étiquette) : visible de tous
+      case 'materiels': return (r.affectation && ctx.equipe.includes(r.affectation.userId)) || r.scan || /mesure|manom/i.test(`${r.categorie} ${r.designation}`) ? sans(r, ['valeur', 'historique']) : null;
       default: return r;
     }
   }

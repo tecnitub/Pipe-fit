@@ -2,9 +2,9 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v53';
+  const KEY = 'pipefit-crm-demo-v54';
   const ME_KEY = 'pipefit-crm-demo-me';
-  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications', 'habilitations', 'materiels', 'missions', 'produits', 'equipementsFrigo', 'fichesFluides', 'bouteilles', 'enlevements', 'epreuves', 'misesEnService', 'equilibrages', 'releves', 'fichesTech'];
+  const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications', 'habilitations', 'materiels', 'missions', 'produits', 'equipementsFrigo', 'fichesFluides', 'bouteilles', 'enlevements', 'epreuves', 'misesEnService', 'equilibrages', 'releves', 'fichesTech', 'mouvementsStock'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4], fichesFluides: ['numero', 'FI', 4], epreuves: ['numero', 'EP', 4], misesEnService: ['numero', 'MS', 4], equilibrages: ['numero', 'EQ', 4], releves: ['numero', 'RC', 4] };
   const ACCOUNTS = [
     { id: 'acc-admin', login: 'admin', nom: 'Administrateur', role: 'admin', userId: null, email: 'admin@pipefit.example' },
@@ -154,6 +154,14 @@
     if (p[0] === 'setup') return [200, { needed: false, local: true }];
     if (p[0] === 'me' && !p[1]) return [200, { ...acc, version: 'démonstration', m365: !!(db.m365 || {}).actif, prefs: (db.prefs || {})[acc.id] || {}, adressesEnvoi: db.adressesEnvoi || {}, assistant: accesAssistant(acc) }];
     // Assistant simulé (sans IA) : mêmes droits et mêmes réglages que le vrai
+    // Outil du parc pris ou rendu en scannant son étiquette QR
+    if (p[0] === 'parc' && p[1] === 'scan' && method === 'POST') {
+      const m = (db.materiels || []).find(x => x.id === String(body.materielId || ''));
+      if (!m || m.archive || (acc.role === 'atelier' && !m.scan)) return [404, { error: 'Outil inconnu ou non étiqueté' }];
+      try { Object.assign(m, Stock.affecter(m, { action: body.action, userId: body.action === 'prendre' ? String(acc.role !== 'atelier' && body.userId ? body.userId : acc.userId || '') : '', affaireId: String(body.affaireId || ''), date: new Date().toISOString().slice(0, 10), par: acc.nom }), { _v: (m._v || 1) + 1, _at: new Date().toISOString(), _by: acc.nom }); }
+      catch (e) { return [400, { error: e.message }]; }
+      save(); return [200, m];
+    }
     // Intérimaire déclaré depuis le pointage : fiche et mission à compléter, bureau prévenu
     if (p[0] === 'pointage' && p[1] === 'interimaire' && method === 'POST') {
       const d = ReglesPointage.interimaireDeclare(body, { user: 'u' + DemoSeed.uid(), mission: 'mi' + DemoSeed.uid() }, acc.nom, ReglesPointage.jourIso(new Date()));
@@ -495,6 +503,8 @@
         if (col === 'affaires' && existing) ['creePar', 'creeParId', 'creeLe'].forEach(k => { if (existing[k]) obj[k] = existing[k]; });
         const refus = col === 'affaires' ? null : atelierRefus(acc, col, obj, existing);
         if (refus) return [403, { error: refus }];
+        // Matériel saisi par un compagnon : prix de la bibliothèque (comme le serveur)
+        if (col === 'consommations' && acc.role === 'atelier') { const art = obj.articleId && db.articles.find(a => a.id === obj.articleId); if (art) Object.assign(obj, { pu: Number(art.prixVente) || 0, cout: Number(art.coutRevient) || 0 }); }
         if (col === 'fichesFluides' && obj.statut !== 'Brouillon') { const e = Fluides.erreur(obj, db.equipementsFrigo.find(x => x.id === obj.equipementId)); if (e) return [400, { error: e }]; }
         if (col === 'frais' && obj.statut === 'Soumise' && NoteFrais.erreur(obj)) return [400, { error: NoteFrais.erreur(obj) }];
         if (col === 'rapports' && existing && existing.signatureClientId && acc.role !== 'admin') return [403, { error: 'Ce bon d\'intervention est signé par le client : il ne peut plus être modifié.' }];

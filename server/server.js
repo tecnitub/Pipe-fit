@@ -19,6 +19,7 @@ const Notifs = require('./notifs');
 const Compagnon = require('../public/js/compagnon');
 const MaterielRetenu = require('../public/js/materiel-retenu');
 const Installe = require('../public/js/installe');
+const Stock = require('../public/js/stock');
 const PlanMes = require('../public/js/plan-mes');
 const FT = require('../public/js/fiches-tech');
 // Lignes des commandes fournisseurs d'un chantier pour le suivi du matériel (fournisseur nommé, sans prix)
@@ -631,6 +632,21 @@ async function api(req, res, url) {
     return send(res, 200, { config: DOSSIER.config(), ...DOSSIER.etat(), sep: path.sep });
   }
 
+  // Outil du parc pris ou rendu en scannant son étiquette QR (compagnons compris) : nouvelle affectation et historique
+  if (p[0] === 'parc' && p[1] === 'scan' && method === 'POST') {
+    const b = await readBody(req), m = DB.getRecord(db, 'materiels', String(b.materielId || ''));
+    if (!m || m.archive || (estCompagnon(acc) && !m.scan)) return fail(res, 404, 'Outil inconnu ou non étiqueté');
+    if (estCompagnon(acc) && !acc.user_id) return fail(res, 403, 'Compte non relié à une fiche de l\'équipe');
+    let obj;
+    try { obj = Stock.affecter(DB.clean(m), { action: b.action, userId: b.action === 'prendre' ? String(b.userId && !estCompagnon(acc) ? b.userId : acc.user_id || '') : '', affaireId: String(b.affaireId || ''), date: new Date().toISOString().slice(0, 10), par: acc.nom || acc.login }); }
+    catch (e) { return fail(res, 400, e.message); }
+    const now = new Date().toISOString();
+    db.prepare('UPDATE records SET data = ?, version = version + 1, updated_at = ?, updated_by = ? WHERE col = ? AND id = ?').run(JSON.stringify(obj), now, acc.nom || acc.login, 'materiels', m.id);
+    DB.audit(db, acc.login, b.action === 'prendre' ? 'outil pris (QR)' : 'outil rendu (QR)', 'materiels', m.id, m.designation || '');
+    const rec = DB.getRecord(db, 'materiels', m.id);
+    broadcast('change', { col: 'materiels', record: rec, client: req.headers['x-client-id'] || null });
+    return send(res, 200, pourCompagnon(acc, 'materiels', rec));
+  }
   // Intérimaire pas encore connu, déclaré depuis le pointage (compagnon ou bureau) : fiche et mission à compléter
   if (p[0] === 'pointage' && p[1] === 'interimaire' && method === 'POST') {
     if (!acc.user_id && acc.role === 'atelier') return fail(res, 403, 'Compte non relié à une fiche de l\'équipe');

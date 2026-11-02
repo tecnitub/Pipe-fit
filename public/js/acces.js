@@ -9,7 +9,7 @@ const Acces = (() => {
     { id: 'ecrans', titre: 'Écrans et onglets du bureau', roles: ['charge'], elements: [['consultations', 'Achats › Consultations fournisseurs'], ['efactures', 'Achats › Factures reçues'], ['comptoir', 'Achats › Comptoir'],
       ['prixAchats', 'Achats › Historique des prix'], ['relances', 'Facturation › Relances'], ['tresorerie', 'Facturation › Trésorerie'], ['compta', 'Facturation › Comptabilité'], ['charges', 'Tableau par chargé d\'affaires']] },
     { id: 'compagnon', titre: 'Appli des compagnons (téléphone)', roles: ['atelier'], elements: [['pointage/heures', 'Heures'], ['pointage/planning', 'Planning'], ['pointage/chantiers', 'Chantiers et documents'],
-      ['pointage/rapports', 'Rapports'], ['releve', 'Prise de cotes tuyauterie'], ['epreuve', 'PV d\'épreuve hydraulique'], ['mes', 'PV de mise en service'], ['equilibrage', 'Relevé d\'équilibrage'], ['pointage/frais', 'Notes de frais'], ['pointage/comptoir', 'Achats au comptoir'], ['pointage/fluides', 'Fluides frigorigènes'], ['pointage/calculs', 'Calculs de chantier (débit, perte de charge, vase, dilatation)']] },
+      ['pointage/rapports', 'Rapports'], ['releve', 'Prise de cotes tuyauterie'], ['epreuve', 'PV d\'épreuve hydraulique'], ['mes', 'PV de mise en service'], ['equilibrage', 'Relevé d\'équilibrage'], ['pointage/frais', 'Notes de frais'], ['pointage/comptoir', 'Achats au comptoir'], ['scan', 'Stock et outillage (QR codes)'], ['pointage/fluides', 'Fluides frigorigènes'], ['pointage/calculs', 'Calculs de chantier (débit, perte de charge, vase, dilatation)']] },
   ];
   const ROLES = { charge: 'Chargés d\'affaires', atelier: 'Compagnons' };
   // Éléments masqués pour un compte : son réglage propre, sinon celui de son rôle ; rien pour l'administrateur

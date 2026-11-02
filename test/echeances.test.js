@@ -53,10 +53,29 @@ test('alertes envoyées une seule fois au bureau et aux personnes concernées ; 
   assert.match(nk[0].texte, /Peugeot Partner/); // son véhicule
   // Le compagnon ne voit que ses habilitations et son matériel, sans valeur d'achat ; il ne peut rien modifier
   assert.deepStrictEqual([...new Set(dk.habilitations.map(h => h.userId))], ['o1']);
-  assert.ok(dk.materiels.length && dk.materiels.every(m => (m.affectation.userId === 'o1' || /mesure/i.test(m.categorie)) && m.valeur === undefined)); // les siens, et les appareils de mesure (manomètre des épreuves)
+  assert.ok(dk.materiels.length && dk.materiels.every(m => (m.affectation.userId === 'o1' || /mesure/i.test(m.categorie) || m.scan) && m.valeur === undefined)); // les siens, les appareils de mesure (manomètre des épreuves) et l'outillage étiqueté QR
   assert.strictEqual((await call('PUT', '/api/records/habilitations/hbx', { data: { userId: 'o1', cle: 'sst', expire: '2030-01-01' } }, k)).status, 403);
   assert.strictEqual((await call('PUT', '/api/records/materiels/pm2', { data: { designation: 'x' } }, k)).status, 403);
   // Le bureau renouvelle : nouvelle alerte seulement à la prochaine échéance
   assert.strictEqual((await call('PUT', '/api/records/habilitations/hb4', { data: { userId: 'o1', cle: 'sst', obtenue: '2026-10-18', expire: '2028-10-18' }, version: 1 }, c)).status, 200);
   assert.strictEqual(await NOTIFS.echeances(), 0);
+});
+
+test('stock et outillage étiqueté QR : sortie vers un chantier et outil pris par un compagnon', async () => {
+  const k = (await call('POST', '/api/login', { login: 'kevin', password: 'motdepasse1' })).cookie;
+  // Outil étiqueté : pris puis rendu ; véhicule non étiqueté : refusé
+  const pris = await call('POST', '/api/parc/scan', { materielId: 'pm4', action: 'prendre', affaireId: 'af1' }, k);
+  assert.strictEqual(pris.status, 200);
+  assert.deepStrictEqual([pris.body.affectation.userId, pris.body.affectation.affaireId, pris.body.valeur], ['o1', 'af1', undefined]);
+  assert.strictEqual((await call('POST', '/api/parc/scan', { materielId: 'pm2', action: 'prendre' }, k)).status, 404);
+  assert.strictEqual((await call('POST', '/api/parc/scan', { materielId: 'pm4', action: 'rendre' }, k)).body.affectation.userId, '');
+  // Sortie du stock par le compagnon : prix de la bibliothèque repris par le serveur
+  const r = await call('PUT', '/api/records/consommations/cs-test', { data: { articleId: 'a14', designation: 'Té', unite: 'u', qte: 2, affaireId: 'af1', userId: 'o1', date: '2026-11-02', stock: true } }, k);
+  assert.strictEqual(r.status, 200);
+  const admin = (await call('POST', '/api/login', { login: 'admin', password: 'admin-test-pw' })).cookie;
+  const d = (await call('GET', '/api/data', null, admin)).body;
+  assert.strictEqual(d.consommations.find(c => c.id === 'cs-test').cout, 30);
+  assert.ok(d.mouvementsStock.length >= 5);
+  // Entrées et inventaires : réservés au bureau
+  assert.strictEqual((await call('PUT', '/api/records/mouvementsStock/msx', { data: { articleId: 'a14', type: 'entree', qte: 10, userId: 'o1' } }, k)).status, 403);
 });

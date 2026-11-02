@@ -712,6 +712,14 @@ function demoData() {
     ftd6: ['Ventilia - Notice d\'installation et de maintenance CTA-DF', 'Remplacement des filtres ePM1 55 % tous les 6 mois', 'Contrôle de la roue de récupération chaque année'],
     ftd7: ['Ventilia - Déclaration UE de conformité CTA-DF', 'Directive machines 2006/42/CE, ErP 1253/2014'],
   };
+  // Stock de l'atelier (étiquettes QR) : raccords, brides, vannes, supportage ; inventaire fait il y a un mois, une sortie
+  const STOCK_DEMO = { a4: ['Rayonnage A1', 20, 50, 60], a14: ['Rayonnage A1', 15, 40, 18], a5: ['Rayonnage A2', 4, 10, 3], a7: ['Rayonnage B1', 2, 4, 5], a8: ['Allée C (racks)', 30, 60, 85] };
+  articles.forEach(a => { const x = STOCK_DEMO[a.id]; if (x) Object.assign(a, { stockGere: true, emplacement: x[0], stockMini: x[1], stockReassort: x[2] }); });
+  const mouvementsStock = Object.entries(STOCK_DEMO).map(([articleId, x], i) => ({ id: `ms${i + 1}`, articleId, type: 'inventaire', qte: x[3], date: d(-30), userId: 'u1', note: 'Inventaire de l\'atelier' }));
+  consommations.push({ id: 'cs-stock1', articleId: 'a14', designation: 'Té égal inox 316L DN50 à souder', unite: 'u', qte: 6, pu: 38, cout: 30, affaireId: 'af1', date: d(-5), userId: 'o1', stock: true });
+  // Outillage étiqueté : pris et rendu en scannant son étiquette
+  materiels.forEach(m => { if (['pm3', 'pm4', 'pm6', 'pm7'].includes(m.id)) m.scan = true; });
+
   return {
     files: { 'img-logo': IMAGES.logo, 'img-sig': IMAGES.signature, 'img-rack1': IMAGES.rack1, 'img-rack2': IMAGES.rack2,
       'pdf-iso': pdfExemple('Isometrique NEP aller - ISO-NEP-01 - indice B', ['Ligne NEP aller DN50 inox 316L', 'Longueur developpee : 61,8 m', '14 coudes 90 3D, 4 tes egaux, 4 brides PN16', 'Supportage tous les 2,5 m (colliers sur rail)', 'Indice B : cotes de raccordement mises a jour']),
@@ -750,7 +758,7 @@ function demoData() {
       ['ftd7', 'Ventilia', ['CTA-DF 3000', 'CTA-DF 4500'], 'Déclaration UE de conformité CTA-DF', 'cta', '2024-01-01', 'ft-cta-dop', 'Ventilia/Certificats/DoP CTA-DF.pdf', '', 'dop'],
     ].map(([id, fabricant, references, designation, famille, date, fichierId, chemin, remplaceePar, type]) => ({ id, type: type || 'fiche', fabricant, references, designation, famille, date, fichierId, nom: chemin.split('/').pop(), chemin, source: 'dossier', verifiee: true,
       ...(remplaceePar ? { remplaceePar } : {}), ...(CARAC_DEMO[id] ? { carac: CARAC_DEMO[id].carac, ...(CARAC_DEMO[id].parRef ? { caracParRef: CARAC_DEMO[id].parRef } : {}) } : {}), texteDemo: TEXTES_DEMO[id] || [] })),
-    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels, missions, produits, equipementsFrigo, fichesFluides, bouteilles, enlevements, epreuves, releves, misesEnService, equilibrages,
+    users, mainoeuvre, zones, articles, entreprises, contacts, affaires, devis, situations, commandes, factures, planning, temps, frais, rapports, reserves, receptions, consommations, envois, achats, efactures, familles, consultations, ouvrages, notifications, habilitations, materiels, missions, produits, equipementsFrigo, fichesFluides, bouteilles, enlevements, epreuves, releves, misesEnService, mouvementsStock, equilibrages,
   };
 }
 

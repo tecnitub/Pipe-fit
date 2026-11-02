@@ -10,7 +10,7 @@ self.addEventListener('install', e => e.waitUntil((async () => {
     const page = await fetch('/', { cache: 'no-store' });
     const html = await page.clone().text();
     await c.put('/', page);
-    const fichiers = [...html.matchAll(/(?:src|href)="((?:js|css)\/[^"?#]+)"/g)].map(m => `/${m[1]}`);
+    const fichiers = [...html.matchAll(/(?:src|href)="((?:js|css|vendor)\/[^"?#]+)"/g)].map(m => `/${m[1]}`);
     await c.addAll([...new Set([...fichiers, '/manifest.webmanifest', '/icon-192.png'])].filter(Boolean)).catch(() => {});
   } catch (err) { /* hors ligne pendant l'installation : la copie se fera au fil des pages */ }
   await self.skipWaiting();

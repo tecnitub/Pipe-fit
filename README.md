@@ -707,6 +707,27 @@ modifiable avant de **Ventiler la facture** : une imputation par chantier (« Co
 d'articles enregistrées pour l'historique des prix, les déclarations passées « facturé ». Les déclarations absentes du
 relevé sont signalées (relevé suivant ?) et la fiche chantier rappelle les enlèvements pas encore facturés.
 
+## Stock de l'atelier et QR codes
+
+**Bibliothèque → 📦 Stock et QR codes** (aussi dans Achats) : les fournitures gardées à l'atelier sont « gérées en stock »
+(sélection dans la bibliothèque → « 📦 Mettre en stock (QR) », ou « + Mettre des articles en stock ») avec leur
+emplacement (rayonnage, bac), la quantité minimale et la quantité à commander au réassort.
+
+- **Étiquettes QR** (PDF, planche A4 de 3 × 8) à coller sur les bacs, et **étiquettes de l'outillage** du parc (postes à
+  souder, nacelle, échafaudage…, hors véhicules).
+- **Catalogue Tecnitub** (PDF) : le matériel en stock par famille avec son QR code, à donner aux compagnons ; le même
+  catalogue, avec recherche, est dans l'appli (onglet **📷 Stock**) pour un article sans étiquette.
+- **Scanner** (onglet 📷 Stock du téléphone, ou 📷 Scanner au bureau) : caméra du téléphone, ou photo de l'étiquette si la
+  caméra n'est pas accessible. L'étiquette porte l'adresse de la fiche : l'appareil photo du téléphone l'ouvre aussi.
+  - **Article** : quantité, chantier (ceux du planning du jour d'abord), « ⬆️ Sortir pour ce chantier » ou « ⬇️ Remettre
+    en stock ». La sortie est une consommation du chantier au prix de la bibliothèque (rentabilité), fonctionne sans réseau.
+  - **Outil** : « ✋ Je le prends » (pour un chantier) ou « ↩️ Rendu au dépôt » : affectation et historique du parc.
+  - Au bureau : entrée en stock (réception), inventaire, étiquette, demande de prix de réassort de l'article.
+- **Quantité en stock** = dernier inventaire + entrées − sorties depuis ; état « en stock », « à réassortir » (au minimum
+  ou en dessous) ou « rupture ». **🛒 Demande de prix de réassort** : consultation « stock » (sans chantier) préparée avec
+  les articles à réassortir et leurs fournisseurs habituels, à envoyer comme les autres demandes de prix.
+- Les compagnons sortent et rendent le matériel ; les entrées et inventaires sont réservés au bureau.
+
 ## Historique des achats et des prix
 
 **Achats → Historique des prix** : tout ce qui a été acheté, article par article (bibliothèque, sinon référence du

@@ -9,7 +9,8 @@ function achatsTabs(actif) {
     <a href="#/achats" class="${actif === 'achats' ? 'active' : ''}">Factures fournisseurs ${aVentiler ? `<span class="count">${aVentiler} à ventiler</span>` : ''}</a>
     <a href="#/efactures" class="${actif === 'efactures' ? 'active' : ''}">Factures reçues ${(() => { const n = Store.all('efactures').filter(e => e.statut === 'Reçue').length; return n ? `<span class="count">${n} à traiter</span>` : ''; })()}</a>
     <a href="#/comptoir" class="${actif === 'comptoir' ? 'active' : ''}">Comptoir ${(() => { const n = Store.all('enlevements').filter(e => e.statut === 'Déclaré').length; return n ? `<span class="count">${n}</span>` : ''; })()}</a>
-    <a href="#/prixAchats" class="${actif === 'prix' ? 'active' : ''}">Historique des prix</a></div>`;
+    <a href="#/prixAchats" class="${actif === 'prix' ? 'active' : ''}">Historique des prix</a>
+    <a href="#/stock">📦 Stock ${(() => { const n = Stock.aReassortir(Store.all('articles'), (Store.all('consommations') || []).filter(c => c.stock), Store.all('mouvementsStock') || []).length; return n ? `<span class="count">${n} à réassortir</span>` : ''; })()}</a></div>`;
 }
 const etatVentilation = f => { const t = Calc.achat(f); return t.reste <= 0.005 ? (t.reste < -0.005 ? ['b-bad', 'Sur-imputée'] : ['b-ok', 'Ventilée']) : f.fraisGeneraux ? ['', 'Frais généraux'] : t.impute ? ['b-warn', 'Partielle'] : ['b-warn', 'À ventiler']; };
 

@@ -9,6 +9,11 @@ const articleFields = [
   { key: 'prixVente', label: 'Prix de vente HT', type: 'number', step: '0.01' },
   { key: 'poidsUnitaire', label: 'Poids / unité (kg)', type: 'number', step: '0.1' },
   { key: 'fournisseurId', label: 'Fournisseur habituel', type: 'select', options: v => options(fournisseursList(), v) },
+  // Stock de l'atelier (étiquette QR) : emplacement, minimum avant réassort, quantité commandée au réassort
+  { key: 'stockGere', label: 'Géré en stock (étiquette QR)', type: 'select', options: v => optionsStr(['Non', 'Oui'], v === true || v === 'Oui' ? 'Oui' : 'Non') },
+  { key: 'emplacement', label: 'Emplacement en stock' },
+  { key: 'stockMini', label: 'Stock minimum (réassort en dessous)', type: 'number', step: 'any' },
+  { key: 'stockReassort', label: 'Quantité commandée au réassort', type: 'number', step: 'any' },
 ];
 const moFields = [
   { key: 'code', label: 'Code' },
@@ -31,6 +36,7 @@ function biblioTabs(active) {
     <a href="#/livraison" class="${active === 'livraison' ? 'active' : ''}">Livraison <span class="count">${Store.all('zones').length}</span></a>
     <a href="#/ouvrages" class="${active === 'ouvrages' ? 'active' : ''}">Ouvrages types <span class="count">${Store.all('ouvrages').length}</span></a>
     <a href="#/familles" class="${active === 'familles' ? 'active' : ''}">Familles CAO <span class="count">${Store.all('familles').length}</span></a>
+    <a href="#/stock" class="${active === 'stock' ? 'active' : ''}">📦 Stock et QR codes <span class="count">${Store.all('articles').filter(Stock.gere).length}</span></a>
     <a href="#/fichesTech" class="${active === 'fiches' ? 'active' : ''}">📄 Fiches techniques <span class="count">${Store.all('fichesTech').filter(f => !f.remplaceePar && !f.absente).length}</span></a>
   </div>`;
 }
@@ -75,7 +81,7 @@ Views.articles = () => {
     <section>
       <div class="recherche-art"><input id="search" type="search" value="${esc(e.q)}" placeholder="Rechercher : référence, désignation, DN, matière, fournisseur…" aria-label="Rechercher une fourniture" autocomplete="off">
         <span id="nb" class="muted small">${l.n} fourniture${l.n > 1 ? 's' : ''}${e.famille ? ` · ${esc(e.famille)}${e.sous ? ` › ${esc(e.sous)}` : ''} <button class="linklike small" id="tout-voir">voir tout</button>` : ''}</span></div>
-      <div id="sel-barre" class="sel-barre" ${e.sel.size ? '' : 'hidden'}><span id="sel-n">${e.sel.size} sélectionnée(s)</span><button class="small" id="ranger">Ranger dans une famille…</button><button class="small secondary" id="sel-x">Désélectionner</button></div>
+      <div id="sel-barre" class="sel-barre" ${e.sel.size ? '' : 'hidden'}><span id="sel-n">${e.sel.size} sélectionnée(s)</span><button class="small" id="ranger">Ranger dans une famille…</button><button class="small" id="sel-stock">📦 Mettre en stock (QR)</button><button class="small secondary" id="sel-x">Désélectionner</button></div>
       <div id="liste-art">${l.html}</div>
     </section>
   </div>`;
@@ -102,6 +108,7 @@ async function majArticles(liste, fn) {
   try { await Store.bulk('articles', maj); } catch (err) { notify(err.message); throw err; }
 }
 Views.articles.bind = root => {
+  const ms = root.querySelector('#sel-stock'); if (ms) ms.onclick = () => choisirArticlesStock([...biblioEtat.sel]);
   const e = biblioEtat;
   bindEchange(root);
   const lier = () => {
