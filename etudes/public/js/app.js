@@ -528,6 +528,39 @@ Vues.comparer = {
   },
 };
 
+// Fiche technique de la CTA (PDF du fabricant) : valeurs lues proposées champ par champ, puis reportées dans le calcul de
+// CTA (ou, pour un schéma aéraulique relié à un calcul de CTA, dans ce calcul) ; pression disponible et puissances
+// gardées pour le contrôle du calcul
+async function chargerFicheCta(et, n, fichier) {
+  toast('Lecture de la fiche technique…', 2500);
+  let r;
+  try { const { lignes } = await PdfLecture.lire(fichier, () => {}, { pagesMax: 12, ocr: typeof OCR !== 'undefined' }); r = FicheCta.lire(lignes); }
+  catch (e) { return toast(`Fiche illisible : ${e.message}`, 5000); }
+  if (!r.nb) return confirmer('Aucune caractéristique reconnue dans ce document (PDF scanné ou mise en page inhabituelle). Saisissez les valeurs à la main.', 'OK');
+  // Schéma aéraulique relié à un calcul de CTA : la centrale (débits, batteries, récupérateur…) est remplie dans ce calcul
+  const cible = n.type === 'aero' && n.entrees.cta ? et.notes.find(x => x.id === n.entrees.cta && x.type === 'cta') : null;
+  const lignes = [...FicheCta.champs(cible ? 'cta' : n.type, r.valeurs).map(c => ({ ...c, note: cible || n })), ...(cible ? FicheCta.champs('aero', r.valeurs).filter(c => /^LwFab/.test(c.k)).map(c => ({ ...c, note: n })) : [])];
+  const libVal = (note, k, v) => { const ch = (Notes.TYPES[note.type].champs || []).find(c => c.k === k); if (ch && ch.t === 's') { const o = (typeof ch.o === 'function' ? ch.o(note.entrees, ctxEtude(et, note)) : ch.o).find(([x]) => String(x) === String(v)); return o ? o[1] : String(v ?? ''); } return v === '' || v === undefined ? '—' : String(v).replace('.', ','); };
+  const controles = Object.keys(FicheCta.fiche(r, '')).filter(k => FicheCta.LIBELLES[k] && !['Qs', 'Qr'].includes(k));
+  const nom = [r.fabricant, r.reference].filter(Boolean).join(' ');
+  const b = Modal.open(`<h2>Fiche technique${nom ? ` : ${esc(nom)}` : ''}</h2><p class="muted petit">${esc(fichier.name)} · ${r.nb} caractéristique(s) reconnue(s). Décochez ce qui ne doit pas être repris${cible ? ` ; la centrale est remplie dans le calcul relié « ${esc(cible.titre)} »` : ''}.</p>
+    ${lignes.length ? `<div class="defile-x"><table><thead><tr><th></th><th>Donnée</th><th>Lu sur la fiche</th><th>Valeur actuelle</th></tr></thead><tbody>${lignes.map((c, i) => {
+      const actuel = c.note.entrees[c.k], same = String(actuel) === String(c.val);
+      return `<tr title="${esc(r.sources[c.cle] || '')}"><td><input type="checkbox" data-fc="${i}" ${same ? '' : 'checked'}></td><td>${esc(c.libelle)}${c.unite ? ` <span class="muted petit">(${esc(c.unite)})</span>` : ''}</td><td><strong>${esc(libVal(c.note, c.k, c.val))}</strong></td><td class="${same ? 'ok-texte' : 'muted'}">${esc(libVal(c.note, c.k, actuel))}${same ? ' ✓' : ''}</td></tr>`; }).join('')}</tbody></table></div>` : '<p>Aucune donnée à reporter dans ce calcul.</p>'}
+    ${controles.length ? `<p class="petit"><strong>Gardé pour le contrôle du calcul</strong> : ${controles.map(k => `${esc(FicheCta.LIBELLES[k][0])} ${esc(String(r.valeurs[k]).replace('.', ','))} ${esc(FicheCta.LIBELLES[k][1])}`).join(' · ')}.</p>` : ''}
+    <div class="actions"><button class="secondaire" id="fc-annuler">Annuler</button><button id="fc-ok">Reprendre les valeurs cochées</button></div>`);
+  b.querySelector('#fc-annuler').onclick = Modal.close;
+  b.querySelector('#fc-ok').onclick = () => {
+    let k = 0;
+    lignes.forEach((c, i) => { if (b.querySelector(`[data-fc="${i}"]`).checked) { c.note.entrees[c.k] = c.val; k++; } });
+    // Fiche gardée avec le calcul de la centrale (et avec le schéma, pour la pression disponible face au réseau calculé)
+    const f = FicheCta.fiche(r, fichier.name);
+    (cible ? [cible, n] : [n]).forEach(x => { x.entrees.fiche = f; });
+    enregistrer(et); Modal.close(); App.render();
+    toast(`${k} valeur(s) reprise(s) de la fiche${controles.length ? ' ; pression disponible et puissances contrôlées dans les résultats' : ''}`, 5000);
+  };
+}
+
 // Note de calcul d'une étude
 Vues.note = {
   html: (et, noteId) => {
@@ -545,6 +578,7 @@ Vues.note = {
       <div class="carte"><label class="champ-libre">Commentaire (repris dans la note de calcul)<textarea data-n="commentaire" rows="3">${esc(n.commentaire)}</textarea></label>
       ${emissionsHtml(et, n)}
       <div class="actions-ligne"><button id="emettre-note">🖋️ Émettre l'indice ${esc(Revisions.prochainIndice(n))} (PDF avec cartouche)</button><button class="secondaire" id="pdf-note">📄 Brouillon PDF</button><button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="dupliquer">Dupliquer</button>
+        ${['cta', 'aero'].includes(n.type) ? `<label class="btn secondaire" title="Fiche de sélection du fabricant (PDF) : débits, récupérateur, régimes d'eau, pertes de charge, ventilateurs, acoustique">📄 Charger la fiche technique de la CTA<input type="file" id="fiche-cta" accept=".pdf,application/pdf,image/*" hidden></label>` : ''}
         ${n.type === 'cta' ? `<button class="secondaire" id="cta-reseau">🌬️ ${Liens.reseauxDeCta(et.notes, n).some(x => x.type === 'aero') ? 'Ouvrir le schéma aéraulique relié' : 'Créer le schéma aéraulique relié (gaines, bouches)'}</button>` : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
         ${n.type === 'elec' ? '<button id="elec-reprendre">⚡ Reprendre les équipements de l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button>' : ''}
@@ -557,6 +591,8 @@ Vues.note = {
     const det = root.querySelector('#detacher');
     if (det) det.onclick = async () => { if (await confirmer('Détacher ce calcul ? Les valeurs reprises deviennent des valeurs saisies et ne suivront plus la note d\'origine.', 'Détacher')) { Liens.detacher(et, n); enregistrer(et); App.render(); } };
     // CTA : schéma aéraulique relié (créé avec les zones par défaut à adapter), ouvert s'il existe
+    const fcta = root.querySelector('#fiche-cta');
+    if (fcta) fcta.onchange = ev => { const f = ev.target.files[0]; ev.target.value = ''; if (f) chargerFicheCta(et, n, f); };
     const cr0 = root.querySelector('#cta-reseau');
     if (cr0) cr0.onclick = () => {
       let a = Liens.reseauxDeCta(et.notes, n).find(x => x.type === 'aero');

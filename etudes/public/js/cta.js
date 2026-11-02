@@ -92,11 +92,14 @@ const Cta = ((D, C, N) => {
       if (froid && S.cond > 0) alertes.push(alerte('attention', `Batterie froide en régime humide (${nf(S.cond, 1)} kg/h de condensats) : bac de condensats inox, siphon dimensionné à la dépression du caisson, pare-gouttelettes si v > 2,5 m/s.`));
       if (num(e.vf, 2.5) > 2.8) alertes.push(alerte('attention', 'Vitesse frontale élevée : pertes de charge, bruit et entraînement de gouttelettes sur la batterie froide.'));
       if (sfpS > 2000) alertes.push(alerte('attention', `Puissance spécifique du ventilateur de soufflage ${nf(sfpS, 0)} W/(m³/s) (${cat(sfpS)}) : réduire les pertes de charge ou la vitesse frontale.`));
+      // Fiche technique chargée : pression disponible face au réseau, puissances des batteries et des ventilateurs
+      if (e.fiche) { const FC = typeof FicheCta !== 'undefined' ? FicheCta : require('./fiche-cta');
+        alertes.push(...FC.controles(e.fiche, { reseauS: num(e.dpReseauS), reseauR: type === 'simple' ? NaN : num(e.dpReseauR), Pchaud: H.P, Pfroid: froid ? S.P : NaN, Pvent: (PvS + PvR) / 1000, Qs })); }
       alertes.push(alerte('ok', `Batterie chaude ${nf(H.P, 1)} kW${froid ? `, batterie froide ${nf(S.P, 1)} kW` : ''} ; ventilateurs ${nf((PvS + PvR) / 1000, 2)} kW, SFP ${nf(sfp, 0)} W/(m³/s).`));
       const lig = (nom, s) => [nom, nf(s.T, 1), nf(s.HR, 0), nf(s.x * 1000, 2), nf(s.h, 1)];
       return {
         valeurs: { Pchaud: H.P, Pfroid: S.P, QwC, QwF, condensats: S.cond, vapeur: H.vapeur, PvS, PvR, sfp, sfpS, sfpR, dpS, dpR, Sf, eta, hiver: H.pts.map(p => p[1]), ete: S.pts.map(p => p[1]) },
-        resume: [['Débit soufflé / repris', `${nf(Qs, 0)} / ${nf(Qr, 0)} m³/h`], ...(eta ? [['Récupérateur', `${RECUP[recup][0]}, efficacité ${nf(eta * 100, 0)} %`]] : []),
+        resume: [...(e.fiche && (e.fiche.fabricant || e.fiche.reference) ? [['Centrale (fiche technique)', [e.fiche.fabricant, e.fiche.reference].filter(Boolean).join(' ')]] : []), ['Débit soufflé / repris', `${nf(Qs, 0)} / ${nf(Qr, 0)} m³/h`], ...(eta ? [['Récupérateur', `${RECUP[recup][0]}, efficacité ${nf(eta * 100, 0)} %`]] : []),
           ['Batterie chaude', `${nf(H.P, 1)} kW · ${nf(QwC, 2)} m³/h d'eau (${nf(num(e.TcAller, 70), 0)}/${nf(num(e.TcRetour, 50), 0)} °C)`],
           ...(froid ? [['Batterie froide', `${nf(S.P, 1)} kW · ${nf(QwF, 2)} m³/h d'eau (${nf(num(e.TfAller, 7), 0)}/${nf(num(e.TfRetour, 12), 0)} °C)`], ['Condensats', `${nf(S.cond, 1)} kg/h`]] : []),
           ...(H.vapeur ? [['Humidificateur', `${nf(H.vapeur, 1)} kg/h de vapeur`]] : []),

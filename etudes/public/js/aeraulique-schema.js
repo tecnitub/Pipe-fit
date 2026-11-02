@@ -180,6 +180,9 @@ const SchemaAir = ((D, C, N, Cta) => {
     if (souffle && aspire && rS.Q && rR.Q && Math.abs(rS.Q - rR.Q) / rS.Q > 0.1) alertes.push(alerte('attention', `Débits soufflé ${nf(rS.Q, 0)} m³/h et repris ${nf(rR.Q, 0)} m³/h écartés de plus de 10 % : ${rS.Q > rR.Q ? 'locaux en surpression' : 'locaux en dépression'} (à justifier).`));
     if (!rS.Q && !rR.Q) alertes.push(alerte('erreur', 'Aucune zone avec un débit.'));
     if (sfp > 2.5) alertes.push(alerte('attention', `Puissance spécifique ${nf(sfp, 2)} kW/(m³/s) élevée (repère : ≤ 2 en double flux) : réduire les vitesses ou les pertes de charge.`));
+    // Fiche technique de la CTA chargée : pression disponible, puissances électriques, débit
+    if (e.fiche) { const FC = typeof FicheCta !== 'undefined' ? FicheCta : require('./fiche-cta');
+      alertes.push(...FC.controles(e.fiche, { reseauS: souffle ? rS.dp + num(e.dpSil, 50) + num(e.dpPrise, 40) : NaN, reseauR: aspire ? rR.dp + num(e.dpSil, 50) + num(e.dpRejet, 40) : NaN, Pvent: (PvS + PvR) / 1000, Qs: rS.Q })); }
     const acS = acoustique(rS, e, rS.Q, pS, e.LwFabS, alertes, souffle ? 'soufflage' : ''), acR = acoustique(rR, e, rR.Q, pR, e.LwFabR, alertes, dfx || e.producteur === 'cta-melange' ? 'reprise' : 'extraction');
     const ac = [...acS, ...acR];
     const ligneZ = x => [x.rep, RESEAUX[x.reseau], nf(x.Q, 0), `${x.n} × ${x.bouche.b.libelle} ${x.bouche.nom}`, nf(x.bouche.v, 1), nf(x.bouche.dp, 0), x.antenne.nom, nf(x.antenne.v, 1), nf(x.dpA, 0), nf(x.dpTotal, 0)];
@@ -196,7 +199,7 @@ const SchemaAir = ((D, C, N, Cta) => {
         bouches: [...rS.zones, ...rR.zones].map(x => ({ local: x.rep, type: x.bouche.b.libelle, taille: x.bouche.nom, n: x.n })),
         // Débits théoriques bouche par bouche (relevé d'équilibrage sur le chantier)
         debits: [...rS.zones, ...rR.zones].flatMap((x, i) => Array.from({ length: x.n }, (_, k) => ({ repere: `Z${i + 1}.${k + 1}`, local: x.rep, type: RESEAUX[x.reseau], theorique: Math.round(x.Q / x.n) }))) },
-      resume: [['Producteur', P[0]], ...(souffle ? [[`${titreS}`, `${nf(rS.Q, 0)} m³/h · ${nf(pS, 0)} Pa · ${nf(PvS / 1000, 2)} kW`]] : []),
+      resume: [['Producteur', `${P[0]}${e.fiche && (e.fiche.fabricant || e.fiche.reference) ? ` — ${[e.fiche.fabricant, e.fiche.reference].filter(Boolean).join(' ')}` : ''}`], ...(souffle ? [[`${titreS}`, `${nf(rS.Q, 0)} m³/h · ${nf(pS, 0)} Pa · ${nf(PvS / 1000, 2)} kW`]] : []),
         ...(aspire ? [[dfx || e.producteur === 'cta-melange' ? 'Reprise' : 'Extraction', `${nf(rR.Q, 0)} m³/h · ${nf(pR, 0)} Pa · ${nf(PvR / 1000, 2)} kW`]] : []),
         ['Puissance spécifique (SFP)', `${nf(sfp, 2)} kW/(m³/s)`], ['Bouches', `${[...rS.zones, ...rR.zones].reduce((s, x) => s + x.n, 0)} dans ${rS.zones.length + rR.zones.length} zone(s)`],
         ...(arbo ? [['Registres d\'équilibrage', `${(rS.registres || []).length + (rR.registres || []).length} (${e.registres === 'antennes' ? 'bouches et pied des antennes' : 'sur chaque branche terminale'})`]] : []),
