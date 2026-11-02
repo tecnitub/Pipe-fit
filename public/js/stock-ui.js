@@ -428,7 +428,8 @@ function demandeMaterielHtml() {
     <div class="grid2" style="margin-top:10px"><div class="field"><label for="dm-date">Livraison souhaitée le</label><input id="dm-date" type="date" value="${esc(d.date || '')}"></div>
       <div class="field"><label for="dm-note">Message aux fournisseurs (facultatif)</label><input id="dm-note" value="${esc(d.note || '')}" placeholder="Livraison sur chantier avant 8 h…"></div></div>
     <button class="big" id="dm-go" ${d.lignes.length ? '' : 'disabled'}>📨 Consulter les fournisseurs</button>
-    <p class="small muted">Chaque ligne part chez le fournisseur préféré et les autres fournisseurs consultés de l'article (ou de son type de matériel), par e-mail, avec le chantier et la date. Le chargé d'affaires est prévenu et compare les offres.</p></div>`;
+    <p class="small muted">Chaque ligne part chez le fournisseur préféré et les autres fournisseurs consultés de l'article (ou de son type de matériel), par e-mail, avec le chantier et la date. Le chargé d'affaires est prévenu et compare les offres.</p></div>
+  <h2>📋 Mes demandes</h2><div id="dm-mes"><p class="muted small">Chargement…</p></div>`;
 }
 function resultatDemandeHtml(r) {
   if (r.enAttente) return '<div class="card warn-card">⏳ Pas de réseau : la demande partira automatiquement au retour de la connexion.</div>';
@@ -436,7 +437,23 @@ function resultatDemandeHtml(r) {
     ${r.consultations.map(c => `<p class="small" style="margin:6px 0 0"><strong>${esc(c.ref || '')}</strong> · ${c.lignes} ligne(s) : ${c.fournisseurs.map(f => `${esc(f.nom)} ${f.envoye ? '✅' : `⚠️ <span class="muted">${esc(f.raison)}</span>`}`).join(', ')}</p>`).join('')}
     ${r.aChoisir ? `<p class="small warn-text">${r.aChoisir.lignes} ligne(s) sans fournisseur connu : le bureau les envoie (${esc(r.aChoisir.ref || '')}).</p>` : ''}</div>`;
 }
+// Suivi des demandes : envoyée, offres reçues, commandée (fournisseur, livraison prévue), livrée — sans prix
+const BADGE_DEMANDE = { envoyee: 'b-info', offres: 'b-warn', commandee: 'b-ok', partielle: 'b-warn', livree: 'b-ok', bureau: 'b-warn', close: '' };
+function mesDemandesHtml(l) {
+  if (!l || !l.length) return '<p class="muted small">Aucune demande ces deux derniers mois.</p>';
+  return l.map(d => `<div class="card demande-l"><div class="toolbar" style="margin:0;justify-content:space-between"><strong>${esc(d.ref)}</strong><span class="badge ${BADGE_DEMANDE[d.etat] || ''}">${esc(d.libelle)}</span></div>
+    <div class="small muted">${dateFr(d.date)} · ${esc(affaireLabel(affaireOf(d.affaireId)))}</div>
+    <div class="small">${d.lignes.slice(0, 4).map(x => `${esc(x.designation)} × ${fmtQ(x.qte)} ${esc(x.unite)}`).join(' · ')}${d.lignes.length > 4 ? ` · +${d.lignes.length - 4}` : ''}</div>
+    ${d.commande ? `<div class="small">🧾 Commande ${esc(d.commande.numero)} chez <strong>${esc(d.commande.fournisseur)}</strong>${d.commande.dateLivraison ? ` · livraison prévue le <strong>${dateFr(d.commande.dateLivraison)}</strong>` : ''}${d.commande.auto ? ' · commandée automatiquement' : ''}</div>` : ''}</div>`).join('');
+}
+async function chargerMesDemandes() {
+  const z = document.querySelector('#dm-mes'); if (!z) return;
+  let l = null;
+  try { l = await api('GET', '/api/consultations/terrain/miennes'); HorsLigne.garder('mes-demandes', l); } catch (e) { l = await HorsLigne.relire('mes-demandes'); }
+  const z2 = document.querySelector('#dm-mes'); if (z2) z2.innerHTML = mesDemandesHtml(l);
+}
 function bindDemandeMateriel(root) {
+  chargerMesDemandes();
   const $ = s => root.querySelector(s), maj = fn => { const d = lireDemande(); fn(d); d.lignes = d.lignes.filter(l => Number(l.qte) > 0); garderDemande(d); resultatDemande = null; App.render(); };
   const champs = () => { const d = lireDemande(); d.affaireId = $('#dm-ch').value; d.date = $('#dm-date').value; d.note = $('#dm-note').value; garderDemande(d); };
   ['#dm-ch', '#dm-date', '#dm-note'].forEach(k => { $(k).onchange = champs; });
@@ -466,6 +483,7 @@ function bindDemandeMateriel(root) {
       const r = await HorsLigne.appeler('POST', '/api/consultations/terrain', { affaireId: d.affaireId, date: d.date, note: d.note, lignes: d.lignes.map(l => ({ articleId: l.articleId, designation: l.designation, famille: l.famille, unite: l.unite, qte: l.qte })) });
       resultatDemande = r.enAttente ? { enAttente: true } : r.reponse;
       dernierChantierScan.id = d.affaireId; garderDemande({ affaireId: d.affaireId, date: '', note: '', lignes: [] });
+      if (!r.enAttente) setTimeout(chargerMesDemandes, 300);
       App.render(); App.toast(r.enAttente ? 'Demande gardée : elle partira au retour du réseau' : `${resultatDemande.envoyes} demande(s) de prix envoyée(s) aux fournisseurs`, 5000);
     } catch (e) { ev.target.disabled = false; notify(e.message); }
   };

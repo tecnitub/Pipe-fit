@@ -1172,3 +1172,6 @@ ul.plan-mes li.pm-sansObjet .pm-txt { opacity: .55; text-decoration: line-throug
 
 .panier-l { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .qte-pm.petit input { width: 56px; flex: 0 0 56px; font-size: 15px; } .qte-pm.petit button { min-width: 34px; font-size: 16px; padding: 4px 8px; }
+
+.demande-l { padding: 10px 12px; margin-bottom: 8px; }
+.demande-l .small { margin-top: 3px; }

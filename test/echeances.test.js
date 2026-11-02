@@ -97,3 +97,28 @@ test('demande de matériel du terrain : consultations par fournisseurs, sans Mic
   assert.strictEqual((await call('PUT', '/api/achats/familles-fournisseurs', { Divers: { prefere: 'e5', autres: ['e6', 'e5', 'e11', 'e12', 'e7', 'e9'] } }, admin)).body.Divers.autres.length, 4);
   assert.strictEqual((await call('GET', '/api/achats/familles-fournisseurs', null, k)).status, 403);
 });
+
+test('offre retenue, commande automatique sous le seuil du compagnon et suivi « Mes demandes »', async () => {
+  const k = (await call('POST', '/api/login', { login: 'kevin', password: 'motdepasse1' })).cookie;
+  const admin = (await call('POST', '/api/login', { login: 'admin', password: 'admin-test-pw' })).cookie;
+  const r = await call('POST', '/api/consultations/terrain', { affaireId: 'af1', lignes: [{ articleId: 'a14', qte: 4 }] }, k);
+  const id = r.body.consultations[0].id;
+  let c = (await call('GET', '/api/data', null, admin)).body.consultations.find(x => x.id === id);
+  // Offres reçues : 120 € HT chez le premier (sous le seuil de 500 € de Kevin), les autres déclinent
+  c.fournisseurs = c.fournisseurs.map((f, i) => (i === 0 ? { ...f, statut: 'Offre reçue', offre: { prix: { 0: 30 }, delai: '2' } } : { ...f, statut: 'Décline' }));
+  assert.strictEqual((await call('PUT', `/api/records/consultations/${id}`, { data: c, version: c._v }, admin)).status, 200);
+  await new Promise(res => setTimeout(res, 150));
+  const d = (await call('GET', '/api/data', null, admin)).body;
+  c = d.consultations.find(x => x.id === id);
+  assert.ok(c.retenu && c.retenu.auto && c.retenu.net === 120, JSON.stringify(c.retenu));
+  const cmd = d.commandes.find(x => x.consultationId === id);
+  assert.ok(cmd && /^CF-/.test(cmd.numero) && cmd.statut === 'Brouillon'); // sans Microsoft 365 : à envoyer par le bureau
+  const mes = (await call('GET', '/api/consultations/terrain/miennes', null, k)).body;
+  const e = mes.find(x => x.id === id);
+  assert.deepStrictEqual([e.etat, e.commande.numero, e.commande.auto], ['commandee', cmd.numero, true]);
+  assert.ok(!JSON.stringify(mes).includes('"pu"'));
+  // Retenir de nouveau : refusé ; compagnon : refusé
+  assert.strictEqual((await call('POST', `/api/consultations/${id}/retenir`, { entrepriseId: cmd.fournisseurId }, admin)).status, 409);
+  assert.strictEqual((await call('POST', `/api/consultations/${id}/retenir`, { entrepriseId: cmd.fournisseurId }, k)).status, 403);
+  assert.ok((await call('GET', '/api/data', null, k)).body.notifications.some(n => n.type === 'demande-materiel' && n.texte.includes(cmd.numero)));
+});

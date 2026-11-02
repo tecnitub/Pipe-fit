@@ -103,6 +103,18 @@ métré (bibliothèque de prix) et y dépose ses notes de calcul (catégorie « 
   suite par e-mail** à chaque fournisseur (boîte des demandes de prix, sinon celle du chargé d'affaires du chantier ;
   réponse vers la boîte des offres, qui range l'offre dans sa consultation grâce au n° CS-…). Le chargé d'affaires est
   prévenu ; les lignes sans fournisseur connu restent au bureau. Sans réseau, la demande part au retour de la connexion.
+- **Retenir l'offre en un clic** (consultation) : « ✅ Retenir le mieux-disant et commander » ou « Retenir et commander »
+  sur une offre complète : la commande est créée avec les prix de l'offre et **envoyée au fournisseur par e-mail**
+  (bon de commande dans le corps du message), la consultation est attribuée ; au choix, les autres fournisseurs sont
+  prévenus que leur offre n'est pas retenue. Sans Microsoft 365, la commande reste en brouillon à envoyer.
+- **Commande automatique sous le seuil du compagnon** : fiche de l'équipe (RH) → « Commande automatique de ses demandes
+  de matériel jusqu'à (€ HT) ». Dès que tous les fournisseurs ont répondu (ou 24 h après la demande), le mieux-disant
+  complet est commandé et envoyé tout seul s'il ne dépasse pas ce montant ; au-dessus, ou sans seuil, le chargé
+  d'affaires reçoit « Offres à valider » et retient l'offre en un clic. Vérification toutes les 10 minutes et à chaque
+  offre saisie.
+- **Mes demandes** (compagnon, écran Demande de matériel) : état de chaque demande — envoyée, offres reçues, commandée
+  (fournisseur, n° de commande, livraison prévue, commandée automatiquement), livrée — sans aucun prix ; notification
+  quand le matériel est commandé, puis livré (réception de la commande).
 
 ## Colonnes des tableaux, au choix de chacun
 

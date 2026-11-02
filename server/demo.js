@@ -48,6 +48,7 @@ function demoData() {
   ];
   users.forEach(u => { u.type = u.type || 'salarie'; u.chefId = u.chefId || ''; u.agenceId = u.agenceId || ''; });
   users.find(u => u.id === 'o4').chefId = 'o3';
+  users.find(u => u.id === 'o1').seuilCommande = 500; // Kevin : ses demandes de matériel jusqu'à 500 € HT sont commandées sans attendre le bureau
   // Taux de main-d'œuvre : prix de vente et coût horaire moyen chargé par catégorie
   const mainoeuvre = [
     { id: 'mo1', code: 'SOUD', libelle: 'Soudeur (orbital / TIG)', tauxVente: 55, tauxCout: 38 },

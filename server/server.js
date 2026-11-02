@@ -21,6 +21,7 @@ const MaterielRetenu = require('../public/js/materiel-retenu');
 const Installe = require('../public/js/installe');
 const Stock = require('../public/js/stock');
 const ConsultTerrain = require('../public/js/consult-terrain');
+const OffreChoix = require('../public/js/offre-choix');
 const PlanMes = require('../public/js/plan-mes');
 const FT = require('../public/js/fiches-tech');
 // Lignes des commandes fournisseurs d'un chantier pour le suivi du matériel (fournisseur nommé, sans prix)
@@ -197,6 +198,68 @@ async function envoyerDemandeFiches(d, relance) {
     <table border="1" cellpadding="4" style="border-collapse:collapse"><tr><th>Fabricant</th><th>Référence</th><th>Désignation</th></tr>${lignes.map(l => `<tr><td>${escHtml(l.fabricant || '')}</td><td><strong>${escHtml(l.reference)}</strong></td><td>${escHtml(l.designation || '')}</td></tr>`).join('')}</table>
     ${d.message ? `<p>${escHtml(d.message).replace(/\n/g, '<br>')}</p>` : ''}<p>Merci de répondre à ce message en joignant les PDF (sans modifier l'objet).</p><p>Cordialement,<br>${escHtml(d.par || '')}${soc ? `<br>${escHtml(soc)}` : ''}</p>`;
   await M365.envoyer(cfg, d.expediteur, { to: d.to, cc: [], bcc: [], replyTo: oc.actif && oc.adresse ? [oc.adresse] : [], subject: `${relance ? 'Relance : ' : ''}Fiches techniques${chantiers.length ? ` — ${chantiers.join(', ')}` : ''} [FT-${d.id}]`, html, attachments: [] });
+}
+/* ---------- Offre retenue, commande automatique des demandes du terrain ---------- */
+const ecrireRecord = (col, obj, qui) => {
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO records (col, id, data, version, updated_at, updated_by) VALUES (?, ?, ?, 1, ?, ?)
+    ON CONFLICT(col, id) DO UPDATE SET data = excluded.data, version = records.version + 1, updated_at = excluded.updated_at, updated_by = excluded.updated_by`).run(col, obj.id, JSON.stringify(DB.clean(obj)), now, qui);
+  const rec = DB.getRecord(db, col, obj.id); broadcast('change', { col, record: rec, client: null }); return rec;
+};
+// Offre retenue : commande à ce fournisseur (toutes les lignes), envoyée par e-mail si possible, consultation attribuée,
+// fournisseurs non retenus prévenus au besoin, compagnon (et chargé d'affaires pour une commande automatique) prévenus
+async function retenirOffre(c, eid, { par, emailPar = '', auto = false, envoyer = true, informer = false }) {
+  const jour = new Date().toISOString().slice(0, 10), cmd = OffreChoix.commande(c, eid, jour);
+  cmd.id = uid(); cmd.numero = DB.nextNumber(db, 'commandes', cmd);
+  const aff = DB.getRecord(db, 'affaires', c.affaireId) || {}, contacts = recordsDe('contacts'), ent = DB.getRecord(db, 'entreprises', eid) || {}, soc = ((DB.getSettings(db) || {}).societe || '').split('\n')[0];
+  const charge = aff.chargeId ? db.prepare("SELECT email FROM accounts WHERE user_id = ? AND email IS NOT NULL AND email != '' LIMIT 1").get(aff.chargeId) : null;
+  const site = ((DB.getRecord(db, 'entreprises', aff.clientId) || {}).adresses || []).find(x => x.id === aff.siteId);
+  const livraison = site ? [site.libelle, site.adresse, [site.cp, site.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ') : '';
+  let envoye = false, raison = '';
+  if (envoyer) {
+    const exp = AdressesEnvoi.pour(DB.getConfig(db, 'mail-adresses'), 'commande', (charge && charge.email) || emailPar), to = ConsultTerrain.adresse(ent, contacts);
+    if (!m365Pret()) raison = 'e-mails non configurés'; else if (!exp.expediteur) raison = 'pas d\'expéditeur'; else if (!to) raison = 'pas d\'adresse e-mail du fournisseur';
+    else {
+      const m = OffreChoix.mailCommande({ numero: cmd.numero, consultationRef: c.ref, devisRef: cmd.devisFournisseurRef, lignes: cmd.lignes, chantier: aff, livraison, dateLivraison: cmd.dateLivraison, signataire: par, societe: soc });
+      try {
+        await M365.envoyer(DB.getConfig(db, 'm365'), exp.expediteur, { to: [to], cc: [], bcc: exp.bcc || [], replyTo: [], subject: m.sujet, html: m.html, attachments: [] });
+        envoye = true; Object.assign(cmd, { statut: 'Envoyée', envoyeeLe: jour });
+        ecrireRecord('envois', { id: uid(), date: new Date().toISOString(), type: 'commande', col: 'commandes', docId: cmd.id, numero: cmd.numero, to: [to], cc: [], objet: m.sujet, pieces: [], mode: auto ? 'Microsoft 365 (commande automatique)' : 'Microsoft 365', expediteur: exp.expediteur, par }, par);
+        if (informer) for (const f of (c.fournisseurs || []).filter(x => x.entrepriseId !== eid && x.statut === 'Offre reçue')) {
+          const a2 = ConsultTerrain.adresse(DB.getRecord(db, 'entreprises', f.entrepriseId) || {}, contacts), mn = OffreChoix.mailNonRetenu({ consultationRef: c.ref, signataire: par, societe: soc });
+          if (a2) await M365.envoyer(DB.getConfig(db, 'm365'), exp.expediteur, { to: [a2], cc: [], bcc: [], replyTo: [], subject: mn.sujet, html: mn.html, attachments: [] }).catch(() => {});
+        }
+      } catch (e) { raison = `envoi refusé : ${e.message}`.slice(0, 160); }
+    }
+  }
+  const net = OffreChoix.totaux(c, (c.fournisseurs || []).find(f => f.entrepriseId === eid)).net;
+  ecrireRecord('commandes', cmd, par);
+  Object.assign(c, { statut: 'Attribuée', attribution: Object.fromEntries((c.lignes || []).map((l, i) => [i, eid])), commandeIds: [...(c.commandeIds || []), cmd.id], retenu: { entrepriseId: eid, le: new Date().toISOString(), par, auto, net } });
+  ecrireRecord('consultations', c, par);
+  DB.audit(db, auto ? 'pipe-fit' : par, auto ? 'commande automatique (seuil du compagnon)' : 'offre retenue', 'commandes', cmd.id, `${cmd.numero} — ${ent.nom || eid} — ${net} € HT`);
+  const nomF = ent.nom || '', livre = cmd.dateLivraison ? ` (livraison souhaitée le ${cmd.dateLivraison.split('-').reverse().join('/')})` : '';
+  if (c.terrain && c.terrain.userId) NOTIFS.enregistrer({ type: 'demande-materiel', userId: c.terrain.userId, titre: `✅ Matériel commandé — ${aff.code || ''}`, texte: `Votre demande ${c.ref} est commandée chez ${nomF}${livre}. Commande ${cmd.numero}.`, lien: '#/scan/demande', date: new Date().toISOString(), lu: false });
+  if (auto && aff.chargeId) NOTIFS.enregistrer({ type: 'consultation', userId: aff.chargeId, titre: `🤖 Commande automatique ${cmd.numero} (${aff.code || ''})`, texte: `${nomF} : ${net} € HT, sous le seuil de ${(c.terrain || {}).par || 'du compagnon'}${envoye ? ', envoyée au fournisseur' : ` — non envoyée (${raison}) : à envoyer depuis la commande`}.`, lien: `#/commandes/${cmd.id}`, date: new Date().toISOString(), lu: false });
+  return { commande: DB.getRecord(db, 'commandes', cmd.id), envoye, raison };
+}
+// Demandes du terrain dont les offres sont là : commande automatique sous le seuil du compagnon, sinon le chargé
+// d'affaires est prévenu une fois que la décision lui revient
+let autoEnCours = false;
+async function autoCommandesTerrain() {
+  if (autoEnCours) return; autoEnCours = true;
+  try {
+    const now = new Date().toISOString();
+    for (const c of recordsDe('consultations').filter(x => x.statut === 'En cours' && x.terrain && !x.retenu)) {
+      const user = DB.getRecord(db, 'users', c.terrain.userId), d = OffreChoix.decisionAuto(c, user, now);
+      if (d.commander) { await retenirOffre(c, d.meilleure.entrepriseId, { par: 'Pipe-Fit (commande automatique)', auto: true }).catch(e => console.error('Commande automatique :', e.message)); continue; }
+      if (d.meilleure && !c.decisionDemandee) {
+        const aff = DB.getRecord(db, 'affaires', c.affaireId) || {};
+        const dest = aff.chargeId ? [aff.chargeId] : [...new Set(db.prepare("SELECT user_id FROM accounts WHERE role IN ('admin', 'charge')").all().map(x => x.user_id).filter(Boolean))];
+        dest.forEach(u => NOTIFS.enregistrer({ type: 'consultation', userId: u, titre: `🛒 Offres à valider : ${c.ref} (${aff.code || ''})`, texte: `Demande de ${c.terrain.par} : mieux-disant ${(DB.getRecord(db, 'entreprises', d.meilleure.entrepriseId) || {}).nom || ''} à ${d.meilleure.net} € HT (${d.raison}). Retenez l'offre en un clic.`, lien: `#/consultations/${c.id}`, date: now, lu: false }));
+        c.decisionDemandee = now; ecrireRecord('consultations', c, 'Pipe-Fit');
+      }
+    }
+  } finally { autoEnCours = false; }
 }
 const escHtml = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // Relance automatique : 7 jours sans les fiches, deux relances au plus ; demande soldée dès que toutes les fiches sont là
@@ -923,6 +986,12 @@ async function api(req, res, url) {
       // Chantier créé depuis un devis : les études faites pour ce devis (avant la commande) y sont reliées
       if (col === 'affaires' && result.record.devisId && (!result.avant || result.avant.devisId !== result.record.devisId)) LIENS.relierDevis(result.record.devisId, result.record.id, acc.nom || acc.login);
       if (col === 'affaires' && estCompagnon(acc) && !result.avant) NOTIFS.horsDevisOuvert(acc, result.record);
+      // Offre saisie sur une demande du terrain : commande automatique possible ; commande livrée : le compagnon est prévenu
+      if (col === 'consultations' && result.record.terrain) setImmediate(() => autoCommandesTerrain().catch(() => {}));
+      if (col === 'commandes' && result.record.consultationId && ['Réceptionnée', 'Réceptionnée partiellement'].includes(result.record.statut) && (!result.avant || result.avant.statut !== result.record.statut)) {
+        const cs = DB.getRecord(db, 'consultations', result.record.consultationId);
+        if (cs && cs.terrain && cs.terrain.userId) NOTIFS.enregistrer({ type: 'demande-materiel', userId: cs.terrain.userId, titre: `📦 Matériel ${result.record.statut === 'Réceptionnée' ? 'livré' : 'livré en partie'} — ${(DB.getRecord(db, 'affaires', result.record.affaireId) || {}).code || ''}`, texte: `Commande ${result.record.numero} (${(DB.getRecord(db, 'entreprises', result.record.fournisseurId) || {}).nom || ''}) de votre demande ${cs.ref}.`, lien: '#/scan/demande', date: new Date().toISOString(), lu: false });
+      }
       return send(res, 200, pourCompagnon(acc, col, result.record) || { id: result.record.id, _v: result.record._v });
     }
 
@@ -1010,6 +1079,21 @@ async function api(req, res, url) {
   }
   // Demande de matériel du terrain : consultations créées par groupe de fournisseurs et envoyées tout de suite par
   // e-mail à chacun (adresse des demandes de prix), réponses vers la boîte des offres ; chargé d'affaires prévenu
+  // Mes demandes de matériel (compagnon) : état de chaque demande, sans prix
+  if (p[0] === 'consultations' && p[1] === 'terrain' && p[2] === 'miennes' && method === 'GET') {
+    if (!acc.user_id) return send(res, 200, []);
+    const depuis = new Date(Date.now() - 60 * 864e5).toISOString().slice(0, 10), cmds = recordsDe('commandes'), nom = id => (DB.getRecord(db, 'entreprises', id) || {}).nom || '';
+    return send(res, 200, recordsDe('consultations').filter(c => c.terrain && c.terrain.userId === acc.user_id && (c.date || '') >= depuis).sort((a, b) => String(b.terrain.le).localeCompare(String(a.terrain.le))).slice(0, 40).map(c => OffreChoix.etatDemande(c, cmds, nom)));
+  }
+  // Offre retenue en un clic (bureau) : commande créée et envoyée au fournisseur
+  if (p[0] === 'consultations' && p[1] && p[2] === 'retenir' && method === 'POST') {
+    if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
+    const c = DB.getRecord(db, 'consultations', p[1]), b = await readBody(req);
+    if (!c) return fail(res, 404, 'Consultation introuvable');
+    if (c.retenu) return fail(res, 409, 'Une offre est déjà retenue pour cette consultation');
+    try { return send(res, 200, await retenirOffre(DB.clean(c), String(b.entrepriseId || ''), { par: acc.nom || acc.login, emailPar: acc.email || '', envoyer: b.envoyer !== false, informer: !!b.informer })); }
+    catch (e) { return fail(res, 400, e.message); }
+  }
   if (p[0] === 'consultations' && p[1] === 'terrain' && method === 'POST') {
     if (estCompagnon(acc) && !acc.user_id) return fail(res, 403, 'Compte non relié à une fiche de l\'équipe');
     const b = await readBody(req), aff = DB.getRecord(db, 'affaires', String(b.affaireId || ''));
@@ -1348,6 +1432,8 @@ if (require.main === module) {
   setInterval(() => MAILF.relever(DB, db, broadcast).catch(e => console.error('Boîte des factures :', e.message)), 120000).unref();
   setInterval(() => MAILO.relever(DB, db, broadcast, { fiches: FICHES.recevoirMail }).catch(e => console.error('Boîte des offres :', e.message)), 120000).unref();
   setInterval(() => relancerDemandesFiches().catch(() => {}), 6 * 3600000).unref();
+  // Offres reçues par e-mail (boîte des offres) : commandes automatiques des demandes du terrain sous le seuil
+  setInterval(() => autoCommandesTerrain().catch(e => console.error('Commandes automatiques :', e.message)), 10 * 60000).unref();
   // Échéances des habilitations, visites médicales et contrôles du parc : peu après le démarrage, puis toutes les 6 heures
   const verifierEcheances = () => NOTIFS.echeances().catch(e => console.error('Échéances :', e.message));
   setTimeout(verifierEcheances, 30000).unref();

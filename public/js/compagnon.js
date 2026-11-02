@@ -42,7 +42,7 @@ const Compagnon = (() => {
     if (MASQUEES.includes(col)) return null;
     switch (col) {
       case 'notifications': return r.userId === ctx.userId ? r : null;
-      case 'users': return sans(r, ['tauxHoraire', 'salaireHoraire', 'email']);
+      case 'users': return sans(r, ['tauxHoraire', 'salaireHoraire', 'email', 'seuilCommande']);
       case 'mainoeuvre': return sans(r, ['tauxVente', 'tauxCout']);
       case 'articles': return R.prix ? sans(r, ['coutRevient']) : sans(r, ['prixVente', 'coutRevient']);
       case 'devis': return devis(r, R);

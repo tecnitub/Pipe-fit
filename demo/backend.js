@@ -59,6 +59,26 @@
     db.audit.unshift({ id: Date.now(), at: new Date().toISOString(), login: me().login, action, col, label });
     db.audit.length = Math.min(db.audit.length, 200);
   };
+  // Démonstration : offre retenue -> commande (e-mail simulé), commandes automatiques des demandes du terrain
+  function retenirDemo(c, eid, { par, auto = false, envoyer = true }) {
+    const now = new Date().toISOString(), meta = { _v: 1, _at: now, _by: par }, cmd = OffreChoix.commande(c, eid, now.slice(0, 10));
+    Object.assign(cmd, { id: 'cm' + DemoSeed.uid(), ...meta }); cmd.numero = nextNumber('commandes', cmd);
+    const ent = db.entreprises.find(e => e.id === eid) || {}, to = ConsultTerrain.adresse(ent, db.contacts), aff = db.affaires.find(a => a.id === c.affaireId) || {};
+    if (envoyer && to) { Object.assign(cmd, { statut: 'Envoyée', envoyeeLe: now.slice(0, 10) }); db.envois.push({ id: 'en' + DemoSeed.uid(), date: now, type: 'commande', col: 'commandes', docId: cmd.id, numero: cmd.numero, to: [to], cc: [], objet: OffreChoix.mailCommande({ numero: cmd.numero, consultationRef: c.ref, lignes: cmd.lignes }).sujet, pieces: [], mode: `Démonstration (e-mail simulé)${auto ? ' — commande automatique' : ''}`, par, ...meta }); }
+    db.commandes.push(cmd);
+    const net = OffreChoix.totaux(c, c.fournisseurs.find(f => f.entrepriseId === eid)).net;
+    Object.assign(c, { statut: 'Attribuée', attribution: Object.fromEntries(c.lignes.map((l, i) => [i, eid])), commandeIds: [...(c.commandeIds || []), cmd.id], retenu: { entrepriseId: eid, le: now, par, auto, net }, _v: (c._v || 1) + 1, _at: now });
+    if (c.terrain && c.terrain.userId) db.notifications.push({ id: 'nt' + DemoSeed.uid(), type: 'demande-materiel', userId: c.terrain.userId, titre: `✅ Matériel commandé — ${aff.code || ''}`, texte: `Votre demande ${c.ref} est commandée chez ${ent.nom || ''}. Commande ${cmd.numero}.`, lien: '#/scan/demande', date: now, lu: false, ...meta });
+    if (auto && aff.chargeId) db.notifications.push({ id: 'nt' + DemoSeed.uid(), type: 'consultation', userId: aff.chargeId, titre: `🤖 Commande automatique ${cmd.numero} (${aff.code || ''})`, texte: `${ent.nom || ''} : ${net} € HT, sous le seuil de ${c.terrain.par}.`, lien: `#/commandes/${cmd.id}`, date: now, lu: false, ...meta });
+    return { commande: cmd, envoye: cmd.statut === 'Envoyée', raison: to ? '' : 'pas d\'adresse e-mail du fournisseur', demo: true };
+  }
+  function autoCommandesDemo() {
+    const now = new Date().toISOString();
+    db.consultations.filter(c => c.statut === 'En cours' && c.terrain && !c.retenu).forEach(c => {
+      const d = OffreChoix.decisionAuto(c, db.users.find(u => u.id === c.terrain.userId), now);
+      if (d.commander) retenirDemo(c, d.meilleure.entrepriseId, { par: 'Pipe-Fit (commande automatique)', auto: true });
+    });
+  }
   function canWrite(acc, col) {
     if (acc.role === 'admin') return true;
     if (acc.role === 'charge') return col !== 'users';
@@ -161,6 +181,19 @@
       if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Droits insuffisants' }];
       if (method === 'PUT') { db.famillesFournisseurs = body || {}; save(); }
       return [200, db.famillesFournisseurs || {}];
+    }
+    // Offre retenue (commande créée et « envoyée »), commandes automatiques sous le seuil, demandes du compagnon
+    if (p[0] === 'consultations' && p[1] === 'terrain' && p[2] === 'miennes') {
+      autoCommandesDemo();
+      const nom = id => (db.entreprises.find(e => e.id === id) || {}).nom || '';
+      return [200, db.consultations.filter(c => c.terrain && c.terrain.userId === acc.userId).sort((a, b) => String(b.terrain.le).localeCompare(String(a.terrain.le))).slice(0, 40).map(c => OffreChoix.etatDemande(c, db.commandes, nom))];
+    }
+    if (p[0] === 'consultations' && p[1] && p[2] === 'retenir' && method === 'POST') {
+      if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Réservé au bureau' }];
+      const c = db.consultations.find(x => x.id === p[1]);
+      if (!c) return [404, { error: 'Consultation introuvable' }];
+      if (c.retenu) return [409, { error: 'Une offre est déjà retenue pour cette consultation' }];
+      try { const r = retenirDemo(c, String(body.entrepriseId || ''), { par: acc.nom, envoyer: body.envoyer !== false }); save(); return [200, r]; } catch (e) { return [400, { error: e.message }]; }
     }
     if (p[0] === 'consultations' && p[1] === 'terrain' && method === 'POST') {
       const aff = db.affaires.find(a => a.id === String(body.affaireId || ''));
@@ -533,6 +566,7 @@
         if (col === 'affaires' && existing) ['creePar', 'creeParId', 'creeLe'].forEach(k => { if (existing[k]) obj[k] = existing[k]; });
         const refus = col === 'affaires' ? null : atelierRefus(acc, col, obj, existing);
         if (refus) return [403, { error: refus }];
+        if (col === 'consultations' && obj.terrain) setTimeout(() => { autoCommandesDemo(); save(); }, 0);
         // Matériel saisi par un compagnon : prix de la bibliothèque (comme le serveur)
         if (col === 'consommations' && acc.role === 'atelier') { const art = obj.articleId && db.articles.find(a => a.id === obj.articleId); if (art) Object.assign(obj, { pu: Number(art.prixVente) || 0, cout: Number(art.coutRevient) || 0 }); }
         if (col === 'fichesFluides' && obj.statut !== 'Brouillon') { const e = Fluides.erreur(obj, db.equipementsFrigo.find(x => x.id === obj.equipementId)); if (e) return [400, { error: e }]; }

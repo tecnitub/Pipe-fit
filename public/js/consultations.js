@@ -122,6 +122,8 @@ function consultationEditeur(id) {
   return `<div class="toolbar"><a href="#/consultations" class="btn secondary">← Consultations</a>${c.affaireId ? `<a class="btn secondary" href="#/chantier/${esc(c.affaireId)}">Chantier ${esc(affaireOf(c.affaireId).code || '')}</a>` : ''}<span class="spacer"></span>
     <button class="danger" id="cs-del">Supprimer</button></div>
   <h1>Consultation ${esc(c.ref || '')} ${badge(c.statut)}</h1>${envoisHtml('consultations', c.id)}
+  ${c.terrain ? (() => { const u = Store.get('users', c.terrain.userId) || {}, sl = num(u.seuilCommande); return `<div class="card note-card">🛒 <strong>Demande du terrain</strong> de ${esc(c.terrain.par || '')} le ${dateFr(String(c.terrain.le || '').slice(0, 10))}${c.terrain.note ? ` — « ${esc(c.terrain.note)} »` : ''}.
+    ${c.retenu ? `<br>✅ Offre retenue : <strong>${esc(clientName(c.retenu.entrepriseId))}</strong> (${eur(c.retenu.net)} HT)${c.retenu.auto ? ' — <strong>commande automatique</strong> sous le seuil du compagnon' : ` par ${esc(c.retenu.par || '')}`}.` : `<br><span class="small">${sl > 0 ? `Commande automatique du mieux-disant jusqu'à <strong>${eur(sl)} HT</strong> (fiche de ${esc(u.nom || 'ce compagnon')}), dès que tous les fournisseurs ont répondu ou 24 h après la demande.` : 'Pas de seuil de commande automatique pour ce compagnon : la décision revient au bureau.'}</span>`}</div>`; })() : c.retenu ? `<div class="card note-card">✅ Offre retenue : <strong>${esc(clientName(c.retenu.entrepriseId))}</strong> (${eur(c.retenu.net)} HT) par ${esc(c.retenu.par || '')}.</div>` : ''}
   <div class="card"><div class="grid2">
     <div class="field"><label for="cs-objet">Objet</label><input id="cs-objet" value="${esc(c.objet || '')}" ${ouverte ? '' : 'disabled'}></div>
     <div class="field"><label for="cs-aff">Chantier</label><select id="cs-aff" ${ouverte ? '' : 'disabled'}><option value="">Stock / frais généraux</option>${options(Store.all('affaires').filter(a => !a.archive || a.id === c.affaireId), c.affaireId, affaireLabel, false)}</select></div>
@@ -146,6 +148,7 @@ function consultationEditeur(id) {
       return `<tr><td><strong>${esc(clientName(f.entrepriseId))}</strong>${off.remarques ? `<br><span class="muted small">${esc(off.remarques)}</span>` : ''}${off.mail ? `<br><span class="small">📧 reçue par e-mail le ${new Date(off.mail.recuLe).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}${off.aLire ? ' · <span class="badge b-warn">à lire</span>' : ''}</span>` : ''}${off.aLire && off.pieceId ? ` <button class="small" data-lire="${esc(f.entrepriseId)}">Lire l'offre</button>` : ''}</td><td><select data-fstatut="${esc(f.entrepriseId)}" style="width:auto">${optionsStr(STATUTS_CONSULT_F, f.statut)}</select></td>
         <td>${dateFr(f.envoyeLe)}</td><td class="num">${o ? `${eur(o.t.net)}${o.t.complet ? '' : `<br><span class="warn-text small">${o.t.nb}/${lignes.length} lignes</span>`}` : ''}</td><td>${off.delai ? `${esc(off.delai)} j` : ''}</td>
         <td class="nowrap"><button class="small secondary" data-pdf="consultation|${esc(id)}">PDF</button><button class="small secondary" data-xls="${esc(f.entrepriseId)}">Excel</button>${['admin', 'charge'].includes(Store.me.role) ? `<button class="small" data-mail="consultation|${esc(id)}">✉ Envoyer</button>` : ''}
+          ${ouverte && f.statut === 'Offre reçue' && offreTotaux(c, f).complet && ['admin', 'charge'].includes(Store.me.role) ? `<button class="small" data-retenir="${esc(f.entrepriseId)}" title="Commande créée avec cette offre et envoyée au fournisseur par e-mail">✅ Retenir et commander</button>` : ''}
           <button class="small secondary" data-offre="${esc(f.entrepriseId)}">${f.statut === 'Offre reçue' ? 'Modifier l\'offre' : 'Saisir l\'offre'}</button><label class="btn small secondary" title="PDF ou photo du devis du fournisseur, ou tableau Excel complété">Importer l'offre (PDF, Excel)<input type="file" data-import="${esc(f.entrepriseId)}" accept=".pdf,.xlsx,.csv,image/*" hidden></label>
           ${off.pieceId ? `<a class="btn small secondary" href="${fileUrl(off.pieceId)}${off.pieceNom ? `?nom=${encodeURIComponent(off.pieceNom)}` : ''}" target="_blank" rel="noopener" title="Offre reçue, reprise d'office dans la commande et jointe à son envoi">📎 Offre</a>` : ''}${ouverte && f.statut === 'À consulter' ? `<button class="small danger" data-fdel="${esc(f.entrepriseId)}" aria-label="Retirer">✕</button>` : ''}</td></tr>`; }).join('') || '<tr><td colspan="6" class="muted">Ajoutez les fournisseurs à consulter.</td></tr>'}</table></div>
   ${ouverte ? `<div class="toolbar"><button id="cs-four">🔍 Ajouter des fournisseurs…</button>
@@ -166,6 +169,7 @@ function consultationEditeur(id) {
     <tr class="subtotal"><td colspan="3">Total net (remise et port compris)</td>${an.offres.map(o => `<td class="num">${eur(o.t.net)}${o.t.remise ? `<br><span class="small">remise ${eur(o.t.remise)}</span>` : ''}${o.t.port ? `<br><span class="small">port ${eur(o.t.port)}</span>` : ''}</td>`).join('')}<td></td>${ouverte ? '<td></td>' : ''}</tr>
     <tr class="subtotal"><td colspan="3">Délai / validité</td>${an.offres.map(o => `<td class="num small">${o.f.offre.delai ? esc(o.f.offre.delai) + ' j' : '—'}${o.f.offre.validite ? ` · jusqu'au ${dateFr(o.f.offre.validite)}` : ''}</td>`).join('')}<td></td>${ouverte ? '<td></td>' : ''}</tr></table></div>
   ${ouverte ? `<div class="toolbar">
+    ${an.classement[0] && ['admin', 'charge'].includes(Store.me.role) ? `<button data-retenir="${esc(an.classement[0].f.entrepriseId)}">✅ Retenir le mieux-disant et commander (${esc(clientName(an.classement[0].f.entrepriseId))}, ${eur(an.classement[0].t.net)} HT)</button>` : ''}
     ${an.classement[0] ? `<button class="secondary" id="cs-tout">Tout attribuer au mieux-disant (${esc(clientName(an.classement[0].f.entrepriseId))})</button>` : ''}
     <button class="secondary" id="cs-opt">Attribuer ligne par ligne au meilleur prix</button>
     <label class="check small"><input type="checkbox" id="cs-maj" checked> Mettre à jour le prix d'achat de la bibliothèque</label>
@@ -362,6 +366,23 @@ Views.consultations.bind = (root, params, query) => {
     });
     c.statut = 'Attribuée'; save();
     App.toast(`${c.commandeIds.length} commande(s) créée(s) en brouillon`, 4000);
+  });
+  // Offre retenue en un clic : commande créée par le serveur et envoyée au fournisseur ; non retenus prévenus au choix
+  root.querySelectorAll('[data-retenir]').forEach(b => b.onclick = () => {
+    const eid = b.dataset.retenir, t = offreTotaux(c, c.fournisseurs.find(f => f.entrepriseId === eid));
+    const box = Modal.open(`<h2 style="margin-top:0">Retenir l'offre de ${esc(clientName(eid))}</h2><p>${c.lignes.length} ligne(s) · <strong>${eur(t.net)} HT</strong>${(c.fournisseurs.find(f => f.entrepriseId === eid).offre || {}).delai ? ` · délai ${esc(c.fournisseurs.find(f => f.entrepriseId === eid).offre.delai)} j` : ''}</p>
+      <label class="check"><input type="checkbox" id="rt-env" checked> Envoyer la commande au fournisseur par e-mail</label>
+      <label class="check"><input type="checkbox" id="rt-inf"> Prévenir les autres fournisseurs (offre non retenue)</label>
+      <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="rt-x">Annuler</button><button id="rt-ok">Commander</button></div>`);
+    box.querySelector('#rt-x').onclick = Modal.close;
+    box.querySelector('#rt-ok').onclick = async ev => {
+      ev.target.disabled = true;
+      try {
+        const r = await api('POST', `/api/consultations/${encodeURIComponent(c.id)}/retenir`, { entrepriseId: eid, envoyer: box.querySelector('#rt-env').checked, informer: box.querySelector('#rt-inf').checked });
+        await Store.load(); Modal.close(); App.render();
+        App.toast(`Commande ${r.commande.numero} créée${r.envoye ? ` et envoyée à ${clientName(eid)}${r.demo ? ' (démonstration)' : ''}` : r.raison ? ` — non envoyée (${r.raison}) : envoyez-la depuis la commande` : ''}`, 6000);
+      } catch (e) { ev.target.disabled = false; notify(e.message); }
+    };
   });
   on('#cs-del', () => ask(`Supprimer la consultation ${c.ref || ''} ?`, 'Supprimer').then(ok => { if (ok) { Store.remove('consultations', c.id); location.hash = '#/consultations'; } }));
 };
