@@ -123,7 +123,9 @@ function consultationEditeur(id) {
     <button class="danger" id="cs-del">Supprimer</button></div>
   <h1>Consultation ${esc(c.ref || '')} ${badge(c.statut)}</h1>${envoisHtml('consultations', c.id)}
   ${c.terrain ? (() => { const u = Store.get('users', c.terrain.userId) || {}, sl = num(u.seuilCommande); return `<div class="card note-card">🛒 <strong>Demande du terrain</strong> de ${esc(c.terrain.par || '')} le ${dateFr(String(c.terrain.le || '').slice(0, 10))}${c.terrain.note ? ` — « ${esc(c.terrain.note)} »` : ''}.
-    ${c.retenu ? `<br>✅ Offre retenue : <strong>${esc(clientName(c.retenu.entrepriseId))}</strong> (${eur(c.retenu.net)} HT)${c.retenu.auto ? ' — <strong>commande automatique</strong> sous le seuil du compagnon' : ` par ${esc(c.retenu.par || '')}`}.` : `<br><span class="small">${sl > 0 ? `Commande automatique du mieux-disant jusqu'à <strong>${eur(sl)} HT</strong> (fiche de ${esc(u.nom || 'ce compagnon')}), dès que tous les fournisseurs ont répondu ou 24 h après la demande.` : 'Pas de seuil de commande automatique pour ce compagnon : la décision revient au bureau.'}</span>`}</div>`; })() : c.retenu ? `<div class="card note-card">✅ Offre retenue : <strong>${esc(clientName(c.retenu.entrepriseId))}</strong> (${eur(c.retenu.net)} HT) par ${esc(c.retenu.par || '')}.</div>` : ''}
+    ${c.retenu ? (() => { const cm = Store.all('commandes').find(x => x.consultationId === c.id && x.aValider); return `<br>${cm ? '📝' : '✅'} Offre ${cm ? 'préparée' : 'retenue'} : <strong>${esc(clientName(c.retenu.entrepriseId))}</strong> (${eur(c.retenu.net)} HT)${c.retenu.auto ? ' — mieux-disant sous le seuil du compagnon' : ` par ${esc(c.retenu.par || '')}`}.
+      ${cm ? `<br><strong>Commande ${esc(cm.numero || '')} préparée, rien n'est parti.</strong> <button class="small" data-valider-cmd="${esc(cm.id)}">✅ Valider et envoyer au fournisseur</button> <a class="small" href="#/commandes/${esc(cm.id)}">voir / modifier la commande</a>` : ''}`; })()
+      : `<br><span class="small">${sl > 0 ? `Commande du mieux-disant <strong>préparée</strong> jusqu'à <strong>${eur(sl)} HT</strong> (fiche de ${esc(u.nom || 'ce compagnon')}), dès que tous les fournisseurs ont répondu ou 24 h après la demande ; elle ne part qu'après validation (bureau, ou le compagnon sous son seuil).` : 'Pas de seuil pour ce compagnon : retenez l\'offre ici.'}</span>`}</div>`; })() : c.retenu ? `<div class="card note-card">✅ Offre retenue : <strong>${esc(clientName(c.retenu.entrepriseId))}</strong> (${eur(c.retenu.net)} HT) par ${esc(c.retenu.par || '')}.</div>` : ''}
   <div class="card"><div class="grid2">
     <div class="field"><label for="cs-objet">Objet</label><input id="cs-objet" value="${esc(c.objet || '')}" ${ouverte ? '' : 'disabled'}></div>
     <div class="field"><label for="cs-aff">Chantier</label><select id="cs-aff" ${ouverte ? '' : 'disabled'}><option value="">Stock / frais généraux</option>${options(Store.all('affaires').filter(a => !a.archive || a.id === c.affaireId), c.affaireId, affaireLabel, false)}</select></div>
@@ -366,6 +368,12 @@ Views.consultations.bind = (root, params, query) => {
     });
     c.statut = 'Attribuée'; save();
     App.toast(`${c.commandeIds.length} commande(s) créée(s) en brouillon`, 4000);
+  });
+  // Commande préparée : validation (envoi au fournisseur)
+  root.querySelectorAll('[data-valider-cmd]').forEach(b => b.onclick = async () => {
+    if (!await ask('Valider la commande et l\'envoyer au fournisseur par e-mail ?', 'Valider et envoyer', false)) return;
+    try { const r = await api('POST', `/api/commandes/${encodeURIComponent(b.dataset.validerCmd)}/valider`, {}); await Store.load(); App.render(); App.toast(`Commande ${r.commande.numero} validée${r.envoye ? ` et envoyée${r.demo ? ' (démonstration)' : ''}` : ` — non envoyée (${r.raison}) : envoyez-la depuis la commande`}`, 6000); }
+    catch (e) { notify(e.message); }
   });
   // Offre retenue en un clic : commande créée par le serveur et envoyée au fournisseur ; non retenus prévenus au choix
   root.querySelectorAll('[data-retenir]').forEach(b => b.onclick = () => {

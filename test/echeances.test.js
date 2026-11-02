@@ -98,7 +98,7 @@ test('demande de matériel du terrain : consultations par fournisseurs, sans Mic
   assert.strictEqual((await call('GET', '/api/achats/familles-fournisseurs', null, k)).status, 403);
 });
 
-test('offre retenue, commande automatique sous le seuil du compagnon et suivi « Mes demandes »', async () => {
+test('commande préparée sous le seuil du compagnon : rien ne part sans validation ; suivi « Mes demandes »', async () => {
   const k = (await call('POST', '/api/login', { login: 'kevin', password: 'motdepasse1' })).cookie;
   const admin = (await call('POST', '/api/login', { login: 'admin', password: 'admin-test-pw' })).cookie;
   const r = await call('POST', '/api/consultations/terrain', { affaireId: 'af1', lignes: [{ articleId: 'a14', qte: 4 }] }, k);
@@ -108,15 +108,24 @@ test('offre retenue, commande automatique sous le seuil du compagnon et suivi «
   c.fournisseurs = c.fournisseurs.map((f, i) => (i === 0 ? { ...f, statut: 'Offre reçue', offre: { prix: { 0: 30 }, delai: '2' } } : { ...f, statut: 'Décline' }));
   assert.strictEqual((await call('PUT', `/api/records/consultations/${id}`, { data: c, version: c._v }, admin)).status, 200);
   await new Promise(res => setTimeout(res, 150));
-  const d = (await call('GET', '/api/data', null, admin)).body;
+  let d = (await call('GET', '/api/data', null, admin)).body;
   c = d.consultations.find(x => x.id === id);
   assert.ok(c.retenu && c.retenu.auto && c.retenu.net === 120, JSON.stringify(c.retenu));
-  const cmd = d.commandes.find(x => x.consultationId === id);
-  assert.ok(cmd && /^CF-/.test(cmd.numero) && cmd.statut === 'Brouillon'); // sans Microsoft 365 : à envoyer par le bureau
-  const mes = (await call('GET', '/api/consultations/terrain/miennes', null, k)).body;
-  const e = mes.find(x => x.id === id);
-  assert.deepStrictEqual([e.etat, e.commande.numero, e.commande.auto], ['commandee', cmd.numero, true]);
-  assert.ok(!JSON.stringify(mes).includes('"pu"'));
+  let cmd = d.commandes.find(x => x.consultationId === id);
+  assert.ok(cmd && /^CF-/.test(cmd.numero) && cmd.statut === 'Brouillon' && cmd.aValider === true); // préparée, rien n'est parti
+  assert.ok(!d.envois.some(e => e.docId === cmd.id));
+  let e = (await call('GET', '/api/consultations/terrain/miennes', null, k)).body.find(x => x.id === id);
+  assert.deepStrictEqual([e.etat, e.peutValider, e.commandeId], ['avalider', true, cmd.id]);
+  assert.ok(!JSON.stringify(e).includes('"pu"'));
+  // Validation par le compagnon (sous son seuil) : sans Microsoft 365, validée mais non envoyée
+  const v = await call('POST', `/api/commandes/${cmd.id}/valider`, {}, k);
+  assert.strictEqual(v.status, 200, JSON.stringify(v.body));
+  assert.deepStrictEqual([v.body.envoye, /non configurés/.test(v.body.raison)], [false, true]);
+  assert.strictEqual((await call('POST', `/api/commandes/${cmd.id}/valider`, {}, k)).status, 409);
+  cmd = (await call('GET', '/api/data', null, admin)).body.commandes.find(x => x.id === cmd.id);
+  assert.ok(!cmd.aValider && cmd.validee && cmd.validee.compagnon);
+  e = (await call('GET', '/api/consultations/terrain/miennes', null, k)).body.find(x => x.id === id);
+  assert.strictEqual(e.etat, 'commandee');
   // Retenir de nouveau : refusé ; compagnon : refusé
   assert.strictEqual((await call('POST', `/api/consultations/${id}/retenir`, { entrepriseId: cmd.fournisseurId }, admin)).status, 409);
   assert.strictEqual((await call('POST', `/api/consultations/${id}/retenir`, { entrepriseId: cmd.fournisseurId }, k)).status, 403);

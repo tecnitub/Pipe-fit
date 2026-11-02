@@ -64,19 +64,20 @@
     const now = new Date().toISOString(), meta = { _v: 1, _at: now, _by: par }, cmd = OffreChoix.commande(c, eid, now.slice(0, 10));
     Object.assign(cmd, { id: 'cm' + DemoSeed.uid(), ...meta }); cmd.numero = nextNumber('commandes', cmd);
     const ent = db.entreprises.find(e => e.id === eid) || {}, to = ConsultTerrain.adresse(ent, db.contacts), aff = db.affaires.find(a => a.id === c.affaireId) || {};
-    if (envoyer && to) { Object.assign(cmd, { statut: 'Envoyée', envoyeeLe: now.slice(0, 10) }); db.envois.push({ id: 'en' + DemoSeed.uid(), date: now, type: 'commande', col: 'commandes', docId: cmd.id, numero: cmd.numero, to: [to], cc: [], objet: OffreChoix.mailCommande({ numero: cmd.numero, consultationRef: c.ref, lignes: cmd.lignes }).sujet, pieces: [], mode: `Démonstration (e-mail simulé)${auto ? ' — commande automatique' : ''}`, par, ...meta }); }
+    if (auto) cmd.aValider = true;
+    else if (envoyer && to) { Object.assign(cmd, { statut: 'Envoyée', envoyeeLe: now.slice(0, 10) }); db.envois.push({ id: 'en' + DemoSeed.uid(), date: now, type: 'commande', col: 'commandes', docId: cmd.id, numero: cmd.numero, to: [to], cc: [], objet: OffreChoix.mailCommande({ numero: cmd.numero, consultationRef: c.ref, lignes: cmd.lignes }).sujet, pieces: [], mode: `Démonstration (e-mail simulé)${auto ? ' — commande automatique' : ''}`, par, ...meta }); }
     db.commandes.push(cmd);
     const net = OffreChoix.totaux(c, c.fournisseurs.find(f => f.entrepriseId === eid)).net;
     Object.assign(c, { statut: 'Attribuée', attribution: Object.fromEntries(c.lignes.map((l, i) => [i, eid])), commandeIds: [...(c.commandeIds || []), cmd.id], retenu: { entrepriseId: eid, le: now, par, auto, net }, _v: (c._v || 1) + 1, _at: now });
-    if (c.terrain && c.terrain.userId) db.notifications.push({ id: 'nt' + DemoSeed.uid(), type: 'demande-materiel', userId: c.terrain.userId, titre: `✅ Matériel commandé — ${aff.code || ''}`, texte: `Votre demande ${c.ref} est commandée chez ${ent.nom || ''}. Commande ${cmd.numero}.`, lien: '#/scan/demande', date: now, lu: false, ...meta });
-    if (auto && aff.chargeId) db.notifications.push({ id: 'nt' + DemoSeed.uid(), type: 'consultation', userId: aff.chargeId, titre: `🤖 Commande automatique ${cmd.numero} (${aff.code || ''})`, texte: `${ent.nom || ''} : ${net} € HT, sous le seuil de ${c.terrain.par}.`, lien: `#/commandes/${cmd.id}`, date: now, lu: false, ...meta });
+    if (!auto && c.terrain && c.terrain.userId) db.notifications.push({ id: 'nt' + DemoSeed.uid(), type: 'demande-materiel', userId: c.terrain.userId, titre: `✅ Matériel commandé — ${aff.code || ''}`, texte: `Votre demande ${c.ref} est commandée chez ${ent.nom || ''}. Commande ${cmd.numero}.`, lien: '#/scan/demande', date: now, lu: false, ...meta });
+    if (auto && aff.chargeId) db.notifications.push({ id: 'nt' + DemoSeed.uid(), type: 'consultation', userId: aff.chargeId, titre: `📝 Commande ${cmd.numero} à valider (${aff.code || ''})`, texte: `${ent.nom || ''} : ${net} € HT. Rien n'est parti : validez pour l'envoyer (le compagnon peut aussi la valider, sous son seuil).`, lien: `#/commandes/${cmd.id}`, date: now, lu: false, ...meta });
     return { commande: cmd, envoye: cmd.statut === 'Envoyée', raison: to ? '' : 'pas d\'adresse e-mail du fournisseur', demo: true };
   }
   function autoCommandesDemo() {
     const now = new Date().toISOString();
     db.consultations.filter(c => c.statut === 'En cours' && c.terrain && !c.retenu).forEach(c => {
       const d = OffreChoix.decisionAuto(c, db.users.find(u => u.id === c.terrain.userId), now);
-      if (d.commander) retenirDemo(c, d.meilleure.entrepriseId, { par: 'Pipe-Fit (commande automatique)', auto: true });
+      if (d.commander) retenirDemo(c, d.meilleure.entrepriseId, { par: 'Pipe-Fit (commande préparée)', auto: true });
     });
   }
   function canWrite(acc, col) {
@@ -186,7 +187,22 @@
     if (p[0] === 'consultations' && p[1] === 'terrain' && p[2] === 'miennes') {
       autoCommandesDemo();
       const nom = id => (db.entreprises.find(e => e.id === id) || {}).nom || '';
-      return [200, db.consultations.filter(c => c.terrain && c.terrain.userId === acc.userId).sort((a, b) => String(b.terrain.le).localeCompare(String(a.terrain.le))).slice(0, 40).map(c => OffreChoix.etatDemande(c, db.commandes, nom))];
+      const seuil = Number((db.users.find(u => u.id === acc.userId) || {}).seuilCommande) || 0, tot = cm => cm.lignes.reduce((t, l) => t + l.qte * l.pu, 0);
+      return [200, db.consultations.filter(c => c.terrain && c.terrain.userId === acc.userId).sort((a, b) => String(b.terrain.le).localeCompare(String(a.terrain.le))).slice(0, 40).map(c => {
+        const e = OffreChoix.etatDemande(c, db.commandes, nom), cm = e.etat === 'avalider' && db.commandes.find(x => x.consultationId === c.id && x.aValider);
+        return cm ? { ...e, peutValider: seuil > 0 && tot(cm) <= seuil, commandeId: cm.id } : e; })];
+    }
+    if (p[0] === 'commandes' && p[1] && p[2] === 'valider' && method === 'POST') {
+      const cm = db.commandes.find(x => x.id === p[1]);
+      if (!cm) return [404, { error: 'Commande introuvable' }];
+      if (!cm.aValider) return [409, { error: 'Cette commande est déjà validée' }];
+      const c = db.consultations.find(x => x.id === cm.consultationId), tot = cm.lignes.reduce((t, l) => t + l.qte * l.pu, 0);
+      if (acc.role === 'atelier' && (!c || !c.terrain || c.terrain.userId !== acc.userId || !(Number((db.users.find(u => u.id === acc.userId) || {}).seuilCommande) >= tot))) return [403, { error: 'Au-dessus de votre seuil : validation par le bureau' }];
+      const ent = db.entreprises.find(e => e.id === cm.fournisseurId) || {}, to = ConsultTerrain.adresse(ent, db.contacts), now = new Date().toISOString(), aff = db.affaires.find(a => a.id === cm.affaireId) || {};
+      delete cm.aValider; Object.assign(cm, { validee: { par: acc.nom, le: now, compagnon: acc.role === 'atelier' }, _v: (cm._v || 1) + 1, _at: now });
+      if (to) { Object.assign(cm, { statut: 'Envoyée', envoyeeLe: now.slice(0, 10) }); db.envois.push({ id: 'en' + DemoSeed.uid(), date: now, type: 'commande', col: 'commandes', docId: cm.id, numero: cm.numero, to: [to], cc: [], objet: `Commande ${cm.numero}`, pieces: [], mode: 'Démonstration (e-mail simulé)', par: acc.nom, _v: 1, _at: now, _by: acc.nom }); }
+      if (c && c.terrain) db.notifications.push({ id: 'nt' + DemoSeed.uid(), type: 'demande-materiel', userId: c.terrain.userId, titre: `✅ Matériel commandé — ${aff.code || ''}`, texte: `Votre demande ${c.ref} est commandée chez ${ent.nom || ''}. Commande ${cm.numero}.`, lien: '#/scan/demande', date: now, lu: false, _v: 1, _at: now, _by: acc.nom });
+      save(); return [200, { commande: acc.role === 'atelier' ? { id: cm.id, numero: cm.numero, statut: cm.statut } : cm, envoye: !!to, raison: to ? '' : 'pas d\'adresse e-mail du fournisseur', demo: true }];
     }
     if (p[0] === 'consultations' && p[1] && p[2] === 'retenir' && method === 'POST') {
       if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Réservé au bureau' }];

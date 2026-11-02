@@ -438,19 +438,27 @@ function resultatDemandeHtml(r) {
     ${r.aChoisir ? `<p class="small warn-text">${r.aChoisir.lignes} ligne(s) sans fournisseur connu : le bureau les envoie (${esc(r.aChoisir.ref || '')}).</p>` : ''}</div>`;
 }
 // Suivi des demandes : envoyée, offres reçues, commandée (fournisseur, livraison prévue), livrée — sans prix
-const BADGE_DEMANDE = { envoyee: 'b-info', offres: 'b-warn', commandee: 'b-ok', partielle: 'b-warn', livree: 'b-ok', bureau: 'b-warn', close: '' };
+const BADGE_DEMANDE = { avalider: 'b-warn', envoyee: 'b-info', offres: 'b-warn', commandee: 'b-ok', partielle: 'b-warn', livree: 'b-ok', bureau: 'b-warn', close: '' };
 function mesDemandesHtml(l) {
   if (!l || !l.length) return '<p class="muted small">Aucune demande ces deux derniers mois.</p>';
   return l.map(d => `<div class="card demande-l"><div class="toolbar" style="margin:0;justify-content:space-between"><strong>${esc(d.ref)}</strong><span class="badge ${BADGE_DEMANDE[d.etat] || ''}">${esc(d.libelle)}</span></div>
     <div class="small muted">${dateFr(d.date)} · ${esc(affaireLabel(affaireOf(d.affaireId)))}</div>
     <div class="small">${d.lignes.slice(0, 4).map(x => `${esc(x.designation)} × ${fmtQ(x.qte)} ${esc(x.unite)}`).join(' · ')}${d.lignes.length > 4 ? ` · +${d.lignes.length - 4}` : ''}</div>
-    ${d.commande ? `<div class="small">🧾 Commande ${esc(d.commande.numero)} chez <strong>${esc(d.commande.fournisseur)}</strong>${d.commande.dateLivraison ? ` · livraison prévue le <strong>${dateFr(d.commande.dateLivraison)}</strong>` : ''}${d.commande.auto ? ' · commandée automatiquement' : ''}</div>` : ''}</div>`).join('');
+    ${d.commande ? `<div class="small">🧾 Commande ${esc(d.commande.numero)} chez <strong>${esc(d.commande.fournisseur)}</strong>${d.commande.dateLivraison ? ` · livraison ${d.etat === 'avalider' ? 'souhaitée' : 'prévue'} le <strong>${dateFr(d.commande.dateLivraison)}</strong>` : ''}</div>` : ''}
+    ${d.etat === 'avalider' ? (d.peutValider ? `<button class="small" data-valider="${esc(d.commandeId)}" style="margin-top:6px">✅ Valider la commande (envoi au fournisseur)</button>` : '<div class="small muted">En attente de validation par le bureau.</div>') : ''}</div>`).join('');
 }
 async function chargerMesDemandes() {
   const z = document.querySelector('#dm-mes'); if (!z) return;
   let l = null;
   try { l = await api('GET', '/api/consultations/terrain/miennes'); HorsLigne.garder('mes-demandes', l); } catch (e) { l = await HorsLigne.relire('mes-demandes'); }
-  const z2 = document.querySelector('#dm-mes'); if (z2) z2.innerHTML = mesDemandesHtml(l);
+  const z2 = document.querySelector('#dm-mes'); if (!z2) return;
+  z2.innerHTML = mesDemandesHtml(l);
+  z2.querySelectorAll('[data-valider]').forEach(b => b.onclick = async () => {
+    if (!await ask('Valider la commande ? Elle part chez le fournisseur par e-mail.', 'Valider', false)) return;
+    b.disabled = true;
+    try { const r = await api('POST', `/api/commandes/${encodeURIComponent(b.dataset.valider)}/valider`, {}); App.toast(`Commande ${r.commande.numero} validée${r.envoye ? ' et envoyée au fournisseur' : ' : le bureau l\'envoie'}`, 5000); chargerMesDemandes(); }
+    catch (e) { b.disabled = false; notify(e.message); }
+  });
 }
 function bindDemandeMateriel(root) {
   chargerMesDemandes();

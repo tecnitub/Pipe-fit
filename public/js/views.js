@@ -568,7 +568,7 @@ const userFields = [
   { key: 'tauxHoraire', label: 'Coût horaire chargé €/h (rentabilité)', type: 'number', step: '0.5' },
   { key: 'salaireHoraire', label: 'Salaire horaire brut €/h (paie)', type: 'number', step: '0.01' },
   { key: 'capaciteHebdo', label: 'Capacité hebdomadaire (h, planning)', type: 'number' },
-  { key: 'seuilCommande', label: 'Commande automatique de ses demandes de matériel jusqu\'à (€ HT, mieux-disant ; vide = validation du bureau)', type: 'number', step: '10' },
+  { key: 'seuilCommande', label: 'Ses demandes de matériel : commande préparée et validable par lui jusqu\'à (€ HT ; vide = le bureau retient l\'offre)', type: 'number', step: '10' },
   { key: 'dureeHebdo', label: 'Durée hebdo du contrat (h, paie ; vide = celle de l\'entreprise)', type: 'number', step: '0.5' },
   { key: 'matricule', label: 'Matricule (paie)' },
   { key: 'email', label: 'E-mail professionnel (copie des envois, signature)', type: 'email' },

@@ -24,7 +24,8 @@ const OffreChoix = (() => {
     const depuis = Date.parse((c.terrain && c.terrain.le) || c.date || 0);
     return fs.length > 0 && (!attendus.length || (Number.isFinite(depuis) && Date.parse(maintenant) - depuis >= attenteH * 3600e3));
   }
-  // Commande automatique d'une demande du terrain : mieux-disant complet, au plus le seuil du compagnon (€ HT)
+  // Commande d'une demande du terrain préparée (jamais envoyée sans validation) : mieux-disant complet, au plus le
+  // seuil du compagnon (€ HT) ; « commander » = préparer la commande à valider
   function decisionAuto(c, user, maintenant, attenteH = 24) {
     if (!c || c.statut !== 'En cours' || !c.terrain || c.retenu) return { commander: false, raison: 'hors champ' };
     const seuil = n(user && user.seuilCommande);
@@ -51,6 +52,7 @@ const OffreChoix = (() => {
     const cmd = (commandes || []).find(x => x.consultationId === c.id && x.statut !== 'Annulée');
     const base = { id: c.id, ref: c.ref || '', date: c.date || '', affaireId: c.affaireId || '', lignes: (c.lignes || []).map(l => ({ designation: l.designation, qte: n(l.qte), unite: l.unite || '' })),
       consultes: fs.filter(f => f.statut !== 'À consulter').length, offres: nbOffres };
+    if (cmd && cmd.aValider) return { ...base, etat: 'avalider', libelle: 'Commande préparée — à valider', commande: { numero: cmd.numero || '', fournisseur: nomDe(cmd.fournisseurId), dateLivraison: cmd.dateLivraison || '', auto: true } };
     if (cmd) {
       const livre = cmd.statut === 'Réceptionnée', partiel = cmd.statut === 'Réceptionnée partiellement';
       return { ...base, etat: livre ? 'livree' : partiel ? 'partielle' : 'commandee', libelle: livre ? 'Livrée' : partiel ? 'Livrée en partie' : 'Commandée',

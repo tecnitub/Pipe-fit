@@ -107,12 +107,15 @@ métré (bibliothèque de prix) et y dépose ses notes de calcul (catégorie « 
   sur une offre complète : la commande est créée avec les prix de l'offre et **envoyée au fournisseur par e-mail**
   (bon de commande dans le corps du message), la consultation est attribuée ; au choix, les autres fournisseurs sont
   prévenus que leur offre n'est pas retenue. Sans Microsoft 365, la commande reste en brouillon à envoyer.
-- **Commande automatique sous le seuil du compagnon** : fiche de l'équipe (RH) → « Commande automatique de ses demandes
-  de matériel jusqu'à (€ HT) ». Dès que tous les fournisseurs ont répondu (ou 24 h après la demande), le mieux-disant
-  complet est commandé et envoyé tout seul s'il ne dépasse pas ce montant ; au-dessus, ou sans seuil, le chargé
-  d'affaires reçoit « Offres à valider » et retient l'offre en un clic. Vérification toutes les 10 minutes et à chaque
-  offre saisie.
-- **Mes demandes** (compagnon, écran Demande de matériel) : état de chaque demande — envoyée, offres reçues, commandée
+- **Rien ne part sans validation.** Seuil par compagnon : fiche de l'équipe (RH) → « Ses demandes de matériel :
+  commande préparée et validable par lui jusqu'à (€ HT) ». Dès que tous les fournisseurs ont répondu (ou 24 h après la
+  demande), la commande du mieux-disant complet est **préparée** (brouillon « à valider ») s'il ne dépasse pas ce montant :
+  le chargé d'affaires est prévenu (« Commande à valider ») et le compagnon aussi. Elle part chez le fournisseur quand
+  quelqu'un la **valide** : le bureau (« ✅ Valider et envoyer au fournisseur » sur la consultation, ou envoi depuis l'écran
+  de la commande), ou le compagnon lui-même dans « Mes demandes » (seulement sous son seuil). Au-dessus du seuil, ou sans
+  seuil, rien n'est préparé : le chargé d'affaires reçoit « Offres à valider » et retient l'offre en un clic.
+- **Mes demandes** (compagnon, écran Demande de matériel) : état de chaque demande — envoyée, offres reçues, commande
+  préparée à valider (bouton « Valider la commande » sous son seuil), commandée
   (fournisseur, n° de commande, livraison prévue, commandée automatiquement), livrée — sans aucun prix ; notification
   quand le matériel est commandé, puis livré (réception de la commande).
 
