@@ -79,7 +79,32 @@ const souduresDe = (f, dn) => { const d = declinaisonDe(f, dn); return d && d.so
 
 /* ---------- Paramètres et calcul ---------- */
 const NIVEAUX_DEFAUT = [{ nom: 'Simple (atelier, accès facile)', coef: 1, marge: 15 }, { nom: 'Standard', coef: 1.15, marge: 20 }, { nom: 'Complexe (encombré, en hauteur, en site occupé)', coef: 1.35, marge: 25 }, { nom: 'Très complexe (arrêt technique, ATEX, travail de nuit)', coef: 1.6, marge: 30 }];
-const EXTRAS_TYPES = ['Container de chantier', 'Levage (grue, camion-grue)', 'Manutention', 'Nacelle', 'Échafaudage', 'Études et plans d\'exécution', 'Essais et contrôles', 'Dossier des ouvrages exécutés (DOE)', 'Transport', 'Consignation / mise en sécurité', 'Installation de chantier'];
+const EXTRAS_TYPES = ['Container de chantier', 'Levage (grue, camion-grue)', 'Manutention', 'Nacelle', 'Échafaudage', 'Études et plans d\'exécution', 'Essais et contrôles', 'Dossier des ouvrages exécutés (DOE)', 'Transport', 'Consignation / mise en sécurité', 'Installation de chantier', 'Livraison', 'Frais annexes', 'Calorifuge', 'Sous-traitance', 'Divers'];
+// Chapitres ajoutés d'un coup (« + Chapitres habituels »)
+const EXTRAS_HABITUELS = ['Nacelle', 'Livraison', 'Frais annexes', 'Calorifuge', 'Sous-traitance', 'Divers'];
+// Ligne d'un chapitre hors plan pré-remplie : unité, quantité, main-d'œuvre, prix de vente et coût par défaut ;
+// livraison selon la zone (du devis, sinon du client) et le poids des fournitures du plan ; calorifuge sur la longueur
+// de tube du plan au prix du calorifuge de la bibliothèque
+function extraModele(ch, v) {
+  const mo = code => (Store.all('mainoeuvre').find(m => m.code === code) || {}).id || '', r = calculerChiffrage(ch);
+  const ligne = (designation, unite, qte, moId, pu, cout, heures) => ({ chapitre: v === 'libre' ? 'Prestations complémentaires' : v, designation, unite, qte, moId: moId || '', heures: moId ? (heures ?? (unite === 'h' ? 1 : 8)) : '', pu, cout });
+  if (v === 'Livraison') {
+    const d = Store.get('devis', ch.devisId) || {}, z = Store.get('zones', d.zoneId) || Store.get('zones', (Store.get('entreprises', d.clientId) || {}).zoneId);
+    const t = Math.round(sumBy(r.liste, g => num((g.a || {}).poidsUnitaire) * g.qte)) / 1000;
+    if (z) return ligne(`Livraison ${z.nom}${t ? ` (${fmt(t * 1000, 0)} kg)` : ''}`, 'forfait', 1, '', Math.round((num(z.forfait) + num(z.prixParTonne) * t) * 100) / 100, Math.round((num(z.coutTransporteur) + num(z.coutParTonne) * t) * 100) / 100);
+    return ligne('Livraison sur chantier', 'forfait', 1, '', 150, 110);
+  }
+  if (v === 'Calorifuge') {
+    const ml = Math.round(sumBy(r.liste.filter(g => g.unite === 'ml'), g => g.qte) * 10) / 10;
+    const a = Store.all('articles').filter(x => /calorifu|isolant|isolation/i.test(`${x.famille} ${x.designation}`)).sort((x, y) => (x.unite === 'ml' ? 0 : 1) - (y.unite === 'ml' ? 0 : 1))[0];
+    return ligne(a ? `Calorifuge : ${a.designation}` : 'Calorifuge des tuyauteries (fourniture et pose)', 'ml', ml || 1, '', a ? num(a.prixVente) : 0, a ? num(a.coutRevient) : 0);
+  }
+  const m = { 'Container de chantier': ['forfait', 1, '', 650, 480], 'Levage (grue, camion-grue)': ['jour', 1, '', 1250, 980], 'Manutention': ['h', 8, mo('MONT'), 0, 0],
+    'Nacelle': ['semaine', 1, '', 690, 520], 'Échafaudage': ['semaine', 1, '', 400, 320], 'Études et plans d\'exécution': ['h', 16, mo('BE'), 0, 0], 'Installation de chantier': ['forfait', 1, mo('CHEF'), 0, 0],
+    'Frais annexes': ['forfait', 1, '', 0, 0, 'Frais annexes (déplacements, hébergement, petites fournitures)'], 'Sous-traitance': ['forfait', 1, '', 0, 0, 'Sous-traitance (à préciser)'],
+    'Divers': ['forfait', 1, '', 0, 0, 'Divers et imprévus'] }[v] || ['forfait', 1, '', 0, 0];
+  return ligne(v === 'libre' ? '' : m[5] || v, m[0], m[1], m[2], m[3], m[4]);
+}
 const POSE_TUBE_DEFAUT = [[15, 0.25], [25, 0.3], [50, 0.4], [80, 0.5], [100, 0.6], [150, 0.85], [200, 1.1], [300, 1.6]].map(([dn, h]) => ({ dn, h }));
 const POSE_ROB_DEFAUT = [[15, 0.3], [25, 0.4], [50, 0.6], [80, 0.9], [100, 1.2], [150, 1.8], [200, 2.5], [300, 4]].map(([dn, h]) => ({ dn, h }));
 function parametresDefaut() {
@@ -276,7 +301,8 @@ Views.chiffrage = params => {
       <td class="num"><input data-k="heures" type="number" step="0.5" value="${esc(e.heures ?? '')}" style="width:70px" ${e.moId ? '' : 'disabled'}></td><td class="num"><input data-k="pu" type="number" step="0.01" value="${esc(e.pu ?? '')}" style="width:90px" ${e.moId ? 'disabled' : ''}></td>
       <td class="num"><input data-k="cout" type="number" step="0.01" value="${esc(e.cout ?? '')}" style="width:90px" ${e.moId ? 'disabled' : ''}></td><td><button class="small danger" data-xdel="${i}" aria-label="Retirer">✕</button></td></tr>`).join('') || '<tr><td colspan="9" class="muted">Aucun chapitre complémentaire.</td></tr>'}</table></div>
   <datalist id="ch-chaps">${EXTRAS_TYPES.map(x => `<option value="${esc(x)}">`).join('')}</datalist>
-  <div class="toolbar"><select id="ch-xadd" style="width:auto"><option value="">+ Ajouter…</option>${EXTRAS_TYPES.map(x => `<option>${esc(x)}</option>`).join('')}<option value="libre">Autre (libre)</option></select></div>
+  <div class="toolbar"><select id="ch-xadd" style="width:auto"><option value="">+ Ajouter…</option>${EXTRAS_TYPES.map(x => `<option>${esc(x)}</option>`).join('')}<option value="libre">Autre (libre)</option></select>
+    <button class="secondary small" id="ch-xhab" title="${esc(EXTRAS_HABITUELS.join(', '))}">+ Chapitres habituels (nacelle, livraison, frais annexes, calorifuge, sous-traitance, divers)</button></div>
 
   <h2>Synthèse</h2>
   <div class="cards">
@@ -327,12 +353,15 @@ Views.chiffrage.bind = (root, params) => {
   q('#ch-xadd').onchange = e => {
     const v = e.target.value;
     if (!v) return;
-    const chef = Store.all('mainoeuvre').find(m => m.code === 'CHEF');
-    const modele = { 'Container de chantier': ['forfait', 1, '', 650, 480], 'Levage (grue, camion-grue)': ['jour', 1, '', 1250, 980], 'Manutention': ['h', 8, (Store.all('mainoeuvre').find(m => m.code === 'MONT') || {}).id, 0, 0],
-      'Nacelle': ['semaine', 1, '', 690, 520], 'Échafaudage': ['semaine', 1, '', 400, 320], 'Études et plans d\'exécution': ['h', 16, (Store.all('mainoeuvre').find(m => m.code === 'BE') || {}).id, 0, 0],
-      'Installation de chantier': ['forfait', 1, chef ? chef.id : '', 0, 0] }[v] || ['forfait', 1, '', 0, 0];
-    ch.extras.push({ chapitre: v === 'libre' ? 'Prestations complémentaires' : v, designation: v === 'libre' ? '' : v, unite: modele[0], qte: modele[1], moId: modele[2] || '', heures: modele[2] ? (modele[0] === 'h' ? 1 : 8) : '', pu: modele[3], cout: modele[4] });
+    ch.extras.push(extraModele(ch, v));
     save();
+  };
+  // Chapitres habituels absents du chiffrage, ajoutés d'un coup (quantités et prix à ajuster)
+  q('#ch-xhab').onclick = () => {
+    const manquants = EXTRAS_HABITUELS.filter(v => !ch.extras.some(e => e.chapitre === v));
+    if (!manquants.length) return App.toast('Les chapitres habituels sont déjà dans le chiffrage');
+    manquants.forEach(v => ch.extras.push(extraModele(ch, v)));
+    save(); App.toast(`${manquants.length} chapitre(s) ajouté(s) : ajustez quantités et prix`);
   };
   // Liaisons manquantes : création de la famille CAO ou choix de l'article pour le diamètre
   const r = calculerChiffrage(ch);
