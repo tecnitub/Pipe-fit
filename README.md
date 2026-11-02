@@ -116,7 +116,7 @@ métré (bibliothèque de prix) et y dépose ses notes de calcul (catégorie « 
   seuil, rien n'est préparé : le chargé d'affaires reçoit « Offres à valider » et retient l'offre en un clic.
 - **Mes demandes** (compagnon, écran Demande de matériel) : état de chaque demande — envoyée, offres reçues, commande
   préparée à valider (bouton « Valider la commande » sous son seuil), commandée
-  (fournisseur, n° de commande, livraison prévue, commandée automatiquement), livrée — sans aucun prix ; notification
+  (fournisseur, n° de commande, livraison prévue), livrée — sans aucun prix ; notification
   quand le matériel est commandé, puis livré (réception de la commande).
 
 ## Colonnes des tableaux, au choix de chacun
