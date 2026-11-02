@@ -32,7 +32,7 @@ function planMesHtml(a, mobile) {
   const groupes = PlanMes.GROUPES.map(g => [g, ts.filter(t => t.groupe === g)]).filter(([, l]) => l.length);
   return `<h${mobile ? 2 : 3}>✅ Mises en service à faire ${ts.length ? `<span class="muted small">${b.faits}/${b.utiles} fait(s)${b.ko ? ` · ${b.ko} non conforme(s)` : ''}</span>` : ''}</h${mobile ? 2 : 3}>
     ${ts.length ? `<div class="pm-barre" title="${b.pourcent} % fait"><i style="width:${b.pourcent}%"></i></div>` : ''}
-    ${!mobile ? `<div class="toolbar" style="margin:4px 0 8px">${ts.length ? '<button class="small secondary" id="pm-pdf">🖨️ Liste à imprimer (PDF)</button>' : ''}${bureau ? '<button class="small secondary" id="pm-ajout">+ Ajouter une tâche</button>' : ''}</div>` : ''}
+    ${!mobile ? `<div class="toolbar" style="margin:4px 0 8px">${ts.length ? '<button class="small secondary" id="pm-pdf">🖨️ Liste à imprimer (PDF)</button>' : ''}${ts.length && bureau ? '<button class="small" id="pm-rapport">📘 Rapport de mise en service</button>' : ''}${bureau ? '<button class="small secondary" id="pm-ajout">+ Ajouter une tâche</button>' : ''}</div>` : ''}
     ${groupes.map(([g, l]) => `<h4 class="pm-groupe">${esc(g)} <span class="muted small">${l.filter(t => ['fait', 'reserves'].includes(t.etat)).length}/${l.filter(t => t.etat !== 'sansObjet').length}</span></h4><ul class="plan-mes">${l.map(ligne).join('')}</ul>`).join('')
       || `<p class="muted small">${charge ? 'Aucun point de mise en service : reliez une étude à ce chantier (application Études) ; ses calculs, son matériel retenu et ses débits construisent la liste.' : 'Chargement de la liste…'}</p>`}
     ${ts.length && !mobile ? '<p class="small muted">Liste construite à partir des études reliées : réseaux à éprouver, équipements du matériel retenu avec les valeurs attendues des calculs, installations à équilibrer. Les PV s\'ouvrent préremplis ; un PV signé coche le point.</p>' : ''}`;
@@ -70,6 +70,8 @@ function bindPlanMes(z, a) {
     const s = Store.get('affaires', a.id).planMes || {};
     enreg({ ...s, manuelles: [...(s.manuelles || []), { id: uid(), libelle: lib.trim().slice(0, 200), groupe: PlanMes.GROUPES[3] }] }, 'Tâche ajoutée');
   };
+  const rp = z.querySelector('#pm-rapport');
+  if (rp) rp.onclick = () => dialogueRapportMes(Store.get('affaires', a.id));
   const pdf = z.querySelector('#pm-pdf');
   if (pdf) pdf.onclick = () => PDF.telecharger(documentPlanMes(Store.get('affaires', a.id)), `Mises-en-service-${a.code || a.id}.pdf`.replace(/[^\w.-]+/g, '_')).catch(e => notify(e.message));
 }
@@ -84,4 +86,67 @@ function documentPlanMes(a) {
       ${l.map(t => `<tr><td>${['fait', 'reserves'].includes(t.etat) ? '☒' : '☐'}</td><td><strong>${esc(t.libelle)}</strong></td><td class="small">${esc([attendusTexte(t), t.detail].filter(Boolean).join(' — '))}</td>
         <td class="small">${t.pv ? `${esc(t.pv.numero || 'brouillon')} ${dateFr(t.pv.date)}${t.pv.resultat ? ` · ${esc(t.pv.resultat)}` : ''}` : esc(t.note || '')}</td><td></td></tr>`).join('')}</table>` : ''; }).join('')}
     <div class="doc-pied">${esc(Doc.piedLegal())}</div>`;
+}
+
+/* ---------- Rapport de mise en service final ---------- */
+// Synthèse de fin de chantier : avancement, épreuves, équipements (mesures face aux valeurs attendues de l'étude),
+// équilibrages, contrôles réglementaires et réserves ; PV signés joints en annexe. Déposé dans les documents du
+// chantier (catégorie « Rapport de mise en service »), il ouvre l'annexe F du DOE.
+const nbFr = (v, d = 1) => (v === '' || v === null || v === undefined || !Number.isFinite(Number(String(v).replace(',', '.'))) ? '—' : fmt(Number(String(v).replace(',', '.')), d));
+function ecartsMes(mises) {
+  return mises.flatMap(m => (m.mesures || []).filter(x => x.attendu !== undefined && x.valeur !== '' && x.valeur !== undefined).map(x => ({ m, x, e: PlanMes.ecart(x) })));
+}
+function documentRapportMes(a, { pv = true } = {}) {
+  const ts = tachesMes(a), b = PlanMes.bilan(ts), site = siteOf(a.clientId, a.siteId), signe = r => r.statut === 'Signé';
+  const mises = pvChantier('misesEnService', a.id).filter(signe), eps = pvChantier('epreuves', a.id).filter(signe), eqs = pvChantier('equilibrages', a.id).filter(signe);
+  const ecarts = ecartsMes(mises), horsTol = ecarts.filter(x => x.e !== null && Math.abs(x.e) > 10);
+  const reserves = [...ts.filter(t => ['ko', 'reserves'].includes(t.etat)).map(t => `${t.libelle} : ${PlanMes.ETATS[t.etat].toLowerCase()}${t.pv ? ` (PV ${t.pv.numero})` : ''}`),
+    ...mises.flatMap(m => (m.controles || []).filter(c => c.etat === 'Non conforme').map(c => `${m.equipement} — ${c.libelle}${c.obs ? ` : ${c.obs}` : ''}`)),
+    ...horsTol.map(x => `${x.m.equipement} — ${x.x.libelle} : ${nbFr(x.x.valeur, 2)} ${x.x.unite || ''} pour ${nbFr(x.x.attendu, 2)} attendus (${x.e > 0 ? '+' : ''}${fmt(x.e, 1)} %)`)];
+  const ligneEtat = t => `<tr><td>${['fait', 'reserves'].includes(t.etat) ? '☒' : t.etat === 'sansObjet' ? '–' : '☐'}</td><td>${esc(t.libelle)}${t.detail ? `<br><span class="small">${esc(t.detail)}</span>` : ''}</td><td>${esc(PlanMes.ETATS[t.etat])}</td><td class="small">${t.pv ? `${esc(t.pv.numero || 'brouillon')} du ${dateFr(t.pv.date)}${t.pv.resultat ? ` — ${esc(t.pv.resultat)}` : ''}` : esc(t.note || '')}</td></tr>`;
+  // PV signés en annexe : leur corps seulement (l'en-tête de la société est déjà en tête du rapport)
+  const annexe = (titre, r, corps) => `<h3 class="doc-h">${titre} n° ${esc(r.numero || '')} du ${dateFr(r.date)}</h3>${corps(r, ctxEssai(r))}`;
+  const docPv = pv ? [...eps.map(r => annexe('PV d\'épreuve hydraulique', r, EssaisDoc.epreuve)), ...mises.map(r => annexe('PV de mise en service', r, ESSAIS.mes.corps)), ...eqs.map(r => annexe('Relevé d\'équilibrage', r, ESSAIS.equilibrage.corps))] : [];
+  return `${Doc.entete('pv', 'RAPPORT DE MISE EN SERVICE', `${esc(a.code || '')} · ${dateFr(isoDate(new Date()))}`)}
+    <div class="doc-parties"><div>Maître d'ouvrage : <strong>${esc(clientName(a.clientId))}</strong>${site ? `<br>${esc(site.libelle)}<br>${esc(fullAddress(site))}` : ''}</div>
+      <div>Chantier : <strong>${esc(a.code || '')} – ${esc(a.nom || '')}</strong>${a.moeId ? `<br>Maîtrise d'œuvre : ${esc(clientName(a.moeId))}` : ''}</div></div>
+    <h3 class="doc-h">Synthèse</h3>
+    <table class="doc-lines compact"><tr><th>Points de mise en service</th><th>Faits</th><th>Avec réserves</th><th>Non conformes</th><th>Restant à faire</th><th>Sans objet</th></tr>
+      <tr><td>${b.utiles}</td><td>${b.faits - b.reserves}</td><td>${b.reserves}</td><td>${b.ko}</td><td>${b.aFaire + b.enCours}</td><td>${b.sansObjet}</td></tr></table>
+    <p>${b.aFaire + b.enCours + b.ko ? `<strong>Mise en service non achevée</strong> : ${b.aFaire + b.enCours} point(s) restant(s)${b.ko ? `, ${b.ko} non conforme(s)` : ''}.` : `<strong>Mise en service achevée</strong>${b.reserves || reserves.length ? ' avec réserves (voir ci-dessous)' : ' sans réserve'}.`}
+      ${eps.length} épreuve(s), ${mises.length} PV de mise en service et ${eqs.length} relevé(s) d'équilibrage signés.</p>
+    ${PlanMes.GROUPES.map(g => { const l = ts.filter(t => t.groupe === g); return l.length ? `<h3 class="doc-h">${esc(g)}</h3><table class="doc-lines compact"><tr><th style="width:22px"></th><th>Point</th><th>État</th><th>PV / suivi</th></tr>${l.map(ligneEtat).join('')}</table>` : ''; }).join('')}
+    ${eps.length ? `<h3 class="doc-h">Épreuves des réseaux</h3><table class="doc-lines compact"><tr><th>PV</th><th>Réseau</th><th class="num">Épreuve (bar)</th><th class="num">Durée</th><th class="num">Chute (bar)</th><th>Résultat</th></tr>
+      ${eps.map(r => `<tr><td>${esc(r.numero || '')}</td><td>${esc(r.reseau || '')}</td><td class="num">${nbFr(r.pressionEpreuve, 1)}</td><td class="num">${r.dureeReelle ? `${r.dureeReelle} min` : '—'}</td><td class="num">${nbFr(r.chute, 2)}</td><td>${esc(r.resultat || '')}</td></tr>`).join('')}</table>` : ''}
+    ${ecarts.length ? `<h3 class="doc-h">Mesures face aux valeurs attendues de l'étude</h3><table class="doc-lines compact"><tr><th>Équipement</th><th>Mesure</th><th class="num">Attendu</th><th class="num">Mesuré</th><th class="num">Écart</th></tr>
+      ${ecarts.map(({ m, x, e }) => `<tr><td>${esc(m.equipement)}</td><td>${esc(x.libelle)}</td><td class="num">${nbFr(x.attendu, 2)} ${esc(x.unite || '')}</td><td class="num">${nbFr(x.valeur, 2)} ${esc(x.unite || '')}</td><td class="num">${e === null ? '—' : `${Math.abs(e) > 10 ? '<strong>' : ''}${e > 0 ? '+' : ''}${fmt(e, 1)} %${Math.abs(e) > 10 ? '</strong>' : ''}`}</td></tr>`).join('')}</table>
+      <p class="small">Écart au-delà de ± 10 % en gras : réglage à reprendre ou à justifier.</p>` : ''}
+    ${eqs.length ? `<h3 class="doc-h">Équilibrages</h3><table class="doc-lines compact"><tr><th>Relevé</th><th>Installation</th><th class="num">Points</th><th class="num">Conformes</th><th class="num">Écart global</th><th>Résultat</th></tr>
+      ${eqs.map(q => { const y = Essais.synthese(q); return `<tr><td>${esc(q.numero || '')}</td><td>${esc(q.installation || '')}</td><td class="num">${y.nb}</td><td class="num">${y.conformes}/${y.mesurees}</td><td class="num">${y.ecartGlobal === null ? '—' : `${fmt(y.ecartGlobal, 1)} %`}</td><td>${esc(q.resultat || y.resultat || '')}</td></tr>`; }).join('')}</table>` : ''}
+    <h3 class="doc-h">Réserves et points à lever</h3>${reserves.length ? `<ul>${reserves.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '<p>Aucune.</p>'}
+    <div class="signatures"><div>Pour l'entreprise<br><strong>${esc((Store.me.userId && userName(Store.me.userId)) || Store.me.nom || '')}</strong></div><div>Pour le maître d'ouvrage / la maîtrise d'œuvre</div></div>
+    ${docPv.length ? `<h3 class="doc-h">Annexes : procès-verbaux signés (${docPv.length})</h3>${docPv.map(d => `<div class="rapport-pv">${d}</div>`).join('')}` : ''}
+    <div class="doc-pied">${esc(Doc.piedLegal())}</div>`;
+}
+function dialogueRapportMes(a) {
+  const box = Modal.open(`<h2 style="margin-top:0">📘 Rapport de mise en service</h2>
+    <p class="small muted">Synthèse : avancement, épreuves, mesures face aux valeurs attendues de l'étude, équilibrages, contrôles réglementaires et réserves.</p>
+    <label class="check"><input type="checkbox" id="rm-pv" checked> Joindre les PV signés complets en annexe</label>
+    <div class="modal-actions"><button class="secondary" id="rm-dl">Télécharger</button><span style="flex:1"></span><button class="secondary" id="rm-x">Annuler</button><button id="rm-doc">Enregistrer dans les documents du chantier (DOE)</button></div>`);
+  const nom = `Rapport-mise-en-service-${a.code || a.id}.pdf`.replace(/[^\w.-]+/g, '_'), opts = () => ({ pv: box.querySelector('#rm-pv').checked });
+  box.querySelector('#rm-x').onclick = Modal.close;
+  box.querySelector('#rm-dl').onclick = () => PDF.telecharger(documentRapportMes(a, opts()), nom).catch(e => notify(e.message));
+  box.querySelector('#rm-doc').onclick = async ev => {
+    ev.target.disabled = true;
+    try {
+      const octets = await PDF.depuisHTML(documentRapportMes(a, opts()), nom.replace(/\.pdf$/, ''));
+      const f = await envoyerFichierDocument(new File([octets], nom, { type: 'application/pdf' }));
+      const af = Store.get('affaires', a.id), docs = (af.documents || []).slice(), ex = docs.find(d => d.categorie === 'Rapport de mise en service'), date = isoDate(new Date());
+      const indice = ex ? String.fromCharCode((ex.indice || 'A').charCodeAt(0) + 1) : 'A';
+      if (ex) Object.assign(ex, { anciens: [...(ex.anciens || []), { fichierId: ex.fichierId, indice: ex.indice || 'A', date: ex.date }], fichierId: f.id, nom, mime: f.mime, taille: f.taille, indice, date, par: Store.me.nom });
+      else docs.push({ id: uid(), fichierId: f.id, nom, categorie: 'Rapport de mise en service', indice, note: '', mime: f.mime, taille: f.taille, date, par: Store.me.nom, visible: false });
+      Store.upsert('affaires', { ...af, documents: docs });
+      Modal.close(); App.render(); App.toast(`Rapport de mise en service (indice ${indice}) déposé dans les documents du chantier : il ouvre l'annexe F du DOE`, 5000);
+    } catch (e) { ev.target.disabled = false; notify(e.message); }
+  };
 }

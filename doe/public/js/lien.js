@@ -137,7 +137,10 @@ function piecesPF(doe) {
   if (doe.sansEssaisPF) return { F: [], G: [] };
   const e = essaisPF(doe.affaireId), p = (genere, r, libelle) => ({ libelle: `${r.numero || ''} — ${libelle}`, present: true, genere, ref: r });
   const cerfa = f => p('cerfa', f, `Fiche d'intervention fluides (Cerfa 15497) — ${(PF.get('equipementsFrigo', f.equipementId) || {}).designation || ''}`);
-  return { F: [...e.mes.map(m => p('mes', m, `PV de mise en service — ${m.equipement}`)), ...e.cerfa.filter(f => f.nature === 'miseEnService').map(cerfa),
+  // Rapport de mise en service de Pipe-Fit (synthèse, dernier indice) : en tête de l'annexe F
+  const rap = ((PF.get('affaires', doe.affaireId) || {}).documents || []).filter(d => d.categorie === 'Rapport de mise en service').sort((x, y) => String(y.date || '').localeCompare(String(x.date || '')))[0];
+  const rapport = rap ? [{ libelle: `Rapport de mise en service${rap.indice ? ` — indice ${rap.indice}` : ''}`, fichier: { src: 'pf', id: rap.fichierId, nom: rap.nom, mime: rap.mime || 'application/pdf' }, present: true }] : [];
+  return { F: [...rapport, ...e.mes.map(m => p('mes', m, `PV de mise en service — ${m.equipement}`)), ...e.cerfa.filter(f => f.nature === 'miseEnService').map(cerfa),
       ...e.equilibrages.filter(q => !aeraulique(q)).map(q => p('equilibrage', q, `Relevé d'équilibrage hydraulique — ${q.installation}`))],
     G: [...e.epreuves.map(x => p('epreuve', x, `PV d'épreuve hydraulique — ${x.reseau}`)), ...e.equilibrages.filter(aeraulique).map(q => p('equilibrage', q, `Relevé d'équilibrage aéraulique — ${q.installation}`)),
       ...e.cerfa.filter(f => f.nature !== 'miseEnService').map(cerfa)] };
