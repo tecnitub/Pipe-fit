@@ -1164,3 +1164,8 @@ ul.plan-mes li.pm-sansObjet .pm-txt { opacity: .55; text-decoration: line-throug
 .qte-pm { display: flex; gap: 6px; } .qte-pm input { flex: 1; text-align: center; font-size: 18px; } .qte-pm button { min-width: 44px; font-size: 20px; }
 .ca-liste { max-height: 42vh; overflow: auto; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; margin: 8px 0; }
 .ca-l { display: block; padding: 4px 0; }
+
+.vign { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; flex: 0 0 44px; display: inline-flex; align-items: center; justify-content: center; background: var(--bg-soft, #f2f4f7); font-size: 20px; }
+.vign-l { cursor: pointer; display: inline-block; }
+.sc-item .sc-txt { flex: 1; min-width: 0; }
+.scan-photo { display: block; max-width: 100%; max-height: 180px; border-radius: 8px; margin: 4px 0 8px; object-fit: contain; }

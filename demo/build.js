@@ -46,7 +46,8 @@ fs.mkdirSync(pdfDir, { recursive: true });
 ['pdf.min.js', 'pdf.worker.min.js'].forEach(f => fs.copyFileSync(path.join(root, 'public/vendor/pdfjs', f), path.join(pdfDir, f)));
 
 fs.mkdirSync(path.dirname(out), { recursive: true });
-fs.writeFileSync(out, withBackend);
+// Encodage déclaré en tête : la page ouverte en fichier local (ou servie sans en-tête) reste lue en UTF-8
+fs.writeFileSync(out, `<meta charset="utf-8">\n${withBackend}`);
 // Application DOE de démonstration, ouverte par l'onglet « DOE » des chantiers
 const cle = /const KEY = '([^']+)'/.exec(read('demo/backend.js'))[1];
 require('node:child_process').execFileSync(process.execPath, [path.join(root, 'doe/build-demo.js'), path.join(path.dirname(out), 'doe.html'), '--crm', cle, `${lienCrm}#/chantiers`], { stdio: 'inherit' });

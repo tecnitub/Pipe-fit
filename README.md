@@ -713,9 +713,12 @@ relevé sont signalées (relevé suivant ?) et la fiche chantier rappelle les en
 (sélection dans la bibliothèque → « 📦 Mettre en stock (QR) », ou « + Mettre des articles en stock ») avec leur
 emplacement (rayonnage, bac), la quantité minimale et la quantité à commander au réassort.
 
-- **Étiquettes QR** (PDF, planche A4 de 3 × 8) à coller sur les bacs, et **étiquettes de l'outillage** du parc (postes à
-  souder, nacelle, échafaudage…, hors véhicules).
-- **Catalogue Tecnitub** (PDF) : le matériel en stock par famille avec son QR code, à donner aux compagnons ; le même
+- **Photo de l'article** (clic sur la vignette du tableau, ou « 📷 Photo » sur sa fiche) : réduite, elle s'affiche dans le
+  catalogue, sur la fiche ouverte au scan et sur l'étiquette — on sait ce qu'on scanne et ce qui va dans le casier vide.
+- **Étiquettes QR** (PDF A4, 2 colonnes, traits de coupe) de **2 cm de haut** pour le bord des casiers : désignation devant,
+  référence et emplacement, petite photo, QR code de 18 mm ; **étiquettes de l'outillage** du parc (postes à souder,
+  nacelle, échafaudage…, hors véhicules), avec sa photo s'il en a une.
+- **Catalogue Tecnitub** (PDF) : le matériel en stock par famille avec son QR code et sa photo, à donner aux compagnons ; le même
   catalogue, avec recherche, est dans l'appli (onglet **📷 Stock**) pour un article sans étiquette.
 - **Scanner** (onglet 📷 Stock du téléphone, ou 📷 Scanner au bureau) : caméra du téléphone, ou photo de l'étiquette si la
   caméra n'est pas accessible. L'étiquette porte l'adresse de la fiche : l'appareil photo du téléphone l'ouvre aussi.

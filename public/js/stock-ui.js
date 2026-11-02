@@ -34,15 +34,19 @@ const origineQr = () => location.origin + location.pathname;
 const lienArticle = a => Stock.lien(origineQr(), 'a', a.id), lienOutil = m => Stock.lien(origineQr(), 'm', m.id);
 
 /* ---------- Étiquettes et catalogue (PDF) ---------- */
-// Planche A4 de 3 × 8 étiquettes : QR code, désignation, référence, emplacement
+// Étiquettes de 2 cm de haut (pour le bord des casiers) : désignation devant, QR code, petite photo de l'article pour
+// reconnaître le casier même vide ; deux colonnes par planche A4, traits de coupe en pointillés
 function documentEtiquettes(items) {
-  const cases = items.map(x => `<td class="etq"><img src="${qrPng(x.lien)}" alt=""><div><strong>${esc(x.titre)}</strong><br><span>${esc(x.sous || '')}</span><br><span class="etq-emp">${esc(x.emplacement || '')}</span><br><span class="etq-soc">${esc((Store.data.settings.societe || '').split('\n')[0] || 'TECNITUB')}</span></div></td>`);
-  const lignes = []; for (let i = 0; i < cases.length; i += 3) lignes.push(`<tr>${cases.slice(i, i + 3).join('')}${'<td class="etq"></td>'.repeat(Math.max(0, 3 - cases.slice(i, i + 3).length))}</tr>`);
-  return `<style>.etqs{width:100%;border-collapse:collapse;table-layout:fixed}.etq{height:128px;border:1px dashed #bbb;padding:6px;vertical-align:middle;font-size:10px;line-height:1.25}.etq img{width:92px;height:92px;float:left;margin-right:6px}.etq strong{font-size:11px}.etq-emp{color:#555}.etq-soc{color:#888;font-size:8px;letter-spacing:.05em}</style>
+  const cases = items.map(x => `<td class="etq"><div class="etq-in"><div class="etq-txt"><strong>${esc(x.titre)}</strong><span>${esc([x.sous, x.emplacement].filter(Boolean).join(' · '))}</span></div>
+    ${x.photo ? `<img class="etq-ph" src="${x.photo}" alt="">` : ''}<img class="etq-qr" src="${qrPng(x.lien)}" alt=""></div></td>`);
+  const lignes = []; for (let i = 0; i < cases.length; i += 2) lignes.push(`<tr>${cases.slice(i, i + 2).join('')}${cases.length - i < 2 ? '<td class="etq"></td>' : ''}</tr>`);
+  return `<style>.etqs{width:100%;border-collapse:collapse;table-layout:fixed}.etq{height:20mm;max-height:20mm;border:1px dashed #bbb;padding:1mm 1.5mm;vertical-align:middle;overflow:hidden}
+    .etq-in{display:flex;align-items:center;gap:2mm;height:18mm}.etq-txt{flex:1;min-width:0;line-height:1.15;overflow:hidden;max-height:18mm}.etq-txt strong{display:block;font-size:10pt}.etq-txt span{display:block;font-size:7pt;color:#555;margin-top:.6mm}
+    .etq-ph{width:16mm;height:16mm;object-fit:cover;border-radius:1mm}.etq-qr{width:18mm;height:18mm}</style>
     <table class="etqs">${lignes.join('')}</table>`;
 }
-const itemArticle = a => ({ lien: lienArticle(a), titre: a.designation, sous: [a.ref, a.unite && `(${a.unite})`].filter(Boolean).join(' '), emplacement: a.emplacement ? `Empl. : ${a.emplacement}` : '' });
-const itemOutil = m => ({ lien: lienOutil(m), titre: m.designation, sous: [m.categorie, m.numeroSerie && `n° ${m.numeroSerie}`].filter(Boolean).join(' · '), emplacement: 'Outillage — scanner pour le prendre ou le rendre' });
+const itemArticle = a => ({ lien: lienArticle(a), titre: a.designation, sous: [a.ref, a.unite && `(${a.unite})`].filter(Boolean).join(' '), emplacement: a.emplacement ? `Empl. ${a.emplacement}` : '', photo: a.photoId ? fileUrl(a.photoId) : '' });
+const itemOutil = m => ({ lien: lienOutil(m), titre: m.designation, sous: [m.categorie, m.numeroSerie && `n° ${m.numeroSerie}`].filter(Boolean).join(' · '), emplacement: 'scanner pour le prendre ou le rendre', photo: m.photoId ? fileUrl(m.photoId) : '' });
 async function imprimerEtiquettes(items, nom) {
   if (!items.length) return notify('Aucune étiquette à imprimer.');
   App.toast(`Préparation de ${items.length} étiquette(s)…`);
@@ -54,9 +58,27 @@ function documentCatalogue(articles) {
   articles.slice().sort((x, y) => `${x.famille} ${x.sousFamille} ${x.designation}`.localeCompare(`${y.famille} ${y.sousFamille} ${y.designation}`)).forEach(a => { const f = a.famille || 'Divers'; if (!fam.has(f)) fam.set(f, []); fam.get(f).push(a); });
   return `${Doc.entete('pv', 'CATALOGUE DU MATÉRIEL EN STOCK', `état au ${dateFr(isoDate(new Date()))} · ${articles.length} article(s)`)}
     <p class="small">Scannez le QR code avec l'appli Pipe-Fit (onglet « Stock ») pour sortir l'article vers votre chantier ou le remettre en stock.</p>
-    ${[...fam.entries()].map(([f, l]) => `<h3 class="doc-h">${esc(f)}</h3><table class="doc-lines compact"><tr><th style="width:62px">QR</th><th>Article</th><th>Réf.</th><th>Unité</th><th>Emplacement</th></tr>
-      ${l.map(a => `<tr><td><img src="${qrPng(lienArticle(a), 220)}" alt="" style="width:54px;height:54px"></td><td><strong>${esc(a.designation)}</strong>${a.sousFamille ? `<br><span class="small">${esc(a.sousFamille)}</span>` : ''}</td><td>${esc(a.ref || '')}</td><td>${esc(a.unite || '')}</td><td>${esc(a.emplacement || '')}</td></tr>`).join('')}</table>`).join('')}
+    ${[...fam.entries()].map(([f, l]) => `<h3 class="doc-h">${esc(f)}</h3><table class="doc-lines compact"><tr><th style="width:62px">QR</th><th style="width:62px">Photo</th><th>Article</th><th>Réf.</th><th>Unité</th><th>Emplacement</th></tr>
+      ${l.map(a => `<tr><td><img src="${qrPng(lienArticle(a), 220)}" alt="" style="width:54px;height:54px"></td><td>${a.photoId ? `<img src="${fileUrl(a.photoId)}" alt="" style="width:54px;height:54px;object-fit:cover">` : ''}</td><td><strong>${esc(a.designation)}</strong>${a.sousFamille ? `<br><span class="small">${esc(a.sousFamille)}</span>` : ''}</td><td>${esc(a.ref || '')}</td><td>${esc(a.unite || '')}</td><td>${esc(a.emplacement || '')}</td></tr>`).join('')}</table>`).join('')}
     <div class="doc-pied">${esc(Doc.piedLegal())}</div>`;
+}
+
+/* ---------- Photos des articles et de l'outillage ---------- */
+// Vignette (catalogue de l'appli, tableau du stock) ; au bureau, un clic ajoute ou change la photo
+function vignettePhoto(o, modifiable = false) {
+  const img = o.photoId ? `<img class="vign" src="${esc(fileUrl(o.photoId))}" alt="" loading="lazy">` : `<span class="vign vide" aria-hidden="true">${modifiable ? '📷' : '📦'}</span>`;
+  return modifiable && Store.can('write', 'articles') ? `<label class="vign-l" title="${o.photoId ? 'Changer la photo' : 'Ajouter une photo'}">${img}<input type="file" accept="image/*" capture="environment" data-ph-art="${esc(o.id)}" hidden></label>` : img;
+}
+// Photo réduite (400 px) envoyée au serveur puis rattachée à l'article
+function lierPhotos(root) {
+  root.querySelectorAll('[data-ph-art], [data-ph-mat]').forEach(inp => inp.onchange = async ev => {
+    const col = inp.dataset.phMat ? 'materiels' : 'articles', f = ev.target.files[0], a = Store.get(col, inp.dataset.phMat || inp.dataset.phArt); ev.target.value = '';
+    if (!f || !a) return;
+    try {
+      const id = await envoyerImage(await compressImage(f, 400, 0.8));
+      Store.upsert(col, { ...a, photoId: id }); App.render(); App.toast('Photo enregistrée : elle apparaît sur l\'étiquette et dans le catalogue');
+    } catch (e) { notify(`Photo non enregistrée : ${e.message}`); }
+  });
 }
 
 /* ---------- Écran du bureau : stock et QR codes ---------- */
@@ -75,8 +97,8 @@ Views.stock = () => {
     <button class="secondary" id="st-etq">🏷️ Étiquettes QR${e.sel.size ? ` (${e.sel.size})` : ''}</button><button class="secondary" id="st-cat">📒 Catalogue Tecnitub (PDF)</button><button class="secondary" id="st-outils">🔧 Étiquettes de l'outillage</button></div>
   <div class="toolbar"><input type="search" id="st-q" value="${esc(e.q)}" placeholder="Rechercher : référence, désignation, emplacement…" aria-label="Rechercher dans le stock" style="flex:1;min-width:200px">
     <select id="st-f" aria-label="Filtrer"><option value="">Tout le stock</option>${optionsStr(['reassort', 'rupture', 'ok'], e.filtre).replace(/>reassort</, '>À réassortir (et ruptures)<').replace(/>rupture</, '>En rupture<').replace(/>ok</, '>En stock<')}</select></div>
-  ${lst.length ? `<div class="table-wrap"><table><tr><th><input type="checkbox" id="st-tout" aria-label="Tout sélectionner"></th><th>Article</th><th>Emplacement</th><th class="num">En stock</th><th class="num">Mini</th><th>État</th><th></th></tr>
-    ${vus.map(x => `<tr><td><input type="checkbox" data-st-sel="${esc(x.a.id)}" ${e.sel.has(x.a.id) ? 'checked' : ''} aria-label="Sélectionner"></td><td><a href="#/scan/a/${esc(x.a.id)}"><strong>${esc(x.a.designation)}</strong></a><br><span class="small muted">${esc(x.a.ref || '')} · ${esc(x.a.famille || '')}</span></td>
+  ${lst.length ? `<div class="table-wrap"><table><tr><th><input type="checkbox" id="st-tout" aria-label="Tout sélectionner"></th><th>Photo</th><th>Article</th><th>Emplacement</th><th class="num">En stock</th><th class="num">Mini</th><th>État</th><th></th></tr>
+    ${vus.map(x => `<tr><td><input type="checkbox" data-st-sel="${esc(x.a.id)}" ${e.sel.has(x.a.id) ? 'checked' : ''} aria-label="Sélectionner"></td><td>${vignettePhoto(x.a, true)}</td><td><a href="#/scan/a/${esc(x.a.id)}"><strong>${esc(x.a.designation)}</strong></a><br><span class="small muted">${esc(x.a.ref || '')} · ${esc(x.a.famille || '')}</span></td>
       <td>${esc(x.a.emplacement || '—')}</td><td class="num"><strong>${fmtQ(x.q)}</strong> ${esc(x.a.unite || '')}</td><td class="num">${x.a.stockMini ? fmtQ(Number(x.a.stockMini)) : '—'}</td><td>${badgeStock(x.a, x.q)}</td>
       <td class="nowrap"><button class="small secondary" data-st-in="${esc(x.a.id)}">Entrée</button><button class="small secondary" data-st-inv="${esc(x.a.id)}">Inventaire</button></td></tr>`).join('')}</table></div>`
     : '<p class="muted">Aucun article géré en stock. « + Mettre des articles en stock » (ou dans la Bibliothèque, sélectionnez des fournitures) : emplacement, quantité minimale, puis étiquettes QR à coller sur les bacs.</p>'}
@@ -91,6 +113,7 @@ Views.stock.bind = root => {
   root.querySelectorAll('[data-st-sel]').forEach(cb => cb.onchange = () => { cb.checked ? e.sel.add(cb.dataset.stSel) : e.sel.delete(cb.dataset.stSel); App.render(); });
   const tout = $('#st-tout'); if (tout) tout.onchange = () => { root.querySelectorAll('[data-st-sel]').forEach(cb => (tout.checked ? e.sel.add(cb.dataset.stSel) : e.sel.delete(cb.dataset.stSel))); App.render(); };
   root.querySelectorAll('[data-st-in]').forEach(b => b.onclick = () => mouvementStock(Store.get('articles', b.dataset.stIn), 'entree'));
+  lierPhotos(root);
   root.querySelectorAll('[data-st-inv]').forEach(b => b.onclick = () => mouvementStock(Store.get('articles', b.dataset.stInv), 'inventaire'));
   $('#st-ajout').onclick = () => choisirArticlesStock();
   const r = $('#st-reass'); if (r) r.onclick = () => demandeReassort(Stock.aReassortir(Store.all('articles'), consosStock(), mvtsStock()));
@@ -220,8 +243,8 @@ function catalogueScanHtml(arts, outils, q) {
   const a = arts.filter(x => ok(`${x.ref} ${x.designation} ${x.famille} ${x.sousFamille} ${x.emplacement}`)).sort((x, y) => `${x.famille}${x.designation}`.localeCompare(`${y.famille}${y.designation}`));
   const o = outils.filter(m => ok(`${m.designation} ${m.categorie} ${m.marque}`));
   let fam = '';
-  return `${a.map(x => `${x.famille !== fam ? `<div class="mat-famille">${esc((fam = x.famille) || 'Divers')}</div>` : ''}<a class="sc-item" href="#/scan/a/${esc(x.id)}"><span><strong>${esc(x.designation)}</strong><br><span class="small muted">${esc(x.ref || '')}${x.emplacement ? ` · 📍 ${esc(x.emplacement)}` : ''}</span></span><span class="small">${bureauStock() || Store.all('mouvementsStock') ? `${fmtQ(qteStock(x))} ${esc(x.unite || '')}` : ''}</span></a>`).join('')}
-    ${o.length ? `<div class="mat-famille">Outillage</div>${o.map(m => `<a class="sc-item" href="#/scan/m/${esc(m.id)}"><span><strong>${esc(m.designation)}</strong><br><span class="small muted">${esc(m.categorie || '')}</span></span><span class="small">${(m.affectation || {}).userId || (m.affectation || {}).affaireId ? affectationTxt(m) : 'au dépôt'}</span></a>`).join('')}` : ''}
+  return `${a.map(x => `${x.famille !== fam ? `<div class="mat-famille">${esc((fam = x.famille) || 'Divers')}</div>` : ''}<a class="sc-item" href="#/scan/a/${esc(x.id)}">${vignettePhoto(x)}<span class="sc-txt"><strong>${esc(x.designation)}</strong><br><span class="small muted">${esc(x.ref || '')}${x.emplacement ? ` · 📍 ${esc(x.emplacement)}` : ''}</span></span><span class="small">${bureauStock() || Store.all('mouvementsStock') ? `${fmtQ(qteStock(x))} ${esc(x.unite || '')}` : ''}</span></a>`).join('')}
+    ${o.length ? `<div class="mat-famille">Outillage</div>${o.map(m => `<a class="sc-item" href="#/scan/m/${esc(m.id)}">${vignettePhoto(m)}<span class="sc-txt"><strong>${esc(m.designation)}</strong><br><span class="small muted">${esc(m.categorie || '')}</span></span><span class="small">${(m.affectation || {}).userId || (m.affectation || {}).affaireId ? affectationTxt(m) : 'au dépôt'}</span></a>`).join('')}` : ''}
     ${!a.length && !o.length ? '<p class="muted small">Rien trouvé.</p>' : ''}`;
 }
 // Chantiers proposés : ceux du planning du jour et récents d'abord, puis tous les chantiers en cours
@@ -236,26 +259,26 @@ function ficheArticleScan(a) {
   if (!a) return '<p>Article introuvable (étiquette d\'un article supprimé ?). <a href="#/scan">Retour</a></p>';
   const q = qteStock(a), hist = Stock.historique(a.id, consosStock(), mvtsStock()).slice(-6).reverse();
   return `<div class="toolbar"><a class="btn secondary" href="#/scan">← Scanner</a>${bureauStock() ? '<a class="btn secondary" href="#/stock">Stock</a>' : ''}</div>
-  <h1>${esc(a.designation)}</h1>
+  ${a.photoId ? `<img class="scan-photo" src="${esc(fileUrl(a.photoId))}" alt="Photo de l'article">` : ''}<h1>${esc(a.designation)}</h1>
   <p class="muted">${esc([a.ref, a.famille, a.sousFamille].filter(Boolean).join(' · '))}${a.emplacement ? `<br>📍 ${esc(a.emplacement)}` : ''}</p>
   ${Stock.gere(a) ? `<p>En stock : <strong>${fmtQ(q)} ${esc(a.unite || '')}</strong> ${badgeStock(a, q)}</p>` : '<p class="small muted">Article de la bibliothèque non géré en stock.</p>'}
   <div class="card"><div class="grid2"><div class="field"><label for="sa-q">Quantité (${esc(a.unite || 'u')})</label><div class="qte-pm"><button type="button" class="secondary" data-pm="-1" aria-label="Moins">−</button><input id="sa-q" type="number" inputmode="decimal" step="any" min="0" value="1"><button type="button" class="secondary" data-pm="1" aria-label="Plus">+</button></div></div>
     <div class="field"><label for="sa-ch">Chantier</label><select id="sa-ch">${optionsChantierScan(dernierChantierScan.id)}</select></div></div>
     <div class="field"><label for="sa-n">Note (facultatif)</label><input id="sa-n" placeholder="Repère, ouvrage…"></div>
     <div class="toolbar" style="margin-bottom:0"><button id="sa-sortir" class="big">⬆️ Sortir pour ce chantier</button><button id="sa-retour" class="secondary">⬇️ Remettre en stock</button></div></div>
-  ${bureauStock() ? `<div class="toolbar"><button class="secondary" id="sa-entree">Entrée en stock</button><button class="secondary" id="sa-inv">Inventaire</button><button class="secondary" id="sa-reass">🛒 Demande de prix de réassort</button><button class="secondary" id="sa-etq">🏷️ Étiquette</button><button class="secondary" id="sa-modif">Modifier l'article</button></div>` : ''}
+  ${bureauStock() ? `<div class="toolbar"><label class="btn secondary">📷 ${a.photoId ? 'Changer la photo' : 'Photo de l\'article'}<input type="file" accept="image/*" capture="environment" data-ph-art="${esc(a.id)}" hidden></label><button class="secondary" id="sa-entree">Entrée en stock</button><button class="secondary" id="sa-inv">Inventaire</button><button class="secondary" id="sa-reass">🛒 Demande de prix de réassort</button><button class="secondary" id="sa-etq">🏷️ Étiquette</button><button class="secondary" id="sa-modif">Modifier l'article</button></div>` : ''}
   ${hist.length ? `<h2>Derniers mouvements</h2><ul class="hist-relances">${hist.map(m => `<li>${dateFr(m.date)} · ${{ sortie: 'Sortie', retour: 'Retour', entree: 'Entrée', inventaire: 'Inventaire' }[m.type]} ${fmtQ(Math.abs(m.qte))} ${esc(a.unite || '')}${m.affaireId ? ` · ${esc(affaireLabel(affaireOf(m.affaireId)))}` : ''}${m.userId ? ` · ${esc(userName(m.userId))}` : ''}${m.note ? ` · ${esc(m.note)}` : ''}</li>`).join('')}</ul>` : ''}`;
 }
 function ficheOutilScan(m) {
   if (!m) return '<p>Outil introuvable ou non étiqueté. <a href="#/scan">Retour</a></p>';
   const af = m.affectation || {}, chezMoi = af.userId && af.userId === Store.me.userId;
   return `<div class="toolbar"><a class="btn secondary" href="#/scan">← Scanner</a>${bureauStock() ? `<a class="btn secondary" href="#/parc">Parc</a>` : ''}</div>
-  <h1>🔧 ${esc(m.designation)}</h1>
+  ${m.photoId ? `<img class="scan-photo" src="${esc(fileUrl(m.photoId))}" alt="Photo de l'outil">` : ''}<h1>🔧 ${esc(m.designation)}</h1>
   <p class="muted">${esc([m.categorie, m.marque, m.numeroSerie && `n° ${m.numeroSerie}`].filter(Boolean).join(' · '))}</p>
   <p>Actuellement : ${af.userId || af.affaireId ? affectationTxt(m) : '<strong>au dépôt</strong>'}${af.depuis ? ` <span class="small muted">depuis le ${dateFr(af.depuis)}</span>` : ''}</p>
   ${typeof prochaineEcheance === 'function' && prochaineEcheance(m) ? `<p class="small">Prochain contrôle : ${badgeEcheance(prochaineEcheance(m), isoDate(new Date()))}</p>` : ''}
   <div class="card">${chezMoi ? '' : `<div class="field"><label for="so-ch">Chantier (facultatif)</label><select id="so-ch">${optionsChantierScan(dernierChantierScan.id)}</select></div>`}
-    <div class="toolbar" style="margin-bottom:0">${chezMoi ? '' : '<button id="so-prendre" class="big">✋ Je le prends</button>'}${af.userId || af.affaireId ? '<button id="so-rendre" class="secondary">↩️ Rendu au dépôt</button>' : ''}</div></div>`;
+    <div class="toolbar" style="margin-bottom:0">${bureauStock() && Store.can('write', 'materiels') ? `<label class="btn secondary">📷 ${m.photoId ? 'Changer la photo' : 'Photo de l\'outil'}<input type="file" accept="image/*" capture="environment" data-ph-mat="${esc(m.id)}" hidden></label>` : ''}${chezMoi ? '' : '<button id="so-prendre" class="big">✋ Je le prends</button>'}${af.userId || af.affaireId ? '<button id="so-rendre" class="secondary">↩️ Rendu au dépôt</button>' : ''}</div></div>`;
 }
 Views.scan.bind = (root, params = []) => {
   const $ = s => root.querySelector(s);
@@ -278,6 +301,7 @@ Views.scan.bind = (root, params = []) => {
     on('#sa-inv', () => mouvementStock(a, 'inventaire'));
     on('#sa-reass', () => { const q = qteStock(a); demandeReassort([{ a, q, commande: Stock.aCommander(a, q) }]); });
     on('#sa-etq', () => imprimerEtiquettes([itemArticle(a)], `Etiquette-${a.ref || a.id}.pdf`.replace(/[^\w.-]+/g, '_')));
+    lierPhotos(root);
     on('#sa-modif', () => editModal({ title: 'Fourniture', col: 'articles', fields: articleFields, obj: { ...a } }));
     return;
   }
@@ -292,6 +316,7 @@ Views.scan.bind = (root, params = []) => {
         location.hash = '#/scan';
       } catch (e) { notify(e.message); }
     };
+    lierPhotos(root);
     const p = $('#so-prendre'); if (p) p.onclick = () => action('prendre');
     const r = $('#so-rendre'); if (r) r.onclick = () => action('rendre');
     return;
