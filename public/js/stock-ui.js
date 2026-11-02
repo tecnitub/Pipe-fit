@@ -34,23 +34,50 @@ const origineQr = () => location.origin + location.pathname;
 const lienArticle = a => Stock.lien(origineQr(), 'a', a.id), lienOutil = m => Stock.lien(origineQr(), 'm', m.id);
 
 /* ---------- Étiquettes et catalogue (PDF) ---------- */
-// Étiquettes de 2 cm de haut (pour le bord des casiers) : désignation devant, QR code, petite photo de l'article pour
-// reconnaître le casier même vide ; deux colonnes par planche A4, traits de coupe en pointillés
-function documentEtiquettes(items) {
-  const cases = items.map(x => `<td class="etq"><div class="etq-in"><div class="etq-txt"><strong>${esc(x.titre)}</strong><span>${esc([x.sous, x.emplacement].filter(Boolean).join(' · '))}</span></div>
-    ${x.photo ? `<img class="etq-ph" src="${x.photo}" alt="">` : ''}<img class="etq-qr" src="${qrPng(x.lien)}" alt=""></div></td>`);
-  const lignes = []; for (let i = 0; i < cases.length; i += 2) lignes.push(`<tr>${cases.slice(i, i + 2).join('')}${cases.length - i < 2 ? '<td class="etq"></td>' : ''}</tr>`);
-  return `<style>.etqs{width:100%;border-collapse:collapse;table-layout:fixed}.etq{height:20mm;max-height:20mm;border:1px dashed #bbb;padding:1mm 1.5mm;vertical-align:middle;overflow:hidden}
-    .etq-in{display:flex;align-items:center;gap:2mm;height:18mm}.etq-txt{flex:1;min-width:0;line-height:1.15;overflow:hidden;max-height:18mm}.etq-txt strong{display:block;font-size:10pt}.etq-txt span{display:block;font-size:7pt;color:#555;margin-top:.6mm}
-    .etq-ph{width:16mm;height:16mm;object-fit:cover;border-radius:1mm}.etq-qr{width:18mm;height:18mm}</style>
-    <table class="etqs">${lignes.join('')}</table>`;
-}
 const itemArticle = a => ({ lien: lienArticle(a), titre: a.designation, sous: [a.ref, a.unite && `(${a.unite})`].filter(Boolean).join(' '), emplacement: a.emplacement ? `Empl. ${a.emplacement}` : '', photo: a.photoId ? fileUrl(a.photoId) : '' });
 const itemOutil = m => ({ lien: lienOutil(m), titre: m.designation, sous: [m.categorie, m.numeroSerie && `n° ${m.numeroSerie}`].filter(Boolean).join(' · '), emplacement: 'scanner pour le prendre ou le rendre', photo: m.photoId ? fileUrl(m.photoId) : '' });
+// Impression : modèle de planche (papier à découper ou autocollant du commerce), case de départ pour une planche
+// entamée, décalage de l'imprimante en mm (retenu sur ce poste), feuille de test des cadres
+const CLE_ETQ = 'pipefit-etiquettes';
+const reglagesEtq = () => { try { return { modele: 'libre-20', dx: 0, dy: 0, ...(JSON.parse(localStorage.getItem(CLE_ETQ)) || {}) }; } catch (e) { return { modele: 'libre-20', dx: 0, dy: 0 }; } };
+const mesureTexte = (() => { let ctx; return (t, taille, gras) => { ctx = ctx || document.createElement('canvas').getContext('2d'); ctx.font = `${gras ? 'bold ' : ''}${taille}px Helvetica, Arial, sans-serif`; return ctx.measureText(t).width; }; })();
+// Photo en JPEG pour le PDF (300 px au plus)
+function jpegPhoto(url) {
+  return new Promise(ok => {
+    if (!url) return ok(null);
+    const img = new Image(); img.crossOrigin = 'anonymous';
+    img.onload = () => { const k = Math.min(1, 300 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas'); c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+      const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height);
+      try { ok({ jpeg: atob(c.toDataURL('image/jpeg', 0.82).split(',')[1]), w: c.width, h: c.height }); } catch (e) { ok(null); } };
+    img.onerror = () => ok(null); img.src = url;
+  });
+}
 async function imprimerEtiquettes(items, nom) {
   if (!items.length) return notify('Aucune étiquette à imprimer.');
-  App.toast(`Préparation de ${items.length} étiquette(s)…`);
-  await PDF.telecharger(documentEtiquettes(items), nom).catch(e => notify(e.message));
+  const r = reglagesEtq();
+  const box = Modal.open(`<h2 style="margin-top:0">🏷️ ${items.length} étiquette(s)</h2>
+    <div class="field"><label for="et-m">Planche</label><select id="et-m">${Planches.MODELES.map(m => `<option value="${m.id}" ${m.id === r.modele ? 'selected' : ''}>${esc(m.nom)}</option>`).join('')}</select></div>
+    <div class="grid3"><div class="field"><label for="et-d">Commencer à l'étiquette n°</label><input id="et-d" type="number" min="1" value="1"></div>
+      <div class="field"><label for="et-x">Décalage horizontal (mm)</label><input id="et-x" type="number" step="0.5" value="${r.dx}"></div>
+      <div class="field"><label for="et-y">Décalage vertical (mm)</label><input id="et-y" type="number" step="0.5" value="${r.dy}"></div></div>
+    <p class="small muted" id="et-info"></p>
+    <p class="small muted">Imprimer à <strong>100 % (taille réelle)</strong>, sans « ajuster à la page ». Première fois : imprimez la feuille de test sur papier blanc, posez-la sur une planche à contre-jour, puis réglez le décalage (+ vers la droite / vers le bas).</p>
+    <div class="modal-actions"><button class="secondary" id="et-test">Feuille de test (cadres)</button><span style="flex:1"></span><button class="secondary" id="et-x0">Annuler</button><button id="et-ok">Créer le PDF</button></div>`);
+  const $ = s => box.querySelector(s), lire = () => ({ modele: $('#et-m').value, dx: Number($('#et-x').value) || 0, dy: Number($('#et-y').value) || 0, depart: Math.max(1, Number($('#et-d').value) || 1) });
+  const info = () => { const m = Planches.modele($('#et-m').value), n = m.cols * m.lignes; $('#et-d').max = n; $('#et-info').textContent = `${n} étiquettes par planche · ${Math.ceil((items.length + lire().depart - 1) / n)} planche(s)`; };
+  $('#et-m').onchange = info; $('#et-d').oninput = info; info();
+  $('#et-x0').onclick = Modal.close;
+  const creer = async test => {
+    const o = lire(); try { localStorage.setItem(CLE_ETQ, JSON.stringify({ modele: o.modele, dx: o.dx, dy: o.dy })); } catch (e) { /* stockage indisponible */ }
+    const m = Planches.modele(o.modele);
+    const liste = test ? Array.from({ length: m.cols * m.lignes }, (_, i) => ({ titre: `Étiquette ${i + 1}`, sous: m.nom.split(' — ')[0], qr: null, photo: null }))
+      : await Promise.all(items.map(async x => { const q = qrMatrice(x.lien); return { titre: x.titre, sous: [x.sous, x.emplacement].filter(Boolean).join(' · '), qr: { n: q.getModuleCount(), sombre: (y, c) => q.isDark(y, c) }, photo: await jpegPhoto(x.photo) }; }));
+    const r2 = Planches.pdf(liste, { modele: o.modele, depart: test ? 1 : o.depart, decal: { x: o.dx, y: o.dy }, cadres: test, mesure: mesureTexte });
+    download(test ? `Test-${m.id}.pdf` : nom, r2.octets, 'application/pdf');
+    if (!test) { Modal.close(); App.toast(`${items.length} étiquette(s) sur ${r2.pages} planche(s) ${m.nom.split(' — ')[0]}`); }
+  };
+  $('#et-test').onclick = () => creer(true);
+  $('#et-ok').onclick = () => creer(false);
 }
 // Catalogue Tecnitub : articles du stock par famille avec leur QR code, à donner aux compagnons
 function documentCatalogue(articles) {
@@ -232,6 +259,7 @@ Views.scan = (params = []) => {
   const arts = Store.all('articles').filter(Stock.gere), outils = outilsQr().filter(m => m.scan);
   return `${Store.me.role === 'atelier' ? pointageTabs('scan', Store.me.userId) : '<div class="toolbar"><a class="btn secondary" href="#/stock">← Stock et QR codes</a></div>'}
   <h1>📷 Stock et outillage</h1>
+  ${panierHtml()}
   <div class="card scan-card"><video id="sc-video" class="scan-video" playsinline muted></video><p id="sc-etat" class="small muted">Scannez l'étiquette QR d'un article du stock ou d'un outil.</p>
     <div class="toolbar" style="margin:0"><button id="sc-go" class="big">📷 Scanner une étiquette</button><label class="btn secondary">🖼️ Photo de l'étiquette<input type="file" id="sc-photo" accept="image/*" capture="environment" hidden></label></div></div>
   <h2>Catalogue ${esc(((Store.data.settings.societe || '').split('\n')[0] || 'Tecnitub'))}</h2>
@@ -255,6 +283,19 @@ function optionsChantierScan(sel) {
     <optgroup label="Tous les chantiers">${autres.map(a => `<option value="${esc(a.id)}" ${a.id === sel ? 'selected' : ''}>${esc(affaireLabel(a))}</option>`).join('')}</optgroup>`;
 }
 const dernierChantierScan = { id: '' };
+// Panier de sortie gardé sur le téléphone (rechargement, coupure réseau)
+const CLE_PANIER = 'pipefit-panier-sortie';
+const lirePanier = () => { try { return JSON.parse(localStorage.getItem(CLE_PANIER)) || { affaireId: '', lignes: [] }; } catch (e) { return { affaireId: '', lignes: [] }; } };
+const garderPanier = p => { try { localStorage.setItem(CLE_PANIER, JSON.stringify(p)); } catch (e) { /* stockage indisponible */ } };
+function panierHtml() {
+  const p = lirePanier();
+  if (!p.lignes.length) return '';
+  return `<div class="card panier"><h2 style="margin-top:0">🧺 Panier de sortie <span class="muted small">${p.lignes.length} article(s)</span></h2>
+    ${p.lignes.map((l, i) => { const a = Store.get('articles', l.articleId) || { designation: 'Article supprimé', unite: '' }; return `<div class="panier-l">${vignettePhoto(a)}<span class="sc-txt"><strong>${esc(a.designation)}</strong><br><span class="small muted">${esc(a.ref || '')}</span></span>
+      <span class="qte-pm petit"><button type="button" class="secondary" data-pn="${i}" data-d="-1" aria-label="Moins">−</button><input data-pq="${i}" type="number" inputmode="decimal" step="any" min="0" value="${l.qte}" aria-label="Quantité"><button type="button" class="secondary" data-pn="${i}" data-d="1" aria-label="Plus">+</button></span><span class="small">${esc(a.unite || '')}</span><button type="button" class="icon" data-px="${i}" aria-label="Retirer">✕</button></div>`; }).join('')}
+    <div class="field"><label for="pn-ch">Chantier</label><select id="pn-ch">${optionsChantierScan(p.affaireId || dernierChantierScan.id)}</select></div>
+    <div class="toolbar" style="margin-bottom:0"><button id="pn-ok" class="big">⬆️ Sortir tout pour ce chantier</button><button id="pn-vider" class="secondary">Vider le panier</button></div></div>`;
+}
 function ficheArticleScan(a) {
   if (!a) return '<p>Article introuvable (étiquette d\'un article supprimé ?). <a href="#/scan">Retour</a></p>';
   const q = qteStock(a), hist = Stock.historique(a.id, consosStock(), mvtsStock()).slice(-6).reverse();
@@ -265,7 +306,7 @@ function ficheArticleScan(a) {
   <div class="card"><div class="grid2"><div class="field"><label for="sa-q">Quantité (${esc(a.unite || 'u')})</label><div class="qte-pm"><button type="button" class="secondary" data-pm="-1" aria-label="Moins">−</button><input id="sa-q" type="number" inputmode="decimal" step="any" min="0" value="1"><button type="button" class="secondary" data-pm="1" aria-label="Plus">+</button></div></div>
     <div class="field"><label for="sa-ch">Chantier</label><select id="sa-ch">${optionsChantierScan(dernierChantierScan.id)}</select></div></div>
     <div class="field"><label for="sa-n">Note (facultatif)</label><input id="sa-n" placeholder="Repère, ouvrage…"></div>
-    <div class="toolbar" style="margin-bottom:0"><button id="sa-sortir" class="big">⬆️ Sortir pour ce chantier</button><button id="sa-retour" class="secondary">⬇️ Remettre en stock</button></div></div>
+    <div class="toolbar" style="margin-bottom:0"><button id="sa-sortir" class="big">⬆️ Sortir pour ce chantier</button><button id="sa-panier" class="secondary">🧺 Ajouter au panier et scanner le suivant</button><button id="sa-retour" class="secondary">⬇️ Remettre en stock</button></div></div>
   ${bureauStock() ? `<div class="toolbar"><label class="btn secondary">📷 ${a.photoId ? 'Changer la photo' : 'Photo de l\'article'}<input type="file" accept="image/*" capture="environment" data-ph-art="${esc(a.id)}" hidden></label><button class="secondary" id="sa-entree">Entrée en stock</button><button class="secondary" id="sa-inv">Inventaire</button><button class="secondary" id="sa-reass">🛒 Demande de prix de réassort</button><button class="secondary" id="sa-etq">🏷️ Étiquette</button><button class="secondary" id="sa-modif">Modifier l'article</button></div>` : ''}
   ${hist.length ? `<h2>Derniers mouvements</h2><ul class="hist-relances">${hist.map(m => `<li>${dateFr(m.date)} · ${{ sortie: 'Sortie', retour: 'Retour', entree: 'Entrée', inventaire: 'Inventaire' }[m.type]} ${fmtQ(Math.abs(m.qte))} ${esc(a.unite || '')}${m.affaireId ? ` · ${esc(affaireLabel(affaireOf(m.affaireId)))}` : ''}${m.userId ? ` · ${esc(userName(m.userId))}` : ''}${m.note ? ` · ${esc(m.note)}` : ''}</li>`).join('')}</ul>` : ''}`;
 }
@@ -296,6 +337,14 @@ Views.scan.bind = (root, params = []) => {
     };
     $('#sa-sortir').onclick = () => enreg(1);
     $('#sa-retour').onclick = () => enreg(-1);
+    // Panier : l'article s'ajoute, le scanner se rouvre pour le suivant
+    $('#sa-panier').onclick = () => {
+      const q = Number(String($('#sa-q').value).replace(',', '.'));
+      if (!(q > 0)) return notify('Indiquez la quantité.');
+      const p = Stock.panierAjouter(lirePanier(), a.id, q); if ($('#sa-ch').value) p.affaireId = $('#sa-ch').value;
+      garderPanier(p); scanEtat.relancer = true;
+      App.toast(`${a.designation} ajouté au panier (${p.lignes.length} article(s))`); location.hash = '#/scan';
+    };
     const on = (s, f) => { const b = $(s); if (b) b.onclick = f; };
     on('#sa-entree', () => mouvementStock(a, 'entree'));
     on('#sa-inv', () => mouvementStock(a, 'inventaire'));
@@ -321,6 +370,23 @@ Views.scan.bind = (root, params = []) => {
     const r = $('#so-rendre'); if (r) r.onclick = () => action('rendre');
     return;
   }
+  // Panier de sortie : quantités, retrait, chantier, sortie groupée
+  const majP = fn => { const p = lirePanier(); fn(p); p.lignes = p.lignes.filter(l => l.qte > 0); garderPanier(p); App.render(); };
+  root.querySelectorAll('[data-pn]').forEach(b => b.onclick = () => majP(p => { const l = p.lignes[+b.dataset.pn]; l.qte = Math.max(0, Math.round((Number(l.qte) + Number(b.dataset.d)) * 1000) / 1000); }));
+  root.querySelectorAll('[data-pq]').forEach(i => i.onchange = () => majP(p => { p.lignes[+i.dataset.pq].qte = Number(String(i.value).replace(',', '.')) || 0; }));
+  root.querySelectorAll('[data-px]').forEach(b => b.onclick = () => majP(p => { p.lignes.splice(+b.dataset.px, 1); }));
+  const pch = $('#pn-ch'); if (pch) pch.onchange = () => { const p = lirePanier(); p.affaireId = pch.value; garderPanier(p); };
+  const pv = $('#pn-vider'); if (pv) pv.onclick = async () => { if (await ask('Vider le panier sans rien sortir ?', 'Vider')) { garderPanier({ affaireId: '', lignes: [] }); App.render(); } };
+  const pok = $('#pn-ok'); if (pok) pok.onclick = () => {
+    try {
+      const p = lirePanier(), ch = $('#pn-ch').value;
+      const ss = Stock.panierSorties(p, Store.all('articles'), { affaireId: ch, userId: Store.me.userId || '', date: isoDate(new Date()) });
+      ss.forEach(o => Store.upsert('consommations', o));
+      dernierChantierScan.id = ch; garderPanier({ affaireId: '', lignes: [] });
+      App.render(); App.toast(`${ss.length} article(s) sorti(s) pour ${affaireLabel(affaireOf(ch))}`, 5000);
+    } catch (e) { notify(e.message); }
+  };
+  if (scanEtat.relancer) { scanEtat.relancer = false; setTimeout(() => { const b = document.querySelector('#sc-go'); if (b) b.click(); }, 50); }
   $('#sc-go').onclick = () => { $('#sc-video').classList.add('actif'); demarrerScan($('#sc-video'), $('#sc-etat')); };
   $('#sc-photo').onchange = ev => {
     const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;

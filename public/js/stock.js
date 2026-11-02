@@ -66,6 +66,22 @@ const Stock = (() => {
     return { articleId: article.id, designation: article.designation, unite: article.unite || 'u', qte: q, pu: n(article.prixVente), cout: n(article.coutRevient), affaireId, userId: userId || '', date, stock: true, note: String(note).slice(0, 200) };
   }
 
+  /* ---------- Panier de sortie ---------- */
+  // Plusieurs articles scannés à la suite (chargement de la camionnette), sortis ensemble pour un chantier
+  function panierAjouter(panier, articleId, qte) {
+    const p = { affaireId: (panier && panier.affaireId) || '', lignes: [...((panier && panier.lignes) || [])].map(l => ({ ...l })) };
+    const q = n(qte), l = p.lignes.find(x => x.articleId === articleId);
+    if (l) l.qte = r2(l.qte + q); else if (q) p.lignes.push({ articleId, qte: r2(q) });
+    p.lignes = p.lignes.filter(x => x.qte > 0);
+    return p;
+  }
+  // Enregistrements « consommations » du panier ; articles introuvables ignorés
+  function panierSorties(panier, articles, { affaireId, userId, date }) {
+    const ls = ((panier && panier.lignes) || []).filter(l => n(l.qte) > 0);
+    if (!ls.length) throw new Error('Panier vide');
+    return ls.map(l => { const a = (articles || []).find(x => x.id === l.articleId); return a ? sortie(a, { qte: l.qte, affaireId, userId, date, note: 'Panier de sortie' }) : null; }).filter(Boolean);
+  }
+
   /* ---------- Outillage du parc ---------- */
   // Prise d'un outil (pour soi, sur un chantier) ou retour au dépôt : nouvelle affectation et ligne d'historique
   function affecter(materiel, { action, userId = '', affaireId = '', date, par = '' }) {
@@ -73,6 +89,6 @@ const Stock = (() => {
     const affectation = action === 'rendre' ? { userId: '', affaireId: '', depuis: date } : { userId, affaireId, depuis: date };
     return { ...materiel, affectation, historique: [...(materiel.historique || []), { date, userId: affectation.userId, affaireId: affectation.affaireId, par, scan: true }] };
   }
-  return { lien, lire, gere, historique, quantite, etat, ETATS, aCommander, etatStock, aReassortir, demandeReassort, sortiesChantier, sortie, affecter };
+  return { panierAjouter, panierSorties, lien, lire, gere, historique, quantite, etat, ETATS, aCommander, etatStock, aReassortir, demandeReassort, sortiesChantier, sortie, affecter };
 })();
 if (typeof module !== 'undefined') module.exports = Stock;

@@ -47,3 +47,15 @@ test('Outillage : pris et rendu en scannant', () => {
   assert.deepStrictEqual([rendu.affectation.userId, rendu.historique.length], ['', 2]);
   assert.throws(() => Stock.affecter(m, { action: 'voler' }));
 });
+
+test('Panier de sortie : ajouts cumulés et sortie groupée', () => {
+  const arts = [{ id: 'a1', designation: 'Coude', unite: 'u', coutRevient: 20 }, { id: 'a2', designation: 'Bride', unite: 'u', coutRevient: 60 }];
+  let p = Stock.panierAjouter(null, 'a1', 4);
+  p = Stock.panierAjouter(p, 'a2', 2);
+  p = Stock.panierAjouter(p, 'a1', 1);
+  assert.deepStrictEqual(p.lignes, [{ articleId: 'a1', qte: 5 }, { articleId: 'a2', qte: 2 }]);
+  const s = Stock.panierSorties(p, arts, { affaireId: 'af1', userId: 'o1', date: '2026-11-02' });
+  assert.deepStrictEqual(s.map(x => [x.articleId, x.qte, x.affaireId, x.stock, x.cout]), [['a1', 5, 'af1', true, 20], ['a2', 2, 'af1', true, 60]]);
+  assert.throws(() => Stock.panierSorties(p, arts, { affaireId: '' }), /Chantier/);
+  assert.throws(() => Stock.panierSorties({ lignes: [] }, arts, { affaireId: 'af1' }), /vide/);
+});

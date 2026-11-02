@@ -1169,3 +1169,6 @@ ul.plan-mes li.pm-sansObjet .pm-txt { opacity: .55; text-decoration: line-throug
 .vign-l { cursor: pointer; display: inline-block; }
 .sc-item .sc-txt { flex: 1; min-width: 0; }
 .scan-photo { display: block; max-width: 100%; max-height: 180px; border-radius: 8px; margin: 4px 0 8px; object-fit: contain; }
+
+.panier-l { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.qte-pm.petit input { width: 56px; flex: 0 0 56px; font-size: 15px; } .qte-pm.petit button { min-width: 34px; font-size: 16px; padding: 4px 8px; }
