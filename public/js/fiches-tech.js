@@ -210,6 +210,15 @@ const FichesTech = (() => {
   }
   // Nom de fichier propre (dossier réseau Windows / Linux)
   const nomFichier = s => sansAccents(s).replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim().slice(0, 120) || 'fiche';
-  return { TYPES_DOC, typeDocument, extraitPour, doublons, fabricantsProches, anciennes, fabricantRetenu, repereDemande, trouver, pdfMinimal, cle, cleFab, memeFab, referencesDans, dateDans, familleDe, analyser, score, chercher, enVigueur, versions, lireCatalogue, nomFichier };
+  // Fiches proposées dans un choix (application Études) : versions en vigueur, mots cherchés dans le fabricant, les
+  // références, la désignation et la famille ; les plus récentes d'abord
+  function liste(fiches, q = '', max = 40) {
+    const n = t => sansAccents(t).toLowerCase(), mots = n(q).split(/[\s,;]+/).filter(m => m.length >= 2).slice(0, 8);
+    return (fiches || []).filter(f => !f.absente && !f.remplaceePar && (f.type || 'fiche') === 'fiche')
+      .filter(f => { const t = n(`${f.fabricant} ${(f.references || []).join(' ')} ${f.designation} ${f.famille || ''} ${f.nom || ''}`), tc = cle(t); return mots.every(m => t.includes(m) || tc.includes(cle(m))); })
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, max)
+      .map(f => ({ id: f.id, fichierId: f.fichierId, fabricant: f.fabricant, references: f.references || [], designation: f.designation, famille: f.famille || '', date: f.date || '', nom: f.nom, mime: f.mime || 'application/pdf' }));
+  }
+  return { liste, TYPES_DOC, typeDocument, extraitPour, doublons, fabricantsProches, anciennes, fabricantRetenu, repereDemande, trouver, pdfMinimal, cle, cleFab, memeFab, referencesDans, dateDans, familleDe, analyser, score, chercher, enVigueur, versions, lireCatalogue, nomFichier };
 })();
 if (typeof module !== 'undefined') module.exports = FichesTech;

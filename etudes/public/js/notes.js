@@ -747,7 +747,18 @@ const Notes = ((D, C) => {
     const e = { ...defauts(type), ...(entrees || {}) };
     // Tube choisi absent de la série (série modifiée) : premier tube de la série
     T.champs.filter(c => c.t === 's' && typeof c.o === 'function').forEach(c => { const o = c.o(e); if (!o.some(([v]) => v === e[c.k])) e[c.k] = o[0][0]; });
-    try { return T.calcul(e); } catch (err) { return { valeurs: {}, resume: [], tableaux: [], alertes: [alerte('erreur', `Calcul impossible : ${err.message}`)], hypotheses: [], synthese: 'Erreur de calcul' }; }
+    try {
+      const r = T.calcul(e);
+      // Fiche technique chargée (pompe, vase, ballon, générateur) : contrôles du matériel choisi face au calcul
+      if (e.fiche && r && r.alertes) {
+        let FE = null; try { FE = typeof FicheEquip !== 'undefined' ? FicheEquip : require('./fiche-equipement'); } catch (er) { FE = null; }
+        if (FE && FE.gere(type)) {
+          r.alertes.push(...FE.controles(type, e.fiche, r.valeurs || {}, e));
+          if (e.fiche.fabricant || e.fiche.reference) (r.resume = r.resume || []).unshift(['Matériel (fiche technique)', [e.fiche.fabricant, e.fiche.reference].filter(Boolean).join(' ')]);
+        }
+      }
+      return r;
+    } catch (err) { return { valeurs: {}, resume: [], tableaux: [], alertes: [alerte('erreur', `Calcul impossible : ${err.message}`)], hypotheses: [], synthese: 'Erreur de calcul' }; }
   }
   const familles = () => [...new Set(Object.values(TYPES).map(t => t.famille))];
   return { TYPES, defauts, calculer, familles, nf, num, libPompe, libVanne, optFluides };

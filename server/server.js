@@ -547,6 +547,9 @@ async function api(req, res, url) {
   if (p[0] === 'fiches') {
     if (p[1] === 'trouver' && method === 'POST') { const b = await readBody(req); return send(res, 200, FICHES.trouver(Array.isArray(b.demandes) ? b.demandes : [])); }
     if (p[1] === 'recherche' && method === 'GET') return send(res, 200, FICHES.rechercher(String(url.searchParams.get('q') || '').slice(0, 120)));
+    // Choix d'une fiche (application Études) et son texte, pour remplir un calcul
+    if (p[1] === 'liste' && method === 'GET') return send(res, 200, FT.liste(FICHES.fiches(), String(url.searchParams.get('q') || '').slice(0, 120)));
+    if (p[1] === 'pages' && method === 'GET') { const id = String(url.searchParams.get('id') || ''); return FICHES.fiches().some(f => f.id === id) ? send(res, 200, { pages: FICHES.pagesDe(id) }) : fail(res, 404, 'Fiche inconnue'); }
     if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
     try {
       if (p[1] === 'etat' && method === 'GET') return send(res, 200, { config: FICHES.config(), ...FICHES.etat(), sep: path.sep });

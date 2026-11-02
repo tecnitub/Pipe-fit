@@ -178,6 +178,8 @@
     if (p[0] === 'fiches') {
       db.fichesTech = db.fichesTech || [];
       if (p[1] === 'trouver') return [200, FichesTech.trouver(db.fichesTech, body.demandes || [])];
+      if (p[1] === 'liste') return [200, FichesTech.liste(db.fichesTech, query.get('q') || '')];
+      if (p[1] === 'pages') { const f = db.fichesTech.find(x => x.id === query.get('id')); return f ? [200, { pages: (db.fichesTexte || {})[f.id] || [(f.texteDemo || []).join('\n')].filter(Boolean) }] : [404, { error: 'Fiche inconnue' }]; }
       // Recherche dans le texte (texte lu au dépôt, ou celui des fiches d'exemple)
       if (p[1] === 'recherche') {
         const n = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(), mots = n(query.get('q')).split(/\s+/).filter(m => m.length >= 2);

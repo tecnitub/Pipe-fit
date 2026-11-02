@@ -122,3 +122,6 @@ ul.af { padding-left: 18px; font-size: 13.5px; display: grid; gap: 6px; }
 .doe-doc.garde.ndc .garde-logo { width: 300px; margin: 0 auto 24px; }
 .doe-doc.garde.ndc .t2, .doe-doc.garde.ndc .visa, .doe-doc.garde.ndc .sommaire, .doe-doc.garde.ndc h3, .doe-doc.garde.ndc .petit { text-align: left; }
 .doe-doc.ndc .sommaire td { border: 0; border-bottom: 1px dotted #b7c0d0; }
+
+.ft-liste { max-height: 40vh; overflow: auto; display: grid; gap: 6px; margin-top: 8px; }
+.ft-item { text-align: left; }

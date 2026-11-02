@@ -203,6 +203,12 @@ async function api(req, res, url) {
     if (!r.ok) return p[2] === 'trouver' ? send(res, 200, []) : fail(res, r.status, ((await r.json().catch(() => ({}))).error) || 'Bibliothèque Pipe-Fit indisponible');
     return send(res, 200, await r.json());
   }
+  // Fiche de la bibliothèque choisie pour remplir un calcul : liste (recherche) et texte lu par Pipe-Fit
+  if (p[0] === 'pf' && p[1] === 'fiches' && ['liste', 'pages'].includes(p[2]) && method === 'GET') {
+    const r = await pipefit(s, p[2] === 'liste' ? `/api/fiches/liste?q=${encodeURIComponent(url.searchParams.get('q') || '')}` : `/api/fiches/pages?id=${encodeURIComponent(url.searchParams.get('id') || '')}`);
+    if (!r.ok) return p[2] === 'liste' ? send(res, 200, []) : fail(res, r.status, 'Fiche indisponible');
+    return send(res, 200, await r.json());
+  }
   // Suivi du matériel retenu sur le chantier (soumission, pose, mise en service) : lu dans Pipe-Fit
   if (p[0] === 'pf' && p[1] === 'materiel-suivi' && method === 'GET') {
     const r = await pipefit(s, `/api/liens/materiel/suivi?etudeId=${encodeURIComponent(url.searchParams.get('etudeId') || '')}`);

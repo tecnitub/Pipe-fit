@@ -639,6 +639,12 @@ Chaque point est coché par son PV (fait, avec réserves, non conforme, brouillo
 au bureau (« ✓ Fait », avec la date et le nom) et tout point peut être déclaré « sans objet ». Barre d'avancement et **liste
 à imprimer (PDF)** à cocher sur le chantier. Type de PV ajouté : **vase d'expansion, soupapes et maintien de pression**.
 
+**📘 Rapport de mise en service** (liste des mises en service, au bureau) : synthèse de fin de chantier — avancement,
+état de chaque point et son PV, épreuves, mesures face aux valeurs attendues de l'étude (écarts de plus de 10 % en
+évidence), équilibrages, réserves à lever — avec les PV signés en annexe. Téléchargé, ou déposé dans les documents du
+chantier (catégorie « Rapport de mise en service », nouvel indice à chaque dépôt) : le DOE le place en tête de
+l'annexe F.
+
 **PV de réception** (Chantier → Réserves et réception) : réserves avec photo, signature du client et de l'entreprise sur
 l'écran ; le PV imprimé reprend les photos des réserves (et après levée pour le PV de levée).
 
@@ -729,6 +735,12 @@ emplacement (rayonnage, bac), la quantité minimale et la quantité à commander
 - **Quantité en stock** = dernier inventaire + entrées − sorties depuis ; état « en stock », « à réassortir » (au minimum
   ou en dessous) ou « rupture ». **🛒 Demande de prix de réassort** : consultation « stock » (sans chantier) préparée avec
   les articles à réassortir et leurs fournisseurs habituels, à envoyer comme les autres demandes de prix.
+- **🧺 Panier de sortie** : en chargeant la camionnette, « Ajouter au panier et scanner le suivant » (le scanner se
+  rouvre), puis « Sortir tout pour ce chantier » ; le panier reste sur le téléphone.
+- **Planches autocollantes** : à l'impression des étiquettes, choix de la planche — papier à découper 95 × 20 mm, Avery
+  L4732 (35,6 × 16,9), L7651 (38,1 × 21,2), 3474 (70 × 37), L7160 (63,5 × 38,1), L7173 (99,1 × 57) —, case de départ pour
+  une planche entamée, décalage de l'imprimante (retenu sur le poste) et feuille de test des cadres ; le PDF place chaque
+  étiquette au millimètre (imprimer à 100 %).
 - Les compagnons sortent et rendent le matériel ; les entrées et inventaires sont réservés au bureau.
 
 ## Historique des achats et des prix
