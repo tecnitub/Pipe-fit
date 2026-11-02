@@ -97,6 +97,12 @@ function choisirFournisseurs(c) {
   });
 }
 
+// Fournisseurs des lignes d'après la bibliothèque : préféré et autres consultés de l'article, sinon ceux de la famille
+let famillesFournisseursCache = null;
+function fournisseursBiblio(lignes) {
+  if (famillesFournisseursCache === null && ['admin', 'charge'].includes(Store.me.role)) { famillesFournisseursCache = {}; api('GET', '/api/achats/familles-fournisseurs').then(x => { famillesFournisseursCache = x || {}; App.render(); }).catch(() => {}); }
+  return [...new Set((lignes || []).flatMap(l => ConsultTerrain.fournisseursLigne(l, Store.all('articles'), famillesFournisseursCache || {})))];
+}
 function nouvelleConsultation(base = {}) {
   return Store.upsert('consultations', { ref: '', objet: '', affaireId: '', date: isoDate(new Date()), dateLimite: isoDate(addDays(new Date(), 7)), dateLivraison: '', statut: 'En cours', lignes: [], fournisseurs: [], ...base });
 }
@@ -143,7 +149,7 @@ function consultationEditeur(id) {
           <button class="small secondary" data-offre="${esc(f.entrepriseId)}">${f.statut === 'Offre reçue' ? 'Modifier l\'offre' : 'Saisir l\'offre'}</button><label class="btn small secondary" title="PDF ou photo du devis du fournisseur, ou tableau Excel complété">Importer l'offre (PDF, Excel)<input type="file" data-import="${esc(f.entrepriseId)}" accept=".pdf,.xlsx,.csv,image/*" hidden></label>
           ${off.pieceId ? `<a class="btn small secondary" href="${fileUrl(off.pieceId)}${off.pieceNom ? `?nom=${encodeURIComponent(off.pieceNom)}` : ''}" target="_blank" rel="noopener" title="Offre reçue, reprise d'office dans la commande et jointe à son envoi">📎 Offre</a>` : ''}${ouverte && f.statut === 'À consulter' ? `<button class="small danger" data-fdel="${esc(f.entrepriseId)}" aria-label="Retirer">✕</button>` : ''}</td></tr>`; }).join('') || '<tr><td colspan="6" class="muted">Ajoutez les fournisseurs à consulter.</td></tr>'}</table></div>
   ${ouverte ? `<div class="toolbar"><button id="cs-four">🔍 Ajouter des fournisseurs…</button>
-    ${(() => { const hab = [...new Set(lignes.map(l => (Store.get('articles', l.articleId) || {}).fournisseurId).filter(x => x && !fs.some(f => f.entrepriseId === x)))]; return hab.length ? `<button class="secondary small" id="cs-hab">Ajouter les fournisseurs habituels (${hab.length})</button>` : ''; })()}</div>` : ''}
+    ${(() => { const hab = fournisseursBiblio(lignes).filter(x => !fs.some(f => f.entrepriseId === x)); return hab.length ? `<button class="secondary small" id="cs-hab" title="Fournisseur préféré et autres fournisseurs consultés des articles (bibliothèque), ou ceux de leur famille">Ajouter les fournisseurs de la bibliothèque (${hab.length})</button>` : ''; })()}</div>` : ''}
 
   ${an.offres.length ? `<h2>Analyse des offres</h2>${propositionHtml(c)}
   <div class="cards">
@@ -295,7 +301,7 @@ Views.consultations.bind = (root, params, query) => {
     ids.forEach(eid => { if (!c.fournisseurs.some(f => f.entrepriseId === eid)) c.fournisseurs.push({ entrepriseId: eid, statut: 'À consulter' }); });
     save(); App.toast(`${ids.length} fournisseur(s) ajouté(s) à la demande de prix`);
   });
-  on('#cs-hab', () => { [...new Set(c.lignes.map(l => (Store.get('articles', l.articleId) || {}).fournisseurId).filter(Boolean))].forEach(eid => { if (!c.fournisseurs.some(f => f.entrepriseId === eid)) c.fournisseurs.push({ entrepriseId: eid, statut: 'À consulter' }); }); save(); });
+  on('#cs-hab', () => { fournisseursBiblio(c.lignes).forEach(eid => { if (!c.fournisseurs.some(f => f.entrepriseId === eid)) c.fournisseurs.push({ entrepriseId: eid, statut: 'À consulter' }); }); save(); });
   root.querySelectorAll('[data-fdel]').forEach(b => b.onclick = () => { c.fournisseurs = c.fournisseurs.filter(f => f.entrepriseId !== b.dataset.fdel); save(); });
   root.querySelectorAll('[data-fstatut]').forEach(el => el.onchange = () => { const f = c.fournisseurs.find(x => x.entrepriseId === el.dataset.fstatut); f.statut = el.value; save(); });
   root.querySelectorAll('[data-xls]').forEach(b => b.onclick = () => download(`Offre ${c.ref || ''} ${clientName(b.dataset.xls)}.xlsx`, excelConsultation(c, b.dataset.xls), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'));

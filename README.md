@@ -88,6 +88,22 @@ métré (bibliothèque de prix) et y dépose ses notes de calcul (catégorie « 
   boîte des offres comme **adresse de réponse** ; une offre arrivée par erreur dans la boîte des factures (n° CS-… dans
   l'objet) est aussi rangée dans sa consultation.
 
+### Fournisseurs consultés par article et demandes du terrain
+
+- **Bibliothèque** : chaque fourniture a son **fournisseur préféré** et jusqu'à **4 autres fournisseurs consultés**
+  (fiche de la fourniture). **🏭 Fournisseurs par famille** : les mêmes réglages par type de matériel, pour les lignes
+  libres et les articles sans fournisseur.
+- **Fiche fournisseur** : « E-mail des demandes de prix » (service commercial / ADV). À défaut : un contact commercial,
+  ADV ou devis, sinon un contact avec e-mail, sinon l'adresse générale.
+- **Consultation au bureau** : « Ajouter les fournisseurs de la bibliothèque » ajoute le préféré, les autres consultés et
+  ceux de la famille des lignes.
+- **Terrain** (appli des compagnons, onglet 📷 Stock → **🛒 Demande de matériel**) : chantier, lignes cherchées dans la
+  bibliothèque ou écrites avec leur type de matériel, quantités, date de livraison souhaitée, message. **📨 Consulter les
+  fournisseurs** : les lignes sont regroupées par fournisseurs, une consultation est créée par groupe et **envoyée tout de
+  suite par e-mail** à chaque fournisseur (boîte des demandes de prix, sinon celle du chargé d'affaires du chantier ;
+  réponse vers la boîte des offres, qui range l'offre dans sa consultation grâce au n° CS-…). Le chargé d'affaires est
+  prévenu ; les lignes sans fournisseur connu restent au bureau. Sans réseau, la demande part au retour de la connexion.
+
 ## Colonnes des tableaux, au choix de chacun
 
 Au-dessus des tableaux de gestion (devis, chantiers, factures, situations, commandes, factures fournisseurs, consultations,

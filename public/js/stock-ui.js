@@ -256,9 +256,11 @@ async function demarrerScan(video, etat) {
 Views.scan = (params = []) => {
   if (params[0] === 'a') return ficheArticleScan(Store.get('articles', params[1]));
   if (params[0] === 'm') return ficheOutilScan(Store.get('materiels', params[1]));
+  if (params[0] === 'demande') return demandeMaterielHtml();
   const arts = Store.all('articles').filter(Stock.gere), outils = outilsQr().filter(m => m.scan);
   return `${Store.me.role === 'atelier' ? pointageTabs('scan', Store.me.userId) : '<div class="toolbar"><a class="btn secondary" href="#/stock">← Stock et QR codes</a></div>'}
   <h1>📷 Stock et outillage</h1>
+  <a class="btn big secondary" href="#/scan/demande" style="display:block;text-align:center;margin-bottom:10px">🛒 Demande de matériel aux fournisseurs${lireDemande().lignes.length ? ` (${lireDemande().lignes.length} ligne(s) en cours)` : ''}</a>
   ${panierHtml()}
   <div class="card scan-card"><video id="sc-video" class="scan-video" playsinline muted></video><p id="sc-etat" class="small muted">Scannez l'étiquette QR d'un article du stock ou d'un outil.</p>
     <div class="toolbar" style="margin:0"><button id="sc-go" class="big">📷 Scanner une étiquette</button><label class="btn secondary">🖼️ Photo de l'étiquette<input type="file" id="sc-photo" accept="image/*" capture="environment" hidden></label></div></div>
@@ -323,6 +325,7 @@ function ficheOutilScan(m) {
 }
 Views.scan.bind = (root, params = []) => {
   const $ = s => root.querySelector(s);
+  if (params[0] === 'demande') return bindDemandeMateriel(root);
   if (params[0] === 'a') {
     const a = Store.get('articles', params[1]); if (!a) return;
     root.querySelectorAll('[data-pm]').forEach(b => b.onclick = () => { const i = $('#sa-q'); i.value = Math.max(0, (Number(i.value) || 0) + Number(b.dataset.pm)); });
@@ -351,7 +354,7 @@ Views.scan.bind = (root, params = []) => {
     on('#sa-reass', () => { const q = qteStock(a); demandeReassort([{ a, q, commande: Stock.aCommander(a, q) }]); });
     on('#sa-etq', () => imprimerEtiquettes([itemArticle(a)], `Etiquette-${a.ref || a.id}.pdf`.replace(/[^\w.-]+/g, '_')));
     lierPhotos(root);
-    on('#sa-modif', () => editModal({ title: 'Fourniture', col: 'articles', fields: articleFields, obj: { ...a } }));
+    on('#sa-modif', () => editArticle({ ...a }));
     return;
   }
   if (params[0] === 'm') {
@@ -397,3 +400,73 @@ Views.scan.bind = (root, params = []) => {
   const arts = Store.all('articles').filter(Stock.gere), outils = outilsQr().filter(m => m.scan);
   $('#sc-q').oninput = ev => { $('#sc-liste').innerHTML = catalogueScanHtml(arts, outils, ev.target.value); };
 };
+
+/* ---------- Demande de matériel du terrain : consultation des fournisseurs ---------- */
+// Lignes de la bibliothèque (fournisseur préféré et autres consultés de l'article) ou libres avec leur type de matériel
+// (fournisseurs de la famille) ; « Consulter les fournisseurs » envoie tout de suite les demandes de prix par e-mail.
+const CLE_DEMANDE = 'pipefit-demande-materiel';
+const lireDemande = () => { try { return { affaireId: '', date: '', note: '', lignes: [], ...(JSON.parse(localStorage.getItem(CLE_DEMANDE)) || {}) }; } catch (e) { return { affaireId: '', date: '', note: '', lignes: [] }; } };
+const garderDemande = d => { try { localStorage.setItem(CLE_DEMANDE, JSON.stringify(d)); } catch (e) { /* stockage indisponible */ } };
+let resultatDemande = null;
+function demandeMaterielHtml() {
+  const d = lireDemande(), fams = typeof famillesArticles === 'function' ? famillesArticles() : [];
+  return `${Store.me.role === 'atelier' ? pointageTabs('scan', Store.me.userId) : ''}<div class="toolbar"><a class="btn secondary" href="#/scan">← Stock</a></div>
+  <h1>🛒 Demande de matériel</h1>
+  ${resultatDemande ? resultatDemandeHtml(resultatDemande) : ''}
+  <div class="card"><div class="field"><label for="dm-ch">Chantier</label><select id="dm-ch">${optionsChantierScan(d.affaireId || dernierChantierScan.id)}</select></div>
+    ${d.lignes.length ? d.lignes.map((l, i) => `<div class="panier-l"><span class="sc-txt"><strong>${esc(l.designation)}</strong><br><span class="small muted">${esc([l.ref, l.famille].filter(Boolean).join(' · ') || 'ligne libre')}</span></span>
+      <span class="qte-pm petit"><button type="button" class="secondary" data-dq="${i}" data-d="-1" aria-label="Moins">−</button><input data-dqv="${i}" type="number" inputmode="decimal" step="any" min="0" value="${l.qte}" aria-label="Quantité"><button type="button" class="secondary" data-dq="${i}" data-d="1" aria-label="Plus">+</button></span><span class="small">${esc(l.unite || '')}</span><button type="button" class="icon" data-dx="${i}" aria-label="Retirer">✕</button></div>`).join('')
+      : '<p class="muted small">Ajoutez le matériel : recherchez-le dans la bibliothèque ou écrivez-le avec son type.</p>'}
+    <h3>Ajouter depuis la bibliothèque</h3>
+    <input type="search" id="dm-q" placeholder="Coude inox DN50, bride, vanne papillon…" aria-label="Rechercher dans la bibliothèque" style="width:100%"><div id="dm-res"></div>
+    <h3>Ou écrire une ligne</h3>
+    <div class="grid2"><div class="field"><label for="dm-des">Désignation</label><input id="dm-des" placeholder="Robinet 1/4 tour laiton DN20"></div>
+      <div class="field"><label for="dm-fam">Type de matériel</label><select id="dm-fam"><option value="">— Choisir —</option>${fams.map(f => `<option>${esc(f)}</option>`).join('')}</select></div>
+      <div class="field"><label for="dm-qte">Quantité</label><input id="dm-qte" type="number" inputmode="decimal" step="any" min="0" value="1"></div>
+      <div class="field"><label for="dm-u">Unité</label><select id="dm-u">${optionsStr(['u', 'ml', 'm²', 'kg', 'lot'], 'u')}</select></div></div>
+    <button class="secondary" id="dm-libre">+ Ajouter la ligne</button>
+    <div class="grid2" style="margin-top:10px"><div class="field"><label for="dm-date">Livraison souhaitée le</label><input id="dm-date" type="date" value="${esc(d.date || '')}"></div>
+      <div class="field"><label for="dm-note">Message aux fournisseurs (facultatif)</label><input id="dm-note" value="${esc(d.note || '')}" placeholder="Livraison sur chantier avant 8 h…"></div></div>
+    <button class="big" id="dm-go" ${d.lignes.length ? '' : 'disabled'}>📨 Consulter les fournisseurs</button>
+    <p class="small muted">Chaque ligne part chez le fournisseur préféré et les autres fournisseurs consultés de l'article (ou de son type de matériel), par e-mail, avec le chantier et la date. Le chargé d'affaires est prévenu et compare les offres.</p></div>`;
+}
+function resultatDemandeHtml(r) {
+  if (r.enAttente) return '<div class="card warn-card">⏳ Pas de réseau : la demande partira automatiquement au retour de la connexion.</div>';
+  return `<div class="card ${r.envoyes ? '' : 'warn-card'}"><strong>📨 ${r.envoyes} demande(s) de prix envoyée(s)${r.demo ? ' (démonstration : e-mails simulés)' : ''}</strong>
+    ${r.consultations.map(c => `<p class="small" style="margin:6px 0 0"><strong>${esc(c.ref || '')}</strong> · ${c.lignes} ligne(s) : ${c.fournisseurs.map(f => `${esc(f.nom)} ${f.envoye ? '✅' : `⚠️ <span class="muted">${esc(f.raison)}</span>`}`).join(', ')}</p>`).join('')}
+    ${r.aChoisir ? `<p class="small warn-text">${r.aChoisir.lignes} ligne(s) sans fournisseur connu : le bureau les envoie (${esc(r.aChoisir.ref || '')}).</p>` : ''}</div>`;
+}
+function bindDemandeMateriel(root) {
+  const $ = s => root.querySelector(s), maj = fn => { const d = lireDemande(); fn(d); d.lignes = d.lignes.filter(l => Number(l.qte) > 0); garderDemande(d); resultatDemande = null; App.render(); };
+  const champs = () => { const d = lireDemande(); d.affaireId = $('#dm-ch').value; d.date = $('#dm-date').value; d.note = $('#dm-note').value; garderDemande(d); };
+  ['#dm-ch', '#dm-date', '#dm-note'].forEach(k => { $(k).onchange = champs; });
+  root.querySelectorAll('[data-dq]').forEach(b => b.onclick = () => maj(d => { const l = d.lignes[+b.dataset.dq]; l.qte = Math.max(0, Math.round((Number(l.qte) + Number(b.dataset.d)) * 1000) / 1000); }));
+  root.querySelectorAll('[data-dqv]').forEach(i => i.onchange = () => maj(d => { d.lignes[+i.dataset.dqv].qte = Number(String(i.value).replace(',', '.')) || 0; }));
+  root.querySelectorAll('[data-dx]').forEach(b => b.onclick = () => maj(d => { d.lignes.splice(+b.dataset.dx, 1); }));
+  const ajouter = l => maj(d => { const ex = l.articleId && d.lignes.find(x => x.articleId === l.articleId); if (ex) ex.qte = Number(ex.qte) + Number(l.qte); else d.lignes.push(l); });
+  $('#dm-q').oninput = ev => {
+    const q = RechercheArticles.norm(ev.target.value), z = $('#dm-res');
+    if (q.length < 2) { z.innerHTML = ''; return; }
+    const l = Store.all('articles').filter(a => RechercheArticles.norm(`${a.ref} ${a.designation} ${a.famille} ${a.sousFamille}`).includes(q)).slice(0, 12);
+    z.innerHTML = l.map(a => `<button type="button" class="sc-item linklike" data-dart="${esc(a.id)}" style="width:100%;text-align:left">${vignettePhoto(a)}<span class="sc-txt"><strong>${esc(a.designation)}</strong><br><span class="small muted">${esc([a.ref, a.famille].filter(Boolean).join(' · '))}</span></span><span>＋</span></button>`).join('') || '<p class="small muted">Rien dans la bibliothèque : écrivez la ligne ci-dessous.</p>';
+    z.querySelectorAll('[data-dart]').forEach(b => b.onclick = () => { const a = Store.get('articles', b.dataset.dart); champs(); ajouter({ articleId: a.id, designation: a.designation, ref: a.ref || '', famille: a.famille || '', unite: a.unite || 'u', qte: 1 }); });
+  };
+  $('#dm-libre').onclick = () => {
+    const des = $('#dm-des').value.trim(), q = Number(String($('#dm-qte').value).replace(',', '.'));
+    if (!des) return notify('Écrivez la désignation.');
+    if (!$('#dm-fam').value) return notify('Choisissez le type de matériel : il désigne les fournisseurs consultés.');
+    champs(); ajouter({ articleId: '', designation: des, ref: '', famille: $('#dm-fam').value, unite: $('#dm-u').value, qte: q > 0 ? q : 1 });
+  };
+  $('#dm-go').onclick = async ev => {
+    champs();
+    const d = lireDemande();
+    if (!d.affaireId) return notify('Choisissez le chantier.');
+    ev.target.disabled = true;
+    try {
+      const r = await HorsLigne.appeler('POST', '/api/consultations/terrain', { affaireId: d.affaireId, date: d.date, note: d.note, lignes: d.lignes.map(l => ({ articleId: l.articleId, designation: l.designation, famille: l.famille, unite: l.unite, qte: l.qte })) });
+      resultatDemande = r.enAttente ? { enAttente: true } : r.reponse;
+      dernierChantierScan.id = d.affaireId; garderDemande({ affaireId: d.affaireId, date: '', note: '', lignes: [] });
+      App.render(); App.toast(r.enAttente ? 'Demande gardée : elle partira au retour du réseau' : `${resultatDemande.envoyes} demande(s) de prix envoyée(s) aux fournisseurs`, 5000);
+    } catch (e) { ev.target.disabled = false; notify(e.message); }
+  };
+}

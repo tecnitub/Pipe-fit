@@ -2,7 +2,7 @@
 // Les données restent sur l'appareil (localStorage). Mêmes règles que server/server.js :
 // droits par rôle, contrôle de version, numérotation, factures verrouillées.
 (function () {
-  const KEY = 'pipefit-crm-demo-v54';
+  const KEY = 'pipefit-crm-demo-v55';
   const ME_KEY = 'pipefit-crm-demo-me';
   const COLLECTIONS = ['users', 'entreprises', 'contacts', 'articles', 'mainoeuvre', 'zones', 'affaires', 'devis', 'situations', 'commandes', 'factures', 'planning', 'temps', 'frais', 'rapports', 'reserves', 'receptions', 'consommations', 'envois', 'achats', 'efactures', 'familles', 'chiffrages', 'consultations', 'ouvrages', 'notifications', 'habilitations', 'materiels', 'missions', 'produits', 'equipementsFrigo', 'fichesFluides', 'bouteilles', 'enlevements', 'epreuves', 'misesEnService', 'equilibrages', 'releves', 'fichesTech', 'mouvementsStock'];
   const NUMBERING = { devis: ['numero', 'DV', 4], factures: ['numero', 'FA', 4], commandes: ['numero', 'CF', 4], affaires: ['code', 'CH', 3], situations: ['numero', 'BL', 4], frais: ['numero', 'NF', 4], rapports: ['numero', 'RI', 4], receptions: ['numero', 'PV', 4], achats: ['ref', 'FF', 4], consultations: ['ref', 'CS', 4], fichesFluides: ['numero', 'FI', 4], epreuves: ['numero', 'EP', 4], misesEnService: ['numero', 'MS', 4], equilibrages: ['numero', 'EQ', 4], releves: ['numero', 'RC', 4] };
@@ -26,6 +26,8 @@
     const db = { settings: seed.settings, accounts: ACCOUNTS.map(a => ({ ...a, createdAt: now })), audit: [], counters: {}, files: { ...(seed.files || {}) },
       m365: { tenantId: '00000000-demo-0000-0000-000000000000', clientId: '11111111-demo-1111-1111-111111111111', clientSecret: 'demo', actif: true } };
     COLLECTIONS.forEach(c => { db[c] = (seed[c] || []).map(o => ({ ...o, _v: 1, _at: now, _by: 'Démo' })); });
+    // Fournisseurs consultés par type de matériel (lignes libres des demandes du terrain)
+    db.famillesFournisseurs = { Robinetterie: { prefere: 'e6', autres: ['e11'] }, Raccords: { prefere: 'e5', autres: ['e11', 'e12'] }, Tubes: { prefere: 'e5', autres: ['e11', 'e12'] }, Supportage: { prefere: 'e11', autres: ['e12'] } };
     return db;
   }
   let db;
@@ -154,6 +156,32 @@
     if (p[0] === 'setup') return [200, { needed: false, local: true }];
     if (p[0] === 'me' && !p[1]) return [200, { ...acc, version: 'démonstration', m365: !!(db.m365 || {}).actif, prefs: (db.prefs || {})[acc.id] || {}, adressesEnvoi: db.adressesEnvoi || {}, assistant: accesAssistant(acc) }];
     // Assistant simulé (sans IA) : mêmes droits et mêmes réglages que le vrai
+    // Fournisseurs consultés par famille et demande de matériel du terrain (démonstration : e-mails simulés)
+    if (p[0] === 'achats' && p[1] === 'familles-fournisseurs') {
+      if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Droits insuffisants' }];
+      if (method === 'PUT') { db.famillesFournisseurs = body || {}; save(); }
+      return [200, db.famillesFournisseurs || {}];
+    }
+    if (p[0] === 'consultations' && p[1] === 'terrain' && method === 'POST') {
+      const aff = db.affaires.find(a => a.id === String(body.affaireId || ''));
+      if (!aff) return [400, { error: 'Chantier à choisir' }];
+      const ls = ConsultTerrain.lignes(body.lignes, db.articles);
+      if (!ls.length) return [400, { error: 'Ajoutez au moins une ligne avec une quantité' }];
+      const g = ConsultTerrain.grouper(ls, db.articles, db.famillesFournisseurs || {}), now = new Date().toISOString(), jour = now.slice(0, 10), meta = { _v: 1, _at: now, _by: acc.nom };
+      const creer = (lignes, fournisseurs, sans) => { const c = { id: 'cs' + DemoSeed.uid(), objet: `Matériel demandé par ${acc.nom} – ${aff.code || ''}${sans ? ' (fournisseurs à choisir)' : ''}`, affaireId: aff.id, date: jour, dateLimite: new Date(Date.now() + 2 * 864e5).toISOString().slice(0, 10), dateLivraison: String(body.date || ''), statut: 'En cours',
+        lignes: lignes.map(l => ({ articleId: l.articleId, designation: l.designation + (l.note ? ` (${l.note})` : ''), unite: l.unite, qte: l.qte })), fournisseurs: fournisseurs.map(entrepriseId => ({ entrepriseId, statut: 'À consulter' })), terrain: { par: acc.nom, userId: acc.userId || '', le: now, note: String(body.note || '') }, ...meta };
+        c.ref = nextNumber('consultations', c); db.consultations.push(c); return c; };
+      const out = g.groupes.map(gr => { const c = creer(gr.lignes, gr.fournisseurs, false);
+        return { id: c.id, ref: c.ref, lignes: gr.lignes.length, fournisseurs: c.fournisseurs.map(f => { const ent = db.entreprises.find(e => e.id === f.entrepriseId) || {}, to = ConsultTerrain.adresse(ent, db.contacts);
+          if (!to) return { nom: ent.nom || '?', envoye: false, raison: 'pas d\'adresse e-mail' };
+          Object.assign(f, { statut: 'Consulté', envoyeLe: jour, envoyeA: to });
+          db.envois.push({ id: 'en' + DemoSeed.uid(), date: now, type: 'consultation', col: 'consultations', docId: c.id, numero: c.ref, to: [to], cc: [], objet: ConsultTerrain.message({ ref: c.ref, chantier: aff }).sujet, pieces: [], mode: 'Démonstration (e-mail simulé)', par: acc.nom, ...meta });
+          return { nom: ent.nom, envoye: true, raison: '' }; }) }; });
+      const aChoisir = g.sansFournisseur.length ? (c => ({ id: c.id, ref: c.ref, lignes: g.sansFournisseur.length }))(creer(g.sansFournisseur, [], true)) : null;
+      const nbEnv = out.reduce((n, x) => n + x.fournisseurs.filter(f => f.envoye).length, 0);
+      (aff.chargeId ? [aff.chargeId] : ['u1']).forEach(u => db.notifications.push({ id: 'nt' + DemoSeed.uid(), type: 'consultation', userId: u, titre: `🛒 Matériel demandé par ${acc.nom} (${aff.code || ''})`, texte: `${ls.length} ligne(s) : ${out.length} consultation(s), ${nbEnv} e-mail(s) envoyé(s)${aChoisir ? ` ; ${aChoisir.lignes} ligne(s) sans fournisseur (${aChoisir.ref})` : ''}.`, lien: `#/consultations/${(out[0] || aChoisir || {}).id || ''}`, date: now, lu: false, ...meta }));
+      save(); return [200, { consultations: out, aChoisir, envoyes: nbEnv, demo: true }];
+    }
     // Outil du parc pris ou rendu en scannant son étiquette QR
     if (p[0] === 'parc' && p[1] === 'scan' && method === 'POST') {
       const m = (db.materiels || []).find(x => x.id === String(body.materielId || ''));

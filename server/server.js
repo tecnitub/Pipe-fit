@@ -20,6 +20,7 @@ const Compagnon = require('../public/js/compagnon');
 const MaterielRetenu = require('../public/js/materiel-retenu');
 const Installe = require('../public/js/installe');
 const Stock = require('../public/js/stock');
+const ConsultTerrain = require('../public/js/consult-terrain');
 const PlanMes = require('../public/js/plan-mes');
 const FT = require('../public/js/fiches-tech');
 // Lignes des commandes fournisseurs d'un chantier pour le suivi du matériel (fournisseur nommé, sans prix)
@@ -994,6 +995,74 @@ async function api(req, res, url) {
     const record = DB.getRecord(db, 'envois', id);
     broadcast('change', { col: 'envois', record, client: req.headers['x-client-id'] || null });
     return send(res, 200, record);
+  }
+
+  // Fournisseurs consultés par famille de matériel (lignes libres des demandes du terrain) : bureau
+  if (p[0] === 'achats' && p[1] === 'familles-fournisseurs') {
+    if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Droits insuffisants');
+    if (method === 'GET') return send(res, 200, DB.getConfig(db, 'familles-fournisseurs') || {});
+    if (method === 'PUT') {
+      const b = await readBody(req), c = {};
+      Object.entries(b && typeof b === 'object' ? b : {}).slice(0, 200).forEach(([f, v]) => { const pref = String((v && v.prefere) || '').slice(0, 64), autres = [...new Set(((v && v.autres) || []).map(x => String(x).slice(0, 64)).filter(x => x && x !== pref))].slice(0, ConsultTerrain.MAX_AUTRES); if (pref || autres.length) c[String(f).slice(0, 80)] = { prefere: pref, autres }; });
+      DB.setConfig(db, 'familles-fournisseurs', c); DB.audit(db, acc.login, 'fournisseurs consultés par famille', null, null, `${Object.keys(c).length} famille(s)`);
+      return send(res, 200, c);
+    }
+  }
+  // Demande de matériel du terrain : consultations créées par groupe de fournisseurs et envoyées tout de suite par
+  // e-mail à chacun (adresse des demandes de prix), réponses vers la boîte des offres ; chargé d'affaires prévenu
+  if (p[0] === 'consultations' && p[1] === 'terrain' && method === 'POST') {
+    if (estCompagnon(acc) && !acc.user_id) return fail(res, 403, 'Compte non relié à une fiche de l\'équipe');
+    const b = await readBody(req), aff = DB.getRecord(db, 'affaires', String(b.affaireId || ''));
+    if (!aff) return fail(res, 400, 'Chantier à choisir');
+    const articles = recordsDe('articles'), ls = ConsultTerrain.lignes(b.lignes, articles);
+    if (!ls.length) return fail(res, 400, 'Ajoutez au moins une ligne avec une quantité');
+    const g = ConsultTerrain.grouper(ls, articles, DB.getConfig(db, 'familles-fournisseurs') || {});
+    const qui = acc.nom || acc.login, now = new Date().toISOString(), jour = now.slice(0, 10), contacts = recordsDe('contacts');
+    const site = ((DB.getRecord(db, 'entreprises', aff.clientId) || {}).adresses || []).find(x => x.id === aff.siteId);
+    const livraison = String(b.livraison || '').slice(0, 200) || (site ? [site.libelle, site.adresse, [site.cp, site.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ') : '');
+    const dateSouhaitee = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || '')) ? String(b.date) : '';
+    // Expéditeur : boîte des demandes de prix si elle est réglée, sinon celle du chargé d'affaires du chantier
+    const charge = aff.chargeId ? db.prepare('SELECT id, email FROM accounts WHERE user_id = ? AND email IS NOT NULL AND email != \'\' LIMIT 1').get(aff.chargeId) : null;
+    const exp = AdressesEnvoi.pour(DB.getConfig(db, 'mail-adresses'), 'consultation', (charge && charge.email) || (estCompagnon(acc) ? '' : acc.email || ''));
+    const peutEnvoyer = m365Pret() && !!exp.expediteur, oc = MAILO.config(DB, db), cfg = DB.getConfig(db, 'm365'), soc = ((DB.getSettings(db) || {}).societe || '').split('\n')[0];
+    const creer = (lignes, fournisseurs, sans) => {
+      const id = uid(), obj = { id, objet: `Matériel demandé par ${qui} – ${aff.code || ''}${sans ? ' (fournisseurs à choisir)' : ''}`.slice(0, 200), affaireId: aff.id, date: jour, dateLimite: new Date(Date.now() + 2 * 864e5).toISOString().slice(0, 10),
+        dateLivraison: dateSouhaitee, statut: 'En cours', lignes: lignes.map(l => ({ articleId: l.articleId, designation: l.designation + (l.note ? ` (${l.note})` : ''), unite: l.unite, qte: l.qte })),
+        fournisseurs: fournisseurs.map(entrepriseId => ({ entrepriseId, statut: 'À consulter' })), terrain: { par: qui, userId: acc.user_id || '', le: now, note: String(b.note || '').slice(0, 500) } };
+      obj.ref = DB.nextNumber(db, 'consultations', obj);
+      db.prepare('INSERT INTO records (col, id, data, version, updated_at, updated_by) VALUES (?, ?, ?, 1, ?, ?)').run('consultations', id, JSON.stringify(obj), now, qui);
+      DB.audit(db, acc.login, 'demande de matériel du terrain', 'consultations', id, `${obj.ref} — ${lignes.length} ligne(s)`);
+      return obj;
+    };
+    const out = [];
+    for (const gr of g.groupes) {
+      const c = creer(gr.lignes, gr.fournisseurs, false), res2 = { id: c.id, ref: c.ref, lignes: gr.lignes.length, fournisseurs: [] };
+      for (const f of c.fournisseurs) {
+        const ent = DB.getRecord(db, 'entreprises', f.entrepriseId) || {}, to = ConsultTerrain.adresse(ent, contacts), r = { nom: ent.nom || '?', envoye: false, raison: '' };
+        if (!to) r.raison = 'pas d\'adresse e-mail';
+        else if (!peutEnvoyer) r.raison = m365Pret() ? 'pas d\'expéditeur (adresse du chargé d\'affaires)' : 'e-mails non configurés';
+        else {
+          const m = ConsultTerrain.message({ ref: c.ref, chantier: aff, livraison, date: dateSouhaitee, lignes: gr.lignes, demandeur: qui, societe: soc, note: c.terrain.note });
+          try {
+            await M365.envoyer(cfg, exp.expediteur, { to: [to], cc: [], bcc: exp.bcc || [], replyTo: oc.actif && oc.adresse ? [oc.adresse] : [], subject: m.sujet, html: m.html, attachments: [] });
+            Object.assign(f, { statut: 'Consulté', envoyeLe: jour, envoyeA: to }); r.envoye = true;
+            const eid = uid();
+            db.prepare('INSERT INTO records (col, id, data, version, updated_at, updated_by) VALUES (?, ?, ?, 1, ?, ?)').run('envois', eid, JSON.stringify({ id: eid, date: now, type: 'consultation', col: 'consultations', docId: c.id, numero: c.ref, to: [to], cc: [], objet: m.sujet, pieces: [], mode: 'Microsoft 365 (demande du terrain)', expediteur: exp.expediteur, par: qui }), now, qui);
+          } catch (e) { r.raison = `envoi refusé : ${e.message}`.slice(0, 160); }
+        }
+        res2.fournisseurs.push(r);
+      }
+      db.prepare('UPDATE records SET data = ?, version = version + 1, updated_at = ? WHERE col = ? AND id = ?').run(JSON.stringify(c), now, 'consultations', c.id);
+      broadcast('change', { col: 'consultations', record: DB.getRecord(db, 'consultations', c.id), client: null });
+      out.push(res2);
+    }
+    let aChoisir = null;
+    if (g.sansFournisseur.length) { const c = creer(g.sansFournisseur, [], true); broadcast('change', { col: 'consultations', record: DB.getRecord(db, 'consultations', c.id), client: null }); aChoisir = { id: c.id, ref: c.ref, lignes: g.sansFournisseur.length }; }
+    // Chargé d'affaires (sinon le bureau) prévenu : consultations envoyées, lignes sans fournisseur à compléter
+    const destinataires = aff.chargeId ? [aff.chargeId] : [...new Set(db.prepare("SELECT user_id FROM accounts WHERE role IN ('admin', 'charge')").all().map(x => x.user_id).filter(Boolean))];
+    const nbEnv = out.reduce((n, x) => n + x.fournisseurs.filter(f => f.envoye).length, 0);
+    destinataires.forEach(u => NOTIFS.enregistrer({ type: 'consultation', userId: u, titre: `🛒 Matériel demandé par ${qui} (${aff.code || ''})`, texte: `${ls.length} ligne(s) : ${out.length} consultation(s), ${nbEnv} e-mail(s) envoyé(s) aux fournisseurs${aChoisir ? ` ; ${aChoisir.lignes} ligne(s) sans fournisseur à compléter (${aChoisir.ref})` : ''}.`, lien: `#/consultations/${(out[0] || aChoisir || {}).id || ''}`, date: now, lu: false }));
+    return send(res, 200, { consultations: out, aChoisir, envoyes: nbEnv });
   }
 
   // Boîte des offres fournisseurs : état (écran des consultations) et relève immédiate

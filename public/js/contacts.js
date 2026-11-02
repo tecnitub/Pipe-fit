@@ -35,6 +35,7 @@ const entrepriseFields = [
   { key: 'compteCharge', label: 'Compte de charge par défaut de ce fournisseur (ex. 611000 sous-traitance, 621100 intérim)' },
   { key: 'tel', label: 'Téléphone standard', type: 'tel' },
   { key: 'email', label: 'E-mail', type: 'email' },
+  { key: 'emailConsultation', label: 'E-mail des demandes de prix (fournisseur : service commercial / ADV)', type: 'email' },
   { key: 'web', label: 'Site web' },
   { key: 'zoneId', label: 'Zone de livraison par défaut', type: 'select', options: v => options(Store.all('zones'), v) },
   { key: 'notes', label: 'Notes', type: 'textarea' },

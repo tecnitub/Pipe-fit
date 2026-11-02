@@ -8,7 +8,7 @@ const articleFields = [
   { key: 'coutRevient', label: "Prix d'achat HT", type: 'number', step: '0.01' },
   { key: 'prixVente', label: 'Prix de vente HT', type: 'number', step: '0.01' },
   { key: 'poidsUnitaire', label: 'Poids / unité (kg)', type: 'number', step: '0.1' },
-  { key: 'fournisseurId', label: 'Fournisseur habituel', type: 'select', options: v => options(fournisseursList(), v) },
+  { key: 'fournisseurId', label: 'Fournisseur préféré', type: 'select', options: v => options(fournisseursList(), v) },
   // Stock de l'atelier (étiquette QR) : emplacement, minimum avant réassort, quantité commandée au réassort
   { key: 'stockGere', label: 'Géré en stock (étiquette QR)', type: 'select', options: v => optionsStr(['Non', 'Oui'], v === true || v === 'Oui' ? 'Oui' : 'Non') },
   { key: 'emplacement', label: 'Emplacement en stock' },
@@ -28,6 +28,39 @@ const zoneFields = [
   { key: 'coutTransporteur', label: 'Coût transporteur (forfait)', type: 'number', step: '0.01' },
   { key: 'coutParTonne', label: 'Coût transporteur / tonne', type: 'number', step: '0.01' },
 ];
+
+// Fiche d'une fourniture : champs habituels, puis jusqu'à 4 autres fournisseurs consultés avec le préféré (demandes de prix)
+function editArticle(obj, base) {
+  const o = base ? { ...base } : obj, titre = base ? obj.titre : 'Fourniture';
+  editModal({ title: titre, col: 'articles', fields: articleFields, obj: o, beforeSave: x => {
+    const sel = [...document.querySelectorAll('#modal [data-fc-autre]')].map(s => s.value).filter(v => v && v !== x.fournisseurId);
+    x.fournisseursConsult = [...new Set(sel)].slice(0, ConsultTerrain.MAX_AUTRES);
+  } });
+  const box = document.querySelector('#modal .modal-box') || document.querySelector('.modal-box'), act = box && box.querySelector('.modal-actions');
+  if (!act) return;
+  const autres = (o.fournisseursConsult || []).slice(0, ConsultTerrain.MAX_AUTRES);
+  act.insertAdjacentHTML('beforebegin', `<fieldset class="hd-bloc"><legend>Autres fournisseurs consultés (${ConsultTerrain.MAX_AUTRES} au plus)</legend>
+    <p class="small muted" style="margin-top:0">Avec le fournisseur préféré, ils reçoivent les demandes de prix de cet article (bureau et demandes du terrain), à leur adresse des demandes de prix.</p>
+    <div class="grid2">${Array.from({ length: ConsultTerrain.MAX_AUTRES }, (_, i) => `<div class="field"><label>Fournisseur ${i + 2}</label><select data-fc-autre="${i}"><option value="">—</option>${options(fournisseursList(), autres[i] || '')}</select></div>`).join('')}</div></fieldset>`);
+}
+// Fournisseurs consultés par famille (lignes libres des demandes du terrain, articles sans fournisseur)
+async function fournisseursParFamille() {
+  let c = {};
+  try { c = await api('GET', '/api/achats/familles-fournisseurs'); } catch (e) { return notify(e.message); }
+  const fams = famillesArticles(), sel = (f, i, v) => `<select data-ff="${esc(f)}" data-i="${i}" aria-label="${i ? `Fournisseur ${i + 1}` : 'Fournisseur préféré'} — ${esc(f)}"><option value="">—</option>${options(fournisseursList(), v || '')}</select>`;
+  const box = Modal.open(`<h2 style="margin-top:0">🏭 Fournisseurs consultés par famille</h2>
+    <p class="small muted">Pour une ligne libre d'une demande de matériel (« type de matériel ») ou un article sans fournisseur : le préféré et jusqu'à ${ConsultTerrain.MAX_AUTRES} autres reçoivent la demande de prix.</p>
+    <div class="table-wrap" style="max-height:60vh"><table><tr><th>Famille</th><th>Préféré</th>${Array.from({ length: ConsultTerrain.MAX_AUTRES }, (_, i) => `<th>Fournisseur ${i + 2}</th>`).join('')}</tr>
+      ${fams.map(f => { const x = c[f] || {}; return `<tr><td><strong>${esc(f)}</strong></td><td>${sel(f, 0, x.prefere)}</td>${Array.from({ length: ConsultTerrain.MAX_AUTRES }, (_, i) => `<td>${sel(f, i + 1, (x.autres || [])[i])}</td>`).join('')}</tr>`; }).join('')}</table></div>
+    <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="ff-x">Annuler</button><button id="ff-ok">Enregistrer</button></div>`);
+  box.classList.add('wide');
+  box.querySelector('#ff-x').onclick = Modal.close;
+  box.querySelector('#ff-ok').onclick = async () => {
+    const out = {};
+    box.querySelectorAll('[data-ff]').forEach(s => { if (!s.value) return; const f = s.dataset.ff, x = out[f] || (out[f] = { prefere: '', autres: [] }); if (s.dataset.i === '0') x.prefere = s.value; else x.autres.push(s.value); });
+    try { await api('PUT', '/api/achats/familles-fournisseurs', out); if (typeof famillesFournisseursCache !== 'undefined') famillesFournisseursCache = out; Modal.close(); App.toast('Fournisseurs par famille enregistrés'); } catch (e) { notify(e.message); }
+  };
+}
 
 function biblioTabs(active) {
   return `<div class="tabs">
@@ -74,6 +107,7 @@ Views.articles = () => {
   <div class="toolbar">
     <button id="add">+ Fourniture</button>
     <button class="secondary" id="hausse">Révision des prix de vente %</button>
+    <button class="secondary" id="fam-four">🏭 Fournisseurs par famille</button>
     ${boutonsEchange('articles')}
   </div>
   <div class="biblio">
@@ -108,13 +142,14 @@ async function majArticles(liste, fn) {
   try { await Store.bulk('articles', maj); } catch (err) { notify(err.message); throw err; }
 }
 Views.articles.bind = root => {
+  const ff = root.querySelector('#fam-four'); if (ff) ff.onclick = fournisseursParFamille;
   const ms = root.querySelector('#sel-stock'); if (ms) ms.onclick = () => choisirArticlesStock([...biblioEtat.sel]);
   const e = biblioEtat;
   bindEchange(root);
   const lier = () => {
     root.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = ev => {
       if (ev.target.closest('[data-nocl]')) return;
-      editModal({ title: 'Fourniture', col: 'articles', fields: articleFields, obj: { ...Store.get('articles', tr.dataset.id) } });
+      editArticle({ ...Store.get('articles', tr.dataset.id) });
     });
     const majSel = () => { root.querySelector('#sel-barre').hidden = !e.sel.size; root.querySelector('#sel-n').textContent = `${e.sel.size} sélectionnée(s)`; };
     root.querySelectorAll('[data-sel-art]').forEach(cb => cb.onchange = () => { cb.checked ? e.sel.add(cb.dataset.selArt) : e.sel.delete(cb.dataset.selArt); majSel(); });
@@ -144,7 +179,7 @@ Views.articles.bind = root => {
   });
   root.querySelector('#ranger').onclick = () => rangerArticles([...e.sel]);
   root.querySelector('#sel-x').onclick = () => { e.sel.clear(); App.render(); };
-  root.querySelector('#add').onclick = () => editModal({ title: 'Nouvelle fourniture', col: 'articles', fields: articleFields, obj: { unite: 'u', famille: e.famille && e.famille !== RechercheArticles.SANS ? e.famille : '', sousFamille: e.sous } });
+  root.querySelector('#add').onclick = () => editArticle({ titre: 'Nouvelle fourniture' },  { unite: 'u', famille: e.famille && e.famille !== RechercheArticles.SANS ? e.famille : '', sousFamille: e.sous });
   root.querySelector('#hausse').onclick = async () => {
     const cible = RechercheArticles.filtrer(Store.all('articles'), { famille: e.famille, sousFamille: e.sous });
     const p = await askValue(`Révision des prix de vente en %${e.famille ? ` (${e.famille}${e.sous ? ` › ${e.sous}` : ''} : ${cible.length} fourniture(s))` : ' (toutes les fournitures)'}`, '3', 'number');

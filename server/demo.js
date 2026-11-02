@@ -717,6 +717,8 @@ function demoData() {
   articles.forEach(a => { const x = STOCK_DEMO[a.id]; if (x) Object.assign(a, { stockGere: true, emplacement: x[0], stockMini: x[1], stockReassort: x[2] }); });
   const mouvementsStock = Object.entries(STOCK_DEMO).map(([articleId, x], i) => ({ id: `ms${i + 1}`, articleId, type: 'inventaire', qte: x[3], date: d(-30), userId: 'u1', note: 'Inventaire de l\'atelier' }));
   consommations.push({ id: 'cs-stock1', articleId: 'a14', designation: 'Té égal inox 316L DN50 à souder', unite: 'u', qte: 6, pu: 38, cout: 30, affaireId: 'af1', date: d(-5), userId: 'o1', stock: true });
+  // Fournisseurs consultés avec le préféré (demandes de prix) : négoces pour les tubes et raccords inox
+  articles.forEach(a => { if (['Tubes', 'Raccords', 'Supportage'].includes(a.famille) && a.fournisseurId === 'e5') a.fournisseursConsult = ['e11', 'e12']; if (a.famille === 'Robinetterie') a.fournisseursConsult = ['e11']; });
   // Outillage étiqueté : pris et rendu en scannant son étiquette
   materiels.forEach(m => { if (['pm3', 'pm4', 'pm6', 'pm7'].includes(m.id)) m.scan = true; });
 

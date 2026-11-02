@@ -79,3 +79,21 @@ test('stock et outillage étiqueté QR : sortie vers un chantier et outil pris p
   // Entrées et inventaires : réservés au bureau
   assert.strictEqual((await call('PUT', '/api/records/mouvementsStock/msx', { data: { articleId: 'a14', type: 'entree', qte: 10, userId: 'o1' } }, k)).status, 403);
 });
+
+test('demande de matériel du terrain : consultations par fournisseurs, sans Microsoft 365 rien ne part', async () => {
+  const k = (await call('POST', '/api/login', { login: 'kevin', password: 'motdepasse1' })).cookie;
+  const r = await call('POST', '/api/consultations/terrain', { affaireId: 'af1', lignes: [{ articleId: 'a4', qte: 3 }, { designation: 'Joint spécial', famille: 'Divers', qte: 2 }] }, k);
+  assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+  assert.strictEqual(r.body.envoyes, 0);
+  assert.ok(r.body.consultations[0].fournisseurs.length >= 1 && r.body.consultations[0].fournisseurs.every(f => !f.envoye && /non configurés/.test(f.raison)));
+  assert.strictEqual(r.body.aChoisir.lignes, 1);
+  assert.strictEqual((await call('POST', '/api/consultations/terrain', { affaireId: 'af1', lignes: [] }, k)).status, 400);
+  // Le compagnon ne voit pas les consultations ; le bureau oui, avec le n° et l'origine « terrain »
+  assert.strictEqual(((await call('GET', '/api/data', null, k)).body.consultations || []).length, 0);
+  const admin = (await call('POST', '/api/login', { login: 'admin', password: 'admin-test-pw' })).cookie;
+  const cs = (await call('GET', '/api/data', null, admin)).body.consultations.filter(c => c.terrain);
+  assert.strictEqual(cs.length, 2); assert.ok(cs.every(c => /^CS-/.test(c.ref)));
+  // Fournisseurs par famille : bureau seulement
+  assert.strictEqual((await call('PUT', '/api/achats/familles-fournisseurs', { Divers: { prefere: 'e5', autres: ['e6', 'e5', 'e11', 'e12', 'e7', 'e9'] } }, admin)).body.Divers.autres.length, 4);
+  assert.strictEqual((await call('GET', '/api/achats/familles-fournisseurs', null, k)).status, 403);
+});
