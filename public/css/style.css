@@ -1183,3 +1183,8 @@ ul.plan-mes li.pm-sansObjet .pm-txt { opacity: .55; text-decoration: line-throug
 .ch-depot.rempli { border-style: solid; border-color: color-mix(in srgb, var(--accent, #b5492d) 45%, var(--border)); color: inherit; }
 .ch-depot-t { font-size: 15px; }
 .ch-depots .ch-depot .small { overflow-wrap: anywhere; }
+.ch-tcd tr.tcd-n0 td { background: color-mix(in srgb, var(--accent, #b5492d) 10%, var(--panel, #fff)); font-weight: 600; }
+.ch-tcd tr.tcd-n1 td { background: color-mix(in srgb, var(--accent, #b5492d) 4%, var(--panel, #fff)); font-weight: 600; }
+.ch-tcd tr.tcd-total td { border-top: 2px solid var(--border); font-weight: 700; }
+.ch-tcd .tcd-bt { width: 22px; padding: 0; }
+.ch-occ summary { cursor: pointer; margin: 10px 0; font-weight: 600; }

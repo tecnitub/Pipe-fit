@@ -170,13 +170,14 @@ const tauxDe = (m, vente, cout) => ({ m, vente: vente === '' || vente == null ? 
 // (tube au mètre et robinetterie selon le DN, soudures de raccordement sur site, temps de la famille sinon)
 function calculerChiffrage(ch) {
   const p = { ...parametresDefaut(), ...(ch.params || {}) }, niv = p.niveaux[p.niveau] || p.niveaux[0];
-  const groupes = {};
-  (ch.lignes || []).forEach(l => {
+  const groupes = {}, occ = [];
+  (ch.lignes || []).forEach((l, i) => {
     const parCol = p.regroupement === 'colonnes', chap = parCol ? l.chapitre || `Sans ${normRecherche(p.colChapitre || 'chapitre')}` : '', sous = parCol ? l.sousChapitre || '' : '';
     const fam = familleDe(l), tc = tailleCle(l.taille), cle = `${p.regroupement === 'systeme' ? l.systeme : ''}|${chap}|${sous}|${l.nature || ''}|${fam ? fam.id : cleFamille(`${l.famille} ${l.type}`)}|${l.dn}|${tc}`;
     const g = groupes[cle] = groupes[cle] || { systeme: p.regroupement === 'systeme' ? l.systeme : '', chapitre: chap, sousChapitre: sous, nature: l.nature || '', fam, dn: l.dn, tc, brut: [l.famille, l.type].filter(Boolean).join(' : '), famille: l.famille, type: l.type, qte: 0, n: 0 };
     // Au mètre : famille au mètre, ou canalisation pas encore reliée
-    g.qte += (fam ? fam.unite === 'ml' : l.nature === 'canalisations') ? (l.longueur || 0) * l.qte : l.qte; g.n += l.qte;
+    const auMetre = fam ? fam.unite === 'ml' : l.nature === 'canalisations', q = auMetre ? (l.longueur || 0) * l.qte : l.qte;
+    g.qte += q; g.n += l.qte; g.cle = cle; occ.push({ i, l, cle, q, auMetre });
   });
   const A = tauxDe(Store.get('mainoeuvre', p.moAtelier) || {}, p.tauxAtelier), C = tauxDe(Store.get('mainoeuvre', p.moChantier) || {}, p.tauxPose, p.coutPose);
   const hj = num(p.heuresJour), part = Math.min(1, Math.max(0, num(p.partAtelier) / 100));
@@ -205,7 +206,12 @@ function calculerChiffrage(ch) {
   };
   tot.prefab = tot.fournitures + sumBy(liste, g => g.hA * A.vente * g.qte); tot.pose = sumBy(liste, g => g.hC * C.vente * g.qte);
   tot.total = tot.fournitures + tot.mo + tot.extras; tot.cout = tot.achats + tot.coutMO + tot.coutExtras;
-  return { p, niv, liste, extras, tot, A, C };
+  // Chaque occurrence (ligne de la nomenclature) chiffrée séparément au prix unitaire de son article : fourniture,
+  // heures de préfabrication et de pose ; la somme des occurrences donne celle des groupes
+  const parCle = Object.fromEntries(liste.map(g => [g.cle, g]));
+  const occurrences = occ.map(o => { const g = parCle[o.cle], h = (g.hA + g.hC) * o.q, mo = (g.hA * A.vente + g.hC * C.vente) * o.q;
+    return { ...o, g, fourniture: g.pu * o.q, heures: h, mo, montant: g.pu * o.q + mo, cout: g.cout * o.q + (g.hA * A.cout + g.hC * C.cout) * o.q }; });
+  return { p, niv, liste, extras, tot, A, C, occurrences };
 }
 
 const POUCES_TXT = x => `${fmt(x, 2).replace(/,00$/, '')}"`;
@@ -290,6 +296,65 @@ function lignesDevisDepuis(ch) {
     });
   });
   return out;
+}
+
+/* ---------- Tableau croisé (comme un tableau croisé dynamique Excel) ---------- */
+// Lignes : chapitre › sous-chapitre › élément (famille et taille) ; valeurs : occurrences, pièces, longueur, heures,
+// fourniture, main-d'œuvre et montant, avec sous-totaux à chaque niveau
+const libNature = k => (NATURES_NOMENCLATURE.find(n => n.k === k) || {}).titre || '';
+function tableauCroise(r) {
+  const parCol = r.p.regroupement === 'colonnes', vide = () => ({ occ: 0, pieces: 0, ml: 0, qte: 0, heures: 0, fourniture: 0, mo: 0, montant: 0, cout: 0, aChiffrer: 0 });
+  const ajouter = (t, o) => { t.occ++; t.pieces += o.l.qte; if (o.auMetre) t.ml += o.q; else t.qte += o.q; t.heures += o.heures; t.fourniture += o.fourniture; t.mo += o.mo; t.montant += o.montant; t.cout += o.cout; if (o.g.statut !== 'ok') t.aChiffrer++; };
+  const total = vide(), chapitres = new Map();
+  r.occurrences.forEach(o => {
+    const g = o.g, c = parCol ? g.chapitre : g.systeme || 'Tuyauterie', sc = parCol ? g.sousChapitre || libNature(g.nature) || '—' : libNature(g.nature) || '—';
+    const elt = `${g.fam ? g.fam.nom : g.brut || '?'}${g.tc ? ' ' + g.tc : g.dn ? ' DN' + g.dn : ''}`;
+    if (!chapitres.has(c)) chapitres.set(c, { titre: c, t: vide(), sous: new Map() });
+    const C = chapitres.get(c);
+    if (!C.sous.has(sc)) C.sous.set(sc, { titre: sc, t: vide(), elts: new Map() });
+    const S = C.sous.get(sc);
+    if (!S.elts.has(g.cle)) S.elts.set(g.cle, { titre: elt, g, t: vide() });
+    [total, C.t, S.t, S.elts.get(g.cle).t].forEach(t => ajouter(t, o));
+  });
+  const tri = m => [...m.values()].sort((a, b) => String(a.titre).localeCompare(String(b.titre), 'fr', { numeric: true }));
+  return { total, chapitres: tri(chapitres).map(C => ({ ...C, sous: tri(C.sous).map(S => ({ ...S, elts: [...S.elts.values()] })) })) };
+}
+const tcdFermes = new Set();
+function htmlTableauCroise(ch, r) {
+  const tc = tableauCroise(r), m = v => (v ? eur(v) : '—'), n = (v, d = 0) => (v ? fmt(v, d) : '—');
+  const cel = t => `<td class="num">${t.occ}</td><td class="num">${n(t.pieces)}</td><td class="num">${n(t.ml, 2)}</td><td class="num">${n(t.heures, 1)}</td><td class="num">${m(t.fourniture)}</td><td class="num">${m(t.mo)}</td><td class="num"><strong>${m(t.montant)}</strong>${t.aChiffrer ? ` <span class="badge b-warn" title="occurrences sans prix">${t.aChiffrer}</span>` : ''}</td>`;
+  const ligne = (chemin, niv, titre, t, enfants) => `<tr class="tcd-n${niv}" data-tcd="${esc(chemin)}"><td style="padding-left:${8 + niv * 18}px">${enfants ? `<button class="icon small tcd-bt" data-tcd-bt="${esc(chemin)}" aria-label="Replier / déplier">${tcdFermes.has(ch.id + chemin) ? '▸' : '▾'}</button> ` : ''}${esc(titre)}</td>${cel(t)}</tr>`;
+  const rows = tc.chapitres.map(C => ligne(C.titre, 0, C.titre, C.t, true) + C.sous.map(S => ligne(`${C.titre}¦${S.titre}`, 1, S.titre, S.t, true)
+    + S.elts.map(E => ligne(`${C.titre}¦${S.titre}¦${E.g.cle}`, 2, E.titre, E.t, false)).join('')).join('')).join('');
+  return `<div class="toolbar"><button class="small secondary" data-tcd-niv="0">Chapitres</button><button class="small secondary" data-tcd-niv="1">+ sous-chapitres</button><button class="small secondary" data-tcd-niv="2">Tout déplier</button><span class="spacer"></span><button class="small secondary" id="ch-xlsx">⬇ Excel (tableau croisé + occurrences)</button></div>
+    <div class="table-wrap"><table class="compact ch-tcd"><tr><th>${r.p.regroupement === 'colonnes' ? 'Chapitre › sous-chapitre › élément' : 'Réseau › nature › élément'}</th><th class="num">Occurrences</th><th class="num">Pièces</th><th class="num">Longueur (ml)</th><th class="num">Heures</th><th class="num">Fourniture</th><th class="num">Main-d'œuvre</th><th class="num">Montant HT</th></tr>
+    ${rows}<tr class="tcd-total"><td><strong>Total général</strong></td>${cel(tc.total)}</tr></table></div>`;
+}
+// Masque les lignes dont un niveau parent est replié
+function appliquerTcd(root, ch) {
+  root.querySelectorAll('.ch-tcd tr[data-tcd]').forEach(tr => {
+    const p = tr.dataset.tcd.split('¦'); let cache = false;
+    for (let k = 1; k < p.length; k++) if (tcdFermes.has(ch.id + p.slice(0, k).join('¦'))) cache = true;
+    tr.hidden = cache;
+    const bt = tr.querySelector('[data-tcd-bt]'); if (bt) bt.textContent = tcdFermes.has(ch.id + tr.dataset.tcd) ? '▸' : '▾';
+  });
+}
+function exporterChiffrageExcel(ch) {
+  const r = calculerChiffrage(ch), tc = tableauCroise(r), e = v => ({ v: Math.round(v * 100) / 100, s: 'eur' }), h = t => ({ v: t, s: 'head' });
+  const vals = (t, st) => [t.occ, t.pieces, Math.round(t.ml * 100) / 100, Math.round(t.heures * 10) / 10, { v: Math.round(t.fourniture * 100) / 100, s: st }, { v: Math.round(t.mo * 100) / 100, s: st }, { v: Math.round(t.montant * 100) / 100, s: st }];
+  const rows = [[{ v: `Tableau croisé – ${ch.nom || 'chiffrage'}`, s: 'title' }], [], ['Chapitre', 'Sous-chapitre', 'Élément', 'Occurrences', 'Pièces', 'Longueur (ml)', 'Heures', 'Fourniture', 'Main-d\'œuvre', 'Montant HT'].map(h)];
+  tc.chapitres.forEach(C => {
+    C.sous.forEach(S => {
+      S.elts.forEach(E => rows.push([C.titre, S.titre, E.titre, ...vals(E.t, 'eur')]));
+      rows.push([{ v: '', s: 'total' }, { v: `Total ${S.titre}`, s: 'total' }, { v: '', s: 'total' }, ...vals(S.t, 'boldeur')]);
+    });
+    rows.push([{ v: `Total ${C.titre}`, s: 'bold' }, '', '', ...vals(C.t, 'boldeur')]);
+  });
+  rows.push([], [{ v: 'Total général', s: 'bold' }, '', '', ...vals(tc.total, 'boldeur')]);
+  const occ = [['N°', 'Chapitre', 'Sous-chapitre', 'Nature', 'Système', 'Élément (nomenclature)', 'Taille', 'Longueur (m)', 'Nombre', 'Quantité chiffrée', 'Unité', 'Article', 'PU fourniture', 'Heures', 'Fourniture', 'Main-d\'œuvre', 'Montant HT'].map(h),
+    ...r.occurrences.map(o => [o.i + 1, o.g.chapitre, o.g.sousChapitre, libNature(o.l.nature), o.l.systeme, [o.l.famille, o.l.type].filter(Boolean).join(' : '), o.l.taille, o.l.longueur || '', o.l.qte, Math.round(o.q * 1000) / 1000, o.g.unite,
+      o.g.a ? `${o.g.a.ref} · ${o.g.a.designation}` : 'à chiffrer', e(o.g.pu), Math.round(o.heures * 100) / 100, e(o.fourniture), e(o.mo), e(o.montant)])];
+  download(`Chiffrage-${(ch.nom || 'plan').replace(/[^\w-]+/g, '_')}.xlsx`, XLSX.build([{ name: 'Tableau croisé', cols: [26, 24, 40, 12, 10, 14, 10, 14, 14, 14], freeze: 3, rows }, { name: 'Occurrences', cols: [6, 18, 18, 18, 18, 36, 12, 12, 9, 12, 7, 40, 13, 9, 13, 13, 13], freeze: 1, rows: occ }]), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
 
 /* ---------- Écrans ---------- */
@@ -405,6 +470,15 @@ Views.chiffrage = params => {
       <td class="num small">${g.cat === 'tube' ? '<span class="muted">fourniture seule</span>' : g.sd ? `${fmt(g.sd, 2).replace(/,00$/, '')} × ${POUCES_TXT(g.inch)}` : '—'}</td>
       <td class="num">${fmt(g.poucesA, 1)} / ${fmt(g.poucesC, 1)}</td><td class="num">${fmt(g.hA, 2)}</td><td class="num" title="pose ${fmt(g.hPose, 2)} h + soudures sur site ${fmt(g.hSoudC, 2)} h">${fmt(g.hC, 2)}</td><td class="num">${g.a ? eur(g.cout) : '—'}</td><td class="num">${g.a ? eur(g.pu) : '—'}</td></tr>`).join('')}</table></div>` : ''}
 
+  ${r.occurrences.length ? `<h2>Tableau croisé ${p.regroupement === 'colonnes' ? 'par chapitre et sous-chapitre' : ''}</h2>
+  <p class="small muted">Chaque occurrence de la nomenclature est chiffrée séparément (sa longueur ou sa quantité × le prix de son article et ses heures), puis cumulée par chapitre, sous-chapitre et élément. Cliquez ▾ pour replier un niveau.</p>
+  ${htmlTableauCroise(ch, r)}
+  <details class="ch-occ"><summary>Détail des ${r.occurrences.length} occurrences chiffrées</summary>
+    <input id="ch-occ-f" type="search" placeholder="Filtrer (chapitre, système, élément, taille…)" style="max-width:360px;margin:8px 0">
+    <div class="table-wrap" style="max-height:480px;overflow:auto"><table class="compact ch-occ-t"><tr><th class="num">N°</th><th>Chapitre › sous-chapitre</th><th>Élément</th><th>Taille</th><th class="num">Longueur</th><th class="num">Nb</th><th class="num">PU fourniture</th><th class="num">Heures</th><th class="num">Montant HT</th></tr>
+    ${r.occurrences.map(o => `<tr class="${o.g.statut !== 'ok' ? 'a-chiffrer' : ''}"><td class="num">${o.i + 1}</td><td class="small">${esc([o.g.chapitre || o.l.systeme, o.g.sousChapitre].filter(Boolean).join(' › '))}</td><td>${esc([o.l.famille, o.l.type].filter(Boolean).join(' : '))}</td><td>${esc(o.l.taille)}</td>
+      <td class="num">${o.l.longueur ? fmt(o.l.longueur, 3) + ' m' : ''}</td><td class="num">${fmt(o.l.qte)}</td><td class="num">${o.g.a ? eur(o.g.pu) : '<span class="small">à chiffrer</span>'}</td><td class="num">${fmt(o.heures, 2)}</td><td class="num">${eur(o.montant)}</td></tr>`).join('')}</table></div></details>` : ''}
+
   <h2>3. Paramètres du chiffrage</h2>
   <div class="card">
   <div class="ch-params">
@@ -501,6 +575,14 @@ Views.chiffrage.bind = (root, params) => {
   root.ondragover = e => { if (![...(e.dataTransfer.types || [])].includes('Files')) return; e.preventDefault(); effacer(); const z = e.target.closest && e.target.closest('[data-depot]'); (z ? [z] : zones).forEach(x => x.classList.add('survol')); };
   root.ondragleave = e => { if (!root.contains(e.relatedTarget)) effacer(); };
   root.ondrop = e => { const f = fichiersNomenclature(e); if (!f.length) return; e.preventDefault(); effacer(); const z = e.target.closest && e.target.closest('[data-depot]'); importer(z ? f.slice(0, 1) : f, z ? z.dataset.depot : undefined); };
+  // Tableau croisé : replier / déplier par niveau, export Excel, filtre des occurrences
+  appliquerTcd(root, ch);
+  root.querySelectorAll('[data-tcd-bt]').forEach(b => b.onclick = () => { const k = ch.id + b.dataset.tcdBt; if (tcdFermes.has(k)) tcdFermes.delete(k); else tcdFermes.add(k); appliquerTcd(root, ch); });
+  root.querySelectorAll('[data-tcd-niv]').forEach(b => b.onclick = () => { const niv = +b.dataset.tcdNiv;
+    root.querySelectorAll('.ch-tcd tr[data-tcd]').forEach(tr => { const k = ch.id + tr.dataset.tcd, prof = tr.dataset.tcd.split('¦').length - 1; if (!tr.querySelector('[data-tcd-bt]')) return; if (prof >= niv) tcdFermes.add(k); else tcdFermes.delete(k); });
+    appliquerTcd(root, ch); });
+  const xl = q('#ch-xlsx'); if (xl) xl.onclick = () => exporterChiffrageExcel(ch);
+  const of = q('#ch-occ-f'); if (of) of.oninput = () => { const t = normRecherche(of.value); root.querySelectorAll('.ch-occ-t tr').forEach((tr, i) => { if (i) tr.hidden = t && !normRecherche(tr.textContent).includes(t); }); };
   // Présentation des chapitres dans le devis
   root.querySelectorAll('[data-pres]').forEach(el => el.onchange = () => { ch.params.presentation = { ...(ch.params.presentation || {}), [el.dataset.pres]: el.value }; save(false); });
   root.querySelectorAll('[data-pres-tout]').forEach(b => b.onclick = () => { const v = b.dataset.presTout; ch.params.presentation = Object.fromEntries(structureDevis(ch).map(c => [c.titre, v === 'sous' && !c.sous.some(x => x.titre) ? 'detail' : v])); save(); });
