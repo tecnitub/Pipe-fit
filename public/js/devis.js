@@ -256,7 +256,7 @@ function devisEditor(id) {
     <span class="spacer"></span>
     ${!locked ? '<button class="secondary" id="dpgf-imp">Importer un DPGF</button>' : ''}
     <button class="secondary dl-btn" id="dpgf-exp">Exporter le DPGF chiffré</button>
-    <button class="secondary" data-chiffrage="${esc(d.id)}">Chiffrage depuis plan</button>
+    <button class="secondary" data-chiffrage="${esc(d.id)}" title="Ou glissez la nomenclature Revit (.txt, .csv) sur le devis">Chiffrage depuis plan</button>
     ${urlEtudes('') ? `<a class="btn secondary" href="#/etudes-be?devis=${esc(d.id)}" title="Notes de calcul faites pour ce devis (avant la commande)">📐 Études</a>` : ''}
     <button class="secondary" id="dup">Dupliquer</button>
     <button class="secondary print-btn" data-print>Imprimer</button>${boutonsEnvoi('devis', d.id)}
@@ -375,6 +375,16 @@ Views.devis.bind = (root, params, query) => {
   }
   const d = Store.get('devis', params[0]);
   if (!d) return;
+  // Nomenclature Revit glissée sur le devis (.txt, .csv, .xlsx) : chiffrage depuis plan de ce devis, importée et ouverte
+  root.ondragover = e => { if (d.statut !== 'Accepté' && [...(e.dataTransfer.types || [])].includes('Files')) e.preventDefault(); };
+  root.ondrop = async e => {
+    const f = [...(e.dataTransfer.files || [])].find(x => /\.(txt|csv|tsv|xlsx)$/i.test(x.name));
+    if (!f || d.statut === 'Accepté') return;
+    e.preventDefault();
+    const ch = Store.all('chiffrages').find(c => c.devisId === d.id) || nouveauChiffrage(d.id);
+    try { const n = await importerNomenclature(ch, f); location.hash = `#/chiffrage/${ch.id}`; App.toast(`${n} élément(s) de ${f.name} importé(s) : reliez les articles inconnus puis « Mettre à jour le devis »`, 6000); }
+    catch (err) { notify('Lecture impossible : ' + err.message); }
+  };
   const save = () => { Store.upsert('devis', d); App.render(); };
   const on = (sel, ev, fn) => { const el = root.querySelector(sel); if (el) el[ev] = fn; };
   const field = (sel, key, isNum) => on(sel, 'onchange', e => { d[key] = isNum ? (e.target.value === '' ? '' : +e.target.value) : e.target.value; save(); });

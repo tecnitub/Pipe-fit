@@ -1175,3 +1175,6 @@ ul.plan-mes li.pm-sansObjet .pm-txt { opacity: .55; text-decoration: line-throug
 
 .demande-l { padding: 10px 12px; margin-bottom: 8px; }
 .demande-l .small { margin-top: 3px; }
+
+.ch-depot { border: 2px dashed var(--border); border-radius: 8px; padding: 14px; text-align: center; margin-bottom: 8px; color: var(--muted); }
+.ch-depot.survol { border-color: var(--accent, #b5492d); background: var(--bg-soft, #f6efe9); color: inherit; }

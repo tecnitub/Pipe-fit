@@ -29,6 +29,9 @@ const COLONNES_PLAN = {
   taille: ['taille', 'size', 'diametre', 'dn', 'diametrenominal', 'nominaldiameter', 'dimension', 'diametreexterieur'],
   longueur: ['longueur', 'length', 'long', 'longueurmm', 'longueurm', 'longueurdecoupe', 'cutlength'],
   quantite: ['nombre', 'quantite', 'qte', 'count', 'qty', 'quantity', 'nb'],
+  // Chapitres et sous-chapitres du devis (colonne ajoutée à la nomenclature, ex. paramètre partagé « Chapitre devis »)
+  chapitre: ['chapitre', 'chapitredevis', 'lot', 'lotdevis', 'chapter', 'zone', 'batiment'],
+  sousChapitre: ['souschapitre', 'souschapitredevis', 'souslot', 'sousensemble', 'sectiondevis', 'subchapter', 'niveau', 'local'],
 };
 const nomCol = s => normRecherche(s).replace(/[^a-z0-9]/g, '');
 // En-tête : la ligne (parmi les 10 premières) qui reconnaît le plus de colonnes (les exports Revit commencent par le titre)
@@ -41,13 +44,17 @@ function analyserNomenclature(sheet) {
   });
   return { entete: best.idx, colonnes: best.map, titres: sheet.rows[best.idx] || [] };
 }
-function lignesPlan(sheet, analyse, uniteLongueur) {
-  const c = analyse.colonnes, val = (r, k) => (c[k] === undefined ? '' : String(r[c[k]] ?? '').trim());
+// cols : colonnes choisies pour le chapitre et le sous-chapitre (index ; sinon celles reconnues)
+function lignesPlan(sheet, analyse, uniteLongueur, cols = {}) {
+  const c = { ...analyse.colonnes };
+  ['chapitre', 'sousChapitre'].forEach(k => { if (cols[k] !== undefined && cols[k] !== null) { if (cols[k] === '') delete c[k]; else c[k] = +cols[k]; } });
+  const val = (r, k) => (c[k] === undefined ? '' : String(r[c[k]] ?? '').trim());
   const rows = sheet.rows.slice(analyse.entete + 1).filter(r => val(r, 'famille') || val(r, 'type'));
   const long = rows.map(r => num(String(val(r, 'longueur')).replace(/[^\d.,-]/g, '').replace(',', '.')));
   const enMm = uniteLongueur === 'mm' || (uniteLongueur !== 'm' && Math.max(0, ...long) > 60);
   return rows.map((r, i) => ({ systeme: val(r, 'systeme'), famille: val(r, 'famille'), type: val(r, 'type'), taille: val(r, 'taille'), dn: lireDN(val(r, 'taille') || val(r, 'type') || val(r, 'famille')),
-    longueur: Math.round((enMm ? long[i] / 1000 : long[i]) * 1000) / 1000, qte: num(String(val(r, 'quantite')).replace(',', '.')) || 1 }));
+    longueur: Math.round((enMm ? long[i] / 1000 : long[i]) * 1000) / 1000, qte: num(String(val(r, 'quantite')).replace(',', '.')) || 1,
+    chapitre: val(r, 'chapitre'), sousChapitre: val(r, 'sousChapitre') }));
 }
 
 /* ---------- Familles CAO ---------- */
@@ -128,8 +135,9 @@ function calculerChiffrage(ch) {
   const p = { ...parametresDefaut(), ...(ch.params || {}) }, niv = p.niveaux[p.niveau] || p.niveaux[0];
   const groupes = {};
   (ch.lignes || []).forEach(l => {
-    const fam = familleDe(l), cle = `${p.regroupement === 'systeme' ? l.systeme : ''}|${fam ? fam.id : cleFamille(`${l.famille} ${l.type}`)}|${l.dn}`;
-    const g = groupes[cle] = groupes[cle] || { systeme: p.regroupement === 'systeme' ? l.systeme : '', fam, dn: l.dn, brut: `${l.famille}${l.type ? ' : ' + l.type : ''}`, qte: 0, n: 0 };
+    const parCol = p.regroupement === 'colonnes', chap = parCol ? l.chapitre || 'Sans chapitre' : '', sous = parCol ? l.sousChapitre || '' : '';
+    const fam = familleDe(l), cle = `${p.regroupement === 'systeme' ? l.systeme : ''}|${chap}|${sous}|${fam ? fam.id : cleFamille(`${l.famille} ${l.type}`)}|${l.dn}`;
+    const g = groupes[cle] = groupes[cle] || { systeme: p.regroupement === 'systeme' ? l.systeme : '', chapitre: chap, sousChapitre: sous, fam, dn: l.dn, brut: `${l.famille}${l.type ? ' : ' + l.type : ''}`, famille: l.famille, type: l.type, qte: 0, n: 0 };
     g.qte += fam && fam.unite === 'ml' ? (l.longueur || 0) * l.qte : l.qte; g.n += l.qte;
   });
   const A = tauxDe(Store.get('mainoeuvre', p.moAtelier) || {}, p.tauxAtelier), C = tauxDe(Store.get('mainoeuvre', p.moChantier) || {}, p.tauxPose, p.coutPose);
@@ -147,7 +155,7 @@ function calculerChiffrage(ch) {
     const cout = a ? num(a.coutRevient) : 0, pu = Math.round(cout * (1 + num(niv.marge) / 100) * 100) / 100;
     return { ...g, cat, a, sd, inch, qte: Math.round(g.qte * 100) / 100, unite: g.fam ? g.fam.unite || 'u' : 'u', poucesA: poucesA * g.qte, poucesC: poucesC * g.qte,
       souduresC: sd * (1 - part) * g.qte, hA, hPose, hSoudC, hC: hPose + hSoudC, cout, pu, A, C, statut: !g.fam ? 'famille' : !a ? 'article' : 'ok' };
-  }).sort((x, y) => x.systeme.localeCompare(y.systeme) || (x.fam ? x.fam.nom : x.brut).localeCompare(y.fam ? y.fam.nom : y.brut) || x.dn - y.dn);
+  }).sort((x, y) => x.systeme.localeCompare(y.systeme) || x.chapitre.localeCompare(y.chapitre, 'fr', { numeric: true }) || x.sousChapitre.localeCompare(y.sousChapitre, 'fr', { numeric: true }) || (x.fam ? x.fam.nom : x.brut).localeCompare(y.fam ? y.fam.nom : y.brut) || x.dn - y.dn);
   const extras = (ch.extras || []).filter(e => e.designation && num(e.qte));
   const tot = {
     poucesA: sumBy(liste, g => g.poucesA), poucesC: sumBy(liste, g => g.poucesC), hA: sumBy(liste, g => g.hA * g.qte), hC: sumBy(liste, g => g.hC * g.qte),
@@ -163,41 +171,84 @@ function calculerChiffrage(ch) {
 }
 
 const POUCES_TXT = x => `${fmt(x, 2).replace(/,00$/, '')}"`;
-// Lignes de devis générées : par réseau, un sous-chapitre « Préfabrication atelier » (fournitures du plan, tube en
-// fourniture seule, raccords avec leurs soudures d'atelier) et un sous-chapitre « Pose sur site » (pose des tubes au mètre
-// et de la robinetterie selon le DN, soudures de raccordement sur site), puis les chapitres hors plan
-function lignesDevisDepuis(ch) {
-  const { p, liste, extras, A, C } = calculerChiffrage(ch), out = [];
+// Structure du devis : chapitres > sous-chapitres > ouvrages. Par réseau : sous-chapitres « Préfabrication atelier »
+// (fournitures, tube en fourniture seule, soudures d'atelier) et « Pose sur site » ; par chapitres de la nomenclature :
+// chaque matériel fourni-posé (fourniture, préfabrication, pose et soudures sur site) dans son chapitre et sous-chapitre ;
+// puis les chapitres hors plan
+function structureDevis(ch) {
+  const { p, liste, extras, A, C } = calculerChiffrage(ch), chapitres = [];
   const mo = (t, h) => ({ type: 'mo', moId: t.m.id, libelle: t.m.libelle, heures: Math.round(h * 1000) / 1000, taux: t.vente, cout: t.cout });
   const nomDe = g => `${g.fam ? g.fam.nom : g.brut}${g.dn ? ' DN' + g.dn : ''}`;
-  [...new Set(liste.map(g => g.systeme))].forEach(sys => {
-    const gs = liste.filter(g => g.systeme === sys);
-    out.push({ type: 'chapitre', niveau: 1, titre: sys ? `Réseau ${sys}` : 'Tuyauterie (d\'après plan)', plan: ch.id });
-    out.push({ type: 'chapitre', niveau: 2, titre: 'Préfabrication atelier', plan: ch.id });
-    gs.forEach(g => {
-      const comp = [];
-      if (g.a) comp.push({ type: 'f', articleId: g.a.id, designation: g.a.designation, unite: g.a.unite, qte: 1, pu: g.pu, cout: g.cout, poids: num(g.a.poidsUnitaire) });
-      if (g.hA > 0 && A.m.id) comp.push(mo(A, g.hA));
-      if (!comp.length && g.statut === 'ok') return;
-      out.push({ type: 'ouvrage', plan: ch.id, designation: g.a ? g.a.designation : nomDe(g), unite: g.unite, qte: g.qte, composants: comp,
-        detail: g.cat === 'tube' ? 'Fourniture seule' : g.sd ? `${fmt(g.sd, 2).replace(/,00$/, '')} soudure(s) de ${POUCES_TXT(g.inch)} par ${g.unite}, ${fmt(num(p.partAtelier), 0)} % en atelier` : '' });
+  const fourniture = g => (g.a ? [{ type: 'f', articleId: g.a.id, designation: g.a.designation, unite: g.a.unite, qte: 1, pu: g.pu, cout: g.cout, poids: num(g.a.poidsUnitaire) }] : []);
+  if (p.regroupement === 'colonnes') {
+    [...new Set(liste.map(g => g.chapitre))].forEach(titre => {
+      const gc = liste.filter(g => g.chapitre === titre), sous = [...new Set(gc.map(g => g.sousChapitre))];
+      chapitres.push({ titre, plan: true, sous: sous.map(st => ({ titre: st, ouvrages: gc.filter(g => g.sousChapitre === st).map(g => {
+        const comp = [...fourniture(g)];
+        if (g.hA > 0 && A.m.id) comp.push(mo(A, g.hA));
+        if (g.hC > 0 && C.m.id) comp.push(mo(C, g.hC));
+        return { type: 'ouvrage', plan: ch.id, designation: g.a ? g.a.designation : nomDe(g), unite: g.unite, qte: g.qte, composants: comp,
+          detail: g.cat === 'tube' ? 'Fourni-posé (préfabrication et pose)' : g.sd ? `${fmt(g.sd, 2).replace(/,00$/, '')} soudure(s) de ${POUCES_TXT(g.inch)} par ${g.unite}` : '' };
+      }) })) });
     });
-    const pose = [];
-    gs.filter(g => g.hPose > 0).forEach(g => pose.push({ type: 'ouvrage', plan: ch.id, designation: g.cat === 'tube' ? `Pose tuyauterie DN${g.dn}${g.a ? ` (${g.a.designation})` : ''}` : `Pose ${nomDe(g)}`,
-      unite: g.unite, qte: g.qte, composants: C.m.id ? [mo(C, g.hPose)] : [] }));
-    // Soudures de raccordement sur site, regroupées par diamètre
-    const parDN = {};
-    gs.filter(g => g.hSoudC > 0).forEach(g => { const x = parDN[g.dn] = parDN[g.dn] || { n: 0, h: 0, inch: g.inch }; x.n += g.souduresC; x.h += g.hSoudC * g.qte; });
-    Object.entries(parDN).forEach(([dn, x]) => { if (x.n > 0) pose.push({ type: 'ouvrage', plan: ch.id, designation: `Soudures de raccordement sur site DN${dn} (${POUCES_TXT(x.inch)})`, unite: 'soudure', qte: Math.round(x.n * 100) / 100,
-      composants: C.m.id ? [mo(C, x.h / x.n)] : [] }); });
-    if (pose.length) out.push({ type: 'chapitre', niveau: 2, titre: 'Pose sur site', plan: ch.id }, ...pose);
-  });
+  } else {
+    [...new Set(liste.map(g => g.systeme))].forEach(sys => {
+      const gs = liste.filter(g => g.systeme === sys), prefab = [], pose = [];
+      gs.forEach(g => {
+        const comp = [...fourniture(g)];
+        if (g.hA > 0 && A.m.id) comp.push(mo(A, g.hA));
+        if (!comp.length && g.statut === 'ok') return;
+        prefab.push({ type: 'ouvrage', plan: ch.id, designation: g.a ? g.a.designation : nomDe(g), unite: g.unite, qte: g.qte, composants: comp,
+          detail: g.cat === 'tube' ? 'Fourniture seule' : g.sd ? `${fmt(g.sd, 2).replace(/,00$/, '')} soudure(s) de ${POUCES_TXT(g.inch)} par ${g.unite}, ${fmt(num(p.partAtelier), 0)} % en atelier` : '' });
+      });
+      gs.filter(g => g.hPose > 0).forEach(g => pose.push({ type: 'ouvrage', plan: ch.id, designation: g.cat === 'tube' ? `Pose tuyauterie DN${g.dn}${g.a ? ` (${g.a.designation})` : ''}` : `Pose ${nomDe(g)}`,
+        unite: g.unite, qte: g.qte, composants: C.m.id ? [mo(C, g.hPose)] : [] }));
+      // Soudures de raccordement sur site, regroupées par diamètre
+      const parDN = {};
+      gs.filter(g => g.hSoudC > 0).forEach(g => { const x = parDN[g.dn] = parDN[g.dn] || { n: 0, h: 0, inch: g.inch }; x.n += g.souduresC; x.h += g.hSoudC * g.qte; });
+      Object.entries(parDN).forEach(([dn, x]) => { if (x.n > 0) pose.push({ type: 'ouvrage', plan: ch.id, designation: `Soudures de raccordement sur site DN${dn} (${POUCES_TXT(x.inch)})`, unite: 'soudure', qte: Math.round(x.n * 100) / 100,
+        composants: C.m.id ? [mo(C, x.h / x.n)] : [] }); });
+      chapitres.push({ titre: sys ? `Réseau ${sys}` : 'Tuyauterie (d\'après plan)', plan: true, sous: [{ titre: 'Préfabrication atelier', ouvrages: prefab }, ...(pose.length ? [{ titre: 'Pose sur site', ouvrages: pose }] : [])] });
+    });
+  }
   [...new Set(extras.map(e => e.chapitre || 'Prestations complémentaires'))].forEach(titre => {
-    out.push({ type: 'chapitre', niveau: 1, titre, plan: ch.id });
-    extras.filter(e => (e.chapitre || 'Prestations complémentaires') === titre).forEach(e => {
+    chapitres.push({ titre, plan: false, sous: [{ titre: '', ouvrages: extras.filter(e => (e.chapitre || 'Prestations complémentaires') === titre).map(e => {
       const m = Store.get('mainoeuvre', e.moId);
-      out.push({ type: 'ouvrage', plan: ch.id, designation: e.designation, unite: e.unite || 'forfait', qte: num(e.qte),
-        composants: m ? [mo(tauxDe(m), num(e.heures))] : [{ type: 'f', articleId: e.articleId || '', designation: e.designation, unite: e.unite || 'forfait', qte: 1, pu: num(e.pu), cout: num(e.cout), poids: 0 }] });
+      return { type: 'ouvrage', plan: ch.id, designation: e.designation, unite: e.unite || 'forfait', qte: num(e.qte),
+        composants: m ? [mo(tauxDe(m), num(e.heures))] : [{ type: 'f', articleId: e.articleId || '', designation: e.designation, unite: e.unite || 'forfait', qte: 1, pu: num(e.pu), cout: num(e.cout), poids: 0 }] };
+    }) }] });
+  });
+  return chapitres;
+}
+// Présentation d'un chapitre dans le devis : détaillé (chaque matériel), regroupé (une ligne par sous-chapitre), ou
+// une seule ligne pour tout le chapitre. Les composants (fournitures, heures) sont cumulés : prix et marge identiques.
+const PRESENTATIONS = [['detail', 'Détaillé (chaque matériel)'], ['sous', 'Une ligne par sous-chapitre'], ['global', 'Une seule ligne pour le chapitre']];
+function cumulerOuvrages(ouvrages, designation, plan, detail) {
+  const comp = [];
+  ouvrages.forEach(o => (o.composants || []).forEach(c => {
+    const qte = num(c.type === 'mo' ? c.heures : c.qte) * num(o.qte), k = c.type === 'mo' ? `mo|${c.moId}|${c.taux}|${c.cout}` : `f|${c.articleId || c.designation}|${c.pu}|${c.cout}`, ex = comp.find(x => x._k === k);
+    if (ex) { if (c.type === 'mo') ex.heures = Math.round((ex.heures + qte) * 1000) / 1000; else ex.qte = Math.round((ex.qte + qte) * 1000) / 1000; }
+    else comp.push(c.type === 'mo' ? { ...c, heures: Math.round(qte * 1000) / 1000, _k: k } : { ...c, qte: Math.round(qte * 1000) / 1000, _k: k });
+  }));
+  // Matériel sans prix (non relié à la bibliothèque) : signalé, à chiffrer
+  const sans = ouvrages.filter(o => !(o.composants || []).length).map(o => o.designation);
+  return { type: 'ouvrage', plan, designation, unite: 'ens', qte: 1, composants: comp.map(({ _k, ...c }) => c), detail: sans.length ? `${detail}${detail ? ' — ' : ''}À chiffrer : ${sans.join(', ')}` : detail };
+}
+function lignesDevisDepuis(ch) {
+  const pres = ((ch.params || {}).presentation) || {}, out = [];
+  structureDevis(ch).forEach(chap => {
+    const mode = pres[chap.titre] || 'detail', sous = chap.sous.filter(s => s.ouvrages.length);
+    if (!sous.length) return;
+    out.push({ type: 'chapitre', niveau: 1, titre: chap.titre, plan: ch.id });
+    if (mode === 'global') {
+      const tous = sous.flatMap(s => s.ouvrages), noms = sous.map(s => s.titre).filter(Boolean);
+      out.push(cumulerOuvrages(tous, chap.titre, ch.id, noms.length ? noms.join(' · ') : `${tous.length} article(s)`));
+      return;
+    }
+    sous.forEach(s => {
+      if (mode === 'sous' && s.titre) { out.push(cumulerOuvrages(s.ouvrages, s.titre, ch.id, s.ouvrages.map(o => `${o.designation} × ${fmt(o.qte, 2).replace(/,00$/, '')} ${o.unite}`).join(' · ').slice(0, 900))); return; }
+      if (s.titre) out.push({ type: 'chapitre', niveau: 2, titre: s.titre, plan: ch.id });
+      out.push(...s.ouvrages);
     });
   });
   return out;
@@ -211,7 +262,8 @@ Views.chiffrages = () => `<h1>Devis</h1>${devisTabs('chiffrages')}
   <p class="muted">Importez la nomenclature exportée de votre logiciel de dessin (Revit : Exporter → Rapports → Nomenclature, fichier .txt ; ou .csv / .xlsx) :
     chaque élément est relié à une famille CAO de la bibliothèque (article et nombre de soudures par diamètre). La préfabrication atelier compte les fournitures
     (le tube en fourniture seule) et les soudures en pouces-diamètre ; la pose sur site a son propre taux horaire et ses temps par diamètre (tube au mètre,
-    robinetterie à l'unité). Le devis est généré par réseau, en sous-chapitres « Préfabrication atelier » et « Pose sur site », avec les chapitres hors plan.</p>
+    robinetterie à l'unité). Le devis est rangé par chapitres et sous-chapitres lus dans la nomenclature (ou par réseau), avec les chapitres hors plan ;
+    chaque chapitre est détaillé, regroupé par sous-chapitre ou en une seule ligne. Glissez la nomenclature directement sur un devis pour le chiffrer.</p>
   <div class="toolbar"><button id="ch-new">+ Nouveau chiffrage</button><a class="btn secondary" href="#/familles">Familles CAO (${Store.all('familles').length})</a></div>
   ${Store.all('chiffrages').length ? `<div class="table-wrap"><table data-colonnes="chiffrages"><tr><th>Chiffrage</th><th>Devis</th><th>Client</th><th class="num">Éléments</th><th class="num">Pouces atelier / chantier</th><th class="num">Total HT</th><th class="num">Marge</th></tr>
     ${Store.all('chiffrages').map(ch => { const r = calculerChiffrage(ch), d = Store.get('devis', ch.devisId) || {};
@@ -227,6 +279,24 @@ function nouveauChiffrage(devisId) {
   const params = dernier ? { ...parametresDefaut(), ...JSON.parse(JSON.stringify(dernier.params || {})) } : parametresDefaut();
   return Store.upsert('chiffrages', { nom: d ? (d.objet || d.numero || 'Chiffrage') : 'Nouveau chiffrage', devisId: devisId || '', fichier: '', lignes: [], extras: [], params });
 }
+// Import d'une nomenclature (fichier .txt, .csv, .tsv, .xlsx) dans un chiffrage
+async function importerNomenclature(ch, file) {
+  const buf = await file.arrayBuffer(), sheets = /\.xlsx$/i.test(file.name) ? await XLSX.read(buf) : XLSX.readCSV(buf);
+  return chargerNomenclature(ch, file.name, sheets.sort((a, b) => b.rows.length - a.rows.length)[0]);
+}
+function chargerNomenclature(ch, nom, sheet) {
+  const an = analyserNomenclature(sheet);
+  if (an.colonnes.famille === undefined && an.colonnes.type === undefined) throw new Error('Colonnes « Famille » ou « Type » introuvables dans la nomenclature.');
+  ch.params = { ...parametresDefaut(), ...(ch.params || {}) };
+  // Colonne de chapitre reconnue : regroupement par chapitres de la nomenclature
+  if (an.colonnes.chapitre !== undefined) { ch.params.regroupement = 'colonnes'; ch.params.colChapitre = String(an.colonnes.chapitre); ch.params.colSousChapitre = an.colonnes.sousChapitre !== undefined ? String(an.colonnes.sousChapitre) : ''; }
+  Object.assign(ch, { fichier: nom, sheet, colonnes: Object.fromEntries(Object.entries(an.colonnes).map(([k, j]) => [k, an.titres[j]])), lignes: lignesPlan(sheet, an, ch.params.uniteLongueur, colsDe(ch)) });
+  Store.upsert('chiffrages', ch);
+  return ch.lignes.length;
+}
+const colsDe = ch => (ch.params && ch.params.regroupement === 'colonnes' ? { chapitre: ch.params.colChapitre ?? '', sousChapitre: ch.params.colSousChapitre ?? '' } : {});
+// Colonnes de la nomenclature (titres) pour le choix du chapitre et du sous-chapitre
+const titresNomenclature = ch => (ch.sheet ? (ch.sheet.rows[analyserNomenclature(ch.sheet).entete] || []).map(String) : []);
 function ouvrirChiffrage(devisId) {
   const ch = Store.all('chiffrages').find(c => c.devisId === devisId) || nouveauChiffrage(devisId);
   location.hash = `#/chiffrage/${ch.id}`;
@@ -247,18 +317,22 @@ Views.chiffrage = params => {
   </div></div>
 
   <h2>1. Nomenclature du plan</h2>
+  <div class="ch-depot" id="ch-depot">📥 <strong>Glissez ici la nomenclature extraite de Revit</strong> (.txt, .csv ou .xlsx) — une ligne par pièce (occurrence) ou par type avec sa quantité ; les colonnes « Chapitre » et « Sous-chapitre » ajoutées dans Revit rangent le devis.</div>
   <div class="toolbar">
     <label class="btn secondary">${(ch.lignes || []).length ? 'Remplacer la nomenclature' : 'Importer la nomenclature (.txt, .csv, .xlsx)'}<input type="file" id="ch-file" accept=".txt,.csv,.tsv,.xlsx" hidden></label>
     ${document.body.classList.contains('demo') ? '<button class="secondary" id="ch-exemple">Nomenclature d\'exemple (Revit)</button>' : ''}
     <label class="inline small">Longueurs <select id="ch-ul"><option value="auto" ${p.uniteLongueur === 'auto' ? 'selected' : ''}>détection auto</option><option value="mm" ${p.uniteLongueur === 'mm' ? 'selected' : ''}>en mm</option><option value="m" ${p.uniteLongueur === 'm' ? 'selected' : ''}>en m</option></select></label>
-    <label class="inline small">Regrouper <select id="ch-grp"><option value="systeme" ${p.regroupement === 'systeme' ? 'selected' : ''}>par réseau / système</option><option value="" ${p.regroupement !== 'systeme' ? 'selected' : ''}>tout ensemble</option></select></label>
+    <label class="inline small">Chapitres du devis <select id="ch-grp"><option value="colonnes" ${p.regroupement === 'colonnes' ? 'selected' : ''}>colonnes de la nomenclature (chapitre / sous-chapitre)</option><option value="systeme" ${p.regroupement === 'systeme' ? 'selected' : ''}>par réseau / système (préfabrication et pose)</option><option value="" ${!['systeme', 'colonnes'].includes(p.regroupement) ? 'selected' : ''}>tout ensemble</option></select></label>
   </div>
+  ${p.regroupement === 'colonnes' && ch.sheet ? (() => { const tt = titresNomenclature(ch), sel = (id, v) => `<select id="${id}"><option value="">— aucune —</option>${tt.map((x, j) => `<option value="${j}" ${String(v) === String(j) ? 'selected' : ''}>${esc(x || `Colonne ${j + 1}`)}</option>`).join('')}</select>`;
+    return `<div class="toolbar"><label class="inline small">Colonne des chapitres ${sel('ch-colc', p.colChapitre)}</label><label class="inline small">Colonne des sous-chapitres ${sel('ch-cols', p.colSousChapitre)}</label></div>`; })() : ''}
   ${ch.fichier ? `<p class="muted small">${esc(ch.fichier)} · ${(ch.lignes || []).length} ligne(s) · colonnes reconnues : ${esc(Object.keys(ch.colonnes || {}).join(', '))}</p>` : ''}
 
   ${r.liste.length ? `<h2>2. Correspondance avec la bibliothèque ${t.manquants ? `<span class="badge b-warn">${t.manquants} à relier</span>` : '<span class="badge b-ok">complète</span>'}</h2>
-  <div class="table-wrap"><table class="compact ch-table"><tr><th>Réseau</th><th>Élément du plan</th><th>DN</th><th class="num">Qté</th><th>Famille CAO / article</th><th class="num">Soudures / u</th><th class="num">Pouces atelier / chantier</th><th class="num">h préfab / u</th><th class="num">h pose / u</th><th class="num">Achat / u</th><th class="num">Vente / u</th></tr>
-    ${r.liste.map((g, i) => `<tr class="${g.statut !== 'ok' ? 'a-chiffrer' : ''}"><td class="small">${esc(g.systeme)}</td><td>${esc(g.fam ? g.fam.nom : g.brut)}</td><td>${g.dn || ''}</td><td class="num">${fmt(g.qte, 2)} ${esc(g.unite)}</td>
-      <td>${g.statut === 'famille' ? `<button class="small" data-creer="${i}">Créer la famille</button>` : g.statut === 'article' ? `<button class="small" data-relier="${i}">Choisir l'article DN${g.dn}</button>` : `<span class="small">${esc(g.a.ref)} · ${esc(g.a.designation)}</span>`}</td>
+  <div class="table-wrap"><table class="compact ch-table"><tr><th>${p.regroupement === 'colonnes' ? 'Chapitre / sous-chapitre' : 'Réseau'}</th><th>Élément du plan</th><th>DN</th><th class="num">Qté</th><th>Famille CAO / article</th><th class="num">Soudures / u</th><th class="num">Pouces atelier / chantier</th><th class="num">h préfab / u</th><th class="num">h pose / u</th><th class="num">Achat / u</th><th class="num">Vente / u</th></tr>
+    ${r.liste.map((g, i) => `<tr class="${g.statut !== 'ok' ? 'a-chiffrer' : ''}"><td class="small">${esc(p.regroupement === 'colonnes' ? [g.chapitre, g.sousChapitre].filter(Boolean).join(' › ') : g.systeme)}</td><td>${esc(g.fam ? g.fam.nom : g.brut)}</td><td>${g.dn || ''}</td><td class="num">${fmt(g.qte, 2)} ${esc(g.unite)}</td>
+      <td>${g.statut === 'ok' ? `<span class="small">${esc(g.a.ref)} · ${esc(g.a.designation)}</span> <button class="icon small" data-modif-art="${i}" title="Modifier l'article (prix, désignation) dans la bibliothèque">✎</button>`
+        : `<button class="small" data-nouvel-art="${i}" title="Article créé dans la bibliothèque et relié à cet élément du plan : reconnu au prochain import">➕ Créer l'article</button> ${g.statut === 'famille' ? `<button class="small secondary" data-creer="${i}">Famille CAO…</button>` : `<button class="small secondary" data-relier="${i}">Article existant DN${g.dn}…</button>`}`}</td>
       <td class="num small">${g.cat === 'tube' ? '<span class="muted">fourniture seule</span>' : g.sd ? `${fmt(g.sd, 2).replace(/,00$/, '')} × ${POUCES_TXT(g.inch)}` : '—'}</td>
       <td class="num">${fmt(g.poucesA, 1)} / ${fmt(g.poucesC, 1)}</td><td class="num">${fmt(g.hA, 2)}</td><td class="num" title="pose ${fmt(g.hPose, 2)} h + soudures sur site ${fmt(g.hSoudC, 2)} h">${fmt(g.hC, 2)}</td><td class="num">${g.a ? eur(g.cout) : '—'}</td><td class="num">${g.a ? eur(g.pu) : '—'}</td></tr>`).join('')}</table></div>` : ''}
 
@@ -304,6 +378,13 @@ Views.chiffrage = params => {
   <div class="toolbar"><select id="ch-xadd" style="width:auto"><option value="">+ Ajouter…</option>${EXTRAS_TYPES.map(x => `<option>${esc(x)}</option>`).join('')}<option value="libre">Autre (libre)</option></select>
     <button class="secondary small" id="ch-xhab" title="${esc(EXTRAS_HABITUELS.join(', '))}">+ Chapitres habituels (nacelle, livraison, frais annexes, calorifuge, sous-traitance, divers)</button></div>
 
+  ${(() => { const chaps = structureDevis(ch).filter(c => c.sous.some(x => x.ouvrages.length)), pres = p.presentation || {};
+    return chaps.length ? `<h2>5. Présentation du devis</h2><p class="small muted">Pour chaque chapitre : le détail de chaque matériel, une ligne par sous-chapitre, ou une seule ligne pour tout le chapitre. Le prix et la marge ne changent pas ; « Mettre à jour le devis » applique le choix.</p>
+      <div class="table-wrap"><table class="compact ch-pres"><tr><th>Chapitre</th><th class="num">Sous-chapitres</th><th class="num">Lignes détaillées</th><th>Présentation dans le devis</th></tr>
+      ${chaps.map(c => { const sc = c.sous.filter(x => x.ouvrages.length); return `<tr><td><strong>${esc(c.titre)}</strong>${sc.filter(x => x.titre).length ? `<br><span class="small muted">${esc(sc.map(x => x.titre).filter(Boolean).join(' · '))}</span>` : ''}</td><td class="num">${sc.filter(x => x.titre).length || '—'}</td><td class="num">${sc.reduce((n, x) => n + x.ouvrages.length, 0)}</td>
+        <td><select data-pres="${esc(c.titre)}">${PRESENTATIONS.filter(([k]) => k !== 'sous' || sc.some(x => x.titre)).map(([k, l]) => `<option value="${k}" ${(pres[c.titre] || 'detail') === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></td></tr>`; }).join('')}
+      </table></div><div class="toolbar"><button class="small secondary" data-pres-tout="detail">Tout détailler</button><button class="small secondary" data-pres-tout="sous">Tout par sous-chapitre</button><button class="small secondary" data-pres-tout="global">Tout en une ligne par chapitre</button></div>` : ''; })()}
+
   <h2>Synthèse</h2>
   <div class="cards">
     <div class="card"><div class="label">Soudures</div><div class="value">${fmt(t.poucesA + t.poucesC, 0)} pouces</div><div class="sub">atelier ${fmt(t.poucesA, 0)} · chantier ${fmt(t.poucesC, 0)}</div></div>
@@ -322,20 +403,26 @@ Views.chiffrage.bind = (root, params) => {
   const q = s => root.querySelector(s);
   q('#ch-nom').onchange = e => { ch.nom = e.target.value; save(false); };
   q('#ch-devis').onchange = e => { ch.devisId = e.target.value; save(); };
-  q('#ch-ul').onchange = e => { ch.params.uniteLongueur = e.target.value; if (ch.sheet) ch.lignes = lignesPlan(ch.sheet, analyserNomenclature(ch.sheet), e.target.value); save(); };
-  q('#ch-grp').onchange = e => { ch.params.regroupement = e.target.value; save(); };
-  const charger = (nom, sheet) => {
-    const an = analyserNomenclature(sheet);
-    if (an.colonnes.famille === undefined && an.colonnes.type === undefined) return notify('Colonnes « Famille » ou « Type » introuvables dans la nomenclature.');
-    Object.assign(ch, { fichier: nom, sheet, colonnes: Object.fromEntries(Object.entries(an.colonnes).map(([k, j]) => [k, an.titres[j]])), lignes: lignesPlan(sheet, an, ch.params.uniteLongueur) });
-    save(); App.toast(`${ch.lignes.length} élément(s) importé(s)`);
+  const relire = () => { if (ch.sheet) ch.lignes = lignesPlan(ch.sheet, analyserNomenclature(ch.sheet), ch.params.uniteLongueur, colsDe(ch)); };
+  q('#ch-ul').onchange = e => { ch.params.uniteLongueur = e.target.value; relire(); save(); };
+  q('#ch-grp').onchange = e => {
+    ch.params.regroupement = e.target.value;
+    if (e.target.value === 'colonnes' && ch.sheet && ch.params.colChapitre === undefined) { const an = analyserNomenclature(ch.sheet); ch.params.colChapitre = an.colonnes.chapitre !== undefined ? String(an.colonnes.chapitre) : ''; ch.params.colSousChapitre = an.colonnes.sousChapitre !== undefined ? String(an.colonnes.sousChapitre) : ''; }
+    relire(); save();
   };
-  q('#ch-file').onchange = async e => {
-    const file = e.target.files[0]; e.target.value = '';
-    if (!file) return;
-    try { const buf = await file.arrayBuffer(); const sheets = /\.xlsx$/i.test(file.name) ? await XLSX.read(buf) : XLSX.readCSV(buf); charger(file.name, sheets.sort((a, b) => b.rows.length - a.rows.length)[0]); }
-    catch (err) { notify('Lecture impossible : ' + err.message); }
-  };
+  const cc = q('#ch-colc'); if (cc) cc.onchange = e => { ch.params.colChapitre = e.target.value; relire(); save(); };
+  const cs2 = q('#ch-cols'); if (cs2) cs2.onchange = e => { ch.params.colSousChapitre = e.target.value; relire(); save(); };
+  const charger = (nom, sheet) => { try { const n = chargerNomenclature(ch, nom, sheet); App.render(); App.toast(`${n} élément(s) importé(s)`); } catch (err) { notify(err.message); } };
+  const importer = async file => { try { const n = await importerNomenclature(ch, file); App.render(); App.toast(`${n} élément(s) importé(s) de ${file.name}`); } catch (err) { notify('Lecture impossible : ' + err.message); } };
+  q('#ch-file').onchange = e => { const file = e.target.files[0]; e.target.value = ''; if (file) importer(file); };
+  // Glisser-déposer de la nomenclature sur la page
+  const zone = q('#ch-depot');
+  root.ondragover = e => { if ([...(e.dataTransfer.types || [])].includes('Files')) { e.preventDefault(); zone.classList.add('survol'); } };
+  root.ondragleave = e => { if (!root.contains(e.relatedTarget)) zone.classList.remove('survol'); };
+  root.ondrop = e => { const f = [...(e.dataTransfer.files || [])].find(x => /\.(txt|csv|tsv|xlsx)$/i.test(x.name)); if (!f) return; e.preventDefault(); zone.classList.remove('survol'); importer(f); };
+  // Présentation des chapitres dans le devis
+  root.querySelectorAll('[data-pres]').forEach(el => el.onchange = () => { ch.params.presentation = { ...(ch.params.presentation || {}), [el.dataset.pres]: el.value }; save(false); });
+  root.querySelectorAll('[data-pres-tout]').forEach(b => b.onclick = () => { const v = b.dataset.presTout; ch.params.presentation = Object.fromEntries(structureDevis(ch).map(c => [c.titre, v === 'sous' && !c.sous.some(x => x.titre) ? 'detail' : v])); save(); });
   const ex = q('#ch-exemple');
   if (ex) ex.onclick = () => charger('Nomenclature tuyauterie (exemple Revit).txt', XLSX.readCSV(new TextEncoder().encode(nomenclatureExemple()).buffer)[0]);
   root.querySelectorAll('[data-p]').forEach(el => el.onchange = () => { ch.params[el.dataset.p] = el.tagName === 'SELECT' || (el.dataset.vide && el.value === '') ? el.value : num(el.value); save(); });
@@ -366,6 +453,8 @@ Views.chiffrage.bind = (root, params) => {
   // Liaisons manquantes : création de la famille CAO ou choix de l'article pour le diamètre
   const r = calculerChiffrage(ch);
   root.querySelectorAll('[data-creer]').forEach(b => b.onclick = () => { const g = r.liste[+b.dataset.creer]; editerFamille({ nom: g.brut.split(' : ')[0], alias: g.brut, unite: /tuyau|tube|pipe/i.test(g.brut) ? 'ml' : 'u', soudures: /coude|elbow/i.test(g.brut) ? 2 : /t[ée]\b|tee/i.test(g.brut) ? 3 : /bride|flange/i.test(g.brut) ? 1 : /r[ée]duction|reducer/i.test(g.brut) ? 2 : 0, tempsPrefab: 0.1, tempsPose: 0.1, declinaisons: [{ dn: g.dn, articleId: '' }] }); });
+  root.querySelectorAll('[data-nouvel-art]').forEach(b => b.onclick = () => articleDepuisPlan(r.liste[+b.dataset.nouvelArt], ch, () => { relire(); save(); }));
+  root.querySelectorAll('[data-modif-art]').forEach(b => b.onclick = () => { const g = r.liste[+b.dataset.modifArt]; if (typeof editArticle === 'function') editArticle({ ...g.a }); });
   root.querySelectorAll('[data-relier]').forEach(b => b.onclick = () => { const g = r.liste[+b.dataset.relier]; const f = { ...g.fam, declinaisons: [...(g.fam.declinaisons || []), { dn: g.dn, articleId: '' }] }; editerFamille(f); });
   q('#ch-gen').onclick = async () => {
     const lignes = lignesDevisDepuis(ch), t = calculerChiffrage(ch).tot;
@@ -400,6 +489,36 @@ Views.familles.bind = root => {
   root.querySelector('#fam-add').onclick = () => editerFamille({ nom: '', unite: 'u', soudures: 0, tempsPrefab: 0, tempsPose: 0, declinaisons: [] });
   root.querySelectorAll('[data-fam]').forEach(tr => tr.onclick = () => editerFamille({ ...Store.get('familles', tr.dataset.fam) }));
 };
+// Élément du plan inconnu de la bibliothèque : article créé (désignation, référence, prix d'achat et de vente, fournisseur)
+// et famille CAO créée ou complétée pour ce diamètre, de sorte qu'il soit reconnu et chiffré au prochain import
+function articleDepuisPlan(g, ch, apres) {
+  const p = { ...parametresDefaut(), ...(ch.params || {}) }, niv = p.niveaux[p.niveau] || p.niveaux[0];
+  const cat = g.fam ? categorieFamille(g.fam) : /tuyau|tube|pipe/i.test(g.brut) ? 'tube' : /vanne|robinet|clapet|purgeur|filtre/i.test(g.brut) ? 'robinetterie' : /coude|t[ée]\b|bride|r[ée]duction|manchon/i.test(g.brut) ? 'raccord' : 'autre';
+  const unite = g.fam ? g.fam.unite || 'u' : cat === 'tube' ? 'ml' : 'u';
+  const familleBiblio = { tube: 'Tubes', raccord: 'Raccords', robinetterie: 'Robinetterie' }[cat] || 'Supportage';
+  const box = Modal.open(`<h2 style="margin-top:0">Nouvel article de la bibliothèque</h2>
+    <p class="small muted">Élément du plan : <strong>${esc(g.brut)}</strong>${g.dn ? ` · DN${g.dn}` : ''} · ${fmt(g.qte, 2)} ${esc(unite)}. L'article est relié à cet élément : au prochain import, il est reconnu et chiffré.</p>
+    <div class="grid2"><div class="field"><label for="na-des">Désignation</label><input id="na-des" value="${esc(`${g.famille || g.brut}${g.type ? ` ${g.type}` : ''}${g.dn ? ` DN${g.dn}` : ''}`)}"></div>
+      <div class="field"><label for="na-ref">Référence</label><input id="na-ref" placeholder="Réf. fournisseur ou interne"></div>
+      <div class="field"><label for="na-fam">Famille (bibliothèque)</label><input id="na-fam" list="na-fams" value="${esc(familleBiblio)}"><datalist id="na-fams">${famillesArticles().map(f => `<option value="${esc(f)}">`).join('')}</datalist></div>
+      <div class="field"><label for="na-u">Unité</label><select id="na-u">${optionsStr([...new Set([...UNITES, unite])], unite)}</select></div>
+      <div class="field"><label for="na-cout">Prix d'achat HT</label><input id="na-cout" type="number" step="0.01" min="0"></div>
+      <div class="field"><label for="na-pv">Prix de vente HT <span class="small muted">(vide : achat + ${fmt(num(niv.marge), 0)} %)</span></label><input id="na-pv" type="number" step="0.01" min="0"></div>
+      <div class="field"><label for="na-four">Fournisseur préféré</label><select id="na-four">${options(fournisseursList(), '')}</select></div>
+      <div class="field"><label for="na-sd">Soudures par ${esc(unite)}</label><input id="na-sd" type="number" step="0.5" min="0" value="${esc(g.fam ? num(g.fam.soudures) : cat === 'raccord' ? (/t[ée]\b/i.test(g.brut) ? 3 : 2) : 0)}"></div></div>
+    <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="na-x">Annuler</button><button id="na-ok">Enregistrer dans la bibliothèque</button></div>`);
+  box.querySelector('#na-x').onclick = Modal.close;
+  box.querySelector('#na-ok').onclick = () => {
+    const v = k => box.querySelector(k).value.trim(), cout = num(v('#na-cout')), pv = v('#na-pv') === '' ? Math.round(cout * (1 + num(niv.marge) / 100) * 100) / 100 : num(v('#na-pv'));
+    if (!v('#na-des')) return notify('Indiquez la désignation.');
+    const a = Store.upsert('articles', { ref: v('#na-ref') || `PLAN-${uid().slice(0, 6).toUpperCase()}`, designation: v('#na-des'), famille: v('#na-fam'), sousFamille: '', unite: v('#na-u'), coutRevient: cout, prixVente: pv, poidsUnitaire: 0, fournisseurId: v('#na-four') });
+    const f = g.fam ? { ...g.fam, declinaisons: [...(g.fam.declinaisons || []).filter(x => num(x.dn) !== num(g.dn))] } : { nom: g.famille || g.brut.split(' : ')[0], alias: g.brut, unite: v('#na-u'), categorie: cat, soudures: num(v('#na-sd')), tempsPose: '', declinaisons: [] };
+    f.declinaisons.push({ dn: g.dn || '', articleId: a.id, ...(g.fam && num(v('#na-sd')) !== num(g.fam.soudures) ? { soudures: num(v('#na-sd')) } : {}) });
+    if (g.fam && !String(f.alias || '').split(',').map(x => x.trim()).includes(g.brut)) f.alias = [f.alias, g.brut].filter(Boolean).join(', ');
+    Store.upsert('familles', f);
+    Modal.close(); App.toast(`« ${a.designation} » enregistré dans la bibliothèque et relié au plan`); if (apres) apres();
+  };
+}
 function editerFamille(f) {
   f.declinaisons = (f.declinaisons || []).map(d => ({ ...d }));
   f.categorie = categorieFamille(f);
@@ -450,18 +569,21 @@ function editerFamille(f) {
 }
 
 // Démonstration : export de nomenclature Revit (texte séparé par tabulations, longueurs en mm, titre en première ligne)
+// Démonstration : nomenclature Revit d'une pièce par ligne (occurrences), avec les colonnes « Chapitre » et
+// « Sous-chapitre » ajoutées au projet (paramètres partagés) et une pièce absente de la bibliothèque
 function nomenclatureExemple() {
-  const L = [['Nomenclature de canalisations et raccords – Ligne NEP'], ['Abréviation du système', 'Famille', 'Type', 'Taille', 'Longueur', 'Nombre']];
-  const sys = [['NEP-ALLER', 50], ['NEP-RETOUR', 50], ['EG-101', 100]];
-  sys.forEach(([s, dn]) => {
-    L.push([s, 'Tuyau', 'Inox 316L soudé', `${dn} mm`, dn === 100 ? '42500' : '61800', '1']);
-    L.push([s, 'Coude - Soudé', 'Standard 90°', `${dn} mm`, '', dn === 100 ? '9' : '14']);
-    L.push([s, 'Té - Soudé', 'Égal', `${dn} mm`, '', dn === 100 ? '2' : '4']);
-    L.push([s, 'Bride à collerette', 'PN16', `${dn} mm`, '', '4']);
-    if (dn === 50) L.push([s, 'Vanne papillon', 'À levier PN16', `${dn} mm`, '', '3']);
-    L.push([s, 'Support de tuyauterie', 'Collier sur rail', `${dn} mm`, dn === 100 ? '42500' : '61800', '1']);
+  const L = [['Nomenclature de canalisations et raccords – Ligne NEP'], ['Chapitre', 'Sous-chapitre', 'Abréviation du système', 'Famille', 'Type', 'Taille', 'Longueur', 'Nombre']];
+  const piece = (chap, sous, sys, fam, type, taille, long = '', n = 1) => { for (let i = 0; i < n; i++) L.push([chap, sous, sys, fam, type, taille, long, '1']); };
+  [['1 – Ligne NEP', 'Aller', 'NEP-ALLER', 50, ['31200', '18400', '12200']], ['1 – Ligne NEP', 'Retour', 'NEP-RETOUR', 50, ['30100', '19800', '11900']], ['2 – Eau glacée process', 'Collecteur', 'EG-101', 100, ['21500', '21000']]].forEach(([chap, sous, sys, dn, longs]) => {
+    longs.forEach(l => piece(chap, sous, sys, 'Tuyau', dn === 100 ? 'Acier P235GH' : 'Inox 316L soudé', `${dn} mm`, l));
+    piece(chap, sous, sys, 'Coude - Soudé', 'Standard 90°', `${dn} mm`, '', dn === 100 ? 9 : 7);
+    piece(chap, sous, sys, 'Té - Soudé', 'Égal', `${dn} mm`, '', 2);
+    piece(chap, sous, sys, 'Bride à collerette', 'PN16', `${dn} mm`, '', 4);
+    if (dn === 50) piece(chap, sous, sys, 'Vanne papillon', 'À levier PN16', `${dn} mm`, '', 2);
+    longs.forEach(l => piece(chap, sous, sys, 'Support de tuyauterie', 'Collier sur rail', `${dn} mm`, l));
   });
-  L.push(['EG-101', 'Réduction concentrique', 'Soudée', '100 mm-50 mm', '', '2']);
-  L.push(['EG-101', 'Purgeur automatique', 'Standard', '15 mm', '', '2']);
+  piece('2 – Eau glacée process', 'Collecteur', 'EG-101', 'Réduction concentrique', 'Soudée', '100 mm-50 mm', '', 2);
+  piece('2 – Eau glacée process', 'Équipements', 'EG-101', 'Purgeur automatique', 'Standard', '15 mm', '', 2);
+  piece('2 – Eau glacée process', 'Équipements', 'EG-101', 'Manomètre à cadran', 'Glycérine 0-10 bar', '15 mm', '', 2);
   return L.map(r => r.map(c => `"${c}"`).join('\t')).join('\r\n');
 }
