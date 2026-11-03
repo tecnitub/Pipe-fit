@@ -96,7 +96,8 @@
         <ul class="liste-fonctions">
           <li><b>Compiler</b> plusieurs PDF, photos et scans en un seul document, avec sommaire et signets</li>
           <li><b>Réorganiser</b> les pages par glisser-déposer, pivoter, dupliquer, supprimer</li>
-          <li><b>Modifier</b> une page : ajouter du texte, masquer (blanc correcteur), surligner, encadrer, apposer une signature ou un tampon</li>
+          <li><b>Annoter</b> une page : texte à la volée, bulles, traits, flèches, carrés, cercles, crayon, surlignage, images et signatures</li>
+          <li><b>Caviarder</b> les informations confidentielles (à la main ou en recherchant un mot) : elles sont réellement supprimées</li>
           <li><b>Extraire</b> ou <b>diviser</b> en plusieurs fichiers, <b>numéroter</b>, ajouter un <b>filigrane</b>, <b>réduire la taille</b></li>
         </ul>
         <p class="aide">Tout se passe sur cet ordinateur : aucun fichier n'est envoyé sur Internet.</p>
@@ -116,23 +117,35 @@
 <div id="editeur" class="modale" hidden>
   <div class="ed-barre">
     <div class="groupe-outils" id="ed-outils">
-      <button data-outil="selection" class="actif" title="Sélectionner, déplacer, redimensionner">↖ Sélection</button>
-      <button data-outil="texte" title="Cliquer sur la page pour écrire">T Texte</button>
-      <button data-outil="masque" title="Tracer un rectangle blanc pour masquer (blanc correcteur)">▭ Masquer</button>
-      <button data-outil="surligne" title="Tracer une zone surlignée">▬ Surligner</button>
-      <button data-outil="cadre" title="Tracer un cadre">▢ Encadrer</button>
-      <button data-outil="image" title="Ajouter une image : signature, tampon, logo">✍ Image / signature</button>
+      <button data-outil="selection" class="actif" title="Sélectionner, déplacer, redimensionner (V)">↖</button>
+      <span class="sep-ed"></span>
+      <button data-outil="texte" title="Texte à la volée : cliquer sur la page et écrire (T)">T&nbsp;Texte</button>
+      <button data-outil="bulle" title="Bulle : tracer la bulle (ou cliquer sur le point à commenter), puis écrire. Le point bleu règle la pointe (B)">💬&nbsp;Bulle</button>
+      <span class="sep-ed"></span>
+      <button data-outil="ligne" title="Trait (L) – Maj : horizontal, vertical ou 45°">╱&nbsp;Trait</button>
+      <button data-outil="fleche" title="Flèche (F) – Maj : horizontale, verticale ou 45°">↗&nbsp;Flèche</button>
+      <button data-outil="cadre" title="Rectangle / carré (R)">▢&nbsp;Carré</button>
+      <button data-outil="ellipse" title="Ellipse / cercle (E)">◯&nbsp;Cercle</button>
+      <button data-outil="crayon" title="Dessin à main levée (C)">✎&nbsp;Crayon</button>
+      <span class="sep-ed"></span>
+      <button data-outil="surligne" title="Surligner une zone (S)">▬&nbsp;Surligner</button>
+      <button data-outil="masque" title="Masquer en blanc, blanc correcteur (M) – le contenu reste dans le fichier">▭&nbsp;Masquer</button>
+      <button data-outil="caviarde" title="Caviarder (X) : zone noire, le contenu dessous est réellement supprimé à l'enregistrement">■&nbsp;Caviarder</button>
+      <button data-outil="image" title="Insérer une image : signature, tampon, photo, logo (I) – ou Ctrl+V pour coller une image copiée">🖼&nbsp;Image</button>
     </div>
     <div class="groupe-outils">
-      <label title="Couleur">Couleur <input type="color" id="ed-couleur" value="#000000"></label>
+      <label title="Couleur">🎨 <input type="color" id="ed-couleur" value="#000000"></label>
+      <label title="Épaisseur du trait (points)">Trait <input type="number" id="ed-epaisseur" min="0.5" max="30" step="0.5" value="2"></label>
       <label title="Taille du texte (points)">Taille <input type="number" id="ed-taille" min="5" max="120" value="12"></label>
-      <label class="case-ed"><input type="checkbox" id="ed-gras"> Gras</label>
-      <button id="ed-suppr" title="Supprimer l'élément sélectionné (Suppr)">🗑</button>
+      <label class="case-ed" title="Texte en gras"><input type="checkbox" id="ed-gras"> <b>G</b></label>
+      <button id="ed-dupl" title="Dupliquer l'élément (Ctrl+D)">⧉</button>
+      <button id="ed-suppr" title="Supprimer l'élément (Suppr)">🗑</button>
     </div>
     <div class="groupe-outils">
-      <button id="ed-prec" title="Page précédente">◀</button>
+      <button id="ed-caviarder" title="Rechercher un mot ou un nom dans tous les PDF et le caviarder partout">■ Caviarder un mot…</button>
+      <button id="ed-prec" title="Page précédente (Page préc.)">◀</button>
       <span id="ed-num"></span>
-      <button id="ed-suiv" title="Page suivante">▶</button>
+      <button id="ed-suiv" title="Page suivante (Page suiv.)">▶</button>
       <button id="ed-fermer" class="principal">Terminé</button>
     </div>
   </div>
@@ -142,7 +155,8 @@
       <div class="calque" id="ed-calque"></div>
     </div>
   </div>
-  <div class="ed-aide">Astuce : pour <b>remplacer</b> un texte existant, masquez-le avec « Masquer » puis écrivez le nouveau texte par-dessus.</div>
+  <div class="ed-aide">Glisser pour tracer · double-clic sur un texte ou une bulle pour le corriger · Ctrl+V colle une image ou un texte · Échap revient à la sélection · Ctrl+Z annule.
+    Pour <b>remplacer</b> un texte : « Masquer » puis écrire par-dessus. Pour <b>supprimer</b> une information confidentielle : « Caviarder ».</div>
 </div>
 
 <!-- Dialogue « Diviser » -->

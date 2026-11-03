@@ -24,14 +24,30 @@ ORGANISER LES PAGES
   - « Page blanche » et « Intercalaire » (page de titre) s'insèrent après la sélection.
   - Ctrl+Z / Ctrl+Y : annuler / rétablir.
 
-MODIFIER UNE PAGE (double-clic sur la page, ou « Modifier »)
-  - Texte : cliquer sur la page puis écrire. Double-clic sur un texte pour le corriger.
-  - Masquer : tracer un rectangle blanc (blanc correcteur) pour cacher une zone.
-    Pour REMPLACER un texte : le masquer, puis écrire le nouveau texte par-dessus.
-  - Surligner, Encadrer : tracer la zone.
-  - Image / signature : ajouter une signature scannée, un tampon, un logo
-    (PNG à fond transparent conseillé). Tirer le coin bleu pour redimensionner.
-  - Suppr : supprimer l'élément choisi. Pages précédente/suivante : ◀ ▶ (ou Page préc./suiv.).
+ANNOTER UNE PAGE (double-clic sur la page, ou « Modifier »)
+  Choisir un outil (lettre entre parenthèses = raccourci clavier), puis :
+  - Texte (T) : cliquer sur la page et écrire directement. Cliquer ailleurs pour
+    écrire un autre texte. Double-clic sur un texte pour le corriger.
+  - Bulle (B) : tracer la bulle, ou cliquer sur le point à commenter ; écrire le
+    commentaire. Le point orange règle la pointe de la bulle.
+  - Trait (L), Flèche (F) : glisser du début à la fin. Maj : horizontal,
+    vertical ou à 45°. Les points bleus déplacent les extrémités.
+  - Carré (R), Cercle (E) : glisser pour tracer.
+  - Crayon (C) : dessin à main levée.
+  - Surligner (S) : zone jaune transparente.
+  - Masquer (M) : rectangle blanc (blanc correcteur). Le texte caché reste dans le
+    fichier : pour REMPLACER un texte, masquer puis écrire par-dessus.
+  - Caviarder (X) : rectangle noir. À l'enregistrement, la page est recopiée en
+    image : le contenu sous le noir est RÉELLEMENT supprimé (non récupérable).
+    « Caviarder un mot… » recherche un nom, un numéro… dans tous les PDF et le
+    noircit partout (vérifier les pages ensuite ; les scans se caviardent à la main).
+  - Image (I) : signature, tampon, photo, logo (PNG à fond transparent conseillé).
+    Ctrl+V colle une image ou un texte copiés (capture d'écran, Word…).
+  Couleur, épaisseur du trait, taille et gras s'appliquent à l'élément choisi et
+  sont retenus pour les suivants.
+  Sélection (V ou Échap) : cliquer un élément pour le déplacer (ou flèches du
+  clavier), tirer le carré bleu pour le redimensionner. Ctrl+D : dupliquer.
+  Suppr : supprimer. Ctrl+Z : annuler. Page préc./Page suiv. : changer de page.
 
 COMPILER ET ENREGISTRER
   Colonne de gauche, avant d'enregistrer :

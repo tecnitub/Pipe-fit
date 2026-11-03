@@ -66,17 +66,121 @@
     });
   }
 
+  // ---------- Formes vectorielles (communes à l'écran et au PDF) ----------
+  // Chaque forme est décrite dans le repère de la page affichée, en unités « l × h » (points pour le PDF,
+  // pixels à l'écran), k = unités par point (taille des pointes de flèche, épaisseurs, arrondis).
+  // Résultat : [{ cmds: [['M',x,y],['L',x,y],['C',x1,y1,x2,y2,x,y],['Z']], trait, fond, epaisseur, rond, opacite }]
+  const DEFAUTS = { ligne: '#d32f2f', fleche: '#d32f2f', crayon: '#1565c0', ellipse: '#d32f2f', cadre: '#d32f2f', bulle: '#1565c0', texte: '#000000' };
+  const K_ELLIPSE = 0.5523;
+
+  function cmdsRect(x, y, w, h) { return [['M', x, y], ['L', x + w, y], ['L', x + w, y + h], ['L', x, y + h], ['Z']]; }
+  function cmdsEllipse(x, y, w, h) {
+    const cx = x + w / 2, cy = y + h / 2, rx = w / 2, ry = h / 2, ox = rx * K_ELLIPSE, oy = ry * K_ELLIPSE;
+    return [['M', cx - rx, cy], ['C', cx - rx, cy - oy, cx - ox, cy - ry, cx, cy - ry], ['C', cx + ox, cy - ry, cx + rx, cy - oy, cx + rx, cy],
+      ['C', cx + rx, cy + oy, cx + ox, cy + ry, cx, cy + ry], ['C', cx - ox, cy + ry, cx - rx, cy + oy, cx - rx, cy], ['Z']];
+  }
+  // Bulle : rectangle arrondi dont un côté porte une pointe dirigée vers (px, py)
+  function cmdsBulle(x, y, w, h, px, py, k) {
+    const r = Math.min(8 * k, w / 3, h / 3);
+    const dx = (px - (x + w / 2)) / Math.max(w, 1e-6), dy = (py - (y + h / 2)) / Math.max(h, 1e-6);
+    const dedans = px > x && px < x + w && py > y && py < y + h;
+    const cote = dedans ? null : Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'd' : 'g') : (dy > 0 ? 'b' : 'h');
+    const base = (debut, fin) => Math.min(14 * k, (fin - debut - 2 * r) * 0.5); // largeur de la pointe
+    const c = [];
+    // Points de passage dans le sens horaire (y vers le bas)
+    c.push(['M', x + r, y]);
+    if (cote === 'h') { const b = base(x, x + w); const m = Math.min(Math.max(px, x + r + b / 2), x + w - r - b / 2); c.push(['L', m - b / 2, y], ['L', px, py], ['L', m + b / 2, y]); }
+    c.push(['L', x + w - r, y], ['C', x + w - r * (1 - K_ELLIPSE), y, x + w, y + r * (1 - K_ELLIPSE), x + w, y + r]);
+    if (cote === 'd') { const b = base(y, y + h); const m = Math.min(Math.max(py, y + r + b / 2), y + h - r - b / 2); c.push(['L', x + w, m - b / 2], ['L', px, py], ['L', x + w, m + b / 2]); }
+    c.push(['L', x + w, y + h - r], ['C', x + w, y + h - r * (1 - K_ELLIPSE), x + w - r * (1 - K_ELLIPSE), y + h, x + w - r, y + h]);
+    if (cote === 'b') { const b = base(x, x + w); const m = Math.min(Math.max(px, x + r + b / 2), x + w - r - b / 2); c.push(['L', m + b / 2, y + h], ['L', px, py], ['L', m - b / 2, y + h]); }
+    c.push(['L', x + r, y + h], ['C', x + r * (1 - K_ELLIPSE), y + h, x, y + h - r * (1 - K_ELLIPSE), x, y + h - r]);
+    if (cote === 'g') { const b = base(y, y + h); const m = Math.min(Math.max(py, y + r + b / 2), y + h - r - b / 2); c.push(['L', x, m + b / 2], ['L', px, py], ['L', x, m - b / 2]); }
+    c.push(['L', x, y + r], ['C', x, y + r * (1 - K_ELLIPSE), x + r * (1 - K_ELLIPSE), y, x + r, y], ['Z']);
+    return c;
+  }
+
+  function formes(e, l, h, k = 1) {
+    const ep = (e.epaisseur || 2) * k;
+    const coul = e.couleur || DEFAUTS[e.type] || '#000000';
+    const X = v => v * l, Y = v => v * h;
+    switch (e.type) {
+      case 'ligne':
+        return [{ cmds: [['M', X(e.x1), Y(e.y1)], ['L', X(e.x2), Y(e.y2)]], trait: coul, epaisseur: ep, rond: true }];
+      case 'fleche': {
+        const x1 = X(e.x1), y1 = Y(e.y1), x2 = X(e.x2), y2 = Y(e.y2);
+        const lg = Math.hypot(x2 - x1, y2 - y1) || 1;
+        const ux = (x2 - x1) / lg, uy = (y2 - y1) / lg;
+        const tete = Math.min(lg * 0.6, Math.max(9 * k, ep * 4)), demi = tete * 0.45;
+        const bx = x2 - ux * tete, by = y2 - uy * tete;
+        return [
+          { cmds: [['M', x1, y1], ['L', bx + ux * ep * 0.5, by + uy * ep * 0.5]], trait: coul, epaisseur: ep, rond: true },
+          { cmds: [['M', x2, y2], ['L', bx - uy * demi, by + ux * demi], ['L', bx + uy * demi, by - ux * demi], ['Z']], fond: coul },
+        ];
+      }
+      case 'crayon': {
+        const pts = e.points || [];
+        if (!pts.length) return [];
+        const cmds = pts.map(([px, py], i) => [i ? 'L' : 'M', X(px), Y(py)]);
+        if (pts.length === 1) cmds.push(['L', X(pts[0][0]) + 0.01, Y(pts[0][1])]);
+        return [{ cmds, trait: coul, epaisseur: ep, rond: true }];
+      }
+      case 'ellipse':
+        return [{ cmds: cmdsEllipse(X(e.x), Y(e.y), X(e.w), Y(e.h)), trait: coul, epaisseur: ep, fond: e.fond || null }];
+      case 'bulle':
+        return [{ cmds: cmdsBulle(X(e.x), Y(e.y), X(e.w), Y(e.h), X(e.px ?? e.x), Y(e.py ?? (e.y + e.h + 0.05)), k), trait: coul, epaisseur: Math.max(k, ep * 0.75), fond: e.fond || '#ffffff' }];
+      default:
+        return [];
+    }
+  }
+
+  // Commandes -> chemin SVG, chaque point passé par f(x, y) -> [X, Y]
+  function chemin(cmds, f = (x, y) => [x, y]) {
+    const n = v => (Math.round(v * 1000) / 1000).toString();
+    return cmds.map(c => {
+      if (c[0] === 'Z') return 'Z';
+      const pts = [];
+      for (let i = 1; i < c.length; i += 2) { const [a, b] = f(c[i], c[i + 1]); pts.push(n(a), n(b)); }
+      return `${c[0]} ${pts.join(' ')}`;
+    }).join(' ');
+  }
+
+  // Texte coupé en lignes tenant dans « max » (mots trop longs coupés)
+  function couperLignes(mesure, texte, max) {
+    const res = [];
+    String(texte || '').split(/\r?\n/).forEach(par => {
+      let ligne = '';
+      for (const mot of par.split(/(\s+)/)) {
+        const essai = ligne + mot;
+        if (!ligne || mesure(essai.trimEnd()) <= max) { ligne = essai; continue; }
+        res.push(ligne.trimEnd());
+        ligne = mot.trimStart();
+        while (ligne.length > 1 && mesure(ligne) > max) {
+          let i = ligne.length - 1;
+          while (i > 1 && mesure(ligne.slice(0, i)) > max) i--;
+          res.push(ligne.slice(0, i)); ligne = ligne.slice(i);
+        }
+      }
+      res.push(ligne.trimEnd());
+    });
+    return res;
+  }
+  const MARGE_BULLE = 6; // points
+
   // ---------- Éléments ajoutés sur une page ----------
   async function dessinerElements(sortie, page, r, elements, ctx) {
-    const { degrees } = lib();
+    const { degrees, LineCapStyle } = lib();
     const boite = page.getCropBox();
     const affiche = tailleAffichee(boite, r);
+    const versChemin = (x, y) => { const p = versPdf(boite, r, x / affiche.l, y / affiche.h); return [p.x, -p.y]; };
     for (const e of elements || []) {
       if (e.type === 'texte') {
         const police = e.gras ? ctx.policeGras : ctx.police;
         poserTexte(page, boite, r, police, { texte: e.texte || '', u: e.x, v: e.y, taille: e.taille || 12, coul: couleur(e.couleur) });
       } else if (e.type === 'masque') {
         page.drawRectangle({ ...rectPdf(boite, r, e), color: couleur(e.couleur, [1, 1, 1]) });
+      } else if (e.type === 'caviarde') {
+        page.drawRectangle({ ...rectPdf(boite, r, e), color: couleur('#000000') });
       } else if (e.type === 'surligne') {
         page.drawRectangle({ ...rectPdf(boite, r, e), color: couleur(e.couleur || '#ffeb3b'), opacity: 0.35 });
       } else if (e.type === 'cadre') {
@@ -87,6 +191,19 @@
         // Coin bas-gauche de l'image affichée = point d'ancrage, puis rotation pour qu'elle reste à l'endroit
         const p = versPdf(boite, r, e.x, e.y + e.h);
         page.drawImage(img, { x: p.x, y: p.y, width: e.w * affiche.l, height: e.h * affiche.h, rotate: degrees(normRot(r)) });
+      }
+      for (const f of formes(e, affiche.l, affiche.h, 1)) {
+        const o = { x: 0, y: 0 };
+        if (f.trait) Object.assign(o, { borderColor: couleur(f.trait), borderWidth: f.epaisseur, borderLineCap: f.rond ? LineCapStyle.Round : LineCapStyle.Butt });
+        if (f.fond) o.color = couleur(f.fond);
+        page.drawSvgPath(chemin(f.cmds, versChemin), o);
+      }
+      if (e.type === 'bulle' && e.texte) {
+        const police = e.gras ? ctx.policeGras : ctx.police;
+        const taille = e.taille || 11;
+        const largeur = e.w * affiche.l - 2 * MARGE_BULLE;
+        const lignes = couperLignes(t => police.widthOfTextAtSize(nettoyer(police, t), taille), e.texte, largeur);
+        poserTexte(page, boite, r, police, { texte: lignes.join('\n'), u: e.x + MARGE_BULLE / affiche.l, v: e.y + MARGE_BULLE / affiche.h, taille, coul: couleur(e.couleurTexte || '#000000') });
       }
     }
   }
@@ -357,5 +474,5 @@
     return res;
   }
 
-  return { compiler, lirePlages, versPdf, tailleAffichee, rectPdf, normRot, A4 };
+  return { compiler, lirePlages, versPdf, tailleAffichee, rectPdf, normRot, A4, formes, chemin, couperLignes, MARGE_BULLE, DEFAUTS };
 });

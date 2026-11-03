@@ -132,17 +132,30 @@ input:focus, select:focus { outline: 2px solid #9cc2f0; outline-offset: 0; }
 .calque.ecrit { cursor: text; }
 .el { position: absolute; }
 .el.choisi { outline: 2px dashed #2f80ed; outline-offset: 2px; }
-.el-texte { font-family: Helvetica, Arial, sans-serif; line-height: 1.2; white-space: pre; padding: 0; cursor: move; min-width: 4px; }
+.el-texte { font-family: Helvetica, Arial, sans-serif; line-height: 1.2; white-space: pre; padding: 0; cursor: move; min-width: 4px; min-height: 1em; }
+.el-texte:empty::before { content: "Tapez votre texte"; color: #9aa7b5; }
+.el-bulle { font-family: Helvetica, Arial, sans-serif; line-height: 1.2; white-space: pre-wrap; overflow-wrap: anywhere; cursor: move; overflow: visible; }
+.el-bulle[contenteditable=true] { cursor: text; outline: 2px solid #2f80ed; user-select: text; }
+.el-bulle:empty[contenteditable=true]::before { content: "Votre commentaire"; color: #9aa7b5; }
+.el-caviarde { background: #000; cursor: move; }
+svg.forme { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+svg.forme path { pointer-events: visiblePainted; cursor: move; }
+svg.forme path.prise { stroke: transparent; fill: none; stroke-width: 14px; pointer-events: stroke; }
+.calque.trace svg.forme path, .calque.trace .el { cursor: crosshair; }
+.contour { position: absolute; border: 1.5px dashed #2f80ed; pointer-events: none; border-radius: 3px; }
 .el-texte[contenteditable=true] { cursor: text; outline: 2px solid #2f80ed; user-select: text; }
 .el-masque { background: #fff; outline: 1px dotted #9aa7b5; cursor: move; }
 .el-surligne { opacity: .35; cursor: move; }
 .el-cadre { border-style: solid; cursor: move; }
 .el-image { cursor: move; }
 .el-image img { width: 100%; height: 100%; display: block; pointer-events: none; }
-.poignee { position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px; background: #2f80ed; border: 2px solid #fff; border-radius: 2px; cursor: nwse-resize; display: none; }
-.el.choisi .poignee { display: block; }
+.poignee { position: absolute; width: 12px; height: 12px; background: #2f80ed; border: 2px solid #fff; border-radius: 2px; cursor: nwse-resize; box-shadow: 0 0 0 1px rgba(0,0,0,.25); z-index: 2; }
+.poignee[data-poignee=p1], .poignee[data-poignee=p2] { border-radius: 50%; cursor: move; }
+.poignee.pointe { border-radius: 50%; background: #ff9800; cursor: move; }
 .ed-aide { background: #2a313b; color: #cfd6df; font-size: 12px; padding: 6px 12px; text-align: center; }
 .case-ed { cursor: pointer; }
+.sep-ed { width: 1px; height: 22px; background: rgba(255,255,255,.2); margin: 0 2px; }
+.ed-barre button { padding: 5px 8px; font-size: 13px; }
 
 .dialogue { background: rgba(20,30,45,.55); align-items: center; justify-content: center; }
 .dialogue .boite { background: #fff; border-radius: 10px; padding: 18px 22px; width: min(480px, 94vw); box-shadow: 0 10px 40px rgba(0,0,0,.35); }

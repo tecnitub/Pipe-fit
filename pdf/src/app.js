@@ -224,13 +224,27 @@
   }
 
   // Éléments ajoutés dessinés sur un canvas (vignettes)
-  async function dessinerElements(p, canvas, ech, dpr) {
+  async function dessinerElements(p, canvas, ech, dpr, seulement = null) {
     if (!p.elements.length) return;
     const g = canvas.getContext('2d');
     const L = canvas.width, H = canvas.height;
+    const k = ech * dpr;
     for (const e of p.elements) {
+      if (seulement && e.type !== seulement) continue;
       const x = e.x * L, y = e.y * H, w = (e.w || 0) * L, h = (e.h || 0) * H;
-      if (e.type === 'masque') { g.fillStyle = e.couleur || '#fff'; g.fillRect(x, y, w, h); }
+      for (const f of MoteurPDF.formes(e, L, H, k)) {
+        const chemin = new Path2D(MoteurPDF.chemin(f.cmds));
+        if (f.fond) { g.fillStyle = f.fond; g.fill(chemin); }
+        if (f.trait) { g.strokeStyle = f.trait; g.lineWidth = f.epaisseur; g.lineCap = f.rond ? 'round' : 'butt'; g.lineJoin = 'round'; g.stroke(chemin); }
+      }
+      if (e.type === 'caviarde') { g.fillStyle = '#000'; g.fillRect(x, y, w, h); }
+      else if (e.type === 'bulle' && e.texte) {
+        const t = (e.taille || 11) * k, m = MoteurPDF.MARGE_BULLE * k;
+        g.fillStyle = e.couleurTexte || '#000';
+        g.font = `${e.gras ? 'bold ' : ''}${t}px Helvetica, Arial, sans-serif`;
+        MoteurPDF.couperLignes(s => g.measureText(s).width, e.texte, w - 2 * m).forEach((l, i) => g.fillText(l, x + m, y + m + t * 0.94 + i * t * 1.2));
+      }
+      else if (e.type === 'masque') { g.fillStyle = e.couleur || '#fff'; g.fillRect(x, y, w, h); }
       else if (e.type === 'surligne') { g.globalAlpha = .35; g.fillStyle = e.couleur || '#ffeb3b'; g.fillRect(x, y, w, h); g.globalAlpha = 1; }
       else if (e.type === 'cadre') { g.strokeStyle = e.couleur || '#d32f2f'; g.lineWidth = (e.epaisseur || 2) * ech * dpr; g.strokeRect(x, y, w, h); }
       else if (e.type === 'image') { const i = etat.images.get(e.image); if (i) g.drawImage(await chargerImageCache(i), x, y, w, h); }
@@ -583,6 +597,18 @@
     return { type: 'image', plein: true, octets: new Uint8Array(await blob.arrayBuffer()), mime: 'image/jpeg', largeur: d.l, hauteur: d.h };
   }
 
+  async function pageCaviardee(p, dpi) {
+    const d = dims(p);
+    const dpr = window.devicePixelRatio || 1;
+    const c = document.createElement('canvas');
+    const { ech } = await rendrePage(p, c, d.l * dpi / 72 / dpr);
+    // Seules les zones noires sont incrustées dans l'image ; les autres annotations restent vectorielles
+    await dessinerElements(p, c, ech, dpr, 'caviarde');
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
+    c.width = c.height = 0;
+    return { type: 'image', plein: true, octets: new Uint8Array(await blob.arrayBuffer()), mime: 'image/jpeg', largeur: d.l, hauteur: d.h };
+  }
+
   async function produire(pages, opts, avance = () => {}) {
     const sources = {};
     const liste = [];
@@ -592,7 +618,10 @@
     for (const p of pages) {
       const s = etat.sources.get(p.source);
       const commun = { elements: p.elements, groupe: s ? s.nom : p.titre, source: s ? s.id : (p.titre ? p.id : null) };
-      if (p.type === 'pdf') {
+      if (p.elements.some(e => e.type === 'caviarde')) {
+        // Caviardage : la page est recopiée en image avec les zones noircies, le texte et les images dessous disparaissent
+        liste.push({ ...await pageCaviardee(p, opts.compresser ? opts.dpi : 200), ...commun, rotation: 0 });
+      } else if (p.type === 'pdf') {
         if (s.rasteriser || opts.compresser) {
           liste.push({ ...await pageEnImage(p, s.rasteriser && !opts.compresser ? 200 : opts.dpi), ...commun, rotation: p.rot });
         } else {
@@ -708,8 +737,22 @@
     }
   }
 
-  // ---------- Éditeur de page ----------
-  const ed = { page: null, elements: [], outil: 'selection', choisi: null, ech: 1, L: 0, H: 0 };
+  // ---------- Éditeur de page (annotations) ----------
+  // Éléments (coordonnées en fractions de la page affichée) :
+  //  texte {x,y,texte,taille,couleur,gras} · bulle {x,y,w,h,px,py,texte,taille,couleur}
+  //  ligne / fleche {x1,y1,x2,y2,couleur,epaisseur} · crayon {points,couleur,epaisseur}
+  //  cadre / ellipse {x,y,w,h,couleur,epaisseur} · surligne / masque / caviarde {x,y,w,h} · image {x,y,w,h,image}
+  const BOITES = ['masque', 'surligne', 'cadre', 'caviarde', 'ellipse', 'bulle', 'image'];
+  const A_TRACER = ['masque', 'surligne', 'cadre', 'caviarde', 'ellipse', 'bulle'];
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const ed = { page: null, elements: [], outil: 'selection', choisi: null, ech: 1, L: 0, H: 0, hist: [], point: null };
+  const reglages = {
+    texte: { couleur: '#000000', taille: 12 }, bulle: { couleur: '#1565c0', taille: 11 },
+    ligne: { couleur: '#d32f2f', epaisseur: 2 }, fleche: { couleur: '#d32f2f', epaisseur: 2 }, crayon: { couleur: '#1565c0', epaisseur: 2 },
+    cadre: { couleur: '#d32f2f', epaisseur: 2 }, ellipse: { couleur: '#d32f2f', epaisseur: 2 }, surligne: { couleur: '#ffeb3b' },
+  };
+  try { Object.assign(reglages, JSON.parse(localStorage.getItem('atelierpdf.reglages') || '{}')); } catch { /* rien */ }
+  const sauverReglages = () => { try { localStorage.setItem('atelierpdf.reglages', JSON.stringify(reglages)); } catch { /* rien */ } };
   const calque = $('#ed-calque');
 
   function ouvrirEditeur(id) {
@@ -718,12 +761,14 @@
     const p = etat.pages.find(x => x.id === id);
     if (!p) return;
     $('#editeur').hidden = false;
+    choisirOutil('selection');
     chargerDansEditeur(p);
   }
   async function chargerDansEditeur(p) {
     ed.page = p;
     ed.elements = structuredClone(p.elements);
     ed.choisi = null;
+    ed.hist = [];
     const i = etat.pages.indexOf(p);
     $('#ed-num').textContent = `Page ${i + 1} / ${etat.pages.length}`;
     $('#ed-prec').disabled = i <= 0;
@@ -755,191 +800,456 @@
     if (etat.pages[i]) { etat.selection = new Set([etat.pages[i].id]); rafraichir(); chargerDansEditeur(etat.pages[i]); }
   }
 
+  // Annuler dans l'éditeur (Ctrl+Z)
+  function edMemo() { ed.hist.push(JSON.stringify(ed.elements)); if (ed.hist.length > 200) ed.hist.shift(); }
+  function edAnnuler() { if (!ed.hist.length) return; finirSaisie(); ed.elements = JSON.parse(ed.hist.pop()); ed.choisi = null; dessinerCalque(); }
+
   function choisirOutil(o) {
+    finirSaisie();
     ed.outil = o;
     document.querySelectorAll('#ed-outils button').forEach(b => b.classList.toggle('actif', b.dataset.outil === o));
-    calque.classList.toggle('trace', ['masque', 'surligne', 'cadre'].includes(o));
+    calque.classList.toggle('trace', o !== 'selection' && o !== 'texte');
     calque.classList.toggle('ecrit', o === 'texte');
-    if (o === 'image') $('#fichier-image').click();
+    if (reglages[o]) majReglagesAffiches(reglages[o]);
+    if (o === 'image') { $('#fichier-image').click(); }
+  }
+  function majReglagesAffiches(r) {
+    if (r.couleur) $('#ed-couleur').value = r.couleur;
+    if (r.epaisseur) $('#ed-epaisseur').value = r.epaisseur;
+    if (r.taille) $('#ed-taille').value = r.taille;
+    if ('gras' in r) $('#ed-gras').checked = !!r.gras;
   }
 
-  function dessinerCalque() {
-    calque.replaceChildren(...ed.elements.map((e, i) => {
-      const d = document.createElement('div');
-      d.className = `el el-${e.type}${ed.choisi === i ? ' choisi' : ''}`;
-      d.dataset.i = i;
-      d.style.left = `${e.x * ed.L}px`;
-      d.style.top = `${e.y * ed.H}px`;
-      if (e.type === 'texte') {
-        d.textContent = e.texte;
-        d.style.fontSize = `${(e.taille || 12) * ed.ech}px`;
-        d.style.color = e.couleur || '#000';
-        d.style.fontWeight = e.gras ? 'bold' : 'normal';
-      } else {
-        d.style.width = `${e.w * ed.L}px`;
-        d.style.height = `${e.h * ed.H}px`;
-        if (e.type === 'masque') d.style.background = e.couleur || '#fff';
-        if (e.type === 'surligne') d.style.background = e.couleur || '#ffeb3b';
-        if (e.type === 'cadre') { d.style.borderColor = e.couleur || '#d32f2f'; d.style.borderWidth = `${(e.epaisseur || 2) * ed.ech}px`; }
-        if (e.type === 'image') { const im = document.createElement('img'); im.src = etat.images.get(e.image)?.url || ''; d.appendChild(im); }
-        const poignee = document.createElement('div');
-        poignee.className = 'poignee';
-        d.appendChild(poignee);
+  // ----- Dessin du calque : un élément = un nœud (l'ordre d'empilement est celui du PDF) -----
+  const px = (v, axe) => `${v * (axe === 'x' ? ed.L : ed.H)}px`;
+  function poignee(type, x, y) {
+    const d = document.createElement('div');
+    d.className = 'poignee';
+    d.dataset.poignee = type;
+    d.style.left = `${x * ed.L - 6}px`;
+    d.style.top = `${y * ed.H - 6}px`;
+    return d;
+  }
+  function boiteDe(e) {
+    if (BOITES.includes(e.type)) return { x: e.x, y: e.y, w: e.w, h: e.h };
+    const pts = e.type === 'crayon' ? e.points : [[e.x1, e.y1], [e.x2, e.y2]];
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    const x = Math.min(...xs), y = Math.min(...ys);
+    return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+  }
+  function noeudForme(e, i) {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('class', 'forme');
+    svg.setAttribute('width', ed.L);
+    svg.setAttribute('height', ed.H);
+    for (const f of MoteurPDF.formes(e, ed.L, ed.H, ed.ech)) {
+      const d = MoteurPDF.chemin(f.cmds);
+      // Zone de prise large (traits fins faciles à attraper)
+      if (f.trait) {
+        const prise = document.createElementNS(SVG_NS, 'path');
+        prise.setAttribute('d', d);
+        prise.setAttribute('class', 'prise');
+        prise.dataset.i = i;
+        svg.appendChild(prise);
       }
-      return d;
-    }));
+      const p = document.createElementNS(SVG_NS, 'path');
+      p.setAttribute('d', d);
+      p.setAttribute('fill', f.fond || 'none');
+      p.setAttribute('stroke', f.trait || 'none');
+      p.setAttribute('stroke-width', f.epaisseur || 0);
+      p.setAttribute('stroke-linecap', f.rond ? 'round' : 'butt');
+      p.setAttribute('stroke-linejoin', 'round');
+      p.dataset.i = i;
+      svg.appendChild(p);
+    }
+    return svg;
+  }
+  function dessinerCalque() {
+    const noeuds = [];
+    ed.elements.forEach((e, i) => {
+      const choisi = ed.choisi === i;
+      if (['ligne', 'fleche', 'crayon', 'ellipse', 'bulle'].includes(e.type)) noeuds.push(noeudForme(e, i));
+      if (e.type === 'bulle') {
+        const t = document.createElement('div');
+        t.className = 'el el-bulle';
+        t.dataset.i = i;
+        const m = MoteurPDF.MARGE_BULLE * ed.ech;
+        Object.assign(t.style, { left: px(e.x, 'x'), top: px(e.y, 'y'), width: px(e.w, 'x'), height: px(e.h, 'y'), padding: `${m}px`,
+          fontSize: `${(e.taille || 11) * ed.ech}px`, fontWeight: e.gras ? 'bold' : 'normal', color: e.couleurTexte || '#000' });
+        t.textContent = e.texte || '';
+        noeuds.push(t);
+      } else if (!['ligne', 'fleche', 'crayon', 'ellipse'].includes(e.type)) {
+        const d = document.createElement('div');
+        d.className = `el el-${e.type}`;
+        d.dataset.i = i;
+        d.style.left = px(e.x, 'x');
+        d.style.top = px(e.y, 'y');
+        if (e.type === 'texte') {
+          d.textContent = e.texte;
+          d.style.fontSize = `${(e.taille || 12) * ed.ech}px`;
+          d.style.color = e.couleur || '#000';
+          d.style.fontWeight = e.gras ? 'bold' : 'normal';
+        } else {
+          d.style.width = px(e.w, 'x');
+          d.style.height = px(e.h, 'y');
+          if (e.type === 'masque') d.style.background = e.couleur || '#fff';
+          if (e.type === 'surligne') d.style.background = e.couleur || '#ffeb3b';
+          if (e.type === 'cadre') { d.style.borderColor = e.couleur || '#d32f2f'; d.style.borderWidth = `${(e.epaisseur || 2) * ed.ech}px`; }
+          if (e.type === 'image') { const im = document.createElement('img'); im.src = etat.images.get(e.image)?.url || ''; d.appendChild(im); }
+        }
+        noeuds.push(d);
+      }
+      if (choisi) {
+        if (e.type !== 'texte') {
+          const b = boiteDe(e);
+          const cadre = document.createElement('div');
+          cadre.className = 'contour';
+          Object.assign(cadre.style, { left: `${b.x * ed.L - 4}px`, top: `${b.y * ed.H - 4}px`, width: `${b.w * ed.L + 8}px`, height: `${b.h * ed.H + 8}px` });
+          noeuds.push(cadre);
+        }
+        if (BOITES.includes(e.type)) noeuds.push(poignee('redim', e.x + e.w, e.y + e.h));
+        if (e.type === 'ligne' || e.type === 'fleche') noeuds.push(poignee('p1', e.x1, e.y1), poignee('p2', e.x2, e.y2));
+        if (e.type === 'bulle') { const p = poignee('pointe', e.px, e.py); p.classList.add('pointe'); noeuds.push(p); }
+      }
+    });
+    calque.replaceChildren(...noeuds);
+    calque.querySelectorAll('.el-texte').forEach(d => d.classList.toggle('choisi', Number(d.dataset.i) === ed.choisi));
     majProprietes();
   }
   function majProprietes() {
     const e = ed.elements[ed.choisi];
-    $('#ed-suppr').disabled = !e;
+    $('#ed-suppr').disabled = $('#ed-dupl').disabled = !e;
     if (!e) return;
-    // La couleur blanche d'un masque ou jaune d'un surlignage ne devient pas celle du prochain texte
-    if (e.couleur && (e.type === 'texte' || e.type === 'cadre')) $('#ed-couleur').value = e.couleur;
-    if (e.type === 'texte') { $('#ed-taille').value = e.taille || 12; $('#ed-gras').checked = !!e.gras; }
+    majReglagesAffiches(e);
   }
-  function choisirElement(i) {
-    ed.choisi = i;
-    calque.querySelectorAll('.el').forEach(el => el.classList.toggle('choisi', Number(el.dataset.i) === i));
-    majProprietes();
-  }
+  function choisirElement(i) { ed.choisi = i; dessinerCalque(); }
 
-  // Saisie d'un texte directement sur la page
+  // ----- Saisie de texte directement sur la page (texte et bulle) -----
   function editerTexte(i) {
-    const el = calque.querySelector(`.el[data-i="${i}"]`);
+    const e = ed.elements[i];
+    if (!e) return;
+    if (ed.choisi !== i) choisirElement(i);
+    const el = calque.querySelector(`.el-texte[data-i="${i}"], .el-bulle[data-i="${i}"]`);
     if (!el) return;
-    choisirElement(i);
+    edMemo();
     el.contentEditable = 'true';
     el.focus();
     const r = document.createRange();
     r.selectNodeContents(el);
     const s = getSelection(); s.removeAllRanges(); s.addRange(r);
-    el.addEventListener('input', () => { ed.elements[i].texte = el.innerText.replace(/\n$/, ''); });
+    el.addEventListener('input', () => { e.texte = el.innerText.replace(/\n$/, ''); });
     el.addEventListener('blur', () => finirSaisie(), { once: true });
   }
   function finirSaisie() {
-    const el = calque.querySelector('.el[contenteditable=true]');
+    const el = calque.querySelector('[contenteditable=true]');
     if (!el) return;
     const i = Number(el.dataset.i);
     el.contentEditable = 'false';
     const e = ed.elements[i];
-    if (e) e.texte = el.innerText.replace(/\n$/, '');
-    if (e && !e.texte.trim()) { ed.elements.splice(i, 1); ed.choisi = null; dessinerCalque(); }
+    if (!e) return;
+    e.texte = el.innerText.replace(/\n$/, '');
+    // Bulle : hauteur agrandie si le texte déborde
+    if (e.type === 'bulle' && el.scrollHeight > el.clientHeight + 1) e.h = el.scrollHeight / ed.H;
+    if (e.type === 'texte' && !e.texte.trim()) { ed.elements.splice(i, 1); ed.choisi = null; ed.hist.pop(); }
+    dessinerCalque();
   }
 
   const posFraction = ev => {
     const r = calque.getBoundingClientRect();
     return { x: Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height)) };
   };
+  // Maj : trait horizontal, vertical ou à 45°
+  function aimanter(a, b) {
+    const dx = (b.x - a.x) * ed.L, dy = (b.y - a.y) * ed.H;
+    const ang = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+    const lg = Math.hypot(dx, dy);
+    return { x: a.x + Math.cos(ang) * lg / ed.L, y: a.y + Math.sin(ang) * lg / ed.H };
+  }
+  function deplacerElement(e, o, dx, dy) {
+    if ('x' in o) { e.x = o.x + dx; e.y = o.y + dy; }
+    if ('x1' in o) { e.x1 = o.x1 + dx; e.y1 = o.y1 + dy; e.x2 = o.x2 + dx; e.y2 = o.y2 + dy; }
+    if (o.points) e.points = o.points.map(([x, y]) => [x + dx, y + dy]);
+    if ('px' in o) { e.px = o.px + dx; e.py = o.py + dy; }
+  }
+  // Suivi d'un glisser sur le calque
+  function suivre(ev, bouger, fin = () => {}) {
+    calque.setPointerCapture(ev.pointerId);
+    const mv = m => bouger(posFraction(m), m);
+    const up = m => { calque.removeEventListener('pointermove', mv); calque.removeEventListener('pointerup', up); calque.removeEventListener('pointercancel', up); fin(posFraction(m), m); };
+    calque.addEventListener('pointermove', mv);
+    calque.addEventListener('pointerup', up);
+    calque.addEventListener('pointercancel', up);
+  }
+  function nouvelElement(type, valeurs) {
+    const r = reglages[type] || {};
+    const e = { type, ...valeurs };
+    if (r.couleur && !['masque', 'caviarde'].includes(type)) e.couleur = r.couleur;
+    if (r.epaisseur && ['ligne', 'fleche', 'crayon', 'cadre', 'ellipse', 'bulle'].includes(type)) e.epaisseur = r.epaisseur;
+    if (type === 'texte' || type === 'bulle') { e.taille = r.taille || (type === 'bulle' ? 11 : 12); e.gras = !!r.gras; }
+    edMemo();
+    ed.elements.push(e);
+    ed.choisi = ed.elements.length - 1;
+    return e;
+  }
 
   calque.addEventListener('pointerdown', ev => {
     if (ev.button !== 0) return;
-    const elDom = ev.target.closest('.el');
-    if (elDom && elDom.isContentEditable) return;
+    const cible = ev.target;
+    if (cible.isContentEditable) return;
     finirSaisie();
     const depart = posFraction(ev);
-    // Avec l'outil Texte, un clic sur un texte existant le modifie
-    if (elDom && ed.outil === 'texte' && elDom.classList.contains('el-texte')) { ev.preventDefault(); choisirOutil('selection'); editerTexte(Number(elDom.dataset.i)); return; }
-    if (elDom && ed.outil === 'selection') {
-      // Déplacer ou redimensionner
-      const i = Number(elDom.dataset.i);
-      choisirElement(i);
-      const e = ed.elements[i];
-      const origine = { ...e };
-      const redim = ev.target.classList.contains('poignee');
-      calque.setPointerCapture(ev.pointerId);
-      const bouger = m => {
-        const p = posFraction(m);
-        const dx = p.x - depart.x, dy = p.y - depart.y;
-        if (redim) {
-          if (e.type === 'image' && !m.shiftKey) {
-            // Proportions conservées (Maj pour les libérer)
-            const w = Math.max(0.01, origine.w + dx);
-            e.w = w; e.h = w * (origine.h / origine.w);
-          } else { e.w = Math.max(0.005, origine.w + dx); e.h = Math.max(0.005, origine.h + dy); }
-          elDom.style.width = `${e.w * ed.L}px`; elDom.style.height = `${e.h * ed.H}px`;
-        } else {
-          e.x = origine.x + dx; e.y = origine.y + dy;
-          elDom.style.left = `${e.x * ed.L}px`; elDom.style.top = `${e.y * ed.H}px`;
-        }
-      };
-      const fin = () => { calque.removeEventListener('pointermove', bouger); calque.removeEventListener('pointerup', fin); };
-      calque.addEventListener('pointermove', bouger);
-      calque.addEventListener('pointerup', fin);
-      return;
-    }
-    if (ed.outil === 'texte') {
+    ed.point = depart;
+    const elDom = cible.closest('[data-i]');
+    const i = elDom ? Number(elDom.dataset.i) : null;
+
+    // Poignées de l'élément choisi
+    if (cible.dataset.poignee && ed.choisi != null) {
       ev.preventDefault();
-      const taillePt = Number($('#ed-taille').value) || 12;
-      ed.elements.push({ type: 'texte', x: depart.x, y: Math.max(0, depart.y - (taillePt * 0.6 * ed.ech) / ed.H), texte: 'Texte', taille: taillePt, couleur: $('#ed-couleur').value, gras: $('#ed-gras').checked });
-      const i = ed.elements.length - 1;
-      dessinerCalque();
-      choisirOutil('selection');
-      editerTexte(i);
+      const e = ed.elements[ed.choisi];
+      const o = structuredClone(e);
+      edMemo();
+      suivre(ev, (p, m) => {
+        const t = cible.dataset.poignee;
+        if (t === 'redim') {
+          let w = Math.max(0.005, p.x - o.x), h = Math.max(0.005, p.y - o.y);
+          if (e.type === 'image' && !m.shiftKey) h = w * (o.h / o.w);   // proportions conservées (Maj pour les libérer)
+          e.w = w; e.h = h;
+        } else if (t === 'p1' || t === 'p2') {
+          const fixe = t === 'p1' ? { x: o.x2, y: o.y2 } : { x: o.x1, y: o.y1 };
+          const q = m.shiftKey ? aimanter(fixe, p) : p;
+          if (t === 'p1') { e.x1 = q.x; e.y1 = q.y; } else { e.x2 = q.x; e.y2 = q.y; }
+        } else if (t === 'pointe') { e.px = p.x; e.py = p.y; }
+        dessinerCalque();
+      });
       return;
     }
-    if (['masque', 'surligne', 'cadre'].includes(ed.outil)) {
-      const coul = ed.outil === 'masque' ? '#ffffff' : ed.outil === 'surligne' ? '#ffeb3b' : ($('#ed-couleur').value === '#000000' ? '#d32f2f' : $('#ed-couleur').value);
-      const e = { type: ed.outil, x: depart.x, y: depart.y, w: 0, h: 0, couleur: coul };
-      ed.elements.push(e);
-      const i = ed.elements.length - 1;
+
+    // Outil Sélection : choisir et déplacer
+    if (ed.outil === 'selection') {
+      if (i == null) { if (ed.choisi != null) choisirElement(null); return; }
+      ev.preventDefault();
+      if (ed.choisi !== i) choisirElement(i);
+      const e = ed.elements[i];
+      const o = structuredClone(e);
+      let bouge = false;
+      suivre(ev, p => {
+        if (!bouge) { edMemo(); bouge = true; }
+        deplacerElement(e, o, p.x - depart.x, p.y - depart.y);
+        dessinerCalque();
+      });
+      return;
+    }
+
+    ev.preventDefault();
+    // Texte à la volée : clic puis frappe ; clic sur un texte ou une bulle existants = le corriger
+    if (ed.outil === 'texte') {
+      const e0 = i != null ? ed.elements[i] : null;
+      if (e0 && (e0.type === 'texte' || e0.type === 'bulle')) { editerTexte(i); return; }
+      const t = reglages.texte.taille || 12;
+      nouvelElement('texte', { x: depart.x, y: Math.max(0, depart.y - (t * 0.6 * ed.ech) / ed.H), texte: '' });
       dessinerCalque();
-      choisirElement(i);
-      const elDom2 = calque.querySelector(`.el[data-i="${i}"]`);
-      calque.setPointerCapture(ev.pointerId);
-      const bouger = m => {
-        const p = posFraction(m);
+      editerTexte(ed.choisi);
+      ed.hist.pop(); // la création compte pour une seule étape
+      return;
+    }
+
+    if (ed.outil === 'ligne' || ed.outil === 'fleche') {
+      const e = nouvelElement(ed.outil, { x1: depart.x, y1: depart.y, x2: depart.x, y2: depart.y });
+      suivre(ev, (p, m) => { const q = m.shiftKey ? aimanter(depart, p) : p; e.x2 = q.x; e.y2 = q.y; dessinerCalque(); },
+        () => { if (Math.hypot((e.x2 - e.x1) * ed.L, (e.y2 - e.y1) * ed.H) < 5) { ed.elements.pop(); ed.choisi = null; ed.hist.pop(); } dessinerCalque(); });
+      dessinerCalque();
+      return;
+    }
+
+    if (ed.outil === 'crayon') {
+      const e = nouvelElement('crayon', { points: [[depart.x, depart.y]] });
+      dessinerCalque();
+      suivre(ev, p => {
+        const [dx, dy] = e.points[e.points.length - 1];
+        if (Math.hypot((p.x - dx) * ed.L, (p.y - dy) * ed.H) < 2) return;
+        e.points.push([p.x, p.y]);
+        dessinerCalque();
+      }, () => { ed.choisi = null; dessinerCalque(); });
+      return;
+    }
+
+    if (A_TRACER.includes(ed.outil)) {
+      const type = ed.outil;
+      const e = nouvelElement(type, { x: depart.x, y: depart.y, w: 0, h: 0 });
+      if (type === 'bulle') { e.texte = ''; e.px = depart.x; e.py = depart.y; }
+      dessinerCalque();
+      suivre(ev, p => {
         e.x = Math.min(depart.x, p.x); e.y = Math.min(depart.y, p.y);
         e.w = Math.abs(p.x - depart.x); e.h = Math.abs(p.y - depart.y);
-        Object.assign(elDom2.style, { left: `${e.x * ed.L}px`, top: `${e.y * ed.H}px`, width: `${e.w * ed.L}px`, height: `${e.h * ed.H}px` });
-      };
-      const fin = () => {
-        calque.removeEventListener('pointermove', bouger); calque.removeEventListener('pointerup', fin);
-        if (e.w * ed.L < 4 || e.h * ed.H < 4) { ed.elements.splice(i, 1); ed.choisi = null; dessinerCalque(); }
-      };
-      calque.addEventListener('pointermove', bouger);
-      calque.addEventListener('pointerup', fin);
-      return;
+        if (type === 'bulle') { e.px = Math.max(0, e.x - 0.04); e.py = Math.min(1, e.y + e.h + 0.06); }
+        dessinerCalque();
+      }, () => {
+        const petit = e.w * ed.L < 6 || e.h * ed.H < 6;
+        if (petit && type === 'bulle') {
+          // Simple clic : bulle de taille standard, pointe vers le point cliqué
+          e.w = 180 / ed.L; e.h = 50 / ed.H;
+          e.px = depart.x; e.py = depart.y;
+          e.x = Math.min(1 - e.w, depart.x + 30 / ed.L); e.y = Math.max(0, depart.y - e.h - 30 / ed.H);
+        } else if (petit) { ed.elements.pop(); ed.choisi = null; ed.hist.pop(); dessinerCalque(); return; }
+        dessinerCalque();
+        if (type === 'bulle') { editerTexte(ed.choisi); ed.hist.pop(); }
+      });
     }
-    choisirElement(null);
   });
   calque.addEventListener('dblclick', ev => {
-    const elDom = ev.target.closest('.el-texte');
+    const elDom = ev.target.closest('.el-texte, .el-bulle');
     if (elDom) editerTexte(Number(elDom.dataset.i));
   });
 
-  $('#fichier-image').addEventListener('change', async ev => {
-    const f = ev.target.files[0];
-    ev.target.value = '';
-    choisirOutil('selection');
-    if (!f || !ed.page) return;
+  // ----- Images : bouton, ou collage (Ctrl+V) d'une image ou d'un texte copiés -----
+  async function ajouterImage(blob, lieu = null) {
     try {
-      const img = await normaliserImage(f);
+      const img = await normaliserImage(blob);
       const id = nouvelId('i');
       etat.images.set(id, img);
-      const w = 0.3, h = w * (img.h / img.l) * (ed.L / ed.H);
-      ed.elements.push({ type: 'image', image: id, x: 0.35, y: Math.max(0, 0.5 - h / 2), w, h });
-      ed.choisi = ed.elements.length - 1;
+      const w = Math.min(0.3, img.l * 0.75 / ed.L), h = w * (img.h / img.l) * (ed.L / ed.H);
+      const x = lieu ? Math.min(1 - w, lieu.x) : 0.5 - w / 2, y = lieu ? Math.min(1 - h, lieu.y) : Math.max(0, 0.5 - h / 2);
+      nouvelElement('image', { image: id, x, y, w, h });
+      choisirOutil('selection');
       dessinerCalque();
-      note('Image ajoutée : déplacez-la, et tirez le coin bleu pour la redimensionner. Astuce : une signature en PNG sur fond transparent rend mieux.');
+      note('Image ajoutée : déplacez-la, et tirez le coin bleu pour la redimensionner. Une signature en PNG sur fond transparent rend mieux.');
     } catch (e) { note(`Image illisible : ${e.message || e}`, 'erreur'); }
+  }
+  $('#fichier-image').addEventListener('change', ev => {
+    const f = ev.target.files[0];
+    ev.target.value = '';
+    if (ed.outil === 'image') choisirOutil('selection');
+    if (f && ed.page) ajouterImage(f, ed.point);
   });
+  document.addEventListener('paste', ev => {
+    if ($('#editeur').hidden || document.activeElement?.isContentEditable || /INPUT|TEXTAREA/.test(document.activeElement?.tagName)) return;
+    const items = [...(ev.clipboardData?.items || [])];
+    const image = items.find(it => it.type.startsWith('image/'));
+    if (image) { ev.preventDefault(); ajouterImage(image.getAsFile(), ed.point); return; }
+    const texte = ev.clipboardData?.getData('text/plain');
+    if (texte) {
+      ev.preventDefault();
+      const p = ed.point || { x: 0.1, y: 0.1 };
+      nouvelElement('texte', { x: p.x, y: p.y, texte: texte.replace(/\r/g, '') });
+      dessinerCalque();
+    }
+  });
+
+  // ----- Caviarder un texte sur toutes les pages (recherche dans le texte des PDF) -----
+  const sansAccent = t => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  async function caviarderRecherche() {
+    const mot = prompt('Texte à caviarder sur toutes les pages (nom, adresse, n° de téléphone…) :\nLes zones trouvées seront recouvertes de noir et le texte supprimé à l\'enregistrement.');
+    if (!mot || !mot.trim()) return;
+    const cherche = sansAccent(mot.trim());
+    if (ed.page) validerEditeur();
+    let total = 0, pagesTouchees = 0;
+    const ajouts = new Map();
+    await occupe('Recherche du texte…', async avance => {
+      const pdfs = etat.pages.filter(p => p.type === 'pdf');
+      for (let k = 0; k < pdfs.length; k++) {
+        const p = pdfs[k];
+        const doc = await etat.sources.get(p.source).doc;
+        const page = await doc.getPage(p.index + 1);
+        const vp = page.getViewport({ scale: 1, rotation: rotTotale(p) });
+        const contenu = await page.getTextContent();
+        const zones = [];
+        for (const it of contenu.items) {
+          if (!it.str) continue;
+          const s = sansAccent(it.str);
+          let pos = s.indexOf(cherche);
+          while (pos >= 0) {
+            const [a, b, c, d, tx, ty] = it.transform;
+            const lgDir = Math.hypot(a, b) || 1, haut = it.height || Math.hypot(c, d) || 10;
+            const ux = a / lgDir, uy = b / lgDir;      // sens d'écriture
+            const nx = -uy, ny = ux;                     // vers le haut du texte
+            const lg = it.width || lgDir * s.length * 0.5;
+            const d0 = lg * pos / s.length, d1 = lg * (pos + cherche.length) / s.length;
+            const coins = [[d0, -0.25], [d1, -0.25], [d1, 1.0], [d0, 1.0]].map(([dd, hh]) => vp.convertToViewportPoint(tx + ux * dd + nx * hh * haut, ty + uy * dd + ny * hh * haut));
+            const xs = coins.map(q => q[0] / vp.width), ys = coins.map(q => q[1] / vp.height);
+            const x = Math.min(...xs), y = Math.min(...ys);
+            zones.push({ type: 'caviarde', x: x - 0.002, y: y - 0.002, w: Math.max(...xs) - x + 0.004, h: Math.max(...ys) - y + 0.004 });
+            pos = s.indexOf(cherche, pos + 1);
+          }
+        }
+        if (zones.length) { ajouts.set(p, zones); total += zones.length; pagesTouchees++; }
+        avance((k + 1) / pdfs.length);
+      }
+    });
+    if (!total) { note(`« ${mot} » n'a pas été trouvé dans le texte des PDF (les scans et photos ne contiennent pas de texte lisible : caviardez-les à la main).`, 'erreur'); return; }
+    memoriser();
+    for (const [p, zones] of ajouts) p.elements.push(...zones);
+    rafraichir();
+    if (ed.page) chargerDansEditeur(ed.page);
+    note(`${total} occurrence(s) caviardée(s) sur ${pagesTouchees} page(s). Vérifiez les pages avant d'enregistrer.`, 'ok');
+  }
 
   function supprimerElement() {
     if (ed.choisi == null) return;
+    edMemo();
     ed.elements.splice(ed.choisi, 1);
     ed.choisi = null;
     dessinerCalque();
   }
+  function dupliquerElement() {
+    const e = ed.elements[ed.choisi];
+    if (!e) return;
+    edMemo();
+    const c = structuredClone(e);
+    deplacerElement(c, structuredClone(e), 15 / ed.L, 15 / ed.H);
+    ed.elements.push(c);
+    ed.choisi = ed.elements.length - 1;
+    dessinerCalque();
+  }
+  // Réglage modifié : appliqué à l'élément choisi et retenu pour l'outil
+  function regler(cle, valeur) {
+    const e = ed.elements[ed.choisi];
+    const type = e ? e.type : ed.outil;
+    if (reglages[type]) { reglages[type][cle] = valeur; sauverReglages(); }
+    if (!e) return;
+    if (cle === 'couleur' && ['masque', 'caviarde', 'image'].includes(e.type)) return;
+    if (cle === 'taille' && !['texte', 'bulle'].includes(e.type)) return;
+    if (cle === 'gras' && !['texte', 'bulle'].includes(e.type)) return;
+    if (cle === 'epaisseur' && !['ligne', 'fleche', 'crayon', 'cadre', 'ellipse', 'bulle'].includes(e.type)) return;
+    if (!ed.reglageEnCours) { edMemo(); ed.reglageEnCours = true; }
+    e[cle] = valeur;
+    dessinerCalque();
+  }
+  ['ed-couleur', 'ed-epaisseur', 'ed-taille'].forEach(id => $(`#${id}`).addEventListener('change', () => { ed.reglageEnCours = false; }));
   $('#ed-outils').addEventListener('click', ev => { const b = ev.target.closest('button[data-outil]'); if (b) choisirOutil(b.dataset.outil); });
-  $('#ed-couleur').addEventListener('input', () => { const e = ed.elements[ed.choisi]; if (e && e.type !== 'image') { e.couleur = $('#ed-couleur').value; dessinerCalque(); } });
-  $('#ed-taille').addEventListener('input', () => { const e = ed.elements[ed.choisi]; if (e && e.type === 'texte') { e.taille = Number($('#ed-taille').value) || 12; dessinerCalque(); } });
-  $('#ed-gras').addEventListener('change', () => { const e = ed.elements[ed.choisi]; if (e && e.type === 'texte') { e.gras = $('#ed-gras').checked; dessinerCalque(); } });
+  $('#ed-couleur').addEventListener('input', () => regler('couleur', $('#ed-couleur').value));
+  $('#ed-epaisseur').addEventListener('input', () => regler('epaisseur', Number($('#ed-epaisseur').value) || 2));
+  $('#ed-taille').addEventListener('input', () => regler('taille', Number($('#ed-taille').value) || 12));
+  $('#ed-gras').addEventListener('change', () => { ed.reglageEnCours = false; regler('gras', $('#ed-gras').checked); });
   $('#ed-suppr').addEventListener('click', supprimerElement);
+  $('#ed-dupl').addEventListener('click', dupliquerElement);
+  $('#ed-caviarder').addEventListener('click', caviarderRecherche);
   $('#ed-fermer').addEventListener('click', fermerEditeur);
   $('#ed-prec').addEventListener('click', () => changerPage(-1));
   $('#ed-suiv').addEventListener('click', () => changerPage(1));
-  window.addEventListener('resize', () => { if (ed.page) { finirSaisie(); const els = ed.elements, c = ed.choisi; chargerDansEditeur(ed.page).then(() => { ed.elements = els; ed.choisi = c; dessinerCalque(); }); } });
+  window.addEventListener('resize', () => { if (ed.page) { finirSaisie(); const els = ed.elements, c = ed.choisi, h = ed.hist; chargerDansEditeur(ed.page).then(() => { ed.elements = els; ed.choisi = c; ed.hist = h; dessinerCalque(); }); } });
+
+  // Raccourcis de l'éditeur
+  function toucheEditeur(ev, ctrl, touche) {
+    if (ctrl && touche === 'z') { ev.preventDefault(); edAnnuler(); return; }
+    if (ctrl && touche === 'd') { ev.preventDefault(); dupliquerElement(); return; }
+    if (ev.key === 'Delete' || ev.key === 'Backspace') { ev.preventDefault(); supprimerElement(); return; }
+    if (ev.key === 'Escape') { if (ed.outil !== 'selection') choisirOutil('selection'); else if (ed.choisi != null) choisirElement(null); else fermerEditeur(); return; }
+    if (ev.key === 'PageDown') { changerPage(1); return; }
+    if (ev.key === 'PageUp') { changerPage(-1); return; }
+    const fleches = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    if (fleches[ev.key] && ed.choisi != null) {
+      ev.preventDefault();
+      const pas = ev.shiftKey ? 10 : 1;
+      const e = ed.elements[ed.choisi];
+      edMemo();
+      deplacerElement(e, structuredClone(e), fleches[ev.key][0] * pas / ed.L, fleches[ev.key][1] * pas / ed.H);
+      dessinerCalque();
+      return;
+    }
+    if (ctrl || ev.altKey) return;
+    const outils = { v: 'selection', t: 'texte', b: 'bulle', l: 'ligne', f: 'fleche', r: 'cadre', e: 'ellipse', c: 'crayon', s: 'surligne', m: 'masque', x: 'caviarde', i: 'image' };
+    if (outils[touche]) choisirOutil(outils[touche]);
+  }
 
   // ---------- Boutons et raccourcis ----------
   const ouvrirFichiers = () => $('#fichiers').click();
@@ -972,11 +1282,8 @@
     const ctrl = ev.ctrlKey || ev.metaKey;
     const touche = ev.key.toLowerCase();
     if (!$('#editeur').hidden) {
-      if (saisie) { if (ev.key === 'Escape') document.activeElement.blur(); return; }
-      if (ev.key === 'Delete' || ev.key === 'Backspace') { ev.preventDefault(); supprimerElement(); }
-      else if (ev.key === 'Escape') fermerEditeur();
-      else if (ev.key === 'PageDown') changerPage(1);
-      else if (ev.key === 'PageUp') changerPage(-1);
+      if (saisie) { if (ev.key === 'Escape') { document.activeElement.blur(); choisirOutil('selection'); } return; }
+      toucheEditeur(ev, ctrl, touche);
       return;
     }
     if (!$('#dlg-diviser').hidden) { if (ev.key === 'Escape') $('#dlg-diviser').hidden = true; return; }

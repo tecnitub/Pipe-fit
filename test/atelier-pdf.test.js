@@ -83,3 +83,29 @@ test('lecture des plages de pages', () => {
   assert.throws(() => Moteur.lirePlages('12', 9));
   assert.throws(() => Moteur.lirePlages('', 9));
 });
+
+test('annotations : trait, flèche, ellipse, crayon, bulle avec texte, caviardage, sur pages tournées', async () => {
+  const sources = { a: { octets: await pdfDe(1) } };
+  const elements = [
+    { type: 'ligne', x1: 0.1, y1: 0.1, x2: 0.5, y2: 0.2, epaisseur: 3 },
+    { type: 'fleche', x1: 0.2, y1: 0.6, x2: 0.4, y2: 0.4, couleur: '#00aa00' },
+    { type: 'ellipse', x: 0.5, y: 0.5, w: 0.2, h: 0.1 },
+    { type: 'crayon', points: [[0.1, 0.8], [0.15, 0.82], [0.2, 0.79]] },
+    { type: 'bulle', x: 0.55, y: 0.1, w: 0.3, h: 0.12, px: 0.4, py: 0.3, texte: 'Vanne à remplacer — voir plan indice B, repère 12', taille: 10 },
+    { type: 'caviarde', x: 0.1, y: 0.05, w: 0.3, h: 0.04 },
+  ];
+  for (const rotation of [0, 90, 180, 270]) {
+    const octets = await Moteur.compiler({ sources, pages: [{ source: 'a', index: 0, rotation, elements }] });
+    const doc = await PDFDocument.load(octets);
+    assert.strictEqual(doc.getPage(0).getRotation().angle, rotation);
+  }
+});
+
+test('formes : pointe de bulle sur le bon côté, flèche à deux tracés, coupure des lignes', () => {
+  const bulle = Moteur.formes({ type: 'bulle', x: 0.1, y: 0.1, w: 0.2, h: 0.1, px: 0.2, py: 0.5 }, 100, 100)[0];
+  assert.ok(bulle.cmds.some(c => c[0] === 'L' && c[1] === 20 && c[2] === 50), 'la pointe atteint le point visé');
+  assert.strictEqual(Moteur.formes({ type: 'fleche', x1: 0, y1: 0, x2: 1, y2: 1 }, 100, 100).length, 2);
+  assert.match(Moteur.chemin([['M', 1, 2], ['L', 3, 4], ['Z']]), /^M 1 2 L 3 4 Z$/);
+  const lignes = Moteur.couperLignes(t => t.length, 'un deux trois quatre', 9);
+  assert.deepStrictEqual(lignes, ['un deux', 'trois', 'quatre']);
+});
