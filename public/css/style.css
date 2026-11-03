@@ -1178,3 +1178,8 @@ ul.plan-mes li.pm-sansObjet .pm-txt { opacity: .55; text-decoration: line-throug
 
 .ch-depot { border: 2px dashed var(--border); border-radius: 8px; padding: 14px; text-align: center; margin-bottom: 8px; color: var(--muted); }
 .ch-depot.survol { border-color: var(--accent, #b5492d); background: var(--bg-soft, #f6efe9); color: inherit; }
+.ch-depots { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-bottom: 8px; }
+.ch-depots .ch-depot { margin: 0; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: space-between; min-height: 120px; }
+.ch-depot.rempli { border-style: solid; border-color: color-mix(in srgb, var(--accent, #b5492d) 45%, var(--border)); color: inherit; }
+.ch-depot-t { font-size: 15px; }
+.ch-depots .ch-depot .small { overflow-wrap: anywhere; }

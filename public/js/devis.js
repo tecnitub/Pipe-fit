@@ -377,13 +377,16 @@ Views.devis.bind = (root, params, query) => {
   if (!d) return;
   // Nomenclature Revit glissée sur le devis (.txt, .csv, .xlsx) : chiffrage depuis plan de ce devis, importée et ouverte
   root.ondragover = e => { if (d.statut !== 'Accepté' && [...(e.dataTransfer.types || [])].includes('Files')) e.preventDefault(); };
+  // Plusieurs fichiers d'un coup (canalisations, raccords, accessoires, équipements) : chacun rangé selon son nom ou son titre
   root.ondrop = async e => {
-    const f = [...(e.dataTransfer.files || [])].find(x => /\.(txt|csv|tsv|xlsx)$/i.test(x.name));
-    if (!f || d.statut === 'Accepté') return;
+    const fs = [...(e.dataTransfer.files || [])].filter(x => /\.(txt|csv|tsv|xlsx)$/i.test(x.name));
+    if (!fs.length || d.statut === 'Accepté') return;
     e.preventDefault();
     const ch = Store.all('chiffrages').find(c => c.devisId === d.id) || nouveauChiffrage(d.id);
-    try { const n = await importerNomenclature(ch, f); location.hash = `#/chiffrage/${ch.id}`; App.toast(`${n} élément(s) de ${f.name} importé(s) : reliez les articles inconnus puis « Mettre à jour le devis »`, 6000); }
-    catch (err) { notify('Lecture impossible : ' + err.message); }
+    let n = 0;
+    for (const f of fs) { try { n += await importerNomenclature(ch, f); } catch (err) { notify(`${f.name} : lecture impossible (${err.message})`); } }
+    location.hash = `#/chiffrage/${ch.id}`;
+    if (n) App.toast(`${n} pièce(s) importée(s) de ${fs.length} nomenclature(s) : reliez les articles inconnus puis « Mettre à jour le devis »`, 6000);
   };
   const save = () => { Store.upsert('devis', d); App.render(); };
   const on = (sel, ev, fn) => { const el = root.querySelector(sel); if (el) el[ev] = fn; };
