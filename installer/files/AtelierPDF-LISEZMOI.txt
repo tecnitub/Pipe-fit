@@ -1,0 +1,56 @@
+﻿ATELIER PDF - Mode d'emploi
+===========================
+
+Atelier PDF compile et modifie vos documents PDF, directement sur ce PC.
+Aucun fichier n'est envoyé sur Internet. Fonctionne sans connexion.
+
+DÉMARRER
+  Icône « Atelier PDF » du bureau ou du menu Démarrer.
+  L'application s'ouvre dans sa propre fenêtre (Microsoft Edge).
+
+AJOUTER DES DOCUMENTS
+  - Bouton « + Ajouter des fichiers » (Ctrl+O), ou glisser-déposer des fichiers
+    depuis l'Explorateur Windows dans la fenêtre.
+  - Acceptés : PDF, photos et images (JPG, PNG, WebP, GIF, BMP).
+    Une image devient une page A4 (portrait ou paysage selon la photo).
+  - Les fichiers lâchés entre deux pages sont insérés à cet endroit.
+
+ORGANISER LES PAGES
+  - Clic : sélectionner une page. Ctrl+clic : ajouter. Maj+clic : plage.
+    Ctrl+A : tout sélectionner. Échap : désélectionner.
+  - Glisser une page (ou la sélection) pour la déplacer.
+  - R / Maj+R : pivoter à droite / à gauche.
+  - Suppr : supprimer. Ctrl+D : dupliquer.
+  - « Page blanche » et « Intercalaire » (page de titre) s'insèrent après la sélection.
+  - Ctrl+Z / Ctrl+Y : annuler / rétablir.
+
+MODIFIER UNE PAGE (double-clic sur la page, ou « Modifier »)
+  - Texte : cliquer sur la page puis écrire. Double-clic sur un texte pour le corriger.
+  - Masquer : tracer un rectangle blanc (blanc correcteur) pour cacher une zone.
+    Pour REMPLACER un texte : le masquer, puis écrire le nouveau texte par-dessus.
+  - Surligner, Encadrer : tracer la zone.
+  - Image / signature : ajouter une signature scannée, un tampon, un logo
+    (PNG à fond transparent conseillé). Tirer le coin bleu pour redimensionner.
+  - Suppr : supprimer l'élément choisi. Pages précédente/suivante : ◀ ▶ (ou Page préc./suiv.).
+
+COMPILER ET ENREGISTRER
+  Colonne de gauche, avant d'enregistrer :
+  - Titre et auteur du document.
+  - Sommaire en tête (avec liens cliquables) et signets : un par document, avec le nom
+    indiqué dans la liste « Documents » (modifiable).
+  - Numérotation des pages (format, position, premier numéro, pages sans numéro).
+  - Filigrane (ex. « COPIE », « PROVISOIRE »).
+  - Réduire la taille : convertit les pages en images (100 à 200 ppp), utile pour
+    envoyer de gros scans par e-mail (le texte n'est alors plus sélectionnable).
+  Puis « Enregistrer le PDF » (Ctrl+S) : Windows demande où enregistrer.
+  « Extraire » enregistre seulement les pages sélectionnées.
+  « Diviser… » crée plusieurs PDF : un par document, un par page, toutes les N pages,
+  ou selon des plages (ex. 1-3, 4-10, 11-).
+
+PDF PROTÉGÉS
+  Un PDF protégé contre la modification est accepté : ses pages sont recopiées
+  sous forme d'images (signalé dans la liste « Documents »). Si un mot de passe
+  d'ouverture est demandé, il faut le connaître.
+
+DÉSINSTALLER
+  Paramètres Windows > Applications > Atelier PDF > Désinstaller.

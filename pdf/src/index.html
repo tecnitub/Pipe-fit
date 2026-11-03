@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atelier PDF</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="barre">
+  <div class="marque"><span class="logo">PDF</span><span>Atelier PDF</span></div>
+  <div class="outils">
+    <button id="b-ouvrir" class="principal-clair" title="Ajouter des PDF ou des images (Ctrl+O)">＋ Ajouter des fichiers</button>
+    <button id="b-blanche" title="Insérer une page blanche après la sélection">Page blanche</button>
+    <button id="b-intercalaire" title="Insérer une page de titre (intercalaire) après la sélection">Intercalaire</button>
+    <span class="sep"></span>
+    <button id="b-annuler" title="Annuler (Ctrl+Z)">↶</button>
+    <button id="b-retablir" title="Rétablir (Ctrl+Y)">↷</button>
+    <span class="sep"></span>
+    <button id="b-gauche" class="sel" title="Pivoter à gauche (Maj+R)">⟲</button>
+    <button id="b-droite" class="sel" title="Pivoter à droite (R)">⟳</button>
+    <button id="b-dupliquer" class="sel" title="Dupliquer (Ctrl+D)">Dupliquer</button>
+    <button id="b-modifier" class="sel" title="Modifier la page : texte, masquer, surligner, signature… (double-clic)">✎ Modifier</button>
+    <button id="b-supprimer" class="sel danger" title="Supprimer les pages sélectionnées (Suppr)">Supprimer</button>
+    <span class="sep"></span>
+    <button id="b-extraire" class="sel" title="Enregistrer seulement les pages sélectionnées dans un nouveau PDF">Extraire</button>
+    <button id="b-diviser" title="Découper en plusieurs PDF">Diviser…</button>
+    <button id="b-enregistrer" class="principal" title="Compiler toutes les pages en un PDF (Ctrl+S)">⬇ Enregistrer le PDF</button>
+  </div>
+</header>
+
+<div class="corps">
+  <aside class="cote">
+    <section>
+      <h2>Documents</h2>
+      <p class="aide" id="aide-docs">Les fichiers ajoutés apparaissent ici. Le nom sert de titre dans le sommaire et les signets.</p>
+      <ul id="sources" class="sources"></ul>
+    </section>
+
+    <section>
+      <h2>Compilation</h2>
+      <label class="champ">Titre du document<input id="o-titre" placeholder="ex. DOE – Lot CVC"></label>
+      <label class="champ">Auteur<input id="o-auteur" placeholder="ex. Tecnitub"></label>
+      <label class="case"><input type="checkbox" id="o-sommaire"> Page de sommaire en tête (liens cliquables)</label>
+      <label class="case"><input type="checkbox" id="o-signets" checked> Signets (un par document)</label>
+      <label class="case"><input type="checkbox" id="o-aplatir"> Aplatir les formulaires remplis</label>
+    </section>
+
+    <section>
+      <label class="case titre"><input type="checkbox" id="o-num"> Numéroter les pages</label>
+      <div class="sous" id="sous-num">
+        <label class="champ">Format<input id="o-num-format" value="Page {n} / {total}"></label>
+        <div class="ligne">
+          <label class="champ">Position
+            <select id="o-num-position">
+              <option value="bas-centre">Bas, centre</option><option value="bas-droite">Bas, droite</option><option value="bas-gauche">Bas, gauche</option>
+              <option value="haut-centre">Haut, centre</option><option value="haut-droite">Haut, droite</option><option value="haut-gauche">Haut, gauche</option>
+            </select></label>
+          <label class="champ court">Taille<input id="o-num-taille" type="number" min="6" max="30" value="10"></label>
+        </div>
+        <div class="ligne">
+          <label class="champ court">Premier n°<input id="o-num-debut" type="number" min="0" value="1"></label>
+          <label class="champ court">Sans n° sur les<input id="o-num-ignorer" type="number" min="0" value="0" title="Nombre de premières pages sans numéro (page de garde, sommaire)"></label>
+        </div>
+        <p class="aide">{n} = numéro de la page, {total} = nombre de pages.</p>
+      </div>
+    </section>
+
+    <section>
+      <label class="case titre"><input type="checkbox" id="o-fil"> Filigrane</label>
+      <div class="sous" id="sous-fil">
+        <label class="champ">Texte<input id="o-fil-texte" value="COPIE"></label>
+        <div class="ligne">
+          <label class="champ court">Opacité<input id="o-fil-opacite" type="range" min="0.05" max="0.6" step="0.05" value="0.2"></label>
+          <label class="champ court">Couleur<input id="o-fil-couleur" type="color" value="#c62828"></label>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <label class="case titre"><input type="checkbox" id="o-compresser"> Réduire la taille du fichier</label>
+      <div class="sous" id="sous-compresser">
+        <label class="champ">Résolution
+          <select id="o-dpi"><option value="100">100 ppp (léger, écran)</option><option value="150" selected>150 ppp (bon compromis)</option><option value="200">200 ppp (impression)</option></select></label>
+        <p class="aide">Les pages sont converties en images : le texte ne sera plus sélectionnable. Utile pour les gros scans à envoyer par e-mail.</p>
+      </div>
+    </section>
+  </aside>
+
+  <main id="zone" class="zone">
+    <div id="vide" class="vide">
+      <div class="cadre-vide">
+        <div class="grand">Glissez vos PDF et images ici</div>
+        <p>ou</p>
+        <button id="b-ouvrir2" class="principal">Choisir des fichiers…</button>
+        <ul class="liste-fonctions">
+          <li><b>Compiler</b> plusieurs PDF, photos et scans en un seul document, avec sommaire et signets</li>
+          <li><b>Réorganiser</b> les pages par glisser-déposer, pivoter, dupliquer, supprimer</li>
+          <li><b>Modifier</b> une page : ajouter du texte, masquer (blanc correcteur), surligner, encadrer, apposer une signature ou un tampon</li>
+          <li><b>Extraire</b> ou <b>diviser</b> en plusieurs fichiers, <b>numéroter</b>, ajouter un <b>filigrane</b>, <b>réduire la taille</b></li>
+        </ul>
+        <p class="aide">Tout se passe sur cet ordinateur : aucun fichier n'est envoyé sur Internet.</p>
+      </div>
+    </div>
+    <div id="grille" class="grille"></div>
+  </main>
+</div>
+
+<footer class="etat">
+  <span id="etat-texte">Aucune page</span>
+  <span class="espace"></span>
+  <label class="zoom">Taille des vignettes <input id="zoom" type="range" min="100" max="340" step="10" value="170"></label>
+</footer>
+
+<!-- Éditeur de page -->
+<div id="editeur" class="modale" hidden>
+  <div class="ed-barre">
+    <div class="groupe-outils" id="ed-outils">
+      <button data-outil="selection" class="actif" title="Sélectionner, déplacer, redimensionner">↖ Sélection</button>
+      <button data-outil="texte" title="Cliquer sur la page pour écrire">T Texte</button>
+      <button data-outil="masque" title="Tracer un rectangle blanc pour masquer (blanc correcteur)">▭ Masquer</button>
+      <button data-outil="surligne" title="Tracer une zone surlignée">▬ Surligner</button>
+      <button data-outil="cadre" title="Tracer un cadre">▢ Encadrer</button>
+      <button data-outil="image" title="Ajouter une image : signature, tampon, logo">✍ Image / signature</button>
+    </div>
+    <div class="groupe-outils">
+      <label title="Couleur">Couleur <input type="color" id="ed-couleur" value="#000000"></label>
+      <label title="Taille du texte (points)">Taille <input type="number" id="ed-taille" min="5" max="120" value="12"></label>
+      <label class="case-ed"><input type="checkbox" id="ed-gras"> Gras</label>
+      <button id="ed-suppr" title="Supprimer l'élément sélectionné (Suppr)">🗑</button>
+    </div>
+    <div class="groupe-outils">
+      <button id="ed-prec" title="Page précédente">◀</button>
+      <span id="ed-num"></span>
+      <button id="ed-suiv" title="Page suivante">▶</button>
+      <button id="ed-fermer" class="principal">Terminé</button>
+    </div>
+  </div>
+  <div class="ed-scene" id="ed-scene">
+    <div class="ed-page" id="ed-page">
+      <canvas id="ed-canvas"></canvas>
+      <div class="calque" id="ed-calque"></div>
+    </div>
+  </div>
+  <div class="ed-aide">Astuce : pour <b>remplacer</b> un texte existant, masquez-le avec « Masquer » puis écrivez le nouveau texte par-dessus.</div>
+</div>
+
+<!-- Dialogue « Diviser » -->
+<div id="dlg-diviser" class="modale dialogue" hidden>
+  <div class="boite">
+    <h2>Diviser en plusieurs PDF</h2>
+    <label class="radio"><input type="radio" name="mode" value="document" checked> Un fichier par document d'origine</label>
+    <label class="radio"><input type="radio" name="mode" value="page"> Un fichier par page</label>
+    <label class="radio"><input type="radio" name="mode" value="n"> Toutes les <input id="div-n" type="number" min="1" value="2" class="mini"> pages</label>
+    <label class="radio"><input type="radio" name="mode" value="plages"> Selon des plages : <input id="div-plages" placeholder="1-3, 4-10, 11-" class="moyen"></label>
+    <label class="champ">Nom des fichiers<input id="div-nom" value="Document"></label>
+    <p class="aide">Les options de la colonne de gauche (numérotation, filigrane…) s'appliquent à chaque fichier.</p>
+    <div class="boutons"><button id="div-annuler">Annuler</button><button id="div-ok" class="principal">Diviser</button></div>
+  </div>
+</div>
+
+<div id="occupe" class="occupe" hidden><div class="boite-occupe"><div class="roue"></div><div id="occupe-texte">Traitement…</div><progress id="occupe-barre" max="1" value="0"></progress></div></div>
+<div id="notes" class="notes"></div>
+<input type="file" id="fichiers" multiple accept=".pdf,application/pdf,image/*" hidden>
+<input type="file" id="fichier-image" accept="image/*" hidden>
+
+<script src="../../doe/public/vendor/pdf-lib-1.17.1.min.js"></script>
+<script src="../../public/vendor/pdfjs/pdf.min.js"></script>
+<script src="../../public/vendor/pdfjs/pdf.worker.min.js" data-worker></script>
+<script src="moteur.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
