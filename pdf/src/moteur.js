@@ -66,6 +66,19 @@
     });
   }
 
+  // Police standard proche de celle du texte d'origine
+  function nomPoliceStandard(e) {
+    const { StandardFonts } = lib();
+    const fam = e.police === 'times' ? 'TimesRoman' : e.police === 'courier' ? 'Courier' : 'Helvetica';
+    const ital = e.italique ? (fam === 'TimesRoman' ? 'Italic' : 'Oblique') : '';
+    return StandardFonts[fam + (e.gras ? 'Bold' : '') + ital] || StandardFonts[fam];
+  }
+  // Zone légèrement agrandie (1 pt) pour couvrir l'anticrénelage du texte d'origine
+  function elargirZone(z, affiche) {
+    const dx = 1 / affiche.l, dy = 1 / affiche.h;
+    return { x: z.x - dx, y: z.y - dy, w: z.w + 2 * dx, h: z.h + 2 * dy };
+  }
+
   // ---------- Formes vectorielles (communes à l'écran et au PDF) ----------
   // Chaque forme est décrite dans le repère de la page affichée, en unités « l × h » (points pour le PDF,
   // pixels à l'écran), k = unités par point (taille des pointes de flèche, épaisseurs, arrondis).
@@ -249,6 +262,16 @@
       if (e.type === 'texte') {
         const police = e.gras ? ctx.policeGras : ctx.police;
         poserTexte(page, boite, r, police, { texte: e.texte || '', u: e.x, v: e.y, taille: e.taille || 12, coul: couleur(e.couleur) });
+      } else if (e.type === 'texteModifie') {
+        // Texte d'origine introuvable dans le contenu (scan, texte dans un sous-dessin) : recouvert par le fond
+        if (!e.retire && !e.applique) page.drawRectangle({ ...rectPdf(boite, r, elargirZone(e.zone, affiche)), color: couleur(e.fond, [1, 1, 1]) });
+        const police = await ctx.policeStandard(nomPoliceStandard(e));
+        String(e.texte || '').split(/\r?\n/).forEach((ligne, i) => {
+          const t = nettoyer(police, ligne);
+          if (!t) return;
+          const q = versPdf(boite, r, e.x, e.base + i * 1.2 * e.taille / affiche.h);
+          page.drawText(t, { x: q.x, y: q.y, size: e.taille, font: police, color: couleur(e.couleur), rotate: degrees(normRot(r)) });
+        });
       } else if (e.type === 'masque') {
         page.drawRectangle({ ...rectPdf(boite, r, e), color: couleur(e.couleur, [1, 1, 1]) });
       } else if (e.type === 'caviarde') {
@@ -458,6 +481,11 @@
       police: await sortie.embedFont(StandardFonts.Helvetica),
       policeGras: await sortie.embedFont(StandardFonts.HelveticaBold),
       cacheImages: new Map(),
+      polices: new Map(),
+      policeStandard(nom) {
+        if (!this.polices.has(nom)) this.polices.set(nom, sortie.embedFont(nom));
+        return this.polices.get(nom);
+      },
       async image(id) {
         if (!id || !images[id]) return null;
         if (!this.cacheImages.has(id)) this.cacheImages.set(id, integrerImage(sortie, images[id].octets, images[id].mime));
@@ -512,9 +540,17 @@
       }
       const r = normRot(p.rotation || 0);
       page.setRotation(degrees(r));
+      // Texte modifié : les caractères d'origine sont retirés du contenu de la page (PDF d'origine seulement)
+      const modifs = (p.elements || []).filter(e => e.type === 'texteModifie');
+      let elements = p.elements;
+      if (modifs.length) {
+        const boite0 = page.getCropBox();
+        const comptes = (!p.type || p.type === 'pdf') ? await retirerTexte(sortie, page, modifs.map(e => rectPdf(boite0, r, e.zone)), ctx) : modifs.map(() => 0);
+        elements = p.elements.map(e => { const k = modifs.indexOf(e); return k >= 0 ? { ...e, retire: comptes[k] > 0 } : e; });
+      }
       // Annotations et texte OCR dans un flux à part, retiré si le PDF est rouvert dans Atelier PDF pour être modifié
       nouveauFlux(page);
-      await dessinerElements(sortie, page, r, p.elements, ctx);
+      await dessinerElements(sortie, page, r, elements, ctx);
       if (p.ocr && p.ocr.length) dessinerOcr(page, r, p.ocr, p.elements, ctx);
       const calques = page.contentStreamRef ? [page.contentStreamRef] : [];
       nouveauFlux(page);
@@ -555,6 +591,266 @@
     sortie.setCreationDate(new Date());
     sortie.setModificationDate(new Date());
     return sortie.save({ useObjectStreams: true });
+  }
+
+  // ---------- Retrait du texte d'origine (modification du texte d'une page) ----------
+  // Lit le contenu de la page, repère chaque caractère affiché et retire ceux dont le centre est dans une des zones
+  // (repère PDF). Les caractères suivants gardent leur place : l'avance des caractères retirés est remplacée par un
+  // décalage équivalent. Renvoie le nombre de caractères retirés par zone (0 : texte introuvable, ex. scan).
+  const ESPACES = new Set([0, 9, 10, 12, 13, 32]);
+  const DELIMS = new Set([40, 41, 60, 62, 91, 93, 123, 125, 47, 37]);
+  function lexer(b) {
+    let i = 0;
+    const n = b.length;
+    const latin = (d, f) => { let t = ''; for (let k = d; k < f; k++) t += String.fromCharCode(b[k]); return t; };
+    function chaine() { // ( ... ) avec échappements et parenthèses imbriquées
+      const o = [];
+      let niv = 1;
+      i++;
+      while (i < n) {
+        const c = b[i++];
+        if (c === 92) {
+          const e = b[i++];
+          const simples = { 110: 10, 114: 13, 116: 9, 98: 8, 102: 12, 40: 40, 41: 41, 92: 92 };
+          if (e in simples) o.push(simples[e]);
+          else if (e >= 48 && e <= 55) {
+            let v = e - 48;
+            for (let k = 0; k < 2 && b[i] >= 48 && b[i] <= 55; k++) v = v * 8 + (b[i++] - 48);
+            o.push(v & 255);
+          } else if (e === 13) { if (b[i] === 10) i++; } else if (e !== 10) o.push(e);
+        } else if (c === 40) { niv++; o.push(c); } else if (c === 41) { if (--niv === 0) break; o.push(c); } else o.push(c);
+      }
+      return Uint8Array.from(o);
+    }
+    function hex() {
+      i++;
+      let t = '';
+      while (i < n && b[i] !== 62) { const c = b[i++]; if (!ESPACES.has(c)) t += String.fromCharCode(c); }
+      i++;
+      if (t.length % 2) t += '0';
+      const o = new Uint8Array(t.length / 2);
+      for (let k = 0; k < o.length; k++) o[k] = parseInt(t.substr(k * 2, 2), 16) || 0;
+      return o;
+    }
+    return {
+      get pos() { return i; },
+      set pos(v) { i = v; },
+      octets: b,
+      suivant() {
+        for (;;) {
+          while (i < n && ESPACES.has(b[i])) i++;
+          if (b[i] === 37) { while (i < n && b[i] !== 10 && b[i] !== 13) i++; continue; }
+          break;
+        }
+        if (i >= n) return null;
+        const d = i, c = b[i];
+        if (c === 40) return { t: 'val', v: { chaine: chaine() }, d };
+        if (c === 60) { if (b[i + 1] === 60) { i += 2; return { t: '<<', d }; } return { t: 'val', v: { chaine: hex() }, d }; }
+        if (c === 62 && b[i + 1] === 62) { i += 2; return { t: '>>', d }; }
+        if (c === 91) { i++; return { t: '[', d }; }
+        if (c === 93) { i++; return { t: ']', d }; }
+        if (c === 123 || c === 125) { i++; return { t: 'val', v: null, d }; }
+        if (c === 47) { i++; const s0 = i; while (i < n && !ESPACES.has(b[i]) && !DELIMS.has(b[i])) i++; return { t: 'val', v: { nom: latin(s0, i) }, d }; }
+        while (i < n && !ESPACES.has(b[i]) && !DELIMS.has(b[i])) i++;
+        if (i === d) { i++; return { t: 'val', v: null, d }; }
+        const mot = latin(d, i);
+        if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(mot)) return { t: 'val', v: Number(mot), d };
+        if (mot === 'true' || mot === 'false' || mot === 'null') return { t: 'val', v: mot, d };
+        return { t: 'op', v: mot, d };
+      },
+    };
+  }
+  // Opérations du flux : { op, args, d (début des opérandes), f (fin de l'opérateur) }
+  function operations(b) {
+    const lx = lexer(b);
+    const ops = [];
+    let pile = [], debut = null;
+    const conteneurs = [];
+    for (let tk = lx.suivant(); tk; tk = lx.suivant()) {
+      if (debut === null) debut = tk.d;
+      if (tk.t === '[' || tk.t === '<<') { conteneurs.push(pile); pile = []; continue; }
+      if (tk.t === ']' || tk.t === '>>') { const v = tk.t === ']' ? pile : { dict: pile }; pile = conteneurs.pop() || []; pile.push(v); continue; }
+      if (tk.t === 'val') { pile.push(tk.v); continue; }
+      if (conteneurs.length) { pile.push(tk.v); continue; }
+      if (tk.v === 'BI') {
+        // Image en ligne : données binaires jusqu'à « EI »
+        let p = lx.pos;
+        const fin = b.length;
+        const id = (() => { for (let k = p; k < fin - 2; k++) if (b[k] === 73 && b[k + 1] === 68 && ESPACES.has(b[k + 2]) && ESPACES.has(b[k - 1])) return k + 3; return fin; })();
+        p = id;
+        while (p < fin - 1 && !(ESPACES.has(b[p - 1]) && b[p] === 69 && b[p + 1] === 73 && (p + 2 >= fin || ESPACES.has(b[p + 2])))) p++;
+        lx.pos = Math.min(fin, p + 2);
+        ops.push({ op: 'BI', args: [], d: debut, f: lx.pos });
+      } else ops.push({ op: tk.v, args: pile, d: debut, f: lx.pos });
+      pile = []; debut = null;
+    }
+    return ops;
+  }
+  const mult = (m, n) => [m[0] * n[0] + m[1] * n[2], m[0] * n[1] + m[1] * n[3], m[2] * n[0] + m[3] * n[2], m[2] * n[1] + m[3] * n[3], m[4] * n[0] + m[5] * n[2] + n[4], m[4] * n[1] + m[5] * n[3] + n[5]];
+  const appliquer = (m, x, y) => [x * m[0] + y * m[2] + m[4], x * m[1] + y * m[3] + m[5]];
+
+  // Largeurs des caractères d'une police de la page (unités de texte pour une taille 1)
+  async function infosPolice(page, nom, ctx) {
+    const { PDFName, PDFArray, PDFNumber, StandardFonts } = lib();
+    const res = page.node.Resources();
+    const polices = res && res.lookup(PDFName.of('Font'));
+    const f = polices && polices.lookup(PDFName.of(nom));
+    if (!f || !f.lookup) return null;
+    const nomDe = o => (o ? String(o).replace(/^\//, '') : '');
+    const num = o => (o instanceof PDFNumber ? o.asNumber() : (typeof o?.asNumber === 'function' ? o.asNumber() : null));
+    const sub = nomDe(f.get(PDFName.of('Subtype')));
+    if (sub === 'Type0') {
+      const enc = nomDe(f.get(PDFName.of('Encoding')));
+      if (!/^Identity-[HV]$/.test(enc)) return null;
+      const desc = f.lookup(PDFName.of('DescendantFonts'))?.lookup(0);
+      const dw = num(desc?.lookup(PDFName.of('DW'))) ?? 1000;
+      const larg = new Map();
+      const w = desc?.lookup(PDFName.of('W'));
+      if (w instanceof PDFArray) {
+        const a = w.asArray().map(o => desc.context.lookup(o) || o);
+        for (let k = 0; k < a.length;) {
+          const c0 = num(a[k]);
+          if (a[k + 1] instanceof PDFArray) { a[k + 1].asArray().forEach((v, j) => larg.set(c0 + j, num(desc.context.lookup(v) || v))); k += 2; }
+          else { const c1 = num(a[k + 1]), v = num(a[k + 2]); for (let c = c0; c <= c1 && c - c0 < 65536; c++) larg.set(c, v); k += 3; }
+        }
+      }
+      return { octets: 2, largeur: c => (larg.get(c) ?? dw) / 1000 };
+    }
+    const fm = f.lookup(PDFName.of('FontMatrix'));
+    const echelle = fm instanceof PDFArray ? num(fm.lookup(0)) : 0.001;
+    const premier = num(f.lookup(PDFName.of('FirstChar'))) ?? 0;
+    const largeurs = f.lookup(PDFName.of('Widths'));
+    const manquante = num(f.lookup(PDFName.of('FontDescriptor'))?.lookup(PDFName.of('MissingWidth'))) ?? 0;
+    if (largeurs instanceof PDFArray) {
+      const a = largeurs.asArray().map(o => num(f.context.lookup(o) || o) ?? 0);
+      return { octets: 1, largeur: c => ((c >= premier && c - premier < a.length) ? a[c - premier] : manquante) * echelle };
+    }
+    // Police standard sans table de largeurs : métriques de la police standard la plus proche
+    const base = nomDe(f.get(PDFName.of('BaseFont')));
+    const famille = /courier|mono/i.test(base) ? 'Courier' : /times|serif|roman/i.test(base) ? 'TimesRoman' : 'Helvetica';
+    const gras = /bold|black|heavy/i.test(base), ital = /italic|oblique/i.test(base);
+    const cle = famille + (gras ? 'Bold' : '') + (ital ? (famille === 'TimesRoman' ? 'Italic' : 'Oblique') : '');
+    const nomStd = StandardFonts[cle] || StandardFonts[famille];
+    const pol = await ctx.policeStandard(nomStd);
+    return { octets: 1, largeur: c => { try { return pol.widthOfTextAtSize(String.fromCharCode(c), 1); } catch { return 0.5; } } };
+  }
+
+  async function retirerTexte(sortie, page, zones, ctx) {
+    const { PDFName, PDFArray, decodePDFRawStream } = lib();
+    const compte = zones.map(() => 0);
+    if (!zones.length) return compte;
+    // Contenu de la page (plusieurs flux possibles, mis bout à bout)
+    const c = page.node.get(PDFName.of('Contents'));
+    const refs = c instanceof PDFArray ? c.asArray() : (c ? [c] : []);
+    const morceaux = [];
+    try {
+      for (const r of refs) { morceaux.push(decodePDFRawStream(sortie.context.lookup(r)).decode(), Uint8Array.of(10)); }
+    } catch { return compte; }
+    const total = morceaux.reduce((a, m) => a + m.length, 0);
+    const b = new Uint8Array(total);
+    let pos = 0;
+    for (const m of morceaux) { b.set(m, pos); pos += m.length; }
+    const ops = operations(b);
+
+    const marge = 0.8;
+    const dans = (x, y) => zones.findIndex(z => x >= z.x - marge && x <= z.x + z.width + marge && y >= z.y - marge && y <= z.y + z.height + marge);
+    let ctm = [1, 0, 0, 1, 0, 0];
+    const pileEtat = [];
+    let tm = [1, 0, 0, 1, 0, 0], tlm = [1, 0, 0, 1, 0, 0];
+    let tc = 0, tw = 0, th = 1, tl = 0, rise = 0, tfs = 0, police = null, nomPolice = null;
+    const polices = new Map();
+    const remplacements = [];
+    const hexa = codes => `<${codes.map(v => v.toString(16).padStart(2, '0')).join('')}>`;
+    // Nombre TJ équivalent à un déplacement (en fraction de taille) : n = -déplacement × 1000
+    const decalage = v => String(Math.round(-v * 1e6) / 1000);
+
+    for (const o of ops) {
+      const a = o.args;
+      switch (o.op) {
+        case 'q': pileEtat.push({ ctm, tc, tw, th, tl, rise, tfs, police, nomPolice }); break;
+        case 'Q': if (pileEtat.length) ({ ctm, tc, tw, th, tl, rise, tfs, police, nomPolice } = pileEtat.pop()); break;
+        case 'cm': if (a.length === 6) ctm = mult(a, ctm); break;
+        case 'BT': tm = [1, 0, 0, 1, 0, 0]; tlm = tm; break;
+        case 'Tm': if (a.length === 6) { tm = a.slice(); tlm = tm; } break;
+        case 'Td': tlm = mult([1, 0, 0, 1, a[0], a[1]], tlm); tm = tlm; break;
+        case 'TD': tl = -a[1]; tlm = mult([1, 0, 0, 1, a[0], a[1]], tlm); tm = tlm; break;
+        case 'T*': tlm = mult([1, 0, 0, 1, 0, -tl], tlm); tm = tlm; break;
+        case 'Tc': tc = a[0]; break;
+        case 'Tw': tw = a[0]; break;
+        case 'Tz': th = a[0] / 100; break;
+        case 'TL': tl = a[0]; break;
+        case 'Ts': rise = a[0]; break;
+        case 'Tf':
+          nomPolice = a[0] && a[0].nom; tfs = a[1];
+          if (!polices.has(nomPolice)) polices.set(nomPolice, await infosPolice(page, nomPolice, ctx).catch(() => null));
+          police = polices.get(nomPolice);
+          break;
+        case 'Tj': case 'TJ': case "'": case '"': {
+          let prefixe = '';
+          if (o.op === "'") { tlm = mult([1, 0, 0, 1, 0, -tl], tlm); tm = tlm; prefixe = 'T* '; }
+          if (o.op === '"') { tw = a[0]; tc = a[1]; tlm = mult([1, 0, 0, 1, 0, -tl], tlm); tm = tlm; prefixe = `${a[0]} Tw ${a[1]} Tc T* `; }
+          const elems = o.op === 'TJ' ? (Array.isArray(a[0]) ? a[0] : []) : [a[a.length - 1]];
+          if (!police || !tfs) {
+            // Police illisible : avance inconnue, on ne touche à rien
+            break;
+          }
+          const sortieTJ = [];
+          let retire = false, enAttente = 0, courant = [];
+          const vider = () => { if (courant.length) { sortieTJ.push(hexa(courant)); courant = []; } };
+          for (const el of elems) {
+            if (typeof el === 'number') {
+              if (enAttente) { sortieTJ.push(decalage(enAttente)); enAttente = 0; }
+              vider();
+              sortieTJ.push(String(el));
+              tm = mult([1, 0, 0, 1, -el / 1000 * tfs * th, 0], tm);
+              continue;
+            }
+            const octets = el && el.chaine;
+            if (!octets) continue;
+            for (let k = 0; k + police.octets <= octets.length; k += police.octets) {
+              const code = police.octets === 2 ? (octets[k] << 8) | octets[k + 1] : octets[k];
+              const w0 = police.largeur(code) || 0;
+              const tx = (w0 * tfs + tc + (police.octets === 1 && code === 32 ? tw : 0)) * th;
+              const trm = mult([tfs * th, 0, 0, tfs, 0, rise], mult(tm, ctm));
+              const [cx, cy] = appliquer(trm, (w0 * 0.5), 0.35);
+              const z = dans(cx, cy);
+              const codes = police.octets === 2 ? [octets[k], octets[k + 1]] : [octets[k]];
+              if (z >= 0 && w0 > 0) {
+                compte[z]++;
+                retire = true;
+                vider();
+                // Décalage TJ équivalent à l'avance du caractère retiré (en millièmes de taille)
+                enAttente += tx / (tfs * th);
+              } else {
+                if (enAttente) { sortieTJ.push(decalage(enAttente)); enAttente = 0; }
+                courant.push(...codes);
+              }
+              tm = mult([1, 0, 0, 1, tx, 0], tm);
+            }
+          }
+          if (retire) {
+            vider();
+            if (enAttente) sortieTJ.push(decalage(enAttente));
+            remplacements.push({ d: o.d, f: o.f, texte: `${prefixe}[${sortieTJ.join(' ')}] TJ` });
+          }
+          break;
+        }
+        default: break;
+      }
+    }
+    if (!remplacements.length) return compte;
+    // Flux réécrit : tout est conservé à l'identique, sauf les opérations d'affichage de texte modifiées
+    const enc = new TextEncoder();
+    const parts = [];
+    let dern = 0;
+    for (const r of remplacements) { parts.push(b.subarray(dern, r.d), enc.encode(r.texte)); dern = r.f; }
+    parts.push(b.subarray(dern));
+    const n = parts.reduce((x, m) => x + m.length, 0);
+    const nouveau = new Uint8Array(n);
+    let q = 0;
+    for (const m of parts) { nouveau.set(m, q); q += m.length; }
+    page.node.set(PDFName.of('Contents'), sortie.context.register(sortie.context.flateStream(nouveau)));
+    return compte;
   }
 
   // pdf-lib écrit dans le dernier flux de la page : on en force un nouveau
@@ -627,7 +923,9 @@
         page.node.set(PDFName.of('Contents'), doc.context.obj(garder));
       }
       const ref = d.get(PDFName.of('Donnees'));
-      pages.push(ref ? (lireJson(ref) || {}) : {});
+      const donnees = ref ? (lireJson(ref) || {}) : {};
+      (donnees.elements || []).forEach(e => { if (e.type === 'texteModifie') e.applique = true; });
+      pages.push(donnees);
       page.node.delete(PDFName.of('AtelierPDF'));
     });
     aRetirer.reverse().forEach(i => doc.removePage(i));
@@ -665,5 +963,5 @@
     return res;
   }
 
-  return { compiler, relire, lirePlages, versPdf, tailleAffichee, rectPdf, normRot, A4, formes, chemin, couperLignes, etiquettes, lignesTampon, MARGE_BULLE, DEFAUTS };
+  return { compiler, relire, retirerTexte, nomPoliceStandard, lirePlages, versPdf, tailleAffichee, rectPdf, normRot, A4, formes, chemin, couperLignes, etiquettes, lignesTampon, MARGE_BULLE, DEFAUTS };
 });

@@ -58,12 +58,20 @@ const OcrAtelier = (() => {
         const { data } = await w.recognize(canvas, {}, { blocks: true });
         const L = canvas.width, H = canvas.height;
         const mots = [];
-        (data.blocks || []).forEach(b => b.paragraphs.forEach(p => p.lines.forEach(l => l.words.forEach(m => {
-          const t = (m.text || '').trim();
-          if (!t || m.confidence < 35) return;
-          const { x0, y0, x1, y1 } = m.bbox;
-          mots.push({ t, x: x0 / L, y: y0 / H, w: (x1 - x0) / L, h: (y1 - y0) / H });
-        }))));
+        let n = 0;
+        (data.blocks || []).forEach(b => b.paragraphs.forEach(p => p.lines.forEach(l => {
+          // Ligne : ligne de base (droite x0,y0 -> x1,y1) et hauteur de rangée, pour réécrire la ligne à l'identique
+          const bl = l.baseline || {};
+          const rang = l.rowAttributes?.row_height || (l.bbox.y1 - l.bbox.y0);
+          const baseEn = x => (bl.x1 > bl.x0 ? bl.y0 + (bl.y1 - bl.y0) * (x - bl.x0) / (bl.x1 - bl.x0) : l.bbox.y1);
+          n++;
+          l.words.forEach(m => {
+            const t = (m.text || '').trim();
+            if (!t || m.confidence < 35) return;
+            const { x0, y0, x1, y1 } = m.bbox;
+            mots.push({ t, x: x0 / L, y: y0 / H, w: (x1 - x0) / L, h: (y1 - y0) / H, ligne: n, base: baseEn(x0) / H, rang: rang / H });
+          });
+        })));
         return mots;
       } finally { suivi = null; }
     },

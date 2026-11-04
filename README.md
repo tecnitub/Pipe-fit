@@ -43,7 +43,7 @@ fiches techniques, notices et le PV de réception déjà repris, « Générer le
 ## Atelier PDF (compilation et modification de PDF)
 
 Logiciel Windows séparé, dans `pdf/` : compiler PDF, photos et scans en un document (sommaire, signets, numérotation),
-réorganiser les pages, annoter (texte, bulles, traits, flèches, carrés, cercles, crayon, images), tampons et signatures,
+réorganiser les pages, modifier le texte du PDF, annoter (texte, bulles, traits, flèches, carrés, cercles, crayon, images), tampons et signatures,
 mesures sur plan à l'échelle, OCR des scans, caviarder, extraire, diviser ; sauvegarde automatique et projets. Installateur sans droits
 administrateur `AtelierPDF-Setup-x.y.z.exe` (onglet **Actions** → *Artifacts* → `AtelierPDF-Setup`, ou
 `bash installer/build-pdf.sh`). Voir [pdf/README.md](pdf/README.md).

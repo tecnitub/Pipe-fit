@@ -112,6 +112,7 @@
         <ul class="liste-fonctions">
           <li><b>Compiler</b> plusieurs PDF, photos et scans en un seul document, avec sommaire et signets</li>
           <li><b>Réorganiser</b> les pages par glisser-déposer, pivoter, dupliquer, supprimer</li>
+          <li><b>Modifier le texte</b> d'un PDF directement sur la page (l'ancien texte est retiré du fichier)</li>
           <li><b>Annoter</b> une page : texte à la volée, bulles, traits, flèches, carrés, cercles, crayon, surlignage, images et signatures</li>
           <li><b>Caviarder</b> les informations confidentielles (à la main ou en recherchant un mot) : elles sont réellement supprimées</li>
           <li><b>Mesurer</b> sur les plans à l'échelle (cotes, longueurs, surfaces), poser des <b>tampons</b> et sa <b>signature</b></li>
@@ -138,6 +139,7 @@
     <div class="groupe-outils" id="ed-outils">
       <button data-outil="selection" class="actif" title="Sélectionner, déplacer, redimensionner (V)">↖</button>
       <span class="sep-ed"></span>
+      <button data-outil="editertexte" title="Modifier le texte du PDF : cliquer sur une ligne et la corriger ; l'ancien texte est retiré du fichier (scans : après OCR)">✏️&nbsp;Modifier le texte</button>
       <button data-outil="texte" title="Texte à la volée : cliquer sur la page et écrire (T)">T&nbsp;Texte</button>
       <button data-outil="bulle" title="Bulle : tracer la bulle (ou cliquer sur le point à commenter), puis écrire. Le point bleu règle la pointe (B)">💬&nbsp;Bulle</button>
       <span class="sep-ed"></span>
@@ -171,6 +173,10 @@
       <label title="Épaisseur du trait (points)">Trait <input type="number" id="ed-epaisseur" min="0.5" max="30" step="0.5" value="2"></label>
       <label title="Taille du texte (points)">Taille <input type="number" id="ed-taille" min="5" max="120" value="12"></label>
       <label class="case-ed" title="Texte en gras"><input type="checkbox" id="ed-gras"> <b>G</b></label>
+      <span id="ed-police-zone" hidden>
+        <select id="ed-police" title="Police du texte modifié"><option value="helvetica">Arial / Helvetica</option><option value="times">Times</option><option value="courier">Courier</option></select>
+        <label class="case-ed" title="Italique"><input type="checkbox" id="ed-italique"> <i>I</i></label>
+      </span>
       <button id="ed-dupl" title="Dupliquer l'élément (Ctrl+D)">⧉</button>
       <button id="ed-memoriser" title="Garder cette image (signature, tampon) dans la bibliothèque, pour la réutiliser" hidden>☆ Mémoriser</button>
       <button id="ed-suppr" title="Supprimer l'élément (Suppr)">🗑</button>
@@ -202,7 +208,7 @@
     </div>
   </div>
   <div class="ed-aide"><span id="ed-recap" class="recap"></span> Glisser pour tracer · double-clic sur un texte ou une bulle pour le corriger · Ctrl+V colle une image ou un texte · Échap revient à la sélection · Ctrl+Z annule.
-    Pour <b>remplacer</b> un texte : « Masquer » puis écrire par-dessus. Pour <b>supprimer</b> une information confidentielle : « Caviarder ».</div>
+    Pour <b>corriger</b> le texte du PDF : « ✏️ Modifier le texte ». Pour <b>supprimer</b> une information confidentielle : « Caviarder ».</div>
 </div>
 
 <!-- Dialogue « Diviser » -->

@@ -187,3 +187,35 @@ test('fichier projet .atelierpdf : aller-retour', () => {
   assert.deepStrictEqual([...r.fichiers.get('i1').octets], [...PNG]);
   assert.throws(() => Stockage.depuisProjet(PNG));
 });
+
+test('modifier le texte : caractères d\'origine retirés du contenu, le reste intact, nouveau texte écrit', async () => {
+  const d = await PDFDocument.create();
+  const f = await d.embedFont(StandardFonts.Helvetica);
+  const pg = d.addPage([595, 842]);
+  pg.drawText('Ligne une à garder', { x: 50, y: 750, size: 14, font: f });
+  pg.drawText('Prix : 100 euros', { x: 50, y: 720, size: 14, font: f });
+  pg.drawText('Fin du document', { x: 50, y: 690, size: 14, font: f });
+  const sources = { a: { octets: await d.save() } };
+  const hex = t => Buffer.from(t, 'latin1').toString('hex').toUpperCase();
+  // Zone de « Prix : 100 euros » (repère de la page affichée, origine en haut à gauche)
+  const zone = { x: 48 / 595, y: (842 - 734) / 842, w: 130 / 595, h: 18 / 842 };
+  for (const rotation of [0, 90]) {
+    const el = { type: 'texteModifie', zone: rotation ? { x: 716 / 842, y: 48 / 595, w: 18 / 842, h: 130 / 595 } : zone,
+      x: zone.x, base: (842 - 720) / 842, texte: 'Prix : 95 euros', taille: 14, police: 'helvetica', couleur: '#000000', fond: '#ffffff' };
+    const octets = await Moteur.compiler({ sources, pages: [{ source: 'a', index: 0, rotation, elements: [el] }], options: { editable: false } });
+    const contenu = await contenuPages(octets);
+    assert.ok(!contenu.includes(hex('Prix : 100 euros')), 'ancien texte retiré');
+    assert.ok(contenu.includes(hex('Ligne une à garder')) && contenu.includes(hex('Fin du document')), 'autres lignes intactes');
+    assert.ok(contenu.includes(hex('Prix : 95 euros')), 'nouveau texte écrit');
+    assert.ok(!contenu.includes('1 1 1 rg'), 'pas de rectangle blanc de masquage : le texte a vraiment été retiré');
+  }
+});
+
+test('modifier le texte : scan (pas de texte dans le contenu) -> fond posé par-dessus', async () => {
+  const sources = { a: { octets: await pdfDe(1) } };
+  const el = { type: 'texteModifie', zone: { x: 0.5, y: 0.5, w: 0.2, h: 0.02 }, x: 0.5, base: 0.515, texte: 'Nouveau', taille: 12, police: 'times', gras: true, italique: true, fond: '#fdf6e3' };
+  const octets = await Moteur.compiler({ sources, pages: [{ source: 'a', index: 0, elements: [el] }], options: { editable: false } });
+  const contenu = await contenuPages(octets);
+  assert.match(contenu, /0\.99\d* 0\.96\d* 0\.89\d* rg/, 'rectangle de la couleur du fond posé sur le texte du scan');
+  assert.strictEqual(Moteur.nomPoliceStandard(el), 'Times-BoldItalic');
+});

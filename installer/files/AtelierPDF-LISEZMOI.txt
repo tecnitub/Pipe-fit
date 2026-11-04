@@ -24,6 +24,22 @@ ORGANISER LES PAGES
   - « Page blanche » et « Intercalaire » (page de titre) s'insèrent après la sélection.
   - Ctrl+Z / Ctrl+Y : annuler / rétablir.
 
+MODIFIER LE TEXTE D'UN PDF (double-clic sur la page, puis « ✏️ Modifier le texte »)
+  - Les lignes de texte de la page sont encadrées en pointillé : cliquez sur une
+    ligne, corrigez-la directement (le curseur est en fin de ligne), puis cliquez
+    ailleurs. Ctrl+A dans la ligne pour tout retaper ; ligne vidée = texte supprimé.
+  - La police (type Arial, Times ou Courier), le gras, l'italique, la taille et la
+    couleur du texte d'origine sont repris ; modifiables avec la barre d'outils.
+    Le nouveau texte peut être déplacé avec la Sélection.
+  - À l'enregistrement, l'ancien texte est RETIRÉ du fichier (il ne réapparaît
+    pas au copier-coller ni dans une recherche) ; le fond, les traits et le reste
+    de la page ne bougent pas.
+  - Scans et photos : lancez d'abord « 🔍 OCR » ; l'ancien texte, qui fait partie
+    de l'image, est alors recouvert par la couleur du fond.
+  - Limites : la police est une police standard proche de l'originale (pas
+    toujours identique) ; un texte écrit en biais, ou certains PDF particuliers
+    (texte dessiné dans un sous-élément), sont recouverts au lieu d'être retirés.
+
 ANNOTER UNE PAGE (double-clic sur la page, ou « Modifier »)
   Choisir un outil (lettre entre parenthèses = raccourci clavier), puis :
   - Texte (T) : cliquer sur la page et écrire directement. Cliquer ailleurs pour
@@ -36,7 +52,7 @@ ANNOTER UNE PAGE (double-clic sur la page, ou « Modifier »)
   - Crayon (C) : dessin à main levée.
   - Surligner (S) : zone jaune transparente.
   - Masquer (M) : rectangle blanc (blanc correcteur). Le texte caché reste dans le
-    fichier : pour REMPLACER un texte, masquer puis écrire par-dessus.
+    fichier : pour REMPLACER un texte, utilisez plutôt « Modifier le texte ».
   - Caviarder (X) : rectangle noir. À l'enregistrement, la page est recopiée en
     image : le contenu sous le noir est RÉELLEMENT supprimé (non récupérable).
     « Caviarder un mot… » recherche un nom, un numéro… dans tous les PDF et le

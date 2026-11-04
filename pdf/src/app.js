@@ -428,6 +428,13 @@
         }
       }
       if (e.type === 'caviarde') { g.fillStyle = '#000'; g.fillRect(x, y, w, h); }
+      else if (e.type === 'texteModifie') {
+        if (!e.applique) { g.fillStyle = e.fond || '#fff'; g.fillRect(e.zone.x * L - k, e.zone.y * H - k, e.zone.w * L + 2 * k, e.zone.h * H + 2 * k); }
+        const t = e.taille * k;
+        g.fillStyle = e.couleur || '#000';
+        g.font = `${e.italique ? 'italic ' : ''}${e.gras ? 'bold ' : ''}${t}px ${FAMILLES[e.police] || FAMILLES.helvetica}`;
+        String(e.texte || '').split('\n').forEach((l, i) => g.fillText(l, e.x * L, e.base * H + i * t * 1.2));
+      }
       else if (e.type === 'bulle' && e.texte) {
         const t = (e.taille || 11) * k, m = MoteurPDF.MARGE_BULLE * k;
         g.fillStyle = e.couleurTexte || '#000';
@@ -447,6 +454,8 @@
       }
     }
   }
+  // Polices d'écran équivalentes aux polices standard du PDF
+  const FAMILLES = { helvetica: 'Helvetica, Arial, "Liberation Sans", sans-serif', times: '"Times New Roman", Times, "Liberation Serif", serif', courier: '"Courier New", Courier, "Liberation Mono", monospace' };
   // Largeur d'un texte (police Helvetica/Arial) pour centrer les tampons comme dans le PDF
   const ctxMesure = document.createElement('canvas').getContext('2d');
   function mesureTexte(t, gras, taille) {
@@ -849,7 +858,8 @@
       const coins = [o, fin, pt(lg, 1.0), hautO];
       const xs = coins.map(q => q[0]), ys = coins.map(q => q[1]);
       const x = Math.min(...xs), y = Math.min(...ys);
-      res.push({ t: it.str, x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y, o, u: [fin[0] - o[0], fin[1] - o[1]], v: [hautO[0] - o[0], hautO[1] - o[1]] });
+      res.push({ t: it.str, x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y, o, u: [fin[0] - o[0], fin[1] - o[1]], v: [hautO[0] - o[0], hautO[1] - o[1]],
+        b: pt(0, 0), taille: haut, police: it.fontName, famille: contenu.styles[it.fontName]?.fontFamily || '' });
     }
     return res;
   }
@@ -873,7 +883,8 @@
       // Texte à garder interrogeable : reconnu (OCR), ou celui du PDF quand la page devient une image
       let mots = p.ocr || null;
       if (!mots && enImage && p.type === 'pdf') mots = (await texteNatif(p)).map(({ t, x, y, w, h }) => ({ t, x, y, w, h }));
-      if (mots && caches.length) mots = mots.filter(m => !sousCaviardage(m, caches));
+      const anciens = p.elements.filter(e => e.type === 'texteModifie').map(e => e.zone);
+      if (mots && (caches.length || anciens.length)) mots = mots.filter(m => !sousCaviardage(m, [...caches, ...anciens]));
       // Données pour rouvrir le PDF et modifier à nouveau : le caviardage, lui, est définitif
       const donnees = { elements: p.elements.filter(e => e.type !== 'caviarde'), groupe: s ? s.nom : (p.titre || null) };
       if (p.ocr) donnees.ocr = caches.length ? p.ocr.filter(m => !sousCaviardage(m, caches)) : p.ocr;
@@ -1057,11 +1068,11 @@
   //  tampon {x,y,w,h,texte,ligne2,couleur} · cote {x1,y1,x2,y2} · longueur / surface {points} (+ etiquette calculée)
   const BOITES = ['masque', 'surligne', 'cadre', 'caviarde', 'ellipse', 'bulle', 'image', 'tampon'];
   const EN_SVG = ['ligne', 'fleche', 'crayon', 'ellipse', 'bulle', 'tampon', 'cote', 'longueur', 'surface'];
-  const SANS_DIV = ['ligne', 'fleche', 'crayon', 'ellipse', 'cote', 'longueur', 'surface'];
+  const SANS_DIV = ['ligne', 'fleche', 'crayon', 'ellipse', 'cote', 'longueur', 'surface', 'texteModifie'];
   const MESURES = ['cote', 'longueur', 'surface'];
   const A_TRACER = ['masque', 'surligne', 'cadre', 'caviarde', 'ellipse', 'bulle'];
   const SVG_NS = 'http://www.w3.org/2000/svg';
-  const ed = { page: null, elements: [], outil: 'selection', choisi: null, ech: 1, L: 0, H: 0, hist: [], point: null, trace: null, tampon: null };
+  const ed = { page: null, elements: [], outil: 'selection', choisi: null, ech: 1, L: 0, H: 0, hist: [], point: null, trace: null, tampon: null, lignes: null };
   const reglages = {
     texte: { couleur: '#000000', taille: 12 }, bulle: { couleur: '#1565c0', taille: 11 },
     ligne: { couleur: '#d32f2f', epaisseur: 2 }, fleche: { couleur: '#d32f2f', epaisseur: 2 }, crayon: { couleur: '#1565c0', epaisseur: 2 },
@@ -1083,6 +1094,7 @@
   }
   async function chargerDansEditeur(p) {
     ed.trace = null;
+    ed.lignes = null;
     ed.page = p;
     ed.elements = structuredClone(p.elements);
     ed.choisi = null;
@@ -1097,6 +1109,9 @@
     const canvas = $('#ed-canvas');
     const r = await rendrePage(p, canvas, Math.max(200, largeur));
     ed.ech = r.ech; // pixels CSS par point
+    // Page pdf.js (polices chargées par l'affichage : nom, gras, italique pour « Modifier le texte »)
+    ed.pagePdfjs = p.type === 'pdf' ? await (await etat.sources.get(p.source).doc).getPage(p.index + 1) : null;
+    if (ed.outil === 'editertexte') preparerLignes();
     ed.L = parseFloat(canvas.style.width); ed.H = parseFloat(canvas.style.height);
     $('#ed-page').style.width = `${ed.L}px`;
     $('#ed-page').style.height = `${ed.H}px`;
@@ -1136,12 +1151,16 @@
     calque.classList.toggle('ecrit', o === 'texte');
     if (reglages[o]) majReglagesAffiches(reglages[o]);
     if (o === 'image') { $('#fichier-image').click(); }
+    if (o === 'editertexte') preparerLignes();
+    else if (ed.lignes) dessinerCalque();
   }
   function majReglagesAffiches(r) {
     if (r.couleur) $('#ed-couleur').value = r.couleur;
     if (r.epaisseur) $('#ed-epaisseur').value = r.epaisseur;
     if (r.taille) $('#ed-taille').value = r.taille;
     if ('gras' in r) $('#ed-gras').checked = !!r.gras;
+    $('#ed-police-zone').hidden = r.type !== 'texteModifie';
+    if (r.type === 'texteModifie') { $('#ed-police').value = r.police || 'helvetica'; $('#ed-italique').checked = !!r.italique; }
   }
 
   // ----- Dessin du calque : un élément = un nœud (l'ordre d'empilement est celui du PDF) -----
@@ -1156,6 +1175,7 @@
   }
   function boiteDe(e) {
     if (BOITES.includes(e.type)) return { x: e.x, y: e.y, w: e.w, h: e.h };
+    if (e.type === 'texteModifie') return e.zone;
     const pts = e.points ? e.points : [[e.x1, e.y1], [e.x2, e.y2]];
     const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
     const x = Math.min(...xs), y = Math.min(...ys);
@@ -1218,6 +1238,7 @@
     ed.elements.forEach((e, i) => {
       const choisi = ed.choisi === i;
       if (EN_SVG.includes(e.type)) noeuds.push(noeudForme(e, i));
+      if (e.type === 'texteModifie') noeuds.push(...noeudsTexteModifie(e, i));
       if (MESURES.includes(e.type)) noeuds.push(...noeudsEtiquettes(e, i));
       if (e.type === 'bulle') {
         const t = document.createElement('div');
@@ -1263,8 +1284,9 @@
         if (e.type === 'bulle') { const p = poignee('pointe', e.px, e.py); p.classList.add('pointe'); noeuds.push(p); }
       }
     });
+    if (ed.outil === 'editertexte' && ed.lignes) noeuds.push(...noeudsLignes());
     calque.replaceChildren(...noeuds);
-    calque.querySelectorAll('.el-texte').forEach(d => d.classList.toggle('choisi', Number(d.dataset.i) === ed.choisi));
+    calque.querySelectorAll('.el-texte, .el-texteModifie').forEach(d => d.classList.toggle('choisi', Number(d.dataset.i) === ed.choisi));
     majProprietes();
     majRecapMesures();
   }
@@ -1282,13 +1304,15 @@
     const e = ed.elements[i];
     if (!e) return;
     if (ed.choisi !== i) choisirElement(i);
-    const el = calque.querySelector(`.el-texte[data-i="${i}"], .el-bulle[data-i="${i}"]`);
+    const el = calque.querySelector(`.el-texte[data-i="${i}"], .el-bulle[data-i="${i}"], .el-texteModifie[data-i="${i}"]`);
     if (!el) return;
     edMemo();
     el.contentEditable = 'true';
     el.focus();
     const r = document.createRange();
     r.selectNodeContents(el);
+    // Texte du PDF : curseur à la fin (on corrige un mot, on ne retape pas tout)
+    if (e.type === 'texteModifie') r.collapse(false);
     const s = getSelection(); s.removeAllRanges(); s.addRange(r);
     el.addEventListener('input', () => { e.texte = el.innerText.replace(/\n$/, ''); });
     el.addEventListener('blur', () => finirSaisie(), { once: true });
@@ -1304,6 +1328,9 @@
     // Bulle : hauteur agrandie si le texte déborde
     if (e.type === 'bulle' && el.scrollHeight > el.clientHeight + 1) e.h = el.scrollHeight / ed.H;
     if (e.type === 'texte' && !e.texte.trim()) { ed.elements.splice(i, 1); ed.choisi = null; ed.hist.pop(); }
+    // Ligne du PDF ouverte puis laissée telle quelle : rien à modifier
+    else if (e.type === 'texteModifie' && e.texte === e.origine && e.nouveau && !e.applique) { ed.elements.splice(i, 1); ed.choisi = null; ed.hist.pop(); }
+    if (e.type === 'texteModifie') delete e.nouveau;
     dessinerCalque();
   }
 
@@ -1319,6 +1346,8 @@
     return { x: a.x + Math.cos(ang) * lg / ed.L, y: a.y + Math.sin(ang) * lg / ed.H };
   }
   function deplacerElement(e, o, dx, dy) {
+    // Texte modifié : seul le nouveau texte bouge, la zone d'origine (retirée) reste en place
+    if (o.type === 'texteModifie') { e.x = o.x + dx; e.base = o.base + dy; return; }
     if ('x' in o) { e.x = o.x + dx; e.y = o.y + dy; }
     if ('x1' in o) { e.x1 = o.x1 + dx; e.y1 = o.y1 + dy; e.x2 = o.x2 + dx; e.y2 = o.y2 + dy; }
     if (o.points) e.points = o.points.map(([x, y]) => [x + dx, y + dy]);
@@ -1395,6 +1424,14 @@
     }
 
     ev.preventDefault();
+    // Modifier le texte du PDF : clic sur une ligne repérée
+    if (ed.outil === 'editertexte') {
+      const e0 = i != null ? ed.elements[i] : null;
+      if (e0 && e0.type === 'texteModifie') { editerTexte(i); return; }
+      const n = cible.dataset.ligne != null ? Number(cible.dataset.ligne) : ligneSous(depart);
+      if (n >= 0 && ed.lignes[n]) modifierLigne(ed.lignes[n]);
+      return;
+    }
     // Texte à la volée : clic puis frappe ; clic sur un texte ou une bulle existants = le corriger
     if (ed.outil === 'texte') {
       const e0 = i != null ? ed.elements[i] : null;
@@ -1593,6 +1630,151 @@
     rafraichir();
     if (ed.page) chargerDansEditeur(ed.page);
     note(`${total} occurrence(s) caviardée(s) sur ${pagesTouchees} page(s). Vérifiez les pages avant d'enregistrer.`, 'ok');
+  }
+
+  // ----- Modifier le texte du PDF -----
+  // Lignes de texte de la page affichée : éléments de texte du PDF (pdf.js) ou mots reconnus (OCR) regroupés par ligne
+  async function lignesTexte(p) {
+    const d = dims(p);
+    let mots;
+    const natif = p.type === 'pdf' ? await texteNatif(p) : [];
+    if (natif.some(m => m.t.trim())) {
+      mots = natif.filter(m => Math.abs(m.u[1] * d.h) < 0.5 && m.u[0] > 0 && m.t.trim())
+        .map(m => ({ t: m.t, x: m.x, y: m.y, w: m.w, h: m.h, gauche: m.b[0], base: m.b[1], taille: m.taille, police: m.police, famille: m.famille }));
+    } else if (p.ocr && p.ocr.length) {
+      // Texte reconnu : lignes données par l'OCR ; sinon (anciennes reconnaissances) regroupement par position
+      const parLigne = new Map();
+      p.ocr.forEach(m => { const k = m.ligne ?? `${Math.round((m.y + m.h) * 200)}`; if (!parLigne.has(k)) parLigne.set(k, []); parLigne.get(k).push(m); });
+      mots = [];
+      for (const groupe of parLigne.values()) {
+        const hMax = Math.max(...groupe.map(m => m.h));
+        const taille = (groupe[0].rang ? groupe[0].rang * 1.05 : hMax / 0.9) * d.h;
+        const base = groupe[0].base ?? Math.max(...groupe.map(m => m.y + m.h)) - hMax * 0.2;
+        groupe.forEach(m => mots.push({ t: m.t, x: m.x, y: m.y, w: m.w, h: m.h, gauche: m.x, base, taille, ocr: true, police: `ocr${m.ligne ?? ''}` }));
+      }
+      // Même ligne de l'OCR : même base et même taille, les mots se suivent
+    } else return [];
+    mots.sort((a, b) => a.base - b.base || a.gauche - b.gauche);
+    const lignes = [];
+    for (const m of mots) {
+      // Une ligne = même ligne de base, même taille et même police (un libellé en gras et sa valeur sont séparés)
+      const l = lignes.find(x => Math.abs(x.base - m.base) * d.h < 0.35 * Math.max(x.taille, m.taille)
+        && Math.abs(x.taille - m.taille) < 0.3 * x.taille && x.police === m.police
+        && (m.x - (x.zone.x + x.zone.w)) * d.l < 1.2 * x.taille && m.x + 1e-6 >= x.zone.x);
+      if (!l) {
+        lignes.push({ t: m.t, zone: { x: m.x, y: m.y, w: m.w, h: m.h }, x: m.gauche, base: m.base, taille: m.taille, police: m.police, famille: m.famille, ocr: !!m.ocr });
+        continue;
+      }
+      const ecart = (m.x - (l.zone.x + l.zone.w)) * d.l;
+      if (ecart > 0.18 * l.taille && !/\s$/.test(l.t) && !/^\s/.test(m.t)) l.t += ' ';
+      l.t += m.t;
+      const x2 = Math.max(l.zone.x + l.zone.w, m.x + m.w), y2 = Math.max(l.zone.y + l.zone.h, m.y + m.h);
+      l.zone.x = Math.min(l.zone.x, m.x); l.zone.y = Math.min(l.zone.y, m.y);
+      l.zone.w = x2 - l.zone.x; l.zone.h = y2 - l.zone.y;
+    }
+    lignes.forEach(l => { l.t = l.t.replace(/\s+$/, ''); });
+    return lignes;
+  }
+  async function preparerLignes() {
+    const p = ed.page;
+    if (!p) return;
+    try { ed.lignes = await lignesTexte(p); } catch (e) { console.error(e); ed.lignes = []; }
+    if (ed.page !== p) return;
+    if (!ed.lignes.length) {
+      note(p.type === 'pdf' || p.type === 'image'
+        ? 'Aucun texte lisible sur cette page (scan ou photo) : lancez d\'abord « 🔍 OCR », ou utilisez « Masquer » puis « Texte ».'
+        : 'Aucun texte sur cette page.', 'erreur');
+    } else note('Cliquez sur une ligne pour la corriger. À l\'enregistrement, l\'ancien texte est retiré du fichier.');
+    dessinerCalque();
+  }
+  function noeudsLignes() {
+    const deja = ed.elements.filter(e => e.type === 'texteModifie').map(e => e.zone);
+    return ed.lignes.map((l, n) => {
+      if (deja.some(z => Math.abs(z.x - l.zone.x) < 1e-4 && Math.abs(z.y - l.zone.y) < 1e-4)) return null;
+      const d = document.createElement('div');
+      d.className = 'ligne-texte';
+      d.dataset.ligne = n;
+      d.title = l.t;
+      Object.assign(d.style, { left: `${l.zone.x * ed.L - 2}px`, top: `${l.zone.y * ed.H - 2}px`, width: `${l.zone.w * ed.L + 4}px`, height: `${l.zone.h * ed.H + 4}px` });
+      return d;
+    }).filter(Boolean);
+  }
+  const ligneSous = pt => (ed.lignes || []).findIndex(l => pt.x >= l.zone.x && pt.x <= l.zone.x + l.zone.w && pt.y >= l.zone.y && pt.y <= l.zone.y + l.zone.h);
+  function noeudsTexteModifie(e, i) {
+    const res = [];
+    if (!e.applique) {
+      const fond = document.createElement('div');
+      fond.className = 'el-fondtexte';
+      fond.dataset.i = i;
+      const m = 1.2 * ed.ech;
+      Object.assign(fond.style, { left: `${e.zone.x * ed.L - m}px`, top: `${e.zone.y * ed.H - m}px`, width: `${e.zone.w * ed.L + 2 * m}px`, height: `${e.zone.h * ed.H + 2 * m}px`, background: e.fond || '#fff' });
+      res.push(fond);
+    }
+    const t = document.createElement('div');
+    t.className = 'el el-texteModifie';
+    t.dataset.i = i;
+    const taille = e.taille * ed.ech;
+    Object.assign(t.style, { left: px(e.x, 'x'), top: `${e.base * ed.H - taille * 0.94}px`, fontSize: `${taille}px`, color: e.couleur || '#000',
+      fontFamily: FAMILLES[e.police] || FAMILLES.helvetica, fontWeight: e.gras ? 'bold' : 'normal', fontStyle: e.italique ? 'italic' : 'normal' });
+    t.textContent = e.texte;
+    res.push(t);
+    return res;
+  }
+  // Police, couleur du texte et du fond de la ligne d'origine
+  function styleDeLigne(l) {
+    let nom = '', serif = /serif/i.test(l.famille || '') && !/sans/i.test(l.famille || ''), mono = /mono/i.test(l.famille || ''), gras = false, ital = false;
+    try {
+      const f = l.police && ed.pagePdfjs && ed.pagePdfjs.commonObjs.has(l.police) ? ed.pagePdfjs.commonObjs.get(l.police) : null;
+      if (f) {
+        nom = f.name || '';
+        gras = !!(f.bold || f.black); ital = !!f.italic;
+        if (f.isMonospace) mono = true;
+        if (f.isSerifFont) serif = true;
+      }
+    } catch { /* police non chargée */ }
+    if (/bold|black|heavy|semibold|demi/i.test(nom)) gras = true;
+    if (/italic|oblique/i.test(nom)) ital = true;
+    if (/courier|mono|consol/i.test(nom)) mono = true;
+    else if (/times|roman|serif|garamond|georgia|cambria|book/i.test(nom) && !/sans/i.test(nom)) serif = true;
+    else if (/arial|helvetica|sans|calibri|verdana|tahoma|segoe/i.test(nom)) serif = false;
+    const police = mono ? 'courier' : serif ? 'times' : 'helvetica';
+    // Couleurs : fond = couleur la plus fréquente sur le bord de la zone, texte = pixels les plus éloignés du fond
+    const c = $('#ed-canvas');
+    const kx = c.width / ed.L, ky = c.height / ed.H;
+    const x0 = Math.max(0, Math.floor(l.zone.x * ed.L * kx)), y0 = Math.max(0, Math.floor(l.zone.y * ed.H * ky));
+    const w = Math.min(c.width - x0, Math.ceil(l.zone.w * ed.L * kx)), h = Math.min(c.height - y0, Math.ceil(l.zone.h * ed.H * ky));
+    let fond = '#ffffff', couleur = '#000000';
+    try {
+      const px = c.getContext('2d').getImageData(x0, y0, Math.max(1, w), Math.max(1, h)).data;
+      const freq = new Map();
+      const bord = (x, y) => x < 2 || y < 2 || x >= w - 2 || y >= h - 2;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (!bord(x, y)) continue;
+        const k = (y * w + x) * 4;
+        const cle = ((px[k] >> 3) << 10) | ((px[k + 1] >> 3) << 5) | (px[k + 2] >> 3);
+        freq.set(cle, (freq.get(cle) || 0) + 1);
+      }
+      const [cf] = [...freq.entries()].sort((a, b) => b[1] - a[1])[0] || [0x7fff];
+      const fr = ((cf >> 10) & 31) * 8 + 4, fg = ((cf >> 5) & 31) * 8 + 4, fb = (cf & 31) * 8 + 4;
+      fond = rvb(fr, fg, fb);
+      const dist = [];
+      for (let k = 0; k < px.length; k += 4) dist.push([Math.abs(px[k] - fr) + Math.abs(px[k + 1] - fg) + Math.abs(px[k + 2] - fb), k]);
+      dist.sort((a, b) => b[0] - a[0]);
+      const sel = dist.slice(0, Math.max(1, Math.floor(dist.length * 0.06)));
+      if (sel[0] && sel[0][0] > 60) {
+        const moy = [0, 1, 2].map(o => sel.reduce((a, [, k]) => a + px[k + o], 0) / sel.length);
+        couleur = rvb(...moy);
+      }
+    } catch { /* lecture impossible : noir sur blanc */ }
+    return { police, gras, italique: ital, couleur, fond };
+  }
+  const rvb = (r, g, b) => '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+  async function modifierLigne(l) {
+    const st = styleDeLigne(l);
+    const e = nouvelElement('texteModifie', { zone: { ...l.zone }, x: l.x, base: l.base, texte: l.t, origine: l.t, taille: Math.round(l.taille * 10) / 10, ...st, nouveau: true });
+    dessinerCalque();
+    editerTexte(ed.elements.indexOf(e));
+    ed.hist.pop();
   }
 
   // ----- Mesures sur plan -----
@@ -1817,8 +1999,9 @@
     if (reglages[type]) { reglages[type][cle] = valeur; sauverReglages(); }
     if (!e) return;
     if (cle === 'couleur' && ['masque', 'caviarde', 'image'].includes(e.type)) return;
-    if (cle === 'taille' && !['texte', 'bulle'].includes(e.type)) return;
-    if (cle === 'gras' && !['texte', 'bulle'].includes(e.type)) return;
+    if (cle === 'taille' && !['texte', 'bulle', 'texteModifie'].includes(e.type)) return;
+    if (cle === 'gras' && !['texte', 'bulle', 'texteModifie'].includes(e.type)) return;
+    if ((cle === 'police' || cle === 'italique') && e.type !== 'texteModifie') return;
     if (cle === 'epaisseur' && !['ligne', 'fleche', 'crayon', 'cadre', 'ellipse', 'bulle'].includes(e.type)) return;
     if (!ed.reglageEnCours) { edMemo(); ed.reglageEnCours = true; }
     e[cle] = valeur;
@@ -1830,6 +2013,8 @@
   $('#ed-epaisseur').addEventListener('input', () => regler('epaisseur', Number($('#ed-epaisseur').value) || 2));
   $('#ed-taille').addEventListener('input', () => regler('taille', Number($('#ed-taille').value) || 12));
   $('#ed-gras').addEventListener('change', () => { ed.reglageEnCours = false; regler('gras', $('#ed-gras').checked); });
+  $('#ed-police').addEventListener('change', () => { ed.reglageEnCours = false; regler('police', $('#ed-police').value); });
+  $('#ed-italique').addEventListener('change', () => { ed.reglageEnCours = false; regler('italique', $('#ed-italique').checked); });
   $('#ed-suppr').addEventListener('click', supprimerElement);
   $('#ed-dupl').addEventListener('click', dupliquerElement);
   $('#ed-caviarder').addEventListener('click', caviarderRecherche);
