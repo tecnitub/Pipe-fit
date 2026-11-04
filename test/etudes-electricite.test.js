@@ -48,13 +48,23 @@ test('armoire CVC : phases équilibrées, foisonnement, réserve, demandes au lo
   assert.deepStrictEqual(dem.lignes.map(l => l[0]), ['Armoire AR1', 'PAC1 — PAC', 'VC — Ventilo bureaux']);
   assert.match(dem.lignes[1][7], /liaisons de commande et de défaut vers l'armoire AR1/);
   assert.match(dem.lignes[1][5], /^80 A courbe D$/); // 30 kW tri : 50,9 A × 1,25 = 63,7 A → 80 A
-  // Points : P1 tor (2), P2 tor + retour (3), P3 tor par défaut (2), V1 3 points (2), PAC bus (1) ; ventilo autonome hors armoire
+  // Points : P1 tor (2), P2 tor + retour (3), P3 tor par défaut (2), V1 3 points (2), PAC communicante (9 points par bus),
+  // 3 points logiciels de l'armoire ; ventilo autonome hors armoire
   const reg = r.onglets.find(o => o.titre === 'Régulation');
-  const pts = reg.blocs[1].tableau.lignes;
-  assert.strictEqual(pts.filter(p => p[3] === 'AR1').length, 10);
+  const pts = r.valeurs.listePoints;
+  assert.strictEqual(pts.filter(p => p[3] === 'AR1' && p[2] !== 'LOG').length, 18);
+  assert.strictEqual(pts.filter(p => p[3] === 'AR1' && p[2] === 'LOG').length, 3);
   assert.ok(pts.some(p => p[0] === 'VC' && p[3] === 'autonome'));
   const io = reg.blocs[2].tableau.lignes[0];
-  assert.deepStrictEqual(io.slice(0, 6), ['AR1', '0', '0', '4', '5', '1']); // EA, SA, ETOR, STOR, Bus
+  assert.deepStrictEqual(io.slice(0, 6), ['AR1', '0', '0', '4', '5', '9']); // EA, SA, ETOR, STOR, Bus
+  // Liste de points au format GTB : classes TA / TS / TM / TC / TR, point communiqué, totaux
+  const gtb = reg.blocs[1].tableau;
+  assert.deepStrictEqual(gtb.entetes.slice(2, 10), ['TA', 'TS', 'TCP', 'TM', 'TC', 'TR', 'COM (bus)', 'LOG']);
+  assert.ok(gtb.lignes.some(l => l[0] === 'Armoire AR1'));
+  const tDep = gtb.lignes.find(l => l[1] === 'Température de départ');
+  assert.ok(tDep && tDep[5] === 'x' && tDep[8] === 'Modbus RTU', JSON.stringify(tDep));
+  assert.ok(gtb.lignes.some(l => /^Défaut/.test(l[1]) && l[2] === 'x'));
+  assert.strictEqual(gtb.lignes[gtb.lignes.length - 1][0], 'Totaux');
   assert.ok(reg.blocs[0].liste.some(t => /PAC1 — PAC : piloté par bus.*Relève de la chaudière sous -5 °C.*AR1/.test(t)));
   assert.ok(reg.blocs[0].liste.some(t => /BACnet\/IP/.test(t)));
   // Cahier des charges et schéma unifilaire
@@ -103,7 +113,7 @@ test('chaufferie : sécurités reprises, bilan de puissance au TGBT, plan d\'adr
   const r = N.calculer('elec', { ...N.defauts('elec'), equipements: eqs, ksTgbt: 90 });
   const ar = r.valeurs.armoires[0];
   // Points : électrovanne gaz (commande + fin de course), sécurités en ETOR, compteurs par impulsions
-  const pts = r.onglets.find(o => o.titre === 'Régulation').blocs[1].tableau.lignes;
+  const pts = r.valeurs.listePoints;
   assert.ok(pts.some(p => p[0] === 'EVG' && p[2] === 'STOR') && pts.some(p => p[0] === 'EVG' && p[2] === 'ETOR'));
   assert.ok(['AU', 'DG', 'PMQ', 'CE1'].every(x => pts.some(p => p[0] === x && p[2] === 'ETOR')));
   // Cartes avec 20 % de réserve, adresses uniques et bornes X2 deux par deux

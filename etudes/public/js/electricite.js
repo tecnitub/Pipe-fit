@@ -50,6 +50,34 @@ const Electricite = ((N, Sc) => {
   };
   // Cartes d'entrées / sorties de l'automate : voies par carte et signal câblé
   const CARTES = { EA: [8, 'PT1000 / 0-10 V / 4-20 mA'], SA: [8, '0-10 V'], ETOR: [16, 'Contact sec 24 V DC'], STOR: [16, 'Relais 24 V DC / 230 V AC'] };
+  // Liste de points GTB (présentation usuelle) : télé-alarme TA, télé-signalisation TS, télécomptage TCP, télémesure TM,
+  // télécommande TC, téléréglage TR, point communiqué par bus COM, point logiciel LOG
+  const CLASSES = ['TA', 'TS', 'TCP', 'TM', 'TC', 'TR'];
+  function classeGtb(des, type) {
+    const d = String(des || '').toLowerCase();
+    if (type === 'LOG') return 'LOG';
+    if (/impulsion|comptage|énergie|energie|compteur/.test(d)) return 'TCP';
+    if (type === 'ETOR') return /défaut|defaut|alarme|déclenchement|sécurité|securite/.test(d) ? 'TA' : 'TS';
+    if (type === 'EA') return 'TM';
+    if (type === 'STOR') return 'TC';
+    if (type === 'SA') return 'TR';
+    // Point communiqué : classé d'après son libellé
+    if (/défaut|defaut|alarme/.test(d)) return 'TA';
+    if (/consigne|réglage|reglage/.test(d)) return 'TR';
+    if (/marche \/ arrêt|commande|autorisation/.test(d)) return 'TC';
+    if (/état|etat|retour de marche|mode|en service/.test(d)) return 'TS';
+    return 'TM';
+  }
+  // Points lus et écrits par le bus d'un équipement communicant (Modbus / BACnet), selon son type
+  const POINTS_BUS = {
+    pac: ['Marche / arrêt', 'Consigne de température de départ', 'Température de départ', 'Température de retour', 'État de marche', 'Défaut / code alarme', 'Puissance électrique absorbée', 'Énergie électrique', 'Heures de fonctionnement et démarrages'],
+    generateur: ['Autorisation de marche', 'Consigne de température de départ', 'Température de départ', 'Température de retour', 'État de marche (brûleur)', 'Défaut / code alarme', 'Taux de modulation', 'Heures de fonctionnement'],
+    pompe: ['Marche / arrêt', 'Consigne (pression différentielle ou vitesse)', 'Retour de marche', 'Défaut / code alarme', 'Vitesse', 'Pression différentielle', 'Débit', 'Puissance électrique', 'Énergie électrique'],
+    cta: ['Marche / arrêt', 'Consigne de température de soufflage', 'Température de soufflage', 'Température de reprise', 'Température d\'air neuf', 'État de marche', 'Défauts (ventilateurs, gel, filtres)', 'Encrassement des filtres', 'Vitesse des ventilateurs', 'Énergie électrique'],
+    ventilateur: ['Marche / arrêt', 'Consigne de vitesse', 'Retour de marche', 'Défaut variateur', 'Vitesse', 'Puissance électrique'],
+    ventilo: ['Marche / arrêt', 'Consigne de température', 'Température ambiante', 'Mode chaud / froid', 'État de marche', 'Défaut'],
+    split: ['Marche / arrêt', 'Consigne de température', 'Température ambiante', 'Mode chaud / froid', 'État de marche', 'Défaut'],
+  };
   const CALIBRES = [2, 4, 6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 320, 400, 500, 630];
   const SECTIONS = [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240];
   // Section mini (mm², cuivre, PVC, pose sur chemin de câbles) selon le calibre de la protection
@@ -158,12 +186,34 @@ const Electricite = ((N, Sc) => {
     eqs.forEach(q => {
       const reg = REGULS[q.regulation] || REGULS.aucune;
       // Terminal piloté par l'automate : ses points (ventilateur, vannes, sonde…) ; groupe de n appareils : points par appareil
-      const liste = q.regulation === 'terminal' && Array.isArray(q.pointsUnit) ? q.pointsUnit.map(([d, t]) => ['', d, t]) : [...reg[1]];
+      const liste = q.regulation === 'terminal' && Array.isArray(q.pointsUnit) ? q.pointsUnit.map(([d, t]) => ['', d, t])
+        : q.regulation === 'bus' && POINTS_BUS[q.type] ? POINTS_BUS[q.type].map(d => ['', d, 'Bus']) : [...reg[1]];
       if (q.moteur && q.regulation === 'tor' && q.depart === 'variateur') liste.push(['', 'Consigne de vitesse', 'SA']);
       const nb = Math.max(1, Math.round(num(q.nb, 1))), court = String(q.designation || q.t[0]).replace(/^\d+ × /, '');
-      for (let k = 1; k <= nb; k++) liste.forEach(([, des, type]) => { const p = [nb > 1 ? `${q.rep}.${String(k).padStart(2, '0')}` : q.rep, `${des} — ${court}`, type, q.pilote ? q.pilote.rep : 'autonome']; pts.push(p); if (q.pilote) q.pilote.pts.push(p); });
+      // Point : [repère, libellé, type d'E/S, armoire, classe GTB, protocole, équipement, libellé court]
+      const proto = q.protocole || (e.busEquip || 'Modbus RTU');
+      for (let k = 1; k <= nb; k++) liste.forEach(([, des, type]) => { const p = [nb > 1 ? `${q.rep}.${String(k).padStart(2, '0')}` : q.rep, `${des} — ${court}`, type, q.pilote ? q.pilote.rep : 'autonome', classeGtb(des, type), type === 'Bus' ? proto : '', `${q.rep} — ${court}${q.local && !court.includes(q.local) ? ` (${q.local})` : ''}`, des]; pts.push(p); if (q.pilote) q.pilote.pts.push(p); });
     });
-    arm.forEach(a => { (a.sondes || '').split(/[;\n]+/).map(s => s.trim()).filter(Boolean).forEach(s => { const p = [`S-${a.rep}`, s, 'EA', a.rep]; pts.push(p); a.pts.push(p); }); });
+    arm.forEach(a => { (a.sondes || '').split(/[;\n]+/).map(s => s.trim()).filter(Boolean).forEach(s => { const p = [`S-${a.rep}`, s, 'EA', a.rep, 'TM', '', `Mesures communes de l'armoire ${a.rep}`, s]; pts.push(p); a.pts.push(p); }); });
+    // Points logiciels de chaque armoire : programmation horaire, consignes, alarmes de synthèse (présentation GTB)
+    arm.filter(a => a.eqs.length).forEach(a => [['Programme horaire d\'occupation'], ['Consignes générales (confort, réduit, hors gel)'], ['Synthèse des défauts de l\'armoire']].forEach(([d]) => { const p = [`LOG-${a.rep}`, d, 'LOG', a.rep, d.startsWith('Synthèse') ? 'TA' : 'LOG', '', `Points logiciels de l'armoire ${a.rep}`, d]; pts.push(p); a.pts.push(p); }));
+    // Liste de points au format GTB : une ligne par point, regroupée par armoire puis par équipement, une croix par classe
+    const ptsGtb = (() => {
+      const lignes = [], tot = { TA: 0, TS: 0, TCP: 0, TM: 0, TC: 0, TR: 0, COM: 0, LOG: 0 };
+      const armoires = [...new Set(pts.map(p => p[3]))];
+      armoires.forEach(ar => {
+        lignes.push([ar === 'autonome' ? 'Équipements autonomes (régulation propre)' : `Armoire ${ar}`, '', '', '', '', '', '', '', '', '', '']);
+        let eq = null;
+        pts.filter(p => p[3] === ar).forEach(p => {
+          const c = p[4], x = k => (c === k ? 'x' : '');
+          CLASSES.forEach(k => { if (c === k) tot[k]++; }); if (p[5]) tot.COM++; if (p[2] === 'LOG') tot.LOG++;
+          lignes.push([p[6] !== eq ? p[6] : '', p[7] || p[1], x('TA'), x('TS'), x('TCP'), x('TM'), x('TC'), x('TR'), p[5] || '', p[2] === 'LOG' ? 'x' : '', ['EA', 'SA', 'ETOR', 'STOR'].includes(p[2]) ? p[2] : '']);
+          eq = p[6];
+        });
+      });
+      lignes.push(['Totaux', '', ...CLASSES.map(k => String(tot[k])), String(tot.COM), String(tot.LOG), String(pts.filter(p => ['EA', 'SA', 'ETOR', 'STOR'].includes(p[2])).length)]);
+      return { entetes: ['Équipement', 'Libellé du point', 'TA', 'TS', 'TCP', 'TM', 'TC', 'TR', 'COM (bus)', 'LOG', 'E/S automate'], lignes, total: true };
+    })();
     const TYPES_PTS = ['EA', 'SA', 'ETOR', 'STOR', 'Bus'], LIB_PTS = { EA: 'Entrées analogiques (EA)', SA: 'Sorties analogiques (SA)', ETOR: 'Entrées TOR (ETOR)', STOR: 'Sorties TOR (STOR)', Bus: 'Points par bus' };
     const compte = l => TYPES_PTS.map(t => [t, l.filter(p => p[2] === t).length]);
     const gtb = e.gtb && e.gtb !== 'aucune' ? e.gtb : '';
@@ -262,13 +312,13 @@ const Electricite = ((N, Sc) => {
       ];
     };
     return {
-      valeurs: { Ptot, PCvc, Pelec, Pappel, Sappel, Itgbt, armoires: arm.map(a => ({ rep: a.rep, P: a.P, Ib: a.Ib, cal: a.cal, cartes: a.cartes, enveloppe: a.enveloppe })), points: pts.length,
+      valeurs: { listePoints: pts, Ptot, PCvc, Pelec, Pappel, Sappel, Itgbt, armoires: arm.map(a => ({ rep: a.rep, P: a.P, Ib: a.Ib, cal: a.cal, cartes: a.cartes, enveloppe: a.enveloppe })), points: pts.length,
         // Classeur Excel : bilan, attentes, équipements, points, puis adressage et nomenclature de chaque armoire
         feuilles: [
           { name: 'Bilan de puissance', entetes: tableauBilan.entetes, lignes: tableauBilan.lignes },
           { name: 'Attentes lot élec', entetes: ['Pour', 'Local', 'Tension', 'P (kW)', 'Ib (A)', 'Protection en tête', 'Câble indicatif', 'À prévoir'], lignes: demandes },
           { name: 'Équipements', entetes: ['Repère', 'Équipement', 'P (kW)', 'Tension', 'Alimenté par', 'Départ', 'Ib (A)', 'Protection', 'Câble', 'Régulation'], lignes: eqs.map(ligneEq) },
-          { name: 'Liste des points', entetes: ['Repère', 'Désignation', 'Type', 'Armoire'], lignes: pts },
+          { name: 'Liste des points', entetes: ptsGtb.entetes, lignes: ptsGtb.lignes },
           ...arm.flatMap(a => [{ name: `E-S ${a.rep}`, entetes: ['Adresse', 'Bornes', 'Repère', 'Désignation', 'Type', 'Signal'], lignes: a.adresses },
             { name: `Nomenclature ${a.rep}`, entetes: ['Famille', 'Désignation', 'Caractéristiques', 'Qté'], lignes: a.nomenclature }])] },
       resume: [['Équipements', `${eqs.length} (${eqs.filter(q => q.alim === 'elec').length} sur attente électrique, ${eqs.filter(q => q.alim !== 'elec').length} sur armoire CVC)`],
@@ -303,7 +353,7 @@ const Electricite = ((N, Sc) => {
           { texte: [`Puissance installée ${nf(Ptot, 1)} kW ; appelée ${nf(Pappel, 1)} kW (${nf(Sappel, 1)} kVA), foisonnement de chaque armoire puis simultanéité ${nf(ksT * 100, 0)} % au TGBT. À transmettre au ${lot} pour le bilan général et l'abonnement.`] }] },
         { titre: 'Régulation', blocs: [
           { titre: 'Analyse fonctionnelle', liste: af },
-          { titre: 'Liste des points (automate / GTB)', tableau: { entetes: ['Repère', 'Désignation', 'Type', 'Armoire'], lignes: pts } },
+          { titre: 'Liste des points GTB (TA télé-alarme, TS télé-signalisation, TCP télécomptage, TM télémesure, TC télécommande, TR téléréglage, COM point communiqué, LOG point logiciel)', tableau: ptsGtb },
           { titre: 'Entrées / sorties par armoire', tableau: { entetes: ['Armoire', ...TYPES_PTS.map(t => LIB_PTS[t]), 'Total avec 20 % de réserve'],
             lignes: arm.map(a => { const io = compte(a.pts); return [a.rep, ...io.map(([, n]) => String(n)), String(io.filter(([t]) => t !== 'Bus').reduce((s, [, n]) => s + Math.ceil(n * 1.2), 0))]; }) } },
           ...arm.map(a => ({ titre: `Plan d'adressage — armoire ${a.rep} (${Object.entries(a.cartes).filter(([, n]) => n).map(([t, n]) => `${n} × ${CARTES[t][0]} ${t}`).join(', ') || 'aucune carte'})`, tableau: { entetes: ['Adresse', 'Bornes', 'Repère', 'Désignation', 'Type', 'Signal'], lignes: a.adresses } }))] },
@@ -548,6 +598,7 @@ const Electricite = ((N, Sc) => {
       { k: 'lotElec', l: 'Lot électricité (destinataire des demandes d\'attentes)', t: 't', d: 'Lot électricité' },
       { k: 'ksTgbt', l: 'Simultanéité des départs CVC au TGBT', u: '%', d: 90 },
       { k: 'iccTgbt', l: 'Courant de court-circuit au TGBT (donnée du lot électricité)', u: 'kA', d: 10 },
+      { k: 'busEquip', l: 'Bus des équipements communicants', t: 's', o: [['Modbus RTU', 'Modbus RTU (RS485)'], ['Modbus TCP', 'Modbus TCP'], ['BACnet MS/TP', 'BACnet MS/TP'], ['BACnet/IP', 'BACnet/IP'], ['M-Bus', 'M-Bus (compteurs)']], d: 'Modbus RTU' },
       { k: 'gtb', l: 'Supervision / GTB', t: 's', o: [['aucune', 'Aucune (interface en façade)'], ['BACnet/IP', 'BACnet/IP'], ['Modbus TCP', 'Modbus TCP'], ['KNX', 'KNX'], ['LON', 'LON']], d: 'BACnet/IP' },
     ],
     calcul: calculer,
