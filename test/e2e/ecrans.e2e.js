@@ -52,6 +52,13 @@ test('Études : chaque type de calcul s\'ouvre et calcule sans erreur', { skip: 
   // Tableau de bord de l'étude
   await p.evaluate(e => { location.hash = `#/etude/${e}`; }, r.id); await p.waitForTimeout(1500);
   assert.match(await p.innerText('.tableau-bord'), /Tableau de bord/);
+  // Fiches de mise en service : une par équipement, avec les valeurs attendues
+  await p.click('#fiches-mes'); await p.waitForTimeout(500);
+  const nbFiches = await p.$$eval('[data-fm]', x => x.length);
+  assert.ok(nbFiches >= 5, `${nbFiches} fiche(s)`);
+  const html = await p.evaluate(e => { const et = S.etudes.find(x => x.id === e); return FichesMes.html(et, FichesMes.fiches(et, n => Liens.calculer(et, n)).slice(0, 2)); }, r.id);
+  assert.match(html, /Attendu \(étude\)/);
+  await p.click('#fm-x');
   assert.deepStrictEqual(erreurs, []);
 });
 

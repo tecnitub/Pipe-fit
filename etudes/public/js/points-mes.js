@@ -53,6 +53,33 @@ const PointsMes = (() => {
         case 'ecs':
           out.push({ ...base, nature: 'mes', type: 'ecs', cle: '', titre: `Production ECS — ${titre}`, attendus: nettoie([att('Température de stockage', 60, '°C', 0), att('Volume de stockage', v.choisi, 'L', 0), att('Débit de pointe', v.Qp, 'm³/h', 2)]) });
           break;
+        case 'terminaux': {
+          // Un équipement = une fiche : chaque appareil (plusieurs unités : repères suffixés)
+          const T = typeof Terminaux !== 'undefined' ? Terminaux : require('./terminaux');
+          (v.lignes || []).forEach(x => {
+            const cat = (x.t || [])[1], type = x.pompe ? 'pompes' : x.type === 'ctaSf' ? 'cta' : x.type === 'tourelle' ? 'vmc' : cat === 'split' ? 'split' : ['registre', 'sondeAir'].includes(cat) ? 'gtb' : cat === 'sansElec' ? '' : 'terminal';
+            if (!type) return;
+            for (let k = 1; k <= Math.max(1, x.n || 1); k++) {
+              const rep = x.n > 1 ? `${x.rep}.${k}` : x.rep, lib = (T.TYPES[x.type] || [x.type])[0];
+              const q = x.qc || x.qf;
+              out.push({ ...base, nature: 'mes', type, cle: `term|${n.id}|${rep}`, repere: rep, local: txt(x.local, 80), titre: `${lib} ${rep}${x.local ? ` — ${txt(x.local, 60)}` : ''}`,
+                attendus: nettoie(x.pompe ? [att('Débit', x.Qp, 'm³/h', 2), att('Hauteur manométrique', x.Hp, 'mCE', 1), att('Puissance absorbée', x.P * 1000, 'W', 0)]
+                  : [att('Puissance chaud', x.Pch || null, 'kW', 2), att('Puissance froid', x.Pfr || null, 'kW', 2), att('Débit d\'eau', q || null, 'm³/h', 3), att('Puissance électrique', x.P ? x.P * 1000 : null, 'W', 0),
+                    att('Intensité absorbée', x.P ? x.P * 1000 / (x.tension === 'tri' ? 400 * 1.732 * 0.85 : 230 * 0.9) : null, 'A', 2)]) });
+            }
+          });
+          break;
+        }
+        case 'pid': {
+          const Sc = typeof Schema !== 'undefined' ? Schema : require('./schema');
+          let d; try { d = Sc.dimensionner(e); } catch (err) { break; }
+          const G = (Sc.GENERATEURS || {})[e.generateur] || ['Générateur'], R = (Sc.REGIMES || {})[e.reseau], pac = /^(pac|gf)/.test(e.generateur || '');
+          const Td = R && R[1] !== undefined ? R[1] : Number(e.Tdep) || null, Tr = R && R[2] !== undefined ? R[2] : Number(e.Tret) || null;
+          if (!/^echangeur/.test(e.generateur || '')) for (let i = 1; i <= (d.n || 1); i++) out.push({ ...base, nature: 'mes', type: pac ? 'pac' : /^chaudiere/.test(e.generateur || '') ? 'chaudiere' : 'autre', cle: `gen|${e.generateur}|${d.Pg}`, repere: `${pac ? 'PAC' : 'G'}${i}`, titre: `${G[0]} ${i} — ${titre}`,
+            attendus: nettoie([att('Puissance', d.Pg, 'kW', 0), att('Température départ eau', Td, '°C', 0), att('Température retour eau', Tr, '°C', 0), att('Débit', d.Qg, 'm³/h', 2)]) });
+          (v.circuits || []).forEach((c, k) => out.push({ ...base, nature: 'mes', type: 'pompes', cle: `pompe-circuit|${n.id}|${k}`, repere: `PC${k + 1}`, titre: `Pompe du circuit ${txt(c.rep, 60)}`, attendus: nettoie([att('Débit', c.Q, 'm³/h', 2), att('Hauteur manométrique', c.hmt, 'mCE', 2)]) }));
+          break;
+        }
         case 'sanitaire': {
           const PS = r(e.pDispo, 1), PT = PS ? Math.max(10, r(PS * 1.5, 1)) : null;
           out.push({ ...base, nature: 'epreuve', titre: `${titre} — eau froide`, reseau: `${titre} — eau froide sanitaire`, natureReseau: 'Eau froide sanitaire', PS, PT });

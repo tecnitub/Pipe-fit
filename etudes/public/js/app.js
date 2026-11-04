@@ -397,6 +397,7 @@ Vues.etude = {
       ${carteDocuments(et)}
       ${tableauBordHtml(et)}
       <div class="barre"><h2>Calculs <span class="compte">${et.notes.length}</span></h2><button id="ajout">+ Ajouter un calcul</button><span class="espace"></span>
+        ${et.notes.length ? '<button class="secondaire" id="fiches-mes" title="Une fiche par équipement (générateurs, pompes, terminaux, CTA…) : points de contrôle, valeurs attendues de l\'étude, mesures à relever">📋 Fiches de mise en service</button>' : ''}
         ${et.notes.length > 1 ? '<button class="secondaire" id="comparer" disabled title="Cocher au moins deux calculs">⚖️ Comparer la sélection</button>' : ''}</div>
       ${et.notes.length ? `<div class="notes">${et.notes.map((n, i) => { const t = Notes.TYPES[n.type], r = Liens.calculer(et, n), err = r.alertes.filter(x => x.niveau === 'erreur').length, att = r.alertes.filter(x => x.niveau === 'attention').length;
         return `<div class="carte note"><a href="#/etude/${et.id}/${n.id}" class="note-lien"><span class="ico">${t.icone}</span><span><span class="muted petit">N${i + 1} · ${esc(t.famille)}${n.lien || n.entrees.cta || (n.type === 'cta' && Liens.reseauxDeCta(et.notes, n).length) || Liens.circuitDeAnnexe(et.notes, n) || (n.entrees.circuits || []).some(c => c.bilan || c.annexe) ? ' · 🔗 lié' : ''}</span><strong>${esc(n.titre)}</strong>
@@ -409,6 +410,8 @@ Vues.etude = {
     if (!et) return;
     if (noteId === 'comparer') return Vues.comparer.bind(root, et, ids);
     if (noteId) return Vues.note.bind(root, et, noteId);
+    const fm = root.querySelector('#fiches-mes');
+    if (fm) fm.onclick = () => dialogueFichesMes(et);
     root.querySelectorAll('[data-e]').forEach(el => {
       el.onchange = el.oninput = () => {
         et[el.dataset.e] = el.value;
@@ -903,6 +906,31 @@ Vues.note = {
 };
 
 // Émissions d'un calcul : indice émis, modifié depuis (badge de la liste des calculs) ; historique avec les modifications
+// Fiches de mise en service prêtes à remplir (une par équipement) : choix des équipements, PDF à imprimer
+function dialogueFichesMes(et) {
+  let liste = [];
+  try { contexteEtude = et; liste = FichesMes.fiches(et, n => Liens.calculer(et, n)); } catch (e) { return toast(`Fiches impossibles : ${e.message}`, 6000); }
+  if (!liste.length) return toast('Aucun équipement à mettre en service dans les calculs de l\'étude (production, pompes, terminaux, CTA…).', 6000);
+  const groupes = [...new Set(liste.map(f => f.libType))];
+  const b = Modal.open(`<h2>📋 Fiches de mise en service</h2><p class="muted petit">Une fiche par équipement : points de contrôle à cocher, valeurs attendues reprises de l'étude, colonnes « Mesuré », « Écart » et « Conforme » à remplir sur place, réglages, conclusion et signatures.</p>
+    <p><label class="case"><input type="checkbox" id="fm-tout" checked> Tout sélectionner (${liste.length} équipement(s))</label></p>
+    <div style="max-height:50vh;overflow:auto">${groupes.map(g => `<h3>${esc(g)}</h3>${liste.map((f, i) => f.libType === g ? `<label class="case" style="display:block"><input type="checkbox" data-fm="${i}" checked> ${esc(f.titre)} <span class="muted petit">${f.mesures.filter(m => m.attendu !== null).length} valeur(s) attendue(s)</span></label>` : '').join('')}`).join('')}</div>
+    <div class="actions"><button class="secondaire" id="fm-x">Fermer</button><button id="fm-pdf">Générer le PDF</button></div>`);
+  b.querySelector('#fm-x').onclick = Modal.close;
+  b.querySelector('#fm-tout').onchange = ev => b.querySelectorAll('[data-fm]').forEach(x => { x.checked = ev.target.checked; });
+  b.querySelector('#fm-pdf').onclick = async () => {
+    const choix = [...b.querySelectorAll('[data-fm]:checked')].map(x => liste[+x.dataset.fm]);
+    if (!choix.length) return toast('Sélectionnez au moins un équipement.', 3000);
+    b.innerHTML = `<h2>Fiches de mise en service</h2><p>Mise en page de ${choix.length} fiche(s)…</p>`;
+    try {
+      const bytes = await PDF.depuisHTML(pourPdf(FichesMes.html(et, choix, { societe: (S.config || {}).societe })), 'Fiches de mise en service', null, { margeHaut: 36, margeBas: 36 });
+      const nom = `Fiches_MES_${String(et.objet).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_').slice(0, 40)}.pdf`;
+      b.innerHTML = `<h2>Fiches générées</h2><p><strong>${esc(nom)}</strong> — ${choix.length} fiche(s), une par page.</p><p class="petit muted">Les mêmes équipements apparaissent dans la liste des mises en service du chantier (Pipe-Fit), avec les PV préremplis des valeurs attendues.</p>
+        <div class="actions"><button class="secondaire" id="f">Fermer</button><button id="dl">Télécharger le PDF</button></div>`;
+      b.querySelector('#f').onclick = Modal.close; b.querySelector('#dl').onclick = () => enregistrerFichier(b, nom, bytes, 'application/pdf');
+    } catch (e) { b.innerHTML = `<h2>Génération impossible</h2><p class="erreur">${esc(e.message)}</p><div class="actions"><button id="f">Fermer</button></div>`; b.querySelector('#f').onclick = Modal.close; }
+  };
+}
 // Tableau de bord de l'étude : calculs en erreur, points d'attention, fiches techniques à charger, notes non émises ou
 // modifiées depuis leur émission ; chaque point mène au calcul concerné
 function tableauBordHtml(et) {
