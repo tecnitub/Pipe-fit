@@ -881,13 +881,37 @@ Vues.note = {
     };
     const pn = root.querySelector('#pid-nomenc');
     if (pn) pn.onclick = () => {
-      if (typeof XLSX === 'undefined') return toast('Classeur indisponible.', 5000);
+      // Liste d'achat chiffrée avec la bibliothèque de Pipe-Fit : classeur Excel, consultation des fournisseurs
       const calc = x => Liens.calculer(et, x); calc.entrees = x => Liens.resoudre(et, x).entrees;
-      const f = Nomenclature.feuilles(et, n, calc), H = v => ({ v, s: 'head' });
+      const arts = (S.pf && S.pf.articles) || [], liste = Nomenclature.prixAchats(Nomenclature.achats(Nomenclature.lignes(et, n, calc)), arts);
+      const tot = liste.reduce((s, x) => s + x.total, 0), eur = v => `${Notes.nf(v, 2)} €`;
+      const b = Modal.open(`<h2>📦 Liste d'achat — ${esc(n.titre)}</h2>
+        <p class="muted petit">${liste.length} article(s), ${liste.filter(x => x.pu).length} chiffré(s) avec la bibliothèque de Pipe-Fit (coût d'achat) ; les autres sont à chiffrer par la consultation.</p>
+        <div class="defile-x" style="max-height:48vh;overflow:auto"><table class="liste compact"><thead><tr><th>Désignation</th><th>DN</th><th>Qté</th><th>Article de la bibliothèque</th><th>PU HT</th><th>Total HT</th></tr></thead><tbody>
+        ${liste.map(x => `<tr><td>${esc(x.designation)}${x.reference ? ` <span class="muted petit">${esc([x.fabricant, x.reference].filter(Boolean).join(' '))}</span>` : ''}</td><td>${x.dn ? `DN ${esc(String(x.dn))}` : ''}</td><td>${esc(Notes.nf(x.qte, x.unite === 'ml' ? 1 : 0))} ${esc(x.unite)}</td>
+          <td class="petit">${x.articleId ? esc(`${x.articleRef ? `${x.articleRef} — ` : ''}${x.articleDesignation}`) : '<span class="muted">à chiffrer</span>'}</td><td>${x.pu ? eur(x.pu) : ''}</td><td>${x.pu ? eur(x.total) : ''}</td></tr>`).join('')}
+        <tr class="total"><td colspan="5">Total des articles chiffrés</td><td>${eur(tot)}</td></tr></tbody></table></div>
+        ${et.affaireId ? '' : '<p class="petit alerte attention">Reliez l\'étude à un chantier (fiche de l\'étude) pour lancer la consultation des fournisseurs.</p>'}
+        <div class="actions"><button class="secondaire" id="la-x">Fermer</button><button class="secondaire" id="la-xlsx">📊 Classeur Excel</button>${et.affaireId ? '<button id="la-cs">🛒 Consulter les fournisseurs dans Pipe-Fit</button>' : ''}</div>`);
+      b.querySelector('#la-x').onclick = Modal.close;
+      const cs = b.querySelector('#la-cs');
+      if (cs) cs.onclick = async () => {
+        cs.disabled = true; cs.textContent = 'Création…';
+        try {
+          const r = await api('POST', '/api/pf/consultation', { affaireId: et.affaireId, etudeId: et.id, noteId: n.id, objet: `${n.titre} — ${et.objet}`.slice(0, 200), lignes: Nomenclature.lignesConsultation(liste) });
+          const pf = S.me.pipefit || (/^https?:$/.test(location.protocol) ? `${location.protocol}//${location.hostname}:3000` : '');
+          cs.outerHTML = `<span class="badge ok">Consultation ${esc(r.ref || '')} créée</span>${pf ? `<a class="btn" href="${esc(pf)}/#/consultations/${encodeURIComponent(r.id)}" target="_blank" rel="noopener">Ouvrir dans Pipe-Fit ↗</a>` : ''}`;
+          toast('Consultation créée dans Pipe-Fit : choisissez les fournisseurs, envoyez la demande de prix ; l\'offre retenue devient la commande du chantier.', 7000);
+        } catch (e) { cs.disabled = false; cs.textContent = '🛒 Consulter les fournisseurs dans Pipe-Fit'; toast(e.message, 6000); }
+      };
+      b.querySelector('#la-xlsx').onclick = () => {
+      if (typeof XLSX === 'undefined') return toast('Classeur indisponible.', 5000);
+      const f = Nomenclature.feuilles(et, n, calc, arts), H = v => ({ v, s: 'head' });
       const octets = XLSX.build(f.map(x => ({ name: x.name, freeze: 3, cols: x.entetes.map(h => (/Désignation/.test(h) ? 52 : /Circuit|Fabricant|Référence|Repères|Fournisseur|Fiche/.test(h) ? 22 : 12)),
         rows: [[{ v: `${x.name} — ${n.titre} — ${et.objet} (indice ${et.indice})`, s: 'title' }], [], x.entetes.map(H), ...x.lignes] })));
       Promise.resolve(telecharger(`Nomenclature_${sansAccents(n.titre).slice(0, 30)}_${sansAccents(et.objet).slice(0, 30)}.xlsx`, octets, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'))
-        .then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : `Nomenclature enregistrée : ${f[0].lignes.length} ligne(s), ${f[1].lignes.length} article(s) à acheter`, 5000)).catch(er => toast(er.message, 6000));
+        .then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : `Nomenclature enregistrée : ${f[0].lignes.length} ligne(s), ${f[1].lignes.length - 1} article(s) à acheter`, 5000)).catch(er => toast(er.message, 6000));
+      };
     };
     // Évacuations : appareils repris du calcul sanitaire (tronçon à choisir)
     const es = root.querySelector('#evac-san');

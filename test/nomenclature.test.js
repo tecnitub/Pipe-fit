@@ -75,3 +75,17 @@ test('réseau arborescent : robinetterie par tronçon, vanne d\'équilibrage de 
   assert.strictEqual(f.find(x => /TH1/.test(x.element)).calcul, false);
   assert.strictEqual(f.find(x => /F1/.test(x.element)).calcul, true);
 });
+
+test('liste d\'achat : prix de la bibliothèque (référence, désignation + DN), lignes de consultation', () => {
+  const arts = [{ id: 'a1', ref: 'VS-40', designation: 'Vanne d\'isolement 1/4 tour DN40', coutRevient: 44, prixVente: 62 }, { id: 'a2', ref: 'TUB-40', designation: 'Tube acier noir T10 DN40', coutRevient: 10.4 },
+    { id: 'a3', ref: 'TUB-50', designation: 'Tube acier noir T10 DN50', coutRevient: 13 }];
+  const l = Nm.prixAchats([{ famille: 'Robinetterie', designation: 'Vanne d\'isolement 1/4 tour (papillon, sphérique)', dn: 40, fabricant: 'Exemplair', reference: 'VS-40', unite: 'u', qte: 8, reps: [] },
+    { famille: 'Tuyauterie', designation: 'Tube DN 40 (48,3 × 2,6) (aller + retour)', dn: 40, fabricant: '', reference: '', unite: 'ml', qte: 120, reps: [] },
+    { famille: 'Pompes', designation: 'Pompe Circulateur 32-80', dn: '', fabricant: '', reference: '', unite: 'u', qte: 1, reps: [] }], arts);
+  assert.deepStrictEqual(l.map(x => x.articleId), ['a1', 'a2', '']);
+  assert.strictEqual(l[0].total, 352);
+  assert.ok(l[0].certain && !l[1].certain);
+  const c = Nm.lignesConsultation(l);
+  assert.deepStrictEqual(c.map(x => [x.articleId, x.unite, x.qte]), [['a1', 'u', 8], ['a2', 'ml', 120], ['', 'u', 1]]);
+  assert.match(c[0].designation, /DN 40 — Exemplair VS-40/);
+});

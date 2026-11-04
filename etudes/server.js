@@ -239,6 +239,19 @@ async function api(req, res, url) {
     return send(res, 200, { ok: true, docId, indice });
   }
   // Devis brouillon créé dans Pipe-Fit à partir du métré de l'étude (client, contact et site de l'affaire)
+  // Liste d'achat d'une étude : consultation fournisseurs « En cours » dans Pipe-Fit (offres, attribution, commandes)
+  if (p[0] === 'pf' && p[1] === 'consultation' && method === 'POST') {
+    const b = await lireJSON(req);
+    if (!b.affaireId || !Array.isArray(b.lignes) || !b.lignes.length) return fail(res, 400, 'Chantier et lignes de la liste d\'achat requis');
+    const lignes = b.lignes.slice(0, 400).map(l => ({ articleId: String(l.articleId || '').slice(0, 64), designation: String(l.designation || '').slice(0, 200), unite: String(l.unite || 'u').slice(0, 10), qte: Number(l.qte) > 0 ? Number(l.qte) : 1 }));
+    const j7 = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), id = idPF();
+    const data = { ref: '', objet: String(b.objet || 'Liste d\'achat du bureau d\'études').slice(0, 200), affaireId: String(b.affaireId), date: new Date().toISOString().slice(0, 10), dateLimite: j7, dateLivraison: '',
+      statut: 'En cours', lignes, fournisseurs: [], origine: { app: 'etudes', etudeId: String(b.etudeId || '').slice(0, 64), noteId: String(b.noteId || '').slice(0, 64) } };
+    const w = await pipefit(s, `/api/records/consultations/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data }) });
+    const j = await w.json().catch(() => ({}));
+    if (!w.ok) return fail(res, w.status === 403 ? 403 : w.status === 400 ? 400 : 502, j.error || 'Création de la consultation refusée par Pipe-Fit');
+    return send(res, 200, { id: j.id || id, ref: j.ref || '' });
+  }
   if (p[0] === 'pf' && p[1] === 'devis' && method === 'POST') {
     const b = await lireJSON(req);
     if ((!b.affaireId && !b.clientId) || !Array.isArray(b.lignes) || !b.lignes.length) return fail(res, 400, 'Affaire (ou client) et lignes du devis requises');

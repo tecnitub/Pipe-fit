@@ -62,15 +62,42 @@ const Nomenclature = ((N, Sc) => {
     const ORDRE = ['Production', 'Pompes', 'Équipements', 'Robinetterie', 'Terminaux', 'Tuyauterie'];
     return [...m.values()].sort((a, b) => ORDRE.indexOf(a.famille) - ORDRE.indexOf(b.famille) || a.designation.localeCompare(b.designation, 'fr') || (Number(a.dn) || 0) - (Number(b.dn) || 0));
   }
-  // Feuilles du classeur : nomenclature par circuit, liste d'achat
-  function feuilles(et, pid, calc) {
-    const l = lignes(et, pid, calc), a = achats(l);
+  // Article de la bibliothèque de Pipe-Fit correspondant à une ligne d'achat : référence exacte, sinon mots de la
+  // désignation et DN ; prix d'achat = coût de revient de l'article (dernier prix fournisseur), sinon prix de vente
+  const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const MOTS_VIDES = new Set(['de', 'du', 'des', 'la', 'le', 'les', 'et', 'en', 'a', 'avec', 'pour', 'sur', 'aller', 'retour', 'si', 'autre', 'que', 'celle', 'circuit']);
+  function article(x, articles) {
+    if (!(articles || []).length) return null;
+    const ref = norm(x.reference);
+    if (ref) { const a = articles.find(y => norm(y.ref) === ref || (ref.length > 3 && norm(`${y.designation} ${y.ref}`).includes(ref))); if (a) return { a, score: 10 }; }
+    const mots = norm(x.designation.replace(/\(.*?\)/g, '')).split(' ').filter(m => m.length > 2 && !MOTS_VIDES.has(m)), dn = x.dn ? String(x.dn) : '';
+    let best = null;
+    articles.forEach(y => {
+      const t = ` ${norm(`${y.designation} ${y.ref || ''} ${y.famille || ''}`)} `, n = mots.filter(m => t.includes(` ${m}`)).length;
+      if (dn && !new RegExp(`\\b(dn ?${dn}|${dn} ?mm)\\b`).test(t)) return;
+      const sc = n / Math.max(2, mots.length);
+      if (sc >= 0.5 && (!best || sc > best.score)) best = { a: y, score: sc };
+    });
+    return best;
+  }
+  function prixAchats(liste, articles) {
+    return liste.map(x => { const m = article(x, articles), pu = m ? Number(m.a.coutRevient) || Number(m.a.prixVente) || 0 : 0;
+      return { ...x, articleId: m ? m.a.id : '', articleRef: m ? m.a.ref || '' : '', articleDesignation: m ? m.a.designation : '', pu, total: pu * x.qte, certain: !!m && m.score >= 10 }; });
+  }
+  // Lignes d'une consultation fournisseurs de Pipe-Fit (article de la bibliothèque si trouvé, sinon ligne libre)
+  const lignesConsultation = liste => liste.filter(x => x.qte > 0).map(x => ({ articleId: x.articleId || '', designation: `${x.designation}${x.dn ? ` DN ${x.dn}` : ''}${x.fabricant || x.reference ? ` — ${[x.fabricant, x.reference].filter(Boolean).join(' ')}` : ''}`.slice(0, 200),
+    unite: x.unite || 'u', qte: Math.round(x.qte * 100) / 100 }));
+  // Feuilles du classeur : nomenclature par circuit, liste d'achat (prix de la bibliothèque si fournie)
+  function feuilles(et, pid, calc, articles) {
+    const l = lignes(et, pid, calc), a = prixAchats(achats(l), articles);
     return [
       { name: 'Nomenclature', entetes: ['Repère', 'Circuit', 'Famille', 'Désignation', 'DN', 'Qté', 'Unité', 'Fabricant', 'Référence', 'Fiche technique', 'ΔP (kPa)'],
         lignes: l.map(x => [x.rep, x.circuit, x.famille, x.designation, x.dn ? `DN ${x.dn}` : '', x.qte, x.unite, x.fabricant, x.reference, x.fiche, x.dp === '' ? '' : Math.round(x.dp * 100) / 100]) },
-      { name: 'Liste d\'achat', entetes: ['Famille', 'Désignation', 'DN', 'Fabricant', 'Référence', 'Qté', 'Unité', 'Repères', 'Fournisseur', 'Prix unitaire HT', 'Total HT'],
-        lignes: a.map(x => [x.famille, x.designation, x.dn ? `DN ${x.dn}` : '', x.fabricant, x.reference, Math.round(x.qte * 10) / 10, x.unite, x.reps.join(', ').slice(0, 200), '', '', '']) }];
+      { name: 'Liste d\'achat', entetes: ['Famille', 'Désignation', 'DN', 'Fabricant', 'Référence', 'Qté', 'Unité', 'Repères', 'Article de la bibliothèque', 'Prix unitaire HT', 'Total HT'],
+        lignes: [...a.map(x => [x.famille, x.designation, x.dn ? `DN ${x.dn}` : '', x.fabricant, x.reference, Math.round(x.qte * 10) / 10, x.unite, x.reps.join(', ').slice(0, 200),
+          x.articleId ? `${x.articleRef ? `${x.articleRef} — ` : ''}${x.articleDesignation}`.slice(0, 120) : 'à chiffrer', x.pu ? { v: x.pu, s: 'eur' } : '', x.pu ? { v: Math.round(x.total * 100) / 100, s: 'eur' } : '']),
+          ['', 'Total des articles chiffrés', '', '', '', '', '', '', `${a.filter(x => x.pu).length} / ${a.length} article(s)`, '', { v: Math.round(a.reduce((s, x) => s + x.total, 0) * 100) / 100, s: 'eur' }]] }];
   }
-  return { lignes, achats, feuilles };
+  return { lignes, achats, feuilles, article, prixAchats, lignesConsultation };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'), typeof Schema !== 'undefined' ? Schema : require('./schema'));
 if (typeof module !== 'undefined') module.exports = Nomenclature;

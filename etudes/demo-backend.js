@@ -167,6 +167,13 @@
       if (ex) { ex.indice = b.indice; ex.date = new Date().toISOString(); } else db.envoisPF.push({ genre: 'document', etudeId: b.etudeId, noteId: b.noteId || '', affaireId: b.affaireId, nom: b.nom, indice: b.indice, date: new Date().toISOString() });
       save(); return rep(200, { ok: true, docId: 'demo', indice: b.indice || 'A' });
     }
+    if (p[0] === 'pf' && p[1] === 'consultation' && method === 'POST') {
+      const b = body(), c = crm();
+      if (!b.affaireId || !(b.lignes || []).length) return err(400, 'Chantier et lignes de la liste d\'achat requis');
+      const n = c ? (c.consultations || []).length + 1 : 1, ref = `CS-${new Date().getFullYear()}-${String(n).padStart(4, '0')}`, id = `cs${Date.now().toString(36)}`, now = new Date().toISOString();
+      if (c) { c.consultations = c.consultations || []; c.consultations.push({ id, ref, objet: String(b.objet || 'Liste d\'achat du bureau d\'études'), affaireId: b.affaireId, date: now.slice(0, 10), dateLimite: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), dateLivraison: '', statut: 'En cours', lignes: b.lignes, fournisseurs: [], origine: { app: 'etudes', etudeId: b.etudeId || '' }, _v: 1, _at: now, _by: s.nom }); storage.set(window.PIPEFIT_CRM_KEY, JSON.stringify(c)); }
+      return rep(200, { id, ref });
+    }
     if (p[0] === 'pf' && p[1] === 'devis' && method === 'POST') {
       const b = body(); db.envoisPF = db.envoisPF || [];
       const numero = `DV-${new Date().getFullYear()}-${String(90 + db.envoisPF.filter(x => x.genre === 'devis').length).padStart(4, '0')}`;
