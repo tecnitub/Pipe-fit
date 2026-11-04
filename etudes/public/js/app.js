@@ -573,6 +573,7 @@ async function chargerFiche(et, n, fichier) {
 }
 function appliquerFiche(et, n, lignesTexte, nomFichier) {
   if (n.type === 'terminaux') return appliquerFicheTerminal(et, n, lignesTexte, nomFichier);
+  if (n.type === 'aero' && cibleBouche !== '') return appliquerFicheBouche(et, n, lignesTexte, nomFichier);
   // CTA et schéma aéraulique : lecture détaillée d'une centrale ; autres équipements : pompe, vase, ballon, générateur
   const Mod = ['cta', 'aero'].includes(n.type) ? FicheCta : FicheEquip, r = Mod.lire(lignesTexte), fichier = { name: nomFichier };
   if (!r.nb) return confirmer('Aucune caractéristique reconnue dans ce document (PDF scanné ou mise en page inhabituelle). Saisissez les valeurs à la main.', 'OK');
@@ -612,15 +613,29 @@ function fichesInstallationHtml(et, n) {
       <td class="petit"><a href="#/etude/${et.id}/${x.note}">${esc(x.ou)}</a></td><td><button class="secondaire petit" data-fiche-elt="${i}">📄 ${x.fiche ? 'Remplacer' : 'Charger'}</button></td></tr>`).join('')}</tbody></table></div>
     <p class="petit muted">Une fiche chargée ici remplit le calcul de l'élément (terminaux, production, CTA) et se retrouve dans le schéma de principe comme dans le réseau arborescent.</p></div>`;
 }
-let ligneCibleTerminal = '';
+let ligneCibleTerminal = '', cibleBouche = '';
 document.addEventListener('click', ev => {
   const b = ev.target.closest('[data-fiche-elt]'); if (!b) return;
   const m = /#\/etude\/([^/]+)\/([^/?]+)/.exec(location.hash); if (!m) return;
   const et = S.etudes.find(x => x.id === m[1]), n = et && et.notes.find(x => x.id === m[2]); if (!n) return;
   const x = Liens.fichesInstallation(et, n)[+b.dataset.ficheElt], cible = x && et.notes.find(y => y.id === x.note); if (!cible) return;
-  ligneCibleTerminal = x.rep || '';
+  ligneCibleTerminal = x.rep || ''; cibleBouche = x.bouche !== undefined ? x.bouche : '';
   dialogueFiche(et, cible);
 });
+
+// Fiche technique d'une bouche : perte de charge et puissance acoustique reportées sur la bouche choisie
+function appliquerFicheBouche(et, n, lignesTexte, nomFichier) {
+  const i = +cibleBouche, b = (n.entrees.bouchesL || [])[i]; cibleBouche = '';
+  if (!b) return;
+  const r = SchemaAir.lireFicheBouche(lignesTexte), nom = [r.fabricant, r.reference].filter(Boolean).join(' ');
+  if (!r.nb) return confirmer('Aucune caractéristique reconnue (perte de charge, puissance acoustique) : saisissez-les sur la ligne de la bouche.', 'OK');
+  if (r.valeurs.dp !== undefined) b.dp = r.valeurs.dp;
+  if (r.valeurs.Lw !== undefined) b.Lw = r.valeurs.Lw;
+  if (nom) b.ref = nom;
+  b.fiche = { nom: String(nomFichier || '').slice(0, 120), fabricant: r.fabricant, reference: r.reference };
+  enregistrer(et); App.render();
+  toast(`Fiche reprise sur ${b.rep || 'la bouche'} : ${[r.valeurs.dp !== undefined && `ΔP ${r.valeurs.dp} Pa`, r.valeurs.Lw !== undefined && `Lw ${r.valeurs.Lw} dB(A)`].filter(Boolean).join(', ')}${r.valeurs.Q && Notes.num(b.Q) && Math.abs(r.valeurs.Q - Notes.num(b.Q)) / Notes.num(b.Q) > 0.1 ? ` — attention, fiche sélectionnée à ${r.valeurs.Q} m³/h pour ${b.Q} m³/h` : ''}`, 6000);
+}
 
 // Fiche technique d'un terminal (cassette, ventilo-convecteur…) : puissances, ventilateur, batterie électrique, tension,
 // reportés sur la ligne choisie (ou une nouvelle ligne)
@@ -670,7 +685,7 @@ Vues.note = {
       <p class="muted petit">${esc(t.description)}</p>
       ${lien ? `<div class="bandeau-lien">🔗 ${esc(lien)} <button class="secondaire petit" id="detacher">Détacher</button></div>` : ''}
       ${calculateurHtml(n.type, n.entrees, ctx)}
-      ${['pid', 'arbo'].includes(n.type) ? fichesInstallationHtml(et, n) : ''}
+      ${['pid', 'arbo'].includes(n.type) || (n.type === 'aero' && n.entrees.structure === 'arborescence') ? fichesInstallationHtml(et, n) : ''}
       <div class="carte"><label class="champ-libre">Commentaire (repris dans la note de calcul)<textarea data-n="commentaire" rows="3">${esc(n.commentaire)}</textarea></label>
       ${emissionsHtml(et, n)}
       <div class="actions-ligne"><button id="emettre-note">🖋️ Émettre l'indice ${esc(Revisions.prochainIndice(n))} (PDF avec cartouche)</button><button class="secondaire" id="pdf-note">📄 Brouillon PDF</button><button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="dupliquer">Dupliquer</button>
@@ -678,6 +693,7 @@ Vues.note = {
         ${n.type === 'cta' ? `<button class="secondaire" id="cta-reseau">🌬️ ${Liens.reseauxDeCta(et.notes, n).some(x => x.type === 'aero') ? 'Ouvrir le schéma aéraulique relié' : 'Créer le schéma aéraulique relié (gaines, bouches)'}</button>` : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
         ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button>' : ''}
+        ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="aero-vitesses" title="Même vitesse pour toutes les branches (ou les principales, ou les terminales) : les diamètres des gaines sont recalculés">💨 Changer toutes les vitesses</button>' : ''}
         ${n.type === 'arbo' ? '<button class="secondaire" id="arbo-emetteurs" title="Une branche par terminal ou batterie de CTA de l\'étude, reliée : puissance, débit et pertes de charge remplis ; il reste à choisir le tronçon amont et la longueur">🌀 Ajouter les émetteurs de l\'étude</button>' : ''}
         ${n.type === 'cable' ? '<button id="cable-reprendre">🔌 Reprendre les liaisons de l\'alimentation électrique</button>' : ''}<span class="espace"></span><button class="secondaire" id="supprimer">Supprimer ce calcul</button></div></div>`;
   },
@@ -734,6 +750,19 @@ Vues.note = {
       location.hash = `#/etude/${et.id}/${c.id}`;
     };
     // Alimentation électrique : équipements repris des autres calculs (schéma, réseaux, CTA…), choix déjà faits conservés
+    // Schéma aéraulique : même vitesse sur toutes les branches choisies (diamètres recalculés)
+    const av = root.querySelector('#aero-vitesses');
+    if (av) av.onclick = () => {
+      const b = Modal.open(`<h2>💨 Vitesse des branches</h2><p class="muted petit">La gaine de chaque branche est recalculée (plus petit diamètre dont la vitesse reste sous la valeur).</p>
+        <label>Vitesse (m/s) <input id="av-v" inputmode="decimal" value="4"></label>
+        <label>Branches <select id="av-p"><option value="tout">Toutes</option><option value="princ">Principales (avec des branches en aval)</option><option value="term">Terminales (bouches)</option></select></label>
+        <div class="actions"><button class="secondaire" id="av-auto">Revenir en automatique</button><span class="espace"></span><button class="secondaire" id="av-x">Annuler</button><button id="av-ok">Appliquer</button></div>`);
+      const tr = n.entrees.troncons || [], aval = t => tr.some(x => String(x.amont || '').trim() === String(t.rep || '').trim());
+      const cibles = () => tr.filter(t => ({ tout: true, princ: aval(t), term: !aval(t) })[b.querySelector('#av-p').value]);
+      b.querySelector('#av-x').onclick = Modal.close;
+      b.querySelector('#av-auto').onclick = () => { cibles().forEach(t => { t.v = ''; }); enregistrer(et); Modal.close(); App.render(); };
+      b.querySelector('#av-ok').onclick = () => { const v = Notes.num(String(b.querySelector('#av-v').value).replace(',', '.')); if (!(v > 0)) return toast('Vitesse invalide', 3000); const c = cibles(); c.forEach(t => { t.v = v; }); enregistrer(et); Modal.close(); App.render(); toast(`${c.length} branche(s) à ${String(v).replace('.', ',')} m/s : diamètres recalculés`, 4000); };
+    };
     // Réseau arborescent : une branche par émetteur de l'étude non encore relié, rattachée au premier tronçon de départ
     const ae = root.querySelector('#arbo-emetteurs');
     if (ae) ae.onclick = () => {

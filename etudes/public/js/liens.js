@@ -301,6 +301,10 @@ const Liens = ((N, Sc) => {
       const reps = new Set(((note.entrees || {}).circuits || []).map(c => `${note.id}|${c.rep}`));
       ((note.entrees || {}).circuits || []).forEach(c => { const an = c.annexe && notes.find(n => n.id === c.annexe); if (an && an.type === 'cta') ajNote(an, 'CTA (batteries)'); if (an && an.type === 'arbo') (an.entrees.troncons || []).forEach(t => { if (t.pompe) { const [id, r] = String(t.pompe).split(':'); const tn = notes.find(n => n.id === id), a = tn && (tn.entrees.appareils || []).find(x => x.rep === r); if (a) ajTerm(tn, a); } }); });
       terms.forEach(n => (n.entrees.appareils || []).forEach(a => { if (reps.has(a.circuit)) ajTerm(n, a); }));
+    } else if (note.type === 'aero') {
+      const cta = notes.find(n => n.id === (note.entrees || {}).cta && n.type === 'cta');
+      if (cta) ajNote(cta, 'CTA'); else out.push({ element: (note.entrees || {}).titreInstallation || note.titre, nature: 'Producteur (CTA, caisson)', fiche: ficheDe((note.entrees || {}).fiche), note: note.id, ou: lib(note) });
+      ((note.entrees || {}).bouchesL || []).forEach((b, i) => { if (b && (b.rep || b.salle)) out.push({ element: `${b.rep || 'Bouche'}${b.salle ? ` — ${b.salle}` : ''}${b.etage ? ` (${b.etage})` : ''}`, nature: 'Bouche', fiche: ficheDe(b.fiche) || (b.ref ? { reference: b.ref } : null), note: note.id, bouche: i, ou: lib(note) }); });
     } else if (note.type === 'arbo') {
       const pid = notes.find(n => n.type === 'pid' && ((n.entrees || {}).circuits || []).some(c => c.annexe === note.id));
       if (pid) ajNote(pid, 'Production (générateur)');

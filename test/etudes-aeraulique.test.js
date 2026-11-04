@@ -155,7 +155,7 @@ test('réseau aéraulique arborescent : antennes et ramifications, débits cumul
   const e = { ...N.defauts('aero'), structure: 'arborescence' }, r = N.calculer('aero', e), v = r.valeurs;
   assert.deepStrictEqual([v.Qs, v.Qr], [3000, 2900], 'débits cumulés depuis les bouches');
   const arbre = r.tableaux.find(t => /Arborescence du réseau de soufflage/.test(t.titre)).lignes;
-  const ligne = rep => arbre.find(l => l[0].startsWith(`${rep} —`));
+  const ligne = rep => arbre.find(l => l[0].replace(/^★ /, '').startsWith(`${rep} —`));
   assert.deepStrictEqual([ligne('S')[2], ligne('S1')[2], ligne('S2')[2]].map(x => x.replace(/\s/g, '')), ['3000', '1600', '1400']);
   assert.strictEqual(ligne('S1.1')[1], 'S1');
   // Registres : un par branche terminale ; la plus défavorisée ne dissipe que le minimum
@@ -163,7 +163,7 @@ test('réseau aéraulique arborescent : antennes et ramifications, débits cumul
   assert.ok(v.registres.some(x => Math.round(x.dp) === 10), 'branche la plus défavorisée : 10 Pa');
   assert.ok(v.registres.every(x => x.dp >= 10));
   // Pression du ventilateur = besoin à l'entrée de la gaine principale + composants, avec la marge
-  assert.ok(Math.abs(v.dpReseauS - Number(ligne('S')[8].replace(/\s/g, ''))) <= 1);
+  assert.ok(Math.abs(v.dpReseauS - Number(ligne('S')[9].replace(/\s/g, ''))) <= 1);
   // Métré : chaque tronçon une seule fois (pas d'antenne ajoutée en double)
   assert.strictEqual(v.troncons.length, 12);
   assert.deepStrictEqual(r.schemas.map(s => s.titre), ['Arborescence du réseau de soufflage', 'Arborescence du réseau de reprise']);
@@ -231,4 +231,27 @@ test('acoustique par branche : atténuations du chemin, registre, bouches, nivea
   assert.ok(!t(sans) && !sans.alertes.some(a => /dB\(A\) estimés/.test(a.texte)));
   // Structure à piquages : estimée aussi (sans registre)
   assert.strictEqual(t(N.calculer('aero', N.defauts('aero'))).lignes.length, 6);
+});
+
+test('bouches une par une (salle, étage, fiche technique), vitesse choisie par branche → diamètre, branche défavorisée', () => {
+  const S = require('../etudes/public/js/aeraulique-schema');
+  const e = { ...N.defauts('aero'), structure: 'arborescence', producteur: 'cta-sf', troncons: [
+    { rep: 'S', reseau: 'soufflage', amont: '', nom: 'Principal', L: 20, zeta: 1 },
+    { rep: 'S1', reseau: 'soufflage', amont: 'S', nom: 'Salle A', L: 8, zeta: 1 },
+    { rep: 'S2', reseau: 'soufflage', amont: 'S', nom: 'Salle B', L: 25, zeta: 1, v: 2.5 }],
+    bouchesL: [{ rep: 'B1', reseau: 'soufflage', salle: 'Réunion A', etage: 'R+1', type: 'plafond', Q: 300, troncon: 'S1', dp: 25, Lw: 32, ref: 'Fab D300' },
+      { rep: 'B2', reseau: 'soufflage', salle: 'Réunion A', etage: 'R+1', type: 'plafond', Q: 300, troncon: 'S1' },
+      { rep: 'B3', reseau: 'soufflage', salle: 'Bureau B', etage: 'R+2', type: 'plafond', Q: 450, troncon: 'S2' }] };
+  const r = N.calculer('aero', e), arbre = r.tableaux.find(t => /Arborescence du réseau de soufflage/.test(t.titre)).lignes;
+  const lg = rep => arbre.find(l => l[0].replace(/^★ /, '').startsWith(`${rep} —`));
+  assert.strictEqual(lg('S')[2].replace(/\s/g, ''), '1050');
+  assert.strictEqual(lg('S1')[2].replace(/\s/g, ''), '600');
+  assert.strictEqual(lg('S2')[3], '2,5');
+  assert.ok(Number(lg('S2')[6].replace(',', '.')) <= 2.5);
+  assert.ok(lg('S1')[0].startsWith('★') && !lg('S2')[0].startsWith('★'), 'S1 la plus défavorisée : 25 Pa de bouche (fiche), S2 longue mais à 2,5 m/s');
+  const bt = r.tableaux.find(t => /^Bouches — /.test(t.titre)).lignes;
+  assert.deepStrictEqual(bt.map(l => [l[0].replace(/^★ /, ''), l[1], l[2], l[4]]), [['B1', 'Réunion A', 'R+1', 'S1'], ['B2', 'Réunion A', 'R+1', 'S1'], ['B3', 'Bureau B', 'R+2', 'S2']]);
+  assert.strictEqual(bt[0][6], '25');
+  const f = S.lireFicheBouche(['Diffuseur plafonnier D300', 'Débit : 300 m³/h', 'Perte de charge totale : 22 Pa', 'Puissance acoustique Lw : 31 dB(A)']);
+  assert.deepStrictEqual([f.valeurs.Q, f.valeurs.dp, f.valeurs.Lw], [300, 22, 31]);
 });

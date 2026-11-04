@@ -25,8 +25,9 @@ const SchemaAir = ((D, C, N, Cta) => {
     return r.zeta;
   }
   // Gaine circulaire automatique (ou rectangulaire à hauteur imposée) respectant vmax et Rmax
-  function choisirGaine(Q, e, vmax) {
-    const qv = Q / 3600, T = num(e.T, 20), rug = (D.RUGOSITE_GAINE[e.materiau] || D.RUGOSITE_GAINE.galva)[1], Rmax = num(e.Rmax, 1), h = num(e.h, 300);
+  // vitesse choisie pour la branche : la gaine est choisie sur cette seule vitesse (diamètre déduit)
+  function choisirGaine(Q, e, vmax, vitesseChoisie) {
+    const qv = Q / 3600, T = num(e.T, 20), rug = (D.RUGOSITE_GAINE[e.materiau] || D.RUGOSITE_GAINE.galva)[1], Rmax = vitesseChoisie ? Infinity : num(e.Rmax, 1), h = num(e.h, 300);
     const dims = e.forme === 'rect' ? [200, 250, 300, 350, 400, 450, 500, 600, 700, 800, 900, 1000, 1200, 1400, 1600, 1800, 2000].map(a => ({ a, b: Math.min(a, h) })) : D.GAINES_RONDES.map(d => ({ a: d, b: 0 }));
     const d = dims.find(x => { const r = C.gaine(qv, x, T, rug); return r.v <= vmax && r.R <= Rmax; }) || dims[dims.length - 1];
     return { dim: d, nom: d.b ? `${d.a} × ${d.b}` : `Ø ${d.a}`, ...C.gaine(qv, d, T, rug) };
@@ -86,17 +87,30 @@ const SchemaAir = ((D, C, N, Cta) => {
     tr.filter(t => !vus.has(t)).forEach(t => alertes.push(alerte('erreur', `${t.rep} : boucle dans les tronçons amont, tronçon ignoré.`)));
     const actifs = tr.filter(t => vus.has(t)), terminaux = actifs.filter(t => !t.enfants.length);
     if (!terminaux.length) return { zones: [], troncons: [], Q: 0, dp: 0, defav: null, alertes, arbre: { racines: [], actifs: [], terminaux: [] }, registres: [] };
+    // Bouches saisies une par une (salle, étage, débit, fiche technique) et rattachées à leur tronçon terminal
+    const rho0 = C.air(num(e.T, 20)).rho;
+    const lesBouches = (e.bouchesL || []).filter(b => b && b.troncon && (b.reseau || 'soufflage') === reseauNom || (b && b.troncon && reseauNom !== 'soufflage' && (b.reseau || 'soufflage') !== 'soufflage'));
+    tr.forEach(t => {
+      const bs = lesBouches.filter(b => String(b.troncon).trim() === t.rep);
+      if (!bs.length) return;
+      t.bouchesL = bs.map(b => { const ty = BOUCHES[b.type] ? b.type : t.type, auto = choisirBouche(ty, num(b.Q), rho0);
+        return { rep: b.rep || '', salle: b.salle || '', etage: b.etage || '', Q: num(b.Q), type: ty, dp: num(b.dp) > 0 ? num(b.dp) : auto.dp, Lw: num(b.Lw) > 0 ? num(b.Lw) : auto.Lw, taille: num(b.dp) > 0 ? (b.ref || 'fiche') : auto.nom, fiche: num(b.dp) > 0 }; });
+      t.Qsaisi = t.bouchesL.reduce((a, b) => a + b.Q, 0); t.n = t.bouchesL.length; t.type = t.bouchesL[0].type;
+    });
     const debit = t => { t.Q = t.enfants.length ? t.enfants.reduce((a, c) => a + debit(c), 0) : t.Qsaisi; return t.Q; };
     racines.forEach(debit);
     terminaux.filter(t => !(t.Q > 0)).forEach(t => alertes.push(alerte('erreur', `${t.rep} : tronçon terminal sans débit de bouches.`)));
     actifs.filter(t => t.enfants.length && t.Qsaisi > 0).forEach(t => alertes.push(alerte('attention', `${t.rep} : débit saisi sur un tronçon qui a des tronçons en aval, non pris en compte (les bouches sont en bout de tronçon).`)));
     // Gaines et pertes de charge ; bouches des tronçons terminaux
     actifs.forEach(t => {
-      const dim = C.lireDimension(t.x.dim), g = dim ? { dim, nom: dim.b ? `${dim.a} × ${dim.b}` : `Ø ${dim.a}`, ...C.gaine(t.Q / 3600, dim, T, rug) } : choisirGaine(t.Q, e, t.enfants.length ? num(e.vmaxP, 6) : num(e.vmaxA, 4));
-      Object.assign(t, { g, nomGaine: g.nom, v: g.v, R: g.R, dp: g.R * t.L + t.zeta * g.pd, auto: !dim });
-      if (!dim && g.v > (t.enfants.length ? num(e.vmaxP, 6) : num(e.vmaxA, 4)) * 1.01) alertes.push(alerte('attention', `${t.rep} : vitesse ${nf(g.v, 1)} m/s même dans la plus grande gaine.`));
+      // Vitesse choisie pour la branche (sinon vitesse maxi principale / terminale) → diamètre de la gaine
+      const vCh = num(t.x.v) > 0 ? num(t.x.v) : 0, vRef = vCh || (t.enfants.length ? num(e.vmaxP, 6) : num(e.vmaxA, 4));
+      const dim = C.lireDimension(t.x.dim), g = dim ? { dim, nom: dim.b ? `${dim.a} × ${dim.b}` : `Ø ${dim.a}`, ...C.gaine(t.Q / 3600, dim, T, rug) } : choisirGaine(t.Q, e, vRef, !!vCh);
+      Object.assign(t, { g, nomGaine: g.nom, v: g.v, R: g.R, dp: g.R * t.L + t.zeta * g.pd, auto: !dim, vCh });
+      if (!t.enfants.length && t.bouchesL) { const pire = t.bouchesL.reduce((a, b) => (b.dp > a.dp ? b : a)); t.bouche = { b: BOUCHES[pire.type], nom: pire.taille, v: 0, dp: pire.dp, Lw: Math.max(...t.bouchesL.map(b => b.Lw)), liste: t.bouchesL }; }
+      if (!dim && g.v > vRef * 1.01) alertes.push(alerte('attention', `${t.rep} : vitesse ${nf(g.v, 1)} m/s même dans la plus grande gaine.`));
       if (dim && g.v > num(e.vmaxP, 6) * 1.01) alertes.push(alerte('attention', `${t.rep} : vitesse ${nf(g.v, 1)} m/s dans la gaine imposée ${g.nom} (bruit, pertes de charge).`));
-      if (!t.enfants.length && t.Q > 0) { t.bouche = choisirBouche(t.type, t.Q / t.n, rho); if (t.bouche.v > t.bouche.b.vmax * 1.01) alertes.push(alerte('attention', `${t.rep} : ${t.n} bouche(s) insuffisante(s), vitesse au col ${nf(t.bouche.v, 1)} m/s (ajoutez des bouches).`)); }
+      if (!t.enfants.length && t.Q > 0 && !t.bouchesL) { t.bouche = choisirBouche(t.type, t.Q / t.n, rho); if (t.bouche.v > t.bouche.b.vmax * 1.01) alertes.push(alerte('attention', `${t.rep} : ${t.n} bouche(s) insuffisante(s), vitesse au col ${nf(t.bouche.v, 1)} m/s (ajoutez des bouches).`)); }
     });
     // Pression nécessaire et registres (même méthode que les vannes d'équilibrage du réseau hydraulique)
     const aRegistre = t => !t.enfants.length || (partenaires && (t.amont && parRep.get(t.amont) ? parRep.get(t.amont).enfants.length > 1 : racines.length > 1));
@@ -123,9 +137,10 @@ const SchemaAir = ((D, C, N, Cta) => {
     // Mise en forme commune avec le réseau à piquages : zones = tronçons terminaux (bouches), tronçons = toutes les gaines
     const zones = terminaux.filter(t => t.bouche).map(t => ({ rep: t.nom || t.rep, reseau: reseauNom, type: t.type, n: t.n, Q: t.Q, L: t.L, d: t.chemin.reduce((s, x) => s + x.L, 0) - t.L,
       bouche: t.bouche, antenne: { nom: t.nomGaine, v: t.v }, dpA: t.dp, dpPrincipal: t.chemin.slice(0, -1).reduce((s, x) => s + x.dp, 0), dpTotal: somme(t) + (t.dpReg || 0), repTroncon: t.rep }));
-    const troncons = actifs.map(t => ({ rep: `${t.rep}${t.nom ? ` — ${t.nom}` : ''}`, Q: t.Q, L: t.L, nom: t.nomGaine, v: t.v, R: t.R, dp: t.dp, amont: t.amont, H: t.H, dpReg: t.dpReg, auto: t.auto }));
+    const troncons = actifs.map(t => ({ rep: `${t.rep}${t.nom ? ` — ${t.nom}` : ''}`, Q: t.Q, L: t.L, nom: t.nomGaine, v: t.v, R: t.R, dp: t.dp, amont: t.amont, H: t.H, dpReg: t.dpReg, auto: t.auto, vCh: t.vCh, defav: defav && defav.chemin.includes(t) }));
+    const bouchesDet = terminaux.flatMap(t => (t.bouchesL || []).map(b => ({ ...b, troncon: t.rep, chemin: t.chemin.map(x => x.rep).join(' → '), dpTot: t.chemin.reduce((s, x) => s + x.dp, 0) + b.dp, defav: t === defav })));
     return { zones, troncons, Q: racines.reduce((s, t) => s + t.Q, 0), dp: Hres, defav: defav ? { rep: defav.nom || defav.rep, dpTotal: Hres, chemin: defav.chemin.map(x => x.rep) } : null, alertes,
-      arbre: { racines, actifs, terminaux, defav }, registres };
+      arbre: { racines, actifs, terminaux, defav }, registres, bouches: bouchesDet };
   }
 
   /* ---------- Acoustique par branche (niveau global pondéré A, méthode simplifiée du bilan acoustique) ---------- */
@@ -207,8 +222,10 @@ const SchemaAir = ((D, C, N, Cta) => {
       tableaux: [
         { titre: 'Zones et bouches (émetteurs)', entetes: ['Zone', 'Réseau', 'Q (m³/h)', 'Bouches', 'v col (m/s)', 'ΔP bouche (Pa)', 'Antenne', 'v (m/s)', 'ΔP antenne (Pa)', 'ΔP depuis le ventilateur (Pa)'], lignes: [...rS.zones, ...rR.zones].map(ligneZ) },
         ...(arbo ? [rS, rR].filter(r => r.troncons.length).flatMap((r, k) => [
-          { titre: `Arborescence du réseau de ${r === rS ? titreS.toLowerCase() : (dfx || e.producteur === 'cta-melange' ? 'reprise' : 'extraction')} (débits cumulés)`, entetes: ['Tronçon', 'Amont', 'Q (m³/h)', 'Gaine (mm)', 'L (m)', 'v (m/s)', 'R (Pa/m)', 'ΔP (Pa)', 'Pression nécessaire à l\'entrée (Pa)'],
-            lignes: r.troncons.map(x => [x.rep, x.amont || 'ventilateur', nf(x.Q, 0), `${x.nom}${x.auto ? '' : ' (imposée)'}`, nf(x.L, 1), nf(x.v, 1), nf(x.R, 2), nf(x.dp, 0), nf(x.H, 0)]) },
+          { titre: `Arborescence du réseau de ${r === rS ? titreS.toLowerCase() : (dfx || e.producteur === 'cta-melange' ? 'reprise' : 'extraction')} (débits cumulés ; ★ branche la plus défavorisée)`, entetes: ['Tronçon', 'Amont', 'Q (m³/h)', 'Vitesse choisie (m/s)', 'Gaine (mm)', 'L (m)', 'v réelle (m/s)', 'R (Pa/m)', 'ΔP (Pa)', 'Pression nécessaire à l\'entrée (Pa)'],
+            lignes: r.troncons.map(x => [`${x.defav ? '★ ' : ''}${x.rep}`, x.amont || 'ventilateur', nf(x.Q, 0), x.vCh ? nf(x.vCh, 1) : 'auto', `${x.nom}${x.auto ? '' : ' (imposée)'}`, nf(x.L, 1), nf(x.v, 1), nf(x.R, 2), nf(x.dp, 0), nf(x.H, 0)]) },
+          ...(r.bouches && r.bouches.length ? [{ titre: `Bouches — ${r === rS ? titreS.toLowerCase() : 'reprise / extraction'} (ΔP de la fiche technique, sinon de la gamme générique)`, entetes: ['Bouche', 'Salle', 'Étage', 'Q (m³/h)', 'Tronçon', 'Modèle', 'ΔP bouche (Pa)', 'Lw (dB(A))', 'ΔP depuis le ventilateur (Pa)', 'Chemin'],
+            lignes: r.bouches.map(b => [`${b.defav ? '★ ' : ''}${b.rep}`, b.salle, b.etage, nf(b.Q, 0), b.troncon, `${b.taille}${b.fiche ? ' ✓' : ''}`, nf(b.dp, 0), nf(b.Lw, 0), nf(b.dpTot, 0), b.chemin]) }] : []),
           ...(r.registres.length ? [{ titre: `Registres d'équilibrage — ${r === rS ? titreS.toLowerCase() : 'reprise / extraction'}`, entetes: ['Registre', 'Gaine', 'Q (m³/h)', 'ΔP à dissiper (Pa)'], lignes: r.registres.map(x => [`${x.rep}${x.nom ? ` — ${x.nom}` : ''}`, x.nomGaine, nf(x.Q, 0), nf(x.dpReg, 0)]) }] : [])]) : []),
         ...(!arbo && rS.troncons.length ? [{ titre: `Gaine principale de ${titreS.toLowerCase()}`, entetes: ['Tronçon', 'Q (m³/h)', 'Gaine (mm)', 'L (m)', 'v (m/s)', 'R (Pa/m)', 'ΔP (Pa)'], lignes: rS.troncons.map(ligneT) }] : []),
         ...(!arbo && rR.troncons.length ? [{ titre: 'Gaine principale de reprise / extraction', entetes: ['Tronçon', 'Q (m³/h)', 'Gaine (mm)', 'L (m)', 'v (m/s)', 'R (Pa/m)', 'ΔP (Pa)'], lignes: rR.troncons.map(ligneT) }] : []),
@@ -370,8 +387,13 @@ const SchemaAir = ((D, C, N, Cta) => {
         { rep: 'R2.1', reseau: 'reprise', amont: 'R2', nom: 'Salle de réunion (reprise)', L: 5, zeta: 1.5, dim: '', type: 'extraction', n: 2, Q: 950 },
         { rep: 'R2.2', reseau: 'reprise', amont: 'R2', nom: 'Sanitaires', L: 8, zeta: 1.5, dim: '', type: 'extraction', n: 6, Q: 450 }],
         colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'reseau', l: 'Réseau', t: 's', o: Object.entries(RESEAUX) }, { k: 'amont', l: 'Amont', t: 't' }, { k: 'nom', l: 'Désignation', t: 't' },
-          { k: 'L', l: 'Longueur (m)' }, { k: 'zeta', l: 'Σζ' }, { k: 'sing', l: 'Singularités (ex. « 2 coudes, piquage, registre » : remplacent Σζ)', t: 't' }, { k: 'dim', l: 'Gaine (mm)', t: 't' }, { k: 'type', l: 'Bouches', t: 's', o: Object.entries(BOUCHES).map(([k, b]) => [k, b.libelle]) },
+          { k: 'L', l: 'Longueur (m)' }, { k: 'zeta', l: 'Σζ' }, { k: 'sing', l: 'Singularités (ex. « 2 coudes, piquage, registre » : remplacent Σζ)', t: 't' }, { k: 'v', l: 'Vitesse choisie (m/s ; vide = auto)' }, { k: 'dim', l: 'Gaine (mm)', t: 't' }, { k: 'type', l: 'Bouches', t: 's', o: Object.entries(BOUCHES).map(([k, b]) => [k, b.libelle]) },
           { k: 'n', l: 'Nombre de bouches' }, { k: 'Q', l: 'Débit des bouches (m³/h)' }] },
+      { k: 'bouchesL', l: 'Bouches une par une (salle et étage pour le repérage ; rattachées à un tronçon terminal, elles en donnent le débit ; « 📄 » charge la fiche technique)', t: 'lignes', si: e => e.structure === 'arborescence', d: [],
+        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'reseau', l: 'Réseau', t: 's', o: Object.entries(RESEAUX) }, { k: 'salle', l: 'Salle', t: 't' }, { k: 'etage', l: 'Étage', t: 't' },
+          { k: 'type', l: 'Type', t: 's', o: Object.entries(BOUCHES).map(([k, b]) => [k, b.libelle]) }, { k: 'Q', l: 'Débit (m³/h)' },
+          { k: 'troncon', l: 'Tronçon', t: 's', o: e => [['', '—'], ...(e.troncons || []).filter(t => t.rep).map(t => [t.rep, `${t.rep}${t.nom ? ` — ${t.nom}` : ''}`])] },
+          { k: 'dp', l: 'ΔP fiche (Pa)' }, { k: 'Lw', l: 'Lw fiche (dB(A))' }, { k: 'ref', l: 'Fabricant, référence', t: 't' }] },
       { k: 'registres', l: 'Registres d\'équilibrage', t: 's', o: [['bouches', 'Sur chaque branche terminale (bouches)'], ['antennes', 'Sur chaque branche et au pied des antennes (registres partenaires)']], d: 'bouches', si: e => e.structure === 'arborescence' },
       { k: 'dpRegistre', l: 'ΔP mini d\'un registre (réglage fiable)', u: 'Pa', d: 10, si: e => e.structure === 'arborescence' },
       { k: 'zones', l: 'Zones (distance : longueur de gaine principale du ventilateur jusqu\'au piquage de la zone)', t: 'lignes', si: e => e.structure !== 'arborescence', d: [
@@ -400,6 +422,19 @@ const SchemaAir = ((D, C, N, Cta) => {
     ],
     calcul: calculer,
   };
-  return { PRODUCTEURS, RECUPERATEURS, RESEAUX, calculer, choisirGaine, choisirBouche };
+  // Fiche technique d'une bouche : perte de charge (Pa), puissance acoustique (dB(A)), débit de sélection, fabricant
+  function lireFicheBouche(lignes) {
+    const L = (Array.isArray(lignes) ? lignes : String(lignes || '').split(/\r?\n/)).map(String).filter(l => l.trim()), v = {}, src = {};
+    const norm = x => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/m\s*(?:³|3)\s*\/\s*h/g, 'm3/h');
+    const nb = (x, u) => { const m = new RegExp(`(\\d+(?:[.,]\\d+)?)\\s*(?:${u})(?![a-z])`).exec(x); return m ? Number(m[1].replace(',', '.')) : undefined; };
+    L.forEach((l, i) => { const x = norm(l);
+      if (v.dp === undefined && /perte de charge|delta ?p|pression totale|pressure drop|\bdpt?\b/.test(x)) { const n = nb(x, 'pa'); if (n > 0 && n < 500) { v.dp = n; src.dp = l.trim(); } }
+      if (v.Lw === undefined && /\blw|puissance acoustique|sound power|niveau de puissance/.test(x)) { const n = nb(x, 'db\\s*\\(?a\\)?|dba|db'); if (n > 5 && n < 100) { v.Lw = n; src.Lw = l.trim(); } }
+      if (v.Q === undefined && /debit|air flow|airflow/.test(x)) { const n = nb(x, 'm3/h'); if (n > 5 && n < 20000) { v.Q = n; src.Q = l.trim(); } } });
+    let fabricant = '', reference = '';
+    try { const FT = typeof FichesTech !== 'undefined' ? FichesTech : require('../../../public/js/fiches-tech'); const a = FT.analyser({ texte: L.join('\n') }); fabricant = a.fabricant || ''; reference = (a.references || [])[0] || ''; } catch (err) { /* sans bibliothèque */ }
+    return { valeurs: v, sources: src, fabricant, reference, nb: Object.keys(v).length };
+  }
+  return { PRODUCTEURS, RECUPERATEURS, RESEAUX, calculer, choisirGaine, choisirBouche, lireFicheBouche };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Notes !== 'undefined' ? Notes : require('./notes'), typeof Cta !== 'undefined' ? Cta : require('./cta'));
 if (typeof module !== 'undefined') module.exports = SchemaAir;
