@@ -4,7 +4,7 @@
 const Metre = ((N, C, D, L, Sc) => {
   const nf = N.nf, num = N.num;
   const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[×x]/g, ' x ').replace(/,/g, '.');
-  const CHAPITRES = ['Études', 'Production', 'Tuyauteries', 'Équipements hydrauliques', 'Plomberie sanitaire', 'Appareils sanitaires', 'Calorifuge', 'Aéraulique'];
+  const CHAPITRES = ['Études', 'Production', 'Tuyauteries', 'Équipements hydrauliques', 'Plomberie sanitaire', 'Appareils sanitaires', 'Évacuations', 'Calorifuge', 'Aéraulique', 'Désenfumage'];
   // Mots-clés de matériau par série de tubes
   const MATIERE = { acier: ['acier', 'p235', 'p265', 'noir', 'e235', 'st37'], galva: ['galva'], inox: ['inox', '316', '304', '1.44', '1.43'], cuivre: ['cuivre'], pehd: ['pehd', 'pe100', 'polyethylene'], multicouche: ['multicouche', 'per-al', 'pert'] };
   const matiereDe = serie => (/galva/.test(serie) ? 'galva' : /inox/.test(serie) ? 'inox' : /cuivre/.test(serie) ? 'cuivre' : /pehd/.test(serie) ? 'pehd' : /multicouche/.test(serie) ? 'multicouche' : 'acier');
@@ -70,6 +70,16 @@ const Metre = ((N, C, D, L, Sc) => {
         if (v.mitigeurs) equip('mitigeur|thermo', 'Plomberie sanitaire', 'Mitigeur thermostatique / limiteur de température 50 °C', v.mitigeurs, 0.5, { type: 'mitigeur' }, src);
         const A = (typeof Sanitaire !== 'undefined' ? Sanitaire : require('./sanitaire')).APPAREILS;
         Object.entries(v.appareils || {}).forEach(([k, q]) => equip(`appareil|${k}`, 'Appareils sanitaires', `${(A[k] || [k])[0]}, robinetterie et raccordement`, q, k === 'baignoire' ? 3 : 1.5, { type: 'appareil' }, src));
+      }
+      if (n.type === 'evacuation') {
+        (v.troncons || []).forEach(t => { if (t.d && t.L > 0) ajouter(`pvc|${t.d}`, { chapitre: 'Évacuations', designation: `Tube PVC évacuation Ø ${t.d} mm (NF EN 1329), raccords et supports compris`, unite: 'ml', qte: t.L, heures: t.d >= 100 ? 0.45 : 0.3, mo: 'monteur', source: src, recherche: { type: 'pvc', dn: t.d } }); });
+        if (v.chutes) equip('ventilation|primaire', 'Évacuations', 'Ventilation primaire en toiture (chapeau, traversée d\'étanchéité)', v.chutes, 2, { type: 'ventilation' }, src);
+      }
+      if (n.type === 'gazReseau') (v.troncons || []).forEach(t => tube(v.serie, t.tube, t.L, src));
+      if (n.type === 'desenfumage' && v.Qv > 0) {
+        equip(`vde|${Math.round(v.Qv * 3600)}`, 'Désenfumage', `Ventilateur de désenfumage F400 120 ${nf(v.Qv * 3600, 0)} m³/h`, 1, 12, { type: 'ventilateur' }, src);
+        if (v.QaMax > 0) equip(`vda|${Math.round(v.QaMax * 3600)}`, 'Désenfumage', `Ventilateur d'amenée d'air ${nf(v.QaMax * 3600, 0)} m³/h`, 1, 8, { type: 'ventilateur' }, src);
+        equip('volet|desenfumage', 'Désenfumage', 'Volet de désenfumage motorisé (24/48 V, bobine à émission) et grille', v.volets, 2.5, { type: 'volet' }, src);
       }
       if (n.type === 'cta' && v.Pchaud !== undefined) equip(`cta|${num(e.Qs)}`, 'Aéraulique', `Centrale de traitement d'air ${nf(num(e.Qs), 0)} m³/h (batterie chaude ${nf(v.Pchaud, 0)} kW${v.Pfroid ? `, froide ${nf(v.Pfroid, 0)} kW` : ''})`, 1, 16, { type: 'cta' }, src);
       if (n.type === 'bouches') (v.bouches || []).forEach(b => equip(`bouche|${b.type}|${b.taille}`, 'Aéraulique', `${b.type} ${b.taille}, plénum et raccordement`, b.n, 0.75, { type: 'bouche', taille: b.taille }, src));

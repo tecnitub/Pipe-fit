@@ -62,6 +62,7 @@ function resumePF(et) {
     try {
       if (n.type === 'aero') { const r = Liens.calculer(et, n), v = r.valeurs || {}; if ((v.debits || []).length) debits.push({ installation: Liens.resoudre(et, n).entrees.titreInstallation || n.titre, type: 'Aéraulique', unite: 'm³/h', lignes: v.debits.slice(0, 500) }); }
       if (n.type === 'arbo') { const v = Liens.calculer(et, n).valeurs || {}; if ((v.vannes || []).length) debits.push({ installation: n.titre, type: 'Hydraulique', unite: 'm³/h', lignes: v.vannes.map(x => ({ repere: x.rep, local: '', type: 'Vanne d\'équilibrage', theorique: Math.round(x.Q * 100) / 100 })) }); }
+      if (n.type === 'desenfumage') { const v = Liens.calculer(et, n).valeurs || {}; if ((v.debits || []).length) debits.push({ installation: `${n.titre}`, type: 'Aéraulique', unite: 'm³/h', lignes: v.debits }); }
       if (n.type === 'sanitaire') { const B = (Liens.calculer(et, n).valeurs || {}).bouclage; if (B && (B.vannes || []).length) debits.push({ installation: `${n.titre} — bouclage ECS`, type: 'Hydraulique', unite: 'L/h', lignes: B.vannes.map(x => ({ repere: x.rep, local: x.nom || '', type: 'Vanne thermostatique de bouclage', theorique: Math.round(x.q) })) }); }
     } catch (e) { /* calcul incomplet : pas de débits */ }
   });
@@ -710,6 +711,8 @@ Vues.note = {
         ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="aero-vitesses" title="Même vitesse pour toutes les branches (ou les principales, ou les terminales) : les diamètres des gaines sont recalculés">💨 Changer toutes les vitesses</button>' : ''}
         ${n.type === 'sanitaire' ? `<button class="secondaire" id="san-foison" title="Compare le débit probable avec et sans foisonnement et choisit la méthode de calcul">⚖️ Foisonnement : ${esc({ dtu: 'DTU 60.11', saisi: `${Notes.num(n.entrees.coefSaisi, 60)} %`, aucun: 'aucun' }[n.entrees.foisonnement || 'dtu'] || '')}</button>` : ''}
+        ${n.type === 'evacuation' ? '<button class="secondaire" id="evac-san" title="Une ligne par appareil du calcul sanitaire choisi (lavabos, WC, douches…), avec sa salle et son étage ; il reste à choisir le tronçon">🚽 Reprendre les appareils du calcul sanitaire</button>' : ''}
+        ${n.type === 'terminaux' && et.notes.some(x => x.type === 'pieces') ? '<button class="secondaire" id="term-pieces" title="Un terminal par pièce du bilan pièce par pièce qui n\'en a pas, aux puissances de la pièce">🏠 Créer les terminaux des pièces</button>' : ''}
         ${n.type === 'arbo' ? '<button class="secondaire" id="arbo-emetteurs" title="Une branche par terminal ou batterie de CTA de l\'étude, reliée : puissance, débit et pertes de charge remplis ; il reste à choisir le tronçon amont et la longueur">🌀 Ajouter les émetteurs de l\'étude</button>' : ''}
         ${n.type === 'cable' ? '<button id="cable-reprendre">🔌 Reprendre les liaisons de l\'alimentation électrique</button>' : ''}<span class="espace"></span><button class="secondaire" id="supprimer">Supprimer ce calcul</button></div></div>`;
   },
@@ -793,6 +796,25 @@ Vues.note = {
       b.querySelector('#av-ok').onclick = () => { const v = Notes.num(String(b.querySelector('#av-v').value).replace(',', '.')); if (!(v > 0)) return toast('Vitesse invalide', 3000); const c = cibles(); c.forEach(t => { t.v = v; }); enregistrer(et); Modal.close(); App.render(); toast(`${c.length} branche(s) à ${String(v).replace('.', ',')} m/s : diamètres recalculés`, 4000); };
     };
     // Réseau arborescent : une branche par émetteur de l'étude non encore relié, rattachée au premier tronçon de départ
+    // Évacuations : appareils repris du calcul sanitaire (tronçon à choisir)
+    const es = root.querySelector('#evac-san');
+    if (es) es.onclick = () => {
+      const san = et.notes.find(x => x.id === n.entrees.sanitaire && x.type === 'sanitaire') || et.notes.find(x => x.type === 'sanitaire');
+      if (!san) return toast('Aucun calcul « Eau froide et eau chaude sanitaires » dans l\'étude.', 5000);
+      const l = n.entrees.appareils = (n.entrees.appareils || []).filter(a => a.rep || a.salle), deja = new Set(l.map(a => a.rep).filter(Boolean));
+      const nv = Evacuation.depuisSanitaire(Liens.resoudre(et, san).entrees.points).filter(a => !a.rep || !deja.has(a.rep));
+      if (!nv.length) return toast('Tous les appareils du calcul sanitaire sont déjà repris.', 4000);
+      l.push(...nv); n.entrees.sanitaire = san.id; enregistrer(et); App.render(); toast(`${nv.length} appareil(s) repris : choisissez leur tronçon.`, 5000);
+    };
+    // Terminaux : un terminal par pièce sans terminal (bilan pièce par pièce)
+    const tp = root.querySelector('#term-pieces');
+    if (tp) tp.onclick = () => {
+      const l = n.entrees.appareils = n.entrees.appareils || [], nv = Pieces.terminauxManquants(et, l);
+      if (!nv.length) return toast('Chaque pièce du bilan a déjà son terminal.', 4000);
+      const reps = new Set(l.map(a => a.rep)); let k = l.length + 1;
+      nv.forEach(x => { let r; do { r = `T-${String(k++).padStart(2, '0')}`; } while (reps.has(r)); reps.add(r); l.push({ rep: r, local: x.local, type: x.type, n: 1, Pch: x.Pch, Pfr: x.Pfr, batterie: '4t', vanne: '2v', Pvent: '', Pbe: '', tension: '', alim: 'cvc', regul: 'propre', ref: '' }); });
+      enregistrer(et); App.render(); toast(`${nv.length} terminal(aux) créé(s) aux puissances des pièces : choisissez le modèle (fiche technique).`, 6000);
+    };
     const ae = root.querySelector('#arbo-emetteurs');
     if (ae) ae.onclick = () => {
       // Réseau d'un circuit du schéma de principe : ses terminaux (et ceux non rattachés, qui le deviennent)

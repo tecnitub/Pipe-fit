@@ -71,6 +71,14 @@ const PointsMes = (() => {
             controles: pts.map(p => txt(`${p[0]} — ${p[7] || p[1]} (${p[4] || p[2]})`, 120)), attendus: [] });
           break;
         }
+        case 'desenfumage':
+          if (v.Qv > 0) out.push({ ...base, nature: 'mes', type: 'desenfumage', cle: '', titre: `Désenfumage — ${titre}`, attendus: nettoie([att('Débit extrait', v.Qv * 3600, 'm³/h', 0)]) });
+          out.push({ ...base, nature: 'controle', titre: `Désenfumage : essais avec le SSI — ${titre}`, detail: `Essais de fonctionnement canton par canton (${v.cantons || 0}) depuis le CMSI, mesure des débits et des vitesses, rapport du bureau de contrôle (IT 246).` });
+          break;
+        case 'evacuation':
+          out.push({ ...base, nature: 'controle', titre: `Évacuations EU / EV : essai d'étanchéité et d'écoulement — ${titre}`, detail: 'Essai à l\'eau des chutes et collecteurs (bouchons, mise en charge), contrôle des pentes, des ventilations primaires et des tampons de visite ; inspection caméra des collecteurs enterrés si prévue au CCTP.' });
+          break;
+        case 'gazReseau':
         case 'gaz':
           out.push({ ...base, nature: 'epreuve', titre, reseau: titre, natureReseau: 'Gaz', fluideEssai: 'Air' });
           out.push({ ...base, nature: 'controle', titre: `Gaz — ${titre}`, detail: 'Contrôle d\'étanchéité, certificat de conformité (modèle 2 ou 4) avant la mise en gaz, essai des organes de coupure.' });

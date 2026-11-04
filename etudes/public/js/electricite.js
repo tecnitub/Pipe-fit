@@ -534,6 +534,12 @@ const Electricite = ((N, Sc) => {
         if (fioul) ajout('evg', { rep: 'EVF', designation: 'Vanne de police fioul (coupure de la chaufferie)', type: 'electrovanne', P: 0.02, tension: 'mono', regulation: 'evGaz' });
       }
       // Plomberie sanitaire : pompe de bouclage d'ECS (asservie à la température de retour) et sonde de retour de boucle
+      if (n.type === 'desenfumage' && v.Qv > 0) {
+        ajout('vde', { rep: 'VDE', designation: `Ventilateur de désenfumage (extraction) ${nf(v.Qv * 3600, 0)} m³/h, F400 120 — alimentation de sécurité`, type: 'ventilateur', P: Math.max(0.37, Math.round(v.Pel * 100) / 100), tension: v.Pel > 2.2 ? 'tri' : 'mono', regulation: 'torRetour', depart: 'contacteur', alim: es.alim || '' });
+        if (v.QaMax > 0) ajout('vda', { rep: 'VDA', designation: `Ventilateur d'amenée d'air de désenfumage ${nf(v.QaMax * 3600, 0)} m³/h — alimentation de sécurité`, type: 'ventilateur', P: Math.max(0.25, Math.round(v.PelA * 100) / 100), tension: v.PelA > 2.2 ? 'tri' : 'mono', regulation: 'torRetour', depart: 'contacteur', alim: es.alim || '' });
+        ajout('volets', { rep: 'VD', designation: `Volets de désenfumage (${v.volets}), commande 24/48 V par le CMSI`, type: 'securite', P: Math.round(v.volets * 0.01 * 100) / 100, tension: '24V', regulation: 'securite' });
+        ajout('crd', { rep: 'CRD', designation: 'Coffret de relayage des ventilateurs de désenfumage (report au CMSI)', type: 'securite', P: 0.02, tension: 'mono', regulation: 'securite' });
+      }
       if (n.type === 'sanitaire' && v.surpresseur) {
         const Sp = v.surpresseur, kw = Math.round(Sp.Pel / 10) / 100;
         for (let i = 1; i <= Sp.pompes; i++) ajout(`surp${i}`, { rep: `SUR-P${i}`, designation: `Surpresseur eau froide — pompe ${i}${i === Sp.pompes ? ' (secours)' : ''} (${nf(Sp.Q, 2)} m³/h, ${nf(Sp.H, 1)} mCE)`, type: 'pompe', P: kw, tension: kw > 2.2 ? 'tri' : 'mono', regulation: 'torRetour', alim: es.alimSurp || '' });

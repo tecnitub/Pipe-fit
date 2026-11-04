@@ -85,6 +85,14 @@ const Terminaux = ((N) => {
       qf: lignes.reduce((s, x) => s + x.qf * x.n, 0), P: lignes.reduce((s, x) => s + x.P, 0), vannes: lignes.reduce((s, x) => s + x.nbV * x.n, 0) };
     const parAlim = {};
     lignes.forEach(x => { const k = x.alim || ''; parAlim[k] = parAlim[k] || { P: 0, n: 0 }; parAlim[k].P += x.P; parAlim[k].n += x.n; });
+    // Besoins des pièces (bilan pièce par pièce de l'étude) comparés aux terminaux installés dans chaque pièce
+    const nrm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const besoins = e._besoins && typeof e._besoins === 'object' ? Object.values(e._besoins) : [];
+    const cmp = besoins.map(b => { const ici = lignes.filter(x => nrm(x.local) === nrm(b.nom)); const ch = ici.reduce((s, x) => s + x.Pch * x.n, 0), fr = ici.reduce((s, x) => s + x.Pfr * x.n, 0); return { b, ch, fr, n: ici.reduce((s, x) => s + x.n, 0) }; });
+    cmp.forEach(c => {
+      if (!c.n) alertes.push(alerte('attention', `${c.b.nom} : aucun terminal pour ${nf(c.b.Pch, 2)} kW de chauffage et ${nf(c.b.Pfr, 2)} kW de froid (bilan par pièce).`));
+      else if (c.ch + 1e-9 < c.b.Pch * 0.95 || c.fr + 1e-9 < c.b.Pfr * 0.95) alertes.push(alerte('erreur', `${c.b.nom} : terminaux insuffisants (${nf(c.ch, 2)} / ${nf(c.b.Pch, 2)} kW chaud, ${nf(c.fr, 2)} / ${nf(c.b.Pfr, 2)} kW froid).`));
+    });
     alertes.push(alerte('ok', `${tot.n} terminaux : ${nf(tot.Pch, 1)} kW chaud, ${nf(tot.Pfr, 1)} kW froid, ${nf(tot.P, 2)} kW électriques, ${tot.vannes} vanne(s).`));
     return {
       valeurs: { lignes, tot, parAlim },
@@ -93,6 +101,8 @@ const Terminaux = ((N) => {
       tableaux: [{ titre: 'Terminaux', entetes: ['Repère', 'Pièce', 'Type', 'Régulation', 'Batterie', 'P chaud (kW/u)', 'P froid (kW/u)', 'Débit eau (m³/h/u)', 'Vanne', 'Kvs', 'P élec (kW/u)', 'P élec totale (kW)', 'Alimentation'],
         lignes: lignes.map(x => [x.rep, x.local, x.t[0], x.regul === 'esclave' ? `esclave de ${x.maitre}` : x.esclaves.length ? `maître de ${x.esclaves.join(', ')}` : (REGULATIONS[x.regul] || '').split(' (')[0], BATTERIES[x.b], x.Pch ? nf(x.Pch, 2) : '—', x.Pfr ? nf(x.Pfr, 2) : '—', x.qc || x.qf ? [x.qc && `ch ${nf(x.qc, 3)}`, x.qf && `fr ${nf(x.qf, 3)}`].filter(Boolean).join(' · ') : '—',
           x.nbV ? `${VANNES[x.v].split(' (')[0]}${x.nbV > 1 ? ' × 2' : ''}` : '—', x.kvs ? nf(x.kvs, 2) : '—', nf(x.pU, 3), nf(x.P, 2), libAlim(x.alim)]) },
+        ...(cmp.length ? [{ titre: 'Besoins des pièces (bilan pièce par pièce) et terminaux installés', entetes: ['Pièce', 'Étage', 'Besoin chaud (kW)', 'Installé chaud (kW)', 'Besoin froid (kW)', 'Installé froid (kW)', 'Terminaux', 'Couverture'],
+          lignes: cmp.map(c => [c.b.nom, c.b.etage || '', nf(c.b.Pch, 2), nf(c.ch, 2), nf(c.b.Pfr, 2), nf(c.fr, 2), String(c.n), !c.n ? 'aucun terminal' : c.ch + 1e-9 >= c.b.Pch * 0.95 && c.fr + 1e-9 >= c.b.Pfr * 0.95 ? 'OK' : 'insuffisant']) }] : []),
         { titre: 'Puissance électrique par alimentation', entetes: ['Alimentation', 'Appareils', 'P installée (kW)'], lignes: [...Object.entries(parAlim).map(([k, x]) => [libAlim(k), x.n, nf(x.P, 2)]), ['Total', tot.n, nf(tot.P, 2)]], total: true }],
       alertes,
       hypotheses: ['Débit d\'eau = P / (1,163 × ΔT) au régime saisi ; Kvs = débit / √(ΔP vanne en bar), valeur normalisée immédiatement supérieure.',
