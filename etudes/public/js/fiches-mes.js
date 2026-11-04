@@ -8,7 +8,8 @@ const FichesMes = ((PM, Es) => {
   const nf = (v, d) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? '' : Number(v).toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }));
   const dec = v => (Math.abs(v) >= 100 ? 0 : Math.abs(v) >= 10 ? 1 : 2);
   // Tolérance usuelle de réception selon la grandeur
-  const tolerance = (lib, unite) => (/°C|K/.test(unite) ? '± 2 K' : /bar|mCE|Pa/.test(unite) && /pression|gonflage|tarage|remplissage/i.test(lib) ? '± 0,2 bar' : /m³\/h|L\/h|L\/s/.test(unite) ? '± 10 %' : /kW|W|A/.test(unite) ? '± 10 %' : '± 10 %');
+  // Même tolérance que le PV de mise en service (verdict automatique)
+  const tolerance = (lib, unite) => Es.tolerance(lib, unite).texte;
 
   // Fiches de l'étude : [{ cle, titre, type, libType, repere, local, source, frigo, controles: [libellé], mesures: [{ libelle, unite, attendu, tolerance }] }]
   // Fiche d'un point de mise en service (étude) ou d'une tâche de la liste du chantier (même forme : titre / libelle,

@@ -90,3 +90,27 @@ test('serveur : PV de mise en service et relevé d\'équilibrage complets pour �
   assert.match((await call('GET', '/api/records/equilibrages/eq-t', null, admin)).body.numero, /^EQ-\d{4}-\d{4}$/);
   assert.strictEqual((await call('PUT', '/api/records/equilibrages/eq-u', { data: { ...q, userId: 'o1' } }, ahmed)).status, 403, 'pour soi seulement');
 });
+
+test('mise en service : verdict par mesure comme une épreuve (tolérance, hors tolérance, mesure manquante)', () => {
+  const E = require('../public/js/essais');
+  assert.strictEqual(E.tolerance('Température départ eau', '°C').texte, '± 2 K');
+  assert.strictEqual(E.tolerance('Pression de gonflage', 'bar').texte, '± 0,2 bar');
+  assert.strictEqual(E.tolerance('Débit', 'm³/h').texte, '± 10 %');
+  assert.strictEqual(E.conformeMesure({ libelle: 'Débit', unite: 'm³/h', attendu: 6, valeur: '6,5' }), true);
+  assert.strictEqual(E.conformeMesure({ libelle: 'Débit', unite: 'm³/h', attendu: 6, valeur: '7' }), false);
+  assert.strictEqual(E.conformeMesure({ libelle: 'Température départ eau', unite: '°C', attendu: 45, valeur: '42' }), false);
+  assert.strictEqual(E.conformeMesure({ libelle: 'Débit', unite: 'm³/h', attendu: 6, valeur: '' }), null);
+  const m = { affaireId: 'a', userId: 'u', date: '2026-11-04', equipement: 'CA-01', controles: [{ etat: 'OK' }], resultat: '',
+    mesures: [{ libelle: 'Débit', unite: 'm³/h', attendu: 6, valeur: '' }, { libelle: 'Intensité', unite: 'A', valeur: '' }] };
+  assert.strictEqual(E.conclusion(m), '');
+  assert.ok(E.manquesMES(m).some(x => /mesure\(s\) attendue\(s\) non relevée\(s\) : Débit/.test(x)));
+  m.mesures[0].valeur = '6,2';
+  assert.strictEqual(E.conclusion(m), 'Mis en service');
+  m.mesures[0].valeur = '4';
+  assert.strictEqual(E.conclusion(m), 'Mis en service avec réserves');
+  // PV signé : tolérance et conformité de chaque mesure
+  const D = require('../public/js/essais-doc');
+  const h = D.miseEnService({ ...m, type: 'terminal', resultat: 'Mis en service avec réserves' }, { img: () => '', technicien: 'T', societe: 'S', chantier: {} });
+  assert.match(h, /hors tolérance/);
+  assert.match(h, /± 10 %/);
+});

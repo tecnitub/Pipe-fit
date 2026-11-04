@@ -113,7 +113,8 @@ const bindEssaiVue = (root, kind, r) => { const b = root.querySelector('#es-pdf'
 
 /* ---------- PV de mise en service ---------- */
 // Valeur attendue (étude) et écart de la mesure saisie
-const attenduHtml = m => { const e = PlanMes.ecart(m); return `attendu ${fmt(m.attendu, m.attendu % 1 ? 2 : 0)} ${esc(m.unite || '')}${e === null ? '' : ` · <span class="${Math.abs(e) <= 10 ? 'pos' : 'neg'}">écart ${e > 0 ? '+' : ''}${fmt(e, 1)} %</span>`}`; };
+const attenduHtml = m => { const e = PlanMes.ecart(m), c = Essais.conformeMesure(m), t = Essais.tolerance(m.libelle, m.unite);
+  return `attendu ${fmt(m.attendu, m.attendu % 1 ? 2 : 0)} ${esc(m.unite || '')} (${esc(t.texte)})${e === null ? '' : ` · <span class="${c ? 'pos' : 'neg'}">écart ${t.abs !== undefined ? (d => `${d > 0 ? '+' : ''}${fmt(d, 1)} ${/°C/.test(m.unite) ? 'K' : esc(m.unite)}`)(num(m.valeur) - m.attendu) : `${e > 0 ? '+' : ''}${fmt(e, 1)} %`} — ${c ? '✓ conforme' : '✕ hors tolérance'}</span>`}`; };
 Views.mes = (params, query) => {
   // Ouvert depuis le matériel retenu d'une étude : type, équipement, marque et modèle préremplis
   const q0 = k => String(query.get(k) || '').slice(0, 200), typeQ = Essais.TYPES[q0('type')] ? q0('type') : 'pac';
@@ -170,7 +171,9 @@ Views.mes.bind = (root, params) => {
   root.querySelectorAll('[data-ctl]').forEach(b => b.onclick = () => { const c = e.controles[+b.dataset.ctl]; c.etat = c.etat === b.dataset.etat ? '' : b.dataset.etat; proposer(); App.render(); });
   root.querySelectorAll('[data-ctlobs]').forEach(el => el.oninput = () => { e.controles[+el.dataset.ctlobs].obs = el.value; });
   $('#es-tout-ok').onclick = () => { e.controles.forEach(c => { if (!c.etat) c.etat = 'OK'; }); proposer(); App.render(); };
-  root.querySelectorAll('[data-mes]').forEach(el => el.oninput = () => { const m = e.mesures[+el.dataset.mes]; m.valeur = el.value.trim(); const a = root.querySelector(`[data-att="${el.dataset.mes}"]`); if (a) a.innerHTML = attenduHtml(m); });
+  // Mesure saisie : écart, conformité et conclusion proposée mis à jour (comme le résultat d'une épreuve)
+  root.querySelectorAll('[data-mes]').forEach(el => el.oninput = () => { const m = e.mesures[+el.dataset.mes]; m.valeur = el.value.trim(); const a = root.querySelector(`[data-att="${el.dataset.mes}"]`); if (a) a.innerHTML = attenduHtml(m);
+    const avant = e.resultat; proposer(); if (e.resultat !== avant && $('#es-res')) $('#es-res').value = e.resultat; });
   $('#es-add-mes').onclick = async () => { const lib = await askValue('Mesure (ex. Débit d\'eau, m³/h)', ''); if (!lib) return; const [l, u] = lib.split(','); e.mesures.push({ libelle: l.trim(), unite: (u || '').trim(), valeur: '' }); App.render(); };
   $('#es-res').addEventListener('change', () => { e.resultatAuto = false; });
   // Plaque signalétique : photo gardée et lue pour remplir marque, modèle, n° de série (et fluide, charge)

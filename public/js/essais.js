@@ -46,14 +46,33 @@ const Essais = (() => {
   const ETATS = ['OK', 'Non conforme', 'Sans objet'];
   // Points de contrôle et mesures d'un type (pour une nouvelle mise en service)
   const modele = type => { const t = TYPES[type] || TYPES.autre; return { controles: t.controles.map(libelle => ({ libelle, etat: '', obs: '' })), mesures: t.mesures.map(([libelle, unite]) => ({ libelle, unite, valeur: '' })) }; };
-  // Conclusion proposée : non conforme -> avec réserves ; tout vérifié -> mis en service
-  function conclusion(m) {
-    const c = m.controles || [];
-    if (c.some(x => x.etat === 'Non conforme')) return 'Mis en service avec réserves';
-    return c.length && c.every(x => x.etat) ? 'Mis en service' : '';
+  // Tolérance de réception d'une mesure comparée à la valeur attendue de l'étude (comme la chute admissible d'une épreuve) :
+  // températures ± 2 K, pressions de réglage ± 0,2 bar, autres grandeurs ± 10 %
+  function tolerance(libelle, unite) {
+    const u = String(unite || ''), l = String(libelle || '');
+    if (/°C|^K$/.test(u)) return { abs: 2, texte: '± 2 K' };
+    if (/bar/.test(u) && /pression|gonflage|tarage|remplissage/i.test(l)) return { abs: 0.2, texte: '± 0,2 bar' };
+    return { pct: 10, texte: '± 10 %' };
   }
-  const manquesMES = m => [!m.affaireId && 'chantier', !String(m.equipement || '').trim() && 'équipement', !m.userId && 'technicien', !m.date && 'date',
-    (m.controles || []).some(x => !x.etat) && 'points de contrôle non renseignés', !m.resultat && 'conclusion'].filter(Boolean);
+  const aValeur = v => v !== '' && v !== null && v !== undefined && Number.isFinite(n(v));
+  // Mesure dans la tolérance : null tant que la valeur attendue ou la mesure manque
+  function conformeMesure(m) {
+    const a = Number(m.attendu), v = n(m.valeur);
+    if (m.attendu === null || m.attendu === undefined || m.attendu === '' || !Number.isFinite(a) || !aValeur(m.valeur)) return null;
+    const t = tolerance(m.libelle, m.unite);
+    return t.abs !== undefined ? Math.abs(v - a) <= t.abs + 1e-9 : a ? Math.abs(v - a) / Math.abs(a) * 100 <= t.pct + 1e-9 : v === 0;
+  }
+  const mesuresAttendues = m => (m.mesures || []).filter(x => x.attendu !== null && x.attendu !== undefined && x.attendu !== '');
+  // Conclusion proposée, comme le résultat d'une épreuve : contrôle non conforme ou mesure hors tolérance -> avec réserves ;
+  // tous les contrôles faits et toutes les mesures attendues relevées dans la tolérance -> mis en service
+  function conclusion(m) {
+    const c = m.controles || [], att = mesuresAttendues(m);
+    if (c.some(x => x.etat === 'Non conforme') || att.some(x => conformeMesure(x) === false)) return 'Mis en service avec réserves';
+    return c.length && c.every(x => x.etat) && att.every(x => conformeMesure(x) !== null) ? 'Mis en service' : '';
+  }
+  const manquesMES = m => { const sansMesure = mesuresAttendues(m).filter(x => !aValeur(x.valeur));
+    return [!m.affaireId && 'chantier', !String(m.equipement || '').trim() && 'équipement', !m.userId && 'technicien', !m.date && 'date',
+      (m.controles || []).some(x => !x.etat) && 'points de contrôle non renseignés', sansMesure.length && `mesure(s) attendue(s) non relevée(s) : ${sansMesure.map(x => x.libelle).join(', ')}`, !m.resultat && 'conclusion'].filter(Boolean); };
 
   // Équilibrage : écart d'une bouche ou d'un organe, conformité, synthèse
   const ecart = l => (n(l.theorique) > 0 && n(l.mesure) !== null ? r1((n(l.mesure) - n(l.theorique)) / n(l.theorique) * 100) : null);
@@ -79,6 +98,6 @@ const Essais = (() => {
     return (entete ? t.slice(1) : t).map(r => ({ repere: r[iR] || '', local: iL >= 0 ? r[iL] || '' : '', type: iTy >= 0 ? r[iTy] || '' : '', theorique: n(r[iT]) ?? '', mesure: '', reglage: '' }))
       .filter(x => x.repere || x.local || x.theorique !== '');
   }
-  return { TYPES, ETATS, modele, conclusion, manquesMES, ecart, conforme, synthese, manquesEQ, importerLignes };
+  return { TYPES, ETATS, modele, conclusion, manquesMES, tolerance, conformeMesure, ecart, conforme, synthese, manquesEQ, importerLignes };
 })();
 if (typeof module !== 'undefined') module.exports = Essais;

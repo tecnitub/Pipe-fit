@@ -29,7 +29,7 @@ const EssaisDoc = (() => {
   }
 
   function miseEnService(m, x) {
-    const type = (typeof Essais !== 'undefined' ? Essais : require('./essais')).TYPES[m.type] || {};
+    const E = typeof Essais !== 'undefined' ? Essais : require('./essais'), type = E.TYPES[m.type] || {};
     return `<h3 class="doc-h">Équipement</h3>${table([l('Équipement', `<strong>${esc(m.equipement)}</strong>${m.repere ? ` · repère ${esc(m.repere)}` : ''}`), l('Type', esc(type.libelle || '')),
       l('Marque, modèle, n° de série', esc([m.marque, m.modele, m.numeroSerie && `n° ${m.numeroSerie}`].filter(Boolean).join(' · ') || '—')), m.localisation ? l('Localisation', esc(m.localisation)) : '',
       m.fluide ? l('Fluide frigorigène', esc(`${m.fluide}${vide(m.charge) ? '' : ` · charge ${nb(m.charge)} kg`}`)) : '', l('Date', `${dateFr(m.date)}${m.heure ? ` à ${esc(m.heure)}` : ''}`)])}
@@ -37,9 +37,10 @@ const EssaisDoc = (() => {
     <h3 class="doc-h">Points de contrôle</h3><table class="doc-lines compact"><tr><th>Contrôle</th><th>Résultat</th><th>Observation</th></tr>
       ${(m.controles || []).map(c => `<tr><td>${esc(c.libelle)}</td><td>${c.etat === 'Non conforme' ? `<strong>${esc(c.etat)}</strong>` : esc(c.etat || '—')}</td><td>${esc(c.obs || '')}</td></tr>`).join('')}</table>
     ${(m.mesures || []).some(v => !vide(v.valeur)) ? (() => { const att = m.mesures.some(v => !vide(v.valeur) && !vide(v.attendu));
-      const ec = v => { const a = Number(v.attendu), x = Number(String(v.valeur).replace(',', '.')); return !vide(v.attendu) && a && Number.isFinite(x) ? `${x >= a ? '+' : ''}${((x - a) / a * 100).toFixed(1).replace('.', ',')} %` : ''; };
-      return `<h3 class="doc-h">Mesures et relevés</h3><table class="doc-lines compact"><tr><th>Mesure</th><th class="num">Valeur</th>${att ? '<th class="num">Attendu (étude)</th><th class="num">Écart</th>' : ''}</tr>
-      ${m.mesures.filter(v => !vide(v.valeur)).map(v => `<tr><td>${esc(v.libelle)}</td><td class="num">${esc(String(v.valeur).replace('.', ','))} ${esc(v.unite || '')}</td>${att ? `<td class="num">${vide(v.attendu) ? '' : `${nb(v.attendu)} ${esc(v.unite || '')}`}</td><td class="num">${ec(v)}</td>` : ''}</tr>`).join('')}</table>`; })() : ''}
+      const ec = v => { const a = Number(v.attendu), x = Number(String(v.valeur).replace(',', '.')); if (vide(v.attendu) || !a || !Number.isFinite(x)) return ''; const t = E.tolerance(v.libelle, v.unite);
+        return t.abs !== undefined ? `${x >= a ? '+' : ''}${(x - a).toFixed(1).replace('.', ',')} ${/°C/.test(v.unite || '') ? 'K' : esc(v.unite || '')}` : `${x >= a ? '+' : ''}${((x - a) / a * 100).toFixed(1).replace('.', ',')} %`; };
+      return `<h3 class="doc-h">Mesures et relevés</h3><table class="doc-lines compact"><tr><th>Mesure</th><th class="num">Valeur</th>${att ? '<th class="num">Attendu (étude)</th><th class="num">Écart</th><th>Tolérance</th><th>Conformité</th>' : ''}</tr>
+      ${m.mesures.filter(v => !vide(v.valeur)).map(v => `<tr><td>${esc(v.libelle)}</td><td class="num">${esc(String(v.valeur).replace('.', ','))} ${esc(v.unite || '')}</td>${att ? `<td class="num">${vide(v.attendu) ? '' : `${nb(v.attendu)} ${esc(v.unite || '')}`}</td><td class="num">${ec(v)}</td><td>${vide(v.attendu) ? '' : esc(E.tolerance(v.libelle, v.unite).texte)}</td><td>${(c => (c === null ? '' : c ? 'conforme' : '<strong>hors tolérance</strong>'))(E.conformeMesure(v))}</td>` : ''}</tr>`).join('')}</table>`; })() : ''}
     ${m.reglages ? `<h3 class="doc-h">Réglages effectués</h3><p class="pre">${esc(m.reglages)}</p>` : ''}${m.observations ? `<h3 class="doc-h">Observations</h3><p class="pre">${esc(m.observations)}</p>` : ''}
     ${choix(m.resultat, [['Mis en service', 'Équipement <strong>mis en service</strong>, fonctionnement conforme'], ['Mis en service avec réserves', 'Équipement <strong>mis en service avec réserves</strong> (points non conformes ci-dessus)'], ['Non mis en service', 'Équipement <strong>non mis en service</strong>']])}
     <p><strong>Attestation.</strong> Je soussigné ${esc(x.technicien)}, technicien de ${esc(x.societe)}, atteste avoir procédé le ${dateFr(m.date)} à la mise en service de l'équipement « ${esc(m.equipement)} » du chantier ${esc(x.chantier.code || '')}, selon les contrôles et mesures ci-dessus.</p>
