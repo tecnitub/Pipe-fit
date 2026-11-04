@@ -100,7 +100,8 @@ function securiteChantier(a) {
         return `<tr><td><strong>${esc(userName(x.userId))}</strong>${(Store.get('users', x.userId) || {}).type === 'interimaire' ? ' <span class="badge">intérim</span>' : ''}</td><td class="small">${esc(libHabs(h)) || '<span class="muted">—</span>'}</td>
         <td>${x.visite === 'ok' ? '<span class="badge b-ok">à jour</span>' : `<span class="badge b-bad">${x.visite === 'absente' ? 'non renseignée' : 'expirée'}</span>`}</td>
         <td class="small">${x.manque.length ? `<span class="neg">manque : ${esc(libHabs(x.manque))}</span>` : ''}${x.expirees.length ? `${x.manque.length ? '<br>' : ''}<span class="neg">expirée : ${esc(libHabs(x.expirees))}</span>` : ''}${!x.manque.length && !x.expirees.length ? '<span class="pos">✓</span>' : ''}</td></tr>`; }).join('')}</table></div>
-      ${pb.length ? `<p class="small warn-text">${pb.length} intervenant(s) à régulariser avant le début des travaux (RH → Habilitations).</p>` : ''}`
+      ${pb.length ? `<p class="small warn-text">${pb.length} intervenant(s) à régulariser avant le début des travaux (RH → Habilitations).</p>` : ''}
+      <div class="toolbar"><button class="secondary small" data-fiche-hab="${a.id}">📄 Fiche récapitulative des habilitations pour le client</button><button class="secondary small" data-autor-equipe="${esc(c.ids.join(','))}">📄 Autorisations de conduite de l'équipe</button></div>`
       : '<p class="muted small">Personne n\'est encore planifié sur ce chantier : planifiez l\'équipe pour contrôler les habilitations.</p>'}
 
     <h3>7. Matériel et contrôles</h3>

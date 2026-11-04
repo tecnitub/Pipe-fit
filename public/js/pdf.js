@@ -70,11 +70,13 @@ const PDF = (() => {
       await Promise.all([...box.querySelectorAll('img')].map(i => (i.complete ? 0 : new Promise(r => { i.onload = i.onerror = r; }))));
       if (document.fonts && document.fonts.ready) await document.fonts.ready;
       const R = box.getBoundingClientRect(), ox = R.left, oy = R.top;
-      const ops = [], atomes = [], images = new Map();
+      const ops = [], atomes = [], images = new Map(), sauts = [];
       for (const el of box.querySelectorAll('*')) {
         const cs = getComputedStyle(el);
         if (cs.display === 'none' || cs.visibility === 'hidden') continue;
         const r = el.getBoundingClientRect();
+        // Saut de page forcé : élément .pdf-saut (une autorisation par page…)
+        if (el.classList.contains('pdf-saut')) { sauts.push(r.top - oy); continue; }
         if (!r.width && !r.height) continue;
         const x = r.left - ox, y = r.top - oy, w = r.width, h = r.height;
         if (el.matches('tr, p, h1, h2, h3, li, img, .signatures, .doc-head, .doc-parties > div, .doc-pied, .doc-rib, .totals')) atomes.push([y, y + h]);
@@ -127,12 +129,12 @@ const PDF = (() => {
         }
         fin();
       }
-      return { ops, atomes, images, hauteur: R.height };
+      return { ops, atomes, images, hauteur: R.height, sauts };
     } finally { box.remove(); }
   }
 
   // Coupures de page entre les lignes de tableau / paragraphes
-  function paginer(atomes, total, H = PAGE_H - 2 * MARGE) {
+  function paginer(atomes, total, H = PAGE_H - 2 * MARGE, sauts = []) {
     const pages = [];
     let debut = 0;
     while (debut < total - 1) {
@@ -145,6 +147,8 @@ const PDF = (() => {
         }
         if (fin <= debut + 40) fin = debut + H;
       }
+      const saut = sauts.filter(y => y > debut + 1 && y < fin - 1).sort((a, b) => a - b)[0];
+      if (saut !== undefined) fin = saut;
       pages.push([debut, Math.min(fin, total)]);
       debut = fin;
     }
@@ -152,9 +156,9 @@ const PDF = (() => {
   }
 
   // opts : margeHaut / margeBas en px (place pour un en-tête et un pied ajoutés ensuite), numeros: false (numérotation faite ailleurs)
-  function assembler({ ops, atomes, images, hauteur }, titre, pj, opts = {}) {
+  function assembler({ ops, atomes, images, hauteur, sauts }, titre, pj, opts = {}) {
     const MH = opts.margeHaut ?? MARGE, MB = opts.margeBas ?? MARGE;
-    const pages = paginer(atomes, hauteur, PAGE_H - MH - MB);
+    const pages = paginer(atomes, hauteur, PAGE_H - MH - MB, sauts);
     const objets = [];
     const ajouter = corps => { objets.push(corps); return objets.length; };
     ajouter(''); ajouter(''); // 1 catalogue, 2 arbre des pages

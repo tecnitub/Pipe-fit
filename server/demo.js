@@ -625,6 +625,8 @@ function demoData() {
     H('hb14', 'o5', 'visite', -530, 200, 'VIP'), H('hb15', 'o5', 'caces_chariot', -800, 1000, 'Catégorie 3'),
     H('hb16', 'o6', 'visite', -380, 350, 'VIP'), H('hb17', 'o6', 'elec', -900, 200, 'B0, H0V'),
     H('hb18', 'i1', 'visite', -580, 150, 'Visite agence intérim'), H('hb19', 'i1', 'hauteur', -1000, 90),
+    H('hb20', 'o5', 'pont', -300, 1500, 'Catégorie 1 (commande au sol)', 'R484-2025-332'), H('hb21', 'o2', 'hauteur', -200, 900, 'Harnais, longe double, antichute à rappel'),
+    { ...H('hb22', 'o4', 'caces_nacelle', -500, 1300, 'Catégorie B', 'R486-2025-071') },
   ];
   // Parc : véhicules et outillage, affectations et contrôles périodiques
   const E = (cle, libelle, derniere, prochaine, periodicite) => ({ cle, libelle, derniere: derniere === null ? '' : d(derniere), prochaine: d(prochaine), periodicite });
@@ -696,6 +698,7 @@ function demoData() {
   materiels.find(m => m.id === 'pm1').produits = ['pr1', 'pr2', 'pr5'];
   materiels.find(m => m.id === 'pm2').produits = ['pr3', 'pr4', 'pr6'];
   // Plan de prévention annuel du client et préparation du PPSPS de la ligne NEP
+  entreprises.find(e => e.id === 'e3').pdpAnnuel = true;
   entreprises.find(e => e.id === 'e2').plansPrevention = [{ id: 'pp1', nom: `Plan de prévention annuel ${new Date().getFullYear()} – Laiterie des Alpes`, fichierId: 'pdf-pdp-laiterie', debut: d(-280), fin: d(85), siteId: '', note: 'Inspection commune faite avec le responsable maintenance' }];
   Object.assign(affaires.find(a => a.id === 'af1'), { securite: { coordonnateur: '', contraintes: 'Site agroalimentaire en production : accueil sécurité au poste de garde, badge nominatif. Permis de feu obligatoire pour toute soudure ou meulage. Travaux dans le rack à 4 m de hauteur depuis la nacelle. Coactivité avec l\'entreprise de calorifuge. Lignes NEP en service : consignation par la maintenance avant toute ouverture.',
     risques: { feu: { mesures: 'Permis de feu délivré par la maintenance de la laiterie chaque matin. Extincteur CO2 au pied de la nacelle. Surveillance 2 h après la dernière soudure. Écran de soudage pour protéger les lignes voisines.', epi: 'Masque de soudeur, gants et tablier cuir' },

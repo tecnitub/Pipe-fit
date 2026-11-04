@@ -11,13 +11,14 @@ const Echeances = (() => {
     ['elec', 'Habilitation électrique (B0, BR, BC, H0…)', 36],
     ['caces_nacelle', 'CACES R486 nacelle (PEMP)', 60],
     ['caces_chariot', 'CACES R489 chariot élévateur', 60],
+    ['pont', 'Conduite de pont roulant / palan (CACES R484)', 60],
     ['hauteur', 'Travail en hauteur, port du harnais', 36],
     ['sst', 'Sauveteur secouriste du travail (SST)', 24],
     ['aipr', 'AIPR (travaux à proximité des réseaux)', 60],
     ['amiante', 'Amiante sous-section 4', 36],
     ['atex', 'ATEX (atmosphères explosives)', 36],
   ];
-  const COURT = { visite: 'Visite méd.', qmos: 'Soudeur', fluides: 'Fluides', elec: 'Électrique', caces_nacelle: 'Nacelle', caces_chariot: 'Chariot', hauteur: 'Hauteur', sst: 'SST', aipr: 'AIPR', amiante: 'Amiante SS4', atex: 'ATEX' };
+  const COURT = { visite: 'Visite méd.', qmos: 'Soudeur', fluides: 'Fluides', elec: 'Électrique', caces_nacelle: 'Nacelle', caces_chariot: 'Chariot', pont: 'Pont roulant', hauteur: 'Hauteur', sst: 'SST', aipr: 'AIPR', amiante: 'Amiante SS4', atex: 'ATEX' };
   // Parc : catégories et contrôles proposés [clé, libellé, périodicité en mois]
   const PARC = {
     'Véhicule utilitaire': [['ct', 'Contrôle technique', 24], ['entretien', 'Entretien / vidange', 12], ['assurance', 'Échéance assurance', 12]],
@@ -49,7 +50,7 @@ const Echeances = (() => {
   // Alertes (expirées ou bientôt) d'une personne à partir de ses habilitations enregistrées
   function alertesPersonne(habs, auj) {
     return habs.map(h => ({ h, ...etat(h.expire, auj) })).filter(x => x.etat === 'expire' || x.etat === 'bientot')
-      .map(x => ({ cle: x.h.cle, libelle: libelleHab(x.h.cle), expire: x.h.expire, etat: x.etat, jours: x.jours, userId: x.h.userId, id: x.h.id }));
+      .map(x => ({ cle: x.h.cle, libelle: libelleHab(x.h.cle), expire: x.h.expire, etat: x.etat, jours: x.jours, userId: x.h.userId, id: x.h.id, ...(x.h.rdv ? { rdv: x.h.rdv } : {}) }));
   }
   // Alertes d'un matériel du parc
   function alertesMateriel(m, auj) {
@@ -58,7 +59,9 @@ const Echeances = (() => {
   }
   // Message lisible : « expirée depuis 12 j » / « expire dans 20 j (le 03/11/2026) »
   const dateFrS = s => { const [a, m, j] = String(s).split('-'); return `${j}/${m}/${a}`; };
-  const texte = a => (a.etat === 'expire' ? `expirée depuis ${-a.jours} j (${dateFrS(a.expire)})` : a.jours === 0 ? 'expire aujourd\'hui' : `expire dans ${a.jours} j (le ${dateFrS(a.expire)})`);
+  // Visite médicale : rendez-vous à prendre, ou rendez-vous pris
+  const texte = a => (a.etat === 'expire' ? `expirée depuis ${-a.jours} j (${dateFrS(a.expire)})` : a.jours === 0 ? 'expire aujourd\'hui' : `expire dans ${a.jours} j (le ${dateFrS(a.expire)})`)
+    + (a.cle === 'visite' ? (a.rdv ? ` – rendez-vous le ${dateFrS(a.rdv)}` : ' – prendre rendez-vous avec la médecine du travail') : '');
 
   return { SEUIL, HABILITATIONS, COURT, PARC, VEHICULES, ajouterMois, jours, etat, libelleHab, alertesPersonne, alertesMateriel, texte, iso };
 })();

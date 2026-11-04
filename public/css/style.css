@@ -1188,3 +1188,6 @@ ul.plan-mes li.pm-sansObjet .pm-txt { opacity: .55; text-decoration: line-throug
 .ch-tcd tr.tcd-total td { border-top: 2px solid var(--border); font-weight: 700; }
 .ch-tcd .tcd-bt { width: 22px; padding: 0; }
 .ch-occ summary { cursor: pointer; margin: 10px 0; font-weight: 600; }
+.pdf-saut { height: 0; border-top: 1px dashed var(--border); margin: 18px 0; }
+.pdf-render .pdf-saut { border: 0; margin: 0; }
+.fr-gens { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 2px 12px; max-height: 240px; overflow: auto; }
