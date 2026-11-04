@@ -199,7 +199,9 @@ function lierCalculateur(root, type, e, changer, ctx = ctxSimple(type, e)) {
   });
   root.querySelectorAll('[data-ajout-ligne]').forEach(b => b.onclick = () => {
     const k = b.dataset.ajoutLigne, c = Notes.TYPES[type].champs.find(x => x.k === k), l = e[k] || (e[k] = []);
-    l.push(l.length ? { ...l[l.length - 1], ...(c.colonnes[0].t === 't' ? { [c.colonnes[0].k]: '' } : {}) } : Object.fromEntries(c.colonnes.map(col => [col.k, ''])));
+    // Nouvelle ligne : copie de la précédente ; un repère numéroté (« CA-03 ») passe au suivant (« CA-04 »), sinon vidé
+    const k0 = c.colonnes[0].k, der = l[l.length - 1], m = der && c.colonnes[0].t === 't' && /^(.*?)(\d+)$/.exec(String(der[k0] || ''));
+    l.push(l.length ? { ...der, ...(c.colonnes[0].t === 't' ? { [k0]: m ? `${m[1]}${String(+m[2] + 1).padStart(m[2].length, '0')}` : '' } : {}) } : Object.fromEntries(c.colonnes.map(col => [col.k, ''])));
     redessiner();
   });
   root.querySelectorAll('[data-suppr-ligne]').forEach(b => b.onclick = () => { const [k, i] = b.dataset.supprLigne.split('.'); e[k].splice(+i, 1); redessiner(); });
@@ -633,6 +635,8 @@ Vues.note = {
     // Alimentation électrique : équipements de l'étude repris automatiquement (terminaux, CTA, producteurs, réseaux),
     // lignes ajoutées à la main gardées
     let auto = '';
+    // Terminaux : une ligne par appareil (les lignes « × n » des anciennes saisies sont éclatées, repères numérotés)
+    if (n.type === 'terminaux') { const x = Terminaux.eclater(n.entrees.appareils); if (x.nb) { n.entrees.appareils = x.lignes; enregistrer(et); auto = `<div class="bandeau-lien">🌀 ${x.nb} ligne(s) groupée(s) éclatée(s) : une ligne par appareil, avec son repère.</div>`; } }
     if (n.type === 'elec') {
       const r = Electricite.fusionner((n.entrees || {}).equipements, Electricite.equipementsEtude(et, Liens), new Set(et.notes.map(x => x.id)));
       if (r.ajoutees || r.majs || r.retirees) { n.entrees = { ...n.entrees, equipements: r.lignes }; enregistrer(et); auto = `<div class="bandeau-lien">⚡ Bilan mis à jour depuis l'étude : ${[r.ajoutees && `${r.ajoutees} équipement(s) ajouté(s)`, r.majs && `${r.majs} mis à jour`, r.retirees && `${r.retirees} retiré(s) (calcul supprimé)`].filter(Boolean).join(', ')}.</div>`; }

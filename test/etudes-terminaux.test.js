@@ -36,7 +36,8 @@ test('bilan électrique : terminaux, CTA (fiche technique) repris avec leur alim
   et.notes[0].entrees.appareils = [app];
   const l = E.equipementsEtude(et, Liens);
   const ca = l.find(x => x.rep === 'CA-01'), vs = l.find(x => /^VS-/.test(x.rep)), be = l.find(x => /^BE-/.test(x.rep));
-  assert.ok(ca && ca.alim === 'cvc' && ca.nb === 3 && ca.regulation === 'terminal');
+  assert.ok(ca && ca.alim === 'cvc' && ca.nb === 1 && ca.regulation === 'terminal');
+  assert.deepStrictEqual(l.filter(x => /^CA-0/.test(x.rep)).map(x => x.rep), ['CA-01', 'CA-02', 'CA-03'], 'une ligne par appareil');
   assert.strictEqual(vs.P, 1.8); assert.strictEqual(vs.alim, 'elec');
   assert.ok(be && be.P === 6 && be.type === 'resistance');
   // Fusion : ligne ajoutée à la main gardée ; ligne d'un calcul supprimé retirée ; alimentation de l'appareil imposée
@@ -46,7 +47,24 @@ test('bilan électrique : terminaux, CTA (fiche technique) repris avec leur alim
   const pts = r.tableaux ? null : null; // calcul effectué sans erreur
   assert.ok(r.valeurs.points >= 3 * 7, `points : ${r.valeurs.points}`);
   const af = JSON.stringify(r);
-  assert.match(af, /CA-01\.03/);
+  assert.match(af, /CA-03/);
   assert.match(af, /deux vannes \(chaud et froid\)/);
   assert.match(af, /Extracteur oublié/);
+});
+
+test('une ligne par appareil, maître / esclave', () => {
+  const x = T.eclater([{ rep: 'CA-07', local: 'Salle A', n: 3, type: 'cassette2' }, { rep: 'VC-01', type: 'vc2' }]);
+  assert.strictEqual(x.nb, 1);
+  assert.deepStrictEqual(x.lignes.map(l => [l.rep, l.local, l.n]), [['CA-07', 'Salle A', undefined], ['CA-08', 'Salle A', undefined], ['CA-09', 'Salle A', undefined], ['VC-01', undefined, undefined]]);
+  const base = { type: 'cassette2', Pch: 3, Pfr: 3.5, batterie: '2t', vanne: '2v', Pvent: 50, alim: 'cvc' };
+  const r = N.calculer('terminaux', { TcAller: 45, TcRetour: 40, TfAller: 7, TfRetour: 12, dpVanne: 15, appareils: [
+    { ...base, rep: 'CA-01', local: 'Réunion', regul: 'maitre' }, { ...base, rep: 'CA-02', local: 'Réunion', regul: 'esclave', maitre: 'CA-01' }, { ...base, rep: 'CA-03', local: 'Bureau', regul: 'esclave', maitre: '' }] });
+  const [m, e] = r.valeurs.lignes;
+  assert.deepStrictEqual(m.esclaves, ['CA-02']);
+  assert.ok(r.alertes.some(a => a.niveau === 'erreur' && /CA-03 : esclave sans maître/.test(a.texte)));
+  const l = T.versElec({ id: 'n' }, r);
+  assert.strictEqual(l.find(q => q.rep === 'CA-02').regulation, 'esclave');
+  assert.match(l.find(q => q.rep === 'CA-01').afAuto, /maître de CA-02/);
+  assert.match(l.find(q => q.rep === 'CA-02').afAuto, /esclave de CA-01/);
+  assert.strictEqual(r.tableaux[0].entetes[1], 'Pièce');
 });

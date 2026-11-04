@@ -13,7 +13,20 @@ const Terminaux = ((N) => {
   };
   const BATTERIES = { chaude: 'Eau chaude', froide: 'Eau froide', '2t': '2 tubes réversible (change-over)', '4t': '4 tubes (chaud et froid)', elec: 'Électrique seule', 'froide+elec': 'Eau froide + électrique', aucune: 'Sans batterie (détente directe…)' };
   const VANNES = { '2v': 'Vanne 2 voies (débit variable)', '3v': 'Vanne 3 voies (débit constant)', '4v': 'Vanne 4 voies (by-pass intégré, débit constant)', aucune: 'Sans vanne' };
-  const REGULATIONS = { propre: 'Régulateur propre (report de défaut à la GTB)', automate: 'Piloté par l\'automate de l\'armoire', bus: 'Régulateur communicant (bus)' };
+  const REGULATIONS = { propre: 'Régulateur propre (report de défaut à la GTB)', maitre: 'Maître (son régulateur commande des esclaves)', esclave: 'Esclave (commandé par un maître)',
+    automate: 'Piloté par l\'automate de l\'armoire', bus: 'Régulateur communicant (bus)' };
+  // Une ligne par appareil : une ligne « × n » devient n lignes (repères numérotés à la suite)
+  function eclater(lignes) {
+    const out = []; let nb = 0;
+    (lignes || []).forEach(l => {
+      const n = Math.max(1, Math.round(num(l.n, 1)));
+      if (n === 1) { out.push(l.n !== undefined ? (({ n: _n, ...x }) => x)(l) : l); return; }
+      nb++;
+      const m = /^(.*?)(\d+)$/.exec(String(l.rep || ''));
+      for (let k = 0; k < n; k++) { const { n: _n, ...x } = l; out.push({ ...x, rep: m ? `${m[1]}${String(+m[2] + k).padStart(m[2].length, '0')}` : `${l.rep || 'T'}.${k + 1}` }); }
+    });
+    return { lignes: out, nb };
+  }
   const KVS = [0.25, 0.4, 0.63, 1, 1.6, 2.5, 4, 6.3, 10, 16, 25, 40];
   const eau = b => ['chaude', 'froide', '2t', '4t', 'froide+elec'].includes(b);
   const chaudEau = b => ['chaude', '2t', '4t'].includes(b), froidEau = b => ['froide', '2t', '4t', 'froide+elec'].includes(b);
@@ -44,9 +57,22 @@ const Terminaux = ((N) => {
       if ((batElec(b) || l.type === 'radElec') && !num(l.Pbe)) alertes.push(alerte('erreur', `${rep} : puissance de la batterie électrique à renseigner.`));
       if (pU > 0 && !l.alim) alertes.push(alerte('attention', `${rep} : choisir l'alimentation (électricien ou armoire CVC).`));
       const tension = l.tension || (pU * 1000 / 230 > 16 ? 'tri' : 'mono');
-      return { rep, local: l.local || '', t, type: l.type || 'autre', n, b, v, nbV, Pch, Pfr, qc, qf, kvs: qV ? kvs(qV) : 0, pVent, pBe, pU, P: pU * n, tension, alim: l.alim || '', ref: l.ref || '', regul: l.regul || 'propre' };
+      return { rep, local: l.local || '', t, type: l.type || 'autre', n, b, v, nbV, Pch, Pfr, qc, qf, kvs: qV ? kvs(qV) : 0, pVent, pBe, pU, P: pU * n, tension, alim: l.alim || '', ref: l.ref || '', regul: l.regul || 'propre', maitre: l.maitre || '' };
     });
-    if (!lignes.length) alertes.push(alerte('attention', 'Ajoutez les terminaux (cassettes, ventilo-convecteurs…) local par local.'));
+    if (!lignes.length) alertes.push(alerte('attention', 'Ajoutez les terminaux (cassettes, ventilo-convecteurs…), une ligne par appareil.'));
+    // Maître / esclave : chaque esclave est rattaché à un maître de la liste (même consigne, même commande)
+    const parRep = new Map(lignes.map(x => [x.rep, x]));
+    lignes.forEach(x => { x.esclaves = []; });
+    lignes.forEach(x => {
+      if (x.regul !== 'esclave') return;
+      const m = parRep.get(x.maitre);
+      if (!m || m === x) { alertes.push(alerte('erreur', `${x.rep} : esclave sans maître (choisissez l'appareil maître).`)); x.maitreOk = null; return; }
+      if (m.regul === 'esclave') alertes.push(alerte('erreur', `${x.rep} : son maître ${m.rep} est lui-même esclave.`));
+      if (m.local && x.local && m.local !== x.local) alertes.push(alerte('info', `${x.rep} (${x.local}) esclave de ${m.rep} (${m.local}) : pièces différentes, une seule consigne pour les deux.`));
+      if (m.b !== x.b || m.v !== x.v) alertes.push(alerte('attention', `${x.rep} : batterie ou vanne différente de son maître ${m.rep} (commande commune à vérifier).`));
+      m.esclaves.push(x.rep); x.maitreOk = m;
+    });
+    lignes.filter(x => x.regul === 'maitre' && !x.esclaves.length).forEach(x => alertes.push(alerte('info', `${x.rep} : maître sans esclave rattaché.`)));
     const tot = { n: lignes.reduce((s, x) => s + x.n, 0), Pch: lignes.reduce((s, x) => s + x.Pch * x.n, 0), Pfr: lignes.reduce((s, x) => s + x.Pfr * x.n, 0), qc: lignes.reduce((s, x) => s + x.qc * x.n, 0),
       qf: lignes.reduce((s, x) => s + x.qf * x.n, 0), P: lignes.reduce((s, x) => s + x.P, 0), vannes: lignes.reduce((s, x) => s + x.nbV * x.n, 0) };
     const parAlim = {};
@@ -56,8 +82,8 @@ const Terminaux = ((N) => {
       valeurs: { lignes, tot, parAlim },
       resume: [['Terminaux', `${tot.n} appareils`], ['Puissance chaud / froid', `${nf(tot.Pch, 1)} / ${nf(tot.Pfr, 1)} kW`], ['Débit d\'eau chaude / glacée', `${nf(tot.qc, 2)} / ${nf(tot.qf, 2)} m³/h`],
         ['Puissance électrique', `${nf(tot.P, 2)} kW (ventilateurs et batteries électriques)`], ['Vannes de régulation', `${tot.vannes}`]],
-      tableaux: [{ titre: 'Terminaux', entetes: ['Repère', 'Local', 'Type', 'Nb', 'Batterie', 'P chaud (kW/u)', 'P froid (kW/u)', 'Débit eau (m³/h/u)', 'Vanne', 'Kvs', 'P élec (kW/u)', 'P élec totale (kW)', 'Alimentation'],
-        lignes: lignes.map(x => [x.rep, x.local, x.t[0], x.n, BATTERIES[x.b], x.Pch ? nf(x.Pch, 2) : '—', x.Pfr ? nf(x.Pfr, 2) : '—', x.qc || x.qf ? [x.qc && `ch ${nf(x.qc, 3)}`, x.qf && `fr ${nf(x.qf, 3)}`].filter(Boolean).join(' · ') : '—',
+      tableaux: [{ titre: 'Terminaux', entetes: ['Repère', 'Pièce', 'Type', 'Régulation', 'Batterie', 'P chaud (kW/u)', 'P froid (kW/u)', 'Débit eau (m³/h/u)', 'Vanne', 'Kvs', 'P élec (kW/u)', 'P élec totale (kW)', 'Alimentation'],
+        lignes: lignes.map(x => [x.rep, x.local, x.t[0], x.regul === 'esclave' ? `esclave de ${x.maitre}` : x.esclaves.length ? `maître de ${x.esclaves.join(', ')}` : (REGULATIONS[x.regul] || '').split(' (')[0], BATTERIES[x.b], x.Pch ? nf(x.Pch, 2) : '—', x.Pfr ? nf(x.Pfr, 2) : '—', x.qc || x.qf ? [x.qc && `ch ${nf(x.qc, 3)}`, x.qf && `fr ${nf(x.qf, 3)}`].filter(Boolean).join(' · ') : '—',
           x.nbV ? `${VANNES[x.v].split(' (')[0]}${x.nbV > 1 ? ' × 2' : ''}` : '—', x.kvs ? nf(x.kvs, 2) : '—', nf(x.pU, 3), nf(x.P, 2), libAlim(x.alim)]) },
         { titre: 'Puissance électrique par alimentation', entetes: ['Alimentation', 'Appareils', 'P installée (kW)'], lignes: [...Object.entries(parAlim).map(([k, x]) => [libAlim(k), x.n, nf(x.P, 2)]), ['Total', tot.n, nf(tot.P, 2)]], total: true }],
       alertes,
@@ -106,11 +132,13 @@ const Terminaux = ((N) => {
     champs: [{ g: 'Régimes d\'eau' }, { k: 'TcAller', l: 'Eau chaude : départ', u: '°C', d: 45 }, { k: 'TcRetour', l: 'Eau chaude : retour', u: '°C', d: 40 },
       { k: 'TfAller', l: 'Eau glacée : départ', u: '°C', d: 7 }, { k: 'TfRetour', l: 'Eau glacée : retour', u: '°C', d: 12 }, { k: 'dpVanne', l: 'Perte de charge des vannes (Kvs)', u: 'kPa', d: 15 },
       { g: 'Terminaux' },
-      { k: 'appareils', l: 'Appareils — « 📄 Fiche technique » remplit une ligne (puissances, ventilateur, batterie électrique)', t: 'lignes', d: [{ rep: 'CA-01', local: 'Bureau 1', type: 'cassette2', n: 2, Pch: 3.2, Pfr: 3.6, batterie: '2t', vanne: '2v', Pvent: 45, Pbe: '', tension: 'mono', alim: '', ref: '' }],
-        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'local', l: 'Local', t: 't' }, { k: 'type', l: 'Type', t: 's', o: Object.entries(TYPES).map(([k, x]) => [k, x[0]]) }, { k: 'n', l: 'Nombre' },
+      { k: 'appareils', l: 'Appareils, une ligne par appareil (« + Ajouter une ligne » copie la précédente avec le repère suivant) — « 📄 Fiche technique » remplit une ligne', t: 'lignes', d: [{ rep: 'CA-01', local: 'Bureau 1', type: 'cassette2', Pch: 3.2, Pfr: 3.6, batterie: '2t', vanne: '2v', Pvent: 45, Pbe: '', tension: 'mono', alim: '', regul: 'propre', maitre: '', ref: '' }],
+        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'local', l: 'Pièce (repérage)', t: 't' }, { k: 'type', l: 'Type', t: 's', o: Object.entries(TYPES).map(([k, x]) => [k, x[0]]) },
           { k: 'Pch', l: 'P chaud (kW/u)' }, { k: 'Pfr', l: 'P froid (kW/u)' }, { k: 'batterie', l: 'Batterie', t: 's', o: Object.entries(BATTERIES) }, { k: 'vanne', l: 'Vanne', t: 's', o: Object.entries(VANNES) },
           { k: 'Pvent', l: 'Ventilateur (W/u)' }, { k: 'Pbe', l: 'Batterie élec. (kW/u)' }, { k: 'tension', l: 'Tension', t: 's', o: [['', 'Auto'], ['mono', '230 V mono'], ['tri', '400 V tri']] },
-          { k: 'alim', l: 'Alimenté par', t: 's', o: (e, et) => optAlim(e, et) }, { k: 'regul', l: 'Régulation', t: 's', o: Object.entries(REGULATIONS) }, { k: 'ref', l: 'Fabricant, référence', t: 't' }] }],
+          { k: 'alim', l: 'Alimenté par', t: 's', o: (e, et) => optAlim(e, et) }, { k: 'regul', l: 'Régulation', t: 's', o: Object.entries(REGULATIONS) },
+          { k: 'maitre', l: 'Maître (si esclave)', t: 's', o: e => [['', '—'], ...((e && e.appareils) || []).filter(a => a.rep && a.regul !== 'esclave').map(a => [a.rep, `${a.rep}${a.local ? ` (${a.local})` : ''}`])] },
+          { k: 'ref', l: 'Fabricant, référence', t: 't' }] }],
     calcul: calculer,
   };
 
@@ -129,8 +157,9 @@ const Terminaux = ((N) => {
   function fonctionnement(x) {
     const bat = { chaude: 'la batterie eau chaude', froide: 'la batterie eau glacée', '2t': 'la batterie 2 tubes (eau chaude l\'hiver, eau glacée l\'été selon l\'inversion de la production)', '4t': 'les batteries eau chaude et eau glacée (séquences chaud / froid avec zone neutre)', 'froide+elec': 'la batterie eau glacée et la batterie électrique (appoint de chauffage)' }[x.b];
     const vanne = x.nbV === 2 ? 'deux vannes (chaud et froid) modulées' : x.v === '2v' ? 'une vanne 2 voies modulante (débit variable sur le réseau)' : x.v === '3v' ? 'une vanne 3 voies modulante (débit constant sur le réseau)' : x.v === '4v' ? 'une vanne 4 voies (by-pass intégré, débit constant sur le réseau)' : '';
+    if (x.regul === 'esclave') return `${x.t[0]}${x.local ? ` (${x.local})` : ''} esclave de ${x.maitre || '—'} : ventilateur${x.nbV ? ' et vanne' + (x.nbV > 1 ? 's' : '') : ''} commandés en parallèle par le régulateur du maître (même consigne, sans sonde propre), défaut reporté par le maître`;
     const qui = x.regul === 'automate' ? 'l\'automate de l\'armoire, d\'après la sonde d\'ambiance et la consigne du local (programmation horaire, réduit inoccupation)' : x.regul === 'bus' ? `${x.n > 1 ? 'leur' : 'son'} régulateur communicant (consignes, horaires et états par le bus de la GTB)` : `${x.n > 1 ? 'leur' : 'son'} régulateur propre (thermostat d'ambiance), défaut reporté à la GTB`;
-    const t = [`${x.n} × ${x.t[0]}${x.local ? ` (${x.local})` : ''} régulé${x.n > 1 ? 's' : ''} par ${qui}`];
+    const t = [`${x.n > 1 ? `${x.n} × ` : ''}${x.t[0]}${x.local ? ` (${x.local})` : ''} régulé${x.n > 1 ? 's' : ''} par ${qui}${(x.esclaves || []).length ? `, maître de ${x.esclaves.join(', ')} (commandés en parallèle, même consigne)` : ''}`];
     if (bat && vanne) t.push(`${vanne} sur ${bat}`);
     else if (x.b === 'elec' || x.type === 'radElec') t.push('batterie électrique commandée par étages ou triac, thermostat de sécurité à réarmement manuel');
     if (x.t[1] !== 'aucun' && x.type !== 'radElec') t.push('ventilateur à vitesse ajustée selon l\'écart à la consigne, arrêt en inoccupation');
@@ -140,10 +169,20 @@ const Terminaux = ((N) => {
   // Lignes d'équipements pour le bilan électrique : une ligne par groupe d'appareils identiques ; les points automate et
   // l'analyse fonctionnelle sont calculés par appareil
   function versElec(n, r) {
-    return ((r && r.valeurs && r.valeurs.lignes) || []).filter(x => x.P > 0 || x.regul === 'automate' || x.nbV).map((x, i) => ({ src: `${n.id}:t${i}:${x.rep}`, rep: x.rep, designation: `${x.n} × ${x.t[0]}${x.local ? ` — ${x.local}` : ''}${x.ref ? ` — ${x.ref}` : ''}${x.pBe ? ` (dont batterie électrique ${nf(x.pBe, 2)} kW/u)` : ''}`,
-      type: x.t[1] === 'aucun' ? 'autre' : x.type === 'radElec' ? 'resistance' : x.t[1], P: Math.round(x.P * 100) / 100, tension: x.P > 0 ? x.tension : '24V', regulation: x.regul === 'automate' ? 'terminal' : x.regul === 'bus' ? 'bus' : x.type === 'radElec' ? 'tor' : 'regul',
-      regImpose: true, alim: x.alim || '', local: x.local, nb: x.n, pointsUnit: x.regul === 'automate' ? pointsTerminal(x) : null, afAuto: fonctionnement(x) }));
+    const out = [];
+    ((r && r.valeurs && r.valeurs.lignes) || []).filter(x => x.P > 0 || x.regul === 'automate' || x.nbV).forEach((x, i) => {
+      const m = /^(.*?)(\d+)$/.exec(x.rep);
+      for (let k = 0; k < x.n; k++) {
+        const rep = x.n === 1 ? x.rep : m ? `${m[1]}${String(+m[2] + k).padStart(m[2].length, '0')}` : `${x.rep}.${k + 1}`;
+        // Esclave d'un maître piloté par l'automate : commandé par le maître, pas de points propres
+        const regulation = x.regul === 'esclave' ? 'esclave' : x.regul === 'automate' ? 'terminal' : x.regul === 'bus' ? 'bus' : x.type === 'radElec' ? 'tor' : 'regul';
+        out.push({ src: `${n.id}:t${i}:${x.rep}${x.n > 1 ? `:${k}` : ''}`, rep, designation: `${x.t[0]}${x.local ? ` — ${x.local}` : ''}${x.ref ? ` — ${x.ref}` : ''}${x.pBe ? ` (dont batterie électrique ${nf(x.pBe, 2)} kW)` : ''}`,
+          type: x.t[1] === 'aucun' ? 'autre' : x.type === 'radElec' ? 'resistance' : x.t[1], P: Math.round(x.pU * 100) / 100, tension: x.pU > 0 ? x.tension : '24V', regulation,
+          regImpose: true, alim: x.alim || '', local: x.local, nb: 1, pointsUnit: x.regul === 'automate' ? pointsTerminal(x) : null, afAuto: fonctionnement({ ...x, n: 1 }) });
+      }
+    });
+    return out;
   }
-  return { TYPES, BATTERIES, VANNES, REGULATIONS, pointsTerminal, fonctionnement, optAlim, libAlim, calculer, lireFiche, LIBELLES, versElec };
+  return { TYPES, BATTERIES, VANNES, REGULATIONS, eclater, pointsTerminal, fonctionnement, optAlim, libAlim, calculer, lireFiche, LIBELLES, versElec };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'));
 if (typeof module !== 'undefined') module.exports = Terminaux;

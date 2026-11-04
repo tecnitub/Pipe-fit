@@ -43,6 +43,7 @@ const Electricite = ((N, Sc) => {
     securite: ['Sécurité câblée, report d\'alarme', [['', 'Alarme / déclenchement', 'ETOR']], 'câblé en dur dans la chaîne de sécurité (coupure indépendante de l\'automate) ; déclenchement reporté à l\'automate et à la GTB'],
     evGaz: ['Électrovanne normalement fermée', [['', 'Commande d\'ouverture', 'STOR'], ['', 'Position fermée (fin de course)', 'ETOR']], 'ouverte par l\'automate quand la chaufferie est autorisée ; refermée en dur par l\'arrêt d\'urgence et la détection gaz ; position contrôlée'],
     terminal: ['Terminal piloté par l\'automate (points par appareil)', [], 'piloté par l\'automate de l\'armoire (points par appareil ci-dessous)'],
+    esclave: ['Esclave d\'un maître (câblage maître / esclave)', [], 'commandé en parallèle par le régulateur de son maître (même consigne, sans sonde propre)'],
     impulsion: ['Comptage par impulsions', [['', 'Impulsions de comptage', 'ETOR']], 'comptage relevé par l\'automate (historiques, bilans d\'énergie)'],
     regul: ['Régulation propre, report à la GTB', [['', 'Défaut / état', 'ETOR']], 'régulé par son régulateur propre (consigne locale ou par bus) ; état et défaut reportés'],
     bus: ['Communication par bus (Modbus / BACnet)', [['', 'États, défauts, consignes, mesures', 'Bus']], 'piloté par bus (marche, consignes) ; états, défauts et mesures remontés par la communication'],
