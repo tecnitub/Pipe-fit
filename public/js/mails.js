@@ -32,6 +32,8 @@ const MAIL_TYPES = {
     corps: 'Madame, Monsieur,\n\nVeuillez trouver ci-joint notre mise en demeure de payer la facture {numero} du {date} ({chantier}), échue depuis le {echeance}, pour un montant restant dû de {reste_du} TTC.\n\nCe courrier vous est également adressé par lettre recommandée avec accusé de réception.\n\n{signature}' },
   liberationRG: { label: 'Demande de libération de la retenue de garantie', objet: 'Libération de la retenue de garantie – {chantier}',
     corps: 'Bonjour {contact},\n\nLa réception des travaux du chantier {chantier} a été prononcée le {date_reception}. Le délai de garantie d\'un an étant écoulé, nous vous remercions de bien vouloir procéder à la libération de la retenue de garantie, soit {montant_ttc} TTC.\n\nVous trouverez ci-joint le récapitulatif des retenues pratiquées sur nos factures.\n\nCordialement,\n\n{signature}' },
+  habilitations: { label: 'Habilitations du personnel', objet: 'Habilitations de nos intervenants{chantier_objet}',
+    corps: 'Bonjour {contact},\n\nVeuillez trouver ci-joint la fiche récapitulative des habilitations à jour de nos intervenants{chantier_phrase} ({nb_personnes} personne(s)) : visites médicales, titres et CACES en cours de validité, et autorisations de conduite et de travail en hauteur signées.\n\nNous restons à votre disposition pour tout justificatif complémentaire.\n\nCordialement,\n\n{signature}' },
   materiel: { label: 'Matériel proposé à la validation', objet: '{relance_objet}Matériel proposé à votre validation – {chantier}',
     corps: 'Bonjour {contact},\n\n{relance_phrase}Veuillez trouver ci-joint la liste du matériel que nous proposons pour le chantier {chantier} ({nb_equipements} équipement(s) : fabricants et références).\nMerci de nous retourner votre avis ligne par ligne (validé, validé avec observations ou refusé) avant le {date_limite}, afin que nous puissions passer commande.\n\nCordialement,\n\n{signature}' },
   pv: { label: 'PV de réception', objet: 'Procès-verbal {numero} – {chantier}',
@@ -65,6 +67,15 @@ function mailContexte(type, id) {
   const chantier = a => (a && a.code ? `${a.code} – ${a.nom}` : (a && a.nom) || '');
   let x;
   switch (type) {
+    // Fiche des habilitations préparée (id : clé de l'envoi), autorisations signées en annexe
+    case 'habilitations': {
+      const e = typeof envoisHabilitations !== 'undefined' && envoisHabilitations.get(id);
+      if (!e) return null;
+      const a = e.affaire;
+      return { ref: { col: 'entreprises', id: e.client.id }, numero: '', entrepriseId: e.client.id, contactId: a ? a.contactId : '', chargeId: a ? a.chargeId : '',
+        fichier: `Habilitations ${e.client.nom}${a && a.code ? ` ${a.code}` : ''}`, html: () => e.html,
+        vars: { chantier: chantier(a), objet: '', nb_personnes: String(e.nb), chantier_objet: a ? ` – ${chantier(a)}` : '', chantier_phrase: a ? ` pour le chantier ${chantier(a)}` : '' } };
+    }
     // Matériel retenu par les études du chantier, à faire valider par le client ou la maîtrise d'œuvre (id : chantier)
     case 'materiel': {
       const a = Store.get('affaires', id), tout = (typeof materielChantier !== 'undefined' && materielChantier.get(id)) || [];

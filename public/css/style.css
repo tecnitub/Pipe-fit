@@ -1192,3 +1192,4 @@ ul.plan-mes li.pm-sansObjet .pm-txt { opacity: .55; text-decoration: line-throug
 .pdf-render .pdf-saut { border: 0; margin: 0; }
 .fr-gens { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 2px 12px; max-height: 240px; overflow: auto; }
 .au-int { display: grid; gap: 4px; margin-top: 6px; } .au-int label { font-size: 12px; }
+.au-apercu { max-height: 46vh; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 16px; }

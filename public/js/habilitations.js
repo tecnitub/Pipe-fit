@@ -19,7 +19,7 @@ function rhHabilitations() {
   const habs = Store.all('habilitations'), alertesPdp = Autorisations.alertesPlans(Store.all('entreprises'), auj);
   // Bouton par personne : autorisations possibles (titre et visite à jour), ou à faire avec une formation interne
   const autor = u => { const l = Autorisations.pourPersonne(u.id, habs, auj), ok = l.filter(x => x.ok);
-    return `<td><button class="small ${ok.length ? '' : 'secondary'}" data-autor="${u.id}" title="${esc(l.map(x => `${x.court} : ${x.ok ? `valable jusqu'au ${dateFr(x.jusqua)}` : x.motifs.join(', ')}`).join('\n') || 'Autorisation avec formation et évaluation internes (sans CACES)')}">📄 ${ok.map(x => x.court).join(', ') || '+'}</button></td>`; };
+    return `<td><button class="small ${ok.length ? '' : 'secondary'}" data-autor="${u.id}" title="${esc(l.map(x => `${x.court} : ${x.ok ? `valable jusqu'au ${dateFr(x.jusqua)}${autorisationSignee(x.hab, auj) ? ', signée' : ', à signer'}` : x.motifs.join(', ')}`).join('\n') || 'Autorisation avec formation et évaluation internes (sans CACES)')}">${ok.map(x => `${autorisationSignee(x.hab, auj) ? '✍' : '📄'} ${x.court}`).join(', ') || '📄 +'}</button></td>`; };
   const cellule = (u, cle) => {
     const h = habDe(u.id, cle), e = h ? Echeances.etat(h.expire, auj) : { etat: 'absent' };
     return `<td class="hab-c ${e.etat}"><button class="hab-b" data-hab="${u.id}|${cle}" title="${esc(Echeances.libelleHab(cle))}${h && h.niveau ? ` · ${esc(h.niveau)}` : ''}">${h ? `${h.expire ? dateFr(h.expire) : 'sans date'}${h.niveau ? `<br><span class="small">${esc(h.niveau)}</span>` : ''}` : '<span class="muted">+</span>'}</button></td>`;
@@ -53,15 +53,15 @@ function editerHabilitation(uid, cle) {
     </div>
     ${Autorisations.type(cle) && h.id ? (() => { const c = Autorisations.conditions(uid, cle, Store.all('habilitations'), isoDate(new Date()));
       return `<div class="note ${c.ok ? '' : 'warn-note'} small">${c.ok ? `Autorisation possible jusqu'au ${dateFr(c.jusqua)} (fin du titre ou de la visite médicale).` : `Autorisation impossible : ${esc(c.motifs.join(', '))}.`}
-        ${h.autorisationId ? ` <a href="${fileUrl(h.autorisationId)}" target="_blank" rel="noopener">📎 Dernière autorisation (${dateFr(h.autorisationLe)})</a>` : ''}
-        ${c.ok && peut ? ` <button class="small" id="hb-autor">📄 Générer l'autorisation</button>` : ''}</div>`; })() : ''}
+        ${h.autorisationId ? ` <a href="${fileUrl(h.autorisationId)}" target="_blank" rel="noopener">📎 ${autorisationSignee(h) ? `Autorisation signée le ${dateFr(h.autorisationSignee.signeLe)}` : `Dernière autorisation (${dateFr(h.autorisationLe)})`}</a>` : ''}
+        ${c.ok && peut ? ` <button class="small" id="hb-autor">✍ Générer et signer l'autorisation</button>` : ''}</div>`; })() : ''}
     <div class="field"><label>Justificatif (photo ou PDF)</label><div id="hb-f">${fichier ? `<a href="${fileUrl(fichier)}" target="_blank" rel="noopener">📎 Voir le justificatif</a>` : '<span class="muted small">aucun</span>'}</div>
       ${peut ? '<input id="hb-file" type="file" accept="image/*,application/pdf">' : ''}</div>
     <div class="modal-actions">${peut && h.id ? '<button class="danger" id="hb-del">Supprimer</button>' : ''}<span style="flex:1"></span><button class="secondary" id="hb-x">Fermer</button>${peut ? '<button id="hb-ok">Enregistrer</button>' : ''}</div>`);
   const $ = s => box.querySelector(s);
   $('#hb-x').onclick = Modal.close;
   if (!peut) return;
-  if ($('#hb-autor')) $('#hb-autor').onclick = () => { Modal.close(); genererAutorisations([uid], [cle]); };
+  if ($('#hb-autor')) $('#hb-autor').onclick = () => { Modal.close(); signerAutorisations(uid, [cle]); };
   $('#hb-file').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
     try {
@@ -126,8 +126,9 @@ function saisirRdv(hid) {
 
 /* ---------- Autorisations de conduite / de travail en hauteur (PDF, une par page) ---------- */
 const qualifDe = u => (Store.get('mainoeuvre', u.categorieId) || {}).libelle || (u.type === 'interimaire' ? 'Intérimaire' : '');
-function autorisationHtml(u, t, c) {
-  const st = Store.data.settings, h = c.hab, v = c.visite, auj = isoDate(new Date());
+// sig : autorisation signée à l'écran { le, signataire, sigEmp, sigSal, signeLe } (images des signatures)
+function autorisationHtml(u, t, c, sig) {
+  const st = Store.data.settings, h = c.hab, v = c.visite, auj = (sig && sig.le) || isoDate(new Date());
   const l = (k, x) => (x ? `<tr><th style="width:38%">${esc(k)}</th><td>${x}</td></tr>` : '');
   return `${Doc.entete('facture', t.titre, `Délivrée le ${dateFr(auj)}`)}
     <h3 class="doc-h">${esc(t.objet)}</h3>
@@ -145,7 +146,52 @@ function autorisationHtml(u, t, c) {
       ? 'à réaliser des travaux en hauteur avec port du harnais antichute, après vérification du point d\'ancrage et de l\'état de l\'équipement avant chaque utilisation, dans le respect des consignes du chantier et du plan de prévention ou du PPSPS.'
       : 'à conduire les équipements désignés ci-dessus sur les chantiers et sites de l\'entreprise et de ses clients, après accueil sécurité et prise de connaissance des lieux, des consignes et des instructions propres à chaque site (vérification de l\'équipement avant utilisation, balisage, conditions météo).'}</p>
     <p class="small muted">Conditions de délivrance réunies : aptitude médicale, formation ${h && h.interne ? 'adéquate et évaluation des connaissances et du savoir-faire réalisées par l\'employeur (le CACES n\'est pas obligatoire)' : '/ contrôle des connaissances et du savoir-faire en cours de validité'}, connaissance des lieux et des instructions à respecter. Références : ${esc(t.textes)}. L'autorisation est retirée en cas d'inaptitude ou de comportement dangereux.</p>
-    <div class="signatures"><div>Pour ${esc(st.societe || 'l\'entreprise')}<br>Nom, fonction, date et signature :</div><div>Le salarié, ${esc(u.nom)}<br>Lu et approuvé, date et signature :</div></div>`;
+    ${sig && sig.sigEmp && sig.sigSal ? `<div class="signatures"><div>Pour ${esc(st.societe || 'l\'entreprise')}<br>${esc(sig.signataire || '')}<br><img src="${fileUrl(sig.sigEmp)}" alt="Signature de l'employeur" style="height:70px;max-width:100%;object-fit:contain"><br><span class="small">Signé le ${dateFr(sig.signeLe)}</span></div>
+      <div>Le salarié, ${esc(u.nom)}<br>Lu et approuvé<br><img src="${fileUrl(sig.sigSal)}" alt="Signature du salarié" style="height:70px;max-width:100%;object-fit:contain"><br><span class="small">Signé le ${dateFr(sig.signeLe)}</span></div></div>`
+      : `<div class="signatures"><div>Pour ${esc(st.societe || 'l\'entreprise')}<br>Nom, fonction, date et signature :</div><div>Le salarié, ${esc(u.nom)}<br>Lu et approuvé, date et signature :</div></div>`}`;
+}
+// Autorisation signée encore valable d'une habilitation
+const autorisationSignee = (h, auj = isoDate(new Date())) => (h && h.autorisationSignee && (!h.autorisationSignee.jusqua || h.autorisationSignee.jusqua >= auj) ? h.autorisationSignee : null);
+const toDataUrl = bytes => new Promise((r, k) => { const f = new FileReader(); f.onload = () => r(f.result); f.onerror = k; f.readAsDataURL(new Blob([bytes], { type: 'application/pdf' })); });
+
+/* ---------- Signature à l'écran (souris, doigt ou stylet) : employeur et salarié ---------- */
+function signerAutorisations(uid, cles) {
+  const u = Store.get('users', uid), auj = isoDate(new Date()), habs = Store.all('habilitations');
+  const l = cles.map(cle => ({ t: Autorisations.type(cle), c: Autorisations.conditions(uid, cle, habs, auj) })).filter(x => x.c.ok);
+  if (!u || !l.length) return notify('Aucune autorisation à signer.');
+  const moi = Store.get('users', Store.me.userId) || {};
+  const box = Modal.open(`<h2 style="margin-top:0">Signer ${l.length > 1 ? `les ${l.length} autorisations` : 'l\'autorisation'} – ${esc(u.nom)}</h2>
+    <div class="doc doc-apercu au-apercu">${l.map(({ t, c }, i) => `${i ? '<div class="pdf-saut"></div>' : ''}${autorisationHtml(u, t, c)}`).join('')}</div>
+    <div class="grid2" style="margin-top:12px">
+      <div><div class="field"><label for="sg-nom">Pour l'entreprise : nom et fonction</label><input id="sg-nom" value="${esc([Store.me.nom, moi.role === 'charge' ? 'Chargé(e) d\'affaires' : Store.me.role === 'admin' ? 'Direction' : ''].filter(Boolean).join(', '))}"></div>
+        <canvas class="sign-pad" id="sg-emp" aria-label="Signature de l'employeur"></canvas><button class="small secondary" id="sg-emp-x" type="button">Effacer</button></div>
+      <div><div class="field"><label>Le salarié : ${esc(u.nom)} (lu et approuvé)</label><input disabled value="${esc(u.nom)}"></div>
+        <canvas class="sign-pad" id="sg-sal" aria-label="Signature du salarié"></canvas><button class="small secondary" id="sg-sal-x" type="button">Effacer</button></div>
+    </div>
+    <p class="small muted">Signez dans les cadres à la souris, au doigt ou au stylet. ${l.length > 1 ? 'Les deux signatures s\'appliquent à chaque autorisation ; ' : ''}l'autorisation signée est enregistrée et pourra être jointe à la fiche des habilitations envoyée aux clients.</p>
+    <div class="modal-actions"><button class="secondary" id="sg-pdf" type="button">Télécharger sans signer</button><span style="flex:1"></span><button class="secondary" id="sg-x">Annuler</button><button id="sg-ok">✍ Signer et enregistrer</button></div>`, true);
+  const $ = s => box.querySelector(s);
+  const padE = signaturePad($('#sg-emp')), padS = signaturePad($('#sg-sal'));
+  $('#sg-emp-x').onclick = () => padE.effacer(); $('#sg-sal-x').onclick = () => padS.effacer();
+  $('#sg-x').onclick = Modal.close;
+  $('#sg-pdf').onclick = () => { Modal.close(); genererAutorisations([uid], cles); };
+  $('#sg-ok').onclick = async () => {
+    if (padE.vide() || padS.vide()) return notify('Les deux signatures sont nécessaires : l\'employeur et le salarié.');
+    if (!$('#sg-nom').value.trim()) return notify('Indiquez le nom du signataire pour l\'entreprise.');
+    const btn = $('#sg-ok'); btn.disabled = true; btn.textContent = 'Enregistrement…';
+    try {
+      const sigEmp = await envoyerImage(padE.image()), sigSal = await envoyerImage(padS.image());
+      const base = { le: auj, signeLe: auj, signataire: $('#sg-nom').value.trim(), sigEmp, sigSal };
+      for (const { t, c } of l) {
+        const sig = { ...base, jusqua: c.jusqua };
+        const bytes = await PDF.depuisHTML(autorisationHtml(u, t, c, sig), `${t.titre} ${u.nom}`);
+        const fichierId = (await api('POST', '/api/files', { dataUrl: await toDataUrl(bytes) })).id;
+        Store.upsert('habilitations', { ...Store.get('habilitations', c.hab.id), autorisationId: fichierId, autorisationLe: auj, autorisationJusqua: c.jusqua, autorisationSignee: { ...sig, fichierId, cle: t.cle } });
+      }
+      Modal.close(); App.render();
+      App.toast(`${l.length} autorisation(s) signée(s) et enregistrée(s) : jointes à la fiche des habilitations envoyée aux clients`, 5000);
+    } catch (e) { notify('Signature : ' + e.message); btn.disabled = false; btn.textContent = '✍ Signer et enregistrer'; }
+  };
 }
 // Personnes × types : une page par autorisation possible ; les autorisations impossibles sont signalées
 async function genererAutorisations(uids, cles) {
@@ -181,22 +227,34 @@ function ficheRecapHabilitations({ affaireId = '', clientId = '', personnes = nu
     <div class="grid2"><div class="field"><label for="fr-c">Client</label><select id="fr-c"><option value="">—</option>${clients.map(e => `<option value="${e.id}" ${e.id === (clientId || (a && a.clientId)) ? 'selected' : ''}>${esc(e.nom)}</option>`).join('')}</select></div>
       <div class="field"><label for="fr-a">Chantier</label><select id="fr-a"><option value="">—</option>${Store.all('affaires').filter(x => !x.archive && x.statut !== 'Terminé').map(x => `<option value="${x.id}" ${x.id === affaireId ? 'selected' : ''}>${esc(affaireLabel(x))}</option>`).join('')}</select></div></div>
     <div class="field"><label>Personnes</label><div class="fr-gens">${gens.map(u => `<label class="check"><input type="checkbox" data-fr="${u.id}" ${coche.has(u.id) ? 'checked' : ''}> ${esc(u.nom)}</label>`).join('')}</div></div>
+    <label class="check"><input type="checkbox" id="fr-aut" checked> Joindre les autorisations signées (une page chacune)</label>
     <label class="check"><input type="checkbox" id="fr-pj" checked> Joindre les justificatifs en photo (attestations, cartes CACES, fiches d'aptitude)</label>
     <label class="check"><input type="checkbox" id="fr-doc" ${a ? 'checked' : ''}> Enregistrer dans les documents du chantier</label>
-    <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="fr-x">Annuler</button><button id="fr-ok">📄 Générer le PDF</button></div>`);
+    <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="fr-x">Annuler</button><button class="secondary" id="fr-ok">📄 Télécharger le PDF</button>${['admin', 'charge'].includes(Store.me.role) ? '<button id="fr-mail">✉ Envoyer au client</button>' : ''}</div>`);
   const $ = s => box.querySelector(s);
   $('#fr-x').onclick = Modal.close;
   $('#fr-a').onchange = () => { const af = Store.get('affaires', $('#fr-a').value); if (!af) return; if (af.clientId) $('#fr-c').value = af.clientId;
     if (typeof contexteSecurite === 'function') { const ids = new Set(contexteSecurite(af).controle.map(c => c.userId)); if (ids.size) box.querySelectorAll('[data-fr]').forEach(c => { c.checked = ids.has(c.dataset.fr); }); }
     $('#fr-doc').checked = true; };
+  // Envoi par e-mail au client (contacts de sa fiche), le PDF de la fiche avec les autorisations signées en annexe
+  if ($('#fr-mail')) $('#fr-mail').onclick = async () => {
+    const ids = [...box.querySelectorAll('[data-fr]:checked')].map(c => c.dataset.fr);
+    const af = Store.get('affaires', $('#fr-a').value), cl = Store.get('entreprises', $('#fr-c').value);
+    if (!ids.length) return notify('Choisissez au moins une personne.');
+    if (!cl) return notify('Choisissez le client destinataire.');
+    const html = await recapHtml(ids.map(id => Store.get('users', id)).filter(Boolean), cl, af, $('#fr-pj').checked, $('#fr-aut').checked);
+    const cle = uid();
+    envoisHabilitations.set(cle, { html, client: cl, affaire: af, nb: ids.length });
+    Modal.close(); envoyerParMail('habilitations', cle).catch(e => notify(e.message));
+  };
   $('#fr-ok').onclick = async () => {
     const ids = [...box.querySelectorAll('[data-fr]:checked')].map(c => c.dataset.fr);
     if (!ids.length) return notify('Choisissez au moins une personne.');
-    const af = Store.get('affaires', $('#fr-a').value), cl = Store.get('entreprises', $('#fr-c').value), pj = $('#fr-pj').checked, enDoc = $('#fr-doc').checked && af;
+    const af = Store.get('affaires', $('#fr-a').value), cl = Store.get('entreprises', $('#fr-c').value), pj = $('#fr-pj').checked, aut = $('#fr-aut').checked, enDoc = $('#fr-doc').checked && af;
     Modal.close();
     try {
       App.toast('Génération de la fiche…');
-      const html = await recapHtml(ids.map(id => Store.get('users', id)).filter(Boolean), cl, af, pj);
+      const html = await recapHtml(ids.map(id => Store.get('users', id)).filter(Boolean), cl, af, pj, aut);
       const nom = nomFichier(`Habilitations ${cl ? cl.nom : ''} ${af ? af.code || '' : ''} ${isoDate(new Date())}`.replace(/\s+/g, ' '));
       const fichier = /\.pdf$/i.test(nom) ? nom : `${nom}.pdf`, bytes = await PDF.depuisHTML(html, fichier.replace(/\.pdf$/i, ''));
       if (enDoc) {
@@ -211,7 +269,8 @@ function ficheRecapHabilitations({ affaireId = '', clientId = '', personnes = nu
 }
 // Image chargée ? (les justificatifs PDF ne s'insèrent pas : ils restent disponibles sur demande)
 const imageOk = src => new Promise(r => { const i = new Image(); i.onload = () => r(i.naturalWidth > 0); i.onerror = () => r(false); i.src = src; });
-async function recapHtml(gens, client, affaire, avecPj) {
+const envoisHabilitations = new Map();
+async function recapHtml(gens, client, affaire, avecPj, avecAut = true) {
   const auj = isoDate(new Date()), habs = Store.all('habilitations'), st = Store.data.settings;
   const r = Autorisations.recap(gens, habs, auj, { cles: Echeances.HABILITATIONS.map(([c]) => c) });
   // Une ligne par intervenant : visite médicale, titres valides (libellé, niveau, échéance), autorisations de l'employeur
@@ -225,10 +284,19 @@ async function recapHtml(gens, client, affaire, avecPj) {
       <td class="small">${aut.map(x => `${esc(x.court)} – jusqu'au ${dateFr(x.jusqua)}`).join('<br>') || '—'}</td></tr>`;
   }).join('');
   let annexe = '';
+  // Autorisations signées encore valables : une page chacune, avec les signatures
+  if (avecAut) {
+    const pages = [];
+    r.lignes.forEach(({ u }) => habs.filter(h => h.userId === u.id && autorisationSignee(h, auj)).forEach(h => {
+      const t = Autorisations.type(h.cle), sig = h.autorisationSignee;
+      if (t) pages.push(autorisationHtml(u, t, { hab: h, visite: Autorisations.aptitude(u.id, habs, auj).visite, jusqua: sig.jusqua }, sig));
+    }));
+    annexe += pages.map(p => `<div class="pdf-saut"></div>${p}`).join('');
+  }
   if (avecPj) {
     const pieces = [];
     for (const { u, cells } of r.lignes) for (const h of Object.values(cells)) if (h.fichierId && await imageOk(fileUrl(h.fichierId))) pieces.push({ u, h });
-    if (pieces.length) annexe = `<div class="pdf-saut"></div><h3 class="doc-h">Justificatifs</h3>${pieces.map(({ u, h }) => `<p><strong>${esc(u.nom)}</strong> – ${esc(Echeances.libelleHab(h.cle))}</p><img src="${fileUrl(h.fichierId)}" alt="" style="max-width:100%;max-height:420px;object-fit:contain;display:block;margin:0 0 12px">`).join('')}`;
+    if (pieces.length) annexe += `<div class="pdf-saut"></div><h3 class="doc-h">Justificatifs</h3>${pieces.map(({ u, h }) => `<p><strong>${esc(u.nom)}</strong> – ${esc(Echeances.libelleHab(h.cle))}</p><img src="${fileUrl(h.fichierId)}" alt="" style="max-width:100%;max-height:420px;object-fit:contain;display:block;margin:0 0 12px">`).join('')}`;
   }
   return `${Doc.entete('facture', 'Habilitations du personnel', `${client ? `Pour ${esc(client.nom)}<br>` : ''}${affaire ? `Chantier ${esc(affaire.code || '')} – ${esc(affaire.nom || '')}<br>` : ''}À jour au ${dateFr(auj)}`)}
     <p>Liste des intervenants de ${esc(st.societe || 'l\'entreprise')} et de leurs habilitations en cours de validité à la date du document (visite médicale, titres, CACES et autorisations délivrées par l'employeur).</p>
@@ -264,11 +332,11 @@ function choisirAutorisations(uid) {
     <div class="table-wrap"><table class="compact"><tr><th></th><th>Autorisation</th><th>Base</th></tr>
     ${lignes.map(({ t, c }) => { const titre = c.hab && Autorisations.valide(c.hab, auj);
       return `<tr><td><input type="checkbox" data-au="${t.cle}" ${apt.ok && titre ? 'checked' : ''} ${apt.ok && peut ? '' : 'disabled'} aria-label="${esc(t.court)}"></td><td><strong>${esc(t.court)}</strong><br><span class="small muted">${esc(t.objet)}</span></td>
-        <td class="small">${titre ? `${c.hab.interne ? 'Formation interne' : esc(t.formation)} valable jusqu'au ${dateFr(c.hab.expire)}` : `<span class="warn-text">${c.hab ? `${esc(t.formation)} expiré le ${dateFr(c.hab.expire)}` : `Pas de ${t.cle === 'hauteur' ? 'formation enregistrée' : 'CACES'}`}</span> → formation interne
+        <td class="small">${titre ? `${c.hab.interne ? 'Formation interne' : esc(t.formation)} valable jusqu'au ${dateFr(c.hab.expire)}${autorisationSignee(c.hab) ? `<br>✍ <a href="${fileUrl(c.hab.autorisationSignee.fichierId)}" target="_blank" rel="noopener">autorisation signée le ${dateFr(c.hab.autorisationSignee.signeLe)}</a>` : ''}` : `<span class="warn-text">${c.hab ? `${esc(t.formation)} expiré le ${dateFr(c.hab.expire)}` : `Pas de ${t.cle === 'hauteur' ? 'formation enregistrée' : 'CACES'}`}</span> → formation interne
           <div class="au-int" data-int="${t.cle}" hidden><label>Formé et évalué le <input type="date" data-k="obtenue" value="${auj}"></label> <label>par <input data-k="formateur" value="${esc(Store.me.nom || '')}" style="width:150px"></label>
           <label>valable <input type="number" data-k="mois" value="${mois(t.cle)}" min="1" style="width:60px"> mois</label>
           <label>Catégories / équipements <input data-k="niveau" value="${esc(t.cle === 'hauteur' ? 'Harnais, longe, antichute à rappel automatique' : '')}" placeholder="${esc(t.categories)}" style="width:100%"></label></div>`}</td></tr>`; }).join('')}</table></div>
-    <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="au-x">Fermer</button>${apt.ok && peut ? '<button id="au-ok">📄 Générer les autorisations</button>' : ''}</div>`);
+    <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="au-x">Fermer</button>${apt.ok && peut ? '<button id="au-ok">✍ Générer et signer</button>' : ''}</div>`);
   const $ = s => box.querySelector(s);
   $('#au-x').onclick = Modal.close;
   box.querySelectorAll('[data-au]').forEach(cb => cb.onchange = () => { const z = box.querySelector(`[data-int="${cb.dataset.au}"]`); if (z) z.hidden = !cb.checked; });
@@ -283,6 +351,6 @@ function choisirAutorisations(uid) {
       if (!v('obtenue') || !v('formateur')) return notify(`${Autorisations.type(cle).court} : indiquez la date de la formation et le nom du formateur / évaluateur.`);
       Store.upsert('habilitations', { userId: uid, cle, interne: true, niveau: v('niveau') || 'Formation interne', numero: '', formateur: v('formateur'), obtenue: v('obtenue'), expire: Echeances.ajouterMois(v('obtenue'), num(v('mois')) || mois(cle)), fichierId: '' });
     }
-    Modal.close(); genererAutorisations([uid], cles);
+    Modal.close(); signerAutorisations(uid, cles);
   };
 }
