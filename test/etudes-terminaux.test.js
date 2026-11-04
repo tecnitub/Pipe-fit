@@ -132,3 +132,19 @@ test('réseau arborescent : pondération des tuyauteries et ΔP complémentaires
   assert.ok(['PF', 'PBI', 'FT-N', 'TN'].every(r => l.some(x => x.rep === r)));
 });
 const num = v => (v === '' || v == null ? 0 : Number(v));
+
+test('régulation aéraulique : registre motorisé avec sonde de CO₂, registre manuel, tourelle d\'extraction', () => {
+  const app = [
+    { rep: 'CO2-01', local: 'Salle de réunion', type: 'sondeCO2', regul: 'automate', alim: 'cvc' },
+    { rep: 'RM-01', local: 'Salle de réunion', type: 'registreMot', regul: 'automate', maitre: 'CO2-01', alim: 'cvc' },
+    { rep: 'RG-01', local: 'Couloir', type: 'registreMan' },
+    { rep: 'TE-01', local: 'Toiture', type: 'tourelle', Pvent: 550, regul: 'automate', alim: 'elec' }];
+  const r = N.calculer('terminaux', { ...N.defauts('terminaux'), appareils: app });
+  assert.ok(!r.alertes.some(a => /batterie à eau sans vanne|ventilateur à renseigner/.test(a.texte) && /CO2-01|RM-01|RG-01/.test(a.texte)), r.alertes.map(a => a.texte).join(' | '));
+  const l = T.versElec({ id: 'n' }, r), reps = l.map(x => x.rep);
+  assert.deepStrictEqual(reps, ['CO2-01', 'RM-01', 'TE-01'], 'registre manuel sans ligne électrique');
+  assert.deepStrictEqual(l.find(x => x.rep === 'RM-01').pointsUnit.map(p => p[1]), ['SA', 'EA']);
+  assert.match(l.find(x => x.rep === 'RM-01').afAuto, /CO₂ mesurée par CO2-01/);
+  const te = l.find(x => x.rep === 'TE-01');
+  assert.strictEqual(te.type, 'ventilateur'); assert.strictEqual(te.P, 0.55); assert.strictEqual(te.alim, 'elec');
+});

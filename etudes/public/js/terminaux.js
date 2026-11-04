@@ -11,9 +11,13 @@ const Terminaux = ((N) => {
     gainable: ['Ventilo-convecteur gainable', 'ventilo'], poutre: ['Poutre froide, plafond rayonnant', 'aucun'], aerotherme: ['Aérotherme', 'aerotherme'], radiateur: ['Radiateur à eau', 'aucun'],
     rideau: ['Rideau d\'air', 'aerotherme'], split: ['Split, unité intérieure DRV', 'split'], radElec: ['Radiateur, convecteur électrique', 'resistance'],
     ctaSf: ['CTA simple flux (avec ou sans batterie)', 'ventilateur'],
-    pompeDist: ['Pompe de distribution (réseau)', 'pompe'], pompePrim: ['Pompe du réseau primaire', 'pompe'], autre: ['Autre terminal', 'ventilo'],
+    pompeDist: ['Pompe de distribution (réseau)', 'pompe'], pompePrim: ['Pompe du réseau primaire', 'pompe'],
+    tourelle: ['Tourelle d\'extraction', 'ventilateur'], registreMot: ['Registre motorisé (régulation aéraulique)', 'registre'], registreMan: ['Registre manuel de réglage', 'sansElec'],
+    sondeCO2: ['Sonde de CO₂ (qualité d\'air)', 'sondeAir'], autre: ['Autre terminal', 'ventilo'],
   };
   const estPompe = type => (TYPES[type] || [])[1] === 'pompe';
+  // Équipements sans batterie à eau (pompes, aéraulique)
+  const sansEau = type => ['pompe', 'registre', 'sansElec', 'sondeAir'].includes((TYPES[type] || [])[1]) || type === 'tourelle';
   const BATTERIES = { chaude: 'Eau chaude', froide: 'Eau froide', '2t': '2 tubes réversible (change-over)', '4t': '4 tubes (chaud et froid)', elec: 'Électrique seule', 'froide+elec': 'Eau froide + électrique', aucune: 'Sans batterie (détente directe…)' };
   const VANNES = { '2v': 'Vanne 2 voies (débit variable)', '3v': 'Vanne 3 voies (débit constant)', '4v': 'Vanne 4 voies (by-pass intégré, débit constant)', aucune: 'Sans vanne' };
   const REGULATIONS = { propre: 'Régulateur propre (report de défaut à la GTB)', maitre: 'Maître (son régulateur commande des esclaves)', esclave: 'Esclave (commandé par un maître)',
@@ -48,7 +52,7 @@ const Terminaux = ((N) => {
     const alertes = [], dTc = Math.abs(num(e.TcAller, 45) - num(e.TcRetour, 40)) || 5, dTf = Math.abs(num(e.TfRetour, 12) - num(e.TfAller, 7)) || 5, dpV = Math.max(1, num(e.dpVanne, 15));
     const kvs = q => KVS.find(k => k >= q / Math.sqrt(dpV / 100)) || KVS[KVS.length - 1];
     const lignes = (e.appareils || []).filter(l => l.type || l.rep).map((l, i) => {
-      const t = TYPES[l.type] || TYPES.autre, n = Math.max(1, Math.round(num(l.n, 1))), pompe = estPompe(l.type), b = pompe ? 'aucune' : l.batterie || 'chaude', rep = String(l.rep || `T${i + 1}`).trim();
+      const t = TYPES[l.type] || TYPES.autre, n = Math.max(1, Math.round(num(l.n, 1))), pompe = estPompe(l.type), b = sansEau(l.type) ? 'aucune' : l.batterie || 'chaude', rep = String(l.rep || `T${i + 1}`).trim();
       const Pch = num(l.Pch), Pfr = num(l.Pfr), qc = chaudEau(b) && Pch ? Pch / (1.163 * dTc) : 0, qf = froidEau(b) && Pfr ? Pfr / (1.163 * dTf) : 0;
       const pVent = num(l.Pvent) / 1000, pBe = batElec(b) || l.type === 'radElec' ? num(l.Pbe) : 0, pU = pVent + pBe;
       const v = eau(b) ? (l.vanne || '2v') : 'aucune', nbV = b === '4t' && v !== 'aucune' ? 2 : v !== 'aucune' ? 1 : 0;
@@ -56,7 +60,7 @@ const Terminaux = ((N) => {
       if (eau(b) && v === 'aucune') alertes.push(alerte('attention', `${rep} : batterie à eau sans vanne de régulation (débit permanent, pas de régulation terminale).`));
       if (b === '4t' && v !== 'aucune') alertes.push(alerte('info', `${rep} : 4 tubes : une vanne sur le chaud et une sur le froid (${n * 2} vannes).`));
       if (v === '4v' && b !== '2t') alertes.push(alerte('info', `${rep} : vanne 4 voies : débit constant sur le réseau (by-pass intégré), retenue en général pour les unités en bout de réseau.`));
-      if (t[1] !== 'aucun' && !num(l.Pvent) && l.type !== 'radElec') alertes.push(alerte('attention', `${rep} : puissance électrique ${pompe ? 'de la pompe' : 'du ventilateur'} à renseigner (fiche technique).`));
+      if (!['aucun', 'registre', 'sansElec', 'sondeAir'].includes(t[1]) && !num(l.Pvent) && l.type !== 'radElec') alertes.push(alerte('attention', `${rep} : puissance électrique ${pompe ? 'de la pompe' : 'du ventilateur'} à renseigner (fiche technique).`));
       if (pompe && !(num(l.Qp) > 0 && num(l.Hp) > 0)) alertes.push(alerte('attention', `${rep} : débit et hauteur de la pompe à renseigner (fiche technique), pour le contrôle dans le réseau arborescent.`));
       if ((batElec(b) || l.type === 'radElec') && !num(l.Pbe)) alertes.push(alerte('erreur', `${rep} : puissance de la batterie électrique à renseigner.`));
       if (pU > 0 && !l.alim) alertes.push(alerte('attention', `${rep} : choisir l'alimentation (électricien ou armoire CVC).`));
@@ -165,6 +169,9 @@ const Terminaux = ((N) => {
 
   // Points automate d'un appareil piloté par l'automate : ventilateur, vanne(s), batterie électrique, sonde d'ambiance, défaut
   function pointsTerminal(x) {
+    if (x.type === 'registreMot') return [['Commande du registre (0-10 V)', 'SA'], ['Recopie de position du registre', 'EA']];
+    if (x.type === 'sondeCO2') return [['Concentration de CO₂', 'EA']];
+    if (x.type === 'tourelle') return [['Commande de marche de la tourelle', 'STOR'], ['Retour de marche (pressostat)', 'ETOR'], ['Défaut de la tourelle', 'ETOR'], ...(x.pVent > 0.37 ? [['Consigne de vitesse', 'SA']] : [])];
     if (x.pompe) return [['Commande de marche de la pompe', 'STOR'], ['Consigne de vitesse de la pompe', 'SA'], ['Retour de marche de la pompe', 'ETOR'], ['Défaut de la pompe', 'ETOR']];
     const p = [];
     if (x.t[1] !== 'aucun' && x.type !== 'radElec') p.push(['Commande de marche du ventilateur', 'STOR'], ['Consigne de vitesse du ventilateur', 'SA']);
@@ -177,6 +184,11 @@ const Terminaux = ((N) => {
   }
   // Analyse fonctionnelle d'un appareil d'après sa batterie, sa vanne et sa régulation
   function fonctionnement(x) {
+    const lieu = x.local ? ` (${x.local})` : '';
+    if (x.type === 'registreMot') return `${x.t[0]}${lieu} modulé (0-10 V) selon la concentration de CO₂${x.maitre ? ` mesurée par ${x.maitre}` : ' du local'} (débit mini d'hygiène, ouverture progressive de 800 à 1 000 ppm), fermé en inoccupation`;
+    if (x.type === 'sondeCO2') return `${x.t[0]}${lieu} : mesure de la qualité d'air transmise ${x.regul === 'automate' ? 'à l\'automate' : x.regul === 'bus' ? 'par le bus' : 'au registre ou au régulateur associé'} (consigne 800 à 1 000 ppm)`;
+    if (x.type === 'registreMan') return `${x.t[0]}${lieu} : réglé et bloqué à la mise en service (relevé d'équilibrage aéraulique)`;
+    if (x.type === 'tourelle') return `${x.t[0]}${lieu} ${x.regul === 'automate' ? 'mise en marche par l\'automate selon la programmation horaire, retour de marche contrôlé par pressostat' : 'en marche selon son interrupteur ou son horloge'}, défaut reporté`;
     if (x.pompe) return `${x.t[0]}${x.local ? ` (${x.local})` : ''}${x.Qp ? ` : ${nf(x.Qp, 2)} m³/h sous ${nf(x.Hp, 1)} mCE` : ''}, ${x.regul === 'automate' ? 'mise en marche et vitesse commandées par l\'automate (pression différentielle constante ou proportionnelle), retour de marche et défaut contrôlés' : x.regul === 'bus' ? 'pilotée par bus (marche, consigne, vitesse, défauts)' : 'à vitesse variable intégrée (consigne réglée sur la pompe), défaut reporté à la GTB'}`;
     const bat = { chaude: 'la batterie eau chaude', froide: 'la batterie eau glacée', '2t': 'la batterie 2 tubes (eau chaude l\'hiver, eau glacée l\'été selon l\'inversion de la production)', '4t': 'les batteries eau chaude et eau glacée (séquences chaud / froid avec zone neutre)', 'froide+elec': 'la batterie eau glacée et la batterie électrique (appoint de chauffage)' }[x.b];
     const vanne = x.nbV === 2 ? 'deux vannes (chaud et froid) modulées' : x.v === '2v' ? 'une vanne 2 voies modulante (débit variable sur le réseau)' : x.v === '3v' ? 'une vanne 3 voies modulante (débit constant sur le réseau)' : x.v === '4v' ? 'une vanne 4 voies (by-pass intégré, débit constant sur le réseau)' : '';
@@ -193,14 +205,15 @@ const Terminaux = ((N) => {
   // l'analyse fonctionnelle sont calculés par appareil
   function versElec(n, r) {
     const out = [];
-    ((r && r.valeurs && r.valeurs.lignes) || []).filter(x => x.P > 0 || x.regul === 'automate' || x.nbV).forEach((x, i) => {
+    ((r && r.valeurs && r.valeurs.lignes) || []).filter(x => x.type !== 'registreMan' && (x.P > 0 || x.regul === 'automate' || x.nbV || ['registreMot', 'sondeCO2'].includes(x.type))).forEach((x, i) => {
       const m = /^(.*?)(\d+)$/.exec(x.rep);
       for (let k = 0; k < x.n; k++) {
         const rep = x.n === 1 ? x.rep : m ? `${m[1]}${String(+m[2] + k).padStart(m[2].length, '0')}` : `${x.rep}.${k + 1}`;
         // Esclave d'un maître piloté par l'automate : commandé par le maître, pas de points propres
-        const regulation = x.regul === 'esclave' ? 'esclave' : x.regul === 'automate' ? 'terminal' : x.regul === 'bus' ? 'bus' : x.type === 'radElec' ? 'tor' : 'regul';
+        const aero = { registreMot: ['vanne', x.regul === 'automate' ? 'terminal' : 'v010r'], sondeCO2: ['sonde', x.regul === 'automate' ? 'terminal' : 'sonde'] }[x.type];
+        const regulation = aero ? aero[1] : x.regul === 'esclave' ? 'esclave' : x.regul === 'automate' ? 'terminal' : x.regul === 'bus' ? 'bus' : x.type === 'radElec' ? 'tor' : 'regul';
         out.push({ src: `${n.id}:t${i}:${x.rep}${x.n > 1 ? `:${k}` : ''}`, rep, designation: `${x.t[0]}${x.local ? ` — ${x.local}` : ''}${x.ref ? ` — ${x.ref}` : ''}${x.pBe ? ` (dont batterie électrique ${nf(x.pBe, 2)} kW)` : ''}`,
-          type: x.t[1] === 'aucun' ? 'autre' : x.type === 'radElec' ? 'resistance' : x.t[1], P: Math.round(x.pU * 100) / 100, tension: x.pU > 0 ? x.tension : '24V', regulation,
+          type: aero ? aero[0] : x.t[1] === 'aucun' ? 'autre' : x.type === 'radElec' ? 'resistance' : x.t[1], P: Math.round(x.pU * 100) / 100, tension: x.pU > 0 ? x.tension : '24V', regulation,
           regImpose: true, alim: x.alim || '', local: x.local, nb: 1, pointsUnit: x.regul === 'automate' ? pointsTerminal(x) : null, afAuto: fonctionnement({ ...x, n: 1 }) });
       }
     });
