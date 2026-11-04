@@ -130,8 +130,13 @@ const Metre = ((N, C, D, L, Sc) => {
           tube(e.serie, c.t.cle, c.L, src);
           if (c.pompe) equip(`pompe|${c.pompe.modele}`, 'Équipements hydrauliques', `Pompe ${N.libPompe(c.pompe).replace(/, vitesse.*/, '')}`, 1, 3, { type: 'pompe', modele: c.pompe.modele, dn: c.pompe.dn }, src);
           if (c.vanne) equip(`vanne|${c.vanne.type}|${c.vanne.dn}|${c.vanne.Kvs}`, 'Équipements hydrauliques', `${N.libVanne(c.vanne)} motorisée`, 1, 2, { type: 'vanne', sorte: c.vanne.type, dn: c.vanne.dn, kvs: c.vanne.Kvs }, src);
-          equip(`equil|${c.t.dn}`, 'Équipements hydrauliques', `Vanne d'équilibrage DN ${c.t.dn}`, 1, 1, { type: 'equilibrage', dn: c.t.dn }, src);
-          equip(`isol|${c.t.dn}`, 'Équipements hydrauliques', `Vanne d'isolement DN ${c.t.dn}`, 4, 0.3 + 0.01 * c.t.dn, { type: 'isolement', dn: c.t.dn }, src);
+          // Robinetterie saisie (fiches techniques) ; sinon équipement usuel du circuit
+          if ((c.rob || []).length) c.rob.forEach(x => equip(`rob|${x.type}|${x.dn}|${x.ref || (x.fiche ? x.fiche.reference : '') || ''}`, 'Équipements hydrauliques', `${x.lib} DN ${x.dn}${x.ref ? ` — ${x.ref}` : x.fiche && x.fiche.reference ? ` — ${[x.fiche.fabricant, x.fiche.reference].filter(Boolean).join(' ')}` : ''}`, x.qte, 0.3 + 0.01 * x.dn,
+            { type: { isolement: 'isolement', equilibrage: 'equilibrage', compteur: 'compteur', desemboueur: 'desemboueur', soupape: 'soupape' }[x.type] || 'accessoire', dn: x.dn }, src));
+          else {
+            equip(`equil|${c.t.dn}`, 'Équipements hydrauliques', `Vanne d'équilibrage DN ${c.t.dn}`, 1, 1, { type: 'equilibrage', dn: c.t.dn }, src);
+            equip(`isol|${c.t.dn}`, 'Équipements hydrauliques', `Vanne d'isolement DN ${c.t.dn}`, 4, 0.3 + 0.01 * c.t.dn, { type: 'isolement', dn: c.t.dn }, src);
+          }
           if (e.compteurs === 'oui') equip(`ce|${c.t.dn}`, 'Équipements hydrauliques', `Compteur d'énergie DN ${c.t.dn}`, 1, 2, { type: 'compteur', dn: c.t.dn }, src);
         });
         equip(`isol|${d.tg.dn}`, 'Production', `Vanne d'isolement DN ${d.tg.dn}`, 2 * d.n, 0.3 + 0.01 * d.tg.dn, { type: 'isolement', dn: d.tg.dn }, src);

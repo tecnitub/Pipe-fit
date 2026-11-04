@@ -27,6 +27,13 @@ const Schema = ((D, C, N) => {
     aerotherme: ['Aérothermes', 15, 'chaud'], radiant: ['Panneaux rayonnants', 15, 'chaud'], plafond: ['Plafonds / poutres froides', 25, 'froid'],
     ecs: ['Production d\'ECS (ballon, échangeur)', 20, 'chaud'], process: ['Process (échangeur, machine)', 30, 'mixte'], sousstation: ['Départ réseau / sous-station', 20, 'mixte'],
   };
+  // Robinetterie et accessoires : [libellé, ζ usuel (perte de charge si ni Kv ni ΔP de la fiche), quantité usuelle par circuit]
+  const ROBINETTERIE = {
+    isolement: ['Vanne d\'isolement 1/4 tour (papillon, sphérique)', 0.3, 2], clapet: ['Clapet anti-retour', 2.5, 1], equilibrage: ['Vanne d\'équilibrage (réglage, mesure)', 0, 1],
+    filtre: ['Filtre à tamis', 2.5, 1], desemboueur: ['Pot à boue / désemboueur magnétique', 1.5, 1], compteur: ['Compteur d\'énergie (débitmètre)', 1.5, 1],
+    regulation: ['Vanne de régulation motorisée (si autre que celle du circuit)', 0, 1], manchette: ['Manchette anti-vibratile', 0.5, 2], soupape: ['Soupape de sécurité', 0, 1],
+    purgeur: ['Purgeur automatique', 0, 1], thermometre: ['Thermomètre / manomètre (doigt de gant)', 0, 2], echangeur: ['Échangeur, batterie (autre que l\'émetteur)', 0, 1], autre: ['Autre accessoire', 0, 1],
+  };
   const REGULATIONS = { '3v': 'Vanne 3 voies mélangeuse', '2v': 'Vanne 2 voies (débit variable)', direct: 'Sans vanne (départ direct)' };
 
   /* ---------- Calcul ---------- */
@@ -52,7 +59,9 @@ const Schema = ((D, C, N) => {
       const Qcoll = reg === '3v' ? debit(P, Math.abs(Tsd - rc[1])) : Q;
       // Réseau annexe relié (réseau arborescent, réseau et pompe) : ses pertes de charge remplacent celle de l'émetteur
       const dpAnnexe = num(c.dpAnnexe) > 0 ? num(c.dpAnnexe) : 0, dpEm = dpAnnexe || em[1], dpV = reg === 'direct' ? 0 : Math.max(em[1], 10), dpL = x.R * num(c.L) * 1.3 / 1000;
-      const hmt = (dpL + dpEm + dpV + 5) * 1000 / (f.rho * C.G), kvs = reg === 'direct' ? null : D.KVS.find(k => k >= C.kv(Q, dpV, f.rho) * 0.97) || null;
+      // Robinetterie saisie sur ce circuit (fiches techniques) : remplace la valeur forfaitaire de 5 kPa
+      const rob = robinetterie(e, rep, Q, t, f), dpRob = rob.reduce((a, x) => a + x.dpTot, 0);
+      const hmt = (dpL + dpEm + dpV + (rob.length ? dpRob : 5)) * 1000 / (f.rho * C.G), kvs = reg === 'direct' ? null : D.KVS.find(k => k >= C.kv(Q, dpV, f.rho) * 0.97) || null;
       const different = Math.abs(rc[0] - Tsd) > 0.5 || Math.abs(rc[1] - Tsr) > 0.5;
       if (different && reg !== '3v') alertes.push(alerte('attention', `${rep} : régime ${rc[0]}/${rc[1]} °C différent du réseau sans vanne 3 voies de mélange.`));
       if (reg === '3v' && (chaud ? rc[0] > Tsd : rc[0] < Tsd)) alertes.push(alerte('erreur', `${rep} : départ du circuit (${rc[0]} °C) ${chaud ? 'plus chaud' : 'plus froid'} que le départ ${echangeur ? 'du secondaire de l\'échangeur' : 'du réseau'} (${Tsd} °C).`));
@@ -60,7 +69,7 @@ const Schema = ((D, C, N) => {
       const Cat = typeof Catalogue !== 'undefined' ? Catalogue : require('./catalogue');
       const pompe = Cat.pompesPour(Q, hmt)[0] || null, vanne = reg === 'direct' ? null : Cat.vannePour(C.kv(Q, dpV, f.rho), reg);
       if (dpAnnexe) alertes.push(alerte('ok', `${rep} : pompe dimensionnée sur le réseau annexe (${nf(dpAnnexe, 1)} kPa) + vanne ${nf(dpV, 1)} kPa + liaison et collecteur ${nf(dpL + 5, 1)} kPa = ${nf(hmt, 2)} mCE.`));
-      return { rep, em, emetteur: c.emetteur, reg, rc, P, Q, Qcoll, t, v: x.v, hmt, kvs, dpV, dpL, dpAnnexe, L: num(c.L), pompe, vanne };
+      return { rep, em, emetteur: c.emetteur, reg, rc, P, Q, Qcoll, t, v: x.v, hmt, kvs, dpV, dpL, dpEm, dpAnnexe, L: num(c.L), pompe, vanne, rob, dpRob };
     });
     // Production
     const n = Math.max(1, Math.min(6, Math.round(num(e.nGen, 1)))), Pg = num(e.Pgen), Pprod = n * Pg, gen = GENERATEURS[e.generateur] || GENERATEURS['chaudiere-cond'];
@@ -115,6 +124,18 @@ const Schema = ((D, C, N) => {
   }
   const TAMPONS = [100, 200, 300, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000, 5000];
   // Change-over 2 tubes : dimensionnement au régime chaud et au régime froid, diamètres retenus au débit le plus fort
+  // Pertes de charge de la robinetterie d'un circuit : ΔP de la fiche, sinon (Q / Kv)², sinon ζ × pression dynamique
+  function robinetterie(e, rep, Q, t, f) {
+    return (e.robinetterie || []).map((r, i) => ({ r, i })).filter(({ r }) => r && r.type && String(r.circuit || '').trim() === String(rep).trim()).map(({ r, i }) => {
+      const R = ROBINETTERIE[r.type] || ROBINETTERIE.autre, q = Math.max(1, Math.round(num(r.qte, R[2]))), kv = num(r.kv), dpS = num(r.dp);
+      const di = num(r.dn) > 0 ? num(r.dn) : t.di, v = Q / 3600 / (Math.PI * (di / 1000) ** 2 / 4), pd = f.rho * v * v / 2;
+      // Vanne d'équilibrage : au moins 3 kPa à son réglage pour mesurer le débit
+      const brut = dpS > 0 ? dpS : kv > 0 ? (Q / kv) ** 2 * 100 * (f.rho / 1000) : R[1] * pd / 1000, mini = r.type === 'equilibrage' && !(dpS > 0) && brut < 3;
+      const dpU = mini ? 3 : brut;
+      return { i, rep: r.rep || `${R[0].split(' ')[0]} ${i + 1}`, type: r.type, lib: R[0], dn: num(r.dn) > 0 ? num(r.dn) : t.dn, qte: q, kv, dpU, dpTot: dpU * q, source: mini ? 'réglage mini 3 kPa' : dpS > 0 ? 'ΔP fiche' : kv > 0 ? 'Kv fiche' : R[1] ? `ζ ${String(R[1]).replace('.', ',')}` : 'négligeable',
+        ref: r.ref || '', fiche: r.fiche && (r.fiche.fabricant || r.fiche.reference) ? r.fiche : null, Q };
+    });
+  }
   function dimensionner(e) {
     if (e.reseau !== 'co') return dimensionnerRegime(e);
     const base = { ...e, reseau: 'perso' };
@@ -502,6 +523,10 @@ const Schema = ((D, C, N) => {
         { k: 'bilan', l: 'Puissance reprise de', t: 's', o: (e, ctx) => [['', 'Saisie'], ...((ctx && ctx.notes) || []).map((n, i) => [n, i]).filter(([n]) => n.type === 'bilan').map(([n, i]) => [n.id, `N${i + 1} — ${n.titre}`])] },
         { k: 'annexe', l: 'Réseau annexe relié', t: 's', o: (e, ctx) => [['', '—'], ...((ctx && ctx.notes) || []).map((n, i) => [n, i]).filter(([n]) => ['arbo', 'reseau', 'cta'].includes(n.type) && !n.lien).map(([n, i]) => [n.id, `N${i + 1} — ${n.titre}`])] },
         { k: 'regime', l: 'Régime (°C)', t: 't' }, { k: 'regulation', l: 'Régulation', t: 's', o: optListe(REGULATIONS) }, { k: 'L', l: 'Longueur aller + retour (m)' }] },
+      { k: 'robinetterie', l: 'Robinetterie et accessoires par circuit (vannes, clapets, filtres…) : ΔP ou Kv de la fiche technique, sinon valeur usuelle ; « 📄 » dans le tableau des fiches charge la fiche', t: 'lignes', d: [],
+        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'circuit', l: 'Circuit', t: 's', o: e => [['', '—'], ...(e.circuits || []).map((c, i) => c.rep || `C${i + 1}`).map(r => [r, r])] },
+          { k: 'type', l: 'Organe', t: 's', o: Object.entries(ROBINETTERIE).map(([k, x]) => [k, x[0]]) }, { k: 'dn', l: 'DN (vide : celui du circuit)' }, { k: 'qte', l: 'Quantité sur le circuit' },
+          { k: 'kv', l: 'Kv / Kvs (fiche)' }, { k: 'dp', l: 'ΔP (kPa, fiche)' }, { k: 'ref', l: 'Fabricant, référence', t: 't' }] },
       { k: 'foisonnement', l: 'Coefficient de simultanéité des besoins', u: '%', d: 100 },
       { g: 'Réglementation' }, { k: 'usage', l: 'Usage du bâtiment', t: 's', o: [['tertiaire', 'Tertiaire (bureaux, commerces…)'], ['erp', 'Établissement recevant du public'], ['habitation', 'Habitation collective'], ['industrie', 'Industriel (locaux de production)']], d: 'tertiaire' },
       { k: 'fluideFrigo', l: 'Fluide frigorigène', t: 's', o: Object.keys(FLUIDES_FRIGO).map(k => [k, k]), d: 'R32', si: e => /^(pac|gf)/.test(e.generateur || '') },
@@ -518,7 +543,7 @@ const Schema = ((D, C, N) => {
       const d = dimensionner(e), alertes = [...d.alertes], vol = volumeEau(d, e.generateur), dr = d.co ? d.co.dC : d;
       if (!alertes.some(a => a.niveau === 'erreur')) alertes.unshift(alerte('ok', `${d.n > 1 ? `Cascade de ${d.n} × ${nf(d.Pg, 0)} kW` : `Générateur de ${nf(d.Pg, 0)} kW`} pour ${nf(d.Pdem, 0)} kW de besoins ; débit primaire ${nf(d.Qp, 2)} m³/h, secondaire ${nf(d.Qs, 2)} m³/h${d.bouteille && d.tb ? `, bouteille ${d.tb.nom}` : ''}.`));
       return {
-        valeurs: { volume: vol.total, Pprod: d.Pprod, Pdem: d.Pdem, Qp: d.Qp, Qs: d.Qs, Qg: d.Qg, bouteille: d.tb ? d.tb.cle : null, Db: d.Db, collecteur: d.tc.cle, circuits: d.circuits.map(c => ({ rep: c.rep, Q: c.Q, Qcoll: c.Qcoll, tube: c.t.cle, hmt: c.hmt, kvs: c.kvs })) },
+        valeurs: { volume: vol.total, Pprod: d.Pprod, Pdem: d.Pdem, Qp: d.Qp, Qs: d.Qs, Qg: d.Qg, bouteille: d.tb ? d.tb.cle : null, Db: d.Db, collecteur: d.tc.cle, circuits: d.circuits.map(c => ({ rep: c.rep, Q: c.Q, Qcoll: c.Qcoll, tube: c.t.cle, hmt: c.hmt, kvs: c.kvs, L: c.L, reg: c.reg, dn: c.t.dn, tubeNom: c.t.nom, pompe: c.pompe ? N.libPompe(c.pompe) : '', vanne: c.vanne ? N.libVanne(c.vanne) : '', rob: (c.rob || []).map(x => ({ i: x.i, rep: x.rep, type: x.type, lib: x.lib, dn: x.dn, qte: x.qte, dpTot: x.dpTot, ref: x.ref, fiche: x.fiche })) })) },
         resume: [['Réseau', `${d.regime} — ${d.f.libelle}`], ['Production', `${d.n} × ${d.gen[0].toLowerCase()} de ${nf(d.Pg, 0)} kW = ${nf(d.Pprod, 0)} kW`],
           ['Besoins (avec simultanéité)', `${nf(d.Pdem, 0)} kW`], ['Débit par générateur', `${nf(d.Qg, 2)} m³/h — ${d.tg.nom}`], ['Débit primaire total', `${nf(d.Qp, 2)} m³/h`],
           ['Débit appelé par les circuits', `${nf(d.Qs, 2)} m³/h`], ['Collecteurs', `${d.tc.nom} (${nf(d.Qcoll, 2)} m³/h)`],
@@ -531,6 +556,10 @@ const Schema = ((D, C, N) => {
           lignes: d.circuits.map(c => [c.rep, c.em[0], `${nf(c.P, 0)} / ${nf(c.Pf, 0)}`, `${nf(c.Qc, 2)} / ${nf(c.Qf, 2)}`, c.t.nom, nf(c.v, 2), REGULATIONS[c.reg], c.kvs ? nf(c.kvs, c.kvs < 1 ? 2 : 1) : '—', `${nf(c.Q, 2)} × ${nf(c.hmt, 1)}`]) }
           : { titre: 'Circuits de distribution', entetes: ['Circuit', 'Émetteur', 'P (kW)', 'Régime (°C)', 'Débit (m³/h)', 'Tube', 'v (m/s)', 'Régulation', 'Kvs', 'Pompe (m³/h × mCE)'],
           lignes: d.circuits.map(c => [c.rep, c.em[0], nf(c.P, 0), `${c.rc[0]}/${c.rc[1]}`, nf(c.Q, 2), c.t.nom, nf(c.v, 2), REGULATIONS[c.reg], c.kvs ? nf(c.kvs, c.kvs < 1 ? 2 : 1) : '—', `${nf(c.Q, 2)} × ${nf(c.hmt, 1)}`]) },
+        { titre: 'Pertes de charge et HMT des pompes de circuit', entetes: ['Circuit', 'Débit (m³/h)', 'Liaison (kPa)', 'Émetteur / réseau (kPa)', 'Vanne de régulation (kPa)', 'Robinetterie (kPa)', 'HMT (mCE)'],
+          lignes: d.circuits.map(c => [c.rep, nf(c.Q, 2), nf(c.dpL, 1), nf(c.dpEm, 1), nf(c.dpV, 1), (c.rob || []).length ? nf(c.dpRob, 1) : '5,0 (forfait)', nf(c.hmt, 2)]) },
+        ...(d.circuits.some(c => (c.rob || []).length) ? [{ titre: 'Robinetterie et accessoires : pertes de charge', entetes: ['Repère', 'Circuit', 'Organe', 'DN', 'Qté', 'Débit (m³/h)', 'ΔP unitaire (kPa)', 'ΔP total (kPa)', 'Origine', 'Fabricant, référence', 'Fiche'],
+          lignes: d.circuits.flatMap(c => (c.rob || []).map(x => [x.rep, c.rep, x.lib, `DN ${x.dn}`, String(x.qte), nf(x.Q, 2), nf(x.dpU, 2), nf(x.dpTot, 2), x.source, x.ref || (x.fiche ? [x.fiche.fabricant, x.fiche.reference].filter(Boolean).join(' ') : ''), x.fiche ? '✓' : ''])) }] : []),
         { titre: 'Matériel proposé (catalogue)', entetes: ['Circuit', 'Pompe', 'Vanne de régulation'],
           lignes: d.circuits.map(c => [c.rep, c.pompe ? N.libPompe(c.pompe) : 'aucune pompe du catalogue', c.reg === 'direct' ? '—' : c.vanne ? N.libVanne(c.vanne) : 'aucune vanne du catalogue']) },
         { titre: 'Production', entetes: ['Générateur', 'P (kW)', 'Débit (m³/h)', 'Raccordement', 'Pompe primaire'],
@@ -552,6 +581,18 @@ const Schema = ((D, C, N) => {
       };
     },
   };
-  return { REGIMES, GENERATEURS, EMETTEURS, REGULATIONS, FLUIDES_FRIGO, CONTENANCE, volumeEau, utiliserReglementation, dimensionner, dessiner, reglementation, regulation };
+  // Fiche technique d'un organe de robinetterie : Kv / Kvs, DN, perte de charge, fabricant et référence
+  function lireFicheRobinet(lignes) {
+    const L = (Array.isArray(lignes) ? lignes : String(lignes || '').split(/\r?\n/)).map(String).filter(l => l.trim()), v = {}, src = {};
+    const nrm = x => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    L.forEach(l => { const x = nrm(l);
+      if (v.kv === undefined) { const m = /\bkvs?\b\s*[:=]?\s*(\d+(?:[.,]\d+)?)/.exec(x); if (m) { v.kv = +m[1].replace(',', '.'); src.kv = l.trim(); } }
+      if (v.dn === undefined) { const m = /\bdn\s*(\d{2,3})\b/.exec(x); if (m) { v.dn = +m[1]; src.dn = l.trim(); } }
+      if (v.dp === undefined && /perte de charge|pression differentielle|delta ?p|Δp/.test(x)) { const m = /(\d+(?:[.,]\d+)?)\s*(kpa|mbar|mce)/.exec(x); if (m) { const n = +m[1].replace(',', '.'); v.dp = m[2] === 'kpa' ? n : m[2] === 'mbar' ? n / 10 : n * 9.81; src.dp = l.trim(); } } });
+    let fabricant = '', reference = '';
+    try { const FT = typeof FichesTech !== 'undefined' ? FichesTech : require('../../../public/js/fiches-tech'); const a = FT.analyser({ texte: L.join('\n') }); fabricant = a.fabricant || ''; reference = (a.references || [])[0] || ''; } catch (err) { /* sans bibliothèque */ }
+    return { valeurs: v, sources: src, fabricant, reference, nb: Object.keys(v).length };
+  }
+  return { ROBINETTERIE, lireFicheRobinet, REGIMES, GENERATEURS, EMETTEURS, REGULATIONS, FLUIDES_FRIGO, CONTENANCE, volumeEau, utiliserReglementation, dimensionner, dessiner, reglementation, regulation };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Notes !== 'undefined' ? Notes : require('./notes'));
 if (typeof module !== 'undefined') module.exports = Schema;

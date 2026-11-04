@@ -612,6 +612,7 @@ function appliquerFiche(et, n, lignesTexte, nomFichier) {
   if (n.type === 'terminaux') return appliquerFicheTerminal(et, n, lignesTexte, nomFichier);
   if (n.type === 'aero' && cibleBouche !== '') return appliquerFicheBouche(et, n, lignesTexte, nomFichier);
   if (n.type === 'sanitaire') return appliquerFichePoint(et, n, lignesTexte, nomFichier);
+  if (n.type === 'pid' && cibleRobinet !== '') return appliquerFicheRobinet(et, n, lignesTexte, nomFichier);
   // CTA et schéma aéraulique : lecture détaillée d'une centrale ; autres équipements : pompe, vase, ballon, générateur
   const Mod = ['cta', 'aero'].includes(n.type) ? FicheCta : FicheEquip, r = Mod.lire(lignesTexte), fichier = { name: nomFichier };
   if (!r.nb) return confirmer('Aucune caractéristique reconnue dans ce document (PDF scanné ou mise en page inhabituelle). Saisissez les valeurs à la main.', 'OK');
@@ -651,7 +652,7 @@ function fichesInstallationHtml(et, n) {
       <td class="petit"><a href="#/etude/${et.id}/${x.note}">${esc(x.ou)}</a></td><td><button class="secondaire petit" data-fiche-elt="${i}">📄 ${x.fiche ? 'Remplacer' : 'Charger'}</button></td></tr>`).join('')}</tbody></table></div>
     <p class="petit muted">Une fiche chargée ici remplit le calcul de l'élément (terminaux, production, CTA) et se retrouve dans le schéma de principe comme dans le réseau arborescent.</p></div>`;
 }
-let ligneCibleTerminal = '', cibleBouche = '', ciblePoint = '';
+let ligneCibleTerminal = '', cibleBouche = '', ciblePoint = '', cibleRobinet = '';
 // Vue d'une note : tout, saisie seule, résultats seuls, schéma, fiches techniques (mémorisée sur ce poste)
 const VUES_NOTE = [['tout', 'Tout'], ['saisie', '✏️ Saisie'], ['resultats', '📊 Résultats'], ['schema', '📐 Schéma'], ['fiches', '📄 Fiches techniques']];
 let vueNote = (() => { try { return localStorage.getItem('etudes-vue-note') || 'tout'; } catch (e) { return 'tout'; } })();
@@ -673,10 +674,23 @@ document.addEventListener('click', ev => {
   const m = /#\/etude\/([^/]+)\/([^/?]+)/.exec(location.hash); if (!m) return;
   const et = S.etudes.find(x => x.id === m[1]), n = et && et.notes.find(x => x.id === m[2]); if (!n) return;
   const x = Liens.fichesInstallation(et, n)[+b.dataset.ficheElt], cible = x && et.notes.find(y => y.id === x.note); if (!cible) return;
-  ligneCibleTerminal = x.rep || ''; cibleBouche = x.bouche !== undefined ? x.bouche : ''; ciblePoint = x.point !== undefined ? x.point : '';
+  ligneCibleTerminal = x.rep || ''; cibleBouche = x.bouche !== undefined ? x.bouche : ''; ciblePoint = x.point !== undefined ? x.point : ''; cibleRobinet = x.robinet !== undefined ? x.robinet : '';
   dialogueFiche(et, cible);
 });
 
+// Fiche technique d'un organe de robinetterie (vanne, clapet, filtre…) : Kv, DN, perte de charge, fabricant et référence
+function appliquerFicheRobinet(et, n, lignesTexte, nomFichier) {
+  const i = +cibleRobinet, r = (n.entrees.robinetterie || [])[i]; cibleRobinet = '';
+  if (!r) return;
+  const f = Schema.lireFicheRobinet(lignesTexte), nom = [f.fabricant, f.reference].filter(Boolean).join(' ');
+  if (f.valeurs.kv !== undefined) r.kv = f.valeurs.kv;
+  if (f.valeurs.dn !== undefined) r.dn = f.valeurs.dn;
+  if (f.valeurs.dp !== undefined && f.valeurs.kv === undefined) r.dp = Math.round(f.valeurs.dp * 100) / 100;
+  if (nom) r.ref = nom;
+  r.fiche = { nom: String(nomFichier || '').slice(0, 120), fabricant: f.fabricant, reference: f.reference };
+  enregistrer(et); App.render();
+  toast(`Fiche reprise sur ${r.rep || 'l\'organe'} : ${[f.valeurs.kv !== undefined && `Kv ${String(f.valeurs.kv).replace('.', ',')}`, f.valeurs.dn !== undefined && `DN ${f.valeurs.dn}`, f.valeurs.dp !== undefined && `ΔP ${String(Math.round(f.valeurs.dp * 10) / 10).replace('.', ',')} kPa`, nom].filter(Boolean).join(', ') || 'fiche jointe (aucune valeur lue : saisissez le Kv ou la ΔP)'} — HMT de la pompe recalculée`, 6000);
+}
 // Fiche technique d'un point de puisage (robinetterie, WC, douche…) : débit et pression mini reportés sur le point choisi
 function appliquerFichePoint(et, n, lignesTexte, nomFichier) {
   const i = +ciblePoint, p = ciblePoint === '' ? null : (n.entrees.points || [])[i]; ciblePoint = '';
@@ -761,6 +775,7 @@ Vues.note = {
       <div class="actions-ligne"><button id="emettre-note">🖋️ Émettre l'indice ${esc(Revisions.prochainIndice(n))} (PDF avec cartouche)</button><button class="secondaire" id="pdf-note">📄 Brouillon PDF</button><button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="dupliquer">Dupliquer</button>
         ${TYPES_FICHE.includes(n.type) ? `<button class="secondaire" id="fiche-tech" title="Fiche du fabricant (PDF de l'ordinateur ou de la bibliothèque Pipe-Fit) : remplit le calcul et contrôle le matériel choisi">📄 Fiche technique${['cta', 'aero'].includes(n.type) ? ' de la CTA' : { reseau: ' de la pompe', arbo: ' de la pompe', vase: ' du vase', ecs: ' du ballon / échangeur', pid: ' du générateur', terminaux: ' d\'un terminal' }[n.type] || ''}${n.entrees.fiche && (n.entrees.fiche.fabricant || n.entrees.fiche.reference) ? ` ✓` : ''}</button>` : ''}
         ${n.type === 'cta' ? `<button class="secondaire" id="cta-reseau">🌬️ ${Liens.reseauxDeCta(et.notes, n).some(x => x.type === 'aero') ? 'Ouvrir le schéma aéraulique relié' : 'Créer le schéma aéraulique relié (gaines, bouches)'}</button>` : ''}
+        ${n.type === 'pid' ? '<button class="secondaire" id="pid-rob" title="Pour chaque circuit sans robinetterie : vannes d\'isolement, vanne d\'équilibrage, filtre, manchettes, thermomètres ; à compléter avec les Kv des fiches">🔩 Robinetterie type par circuit</button><button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par circuit (repères, DN, fabricant, référence, fiche, ΔP) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
         ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="aero-vitesses" title="Même vitesse pour toutes les branches (ou les principales, ou les terminales) : les diamètres des gaines sont recalculés">💨 Changer toutes les vitesses</button>' : ''}
@@ -851,6 +866,25 @@ Vues.note = {
       b.querySelector('#av-ok').onclick = () => { const v = Notes.num(String(b.querySelector('#av-v').value).replace(',', '.')); if (!(v > 0)) return toast('Vitesse invalide', 3000); const c = cibles(); c.forEach(t => { t.v = v; }); enregistrer(et); Modal.close(); App.render(); toast(`${c.length} branche(s) à ${String(v).replace('.', ',')} m/s : diamètres recalculés`, 4000); };
     };
     // Réseau arborescent : une branche par émetteur de l'étude non encore relié, rattachée au premier tronçon de départ
+    // Schéma de principe : robinetterie type par circuit, nomenclature et liste d'achat
+    const pr = root.querySelector('#pid-rob');
+    if (pr) pr.onclick = () => {
+      const l = n.entrees.robinetterie = n.entrees.robinetterie || [], avec = new Set(l.map(r => r.circuit)), circuits = (n.entrees.circuits || []).map((c, i) => c.rep || `C${i + 1}`).filter(c => !avec.has(c));
+      if (!circuits.length) return toast('Chaque circuit a déjà sa robinetterie.', 4000);
+      circuits.forEach((c, k) => { const s = (n.entrees.circuits || []).findIndex(x => (x.rep || '') === c) + 1 || k + 1;
+        [['isolement', 4, 'VI'], ['equilibrage', 1, 'VE'], ['filtre', 1, 'F'], ['manchette', 2, 'MA'], ['thermometre', 2, 'TH']].forEach(([type, qte, p]) => l.push({ rep: `${p}${s}`, circuit: c, type, dn: '', qte, kv: '', dp: '', ref: '' })); });
+      enregistrer(et); App.render(); toast(`Robinetterie type ajoutée sur ${circuits.length} circuit(s) : chargez les fiches techniques (tableau des fiches) pour les Kv et pertes de charge.`, 6000);
+    };
+    const pn = root.querySelector('#pid-nomenc');
+    if (pn) pn.onclick = () => {
+      if (typeof XLSX === 'undefined') return toast('Classeur indisponible.', 5000);
+      const calc = x => Liens.calculer(et, x); calc.entrees = x => Liens.resoudre(et, x).entrees;
+      const f = Nomenclature.feuilles(et, n, calc), H = v => ({ v, s: 'head' });
+      const octets = XLSX.build(f.map(x => ({ name: x.name, freeze: 3, cols: x.entetes.map(h => (/Désignation/.test(h) ? 52 : /Circuit|Fabricant|Référence|Repères|Fournisseur|Fiche/.test(h) ? 22 : 12)),
+        rows: [[{ v: `${x.name} — ${n.titre} — ${et.objet} (indice ${et.indice})`, s: 'title' }], [], x.entetes.map(H), ...x.lignes] })));
+      Promise.resolve(telecharger(`Nomenclature_${sansAccents(n.titre).slice(0, 30)}_${sansAccents(et.objet).slice(0, 30)}.xlsx`, octets, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'))
+        .then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : `Nomenclature enregistrée : ${f[0].lignes.length} ligne(s), ${f[1].lignes.length} article(s) à acheter`, 5000)).catch(er => toast(er.message, 6000));
+    };
     // Évacuations : appareils repris du calcul sanitaire (tronçon à choisir)
     const es = root.querySelector('#evac-san');
     if (es) es.onclick = () => {

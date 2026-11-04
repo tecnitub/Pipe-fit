@@ -313,6 +313,9 @@ const Liens = ((N, Sc) => {
     const terms = notes.filter(n => n.type === 'terminaux');
     if (note.type === 'pid') {
       ajNote(note, 'Production (générateur)');
+      // Robinetterie et accessoires des circuits : une fiche par organe
+      const RB = (typeof Schema !== 'undefined' ? Schema : require('./schema')).ROBINETTERIE;
+      ((note.entrees || {}).robinetterie || []).forEach((r, i) => { if (r && r.type) out.push({ element: `${r.rep || `Organe ${i + 1}`}${r.circuit ? ` — ${r.circuit}` : ''}`, nature: (RB[r.type] || RB.autre)[0], fiche: ficheDe(r.fiche) || (r.ref ? { reference: r.ref } : null), note: note.id, robinet: i, ou: lib(note) }); });
       const reps = new Set(((note.entrees || {}).circuits || []).map(c => `${note.id}|${c.rep}`));
       ((note.entrees || {}).circuits || []).forEach(c => { const an = c.annexe && notes.find(n => n.id === c.annexe); if (an && an.type === 'cta') ajNote(an, 'CTA (batteries)'); if (an && an.type === 'arbo') (an.entrees.troncons || []).forEach(t => { if (t.pompe) { const [id, r] = String(t.pompe).split(':'); const tn = notes.find(n => n.id === id), a = tn && (tn.entrees.appareils || []).find(x => x.rep === r); if (a) ajTerm(tn, a); } }); });
       terms.forEach(n => (n.entrees.appareils || []).forEach(a => { if (reps.has(a.circuit)) ajTerm(n, a); }));
