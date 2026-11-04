@@ -34,7 +34,7 @@ Var URL
 !define MUI_UNICON "files/atelier-pdf.ico"
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TITLE "Installation d'${APPNAME}"
-!define MUI_WELCOMEPAGE_TEXT "Atelier PDF compile vos PDF, photos et scans en un seul document et permet de les modifier : réorganiser les pages, annoter (texte, bulles, traits, flèches, carrés, cercles, images), caviarder, signer, numéroter, diviser.$\r$\n$\r$\nTout se fait sur cet ordinateur : aucun fichier n'est envoyé sur Internet.$\r$\n$\r$\nAucun droit administrateur n'est nécessaire."
+!define MUI_WELCOMEPAGE_TEXT "Atelier PDF compile vos PDF, photos et scans en un seul document et permet de les modifier : réorganiser les pages, annoter, tamponner, signer, mesurer sur plan, reconnaître le texte des scans (OCR), caviarder, numéroter, diviser.$\r$\n$\r$\nTout se fait sur cet ordinateur : aucun fichier n'est envoyé sur Internet.$\r$\n$\r$\nAucun droit administrateur n'est nécessaire."
 !define MUI_FINISHPAGE_TITLE "${APPNAME} est installé"
 !define MUI_FINISHPAGE_TEXT "Lancez « ${APPNAME} » depuis l'icône du bureau ou le menu Démarrer."
 !define MUI_FINISHPAGE_RUN

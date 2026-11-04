@@ -72,6 +72,10 @@
 
   // ---------- Import des fichiers ----------
   async function importer(fichiers, position = null) {
+    const projets = [...fichiers].filter(f => /\.atelierpdf$/i.test(f.name));
+    for (const f of projets) await ouvrirProjet(f, position);
+    fichiers = [...fichiers].filter(f => !/\.atelierpdf$/i.test(f.name));
+    if (projets.length && !fichiers.length) return;
     const liste = [...fichiers].filter(f => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name) || /^image\//.test(f.type));
     const refuses = fichiers.length - liste.length;
     if (refuses) note(`${refuses} fichier(s) ignoré(s) : seuls les PDF et les images sont acceptés.`, 'erreur');
@@ -106,7 +110,11 @@
   }
 
   async function importerPdf(f) {
-    const octets = new Uint8Array(await f.arrayBuffer());
+    let octets = new Uint8Array(await f.arrayBuffer());
+    // PDF déjà produit par Atelier PDF : on retrouve le document d'origine et ses annotations, modifiables
+    let relu = null;
+    try { relu = await MoteurPDF.relire(octets); } catch (e) { console.warn('Relecture impossible', e); }
+    if (relu) octets = relu.octets;
     const s = nouvelleSource(f.name, 'pdf');
     s.octets = octets;
     // pdf-lib doit pouvoir relire le fichier pour en copier les pages sans perte ; sinon les pages seront converties en images
@@ -135,7 +143,175 @@
       const [x1, y1, x2, y2] = p.view;
       pages.push({ id: nouvelId('p'), type: 'pdf', source: s.id, index: i, rotBase: p.rotate || 0, rot: 0, boite: { x: x1, y: y1, width: x2 - x1, height: y2 - y1 }, elements: [] });
     }
+    if (relu) appliquerRelecture(s, pages, relu);
     return pages;
+  }
+
+  // Une source par document d'origine (même fichier), annotations, texte reconnu et échelles restaurés
+  function appliquerRelecture(s, pages, relu) {
+    const parGroupe = new Map();
+    for (const [id, img] of Object.entries(relu.images || {})) {
+      if (!etat.images.has(id)) etat.images.set(id, { octets: img.octets, mime: img.mime, url: URL.createObjectURL(new Blob([img.octets], { type: img.mime })) });
+    }
+    pages.forEach((p, i) => {
+      const d = relu.pages[i] || {};
+      p.elements = d.elements || [];
+      if (d.ocr) p.ocr = d.ocr;
+      if (d.echelle) p.echelle = d.echelle;
+      if (d.intercalaire) p.titre = d.intercalaire;
+      const nom = d.groupe || s.nom;
+      if (!parGroupe.size) { s.nom = nom; parGroupe.set(nom, s); }
+      if (!parGroupe.has(nom)) {
+        const autre = nouvelleSource(`${nom}.pdf`, 'pdf');
+        Object.assign(autre, { octets: s.octets, doc: s.doc, nbPages: s.nbPages, fichier: s.id, rasteriser: s.rasteriser, alerte: s.alerte });
+        parGroupe.set(nom, autre);
+      }
+      p.source = parGroupe.get(nom).id;
+    });
+    if (relu.options && !etat.pages.length) appliquerOptions(relu.options);
+    const n = pages.reduce((a, p) => a + p.elements.length, 0);
+    note(`PDF créé avec Atelier PDF : ${parGroupe.size} document(s) retrouvé(s)${n ? `, ${n} annotation(s) de nouveau modifiable(s)` : ''}. Numéros, filigrane et sommaire seront refaits à l'enregistrement.`, 'ok');
+  }
+
+  // ---------- Sauvegarde : travail en cours, fichier projet ----------
+  // L'état est décrit en JSON ; les fichiers (PDF, images) sont à part, repérés par un identifiant
+  function exporterEtat() {
+    const fichiers = new Map();
+    const utilisees = new Set(etat.pages.map(p => p.source).filter(Boolean));
+    const sources = [];
+    for (const s of etat.sources.values()) {
+      if (!utilisees.has(s.id)) continue;
+      const cle = `f_${s.fichier || s.id}`;
+      if (!fichiers.has(cle)) fichiers.set(cle, { octets: s.octets, mime: s.type === 'pdf' ? 'application/pdf' : s.mime });
+      sources.push({ id: s.id, nom: s.nom, type: s.type, mime: s.mime, couleur: s.couleur, nbPages: s.nbPages, rasteriser: !!s.rasteriser, alerte: s.alerte || '', l: s.l, h: s.h, fichier: cle });
+    }
+    const images = [];
+    for (const p of etat.pages) for (const e of p.elements) {
+      if (e.type !== 'image' || fichiers.has(`i_${e.image}`)) continue;
+      const img = etat.images.get(e.image);
+      if (!img) continue;
+      fichiers.set(`i_${e.image}`, { octets: img.octets, mime: img.mime });
+      images.push({ id: e.image, mime: img.mime, l: img.l, h: img.h });
+    }
+    return { meta: { version: 1, date: Date.now(), pages: etat.pages, sources, images, options: lireOptionsBrutes() }, fichiers };
+  }
+
+  // Restaure un état (session ou projet) ; ajouté au travail en cours, avec de nouveaux identifiants
+  async function importerEtat(meta, fichier, position = null) {
+    const idsSources = new Map();
+    const docs = new Map();
+    for (const m of meta.sources || []) {
+      const f = await fichier(m.fichier);
+      if (!f) continue;
+      const s = nouvelleSource(`${m.nom}.x`, m.type);
+      Object.assign(s, { nom: m.nom, mime: m.mime, couleur: m.couleur, nbPages: m.nbPages, rasteriser: m.rasteriser, alerte: m.alerte, l: m.l, h: m.h, octets: f.octets });
+      if (m.type === 'pdf') {
+        if (!docs.has(m.fichier)) docs.set(m.fichier, { doc: pdfjs.getDocument({ data: f.octets.slice(), isEvalSupported: false }).promise, id: s.id });
+        s.doc = docs.get(m.fichier).doc;
+        if (docs.get(m.fichier).id !== s.id) s.fichier = docs.get(m.fichier).id;
+      } else {
+        s.url = URL.createObjectURL(new Blob([f.octets], { type: m.mime }));
+      }
+      idsSources.set(m.id, s.id);
+    }
+    for (const m of meta.images || []) {
+      if (etat.images.has(m.id)) continue;
+      const f = await fichier(`i_${m.id}`);
+      if (f) etat.images.set(m.id, { octets: f.octets, mime: m.mime, l: m.l, h: m.h, url: URL.createObjectURL(new Blob([f.octets], { type: m.mime })) });
+    }
+    const pages = (meta.pages || []).filter(p => !p.source || idsSources.has(p.source))
+      .map(p => ({ ...p, id: nouvelId('p'), source: p.source ? idsSources.get(p.source) : null }));
+    if (!pages.length) return 0;
+    if (!etat.pages.length && meta.options) appliquerOptions(meta.options);
+    memoriser();
+    etat.pages.splice(position ?? etat.pages.length, 0, ...pages);
+    rafraichir();
+    return pages.length;
+  }
+
+  async function ouvrirProjet(f, position = null) {
+    try {
+      const { meta, fichiers } = Stockage.depuisProjet(new Uint8Array(await f.arrayBuffer()));
+      const n = await occupe('Ouverture du projet…', () => importerEtat(meta, async id => fichiers.get(id), position));
+      if (!$('#o-titre').value && meta.options && meta.options['o-titre']) $('#o-titre').value = meta.options['o-titre'];
+      note(`Projet « ${f.name} » ouvert : ${n} page(s).`, 'ok');
+    } catch (e) {
+      console.error(e);
+      note(`Projet « ${f.name} » illisible : ${e.message || e}`, 'erreur');
+    }
+  }
+
+  async function enregistrerProjet() {
+    if (!etat.pages.length) return;
+    const { meta, fichiers } = exporterEtat();
+    const octets = Stockage.versProjet(meta, fichiers);
+    const nom = `${nomFichier($('#o-titre').value.trim() || etat.sources.get(etat.pages[0].source)?.nom || 'Projet')}.atelierpdf`;
+    const blob = new Blob([octets], { type: 'application/octet-stream' });
+    if (window.showSaveFilePicker) {
+      try {
+        const h = await window.showSaveFilePicker({ suggestedName: nom, types: [{ description: 'Projet Atelier PDF', accept: { 'application/octet-stream': ['.atelierpdf'] } }] });
+        const w = await h.createWritable(); await w.write(blob); await w.close();
+        note(`Projet « ${h.name} » enregistré : rouvrez-le avec « Projet › Ouvrir » pour continuer.`, 'ok');
+        return;
+      } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    telecharger(blob, nom);
+    note(`Projet « ${nom} » enregistré dans Téléchargements.`, 'ok');
+  }
+
+  function nouveauTravail() {
+    if (etat.pages.length && !confirm('Fermer le travail en cours et repartir de zéro ?\nPensez à enregistrer le PDF ou le projet avant.')) return;
+    etat.pages = []; etat.selection.clear(); etat.historique = []; etat.futur = [];
+    etat.sources.clear();
+    $('#o-titre').value = '';
+    rafraichir();
+  }
+
+  // Sauvegarde automatique, une seconde après la dernière modification
+  let minuterieSauvegarde = null, sauvegardeEnAttente = false, sessionProposee = false;
+  function planifierSauvegarde() {
+    if (!sessionProposee) return; // pas avant d'avoir proposé de reprendre le travail précédent
+    sauvegardeEnAttente = true;
+    clearTimeout(minuterieSauvegarde);
+    minuterieSauvegarde = setTimeout(async () => {
+      try {
+        if (etat.pages.length) { const { meta, fichiers } = exporterEtat(); await Stockage.sauverSession(meta, fichiers); }
+        else await Stockage.effacerSession();
+        sauvegardeEnAttente = false;
+        const h = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        $('#etat-sauvegarde').textContent = etat.pages.length ? `✓ Travail sauvegardé sur ce PC à ${h}` : '';
+      } catch (e) {
+        console.warn('Sauvegarde automatique impossible', e);
+        $('#etat-sauvegarde').textContent = '⚠ Sauvegarde automatique indisponible : enregistrez le projet';
+      }
+    }, 1000);
+  }
+
+  async function proposerReprise() {
+    let session = null;
+    try { session = await Stockage.lireSession(); } catch { /* stockage indisponible */ }
+    if (!session || !session.meta.pages?.length) { sessionProposee = true; return; }
+    const m = session.meta;
+    const quand = new Date(m.date).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+    const bandeau = $('#reprise');
+    $('#reprise-texte').textContent = `Travail non terminé du ${quand} : ${m.pages.length} page${m.pages.length > 1 ? 's' : ''} (${m.sources.map(x => x.nom).slice(0, 3).join(', ')}${m.sources.length > 3 ? '…' : ''}).`;
+    bandeau.hidden = false;
+    $('#reprise-oui').onclick = async () => {
+      bandeau.hidden = true;
+      try {
+        const n = await occupe('Reprise du travail…', () => importerEtat(m, id => session.fichier(id)));
+        etat.historique = [];
+        note(`${n} page(s) retrouvée(s).`, 'ok');
+      } catch (e) { note(`Reprise impossible : ${e.message || e}`, 'erreur'); }
+      sessionProposee = true;
+      planifierSauvegarde();
+    };
+    $('#reprise-non').onclick = async () => {
+      bandeau.hidden = true;
+      sessionProposee = true;
+      try { await Stockage.effacerSession(); } catch { /* rien */ }
+      planifierSauvegarde();
+    };
   }
 
   // Image -> JPEG ou PNG redressé (orientation de l'appareil photo appliquée), 3000 px maximum
@@ -234,8 +410,22 @@
       const x = e.x * L, y = e.y * H, w = (e.w || 0) * L, h = (e.h || 0) * H;
       for (const f of MoteurPDF.formes(e, L, H, k)) {
         const chemin = new Path2D(MoteurPDF.chemin(f.cmds));
-        if (f.fond) { g.fillStyle = f.fond; g.fill(chemin); }
+        if (f.fond) { g.globalAlpha = f.opaciteFond ?? 1; g.fillStyle = f.fond; g.fill(chemin); g.globalAlpha = 1; }
         if (f.trait) { g.strokeStyle = f.trait; g.lineWidth = f.epaisseur; g.lineCap = f.rond ? 'round' : 'butt'; g.lineJoin = 'round'; g.stroke(chemin); }
+      }
+      for (const et of MoteurPDF.etiquettes(e, L, H, k)) {
+        g.font = `${et.taille}px Helvetica, Arial, sans-serif`;
+        const lt = g.measureText(et.texte).width, bw = lt + et.taille * 0.8, bh = et.taille * 1.35;
+        g.fillStyle = '#fff'; g.fillRect(et.cx - bw / 2, et.cy - bh / 2, bw, bh);
+        g.strokeStyle = et.couleur; g.lineWidth = 0.6 * k; g.strokeRect(et.cx - bw / 2, et.cy - bh / 2, bw, bh);
+        g.fillStyle = et.couleur; g.fillText(et.texte, et.cx - lt / 2, et.cy - et.taille * 0.58 + et.taille * 0.94);
+      }
+      if (e.type === 'tampon') {
+        g.fillStyle = e.couleur || MoteurPDF.DEFAUTS.tampon;
+        for (const lg of MoteurPDF.lignesTampon(e, L, H, k, mesureTexte)) {
+          g.font = `${lg.gras ? 'bold ' : ''}${lg.taille}px Helvetica, Arial, sans-serif`;
+          g.fillText(lg.texte, lg.x, lg.y + lg.taille * 0.94);
+        }
       }
       if (e.type === 'caviarde') { g.fillStyle = '#000'; g.fillRect(x, y, w, h); }
       else if (e.type === 'bulle' && e.texte) {
@@ -256,6 +446,12 @@
         String(e.texte || '').split('\n').forEach((l, i) => g.fillText(l, x, y + t * 0.94 + i * t * 1.2));
       }
     }
+  }
+  // Largeur d'un texte (police Helvetica/Arial) pour centrer les tampons comme dans le PDF
+  const ctxMesure = document.createElement('canvas').getContext('2d');
+  function mesureTexte(t, gras, taille) {
+    ctxMesure.font = `${gras ? 'bold ' : ''}${taille}px Helvetica, Arial, sans-serif`;
+    return ctxMesure.measureText(t).width;
   }
   function chargerImageCache(i) { if (!i.img) i.img = chargerImage(i.url); return i.img; }
 
@@ -333,6 +529,9 @@
       let badge = c.querySelector('.badge-modif');
       if (p.elements.length && !badge) { badge = document.createElement('span'); badge.className = 'badge-modif'; badge.textContent = 'modifiée'; c.appendChild(badge); }
       else if (!p.elements.length && badge) badge.remove();
+      let badgeOcr = c.querySelector('.badge-ocr');
+      if (p.ocr && !badgeOcr) { badgeOcr = document.createElement('span'); badgeOcr.className = 'badge-ocr'; badgeOcr.textContent = 'texte reconnu'; badgeOcr.title = 'Texte reconnu (OCR) : interrogeable dans le PDF'; c.appendChild(badgeOcr); }
+      else if (!p.ocr && badgeOcr) badgeOcr.remove();
       const k = cle(p);
       if (c.dataset.cle !== k) {
         c.dataset.cle = k;
@@ -350,13 +549,14 @@
     });
     majSources();
     majBoutons();
+    planifierSauvegarde();
   }
 
   function majBoutons() {
     const n = etat.selection.size;
     document.querySelectorAll('.barre button.sel').forEach(b => { b.disabled = !n; });
     $('#b-modifier').disabled = n !== 1 && !(n === 0 && etat.pages.length === 1);
-    $('#b-enregistrer').disabled = $('#b-diviser').disabled = !etat.pages.length;
+    $('#b-enregistrer').disabled = $('#b-diviser').disabled = $('#b-ocr').disabled = $('#m-enregistrer').disabled = !etat.pages.length;
     $('#b-annuler').disabled = !etat.historique.length;
     $('#b-retablir').disabled = !etat.futur.length;
     const total = etat.pages.length;
@@ -542,7 +742,7 @@
   zone.addEventListener('click', ev => { if (ev.target === zone || ev.target === grille) { etat.selection.clear(); rafraichir(); } });
 
   // ---------- Options ----------
-  const champsOptions = ['o-titre', 'o-auteur', 'o-sommaire', 'o-signets', 'o-aplatir', 'o-num', 'o-num-format', 'o-num-position', 'o-num-taille', 'o-num-debut', 'o-num-ignorer',
+  const champsOptions = ['o-titre', 'o-auteur', 'o-sommaire', 'o-signets', 'o-aplatir', 'o-editable', 'o-num', 'o-num-format', 'o-num-position', 'o-num-taille', 'o-num-debut', 'o-num-ignorer',
     'o-fil', 'o-fil-texte', 'o-fil-opacite', 'o-fil-couleur', 'o-compresser', 'o-dpi'];
   function chargerOptions() {
     let o = {};
@@ -555,6 +755,19 @@
     // Le titre et l'auteur ne sont pas repris d'une fois sur l'autre pour le titre (propre à chaque dossier)
     $('#o-titre').value = '';
   }
+  function lireOptionsBrutes() {
+    const o = {};
+    champsOptions.forEach(id => { const el = document.getElementById(id); o[id] = el.type === 'checkbox' ? el.checked : el.value; });
+    return o;
+  }
+  function appliquerOptions(o) {
+    champsOptions.forEach(id => {
+      const el = document.getElementById(id);
+      if (!o || !(id in o)) return;
+      if (el.type === 'checkbox') el.checked = !!o[id]; else el.value = o[id];
+    });
+    sauverOptions();
+  }
   function sauverOptions() {
     const o = {};
     champsOptions.forEach(id => { const el = document.getElementById(id); o[id] = el.type === 'checkbox' ? el.checked : el.value; });
@@ -562,6 +775,7 @@
     $('#sous-num').classList.toggle('ouvert', $('#o-num').checked);
     $('#sous-fil').classList.toggle('ouvert', $('#o-fil').checked);
     $('#sous-compresser').classList.toggle('ouvert', $('#o-compresser').checked);
+    planifierSauvegarde();
   }
   function options() {
     return {
@@ -574,6 +788,8 @@
       filigrane: { actif: $('#o-fil').checked, texte: $('#o-fil-texte').value, opacite: Number($('#o-fil-opacite').value), couleur: $('#o-fil-couleur').value },
       compresser: $('#o-compresser').checked,
       dpi: Number($('#o-dpi').value) || 150,
+      editable: $('#o-editable').checked,
+      donneesDocument: lireOptionsBrutes(),
     };
   }
   document.querySelector('.cote').addEventListener('input', ev => { if (ev.target.id && ev.target.id.startsWith('o-')) sauverOptions(); });
@@ -609,6 +825,41 @@
     return { type: 'image', plein: true, octets: new Uint8Array(await blob.arrayBuffer()), mime: 'image/jpeg', largeur: d.l, hauteur: d.h };
   }
 
+  // Mots sous une zone caviardée : jamais recopiés (ni texte invisible, ni données de réédition)
+  const sousCaviardage = (m, caches) => caches.some(c => m.x < c.x + c.w && m.x + m.w > c.x && m.y < c.y + c.h && m.y + m.h > c.y);
+
+  // Texte d'une page PDF (pdf.js) en « mots » positionnés sur la page affichée : sert à garder le texte
+  // interrogeable quand la page est recopiée en image, et à la recherche pour caviarder
+  async function texteNatif(p) {
+    if (p.type !== 'pdf') return [];
+    const doc = await etat.sources.get(p.source).doc;
+    const page = await doc.getPage(p.index + 1);
+    const vp = page.getViewport({ scale: 1, rotation: rotTotale(p) });
+    const contenu = await page.getTextContent();
+    const res = [];
+    for (const it of contenu.items) {
+      if (!it.str || !it.str.trim()) continue;
+      const [a, b, c, d, tx, ty] = it.transform;
+      const lgDir = Math.hypot(a, b) || 1, haut = it.height || Math.hypot(c, d) || 10;
+      const ux = a / lgDir, uy = b / lgDir, nx = -uy, ny = ux;
+      const lg = it.width || lgDir * it.str.length * 0.5;
+      // Origine, sens d'écriture et hauteur dans le repère de la page affichée (fractions)
+      const pt = (dd, hh) => { const q = vp.convertToViewportPoint(tx + ux * dd + nx * hh * haut, ty + uy * dd + ny * hh * haut); return [q[0] / vp.width, q[1] / vp.height]; };
+      const o = pt(0, -0.25), fin = pt(lg, -0.25), hautO = pt(0, 1.0);
+      const coins = [o, fin, pt(lg, 1.0), hautO];
+      const xs = coins.map(q => q[0]), ys = coins.map(q => q[1]);
+      const x = Math.min(...xs), y = Math.min(...ys);
+      res.push({ t: it.str, x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y, o, u: [fin[0] - o[0], fin[1] - o[1]], v: [hautO[0] - o[0], hautO[1] - o[1]] });
+    }
+    return res;
+  }
+  async function aDuTexte(p) {
+    if (p.ocr && p.ocr.length) return true;
+    if (p.type !== 'pdf') return false;
+    if (p.texteNatif == null) p.texteNatif = (await texteNatif(p)).reduce((n, m) => n + m.t.trim().length, 0) > 15;
+    return p.texteNatif;
+  }
+
   async function produire(pages, opts, avance = () => {}) {
     const sources = {};
     const liste = [];
@@ -617,8 +868,19 @@
     let k = 0;
     for (const p of pages) {
       const s = etat.sources.get(p.source);
-      const commun = { elements: p.elements, groupe: s ? s.nom : p.titre, source: s ? s.id : (p.titre ? p.id : null) };
-      if (p.elements.some(e => e.type === 'caviarde')) {
+      const caches = p.elements.filter(e => e.type === 'caviarde');
+      const enImage = caches.length > 0 || (p.type === 'pdf' && (s.rasteriser || opts.compresser));
+      // Texte à garder interrogeable : reconnu (OCR), ou celui du PDF quand la page devient une image
+      let mots = p.ocr || null;
+      if (!mots && enImage && p.type === 'pdf') mots = (await texteNatif(p)).map(({ t, x, y, w, h }) => ({ t, x, y, w, h }));
+      if (mots && caches.length) mots = mots.filter(m => !sousCaviardage(m, caches));
+      // Données pour rouvrir le PDF et modifier à nouveau : le caviardage, lui, est définitif
+      const donnees = { elements: p.elements.filter(e => e.type !== 'caviarde'), groupe: s ? s.nom : (p.titre || null) };
+      if (p.ocr) donnees.ocr = caches.length ? p.ocr.filter(m => !sousCaviardage(m, caches)) : p.ocr;
+      if (p.echelle) donnees.echelle = p.echelle;
+      if (p.titre) donnees.intercalaire = p.titre;
+      const commun = { elements: p.elements, groupe: s ? s.nom : p.titre, source: s ? s.id : (p.titre ? p.id : null), ocr: mots, donnees };
+      if (caches.length) {
         // Caviardage : la page est recopiée en image avec les zones noircies, le texte et les images dessous disparaissent
         liste.push({ ...await pageCaviardee(p, opts.compresser ? opts.dpi : 200), ...commun, rotation: 0 });
       } else if (p.type === 'pdf') {
@@ -677,6 +939,56 @@
       console.error(e);
       note(`Le PDF n'a pas pu être créé : ${e.message || e}`, 'erreur');
     }
+  }
+
+  // ---------- Reconnaissance du texte (OCR) ----------
+  async function reconnaitre() {
+    const cibles = etat.selection.size ? pagesChoisies() : etat.pages.slice();
+    if (!cibles.length) return;
+    const aTraiter = [];
+    let dejaTexte = 0;
+    await occupe('Recherche des pages sans texte…', async avance => {
+      for (let i = 0; i < cibles.length; i++) {
+        const p = cibles[i];
+        if (p.type === 'blanche') { avance((i + 1) / cibles.length); continue; }
+        if (await aDuTexte(p)) dejaTexte++; else aTraiter.push(p);
+        avance((i + 1) / cibles.length);
+      }
+    });
+    if (!aTraiter.length) { note(`Rien à reconnaître : ${dejaTexte ? 'les pages contiennent déjà du texte.' : 'aucune page scannée ou photo.'}`); return; }
+    return lancerOcr(aTraiter, dejaTexte);
+  }
+  async function lancerOcr(aTraiter, dejaTexte = 0) {
+    const resultats = new Map();
+    let nbMots = 0;
+    try {
+      await occupe(`Reconnaissance du texte (OCR) : ${aTraiter.length} page(s)…`, async avance => {
+        for (let i = 0; i < aTraiter.length; i++) {
+          const p = aTraiter[i];
+          $('#occupe-texte').textContent = `Reconnaissance du texte : page ${i + 1} / ${aTraiter.length}…`;
+          const d = dims(p);
+          const dpr = window.devicePixelRatio || 1;
+          // ≈ 300 ppp, 3500 pixels au plus
+          const largeur = Math.min(3500, d.l * 300 / 72) / dpr;
+          const c = document.createElement('canvas');
+          await rendrePage(p, c, largeur);
+          const mots = await OcrAtelier.lire(c, v => avance((i + v) / aTraiter.length));
+          c.width = c.height = 0;
+          resultats.set(p, mots);
+          nbMots += mots.length;
+          avance((i + 1) / aTraiter.length);
+        }
+      });
+    } catch (e) {
+      console.error(e);
+      note(`Reconnaissance interrompue : ${e.message || e}`, 'erreur');
+    }
+    if (!resultats.size) return 0;
+    memoriser();
+    for (const [p, mots] of resultats) { p.ocr = mots; p.texteNatif = null; }
+    rafraichir();
+    note(`Texte reconnu sur ${resultats.size} page(s) (${nbMots} mots)${dejaTexte ? ` ; ${dejaTexte} page(s) avaient déjà du texte` : ''}. Le PDF enregistré sera interrogeable (Ctrl+F) et le texte sélectionnable.`, 'ok');
+    return resultats.size;
   }
 
   // ---------- Diviser ----------
@@ -742,14 +1054,19 @@
   //  texte {x,y,texte,taille,couleur,gras} · bulle {x,y,w,h,px,py,texte,taille,couleur}
   //  ligne / fleche {x1,y1,x2,y2,couleur,epaisseur} · crayon {points,couleur,epaisseur}
   //  cadre / ellipse {x,y,w,h,couleur,epaisseur} · surligne / masque / caviarde {x,y,w,h} · image {x,y,w,h,image}
-  const BOITES = ['masque', 'surligne', 'cadre', 'caviarde', 'ellipse', 'bulle', 'image'];
+  //  tampon {x,y,w,h,texte,ligne2,couleur} · cote {x1,y1,x2,y2} · longueur / surface {points} (+ etiquette calculée)
+  const BOITES = ['masque', 'surligne', 'cadre', 'caviarde', 'ellipse', 'bulle', 'image', 'tampon'];
+  const EN_SVG = ['ligne', 'fleche', 'crayon', 'ellipse', 'bulle', 'tampon', 'cote', 'longueur', 'surface'];
+  const SANS_DIV = ['ligne', 'fleche', 'crayon', 'ellipse', 'cote', 'longueur', 'surface'];
+  const MESURES = ['cote', 'longueur', 'surface'];
   const A_TRACER = ['masque', 'surligne', 'cadre', 'caviarde', 'ellipse', 'bulle'];
   const SVG_NS = 'http://www.w3.org/2000/svg';
-  const ed = { page: null, elements: [], outil: 'selection', choisi: null, ech: 1, L: 0, H: 0, hist: [], point: null };
+  const ed = { page: null, elements: [], outil: 'selection', choisi: null, ech: 1, L: 0, H: 0, hist: [], point: null, trace: null, tampon: null };
   const reglages = {
     texte: { couleur: '#000000', taille: 12 }, bulle: { couleur: '#1565c0', taille: 11 },
     ligne: { couleur: '#d32f2f', epaisseur: 2 }, fleche: { couleur: '#d32f2f', epaisseur: 2 }, crayon: { couleur: '#1565c0', epaisseur: 2 },
     cadre: { couleur: '#d32f2f', epaisseur: 2 }, ellipse: { couleur: '#d32f2f', epaisseur: 2 }, surligne: { couleur: '#ffeb3b' },
+    cote: { couleur: '#e65100', epaisseur: 1.5 }, longueur: { couleur: '#e65100', epaisseur: 2 }, surface: { couleur: '#6a1b9a', epaisseur: 1.5 },
   };
   try { Object.assign(reglages, JSON.parse(localStorage.getItem('atelierpdf.reglages') || '{}')); } catch { /* rien */ }
   const sauverReglages = () => { try { localStorage.setItem('atelierpdf.reglages', JSON.stringify(reglages)); } catch { /* rien */ } };
@@ -765,6 +1082,7 @@
     chargerDansEditeur(p);
   }
   async function chargerDansEditeur(p) {
+    ed.trace = null;
     ed.page = p;
     ed.elements = structuredClone(p.elements);
     ed.choisi = null;
@@ -806,8 +1124,14 @@
 
   function choisirOutil(o) {
     finirSaisie();
+    terminerTrace();
+    if (o !== 'tampon') $('#ed-tampons').hidden = true;
+    if (MESURES.includes(o) && ed.page && !ed.page.echelle) {
+      note('Choisissez d\'abord l\'échelle du plan (liste « Échelle »), ou « Étalonner » sur une cote connue.');
+      $('#ed-echelle').classList.add('alerte');
+    }
     ed.outil = o;
-    document.querySelectorAll('#ed-outils button').forEach(b => b.classList.toggle('actif', b.dataset.outil === o));
+    document.querySelectorAll('#ed-outils button').forEach(b => b.classList.toggle('actif', b.dataset.outil === o || b.dataset.outilMenu === o));
     calque.classList.toggle('trace', o !== 'selection' && o !== 'texte');
     calque.classList.toggle('ecrit', o === 'texte');
     if (reglages[o]) majReglagesAffiches(reglages[o]);
@@ -832,7 +1156,7 @@
   }
   function boiteDe(e) {
     if (BOITES.includes(e.type)) return { x: e.x, y: e.y, w: e.w, h: e.h };
-    const pts = e.type === 'crayon' ? e.points : [[e.x1, e.y1], [e.x2, e.y2]];
+    const pts = e.points ? e.points : [[e.x1, e.y1], [e.x2, e.y2]];
     const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
     const x = Math.min(...xs), y = Math.min(...ys);
     return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
@@ -855,6 +1179,7 @@
       const p = document.createElementNS(SVG_NS, 'path');
       p.setAttribute('d', d);
       p.setAttribute('fill', f.fond || 'none');
+      if (f.opaciteFond != null) p.setAttribute('fill-opacity', f.opaciteFond);
       p.setAttribute('stroke', f.trait || 'none');
       p.setAttribute('stroke-width', f.epaisseur || 0);
       p.setAttribute('stroke-linecap', f.rond ? 'round' : 'butt');
@@ -862,13 +1187,38 @@
       p.dataset.i = i;
       svg.appendChild(p);
     }
+    if (e.type === 'tampon') {
+      for (const lg of MoteurPDF.lignesTampon(e, ed.L, ed.H, ed.ech, mesureTexte)) {
+        const t = document.createElementNS(SVG_NS, 'text');
+        t.setAttribute('x', lg.x);
+        t.setAttribute('y', lg.y + lg.taille * 0.94);
+        t.setAttribute('font-size', lg.taille);
+        t.setAttribute('font-family', 'Helvetica, Arial, sans-serif');
+        t.setAttribute('font-weight', lg.gras ? 'bold' : 'normal');
+        t.setAttribute('fill', e.couleur || MoteurPDF.DEFAUTS.tampon);
+        t.textContent = lg.texte;
+        svg.appendChild(t);
+      }
+    }
     return svg;
+  }
+  function noeudsEtiquettes(e, i) {
+    return MoteurPDF.etiquettes(e, ed.L, ed.H, ed.ech).map(et => {
+      const d = document.createElement('div');
+      d.className = 'el-etiquette';
+      d.dataset.i = i;
+      Object.assign(d.style, { left: `${et.cx}px`, top: `${et.cy}px`, fontSize: `${et.taille}px`, color: et.couleur, borderColor: et.couleur });
+      d.textContent = et.texte;
+      return d;
+    });
   }
   function dessinerCalque() {
     const noeuds = [];
+    majMesures(ed.elements, ed.page);
     ed.elements.forEach((e, i) => {
       const choisi = ed.choisi === i;
-      if (['ligne', 'fleche', 'crayon', 'ellipse', 'bulle'].includes(e.type)) noeuds.push(noeudForme(e, i));
+      if (EN_SVG.includes(e.type)) noeuds.push(noeudForme(e, i));
+      if (MESURES.includes(e.type)) noeuds.push(...noeudsEtiquettes(e, i));
       if (e.type === 'bulle') {
         const t = document.createElement('div');
         t.className = 'el el-bulle';
@@ -878,7 +1228,7 @@
           fontSize: `${(e.taille || 11) * ed.ech}px`, fontWeight: e.gras ? 'bold' : 'normal', color: e.couleurTexte || '#000' });
         t.textContent = e.texte || '';
         noeuds.push(t);
-      } else if (!['ligne', 'fleche', 'crayon', 'ellipse'].includes(e.type)) {
+      } else if (!SANS_DIV.includes(e.type)) {
         const d = document.createElement('div');
         d.className = `el el-${e.type}`;
         d.dataset.i = i;
@@ -908,17 +1258,20 @@
           noeuds.push(cadre);
         }
         if (BOITES.includes(e.type)) noeuds.push(poignee('redim', e.x + e.w, e.y + e.h));
-        if (e.type === 'ligne' || e.type === 'fleche') noeuds.push(poignee('p1', e.x1, e.y1), poignee('p2', e.x2, e.y2));
+        if (e.type === 'ligne' || e.type === 'fleche' || e.type === 'cote') noeuds.push(poignee('p1', e.x1, e.y1), poignee('p2', e.x2, e.y2));
+        if ((e.type === 'longueur' || e.type === 'surface') && ed.trace !== e) e.points.forEach(([x, y], k) => noeuds.push(poignee(`v${k}`, x, y)));
         if (e.type === 'bulle') { const p = poignee('pointe', e.px, e.py); p.classList.add('pointe'); noeuds.push(p); }
       }
     });
     calque.replaceChildren(...noeuds);
     calque.querySelectorAll('.el-texte').forEach(d => d.classList.toggle('choisi', Number(d.dataset.i) === ed.choisi));
     majProprietes();
+    majRecapMesures();
   }
   function majProprietes() {
     const e = ed.elements[ed.choisi];
     $('#ed-suppr').disabled = $('#ed-dupl').disabled = !e;
+    $('#ed-memoriser').hidden = !(e && e.type === 'image');
     if (!e) return;
     majReglagesAffiches(e);
   }
@@ -1019,6 +1372,7 @@
           const q = m.shiftKey ? aimanter(fixe, p) : p;
           if (t === 'p1') { e.x1 = q.x; e.y1 = q.y; } else { e.x2 = q.x; e.y2 = q.y; }
         } else if (t === 'pointe') { e.px = p.x; e.py = p.y; }
+        else if (t[0] === 'v') { e.points[Number(t.slice(1))] = [p.x, p.y]; }
         dessinerCalque();
       });
       return;
@@ -1053,10 +1407,48 @@
       return;
     }
 
-    if (ed.outil === 'ligne' || ed.outil === 'fleche') {
-      const e = nouvelElement(ed.outil, { x1: depart.x, y1: depart.y, x2: depart.x, y2: depart.y });
+    // Longueur (polyligne) et surface (polygone) : un clic par point, double-clic ou Entrée pour finir
+    if (ed.outil === 'longueur' || ed.outil === 'surface') {
+      if (!ed.trace) {
+        ed.trace = nouvelElement(ed.outil, { points: [[depart.x, depart.y], [depart.x, depart.y]] });
+        note('Cliquez les points suivants ; double-clic (ou Entrée) pour terminer, Échap pour arrêter.');
+      } else ed.trace.points.push([depart.x, depart.y]);
+      dessinerCalque();
+      return;
+    }
+
+    // Tampon choisi dans la liste : clic = taille standard, glisser = taille voulue
+    if (ed.outil === 'tampon' && ed.tampon) {
+      if (ed.tampon.image) { poserImageBibliotheque(ed.tampon, depart); return; }
+      const d = dims(ed.page);
+      const e = nouvelElement('tampon', { texte: ed.tampon.texte, ligne2: ligneTampon(), couleur: ed.tampon.couleur, x: depart.x, y: depart.y, w: 0, h: 0 });
+      dessinerCalque();
+      suivre(ev, p => {
+        e.x = Math.min(depart.x, p.x); e.y = Math.min(depart.y, p.y);
+        e.w = Math.abs(p.x - depart.x); e.h = Math.abs(p.y - depart.y);
+        dessinerCalque();
+      }, () => {
+        if (e.w * ed.L < 20 || e.h * ed.H < 10) {
+          e.w = Math.min(0.9, 200 / d.l); e.h = Math.min(0.5, (e.ligne2 ? 66 : 48) / d.h);
+          e.x = Math.max(0, Math.min(1 - e.w, depart.x - e.w / 2)); e.y = Math.max(0, Math.min(1 - e.h, depart.y - e.h / 2));
+        }
+        choisirOutil('selection');
+        choisirElement(ed.elements.indexOf(e));
+      });
+      return;
+    }
+
+    if (ed.outil === 'ligne' || ed.outil === 'fleche' || ed.outil === 'cote' || ed.outil === 'etalonner') {
+      const e = nouvelElement(ed.outil === 'etalonner' ? 'ligne' : ed.outil, { x1: depart.x, y1: depart.y, x2: depart.x, y2: depart.y });
+      if (ed.outil === 'etalonner') { e.couleur = '#00897b'; e.epaisseur = 2; }
+      const etalonnage = ed.outil === 'etalonner';
       suivre(ev, (p, m) => { const q = m.shiftKey ? aimanter(depart, p) : p; e.x2 = q.x; e.y2 = q.y; dessinerCalque(); },
-        () => { if (Math.hypot((e.x2 - e.x1) * ed.L, (e.y2 - e.y1) * ed.H) < 5) { ed.elements.pop(); ed.choisi = null; ed.hist.pop(); } dessinerCalque(); });
+        () => {
+          const court = Math.hypot((e.x2 - e.x1) * ed.L, (e.y2 - e.y1) * ed.H) < 5;
+          if (court || etalonnage) { ed.elements.pop(); ed.choisi = null; ed.hist.pop(); }
+          dessinerCalque();
+          if (etalonnage && !court) etalonner(e);
+        });
       dessinerCalque();
       return;
     }
@@ -1135,52 +1527,270 @@
     }
   });
 
-  // ----- Caviarder un texte sur toutes les pages (recherche dans le texte des PDF) -----
+  // ----- Caviarder un texte sur toutes les pages : texte des PDF et texte reconnu (OCR) -----
   const sansAccent = t => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  // Mots d'une page avec leur géométrie : origine o, sens d'écriture u (toute la longueur), hauteur v
+  async function motsPourRecherche(p) {
+    if (p.ocr && p.ocr.length) return p.ocr.map(m => ({ t: m.t, o: [m.x, m.y + m.h], u: [m.w, 0], v: [0, -m.h] }));
+    return texteNatif(p);
+  }
+  // Zone (fractions) d'une partie [a, b] (0..1) d'un mot
+  function zoneMot(m, a, b) {
+    const pts = [[a, 0], [b, 0], [b, 1], [a, 1]].map(([s, t]) => [m.o[0] + m.u[0] * s + m.v[0] * t, m.o[1] + m.u[1] * s + m.v[1] * t]);
+    const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]);
+    const x = Math.min(...xs), y = Math.min(...ys);
+    return { type: 'caviarde', x: x - 0.002, y: y - 0.002, w: Math.max(...xs) - x + 0.004, h: Math.max(...ys) - y + 0.004 };
+  }
+  // Recherche d'une expression (plusieurs mots possibles) : les mots sont mis bout à bout, séparés par une espace
+  function chercher(mots, cherche) {
+    let texte = '';
+    const debuts = [];
+    mots.forEach(m => { debuts.push(texte.length); texte += sansAccent(m.t) + ' '; });
+    const zones = [];
+    const motDe = pos => { let i = debuts.length - 1; while (i > 0 && debuts[i] > pos) i--; return i; };
+    let pos = texte.indexOf(cherche);
+    while (pos >= 0) {
+      const fin = pos + cherche.length;
+      for (let i = motDe(pos); i <= motDe(fin - 1); i++) {
+        const lg = sansAccent(mots[i].t).length || 1;
+        const a = Math.max(0, pos - debuts[i]) / lg, b = Math.min(lg, fin - debuts[i]) / lg;
+        if (b > a) zones.push(zoneMot(mots[i], a, b));
+      }
+      pos = texte.indexOf(cherche, pos + 1);
+    }
+    return zones;
+  }
   async function caviarderRecherche() {
     const mot = prompt('Texte à caviarder sur toutes les pages (nom, adresse, n° de téléphone…) :\nLes zones trouvées seront recouvertes de noir et le texte supprimé à l\'enregistrement.');
     if (!mot || !mot.trim()) return;
-    const cherche = sansAccent(mot.trim());
+    const cherche = sansAccent(mot.trim().replace(/\s+/g, ' '));
     if (ed.page) validerEditeur();
+    // Pages scannées sans texte : proposer de les lire d'abord
+    const sansTexte = [];
+    await occupe('Recherche des pages sans texte…', async avance => {
+      for (let k = 0; k < etat.pages.length; k++) {
+        const p = etat.pages[k];
+        if (p.type !== 'blanche' && !(await aDuTexte(p))) sansTexte.push(p);
+        avance((k + 1) / etat.pages.length);
+      }
+    });
+    if (sansTexte.length && confirm(`${sansTexte.length} page(s) scannée(s) ou photo(s) n'ont pas encore de texte lisible.\nLancer la reconnaissance du texte (OCR) pour y chercher aussi « ${mot.trim()} » ?`)) {
+      await lancerOcr(sansTexte);
+    }
     let total = 0, pagesTouchees = 0;
     const ajouts = new Map();
     await occupe('Recherche du texte…', async avance => {
-      const pdfs = etat.pages.filter(p => p.type === 'pdf');
-      for (let k = 0; k < pdfs.length; k++) {
-        const p = pdfs[k];
-        const doc = await etat.sources.get(p.source).doc;
-        const page = await doc.getPage(p.index + 1);
-        const vp = page.getViewport({ scale: 1, rotation: rotTotale(p) });
-        const contenu = await page.getTextContent();
-        const zones = [];
-        for (const it of contenu.items) {
-          if (!it.str) continue;
-          const s = sansAccent(it.str);
-          let pos = s.indexOf(cherche);
-          while (pos >= 0) {
-            const [a, b, c, d, tx, ty] = it.transform;
-            const lgDir = Math.hypot(a, b) || 1, haut = it.height || Math.hypot(c, d) || 10;
-            const ux = a / lgDir, uy = b / lgDir;      // sens d'écriture
-            const nx = -uy, ny = ux;                     // vers le haut du texte
-            const lg = it.width || lgDir * s.length * 0.5;
-            const d0 = lg * pos / s.length, d1 = lg * (pos + cherche.length) / s.length;
-            const coins = [[d0, -0.25], [d1, -0.25], [d1, 1.0], [d0, 1.0]].map(([dd, hh]) => vp.convertToViewportPoint(tx + ux * dd + nx * hh * haut, ty + uy * dd + ny * hh * haut));
-            const xs = coins.map(q => q[0] / vp.width), ys = coins.map(q => q[1] / vp.height);
-            const x = Math.min(...xs), y = Math.min(...ys);
-            zones.push({ type: 'caviarde', x: x - 0.002, y: y - 0.002, w: Math.max(...xs) - x + 0.004, h: Math.max(...ys) - y + 0.004 });
-            pos = s.indexOf(cherche, pos + 1);
-          }
-        }
+      for (let k = 0; k < etat.pages.length; k++) {
+        const p = etat.pages[k];
+        const zones = chercher(await motsPourRecherche(p), cherche);
         if (zones.length) { ajouts.set(p, zones); total += zones.length; pagesTouchees++; }
-        avance((k + 1) / pdfs.length);
+        avance((k + 1) / etat.pages.length);
       }
     });
-    if (!total) { note(`« ${mot} » n'a pas été trouvé dans le texte des PDF (les scans et photos ne contiennent pas de texte lisible : caviardez-les à la main).`, 'erreur'); return; }
+    if (!total) { note(`« ${mot} » n'a pas été trouvé dans le texte des pages.`, 'erreur'); return; }
     memoriser();
     for (const [p, zones] of ajouts) p.elements.push(...zones);
     rafraichir();
     if (ed.page) chargerDansEditeur(ed.page);
     note(`${total} occurrence(s) caviardée(s) sur ${pagesTouchees} page(s). Vérifiez les pages avant d'enregistrer.`, 'ok');
+  }
+
+  // ----- Mesures sur plan -----
+  // Échelle de la page : millimètres réels par point PDF (1 pt = 25,4/72 mm sur le papier)
+  const MM_PAR_PT = 25.4 / 72;
+  const nombre = (v, dec) => v.toLocaleString('fr-FR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+  const formatLongueur = mm => (mm < 1000 ? `${nombre(mm, 0)} mm` : `${nombre(mm / 1000, 2)} m`);
+  const formatSurface = mm2 => `${nombre(mm2 / 1e6, 2)} m²`;
+  function valeurMesure(e, p) {
+    const d = dims(p);
+    const mmPt = p.echelle ? p.echelle.mmParPt : MM_PAR_PT;
+    const pts = e.type === 'cote' ? [[e.x1, e.y1], [e.x2, e.y2]] : (e.points || []);
+    if (e.type === 'surface') {
+      let a = 0;
+      pts.forEach(([x1, y1], i) => { const [x2, y2] = pts[(i + 1) % pts.length]; a += x1 * d.l * y2 * d.h - x2 * d.l * y1 * d.h; });
+      return { type: 'surface', mm2: Math.abs(a) / 2 * mmPt * mmPt };
+    }
+    let lg = 0;
+    for (let i = 1; i < pts.length; i++) lg += Math.hypot((pts[i][0] - pts[i - 1][0]) * d.l, (pts[i][1] - pts[i - 1][1]) * d.h);
+    return { type: 'longueur', mm: lg * mmPt };
+  }
+  function majMesures(elements, p) {
+    if (!p) return;
+    for (const e of elements) {
+      if (!MESURES.includes(e.type)) continue;
+      const v = valeurMesure(e, p);
+      e.etiquette = (v.type === 'surface' ? formatSurface(v.mm2) : formatLongueur(v.mm)) + (p.echelle ? '' : ' (papier)');
+    }
+  }
+  function majRecapMesures() {
+    const zone = $('#ed-recap');
+    if (!ed.page) return;
+    const ech = ed.page.echelle;
+    $('#ed-echelle').value = ech ? (ech.libelle || 'etalonnee') : '';
+    const opt = $('#ed-echelle').querySelector('option[value=etalonnee]');
+    opt.hidden = !(ech && !ech.libelle);
+    if (ech && !ech.libelle) opt.textContent = `Étalonnée (1 cm papier = ${formatLongueur(ech.mmParPt * 72 / 2.54)})`;
+    let lg = 0, surf = 0, n = 0;
+    for (const e of ed.elements) {
+      if (!MESURES.includes(e.type)) continue;
+      const v = valeurMesure(e, ed.page);
+      n++;
+      if (v.type === 'surface') surf += v.mm2; else lg += v.mm;
+    }
+    zone.textContent = n ? `Mesures de la page : ${n} · longueurs ${formatLongueur(lg)} · surfaces ${formatSurface(surf)}${ech ? '' : ' — échelle non définie'}` : '';
+  }
+  // Échelle appliquée à toutes les pages du même document
+  function appliquerEchelle(echelle) {
+    const src = ed.page.source;
+    memoriser();
+    etat.pages.forEach(p => { if (p === ed.page || (src && p.source === src)) { if (echelle) p.echelle = echelle; else delete p.echelle; } });
+    $('#ed-echelle').classList.remove('alerte');
+    dessinerCalque();
+    rafraichir();
+  }
+  $('#ed-echelle').addEventListener('change', () => {
+    const v = $('#ed-echelle').value;
+    if (v === 'etalonner') { choisirOutil('etalonner'); note('Tracez un trait sur une cote connue du plan, puis indiquez sa longueur réelle.'); majRecapMesures(); return; }
+    if (v === 'etalonnee') return;
+    if (!v) { appliquerEchelle(null); return; }
+    const n = Number(v.split('/')[1]);
+    appliquerEchelle({ mmParPt: MM_PAR_PT * n, libelle: v });
+  });
+  function lireLongueur(texte) {
+    const m = /^\s*([\d\s]+(?:[.,]\d+)?)\s*(mm|cm|m)?\s*$/i.exec(texte || '');
+    if (!m) return null;
+    const v = Number(m[1].replace(/\s/g, '').replace(',', '.'));
+    const u = (m[2] || 'm').toLowerCase();
+    return v * (u === 'mm' ? 1 : u === 'cm' ? 10 : 1000);
+  }
+  function etalonner(e) {
+    const d = dims(ed.page);
+    const lgPt = Math.hypot((e.x2 - e.x1) * d.l, (e.y2 - e.y1) * d.h);
+    const rep = prompt('Longueur réelle de ce trait (ex. 2,50 m · 2500 mm · 250 cm) :');
+    choisirOutil('selection');
+    if (rep === null) { majRecapMesures(); return; }
+    const mm = lireLongueur(rep);
+    if (!mm || mm <= 0) { note('Longueur non comprise : écrivez par exemple « 2,5 m » ou « 2500 mm ».', 'erreur'); majRecapMesures(); return; }
+    appliquerEchelle({ mmParPt: mm / lgPt });
+    note(`Échelle étalonnée pour toutes les pages de ce document.`, 'ok');
+  }
+  function terminerTrace() {
+    const e = ed.trace;
+    if (!e) return;
+    ed.trace = null;
+    // Points en double laissés par le double-clic
+    while (e.points.length > 1) {
+      const [a, b] = e.points.slice(-2);
+      if (Math.hypot((a[0] - b[0]) * ed.L, (a[1] - b[1]) * ed.H) < 4) e.points.pop(); else break;
+    }
+    if (e.points.length < (e.type === 'surface' ? 3 : 2)) { ed.elements.splice(ed.elements.indexOf(e), 1); ed.choisi = null; }
+    dessinerCalque();
+  }
+  calque.addEventListener('pointermove', ev => {
+    if (!ed.trace) return;
+    let p = posFraction(ev);
+    const pts = ed.trace.points;
+    if (ev.shiftKey && pts.length > 1) p = aimanter({ x: pts[pts.length - 2][0], y: pts[pts.length - 2][1] }, p);
+    pts[pts.length - 1] = [p.x, p.y];
+    dessinerCalque();
+  });
+  calque.addEventListener('dblclick', () => { if (ed.trace) terminerTrace(); });
+
+  // Relevé de toutes les mesures du dossier (tableur, séparateur « ; »)
+  function exporterMesures() {
+    validerEditeur();
+    const lignes = [['Page', 'Document', 'Type', 'Valeur', 'Unité', 'Échelle']];
+    let n = 0;
+    etat.pages.forEach((p, i) => {
+      const els = p.elements.filter(e => MESURES.includes(e.type));
+      els.forEach(e => {
+        const v = valeurMesure(e, p);
+        const type = { cote: 'Cote', longueur: 'Longueur', surface: 'Surface' }[e.type];
+        const val = v.type === 'surface' ? nombre(v.mm2 / 1e6, 3) : nombre(v.mm / 1000, 3);
+        lignes.push([i + 1, etat.sources.get(p.source)?.nom || p.titre || '', type, val, v.type === 'surface' ? 'm²' : 'm', p.echelle ? (p.echelle.libelle || 'étalonnée') : 'aucune']);
+        n++;
+      });
+    });
+    if (!n) { note('Aucune mesure dans le dossier.', 'erreur'); return; }
+    const csv = '﻿' + lignes.map(l => l.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\r\n');
+    telecharger(new Blob([csv], { type: 'text/csv' }), `Mesures - ${nomFichier($('#o-titre').value.trim() || 'dossier')}.csv`);
+    note(`${n} mesure(s) exportée(s) (fichier CSV, s'ouvre dans Excel).`, 'ok');
+  }
+
+  // ----- Tampons et images mémorisées (signatures) -----
+  const TAMPONS = [
+    { texte: 'BON POUR EXÉCUTION', couleur: '#2e7d32' }, { texte: 'APPROUVÉ', couleur: '#2e7d32' }, { texte: 'CONFORME', couleur: '#2e7d32' },
+    { texte: 'VISA', couleur: '#1565c0' }, { texte: 'VU', couleur: '#1565c0' }, { texte: 'REÇU', couleur: '#1565c0' },
+    { texte: 'À REPRENDRE', couleur: '#e65100' }, { texte: 'REFUSÉ', couleur: '#c62828' }, { texte: 'NON CONFORME', couleur: '#c62828' },
+    { texte: 'PROVISOIRE', couleur: '#6a1b9a' }, { texte: 'COPIE CONFORME', couleur: '#455a64' }, { texte: 'ANNULÉ', couleur: '#c62828' },
+  ];
+  function ligneTampon() {
+    const nom = $('#tp-nom').value.trim();
+    const date = $('#tp-date').checked ? `le ${new Date().toLocaleDateString('fr-FR')}` : '';
+    return [nom, date].filter(Boolean).join(' – ');
+  }
+  try { $('#tp-nom').value = localStorage.getItem('atelierpdf.tampon.nom') || ''; $('#tp-date').checked = localStorage.getItem('atelierpdf.tampon.date') !== '0'; } catch { /* rien */ }
+  $('#tp-nom').addEventListener('input', () => { try { localStorage.setItem('atelierpdf.tampon.nom', $('#tp-nom').value); } catch { /* rien */ } });
+  $('#tp-date').addEventListener('change', () => { try { localStorage.setItem('atelierpdf.tampon.date', $('#tp-date').checked ? '1' : '0'); } catch { /* rien */ } });
+
+  function armerTampon(t) {
+    ed.tampon = t;
+    $('#ed-tampons').hidden = true;
+    choisirOutil('tampon');
+    note(t.image ? 'Cliquez sur la page pour poser l\'image.' : 'Cliquez sur la page pour poser le tampon (ou glissez pour choisir sa taille).');
+  }
+  async function ouvrirTampons() {
+    const zone = $('#ed-tampons');
+    if (!zone.hidden) { zone.hidden = true; return; }
+    $('#tp-liste').replaceChildren(...TAMPONS.map(t => {
+      const b = document.createElement('button');
+      b.className = 'tp-tampon';
+      b.textContent = t.texte;
+      b.style.color = b.style.borderColor = t.couleur;
+      b.onclick = () => armerTampon(t);
+      return b;
+    }));
+    let biblio = [];
+    try { biblio = await Stockage.listerBibliotheque(); } catch { /* stockage indisponible */ }
+    $('#tp-biblio').replaceChildren(...(biblio.length ? biblio.sort((a, b) => a.date - b.date).map(item => {
+      const d = document.createElement('div');
+      d.className = 'tp-image';
+      const im = document.createElement('img');
+      im.src = URL.createObjectURL(new Blob([item.octets], { type: item.mime }));
+      im.title = item.nom;
+      const n = document.createElement('span'); n.textContent = item.nom;
+      const x = document.createElement('button'); x.textContent = '✕'; x.title = 'Retirer de la bibliothèque';
+      x.onclick = async ev => { ev.stopPropagation(); if (!confirm(`Retirer « ${item.nom} » de la bibliothèque ?`)) return; await Stockage.retirerBibliotheque(item.id); d.remove(); };
+      d.append(im, n, x);
+      d.onclick = () => armerTampon({ image: item });
+      return d;
+    }) : [Object.assign(document.createElement('p'), { className: 'aide', textContent: 'Aucune image : insérez votre signature (outil Image), sélectionnez-la puis « ☆ Mémoriser ».' })]));
+    zone.hidden = false;
+  }
+  $('#tp-perso').addEventListener('click', () => {
+    const t = prompt('Texte du tampon :');
+    if (t && t.trim()) armerTampon({ texte: t.trim().toUpperCase(), couleur: $('#ed-couleur').value === '#000000' ? '#1565c0' : $('#ed-couleur').value });
+  });
+  function poserImageBibliotheque(t, lieu) {
+    const item = t.image;
+    const id = `b${item.id}`;
+    if (!etat.images.has(id)) etat.images.set(id, { octets: item.octets, mime: item.mime, l: item.l, h: item.h, url: URL.createObjectURL(new Blob([item.octets], { type: item.mime })) });
+    const w = Math.min(0.3, (item.largeurPage || 0.25)), h = w * (item.h / item.l) * (ed.L / ed.H);
+    nouvelElement('image', { image: id, x: Math.max(0, Math.min(1 - w, lieu.x - w / 2)), y: Math.max(0, Math.min(1 - h, lieu.y - h / 2)), w, h });
+    choisirOutil('selection');
+    dessinerCalque();
+  }
+  async function memoriserImage() {
+    const e = ed.elements[ed.choisi];
+    if (!e || e.type !== 'image') return;
+    const img = etat.images.get(e.image);
+    if (!img) return;
+    const nom = prompt('Nom de cette image dans la bibliothèque (ex. « Signature C. Vert », « Tampon société ») :', 'Signature');
+    if (!nom) return;
+    try {
+      await Stockage.ajouterBibliotheque({ id: nouvelId('b'), nom: nom.trim(), octets: img.octets, mime: img.mime, l: img.l, h: img.h, largeurPage: e.w, date: Date.now() });
+      note(`« ${nom} » mémorisée : retrouvez-la dans « Tampon ».`, 'ok');
+    } catch (err) { note(`Mémorisation impossible : ${err.message || err}`, 'erreur'); }
   }
 
   function supprimerElement() {
@@ -1223,6 +1833,9 @@
   $('#ed-suppr').addEventListener('click', supprimerElement);
   $('#ed-dupl').addEventListener('click', dupliquerElement);
   $('#ed-caviarder').addEventListener('click', caviarderRecherche);
+  $('#ed-tampon').addEventListener('click', ouvrirTampons);
+  $('#ed-memoriser').addEventListener('click', memoriserImage);
+  $('#ed-csv').addEventListener('click', exporterMesures);
   $('#ed-fermer').addEventListener('click', fermerEditeur);
   $('#ed-prec').addEventListener('click', () => changerPage(-1));
   $('#ed-suiv').addEventListener('click', () => changerPage(1));
@@ -1233,6 +1846,9 @@
     if (ctrl && touche === 'z') { ev.preventDefault(); edAnnuler(); return; }
     if (ctrl && touche === 'd') { ev.preventDefault(); dupliquerElement(); return; }
     if (ev.key === 'Delete' || ev.key === 'Backspace') { ev.preventDefault(); supprimerElement(); return; }
+    if (ev.key === 'Enter' && ed.trace) { terminerTrace(); return; }
+    if (ev.key === 'Escape' && ed.trace) { terminerTrace(); return; }
+    if (ev.key === 'Escape' && !$('#ed-tampons').hidden) { $('#ed-tampons').hidden = true; return; }
     if (ev.key === 'Escape') { if (ed.outil !== 'selection') choisirOutil('selection'); else if (ed.choisi != null) choisirElement(null); else fermerEditeur(); return; }
     if (ev.key === 'PageDown') { changerPage(1); return; }
     if (ev.key === 'PageUp') { changerPage(-1); return; }
@@ -1264,6 +1880,12 @@
   $('#b-dupliquer').onclick = dupliquer;
   $('#b-supprimer').onclick = () => supprimer();
   $('#b-modifier').onclick = () => ouvrirEditeur();
+  $('#b-ocr').onclick = () => reconnaitre();
+  $('#b-projet').onclick = ev => { ev.stopPropagation(); $('#menu-projet').hidden = !$('#menu-projet').hidden; };
+  document.addEventListener('click', ev => { if (!ev.target.closest('.menu')) $('#menu-projet').hidden = true; });
+  $('#m-nouveau').onclick = () => { $('#menu-projet').hidden = true; nouveauTravail(); };
+  $('#m-ouvrir').onclick = () => { $('#menu-projet').hidden = true; ouvrirFichiers(); };
+  $('#m-enregistrer').onclick = () => { $('#menu-projet').hidden = true; enregistrerProjet(); };
   $('#b-enregistrer').onclick = () => enregistrerPages(etat.pages, etat.sources.get(etat.pages[0]?.source)?.nom || 'Compilation');
   $('#b-extraire').onclick = () => enregistrerPages(pagesChoisies(), 'Extrait');
   $('#b-diviser').onclick = ouvrirDiviser;
@@ -1300,11 +1922,12 @@
     else if (ev.key === 'Escape') { etat.selection.clear(); rafraichir(); }
   });
 
-  window.addEventListener('beforeunload', ev => { if (etat.pages.length) { ev.preventDefault(); ev.returnValue = ''; } });
+  window.addEventListener('beforeunload', ev => { if (etat.pages.length && (sauvegardeEnAttente || !sessionProposee)) { ev.preventDefault(); ev.returnValue = ''; } });
 
   chargerOptions();
   sauverOptions();
   rafraichir();
+  proposerReprise();
   // Accès pour les tests automatisés
   window.AtelierPDF = { etat, importer, produire, options };
 })();

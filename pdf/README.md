@@ -24,6 +24,13 @@ Obtenir les fichiers : onglet **Actions** du dépôt GitHub → dernière exécu
   surlignage, masque (blanc correcteur), images et signatures (bouton ou Ctrl+V).
 - **Caviarder** : zones noires dont le contenu est réellement supprimé (page recopiée en image à l'enregistrement),
   à la main ou en recherchant un mot dans tous les PDF.
+- **Tampons** (BON POUR EXÉCUTION, VISA, VU… avec nom et date) et **signatures mémorisées** sur le poste.
+- **Mesures sur plan** à l'échelle (1/50, 1/100… ou étalonnage sur une cote) : cotes, longueurs cumulées, surfaces ;
+  total par page et export CSV de toutes les mesures.
+- **OCR** (Tesseract, français, sur le poste) : scans et photos interrogeables, caviardage par recherche dans les scans.
+- **Sauvegarde automatique** du travail en cours (reprise à la réouverture) et **fichier projet** `.atelierpdf`.
+- **Réédition** : un PDF enregistré par Atelier PDF, rouvert dans Atelier PDF, retrouve ses annotations modifiables
+  (données intégrées au PDF, invisibles pour les autres logiciels ; numéros, filigrane et sommaire retirés puis refaits).
 - **Numérotation** des pages, **filigrane**, titre et auteur du document, aplatissement des formulaires.
 - **Extraire** des pages, **diviser** (par document, par page, toutes les N pages, par plages).
 - **Réduire la taille** (pages converties en images 100–200 ppp).
@@ -33,9 +40,11 @@ Mode d'emploi détaillé : [installer/files/AtelierPDF-LISEZMOI.txt](../installe
 
 ## Développement
 
-- `pdf/src/` : `index.html`, `app.css`, `app.js` (interface), `moteur.js` (assemblage avec pdf-lib, testé sous Node).
+- `pdf/src/` : `index.html`, `app.css`, `app.js` (interface), `moteur.js` (assemblage avec pdf-lib, testé sous Node),
+  `stockage.js` (sauvegarde, projets, bibliothèque), `ocr.js` (Tesseract : moteur, worker et modèle inclus dans la page).
   `pdf/src/index.html` s'ouvre directement dans un navigateur pour le développement.
 - `node pdf/build.js` → `dist/AtelierPDF.html` (un seul fichier : pdf.js et pdf-lib inclus).
 - `bash installer/build-pdf.sh` → `dist/AtelierPDF-Setup-<version>.exe` (version dans `pdf/VERSION`).
 - Tests : `node --test test/atelier-pdf.test.js` (inclus dans `npm test`).
-- Bibliothèques (déjà présentes dans le dépôt) : pdf.js 3.11.174 (Apache 2.0), pdf-lib 1.17.1 (MIT).
+- Bibliothèques (déjà présentes dans le dépôt) : pdf.js 3.11.174 (Apache 2.0), pdf-lib 1.17.1 (MIT),
+  tesseract.js 7 et modèle français (Apache 2.0).

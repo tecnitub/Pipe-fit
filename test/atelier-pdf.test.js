@@ -7,6 +7,18 @@ globalThis.PDFLib = require(path.join(__dirname, '../doe/public/vendor/pdf-lib-1
 const { PDFDocument, PDFName, StandardFonts } = globalThis.PDFLib;
 const Moteur = require('../pdf/src/moteur.js');
 
+// Texte de tous les flux de contenu des pages (décompressés)
+async function contenuPages(octets) {
+  const doc = await PDFDocument.load(octets);
+  let texte = '';
+  for (const p of doc.getPages()) {
+    for (const ref of p.node.Contents().asArray()) {
+      texte += Buffer.from(globalThis.PDFLib.decodePDFRawStream(doc.context.lookup(ref)).decode()).toString('latin1');
+    }
+  }
+  return texte;
+}
+
 // PNG 1×1 rouge
 const PNG = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64'));
 
@@ -108,4 +120,70 @@ test('formes : pointe de bulle sur le bon côté, flèche à deux tracés, coupu
   assert.match(Moteur.chemin([['M', 1, 2], ['L', 3, 4], ['Z']]), /^M 1 2 L 3 4 Z$/);
   const lignes = Moteur.couperLignes(t => t.length, 'un deux trois quatre', 9);
   assert.deepStrictEqual(lignes, ['un deux', 'trois', 'quatre']);
+});
+
+test('tampon, cotes, longueur et surface avec étiquettes ; texte OCR invisible hors zones caviardées', async () => {
+  const sources = { a: { octets: await pdfDe(1) } };
+  const elements = [
+    { type: 'tampon', x: 0.5, y: 0.1, w: 0.35, h: 0.1, texte: 'BON POUR EXÉCUTION', ligne2: 'Tecnitub – le 04/11/2026' },
+    { type: 'cote', x1: 0.1, y1: 0.5, x2: 0.6, y2: 0.5, etiquette: '5,00 m' },
+    { type: 'longueur', points: [[0.1, 0.6], [0.3, 0.6], [0.3, 0.7]], etiquette: '3,25 m' },
+    { type: 'surface', points: [[0.5, 0.6], [0.8, 0.6], [0.8, 0.8], [0.5, 0.8]], etiquette: '12,40 m²' },
+    { type: 'caviarde', x: 0.1, y: 0.9, w: 0.2, h: 0.03 },
+  ];
+  const ocr = [{ t: 'Visible', x: 0.5, y: 0.9, w: 0.1, h: 0.02 }, { t: 'Secret', x: 0.15, y: 0.905, w: 0.1, h: 0.02 }];
+  for (const rotation of [0, 90]) {
+    const octets = await Moteur.compiler({ sources, pages: [{ source: 'a', index: 0, rotation, elements, ocr }] });
+    const contenu = await contenuPages(octets);
+    const hex = t => Buffer.from(t, 'latin1').toString('hex').toUpperCase();
+    assert.ok(contenu.includes(`<${hex('Visible')}>`), 'mot reconnu écrit (invisible)');
+    assert.ok(!contenu.includes(`<${hex('Secret')}>`), 'mot sous le caviardage jamais écrit');
+  }
+  const l = Moteur.lignesTampon(elements[0], 600, 800, 1, (t, g, s) => t.length * s * 0.6);
+  assert.strictEqual(l.length, 2);
+  assert.ok(l[0].x >= 300 && l[0].x + l[0].texte.length * l[0].taille * 0.6 <= 300 + 210 + 0.01, 'titre centré dans le cadre');
+  assert.strictEqual(Moteur.etiquettes(elements[1], 600, 800)[0].cx, 210);
+});
+
+test('PDF rouvert : annotations, numérotation, filigrane et sommaire retirés, données retrouvées', async () => {
+  const sources = { a: { octets: await pdfDe(2) }, b: { octets: await pdfDe(1) } };
+  const elA = [{ type: 'texte', x: 0.1, y: 0.1, texte: 'Note' }, { type: 'image', image: 'sig', x: 0.5, y: 0.5, w: 0.2, h: 0.1 }];
+  const pages = [
+    { source: 'a', index: 0, groupe: 'Notice', elements: elA, donnees: { elements: elA, groupe: 'Notice' } },
+    { source: 'a', index: 1, groupe: 'Notice', elements: [], donnees: { elements: [], groupe: 'Notice' } },
+    { source: 'b', index: 0, rotation: 90, groupe: 'Plan', elements: [], donnees: { elements: [], groupe: 'Plan', echelle: { mmParPt: 17.6 } } },
+  ];
+  const octets = await Moteur.compiler({
+    sources, pages, images: { sig: { octets: PNG, mime: 'image/png' } },
+    options: { sommaire: true, signets: true, numerotation: { actif: true }, filigrane: { actif: true, texte: 'COPIE' }, donneesDocument: { titre: 'DOE' } },
+  });
+  assert.strictEqual((await PDFDocument.load(octets)).getPageCount(), 4);
+  const r = await Moteur.relire(octets);
+  assert.ok(r, 'reconnu comme PDF Atelier');
+  const doc = await PDFDocument.load(r.octets);
+  assert.strictEqual(doc.getPageCount(), 3, 'page de sommaire retirée');
+  // Il ne reste que le contenu d'origine (encadré par pdf-lib : q, contenu, Q)
+  doc.getPages().forEach(p => assert.strictEqual(p.node.Contents().size(), 3));
+  assert.strictEqual(doc.getPage(2).getRotation().angle, 90);
+  assert.deepStrictEqual(r.pages.map(p => p.groupe), ['Notice', 'Notice', 'Plan']);
+  assert.strictEqual(r.pages[0].elements[0].texte, 'Note');
+  assert.strictEqual(r.pages[2].echelle.mmParPt, 17.6);
+  assert.strictEqual(r.images.sig.mime, 'image/png');
+  assert.deepStrictEqual([...r.images.sig.octets], [...PNG]);
+  assert.strictEqual(r.options.titre, 'DOE');
+  assert.strictEqual(await Moteur.relire(await pdfDe(1)), null, 'PDF ordinaire non concerné');
+});
+
+test('fichier projet .atelierpdf : aller-retour', () => {
+  const Stockage = require('../pdf/src/stockage.js');
+  const meta = { version: 1, pages: [{ id: 'p1', elements: [{ type: 'texte', texte: 'é' }] }] };
+  const fichiers = new Map([['s1', { octets: new Uint8Array([1, 2, 3]), mime: 'application/pdf' }], ['i1', { octets: PNG, mime: 'image/png' }]]);
+  const octets = Stockage.versProjet(meta, fichiers);
+  assert.ok(Stockage.estProjet(octets));
+  const r = Stockage.depuisProjet(octets);
+  assert.deepStrictEqual(r.meta, meta);
+  assert.deepStrictEqual([...r.fichiers.get('s1').octets], [1, 2, 3]);
+  assert.strictEqual(r.fichiers.get('i1').mime, 'image/png');
+  assert.deepStrictEqual([...r.fichiers.get('i1').octets], [...PNG]);
+  assert.throws(() => Stockage.depuisProjet(PNG));
 });

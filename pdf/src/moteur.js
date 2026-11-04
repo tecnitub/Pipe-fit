@@ -70,9 +70,17 @@
   // Chaque forme est décrite dans le repère de la page affichée, en unités « l × h » (points pour le PDF,
   // pixels à l'écran), k = unités par point (taille des pointes de flèche, épaisseurs, arrondis).
   // Résultat : [{ cmds: [['M',x,y],['L',x,y],['C',x1,y1,x2,y2,x,y],['Z']], trait, fond, epaisseur, rond, opacite }]
-  const DEFAUTS = { ligne: '#d32f2f', fleche: '#d32f2f', crayon: '#1565c0', ellipse: '#d32f2f', cadre: '#d32f2f', bulle: '#1565c0', texte: '#000000' };
+  const DEFAUTS = { ligne: '#d32f2f', fleche: '#d32f2f', crayon: '#1565c0', ellipse: '#d32f2f', cadre: '#d32f2f', bulle: '#1565c0', texte: '#000000',
+    tampon: '#2e7d32', cote: '#e65100', longueur: '#e65100', surface: '#6a1b9a' };
   const K_ELLIPSE = 0.5523;
 
+  function cmdsRectArrondi(x, y, w, h, r) {
+    r = Math.max(0, Math.min(r, w / 2, h / 2));
+    const c = r * (1 - K_ELLIPSE);
+    return [['M', x + r, y], ['L', x + w - r, y], ['C', x + w - c, y, x + w, y + c, x + w, y + r], ['L', x + w, y + h - r],
+      ['C', x + w, y + h - c, x + w - c, y + h, x + w - r, y + h], ['L', x + r, y + h], ['C', x + c, y + h, x, y + h - c, x, y + h - r],
+      ['L', x, y + r], ['C', x, y + c, x + c, y, x + r, y], ['Z']];
+  }
   function cmdsRect(x, y, w, h) { return [['M', x, y], ['L', x + w, y], ['L', x + w, y + h], ['L', x, y + h], ['Z']]; }
   function cmdsEllipse(x, y, w, h) {
     const cx = x + w / 2, cy = y + h / 2, rx = w / 2, ry = h / 2, ox = rx * K_ELLIPSE, oy = ry * K_ELLIPSE;
@@ -129,9 +137,73 @@
         return [{ cmds: cmdsEllipse(X(e.x), Y(e.y), X(e.w), Y(e.h)), trait: coul, epaisseur: ep, fond: e.fond || null }];
       case 'bulle':
         return [{ cmds: cmdsBulle(X(e.x), Y(e.y), X(e.w), Y(e.h), X(e.px ?? e.x), Y(e.py ?? (e.y + e.h + 0.05)), k), trait: coul, epaisseur: Math.max(k, ep * 0.75), fond: e.fond || '#ffffff' }];
+      case 'tampon': {
+        const x = X(e.x), y = Y(e.y), w = X(e.w), hh = Y(e.h), i = 3.5 * k;
+        return [
+          { cmds: cmdsRectArrondi(x, y, w, hh, 6 * k), trait: coul, epaisseur: 2.2 * k },
+          { cmds: cmdsRectArrondi(x + i, y + i, w - 2 * i, hh - 2 * i, 3.5 * k), trait: coul, epaisseur: 0.8 * k },
+        ];
+      }
+      case 'cote': {
+        // Cote : trait, traits de rappel perpendiculaires et pointes aux deux bouts
+        const x1 = X(e.x1), y1 = Y(e.y1), x2 = X(e.x2), y2 = Y(e.y2);
+        const lg = Math.hypot(x2 - x1, y2 - y1) || 1;
+        const ux = (x2 - x1) / lg, uy = (y2 - y1) / lg, nx = -uy, ny = ux;
+        const t = 6 * k, pt = Math.min(lg / 3, 7 * k), dp = pt * 0.4;
+        return [
+          { cmds: [['M', x1, y1], ['L', x2, y2], ['M', x1 + nx * t, y1 + ny * t], ['L', x1 - nx * t, y1 - ny * t], ['M', x2 + nx * t, y2 + ny * t], ['L', x2 - nx * t, y2 - ny * t]], trait: coul, epaisseur: Math.max(0.6 * k, ep * 0.6) },
+          { cmds: [['M', x1, y1], ['L', x1 + ux * pt + nx * dp, y1 + uy * pt + ny * dp], ['L', x1 + ux * pt - nx * dp, y1 + uy * pt - ny * dp], ['Z'],
+            ['M', x2, y2], ['L', x2 - ux * pt + nx * dp, y2 - uy * pt + ny * dp], ['L', x2 - ux * pt - nx * dp, y2 - uy * pt - ny * dp], ['Z']], fond: coul },
+        ];
+      }
+      case 'longueur': {
+        const pts = e.points || [];
+        if (pts.length < 2) return [];
+        const r = 1.8 * k;
+        const sommets = pts.flatMap(([px, py]) => cmdsRect(X(px) - r, Y(py) - r, 2 * r, 2 * r));
+        return [{ cmds: pts.map(([px, py], i) => [i ? 'L' : 'M', X(px), Y(py)]), trait: coul, epaisseur: ep, rond: true }, { cmds: sommets, fond: coul }];
+      }
+      case 'surface': {
+        const pts = e.points || [];
+        if (pts.length < 2) return [];
+        return [{ cmds: [...pts.map(([px, py], i) => [i ? 'L' : 'M', X(px), Y(py)]), ['Z']], trait: coul, epaisseur: ep, fond: coul, opaciteFond: 0.15 }];
+      }
       default:
         return [];
     }
+  }
+
+  // Étiquettes des mesures (valeur calculée par l'application dans e.etiquette), centrées en (cx, cy)
+  function etiquettes(e, l, h, k = 1) {
+    if (!e.etiquette || !['cote', 'longueur', 'surface'].includes(e.type)) return [];
+    const taille = (e.taille || 10) * k;
+    let cx, cy;
+    if (e.type === 'cote') { cx = (e.x1 + e.x2) / 2 * l; cy = (e.y1 + e.y2) / 2 * h; }
+    else {
+      const pts = e.points || [];
+      if (!pts.length) return [];
+      if (e.type === 'longueur') { const [px, py] = pts[pts.length - 1]; cx = px * l; cy = py * h - taille * 1.2; }
+      else { cx = pts.reduce((a, q) => a + q[0], 0) / pts.length * l; cy = pts.reduce((a, q) => a + q[1], 0) / pts.length * h; }
+    }
+    return [{ texte: e.etiquette, cx, cy, taille, couleur: e.couleur || DEFAUTS[e.type] }];
+  }
+
+  // Lignes d'un tampon centrées dans son cadre ; mesure(texte, gras, taille) -> largeur dans les mêmes unités
+  function lignesTampon(e, l, h, k, mesure) {
+    const W = e.w * l, H = e.h * h, pad = 8 * k;
+    const l2 = (e.ligne2 || '').trim();
+    const m1 = Math.max(1e-6, mesure(e.texte || '', true, 1));
+    const s1 = Math.max(1, Math.min(H * (l2 ? 0.36 : 0.6), (W - 2 * pad) / m1));
+    const s2 = l2 ? Math.max(1, Math.min(H * 0.24, s1 * 0.75, (W - 2 * pad) / Math.max(1e-6, mesure(l2, false, 1)))) : 0;
+    // Hauteur visible des majuscules ≈ 0,72 × taille ; haut du dessin à 0,22 × taille sous le haut de la ligne
+    const bloc = 0.72 * s1 + (l2 ? 0.45 * s2 + 0.72 * s2 : 0);
+    const haut = e.y * h + (H - bloc) / 2;
+    const res = [{ texte: e.texte || '', gras: true, taille: s1, x: e.x * l + (W - mesure(e.texte || '', true, s1)) / 2, y: haut - 0.22 * s1 }];
+    if (l2) {
+      const haut2 = haut + 0.72 * s1 + 0.45 * s2;
+      res.push({ texte: l2, gras: false, taille: s2, x: e.x * l + (W - mesure(l2, false, s2)) / 2, y: haut2 - 0.22 * s2 });
+    }
+    return res;
   }
 
   // Commandes -> chemin SVG, chaque point passé par f(x, y) -> [X, Y]
@@ -195,8 +267,21 @@
       for (const f of formes(e, affiche.l, affiche.h, 1)) {
         const o = { x: 0, y: 0 };
         if (f.trait) Object.assign(o, { borderColor: couleur(f.trait), borderWidth: f.epaisseur, borderLineCap: f.rond ? LineCapStyle.Round : LineCapStyle.Butt });
-        if (f.fond) o.color = couleur(f.fond);
+        if (f.fond) { o.color = couleur(f.fond); if (f.opaciteFond != null) o.opacity = f.opaciteFond; }
         page.drawSvgPath(chemin(f.cmds, versChemin), o);
+      }
+      for (const et of etiquettes(e, affiche.l, affiche.h, 1)) {
+        const t = nettoyer(ctx.police, et.texte);
+        const lt = ctx.police.widthOfTextAtSize(t, et.taille);
+        const bw = lt + et.taille * 0.8, bh = et.taille * 1.35;
+        page.drawSvgPath(chemin(cmdsRectArrondi(et.cx - bw / 2, et.cy - bh / 2, bw, bh, et.taille * 0.3), versChemin), { x: 0, y: 0, color: couleur('#ffffff'), borderColor: couleur(et.couleur), borderWidth: 0.6 });
+        poserTexte(page, boite, r, ctx.police, { texte: t, u: (et.cx - lt / 2) / affiche.l, v: (et.cy - et.taille * 0.58) / affiche.h, taille: et.taille, coul: couleur(et.couleur) });
+      }
+      if (e.type === 'tampon') {
+        const mesure = (t, gras, taille) => (gras ? ctx.policeGras : ctx.police).widthOfTextAtSize(nettoyer(gras ? ctx.policeGras : ctx.police, t), taille);
+        for (const lg of lignesTampon(e, affiche.l, affiche.h, 1, mesure)) {
+          poserTexte(page, boite, r, lg.gras ? ctx.policeGras : ctx.police, { texte: lg.texte, u: lg.x / affiche.l, v: lg.y / affiche.h, taille: lg.taille, coul: couleur(e.couleur || DEFAUTS.tampon) });
+        }
       }
       if (e.type === 'bulle' && e.texte) {
         const police = e.gras ? ctx.policeGras : ctx.police;
@@ -205,6 +290,25 @@
         const lignes = couperLignes(t => police.widthOfTextAtSize(nettoyer(police, t), taille), e.texte, largeur);
         poserTexte(page, boite, r, police, { texte: lignes.join('\n'), u: e.x + MARGE_BULLE / affiche.l, v: e.y + MARGE_BULLE / affiche.h, taille, coul: couleur(e.couleurTexte || '#000000') });
       }
+    }
+  }
+
+  // Texte reconnu (OCR) posé de façon invisible sur la page : le PDF devient interrogeable et le texte sélectionnable.
+  // Les mots situés sous une zone caviardée ne sont jamais écrits.
+  function dessinerOcr(page, r, mots, elements, ctx) {
+    const boite = page.getCropBox();
+    const aff = tailleAffichee(boite, r);
+    const caches = (elements || []).filter(e => e.type === 'caviarde');
+    const sousCache = m => caches.some(c => m.x < c.x + c.w && m.x + m.w > c.x && m.y < c.y + c.h && m.y + m.h > c.y);
+    for (const m of mots || []) {
+      if (sousCache(m)) continue;
+      const t = nettoyer(ctx.police, m.t);
+      if (!t.trim()) continue;
+      const hPt = m.h * aff.h, wPt = m.w * aff.l;
+      let taille = hPt * 0.9;
+      const lg = ctx.police.widthOfTextAtSize(t, taille);
+      if (lg > 0) taille = Math.max(hPt * 0.4, Math.min(hPt * 1.3, taille * wPt / lg));
+      poserTexte(page, boite, r, ctx.police, { texte: t, u: m.x, v: m.y + (hPt - taille) / 2 / aff.h, taille, coul: couleur('#000000'), opacite: 0 });
     }
   }
 
@@ -383,6 +487,7 @@
     }
 
     let k = 0;
+    const infosPages = [];
     for (const p of pages) {
       let page;
       if (!p.type || p.type === 'pdf') {
@@ -407,7 +512,13 @@
       }
       const r = normRot(p.rotation || 0);
       page.setRotation(degrees(r));
+      // Annotations et texte OCR dans un flux à part, retiré si le PDF est rouvert dans Atelier PDF pour être modifié
+      nouveauFlux(page);
       await dessinerElements(sortie, page, r, p.elements, ctx);
+      if (p.ocr && p.ocr.length) dessinerOcr(page, r, p.ocr, p.elements, ctx);
+      const calques = page.contentStreamRef ? [page.contentStreamRef] : [];
+      nouveauFlux(page);
+      infosPages.push({ page, calques, donnees: p.donnees });
       progression(++k / pages.length);
     }
 
@@ -434,6 +545,7 @@
       if (nbSommaire) sig.unshift({ titre: 'Sommaire', pageFinale: 0 });
       ajouterSignets(sortie, sig);
     }
+    if (options.editable !== false) ecrireDonneesEdition(sortie, infosPages, images, options);
 
     sortie.setTitle(options.titre || '', { showInWindowTitleBar: !!options.titre });
     if (options.auteur) sortie.setAuthor(options.auteur);
@@ -443,6 +555,85 @@
     sortie.setCreationDate(new Date());
     sortie.setModificationDate(new Date());
     return sortie.save({ useObjectStreams: true });
+  }
+
+  // pdf-lib écrit dans le dernier flux de la page : on en force un nouveau
+  function nouveauFlux(page) { page.contentStream = undefined; page.contentStreamRef = undefined; }
+
+  // Données de réédition : pour chaque page, les flux ajoutés (annotations, numéros, filigrane) et les annotations
+  // d'origine ; pour le document, les images utilisées et les options. Invisibles pour les autres logiciels.
+  function ecrireDonneesEdition(sortie, infosPages, images, options) {
+    const { PDFName, PDFBool, PDFHexString } = lib();
+    const c = sortie.context;
+    const flux = obj => c.register(c.flateStream(new TextEncoder().encode(JSON.stringify(obj))));
+    const parPage = new Map(infosPages.map(i => [i.page.ref.toString(), i]));
+    sortie.getPages().forEach(page => {
+      const info = parPage.get(page.ref.toString());
+      const calques = info ? info.calques.slice() : [];
+      // Flux créé ensuite par la numérotation ou le filigrane
+      if (page.contentStreamRef) calques.push(page.contentStreamRef);
+      const d = c.obj({ V: 1 });
+      d.set(PDFName.of('Calques'), c.obj(calques));
+      if (!info) d.set(PDFName.of('Genere'), PDFBool.True);       // page de sommaire
+      else if (info.donnees) d.set(PDFName.of('Donnees'), flux(info.donnees));
+      page.node.set(PDFName.of('AtelierPDF'), d);
+    });
+    const dImages = c.obj({});
+    const utilisees = new Set();
+    infosPages.forEach(i => (i.donnees?.elements || []).forEach(e => { if (e.type === 'image') utilisees.add(e.image); }));
+    for (const id of utilisees) {
+      if (!images[id]) continue;
+      const s = c.stream(images[id].octets instanceof Uint8Array ? images[id].octets : new Uint8Array(images[id].octets), {});
+      s.dict.set(PDFName.of('Mime'), PDFHexString.fromText(images[id].mime || 'image/png'));
+      dImages.set(PDFName.of(id), c.register(s));
+    }
+    const doc = c.obj({ V: 1 });
+    doc.set(PDFName.of('Images'), dImages);
+    doc.set(PDFName.of('Options'), flux(options.donneesDocument || {}));
+    sortie.catalog.set(PDFName.of('AtelierPDF'), doc);
+  }
+
+  // PDF produit par Atelier PDF -> PDF d'origine (sans annotations, numéros, filigrane ni sommaire) et données pour
+  // retrouver les annotations modifiables. null si le fichier ne vient pas d'Atelier PDF.
+  async function relire(octets) {
+    const { PDFDocument, PDFName, PDFArray, PDFRef, decodePDFRawStream } = lib();
+    let doc;
+    try { doc = await PDFDocument.load(octets, { updateMetadata: false }); } catch { return null; }
+    const racine = doc.catalog.lookup(PDFName.of('AtelierPDF'));
+    if (!racine) return null;
+    const lireJson = ref => {
+      try { return JSON.parse(new TextDecoder().decode(decodePDFRawStream(doc.context.lookup(ref)).decode())); } catch { return null; }
+    };
+    const images = {};
+    const dImages = racine.lookup(PDFName.of('Images'));
+    if (dImages) {
+      for (const [nom, ref] of dImages.entries()) {
+        const st = doc.context.lookup(ref);
+        const mime = st.dict.lookup(PDFName.of('Mime'));
+        images[nom.asString().slice(1)] = { octets: st.getContents().slice(), mime: mime && mime.decodeText ? mime.decodeText() : 'image/png' };
+      }
+    }
+    const options = racine.get(PDFName.of('Options')) ? lireJson(racine.get(PDFName.of('Options'))) : null;
+    const pages = [];
+    const aRetirer = [];
+    doc.getPages().forEach((page, i) => {
+      const d = page.node.lookup(PDFName.of('AtelierPDF'));
+      if (!d) { pages.push({}); return; }
+      if (d.get(PDFName.of('Genere'))?.toString() === 'true') { aRetirer.push(i); return; }
+      const calques = new Set((d.lookup(PDFName.of('Calques'))?.asArray() || []).map(r => r.toString()));
+      const contenus = page.node.get(PDFName.of('Contents'));
+      if (contenus instanceof PDFArray) {
+        const garder = contenus.asArray().filter(r => !(r instanceof PDFRef && calques.has(r.toString())));
+        page.node.set(PDFName.of('Contents'), doc.context.obj(garder));
+      }
+      const ref = d.get(PDFName.of('Donnees'));
+      pages.push(ref ? (lireJson(ref) || {}) : {});
+      page.node.delete(PDFName.of('AtelierPDF'));
+    });
+    aRetirer.reverse().forEach(i => doc.removePage(i));
+    doc.catalog.delete(PDFName.of('AtelierPDF'));
+    doc.catalog.delete(PDFName.of('Outlines'));
+    return { octets: await doc.save({ useObjectStreams: true }), pages, images, options };
   }
 
   async function integrerImage(doc, octets, mime) {
@@ -474,5 +665,5 @@
     return res;
   }
 
-  return { compiler, lirePlages, versPdf, tailleAffichee, rectPdf, normRot, A4, formes, chemin, couperLignes, MARGE_BULLE, DEFAUTS };
+  return { compiler, relire, lirePlages, versPdf, tailleAffichee, rectPdf, normRot, A4, formes, chemin, couperLignes, etiquettes, lignesTampon, MARGE_BULLE, DEFAUTS };
 });

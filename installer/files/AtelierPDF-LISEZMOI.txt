@@ -43,6 +43,12 @@ ANNOTER UNE PAGE (double-clic sur la page, ou « Modifier »)
     noircit partout (vérifier les pages ensuite ; les scans se caviardent à la main).
   - Image (I) : signature, tampon, photo, logo (PNG à fond transparent conseillé).
     Ctrl+V colle une image ou un texte copiés (capture d'écran, Word…).
+  - Tampon : BON POUR EXÉCUTION, VISA, VU, APPROUVÉ, REFUSÉ… avec votre nom ou
+    société et la date du jour ; ou un tampon personnalisé. Cliquer sur la page
+    pour le poser (ou glisser pour choisir sa taille).
+  - Signature mémorisée : insérez une fois votre signature (outil Image),
+    sélectionnez-la puis « ☆ Mémoriser ». Elle se retrouve ensuite dans
+    « Tampon », sur ce PC, à chaque utilisation.
   Couleur, épaisseur du trait, taille et gras s'appliquent à l'élément choisi et
   sont retenus pour les suivants.
   Sélection (V ou Échap) : cliquer un élément pour le déplacer (ou flèches du
@@ -62,6 +68,48 @@ COMPILER ET ENREGISTRER
   « Extraire » enregistre seulement les pages sélectionnées.
   « Diviser… » crée plusieurs PDF : un par document, un par page, toutes les N pages,
   ou selon des plages (ex. 1-3, 4-10, 11-).
+
+MESURER SUR UN PLAN (dans l'éditeur de page)
+  1. Choisir l'échelle du plan dans la liste « Échelle » (1/50, 1/100…).
+     Elle s'applique à toutes les pages du même document.
+     Ou « Étalonner sur une cote connue… » : tracer un trait sur une cote écrite
+     du plan et taper sa longueur réelle (ex. « 4,20 m » ou « 4200 mm »).
+  2. Mesurer :
+     - Cote : glisser d'un point à l'autre (Maj : horizontal, vertical, 45°) ;
+     - Longueur : un clic par point (ex. un tracé de tuyauterie), double-clic ou
+       Entrée pour finir : la longueur totale s'affiche ;
+     - Surface : un clic par sommet, double-clic pour finir : surface en m².
+     Les points bleus permettent de corriger un sommet.
+  3. Le total de la page s'affiche en bas. « ⬇ Mesures (CSV) » exporte toutes les
+     mesures du dossier dans un tableau qui s'ouvre avec Excel.
+  Sans échelle, les valeurs sont celles du papier (signalées « (papier) »).
+  Attention : un plan imprimé ou scanné « ajusté à la page » n'est plus à
+  l'échelle indiquée ; dans ce cas, étalonnez sur une cote connue.
+
+RECONNAÎTRE LE TEXTE DES SCANS (OCR)
+  Bouton « 🔍 OCR » : lit le texte des pages scannées et des photos (pages
+  sélectionnées, ou toutes). Les pages qui ont déjà du texte sont ignorées.
+  Le PDF enregistré devient interrogeable (Ctrl+F) et son texte sélectionnable.
+  « Caviarder un mot… » cherche aussi dans le texte reconnu et propose de lancer
+  l'OCR sur les scans qui ne l'ont pas encore été.
+  La lecture se fait sur ce PC (aucun envoi sur Internet). Elle est fiable sur
+  les documents tapés et bien scannés ; vérifiez les pages manuscrites ou floues.
+
+SAUVEGARDE ET PROJETS
+  - Le travail en cours est sauvegardé automatiquement sur ce PC (indiqué en bas
+    de la fenêtre). À la réouverture, « Reprendre » le retrouve tel quel.
+  - Menu « Projet » : enregistrer tout le travail dans un fichier .atelierpdf
+    (à ranger sur le réseau, à envoyer à un collègue qui a Atelier PDF),
+    l'ouvrir plus tard, ou repartir de zéro (« Nouveau »).
+
+ROUVRIR UN PDF POUR LE MODIFIER
+  Un PDF enregistré par Atelier PDF (case « Annotations modifiables à la
+  réouverture », cochée par défaut) peut être rouvert dans Atelier PDF : les
+  annotations, tampons, mesures et le texte reconnu redeviennent modifiables,
+  les documents d'origine sont retrouvés ; numéros de pages, filigrane et
+  sommaire sont refaits à l'enregistrement. Pour les autres logiciels (Acrobat,
+  Edge…), le PDF s'affiche normalement.
+  Le caviardage, lui, est définitif : les zones noires ne peuvent pas être retirées.
 
 PDF PROTÉGÉS
   Un PDF protégé contre la modification est accepté : ses pages sont recopiées
