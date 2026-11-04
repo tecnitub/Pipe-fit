@@ -27,6 +27,8 @@
       m365: { tenantId: '00000000-demo-0000-0000-000000000000', clientId: '11111111-demo-1111-1111-111111111111', clientSecret: 'demo', actif: true } };
     COLLECTIONS.forEach(c => { db[c] = (seed[c] || []).map(o => ({ ...o, _v: 1, _at: now, _by: 'Démo' })); });
     // Fournisseurs consultés par type de matériel (lignes libres des demandes du terrain)
+    // Étude d'exemple reliée au premier chantier (liste des mises en service remplie d'emblée)
+    if (window.DEMO_LIEN_ETUDE) db.liens = [{ ...window.DEMO_LIEN_ETUDE, maj: now }];
     db.famillesFournisseurs = { Robinetterie: { prefere: 'e6', autres: ['e11'] }, Raccords: { prefere: 'e5', autres: ['e11', 'e12'] }, Tubes: { prefere: 'e5', autres: ['e11', 'e12'] }, Supportage: { prefere: 'e11', autres: ['e12'] } };
     return db;
   }

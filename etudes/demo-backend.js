@@ -49,19 +49,8 @@
     mainoeuvre: (src.mainoeuvre || []).map(m => ({ id: m.id, code: m.code, libelle: m.libelle, tauxVente: m.tauxVente, tauxCout: m.tauxCout })) };
   const af = pf.affaires.find(a => a.type !== 'horsDevis') || {};
   // Étude d'exemple : distribution vapeur et eau chaude d'un atelier
-  const exemple = () => ({
-    id: 'demo-etude-1', objet: 'Chaufferie vapeur atelier — distribution vapeur et réseau eau chaude', affaireId: af.id || '', client: ((pf.entreprises.find(e => e.id === af.clientId)) || {}).nom || '',
-    indice: 'B', date: new Date().toISOString().slice(0, 10), auteur: 'Jacky (bureau d\'études)', verificateur: 'Claire Martin', motifIndice: 'Débit vapeur porté à 1 800 kg/h',
-    description: 'CCTP lot 14 indice C, plans de principe PID-CH-001 indice B.', historique: [{ indice: 'A', date: '2026-09-15', motif: 'Première émission' }],
-    notes: [
-      { id: 'n1', type: 'vapeur', titre: 'Collecteur vapeur 7 bar → ateliers', entrees: { p: 7, mode: 'debit', m: 1800, serie: 'acier-10216', L: 95, zeta: 9, vmax: 25, dpmax: 0.5, pc: 0.5, vflash: 15 }, commentaire: 'Purges de ligne tous les 40 m, poches de purge DN 80.' },
-      { id: 'n2', type: 'reseau', titre: 'Boucle eau chaude 80/60 °C — pompe P1', entrees: {}, commentaire: '' },
-      { id: 'n3', type: 'vase', titre: 'Vase d\'expansion boucle eau chaude', entrees: {}, commentaire: '' },
-      { id: 'n4', type: 'isolation', titre: 'Isolation de la ligne vapeur DN 80', entrees: { serie: 'acier-10216', tube: '88.9x3.2', Tf: 170, L: 95, heures: 4000, Ta: 15, HR: 60, vent: 0, isolant: 'laine-roche', revetement: 'alu', qmax: 60, TsMax: 50, margeRosee: 1 }, commentaire: '' },
-      { id: 'n5', type: 'dilatation', titre: 'Lyres de la ligne vapeur', entrees: { serie: 'acier-10216', tube: '88.9x3.2', L: 45, Tpose: 10, Tmin: 5, Tmax: 170 }, commentaire: '' },
-      { id: 'n6', type: 'desp', titre: 'Classement DESP du collecteur vapeur', entrees: { equipement: 'tuyauterie', fluide: 'vapeur', PS: 12, TS: 190, DN: 100, nuance: 'P235GH', troncons: [{ rep: 'Antennes ateliers', fluide: '', DN: 50, PS: '', TS: '' }, { rep: 'Retour condensats', fluide: 'condensats', DN: 40, PS: 3, TS: 120 }] }, commentaire: '' },
-    ], _v: 1, _at: new Date().toISOString(), _by: 'Jacky (bureau d\'études)',
-  });
+  // Étude d'exemple (etudes/demo-exemple.js) : distribution vapeur et eau chaude d'un atelier
+  const exemple = () => EtudeDemoExemple({ affaireId: af.id || '', client: ((pf.entreprises.find(e => e.id === af.clientId)) || {}).nom || '' });
   let db;
   try { db = JSON.parse(storage.get(KEY)); } catch (e) { db = null; }
   if (!db || !Array.isArray(db.etudes)) db = { etudes: [exemple()], config: {} };

@@ -431,11 +431,25 @@ SECTIONS.s7 = {
     ${tableEditable('maintenance', doe.maintenance, [{ lib: 'Équipement' }, { lib: 'Opération' }, { lib: 'Fréquence' }, { lib: 'Intervenant' }])}
     <button class="secondaire petit" id="maint-auto">Proposer selon les familles d'équipements</button>
     <h3>7.2 Notices d'exploitation</h3><ul class="pieces">${doe.notices.map((n, i) => `<li>${lienFichier(n.fichier)} <input data-ch="notices.${i}.libelle" value="${esc(n.libelle)}"><button class="icone" data-retirer="notices.${i}">✕</button></li>`).join('') || '<li class="manque">Aucune notice</li>'}</ul>
-    <button class="secondaire petit" id="notice-ajout">+ Joindre des notices</button>
+    <button class="secondaire petit" id="notice-ajout">+ Joindre des notices</button> <button class="petit" id="notice-generer" title="Notice de l'installation : équipements posés, consignes de conduite et de sécurité, réglages et mesures des PV de mise en service signés, carnet d'entretien, formation, contacts">📘 Générer la notice d'exploitation</button>
     <h3>7.3 Pièces de rechange recommandées</h3>${tableEditable('pieces', doe.pieces, [{ lib: 'Équipement' }, { lib: 'Pièce' }, { lib: 'Référence constructeur' }, { lib: 'Qté min.' }])}`,
   bind: (root, doe) => {
     bindTables(root, doe, { maintenance: Object.assign(() => doe.maintenance, { tableau: true }), pieces: Object.assign(() => doe.pieces, { tableau: true }) });
     root.querySelector('#maint-auto').onclick = () => { const deja = new Set(doe.maintenance.map(l => `${l[0]}|${l[1]}`)); let n = 0; doe.familles.forEach(f => (TRAME.maintenance[f] || []).forEach(l => { if (!deja.has(`${l[0]}|${l[1]}`)) { doe.maintenance.push([...l]); n++; } })); enregistrer(doe); App.render(); toast(`${n} opération(s) ajoutée(s)`); };
+    // Notice générée depuis le DOE et les PV signés : PDF joint en 7.2 (remplace la version générée précédente)
+    root.querySelector('#notice-generer').onclick = async ev => {
+      const b = ev.currentTarget; b.disabled = true; b.textContent = 'Mise en page…';
+      try {
+        const c = S.config.societe || {}, essais = doe.affaireId && typeof essaisPF === 'function' ? essaisPF(doe.affaireId) : { mes: [] };
+        const html = NoticeExploitation.html(doe, { trame: TRAME, essais, societe: { raison: c.raison, adresse: c.adresse, tel: c.tel, email: c.email } });
+        const bytes = await PDF.depuisHTML(html, 'Notice d\'exploitation et de maintenance', null, { margeHaut: 42, margeBas: 42 });
+        const nom = `Notice_exploitation_${String(doe.operation || 'installation').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_').slice(0, 40)}_ind${doe.indice || 'A'}.pdf`;
+        const f = await envoyerFichier(new File([bytes], nom, { type: 'application/pdf' }));
+        doe.notices = doe.notices.filter(x => !x.generee);
+        doe.notices.unshift({ id: uidD(), libelle: `Notice d'exploitation et de maintenance de l'installation (générée le ${dateFr(new Date().toISOString().slice(0, 10))}, ${essais.mes.filter(m => m.statut === 'Signé').length} PV de mise en service repris)`, fichier: f, generee: true });
+        enregistrer(doe); App.render(); toast('Notice d\'exploitation générée et jointe au DOE (7.2)', 5000);
+      } catch (e) { b.disabled = false; b.textContent = '📘 Générer la notice d\'exploitation'; toast(`Notice impossible : ${e.message}`, 6000); }
+    };
     root.querySelector('#notice-ajout').onclick = async () => { const fs = await choisirFichiers(true, '.pdf,.docx'); fs.forEach(f => doe.notices.push({ id: uidD(), libelle: f.nom.replace(/\.[a-z0-9]+$/i, ''), fichier: f })); if (fs.length) { enregistrer(doe); App.render(); } };
     bindRetirer(root, doe);
   },

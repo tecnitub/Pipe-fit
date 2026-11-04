@@ -29,8 +29,24 @@ const page = [
   ...scripts.map(s => inlineScript(read(s.startsWith('js/etudes/') ? path.join('etudes/public/js', s.slice(10)) : path.join('public', s)))),
 ].join('\n');
 
+// Étude d'exemple reliée au premier chantier : ses points de mise en service (équipements, épreuves, contrôles) sont
+// calculés ici et placés dans la démonstration, pour que la liste des mises en service du chantier soit remplie d'emblée
+const lienEtudeDemo = (() => {
+  try {
+    const J = m => require(path.join(root, 'etudes/public/js', m));
+    const N = J('notes'); void N;
+    [['cta'], ['industriel'], ['terminaux', 'Terminaux'], ['schema', 'Schema'], ['equilibrage'], ['aeraulique-schema'], ['sanitaire', 'Sanitaire'], ['evacuation'], ['desenfumage'], ['pieces', 'Pieces'], ['gaz-reseau']]
+      .forEach(([m, g]) => { const x = J(m); if (g) global[g] = x; });
+    const L = J('liens'), PM = J('points-mes'), seed = require(path.join(root, 'server/demo.js')).demoData();
+    const af = (seed.affaires || []).find(a => a.type !== 'horsDevis') || {}, client = ((seed.entreprises || []).find(e => e.id === af.clientId) || {}).nom || '';
+    const et = require(path.join(root, 'etudes/demo-exemple.js'))({ affaireId: af.id, client });
+    const mes = PM.extraire(et, n => L.calculer(et, n));
+    return { app: 'etudes', id: et.id, affaireId: af.id || '', devisId: '', clientId: af.clientId || '', par: et.auteur, relie: null,
+      resume: { objet: et.objet, client, indice: et.indice, date: et.date, auteur: et.auteur, notes: [], erreurs: 0, attention: 0, equipements: [], materiel: [], debits: [], mes, devis: [] } };
+  } catch (e) { console.warn(`Étude d'exemple non reliée à la démonstration : ${e.message}`); return null; }
+})();
 // Le faux serveur doit être chargé avant l'application (après ui.js pour les dialogues).
-const withBackend = (inlineScript("window.OCR_MODELE_JS = 'fra-traineddata.js';") + '\n' + page).replace(inlineScript(read('public/js/store.js')),
+const withBackend = (inlineScript(`window.OCR_MODELE_JS = 'fra-traineddata.js'; window.DEMO_LIEN_ETUDE = ${JSON.stringify(lienEtudeDemo).replace(/</g, '\\u003c')};`) + '\n' + page).replace(inlineScript(read('public/js/store.js')),
   inlineScript(read('demo/assistant-simule.js')) + '\n' + inlineScript(read('demo/backend.js')) + '\n' + inlineScript(read('public/js/store.js')));
 
 // Lecture des tickets (OCR) : fichiers publiés à côté de la page dans vendor/tesseract/ ; le modèle .gz, que l'hébergement
