@@ -501,6 +501,14 @@ const Electricite = ((N, Sc) => {
             P: pGen ?? (pac ? Math.round(d.Pg / 3 * 10) / 10 : Math.max(0.2, Math.round(d.Pg * 0.003 * 10) / 10)), tension: es.tensionGen || (pac || d.Pg > 300 ? 'tri' : 'mono'), regulation: pac ? 'bus' : 'mod', alim: es.alimProd || '', ...(pGen != null ? { pFiche: true } : {}) });
           if (d.pompesInd && (d.bouteille || d.echangeur || d.n > 1)) ajout(`pp${i}`, { rep: `PP${i}`, designation: `Pompe primaire ${i}`, type: 'pompe', P: Math.max(0.05, Math.round(d.Qg * 8 / 367 / 0.45 * 100) / 100), tension: 'mono', regulation: 'tor' });
         }
+        // PAC / groupe eau-eau sur nappe : pompe de forage, pompe de la boucle intermédiaire, contrôle de débit et température
+        if (d.forage) {
+          const F = d.forage;
+          ajout('pforage', { rep: 'PF', designation: `Pompe immergée du forage (${nf(F.Qn, 1)} m³/h, ${nf(F.H, 0)} mCE)`, type: 'pompe', P: Math.max(0.37, Math.round(F.Pel * 1.1 * 100) / 100), tension: F.Pel > 2.2 ? 'tri' : 'mono', regulation: 'torRetour', depart: F.Pel > 4 ? 'variateur' : 'contacteur', alim: es.alimProd || '' });
+          ajout('pinter', { rep: 'PBI', designation: 'Pompe de la boucle intermédiaire (échangeur de barrage)', type: 'pompe', P: Math.max(0.1, Math.round(F.Qi * 8 / 367 / 0.45 * 100) / 100), tension: 'mono', regulation: 'tor', alim: es.alimProd || '' });
+          ajout('fqn', { rep: 'FT-N', designation: 'Contrôleur de débit de l\'eau de nappe', type: 'securite', P: 0, tension: '24V', regulation: 'securite' });
+          ajout('tn', { rep: 'TN', designation: 'Sonde de température de l\'eau de nappe (entrée échangeur)', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
+        }
         d.circuits.forEach((c, i) => {
           const k = i + 1;
           ajout(`pc${k}`, { ...(c.pompe ? { metre: `pompe|${c.pompe.modele}` } : {}), rep: `PC${k}`, designation: `Pompe ${c.rep}`, type: 'pompe', P: c.pompe && c.pompe.P1 ? kW(c.pompe.P1) : Math.max(0.05, Math.round(c.Q * Math.max(2, c.hmt) / 367 / 0.45 * 100) / 100), tension: 'mono',

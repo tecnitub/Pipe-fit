@@ -116,3 +116,19 @@ test('pompes de distribution placées sur une branche : branche découplée, poi
   const a1 = N.calculer('arbo', { ...ra.entrees, troncons: ra.entrees.troncons.filter(t => !/^A[23]/.test(t.rep)) });
   assert.ok(r.valeurs.Hres < a1.valeurs.Hres * 1.1, 'seule la branche A1 (sans pompe) fixe la HMT de départ');
 });
+
+test('réseau arborescent : pondération des tuyauteries et ΔP complémentaires dans la HMT ; PAC eau/eau sur nappe', () => {
+  require('../etudes/public/js/equilibrage');
+  const base = N.defauts('arbo');
+  const r0 = N.calculer('arbo', base), r1 = N.calculer('arbo', { ...base, pondTuyaux: 20, dpSupp: 15 });
+  assert.ok(r1.valeurs.HMT > r0.valeurs.HMT);
+  assert.ok(Math.abs(r1.valeurs.dpTot - (r1.valeurs.Hres + num(base.dpGen) * 1000 + 15000)) < 1);
+  assert.ok(r1.resume.some(([l]) => l === 'Calcul de la HMT'));
+  require('../etudes/public/js/schema');
+  const p = N.calculer('pid', { ...N.defauts('pid'), generateur: 'pac-eau', reseau: 'ch-45-35', nGen: '2', Pgen: 100, copForage: 4, dTforage: 4 });
+  assert.match(p.schema, /Forage de pompage/); assert.match(p.schema, /Échangeur de barrage/);
+  assert.ok(p.alertes.some(a => /Nappe : 32,2 m³\/h/.test(a.texte)), p.alertes.map(a => a.texte).join(' | '));
+  const l = E.equipementsEtude({ notes: [{ id: 'p', type: 'pid', titre: 'PAC', entrees: { ...N.defauts('pid'), generateur: 'pac-eau', reseau: 'ch-45-35' } }] }, Liens);
+  assert.ok(['PF', 'PBI', 'FT-N', 'TN'].every(r => l.some(x => x.rep === r)));
+});
+const num = v => (v === '' || v == null ? 0 : Number(v));

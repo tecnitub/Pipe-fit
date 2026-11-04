@@ -91,6 +91,19 @@ const Schema = ((D, C, N) => {
     if ((!chaud || /pac/.test(e.generateur)) && e.tampon !== 'oui') alertes.push(alerte('attention', 'Vérifier le volume d\'eau minimal exigé par le constructeur (anti-courts-cycles) : ballon tampon si le réseau est trop court.'));
     if (bouteille && chaud === false && Qp < Qs) alertes.push(alerte('attention', 'En eau glacée, un débit secondaire supérieur au primaire réchauffe le départ : prévoir des pompes secondaires à vitesse variable.'));
     const d = { Td, Tr, Tsd, Tsr, chaud, dT, f, s, n, Pg, Pprod, Pdem, gen, Qg, tg, Qp, Qs, bouteille, echangeur, pinc, Aech, Qech, pompesInd, tichelmann, Qcoll, tc, tb, Db, circuits, alertes, regime: e.reseau === 'perso' ? `Régime ${Td}/${Tr} °C` : r[0] };
+    // PAC ou groupe eau/eau sur nappe : forage de pompage, échangeur de barrage (protège l'évaporateur de l'eau de nappe),
+    // boucle intermédiaire côté générateur, puits de rejet
+    if (/-eau$/.test(e.generateur || '') && e.sourceEau !== 'boucle') {
+      const cop = Math.max(1.5, num(e.copForage, 4.5)), dTf = Math.max(1, num(e.dTforage, 4));
+      const Psource = Pprod * (chaud ? 1 - 1 / cop : 1 + 1 / cop), Qn = Psource / (1.163 * dTf), Qi = Psource / (1.163 * Math.max(1, dTf - num(e.pincBarrage, 2) / 2 + 1));
+      const tN = C.tubes(e.serie || 'acier-10216'), tf = tN.find(t => { const r = C.ecoulement(Qn / 3600, t.di / 1000, f.rho, f.mu, s.rugosite); return r.v <= 1.5 && r.R <= 200; }) || tN[tN.length - 1];
+      const rf = C.ecoulement(Qn / 3600, tf.di / 1000, f.rho, f.mu, s.rugosite), dpL = rf.R * num(e.Lforage, 80) * 1.3 / 1000;
+      const H = num(e.nivDyn, 15) + (num(e.dpBarrage, 30) + dpL + 50) / 9.81, Pel = Qn / 3600 * 1000 * 9.81 * H / 0.5 / 1000;
+      const A = Psource * 1000 / (3500 * Math.max(0.5, num(e.pincBarrage, 2)));
+      d.forage = { Psource, Qn, Qi, H, Pel, A, tube: tf, dTf, cop };
+      alertes.push(alerte('ok', `Nappe : ${nf(Qn, 1)} m³/h pompés (${nf(Psource, 0)} kW ${chaud ? 'prélevés' : 'rejetés'}, ΔT ${nf(dTf, 0)} K) ; pompe de forage ≈ ${nf(H, 1)} mCE, ${nf(Pel, 2)} kW ; échangeur de barrage ≈ ${nf(A, 1)} m².`));
+      alertes.push(alerte('attention', 'Forage : déclaration ou autorisation au titre du code de l\'environnement (prélèvement et rejet en nappe), essai de pompage et analyse d\'eau (fer, manganèse, colmatage) avant de fixer le débit et le matériau de l\'échangeur (inox 316 ou titane).'));
+    }
     // Ballon tampon : volume d'eau minimal exigé (L/kW de production) diminué du volume de l'installation
     if (e.tampon === 'oui') {
       const Vmin = num(e.ratioTampon, 10) * Pprod, Vres = volumeEau(d, e.generateur).total, Vreq = Math.max(0, Vmin - Vres);
@@ -132,7 +145,7 @@ const Schema = ((D, C, N) => {
 
   /* ---------- Dessin ---------- */
   function dessiner(d, e) {
-    const nG = d.n, nC = Math.max(d.circuits.length, 1), Y1 = 330, Y2 = 380, H = 720;
+    const nG = d.n, nC = Math.max(d.circuits.length, 1), Y1 = 330, Y2 = 380, H = d.forage ? 1000 : 720;
     const decouple = d.bouteille || d.echangeur, extra = d.tampon && d.tampon.V > 0 ? 90 : 0, G = d.co ? 'PAC' : d.chaud ? 'G' : 'GF';
     const xG0 = 150, pasG = 150, xB = xG0 + nG * pasG + 90 + extra, xS0 = decouple ? xB + 110 : xG0 + nG * pasG + 110 + extra, pasC = 175;
     const W = Math.max(xS0 + nC * pasC + 150, 900);
@@ -219,6 +232,27 @@ const Schema = ((D, C, N) => {
         texte(xd - 30, yGen - 66, 'Soupape', { fs: 8.5, a: 'middle' }));
       dessus.push(texte(xd + 6, yGen - 8, d.tg.nom.replace(/ \(.*/, ''), { fs: 9, c: cD }));
       if (d.chaud && d.Pg > 300) dessus.push(`<line x1="${xd}" y1="${yGen - 95}" x2="${xd - 18}" y2="${yGen - 95}" stroke="#222" stroke-width="1"/><circle cx="${xd - 26}" cy="${yGen - 95}" r="8" fill="#fff" stroke="#222" stroke-width="1.2"/>`, texte(xd - 26, yGen - 92, 'PS', { fs: 7, a: 'middle', b: true }), texte(xd - 36, yGen - 92, 'Manque d\'eau', { fs: 8, a: 'end' }));
+    }
+    // Nappe : boucle intermédiaire (évaporateurs), échangeur de barrage, forage de pompage et puits de rejet
+    if (d.forage) {
+      const F = d.forage, cN = '#00897b', cI = '#5d4037', yA = yGen + 110, yB = yGen + 150, xE = xG0 + nG * pasG + 40, xP = xE + 170, xRj = xP + 150;
+      for (let i = 0; i < nG; i++) { const x = xG0 + i * pasG; out.push(ligne(x + 50, yGen + 70, x + 50, yA, cI, 2.5), ligne(x + 90, yB, x + 90, yGen + 70, cI, 2.5)); dessus.push(point(x + 50, yA, cI), point(x + 90, yB, cI)); }
+      out.push(ligne(xG0 + 50, yA, xE, yA, cI, 2.5), ligne(xG0 + 90, yB, xE, yB, cI, 2.5));
+      dessus.push(pompeH(xE - 60, yA), texte(xE - 60, yA - 18, 'Pompe boucle intermédiaire', { fs: 8.5, a: 'middle' }), texte(xE - 60, yB + 22, `${nf(F.Qi, 1)} m³/h`, { fs: 8.5, a: 'middle', c: cI }));
+      out.push(`<rect x="${xE}" y="${yA - 30}" width="50" height="${yB - yA + 60}" rx="4" fill="#fff" stroke="#222" stroke-width="1.6"/>`,
+        `<path d="M${xE + 6} ${yA - 20} ${Array.from({ length: 7 }, (_, k) => `L${xE + (k % 2 ? 44 : 6)} ${yA - 20 + (k + 1) * (yB - yA + 40) / 7}`).join(' ')}" fill="none" stroke="#666" stroke-width="1.2"/>`);
+      dessus.push(texte(xE + 25, yB + 46, 'Échangeur de barrage', { fs: 9.5, a: 'middle', b: true }), texte(xE + 25, yB + 58, `${nf(F.Psource, 0)} kW · ≈ ${nf(F.A, 1)} m² (inox / titane)`, { fs: 8.5, a: 'middle' }));
+      // Côté nappe : forage de pompage → échangeur → puits de rejet
+      const yS = yB + 160;
+      out.push(ligne(xE + 50, yA, xP, yA, cN, 2.5), ligne(xP, yA, xP, yS - 60, cN, 2.5), ligne(xE + 50, yB, xRj, yB, cN, 2.5), ligne(xRj, yB, xRj, yS - 60, cN, 2.5));
+      [[xP, 'Forage de pompage'], [xRj, 'Puits de rejet']].forEach(([x, t]) => {
+        out.push(`<rect x="${x - 14}" y="${yS - 110}" width="28" height="110" fill="#e0f2f1" stroke="#222" stroke-width="1.4"/>`, `<path d="M${x - 30} ${yS - 70} h60" stroke="${cN}" stroke-width="1" stroke-dasharray="4 3"/>`);
+        dessus.push(texte(x, yS + 14, t, { fs: 9.5, a: 'middle', b: true }));
+      });
+      dessus.push(pompe(xP, yS - 40), texte(xP + 18, yS - 36, 'Pompe immergée', { fs: 8.5 }), texte(xP + 18, yS - 24, `${nf(F.Qn, 1)} m³/h · ${nf(F.H, 0)} mCE`, { fs: 8.5, c: cN }),
+        texte(xP - 32, yS - 74, 'niveau dynamique', { fs: 7.5, a: 'end', c: '#555' }), vanne(xP, yA + 40), `<rect x="${xP - 11}" y="${yA + 70}" width="22" height="16" fill="#fff" stroke="#222" stroke-width="1.2"/>`, texte(xP, yA + 82, 'FT', { fs: 8, a: 'middle', b: true }),
+        texte(xP + 16, yA + 82, 'Débitmètre (contrôleur de débit)', { fs: 8 }), thermo(xP, yA + 105), vanne(xRj, yB + 40), clapet(xRj, yB + 70, false),
+        texte((xP + xRj) / 2, yA - 10, `Eau de nappe ΔT ${nf(F.dTf, 0)} K`, { fs: 9, a: 'middle', c: cN, b: true }), texte((xP + xRj) / 2, yA + 4, F.tube.nom.replace(/ \(.*/, ''), { fs: 8.5, a: 'middle', c: cN }));
     }
     if (!d.pompesInd && nG > 1 && decouple) dessus.push(pompeH(xB - 45, Y1), texte(xB - 45, Y1 - 18, 'Pompe primaire', { fs: 8.5, a: 'middle' }));
     // Accessoires du primaire : vase d'expansion, remplissage, désemboueur
@@ -447,6 +481,13 @@ const Schema = ((D, C, N) => {
       { k: 'tampon', l: 'Ballon tampon', t: 's', o: [['non', 'Sans'], ['oui', 'Avec ballon tampon sur le retour']], d: 'non' },
       { k: 'ratioTampon', l: 'Volume d\'eau minimal exigé par le constructeur', u: 'L/kW', d: 10, si: e => e.tampon === 'oui' },
       { k: 'Vtampon', l: 'Volume du ballon imposé (vide : calculé)', u: 'L', d: '', si: e => e.tampon === 'oui' },
+      { k: 'sourceEau', l: 'Source d\'eau de la PAC / du groupe eau-eau', t: 's', o: [['forage', 'Nappe : forage de pompage et puits de rejet, échangeur de barrage'], ['boucle', 'Boucle d\'eau fermée (géothermie, boucle tempérée)']], d: 'forage', si: e => /-eau$/.test(e.generateur || '') },
+      { k: 'copForage', l: 'COP (chaud) ou EER (froid) du générateur', d: 4.5, si: e => /-eau$/.test(e.generateur || '') },
+      { k: 'dTforage', l: 'Écart de température sur l\'eau de nappe', u: 'K', d: 4, si: e => /-eau$/.test(e.generateur || '') && e.sourceEau !== 'boucle' },
+      { k: 'nivDyn', l: 'Niveau dynamique de la nappe (profondeur de pompage)', u: 'm', d: 15, si: e => /-eau$/.test(e.generateur || '') && e.sourceEau !== 'boucle' },
+      { k: 'Lforage', l: 'Liaisons forage → échangeur → puits de rejet (aller + retour)', u: 'm', d: 80, si: e => /-eau$/.test(e.generateur || '') && e.sourceEau !== 'boucle' },
+      { k: 'pincBarrage', l: 'Pincement de l\'échangeur de barrage', u: 'K', d: 2, si: e => /-eau$/.test(e.generateur || '') && e.sourceEau !== 'boucle' },
+      { k: 'dpBarrage', l: 'Perte de charge de l\'échangeur de barrage (côté nappe)', u: 'kPa', d: 30, si: e => /-eau$/.test(e.generateur || '') && e.sourceEau !== 'boucle' },
       { k: 'PelecGen', l: 'Puissance électrique absorbée par générateur (vide : estimée ; « 📄 Fiche technique » la remplit)', u: 'kW', d: '' },
       { k: 'tensionGen', l: 'Tension du générateur', t: 's', o: [['', 'Selon le type'], ['mono', '230 V mono'], ['tri', '400 V tri']], d: '' },
       { k: 'alimProd', l: 'Production alimentée par', t: 's', o: (e, et) => (typeof Terminaux !== 'undefined' ? Terminaux : require('./terminaux')).optAlim(e, et, e.alimProd), d: '' },

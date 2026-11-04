@@ -47,6 +47,8 @@ const Equilibrage = ((D, C, N) => {
       { k: 'methode', l: 'Vannes d\'équilibrage', t: 's', o: [['emetteurs', 'Sur chaque émetteur'], ['antennes', 'Sur chaque émetteur et au pied de chaque antenne (vannes partenaires)']], d: 'emetteurs' },
       { k: 'dpMin', l: 'ΔP mini d\'une vanne d\'équilibrage (mesure fiable)', u: 'kPa', d: 3 },
       { k: 'dpGen', l: 'ΔP côté production (générateur, bouteille, accessoires)', u: 'kPa', d: 10 },
+      { k: 'pondTuyaux', l: 'Pondération des pertes de charge des tuyauteries (encrassement, vieillissement)', u: '%', d: 0 },
+      { k: 'dpSupp', l: 'Pertes de charge complémentaires sur le départ (filtre, compteur, désemboueur…)', u: 'kPa', d: 0 },
       { k: 'marge', l: 'Marge de sécurité sur la HMT', u: '%', d: 10 }, { k: 'rendement', l: 'Rendement global de la pompe', u: '%', d: 55 }],
     calcul(e) {
       const f = C.liquide(e.fluide, num(e.T, 20)), s = D.SERIES[e.serie] || D.SERIES['acier-10216'], tubes = C.tubes(e.serie), alertes = [];
@@ -80,7 +82,7 @@ const Equilibrage = ((D, C, N) => {
         t.t = t.tubeImpose ? tubes.find(y => y.cle === t.tubeImpose) : null; t.auto = !t.t;
         if (!t.t) t.t = tubes.find(y => { const r = C.ecoulement(qv, y.di / 1000, f.rho, f.mu, s.rugosite); return r.v <= vmax && r.R <= Rmax; }) || tubes[tubes.length - 1];
         Object.assign(t, C.ecoulement(qv, t.t.di / 1000, f.rho, f.mu, s.rugosite));
-        t.dp = t.R * 2 * t.L + t.zeta * t.pd;
+        t.dp = (t.R * 2 * t.L + t.zeta * t.pd) * (1 + Math.max(0, num(e.pondTuyaux)) / 100);
         if (t.v > vmax * 1.001) alertes.push(alerte('attention', `${t.rep} : vitesse ${nf(t.v)} m/s supérieure à ${nf(vmax)} m/s.`));
       });
       // Pression nécessaire à l'entrée de chaque tronçon et réglage des vannes
@@ -119,7 +121,7 @@ const Equilibrage = ((D, C, N) => {
       terminaux.forEach(t => { t.chemin = []; for (let x = t; x; x = x.amont ? parRep.get(x.amont) : null) { t.chemin.unshift(x); if (t.chemin.length > tr.length) break; } });
       const defav = terminaux.reduce((a, t) => (!a || t.chemin.reduce((s2, x) => s2 + x.dp, 0) + t.dpEm > a.chemin.reduce((s2, x) => s2 + x.dp, 0) + a.dpEm ? t : a), null);
       const dpGen = num(e.dpGen) * 1000, marge = num(e.marge, 10), Qp = racines.reduce((a, t) => a + t.Q, 0), Ptot = terminaux.reduce((a, t) => a + t.P, 0);
-      const dpTot = Hres + dpGen, HMT = dpTot * (1 + marge / 100) / (f.rho * C.G), Ph = Qp / 3600 * HMT * f.rho * C.G, Pabs = Ph / (num(e.rendement, 55) / 100);
+      const dpSupp = Math.max(0, num(e.dpSupp)) * 1000, dpTot = Hres + dpGen + dpSupp, HMT = dpTot * (1 + marge / 100) / (f.rho * C.G), Ph = Qp / 3600 * HMT * f.rho * C.G, Pabs = Ph / (num(e.rendement, 55) / 100);
       const pompes = Qp > 0 ? (typeof Catalogue !== 'undefined' ? Catalogue : require('./catalogue')).pompesPour(Qp, HMT) : [];
       const vannes = actifs.filter(t => t.vanne);
       vannes.filter(t => t.vanne.ouverture < 0.12).forEach(t => alertes.push(alerte('attention', `${t.rep} : vanne DN ${t.vanne.dn} presque fermée (Kv ${nf(t.Kv, 2)}, ${nf(t.dpV / 1000, 1)} kPa à dissiper) : risque de bruit et de bouchage, prévoir un régulateur de pression différentielle sur l'antenne ou revoir les diamètres.`)));
@@ -135,7 +137,9 @@ const Equilibrage = ((D, C, N) => {
           noeuds: actifs.map(t => ({ rep: t.rep, Q: t.Q, dp: t.dp, H: t.H, dispo: t.dispo, dpV: t.dpV })) },
         resume: [['Puissance des émetteurs', `${nf(Ptot, 1)} kW`], ['Débit de la pompe', `${nf(Qp, 2)} m³/h`],
           ['Circuit le plus défavorisé', defav ? defav.chemin.map(x => x.rep).join(' → ') : '—'],
-          ['ΔP du réseau (circuit le plus défavorisé, vannes comprises)', `${nf(Hres / 1000, 1)} kPa`], ['ΔP côté production', `${nf(dpGen / 1000, 1)} kPa`],
+          ['ΔP du réseau (circuit le plus défavorisé, vannes comprises)', `${nf(Hres / 1000, 1)} kPa${num(e.pondTuyaux) ? ` (tuyauteries pondérées de + ${nf(num(e.pondTuyaux), 0)} %)` : ''}`], ['ΔP côté production', `${nf(dpGen / 1000, 1)} kPa`],
+          ...(dpSupp ? [['ΔP complémentaires (filtre, compteur…)', `${nf(dpSupp / 1000, 1)} kPa`]] : []),
+          ['Calcul de la HMT', `(${nf(Hres / 1000, 1)} + ${nf(dpGen / 1000, 1)}${dpSupp ? ` + ${nf(dpSupp / 1000, 1)}` : ''}) kPa × ${nf(1 + marge / 100, 2)} = ${nf(dpTot * (1 + marge / 100) / 1000, 1)} kPa`],
           [`HMT avec marge de ${nf(marge, 0)} %`, `${nf(HMT, 2)} mCE`], ['Puissance absorbée estimée', `${nf(Pabs / 1000, 2)} kW`],
           ['Pompe proposée', pompes.length ? N.libPompe(pompes[0]) : '—'], ['Vannes d\'équilibrage', `${vannes.length} (${partenaires ? 'émetteurs et antennes' : 'émetteurs'})`]],
         tableaux: [
