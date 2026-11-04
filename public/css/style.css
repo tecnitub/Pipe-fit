@@ -1200,3 +1200,4 @@ ul.plan-mes li.pm-sansObjet .pm-txt { opacity: .55; text-decoration: line-throug
 .ppsps-chap { text-transform: none; }
 .ppsps-sommaire p { margin: 6px 0; }
 .ppsps-affiche { border: 2px solid var(--doc-accent, #8f2f1a); border-radius: 6px; padding: 12px 16px; }
+.reu-retard td { background: color-mix(in srgb, var(--neg, #b3261e) 7%, transparent); } .reu-taches textarea { width: 100%; min-width: 280px; }

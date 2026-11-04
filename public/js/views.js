@@ -151,6 +151,7 @@ Views.chantier = params => {
   if (!a) return '<p>Chantier introuvable. <a href="#/chantiers">Retour aux chantiers</a></p>';
   if (params[1] === 'documents') return documentsChantier(a);
   if (params[1] === 'securite') return securiteChantier(a);
+  if (params[1] === 'reunions') return reunionsChantier(a);
   if (params[1] === 'gantt') return ganttChantier(a);
   if (estHorsDevis(a)) return horsDevisView(a);
   const s = Calc.affaire(a);
@@ -257,6 +258,7 @@ Views.chantier.bind = (root, params) => {
   if (!a) return;
   if (params[1] === 'documents') return bindDocumentsChantier(root, a);
   if (params[1] === 'securite') return bindSecuriteChantier(root, a);
+  if (params[1] === 'reunions') return bindReunionsChantier(root, a);
   if (params[1] === 'gantt') return bindGanttChantier(root, a);
   if (estHorsDevis(a)) return bindHorsDevis(root, a);
   bindEtudeChantier(root, a);

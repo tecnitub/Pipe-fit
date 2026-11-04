@@ -1,7 +1,7 @@
 // Documents du chantier (plans, fiches techniques, notices, sécurité…) déposés par le bureau et transmis aux compagnons,
 // et fiche chantier du compagnon sur son téléphone : documents, matériel prévu (sans prix ni heures, selon les réglages),
 // commandes et livraisons attendues.
-const CATEGORIES_DOC = [['Demande client', '📧'], ['CCTP', '📑'], ['Plan', '📐'], ['Fiche technique', '📄'], ['Notice', '📘'], ['Note de calcul', '🧮'], ['Matériel à valider', '🏷️'], ['Rapport de mise en service', '📗'], ['Sécurité / PPSPS', '⛑️'], ['PGC', '🦺'], ['Plan de prévention', '🛡️'], ['Photo', '🖼️'], ['Autre', '📁']];
+const CATEGORIES_DOC = [['Demande client', '📧'], ['CCTP', '📑'], ['Plan', '📐'], ['Fiche technique', '📄'], ['Notice', '📘'], ['Note de calcul', '🧮'], ['Matériel à valider', '🏷️'], ['Rapport de mise en service', '📗'], ['Sécurité / PPSPS', '⛑️'], ['PGC', '🦺'], ['Plan de prévention', '🛡️'], ['Compte rendu de réunion', '🗒️'], ['Photo', '🖼️'], ['Autre', '📁']];
 const iconeDoc = c => (CATEGORIES_DOC.find(x => x[0] === c) || CATEGORIES_DOC[CATEGORIES_DOC.length - 1])[1];
 const categorieDevinee = Classement.categorieDevinee;
 const tailleLisible = o => (o > 1048576 ? `${fmt(o / 1048576, 1)} Mo` : `${Math.max(1, Math.round(o / 1024))} Ko`);
@@ -18,6 +18,7 @@ function chantierOnglets(a, actif) {
   const n = (a.documents || []).length;
   return `<div class="tabs no-print"><a href="#/chantier/${a.id}" class="${actif === 'apercu' ? 'active' : ''}">Vue d'ensemble</a>
     <a href="#/chantier/${a.id}/documents" class="${actif === 'documents' ? 'active' : ''}">📎 Documents <span class="count">${n}</span></a>
+    <a href="#/chantier/${a.id}/reunions" class="${actif === 'reunions' ? 'active' : ''}">🗒️ Réunions${(a.taches || []).filter(t => t.statut !== 'fait').length ? ` <span class="count">${(a.taches || []).filter(t => t.statut !== 'fait').length}</span>` : ''}</a>
     <a href="#/chantier/${a.id}/securite" class="${actif === 'securite' ? 'active' : ''}">⛑️ Sécurité${(a.documents || []).some(d => d.categorie === 'Sécurité / PPSPS') ? '' : ' <span class="count">à faire</span>'}</a>
     ${estHorsDevis(a) ? '' : `<a href="#/chantier/${a.id}/gantt" class="${actif === 'gantt' ? 'active' : ''}">📊 Gantt${(a.phases || []).length ? '' : ' <span class="count">à faire</span>'}</a>`}
     ${estHorsDevis(a) ? '' : `<a href="#/situations">Situations</a>`}
