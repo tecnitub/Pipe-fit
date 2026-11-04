@@ -220,6 +220,8 @@ Views.chantier = params => {
   ${epreuvesChantierHtml(a)}
   ${essaisChantierHtml(a)}
 
+  <div id="contrat-entretien">${contratChantierHtml(a)}</div>
+
   <h2>Réserves et réception</h2>
   <div class="card reception-card">
     ${pvRec ? `<span class="badge b-ok">PV ${esc(pvRec.numero)} signé le ${dateFr(pvRec.date)}</span> ${esc(pvRec.decision)} · signataire ${esc(pvRec.signataireNom)}` : '<span class="badge b-warn">Réception non signée</span>'}
@@ -263,6 +265,8 @@ Views.chantier.bind = (root, params) => {
   if (estHorsDevis(a)) return bindHorsDevis(root, a);
   bindEtudeChantier(root, a);
   chargerPlanMes(root, a.id);
+  bindContratChantier(root, a);
+  if (!carnetsDoe.has(a.id)) chargerCarnetDoe(a.id).then(() => { if (location.hash.startsWith(`#/chantier/${a.id}`) && !(Store.get('affaires', a.id).contrat || {}).actif) { const z = document.querySelector('#contrat-entretien'); if (z) { z.innerHTML = contratChantierHtml(Store.get('affaires', a.id)); bindContratChantier(document, Store.get('affaires', a.id)); } } });
   root.querySelector('#ch-consultation').onclick = () => { location.hash = '#/consultations/' + nouvelleConsultation({ affaireId: a.id, objet: `Fournitures ${a.code || ''}` }).id; };
   root.querySelector('#edit').onclick = () => editModal({ title: `Chantier ${a.code}`, col: 'affaires', fields: chantierFields, obj: { ...a },
     onDelete: () => { location.hash = '#/chantiers'; } });

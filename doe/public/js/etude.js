@@ -281,7 +281,7 @@ function resumeEtude(doe) {
   doe.fiches.forEach(f => { const v = f.visa || 'À soumettre'; visas[v] = (visas[v] || 0) + 1; });
   const ficheDe = e => doe.fiches.find(f => (f.equipements || []).includes(e.id));
   return {
-    doeId: doe.id, statut: doe.statut || 'En cours', etude: enEtude(doe), indice: doe.indice || '', pct: m.pct, aFaire: m.manques.length,
+    doeId: doe.id, statut: doe.statut || 'En cours', maintenance: (doe.maintenance || []).slice(0, 200).map(l => (Array.isArray(l) ? l.slice(0, 4).map(x => String(x || '').slice(0, 200)) : l)), etude: enEtude(doe), indice: doe.indice || '', pct: m.pct, aFaire: m.manques.length,
     manques: m.manques.slice(0, 6).map(x => x.libelle),
     cctp: lu ? { nom: lu.nom || '', le: lu.le || '', articles: (lu.articles || []).length, equipements: (lu.equipements || []).length, manquants: equipementsCctpManquants(doe).length } : null,
     sansCctp: !!doe.sansCctp,

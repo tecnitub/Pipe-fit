@@ -10,6 +10,7 @@ const Echeances = require('../public/js/echeances');
 const Autorisations = require('../public/js/autorisations');
 const Fluides = require('../public/js/fluides');
 const Derive = require('../public/js/derive');
+const Contrats = require('../public/js/contrats');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -174,15 +175,21 @@ function creer({ DB, db, broadcast }) {
       const cle = `p:${a.entrepriseId}:${a.fin || ''}:${a.etat}`;
       if (!deja[cle]) nouvelles.push({ cle, type: 'pdp', texte: `${a.nom} : ${a.texte}`, etat: a.etat === 'bientot' ? 'bientot' : 'expire' });
     });
+    // Contrats d'entretien : visites à planifier dans le mois ou en retard
+    tous('affaires').filter(a => a.contrat && a.contrat.actif && !a.archive).forEach(a => Contrats.rappels(a.contrat, auj).forEach(r => {
+      const cle = `e:${a.id}:${r.v.id}:${r.etat}`;
+      if (!deja[cle]) nouvelles.push({ cle, type: 'entretien', texte: `${a.code || ''} ${a.nom || ''} : visite d'entretien du ${r.v.prevue.split('-').reverse().join('/')} ${r.etat === 'retard' ? 'en retard' : 'à planifier'} (${r.v.operations.length} opération(s))`, etat: r.etat === 'retard' ? 'expire' : 'bientot', lien: `#/chantier/${a.id}` });
+    }));
     if (!nouvelles.length) return 0;
     purger();
     const doc = (DB.getSettings(db).doc || {}), sujet = doc.email ? `mailto:${doc.email}` : undefined;
     // Bureau : un résumé
     const bureau = db.prepare("SELECT id, user_id FROM accounts WHERE role IN ('admin', 'charge')").all();
     const nh = nouvelles.filter(n => n.type === 'hab'), np = nouvelles.filter(n => n.type === 'parc'), nf = nouvelles.filter(n => n.type === 'fluide'), npp = nouvelles.filter(n => n.type === 'pdp');
-    const titre = `⏰ Échéances : ${[nh.length && `${nh.length} habilitation(s) / visite(s) médicale(s)`, np.length && `${np.length} contrôle(s) du parc`, nf.length && `${nf.length} contrôle(s) d'étanchéité`, npp.length && `${npp.length} plan(s) de prévention client`].filter(Boolean).join(', ')}`;
+    const titre = `⏰ Échéances : ${[nh.length && `${nh.length} habilitation(s) / visite(s) médicale(s)`, np.length && `${np.length} contrôle(s) du parc`, nf.length && `${nf.length} contrôle(s) d'étanchéité`, npp.length && `${npp.length} plan(s) de prévention client`, nouvelles.some(n => n.type === 'entretien') && `${nouvelles.filter(n => n.type === 'entretien').length} visite(s) d'entretien`].filter(Boolean).join(', ')}`;
     const texte = nouvelles.map(n => `${n.type === 'hab' ? `${(lire('users', n.userId) || {}).nom || ''} : ` : ''}${n.texte}`).join('\n');
-    const lien = nh.length || npp.length ? '#/rh/habilitations' : np.length ? '#/parc' : '#/fluides';
+    const ne = nouvelles.filter(n => n.type === 'entretien');
+    const lien = nh.length || npp.length ? '#/rh/habilitations' : np.length ? '#/parc' : nf.length ? '#/fluides' : ne.length ? ne[0].lien : '#/fluides';
     [...new Set(bureau.map(c => c.user_id).filter(Boolean))].forEach(uid => enregistrer({ type: 'echeance', userId: uid, titre, texte, lien, date: new Date().toISOString(), lu: false }));
     await Push.envoyer(DB, db, bureau.map(c => c.id), { titre, texte, lien, tag: 'echeances' }, sujet).catch(e => console.error('Notification :', e.message));
     // Personnes concernées (compagnon, ou son chef d'équipe s'il n'a pas de compte)
