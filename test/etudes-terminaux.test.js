@@ -89,3 +89,30 @@ test('réseau arborescent : branches reliées aux terminaux (débit au régime d
   const r = N.calculer('arbo', ra.entrees);
   assert.ok(Number.isFinite(r.valeurs.Qp || r.valeurs.Q || 0));
 });
+
+test('pompes de distribution placées sur une branche : branche découplée, point demandé contrôlé ; CTA simple flux', () => {
+  const Eq = require('../etudes/public/js/equilibrage');
+  assert.ok(T.TYPES.ctaSf && T.TYPES.gainable && T.estPompe('pompeDist') && T.estPompe('pompePrim'));
+  const term = { id: 't1', type: 'terminaux', titre: 'Équipements', entrees: { ...N.defauts('terminaux'), appareils: [
+    { rep: 'CA-01', local: 'Bureau', type: 'cassette2', Pch: 4, batterie: 'chaude', vanne: '2v', dpEauC: 15, Pvent: 50 },
+    { rep: 'P-ANT2', local: 'Sous-station', type: 'pompeDist', Qp: 1, Hp: 5, Pvent: 120, regul: 'automate' },
+    { rep: 'P-ANT3', local: 'Sous-station', type: 'pompeDist', Qp: 0.1, Hp: 0.5, Pvent: 60 }] } };
+  assert.deepStrictEqual(T.pompesEtude({ notes: [term] }).map(x => x.rep), ['P-ANT2', 'P-ANT3']);
+  const l = T.versElec(term, N.calculer('terminaux', term.entrees)), p2 = l.find(x => x.rep === 'P-ANT2');
+  assert.strictEqual(p2.type, 'pompe'); assert.ok(p2.pointsUnit.some(([d]) => /Retour de marche/.test(d)));
+  const arbo = { id: 'a1', type: 'arbo', titre: 'Réseau', entrees: { ...N.defauts('arbo'), dT: 10, troncons: [{ rep: 'C', amont: '', L: 10, zeta: 4 },
+    { rep: 'A1', amont: 'C', L: 20, zeta: 3, P: 20, dpEm: 10 },
+    { rep: 'A2', amont: 'C', L: 30, zeta: 3, pompe: 't1:P-ANT2' }, { rep: 'A2.1', amont: 'A2', L: 10, zeta: 5, emetteur: 't1:CA-01' },
+    { rep: 'A3', amont: 'C', L: 15, zeta: 3, pompe: 't1:P-ANT3' }, { rep: 'A3.1', amont: 'A3', L: 5, zeta: 5, P: 8, dpEm: 20 }] } };
+  const et = { notes: [term, arbo] }, ra = Liens.resoudre(et, arbo);
+  assert.strictEqual(ra.entrees.troncons[2].pompeQ, 1);
+  const r = N.calculer('arbo', ra.entrees), pp = r.tableaux.find(t => /Pompes placées/.test(t.titre));
+  assert.ok(pp && pp.lignes.length === 2);
+  assert.strictEqual(pp.lignes.find(x => /^A2/.test(x[0]))[5], 'adaptée');
+  assert.strictEqual(pp.lignes.find(x => /^A3/.test(x[0]))[5], 'insuffisante');
+  // La pompe de départ ne compte plus les branches équipées de leur pompe (découplées)
+  const sansPompes = N.calculer('arbo', { ...ra.entrees, troncons: ra.entrees.troncons.map(t => ({ ...t, pompe: '' })) });
+  assert.ok(r.valeurs.Hres < sansPompes.valeurs.Hres, `${r.valeurs.Hres} / ${sansPompes.valeurs.Hres}`);
+  const a1 = N.calculer('arbo', { ...ra.entrees, troncons: ra.entrees.troncons.filter(t => !/^A[23]/.test(t.rep)) });
+  assert.ok(r.valeurs.Hres < a1.valeurs.Hres * 1.1, 'seule la branche A1 (sans pompe) fixe la HMT de départ');
+});

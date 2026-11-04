@@ -41,6 +41,7 @@ const Equilibrage = ((D, C, N) => {
       colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'amont', l: 'Amont (vide = pompe)', t: 't' }, { k: 'nom', l: 'Désignation', t: 't' },
         { k: 'L', l: 'Longueur aller (m)' }, { k: 'zeta', l: 'Σζ aller + retour' }, { k: 'sing', l: 'Singularités de l\'aller (comptées aussi au retour ; remplacent Σζ)', t: 't' }, { k: 'tube', l: 'Tube', t: 's', o: e => [['', 'Auto'], ...optTubes(e)] },
         { k: 'emetteur', l: 'Émetteur de l\'étude (remplit puissance, débit et ΔP)', t: 's', o: (e, et) => [['', 'Saisie'], ...emetteursEtude(et, e.saison).map(x => [x.cle, x.libelle])] },
+        { k: 'pompe', l: 'Pompe placée sur ce tronçon (dessert toute la branche en aval)', t: 's', o: (e, et) => [['', '—'], ...(typeof Terminaux !== 'undefined' ? Terminaux : require('./terminaux')).pompesEtude(et).map(x => [x.cle, x.libelle]), ...(e && !et ? (e.troncons || []).filter(t => t.pompe).map(t => [t.pompe, t.pompe]) : [])] },
         { k: 'P', l: 'Puissance émetteur (kW)' }, { k: 'Q', l: 'Débit émetteur (m³/h ; vide = P / ΔT)' }, { k: 'dpEm', l: 'ΔP émetteur + vanne de régulation (kPa)' }] },
       { g: 'Équilibrage et pompe' },
       { k: 'methode', l: 'Vannes d\'équilibrage', t: 's', o: [['emetteurs', 'Sur chaque émetteur'], ['antennes', 'Sur chaque émetteur et au pied de chaque antenne (vannes partenaires)']], d: 'emetteurs' },
@@ -53,7 +54,7 @@ const Equilibrage = ((D, C, N) => {
       const zetaSing = (x, rep) => { const s = String(x.sing || '').trim(); if (!s) return num(x.zeta); const r = D.singularites(s, false); if (r.inconnus.length) alertes.push(alerte('attention', `${rep} : singularité(s) non reconnue(s) « ${r.inconnus.join(', ')} », non comptée(s).`)); return 2 * r.zeta; };
       const vmax = num(e.vmax, 1.5), Rmax = num(e.Rmax, 150), dT = num(e.dT, 15), dpMin = num(e.dpMin, 3) * 1000, partenaires = e.methode === 'antennes';
       // Arbre des tronçons
-      const tr = (e.troncons || []).map((x, i) => ({ i, rep: String(x.rep || `T${i + 1}`).trim(), amont: String(x.amont || '').trim(), nom: x.nom || '', L: num(x.L), zeta: zetaSing(x, `${x.rep || `T${i + 1}`}`), tubeImpose: x.tube, P: num(x.P), Qimp: num(x.Q), dpEm: num(x.dpEm) * 1000, enfants: [] }));
+      const tr = (e.troncons || []).map((x, i) => ({ i, rep: String(x.rep || `T${i + 1}`).trim(), amont: String(x.amont || '').trim(), nom: x.nom || '', L: num(x.L), zeta: zetaSing(x, `${x.rep || `T${i + 1}`}`), tubeImpose: x.tube, P: num(x.P), Qimp: num(x.Q), pompe: x.pompe || '', pompeQ: num(x.pompeQ), pompeH: num(x.pompeH), pompeNom: x.pompeNom || '', dpEm: num(x.dpEm) * 1000, enfants: [] }));
       const parRep = new Map();
       tr.forEach(t => { if (parRep.has(t.rep)) alertes.push(alerte('erreur', `Repère ${t.rep} en double.`)); else parRep.set(t.rep, t); });
       const racines = [];
@@ -85,24 +86,36 @@ const Equilibrage = ((D, C, N) => {
       // Pression nécessaire à l'entrée de chaque tronçon et réglage des vannes
       // Vannes partenaires : au pied des antennes qui ont des voisines (pas sur un départ unique)
       const aVanne = t => !t.enfants.length || (partenaires && (t.amont ? parRep.get(t.amont).enfants.length > 1 : racines.length > 1));
+      // Branche portant sa propre pompe (distribution derrière un collecteur ou une bouteille) : découplée, la pompe
+      // fournit la pression de toute la branche ; le réseau en amont ne la compte pas
       const besoin = t => {
-        const aval = t.enfants.length ? Math.max(...t.enfants.map(besoin)) : t.dpEm;
-        t.enfants.forEach(c => { c.exces = aval - c.H; });
+        t.enfants.forEach(besoin);
+        const vus2 = t.enfants.filter(c => !c.pompe), aval = t.enfants.length ? (vus2.length ? Math.max(...vus2.map(c => c.H)) : 0) : t.dpEm;
+        t.enfants.forEach(c => { c.exces = c.pompe ? 0 : aval - c.H; });
         t.H = t.dp + aval + (aVanne(t) ? dpMin : 0);
         return t.H;
       };
       racines.forEach(besoin);
-      const Hres = racines.length ? Math.max(...racines.map(t => t.H)) : 0;
-      racines.forEach(t => { t.exces = Hres - t.H; });
+      const sansPompe = racines.filter(t => !t.pompe), Hres = sansPompe.length ? Math.max(...sansPompe.map(t => t.H)) : 0;
+      racines.forEach(t => { t.exces = t.pompe ? 0 : Hres - t.H; });
       // Sans vannes partenaires, l'excès d'un tronçon intermédiaire descend jusqu'aux vannes des émetteurs
       const regler = (t, report, dispo) => {
         t.dispo = dispo;
         const total = report + t.exces;
         if (aVanne(t)) { t.dpV = dpMin + total; t.Kv = t.Q > 0 ? C.kv(t.Q, t.dpV / 1000, f.rho) : NaN; t.vanne = vannePour(t.Kv); }
         const reste = aVanne(t) ? 0 : total;
-        t.enfants.forEach(c => regler(c, reste, dispo - t.dp - (aVanne(t) ? t.dpV : 0)));
+        t.enfants.forEach(c => regler(c, c.pompe ? 0 : reste, c.pompe ? c.H : dispo - t.dp - (aVanne(t) ? t.dpV : 0)));
       };
-      racines.forEach(t => regler(t, 0, Hres));
+      racines.forEach(t => regler(t, 0, t.pompe ? t.H : Hres));
+      // Pompes placées : point demandé (débit de la branche, hauteur de la branche + marge) face à la fiche de la pompe
+      const margeP = num(e.marge, 10);
+      const placees = actifs.filter(t => t.pompe).map(t => {
+        const H = t.H * (1 + margeP / 100) / (f.rho * C.G), ok = t.pompeQ > 0 && t.pompeH > 0 ? t.pompeQ >= t.Q * 0.95 && t.pompeH >= H * 0.95 : null;
+        if (ok === false) alertes.push(alerte('erreur', `${t.rep} : pompe ${t.pompeNom || t.pompe} (${nf(t.pompeQ, 2)} m³/h à ${nf(t.pompeH, 1)} mCE) insuffisante pour la branche : ${nf(t.Q, 2)} m³/h sous ${nf(H, 2)} mCE.`));
+        else if (ok) alertes.push(alerte('ok', `${t.rep} : pompe ${t.pompeNom || t.pompe} adaptée à la branche (${nf(t.Q, 2)} m³/h sous ${nf(H, 2)} mCE demandés).`));
+        else alertes.push(alerte('attention', `${t.rep} : pompe ${t.pompeNom || t.pompe} sans point de fonctionnement (débit, HMT) : à renseigner dans les équipements.`));
+        return { t, H, ok };
+      });
       terminaux.forEach(t => { t.chemin = []; for (let x = t; x; x = x.amont ? parRep.get(x.amont) : null) { t.chemin.unshift(x); if (t.chemin.length > tr.length) break; } });
       const defav = terminaux.reduce((a, t) => (!a || t.chemin.reduce((s2, x) => s2 + x.dp, 0) + t.dpEm > a.chemin.reduce((s2, x) => s2 + x.dp, 0) + a.dpEm ? t : a), null);
       const dpGen = num(e.dpGen) * 1000, marge = num(e.marge, 10), Qp = racines.reduce((a, t) => a + t.Q, 0), Ptot = terminaux.reduce((a, t) => a + t.P, 0);
@@ -131,6 +144,8 @@ const Equilibrage = ((D, C, N) => {
           { titre: 'Circuits des émetteurs', entetes: ['Émetteur', 'P (kW)', 'Q (m³/h)', 'Chemin', 'ΔP tuyauteries (kPa)', 'ΔP émetteur (kPa)', 'Vanne à dissiper (kPa)'],
             lignes: terminaux.map(t => [nomDe(t), nf(t.P, 1), nf(t.Q, 3), t.chemin.map(x => x.rep).join(' → '), nf(t.chemin.reduce((a, x) => a + x.dp, 0) / 1000, 2), nf(t.dpEm / 1000, 1), nf(t.dpV / 1000, 1)]),
             surligne: defav ? terminaux.indexOf(defav) : undefined },
+          ...(placees.length ? [{ titre: 'Pompes placées sur le réseau (branche desservie)', entetes: ['Tronçon', 'Pompe', 'Débit demandé (m³/h)', 'HMT demandée avec marge (mCE)', 'Point de la pompe', 'Contrôle'],
+            lignes: placees.map(x => [nomDe(x.t), x.t.pompeNom || x.t.pompe, nf(x.t.Q, 2), nf(x.H, 2), x.t.pompeQ ? `${nf(x.t.pompeQ, 2)} m³/h · ${nf(x.t.pompeH, 1)} mCE` : '—', x.ok === null ? 'à renseigner' : x.ok ? 'adaptée' : 'insuffisante']) }] : []),
           { titre: 'Réglage des vannes d\'équilibrage (gamme générique, Kvs à pleine ouverture)', entetes: ['Vanne', 'Q (m³/h)', 'ΔP à dissiper (kPa)', 'Kv de réglage', 'DN', 'Kvs', 'Ouverture ≈'],
             lignes: vannes.map(t => [nomDe(t), nf(t.Q, 3), nf(t.dpV / 1000, 1), nf(t.Kv, 2), String(t.vanne.dn), nf(t.vanne.Kvs, 1), `${nf(t.vanne.ouverture * 100, 0)} %`]) }],
         alertes,

@@ -77,6 +77,13 @@ const Liens = ((N, Sc) => {
   function lienEmetteurs(etude, e, verrous, alertes, libelle, pile) {
     const notes = (etude && etude.notes) || [], froid = e.saison === 'froid', cache = new Map();
     const calc = src => { if (!cache.has(src.id)) { try { cache.set(src.id, N.calculer(src.type, resoudre(etude, src, pile).entrees)); } catch (err) { cache.set(src.id, null); } } return cache.get(src.id); };
+    // Pompes placées : point de fonctionnement repris de l'équipement (fiche technique)
+    (e.troncons || []).forEach(t => {
+      if (!t || !t.pompe) return;
+      const [id, cle] = String(t.pompe).split(':'), src = notes.find(n => n.id === id), a = src && ((src.entrees || {}).appareils || []).find(x => x.rep === cle);
+      if (!a) { alertes.push({ niveau: 'attention', texte: `${t.rep || 'Tronçon'} : la pompe placée n'existe plus dans les équipements.` }); return; }
+      Object.assign(t, { pompeQ: num(a.Qp), pompeH: num(a.Hp), pompeNom: `${a.rep}${a.ref ? ` (${a.ref})` : ''}` });
+    });
     (e.troncons || []).forEach((t, i) => {
       if (!t || !t.emetteur) return;
       const [id, cle] = String(t.emetteur).split(':'), src = notes.find(n => n.id === id), rep = t.rep || `Tronçon ${i + 1}`;
