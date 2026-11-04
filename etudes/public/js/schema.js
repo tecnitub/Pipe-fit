@@ -131,13 +131,26 @@ const Schema = ((D, C, N) => {
     const di = num(r.dn) > 0 ? num(r.dn) : t.di, v = Q / 3600 / (Math.PI * (di / 1000) ** 2 / 4), pd = rho * v * v / 2;
     const brut = dpS > 0 ? dpS : kv > 0 ? (Q / kv) ** 2 * 100 * (rho / 1000) : R[1] * pd / 1000, mini = r.type === 'equilibrage' && !(dpS > 0) && brut < 3;
     const dpU = mini ? 3 : brut;
-    return { i, rep: r.rep || `${R[0].split(' ')[0]} ${i + 1}`, type: r.type, lib: R[0], dn: num(r.dn) > 0 ? num(r.dn) : t.dn, qte: q, kv, tours: num(r.tours), dpU, dpTot: dpU * q,
+    return { i, rep: r.rep || `${R[0].split(' ')[0]} ${i + 1}`, type: r.type, lib: R[0], dn: num(r.dn) > 0 ? num(r.dn) : t.dn, qte: q, kv, tours: num(r.tours), abaque: lireAbaque(r.abaque), dpU, dpTot: dpU * q,
       source: mini ? 'réglage mini 3 kPa' : dpS > 0 ? 'ΔP fiche' : kv > 0 ? 'Kv fiche' : R[1] ? `ζ ${String(R[1]).replace('.', ',')}` : 'négligeable',
       ref: r.ref || '', fiche: r.fiche && (r.fiche.fabricant || r.fiche.reference) ? r.fiche : null, Q };
   }
   // Robinetterie d'un circuit (ou d'un tronçon : champ « circuit » ou « troncon » de la ligne)
   function robinetterie(e, rep, Q, t, f, champ = 'circuit') {
     return (e.robinetterie || []).map((r, i) => ({ r, i })).filter(({ r }) => r && r.type && String(r[champ] || '').trim() === String(rep).trim()).map(({ r, i }) => organe(r, i, Q, t, f.rho));
+  }
+  // Abaque d'une vanne d'équilibrage : « tours:Kv » séparés par des points-virgules (ex. « 0,5:0,4 ; 1:0,9 ; 2:2,1 »)
+  function lireAbaque(txt) {
+    return String(txt || '').split(/[;|\n]+/).map(p => p.trim().split(/\s*[:=→]\s*|\s+/).map(x => Number(String(x).replace(',', '.'))))
+      .filter(p => p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]) && p[1] >= 0).map(p => [p[0], p[1]]).sort((a, b) => a[0] - b[0]);
+  }
+  const ecrireAbaque = pts => pts.map(([t, k]) => `${String(t).replace('.', ',')}:${String(k).replace('.', ',')}`).join(' ; ');
+  // Position (tours) donnant le Kv demandé, par interpolation linéaire entre les points de l'abaque
+  function toursAbaque(pts, Kv) {
+    if (!pts || pts.length < 2 || !(Kv > 0)) return null;
+    if (Kv <= pts[0][1]) return { tours: pts[0][0], borne: Kv < pts[0][1] ? 'mini' : '' };
+    for (let i = 1; i < pts.length; i++) { const [t0, k0] = pts[i - 1], [t1, k1] = pts[i]; if (Kv <= k1) return { tours: k1 === k0 ? t1 : t0 + (t1 - t0) * (Kv - k0) / (k1 - k0), borne: '' }; }
+    return { tours: pts[pts.length - 1][0], borne: 'maxi' };
   }
   // Organes qui changent le calcul (pertes de charge) ; les autres ne servent qu'au DOE (repérage, fiche technique)
   const ORGANES_CALCUL = ['isolement', 'clapet', 'equilibrage', 'filtre', 'desemboueur', 'compteur', 'regulation', 'manchette', 'echangeur'];
@@ -605,10 +618,26 @@ const Schema = ((D, C, N) => {
       if (v.dn === undefined) { const m = /\bdn\s*(\d{2,3})\b/.exec(x); if (m) { v.dn = +m[1]; src.dn = l.trim(); } }
       if (v.tours === undefined) { const m = /(\d+(?:[.,]\d+)?)\s*tours/.exec(x); if (m && +m[1].replace(',', '.') <= 20) { v.tours = +m[1].replace(',', '.'); src.tours = l.trim(); } }
       if (v.dp === undefined && /perte de charge|pression differentielle|delta ?p|Δp/.test(x)) { const m = /(\d+(?:[.,]\d+)?)\s*(kpa|mbar|mce)/.exec(x); if (m) { const n = +m[1].replace(',', '.'); v.dp = m[2] === 'kpa' ? n : m[2] === 'mbar' ? n / 10 : n * 9.81; src.dp = l.trim(); } } });
+    // Abaque : ligne des positions (tours) suivie d'une ligne de Kv de même longueur, ou couples « 1 tour : Kv 0,9 »
+    const nombres = l => (l.match(/\d+(?:[.,]\d+)?/g) || []).map(x => Number(x.replace(',', '.')));
+    for (let i = 0; i < L.length && !v.abaque; i++) {
+      const x = nrm(L[i]);
+      if (!/tours?|position|reglage/.test(x)) continue;
+      const t = nombres(L[i]).filter(n => n <= 20);
+      for (let j = i + 1; j <= i + 3 && j < L.length; j++) {
+        if (!/\bkv/.test(nrm(L[j]))) continue;
+        const k = nombres(L[j].replace(/kvs?/i, ''));
+        if (t.length >= 3 && k.length === t.length && t.every((n, z) => !z || n > t[z - 1])) { v.abaque = ecrireAbaque(t.map((n, z) => [n, k[z]])); src.abaque = `${L[i].trim()} / ${L[j].trim()}`; }
+        break;
+      }
+    }
+    if (!v.abaque) { const pts = L.map(l => /(\d+(?:[.,]\d+)?)\s*tours?\s*[:=–-]?\s*kv\s*[:=]?\s*(\d+(?:[.,]\d+)?)/i.exec(nrm(l))).filter(Boolean).map(m => [Number(m[1].replace(',', '.')), Number(m[2].replace(',', '.'))]);
+      if (pts.length >= 3) { v.abaque = ecrireAbaque(pts.sort((a, b) => a[0] - b[0])); src.abaque = 'couples tours / Kv'; } }
+    if (v.abaque) { const d = lireAbaque(v.abaque).slice(-1)[0]; if (v.tours === undefined) v.tours = d[0]; if (/abaque|tours/.test(String(src.kv || '').toLowerCase()) || src.kv === undefined || v.kv < d[1]) { v.kv = d[1]; src.kv = 'Kvs : dernier point de l\'abaque'; } }
     let fabricant = '', reference = '';
     try { const FT = typeof FichesTech !== 'undefined' ? FichesTech : require('../../../public/js/fiches-tech'); const a = FT.analyser({ texte: L.join('\n') }); fabricant = a.fabricant || ''; reference = (a.references || [])[0] || ''; } catch (err) { /* sans bibliothèque */ }
     return { valeurs: v, sources: src, fabricant, reference, nb: Object.keys(v).length };
   }
-  return { ROBINETTERIE, ORGANES_CALCUL, robinetterie, organe, lireFicheRobinet, REGIMES, GENERATEURS, EMETTEURS, REGULATIONS, FLUIDES_FRIGO, CONTENANCE, volumeEau, utiliserReglementation, dimensionner, dessiner, reglementation, regulation };
+  return { ROBINETTERIE, ORGANES_CALCUL, robinetterie, organe, lireFicheRobinet, lireAbaque, toursAbaque, REGIMES, GENERATEURS, EMETTEURS, REGULATIONS, FLUIDES_FRIGO, CONTENANCE, volumeEau, utiliserReglementation, dimensionner, dessiner, reglementation, regulation };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Notes !== 'undefined' ? Notes : require('./notes'));
 if (typeof module !== 'undefined') module.exports = Schema;

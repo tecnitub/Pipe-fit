@@ -50,7 +50,8 @@ const Equilibrage = ((D, C, N) => {
       { k: 'robinetterie', l: 'Robinetterie et accessoires par tronçon (ΔP ou Kv de la fiche ; une vanne d\'équilibrage saisie ici remplace la vanne générique : Kvs et nombre de tours de sa fiche)', t: 'lignes', d: [],
         colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'troncon', l: 'Tronçon', t: 's', o: e => [['', '—'], ...(e.troncons || []).filter(t => t.rep).map(t => [t.rep, `${t.rep}${t.nom ? ` — ${t.nom}` : ''}`])] },
           { k: 'type', l: 'Organe', t: 's', o: () => Object.entries(Sch().ROBINETTERIE).map(([k, x]) => [k, x[0]]) }, { k: 'dn', l: 'DN (vide : celui du tronçon)' }, { k: 'qte', l: 'Quantité' },
-          { k: 'kv', l: 'Kv / Kvs (fiche)' }, { k: 'dp', l: 'ΔP (kPa, fiche)' }, { k: 'tours', l: 'Tours maxi (vanne d\'équilibrage)' }, { k: 'ref', l: 'Fabricant, référence', t: 't' }] },
+          { k: 'kv', l: 'Kv / Kvs (fiche)' }, { k: 'dp', l: 'ΔP (kPa, fiche)' }, { k: 'tours', l: 'Tours maxi (vanne d\'équilibrage)' },
+          { k: 'abaque', l: 'Abaque tours:Kv du fabricant (ex. 1:0,9 ; 2:2,1 ; 3:3,6 ; 4:5,2)', t: 't' }, { k: 'ref', l: 'Fabricant, référence', t: 't' }] },
       { g: 'Équilibrage et pompe' },
       { k: 'methode', l: 'Vannes d\'équilibrage', t: 's', o: [['emetteurs', 'Sur chaque émetteur'], ['antennes', 'Sur chaque émetteur et au pied de chaque antenne (vannes partenaires)']], d: 'emetteurs' },
       { k: 'dpMin', l: 'ΔP mini d\'une vanne d\'équilibrage (mesure fiable)', u: 'kPa', d: 3 },
@@ -119,8 +120,12 @@ const Equilibrage = ((D, C, N) => {
           t.dpV = dpMin + total; t.Kv = t.Q > 0 ? C.kv(t.Q, t.dpV / 1000, f.rho) : NaN;
           // Vanne de la fiche (Kvs, tours) si elle est saisie sur ce tronçon, sinon vanne générique
           const q = t.equil;
-          t.vanne = q && q.kv > 0 ? { dn: q.dn, Kvs: q.kv, ouverture: t.Kv / q.kv, ref: q.ref || (q.fiche ? [q.fiche.fabricant, q.fiche.reference].filter(Boolean).join(' ') : ''), rep: q.rep, toursMax: q.tours || 4, fiche: !!q.fiche } : { ...vannePour(t.Kv), toursMax: 4 };
-          t.vanne.tours = tours(t.Kv, t.vanne.Kvs, t.vanne.toursMax);
+          const ab = q && q.abaque && q.abaque.length >= 2 ? q.abaque : null, kvsAb = ab ? ab[ab.length - 1][1] : 0;
+          t.vanne = q && (q.kv > 0 || kvsAb > 0) ? { dn: q.dn, Kvs: q.kv > 0 ? q.kv : kvsAb, ouverture: t.Kv / (q.kv > 0 ? q.kv : kvsAb), ref: q.ref || (q.fiche ? [q.fiche.fabricant, q.fiche.reference].filter(Boolean).join(' ') : ''), rep: q.rep, toursMax: q.tours || (ab ? ab[ab.length - 1][0] : 4), fiche: !!q.fiche } : { ...vannePour(t.Kv), toursMax: 4 };
+          // Préréglage : abaque du fabricant si saisie (interpolation), sinon caractéristique linéaire
+          const pa = ab ? Sch().toursAbaque(ab, t.Kv) : null;
+          t.vanne.tours = pa ? pa.tours : tours(t.Kv, t.vanne.Kvs, t.vanne.toursMax); t.vanne.abaque = !!pa;
+          if (pa && pa.borne === 'mini') alertes.push(alerte('attention', `${t.rep} : Kv de réglage ${nf(t.Kv, 2)} sous le premier point de l'abaque (${nf(ab[0][1], 2)}) : vanne presque fermée, choisir une vanne plus petite.`));
           if (q && q.kv > 0 && t.Kv > q.kv) alertes.push(alerte('erreur', `${t.rep} : vanne ${q.rep} (Kvs ${nf(q.kv, 1)}) trop petite pour le Kv de réglage ${nf(t.Kv, 2)} : vanne plus grande ou ΔP à dissiper plus faible.`));
         }
         const reste = aVanne(t) ? 0 : total;
@@ -151,7 +156,7 @@ const Equilibrage = ((D, C, N) => {
       return {
         valeurs: { Qp, HMT, dpTot, Hres, Ph, Pabs, Ptot, defavorise: defav ? defav.rep : null, pompe: pompes[0] || null,
           troncons: actifs.map(t => ({ rep: t.rep, serie: e.serie, tube: t.t.cle, dn: t.t.dn, L: 2 * t.L })),
-          vannes: vannes.map(t => ({ rep: t.rep, dn: t.vanne.dn, Kvs: t.vanne.Kvs, Kv: t.Kv, dp: t.dpV, Q: t.Q, tours: t.vanne.tours, toursMax: t.vanne.toursMax, ref: t.vanne.ref || '', vanneRep: t.vanne.rep || '' })),
+          vannes: vannes.map(t => ({ rep: t.rep, dn: t.vanne.dn, Kvs: t.vanne.Kvs, Kv: t.Kv, dp: t.dpV, Q: t.Q, tours: t.vanne.tours, toursMax: t.vanne.toursMax, abaque: !!t.vanne.abaque, ref: t.vanne.ref || '', vanneRep: t.vanne.rep || '' })),
           robinetterie: actifs.flatMap(t => (t.rob || []).map(x => ({ ...x, troncon: t.rep }))),
           noeuds: actifs.map(t => ({ rep: t.rep, Q: t.Q, dp: t.dp, H: t.H, dispo: t.dispo, dpV: t.dpV })) },
         resume: [['Puissance des émetteurs', `${nf(Ptot, 1)} kW`], ['Débit de la pompe', `${nf(Qp, 2)} m³/h`],
@@ -171,7 +176,7 @@ const Equilibrage = ((D, C, N) => {
             lignes: placees.map(x => [nomDe(x.t), x.t.pompeNom || x.t.pompe, nf(x.t.Q, 2), nf(x.H, 2), x.t.pompeQ ? `${nf(x.t.pompeQ, 2)} m³/h · ${nf(x.t.pompeH, 1)} mCE` : '—', x.ok === null ? 'à renseigner' : x.ok ? 'adaptée' : 'insuffisante']) }] : []),
           { titre: 'Réglage des vannes d\'équilibrage (préréglage à reporter sur la vanne, puis contrôle du débit à la mise en service)', entetes: ['Vanne', 'Q (m³/h)', 'ΔP à dissiper (kPa)', 'Kv de réglage', 'Vanne retenue', 'DN', 'Kvs', 'Ouverture ≈', 'Préréglage ≈'],
             lignes: vannes.map(t => [nomDe(t), nf(t.Q, 3), nf(t.dpV / 1000, 1), nf(t.Kv, 2), t.vanne.ref ? `${t.vanne.rep ? `${t.vanne.rep} · ` : ''}${t.vanne.ref}` : 'générique', String(t.vanne.dn), nf(t.vanne.Kvs, 1), `${nf(t.vanne.ouverture * 100, 0)} %`,
-              t.vanne.tours ? `${nf(t.vanne.tours, 1)} / ${nf(t.vanne.toursMax, 0)} tours` : '—']) },
+              t.vanne.tours ? `${nf(t.vanne.tours, 1)} / ${nf(t.vanne.toursMax, 0)} tours ${t.vanne.abaque ? '(abaque)' : '(linéaire)'}` : '—']) },
           ...(actifs.some(t => (t.rob || []).length) ? [{ titre: 'Robinetterie et accessoires des tronçons', entetes: ['Repère', 'Tronçon', 'Organe', 'DN', 'Qté', 'Q (m³/h)', 'ΔP unitaire (kPa)', 'ΔP total (kPa)', 'Origine', 'Fabricant, référence', 'Fiche'],
             lignes: actifs.flatMap(t => (t.rob || []).map(x => [x.rep, t.rep, x.lib, `DN ${x.dn}`, String(x.qte), nf(x.Q, 3), x.type === 'equilibrage' ? 'réglage' : nf(x.dpU, 2), x.type === 'equilibrage' ? nf(t.dpV / 1000, 1) : nf(x.dpTot, 2), x.type === 'equilibrage' ? 'vanne d\'équilibrage' : x.source, x.ref || (x.fiche ? [x.fiche.fabricant, x.fiche.reference].filter(Boolean).join(' ') : ''), x.fiche ? '✓' : ''])) }] : [])],
         alertes,
@@ -179,7 +184,7 @@ const Equilibrage = ((D, C, N) => {
           `${s.libelle}. Tube « auto » : plus petit diamètre avec v ≤ ${nf(vmax)} m/s et R ≤ ${nf(Rmax, 0)} Pa/m. Retour identique à l'aller (longueur comptée deux fois).`, ...['Pertes de charge : Darcy-Weisbach et Colebrook-White ; singulières Σζ · ρv²/2.'],
           `Chaque vanne d'équilibrage garde au moins ${nf(dpMin / 1000, 1)} kPa pour une mesure de débit fiable ; elle dissipe en plus l'excès de pression de son circuit par rapport au circuit le plus défavorisé.`,
           partenaires ? 'Vannes partenaires : l\'excès de chaque antenne par rapport à ses voisines est dissipé au pied de l\'antenne, les émetteurs ne compensent que les écarts à l\'intérieur de leur antenne.' : 'Vannes sur les émetteurs seulement : l\'excès de pression de chaque circuit est dissipé dans la vanne de son émetteur.',
-          'Kv de réglage = Q · √(ρ / 1000 / ΔP[bar]). Préréglage ≈ tours maxi × Kv / Kvs (caractéristique linéaire ; 4 tours pour la vanne générique) : à confirmer sur l\'abaque du constructeur, puis débit contrôlé à la mise en service.',
+          'Kv de réglage = Q · √(ρ / 1000 / ΔP[bar]). Préréglage : interpolé sur l\'abaque tours / Kv du fabricant quand elle est saisie ou lue sur la fiche, sinon tours maxi × Kv / Kvs (caractéristique linéaire, 4 tours pour la vanne générique) ; débit contrôlé à la mise en service.',
           `HMT = (ΔP du réseau + ΔP production) × (1 + marge) / (ρ · g) ; puissance absorbée = ρ · g · Q · HMT / η (η = ${nf(num(e.rendement, 55), 0)} %).`],
         synthese: `${terminaux.length} émetteurs · ${nf(Qp, 2)} m³/h · HMT ${nf(HMT, 2)} mCE · ${vannes.length} vannes d'équilibrage`,
         schema: terminaux.length ? dessiner(racines, defav, f) : undefined,

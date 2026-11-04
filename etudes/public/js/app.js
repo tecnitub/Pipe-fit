@@ -689,10 +689,11 @@ function appliquerFicheRobinet(et, n, lignesTexte, nomFichier) {
   if (f.valeurs.dn !== undefined) r.dn = f.valeurs.dn;
   if (f.valeurs.dp !== undefined && f.valeurs.kv === undefined) r.dp = Math.round(f.valeurs.dp * 100) / 100;
   if (f.valeurs.tours !== undefined && r.type === 'equilibrage') r.tours = f.valeurs.tours;
+  if (f.valeurs.abaque && r.type === 'equilibrage') r.abaque = f.valeurs.abaque;
   if (nom) r.ref = nom;
   r.fiche = { nom: String(nomFichier || '').slice(0, 120), fabricant: f.fabricant, reference: f.reference };
   enregistrer(et); App.render();
-  toast(`Fiche reprise sur ${r.rep || 'l\'organe'} : ${[f.valeurs.kv !== undefined && `Kv ${String(f.valeurs.kv).replace('.', ',')}`, f.valeurs.dn !== undefined && `DN ${f.valeurs.dn}`, f.valeurs.tours !== undefined && `${String(f.valeurs.tours).replace('.', ',')} tours`, f.valeurs.dp !== undefined && `ΔP ${String(Math.round(f.valeurs.dp * 10) / 10).replace('.', ',')} kPa`, nom].filter(Boolean).join(', ') || 'fiche jointe (aucune valeur lue : saisissez le Kv ou la ΔP)'} — HMT de la pompe recalculée`, 6000);
+  toast(`Fiche reprise sur ${r.rep || 'l\'organe'} : ${[f.valeurs.kv !== undefined && `Kv ${String(f.valeurs.kv).replace('.', ',')}`, f.valeurs.dn !== undefined && `DN ${f.valeurs.dn}`, f.valeurs.tours !== undefined && `${String(f.valeurs.tours).replace('.', ',')} tours`, f.valeurs.abaque && 'abaque tours / Kv', f.valeurs.dp !== undefined && `ΔP ${String(Math.round(f.valeurs.dp * 10) / 10).replace('.', ',')} kPa`, nom].filter(Boolean).join(', ') || 'fiche jointe (aucune valeur lue : saisissez le Kv ou la ΔP)'} — HMT de la pompe recalculée`, 6000);
 }
 // Fiche technique d'un point de puisage (robinetterie, WC, douche…) : débit et pression mini reportés sur le point choisi
 function appliquerFichePoint(et, n, lignesTexte, nomFichier) {

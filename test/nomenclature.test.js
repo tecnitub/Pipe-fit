@@ -89,3 +89,21 @@ test('liste d\'achat : prix de la bibliothèque (référence, désignation + DN)
   assert.deepStrictEqual(c.map(x => [x.articleId, x.unite, x.qte]), [['a1', 'u', 8], ['a2', 'ml', 120], ['', 'u', 1]]);
   assert.match(c[0].designation, /DN 40 — Exemplair VS-40/);
 });
+
+test('abaque tours / Kv : lecture de la fiche, interpolation du préréglage dans le réseau arborescent', () => {
+  const f = Sc.lireFicheRobinet(['Vanne STAD DN 25', 'Préréglage (tours) 0,5 1 1,5 2 2,5 3 3,5 4', 'Kv 0,36 0,66 1,02 1,47 2,08 2,85 3,72 4,54']);
+  assert.strictEqual(f.valeurs.kv, 4.54);
+  assert.strictEqual(f.valeurs.tours, 4);
+  assert.deepStrictEqual(Sc.lireAbaque(f.valeurs.abaque)[2], [1.5, 1.02]);
+  const ab = Sc.lireAbaque('1:0,9 ; 2:2,1 ; 3:3,6 ; 4:5,2');
+  assert.strictEqual(Sc.toursAbaque(ab, 3).tours, 2.6);
+  assert.strictEqual(Sc.toursAbaque(ab, 9).borne, 'maxi');
+  // Réseau arborescent : vanne avec abaque sur A3
+  require('../etudes/public/js/equilibrage');
+  const e = { ...N.defauts('arbo'), robinetterie: [{ rep: 'STAD-1', troncon: 'A3', type: 'equilibrage', abaque: '0,5:2 ; 1:4 ; 2:9 ; 3:16 ; 4:25' }] };
+  const r = N.calculer('arbo', e), a3 = r.valeurs.vannes.find(x => x.rep === 'A3');
+  assert.strictEqual(a3.Kvs, 25);
+  assert.ok(a3.abaque);
+  assert.ok(Math.abs(a3.tours - Sc.toursAbaque(Sc.lireAbaque(e.robinetterie[0].abaque), a3.Kv).tours) < 1e-9);
+  assert.ok(r.tableaux.some(t => t.lignes.some(l => /\(abaque\)/.test(l[8]))));
+});
