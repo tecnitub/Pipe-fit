@@ -107,3 +107,27 @@ test('abaque tours / Kv : lecture de la fiche, interpolation du préréglage dan
   assert.ok(Math.abs(a3.tours - Sc.toursAbaque(Sc.lireAbaque(e.robinetterie[0].abaque), a3.Kv).tours) < 1e-9);
   assert.ok(r.tableaux.some(t => t.lignes.some(l => /\(abaque\)/.test(l[8]))));
 });
+
+test('pompes sur la courbe du fabricant : point de fonctionnement, vitesse de réglage, insuffisance, fiche', () => {
+  const P = require('../etudes/public/js/pompes');
+  global.Pompes = P;
+  const c = '0:9 ; 2:8,6 ; 4:7,6 ; 6:6 ; 8:3,8';
+  const ok = P.point(c, 4, 5);
+  assert.ok(ok.ok && ok.Q > 4 && Math.abs(ok.H - 5 * (ok.Q / 4) ** 2) < 0.01);
+  assert.ok(ok.vitesse > 50 && ok.vitesse < 100);
+  // À la vitesse de réglage, la pompe donne la hauteur demandée au débit demandé (similitude)
+  const s = ok.vitesse / 100;
+  assert.ok(Math.abs(s * s * P.interp(P.lireCourbe(c), 4 / s) - 5) < 0.05);
+  assert.strictEqual(P.point(c, 6, 8).ok, false);
+  assert.strictEqual(P.lireFiche(['Débit Q (m³/h) 0 2 4 6 8', 'Hauteur H (m) 9 8,6 7,6 6 3,8', 'P1 (W) 120 160 200 230 250']), '0:9:120 ; 2:8,6:160 ; 4:7,6:200 ; 6:6:230 ; 8:3,8:250');
+  // Schéma de principe : pompe retenue sur le circuit, contrôle et tableau
+  const e = { ...N.defauts('pid'), pompesFab: [{ circuit: 'Radiateurs bureaux', ref: 'Exemplair CX 40-8', courbe: '0:9 ; 2:8,6 ; 4:7,6 ; 6:6 ; 8:3,8' }, { circuit: 'CTA atelier', ref: 'Petite', courbe: '0:3 ; 2:2,5 ; 4:1' }] };
+  const r = N.calculer('pid', e);
+  assert.ok(r.tableaux.some(t => /courbe du fabricant/.test(t.titre)));
+  assert.ok(r.alertes.some(a => a.niveau === 'erreur' && /Petite insuffisante/.test(a.texte)));
+  assert.match(r.valeurs.circuits[0].pompe, /Exemplair CX 40-8/);
+  // Réseau arborescent
+  require('../etudes/public/js/equilibrage');
+  const v = N.calculer('arbo', { ...N.defauts('arbo'), pompeRef: 'Exemplair CX 65-12', pompeCourbe: '0:16 ; 5:15 ; 10:13 ; 15:9 ; 20:3' }).valeurs;
+  assert.ok(v.pompeRetenue && v.pompeRetenue.ref === 'Exemplair CX 65-12');
+});

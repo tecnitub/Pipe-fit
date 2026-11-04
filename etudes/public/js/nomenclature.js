@@ -9,7 +9,8 @@ const Nomenclature = ((N, Sc) => {
   function lignesArbo(et, n, calc) {
     const v = calc(n).valeurs || {}, out = [], add = o => out.push({ circuit: '', dn: '', unite: 'u', fabricant: '', reference: '', fiche: '', dp: '', ...o });
     const T = typeof Schema !== 'undefined' ? Schema : Sc;
-    if (v.pompe) add({ rep: 'P', circuit: 'Départ', famille: 'Pompes', designation: `Pompe ${N.libPompe(v.pompe).replace(/, vitesse.*/, '')} (${nf(v.Qp, 2)} m³/h × ${nf(v.HMT, 2)} mCE)`, qte: 1 });
+    if (v.pompeRetenue && v.pompeRetenue.ref) { const [fab, ...refs] = v.pompeRetenue.ref.split(/\s+/); add({ rep: 'P', circuit: 'Départ', famille: 'Pompes', designation: `Pompe ${nf(v.Qp, 2)} m³/h × ${nf(v.HMT, 2)} mCE (réglage ≈ ${nf(v.pompeRetenue.vitesse || 100, 0)} %)`, qte: 1, fabricant: fab, reference: refs.join(' ') }); }
+    else if (v.pompe) add({ rep: 'P', circuit: 'Départ', famille: 'Pompes', designation: `Pompe ${N.libPompe(v.pompe).replace(/, vitesse.*/, '')} (${nf(v.Qp, 2)} m³/h × ${nf(v.HMT, 2)} mCE)`, qte: 1 });
     (v.vannes || []).forEach(x => { const [fab, ...refs] = String(x.ref || '').split(/\s+/);
       add({ rep: x.vanneRep || `VE-${x.rep}`, circuit: x.rep, famille: 'Robinetterie', designation: `Vanne d'équilibrage Kvs ${nf(x.Kvs, 1)}${x.tours ? ` — préréglage ≈ ${nf(x.tours, 1)} / ${nf(x.toursMax, 0)} tours` : ''}`, dn: x.dn, qte: 1, fabricant: x.ref ? fab : '', reference: refs.join(' '), dp: x.dp / 1000 }); });
     (v.robinetterie || []).filter(x => x.type !== 'equilibrage').forEach(x => { const [fab, ...refs] = String(x.ref || '').split(/\s+/);

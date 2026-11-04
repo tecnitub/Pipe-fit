@@ -69,7 +69,13 @@ const Schema = ((D, C, N) => {
       const Cat = typeof Catalogue !== 'undefined' ? Catalogue : require('./catalogue');
       const pompe = Cat.pompesPour(Q, hmt)[0] || null, vanne = reg === 'direct' ? null : Cat.vannePour(C.kv(Q, dpV, f.rho), reg);
       if (dpAnnexe) alertes.push(alerte('ok', `${rep} : pompe dimensionnée sur le réseau annexe (${nf(dpAnnexe, 1)} kPa) + vanne ${nf(dpV, 1)} kPa + liaison et collecteur ${nf(dpL + 5, 1)} kPa = ${nf(hmt, 2)} mCE.`));
-      return { rep, em, emetteur: c.emetteur, reg, rc, P, Q, Qcoll, t, v: x.v, hmt, kvs, dpV, dpL, dpEm, dpAnnexe, L: num(c.L), pompe, vanne, rob, dpRob };
+      // Pompe choisie sur la fiche du fabricant : point de fonctionnement sur sa courbe
+      const pfab = (e.pompesFab || []).map((p, k) => ({ p, k })).find(({ p }) => p && String(p.circuit || '').trim() === String(rep).trim() && String(p.courbe || '').trim());
+      const PO = typeof Pompes !== 'undefined' ? Pompes : require('./pompes'), pf = pfab ? PO.point(pfab.p.courbe, Q, hmt) : null;
+      if (pf) { pf.ref = pfab.p.ref || ''; pf.k = pfab.k; pf.fiche = pfab.p.fiche || null;
+        if (!pf.ok) alertes.push(alerte('erreur', `${rep} : pompe ${pf.ref || ''} insuffisante : ${nf(pf.Hpompe ?? 0, 2)} mCE à ${nf(Q, 2)} m³/h pour ${nf(hmt, 2)} mCE demandés (point réel ${nf(pf.Q, 2)} m³/h, ${nf(pf.ecart, 0)} %).`));
+        else alertes.push(alerte(pf.ecart > 25 ? 'attention' : 'ok', `${rep} : pompe ${pf.ref || ''} : point de fonctionnement ${nf(pf.Q, 2)} m³/h sous ${nf(pf.H, 2)} mCE à pleine vitesse (+${nf(pf.ecart, 0)} %) ; vitesse de réglage ≈ ${nf(pf.vitesse, 0)} % pour ${nf(Q, 2)} m³/h${pf.ecart > 25 ? ' : pompe surdimensionnée à vitesse fixe' : ''}.`)); }
+      return { rep, em, emetteur: c.emetteur, reg, rc, P, Q, Qcoll, t, v: x.v, hmt, kvs, dpV, dpL, dpEm, dpAnnexe, L: num(c.L), pompe, vanne, rob, dpRob, pf };
     });
     // Production
     const n = Math.max(1, Math.min(6, Math.round(num(e.nGen, 1)))), Pg = num(e.Pgen), Pprod = n * Pg, gen = GENERATEURS[e.generateur] || GENERATEURS['chaudiere-cond'];
@@ -555,6 +561,8 @@ const Schema = ((D, C, N) => {
         colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'circuit', l: 'Circuit', t: 's', o: e => [['', '—'], ...(e.circuits || []).map((c, i) => c.rep || `C${i + 1}`).map(r => [r, r])] },
           { k: 'type', l: 'Organe', t: 's', o: Object.entries(ROBINETTERIE).map(([k, x]) => [k, x[0]]) }, { k: 'dn', l: 'DN (vide : celui du circuit)' }, { k: 'qte', l: 'Quantité sur le circuit' },
           { k: 'kv', l: 'Kv / Kvs (fiche)' }, { k: 'dp', l: 'ΔP (kPa, fiche)' }, { k: 'ref', l: 'Fabricant, référence', t: 't' }] },
+      { k: 'pompesFab', l: 'Pompes retenues (fiche du fabricant) : courbe débit:hauteur « Q:H ; Q:H … » en m³/h et mCE (« 📄 » dans le tableau des fiches la lit)', t: 'lignes', d: [],
+        colonnes: [{ k: 'circuit', l: 'Circuit', t: 's', o: e => [['', '—'], ...(e.circuits || []).map((c, i) => c.rep || `C${i + 1}`).map(r => [r, r])] }, { k: 'ref', l: 'Fabricant, modèle', t: 't' }, { k: 'courbe', l: 'Courbe Q:H (m³/h:mCE)', t: 't' }] },
       { k: 'foisonnement', l: 'Coefficient de simultanéité des besoins', u: '%', d: 100 },
       { g: 'Réglementation' }, { k: 'usage', l: 'Usage du bâtiment', t: 's', o: [['tertiaire', 'Tertiaire (bureaux, commerces…)'], ['erp', 'Établissement recevant du public'], ['habitation', 'Habitation collective'], ['industrie', 'Industriel (locaux de production)']], d: 'tertiaire' },
       { k: 'fluideFrigo', l: 'Fluide frigorigène', t: 's', o: Object.keys(FLUIDES_FRIGO).map(k => [k, k]), d: 'R32', si: e => /^(pac|gf)/.test(e.generateur || '') },
@@ -571,7 +579,7 @@ const Schema = ((D, C, N) => {
       const d = dimensionner(e), alertes = [...d.alertes], vol = volumeEau(d, e.generateur), dr = d.co ? d.co.dC : d;
       if (!alertes.some(a => a.niveau === 'erreur')) alertes.unshift(alerte('ok', `${d.n > 1 ? `Cascade de ${d.n} × ${nf(d.Pg, 0)} kW` : `Générateur de ${nf(d.Pg, 0)} kW`} pour ${nf(d.Pdem, 0)} kW de besoins ; débit primaire ${nf(d.Qp, 2)} m³/h, secondaire ${nf(d.Qs, 2)} m³/h${d.bouteille && d.tb ? `, bouteille ${d.tb.nom}` : ''}.`));
       return {
-        valeurs: { volume: vol.total, Pprod: d.Pprod, Pdem: d.Pdem, Qp: d.Qp, Qs: d.Qs, Qg: d.Qg, bouteille: d.tb ? d.tb.cle : null, Db: d.Db, collecteur: d.tc.cle, circuits: d.circuits.map(c => ({ rep: c.rep, Q: c.Q, Qcoll: c.Qcoll, tube: c.t.cle, hmt: c.hmt, kvs: c.kvs, L: c.L, reg: c.reg, dn: c.t.dn, tubeNom: c.t.nom, pompe: c.pompe ? N.libPompe(c.pompe) : '', vanne: c.vanne ? N.libVanne(c.vanne) : '', rob: (c.rob || []).map(x => ({ i: x.i, rep: x.rep, type: x.type, lib: x.lib, dn: x.dn, qte: x.qte, dpTot: x.dpTot, ref: x.ref, fiche: x.fiche })) })) },
+        valeurs: { volume: vol.total, Pprod: d.Pprod, Pdem: d.Pdem, Qp: d.Qp, Qs: d.Qs, Qg: d.Qg, bouteille: d.tb ? d.tb.cle : null, Db: d.Db, collecteur: d.tc.cle, circuits: d.circuits.map(c => ({ rep: c.rep, Q: c.Q, Qcoll: c.Qcoll, tube: c.t.cle, hmt: c.hmt, kvs: c.kvs, L: c.L, reg: c.reg, dn: c.t.dn, tubeNom: c.t.nom, pompe: c.pf && c.pf.ref ? `${c.pf.ref} (${nf(c.Q, 2)} m³/h × ${nf(c.hmt, 2)} mCE, vitesse ≈ ${nf(c.pf.vitesse || 100, 0)} %)` : c.pompe ? N.libPompe(c.pompe) : '', pompeFiche: c.pf ? c.pf.fiche : null, vanne: c.vanne ? N.libVanne(c.vanne) : '', rob: (c.rob || []).map(x => ({ i: x.i, rep: x.rep, type: x.type, lib: x.lib, dn: x.dn, qte: x.qte, dpTot: x.dpTot, ref: x.ref, fiche: x.fiche })) })) },
         resume: [['Réseau', `${d.regime} — ${d.f.libelle}`], ['Production', `${d.n} × ${d.gen[0].toLowerCase()} de ${nf(d.Pg, 0)} kW = ${nf(d.Pprod, 0)} kW`],
           ['Besoins (avec simultanéité)', `${nf(d.Pdem, 0)} kW`], ['Débit par générateur', `${nf(d.Qg, 2)} m³/h — ${d.tg.nom}`], ['Débit primaire total', `${nf(d.Qp, 2)} m³/h`],
           ['Débit appelé par les circuits', `${nf(d.Qs, 2)} m³/h`], ['Collecteurs', `${d.tc.nom} (${nf(d.Qcoll, 2)} m³/h)`],
@@ -588,6 +596,8 @@ const Schema = ((D, C, N) => {
           lignes: d.circuits.map(c => [c.rep, nf(c.Q, 2), nf(c.dpL, 1), nf(c.dpEm, 1), nf(c.dpV, 1), (c.rob || []).length ? nf(c.dpRob, 1) : '5,0 (forfait)', nf(c.hmt, 2)]) },
         ...(d.circuits.some(c => (c.rob || []).length) ? [{ titre: 'Robinetterie et accessoires : pertes de charge', entetes: ['Repère', 'Circuit', 'Organe', 'DN', 'Qté', 'Débit (m³/h)', 'ΔP unitaire (kPa)', 'ΔP total (kPa)', 'Origine', 'Fabricant, référence', 'Fiche'],
           lignes: d.circuits.flatMap(c => (c.rob || []).map(x => [x.rep, c.rep, x.lib, `DN ${x.dn}`, String(x.qte), nf(x.Q, 2), nf(x.dpU, 2), nf(x.dpTot, 2), x.source, x.ref || (x.fiche ? [x.fiche.fabricant, x.fiche.reference].filter(Boolean).join(' ') : ''), x.fiche ? '✓' : ''])) }] : []),
+        ...(d.circuits.some(c => c.pf) ? [{ titre: 'Pompes retenues : point de fonctionnement sur la courbe du fabricant', entetes: ['Circuit', 'Pompe', 'Demandé (m³/h × mCE)', 'Hauteur de la pompe au débit demandé (mCE)', 'Point à pleine vitesse', 'Écart de débit', 'Vitesse de réglage', 'Contrôle'],
+          lignes: d.circuits.filter(c => c.pf).map(c => [c.rep, c.pf.ref || '—', `${nf(c.Q, 2)} × ${nf(c.hmt, 2)}`, c.pf.Hpompe === null ? 'hors courbe' : nf(c.pf.Hpompe, 2), `${nf(c.pf.Q, 2)} m³/h · ${nf(c.pf.H, 2)} mCE`, `${c.pf.ecart >= 0 ? '+' : ''}${nf(c.pf.ecart, 0)} %`, c.pf.ok ? `≈ ${nf(c.pf.vitesse, 0)} %` : '—', c.pf.ok ? (c.pf.ecart > 25 ? 'surdimensionnée' : 'OK') : 'insuffisante']) }] : []),
         { titre: 'Matériel proposé (catalogue)', entetes: ['Circuit', 'Pompe', 'Vanne de régulation'],
           lignes: d.circuits.map(c => [c.rep, c.pompe ? N.libPompe(c.pompe) : 'aucune pompe du catalogue', c.reg === 'direct' ? '—' : c.vanne ? N.libVanne(c.vanne) : 'aucune vanne du catalogue']) },
         { titre: 'Production', entetes: ['Générateur', 'P (kW)', 'Débit (m³/h)', 'Raccordement', 'Pompe primaire'],

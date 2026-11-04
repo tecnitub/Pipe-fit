@@ -613,6 +613,7 @@ function appliquerFiche(et, n, lignesTexte, nomFichier) {
   if (n.type === 'aero' && cibleBouche !== '') return appliquerFicheBouche(et, n, lignesTexte, nomFichier);
   if (n.type === 'sanitaire') return appliquerFichePoint(et, n, lignesTexte, nomFichier);
   if (['pid', 'arbo'].includes(n.type) && cibleRobinet !== '') return appliquerFicheRobinet(et, n, lignesTexte, nomFichier);
+  if (['pid', 'arbo'].includes(n.type) && ciblePompe !== '') return appliquerFichePompe(et, n, lignesTexte, nomFichier);
   // CTA et schéma aéraulique : lecture détaillée d'une centrale ; autres équipements : pompe, vase, ballon, générateur
   const Mod = ['cta', 'aero'].includes(n.type) ? FicheCta : FicheEquip, r = Mod.lire(lignesTexte), fichier = { name: nomFichier };
   if (!r.nb) return confirmer('Aucune caractéristique reconnue dans ce document (PDF scanné ou mise en page inhabituelle). Saisissez les valeurs à la main.', 'OK');
@@ -654,7 +655,7 @@ function fichesInstallationHtml(et, n) {
     ${doe.length ? `<details${manqueDoe && !manque ? ' open' : ''}><summary class="petit"><strong>Fiches pour le DOE seulement</strong> (thermomètres, purgeurs, soupapes…) — ${doe.length - manqueDoe}/${doe.length} chargée(s)</summary>${table(doe)}</details>` : ''}
     <p class="petit muted">Une fiche chargée ici remplit le calcul de l'élément (terminaux, production, CTA) et se retrouve dans le schéma de principe comme dans le réseau arborescent.</p></div>`;
 }
-let ligneCibleTerminal = '', cibleBouche = '', ciblePoint = '', cibleRobinet = '';
+let ligneCibleTerminal = '', cibleBouche = '', ciblePoint = '', cibleRobinet = '', ciblePompe = '';
 // Vue d'une note : tout, saisie seule, résultats seuls, schéma, fiches techniques (mémorisée sur ce poste)
 const VUES_NOTE = [['tout', 'Tout'], ['saisie', '✏️ Saisie'], ['resultats', '📊 Résultats'], ['schema', '📐 Schéma'], ['fiches', '📄 Fiches techniques']];
 let vueNote = (() => { try { return localStorage.getItem('etudes-vue-note') || 'tout'; } catch (e) { return 'tout'; } })();
@@ -676,10 +677,19 @@ document.addEventListener('click', ev => {
   const m = /#\/etude\/([^/]+)\/([^/?]+)/.exec(location.hash); if (!m) return;
   const et = S.etudes.find(x => x.id === m[1]), n = et && et.notes.find(x => x.id === m[2]); if (!n) return;
   const x = Liens.fichesInstallation(et, n)[+b.dataset.ficheElt], cible = x && et.notes.find(y => y.id === x.note); if (!cible) return;
-  ligneCibleTerminal = x.rep || ''; cibleBouche = x.bouche !== undefined ? x.bouche : ''; ciblePoint = x.point !== undefined ? x.point : ''; cibleRobinet = x.robinet !== undefined ? x.robinet : '';
+  ligneCibleTerminal = x.rep || ''; cibleBouche = x.bouche !== undefined ? x.bouche : ''; ciblePoint = x.point !== undefined ? x.point : ''; cibleRobinet = x.robinet !== undefined ? x.robinet : ''; ciblePompe = x.pompe !== undefined ? x.pompe : '';
   dialogueFiche(et, cible);
 });
 
+// Fiche technique d'une pompe : courbe débit / hauteur (et P1) du fabricant, modèle ; point de fonctionnement recalculé
+function appliquerFichePompe(et, n, lignesTexte, nomFichier) {
+  const k = ciblePompe; ciblePompe = '';
+  const courbe = Pompes.lireFiche(lignesTexte), f = Schema.lireFicheRobinet(lignesTexte), nom = [f.fabricant, f.reference].filter(Boolean).join(' '), fiche = { nom: String(nomFichier || '').slice(0, 120), fabricant: f.fabricant, reference: f.reference };
+  if (k === 'reseau') { if (courbe) n.entrees.pompeCourbe = courbe; if (nom) n.entrees.pompeRef = nom; n.entrees.pompeFiche = fiche; }
+  else { const p = (n.entrees.pompesFab || [])[+k]; if (!p) return; if (courbe) p.courbe = courbe; if (nom) p.ref = nom; p.fiche = fiche; }
+  enregistrer(et); App.render();
+  toast(courbe ? `Courbe de la pompe lue (${courbe.split(';').length} points)${nom ? ` — ${nom}` : ''} : point de fonctionnement recalculé` : 'Fiche jointe ; courbe non reconnue : saisissez-la « Q:H ; Q:H … » (m³/h:mCE)', 6000);
+}
 // Fiche technique d'un organe de robinetterie (vanne, clapet, filtre…) : Kv, DN, perte de charge, fabricant et référence
 function appliquerFicheRobinet(et, n, lignesTexte, nomFichier) {
   const i = +cibleRobinet, r = (n.entrees.robinetterie || [])[i]; cibleRobinet = '';
@@ -780,6 +790,7 @@ Vues.note = {
         ${TYPES_FICHE.includes(n.type) ? `<button class="secondaire" id="fiche-tech" title="Fiche du fabricant (PDF de l'ordinateur ou de la bibliothèque Pipe-Fit) : remplit le calcul et contrôle le matériel choisi">📄 Fiche technique${['cta', 'aero'].includes(n.type) ? ' de la CTA' : { reseau: ' de la pompe', arbo: ' de la pompe', vase: ' du vase', ecs: ' du ballon / échangeur', pid: ' du générateur', terminaux: ' d\'un terminal' }[n.type] || ''}${n.entrees.fiche && (n.entrees.fiche.fabricant || n.entrees.fiche.reference) ? ` ✓` : ''}</button>` : ''}
         ${n.type === 'cta' ? `<button class="secondaire" id="cta-reseau">🌬️ ${Liens.reseauxDeCta(et.notes, n).some(x => x.type === 'aero') ? 'Ouvrir le schéma aéraulique relié' : 'Créer le schéma aéraulique relié (gaines, bouches)'}</button>` : ''}
         ${n.type === 'arbo' ? '<button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par tronçon (tubes, vannes d\'équilibrage avec préréglage, robinetterie, pompe) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
+        ${n.type === 'pid' ? '<button class="secondaire" id="pid-pompes" title="Une ligne par circuit pour saisir la pompe retenue et sa courbe (ou la lire sur la fiche du fabricant)">⚙️ Pompes retenues par circuit</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-rob" title="Pour chaque circuit sans robinetterie : vannes d\'isolement, vanne d\'équilibrage, filtre, manchettes, thermomètres ; à compléter avec les Kv des fiches">🔩 Robinetterie type par circuit</button><button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par circuit (repères, DN, fabricant, référence, fiche, ΔP) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
         ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button>' : ''}
@@ -872,6 +883,12 @@ Vues.note = {
     };
     // Réseau arborescent : une branche par émetteur de l'étude non encore relié, rattachée au premier tronçon de départ
     // Schéma de principe : robinetterie type par circuit, nomenclature et liste d'achat
+    const pp = root.querySelector('#pid-pompes');
+    if (pp) pp.onclick = () => {
+      const l = n.entrees.pompesFab = n.entrees.pompesFab || [], deja = new Set(l.map(x => x.circuit)), c = (n.entrees.circuits || []).map((x, i) => x.rep || `C${i + 1}`).filter(r => !deja.has(r));
+      if (!c.length) return toast('Chaque circuit a déjà sa pompe.', 4000);
+      c.forEach(r => l.push({ circuit: r, ref: '', courbe: '' })); enregistrer(et); App.render(); toast(`${c.length} pompe(s) à renseigner : chargez la fiche (tableau des fiches) ou saisissez la courbe Q:H.`, 6000);
+    };
     const pr = root.querySelector('#pid-rob');
     if (pr) pr.onclick = () => {
       const l = n.entrees.robinetterie = n.entrees.robinetterie || [], avec = new Set(l.map(r => r.circuit)), circuits = (n.entrees.circuits || []).map((c, i) => c.rep || `C${i + 1}`).filter(c => !avec.has(c));
