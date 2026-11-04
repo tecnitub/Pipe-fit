@@ -62,6 +62,7 @@ function resumePF(et) {
     try {
       if (n.type === 'aero') { const r = Liens.calculer(et, n), v = r.valeurs || {}; if ((v.debits || []).length) debits.push({ installation: Liens.resoudre(et, n).entrees.titreInstallation || n.titre, type: 'Aéraulique', unite: 'm³/h', lignes: v.debits.slice(0, 500) }); }
       if (n.type === 'arbo') { const v = Liens.calculer(et, n).valeurs || {}; if ((v.vannes || []).length) debits.push({ installation: n.titre, type: 'Hydraulique', unite: 'm³/h', lignes: v.vannes.map(x => ({ repere: x.rep, local: '', type: 'Vanne d\'équilibrage', theorique: Math.round(x.Q * 100) / 100 })) }); }
+      if (n.type === 'sanitaire') { const B = (Liens.calculer(et, n).valeurs || {}).bouclage; if (B && (B.vannes || []).length) debits.push({ installation: `${n.titre} — bouclage ECS`, type: 'Hydraulique', unite: 'L/h', lignes: B.vannes.map(x => ({ repere: x.rep, local: x.nom || '', type: 'Vanne thermostatique de bouclage', theorique: Math.round(x.q) })) }); }
     } catch (e) { /* calcul incomplet : pas de débits */ }
   });
   // Points de mise en service (valeurs attendues, réseaux à éprouver, contrôles) : liste des mises en service du chantier

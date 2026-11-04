@@ -77,3 +77,11 @@ test('Valeurs attendues dans le PV de mise en service', () => {
   assert.strictEqual(PlanMes.ecart({ valeur: '', attendu: 12 }), null);
   assert.strictEqual(PlanMes.propre({ nature: 'autre' }), null);
 });
+
+test('plan : liste de points GTB reprise de l\'étude (tests point à point)', () => {
+  const PM = require('../public/js/plan-mes');
+  const pts = PM.pointsChantier([{ app: 'etudes', id: 'e1', resume: { objet: 'Étude', mes: [{ nature: 'mes', noteId: 'n1', type: 'gtb', titre: 'Tests point à point GTB — 2 points', controles: ['CA-01.01 — Marche (TC)', 'CA-01.02 — Défaut (TA)'] }] } }]);
+  const t = PM.plan({ affaireId: 'a1', points: pts }).find(x => x.type === 'gtb');
+  assert.deepStrictEqual(t.controles, ['CA-01.01 — Marche (TC)', 'CA-01.02 — Défaut (TA)']);
+  assert.match(t.detail, /2 point/);
+});

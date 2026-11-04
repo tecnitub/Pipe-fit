@@ -119,7 +119,9 @@ Views.mes = (params, query) => {
   const q0 = k => String(query.get(k) || '').slice(0, 200), typeQ = Essais.TYPES[q0('type')] ? q0('type') : 'pac';
   // Ouvert depuis la liste des mises en service : valeurs attendues de l'étude (débit, HMT, pressions…) à côté des mesures
   const attendus = PlanMes.lireAttendus(query.get('att'));
-  const b = brouillonEssai('mes', params, query, base => { const m = Essais.modele(typeQ);
+  // Liste de points à tester reprise de l'étude (tests point à point de la GTB)
+  const ctlPlan = (() => { try { const l = JSON.parse(sessionStorage.getItem(`pf-plan-controles:${q0('plan')}`) || 'null'); return Array.isArray(l) ? l.slice(0, 400).map(x => String(x).slice(0, 120)) : null; } catch (e) { return null; } })();
+  const b = brouillonEssai('mes', params, query, base => { const m = Essais.modele(typeQ); if (ctlPlan && ctlPlan.length) m.controles = [...ctlPlan.map(libelle => ({ libelle, etat: '', obs: '' })), ...m.controles];
     return { ...base, type: typeQ, equipement: q0('equipement'), repere: q0('repere'), localisation: '', marque: q0('marque'), modele: q0('modele'), numeroSerie: '', fluide: '', charge: '', reglages: '', resultat: '', ...(q0('materiel') ? { materiel: q0('materiel') } : {}),
       ...(q0('plan') ? { planCle: q0('plan') } : {}), ...(attendus.length ? { attendus } : {}), controles: m.controles, mesures: PlanMes.avecAttendus(m.mesures, attendus) }; });
   if (b.introuvable) return '<p>Procès-verbal introuvable.</p>';

@@ -6,8 +6,11 @@ const planMesCache = new Map(); // affaireId -> { points, debits }
 const pvChantier = (col, affaireId) => Store.all(col).filter(r => r.affaireId === affaireId);
 function tachesMes(a) {
   const c = planMesCache.get(a.id) || {};
-  return PlanMes.plan({ affaireId: a.id, materiel: (typeof materielChantier !== 'undefined' && materielChantier.get(a.id)) || [], points: c.points || [], debits: c.debits || [],
+  const ts = PlanMes.plan({ affaireId: a.id, materiel: (typeof materielChantier !== 'undefined' && materielChantier.get(a.id)) || [], points: c.points || [], debits: c.debits || [],
     pv: { mises: pvChantier('misesEnService', a.id), epreuves: pvChantier('epreuves', a.id), equilibrages: pvChantier('equilibrages', a.id) }, suivi: a.planMes || {} });
+  // Listes de points à tester (GTB point à point) : reprises par le PV ouvert depuis la liste
+  ts.filter(t => (t.controles || []).length).forEach(t => { try { sessionStorage.setItem(`pf-plan-controles:${t.cle}`, JSON.stringify(t.controles)); } catch (e) { /* stockage indisponible */ } });
+  return ts;
 }
 const BADGE_MES = { aFaire: ['b-info', '○'], enCours: ['b-warn', '◔'], fait: ['b-ok', '✓'], reserves: ['b-warn', '✓'], ko: ['b-bad', '✕'], sansObjet: ['', '–'] };
 const ROUTE_PV = { mes: 'mes', epreuve: 'epreuve', equilibrage: 'equilibrage' };

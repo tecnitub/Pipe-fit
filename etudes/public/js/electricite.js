@@ -534,6 +534,11 @@ const Electricite = ((N, Sc) => {
         if (fioul) ajout('evg', { rep: 'EVF', designation: 'Vanne de police fioul (coupure de la chaufferie)', type: 'electrovanne', P: 0.02, tension: 'mono', regulation: 'evGaz' });
       }
       // Plomberie sanitaire : pompe de bouclage d'ECS (asservie à la température de retour) et sonde de retour de boucle
+      if (n.type === 'sanitaire' && v.surpresseur) {
+        const Sp = v.surpresseur, kw = Math.round(Sp.Pel / 10) / 100;
+        for (let i = 1; i <= Sp.pompes; i++) ajout(`surp${i}`, { rep: `SUR-P${i}`, designation: `Surpresseur eau froide — pompe ${i}${i === Sp.pompes ? ' (secours)' : ''} (${nf(Sp.Q, 2)} m³/h, ${nf(Sp.H, 1)} mCE)`, type: 'pompe', P: kw, tension: kw > 2.2 ? 'tri' : 'mono', regulation: 'torRetour', alim: es.alimSurp || '' });
+        ajout('surpmq', { rep: 'SUR-MQ', designation: 'Surpresseur : protection contre le manque d\'eau', type: 'securite', P: 0, tension: '24V', regulation: 'securite' });
+      }
       if (n.type === 'sanitaire' && v.bouclage) {
         const B = v.bouclage;
         ajout('pbecs', { rep: 'PB-ECS', designation: `Pompe de bouclage ECS (${nf(B.Qb, 2)} m³/h, ${nf(B.H, 1)} mCE)`, type: 'pompe', P: Math.max(0.03, Math.round(B.Pel / 10) / 100), tension: 'mono', regulation: 'torRetour', alim: es.alimBouclage || '' });

@@ -4,7 +4,7 @@
 const Metre = ((N, C, D, L, Sc) => {
   const nf = N.nf, num = N.num;
   const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[×x]/g, ' x ').replace(/,/g, '.');
-  const CHAPITRES = ['Études', 'Production', 'Tuyauteries', 'Équipements hydrauliques', 'Calorifuge', 'Aéraulique'];
+  const CHAPITRES = ['Études', 'Production', 'Tuyauteries', 'Équipements hydrauliques', 'Plomberie sanitaire', 'Appareils sanitaires', 'Calorifuge', 'Aéraulique'];
   // Mots-clés de matériau par série de tubes
   const MATIERE = { acier: ['acier', 'p235', 'p265', 'noir', 'e235', 'st37'], galva: ['galva'], inox: ['inox', '316', '304', '1.44', '1.43'], cuivre: ['cuivre'], pehd: ['pehd', 'pe100', 'polyethylene'], multicouche: ['multicouche', 'per-al', 'pert'] };
   const matiereDe = serie => (/galva/.test(serie) ? 'galva' : /inox/.test(serie) ? 'inox' : /cuivre/.test(serie) ? 'cuivre' : /pehd/.test(serie) ? 'pehd' : /multicouche/.test(serie) ? 'multicouche' : 'acier');
@@ -58,6 +58,18 @@ const Metre = ((N, C, D, L, Sc) => {
         (v.vannes || []).forEach(x => equip(`equil|${x.dn}`, 'Équipements hydrauliques', `Vanne d'équilibrage DN ${x.dn}`, 1, 1, { type: 'equilibrage', dn: x.dn }, src));
         // Réseau annexe d'un circuit du schéma : sa pompe est celle du circuit (comptée par le schéma)
         if (v.pompe && !L.circuitDeAnnexe(notes, n)) equip(`pompe|${v.pompe.modele}`, 'Équipements hydrauliques', `Pompe ${N.libPompe(v.pompe).replace(/, vitesse.*/, '')}`, 1, 3, { type: 'pompe', modele: v.pompe.modele, dn: v.pompe.dn }, src);
+      }
+      // Plomberie sanitaire : tubes EF, ECS et retour de bouclage, calorifuge de l'ECS, appareils, équipements du réseau
+      if (n.type === 'sanitaire') {
+        const sr = v.serie || 'cuivre-1057', isoC = (cle, Lm) => { const t = C.tube(sr, cle); if (!t || !(Lm > 0)) return; ajouter(`iso|elastomere|13|${t.cle}`, { chapitre: 'Calorifuge', designation: `Calorifuge élastomère ép. 13 mm sur ${t.nom} (ECS)`, unite: 'ml', qte: Lm, heures: lin(R.calorifuge, t.dn), mo: 'calorifugeur', source: src, recherche: { type: 'calorifuge', isolant: 'elastomere', ep: 13, dn: t.dn, de: t.de } }); };
+        (v.troncons || []).forEach(t => { if (t.ef) tube(sr, t.ef, t.L, src); if (t.ecs) { tube(sr, t.ecs, t.L, src); isoC(t.ecs, t.L); } });
+        const B = v.bouclage;
+        if (B && B.tR) { tube(sr, B.tR.cle, B.Lret, src); isoC(B.tR.cle, B.Lret); equip('pompe|bouclage-ecs', 'Plomberie sanitaire', `Circulateur de bouclage ECS ${nf(B.Qb, 2)} m³/h · ${nf(B.H, 1)} mCE (eau potable, corps bronze ou inox)`, 1, 3, { type: 'pompe' }, src);
+          equip('vtherm|ecs', 'Plomberie sanitaire', 'Vanne thermostatique d\'équilibrage de bouclage ECS', (B.vannes || []).length, 1, { type: 'equilibrage' }, src); }
+        if (v.surpresseur) equip(`surp|${nf(v.surpresseur.Q, 1)}`, 'Plomberie sanitaire', `Surpresseur 2 pompes ${nf(v.surpresseur.Q, 2)} m³/h · ${nf(v.surpresseur.H, 1)} mCE, réservoir à vessie`, 1, 8, { type: 'pompe' }, src);
+        if (v.mitigeurs) equip('mitigeur|thermo', 'Plomberie sanitaire', 'Mitigeur thermostatique / limiteur de température 50 °C', v.mitigeurs, 0.5, { type: 'mitigeur' }, src);
+        const A = (typeof Sanitaire !== 'undefined' ? Sanitaire : require('./sanitaire')).APPAREILS;
+        Object.entries(v.appareils || {}).forEach(([k, q]) => equip(`appareil|${k}`, 'Appareils sanitaires', `${(A[k] || [k])[0]}, robinetterie et raccordement`, q, k === 'baignoire' ? 3 : 1.5, { type: 'appareil' }, src));
       }
       if (n.type === 'cta' && v.Pchaud !== undefined) equip(`cta|${num(e.Qs)}`, 'Aéraulique', `Centrale de traitement d'air ${nf(num(e.Qs), 0)} m³/h (batterie chaude ${nf(v.Pchaud, 0)} kW${v.Pfroid ? `, froide ${nf(v.Pfroid, 0)} kW` : ''})`, 1, 16, { type: 'cta' }, src);
       if (n.type === 'bouches') (v.bouches || []).forEach(b => equip(`bouche|${b.type}|${b.taille}`, 'Aéraulique', `${b.type} ${b.taille}, plénum et raccordement`, b.n, 0.75, { type: 'bouche', taille: b.taille }, src));

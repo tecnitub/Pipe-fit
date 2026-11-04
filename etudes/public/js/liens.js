@@ -41,6 +41,19 @@ const Liens = ((N, Sc) => {
       if (froid !== (num(rg[0]) < num(rg[1]))) { alertes.push({ niveau: 'attention', texte: `${libelle(src)} : régime ${rg[0]}/${rg[1]} °C, pas un régime ${froid ? 'd\'eau glacée' : 'd\'eau chaude'}.` }); return; }
       e[kd] = num(rg[0]); e[kr] = num(rg[1]); verrous[kd] = libelle(src); verrous[kr] = libelle(src);
     });
+    // Production d'ECS choisie par un calcul sanitaire : besoins repris des points de puisage (méthode des puisages)
+    if (note.type === 'ecs') {
+      const san = notes.find(n => n.type === 'sanitaire' && (n.entrees || {}).production === note.id);
+      if (san) {
+        try {
+          const v = N.calculer('sanitaire', resoudre(etude, san, pile).entrees).valeurs, b = v.besoinECS;
+          if (b && b.Vj > 0) {
+            Object.assign(e, { usage: 'perso', Vj: Math.round(b.Vj), pointe: Math.round(b.part * 100), tp: b.tp, Tc: b.Tst, Tf: num(brut(san).Tef) || e.Tf });
+            ['usage', 'Vj', 'pointe', 'tp', 'Tc', 'Tf'].forEach(k => { verrous[k] = `${libelle(san)} (${v.points} points de puisage)`; });
+          }
+        } catch (err) { alertes.push({ niveau: 'attention', texte: 'Calcul sanitaire relié incomplet : besoins saisis conservés.' }); }
+      }
+    }
     // Réseau arborescent : branches reliées à un émetteur de l'étude (terminal, batterie de CTA)
     if (note.type === 'arbo') lienEmetteurs(etude, e, verrous, alertes, libelle, pile);
     // Schéma : puissance des circuits sans bilan ni réseau annexe = somme des terminaux qui y sont rattachés

@@ -26,6 +26,7 @@ const PlanMes = (() => {
   const propre = p => (p && NATURES.includes(p.nature) ? {
     nature: p.nature, noteId: txt(p.noteId, 64), source: txt(p.source), titre: txt(p.titre, 200), type: txt(p.type, 20), cle: txt(p.cle, 200), detail: txt(p.detail, 600),
     reseau: txt(p.reseau, 200), natureReseau: txt(p.natureReseau, 60), fluideEssai: txt(p.fluideEssai, 20), PS: num(p.PS), PT: num(p.PT), categorie: num(p.categorie),
+    controles: (Array.isArray(p.controles) ? p.controles : []).slice(0, 400).map(c => txt(c, 120)).filter(Boolean),
     attendus: (Array.isArray(p.attendus) ? p.attendus : []).slice(0, 12).map(a => ({ libelle: txt(a && a.libelle, 80), valeur: num(a && a.valeur), unite: txt(a && a.unite, 12) })).filter(a => a.libelle && a.valeur !== null),
   } : null);
   // Points des études du chantier (serveur) : [{ etudeId, etude, ...point }]
@@ -77,7 +78,7 @@ const PlanMes = (() => {
       const deja = p.cle && taches.find(t => t.nature === 'mes' && t.pointCle === `${p.etudeId}|${p.cle}`);
       if (deja) { (p.attendus || []).forEach(a => { if (!deja.attendus.some(x => x.libelle === a.libelle)) deja.attendus.push(a); }); deja.lien = deja.lien.replace(/([?&]att=)[^&]*/, `$1${encodeURIComponent(attendusQ(deja.attendus))}`); return; }
       const cle = `pt|${p.etudeId}|${p.noteId}`;
-      taches.push({ cle, pointCle: p.cle ? `${p.etudeId}|${p.cle}` : '', groupe: GROUPES[1], nature: 'mes', type: p.type || 'autre', libelle: txt(p.titre), detail: 'd\'après le calcul (pas de matériel retenu)', attendus: [...(p.attendus || [])], source: p.etude,
+      taches.push({ cle, pointCle: p.cle ? `${p.etudeId}|${p.cle}` : '', groupe: GROUPES[1], nature: 'mes', type: p.type || 'autre', libelle: txt(p.titre), detail: (p.controles || []).length ? `${p.controles.length} point(s) à tester, liste reprise de l'étude` : 'd\'après le calcul (pas de matériel retenu)', attendus: [...(p.attendus || [])], ...((p.controles || []).length ? { controles: p.controles } : {}), source: p.etude,
         lien: `#/mes/new?${q({ chantier: affaireId, type: p.type || 'autre', equipement: txt(p.titre), plan: cle, att: attendusQ(p.attendus) })}`,
         trouver: r => r.planCle === cle, recs: mises, etatDe: resultatMes });
     });

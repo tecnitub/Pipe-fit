@@ -32,7 +32,7 @@ test('sanitaire : diamètres sous la vitesse maxi, point le plus défavorisé à
   r.tableaux[1].lignes.forEach(l => assert.ok(Number(l[7].replace(',', '.')) <= 1.5, l.join(' | ')));
   assert.match(r.tableaux[0].lignes.find(l => /DO-R3/.test(l[0]))[0], /★/);
   // Pression insuffisante → alerte surpresseur
-  const r2 = N.calculer('sanitaire', { ...e, pDispo: 1 });
+  const r2 = N.calculer('sanitaire', { ...e, pDispo: 1, surpresseur: 'non' });
   assert.ok(r2.alertes.some(a => a.niveau === 'erreur' && /surpresseur/.test(a.texte)));
 });
 
@@ -68,4 +68,38 @@ test('sanitaire : pompe de bouclage au bilan électrique, fiches de l\'installat
   const f = Liens.fichesInstallation(et, s);
   assert.strictEqual(f[0].nature, 'Production d\'ECS (ballon)');
   assert.strictEqual(f.filter(x => x.point !== undefined).length, 4);
+});
+
+test('sanitaire : besoin d\'ECS repris par le ballon, surpresseur, protections, vannes de bouclage', () => {
+  const ecs = { id: 'e1', type: 'ecs', titre: 'Ballon', entrees: N.defauts('ecs') };
+  const s = { id: 's1', type: 'sanitaire', titre: 'Plomberie', entrees: { ...base(), production: 'e1', usage: 'vestiaire', pDispo: 1.2 } };
+  const et = { id: 'x', notes: [ecs, s] };
+  const v = N.calculer('sanitaire', s.entrees).valeurs;
+  // Vestiaires : 3 douches de 40 L à 40 °C + 3 lavabos de 5 L + 1 évier (1 puisage de 10 L) ramenés à 60 °C
+  const Vp40 = 3 * 40 + 3 * 5 + 10;
+  assert.ok(Math.abs(v.besoinECS.Vp - Vp40 * 28 / 48) < 1e-6);
+  const re = Liens.resoudre(et, ecs);
+  assert.strictEqual(re.entrees.usage, 'perso');
+  assert.strictEqual(re.entrees.Vj, Math.round(v.besoinECS.Vj));
+  assert.ok(re.verrous.Vj);
+  assert.ok(v.surpresseur && v.surpresseur.H > 3 && v.surpresseur.Pel >= 370);
+  const r = N.calculer('sanitaire', s.entrees), prot = r.tableaux.find(t => /Protections/.test(t.titre)).lignes.map(l => l[0]);
+  assert.ok(prot.includes('Surpresseur') && prot.some(x => /Mitigeur/.test(x)) && prot.some(x => /BA/.test(x)));
+  assert.ok(N.calculer('sanitaire', { ...s.entrees, pDispo: 5, surpresseur: 'non' }).tableaux.find(t => /Protections/.test(t.titre)).lignes.some(l => /Réducteur/.test(l[0])));
+  assert.ok(v.bouclage.vannes.length >= 1 && v.bouclage.vannes.every(x => x.q >= 50));
+  assert.match(r.schema, /^<svg/);
+  const lignes = E.equipementsEtude(et, Liens);
+  assert.strictEqual(lignes.filter(l => /^SUR-P/.test(l.rep)).length, 2);
+});
+
+test('sanitaire : métré et points de mise en service', () => {
+  const M = require('../etudes/public/js/metre'), P = require('../etudes/public/js/points-mes');
+  const s = { id: 's1', type: 'sanitaire', titre: 'Plomberie', entrees: base() }, et = { id: 'x', notes: [s] };
+  const postes = M.metre(et);
+  assert.ok(postes.some(p => p.chapitre === 'Appareils sanitaires' && /Douche/.test(p.designation)));
+  assert.ok(postes.some(p => /Circulateur de bouclage/.test(p.designation)));
+  assert.ok(postes.some(p => p.chapitre === 'Calorifuge' && /ECS/.test(p.designation)));
+  const pts = P.extraire(et, n => Liens.calculer(et, n));
+  assert.deepStrictEqual(pts.filter(p => p.nature === 'epreuve').map(p => p.natureReseau), ['Eau froide sanitaire', 'Eau chaude sanitaire']);
+  assert.ok(pts.some(p => p.nature === 'controle' && /Désinfection/.test(p.titre)));
 });

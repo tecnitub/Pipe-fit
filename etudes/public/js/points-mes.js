@@ -53,6 +53,24 @@ const PointsMes = (() => {
         case 'ecs':
           out.push({ ...base, nature: 'mes', type: 'ecs', cle: '', titre: `Production ECS — ${titre}`, attendus: nettoie([att('Température de stockage', 60, '°C', 0), att('Volume de stockage', v.choisi, 'L', 0), att('Débit de pointe', v.Qp, 'm³/h', 2)]) });
           break;
+        case 'sanitaire': {
+          const PS = r(e.pDispo, 1), PT = PS ? Math.max(10, r(PS * 1.5, 1)) : null;
+          out.push({ ...base, nature: 'epreuve', titre: `${titre} — eau froide`, reseau: `${titre} — eau froide sanitaire`, natureReseau: 'Eau froide sanitaire', PS, PT });
+          if (v.totC > 0) out.push({ ...base, nature: 'epreuve', titre: `${titre} — eau chaude`, reseau: `${titre} — eau chaude sanitaire et bouclage`, natureReseau: 'Eau chaude sanitaire', PS, PT });
+          if (v.bouclage) out.push({ ...base, nature: 'mes', type: 'pompes', cle: 'pompe|bouclage-ecs', titre: `Pompe de bouclage ECS — ${titre}`, attendus: nettoie([att('Débit', v.bouclage.Qb, 'm³/h', 3), att('Hauteur manométrique', v.bouclage.H, 'mCE', 2), att('Température retour bouclage', 55, '°C', 0)]) });
+          if (v.surpresseur) out.push({ ...base, nature: 'mes', type: 'pompes', cle: `surp|${String(r(v.surpresseur.Q, 1)).replace('.', ',')}`, titre: `Surpresseur eau froide — ${titre}`, attendus: nettoie([att('Débit', v.surpresseur.Q, 'm³/h', 2), att('Hauteur manométrique', v.surpresseur.H, 'mCE', 1)]) });
+          out.push({ ...base, nature: 'controle', titre: `Désinfection du réseau d'eau potable — ${titre}`, detail: 'Rinçage, désinfection et analyse bactériologique avant la mise en service (eau destinée à la consommation humaine) ; certificat joint au DOE.' });
+          if (v.bouclage) out.push({ ...base, nature: 'controle', titre: `Températures de l'ECS et légionelles — ${titre}`, detail: `Relevé des températures : départ ≥ 55 °C, retour de chaque boucle ≥ 50 °C (${(v.bouclage.vannes || []).length} vanne(s) thermostatique(s)) ; analyse de légionelles en ERP (arrêté du 1er février 2010).` });
+          if (e.remplissageCvc !== 'non') out.push({ ...base, nature: 'controle', titre: 'Disconnecteur BA du remplissage CVC', detail: 'Essai du disconnecteur par un vérificateur agréé à la mise en service, puis contrôle annuel (NF EN 1717).' });
+          break;
+        }
+        case 'elec': {
+          // Tests point à point de la GTB : un contrôle par point de la liste
+          const pts = (v.listePoints || []).slice(0, 400);
+          if (pts.length) out.push({ ...base, nature: 'mes', type: 'gtb', cle: '', titre: `Tests point à point GTB — ${pts.length} points (${titre})`,
+            controles: pts.map(p => txt(`${p[0]} — ${p[7] || p[1]} (${p[4] || p[2]})`, 120)), attendus: [] });
+          break;
+        }
         case 'gaz':
           out.push({ ...base, nature: 'epreuve', titre, reseau: titre, natureReseau: 'Gaz', fluideEssai: 'Air' });
           out.push({ ...base, nature: 'controle', titre: `Gaz — ${titre}`, detail: 'Contrôle d\'étanchéité, certificat de conformité (modèle 2 ou 4) avant la mise en gaz, essai des organes de coupure.' });
