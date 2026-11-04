@@ -124,18 +124,23 @@ const Schema = ((D, C, N) => {
   }
   const TAMPONS = [100, 200, 300, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000, 5000];
   // Change-over 2 tubes : dimensionnement au régime chaud et au régime froid, diamètres retenus au débit le plus fort
-  // Pertes de charge de la robinetterie d'un circuit : ΔP de la fiche, sinon (Q / Kv)², sinon ζ × pression dynamique
-  function robinetterie(e, rep, Q, t, f) {
-    return (e.robinetterie || []).map((r, i) => ({ r, i })).filter(({ r }) => r && r.type && String(r.circuit || '').trim() === String(rep).trim()).map(({ r, i }) => {
-      const R = ROBINETTERIE[r.type] || ROBINETTERIE.autre, q = Math.max(1, Math.round(num(r.qte, R[2]))), kv = num(r.kv), dpS = num(r.dp);
-      const di = num(r.dn) > 0 ? num(r.dn) : t.di, v = Q / 3600 / (Math.PI * (di / 1000) ** 2 / 4), pd = f.rho * v * v / 2;
-      // Vanne d'équilibrage : au moins 3 kPa à son réglage pour mesurer le débit
-      const brut = dpS > 0 ? dpS : kv > 0 ? (Q / kv) ** 2 * 100 * (f.rho / 1000) : R[1] * pd / 1000, mini = r.type === 'equilibrage' && !(dpS > 0) && brut < 3;
-      const dpU = mini ? 3 : brut;
-      return { i, rep: r.rep || `${R[0].split(' ')[0]} ${i + 1}`, type: r.type, lib: R[0], dn: num(r.dn) > 0 ? num(r.dn) : t.dn, qte: q, kv, dpU, dpTot: dpU * q, source: mini ? 'réglage mini 3 kPa' : dpS > 0 ? 'ΔP fiche' : kv > 0 ? 'Kv fiche' : R[1] ? `ζ ${String(R[1]).replace('.', ',')}` : 'négligeable',
-        ref: r.ref || '', fiche: r.fiche && (r.fiche.fabricant || r.fiche.reference) ? r.fiche : null, Q };
-    });
+  // Perte de charge d'un organe au débit Q (m³/h) : ΔP de la fiche, sinon (Q / Kv)², sinon ζ × pression dynamique ;
+  // une vanne d'équilibrage garde au moins 3 kPa à son réglage pour mesurer le débit
+  function organe(r, i, Q, t, rho) {
+    const R = ROBINETTERIE[r.type] || ROBINETTERIE.autre, q = Math.max(1, Math.round(num(r.qte, R[2]))), kv = num(r.kv), dpS = num(r.dp);
+    const di = num(r.dn) > 0 ? num(r.dn) : t.di, v = Q / 3600 / (Math.PI * (di / 1000) ** 2 / 4), pd = rho * v * v / 2;
+    const brut = dpS > 0 ? dpS : kv > 0 ? (Q / kv) ** 2 * 100 * (rho / 1000) : R[1] * pd / 1000, mini = r.type === 'equilibrage' && !(dpS > 0) && brut < 3;
+    const dpU = mini ? 3 : brut;
+    return { i, rep: r.rep || `${R[0].split(' ')[0]} ${i + 1}`, type: r.type, lib: R[0], dn: num(r.dn) > 0 ? num(r.dn) : t.dn, qte: q, kv, tours: num(r.tours), dpU, dpTot: dpU * q,
+      source: mini ? 'réglage mini 3 kPa' : dpS > 0 ? 'ΔP fiche' : kv > 0 ? 'Kv fiche' : R[1] ? `ζ ${String(R[1]).replace('.', ',')}` : 'négligeable',
+      ref: r.ref || '', fiche: r.fiche && (r.fiche.fabricant || r.fiche.reference) ? r.fiche : null, Q };
   }
+  // Robinetterie d'un circuit (ou d'un tronçon : champ « circuit » ou « troncon » de la ligne)
+  function robinetterie(e, rep, Q, t, f, champ = 'circuit') {
+    return (e.robinetterie || []).map((r, i) => ({ r, i })).filter(({ r }) => r && r.type && String(r[champ] || '').trim() === String(rep).trim()).map(({ r, i }) => organe(r, i, Q, t, f.rho));
+  }
+  // Organes qui changent le calcul (pertes de charge) ; les autres ne servent qu'au DOE (repérage, fiche technique)
+  const ORGANES_CALCUL = ['isolement', 'clapet', 'equilibrage', 'filtre', 'desemboueur', 'compteur', 'regulation', 'manchette', 'echangeur'];
   function dimensionner(e) {
     if (e.reseau !== 'co') return dimensionnerRegime(e);
     const base = { ...e, reseau: 'perso' };
@@ -306,6 +311,16 @@ const Schema = ((D, C, N) => {
       if (e.compteurs === 'oui') dessus.push(compteur(xr, 228));
       dessus.push(fleche(xd, 228, 'haut', cD), fleche(xr, 172, 'bas', cR));
       dessus.push(texte(xd - 6, 150 + 14, c.t.nom.replace(/ \(.*/, ''), { fs: 9, c: cD, a: 'end', rot: -90 }));
+      // Robinetterie et accessoires saisis : repérés sous le circuit (symbole, repère, quantité, DN, référence)
+      (c.rob || []).slice(0, 9).forEach((r, k) => {
+        const y = Y2 + 34 + k * 20, xs = x + 30, sym = { isolement: vanneH(xs, y), clapet: clapet(xs, y), equilibrage: equilibrage(xs, y), compteur: compteur(xs, y), thermometre: thermo(xs, y),
+          filtre: `<path d="M${xs - 9} ${y} L${xs + 9} ${y} M${xs - 3} ${y} L${xs + 4} ${y + 8}" stroke="#222" stroke-width="1.6" fill="none"/><rect x="${xs + 1}" y="${y + 6}" width="6" height="5" fill="#fff" stroke="#222"/>`,
+          manchette: `<path d="M${xs - 9} ${y} l3 -5 l3 10 l3 -10 l3 10 l3 -10 l3 5" stroke="#222" stroke-width="1.4" fill="none"/>`,
+          desemboueur: `<circle cx="${xs}" cy="${y}" r="6" fill="#fff" stroke="#222" stroke-width="1.4"/><line x1="${xs - 4}" y1="${y + 3}" x2="${xs + 4}" y2="${y + 3}" stroke="#222"/>` }[r.type]
+          || `<circle cx="${xs}" cy="${y}" r="5" fill="#fff" stroke="#222" stroke-width="1.4"/>`;
+        dessus.push(sym, texte(xs + 30, y + 4, `${r.rep}${r.qte > 1 ? ` ×${r.qte}` : ''} · DN ${r.dn}${r.ref ? ` · ${String(r.ref).slice(0, 16)}` : ''}`, { fs: 8.5 }));
+      });
+      if ((c.rob || []).length > 9) dessus.push(texte(x + 30, Y2 + 34 + 9 * 20, `+ ${c.rob.length - 9} autre(s) (tableau)`, { fs: 8, c: '#666' }));
     });
 
     // Légende
@@ -588,11 +603,12 @@ const Schema = ((D, C, N) => {
     L.forEach(l => { const x = nrm(l);
       if (v.kv === undefined) { const m = /\bkvs?\b\s*[:=]?\s*(\d+(?:[.,]\d+)?)/.exec(x); if (m) { v.kv = +m[1].replace(',', '.'); src.kv = l.trim(); } }
       if (v.dn === undefined) { const m = /\bdn\s*(\d{2,3})\b/.exec(x); if (m) { v.dn = +m[1]; src.dn = l.trim(); } }
+      if (v.tours === undefined) { const m = /(\d+(?:[.,]\d+)?)\s*tours/.exec(x); if (m && +m[1].replace(',', '.') <= 20) { v.tours = +m[1].replace(',', '.'); src.tours = l.trim(); } }
       if (v.dp === undefined && /perte de charge|pression differentielle|delta ?p|Δp/.test(x)) { const m = /(\d+(?:[.,]\d+)?)\s*(kpa|mbar|mce)/.exec(x); if (m) { const n = +m[1].replace(',', '.'); v.dp = m[2] === 'kpa' ? n : m[2] === 'mbar' ? n / 10 : n * 9.81; src.dp = l.trim(); } } });
     let fabricant = '', reference = '';
     try { const FT = typeof FichesTech !== 'undefined' ? FichesTech : require('../../../public/js/fiches-tech'); const a = FT.analyser({ texte: L.join('\n') }); fabricant = a.fabricant || ''; reference = (a.references || [])[0] || ''; } catch (err) { /* sans bibliothèque */ }
     return { valeurs: v, sources: src, fabricant, reference, nb: Object.keys(v).length };
   }
-  return { ROBINETTERIE, lireFicheRobinet, REGIMES, GENERATEURS, EMETTEURS, REGULATIONS, FLUIDES_FRIGO, CONTENANCE, volumeEau, utiliserReglementation, dimensionner, dessiner, reglementation, regulation };
+  return { ROBINETTERIE, ORGANES_CALCUL, robinetterie, organe, lireFicheRobinet, REGIMES, GENERATEURS, EMETTEURS, REGULATIONS, FLUIDES_FRIGO, CONTENANCE, volumeEau, utiliserReglementation, dimensionner, dessiner, reglementation, regulation };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Notes !== 'undefined' ? Notes : require('./notes'));
 if (typeof module !== 'undefined') module.exports = Schema;

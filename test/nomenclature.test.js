@@ -48,3 +48,30 @@ test('nomenclature et liste d\'achat : articles regroupés, fiches, terminaux du
   const postes = M.metre({ id: 'x', notes: [p] });
   assert.ok(postes.some(x => /Vanne d'isolement.*Comap 2000/.test(x.designation) && x.qte === 8));
 });
+
+test('réseau arborescent : robinetterie par tronçon, vanne d\'équilibrage de la fiche, préréglage en tours', () => {
+  const E = require('../etudes/public/js/equilibrage');
+  void E;
+  const base = N.defauts('arbo');
+  const sans = N.calculer('arbo', base).valeurs;
+  const e = { ...base, robinetterie: [{ rep: 'F1', troncon: 'C', type: 'filtre', dp: 8 }, { rep: 'STAD-1', troncon: 'A3', type: 'equilibrage', kv: 25, tours: 4, ref: 'TA STAD' }] };
+  const r = N.calculer('arbo', e), v = r.valeurs;
+  // Filtre de 8 kPa sur le départ commun : le réseau (circuit le plus défavorisé) prend 8 kPa de plus
+  assert.ok(Math.abs((v.Hres - sans.Hres) / 1000 - 8) < 0.05);
+  const a3 = v.vannes.find(x => x.rep === 'A3');
+  assert.strictEqual(a3.Kvs, 25);
+  assert.strictEqual(a3.ref, 'TA STAD');
+  assert.ok(Math.abs(a3.tours - Math.max(0.5, 4 * a3.Kv / 25)) < 1e-9 && a3.tours < 4);
+  assert.ok(N.calculer('arbo', { ...e, robinetterie: [{ rep: 'S', troncon: 'A3', type: 'equilibrage', kv: 5, tours: 4 }] }).alertes.some(a => a.niveau === 'erreur' && /trop petite/.test(a.texte)));
+  assert.ok(v.vannes.filter(x => x.rep !== 'A3').every(x => x.toursMax === 4 && x.tours > 0));
+  assert.ok(r.tableaux.some(t => /Robinetterie et accessoires des tronçons/.test(t.titre)));
+  assert.strictEqual(Sc.lireFicheRobinet(['STAD DN 25', 'Kvs 8,8', 'Préréglage 0 à 4 tours']).valeurs.tours, 4);
+  const n = { id: 'a', type: 'arbo', titre: 'Réseau', entrees: e }, et = { id: 'x', notes: [n] }, calc = x => L.calculer(et, x); calc.entrees = x => L.resoudre(et, x).entrees;
+  const nom = Nm.feuilles(et, n, calc)[0].lignes;
+  assert.ok(nom.some(l => /préréglage ≈/.test(l[3]) && l[7] === 'TA'));
+  assert.ok(nom.some(l => l[0] === 'F1' && l[2] === 'Robinetterie'));
+  // Fiches : organes du calcul et organes « DOE seulement »
+  const f = L.fichesInstallation({ notes: [{ ...n, entrees: { ...e, robinetterie: [...e.robinetterie, { rep: 'TH1', troncon: 'C', type: 'thermometre' }] } }] }, { ...n, entrees: { ...e, robinetterie: [...e.robinetterie, { rep: 'TH1', troncon: 'C', type: 'thermometre' }] } });
+  assert.strictEqual(f.find(x => /TH1/.test(x.element)).calcul, false);
+  assert.strictEqual(f.find(x => /F1/.test(x.element)).calcul, true);
+});

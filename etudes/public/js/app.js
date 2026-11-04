@@ -61,7 +61,7 @@ function resumePF(et) {
   (et.notes || []).forEach(n => {
     try {
       if (n.type === 'aero') { const r = Liens.calculer(et, n), v = r.valeurs || {}; if ((v.debits || []).length) debits.push({ installation: Liens.resoudre(et, n).entrees.titreInstallation || n.titre, type: 'Aéraulique', unite: 'm³/h', lignes: v.debits.slice(0, 500) }); }
-      if (n.type === 'arbo') { const v = Liens.calculer(et, n).valeurs || {}; if ((v.vannes || []).length) debits.push({ installation: n.titre, type: 'Hydraulique', unite: 'm³/h', lignes: v.vannes.map(x => ({ repere: x.rep, local: '', type: 'Vanne d\'équilibrage', theorique: Math.round(x.Q * 100) / 100 })) }); }
+      if (n.type === 'arbo') { const v = Liens.calculer(et, n).valeurs || {}; if ((v.vannes || []).length) debits.push({ installation: n.titre, type: 'Hydraulique', unite: 'm³/h', lignes: v.vannes.map(x => ({ repere: x.rep, local: '', type: `Vanne d'équilibrage${x.ref ? ` ${x.ref}` : ''}${x.tours ? ` — préréglage ≈ ${String(Math.round(x.tours * 10) / 10).replace('.', ',')} tours` : ''}`, theorique: Math.round(x.Q * 100) / 100 })) }); }
       if (n.type === 'desenfumage') { const v = Liens.calculer(et, n).valeurs || {}; if ((v.debits || []).length) debits.push({ installation: `${n.titre}`, type: 'Aéraulique', unite: 'm³/h', lignes: v.debits }); }
       if (n.type === 'sanitaire') { const B = (Liens.calculer(et, n).valeurs || {}).bouclage; if (B && (B.vannes || []).length) debits.push({ installation: `${n.titre} — bouclage ECS`, type: 'Hydraulique', unite: 'L/h', lignes: B.vannes.map(x => ({ repere: x.rep, local: x.nom || '', type: 'Vanne thermostatique de bouclage', theorique: Math.round(x.q) })) }); }
     } catch (e) { /* calcul incomplet : pas de débits */ }
@@ -612,7 +612,7 @@ function appliquerFiche(et, n, lignesTexte, nomFichier) {
   if (n.type === 'terminaux') return appliquerFicheTerminal(et, n, lignesTexte, nomFichier);
   if (n.type === 'aero' && cibleBouche !== '') return appliquerFicheBouche(et, n, lignesTexte, nomFichier);
   if (n.type === 'sanitaire') return appliquerFichePoint(et, n, lignesTexte, nomFichier);
-  if (n.type === 'pid' && cibleRobinet !== '') return appliquerFicheRobinet(et, n, lignesTexte, nomFichier);
+  if (['pid', 'arbo'].includes(n.type) && cibleRobinet !== '') return appliquerFicheRobinet(et, n, lignesTexte, nomFichier);
   // CTA et schéma aéraulique : lecture détaillée d'une centrale ; autres équipements : pompe, vase, ballon, générateur
   const Mod = ['cta', 'aero'].includes(n.type) ? FicheCta : FicheEquip, r = Mod.lire(lignesTexte), fichier = { name: nomFichier };
   if (!r.nb) return confirmer('Aucune caractéristique reconnue dans ce document (PDF scanné ou mise en page inhabituelle). Saisissez les valeurs à la main.', 'OK');
@@ -645,11 +645,13 @@ function appliquerFiche(et, n, lignesTexte, nomFichier) {
 function fichesInstallationHtml(et, n) {
   const l = Liens.fichesInstallation(et, n);
   if (!l.length) return '';
-  const manque = l.filter(x => !x.fiche).length;
-  return `<div class="carte fiches-install"><h3 style="margin-top:0">📄 Fiches techniques de l'installation ${manque ? `<span class="muted petit">(${manque} à charger)</span>` : '✓'}</h3>
-    <div class="defile-x"><table><thead><tr><th>Élément</th><th>Nature</th><th>Fiche technique</th><th>Calcul</th><th></th></tr></thead><tbody>
-    ${l.map((x, i) => `<tr><td>${esc(x.element)}</td><td class="petit">${esc(x.nature)}</td><td>${x.fiche ? `✓ ${esc([x.fiche.fabricant, x.fiche.reference].filter(Boolean).join(' ') || x.fiche.nom)}` : '<span class="muted">à charger</span>'}</td>
-      <td class="petit"><a href="#/etude/${et.id}/${x.note}">${esc(x.ou)}</a></td><td><button class="secondaire petit" data-fiche-elt="${i}">📄 ${x.fiche ? 'Remplacer' : 'Charger'}</button></td></tr>`).join('')}</tbody></table></div>
+  const calc = l.filter(x => x.calcul !== false), doe = l.filter(x => x.calcul === false), manque = calc.filter(x => !x.fiche).length, manqueDoe = doe.filter(x => !x.fiche).length;
+  const ligne = x => { const i = l.indexOf(x); return `<tr><td>${esc(x.element)}</td><td class="petit">${esc(x.nature)}</td><td>${x.fiche ? `✓ ${esc([x.fiche.fabricant, x.fiche.reference].filter(Boolean).join(' ') || x.fiche.nom)}` : '<span class="muted">à charger</span>'}</td>
+      <td class="petit"><a href="#/etude/${et.id}/${x.note}">${esc(x.ou)}</a></td><td><button class="secondaire petit" data-fiche-elt="${i}">📄 ${x.fiche ? 'Remplacer' : 'Charger'}</button></td></tr>`; };
+  const table = lst => `<div class="defile-x"><table><thead><tr><th>Élément</th><th>Nature</th><th>Fiche technique</th><th>Calcul</th><th></th></tr></thead><tbody>${lst.map(ligne).join('')}</tbody></table></div>`;
+  return `<div class="carte fiches-install"><h3 style="margin-top:0">📄 Fiches techniques de l'installation ${manque ? `<span class="muted petit">(${manque} à charger pour le calcul)</span>` : '✓'}</h3>
+    ${calc.length ? `<p class="petit"><strong>Fiches qui changent le calcul</strong> (puissances, débits, Kv, pertes de charge)</p>${table(calc)}` : ''}
+    ${doe.length ? `<details${manqueDoe && !manque ? ' open' : ''}><summary class="petit"><strong>Fiches pour le DOE seulement</strong> (thermomètres, purgeurs, soupapes…) — ${doe.length - manqueDoe}/${doe.length} chargée(s)</summary>${table(doe)}</details>` : ''}
     <p class="petit muted">Une fiche chargée ici remplit le calcul de l'élément (terminaux, production, CTA) et se retrouve dans le schéma de principe comme dans le réseau arborescent.</p></div>`;
 }
 let ligneCibleTerminal = '', cibleBouche = '', ciblePoint = '', cibleRobinet = '';
@@ -686,10 +688,11 @@ function appliquerFicheRobinet(et, n, lignesTexte, nomFichier) {
   if (f.valeurs.kv !== undefined) r.kv = f.valeurs.kv;
   if (f.valeurs.dn !== undefined) r.dn = f.valeurs.dn;
   if (f.valeurs.dp !== undefined && f.valeurs.kv === undefined) r.dp = Math.round(f.valeurs.dp * 100) / 100;
+  if (f.valeurs.tours !== undefined && r.type === 'equilibrage') r.tours = f.valeurs.tours;
   if (nom) r.ref = nom;
   r.fiche = { nom: String(nomFichier || '').slice(0, 120), fabricant: f.fabricant, reference: f.reference };
   enregistrer(et); App.render();
-  toast(`Fiche reprise sur ${r.rep || 'l\'organe'} : ${[f.valeurs.kv !== undefined && `Kv ${String(f.valeurs.kv).replace('.', ',')}`, f.valeurs.dn !== undefined && `DN ${f.valeurs.dn}`, f.valeurs.dp !== undefined && `ΔP ${String(Math.round(f.valeurs.dp * 10) / 10).replace('.', ',')} kPa`, nom].filter(Boolean).join(', ') || 'fiche jointe (aucune valeur lue : saisissez le Kv ou la ΔP)'} — HMT de la pompe recalculée`, 6000);
+  toast(`Fiche reprise sur ${r.rep || 'l\'organe'} : ${[f.valeurs.kv !== undefined && `Kv ${String(f.valeurs.kv).replace('.', ',')}`, f.valeurs.dn !== undefined && `DN ${f.valeurs.dn}`, f.valeurs.tours !== undefined && `${String(f.valeurs.tours).replace('.', ',')} tours`, f.valeurs.dp !== undefined && `ΔP ${String(Math.round(f.valeurs.dp * 10) / 10).replace('.', ',')} kPa`, nom].filter(Boolean).join(', ') || 'fiche jointe (aucune valeur lue : saisissez le Kv ou la ΔP)'} — HMT de la pompe recalculée`, 6000);
 }
 // Fiche technique d'un point de puisage (robinetterie, WC, douche…) : débit et pression mini reportés sur le point choisi
 function appliquerFichePoint(et, n, lignesTexte, nomFichier) {
@@ -775,6 +778,7 @@ Vues.note = {
       <div class="actions-ligne"><button id="emettre-note">🖋️ Émettre l'indice ${esc(Revisions.prochainIndice(n))} (PDF avec cartouche)</button><button class="secondaire" id="pdf-note">📄 Brouillon PDF</button><button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="dupliquer">Dupliquer</button>
         ${TYPES_FICHE.includes(n.type) ? `<button class="secondaire" id="fiche-tech" title="Fiche du fabricant (PDF de l'ordinateur ou de la bibliothèque Pipe-Fit) : remplit le calcul et contrôle le matériel choisi">📄 Fiche technique${['cta', 'aero'].includes(n.type) ? ' de la CTA' : { reseau: ' de la pompe', arbo: ' de la pompe', vase: ' du vase', ecs: ' du ballon / échangeur', pid: ' du générateur', terminaux: ' d\'un terminal' }[n.type] || ''}${n.entrees.fiche && (n.entrees.fiche.fabricant || n.entrees.fiche.reference) ? ` ✓` : ''}</button>` : ''}
         ${n.type === 'cta' ? `<button class="secondaire" id="cta-reseau">🌬️ ${Liens.reseauxDeCta(et.notes, n).some(x => x.type === 'aero') ? 'Ouvrir le schéma aéraulique relié' : 'Créer le schéma aéraulique relié (gaines, bouches)'}</button>` : ''}
+        ${n.type === 'arbo' ? '<button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par tronçon (tubes, vannes d\'équilibrage avec préréglage, robinetterie, pompe) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-rob" title="Pour chaque circuit sans robinetterie : vannes d\'isolement, vanne d\'équilibrage, filtre, manchettes, thermomètres ; à compléter avec les Kv des fiches">🔩 Robinetterie type par circuit</button><button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par circuit (repères, DN, fabricant, référence, fiche, ΔP) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
         ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button>' : ''}

@@ -315,7 +315,7 @@ const Liens = ((N, Sc) => {
       ajNote(note, 'Production (générateur)');
       // Robinetterie et accessoires des circuits : une fiche par organe
       const RB = (typeof Schema !== 'undefined' ? Schema : require('./schema')).ROBINETTERIE;
-      ((note.entrees || {}).robinetterie || []).forEach((r, i) => { if (r && r.type) out.push({ element: `${r.rep || `Organe ${i + 1}`}${r.circuit ? ` — ${r.circuit}` : ''}`, nature: (RB[r.type] || RB.autre)[0], fiche: ficheDe(r.fiche) || (r.ref ? { reference: r.ref } : null), note: note.id, robinet: i, ou: lib(note) }); });
+      ((note.entrees || {}).robinetterie || []).forEach((r, i) => { if (r && r.type) out.push({ element: `${r.rep || `Organe ${i + 1}`}${r.circuit ? ` — ${r.circuit}` : ''}`, nature: (RB[r.type] || RB.autre)[0], type: r.type, fiche: ficheDe(r.fiche) || (r.ref ? { reference: r.ref } : null), note: note.id, robinet: i, ou: lib(note) }); });
       const reps = new Set(((note.entrees || {}).circuits || []).map(c => `${note.id}|${c.rep}`));
       ((note.entrees || {}).circuits || []).forEach(c => { const an = c.annexe && notes.find(n => n.id === c.annexe); if (an && an.type === 'cta') ajNote(an, 'CTA (batteries)'); if (an && an.type === 'arbo') (an.entrees.troncons || []).forEach(t => { if (t.pompe) { const [id, r] = String(t.pompe).split(':'); const tn = notes.find(n => n.id === id), a = tn && (tn.entrees.appareils || []).find(x => x.rep === r); if (a) ajTerm(tn, a); } }); });
       terms.forEach(n => (n.entrees.appareils || []).forEach(a => { if (reps.has(a.circuit)) ajTerm(n, a); }));
@@ -324,6 +324,8 @@ const Liens = ((N, Sc) => {
       if (cta) ajNote(cta, 'CTA'); else out.push({ element: (note.entrees || {}).titreInstallation || note.titre, nature: 'Producteur (CTA, caisson)', fiche: ficheDe((note.entrees || {}).fiche), note: note.id, ou: lib(note) });
       ((note.entrees || {}).bouchesL || []).forEach((b, i) => { if (b && (b.rep || b.salle)) out.push({ element: `${b.rep || 'Bouche'}${b.salle ? ` — ${b.salle}` : ''}${b.etage ? ` (${b.etage})` : ''}`, nature: 'Bouche', fiche: ficheDe(b.fiche) || (b.ref ? { reference: b.ref } : null), note: note.id, bouche: i, ou: lib(note) }); });
     } else if (note.type === 'arbo') {
+      const RBa = (typeof Schema !== 'undefined' ? Schema : require('./schema')).ROBINETTERIE;
+      ((note.entrees || {}).robinetterie || []).forEach((r, i) => { if (r && r.type) out.push({ element: `${r.rep || `Organe ${i + 1}`}${r.troncon ? ` — ${r.troncon}` : ''}`, nature: (RBa[r.type] || RBa.autre)[0], type: r.type, fiche: ficheDe(r.fiche) || (r.ref ? { reference: r.ref } : null), note: note.id, robinet: i, ou: lib(note) }); });
       const pid = notes.find(n => n.type === 'pid' && ((n.entrees || {}).circuits || []).some(c => c.annexe === note.id));
       if (pid) ajNote(pid, 'Production (générateur)');
       ((note.entrees || {}).troncons || []).forEach(t => [t.emetteur, t.pompe].filter(Boolean).forEach(cl => {
@@ -336,6 +338,9 @@ const Liens = ((N, Sc) => {
       const A = (typeof Sanitaire !== 'undefined' ? Sanitaire : require('./sanitaire')).APPAREILS;
       ((note.entrees || {}).points || []).forEach((p, i) => { if (p && (p.rep || p.salle)) out.push({ element: `${p.rep || 'Point'}${p.salle ? ` — ${p.salle}` : ''}${p.etage ? ` (${p.etage})` : ''}`, nature: (A[p.type] || ['Point de puisage'])[0], fiche: ficheDe(p.fiche) || (p.ref ? { reference: p.ref } : null), note: note.id, point: i, ou: lib(note) }); });
     }
+    // Fiche qui change le calcul (production, terminaux, CTA, bouches, organes à perte de charge) ou utile au seul DOE
+    const OC = (typeof Schema !== 'undefined' ? Schema : require('./schema')).ORGANES_CALCUL;
+    out.forEach(x => { x.calcul = x.robinet === undefined || OC.includes(x.type); });
     return out;
   }
   return { fichesInstallation, resoudre, calculer, notesDepuisSchema, detacher, description, reseauxDeCta, circuitDeAnnexe, nf };

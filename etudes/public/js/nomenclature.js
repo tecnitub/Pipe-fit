@@ -5,7 +5,21 @@
 const Nomenclature = ((N, Sc) => {
   const { nf, num } = N;
   // Lignes : { rep, circuit, famille, designation, dn, qte, unite, fabricant, reference, fiche, dp }
+  // Réseau arborescent : pompe, tubes par tronçon, vannes d'équilibrage (préréglage), robinetterie
+  function lignesArbo(et, n, calc) {
+    const v = calc(n).valeurs || {}, out = [], add = o => out.push({ circuit: '', dn: '', unite: 'u', fabricant: '', reference: '', fiche: '', dp: '', ...o });
+    const T = typeof Schema !== 'undefined' ? Schema : Sc;
+    if (v.pompe) add({ rep: 'P', circuit: 'Départ', famille: 'Pompes', designation: `Pompe ${N.libPompe(v.pompe).replace(/, vitesse.*/, '')} (${nf(v.Qp, 2)} m³/h × ${nf(v.HMT, 2)} mCE)`, qte: 1 });
+    (v.vannes || []).forEach(x => { const [fab, ...refs] = String(x.ref || '').split(/\s+/);
+      add({ rep: x.vanneRep || `VE-${x.rep}`, circuit: x.rep, famille: 'Robinetterie', designation: `Vanne d'équilibrage Kvs ${nf(x.Kvs, 1)}${x.tours ? ` — préréglage ≈ ${nf(x.tours, 1)} / ${nf(x.toursMax, 0)} tours` : ''}`, dn: x.dn, qte: 1, fabricant: x.ref ? fab : '', reference: refs.join(' '), dp: x.dp / 1000 }); });
+    (v.robinetterie || []).filter(x => x.type !== 'equilibrage').forEach(x => { const [fab, ...refs] = String(x.ref || '').split(/\s+/);
+      add({ rep: x.rep, circuit: x.troncon, famille: 'Robinetterie', designation: x.lib, dn: x.dn, qte: x.qte, fabricant: x.fiche ? x.fiche.fabricant || '' : x.ref ? fab : '', reference: x.fiche ? x.fiche.reference || '' : refs.join(' '), fiche: x.fiche ? x.fiche.nom || '✓' : '', dp: x.dpTot }); });
+    (v.troncons || []).forEach(t => { const tb = (typeof Calculs !== 'undefined' ? Calculs : require('./calculs')).tube(t.serie, t.tube); if (tb && t.L > 0) add({ rep: t.rep, circuit: t.rep, famille: 'Tuyauterie', designation: `Tube ${tb.nom} (aller + retour)`, dn: tb.dn, qte: Math.round(t.L * 10) / 10, unite: 'ml' }); });
+    void T;
+    return out;
+  }
   function lignes(et, pid, calc) {
+    if (pid.type === 'arbo') return lignesArbo(et, pid, calc);
     const r = calc(pid), v = r.valeurs || {}, e = (calc.entrees ? calc.entrees(pid) : pid.entrees) || {}, out = [];
     let d; try { d = Sc.dimensionner(e); } catch (err) { d = null; }
     const fg = e.fiche || {}, add = o => out.push({ circuit: '', dn: '', unite: 'u', fabricant: '', reference: '', fiche: '', dp: '', ...o });

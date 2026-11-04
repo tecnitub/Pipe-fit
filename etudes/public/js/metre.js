@@ -55,7 +55,9 @@ const Metre = ((N, C, D, L, Sc) => {
       if (n.type === 'reseau') (v.troncons || []).forEach(t => tube(t.serie, t.tube, t.L, src));
       if (n.type === 'arbo') {
         (v.troncons || []).forEach(t => tube(t.serie, t.tube, t.L, src));
-        (v.vannes || []).forEach(x => equip(`equil|${x.dn}`, 'Équipements hydrauliques', `Vanne d'équilibrage DN ${x.dn}`, 1, 1, { type: 'equilibrage', dn: x.dn }, src));
+        (v.vannes || []).forEach(x => equip(`equil|${x.dn}|${x.ref || ''}`, 'Équipements hydrauliques', `Vanne d'équilibrage DN ${x.dn}${x.ref ? ` — ${x.ref}` : ''}`, 1, 1, { type: 'equilibrage', dn: x.dn }, src));
+        (v.robinetterie || []).filter(x => x.type !== 'equilibrage').forEach(x => equip(`rob|${x.type}|${x.dn}|${x.ref || ''}`, 'Équipements hydrauliques', `${x.lib} DN ${x.dn}${x.ref ? ` — ${x.ref}` : ''}`, x.qte, 0.3 + 0.01 * x.dn,
+          { type: { isolement: 'isolement', compteur: 'compteur', desemboueur: 'desemboueur', soupape: 'soupape' }[x.type] || 'accessoire', dn: x.dn }, src));
         // Réseau annexe d'un circuit du schéma : sa pompe est celle du circuit (comptée par le schéma)
         if (v.pompe && !L.circuitDeAnnexe(notes, n)) equip(`pompe|${v.pompe.modele}`, 'Équipements hydrauliques', `Pompe ${N.libPompe(v.pompe).replace(/, vitesse.*/, '')}`, 1, 3, { type: 'pompe', modele: v.pompe.modele, dn: v.pompe.dn }, src);
       }
