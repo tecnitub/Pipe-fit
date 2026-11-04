@@ -533,6 +533,12 @@ const Electricite = ((N, Sc) => {
         }
         if (fioul) ajout('evg', { rep: 'EVF', designation: 'Vanne de police fioul (coupure de la chaufferie)', type: 'electrovanne', P: 0.02, tension: 'mono', regulation: 'evGaz' });
       }
+      // Plomberie sanitaire : pompe de bouclage d'ECS (asservie à la température de retour) et sonde de retour de boucle
+      if (n.type === 'sanitaire' && v.bouclage) {
+        const B = v.bouclage;
+        ajout('pbecs', { rep: 'PB-ECS', designation: `Pompe de bouclage ECS (${nf(B.Qb, 2)} m³/h, ${nf(B.H, 1)} mCE)`, type: 'pompe', P: Math.max(0.03, Math.round(B.Pel / 10) / 100), tension: 'mono', regulation: 'torRetour', alim: es.alimBouclage || '' });
+        ajout('trb', { rep: 'TRB', designation: 'Sonde de température du retour de boucle ECS', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
+      }
       if ((n.type === 'reseau' || n.type === 'arbo') && Number.isFinite(v.Pabs) && !(n.lien && n.lien.note) && !(Liens.circuitDeAnnexe && Liens.circuitDeAnnexe(etude.notes || [], n))) ajout('pompe', { rep: `P-N${ni + 1}`, designation: `Pompe — ${titre}`, type: 'pompe', P: pompeP(v.pompe, v.Pabs), tension: 'mono', regulation: 'tor' });
       if (n.type === 'aeraulique' && Number.isFinite(v.Pabs) && !(es.cta && notes.some(x => x.id === es.cta && x.type === 'cta'))) ajout('vent', { rep: `V-N${ni + 1}`, designation: `Ventilateur — ${titre}`, type: 'ventilateur', P: Math.max(0.1, kW(v.Pabs * 1.15)), tension: v.Pabs > 2200 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur' });
       // Schéma aéraulique : ventilateurs du producteur (soufflage / insufflation, reprise / extraction)

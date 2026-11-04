@@ -574,6 +574,7 @@ async function chargerFiche(et, n, fichier) {
 function appliquerFiche(et, n, lignesTexte, nomFichier) {
   if (n.type === 'terminaux') return appliquerFicheTerminal(et, n, lignesTexte, nomFichier);
   if (n.type === 'aero' && cibleBouche !== '') return appliquerFicheBouche(et, n, lignesTexte, nomFichier);
+  if (n.type === 'sanitaire') return appliquerFichePoint(et, n, lignesTexte, nomFichier);
   // CTA et schéma aéraulique : lecture détaillée d'une centrale ; autres équipements : pompe, vase, ballon, générateur
   const Mod = ['cta', 'aero'].includes(n.type) ? FicheCta : FicheEquip, r = Mod.lire(lignesTexte), fichier = { name: nomFichier };
   if (!r.nb) return confirmer('Aucune caractéristique reconnue dans ce document (PDF scanné ou mise en page inhabituelle). Saisissez les valeurs à la main.', 'OK');
@@ -613,15 +614,28 @@ function fichesInstallationHtml(et, n) {
       <td class="petit"><a href="#/etude/${et.id}/${x.note}">${esc(x.ou)}</a></td><td><button class="secondaire petit" data-fiche-elt="${i}">📄 ${x.fiche ? 'Remplacer' : 'Charger'}</button></td></tr>`).join('')}</tbody></table></div>
     <p class="petit muted">Une fiche chargée ici remplit le calcul de l'élément (terminaux, production, CTA) et se retrouve dans le schéma de principe comme dans le réseau arborescent.</p></div>`;
 }
-let ligneCibleTerminal = '', cibleBouche = '';
+let ligneCibleTerminal = '', cibleBouche = '', ciblePoint = '';
 document.addEventListener('click', ev => {
   const b = ev.target.closest('[data-fiche-elt]'); if (!b) return;
   const m = /#\/etude\/([^/]+)\/([^/?]+)/.exec(location.hash); if (!m) return;
   const et = S.etudes.find(x => x.id === m[1]), n = et && et.notes.find(x => x.id === m[2]); if (!n) return;
   const x = Liens.fichesInstallation(et, n)[+b.dataset.ficheElt], cible = x && et.notes.find(y => y.id === x.note); if (!cible) return;
-  ligneCibleTerminal = x.rep || ''; cibleBouche = x.bouche !== undefined ? x.bouche : '';
+  ligneCibleTerminal = x.rep || ''; cibleBouche = x.bouche !== undefined ? x.bouche : ''; ciblePoint = x.point !== undefined ? x.point : '';
   dialogueFiche(et, cible);
 });
+
+// Fiche technique d'un point de puisage (robinetterie, WC, douche…) : débit et pression mini reportés sur le point choisi
+function appliquerFichePoint(et, n, lignesTexte, nomFichier) {
+  const i = +ciblePoint, p = ciblePoint === '' ? null : (n.entrees.points || [])[i]; ciblePoint = '';
+  if (!p) return toast('Choisissez le point de puisage dans le tableau « Fiches techniques de l\'installation ».', 5000);
+  const r = Sanitaire.lireFichePoint(lignesTexte), nom = [r.fabricant, r.reference].filter(Boolean).join(' '), A = Sanitaire.APPAREILS[p.type] || Sanitaire.APPAREILS.lavabo;
+  if (r.valeurs.q !== undefined) { p.qEF = r.valeurs.q; if (A[2]) p.qECS = r.valeurs.q; }
+  if (r.valeurs.pMin !== undefined) p.pMin = r.valeurs.pMin;
+  if (nom) p.ref = nom;
+  p.fiche = { nom: String(nomFichier || '').slice(0, 120), fabricant: r.fabricant, reference: r.reference };
+  enregistrer(et); App.render();
+  toast(`Fiche reprise sur ${p.rep || 'le point'} : ${[r.valeurs.q !== undefined && `débit ${String(r.valeurs.q).replace('.', ',')} L/s`, r.valeurs.pMin !== undefined && `pression mini ${String(r.valeurs.pMin).replace('.', ',')} bar`].filter(Boolean).join(', ') || 'référence seule (débits du DTU conservés)'}`, 6000);
+}
 
 // Fiche technique d'une bouche : perte de charge et puissance acoustique reportées sur la bouche choisie
 function appliquerFicheBouche(et, n, lignesTexte, nomFichier) {
@@ -685,7 +699,7 @@ Vues.note = {
       <p class="muted petit">${esc(t.description)}</p>
       ${lien ? `<div class="bandeau-lien">🔗 ${esc(lien)} <button class="secondaire petit" id="detacher">Détacher</button></div>` : ''}
       ${calculateurHtml(n.type, n.entrees, ctx)}
-      ${['pid', 'arbo'].includes(n.type) || (n.type === 'aero' && n.entrees.structure === 'arborescence') ? fichesInstallationHtml(et, n) : ''}
+      ${['pid', 'arbo', 'sanitaire'].includes(n.type) || (n.type === 'aero' && n.entrees.structure === 'arborescence') ? fichesInstallationHtml(et, n) : ''}
       <div class="carte"><label class="champ-libre">Commentaire (repris dans la note de calcul)<textarea data-n="commentaire" rows="3">${esc(n.commentaire)}</textarea></label>
       ${emissionsHtml(et, n)}
       <div class="actions-ligne"><button id="emettre-note">🖋️ Émettre l'indice ${esc(Revisions.prochainIndice(n))} (PDF avec cartouche)</button><button class="secondaire" id="pdf-note">📄 Brouillon PDF</button><button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="dupliquer">Dupliquer</button>
@@ -694,6 +708,7 @@ Vues.note = {
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
         ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="aero-vitesses" title="Même vitesse pour toutes les branches (ou les principales, ou les terminales) : les diamètres des gaines sont recalculés">💨 Changer toutes les vitesses</button>' : ''}
+        ${n.type === 'sanitaire' ? `<button class="secondaire" id="san-foison" title="Compare le débit probable avec et sans foisonnement et choisit la méthode de calcul">⚖️ Foisonnement : ${esc({ dtu: 'DTU 60.11', saisi: `${Notes.num(n.entrees.coefSaisi, 60)} %`, aucun: 'aucun' }[n.entrees.foisonnement || 'dtu'] || '')}</button>` : ''}
         ${n.type === 'arbo' ? '<button class="secondaire" id="arbo-emetteurs" title="Une branche par terminal ou batterie de CTA de l\'étude, reliée : puissance, débit et pertes de charge remplis ; il reste à choisir le tronçon amont et la longueur">🌀 Ajouter les émetteurs de l\'étude</button>' : ''}
         ${n.type === 'cable' ? '<button id="cable-reprendre">🔌 Reprendre les liaisons de l\'alimentation électrique</button>' : ''}<span class="espace"></span><button class="secondaire" id="supprimer">Supprimer ce calcul</button></div></div>`;
   },
@@ -750,6 +765,19 @@ Vues.note = {
       location.hash = `#/etude/${et.id}/${c.id}`;
     };
     // Alimentation électrique : équipements repris des autres calculs (schéma, réseaux, CTA…), choix déjà faits conservés
+    // Plomberie sanitaire : foisonnement comparé (DTU, saisi, aucun) puis choisi
+    const sf = root.querySelector('#san-foison');
+    if (sf) sf.onclick = () => {
+      const es = Liens.resoudre(et, n).entrees, res = m => Notes.calculer('sanitaire', { ...es, foisonnement: m, coefSaisi: m === 'saisi' ? Notes.num(es.coefSaisi, 60) : es.coefSaisi }).valeurs || {};
+      const f = x => Notes.nf(x, 2), modes = Object.entries(Sanitaire.FOISONNEMENTS);
+      const b = Modal.open(`<h2>⚖️ Foisonnement</h2><p class="muted petit">Tous les appareils ne puisent pas en même temps : le débit probable = Σ débits de base × y. Les diamètres, pertes de charge et le point le plus défavorisé sont recalculés.</p>
+        <table><thead><tr><th>Méthode</th><th>EF au compteur</th><th>ECS en sortie de production</th><th></th></tr></thead><tbody>
+        ${modes.map(([k, l]) => { const v = res(k); return `<tr${(es.foisonnement || 'dtu') === k ? ' style="font-weight:600"' : ''}><td>${esc(l)}</td><td>${f(v.totEF)} L/s (${f(v.totEF * 3.6)} m³/h)</td><td>${f(v.totC)} L/s</td><td><button class="petit${(es.foisonnement || 'dtu') === k ? '' : ' secondaire'}" data-sf="${k}">Choisir</button></td></tr>`; }).join('')}</tbody></table>
+        <label>Coefficient saisi (%) <input id="sf-c" inputmode="decimal" value="${esc(String(Notes.num(es.coefSaisi, 60)))}"></label>
+        <div class="actions"><button class="secondaire" id="sf-x">Fermer</button></div>`);
+      b.querySelector('#sf-x').onclick = Modal.close;
+      b.querySelectorAll('[data-sf]').forEach(x => { x.onclick = () => { n.entrees.foisonnement = x.dataset.sf; if (x.dataset.sf === 'saisi') { const c = Notes.num(String(b.querySelector('#sf-c').value).replace(',', '.')); if (c > 0) n.entrees.coefSaisi = Math.min(100, c); } enregistrer(et); Modal.close(); App.render(); toast(`Foisonnement : ${Sanitaire.FOISONNEMENTS[x.dataset.sf]}`, 4000); }; });
+    };
     // Schéma aéraulique : même vitesse sur toutes les branches choisies (diamètres recalculés)
     const av = root.querySelector('#aero-vitesses');
     if (av) av.onclick = () => {

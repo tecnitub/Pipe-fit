@@ -312,6 +312,11 @@ const Liens = ((N, Sc) => {
         const [id, r] = String(cl).split(':'), n = notes.find(x => x.id === id); if (!n) return;
         if (n.type === 'cta') ajNote(n, 'CTA (batteries)'); else { const a = (n.entrees.appareils || []).find(x => x.rep === r); if (a) ajTerm(n, a); }
       }));
+    } else if (note.type === 'sanitaire') {
+      const ecs = notes.find(n => n.id === (note.entrees || {}).production && n.type === 'ecs');
+      if (ecs) ajNote(ecs, 'Production d\'ECS (ballon)');
+      const A = (typeof Sanitaire !== 'undefined' ? Sanitaire : require('./sanitaire')).APPAREILS;
+      ((note.entrees || {}).points || []).forEach((p, i) => { if (p && (p.rep || p.salle)) out.push({ element: `${p.rep || 'Point'}${p.salle ? ` — ${p.salle}` : ''}${p.etage ? ` (${p.etage})` : ''}`, nature: (A[p.type] || ['Point de puisage'])[0], fiche: ficheDe(p.fiche) || (p.ref ? { reference: p.ref } : null), note: note.id, point: i, ou: lib(note) }); });
     }
     return out;
   }
