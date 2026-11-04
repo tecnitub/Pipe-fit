@@ -1,0 +1,52 @@
+// Terminaux (cassettes, ventilo-convecteurs…) : vannes, données électriques, alimentation, bilan, points automate
+const { test } = require('node:test');
+const assert = require('node:assert');
+const N = require('../etudes/public/js/notes');
+require('../etudes/public/js/cta');
+const T = require('../etudes/public/js/terminaux');
+global.Terminaux = T;
+const E = require('../etudes/public/js/electricite');
+const Liens = require('../etudes/public/js/liens');
+
+const app = { rep: 'CA-01', local: 'Bureaux', type: 'cassette4', n: 3, Pch: 3, Pfr: 4, batterie: '4t', vanne: '2v', Pvent: 60, Pbe: '', tension: '', alim: 'cvc', regul: 'automate', ref: 'Marque X C4' };
+
+test('terminaux : débits, Kvs, vannes, puissance électrique', () => {
+  const r = N.calculer('terminaux', { TcAller: 45, TcRetour: 40, TfAller: 7, TfRetour: 12, dpVanne: 15, appareils: [app, { rep: 'VC-02', type: 'vc2', n: 1, Pch: 2, batterie: 'froide+elec', vanne: '3v', Pfr: 2.5, Pvent: 40, Pbe: 1.5, alim: 'elec' }] });
+  const [a, b] = r.valeurs.lignes;
+  assert.strictEqual(a.nbV, 2);
+  assert.ok(Math.abs(a.qc - 3 / (1.163 * 5)) < 1e-9);
+  assert.ok(a.kvs >= a.qf / Math.sqrt(0.15));
+  assert.ok(Math.abs(a.P - 0.18) < 1e-9);
+  assert.ok(Math.abs(b.P - 1.54) < 1e-9);
+  assert.strictEqual(r.valeurs.tot.vannes, 7);
+  assert.ok(r.alertes.some(x => /4 tubes/.test(x.texte)));
+});
+
+test('fiche technique d\'un terminal : puissances, ventilateur, batterie électrique, tension', () => {
+  const r = T.lireFiche(['Cassette 4 voies modèle C4-35', 'Puissance frigorifique totale : 3,6 kW', 'Puissance calorifique : 4,1 kW', 'Puissance absorbée (PV / MV / GV) : 22 / 35 / 58 W',
+    'Batterie électrique : 1,5 kW', 'Alimentation : 230 V / 1~ / 50 Hz', 'Débit d\'air : 450 / 560 / 680 m³/h']);
+  assert.deepStrictEqual([r.valeurs.Pfr, r.valeurs.Pch, r.valeurs.Pvent, r.valeurs.Pbe, r.valeurs.tension, r.valeurs.Qair], [3.6, 4.1, 58, 1.5, 'mono', 680]);
+});
+
+test('bilan électrique : terminaux, CTA (fiche technique) repris avec leur alimentation, points automate par appareil', () => {
+  const et = { notes: [
+    { id: 'n1', type: 'terminaux', titre: 'Terminaux', entrees: N.TYPES.terminaux.champs.filter(c => c.k).reduce((o, c) => ({ ...o, [c.k]: c.d }), {}) },
+    { id: 'n2', type: 'cta', titre: 'CTA bureaux', entrees: { ...N.TYPES.cta.champs.filter(c => c.k).reduce((o, c) => ({ ...o, [c.k]: c.d }), {}), alim: 'elec', PelBe: 6, fiche: { PelS: 1.8, PelR: 1.5, fabricant: 'Fab' } } },
+    { id: 'n3', type: 'elec', titre: 'Électricité', entrees: { armoires: [{ rep: 'AR-CVC-01', local: 'Local CVC', L: 30, ks: 80, reserve: 20 }] } }] };
+  et.notes[0].entrees.appareils = [app];
+  const l = E.equipementsEtude(et, Liens);
+  const ca = l.find(x => x.rep === 'CA-01'), vs = l.find(x => /^VS-/.test(x.rep)), be = l.find(x => /^BE-/.test(x.rep));
+  assert.ok(ca && ca.alim === 'cvc' && ca.nb === 3 && ca.regulation === 'terminal');
+  assert.strictEqual(vs.P, 1.8); assert.strictEqual(vs.alim, 'elec');
+  assert.ok(be && be.P === 6 && be.type === 'resistance');
+  // Fusion : ligne ajoutée à la main gardée ; ligne d'un calcul supprimé retirée ; alimentation de l'appareil imposée
+  const f = E.fusionner([{ rep: 'EXT-01', designation: 'Extracteur oublié', type: 'ventilateur', P: 0.4, alim: '' }, { src: 'zz:1', rep: 'OLD', P: 1 }], l, new Set(et.notes.map(x => x.id)));
+  assert.ok(f.lignes.some(x => x.rep === 'EXT-01')); assert.ok(!f.lignes.some(x => x.rep === 'OLD')); assert.strictEqual(f.retirees, 1);
+  const r = N.calculer('elec', { ...N.TYPES.elec.champs.filter(c => c.k).reduce((o, c) => ({ ...o, [c.k]: c.d }), {}), armoires: et.notes[2].entrees.armoires, equipements: f.lignes });
+  const pts = r.tableaux ? null : null; // calcul effectué sans erreur
+  assert.ok(r.valeurs.points >= 3 * 7, `points : ${r.valeurs.points}`);
+  const af = JSON.stringify(r);
+  assert.match(af, /CA-01\.03/);
+  assert.match(af, /deux vannes \(chaud et froid\)/);
+  assert.match(af, /Extracteur oublié/);
+});

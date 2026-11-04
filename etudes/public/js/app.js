@@ -532,7 +532,7 @@ Vues.comparer = {
 // CTA (ou, pour un schéma aéraulique relié à un calcul de CTA, dans ce calcul) ; pression disponible et puissances
 // gardées pour le contrôle du calcul
 // Fiche technique d'un équipement : choisie sur l'ordinateur ou dans la bibliothèque de Pipe-Fit (matériel retenu proposé)
-const TYPES_FICHE = ['cta', 'aero', 'reseau', 'arbo', 'vase', 'ecs', 'pid'];
+const TYPES_FICHE = ['cta', 'aero', 'reseau', 'arbo', 'vase', 'ecs', 'pid', 'terminaux'];
 const PREFIXE_MATERIEL = { cta: ['cta|'], aero: ['aero|', 'cta|'], reseau: ['pompe|'], arbo: ['pompe|'], vase: ['vase|'], pid: ['gen|'], ecs: ['echangeur|'] };
 function dialogueFiche(et, n) {
   const ret = Object.entries(et.materiel || {}).find(([cle, x]) => x && x.reference && (PREFIXE_MATERIEL[n.type] || []).some(pf => cle.startsWith(pf)));
@@ -570,6 +570,7 @@ async function chargerFiche(et, n, fichier) {
   catch (e) { toast(`Fiche illisible : ${e.message}`, 5000); }
 }
 function appliquerFiche(et, n, lignesTexte, nomFichier) {
+  if (n.type === 'terminaux') return appliquerFicheTerminal(et, n, lignesTexte, nomFichier);
   // CTA et schéma aéraulique : lecture détaillée d'une centrale ; autres équipements : pompe, vase, ballon, générateur
   const Mod = ['cta', 'aero'].includes(n.type) ? FicheCta : FicheEquip, r = Mod.lire(lignesTexte), fichier = { name: nomFichier };
   if (!r.nb) return confirmer('Aucune caractéristique reconnue dans ce document (PDF scanné ou mise en page inhabituelle). Saisissez les valeurs à la main.', 'OK');
@@ -597,6 +598,29 @@ function appliquerFiche(et, n, lignesTexte, nomFichier) {
   };
 }
 
+// Fiche technique d'un terminal (cassette, ventilo-convecteur…) : puissances, ventilateur, batterie électrique, tension,
+// reportés sur la ligne choisie (ou une nouvelle ligne)
+function appliquerFicheTerminal(et, n, lignesTexte, nomFichier) {
+  const r = Terminaux.lireFiche(lignesTexte), nom = [r.fabricant, r.reference].filter(Boolean).join(' ');
+  if (!r.nb) return confirmer('Aucune caractéristique reconnue dans ce document (PDF scanné ou mise en page inhabituelle). Saisissez les valeurs à la main.', 'OK');
+  const app = n.entrees.appareils = n.entrees.appareils || [];
+  const cles = Object.keys(Terminaux.LIBELLES).filter(k => r.valeurs[k] !== undefined);
+  const b = Modal.open(`<h2>Fiche technique${nom ? ` : ${esc(nom)}` : ''}</h2><p class="muted petit">${esc(nomFichier)} · ${r.nb} caractéristique(s) reconnue(s).</p>
+    <label>Terminal à remplir <select id="ft-ligne">${app.map((l, i) => `<option value="${i}">${esc([l.rep, l.local, (Terminaux.TYPES[l.type] || [''])[0]].filter(Boolean).join(' — '))}</option>`).join('')}<option value="nouveau" ${app.length ? '' : 'selected'}>+ Nouveau terminal</option></select></label>
+    <table><thead><tr><th></th><th>Donnée</th><th>Lu sur la fiche</th></tr></thead><tbody>${cles.map(k => `<tr title="${esc(r.sources[k] || '')}"><td><input type="checkbox" data-tf="${k}" checked></td><td>${esc(Terminaux.LIBELLES[k][0])}</td><td><strong>${esc(k === 'tension' ? (r.valeurs[k] === 'tri' ? '400 V tri' : '230 V mono') : String(r.valeurs[k]).replace('.', ','))}</strong> ${esc(Terminaux.LIBELLES[k][1])}</td></tr>`).join('')}</tbody></table>
+    ${r.valeurs.Qair ? `<p class="petit muted">Débit d'air : ${esc(String(r.valeurs.Qair))} m³/h${r.valeurs.Kvs ? ` · Kvs de la vanne : ${esc(String(r.valeurs.Kvs).replace('.', ','))}` : ''}</p>` : ''}
+    <div class="actions"><button class="secondaire" id="tf-x">Annuler</button><button id="tf-ok">Reprendre les valeurs cochées</button></div>`);
+  b.querySelector('#tf-x').onclick = Modal.close;
+  b.querySelector('#tf-ok').onclick = () => {
+    const v = b.querySelector('#ft-ligne').value;
+    let l = v === 'nouveau' ? null : app[+v];
+    if (!l) { l = { rep: `T-${String(app.length + 1).padStart(2, '0')}`, local: '', type: 'cassette2', n: 1, Pch: '', Pfr: '', batterie: r.valeurs.Pbe ? 'froide+elec' : '2t', vanne: '2v', Pvent: '', Pbe: '', tension: '', alim: '', ref: '' }; app.push(l); }
+    cles.forEach(k => { if (b.querySelector(`[data-tf="${k}"]`).checked) l[Terminaux.LIBELLES[k][2]] = r.valeurs[k]; });
+    if (nom) l.ref = nom;
+    enregistrer(et); Modal.close(); App.render(); toast(`Fiche reprise sur ${l.rep} : puissances et données électriques reportées au bilan électrique`, 5000);
+  };
+}
+
 // Note de calcul d'une étude
 Vues.note = {
   html: (et, noteId) => {
@@ -606,7 +630,14 @@ Vues.note = {
     n.entrees = completer(n.type, n.entrees || {});
     contexteEtude = et;
     const lien = Liens.description(et, n), ctx = ctxEtude(et, n);
-    return `<div class="barre"><a href="#/etude/${et.id}" class="secondaire btn petit">← ${esc(et.objet)}</a><span class="ico-titre">${t.icone}</span><span class="muted">N${i + 1}</span>
+    // Alimentation électrique : équipements de l'étude repris automatiquement (terminaux, CTA, producteurs, réseaux),
+    // lignes ajoutées à la main gardées
+    let auto = '';
+    if (n.type === 'elec') {
+      const r = Electricite.fusionner((n.entrees || {}).equipements, Electricite.equipementsEtude(et, Liens), new Set(et.notes.map(x => x.id)));
+      if (r.ajoutees || r.majs || r.retirees) { n.entrees = { ...n.entrees, equipements: r.lignes }; enregistrer(et); auto = `<div class="bandeau-lien">⚡ Bilan mis à jour depuis l'étude : ${[r.ajoutees && `${r.ajoutees} équipement(s) ajouté(s)`, r.majs && `${r.majs} mis à jour`, r.retirees && `${r.retirees} retiré(s) (calcul supprimé)`].filter(Boolean).join(', ')}.</div>`; }
+    }
+    return `${auto}<div class="barre"><a href="#/etude/${et.id}" class="secondaire btn petit">← ${esc(et.objet)}</a><span class="ico-titre">${t.icone}</span><span class="muted">N${i + 1}</span>
         <input class="titre-note" data-n="titre" value="${esc(n.titre)}" aria-label="Titre du calcul"><span class="muted petit" id="etat-enreg"></span></div>
       <p class="muted petit">${esc(t.description)}</p>
       ${lien ? `<div class="bandeau-lien">🔗 ${esc(lien)} <button class="secondaire petit" id="detacher">Détacher</button></div>` : ''}
@@ -614,10 +645,10 @@ Vues.note = {
       <div class="carte"><label class="champ-libre">Commentaire (repris dans la note de calcul)<textarea data-n="commentaire" rows="3">${esc(n.commentaire)}</textarea></label>
       ${emissionsHtml(et, n)}
       <div class="actions-ligne"><button id="emettre-note">🖋️ Émettre l'indice ${esc(Revisions.prochainIndice(n))} (PDF avec cartouche)</button><button class="secondaire" id="pdf-note">📄 Brouillon PDF</button><button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="dupliquer">Dupliquer</button>
-        ${TYPES_FICHE.includes(n.type) ? `<button class="secondaire" id="fiche-tech" title="Fiche du fabricant (PDF de l'ordinateur ou de la bibliothèque Pipe-Fit) : remplit le calcul et contrôle le matériel choisi">📄 Fiche technique${['cta', 'aero'].includes(n.type) ? ' de la CTA' : { reseau: ' de la pompe', arbo: ' de la pompe', vase: ' du vase', ecs: ' du ballon / échangeur', pid: ' du générateur' }[n.type] || ''}${n.entrees.fiche && (n.entrees.fiche.fabricant || n.entrees.fiche.reference) ? ` ✓` : ''}</button>` : ''}
+        ${TYPES_FICHE.includes(n.type) ? `<button class="secondaire" id="fiche-tech" title="Fiche du fabricant (PDF de l'ordinateur ou de la bibliothèque Pipe-Fit) : remplit le calcul et contrôle le matériel choisi">📄 Fiche technique${['cta', 'aero'].includes(n.type) ? ' de la CTA' : { reseau: ' de la pompe', arbo: ' de la pompe', vase: ' du vase', ecs: ' du ballon / échangeur', pid: ' du générateur', terminaux: ' d\'un terminal' }[n.type] || ''}${n.entrees.fiche && (n.entrees.fiche.fabricant || n.entrees.fiche.reference) ? ` ✓` : ''}</button>` : ''}
         ${n.type === 'cta' ? `<button class="secondaire" id="cta-reseau">🌬️ ${Liens.reseauxDeCta(et.notes, n).some(x => x.type === 'aero') ? 'Ouvrir le schéma aéraulique relié' : 'Créer le schéma aéraulique relié (gaines, bouches)'}</button>` : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
-        ${n.type === 'elec' ? '<button id="elec-reprendre">⚡ Reprendre les équipements de l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button>' : ''}
+        ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button>' : ''}
         ${n.type === 'cable' ? '<button id="cable-reprendre">🔌 Reprendre les liaisons de l\'alimentation électrique</button>' : ''}<span class="espace"></span><button class="secondaire" id="supprimer">Supprimer ce calcul</button></div></div>`;
   },
   bind: (root, et, noteId) => {
@@ -675,7 +706,7 @@ Vues.note = {
     // Alimentation électrique : équipements repris des autres calculs (schéma, réseaux, CTA…), choix déjà faits conservés
     const rep = root.querySelector('#elec-reprendre');
     if (rep) rep.onclick = () => {
-      const r = Electricite.fusionner((n.entrees || {}).equipements, Electricite.equipementsEtude(et, Liens));
+      const r = Electricite.fusionner((n.entrees || {}).equipements, Electricite.equipementsEtude(et, Liens), new Set(et.notes.map(x => x.id)));
       if (!r.ajoutees && !r.majs) return toast('Aucun nouvel équipement : ajoutez un schéma de principe, un réseau, une CTA… à l\'étude, ou saisissez les équipements.', 6000);
       n.entrees = { ...(n.entrees || {}), equipements: r.lignes }; enregistrer(et); App.render();
       toast(`${r.ajoutees} équipement(s) ajouté(s)${r.majs ? `, ${r.majs} mis à jour` : ''} : choisissez pour chacun son alimentation et sa régulation.`, 6000);

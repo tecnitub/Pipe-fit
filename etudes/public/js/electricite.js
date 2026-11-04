@@ -42,6 +42,7 @@ const Electricite = ((N, Sc) => {
     sonde: ['Mesure (sonde, capteur)', [['', 'Mesure', 'EA']], 'mesure transmise à l\'automate (régulation et historiques)'],
     securite: ['Sécurité câblée, report d\'alarme', [['', 'Alarme / déclenchement', 'ETOR']], 'câblé en dur dans la chaîne de sécurité (coupure indépendante de l\'automate) ; déclenchement reporté à l\'automate et à la GTB'],
     evGaz: ['Électrovanne normalement fermée', [['', 'Commande d\'ouverture', 'STOR'], ['', 'Position fermée (fin de course)', 'ETOR']], 'ouverte par l\'automate quand la chaufferie est autorisée ; refermée en dur par l\'arrêt d\'urgence et la détection gaz ; position contrôlée'],
+    terminal: ['Terminal piloté par l\'automate (points par appareil)', [], 'piloté par l\'automate de l\'armoire (points par appareil ci-dessous)'],
     impulsion: ['Comptage par impulsions', [['', 'Impulsions de comptage', 'ETOR']], 'comptage relevé par l\'automate (historiques, bilans d\'énergie)'],
     regul: ['Régulation propre, report à la GTB', [['', 'Défaut / état', 'ETOR']], 'régulé par son régulateur propre (consigne locale ou par bus) ; état et défaut reportés'],
     bus: ['Communication par bus (Modbus / BACnet)', [['', 'États, défauts, consignes, mesures', 'Bus']], 'piloté par bus (marche, consignes) ; états, défauts et mesures remontés par la communication'],
@@ -56,7 +57,7 @@ const Electricite = ((N, Sc) => {
 
   const listeOpt = t => Object.entries(t).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v]);
   // Armoires d'abord : une ligne sans choix est alimentée par la première armoire (sans armoire : attente électrique)
-  const optAlim = e => [...(e.armoires || []).filter(a => a.rep).map(a => [a.rep, `Armoire ${a.rep}${a.local ? ` (${a.local})` : ''}`]), ['elec', 'Attente électrique (lot électricité)']];
+  const optAlim = e => [...(e.armoires || []).filter(a => a.rep).map(a => [a.rep, `Armoire ${a.rep}${a.local ? ` (${a.local})` : ''}`]), ['elec', 'Attente électrique (lot électricité)'], ['cvc', 'Armoire CVC (local CVC, la première)']];
   const selonType = l => [['', 'Selon le type'], ...l];
   const optPilote = e => [['', 'Armoire d\'alimentation'], ['autonome', 'Autonome (régulation propre)'], ...(e.armoires || []).filter(a => a.rep).map(a => [a.rep, `Armoire ${a.rep}`])];
 
@@ -83,7 +84,9 @@ const Electricite = ((N, Sc) => {
     const eqs = (e.equipements || []).map((x, i) => {
       const t = TYPES_EQ[x.type] || TYPES_EQ.autre, rep = String(x.rep || `${t[5]}${i + 1}`).trim();
       if (reps.has(rep)) alertes.push(alerte('erreur', `Repère ${rep} en double.`)); reps.add(rep);
-      const q = { ...x, rep, t, moteur: t[1], tension: x.tension || t[2], depart: x.depart || t[3], regulation: x.regulation || t[4], alim: x.alim || (arm[0] ? arm[0].rep : 'elec') };
+      // « Armoire CVC » choisie sur l'appareil : la première armoire de l'étude (celle du local CVC)
+      const alim0 = x.alim === 'cvc' ? (arm[0] ? arm[0].rep : 'elec') : x.alim;
+      const q = { ...x, rep, t, moteur: t[1], tension: x.tension || t[2], depart: x.depart || t[3], regulation: x.regulation || t[4], alim: alim0 || (arm[0] ? arm[0].rep : 'elec') };
       if (q.alim !== 'elec' && !parRep.has(q.alim)) { alertes.push(alerte('attention', `${rep} : armoire « ${q.alim} » inconnue, équipement compté en attente électrique.`)); q.alim = 'elec'; }
       if (q.tension === '24V' && q.alim === 'elec') alertes.push(alerte('attention', `${rep} : un équipement en 24 V est alimenté depuis une armoire (choisissez l'armoire).`));
       q.d = q.tension === '24V' ? { Ib: 0, cal: 0, S: 0, du: 0, cable: '' } : depart(q);
@@ -153,9 +156,11 @@ const Electricite = ((N, Sc) => {
     const pts = [];
     eqs.forEach(q => {
       const reg = REGULS[q.regulation] || REGULS.aucune;
-      const liste = [...reg[1]];
+      // Terminal piloté par l'automate : ses points (ventilateur, vannes, sonde…) ; groupe de n appareils : points par appareil
+      const liste = q.regulation === 'terminal' && Array.isArray(q.pointsUnit) ? q.pointsUnit.map(([d, t]) => ['', d, t]) : [...reg[1]];
       if (q.moteur && q.regulation === 'tor' && q.depart === 'variateur') liste.push(['', 'Consigne de vitesse', 'SA']);
-      liste.forEach(([, des, type]) => { const p = [q.rep, `${des} — ${q.designation || q.t[0]}`, type, q.pilote ? q.pilote.rep : 'autonome']; pts.push(p); if (q.pilote) q.pilote.pts.push(p); });
+      const nb = Math.max(1, Math.round(num(q.nb, 1))), court = String(q.designation || q.t[0]).replace(/^\d+ × /, '');
+      for (let k = 1; k <= nb; k++) liste.forEach(([, des, type]) => { const p = [nb > 1 ? `${q.rep}.${String(k).padStart(2, '0')}` : q.rep, `${des} — ${court}`, type, q.pilote ? q.pilote.rep : 'autonome']; pts.push(p); if (q.pilote) q.pilote.pts.push(p); });
     });
     arm.forEach(a => { (a.sondes || '').split(/[;\n]+/).map(s => s.trim()).filter(Boolean).forEach(s => { const p = [`S-${a.rep}`, s, 'EA', a.rep]; pts.push(p); a.pts.push(p); }); });
     const TYPES_PTS = ['EA', 'SA', 'ETOR', 'STOR', 'Bus'], LIB_PTS = { EA: 'Entrées analogiques (EA)', SA: 'Sorties analogiques (SA)', ETOR: 'Entrées TOR (ETOR)', STOR: 'Sorties TOR (STOR)', Bus: 'Points par bus' };
@@ -220,7 +225,7 @@ const Electricite = ((N, Sc) => {
       lignes: [...bilan.map(x => ligneBilan(x.nom, x.alim, x.P, x.ks, x.S, x.Ib)),
         ['Total CVC au TGBT', `simultanéité ${nf(ksT * 100, 0)} %`, nf(bilan.reduce((s, x) => s + x.P, 0), 2), '', nf(Pappel, 2), Sappel ? nf(Pappel / Sappel, 2) : '—', nf(Sappel, 2), `${nf(Itgbt, 1)} (phases équilibrées)`]], total: true };
     // Analyse fonctionnelle : une phrase par équipement, puis les principes communs
-    const af = eqs.map(q => `${q.rep} — ${q.designation || q.t[0]}${q.regulation !== 'aucune' ? '' : ''} : ${(REGULS[q.regulation] || REGULS.aucune)[2]}${q.fonctionnement ? `. ${String(q.fonctionnement).trim().replace(/\.$/, '')}` : ''}${q.pilote ? ` (automate de l'armoire ${q.pilote.rep})` : q.regulation === 'aucune' ? '' : ' (régulation autonome)'}.`);
+    const af = eqs.map(q => `${q.rep} — ${q.designation || q.t[0]}${q.regulation !== 'aucune' ? '' : ''} : ${q.afAuto || (REGULS[q.regulation] || REGULS.aucune)[2]}${q.fonctionnement ? `. ${String(q.fonctionnement).trim().replace(/\.$/, '')}` : ''}${q.pilote ? ` (automate de l'armoire ${q.pilote.rep})` : q.regulation === 'aucune' ? '' : ' (régulation autonome)'}.`);
     af.push(`Modes de marche de chaque départ : arrêt / automatique / marche forcée (commutateur en façade ou forçage depuis la ${e.gtb && e.gtb !== 'aucune' ? `GTB (${e.gtb})` : 'supervision'}) ; voyants de marche et de défaut.`);
     af.push('Programmation horaire et dérogations par zone ; hors gel des équipements à eau sous 3 °C extérieur ; dégommage hebdomadaire des pompes et des vannes en période d\'arrêt.');
     af.push('Coupure d\'urgence et sécurités câblées en dur (indépendantes de l\'automate) ; reprise automatique après coupure secteur avec démarrages échelonnés.');
@@ -423,17 +428,26 @@ const Electricite = ((N, Sc) => {
     const dejaInv = new Set(inv.map(x => x.type));
     const kW = w => Math.round(num(w) / 10) / 100;
     const pompeP = (pompe, Pabs) => kW(pompe && pompe.P1 ? pompe.P1 : Pabs);
+    // Terminaux saisis appareil par appareil : ils remplacent l'estimation des émetteurs des circuits
+    const avecTerminaux = notes.some(n => n.type === 'terminaux' && ((n.entrees || {}).appareils || []).length);
+    // Puissance électrique lue sur la fiche technique (kW), sinon saisie, sinon estimation
+    const kwFiche = x => (x !== undefined && x !== '' && Number.isFinite(Number(x)) && Number(x) > 0 ? Number(x) : null);
     notes.forEach((n, ni) => {
       let es, r;
       try { es = Liens.resoudre(etude, n).entrees; r = N.calculer(n.type, es); } catch (err) { return; }
       const v = r.valeurs || {}, titre = n.titre || '';
       const ajout = (cle, o) => { if (!dejaInv.has(o.type) || o.type === 'sonde') out.push({ src: `${n.id}:${cle}`, ...o }); };
+      if (n.type === 'terminaux' && typeof Terminaux !== 'undefined') { Terminaux.versElec(n, r).forEach(o => out.push(o)); return; }
+      const fiche = es.fiche || {};
       if (n.type === 'pid') {
         let d; try { d = Sc.dimensionner(es); } catch (err) { return; }
         const G = Sc.GENERATEURS[es.generateur] || ['Générateur'], pac = /^(pac|gf)/.test(es.generateur || '');
         for (let i = 1; i <= d.n; i++) {
           if (/^echangeur/.test(es.generateur || '')) continue;
-          ajout(`gen${i}`, { metre: `gen|${es.generateur}|${d.Pg}`, rep: `${pac ? 'PAC' : 'G'}${i}`, designation: `${G[0]} ${i}`, type: pac ? 'pac' : 'generateur', P: pac ? Math.round(d.Pg / 3 * 10) / 10 : Math.max(0.2, Math.round(d.Pg * 0.003 * 10) / 10), tension: pac || d.Pg > 300 ? 'tri' : 'mono', regulation: pac ? 'bus' : 'mod' });
+          // Puissance électrique du générateur : saisie, sinon lue sur sa fiche technique (P absorbée), sinon estimée
+          const pGen = kwFiche(es.PelecGen) ?? (kwFiche(fiche.P1) ? Math.round(fiche.P1 / 10) / 100 : null);
+          ajout(`gen${i}`, { metre: `gen|${es.generateur}|${d.Pg}`, rep: `${pac ? 'PAC' : 'G'}${i}`, designation: `${G[0]} ${i}${fiche.fabricant || fiche.reference ? ` — ${[fiche.fabricant, fiche.reference].filter(Boolean).join(' ')}` : ''}`, type: pac ? 'pac' : 'generateur',
+            P: pGen ?? (pac ? Math.round(d.Pg / 3 * 10) / 10 : Math.max(0.2, Math.round(d.Pg * 0.003 * 10) / 10)), tension: es.tensionGen || (pac || d.Pg > 300 ? 'tri' : 'mono'), regulation: pac ? 'bus' : 'mod', alim: es.alimProd || '', ...(pGen != null ? { pFiche: true } : {}) });
           if (d.pompesInd && (d.bouteille || d.echangeur || d.n > 1)) ajout(`pp${i}`, { rep: `PP${i}`, designation: `Pompe primaire ${i}`, type: 'pompe', P: Math.max(0.05, Math.round(d.Qg * 8 / 367 / 0.45 * 100) / 100), tension: 'mono', regulation: 'tor' });
         }
         d.circuits.forEach((c, i) => {
@@ -444,7 +458,7 @@ const Electricite = ((N, Sc) => {
           ajout(`td${k}`, { rep: `TD${k}`, designation: `Sonde de départ ${c.rep}`, type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
           if (es.compteurs === 'oui') ajout(`ce${k}`, { rep: `CE${k}`, designation: `Compteur d'énergie ${c.rep}`, type: 'sonde', P: 0, tension: '24V', regulation: 'impulsion' });
           const annexe = ((es.circuits || [])[i] || {}).annexe, ctaReliee = annexe && (etude.notes || []).some(x => x.id === annexe && x.type === 'cta');
-          const em = ctaReliee ? null : { aerotherme: ['aerotherme', 0.5], ventilo: ['ventilo', 0.1], cta: ['cta', 3] }[c.emetteur];
+          const em = ctaReliee || (avecTerminaux && ['ventilo', 'aerotherme'].includes(c.emetteur)) ? null : { aerotherme: ['aerotherme', 0.5], ventilo: ['ventilo', 0.1], cta: ['cta', 3] }[c.emetteur];
           if (em) ajout(`em${k}`, { rep: `E${k}`, designation: `${(Sc.EMETTEURS[c.emetteur] || [''])[0]} — ${c.rep} (puissance à préciser)`, type: em[0], P: em[1], tension: 'mono', regulation: em[0] === 'aerotherme' ? 'tor' : 'regul' });
         });
         ajout('te', { rep: 'TE', designation: 'Sonde de température extérieure', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
@@ -470,8 +484,13 @@ const Electricite = ((N, Sc) => {
         if (v.Qr > 0 && Number.isFinite(v.PvR)) ajout('vr', { metre: cleAero, rep: `${cta ? 'VR' : 'VE'}-N${ni + 1}`, designation: `Ventilateur ${cta ? 'de reprise' : 'd\'extraction'} — ${nom}`, type: 'ventilateur', P: Math.max(0.1, kW(v.PvR * 1.15)), tension: v.PvR > 2200 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur' });
       }
       if (n.type === 'cta' && Number.isFinite(v.PvS)) {
-        ajout('vs', { metre: `cta|${num(es.Qs)}`, rep: `VS-N${ni + 1}`, designation: `Ventilateur de soufflage — ${titre}`, type: 'ventilateur', P: Math.max(0.1, kW(v.PvS * 1.15)), tension: v.PvS > 2200 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur' });
-        if (Number.isFinite(v.PvR) && v.PvR > 0) ajout('vr', { metre: `cta|${num(es.Qs)}`, rep: `VR-N${ni + 1}`, designation: `Ventilateur de reprise — ${titre}`, type: 'ventilateur', P: Math.max(0.1, kW(v.PvR * 1.15)), tension: v.PvR > 2200 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur' });
+        // Ventilateurs : puissance saisie, sinon celle de la fiche technique de la centrale, sinon calculée (+ 15 %)
+        const pS = kwFiche(es.PelecVS) ?? kwFiche(fiche.PelS), pR = kwFiche(es.PelecVR) ?? kwFiche(fiche.PelR), nomF = fiche.fabricant || fiche.reference ? ` — ${[fiche.fabricant, fiche.reference].filter(Boolean).join(' ')}` : '';
+        const tS = es.tensionCta || ((pS ?? v.PvS / 1000) > 2.2 ? 'tri' : 'mono'), tR = es.tensionCta || ((pR ?? v.PvR / 1000) > 2.2 ? 'tri' : 'mono');
+        ajout('vs', { metre: `cta|${num(es.Qs)}`, rep: `VS-N${ni + 1}`, designation: `Ventilateur de soufflage — ${titre}${nomF}`, type: 'ventilateur', P: pS ?? Math.max(0.1, kW(v.PvS * 1.15)), tension: tS, regulation: 'var', depart: 'variateur', alim: es.alim || '', ...(pS != null ? { pFiche: true } : {}) });
+        if (Number.isFinite(v.PvR) && v.PvR > 0) ajout('vr', { metre: `cta|${num(es.Qs)}`, rep: `VR-N${ni + 1}`, designation: `Ventilateur de reprise — ${titre}${nomF}`, type: 'ventilateur', P: pR ?? Math.max(0.1, kW(v.PvR * 1.15)), tension: tR, regulation: 'var', depart: 'variateur', alim: es.alim || '', ...(pR != null ? { pFiche: true } : {}) });
+        const pBe = kwFiche(es.PelBe) ?? kwFiche(fiche.Pbe);
+        if (pBe) ajout('be', { rep: `BE-N${ni + 1}`, designation: `Batterie électrique — ${titre}`, type: 'resistance', P: pBe, tension: es.tensionCta || (pBe > 3.6 ? 'tri' : 'mono'), regulation: 'tor', alim: es.alim || '' });
       }
     });
     // Matériel retenu choisi dans le catalogue des fabricants : sa puissance électrique remplace l'estimation
@@ -486,12 +505,24 @@ const Electricite = ((N, Sc) => {
     return out;
   }
   // Fusion avec les lignes déjà saisies : les choix (alimentation, départ, régulation, longueur…) des lignes déjà reprises sont gardés
-  function fusionner(lignes, reprises) {
-    const garde = (lignes || []).slice(), n = { ajoutees: 0, majs: 0 };
+  // L'alimentation choisie sur l'appareil (terminal, CTA, producteur) s'impose ; les lignes ajoutées à la main (sans
+  // source) sont gardées telles quelles ; celles d'un calcul supprimé de l'étude sont retirées (noteIds : calculs existants)
+  function fusionner(lignes, reprises, noteIds) {
+    let garde = (lignes || []).slice();
+    const n = { ajoutees: 0, majs: 0, retirees: 0 };
+    if (noteIds) { const avant = garde.length; garde = garde.filter(l => !l.src || /^inv/.test(l.src) || noteIds.has(String(l.src).split(':')[0])); n.retirees = avant - garde.length; }
     reprises.forEach(r => {
       const ex = garde.find(l => l.src === r.src);
-      if (ex) { if (num(ex.P) !== num(r.P) || ex.designation !== r.designation) { Object.assign(ex, { P: r.P, designation: ex.designationModifiee ? ex.designation : r.designation }); n.majs++; } }
-      else { garde.push({ ...r, alim: '', depart: r.depart || '', pilote: '', L: '', fonctionnement: '' }); n.ajoutees++; }
+      if (ex) {
+        const ch = {};
+        if (num(ex.P) !== num(r.P)) ch.P = r.P;
+        if (ex.designation !== r.designation && !ex.designationModifiee) ch.designation = r.designation;
+        if (r.alim && ex.alim !== r.alim) ch.alim = r.alim;
+        if (r.tension && r.pFiche && ex.tension !== r.tension) ch.tension = r.tension;
+        if (r.regImpose && r.regulation && ex.regulation !== r.regulation) ch.regulation = r.regulation;
+        ['nb', 'pointsUnit', 'afAuto', 'local'].forEach(k => { if (r[k] !== undefined && JSON.stringify(ex[k]) !== JSON.stringify(r[k])) ch[k] = r[k]; });
+        if (Object.keys(ch).length) { Object.assign(ex, ch); n.majs++; }
+      } else { garde.push({ ...r, alim: r.alim || '', depart: r.depart || '', pilote: '', L: '', fonctionnement: '' }); n.ajoutees++; }
     });
     return { lignes: garde, ...n };
   }
@@ -506,7 +537,7 @@ const Electricite = ((N, Sc) => {
         colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'local', l: 'Local', t: 't' }, { k: 'L', l: 'Longueur depuis le TGBT (m)' }, { k: 'ks', l: 'Foisonnement (%)' }, { k: 'reserve', l: 'Réserve (%)' },
           { k: 'regime', l: 'Liaison à la terre', t: 's', o: [['TT', 'TT'], ['TN-S', 'TN-S'], ['TN-C', 'TN-C'], ['IT', 'IT']] }, { k: 'sondes', l: 'Sondes d\'ambiance / mesures communes (séparées par ;)', t: 't' }] },
       { g: 'Équipements (émetteurs, producteurs, auxiliaires)' },
-      { k: 'equipements', l: 'Équipements — « ⚡ Reprendre les équipements de l\'étude » les ajoute depuis les autres calculs', t: 'lignes', d: [],
+      { k: 'equipements', l: 'Équipements — repris automatiquement des terminaux, CTA, producteurs et réseaux de l\'étude ; « + Ajouter une ligne » pour un équipement oublié (il figure au bilan et au schéma de l\'armoire)', t: 'lignes', d: [],
         colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'designation', l: 'Désignation', t: 't' }, { k: 'type', l: 'Type', t: 's', o: [['', '— Type —'], ...listeOpt(TYPES_EQ)] },
           { k: 'P', l: 'P électrique (kW)' }, { k: 'tension', l: 'Tension', t: 's', o: selonType(Object.entries(TENSIONS)) },
           { k: 'alim', l: 'Alimenté par', t: 's', o: optAlim }, { k: 'depart', l: 'Départ', t: 's', o: selonType(Object.entries(DEPARTS)) }, { k: 'L', l: 'Longueur câble (m)' },

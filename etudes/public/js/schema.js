@@ -447,6 +447,9 @@ const Schema = ((D, C, N) => {
       { k: 'tampon', l: 'Ballon tampon', t: 's', o: [['non', 'Sans'], ['oui', 'Avec ballon tampon sur le retour']], d: 'non' },
       { k: 'ratioTampon', l: 'Volume d\'eau minimal exigé par le constructeur', u: 'L/kW', d: 10, si: e => e.tampon === 'oui' },
       { k: 'Vtampon', l: 'Volume du ballon imposé (vide : calculé)', u: 'L', d: '', si: e => e.tampon === 'oui' },
+      { k: 'PelecGen', l: 'Puissance électrique absorbée par générateur (vide : estimée ; « 📄 Fiche technique » la remplit)', u: 'kW', d: '' },
+      { k: 'tensionGen', l: 'Tension du générateur', t: 's', o: [['', 'Selon le type'], ['mono', '230 V mono'], ['tri', '400 V tri']], d: '' },
+      { k: 'alimProd', l: 'Production alimentée par', t: 's', o: (e, et) => (typeof Terminaux !== 'undefined' ? Terminaux : require('./terminaux')).optAlim(e, et, e.alimProd), d: '' },
       { g: 'Distribution' },
       { k: 'circuits', l: 'Circuits (régime : « 45/35 » si différent du réseau, vide = régime du réseau)', t: 'lignes', d: [
         { rep: 'Radiateurs bureaux', emetteur: 'radiateurs', P: 90, regime: '', regulation: '3v', L: 120 },

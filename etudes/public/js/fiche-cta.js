@@ -70,6 +70,10 @@ const FicheCta = (() => {
           else if (estBF) pose('dpBF', pa[0], i);
         }
       }
+      // Batterie électrique (préchauffage, réchauffage, appoint) : puissance en kW
+      if (/batterie electrique|resistance(?:s)? electrique|rechauffeur electrique|prechauffage electrique|electric heater/.test(x)) {
+        const kw = valeurs(x, 'kw').filter(n => n > 0 && n < 1000); if (kw.length) pose('Pbe', kw[0], i, 0.1, 1000);
+      } else
       // Ventilateurs : puissance électrique, rendement, SFP
       if (/ventil|fan|moteur|motor/.test(x) || /puissance (?:electrique )?absorbee|puissance electrique/.test(x)) {
         if (/puissance|absorb|power|p1\b/.test(x) && !/acoustique|sonore/.test(x)) {
@@ -119,7 +123,7 @@ const FicheCta = (() => {
     dpFiltreAN: ['Filtre d\'air neuf', 'Pa'], dpFiltreR: ['Filtre de reprise', 'Pa'], dpRecup: ['Récupérateur (par flux)', 'Pa'], dpBC: ['Batterie chaude (côté air)', 'Pa'], dpBF: ['Batterie froide (côté air)', 'Pa'],
     rendement: ['Rendement des ventilateurs', '%'], LwS: ['Lw ventilateur de soufflage', 'dB(A)'], LwR: ['Lw ventilateur de reprise', 'dB(A)'],
     PdispoS: ['Pression disponible soufflage', 'Pa'], PdispoR: ['Pression disponible reprise', 'Pa'], PchBC: ['Puissance batterie chaude', 'kW'], PfrBF: ['Puissance batterie froide', 'kW'],
-    PelS: ['Puissance électrique ventilateur soufflage', 'kW'], PelR: ['Puissance électrique ventilateur reprise', 'kW'], SFP: ['SFP', 'W/(m³/s)'],
+    PelS: ['Puissance électrique ventilateur soufflage', 'kW'], PelR: ['Puissance électrique ventilateur reprise', 'kW'], SFP: ['SFP', 'W/(m³/s)'], Pbe: ['Batterie électrique', 'kW'],
   };
   const CONTROLES = ['PdispoS', 'PdispoR', 'PchBC', 'PfrBF', 'PelS', 'PelR', 'SFP'];
   // Champ de la note pour chaque valeur lue (null : contrôle seulement)
@@ -129,7 +133,7 @@ const FicheCta = (() => {
     Object.entries(valeurs).forEach(([cle, val]) => {
       if (CONTROLES.includes(cle) || !LIBELLES[cle]) return;
       if (type === 'cta') {
-        if (cle === 'LwS' || cle === 'LwR') return;
+        if (cle === 'LwS' || cle === 'LwR' || cle === 'Pbe') return;
         if (cle === 'humid') { if (val === 'vapeur') ajoute(cle, 'humid', 'vapeur'); return; }
         ajoute(cle, cle, val);
       } else if (type === 'aero') {
@@ -138,6 +142,8 @@ const FicheCta = (() => {
         ajoute(cle, k, cle === 'recup' ? (val === 'glycol' ? 'boucle' : val) : val);
       }
     });
+    // Données électriques de la centrale : reprises dans la note (bilan électrique de l'étude)
+    if (type === 'cta') { [['PelS', 'PelecVS'], ['PelR', 'PelecVR'], ['Pbe', 'PelBe']].forEach(([cle, k]) => { if (valeurs[cle] !== undefined) ajoute(cle, k, valeurs[cle]); }); }
     if (type === 'aero' && (valeurs.TcAller !== undefined || valeurs.PchBC !== undefined || valeurs.dpBC !== undefined)) ajoute('TcAller', 'batChaude', 'oui');
     if (type === 'aero') out.forEach(c => { if (c.k === 'batChaude') c.libelle = 'Batterie chaude'; });
     return out;

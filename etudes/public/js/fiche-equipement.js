@@ -57,7 +57,7 @@ const FicheEquip = (() => {
       if (eta !== undefined) out.push({ k: 'rendement', cle: 'rendement', val: Math.round(eta), libelle: v.rendement !== undefined ? 'Rendement de la pompe' : 'Rendement de la pompe (ρ·g·Q·H / P1)', unite: '%' });
     }
     if (t === 'ecs') a('P', 'P', v.P);
-    if (t === 'generateur') { a('Pgen', 'P', v.P); a('PgenF', 'Pfr', v.Pfr); }
+    if (t === 'generateur') { a('Pgen', 'P', v.P); a('PgenF', 'Pfr', v.Pfr); if (v.P1 !== undefined) out.push({ k: 'PelecGen', cle: 'P1', val: Math.round(v.P1 / 10) / 100, libelle: 'Puissance électrique absorbée', unite: 'kW' }); }
     return out;
   }
   // Fiche gardée avec le calcul (contrôles)

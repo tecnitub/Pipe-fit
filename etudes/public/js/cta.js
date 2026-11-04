@@ -45,7 +45,13 @@ const Cta = ((D, C, N) => {
       { k: 'dpFiltreAN', l: 'Filtre d\'air neuf ePM1 (F7), perte moyenne', u: 'Pa', d: 150 }, { k: 'dpFiltreR', l: 'Filtre de reprise ePM10 (M5), perte moyenne', u: 'Pa', d: 100, si: e => e.type !== 'simple' },
       { k: 'dpRecup', l: 'Récupérateur (par flux)', u: 'Pa', d: 150, si: e => e.type === 'double' && e.recup !== 'aucun' },
       { k: 'dpBC', l: 'Batterie chaude', u: 'Pa', d: 60 }, { k: 'dpBF', l: 'Batterie froide (humide)', u: 'Pa', d: 120, si: e => e.froid !== 'non' },
-      { k: 'dpDivers', l: 'Caissons, silencieux, volets', u: 'Pa', d: 80 }, { k: 'rendement', l: 'Rendement global des ventilateurs', u: '%', d: 60 }],
+      { k: 'dpDivers', l: 'Caissons, silencieux, volets', u: 'Pa', d: 80 }, { k: 'rendement', l: 'Rendement global des ventilateurs', u: '%', d: 60 },
+      { g: 'Électricité (bilan de puissance de l\'étude)' },
+      { k: 'PelecVS', l: 'Puissance électrique du ventilateur de soufflage (vide : calculée ; « 📄 Fiche technique » la remplit)', u: 'kW', d: '' },
+      { k: 'PelecVR', l: 'Puissance électrique du ventilateur de reprise (vide : calculée)', u: 'kW', d: '', si: e => e.type !== 'simple' },
+      { k: 'PelBe', l: 'Batterie électrique (préchauffage, appoint)', u: 'kW', d: '' },
+      { k: 'tensionCta', l: 'Tension', t: 's', o: [['', 'Selon la puissance'], ['mono', '230 V mono'], ['tri', '400 V tri']], d: '' },
+      { k: 'alim', l: 'Alimentée par', t: 's', o: (e, et) => (typeof Terminaux !== 'undefined' ? Terminaux : require('./terminaux')).optAlim(e, et, e.alim), d: '' }],
     calcul(e) {
       const alertes = [], type = e.type || 'double', Qs = num(e.Qs), Qr = type === 'simple' ? 0 : num(e.Qr, Qs);
       const recup = type === 'double' ? (RECUP[e.recup] ? e.recup : 'plaques') : 'aucun', eta = recup === 'aucun' ? 0 : (e.eta === '' || e.eta === undefined ? RECUP[recup][1] : num(e.eta)) / 100;
