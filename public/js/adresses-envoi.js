@@ -9,7 +9,7 @@ const AdressesEnvoi = (() => {
       types: ['facture', 'avoir', 'situation', 'relance1', 'relance2', 'relance3', 'demeure', 'liberationRG', 'compta'] },
     { id: 'commandes', label: 'Commandes fournisseurs', exemple: 'achats@votre-domaine.fr', types: ['commande', 'demandePrix'] },
     { id: 'consultations', label: 'Demandes de prix (consultations)', exemple: 'achats@votre-domaine.fr', types: ['consultation'] },
-    { id: 'chantier', label: 'Attachements, bons d\'intervention, PV et habilitations', exemple: 'travaux@votre-domaine.fr', types: ['attachement', 'bon', 'pv', 'habilitations'] },
+    { id: 'chantier', label: 'Attachements, bons d\'intervention, PV, habilitations et PPSPS', exemple: 'travaux@votre-domaine.fr', types: ['attachement', 'bon', 'pv', 'habilitations', 'ppsps'] },
   ];
   const EMAIL = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/;
   const groupe = type => GROUPES.find(g => g.types.includes(type)) || null;

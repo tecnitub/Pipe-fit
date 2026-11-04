@@ -32,6 +32,8 @@ const MAIL_TYPES = {
     corps: 'Madame, Monsieur,\n\nVeuillez trouver ci-joint notre mise en demeure de payer la facture {numero} du {date} ({chantier}), échue depuis le {echeance}, pour un montant restant dû de {reste_du} TTC.\n\nCe courrier vous est également adressé par lettre recommandée avec accusé de réception.\n\n{signature}' },
   liberationRG: { label: 'Demande de libération de la retenue de garantie', objet: 'Libération de la retenue de garantie – {chantier}',
     corps: 'Bonjour {contact},\n\nLa réception des travaux du chantier {chantier} a été prononcée le {date_reception}. Le délai de garantie d\'un an étant écoulé, nous vous remercions de bien vouloir procéder à la libération de la retenue de garantie, soit {montant_ttc} TTC.\n\nVous trouverez ci-joint le récapitulatif des retenues pratiquées sur nos factures.\n\nCordialement,\n\n{signature}' },
+  ppsps: { label: 'PPSPS', objet: 'PPSPS {lot} – {chantier}',
+    corps: 'Bonjour {contact},\n\nVeuillez trouver ci-joint notre Plan Particulier de Sécurité et de Protection de la Santé (PPSPS, indice {indice}) pour le chantier {chantier}{lot_phrase}, établi d\'après le PGC du coordonnateur SPS.\n\nNous restons à votre disposition pour l\'inspection commune et pour tout complément.\n\nCordialement,\n\n{signature}' },
   habilitations: { label: 'Habilitations du personnel', objet: 'Habilitations de nos intervenants{chantier_objet}',
     corps: 'Bonjour {contact},\n\nVeuillez trouver ci-joint la fiche récapitulative des habilitations à jour de nos intervenants{chantier_phrase} ({nb_personnes} personne(s)) : visites médicales, titres et CACES en cours de validité, et autorisations de conduite et de travail en hauteur signées.\n\nNous restons à votre disposition pour tout justificatif complémentaire.\n\nCordialement,\n\n{signature}' },
   materiel: { label: 'Matériel proposé à la validation', objet: '{relance_objet}Matériel proposé à votre validation – {chantier}',
@@ -67,6 +69,16 @@ function mailContexte(type, id) {
   const chantier = a => (a && a.code ? `${a.code} – ${a.nom}` : (a && a.nom) || '');
   let x;
   switch (type) {
+    // PPSPS du chantier (id : chantier) : au client, coordonnateur SPS proposé en destinataire
+    case 'ppsps': {
+      const a = Store.get('affaires', id), d = a && ppspsGenere(a);
+      if (!a || !d) return null;
+      const sec = a.securite || {};
+      return { ref: { col: 'affaires', id }, numero: '', entrepriseId: a.clientId, contactId: a.contactId, chargeId: a.chargeId, autres: sec.coordEmail ? [sec.coordEmail] : [],
+        fichier: `PPSPS ${a.code || a.nom}${d.indice ? ` ind ${d.indice}` : ''}`, html: () => ppspsDocument(a, d.indice || 'A'),
+        vars: { chantier: chantier(a), objet: a.nom || '', indice: d.indice || 'A', lot: sec.lot || '', lot_phrase: sec.lot ? ` (${sec.lot})` : '' },
+        apres: () => { a.securite = { ...(a.securite || {}), envoyeLe: isoDate(new Date()), envoyeA: [clientName(a.clientId), sec.coordEmail].filter(Boolean).join(', ') }; Store.upsert('affaires', a); } };
+    }
     // Fiche des habilitations préparée (id : clé de l'envoi), autorisations signées en annexe
     case 'habilitations': {
       const e = typeof envoisHabilitations !== 'undefined' && envoisHabilitations.get(id);
@@ -295,6 +307,7 @@ async function envoyerParMail(type, id) {
     q('#ml-contacts').querySelectorAll('[data-k]').forEach(btn => btn.onclick = () => { st.roles[btn.dataset.k] = btn.dataset.r; dessinerContacts(); remplirTexte(); });
   };
   dessinerContacts(); remplirTexte();
+  if (ctx.autres && ctx.autres.length) q('#ml-to').value = ctx.autres.join(', ');
   q('#ml-objet').oninput = q('#ml-corps').oninput = () => { st.modifie = true; };
   if (q('#ml-ent')) q('#ml-ent').onchange = e => { st.entrepriseId = e.target.value; initRoles(); dessinerContacts(); remplirTexte(); };
   q('#ml-cancel').onclick = Modal.close;
