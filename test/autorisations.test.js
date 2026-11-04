@@ -53,3 +53,13 @@ test('plans de prévention annuels : à charger, à renouveler, échu', () => {
   assert.deepStrictEqual(a.map(x => [x.entrepriseId, x.etat]), [['e1', 'absent'], ['e2', 'bientot'], ['e4', 'echu']]);
   assert.match(a[2].texte, /charger le nouveau plan/);
 });
+
+test('aptitude médicale : seule condition indispensable (CACES non obligatoire)', () => {
+  assert.ok(A.aptitude('u1', habs, auj).ok);
+  assert.match(A.aptitude('u2', habs, auj).motif, /échue/);
+  assert.match(A.aptitude('u3', habs, auj).motif, /aucune visite/);
+  // Formation interne enregistrée comme habilitation : autorisation possible
+  const avec = [...habs, { id: 'i1', userId: 'u1', cle: 'pont', interne: true, obtenue: '2026-11-04', expire: '2029-11-04' }];
+  const c = A.conditions('u1', 'pont', avec, auj);
+  assert.ok(c.ok); assert.strictEqual(c.jusqua, '2027-06-01');
+});

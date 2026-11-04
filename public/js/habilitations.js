@@ -17,9 +17,9 @@ function rhHabilitations() {
   const auj = isoDate(new Date()), alertes = alertesHabilitations(auj), gens = personnesRH();
   const exp = alertes.filter(a => a.etat === 'expire'), bientot = alertes.filter(a => a.etat === 'bientot');
   const habs = Store.all('habilitations'), alertesPdp = Autorisations.alertesPlans(Store.all('entreprises'), auj);
-  const autor = u => { const l = Autorisations.pourPersonne(u.id, habs, auj); if (!l.length) return '<td class="muted small">—</td>';
-    const ok = l.filter(x => x.ok);
-    return `<td><button class="small ${ok.length ? '' : 'secondary'}" data-autor="${u.id}" title="${esc(l.map(x => `${x.court} : ${x.ok ? `valable jusqu'au ${dateFr(x.jusqua)}` : x.motifs.join(', ')}`).join('\n'))}">📄 ${ok.map(x => x.court).join(', ') || 'à régulariser'}</button></td>`; };
+  // Bouton par personne : autorisations possibles (titre et visite à jour), ou à faire avec une formation interne
+  const autor = u => { const l = Autorisations.pourPersonne(u.id, habs, auj), ok = l.filter(x => x.ok);
+    return `<td><button class="small ${ok.length ? '' : 'secondary'}" data-autor="${u.id}" title="${esc(l.map(x => `${x.court} : ${x.ok ? `valable jusqu'au ${dateFr(x.jusqua)}` : x.motifs.join(', ')}`).join('\n') || 'Autorisation avec formation et évaluation internes (sans CACES)')}">📄 ${ok.map(x => x.court).join(', ') || '+'}</button></td>`; };
   const cellule = (u, cle) => {
     const h = habDe(u.id, cle), e = h ? Echeances.etat(h.expire, auj) : { etat: 'absent' };
     return `<td class="hab-c ${e.etat}"><button class="hab-b" data-hab="${u.id}|${cle}" title="${esc(Echeances.libelleHab(cle))}${h && h.niveau ? ` · ${esc(h.niveau)}` : ''}">${h ? `${h.expire ? dateFr(h.expire) : 'sans date'}${h.niveau ? `<br><span class="small">${esc(h.niveau)}</span>` : ''}` : '<span class="muted">+</span>'}</button></td>`;
@@ -83,7 +83,7 @@ function editerHabilitation(uid, cle) {
 document.addEventListener('click', e => {
   const t = e.target, b = t.closest('[data-hab]');
   if (b) { const [uid, cle] = b.dataset.hab.split('|'); editerHabilitation(uid, cle); return; }
-  const x = t.closest('[data-autor]'); if (x) return genererAutorisations([x.dataset.autor]);
+  const x = t.closest('[data-autor]'); if (x) return choisirAutorisations(x.dataset.autor);
   const r = t.closest('[data-rdv]'); if (r) return saisirRdv(r.dataset.rdv);
   const pc = t.closest('[data-pdp-charger]'); if (pc) { const en = Store.get('entreprises', pc.dataset.pdpCharger); if (en) editerPlanPrevention(en, null); return; }
   const pm = t.closest('[data-pdp-modif]'); if (pm) { const [eid, pid] = pm.dataset.pdpModif.split('|'); const en = Store.get('entreprises', eid); if (en) editerPlanPrevention(en, pid); return; }
@@ -136,14 +136,15 @@ function autorisationHtml(u, t, c) {
       ${l('Nom', `<strong>${esc(u.nom)}</strong>`)}${l('Qualification', esc(qualifDe(u)))}
       ${l(t.cle === 'hauteur' ? 'Travaux autorisés' : 'Équipements', esc(t.objet))}
       ${l(t.cle === 'hauteur' ? 'Équipements de protection' : 'Catégories autorisées', esc((h && h.niveau) || t.categories))}
-      ${l('Formation / titre', `${esc(t.formation)}${h && h.numero ? ` – n° ${esc(h.numero)}` : ''}${h && h.obtenue ? ` – obtenu le ${dateFr(h.obtenue)}` : ''}${h && h.expire ? `, valable jusqu'au ${dateFr(h.expire)}` : ''}`)}
+      ${h && h.interne ? l('Formation / évaluation', `Formation et évaluation internes des connaissances et du savoir-faire (sans CACES)${h.obtenue ? ` le ${dateFr(h.obtenue)}` : ''}${h.formateur ? ` par ${esc(h.formateur)}` : ''}${h.expire ? `, à renouveler avant le ${dateFr(h.expire)}` : ''}${h.note ? `<br><span class="small">${esc(h.note)}</span>` : ''}`)
+        : l('Formation / titre', `${esc(t.formation)}${h && h.numero ? ` – n° ${esc(h.numero)}` : ''}${h && h.obtenue ? ` – obtenu le ${dateFr(h.obtenue)}` : ''}${h && h.expire ? `, valable jusqu'au ${dateFr(h.expire)}` : ''}`)}
       ${l('Aptitude médicale', v ? `${esc(v.niveau || 'Apte')} – visite du ${v.obtenue ? dateFr(v.obtenue) : '—'}, prochaine avant le ${v.expire ? dateFr(v.expire) : '—'}` : '')}
-      ${l('Validité de l\'autorisation', `<strong>jusqu'au ${dateFr(c.jusqua)}</strong> (échéance la plus proche du titre et de la visite médicale), sauf retrait`)}
+      ${l('Validité de l\'autorisation', `<strong>jusqu'au ${dateFr(c.jusqua)}</strong> (échéance la plus proche ${h && h.interne ? 'de la formation interne' : 'du titre'} et de la visite médicale), sauf retrait`)}
     </tbody></table>
     <p class="small">${t.cle === 'hauteur'
       ? 'à réaliser des travaux en hauteur avec port du harnais antichute, après vérification du point d\'ancrage et de l\'état de l\'équipement avant chaque utilisation, dans le respect des consignes du chantier et du plan de prévention ou du PPSPS.'
       : 'à conduire les équipements désignés ci-dessus sur les chantiers et sites de l\'entreprise et de ses clients, après accueil sécurité et prise de connaissance des lieux, des consignes et des instructions propres à chaque site (vérification de l\'équipement avant utilisation, balisage, conditions météo).'}</p>
-    <p class="small muted">Conditions de délivrance réunies : aptitude médicale, formation / contrôle des connaissances et du savoir-faire en cours de validité, connaissance des lieux et des instructions à respecter. Références : ${esc(t.textes)}. L'autorisation est retirée en cas d'inaptitude ou de comportement dangereux.</p>
+    <p class="small muted">Conditions de délivrance réunies : aptitude médicale, formation ${h && h.interne ? 'adéquate et évaluation des connaissances et du savoir-faire réalisées par l\'employeur (le CACES n\'est pas obligatoire)' : '/ contrôle des connaissances et du savoir-faire en cours de validité'}, connaissance des lieux et des instructions à respecter. Références : ${esc(t.textes)}. L'autorisation est retirée en cas d'inaptitude ou de comportement dangereux.</p>
     <div class="signatures"><div>Pour ${esc(st.societe || 'l\'entreprise')}<br>Nom, fonction, date et signature :</div><div>Le salarié, ${esc(u.nom)}<br>Lu et approuvé, date et signature :</div></div>`;
 }
 // Personnes × types : une page par autorisation possible ; les autorisations impossibles sont signalées
@@ -249,4 +250,39 @@ function plansAnnuelsHtml(auj) {
       <td>${p ? `${p.debut ? dateFr(p.debut) : ''} → ${p.fin ? dateFr(p.fin) : ''} ` : ''}<span class="badge ${b[0]}">${b[1]}</span></td>
       <td class="actions">${edit ? `<button class="small ${x.etat === 'valide' ? 'secondary' : ''}" data-pdp-charger="${e.id}">📤 Charger le plan ${x.etat === 'valide' && p && p.fin && p.fin.slice(0, 4) > String(an) ? an + 1 : an}</button>${p ? ` <button class="small secondary" data-pdp-modif="${e.id}|${p.id}">Modifier</button>` : ''} <button class="icon small" data-pdp-retirer="${e.id}" title="Ne plus suivre ce client" aria-label="Ne plus suivre">✕</button>` : ''}</td></tr>`; }).join('')}</table></div>` : '<p class="muted">Aucun client suivi.</p>'}
   ${edit ? `<div class="toolbar"><select id="pdp-suivre" style="width:auto"><option value="">+ Suivre le plan annuel d'un client…</option>${autres.map(e => `<option value="${e.id}">${esc(e.nom)}</option>`).join('')}</select></div>` : ''}`;
+}
+
+/* ---------- Autorisations d'une personne : avec CACES, ou formation et évaluation internes ---------- */
+function choisirAutorisations(uid) {
+  const u = Store.get('users', uid); if (!u) return;
+  const auj = isoDate(new Date()), habs = Store.all('habilitations'), apt = Autorisations.aptitude(uid, habs, auj), peut = Store.can('write', 'habilitations');
+  const mois = cle => (Echeances.HABILITATIONS.find(x => x[0] === cle) || [])[2] || 36;
+  const lignes = Autorisations.TYPES.map(t => ({ t, c: Autorisations.conditions(uid, t.cle, habs, auj) }));
+  const box = Modal.open(`<h2 style="margin-top:0">Autorisations – ${esc(u.nom)}</h2>
+    <p class="small ${apt.ok ? 'muted' : 'warn-text'}">${apt.ok ? `Aptitude médicale à jour jusqu'au ${dateFr(apt.visite.expire)}.` : `Aucune autorisation possible : ${esc(apt.motif)}. L'aptitude médicale est obligatoire (R4323-56) : chargez l'attestation de visite dans la case « Visite méd. ».`}</p>
+    <p class="small muted">Le CACES n'est pas obligatoire : sans CACES valide, l'autorisation repose sur une formation et une évaluation internes (connaissances, savoir-faire, connaissance des lieux), enregistrées comme habilitation.</p>
+    <div class="table-wrap"><table class="compact"><tr><th></th><th>Autorisation</th><th>Base</th></tr>
+    ${lignes.map(({ t, c }) => { const titre = c.hab && Autorisations.valide(c.hab, auj);
+      return `<tr><td><input type="checkbox" data-au="${t.cle}" ${apt.ok && titre ? 'checked' : ''} ${apt.ok && peut ? '' : 'disabled'} aria-label="${esc(t.court)}"></td><td><strong>${esc(t.court)}</strong><br><span class="small muted">${esc(t.objet)}</span></td>
+        <td class="small">${titre ? `${c.hab.interne ? 'Formation interne' : esc(t.formation)} valable jusqu'au ${dateFr(c.hab.expire)}` : `<span class="warn-text">${c.hab ? `${esc(t.formation)} expiré le ${dateFr(c.hab.expire)}` : `Pas de ${t.cle === 'hauteur' ? 'formation enregistrée' : 'CACES'}`}</span> → formation interne
+          <div class="au-int" data-int="${t.cle}" hidden><label>Formé et évalué le <input type="date" data-k="obtenue" value="${auj}"></label> <label>par <input data-k="formateur" value="${esc(Store.me.nom || '')}" style="width:150px"></label>
+          <label>valable <input type="number" data-k="mois" value="${mois(t.cle)}" min="1" style="width:60px"> mois</label>
+          <label>Catégories / équipements <input data-k="niveau" value="${esc(t.cle === 'hauteur' ? 'Harnais, longe, antichute à rappel automatique' : '')}" placeholder="${esc(t.categories)}" style="width:100%"></label></div>`}</td></tr>`; }).join('')}</table></div>
+    <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="au-x">Fermer</button>${apt.ok && peut ? '<button id="au-ok">📄 Générer les autorisations</button>' : ''}</div>`);
+  const $ = s => box.querySelector(s);
+  $('#au-x').onclick = Modal.close;
+  box.querySelectorAll('[data-au]').forEach(cb => cb.onchange = () => { const z = box.querySelector(`[data-int="${cb.dataset.au}"]`); if (z) z.hidden = !cb.checked; });
+  if (!$('#au-ok')) return;
+  $('#au-ok').onclick = () => {
+    const cles = [...box.querySelectorAll('[data-au]:checked')].map(cb => cb.dataset.au);
+    if (!cles.length) return notify('Cochez au moins une autorisation.');
+    // Sans titre valide : la formation et l'évaluation internes deviennent une habilitation (échéance, alertes)
+    for (const cle of cles) {
+      const z = box.querySelector(`[data-int="${cle}"]`); if (!z) continue;
+      const v = k => z.querySelector(`[data-k="${k}"]`).value.trim();
+      if (!v('obtenue') || !v('formateur')) return notify(`${Autorisations.type(cle).court} : indiquez la date de la formation et le nom du formateur / évaluateur.`);
+      Store.upsert('habilitations', { userId: uid, cle, interne: true, niveau: v('niveau') || 'Formation interne', numero: '', formateur: v('formateur'), obtenue: v('obtenue'), expire: Echeances.ajouterMois(v('obtenue'), num(v('mois')) || mois(cle)), fichierId: '' });
+    }
+    Modal.close(); genererAutorisations([uid], cles);
+  };
 }

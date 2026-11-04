@@ -22,6 +22,15 @@ const Autorisations = (() => {
   const derniere = (habs, uid, cle) => habs.filter(h => h.userId === uid && h.cle === cle).sort((a, b) => (b.expire || '').localeCompare(a.expire || ''))[0] || null;
   const valide = (h, auj) => !!h && (!h.expire || h.expire >= auj) && (!h.obtenue || h.obtenue <= auj);
 
+  // Aptitude médicale : seule condition indispensable (le CACES n'est pas obligatoire : l'employeur peut former et
+  // évaluer lui-même le salarié, R4323-55 et R4323-56)
+  function aptitude(uid, habs, auj) {
+    const v = derniere(habs, uid, 'visite');
+    if (!v) return { ok: false, motif: 'aucune visite médicale enregistrée', visite: null };
+    if (!valide(v, auj)) return { ok: false, motif: `visite médicale échue le ${fr(v.expire)}`, visite: v };
+    if (/inapte/i.test(v.niveau || '')) return { ok: false, motif: 'avis médical d\'inaptitude', visite: v };
+    return { ok: true, motif: '', visite: v };
+  }
   // Conditions de délivrance d'une autorisation : habilitation (CACES / formation) en cours de validité et visite
   // médicale à jour. Validité de l'autorisation = la plus proche des deux échéances.
   function conditions(uid, cle, habs, auj) {
@@ -79,6 +88,6 @@ const Autorisations = (() => {
   }
   const fr = s => { const [a, m, j] = String(s || '').split('-'); return a ? `${j}/${m}/${a}` : ''; };
 
-  return { TYPES, type, conditions, pourPersonne, rendezVousVisite, recap, etatPlanAnnuel, clientSuivi, alertesPlans, valide };
+  return { TYPES, type, aptitude, conditions, pourPersonne, rendezVousVisite, recap, etatPlanAnnuel, clientSuivi, alertesPlans, valide };
 })();
 if (typeof module !== 'undefined') module.exports = Autorisations;
