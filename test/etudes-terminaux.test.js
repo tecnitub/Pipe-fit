@@ -68,3 +68,24 @@ test('une ligne par appareil, maître / esclave', () => {
   assert.match(l.find(q => q.rep === 'CA-02').afAuto, /esclave de CA-01/);
   assert.strictEqual(r.tableaux[0].entetes[1], 'Pièce');
 });
+
+test('réseau arborescent : branches reliées aux terminaux (débit au régime de la production, ΔP de la fiche + vanne)', () => {
+  require('../etudes/public/js/equilibrage');
+  const Eq = require('../etudes/public/js/equilibrage');
+  const pid = { id: 'p1', type: 'pid', titre: 'Production', entrees: { ...N.defauts('pid'), reseau: 'ch-55-45' } };
+  const term = { id: 't1', type: 'terminaux', titre: 'Terminaux', entrees: { ...N.defauts('terminaux'), prodChaud: 'p1', dpVanne: 12, appareils: [
+    { rep: 'CA-01', local: 'Bureau 1', type: 'cassette2', Pch: 3, Pfr: 3.5, batterie: '2t', vanne: '2v', dpEauC: 18, dpEauF: 22, Pvent: 50 },
+    { rep: 'CA-02', local: 'Bureau 2', type: 'cassette2', Pch: 2, Pfr: 2.5, batterie: '2t', vanne: '2v', Pvent: 50 }] } };
+  const arbo = { id: 'a1', type: 'arbo', titre: 'Réseau', entrees: { ...N.defauts('arbo'), troncons: [{ rep: 'C', amont: '', nom: 'Collecteur', L: 10, zeta: 4 },
+    { rep: 'B1', amont: 'C', L: 8, zeta: 5, emetteur: 't1:CA-01' }, { rep: 'B2', amont: 'C', L: 12, zeta: 5, emetteur: 't1:CA-02' }] } };
+  const et = { notes: [pid, term, arbo] };
+  assert.deepStrictEqual(Eq.emetteursEtude(et, 'chaud').map(x => x.cle), ['t1:CA-01', 't1:CA-02']);
+  const rt = Liens.resoudre(et, term);
+  assert.strictEqual(rt.entrees.TcAller, 55); assert.ok(rt.verrous.TcAller);
+  const ra = Liens.resoudre(et, arbo), b1 = ra.entrees.troncons[1];
+  assert.strictEqual(b1.P, 3); assert.strictEqual(b1.dpEm, 30); assert.ok(Math.abs(b1.Q - 3 / (1.163 * 10)) < 0.001);
+  assert.ok(ra.verrous['troncons.1.Q'] && ra.verrous['troncons.2.dpEm']);
+  assert.strictEqual(ra.entrees.troncons[2].dpEm, 12);
+  const r = N.calculer('arbo', ra.entrees);
+  assert.ok(Number.isFinite(r.valeurs.Qp || r.valeurs.Q || 0));
+});

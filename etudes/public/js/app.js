@@ -653,6 +653,7 @@ Vues.note = {
         ${n.type === 'cta' ? `<button class="secondaire" id="cta-reseau">🌬️ ${Liens.reseauxDeCta(et.notes, n).some(x => x.type === 'aero') ? 'Ouvrir le schéma aéraulique relié' : 'Créer le schéma aéraulique relié (gaines, bouches)'}</button>` : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
         ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button>' : ''}
+        ${n.type === 'arbo' ? '<button class="secondaire" id="arbo-emetteurs" title="Une branche par terminal ou batterie de CTA de l\'étude, reliée : puissance, débit et pertes de charge remplis ; il reste à choisir le tronçon amont et la longueur">🌀 Ajouter les émetteurs de l\'étude</button>' : ''}
         ${n.type === 'cable' ? '<button id="cable-reprendre">🔌 Reprendre les liaisons de l\'alimentation électrique</button>' : ''}<span class="espace"></span><button class="secondaire" id="supprimer">Supprimer ce calcul</button></div></div>`;
   },
   bind: (root, et, noteId) => {
@@ -708,6 +709,19 @@ Vues.note = {
       location.hash = `#/etude/${et.id}/${c.id}`;
     };
     // Alimentation électrique : équipements repris des autres calculs (schéma, réseaux, CTA…), choix déjà faits conservés
+    // Réseau arborescent : une branche par émetteur de l'étude non encore relié, rattachée au premier tronçon de départ
+    const ae = root.querySelector('#arbo-emetteurs');
+    if (ae) ae.onclick = () => {
+      const tr = n.entrees.troncons = n.entrees.troncons || [], dispo = Equilibrage.emetteursEtude(et, n.entrees.saison), deja = new Set(tr.map(t => t.emetteur).filter(Boolean));
+      const nouveaux = dispo.filter(x => !deja.has(x.cle));
+      if (!nouveaux.length) return toast(dispo.length ? 'Tous les émetteurs de l\'étude ont déjà leur branche.' : 'Aucun émetteur dans l\'étude : ajoutez un calcul « Terminaux » ou une CTA.', 5000);
+      let racine = tr.find(t => !String(t.amont || '').trim() && String(t.rep || '').trim());
+      if (!racine) { racine = { rep: 'C', amont: '', nom: 'Départ pompe → collecteur', L: 10, zeta: 4, tube: '', P: '', Q: '', dpEm: '' }; tr.unshift(racine); }
+      const reps = new Set(tr.map(t => t.rep));
+      nouveaux.forEach(x => { let r = x.rep, k = 2; while (reps.has(r)) r = `${x.rep}-${k++}`; reps.add(r); tr.push({ rep: r, amont: racine.rep, nom: x.nom, L: 10, zeta: 5, tube: '', emetteur: x.cle, P: '', Q: '', dpEm: '' }); });
+      enregistrer(et); App.render();
+      toast(`${nouveaux.length} branche(s) ajoutée(s), rattachées à « ${racine.rep} » : puissance, débit et pertes de charge repris des émetteurs ; corrigez le tronçon amont et la longueur de chacune.`, 7000);
+    };
     const rep = root.querySelector('#elec-reprendre');
     if (rep) rep.onclick = () => {
       const r = Electricite.fusionner((n.entrees || {}).equipements, Electricite.equipementsEtude(et, Liens), new Set(et.notes.map(x => x.id)));

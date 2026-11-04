@@ -8,11 +8,25 @@ const Equilibrage = ((D, C, N) => {
   const VANNES = [[15, 2.52], [20, 5.7], [25, 8.7], [32, 14.2], [40, 19.2], [50, 33], [65, 85], [80, 120], [100, 190], [125, 300], [150, 420], [200, 765]];
   const vannePour = Kv => { const v = VANNES.find(([, k]) => Kv <= k) || VANNES[VANNES.length - 1]; return { dn: v[0], Kvs: v[1], ouverture: Kv / v[1] }; };
 
+  // Émetteurs de l'étude proposés aux branches : terminaux (cassettes, ventilo-convecteurs…) et batteries des CTA
+  function emetteursEtude(et, saison = 'chaud') {
+    const out = [], notes = (et && et.notes) || [], froid = saison === 'froid';
+    notes.forEach((n, ni) => {
+      if (n.type === 'terminaux') ((n.entrees || {}).appareils || []).forEach(a => {
+        const T = typeof Terminaux !== 'undefined' ? Terminaux : null, b = a.batterie || 'chaude';
+        const ok = froid ? ['froide', '2t', '4t', 'froide+elec'].includes(b) : ['chaude', '2t', '4t'].includes(b);
+        if (a.rep && ok) out.push({ cle: `${n.id}:${a.rep}`, rep: a.rep, nom: a.local || '', libelle: `${a.rep}${a.local ? ` — ${a.local}` : ''} (${T && T.TYPES[a.type] ? T.TYPES[a.type][0] : 'terminal'})` });
+      });
+      if (n.type === 'cta' && (!froid || (n.entrees || {}).froid !== 'non')) out.push({ cle: `${n.id}:${froid ? 'bf' : 'bc'}`, rep: `BAT-N${ni + 1}`, nom: n.titre, libelle: `${n.titre} — batterie ${froid ? 'froide' : 'chaude'}` });
+    });
+    return out;
+  }
   N.TYPES.arbo = {
     titre: 'Réseau arborescent et équilibrage', icone: '🌳', famille: 'Hydraulique',
     description: 'Collecteur, antennes et émetteurs : débits cumulés, diamètres, circuit le plus défavorisé, pompe et réglage des vannes d\'équilibrage.',
     champs: [{ g: 'Fluide' }, { k: 'fluide', l: 'Fluide', t: 's', o: N.optFluides, d: 'eau' }, { k: 'T', l: 'Température moyenne du fluide', u: '°C', d: 60 },
       { k: 'dT', l: 'Écart de température aux émetteurs', u: 'K', d: 15 },
+      { k: 'saison', l: 'Émetteurs repris : batteries', t: 's', o: [['chaud', 'Chaudes (puissance et débit chaud)'], ['froid', 'Froides (eau glacée)']], d: 'chaud' },
       { g: 'Réseau' }, { k: 'serie', l: 'Série de tubes', t: 's', o: Object.entries(D.SERIES).map(([k, s]) => [k, s.libelle]), d: 'acier-10216' },
       { k: 'vmax', l: 'Vitesse maximale (dimensionnement auto)', u: 'm/s', d: 1.5 }, { k: 'Rmax', l: 'Perte linéique maxi (dimensionnement auto)', u: 'Pa/m', d: 150 },
       { k: 'troncons', l: 'Tronçons (un tronçon sans tronçon en aval alimente un émetteur)', t: 'lignes', d: [
@@ -26,7 +40,8 @@ const Equilibrage = ((D, C, N) => {
         { rep: 'A3', amont: 'C', nom: 'CTA', L: 10, zeta: 6, tube: '', P: 60, dpEm: 25 }],
       colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'amont', l: 'Amont (vide = pompe)', t: 't' }, { k: 'nom', l: 'Désignation', t: 't' },
         { k: 'L', l: 'Longueur aller (m)' }, { k: 'zeta', l: 'Σζ aller + retour' }, { k: 'sing', l: 'Singularités de l\'aller (comptées aussi au retour ; remplacent Σζ)', t: 't' }, { k: 'tube', l: 'Tube', t: 's', o: e => [['', 'Auto'], ...optTubes(e)] },
-        { k: 'P', l: 'Puissance émetteur (kW)' }, { k: 'dpEm', l: 'ΔP émetteur + vanne de régulation (kPa)' }] },
+        { k: 'emetteur', l: 'Émetteur de l\'étude (remplit puissance, débit et ΔP)', t: 's', o: (e, et) => [['', 'Saisie'], ...emetteursEtude(et, e.saison).map(x => [x.cle, x.libelle])] },
+        { k: 'P', l: 'Puissance émetteur (kW)' }, { k: 'Q', l: 'Débit émetteur (m³/h ; vide = P / ΔT)' }, { k: 'dpEm', l: 'ΔP émetteur + vanne de régulation (kPa)' }] },
       { g: 'Équilibrage et pompe' },
       { k: 'methode', l: 'Vannes d\'équilibrage', t: 's', o: [['emetteurs', 'Sur chaque émetteur'], ['antennes', 'Sur chaque émetteur et au pied de chaque antenne (vannes partenaires)']], d: 'emetteurs' },
       { k: 'dpMin', l: 'ΔP mini d\'une vanne d\'équilibrage (mesure fiable)', u: 'kPa', d: 3 },
@@ -38,7 +53,7 @@ const Equilibrage = ((D, C, N) => {
       const zetaSing = (x, rep) => { const s = String(x.sing || '').trim(); if (!s) return num(x.zeta); const r = D.singularites(s, false); if (r.inconnus.length) alertes.push(alerte('attention', `${rep} : singularité(s) non reconnue(s) « ${r.inconnus.join(', ')} », non comptée(s).`)); return 2 * r.zeta; };
       const vmax = num(e.vmax, 1.5), Rmax = num(e.Rmax, 150), dT = num(e.dT, 15), dpMin = num(e.dpMin, 3) * 1000, partenaires = e.methode === 'antennes';
       // Arbre des tronçons
-      const tr = (e.troncons || []).map((x, i) => ({ i, rep: String(x.rep || `T${i + 1}`).trim(), amont: String(x.amont || '').trim(), nom: x.nom || '', L: num(x.L), zeta: zetaSing(x, `${x.rep || `T${i + 1}`}`), tubeImpose: x.tube, P: num(x.P), dpEm: num(x.dpEm) * 1000, enfants: [] }));
+      const tr = (e.troncons || []).map((x, i) => ({ i, rep: String(x.rep || `T${i + 1}`).trim(), amont: String(x.amont || '').trim(), nom: x.nom || '', L: num(x.L), zeta: zetaSing(x, `${x.rep || `T${i + 1}`}`), tubeImpose: x.tube, P: num(x.P), Qimp: num(x.Q), dpEm: num(x.dpEm) * 1000, enfants: [] }));
       const parRep = new Map();
       tr.forEach(t => { if (parRep.has(t.rep)) alertes.push(alerte('erreur', `Repère ${t.rep} en double.`)); else parRep.set(t.rep, t); });
       const racines = [];
@@ -53,10 +68,11 @@ const Equilibrage = ((D, C, N) => {
       tr.filter(t => !vus.has(t)).forEach(t => { alertes.push(alerte('erreur', `${t.rep} : boucle dans les tronçons amont, tronçon ignoré.`)); });
       const actifs = tr.filter(t => vus.has(t)), terminaux = actifs.filter(t => !t.enfants.length);
       // Débits cumulés depuis les émetteurs
-      const debit = t => { t.Q = t.enfants.length ? t.enfants.reduce((a, c) => a + debit(c), 0) : (dT > 0 ? t.P * 1000 / (f.rho * f.cp * dT) * 3600 : 0); return t.Q; };
+      // Débit d'un émetteur : imposé (régime propre de l'émetteur, fiche technique), sinon P / (ρ · cp · ΔT)
+      const debit = t => { t.Q = t.enfants.length ? t.enfants.reduce((a, c) => a + debit(c), 0) : t.Qimp > 0 ? t.Qimp : (dT > 0 ? t.P * 1000 / (f.rho * f.cp * dT) * 3600 : 0); return t.Q; };
       racines.forEach(debit);
       actifs.filter(t => t.enfants.length && t.P).forEach(t => alertes.push(alerte('attention', `${t.rep} : puissance saisie sur un tronçon qui a des tronçons en aval, non prise en compte (créer un tronçon pour l'émetteur).`)));
-      terminaux.filter(t => !(t.P > 0)).forEach(t => alertes.push(alerte('erreur', `${t.rep} : tronçon terminal sans puissance d'émetteur.`)));
+      terminaux.filter(t => !(t.P > 0) && !(t.Qimp > 0)).forEach(t => alertes.push(alerte('erreur', `${t.rep} : tronçon terminal sans puissance d'émetteur.`)));
       // Diamètres et pertes de charge (aller + retour)
       actifs.forEach(t => {
         const qv = t.Q / 3600;
@@ -171,6 +187,6 @@ const Equilibrage = ((D, C, N) => {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" data-depart="${cD}" data-retour="${cR}"><rect width="${W}" height="${H}" fill="#fff"/>${out.join('')}</svg>`;
   }
 
-  return { VANNES, vannePour };
+  return { VANNES, vannePour, emetteursEtude };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Notes !== 'undefined' ? Notes : require('./notes'));
 if (typeof module !== 'undefined') module.exports = Equilibrage;

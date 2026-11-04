@@ -57,6 +57,10 @@ const FicheCta = (() => {
         if (kw.length && estBC) pose('PchBC', kw[0], i, 0.1, 5000);
         if (kw.length && estBF) pose('PfrBF', kw[0], i, 0.1, 5000);
       }
+      // Pertes de charge côté eau des batteries (kPa)
+      if (/perte de charge|pertes de charge|delta ?p|pressure drop/.test(x) && /eau|hydraulique|water/.test(x) && (estBC || estBF)) {
+        const k = valeurs(x, 'kpa').filter(n => n > 0 && n < 300); if (k.length) pose(estBF ? 'dpEauBF' : 'dpEauBC', k[0], i);
+      }
       // Pertes de charge côté air
       if (/perte de charge|pertes de charge|delta ?p|\bdp\b|pressure drop|δp|resistance/.test(x) || (/filtre|filter/.test(x) && /\bpa\b/.test(x))) {
         const pa = avecUnite(x, 'pa').filter(n => n > 0 && n <= 1500);
@@ -123,9 +127,10 @@ const FicheCta = (() => {
     dpFiltreAN: ['Filtre d\'air neuf', 'Pa'], dpFiltreR: ['Filtre de reprise', 'Pa'], dpRecup: ['Récupérateur (par flux)', 'Pa'], dpBC: ['Batterie chaude (côté air)', 'Pa'], dpBF: ['Batterie froide (côté air)', 'Pa'],
     rendement: ['Rendement des ventilateurs', '%'], LwS: ['Lw ventilateur de soufflage', 'dB(A)'], LwR: ['Lw ventilateur de reprise', 'dB(A)'],
     PdispoS: ['Pression disponible soufflage', 'Pa'], PdispoR: ['Pression disponible reprise', 'Pa'], PchBC: ['Puissance batterie chaude', 'kW'], PfrBF: ['Puissance batterie froide', 'kW'],
+    dpEauBC: ['Batterie chaude : perte de charge côté eau', 'kPa'], dpEauBF: ['Batterie froide : perte de charge côté eau', 'kPa'],
     PelS: ['Puissance électrique ventilateur soufflage', 'kW'], PelR: ['Puissance électrique ventilateur reprise', 'kW'], SFP: ['SFP', 'W/(m³/s)'], Pbe: ['Batterie électrique', 'kW'],
   };
-  const CONTROLES = ['PdispoS', 'PdispoR', 'PchBC', 'PfrBF', 'PelS', 'PelR', 'SFP'];
+  const CONTROLES = ['PdispoS', 'PdispoR', 'PchBC', 'PfrBF', 'PelS', 'PelR', 'SFP', 'dpEauBC', 'dpEauBF'];
   // Champ de la note pour chaque valeur lue (null : contrôle seulement)
   function champs(type, valeurs) {
     const out = [];

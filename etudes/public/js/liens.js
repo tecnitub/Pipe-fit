@@ -30,6 +30,19 @@ const Liens = ((N, Sc) => {
         verrous[`circuits.${i}.P`] = libelle(src);
       });
     }
+    // Terminaux : régimes d'eau chaude et glacée repris de la production choisie (schéma de principe)
+    if (note.type === 'terminaux') [['prodChaud', 'TcAller', 'TcRetour', false], ['prodFroid', 'TfAller', 'TfRetour', true]].forEach(([k, kd, kr, froid]) => {
+      if (!e[k]) return;
+      const src = notes.find(n => n.id === e[k] && n.type === 'pid');
+      if (!src) { alertes.push({ niveau: 'attention', texte: 'La production reliée a été supprimée : régimes saisis conservés.' }); return; }
+      const es = brut(src), R = Sc.REGIMES[es.reseau];
+      const rg = es.reseau === 'co' ? (froid ? [es.TdepF, es.TretF] : [es.TdepC, es.TretC]) : es.reseau === 'perso' ? [es.Tdep, es.Tret] : R ? [R[1], R[2]] : null;
+      if (!rg) return;
+      if (froid !== (num(rg[0]) < num(rg[1]))) { alertes.push({ niveau: 'attention', texte: `${libelle(src)} : régime ${rg[0]}/${rg[1]} °C, pas un régime ${froid ? 'd\'eau glacée' : 'd\'eau chaude'}.` }); return; }
+      e[kd] = num(rg[0]); e[kr] = num(rg[1]); verrous[kd] = libelle(src); verrous[kr] = libelle(src);
+    });
+    // Réseau arborescent : branches reliées à un émetteur de l'étude (terminal, batterie de CTA)
+    if (note.type === 'arbo') lienEmetteurs(etude, e, verrous, alertes, libelle, pile);
     // Réseau aéraulique relié à une CTA (et CTA alimentée par ses réseaux)
     const air = lienAir(etude, note, e, verrous, alertes, libelle), eau = note.lien ? null : lienHydro(etude, note, e, verrous, alertes, libelle, pile);
     if (air || eau) return { entrees: e, verrous, alertes, source: air && eau ? { ...air, libelle: `${air.libelle}, ${eau.libelle}`, texte: `${air.texte} ${eau.texte}` } : air || eau };
@@ -56,6 +69,35 @@ const Liens = ((N, Sc) => {
       return { entrees: e, verrous, alertes, source: { note: src, libelle: libelle(src), circuit: c ? c.rep : '' } };
     }
     return { entrees: e, verrous, alertes, source: null };
+  }
+
+  /* ---------- Réseau arborescent ← émetteurs (terminaux, batteries de CTA) ---------- */
+  // Chaque branche reliée prend la puissance, le débit (régime de l'émetteur) et la perte de charge côté eau de la
+  // batterie (fiche technique) + vanne de régulation ; seule l'arborescence (tronçons amont, longueurs) reste à saisir
+  function lienEmetteurs(etude, e, verrous, alertes, libelle, pile) {
+    const notes = (etude && etude.notes) || [], froid = e.saison === 'froid', cache = new Map();
+    const calc = src => { if (!cache.has(src.id)) { try { cache.set(src.id, N.calculer(src.type, resoudre(etude, src, pile).entrees)); } catch (err) { cache.set(src.id, null); } } return cache.get(src.id); };
+    (e.troncons || []).forEach((t, i) => {
+      if (!t || !t.emetteur) return;
+      const [id, cle] = String(t.emetteur).split(':'), src = notes.find(n => n.id === id), rep = t.rep || `Tronçon ${i + 1}`;
+      if (!src) { alertes.push({ niveau: 'attention', texte: `${rep} : l'émetteur relié a été supprimé de l'étude, valeurs saisies conservées.` }); return; }
+      const r = calc(src); if (!r) return;
+      let P, Q, dp;
+      if (src.type === 'terminaux') {
+        const x = (r.valeurs.lignes || []).find(l => l.rep === cle);
+        if (!x) { alertes.push({ niveau: 'attention', texte: `${rep} : terminal ${cle} introuvable dans ${libelle(src)}.` }); return; }
+        const dpV = num((src.entrees || {}).dpVanne, 15), dpB = froid ? x.dpF : x.dpC;
+        P = froid ? x.Pfr : x.Pch; Q = froid ? x.qf : x.qc; dp = (dpB || 0) + (x.nbV ? dpV : 0);
+        if (!dpB) alertes.push({ niveau: 'info', texte: `${rep} : perte de charge eau de ${cle} non renseignée (fiche technique du terminal) : seule la vanne est comptée.` });
+      } else if (src.type === 'cta') {
+        const v = r.valeurs, f = (src.entrees || {}).fiche || {}, dpB = froid ? f.dpEauBF : f.dpEauBC;
+        P = froid ? v.Pfroid : v.Pchaud; Q = froid ? v.QwF : v.QwC; dp = (Number.isFinite(dpB) ? dpB : 20) + 15;
+        if (!Number.isFinite(dpB)) alertes.push({ niveau: 'info', texte: `${rep} : batterie de ${src.titre} : 20 kPa côté eau pris par défaut (fiche technique de la CTA à charger) + 15 kPa de vanne.` });
+      } else return;
+      Object.assign(t, { P: Math.round(num(P) * 100) / 100, Q: Math.round(num(Q) * 1000) / 1000, dpEm: Math.round(dp * 10) / 10 });
+      if (!String(t.nom || '').trim()) t.nom = src.type === 'cta' ? `${src.titre} (batterie ${froid ? 'froide' : 'chaude'})` : cle;
+      ['P', 'Q', 'dpEm'].forEach(k => { verrous[`troncons.${i}.${k}`] = libelle(src); });
+    });
   }
 
   /* ---------- CTA ↔ réseau aéraulique ---------- */
