@@ -127,7 +127,7 @@ function formulaireHtml(type, e, v = {}) {
         <tbody>${lignes.map((l, i) => `<tr>${cols.map(col => `<td>${col.t === 's' ? `<select data-l="${c.k}.${i}.${col.k}"${verrou(v, `${c.k}.${i}.${col.k}`)}>${optionsHtml(optionsDe(col, e), l[col.k])}</select>`
           : `<input data-l="${c.k}.${i}.${col.k}" value="${esc(valeurChamp(l[col.k]))}" ${col.t === 't' ? '' : 'inputmode="decimal" class="nombre"'}${verrou(v, `${c.k}.${i}.${col.k}`)}>`}</td>`).join('')}
           <td><button class="icone" data-suppr-ligne="${c.k}.${i}" title="Supprimer la ligne">✕</button></td></tr>`).join('')}</tbody></table></div>
-        <button class="secondaire petit" data-ajout-ligne="${c.k}">+ Ajouter une ligne</button></div>`;
+        <button class="secondaire petit" data-ajout-ligne="${c.k}">+ Ajouter une ligne</button> <span class="petit muted">ou collez un tableau Excel dans une cellule</span></div>`;
     }
     const lib = `<span>${esc(c.l)}${c.u ? ` <span class="unite">(${esc(c.u)})</span>` : ''}</span>`;
     if (c.t === 's') return `<label>${lib}<select data-k="${c.k}"${verrou(v, c.k)}>${optionsHtml(optionsDe(c, e), e[c.k])}</select></label>`;
@@ -168,6 +168,29 @@ function calculateurHtml(type, e, ctx = ctxSimple(type, e)) {
   return `<div class="calc"><div class="calc-saisie">${formulaireHtml(type, eff.entrees, eff.verrous)}</div><div class="calc-resultats carte" id="resultats">${resultatsHtml(r)}</div></div>
     <div class="carte schema-carte" id="schema" ${tousSchemas(r).length ? '' : 'hidden'}>${schemaHtml(r)}</div>`;
 }
+// Collage d'un tableau (Excel, CSV à tabulations) dans une liste de lignes : colonnes visibles à partir de la cellule
+// choisie ; les listes déroulantes acceptent la valeur ou le libellé. Renvoie le nombre de cellules remplies.
+const normTxt = s => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+function collerTableau(type, e, cle, texte) {
+  const [k, i0, col0] = String(cle).split('.'), c = (Notes.TYPES[type].champs || []).find(x => x.k === k && x.t === 'lignes');
+  if (!c) return 0;
+  const cols = colonnesDe(c, e), j0 = cols.findIndex(x => x.k === col0);
+  if (j0 < 0) return 0;
+  const rangs = String(texte).replace(/\r/g, '').replace(/\n+$/, '').split('\n').map(r => r.split('\t'));
+  const l = e[k] || (e[k] = []);
+  let n = 0;
+  rangs.forEach((r, di) => {
+    const ligne = l[+i0 + di] || (l[+i0 + di] = {});
+    r.forEach((v, dj) => {
+      const col = cols[j0 + dj]; if (!col) return;
+      let val = String(v).trim();
+      if (col.t === 's') { const o = optionsDe(col, e), m = o.find(([kk, lib]) => normTxt(kk) === normTxt(val) || normTxt(lib) === normTxt(val)) || o.find(([, lib]) => normTxt(val) && normTxt(lib).startsWith(normTxt(val))); if (!m) return; val = m[0]; }
+      else if (col.t !== 't') val = val.replace(/\s/g, '').replace(',', '.');
+      ligne[col.k] = val; n++;
+    });
+  });
+  return n;
+}
 function lierCalculateur(root, type, e, changer, ctx = ctxSimple(type, e)) {
   const recalculer = () => {
     const r = ctx.calcul(), z = root.querySelector('#schema');
@@ -192,6 +215,14 @@ function lierCalculateur(root, type, e, changer, ctx = ctxSimple(type, e)) {
   root.querySelectorAll('[data-k]').forEach(el => {
     if (el.tagName === 'SELECT') el.onchange = () => { e[el.dataset.k] = el.value; redessiner(); };
     else el.oninput = () => { e[el.dataset.k] = el.value; recalculer(); };
+  });
+  // Tableau collé depuis Excel (cellules séparées par des tabulations) : rempli à partir de la cellule, lignes ajoutées
+  root.querySelector('.calc-saisie').addEventListener('paste', ev => {
+    const el = ev.target.closest('[data-l]'), txt = ev.clipboardData && ev.clipboardData.getData('text/plain');
+    if (!el || !txt || !/[\t\n]/.test(txt.replace(/\r?\n$/, ''))) return;
+    const n = collerTableau(type, e, el.dataset.l, txt);
+    if (!n) return;
+    ev.preventDefault(); toast(`${n} cellule(s) collée(s) depuis le tableau`, 3500); redessiner();
   });
   root.querySelectorAll('[data-l]').forEach(el => {
     const [k, i, col] = el.dataset.l.split('.');
@@ -364,6 +395,7 @@ Vues.etude = {
         return `<div class="carte petit">📑 <strong>Inventaire du dossier de consultation</strong> : ${nb('producteur')} producteur(s), ${lignes('emetteur')} type(s) d'émetteurs, ${lignes('auxiliaire')} type(s) d'auxiliaires — ${esc([...new Set(inc.map(x => InventaireCVC.GENRES[x.genre] && InventaireCVC.GENRES[x.genre].libelle).filter(Boolean))].join(', '))} <button class="secondaire petit" id="inventaire2">Voir / préremplir</button></div>`; })() : ''}
       ${typeof carteMateriel === 'function' ? carteMateriel(et) : ''}
       ${carteDocuments(et)}
+      ${tableauBordHtml(et)}
       <div class="barre"><h2>Calculs <span class="compte">${et.notes.length}</span></h2><button id="ajout">+ Ajouter un calcul</button><span class="espace"></span>
         ${et.notes.length > 1 ? '<button class="secondaire" id="comparer" disabled title="Cocher au moins deux calculs">⚖️ Comparer la sélection</button>' : ''}</div>
       ${et.notes.length ? `<div class="notes">${et.notes.map((n, i) => { const t = Notes.TYPES[n.type], r = Liens.calculer(et, n), err = r.alertes.filter(x => x.niveau === 'erreur').length, att = r.alertes.filter(x => x.niveau === 'attention').length;
@@ -610,13 +642,29 @@ function fichesInstallationHtml(et, n) {
   const l = Liens.fichesInstallation(et, n);
   if (!l.length) return '';
   const manque = l.filter(x => !x.fiche).length;
-  return `<div class="carte"><h3 style="margin-top:0">📄 Fiches techniques de l'installation ${manque ? `<span class="muted petit">(${manque} à charger)</span>` : '✓'}</h3>
+  return `<div class="carte fiches-install"><h3 style="margin-top:0">📄 Fiches techniques de l'installation ${manque ? `<span class="muted petit">(${manque} à charger)</span>` : '✓'}</h3>
     <div class="defile-x"><table><thead><tr><th>Élément</th><th>Nature</th><th>Fiche technique</th><th>Calcul</th><th></th></tr></thead><tbody>
     ${l.map((x, i) => `<tr><td>${esc(x.element)}</td><td class="petit">${esc(x.nature)}</td><td>${x.fiche ? `✓ ${esc([x.fiche.fabricant, x.fiche.reference].filter(Boolean).join(' ') || x.fiche.nom)}` : '<span class="muted">à charger</span>'}</td>
       <td class="petit"><a href="#/etude/${et.id}/${x.note}">${esc(x.ou)}</a></td><td><button class="secondaire petit" data-fiche-elt="${i}">📄 ${x.fiche ? 'Remplacer' : 'Charger'}</button></td></tr>`).join('')}</tbody></table></div>
     <p class="petit muted">Une fiche chargée ici remplit le calcul de l'élément (terminaux, production, CTA) et se retrouve dans le schéma de principe comme dans le réseau arborescent.</p></div>`;
 }
 let ligneCibleTerminal = '', cibleBouche = '', ciblePoint = '';
+// Vue d'une note : tout, saisie seule, résultats seuls, schéma, fiches techniques (mémorisée sur ce poste)
+const VUES_NOTE = [['tout', 'Tout'], ['saisie', '✏️ Saisie'], ['resultats', '📊 Résultats'], ['schema', '📐 Schéma'], ['fiches', '📄 Fiches techniques']];
+let vueNote = (() => { try { return localStorage.getItem('etudes-vue-note') || 'tout'; } catch (e) { return 'tout'; } })();
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-vue-note]'); if (!b) return;
+  vueNote = b.dataset.vueNote; try { localStorage.setItem('etudes-vue-note', vueNote); } catch (e) { /* stockage indisponible */ }
+  const z = document.querySelector('.vue-note'); if (z) z.dataset.vue = vueNote;
+  document.querySelectorAll('[data-vue-note]').forEach(x => { x.classList.toggle('actif', x === b); x.setAttribute('aria-selected', x === b); });
+});
+// Onglets sans contenu (pas de schéma, pas de fiches) masqués
+function majVuesNote(root) {
+  const vide = { schema: () => { const s = root.querySelector('#schema'); return !s || s.hidden; }, fiches: () => !root.querySelector('.fiches-install') };
+  root.querySelectorAll('[data-vue-note]').forEach(b => { b.hidden = !!(vide[b.dataset.vueNote] && vide[b.dataset.vueNote]()); });
+  const actif = root.querySelector(`[data-vue-note="${vueNote}"]`), z = root.querySelector('.vue-note');
+  if (z && actif && actif.hidden) { z.dataset.vue = 'tout'; root.querySelectorAll('[data-vue-note]').forEach(x => x.classList.toggle('actif', x.dataset.vueNote === 'tout')); }
+}
 document.addEventListener('click', ev => {
   const b = ev.target.closest('[data-fiche-elt]'); if (!b) return;
   const m = /#\/etude\/([^/]+)\/([^/?]+)/.exec(location.hash); if (!m) return;
@@ -700,8 +748,11 @@ Vues.note = {
         <input class="titre-note" data-n="titre" value="${esc(n.titre)}" aria-label="Titre du calcul"><span class="muted petit" id="etat-enreg"></span></div>
       <p class="muted petit">${esc(t.description)}</p>
       ${lien ? `<div class="bandeau-lien">🔗 ${esc(lien)} <button class="secondaire petit" id="detacher">Détacher</button></div>` : ''}
+      <div class="onglets vues-note" role="tablist">${VUES_NOTE.map(([k, l]) => `<button role="tab" class="onglet${k === vueNote ? ' actif' : ''}" aria-selected="${k === vueNote}" data-vue-note="${k}">${l}</button>`).join('')}</div>
+      <div class="vue-note" data-vue="${vueNote}">
       ${calculateurHtml(n.type, n.entrees, ctx)}
       ${['pid', 'arbo', 'sanitaire'].includes(n.type) || (n.type === 'aero' && n.entrees.structure === 'arborescence') ? fichesInstallationHtml(et, n) : ''}
+      </div>
       <div class="carte"><label class="champ-libre">Commentaire (repris dans la note de calcul)<textarea data-n="commentaire" rows="3">${esc(n.commentaire)}</textarea></label>
       ${emissionsHtml(et, n)}
       <div class="actions-ligne"><button id="emettre-note">🖋️ Émettre l'indice ${esc(Revisions.prochainIndice(n))} (PDF avec cartouche)</button><button class="secondaire" id="pdf-note">📄 Brouillon PDF</button><button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="dupliquer">Dupliquer</button>
@@ -720,6 +771,7 @@ Vues.note = {
     const n = et.notes.find(x => x.id === noteId);
     if (!n) return;
     lierCalculateur(root, n.type, n.entrees, redessin => { enregistrer(et); if (redessin) avecFocus(App.render); }, ctxEtude(et, n));
+    majVuesNote(root);
     const det = root.querySelector('#detacher');
     if (det) det.onclick = async () => { if (await confirmer('Détacher ce calcul ? Les valeurs reprises deviennent des valeurs saisies et ne suivront plus la note d\'origine.', 'Détacher')) { Liens.detacher(et, n); enregistrer(et); App.render(); } };
     // CTA : schéma aéraulique relié (créé avec les zones par défaut à adapter), ouvert s'il existe
@@ -851,6 +903,28 @@ Vues.note = {
 };
 
 // Émissions d'un calcul : indice émis, modifié depuis (badge de la liste des calculs) ; historique avec les modifications
+// Tableau de bord de l'étude : calculs en erreur, points d'attention, fiches techniques à charger, notes non émises ou
+// modifiées depuis leur émission ; chaque point mène au calcul concerné
+function tableauBordHtml(et) {
+  if (!(et.notes || []).length) return '';
+  const lib = n => `N${et.notes.indexOf(n) + 1} — ${n.titre}`, aFaire = [], fichesVues = new Set();
+  let err = 0, att = 0, nonEmis = 0, modifies = 0, fiches = 0;
+  et.notes.forEach(n => {
+    let r; try { r = Liens.calculer(et, n); } catch (e) { r = { alertes: [{ niveau: 'erreur', texte: `Calcul impossible : ${e.message}` }] }; }
+    r.alertes.filter(a => a.niveau === 'erreur').forEach(a => { err++; aFaire.push({ n, niveau: 'erreur', texte: a.texte }); });
+    att += r.alertes.filter(a => a.niveau === 'attention').length;
+    const d = Revisions.derniere(n);
+    if (!d) nonEmis++;
+    else { contexteEtude = et; if (Revisions.modifieDepuis(n, Liens.resoudre(et, n).entrees)) { modifies++; aFaire.push({ n, niveau: 'attention', texte: `Modifié depuis l'émission de l'indice ${d.indice} : à réémettre.` }); } }
+    if (['pid', 'arbo', 'sanitaire'].includes(n.type) || (n.type === 'aero' && (n.entrees || {}).structure === 'arborescence')) {
+      Liens.fichesInstallation(et, n).forEach(x => { const k = `${x.note}|${x.element}`; if (fichesVues.has(k)) return; fichesVues.add(k); if (!x.fiche) { fiches++; if (fiches <= 6) aFaire.push({ n, niveau: 'info', texte: `Fiche technique à charger : ${x.element} (${x.nature}).` }); } });
+    }
+  });
+  const tuile = (v, l, c) => `<div class="tuile ${v ? c : 'ok'}"><strong>${v}</strong><span>${l}</span></div>`;
+  return `<div class="carte tableau-bord"><h3 style="margin-top:0">📊 Tableau de bord de l'étude</h3>
+    <div class="tuiles">${tuile(err, 'erreur(s) de calcul', 'erreur')}${tuile(att, 'point(s) d\'attention', 'attention')}${tuile(fiches, 'fiche(s) technique(s) à charger', 'attention')}${tuile(nonEmis, 'calcul(s) jamais émis', 'attention')}${tuile(modifies, 'modifié(s) depuis l\'émission', 'erreur')}</div>
+    ${aFaire.length ? `<ul class="a-faire">${aFaire.slice(0, 14).map(x => `<li class="${x.niveau}"><a href="#/etude/${et.id}/${x.n.id}">${esc(lib(x.n))}</a> : ${esc(x.texte)}</li>`).join('')}${aFaire.length > 14 ? `<li class="muted">… et ${aFaire.length - 14} autre(s)</li>` : ''}</ul>` : '<p class="petit muted">✓ Rien à reprendre : calculs sans erreur, fiches chargées, notes émises à jour.</p>'}</div>`;
+}
 function etatEmission(et, n) {
   const d = Revisions.derniere(n);
   if (!d) return ' <span class="badge" title="Jamais émis">non émis</span>';

@@ -17,6 +17,9 @@ jobs:
           node-version: 22
       - run: npm ci --no-audit --no-fund
       - run: npm test
+      # Tests des écrans (navigateur) sur la version de démonstration
+      - run: npm i --no-save --no-audit --no-fund playwright && npx playwright install --with-deps chromium
+      - run: npm run test:e2e
       - run: sudo apt-get update && sudo apt-get install -y nsis
       - run: bash installer/build.sh
       - uses: actions/upload-artifact@v4
@@ -24,6 +27,8 @@ jobs:
           name: PipeFitCRM-Setup
           path: dist/*.exe
       - run: bash deploy/pack.sh
+      # Contrôle du pack : contenu, installation à blanc (3 serveurs), base d'une version précédente
+      - run: npm run verifier-pack
       - uses: actions/upload-artifact@v4
         with:
           name: PipeFit-Pack

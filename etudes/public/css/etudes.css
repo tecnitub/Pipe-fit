@@ -86,6 +86,25 @@ table.comparaison tr.synthese td { font-weight: 700; }
 input[data-verrou], select[data-verrou] { background: var(--bleu-clair); color: var(--bleu); border-style: dashed; opacity: 1; }
 
 /* Onglets du panneau des résultats (réglementation, régulation) */
+/* Vues d'une note et tableau de bord de l'étude */
+.vue-note[data-vue="saisie"] .calc { grid-template-columns: minmax(0, 1fr); }
+.vue-note[data-vue="saisie"] .calc-resultats, .vue-note[data-vue="saisie"] #schema, .vue-note[data-vue="saisie"] .fiches-install,
+.vue-note[data-vue="resultats"] .calc-saisie, .vue-note[data-vue="resultats"] #schema, .vue-note[data-vue="resultats"] .fiches-install,
+.vue-note[data-vue="schema"] .calc, .vue-note[data-vue="schema"] .fiches-install,
+.vue-note[data-vue="fiches"] .calc, .vue-note[data-vue="fiches"] #schema { display: none !important; }
+.vue-note[data-vue="resultats"] .calc { grid-template-columns: minmax(0, 1fr); }
+.vue-note[data-vue="resultats"] .calc-resultats { position: static; max-height: none; }
+.tuiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.tuile { border: 1px solid var(--bord); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; }
+.tuile strong { font-size: 1.5em; }
+.tuile span { font-size: .85em; color: var(--muted); }
+.tuile.erreur { border-color: #e5a3a3; background: #fdf1f1; }
+.tuile.attention { border-color: #ecd28f; background: #fdf8ea; }
+.tuile.ok strong { color: #2e7d4f; }
+.a-faire { margin: 0; padding-left: 18px; font-size: .92em; }
+.a-faire li.erreur::marker { color: #c0392b; }
+.a-faire li.attention::marker { color: #b7791f; }
+@media (prefers-color-scheme: dark) { .tuile.erreur { background: #3a2020; } .tuile.attention { background: #3a3220; } }
 .onglets { display: flex; gap: 4px; border-bottom: 2px solid var(--bord); margin: -4px 0 12px; flex-wrap: wrap; }
 .onglet { background: transparent; color: var(--muted); border-radius: 8px 8px 0 0; padding: 7px 14px; font-weight: 600; margin-bottom: -2px; border-bottom: 2px solid transparent; }
 .onglet:hover { color: var(--bleu); filter: none; }
