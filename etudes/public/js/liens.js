@@ -43,6 +43,22 @@ const Liens = ((N, Sc) => {
     });
     // Réseau arborescent : branches reliées à un émetteur de l'étude (terminal, batterie de CTA)
     if (note.type === 'arbo') lienEmetteurs(etude, e, verrous, alertes, libelle, pile);
+    // Schéma : puissance des circuits sans bilan ni réseau annexe = somme des terminaux qui y sont rattachés
+    if (note.type === 'pid') {
+      const terms = notes.filter(n => n.type === 'terminaux');
+      (e.circuits || []).forEach((c, i) => {
+        if (!c.rep || c.bilan || c.annexe) return;
+        const cle = `${note.id}|${c.rep}`, srcs = [];
+        let P = 0, Pf = 0, nb = 0;
+        terms.forEach(n => {
+          const r = N.calculer('terminaux', resoudre(etude, n, pile).entrees);
+          (r.valeurs.lignes || []).forEach((x, k) => { const a = ((n.entrees || {}).appareils || []).find(y => y.rep === x.rep); if (a && a.circuit === cle) { P += x.Pch; Pf += x.Pfr; nb++; if (!srcs.includes(n)) srcs.push(n); } });
+        });
+        if (!nb) return;
+        c.P = Math.round(P * 10) / 10; verrous[`circuits.${i}.P`] = `${nb} terminal(aux) de ${srcs.map(libelle).join(', ')}`;
+        if (e.reseau === 'co') { c.Pf = Math.round(Pf * 10) / 10; verrous[`circuits.${i}.Pf`] = verrous[`circuits.${i}.P`]; }
+      });
+    }
     // Réseau aéraulique relié à une CTA (et CTA alimentée par ses réseaux)
     const air = lienAir(etude, note, e, verrous, alertes, libelle), eau = note.lien ? null : lienHydro(etude, note, e, verrous, alertes, libelle, pile);
     if (air || eau) return { entrees: e, verrous, alertes, source: air && eau ? { ...air, libelle: `${air.libelle}, ${eau.libelle}`, texte: `${air.texte} ${eau.texte}` } : air || eau };
@@ -272,6 +288,29 @@ const Liens = ((N, Sc) => {
     if (r.source.texte) return r.source.texte;
     return `Données reprises de ${r.source.libelle}${r.source.circuit ? ` (circuit « ${r.source.circuit} »)` : ''} pour ce ${ROLES[note.lien.role] || 'calcul'} : mises à jour automatiquement.`;
   };
-  return { resoudre, calculer, notesDepuisSchema, detacher, description, reseauxDeCta, circuitDeAnnexe, nf };
+  // Fiches techniques de l'installation, vues depuis le schéma de principe ou le réseau arborescent : production,
+  // terminaux et pompes (rattachés au circuit ou à une branche), CTA ; chaque ligne dit où charger la fiche
+  function fichesInstallation(etude, note) {
+    const notes = (etude && etude.notes) || [], out = [], vus = new Set(), lib = n => `N${notes.indexOf(n) + 1} — ${n.titre}`;
+    const ficheDe = f => (f && (f.fabricant || f.reference || f.nom) ? f : null);
+    const ajTerm = (n, a) => { const k = `${n.id}:${a.rep}`; if (vus.has(k)) return; vus.add(k); out.push({ element: `${a.rep}${a.local ? ` — ${a.local}` : ''}`, nature: (typeof Terminaux !== 'undefined' ? Terminaux : require('./terminaux')).TYPES[a.type] ? (typeof Terminaux !== 'undefined' ? Terminaux : require('./terminaux')).TYPES[a.type][0] : 'Équipement', fiche: ficheDe(a.fiche) || (a.ref ? { reference: a.ref } : null), note: n.id, rep: a.rep, ou: lib(n) }); };
+    const ajNote = (n, nature) => { if (vus.has(n.id)) return; vus.add(n.id); out.push({ element: n.titre, nature, fiche: ficheDe((n.entrees || {}).fiche), note: n.id, ou: lib(n) }); };
+    const terms = notes.filter(n => n.type === 'terminaux');
+    if (note.type === 'pid') {
+      ajNote(note, 'Production (générateur)');
+      const reps = new Set(((note.entrees || {}).circuits || []).map(c => `${note.id}|${c.rep}`));
+      ((note.entrees || {}).circuits || []).forEach(c => { const an = c.annexe && notes.find(n => n.id === c.annexe); if (an && an.type === 'cta') ajNote(an, 'CTA (batteries)'); if (an && an.type === 'arbo') (an.entrees.troncons || []).forEach(t => { if (t.pompe) { const [id, r] = String(t.pompe).split(':'); const tn = notes.find(n => n.id === id), a = tn && (tn.entrees.appareils || []).find(x => x.rep === r); if (a) ajTerm(tn, a); } }); });
+      terms.forEach(n => (n.entrees.appareils || []).forEach(a => { if (reps.has(a.circuit)) ajTerm(n, a); }));
+    } else if (note.type === 'arbo') {
+      const pid = notes.find(n => n.type === 'pid' && ((n.entrees || {}).circuits || []).some(c => c.annexe === note.id));
+      if (pid) ajNote(pid, 'Production (générateur)');
+      ((note.entrees || {}).troncons || []).forEach(t => [t.emetteur, t.pompe].filter(Boolean).forEach(cl => {
+        const [id, r] = String(cl).split(':'), n = notes.find(x => x.id === id); if (!n) return;
+        if (n.type === 'cta') ajNote(n, 'CTA (batteries)'); else { const a = (n.entrees.appareils || []).find(x => x.rep === r); if (a) ajTerm(n, a); }
+      }));
+    }
+    return out;
+  }
+  return { fichesInstallation, resoudre, calculer, notesDepuisSchema, detacher, description, reseauxDeCta, circuitDeAnnexe, nf };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'), typeof Schema !== 'undefined' ? Schema : require('./schema'));
 if (typeof module !== 'undefined') module.exports = Liens;

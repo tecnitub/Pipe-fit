@@ -148,3 +148,17 @@ test('régulation aéraulique : registre motorisé avec sonde de CO₂, registre
   const te = l.find(x => x.rep === 'TE-01');
   assert.strictEqual(te.type, 'ventilateur'); assert.strictEqual(te.P, 0.55); assert.strictEqual(te.alim, 'elec');
 });
+
+test('tout est lié : puissance des circuits du schéma depuis les terminaux rattachés, fiches techniques de l\'installation', () => {
+  const pid = { id: 'p1', type: 'pid', titre: 'Production', entrees: { ...N.defauts('pid'), reseau: 'ch-45-35', circuits: [{ rep: 'Ventilos', emetteur: 'ventilo', P: '', regime: '', regulation: '2v', L: 50 }, { rep: 'Radiateurs', emetteur: 'radiateurs', P: 20, regime: '', regulation: '3v', L: 30 }], fiche: { fabricant: 'Fab', reference: 'PAC-100' } } };
+  const term = { id: 't1', type: 'terminaux', titre: 'Terminaux', entrees: { ...N.defauts('terminaux'), prodChaud: 'p1', appareils: [
+    { rep: 'CA-01', type: 'cassette2', Pch: 3, batterie: 'chaude', vanne: '2v', circuit: 'p1|Ventilos', fiche: { fabricant: 'Fab', reference: 'C-35' } },
+    { rep: 'CA-02', type: 'cassette2', Pch: 4.5, batterie: 'chaude', vanne: '2v', circuit: 'p1|Ventilos' },
+    { rep: 'CA-03', type: 'cassette2', Pch: 2, batterie: 'chaude', vanne: '2v' }] } };
+  const et = { notes: [pid, term] };
+  const r = Liens.resoudre(et, pid);
+  assert.strictEqual(r.entrees.circuits[0].P, 7.5); assert.ok(r.verrous['circuits.0.P']);
+  assert.strictEqual(r.entrees.circuits[1].P, 20);
+  const f = Liens.fichesInstallation(et, pid);
+  assert.deepStrictEqual(f.map(x => [x.element.split(' ')[0], !!x.fiche]), [['Production', true], ['CA-01', true], ['CA-02', false]]);
+});

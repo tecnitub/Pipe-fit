@@ -163,6 +163,7 @@ const Terminaux = ((N) => {
           { k: 'Pvent', l: 'Moteur : ventilateur ou pompe (W)' }, { k: 'Pbe', l: 'Batterie élec. (kW/u)' }, { k: 'tension', l: 'Tension', t: 's', o: [['', 'Auto'], ['mono', '230 V mono'], ['tri', '400 V tri']] },
           { k: 'alim', l: 'Alimenté par', t: 's', o: (e, et) => optAlim(e, et) }, { k: 'regul', l: 'Régulation', t: 's', o: Object.entries(REGULATIONS) },
           { k: 'maitre', l: 'Maître (si esclave)', t: 's', o: e => [['', '—'], ...((e && e.appareils) || []).filter(a => a.rep && a.regul !== 'esclave').map(a => [a.rep, `${a.rep}${a.local ? ` (${a.local})` : ''}`])] },
+          { k: 'circuit', l: 'Circuit du schéma de principe', t: 's', o: (e, et) => [['', '—'], ...(et ? (et.notes || []).map((n, i) => [n, i]).filter(([n]) => n.type === 'pid').flatMap(([n, i]) => ((n.entrees || {}).circuits || []).filter(c => c.rep).map(c => [`${n.id}|${c.rep}`, `N${i + 1} — ${c.rep}`])) : [])] },
           { k: 'ref', l: 'Fabricant, référence', t: 't' }] }],
     calcul: calculer,
   };

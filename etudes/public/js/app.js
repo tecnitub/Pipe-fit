@@ -600,6 +600,28 @@ function appliquerFiche(et, n, lignesTexte, nomFichier) {
   };
 }
 
+// Fiches techniques de tous les éléments de l'installation (production, terminaux, pompes, CTA) vues depuis le schéma
+// de principe ou le réseau arborescent : chargées ici, elles vont dans le calcul de l'élément et reviennent partout
+function fichesInstallationHtml(et, n) {
+  const l = Liens.fichesInstallation(et, n);
+  if (!l.length) return '';
+  const manque = l.filter(x => !x.fiche).length;
+  return `<div class="carte"><h3 style="margin-top:0">📄 Fiches techniques de l'installation ${manque ? `<span class="muted petit">(${manque} à charger)</span>` : '✓'}</h3>
+    <div class="defile-x"><table><thead><tr><th>Élément</th><th>Nature</th><th>Fiche technique</th><th>Calcul</th><th></th></tr></thead><tbody>
+    ${l.map((x, i) => `<tr><td>${esc(x.element)}</td><td class="petit">${esc(x.nature)}</td><td>${x.fiche ? `✓ ${esc([x.fiche.fabricant, x.fiche.reference].filter(Boolean).join(' ') || x.fiche.nom)}` : '<span class="muted">à charger</span>'}</td>
+      <td class="petit"><a href="#/etude/${et.id}/${x.note}">${esc(x.ou)}</a></td><td><button class="secondaire petit" data-fiche-elt="${i}">📄 ${x.fiche ? 'Remplacer' : 'Charger'}</button></td></tr>`).join('')}</tbody></table></div>
+    <p class="petit muted">Une fiche chargée ici remplit le calcul de l'élément (terminaux, production, CTA) et se retrouve dans le schéma de principe comme dans le réseau arborescent.</p></div>`;
+}
+let ligneCibleTerminal = '';
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-fiche-elt]'); if (!b) return;
+  const m = /#\/etude\/([^/]+)\/([^/?]+)/.exec(location.hash); if (!m) return;
+  const et = S.etudes.find(x => x.id === m[1]), n = et && et.notes.find(x => x.id === m[2]); if (!n) return;
+  const x = Liens.fichesInstallation(et, n)[+b.dataset.ficheElt], cible = x && et.notes.find(y => y.id === x.note); if (!cible) return;
+  ligneCibleTerminal = x.rep || '';
+  dialogueFiche(et, cible);
+});
+
 // Fiche technique d'un terminal (cassette, ventilo-convecteur…) : puissances, ventilateur, batterie électrique, tension,
 // reportés sur la ligne choisie (ou une nouvelle ligne)
 function appliquerFicheTerminal(et, n, lignesTexte, nomFichier) {
@@ -608,7 +630,7 @@ function appliquerFicheTerminal(et, n, lignesTexte, nomFichier) {
   const app = n.entrees.appareils = n.entrees.appareils || [];
   const cles = Object.keys(Terminaux.LIBELLES).filter(k => r.valeurs[k] !== undefined);
   const b = Modal.open(`<h2>Fiche technique${nom ? ` : ${esc(nom)}` : ''}</h2><p class="muted petit">${esc(nomFichier)} · ${r.nb} caractéristique(s) reconnue(s).</p>
-    <label>Terminal à remplir <select id="ft-ligne">${app.map((l, i) => `<option value="${i}">${esc([l.rep, l.local, (Terminaux.TYPES[l.type] || [''])[0]].filter(Boolean).join(' — '))}</option>`).join('')}<option value="nouveau" ${app.length ? '' : 'selected'}>+ Nouveau terminal</option></select></label>
+    <label>Terminal à remplir <select id="ft-ligne">${app.map((l, i) => `<option value="${i}" ${l.rep && l.rep === ligneCibleTerminal ? 'selected' : ''}>${esc([l.rep, l.local, (Terminaux.TYPES[l.type] || [''])[0]].filter(Boolean).join(' — '))}</option>`).join('')}<option value="nouveau" ${app.length ? '' : 'selected'}>+ Nouveau terminal</option></select></label>
     <table><thead><tr><th></th><th>Donnée</th><th>Lu sur la fiche</th></tr></thead><tbody>${cles.map(k => `<tr title="${esc(r.sources[k] || '')}"><td><input type="checkbox" data-tf="${k}" checked></td><td>${esc(Terminaux.LIBELLES[k][0])}</td><td><strong>${esc(k === 'tension' ? (r.valeurs[k] === 'tri' ? '400 V tri' : '230 V mono') : String(r.valeurs[k]).replace('.', ','))}</strong> ${esc(Terminaux.LIBELLES[k][1])}</td></tr>`).join('')}</tbody></table>
     ${r.valeurs.Qair ? `<p class="petit muted">Débit d'air : ${esc(String(r.valeurs.Qair))} m³/h${r.valeurs.Kvs ? ` · Kvs de la vanne : ${esc(String(r.valeurs.Kvs).replace('.', ','))}` : ''}</p>` : ''}
     <div class="actions"><button class="secondaire" id="tf-x">Annuler</button><button id="tf-ok">Reprendre les valeurs cochées</button></div>`);
@@ -619,6 +641,8 @@ function appliquerFicheTerminal(et, n, lignesTexte, nomFichier) {
     if (!l) { l = { rep: `T-${String(app.length + 1).padStart(2, '0')}`, local: '', type: 'cassette2', n: 1, Pch: '', Pfr: '', batterie: r.valeurs.Pbe ? 'froide+elec' : '2t', vanne: '2v', Pvent: '', Pbe: '', tension: '', alim: '', ref: '' }; app.push(l); }
     cles.forEach(k => { if (b.querySelector(`[data-tf="${k}"]`).checked) l[Terminaux.LIBELLES[k][2]] = r.valeurs[k]; });
     if (nom) l.ref = nom;
+    l.fiche = { nom: String(nomFichier || '').slice(0, 120), fabricant: r.fabricant, reference: r.reference };
+    ligneCibleTerminal = '';
     enregistrer(et); Modal.close(); App.render(); toast(`Fiche reprise sur ${l.rep} : puissances et données électriques reportées au bilan électrique`, 5000);
   };
 }
@@ -646,6 +670,7 @@ Vues.note = {
       <p class="muted petit">${esc(t.description)}</p>
       ${lien ? `<div class="bandeau-lien">🔗 ${esc(lien)} <button class="secondaire petit" id="detacher">Détacher</button></div>` : ''}
       ${calculateurHtml(n.type, n.entrees, ctx)}
+      ${['pid', 'arbo'].includes(n.type) ? fichesInstallationHtml(et, n) : ''}
       <div class="carte"><label class="champ-libre">Commentaire (repris dans la note de calcul)<textarea data-n="commentaire" rows="3">${esc(n.commentaire)}</textarea></label>
       ${emissionsHtml(et, n)}
       <div class="actions-ligne"><button id="emettre-note">🖋️ Émettre l'indice ${esc(Revisions.prochainIndice(n))} (PDF avec cartouche)</button><button class="secondaire" id="pdf-note">📄 Brouillon PDF</button><button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="dupliquer">Dupliquer</button>
@@ -712,13 +737,17 @@ Vues.note = {
     // Réseau arborescent : une branche par émetteur de l'étude non encore relié, rattachée au premier tronçon de départ
     const ae = root.querySelector('#arbo-emetteurs');
     if (ae) ae.onclick = () => {
-      const tr = n.entrees.troncons = n.entrees.troncons || [], dispo = Equilibrage.emetteursEtude(et, n.entrees.saison), deja = new Set(tr.map(t => t.emetteur).filter(Boolean));
+      // Réseau d'un circuit du schéma de principe : ses terminaux (et ceux non rattachés, qui le deviennent)
+      const pid = et.notes.find(x => x.type === 'pid' && ((x.entrees || {}).circuits || []).some(c => c.annexe === n.id)), circ = pid && pid.entrees.circuits.find(c => c.annexe === n.id), cleC = circ ? `${pid.id}|${circ.rep}` : '';
+      const appDe = cl => { const [id, r] = cl.split(':'), tn = et.notes.find(x => x.id === id); return tn && tn.type === 'terminaux' ? (tn.entrees.appareils || []).find(a => a.rep === r) : null; };
+      const tr = n.entrees.troncons = n.entrees.troncons || [], dispo = Equilibrage.emetteursEtude(et, n.entrees.saison).filter(x => { const a = appDe(x.cle); return !cleC || !a || !a.circuit || a.circuit === cleC; }), deja = new Set(tr.map(t => t.emetteur).filter(Boolean));
       const nouveaux = dispo.filter(x => !deja.has(x.cle));
       if (!nouveaux.length) return toast(dispo.length ? 'Tous les émetteurs de l\'étude ont déjà leur branche.' : 'Aucun émetteur dans l\'étude : ajoutez un calcul « Terminaux » ou une CTA.', 5000);
       let racine = tr.find(t => !String(t.amont || '').trim() && String(t.rep || '').trim());
       if (!racine) { racine = { rep: 'C', amont: '', nom: 'Départ pompe → collecteur', L: 10, zeta: 4, tube: '', P: '', Q: '', dpEm: '' }; tr.unshift(racine); }
       const reps = new Set(tr.map(t => t.rep));
       nouveaux.forEach(x => { let r = x.rep, k = 2; while (reps.has(r)) r = `${x.rep}-${k++}`; reps.add(r); tr.push({ rep: r, amont: racine.rep, nom: x.nom, L: 10, zeta: 5, tube: '', emetteur: x.cle, P: '', Q: '', dpEm: '' }); });
+      if (cleC) nouveaux.forEach(x => { const a = appDe(x.cle); if (a && !a.circuit) a.circuit = cleC; });
       enregistrer(et); App.render();
       toast(`${nouveaux.length} branche(s) ajoutée(s), rattachées à « ${racine.rep} » : puissance, débit et pertes de charge repris des émetteurs ; corrigez le tronçon amont et la longueur de chacune.`, 7000);
     };
