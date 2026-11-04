@@ -79,7 +79,7 @@ const PlanMes = (() => {
       const deja = p.cle && taches.find(t => t.nature === 'mes' && t.pointCle === `${p.etudeId}|${p.cle}`);
       if (deja) { (p.attendus || []).forEach(a => { if (!deja.attendus.some(x => x.libelle === a.libelle)) deja.attendus.push(a); }); deja.lien = deja.lien.replace(/([?&]att=)[^&]*/, `$1${encodeURIComponent(attendusQ(deja.attendus))}`); return; }
       const cle = `pt|${p.etudeId}|${p.noteId}${p.repere ? `|${norm(p.repere)}` : ''}`;
-      taches.push({ cle, pointCle: p.cle ? `${p.etudeId}|${p.cle}` : '', groupe: GROUPES[1], nature: 'mes', type: p.type || 'autre', libelle: txt(p.titre), detail: (p.controles || []).length ? `${p.controles.length} point(s) à tester, liste reprise de l'étude` : 'd\'après le calcul (pas de matériel retenu)', attendus: [...(p.attendus || [])], ...((p.controles || []).length ? { controles: p.controles } : {}), source: p.etude,
+      taches.push({ cle, pointCle: p.cle ? `${p.etudeId}|${p.cle}` : '', groupe: GROUPES[1], nature: 'mes', type: p.type || 'autre', libelle: txt(p.titre), repere: p.repere || '', local: p.local || '', detail: (p.controles || []).length ? `${p.controles.length} point(s) à tester, liste reprise de l'étude` : 'd\'après le calcul (pas de matériel retenu)', attendus: [...(p.attendus || [])], ...((p.controles || []).length ? { controles: p.controles } : {}), source: p.etude,
         lien: `#/mes/new?${q({ chantier: affaireId, type: p.type || 'autre', equipement: txt(p.titre), repere: p.repere, localisation: p.local, plan: cle, att: attendusQ(p.attendus) })}`,
         trouver: r => r.planCle === cle, recs: mises, etatDe: resultatMes });
     });

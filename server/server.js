@@ -1444,7 +1444,7 @@ function serveStatic(req, res, url) {
   if (!file.startsWith(PUBLIC_DIR + path.sep)) { res.writeHead(403); return res.end(); }
   envoyerFichier(res, file);
 }
-const PARTAGES_ETUDES = Object.fromEntries(['donnees.js', 'calculs.js'].map(f => [`/js/etudes/${f}`, path.join(__dirname, '..', 'etudes', 'public', 'js', f)]));
+const PARTAGES_ETUDES = Object.fromEntries(['donnees.js', 'calculs.js', 'fiches-mes.js'].map(f => [`/js/etudes/${f}`, path.join(__dirname, '..', 'etudes', 'public', 'js', f)]));
 function envoyerFichier(res, file) {
   fs.readFile(file, (err, buf) => {
     if (err) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Introuvable'); }

@@ -53,3 +53,18 @@ test('plan de mise en service : une tâche par terminal, repère et local dans l
   assert.match(ts[0].lien, /repere=CA-01\.1/);
   assert.match(ts[0].lien, /localisation=Bureau%201/);
 });
+
+test('chantier : fiche à remplir depuis une tâche de la liste, PV signé = fait', () => {
+  const et = etude(), PMe = require('../etudes/public/js/points-mes'), mes = PMe.extraire(et, n => L.calculer(et, n));
+  const pts = PM.pointsChantier([{ app: 'etudes', id: 'e1', resume: { objet: 'Bureaux', mes } }]);
+  let ts = PM.plan({ affaireId: 'a', points: pts });
+  const t = ts.find(x => x.repere === 'CA-01.1');
+  const f = F.depuisPoint(t);
+  assert.strictEqual(f.titre, t.libelle);
+  assert.strictEqual(f.local, 'Bureau 1');
+  assert.strictEqual(f.mesures.find(m => m.libelle === 'Puissance chaud').attendu, 3);
+  // PV signé rattaché à la tâche : point fait (et repris dans le DOE, annexe F)
+  ts = PM.plan({ affaireId: 'a', points: pts, pv: { mises: [{ id: 'pv1', affaireId: 'a', planCle: t.cle, statut: 'Signé', resultat: 'Mis en service', date: '2026-11-04' }] } });
+  assert.strictEqual(ts.find(x => x.cle === t.cle).etat, 'fait');
+  assert.strictEqual(ts.find(x => x.repere === 'CA-01.2').etat, 'aFaire');
+});

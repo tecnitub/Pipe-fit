@@ -14,6 +14,18 @@ function tachesMes(a) {
 }
 const BADGE_MES = { aFaire: ['b-info', '○'], enCours: ['b-warn', '◔'], fait: ['b-ok', '✓'], reserves: ['b-warn', '✓'], ko: ['b-bad', '✕'], sansObjet: ['', '–'] };
 const ROUTE_PV = { mes: 'mes', epreuve: 'epreuve', equilibrage: 'equilibrage' };
+// Filtre de la liste (tout, reste à faire, fait) mémorisé pendant la session
+let filtrePlanMes = 'tout';
+const RESTE = ['aFaire', 'enCours', 'ko'], FAIT = ['fait', 'reserves'];
+// PV signé : repris automatiquement dans le DOE du chantier (annexe F mise en service, annexe G essais)
+const annexeDoe = t => (t.nature === 'mes' ? 'F' : t.nature === 'epreuve' ? 'G' : t.nature === 'equilibrage' ? (/hydraulique/i.test(t.libelle) ? 'F' : 'G') : '');
+// Fiches vierges à imprimer (une par équipement) : contrôles, valeurs attendues, mesures à relever
+function fichesPlanMes(a, taches) {
+  const liste = taches.filter(t => t.nature === 'mes').map(t => FichesMes.depuisPoint(t));
+  if (!liste.length) return notify('Aucun équipement à mettre en service dans la sélection.');
+  const doc = FichesMes.html({ objet: `${a.code || ''} – ${a.nom || ''}`, client: clientName(a.clientId) }, liste, { societe: { nom: (Store.data.settings || {}).societe || 'TECNITUB' } });
+  return PDF.telecharger(doc, `Fiches-mise-en-service-${a.code || a.id}.pdf`.replace(/[^\w.-]+/g, '_')).catch(e => notify(e.message));
+}
 const attendusTexte = t => (t.attendus || []).map(x => `${x.libelle} ${fmt(x.valeur, x.valeur % 1 ? 2 : 0)} ${x.unite}`).join(' · ');
 
 function planMesHtml(a, mobile) {
@@ -25,18 +37,25 @@ function planMesHtml(a, mobile) {
       : route && t.etat === 'ko' ? `<a class="btn small secondary" href="${esc(t.lien)}">Refaire</a>` : '';
     const coche = bureau && !route ? `<button type="button" class="small ${t.etat === 'fait' ? 'secondary' : ''}" data-pm-fait="${esc(t.cle)}">${t.etat === 'fait' ? 'Annuler' : '✓ Fait'}</button>` : '';
     const so = bureau && t.etat !== 'fait' && t.etat !== 'reserves' && !t.manuelle ? `<button type="button" class="small secondary" data-pm-so="${esc(t.cle)}" title="Ce point ne concerne pas ce chantier">${t.etat === 'sansObjet' ? 'Rétablir' : 'Sans objet'}</button>` : '';
+    const fiche = t.nature === 'mes' && t.etat !== 'sansObjet' && !FAIT.includes(t.etat) ? `<button type="button" class="small secondary" data-pm-fiche="${esc(t.cle)}" title="Fiche à remplir sur papier : contrôles, valeurs attendues, mesures">🖨️ Fiche</button>` : '';
+    const doe = t.pv && t.pv.statut === 'Signé' && annexeDoe(t) ? ` · <span class="badge b-ok" title="Le PV signé est repris automatiquement dans le DOE du chantier">📘 DOE annexe ${annexeDoe(t)}</span>` : '';
     const sup = bureau && t.manuelle ? `<button type="button" class="icon" data-pm-sup="${esc(t.cle)}" aria-label="Retirer la tâche">✕</button>` : '';
     return `<li class="pm-${t.etat}"><span class="badge ${cls}" title="${esc(PlanMes.ETATS[t.etat])}">${ic}</span>
       <span class="pm-txt"><strong>${esc(t.libelle)}</strong>${t.detail ? `<br><span class="small muted">${esc(t.detail)}</span>` : ''}
         ${(t.attendus || []).length ? `<br><span class="small">🎯 Attendu : ${esc(attendusTexte(t))}</span>` : ''}
-        ${pv || t.note ? `<br><span class="small">${pv}${t.note ? `${pv ? ' · ' : ''}${esc(t.note)}` : ''}</span>` : ''}</span>
-      <span class="pm-act">${action}${coche}${so}${sup}</span></li>`;
+        ${pv || t.note ? `<br><span class="small">${pv}${doe}${t.note ? `${pv ? ' · ' : ''}${esc(t.note)}` : ''}</span>` : ''}</span>
+      <span class="pm-act">${action}${fiche}${coche}${so}${sup}</span></li>`;
   };
+  const garde = t => filtrePlanMes === 'reste' ? RESTE.includes(t.etat) : filtrePlanMes === 'fait' ? FAIT.includes(t.etat) : true;
   const groupes = PlanMes.GROUPES.map(g => [g, ts.filter(t => t.groupe === g)]).filter(([, l]) => l.length);
+  const tuile = (k, v, l, cls) => `<button type="button" class="pm-tuile ${cls}${filtrePlanMes === k ? ' actif' : ''}" data-pm-filtre="${k}"><strong>${v}</strong><span>${l}</span></button>`;
+  const reste = ts.filter(t => RESTE.includes(t.etat)).length, signes = ts.filter(t => t.pv && t.pv.statut === 'Signé' && annexeDoe(t)).length;
+  const tuiles = ts.length ? `<div class="pm-tuiles">${tuile('reste', reste, `reste à faire${b.enCours ? ` (${b.enCours} en cours)` : ''}`, reste ? 'a-faire' : 'ok')}${tuile('fait', b.faits, `fait${b.reserves ? ` (${b.reserves} avec réserves)` : ''}`, 'ok')}${b.ko ? tuile('reste', b.ko, 'non conforme(s)', 'ko') : ''}${tuile('tout', `${b.pourcent} %`, `avancement · ${signes} PV dans le DOE`, 'neutre')}</div>` : '';
   return `<h${mobile ? 2 : 3}>✅ Mises en service à faire ${ts.length ? `<span class="muted small">${b.faits}/${b.utiles} fait(s)${b.ko ? ` · ${b.ko} non conforme(s)` : ''}</span>` : ''}</h${mobile ? 2 : 3}>
     ${ts.length ? `<div class="pm-barre" title="${b.pourcent} % fait"><i style="width:${b.pourcent}%"></i></div>` : ''}
-    ${!mobile ? `<div class="toolbar" style="margin:4px 0 8px">${ts.length ? '<button class="small secondary" id="pm-pdf">🖨️ Liste à imprimer (PDF)</button>' : ''}${ts.length && bureau ? '<button class="small" id="pm-rapport">📘 Rapport de mise en service</button>' : ''}${bureau ? '<button class="small secondary" id="pm-ajout">+ Ajouter une tâche</button>' : ''}</div>` : ''}
-    ${groupes.map(([g, l]) => `<h4 class="pm-groupe">${esc(g)} <span class="muted small">${l.filter(t => ['fait', 'reserves'].includes(t.etat)).length}/${l.filter(t => t.etat !== 'sansObjet').length}</span></h4><ul class="plan-mes">${l.map(ligne).join('')}</ul>`).join('')
+    ${!mobile ? `<div class="toolbar" style="margin:4px 0 8px">${ts.length ? '<button class="small secondary" id="pm-pdf">🖨️ Liste à imprimer (PDF)</button>' : ''}${ts.some(t => t.nature === 'mes' && RESTE.includes(t.etat)) ? '<button class="small secondary" id="pm-fiches" title="Une fiche par équipement restant à mettre en service : contrôles, valeurs attendues, mesures à relever">📋 Fiches à remplir (PDF)</button>' : ''}${ts.length && bureau ? '<button class="small" id="pm-rapport">📘 Rapport de mise en service</button>' : ''}${bureau ? '<button class="small secondary" id="pm-ajout">+ Ajouter une tâche</button>' : ''}</div>` : ''}
+    ${tuiles}
+    ${groupes.map(([g, l]) => { const vis = l.filter(garde); return `<h4 class="pm-groupe">${esc(g)} <span class="muted small">${l.filter(t => FAIT.includes(t.etat)).length}/${l.filter(t => t.etat !== 'sansObjet').length}</span></h4>${vis.length ? `<ul class="plan-mes">${vis.map(ligne).join('')}</ul>` : `<p class="small muted">${filtrePlanMes === 'reste' ? '✓ Rien ne reste à faire dans ce groupe.' : 'Rien de fait pour l\'instant.'}</p>`}`; }).join('')
       || `<p class="muted small">${charge ? 'Aucun point de mise en service : reliez une étude à ce chantier (application Études) ; ses calculs, son matériel retenu et ses débits construisent la liste.' : 'Chargement de la liste…'}</p>`}
     ${ts.length && !mobile ? '<p class="small muted">Liste construite à partir des études reliées : réseaux à éprouver, équipements du matériel retenu avec les valeurs attendues des calculs, installations à équilibrer. Les PV s\'ouvrent préremplis ; un PV signé coche le point.</p>' : ''}`;
 }
@@ -73,6 +92,10 @@ function bindPlanMes(z, a) {
     const s = Store.get('affaires', a.id).planMes || {};
     enreg({ ...s, manuelles: [...(s.manuelles || []), { id: uid(), libelle: lib.trim().slice(0, 200), groupe: PlanMes.GROUPES[3] }] }, 'Tâche ajoutée');
   };
+  z.querySelectorAll('[data-pm-filtre]').forEach(b => b.onclick = () => { filtrePlanMes = filtrePlanMes === b.dataset.pmFiltre ? 'tout' : b.dataset.pmFiltre; afficherPlanMes(a.id); });
+  z.querySelectorAll('[data-pm-fiche]').forEach(b => b.onclick = () => { const t = ts().find(x => x.cle === b.dataset.pmFiche); if (t) fichesPlanMes(Store.get('affaires', a.id), [t]); });
+  const fi = z.querySelector('#pm-fiches');
+  if (fi) fi.onclick = () => fichesPlanMes(Store.get('affaires', a.id), ts().filter(t => RESTE.includes(t.etat)));
   const rp = z.querySelector('#pm-rapport');
   if (rp) rp.onclick = () => dialogueRapportMes(Store.get('affaires', a.id));
   const pdf = z.querySelector('#pm-pdf');

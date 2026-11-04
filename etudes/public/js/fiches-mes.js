@@ -11,18 +11,21 @@ const FichesMes = ((PM, Es) => {
   const tolerance = (lib, unite) => (/°C|K/.test(unite) ? '± 2 K' : /bar|mCE|Pa/.test(unite) && /pression|gonflage|tarage|remplissage/i.test(lib) ? '± 0,2 bar' : /m³\/h|L\/h|L\/s/.test(unite) ? '± 10 %' : /kW|W|A/.test(unite) ? '± 10 %' : '± 10 %');
 
   // Fiches de l'étude : [{ cle, titre, type, libType, repere, local, source, frigo, controles: [libellé], mesures: [{ libelle, unite, attendu, tolerance }] }]
-  function fiches(et, calc) {
-    const vus = new Set();
-    return PM.extraire(et, calc).filter(p => p.nature === 'mes').filter(p => { const k = `${p.cle || ''}|${p.repere || ''}|${p.titre}`; if (vus.has(k)) return false; vus.add(k); return true; }).map(p => {
-      const t = Es.TYPES[p.type] || Es.TYPES.autre, att = p.attendus || [];
+  // Fiche d'un point de mise en service (étude) ou d'une tâche de la liste du chantier (même forme : titre / libelle,
+  // type, repère, local, contrôles, attendus)
+  function depuisPoint(p) {
+    const t = Es.TYPES[p.type] || Es.TYPES.autre, att = p.attendus || [];
       const mesures = t.mesures.map(([libelle, unite]) => { const a = att.find(x => norm(x.libelle) === norm(libelle) && (x.unite || '') === (unite || '')); return { libelle, unite, attendu: a ? a.valeur : null }; });
       att.forEach(a => { if (!mesures.some(m => norm(m.libelle) === norm(a.libelle) && m.unite === a.unite)) mesures.push({ libelle: a.libelle, unite: a.unite, attendu: a.valeur }); });
       mesures.forEach(m => { m.tolerance = m.attendu === null ? '' : tolerance(m.libelle, m.unite); });
       // Les mesures attendues par l'étude d'abord
       mesures.sort((a, b) => (a.attendu === null) - (b.attendu === null));
-      return { cle: `${p.noteId}|${p.cle || ''}|${p.repere || p.titre}`, titre: p.titre, type: p.type, libType: t.libelle, repere: p.repere || '', local: p.local || '', source: p.source || '', frigo: !!t.frigo,
+      return { cle: p.cle && /^(pt|mat)\|/.test(p.cle) ? p.cle : `${p.noteId || ''}|${p.cle || ''}|${p.repere || p.titre || p.libelle}`, titre: p.titre || p.libelle || '', type: p.type, libType: t.libelle, repere: p.repere || '', local: p.local || '', source: p.source || '', frigo: !!t.frigo,
         controles: [...(p.controles || []), ...t.controles], mesures };
-    });
+  }
+  function fiches(et, calc) {
+    const vus = new Set();
+    return PM.extraire(et, calc).filter(p => p.nature === 'mes').filter(p => { const k = `${p.cle || ''}|${p.repere || ''}|${p.titre}`; if (vus.has(k)) return false; vus.add(k); return true; }).map(depuisPoint);
   }
 
   // Document HTML (une fiche par page) ; et : étude (objet, client), opts : { societe }
@@ -55,6 +58,6 @@ const FichesMes = ((PM, Es) => {
       <style>.fiches-mes .ident th { width: 18%; text-align: left; } .fiches-mes td.case { text-align: center; white-space: nowrap; } .fiches-mes td.attendu { font-weight: bold; }
         .fiches-mes .zone-ecrire { border: 1px solid #999; height: 36px; } .fiches-mes td.signature { height: 50px; } .fiches-mes h3 { margin: 8px 0 4px; } .fiches-mes .mesures td { height: 22px; }</style></div>`;
   }
-  return { fiches, html, tolerance };
-})(typeof PointsMes !== 'undefined' ? PointsMes : require('./points-mes'), typeof Essais !== 'undefined' ? Essais : require('../../../public/js/essais'));
+  return { fiches, depuisPoint, html, tolerance };
+})(typeof PointsMes !== 'undefined' ? PointsMes : typeof require !== 'undefined' ? require('./points-mes') : null, typeof Essais !== 'undefined' ? Essais : require('../../../public/js/essais'));
 if (typeof module !== 'undefined') module.exports = FichesMes;
