@@ -23,7 +23,8 @@ const annexeDoe = t => (t.nature === 'mes' ? 'F' : t.nature === 'epreuve' ? 'G' 
 function fichesPlanMes(a, taches) {
   const liste = taches.filter(t => t.nature === 'mes').map(t => FichesMes.depuisPoint(t));
   if (!liste.length) return notify('Aucun équipement à mettre en service dans la sélection.');
-  const doc = FichesMes.html({ objet: `${a.code || ''} – ${a.nom || ''}`, client: clientName(a.clientId) }, liste, { societe: { nom: (Store.data.settings || {}).societe || 'TECNITUB' } });
+  const site = a.siteId ? siteOf(a.clientId, a.siteId) : null;
+  const doc = FichesMes.html({ objet: `${a.code || ''} – ${a.nom || ''}`, client: clientName(a.clientId), adresse: [site && site.libelle, fullAddress(site || (entreprise(a.clientId).adresses || [])[0])].filter(Boolean).join(' — '), moe: a.moeId ? clientName(a.moeId) : '' }, liste, { societe: { nom: (Store.data.settings || {}).societe || 'TECNITUB' } });
   return PDF.telecharger(doc, `Fiches-mise-en-service-${a.code || a.id}.pdf`.replace(/[^\w.-]+/g, '_')).catch(e => notify(e.message));
 }
 const attendusTexte = t => (t.attendus || []).map(x => `${x.libelle} ${fmt(x.valeur, x.valeur % 1 ? 2 : 0)} ${x.unite}`).join(' · ');

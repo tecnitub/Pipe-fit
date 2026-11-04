@@ -31,7 +31,7 @@ const EssaisDoc = (() => {
   function miseEnService(m, x) {
     const E = typeof Essais !== 'undefined' ? Essais : require('./essais'), type = E.TYPES[m.type] || {};
     return `<h3 class="doc-h">Équipement</h3>${table([l('Équipement', `<strong>${esc(m.equipement)}</strong>${m.repere ? ` · repère ${esc(m.repere)}` : ''}`), l('Type', esc(type.libelle || '')),
-      l('Marque, modèle, n° de série', esc([m.marque, m.modele, m.numeroSerie && `n° ${m.numeroSerie}`].filter(Boolean).join(' · ') || '—')), m.localisation ? l('Localisation', esc(m.localisation)) : '',
+      l('Marque, modèle, n° de série', esc([m.marque, m.modele, m.numeroSerie && `n° ${m.numeroSerie}`].filter(Boolean).join(' · ') || '—')), m.localisation || m.zone ? l('Localisation', esc([m.localisation, m.zone].filter(Boolean).join(' — '))) : '',
       m.fluide ? l('Fluide frigorigène', esc(`${m.fluide}${vide(m.charge) ? '' : ` · charge ${nb(m.charge)} kg`}`)) : '', l('Date', `${dateFr(m.date)}${m.heure ? ` à ${esc(m.heure)}` : ''}`)])}
     ${m.photoPlaqueId ? `<div class="doc-photos"><figure><img src="${x.img(m.photoPlaqueId)}" alt="Plaque signalétique"><figcaption>Plaque signalétique</figcaption></figure></div>` : ''}
     <h3 class="doc-h">Points de contrôle</h3><table class="doc-lines compact"><tr><th>Contrôle</th><th>Résultat</th><th>Observation</th></tr>

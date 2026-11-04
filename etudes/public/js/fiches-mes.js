@@ -21,7 +21,7 @@ const FichesMes = ((PM, Es) => {
       mesures.forEach(m => { m.tolerance = m.attendu === null ? '' : tolerance(m.libelle, m.unite); });
       // Les mesures attendues par l'étude d'abord
       mesures.sort((a, b) => (a.attendu === null) - (b.attendu === null));
-      return { cle: p.cle && /^(pt|mat)\|/.test(p.cle) ? p.cle : `${p.noteId || ''}|${p.cle || ''}|${p.repere || p.titre || p.libelle}`, titre: p.titre || p.libelle || '', type: p.type, libType: t.libelle, repere: p.repere || '', local: p.local || '', source: p.source || '', frigo: !!t.frigo,
+      return { zone: p.zone || '', marque: p.marque || '', modele: p.modele || '', cle: p.cle && /^(pt|mat)\|/.test(p.cle) ? p.cle : `${p.noteId || ''}|${p.cle || ''}|${p.repere || p.titre || p.libelle}`, titre: p.titre || p.libelle || '', type: p.type, libType: t.libelle, repere: p.repere || '', local: p.local || '', source: p.source || '', frigo: !!t.frigo,
         controles: [...(p.controles || []), ...t.controles], mesures };
   }
   function fiches(et, calc) {
@@ -34,12 +34,13 @@ const FichesMes = ((PM, Es) => {
     const soc = (opts.societe && opts.societe.nom) || 'TECNITUB';
     return `<div class="doe-doc fiches-mes">${liste.map((f, i) => `${i ? '<div class="pdf-saut"></div>' : ''}
       <h2>FICHE DE MISE EN SERVICE</h2>
-      <p class="petit">${esc(soc)} — ${esc(et.objet || '')}${et.client ? ` — ${esc(et.client)}` : ''} · fiche ${i + 1} / ${liste.length}</p>
+      <p class="petit">${esc(soc)} · fiche ${i + 1} / ${liste.length}</p>
       <table class="tn ident"><tbody>
+        <tr><th>Chantier</th><td colspan="3"><strong>${esc(et.objet || '')}</strong>${et.client ? ` — ${esc(et.client)}` : ''}${et.adresse ? `<br>${esc(et.adresse)}` : ''}${et.moe ? `<br>Maîtrise d'œuvre : ${esc(et.moe)}` : ''}</td></tr>
         <tr><th>Équipement</th><td colspan="3"><strong>${esc(f.titre)}</strong></td></tr>
         <tr><th>Type</th><td>${esc(f.libType)}</td><th>Repère</th><td>${esc(f.repere) || '&nbsp;'}</td></tr>
-        <tr><th>Local / emplacement</th><td>${esc(f.local) || '&nbsp;'}</td><th>Calcul d'origine</th><td>${esc(f.source)}</td></tr>
-        <tr><th>Marque</th><td>&nbsp;</td><th>Modèle</th><td>&nbsp;</td></tr>
+        <tr><th>Local / emplacement</th><td>${esc(f.local) || '&nbsp;'}</td><th>Étage / zone</th><td>${esc(f.zone) || '&nbsp;'}</td></tr>
+        <tr><th>Marque</th><td>${esc(f.marque) || '&nbsp;'}</td><th>Modèle</th><td>${esc(f.modele) || '&nbsp;'}</td></tr>
         <tr><th>N° de série</th><td>&nbsp;</td><th>Date</th><td>&nbsp;</td></tr>
         ${f.frigo ? '<tr><th>Fluide frigorigène</th><td>&nbsp;</td><th>Charge (kg)</th><td>&nbsp;</td></tr>' : ''}
         <tr><th>Technicien</th><td>&nbsp;</td><th>Entreprise</th><td>${esc(soc)}</td></tr></tbody></table>

@@ -62,7 +62,8 @@ const PointsMes = (() => {
             for (let k = 1; k <= Math.max(1, x.n || 1); k++) {
               const rep = x.n > 1 ? `${x.rep}.${k}` : x.rep, lib = (T.TYPES[x.type] || [x.type])[0];
               const q = x.qc || x.qf;
-              out.push({ ...base, nature: 'mes', type, cle: `term|${n.id}|${rep}`, repere: rep, local: txt(x.local, 80), titre: `${lib} ${rep}${x.local ? ` — ${txt(x.local, 60)}` : ''}`,
+              out.push({ ...base, nature: 'mes', type, cle: `term|${n.id}|${rep}`, repere: rep, local: txt(x.local, 80), zone: txt(x.zone, 60),
+                marque: txt(x.fiche ? x.fiche.fabricant : '', 60), modele: txt(x.fiche ? x.fiche.reference : x.ref, 80), titre: `${lib} ${rep}${x.local ? ` — ${txt(x.local, 60)}` : ''}`,
                 attendus: nettoie(x.pompe ? [att('Débit', x.Qp, 'm³/h', 2), att('Hauteur manométrique', x.Hp, 'mCE', 1), att('Puissance absorbée', x.P * 1000, 'W', 0)]
                   : [att('Puissance chaud', x.Pch || null, 'kW', 2), att('Puissance froid', x.Pfr || null, 'kW', 2), att('Débit d\'eau', q || null, 'm³/h', 3), att('Puissance électrique', x.P ? x.P * 1000 : null, 'W', 0),
                     att('Intensité absorbée', x.P ? x.P * 1000 / (x.tension === 'tri' ? 400 * 1.732 * 0.85 : 230 * 0.9) : null, 'A', 2)]) });
@@ -75,7 +76,9 @@ const PointsMes = (() => {
           let d; try { d = Sc.dimensionner(e); } catch (err) { break; }
           const G = (Sc.GENERATEURS || {})[e.generateur] || ['Générateur'], R = (Sc.REGIMES || {})[e.reseau], pac = /^(pac|gf)/.test(e.generateur || '');
           const Td = R && R[1] !== undefined ? R[1] : Number(e.Tdep) || null, Tr = R && R[2] !== undefined ? R[2] : Number(e.Tret) || null;
-          if (!/^echangeur/.test(e.generateur || '')) for (let i = 1; i <= (d.n || 1); i++) out.push({ ...base, nature: 'mes', type: pac ? 'pac' : /^chaudiere/.test(e.generateur || '') ? 'chaudiere' : 'autre', cle: `gen|${e.generateur}|${d.Pg}`, repere: `${pac ? 'PAC' : 'G'}${i}`, titre: `${G[0]} ${i} — ${titre}`,
+          const fg = e.fiche || {};
+          if (!/^echangeur/.test(e.generateur || '')) for (let i = 1; i <= (d.n || 1); i++) out.push({ ...base, nature: 'mes', type: pac ? 'pac' : /^chaudiere/.test(e.generateur || '') ? 'chaudiere' : 'autre', cle: `gen|${e.generateur}|${d.Pg}`, repere: `${pac ? 'PAC' : 'G'}${i}`,
+            local: pac ? 'Production (extérieur / local technique)' : 'Chaufferie', marque: txt(fg.fabricant, 60), modele: txt(fg.reference, 80), titre: `${G[0]} ${i} — ${titre}`,
             attendus: nettoie([att('Puissance', d.Pg, 'kW', 0), att('Température départ eau', Td, '°C', 0), att('Température retour eau', Tr, '°C', 0), att('Débit', d.Qg, 'm³/h', 2)]) });
           (v.circuits || []).forEach((c, k) => out.push({ ...base, nature: 'mes', type: 'pompes', cle: `pompe-circuit|${n.id}|${k}`, repere: `PC${k + 1}`, titre: `Pompe du circuit ${txt(c.rep, 60)}`, attendus: nettoie([att('Débit', c.Q, 'm³/h', 2), att('Hauteur manométrique', c.hmt, 'mCE', 2)]) }));
           break;

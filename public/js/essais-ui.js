@@ -40,8 +40,14 @@ function brouillonEssai(kind, params, query, creer) {
 const champEssai = (e, k, lib, type = 'text', extra = '') => `<div class="field"><label for="es-${k}">${lib}</label><input id="es-${k}" data-k="${k}" type="${type}" value="${esc(e[k] ?? '')}" ${extra}></div>`;
 const enteteEssai = (e, kind, titre) => `<div class="toolbar"><a href="${retourEssai(e)}" class="btn secondary">← ${Store.me.role === 'atelier' ? 'Rapports' : 'Chantier'}</a></div>
   <h1>${titre}${e.numero ? ` ${esc(e.numero)}` : ''}</h1>`;
+// Récapitulatif du chantier (repris automatiquement sur le PV) : client, site et adresse, maîtrise d'œuvre, conducteur
+const recapChantierEssai = a => { if (!a) return '';
+  const site = a.siteId ? siteOf(a.clientId, a.siteId) : null, adr = site ? fullAddress(site) : fullAddress((entreprise(a.clientId).adresses || [])[0]);
+  const cond = a.chargeId;
+  return `<div class="recap-chantier small"><strong>${esc(a.code || '')} – ${esc(a.nom || '')}</strong><br>Maître d'ouvrage : ${esc(clientName(a.clientId))}${site ? ` · ${esc(site.libelle || '')}` : ''}${adr ? `<br>📍 ${esc(adr)}` : ''}
+    ${a.moeId ? `<br>Maîtrise d'œuvre : ${esc(clientName(a.moeId))}` : ''}${cond && userName(cond) ? `<br>Chargé d'affaires : ${esc(userName(cond))}` : ''}</div>`; };
 const chantierTechEssai = e => { const a = Store.get('affaires', e.affaireId);
-  return `<div class="field"><label for="es-aff">Chantier</label><select id="es-aff" class="big-select">${options(chantiersActifs().concat(a && !chantiersActifs().includes(a) ? [a] : []), e.affaireId, affaireLabel)}</select></div>
+  return `${recapChantierEssai(a)}<div class="field"><label for="es-aff">Chantier</label><select id="es-aff" class="big-select">${options(chantiersActifs().concat(a && !chantiersActifs().includes(a) ? [a] : []), e.affaireId, affaireLabel)}</select></div>
     <div class="field"><label for="es-userId">Technicien</label><select id="es-userId" data-k="userId">${options(Store.all('users').filter(u => !u.archive), e.userId)}</select></div>
     ${champEssai(e, 'date', 'Date', 'date')}${champEssai(e, 'heure', 'Heure', 'time')}`; };
 const photosEssai = (e, lib) => `<div class="photos-grid">${(e.photos || []).map((p, i) => `<div class="ph"><img src="${p.startsWith('data:') ? p : fileUrl(p)}" alt="Photo ${i + 1}"><button class="icon" data-rmph="${i}" aria-label="Retirer la photo">✕</button></div>`).join('')}
@@ -123,7 +129,7 @@ Views.mes = (params, query) => {
   // Liste de points à tester reprise de l'étude (tests point à point de la GTB)
   const ctlPlan = (() => { try { const l = JSON.parse(sessionStorage.getItem(`pf-plan-controles:${q0('plan')}`) || 'null'); return Array.isArray(l) ? l.slice(0, 400).map(x => String(x).slice(0, 120)) : null; } catch (e) { return null; } })();
   const b = brouillonEssai('mes', params, query, base => { const m = Essais.modele(typeQ); if (ctlPlan && ctlPlan.length) m.controles = [...ctlPlan.map(libelle => ({ libelle, etat: '', obs: '' })), ...m.controles];
-    return { ...base, type: typeQ, equipement: q0('equipement'), repere: q0('repere'), localisation: q0('localisation'), marque: q0('marque'), modele: q0('modele'), numeroSerie: '', fluide: '', charge: '', reglages: '', resultat: '', ...(q0('materiel') ? { materiel: q0('materiel') } : {}),
+    return { ...base, type: typeQ, equipement: q0('equipement'), repere: q0('repere'), localisation: q0('localisation'), zone: q0('zone'), marque: q0('marque'), modele: q0('modele'), numeroSerie: '', fluide: '', charge: '', reglages: '', resultat: '', ...(q0('materiel') ? { materiel: q0('materiel') } : {}),
       ...(q0('plan') ? { planCle: q0('plan') } : {}), ...(attendus.length ? { attendus } : {}), controles: m.controles, mesures: PlanMes.avecAttendus(m.mesures, attendus) }; });
   if (b.introuvable) return '<p>Procès-verbal introuvable.</p>';
   if (b.signe) return essaiVue('mes', b.signe);
@@ -133,7 +139,7 @@ Views.mes = (params, query) => {
   <div class="card epreuve-form">
     <fieldset class="hd-bloc"><legend>Chantier et équipement</legend><div class="grid2">${chantierTechEssai(e)}
       <div class="field"><label for="es-type">Type d'équipement</label><select id="es-type">${Object.entries(Essais.TYPES).map(([k, x]) => `<option value="${k}" ${k === e.type ? 'selected' : ''}>${esc(x.libelle)}</option>`).join('')}</select></div>
-      ${champEssai(e, 'equipement', 'Équipement *', 'text', 'placeholder="PAC air/eau bâtiment B, CTA 1 bureaux…"')}${champEssai(e, 'repere', 'Repère (plans)')}${champEssai(e, 'localisation', 'Localisation')}</div>
+      ${champEssai(e, 'equipement', 'Équipement *', 'text', 'placeholder="PAC air/eau bâtiment B, CTA 1 bureaux…"')}${champEssai(e, 'repere', 'Repère (plans)')}${champEssai(e, 'localisation', 'Localisation (pièce)')}${champEssai(e, 'zone', 'Étage / zone / bâtiment')}</div>
       <div class="eq-plaque">${ph ? `<img src="${ph}" alt="Plaque signalétique">` : ''}<label class="btn secondary">📷 ${ph ? 'Reprendre la plaque' : 'Photo de la plaque signalétique'}<input type="file" id="es-plaque" accept="image/*" capture="environment" hidden></label><span class="small muted" id="es-plaque-etat"></span></div>
       <div class="grid3">${champEssai(e, 'marque', 'Marque')}${champEssai(e, 'modele', 'Modèle')}${champEssai(e, 'numeroSerie', 'N° de série')}
         ${t.frigo ? `<div class="field"><label for="es-fluide">Fluide frigorigène</label><select id="es-fluide" data-k="fluide"><option value="">—</option>${optionsStr(Fluides.LISTE.map(x => x[0]), e.fluide)}</select></div>${champEssai(e, 'charge', 'Charge (kg)', 'number', 'step="0.01" min="0"')}` : ''}</div>

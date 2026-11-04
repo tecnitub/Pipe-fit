@@ -68,3 +68,19 @@ test('chantier : fiche à remplir depuis une tâche de la liste, PV signé = fai
   assert.strictEqual(ts.find(x => x.cle === t.cle).etat, 'fait');
   assert.strictEqual(ts.find(x => x.repere === 'CA-01.2').etat, 'aFaire');
 });
+
+test('PV prérempli : étage / zone, marque et modèle de la fiche technique transmis au chantier', () => {
+  const et = etude();
+  Object.assign(et.notes[1].entrees.appareils[0], { zone: 'R+1 — Bâtiment A', fiche: { fabricant: 'Daikin', reference: 'FXZQ32A' } });
+  const PMe = require('../etudes/public/js/points-mes'), mes = PMe.extraire(et, n => L.calculer(et, n));
+  const p = mes.find(x => x.repere === 'CA-01.1');
+  assert.deepStrictEqual([p.zone, p.marque, p.modele], ['R+1 — Bâtiment A', 'Daikin', 'FXZQ32A']);
+  const t = PM.plan({ affaireId: 'a', points: PM.pointsChantier([{ app: 'etudes', id: 'e1', resume: { objet: 'B', mes } }]) }).find(x => x.repere === 'CA-01.1');
+  assert.match(t.lien, /zone=R%2B1/);
+  assert.match(t.lien, /marque=Daikin/);
+  assert.match(t.lien, /modele=FXZQ32A/);
+  const h = F.html({ objet: 'CH-1 – Bureaux', client: 'Client', adresse: 'ZI des Forges, 69800 Saint-Priest' }, [F.depuisPoint(t)]);
+  assert.match(h, /ZI des Forges/);
+  assert.match(h, /Daikin/);
+  assert.match(h, /R\+1 — Bâtiment A/);
+});

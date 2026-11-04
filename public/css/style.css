@@ -1149,6 +1149,7 @@ label.cf-ligne { display: flex; gap: 10px; width: 100%; margin-top: 6px; padding
 .pm-barre { height: 6px; background: var(--line, #e3e7ee); border-radius: 3px; overflow: hidden; margin: 2px 0 6px; }
 .pm-barre i { display: block; height: 100%; background: #2e9d5b; }
 .pm-groupe { margin: 12px 0 4px; font-size: 14px; }
+.recap-chantier { grid-column: 1 / -1; background: var(--bg-soft, #f4f6f9); border-left: 3px solid var(--primary, #1f3a5f); border-radius: 6px; padding: 8px 10px; line-height: 1.5; }
 .pm-tuiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px; margin: 6px 0 4px; }
 .pm-tuile { display: flex; flex-direction: column; align-items: flex-start; text-align: left; background: var(--card, #fff); color: inherit; border: 1px solid var(--line, #e3e7ee); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
 .pm-tuile strong { font-size: 20px; line-height: 1.1; }

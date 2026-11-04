@@ -65,7 +65,7 @@ const Terminaux = ((N) => {
       if ((batElec(b) || l.type === 'radElec') && !num(l.Pbe)) alertes.push(alerte('erreur', `${rep} : puissance de la batterie électrique à renseigner.`));
       if (pU > 0 && !l.alim) alertes.push(alerte('attention', `${rep} : choisir l'alimentation (électricien ou armoire CVC).`));
       const tension = l.tension || (pU * 1000 / 230 > 16 ? 'tri' : 'mono');
-      return { rep, local: l.local || '', t, type: l.type || 'autre', n, b, v, nbV, Pch, Pfr, qc, qf, kvs: qV ? kvs(qV) : 0, pVent, pBe, pU, P: pU * n, tension, alim: l.alim || '', ref: l.ref || '', regul: l.regul || 'propre', maitre: l.maitre || '', dpC: num(l.dpEauC), dpF: num(l.dpEauF), pompe, Qp: num(l.Qp), Hp: num(l.Hp) };
+      return { rep, local: l.local || '', zone: l.zone || '', fiche: l.fiche && (l.fiche.fabricant || l.fiche.reference) ? { fabricant: l.fiche.fabricant || '', reference: l.fiche.reference || '' } : null, t, type: l.type || 'autre', n, b, v, nbV, Pch, Pfr, qc, qf, kvs: qV ? kvs(qV) : 0, pVent, pBe, pU, P: pU * n, tension, alim: l.alim || '', ref: l.ref || '', regul: l.regul || 'propre', maitre: l.maitre || '', dpC: num(l.dpEauC), dpF: num(l.dpEauF), pompe, Qp: num(l.Qp), Hp: num(l.Hp) };
     });
     if (!lignes.length) alertes.push(alerte('attention', 'Ajoutez les terminaux (cassettes, ventilo-convecteurs…), une ligne par appareil.'));
     // Maître / esclave : chaque esclave est rattaché à un maître de la liste (même consigne, même commande)
@@ -166,7 +166,7 @@ const Terminaux = ((N) => {
       { k: 'TfAller', l: 'Eau glacée : départ', u: '°C', d: 7 }, { k: 'TfRetour', l: 'Eau glacée : retour', u: '°C', d: 12 }, { k: 'dpVanne', l: 'Perte de charge des vannes (Kvs)', u: 'kPa', d: 15 },
       { g: 'Terminaux' },
       { k: 'appareils', l: 'Appareils, une ligne par appareil (« + Ajouter une ligne » copie la précédente avec le repère suivant) — « 📄 Fiche technique » remplit une ligne', t: 'lignes', d: [{ rep: 'CA-01', local: 'Bureau 1', type: 'cassette2', Pch: 3.2, Pfr: 3.6, batterie: '2t', vanne: '2v', Pvent: 45, Pbe: '', tension: 'mono', alim: '', regul: 'propre', maitre: '', ref: '' }],
-        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'local', l: 'Pièce (repérage)', t: 't' }, { k: 'type', l: 'Type', t: 's', o: Object.entries(TYPES).map(([k, x]) => [k, x[0]]) },
+        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'local', l: 'Pièce (repérage)', t: 't' }, { k: 'zone', l: 'Étage / zone', t: 't' }, { k: 'type', l: 'Type', t: 's', o: Object.entries(TYPES).map(([k, x]) => [k, x[0]]) },
           { k: 'Pch', l: 'P chaud (kW/u)' }, { k: 'Pfr', l: 'P froid (kW/u)' }, { k: 'batterie', l: 'Batterie', t: 's', o: Object.entries(BATTERIES) }, { k: 'vanne', l: 'Vanne', t: 's', o: Object.entries(VANNES) },
           { k: 'dpEauC', l: 'ΔP eau chaud (kPa)' }, { k: 'dpEauF', l: 'ΔP eau froid (kPa)' },
           { k: 'Qp', l: 'Pompe : débit (m³/h)' }, { k: 'Hp', l: 'Pompe : HMT (mCE)' },
