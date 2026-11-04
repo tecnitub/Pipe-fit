@@ -267,16 +267,18 @@
     rafraichir();
   }
 
-  // Sauvegarde automatique, une seconde après la dernière modification
-  let minuterieSauvegarde = null, sauvegardeEnAttente = false, sessionProposee = false;
+  // Sauvegarde automatique, une seconde après la dernière modification. Chaque fenêtre a sa propre session :
+  // plusieurs PDF peuvent être ouverts en même temps (double-clic dans l'Explorateur) sans se gêner.
+  const ID_SESSION = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  const CLE_VIVANT = 'atelierpdf.vivant.';
+  let minuterieSauvegarde = null, sauvegardeEnAttente = false;
   function planifierSauvegarde() {
-    if (!sessionProposee) return; // pas avant d'avoir proposé de reprendre le travail précédent
     sauvegardeEnAttente = true;
     clearTimeout(minuterieSauvegarde);
     minuterieSauvegarde = setTimeout(async () => {
       try {
-        if (etat.pages.length) { const { meta, fichiers } = exporterEtat(); await Stockage.sauverSession(meta, fichiers); }
-        else await Stockage.effacerSession();
+        if (etat.pages.length) { const { meta, fichiers } = exporterEtat(); await Stockage.sauverSession(ID_SESSION, meta, fichiers); }
+        else await Stockage.effacerSession(`session:${ID_SESSION}`);
         sauvegardeEnAttente = false;
         const h = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
         $('#etat-sauvegarde').textContent = etat.pages.length ? `✓ Travail sauvegardé sur ce PC à ${h}` : '';
@@ -286,15 +288,24 @@
       }
     }, 1000);
   }
+  // Signe de vie de la fenêtre : une session encore ouverte ailleurs n'est pas proposée à la reprise
+  function signalerVie() { try { localStorage.setItem(CLE_VIVANT + ID_SESSION, String(Date.now())); } catch { /* rien */ } }
+  signalerVie();
+  setInterval(signalerVie, 15000);
+  window.addEventListener('pagehide', () => { try { localStorage.removeItem(CLE_VIVANT + ID_SESSION); } catch { /* rien */ } });
+  const fenetreOuverte = cle => {
+    try { const t = Number(localStorage.getItem(CLE_VIVANT + String(cle).replace(/^session:/, ''))); return t && Date.now() - t < 45000; } catch { return false; }
+  };
 
   async function proposerReprise() {
-    let session = null;
-    try { session = await Stockage.lireSession(); } catch { /* stockage indisponible */ }
-    if (!session || !session.meta.pages?.length) { sessionProposee = true; return; }
+    let liste = [];
+    try { liste = (await Stockage.lireSessions(ID_SESSION)).filter(x => !fenetreOuverte(x.cle)); } catch { /* stockage indisponible */ }
+    const bandeau = $('#reprise');
+    if (!liste.length) { bandeau.hidden = true; return; }
+    const session = liste[0];
     const m = session.meta;
     const quand = new Date(m.date).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
-    const bandeau = $('#reprise');
-    $('#reprise-texte').textContent = `Travail non terminé du ${quand} : ${m.pages.length} page${m.pages.length > 1 ? 's' : ''} (${m.sources.map(x => x.nom).slice(0, 3).join(', ')}${m.sources.length > 3 ? '…' : ''}).`;
+    $('#reprise-texte').textContent = `Travail non terminé du ${quand} : ${m.pages.length} page${m.pages.length > 1 ? 's' : ''} (${m.sources.map(x => x.nom).slice(0, 3).join(', ')}${m.sources.length > 3 ? '…' : ''})${liste.length > 1 ? ` — et ${liste.length - 1} autre(s)` : ''}.`;
     bandeau.hidden = false;
     $('#reprise-oui').onclick = async () => {
       bandeau.hidden = true;
@@ -302,16 +313,38 @@
         const n = await occupe('Reprise du travail…', () => importerEtat(m, id => session.fichier(id)));
         etat.historique = [];
         note(`${n} page(s) retrouvée(s).`, 'ok');
+        planifierSauvegarde();
+        await Stockage.effacerSession(session.cle);
       } catch (e) { note(`Reprise impossible : ${e.message || e}`, 'erreur'); }
-      sessionProposee = true;
-      planifierSauvegarde();
+      proposerReprise();
     };
     $('#reprise-non').onclick = async () => {
       bandeau.hidden = true;
-      sessionProposee = true;
-      try { await Stockage.effacerSession(); } catch { /* rien */ }
-      planifierSauvegarde();
+      try { await Stockage.effacerSession(session.cle); } catch { /* rien */ }
+      proposerReprise();
     };
+  }
+
+  // Fichiers transmis par le lanceur Windows (double-clic sur un PDF, « Ouvrir avec Atelier PDF »)
+  const TYPES = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
+  async function ouvrirFichiersTransmis() {
+    const liste = window.FICHIERS_A_OUVRIR;
+    if (!Array.isArray(liste) || !liste.length) return false;
+    delete window.FICHIERS_A_OUVRIR;
+    const fichiers = [];
+    for (const f of liste) {
+      try {
+        const octets = await (await fetch(`data:application/octet-stream;base64,${f.donnees}`)).arrayBuffer();
+        const ext = (/\.([^.]+)$/.exec(f.nom || '') || [])[1]?.toLowerCase() || '';
+        fichiers.push(new File([octets], f.nom || 'document.pdf', { type: TYPES[ext] || '' }));
+      } catch (e) { note(`« ${f.nom} » n'a pas pu être lu.`, 'erreur'); }
+    }
+    if (!fichiers.length) return false;
+    document.title = `${fichiers.length === 1 ? sansExtension(fichiers[0].name) : `${fichiers.length} documents`} – Atelier PDF`;
+    await importer(fichiers);
+    etat.historique = [];
+    rafraichir();
+    return true;
   }
 
   // Image -> JPEG ou PNG redressé (orientation de l'appareil photo appliquée), 3000 px maximum
@@ -2107,12 +2140,13 @@
     else if (ev.key === 'Escape') { etat.selection.clear(); rafraichir(); }
   });
 
-  window.addEventListener('beforeunload', ev => { if (etat.pages.length && (sauvegardeEnAttente || !sessionProposee)) { ev.preventDefault(); ev.returnValue = ''; } });
+  window.addEventListener('beforeunload', ev => { if (etat.pages.length && sauvegardeEnAttente) { ev.preventDefault(); ev.returnValue = ''; } });
 
   chargerOptions();
   sauverOptions();
   rafraichir();
-  proposerReprise();
+  // Ouvert avec des fichiers : on les affiche ; sinon, proposition de reprendre le travail laissé
+  ouvrirFichiersTransmis().then(ouverts => { if (!ouverts) proposerReprise(); });
   // Accès pour les tests automatisés
   window.AtelierPDF = { etat, importer, produire, options };
 })();

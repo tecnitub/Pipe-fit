@@ -32,33 +32,46 @@ const Stockage = (() => {
     return res;
   }
 
-  // ----- Travail en cours -----
-  const dejaEcrits = new Set();
-  async function sauverSession(meta, fichiers) {
-    // Fichiers d'abord (une seule fois chacun), puis l'état qui les référence
+  // ----- Travail en cours : une session par fenêtre (plusieurs PDF ouverts en même temps depuis l'Explorateur) -----
+  // Clé « session:<id> » dans le magasin « etat » ; les fichiers sont partagés et effacés quand plus aucune session
+  // ne les utilise. L'ancienne clé unique « session » (versions 1.2 et 1.3) est relue comme une session.
+  const clesFichiers = meta => [...(meta.sources || []).map(s => s.fichier), ...(meta.images || []).map(i => `i_${i.id}`)];
+  async function toutesLesSessions() {
+    return transaction('etat', 'readonly', e => new Promise((ok, ko) => {
+      const res = [];
+      const r = e.openCursor();
+      r.onsuccess = () => {
+        const c = r.result;
+        if (!c) return ok(res);
+        if (c.key === 'session' || String(c.key).startsWith('session:')) res.push({ cle: c.key, meta: c.value });
+        c.continue();
+      };
+      r.onerror = () => ko(r.error);
+    }));
+  }
+  async function nettoyerFichiers(gardes = new Set()) {
+    const sessions = await toutesLesSessions();
+    sessions.forEach(x => clesFichiers(x.meta).forEach(k => gardes.add(k)));
     const cles = await transaction('fichiers', 'readonly', f => requete(f.getAllKeys()));
-    cles.forEach(c => dejaEcrits.add(c));
-    const nouveaux = [...fichiers].filter(([id]) => !dejaEcrits.has(id));
-    if (nouveaux.length) {
-      await transaction('fichiers', 'readwrite', f => { nouveaux.forEach(([id, v]) => f.put(v, id)); });
-      nouveaux.forEach(([id]) => dejaEcrits.add(id));
-    }
-    await transaction('etat', 'readwrite', e => { e.put(meta, 'session'); });
-    // Fichiers devenus inutiles
-    const inutiles = cles.filter(c => !fichiers.has(c));
-    if (inutiles.length) {
-      await transaction('fichiers', 'readwrite', f => { inutiles.forEach(c => f.delete(c)); });
-      inutiles.forEach(c => dejaEcrits.delete(c));
-    }
+    const inutiles = cles.filter(c => !gardes.has(c));
+    if (inutiles.length) await transaction('fichiers', 'readwrite', f => { inutiles.forEach(c => f.delete(c)); });
   }
-  async function lireSession() {
-    const meta = await transaction('etat', 'readonly', e => requete(e.get('session')));
-    if (!meta) return null;
-    return { meta, fichier: id => transaction('fichiers', 'readonly', f => requete(f.get(id))) };
+  async function sauverSession(id, meta, fichiers) {
+    const cles = new Set(await transaction('fichiers', 'readonly', f => requete(f.getAllKeys())));
+    const nouveaux = [...fichiers].filter(([k]) => !cles.has(k));
+    if (nouveaux.length) await transaction('fichiers', 'readwrite', f => { nouveaux.forEach(([k, v]) => f.put(v, k)); });
+    await transaction('etat', 'readwrite', e => { e.put(meta, `session:${id}`); });
+    await nettoyerFichiers(new Set(fichiers.keys()));
   }
-  async function effacerSession() {
-    await transaction(['etat', 'fichiers'], 'readwrite', (e, f) => { e.delete('session'); f.clear(); });
-    dejaEcrits.clear();
+  // Sessions laissées par d'autres fenêtres, la plus récente d'abord
+  async function lireSessions(sauf) {
+    const liste = (await toutesLesSessions()).filter(x => x.cle !== `session:${sauf}` && x.meta && x.meta.pages && x.meta.pages.length);
+    liste.sort((a, b) => (b.meta.date || 0) - (a.meta.date || 0));
+    return liste.map(x => ({ cle: x.cle, meta: x.meta, fichier: k => transaction('fichiers', 'readonly', f => requete(f.get(k))) }));
+  }
+  async function effacerSession(cle) {
+    await transaction('etat', 'readwrite', e => { e.delete(cle); });
+    await nettoyerFichiers();
   }
 
   // ----- Bibliothèque (signatures, tampons images) -----
@@ -103,6 +116,6 @@ const Stockage = (() => {
     return { meta, fichiers };
   }
 
-  return { sauverSession, lireSession, effacerSession, listerBibliotheque, ajouterBibliotheque, retirerBibliotheque, versProjet, depuisProjet, estProjet };
+  return { sauverSession, lireSessions, effacerSession, listerBibliotheque, ajouterBibliotheque, retirerBibliotheque, versProjet, depuisProjet, estProjet };
 })();
 if (typeof module === 'object' && module.exports) module.exports = Stockage;

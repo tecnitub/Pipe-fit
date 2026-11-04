@@ -8,6 +8,23 @@ DÉMARRER
   Icône « Atelier PDF » du bureau ou du menu Démarrer.
   L'application s'ouvre dans sa propre fenêtre (Microsoft Edge).
 
+OUVRIR LES PDF DE L'ORDINATEUR AVEC ATELIER PDF
+  - Clic droit sur un PDF > Ouvrir avec > Atelier PDF.
+    (Windows 11 : aussi « Afficher plus d'options » > « Ouvrir avec Atelier PDF ».)
+  - Pour que TOUS les PDF s'ouvrent par un double-clic dans Atelier PDF :
+    clic droit sur un PDF > Ouvrir avec > Choisir une autre application >
+    Atelier PDF > cocher « Toujours utiliser cette application » (ou bouton
+    « Toujours »). Ou : Paramètres Windows > Applications > Applications par
+    défaut > Atelier PDF > .pdf. Windows exige que ce choix soit fait par vous.
+    Pour revenir en arrière : même manipulation en choisissant Edge ou Acrobat.
+  - Plusieurs PDF sélectionnés puis « Ouvrir avec Atelier PDF » : ils arrivent
+    ensemble dans une seule fenêtre, prêts à être compilés.
+  - Chaque fenêtre a sa propre sauvegarde automatique : on peut ouvrir plusieurs
+    PDF en même temps. Au lancement suivant (icône du bureau), les travaux non
+    terminés des fenêtres fermées sont proposés à la reprise.
+  - Le fichier d'origine n'est jamais modifié : « Enregistrer le PDF » demande
+    où enregistrer (le même nom pour le remplacer, ou un nouveau nom).
+
 AJOUTER DES DOCUMENTS
   - Bouton « + Ajouter des fichiers » (Ctrl+O), ou glisser-déposer des fichiers
     depuis l'Explorateur Windows dans la fenêtre.

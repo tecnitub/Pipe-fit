@@ -10,6 +10,13 @@ administrateur**, dans `%LOCALAPPDATA%\Programs\AtelierPDF`. Icônes « Atelier 
 menu Démarrer ; l'application s'ouvre dans sa propre fenêtre Microsoft Edge (mode application).
 Désinstallation : Paramètres Windows > Applications.
 
+**Ouvrir les PDF de l'ordinateur** : l'installateur inscrit Atelier PDF pour les PDF (pour l'utilisateur) :
+« Ouvrir avec › Atelier PDF », clic droit « Ouvrir avec Atelier PDF » (plusieurs fichiers : une seule fenêtre), et
+Atelier PDF proposé dans Paramètres › Applications par défaut (case à la fin de l'installation ; Windows exige que
+l'utilisateur confirme lui-même le lecteur par défaut). Le lanceur `AtelierPDF.exe` (`installer/lanceur/lanceur.c`)
+reçoit les fichiers, écrit une page de démarrage (l'application et le contenu des fichiers) dans
+`%LOCALAPPDATA%\AtelierPDF\ouverture` et l'ouvre dans Edge ; une sauvegarde automatique par fenêtre.
+
 Sans installation : `AtelierPDF.html` s'ouvre aussi par simple double-clic (Edge ou Chrome conseillés).
 
 Obtenir les fichiers : onglet **Actions** du dépôt GitHub → dernière exécution « Installateur Windows »

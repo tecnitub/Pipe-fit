@@ -15,7 +15,7 @@ jobs:
         with:
           node-version: 22
       - run: npm test
-      - run: sudo apt-get update && sudo apt-get install -y nsis
+      - run: sudo apt-get update && sudo apt-get install -y nsis gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64
       - run: bash installer/build.sh
       - uses: actions/upload-artifact@v4
         with:

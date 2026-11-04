@@ -1,0 +1,23 @@
+#include <winver.h>
+1 ICON "../files/atelier-pdf.ico"
+1 VERSIONINFO
+FILEVERSION VMAJ,VMIN,VPAT,0
+PRODUCTVERSION VMAJ,VMIN,VPAT,0
+FILETYPE VFT_APP
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040C04B0"
+    BEGIN
+      VALUE "CompanyName", "Tecnitub"
+      VALUE "FileDescription", "Atelier PDF"
+      VALUE "ProductName", "Atelier PDF"
+      VALUE "OriginalFilename", "AtelierPDF.exe"
+      VALUE "LegalCopyright", "Tecnitub"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x040C, 1200
+  END
+END
