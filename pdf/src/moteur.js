@@ -84,7 +84,7 @@
   // pixels à l'écran), k = unités par point (taille des pointes de flèche, épaisseurs, arrondis).
   // Résultat : [{ cmds: [['M',x,y],['L',x,y],['C',x1,y1,x2,y2,x,y],['Z']], trait, fond, epaisseur, rond, opacite }]
   const DEFAUTS = { ligne: '#d32f2f', fleche: '#d32f2f', crayon: '#1565c0', ellipse: '#d32f2f', cadre: '#d32f2f', bulle: '#1565c0', texte: '#000000',
-    tampon: '#2e7d32', cote: '#e65100', longueur: '#e65100', surface: '#6a1b9a' };
+    tampon: '#2e7d32', cote: '#e65100', longueur: '#e65100', surface: '#6a1b9a', angle: '#00838f' };
   const K_ELLIPSE = 0.5523;
 
   function cmdsRectArrondi(x, y, w, h, r) {
@@ -176,6 +176,24 @@
         const sommets = pts.flatMap(([px, py]) => cmdsRect(X(px) - r, Y(py) - r, 2 * r, 2 * r));
         return [{ cmds: pts.map(([px, py], i) => [i ? 'L' : 'M', X(px), Y(py)]), trait: coul, epaisseur: ep, rond: true }, { cmds: sommets, fond: coul }];
       }
+      case 'angle': {
+        // Points : extrémité, sommet, extrémité ; arc entre les deux côtés
+        const pts = e.points || [];
+        if (pts.length < 2) return [];
+        const [a, o, b] = pts.map(([px, py]) => [X(px), Y(py)]);
+        const res = [{ cmds: [['M', a[0], a[1]], ['L', o[0], o[1]], ...(b ? [['L', b[0], b[1]]] : [])], trait: coul, epaisseur: ep, rond: true }];
+        if (b) {
+          const r = Math.min(18 * k, Math.hypot(a[0] - o[0], a[1] - o[1]) * 0.6, Math.hypot(b[0] - o[0], b[1] - o[1]) * 0.6);
+          const t1 = Math.atan2(a[1] - o[1], a[0] - o[0]);
+          let dt = Math.atan2(b[1] - o[1], b[0] - o[0]) - t1;
+          while (dt > Math.PI) dt -= 2 * Math.PI;
+          while (dt < -Math.PI) dt += 2 * Math.PI;
+          const n = 12, arc = [];
+          for (let i = 0; i <= n; i++) { const t = t1 + dt * i / n; arc.push([i ? 'L' : 'M', o[0] + r * Math.cos(t), o[1] + r * Math.sin(t)]); }
+          res.push({ cmds: arc, trait: coul, epaisseur: Math.max(0.6 * k, ep * 0.6), rond: true });
+        }
+        return res;
+      }
       case 'surface': {
         const pts = e.points || [];
         if (pts.length < 2) return [];
@@ -188,7 +206,7 @@
 
   // Étiquettes des mesures (valeur calculée par l'application dans e.etiquette), centrées en (cx, cy)
   function etiquettes(e, l, h, k = 1) {
-    if (!e.etiquette || !['cote', 'longueur', 'surface'].includes(e.type)) return [];
+    if (!e.etiquette || !['cote', 'longueur', 'surface', 'angle'].includes(e.type)) return [];
     const taille = (e.taille || 10) * k;
     let cx, cy;
     if (e.type === 'cote') { cx = (e.x1 + e.x2) / 2 * l; cy = (e.y1 + e.y2) / 2 * h; }
@@ -196,6 +214,17 @@
       const pts = e.points || [];
       if (!pts.length) return [];
       if (e.type === 'longueur') { const [px, py] = pts[pts.length - 1]; cx = px * l; cy = py * h - taille * 1.2; }
+      else if (e.type === 'angle') {
+        // Sur la bissectrice, un peu au-delà de l'arc
+        if (pts.length < 3) return [];
+        const [a, o, b] = pts.map(([px, py]) => [px * l, py * h]);
+        const ua = Math.hypot(a[0] - o[0], a[1] - o[1]) || 1, ub = Math.hypot(b[0] - o[0], b[1] - o[1]) || 1;
+        let bx = (a[0] - o[0]) / ua + (b[0] - o[0]) / ub, by = (a[1] - o[1]) / ua + (b[1] - o[1]) / ub;
+        const nb = Math.hypot(bx, by) || 1;
+        bx /= nb; by /= nb;
+        const r = Math.min(18 * k, ua * 0.6, ub * 0.6) + taille * 1.6;
+        cx = o[0] + bx * r; cy = o[1] + by * r;
+      }
       else { cx = pts.reduce((a, q) => a + q[0], 0) / pts.length * l; cy = pts.reduce((a, q) => a + q[1], 0) / pts.length * h; }
     }
     return [{ texte: e.etiquette, cx, cy, taille, couleur: e.couleur || DEFAUTS[e.type] }];
@@ -266,11 +295,34 @@
         // Texte d'origine introuvable dans le contenu (scan, texte dans un sous-dessin) : recouvert par le fond
         if (!e.retire && !e.applique) page.drawRectangle({ ...rectPdf(boite, r, elargirZone(e.zone, affiche)), color: couleur(e.fond, [1, 1, 1]) });
         const police = await ctx.policeStandard(nomPoliceStandard(e));
-        String(e.texte || '').split(/\r?\n/).forEach((ligne, i) => {
+        const po = e.policeOrigine;
+        // Largeur d'un texte : police d'origine (largeurs du PDF) ou police standard
+        const largeurOrigine = t => { const h = po && encoderDansPolice(page, po.nom, t, po.infos.octets); if (!h) return null; let l = 0; for (let i = 0; i < h.length; i += po.infos.octets * 2) l += po.infos.largeur(parseInt(h.substr(i, po.infos.octets * 2), 16)); return l * e.taille; };
+        const toutEnOrigine = po && encoderDansPolice(page, po.nom, String(e.texte || '').replace(/\s+/g, ' '), po.infos.octets) !== null;
+        const mesure = t => (toutEnOrigine ? largeurOrigine(t) : null) ?? police.widthOfTextAtSize(nettoyer(police, t), e.taille);
+        // Paragraphe : texte recoupé à la largeur d'origine, avec l'interligne d'origine
+        const lignes = e.paragraphe
+          ? couperLignes(mesure, e.texte, e.paragraphe.largeur * affiche.l)
+          : String(e.texte || '').split(/\r?\n/);
+        const interligne = e.paragraphe ? e.paragraphe.interligne : 1.2 * e.taille;
+        const { PDFHexString, PDFName, pushGraphicsState, popGraphicsState, beginText, endText, setFontAndSize, setTextMatrix, showText, setFillingRgbColor } = lib();
+        const coul = couleur(e.couleur);
+        // Police d'origine seulement si elle contient tous les caractères du bloc : jamais deux polices mélangées
+        const hexes = po ? lignes.map(l => (l ? encoderDansPolice(page, po.nom, l, po.infos.octets) : '')) : [];
+        const origine = po && hexes.every(h => h !== null);
+        lignes.forEach((ligne, i) => {
+          if (!ligne) return;
+          const q = versPdf(boite, r, e.x, e.base + i * interligne / affiche.h);
+          const hex = origine ? hexes[i] : null;
+          if (hex) {
+            // Police d'origine (incluse dans le PDF) : la correction ne se voit pas
+            const a = normRot(r) * Math.PI / 180, cs = Math.cos(a), sn = Math.sin(a);
+            page.pushOperators(pushGraphicsState(), setFillingRgbColor(coul.red, coul.green, coul.blue), beginText(), setFontAndSize(PDFName.of(po.nom), e.taille),
+              setTextMatrix(cs, sn, -sn, cs, q.x, q.y), showText(PDFHexString.of(hex)), endText(), popGraphicsState());
+            return;
+          }
           const t = nettoyer(police, ligne);
-          if (!t) return;
-          const q = versPdf(boite, r, e.x, e.base + i * 1.2 * e.taille / affiche.h);
-          page.drawText(t, { x: q.x, y: q.y, size: e.taille, font: police, color: couleur(e.couleur), rotate: degrees(normRot(r)) });
+          if (t) page.drawText(t, { x: q.x, y: q.y, size: e.taille, font: police, color: coul, rotate: degrees(normRot(r)) });
         });
       } else if (e.type === 'masque') {
         page.drawRectangle({ ...rectPdf(boite, r, e), color: couleur(e.couleur, [1, 1, 1]) });
@@ -483,6 +535,8 @@
       cacheImages: new Map(),
       polices: new Map(),
       policeStandard(nom) {
+        if (nom === StandardFonts.Helvetica) return this.police;
+        if (nom === StandardFonts.HelveticaBold) return this.policeGras;
         if (!this.polices.has(nom)) this.polices.set(nom, sortie.embedFont(nom));
         return this.polices.get(nom);
       },
@@ -502,7 +556,9 @@
         const s = sources[p.source];
         if (!s) throw new Error('Document source introuvable.');
         const doc = await PDFDocument.load(s.octets, { ignoreEncryption: true, updateMetadata: false, throwOnInvalidObject: false });
-        if (options.aplatir) { try { doc.getForm().flatten(); } catch { /* formulaire illisible : laissé tel quel */ } }
+        // Formulaire rempli dans Atelier PDF : valeurs écrites puis figées (le formulaire ne suit pas la copie des pages)
+        if (s.champs && Object.keys(s.champs).length) remplirFormulaire(doc, s.champs);
+        else if (options.aplatir) { try { doc.getForm().flatten(); } catch { /* formulaire illisible : laissé tel quel */ } }
         docs.set(p.source, doc);
         copies.set(p.source, []);
       }
@@ -546,11 +602,16 @@
       if (modifs.length) {
         const boite0 = page.getCropBox();
         const comptes = (!p.type || p.type === 'pdf') ? await retirerTexte(sortie, page, modifs.map(e => rectPdf(boite0, r, e.zone)), ctx) : modifs.map(() => 0);
-        elements = p.elements.map(e => { const k = modifs.indexOf(e); return k >= 0 ? { ...e, retire: comptes[k] > 0 } : e; });
+        elements = p.elements.map(e => { const k = modifs.indexOf(e); return k >= 0 ? { ...e, retire: comptes[k] > 0, policeOrigine: comptes.polices ? comptes.polices[k] : null } : e; });
       }
       // Annotations et texte OCR dans un flux à part, retiré si le PDF est rouvert dans Atelier PDF pour être modifié
       nouveauFlux(page);
-      await dessinerElements(sortie, page, r, elements, ctx);
+      // Option « commentaires » : annotations ajoutées comme commentaires PDF (Acrobat…), le reste dans la page
+      if (options.commentaires) {
+        const enCommentaire = (elements || []).filter(e => COMMENTABLES.includes(e.type));
+        await dessinerElements(sortie, page, r, (elements || []).filter(e => !COMMENTABLES.includes(e.type)), ctx);
+        if (enCommentaire.length) await ajouterCommentaires(sortie, page, r, enCommentaire, images, options);
+      } else await dessinerElements(sortie, page, r, elements, ctx);
       if (p.ocr && p.ocr.length) dessinerOcr(page, r, p.ocr, p.elements, ctx);
       const calques = page.contentStreamRef ? [page.contentStreamRef] : [];
       nouveauFlux(page);
@@ -735,9 +796,52 @@
     return { octets: 1, largeur: c => { try { return pol.widthOfTextAtSize(String.fromCharCode(c), 1); } catch { return 0.5; } } };
   }
 
+  // Table ToUnicode d'une police : texte Unicode -> code du caractère dans la police (bfchar, bfrange)
+  function tableUnicode(f) {
+    const { PDFName, decodePDFRawStream } = lib();
+    const tu = f.lookup(PDFName.of('ToUnicode'));
+    if (!tu) return null;
+    let t;
+    try { t = new TextDecoder('latin1').decode(decodePDFRawStream(tu).decode()); } catch { return null; }
+    const hexVersTexte = h => { let r = ''; for (let i = 0; i + 4 <= h.length; i += 4) r += String.fromCharCode(parseInt(h.substr(i, 4), 16)); return r; };
+    const table = new Map();
+    for (const bloc of t.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)) {
+      for (const m of bloc[1].matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/g)) { const u = hexVersTexte(m[2]); if (u && !table.has(u)) table.set(u, parseInt(m[1], 16)); }
+    }
+    for (const bloc of t.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) {
+      for (const m of bloc[1].matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*(\[[^\]]*\]|<[0-9a-fA-F]+>)/g)) {
+        const lo = parseInt(m[1], 16), hi = parseInt(m[2], 16);
+        if (hi - lo > 5000) continue;
+        if (m[3][0] === '[') {
+          [...m[3].matchAll(/<([0-9a-fA-F]+)>/g)].forEach((d, k) => { const u = hexVersTexte(d[1]); if (u && !table.has(u)) table.set(u, lo + k); });
+        } else {
+          const base = parseInt(m[3].slice(1, -1), 16);
+          for (let c = lo; c <= hi; c++) { const u = String.fromCodePoint(base + (c - lo)); if (!table.has(u)) table.set(u, c); }
+        }
+      }
+    }
+    return table;
+  }
+  // Codes du texte dans la police d'origine de la page ; null si un caractère n'y existe pas (police réduite)
+  function encoderDansPolice(page, nom, texte, octets) {
+    const { PDFName } = lib();
+    const f = page.node.Resources()?.lookup(PDFName.of('Font'))?.lookup(PDFName.of(nom));
+    if (!f) return null;
+    const table = tableUnicode(f);
+    if (!table) return null;
+    const codes = [];
+    for (const ch of String(texte)) {
+      const c = table.get(ch);
+      if (c === undefined) return null;
+      codes.push(c);
+    }
+    return codes.map(c => (octets === 2 ? c.toString(16).padStart(4, '0') : c.toString(16).padStart(2, '0'))).join('');
+  }
+
   async function retirerTexte(sortie, page, zones, ctx) {
     const { PDFName, PDFArray, decodePDFRawStream } = lib();
     const compte = zones.map(() => 0);
+    compte.polices = zones.map(() => null); // police (nom de ressource) du texte retiré dans chaque zone
     if (!zones.length) return compte;
     // Contenu de la page (plusieurs flux possibles, mis bout à bout)
     const c = page.node.get(PDFName.of('Contents'));
@@ -817,6 +921,7 @@
               const codes = police.octets === 2 ? [octets[k], octets[k + 1]] : [octets[k]];
               if (z >= 0 && w0 > 0) {
                 compte[z]++;
+                if (!compte.polices[z]) compte.polices[z] = { nom: nomPolice, infos: police };
                 retire = true;
                 vider();
                 // Décalage TJ équivalent à l'avance du caractère retiré (en millièmes de taille)
@@ -851,6 +956,145 @@
     for (const m of parts) { nouveau.set(m, q); q += m.length; }
     page.node.set(PDFName.of('Contents'), sortie.context.register(sortie.context.flateStream(nouveau)));
     return compte;
+  }
+
+  function remplirFormulaire(doc, champs) {
+    const { PDFTextField, PDFCheckBox, PDFRadioGroup, PDFDropdown, PDFOptionList } = lib();
+    let form;
+    try { form = doc.getForm(); } catch { return; }
+    // Caractères de la police standard du formulaire (WinAnsi) ; les autres deviennent « ? »
+    const latin = t => String(t ?? '').replace(/[^\n\x20-\x7E\xA0-\xFF\u2013\u2014\u2018\u2019\u201A\u201C\u201D\u201E\u2020\u2021\u2022\u2026\u2030\u2039\u203A\u20AC\u2122\u0152\u0153\u0160\u0161\u0178\u017D\u017E\u0192\u02C6\u02DC]/g, '?');
+    for (const [nom, v] of Object.entries(champs)) {
+      let f = null;
+      try { f = form.getFieldMaybe(nom); } catch { f = null; }
+      if (!f) continue;
+      try {
+        if (f instanceof PDFTextField) {
+          let t = latin(v);
+          const max = f.getMaxLength();
+          if (max) t = t.slice(0, max);
+          // Taille automatique ou démesurée sur un champ de plusieurs lignes : 10 pt
+          const m = /([\d.]+)\s+Tf/.exec(f.acroField.getDefaultAppearance() || '');
+          if (f.isMultiline() && (!m || !Number(m[1]) || Number(m[1]) > 14)) f.setFontSize(10);
+          f.setText(t);
+        } else if (f instanceof PDFCheckBox) { if (v) f.check(); else f.uncheck(); }
+        else if (f instanceof PDFRadioGroup) {
+          if (!v) { f.clear(); continue; }
+          // pdf.js donne l'état « activé » du bouton (souvent 0, 1…), pdf-lib attend l'option : correspondance par le rang
+          const options = f.getOptions();
+          let choix = String(v);
+          if (!options.includes(choix)) {
+            const etats = f.acroField.getOnValues().map(n => n.asString().slice(1));
+            const k = etats.indexOf(choix);
+            if (k >= 0 && options[k] != null) choix = options[k];
+            else if (/^\d+$/.test(choix) && options[Number(choix)] != null) choix = options[Number(choix)];
+          }
+          f.select(choix);
+        }
+        else if (f instanceof PDFDropdown || f instanceof PDFOptionList) { if (v) f.select(String(v)); else f.clear(); }
+      } catch (e) { /* valeur refusée par le champ : laissé tel quel */ }
+    }
+    try { form.flatten(); } catch { try { form.updateFieldAppearances(); } catch { /* rien */ } }
+  }
+
+  // ---------- Annotations en commentaires PDF ----------
+  const COMMENTABLES = ['texte', 'bulle', 'ligne', 'fleche', 'cadre', 'ellipse', 'crayon', 'surligne', 'image', 'tampon', 'cote', 'longueur', 'surface', 'angle'];
+  // Cadre (unités de la page affichée) occupé par le dessin d'un élément, marges comprises
+  function cadreElement(e, l, h, mesureTexte) {
+    const ep = (e.epaisseur || 2) + 2;
+    const pts = [];
+    const X = v => v * l, Y = v => v * h;
+    if (e.type === 'texte') {
+      const lignes = String(e.texte || '').split(/\r?\n/);
+      const t = e.taille || 12;
+      const w = Math.max(...lignes.map(x => mesureTexte(x, e.gras, t)), 1);
+      pts.push([X(e.x), Y(e.y)], [X(e.x) + w, Y(e.y) + lignes.length * 1.2 * t]);
+    } else if ('w' in e && 'x' in e) {
+      pts.push([X(e.x), Y(e.y)], [X(e.x + e.w), Y(e.y + e.h)]);
+      if (e.type === 'bulle') pts.push([X(e.px ?? e.x), Y(e.py ?? e.y)]);
+    } else if ('x1' in e) pts.push([X(e.x1), Y(e.y1)], [X(e.x2), Y(e.y2)]);
+    else (e.points || []).forEach(([x, y]) => pts.push([X(x), Y(y)]));
+    for (const et of etiquettes(e, l, h, 1)) {
+      const lt = mesureTexte(et.texte, false, et.taille);
+      pts.push([et.cx - lt / 2 - et.taille, et.cy - et.taille], [et.cx + lt / 2 + et.taille, et.cy + et.taille]);
+    }
+    if (!pts.length) return null;
+    const m = ep + (['fleche', 'cote', 'angle'].includes(e.type) ? 12 : 2);
+    const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]);
+    return { x0: Math.min(...xs) - m, y0: Math.min(...ys) - m, x1: Math.max(...xs) + m, y1: Math.max(...ys) + m };
+  }
+  async function ajouterCommentaires(sortie, page, r, elements, images, options) {
+    const { PDFDocument, PDFName, PDFHexString, PDFString, StandardFonts } = lib();
+    const boite = page.getCropBox();
+    const affiche = tailleAffichee(boite, r);
+    // Chaque élément est dessiné seul sur une page temporaire, intégrée comme apparence du commentaire
+    const tmp = await PDFDocument.create();
+    const ctxTmp = {
+      police: await tmp.embedFont(StandardFonts.Helvetica), policeGras: await tmp.embedFont(StandardFonts.HelveticaBold),
+      polices: new Map(), cacheImages: new Map(),
+      policeStandard(nom) { if (!this.polices.has(nom)) this.polices.set(nom, tmp.embedFont(nom)); return this.polices.get(nom); },
+      async image(id) { if (!id || !images[id]) return null; if (!this.cacheImages.has(id)) this.cacheImages.set(id, integrerImage(tmp, images[id].octets, images[id].mime)); return this.cacheImages.get(id); },
+    };
+    const mesure = (t, gras, taille) => (gras ? ctxTmp.policeGras : ctxTmp.police).widthOfTextAtSize(nettoyer(gras ? ctxTmp.policeGras : ctxTmp.police, t), taille);
+    const pages = [], cadres = [], retenus = [];
+    for (const e of elements) {
+      const c = cadreElement(e, affiche.l, affiche.h, mesure);
+      if (!c) continue;
+      const tp = tmp.addPage([boite.width, boite.height]);
+      tp.setMediaBox(boite.x, boite.y, boite.width, boite.height);
+      await dessinerElements(tmp, tp, r, [e], ctxTmp);
+      const a = versPdf(boite, r, c.x0 / affiche.l, c.y0 / affiche.h), b = versPdf(boite, r, c.x1 / affiche.l, c.y1 / affiche.h);
+      const rect = { left: Math.min(a.x, b.x), bottom: Math.min(a.y, b.y), right: Math.max(a.x, b.x), top: Math.max(a.y, b.y) };
+      pages.push(tp); cadres.push(rect); retenus.push(e);
+    }
+    if (!pages.length) return;
+    const integrees = await sortie.embedPages(pages, cadres);
+    const ctxPdf = sortie.context;
+    const auteur = options.auteur || 'Atelier PDF';
+    const maintenant = PDFString.fromDate(new Date());
+    const pt = (x, y) => { const q = versPdf(boite, r, x, y); return [q.x, q.y]; };
+    let annots = page.node.lookup(PDFName.of('Annots'));
+    if (!annots) { annots = ctxPdf.obj([]); page.node.set(PDFName.of('Annots'), annots); }
+    retenus.forEach((e, i) => {
+      const rect = cadres[i];
+      const coul = couleur(e.couleur || DEFAUTS[e.type] || (e.type === 'surligne' ? '#ffeb3b' : '#000000'));
+      const d = ctxPdf.obj({ Type: 'Annot', Rect: [rect.left, rect.bottom, rect.right, rect.top], F: 4, C: [coul.red, coul.green, coul.blue] });
+      // Apparence : le dessin d'Atelier PDF ; propriétés : celles qu'Acrobat sait modifier
+      const ap = ctxPdf.obj({});
+      ap.set(PDFName.of('N'), integrees[i].ref);
+      d.set(PDFName.of('AP'), ap);
+      d.set(PDFName.of('T'), PDFHexString.fromText(auteur));
+      d.set(PDFName.of('M'), maintenant);
+      d.set(PDFName.of('CreationDate'), maintenant);
+      d.set(PDFName.of('NM'), PDFString.of(`atelierpdf-${Date.now().toString(36)}-${i}`));
+      d.set(PDFName.of('AtelierPDF'), ctxPdf.obj(true));
+      const bord = ctxPdf.obj({ W: e.epaisseur || 2 });
+      const texte = e.texte || e.etiquette || (e.type === 'tampon' ? [e.texte, e.ligne2].filter(Boolean).join(' – ') : '');
+      if (texte) d.set(PDFName.of('Contents'), PDFHexString.fromText(texte));
+      const sous = {
+        texte: 'FreeText', bulle: 'FreeText', ligne: 'Line', fleche: 'Line', cote: 'Line', cadre: 'Square', surligne: 'Square', ellipse: 'Circle',
+        crayon: 'Ink', longueur: 'PolyLine', angle: 'PolyLine', surface: 'Polygon', image: 'Stamp', tampon: 'Stamp',
+      }[e.type];
+      d.set(PDFName.of('Subtype'), PDFName.of(sous));
+      if (sous === 'FreeText') {
+        d.set(PDFName.of('DA'), PDFString.of(`/Helv ${e.taille || 12} Tf ${coul.red} ${coul.green} ${coul.blue} rg`));
+        if (e.type === 'bulle') d.set(PDFName.of('IT'), PDFName.of('FreeTextCallout'));
+      }
+      if (sous === 'Line') {
+        d.set(PDFName.of('L'), ctxPdf.obj([...pt(e.x1, e.y1), ...pt(e.x2, e.y2)]));
+        if (e.type === 'fleche') d.set(PDFName.of('LE'), ctxPdf.obj(['None', 'OpenArrow']));
+        if (e.type === 'cote') d.set(PDFName.of('LE'), ctxPdf.obj(['ClosedArrow', 'ClosedArrow']));
+        d.set(PDFName.of('BS'), bord);
+      }
+      if (sous === 'Square' || sous === 'Circle') {
+        d.set(PDFName.of('BS'), e.type === 'surligne' ? ctxPdf.obj({ W: 0 }) : bord);
+        if (e.type === 'surligne') { d.set(PDFName.of('IC'), ctxPdf.obj([coul.red, coul.green, coul.blue])); d.set(PDFName.of('CA'), ctxPdf.obj(0.35)); }
+      }
+      if (sous === 'Ink') { d.set(PDFName.of('InkList'), ctxPdf.obj([(e.points || []).flatMap(([x, y]) => pt(x, y))])); d.set(PDFName.of('BS'), bord); }
+      if (sous === 'PolyLine' || sous === 'Polygon') { d.set(PDFName.of('Vertices'), ctxPdf.obj((e.points || []).flatMap(([x, y]) => pt(x, y)))); d.set(PDFName.of('BS'), bord); }
+      if (sous === 'Stamp') d.set(PDFName.of('Name'), PDFName.of(e.type === 'tampon' ? 'Approved' : 'Draft'));
+      annots.push(ctxPdf.register(d));
+    });
   }
 
   // pdf-lib écrit dans le dernier flux de la page : on en force un nouveau
@@ -927,6 +1171,12 @@
       (donnees.elements || []).forEach(e => { if (e.type === 'texteModifie') e.applique = true; });
       pages.push(donnees);
       page.node.delete(PDFName.of('AtelierPDF'));
+      // Commentaires créés par Atelier PDF : ils redeviennent des annotations modifiables (données ci-dessus)
+      const annots = page.node.lookup(PDFName.of('Annots'));
+      if (annots instanceof PDFArray) {
+        const garder = annots.asArray().filter(ref => { const a = doc.context.lookup(ref); return !(a && a.get && a.get(PDFName.of('AtelierPDF'))); });
+        if (garder.length) page.node.set(PDFName.of('Annots'), doc.context.obj(garder)); else page.node.delete(PDFName.of('Annots'));
+      }
     });
     aRetirer.reverse().forEach(i => doc.removePage(i));
     doc.catalog.delete(PDFName.of('AtelierPDF'));

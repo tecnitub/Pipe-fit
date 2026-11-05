@@ -43,6 +43,18 @@ Obtenir les fichiers : onglet **Actions** du dépôt GitHub → dernière exécu
 - **Sauvegarde automatique** du travail en cours (reprise à la réouverture) et **fichier projet** `.atelierpdf`.
 - **Réédition** : un PDF enregistré par Atelier PDF, rouvert dans Atelier PDF, retrouve ses annotations modifiables
   (données intégrées au PDF, invisibles pour les autres logiciels ; numéros, filigrane et sommaire retirés puis refaits).
+- **Rechercher** (Ctrl+F, texte du PDF et OCR) et **imprimer** (Ctrl+P) le document compilé.
+- **Formulaires PDF** remplis sur la page (texte, cases, boutons radio, listes), valeurs écrites puis figées.
+- **Comparer deux indices** d'un plan : superposition rouge (supprimé) / vert (ajouté), recalage automatique.
+- **Mesures** : accroche aux extrémités et aux traits du plan (géométrie lue dans le PDF), angles, zones de détail à
+  une autre échelle.
+- **Texte modifié dans la police d'origine** quand elle contient les caractères, **paragraphes** (Maj+clic) recoupés
+  à la largeur d'origine.
+- **Commentaires PDF** (option) : annotations exportées comme commentaires Acrobat avec leur apparence, retirées et
+  redevenues modifiables à la réouverture dans Atelier PDF.
+- **Pipe-Fit** : ouvrir un document d'un chantier, enregistrer le résultat comme nouveau document ou nouvel indice
+  (clé d'API ; le serveur accepte la page locale d'Atelier PDF uniquement avec une clé, cookies ignorés).
+- **Mises à jour** : le lanceur cherche un Setup plus récent dans le dossier réseau d'installation.
 - **Numérotation** des pages, **filigrane**, titre et auteur du document, aplatissement des formulaires.
 - **Extraire** des pages, **diviser** (par document, par page, toutes les N pages, par plages).
 - **Réduire la taille** (pages converties en images 100–200 ppp).
@@ -57,6 +69,11 @@ Mode d'emploi détaillé : [installer/files/AtelierPDF-LISEZMOI.txt](../installe
   `pdf/src/index.html` s'ouvre directement dans un navigateur pour le développement.
 - `node pdf/build.js` → `dist/AtelierPDF.html` (un seul fichier : pdf.js et pdf-lib inclus).
 - `bash installer/build-pdf.sh` → `dist/AtelierPDF-Setup-<version>.exe` (version dans `pdf/VERSION`).
-- Tests : `node --test test/atelier-pdf.test.js` (inclus dans `npm test`).
+- Tests : `node --test test/atelier-pdf.test.js` (inclus dans `npm test`) ; interface dans Chromium :
+  `npm run test:ui` (Playwright ; aussi sur GitHub Actions).
+- Signature de code : `installer/build-pdf.sh` signe le lanceur, l'installateur et le désinstallateur si
+  `ATELIERPDF_CERT_PFX` (ou `ATELIERPDF_CERT_PFX_BASE64`) et `ATELIERPDF_CERT_PASSWORD` sont fournis
+  (secrets GitHub du même nom en `_BASE64`) ; `osslsigncode` requis.
+- Vérification sur de vrais PC : `installer/files/AtelierPDF-VERIFICATION.txt` (aussi dans le pack).
 - Bibliothèques (déjà présentes dans le dépôt) : pdf.js 3.11.174 (Apache 2.0), pdf-lib 1.17.1 (MIT),
   tesseract.js 7 et modèle français (Apache 2.0).

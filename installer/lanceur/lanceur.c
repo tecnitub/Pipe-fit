@@ -220,6 +220,79 @@ static void nettoyer(const wchar_t *dossier) {
   FindClose(r);
 }
 
+/* ----- Mises à jour : nouvelle version déposée dans le dossier d'installation d'origine (dossier réseau) -----
+ * L'installateur enregistre ce dossier (HKCU\Software\AtelierPDF, « DossierMisesAJour ») quand il a été lancé depuis
+ * le réseau. Au démarrage, une fois par jour au plus et sans retarder l'ouverture, on y cherche
+ * AtelierPDF-Setup-x.y.z.exe plus récent que cette version, et on propose de l'installer. */
+#ifndef VERSION_ATELIER
+#define VERSION_ATELIER "0.0.0"
+#endif
+#define CLE_ATELIER L"Software\\AtelierPDF"
+/* Question posée à l'utilisateur (remplaçable pour les essais automatiques) */
+#ifndef DEMANDER
+#define DEMANDER(m) MessageBoxW(NULL, (m), L"Atelier PDF — mise à jour", MB_YESNO | MB_ICONINFORMATION | MB_SETFOREGROUND)
+#endif
+static wchar_t setupTrouve[MAX_CHEMIN], versionTrouvee[64];
+static int comparerVersions(const wchar_t *a, const wchar_t *b) {
+  unsigned va[3] = {0}, vb[3] = {0};
+  for (int i = 0, k = 0; a[i] && k < 3; i++) { if (a[i] == L'.') k++; else if (a[i] >= L'0' && a[i] <= L'9') va[k] = va[k] * 10 + (a[i] - L'0'); }
+  for (int i = 0, k = 0; b[i] && k < 3; i++) { if (b[i] == L'.') k++; else if (b[i] >= L'0' && b[i] <= L'9') vb[k] = vb[k] * 10 + (b[i] - L'0'); }
+  for (int i = 0; i < 3; i++) if (va[i] != vb[i]) return va[i] < vb[i] ? -1 : 1;
+  return 0;
+}
+static DWORD WINAPI chercherMiseAJour(LPVOID inutile) {
+  (void)inutile;
+  wchar_t dossier[MAX_CHEMIN], motif[MAX_CHEMIN], actuelle[64];
+  DWORD t = sizeof(dossier);
+  if (RegGetValueW(HKEY_CURRENT_USER, CLE_ATELIER, L"DossierMisesAJour", RRF_RT_REG_SZ, NULL, dossier, &t) != ERROR_SUCCESS || !dossier[0]) return 0;
+  MultiByteToWideChar(CP_UTF8, 0, VERSION_ATELIER, -1, actuelle, 64);
+  swprintf(motif, MAX_CHEMIN, L"%ls\\AtelierPDF-Setup-*.exe", dossier);
+  WIN32_FIND_DATAW f;
+  HANDLE r = FindFirstFileW(motif, &f);
+  if (r == INVALID_HANDLE_VALUE) return 0;
+  wchar_t meilleure[64];
+  wcscpy(meilleure, actuelle);
+  do {
+    /* « AtelierPDF-Setup-1.7.2.exe » -> « 1.7.2 » (lu à la main : swscanf et %[ diffèrent selon les bibliothèques C) */
+    wchar_t v[64] = {0};
+    const wchar_t *debut = f.cFileName + wcslen(L"AtelierPDF-Setup-");
+    size_t n = 0;
+    while (n < 63 && ((debut[n] >= L'0' && debut[n] <= L'9') || debut[n] == L'.')) { v[n] = debut[n]; n++; }
+    while (n && v[n - 1] == L'.') v[--n] = 0;
+    if (n && _wcsicmp(debut + wcslen(v), L".exe") == 0 && comparerVersions(v, meilleure) > 0) {
+      wcscpy(meilleure, v);
+      swprintf(setupTrouve, MAX_CHEMIN, L"%ls\\%ls", dossier, f.cFileName);
+    }
+  } while (FindNextFileW(r, &f));
+  FindClose(r);
+  if (setupTrouve[0]) wcscpy(versionTrouvee, meilleure);
+  return 0;
+}
+static BOOL verificationDuJour(void) {
+  SYSTEMTIME st;
+  GetLocalTime(&st);
+  DWORD aujourdhui = st.wYear * 10000 + st.wMonth * 100 + st.wDay, derniere = 0, t = sizeof(derniere);
+  RegGetValueW(HKEY_CURRENT_USER, CLE_ATELIER, L"DerniereVerification", RRF_RT_REG_DWORD, NULL, &derniere, &t);
+  if (derniere == aujourdhui) return FALSE;
+  HKEY k;
+  if (RegCreateKeyExW(HKEY_CURRENT_USER, CLE_ATELIER, 0, NULL, 0, KEY_SET_VALUE, NULL, &k, NULL) == ERROR_SUCCESS) {
+    RegSetValueExW(k, L"DerniereVerification", 0, REG_DWORD, (const BYTE *)&aujourdhui, sizeof(aujourdhui));
+    RegCloseKey(k);
+  }
+  return TRUE;
+}
+/* Après l'ouverture de la fenêtre : attend la recherche (10 s au plus, dossier réseau lent) puis propose l'installation */
+static void proposerMiseAJour(HANDLE recherche) {
+  if (!recherche) return;
+  if (WaitForSingleObject(recherche, 10000) != WAIT_OBJECT_0) return;
+  CloseHandle(recherche);
+  if (!setupTrouve[0]) return;
+  wchar_t m[MAX_CHEMIN + 256];
+  swprintf(m, MAX_CHEMIN + 256, L"Une nouvelle version d'Atelier PDF (%ls) est disponible :\n%ls\n\nL'installer maintenant ? Enregistrez d'abord votre travail en cours (il est aussi sauvegardé automatiquement).", versionTrouvee, setupTrouve);
+  if (DEMANDER(m) == IDYES)
+    ShellExecuteW(NULL, L"open", setupTrouve, NULL, NULL, SW_SHOWNORMAL);
+}
+
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prec, PWSTR ligne, int affichage) {
   (void)inst; (void)prec; (void)ligne; (void)affichage;
   int argc = 0;
@@ -230,6 +303,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prec, PWSTR ligne, int affichage) 
   DWORD tailleAppli = 0;
   unsigned char *html = NULL;
   wcscpy(page, appli);
+  /* Recherche d'une mise à jour en parallèle (lancement simple seulement : on n'interrompt pas l'ouverture d'un document) */
+  HANDLE recherche = (argc <= 1 && verificationDuJour()) ? CreateThread(NULL, 0, chercherMiseAJour, NULL, 0, NULL) : NULL;
 
   if (argc > 1) {
     html = lireFichier(appli, &tailleAppli);
@@ -281,13 +356,16 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prec, PWSTR ligne, int affichage) 
     if (CreateProcessW(NULL, commande, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
       CloseHandle(pi.hThread);
       CloseHandle(pi.hProcess);
+      proposerMiseAJour(recherche);
       return 0;
     }
   }
   /* Sans Edge : navigateur par défaut */
   if ((INT_PTR)ShellExecuteW(NULL, L"open", page, NULL, NULL, SW_SHOWNORMAL) <= 32) {
     message(L"Aucun navigateur trouvé pour ouvrir Atelier PDF (Microsoft Edge conseillé).");
+    proposerMiseAJour(recherche);
     return 1;
   }
+  proposerMiseAJour(recherche);
   return 0;
 }

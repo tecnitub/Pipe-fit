@@ -20,6 +20,11 @@ OutFile "../dist/AtelierPDF-Setup-${VERSION}.exe"
 InstallDir "$LOCALAPPDATA\Programs\AtelierPDF"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
+; Signature de code (si un certificat est fourni à la construction : installer/build-pdf.sh)
+!ifdef SIGNER
+  !finalize '${SIGNER} "%1"'
+  !uninstfinalize '${SIGNER} "%1"'
+!endif
 BrandingText "${APPNAME} ${VERSION}"
 
 VIProductVersion "${VERSION}.0"
@@ -119,6 +124,22 @@ Section "Installer"
   WriteRegStr HKCU "${CAPAS}" "ApplicationIcon" '"$INSTDIR\AtelierPDF.exe",0'
   WriteRegStr HKCU "${CAPAS}\FileAssociations" ".pdf" "${PROGID}"
   WriteRegStr HKCU "Software\RegisteredApplications" "AtelierPDF" "${CAPAS}"
+  ; Mises à jour : lancé depuis un dossier réseau, ce dossier sera surveillé par le lanceur (nouvelles versions)
+  StrCpy $0 $EXEDIR 2
+  StrCpy $1 ""
+  ${If} $0 == "\\"
+    StrCpy $1 $EXEDIR
+  ${Else}
+    StrCpy $2 $EXEDIR 3
+    System::Call 'kernel32::GetDriveTypeW(w r2) i .r3'
+    ${If} $3 == 4
+      StrCpy $1 $EXEDIR
+    ${EndIf}
+  ${EndIf}
+  ${If} $1 != ""
+    WriteRegStr HKCU "Software\AtelierPDF" "DossierMisesAJour" "$1"
+    DetailPrint "Mises à jour : nouvelles versions recherchées dans $1"
+  ${EndIf}
   ; Prévenir l'Explorateur que les associations ont changé
   System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 SectionEnd

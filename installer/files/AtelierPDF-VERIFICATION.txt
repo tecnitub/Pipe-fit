@@ -1,0 +1,67 @@
+﻿LISTE DE VÉRIFICATION – ATELIER PDF SUR UN VRAI PC WINDOWS
+===========================================================
+
+Durée : environ 20 minutes. À faire sur 2 ou 3 postes (un portable, un fixe,
+si possible un PC « verrouillé » par l'antivirus de l'entreprise).
+Cochez [x] ce qui fonctionne ; notez ce qui ne va pas (capture d'écran bienvenue)
+et renvoyez la liste.
+
+Poste : ...................  Windows 10 / 11 : ......  Date : ..........
+Antivirus : ................  Écran : portable / fixe
+
+A. INSTALLATION
+[ ] 1. Copier le pack sur le réseau (ex. \\serveur\Logiciels\AtelierPDF) et lancer
+       AtelierPDF-Setup-x.y.z.exe DEPUIS LE RÉSEAU (pour tester les mises à jour, point F).
+[ ] 2. Fenêtre bleue « Windows a protégé votre ordinateur » : « Informations
+       complémentaires » puis « Exécuter quand même » permet d'installer.
+       (Avec un programme signé, cette fenêtre ne doit pas apparaître.)
+[ ] 3. L'antivirus ne bloque ni l'installateur, ni AtelierPDF.exe.
+[ ] 4. À la fin, la case « Ouvrir les PDF avec Atelier PDF par défaut » ouvre la page
+       « Applications par défaut » de Windows ; Atelier PDF y figure pour .pdf.
+[ ] 5. L'icône « Atelier PDF » est sur le bureau et dans le menu Démarrer ;
+       elle ouvre une fenêtre à part (Edge) en moins de 3 secondes.
+
+B. OUVRIR DES PDF DE L'ORDINATEUR
+[ ] 6. Clic droit sur un PDF > Ouvrir avec > Atelier PDF : le PDF s'affiche.
+[ ] 7. Après avoir choisi Atelier PDF par défaut : double-clic sur un PDF l'ouvre.
+[ ] 8. Sélectionner 3 PDF > clic droit > Ouvrir avec Atelier PDF (Windows 11 :
+       « Afficher plus d'options ») : UNE seule fenêtre avec les 3 documents.
+[ ] 9. PDF avec accents et espaces dans le nom (« Plan été n°2.pdf ») : nom correct.
+[ ] 10. Glisser des PDF et des photos depuis l'Explorateur dans la fenêtre.
+
+C. TRAVAIL COURANT
+[ ] 11. Réorganiser des pages, pivoter, supprimer, enregistrer : la fenêtre
+        « Enregistrer sous » de Windows s'ouvre ; le PDF obtenu s'ouvre dans Acrobat/Edge.
+[ ] 12. Double-clic sur une page : zoom à la molette avec Ctrl, barre d'espace +
+        glisser pour se déplacer, vignettes à gauche (clic, glisser).
+[ ] 13. Barre d'outils lisible sur le portable (pas de boutons coupés).
+[ ] 14. « ✏️ Modifier le texte » sur un devis : la ligne corrigée ressemble à
+        l'originale ; dans le PDF enregistré, Ctrl+F ne trouve plus l'ancien texte.
+[ ] 15. OCR d'un scan (🔍 OCR) : quelques secondes par page ; Ctrl+F trouve un mot du scan.
+[ ] 16. Un formulaire PDF (Cerfa) se remplit et s'enregistre.
+[ ] 17. Comparer deux indices d'un plan : rouge/vert cohérents.
+[ ] 18. Mesures sur un plan à l'échelle connue : une cote connue est retrouvée.
+[ ] 19. Ctrl+P : la fenêtre d'impression de Windows s'ouvre avec le document.
+[ ] 20. Fermer la fenêtre en cours de travail, relancer : « Reprendre » retrouve tout.
+
+D. PIPE-FIT (si utilisé)
+[ ] 21. Projet > Connexion à Pipe-Fit (adresse http://SERVEUR:3000 + clé d'API) : connecté.
+[ ] 22. Ouvrir un document d'un chantier, l'annoter, « Enregistrer dans un chantier »
+        comme nouvel indice : visible dans Pipe-Fit avec l'indice suivant.
+
+E. ANNOTATIONS DANS ACROBAT
+[ ] 23. Case « Annotations en commentaires (Acrobat) » cochée : dans Acrobat Reader,
+        les annotations apparaissent dans la liste des commentaires et se déplacent.
+
+F. MISE À JOUR
+[ ] 24. Déposer un AtelierPDF-Setup de version plus récente dans le dossier réseau
+        du point 1, relancer Atelier PDF le lendemain (ou effacer la valeur
+        DerniereVerification dans HKCU\Software\AtelierPDF) : la mise à jour est proposée.
+
+G. DÉSINSTALLATION
+[ ] 25. Paramètres > Applications > Atelier PDF > Désinstaller : plus d'icône,
+        plus d'« Ouvrir avec Atelier PDF », les PDF s'ouvrent avec le lecteur d'avant.
+
+Remarques :
+.............................................................................
+.............................................................................

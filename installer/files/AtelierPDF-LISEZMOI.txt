@@ -65,8 +65,12 @@ MODIFIER LE TEXTE D'UN PDF (double-clic sur la page, puis « ✏️ Modifier le 
     de la page ne bougent pas.
   - Scans et photos : lancez d'abord « 🔍 OCR » ; l'ancien texte, qui fait partie
     de l'image, est alors recouvert par la couleur du fond.
-  - Limites : la police est une police standard proche de l'originale (pas
-    toujours identique) ; un texte écrit en biais, ou certains PDF particuliers
+  - Maj+clic sur une ligne : tout le PARAGRAPHE, qui revient à la ligne tout seul
+    à la largeur d'origine.
+  - La police d'origine du PDF est réutilisée quand elle contient toutes les
+    lettres du texte (la correction ne se voit pas) ; sinon, police standard
+    la plus proche (Arial, Times ou Courier).
+  - Limites : un texte écrit en biais, ou certains PDF particuliers
     (texte dessiné dans un sous-élément), sont recouverts au lieu d'être retirés.
 
 ANNOTER UNE PAGE (double-clic sur la page, ou « Modifier »)
@@ -100,6 +104,26 @@ ANNOTER UNE PAGE (double-clic sur la page, ou « Modifier »)
   clavier), tirer le carré bleu pour le redimensionner. Ctrl+D : dupliquer.
   Suppr : supprimer. Ctrl+Z : annuler. Page préc./Page suiv. : changer de page.
 
+RECHERCHER ET IMPRIMER
+  - Ctrl+F (ou 🔎) : rechercher un mot dans tout le document, y compris dans les
+    scans passés à l'OCR. Entrée / F3 : résultat suivant ; Maj+Entrée : précédent.
+  - Ctrl+P (ou 🖨 Imprimer) : imprime le document compilé (fenêtre d'impression
+    de Windows), avec numérotation, filigrane et annotations.
+
+FORMULAIRES PDF (Cerfa, bons à remplir)
+  Ouvrez la page (double-clic) : les champs du formulaire sont encadrés en bleu.
+  Cliquez dedans pour écrire, cocher, choisir dans une liste (outil Sélection).
+  À l'enregistrement, les valeurs sont écrites dans le PDF et le formulaire est
+  figé (il ne peut plus être modifié par erreur).
+
+COMPARER DEUX INDICES D'UN PLAN
+  Sélectionnez les deux pages (Ctrl+clic), l'ancienne puis la nouvelle, puis
+  « ⇆ Comparer » : rouge = seulement dans l'ancien (supprimé), vert = seulement
+  dans le nouveau (ajouté), gris = identique. Les deux plans sont recalés
+  automatiquement (« ⌖ Recaler ») ; flèches du clavier pour ajuster à la main.
+  « Tolérance » : ignorer les écarts d'un trait. « Ajouter au document » : la
+  comparaison devient une page du dossier.
+
 COMPILER ET ENREGISTRER
   Colonne de gauche, avant d'enregistrer :
   - Titre et auteur du document.
@@ -131,6 +155,14 @@ MESURER SUR UN PLAN (dans l'éditeur de page)
   Attention : un plan imprimé ou scanné « ajusté à la page » n'est plus à
   l'échelle indiquée ; dans ce cas, étalonnez sur une cote connue.
 
+  Accroche : en traçant une cote, une longueur ou une surface, le point se colle
+  aux extrémités et aux traits du plan (carré vert : extrémité, rond vert : sur
+  un trait). Alt enfoncé : pas d'accroche.
+  Angle : un clic sur un côté, un sur le sommet, un sur l'autre côté.
+  Détail à une autre échelle sur la même feuille : liste « Échelle » >
+  « Zone à une autre échelle », tracer le cadre du détail, indiquer son échelle ;
+  les mesures commencées dans ce cadre utilisent cette échelle.
+
 RECONNAÎTRE LE TEXTE DES SCANS (OCR)
   Bouton « 🔍 OCR » : lit le texte des pages scannées et des photos (pages
   sélectionnées, ou toutes). Les pages qui ont déjà du texte sont ignorées.
@@ -139,6 +171,24 @@ RECONNAÎTRE LE TEXTE DES SCANS (OCR)
   l'OCR sur les scans qui ne l'ont pas encore été.
   La lecture se fait sur ce PC (aucun envoi sur Internet). Elle est fiable sur
   les documents tapés et bien scannés ; vérifiez les pages manuscrites ou floues.
+
+ANNOTATIONS EN COMMENTAIRES (ACROBAT)
+  Case « Annotations en commentaires (Acrobat) » (colonne de gauche) : textes,
+  bulles, flèches, cadres, surlignages, tampons et mesures sont enregistrés comme
+  commentaires PDF : vos collègues les voient dans la liste des commentaires
+  d'Acrobat ou d'Edge, peuvent les déplacer, y répondre ou les supprimer.
+  Case décochée : les annotations font partie de la page (impossibles à retirer).
+  Le caviardage et le texte modifié font toujours partie de la page.
+
+PIPE-FIT (documents des chantiers)
+  Menu « Projet » :
+  - « Connexion à Pipe-Fit » : adresse du serveur (ex. http://SERVEUR:3000) et
+    clé d'API (Pipe-Fit > Paramètres > API et automatisations > Nouvelle clé ;
+    elle donne les droits du compte qui la crée).
+  - « Ouvrir un document d'un chantier » : choisir le chantier puis le PDF.
+  - « Enregistrer dans un chantier » : comme nouveau document (nom, catégorie),
+    ou comme NOUVEL INDICE d'un document du chantier (l'indice précédent reste
+    dans l'historique de Pipe-Fit). Option « Transmettre aux compagnons ».
 
 SAUVEGARDE ET PROJETS
   - Le travail en cours est sauvegardé automatiquement sur ce PC (indiqué en bas
@@ -160,6 +210,12 @@ PDF PROTÉGÉS
   Un PDF protégé contre la modification est accepté : ses pages sont recopiées
   sous forme d'images (signalé dans la liste « Documents »). Si un mot de passe
   d'ouverture est demandé, il faut le connaître.
+
+MISES À JOUR
+  Si l'installation a été lancée depuis un dossier réseau (ex.
+  \\serveur\Logiciels\AtelierPDF), Atelier PDF y cherche chaque jour une version
+  plus récente (AtelierPDF-Setup-x.y.z.exe) et propose de l'installer : il suffit
+  de déposer la nouvelle version dans ce dossier.
 
 DÉSINSTALLER
   Paramètres Windows > Applications > Atelier PDF > Désinstaller.

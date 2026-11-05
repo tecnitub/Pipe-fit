@@ -201,7 +201,8 @@ function ouvrirSession(req, accountId) {
   return sessionCookie(req, token, SESSION_DAYS * 86400);
 }
 function currentAccount(req) {
-  const token = cookies(req).sid;
+  // Page locale (Atelier PDF) : la clé d'API seulement, jamais le cookie de session du navigateur
+  const token = req.headers.origin === 'null' ? null : cookies(req).sid;
   // Clé d'API (automatisations) : les droits sont ceux du compte propriétaire de la clé
   if (!token) { const a = API.compteDeCle(db, req.headers.authorization); return a ? { ...a, token: null, cleApi: true } : null; }
   const h = empreinte(token);
@@ -262,6 +263,21 @@ const FACTICE = DB.hashPassword(crypto.randomBytes(16).toString('hex'));
 async function api(req, res, url) {
   const p = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean);
   const method = req.method;
+
+  // Atelier PDF (logiciel du poste : page locale, d'origine « null ») : accès par clé d'API uniquement,
+  // réponses lisibles par la page (CORS). Sans clé, refusé ; les cookies de session sont ignorés (currentAccount).
+  if (req.headers.origin === 'null') {
+    if (method === 'OPTIONS') {
+      const demandes = String(req.headers['access-control-request-headers'] || '').toLowerCase().split(',').map(s => s.trim());
+      if (!demandes.includes('authorization')) return fail(res, 403, 'Origine de la requête refusée');
+      res.writeHead(204, { 'Access-Control-Allow-Origin': 'null', 'Access-Control-Allow-Methods': 'GET, POST, PUT',
+        'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-PipeFit-Upload, X-Filename', 'Access-Control-Max-Age': '600', Vary: 'Origin' });
+      return res.end();
+    }
+    if (!/^Bearer\s+pf_/.test(String(req.headers.authorization || ''))) return fail(res, 403, 'Origine de la requête refusée');
+    res.setHeader('Access-Control-Allow-Origin', 'null');
+    res.setHeader('Vary', 'Origin');
+  }
 
   // Protection CSRF : les écritures doivent être en JSON (impossible via un formulaire d'un autre site).
   // Adresse de dépôt de la plateforme de facturation électronique : authentifiée par jeton (pas de session),

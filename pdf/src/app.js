@@ -105,6 +105,8 @@
   function nouvelleSource(nom, type) {
     const id = nouvelId('s');
     const s = { id, nom: sansExtension(nom), type, couleur: COULEURS[etat.sources.size % COULEURS.length] };
+    // Document venu d'un chantier Pipe-Fit : on s'en souvient pour y enregistrer le résultat (nouvel indice)
+    if (etat.origineImport) s.pipefit = etat.origineImport;
     etat.sources.set(id, s);
     return s;
   }
@@ -183,7 +185,7 @@
       if (!utilisees.has(s.id)) continue;
       const cle = `f_${s.fichier || s.id}`;
       if (!fichiers.has(cle)) fichiers.set(cle, { octets: s.octets, mime: s.type === 'pdf' ? 'application/pdf' : s.mime });
-      sources.push({ id: s.id, nom: s.nom, type: s.type, mime: s.mime, couleur: s.couleur, nbPages: s.nbPages, rasteriser: !!s.rasteriser, alerte: s.alerte || '', l: s.l, h: s.h, fichier: cle });
+      sources.push({ id: s.id, nom: s.nom, type: s.type, mime: s.mime, couleur: s.couleur, nbPages: s.nbPages, rasteriser: !!s.rasteriser, alerte: s.alerte || '', l: s.l, h: s.h, fichier: cle, champs: s.champs || null, pipefit: s.pipefit || null });
     }
     const images = [];
     for (const p of etat.pages) for (const e of p.elements) {
@@ -205,6 +207,8 @@
       if (!f) continue;
       const s = nouvelleSource(`${m.nom}.x`, m.type);
       Object.assign(s, { nom: m.nom, mime: m.mime, couleur: m.couleur, nbPages: m.nbPages, rasteriser: m.rasteriser, alerte: m.alerte, l: m.l, h: m.h, octets: f.octets });
+      if (m.champs) { s.champs = m.champs; s.champsV = 1; }
+      if (m.pipefit) s.pipefit = m.pipefit;
       if (m.type === 'pdf') {
         if (!docs.has(m.fichier)) docs.set(m.fichier, { doc: pdfjs.getDocument({ data: f.octets.slice(), isEvalSupported: false }).promise, id: s.id });
         s.doc = docs.get(m.fichier).doc;
@@ -413,7 +417,8 @@
       const doc = await s.doc;
       const page = await doc.getPage(p.index + 1);
       const vp = page.getViewport({ scale: ech * dpr, rotation: rotTotale(p) });
-      await page.render({ canvasContext: g, viewport: vp }).promise;
+      await page.render({ canvasContext: g, viewport: vp, annotationMode: pdfjs.AnnotationMode.ENABLE }).promise;
+      await dessinerChamps(p, canvas);
     } else {
       // Page dessinée non tournée, puis rotation
       const W = p.boite.width * ech * dpr, H = p.boite.height * ech * dpr;
@@ -466,7 +471,9 @@
         const t = e.taille * k;
         g.fillStyle = e.couleur || '#000';
         g.font = `${e.italique ? 'italic ' : ''}${e.gras ? 'bold ' : ''}${t}px ${FAMILLES[e.police] || FAMILLES.helvetica}`;
-        String(e.texte || '').split('\n').forEach((l, i) => g.fillText(l, e.x * L, e.base * H + i * t * 1.2));
+        const lignes = e.paragraphe ? MoteurPDF.couperLignes(x => g.measureText(x).width, e.texte, e.paragraphe.largeur * L) : String(e.texte || '').split('\n');
+        const il = e.paragraphe ? e.paragraphe.interligne * k : t * 1.2;
+        lignes.forEach((l, i) => g.fillText(l, e.x * L, e.base * H + i * il));
       }
       else if (e.type === 'bulle' && e.texte) {
         const t = (e.taille || 11) * k, m = MoteurPDF.MARGE_BULLE * k;
@@ -497,6 +504,109 @@
   }
   function chargerImageCache(i) { if (!i.img) i.img = chargerImage(i.url); return i.img; }
 
+  // ---------- Formulaires PDF (champs à remplir) ----------
+  // Champs d'une page, d'après pdf.js : position sur la page affichée (fractions), type, valeur d'origine
+  const cacheChamps = new Map();
+  function champsPage(p) {
+    const s = etat.sources.get(p.source);
+    if (p.type !== 'pdf' || !s || s.rasteriser) return Promise.resolve([]);
+    const cle = `${p.source}|${p.index}|${rotTotale(p)}`;
+    if (!cacheChamps.has(cle)) cacheChamps.set(cle, (async () => {
+      const page = await (await s.doc).getPage(p.index + 1);
+      const vp = page.getViewport({ scale: 1, rotation: rotTotale(p) });
+      const annots = await page.getAnnotations({ intent: 'display' });
+      return annots.filter(a => a.annotationType === 20 && a.fieldName && !a.pushButton && a.fieldType !== 'Sig' && !a.hidden).map(a => {
+        const [x1, y1, x2, y2] = vp.convertToViewportRectangle(a.rect);
+        const c = { nom: a.fieldName, x: Math.min(x1, x2) / vp.width, y: Math.min(y1, y2) / vp.height, w: Math.abs(x2 - x1) / vp.width, h: Math.abs(y2 - y1) / vp.height,
+          lectureSeule: !!a.readOnly, taille: a.defaultAppearanceData?.fontSize || 0 };
+        if (a.fieldType === 'Tx') Object.assign(c, { type: 'texte', initiale: a.fieldValue || '', multiligne: !!a.multiLine, max: a.maxLen || 0 });
+        else if (a.fieldType === 'Btn' && a.radioButton) Object.assign(c, { type: 'radio', valeurExport: a.buttonValue, initiale: a.fieldValue && a.fieldValue !== 'Off' ? a.fieldValue : '' });
+        else if (a.fieldType === 'Btn') Object.assign(c, { type: 'case', initiale: !!a.fieldValue && a.fieldValue !== 'Off' });
+        else if (a.fieldType === 'Ch') Object.assign(c, { type: 'liste', options: (a.options || []).map(o => ({ v: o.exportValue, t: o.displayValue })), initiale: Array.isArray(a.fieldValue) ? (a.fieldValue[0] || '') : (a.fieldValue || '') });
+        return c.type ? c : null;
+      }).filter(Boolean);
+    })().catch(e => { console.warn('Formulaire illisible', e); return []; }));
+    return cacheChamps.get(cle);
+  }
+  const valeurChamp = (s, c) => (s.champs && c.nom in s.champs ? s.champs[c.nom] : c.initiale);
+  // Valeurs saisies dessinées sur la page (vignettes, pages recopiées en image)
+  async function dessinerChamps(p, canvas) {
+    const s = etat.sources.get(p.source);
+    if (!s || !s.champs || !Object.keys(s.champs).length) return;
+    const champs = (await champsPage(p)).filter(c => c.nom in s.champs);
+    if (!champs.length) return;
+    const g = canvas.getContext('2d');
+    const L = canvas.width, H = canvas.height, k = L / dims(p).l;
+    for (const c of champs) {
+      const v = s.champs[c.nom];
+      const x = c.x * L, y = c.y * H, w = c.w * L, h = c.h * H;
+      g.save();
+      g.beginPath(); g.rect(x, y, w, h); g.clip();
+      g.fillStyle = '#fff'; g.fillRect(x, y, w, h);
+      g.fillStyle = '#000';
+      if (c.type === 'case' && v) { g.font = `${h * 0.9}px Arial`; g.textAlign = 'center'; g.fillText('✓', x + w / 2, y + h * 0.82); }
+      else if (c.type === 'radio' && v === c.valeurExport) { g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) * 0.25, 0, 7); g.fill(); }
+      else if (c.type === 'texte' || c.type === 'liste') {
+        const hPt = c.h * dims(p).h;
+        const t = (c.multiligne ? Math.min(c.taille || 10, 12) : c.taille ? Math.min(c.taille, hPt * 0.8) : Math.min(12, hPt * 0.65)) * k;
+        g.font = `${t}px Helvetica, Arial, sans-serif`;
+        String(v || '').split('\n').forEach((l, i) => g.fillText(l, x + 2 * k, y + (c.multiligne ? t * (1.1 + i * 1.15) : h / 2 + t * 0.35)));
+      }
+      g.restore();
+    }
+  }
+  function changerChamp(s, nom, valeur) {
+    s.champs = s.champs || {};
+    s.champs[nom] = valeur;
+    s.champsV = (s.champsV || 0) + 1;
+    rafraichir();
+  }
+  // Champs de saisie posés sur la page dans l'éditeur (calque à part : la saisie n'est pas interrompue)
+  async function afficherChamps() {
+    const zone = $('#ed-champs');
+    zone.replaceChildren();
+    const p = ed.page, s = etat.sources.get(p.source);
+    const champs = await champsPage(p);
+    if (ed.page !== p || !champs.length) return;
+    // Taille du texte : celle du formulaire, bornée ; automatique (0) : d'après la hauteur du champ
+    const pt = c => {
+      const hPt = c.h * dims(p).h;
+      if (c.multiligne) return Math.min(c.taille || 10, 12);
+      return c.taille ? Math.min(c.taille, hPt * 0.8) : Math.min(12, hPt * 0.65);
+    };
+    zone.replaceChildren(...champs.map(c => {
+      let el;
+      const v = valeurChamp(s, c);
+      if (c.type === 'texte') {
+        el = document.createElement(c.multiligne ? 'textarea' : 'input');
+        el.value = v || '';
+        if (c.max) el.maxLength = c.max;
+        el.addEventListener('input', () => changerChamp(s, c.nom, el.value));
+      } else if (c.type === 'case' || c.type === 'radio') {
+        el = document.createElement('input');
+        el.type = 'checkbox';
+        el.checked = c.type === 'case' ? !!v : v === c.valeurExport;
+        el.addEventListener('change', () => {
+          if (c.type === 'case') changerChamp(s, c.nom, el.checked);
+          else { changerChamp(s, c.nom, el.checked ? c.valeurExport : ''); zone.querySelectorAll(`[data-nom="${CSS.escape(c.nom)}"]`).forEach(o => { if (o !== el) o.checked = false; }); }
+        });
+      } else {
+        el = document.createElement('select');
+        el.append(new Option('', ''), ...c.options.map(o => new Option(o.t, o.v)));
+        el.value = v || '';
+        el.addEventListener('change', () => changerChamp(s, c.nom, el.value));
+      }
+      el.className = `champ-form champ-${c.type}`;
+      el.dataset.nom = c.nom;
+      el.title = c.nom;
+      el.disabled = c.lectureSeule;
+      Object.assign(el.style, { left: `${c.x * 100}%`, top: `${c.y * 100}%`, width: `${c.w * 100}%`, height: `${c.h * 100}%` });
+      el.style.setProperty('--pt', pt(c));
+      return el;
+    }));
+    if (!ed.noteFormulaire) { ed.noteFormulaire = true; note('Ce document contient un formulaire : cliquez dans les champs (outil Sélection) pour le remplir. Les valeurs sont écrites dans le PDF à l\'enregistrement.'); }
+  }
+
   // ---------- Grille des vignettes ----------
   const grille = $('#grille');
   const cartes = new Map(); // id page -> élément
@@ -504,7 +614,7 @@
   try { largeurVignette = Number(localStorage.getItem('atelierpdf.zoom')) || 170; } catch { /* stockage indisponible */ }
   $('#zoom').value = largeurVignette;
 
-  const cle = p => `${largeurVignette}|${p.type}|${p.source}|${p.index}|${rotTotale(p)}|${JSON.stringify(p.elements)}`;
+  const cle = p => `${largeurVignette}|${p.type}|${p.source}|${p.index}|${rotTotale(p)}|${JSON.stringify(p.elements)}|${etat.sources.get(p.source)?.champsV || 0}`;
 
   const observateur = new IntersectionObserver(entrees => {
     entrees.forEach(en => { if (en.isIntersecting) en.target.visible = true; else en.target.visible = false; });
@@ -599,7 +709,8 @@
     const n = etat.selection.size;
     document.querySelectorAll('.barre button.sel').forEach(b => { b.disabled = !n; });
     $('#b-modifier').disabled = n !== 1 && !(n === 0 && etat.pages.length === 1);
-    $('#b-enregistrer').disabled = $('#b-diviser').disabled = $('#b-ocr').disabled = $('#m-enregistrer').disabled = !etat.pages.length;
+    $('#b-enregistrer').disabled = $('#b-diviser').disabled = $('#b-ocr').disabled = $('#m-enregistrer').disabled = $('#b-imprimer').disabled = $('#b-rechercher').disabled = !etat.pages.length;
+    invaliderRecherche();
     $('#b-annuler').disabled = !etat.historique.length;
     $('#b-retablir').disabled = !etat.futur.length;
     const total = etat.pages.length;
@@ -785,7 +896,7 @@
   zone.addEventListener('click', ev => { if (ev.target === zone || ev.target === grille) { etat.selection.clear(); rafraichir(); } });
 
   // ---------- Options ----------
-  const champsOptions = ['o-titre', 'o-auteur', 'o-sommaire', 'o-signets', 'o-aplatir', 'o-editable', 'o-num', 'o-num-format', 'o-num-position', 'o-num-taille', 'o-num-debut', 'o-num-ignorer',
+  const champsOptions = ['o-titre', 'o-auteur', 'o-sommaire', 'o-signets', 'o-aplatir', 'o-editable', 'o-commentaires', 'o-num', 'o-num-format', 'o-num-position', 'o-num-taille', 'o-num-debut', 'o-num-ignorer',
     'o-fil', 'o-fil-texte', 'o-fil-opacite', 'o-fil-couleur', 'o-compresser', 'o-dpi'];
   function chargerOptions() {
     let o = {};
@@ -832,6 +943,7 @@
       compresser: $('#o-compresser').checked,
       dpi: Number($('#o-dpi').value) || 150,
       editable: $('#o-editable').checked,
+      commentaires: $('#o-commentaires').checked,
       donneesDocument: lireOptionsBrutes(),
     };
   }
@@ -849,7 +961,7 @@
     c.width = Math.round(vp.width); c.height = Math.round(vp.height);
     const g = c.getContext('2d');
     g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
-    await page.render({ canvasContext: g, viewport: vp, intent: 'print' }).promise;
+    await page.render({ canvasContext: g, viewport: vp, intent: 'print', annotationMode: pdfjs.AnnotationMode.ENABLE }).promise;
     const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8));
     const d = MoteurPDF.tailleAffichee(p.boite, p.rotBase || 0);
     c.width = c.height = 0;
@@ -873,8 +985,15 @@
 
   // Texte d'une page PDF (pdf.js) en « mots » positionnés sur la page affichée : sert à garder le texte
   // interrogeable quand la page est recopiée en image, et à la recherche pour caviarder
-  async function texteNatif(p) {
-    if (p.type !== 'pdf') return [];
+  // Texte d'une page, gardé en mémoire (recherche, caviardage, modification) : même document, page et rotation
+  const cacheTexte = new Map();
+  function texteNatif(p) {
+    if (p.type !== 'pdf') return Promise.resolve([]);
+    const cle = `${p.source}|${p.index}|${rotTotale(p)}`;
+    if (!cacheTexte.has(cle)) cacheTexte.set(cle, texteNatifBrut(p).catch(e => { cacheTexte.delete(cle); throw e; }));
+    return cacheTexte.get(cle);
+  }
+  async function texteNatifBrut(p) {
     const doc = await etat.sources.get(p.source).doc;
     const page = await doc.getPage(p.index + 1);
     const vp = page.getViewport({ scale: 1, rotation: rotTotale(p) });
@@ -932,7 +1051,7 @@
         if (s.rasteriser || opts.compresser) {
           liste.push({ ...await pageEnImage(p, s.rasteriser && !opts.compresser ? 200 : opts.dpi), ...commun, rotation: p.rot });
         } else {
-          sources[s.id] = sources[s.id] || { octets: s.octets };
+          sources[s.id] = sources[s.id] || { octets: s.octets, champs: s.champs || null };
           liste.push({ ...commun, index: p.index, rotation: rotTotale(p) });
         }
       } else if (p.type === 'image') {
@@ -1036,6 +1155,359 @@
     return resultats.size;
   }
 
+  // ---------- Imprimer (Ctrl+P) : le PDF compilé, dans la fenêtre d'impression de Windows ----------
+  async function imprimer() {
+    if (!etat.pages.length) return;
+    if (!$('#editeur').hidden) validerEditeur();
+    let octets;
+    try { octets = await occupe('Préparation de l\'impression…', avance => produire(etat.pages, { ...options(), editable: false }, avance)); }
+    catch (e) { note(`Impression impossible : ${e.message || e}`, 'erreur'); return; }
+    const url = URL.createObjectURL(new Blob([octets], { type: 'application/pdf' }));
+    document.querySelectorAll('iframe.impression').forEach(f => f.remove());
+    const cadre = document.createElement('iframe');
+    cadre.className = 'impression';
+    cadre.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0';
+    cadre.onload = () => {
+      // Lecteur PDF du navigateur dans un cadre invisible : sa fenêtre d'impression s'ouvre directement
+      setTimeout(() => {
+        try { cadre.contentWindow.focus(); cadre.contentWindow.print(); }
+        catch { window.open(url, '_blank'); note('Le PDF est ouvert dans une nouvelle fenêtre : imprimez-le avec Ctrl+P.'); }
+      }, 300);
+    };
+    cadre.src = url;
+    document.body.appendChild(cadre);
+    setTimeout(() => URL.revokeObjectURL(url), 10 * 60000);
+  }
+
+  // ---------- Comparer deux pages (indices d'un plan) ----------
+  const cmp = { a: null, b: null, dx: 0, dy: 0, imgA: null, imgB: null, L: 0, H: 0, k: 1, zoom: 'ajuster', resultat: null };
+  const PX_CMP = 3000; // largeur de calcul (pixels) de la plus grande des deux pages
+  async function rendreGris(p, k) {
+    const c = document.createElement('canvas');
+    const d = dims(p);
+    await rendrePage(p, c, d.l * k, 1);
+    const g = c.getContext('2d', { willReadFrequently: true });
+    const px = g.getImageData(0, 0, c.width, c.height).data;
+    // « Encre » : 0 (blanc) à 255 (noir)
+    const encre = new Uint8Array(c.width * c.height);
+    for (let i = 0, j = 0; i < px.length; i += 4, j++) encre[j] = 255 - ((px[i] * 299 + px[i + 1] * 587 + px[i + 2] * 114) / 1000 | 0);
+    const res = { l: c.width, h: c.height, encre };
+    c.width = c.height = 0;
+    return res;
+  }
+  async function ouvrirComparaison() {
+    const choisies = etat.pages.filter(p => etat.selection.has(p.id));
+    if (choisies.length !== 2) { note('Sélectionnez exactement 2 pages (Ctrl+clic) : l\'ancien indice puis le nouveau.', 'erreur'); return; }
+    [cmp.a, cmp.b] = choisies;
+    cmp.dx = cmp.dy = 0;
+    $('#comparaison').hidden = false;
+    await preparerComparaison(true);
+  }
+  async function preparerComparaison(recaler) {
+    const dA = dims(cmp.a), dB = dims(cmp.b);
+    cmp.k = PX_CMP / Math.max(dA.l, dB.l);
+    const nom = p => { const s = etat.sources.get(p.source); return `${s ? s.nom : p.titre || 'page'} p. ${etat.pages.indexOf(p) + 1}`; };
+    $('#cmp-nom-a').textContent = nom(cmp.a);
+    $('#cmp-nom-b').textContent = nom(cmp.b);
+    await occupe('Comparaison des pages…', async avance => {
+      cmp.imgA = await rendreGris(cmp.a, cmp.k); avance(0.4);
+      cmp.imgB = await rendreGris(cmp.b, cmp.k); avance(0.8);
+      cmp.L = Math.max(cmp.imgA.l, cmp.imgB.l); cmp.H = Math.max(cmp.imgA.h, cmp.imgB.h);
+      if (recaler) recalerAuto();
+      calculerDifferences();
+      avance(1);
+    });
+    afficherComparaison();
+  }
+  // Recalage : décalage qui superpose le mieux les traits des deux pages (grossier puis fin)
+  function recalerAuto() {
+    const reduire = (img, f) => {
+      const l = Math.ceil(img.l / f), h = Math.ceil(img.h / f), o = new Uint8Array(l * h);
+      for (let y = 0; y < img.h; y++) for (let x = 0; x < img.l; x++) { const v = img.encre[y * img.l + x]; if (v > 80) o[((y / f) | 0) * l + ((x / f) | 0)] = 1; }
+      return { l, h, o };
+    };
+    const score = (A, B, dx, dy) => {
+      let n = 0;
+      for (let y = 0; y < A.h; y++) {
+        const yb = y - dy;
+        if (yb < 0 || yb >= B.h) continue;
+        for (let x = 0; x < A.l; x++) { const xb = x - dx; if (xb >= 0 && xb < B.l && A.o[y * A.l + x] && B.o[yb * B.l + xb]) n++; }
+      }
+      return n;
+    };
+    const f1 = 12, A1 = reduire(cmp.imgA, f1), B1 = reduire(cmp.imgB, f1);
+    let best = { dx: 0, dy: 0, s: score(A1, B1, 0, 0) };
+    for (let dy = -8; dy <= 8; dy++) for (let dx = -8; dx <= 8; dx++) { const sc = score(A1, B1, dx, dy); if (sc > best.s * 1.02) best = { dx, dy, s: sc }; }
+    const f2 = 3, A2 = reduire(cmp.imgA, f2), B2 = reduire(cmp.imgB, f2);
+    const cx = best.dx * f1 / f2, cy = best.dy * f1 / f2;
+    let fin = { dx: Math.round(cx), dy: Math.round(cy), s: -1 };
+    for (let dy = Math.round(cy) - 5; dy <= Math.round(cy) + 5; dy++) for (let dx = Math.round(cx) - 5; dx <= Math.round(cx) + 5; dx++) { const sc = score(A2, B2, dx, dy); if (sc > fin.s) fin = { dx, dy, s: sc }; }
+    cmp.dx = fin.dx * f2; cmp.dy = fin.dy * f2;
+  }
+  // Rouge : seulement dans l'ancien ; vert : seulement dans le nouveau ; gris : dans les deux (à la tolérance près)
+  function calculerDifferences() {
+    const { imgA: A, imgB: B, L, H, dx, dy } = cmp;
+    const seuil = 70;
+    const tol = Number($('#cmp-tolerance').value);
+    const encreA = new Uint8Array(L * H), encreB = new Uint8Array(L * H);
+    for (let y = 0; y < A.h; y++) for (let x = 0; x < A.l; x++) if (A.encre[y * A.l + x] > seuil) encreA[y * L + x] = 1;
+    for (let y = 0; y < B.h; y++) { const yy = y + dy; if (yy < 0 || yy >= H) continue; for (let x = 0; x < B.l; x++) { const xx = x + dx; if (xx >= 0 && xx < L && B.encre[y * B.l + x] > seuil) encreB[yy * L + xx] = 1; } }
+    // Dilatation (tolérance en pixels) : un trait déplacé d'un pixel n'est pas une modification
+    const dilater = (m, r) => {
+      if (!r) return m;
+      const t = new Uint8Array(L * H), o = new Uint8Array(L * H);
+      for (let y = 0; y < H; y++) for (let x = 0; x < L; x++) { if (!m[y * L + x]) continue; for (let k = Math.max(0, x - r); k <= Math.min(L - 1, x + r); k++) t[y * L + k] = 1; }
+      for (let y = 0; y < H; y++) for (let x = 0; x < L; x++) { if (!t[y * L + x]) continue; for (let k = Math.max(0, y - r); k <= Math.min(H - 1, y + r); k++) o[k * L + x] = 1; }
+      return o;
+    };
+    const aD = dilater(encreA, tol), bD = dilater(encreB, tol);
+    const img = new ImageData(L, H);
+    const d = img.data;
+    let rouges = 0, verts = 0;
+    for (let i = 0; i < L * H; i++) {
+      const a = encreA[i], b = encreB[i];
+      let r = 255, g = 255, bl = 255;
+      if (a && !bD[i]) { r = 220; g = 30; bl = 30; rouges++; }
+      else if (b && !aD[i]) { r = 0; g = 150; bl = 60; verts++; }
+      else if (a || b) { r = g = bl = 150; }
+      const o = i * 4; d[o] = r; d[o + 1] = g; d[o + 2] = bl; d[o + 3] = 255;
+    }
+    cmp.resultat = img;
+    const part = (rouges + verts) / (L * H);
+    $('#cmp-info').textContent = (rouges + verts) < 20
+      ? 'Aucune différence visible entre les deux pages.'
+      : `Différences : ${rouges ? 'supprimé (rouge)' : ''}${rouges && verts ? ' et ' : ''}${verts ? 'ajouté (vert)' : ''} — ${(part * 100).toFixed(2).replace('.', ',')} % de la surface. Flèches : décaler · Ctrl + molette : zoom · glisser : déplacer.`;
+    $('#cmp-decalage').textContent = `Décalage ${Math.round(dx / cmp.k)} ; ${Math.round(dy / cmp.k)} pt`;
+  }
+  function afficherComparaison() {
+    const c = $('#cmp-canvas');
+    c.width = cmp.L; c.height = cmp.H;
+    c.getContext('2d').putImageData(cmp.resultat, 0, 0);
+    zoomComparaison();
+  }
+  function zoomComparaison() {
+    const c = $('#cmp-canvas'), scene = $('#cmp-scene');
+    const z = cmp.zoom;
+    const largeur = z === 'ajuster' ? Math.min(scene.clientWidth - 40, (scene.clientHeight - 40) * cmp.L / cmp.H) : cmp.L / cmp.k * PX_PAR_PT_CMP * z;
+    c.style.width = `${largeur}px`;
+    c.style.height = `${largeur * cmp.H / cmp.L}px`;
+  }
+  const PX_PAR_PT_CMP = 96 / 72;
+  let minuterieCmp = null;
+  function decalerComparaison(dx, dy) {
+    cmp.dx += dx; cmp.dy += dy;
+    clearTimeout(minuterieCmp);
+    minuterieCmp = setTimeout(() => { calculerDifferences(); afficherComparaison(); }, 60);
+  }
+  $('#b-comparer').onclick = ouvrirComparaison;
+  $('#cmp-fermer').onclick = () => { $('#comparaison').hidden = true; cmp.imgA = cmp.imgB = cmp.resultat = null; };
+  $('#cmp-inverser').onclick = () => { [cmp.a, cmp.b] = [cmp.b, cmp.a]; cmp.dx = -cmp.dx; cmp.dy = -cmp.dy; preparerComparaison(false); };
+  $('#cmp-recaler').onclick = () => { recalerAuto(); calculerDifferences(); afficherComparaison(); };
+  $('#cmp-tolerance').oninput = () => { calculerDifferences(); afficherComparaison(); };
+  $('#cmp-zoom').onchange = () => { const v = $('#cmp-zoom').value; cmp.zoom = v === 'ajuster' ? v : Number(v); zoomComparaison(); };
+  $('#cmp-scene').addEventListener('wheel', ev => {
+    if (!ev.ctrlKey && !ev.metaKey) return;
+    ev.preventDefault();
+    const c = $('#cmp-canvas');
+    const actuel = parseFloat(c.style.width) / (cmp.L / cmp.k * PX_PAR_PT_CMP);
+    cmp.zoom = Math.min(8, Math.max(0.1, actuel * Math.exp(-ev.deltaY * 0.0025)));
+    $('#cmp-zoom').value = 'ajuster';
+    zoomComparaison();
+  }, { passive: false });
+  $('#cmp-scene').addEventListener('pointerdown', ev => {
+    const scene = $('#cmp-scene');
+    const x0 = ev.clientX, y0 = ev.clientY, sl = scene.scrollLeft, st = scene.scrollTop;
+    scene.setPointerCapture(ev.pointerId); scene.classList.add('glisse');
+    const bouger = m => { scene.scrollLeft = sl - (m.clientX - x0); scene.scrollTop = st - (m.clientY - y0); };
+    const fin = () => { scene.removeEventListener('pointermove', bouger); scene.removeEventListener('pointerup', fin); scene.classList.remove('glisse'); };
+    scene.addEventListener('pointermove', bouger); scene.addEventListener('pointerup', fin);
+  });
+  // Image de la comparaison ajoutée au document, juste après la page la plus récente
+  $('#cmp-ajouter').onclick = async () => {
+    const c = $('#cmp-canvas');
+    const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+    const img = await normaliserImage(blob);
+    const s = nouvelleSource(`Comparaison ${$('#cmp-nom-a').textContent} - ${$('#cmp-nom-b').textContent}.png`, 'image');
+    Object.assign(s, img, { nbPages: 1 });
+    const dB = dims(cmp.b);
+    const p = { id: nouvelId('p'), type: 'image', source: s.id, index: 0, rotBase: 0, rot: 0, boite: { x: 0, y: 0, width: Math.max(dB.l, dims(cmp.a).l), height: Math.max(dB.h, dims(cmp.a).h) }, elements: [] };
+    memoriser();
+    etat.pages.splice(Math.max(etat.pages.indexOf(cmp.a), etat.pages.indexOf(cmp.b)) + 1, 0, p);
+    rafraichir();
+    note('Comparaison ajoutée au document.', 'ok');
+  };
+
+  // ---------- Pipe-Fit : documents des chantiers ----------
+  // Connexion par clé d'API (Pipe-Fit › Paramètres › API et automatisations) ; adresse et clé gardées sur ce PC
+  const PF = { url: '', cle: '' };
+  try { PF.url = localStorage.getItem('atelierpdf.pipefit.url') || ''; PF.cle = localStorage.getItem('atelierpdf.pipefit.cle') || ''; } catch { /* rien */ }
+  const CATEGORIES_PF = ['Plan', 'Fiche technique', 'Notice', 'Demande client', 'Sécurité / PPSPS', 'PGC', 'Plan de prévention', 'Photo', 'Autre'];
+  const echapper = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  async function pf(chemin, opts = {}) {
+    let r;
+    try {
+      r = await fetch(`${PF.url.replace(/\/+$/, '')}/api/${chemin}`, { ...opts, headers: { Authorization: `Bearer ${PF.cle}`, ...(opts.headers || {}) } });
+    } catch { throw new Error(`serveur injoignable (${PF.url}) : vérifiez l'adresse et que le PC est sur le réseau de l'entreprise`); }
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      throw new Error(r.status === 401 ? 'clé d\'API refusée' : r.status === 409 ? 'conflit' : (j.error || `erreur ${r.status}`));
+    }
+    return r;
+  }
+  const dlg = {
+    ouvrir(titre, html, ok = null) {
+      $('#pf-titre').textContent = titre;
+      $('#pf-contenu').innerHTML = html;
+      $('#pf-message').textContent = '';
+      $('#pf-ok').hidden = !ok;
+      if (ok) { $('#pf-ok').textContent = ok.texte; $('#pf-ok').onclick = ok.action; }
+      $('#dlg-pf').hidden = false;
+    },
+    message(t, erreur = false) { $('#pf-message').textContent = t; $('#pf-message').style.color = erreur ? '#c62828' : ''; },
+    fermer() { $('#dlg-pf').hidden = true; },
+  };
+  $('#pf-annuler').onclick = () => dlg.fermer();
+
+  function connexionPipeFit(ensuite = null) {
+    dlg.ouvrir('Connexion à Pipe-Fit', `
+      <label class="champ">Adresse de Pipe-Fit<input id="pf-url" placeholder="http://SERVEUR:3000" value="${echapper(PF.url)}"></label>
+      <label class="champ">Clé d'API<input id="pf-cle" type="password" placeholder="pf_…" value="${echapper(PF.cle)}"></label>
+      <p class="aide">La clé se crée dans Pipe-Fit : Paramètres › API et automatisations › Nouvelle clé. Elle donne les droits du compte qui l'a créée :
+      un compte qui peut modifier les chantiers est nécessaire pour y enregistrer des documents. Elle est gardée sur ce PC.</p>`,
+    { texte: 'Se connecter', action: async () => {
+      PF.url = $('#pf-url').value.trim(); PF.cle = $('#pf-cle').value.trim();
+      if (!/^https?:\/\//i.test(PF.url)) PF.url = `http://${PF.url}`;
+      dlg.message('Connexion…');
+      try {
+        const moi = await (await pf('me')).json();
+        try { localStorage.setItem('atelierpdf.pipefit.url', PF.url); localStorage.setItem('atelierpdf.pipefit.cle', PF.cle); } catch { /* rien */ }
+        note(`Connecté à Pipe-Fit (${moi.nom || moi.login}).`, 'ok');
+        dlg.fermer();
+        if (ensuite) ensuite();
+      } catch (e) { dlg.message(`Connexion impossible : ${e.message}`, true); }
+    } });
+  }
+  async function chantiers() {
+    const liste = await (await pf('records/affaires?limite=5000')).json();
+    return liste.filter(a => a.type !== 'modele').sort((a, b) => String(b.code || '').localeCompare(String(a.code || '')));
+  }
+  const nomChantier = a => [a.code, a.nom].filter(Boolean).join(' – ');
+  // Liste de chantiers avec recherche ; choix(a) appelé au clic
+  function listeChantiers(liste, choix, choisiId = null) {
+    $('#pf-contenu').innerHTML = `<input id="pf-filtre" placeholder="Rechercher un chantier (code, nom)…"><ul class="pf-liste" id="pf-chantiers"></ul>`;
+    const remplir = () => {
+      const f = sansAccent($('#pf-filtre').value.trim());
+      const ul = $('#pf-chantiers');
+      ul.replaceChildren(...liste.filter(a => !f || sansAccent(nomChantier(a)).includes(f)).slice(0, 300).map(a => {
+        const li = document.createElement('li');
+        li.innerHTML = `<b>${echapper(a.code || '')}</b> ${echapper(a.nom || '')}<span class="muet">${(a.documents || []).length} document(s)</span>`;
+        if (a.id === choisiId) li.classList.add('choisi');
+        li.onclick = () => choix(a);
+        return li;
+      }));
+    };
+    $('#pf-filtre').oninput = remplir;
+    remplir();
+    $('#pf-filtre').focus();
+  }
+  async function ouvrirDepuisPipeFit() {
+    if (!PF.url || !PF.cle) return connexionPipeFit(ouvrirDepuisPipeFit);
+    dlg.ouvrir('Ouvrir un document d\'un chantier', '<p>Chargement des chantiers…</p>');
+    let liste;
+    try { liste = await chantiers(); } catch (e) { dlg.message(e.message, true); if (/clé|injoignable/.test(e.message)) connexionPipeFit(ouvrirDepuisPipeFit); return; }
+    const montrerDocs = a => {
+      const docs = (a.documents || []).filter(d => /pdf|image/.test(d.mime || '') || /\.(pdf|png|jpe?g)$/i.test(d.nom || ''));
+      $('#pf-titre').textContent = nomChantier(a);
+      $('#pf-contenu').innerHTML = `<button id="pf-retour">← Chantiers</button><ul class="pf-liste" id="pf-docs"></ul>`;
+      $('#pf-retour').onclick = () => { $('#pf-titre').textContent = 'Ouvrir un document d\'un chantier'; listeChantiers(liste, montrerDocs); };
+      $('#pf-docs').replaceChildren(...(docs.length ? docs.map(d => {
+        const li = document.createElement('li');
+        li.innerHTML = `${echapper(d.nom)}<span class="muet">${echapper(d.categorie || '')}${d.indice ? ` · ind. ${echapper(d.indice)}` : ''}</span>`;
+        li.onclick = async () => {
+          dlg.message(`Téléchargement de « ${d.nom} »…`);
+          try {
+            const octets = await (await pf(`files/${encodeURIComponent(d.fichierId)}`)).arrayBuffer();
+            const type = /pdf/.test(d.mime || '') || /\.pdf$/i.test(d.nom) ? 'application/pdf' : (d.mime || 'image/jpeg');
+            etat.origineImport = { affaireId: a.id, chantier: nomChantier(a), docId: d.id, nom: d.nom, categorie: d.categorie, indice: d.indice || '' };
+            try { await importer([new File([octets], d.nom, { type })]); } finally { etat.origineImport = null; }
+            dlg.fermer();
+          } catch (e) { dlg.message(`Téléchargement impossible : ${e.message}`, true); }
+        };
+        return li;
+      }) : [Object.assign(document.createElement('li'), { textContent: 'Aucun PDF ni image dans ce chantier.' })]));
+    };
+    listeChantiers(liste, montrerDocs);
+  }
+  const indiceSuivant = i => (/^[A-Y]$/i.test(i || '') ? String.fromCharCode(i.toUpperCase().charCodeAt(0) + 1) : /^\d+$/.test(i || '') ? String(+i + 1) : i ? `${i}+` : 'B');
+  async function enregistrerDansPipeFit() {
+    if (!etat.pages.length) return;
+    if (!PF.url || !PF.cle) return connexionPipeFit(enregistrerDansPipeFit);
+    if (!$('#editeur').hidden) validerEditeur();
+    dlg.ouvrir('Enregistrer dans un chantier', '<p>Chargement des chantiers…</p>');
+    let liste;
+    try { liste = await chantiers(); } catch (e) { dlg.message(e.message, true); return; }
+    const origine = [...new Set(etat.pages.map(p => etat.sources.get(p.source)?.pipefit).filter(Boolean))][0];
+    const formulaire = a => {
+      const docs = (a.documents || []).filter(d => /pdf/.test(d.mime || '') || /\.pdf$/i.test(d.nom || ''));
+      const docOrigine = origine && origine.affaireId === a.id ? docs.find(d => d.id === origine.docId) : null;
+      const nomDefaut = `${nomFichier($('#o-titre').value.trim() || etat.sources.get(etat.pages[0].source)?.nom || 'Document')}.pdf`;
+      $('#pf-titre').textContent = `Enregistrer dans ${nomChantier(a)}`;
+      $('#pf-contenu').innerHTML = `
+        <button id="pf-retour">← Choisir un autre chantier</button>
+        <label class="radio"><input type="radio" name="pf-mode" value="nouveau" ${docOrigine ? '' : 'checked'}> Nouveau document</label>
+        <div class="sous ouvert">
+          <label class="champ">Nom<input id="pf-nom" value="${echapper(nomDefaut)}"></label>
+          <label class="champ">Catégorie<select id="pf-cat">${CATEGORIES_PF.map(c => `<option ${c === (origine?.categorie || 'Plan') ? 'selected' : ''}>${echapper(c)}</option>`).join('')}</select></label>
+        </div>
+        <label class="radio"><input type="radio" name="pf-mode" value="indice" ${docOrigine ? 'checked' : ''} ${docs.length ? '' : 'disabled'}> Nouvel indice d'un document du chantier (l'indice actuel est gardé dans l'historique)</label>
+        <div class="sous ouvert"><select id="pf-doc" ${docs.length ? '' : 'disabled'}>${docs.map(d => `<option value="${echapper(d.id)}" ${docOrigine && d.id === docOrigine.id ? 'selected' : ''}>${echapper(d.nom)}${d.indice ? ` (ind. ${echapper(d.indice)} → ${echapper(indiceSuivant(d.indice))})` : ''}</option>`).join('')}</select></div>
+        <label class="case"><input type="checkbox" id="pf-visible"> Transmettre aux compagnons (visible sur leur téléphone)</label>`;
+      $('#pf-retour').onclick = () => { $('#pf-ok').hidden = true; listeChantiers(liste, formulaire, a.id); };
+      $('#pf-ok').hidden = false;
+      $('#pf-ok').textContent = 'Enregistrer';
+      $('#pf-ok').onclick = () => envoyer(a);
+    };
+    const envoyer = async a => {
+      const mode = document.querySelector('input[name=pf-mode]:checked')?.value;
+      const nom = (() => { const n = nomFichier($('#pf-nom').value.trim() || 'Document'); return /\.pdf$/i.test(n) ? n : `${n}.pdf`; })();
+      const docId = $('#pf-doc').value, visible = $('#pf-visible').checked, categorie = $('#pf-cat').value;
+      $('#pf-ok').disabled = true;
+      try {
+        dlg.message('Création du PDF…');
+        const octets = await produire(etat.pages, options());
+        dlg.message('Envoi à Pipe-Fit…');
+        const doc = mode === 'indice' ? (a.documents || []).find(d => d.id === docId) : null;
+        const envoi = await (await pf('documents/fichier', { method: 'POST', headers: { 'X-PipeFit-Upload': '1', 'X-Filename': encodeURIComponent(doc ? doc.nom : nom) }, body: new Blob([octets], { type: 'application/pdf' }) })).json();
+        // Ajout au chantier ; si quelqu'un a modifié le chantier entre-temps : relu puis réessayé
+        for (let essai = 0; essai < 3; essai++) {
+          const actuel = await (await pf(`records/affaires/${encodeURIComponent(a.id)}`)).json();
+          const documents = (actuel.documents || []).map(d => ({ ...d }));
+          const aujourdhui = new Date().toISOString().slice(0, 10);
+          const d = doc && documents.find(x => x.id === doc.id);
+          if (d) {
+            d.anciens = [...(d.anciens || []), { fichierId: d.fichierId, indice: d.indice || 'A', date: d.date }];
+            Object.assign(d, { fichierId: envoi.id, mime: envoi.mime, taille: envoi.taille, indice: indiceSuivant(d.indice || 'A'), date: aujourdhui, par: 'Atelier PDF', visible: visible || d.visible });
+          } else {
+            documents.push({ id: nouvelId('d'), fichierId: envoi.id, nom, categorie, indice: '', note: '', mime: envoi.mime, taille: envoi.taille, date: aujourdhui, par: 'Atelier PDF', visible });
+          }
+          try {
+            await pf(`records/affaires/${encodeURIComponent(a.id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: { ...actuel, documents }, version: actuel._v }) });
+            dlg.fermer();
+            note(d ? `« ${d.nom} » : indice ${d.indice} enregistré dans ${nomChantier(a)}.` : `« ${nom} » enregistré dans ${nomChantier(a)}.`, 'ok');
+            return;
+          } catch (e) { if (e.message !== 'conflit') throw e; }
+        }
+        throw new Error('le chantier est modifié en ce moment par quelqu\'un d\'autre, réessayez');
+      } catch (e) { dlg.message(`Enregistrement impossible : ${e.message}`, true); }
+      finally { $('#pf-ok').disabled = false; }
+    };
+    const depart = origine && liste.find(a => a.id === origine.affaireId);
+    if (depart) formulaire(depart); else listeChantiers(liste, formulaire);
+  }
+  $('#m-pf-ouvrir').onclick = () => { $('#menu-projet').hidden = true; ouvrirDepuisPipeFit(); };
+  $('#m-pf-enregistrer').onclick = () => { $('#menu-projet').hidden = true; enregistrerDansPipeFit(); };
+  $('#m-pf-connexion').onclick = () => { $('#menu-projet').hidden = true; connexionPipeFit(); };
+
   // ---------- Diviser ----------
   function ouvrirDiviser() {
     const premier = etat.sources.get(etat.pages[0]?.source);
@@ -1100,18 +1572,20 @@
   //  ligne / fleche {x1,y1,x2,y2,couleur,epaisseur} · crayon {points,couleur,epaisseur}
   //  cadre / ellipse {x,y,w,h,couleur,epaisseur} · surligne / masque / caviarde {x,y,w,h} · image {x,y,w,h,image}
   //  tampon {x,y,w,h,texte,ligne2,couleur} · cote {x1,y1,x2,y2} · longueur / surface {points} (+ etiquette calculée)
-  const BOITES = ['masque', 'surligne', 'cadre', 'caviarde', 'ellipse', 'bulle', 'image', 'tampon'];
-  const EN_SVG = ['ligne', 'fleche', 'crayon', 'ellipse', 'bulle', 'tampon', 'cote', 'longueur', 'surface'];
-  const SANS_DIV = ['ligne', 'fleche', 'crayon', 'ellipse', 'cote', 'longueur', 'surface', 'texteModifie'];
-  const MESURES = ['cote', 'longueur', 'surface'];
-  const A_TRACER = ['masque', 'surligne', 'cadre', 'caviarde', 'ellipse', 'bulle'];
+  const BOITES = ['masque', 'surligne', 'cadre', 'caviarde', 'ellipse', 'bulle', 'image', 'tampon', 'zoneEchelle'];
+  const EN_SVG = ['ligne', 'fleche', 'crayon', 'ellipse', 'bulle', 'tampon', 'cote', 'longueur', 'surface', 'angle'];
+  const SANS_DIV = ['ligne', 'fleche', 'crayon', 'ellipse', 'cote', 'longueur', 'surface', 'angle', 'texteModifie'];
+  const MESURES = ['cote', 'longueur', 'surface', 'angle'];
+  // Outils qui s'accrochent aux traits du plan (extrémités, puis traits)
+  const ACCROCHE = ['cote', 'longueur', 'surface', 'angle', 'etalonner', 'ligne', 'fleche'];
+  const A_TRACER = ['masque', 'surligne', 'cadre', 'caviarde', 'ellipse', 'bulle', 'zoneEchelle'];
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const ed = { page: null, elements: [], outil: 'selection', choisi: null, ech: 1, L: 0, H: 0, hist: [], point: null, trace: null, tampon: null, lignes: null };
   const reglages = {
     texte: { couleur: '#000000', taille: 12 }, bulle: { couleur: '#1565c0', taille: 11 },
     ligne: { couleur: '#d32f2f', epaisseur: 2 }, fleche: { couleur: '#d32f2f', epaisseur: 2 }, crayon: { couleur: '#1565c0', epaisseur: 2 },
     cadre: { couleur: '#d32f2f', epaisseur: 2 }, ellipse: { couleur: '#d32f2f', epaisseur: 2 }, surligne: { couleur: '#ffeb3b' },
-    cote: { couleur: '#e65100', epaisseur: 1.5 }, longueur: { couleur: '#e65100', epaisseur: 2 }, surface: { couleur: '#6a1b9a', epaisseur: 1.5 },
+    cote: { couleur: '#e65100', epaisseur: 1.5 }, longueur: { couleur: '#e65100', epaisseur: 2 }, surface: { couleur: '#6a1b9a', epaisseur: 1.5 }, angle: { couleur: '#00838f', epaisseur: 1.5 },
   };
   try { Object.assign(reglages, JSON.parse(localStorage.getItem('atelierpdf.reglages') || '{}')); } catch { /* rien */ }
   const sauverReglages = () => { try { localStorage.setItem('atelierpdf.reglages', JSON.stringify(reglages)); } catch { /* rien */ } };
@@ -1136,6 +1610,7 @@
     majVignettesEditeur();
     $('#ed-scene').scrollTo(0, 0);
     await afficherPage();
+    afficherChamps();
     // Page pdf.js (polices chargées par l'affichage : nom, gras, italique pour « Modifier le texte »)
     ed.pagePdfjs = p.type === 'pdf' ? await (await etat.sources.get(p.source).doc).getPage(p.index + 1) : null;
     if (ed.outil === 'editertexte') preparerLignes();
@@ -1164,6 +1639,7 @@
     c.style.width = `${ed.L}px`; c.style.height = `${ed.H}px`;
     $('#ed-page').style.width = `${ed.L}px`;
     $('#ed-page').style.height = `${ed.H}px`;
+    $('#ed-page').style.setProperty('--ech', ed.ech);
     dessinerCalque();
     majAffichageZoom();
   }
@@ -1268,11 +1744,11 @@
     if (etat.pages[i]) allerA(etat.pages[i]);
   }
   function allerA(p) {
-    if (p === ed.page) return;
+    if (p === ed.page) return Promise.resolve();
     validerEditeur();
     etat.selection = new Set([p.id]);
     rafraichir();
-    chargerDansEditeur(p);
+    return chargerDansEditeur(p);
   }
   // Numéro de page et flèches (la page courante peut avoir changé de place)
   function majNavigation() {
@@ -1288,7 +1764,7 @@
   const vgCartes = new Map();
   const TAILLE_VG = 128;
   try { colonne.hidden = localStorage.getItem('atelierpdf.vignettes') === '0'; } catch { /* rien */ }
-  const cleVg = p => `${p.type}|${p.source}|${p.index}|${rotTotale(p)}|${JSON.stringify(p.elements)}`;
+  const cleVg = p => `${p.type}|${p.source}|${p.index}|${rotTotale(p)}|${JSON.stringify(p.elements)}|${etat.sources.get(p.source)?.champsV || 0}`;
   const obsVg = new IntersectionObserver(entrees => entrees.forEach(en => {
     en.target.visible = en.isIntersecting;
     if (en.isIntersecting && en.target.sale) demanderVg(en.target);
@@ -1440,11 +1916,14 @@
     ed.outil = o;
     document.querySelectorAll('#ed-outils button').forEach(b => b.classList.toggle('actif', b.dataset.outil === o || b.dataset.outilMenu === o));
     calque.classList.toggle('trace', o !== 'selection' && o !== 'texte');
+    $('#ed-page').classList.toggle('outil-actif', o !== 'selection');
     calque.classList.toggle('ecrit', o === 'texte');
     if (reglages[o]) majReglagesAffiches(reglages[o]);
     if (o === 'image') { $('#fichier-image').click(); }
     if (o === 'editertexte') preparerLignes();
     else if (ed.lignes) dessinerCalque();
+    if (ACCROCHE.includes(o)) preparerAccroche();
+    else $('#ed-accroche').hidden = true;
   }
   function majReglagesAffiches(r) {
     if (r.couleur) $('#ed-couleur').value = r.couleur;
@@ -1559,6 +2038,7 @@
           if (e.type === 'surligne') d.style.background = e.couleur || '#ffeb3b';
           if (e.type === 'cadre') { d.style.borderColor = e.couleur || '#d32f2f'; d.style.borderWidth = `${(e.epaisseur || 2) * ed.ech}px`; }
           if (e.type === 'image') { const im = document.createElement('img'); im.src = etat.images.get(e.image)?.url || ''; d.appendChild(im); }
+          if (e.type === 'zoneEchelle') d.dataset.libelle = `Zone ${e.echelle ? (e.echelle.libelle || 'étalonnée') : 'sans échelle'}`;
         }
         noeuds.push(d);
       }
@@ -1577,6 +2057,7 @@
       }
     });
     if (ed.outil === 'editertexte' && ed.lignes) noeuds.push(...noeudsLignes());
+    noeuds.push(...noeudsResultats());
     calque.replaceChildren(...noeuds);
     calque.querySelectorAll('.el-texte, .el-texteModifie').forEach(d => d.classList.toggle('choisi', Number(d.dataset.i) === ed.choisi));
     majProprietes();
@@ -1671,7 +2152,8 @@
     const cible = ev.target;
     if (cible.isContentEditable) return;
     finirSaisie();
-    const depart = posFraction(ev);
+    let depart = posFraction(ev);
+    if (ACCROCHE.includes(ed.outil) && !cible.dataset.poignee) depart = accrocher(depart, ev);
     ed.point = depart;
     const elDom = cible.closest('[data-i]');
     const i = elDom ? Number(elDom.dataset.i) : null;
@@ -1690,10 +2172,10 @@
           e.w = w; e.h = h;
         } else if (t === 'p1' || t === 'p2') {
           const fixe = t === 'p1' ? { x: o.x2, y: o.y2 } : { x: o.x1, y: o.y1 };
-          const q = m.shiftKey ? aimanter(fixe, p) : p;
+          const q = m.shiftKey ? aimanter(fixe, p) : accrocher(p, m);
           if (t === 'p1') { e.x1 = q.x; e.y1 = q.y; } else { e.x2 = q.x; e.y2 = q.y; }
         } else if (t === 'pointe') { e.px = p.x; e.py = p.y; }
-        else if (t[0] === 'v') { e.points[Number(t.slice(1))] = [p.x, p.y]; }
+        else if (t[0] === 'v') { const q = accrocher(p, m); e.points[Number(t.slice(1))] = [q.x, q.y]; }
         dessinerCalque();
       });
       return;
@@ -1721,7 +2203,7 @@
       const e0 = i != null ? ed.elements[i] : null;
       if (e0 && e0.type === 'texteModifie') { editerTexte(i); return; }
       const n = cible.dataset.ligne != null ? Number(cible.dataset.ligne) : ligneSous(depart);
-      if (n >= 0 && ed.lignes[n]) modifierLigne(ed.lignes[n]);
+      if (n >= 0 && ed.lignes[n]) { if (ev.shiftKey) modifierParagraphe(n); else modifierLigne(ed.lignes[n]); }
       return;
     }
     // Texte à la volée : clic puis frappe ; clic sur un texte ou une bulle existants = le corriger
@@ -1737,11 +2219,16 @@
     }
 
     // Longueur (polyligne) et surface (polygone) : un clic par point, double-clic ou Entrée pour finir
-    if (ed.outil === 'longueur' || ed.outil === 'surface') {
+    if (ed.outil === 'longueur' || ed.outil === 'surface' || ed.outil === 'angle') {
       if (!ed.trace) {
         ed.trace = nouvelElement(ed.outil, { points: [[depart.x, depart.y], [depart.x, depart.y]] });
-        note('Cliquez les points suivants ; double-clic (ou Entrée) pour terminer, Échap pour arrêter.');
-      } else ed.trace.points.push([depart.x, depart.y]);
+        note(ed.outil === 'angle' ? 'Angle : cliquez le sommet, puis l\'extrémité du second côté.' : 'Cliquez les points suivants ; double-clic (ou Entrée) pour terminer, Échap pour arrêter.');
+      } else {
+        ed.trace.points[ed.trace.points.length - 1] = [depart.x, depart.y];
+        ed.trace.points.push([depart.x, depart.y]);
+        // Angle : trois points (côté, sommet, côté)
+        if (ed.trace.type === 'angle' && ed.trace.points.length > 3) { ed.trace.points.length = 3; terminerTrace(); return; }
+      }
       dessinerCalque();
       return;
     }
@@ -1771,7 +2258,7 @@
       const e = nouvelElement(ed.outil === 'etalonner' ? 'ligne' : ed.outil, { x1: depart.x, y1: depart.y, x2: depart.x, y2: depart.y });
       if (ed.outil === 'etalonner') { e.couleur = '#00897b'; e.epaisseur = 2; }
       const etalonnage = ed.outil === 'etalonner';
-      suivre(ev, (p, m) => { const q = m.shiftKey ? aimanter(depart, p) : p; e.x2 = q.x; e.y2 = q.y; dessinerCalque(); },
+      suivre(ev, (p, m) => { const q = m.shiftKey ? aimanter(depart, p) : accrocher(p, m); e.x2 = q.x; e.y2 = q.y; dessinerCalque(); },
         () => {
           const court = Math.hypot((e.x2 - e.x1) * ed.L, (e.y2 - e.y1) * ed.H) < 5;
           if (court || etalonnage) { ed.elements.pop(); ed.choisi = null; ed.hist.pop(); }
@@ -1814,6 +2301,16 @@
         } else if (petit) { ed.elements.pop(); ed.choisi = null; ed.hist.pop(); dessinerCalque(); return; }
         dessinerCalque();
         if (type === 'bulle') { editerTexte(ed.choisi); ed.hist.pop(); }
+        if (type === 'zoneEchelle') {
+          const rep = prompt('Échelle de cette zone (ex. 1/20 pour un détail) :', '1/20');
+          const m = /^\s*1\s*[/:]\s*(\d+(?:[.,]\d+)?)\s*$/.exec(rep || '');
+          if (!m) { ed.elements.pop(); ed.choisi = null; ed.hist.pop(); dessinerCalque(); if (rep !== null) note('Échelle non comprise : écrivez par exemple « 1/20 ».', 'erreur'); return; }
+          const n = Number(m[1].replace(',', '.'));
+          e.echelle = { mmParPt: MM_PAR_PT * n, libelle: `1/${m[1]}` };
+          choisirOutil('selection');
+          dessinerCalque();
+          note(`Zone au ${e.echelle.libelle} : les mesures commencées dans cette zone utilisent cette échelle (zone non imprimée).`, 'ok');
+        }
       });
     }
   });
@@ -1976,7 +2473,7 @@
       note(p.type === 'pdf' || p.type === 'image'
         ? 'Aucun texte lisible sur cette page (scan ou photo) : lancez d\'abord « 🔍 OCR », ou utilisez « Masquer » puis « Texte ».'
         : 'Aucun texte sur cette page.', 'erreur');
-    } else note('Cliquez sur une ligne pour la corriger. À l\'enregistrement, l\'ancien texte est retiré du fichier.');
+    } else note('Cliquez sur une ligne pour la corriger (Maj+clic : tout le paragraphe). À l\'enregistrement, l\'ancien texte est retiré du fichier.');
     dessinerCalque();
   }
   function noeudsLignes() {
@@ -2008,6 +2505,11 @@
     const taille = e.taille * ed.ech;
     Object.assign(t.style, { left: px(e.x, 'x'), top: `${e.base * ed.H - taille * 0.94}px`, fontSize: `${taille}px`, color: e.couleur || '#000',
       fontFamily: FAMILLES[e.police] || FAMILLES.helvetica, fontWeight: e.gras ? 'bold' : 'normal', fontStyle: e.italique ? 'italic' : 'normal' });
+    if (e.paragraphe) {
+      // Paragraphe : retour à la ligne automatique, interligne d'origine (ligne de base de la 1re ligne conservée)
+      const il = e.paragraphe.interligne * ed.ech;
+      Object.assign(t.style, { width: `${e.paragraphe.largeur * ed.L}px`, whiteSpace: 'pre-wrap', lineHeight: `${il}px`, top: `${e.base * ed.H - taille * 0.94 - (il - taille * 1.2) / 2}px` });
+    }
     t.textContent = e.texte;
     res.push(t);
     return res;
@@ -2052,15 +2554,53 @@
       const dist = [];
       for (let k = 0; k < px.length; k += 4) dist.push([Math.abs(px[k] - fr) + Math.abs(px[k + 1] - fg) + Math.abs(px[k + 2] - fb), k]);
       dist.sort((a, b) => b[0] - a[0]);
-      const sel = dist.slice(0, Math.max(1, Math.floor(dist.length * 0.06)));
+      // Les pixels les plus éloignés du fond (cœur des lettres, sans le lissage des bords)
+      const sel = dist.slice(0, Math.max(3, Math.floor(dist.length * 0.005)));
       if (sel[0] && sel[0][0] > 60) {
         const moy = [0, 1, 2].map(o => sel.reduce((a, [, k]) => a + px[k + o], 0) / sel.length);
-        couleur = rvb(...moy);
+        // Gris très foncé et neutre : c'est du noir adouci par l'affichage
+        couleur = Math.max(...moy) < 60 && Math.max(...moy) - Math.min(...moy) < 12 ? '#000000' : rvb(...moy);
       }
     } catch { /* lecture impossible : noir sur blanc */ }
     return { police, gras, italique: ital, couleur, fond };
   }
   const rvb = (r, g, b) => '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+  // Paragraphe : lignes voisines de même police et taille, alignées à gauche, à interligne régulier
+  function paragrapheDe(n) {
+    const d = dims(ed.page);
+    const L = ed.lignes;
+    const ref = L[n];
+    const proches = (a, b) => a.police === b.police && Math.abs(a.taille - b.taille) < 0.12 * a.taille && Math.abs(a.zone.x - b.zone.x) * d.l < 3;
+    const ordre = L.map((l, i) => i).filter(i => proches(L[i], ref)).sort((a, b) => L[a].base - L[b].base);
+    let k = ordre.indexOf(n);
+    let haut = k, bas = k, pas = null;
+    const ok = (i, j) => {
+      const e = (L[ordre[j]].base - L[ordre[i]].base) * d.h;
+      if (e < ref.taille * 0.95 || e > ref.taille * 1.9) return false;
+      if (pas && Math.abs(e - pas) > pas * 0.15) return false;
+      pas = pas || e;
+      return true;
+    };
+    while (bas + 1 < ordre.length && ok(bas, bas + 1)) bas++;
+    while (haut - 1 >= 0 && ok(haut - 1, haut)) haut--;
+    return { lignes: ordre.slice(haut, bas + 1).map(i => L[i]), interligne: pas || ref.taille * 1.2 };
+  }
+  function modifierParagraphe(n) {
+    const { lignes, interligne } = paragrapheDe(n);
+    if (lignes.length < 2) { modifierLigne(ed.lignes[n]); return; }
+    const x0 = Math.min(...lignes.map(l => l.zone.x)), y0 = Math.min(...lignes.map(l => l.zone.y));
+    const x1 = Math.max(...lignes.map(l => l.zone.x + l.zone.w)), y1 = Math.max(...lignes.map(l => l.zone.y + l.zone.h));
+    // Mot coupé en fin de ligne (trait d'union) : recollé
+    const texte = lignes.map(l => l.t).reduce((a, t) => (/[a-zà-ÿ]-$/i.test(a) ? a.slice(0, -1) + t : `${a} ${t}`));
+    const premiere = lignes[0];
+    const st = styleDeLigne({ ...premiere, zone: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } });
+    const e = nouvelElement('texteModifie', { zone: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, x: premiere.x, base: premiere.base, texte, origine: texte,
+      taille: Math.round(premiere.taille * 10) / 10, ...st, nouveau: true, paragraphe: { largeur: (x1 - premiere.x) * 1.01, interligne: Math.round(interligne * 100) / 100 } });
+    dessinerCalque();
+    editerTexte(ed.elements.indexOf(e));
+    ed.hist.pop();
+    note(`Paragraphe de ${lignes.length} lignes : le texte revient à la ligne tout seul à la largeur d'origine.`);
+  }
   async function modifierLigne(l) {
     const st = styleDeLigne(l);
     const e = nouvelElement('texteModifie', { zone: { ...l.zone }, x: l.x, base: l.base, texte: l.t, origine: l.t, taille: Math.round(l.taille * 10) / 10, ...st, nouveau: true });
@@ -2069,15 +2609,215 @@
     ed.hist.pop();
   }
 
+  // ----- Rechercher dans le document (Ctrl+F) -----
+  const rech = { texte: '', resultats: [], actuel: -1, numero: 0 };
+  function noeudsResultats() {
+    if (!rech.resultats.length || $('#recherche').hidden) return [];
+    return rech.resultats.map((r, k) => ({ r, k })).filter(x => x.r.page === ed.page).map(({ r, k }) => {
+      const d = document.createElement('div');
+      d.className = `resultat${k === rech.actuel ? ' actuel' : ''}`;
+      Object.assign(d.style, { left: `${r.zone.x * ed.L}px`, top: `${r.zone.y * ed.H}px`, width: `${r.zone.w * ed.L}px`, height: `${r.zone.h * ed.H}px` });
+      return d;
+    });
+  }
+  function ouvrirRecherche() {
+    if (!etat.pages.length) return;
+    if ($('#editeur').hidden) ouvrirEditeur(etat.selection.size ? [...etat.selection][0] : etat.pages[0].id);
+    $('#recherche').hidden = false;
+    const champ = $('#rech-texte');
+    champ.focus();
+    champ.select();
+  }
+  function fermerRecherche() {
+    $('#recherche').hidden = true;
+    rech.resultats = []; rech.actuel = -1; rech.texte = '';
+    $('#rech-compte').textContent = '';
+    if (ed.page) dessinerCalque();
+  }
+  async function lancerRecherche() {
+    const brut = $('#rech-texte').value.trim().replace(/\s+/g, ' ');
+    const cherche = sansAccent(brut);
+    if (cherche === rech.texte && rech.resultats.length) return;
+    const n = ++rech.numero;
+    rech.texte = cherche; rech.resultats = []; rech.actuel = -1;
+    if (!cherche) { $('#rech-compte').textContent = ''; dessinerCalque(); return; }
+    $('#rech-compte').textContent = 'Recherche…';
+    let sansTexte = 0;
+    for (const p of etat.pages) {
+      const mots = await motsPourRecherche(p);
+      if (n !== rech.numero) return; // une autre recherche a été lancée entre-temps
+      if (!mots.length && p.type !== 'blanche') sansTexte++;
+      for (const z of chercher(mots, cherche)) rech.resultats.push({ page: p, zone: { x: z.x, y: z.y, w: z.w, h: z.h } });
+    }
+    // Premier résultat à partir de la page affichée
+    const depuis = etat.pages.indexOf(ed.page);
+    rech.actuel = rech.resultats.length ? Math.max(0, rech.resultats.findIndex(r => etat.pages.indexOf(r.page) >= depuis)) : -1;
+    $('#rech-compte').textContent = rech.resultats.length ? '' : `Aucun résultat${sansTexte ? ` (${sansTexte} page(s) scannée(s) sans texte : 🔍 OCR)` : ''}`;
+    await montrerResultat();
+  }
+  async function montrerResultat() {
+    const r = rech.resultats[rech.actuel];
+    if (!r) { dessinerCalque(); return; }
+    $('#rech-compte').textContent = `${rech.actuel + 1} / ${rech.resultats.length}`;
+    if (r.page !== ed.page) await allerA(r.page);
+    dessinerCalque();
+    // Résultat amené au centre de la vue
+    const scene = $('#ed-scene'), rp = $('#ed-page').getBoundingClientRect(), rs = scene.getBoundingClientRect();
+    const x = rp.left + (r.zone.x + r.zone.w / 2) * rp.width, y = rp.top + (r.zone.y + r.zone.h / 2) * rp.height;
+    scene.scrollLeft += x - (rs.left + scene.clientWidth / 2);
+    scene.scrollTop += y - (rs.top + scene.clientHeight / 2);
+  }
+  async function resultatSuivant(sens) {
+    if (!rech.resultats.length || rech.texte !== sansAccent($('#rech-texte').value.trim().replace(/\s+/g, ' '))) return lancerRecherche();
+    rech.actuel = (rech.actuel + sens + rech.resultats.length) % rech.resultats.length;
+    await montrerResultat();
+  }
+  let minuterieRecherche = null;
+  $('#rech-texte').addEventListener('input', () => { clearTimeout(minuterieRecherche); minuterieRecherche = setTimeout(lancerRecherche, 350); });
+  $('#rech-texte').addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') { ev.preventDefault(); clearTimeout(minuterieRecherche); resultatSuivant(ev.shiftKey ? -1 : 1); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); fermerRecherche(); }
+  });
+  $('#rech-suiv').addEventListener('click', () => resultatSuivant(1));
+  $('#rech-prec').addEventListener('click', () => resultatSuivant(-1));
+  $('#rech-fermer').addEventListener('click', fermerRecherche);
+  // Le texte change quand des pages sont ajoutées, retirées ou tournées : recherche refaite à la demande
+  let signaturePages = '';
+  function invaliderRecherche() {
+    const sig = etat.pages.map(p => `${p.id}:${rotTotale(p)}:${p.ocr ? 1 : 0}`).join(',');
+    if (sig !== signaturePages) { signaturePages = sig; rech.texte = ''; }
+  }
+
+  // ----- Accroche aux traits du plan (mesures) -----
+  // Géométrie vectorielle de la page lue dans les opérations de dessin de pdf.js : extrémités et segments,
+  // rangés dans une grille pour une recherche rapide. Alt enfoncé : pas d'accroche.
+  const cacheGeometrie = new Map();
+  const GRILLE = 64;
+  function geometriePage(p) {
+    if (p.type !== 'pdf') return Promise.resolve(null);
+    const cle = `${p.source}|${p.index}|${rotTotale(p)}`;
+    if (!cacheGeometrie.has(cle)) cacheGeometrie.set(cle, (async () => {
+      const page = await (await etat.sources.get(p.source).doc).getPage(p.index + 1);
+      const vp = page.getViewport({ scale: 1, rotation: rotTotale(p) });
+      const liste = await page.getOperatorList();
+      const O = pdfjs.OPS;
+      const mult = (m, n) => [m[0] * n[0] + m[1] * n[2], m[0] * n[1] + m[1] * n[3], m[2] * n[0] + m[3] * n[2], m[2] * n[1] + m[3] * n[3], m[4] * n[0] + m[5] * n[2] + n[4], m[4] * n[1] + m[5] * n[3] + n[5]];
+      let ctm = [1, 0, 0, 1, 0, 0];
+      const pile = [];
+      const points = [], segments = [];
+      const versPage = (x, y) => { const u = x * ctm[0] + y * ctm[2] + ctm[4], v = x * ctm[1] + y * ctm[3] + ctm[5]; const q = vp.convertToViewportPoint(u, v); return [q[0] / vp.width, q[1] / vp.height]; };
+      const MAXSEG = 150000;
+      for (let i = 0; i < liste.fnArray.length && segments.length < MAXSEG; i++) {
+        const fn = liste.fnArray[i], a = liste.argsArray[i];
+        if (fn === O.save) pile.push(ctm);
+        else if (fn === O.restore) ctm = pile.pop() || ctm;
+        else if (fn === O.transform) ctm = mult(a, ctm);
+        else if (fn === O.paintFormXObjectBegin) { pile.push(ctm); if (Array.isArray(a[0]) && a[0].length === 6) ctm = mult(a[0], ctm); }
+        else if (fn === O.paintFormXObjectEnd) ctm = pile.pop() || ctm;
+        else if (fn === O.constructPath) {
+          const ops = a[0], c = a[1];
+          let k = 0, cour = null, debut = null;
+          for (const op of ops) {
+            if (op === O.moveTo) { cour = debut = versPage(c[k], c[k + 1]); k += 2; points.push(cour); }
+            else if (op === O.lineTo) { const q = versPage(c[k], c[k + 1]); k += 2; if (cour) segments.push([cour[0], cour[1], q[0], q[1]]); points.push(q); cour = q; }
+            else if (op === O.curveTo) { const q = versPage(c[k + 4], c[k + 5]); k += 6; points.push(q); cour = q; }
+            else if (op === O.curveTo2 || op === O.curveTo3) { const q = versPage(c[k + 2], c[k + 3]); k += 4; points.push(q); cour = q; }
+            else if (op === O.closePath) { if (cour && debut) segments.push([cour[0], cour[1], debut[0], debut[1]]); cour = debut; }
+            else if (op === O.rectangle) {
+              const [x, y, w, h] = [c[k], c[k + 1], c[k + 2], c[k + 3]]; k += 4;
+              const r = [versPage(x, y), versPage(x + w, y), versPage(x + w, y + h), versPage(x, y + h)];
+              r.forEach((q, j) => { points.push(q); segments.push([q[0], q[1], r[(j + 1) % 4][0], r[(j + 1) % 4][1]]); });
+              cour = debut = r[0];
+            }
+          }
+        }
+      }
+      // Grille : points et segments par case
+      const casesP = new Map(), casesS = new Map();
+      const caseDe = (x, y) => `${Math.floor(Math.min(0.9999, Math.max(0, x)) * GRILLE)},${Math.floor(Math.min(0.9999, Math.max(0, y)) * GRILLE)}`;
+      points.forEach((q, i) => { if (q[0] < 0 || q[0] > 1 || q[1] < 0 || q[1] > 1) return; const c = caseDe(q[0], q[1]); if (!casesP.has(c)) casesP.set(c, []); casesP.get(c).push(i); });
+      segments.forEach((sg, i) => {
+        const x0 = Math.floor(Math.max(0, Math.min(sg[0], sg[2])) * GRILLE), x1 = Math.floor(Math.min(0.9999, Math.max(sg[0], sg[2])) * GRILLE);
+        const y0 = Math.floor(Math.max(0, Math.min(sg[1], sg[3])) * GRILLE), y1 = Math.floor(Math.min(0.9999, Math.max(sg[1], sg[3])) * GRILLE);
+        if ((x1 - x0 + 1) * (y1 - y0 + 1) > 300) return; // très longs traits obliques : ignorés pour l'accroche « sur le trait »
+        for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) { const c = `${x},${y}`; if (!casesS.has(c)) casesS.set(c, []); casesS.get(c).push(i); }
+      });
+      return { points, segments, casesP, casesS };
+    })().catch(e => { console.warn('Géométrie illisible', e); return null; }));
+    return cacheGeometrie.get(cle);
+  }
+  async function preparerAccroche() {
+    const p = ed.page;
+    if (!p || p.type !== 'pdf') return;
+    ed.geometrie = null;
+    const g = await geometriePage(p);
+    if (ed.page === p) ed.geometrie = g;
+  }
+  // Point accroché le plus proche (en pixels d'écran) : extrémité, sinon point du trait ; marqueur affiché
+  function accrocher(pt, ev) {
+    const m = $('#ed-accroche');
+    const g = ed.geometrie;
+    if (!g || (ev && ev.altKey) || !ACCROCHE.includes(ed.outil)) { m.hidden = true; return pt; }
+    const tol = 9; // pixels
+    const tx = tol / ed.L, ty = tol / ed.H;
+    const cx0 = Math.floor((pt.x - tx) * GRILLE), cx1 = Math.floor((pt.x + tx) * GRILLE), cy0 = Math.floor((pt.y - ty) * GRILLE), cy1 = Math.floor((pt.y + ty) * GRILLE);
+    let best = null, dmin = tol;
+    for (let x = cx0; x <= cx1; x++) for (let y = cy0; y <= cy1; y++) {
+      for (const i of g.casesP.get(`${x},${y}`) || []) {
+        const q = g.points[i];
+        const d = Math.hypot((q[0] - pt.x) * ed.L, (q[1] - pt.y) * ed.H);
+        if (d < dmin) { dmin = d; best = { x: q[0], y: q[1], type: 'extremite' }; }
+      }
+    }
+    if (!best) {
+      dmin = tol * 0.7;
+      for (let x = cx0; x <= cx1; x++) for (let y = cy0; y <= cy1; y++) {
+        for (const i of g.casesS.get(`${x},${y}`) || []) {
+          const [x1, y1, x2, y2] = g.segments[i];
+          const ax = (x2 - x1) * ed.L, ay = (y2 - y1) * ed.H, lg2 = ax * ax + ay * ay;
+          if (!lg2) continue;
+          let t = (((pt.x - x1) * ed.L) * ax + ((pt.y - y1) * ed.H) * ay) / lg2;
+          t = Math.max(0, Math.min(1, t));
+          const px = x1 + (x2 - x1) * t, py = y1 + (y2 - y1) * t;
+          const d = Math.hypot((px - pt.x) * ed.L, (py - pt.y) * ed.H);
+          if (d < dmin) { dmin = d; best = { x: px, y: py, type: 'trait' }; }
+        }
+      }
+    }
+    if (!best) { m.hidden = true; return pt; }
+    m.hidden = false;
+    m.className = `accroche ${best.type}`;
+    m.style.left = `${best.x * ed.L}px`;
+    m.style.top = `${best.y * ed.H}px`;
+    m.title = best.type === 'extremite' ? 'Extrémité' : 'Sur le trait';
+    return { x: best.x, y: best.y };
+  }
+  calque.addEventListener('pointerleave', () => { $('#ed-accroche').hidden = true; });
+
   // ----- Mesures sur plan -----
   // Échelle de la page : millimètres réels par point PDF (1 pt = 25,4/72 mm sur le papier)
   const MM_PAR_PT = 25.4 / 72;
   const nombre = (v, dec) => v.toLocaleString('fr-FR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
   const formatLongueur = mm => (mm < 1000 ? `${nombre(mm, 0)} mm` : `${nombre(mm / 1000, 2)} m`);
   const formatSurface = mm2 => `${nombre(mm2 / 1e6, 2)} m²`;
-  function valeurMesure(e, p) {
+  // Zone d'échelle contenant le premier point de la mesure (détail à une autre échelle sur la même feuille)
+  function zoneDe(e, elements) {
+    const pt = e.type === 'cote' ? [e.x1, e.y1] : (e.points || [])[e.type === 'angle' ? 1 : 0];
+    if (!pt) return null;
+    return (elements || []).find(z => z.type === 'zoneEchelle' && z.echelle && pt[0] >= z.x && pt[0] <= z.x + z.w && pt[1] >= z.y && pt[1] <= z.y + z.h) || null;
+  }
+  function valeurMesure(e, p, elements = p.elements) {
     const d = dims(p);
-    const mmPt = p.echelle ? p.echelle.mmParPt : MM_PAR_PT;
+    if (e.type === 'angle') {
+      const [a, o, b] = (e.points || []).map(([x, y]) => [x * d.l, y * d.h]);
+      if (!b) return { type: 'angle', deg: 0 };
+      let t = Math.abs(Math.atan2(a[1] - o[1], a[0] - o[0]) - Math.atan2(b[1] - o[1], b[0] - o[0])) * 180 / Math.PI;
+      if (t > 180) t = 360 - t;
+      return { type: 'angle', deg: t };
+    }
+    const zone = zoneDe(e, elements);
+    const echelle = zone ? zone.echelle : p.echelle;
+    const mmPt = echelle ? echelle.mmParPt : MM_PAR_PT;
     const pts = e.type === 'cote' ? [[e.x1, e.y1], [e.x2, e.y2]] : (e.points || []);
     if (e.type === 'surface') {
       let a = 0;
@@ -2092,8 +2832,10 @@
     if (!p) return;
     for (const e of elements) {
       if (!MESURES.includes(e.type)) continue;
-      const v = valeurMesure(e, p);
-      e.etiquette = (v.type === 'surface' ? formatSurface(v.mm2) : formatLongueur(v.mm)) + (p.echelle ? '' : ' (papier)');
+      const v = valeurMesure(e, p, elements);
+      if (v.type === 'angle') { e.etiquette = `${nombre(v.deg, 1)}°`; continue; }
+      const aEchelle = p.echelle || zoneDe(e, elements);
+      e.etiquette = (v.type === 'surface' ? formatSurface(v.mm2) : formatLongueur(v.mm)) + (aEchelle ? '' : ' (papier)');
     }
   }
   function majRecapMesures() {
@@ -2107,7 +2849,8 @@
     let lg = 0, surf = 0, n = 0;
     for (const e of ed.elements) {
       if (!MESURES.includes(e.type)) continue;
-      const v = valeurMesure(e, ed.page);
+      const v = valeurMesure(e, ed.page, ed.elements);
+      if (v.type === 'angle') continue;
       n++;
       if (v.type === 'surface') surf += v.mm2; else lg += v.mm;
     }
@@ -2125,6 +2868,7 @@
   $('#ed-echelle').addEventListener('change', () => {
     const v = $('#ed-echelle').value;
     if (v === 'etalonner') { choisirOutil('etalonner'); note('Tracez un trait sur une cote connue du plan, puis indiquez sa longueur réelle.'); majRecapMesures(); return; }
+    if (v === 'zone') { choisirOutil('zoneEchelle'); note('Tracez le cadre du détail qui est à une autre échelle, puis indiquez son échelle.'); majRecapMesures(); return; }
     if (v === 'etalonnee') return;
     if (!v) { appliquerEchelle(null); return; }
     const n = Number(v.split('/')[1]);
@@ -2157,14 +2901,17 @@
       const [a, b] = e.points.slice(-2);
       if (Math.hypot((a[0] - b[0]) * ed.L, (a[1] - b[1]) * ed.H) < 4) e.points.pop(); else break;
     }
-    if (e.points.length < (e.type === 'surface' ? 3 : 2)) { ed.elements.splice(ed.elements.indexOf(e), 1); ed.choisi = null; }
+    if (e.type === 'angle' && e.points.length > 3) e.points.length = 3;
+    if (e.points.length < (e.type === 'surface' || e.type === 'angle' ? 3 : 2)) { ed.elements.splice(ed.elements.indexOf(e), 1); ed.choisi = null; }
     dessinerCalque();
   }
   calque.addEventListener('pointermove', ev => {
+    if (ACCROCHE.includes(ed.outil) && !ev.buttons) accrocher(posFraction(ev), ev);
     if (!ed.trace) return;
     let p = posFraction(ev);
     const pts = ed.trace.points;
     if (ev.shiftKey && pts.length > 1) p = aimanter({ x: pts[pts.length - 2][0], y: pts[pts.length - 2][1] }, p);
+    else p = accrocher(p, ev);
     pts[pts.length - 1] = [p.x, p.y];
     dessinerCalque();
   });
@@ -2179,9 +2926,10 @@
       const els = p.elements.filter(e => MESURES.includes(e.type));
       els.forEach(e => {
         const v = valeurMesure(e, p);
-        const type = { cote: 'Cote', longueur: 'Longueur', surface: 'Surface' }[e.type];
-        const val = v.type === 'surface' ? nombre(v.mm2 / 1e6, 3) : nombre(v.mm / 1000, 3);
-        lignes.push([i + 1, etat.sources.get(p.source)?.nom || p.titre || '', type, val, v.type === 'surface' ? 'm²' : 'm', p.echelle ? (p.echelle.libelle || 'étalonnée') : 'aucune']);
+        const type = { cote: 'Cote', longueur: 'Longueur', surface: 'Surface', angle: 'Angle' }[e.type];
+        const val = v.type === 'angle' ? nombre(v.deg, 1) : v.type === 'surface' ? nombre(v.mm2 / 1e6, 3) : nombre(v.mm / 1000, 3);
+        const ech = zoneDe(e, p.elements)?.echelle || p.echelle;
+        lignes.push([i + 1, etat.sources.get(p.source)?.nom || p.titre || '', type, val, v.type === 'angle' ? '°' : v.type === 'surface' ? 'm²' : 'm', v.type === 'angle' ? '' : ech ? (ech.libelle || 'étalonnée') : 'aucune']);
         n++;
       });
     });
@@ -2362,6 +3110,10 @@
   $('#b-supprimer').onclick = () => supprimer();
   $('#b-modifier').onclick = () => ouvrirEditeur();
   $('#b-ocr').onclick = () => reconnaitre();
+  $('#b-imprimer').onclick = () => imprimer();
+  $('#b-rechercher').onclick = () => ouvrirRecherche();
+  $('#ed-imprimer').onclick = () => imprimer();
+  $('#ed-rechercher').onclick = () => ouvrirRecherche();
   $('#b-projet').onclick = ev => { ev.stopPropagation(); $('#menu-projet').hidden = !$('#menu-projet').hidden; };
   document.addEventListener('click', ev => { if (!ev.target.closest('.menu')) $('#menu-projet').hidden = true; });
   $('#m-nouveau').onclick = () => { $('#menu-projet').hidden = true; nouveauTravail(); };
@@ -2391,9 +3143,19 @@
     const saisie = /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
     const ctrl = ev.ctrlKey || ev.metaKey;
     const touche = ev.key.toLowerCase();
+    // Rechercher et imprimer : partout (sinon le navigateur imprimerait l'écran au lieu du document)
+    if (ctrl && touche === 'f' && !ev.shiftKey) { ev.preventDefault(); ouvrirRecherche(); return; }
+    if (ctrl && touche === 'p') { ev.preventDefault(); imprimer(); return; }
+    if (ev.key === 'F3') { ev.preventDefault(); if ($('#recherche').hidden) ouvrirRecherche(); else resultatSuivant(ev.shiftKey ? -1 : 1); return; }
     if (!$('#editeur').hidden) {
       if (saisie) { if (ev.key === 'Escape') { document.activeElement.blur(); choisirOutil('selection'); } return; }
       toucheEditeur(ev, ctrl, touche);
+      return;
+    }
+    if (!$('#comparaison').hidden) {
+      const fl = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[ev.key];
+      if (fl) { ev.preventDefault(); const pas = ev.shiftKey ? 10 : 1; decalerComparaison(fl[0] * pas, fl[1] * pas); }
+      else if (ev.key === 'Escape') $('#cmp-fermer').click();
       return;
     }
     if (!$('#dlg-diviser').hidden) { if (ev.key === 'Escape') $('#dlg-diviser').hidden = true; return; }

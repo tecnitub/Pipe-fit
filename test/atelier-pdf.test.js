@@ -219,3 +219,58 @@ test('modifier le texte : scan (pas de texte dans le contenu) -> fond posé par-
   assert.match(contenu, /0\.99\d* 0\.96\d* 0\.89\d* rg/, 'rectangle de la couleur du fond posé sur le texte du scan');
   assert.strictEqual(Moteur.nomPoliceStandard(el), 'Times-BoldItalic');
 });
+
+test('formulaire : champs texte, case, boutons radio et liste remplis puis figés', async () => {
+  const d = await PDFDocument.create();
+  const pg = d.addPage([595, 842]);
+  const form = d.getForm();
+  form.createTextField('client').addToPage(pg, { x: 100, y: 700, width: 300, height: 20 });
+  const obs = form.createTextField('obs'); obs.enableMultiline(); obs.addToPage(pg, { x: 100, y: 600, width: 300, height: 60 });
+  form.createCheckBox('termine').addToPage(pg, { x: 100, y: 560, width: 15, height: 15 });
+  const r = form.createRadioGroup('urgence');
+  r.addOptionToPage('normale', pg, { x: 100, y: 520, width: 15, height: 15 });
+  r.addOptionToPage('haute', pg, { x: 130, y: 520, width: 15, height: 15 });
+  const dd = form.createDropdown('tech'); dd.addOptions(['Kevin', 'Thomas']); dd.addToPage(pg, { x: 100, y: 480, width: 150, height: 20 });
+  const sources = { a: { octets: await d.save(), champs: { client: 'Laiterie – Rumilly', obs: 'Ligne 1\nLigne 2 €', termine: true, urgence: '1', tech: 'Thomas' } } };
+  const octets = await Moteur.compiler({ sources, pages: [{ source: 'a', index: 0 }], options: { editable: false } });
+  const out = await PDFDocument.load(octets);
+  assert.strictEqual(out.getForm().getFields().length, 0, 'formulaire figé');
+  // Formulaire figé : les valeurs sont dans les dessins des champs (sous-dessins de la page)
+  let tout = '';
+  for (const [, obj] of out.context.enumerateIndirectObjects()) {
+    if (obj instanceof globalThis.PDFLib.PDFRawStream) { try { tout += Buffer.from(globalThis.PDFLib.decodePDFRawStream(obj).decode()).toString('latin1'); } catch { /* image */ } }
+  }
+  const hex = t => Buffer.from(t, 'latin1').toString('hex').toUpperCase();
+  for (const t of ['Ligne 1', 'Ligne 2 \x80', 'Thomas', 'Laiterie \x96 Rumilly']) assert.ok(tout.includes(hex(t)) || tout.includes(`(${t})`), `valeur « ${t} » écrite`);
+});
+
+test('fichiers de l\'application : syntaxe JavaScript valide', () => {
+  const { execFileSync } = require('node:child_process');
+  for (const f of ['app.js', 'moteur.js', 'stockage.js', 'ocr.js']) {
+    execFileSync(process.execPath, ['--check', path.join(__dirname, '../pdf/src', f)]);
+  }
+});
+
+test('annotations en commentaires PDF : types, apparence, retirées à la réouverture', async () => {
+  const sources = { a: { octets: await pdfDe(1) } };
+  const elements = [
+    { type: 'texte', x: 0.1, y: 0.1, texte: 'Note', taille: 12 },
+    { type: 'fleche', x1: 0.2, y1: 0.3, x2: 0.4, y2: 0.35 },
+    { type: 'cadre', x: 0.5, y: 0.5, w: 0.2, h: 0.1 },
+    { type: 'surligne', x: 0.1, y: 0.6, w: 0.3, h: 0.02 },
+    { type: 'crayon', points: [[0.1, 0.8], [0.2, 0.82]] },
+    { type: 'cote', x1: 0.1, y1: 0.9, x2: 0.5, y2: 0.9, etiquette: '4,00 m' },
+    { type: 'caviarde', x: 0.6, y: 0.1, w: 0.1, h: 0.02 },
+  ];
+  for (const rotation of [0, 90]) {
+    const octets = await Moteur.compiler({ sources, pages: [{ source: 'a', index: 0, rotation, elements, donnees: { elements } }], options: { commentaires: true, auteur: 'Tecnitub' } });
+    const doc = await PDFDocument.load(octets);
+    const annots = doc.getPage(0).node.lookup(PDFName.of('Annots')).asArray().map(r => doc.context.lookup(r));
+    assert.deepStrictEqual(annots.map(a => a.get(PDFName.of('Subtype')).asString()), ['/FreeText', '/Line', '/Square', '/Square', '/Ink', '/Line'], 'un commentaire par annotation (pas le caviardage)');
+    annots.forEach(a => assert.ok(a.lookup(PDFName.of('AP')).get(PDFName.of('N')), 'apparence fournie'));
+    const relu = await Moteur.relire(octets);
+    const doc2 = await PDFDocument.load(relu.octets);
+    assert.ok(!doc2.getPage(0).node.lookup(PDFName.of('Annots')), 'commentaires retirés à la réouverture');
+    assert.strictEqual(relu.pages[0].elements.length, elements.length, 'annotations retrouvées, modifiables');
+  }
+});
