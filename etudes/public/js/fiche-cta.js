@@ -149,6 +149,12 @@ const FicheCta = (() => {
     });
     // Données électriques de la centrale : reprises dans la note (bilan électrique de l'étude)
     if (type === 'cta') { [['PelS', 'PelecVS'], ['PelR', 'PelecVR'], ['Pbe', 'PelBe']].forEach(([cle, k]) => { if (valeurs[cle] !== undefined) ajoute(cle, k, valeurs[cle]); }); }
+    // Puissances des batteries lues sur la fiche : saisie directe (sans refaire le calcul depuis les conditions extérieures)
+    if (type === 'cta' && (valeurs.PchBC !== undefined || valeurs.PfrBF !== undefined)) {
+      if (valeurs.PchBC !== undefined) ajoute('PchBC', 'PchaudS', valeurs.PchBC);
+      if (valeurs.PfrBF !== undefined) ajoute('PfrBF', 'PfroidS', valeurs.PfrBF);
+      out.push({ cle: 'modeP', k: 'modeP', val: 'saisie', libelle: 'Puissances chaud et froid', unite: 'saisies depuis la fiche' });
+    }
     if (type === 'aero' && (valeurs.TcAller !== undefined || valeurs.PchBC !== undefined || valeurs.dpBC !== undefined)) ajoute('TcAller', 'batChaude', 'oui');
     if (type === 'aero') out.forEach(c => { if (c.k === 'batChaude') c.libelle = 'Batterie chaude'; });
     return out;

@@ -152,15 +152,15 @@ const Liens = ((N, Sc) => {
       if (!src) { alertes.push({ niveau: 'attention', texte: 'Le calcul de CTA relié a été supprimé : choisissez-en un autre ou « Saisie ».' }); return null; }
       const c = brut(src), lib = libelle(src), recup = c.type === 'double' ? c.recup : 'aucun', froid = c.froid !== 'non';
       if (note.type === 'aero') {
-        imposer({ producteur: TYPE_AIR[c.type] || 'cta-df', recuperateur: RECUP_AIR[recup] || 'aucun', batChaude: 'oui', batFroide: froid ? 'oui' : 'non',
-          dpFiltreS: num(c.dpFiltreAN), dpFiltreR: c.type === 'simple' ? 0 : num(c.dpFiltreR), dpRecup: recup !== 'aucun' ? num(c.dpRecup) : 0, dpBatC: num(c.dpBC) + (c.humid === 'vapeur' ? 30 : 0), dpBatF: froid ? num(c.dpBF) : 0,
+        imposer({ producteur: TYPE_AIR[c.type] || 'cta-df', recuperateur: RECUP_AIR[recup] || 'aucun', batChaude: c.froid !== 'froide' ? 'oui' : 'non', batFroide: froid ? 'oui' : 'non',
+          dpFiltreS: num(c.dpFiltreAN), dpFiltreR: c.type === 'simple' ? 0 : num(c.dpFiltreR), dpRecup: recup !== 'aucun' ? num(c.dpRecup) : 0, dpBatC: (['froide', 'co'].includes(c.froid) ? 0 : num(c.dpBC)) + (c.humid === 'vapeur' ? 30 : 0), dpBatF: froid ? num(c.dpBF) : 0,
           // Caissons, silencieux et volets de la CTA : moitié à la prise d'air, moitié au silencieux (la reprise en compte la moitié)
           dpPrise: num(c.dpDivers) / 2, dpSil: num(c.dpDivers) / 2, dpRejet: 0, rendement: num(c.rendement, 60) }, lib);
         if (!String(e.titreInstallation || '').trim() || e.titreInstallation === N.defauts('aero').titreInstallation) e.titreInstallation = src.titre;
       } else {
         const reprise = e.ctaFlux === 'reprise' && c.type !== 'simple';
         const dpCta = reprise ? num(c.dpFiltreR) + (recup !== 'aucun' ? num(c.dpRecup) : 0) + num(c.dpDivers) / 2
-          : num(c.dpFiltreAN) + (recup !== 'aucun' ? num(c.dpRecup) : 0) + num(c.dpBC) + (froid ? num(c.dpBF) : 0) + (c.humid === 'vapeur' ? 30 : 0) + num(c.dpDivers);
+          : num(c.dpFiltreAN) + (recup !== 'aucun' ? num(c.dpRecup) : 0) + (['froide', 'co'].includes(c.froid) ? 0 : num(c.dpBC)) + (froid ? num(c.dpBF) : 0) + (c.humid === 'vapeur' ? 30 : 0) + num(c.dpDivers);
         imposer({ dpCta: Math.round(dpCta) }, lib);
         const doublons = (e.composants || []).filter(x => /filtre|batterie|recup|récup|echangeur|échangeur|roue/i.test(x.nom || '') && num(x.dp) > 0);
         if (doublons.length) alertes.push({ niveau: 'attention', texte: `Composants déjà comptés dans la CTA (${doublons.map(x => x.nom).join(', ')}) : à retirer de la liste des composants du réseau.` });
