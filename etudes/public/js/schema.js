@@ -469,6 +469,37 @@ const Schema = ((D, C, N) => {
     return [blocVisa(), ...blocs];
   }
 
+  /* ---------- Courbe de chauffe (loi d'eau) de chaque circuit ---------- */
+  // Départ linéaire entre (température de base, départ nominal) et (18 °C, départ mini) ; retour : écart proportionnel à la
+  // charge ; arrêt du chauffage au-delà du seuil de non-chauffage. Équivalent « pente / déplacement parallèle » (type Synco).
+  function courbeChauffe(d, e) {
+    const Tb = num(e.Tbase, -10), arret = num(e.nonChauffage, 17), Ta = 20;
+    const circ = (d.circuits || []).filter(c => c.rc[0] > c.rc[1] && ['radiateurs', 'plancher', 'radiant', 'aerotherme'].includes(c.emetteur) && c.reg !== 'direct').map(c => {
+      const base = c.emetteur === 'plancher' ? 25 : 30, s = (c.rc[0] - base) / (18 - Tb);
+      const dep = T => Math.max(base, Math.min(c.rc[0], c.rc[0] - s * (T - Tb))), ret = T => { const x = dep(T); return x - (c.rc[0] - c.rc[1]) * (x - Ta) / (c.rc[0] - Ta); };
+      return { rep: c.rep, emetteur: c.emetteur, regime: c.rc, base, pente: s, deplacement: base - s * (Ta - 18) - Ta, dep, ret };
+    });
+    if (!circ.length) return null;
+    // Graphique : abscisse température extérieure (de Tb à 20 °C), ordonnée température d'eau
+    const W = 720, H = 400, g = { x: 60, y: 20, w: 600, h: 320 }, xmin = Math.floor(Tb / 5) * 5, xmax = 20, ymax = Math.ceil(Math.max(...circ.map(c => c.regime[0])) / 10) * 10 + 10, ymin = 10;
+    const X = T => g.x + (T - xmin) / (xmax - xmin) * g.w, Y = t => g.y + g.h - (t - ymin) / (ymax - ymin) * g.h;
+    const COUL = ['#c0392b', '#2471a3', '#1e8449', '#b9770e', '#7d3c98', '#117a65'];
+    const o = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" font-family="Arial, sans-serif" font-size="11"><rect width="${W}" height="${H}" fill="#fff"/>`];
+    for (let T = xmin; T <= xmax; T += 5) o.push(`<line x1="${X(T)}" y1="${g.y}" x2="${X(T)}" y2="${g.y + g.h}" stroke="#ddd"/><text x="${X(T)}" y="${g.y + g.h + 16}" text-anchor="middle">${T}</text>`);
+    for (let t = ymin; t <= ymax; t += 10) o.push(`<line x1="${g.x}" y1="${Y(t)}" x2="${g.x + g.w}" y2="${Y(t)}" stroke="#ddd"/><text x="${g.x - 6}" y="${Y(t) + 4}" text-anchor="end">${t}</text>`);
+    o.push(`<text x="${g.x + g.w / 2}" y="${H - 22}" text-anchor="middle">Température extérieure (°C)</text><text transform="translate(16 ${g.y + g.h / 2}) rotate(-90)" text-anchor="middle">Température d'eau (°C)</text>`);
+    o.push(`<line x1="${X(arret)}" y1="${g.y}" x2="${X(arret)}" y2="${g.y + g.h}" stroke="#555" stroke-dasharray="5 4"/><text x="${X(arret) - 4}" y="${g.y + 12}" text-anchor="end" fill="#555">arrêt chauffage ${arret} °C</text>`);
+    o.push(`<line x1="${X(Tb)}" y1="${g.y}" x2="${X(Tb)}" y2="${g.y + g.h}" stroke="#555" stroke-dasharray="2 3"/><text x="${X(Tb) + 4}" y="${g.y + 12}" fill="#555">base ${Tb} °C</text>`);
+    circ.forEach((c, i) => {
+      const k = COUL[i % COUL.length], pts = f => { const l = []; for (let T = Tb; T <= arret + 1e-9; T += 0.5) l.push(`${X(T).toFixed(1)},${Y(f(T)).toFixed(1)}`); return l.join(' '); };
+      o.push(`<polyline points="${pts(c.dep)}" fill="none" stroke="${k}" stroke-width="2.5"/><polyline points="${pts(c.ret)}" fill="none" stroke="${k}" stroke-width="1.5" stroke-dasharray="6 4"/>`);
+      o.push(`<circle cx="${X(Tb)}" cy="${Y(c.dep(Tb))}" r="3.5" fill="${k}"/><text x="${X(Tb) + 8}" y="${Y(c.dep(Tb)) - 6}" fill="${k}" font-weight="bold">${String(c.rep).replace(/&/g, '&amp;').replace(/</g, '&lt;')} : ${c.regime[0]}/${c.regime[1]} °C</text>`);
+    });
+    o.push(`<text x="${g.x + g.w}" y="${H - 6}" text-anchor="end" fill="#555">trait plein : départ · pointillés : retour</text></svg>`);
+    const temps = [Tb, ...[-5, 0, 5, 10, 15].filter(T => T > Tb && T < arret), arret];
+    return { circuits: circ, Tb, arret, svg: o.join(''), tableau: { entetes: ['Circuit', ...temps.map(T => `${T} °C ext.`)], lignes: circ.map(c => [c.rep, ...temps.map(T => `${nf(c.dep(T), 0)} / ${nf(c.ret(T), 0)}`)]) } };
+  }
+
   /* ---------- Régulation : analyse fonctionnelle et liste des points ---------- */
   function regulation(d, e) {
     const Tb = num(e.Tbase, -10), red = num(e.reduit, 3), perm = num(e.permutation, 168), af = [], pts = [];
@@ -602,6 +633,7 @@ const Schema = ((D, C, N) => {
     calcul(e) {
       const d = dimensionner(e), alertes = [...d.alertes], vol = volumeEau(d, e.generateur), dr = d.co ? d.co.dC : d;
       if (!alertes.some(a => a.niveau === 'erreur')) alertes.unshift(alerte('ok', `${d.n > 1 ? `Cascade de ${d.n} × ${nf(d.Pg, 0)} kW` : `Générateur de ${nf(d.Pg, 0)} kW`} pour ${nf(d.Pdem, 0)} kW de besoins ; débit primaire ${nf(d.Qp, 2)} m³/h, secondaire ${nf(d.Qs, 2)} m³/h${d.bouteille && d.tb ? `, bouteille ${d.tb.nom}` : ''}.`));
+      const cc = courbeChauffe(dr, e);
       return {
         valeurs: { volume: vol.total, Pprod: d.Pprod, Pdem: d.Pdem, Qp: d.Qp, Qs: d.Qs, Qg: d.Qg, bouteille: d.tb ? d.tb.cle : null, Db: d.Db, collecteur: d.tc.cle, circuits: d.circuits.map(c => ({ rep: c.rep, Q: c.Q, Qcoll: c.Qcoll, tube: c.t.cle, hmt: c.hmt, kvs: c.kvs, L: c.L, reg: c.reg, dn: c.t.dn, tubeNom: c.t.nom, pompe: c.pf && c.pf.ref ? `${c.pf.ref} (${nf(c.Q, 2)} m³/h × ${nf(c.hmt, 2)} mCE, vitesse ≈ ${nf(c.pf.vitesse || 100, 0)} %)` : c.pompe ? N.libPompe(c.pompe) : '', pompeFiche: c.pf ? c.pf.fiche : null, vanne: c.vanne ? N.libVanne(c.vanne) : '', rob: (c.rob || []).map(x => ({ i: x.i, rep: x.rep, type: x.type, lib: x.lib, dn: x.dn, qte: x.qte, dpTot: x.dpTot, ref: x.ref, fiche: x.fiche })) })) },
         resume: [['Réseau', `${d.regime} — ${d.f.libelle}`], ['Production', `${d.n} × ${d.gen[0].toLowerCase()} de ${nf(d.Pg, 0)} kW = ${nf(d.Pprod, 0)} kW`],
@@ -639,7 +671,10 @@ const Schema = ((D, C, N) => {
           'Schéma de principe : ne remplace pas le plan d\'exécution (organes de sécurité, vidanges, purges et appareils de mesure à compléter selon le CCTP).'],
         synthese: `${d.co ? 'Change-over · ' : ''}${d.n > 1 ? `Cascade ${d.n} × ${nf(d.Pg, 0)} kW` : `${nf(d.Pg, 0)} kW`} · ${d.circuits.length} circuit(s) · ${d.echangeur ? 'échangeur' : d.bouteille ? 'bouteille' : 'sans découplage'}${d.tampon && d.tampon.V > 0 ? ` · tampon ${nf(d.tampon.V, 0)} L` : ''} · ${nf(d.Qs, 1)} m³/h`,
         schema: dessiner(d, e),
-        onglets: [{ titre: 'Réglementation', blocs: reglementation({ ...dr, Pprod: Math.max(d.Pprod, d.co ? d.co.dF.Pprod : 0), circuits: d.circuits, echangeur: d.echangeur }, e) }, { titre: 'Régulation', blocs: regulation({ ...dr, circuits: dr.circuits, co: d.co }, e) }],
+        ...(cc ? { schemas: [{ titre: 'Courbe de chauffe (loi d\'eau) des circuits', svg: cc.svg }] } : {}),
+        onglets: [{ titre: 'Réglementation', blocs: reglementation({ ...dr, Pprod: Math.max(d.Pprod, d.co ? d.co.dF.Pprod : 0), circuits: d.circuits, echangeur: d.echangeur }, e) }, { titre: 'Régulation', blocs: [...(cc ? [{ titre: 'Courbe de chauffe (loi d\'eau)', svg: cc.svg }, { titre: 'Températures de départ / retour (°C) selon la température extérieure', tableau: cc.tableau },
+          { titre: 'Réglage de la courbe sur le régulateur', liste: cc.circuits.map(c => `${c.rep} : départ ${c.regime[0]} °C à ${cc.Tb} °C extérieur, ${c.base} °C à 18 °C extérieur ; équivalent type Synco : pente ≈ ${nf(c.pente, 2)}, déplacement parallèle ≈ ${c.deplacement >= 0 ? '+' : ''}${nf(c.deplacement, 1)} K (consigne d'ambiance 20 °C) — à affiner à l'usage.`) }] : []),
+          ...regulation({ ...dr, circuits: dr.circuits, co: d.co }, e)] }],
       };
     },
   };
@@ -673,6 +708,6 @@ const Schema = ((D, C, N) => {
     try { const FT = typeof FichesTech !== 'undefined' ? FichesTech : require('../../../public/js/fiches-tech'); const a = FT.analyser({ texte: L.join('\n') }); fabricant = a.fabricant || ''; reference = (a.references || [])[0] || ''; } catch (err) { /* sans bibliothèque */ }
     return { valeurs: v, sources: src, fabricant, reference, nb: Object.keys(v).length };
   }
-  return { ROBINETTERIE, ORGANES_CALCUL, robinetterie, organe, lireFicheRobinet, lireAbaque, toursAbaque, REGIMES, GENERATEURS, EMETTEURS, REGULATIONS, FLUIDES_FRIGO, CONTENANCE, volumeEau, utiliserReglementation, dimensionner, dessiner, reglementation, regulation };
+  return { courbeChauffe, ROBINETTERIE, ORGANES_CALCUL, robinetterie, organe, lireFicheRobinet, lireAbaque, toursAbaque, REGIMES, GENERATEURS, EMETTEURS, REGULATIONS, FLUIDES_FRIGO, CONTENANCE, volumeEau, utiliserReglementation, dimensionner, dessiner, reglementation, regulation };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Notes !== 'undefined' ? Notes : require('./notes'));
 if (typeof module !== 'undefined') module.exports = Schema;

@@ -97,3 +97,23 @@ test('affectation sur régulateur préprogrammé : bornes et dépassement de cap
   const gros = Rg.allouer([...Array(40)].map((_, i) => [`S${i}`, 'Sonde', 'EA']), 'chauffage', { chauffage: [8, 4, 6], extension: [4, 2, 2] });
   assert.strictEqual(gros.regulateurs.length, 2); // 8 + 3 modules × 4 = 20 entrées par régulateur
 });
+
+test('courbe de chauffe (loi d\'eau) : départ et retour selon l\'extérieur, arrêt chauffage, pente et déplacement', () => {
+  const Sc = require('../etudes/public/js/schema');
+  const e = { ...N.defauts('pid'), Tbase: -10 }, d = Sc.dimensionner(e), c = Sc.courbeChauffe(d, e);
+  const rad = c.circuits.find(x => x.emetteur === 'radiateurs'), pl = c.circuits.find(x => x.emetteur === 'plancher');
+  assert.ok(rad && pl);
+  assert.strictEqual(rad.dep(-10), rad.regime[0]);
+  assert.strictEqual(rad.dep(18), 30);
+  assert.ok(Math.abs(rad.dep(4) - (rad.regime[0] + 30) / 2) < 1e-9); // linéaire entre -10 et 18 °C
+  assert.ok(Math.abs(rad.ret(-10) - rad.regime[1]) < 1e-9 && rad.ret(10) < rad.dep(10));
+  assert.ok(Math.abs(rad.pente - (rad.regime[0] - 30) / 28) < 1e-9);
+  assert.strictEqual(pl.dep(18), 25);
+  assert.match(c.svg, /^<svg[\s\S]*arrêt chauffage 17 °C[\s\S]*<\/svg>$/);
+  assert.strictEqual(c.tableau.lignes.length, c.circuits.length);
+  assert.deepStrictEqual(c.tableau.entetes, ['Circuit', '-10 °C ext.', '-5 °C ext.', '0 °C ext.', '5 °C ext.', '10 °C ext.', '15 °C ext.', '17 °C ext.']);
+  // Dans le calcul : onglet Régulation (graphique, tableau, réglage) et schéma téléchargeable
+  const r = N.calculer('pid', e), reg = r.onglets.find(o => o.titre === 'Régulation').blocs;
+  assert.ok(reg[0].svg && /tableau/.test(Object.keys(reg[1]).join()) && /pente ≈/.test(reg[2].liste[0]));
+  assert.ok(r.schemas.some(s => /Courbe de chauffe/.test(s.titre)));
+});

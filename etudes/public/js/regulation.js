@@ -84,7 +84,9 @@ const Regulation = (() => {
             if (loi && c.reg !== 'direct') { params.push(p(`Loi d'eau ${c.rep} : départ à ${nf(Tb, 0)} °C extérieur`, c.rc[0], '°C'), p(`Loi d'eau ${c.rep} : départ à 18 °C extérieur`, c.emetteur === 'plancher' ? 25 : 30, '°C')); }
             else params.push(p(`Consigne de départ ${c.rep}`, c.rc[0], '°C'));
           });
-          if (d.chaud) params.push(p('Arrêt chauffage (non-chauffage) au-dessus de', 17, '°C ext.'));
+          const cc = Sc().courbeChauffe ? Sc().courbeChauffe(d.co ? d.co.dC : d, e) : null;
+          if (cc) cc.circuits.forEach(c => { params.push(p(`Pente de la courbe de chauffe ${c.rep} (type Synco)`, Math.round(c.pente * 20) / 20, ''), p(`Déplacement parallèle ${c.rep}`, Math.round(c.deplacement * 2) / 2, 'K')); });
+          if (d.chaud) params.push(p('Arrêt chauffage (non-chauffage) au-dessus de', cc ? cc.arret : 17, '°C ext.'));
           installations.push({ noteId: n.id, titre, app: 'production', af: ((Array.isArray(r) ? r.find(b => b.liste) : r) || {}).liste || r.af || [], params: params.filter(Boolean) });
         } else if (n.type === 'cta') {
           const { e } = res(n), f = e.froid || 'oui', recup = e.recup || '', co = f === 'co';

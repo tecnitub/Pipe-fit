@@ -176,7 +176,8 @@ test('schéma : réglementation selon la puissance et liste des points de régul
   const froid = N.calculer('pid', { reseau: 'eg-7-12', generateur: 'gf-air', nGen: '1', Pgen: 300, fluideFrigo: 'R410A', chargeFrigo: 120,
     circuits: [{ rep: 'V', emetteur: 'ventilo', P: 250, regime: '', regulation: '2v', L: 50 }] });
   assert.match(items(froid), /250,6 t éq\. CO₂/); assert.match(items(froid), /tous les 6 mois/); assert.doesNotMatch(items(froid), /rubrique 1185/);
-  const reg = moyen.onglets[1].blocs, pts = reg[1].tableau.lignes, recap = reg[2].tableau.lignes;
+  const blocsReg = moyen.onglets[1].blocs, reg = [blocsReg.find(b => b.titre === 'Analyse fonctionnelle'), blocsReg.find(b => /^Liste des points/.test(b.titre)), blocsReg.find(b => /^Récapitulatif/.test(b.titre))];
+  const pts = reg[1].tableau.lignes, recap = reg[2].tableau.lignes;
   assert.strictEqual(recap[recap.length - 1][1], String(pts.length), 'récapitulatif = nombre de points');
   assert.ok(pts.some(p => p[0] === 'MDE') && pts.some(p => p[0] === 'PG2') && reg[0].liste.some(t => /Permutation/.test(t)));
 });
