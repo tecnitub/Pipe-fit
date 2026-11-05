@@ -112,3 +112,53 @@ document.addEventListener('click', ev => {
   const m = /#\/etude\/([^/]+)/.exec(location.hash), et = m && S.etudes.find(x => x.id === m[1]);
   if (et) dialogueRegistre(et);
 });
+
+/* ---------- Parcours de l'étude : étapes, progression, une action en un clic pour ce qui manque ---------- */
+function etapesEtude(et) {
+  const notes = et.notes || [], b = Registre.bilan(et), libres = b.filter(y => !y.emplacements.length).length;
+  const eau = a => !['aucune', 'elec', 'electrique'].includes(a.batterie || 'chaude') && !Terminaux.estPompe(a.type);
+  const raccordes = new Set(notes.filter(n => n.type === 'arbo').flatMap(n => (n.entrees.troncons || []).map(t => t && t.emetteur).filter(Boolean)));
+  const terms = notes.filter(n => n.type === 'terminaux').flatMap(n => (n.entrees.appareils || []).filter(a => a && a.rep && eau(a)).map(a => ({ n, a })));
+  const termLibres = terms.filter(({ n, a }) => !raccordes.has(`${n.id}:${a.rep}`)), bouchesLibres = Registre.schemasAir(et).flatMap(n => (n.entrees.bouchesL || []).filter(x => x && (x.rep || x.Q) && !String(x.troncon || '').trim()).map(x => ({ n, x })));
+  const rep = Registre.reperesAReprendre(et);
+  let erreurs = 0, noteErreur = null;
+  notes.forEach(n => { try { const k = Liens.calculer(et, n).alertes.filter(a => a.niveau === 'erreur').length; erreurs += k; if (k && !noteErreur) noteErreur = n; } catch (e) { /* calcul incomplet */ } });
+  let fiches = 0, lignes = 0;
+  try { const pts = PointsMes.extraire(et, n => Liens.calculer(et, n)).filter(p => p.nature === 'mes'); fiches = pts.length; lignes = pts.reduce((s, p) => s + (p.attendus || []).filter(a => / — .* · |^Débit \S+ · /.test(a.libelle)).length, 0); } catch (e) { /* étude incomplète */ }
+  const arbo = notes.find(n => n.type === 'arbo'), aero = (bouchesLibres[0] || {}).n;
+  const e = [
+    { ico: '📥', titre: 'Charger les fiches', fait: b.length > 0, info: b.length ? `${b.length} modèle(s) au registre` : 'Toutes les fiches du chantier d\'un coup', action: ['vrac', '📥 Charger les fiches'] },
+    { ico: '📍', titre: 'Placer dans les pièces', fait: b.length > 0 && !libres, info: !b.length ? '—' : libres ? `${libres} modèle(s) à placer` : `${b.reduce((s, y) => s + y.emplacements.length, 0)} emplacement(s)`, action: ['registre', '📍 Placer'] },
+    { ico: '🔢', titre: 'Un repère unique chacun', fait: !rep, info: rep ? `${rep} repère(s) manquant(s) ou en double` : 'Terminaux et bouches numérotés', action: ['reperes', '🔢 Tout numéroter'] },
+    { ico: '🌀', titre: 'Raccorder aux réseaux', fait: !termLibres.length && !bouchesLibres.length, info: termLibres.length || bouchesLibres.length ? [termLibres.length && `${termLibres.length} terminal(aux) hors réseau hydraulique`, bouchesLibres.length && `${bouchesLibres.length} bouche(s) sans branche`].filter(Boolean).join(', ') : 'Chaque émetteur a sa branche',
+      action: termLibres.length ? (arbo ? ['note:' + arbo.id, '🌀 Raccorder les terminaux'] : ['creer-arbo', '🌳 Créer le réseau et raccorder']) : aero ? ['note:' + aero.id, '🌀 Choisir les branches'] : null },
+    { ico: '🧮', titre: 'Calculs sans erreur', fait: !erreurs, info: erreurs ? `${erreurs} erreur(s) à corriger` : 'Tous les calculs sont cohérents', action: noteErreur ? ['note:' + noteErreur.id, `➡️ Voir ${noteErreur.titre.slice(0, 28)}`] : null },
+    { ico: '📋', titre: 'Mise en service prête', fait: false, info: fiches ? `${fiches} fiche(s)${lignes ? `, ${lignes} ligne(s) de relevé` : ''}` : 'Aucune fiche', action: fiches ? ['fiches-mes', '📋 Fiches de mise en service'] : null },
+  ];
+  e[5].fait = fiches > 0 && e.slice(0, 5).every(x => x.fait);
+  return e;
+}
+function parcoursHtml(et) {
+  if (et.modele || !(et.notes || []).length) return '';
+  let e; try { e = etapesEtude(et); } catch (err) { return ''; }
+  const faits = e.filter(x => x.fait).length, pct = Math.round(faits / e.length * 100), cur = e.findIndex(x => !x.fait);
+  return `<div class="carte parcours"><div class="parcours-tete"><strong>${pct === 100 ? '🎉 Étude prête : tout est relié, rien à ressaisir' : `🧭 Parcours de l'étude — ${pct} %`}</strong>
+      <div class="parcours-barre"><span style="width:${pct}%"></span></div></div>
+    <ol class="parcours-etapes">${e.map((x, i) => `<li class="${x.fait ? 'fait' : i === cur ? 'actuelle' : ''}"><span class="pastille">${x.fait ? '✓' : x.ico}</span><span class="txt"><strong>${esc(x.titre)}</strong><span class="petit">${esc(x.info)}</span>
+      ${!x.fait && x.action ? `<button class="${i === cur ? '' : 'secondaire '}petit" data-parcours="${esc(x.action[0])}">${esc(x.action[1])}</button>` : ''}</span></li>`).join('')}</ol></div>`;
+}
+function lierParcours(root, et) {
+  root.querySelectorAll('[data-parcours]').forEach(b => b.onclick = () => {
+    const a = b.dataset.parcours;
+    if (a === 'vrac') return dialogueVrac(et);
+    if (a === 'registre') return dialogueRegistre(et);
+    if (a === 'fiches-mes') return dialogueFichesMes(et);
+    if (a === 'reperes') { const k = Registre.numeroterTout(et); enregistrer(et); App.render(); return toast(`${k} repère(s) attribué(s) : chaque terminal et chaque bouche a son numéro unique.`, 5000); }
+    if (a === 'creer-arbo') { const n = nouvelleNote('arbo'); n.titre = 'Réseau hydraulique des terminaux'; n.entrees.troncons = [{ rep: 'C', amont: '', nom: 'Départ pompe → collecteur', L: 10, zeta: 4, tube: '', P: '', Q: '', dpEm: '' }]; et.notes.push(n); enregistrer(et); location.hash = `#/etude/${et.id}/${n.id}`; return setTimeout(() => { const x = document.querySelector('#arbo-emetteurs'); if (x) x.click(); }, 400); }
+    if (a.startsWith('note:')) {
+      const id = a.slice(5), n = et.notes.find(x => x.id === id); location.hash = `#/etude/${et.id}/${id}`;
+      // Réseau arborescent : la liste des émetteurs à raccorder s'ouvre directement
+      if (n && n.type === 'arbo') setTimeout(() => { const x = document.querySelector('#arbo-emetteurs'); if (x) x.click(); }, 400);
+    }
+  });
+}

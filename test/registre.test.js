@@ -236,3 +236,26 @@ test('PV : lignes du relevé reconnues (repère, pièce, réseau et branche)', (
   assert.strictEqual(Es.releve({ libelle: 'Débit de soufflage' }), null);
   assert.ok(Es.TYPES.reseau && Es.TYPES.reseau.controles.length);
 });
+
+test('sans ressaisie : matériel retenu rempli depuis le registre, tout numéroter en un clic', () => {
+  const term = note('terminaux', { appareils: [] }), aero = note('aero', { structure: 'arborescence', bouchesL: [] }), vase = note('vase'), et = { notes: [term, aero, vase] };
+  V.appliquer(et, item('terminal', { local: 'Bureau 1 ; Salle ×2' }), `term:${term.id}`, note);
+  V.appliquer(et, item('bouche', { qte: 2, branche: 'S1.1' }), `aero:${aero.id}`, note);
+  V.appliquer(et, item('vase'), `vase:${vase.id}`, note);
+  // Postes du métré (unités) : vase et bouches de la note ; terminaux absents du métré
+  const postes = [{ cle: 'vase|80', unite: 'u', sources: ['N3'] }, { cle: 'bouche|Diffuseur plafond|Exemplair DF4-200', unite: 'u', sources: ['N2'] }, { cle: 'bouche|Grille|400 × 150', unite: 'u', sources: ['N2'] }, { cle: 'tube|x', unite: 'ml', sources: ['N1'] }];
+  et.materiel = { 'vase|80': { fabricant: 'Autre', reference: 'Déjà choisi' } };
+  assert.ok(R.versMateriel(et, postes) >= 2);
+  assert.deepStrictEqual(et.materiel['vase|80'].reference, 'Déjà choisi'); // jamais un choix écrasé
+  assert.deepStrictEqual([et.materiel['bouche|Diffuseur plafond|Exemplair DF4-200'].fabricant, et.materiel['bouche|Diffuseur plafond|Exemplair DF4-200'].reference], ['Exemplair', 'DF4-200']);
+  assert.strictEqual(et.materiel['bouche|Grille|400 × 150'], undefined); // bouche générique : reste à choisir
+  const lt = Object.entries(et.materiel).find(([k]) => /^reg\|/.test(k))[1];
+  assert.deepStrictEqual([lt.libre, lt.chapitre, lt.qte, lt.reference], [true, 'Terminaux', 3, 'CK-36']);
+  assert.strictEqual(R.versMateriel(et, postes), 0); // stable
+  // Repères manquants ou en double : comptés puis tous attribués d'un clic
+  term.entrees.appareils[1].rep = 'CA-01'; aero.entrees.bouchesL[1].rep = ''; aero.entrees.bouchesL.push({ salle: 'Couloir', Q: 50 });
+  assert.strictEqual(R.reperesAReprendre(et), 3);
+  assert.strictEqual(R.numeroterTout(et), 3);
+  assert.strictEqual(R.reperesAReprendre(et), 0);
+  assert.strictEqual(new Set(term.entrees.appareils.map(a => a.rep)).size, 3);
+});

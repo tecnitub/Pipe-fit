@@ -333,6 +333,64 @@ const Registre = (() => {
     l.forEach(({ b }) => { const p = pf(b); let k = compte[p] === undefined ? Math.max(1, Math.round(Number(debut) || 1)) : compte[p]; let r; do { r = `${p}-${String(k++).padStart(w, '0')}`; } while (autres.has(r)); compte[p] = k; b.rep = r; });
     return l.length;
   }
-  return { schemasAir, repSuivant, repsBouches, completerBouches, renumeroterBouches, unites, branches, raccorder, numeroter, TYPES, TYPE_GENRE, libelles, ajouter, champs, inverse, emplacements, libelleEmplacement, collecter, propager, synchroniser, verrous, lier, detacher, supprimer, placer, bilan, nomEq, parId, typeTerminal, typeOrgane };
+  /* ---------- Matériel retenu rempli depuis le registre (pas de ressaisie) ---------- */
+  // Lignes du métré dont le calcul a un modèle du registre : fabricant et référence repris (jamais un choix déjà fait) ;
+  // terminaux (absents du métré) : une ligne par modèle placé, quantité = nombre d'emplacements. Renvoie le nombre de changements
+  function versMateriel(et, postes) {
+    const m = et.materiel = et.materiel || {}, notes = (et && et.notes) || [], src = n => `N${notes.indexOf(n) + 1}`;
+    let k = 0;
+    const remplir = (cle, x) => { const s = m[cle] || {}; if (String(s.reference || '').trim() || !(x.fabricant || x.reference)) return; m[cle] = { ...s, fabricant: x.fabricant || '', reference: x.reference || '', registre: x.id }; k++; };
+    (postes || []).forEach(p => {
+      if (!p.cle || p.unite !== 'u') return;
+      const pref = p.cle.split('|')[0], srcs = [...(p.sources || [])];
+      for (const n of notes.filter(y => srcs.includes(src(y)))) {
+        const e = n.entrees || {};
+        let x = null;
+        if ((pref === 'cta' && n.type === 'cta') || (pref === 'gen' && n.type === 'pid') || (pref === 'vase' && n.type === 'vase') || (pref === 'pompe' && n.type === 'reseau')) x = e.eq && parId(et, e.eq);
+        else if (pref === 'pompe' && n.type === 'arbo') x = e.pompeEq && parId(et, e.pompeEq);
+        // Bouches : la ligne du métré porte la référence de la fiche (taille = modèle) ; les bouches génériques restent à choisir
+        else if (pref === 'bouche' && n.type === 'aero') x = [...new Set((e.bouchesL || []).filter(b => b && b.eq).map(b => b.eq))].map(id => parId(et, id)).find(y => y && p.cle.endsWith(`|${nomEq(y)}`)) || null;
+        if (x) { remplir(p.cle, x); break; }
+      }
+    });
+    // Terminaux : une ligne par modèle placé
+    const emp = emplacements(et), vus = new Set();
+    liste(et).filter(x => x.type === 'terminal').forEach(x => {
+      const q = emp.filter(p => p.eq === x.id && p.genre === 'term').length, cle = `reg|${x.id}`;
+      if (!q) return;
+      vus.add(cle);
+      const s = m[cle] || {}, d = `${TYPES.terminal} ${nomEq(x)}`;
+      if (s.qte !== q || !s.libre || s.designation !== d || (!String(s.reference || '').trim() && x.reference)) {
+        m[cle] = { ...s, libre: true, registre: x.id, chapitre: 'Terminaux', designation: d, qte: q, ...(String(s.reference || '').trim() ? {} : { fabricant: x.fabricant || '', reference: x.reference || '' }) }; k++;
+      }
+    });
+    Object.keys(m).forEach(cle => { if (/^reg\|/.test(cle) && !vus.has(cle) && !/Valid|Soumis/.test(String(m[cle].statut || ''))) { delete m[cle]; k++; } });
+    return k;
+  }
+
+  /* ---------- Repères : tout numéroter d'un clic (terminaux, bouches de toute l'étude) ---------- */
+  function numeroterTout(et) {
+    let k = 0;
+    ((et && et.notes) || []).filter(n => n.type === 'terminaux').forEach(n => {
+      k += numeroter(n.entrees.appareils || [], a => typeTerminal((T().TYPES[a.type] || [''])[0], a).prefixe, 'rep', a => a.type || a.rep);
+    });
+    const pris = new Set();
+    schemasAir(et).forEach(n => (n.entrees.bouchesL || []).forEach(b => {
+      if (!remplie(b)) return;
+      const r = String(b.rep || '').trim();
+      if (!r || pris.has(r)) { b.rep = r ? repSuivant(r, new Set([...pris, ...repsBouches(et)])) : prochain('B', new Set([...pris, ...repsBouches(et)])); k++; }
+      pris.add(b.rep);
+    }));
+    return k;
+  }
+  // Repères manquants ou en double (terminaux par calcul, bouches dans toute l'étude)
+  function reperesAReprendre(et) {
+    let n = 0;
+    ((et && et.notes) || []).filter(x => x.type === 'terminaux').forEach(x => { const vus = new Set(); (x.entrees.appareils || []).filter(a => a && (a.type || a.rep)).forEach(a => { const r = String(a.rep || '').trim(); if (!r || vus.has(r)) n++; vus.add(r); }); });
+    const vus = new Set();
+    schemasAir(et).forEach(x => (x.entrees.bouchesL || []).filter(remplie).forEach(b => { const r = String(b.rep || '').trim(); if (!r || vus.has(r)) n++; vus.add(r); }));
+    return n;
+  }
+  return { versMateriel, numeroterTout, reperesAReprendre, schemasAir, repSuivant, repsBouches, completerBouches, renumeroterBouches, unites, branches, raccorder, numeroter, TYPES, TYPE_GENRE, libelles, ajouter, champs, inverse, emplacements, libelleEmplacement, collecter, propager, synchroniser, verrous, lier, detacher, supprimer, placer, bilan, nomEq, parId, typeTerminal, typeOrgane };
 })();
 if (typeof module !== 'undefined') module.exports = Registre;

@@ -4,6 +4,8 @@
 function lignesMateriel(et) {
   let postes = [];
   try { postes = Metre.metre(et).filter(Metre.estEquipement); } catch (e) { postes = []; }
+  // Modèles du registre des équipements : fabricant et référence repris, terminaux ajoutés (pas de ressaisie)
+  if (typeof Registre !== 'undefined' && !et.modele) { try { if (Registre.versMateriel(et, postes)) enregistrer(et); } catch (e) { /* étude incomplète */ } }
   return MaterielRetenu.lignes(postes, et.materiel);
 }
 const BADGE_STATUT = { 'À choisir': '', 'À soumettre': '', 'Soumis au client': 'info', Validé: 'ok', 'Validé avec réserves': 'ok', Refusé: 'erreur' };

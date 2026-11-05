@@ -144,3 +144,17 @@ ul.af { padding-left: 18px; font-size: 13.5px; display: grid; gap: 6px; }
 
 .ft-liste { max-height: 40vh; overflow: auto; display: grid; gap: 6px; margin-top: 8px; }
 .ft-item { text-align: left; }
+
+/* Parcours de l'étude : étapes et progression */
+.parcours { border-left: 4px solid var(--accent, #2a6df4); }
+.parcours-tete { display: flex; align-items: center; gap: 1em; flex-wrap: wrap; margin-bottom: .6em; }
+.parcours-barre { flex: 1; min-width: 140px; height: 8px; border-radius: 4px; background: rgba(127, 127, 127, .2); overflow: hidden; }
+.parcours-barre span { display: block; height: 100%; background: linear-gradient(90deg, #2a9d5c, #5cc98a); transition: width .6s ease; }
+.parcours-etapes { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: .6em; }
+.parcours-etapes li { display: flex; gap: .55em; align-items: flex-start; padding: .55em; border-radius: 8px; background: rgba(127, 127, 127, .06); }
+.parcours-etapes li.fait { opacity: .75; }
+.parcours-etapes li.actuelle { background: rgba(42, 109, 244, .1); outline: 2px solid rgba(42, 109, 244, .45); }
+.parcours-etapes .pastille { flex: none; width: 2em; height: 2em; border-radius: 50%; display: grid; place-items: center; background: rgba(127, 127, 127, .15); font-size: .95em; }
+.parcours-etapes li.fait .pastille { background: #2a9d5c; color: #fff; font-weight: bold; }
+.parcours-etapes .txt { display: flex; flex-direction: column; gap: .2em; }
+.parcours-etapes .txt button { align-self: flex-start; margin-top: .25em; }
