@@ -123,7 +123,7 @@ const FicheCta = (() => {
   const LIBELLES = {
     Qs: ['Débit soufflé', 'm³/h'], Qr: ['Débit repris', 'm³/h'], recup: ['Récupérateur', ''], eta: ['Efficacité du récupérateur', '%'],
     TcAller: ['Batterie chaude : départ', '°C'], TcRetour: ['Batterie chaude : retour', '°C'], TfAller: ['Batterie froide : départ', '°C'], TfRetour: ['Batterie froide : retour', '°C'],
-    froid: ['Batterie froide', ''], humid: ['Humidification', ''], TsH: ['Soufflage en hiver', '°C'], TsE: ['Soufflage en été', '°C'],
+    froid: ['Batteries', ''], humid: ['Humidification', ''], TsH: ['Soufflage en hiver', '°C'], TsE: ['Soufflage en été', '°C'],
     dpFiltreAN: ['Filtre d\'air neuf', 'Pa'], dpFiltreR: ['Filtre de reprise', 'Pa'], dpRecup: ['Récupérateur (par flux)', 'Pa'], dpBC: ['Batterie chaude (côté air)', 'Pa'], dpBF: ['Batterie froide (côté air)', 'Pa'],
     rendement: ['Rendement des ventilateurs', '%'], LwS: ['Lw ventilateur de soufflage', 'dB(A)'], LwR: ['Lw ventilateur de reprise', 'dB(A)'],
     PdispoS: ['Pression disponible soufflage', 'Pa'], PdispoR: ['Pression disponible reprise', 'Pa'], PchBC: ['Puissance batterie chaude', 'kW'], PfrBF: ['Puissance batterie froide', 'kW'],

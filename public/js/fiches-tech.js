@@ -57,6 +57,13 @@ const FichesTech = (() => {
   function analyser({ nom = '', chemin = '', texte = '', fabricants = [], dateFichier = '' } = {}) {
     const base = String(nom).replace(/\.[a-z0-9]+$/i, ''), dossiers = String(chemin).split(/[\\/]/).slice(0, -1).filter(d => d && !GENERIQUE.test(d.trim()));
     const debut = String(texte).slice(0, 3000);
+    // Fiche au format Pipe-Fit : lignes « Fabricant : … » et « Référence : … » (ou « Modèle : … ») prioritaires
+    const champ = re => { const m = new RegExp(`^\\s*(?:${re})\\s*:\\s*(.+?)\\s*$`, 'im').exec(debut); return m ? m[1].trim() : ''; };
+    const fabExplicite = champ('fabricant|marque|constructeur'), refExplicite = champ('r[ée]f[ée]rence|mod[èe]le');
+    if (fabExplicite || refExplicite) {
+      const r = analyser({ nom, chemin, texte: String(texte).split(/\n/).filter(l => !/^\s*(?:fabricant|marque|constructeur|r[ée]f[ée]rence|mod[èe]le)\s*:/i.test(l)).join('\n'), fabricants, dateFichier });
+      return { ...r, fabricant: (fabExplicite || r.fabricant).slice(0, 60), references: [...(refExplicite ? [refExplicite.slice(0, 60)] : []), ...r.references.filter(x => !refExplicite || cle(x) !== cle(refExplicite))].slice(0, 20) };
+    }
     let fabricant = dossiers[0] || '';
     if (!fabricant) fabricant = (fabricants || []).filter(Boolean).sort((a, b) => b.length - a.length).find(f => cleFab(f).length >= 3 && (cleFab(base).includes(cleFab(f)) || cleFab(debut.slice(0, 1500)).includes(cleFab(f)))) || '';
     if (!fabricant) { const w = /www\.([a-z0-9-]{3,30})\.(?:com|fr|de|it|eu|net)/i.exec(debut); if (w) fabricant = w[1].replace(/-/g, ' ').replace(/^./, c => c.toUpperCase()); }

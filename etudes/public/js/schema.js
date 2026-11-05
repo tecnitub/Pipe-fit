@@ -650,7 +650,8 @@ const Schema = ((D, C, N) => {
     L.forEach(l => { const x = nrm(l);
       if (v.kv === undefined) { const m = /\bkvs?\b\s*[:=]?\s*(\d+(?:[.,]\d+)?)/.exec(x); if (m) { v.kv = +m[1].replace(',', '.'); src.kv = l.trim(); } }
       if (v.dn === undefined) { const m = /\bdn\s*(\d{2,3})\b/.exec(x); if (m) { v.dn = +m[1]; src.dn = l.trim(); } }
-      if (v.tours === undefined) { const m = /(\d+(?:[.,]\d+)?)\s*tours/.exec(x); if (m && +m[1].replace(',', '.') <= 20) { v.tours = +m[1].replace(',', '.'); src.tours = l.trim(); } }
+      if (v.abaque === undefined && /abaque/.test(x)) { const m = /abaque[^:]*:\s*(.+)$/.exec(x.replace(/\(.*?\)/g, '')); const pts = m ? lireAbaque(m[1]) : []; if (pts.length >= 2) { v.abaque = ecrireAbaque(pts); src.abaque = l.trim(); } }
+      if (v.tours === undefined && !/abaque/.test(x)) { const m = /(\d+(?:[.,]\d+)?)\s*tours/.exec(x) || /nombre de tours[^0-9]{0,10}(\d+(?:[.,]\d+)?)/.exec(x); if (m && +m[1].replace(',', '.') <= 20) { v.tours = +m[1].replace(',', '.'); src.tours = l.trim(); } }
       if (v.dp === undefined && /perte de charge|pression differentielle|delta ?p|Δp/.test(x)) { const m = /(\d+(?:[.,]\d+)?)\s*(kpa|mbar|mce)/.exec(x); if (m) { const n = +m[1].replace(',', '.'); v.dp = m[2] === 'kpa' ? n : m[2] === 'mbar' ? n / 10 : n * 9.81; src.dp = l.trim(); } } });
     // Abaque : ligne des positions (tours) suivie d'une ligne de Kv de même longueur, ou couples « 1 tour : Kv 0,9 »
     const nombres = l => (l.match(/\d+(?:[.,]\d+)?/g) || []).map(x => Number(x.replace(',', '.')));

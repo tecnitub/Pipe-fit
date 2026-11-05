@@ -577,13 +577,18 @@ function dialogueFiche(et, n) {
   const ret = Object.entries(et.materiel || {}).find(([cle, x]) => x && x.reference && (PREFIXE_MATERIEL[n.type] || []).some(pf => cle.startsWith(pf)));
   const q0 = ret ? [ret[1].fabricant, ret[1].reference].filter(Boolean).join(' ') : '';
   const b = Modal.open(`<h2>📄 Fiche technique</h2><p class="muted petit">Les caractéristiques lues remplissent le calcul et contrôlent le matériel choisi.</p>
-    <p><label class="btn">💻 Choisir le PDF sur l'ordinateur<input type="file" id="ft-fichier" accept=".pdf,application/pdf,image/*" hidden></label></p>
+    <p><label class="btn">💻 Choisir le PDF (ou la fiche texte) sur l'ordinateur<input type="file" id="ft-fichier" accept=".pdf,application/pdf,image/*,.txt,.md,text/plain" hidden></label></p>
+    <details><summary>📋 Coller une fiche au format Pipe-Fit (texte « clé : valeur »)</summary>
+      <textarea id="ft-texte" rows="8" style="width:100%" placeholder="Fabricant : …&#10;Référence : …&#10;Puissance chaud : 3,2 kW&#10;…"></textarea>
+      <p class="petit muted">Texte préparé avec le modèle de fiche Pipe-Fit (une valeur par ligne, unité écrite) : il est lu comme une fiche PDF.</p>
+      <button class="secondaire petit" id="ft-lire">Lire le texte collé</button></details>
     <h3>📚 Bibliothèque des fiches techniques de Pipe-Fit</h3>
     <input type="search" id="ft-q" value="${esc(q0)}" placeholder="Fabricant, référence, désignation…" style="width:100%">${ret ? `<p class="petit muted">Matériel retenu pour ce calcul : ${esc(q0)}</p>` : ''}
     <div id="ft-liste" class="ft-liste"><p class="muted petit">Recherche…</p></div>
     <div class="actions"><button class="secondaire" id="ft-x">Annuler</button></div>`);
   b.querySelector('#ft-x').onclick = Modal.close;
   b.querySelector('#ft-fichier').onchange = ev => { const f = ev.target.files[0]; ev.target.value = ''; if (f) { Modal.close(); chargerFiche(et, n, f); } };
+  b.querySelector('#ft-lire').onclick = () => { const t = b.querySelector('#ft-texte').value; if (!t.trim()) return toast('Collez d\'abord le texte de la fiche.', 3000); Modal.close(); appliquerFiche(et, n, t.split(/\r?\n/), 'Fiche au format Pipe-Fit'); };
   let minuterie = 0;
   const chercher = async () => {
     const z = b.querySelector('#ft-liste');
@@ -605,7 +610,11 @@ function dialogueFiche(et, n) {
 }
 async function chargerFiche(et, n, fichier) {
   toast('Lecture de la fiche technique…', 2500);
-  try { const { lignes } = await PdfLecture.lire(fichier, () => {}, { pagesMax: 12, ocr: typeof OCR !== 'undefined' }); appliquerFiche(et, n, lignes, fichier.name); }
+  try {
+    // Fiche texte (format Pipe-Fit) : lue telle quelle
+    if (/^text\//.test(fichier.type || '') || /\.(txt|md)$/i.test(fichier.name || '')) return appliquerFiche(et, n, (await fichier.text()).split(/\r?\n/), fichier.name);
+    const { lignes } = await PdfLecture.lire(fichier, () => {}, { pagesMax: 12, ocr: typeof OCR !== 'undefined' }); appliquerFiche(et, n, lignes, fichier.name);
+  }
   catch (e) { toast(`Fiche illisible : ${e.message}`, 5000); }
 }
 function appliquerFiche(et, n, lignesTexte, nomFichier) {

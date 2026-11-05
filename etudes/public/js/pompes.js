@@ -36,6 +36,9 @@ const Pompes = (() => {
   function lireFiche(lignes) {
     const L = (Array.isArray(lignes) ? lignes : String(lignes || '').split(/\r?\n/)).map(String), nombres = l => (l.match(/\d+(?:[.,]\d+)?/g) || []).map(n);
     const nrm = x => x.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    // Format Pipe-Fit : « Courbe Q:H (m³/h:mCE) : 0:9 ; 2:8,6 ; … » (éventuellement Q:H:P1)
+    const direct = L.map(l => /courbe[^:]*q\s*:\s*h[^:]*:\s*(.+)$/i.exec(nrm(l).replace(/\(.*?\)/g, ''))).find(Boolean);
+    if (direct) { const c = lireCourbe(direct[1]); if (c.length >= 2) return ecrire(c); }
     for (let i = 0; i < L.length; i++) {
       const x = nrm(L[i]); if (!/\bq\b|debit/.test(x) || !/m3\/h|m³\/h|m3h/.test(x.replace('³', '3'))) continue;
       const q = nombres(L[i].replace(/m[³3]\/h/gi, ''));
