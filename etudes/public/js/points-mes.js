@@ -49,8 +49,8 @@ const PointsMes = (() => {
           (v.bouchesDetail || []).forEach(b => {
             if (!b.rep) return;
             const src = (e.bouchesL || []).find(x => String(x.rep || '').trim() === b.rep) || {}, f = src.fiche || {};
-            out.push({ ...base, nature: 'mes', type: 'bouche', cle: `bouche|${n.id}|${b.rep}`, repere: b.rep, local: txt(b.salle, 80), zone: txt(b.etage, 60), marque: txt(f.fabricant, 60), modele: txt(f.reference || src.ref, 80),
-              titre: `Bouche ${b.rep}${b.salle ? ` — ${txt(b.salle, 60)}` : ''} (${b.reseau}, branche ${b.troncon})`, branche: txt(b.chemin, 160),
+            out.push({ ...base, nature: 'mes', type: 'bouche', cle: `bouche|${n.id}|${b.rep}`, repere: b.rep, local: txt(b.salle, 80), zone: txt([b.zone, b.etage].filter(Boolean).join(' · '), 60), marque: txt(f.fabricant, 60), modele: txt(f.reference || src.ref, 80),
+              titre: `Bouche ${b.rep}${b.salle ? ` — ${txt(b.salle, 60)}` : ''}${b.zone ? ` (${txt(b.zone, 40)})` : ''} — ${txt(titre, 60)}, ${b.reseau}, branche ${b.troncon}`, branche: txt(b.chemin, 160),
               attendus: nettoie([att('Débit', b.Q, 'm³/h', 0), att('Pression de mesure au plénum', b.dp, 'Pa', 0)]) });
           });
           break;

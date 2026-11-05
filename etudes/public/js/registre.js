@@ -255,9 +255,9 @@ const Registre = (() => {
     if (genre === 'reseau' || genre === 'vase' || genre === 'ecs') { const n = cibleNote(genre); if (!n) return null; noteEntiere(n, genre); return `${n.titre} : ${nom}`; }
     if (genre === 'aero') {
       const n = notes.find(y => y.id === id && y.type === 'aero'); if (!n) return null;
-      const l = n.entrees.bouchesL = n.entrees.bouchesL || [], deja = new Set(l.map(b => b.rep)), locaux = unites(opts.local, qte), tc = String(opts.branche || '');
+      const l = n.entrees.bouchesL = n.entrees.bouchesL || [], deja = repsBouches(et), locaux = unites(opts.local, qte), tc = String(opts.branche || '');
       const t = ((n.entrees.troncons || []).find(y => String(y.rep || '').trim() === tc)) || {}, crees = [];
-      locaux.forEach(local => { const el = { rep: opts.rep && locaux.length === 1 && !deja.has(opts.rep) ? opts.rep : prochain('B', deja), reseau: t.reseau || 'soufflage', salle: local, etage: '', type: 'plafond', troncon: tc }; deja.add(el.rep); l.push(el); poser(n, 'aero', el, 'bouchesL', l.length - 1); crees.push(el); });
+      locaux.forEach(local => { const el = { rep: opts.rep && locaux.length === 1 && !deja.has(opts.rep) ? opts.rep : prochain('B', deja), installation: n.id, reseau: t.reseau || 'soufflage', salle: local, zone: opts.zone || '', etage: '', type: 'plafond', troncon: tc }; deja.add(el.rep); l.push(el); poser(n, 'aero', el, 'bouchesL', l.length - 1); crees.push(el); });
       return `${crees.length} bouche(s) ${nom} ajoutée(s) dans ${n.titre} : ${crees.map(e => e.rep + (e.salle ? ` (${e.salle})` : '')).join(', ')}${tc ? ` — branche ${tc}` : ' (tronçon à choisir)'}`;
     }
     if (genre === 'san') {
@@ -284,6 +284,55 @@ const Registre = (() => {
     a.forEach(el => { el[cleRep] = prochain(typeof prefixe === 'function' ? prefixe(el) : prefixe, new Set([...libres, ...vus])); vus.add(el[cleRep]); libres.add(el[cleRep]); });
     return a.length;
   }
-  return { unites, branches, raccorder, numeroter, TYPES, TYPE_GENRE, libelles, ajouter, champs, inverse, emplacements, libelleEmplacement, collecter, propager, synchroniser, verrous, lier, detacher, supprimer, placer, bilan, nomEq, parId, typeTerminal, typeOrgane };
+  /* ---------- Bouches de l'étude : CTA ou extracteur, numéro unique ---------- */
+  const schemasAir = et => ((et && et.notes) || []).filter(n => n.type === 'aero' && (n.entrees || {}).structure === 'arborescence');
+  const remplie = b => b && (b.rep || b.salle || b.zone || b.Q || b.troncon);
+  const repsBouches = et => new Set(schemasAir(et).flatMap(n => (n.entrees.bouchesL || []).map(b => String(b.rep || '').trim()).filter(Boolean)));
+  // Repère suivant d'un repère numéroté (« B-07 » → « B-08 »), libre dans l'ensemble donné
+  function repSuivant(rep, pris) {
+    const m = /^(.*?)(\d+)$/.exec(String(rep || '').trim()), base = m ? m[1] : `${String(rep || 'B').trim()}-`, w = m ? m[2].length : 2;
+    const max = [...pris].reduce((a, r) => { const x = String(r).startsWith(base) && /^\d+$/.test(String(r).slice(base.length)) ? +String(r).slice(base.length) : 0; return Math.max(a, x); }, m ? +m[2] : 0);
+    return `${base}${String(max + 1).padStart(w, '0')}`;
+  }
+  // À l'enregistrement : chaque bouche est rattachée à sa CTA / son extracteur (schéma aéraulique choisi : la bouche y est
+  // déplacée, tronçon à choisir s'il n'existe pas) ; les bouches sans repère reçoivent le numéro suivant
+  function completerBouches(et) {
+    const sch = schemasAir(et), ids = new Set(sch.map(n => n.id)), r = { deplacees: [], numerotees: 0 };
+    sch.forEach(n => {
+      const l = n.entrees.bouchesL || [];
+      for (let i = l.length - 1; i >= 0; i--) {
+        const b = l[i]; if (!remplie(b)) continue;
+        if (!b.installation || !ids.has(b.installation)) { b.installation = n.id; continue; }
+        if (b.installation === n.id) continue;
+        const cible = sch.find(x => x.id === b.installation);
+        l.splice(i, 1);
+        if (!(cible.entrees.troncons || []).some(t => String(t.rep || '').trim() === String(b.troncon || '').trim())) b.troncon = '';
+        (cible.entrees.bouchesL = cible.entrees.bouchesL || []).push(b);
+        r.deplacees.push({ rep: b.rep, vers: cible.titre });
+      }
+    });
+    // Réseau de chaque bouche compatible avec sa CTA / son extracteur (caisson d'extraction : extraction ; insufflation : soufflage)
+    const SA = typeof SchemaAir !== 'undefined' ? SchemaAir : require('./aeraulique-schema');
+    sch.forEach(n => { const P = SA.PRODUCTEURS[n.entrees.producteur] || SA.PRODUCTEURS['cta-df']; (n.entrees.bouchesL || []).forEach(b => { if (!remplie(b)) return; const res = b.reseau || 'soufflage'; if (res === 'soufflage' && !P[1]) b.reseau = 'extraction'; else if (res !== 'soufflage' && !P[2]) b.reseau = 'soufflage'; }); });
+    const pris = repsBouches(et);
+    sch.forEach(n => (n.entrees.bouchesL || []).forEach(b => { if (remplie(b) && !String(b.rep || '').trim()) { b.rep = prochain('B', pris); r.numerotees++; } }));
+    return r;
+  }
+  // Numérotation de toutes les bouches, une fois l'étude au point : ordre (zone puis pièce, ou ordre des branches),
+  // préfixe (« B » ; « reseau » : S- soufflage, R- reprise, E- extraction ; ou un texte), premier numéro, schémas concernés
+  function renumeroterBouches(et, { notes, ordre = 'zone', prefixe = 'B', debut = 1 } = {}) {
+    const sch = schemasAir(et).filter(n => !notes || notes.includes(n.id)), RES = { soufflage: 0, reprise: 1, extraction: 2 };
+    const cmp = (a, b) => String(a || '').localeCompare(String(b || ''), 'fr', { numeric: true, sensitivity: 'base' });
+    const l = sch.flatMap((n, ni) => (n.entrees.bouchesL || []).map((b, i) => ({ b, ni, i, ti: (n.entrees.troncons || []).findIndex(t => String(t.rep || '').trim() === String(b.troncon || '').trim()) }))).filter(x => remplie(x.b));
+    l.sort((x, y) => x.ni - y.ni || (RES[x.b.reseau || 'soufflage'] || 0) - (RES[y.b.reseau || 'soufflage'] || 0)
+      || (ordre === 'branche' ? (x.ti < 0 ? 1e9 : x.ti) - (y.ti < 0 ? 1e9 : y.ti) : cmp(x.b.zone || x.b.etage, y.b.zone || y.b.etage) || cmp(x.b.salle, y.b.salle)) || x.ni - y.ni || x.i - y.i);
+    const pf = b => (prefixe === 'reseau' ? { soufflage: 'S', reprise: 'R', extraction: 'E' }[b.reseau || 'soufflage'] || 'B' : String(prefixe || 'B').trim() || 'B');
+    const compte = {}, w = String(Math.max(0, debut - 1) + l.length).length > 2 ? 3 : 2;
+    // Hors des schémas renumérotés, les repères restent pris
+    const autres = new Set(schemasAir(et).filter(n => !sch.includes(n)).flatMap(n => (n.entrees.bouchesL || []).map(b => String(b.rep || '').trim())));
+    l.forEach(({ b }) => { const p = pf(b); let k = compte[p] === undefined ? Math.max(1, Math.round(Number(debut) || 1)) : compte[p]; let r; do { r = `${p}-${String(k++).padStart(w, '0')}`; } while (autres.has(r)); compte[p] = k; b.rep = r; });
+    return l.length;
+  }
+  return { schemasAir, repSuivant, repsBouches, completerBouches, renumeroterBouches, unites, branches, raccorder, numeroter, TYPES, TYPE_GENRE, libelles, ajouter, champs, inverse, emplacements, libelleEmplacement, collecter, propager, synchroniser, verrous, lier, detacher, supprimer, placer, bilan, nomEq, parId, typeTerminal, typeOrgane };
 })();
 if (typeof module !== 'undefined') module.exports = Registre;

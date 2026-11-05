@@ -69,7 +69,7 @@ const Vrac = (() => {
         ...de('terminaux').map(n => [`termp:${n.id}`, `${lib(n)} : pompe de distribution (à placer sur une branche)`])];
       case 'vase': return [...de('vase').map(n => [`vase:${n.id}`, lib(n)]), ...nouveau('vase', 'Vase d\'expansion')];
       case 'ecs': return [...de('ecs').map(n => [`ecs:${n.id}`, lib(n)]), ...nouveau('ecs', 'Production d\'ECS')];
-      case 'bouche': return de('aero').filter(n => (n.entrees || {}).structure === 'arborescence').map(n => [`aero:${n.id}`, `${lib(n)} : bouches`]);
+      case 'bouche': { const SA = typeof SchemaAir !== 'undefined' ? SchemaAir : require('./aeraulique-schema'), I = new Map(SA.installationsAir(et)); return de('aero').filter(n => (n.entrees || {}).structure === 'arborescence').map(n => [`aero:${n.id}`, `Bouches de ${I.get(n.id) || lib(n)}`]); }
       case 'robinet': return [...circuits.map(([k, l]) => [k, `${l} (robinetterie)`]), ...de('arbo').flatMap(n => ((n.entrees || {}).troncons || []).filter(t => t.rep).map(t => [`arbot:${n.id}|${t.rep}`, `${lib(n)} : tronçon ${t.rep}`]))];
       case 'sanitaire': return de('sanitaire').map(n => [`san:${n.id}`, `${lib(n)} : points de puisage`]);
       default: return [];

@@ -12,6 +12,15 @@ const SchemaAir = ((D, C, N, Cta) => {
     insufflation: ['Caisson d\'insufflation', true, false],
     extraction: ['Caisson / tourelle d\'extraction (VMC simple flux)', false, true],
   };
+  // Installations d'air de l'étude (une par schéma aéraulique en arborescence) : CTA reliée, sinon producteur (extracteur…)
+  function installationsAir(et) {
+    const notes = (et && et.notes) || [];
+    return notes.filter(n => (n.type === 'aero') && (n.entrees || {}).structure === 'arborescence').map(n => {
+      const e = n.entrees || {}, cta = e.cta && notes.find(x => x.id === e.cta && x.type === 'cta'), P = PRODUCTEURS[e.producteur] || PRODUCTEURS['cta-df'];
+      return [n.id, `${cta ? cta.titre : P[0].split(' (')[0]}${e.titreInstallation ? ` — ${e.titreInstallation}` : ''} (N${notes.indexOf(n) + 1})`];
+    });
+  }
+
   const RECUPERATEURS = { plaques: ['Échangeur à plaques', 150], roue: ['Roue (récupérateur rotatif)', 120], boucle: ['Boucle à eau glycolée', 180], aucun: ['Sans récupérateur', 0] };
   const RESEAUX = { soufflage: 'Soufflage', reprise: 'Reprise', extraction: 'Extraction' };
   const BOUCHES = Cta.BOUCHES;
@@ -94,7 +103,7 @@ const SchemaAir = ((D, C, N, Cta) => {
       const bs = lesBouches.filter(b => String(b.troncon).trim() === t.rep);
       if (!bs.length) return;
       t.bouchesL = bs.map(b => { const ty = BOUCHES[b.type] ? b.type : t.type, auto = choisirBouche(ty, num(b.Q), rho0);
-        return { rep: b.rep || '', salle: b.salle || '', etage: b.etage || '', Q: num(b.Q), type: ty, dp: num(b.dp) > 0 ? num(b.dp) : auto.dp, Lw: num(b.Lw) > 0 ? num(b.Lw) : auto.Lw, taille: num(b.dp) > 0 ? (b.ref || 'fiche') : auto.nom, fiche: num(b.dp) > 0 }; });
+        return { rep: b.rep || '', salle: b.salle || '', zone: b.zone || '', etage: b.etage || '', Q: num(b.Q), type: ty, dp: num(b.dp) > 0 ? num(b.dp) : auto.dp, Lw: num(b.Lw) > 0 ? num(b.Lw) : auto.Lw, taille: num(b.dp) > 0 ? (b.ref || 'fiche') : auto.nom, fiche: num(b.dp) > 0 }; });
       t.Qsaisi = t.bouchesL.reduce((a, b) => a + b.Q, 0); t.n = t.bouchesL.length; t.type = t.bouchesL[0].type;
     });
     const debit = t => { t.Q = t.enfants.length ? t.enfants.reduce((a, c) => a + debit(c), 0) : t.Qsaisi; return t.Q; };
@@ -222,7 +231,7 @@ const SchemaAir = ((D, C, N, Cta) => {
         troncons: [...rS.troncons, ...rR.troncons].map(t => ({ rep: t.rep, nom: t.nom, L: t.L })).concat(arbo ? [] : [...rS.zones, ...rR.zones].map(x => ({ rep: `Antenne ${x.rep}`, nom: x.antenne.nom, L: num(x.L, 5) }))),
         registres: [...(rS.registres || []), ...(rR.registres || [])].map(x => ({ rep: x.rep, gaine: x.nomGaine, Q: x.Q, dp: x.dpReg })),
         // Bouches une par une (fiche de mise en service de chaque bouche : débit attendu, branche)
-        bouchesDetail: [[rS, 'soufflage'], [rR, P[1] ? 'reprise' : 'extraction']].flatMap(([r, res]) => (r.bouches || []).map(b => ({ rep: b.rep, salle: b.salle, etage: b.etage, Q: b.Q, dp: b.dp, troncon: b.troncon, chemin: b.chemin, reseau: res }))),
+        bouchesDetail: [[rS, 'soufflage'], [rR, P[1] ? 'reprise' : 'extraction']].flatMap(([r, res]) => (r.bouches || []).map(b => ({ rep: b.rep, salle: b.salle, zone: b.zone, etage: b.etage, Q: b.Q, dp: b.dp, troncon: b.troncon, chemin: b.chemin, reseau: res }))),
         // Éléments de gaine pour le métré : réseau, gaine, longueur, surface développée (m²), piquage, registre, singularités
         elements: elementsMetre(arbo, rS, rR, souffle),
         producteur: e.producteur || 'cta-df',
@@ -405,7 +414,8 @@ const SchemaAir = ((D, C, N, Cta) => {
           { k: 'L', l: 'Longueur (m)' }, { k: 'zeta', l: 'Σζ' }, { k: 'sing', l: 'Singularités (ex. « 2 coudes, piquage, registre » : remplacent Σζ)', t: 't' }, { k: 'v', l: 'Vitesse choisie (m/s ; vide = auto)' }, { k: 'dim', l: 'Gaine (mm)', t: 't' }, { k: 'type', l: 'Bouches', t: 's', o: Object.entries(BOUCHES).map(([k, b]) => [k, b.libelle]) },
           { k: 'n', l: 'Nombre de bouches' }, { k: 'Q', l: 'Débit des bouches (m³/h)' }] },
       { k: 'bouchesL', l: 'Bouches une par une (salle et étage pour le repérage ; rattachées à un tronçon terminal, elles en donnent le débit ; « 📄 » charge la fiche technique)', t: 'lignes', si: e => e.structure === 'arborescence', d: [],
-        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'reseau', l: 'Réseau', t: 's', o: Object.entries(RESEAUX) }, { k: 'salle', l: 'Salle', t: 't' }, { k: 'etage', l: 'Étage', t: 't' },
+        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'installation', l: 'CTA / extracteur', t: 's', o: (e, et) => [['', 'Ce schéma'], ...installationsAir(et)] }, { k: 'reseau', l: 'Réseau', t: 's', o: Object.entries(RESEAUX) },
+          { k: 'salle', l: 'Pièce', t: 't' }, { k: 'zone', l: 'Zone', t: 't' }, { k: 'etage', l: 'Étage', t: 't' },
           { k: 'type', l: 'Type', t: 's', o: Object.entries(BOUCHES).map(([k, b]) => [k, b.libelle]) }, { k: 'Q', l: 'Débit (m³/h)' },
           { k: 'troncon', l: 'Tronçon', t: 's', o: e => [['', '—'], ...(e.troncons || []).filter(t => t.rep).map(t => [t.rep, `${t.rep}${t.nom ? ` — ${t.nom}` : ''}`])] },
           { k: 'dp', l: 'ΔP fiche (Pa)' }, { k: 'Lw', l: 'Lw fiche (dB(A))' }, { k: 'ref', l: 'Fabricant, référence', t: 't' }] },
@@ -450,6 +460,6 @@ const SchemaAir = ((D, C, N, Cta) => {
     try { const FT = typeof FichesTech !== 'undefined' ? FichesTech : require('../../../public/js/fiches-tech'); const a = FT.analyser({ texte: L.join('\n') }); fabricant = a.fabricant || ''; reference = (a.references || [])[0] || ''; } catch (err) { /* sans bibliothèque */ }
     return { valeurs: v, sources: src, fabricant, reference, nb: Object.keys(v).length };
   }
-  return { PRODUCTEURS, RECUPERATEURS, RESEAUX, calculer, choisirGaine, choisirBouche, lireFicheBouche };
+  return { PRODUCTEURS, RECUPERATEURS, RESEAUX, calculer, choisirGaine, choisirBouche, lireFicheBouche, installationsAir };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Notes !== 'undefined' ? Notes : require('./notes'), typeof Cta !== 'undefined' ? Cta : require('./cta'));
 if (typeof module !== 'undefined') module.exports = SchemaAir;

@@ -169,3 +169,36 @@ test('bouches : numéro unique, branche choisie, débits cumulés, une fiche de 
   assert.strictEqual(R.numeroter(bs, 'B'), 2);
   assert.deepStrictEqual(bs.map(b => b.rep), ['B-01', 'B-02', 'B-03', 'B-04']);
 });
+
+test('bouches : CTA ou extracteur choisi, numérotation automatique, duplication, renumérotation complète', () => {
+  const cta = note('cta'), a1 = note('aero', { structure: 'arborescence', cta: cta.id, titreInstallation: 'Bureaux', bouchesL: [] });
+  const a2 = note('aero', { structure: 'arborescence', producteur: 'extraction', titreInstallation: 'Sanitaires', bouchesL: [] }), et = { notes: [cta, a1, a2] };
+  const I = global.SchemaAir.installationsAir(et);
+  assert.deepStrictEqual(I.map(x => x[0]), [a1.id, a2.id]);
+  assert.match(I[0][1], /^Centrale.*— Bureaux \(N2\)$/);
+  assert.match(I[1][1], /^Caisson \/ tourelle d'extraction — Sanitaires \(N3\)$/);
+  assert.match(V.destinations(et, 'bouche')[1][1], /Bouches de Caisson/);
+  // Repère suivant libre (duplication) ; bouches sans repère numérotées dans toute l'étude
+  assert.strictEqual(R.repSuivant('B-03', new Set(['B-03', 'B-07'])), 'B-08');
+  assert.strictEqual(R.repSuivant('', new Set()), 'B-01');
+  a1.entrees.bouchesL.push({ rep: 'B-01', salle: 'Bureau 1', zone: 'Zone A', Q: 200, troncon: 'S1.1' }, { salle: 'Bureau 2', zone: 'Zone A', Q: 200, troncon: 'S1.1' });
+  a2.entrees.bouchesL.push({ salle: 'WC', Q: 30 });
+  let r = R.completerBouches(et);
+  assert.deepStrictEqual([r.numerotees, a1.entrees.bouchesL[1].rep, a2.entrees.bouchesL[0].rep, a1.entrees.bouchesL[0].installation], [2, 'B-02', 'B-03', a1.id]);
+  // Bouche rattachée à l'extracteur : déplacée dans son schéma (tronçon à choisir)
+  a1.entrees.bouchesL[1].installation = a2.id;
+  r = R.completerBouches(et);
+  assert.deepStrictEqual([r.deplacees.length, a1.entrees.bouchesL.length, a2.entrees.bouchesL.map(b => [b.rep, b.installation])], [1, 1, [['B-03', a2.id], ['B-02', a2.id]]]);
+  // Tout renuméroter : par zone puis pièce, préfixe par réseau, numérotation continue sur l'étude
+  a1.entrees.bouchesL.push({ salle: 'Bureau 10', zone: 'Zone A', Q: 100, troncon: 'S1.1' }, { salle: 'Accueil', zone: 'Zone 0', Q: 100, troncon: 'S1.2' }, { salle: 'Bureau 2', zone: 'Zone A', reseau: 'reprise', Q: 100, troncon: 'R1' });
+  const n = R.renumeroterBouches(et, { ordre: 'zone', prefixe: 'reseau' });
+  assert.strictEqual(n, 6);
+  assert.deepStrictEqual(a1.entrees.bouchesL.map(b => [b.salle, b.rep]), [['Bureau 1', 'S-02'], ['Bureau 10', 'S-03'], ['Accueil', 'S-01'], ['Bureau 2', 'R-01']]);
+  assert.deepStrictEqual(a2.entrees.bouchesL.map(b => [b.rep, b.reseau || 'soufflage']), [['E-01', 'extraction'], ['E-02', 'extraction']]);
+  R.renumeroterBouches(et, { notes: [a2.id], prefixe: 'BE', debut: 1 });
+  assert.deepStrictEqual(a2.entrees.bouchesL.map(b => b.rep), ['BE-01', 'BE-02']);
+  // Fiche de mise en service : pièce, zone et CTA dans le titre
+  const PM = require('../etudes/public/js/points-mes');
+  const p = PM.extraire(et, x => Liens.calculer(et, x)).find(x => x.type === 'bouche' && x.repere === 'S-02');
+  assert.ok(p && p.local === 'Bureau 1' && /Zone A/.test(p.zone) && /Bouche S-02 — Bureau 1 \(Zone A\)/.test(p.titre), p && p.titre);
+});

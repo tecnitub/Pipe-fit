@@ -77,7 +77,14 @@ const corpsEtude = et => { let resume; try { resume = et.modele ? undefined : re
 function enregistrer(etude) {
   if (!S.etudes.includes(etude)) S.etudes.unshift(etude);
   // Registre des équipements : fiches des calculs inscrites, valeurs du registre reportées sur tous les emplacements
-  if (!etude.modele && typeof Registre !== 'undefined') { try { Registre.synchroniser(etude); } catch (e) { /* étude incomplète */ } }
+  if (!etude.modele && typeof Registre !== 'undefined') {
+    try {
+      // Bouches : rattachées à la CTA / l'extracteur choisi, numérotées si elles n'ont pas de repère
+      const b = Registre.completerBouches(etude);
+      if (b.deplacees.length) toast(`${b.deplacees.map(x => x.rep || 'Bouche').join(', ')} : déplacée(s) dans « ${b.deplacees[0].vers} » (CTA / extracteur choisi) ; choisissez le tronçon.`, 6000);
+      Registre.synchroniser(etude);
+    } catch (e) { /* étude incomplète */ }
+  }
   const st = S.enCours.get(etude.id) || {};
   clearTimeout(st.t);
   st.t = setTimeout(async () => {
@@ -128,7 +135,7 @@ function formulaireHtml(type, e, v = {}) {
       return `<div class="large"><div class="petit muted">${esc(c.l)}</div><div class="defile-x"><table class="edit"><thead><tr>${cols.map(col => `<th>${esc(col.l)}</th>`).join('')}<th></th></tr></thead>
         <tbody>${lignes.map((l, i) => `<tr>${cols.map(col => `<td>${col.t === 's' ? `<select data-l="${c.k}.${i}.${col.k}"${verrou(v, `${c.k}.${i}.${col.k}`)}>${optionsHtml(optionsDe(col, e), l[col.k])}</select>`
           : `<input data-l="${c.k}.${i}.${col.k}" value="${esc(valeurChamp(l[col.k]))}" ${col.t === 't' ? '' : 'inputmode="decimal" class="nombre"'}${verrou(v, `${c.k}.${i}.${col.k}`)}>`}</td>`).join('')}
-          <td><button class="icone" data-suppr-ligne="${c.k}.${i}" title="Supprimer la ligne">✕</button></td></tr>`).join('')}</tbody></table></div>
+          <td style="white-space:nowrap">${c.colonnes[0].k === 'rep' ? `<button class="icone" data-dup-ligne="${c.k}.${i}" title="Dupliquer : même équipement, repère suivant ; il reste à changer la pièce">⧉</button>` : ''}<button class="icone" data-suppr-ligne="${c.k}.${i}" title="Supprimer la ligne">✕</button></td></tr>`).join('')}</tbody></table></div>
         <button class="secondaire petit" data-ajout-ligne="${c.k}">+ Ajouter une ligne</button> <span class="petit muted">ou collez un tableau Excel dans une cellule</span></div>`;
     }
     const lib = `<span>${esc(c.l)}${c.u ? ` <span class="unite">(${esc(c.u)})</span>` : ''}</span>`;
@@ -236,8 +243,19 @@ function lierCalculateur(root, type, e, changer, ctx = ctxSimple(type, e)) {
     const k = b.dataset.ajoutLigne, c = Notes.TYPES[type].champs.find(x => x.k === k), l = e[k] || (e[k] = []);
     // Nouvelle ligne : copie de la précédente ; un repère numéroté (« CA-03 ») passe au suivant (« CA-04 »), sinon vidé
     const k0 = c.colonnes[0].k, der = l[l.length - 1], m = der && c.colonnes[0].t === 't' && /^(.*?)(\d+)$/.exec(String(der[k0] || ''));
-    l.push(l.length ? { ...der, ...(c.colonnes[0].t === 't' ? { [k0]: m ? `${m[1]}${String(+m[2] + 1).padStart(m[2].length, '0')}` : '' } : {}) } : Object.fromEntries(c.colonnes.map(col => [col.k, ''])));
+    l.push(l.length ? { ...der, ...(c.colonnes[0].t === 't' ? { [k0]: m ? Registre.repSuivant(der[k0], prisDe(k, l, k0)) : '' } : {}) } : Object.fromEntries(c.colonnes.map(col => [col.k, ''])));
     redessiner();
+  });
+  // Dupliquer une ligne (même bouche, même terminal) : repère suivant libre, insérée dessous ; curseur sur la pièce
+  const prisDe = (k, l, k0) => new Set([...l.map(x => String(x[k0] || '').trim()), ...(k === 'bouchesL' && contexteEtude ? Registre.repsBouches(contexteEtude) : [])]);
+  root.querySelectorAll('[data-dup-ligne]').forEach(b => b.onclick = () => {
+    const [k, i] = b.dataset.dupLigne.split('.'), l = e[k], x = l[+i]; if (!x) return;
+    const copie = JSON.parse(JSON.stringify(x));
+    copie.rep = Registre.repSuivant(x.rep || (k === 'bouchesL' ? 'B' : 'T'), prisDe(k, l, 'rep'));
+    l.splice(+i + 1, 0, copie);
+    redessiner();
+    setTimeout(() => { const z = document.querySelector(`[data-l="${k}.${+i + 1}.salle"], [data-l="${k}.${+i + 1}.local"]`); if (z) { z.focus(); z.select(); } }, 30);
+    toast(`${x.rep || 'Ligne'} dupliquée en ${copie.rep} : changez la pièce.`, 3500);
   });
   root.querySelectorAll('[data-suppr-ligne]').forEach(b => b.onclick = () => { const [k, i] = b.dataset.supprLigne.split('.'); e[k].splice(+i, 1); redessiner(); });
 }
@@ -820,7 +838,7 @@ Vues.note = {
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-rob" title="Pour chaque circuit sans robinetterie : vannes d\'isolement, vanne d\'équilibrage, filtre, manchettes, thermomètres ; à compléter avec les Kv des fiches">🔩 Robinetterie type par circuit</button><button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par circuit (repères, DN, fabricant, référence, fiche, ΔP) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
         ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button>' : ''}
-        ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="num-bouches" title="Donne un numéro unique à chaque bouche sans repère ou en double (B-01, B-02…) : relevé des débits bouche par bouche à la mise en service">🔢 Numéroter les bouches</button>' : ''}
+        ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="num-bouches" title="Numéro unique de chaque bouche : compléter les bouches sans repère ou en double, ou tout renuméroter (par zone et pièce, ou suivant les branches) quand l\'étude est au point">🔢 Numéroter les bouches</button>' : ''}
         ${n.type === 'terminaux' ? '<button class="secondaire" id="num-terminaux" title="Donne un repère unique à chaque terminal sans repère ou en double (CA-01, VC-02…) : une branche par terminal dans le réseau arborescent, une fiche de mise en service par terminal">🔢 Numéroter les terminaux</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="aero-vitesses" title="Même vitesse pour toutes les branches (ou les principales, ou les terminales) : les diamètres des gaines sont recalculés">💨 Changer toutes les vitesses</button>' : ''}
         ${n.type === 'sanitaire' ? `<button class="secondaire" id="san-foison" title="Compare le débit probable avec et sans foisonnement et choisit la méthode de calcul">⚖️ Foisonnement : ${esc({ dtu: 'DTU 60.11', saisi: `${Notes.num(n.entrees.coefSaisi, 60)} %`, aucun: 'aucun' }[n.entrees.foisonnement || 'dtu'] || '')}</button>` : ''}
@@ -898,7 +916,33 @@ Vues.note = {
     };
     // Schéma aéraulique : même vitesse sur toutes les branches choisies (diamètres recalculés)
     const nb = root.querySelector('#num-bouches');
-    if (nb) nb.onclick = () => { const k = Registre.numeroter(n.entrees.bouchesL || [], 'B', 'rep', b => b.rep || b.salle || b.Q || b.troncon); enregistrer(et); App.render(); toast(k ? `${k} bouche(s) numérotée(s) : chaque bouche a son numéro unique.` : 'Toutes les bouches ont déjà un numéro unique.', 5000); };
+    if (nb) nb.onclick = () => {
+      const sch = Registre.schemasAir(et), I = new Map(SchemaAir.installationsAir(et));
+      const b = Modal.open(`<h2>🔢 Numérotation des bouches</h2><p class="muted petit">Chaque bouche a un numéro unique dans l'étude : il sert au repérage sur plan, au relevé des débits et à sa fiche de mise en service.</p>
+        <label style="display:flex;gap:.6em;align-items:center;margin:.4em 0;font-weight:normal"><input type="radio" style="width:auto;flex:none" name="nb-mode" value="completer" checked> Compléter : numéroter les bouches sans repère et celles en double (les autres gardent leur numéro)</label>
+        <label style="display:flex;gap:.6em;align-items:center;margin:.4em 0;font-weight:normal"><input type="radio" style="width:auto;flex:none" name="nb-mode" value="tout"> Tout renuméroter (quand l'étude est au point, avant les fiches de mise en service)</label>
+        <div class="grille-champs" id="nb-opts"><label>Ordre<select id="nb-ordre"><option value="zone">Par zone puis par pièce</option><option value="branche">Dans l'ordre des branches du réseau</option></select></label>
+          <label>Numéros<select id="nb-prefixe"><option value="B">B-01, B-02…</option><option value="reseau">Par réseau : S-01 soufflage, R-01 reprise, E-01 extraction</option><option value="autre">Autre préfixe…</option></select></label>
+          <label>Préfixe<input id="nb-texte" value="BS" disabled></label><label>Premier numéro<input id="nb-debut" type="number" min="1" value="1"></label>
+          ${sch.length > 1 ? `<label class="large">Schémas<select id="nb-portee"><option value="${n.id}">Ce schéma : ${esc(I.get(n.id) || n.titre)}</option><option value="tous">Toutes les bouches de l'étude (${sch.length} CTA / extracteurs, numérotation continue)</option></select></label>` : ''}</div>
+        <div class="actions"><button class="secondaire" id="nb-x">Annuler</button><button id="nb-ok">Numéroter</button></div>`);
+      b.querySelector('#nb-x').onclick = Modal.close;
+      b.querySelector('#nb-prefixe').onchange = ev => { b.querySelector('#nb-texte').disabled = ev.target.value !== 'autre'; };
+      b.querySelector('#nb-ok').onclick = () => {
+        let k;
+        if (b.querySelector('[name="nb-mode"]:checked').value === 'completer') {
+          const pris = Registre.repsBouches(et);
+          (n.entrees.bouchesL || []).forEach(x => pris.delete(String(x.rep || '').trim()));
+          k = Registre.numeroter(n.entrees.bouchesL || [], 'B', 'rep', x => x.rep || x.salle || x.zone || x.Q || x.troncon);
+          const vus = new Set(); (n.entrees.bouchesL || []).forEach(x => { const r = String(x.rep || '').trim(); if (r && pris.has(r) && !vus.has(r)) { x.rep = Registre.repSuivant(r, new Set([...pris, ...Registre.repsBouches(et)])); k++; } vus.add(x.rep); });
+        } else {
+          const pf = b.querySelector('#nb-prefixe').value, portee = b.querySelector('#nb-portee') ? b.querySelector('#nb-portee').value : n.id;
+          k = Registre.renumeroterBouches(et, { notes: portee === 'tous' ? null : [n.id], ordre: b.querySelector('#nb-ordre').value, prefixe: pf === 'autre' ? b.querySelector('#nb-texte').value : pf, debut: +b.querySelector('#nb-debut').value || 1 });
+        }
+        enregistrer(et); Modal.close(); App.render();
+        toast(k ? `${k} bouche(s) numérotée(s) : chaque bouche a son numéro unique.` : 'Toutes les bouches ont déjà un numéro unique.', 5000);
+      };
+    };
     const nt = root.querySelector('#num-terminaux');
     if (nt) nt.onclick = () => {
       // Repère changé : les branches du réseau arborescent qui pointaient sur l'ancien repère suivent seulement s'il était unique
