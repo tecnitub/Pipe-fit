@@ -21,6 +21,23 @@ const EtudeDemoExemple = ({ affaireId, client } = {}) => ({
         { rep: 'CA-03', local: 'Salle de réunion', zone: 'R+1 — Bâtiment A', type: 'cassette4', n: 1, Pch: 4.5, Pfr: 5.2, batterie: '4t', vanne: '2v', Pvent: 70, alim: 'cvc', regul: 'propre', ref: 'Exemplair CK-52', fiche: { fabricant: 'Exemplair', reference: 'CK-52' } }] }, commentaire: '' },
       { id: 'n9', type: 'ecs', titre: 'Ballon d\'eau chaude sanitaire', entrees: {}, commentaire: '' },
       { id: 'n10', type: 'sanitaire', titre: 'Eau froide et eau chaude sanitaires — vestiaires', entrees: { production: 'n9', usage: 'vestiaire' }, commentaire: '' },
+      // Réseau hydraulique des cassettes : une branche par cassette (repère de l'étude) ; une fiche de mise en service
+      // pour le réseau, une ligne de débit par cassette
+      { id: 'n11', type: 'arbo', titre: 'Réseau eau chaude des cassettes — R+1', entrees: { troncons: [
+        { rep: 'C', amont: '', nom: 'Départ pompe → collecteur R+1', L: 12, zeta: 4, tube: '', P: '', dpEm: '' },
+        { rep: 'A1', amont: 'C', nom: 'Antenne bureaux', L: 18, zeta: 3, tube: '', P: '', dpEm: '' },
+        { rep: 'CA-01', amont: 'A1', nom: 'Bureau 1', L: 6, zeta: 5, tube: '', emetteur: 'n8:CA-01', P: '', Q: '', dpEm: '' },
+        { rep: 'CA-02', amont: 'A1', nom: 'Bureau 2', L: 10, zeta: 5, tube: '', emetteur: 'n8:CA-02', P: '', Q: '', dpEm: '' },
+        { rep: 'CA-03', amont: 'A1', nom: 'Salle de réunion', L: 15, zeta: 5, tube: '', emetteur: 'n8:CA-03', P: '', Q: '', dpEm: '' }] }, commentaire: '' },
+      // Ventilation des bureaux : chaque bouche a son numéro, sa pièce, sa zone et sa branche ; une fiche de mise en
+      // service pour la centrale, une ligne de débit par bouche
+      { id: 'n12', type: 'aero', titre: 'Ventilation des bureaux — R+1', entrees: { structure: 'arborescence', titreInstallation: 'Bureaux R+1', bouchesL: [
+        { rep: 'S-01', installation: 'n12', reseau: 'soufflage', salle: 'Bureau 1', zone: 'Zone A', etage: 'R+1', type: 'plafond', Q: 200, troncon: 'S1.1', ref: 'Exemplair DF4-200', fiche: { fabricant: 'Exemplair', reference: 'DF4-200' } },
+        { rep: 'S-02', installation: 'n12', reseau: 'soufflage', salle: 'Bureau 2', zone: 'Zone A', etage: 'R+1', type: 'plafond', Q: 200, troncon: 'S1.1', ref: 'Exemplair DF4-200', fiche: { fabricant: 'Exemplair', reference: 'DF4-200' } },
+        { rep: 'S-03', installation: 'n12', reseau: 'soufflage', salle: 'Bureau 3', zone: 'Zone A', etage: 'R+1', type: 'plafond', Q: 200, troncon: 'S1.2', ref: 'Exemplair DF4-200', fiche: { fabricant: 'Exemplair', reference: 'DF4-200' } },
+        { rep: 'S-04', installation: 'n12', reseau: 'soufflage', salle: 'Salle de réunion', zone: 'Zone B', etage: 'R+1', type: 'plafond', Q: 450, troncon: 'S2.1', ref: 'Exemplair DF4-200', fiche: { fabricant: 'Exemplair', reference: 'DF4-200' } },
+        { rep: 'R-01', installation: 'n12', reseau: 'reprise', salle: 'Bureaux', zone: 'Zone A', etage: 'R+1', type: 'extraction', Q: 600, troncon: 'R1' },
+        { rep: 'R-02', installation: 'n12', reseau: 'reprise', salle: 'Salle de réunion', zone: 'Zone B', etage: 'R+1', type: 'extraction', Q: 450, troncon: 'R2.1' }] }, commentaire: '' },
     ], _v: 1, _at: new Date().toISOString(), _by: 'Jacky (bureau d\'études)',
   });
 if (typeof module !== 'undefined') module.exports = EtudeDemoExemple;

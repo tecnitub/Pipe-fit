@@ -28,7 +28,7 @@ const PlanMes = (() => {
     reseau: txt(p.reseau, 200), natureReseau: txt(p.natureReseau, 60), fluideEssai: txt(p.fluideEssai, 20), PS: num(p.PS), PT: num(p.PT), categorie: num(p.categorie),
     repere: txt(p.repere, 40), local: txt(p.local, 80), zone: txt(p.zone, 60), marque: txt(p.marque, 60), modele: txt(p.modele, 80),
     controles: (Array.isArray(p.controles) ? p.controles : []).slice(0, 400).map(c => txt(c, 120)).filter(Boolean),
-    attendus: (Array.isArray(p.attendus) ? p.attendus : []).slice(0, 12).map(a => ({ libelle: txt(a && a.libelle, 80), valeur: num(a && a.valeur), unite: txt(a && a.unite, 12) })).filter(a => a.libelle && a.valeur !== null),
+    attendus: (Array.isArray(p.attendus) ? p.attendus : []).slice(0, 400).map(a => ({ libelle: txt(a && a.libelle, 160), valeur: num(a && a.valeur), unite: txt(a && a.unite, 12) })).filter(a => a.libelle && a.valeur !== null),
   } : null);
   // Points des études du chantier (serveur) : [{ etudeId, etude, ...point }]
   const pointsChantier = liens => (liens || []).filter(l => l.app === 'etudes').flatMap(l => ((l.resume || {}).mes || []).slice(0, 200)
@@ -40,7 +40,7 @@ const PlanMes = (() => {
   // PV le plus avancé parmi ceux qui correspondent
   const meilleur = (recs, etatDe) => recs.map(r => ({ r, e: etatDe(r) })).sort((a, b) => ORDRE_ETAT[a.e] - ORDRE_ETAT[b.e] || String(b.r.date || '').localeCompare(String(a.r.date || '')))[0] || null;
   const q = o => Object.entries(o).filter(([, v]) => v !== '' && v !== null && v !== undefined).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
-  const attendusQ = a => ((a || []).length ? JSON.stringify(a.slice(0, 12).map(x => [x.libelle, x.valeur, x.unite])) : '');
+  const attendusQ = a => ((a || []).length ? JSON.stringify(a.slice(0, 400).map(x => [x.libelle, x.valeur, x.unite])) : '');
 
   // affaireId ; materiel : lignes de /api/liens/materiel ; points : /api/liens/plan-mes ; debits : /api/liens/debits ;
   // pv : { mises, epreuves, equilibrages } du chantier ; suivi : affaire.planMes = { etats: { [cle]: { fait, sansObjet, le, par } }, manuelles: [{ id, libelle, groupe }] }
@@ -128,7 +128,7 @@ const PlanMes = (() => {
   }
   // Valeurs attendues passées dans l'adresse du PV : [[libellé, valeur, unité]]
   function lireAttendus(s) {
-    try { const a = JSON.parse(s || '[]'); return Array.isArray(a) ? a.slice(0, 12).filter(x => Array.isArray(x) && x[0] && Number.isFinite(Number(x[1]))).map(([libelle, valeur, unite]) => ({ libelle: txt(libelle, 80), valeur: Number(valeur), unite: txt(unite, 12) })) : []; } catch (e) { return []; }
+    try { const a = JSON.parse(s || '[]'); return Array.isArray(a) ? a.slice(0, 400).filter(x => Array.isArray(x) && x[0] && Number.isFinite(Number(x[1]))).map(([libelle, valeur, unite]) => ({ libelle: txt(libelle, 160), valeur: Number(valeur), unite: txt(unite, 12) })) : []; } catch (e) { return []; }
   }
   // Mesures du PV complétées par les valeurs attendues (mesure du même nom, sinon ajoutée)
   function avecAttendus(mesures, attendus) {

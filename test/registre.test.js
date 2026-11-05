@@ -158,9 +158,12 @@ test('bouches : numéro unique, branche choisie, débits cumulés, une fiche de 
   assert.strictEqual(r.valeurs.bouchesDetail.filter(b => b.troncon === terminal).length, 3);
   assert.ok(r.valeurs.Qs >= 900);
   // Fiche de mise en service de chaque bouche : débit attendu, repère, pièce
-  const pts = PM.extraire(et, n => Liens.calculer(et, n)).filter(p => p.type === 'bouche');
-  assert.deepStrictEqual(pts.map(p => [p.repere, p.local, p.attendus[0].libelle, p.attendus[0].valeur]), [['B-01', 'Bureau 1', 'Débit', 300], ['B-02', 'Open space', 'Débit', 300], ['B-03', 'Open space', 'Débit', 300]]);
-  assert.strictEqual(new Set(pts.map(p => p.cle)).size, 3);
+  // Une seule fiche de mise en service pour la CTA ; une ligne par bouche (repère, pièce, branche), débit attendu
+  const pts = PM.extraire(et, n => Liens.calculer(et, n)).filter(p => p.nature === 'mes');
+  assert.strictEqual(pts.length, 1);
+  const lignes = pts[0].attendus.filter(a => /^Débit B-/.test(a.libelle));
+  assert.deepStrictEqual(lignes.map(a => [a.libelle, a.valeur, a.unite]), [[`Débit B-01 — Bureau 1 · soufflage · branche ${terminal}`, 300, 'm³/h'], [`Débit B-02 — Open space · soufflage · branche ${terminal}`, 300, 'm³/h'], [`Débit B-03 — Open space · soufflage · branche ${terminal}`, 300, 'm³/h']]);
+  assert.match(pts[0].detail, /3 bouche\(s\)/);
   // Repère en double, bouche sans repère ou sans tronçon : signalés ; numérotation
   bs[2].rep = 'B-02'; bs.push({ salle: 'Couloir', Q: 100 });
   r = Liens.calculer(et, aero);
@@ -199,6 +202,37 @@ test('bouches : CTA ou extracteur choisi, numérotation automatique, duplication
   assert.deepStrictEqual(a2.entrees.bouchesL.map(b => b.rep), ['BE-01', 'BE-02']);
   // Fiche de mise en service : pièce, zone et CTA dans le titre
   const PM = require('../etudes/public/js/points-mes');
-  const p = PM.extraire(et, x => Liens.calculer(et, x)).find(x => x.type === 'bouche' && x.repere === 'S-02');
-  assert.ok(p && p.local === 'Bureau 1' && /Zone A/.test(p.zone) && /Bouche S-02 — Bureau 1 \(Zone A\)/.test(p.titre), p && p.titre);
+  const fiches = PM.extraire(et, x => Liens.calculer(et, x)).filter(x => x.nature === 'mes' && x.noteId !== cta.id);
+  assert.strictEqual(fiches.length, 2); // une fiche par CTA / extracteur
+  const l = fiches.flatMap(f => f.attendus.map(a => a.libelle));
+  assert.ok(l.includes('Débit S-02 — Bureau 1 (Zone A) · soufflage · branche S1.1'), l.join(' | '));
+  assert.ok(fiches[1].attendus.some(a => /^Débit BE-01 — WC · extraction · branche à rattacher/.test(a.libelle)), fiches[1].attendus.map(a => a.libelle).join(' | '));
+});
+
+test('mise en service : une fiche par réseau hydraulique, une ligne par émetteur (repère, pièce, branche, préréglage)', () => {
+  const PM = require('../etudes/public/js/points-mes');
+  const term = note('terminaux', { appareils: [] }), arbo = note('arbo'), et = { notes: [term, arbo] };
+  V.appliquer(et, item('terminal', { local: 'Bureau 1 ; Salle de réunion ×2', branche: `arbo:${arbo.id}|A2` }), `term:${term.id}`, note);
+  V.appliquer(et, item('terminal', { local: 'Hall' }), `term:${term.id}`, note); // terminal hors réseau : sa propre fiche
+  const pts = PM.extraire(et, n => Liens.calculer(et, n)).filter(p => p.nature === 'mes');
+  const reseau = pts.find(p => p.type === 'reseau');
+  assert.ok(reseau && /^Réseau hydraulique — /.test(reseau.titre));
+  const l = reseau.attendus.filter(a => /^Débit CA-/.test(a.libelle));
+  assert.strictEqual(l.length, 3);
+  assert.match(l[0].libelle, /^Débit CA-01 — Bureau 1 · branche C → A2 → CA-01 · préréglage \d+(,\d)? tours$/);
+  assert.ok(l.every(a => a.unite === 'm³/h' && a.valeur > 0));
+  assert.ok(reseau.attendus.some(a => a.libelle === 'Débit de la pompe'));
+  // Terminaux du réseau : pas de fiche à part ; le terminal hors réseau garde la sienne
+  assert.deepStrictEqual(pts.filter(p => p.type === 'terminal').map(p => p.repere), ['CA-04']);
+  // Le CRM garde toutes les lignes (plus de limite à 12 valeurs)
+  const PlanMes = require('../public/js/plan-mes');
+  assert.strictEqual(PlanMes.propre(reseau).attendus.length, reseau.attendus.length);
+});
+
+test('PV : lignes du relevé reconnues (repère, pièce, réseau et branche)', () => {
+  const Es = require('../public/js/essais');
+  assert.deepStrictEqual(Es.releve({ libelle: 'Débit S-02 — Bureau 2 (Zone A, R+1) · soufflage · branche S1.1' }), { grandeur: 'Débit', repere: 'S-02', piece: 'Bureau 2 (Zone A, R+1)', detail: 'soufflage, branche S1.1' });
+  assert.deepStrictEqual(Es.releve({ libelle: 'Débit CA-01 — Bureau 1 · branche C → A1 → CA-01 · préréglage 1,9 tours' }).detail, 'branche C → A1 → CA-01, préréglage 1,9 tours');
+  assert.strictEqual(Es.releve({ libelle: 'Débit de soufflage' }), null);
+  assert.ok(Es.TYPES.reseau && Es.TYPES.reseau.controles.length);
 });

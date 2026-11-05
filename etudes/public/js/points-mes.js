@@ -25,6 +25,19 @@ const PointsMes = (() => {
         case 'reseau':
         case 'arbo': {
           const Q = n.type === 'arbo' ? v.Qp : v.Qpompe;
+          if (n.type === 'arbo') {
+            // Une fiche par réseau hydraulique : pompe, puis une ligne par émetteur (repère de l'étude, pièce, branche,
+            // préréglage de la vanne d'équilibrage) avec le débit attendu, à mesurer
+            const tr = new Map((e.troncons || []).map(t => [String(t.rep || '').trim(), t])), nf1 = x => String(Math.round(x * 10) / 10).replace('.', ',');
+            const lignes = (v.vannes || []).filter(x => x.terminal).map(x => { const t = tr.get(x.rep) || {}, local = txt(t.nom, 50);
+              return att(`Débit ${x.rep}${local && local !== x.rep ? ` — ${local}` : ''} · branche ${txt(x.chemin, 50)}${Number.isFinite(x.tours) ? ` · préréglage ${nf1(x.tours)} tours` : ''}`, x.Q, 'm³/h', 3); });
+            const pr = e.pompeRef || (v.pompe && v.pompe.modele) || '';
+            out.push({ ...base, nature: 'mes', type: 'reseau', cle: `reseau-hydro|${n.id}`, titre: `Réseau hydraulique — ${titre}`, marque: '', modele: txt(pr, 80),
+              detail: `${lignes.length} émetteur(s) : une ligne par émetteur, débit attendu et mesuré`,
+              attendus: nettoie([att('Débit de la pompe', Q, 'm³/h', 2), att('Hauteur manométrique', v.HMT, 'mCE', 2), att('Puissance absorbée', v.Pabs, 'W', 0), ...lignes]) });
+            out.push({ ...base, nature: 'epreuve', titre, reseau: titre, natureReseau: natureHydro(e) });
+            break;
+          }
           if (v.pompe && v.pompe.modele) out.push({ ...base, nature: 'mes', type: 'pompes', cle: pompe(v.pompe.modele), titre: `Pompe ${txt(v.pompe.modele, 80)} — ${titre}`,
             attendus: nettoie([att('Débit', Q, 'm³/h', 2), att('Hauteur manométrique', v.HMT, 'mCE', 2), att('Puissance absorbée', v.Pabs, 'W', 0)]) });
           out.push({ ...base, nature: 'epreuve', titre, reseau: titre, natureReseau: natureHydro(e) });
@@ -45,14 +58,10 @@ const PointsMes = (() => {
           const cle = lie ? `cta|${Number((lie.entrees || {}).Qs)}` : prod && Q ? `aero|${prod}|${Math.round(Q)}` : '';
           out.push({ ...base, nature: 'mes', type: /^cta/.test(prod) || lie ? 'cta' : 'vmc', cle, titre: `Ventilation — ${titre}`,
             attendus: nettoie([att('Débit de soufflage', v.Qs, 'm³/h', 0), att('Débit de reprise', v.Qr, 'm³/h', 0), att('Pression ventilateur soufflage', v.pS, 'Pa', 0), att('Pression ventilateur reprise', v.pR, 'Pa', 0)]) });
-          // Une fiche par bouche (numéro unique) : débit attendu à relever, branche du réseau pour la retrouver
-          (v.bouchesDetail || []).forEach(b => {
-            if (!b.rep) return;
-            const src = (e.bouchesL || []).find(x => String(x.rep || '').trim() === b.rep) || {}, f = src.fiche || {};
-            out.push({ ...base, nature: 'mes', type: 'bouche', cle: `bouche|${n.id}|${b.rep}`, repere: b.rep, local: txt(b.salle, 80), zone: txt([b.zone, b.etage].filter(Boolean).join(' · '), 60), marque: txt(f.fabricant, 60), modele: txt(f.reference || src.ref, 80),
-              titre: `Bouche ${b.rep}${b.salle ? ` — ${txt(b.salle, 60)}` : ''}${b.zone ? ` (${txt(b.zone, 40)})` : ''} — ${txt(titre, 60)}, ${b.reseau}, branche ${b.troncon}`, branche: txt(b.chemin, 160),
-              attendus: nettoie([att('Débit', b.Q, 'm³/h', 0), att('Pression de mesure au plénum', b.dp, 'Pa', 0)]) });
-          });
+          // Même fiche : une ligne par bouche (numéro unique, pièce, zone, réseau, branche) avec le débit attendu, à mesurer
+          const fiche = out[out.length - 1], bs = (e.bouchesL || []).filter(b => b && String(b.rep || '').trim());
+          fiche.attendus.push(...nettoie(bs.map(b => att(`Débit ${String(b.rep).trim()}${b.salle ? ` — ${txt(b.salle, 40)}` : ''}${b.zone || b.etage ? ` (${txt([b.zone, b.etage].filter(Boolean).join(', '), 30)})` : ''} · ${b.reseau || 'soufflage'} · ${b.troncon ? `branche ${txt(b.troncon, 20)}` : 'branche à rattacher'}`, Number(String(b.Q).replace(',', '.')), 'm³/h', 0))));
+          if (bs.length) fiche.detail = `${bs.length} bouche(s) : une ligne par bouche, débit attendu et mesuré`;
           break;
         }
         case 'aeraulique':
@@ -64,7 +73,9 @@ const PointsMes = (() => {
         case 'terminaux': {
           // Un équipement = une fiche : chaque appareil (plusieurs unités : repères suffixés)
           const T = typeof Terminaux !== 'undefined' ? Terminaux : require('./terminaux');
+          const surReseau = new Set((et.notes || []).filter(a => a.type === 'arbo').flatMap(a => ((a.entrees || {}).troncons || []).map(t => t && t.emetteur).filter(Boolean)));
           (v.lignes || []).forEach(x => {
+            if (surReseau.has(`${n.id}:${x.rep}`)) return; // ligne de la fiche du réseau hydraulique
             const cat = (x.t || [])[1], type = x.pompe ? 'pompes' : x.type === 'ctaSf' ? 'cta' : x.type === 'tourelle' ? 'vmc' : cat === 'split' ? 'split' : ['registre', 'sondeAir'].includes(cat) ? 'gtb' : cat === 'sansElec' ? '' : 'terminal';
             if (!type) return;
             for (let k = 1; k <= Math.max(1, x.n || 1); k++) {

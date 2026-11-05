@@ -166,7 +166,7 @@ const Equilibrage = ((D, C, N) => {
       return {
         valeurs: { Qp, HMT, dpTot, Hres, Ph, Pabs, Ptot, defavorise: defav ? defav.rep : null, pompe: pompes[0] || null, pompeRetenue: pf ? { ref: e.pompeRef || '', ok: pf.ok, Q: pf.Q, H: pf.H, vitesse: pf.vitesse, ecart: pf.ecart } : null,
           troncons: actifs.map(t => ({ rep: t.rep, serie: e.serie, tube: t.t.cle, dn: t.t.dn, L: 2 * t.L })),
-          vannes: vannes.map(t => ({ rep: t.rep, dn: t.vanne.dn, Kvs: t.vanne.Kvs, Kv: t.Kv, dp: t.dpV, Q: t.Q, tours: t.vanne.tours, toursMax: t.vanne.toursMax, abaque: !!t.vanne.abaque, ref: t.vanne.ref || '', vanneRep: t.vanne.rep || '' })),
+          vannes: vannes.map(t => ({ rep: t.rep, nom: t.nom || '', chemin: (t.chemin || []).map(x => x.rep).join(' → '), terminal: !(t.enfants || []).length, dn: t.vanne.dn, Kvs: t.vanne.Kvs, Kv: t.Kv, dp: t.dpV, Q: t.Q, tours: t.vanne.tours, toursMax: t.vanne.toursMax, abaque: !!t.vanne.abaque, ref: t.vanne.ref || '', vanneRep: t.vanne.rep || '' })),
           robinetterie: actifs.flatMap(t => (t.rob || []).map(x => ({ ...x, troncon: t.rep }))),
           noeuds: actifs.map(t => ({ rep: t.rep, Q: t.Q, dp: t.dp, H: t.H, dispo: t.dispo, dpV: t.dpV })) },
         resume: [['Puissance des émetteurs', `${nf(Ptot, 1)} kW`], ['Débit de la pompe', `${nf(Qp, 2)} m³/h`],

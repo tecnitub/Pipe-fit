@@ -119,6 +119,9 @@ const bindEssaiVue = (root, kind, r) => { const b = root.querySelector('#es-pdf'
 
 /* ---------- PV de mise en service ---------- */
 // Valeur attendue (étude) et écart de la mesure saisie
+// Écart seul (relevé par bouche / émetteur, colonne du tableau)
+const ecartHtml = m => { if (m.attendu === undefined) return ''; const e = PlanMes.ecart(m), c = Essais.conformeMesure(m), t = Essais.tolerance(m.libelle, m.unite);
+  return e === null ? `<span class="muted">${esc(t.texte)}</span>` : `<span class="${c ? 'pos' : 'neg'}">${e > 0 ? '+' : ''}${fmt(e, 1)} % ${c ? '✓' : '✕ hors tolérance'}</span>`; };
 const attenduHtml = m => { const e = PlanMes.ecart(m), c = Essais.conformeMesure(m), t = Essais.tolerance(m.libelle, m.unite);
   return `attendu ${fmt(m.attendu, m.attendu % 1 ? 2 : 0)} ${esc(m.unite || '')} (${esc(t.texte)})${e === null ? '' : ` · <span class="${c ? 'pos' : 'neg'}">écart ${t.abs !== undefined ? (d => `${d > 0 ? '+' : ''}${fmt(d, 1)} ${/°C/.test(m.unite) ? 'K' : esc(m.unite)}`)(num(m.valeur) - m.attendu) : `${e > 0 ? '+' : ''}${fmt(e, 1)} %`} — ${c ? '✓ conforme' : '✕ hors tolérance'}</span>`}`; };
 Views.mes = (params, query) => {
@@ -151,8 +154,14 @@ Views.mes = (params, query) => {
       <button class="small secondary" id="es-tout-ok">Tout OK</button>
     </fieldset>
     <fieldset class="hd-bloc"><legend>Mesures et relevés</legend><div class="grid3">
-      ${e.mesures.map((m, i) => `<div class="field"><label for="es-m${i}">${esc(m.libelle)}${m.unite ? ` (${esc(m.unite)})` : ''}</label><input id="es-m${i}" data-mes="${i}" inputmode="decimal" value="${esc(m.valeur ?? '')}"${m.attendu !== undefined ? ` placeholder="attendu ${esc(fmt(m.attendu, m.attendu % 1 ? 2 : 0))}"` : ''}>
+      ${e.mesures.map((m, i) => Essais.releve(m) ? '' : `<div class="field"><label for="es-m${i}">${esc(m.libelle)}${m.unite ? ` (${esc(m.unite)})` : ''}</label><input id="es-m${i}" data-mes="${i}" inputmode="decimal" value="${esc(m.valeur ?? '')}"${m.attendu !== undefined ? ` placeholder="attendu ${esc(fmt(m.attendu, m.attendu % 1 ? 2 : 0))}"` : ''}>
         ${m.attendu !== undefined ? `<span class="small muted" data-att="${i}">${attenduHtml(m)}</span>` : ''}</div>`).join('')}</div>
+      ${(() => { const rl = e.mesures.map((m, i) => [m, i, Essais.releve(m)]).filter(x => x[2]); if (!rl.length) return '';
+        const faits = rl.filter(([m]) => String(m.valeur ?? '').trim() !== '').length;
+        return `<h4 style="margin:.8em 0 .3em">Relevé ligne par ligne — ${rl.length} ${/eau/.test(rl[0][2].grandeur) || e.type === 'reseau' ? 'émetteur(s)' : 'bouche(s)'} <span class="small muted" id="es-releve-n">${faits}/${rl.length} mesuré(s)</span></h4>
+        <div style="overflow-x:auto"><table class="compact"><thead><tr><th>Repère</th><th>Pièce</th><th>Réseau, branche</th><th class="num">Attendu</th><th>Mesuré</th><th>Écart</th></tr></thead><tbody>
+        ${rl.map(([m, i, r]) => `<tr><td><strong>${esc(r.repere)}</strong></td><td>${esc(r.piece)}</td><td class="small">${esc(r.detail)}</td><td class="num">${m.attendu !== undefined ? `${fmt(m.attendu, m.attendu % 1 ? 3 : 0)} ${esc(m.unite || '')}` : ''}</td>
+          <td><input data-mes="${i}" inputmode="decimal" style="width:7em" value="${esc(m.valeur ?? '')}" aria-label="${esc(m.libelle)} mesuré"></td><td class="small" data-att="${i}" data-court="1">${ecartHtml(m)}</td></tr>`).join('')}</tbody></table></div>`; })()}
       ${(e.attendus || []).length ? '<p class="small muted">Valeurs attendues reprises de l\'étude : l\'écart s\'affiche dès la saisie de la mesure.</p>' : ''}
       <button class="small secondary" id="es-add-mes">+ Autre mesure</button></fieldset>
     <div class="field"><label for="es-reglages">Réglages effectués</label><textarea id="es-reglages" data-k="reglages" data-dictee rows="2" placeholder="Consignes, lois d'eau, programmations, débits…">${esc(e.reglages || '')}</textarea></div>
@@ -178,7 +187,8 @@ Views.mes.bind = (root, params) => {
   root.querySelectorAll('[data-ctlobs]').forEach(el => el.oninput = () => { e.controles[+el.dataset.ctlobs].obs = el.value; });
   $('#es-tout-ok').onclick = () => { e.controles.forEach(c => { if (!c.etat) c.etat = 'OK'; }); proposer(); App.render(); };
   // Mesure saisie : écart, conformité et conclusion proposée mis à jour (comme le résultat d'une épreuve)
-  root.querySelectorAll('[data-mes]').forEach(el => el.oninput = () => { const m = e.mesures[+el.dataset.mes]; m.valeur = el.value.trim(); const a = root.querySelector(`[data-att="${el.dataset.mes}"]`); if (a) a.innerHTML = attenduHtml(m);
+  root.querySelectorAll('[data-mes]').forEach(el => el.oninput = () => { const m = e.mesures[+el.dataset.mes]; m.valeur = el.value.trim(); const a = root.querySelector(`[data-att="${el.dataset.mes}"]`); if (a) a.innerHTML = a.dataset.court ? ecartHtml(m) : attenduHtml(m);
+    const rn = root.querySelector('#es-releve-n'); if (rn) { const rl = e.mesures.filter(x => Essais.releve(x)); rn.textContent = `${rl.filter(x => String(x.valeur ?? '').trim() !== '').length}/${rl.length} mesuré(s)`; }
     const avant = e.resultat; proposer(); if (e.resultat !== avant && $('#es-res')) $('#es-res').value = e.resultat; });
   $('#es-add-mes').onclick = async () => { const lib = await askValue('Mesure (ex. Débit d\'eau, m³/h)', ''); if (!lib) return; const [l, u] = lib.split(','); e.mesures.push({ libelle: l.trim(), unite: (u || '').trim(), valeur: '' }); App.render(); };
   $('#es-res').addEventListener('change', () => { e.resultatAuto = false; });

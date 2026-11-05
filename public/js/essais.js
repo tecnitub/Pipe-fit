@@ -39,6 +39,10 @@ const Essais = (() => {
       controles: ['Raccordements hydrauliques (flexibles, vannes d\'isolement) étanches et purgés', 'Vanne de régulation et servomoteur : course complète testée', 'Évacuation des condensats et pompe de relevage testées',
         'Filtre propre, grille et plénum en place', 'Alimentation électrique et protection conformes', 'Thermostat / sonde d\'ambiance et communication (GTB, maître / esclave) testés', 'Vitesses du ventilateur testées'],
       mesures: [['Température d\'eau entrée', '°C'], ['Température d\'eau sortie', '°C'], ['Température de soufflage', '°C'], ['Température de reprise', '°C'], ['Débit d\'eau', 'm³/h'], ['Intensité absorbée', 'A']] },
+    reseau: { libelle: 'Réseau hydraulique et ses émetteurs (équilibrage)',
+      controles: ['Réseau rempli, purgé et sous pression', 'Pompe : sens de rotation et consigne réglée', 'Filtres et pots à boue nettoyés', 'Vannes d\'équilibrage réglées au préréglage et repérées',
+        'Émetteurs raccordés et purgés, vannes de régulation testées', 'Évacuation des condensats des terminaux testée', 'Calorifuge et étiquetage des réseaux'],
+      mesures: [['Débit de la pompe', 'm³/h'], ['Hauteur manométrique', 'mCE'], ['Pression statique du réseau', 'bar']] },
     bouche: { libelle: 'Bouche, diffuseur, grille (relevé de débit)',
       controles: ['Bouche posée au repère du plan, fixée', 'Plénum et raccordement étanches', 'Organe de réglage (registre, cône) accessible', 'Réglage bloqué et repéré après équilibrage', 'Jet orienté (ailettes, diffusion)'],
       mesures: [['Débit', 'm³/h'], ['Pression de mesure au plénum', 'Pa'], ['Position du réglage', '']] },
@@ -101,6 +105,12 @@ const Essais = (() => {
     return (entete ? t.slice(1) : t).map(r => ({ repere: r[iR] || '', local: iL >= 0 ? r[iL] || '' : '', type: iTy >= 0 ? r[iTy] || '' : '', theorique: n(r[iT]) ?? '', mesure: '', reglage: '' }))
       .filter(x => x.repere || x.local || x.theorique !== '');
   }
-  return { TYPES, ETATS, modele, conclusion, manquesMES, tolerance, conformeMesure, ecart, conforme, synthese, manquesEQ, importerLignes };
+  // Ligne d'un relevé par bouche ou par émetteur (fiche d'une CTA, d'un extracteur, d'un réseau hydraulique) :
+  // « Débit S-02 — Bureau 2 (Zone A) · soufflage · branche S1.1 » → { grandeur, repere, piece, detail } ; sinon null
+  function releve(m) {
+    const x = /^(Débit(?: d'eau)?) (\S+)(?: — (.*?))? · (.+)$/.exec(String((m && m.libelle) || ''));
+    return x ? { grandeur: x[1], repere: x[2], piece: x[3] || '', detail: x[4].replace(/ · /g, ', ') } : null;
+  }
+  return { releve, TYPES, ETATS, modele, conclusion, manquesMES, tolerance, conformeMesure, ecart, conforme, synthese, manquesEQ, importerLignes };
 })();
 if (typeof module !== 'undefined') module.exports = Essais;
