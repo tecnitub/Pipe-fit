@@ -396,7 +396,7 @@ Vues.etude = {
       ${typeof carteMateriel === 'function' ? carteMateriel(et) : ''}
       ${carteDocuments(et)}
       ${tableauBordHtml(et)}
-      <div class="barre"><h2>Calculs <span class="compte">${et.notes.length}</span></h2><button id="ajout">+ Ajouter un calcul</button><span class="espace"></span>
+      <div class="barre"><h2>Calculs <span class="compte">${et.notes.length}</span></h2><button id="ajout">+ Ajouter un calcul</button><button class="secondaire" id="vrac" title="Charger toutes les fiches techniques du chantier d'un coup, puis les répartir dans les calculs (terminaux, CTA, production, pompes, vase, ballon, bouches, robinetterie…) sans ressaisie">📥 Matériel en vrac</button><span class="espace"></span>
         ${et.notes.length ? '<button class="secondaire" id="fiches-mes" title="Une fiche par équipement (générateurs, pompes, terminaux, CTA…) : points de contrôle, valeurs attendues de l\'étude, mesures à relever">📋 Fiches de mise en service</button>' : ''}
         ${et.notes.length > 1 ? '<button class="secondaire" id="comparer" disabled title="Cocher au moins deux calculs">⚖️ Comparer la sélection</button>' : ''}</div>
       ${et.notes.length ? `<div class="notes">${et.notes.map((n, i) => { const t = Notes.TYPES[n.type], r = Liens.calculer(et, n), err = r.alertes.filter(x => x.niveau === 'erreur').length, att = r.alertes.filter(x => x.niveau === 'attention').length;
@@ -412,6 +412,8 @@ Vues.etude = {
     if (noteId) return Vues.note.bind(root, et, noteId);
     const fm = root.querySelector('#fiches-mes');
     if (fm) fm.onclick = () => dialogueFichesMes(et);
+    const vr = root.querySelector('#vrac');
+    if (vr) vr.onclick = () => dialogueVrac(et);
     root.querySelectorAll('[data-e]').forEach(el => {
       el.onchange = el.oninput = () => {
         et[el.dataset.e] = el.value;
@@ -996,6 +998,74 @@ Vues.note = {
 
 // Émissions d'un calcul : indice émis, modifié depuis (badge de la liste des calculs) ; historique avec les modifications
 // Fiches de mise en service prêtes à remplir (une par équipement) : choix des équipements, PDF à imprimer
+// Matériel en vrac : toutes les fiches de l'affaire chargées d'un coup (PDF, fiches texte au format Pipe-Fit, texte collé),
+// reconnues, puis réparties dans les calculs de l'étude (terminaux, CTA, production, pompes, vase, ballon, bouches, robinetterie…)
+function dialogueVrac(et) {
+  let items = [];
+  const b = Modal.open(`<h2>📥 Matériel en vrac</h2><p class="muted petit">Chargez toutes les fiches techniques du chantier en une fois (PDF, fiches texte au format Pipe-Fit) ou collez plusieurs fiches séparées par une ligne <code>---</code>. Chaque fiche est reconnue (CTA, pompe, terminal, générateur, vase, ballon, bouche, vanne, appareil sanitaire), lue, puis vous choisissez où la répartir : rien n'est ressaisi.</p>
+    <p><label class="btn">💻 Choisir les fiches (plusieurs à la fois)<input type="file" id="vr-fichiers" multiple accept=".pdf,application/pdf,image/*,.txt,.md,text/plain" hidden></label></p>
+    <details><summary>📋 Coller des fiches au format Pipe-Fit</summary><textarea id="vr-texte" rows="8" style="width:100%" placeholder="Type : Terminal&#10;Fabricant : …&#10;Référence : …&#10;Puissance chaud : 3,2 kW&#10;---&#10;Type : Pompe&#10;…"></textarea>
+      <button class="secondaire petit" id="vr-coller">Ajouter les fiches collées</button></details>
+    <div id="vr-liste"></div>
+    <div class="actions"><button class="secondaire" id="vr-x">Fermer</button><button id="vr-ok" disabled>Répartir dans l'étude</button></div>`);
+  b.classList.add('large');
+  const circuitsPid = () => et.notes.filter(n => n.type === 'pid').flatMap(n => (n.entrees.circuits || []).filter(c => c.rep).map(c => c.rep));
+  const ajouter = (nom, lignes) => {
+    const type = Vrac.classer(lignes, nom), lu = Vrac.lire(type === 'inconnu' ? 'generateur' : type, lignes), d = Vrac.destinations(et, type);
+    items.push({ nom, lignes, type, lu, qte: 1, rep: '', local: '', circuit: '', cible: d.length ? d[0][0] : '' });
+  };
+  const rendre = () => {
+    const z = b.querySelector('#vr-liste'), circ = [...new Set(circuitsPid())];
+    b.querySelector('#vr-ok').disabled = !items.some(x => x.cible);
+    if (!items.length) { z.innerHTML = ''; return; }
+    z.innerHTML = `<div class="defile-x"><table class="edit"><thead><tr><th>Fiche</th><th>Type reconnu</th><th>Lu</th><th>Qté</th><th>Repère</th><th>Local</th><th>Répartir dans</th><th>Circuit (P&ID)</th><th></th></tr></thead><tbody>${items.map((x, i) => {
+      const d = Vrac.destinations(et, x.type);
+      return `<tr><td class="petit">${esc(x.nom)}</td>
+        <td><select data-vr="${i}" data-k="type">${Object.entries(Vrac.TYPES).map(([k, l]) => `<option value="${k}" ${k === x.type ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></td>
+        <td class="petit"><strong>${esc([x.lu.fabricant, x.lu.reference].filter(Boolean).join(' ') || '—')}</strong><br><span class="muted">${esc(x.lu.resume || `${x.lu.nb} valeur(s)`)}</span></td>
+        <td><input type="number" min="1" style="width:4em" data-vr="${i}" data-k="qte" value="${x.qte}"></td>
+        <td><input style="width:6em" data-vr="${i}" data-k="rep" value="${esc(x.rep)}" placeholder="auto"></td>
+        <td><input style="width:8em" data-vr="${i}" data-k="local" value="${esc(x.local)}"></td>
+        <td>${d.length ? `<select data-vr="${i}" data-k="cible"><option value="">— ne pas répartir —</option>${d.map(([k, l]) => `<option value="${esc(k)}" ${k === x.cible ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : `<span class="petit muted">${x.type === 'inconnu' ? 'Choisissez le type' : 'Aucun calcul de destination : ajoutez-le d\'abord'}</span>`}</td>
+        <td>${x.type === 'terminal' && circ.length ? `<select data-vr="${i}" data-k="circuit"><option value="">—</option>${circ.map(c => `<option ${c === x.circuit ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>` : ''}</td>
+        <td><button class="icone" data-vr-suppr="${i}" title="Retirer">✕</button></td></tr>`; }).join('')}</tbody></table></div>`;
+    z.querySelectorAll('[data-vr]').forEach(el => el.onchange = () => {
+      const x = items[+el.dataset.vr], k = el.dataset.k;
+      x[k] = el.value;
+      if (k === 'type') { x.lu = Vrac.lire(x.type === 'inconnu' ? 'generateur' : x.type, x.lignes); const d = Vrac.destinations(et, x.type); x.cible = d.length ? d[0][0] : ''; rendre(); }
+      else b.querySelector('#vr-ok').disabled = !items.some(y => y.cible);
+    });
+    z.querySelectorAll('[data-vr-suppr]').forEach(el => el.onclick = () => { items.splice(+el.dataset.vrSuppr, 1); rendre(); });
+  };
+  b.querySelector('#vr-x').onclick = Modal.close;
+  b.querySelector('#vr-coller').onclick = () => {
+    const blocs = Vrac.decouper(b.querySelector('#vr-texte').value);
+    if (!blocs.length) return toast('Collez d\'abord le texte des fiches.', 3000);
+    blocs.forEach((l, k) => ajouter(`Fiche collée ${items.length + 1}${blocs.length > 1 ? ` (${k + 1}/${blocs.length})` : ''}`, l));
+    b.querySelector('#vr-texte').value = ''; rendre();
+  };
+  b.querySelector('#vr-fichiers').onchange = async ev => {
+    const fichiers = [...ev.target.files]; ev.target.value = '';
+    const z = b.querySelector('#vr-liste');
+    for (const [k, f] of fichiers.entries()) {
+      z.insertAdjacentHTML('afterbegin', `<p class="petit muted vr-lecture">Lecture ${k + 1}/${fichiers.length} : ${esc(f.name)}…</p>`);
+      try {
+        if (/^text\//.test(f.type || '') || /\.(txt|md)$/i.test(f.name || '')) Vrac.decouper(await f.text()).forEach((l, j, t) => ajouter(t.length > 1 ? `${f.name} (${j + 1}/${t.length})` : f.name, l));
+        else ajouter(f.name, (await PdfLecture.lire(f, () => {}, { pagesMax: 12, ocr: typeof OCR !== 'undefined' })).lignes);
+      } catch (e) { toast(`${f.name} : lecture impossible (${e.message})`, 5000); }
+    }
+    rendre();
+  };
+  b.querySelector('#vr-ok').onclick = () => {
+    const comptes = [];
+    items.filter(x => x.cible).forEach(x => { try { const m = Vrac.appliquer(et, x, x.cible, nouvelleNote); if (m) comptes.push(m); } catch (e) { comptes.push(`${x.nom} : ${e.message}`); } });
+    if (!comptes.length) return toast('Rien à répartir.', 3000);
+    enregistrer(et); Modal.close(); App.render();
+    const r = Modal.open(`<h2>📥 Matériel réparti</h2><ul>${comptes.map(c => `<li>${esc(c)}</li>`).join('')}</ul><p class="muted petit">Les calculs sont recalculés avec les valeurs des fiches ; complétez ce qui reste à choisir (tronçon d'une bouche ou d'un point de puisage, branche d'une pompe).</p><div class="actions"><button id="vr-fin">OK</button></div>`);
+    r.querySelector('#vr-fin').onclick = Modal.close;
+  };
+}
+
 function dialogueFichesMes(et) {
   let liste = [];
   try { contexteEtude = et; liste = FichesMes.fiches(et, n => Liens.calculer(et, n)); } catch (e) { return toast(`Fiches impossibles : ${e.message}`, 6000); }

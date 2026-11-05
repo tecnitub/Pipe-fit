@@ -22,7 +22,7 @@ Règles strictes :
 3. Écris toujours l'unité après le nombre (kW, W, m3/h, mCE, kPa, Pa, °C, %, L, bar, dB(A), L/s).
 4. Virgule ou point décimal acceptés ; pas de séparateur de milliers (écris 6000 et non 6 000).
 5. Si une valeur n'est pas dans la fiche, SUPPRIME la ligne (n'invente rien, n'écris pas « NC »).
-6. Les deux premières lignes sont toujours « Fabricant : … » et « Référence : … ».
+6. Les trois premières lignes sont toujours « Type : … » (CTA, Pompe, Terminal, Générateur, Vase d'expansion, Ballon ECS, Bouche, Vanne…, Appareil sanitaire), « Fabricant : … » et « Référence : … ».
 7. Pour les courbes (pompe) et abaques (vanne), écris les points sur une seule ligne : « x:y ; x:y ; x:y ».
 8. Réponds uniquement avec le texte de la fiche, sans commentaire.
 Type d'équipement : [CTA | Pompe | Terminal | Générateur | Vase | Ballon ECS | Bouche | Vanne / robinetterie | Appareil sanitaire]
@@ -37,6 +37,7 @@ Calcul **Centrale de traitement d'air**, et schéma aéraulique relié. Les puis
 
 <!-- fiche: cta -->
 ```text
+Type : CTA
 Fabricant : Exemplair
 Référence : CTA-DF 4500
 Débit soufflage : 4500 m3/h
@@ -74,6 +75,7 @@ Calculs **Réseau / pompe**, **Réseau arborescent**, pompes du **Schéma de pri
 
 <!-- fiche: pompe -->
 ```text
+Type : Pompe
 Fabricant : Exemplair
 Référence : CX 40-8
 Point de fonctionnement : 4,2 m3/h à 6,5 mCE
@@ -94,6 +96,7 @@ Calcul **Terminaux** : une fiche par modèle, reprise sur la ligne choisie.
 
 <!-- fiche: terminal -->
 ```text
+Type : Terminal (cassette)
 Fabricant : Exemplair
 Référence : CK-36
 Puissance chaud : 3,2 kW
@@ -115,6 +118,7 @@ Calcul **Schéma de principe** (production).
 
 <!-- fiche: generateur -->
 ```text
+Type : Générateur (pompe à chaleur)
 Fabricant : Exemplair
 Référence : PAC-AE 150
 Puissance calorifique nominale : 150 kW
@@ -130,6 +134,7 @@ Calcul **Vase d'expansion**.
 
 <!-- fiche: vase -->
 ```text
+Type : Vase d'expansion
 Fabricant : Exemplair
 Référence : VX 80
 Volume nominal : 80 L
@@ -145,6 +150,7 @@ Calcul **Production d'eau chaude sanitaire**.
 
 <!-- fiche: ecs -->
 ```text
+Type : Ballon ECS
 Fabricant : Exemplair
 Référence : BS 500
 Volume nominal : 500 L
@@ -160,6 +166,7 @@ Schéma aéraulique en arborescence (une fiche par bouche).
 
 <!-- fiche: bouche -->
 ```text
+Type : Bouche (diffuseur plafonnier)
 Fabricant : Exemplair
 Référence : DF4-200
 Débit : 300 m3/h
@@ -175,6 +182,7 @@ Robinetterie du **Schéma de principe** et du **Réseau arborescent**. Pour une 
 
 <!-- fiche: robinet -->
 ```text
+Type : Vanne d'équilibrage
 Fabricant : Exemplair
 Référence : EQ-40
 DN 40
@@ -193,6 +201,7 @@ Calcul **Eau froide et eau chaude sanitaires** (une fiche par point de puisage).
 
 <!-- fiche: sanitaire -->
 ```text
+Type : Appareil sanitaire (mitigeur lavabo)
 Fabricant : Exemplair
 Référence : MT-200
 Débit : 0,15 l/s
