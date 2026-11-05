@@ -8,6 +8,8 @@ Ce modèle sert à **réécrire une fiche technique de fabricant** (PDF, catalog
 
 Les valeurs reconnues sont proposées une par une avant d'être reprises dans le calcul.
 
+**Tout le matériel d'un coup** : sur la page de l'étude, **📥 Matériel en vrac** accepte plusieurs PDF ou fichiers texte, ou plusieurs fiches collées à la suite, **séparées par une ligne `---`**. Chaque fiche est reconnue grâce à sa ligne `Type : …`, puis inscrite une seule fois au **🗂️ registre des équipements** de l'étude et répartie dans les calculs (terminaux, CTA, production, pompes, robinetterie, vase, ballon, bouches, points de puisage). Les calculs reprennent les valeurs du registre, verrouillées : corriger une valeur ou remplacer la fiche dans le registre met à jour tous les emplacements.
+
 ---
 
 ## Consigne à donner à Claude (dans une autre conversation)

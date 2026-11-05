@@ -13,7 +13,14 @@ const Liens = ((N, Sc) => {
   const ROLES = { reseau: 'réseau et pompe', vanne: 'vanne de régulation', vase: 'vase d\'expansion' };
 
   // Entrées effectives d'une note : { entrees, verrous: { champ ou 'liste.i.colonne': libellé de la source }, alertes, source }
-  function resoudre(etude, note, pile = new Set()) {
+  // Valeurs reprises du registre des équipements (modèle relié) : verrouillées comme les autres liens
+  const Rg = () => (typeof Registre !== 'undefined' ? Registre : (() => { try { return require('./registre'); } catch (e) { return null; } })());
+  function resoudre(etude, note, pile) {
+    const r = resoudreLiens(etude, note, pile), R = etude && (etude.equipements || []).length ? Rg() : null;
+    if (R) Object.entries(R.verrous(etude, note)).forEach(([k, v]) => { if (!r.verrous[k]) r.verrous[k] = v; });
+    return r;
+  }
+  function resoudreLiens(etude, note, pile = new Set()) {
     const e = { ...N.defauts(note.type), ...copie(note.entrees || {}) }, verrous = {}, alertes = [];
     const notes = (etude && etude.notes) || [], libelle = n => `N${notes.indexOf(n) + 1} — ${n.titre}`;
     if (pile.has(note.id)) return { entrees: e, verrous, alertes: [{ niveau: 'erreur', texte: 'Liens circulaires entre calculs.' }], source: null };

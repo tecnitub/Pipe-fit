@@ -76,6 +76,8 @@ const corpsEtude = et => { let resume; try { resume = et.modele ? undefined : re
 // Enregistrement différé (une requête à la fois par étude, contrôle de version)
 function enregistrer(etude) {
   if (!S.etudes.includes(etude)) S.etudes.unshift(etude);
+  // Registre des équipements : fiches des calculs inscrites, valeurs du registre reportées sur tous les emplacements
+  if (!etude.modele && typeof Registre !== 'undefined') { try { Registre.synchroniser(etude); } catch (e) { /* étude incomplète */ } }
   const st = S.enCours.get(etude.id) || {};
   clearTimeout(st.t);
   st.t = setTimeout(async () => {
@@ -374,6 +376,8 @@ Vues.etude = {
     if (!et) return '<p class="erreur">Étude introuvable.</p><p><a href="#/">Retour aux études</a></p>';
     if (noteId === 'comparer') return Vues.comparer.html(et, ids);
     if (noteId) return Vues.note.html(et, noteId);
+    // Études faites avant le registre : fiches déjà chargées inscrites au registre des équipements
+    if (!et.modele && typeof Registre !== 'undefined' && !et.equipements) { try { if (Registre.collecter(et)) enregistrer(et); else et.equipements = []; } catch (e) { /* étude incomplète */ } }
     const a = affaireDe(et.affaireId);
     return `<div class="barre"><a href="#/" class="secondaire btn petit">← Études</a><h1 class="titre-etude">${esc(et.objet)}</h1><span class="badge pf">${et.modele ? 'Modèle' : `Indice ${esc(et.indice)}`}</span>
         <span class="espace"></span><span class="muted petit" id="etat-enreg"></span><button class="secondaire" id="inventaire">📑 CCTP / DPGF</button><button class="secondaire" id="materiel">🏷️ Matériel retenu</button><button class="secondaire" id="chiffrer">💶 Métré et chiffrage</button><button id="pdf">📄 Note de calcul PDF</button></div>
@@ -393,6 +397,7 @@ Vues.etude = {
           <span class="espace"></span><button class="secondaire petit" id="dupliquer">Dupliquer l'étude</button>${et.modele ? '' : '<button class="secondaire petit" id="modele">⭐ Enregistrer comme modèle</button>'}<button class="secondaire petit" id="supprimer">Supprimer</button></div></div>
       ${(et.inventaire || []).length ? (() => { const inc = et.inventaire.filter(x => x.inclus !== false), nb = c => inc.filter(x => x.categorie === c).reduce((t, x) => t + (Notes.num(x.qte) || 1), 0), lignes = c => inc.filter(x => x.categorie === c).length;
         return `<div class="carte petit">📑 <strong>Inventaire du dossier de consultation</strong> : ${nb('producteur')} producteur(s), ${lignes('emetteur')} type(s) d'émetteurs, ${lignes('auxiliaire')} type(s) d'auxiliaires — ${esc([...new Set(inc.map(x => InventaireCVC.GENRES[x.genre] && InventaireCVC.GENRES[x.genre].libelle).filter(Boolean))].join(', '))} <button class="secondaire petit" id="inventaire2">Voir / préremplir</button></div>`; })() : ''}
+      ${typeof carteRegistre === 'function' ? carteRegistre(et) : ''}
       ${typeof carteMateriel === 'function' ? carteMateriel(et) : ''}
       ${carteDocuments(et)}
       ${tableauBordHtml(et)}
@@ -412,8 +417,9 @@ Vues.etude = {
     if (noteId) return Vues.note.bind(root, et, noteId);
     const fm = root.querySelector('#fiches-mes');
     if (fm) fm.onclick = () => dialogueFichesMes(et);
-    const vr = root.querySelector('#vrac');
-    if (vr) vr.onclick = () => dialogueVrac(et);
+    root.querySelectorAll('#vrac, #vrac2').forEach(b => { b.onclick = () => dialogueVrac(et); });
+    const rg = root.querySelector('#registre');
+    if (rg) rg.onclick = () => dialogueRegistre(et);
     root.querySelectorAll('[data-e]').forEach(el => {
       el.onchange = el.oninput = () => {
         et[el.dataset.e] = el.value;
@@ -647,6 +653,8 @@ function appliquerFiche(et, n, lignesTexte, nomFichier) {
     // Fiche gardée avec le calcul de la centrale (et avec le schéma, pour la pression disponible face au réseau calculé)
     const f = Mod.fiche(r, fichier.name);
     (cible ? [cible, n] : [n]).forEach(x => { x.entrees.fiche = f; });
+    const exclus = new Set(lignes.filter((c, i) => !b.querySelector(`[data-fc="${i}"]`).checked).map(c => c.cle)), lue = Object.fromEntries(Object.entries(r.valeurs).filter(([c]) => !exclus.has(c)));
+    (cible ? [cible, n] : [n]).forEach(x => { if (typeof Registre !== 'undefined') Registre.lier(et, x, x.entrees, lue); });
     enregistrer(et); Modal.close(); App.render();
     toast(`${k} valeur(s) reprise(s) de la fiche${controles.length ? ' ; pression disponible et puissances contrôlées dans les résultats' : ''}`, 5000);
   };
@@ -697,7 +705,8 @@ function appliquerFichePompe(et, n, lignesTexte, nomFichier) {
   const k = ciblePompe; ciblePompe = '';
   const courbe = Pompes.lireFiche(lignesTexte), f = Schema.lireFicheRobinet(lignesTexte), nom = [f.fabricant, f.reference].filter(Boolean).join(' '), fiche = { nom: String(nomFichier || '').slice(0, 120), fabricant: f.fabricant, reference: f.reference };
   if (k === 'reseau') { if (courbe) n.entrees.pompeCourbe = courbe; if (nom) n.entrees.pompeRef = nom; n.entrees.pompeFiche = fiche; }
-  else { const p = (n.entrees.pompesFab || [])[+k]; if (!p) return; if (courbe) p.courbe = courbe; if (nom) p.ref = nom; p.fiche = fiche; }
+  else { const p = (n.entrees.pompesFab || [])[+k]; if (!p) return; if (courbe) p.courbe = courbe; if (nom) p.ref = nom; p.fiche = fiche; Registre.lier(et, n, p); }
+  if (k === 'reseau') Registre.lier(et, n, n.entrees);
   enregistrer(et); App.render();
   toast(courbe ? `Courbe de la pompe lue (${courbe.split(';').length} points)${nom ? ` — ${nom}` : ''} : point de fonctionnement recalculé` : 'Fiche jointe ; courbe non reconnue : saisissez-la « Q:H ; Q:H … » (m³/h:mCE)', 6000);
 }
@@ -713,6 +722,7 @@ function appliquerFicheRobinet(et, n, lignesTexte, nomFichier) {
   if (f.valeurs.abaque && r.type === 'equilibrage') r.abaque = f.valeurs.abaque;
   if (nom) r.ref = nom;
   r.fiche = { nom: String(nomFichier || '').slice(0, 120), fabricant: f.fabricant, reference: f.reference };
+  Registre.lier(et, n, r, f.valeurs);
   enregistrer(et); App.render();
   toast(`Fiche reprise sur ${r.rep || 'l\'organe'} : ${[f.valeurs.kv !== undefined && `Kv ${String(f.valeurs.kv).replace('.', ',')}`, f.valeurs.dn !== undefined && `DN ${f.valeurs.dn}`, f.valeurs.tours !== undefined && `${String(f.valeurs.tours).replace('.', ',')} tours`, f.valeurs.abaque && 'abaque tours / Kv', f.valeurs.dp !== undefined && `ΔP ${String(Math.round(f.valeurs.dp * 10) / 10).replace('.', ',')} kPa`, nom].filter(Boolean).join(', ') || 'fiche jointe (aucune valeur lue : saisissez le Kv ou la ΔP)'} — HMT de la pompe recalculée`, 6000);
 }
@@ -725,6 +735,7 @@ function appliquerFichePoint(et, n, lignesTexte, nomFichier) {
   if (r.valeurs.pMin !== undefined) p.pMin = r.valeurs.pMin;
   if (nom) p.ref = nom;
   p.fiche = { nom: String(nomFichier || '').slice(0, 120), fabricant: r.fabricant, reference: r.reference };
+  Registre.lier(et, n, p, r.valeurs);
   enregistrer(et); App.render();
   toast(`Fiche reprise sur ${p.rep || 'le point'} : ${[r.valeurs.q !== undefined && `débit ${String(r.valeurs.q).replace('.', ',')} L/s`, r.valeurs.pMin !== undefined && `pression mini ${String(r.valeurs.pMin).replace('.', ',')} bar`].filter(Boolean).join(', ') || 'référence seule (débits du DTU conservés)'}`, 6000);
 }
@@ -739,6 +750,7 @@ function appliquerFicheBouche(et, n, lignesTexte, nomFichier) {
   if (r.valeurs.Lw !== undefined) b.Lw = r.valeurs.Lw;
   if (nom) b.ref = nom;
   b.fiche = { nom: String(nomFichier || '').slice(0, 120), fabricant: r.fabricant, reference: r.reference };
+  Registre.lier(et, n, b, r.valeurs);
   enregistrer(et); App.render();
   toast(`Fiche reprise sur ${b.rep || 'la bouche'} : ${[r.valeurs.dp !== undefined && `ΔP ${r.valeurs.dp} Pa`, r.valeurs.Lw !== undefined && `Lw ${r.valeurs.Lw} dB(A)`].filter(Boolean).join(', ')}${r.valeurs.Q && Notes.num(b.Q) && Math.abs(r.valeurs.Q - Notes.num(b.Q)) / Notes.num(b.Q) > 0.1 ? ` — attention, fiche sélectionnée à ${r.valeurs.Q} m³/h pour ${b.Q} m³/h` : ''}`, 6000);
 }
@@ -763,6 +775,7 @@ function appliquerFicheTerminal(et, n, lignesTexte, nomFichier) {
     cles.forEach(k => { if (b.querySelector(`[data-tf="${k}"]`).checked) l[Terminaux.LIBELLES[k][2]] = r.valeurs[k]; });
     if (nom) l.ref = nom;
     l.fiche = { nom: String(nomFichier || '').slice(0, 120), fabricant: r.fabricant, reference: r.reference };
+    Registre.lier(et, n, l, Object.fromEntries(Object.entries(r.valeurs).filter(([k]) => !cles.includes(k) || b.querySelector(`[data-tf="${k}"]`).checked)));
     ligneCibleTerminal = '';
     enregistrer(et); Modal.close(); App.render(); toast(`Fiche reprise sur ${l.rep} : puissances et données électriques reportées au bilan électrique`, 5000);
   };
@@ -777,6 +790,7 @@ Vues.note = {
     n.entrees = completer(n.type, n.entrees || {});
     contexteEtude = et;
     const lien = Liens.description(et, n), ctx = ctxEtude(et, n);
+    const nReg = typeof Registre !== 'undefined' ? Registre.emplacements({ notes: [n] }).filter(p => Registre.parId(et, p.eq)).length : 0;
     // Alimentation électrique : équipements de l'étude repris automatiquement (terminaux, CTA, producteurs, réseaux),
     // lignes ajoutées à la main gardées
     let auto = '';
@@ -786,6 +800,7 @@ Vues.note = {
       const r = Electricite.fusionner((n.entrees || {}).equipements, Electricite.equipementsEtude(et, Liens), new Set(et.notes.map(x => x.id)));
       if (r.ajoutees || r.majs || r.retirees) { n.entrees = { ...n.entrees, equipements: r.lignes }; enregistrer(et); auto = `<div class="bandeau-lien">⚡ Bilan mis à jour depuis l'étude : ${[r.ajoutees && `${r.ajoutees} équipement(s) ajouté(s)`, r.majs && `${r.majs} mis à jour`, r.retirees && `${r.retirees} retiré(s) (calcul supprimé)`].filter(Boolean).join(', ')}.</div>`; }
     }
+    if (nReg) auto += `<div class="bandeau-lien">🗂️ ${nReg} élément(s) repris du registre des équipements : valeurs des fiches verrouillées, à corriger dans le registre (mise à jour de tous les calculs). <button class="secondaire petit" data-ouvrir-registre>Ouvrir le registre</button></div>`;
     return `${auto}<div class="barre"><a href="#/etude/${et.id}" class="secondaire btn petit">← ${esc(et.objet)}</a><span class="ico-titre">${t.icone}</span><span class="muted">N${i + 1}</span>
         <input class="titre-note" data-n="titre" value="${esc(n.titre)}" aria-label="Titre du calcul"><span class="muted petit" id="etat-enreg"></span></div>
       <p class="muted petit">${esc(t.description)}</p>
@@ -1007,7 +1022,7 @@ function dialogueVrac(et) {
     <details><summary>📋 Coller des fiches au format Pipe-Fit</summary><textarea id="vr-texte" rows="8" style="width:100%" placeholder="Type : Terminal&#10;Fabricant : …&#10;Référence : …&#10;Puissance chaud : 3,2 kW&#10;---&#10;Type : Pompe&#10;…"></textarea>
       <button class="secondaire petit" id="vr-coller">Ajouter les fiches collées</button></details>
     <div id="vr-liste"></div>
-    <div class="actions"><button class="secondaire" id="vr-x">Fermer</button><button id="vr-ok" disabled>Répartir dans l'étude</button></div>`);
+    <div class="actions"><button class="secondaire" id="vr-x">Fermer</button><button id="vr-ok" disabled>Inscrire au registre et répartir</button></div>`);
   b.classList.add('large');
   const circuitsPid = () => et.notes.filter(n => n.type === 'pid').flatMap(n => (n.entrees.circuits || []).filter(c => c.rep).map(c => c.rep));
   const ajouter = (nom, lignes) => {
@@ -1016,7 +1031,7 @@ function dialogueVrac(et) {
   };
   const rendre = () => {
     const z = b.querySelector('#vr-liste'), circ = [...new Set(circuitsPid())];
-    b.querySelector('#vr-ok').disabled = !items.some(x => x.cible);
+    b.querySelector('#vr-ok').disabled = !items.some(x => x.type !== 'inconnu');
     if (!items.length) { z.innerHTML = ''; return; }
     z.innerHTML = `<div class="defile-x"><table class="edit"><thead><tr><th>Fiche</th><th>Type reconnu</th><th>Lu</th><th>Qté</th><th>Repère</th><th>Local</th><th>Répartir dans</th><th>Circuit (P&ID)</th><th></th></tr></thead><tbody>${items.map((x, i) => {
       const d = Vrac.destinations(et, x.type);
@@ -1026,14 +1041,14 @@ function dialogueVrac(et) {
         <td><input type="number" min="1" style="width:4em" data-vr="${i}" data-k="qte" value="${x.qte}"></td>
         <td><input style="width:6em" data-vr="${i}" data-k="rep" value="${esc(x.rep)}" placeholder="auto"></td>
         <td><input style="width:8em" data-vr="${i}" data-k="local" value="${esc(x.local)}"></td>
-        <td>${d.length ? `<select data-vr="${i}" data-k="cible"><option value="">— ne pas répartir —</option>${d.map(([k, l]) => `<option value="${esc(k)}" ${k === x.cible ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : `<span class="petit muted">${x.type === 'inconnu' ? 'Choisissez le type' : 'Aucun calcul de destination : ajoutez-le d\'abord'}</span>`}</td>
+        <td>${d.length ? `<select data-vr="${i}" data-k="cible"><option value="">Registre seulement (à placer plus tard)</option>${d.map(([k, l]) => `<option value="${esc(k)}" ${k === x.cible ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : `<span class="petit muted">${x.type === 'inconnu' ? 'Choisissez le type' : 'Registre seulement : aucun calcul ne reçoit encore ce type'}</span>`}</td>
         <td>${x.type === 'terminal' && circ.length ? `<select data-vr="${i}" data-k="circuit"><option value="">—</option>${circ.map(c => `<option ${c === x.circuit ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>` : ''}</td>
         <td><button class="icone" data-vr-suppr="${i}" title="Retirer">✕</button></td></tr>`; }).join('')}</tbody></table></div>`;
     z.querySelectorAll('[data-vr]').forEach(el => el.onchange = () => {
       const x = items[+el.dataset.vr], k = el.dataset.k;
       x[k] = el.value;
       if (k === 'type') { x.lu = Vrac.lire(x.type === 'inconnu' ? 'generateur' : x.type, x.lignes); const d = Vrac.destinations(et, x.type); x.cible = d.length ? d[0][0] : ''; rendre(); }
-      else b.querySelector('#vr-ok').disabled = !items.some(y => y.cible);
+      else b.querySelector('#vr-ok').disabled = !items.some(y => y.type !== 'inconnu');
     });
     z.querySelectorAll('[data-vr-suppr]').forEach(el => el.onclick = () => { items.splice(+el.dataset.vrSuppr, 1); rendre(); });
   };
@@ -1058,11 +1073,12 @@ function dialogueVrac(et) {
   };
   b.querySelector('#vr-ok').onclick = () => {
     const comptes = [];
-    items.filter(x => x.cible).forEach(x => { try { const m = Vrac.appliquer(et, x, x.cible, nouvelleNote); if (m) comptes.push(m); } catch (e) { comptes.push(`${x.nom} : ${e.message}`); } });
+    items.filter(x => x.type !== 'inconnu').forEach(x => { try { const m = Vrac.appliquer(et, x, x.cible, nouvelleNote); if (m) comptes.push(m); } catch (e) { comptes.push(`${x.nom} : ${e.message}`); } });
     if (!comptes.length) return toast('Rien à répartir.', 3000);
     enregistrer(et); Modal.close(); App.render();
-    const r = Modal.open(`<h2>📥 Matériel réparti</h2><ul>${comptes.map(c => `<li>${esc(c)}</li>`).join('')}</ul><p class="muted petit">Les calculs sont recalculés avec les valeurs des fiches ; complétez ce qui reste à choisir (tronçon d'une bouche ou d'un point de puisage, branche d'une pompe).</p><div class="actions"><button id="vr-fin">OK</button></div>`);
+    const r = Modal.open(`<h2>📥 Matériel réparti</h2><ul>${comptes.map(c => `<li>${esc(c)}</li>`).join('')}</ul><p class="muted petit">Chaque modèle est inscrit une fois au registre des équipements ; les calculs reprennent ses valeurs. Complétez ce qui reste à choisir (tronçon d'une bouche ou d'un point de puisage, branche d'une pompe).</p><div class="actions"><button class="secondaire" id="vr-reg">Ouvrir le registre</button><button id="vr-fin">OK</button></div>`);
     r.querySelector('#vr-fin').onclick = Modal.close;
+    r.querySelector('#vr-reg').onclick = () => dialogueRegistre(et);
   };
 }
 

@@ -16,6 +16,7 @@ global.FicheCta = require('../etudes/public/js/fiche-cta');
 global.FicheEquip = require('../etudes/public/js/fiche-equipement');
 require('../etudes/public/js/cta');
 global.SchemaAir = require('../etudes/public/js/aeraulique-schema');
+global.Registre = require('../etudes/public/js/registre');
 const V = require('../etudes/public/js/vrac');
 
 const doc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'MODELE-FICHE-TECHNIQUE.md'), 'utf8');
