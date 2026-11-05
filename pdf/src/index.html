@@ -184,6 +184,17 @@
     <div class="groupe-outils">
       <button id="ed-caviarder" title="Rechercher un mot ou un nom dans tous les PDF et le caviarder partout">■ Caviarder un mot…</button>
       <button id="ed-csv" title="Exporter toutes les mesures du dossier dans un tableau (Excel)">⬇ Mesures (CSV)</button>
+      <span class="zoom-ed" title="Zoom : Ctrl + molette (ou pincer le pavé tactile) ; Ctrl + / Ctrl − ; Ctrl 0 : page entière. Espace + glisser (ou bouton du milieu) pour déplacer la page.">
+        <button id="ed-zoom-moins" title="Zoom arrière (Ctrl −)">−</button>
+        <select id="ed-zoom">
+          <option value="actuel">100 %</option>
+          <option value="page">Page entière</option><option value="largeur">Pleine largeur</option>
+          <option value="0.5">50 %</option><option value="0.75">75 %</option><option value="1">100 %</option><option value="1.5">150 %</option>
+          <option value="2">200 %</option><option value="3">300 %</option><option value="4">400 %</option><option value="8">800 %</option>
+        </select>
+        <button id="ed-zoom-plus" title="Zoom avant (Ctrl +)">+</button>
+      </span>
+      <button id="ed-vignettes-bascule" title="Afficher ou masquer les vignettes des pages">▤</button>
       <button id="ed-prec" title="Page précédente (Page préc.)">◀</button>
       <span id="ed-num"></span>
       <button id="ed-suiv" title="Page suivante (Page suiv.)">▶</button>
@@ -201,10 +212,13 @@
     <div class="tp-entete"><b>Mes signatures et images</b></div>
     <div id="tp-biblio" class="tp-biblio"></div>
   </div>
-  <div class="ed-scene" id="ed-scene">
-    <div class="ed-page" id="ed-page">
-      <canvas id="ed-canvas"></canvas>
-      <div class="calque" id="ed-calque"></div>
+  <div class="ed-corps">
+    <aside id="ed-vignettes" class="ed-vignettes" title="Cliquer : aller à la page · glisser : déplacer la page · déposer des PDF ou images : les insérer"></aside>
+    <div class="ed-scene" id="ed-scene">
+      <div class="ed-page" id="ed-page">
+        <canvas id="ed-canvas"></canvas>
+        <div class="calque" id="ed-calque"></div>
+      </div>
     </div>
   </div>
   <div class="ed-aide"><span id="ed-recap" class="recap"></span> Glisser pour tracer · double-clic sur un texte ou une bulle pour le corriger · Ctrl+V colle une image ou un texte · Échap revient à la sélection · Ctrl+Z annule.

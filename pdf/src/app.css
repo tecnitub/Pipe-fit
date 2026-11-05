@@ -221,3 +221,27 @@ svg.forme path.prise { stroke: transparent; fill: none; stroke-width: 14px; poin
 .el-texteModifie[contenteditable=true] { cursor: text; outline: 2px solid #2f80ed; outline-offset: 1px; user-select: text; }
 #ed-police-zone { display: inline-flex; gap: 6px; align-items: center; }
 #ed-police-zone[hidden] { display: none; }
+
+/* Zoom de la page */
+.zoom-ed { display: inline-flex; gap: 3px; align-items: center; }
+.zoom-ed select { width: 118px !important; }
+.ed-scene.main { cursor: grab; }
+.ed-scene.main .calque, .ed-scene.glisse .calque { pointer-events: none; }
+.ed-scene.glisse { cursor: grabbing; }
+
+/* Vignettes des pages à gauche de la vue d'une page */
+.ed-corps { flex: 1; display: flex; min-height: 0; }
+.ed-corps .ed-scene { flex: 1; min-width: 0; }
+.ed-vignettes { width: 158px; flex: none; overflow-y: auto; background: #2a313b; padding: 10px 8px 30px; display: flex; flex-direction: column; gap: 12px; }
+.ed-vignettes[hidden] { display: none; }
+.ed-vignettes.survol { outline: 3px dashed #2f80ed; outline-offset: -4px; background: #2f3a48; }
+.vg { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; border-radius: 6px; padding: 5px 4px 3px; border: 2px solid transparent; color: #cfd6df; font-size: 11px; }
+.vg:hover { background: rgba(255,255,255,.06); }
+.vg.courante { border-color: #2f80ed; background: rgba(47,128,237,.18); color: #fff; }
+.vg.glisse { opacity: .35; }
+.vg .boite-vg { width: 128px; height: 128px; display: flex; align-items: center; justify-content: center; }
+.vg canvas, .vg .attente { display: block; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.vg .nom-vg { max-width: 136px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vg.avant::before, .vg.apres::after { content: ""; position: absolute; left: 4px; right: 4px; height: 4px; background: #2f80ed; border-radius: 2px; }
+.vg.avant::before { top: -8px; }
+.vg.apres::after { bottom: -8px; }

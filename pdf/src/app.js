@@ -396,10 +396,10 @@
     return s.img;
   }
   // Rendu sans les éléments ajoutés. largeurPx : largeur CSS voulue
-  async function rendrePage(p, canvas, largeurPx) {
+  async function rendrePage(p, canvas, largeurPx, resolution = null) {
     const d = dims(p);
     const ech = largeurPx / d.l;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = resolution || window.devicePixelRatio || 1;
     canvas.width = Math.max(1, Math.round(d.l * ech * dpr));
     canvas.height = Math.max(1, Math.round(d.h * ech * dpr));
     canvas.style.width = `${Math.round(d.l * ech)}px`;
@@ -591,6 +591,7 @@
     });
     majSources();
     majBoutons();
+    majVignettesEditeur();
     planifierSauvegarde();
   }
 
@@ -1132,24 +1133,126 @@
     ed.elements = structuredClone(p.elements);
     ed.choisi = null;
     ed.hist = [];
-    const i = etat.pages.indexOf(p);
-    $('#ed-num').textContent = `Page ${i + 1} / ${etat.pages.length}`;
-    $('#ed-prec').disabled = i <= 0;
-    $('#ed-suiv').disabled = i >= etat.pages.length - 1;
-    const scene = $('#ed-scene');
-    const d = dims(p);
-    const largeur = Math.min(scene.clientWidth - 40, (scene.clientHeight - 40) * d.l / d.h, 1400);
-    const canvas = $('#ed-canvas');
-    const r = await rendrePage(p, canvas, Math.max(200, largeur));
-    ed.ech = r.ech; // pixels CSS par point
+    majVignettesEditeur();
+    $('#ed-scene').scrollTo(0, 0);
+    await afficherPage();
     // Page pdf.js (polices chargées par l'affichage : nom, gras, italique pour « Modifier le texte »)
     ed.pagePdfjs = p.type === 'pdf' ? await (await etat.sources.get(p.source).doc).getPage(p.index + 1) : null;
     if (ed.outil === 'editertexte') preparerLignes();
-    ed.L = parseFloat(canvas.style.width); ed.H = parseFloat(canvas.style.height);
+  }
+
+  // ----- Zoom de la page -----
+  // ed.zoom : 'page' (page entière), 'largeur' (pleine largeur) ou un facteur (1 = taille réelle : 1 pt = 96/72 pixel)
+  const ZOOM_MIN = 0.1, ZOOM_MAX = 8, PX_PAR_PT = 96 / 72;
+  const PIXELS_MAX = 36e6; // au-delà, la page est dessinée moins finement (mémoire, rapidité)
+  ed.zoom = 'page';
+  function largeurVoulue() {
+    const scene = $('#ed-scene');
+    const d = dims(ed.page);
+    if (ed.zoom === 'largeur') return Math.max(200, scene.clientWidth - 40);
+    if (ed.zoom === 'page') return Math.max(200, Math.min(scene.clientWidth - 40, (scene.clientHeight - 40) * d.l / d.h));
+    return d.l * PX_PAR_PT * ed.zoom;
+  }
+  const zoomEffectif = () => ed.L / (dims(ed.page).l * PX_PAR_PT);
+  // Taille et calque mis à jour tout de suite ; dessin net de la page un instant après (zoom à la molette fluide)
+  let minuterieRendu = null, numeroRendu = 0;
+  function appliquerTaille(largeur) {
+    const d = dims(ed.page);
+    ed.ech = largeur / d.l;
+    ed.L = Math.round(d.l * ed.ech); ed.H = Math.round(d.h * ed.ech);
+    const c = $('#ed-canvas');
+    c.style.width = `${ed.L}px`; c.style.height = `${ed.H}px`;
     $('#ed-page').style.width = `${ed.L}px`;
     $('#ed-page').style.height = `${ed.H}px`;
     dessinerCalque();
+    majAffichageZoom();
   }
+  async function dessinerNet() {
+    const p = ed.page, n = ++numeroRendu;
+    const d = dims(p);
+    const dpr = window.devicePixelRatio || 1;
+    const resolution = Math.min(dpr, Math.sqrt(PIXELS_MAX / (d.l * ed.ech * d.h * ed.ech)));
+    // Dessin dans un canvas à part, recopié à la fin : un nouveau zoom pendant le dessin ne le perturbe pas
+    const tmp = document.createElement('canvas');
+    await rendrePage(p, tmp, ed.L, resolution);
+    if (n !== numeroRendu || ed.page !== p) return;
+    const c = $('#ed-canvas');
+    c.width = tmp.width; c.height = tmp.height;
+    c.getContext('2d').drawImage(tmp, 0, 0);
+    tmp.width = tmp.height = 0;
+    c.style.width = `${ed.L}px`; c.style.height = `${ed.H}px`;
+  }
+  async function afficherPage() {
+    finirSaisie();
+    clearTimeout(minuterieRendu);
+    appliquerTaille(largeurVoulue());
+    await dessinerNet();
+  }
+  // Zoom autour d'un point de l'écran (souris) ou du centre de la vue
+  function zoomer(nouveau, ecranX = null, ecranY = null) {
+    if (!ed.page) return;
+    finirSaisie();
+    const scene = $('#ed-scene');
+    const rs = scene.getBoundingClientRect();
+    const ex = ecranX ?? rs.left + scene.clientWidth / 2, ey = ecranY ?? rs.top + scene.clientHeight / 2;
+    const rp = $('#ed-page').getBoundingClientRect();
+    const fx = (ex - rp.left) / rp.width, fy = (ey - rp.top) / rp.height;
+    ed.zoom = typeof nouveau === 'number' ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, nouveau)) : nouveau;
+    appliquerTaille(largeurVoulue());
+    // Le point visé reste sous la souris
+    const rp2 = $('#ed-page').getBoundingClientRect();
+    scene.scrollLeft += rp2.left + fx * rp2.width - ex;
+    scene.scrollTop += rp2.top + fy * rp2.height - ey;
+    clearTimeout(minuterieRendu);
+    minuterieRendu = setTimeout(dessinerNet, 180);
+  }
+  const PALIERS = [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 6, 8];
+  function zoomPalier(sens, x, y) {
+    const z = zoomEffectif();
+    const suivant = sens > 0 ? PALIERS.find(v => v > z * 1.01) ?? ZOOM_MAX : [...PALIERS].reverse().find(v => v < z * 0.99) ?? ZOOM_MIN;
+    zoomer(suivant, x, y);
+  }
+  function majAffichageZoom() {
+    const sel = $('#ed-zoom');
+    const pct = Math.round(zoomEffectif() * 100);
+    sel.querySelector('option[value=actuel]').textContent = `${pct} %`;
+    sel.value = typeof ed.zoom === 'number' && PALIERS.some(v => Math.abs(v - ed.zoom) < 1e-6) ? String(ed.zoom) : (typeof ed.zoom === 'string' ? ed.zoom : 'actuel');
+  }
+  $('#ed-zoom').addEventListener('change', () => {
+    const v = $('#ed-zoom').value;
+    if (v !== 'actuel') zoomer(v === 'page' || v === 'largeur' ? v : Number(v));
+  });
+  $('#ed-zoom-moins').addEventListener('click', () => zoomPalier(-1));
+  $('#ed-zoom-plus').addEventListener('click', () => zoomPalier(1));
+  // Ctrl + molette (ou pincement du pavé tactile) : zoom autour de la souris, sans zoomer toute la fenêtre
+  $('#ed-scene').addEventListener('wheel', ev => {
+    if (!ev.ctrlKey && !ev.metaKey) return;
+    ev.preventDefault();
+    const facteur = Math.exp(-ev.deltaY * (ev.deltaMode === 1 ? 0.05 : 0.0025));
+    zoomer(zoomEffectif() * facteur, ev.clientX, ev.clientY);
+  }, { passive: false });
+  // Déplacer la page agrandie : glisser avec le bouton du milieu, ou en maintenant la barre d'espace
+  let espace = false;
+  document.addEventListener('keydown', ev => {
+    if (ev.code === 'Space' && !$('#editeur').hidden && !document.activeElement?.isContentEditable && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName)) {
+      ev.preventDefault();
+      if (!espace) { espace = true; $('#ed-scene').classList.add('main'); }
+    }
+  });
+  document.addEventListener('keyup', ev => { if (ev.code === 'Space') { espace = false; $('#ed-scene').classList.remove('main'); } });
+  $('#ed-scene').addEventListener('pointerdown', ev => {
+    if (!(ev.button === 1 || (ev.button === 0 && espace))) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const scene = $('#ed-scene');
+    const x0 = ev.clientX, y0 = ev.clientY, sl = scene.scrollLeft, st = scene.scrollTop;
+    scene.setPointerCapture(ev.pointerId);
+    scene.classList.add('glisse');
+    const bouger = m => { scene.scrollLeft = sl - (m.clientX - x0); scene.scrollTop = st - (m.clientY - y0); };
+    const fin = () => { scene.removeEventListener('pointermove', bouger); scene.removeEventListener('pointerup', fin); scene.classList.remove('glisse'); };
+    scene.addEventListener('pointermove', bouger);
+    scene.addEventListener('pointerup', fin);
+  }, true);
   function validerEditeur() {
     if (!ed.page) return;
     finirSaisie();
@@ -1161,10 +1264,166 @@
   }
   function fermerEditeur() { validerEditeur(); $('#editeur').hidden = true; ed.page = null; }
   function changerPage(sens) {
-    validerEditeur();
     const i = etat.pages.indexOf(ed.page) + sens;
-    if (etat.pages[i]) { etat.selection = new Set([etat.pages[i].id]); rafraichir(); chargerDansEditeur(etat.pages[i]); }
+    if (etat.pages[i]) allerA(etat.pages[i]);
   }
+  function allerA(p) {
+    if (p === ed.page) return;
+    validerEditeur();
+    etat.selection = new Set([p.id]);
+    rafraichir();
+    chargerDansEditeur(p);
+  }
+  // Numéro de page et flèches (la page courante peut avoir changé de place)
+  function majNavigation() {
+    if (!ed.page) return;
+    const i = etat.pages.indexOf(ed.page);
+    $('#ed-num').textContent = `Page ${i + 1} / ${etat.pages.length}`;
+    $('#ed-prec').disabled = i <= 0;
+    $('#ed-suiv').disabled = i >= etat.pages.length - 1;
+  }
+
+  // ----- Vignettes des pages, à gauche de la vue d'une page -----
+  const colonne = $('#ed-vignettes');
+  const vgCartes = new Map();
+  const TAILLE_VG = 128;
+  try { colonne.hidden = localStorage.getItem('atelierpdf.vignettes') === '0'; } catch { /* rien */ }
+  const cleVg = p => `${p.type}|${p.source}|${p.index}|${rotTotale(p)}|${JSON.stringify(p.elements)}`;
+  const obsVg = new IntersectionObserver(entrees => entrees.forEach(en => {
+    en.target.visible = en.isIntersecting;
+    if (en.isIntersecting && en.target.sale) demanderVg(en.target);
+  }), { root: colonne, rootMargin: '300px' });
+  const fileVg = new Set();
+  let vgActif = false;
+  function demanderVg(div) { fileVg.add(div); if (!vgActif) pomperVg(); }
+  async function pomperVg() {
+    vgActif = true;
+    while (fileVg.size) {
+      const div = fileVg.values().next().value;
+      fileVg.delete(div);
+      if (!div.isConnected || !div.sale) continue;
+      const p = etat.pages.find(x => x.id === div.dataset.id);
+      if (!p) continue;
+      const k = cleVg(p);
+      div.sale = false;
+      try {
+        const c = document.createElement('canvas');
+        const d = dims(p);
+        const { ech, dpr } = await rendrePage(p, c, d.h > d.l ? TAILLE_VG * d.l / d.h : TAILLE_VG);
+        await dessinerElements(p, c, ech, dpr);
+        if (cleVg(p) !== k) { div.sale = true; fileVg.add(div); continue; }
+        div.querySelector('.boite-vg').replaceChildren(c);
+      } catch (e) { console.error(e); }
+    }
+    vgActif = false;
+  }
+  function majVignettesEditeur() {
+    if ($('#editeur').hidden || !ed.page) return;
+    majNavigation();
+    if (colonne.hidden) return;
+    const presents = new Set(etat.pages.map(p => p.id));
+    for (const [id, div] of vgCartes) if (!presents.has(id)) { obsVg.unobserve(div); div.remove(); vgCartes.delete(id); }
+    etat.pages.forEach((p, i) => {
+      let div = vgCartes.get(p.id);
+      if (!div) {
+        div = document.createElement('div');
+        div.className = 'vg';
+        div.dataset.id = p.id;
+        div.draggable = true;
+        div.innerHTML = '<div class="boite-vg"></div><div class="nom-vg"></div>';
+        vgCartes.set(p.id, div);
+        obsVg.observe(div);
+      }
+      const s = etat.sources.get(p.source);
+      div.querySelector('.nom-vg').textContent = `${i + 1}${s ? ` · ${s.nom}` : p.titre ? ` · ${p.titre}` : ''}`;
+      div.title = div.querySelector('.nom-vg').textContent;
+      div.classList.toggle('courante', p === ed.page);
+      const k = cleVg(p);
+      if (div.dataset.cle !== k) {
+        div.dataset.cle = k;
+        div.sale = true;
+        const boite = div.querySelector('.boite-vg');
+        if (!boite.firstChild) {
+          const d = dims(p);
+          const l = d.h > d.l ? TAILLE_VG * d.l / d.h : TAILLE_VG;
+          const att = document.createElement('div');
+          att.className = 'attente';
+          att.style.cssText = `width:${l}px;height:${l * d.h / d.l}px`;
+          boite.appendChild(att);
+        }
+        if (div.visible) demanderVg(div);
+      }
+      if (colonne.children[i] !== div) colonne.insertBefore(div, colonne.children[i] || null);
+    });
+    const courante = vgCartes.get(ed.page.id);
+    if (courante) {
+      const r = courante.getBoundingClientRect(), rc = colonne.getBoundingClientRect();
+      if (r.top < rc.top || r.bottom > rc.bottom) courante.scrollIntoView({ block: 'nearest' });
+    }
+  }
+  colonne.addEventListener('click', ev => {
+    const div = ev.target.closest('.vg');
+    const p = div && etat.pages.find(x => x.id === div.dataset.id);
+    if (p) allerA(p);
+  });
+  $('#ed-vignettes-bascule').addEventListener('click', () => {
+    colonne.hidden = !colonne.hidden;
+    try { localStorage.setItem('atelierpdf.vignettes', colonne.hidden ? '0' : '1'); } catch { /* rien */ }
+    majVignettesEditeur();
+    afficherPage();
+  });
+  // Glisser-déposer : déplacer une page, ou insérer des fichiers venus de l'Explorateur
+  let vgGlissee = null, vgMarque = null;
+  const effacerVgMarque = () => { if (vgMarque) vgMarque.classList.remove('avant', 'apres'); vgMarque = null; };
+  function indexDepotVg(ev) {
+    const divs = [...colonne.querySelectorAll('.vg')];
+    if (!divs.length) return { index: 0 };
+    let cible = divs[divs.length - 1];
+    for (const d of divs) { const r = d.getBoundingClientRect(); if (ev.clientY < r.bottom) { cible = d; break; } }
+    const r = cible.getBoundingClientRect();
+    const apres = ev.clientY > r.top + r.height / 2;
+    return { index: divs.indexOf(cible) + (apres ? 1 : 0), cible, apres };
+  }
+  colonne.addEventListener('dragstart', ev => {
+    const div = ev.target.closest('.vg');
+    if (!div) return;
+    vgGlissee = div.dataset.id;
+    ev.dataTransfer.effectAllowed = 'move';
+    ev.dataTransfer.setData('text/plain', 'page');
+    requestAnimationFrame(() => div.classList.add('glisse'));
+  });
+  colonne.addEventListener('dragend', () => { colonne.querySelectorAll('.glisse').forEach(d => d.classList.remove('glisse')); vgGlissee = null; effacerVgMarque(); colonne.classList.remove('survol'); });
+  colonne.addEventListener('dragover', ev => {
+    const fichiers = ev.dataTransfer.types.includes('Files');
+    if (!vgGlissee && !fichiers) return;
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = fichiers ? 'copy' : 'move';
+    colonne.classList.toggle('survol', fichiers);
+    const d = indexDepotVg(ev);
+    if (d.cible && (vgMarque !== d.cible || vgMarque.classList.contains('apres') !== d.apres)) {
+      effacerVgMarque();
+      vgMarque = d.cible;
+      vgMarque.classList.add(d.apres ? 'apres' : 'avant');
+    }
+  });
+  colonne.addEventListener('dragleave', ev => { if (!colonne.contains(ev.relatedTarget)) { effacerVgMarque(); colonne.classList.remove('survol'); } });
+  colonne.addEventListener('drop', ev => {
+    ev.preventDefault();
+    const d = indexDepotVg(ev);
+    effacerVgMarque();
+    colonne.classList.remove('survol');
+    validerEditeur();
+    if (ev.dataTransfer.files && ev.dataTransfer.files.length) importer(ev.dataTransfer.files, d.index);
+    else if (vgGlissee) deplacer(new Set([vgGlissee]), d.index);
+  });
+  // Fichiers déposés sur la page affichée : insérés juste après elle
+  $('#ed-scene').addEventListener('dragover', ev => { if (ev.dataTransfer.types.includes('Files')) { ev.preventDefault(); ev.dataTransfer.dropEffect = 'copy'; } });
+  $('#ed-scene').addEventListener('drop', ev => {
+    if (!ev.dataTransfer.files || !ev.dataTransfer.files.length) return;
+    ev.preventDefault();
+    validerEditeur();
+    importer(ev.dataTransfer.files, etat.pages.indexOf(ed.page) + 1);
+  });
 
   // Annuler dans l'éditeur (Ctrl+Z)
   function edMemo() { ed.hist.push(JSON.stringify(ed.elements)); if (ed.hist.length > 200) ed.hist.shift(); }
@@ -2057,10 +2316,14 @@
   $('#ed-fermer').addEventListener('click', fermerEditeur);
   $('#ed-prec').addEventListener('click', () => changerPage(-1));
   $('#ed-suiv').addEventListener('click', () => changerPage(1));
-  window.addEventListener('resize', () => { if (ed.page) { finirSaisie(); const els = ed.elements, c = ed.choisi, h = ed.hist; chargerDansEditeur(ed.page).then(() => { ed.elements = els; ed.choisi = c; ed.hist = h; dessinerCalque(); }); } });
+  window.addEventListener('resize', () => { if (ed.page && !$('#editeur').hidden) afficherPage(); });
 
   // Raccourcis de l'éditeur
   function toucheEditeur(ev, ctrl, touche) {
+    if (ctrl && (ev.key === '+' || ev.key === '=' || ev.code === 'NumpadAdd')) { ev.preventDefault(); zoomPalier(1); return; }
+    if (ctrl && (ev.key === '-' || ev.code === 'NumpadSubtract')) { ev.preventDefault(); zoomPalier(-1); return; }
+    if (ctrl && (ev.key === '0' || ev.code === 'Numpad0')) { ev.preventDefault(); zoomer('page'); return; }
+    if (ctrl && ev.key === '1') { ev.preventDefault(); zoomer(1); return; }
     if (ctrl && touche === 'z') { ev.preventDefault(); edAnnuler(); return; }
     if (ctrl && touche === 'd') { ev.preventDefault(); dupliquerElement(); return; }
     if (ev.key === 'Delete' || ev.key === 'Backspace') { ev.preventDefault(); supprimerElement(); return; }
@@ -2111,6 +2374,13 @@
   $('#div-ok').onclick = diviser;
   $('#div-plages').addEventListener('focus', () => { document.querySelector('input[name=mode][value=plages]').checked = true; });
   $('#div-n').addEventListener('focus', () => { document.querySelector('input[name=mode][value=n]').checked = true; });
+  $('#zone').addEventListener('wheel', ev => {
+    if (!ev.ctrlKey && !ev.metaKey) return;
+    ev.preventDefault();
+    const z = $('#zoom');
+    z.value = Math.min(Number(z.max), Math.max(Number(z.min), Number(z.value) - Math.sign(ev.deltaY) * 20));
+    z.dispatchEvent(new Event('input'));
+  }, { passive: false });
   $('#zoom').addEventListener('input', () => {
     largeurVignette = Number($('#zoom').value);
     try { localStorage.setItem('atelierpdf.zoom', largeurVignette); } catch { /* rien */ }

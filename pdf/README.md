@@ -27,6 +27,8 @@ Obtenir les fichiers : onglet **Actions** du dépôt GitHub → dernière exécu
 - **Compiler** plusieurs PDF, photos et scans (JPG, PNG, WebP…) en un seul PDF : glisser-déposer depuis
   l'Explorateur, réorganiser les pages à la souris, pivoter, dupliquer, supprimer, pages blanches et intercalaires.
 - **Sommaire** en tête avec liens cliquables et **signets** (un par document, titre modifiable).
+- **Vue d'une page** : zoom (10 à 800 %, Ctrl + molette autour du pointeur, page entière, pleine largeur), déplacement
+  (Espace + glisser, bouton du milieu), vignettes de toutes les pages à gauche (navigation, glisser-déposer, dépôt de fichiers).
 - **Modifier le texte** du PDF sur place : clic sur une ligne, correction ; police, gras, italique, taille et couleurs
   repris ; à l'enregistrement les caractères d'origine sont retirés du contenu de la page (les suivants gardent leur
   place), scans après OCR : texte recouvert par la couleur du fond.

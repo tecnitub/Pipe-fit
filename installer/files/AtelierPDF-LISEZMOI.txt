@@ -41,6 +41,18 @@ ORGANISER LES PAGES
   - « Page blanche » et « Intercalaire » (page de titre) s'insèrent après la sélection.
   - Ctrl+Z / Ctrl+Y : annuler / rétablir.
 
+VUE D'UNE PAGE (double-clic sur une page)
+  - Zoom : boutons − / + et liste (page entière, pleine largeur, 50 à 800 %),
+    Ctrl + molette de la souris ou pincement du pavé tactile (zoom autour du
+    pointeur), Ctrl + / Ctrl − ; Ctrl 0 : page entière ; Ctrl 1 : taille réelle.
+  - Déplacer la page agrandie : maintenir la barre d'espace et glisser, ou
+    glisser avec le bouton du milieu (molette enfoncée). Molette : défiler.
+  - Vignettes de toutes les pages à gauche (bouton ▤ pour les masquer) :
+    clic = aller à la page ; glisser une vignette = déplacer la page ;
+    déposer des PDF ou images depuis l'Explorateur entre deux vignettes = les
+    insérer à cet endroit (ou sur la page affichée : insérés juste après).
+  - Le zoom reste le même en passant d'une page à l'autre.
+
 MODIFIER LE TEXTE D'UN PDF (double-clic sur la page, puis « ✏️ Modifier le texte »)
   - Les lignes de texte de la page sont encadrées en pointillé : cliquez sur une
     ligne, corrigez-la directement (le curseur est en fin de ligne), puis cliquez
