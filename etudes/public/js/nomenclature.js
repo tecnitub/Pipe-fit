@@ -28,9 +28,9 @@ const Nomenclature = ((N, Sc) => {
       const pac = /^(pac|gf)/.test(e.generateur || '');
       if (!/^echangeur/.test(e.generateur || '')) add({ rep: d.n > 1 ? `${pac ? 'PAC' : 'G'}1 à ${d.n}` : `${pac ? 'PAC' : 'G'}1`, circuit: 'Production', famille: 'Production', designation: `${d.gen[0]} ${nf(d.Pg, 0)} kW`, qte: d.n, fabricant: fg.fabricant || '', reference: fg.reference || '', fiche: fg.nom || (fg.fabricant || fg.reference ? '✓' : '') });
       if (d.pompesInd && (d.bouteille || d.echangeur || d.n > 1)) add({ rep: 'PP', circuit: 'Production', famille: 'Pompes', designation: `Pompe primaire ${nf(d.Qg, 2)} m³/h, avec clapet anti-retour`, qte: d.n });
-      if (d.bouteille && d.tb) add({ rep: 'BD', circuit: 'Production', famille: 'Équipements', designation: `Bouteille de découplage ${d.tb.nom}`, qte: 1 });
+      if (d.bouteille && d.tb) add({ rep: 'BD', circuit: 'Production', famille: 'Équipements', designation: `Bouteille de découplage${d.decouplage === 'bouteille3' ? ' 3 piquages' : ''} ${d.tb.nom}`, qte: 1 });
       if (d.echangeur) add({ rep: 'EP', circuit: 'Production', famille: 'Équipements', designation: `Échangeur à plaques ${nf(d.Pdem, 0)} kW (≈ ${nf(d.Aech, 1)} m²)`, qte: 1 });
-      if (d.tampon && d.tampon.V > 0) add({ rep: 'BT', circuit: 'Production', famille: 'Équipements', designation: `Ballon tampon ${nf(d.tampon.V, 0)} L`, qte: 1 });
+      if (d.tampon && d.tampon.V > 0) add({ rep: 'BT', circuit: 'Production', famille: 'Équipements', designation: `Ballon tampon ${nf(d.tampon.V, 0)} L${d.tampon.position === 'decouplage' ? ' de découplage (4 piquages)' : d.tampon.position === 'depart' ? ' (sur le départ)' : ' (sur le retour)'}`, qte: 1 });
       if (d.tc) add({ rep: 'COL', circuit: 'Production', famille: 'Équipements', designation: `Collecteurs départ et retour ${d.tc.nom}`, dn: d.tc.dn, qte: 2 });
       if (e.desemboueur !== 'non') add({ rep: 'DS', circuit: 'Production', famille: 'Robinetterie', designation: 'Pot à boue / désemboueur magnétique', dn: d.tc ? d.tc.dn : '', qte: 1 });
       if (e.vase !== 'non') add({ rep: 'VE', circuit: 'Production', famille: 'Équipements', designation: 'Vase d\'expansion, soupape de sécurité, disconnecteur de remplissage (voir note du vase)', qte: 1 });
