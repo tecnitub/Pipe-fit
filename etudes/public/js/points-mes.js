@@ -118,6 +118,11 @@ const PointsMes = (() => {
           const pts = (v.listePoints || []).slice(0, 400);
           if (pts.length) out.push({ ...base, nature: 'mes', type: 'gtb', cle: '', titre: `Tests point à point GTB — ${pts.length} points (${titre})`,
             controles: pts.map(p => txt(`${p[0]} — ${p[7] || p[1]} (${p[4] || p[2]})`, 120)), attendus: [] });
+          // Régulation de chaque installation : une fiche (technologie de son armoire) avec les paramètres à régler et vérifier
+          const RG = typeof Regulation !== 'undefined' ? Regulation : require('./regulation');
+          ((v.regulation || {}).installations || []).forEach(x => out.push({ ...base, nature: 'mes', type: 'gtb', cle: `regul|${x.noteId}`, titre: `Régulation — ${txt(x.titre, 80)} (${(t => t.charAt(0).toLowerCase() + t.slice(1))((RG.TECHNOS[x.techno] || RG.TECHNOS.automate)[0])})`,
+            detail: `${(x.params || []).length} paramètre(s) à régler et vérifier`, controles: (RG.CONTROLES[x.techno] || RG.CONTROLES.automate).slice(),
+            attendus: nettoie((x.params || []).map(q => att(q.libelle, q.valeur, q.unite, 2))) }));
           break;
         }
         case 'desenfumage':

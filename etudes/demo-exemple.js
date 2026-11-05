@@ -38,6 +38,8 @@ const EtudeDemoExemple = ({ affaireId, client } = {}) => ({
         { rep: 'S-04', installation: 'n12', reseau: 'soufflage', salle: 'Salle de réunion', zone: 'Zone B', etage: 'R+1', type: 'plafond', Q: 450, troncon: 'S2.1', ref: 'Exemplair DF4-200', fiche: { fabricant: 'Exemplair', reference: 'DF4-200' } },
         { rep: 'R-01', installation: 'n12', reseau: 'reprise', salle: 'Bureaux', zone: 'Zone A', etage: 'R+1', type: 'extraction', Q: 600, troncon: 'R1' },
         { rep: 'R-02', installation: 'n12', reseau: 'reprise', salle: 'Salle de réunion', zone: 'Zone B', etage: 'R+1', type: 'extraction', Q: 450, troncon: 'R2.1' }] }, commentaire: '' },
+      // Armoire CVC et régulation : régulateurs préprogrammés (type Synco) ; équipements repris de l'étude à l'ouverture
+      { id: 'n13', type: 'elec', titre: 'Armoire CVC et régulation', entrees: { armoires: [{ rep: 'AR-CVC-01', local: 'Chaufferie', L: 30, ks: 80, reserve: 20, regime: 'TT', techno: 'synco', sondes: '' }] }, commentaire: '' },
     ], _v: 1, _at: new Date().toISOString(), _by: 'Jacky (bureau d\'études)',
   });
 if (typeof module !== 'undefined') module.exports = EtudeDemoExemple;

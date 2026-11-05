@@ -55,18 +55,19 @@ test('armoire CVC : phases équilibrées, foisonnement, réserve, demandes au lo
   assert.strictEqual(pts.filter(p => p[3] === 'AR1' && p[2] !== 'LOG').length, 18);
   assert.strictEqual(pts.filter(p => p[3] === 'AR1' && p[2] === 'LOG').length, 3);
   assert.ok(pts.some(p => p[0] === 'VC' && p[3] === 'autonome'));
-  const io = reg.blocs[2].tableau.lignes[0];
+  const bloc = d => reg.blocs.find(b => d.test(b.titre || ''));
+  const io = bloc(/^Entrées \/ sorties par armoire/).tableau.lignes[0];
   assert.deepStrictEqual(io.slice(0, 6), ['AR1', '0', '0', '4', '5', '9']); // EA, SA, ETOR, STOR, Bus
   // Liste de points au format GTB : classes TA / TS / TM / TC / TR, point communiqué, totaux
-  const gtb = reg.blocs[1].tableau;
+  const gtb = bloc(/^Liste des points GTB/).tableau;
   assert.deepStrictEqual(gtb.entetes.slice(2, 10), ['TA', 'TS', 'TCP', 'TM', 'TC', 'TR', 'COM (bus)', 'LOG']);
   assert.ok(gtb.lignes.some(l => l[0] === 'Armoire AR1'));
   const tDep = gtb.lignes.find(l => l[1] === 'Température de départ');
   assert.ok(tDep && tDep[5] === 'x' && tDep[8] === 'Modbus RTU', JSON.stringify(tDep));
   assert.ok(gtb.lignes.some(l => /^Défaut/.test(l[1]) && l[2] === 'x'));
   assert.strictEqual(gtb.lignes[gtb.lignes.length - 1][0], 'Totaux');
-  assert.ok(reg.blocs[0].liste.some(t => /PAC1 — PAC : piloté par bus.*Relève de la chaudière sous -5 °C.*AR1/.test(t)));
-  assert.ok(reg.blocs[0].liste.some(t => /BACnet\/IP/.test(t)));
+  assert.ok(bloc(/^(Analyse fonctionnelle|Fonctionnement de chaque)/).liste.some(t => /PAC1 — PAC : piloté par bus.*Relève de la chaudière sous -5 °C.*AR1/.test(t)));
+  assert.ok(bloc(/^(Analyse fonctionnelle|Fonctionnement de chaque)/).liste.some(t => /BACnet\/IP/.test(t)));
   // Cahier des charges et schéma unifilaire
   const cc = r.onglets.find(o => o.titre === 'Cahier des charges armoires');
   assert.ok(cc.blocs.some(b => b.titre === 'Départs de l\'armoire AR1' && b.tableau.lignes.length === 4));

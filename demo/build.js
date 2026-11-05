@@ -35,7 +35,7 @@ const lienEtudeDemo = (() => {
   try {
     const J = m => require(path.join(root, 'etudes/public/js', m));
     const N = J('notes'); void N;
-    [['cta'], ['industriel'], ['terminaux', 'Terminaux'], ['schema', 'Schema'], ['equilibrage'], ['aeraulique-schema'], ['sanitaire', 'Sanitaire'], ['evacuation'], ['desenfumage'], ['pieces', 'Pieces'], ['gaz-reseau']]
+    [['cta'], ['industriel'], ['terminaux', 'Terminaux'], ['schema', 'Schema'], ['equilibrage'], ['aeraulique-schema'], ['sanitaire', 'Sanitaire'], ['evacuation'], ['desenfumage'], ['pieces', 'Pieces'], ['gaz-reseau'], ['regulation', 'Regulation'], ['electricite']]
       .forEach(([m, g]) => { const x = J(m); if (g) global[g] = x; });
     const L = J('liens'), PM = J('points-mes'), seed = require(path.join(root, 'server/demo.js')).demoData();
     const af = (seed.affaires || []).find(a => a.type !== 'horsDevis') || {}, client = ((seed.entreprises || []).find(e => e.id === af.clientId) || {}).nom || '';
