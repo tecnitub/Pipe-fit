@@ -131,3 +131,20 @@ test('pompes sur la courbe du fabricant : point de fonctionnement, vitesse de r�
   const v = N.calculer('arbo', { ...N.defauts('arbo'), pompeRef: 'Exemplair CX 65-12', pompeCourbe: '0:16 ; 5:15 ; 10:13 ; 15:9 ; 20:3' }).valeurs;
   assert.ok(v.pompeRetenue && v.pompeRetenue.ref === 'Exemplair CX 65-12');
 });
+
+test('réseau arborescent : vanne de régulation de l\'émetteur (2, 3, 4 voies) reprise du terminal et dessinée', () => {
+  require('../etudes/public/js/equilibrage');
+  const t = { id: 't', type: 'terminaux', titre: 'Terminaux', entrees: { ...N.defauts('terminaux'), appareils: [
+    { rep: 'CA-01', local: 'Bureau 1', type: 'cassette2', n: 1, Pch: 3, Pfr: 3.6, batterie: '2t', vanne: '3v', dpEauC: 15 },
+    { rep: 'CA-02', local: 'Bureau 2', type: 'cassette2', n: 1, Pch: 3, Pfr: 3.6, batterie: '2t', vanne: '2v', dpEauC: 15 }] } };
+  const a = { id: 'a', type: 'arbo', titre: 'Réseau', entrees: { ...N.defauts('arbo'), troncons: [
+    { rep: 'C', amont: '', nom: 'Collecteur', L: 10, zeta: 4 }, { rep: 'B1', amont: 'C', nom: '', L: 8, zeta: 5, emetteur: 't:CA-01' }, { rep: 'B2', amont: 'C', nom: '', L: 12, zeta: 5, emetteur: 't:CA-02' }] } };
+  const et = { id: 'x', notes: [t, a] }, r = L.calculer(et, a), e = L.resoudre(et, a);
+  assert.strictEqual(e.entrees.troncons[1].vanneReg, '3v');
+  assert.strictEqual(e.entrees.troncons[2].vanneReg, '2v');
+  assert.ok(e.verrous['troncons.1.vanneReg']);
+  assert.match(r.schema, />V3V</);
+  assert.match(r.schema, />V2V</);
+  const circ = r.tableaux.find(x => x.titre === 'Circuits des émetteurs');
+  assert.ok(circ.lignes.some(l => /Vanne 3 voies · Kvs/.test(l[6])));
+});

@@ -23,6 +23,7 @@ const Equilibrage = ((D, C, N) => {
     return out;
   }
   const Sch = () => (typeof Schema !== 'undefined' ? Schema : require('./schema'));
+  const VREG = { '2v': 'Vanne 2 voies', '3v': 'Vanne 3 voies', '4v': 'Vanne 4 voies' };
   // Préréglage d'une vanne d'équilibrage : nombre de tours ≈ tours maxi × Kv de réglage / Kvs (caractéristique linéaire,
   // à confirmer sur l'abaque du constructeur)
   const tours = (Kv, Kvs, n) => (Kvs > 0 && n > 0 ? Math.max(0.5, Math.min(n, n * Kv / Kvs)) : null);
@@ -47,7 +48,8 @@ const Equilibrage = ((D, C, N) => {
         { k: 'L', l: 'Longueur aller (m)' }, { k: 'zeta', l: 'Σζ aller + retour' }, { k: 'sing', l: 'Singularités de l\'aller (comptées aussi au retour ; remplacent Σζ)', t: 't' }, { k: 'tube', l: 'Tube', t: 's', o: e => [['', 'Auto'], ...optTubes(e)] },
         { k: 'emetteur', l: 'Émetteur de l\'étude (remplit puissance, débit et ΔP)', t: 's', o: (e, et) => [['', 'Saisie'], ...emetteursEtude(et, e.saison).map(x => [x.cle, x.libelle])] },
         { k: 'pompe', l: 'Pompe placée sur ce tronçon (dessert toute la branche en aval)', t: 's', o: (e, et) => [['', '—'], ...(typeof Terminaux !== 'undefined' ? Terminaux : require('./terminaux')).pompesEtude(et).map(x => [x.cle, x.libelle]), ...(e && !et ? (e.troncons || []).filter(t => t.pompe).map(t => [t.pompe, t.pompe]) : [])] },
-        { k: 'P', l: 'Puissance émetteur (kW)' }, { k: 'Q', l: 'Débit émetteur (m³/h ; vide = P / ΔT)' }, { k: 'dpEm', l: 'ΔP émetteur + vanne de régulation (kPa)' }] },
+        { k: 'P', l: 'Puissance émetteur (kW)' }, { k: 'Q', l: 'Débit émetteur (m³/h ; vide = P / ΔT)' }, { k: 'dpEm', l: 'ΔP émetteur + vanne de régulation (kPa)' },
+        { k: 'vanneReg', l: 'Vanne de régulation de l\'émetteur', t: 's', o: [['', '—'], ['2v', 'Vanne 2 voies'], ['3v', 'Vanne 3 voies'], ['4v', 'Vanne 4 voies'], ['aucune', 'Sans vanne']] }, { k: 'kvsReg', l: 'Kvs de la vanne de régulation' }] },
       { k: 'robinetterie', l: 'Robinetterie et accessoires par tronçon (ΔP ou Kv de la fiche ; une vanne d\'équilibrage saisie ici remplace la vanne générique : Kvs et nombre de tours de sa fiche)', t: 'lignes', d: [],
         colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'troncon', l: 'Tronçon', t: 's', o: e => [['', '—'], ...(e.troncons || []).filter(t => t.rep).map(t => [t.rep, `${t.rep}${t.nom ? ` — ${t.nom}` : ''}`])] },
           { k: 'type', l: 'Organe', t: 's', o: () => Object.entries(Sch().ROBINETTERIE).map(([k, x]) => [k, x[0]]) }, { k: 'dn', l: 'DN (vide : celui du tronçon)' }, { k: 'qte', l: 'Quantité' },
@@ -67,7 +69,7 @@ const Equilibrage = ((D, C, N) => {
       const zetaSing = (x, rep) => { const s = String(x.sing || '').trim(); if (!s) return num(x.zeta); const r = D.singularites(s, false); if (r.inconnus.length) alertes.push(alerte('attention', `${rep} : singularité(s) non reconnue(s) « ${r.inconnus.join(', ')} », non comptée(s).`)); return 2 * r.zeta; };
       const vmax = num(e.vmax, 1.5), Rmax = num(e.Rmax, 150), dT = num(e.dT, 15), dpMin = num(e.dpMin, 3) * 1000, partenaires = e.methode === 'antennes';
       // Arbre des tronçons
-      const tr = (e.troncons || []).map((x, i) => ({ i, rep: String(x.rep || `T${i + 1}`).trim(), amont: String(x.amont || '').trim(), nom: x.nom || '', L: num(x.L), zeta: zetaSing(x, `${x.rep || `T${i + 1}`}`), tubeImpose: x.tube, P: num(x.P), Qimp: num(x.Q), pompe: x.pompe || '', pompeQ: num(x.pompeQ), pompeH: num(x.pompeH), pompeNom: x.pompeNom || '', dpEm: num(x.dpEm) * 1000, enfants: [] }));
+      const tr = (e.troncons || []).map((x, i) => ({ i, rep: String(x.rep || `T${i + 1}`).trim(), amont: String(x.amont || '').trim(), nom: x.nom || '', L: num(x.L), zeta: zetaSing(x, `${x.rep || `T${i + 1}`}`), tubeImpose: x.tube, P: num(x.P), Qimp: num(x.Q), pompe: x.pompe || '', pompeQ: num(x.pompeQ), pompeH: num(x.pompeH), pompeNom: x.pompeNom || '', dpEm: num(x.dpEm) * 1000, vreg: x.vanneReg || '', kvsReg: num(x.kvsReg), enfants: [] }));
       const parRep = new Map();
       tr.forEach(t => { if (parRep.has(t.rep)) alertes.push(alerte('erreur', `Repère ${t.rep} en double.`)); else parRep.set(t.rep, t); });
       const racines = [];
@@ -178,8 +180,8 @@ const Equilibrage = ((D, C, N) => {
         tableaux: [
           { titre: 'Tronçons (débits cumulés, aller + retour)', entetes: ['Tronçon', 'Amont', 'Q (m³/h)', 'Tube', 'L aller (m)', 'v (m/s)', 'R (Pa/m)', 'Σζ', 'ΔP (kPa)', 'ΔP dispo. à l\'entrée (kPa)'],
             lignes: actifs.map(t => [nomDe(t), t.amont || 'pompe', nf(t.Q, 2), `${t.t.nom}${t.auto ? ' (auto)' : ''}`, nf(t.L, 1), nf(t.v), nf(t.R, 0), nf(t.zeta, 1), nf(t.dp / 1000, 2), nf(t.dispo / 1000, 1)]) },
-          { titre: 'Circuits des émetteurs', entetes: ['Émetteur', 'P (kW)', 'Q (m³/h)', 'Chemin', 'ΔP tuyauteries (kPa)', 'ΔP émetteur (kPa)', 'Vanne à dissiper (kPa)'],
-            lignes: terminaux.map(t => [nomDe(t), nf(t.P, 1), nf(t.Q, 3), t.chemin.map(x => x.rep).join(' → '), nf(t.chemin.reduce((a, x) => a + x.dp, 0) / 1000, 2), nf(t.dpEm / 1000, 1), nf(t.dpV / 1000, 1)]),
+          { titre: 'Circuits des émetteurs', entetes: ['Émetteur', 'P (kW)', 'Q (m³/h)', 'Chemin', 'ΔP tuyauteries (kPa)', 'ΔP émetteur + vanne de régulation (kPa)', 'Vanne de régulation', 'Vanne d\'équilibrage à dissiper (kPa)'],
+            lignes: terminaux.map(t => [nomDe(t), nf(t.P, 1), nf(t.Q, 3), t.chemin.map(x => x.rep).join(' → '), nf(t.chemin.reduce((a, x) => a + x.dp, 0) / 1000, 2), nf(t.dpEm / 1000, 1), VREG[t.vreg] ? `${VREG[t.vreg]}${t.kvsReg ? ` · Kvs ${nf(t.kvsReg, 2)}` : ''}` : '—', nf(t.dpV / 1000, 1)]),
             surligne: defav ? terminaux.indexOf(defav) : undefined },
           ...(placees.length ? [{ titre: 'Pompes placées sur le réseau (branche desservie)', entetes: ['Tronçon', 'Pompe', 'Débit demandé (m³/h)', 'HMT demandée avec marge (mCE)', 'Point de la pompe', 'Contrôle'],
             lignes: placees.map(x => [nomDe(x.t), x.t.pompeNom || x.t.pompe, nf(x.t.Q, 2), nf(x.H, 2), x.t.pompeQ ? `${nf(x.t.pompeQ, 2)} m³/h · ${nf(x.t.pompeH, 1)} mCE` : '—', x.ok === null ? 'à renseigner' : x.ok ? 'adaptée' : 'insuffisante']) }] : []),
@@ -212,6 +214,10 @@ const Equilibrage = ((D, C, N) => {
     const W = X0 + (profMax + 1) * DX + 190, H = 70 + ligne * PAS + 20, X = p => X0 + p * DX;
     const L = (x1, y1, x2, y2, c, w = 2) => out.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="${w}"/>`);
     const T = (x, y, t, o = {}) => out.push(`<text x="${x}" y="${y}" font-size="${o.fs || 10}" fill="${o.c || cT}"${o.a ? ` text-anchor="${o.a}"` : ''}${o.b ? ' font-weight="bold"' : ''}>${esc(t)}</text>`);
+    // Vanne de régulation motorisée sur le départ (horizontale) : 2 voies, 3 voies (troisième voie vers le bas), 4 voies
+    const vanneReg = (x, y, type) => out.push(`<path d="M${x - 7} ${y - 5} L${x + 7} ${y + 5} L${x + 7} ${y - 5} L${x - 7} ${y + 5} Z" fill="#fff" stroke="${cT}" stroke-width="1.2"/>`
+      + (type !== '2v' ? `<path d="M${x} ${y} L${x - 5} ${y + 8} L${x + 5} ${y + 8} Z" fill="#fff" stroke="${cT}" stroke-width="1.2"/>` : '')
+      + `<line x1="${x}" y1="${y}" x2="${x}" y2="${y - 5}" stroke="${cT}" stroke-width="1"/><rect x="${x - 4}" y="${y - 12}" width="8" height="6" fill="#fff" stroke="${cT}" stroke-width="1"/>`);
     const vanne = (x, y) => out.push(`<path d="M${x - 7} ${y - 5} L${x + 7} ${y + 5} L${x + 7} ${y - 5} L${x - 7} ${y + 5} Z" fill="#fff" stroke="${cT}" stroke-width="1.2"/>`);
     const chemin = new Set(defav ? defav.chemin : []);
     // Production : générateur, pompe et collecteur
@@ -231,17 +237,24 @@ const Equilibrage = ((D, C, N) => {
       } else {
         const xe = X(profMax + 1) - 20;
         L(x1, y, xe, y, cD, gras); L(x1 + 6, y + 12, xe, y + 12, cR, gras);
+        // Vanne de régulation de l'émetteur sur le départ (3 voies : by-pass vers le retour ; 4 voies : by-pass intégré)
+        if (VREG[t.vreg]) {
+          const xr = xe - 22;
+          if (t.vreg === '3v' || t.vreg === '4v') { L(xr, y + 7, xr, y + 12, cR, 1.6); out.push(`<circle cx="${xr}" cy="${y + 12}" r="2.5" fill="${cR}"/>`); }
+          vanneReg(xr, y, t.vreg); T(xr, y - 15, { '2v': 'V2V', '3v': 'V3V', '4v': 'V4V' }[t.vreg], { fs: 8.5, a: 'middle', b: true });
+          if (t.kvsReg) T(xr, y + 26, `Kvs ${nf(t.kvsReg, 1)}`, { fs: 7.5, a: 'middle' });
+        }
         out.push(`<rect x="${xe}" y="${y - 12}" width="150" height="36" fill="#fff" stroke="${chemin.has(t) ? cD : cT}" stroke-width="${chemin.has(t) ? 2 : 1.2}"/>`);
         T(xe + 6, y + 1, t.nom || t.rep, { b: true }); T(xe + 6, y + 16, `${nf(t.P, 0)} kW · ${nf(t.Q, 2)} m³/h`);
       }
       T(x1 + 12, y - 6, `${t.rep} · DN ${t.t.dn} · ${nf(t.Q, 2)} m³/h`, { fs: 9 });
-      if (t.vanne) { const xv = (t.enfants.length ? x1 + DX * 0.62 : X(profMax + 1) - 48); vanne(xv, y + 12); T(xv, y + 30, `DN ${t.vanne.dn} · Kv ${nf(t.Kv, 2)}${t.vanne.tours ? ` · ≈ ${nf(t.vanne.tours, 1)} t` : ''}`, { fs: 8.5, a: 'middle' }); if (t.rob && t.rob.some(x => x.type !== 'equilibrage')) T(xv, y + 41, t.rob.filter(x => x.type !== 'equilibrage').map(x => x.rep).join(', ').slice(0, 30), { fs: 8, a: 'middle', c: '#555' }); }
+      if (t.vanne) { const xv = (t.enfants.length ? x1 + DX * 0.62 : X(profMax + 1) - (VREG[t.vreg] ? 125 : 48)); vanne(xv, y + 12); T(xv, y + 30, `DN ${t.vanne.dn} · Kv ${nf(t.Kv, 2)}${t.vanne.tours ? ` · ≈ ${nf(t.vanne.tours, 1)} t` : ''}`, { fs: 8.5, a: 'middle' }); if (t.rob && t.rob.some(x => x.type !== 'equilibrage')) T(xv, y + 41, t.rob.filter(x => x.type !== 'equilibrage').map(x => x.rep).join(', ').slice(0, 30), { fs: 8, a: 'middle', c: '#555' }); }
     };
     racines.forEach(tracer);
-    T(14, H - 6, `Départ en rouge, retour en bleu ; circuit le plus défavorisé en trait épais ; vannes d'équilibrage repérées par leur DN et leur Kv de réglage. ${f.libelle}.`, { fs: 9 });
+    T(14, H - 6, `Départ en rouge, retour en bleu ; circuit le plus défavorisé en trait épais ; vannes d'équilibrage repérées par leur DN et leur Kv de réglage ; vannes de régulation des émetteurs (V2V, V3V avec by-pass, V4V) près de l'émetteur. ${f.libelle}.`, { fs: 9 });
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" data-depart="${cD}" data-retour="${cR}"><rect width="${W}" height="${H}" fill="#fff"/>${out.join('')}</svg>`;
   }
 
-  return { VANNES, vannePour, emetteursEtude };
+  return { VANNES, VREG, vannePour, emetteursEtude };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Notes !== 'undefined' ? Notes : require('./notes'));
 if (typeof module !== 'undefined') module.exports = Equilibrage;

@@ -126,6 +126,8 @@ const Liens = ((N, Sc) => {
         if (!x) { alertes.push({ niveau: 'attention', texte: `${rep} : terminal ${cle} introuvable dans ${libelle(src)}.` }); return; }
         const dpV = num((src.entrees || {}).dpVanne, 15), dpB = froid ? x.dpF : x.dpC;
         P = froid ? x.Pfr : x.Pch; Q = froid ? x.qf : x.qc; dp = (dpB || 0) + (x.nbV ? dpV : 0);
+        // Vanne de régulation du terminal (2, 3 ou 4 voies) et son Kvs : reprises sur la branche
+        t.vanneReg = x.v === 'aucune' ? 'aucune' : x.v || ''; t.kvsReg = x.kvs || ''; verrous[`troncons.${i}.vanneReg`] = libelle(src); if (x.kvs) verrous[`troncons.${i}.kvsReg`] = libelle(src);
         if (!dpB) alertes.push({ niveau: 'info', texte: `${rep} : perte de charge eau de ${cle} non renseignée (fiche technique du terminal) : seule la vanne est comptée.` });
       } else if (src.type === 'cta') {
         const v = r.valeurs, f = (src.entrees || {}).fiche || {}, dpB = froid ? f.dpEauBF : f.dpEauBC;
