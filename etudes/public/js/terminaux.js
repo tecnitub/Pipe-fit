@@ -93,6 +93,9 @@ const Terminaux = ((N) => {
       if (!c.n) alertes.push(alerte('attention', `${c.b.nom} : aucun terminal pour ${nf(c.b.Pch, 2)} kW de chauffage et ${nf(c.b.Pfr, 2)} kW de froid (bilan par pièce).`));
       else if (c.ch + 1e-9 < c.b.Pch * 0.95 || c.fr + 1e-9 < c.b.Pfr * 0.95) alertes.push(alerte('erreur', `${c.b.nom} : terminaux insuffisants (${nf(c.ch, 2)} / ${nf(c.b.Pch, 2)} kW chaud, ${nf(c.fr, 2)} / ${nf(c.b.Pfr, 2)} kW froid).`));
     });
+    // Chaque appareil a un repère unique (branche du réseau arborescent, fiche de mise en service)
+    const vusRep = new Set();
+    lignes.forEach(x => { if (vusRep.has(x.rep)) alertes.push(alerte('erreur', `Repère ${x.rep} en double : chaque terminal doit avoir un repère unique (branche du réseau arborescent, mise en service).`)); vusRep.add(x.rep); });
     alertes.push(alerte('ok', `${tot.n} terminaux : ${nf(tot.Pch, 1)} kW chaud, ${nf(tot.Pfr, 1)} kW froid, ${nf(tot.P, 2)} kW électriques, ${tot.vannes} vanne(s).`));
     return {
       valeurs: { lignes, tot, parAlim },

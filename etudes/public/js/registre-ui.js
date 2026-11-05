@@ -41,7 +41,8 @@ function dialogueRegistre(et) {
       const d = Vrac.destinations(et, x.type), circ = [...new Set(et.notes.filter(n => n.type === 'pid').flatMap(n => (n.entrees.circuits || []).filter(c => c.rep).map(c => c.rep)))];
       if (!d.length) return '<p class="petit muted">Aucun calcul de l\'étude ne reçoit ce type d\'équipement : ajoutez d\'abord le calcul (schéma de principe, réseau arborescent, schéma aéraulique en arborescence, sanitaire…).</p>';
       return `<div class="grille-champs"><label>Placer dans<select id="rg-pcible">${d.map(([k, l]) => `<option value="${esc(k)}">${esc(l)}</option>`).join('')}</select></label>
-        <label>Quantité<input id="rg-pqte" type="number" min="1" value="1"></label><label>Local<input id="rg-plocal"></label>
+        <label>Quantité<input id="rg-pqte" type="number" min="1" value="1"></label><label>Local (plusieurs : « Bureau 1 ; Salle ×2 »)<input id="rg-plocal" placeholder="Bureau 1 ; Salle de réunion ×2"></label>
+        <label>Branche (raccordement)<select id="rg-pbranche"></select></label>
         ${x.type === 'terminal' && circ.length ? `<label>Circuit du schéma de principe<select id="rg-pcircuit"><option value="">—</option>${circ.map(c => `<option>${esc(c)}</option>`).join('')}</select></label>` : ''}</div>
         <div class="actions" style="justify-content:flex-start"><button class="petit" id="rg-pok">Placer</button></div>`;
     }
@@ -92,8 +93,12 @@ function dialogueRegistre(et) {
           try { remplacer(/^text\//.test(f.type || '') || /\.(txt|md)$/i.test(f.name || '') ? (await f.text()).split(/\r?\n/) : (await PdfLecture.lire(f, () => {}, { pagesMax: 12, ocr: typeof OCR !== 'undefined' })).lignes, f.name); } catch (e) { toast(`Lecture impossible : ${e.message}`, 5000); }
         };
       }
+      if (q('#rg-pbranche')) {
+        const majBr = () => { const br = Registre.branches(et, q('#rg-pcible').value); q('#rg-pbranche').innerHTML = `<option value="">${br.length ? '— à choisir plus tard —' : 'aucune branche pour cette destination'}</option>${br.map(([k, l]) => `<option value="${esc(k)}">${esc(l)}</option>`).join('')}`; };
+        q('#rg-pcible').onchange = majBr; majBr();
+      }
       if (q('#rg-pok')) q('#rg-pok').onclick = () => {
-        const m = Registre.placer(et, x, q('#rg-pcible').value, { qte: q('#rg-pqte').value, local: q('#rg-plocal').value, circuit: q('#rg-pcircuit') ? q('#rg-pcircuit').value : '' }, nouvelleNote);
+        const m = Registre.placer(et, x, q('#rg-pcible').value, { qte: q('#rg-pqte').value, local: q('#rg-plocal').value, branche: q('#rg-pbranche') ? q('#rg-pbranche').value : '', circuit: q('#rg-pcircuit') ? q('#rg-pcircuit').value : '' }, nouvelleNote);
         if (!m) return toast('Placement impossible : calcul introuvable.', 4000);
         ouverts.set(x.id, ''); changer(m);
       };

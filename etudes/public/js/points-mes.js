@@ -45,6 +45,14 @@ const PointsMes = (() => {
           const cle = lie ? `cta|${Number((lie.entrees || {}).Qs)}` : prod && Q ? `aero|${prod}|${Math.round(Q)}` : '';
           out.push({ ...base, nature: 'mes', type: /^cta/.test(prod) || lie ? 'cta' : 'vmc', cle, titre: `Ventilation — ${titre}`,
             attendus: nettoie([att('Débit de soufflage', v.Qs, 'm³/h', 0), att('Débit de reprise', v.Qr, 'm³/h', 0), att('Pression ventilateur soufflage', v.pS, 'Pa', 0), att('Pression ventilateur reprise', v.pR, 'Pa', 0)]) });
+          // Une fiche par bouche (numéro unique) : débit attendu à relever, branche du réseau pour la retrouver
+          (v.bouchesDetail || []).forEach(b => {
+            if (!b.rep) return;
+            const src = (e.bouchesL || []).find(x => String(x.rep || '').trim() === b.rep) || {}, f = src.fiche || {};
+            out.push({ ...base, nature: 'mes', type: 'bouche', cle: `bouche|${n.id}|${b.rep}`, repere: b.rep, local: txt(b.salle, 80), zone: txt(b.etage, 60), marque: txt(f.fabricant, 60), modele: txt(f.reference || src.ref, 80),
+              titre: `Bouche ${b.rep}${b.salle ? ` — ${txt(b.salle, 60)}` : ''} (${b.reseau}, branche ${b.troncon})`, branche: txt(b.chemin, 160),
+              attendus: nettoie([att('Débit', b.Q, 'm³/h', 0), att('Pression de mesure au plénum', b.dp, 'Pa', 0)]) });
+          });
           break;
         }
         case 'aeraulique':

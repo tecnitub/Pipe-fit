@@ -189,6 +189,36 @@ const Registre = (() => {
   }
   const typeOrgane = x => (/equilibr/.test(x) ? 'equilibrage' : /clapet/.test(x) ? 'clapet' : /filtre/.test(x) ? 'filtre' : /pot a boue|desemboueur/.test(x) ? 'desemboueur' : /compteur/.test(x) ? 'compteur'
     : /motoris|regulation|3 voies|2 voies/.test(x) ? 'regulation' : /manchette|anti-?vibr/.test(x) ? 'manchette' : /soupape/.test(x) ? 'soupape' : /purgeur/.test(x) ? 'purgeur' : /thermometre|manometre/.test(x) ? 'thermometre' : 'isolement');
+  // Locaux d'un placement : « Bureau 1 ; Salle de réunion ×2 » → [Bureau 1, Salle de réunion, Salle de réunion] ;
+  // un seul local sans multiplicateur → qte fois ce local
+  function unites(local, qte) {
+    const parts = String(local || '').split(';').map(t => t.trim()).filter(Boolean);
+    const lus = parts.map(t => { const m = /^(.*?)\s*[×x*]\s*(\d+)$/i.exec(t); return m && m[1] ? [m[1].trim(), Math.max(1, +m[2])] : [t, null]; });
+    if (lus.length <= 1 && !(lus[0] && lus[0][1])) return Array(qte).fill(lus[0] ? lus[0][0] : '');
+    return lus.flatMap(([l, k]) => Array(k || 1).fill(l));
+  }
+  // Branches où raccorder ce qui est placé : terminal → tronçon amont d'un réseau arborescent ; bouche → tronçon du schéma
+  // aéraulique ; point de puisage → tronçon du calcul sanitaire. [valeur, libellé]
+  function branches(et, cible) {
+    const [genre, rest = ''] = String(cible || '').split(':'), [id] = rest.split('|'), notes = (et && et.notes) || [], lib = n => `N${notes.indexOf(n) + 1} — ${n.titre}`;
+    const trs = n => ((n.entrees || {}).troncons || []).filter(t => t && String(t.rep || '').trim());
+    if (genre === 'term') return notes.filter(n => n.type === 'arbo').flatMap(n => trs(n).map(t => [`arbo:${n.id}|${t.rep}`, `${lib(n)} : sous ${t.rep}${t.nom ? ` — ${t.nom}` : ''}`]));
+    if (genre === 'aero' || genre === 'san') { const n = notes.find(y => y.id === id); return n ? trs(n).map(t => [t.rep, `${t.rep}${t.nom ? ` — ${t.nom}` : ''}${t.reseau && t.reseau !== 'soufflage' ? ` (${t.reseau})` : ''}`]) : []; }
+    return [];
+  }
+  // Terminaux placés raccordés au réseau arborescent : une branche par appareil, sous le tronçon amont choisi
+  function raccorder(et, termNote, els, branche) {
+    const m = /^arbo:([^|]+)\|(.+)$/.exec(String(branche || '')); if (!m) return 0;
+    const n = et.notes.find(y => y.id === m[1] && y.type === 'arbo'); if (!n) return 0;
+    const tr = n.entrees.troncons = n.entrees.troncons || [], reps = new Set(tr.map(t => String(t.rep || '').trim())), deja = new Set(tr.map(t => t.emetteur).filter(Boolean));
+    let k = 0;
+    els.forEach(el => {
+      const cle = `${termNote.id}:${el.rep}`; if (deja.has(cle)) return;
+      let r = el.rep, i = 2; while (reps.has(r)) r = `${el.rep}-${i++}`; reps.add(r);
+      tr.push({ rep: r, amont: m[2], nom: el.local || '', L: 10, zeta: 5, tube: '', emetteur: cle, P: '', Q: '', dpEm: '' }); k++;
+    });
+    return k;
+  }
   function placer(et, x, cible, opts = {}, nouvelleNote) {
     const [genre, rest = ''] = String(cible || '').split(':'), [id, sous] = rest.split('|'), notes = et.notes, nom = nomEq(x), v = x.valeurs || {};
     const qte = Math.max(1, Math.round(Number(opts.qte) || 1)), texte = norm(`${opts.texte || ''} ${x.nom || ''} ${x.reference || ''}`);
@@ -198,12 +228,13 @@ const Registre = (() => {
     if (genre === 'term' || genre === 'termp') {
       const n = cibleNote('terminaux'); if (!n) return null;
       const l = n.entrees.appareils = (n.entrees.appareils || []).filter(a => a.rep || a.local), deja = new Set(l.map(a => a.rep));
-      const tt = genre === 'termp' ? { type: 'pompeDist', batterie: 'aucune', prefixe: 'PD' } : typeTerminal(texte, v);
-      for (let k = 0; k < qte; k++) {
-        const el = { rep: opts.rep && qte === 1 ? opts.rep : prochain(tt.prefixe, deja), local: opts.local || '', type: tt.type, n: 1, batterie: tt.batterie, vanne: genre === 'termp' ? 'aucune' : '2v', alim: 'cvc', regul: 'propre', ...(opts.circuit ? { circuit: opts.circuit } : {}) };
-        l.push(el); poser(n, genre, el, 'appareils', l.length - 1);
-      }
-      return `${qte} ${genre === 'termp' ? 'pompe(s)' : 'terminal(aux)'} ${nom} ajouté(s) dans ${n.titre}`;
+      const tt = genre === 'termp' ? { type: 'pompeDist', batterie: 'aucune', prefixe: 'PD' } : typeTerminal(texte, v), locaux = unites(opts.local, qte), crees = [];
+      locaux.forEach(local => {
+        const el = { rep: opts.rep && locaux.length === 1 && !deja.has(opts.rep) ? opts.rep : prochain(tt.prefixe, deja), local, type: tt.type, n: 1, batterie: tt.batterie, vanne: genre === 'termp' ? 'aucune' : '2v', alim: 'cvc', regul: 'propre', ...(opts.circuit ? { circuit: opts.circuit } : {}) };
+        deja.add(el.rep); l.push(el); poser(n, genre, el, 'appareils', l.length - 1); crees.push(el);
+      });
+      const br = genre === 'term' ? raccorder(et, n, crees, opts.branche) : 0;
+      return `${crees.length} ${genre === 'termp' ? 'pompe(s)' : 'terminal(aux)'} ${nom} ajouté(s) dans ${n.titre} : ${crees.map(e => e.rep + (e.local ? ` (${e.local})` : '')).join(', ')}${br ? ` — ${br} branche(s) raccordée(s) au réseau arborescent` : ''}`;
     }
     if (genre === 'cta') { const n = cibleNote('cta'); if (!n) return null; noteEntiere(n, 'cta'); if (id === 'nouveau') n.titre = `CTA ${nom}`; return `${n.titre} : ${nom}`; }
     if (genre === 'pid') { const n = notes.find(y => y.id === id && y.type === 'pid'); if (!n) return null; noteEntiere(n, 'pid'); return `${n.titre} : production ${nom}`; }
@@ -224,16 +255,18 @@ const Registre = (() => {
     if (genre === 'reseau' || genre === 'vase' || genre === 'ecs') { const n = cibleNote(genre); if (!n) return null; noteEntiere(n, genre); return `${n.titre} : ${nom}`; }
     if (genre === 'aero') {
       const n = notes.find(y => y.id === id && y.type === 'aero'); if (!n) return null;
-      const l = n.entrees.bouchesL = n.entrees.bouchesL || [], deja = new Set(l.map(b => b.rep));
-      for (let k = 0; k < qte; k++) { const el = { rep: opts.rep && qte === 1 ? opts.rep : prochain('B', deja), reseau: 'soufflage', salle: opts.local || '', etage: '', type: 'plafond', troncon: '' }; l.push(el); poser(n, 'aero', el, 'bouchesL', l.length - 1); }
-      return `${qte} bouche(s) ${nom} ajoutée(s) dans ${n.titre} (tronçon à choisir)`;
+      const l = n.entrees.bouchesL = n.entrees.bouchesL || [], deja = new Set(l.map(b => b.rep)), locaux = unites(opts.local, qte), tc = String(opts.branche || '');
+      const t = ((n.entrees.troncons || []).find(y => String(y.rep || '').trim() === tc)) || {}, crees = [];
+      locaux.forEach(local => { const el = { rep: opts.rep && locaux.length === 1 && !deja.has(opts.rep) ? opts.rep : prochain('B', deja), reseau: t.reseau || 'soufflage', salle: local, etage: '', type: 'plafond', troncon: tc }; deja.add(el.rep); l.push(el); poser(n, 'aero', el, 'bouchesL', l.length - 1); crees.push(el); });
+      return `${crees.length} bouche(s) ${nom} ajoutée(s) dans ${n.titre} : ${crees.map(e => e.rep + (e.salle ? ` (${e.salle})` : '')).join(', ')}${tc ? ` — branche ${tc}` : ' (tronçon à choisir)'}`;
     }
     if (genre === 'san') {
       const n = notes.find(y => y.id === id && y.type === 'sanitaire'); if (!n) return null;
       const l = n.entrees.points = n.entrees.points || [], deja = new Set(l.map(p => p.rep));
       const type = /douche/.test(texte) ? 'douche' : /baignoire/.test(texte) ? 'baignoire' : /evier/.test(texte) ? 'evier' : /\bwc\b|cuvette/.test(texte) ? 'wc' : /urinoir/.test(texte) ? 'urinoir' : /vidoir|vide-seau/.test(texte) ? 'videSeau' : /lave-mains/.test(texte) ? 'laveMains' : 'lavabo';
-      for (let k = 0; k < qte; k++) { const el = { rep: prochain(type.slice(0, 2).toUpperCase(), deja), salle: opts.local || '', etage: '', type, troncon: '' }; l.push(el); poser(n, 'san', el, 'points', l.length - 1); }
-      return `${qte} point(s) de puisage ${nom} ajouté(s) dans ${n.titre} (tronçon à choisir)`;
+      const locaux = unites(opts.local, qte), tc = String(opts.branche || '');
+      locaux.forEach(local => { const el = { rep: prochain(type.slice(0, 2).toUpperCase(), deja), salle: local, etage: '', type, troncon: tc }; l.push(el); poser(n, 'san', el, 'points', l.length - 1); });
+      return `${locaux.length} point(s) de puisage ${nom} ajouté(s) dans ${n.titre}${tc ? ` — tronçon ${tc}` : ' (tronçon à choisir)'}`;
     }
     return null;
   }
@@ -244,6 +277,13 @@ const Registre = (() => {
     return liste(et).map(x => ({ x, nom: nomEq(x), emplacements: emp.filter(p => p.eq === x.id).map(p => ({ ...p, libelle: libelleEmplacement(et, p) })) }));
   }
 
-  return { TYPES, TYPE_GENRE, libelles, ajouter, champs, inverse, emplacements, libelleEmplacement, collecter, propager, synchroniser, verrous, lier, detacher, supprimer, placer, bilan, nomEq, parId, typeTerminal, typeOrgane };
+  // Repères manquants ou en double d'une liste (bouches, terminaux) renumérotés : préfixe-01, préfixe-02… ; renvoie le nombre
+  function numeroter(liste, prefixe, cleRep = 'rep', garder = el => true) {
+    const vus = new Set(), libres = new Set(liste.map(el => String(el[cleRep] || '').trim()).filter(Boolean)), a = [];
+    liste.forEach(el => { if (!garder(el)) return; const r = String(el[cleRep] || '').trim(); if (r && !vus.has(r)) vus.add(r); else a.push(el); });
+    a.forEach(el => { el[cleRep] = prochain(typeof prefixe === 'function' ? prefixe(el) : prefixe, new Set([...libres, ...vus])); vus.add(el[cleRep]); libres.add(el[cleRep]); });
+    return a.length;
+  }
+  return { unites, branches, raccorder, numeroter, TYPES, TYPE_GENRE, libelles, ajouter, champs, inverse, emplacements, libelleEmplacement, collecter, propager, synchroniser, verrous, lier, detacher, supprimer, placer, bilan, nomEq, parId, typeTerminal, typeOrgane };
 })();
 if (typeof module !== 'undefined') module.exports = Registre;

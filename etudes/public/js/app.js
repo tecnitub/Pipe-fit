@@ -820,6 +820,8 @@ Vues.note = {
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-rob" title="Pour chaque circuit sans robinetterie : vannes d\'isolement, vanne d\'équilibrage, filtre, manchettes, thermomètres ; à compléter avec les Kv des fiches">🔩 Robinetterie type par circuit</button><button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par circuit (repères, DN, fabricant, référence, fiche, ΔP) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
         ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button>' : ''}
+        ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="num-bouches" title="Donne un numéro unique à chaque bouche sans repère ou en double (B-01, B-02…) : relevé des débits bouche par bouche à la mise en service">🔢 Numéroter les bouches</button>' : ''}
+        ${n.type === 'terminaux' ? '<button class="secondaire" id="num-terminaux" title="Donne un repère unique à chaque terminal sans repère ou en double (CA-01, VC-02…) : une branche par terminal dans le réseau arborescent, une fiche de mise en service par terminal">🔢 Numéroter les terminaux</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="aero-vitesses" title="Même vitesse pour toutes les branches (ou les principales, ou les terminales) : les diamètres des gaines sont recalculés">💨 Changer toutes les vitesses</button>' : ''}
         ${n.type === 'sanitaire' ? `<button class="secondaire" id="san-foison" title="Compare le débit probable avec et sans foisonnement et choisit la méthode de calcul">⚖️ Foisonnement : ${esc({ dtu: 'DTU 60.11', saisi: `${Notes.num(n.entrees.coefSaisi, 60)} %`, aucun: 'aucun' }[n.entrees.foisonnement || 'dtu'] || '')}</button>` : ''}
         ${n.type === 'evacuation' ? '<button class="secondaire" id="evac-san" title="Une ligne par appareil du calcul sanitaire choisi (lavabos, WC, douches…), avec sa salle et son étage ; il reste à choisir le tronçon">🚽 Reprendre les appareils du calcul sanitaire</button>' : ''}
@@ -895,6 +897,14 @@ Vues.note = {
       b.querySelectorAll('[data-sf]').forEach(x => { x.onclick = () => { n.entrees.foisonnement = x.dataset.sf; if (x.dataset.sf === 'saisi') { const c = Notes.num(String(b.querySelector('#sf-c').value).replace(',', '.')); if (c > 0) n.entrees.coefSaisi = Math.min(100, c); } enregistrer(et); Modal.close(); App.render(); toast(`Foisonnement : ${Sanitaire.FOISONNEMENTS[x.dataset.sf]}`, 4000); }; });
     };
     // Schéma aéraulique : même vitesse sur toutes les branches choisies (diamètres recalculés)
+    const nb = root.querySelector('#num-bouches');
+    if (nb) nb.onclick = () => { const k = Registre.numeroter(n.entrees.bouchesL || [], 'B', 'rep', b => b.rep || b.salle || b.Q || b.troncon); enregistrer(et); App.render(); toast(k ? `${k} bouche(s) numérotée(s) : chaque bouche a son numéro unique.` : 'Toutes les bouches ont déjà un numéro unique.', 5000); };
+    const nt = root.querySelector('#num-terminaux');
+    if (nt) nt.onclick = () => {
+      // Repère changé : les branches du réseau arborescent qui pointaient sur l'ancien repère suivent seulement s'il était unique
+      const k = Registre.numeroter(n.entrees.appareils || [], a => Registre.typeTerminal(Terminaux.TYPES[a.type] ? Terminaux.TYPES[a.type][0] : '', a).prefixe, 'rep', a => a.type || a.rep);
+      enregistrer(et); App.render(); toast(k ? `${k} terminal(aux) renuméroté(s) : raccordez-les dans le réseau arborescent (« Ajouter les émetteurs de l'étude »).` : 'Tous les terminaux ont déjà un repère unique.', 6000);
+    };
     const av = root.querySelector('#aero-vitesses');
     if (av) av.onclick = () => {
       const b = Modal.open(`<h2>💨 Vitesse des branches</h2><p class="muted petit">La gaine de chaque branche est recalculée (plus petit diamètre dont la vitesse reste sous la valeur).</p>
@@ -984,13 +994,27 @@ Vues.note = {
       const tr = n.entrees.troncons = n.entrees.troncons || [], dispo = Equilibrage.emetteursEtude(et, n.entrees.saison).filter(x => { const a = appDe(x.cle); return !cleC || !a || !a.circuit || a.circuit === cleC; }), deja = new Set(tr.map(t => t.emetteur).filter(Boolean));
       const nouveaux = dispo.filter(x => !deja.has(x.cle));
       if (!nouveaux.length) return toast(dispo.length ? 'Tous les émetteurs de l\'étude ont déjà leur branche.' : 'Aucun émetteur dans l\'étude : ajoutez un calcul « Terminaux » ou une CTA.', 5000);
-      let racine = tr.find(t => !String(t.amont || '').trim() && String(t.rep || '').trim());
-      if (!racine) { racine = { rep: 'C', amont: '', nom: 'Départ pompe → collecteur', L: 10, zeta: 4, tube: '', P: '', Q: '', dpEm: '' }; tr.unshift(racine); }
-      const reps = new Set(tr.map(t => t.rep));
-      nouveaux.forEach(x => { let r = x.rep, k = 2; while (reps.has(r)) r = `${x.rep}-${k++}`; reps.add(r); tr.push({ rep: r, amont: racine.rep, nom: x.nom, L: 10, zeta: 5, tube: '', emetteur: x.cle, P: '', Q: '', dpEm: '' }); });
-      if (cleC) nouveaux.forEach(x => { const a = appDe(x.cle); if (a && !a.circuit) a.circuit = cleC; });
-      enregistrer(et); App.render();
-      toast(`${nouveaux.length} branche(s) ajoutée(s), rattachées à « ${racine.rep} » : puissance, débit et pertes de charge repris des émetteurs ; corrigez le tronçon amont et la longueur de chacune.`, 7000);
+      // Chaque émetteur (repère unique) a sa branche : tronçon amont choisi ligne par ligne (proposé d'après la pièce)
+      const amonts = tr.filter(t => String(t.rep || '').trim() && !t.emetteur), racine0 = amonts.find(t => !String(t.amont || '').trim());
+      const propose = x => { const p = String(x.nom || '').toLowerCase(); const t = p && amonts.find(y => y !== racine0 && String(y.nom || '').toLowerCase().includes(p)); return (t || racine0 || {}).rep || 'C'; };
+      const opts = sel => `${amonts.length ? '' : '<option value="C">C — départ pompe (créé)</option>'}${amonts.map(t => `<option value="${esc(t.rep)}" ${t.rep === sel ? 'selected' : ''}>${esc(t.rep)}${t.nom ? ` — ${esc(t.nom)}` : ''}</option>`).join('')}`;
+      const b = Modal.open(`<h2>🌀 Raccorder les émetteurs</h2><p class="muted petit">Une branche par émetteur, avec son repère unique : choisissez le tronçon amont de chacun (antenne, étage, pièce). Puissance, débit et pertes de charge sont repris de l'émetteur ; il restera la longueur.</p>
+        <p><label>Même tronçon amont pour tous <select id="ae-tous"><option value="">—</option>${opts('')}</select></label></p>
+        <div class="defile-x" style="max-height:55vh;overflow:auto"><table><thead><tr><th><input type="checkbox" id="ae-tout" checked></th><th>Émetteur</th><th>Tronçon amont</th></tr></thead><tbody>${nouveaux.map((x, i) => `<tr><td><input type="checkbox" data-ae="${i}" checked></td><td>${esc(x.libelle)}</td><td><select data-ae-amont="${i}">${opts(propose(x))}</select></td></tr>`).join('')}</tbody></table></div>
+        <div class="actions"><button class="secondaire" id="ae-x">Annuler</button><button id="ae-ok">Créer les branches</button></div>`);
+      b.querySelector('#ae-x').onclick = Modal.close;
+      b.querySelector('#ae-tout').onchange = ev => b.querySelectorAll('[data-ae]').forEach(c => { c.checked = ev.target.checked; });
+      b.querySelector('#ae-tous').onchange = ev => { if (ev.target.value) b.querySelectorAll('[data-ae-amont]').forEach(s => { s.value = ev.target.value; }); };
+      b.querySelector('#ae-ok').onclick = () => {
+        const choisis = nouveaux.map((x, i) => [x, b.querySelector(`[data-ae="${i}"]`).checked, b.querySelector(`[data-ae-amont="${i}"]`).value]).filter(y => y[1]);
+        if (!choisis.length) return Modal.close();
+        if (!amonts.length) tr.unshift({ rep: 'C', amont: '', nom: 'Départ pompe → collecteur', L: 10, zeta: 4, tube: '', P: '', Q: '', dpEm: '' });
+        const reps = new Set(tr.map(t => t.rep));
+        choisis.forEach(([x, , amont]) => { let r = x.rep, k = 2; while (reps.has(r)) r = `${x.rep}-${k++}`; reps.add(r); tr.push({ rep: r, amont, nom: x.nom, L: 10, zeta: 5, tube: '', emetteur: x.cle, P: '', Q: '', dpEm: '' }); });
+        if (cleC) choisis.forEach(([x]) => { const a = appDe(x.cle); if (a && !a.circuit) a.circuit = cleC; });
+        enregistrer(et); Modal.close(); App.render();
+        toast(`${choisis.length} branche(s) créée(s), une par émetteur : puissance, débit et pertes de charge repris ; saisissez la longueur de chacune.`, 7000);
+      };
     };
     const rep = root.querySelector('#elec-reprendre');
     if (rep) rep.onclick = () => {
@@ -1033,20 +1057,22 @@ function dialogueVrac(et) {
     const z = b.querySelector('#vr-liste'), circ = [...new Set(circuitsPid())];
     b.querySelector('#vr-ok').disabled = !items.some(x => x.type !== 'inconnu');
     if (!items.length) { z.innerHTML = ''; return; }
-    z.innerHTML = `<div class="defile-x"><table class="edit"><thead><tr><th>Fiche</th><th>Type reconnu</th><th>Lu</th><th>Qté</th><th>Repère</th><th>Local</th><th>Répartir dans</th><th>Circuit (P&ID)</th><th></th></tr></thead><tbody>${items.map((x, i) => {
+    z.innerHTML = `<div class="defile-x"><table class="edit"><thead><tr><th>Fiche</th><th>Type reconnu</th><th>Lu</th><th>Qté</th><th>Repère</th><th>Local</th><th>Répartir dans</th><th>Branche</th><th>Circuit (P&ID)</th><th></th></tr></thead><tbody>${items.map((x, i) => {
       const d = Vrac.destinations(et, x.type);
       return `<tr><td class="petit">${esc(x.nom)}</td>
         <td><select data-vr="${i}" data-k="type">${Object.entries(Vrac.TYPES).map(([k, l]) => `<option value="${k}" ${k === x.type ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></td>
         <td class="petit"><strong>${esc([x.lu.fabricant, x.lu.reference].filter(Boolean).join(' ') || '—')}</strong><br><span class="muted">${esc(x.lu.resume || `${x.lu.nb} valeur(s)`)}</span></td>
         <td><input type="number" min="1" style="width:4em" data-vr="${i}" data-k="qte" value="${x.qte}"></td>
         <td><input style="width:6em" data-vr="${i}" data-k="rep" value="${esc(x.rep)}" placeholder="auto"></td>
-        <td><input style="width:8em" data-vr="${i}" data-k="local" value="${esc(x.local)}"></td>
+        <td><input style="width:10em" data-vr="${i}" data-k="local" value="${esc(x.local)}" placeholder="Bureau 1 ; Salle ×2" title="Plusieurs pièces : « Bureau 1 ; Salle de réunion ×2 » (la quantité devient le total)"></td>
         <td>${d.length ? `<select data-vr="${i}" data-k="cible"><option value="">Registre seulement (à placer plus tard)</option>${d.map(([k, l]) => `<option value="${esc(k)}" ${k === x.cible ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : `<span class="petit muted">${x.type === 'inconnu' ? 'Choisissez le type' : 'Registre seulement : aucun calcul ne reçoit encore ce type'}</span>`}</td>
+        <td>${(() => { const br = Registre.branches(et, x.cible); return br.length ? `<select style="max-width:12em" data-vr="${i}" data-k="branche"><option value="">—</option>${br.map(([k, l]) => `<option value="${esc(k)}" ${k === x.branche ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : ''; })()}</td>
         <td>${x.type === 'terminal' && circ.length ? `<select data-vr="${i}" data-k="circuit"><option value="">—</option>${circ.map(c => `<option ${c === x.circuit ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>` : ''}</td>
         <td><button class="icone" data-vr-suppr="${i}" title="Retirer">✕</button></td></tr>`; }).join('')}</tbody></table></div>`;
     z.querySelectorAll('[data-vr]').forEach(el => el.onchange = () => {
       const x = items[+el.dataset.vr], k = el.dataset.k;
       x[k] = el.value;
+      if (k === 'cible') { x.branche = ''; rendre(); return; }
       if (k === 'type') { x.lu = Vrac.lire(x.type === 'inconnu' ? 'generateur' : x.type, x.lignes); const d = Vrac.destinations(et, x.type); x.cible = d.length ? d[0][0] : ''; rendre(); }
       else b.querySelector('#vr-ok').disabled = !items.some(y => y.type !== 'inconnu');
     });

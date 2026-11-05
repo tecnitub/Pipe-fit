@@ -121,3 +121,51 @@ test('détacher, retirer un modèle, modèle supprimé : valeurs gardées, plus 
   p2.eq = 'disparu'; R.propager(et);
   assert.strictEqual(p2.eq, '');
 });
+
+test('une fiche, plusieurs pièces : repères uniques, une branche par terminal dans le réseau arborescent', () => {
+  assert.deepStrictEqual(R.unites('Bureau 1 ; Salle de réunion ×2', 5), ['Bureau 1', 'Salle de réunion', 'Salle de réunion']);
+  assert.deepStrictEqual(R.unites('Bureau', 2), ['Bureau', 'Bureau']);
+  assert.deepStrictEqual(R.unites('', 1), ['']);
+  const term = note('terminaux', { appareils: [] }), arbo = note('arbo'), et = { notes: [term, arbo] };
+  const amont = arbo.entrees.troncons.find(t => t.rep === 'A2').rep;
+  assert.ok(R.branches(et, `term:${term.id}`).some(([k]) => k === `arbo:${arbo.id}|A2`));
+  const m = V.appliquer(et, item('terminal', { local: 'Bureau 1 ; Salle de réunion ×2', branche: `arbo:${arbo.id}|${amont}` }), `term:${term.id}`, note);
+  assert.match(m, /3 terminal\(aux\).*CA-01 \(Bureau 1\), CA-02 \(Salle de réunion\), CA-03 \(Salle de réunion\).*3 branche\(s\)/);
+  const br = arbo.entrees.troncons.filter(t => t.emetteur);
+  assert.deepStrictEqual(br.map(t => [t.rep, t.amont, t.emetteur, t.nom]), [['CA-01', 'A2', `${term.id}:CA-01`, 'Bureau 1'], ['CA-02', 'A2', `${term.id}:CA-02`, 'Salle de réunion'], ['CA-03', 'A2', `${term.id}:CA-03`, 'Salle de réunion']]);
+  // Puissance de chaque branche reprise de son terminal ; débits cumulés sur l'antenne
+  const res = Liens.calculer(et, arbo), ent = Liens.resoudre(et, arbo).entrees;
+  assert.deepStrictEqual(ent.troncons.filter(t => t.emetteur).map(t => t.P), [3.2, 3.2, 3.2]);
+  assert.ok(!res.alertes.some(a => /déjà raccordé/.test(a.texte)));
+  // Un émetteur sur deux branches : erreur ; repère de terminal en double : erreur
+  arbo.entrees.troncons.push({ rep: 'X', amont: 'A2', L: 5, emetteur: `${term.id}:CA-01` });
+  assert.ok(Liens.calculer(et, arbo).alertes.some(a => a.niveau === 'erreur' && /CA-01 déjà raccordé sur la branche CA-01/.test(a.texte)));
+  term.entrees.appareils[2].rep = 'CA-02';
+  assert.ok(Liens.calculer(et, term).alertes.some(a => a.niveau === 'erreur' && /Repère CA-02 en double/.test(a.texte)));
+  assert.strictEqual(R.numeroter(term.entrees.appareils, 'CA'), 1);
+  assert.deepStrictEqual(term.entrees.appareils.map(a => a.rep), ['CA-01', 'CA-02', 'CA-03']);
+});
+
+test('bouches : numéro unique, branche choisie, débits cumulés, une fiche de mise en service par bouche', () => {
+  const PM = require('../etudes/public/js/points-mes');
+  const aero = note('aero', { structure: 'arborescence', bouchesL: [] }), et = { notes: [aero] };
+  const terminal = aero.entrees.troncons.find(t => !aero.entrees.troncons.some(u => u.amont === t.rep) && (t.reseau || 'soufflage') === 'soufflage').rep;
+  assert.ok(R.branches(et, `aero:${aero.id}`).some(([k]) => k === terminal));
+  V.appliquer(et, item('bouche', { local: 'Bureau 1 ; Open space ×2', branche: terminal }), `aero:${aero.id}`, note);
+  const bs = aero.entrees.bouchesL;
+  assert.deepStrictEqual(bs.map(b => [b.rep, b.salle, b.troncon, b.Q]), [['B-01', 'Bureau 1', terminal, 300], ['B-02', 'Open space', terminal, 300], ['B-03', 'Open space', terminal, 300]]);
+  let r = Liens.calculer(et, aero);
+  assert.strictEqual(r.valeurs.bouchesDetail.filter(b => b.troncon === terminal).length, 3);
+  assert.ok(r.valeurs.Qs >= 900);
+  // Fiche de mise en service de chaque bouche : débit attendu, repère, pièce
+  const pts = PM.extraire(et, n => Liens.calculer(et, n)).filter(p => p.type === 'bouche');
+  assert.deepStrictEqual(pts.map(p => [p.repere, p.local, p.attendus[0].libelle, p.attendus[0].valeur]), [['B-01', 'Bureau 1', 'Débit', 300], ['B-02', 'Open space', 'Débit', 300], ['B-03', 'Open space', 'Débit', 300]]);
+  assert.strictEqual(new Set(pts.map(p => p.cle)).size, 3);
+  // Repère en double, bouche sans repère ou sans tronçon : signalés ; numérotation
+  bs[2].rep = 'B-02'; bs.push({ salle: 'Couloir', Q: 100 });
+  r = Liens.calculer(et, aero);
+  assert.ok(r.alertes.some(a => a.niveau === 'erreur' && /B-02 en double/.test(a.texte)));
+  assert.ok(r.alertes.some(a => /Couloir.*sans repère/.test(a.texte)) && r.alertes.some(a => /aucun tronçon/.test(a.texte)));
+  assert.strictEqual(R.numeroter(bs, 'B'), 2);
+  assert.deepStrictEqual(bs.map(b => b.rep), ['B-01', 'B-02', 'B-03', 'B-04']);
+});

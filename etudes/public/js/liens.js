@@ -122,8 +122,11 @@ const Liens = ((N, Sc) => {
       if (!a) { alertes.push({ niveau: 'attention', texte: `${t.rep || 'Tronçon'} : la pompe placée n'existe plus dans les équipements.` }); return; }
       Object.assign(t, { pompeQ: num(a.Qp), pompeH: num(a.Hp), pompeNom: `${a.rep}${a.ref ? ` (${a.ref})` : ''}` });
     });
+    const raccordes = new Map();
     (e.troncons || []).forEach((t, i) => {
       if (!t || !t.emetteur) return;
+      if (raccordes.has(t.emetteur)) alertes.push({ niveau: 'erreur', texte: `${t.rep || `Tronçon ${i + 1}`} : émetteur ${String(t.emetteur).split(':')[1]} déjà raccordé sur la branche ${raccordes.get(t.emetteur)} (un émetteur = une branche).` });
+      else raccordes.set(t.emetteur, t.rep || `Tronçon ${i + 1}`);
       const [id, cle] = String(t.emetteur).split(':'), src = notes.find(n => n.id === id), rep = t.rep || `Tronçon ${i + 1}`;
       if (!src) { alertes.push({ niveau: 'attention', texte: `${rep} : l'émetteur relié a été supprimé de l'étude, valeurs saisies conservées.` }); return; }
       const r = calc(src); if (!r) return;

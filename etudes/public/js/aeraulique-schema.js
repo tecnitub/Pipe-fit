@@ -182,6 +182,19 @@ const SchemaAir = ((D, C, N, Cta) => {
     const rR = arbo ? reseauArbo(aspire ? lignesArbo.filter(x => (x.reseau || 'soufflage') !== 'soufflage') : [], e, (P[1] ? 'reprise' : 'extraction')) : reseau(aspire ? zones.filter(x => x.reseau !== 'soufflage') : [], e);
     if (arbo) lignesArbo.filter(x => (x.reseau || 'soufflage') === 'soufflage' ? !souffle : !aspire).forEach(x => alertes.push(alerte('attention', `${x.rep || 'Tronçon'} : ${(RESEAUX[x.reseau] || 'soufflage').toLowerCase()} sans ventilateur correspondant (${P[0]}).`)));
     alertes.push(...rS.alertes, ...rR.alertes);
+    // Bouches une par une : numéro unique (repérage, relevé des débits à la mise en service), rattachées à un tronçon terminal
+    if (arbo) {
+      const vusB = new Set(), amonts = new Set(lignesArbo.map(t => String(t.amont || '').trim()).filter(Boolean)), reps = new Set(lignesArbo.map(t => String(t.rep || '').trim()));
+      (e.bouchesL || []).filter(b => b && (b.rep || b.salle || b.Q || b.troncon)).forEach((b, i) => {
+        const r = String(b.rep || '').trim(), qui = r || `Bouche ${i + 1}${b.salle ? ` (${b.salle})` : ''}`, tc = String(b.troncon || '').trim();
+        if (!r) alertes.push(alerte('attention', `${qui} sans repère : numérotez les bouches (« 🔢 Numéroter les bouches ») pour les identifier à la mise en service.`));
+        else if (vusB.has(r)) alertes.push(alerte('erreur', `Repère de bouche ${r} en double : chaque bouche doit avoir un numéro unique (relevé des débits à la mise en service).`));
+        vusB.add(r);
+        if (!tc) alertes.push(alerte('attention', `${qui} : rattachée à aucun tronçon, débit non compté dans le réseau.`));
+        else if (!reps.has(tc)) alertes.push(alerte('erreur', `${qui} : tronçon « ${tc} » introuvable, débit non compté.`));
+        else if (amonts.has(tc)) alertes.push(alerte('attention', `${qui} : piquée sur ${tc} qui alimente d'autres tronçons ; créez une branche terminale pour cette bouche (débit non compté).`));
+      });
+    }
     (arbo ? [] : zones).filter(x => (x.reseau === 'soufflage' && !souffle) || (x.reseau !== 'soufflage' && !aspire)).forEach(x => alertes.push(alerte('attention', `${x.rep} : ${RESEAUX[x.reseau].toLowerCase()} sans ventilateur correspondant (${P[0]}).`)));
     // Composants de la CTA ou du caisson (pertes de charge usuelles, modifiables)
     const recup = (RECUPERATEURS[e.recuperateur] || RECUPERATEURS.aucun), dfx = e.producteur === 'cta-df';
@@ -208,6 +221,8 @@ const SchemaAir = ((D, C, N, Cta) => {
         // Gaines (métré) : en arborescence chaque tronçon est déjà une gaine ; sinon gaine principale et antennes des zones
         troncons: [...rS.troncons, ...rR.troncons].map(t => ({ rep: t.rep, nom: t.nom, L: t.L })).concat(arbo ? [] : [...rS.zones, ...rR.zones].map(x => ({ rep: `Antenne ${x.rep}`, nom: x.antenne.nom, L: num(x.L, 5) }))),
         registres: [...(rS.registres || []), ...(rR.registres || [])].map(x => ({ rep: x.rep, gaine: x.nomGaine, Q: x.Q, dp: x.dpReg })),
+        // Bouches une par une (fiche de mise en service de chaque bouche : débit attendu, branche)
+        bouchesDetail: [[rS, 'soufflage'], [rR, P[1] ? 'reprise' : 'extraction']].flatMap(([r, res]) => (r.bouches || []).map(b => ({ rep: b.rep, salle: b.salle, etage: b.etage, Q: b.Q, dp: b.dp, troncon: b.troncon, chemin: b.chemin, reseau: res }))),
         // Éléments de gaine pour le métré : réseau, gaine, longueur, surface développée (m²), piquage, registre, singularités
         elements: elementsMetre(arbo, rS, rR, souffle),
         producteur: e.producteur || 'cta-df',

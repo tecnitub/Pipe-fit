@@ -81,7 +81,7 @@ const Vrac = (() => {
   const versRegistre = (et, item) => Rg().ajouter(et, { type: item.type, fabricant: item.lu.fabricant, reference: item.lu.reference, valeurs: item.lu.valeurs, nom: item.nom });
   function appliquer(et, item, cible, nouvelleNote) {
     const x = versRegistre(et, item);
-    return cible ? Rg().placer(et, x, cible, { qte: item.qte, rep: item.rep, local: item.local, circuit: item.circuit, texte: (item.lignes || []).join(' ') }, nouvelleNote) : `${Rg().nomEq(x)} : inscrit au registre (à placer)`;
+    return cible ? Rg().placer(et, x, cible, { qte: item.qte, rep: item.rep, local: item.local, circuit: item.circuit, branche: item.branche, texte: (item.lignes || []).join(' ') }, nouvelleNote) : `${Rg().nomEq(x)} : inscrit au registre (à placer)`;
   }
   const typeTerminal = (texte, v) => Rg().typeTerminal(texte, v);
   // Fiches au format Pipe-Fit collées les unes à la suite (séparées par une ligne « --- ») : une fiche par bloc
