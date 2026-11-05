@@ -159,9 +159,12 @@ Views.mes = (params, query) => {
       ${(() => { const rl = e.mesures.map((m, i) => [m, i, Essais.releve(m)]).filter(x => x[2]); if (!rl.length) return '';
         const faits = rl.filter(([m]) => String(m.valeur ?? '').trim() !== '').length;
         return `<h4 style="margin:.8em 0 .3em">Relevé ligne par ligne — ${rl.length} ${/eau/.test(rl[0][2].grandeur) || e.type === 'reseau' ? 'émetteur(s)' : 'bouche(s)'} <span class="small muted" id="es-releve-n">${faits}/${rl.length} mesuré(s)</span></h4>
-        <div style="overflow-x:auto"><table class="compact"><thead><tr><th>Repère</th><th>Pièce</th><th>Réseau, branche</th><th class="num">Attendu</th><th>Mesuré</th><th>Écart</th></tr></thead><tbody>
+        <div style="overflow-x:auto"><table class="compact"><thead><tr><th>Repère</th><th>Pièce</th><th>Réseau, branche</th><th class="num">Attendu</th><th>Mesuré</th><th>Réglage</th><th>Écart</th></tr></thead><tbody>
         ${rl.map(([m, i, r]) => `<tr><td><strong>${esc(r.repere)}</strong></td><td>${esc(r.piece)}</td><td class="small">${esc(r.detail)}</td><td class="num">${m.attendu !== undefined ? `${fmt(m.attendu, m.attendu % 1 ? 3 : 0)} ${esc(m.unite || '')}` : ''}</td>
-          <td><input data-mes="${i}" inputmode="decimal" style="width:7em" value="${esc(m.valeur ?? '')}" aria-label="${esc(m.libelle)} mesuré"></td><td class="small" data-att="${i}" data-court="1">${ecartHtml(m)}</td></tr>`).join('')}</tbody></table></div>`; })()}
+          <td><input data-mes="${i}" inputmode="decimal" style="width:7em" value="${esc(m.valeur ?? '')}" aria-label="${esc(m.libelle)} mesuré"></td>
+          <td><input data-mesreg="${i}" style="width:9em" value="${esc(m.reglage || '')}" placeholder="${esc((/préréglage ([\d,]+ tours)/.exec(r.detail) || [])[1] || 'position, ouverture')}" aria-label="Réglage ${esc(r.repere)}"></td><td class="small" data-att="${i}" data-court="1">${ecartHtml(m)}</td></tr>`).join('')}</tbody></table></div>
+        ${(() => { const rel = Store.all('equilibrages').filter(x => x.affaireId && x.affaireId === e.affaireId), n = rel.length ? Essais.reprendreReleve(JSON.parse(JSON.stringify(e.mesures)), rel) : 0;
+          return n ? `<button class="small secondary" id="es-reprendre-releve">↙ Reprendre ${n} mesure(s) du relevé d'équilibrage (débits et réglages)</button>` : ''; })()}`; })()}
       ${(e.attendus || []).length ? '<p class="small muted">Valeurs attendues reprises de l\'étude : l\'écart s\'affiche dès la saisie de la mesure.</p>' : ''}
       <button class="small secondary" id="es-add-mes">+ Autre mesure</button></fieldset>
     <div class="field"><label for="es-reglages">Réglages effectués</label><textarea id="es-reglages" data-k="reglages" data-dictee rows="2" placeholder="Consignes, lois d'eau, programmations, débits…">${esc(e.reglages || '')}</textarea></div>
@@ -190,6 +193,9 @@ Views.mes.bind = (root, params) => {
   root.querySelectorAll('[data-mes]').forEach(el => el.oninput = () => { const m = e.mesures[+el.dataset.mes]; m.valeur = el.value.trim(); const a = root.querySelector(`[data-att="${el.dataset.mes}"]`); if (a) a.innerHTML = a.dataset.court ? ecartHtml(m) : attenduHtml(m);
     const rn = root.querySelector('#es-releve-n'); if (rn) { const rl = e.mesures.filter(x => Essais.releve(x)); rn.textContent = `${rl.filter(x => String(x.valeur ?? '').trim() !== '').length}/${rl.length} mesuré(s)`; }
     const avant = e.resultat; proposer(); if (e.resultat !== avant && $('#es-res')) $('#es-res').value = e.resultat; });
+  root.querySelectorAll('[data-mesreg]').forEach(el => el.oninput = () => { e.mesures[+el.dataset.mesreg].reglage = el.value.trim(); });
+  const rr = $('#es-reprendre-releve');
+  if (rr) rr.onclick = () => { const k = Essais.reprendreReleve(e.mesures, Store.all('equilibrages').filter(x => x.affaireId === e.affaireId)); proposer(); App.render(); App.toast(`${k} mesure(s) reprise(s) du relevé d'équilibrage : rien à ressaisir.`, 4000); };
   $('#es-add-mes').onclick = async () => { const lib = await askValue('Mesure (ex. Débit d\'eau, m³/h)', ''); if (!lib) return; const [l, u] = lib.split(','); e.mesures.push({ libelle: l.trim(), unite: (u || '').trim(), valeur: '' }); App.render(); };
   $('#es-res').addEventListener('change', () => { e.resultatAuto = false; });
   // Plaque signalétique : photo gardée et lue pour remplir marque, modèle, n° de série (et fluide, charge)
@@ -209,7 +215,7 @@ Views.mes.bind = (root, params) => {
 };
 
 /* ---------- Relevé d'équilibrage ---------- */
-const TYPES_BOUCHE = ['Soufflage', 'Reprise', 'Extraction', 'Air neuf', 'Vanne d\'équilibrage', 'Radiateur', 'Ventilo-convecteur', 'Autre'];
+const TYPES_BOUCHE = ['Soufflage', 'Reprise', 'Extraction', 'Air neuf', 'Registre', 'Vanne d\'équilibrage', 'Radiateur', 'Ventilo-convecteur', 'Autre'];
 function synthEquilibrageHtml(q) {
   const s = Essais.synthese(q);
   return `${s.mesurees} mesuré(s) sur ${s.nb} · ${s.conformes} dans la tolérance${s.horsTolerance ? ` · <strong class="neg">${s.horsTolerance} hors tolérance</strong>` : ''} · total théorique ${fmt(s.totalTheorique, 0)} ${esc(q.unite)} · mesuré ${fmt(s.totalMesure, 0)} ${esc(q.unite)}${s.ecartGlobal !== null ? ` (${s.ecartGlobal > 0 ? '+' : ''}${fmt(s.ecartGlobal, 1)} %)` : ''}${s.resultat ? ` · <span class="badge ${s.resultat === 'Conforme' ? 'b-ok' : 'b-bad'}">${s.resultat}</span>` : ''}`;
@@ -271,7 +277,7 @@ Views.equilibrage.bind = (root, params) => {
     const choisir = nommee || voulues.length === 1 ? nommee || voulues[0] : voulues[(await askValue(`Installation (1 à ${voulues.length}) : ${voulues.map((x, i) => `${i + 1}. ${x.installation}`).join(' · ')}`, '1') | 0) - 1];
     if (!choisir) return;
     q.installation = q.installation || choisir.installation; q.unite = choisir.unite || q.unite;
-    q.lignes = [...q.lignes.filter(x => x.repere || x.local || x.theorique !== ''), ...choisir.lignes.map(l => ({ repere: l.repere, local: l.local, type: TYPES_BOUCHE.includes(l.type) ? l.type : 'Autre', theorique: l.theorique, mesure: '', reglage: '' }))];
+    q.lignes = [...q.lignes.filter(x => x.repere || x.local || x.theorique !== ''), ...choisir.lignes.map(l => ({ repere: l.repere, local: l.local, type: TYPES_BOUCHE.includes(l.type) ? l.type : 'Autre', theorique: l.theorique, mesure: '', reglage: l.reglage || '' }))];
     App.render(); App.toast(`${choisir.lignes.length} débit(s) théorique(s) repris de l'étude « ${choisir.etude} »`, 4000);
   };
   // Ouvert depuis la liste des mises en service : débits théoriques de l'installation repris tout de suite

@@ -229,7 +229,7 @@ const SchemaAir = ((D, C, N, Cta) => {
       valeurs: { Qs: rS.Q, Qr: rR.Q, pS, pR, PvS, PvR, sfp, dpReseauS: rS.dp, dpReseauR: rR.dp, cta: e.cta || '',
         // Gaines (métré) : en arborescence chaque tronçon est déjà une gaine ; sinon gaine principale et antennes des zones
         troncons: [...rS.troncons, ...rR.troncons].map(t => ({ rep: t.rep, nom: t.nom, L: t.L })).concat(arbo ? [] : [...rS.zones, ...rR.zones].map(x => ({ rep: `Antenne ${x.rep}`, nom: x.antenne.nom, L: num(x.L, 5) }))),
-        registres: [...(rS.registres || []), ...(rR.registres || [])].map(x => ({ rep: x.rep, gaine: x.nomGaine, Q: x.Q, dp: x.dpReg })),
+        registres: [...(rS.registres || []), ...(rR.registres || [])].map(x => ({ rep: x.rep, repRegistre: `RG-${x.rep}`, gaine: x.nomGaine, Q: x.Q, dp: x.dpReg, terminal: !(x.enfants || []).length })),
         // Bouches une par une (fiche de mise en service de chaque bouche : débit attendu, branche)
         bouchesDetail: [[rS, 'soufflage'], [rR, P[1] ? 'reprise' : 'extraction']].flatMap(([r, res]) => (r.bouches || []).map(b => ({ rep: b.rep, salle: b.salle, zone: b.zone, etage: b.etage, Q: b.Q, dp: b.dp, troncon: b.troncon, chemin: b.chemin, reseau: res }))),
         // Éléments de gaine pour le métré : réseau, gaine, longueur, surface développée (m²), piquage, registre, singularités
@@ -237,7 +237,10 @@ const SchemaAir = ((D, C, N, Cta) => {
         producteur: e.producteur || 'cta-df',
         bouches: [...rS.zones, ...rR.zones].map(x => ({ local: x.rep, type: x.bouche.b.libelle, taille: x.bouche.nom, n: x.n })),
         // Débits théoriques bouche par bouche (relevé d'équilibrage sur le chantier)
-        debits: [...rS.zones, ...rR.zones].flatMap((x, i) => Array.from({ length: x.n }, (_, k) => ({ repere: `Z${i + 1}.${k + 1}`, local: x.rep, type: RESEAUX[x.reseau], theorique: Math.round(x.Q / x.n) }))) },
+        debits: arbo && (e.bouchesL || []).some(b => b && String(b.rep || '').trim())
+          ? [...(e.bouchesL || []).filter(b => b && String(b.rep || '').trim()).map(b => ({ repere: String(b.rep).trim(), local: `${b.salle || ''}${b.zone || b.etage ? ` (${[b.zone, b.etage].filter(Boolean).join(', ')})` : ''}${b.troncon ? ` · branche ${b.troncon}` : ''}`.trim(), type: RESEAUX[b.reseau || 'soufflage'], theorique: Math.round(num(b.Q)) })),
+            ...[...(rS.registres || []), ...(rR.registres || [])].map(x => ({ repere: `RG-${x.rep}`, local: `${x.nom || x.rep} · gaine ${x.nomGaine}`, type: 'Registre', theorique: Math.round(x.Q), reglage: x.dpReg > 0.5 ? `créer ≈ ${Math.round(x.dpReg)} Pa` : 'grand ouvert' }))]
+          : [...rS.zones, ...rR.zones].flatMap((x, i) => Array.from({ length: x.n }, (_, k) => ({ repere: `Z${i + 1}.${k + 1}`, local: x.rep, type: RESEAUX[x.reseau], theorique: Math.round(x.Q / x.n) }))) },
       resume: [['Producteur', `${P[0]}${e.fiche && (e.fiche.fabricant || e.fiche.reference) ? ` — ${[e.fiche.fabricant, e.fiche.reference].filter(Boolean).join(' ')}` : ''}`], ...(souffle ? [[`${titreS}`, `${nf(rS.Q, 0)} m³/h · ${nf(pS, 0)} Pa · ${nf(PvS / 1000, 2)} kW`]] : []),
         ...(aspire ? [[dfx || e.producteur === 'cta-melange' ? 'Reprise' : 'Extraction', `${nf(rR.Q, 0)} m³/h · ${nf(pR, 0)} Pa · ${nf(PvR / 1000, 2)} kW`]] : []),
         ['Puissance spécifique (SFP)', `${nf(sfp, 2)} kW/(m³/s)`], ['Bouches', `${[...rS.zones, ...rR.zones].reduce((s, x) => s + x.n, 0)} dans ${rS.zones.length + rR.zones.length} zone(s)`],
@@ -250,7 +253,7 @@ const SchemaAir = ((D, C, N, Cta) => {
             lignes: r.troncons.map(x => [`${x.defav ? '★ ' : ''}${x.rep}`, x.amont || 'ventilateur', nf(x.Q, 0), x.vCh ? nf(x.vCh, 1) : 'auto', `${x.nom}${x.auto ? '' : ' (imposée)'}`, nf(x.L, 1), nf(x.v, 1), nf(x.R, 2), nf(x.dp, 0), nf(x.H, 0)]) },
           ...(r.bouches && r.bouches.length ? [{ titre: `Bouches — ${r === rS ? titreS.toLowerCase() : 'reprise / extraction'} (ΔP de la fiche technique, sinon de la gamme générique)`, entetes: ['Bouche', 'Salle', 'Étage', 'Q (m³/h)', 'Tronçon', 'Modèle', 'ΔP bouche (Pa)', 'Lw (dB(A))', 'ΔP depuis le ventilateur (Pa)', 'Chemin'],
             lignes: r.bouches.map(b => [`${b.defav ? '★ ' : ''}${b.rep}`, b.salle, b.etage, nf(b.Q, 0), b.troncon, `${b.taille}${b.fiche ? ' ✓' : ''}`, nf(b.dp, 0), nf(b.Lw, 0), nf(b.dpTot, 0), b.chemin]) }] : []),
-          ...(r.registres.length ? [{ titre: `Registres d'équilibrage — ${r === rS ? titreS.toLowerCase() : 'reprise / extraction'}`, entetes: ['Registre', 'Gaine', 'Q (m³/h)', 'ΔP à dissiper (Pa)'], lignes: r.registres.map(x => [`${x.rep}${x.nom ? ` — ${x.nom}` : ''}`, x.nomGaine, nf(x.Q, 0), nf(x.dpReg, 0)]) }] : [])]) : []),
+          ...(r.registres.length ? [{ titre: `Registres d'équilibrage — ${r === rS ? titreS.toLowerCase() : 'reprise / extraction'}`, entetes: ['Registre', 'Gaine', 'Q (m³/h)', 'ΔP à dissiper (Pa)'], lignes: r.registres.map(x => [`RG-${x.rep}${x.nom ? ` — ${x.nom}` : ''}`, x.nomGaine, nf(x.Q, 0), nf(x.dpReg, 0)]) }] : [])]) : []),
         ...(!arbo && rS.troncons.length ? [{ titre: `Gaine principale de ${titreS.toLowerCase()}`, entetes: ['Tronçon', 'Q (m³/h)', 'Gaine (mm)', 'L (m)', 'v (m/s)', 'R (Pa/m)', 'ΔP (Pa)'], lignes: rS.troncons.map(ligneT) }] : []),
         ...(!arbo && rR.troncons.length ? [{ titre: 'Gaine principale de reprise / extraction', entetes: ['Tronçon', 'Q (m³/h)', 'Gaine (mm)', 'L (m)', 'v (m/s)', 'R (Pa/m)', 'ΔP (Pa)'], lignes: rR.troncons.map(ligneT) }] : []),
         ...(ac.length ? [{ titre: 'Acoustique par zone (niveau global dB(A), méthode simplifiée)', entetes: ['Zone', 'Réseau', 'Lw ventilateur', 'Atténuation silencieux + réseau', 'Lw arrivant par le réseau', 'Lw registre', 'Lw bouches', 'LpA local', 'Objectif', 'Statut'],

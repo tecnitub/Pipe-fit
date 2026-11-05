@@ -42,7 +42,7 @@ const lienEtudeDemo = (() => {
     const et = require(path.join(root, 'etudes/demo-exemple.js'))({ affaireId: af.id, client });
     const mes = PM.extraire(et, n => L.calculer(et, n));
     return { app: 'etudes', id: et.id, affaireId: af.id || '', devisId: '', clientId: af.clientId || '', par: et.auteur, relie: null,
-      resume: { objet: et.objet, client, indice: et.indice, date: et.date, auteur: et.auteur, notes: [], erreurs: 0, attention: 0, equipements: [], materiel: [], debits: [], mes, devis: [] } };
+      resume: { objet: et.objet, client, indice: et.indice, date: et.date, auteur: et.auteur, notes: [], erreurs: 0, attention: 0, equipements: [], materiel: [], debits: PM.debits(et, L), mes, devis: [] } };
   } catch (e) { console.warn(`Étude d'exemple non reliée à la démonstration : ${e.message}`); return null; }
 })();
 // Le faux serveur doit être chargé avant l'application (après ui.js pour les dialogues).

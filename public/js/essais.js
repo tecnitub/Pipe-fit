@@ -111,6 +111,20 @@ const Essais = (() => {
     const x = /^(Débit(?: d'eau)?) (\S+)(?: — (.*?))? · (.+)$/.exec(String((m && m.libelle) || ''));
     return x ? { grandeur: x[1], repere: x[2], piece: x[3] || '', detail: x[4].replace(/ · /g, ', ') } : null;
   }
-  return { releve, TYPES, ETATS, modele, conclusion, manquesMES, tolerance, conformeMesure, ecart, conforme, synthese, manquesEQ, importerLignes };
+  // Mesures d'un relevé d'équilibrage reprises sur les lignes du PV de mise en service (même repère de bouche, ou repère
+  // de la vanne d'équilibrage VE-… d'un émetteur) : débit mesuré et réglage ; renvoie le nombre de lignes reprises
+  function reprendreReleve(mesures, releves) {
+    const par = new Map();
+    (releves || []).forEach(r => (r.lignes || []).forEach(l => { const k = String(l.repere || '').trim(); if (k && String(l.mesure ?? '').trim() !== '') par.set(k, l); }));
+    let k = 0;
+    (mesures || []).forEach(m => {
+      const r = releve(m); if (!r) return;
+      const ve = /vanne(?: partenaire)? ([^\s,]+)/.exec(r.detail), l = par.get(r.repere) || (ve && par.get(ve[1]));
+      if (!l) return;
+      m.valeur = String(l.mesure).replace('.', ','); if (l.reglage) m.reglage = l.reglage; k++;
+    });
+    return k;
+  }
+  return { reprendreReleve, releve, TYPES, ETATS, modele, conclusion, manquesMES, tolerance, conformeMesure, ecart, conforme, synthese, manquesEQ, importerLignes };
 })();
 if (typeof module !== 'undefined') module.exports = Essais;

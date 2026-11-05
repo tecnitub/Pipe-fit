@@ -29,8 +29,8 @@ const PointsMes = (() => {
             // Une fiche par réseau hydraulique : pompe, puis une ligne par émetteur (repère de l'étude, pièce, branche,
             // préréglage de la vanne d'équilibrage) avec le débit attendu, à mesurer
             const tr = new Map((e.troncons || []).map(t => [String(t.rep || '').trim(), t])), nf1 = x => String(Math.round(x * 10) / 10).replace('.', ',');
-            const lignes = (v.vannes || []).filter(x => x.terminal).map(x => { const t = tr.get(x.rep) || {}, local = txt(t.nom, 50);
-              return att(`Débit ${x.rep}${local && local !== x.rep ? ` — ${local}` : ''} · branche ${txt(x.chemin, 50)}${Number.isFinite(x.tours) ? ` · préréglage ${nf1(x.tours)} tours` : ''}`, x.Q, 'm³/h', 3); });
+            const lignes = [...(v.vannes || []).filter(x => x.terminal), ...(v.vannes || []).filter(x => !x.terminal)].map(x => { const t = tr.get(x.rep) || {}, local = txt(t.nom, 50);
+              return att(`Débit ${x.rep}${local && local !== x.rep ? ` — ${local}` : ''} · ${x.terminal ? 'vanne' : 'vanne partenaire'} ${x.repVanne || `VE-${x.rep}`} · branche ${txt(x.chemin, 50)}${Number.isFinite(x.tours) ? ` · préréglage ${nf1(x.tours)} tours` : ''}`, x.Q, 'm³/h', 3); });
             const pr = e.pompeRef || (v.pompe && v.pompe.modele) || '';
             out.push({ ...base, nature: 'mes', type: 'reseau', cle: `reseau-hydro|${n.id}`, titre: `Réseau hydraulique — ${titre}`, marque: '', modele: txt(pr, 80),
               detail: `${lignes.length} émetteur(s) : une ligne par émetteur, débit attendu et mesuré`,
@@ -155,6 +155,20 @@ const PointsMes = (() => {
     return out.slice(0, 200);
   }
 
-  return { extraire };
+  // Débits théoriques des relevés d'équilibrage (schémas aérauliques bouche par bouche et registres, réseaux arborescents
+  // par vanne d'équilibrage, désenfumage, bouclage ECS) : repère, local, type, débit, réglage prévu
+  function debits(et, Liens) {
+    const debits = [];
+    (et.notes || []).forEach(n => {
+      try {
+        if (n.type === 'aero') { const r = Liens.calculer(et, n), v = r.valeurs || {}; if ((v.debits || []).length) debits.push({ installation: Liens.resoudre(et, n).entrees.titreInstallation || n.titre, type: 'Aéraulique', unite: 'm³/h', lignes: v.debits.slice(0, 500) }); }
+        if (n.type === 'arbo') { const v = Liens.calculer(et, n).valeurs || {}; if ((v.vannes || []).length) debits.push({ installation: n.titre, type: 'Hydraulique', unite: 'm³/h', lignes: v.vannes.map(x => ({ repere: x.repVanne || x.rep, local: `${x.nom || x.rep}${x.terminal ? ` (émetteur ${x.rep})` : ' (antenne, vanne partenaire)'} · branche ${x.chemin || x.rep}`, type: 'Vanne d\'équilibrage', theorique: Math.round(x.Q * 1000) / 1000, reglage: x.tours ? `préréglage ${String(Math.round(x.tours * 10) / 10).replace('.', ',')} tours${x.ref ? ` (${x.ref})` : ''}` : '' })) }); }
+        if (n.type === 'desenfumage') { const v = Liens.calculer(et, n).valeurs || {}; if ((v.debits || []).length) debits.push({ installation: `${n.titre}`, type: 'Aéraulique', unite: 'm³/h', lignes: v.debits }); }
+        if (n.type === 'sanitaire') { const B = (Liens.calculer(et, n).valeurs || {}).bouclage; if (B && (B.vannes || []).length) debits.push({ installation: `${n.titre} — bouclage ECS`, type: 'Hydraulique', unite: 'L/h', lignes: B.vannes.map(x => ({ repere: `VT-${x.rep}`, local: x.nom || '', type: 'Vanne thermostatique de bouclage', theorique: Math.round(x.q) })) }); }
+      } catch (e) { /* calcul incomplet : pas de débits */ }
+    });
+    return debits;
+  }
+  return { extraire, debits };
 })();
 if (typeof module !== 'undefined') module.exports = PointsMes;

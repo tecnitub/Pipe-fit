@@ -219,7 +219,7 @@ test('mise en service : une fiche par réseau hydraulique, une ligne par émette
   assert.ok(reseau && /^Réseau hydraulique — /.test(reseau.titre));
   const l = reseau.attendus.filter(a => /^Débit CA-/.test(a.libelle));
   assert.strictEqual(l.length, 3);
-  assert.match(l[0].libelle, /^Débit CA-01 — Bureau 1 · branche C → A2 → CA-01 · préréglage \d+(,\d)? tours$/);
+  assert.match(l[0].libelle, /^Débit CA-01 — Bureau 1 · vanne VE-CA-01 · branche C → A2 → CA-01 · préréglage \d+(,\d)? tours$/);
   assert.ok(l.every(a => a.unite === 'm³/h' && a.valeur > 0));
   assert.ok(reseau.attendus.some(a => a.libelle === 'Débit de la pompe'));
   // Terminaux du réseau : pas de fiche à part ; le terminal hors réseau garde la sienne
@@ -258,4 +258,28 @@ test('sans ressaisie : matériel retenu rempli depuis le registre, tout numérot
   assert.strictEqual(R.numeroterTout(et), 3);
   assert.strictEqual(R.reperesAReprendre(et), 0);
   assert.strictEqual(new Set(term.entrees.appareils.map(a => a.rep)).size, 3);
+});
+
+test('équilibrage : repères des bouches, registres RG- et vannes VE- avec leur réglage ; mesures reprises sans ressaisie', () => {
+  const aero = note('aero', { structure: 'arborescence', bouchesL: [] }), et = { notes: [aero] };
+  V.appliquer(et, item('bouche', { local: 'Bureau 1 ; Open space ×2', branche: 'S1.1' }), `aero:${aero.id}`, note);
+  aero.entrees.bouchesL.forEach(b => { b.zone = 'Zone A'; });
+  const v = Liens.calculer(et, aero).valeurs;
+  // Relevé d'équilibrage aéraulique : numéro de chaque bouche, pièce, zone, branche ; registres numérotés avec le ΔP à créer
+  const b = v.debits.filter(x => /^B-/.test(x.repere)), rg = v.debits.filter(x => x.type === 'Registre');
+  assert.deepStrictEqual(b.map(x => [x.repere, x.local, x.type, x.theorique]), [['B-01', 'Bureau 1 (Zone A) · branche S1.1', 'Soufflage', 300], ['B-02', 'Open space (Zone A) · branche S1.1', 'Soufflage', 300], ['B-03', 'Open space (Zone A) · branche S1.1', 'Soufflage', 300]]);
+  assert.ok(rg.length && rg.every(x => /^RG-/.test(x.repere) && /^(créer ≈ \d+ Pa|grand ouvert)$/.test(x.reglage)), JSON.stringify(rg));
+  assert.ok(v.registres.every(x => /^RG-/.test(x.repRegistre)));
+  // CRM : réglage gardé dans les débits du chantier
+  const MR = require('../public/js/materiel-retenu');
+  const d = MR.debitsChantier([{ app: 'etudes', resume: { objet: 'É', debits: [{ installation: 'CTA', type: 'Aéraulique', unite: 'm³/h', lignes: rg }] } }]);
+  assert.strictEqual(d[0].lignes[0].reglage, rg[0].reglage);
+  // PV de mise en service : mesures et réglages repris du relevé d'équilibrage (repère de bouche ou de vanne VE-)
+  const Es = require('../public/js/essais');
+  const mesures = [{ libelle: 'Débit B-01 — Bureau 1 (Zone A) · soufflage · branche S1.1', unite: 'm³/h', valeur: '', attendu: 300 },
+    { libelle: 'Débit CA-01 — Bureau 1 · vanne VE-CA-01 · branche C → A1 → CA-01 · préréglage 1,9 tours', unite: 'm³/h', valeur: '', attendu: 0.5 },
+    { libelle: 'Débit de soufflage', unite: 'm³/h', valeur: '' }];
+  const releves = [{ lignes: [{ repere: 'B-01', mesure: 290, reglage: 'cône 3' }, { repere: 'VE-CA-01', mesure: '0.48', reglage: '2 tours' }, { repere: 'B-09', mesure: '' }] }];
+  assert.strictEqual(Es.reprendreReleve(mesures, releves), 2);
+  assert.deepStrictEqual(mesures.map(m => [m.valeur, m.reglage]), [['290', 'cône 3'], ['0,48', '2 tours'], ['', undefined]]);
 });

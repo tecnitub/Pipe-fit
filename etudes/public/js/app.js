@@ -57,15 +57,7 @@ function resumePF(et) {
     if (typeof MaterielRetenu !== 'undefined') materiel = MaterielRetenu.pourCrm(MaterielRetenu.lignes(postes, et.materiel));
   } catch (e) { equipements = []; }
   // Débits théoriques pour les relevés d'équilibrage : schémas aérauliques (bouche par bouche), réseaux arborescents (par vanne)
-  const debits = [];
-  (et.notes || []).forEach(n => {
-    try {
-      if (n.type === 'aero') { const r = Liens.calculer(et, n), v = r.valeurs || {}; if ((v.debits || []).length) debits.push({ installation: Liens.resoudre(et, n).entrees.titreInstallation || n.titre, type: 'Aéraulique', unite: 'm³/h', lignes: v.debits.slice(0, 500) }); }
-      if (n.type === 'arbo') { const v = Liens.calculer(et, n).valeurs || {}; if ((v.vannes || []).length) debits.push({ installation: n.titre, type: 'Hydraulique', unite: 'm³/h', lignes: v.vannes.map(x => ({ repere: x.rep, local: '', type: `Vanne d'équilibrage${x.ref ? ` ${x.ref}` : ''}${x.tours ? ` — préréglage ≈ ${String(Math.round(x.tours * 10) / 10).replace('.', ',')} tours` : ''}`, theorique: Math.round(x.Q * 100) / 100 })) }); }
-      if (n.type === 'desenfumage') { const v = Liens.calculer(et, n).valeurs || {}; if ((v.debits || []).length) debits.push({ installation: `${n.titre}`, type: 'Aéraulique', unite: 'm³/h', lignes: v.debits }); }
-      if (n.type === 'sanitaire') { const B = (Liens.calculer(et, n).valeurs || {}).bouclage; if (B && (B.vannes || []).length) debits.push({ installation: `${n.titre} — bouclage ECS`, type: 'Hydraulique', unite: 'L/h', lignes: B.vannes.map(x => ({ repere: x.rep, local: x.nom || '', type: 'Vanne thermostatique de bouclage', theorique: Math.round(x.q) })) }); }
-    } catch (e) { /* calcul incomplet : pas de débits */ }
-  });
+  const debits = PointsMes.debits(et, Liens);
   // Points de mise en service (valeurs attendues, réseaux à éprouver, contrôles) : liste des mises en service du chantier
   let mes = [];
   try { if (typeof PointsMes !== 'undefined') mes = PointsMes.extraire(et, n => Liens.calculer(et, n)); } catch (e) { mes = []; }
