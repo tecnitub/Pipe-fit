@@ -29,8 +29,65 @@ const EssaisDoc = (() => {
     ${photos(e.photos, x)}${signatures(e, x)}`;
   }
 
+  // Fiche de relevés de fonctionnement (CTA, extracteur, pompes) : format de l'entreprise — en-tête, caractéristiques de la
+  // plaque et mesures par côté (soufflage / extraction, pompe 1 / pompe 2), équipements, réglages, autocontrôle des
+  // sécurités (C / NC / SO), équilibrage (antenne, section, réglage, prévu, mesuré), fin d'antenne, observations
+  const ESSAI = () => (typeof Essais !== 'undefined' ? Essais : require('./essais'));
+  const CNS = { OK: 'C', 'Non conforme': 'NC', 'Sans objet': 'SO' };
+  const sectionsFiche = m => { const E = ESSAI(); return [...new Set([...(m.plaque || []).map(p => p.section || ''), ...(m.mesures || []).filter(v => !E.releve(v)).map(v => v.section || '')])].sort((a, b) => (a === '') - (b === '')); };
+  const valeurFiche = v => (vide(v) ? '/' : esc(String(v).replace('.', ',')));
+  function ficheReleves(m, x) {
+    const E = ESSAI(), f = E.TYPES[m.type].fiche, prevu = E.debitPrevu(m), rl = (m.mesures || []).filter(v => E.releve(v));
+    const ec = v => { const a = Number(v.attendu), y = Number(String(v.valeur).replace(',', '.')); return vide(v.attendu) || !a || vide(v.valeur) || !Number.isFinite(y) ? '' : `${y >= a ? '+' : ''}${((y - a) / a * 100).toFixed(1).replace('.', ',')} %`; };
+    const plaqueCommune = (m.plaque || []).filter(p => !p.section), secs = sectionsFiche(m).filter(s => s);
+    const bloc = (sec, avecPlaque = true) => { const pl = avecPlaque ? (m.plaque || []).filter(p => (p.section || '') === sec) : [], me = (m.mesures || []).filter(v => !E.releve(v) && (v.section || '') === sec), att = me.some(v => !vide(v.attendu));
+      return `${pl.length ? `<h4>Caractéristiques</h4>${table(pl.map(p => l(p.libelle, valeurFiche(p.valeur))))}` : ''}
+        ${me.length ? `<h4>${sec ? 'Mesures électriques et aérauliques' : 'Autres relevés'}</h4><table class="doc-lines compact"><tr><th>Mesure</th><th class="num">Valeur</th>${att ? '<th class="num">Prévu (étude)</th><th class="num">Écart</th>' : ''}</tr>
+          ${me.map(v => `<tr><td>${esc(v.libelle)}${v.auto ? ' <span class="small">(facteur K)</span>' : ''}</td><td class="num">${valeurFiche(v.valeur)}${vide(v.valeur) ? '' : ` ${esc(v.unite || '')}`}</td>${att ? `<td class="num">${vide(v.attendu) ? '' : `${nb(v.attendu, v.attendu % 1 ? 2 : 0)} ${esc(v.unite || '')}`}</td><td class="num">${ec(v)}</td>` : ''}</tr>`).join('')}</table>` : ''}`; };
+    return `<h2 class="doc-h" style="text-align:center">FICHE DE RELEVÉS DE FONCTIONNEMENT<br><span style="font-size:.85em">${esc(f.titre.toUpperCase())}</span></h2>
+    ${table([l('Chantier', esc([x.chantier.code, x.chantier.nom].filter(Boolean).join(' – ') || '—')), l('Date', `${dateFr(m.date)}${m.heure ? ` à ${esc(m.heure)}` : ''}`), l('Localisation', esc([m.localisation, m.zone].filter(Boolean).join(' — ') || '—')),
+      l('Désignation', `<strong>${esc(m.equipement)}</strong>${m.repere ? ` · repère ${esc(m.repere)}` : ''}`), l('Marque', esc(m.marque || '—')), l('Références', esc([m.modele, m.numeroSerie && `n° ${m.numeroSerie}`].filter(Boolean).join(' · ') || '—')),
+      prevu !== null ? l('Débit prévu', `${nb(prevu, 0)} m³/h`) : ''])}
+    ${m.photoPlaqueId ? `<div class="doc-photos"><figure><img src="${x.img(m.photoPlaqueId)}" alt="Plaque signalétique"><figcaption>Plaque signalétique</figcaption></figure></div>` : ''}
+    ${plaqueCommune.length ? `<h3 class="doc-h">${m.type === 'pompes' ? 'CARACTÉRISTIQUES ÉLECTRIQUES' : 'CARACTÉRISTIQUES'}</h3>${table(plaqueCommune.map(p => l(p.libelle, valeurFiche(p.valeur))))}` : ''}
+    ${secs.map(sec => `<h3 class="doc-h">${esc(sec.toUpperCase())}</h3>${bloc(sec)}`).join('')}
+    ${(m.mesures || []).some(v => !E.releve(v) && !v.section) ? `<h3 class="doc-h">${secs.length ? 'AUTRES RELEVÉS' : 'MESURES ÉLECTRIQUES ET AÉRAULIQUES'}</h3>${bloc('', false)}` : ''}
+    ${m.composants ? `<h3 class="doc-h">ÉQUIPEMENTS</h3><p class="pre">${esc(m.composants)}</p>` : ''}
+    ${m.reglages ? `<h3 class="doc-h">RÉGLAGES</h3><p class="pre">${esc(m.reglages)}</p>` : ''}
+    <h3 class="doc-h">AUTOCONTRÔLE — TESTS DES ÉQUIPEMENTS ET DES SÉCURITÉS</h3><p class="small">C = conforme · NC = non conforme · SO = sans objet</p>
+    <table class="doc-lines compact"><tr><th>Contrôle</th><th>Résultat</th><th>Observation</th></tr>${(m.controles || []).map(c => `<tr><td>${esc(c.libelle)}</td><td>${c.etat === 'Non conforme' ? '<strong>NC</strong>' : esc(CNS[c.etat] || '—')}</td><td>${esc(c.obs || '')}</td></tr>`).join('')}</table>
+    ${rl.length ? `<h3 class="doc-h">ÉQUILIBRAGE ${/eau/.test(E.releve(rl[0]).grandeur) || m.type === 'pompes' ? 'HYDRAULIQUE' : 'AÉRAULIQUE'}</h3><table class="doc-lines compact"><tr><th>Antenne / local / ${/eau/.test(E.releve(rl[0]).grandeur) ? 'unité' : 'diffuseur'}</th><th>Section / Ø</th><th>Réglage</th><th class="num">Débit prévu</th><th class="num">Débit mesuré</th><th class="num">Écart</th></tr>
+      ${rl.map(v => { const r = E.releve(v); return `<tr><td><strong>${esc(r.repere)}</strong>${r.piece ? ` — ${esc(r.piece)}` : ''}<br><span class="small">${esc(r.detail)}</span></td><td>${esc(v.dim || '')}</td><td>${esc(v.reglage || '')}</td><td class="num">${vide(v.attendu) ? '' : `${nb(v.attendu, 0)} ${esc(v.unite || '')}`}</td><td class="num">${vide(v.valeur) ? '<em>non mesuré</em>' : `${esc(String(v.valeur).replace('.', ','))} ${esc(v.unite || '')}`}</td><td class="num">${ec(v)}</td></tr>`; }).join('')}</table>` : ''}
+    ${m.observations ? `<h3 class="doc-h">OBSERVATIONS / REMARQUES</h3><p class="pre">${esc(m.observations)}</p>` : ''}
+    ${choix(m.resultat, [['Mis en service', 'Équipement <strong>mis en service</strong>, fonctionnement conforme'], ['Mis en service avec réserves', 'Équipement <strong>mis en service avec réserves</strong> (points non conformes ci-dessus)'], ['Non mis en service', 'Équipement <strong>non mis en service</strong>']])}
+    <p><strong>Attestation.</strong> Je soussigné ${esc(x.technicien)}, technicien de ${esc(x.societe)}, atteste avoir procédé le ${dateFr(m.date)} aux relevés de fonctionnement de l'équipement « ${esc(m.equipement)} » du chantier ${esc(x.chantier.code || '')}.</p>
+    ${photos(m.photos, x)}${signatures(m, x)}`;
+  }
+  // Même fiche en classeur Excel (une feuille « Rév.0 », comme le modèle de l'entreprise)
+  function ficheExcel(m, x = {}) {
+    const E = ESSAI(), f = (E.TYPES[m.type] || {}).fiche || { titre: (E.TYPES[m.type] || {}).libelle || 'Équipement' }, prevu = E.debitPrevu(m), rl = (m.mesures || []).filter(v => E.releve(v));
+    const v = y => { const s = String(y ?? '').trim(); if (!s) return '/'; const n = Number(s.replace(',', '.')); return /^-?\d+([.,]\d+)?$/.test(s) && Number.isFinite(n) ? n : s; };
+    const B = t => ({ v: t, s: 'bold' }), H = t => ({ v: t, s: 'head' });
+    const rows = [[{ v: 'FICHE DE RELEVÉS DE FONCTIONNEMENT', s: 'title' }], [B(f.titre.toUpperCase())], [],
+      [B('CHANTIER :'), x.chantier || '', '', B('DATE :'), dateFr(m.date)], [B('LOCALISATION :'), [m.localisation, m.zone].filter(Boolean).join(' — '), '', B('DÉSIGNATION :'), m.equipement || ''],
+      [B('MARQUE :'), m.marque || '', '', B('RÉFÉRENCES :'), m.modele || ''], ...(prevu !== null ? [[B('DÉBIT PRÉVU :'), prevu, 'm³/h']] : []), []];
+    const pl = sec => (m.plaque || []).filter(p => (p.section || '') === sec), me = sec => (m.mesures || []).filter(y => !E.releve(y) && (y.section || '') === sec);
+    if (pl('').length) rows.push([H(m.type === 'pompes' ? 'CARACTÉRISTIQUES ÉLECTRIQUES' : 'CARACTÉRISTIQUES')], ...pl('').map(p => [p.libelle, v(p.valeur)]), []);
+    sectionsFiche(m).forEach(sec => {
+      if (sec) rows.push([H(sec.toUpperCase())], ...(pl(sec).length && sec ? [[B('CARACTÉRISTIQUES')], ...pl(sec).map(p => [p.libelle, v(p.valeur)])] : []));
+      if (me(sec).length) rows.push([B(sec ? 'MESURES ÉLECTRIQUES ET AÉRAULIQUES' : 'AUTRES RELEVÉS'), 'Valeur', 'Unité', 'Prévu (étude)'], ...me(sec).map(y => [y.libelle, v(y.valeur), y.unite || '', vide(y.attendu) ? '' : y.attendu]), []);
+    });
+    if (m.composants) rows.push([H('ÉQUIPEMENTS')], ...String(m.composants).split(/\n+/).map(t => [t]), []);
+    if (m.reglages) rows.push([H('RÉGLAGES')], ...String(m.reglages).split(/\n+/).map(t => [t]), []);
+    rows.push([H('AUTOCONTRÔLE // TESTS DES ÉQUIPEMENTS DE SÉCURITÉ')], ['NC = Non conforme', 'C = Conforme', 'SO = Sans objet'], ...(m.controles || []).map(c => [c.libelle, CNS[c.etat] || '', c.obs || '']), []);
+    if (rl.length) rows.push([H(`ÉQUILIBRAGE ${m.type === 'pompes' ? 'HYDRAULIQUE' : 'AÉRAULIQUE'}`)], [B('ANTENNE / LOCAL / DIFFUSEUR'), B('SECTION / DIAMÈTRE'), B('RÉGLAGE'), B('DÉBIT PRÉVU'), B('DÉBIT MESURÉ')],
+      ...rl.map(y => { const r = E.releve(y); return [`${r.repere}${r.piece ? ` — ${r.piece}` : ''} (${r.detail})`, y.dim || '', y.reglage || '/', vide(y.attendu) ? '' : y.attendu, v(y.valeur)]; }), []);
+    rows.push([H('OBSERVATIONS / REMARQUES')], [m.observations || ''], [], [B('CONCLUSION :'), m.resultat || ''], [B('TECHNICIEN :'), x.technicien || m.technicien || '']);
+    return { name: 'Rév.0', cols: [46, 22, 14, 18, 22], rows };
+  }
   function miseEnService(m, x) {
     const E = typeof Essais !== 'undefined' ? Essais : require('./essais'), type = E.TYPES[m.type] || {};
+    if (type.fiche && (m.plaque || []).length) return ficheReleves(m, x);
     return `<h3 class="doc-h">Équipement</h3>${table([l('Équipement', `<strong>${esc(m.equipement)}</strong>${m.repere ? ` · repère ${esc(m.repere)}` : ''}`), l('Type', esc(type.libelle || '')),
       l('Marque, modèle, n° de série', esc([m.marque, m.modele, m.numeroSerie && `n° ${m.numeroSerie}`].filter(Boolean).join(' · ') || '—')), m.localisation || m.zone ? l('Localisation', esc([m.localisation, m.zone].filter(Boolean).join(' — '))) : '',
       m.fluide ? l('Fluide frigorigène', esc(`${m.fluide}${vide(m.charge) ? '' : ` · charge ${nb(m.charge)} kg`}`)) : '', l('Date', `${dateFr(m.date)}${m.heure ? ` à ${esc(m.heure)}` : ''}`)])}
@@ -72,6 +129,6 @@ const EssaisDoc = (() => {
     <p><strong>Attestation.</strong> Je soussigné ${esc(x.technicien)}, technicien de ${esc(x.societe)}, atteste avoir réalisé le ${dateFr(q.date)} l'équilibrage ${esc((q.type || 'aéraulique').toLowerCase())} de l'installation « ${esc(q.installation)} » du chantier ${esc(x.chantier.code || '')} et relevé les débits ci-dessus.</p>
     ${photos(q.photos, x)}${signatures(q, x)}`;
   }
-  return { epreuve, miseEnService, equilibrage };
+  return { epreuve, miseEnService, ficheReleves, ficheExcel, equilibrage };
 })();
 if (typeof module !== 'undefined') module.exports = EssaisDoc;

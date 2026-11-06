@@ -114,11 +114,14 @@ function essaiVue(kind, r) {
   const conf = ESSAIS[kind], bureau = Store.me.role !== 'atelier', ok = /^(Conforme|Mis en service)$/.test(r.resultat || '');
   return `<div class="toolbar no-print"><a href="${retourEssai(r)}" class="btn secondary">← ${bureau ? 'Chantier' : 'Rapports'}</a><span class="spacer"></span>
     <a class="btn secondary" href="#/${kind}/new?copie=${esc(r.id)}">${kind === 'mes' ? 'Copier pour un autre équipement' : 'Copier pour une autre installation'}</a>
-    <button class="secondary print-btn" data-print>Imprimer</button><button class="secondary" id="es-pdf">PDF</button>${bureau ? boutonsEnvoi(kind, r.id) : ''}</div>
+    <button class="secondary print-btn" data-print>Imprimer</button><button class="secondary" id="es-pdf">PDF</button>${kind === 'mes' && typeof XLSX !== 'undefined' ? '<button class="secondary" id="es-xlsx">Fiche Excel</button>' : ''}${bureau ? boutonsEnvoi(kind, r.id) : ''}</div>
   <h1 class="no-print">${conf.court} ${esc(r.numero || '')} · ${esc(conf.nom(r))} <span class="badge ${ok ? 'b-ok' : 'b-bad'}">${esc(r.resultat || '')}</span></h1>${bureau ? envoisHtml(conf.col, r.id) : ''}
   <div class="doc-print">${documentEssai(conf.titre, r, conf.corps)}</div>`;
 }
-const bindEssaiVue = (root, kind, r) => { const b = root.querySelector('#es-pdf'); if (b) b.onclick = () => PDF.telecharger(documentEssai(ESSAIS[kind].titre, r, ESSAIS[kind].corps), `${kind === 'mes' ? 'PV-mise-en-service' : 'Releve-equilibrage'}-${r.numero || r.id}.pdf`).catch(err => notify(err.message)); };
+const bindEssaiVue = (root, kind, r) => { const x = root.querySelector('#es-xlsx');
+  if (x) x.onclick = () => { const a = Store.get('affaires', r.affaireId) || {}, o = EssaisDoc.ficheExcel(r, { chantier: a.nom || a.code || '', technicien: r.technicien || userName(r.userId) });
+    Promise.resolve(download(`Fiche-releves-${String(r.equipement || r.numero || 'PV').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w-]+/g, '_').slice(0, 50)}.xlsx`, XLSX.build([o]), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')).catch(err => notify(err.message)); };
+  const b = root.querySelector('#es-pdf'); if (b) b.onclick = () => PDF.telecharger(documentEssai(ESSAIS[kind].titre, r, ESSAIS[kind].corps), `${kind === 'mes' ? 'PV-mise-en-service' : 'Releve-equilibrage'}-${r.numero || r.id}.pdf`).catch(err => notify(err.message)); };
 
 /* ---------- PV de mise en service ---------- */
 // Valeur attendue (étude) et écart de la mesure saisie
@@ -142,7 +145,7 @@ Views.mes = (params, query) => {
   const ctlPlan = (() => { try { const l = JSON.parse(sessionStorage.getItem(`pf-plan-controles:${q0('plan')}`) || 'null'); return Array.isArray(l) ? l.slice(0, 400).map(x => String(x).slice(0, 160)) : null; } catch (e) { return null; } })();
   const b = brouillonEssai('mes', params, query, base => { const m = Essais.modele(typeQ); if (ctlPlan && ctlPlan.length) m.controles = [...ctlPlan.map(libelle => ({ libelle, etat: '', obs: '', ...(typeQ === 'gtb' ? { pap: true, etatGtb: '' } : {}) })), ...m.controles];
     return { ...base, type: typeQ, equipement: q0('equipement'), repere: q0('repere'), localisation: q0('localisation'), zone: q0('zone'), marque: q0('marque'), modele: q0('modele'), numeroSerie: '', fluide: '', charge: '', reglages: '', resultat: '', ...(q0('materiel') ? { materiel: q0('materiel') } : {}),
-      ...(q0('plan') ? { planCle: q0('plan') } : {}), ...(attendus.length ? { attendus } : {}), controles: m.controles, mesures: PlanMes.avecAttendus(m.mesures, attendus) }; });
+      ...(q0('plan') ? { planCle: q0('plan') } : {}), ...(attendus.length ? { attendus } : {}), controles: m.controles, mesures: PlanMes.avecAttendus(m.mesures, attendus), ...(m.plaque ? { plaque: m.plaque, composants: '' } : {}) }; });
   if (b.introuvable) return '<p>Procès-verbal introuvable.</p>';
   if (b.signe) return essaiVue('mes', b.signe);
   const e = b.e, t = Essais.TYPES[e.type] || Essais.TYPES.autre, ph = e._plaque || (e.photoPlaqueId ? fileUrl(e.photoPlaqueId) : '');
@@ -168,20 +171,25 @@ Views.mes = (params, query) => {
         ${c.etat === 'Non conforme' ? `<input data-ctlobs="${i}" value="${esc(c.obs || '')}" placeholder="Observation, action à mener" aria-label="Observation">` : ''}</div>`).join('')}
       <button class="small secondary" id="es-tout-ok">Tout OK</button>
     </fieldset>
-    <fieldset class="hd-bloc"><legend>Mesures et relevés</legend><div class="grid3">
-      ${e.mesures.map((m, i) => Essais.releve(m) ? '' : `<div class="field"><label for="es-m${i}">${esc(m.libelle)}${m.unite ? ` (${esc(m.unite)})` : ''}</label><input id="es-m${i}" data-mes="${i}" inputmode="decimal" value="${esc(m.valeur ?? '')}"${m.attendu !== undefined ? ` placeholder="attendu ${esc(fmt(m.attendu, m.attendu % 1 ? 2 : 0))}"` : ''}>
-        ${m.attendu !== undefined ? `<span class="small muted" data-att="${i}">${attenduHtml(m)}</span>` : ''}</div>`).join('')}</div>
+    ${(e.plaque || []).length ? `<fieldset class="hd-bloc"><legend>Caractéristiques (plaque signalétique)${Essais.debitPrevu(e) !== null ? ` — débit prévu ${esc(fmt(Essais.debitPrevu(e), 0))} m³/h` : ''}</legend>
+      ${[...new Set(e.plaque.map(p => p.section || ''))].map(sec => `${sec ? `<h4 style="margin:.4em 0">${esc(sec)}</h4>` : ''}<div class="grid3">${e.plaque.map((p, i) => ((p.section || '') !== sec ? '' : `<div class="field"><label for="es-p${i}">${esc(p.libelle)}</label><input id="es-p${i}" data-plaque="${i}" value="${esc(p.valeur ?? '')}"></div>`)).join('')}</div>`).join('')}
+      ${e.plaque.some(p => /Coefficient K/.test(p.libelle)) ? '<p class="small muted">Débit du ventilateur calculé par le facteur K : Q = K · √ΔP ventilateur.</p>' : ''}</fieldset>` : ''}
+    <fieldset class="hd-bloc"><legend>Mesures et relevés</legend>
+      ${[...new Set(e.mesures.filter(m => !Essais.releve(m)).map(m => m.section || ''))].sort((x, y) => (x === '') - (y === '')).map(sec => `${sec ? `<h4 style="margin:.6em 0 .2em">${esc(sec)}</h4>` : e.mesures.some(m => m.section) ? '<h4 style="margin:.6em 0 .2em">Général</h4>' : ''}<div class="grid3">
+      ${e.mesures.map((m, i) => Essais.releve(m) || (m.section || '') !== sec ? '' : `<div class="field"><label for="es-m${i}">${esc(m.libelle)}${m.unite ? ` (${esc(m.unite)})` : ''}</label><input id="es-m${i}" data-mes="${i}" inputmode="${m.unite ? 'decimal' : 'text'}" value="${esc(m.valeur ?? '')}"${m.attendu !== undefined ? ` placeholder="attendu ${esc(fmt(m.attendu, m.attendu % 1 ? 2 : 0))}"` : ''}>
+        ${m.attendu !== undefined ? `<span class="small muted" data-att="${i}">${attenduHtml(m)}</span>` : ''}</div>`).join('')}</div>`).join('')}
       ${(() => { const rl = e.mesures.map((m, i) => [m, i, Essais.releve(m)]).filter(x => x[2]); if (!rl.length) return '';
         const faits = rl.filter(([m]) => String(m.valeur ?? '').trim() !== '').length;
         return `<h4 style="margin:.8em 0 .3em">Relevé ligne par ligne — ${rl.length} ${/eau/.test(rl[0][2].grandeur) || e.type === 'reseau' ? 'émetteur(s)' : 'bouche(s)'} <span class="small muted" id="es-releve-n">${faits}/${rl.length} mesuré(s)</span></h4>
-        <div style="overflow-x:auto"><table class="compact"><thead><tr><th>Repère</th><th>Pièce</th><th>Réseau, branche</th><th class="num">Attendu</th><th>Mesuré</th><th>Réglage</th><th>Écart</th></tr></thead><tbody>
-        ${rl.map(([m, i, r]) => `<tr><td><strong>${esc(r.repere)}</strong></td><td>${esc(r.piece)}</td><td class="small">${esc(r.detail)}</td><td class="num">${m.attendu !== undefined ? `${fmt(m.attendu, m.attendu % 1 ? 3 : 0)} ${esc(m.unite || '')}` : ''}</td>
+        <div style="overflow-x:auto"><table class="compact"><thead><tr><th>Repère</th><th>Pièce</th><th>Réseau, branche</th><th>Section / Ø</th><th class="num">Attendu</th><th>Mesuré</th><th>Réglage</th><th>Écart</th></tr></thead><tbody>
+        ${rl.map(([m, i, r]) => `<tr><td><strong>${esc(r.repere)}</strong></td><td>${esc(r.piece)}</td><td class="small">${esc(r.detail)}</td><td><input data-mesdim="${i}" style="width:6em" value="${esc(m.dim || '')}" placeholder="125, 775x175" aria-label="Section ${esc(r.repere)}"></td><td class="num">${m.attendu !== undefined ? `${fmt(m.attendu, m.attendu % 1 ? 3 : 0)} ${esc(m.unite || '')}` : ''}</td>
           <td><input data-mes="${i}" inputmode="decimal" style="width:7em" value="${esc(m.valeur ?? '')}" aria-label="${esc(m.libelle)} mesuré"></td>
           <td><input data-mesreg="${i}" style="width:9em" value="${esc(m.reglage || '')}" placeholder="${esc((/préréglage ([\d,]+ tours)/.exec(r.detail) || [])[1] || 'position, ouverture')}" aria-label="Réglage ${esc(r.repere)}"></td><td class="small" data-att="${i}" data-court="1">${ecartHtml(m)}</td></tr>`).join('')}</tbody></table></div>
         ${(() => { const rel = Store.all('equilibrages').filter(x => x.affaireId && x.affaireId === e.affaireId), n = rel.length ? Essais.reprendreReleve(JSON.parse(JSON.stringify(e.mesures)), rel) : 0;
           return `${n ? `<button class="small secondary" id="es-reprendre-releve">↙ Reprendre ${n} mesure(s) du relevé d'équilibrage (débits et réglages)</button> ` : ''}${e.affaireId ? '<button class="small secondary" id="es-renum">🔄 Repères renumérotés dans l\'étude</button>' : ''}`; })()}`; })()}
       ${(e.attendus || []).length ? '<p class="small muted">Valeurs attendues reprises de l\'étude : l\'écart s\'affiche dès la saisie de la mesure.</p>' : ''}
       <button class="small secondary" id="es-add-mes">+ Autre mesure</button></fieldset>
+    ${(e.plaque || []).length ? `<div class="field"><label for="es-composants">Équipements (filtres : nombre, dimensions et classe, thermostat antigel, accessoires)</label><textarea id="es-composants" data-k="composants" data-dictee rows="3" placeholder="Filtre air neuf F7 : 1 × 592 × 592 × 296 mm ePM1 80 %…">${esc(e.composants || '')}</textarea></div>` : ''}
     <div class="field"><label for="es-reglages">Réglages effectués</label><textarea id="es-reglages" data-k="reglages" data-dictee rows="2" placeholder="Consignes, lois d'eau, programmations, débits…">${esc(e.reglages || '')}</textarea></div>
     <div class="field"><label for="es-obs">Observations</label><textarea id="es-obs" data-k="observations" data-dictee rows="2">${esc(e.observations || '')}</textarea></div>
     <div class="field"><label for="es-res">Conclusion</label><select id="es-res" data-k="resultat"><option value="">—</option>${optionsStr(['Mis en service', 'Mis en service avec réserves', 'Non mis en service'], e.resultat)}</select></div>
@@ -198,7 +206,7 @@ Views.mes.bind = (root, params) => {
   $('#es-type').onchange = () => {
     const vides = !e.controles.some(c => c.etat) && !e.mesures.some(m => m.valeur !== '');
     e.type = $('#es-type').value;
-    if (vides) { const m = Essais.modele(e.type); Object.assign(e, { controles: m.controles, mesures: PlanMes.avecAttendus(m.mesures, e.attendus) }); }
+    if (vides) { const m = Essais.modele(e.type); Object.assign(e, { controles: m.controles, mesures: PlanMes.avecAttendus(m.mesures, e.attendus) }); if (m.plaque) e.plaque = m.plaque; else delete e.plaque; }
     App.render();
   };
   root.querySelectorAll('[data-ctl]').forEach(b => b.onclick = () => { const c = e.controles[+b.dataset.ctl]; c.etat = c.etat === b.dataset.etat ? '' : b.dataset.etat; proposer(); App.render(); });
@@ -211,6 +219,11 @@ Views.mes.bind = (root, params) => {
   if ($('#es-pap-a')) $('#es-pap-a').onclick = () => { e.controles.forEach(c => { if (c.pap && !c.etat) c.etat = 'OK'; }); proposer(); App.render(); };
   if ($('#es-pap-g')) $('#es-pap-g').onclick = () => { e.controles.forEach(c => { if (c.pap && !c.etatGtb) c.etatGtb = 'OK'; }); proposer(); App.render(); };
   // Mesure saisie : écart, conformité et conclusion proposée mis à jour (comme le résultat d'une épreuve)
+  // Facteur K : débit du ventilateur recalculé dès la saisie du coefficient ou du ΔP
+  const majK = () => { Essais.calculsFiche(e); e.mesures.forEach((m, i) => { if (m.auto) { const x = root.querySelector(`[data-mes="${i}"]`); if (x && x !== document.activeElement) x.value = m.valeur; } }); };
+  root.querySelectorAll('[data-plaque]').forEach(el => el.oninput = () => { e.plaque[+el.dataset.plaque].valeur = el.value.trim(); majK(); });
+  root.querySelectorAll('[data-mesdim]').forEach(el => el.oninput = () => { e.mesures[+el.dataset.mesdim].dim = el.value.trim(); });
+  root.querySelectorAll('[data-mes]').forEach(el => el.addEventListener('input', () => { const m = e.mesures[+el.dataset.mes]; m.valeur = el.value.trim(); if (m.libelle === 'Débit ventilateur (facteur K)') delete m.auto; majK(); }));
   root.querySelectorAll('[data-mes]').forEach(el => el.oninput = () => { const m = e.mesures[+el.dataset.mes]; m.valeur = el.value.trim(); const a = root.querySelector(`[data-att="${el.dataset.mes}"]`); if (a) a.innerHTML = a.dataset.court ? ecartHtml(m) : attenduHtml(m);
     const rn = root.querySelector('#es-releve-n'); if (rn) { const rl = e.mesures.filter(x => Essais.releve(x)); rn.textContent = `${rl.filter(x => String(x.valeur ?? '').trim() !== '').length}/${rl.length} mesuré(s)`; }
     const avant = e.resultat; proposer(); if (e.resultat !== avant && $('#es-res')) $('#es-res').value = e.resultat; });

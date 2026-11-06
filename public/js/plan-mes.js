@@ -134,7 +134,7 @@ const PlanMes = (() => {
   function avecAttendus(mesures, attendus) {
     const out = (mesures || []).map(m => ({ ...m }));
     (attendus || []).forEach(a => {
-      const m = out.find(x => norm(x.libelle) === norm(a.libelle) && (x.unite || '') === (a.unite || ''));
+      const m = out.find(x => norm(x.libelle) === norm(a.libelle) && (x.unite || '') === (a.unite || '')) || out.find(x => (x.alias || []).some(y => norm(y) === norm(a.libelle)) && (x.unite || '') === (a.unite || '') && x.attendu === undefined);
       if (m) m.attendu = a.valeur; else out.push({ libelle: a.libelle, unite: a.unite, valeur: '', attendu: a.valeur });
     });
     return out;

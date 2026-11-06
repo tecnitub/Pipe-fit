@@ -4,6 +4,17 @@ const Essais = (() => {
   const n = v => (v === '' || v === null || v === undefined ? null : Number(String(v).replace(',', '.')));
   const r1 = v => Math.round(v * 10) / 10;
 
+  // Fiches de relevés de fonctionnement (format de l'entreprise) : caractéristiques de la plaque, mesures par côté
+  // (soufflage / extraction, pompe 1 / pompe 2), équipements, réglages, autocontrôle des sécurités, équilibrage, fin d'antenne.
+  // Mesure : [libellé, unité, section, alias (libellés des valeurs attendues de l'étude)]
+  const PLAQUE_VENT = ['Marque du moto-ventilateur', 'Type du moto-ventilateur', 'Puissance', 'Intensité plaquée', 'Tension plaquée', 'Vitesse', 'Cos φ', 'Coefficient K'];
+  const mesVent = (sec, alias = []) => [['Signal ventilateur', '%', sec], ['Fréquence ventilateur', 'Hz', sec], ['Tension moteur', 'V', sec], ['Intensité moteur', 'A', sec],
+    ['Débit mesuré', 'm³/h', sec, alias], ['Débit ventilateur (facteur K)', 'm³/h', sec], ['ΔP ventilateur', 'Pa', sec], ['ΔP filtres M5 (ePM10)', 'Pa', sec], ['ΔP filtres F7 (ePM1)', 'Pa', sec],
+    ['ΔP batterie eau chaude', 'Pa', sec], ['ΔP batterie eau glacée', 'Pa', sec], ['ΔP pavillon', 'Pa', sec], [sec === 'Extraction' ? 'Pression d\'extraction' : 'Pression de soufflage', 'Pa', sec]];
+  const mesPompe = (sec, a) => [['Tension mesurée', 'V', sec], ['Intensité absorbée mini', 'A', sec], ['Intensité absorbée maxi', 'A', sec], ['Puissance lue mini', 'W', sec], ['Puissance lue maxi', 'W', sec],
+    ['Vitesse lue mini', 'tr/min', sec], ['Vitesse lue maxi', 'tr/min', sec], ['Consigne', '', sec], ['Débit mesuré', 'm³/h', sec, a ? ['Débit', 'Débit de la pompe'] : []], ['Débit lu (info pompe)', 'm³/h', sec],
+    ['Débit lu (info compteur)', 'm³/h', sec], ['HMT mesurée', 'mCE', sec, a ? ['Hauteur manométrique'] : []], ['HMT lue (info pompe)', 'mCE', sec]];
+  const FIN = ['Pression de fin d\'antenne', 'Pa', ''];
   // Types d'équipement : points de contrôle et mesures relevées [libellé, unité]
   const TYPES = {
     pac: { libelle: 'PAC / thermofrigopompe / groupe froid', frigo: true,
@@ -16,15 +27,16 @@ const Essais = (() => {
     chaudiere: { libelle: 'Chaudière / production de chaleur',
       controles: ['Étanchéité du raccordement gaz', 'Évacuation des fumées et amenée d\'air conformes', 'Remplissage, purge et pression du circuit', 'Sécurités (manque d\'eau, surchauffe, flamme) testées', 'Régulation paramétrée'],
       mesures: [['CO2', '%'], ['CO', 'ppm'], ['Température des fumées', '°C'], ['Rendement de combustion', '%'], ['Pression gaz', 'mbar'], ['Température départ', '°C'], ['Température retour', '°C']] },
-    cta: { libelle: 'Centrale de traitement d\'air (CTA)',
-      controles: ['Filtres en place et propres', 'Sens de rotation des ventilateurs', 'Registres et clapets fonctionnels', 'Batteries raccordées et purgées', 'Évacuation des condensats / siphon', 'Sécurités (antigel, pressostats filtres) testées', 'Communication avec la GTB'],
-      mesures: [['Débit de soufflage', 'm³/h'], ['Débit de reprise', 'm³/h'], ['Pression disponible', 'Pa'], ['Perte de charge des filtres', 'Pa'], ['Température de soufflage', '°C'], ['Intensité moteur', 'A']] },
-    vmc: { libelle: 'Ventilation mécanique (VMC, extracteur)',
-      controles: ['Bouches et entrées d\'air conformes', 'Sens de rotation', 'Réseau étanche, gaines raccordées et supportées', 'Rejet extérieur conforme'],
-      mesures: [['Débit total', 'm³/h'], ['Dépression au caisson', 'Pa'], ['Intensité moteur', 'A']] },
-    pompes: { libelle: 'Pompes et circulateurs',
+    cta: { libelle: 'Centrale de traitement d\'air (CTA)', fiche: { titre: 'Centrale de traitement d\'air', sections: ['Soufflage', 'Extraction'], plaque: PLAQUE_VENT, prevu: ['Débit de soufflage', 'Débit de reprise'] },
+      controles: ['Filtres en place et propres', 'Sens de rotation des ventilateurs', 'Registres et clapets fonctionnels', 'Batteries raccordées et purgées', 'Évacuation des condensats / siphon', 'Antigel testé', 'Pressostats des filtres testés', 'Communication avec la GTB'],
+      mesures: [...mesVent('Soufflage', ['Débit de soufflage']), ...mesVent('Extraction', ['Débit de reprise']), FIN] },
+    vmc: { libelle: 'Ventilation mécanique (VMC, extracteur)', fiche: { titre: 'Ventilateur d\'extraction', sections: [''], plaque: PLAQUE_VENT, prevu: ['Débit', 'Débit total', 'Débit de reprise', 'Débit de soufflage'] },
+      controles: ['Bouches et entrées d\'air conformes', 'Sens de rotation', 'Réseau étanche, gaines raccordées et supportées', 'Rejet extérieur conforme', 'Interrupteur de proximité et sécurités testés'],
+      mesures: [['Tension', 'V', ''], ['Intensité', 'A', ''], ['Signal', 'V', ''], ['Débit extraction', 'm³/h', '', ['Débit', 'Débit total', 'Débit de reprise', 'Débit de soufflage']], ['Débit ventilateur (facteur K)', 'm³/h', ''],
+        ['Pression extraction', 'Pa', ''], ['ΔP ventilateur', 'Pa', ''], ['Pression rejet', 'Pa', ''], FIN] },
+    pompes: { libelle: 'Pompes et circulateurs', fiche: { titre: 'Pompes', sections: ['Pompe 1', 'Pompe 2'], plaque: ['Tension nominale', 'Intensité nominale', 'Vitesse de rotation', 'Puissance', 'Cos φ', 'Accouplement électrique'], plaqueCommune: true, prevu: ['Débit', 'Débit de la pompe'] },
       controles: ['Circuit rempli et purgé', 'Sens de rotation', 'Consigne réglée (pression différentielle ou vitesse)', 'Absence de bruit et de vibrations'],
-      mesures: [['Débit', 'm³/h'], ['Hauteur manométrique', 'mCE'], ['Pression aspiration', 'bar'], ['Pression refoulement', 'bar'], ['Intensité', 'A']] },
+      mesures: [...mesPompe('Pompe 1', true), ...mesPompe('Pompe 2', false), ['Vanne de réglage générale (marque, type, position, repère)', '', ''], ['Vanne de réglage by-pass V3V (marque, type, position, repère)', '', ''], ['Pression de fin d\'antenne', 'kPa', '']] },
     desenfumage: { libelle: 'Désenfumage mécanique',
       controles: ['Commandes manuelle et automatique testées', 'Volets et clapets ouverts sur commande', 'Report d\'état au CMSI', 'Alimentation de sécurité'],
       mesures: [['Débit extrait', 'm³/h'], ['Vitesse de passage', 'm/s'], ['Temps de mise en route', 's']] },
@@ -52,7 +64,22 @@ const Essais = (() => {
   };
   const ETATS = ['OK', 'Non conforme', 'Sans objet'];
   // Points de contrôle et mesures d'un type (pour une nouvelle mise en service)
-  const modele = type => { const t = TYPES[type] || TYPES.autre; return { controles: t.controles.map(libelle => ({ libelle, etat: '', obs: '' })), mesures: t.mesures.map(([libelle, unite]) => ({ libelle, unite, valeur: '' })) }; };
+  const modele = type => { const t = TYPES[type] || TYPES.autre, f = t.fiche;
+    return { controles: t.controles.map(libelle => ({ libelle, etat: '', obs: '' })), mesures: t.mesures.map(([libelle, unite, section, alias]) => ({ libelle, unite, valeur: '', ...(section !== undefined ? { section } : {}), ...(alias && alias.length ? { alias } : {}) })),
+      ...(f ? { plaque: (f.plaqueCommune ? [''] : f.sections).flatMap(section => f.plaque.map(libelle => ({ section, libelle, valeur: '' }))) } : {}) }; };
+  // Débit du ventilateur par le facteur K (buse de mesure du moto-ventilateur) : Q = K · √ΔP, recalculé tant qu'il n'a pas été saisi à la main
+  function calculsFiche(m) {
+    const sections = [...new Set((m.mesures || []).map(x => x.section).filter(x => x !== undefined))];
+    sections.forEach(sec => {
+      const K = n(((m.plaque || []).find(p => (p.section || '') === (sec || '') && /^Coefficient K$/i.test(p.libelle)) || {}).valeur);
+      const dp = n(((m.mesures || []).find(x => (x.section || '') === (sec || '') && x.libelle === 'ΔP ventilateur') || {}).valeur), q = (m.mesures || []).find(x => (x.section || '') === (sec || '') && x.libelle === 'Débit ventilateur (facteur K)');
+      if (!q || !(String(q.valeur ?? '').trim() === '' || q.auto)) return;
+      if (K > 0 && dp > 0) { q.valeur = String(Math.round(K * Math.sqrt(dp))); q.auto = true; } else if (q.auto) { q.valeur = ''; }
+    });
+    return m;
+  }
+  // Débit prévu (en-tête de la fiche) : première valeur attendue de l'étude parmi les libellés du type
+  const debitPrevu = m => { const f = (TYPES[m.type] || {}).fiche; if (!f) return null; const x = (m.mesures || []).find(v => v.attendu !== undefined && v.attendu !== '' && (f.prevu.includes(v.libelle) || (v.alias || []).some(a => f.prevu.includes(a)))); return x ? x.attendu : null; };
   // Tolérance de réception d'une mesure comparée à la valeur attendue de l'étude (comme la chute admissible d'une épreuve) :
   // températures ± 2 K, pressions de réglage ± 0,2 bar, autres grandeurs ± 10 %
   function tolerance(libelle, unite) {
@@ -154,6 +181,6 @@ const Essais = (() => {
     });
     return k;
   }
-  return { versReleve, renumeroter, reprendreReleve, releve, TYPES, ETATS, modele, conclusion, reserves, avancementPap, manquesMES, tolerance, conformeMesure, ecart, conforme, synthese, manquesEQ, importerLignes };
+  return { versReleve, renumeroter, reprendreReleve, releve, TYPES, ETATS, modele, conclusion, reserves, avancementPap, calculsFiche, debitPrevu, manquesMES, tolerance, conformeMesure, ecart, conforme, synthese, manquesEQ, importerLignes };
 })();
 if (typeof module !== 'undefined') module.exports = Essais;

@@ -10,7 +10,8 @@ const D = require('../public/js/essais-doc');
 
 test('mise en service : modèle par type, conclusion proposée, champs manquants', () => {
   const m = E.modele('cta');
-  assert.ok(m.controles.length >= 5 && m.mesures.some(x => x.libelle === 'Débit de soufflage' && x.unite === 'm³/h'));
+  assert.ok(m.controles.length >= 5 && m.mesures.some(x => x.libelle === 'Débit mesuré' && x.section === 'Soufflage' && x.alias.includes('Débit de soufflage') && x.unite === 'm³/h'));
+  assert.ok(m.plaque.some(p => p.section === 'Extraction' && p.libelle === 'Coefficient K'));
   assert.strictEqual(E.conclusion(m), '');
   m.controles.forEach(c => { c.etat = 'OK'; });
   assert.strictEqual(E.conclusion(m), 'Mis en service');
@@ -113,4 +114,32 @@ test('mise en service : verdict par mesure comme une épreuve (tolérance, hors 
   const h = D.miseEnService({ ...m, type: 'terminal', resultat: 'Mis en service avec réserves' }, { img: () => '', technicien: 'T', societe: 'S', chantier: {} });
   assert.match(h, /hors tolérance/);
   assert.match(h, /± 10 %/);
+});
+
+test('fiche de relevés de fonctionnement : plaque, mesures par côté, facteur K, débit prévu, équilibrage, PV et Excel', () => {
+  const P = require('../public/js/plan-mes'), X = require('../public/js/xlsx');
+  const m0 = E.modele('cta'), m = { type: 'cta', equipement: 'CTA Orchestre', localisation: 'Toiture', marque: 'Marque CTA', modele: 'Modèle 15', date: '2026-07-01', plaque: m0.plaque, controles: m0.controles,
+    mesures: P.avecAttendus(m0.mesures, [{ libelle: 'Débit de soufflage', unite: 'm³/h', valeur: 3600 }, { libelle: 'Débit de reprise', unite: 'm³/h', valeur: 3600 }, { libelle: 'Débit S-01 — Salle · soufflage · branche A', unite: 'm³/h', valeur: 1800 }]) };
+  const sec = (s, l) => m.mesures.find(x => x.section === s && x.libelle === l);
+  assert.strictEqual(sec('Soufflage', 'Débit mesuré').attendu, 3600); assert.strictEqual(sec('Extraction', 'Débit mesuré').attendu, 3600);
+  assert.strictEqual(m.mesures.filter(x => x.libelle === 'Débit de soufflage').length, 0, 'attendu rangé sur la mesure du côté soufflage');
+  assert.strictEqual(E.debitPrevu(m), 3600);
+  // Facteur K : Q = K · √ΔP (121 · √948 = 3725,5 → 3726 m³/h)
+  m.plaque.find(p => p.section === 'Soufflage' && p.libelle === 'Coefficient K').valeur = '121';
+  sec('Soufflage', 'ΔP ventilateur').valeur = '948';
+  E.calculsFiche(m);
+  assert.strictEqual(sec('Soufflage', 'Débit ventilateur (facteur K)').valeur, '3726');
+  sec('Soufflage', 'ΔP ventilateur').valeur = '1032'; E.calculsFiche(m);
+  assert.strictEqual(sec('Soufflage', 'Débit ventilateur (facteur K)').valeur, '3887', 'recalculé tant qu\'il n\'est pas saisi à la main');
+  const bouche = m.mesures.find(x => E.releve(x)); Object.assign(bouche, { valeur: '1770', dim: '775x175', reglage: '/' });
+  m.controles[0].etat = 'OK'; m.controles[1].etat = 'Sans objet';
+  const h = D.miseEnService({ ...m, composants: 'Filtre F7 : 1 × 592 × 592 × 296 mm', reglages: 'Antigel = 5 °C' }, { img: () => '', technicien: 'T', societe: 'S', chantier: { code: 'C1', nom: 'Conservatoire' } });
+  ['FICHE DE RELEVÉS DE FONCTIONNEMENT', 'CENTRALE DE TRAITEMENT D', 'SOUFFLAGE', 'EXTRACTION', 'Coefficient K', '3887', 'ÉQUIPEMENTS', 'AUTOCONTRÔLE', '>SO<', 'ÉQUILIBRAGE AÉRAULIQUE', '775x175', 'Débit prévu'].forEach(t => assert.ok(h.includes(t), t));
+  const f = D.ficheExcel(m, { chantier: 'Conservatoire', technicien: 'T' });
+  assert.strictEqual(f.name, 'Rév.0'); assert.ok(f.rows.some(r => r[0] === 'Débit ventilateur (facteur K)' && r[1] === 3887));
+  assert.ok(X.build([f]).length > 1000);
+  // Pompes : caractéristiques électriques communes, pompe 1 / pompe 2, débit et HMT attendus sur la pompe 1
+  const p0 = E.modele('pompes'), pm = P.avecAttendus(p0.mesures, [{ libelle: 'Débit', unite: 'm³/h', valeur: 8.6 }, { libelle: 'Hauteur manométrique', unite: 'mCE', valeur: 6 }]);
+  assert.ok(p0.plaque.every(p => p.section === '') && pm.find(x => x.section === 'Pompe 1' && x.libelle === 'Débit mesuré').attendu === 8.6 && pm.find(x => x.section === 'Pompe 1' && x.libelle === 'HMT mesurée').attendu === 6);
+  assert.ok(D.miseEnService({ type: 'pompes', equipement: 'Pompes CTA', plaque: p0.plaque, mesures: pm, controles: p0.controles }, { img: () => '', technicien: 'T', societe: 'S', chantier: {} }).includes('CARACTÉRISTIQUES ÉLECTRIQUES'));
 });
