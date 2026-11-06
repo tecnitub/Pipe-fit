@@ -341,6 +341,8 @@ Views.releve.bind = (root, params) => {
     if (!cible) return;
     const v = el.value.replace(',', '.');
     cible[k] = ['dn', 'dn2', 'dnB', 'dnDepart', 'angle'].includes(k) ? +v : k === 'auto' ? !!v : ['l', 'cote', 'dec', 'dec2', 'af'].includes(k) ? v : el.value;
+    // Modèle du fabricant choisi : raccordement de la fiche (taraudé, ou à brides / entre brides)
+    if (i >= 0 && cible.t === 'vanne' && k === 'modele') { const mo = Tuyauterie.modeleDe(cible); if (mo) cible.rac = mo.raccordement === 'taraude' ? 'taraude' : 'bride'; }
     // Changement de DN : les éléments suivants de même DN suivent (jusqu'à la prochaine réduction)
     // Filtre, disconnecteur : raccordement imposé par le DN (taraudé jusqu'au DN50, à brides au-delà)
     if (i >= 0 && cible.t === 'vanne' && ['type', 'dn'].includes(k)) {

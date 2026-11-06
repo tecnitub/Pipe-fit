@@ -204,3 +204,24 @@ test('serveur : le technicien fait sa prise de cotes, numérotée, complète pou
   assert.strictEqual(ok.status, 200);
   assert.strictEqual(ok.body.numero, brouillon.body.numero, 'numéro conservé');
 });
+
+test('robinetterie à cotes réelles : modèle du fabricant à la place de la cote EN 558, raccordement, nomenclature, DN absent', () => {
+  const ids = T.catalogue().map(x => x.id);
+  ['IMI Hydronic STAD / STADV', 'IMI Hydronic STAF', 'TECOFI VPI 4648-02 (Tecfly Lug)', 'CGR 165'].forEach(id => assert.ok(ids.includes(id), id));
+  // STAD DN20 taraudée : 94 mm (fiche) au lieu de la cote normalisée ; STAF DN80 à brides : 310 + contre-brides
+  assert.strictEqual(T.longueur({ t: 'vanne', dn: 20, type: 'equilibrage', rac: 'taraude', modele: 'IMI Hydronic STAD / STADV' }), 94);
+  assert.strictEqual(T.longueur({ t: 'vanne', dn: 80, type: 'equilibrage', rac: 'bride', modele: 'IMI Hydronic STAF' }), 310 + 2 * (50 + 2));
+  assert.strictEqual(T.longueur({ t: 'vanne', dn: 100, type: 'papillon', rac: 'bride', modele: 'TECOFI VPI 4648-02 (Tecfly Lug)' }), 51.5 + 2 * (52 + 2));
+  assert.ok(T.modeles('equilibrage', 20).some(x => x.id === 'IMI Hydronic STAD / STADV') && !T.modeles('equilibrage', 20).some(x => x.id === 'IMI Hydronic STAF'));
+  // Ligne : longueur de coupe calculée avec la cote du fabricant, modèle sur la nomenclature ; DN absent → cote normalisée signalée
+  const r = { matiere: 'Acier P235GH', dn: 20, depart: 'E', elements: [{ t: 'tube', dn: 20, auto: true, cote: 500 }, { t: 'vanne', dn: 20, type: 'equilibrage', rac: 'taraude', modele: 'IMI Hydronic STAD / STADV' }, { t: 'tube', dn: 20, l: 300 }] };
+  const pl = T.placer(r), v = pl.pieces.find(p => p.t === 'vanne');
+  assert.strictEqual(v.modele, 'IMI Hydronic STAD / STADV');
+  assert.ok(T.nomenclature(r, pl).some(l => JSON.stringify(l).includes('IMI Hydronic STAD / STADV')));
+  const pl2 = T.placer({ ...r, elements: [r.elements[0], { ...r.elements[1], dn: 65, modele: 'IMI Hydronic STAD / STADV' }] });
+  assert.ok(pl2.erreurs.some(e => /pas de cote pour le DN65/.test(e.msg)));
+  // Modèles de l'entreprise ajoutés (paramètres) : pris en compte, sans effacer la base
+  T.definirCatalogue([{ fabricant: 'Maison', modele: 'V1', type: 'boisseau', raccordement: 'taraude', dimensions: { 25: 77 } }]);
+  assert.strictEqual(T.longueur({ t: 'vanne', dn: 25, type: 'boisseau', rac: 'taraude', modele: 'Maison V1' }), 77);
+  assert.ok(T.catalogue().length > 10); T.definirCatalogue();
+});

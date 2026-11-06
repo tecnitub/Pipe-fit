@@ -1,0 +1,21 @@
+// Robinetterie des fabricants : longueur réelle le long de l'axe (mm) par DN, relevée sur les fiches techniques
+// (cote indiquée dans « lettre »). Robinets taraudés : longueur du corps ; à brides : face à face ; entre brides
+// (papillon à oreilles, clapet) : longueur du corps entre les contre-brides. Le DN des taraudés suit le filetage
+// gaz (12×17 = DN10, 15×21 = DN15 … 50×60 = DN50). Les modèles saisis dans les paramètres complètent cette liste.
+const ROBINETTERIE_FABRICANTS = [
+  {"fabricant": "CGR / Astori", "modele": "304A / 304AB (avec allonge)", "type": "boisseau", "raccordement": "taraude", "pose": "taraude", "lettre": "C", "dimensions": {"8": 44, "10": 45, "15": 56, "20": 64, "25": 74, "32": 85, "40": 98, "50": 110, "65": 134}},
+  {"fabricant": "CGR / Astori", "modele": "304 / 304B", "type": "boisseau", "raccordement": "taraude", "pose": "taraude", "lettre": "C", "dimensions": {"8": 44, "10": 45, "15": 56, "20": 64, "25": 74, "32": 85, "40": 98, "50": 110, "65": 134, "80": 160, "100": 186}},
+  {"fabricant": "TECOFI", "modele": "VPI 4648-02 (Tecfly Lug)", "type": "papillon", "raccordement": "bride", "pose": "entre-brides", "lettre": "L", "dimensions": {"40": 32.5, "50": 42.5, "65": 45.5, "80": 45.5, "100": 51.5, "125": 55.5, "150": 55.5, "200": 59.5, "250": 67.5, "300": 77.5}},
+  {"fabricant": "TECOFI", "modele": "VPE 4508-08 (Teclarge double brides)", "type": "papillon", "raccordement": "bride", "pose": "bride", "lettre": "C", "dimensions": {"350": 76.5, "400": 102, "450": 114, "500": 127, "600": 151, "700": 163, "800": 188, "900": 203, "1000": 216, "1200": 276}},
+  {"fabricant": "IMI Hydronic", "modele": "STAD / STADV", "type": "equilibrage", "raccordement": "taraude", "pose": "taraude", "lettre": "A", "dimensions": {"10": 73, "15": 84, "20": 94, "25": 105, "32": 121, "40": 126, "50": 155}},
+  {"fabricant": "IMI Hydronic", "modele": "STAF", "type": "equilibrage", "raccordement": "bride", "pose": "bride", "lettre": "L", "dimensions": {"65": 290, "80": 310, "100": 350, "125": 400, "150": 480, "200": 600, "250": 730, "300": 850}},
+  {"fabricant": "CGR", "modele": "165", "type": "soupape", "raccordement": "taraude", "pose": "taraude", "lettre": "B", "dimensions": {"10": 46, "15": 56, "20": 62, "25": 74, "32": 91, "40": 100, "50": 128}},
+  {"fabricant": "TECOFI", "modele": "F 3240-EP", "type": "filtre", "raccordement": "bride", "pose": "bride", "lettre": "L", "dimensions": {"15": 130, "20": 150, "25": 160, "32": 180, "40": 200, "50": 230, "65": 290, "80": 310, "100": 350, "125": 400, "150": 480, "200": 600, "250": 730, "300": 850, "350": 980, "400": 1100}},
+  {"fabricant": "TECOFI", "modele": "CB 3448N", "type": "clapet", "raccordement": "bride", "pose": "entre-brides", "lettre": "B", "dimensions": {"40": 43, "50": 43, "65": 46, "80": 64, "100": 64, "125": 70, "150": 76, "200": 89, "250": 114, "300": 114, "350": 127, "400": 140, "450": 152, "500": 152, "600": 178, "700": 229, "800": 241}},
+  {"fabricant": "TECOFI", "modele": "DI 7240N", "type": "dilatation", "raccordement": "bride", "pose": "bride", "lettre": "L", "dimensions": {"32": 95, "40": 95, "50": 105, "65": 115, "80": 135, "100": 135, "125": 165, "150": 180, "200": 205, "250": 240, "300": 260, "350": 265, "400": 265, "450": 265, "500": 265, "600": 265}},
+  {"fabricant": "CGR", "modele": "369", "type": "dilatation", "raccordement": "bride", "pose": "bride", "lettre": "L", "dimensions": {"50": 155, "65": 165, "80": 175, "100": 180, "125": 200, "150": 230}},
+  {"fabricant": "Siemens", "modele": "VPF44.. / VPF54.. (PICV PN16/PN25)", "type": "v2v", "raccordement": "bride", "pose": "bride", "lettre": "L1", "dimensions": {"50": 230, "65": 290, "80": 310, "100": 350}},
+  {"fabricant": "Siemens", "modele": "VPF43.. / VPF53.. (PICV PN16/PN25)", "type": "v2v", "raccordement": "bride", "pose": "bride", "lettre": "L1", "dimensions": {"125": 400, "150": 480, "200": 600}},
+  {"fabricant": "Siemens", "modele": "VPI46.. / VPI46..Q (combinée PN25, taraudée Rp)", "type": "v2v", "raccordement": "taraude", "pose": "taraude", "lettre": "L1", "dimensions": {"15": 75, "20": 79, "25": 83, "32": 104, "40": 138, "50": 138}},
+];
+if (typeof module !== 'undefined') module.exports = ROBINETTERIE_FABRICANTS;
