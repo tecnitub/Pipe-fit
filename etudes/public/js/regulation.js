@@ -97,7 +97,7 @@ const Regulation = (() => {
           const cc = Sc().courbeChauffe ? Sc().courbeChauffe(d.co ? d.co.dC : d, e) : null;
           if (cc) cc.circuits.forEach(c => { params.push(p(`Pente de la courbe de chauffe ${c.rep} (type Synco)`, Math.round(c.pente * 20) / 20, ''), p(`Déplacement parallèle ${c.rep}`, Math.round(c.deplacement * 2) / 2, 'K')); });
           if (d.chaud) params.push(p('Arrêt chauffage (non-chauffage) au-dessus de', cc ? cc.arret : 17, '°C ext.'));
-          installations.push({ noteId: n.id, titre, app: 'production', af: ((Array.isArray(r) ? r.find(b => b.liste) : r) || {}).liste || r.af || [], params: params.filter(Boolean) });
+          installations.push({ noteId: n.id, titre, app: 'production', puissance: num(d.Pprod) + (d.co && d.co.dF ? num(d.co.dF.Pprod) : 0), af: ((Array.isArray(r) ? r.find(b => b.liste) : r) || {}).liste || r.af || [], params: params.filter(Boolean) });
         } else if (n.type === 'cta') {
           const { e } = res(n), f = e.froid || 'oui', recup = e.recup || '', co = f === 'co';
           const af = [

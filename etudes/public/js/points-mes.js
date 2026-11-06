@@ -118,7 +118,7 @@ const PointsMes = (() => {
           // Tests point à point de la GTB : un contrôle par point de la liste
           const pts = (v.listePoints || []).slice(0, 400);
           if (pts.length) out.push({ ...base, nature: 'mes', type: 'gtb', cle: '', titre: `Tests point à point GTB — ${pts.length} points (${titre})`,
-            controles: pts.map(p => txt(`${p[0]} — ${p[7] || p[1]} (${p[4] || p[2]})`, 120)), attendus: [] });
+            controles: pts.map(p => txt(`${p[0]} — ${p[7] || p[1]} (${p[4] || p[2]}) : ${(typeof Gtb !== 'undefined' ? Gtb : require('./gtb')).essai(p[2])[0].split(' ; ')[0]}`, 160)), attendus: [] });
           // Régulation de chaque installation : une fiche (technologie de son armoire) avec les paramètres à régler et vérifier
           const RG = typeof Regulation !== 'undefined' ? Regulation : require('./regulation');
           ((v.regulation || {}).installations || []).forEach(x => out.push({ ...base, nature: 'mes', type: 'gtb', cle: `regul|${x.noteId}`, titre: `Régulation — ${txt(x.titre, 80)} (${(t => t.charAt(0).toLowerCase() + t.slice(1))((RG.TECHNOS[x.techno] || RG.TECHNOS.automate)[0])})`,

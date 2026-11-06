@@ -47,12 +47,19 @@ const Electricite = ((N, Sc) => {
     ['modem4G', 'Routeur 4G / télégestion', 'Accès à distance, alarmes par SMS'],
     ['onduleur', 'Onduleur (automate, serveur web, routeur)', 'Maintien 10 min, alarme de coupure secteur'],
     ['compteurElec', 'Compteur d\'énergie électrique de l\'armoire (communicant)', 'Suivi des consommations (décret BACS)'],
+    ['comptageUsages', 'Comptage d\'énergie par usage (compteurs thermiques, sous-compteurs électriques, gaz)', 'RE2020 / RT 2012, décret tertiaire, BACS : compteurs et points GTB ajoutés'],
     ['delestage', 'Contact de délestage / effacement', 'Entrée TOR : arrêt des usages non prioritaires'],
     ['reportSSI', 'Ordre d\'arrêt du SSI (asservissements incendie)', 'Entrée TOR : arrêt des CTA et ventilations'],
     ['defautGeneral', 'Report de défaut général (voyant ou sirène, GTB)', 'Sortie TOR'],
     ['horsGel', 'Sonde extérieure de hors gel', 'Mise en marche des pompes sous 3 °C'],
   ];
-  const OPTIONS_DEFAUT = ['auArmoire', 'auChaufferie', 'manqueEau', 'detectionGaz', 'thermostatSecu', 'prise', 'eclairage', 'parafoudre', 'presenceTension', 'ventilation', 'webServeur', 'switch'];
+  const OPTIONS_DEFAUT = ['auArmoire', 'auChaufferie', 'manqueEau', 'detectionGaz', 'thermostatSecu', 'prise', 'eclairage', 'parafoudre', 'presenceTension', 'ventilation', 'webServeur', 'switch', 'comptageUsages'];
+  // Options par défaut d'une armoire divisionnaire (sans les sécurités de chaufferie)
+  const OPTIONS_DIV = ['auArmoire', 'prise', 'eclairage', 'parafoudre', 'presenceTension', 'ventilation'];
+  const Gt = () => (typeof Gtb !== 'undefined' ? Gtb : require('./gtb'));
+  const Cb = () => (typeof Cables !== 'undefined' ? Cables : require('./cables'));
+  // Ventilateurs à filtre (m³/h) et climatiseurs d'armoire (W froid) usuels
+  const VENTILOS = [20, 55, 105, 180, 300, 550, 900], CLIMS = [300, 500, 750, 1000, 1500, 2000, 3000, 4000];
   // Marques d'automate (désignation ; les capacités restent celles de la fiche retenue)
   const MARQUES = { generique: 'Automate programmable', wit: 'Automate Wit', siemens: 'Automate Siemens', schneider: 'Automate Schneider Electric', sauter: 'Automate Sauter', distech: 'Automate Distech Controls', trend: 'Automate Trend' };
   // Alimentations très basse tension : calibres normalisés (A, VA)
@@ -69,7 +76,7 @@ const Electricite = ((N, Sc) => {
       add('24DC', `${(cfgAut.UC || {}).ref && !/^Automate programmable \(UC\)$/.test(cfgAut.UC.ref) ? cfgAut.UC.ref : (MARQUES[marque] || MARQUES.generique) + ' (UC)'}`, 1, 10); add('24DC', 'Cartes d\'entrées / sorties', nc, 1.5); add('24DC', 'Capteurs actifs (entrées analogiques)', pt('EA'), 0.6); add('24DC', 'Entrées TOR', pt('ETOR'), 0.15); add('24DC', 'Relais d\'interface des sorties TOR', pt('STOR'), 0.4);
       if (a.extensions) add('24DC', 'Coupleurs d\'extension', a.extensions, 3); }
     if (a.techno === 'synco') { add('24ACcmd', 'Régulateurs préprogrammés', (a.synco || []).length, 8); add('24ACcmd', 'Modules d\'extension', (a.synco || []).reduce((x, r) => x + r.modules, 0), 2); }
-    if (a.i === 0) { const o = a.opt || new Set(); if (o.has('webServeur')) add('24DC', 'Serveur web', 1, 8); if (o.has('switch')) add('24DC', 'Switch Ethernet', 1, 4); if (o.has('modem4G')) add('24DC', 'Routeur 4G', 1, 6); }
+    { const o = a.opt || new Set(); if (o.has('webServeur')) add('24DC', 'Serveur web', 1, 8); if (o.has('switch')) add('24DC', 'Switch Ethernet', 1, 4); if (o.has('modem4G')) add('24DC', 'Routeur 4G', 1, 6); }
     const km = a.eqs.filter(q => q.km).length, mot = a.eqs.filter(q => q.moteur && (q.km || q.depart === 'variateur')).length;
     add('24ACcmd', 'Bobines des contacteurs (maintien)', km, 10); add('24ACcmd', 'Voyants marche / défaut', mot * 2, 1); if (!a.opt || a.opt.has('auArmoire')) add('24ACcmd', 'Relais de sécurité / arrêt d\'urgence', 1, 3);
     a.eqs.filter(q => q.tension === '24V' || q.tension === '48V').forEach(q => {
@@ -181,10 +188,16 @@ const Electricite = ((N, Sc) => {
     const armDuLocal = x => { const l = norm(x.local || x.zone); if (!l) return null; return arm.find(a => norm(a.local) === l) || arm.find(a => norm(a.local) && (l.includes(norm(a.local)) || norm(a.local).includes(l))) || null; };
     if (!arm.length) alertes.push(alerte('attention', 'Aucune armoire CVC : ajoutez au moins une armoire (à la charge du lot CVC) ou alimentez tous les équipements par des attentes du lot électricité.'));
     const reps = new Set();
-    const opt = new Set(Array.isArray(e.options) ? e.options : OPTIONS_DEFAUT), a0 = arm[0] ? arm[0].rep : 'elec';
+    const opt = new Set(Array.isArray(e.options) ? e.options : OPTIONS_DEFAUT);
+    // Options de chaque armoire : la première suit les cases générales, les autres leur propre colonne
+    arm.forEach(a => { a.opt = a.i === 0 ? opt : new Set(Array.isArray(a.options) ? a.options : OPTIONS_DIV); });
     const SECU_OPT = { au: 'auChaufferie', pmq: 'manqueEau', dg: 'detectionGaz', evg: 'detectionGaz', mde: 'manqueEau' };
     const listeEq = (e.equipements || []).filter(x => { const cle = String(x.src || '').split(':').pop(); return !SECU_OPT[cle] || opt.has(SECU_OPT[cle]); });
-    const virt = (k, o) => { if (opt.has(k) && !listeEq.some(x => x.rep === o.rep)) listeEq.push({ src: `opt:${k}`, alim: a0, ...o }); };
+    // Équipement ajouté par une option, dans chaque armoire qui la coche (repère suffixé hors de la première)
+    const virt = (k, o) => (arm.length ? arm.filter(a => a.opt.has(k)) : opt.has(k) ? [{ rep: 'elec', i: 0 }] : []).forEach(a => {
+      const r = a.i === 0 ? o.rep : `${o.rep}-${a.rep}`;
+      if (!listeEq.some(x => x.rep === r)) listeEq.push({ ...o, src: a.i === 0 ? `opt:${k}` : `opt:${k}@${a.rep}`, rep: r, alim: a.rep });
+    });
     virt('cordonChauffant', { rep: 'CC1', designation: 'Cordons chauffants hors gel (thermostat d\'ambiance extérieure)', type: 'resistance', P: num(e.cordonP, 0.5), tension: 'mono', depart: 'direct', regulation: 'contact', diff: 'différentiel 30 mA' });
     virt('antiCondensation', { rep: 'RAC', designation: 'Résistance anti-condensation et hygrostat', type: 'resistance', P: 0.1, tension: 'mono', depart: 'direct', regulation: 'aucune' });
     virt('compteurElec', { rep: 'CPT-E', designation: 'Compteur d\'énergie électrique de l\'armoire', type: 'sonde', P: 0, tension: '24V', regulation: 'bus' });
@@ -193,6 +206,8 @@ const Electricite = ((N, Sc) => {
     virt('defautGeneral', { rep: 'DEF-G', designation: 'Report de défaut général (voyant, sirène)', type: 'sonde', P: 0, tension: '24V', regulation: 'report' });
     virt('onduleur', { rep: 'OND', designation: 'Onduleur : défaut secteur', type: 'sonde', P: 0, tension: '24V', regulation: 'contact' });
     virt('horsGel', { rep: 'TE-HG', designation: 'Sonde extérieure de hors gel', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
+    // Comptage d'énergie par usage : compteurs thermiques, sous-compteurs électriques et de gaz, relevés par la première armoire
+    if (opt.has('comptageUsages')) Gt().comptages(listeEq, REG, { gaz: listeEq.some(x => x.type === 'electrovanne') }).forEach(x => listeEq.push({ ...x, alim: arm[0] ? arm[0].rep : 'elec' }));
     // Thermostats de sécurité décochés : retirés de la chaîne de sécurité (ceux repris de l'étude)
     if (!opt.has('thermostatSecu')) for (let i = listeEq.length - 1; i >= 0; i--) if (/thermostat de sécurité/i.test(listeEq[i].designation || '') && listeEq[i].src) listeEq.splice(i, 1);
     // Moteurs doubles (pompes, ventilateurs, CTA) : deux moteurs M1 / M2, un seul en marche (permutation, secours)
@@ -257,6 +272,25 @@ const Electricite = ((N, Sc) => {
     // (pouvoir de coupure des appareils), Icc mini en bout de chaque départ (déclenchement magnétique), sélectivité
     const iccT = Math.max(1, num(e.iccTgbt, 10)) * 1000, Zs = 400 / (Math.sqrt(3) * iccT), XL = 0.00008, RHO0 = 0.01851, RHOC = RHO0 * 1.25;
     const PDC = [6, 10, 15, 25, 36, 50, 70], IM = { B: 5, C: 10, D: 20 }, ccLignes = [];
+    // Câbles : mode de pose, isolant, température et groupement de l'étude (ou du départ) ; chute de tension cumulée
+    // depuis l'origine (TGBT) limitée à 5 % (8 % depuis un poste HTA / BT privé) ; longueur protégée en schéma TN
+    const POSE = { pose: Cb().POSES[e.pose] ? e.pose : 'E', isolant: e.isolant === 'PVC' ? 'PVC' : 'PR', temp: num(e.tAmb, 30), groupes: Math.max(1, num(e.groupes, 3)), mat: 'Cu' };
+    const duLim = e.origine === 'prive' ? 8 : 5, duTgbt = num(e.duTgbt, 0.5), cabLignes = [];
+    const schemaT = a => (/^TN/.test(String((a && a.regime) || 'TT').toUpperCase()) ? 'TN' : 'TT');
+    const duDe = (tri, Ib, cos, L, S) => (Ib && L ? (tri ? 1 : 2) * (RHO * L / S * cos + XL * L * Math.sqrt(1 - cos * cos)) * Ib / 230 * 100 : 0);
+    const izDe = (pose, S, f) => { const t = Cb().IZ[POSE.isolant][pose] || Cb().IZ[POSE.isolant].E, k = Cb().SECTIONS.indexOf(S); return k < 0 ? 0 : t[k] * f; };
+    const LMAX = (S, Ia) => 0.8 * 230 * S / (0.027 * 2 * Ia);
+    // Départ : section relevée si le courant admissible corrigé, la chute de tension cumulée ou la longueur protégée l'exigent
+    const ajusterDepart = (q, duAm, schema, depuis) => {
+      const pose = Cb().POSES[q.pose] ? q.pose : POSE.pose, L = num(q.L);
+      const r = Cb().liaison({ tension: q.d.tri ? 'tri' : 'mono', Ib: q.d.Ib, In: q.d.cal, cos: q.cosphi, L, ...POSE, pose, courbe: q.d.courbe, duMax: duLim }, duAm, schema);
+      if (r.S > q.d.S) { q.d.Sinit = q.d.S; q.d.S = r.S; q.d.cable = q.d.cable.replace(/[\d,]+$/, String(r.S).replace('.', ',')); }
+      q.d.k = r.f; q.d.Iz = izDe(pose, q.d.S, r.f); q.d.du = duDe(q.d.tri, q.d.Ib, q.cosphi, L, q.d.S); q.d.duAm = duAm; q.d.duTot = duAm + q.d.du; q.d.pose = pose;
+      q.d.Lmax = LMAX(q.d.S, q.d.cal * (IM[q.d.courbe] || 10));
+      if (q.d.Sinit) alertes.push(alerte('attention', `${q.rep} : section portée de ${String(q.d.Sinit).replace('.', ',')} à ${String(q.d.S).replace('.', ',')} mm² (${r.raisons.join(', ') || 'courant admissible corrigé'} ; pose ${pose}, k = ${nf(r.f, 2)}).`));
+      if (L && q.d.duTot > duLim + 1e-9) alertes.push(alerte('erreur', `${q.rep} : chute de tension cumulée ${nf(q.d.duTot, 1)} % au-delà de ${duLim} % depuis l'origine.`));
+      if (L) cabLignes.push([q.rep, depuis, pose, nf(r.f, 2), `${q.d.cal} A`, nf(q.d.Iz, 0), `${String(q.d.S).replace('.', ',')} mm²`, nf(duAm, 2), nf(q.d.du, 2), nf(q.d.duTot, 2), `${duLim} %`, q.d.duTot <= duLim + 1e-9 && q.d.Iz >= q.d.cal ? 'Oui' : 'Non']);
+    };
     const iccMin = (Ramont, Xamont, L, S) => 0.95 * 230 / Math.hypot(Ramont + 2 * RHOC * L / S, Xamont + 2 * XL * L);
     // Sélectivité (aval vers amont : une protection relevée en aval peut relever celle de l'amont)
     avalAmont.forEach(a => {
@@ -272,22 +306,65 @@ const Electricite = ((N, Sc) => {
     });
     amontAval.forEach(a => {
       const dep = a.eqs.filter(q => q.d.cal), maxDep = a.maxDep;
-      const L = num(a.L), Rc = RHO0 * L / a.S, p = a.amont ? parRep.get(a.amont) : null;
+      const L = num(a.L), p = a.amont ? parRep.get(a.amont) : null, duAm = p ? p.duCum : duTgbt;
+      // Câble d'alimentation de l'armoire : courant admissible corrigé, 2 % au plus sur ce tronçon
+      const ra = Cb().liaison({ tension: 'triN', Ib: a.Ib, In: a.cal, cos: 0.85, L, ...POSE, courbe: 'C', duMax: duAm + 2 }, duAm, schemaT(p || a));
+      if (ra.S > a.S) { a.Sinit = a.S; a.S = ra.S; a.dep = { ...a.dep, S: a.S, cable: `5G${String(a.S).replace('.', ',')}` }; alertes.push(alerte('attention', `Armoire ${a.rep} : câble d'alimentation porté de ${String(a.Sinit).replace('.', ',')} à ${String(a.S).replace('.', ',')} mm² (${ra.raisons.join(', ') || 'courant admissible corrigé'}).`)); }
+      a.Iz = izDe(POSE.pose, a.S, ra.f); a.du = duDe(true, a.Ib, 0.85, L, a.S); a.duCum = duAm + a.du;
+      if (L) cabLignes.push([`Armoire ${a.rep}`, p ? p.rep : 'TGBT', POSE.pose, nf(ra.f, 2), `${a.cal} A`, nf(a.Iz, 0), `${String(a.S).replace('.', ',')} mm²`, nf(duAm, 2), nf(a.du, 2), nf(a.duCum, 2), `${nf(duAm + 2, 1)} % (2 % sur le tronçon)`, a.Iz >= a.cal ? 'Oui' : 'Non']);
+      const Rc = RHO0 * L / a.S;
       // Impédances cumulées depuis le TGBT (maxi : câbles à 20 °C ; mini : boucle phase-neutre à chaud)
       a.R = (p ? p.R : 0) + Rc; a.X = (p ? p.X : Zs) + XL * L;
       a.Rmin = (p ? p.Rmin : 0) + 2 * RHOC * L / a.S; a.Xmin = (p ? p.Xmin : Zs) + 2 * XL * L;
       a.Icc = 400 / (Math.sqrt(3) * Math.hypot(a.R, a.X)); a.pdc = PDC.find(k => k * 1000 >= a.Icc) || 70;
       ccLignes.push([`Armoire ${a.rep} (jeu de barres${p ? `, depuis ${p.rep}` : ''})`, nf(a.Icc / 1000, 1), `${a.pdc} kA`, `${a.cal} A en tête`, maxDep ? `${maxDep} A` : '—', a.selectif ? 'Oui (≥ 1,6)' : `Portée de ${a.calInitial} à ${a.cal} A`]);
       dep.forEach(q => {
+        ajusterDepart(q, a.duCum, schemaT(a), a.rep);
         q.Icc = a.Icc; q.pdc = a.pdc;
         q.IccMin = iccMin(a.Rmin, a.Xmin, num(q.L), q.d.S);
         q.Ia = q.d.cal * (IM[q.d.courbe] || 10);
         if (num(q.L) && q.IccMin < q.Ia) alertes.push(alerte('erreur', `${q.rep} : Icc mini en bout de ligne ${nf(q.IccMin, 0)} A < seuil magnétique ${nf(q.Ia, 0)} A (${q.d.cal} A courbe ${q.d.courbe}) : section supérieure, courbe plus basse ou longueur réduite.`));
       });
     });
-    eqs.filter(q => q.alim === 'elec' && q.d.cal).forEach(q => { q.Icc = iccT; q.pdc = PDC.find(k => k * 1000 >= iccT) || 70; q.IccMin = iccMin(0, Zs, num(q.L), q.d.S); q.Ia = q.d.cal * (IM[q.d.courbe] || 10); });
+    eqs.filter(q => q.alim === 'elec' && q.d.cal).forEach(q => { ajusterDepart(q, duTgbt, schemaT(arm[0]), 'TGBT'); q.Icc = iccT; q.pdc = PDC.find(k => k * 1000 >= iccT) || 70; q.IccMin = iccMin(0, Zs, num(q.L), q.d.S); q.Ia = q.d.cal * (IM[q.d.courbe] || 10); });
     const ccDeparts = eqs.filter(q => q.d.cal && num(q.L)).map(q => [q.rep, q.alim === 'elec' ? 'TGBT' : q.alim, `${q.d.cal} A ${q.d.courbe}`, q.d.cable, `${num(q.L)} m`, nf(q.IccMin, 0), nf(q.Ia, 0), q.IccMin >= q.Ia ? 'Oui' : 'Non']);
 
+    // Harmoniques (estimation) : variateurs à self continue intégrée THDi ≈ 40 %, charges électroniques monophasées
+    // (variateurs mono, ventilo-convecteurs EC, splits inverter) ≈ 80 % avec un rang 3 de 60 % du courant ; le rang 3
+    // s'additionne dans le neutre (NF C 15-100 § 523.6 : neutre sur le courant de neutre au-delà de 33 %)
+    const nonLinMono = q => !q.d.tri && (q.depart === 'variateur' || ['ventilo', 'split'].includes(q.type));
+    arm.forEach(a => {
+      const pu = a.eqs.filter(q => q.tension !== '24V' && q.d.Ib), Pt = pu.reduce((s, x) => s + num(x.P), 0) || 1;
+      const Pvar = pu.filter(q => q.depart === 'variateur' && q.d.tri).reduce((s, x) => s + num(x.P), 0), Pmono = pu.filter(nonLinMono).reduce((s, x) => s + num(x.P), 0);
+      const thdi = (Pvar * 40 + Pmono * 80) / Pt, In3 = pu.filter(nonLinMono).reduce((s, x) => s + 0.6 * x.d.Ib, 0), Imax = Math.max(...a.phases, 0.01), t3 = In3 / Imax;
+      a.harmo = { Pvar, Pmono, thdi, In3, t3, selfs: pu.filter(q => q.depart === 'variateur' && num(q.P) >= 7.5).map(q => q.rep) };
+      if (t3 > 0.33) {
+        const Sn = SECTION_CAL[CALIBRES.find(c => c >= In3 / 0.86) || 630] || a.S;
+        a.harmo.neutre = `courant de neutre ≈ ${nf(In3, 1)} A (${nf(t3 * 100, 0)} % du courant de phase) : neutre dimensionné sur ce courant, facteur 0,86`;
+        if (Sn > a.S) { a.S = Sn; a.dep = { ...a.dep, S: a.S, cable: `5G${String(a.S).replace('.', ',')}` }; }
+        alertes.push(alerte('attention', `Armoire ${a.rep} : taux d'harmonique 3 estimé à ${nf(t3 * 100, 0)} % (charges électroniques monophasées) — ${a.harmo.neutre}.`));
+      } else a.harmo.neutre = t3 > 0.15 ? 'neutre de même section que les phases (rang 3 entre 15 et 33 %)' : 'neutre de même section que les phases';
+      if (thdi > 20) alertes.push(alerte('attention', `Armoire ${a.rep} : THDi estimé ${nf(thdi, 0)} % (${nf(Pvar, 1)} kW de variateurs) — filtre actif d'harmoniques à étudier avec le lot électricité.`));
+    });
+    // Protection différentielle : 30 mA type A (prises, cordons), type B en aval d'un variateur triphasé, F en monophasé ;
+    // sélectivité verticale : 300 mA S en tête d'une armoire terminale, 1 A retardé au-dessus, 3 A retardé encore au-dessus
+    const hauteur = a => (a.enfants.length ? 1 + Math.max(...a.enfants.map(hauteur)) : 1);
+    const ddrTete = a => { const h = hauteur(a), typeB = a.eqs.some(q => q.depart === 'variateur' && q.d.tri); return `${h === 1 ? '300 mA sélectif (S)' : h === 2 ? '1 A retardé (≥ 200 ms)' : '3 A retardé (≥ 500 ms)'} type ${typeB ? 'B (variateurs triphasés en aval)' : 'A'}`; };
+    const ddrDepart = (a, q) => {
+      const tn = schemaT(a) === 'TN', exterieur = /ext|toit|terrasse/i.test(q.local || ''), trente = q.type === 'resistance' && /cordon/i.test(q.designation || '') || exterieur && !q.d.tri;
+      if (q.depart === 'variateur') return [`${trente ? '30' : '300'} mA type ${q.d.tri ? 'B' : 'F'}`, 'courants de fuite continus et haute fréquence du variateur'];
+      if (trente) return ['30 mA type A', exterieur ? 'circuit extérieur accessible' : 'cordons chauffants (NF C 15-100 § 753)'];
+      if (tn) return num(q.L) && num(q.L) > q.d.Lmax ? ['300 mA type A', `L ${num(q.L)} m > longueur protégée ${nf(q.d.Lmax, 0)} m`] : ['Aucun (TN)', `coupure par le magnétique : L ≤ ${nf(q.d.Lmax || 0, 0)} m`];
+      return ['Par la tête de l\'armoire', 'schéma TT'];
+    };
+    arm.forEach(a => {
+      const tnc = String(a.regime || '').toUpperCase() === 'TN-C';
+      a.ddr = [['Tête de l\'armoire', schemaT(a) === 'TT' ? ddrTete(a) : 'Non requis pour les contacts indirects (TN) — 300 mA conseillé (incendie)', schemaT(a) === 'TT' ? `sélectivité avec les dispositifs en aval${a.enfants.length ? ` et les armoires ${a.enfants.map(c => c.rep).join(', ')}` : ''}` : 'coupure au premier défaut par les protections'],
+        ...a.eqs.filter(q => q.tension !== '24V' && q.d.cal).map(q => [q.rep, ...ddrDepart(a, q)]),
+        ...(a.opt.has('prise') || a.opt.has('eclairage') ? [['Prise et éclairage de l\'armoire', '30 mA type A', 'protection complémentaire des personnes']] : [])];
+      if (tnc && a.ddr.some(x => /mA/.test(x[1]))) alertes.push(alerte('erreur', `Armoire ${a.rep} : schéma TN-C — un différentiel ne fonctionne pas avec un PEN ; passer en TN-S à l'arrivée de l'armoire (TN-C-S).`));
+      if (tnc && a.S < 10) alertes.push(alerte('erreur', `Armoire ${a.rep} : schéma TN-C interdit sous 10 mm² cuivre (PEN) ; passer en TN-S.`));
+    });
     // Points automate par armoire (régulation de chaque équipement)
     const pts = [];
     eqs.forEach(q => {
@@ -388,39 +465,38 @@ const Electricite = ((N, Sc) => {
       const lignes = new Map(), add = (famille, des, carac, qte = 1) => { const k = `${famille}|${des}|${carac}`, x = lignes.get(k); if (x) x[3] += qte; else lignes.set(k, [famille, des, carac, qte]); };
       const puiss = a.eqs.filter(q => q.tension !== '24V'), b24 = a.eqs.filter(q => q.tension === '24V');
       add('Arrivée', 'Interrupteur-sectionneur général 4P cadenassable', `${a.cal} A`);
-      if (opt.has('parafoudre')) add('Arrivée', 'Parafoudre type 2 + protection', `400 V, Icc ${nf(a.Icc / 1000, 1)} kA`);
+      if (a.opt.has('parafoudre')) add('Arrivée', 'Parafoudre type 2 + protection', `400 V, Icc ${nf(a.Icc / 1000, 1)} kA`);
       let modules = 8, bornesP = 0, variateurs = 0;
       puiss.forEach(q => {
         const tri = q.d.tri, pol = tri ? '3P' : '1P+N';
         add('Protection', q.moteur ? 'Disjoncteur moteur magnéto-thermique' : 'Disjoncteur', `${pol} ${q.d.cal} A courbe ${q.d.courbe}, PdC ≥ ${a.pdc} kA`);
         modules += tri ? 3 : 2; bornesP += tri ? 5 : 3;
         if (q.km) { add('Commande', 'Contacteur bobine 24 V', `${tri ? '3P' : '2P'} ${q.d.cal} A (AC-3)`); modules += tri ? 3 : 2; }
-        if (q.depart === 'variateur') { add('Variation', 'Variateur de vitesse', `${nf(num(q.P), 2)} kW ${tri ? '400 V tri' : '230 V mono'}, entrée 0-10 V, relais de défaut`); add('Protection', 'Interrupteur différentiel 30 mA type B ou F', `${tri ? '4P' : '2P'} ${q.d.cal} A`); variateurs++; modules += tri ? 4 : 2; }
+        if (q.depart === 'variateur') { add('Variation', 'Variateur de vitesse', `${nf(num(q.P), 2)} kW ${tri ? '400 V tri' : '230 V mono'}, entrée 0-10 V, relais de défaut`); add('Protection', `Interrupteur différentiel ${ddrDepart(a, q)[0]}`, `${tri ? '4P' : '2P'} ${q.d.cal} A`); if (a.harmo.thdi > 10 && num(q.P) >= 7.5) add('Variation', 'Self de ligne 3 % (réduction des harmoniques)', `${q.d.cal} A`); variateurs++; modules += tri ? 4 : 2; }
         if (q.depart === 'etoile') add('Commande', 'Démarreur progressif (ou étoile-triangle)', `${nf(num(q.P), 2)} kW`);
         if (q.groupe) { if (!q.moteur2) { add('Façade', 'Commutateur Moteur 1 / Moteur 2 / Auto / Arrêt', '4 positions, pompe ou ventilateur double'); add('Commande', 'Contacts auxiliaires de verrouillage mutuel M1 / M2', 'sur contacteurs', 2); } add('Façade', 'Voyants marche (vert) et défaut (rouge)', 'LED 24 V', 2); }
         else if (q.type === 'cta' && !q.km && q.depart !== 'variateur') { add('Façade', 'Commutateur Manu / Auto / Arrêt', '3 positions'); add('Commande', 'Relais d\'autorisation de marche de la CTA', 'contact sec vers l\'armoire de la CTA'); add('Façade', 'Voyants marche (vert) et défaut (rouge)', 'LED 24 V', 2); }
         else if (q.moteur && (q.km || q.depart === 'variateur')) { add('Façade', 'Commutateur Manu / Auto / Arrêt', '3 positions'); add('Façade', 'Voyants marche (vert) et défaut (rouge)', 'LED 24 V', 2); }
       });
-      a.enfants.forEach(c => { add('Protection', 'Disjoncteur départ armoire divisionnaire', `4P ${c.cal} A courbe C, PdC ≥ ${a.pdc} kA${a.regime === 'TT' ? ', bloc différentiel 300 mA sélectif (S)' : ''}`); modules += 4; bornesP += 5; });
+      a.enfants.forEach(c => { add('Protection', 'Disjoncteur départ armoire divisionnaire', `4P ${c.cal} A courbe C, PdC ≥ ${a.pdc} kA`); modules += 4; bornesP += 5; });
       const n24 = b24.length, nVannes = b24.filter(q => ['vanne', 'regulateur'].includes(q.type)).length;
       void n24; void nVannes;
-      a.opt = opt; a.aux = auxiliaires(a, cfgAut, e.marqueAutomate);
+      a.aux = auxiliaires(a, cfgAut, e.marqueAutomate);
       a.aux.forEach(x => { add('Alimentation TBT', x.materiel, `${nf(x.P, 0)} ${x.k.includes('DC') ? 'W' : 'VA'} utiles + 25 %`); add('Alimentation TBT', 'Disjoncteur primaire', `1P+N ${x.protPrim}`); add('Alimentation TBT', 'Protection secondaire (disjoncteur ou fusible)', `${x.k.includes('DC') ? '1P' : '1P+N'} ${x.protSec}`); });
       // Dispositions réglementaires (coupure, arrêt d'urgence, protection des personnes, signalisation)
       const principale = a.i === 0;
-      if (opt.has('auArmoire')) { add('Sécurité', 'Arrêt d\'urgence : coup de poing à accrochage rouge sur fond jaune, en façade', 'NF EN ISO 13850'); add('Sécurité', 'Relais de sécurité d\'arrêt d\'urgence (coupe la commande des contacteurs)', '24 V, contacts guidés'); }
-      if (opt.has('presenceTension')) add('Signalisation', 'Voyant présence tension', 'LED 230 V blanc');
-      if (opt.has('prise') || opt.has('eclairage')) add('Protection', 'Interrupteur différentiel 30 mA (prise de service, éclairage de l\'armoire)', '2P 25 A type A');
-      if (principale && opt.has('prise')) add('Enveloppe', 'Prise de courant 230 V 2P+T de maintenance (rail DIN) et son disjoncteur', '16 A, sur différentiel 30 mA');
-      if (principale && opt.has('eclairage')) add('Enveloppe', 'Éclairage d\'armoire LED avec contact de porte', '230 V');
-      if (principale && opt.has('webServeur')) add('Communication', 'Serveur web / supervision locale', 'IP, accès navigateur, alarmes e-mail');
-      if (principale && opt.has('switch')) add('Communication', 'Switch Ethernet industriel (rail DIN)', '5 à 8 ports, 24 V DC');
-      if (principale && opt.has('modem4G')) add('Communication', 'Routeur 4G de télégestion + antenne déportée', 'Accès à distance, SMS');
-      if (principale && opt.has('onduleur')) add('Alimentation TBT', 'Onduleur rail DIN (automate, serveur web, routeur)', 'autonomie 10 min, contact de défaut secteur');
-      if (principale && opt.has('cordonChauffant')) add('Protection', 'Interrupteur différentiel 30 mA du départ des cordons chauffants', '2P 25 A type A');
-      if (String(a.regime || 'TT').toUpperCase() === 'TT') add('Protection', 'Protection différentielle 300 mA sélective en tête des départs (schéma TT)', `4P ${a.cal} A type S`);
+      if (a.opt.has('auArmoire')) { add('Sécurité', 'Arrêt d\'urgence : coup de poing à accrochage rouge sur fond jaune, en façade', 'NF EN ISO 13850'); add('Sécurité', 'Relais de sécurité d\'arrêt d\'urgence (coupe la commande des contacteurs)', '24 V, contacts guidés'); }
+      if (a.opt.has('presenceTension')) add('Signalisation', 'Voyant présence tension', 'LED 230 V blanc');
+      if (a.opt.has('prise') || a.opt.has('eclairage')) add('Protection', 'Interrupteur différentiel 30 mA (prise de service, éclairage de l\'armoire)', '2P 25 A type A');
+      if (a.opt.has('prise')) add('Enveloppe', 'Prise de courant 230 V 2P+T de maintenance (rail DIN) et son disjoncteur', '16 A, sur différentiel 30 mA');
+      if (a.opt.has('eclairage')) add('Enveloppe', 'Éclairage d\'armoire LED avec contact de porte', '230 V');
+      if (a.opt.has('webServeur')) add('Communication', 'Serveur web / supervision locale', 'IP, accès navigateur, alarmes e-mail');
+      if (a.opt.has('switch')) add('Communication', 'Switch Ethernet industriel (rail DIN)', '5 à 8 ports, 24 V DC');
+      if (a.opt.has('modem4G')) add('Communication', 'Routeur 4G de télégestion + antenne déportée', 'Accès à distance, SMS');
+      if (a.opt.has('onduleur')) add('Alimentation TBT', 'Onduleur rail DIN (automate, serveur web, routeur)', 'autonomie 10 min, contact de défaut secteur');
+      if (a.opt.has('cordonChauffant')) add('Protection', 'Interrupteur différentiel 30 mA du départ des cordons chauffants', '2P 25 A type A');
+      if (String(a.regime || 'TT').toUpperCase() === 'TT') add('Protection', `Protection différentielle ${ddrTete(a).split(' type')[0]} en tête des départs (schéma TT)`, `4P ${a.cal} A type ${ddrTete(a).split(' type ')[1]}`);
       add('Raccordement', 'Barrette de terre principale, tresse de liaison de la porte', 'PE repéré vert / jaune');
-      if (opt.has('ventilation') && (variateurs || a.eqs.some(q => q.depart === 'variateur') || principale)) add('Enveloppe', 'Ventilateur filtrant + thermostat d\'armoire', 'dissipation de la chaleur (variateurs, alimentations)');
       if (a.techno === 'automate') add('Automatisme', `${(cfgAut.UC || {}).ref && !/^Automate programmable \(UC\)$/.test((cfgAut.UC || {}).ref) ? cfgAut.UC.ref : `${MARQUES[e.marqueAutomate] || MARQUES.generique} (unité centrale${e.marqueAutomate && e.marqueAutomate !== 'generique' ? ', référence selon la fiche' : ''})`}${gtb ? ` + communication ${gtb}` : ''}`, `Horloge, historiques, serveur web${['EA', 'SA', 'ETOR', 'STOR'].some(t => a.uc && a.uc[t][1]) ? ` ; voies intégrées : ${['EA', 'SA', 'ETOR', 'STOR'].filter(t => a.uc[t][1]).map(t => `${a.uc[t][1]} ${t}`).join(', ')}` : ''}`);
       if (a.techno === 'synco') {
         a.synco.forEach(x => { add('Régulation', `Régulateur préprogrammé ${Rg().COURT[x.app]} — ${x.ref}`, `${x.entrees[1] - x.modules * ((capa.extension || Rg().CAPACITES.extension)[0])} entrées univ., ${x.sorties[1] - x.modules * ((capa.extension || Rg().CAPACITES.extension)[1])} sorties 0-10 V, ${x.relais[1] - x.modules * ((capa.extension || Rg().CAPACITES.extension)[2])} relais`); if (x.modules) add('Régulation', `Module d'extension — ${((e.capaSynco || []).find(y => y.app === 'extension') || {}).ref || 'module d\'extension'}`, 'Entrées / sorties supplémentaires', x.modules); });
@@ -437,6 +513,26 @@ const Electricite = ((N, Sc) => {
       modules += 8 + Object.values(a.cartes).reduce((s, n) => s + 2 * n, 0) + 6 * (a.extensions || 0);
       const rangees = Math.max(2, Math.ceil(modules * 1.2 / 24)), H = Math.min(2000, Math.ceil((rangees * 150 + 300 + (variateurs ? 400 : 0)) / 200) * 200), L = variateurs > 2 || rangees > 8 ? 800 : 600;
       add('Enveloppe', 'Armoire métallique IP 54 (estimation)', `≈ ${H} × ${L} × 300 mm, ${rangees} rangées DIN de 24 modules${variateurs ? ` + ${variateurs} variateur(s) sur plaque` : ''}, 20 % de réserve`);
+      // Bilan thermique de l'enveloppe (CEI 60890 simplifiée) : pertes des appareils, dissipation naturelle k · Ae · ΔT
+      // (tôle peinte k = 5,5 W/m²·K, armoire murale), 40 °C maxi à l'intérieur ; sinon ventilation forcée ou climatisation
+      const pertes = [], pd = (lib, w) => { if (w > 0.05) pertes.push([lib, w]); };
+      const charge = q => Math.min(1, q.d.Ib / q.d.cal) ** 2;
+      pd('Interrupteur général', (a.Ib / a.cal) ** 2 * 0.1 * a.cal * 4);
+      pd('Disjoncteurs des départs', puiss.reduce((x, q) => x + 0.15 * q.d.cal * charge(q) * (q.d.tri ? 3 : 2), 0) + a.enfants.reduce((x, c) => x + 0.15 * c.cal * 4 * (c.Ib / c.cal) ** 2, 0));
+      pd('Contacteurs (pôles ; bobines comptées en 24 V AC)', puiss.filter(q => q.km).reduce((x, q) => x + 0.1 * q.d.cal * charge(q) * (q.d.tri ? 3 : 2), 0));
+      pd('Variateurs de vitesse (≈ 3 % de la puissance)', puiss.filter(q => q.depart === 'variateur').reduce((x, q) => x + 30 * num(q.P), 0));
+      pd('Alimentations et transformateurs TBT (pertes ≈ 15 %)', (a.aux || []).reduce((x, y) => x + 0.15 * y.P, 0));
+      pd('Automate, cartes, relais, appareils de communication', (a.aux || []).filter(y => /24 V DC|commande/.test(y.nom)).reduce((x, y) => x + y.usages.filter(([l]) => !/ — /.test(l) || /\(UC\)/.test(l)).reduce((z, [, n, p]) => z + n * p, 0), 0));
+      if (a.opt.has('onduleur')) pd('Onduleur', 15);
+      const sousTot = pertes.reduce((x, [, w]) => x + w, 0); pd('Câblage et bornes (+ 10 %)', sousTot * 0.1);
+      const Pd = pertes.reduce((x, [, w]) => x + w, 0), Hm = H / 1000, Lm = L / 1000, Pm = variateurs ? 0.4 : 0.3, Ae = 1.8 * Hm * (Lm + Pm) + 1.4 * Lm * Pm;
+      const tLoc = num(a.tLocal, /chauff|sous-station/i.test(a.local || '') ? 35 : 30), tMax = 40, dT = tMax - tLoc, Pnat = 5.5 * Ae * dT;
+      a.thermique = { pertes, Pd, Ae, tLoc, tMax, Pnat, dims: `${H} × ${L} × ${Pm * 1000} mm`, Tint: tLoc + Pd / (5.5 * Ae) };
+      if (Pd <= Pnat) a.thermique.mode = 'naturelle';
+      else if (dT >= 5) { const Q = 3.1 * (Pd - Pnat) / dT; a.thermique.mode = 'ventilation'; a.thermique.Q = Q; a.thermique.choix = VENTILOS.find(v => v >= Q) || VENTILOS[VENTILOS.length - 1]; add('Enveloppe', 'Ventilateur à filtre, grille de sortie filtrée et thermostat d\'armoire', `${a.thermique.choix} m³/h (besoin ${nf(Q, 0)} m³/h, ${nf(Pd, 0)} W dissipés)`); }
+      else { const Pf = Pd - Pnat; a.thermique.mode = 'clim'; a.thermique.Pf = Pf; a.thermique.choix = CLIMS.find(v => v >= Pf) || CLIMS[CLIMS.length - 1]; add('Enveloppe', 'Climatiseur d\'armoire et thermostat', `${a.thermique.choix} W froid (besoin ${nf(Pf, 0)} W, local à ${nf(tLoc, 0)} °C)`); }
+      if (a.thermique.mode === 'naturelle' && a.opt.has('ventilation') && variateurs) add('Enveloppe', 'Ventilateur filtrant + thermostat d\'armoire', 'conseillé avec des variateurs');
+      if (a.thermique.mode !== 'naturelle' && !a.opt.has('ventilation')) alertes.push(alerte('attention', `Armoire ${a.rep} : ${nf(Pd, 0)} W dissipés pour ${nf(Pnat, 0)} W évacuables naturellement (local à ${nf(tLoc, 0)} °C) — ${a.thermique.mode === 'clim' ? 'climatisation' : 'ventilation forcée'} ajoutée à la nomenclature.`));
       a.nomenclature = [...lignes.values()];
       a.enveloppe = { H, L, rangees, variateurs };
     });
@@ -479,13 +575,13 @@ const Electricite = ((N, Sc) => {
       const tt = String(a.regime || 'TT').toUpperCase() === 'TT', mot = a.eqs.filter(q => q.moteur), loin = mot.filter(q => num(q.L) > 10 || q.alim === 'elec');
       return [
         ['Coupure générale (sectionnement et coupure en charge)', `Interrupteur-sectionneur ${a.cal} A, commande extérieure cadenassable, verrouillage de la porte, repéré « QG »`, 'Prévu (nomenclature)'],
-        ['Arrêt d\'urgence', !opt.has('auArmoire') ? 'Arrêt d\'urgence d\'armoire non retenu : justifier (analyse de risque, arrêt d\'urgence existant)' : 'Coup de poing à accrochage en façade (et à la porte du local technique si chaufferie à combustion) agissant par relais de sécurité sur la commande des contacteurs ; réarmement volontaire', opt.has('auArmoire') ? 'Prévu (nomenclature, folio de commande)' : 'Non retenu'],
+        ['Arrêt d\'urgence', !a.opt.has('auArmoire') ? 'Arrêt d\'urgence d\'armoire non retenu : justifier (analyse de risque, arrêt d\'urgence existant)' : 'Coup de poing à accrochage en façade (et à la porte du local technique si chaufferie à combustion) agissant par relais de sécurité sur la commande des contacteurs ; réarmement volontaire', a.opt.has('auArmoire') ? 'Prévu (nomenclature, folio de commande)' : 'Non retenu'],
         ['Protection contre les surintensités', `Disjoncteur par départ (courbe D pour les moteurs en démarrage direct), pouvoir de coupure ≥ ${nf(a.Icc / 1000, 1)} kA, sélectivité avec la protection amont`, 'Prévu (unifilaire)'],
-        ['Protection des personnes (contacts indirects)', tt ? 'Schéma TT : dispositif différentiel 300 mA sélectif en tête des départs, 30 mA sur les prises et l\'éclairage, type B ou F en aval des variateurs' : `Schéma ${a.regime} : coupure au premier défaut par les protections (TN) ou contrôleur permanent d'isolement (IT) ; 30 mA sur les prises et l'éclairage`, 'Prévu (nomenclature)'],
-        ['Protection contre les surtensions', opt.has('parafoudre') ? 'Parafoudre type 2 avec sa protection associée, liaison à la barrette de terre la plus courte possible' : 'Parafoudre non retenu : vérifier l\'analyse du risque foudre (NF C 15-100 § 443)', opt.has('parafoudre') ? 'Prévu (nomenclature)' : 'À justifier'],
-        ...(a.i === 0 ? [['Sécurités de chaufferie', [opt.has('auChaufferie') && 'arrêt d\'urgence extérieur au local', opt.has('manqueEau') && 'manque d\'eau', opt.has('detectionGaz') && 'détection gaz et électrovanne', opt.has('thermostatSecu') && 'thermostats de sécurité'].filter(Boolean).join(', ') || 'Aucune retenue', 'Chaîne de sécurité câblée en dur, indépendante de l\'automate'],
-          ['Prise de maintenance et éclairage', [opt.has('prise') && 'prise 230 V 2P+T 16 A', opt.has('eclairage') && 'éclairage à contact de porte'].filter(Boolean).join(', ') || 'Non retenus', opt.has('prise') || opt.has('eclairage') ? 'Prévu, sur différentiel 30 mA' : '—'],
-          ...(opt.has('cordonChauffant') ? [['Cordons chauffants', `Départ ${nf(num(e.cordonP, 0.5), 2)} kW protégé par différentiel 30 mA (NF C 15-100 § 753), thermostat d'ambiance extérieure, report de défaut`, 'Prévu']] : [])] : []),
+        ['Protection des personnes (contacts indirects)', tt ? `Schéma TT : ${ddrTete(a)} en tête des départs, 30 mA sur les prises et l'éclairage, type B ou F en aval des variateurs (voir le tableau des différentiels)` : `Schéma ${a.regime} : coupure au premier défaut par les protections (TN) ou contrôleur permanent d'isolement (IT) ; 30 mA sur les prises et l'éclairage`, 'Prévu (nomenclature)'],
+        ['Protection contre les surtensions', a.opt.has('parafoudre') ? 'Parafoudre type 2 avec sa protection associée, liaison à la barrette de terre la plus courte possible' : 'Parafoudre non retenu : vérifier l\'analyse du risque foudre (NF C 15-100 § 443)', a.opt.has('parafoudre') ? 'Prévu (nomenclature)' : 'À justifier'],
+        ...(a.i === 0 ? [['Sécurités de chaufferie', [a.opt.has('auChaufferie') && 'arrêt d\'urgence extérieur au local', a.opt.has('manqueEau') && 'manque d\'eau', a.opt.has('detectionGaz') && 'détection gaz et électrovanne', a.opt.has('thermostatSecu') && 'thermostats de sécurité'].filter(Boolean).join(', ') || 'Aucune retenue', 'Chaîne de sécurité câblée en dur, indépendante de l\'automate'],
+          ...(a.opt.has('cordonChauffant') ? [['Cordons chauffants', `Départ ${nf(num(e.cordonP, 0.5), 2)} kW protégé par différentiel 30 mA (NF C 15-100 § 753), thermostat d'ambiance extérieure, report de défaut`, 'Prévu']] : [])] : []),
+        ['Prise de maintenance et éclairage', [a.opt.has('prise') && 'prise 230 V 2P+T 16 A', a.opt.has('eclairage') && 'éclairage à contact de porte'].filter(Boolean).join(', ') || 'Non retenus', a.opt.has('prise') || a.opt.has('eclairage') ? 'Prévu, sur différentiel 30 mA' : '—'],
         ['Très basse tension de sécurité (TBTS / TBTP)', 'Transformateurs de sécurité EN 61558-2-6 et alimentations EN 61558-2-16, primaire et secondaire protégés, circuits TBT séparés des circuits 230 / 400 V (goulottes ou séparation)', 'Prévu (alimentations TBT)'],
         ['Sectionnement des moteurs', loin.length ? `Interrupteur de proximité cadenassable près des moteurs hors de vue de l'armoire (${loin.map(q => q.rep).join(', ')})` : 'Moteurs en vue de l\'armoire : sectionnement par leur disjoncteur moteur cadenassable', loin.length ? 'À prévoir sur site' : 'Prévu'],
         ['Commande locale et signalisation', 'Commutateur Manu / Auto / Arrêt par moteur (Moteur 1 / Moteur 2 / Auto / Arrêt pour les pompes et ventilateurs doubles, verrouillage mutuel des contacteurs), voyants marche et défaut, voyant présence tension', 'Prévu (nomenclature)'],
@@ -511,6 +607,12 @@ const Electricite = ((N, Sc) => {
         { titre: `Alimentations très basse tension — armoire ${a.rep}`, tableau: { entetes: ['Circuit', 'Usages', 'Puissance utile', 'Matériel retenu (marge 25 %)', 'Protection primaire', 'Protection secondaire'],
           lignes: (a.aux || []).map(x => [x.nom, x.usages.map(([l, n, p]) => `${n > 1 ? `${n} × ` : ''}${l} (${nf(p, 1)})`).join(' ; '), `${nf(x.P, 0)} ${x.k.includes('DC') ? 'W' : 'VA'}`, x.materiel, `1P+N ${x.protPrim}`, x.protSec]) } },
         { titre: `Dispositions réglementaires — armoire ${a.rep} (NF C 15-100, NF EN 61439-1/2, NF EN 60204-1)`, tableau: { entetes: ['Exigence', 'Disposition retenue', 'Statut'], lignes: reglementaire(a).map(x => [x[0], x[1], x[2]]) } },
+        { titre: `Protection différentielle et contacts indirects — armoire ${a.rep} (schéma ${a.regime || 'TT'})`, tableau: { entetes: ['Circuit', 'Dispositif différentiel', 'Justification'], lignes: a.ddr } },
+        { titre: `Harmoniques et neutre — armoire ${a.rep} (estimation)`, liste: [`THDi estimé ${nf(a.harmo.thdi, 0)} % : ${nf(a.harmo.Pvar, 1)} kW de variateurs triphasés, ${nf(a.harmo.Pmono, 1)} kW de charges électroniques monophasées.`, `Neutre : ${a.harmo.neutre}.`,
+          a.harmo.thdi > 20 ? 'Au-delà de 20 % : filtre actif d\'harmoniques à étudier avec le lot électricité (NF EN 61000-3-12).' : a.harmo.thdi > 10 ? `Entre 10 et 20 % : self de ligne 3 % sur les variateurs de 7,5 kW et plus${a.harmo.selfs.length ? ` (${a.harmo.selfs.join(', ')})` : ''}.` : 'Moins de 10 % : pas de traitement particulier.'] },
+        { titre: `Bilan thermique de l'enveloppe — armoire ${a.rep} (CEI 60890 simplifiée)`, tableau: { entetes: ['Poste', 'Puissance dissipée (W)'], lignes: [...a.thermique.pertes.map(([l, w]) => [l, nf(w, 0)]), ['Total dissipé', nf(a.thermique.Pd, 0)]], total: true } },
+        { liste: [`Enveloppe ${a.thermique.dims}, surface d'échange ${nf(a.thermique.Ae, 2)} m² ; local à ${nf(a.thermique.tLoc, 0)} °C, 40 °C maxi à l'intérieur : ${nf(a.thermique.Pnat, 0)} W évacuables par convection naturelle.`,
+          a.thermique.mode === 'naturelle' ? `Convection naturelle suffisante (≈ ${nf(a.thermique.Tint, 0)} °C à l'intérieur).` : a.thermique.mode === 'ventilation' ? `Ventilation forcée : ${nf(a.thermique.Q, 0)} m³/h (V = 3,1 · (P − k · Ae · ΔT) / ΔT) → ventilateur à filtre ${a.thermique.choix} m³/h, entrée en bas, sortie filtrée en haut, thermostat réglé à 35 °C.` : `Local trop chaud pour ventiler (ΔT < 5 K) : climatiseur d'armoire ${a.thermique.choix} W froid (besoin ${nf(a.thermique.Pf, 0)} W).`] },
         { titre: `Bornier X1 (puissance) — armoire ${a.rep}`, tableau: { entetes: ['Bornes', 'Départ', 'Équipement', 'Conducteurs', 'Câble', 'Vers'], lignes: borniersX1(a) } },
         { titre: `Nomenclature de l'appareillage — armoire ${a.rep}`, tableau: { entetes: ['Famille', 'Désignation', 'Caractéristiques', 'Qté'], lignes: a.nomenclature.map(x => [x[0], x[1], x[2], String(x[3])]) } },
         { titre: `Départs de l'armoire ${a.rep}`, tableau: { entetes: ['Repère', 'Équipement', 'P (kW)', 'Tension', 'Phase', 'Départ', 'Ib (A)', 'Protection', 'Câble'],
@@ -539,15 +641,30 @@ const Electricite = ((N, Sc) => {
       if (cc.bacs) exig.push('Décret BACS / classe GTB citée : historiques, suivi des consommations et détection des dérives à prévoir dans la supervision.');
     }
     const parametres = REG.installations.flatMap(x => x.params.map(p => ({ ...p, installation: x.titre, ou: ouRegle(x.noteId) })));
+    // GTB : décret BACS et classe NF EN ISO 52120-1, table d'échange, comptages, séquences
+    const Pbacs = num(e.pBacs) || REG.installations.reduce((s, x) => s + num(x.puissance), 0);
+    const bacs = Gt().bacs({ P: Pbacs, neuf: e.batimentNeuf === 'oui', eqs, REG, opt, gtb: e.gtb, pts });
+    if (bacs.assujetti && !bacs.conforme) alertes.push(alerte('attention', `Décret BACS : bâtiment assujetti (${bacs.echeance}) ; classe de régulation estimée ${bacs.classe}, classe A ou B exigée (onglet « GTB et BACS »).`));
+    const echange = Gt().echange(pts, arm.map(a => a.rep)), comptes = eqs.filter(q => String(q.src || '').startsWith('comptage:'));
+    const seqs = REG.installations.map(x => ({ x, s: Gt().sequences(x, (REG.types || {})[x.noteId], { permutation: e.permutation }) })).filter(y => y.s);
     const regInstallations = REG.installations.map(x => ({ noteId: x.noteId, titre: x.titre, app: x.app, techno: techParNote[x.noteId] || (arm[0] ? arm[0].techno : 'integree'), params: x.params }));
+    // Folios numérotés F01, F02… avec cartouche (affaire, indice, date) et renvois entre folios d'une même armoire
+    const folios = [{ titre: 'Schéma unifilaire des armoires CVC', court: 'unifilaire', svg: unifilaire(arm, lot), arm: '' },
+      ...arm.flatMap(a => [{ titre: `Alimentations et circuits auxiliaires — armoire ${a.rep}`, court: 'auxiliaires', svg: folioAux(a, lot) }, { titre: `Folio de commande — armoire ${a.rep}`, court: 'commande', svg: folioCommande(a) }, ...(a.techno === 'automate' && (a.chassis || []).some(c => c.modules.length) ? [{ titre: `Implantation de l'automate — armoire ${a.rep} (${a.chassis.length} châssis${a.extensions ? `, ${a.extensions} extension(s)` : ''})`, court: 'automate', svg: folioAutomate(a, cfgAut, gtb) }] : []), ...(a.techno === 'automate' && a.adresses.some(x => x[2] !== '—' && !/^Bus/.test(x[0])) ? [{ titre: `Cartes d'entrées / sorties — armoire ${a.rep}`, court: 'cartes E/S', svg: folioCartes(a) }] : [])].map(f => ({ ...f, arm: a.rep })))].filter(f => f.svg);
+    folios.forEach((f, i) => { f.no = `F${String(i + 1).padStart(2, '0')}`; });
+    const renvois = rep => folios.filter(f => f.arm === rep).map(f => `${f.court} ${f.no}`).join(', '), aff = e._affaire || {};
+    folios.forEach(f => { f.svg = cartouche(f.svg, { affaire: aff.objet || '', client: aff.client || '', indice: aff.indice || 'A', date: aff.date || '', auteur: aff.auteur || '', titre: f.titre, no: f.no, total: folios.length,
+      renvois: f.arm ? `Armoire ${f.arm} : unifilaire ${folios[0].no}, ${renvois(f.arm)}` : arm.map(a => `${a.rep} : ${renvois(a.rep)}`).join(' — ') }); });
     return {
-      valeurs: { regulation: { installations: regInstallations, parametres }, listePoints: pts, Ptot, PCvc, Pelec, Pappel, Sappel, Itgbt, armoires: arm.map(a => ({ rep: a.rep, P: a.P, Ib: a.Ib, cal: a.cal, cartes: a.cartes, enveloppe: a.enveloppe, aux: (a.aux || []).map(x => ({ circuit: x.nom, P: x.P, choix: x.choix, materiel: x.materiel })), extensions: a.extensions || 0 })), points: pts.length,
+      valeurs: { regulation: { installations: regInstallations, parametres }, bacs: { P: Pbacs, classe: bacs.classe, conforme: bacs.conforme, assujetti: bacs.assujetti, echeance: bacs.echeance }, echangeCsv: Gt().csv(Gt().ENTETES_ECHANGE, echange), listePoints: pts, Ptot, PCvc, Pelec, Pappel, Sappel, Itgbt, armoires: arm.map(a => ({ rep: a.rep, P: a.P, Ib: a.Ib, cal: a.cal, cartes: a.cartes, enveloppe: a.enveloppe, aux: (a.aux || []).map(x => ({ circuit: x.nom, P: x.P, choix: x.choix, materiel: x.materiel })), extensions: a.extensions || 0 })), points: pts.length,
         // Classeur Excel : bilan, attentes, équipements, points, puis adressage et nomenclature de chaque armoire
         feuilles: [
           { name: 'Bilan de puissance', entetes: tableauBilan.entetes, lignes: tableauBilan.lignes },
           { name: 'Attentes lot élec', entetes: ['Pour', 'Local', 'Tension', 'P (kW)', 'Ib (A)', 'Protection en tête', 'Câble indicatif', 'À prévoir'], lignes: demandes },
           { name: 'Équipements', entetes: ['Repère', 'Équipement', 'P (kW)', 'Tension', 'Alimenté par', 'Départ', 'Ib (A)', 'Protection', 'Câble', 'Régulation'], lignes: eqs.map(ligneEq) },
           { name: 'Liste des points', entetes: ptsGtb.entetes, lignes: ptsGtb.lignes },
+          { name: 'Table d\'échange GTB', entetes: Gt().ENTETES_ECHANGE, lignes: echange },
+          { name: 'Essais point à point', entetes: ['Armoire', ...Gt().ENTETES_ESSAIS], lignes: arm.flatMap(a => Gt().essais(a.adresses).map(l => [a.rep, ...l])) },
           ...arm.flatMap(a => [{ name: `E-S ${a.rep}`, entetes: ['Adresse', 'Bornes', 'Repère', 'Désignation', 'Type', 'Signal'], lignes: a.adresses },
             { name: `Nomenclature ${a.rep}`, entetes: ['Famille', 'Désignation', 'Caractéristiques', 'Qté'], lignes: a.nomenclature }])] },
       resume: [['Équipements', `${eqs.length} (${eqs.filter(q => q.alim === 'elec').length} sur attente électrique, ${eqs.filter(q => q.alim !== 'elec').length} sur armoire CVC)`],
@@ -564,19 +681,21 @@ const Electricite = ((N, Sc) => {
       alertes,
       hypotheses: ['Intensité d\'emploi : Ib = P / (U · cos φ) en monophasé 230 V, P / (√3 · 400 · cos φ) en triphasé ; cos φ 0,85 pour les moteurs, 0,95 sinon (modifiable).',
         'Protection : calibre normalisé ≥ Ib (≥ 1,25 Ib pour un moteur en démarrage direct), courbe D pour les moteurs démarrés en direct, C sinon.',
-        'Section : cuivre, isolant PVC, pose sur chemin de câbles, au moins la section associée au calibre ; augmentée tant que la chute de tension du départ dépasse 3 % (2 % pour l\'alimentation d\'une armoire).',
+        'Section : cuivre, au moins la section associée au calibre ; relevée tant que le courant admissible corrigé (mode de pose, température, circuits jointifs — CEI 60364-5-52) est inférieur au calibre, que la chute de tension cumulée depuis l\'origine dépasse 5 % (8 % depuis un poste privé ; 2 % sur l\'alimentation d\'une armoire) ou, en schéma TN, que la longueur dépasse la longueur protégée.',
+        'Harmoniques, différentiels et bilan thermique des enveloppes : estimations de pré-dimensionnement (voir le cahier des charges de chaque armoire).',
         'Armoire : charges monophasées réparties sur la phase la moins chargée ; Ib = phase la plus chargée × foisonnement × (1 + réserve) ; circuit de commande compté 300 W.',
         'Pré-dimensionnement à confirmer par la note de calcul du lot électricité (NF C 15-100 : facteurs de correction, sélectivité, courts-circuits, schéma de liaison à la terre).'],
       synthese: `${eqs.length} équipement(s) · ${nf(Ptot, 1)} kW · ${arm.length} armoire(s) CVC · ${pts.length} point(s) automate`,
-      schema: unifilaire(arm, lot),
+      schema: (folios[0] || {}).svg || '',
       // Folios complémentaires par armoire : commande (contacteurs, variateurs, chaîne de sécurité) et cartes de l'automate
-      schemas: arm.flatMap(a => [{ titre: `Alimentations et circuits auxiliaires — armoire ${a.rep}`, svg: folioAux(a, lot) }, { titre: `Folio de commande — armoire ${a.rep}`, svg: folioCommande(a) }, ...(a.techno === 'automate' && (a.chassis || []).some(c => c.modules.length) ? [{ titre: `Implantation de l'automate — armoire ${a.rep} (${a.chassis.length} châssis${a.extensions ? `, ${a.extensions} extension(s)` : ''})`, svg: folioAutomate(a, cfgAut, gtb) }] : []), ...(a.techno === 'automate' && a.adresses.some(x => x[2] !== '—' && !/^Bus/.test(x[0])) ? [{ titre: `Cartes d'entrées / sorties — armoire ${a.rep}`, svg: folioCartes(a) }] : [])]).filter(s => s.svg),
-      titreSchema: 'Schéma unifilaire des armoires CVC',
+      schemas: folios.slice(1).map(f => ({ titre: `${f.no} — ${f.titre}`, svg: f.svg })),
+      titreSchema: `${(folios[0] || {}).no || 'F01'} — Schéma unifilaire des armoires CVC`,
       onglets: [
         { titre: 'Bilan de puissance', blocs: [
           { titre: 'Bilan de puissance au TGBT (lot CVC)', tableau: tableauBilan },
           { titre: `Attentes à demander au ${lot}`, tableau: { entetes: ['Pour', 'Local', 'Tension', 'P (kW)', 'Ib (A)', 'Protection en tête', 'Câble indicatif', 'À prévoir'], lignes: demandes } },
           { titre: 'Courts-circuits et sélectivité', tableau: { entetes: ['Point', 'Icc maxi (kA)', 'Pouvoir de coupure mini', 'Protection en tête', 'Plus gros départ', 'Sélectivité ampèremétrique'], lignes: ccLignes } },
+          ...(cabLignes.length ? [{ titre: `Câbles : courant admissible corrigé et chute de tension cumulée depuis l'origine (pose ${POSE.pose}, ${POSE.isolant}, ${nf(POSE.temp, 0)} °C, ${POSE.groupes} circuits jointifs)`, tableau: { entetes: ['Liaison', 'Depuis', 'Pose', 'k (T × G)', 'Protection', 'Iz corrigé (A)', 'Section', 'ΔU amont (%)', 'ΔU liaison (%)', 'ΔU cumulée (%)', 'Limite', 'Conforme'], lignes: cabLignes } }] : []),
           ...(ccDeparts.length ? [{ titre: 'Déclenchement en bout de ligne (Icc mini)', tableau: { entetes: ['Départ', 'Depuis', 'Protection', 'Câble', 'Longueur', 'Icc mini (A)', 'Seuil magnétique (A)', 'Protégé'], lignes: ccDeparts } }] : []),
           { texte: [`Icc au TGBT pris égal à ${nf(iccT / 1000, 1)} kA (à confirmer par le lot électricité) ; impédance amont réactive, câbles cuivre (ρ ${RHO0} Ω·mm²/m à 20 °C pour l'Icc maxi, × 1,25 pour l'Icc mini), réactance 0,08 mΩ/m ; Icc mini phase-neutre à 0,95 · 230 V ; seuil magnétique 5, 10 ou 20 In (courbes B, C, D).`] },
           { texte: [`Puissance installée ${nf(Ptot, 1)} kW ; appelée ${nf(Pappel, 1)} kW (${nf(Sappel, 1)} kVA), foisonnement de chaque armoire puis simultanéité ${nf(ksT * 100, 0)} % au TGBT. À transmettre au ${lot} pour le bilan général et l'abonnement.`] }] },
@@ -596,10 +715,43 @@ const Electricite = ((N, Sc) => {
               ...['EA', 'SA', 'ETOR', 'STOR'].filter(t => a.uc[t][1]).map(t => ['UC', '—', `Voies intégrées ${t}`, (cfgAut.UC || {}).ref || 'UC', String(a.uc[t][1]), String(a.uc[t][0]), String(a.uc[t][1] - a.uc[t][0])]),
               ...a.chassis.flatMap(c => c.modules.map(m => [c.nom === 'UC' ? 'UC' : `${c.nom} (extension)`, String(m.emplacement), m.nom, a.capa[m.type][2], String(m.voies), String(m.utilisees), String(m.voies - m.utilisees)]))] } })),
           ...arm.map(a => ({ titre: `Plan d'adressage — armoire ${a.rep} (${Object.entries(a.cartes).filter(([, n]) => n).map(([t, n]) => `${n} × ${(a.capa ? a.capa[t] : CARTES[t])[0]} ${t}`).join(', ') || 'aucune carte'})`, tableau: { entetes: ['Adresse', 'Bornes', 'Repère', 'Désignation', 'Type', 'Signal'], lignes: a.adresses } }))] },
+        { titre: 'GTB et BACS', blocs: [
+          { titre: 'Décret BACS (articles R.175-1 à R.175-6 du code de la construction)', liste: [
+            `Puissance nominale chauffage + climatisation : ${nf(Pbacs, 0)} kW${num(e.pBacs) ? ' (saisie)' : ' (reprise des schémas de principe de l\'étude)'} ; bâtiment ${e.batimentNeuf === 'oui' ? 'neuf' : 'existant'}, tertiaire.`,
+            bacs.assujetti ? `Assujetti : système d'automatisation et de contrôle exigé au ${bacs.echeance}.` : 'Puissance ≤ 70 kW : non assujetti (le système reste recommandé).',
+            `Classe estimée de la régulation (NF EN ISO 52120-1) : ${bacs.classe}${bacs.conforme ? ' — conforme (A ou B)' : ' — insuffisante : classe B au minimum'} ; à justifier avec l'intégrateur GTB sur le programme livré.`] },
+          { titre: 'Fonctions de régulation et classe (NF EN ISO 52120-1)', tableau: { entetes: ['Domaine', 'Fonction retenue', 'Classe'], lignes: bacs.fonctions } },
+          { titre: 'Exigences du décret BACS', tableau: { entetes: ['Exigence', 'Disposition', 'Statut'], lignes: bacs.exigences.map(([x, d, ok]) => [x, d, ok ? 'Prévu' : 'À compléter']) } },
+          comptes.length ? { titre: 'Comptage d\'énergie par usage (RE2020 / RT 2012, décret tertiaire, BACS)', tableau: { entetes: ['Repère', 'Compteur', 'Usage', 'Liaison'], lignes: comptes.map(q => [q.rep, q.designation, q.usage || '', q.regulation === 'impulsion' ? 'Émetteur d\'impulsions (entrée TOR)' : 'Bus M-Bus / Modbus']) } }
+            : { titre: 'Comptage d\'énergie par usage', liste: ['Option « Comptage d\'énergie par usage » non cochée : aucun compteur ajouté.'] },
+          ...seqs.map(({ x, s }) => ({ titre: `Séquences — ${x.titre}`, tableau: { entetes: ['Phase', 'Déroulement', 'Paramètres par défaut'], lignes: s } })),
+          { titre: `Table d'échange GTB (${pts.length} points) — objets BACnet et registres Modbus`, tableau: { entetes: Gt().ENTETES_ECHANGE, lignes: echange } },
+          { liste: [`Table d'échange au format neutre (classeur Excel, ou CSV séparé par « ; » avec le bouton « Table d'échange GTB ») à importer dans l'outil de l'intégrateur GTB ou de l'automaticien ; un device BACnet par armoire, instances et registres numérotés par armoire, valeurs réelles sur 2 registres.${e.marqueAutomate === 'wit' ? ' Automate Wit : le format d\'import propre au logiciel Wit est à confirmer avec Wit (correspondance des colonnes).' : ''}`] },
+          ...arm.filter(a => a.adresses.some(x => x[2] && x[2] !== '—')).map(a => ({ titre: `Essais point à point — armoire ${a.rep}`, tableau: { entetes: Gt().ENTETES_ESSAIS, lignes: Gt().essais(a.adresses) } }))] },
         { titre: 'Cahier des charges armoires', blocs: [{ titre: 'Objet', liste: [`Réalisation des armoires CVC (lot CVC) : puissance, commande et automatisme, d'après le schéma unifilaire et la liste des points ci-dessous. Les attentes électriques des armoires et des équipements alimentés directement sont dues par le ${lot}.`] },
           ...arm.flatMap(ccArmoire)] },
       ],
     };
+  }
+
+  /* ---------- Cartouche des folios ---------- */
+  // Bandeau ajouté sous le dessin : affaire et client, titre du folio, indice, date, établi par, numéro « F02 / 07 », renvois
+  function cartouche(svg, c) {
+    const m = /^<svg[^>]*?width="([\d.]+)" height="([\d.]+)"/.exec(svg || ''); if (!m) return svg;
+    const W0 = +m[1], H0 = +m[2], W = Math.max(W0, 900), h = 64, H = H0 + h + 12, x0 = 8, y0 = H0 + 6, w = W - 16, esc2 = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const col = [0, 0.34, 0.72, 0.8, 0.9, 1].map(k => x0 + k * w), out = [`<g font-family="Arial, Helvetica, sans-serif" fill="#222"><rect x="${x0}" y="${y0}" width="${w}" height="${h}" fill="#fff" stroke="#222" stroke-width="1.2"/>`];
+    col.slice(1, -1).forEach(x => out.push(`<line x1="${x}" y1="${y0}" x2="${x}" y2="${y0 + 44}" stroke="#222"/>`));
+    out.push(`<line x1="${x0}" y1="${y0 + 44}" x2="${x0 + w}" y2="${y0 + 44}" stroke="#222"/>`);
+    const t = (x, y, s, o = {}) => out.push(`<text x="${x}" y="${y}" font-size="${o.fs || 9}"${o.b ? ' font-weight="bold"' : ''}${o.c ? ` fill="${o.c}"` : ''}>${esc2(s)}</text>`);
+    t(col[0] + 6, y0 + 14, 'Affaire', { fs: 7, c: '#777' }); t(col[0] + 6, y0 + 27, String(c.affaire).slice(0, 60), { b: true, fs: 10 }); t(col[0] + 6, y0 + 39, String(c.client).slice(0, 60), { fs: 8 });
+    t(col[1] + 6, y0 + 14, 'Folio', { fs: 7, c: '#777' }); t(col[1] + 6, y0 + 28, String(c.titre).slice(0, 70), { b: true, fs: 10 }); t(col[1] + 6, y0 + 39, 'Lot CVC — armoires électriques et régulation', { fs: 8 });
+    t(col[2] + 6, y0 + 14, 'Indice', { fs: 7, c: '#777' }); t(col[2] + 6, y0 + 32, c.indice, { b: true, fs: 14 });
+    t(col[3] + 6, y0 + 14, 'Date / établi par', { fs: 7, c: '#777' }); t(col[3] + 6, y0 + 27, String(c.date || '').replace(/^(\d{4})-(\d\d)-(\d\d).*/, '$3/$2/$1'), { fs: 9 }); t(col[3] + 6, y0 + 39, String(c.auteur).slice(0, 18), { fs: 8 });
+    t(col[4] + 6, y0 + 14, 'N° de folio', { fs: 7, c: '#777' }); t(col[4] + 6, y0 + 33, `${c.no} / ${String(c.total).padStart(2, '0')}`, { b: true, fs: 14 });
+    t(x0 + 6, y0 + 57, `Renvois : ${String(c.renvois).slice(0, 190)}`, { fs: 8 });
+    out.push('</g>');
+    return svg.replace(/^<svg([^>]*?)width="[\d.]+" height="[\d.]+" viewBox="0 0 [\d.]+ [\d.]+"/, `<svg$1width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"`)
+      .replace(/<rect x="0" y="0" width="[\d.]+" height="[\d.]+" fill="#fff"\/>/, `<rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>`).replace(/<\/svg>$/, `${out.join('')}</svg>`);
   }
 
   /* ---------- Folios de commande et des cartes de l'automate (SVG) ---------- */
@@ -914,7 +1066,8 @@ const Electricite = ((N, Sc) => {
         colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'local', l: 'Local / zone desservie', t: 't' }, { k: 'amont', l: 'Alimentée depuis', t: 's', o: optAmont }, { k: 'L', l: 'Longueur depuis l\'amont (m)' }, { k: 'ks', l: 'Foisonnement (%)' }, { k: 'reserve', l: 'Réserve (%)' },
           { k: 'regime', l: 'Liaison à la terre', t: 's', o: [['TT', 'TT'], ['TN-S', 'TN-S'], ['TN-C', 'TN-C'], ['IT', 'IT']] },
           { k: 'techno', l: 'Régulation', t: 's', o: [['automate', 'Automate programmable (programme + analyse fonctionnelle)'], ['synco', 'Régulateurs préprogrammés type Siemens Synco (paramétrage)'], ['integree', 'Régulation intégrée aux équipements (puissance et reports)']] },
-          { k: 'sondes', l: 'Sondes d\'ambiance / mesures communes (séparées par ;)', t: 't' }] },
+          { k: 'sondes', l: 'Sondes d\'ambiance / mesures communes (séparées par ;)', t: 't' }, { k: 'tLocal', l: 'T° du local (°C, bilan thermique)' },
+          { k: 'options', l: 'Options de l\'armoire', t: 'cases', o: OPTIONS, d: OPTIONS_DIV, sauf0: 'Cases « Options » ci-dessous' }] },
       { g: 'Options de l\'armoire CVC (la première armoire)' },
       { k: 'options', l: 'Cochez ce que l\'armoire doit comporter ; une sécurité de chaufferie décochée est retirée des points et de la chaîne de sécurité', t: 'cases', o: OPTIONS, d: OPTIONS_DEFAUT },
       { k: 'permutation', l: 'Moteurs doubles : permutation automatique toutes les', u: 'h de fonctionnement', d: 168 },
@@ -936,13 +1089,23 @@ const Electricite = ((N, Sc) => {
       { k: 'equipements', l: 'Équipements — repris automatiquement des terminaux, CTA, producteurs et réseaux de l\'étude ; « + Ajouter une ligne » pour un équipement oublié (il figure au bilan et au schéma de l\'armoire)', t: 'lignes', d: [],
         colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'designation', l: 'Désignation', t: 't' }, { k: 'type', l: 'Type', t: 's', o: [['', '— Type —'], ...listeOpt(TYPES_EQ)] },
           { k: 'P', l: 'P électrique (kW)' }, { k: 'tension', l: 'Tension', t: 's', o: selonType(Object.entries(TENSIONS)) },
-          { k: 'alim', l: 'Alimenté par', t: 's', o: optAlim }, { k: 'depart', l: 'Départ', t: 's', o: selonType(Object.entries(DEPARTS)) }, { k: 'L', l: 'Longueur câble (m)' },
+          { k: 'alim', l: 'Alimenté par', t: 's', o: optAlim }, { k: 'depart', l: 'Départ', t: 's', o: selonType(Object.entries(DEPARTS)) }, { k: 'L', l: 'Longueur câble (m)' }, { k: 'pose', l: 'Pose du câble', t: 's', o: () => [['', 'Selon l\'étude'], ...Object.entries(Cb().POSES)] },
           { k: 'regulation', l: 'Régulation', t: 's', o: selonType(listeOpt(REGULS)) }, { k: 'pilote', l: 'Piloté par', t: 's', o: optPilote },
           { k: 'moteurs', l: 'Moteurs (pompe, ventilateur, CTA)', t: 's', o: [['', 'Simple : Manu / Auto / Arrêt'], ['double', 'Double : moteur 1 / moteur 2 / Auto (basculement) / Arrêt']] },
           { k: 'Paux', l: 'Conso. TBT (W / VA ; vide : usuelle)' },
           { k: 'local', l: 'Local', t: 't' }, { k: 'fonctionnement', l: 'Fonctionnement particulier (analyse fonctionnelle)', t: 't' }] },
       { g: 'Lots et supervision' },
       { k: 'lotElec', l: 'Lot électricité (destinataire des demandes d\'attentes)', t: 't', d: 'Lot électricité' },
+      { g: 'Câbles et protection (NF C 15-100)' },
+      { k: 'pose', l: 'Mode de pose des câbles (sauf départ précisé)', t: 's', o: () => Object.entries(Cb().POSES), d: 'E' },
+      { k: 'isolant', l: 'Isolant des câbles', t: 's', o: [['PR', 'PR (U1000 R2V, 90 °C)'], ['PVC', 'PVC (70 °C)']], d: 'PR' },
+      { k: 'tAmb', l: 'Température ambiante des cheminements', u: '°C', d: 30 },
+      { k: 'groupes', l: 'Circuits jointifs sur un même chemin de câbles', d: 3 },
+      { k: 'origine', l: 'Origine de l\'installation', t: 's', o: [['public', 'Réseau public BT (ΔU ≤ 5 %)'], ['prive', 'Poste HTA / BT privé (ΔU ≤ 8 %)']], d: 'public' },
+      { k: 'duTgbt', l: 'Chute de tension en amont du TGBT', u: '%', d: 0.5 },
+      { g: 'GTB et décret BACS' },
+      { k: 'pBacs', l: 'Puissance nominale chauffage + climatisation (vide : reprise des schémas de principe)', u: 'kW', d: '' },
+      { k: 'batimentNeuf', l: 'Bâtiment', t: 's', o: [['non', 'Existant'], ['oui', 'Neuf (permis après le 21 juillet 2021)']], d: 'non' },
       { k: 'ksTgbt', l: 'Simultanéité des départs CVC au TGBT', u: '%', d: 90 },
       { k: 'iccTgbt', l: 'Courant de court-circuit au TGBT (donnée du lot électricité)', u: 'kA', d: 10 },
       { k: 'busEquip', l: 'Bus des équipements communicants', t: 's', o: [['Modbus RTU', 'Modbus RTU (RS485)'], ['Modbus TCP', 'Modbus TCP'], ['BACnet MS/TP', 'BACnet MS/TP'], ['BACnet/IP', 'BACnet/IP'], ['M-Bus', 'M-Bus (compteurs)']], d: 'Modbus RTU' },

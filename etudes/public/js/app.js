@@ -120,12 +120,18 @@ function rubriques(type, e) {
 const colonnesDe = (c, e) => c.colonnes.filter(col => !col.si || col.si(e));
 // verrous : champs repris d'une autre note (« champ » ou « liste.ligne.colonne » → libellé de la source), affichés non modifiables
 const verrou = (v, cle) => (v[cle] ? ` disabled data-verrou title="Repris de ${esc(v[cle])}"` : '');
+// Colonne « cases à cocher » d'une ligne (options d'une armoire…) : liste repliable
+const casesLigne = (c, col, l, i, e) => {
+  if (col.sauf0 && i === 0) return `<span class="petit muted">${esc(col.sauf0)}</span>`;
+  const val = Array.isArray(l[col.k]) ? l[col.k] : (col.d || []), opts = optionsDe(col, e);
+  return `<details class="cases-ligne"><summary>${val.length} coché(s)</summary>${opts.map(([k, lib, aide]) => `<label class="case" title="${esc(aide || '')}"><input type="checkbox" data-lcase="${c.k}.${i}.${col.k}" value="${esc(k)}" ${val.includes(k) ? 'checked' : ''}> ${esc(lib)}</label>`).join('')}</details>`;
+};
 function formulaireHtml(type, e, v = {}) {
   return rubriques(type, e).map(r => `<fieldset>${r.titre ? `<legend>${esc(r.titre)}</legend>` : ''}<div class="grille-champs">${r.champs.map(c => {
     if (c.t === 'lignes') {
       const lignes = e[c.k] || [], cols = colonnesDe(c, e);
       return `<div class="large"><div class="petit muted">${esc(c.l)}</div><div class="defile-x"><table class="edit"><thead><tr>${cols.map(col => `<th>${esc(col.l)}</th>`).join('')}<th></th></tr></thead>
-        <tbody>${lignes.map((l, i) => `<tr>${cols.map(col => `<td>${col.t === 's' ? `<select data-l="${c.k}.${i}.${col.k}"${verrou(v, `${c.k}.${i}.${col.k}`)}>${optionsHtml(optionsDe(col, e), l[col.k])}</select>`
+        <tbody>${lignes.map((l, i) => `<tr>${cols.map(col => `<td>${col.t === 'cases' ? casesLigne(c, col, l, i, e) : col.t === 's' ? `<select data-l="${c.k}.${i}.${col.k}"${verrou(v, `${c.k}.${i}.${col.k}`)}>${optionsHtml(optionsDe(col, e), l[col.k])}</select>`
           : `<input data-l="${c.k}.${i}.${col.k}" value="${esc(valeurChamp(l[col.k]))}" ${col.t === 't' ? '' : 'inputmode="decimal" class="nombre"'}${verrou(v, `${c.k}.${i}.${col.k}`)}>`}</td>`).join('')}
           <td style="white-space:nowrap">${c.colonnes[0].k === 'rep' ? `<button class="icone" data-dup-ligne="${c.k}.${i}" title="Dupliquer : même équipement, repère suivant ; il reste à changer la pièce">⧉</button>` : ''}<button class="icone" data-suppr-ligne="${c.k}.${i}" title="Supprimer la ligne">✕</button></td></tr>`).join('')}</tbody></table></div>
         <button class="secondaire petit" data-ajout-ligne="${c.k}">+ Ajouter une ligne</button> <span class="petit muted">ou collez un tableau Excel dans une cellule</span></div>`;
@@ -163,7 +169,7 @@ function resultatsPrincipaux(r) {
 // Schéma dessiné par le calcul (P&ID), sur toute la largeur sous la saisie
 // Schémas d'un calcul : le principal, puis les folios complémentaires (commande, cartes de l'automate…)
 const tousSchemas = r => [...(r.schema ? [{ titre: r.titreSchema || 'Schéma de principe', svg: r.schema }] : []), ...(r.schemas || []).filter(s => s && s.svg)];
-const schemaHtml = r => tousSchemas(r).map((s, i) => `<div class="barre"><h2>${esc(s.titre)}</h2><span class="espace"></span><button class="secondaire petit" data-dl-schema="${i}">Télécharger (SVG)</button><button class="secondaire petit" data-dl-dxf="${i}">Télécharger pour AutoCAD (DXF)</button></div><div class="schema">${s.svg}</div>`).join('');
+const schemaHtml = r => tousSchemas(r).map((s, i) => `<div class="barre"><h2>${esc(s.titre)}</h2><span class="espace"></span><button class="secondaire petit" data-dl-schema="${i}">Télécharger (SVG)</button><button class="secondaire petit" data-dl-dxf="${i}">Télécharger pour AutoCAD (DXF)</button><button class="secondaire petit" data-dl-pdf="${i}">PDF A3</button></div><div class="schema">${s.svg}</div>`).join('');
 // ctx : entrées effectives (avec les valeurs reprises d'autres notes) et calcul ; par défaut, la saisie seule
 const ctxSimple = (type, e) => ({ effectives: () => ({ entrees: e, verrous: {} }), calcul: () => Notes.calculer(type, e) });
 const ctxEtude = (et, n) => ({ effectives: () => Liens.resoudre(et, n), calcul: () => Liens.calculer(et, n) });
@@ -207,11 +213,15 @@ function lierCalculateur(root, type, e, changer, ctx = ctxSimple(type, e)) {
     if (o) { ongletActif = o.dataset.onglet; root.querySelector('#resultats').innerHTML = resultatsHtml(ctx.calcul()); }
   };
   root.querySelector('#schema').onclick = ev => {
-    const svg = ev.target.closest('[data-dl-schema]'), dxf = ev.target.closest('[data-dl-dxf]');
-    if (!svg && !dxf) return;
-    const s = tousSchemas(ctx.calcul())[+(svg || dxf).dataset[svg ? 'dlSchema' : 'dlDxf'] || 0];
+    const svg = ev.target.closest('[data-dl-schema]'), dxf = ev.target.closest('[data-dl-dxf]'), pdf = ev.target.closest('[data-dl-pdf]');
+    if (!svg && !dxf && !pdf) return;
+    const s = tousSchemas(ctx.calcul())[+(svg ? svg.dataset.dlSchema : dxf ? dxf.dataset.dlDxf : pdf.dataset.dlPdf) || 0];
     if (!s) return;
     const nom = `${String(s.titre === 'Schéma de principe' ? `Schema_${e.titreInstallation || 'principe'}` : s.titre).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_')}`;
+    if (pdf) {
+      if (typeof PDFLib === 'undefined') return toast('Module PDF indisponible', 5000);
+      return schemaPdfA3(s.svg).then(o => telecharger(`${nom}_A3.pdf`, o, 'application/pdf')).then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : 'Folio A3 enregistré')).catch(er => toast(er.message, 6000));
+    }
     const [fichier, data, mime] = dxf ? [`${nom}.dxf`, Dxf.depuisSvg(s.svg).octets, 'application/dxf'] : [`${nom}.svg`, new TextEncoder().encode(s.svg), 'image/svg+xml'];
     Promise.resolve(telecharger(fichier, data, mime)).then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : 'Schéma enregistré')).catch(er => toast(er.message, 6000));
   };
@@ -232,6 +242,12 @@ function lierCalculateur(root, type, e, changer, ctx = ctxSimple(type, e)) {
     const n = collerTableau(type, e, el.dataset.l, txt);
     if (!n) return;
     ev.preventDefault(); toast(`${n} cellule(s) collée(s) depuis le tableau`, 3500); redessiner();
+  });
+  root.querySelectorAll('[data-lcase]').forEach(el => el.onchange = () => {
+    const [k, i, col] = el.dataset.lcase.split('.'), l = e[k] || (e[k] = []);
+    (l[+i] || (l[+i] = {}))[col] = [...root.querySelectorAll(`[data-lcase="${el.dataset.lcase}"]`)].filter(x => x.checked).map(x => x.value);
+    const det = el.closest('details'); if (det) det.querySelector('summary').textContent = `${l[+i][col].length} coché(s)`;
+    recalculer();
   });
   root.querySelectorAll('[data-l]').forEach(el => {
     const [k, i, col] = el.dataset.l.split('.');
@@ -839,7 +855,7 @@ Vues.note = {
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-pompes" title="Une ligne par circuit pour saisir la pompe retenue et sa courbe (ou la lire sur la fiche du fabricant)">⚙️ Pompes retenues par circuit</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-rob" title="Pour chaque circuit sans robinetterie : vannes d\'isolement, vanne d\'équilibrage, filtre, manchettes, thermomètres ; à compléter avec les Kv des fiches">🔩 Robinetterie type par circuit</button><button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par circuit (repères, DN, fabricant, référence, fiche, ΔP) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
-        ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button>' : ''}
+        ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button><button class="secondaire" id="elec-csv">🔗 Table d\'échange GTB (CSV)</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="num-bouches" title="Numéro unique de chaque bouche : compléter les bouches sans repère ou en double, ou tout renuméroter (par zone et pièce, ou suivant les branches) quand l\'étude est au point">🔢 Numéroter les bouches</button>' : ''}
         ${n.type === 'terminaux' ? '<button class="secondaire" id="num-terminaux" title="Donne un repère unique à chaque terminal sans repère ou en double (CA-01, VC-02…) : une branche par terminal dans le réseau arborescent, une fiche de mise en service par terminal">🔢 Numéroter les terminaux</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="aero-vitesses" title="Même vitesse pour toutes les branches (ou les principales, ou les terminales) : les diamètres des gaines sont recalculés">💨 Changer toutes les vitesses</button>' : ''}
@@ -896,6 +912,14 @@ Vues.note = {
         rows: [[{ v: `${x.name} — ${et.objet} (indice ${et.indice})`, s: 'title' }], [], x.entetes.map(H), ...x.lignes.map(l => l.map(val))] })));
       Promise.resolve(telecharger(`Electricite_${sansAccents(et.objet).slice(0, 40)}_Ind${sansAccents(et.indice) || 'A'}.xlsx`, octets, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'))
         .then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : `Classeur enregistré : ${f.length} feuilles`)).catch(er => toast(er.message, 6000));
+    };
+    // Table d'échange GTB au format neutre (CSV « ; », UTF-8 avec BOM pour Excel) : objets BACnet, registres Modbus
+    const ecsv = root.querySelector('#elec-csv');
+    if (ecsv) ecsv.onclick = () => {
+      const c = (Liens.calculer(et, n).valeurs || {}).echangeCsv;
+      if (!c) return toast('Aucun point.', 4000);
+      Promise.resolve(telecharger(`Table_echange_GTB_${sansAccents(et.objet).slice(0, 40)}_Ind${sansAccents(et.indice) || 'A'}.csv`, new TextEncoder().encode(`\ufeff${c}`), 'text/csv'))
+        .then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : 'Table d\'échange enregistrée')).catch(er => toast(er.message, 6000));
     };
     const ec = root.querySelector('#elec-cables');
     if (ec) ec.onclick = () => {

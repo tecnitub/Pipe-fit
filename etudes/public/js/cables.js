@@ -123,10 +123,13 @@ const Cables = ((N) => {
     const El = typeof Electricite !== 'undefined' ? Electricite : require('./electricite');
     const r = N.calculer('elec', eElec), out = existantes.slice();
     const garde = (rep, o) => { const ex = out.find(l => l.rep === rep); if (ex) Object.assign(ex, { de: o.de, vers: o.vers, P: o.P, tension: o.tension, L: ex.L || o.L }); else out.push({ rep, pose: 'E', isolant: 'PR', mat: 'Cu', temp: 30, groupes: 1, courbe: 'C', duMax: 5, In: '', Ib: '', amont: '', cos: 0.85, ...o }); };
-    (eElec.armoires || []).filter(a => a.rep).forEach(a => {
-      const v = (r.valeurs.armoires || []).find(x => x.rep === a.rep) || {};
-      // Alimentation d'une armoire : 2 % au plus, pour garder de la marge aux départs en aval
-      garde(`TGBT-${a.rep}`, { de: 'TGBT', vers: `Armoire ${a.rep}`, tension: 'triN', P: '', Ib: v.Ib ? Math.round(v.Ib * 10) / 10 : '', In: v.cal || '', L: num(a.L) || '', duMax: 2 });
+    // Armoire divisionnaire : alimentée depuis une autre armoire (liaison amont = alimentation de celle-ci)
+    const arms = (eElec.armoires || []).filter(a => a.rep), amontDe = rep => String((arms.find(a => a.rep === rep) || {}).amont || '').trim();
+    const repArm = rep => `${amontDe(rep) || 'TGBT'}-${rep}`;
+    arms.forEach(a => {
+      const v = (r.valeurs.armoires || []).find(x => x.rep === a.rep) || {}, am = amontDe(a.rep);
+      // Alimentation d'une armoire : 2 % au plus sur le tronçon, pour garder de la marge aux départs en aval
+      garde(repArm(a.rep), { de: am ? `Armoire ${am}` : 'TGBT', vers: `Armoire ${a.rep}`, tension: 'triN', P: '', Ib: v.Ib ? Math.round(v.Ib * 10) / 10 : '', In: v.cal || '', L: num(a.L) || '', duMax: am ? 4 : 2, amont: am ? repArm(am) : '' });
     });
     const tension = q => q.tension || (El.TYPES_EQ[q.type] || [])[2] || 'mono';
     // Départs de puissance des armoires CVC (pas les organes 24 V) dont la longueur est saisie
@@ -134,7 +137,7 @@ const Cables = ((N) => {
     const premiere = ((eElec.armoires || []).find(a => a.rep) || {}).rep || 'elec', alim = q => q.alim || premiere;
     (eElec.equipements || []).filter(q => alim(q) !== 'elec' && tension(q) !== '24V' && num(q.L) > 0).forEach(q => {
       const t = (El.TYPES_EQ[q.type] || [])[1];
-      garde(`${alim(q)}-${q.rep}`, { de: `Armoire ${alim(q)}`, vers: `${q.rep} ${q.designation || ''}`.trim(), tension: tension(q) === 'tri' ? 'tri' : 'mono', P: num(q.P), L: num(q.L), amont: `TGBT-${alim(q)}`, courbe: t && ['direct', 'contacteur', ''].includes(q.depart || '') ? 'D' : 'C' });
+      garde(`${alim(q)}-${q.rep}`, { de: `Armoire ${alim(q)}`, vers: `${q.rep} ${q.designation || ''}`.trim(), tension: tension(q) === 'tri' ? 'tri' : 'mono', P: num(q.P), L: num(q.L), amont: repArm(alim(q)), courbe: t && ['direct', 'contacteur', ''].includes(q.depart || '') ? 'D' : 'C' });
     });
     return out;
   }

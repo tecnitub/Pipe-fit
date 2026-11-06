@@ -133,6 +133,13 @@ async function svgEnPng(svg, largeur = 3200) {
   const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(img, 0, 0, cv.width, cv.height);
   return octetsDe(cv.toDataURL('image/png'));
 }
+// Un folio seul sur une page A3 paysage (impression à l'échelle de l'atelier), cartouche compris dans le dessin
+async function schemaPdfA3(svg) {
+  const { PDFDocument } = PDFLib, doc = await PDFDocument.create(), png = await doc.embedPng(await svgEnPng(svg, 4800)), W = 1190.55, H = 841.89, m = 20, pg = doc.addPage([W, H]);
+  const k = Math.min((W - 2 * m) / png.width, (H - 2 * m) / png.height);
+  pg.drawImage(png, { x: (W - png.width * k) / 2, y: (H - png.height * k) / 2, width: png.width * k, height: png.height * k });
+  return doc.save();
+}
 async function pageSchema(doc, svg, titre, bas = 34) {
   const { StandardFonts, rgb } = PDFLib, png = await doc.embedPng(await svgEnPng(svg)), W = 841.89, H = 595.28, pg = doc.addPage([W, H]);
   const gras = await doc.embedFont(StandardFonts.HelveticaBold), t = winAnsi(pourPdf(titre)).slice(0, 110);

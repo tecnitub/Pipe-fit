@@ -164,3 +164,8 @@ ul.af { padding-left: 18px; font-size: 13.5px; display: grid; gap: 6px; }
 .cases-choix .case { font-weight: normal; }
 .cases-choix label.case { display: flex; flex-direction: row; align-items: flex-start; gap: .45em; margin: 0; }
 .cases-choix label.case input { width: auto; flex: none; margin: .2em 0 0; }
+
+/* Cases à cocher dans une ligne de tableau (options d'une armoire) */
+.cases-ligne summary { cursor: pointer; white-space: nowrap; }
+.cases-ligne[open] { min-width: 300px; }
+.cases-ligne .case { display: flex; gap: .4em; align-items: flex-start; font-weight: normal; font-size: .85em; }

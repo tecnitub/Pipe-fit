@@ -32,7 +32,7 @@ test('armoire CVC : phases équilibrées, foisonnement, réserve, demandes au lo
       { rep: 'PAC1', designation: 'PAC', type: 'pac', P: 30, alim: 'elec', pilote: 'AR1', fonctionnement: 'Relève de la chaudière sous -5 °C' },
       { rep: 'VC', designation: 'Ventilo bureaux', type: 'ventilo', P: 0.8, alim: 'elec', pilote: 'autonome' },
     ],
-    lotElec: 'Lot 13 Électricité', gtb: 'BACnet/IP',
+    lotElec: 'Lot 13 Électricité', gtb: 'BACnet/IP', options: E.OPTIONS_DEFAUT.filter(k => k !== 'comptageUsages'),
   });
   const v = r.valeurs, a = v.armoires[0];
   proche(v.Ptot, 32.6, 0.001, 'équipements + 0,3 kW de commande de l\'armoire'); proche(v.Pelec, 30.8, 0.001);
@@ -72,7 +72,7 @@ test('armoire CVC : phases équilibrées, foisonnement, réserve, demandes au lo
   const cc = r.onglets.find(o => o.titre === 'Cahier des charges armoires');
   assert.ok(cc.blocs.some(b => b.titre === 'Départs de l\'armoire AR1' && b.tableau.lignes.length === 4));
   assert.match(r.schema, /^<svg/); assert.match(r.schema, /QG 10 A/); assert.match(r.schema, />P1</); assert.match(r.schema, /Automate/);
-  assert.strictEqual(r.titreSchema, 'Schéma unifilaire des armoires CVC');
+  assert.strictEqual(r.titreSchema.replace(/^F\d+ — /, ""), 'Schéma unifilaire des armoires CVC');
 });
 
 test('alertes : armoire inconnue, puissance manquante, 24 V hors armoire, phases déséquilibrées', () => {
@@ -132,7 +132,7 @@ test('chaufferie : sécurités reprises, bilan de puissance au TGBT, plan d\'adr
   assert.match(bil[bil.length - 1][0], /Total CVC au TGBT/);
   assert.ok(Math.abs(r.valeurs.Pappel - (ar.P * 0.8 + r.valeurs.Pelec) * 0.9) < 0.01);
   assert.match(r.schema, />KM</, 'contacteur des pompes commandées en marche / arrêt');
-  assert.deepStrictEqual(r.valeurs.feuilles.map(f => f.name), ['Bilan de puissance', 'Attentes lot élec', 'Équipements', 'Liste des points', 'E-S AR-CVC-01', 'Nomenclature AR-CVC-01']);
+  assert.deepStrictEqual(r.valeurs.feuilles.map(f => f.name), ['Bilan de puissance', 'Attentes lot élec', 'Équipements', 'Liste des points', "Table d'échange GTB", 'Essais point à point', 'E-S AR-CVC-01', 'Nomenclature AR-CVC-01']);
   // Le classeur se construit
   const X = require('../public/js/xlsx');
   assert.ok(X.build(r.valeurs.feuilles.map(f => ({ name: f.name, rows: [f.entetes, ...f.lignes] }))).length > 1000);
@@ -167,7 +167,7 @@ test('folios : commande (contacteurs, variateurs, chaîne de sécurité), cartes
   const pid = { id: 'p', type: 'pid', titre: 'Chaufferie', entrees: N.defauts('pid') };
   const eqs = E.fusionner([], E.equipementsEtude({ notes: [pid] }, Liens)).lignes;
   const r = N.calculer('elec', { ...N.defauts('elec'), equipements: eqs });
-  assert.deepStrictEqual(r.schemas.map(s => s.titre), ['Alimentations et circuits auxiliaires — armoire AR-CVC-01', 'Folio de commande — armoire AR-CVC-01', 'Implantation de l\'automate — armoire AR-CVC-01 (1 châssis)', 'Cartes d\'entrées / sorties — armoire AR-CVC-01']);
+  assert.deepStrictEqual(r.schemas.map(s => s.titre.replace(/^F\d+ — /, "")), ['Alimentations et circuits auxiliaires — armoire AR-CVC-01', 'Folio de commande — armoire AR-CVC-01', 'Implantation de l\'automate — armoire AR-CVC-01 (1 châssis)', 'Cartes d\'entrées / sorties — armoire AR-CVC-01']);
   const [aux, cmd, implantation, cartes] = r.schemas.map(s => s.svg);
   assert.match(aux, /QG /); assert.match(aux, /Parafoudre/); assert.match(aux, /KA-AU/);
   assert.match(implantation, />UC</); assert.match(implantation, /utilisées</);
@@ -181,7 +181,7 @@ test('folios : commande (contacteurs, variateurs, chaîne de sécurité), cartes
 });
 
 test('chantier réparti : armoire divisionnaire alimentée depuis une autre armoire, équipements affectés par local', () => {
-  const ent = { ...N.defauts('elec'),
+  const ent = { ...N.defauts('elec'), options: E.OPTIONS_DEFAUT.filter(k => k !== 'comptageUsages'),
     armoires: [{ rep: 'AR-01', local: 'Chaufferie', L: 30, ks: 100, reserve: 0 }, { rep: 'AR-02', local: 'Toiture', amont: 'AR-01', L: 60, ks: 100, reserve: 0 }],
     equipements: [
       { rep: 'P1', type: 'pompe', P: 1.5, tension: 'tri', local: 'Chaufferie' },

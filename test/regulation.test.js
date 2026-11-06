@@ -116,7 +116,7 @@ test('courbe de chauffe (loi d\'eau) : départ et retour selon l\'extérieur, ar
   // Dans le calcul : onglet Régulation (graphique, tableau, réglage) et schéma téléchargeable
   const r = N.calculer('pid', e), reg = r.onglets.find(o => o.titre === 'Régulation').blocs;
   assert.ok(reg[0].svg && /tableau/.test(Object.keys(reg[1]).join()) && /pente ≈/.test(reg[2].liste[0]));
-  assert.ok(r.schemas.some(s => /Courbe de chauffe/.test(s.titre)));
+  assert.ok(r.schemas.some(s => /Courbe de chauffe/.test(s.titre.replace(/^F\d+ — /, ""))));
 });
 
 test('courbe de chauffe réglable : départ à 18 °C par circuit et seuil d\'arrêt du chauffage', () => {
@@ -217,7 +217,7 @@ test('automate : cartes selon les points, voies intégrées à l\'UC, châssis d
   const nom = r.onglets.find(o => o.titre === 'Cahier des charges armoires').blocs.find(b => /^Nomenclature/.test(b.titre)).tableau.lignes;
   assert.ok(nom.some(l => l[1] === 'Coupleur X' && Number(l[3]) === ch - 1), conf.titre + ' / ' + ch);
   assert.ok(nom.some(l => l[1] === 'DI8'));
-  const svg = r.schemas.find(s => /^Implantation de l'automate — armoire AR1/.test(s.titre)).svg;
+  const svg = r.schemas.find(s => /^Implantation de l'automate — armoire AR1/.test(s.titre.replace(/^F\d+ — /, ""))).svg;
   assert.match(svg, /COUPLEUR/); assert.match(svg, /bus d'extension/); assert.match(svg, />UC</);
 });
 
@@ -239,11 +239,11 @@ test('armoire : alimentations 24 V DC / 24 V AC / 48 V dimensionnées, arrêt d\
   const reg = cc.find(b => /^Dispositions réglementaires — armoire AR1/.test(b.titre)).tableau.lignes.map(l => l[0]);
   ['Coupure générale', 'Arrêt d\'urgence', 'Protection des personnes', 'Protection contre les surtensions', 'Très basse tension de sécurité', 'Sectionnement des moteurs', 'Dossier et vérifications'].forEach(k => assert.ok(reg.some(x => x.startsWith(k)), k));
   const nom = cc.find(b => /^Nomenclature/.test(b.titre)).tableau.lignes.map(l => l[1]);
-  assert.ok(nom.some(x => /coup de poing/i.test(x)) && nom.some(x => /Relais de sécurité/.test(x)) && nom.some(x => /300 mA sélective/.test(x)) && nom.some(x => /30 mA/.test(x)));
+  assert.ok(nom.some(x => /coup de poing/i.test(x)) && nom.some(x => /Relais de sécurité/.test(x)) && nom.some(x => /300 mA sélectif/.test(x)) && nom.some(x => /30 mA/.test(x)));
   assert.ok(nom.some(x => /^Automate Wit \(unité centrale, référence selon la fiche\)/.test(x)), nom.filter(x => /Automate/.test(x)).join(' | '));
   assert.ok(cc.find(b => /^Armoire AR1/.test(b.titre)).liste.some(x => /Automate Wit.*télégestion/.test(x)));
   // Folios : auxiliaires, arrêt d'urgence en tête des lignes de contacteurs
-  const svg = t => r.schemas.find(s => s.titre.startsWith(t)).svg;
+  const svg = t => r.schemas.find(s => s.titre.replace(/^F\d+ — /, "").startsWith(t)).svg;
   assert.match(svg('Alimentations et circuits auxiliaires'), /Parafoudre type 2[\s\S]*ID 30 mA[\s\S]*Transformateur|V DC/);
   assert.match(svg('Folio de commande'), /KA-AU[\s\S]*Manu \/ Auto \/ Arrêt/);
 });
@@ -268,7 +268,7 @@ test('options de l\'armoire (cases à cocher) : sécurités de chaufferie, cordo
   assert.ok(reg.find(l => l[0] === 'Cordons chauffants') && reg.find(l => l[0] === 'Arrêt d\'urgence')[2] === 'Non retenu');
   const aux = cc.find(b => /^Alimentations très basse tension/.test(b.titre)).tableau.lignes.find(l => /^24 V DC/.test(l[0]));
   assert.match(aux[1], /Routeur 4G/);
-  const svg = t => r.schemas.find(s => s.titre.startsWith(t)).svg;
+  const svg = t => r.schemas.find(s => s.titre.replace(/^F\d+ — /, "").startsWith(t)).svg;
   assert.match(svg('Alimentations et circuits auxiliaires'), /ONDULEUR/);
   assert.doesNotMatch(svg('Alimentations et circuits auxiliaires'), /KA-AU/);
   assert.doesNotMatch(svg('Folio de commande'), /KA-AU/);
@@ -290,7 +290,7 @@ test('commande des moteurs : simple Manu / Auto / Arrêt, double M1 / M2 / Auto 
   const eqs = r.tableaux.find(t => /^Équipements/.test(t.titre)).lignes.map(l => l[0]);
   assert.ok(eqs.includes('PD1-M1') && eqs.includes('PD1-M2'));
   // Folio de commande : commutateur M1 / M2 / Auto / 0, verrouillage mutuel des contacteurs ; CTA : Manu / Auto / Arrêt et relais d'autorisation
-  const cmd = r.schemas.find(s => /^Folio de commande/.test(s.titre)).svg;
+  const cmd = r.schemas.find(s => /^Folio de commande/.test(s.titre.replace(/^F\d+ — /, ""))).svg;
   assert.match(cmd, /S-PD1<\/text><text[^>]*>M1 \/ M2 \/ Auto \/ 0/);
   assert.match(cmd, /KM-PD1-M2<\/text><text[^>]*>verrouillage/);
   assert.match(cmd, /S-CTA2<\/text><text[^>]*>Manu \/ Auto \/ Arrêt[\s\S]*KA-CTA2/);
