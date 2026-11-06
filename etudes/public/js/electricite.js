@@ -144,8 +144,9 @@ const Electricite = ((N, Sc) => {
 
   const listeOpt = t => Object.entries(t).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v]);
   // Armoires d'abord : une ligne sans choix est alimentée par la première armoire (sans armoire : attente électrique)
-  const optAlim = e => [...(e.armoires || []).filter(a => a.rep).map(a => [a.rep, `Armoire ${a.rep}${a.local ? ` (${a.local})` : ''}`]), ['elec', 'Attente électrique (lot électricité)'], ['cvc', 'Armoire CVC (local CVC, la première)']];
+  const optAlim = e => [['', 'Automatique (armoire du local, sinon la première)'], ...(e.armoires || []).filter(a => a.rep).map(a => [a.rep, `Armoire ${a.rep}${a.local ? ` (${a.local})` : ''}`]), ['elec', 'Attente électrique (lot électricité)'], ['cvc', 'Armoire CVC (local CVC, la première)']];
   const selonType = l => [['', 'Selon le type'], ...l];
+  const optAmont = e => [['', 'TGBT (lot électricité)'], ...(e.armoires || []).filter(a => a.rep).map(a => [a.rep, `Armoire ${a.rep}${a.local ? ` (${a.local})` : ''} — divisionnaire`])];
   const optPilote = e => [['', 'Armoire d\'alimentation'], ['autonome', 'Autonome (régulation propre)'], ...(e.armoires || []).filter(a => a.rep).map(a => [a.rep, `Armoire ${a.rep}`])];
 
   /* ---------- Calcul d'un départ ---------- */
@@ -168,6 +169,16 @@ const Electricite = ((N, Sc) => {
     const REG = e._regulation || { types: {}, installations: [] };
     const alertes = [], arm = (e.armoires || []).filter(a => String(a.rep || '').trim()).map((a, i) => ({ ...a, techno: Rg().TECHNOS[a.techno] ? a.techno : 'automate', rep: String(a.rep).trim(), i, ks: num(a.ks, 80) / 100, reserve: num(a.reserve, 20) / 100, eqs: [], phases: [0, 0, 0], pts: [] }));
     const parRep = new Map(arm.map(a => [a.rep, a]));
+    // Armoires divisionnaires : alimentées depuis une autre armoire (chantier réparti) plutôt que depuis le TGBT
+    arm.forEach(a => { a.amont = String(a.amont || '').trim(); a.enfants = []; if (a.amont && (a.amont === a.rep || !parRep.has(a.amont))) { alertes.push(alerte('attention', `Armoire ${a.rep} : armoire amont « ${a.amont} » inconnue, alimentée depuis le TGBT.`)); a.amont = ''; } });
+    arm.forEach(a => { const vus = new Set([a.rep]); let p = a.amont; while (p) { if (vus.has(p)) { alertes.push(alerte('erreur', `Armoire ${a.rep} : alimentation en boucle (${[...vus].join(' → ')} → ${p}), alimentée depuis le TGBT.`)); a.amont = ''; break; } vus.add(p); p = parRep.get(p).amont; } });
+    arm.forEach(a => { if (a.amont) parRep.get(a.amont).enfants.push(a); });
+    const niveau = a => (a.amont ? 1 + niveau(parRep.get(a.amont)) : 0);
+    arm.forEach(a => { a.niveau = niveau(a); });
+    const amontAval = [...arm].sort((x, y) => x.niveau - y.niveau || x.i - y.i), avalAmont = [...amontAval].reverse(), racines = arm.filter(a => !a.amont);
+    // Équipement sans armoire choisie : celle de son local (ou de sa zone), sinon la première
+    const norm = v => String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+    const armDuLocal = x => { const l = norm(x.local || x.zone); if (!l) return null; return arm.find(a => norm(a.local) === l) || arm.find(a => norm(a.local) && (l.includes(norm(a.local)) || norm(a.local).includes(l))) || null; };
     if (!arm.length) alertes.push(alerte('attention', 'Aucune armoire CVC : ajoutez au moins une armoire (à la charge du lot CVC) ou alimentez tous les équipements par des attentes du lot électricité.'));
     const reps = new Set();
     const opt = new Set(Array.isArray(e.options) ? e.options : OPTIONS_DEFAUT), a0 = arm[0] ? arm[0].rep : 'elec';
@@ -197,7 +208,8 @@ const Electricite = ((N, Sc) => {
       if (reps.has(rep)) alertes.push(alerte('erreur', `Repère ${rep} en double.`)); reps.add(rep);
       // « Armoire CVC » choisie sur l'appareil : la première armoire de l'étude (celle du local CVC)
       const alim0 = x.alim === 'cvc' ? (arm[0] ? arm[0].rep : 'elec') : x.alim;
-      const q = { ...x, rep, t, moteur: t[1], tension: x.tension || t[2], depart: x.depart || t[3], regulation: x.regulation || t[4], alim: alim0 || (arm[0] ? arm[0].rep : 'elec') };
+      const parLocal = !alim0 && armDuLocal(x);
+      const q = { ...x, rep, t, moteur: t[1], tension: x.tension || t[2], depart: x.depart || t[3], regulation: x.regulation || t[4], alim: alim0 || (parLocal ? parLocal.rep : arm[0] ? arm[0].rep : 'elec'), alimAuto: !alim0 };
       if (q.alim !== 'elec' && !parRep.has(q.alim)) { alertes.push(alerte('attention', `${rep} : armoire « ${q.alim} » inconnue, équipement compté en attente électrique.`)); q.alim = 'elec'; }
       if (q.tension === '24V' && q.alim === 'elec') alertes.push(alerte('attention', `${rep} : un équipement en 24 V est alimenté depuis une armoire (choisissez l'armoire).`));
       q.d = q.tension === '24V' ? { Ib: 0, cal: 0, S: 0, du: 0, cable: '' } : depart(q);
@@ -219,11 +231,13 @@ const Electricite = ((N, Sc) => {
       else { const k = a.phases.indexOf(Math.min(...a.phases)); a.phases[k] += q.d.Ib; q.phase = `L${k + 1}`; }
     });
     eqs.filter(q => q.alim !== 'elec' && q.tension === '24V').forEach(q => parRep.get(q.alim).eqs.push(q));
-    arm.forEach(a => {
+    avalAmont.forEach(a => {
       // Circuit de commande : automate, alimentation 24 V, éclairage et prise de l'armoire (environ 300 W sur une phase)
       const Icmd = 300 / 230;
       const k = a.phases.indexOf(Math.min(...a.phases)); a.phases[k] += Icmd;
-      a.P = a.eqs.reduce((s, q) => s + num(q.P), 0) + 0.3;
+      // Armoires divisionnaires alimentées par celle-ci : leur courant foisonné s'ajoute sur chaque phase
+      a.enfants.forEach(c => { a.phases = a.phases.map((v, j) => v + c.phases[j] * c.ks); });
+      a.P = a.eqs.reduce((s, q) => s + num(q.P), 0) + 0.3 + a.enfants.reduce((s, c) => s + c.P, 0);
       a.Pf = a.P * a.ks;
       a.Ib = Math.max(...a.phases) * a.ks * (1 + a.reserve);
       a.cal = CALIBRES.find(c => c >= a.Ib) || CALIBRES[CALIBRES.length - 1];
@@ -235,27 +249,38 @@ const Electricite = ((N, Sc) => {
       const ph = a.phases.filter(v => v > 0);
       a.desequilibre = ph.length ? (Math.max(...a.phases) - Math.min(...a.phases)) / Math.max(...a.phases) : 0;
       if (a.desequilibre > 0.3 && a.Ib > 10) alertes.push(alerte('attention', `Armoire ${a.rep} : phases déséquilibrées de ${nf(a.desequilibre * 100, 0)} % (répartissez les charges monophasées).`));
-      if (!a.eqs.length) alertes.push(alerte('attention', `Armoire ${a.rep} : aucun équipement alimenté.`));
+      if (!a.eqs.length && !a.enfants.length) alertes.push(alerte('attention', `Armoire ${a.rep} : aucun équipement alimenté.`));
+      // Départ de l'armoire amont vers cette divisionnaire (disjoncteur 4P, câble 5G)
+      a.dep = { Ib: a.Ib, cal: a.cal, courbe: 'C', S: a.S, tri: true, cable: `5G${String(a.S).replace('.', ',')}`, du: a.du };
     });
     // Courts-circuits (méthode des impédances, pré-dimensionnement) : Icc maxi au jeu de barres de chaque armoire
     // (pouvoir de coupure des appareils), Icc mini en bout de chaque départ (déclenchement magnétique), sélectivité
     const iccT = Math.max(1, num(e.iccTgbt, 10)) * 1000, Zs = 400 / (Math.sqrt(3) * iccT), XL = 0.00008, RHO0 = 0.01851, RHOC = RHO0 * 1.25;
     const PDC = [6, 10, 15, 25, 36, 50, 70], IM = { B: 5, C: 10, D: 20 }, ccLignes = [];
     const iccMin = (Ramont, Xamont, L, S) => 0.95 * 230 / Math.hypot(Ramont + 2 * RHOC * L / S, Xamont + 2 * XL * L);
-    arm.forEach(a => {
+    // Sélectivité (aval vers amont : une protection relevée en aval peut relever celle de l'amont)
+    avalAmont.forEach(a => {
       // Sélectivité ampèremétrique avec le plus gros départ : la protection en tête (et son câble) est relevée si besoin
-      const dep = a.eqs.filter(q => q.d.cal), maxDep = dep.reduce((m, q) => Math.max(m, q.d.cal), 0), tete = CALIBRES.find(c => c >= 1.6 * maxDep) || CALIBRES[CALIBRES.length - 1];
+      const dep = a.eqs.filter(q => q.d.cal), maxDep = Math.max(dep.reduce((m, q) => Math.max(m, q.d.cal), 0), ...a.enfants.map(c => c.cal)), tete = CALIBRES.find(c => c >= 1.6 * maxDep) || CALIBRES[CALIBRES.length - 1];
       a.selectif = !maxDep || a.cal >= 1.6 * maxDep;
       if (!a.selectif) {
         alertes.push(alerte('attention', `Armoire ${a.rep} : protection en tête ${a.cal} A pour un départ de ${maxDep} A — sélectivité ampèremétrique non assurée (rapport < 1,6) : portée à ${tete} A au TGBT (câble d'alimentation adapté), ou sélectivité vérifiée sur les tables du constructeur.`));
         a.calInitial = a.cal; a.cal = tete; a.S = Math.max(a.S, SECTION_CAL[a.cal] || a.S);
+        a.dep = { ...a.dep, cal: a.cal, S: a.S, cable: `5G${String(a.S).replace('.', ',')}` };
       }
-      const L = num(a.L), Rc = RHO0 * L / a.S;
-      a.Icc = 400 / (Math.sqrt(3) * Math.hypot(Rc, Zs + XL * L)); a.pdc = PDC.find(k => k * 1000 >= a.Icc) || 70;
-      ccLignes.push([`Armoire ${a.rep} (jeu de barres)`, nf(a.Icc / 1000, 1), `${a.pdc} kA`, `${a.cal} A en tête`, maxDep ? `${maxDep} A` : '—', a.selectif ? 'Oui (≥ 1,6)' : `Portée de ${a.calInitial} à ${a.cal} A`]);
+      a.maxDep = maxDep;
+    });
+    amontAval.forEach(a => {
+      const dep = a.eqs.filter(q => q.d.cal), maxDep = a.maxDep;
+      const L = num(a.L), Rc = RHO0 * L / a.S, p = a.amont ? parRep.get(a.amont) : null;
+      // Impédances cumulées depuis le TGBT (maxi : câbles à 20 °C ; mini : boucle phase-neutre à chaud)
+      a.R = (p ? p.R : 0) + Rc; a.X = (p ? p.X : Zs) + XL * L;
+      a.Rmin = (p ? p.Rmin : 0) + 2 * RHOC * L / a.S; a.Xmin = (p ? p.Xmin : Zs) + 2 * XL * L;
+      a.Icc = 400 / (Math.sqrt(3) * Math.hypot(a.R, a.X)); a.pdc = PDC.find(k => k * 1000 >= a.Icc) || 70;
+      ccLignes.push([`Armoire ${a.rep} (jeu de barres${p ? `, depuis ${p.rep}` : ''})`, nf(a.Icc / 1000, 1), `${a.pdc} kA`, `${a.cal} A en tête`, maxDep ? `${maxDep} A` : '—', a.selectif ? 'Oui (≥ 1,6)' : `Portée de ${a.calInitial} à ${a.cal} A`]);
       dep.forEach(q => {
         q.Icc = a.Icc; q.pdc = a.pdc;
-        q.IccMin = iccMin(2 * RHOC * L / a.S, Zs + 2 * XL * L, num(q.L), q.d.S);
+        q.IccMin = iccMin(a.Rmin, a.Xmin, num(q.L), q.d.S);
         q.Ia = q.d.cal * (IM[q.d.courbe] || 10);
         if (num(q.L) && q.IccMin < q.Ia) alertes.push(alerte('erreur', `${q.rep} : Icc mini en bout de ligne ${nf(q.IccMin, 0)} A < seuil magnétique ${nf(q.Ia, 0)} A (${q.d.cal} A courbe ${q.d.courbe}) : section supérieure, courbe plus basse ou longueur réduite.`));
       });
@@ -376,6 +401,7 @@ const Electricite = ((N, Sc) => {
         else if (q.type === 'cta' && !q.km && q.depart !== 'variateur') { add('Façade', 'Commutateur Manu / Auto / Arrêt', '3 positions'); add('Commande', 'Relais d\'autorisation de marche de la CTA', 'contact sec vers l\'armoire de la CTA'); add('Façade', 'Voyants marche (vert) et défaut (rouge)', 'LED 24 V', 2); }
         else if (q.moteur && (q.km || q.depart === 'variateur')) { add('Façade', 'Commutateur Manu / Auto / Arrêt', '3 positions'); add('Façade', 'Voyants marche (vert) et défaut (rouge)', 'LED 24 V', 2); }
       });
+      a.enfants.forEach(c => { add('Protection', 'Disjoncteur départ armoire divisionnaire', `4P ${c.cal} A courbe C, PdC ≥ ${a.pdc} kA${a.regime === 'TT' ? ', bloc différentiel 300 mA sélectif (S)' : ''}`); modules += 4; bornesP += 5; });
       const n24 = b24.length, nVannes = b24.filter(q => ['vanne', 'regulateur'].includes(q.type)).length;
       void n24; void nVannes;
       a.opt = opt; a.aux = auxiliaires(a, cfgAut, e.marqueAutomate);
@@ -415,12 +441,13 @@ const Electricite = ((N, Sc) => {
       a.enveloppe = { H, L, rangees, variateurs };
     });
     // Bornier de puissance : bornes numérotées à la suite, phases, neutre et terre par départ
-    const borniersX1 = a => { let n = 1; return a.eqs.filter(q => q.tension !== '24V').map(q => { const c = q.d.tri ? (q.neutre ? ['L1', 'L2', 'L3', 'N', 'PE'] : ['L1', 'L2', 'L3', 'PE']) : ['L', 'N', 'PE'], b = `X1:${n}-${n + c.length - 1}`; n += c.length; return [b, `Q-${q.rep}`, `${q.rep} — ${q.designation || q.t[0]}`, c.join(' · '), q.d.cable, q.local || ''] }); };
+    const borniersX1 = a => { let n = 1; return [...a.eqs.filter(q => q.tension !== '24V').map(q => { const c = q.d.tri ? (q.neutre ? ['L1', 'L2', 'L3', 'N', 'PE'] : ['L1', 'L2', 'L3', 'PE']) : ['L', 'N', 'PE'], b = `X1:${n}-${n + c.length - 1}`; n += c.length; return [b, `Q-${q.rep}`, `${q.rep} — ${q.designation || q.t[0]}`, c.join(' · '), q.d.cable, q.local || ''] }),
+      ...a.enfants.map(c => { const b = `X1:${n}-${n + 4}`; n += 5; return [b, `Q-${c.rep}`, `Armoire divisionnaire ${c.rep}`, 'L1 · L2 · L3 · N · PE', c.dep.cable, c.local || ''] })]; };
     // Bilan de puissance jusqu'au TGBT : armoires CVC (foisonnées) et attentes directes du lot électricité
-    const ksT = num(e.ksTgbt, 90) / 100;
+    const ksT = num(e.ksTgbt, 90) / 100, descendants = a => a.enfants.flatMap(c => [c, ...descendants(c)]);
     const ligneBilan = (nom, alim, P, ks, S, Ib) => [nom, alim, nf(P, 2), `${nf(ks * 100, 0)} %`, nf(P * ks, 2), S ? nf(P / S, 2) : '—', nf(S * ks, 2), nf(Ib, 1)];
     const bilan = [
-      ...arm.map(a => { const S = a.eqs.reduce((s, q) => s + num(q.P) / q.cosphi, 0) + 0.3; return { nom: `Armoire ${a.rep}${a.local ? ` (${a.local})` : ''}`, alim: '400 V tri', P: a.P, ks: a.ks, S, Ib: a.Ib }; }),
+      ...racines.map(a => { const Sa = b => b.eqs.reduce((s, q) => s + num(q.P) / q.cosphi, 0) + 0.3 + b.enfants.reduce((s, c) => s + Sa(c), 0), S = Sa(a), div = descendants(a); return { nom: `Armoire ${a.rep}${a.local ? ` (${a.local})` : ''}${div.length ? ` + divisionnaire(s) ${div.map(c => c.rep).join(', ')}` : ''}`, alim: '400 V tri', P: a.P, ks: a.ks, S, Ib: a.Ib }; }),
       ...eqs.filter(q => q.alim === 'elec' && q.tension !== '24V').map(q => ({ nom: `${q.rep} — ${q.designation || q.t[0]}`, alim: TENSIONS[q.tension], P: num(q.P), ks: 1, S: num(q.P) / q.cosphi, Ib: q.d.Ib })),
     ];
     const Pappel = bilan.reduce((s, x) => s + x.P * x.ks, 0) * ksT, Sappel = bilan.reduce((s, x) => s + x.S * x.ks, 0) * ksT, Itgbt = Sappel * 1000 / (Math.sqrt(3) * 400);
@@ -439,13 +466,13 @@ const Electricite = ((N, Sc) => {
     const lot = String(e.lotElec || 'lot électricité');
     // Demandes au lot électricité : alimentation de chaque armoire CVC et attentes directes des équipements
     const demandes = [
-      ...arm.map(a => [`Armoire ${a.rep}`, a.local || '', '400 V tri + N + PE', nf(a.Pf, 1), nf(a.Ib, 1), `${a.cal} A`, `5G${String(a.S).replace('.', ',')}${num(a.L) ? ` (${num(a.L)} m)` : ''}`, 'Alimentation de l\'armoire CVC depuis le TGBT']),
+      ...racines.map(a => [`Armoire ${a.rep}`, a.local || '', '400 V tri + N + PE', nf(a.Pf, 1), nf(a.Ib, 1), `${a.cal} A`, `5G${String(a.S).replace('.', ',')}${num(a.L) ? ` (${num(a.L)} m)` : ''}`, `Alimentation de l'armoire CVC depuis le TGBT${descendants(a).length ? ` (alimente aussi ${descendants(a).map(c => c.rep).join(', ')} — lot CVC)` : ''}`]),
       ...eqs.filter(q => q.alim === 'elec').map(q => [`${q.rep} — ${q.designation || q.t[0]}`, q.local || '', TENSIONS[q.tension] || q.tension, nf(num(q.P), 2), nf(q.d.Ib, 1), q.d.cal ? `${q.d.cal} A courbe ${q.d.courbe}` : '—',
         q.d.cable ? `${q.d.cable}${num(q.L) ? ` (${num(q.L)} m)` : ''}` : '', `Attente électrique avec interrupteur de proximité${q.diff ? ` ; ${q.diff}` : ''}${q.pilote ? ` ; liaisons de commande et de défaut vers l'armoire ${q.pilote.rep} (lot CVC)` : ''}`]),
     ];
     const ligneEq = q => [q.rep, q.designation || q.t[0], nf(num(q.P), 2), TENSIONS[q.tension] || q.tension, q.alim === 'elec' ? `Attente ${lot}` : `Armoire ${q.alim}${q.phase ? ` (${q.phase})` : ''}`,
       DEPARTS[q.depart] || q.depart, q.d.Ib ? nf(q.d.Ib, 1) : '—', q.d.cal ? `${q.d.cal} A ${q.d.courbe}` : '—', q.d.cable ? `${q.d.cable}${q.d.du ? ` · ΔU ${nf(q.d.du, 1)} %` : ''}` : '—', (REGULS[q.regulation] || REGULS.aucune)[0]];
-    const PCvc = arm.reduce((s, a) => s + a.P, 0), Pelec = eqs.filter(q => q.alim === 'elec').reduce((s, q) => s + num(q.P), 0), Ptot = PCvc + Pelec;
+    const PCvc = racines.reduce((s, a) => s + a.P, 0), Pelec = eqs.filter(q => q.alim === 'elec').reduce((s, q) => s + num(q.P), 0), Ptot = PCvc + Pelec;
     // Cahier des charges de chaque armoire (pour le tableautier)
     // Dispositions réglementaires d'une armoire CVC : [exigence, disposition, statut]
     const reglementaire = a => {
@@ -471,8 +498,9 @@ const Electricite = ((N, Sc) => {
       const io = compte(a.pts), nb = t => (io.find(x => x[0] === t) || [, 0])[1];
       return [
         { titre: `Armoire ${a.rep}${a.local ? ` — ${a.local}` : ''}`, liste: [
-          `Alimentation : 400 V tri + N + PE depuis le TGBT (${lot}), intensité d'emploi ${nf(a.Ib, 1)} A (foisonnement ${nf(a.ks * 100, 0)} %, réserve ${nf(a.reserve * 100, 0)} %).`,
+          `Alimentation : 400 V tri + N + PE depuis ${a.amont ? `l'armoire ${a.amont} (lot CVC, câble ${a.dep.cable}${num(a.L) ? ` de ${num(a.L)} m` : ''}, armoire divisionnaire)` : `le TGBT (${lot})`}, intensité d'emploi ${nf(a.Ib, 1)} A (foisonnement ${nf(a.ks * 100, 0)} %, réserve ${nf(a.reserve * 100, 0)} %).`,
           `Interrupteur-sectionneur général ${a.cal} A cadenassable en façade, parafoudre, protection différentielle des départs selon le schéma de liaison à la terre${a.regime ? ` (${a.regime})` : ''}.`,
+          ...(a.enfants.length ? [`Départ(s) vers les armoires divisionnaires ${a.enfants.map(c => `${c.rep}${c.local ? ` (${c.local})` : ''} : ${c.cal} A 4P, ${c.dep.cable}`).join(' ; ')} ; sélectivité avec les protections en tête des divisionnaires.`] : []),
           `${a.eqs.filter(q => q.tension !== '24V').length} départ(s) de puissance (voir le tableau), chaque départ repéré, avec commutateur arrêt / auto / manu et voyants marche / défaut pour les moteurs.`,
           `Circuit de commande : transformateur ou alimentation 24 V, protection dédiée, alimentation de l'automate et des organes 24 V (${a.eqs.filter(q => q.tension === '24V').length} équipement(s) : vannes, sondes, régulateurs).`,
           `Alimentations TBT : ${(a.aux || []).map(x => `${x.nom.split(' — ')[0]} ${x.choix}`).join(', ') || 'aucune'} ; primaires et secondaires protégés.`,
@@ -486,7 +514,8 @@ const Electricite = ((N, Sc) => {
         { titre: `Bornier X1 (puissance) — armoire ${a.rep}`, tableau: { entetes: ['Bornes', 'Départ', 'Équipement', 'Conducteurs', 'Câble', 'Vers'], lignes: borniersX1(a) } },
         { titre: `Nomenclature de l'appareillage — armoire ${a.rep}`, tableau: { entetes: ['Famille', 'Désignation', 'Caractéristiques', 'Qté'], lignes: a.nomenclature.map(x => [x[0], x[1], x[2], String(x[3])]) } },
         { titre: `Départs de l'armoire ${a.rep}`, tableau: { entetes: ['Repère', 'Équipement', 'P (kW)', 'Tension', 'Phase', 'Départ', 'Ib (A)', 'Protection', 'Câble'],
-          lignes: a.eqs.map(q => [q.rep, q.designation || q.t[0], nf(num(q.P), 2), TENSIONS[q.tension] || q.tension, q.phase || '24 V', DEPARTS[q.depart] || q.depart, q.d.Ib ? nf(q.d.Ib, 1) : '—', q.d.cal ? `${q.d.cal} A ${q.d.courbe}` : '—', q.d.cable || '—']) } },
+          lignes: [...a.eqs.map(q => [q.rep, q.designation || q.t[0], nf(num(q.P), 2), TENSIONS[q.tension] || q.tension, q.phase || '24 V', DEPARTS[q.depart] || q.depart, q.d.Ib ? nf(q.d.Ib, 1) : '—', q.d.cal ? `${q.d.cal} A ${q.d.courbe}` : '—', q.d.cable || '—']),
+            ...a.enfants.map(c => [c.rep, `Armoire divisionnaire${c.local ? ` — ${c.local}` : ''}`, nf(c.P, 2), '400 V tri', 'L1-L2-L3', 'Départ armoire', nf(c.Ib, 1), `${c.cal} A C`, `${c.dep.cable}${num(c.L) ? ` (${num(c.L)} m)` : ''}`])] } },
         { titre: `Bilan de puissance de l'armoire ${a.rep}`, tableau: { entetes: ['Puissance installée (kW)', 'Foisonnée (kW)', 'L1 (A)', 'L2 (A)', 'L3 (A)', 'Ib avec réserve (A)', 'Interrupteur général'],
           lignes: [[nf(a.P, 2), nf(a.Pf, 2), ...a.phases.map(v => nf(v * a.ks, 1)), nf(a.Ib, 1), `${a.cal} A`]] } },
         { titre: `Plan d'adressage des entrées / sorties — armoire ${a.rep}`, tableau: { entetes: ['Adresse', 'Bornes', 'Repère', 'Désignation', 'Type', 'Signal'], lignes: a.adresses } },
@@ -704,7 +733,7 @@ const Electricite = ((N, Sc) => {
   /* ---------- Schéma unifilaire (SVG) ---------- */
   function unifilaire(arm, lot) {
     if (!arm.length) return '';
-    const pas = 112, haut = 330, marge = 24, larg = Math.max(...arm.map(a => a.eqs.filter(q => q.tension !== '24V').length + 2)) * pas + 60, out = [];
+    const pas = 112, haut = 330, marge = 24, larg = Math.max(...arm.map(a => a.eqs.filter(q => q.tension !== '24V').length + (a.enfants || []).length + 2)) * pas + 60, out = [];
     const t = (x, y, s, o = {}) => out.push(`<text x="${x}" y="${y}" font-size="${o.fs || 10}" text-anchor="${o.a || 'middle'}"${o.b ? ' font-weight="bold"' : ''} fill="#222">${String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</text>`);
     const l = (x1, y1, x2, y2, w = 1.4) => out.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#222" stroke-width="${w}"/>`);
     const r = (x, y, w, h) => out.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff" stroke="#222" stroke-width="1.2"/>`);
@@ -712,10 +741,10 @@ const Electricite = ((N, Sc) => {
       const y0 = marge + n * (haut + 30), xa = 50;
       t(10, y0, `Armoire ${a.rep}${a.local ? ` — ${a.local}` : ''} · ${nf(a.P, 1)} kW installés · Ib ${nf(a.Ib, 1)} A`, { a: 'start', b: true, fs: 12 });
       // Arrivée et interrupteur général
-      t(xa, y0 + 22, `Attente ${lot}`, { fs: 9 }); t(xa, y0 + 33, `5G${String(a.S).replace('.', ',')} · 400 V`, { fs: 9 });
+      t(xa, y0 + 22, a.amont ? `Depuis ${a.amont}` : `Attente ${lot}`, { fs: 9 }); t(xa, y0 + 33, `5G${String(a.S).replace('.', ',')} · 400 V`, { fs: 9 });
       l(xa, y0 + 38, xa, y0 + 60); r(xa - 16, y0 + 60, 32, 26); l(xa - 10, y0 + 80, xa + 10, y0 + 66); t(xa + 22, y0 + 76, `QG ${a.cal} A`, { a: 'start', fs: 9 });
       l(xa, y0 + 86, xa, y0 + 104);
-      const departs = [...a.eqs.filter(q => q.tension !== '24V'), { rep: 'AUX', designation: 'Auxiliaires TBT (voir folio)', commande: true }];
+      const departs = [...a.eqs.filter(q => q.tension !== '24V'), ...(a.enfants || []).map(c => ({ rep: c.rep, designation: `Divisionnaire ${c.local || ''}`.trim(), d: c.dep, P: c.P, L: c.L, armoire: true })), { rep: 'AUX', designation: 'Auxiliaires TBT (voir folio)', commande: true }];
       const xFin = xa + departs.length * pas;
       l(xa, y0 + 104, xFin, y0 + 104, 3);
       departs.forEach((q, i) => {
@@ -731,6 +760,7 @@ const Electricite = ((N, Sc) => {
         l(x, y, x, y + 40); y += 40;
         if (!q.commande) { t(x - 4, y - 24, q.d.cable, { a: 'end', fs: 8 }); if (num(q.L)) t(x - 4, y - 14, `${num(q.L)} m`, { a: 'end', fs: 8 }); }
         if (q.commande) { r(x - 26, y, 52, 24); t(x, y + 15, 'Automate', { fs: 8 }); }
+        else if (q.armoire) { r(x - 22, y, 44, 26); t(x, y + 16, 'Armoire', { fs: 8, b: true }); }
         else { out.push(`<circle cx="${x}" cy="${y + 12}" r="12" fill="#fff" stroke="#222" stroke-width="1.2"/>`); t(x, y + 16, q.moteur ? 'M' : '~', { fs: 10, b: true }); }
         t(x, y + 40, q.rep, { fs: 9, b: true }); t(x, y + 52, String(q.designation || '').slice(0, 20), { fs: 8 });
         if (!q.commande) t(x, y + 64, `${nf(num(q.P), 2)} kW · ${q.d.tri ? '400 V' : '230 V'}${q.phase ? ` · ${q.phase}` : ''}`, { fs: 8 });
@@ -881,7 +911,7 @@ const Electricite = ((N, Sc) => {
     champs: [
       { g: 'Armoires CVC (à la charge du lot CVC)' },
       { k: 'armoires', l: 'Armoires', t: 'lignes', d: [{ rep: 'AR-CVC-01', local: 'Chaufferie', L: 30, ks: 80, reserve: 20, regime: 'TT', sondes: '' }],
-        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'local', l: 'Local', t: 't' }, { k: 'L', l: 'Longueur depuis le TGBT (m)' }, { k: 'ks', l: 'Foisonnement (%)' }, { k: 'reserve', l: 'Réserve (%)' },
+        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'local', l: 'Local / zone desservie', t: 't' }, { k: 'amont', l: 'Alimentée depuis', t: 's', o: optAmont }, { k: 'L', l: 'Longueur depuis l\'amont (m)' }, { k: 'ks', l: 'Foisonnement (%)' }, { k: 'reserve', l: 'Réserve (%)' },
           { k: 'regime', l: 'Liaison à la terre', t: 's', o: [['TT', 'TT'], ['TN-S', 'TN-S'], ['TN-C', 'TN-C'], ['IT', 'IT']] },
           { k: 'techno', l: 'Régulation', t: 's', o: [['automate', 'Automate programmable (programme + analyse fonctionnelle)'], ['synco', 'Régulateurs préprogrammés type Siemens Synco (paramétrage)'], ['integree', 'Régulation intégrée aux équipements (puissance et reports)']] },
           { k: 'sondes', l: 'Sondes d\'ambiance / mesures communes (séparées par ;)', t: 't' }] },

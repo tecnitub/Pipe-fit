@@ -179,3 +179,30 @@ test('folios : commande (contacteurs, variateurs, chaîne de sécurité), cartes
   const x1 = r.onglets.find(o => /Cahier/.test(o.titre)).blocs.find(b => /Bornier X1/.test(b.titre)).tableau.lignes;
   assert.deepStrictEqual(x1.slice(0, 2).map(l => l[0]), ['X1:1-3', 'X1:4-6']);
 });
+
+test('chantier réparti : armoire divisionnaire alimentée depuis une autre armoire, équipements affectés par local', () => {
+  const ent = { ...N.defauts('elec'),
+    armoires: [{ rep: 'AR-01', local: 'Chaufferie', L: 30, ks: 100, reserve: 0 }, { rep: 'AR-02', local: 'Toiture', amont: 'AR-01', L: 60, ks: 100, reserve: 0 }],
+    equipements: [
+      { rep: 'P1', type: 'pompe', P: 1.5, tension: 'tri', local: 'Chaufferie' },
+      { rep: 'V1', type: 'ventilateur', P: 4, tension: 'tri', local: 'toiture terrasse' },
+      { rep: 'V2', type: 'ventilateur', P: 2.2, tension: 'tri', local: 'Toiture', alim: 'AR-01' }] };
+  const r = N.calculer('elec', ent), [a1, a2] = r.valeurs.armoires;
+  // V1 (local « toiture terrasse ») rejoint AR-02 ; V2 reste sur l'armoire choisie
+  const dep = rep => r.onglets.find(o => /Cahier/.test(o.titre)).blocs.find(b => b.titre === `Départs de l'armoire ${rep}`).tableau.lignes.map(l => l[0]);
+  assert.deepStrictEqual(dep('AR-02'), ['V1']);
+  assert.deepStrictEqual(dep('AR-01'), ['P1', 'V2', 'AR-02']);
+  // La puissance de la divisionnaire est comptée dans son armoire amont, une seule fois au TGBT
+  proche(a1.P, 1.5 + 2.2 + 0.3 + a2.P, 1e-9); proche(r.valeurs.PCvc, a1.P, 1e-9);
+  const att = r.onglets.flatMap(o => o.blocs || []).find(b => /Attentes à demander/.test(b.titre)).tableau.lignes.map(l => l[0]);
+  assert.ok(att.includes('Armoire AR-01') && !att.includes('Armoire AR-02'));
+  assert.ok(a1.Ib > a2.Ib);
+  // Icc plus faible en aval ; départ divisionnaire à la nomenclature et au schéma
+  const cc = r.onglets.flatMap(o => o.blocs || []).find(b => b.tableau && b.tableau.lignes.some(l => /jeu de barres/.test(l[0]))).tableau.lignes;
+  assert.ok(Number(cc[1][1].replace(',', '.')) < Number(cc[0][1].replace(',', '.')));
+  assert.match(cc[1][0], /depuis AR-01/);
+  assert.match(r.schema, /Depuis AR-01/); assert.match(r.schema, />Armoire</);
+  // Boucle d'alimentation signalée
+  const b = N.calculer('elec', { ...ent, armoires: [{ ...ent.armoires[0], amont: 'AR-02' }, ent.armoires[1]] });
+  assert.ok(b.alertes.some(x => /en boucle/.test(x.texte || x.message || x[1] || JSON.stringify(x))));
+});
