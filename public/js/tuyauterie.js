@@ -41,6 +41,20 @@ const Tuyauterie = (() => {
     disconnecteur: { lib: 'Disconnecteur BA', serie: 'EN 12729', table: { 50: 400, 65: 450, 80: 500, 100: 560, 125: 650, 150: 750, 200: 900, 250: 1050 }, commande: '', racs: { taraude: [15, 50], bride: [50, 250] },
       taraude: { 15: 150, 20: 170, 25: 200, 32: 230, 40: 270, 50: 300 }, libTaraude: 'taraudé' },
   };
+  // Robinetterie des fabricants : longueur réelle le long de l'axe (face à face, cote de la fiche technique) par DN.
+  // Catalogue de base (fiches techniques transmises) complété par les modèles saisis dans les paramètres ; un modèle choisi
+  // sur une vanne remplace la cote normalisée EN 558. { id, fabricant, modele, type, raccordement, lettre, dimensions: { DN: mm } }
+  const ROBINETTERIE_BASE = typeof ROBINETTERIE_FABRICANTS !== 'undefined' ? ROBINETTERIE_FABRICANTS : (typeof require !== 'undefined' ? (() => { try { return require('./robinetterie-fabricants'); } catch (e) { return []; } })() : []);
+  let catalogue = [];
+  const idModele = x => `${x.fabricant} ${x.modele}`.trim();
+  function definirCatalogue(perso = []) {
+    const tous = [...ROBINETTERIE_BASE, ...(perso || [])].filter(x => x && x.fabricant && x.modele && x.dimensions);
+    const par = new Map(); tous.forEach(x => par.set(idModele(x), { ...x, id: idModele(x), dimensions: Object.fromEntries(Object.entries(x.dimensions).map(([k, v]) => [String(+k), Number(String(v).replace(',', '.'))]).filter(([k, v]) => +k > 0 && v > 0)) }));
+    catalogue = [...par.values()]; return catalogue;
+  }
+  definirCatalogue();
+  const modeles = (type, dn) => catalogue.filter(x => (!type || x.type === type || (type === 'v2v' && x.type === 'v2v')) && (!dn || x.dimensions[String(dn)]));
+  const modeleDe = el => (el && el.modele ? catalogue.find(x => x.id === el.modele) || null : null);
   const ANGLES_DEVOIEMENT = [45, 30, 60, 90];
   const RACCORDEMENTS = { bride: 'à brides', souder: 'à souder', taraude: 'taraudé', sertir: 'à sertir' };
   // Types de tube : diamètres, épaisseurs, raccords (à souder ou à sertir) et familles du chiffrage. Valeurs indicatives
@@ -98,7 +112,8 @@ const Tuyauterie = (() => {
   const axeFaceCoude = el => r1(rayon(el) * Math.tan((angle(el) * Math.PI) / 360));
   const axeFaceTe = el => n(el.l) || TE[dnOk(el.dn)];
   function vanneLong(el) {
-    const v = VANNES[el.type] || VANNES.boisseau, ftf = n(el.l) || lire(el.rac === 'taraude' && v.taraude ? v.taraude : v.table, dnOk(el.dn)).v;
+    const v = VANNES[el.type] || VANNES.boisseau, mod = modeleDe(el), fab = mod && mod.dimensions[String(dnOk(el.dn))];
+    const ftf = n(el.l) || fab || lire(el.rac === 'taraude' && v.taraude ? v.taraude : v.table, dnOk(el.dn)).v;
     return el.rac === 'bride' || !el.rac ? ftf + 2 * (BRIDE[dnOk(el.dn)][1] + JOINT) : ftf;
   }
   // Vanne 3 voies : cote axe-face = demi face à face (+ contre-bride et joint si à brides) sur les trois voies
@@ -260,7 +275,10 @@ const Tuyauterie = (() => {
           piece.piquage = add(piece.centre, piece.tige, piece.de / 2);
         }
         if (el.t === 'vanne') {
-          const vv = VANNES[el.type] || VANNES.boisseau, plage = vv.racs && vv.racs[el.rac || 'bride'];
+          const vv = VANNES[el.type] || VANNES.boisseau, plage = vv.racs && vv.racs[el.rac || 'bride'], mod = modeleDe(el);
+          if (el.modele && !mod) erreurs.push({ chemin: id, msg: `Modèle « ${el.modele} » absent du catalogue de robinetterie : cote normalisée retenue` });
+          else if (mod && !mod.dimensions[String(dnEl)] && !n(el.l)) erreurs.push({ chemin: id, msg: `${mod.id} : pas de cote pour le DN${dnEl} sur la fiche du fabricant, cote normalisée retenue` });
+          piece.modele = mod && (mod.dimensions[String(dnEl)] || n(el.l)) ? mod.id : '';
           if (vv.racs && !plage) erreurs.push({ chemin: id, msg: `${vv.lib} : ${Object.entries(vv.racs).map(([k, [a, b]]) => `${k === 'taraude' ? vv.libTaraude || 'taraudé' : RACCORDEMENTS[k]} DN${a} à DN${b}`).join(', ')}` });
           else if (plage && (dnEl < plage[0] || dnEl > plage[1])) erreurs.push({ chemin: id, msg: `${vv.lib} ${el.rac === 'taraude' ? vv.libTaraude || 'taraudé' : RACCORDEMENTS[el.rac || 'bride']} : du DN${plage[0]} au DN${plage[1]}` });
           const v = DIRS[el.tige] || (Math.abs(d[2]) > 0.5 ? DIRS.E : DIRS.H), perp = add(v, d, -dot(v, d));
@@ -389,7 +407,7 @@ const Tuyauterie = (() => {
       case 'coude': return [s.sertir ? `Coude ${angle(el)}° à sertir ${m} ${T(pc.dn)}` : `Coude ${angle(el)}° 3D ${m} ${T(pc.dn)}`, nr];
       case 'te': return [pc.dnB !== pc.dn ? `Té réduit${k} ${m} ${T(pc.dn)} × ${T(pc.dnB)}` : `Té égal${k} ${m} ${T(pc.dn)}`, nr];
       case 'reduc': return [`Réduction ${s.sertir ? 'à sertir' : el.exc ? 'excentrique' : 'concentrique'} ${m} ${T(Math.max(pc.dn, pc.dn2))} × ${T(Math.min(pc.dn, pc.dn2))}`, nr];
-      case 'vanne': { const v = VANNES[el.type] || VANNES.boisseau; return [`${v.lib} ${el.rac === 'taraude' && v.libTaraude ? v.libTaraude : RACCORDEMENTS[el.rac || 'bride']} ${T(pc.dn)} ${pn}`, el.rac === 'taraude' ? 'ISO 7-1 (filetage)' : el.rac === 'sertir' ? nr : `${v.serie} / ISO 5752`]; }
+      case 'vanne': { const v = VANNES[el.type] || VANNES.boisseau; return [`${v.lib} ${el.rac === 'taraude' && v.libTaraude ? v.libTaraude : RACCORDEMENTS[el.rac || 'bride']} ${T(pc.dn)} ${pn}${pc.modele ? ` — ${pc.modele}` : ''}`, pc.modele ? 'cote de la fiche du fabricant' : el.rac === 'taraude' ? 'ISO 7-1 (filetage)' : el.rac === 'sertir' ? nr : `${v.serie} / ISO 5752`]; }
       case 'v3v': return [`Vanne 3 voies motorisée ${RACCORDEMENTS[el.rac || 'bride']} ${T(pc.dn)} ${pn}`, el.rac === 'sertir' ? nr : 'EN 558 série 1 / ISO 5752'];
       case 'brides': return pc.flanges && pc.flanges[0] === 'tournante' && pc.flanges[1] === 'tournante' ? [`Paire de brides tournantes sur collets DN${pc.dn} ${pn}`, 'EN 1092-1 type 02 / 35']
         : pc.flanges && pc.flanges[0] !== pc.flanges[1] ? [`Assemblage bride à collerette + bride tournante DN${pc.dn} ${pn}`, 'EN 1092-1 type 11 / 02'] : [`Paire de brides à collerette DN${pc.dn} ${pn}`, 'EN 1092-1 type 11 / ISO 7005-1'];
@@ -446,7 +464,7 @@ const Tuyauterie = (() => {
         case 'reduc': ajoute(`Réduction${suf}`, `${S.sertir ? '' : el.exc ? 'excentrique ' : 'concentrique '}${m}`.trim(), Math.max(pc.dn, pc.dn2), 1, 0, S.sertir ? `Ø${S.de[pc.dn]}-Ø${S.de[pc.dn2]} DN${Math.max(pc.dn, pc.dn2)}` : `DN${pc.dn}-DN${pc.dn2}`); break;
         case 'vanne': {
           const v = VANNES[el.type] || VANNES.boisseau;
-          ajoute(v.lib.replace(/ \([^)]*\)$/, ''), `${el.rac === 'taraude' && v.libTaraude ? v.libTaraude : RACCORDEMENTS[el.rac || 'bride']} ${pn}`, pc.dn, 1);
+          ajoute(v.lib.replace(/ \([^)]*\)$/, ''), `${el.rac === 'taraude' && v.libTaraude ? v.libTaraude : RACCORDEMENTS[el.rac || 'bride']} ${pn}${pc.modele ? ` ${pc.modele}` : ''}`, pc.dn, 1);
           brides(pc);
           break;
         }
@@ -481,7 +499,7 @@ const Tuyauterie = (() => {
       !((r.elements || []).length || (r.cotes || []).some(c => n(c.valeur) !== null)) && 'au moins une cote ou un élément de tuyauterie'].filter(Boolean);
   }
   const STATUTS = ['Brouillon', 'Relevé', 'Terminé'];
-  return { DN, DE, INSTRUMENTS, SYSTEMES, systeme, cleSysteme, taille, RAYON_3D, TE, REDUC, FOND, BRIDE, BRIDES_TYPES, VANNES, ANGLES_DEVOIEMENT, aBranche, axeFaceV3V, axeFaceDev, RACCORDEMENTS, RACCORDS, MATIERES, PN, TYPES, DIRS, DIRS_LIB, STATUTS,
+  return { definirCatalogue, modeles, modeleDe, catalogue: () => catalogue, DN, DE, INSTRUMENTS, SYSTEMES, systeme, cleSysteme, taille, RAYON_3D, TE, REDUC, FOND, BRIDE, BRIDES_TYPES, VANNES, ANGLES_DEVOIEMENT, aBranche, axeFaceV3V, axeFaceDev, RACCORDEMENTS, RACCORDS, MATIERES, PN, TYPES, DIRS, DIRS_LIB, STATUTS,
     lire, angle, axeFaceCoude, axeFaceTe, longueur, coupes, placer, trouver, listeDe, designation, nomenclature, bilanSoudures, lignesChiffrage, csvChiffrage, debit, manques };
 })();
 if (typeof module !== 'undefined') module.exports = Tuyauterie;

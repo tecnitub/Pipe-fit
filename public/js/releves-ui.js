@@ -27,6 +27,7 @@ function nouveauReleve(query) {
 }
 
 Views.releve = (params, query) => {
+  Tuyauterie.definirCatalogue(((Store.data || {}).settings || {}).robinetterie || []);
   const id = params[0] || 'new';
   const rec = id !== 'new' && Store.get('releves', id);
   if (id !== 'new' && !rec) return '<p>Relevé introuvable.</p>';
@@ -160,7 +161,8 @@ function editeurListeHtml(r, pl) {
       case 'reduc': return `${dnSel('dn2', el.dn2, i, 'vers DN')}${sel('exc', el.exc || '', i, '', { '': 'Concentrique', haut: 'Excentrique plat dessus', bas: 'Excentrique plat dessous' })}`;
       case 'vanne': return `${sel('type', el.type || 'boisseau', i, '', Object.fromEntries(Object.entries(Tuyauterie.VANNES).map(([k, v]) => [k, v.lib])))}${sel('rac', el.rac || 'bride', i, '', Tuyauterie.RACCORDEMENTS)}
         ${(el.rac || 'bride') === 'bride' ? sel('typeBride', el.typeBride === 'tournante' ? 'tournante' : 'collerette', i, 'contre-brides', { collerette: 'à collerette', tournante: 'tournantes + collets' }) : ''}
-        ${Tuyauterie.VANNES[el.type || 'boisseau'].commande ? dirSel('tige', el.tige || dirDe(pc.tige || []) || 'H', i, 'Commande vers') : ''}${mm('l', el.l, i, 'Face à face', String(pc.ftf ? Math.round(pc.ftf) : ''))}`;
+        ${(() => { const ms = Tuyauterie.modeles(el.type || 'boisseau'); return ms.length || el.modele ? sel('modele', el.modele || '', i, 'Modèle', { '': 'Cote normalisée (EN 558)', ...Object.fromEntries(ms.map(x => [x.id, `${x.id}${x.dimensions[String(pc.dn || el.dn || r.dn)] ? ` — ${x.dimensions[String(pc.dn || el.dn || r.dn)]} mm` : ' (DN absent)'}`])) }) : ''; })()}
+        ${Tuyauterie.VANNES[el.type || 'boisseau'].commande ? dirSel('tige', el.tige || dirDe(pc.tige || []) || 'H', i, 'Commande vers') : ''}${mm('l', el.l, i, 'Face à face', String(pc.ftf ? Math.round(pc.ftf) : ''))}${pc.modele ? '<span class="small muted"> cote du fabricant</span>' : ''}`;
       case 'raccord': return sel('type', el.type || 'union', i, '', Tuyauterie.RACCORDS);
       case 'instrument': return `${sel('type', el.type || 'thermometre', i, '', { thermometre: 'Thermomètre', sonde_t: 'Sonde de température', sonde_p: 'Sonde de pression' })}${dirSel('vers', el.vers || dirDe(pc.tige || []) || 'H', i, 'tige vers')}
         <label class="rl-p">plage <input data-el="${i}" data-k="plage" value="${esc(el.plage || '')}" placeholder="${el.type === 'sonde_p' ? '0-10 bar' : '0-120 °C'}" class="rl-mm"></label>`;
