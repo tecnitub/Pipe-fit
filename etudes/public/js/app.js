@@ -131,6 +131,8 @@ function formulaireHtml(type, e, v = {}) {
         <button class="secondaire petit" data-ajout-ligne="${c.k}">+ Ajouter une ligne</button> <span class="petit muted">ou collez un tableau Excel dans une cellule</span></div>`;
     }
     const lib = `<span>${esc(c.l)}${c.u ? ` <span class="unite">(${esc(c.u)})</span>` : ''}</span>`;
+    if (c.t === 'cases') { const val = Array.isArray(e[c.k]) ? e[c.k] : (c.d || []), opts = optionsDe(c, e);
+      return `<div class="large"><div class="petit muted">${esc(c.l)}</div><div class="cases-choix">${opts.map(([k, l, aide]) => `<label class="case" title="${esc(aide || '')}"><input type="checkbox" data-case="${c.k}" value="${esc(k)}" ${val.includes(k) ? 'checked' : ''}> ${esc(l)}</label>`).join('')}</div></div>`; }
     if (c.t === 's') return `<label>${lib}<select data-k="${c.k}"${verrou(v, c.k)}>${optionsHtml(optionsDe(c, e), e[c.k])}</select></label>`;
     return `<label>${lib}<input data-k="${c.k}" value="${esc(valeurChamp(e[c.k]))}" ${c.t === 't' ? '' : 'inputmode="decimal" class="nombre"'}${verrou(v, c.k)}></label>`;
   }).join('')}</div></fieldset>`).join('');
@@ -214,6 +216,11 @@ function lierCalculateur(root, type, e, changer, ctx = ctxSimple(type, e)) {
     Promise.resolve(telecharger(fichier, data, mime)).then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : 'Schéma enregistré')).catch(er => toast(er.message, 6000));
   };
   const redessiner = () => { changer(true); };
+  root.querySelectorAll('[data-case]').forEach(el => el.onchange = () => {
+    const k = el.dataset.case;
+    e[k] = [...root.querySelectorAll(`[data-case="${k}"]`)].filter(x => x.checked).map(x => x.value);
+    redessiner();
+  });
   root.querySelectorAll('[data-k]').forEach(el => {
     if (el.tagName === 'SELECT') el.onchange = () => { e[el.dataset.k] = el.value; redessiner(); };
     else el.oninput = () => { e[el.dataset.k] = el.value; recalculer(); };

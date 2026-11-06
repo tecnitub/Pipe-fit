@@ -158,3 +158,9 @@ ul.af { padding-left: 18px; font-size: 13.5px; display: grid; gap: 6px; }
 .parcours-etapes li.fait .pastille { background: #2a9d5c; color: #fff; font-weight: bold; }
 .parcours-etapes .txt { display: flex; flex-direction: column; gap: .2em; }
 .parcours-etapes .txt button { align-self: flex-start; margin-top: .25em; }
+
+/* Cases à cocher (options) sur plusieurs colonnes */
+.cases-choix { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .25em .9em; margin: .3em 0 .6em; }
+.cases-choix .case { font-weight: normal; }
+.cases-choix label.case { display: flex; flex-direction: row; align-items: flex-start; gap: .45em; margin: 0; }
+.cases-choix label.case input { width: auto; flex: none; margin: .2em 0 0; }

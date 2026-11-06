@@ -18,7 +18,7 @@ function entreesHtml(type, e, marques = null) {
   const marque = k => marques && [...marques].some(m => m === k || m.startsWith(`${k}.`));
   return rubriques(type, e).map(r => {
     const simples = r.champs.filter(c => c.t !== 'lignes').map(c => {
-      const v = c.t === 's' ? ((optionsDe(c, e).find(([k]) => String(k) === String(e[c.k] ?? '')) || [])[1] || '—') : e[c.k] === '' || e[c.k] === undefined ? '—' : `${valeurChamp(e[c.k])}${c.u ? ` ${c.u}` : ''}`;
+      const v = c.t === 'cases' ? ((Array.isArray(e[c.k]) ? e[c.k] : c.d || []).map(k => ((optionsDe(c, e).find(([x]) => x === k) || [])[1] || k)).join(' ; ') || '—') : c.t === 's' ? ((optionsDe(c, e).find(([k]) => String(k) === String(e[c.k] ?? '')) || [])[1] || '—') : e[c.k] === '' || e[c.k] === undefined ? '—' : `${valeurChamp(e[c.k])}${c.u ? ` ${c.u}` : ''}`;
       return marque(c.k) ? [`» ${c.l}`, `<strong>${esc(v)}</strong>`] : [c.l, esc(v)];
     });
     const listes = r.champs.filter(c => c.t === 'lignes').map(c => `<p class="sous">${marque(c.k) ? '» ' : ''}${esc(c.l)}${marque(c.k) ? ' (modifiée, voir le suivi des modifications)' : ''}</p>${tableauPdf(colonnesDe(c, e).map(x => x.l), (e[c.k] || []).map(l => colonnesDe(c, e).map(col => (col.t === 's' ? ((optionsDe(col, e).find(([k]) => String(k) === String(l[col.k] ?? '')) || [])[1] || '') : valeurChamp(l[col.k])))))}`).join('');

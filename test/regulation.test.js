@@ -247,3 +247,32 @@ test('armoire : alimentations 24 V DC / 24 V AC / 48 V dimensionnées, arrêt d\
   assert.match(svg('Alimentations et circuits auxiliaires'), /Parafoudre type 2[\s\S]*ID 30 mA[\s\S]*Transformateur|V DC/);
   assert.match(svg('Folio de commande'), /KA-AU[\s\S]*A \/ 0 \/ M/);
 });
+
+test('options de l\'armoire (cases à cocher) : sécurités de chaufferie, cordons chauffants, prise, serveur web, 4G, onduleur, reports', () => {
+  const { et, elec } = etude('automate');
+  const E = require('../etudes/public/js/electricite');
+  let r = L.calculer(et, elec);
+  const reps = () => r.valeurs.listePoints.map(p => p[0]);
+  assert.ok(['AU', 'PMQ'].every(x => reps().includes(x)));
+  // Sécurités de chaufferie décochées : retirées des points ; cordons chauffants, 4G, onduleur, délestage, SSI cochés
+  elec.entrees.options = E.OPTIONS_DEFAUT.filter(k => !['auChaufferie', 'manqueEau', 'detectionGaz', 'prise', 'auArmoire'].includes(k)).concat(['cordonChauffant', 'modem4G', 'onduleur', 'delestage', 'reportSSI', 'defautGeneral', 'compteurElec']);
+  elec.entrees.cordonP = 1.2;
+  r = L.calculer(et, elec);
+  assert.ok(!['AU', 'PMQ', 'DG', 'EVG'].some(x => reps().includes(x)), reps().join(','));
+  assert.ok(['CC1', 'DEL', 'SSI', 'DEF-G', 'OND', 'CPT-E'].every(x => reps().includes(x)), reps().join(','));
+  const cc = r.onglets.find(o => o.titre === 'Cahier des charges armoires').blocs, nom = cc.find(b => /^Nomenclature/.test(b.titre)).tableau.lignes.map(l => l[1]);
+  assert.ok(nom.some(x => /Routeur 4G/.test(x)) && nom.some(x => /Onduleur/.test(x)) && nom.some(x => /Serveur web/.test(x)) && nom.some(x => /cordons chauffants/.test(x)));
+  assert.ok(!nom.some(x => /Prise de courant 230 V/.test(x)) && !nom.some(x => /coup de poing/i.test(x)));
+  const reg = cc.find(b => /^Dispositions réglementaires/.test(b.titre)).tableau.lignes;
+  assert.strictEqual(reg.find(l => l[0] === 'Sécurités de chaufferie')[1], 'thermostats de sécurité');
+  assert.ok(reg.find(l => l[0] === 'Cordons chauffants') && reg.find(l => l[0] === 'Arrêt d\'urgence')[2] === 'Non retenu');
+  const aux = cc.find(b => /^Alimentations très basse tension/.test(b.titre)).tableau.lignes.find(l => /^24 V DC/.test(l[0]));
+  assert.match(aux[1], /Routeur 4G/);
+  const svg = t => r.schemas.find(s => s.titre.startsWith(t)).svg;
+  assert.match(svg('Alimentations et circuits auxiliaires'), /ONDULEUR/);
+  assert.doesNotMatch(svg('Alimentations et circuits auxiliaires'), /KA-AU/);
+  assert.doesNotMatch(svg('Folio de commande'), /KA-AU/);
+  // Toutes les options décochées : rien d'imposé, l'étude se calcule
+  elec.entrees.options = [];
+  assert.ok(L.calculer(et, elec).valeurs.listePoints.length);
+});
