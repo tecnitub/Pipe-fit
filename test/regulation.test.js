@@ -220,3 +220,30 @@ test('automate : cartes selon les points, voies intégrées à l\'UC, châssis d
   const svg = r.schemas.find(s => /^Implantation de l'automate — armoire AR1/.test(s.titre)).svg;
   assert.match(svg, /COUPLEUR/); assert.match(svg, /bus d'extension/); assert.match(svg, />UC</);
 });
+
+test('armoire : alimentations 24 V DC / 24 V AC / 48 V dimensionnées, arrêt d\'urgence, dispositions réglementaires, automate Wit', () => {
+  const { et, elec } = etude('automate');
+  elec.entrees.marqueAutomate = 'wit';
+  elec.entrees.equipements.push({ rep: 'VCF1', designation: 'Volets coupe-feu motorisés', type: 'autre', P: 0, tension: '48V', alim: 'AR1', regulation: 'tor', Paux: 15, nb: 4 });
+  const r = L.calculer(et, elec), cc = r.onglets.find(o => o.titre === 'Cahier des charges armoires').blocs;
+  const aux = cc.find(b => /^Alimentations très basse tension — armoire AR1/.test(b.titre)).tableau.lignes;
+  const c = n => aux.find(l => l[0].startsWith(n));
+  assert.ok(c('24 V DC') && /Alimentation à découpage 24 V DC \d+(\.\d)? A/.test(c('24 V DC')[3]));
+  assert.ok(c('24 V AC — commande') && /Transformateur de sécurité 230 \/ 24 V AC \d+ VA/.test(c('24 V AC — commande')[3]) && /Bobines des contacteurs/.test(c('24 V AC — commande')[1]));
+  assert.ok(c('24 V AC — servomoteurs') && /Vanne/.test(c('24 V AC — servomoteurs')[1]));
+  assert.ok(c('48 V DC') && /4 × VCF1/.test(c('48 V DC')[1]) && c('48 V DC')[2] === '60 W');
+  // Choix : puissance utile + 25 % ≤ calibre retenu
+  const a0 = r.valeurs.armoires[0];
+  a0.aux.forEach(x => { const v = parseFloat(x.choix), cap = /VA$/.test(x.choix) ? v : v * (/48/.test(x.circuit) ? 48 : 24); assert.ok(cap >= x.P * 1.25 - 1e-9, `${x.circuit} ${x.choix} ${x.P}`); });
+  // Dispositions réglementaires
+  const reg = cc.find(b => /^Dispositions réglementaires — armoire AR1/.test(b.titre)).tableau.lignes.map(l => l[0]);
+  ['Coupure générale', 'Arrêt d\'urgence', 'Protection des personnes', 'Protection contre les surtensions', 'Très basse tension de sécurité', 'Sectionnement des moteurs', 'Dossier et vérifications'].forEach(k => assert.ok(reg.some(x => x.startsWith(k)), k));
+  const nom = cc.find(b => /^Nomenclature/.test(b.titre)).tableau.lignes.map(l => l[1]);
+  assert.ok(nom.some(x => /coup de poing/i.test(x)) && nom.some(x => /Relais de sécurité/.test(x)) && nom.some(x => /300 mA sélective/.test(x)) && nom.some(x => /30 mA/.test(x)));
+  assert.ok(nom.some(x => /^Automate Wit \(unité centrale, référence selon la fiche\)/.test(x)), nom.filter(x => /Automate/.test(x)).join(' | '));
+  assert.ok(cc.find(b => /^Armoire AR1/.test(b.titre)).liste.some(x => /Automate Wit.*télégestion/.test(x)));
+  // Folios : auxiliaires, arrêt d'urgence en tête des lignes de contacteurs
+  const svg = t => r.schemas.find(s => s.titre.startsWith(t)).svg;
+  assert.match(svg('Alimentations et circuits auxiliaires'), /Parafoudre type 2[\s\S]*ID 30 mA[\s\S]*Transformateur|V DC/);
+  assert.match(svg('Folio de commande'), /KA-AU[\s\S]*A \/ 0 \/ M/);
+});

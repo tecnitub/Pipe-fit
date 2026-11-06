@@ -167,8 +167,9 @@ test('folios : commande (contacteurs, variateurs, chaîne de sécurité), cartes
   const pid = { id: 'p', type: 'pid', titre: 'Chaufferie', entrees: N.defauts('pid') };
   const eqs = E.fusionner([], E.equipementsEtude({ notes: [pid] }, Liens)).lignes;
   const r = N.calculer('elec', { ...N.defauts('elec'), equipements: eqs });
-  assert.deepStrictEqual(r.schemas.map(s => s.titre), ['Folio de commande — armoire AR-CVC-01', 'Implantation de l\'automate — armoire AR-CVC-01 (1 châssis)', 'Cartes d\'entrées / sorties — armoire AR-CVC-01']);
-  const [cmd, implantation, cartes] = r.schemas.map(s => s.svg);
+  assert.deepStrictEqual(r.schemas.map(s => s.titre), ['Alimentations et circuits auxiliaires — armoire AR-CVC-01', 'Folio de commande — armoire AR-CVC-01', 'Implantation de l\'automate — armoire AR-CVC-01 (1 châssis)', 'Cartes d\'entrées / sorties — armoire AR-CVC-01']);
+  const [aux, cmd, implantation, cartes] = r.schemas.map(s => s.svg);
+  assert.match(aux, /QG /); assert.match(aux, /Parafoudre/); assert.match(aux, /KA-AU/);
   assert.match(implantation, />UC</); assert.match(implantation, /utilisées</);
   assert.match(cmd, /Chaîne de sécurité/); assert.match(cmd, />KA1</); assert.match(cmd, />KM-PC1</); assert.match(cmd, />EVG</);
   // Une carte dessinée par carte prévue (réserve comprise), voies libres marquées
