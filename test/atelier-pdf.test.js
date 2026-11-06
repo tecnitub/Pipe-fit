@@ -278,3 +278,33 @@ test('annotations en commentaires PDF : types, apparence, retirées à la réouv
     assert.strictEqual(relu.pages[0].elements.length, elements.length, 'annotations retrouvées, modifiables');
   }
 });
+
+test('modifier le texte dans un sous-dessin (Form XObject) : seule l\'occurrence visée change', async () => {
+  // Cartouche dessiné une fois (sous-dessin), posé deux fois en page 1 et une fois en page 2
+  const modele = await PDFDocument.create();
+  const fm = await modele.embedFont(StandardFonts.Helvetica);
+  modele.addPage([200, 60]).drawText('Indice A', { x: 10, y: 20, size: 14, font: fm });
+  const d = await PDFDocument.create();
+  const [cartouche] = await d.embedPdf(await modele.save());
+  const p1 = d.addPage([595, 842]), p2 = d.addPage([595, 842]);
+  p1.drawPage(cartouche, { x: 50, y: 700 }); p1.drawPage(cartouche, { x: 50, y: 100 }); p2.drawPage(cartouche, { x: 50, y: 700 });
+  const sources = { a: { octets: await d.save() } };
+  // Zone du cartouche du haut de la page 1 (« Indice A » vers x 60-130, y 720-734)
+  const el = { type: 'texteModifie', zone: { x: 55 / 595, y: (842 - 740) / 842, w: 90 / 595, h: 24 / 842 }, x: 60 / 595, base: (842 - 720) / 842, texte: 'Indice B', taille: 14, police: 'helvetica' };
+  const octets = await Moteur.compiler({ sources, pages: [{ source: 'a', index: 0, elements: [el] }, { source: 'a', index: 1 }], options: { editable: false } });
+  const doc = await PDFDocument.load(octets);
+  const hex = t => Buffer.from(t, 'latin1').toString('hex').toUpperCase();
+  const decode = ref => Buffer.from(globalThis.PDFLib.decodePDFRawStream(doc.context.lookup(ref)).decode()).toString('latin1');
+  // Textes vus sur une page, sous-dessins compris
+  const textes = page => {
+    const xo = page.node.Resources().lookup(PDFName.of('XObject'));
+    const contenu = page.node.Contents().asArray().map(decode).join('\n');
+    const appels = [...contenu.matchAll(/\/([^\s/]+) Do/g)].map(m => m[1]);
+    return { contenu, dessins: appels.map(n => decode(xo.get(PDFName.of(n)))) };
+  };
+  const t1 = textes(doc.getPage(0)), t2 = textes(doc.getPage(1));
+  assert.strictEqual(t1.dessins.length, 2);
+  assert.deepStrictEqual(t1.dessins.map(x => x.includes(hex('Indice A'))), [false, true], 'cartouche du haut modifié, celui du bas intact');
+  assert.ok(t1.contenu.includes(hex('Indice B')), 'nouveau texte écrit');
+  assert.ok(t2.dessins[0].includes(hex('Indice A')), 'page 2 intacte');
+});

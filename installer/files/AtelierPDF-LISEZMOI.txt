@@ -70,8 +70,11 @@ MODIFIER LE TEXTE D'UN PDF (double-clic sur la page, puis « ✏️ Modifier le 
   - La police d'origine du PDF est réutilisée quand elle contient toutes les
     lettres du texte (la correction ne se voit pas) ; sinon, police standard
     la plus proche (Arial, Times ou Courier).
-  - Limites : un texte écrit en biais, ou certains PDF particuliers
-    (texte dessiné dans un sous-élément), sont recouverts au lieu d'être retirés.
+  - Texte en biais ou vertical (cotes et étiquettes de plans) : repéré dans son
+    orientation et réécrit avec le même angle. Texte rangé dans un sous-dessin
+    (cartouche, bloc répété) : seule l'occurrence corrigée change.
+  - Limites : un caractère absent de la police d'origine fait passer le bloc en
+    police standard ; le Maj+clic (paragraphe) ne vaut que pour le texte horizontal.
 
 ANNOTER UNE PAGE (double-clic sur la page, ou « Modifier »)
   Choisir un outil (lettre entre parenthèses = raccourci clavier), puis :

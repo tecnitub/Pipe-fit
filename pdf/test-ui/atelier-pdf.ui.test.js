@@ -33,6 +33,10 @@ before(async () => {
   execFileSync(process.execPath, [path.join(racine, 'pdf/build.js')]);
   navigateur = await chromium.launch();
   await pdf('notice.pdf', [{}, {}, {}], (p, f, i) => { p.drawText(`Notice CTA page ${i + 1}`, { x: 60, y: 760, size: 24, font: f }); p.drawText('Prix : 100 euros', { x: 60, y: 700, size: 14, font: f }); });
+  await pdf('biais.pdf', [{ taille: [842, 595] }], (p, f) => {
+    p.drawText('Plan réseau', { x: 50, y: 540, size: 18, font: f });
+    p.drawText('Tuyauterie DN80 pente 1%', { x: 200, y: 215, size: 12, font: f, rotate: PDFLib.degrees(30) });
+  });
   await pdf('plan.pdf', [{ taille: [842, 595], rotation: 90 }, { taille: [842, 595] }], (p, f, i) => { p.drawText(`Plan RDC page ${i + 1}`, { x: 60, y: 540, size: 24, font: f }); });
   for (const [nom, ox, oy, ind] of [['plan-A.pdf', 0, 0, 'A'], ['plan-B.pdf', 4, -3, 'B']]) {
     await pdf(nom, [{ taille: [842, 595] }], (p, f) => {
@@ -369,6 +373,25 @@ test('comparer un plan et son scan tourné et réduit : rotation et échelle ret
   assert.match(await page.textContent('#cmp-decalage'), /rotation -2° · échelle 11\d,\d %/);
   const part = Number((/— ([\d,]+) %/.exec(await page.textContent('#cmp-info')) || [])[1]?.replace(',', '.'));
   assert.ok(part < 0.8, `peu de différences une fois recalé (${part} %) : seulement l'équipement ajouté`);
+  assert.deepStrictEqual(page.erreurs, []);
+  await page.context().close();
+});
+
+test('modifier un texte en biais : repéré, réécrit dans son orientation, ancien texte retiré', { skip: ignorer }, async () => {
+  const page = await appli();
+  await ajouter(page, ['biais.pdf'], 1);
+  await ouvrirPage(page, 1);
+  await page.click('[data-outil=editertexte]');
+  await page.waitForSelector('.ligne-texte.biais');
+  await page.click('.ligne-texte[title^="Tuyauterie"]');
+  await page.keyboard.press('Control+a');
+  await page.keyboard.type('Tuyauterie DN100 pente 1%');
+  await page.mouse.click(10, 900);
+  await page.click('#ed-fermer');
+  assert.strictEqual(await page.evaluate(() => AtelierPDF.etat.pages[0].elements[0].angle), 30);
+  const [texte] = await texteDuPdf(page, await enregistrer(page));
+  assert.match(texte, /Tuyauterie DN100 pente 1%/);
+  assert.ok(!texte.includes('DN80'), 'ancien texte retiré');
   assert.deepStrictEqual(page.erreurs, []);
   await page.context().close();
 });

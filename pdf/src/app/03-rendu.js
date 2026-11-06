@@ -81,13 +81,22 @@
       }
       if (e.type === 'caviarde') { g.fillStyle = '#000'; g.fillRect(x, y, w, h); }
       else if (e.type === 'texteModifie') {
-        if (!e.applique) { g.fillStyle = e.fond || '#fff'; g.fillRect(e.zone.x * L - k, e.zone.y * H - k, e.zone.w * L + 2 * k, e.zone.h * H + 2 * k); }
+        if (!e.applique) {
+          g.fillStyle = e.fond || '#fff';
+          if (e.coins) { g.beginPath(); e.coins.forEach(([u, v], i) => (i ? g.lineTo(u * L, v * H) : g.moveTo(u * L, v * H))); g.closePath(); g.fill(); }
+          else g.fillRect(e.zone.x * L - k, e.zone.y * H - k, e.zone.w * L + 2 * k, e.zone.h * H + 2 * k);
+        }
         const t = e.taille * k;
         g.fillStyle = e.couleur || '#000';
         g.font = `${e.italique ? 'italic ' : ''}${e.gras ? 'bold ' : ''}${t}px ${FAMILLES[e.police] || FAMILLES.helvetica}`;
         const lignes = e.paragraphe ? MoteurPDF.couperLignes(x => g.measureText(x).width, e.texte, e.paragraphe.largeur * L) : String(e.texte || '').split('\n');
         const il = e.paragraphe ? e.paragraphe.interligne * k : t * 1.2;
-        lignes.forEach((l, i) => g.fillText(l, e.x * L, e.base * H + i * il));
+        // Texte en biais : tourné autour de son point de départ
+        g.save();
+        g.translate(e.x * L, e.base * H);
+        if (e.angle) g.rotate(-e.angle * Math.PI / 180);
+        lignes.forEach((l, i) => g.fillText(l, 0, i * il));
+        g.restore();
       }
       else if (e.type === 'bulle' && e.texte) {
         const t = (e.taille || 11) * k, m = MoteurPDF.MARGE_BULLE * k;

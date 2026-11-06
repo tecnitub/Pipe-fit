@@ -293,9 +293,13 @@
         poserTexte(page, boite, r, police, { texte: e.texte || '', u: e.x, v: e.y, taille: e.taille || 12, coul: couleur(e.couleur) });
       } else if (e.type === 'texteModifie') {
         // Texte d'origine introuvable dans le contenu (scan, texte dans un sous-dessin) : recouvert par le fond
-        if (!e.retire && !e.applique) page.drawRectangle({ ...rectPdf(boite, r, elargirZone(e.zone, affiche)), color: couleur(e.fond, [1, 1, 1]) });
+        if (!e.retire && !e.applique) {
+          if (e.coins) page.drawSvgPath(chemin([...e.coins.map(([u, v], i) => [i ? 'L' : 'M', u * affiche.l, v * affiche.h]), ['Z']], versChemin), { x: 0, y: 0, color: couleur(e.fond, [1, 1, 1]), borderColor: couleur(e.fond, [1, 1, 1]), borderWidth: 1.5 });
+          else page.drawRectangle({ ...rectPdf(boite, r, elargirZone(e.zone, affiche)), color: couleur(e.fond, [1, 1, 1]) });
+        }
         const police = await ctx.policeStandard(nomPoliceStandard(e));
-        const po = e.policeOrigine;
+        // Police d'origine : désignée par sa référence (un sous-dessin peut nommer « F1 » une autre police que la page)
+        const po = e.policeOrigine ? { ...e.policeOrigine, nom: nomPoliceSurPage(page, e.policeOrigine) } : null;
         // Largeur d'un texte : police d'origine (largeurs du PDF) ou police standard
         const largeurOrigine = t => { const h = po && encoderDansPolice(page, po.nom, t, po.infos.octets); if (!h) return null; let l = 0; for (let i = 0; i < h.length; i += po.infos.octets * 2) l += po.infos.largeur(parseInt(h.substr(i, po.infos.octets * 2), 16)); return l * e.taille; };
         const toutEnOrigine = po && encoderDansPolice(page, po.nom, String(e.texte || '').replace(/\s+/g, ' '), po.infos.octets) !== null;
@@ -312,17 +316,20 @@
         const origine = po && hexes.every(h => h !== null);
         lignes.forEach((ligne, i) => {
           if (!ligne) return;
-          const q = versPdf(boite, r, e.x, e.base + i * interligne / affiche.h);
+          // Texte en biais (angle, degrés, sens inverse des aiguilles sur la page affichée) : lignes suivantes décalées
+          // perpendiculairement à la ligne de base
+          const ang = (e.angle || 0) * Math.PI / 180;
+          const q = versPdf(boite, r, e.x + Math.sin(ang) * i * interligne / affiche.l, e.base + Math.cos(ang) * i * interligne / affiche.h);
           const hex = origine ? hexes[i] : null;
           if (hex) {
             // Police d'origine (incluse dans le PDF) : la correction ne se voit pas
-            const a = normRot(r) * Math.PI / 180, cs = Math.cos(a), sn = Math.sin(a);
+            const a = (normRot(r) + (e.angle || 0)) * Math.PI / 180, cs = Math.cos(a), sn = Math.sin(a);
             page.pushOperators(pushGraphicsState(), setFillingRgbColor(coul.red, coul.green, coul.blue), beginText(), setFontAndSize(PDFName.of(po.nom), e.taille),
               setTextMatrix(cs, sn, -sn, cs, q.x, q.y), showText(PDFHexString.of(hex)), endText(), popGraphicsState());
             return;
           }
           const t = nettoyer(police, ligne);
-          if (t) page.drawText(t, { x: q.x, y: q.y, size: e.taille, font: police, color: coul, rotate: degrees(normRot(r)) });
+          if (t) page.drawText(t, { x: q.x, y: q.y, size: e.taille, font: police, color: coul, rotate: degrees(normRot(r) + (e.angle || 0)) });
         });
       } else if (e.type === 'masque') {
         page.drawRectangle({ ...rectPdf(boite, r, e), color: couleur(e.couleur, [1, 1, 1]) });
@@ -601,7 +608,9 @@
       let elements = p.elements;
       if (modifs.length) {
         const boite0 = page.getCropBox();
-        const comptes = (!p.type || p.type === 'pdf') ? await retirerTexte(sortie, page, modifs.map(e => rectPdf(boite0, r, e.zone)), ctx) : modifs.map(() => 0);
+        // Zone d'origine : rectangle, ou polygone pour un texte en biais (coins sur la page affichée)
+        const zonePdf = e => (e.coins ? { poly: e.coins.map(([u, v]) => { const q = versPdf(boite0, r, u, v); return [q.x, q.y]; }) } : rectPdf(boite0, r, e.zone));
+        const comptes = (!p.type || p.type === 'pdf') ? await retirerTexte(sortie, page, modifs.map(zonePdf), ctx) : modifs.map(() => 0);
         elements = p.elements.map(e => { const k = modifs.indexOf(e); return k >= 0 ? { ...e, retire: comptes[k] > 0, policeOrigine: comptes.polices ? comptes.polices[k] : null } : e; });
       }
       // Annotations et texte OCR dans un flux à part, retiré si le PDF est rouvert dans Atelier PDF pour être modifié
@@ -751,9 +760,8 @@
   const appliquer = (m, x, y) => [x * m[0] + y * m[2] + m[4], x * m[1] + y * m[3] + m[5]];
 
   // Largeurs des caractères d'une police de la page (unités de texte pour une taille 1)
-  async function infosPolice(page, nom, ctx) {
+  async function infosPolice(res, nom, ctx) {
     const { PDFName, PDFArray, PDFNumber, StandardFonts } = lib();
-    const res = page.node.Resources();
     const polices = res && res.lookup(PDFName.of('Font'));
     const f = polices && polices.lookup(PDFName.of(nom));
     if (!f || !f.lookup) return null;
@@ -822,6 +830,21 @@
     }
     return table;
   }
+  // Nom, dans les ressources de la page, de la police de référence ref (ajoutée sous un nouveau nom si besoin)
+  function nomPoliceSurPage(page, po) {
+    const { PDFName, PDFDict } = lib();
+    if (!po.ref) return po.nom;
+    const res = page.node.Resources();
+    if (!res) return null;
+    let polices = res.lookup(PDFName.of('Font'));
+    if (!polices) { polices = page.doc.context.obj({}); res.set(PDFName.of('Font'), polices); }
+    if (!(polices instanceof PDFDict)) return null;
+    for (const [k, v] of polices.entries()) if (v === po.ref || String(v) === String(po.ref)) return k.asString().slice(1);
+    let n = 1;
+    while (polices.get(PDFName.of(`AtelierF${n}`))) n++;
+    polices.set(PDFName.of(`AtelierF${n}`), po.ref);
+    return `AtelierF${n}`;
+  }
   // Codes du texte dans la police d'origine de la page ; null si un caractère n'y existe pas (police réduite)
   function encoderDansPolice(page, nom, texte, octets) {
     const { PDFName } = lib();
@@ -854,107 +877,151 @@
     const b = new Uint8Array(total);
     let pos = 0;
     for (const m of morceaux) { b.set(m, pos); pos += m.length; }
-    const ops = operations(b);
 
+    // Zones : rectangle (x, y, width, height) ou polygone (poly : [[x, y]…], texte en biais), en points PDF
     const marge = 0.8;
-    const dans = (x, y) => zones.findIndex(z => x >= z.x - marge && x <= z.x + z.width + marge && y >= z.y - marge && y <= z.y + z.height + marge);
-    let ctm = [1, 0, 0, 1, 0, 0];
-    const pileEtat = [];
-    let tm = [1, 0, 0, 1, 0, 0], tlm = [1, 0, 0, 1, 0, 0];
-    let tc = 0, tw = 0, th = 1, tl = 0, rise = 0, tfs = 0, police = null, nomPolice = null;
+    const dansPoly = (x, y, poly) => {
+      let dedans = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const [xi, yi] = poly[i], [xj, yj] = poly[j];
+        if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) dedans = !dedans;
+      }
+      return dedans;
+    };
+    const dans = (x, y) => zones.findIndex(z => (z.poly ? dansPoly(x, y, z.poly)
+      : x >= z.x - marge && x <= z.x + z.width + marge && y >= z.y - marge && y <= z.y + z.height + marge));
     const polices = new Map();
-    const remplacements = [];
+    let compteurX = 0;
     const hexa = codes => `<${codes.map(v => v.toString(16).padStart(2, '0')).join('')}>`;
     // Nombre TJ équivalent à un déplacement (en fraction de taille) : n = -déplacement × 1000
     const decalage = v => String(Math.round(-v * 1e6) / 1000);
 
-    for (const o of ops) {
-      const a = o.args;
-      switch (o.op) {
-        case 'q': pileEtat.push({ ctm, tc, tw, th, tl, rise, tfs, police, nomPolice }); break;
-        case 'Q': if (pileEtat.length) ({ ctm, tc, tw, th, tl, rise, tfs, police, nomPolice } = pileEtat.pop()); break;
-        case 'cm': if (a.length === 6) ctm = mult(a, ctm); break;
-        case 'BT': tm = [1, 0, 0, 1, 0, 0]; tlm = tm; break;
-        case 'Tm': if (a.length === 6) { tm = a.slice(); tlm = tm; } break;
-        case 'Td': tlm = mult([1, 0, 0, 1, a[0], a[1]], tlm); tm = tlm; break;
-        case 'TD': tl = -a[1]; tlm = mult([1, 0, 0, 1, a[0], a[1]], tlm); tm = tlm; break;
-        case 'T*': tlm = mult([1, 0, 0, 1, 0, -tl], tlm); tm = tlm; break;
-        case 'Tc': tc = a[0]; break;
-        case 'Tw': tw = a[0]; break;
-        case 'Tz': th = a[0] / 100; break;
-        case 'TL': tl = a[0]; break;
-        case 'Ts': rise = a[0]; break;
-        case 'Tf':
-          nomPolice = a[0] && a[0].nom; tfs = a[1];
-          if (!polices.has(nomPolice)) polices.set(nomPolice, await infosPolice(page, nomPolice, ctx).catch(() => null));
-          police = polices.get(nomPolice);
-          break;
-        case 'Tj': case 'TJ': case "'": case '"': {
-          let prefixe = '';
-          if (o.op === "'") { tlm = mult([1, 0, 0, 1, 0, -tl], tlm); tm = tlm; prefixe = 'T* '; }
-          if (o.op === '"') { tw = a[0]; tc = a[1]; tlm = mult([1, 0, 0, 1, 0, -tl], tlm); tm = tlm; prefixe = `${a[0]} Tw ${a[1]} Tc T* `; }
-          const elems = o.op === 'TJ' ? (Array.isArray(a[0]) ? a[0] : []) : [a[a.length - 1]];
-          if (!police || !tfs) {
-            // Police illisible : avance inconnue, on ne touche à rien
+    // Un flux de contenu (page ou sous-dessin) : renvoie le flux réécrit, ou null s'il n'a pas changé
+    async function traiterFlux(b, ressources, ctmInitial, etatTexte, profondeur) {
+      const ops = operations(b);
+      let ctm = ctmInitial;
+      const pileEtat = [];
+      let tm = [1, 0, 0, 1, 0, 0], tlm = [1, 0, 0, 1, 0, 0];
+      let { tc, tw, th, tl, rise, tfs, police, nomPolice, refPolice } = etatTexte;
+      const remplacements = [];
+      for (const o of ops) {
+        const a = o.args;
+        switch (o.op) {
+          case 'q': pileEtat.push({ ctm, tc, tw, th, tl, rise, tfs, police, nomPolice, refPolice }); break;
+          case 'Q': if (pileEtat.length) ({ ctm, tc, tw, th, tl, rise, tfs, police, nomPolice, refPolice } = pileEtat.pop()); break;
+          case 'Do': {
+            // Sous-dessin (Form XObject) : parcouru avec sa matrice et ses ressources ; modifié, il est copié sous un
+            // nouveau nom pour ne pas toucher ses autres emplois (autres pages, autres endroits de la page)
+            if (profondeur >= 6) break;
+            const nom = a[0] && a[0].nom;
+            const xobjs = ressources && ressources.lookup(PDFName.of('XObject'));
+            const ref = nom && xobjs && xobjs.get(PDFName.of(nom));
+            const xo = ref && sortie.context.lookup(ref);
+            if (!xo || !xo.dict || String(xo.dict.get(PDFName.of('Subtype'))) !== '/Form') break;
+            let contenu;
+            try { contenu = decodePDFRawStream(xo).decode(); } catch { break; }
+            const m = xo.dict.lookup(PDFName.of('Matrix'));
+            const mat = m instanceof PDFArray && m.size() === 6 ? m.asArray().map(v => (sortie.context.lookup(v) || v).asNumber()) : [1, 0, 0, 1, 0, 0];
+            const resForm = xo.dict.lookup(PDFName.of('Resources')) || ressources;
+            const nouveau = await traiterFlux(contenu, resForm, mult(mat, ctm), { tc, tw, th, tl, rise, tfs, police, nomPolice, refPolice }, profondeur + 1);
+            if (nouveau) {
+              const copie = sortie.context.flateStream(nouveau);
+              for (const [k, v] of xo.dict.entries()) if (!['/Filter', '/DecodeParms', '/Length'].includes(k.asString())) copie.dict.set(k, v);
+              const nouveauNom = `AtelierX${++compteurX}`;
+              xobjs.set(PDFName.of(nouveauNom), sortie.context.register(copie));
+              remplacements.push({ d: o.d, f: o.f, texte: `/${nouveauNom} Do` });
+            }
             break;
           }
-          const sortieTJ = [];
-          let retire = false, enAttente = 0, courant = [];
-          const vider = () => { if (courant.length) { sortieTJ.push(hexa(courant)); courant = []; } };
-          for (const el of elems) {
-            if (typeof el === 'number') {
-              if (enAttente) { sortieTJ.push(decalage(enAttente)); enAttente = 0; }
-              vider();
-              sortieTJ.push(String(el));
-              tm = mult([1, 0, 0, 1, -el / 1000 * tfs * th, 0], tm);
-              continue;
+          case 'cm': if (a.length === 6) ctm = mult(a, ctm); break;
+          case 'BT': tm = [1, 0, 0, 1, 0, 0]; tlm = tm; break;
+          case 'Tm': if (a.length === 6) { tm = a.slice(); tlm = tm; } break;
+          case 'Td': tlm = mult([1, 0, 0, 1, a[0], a[1]], tlm); tm = tlm; break;
+          case 'TD': tl = -a[1]; tlm = mult([1, 0, 0, 1, a[0], a[1]], tlm); tm = tlm; break;
+          case 'T*': tlm = mult([1, 0, 0, 1, 0, -tl], tlm); tm = tlm; break;
+          case 'Tc': tc = a[0]; break;
+          case 'Tw': tw = a[0]; break;
+          case 'Tz': th = a[0] / 100; break;
+          case 'TL': tl = a[0]; break;
+          case 'Ts': rise = a[0]; break;
+          case 'Tf':
+            nomPolice = a[0] && a[0].nom; tfs = a[1];
+            if (!polices.has(ressources)) polices.set(ressources, new Map());
+            if (!polices.get(ressources).has(nomPolice)) polices.get(ressources).set(nomPolice, await infosPolice(ressources, nomPolice, ctx).catch(() => null));
+            police = polices.get(ressources).get(nomPolice);
+            refPolice = ressources?.lookup(PDFName.of('Font'))?.get(PDFName.of(nomPolice)) || null;
+            break;
+          case 'Tj': case 'TJ': case "'": case '"': {
+            let prefixe = '';
+            if (o.op === "'") { tlm = mult([1, 0, 0, 1, 0, -tl], tlm); tm = tlm; prefixe = 'T* '; }
+            if (o.op === '"') { tw = a[0]; tc = a[1]; tlm = mult([1, 0, 0, 1, 0, -tl], tlm); tm = tlm; prefixe = `${a[0]} Tw ${a[1]} Tc T* `; }
+            const elems = o.op === 'TJ' ? (Array.isArray(a[0]) ? a[0] : []) : [a[a.length - 1]];
+            if (!police || !tfs) {
+              // Police illisible : avance inconnue, on ne touche à rien
+              break;
             }
-            const octets = el && el.chaine;
-            if (!octets) continue;
-            for (let k = 0; k + police.octets <= octets.length; k += police.octets) {
-              const code = police.octets === 2 ? (octets[k] << 8) | octets[k + 1] : octets[k];
-              const w0 = police.largeur(code) || 0;
-              const tx = (w0 * tfs + tc + (police.octets === 1 && code === 32 ? tw : 0)) * th;
-              const trm = mult([tfs * th, 0, 0, tfs, 0, rise], mult(tm, ctm));
-              const [cx, cy] = appliquer(trm, (w0 * 0.5), 0.35);
-              const z = dans(cx, cy);
-              const codes = police.octets === 2 ? [octets[k], octets[k + 1]] : [octets[k]];
-              if (z >= 0 && w0 > 0) {
-                compte[z]++;
-                if (!compte.polices[z]) compte.polices[z] = { nom: nomPolice, infos: police };
-                retire = true;
-                vider();
-                // Décalage TJ équivalent à l'avance du caractère retiré (en millièmes de taille)
-                enAttente += tx / (tfs * th);
-              } else {
+            const sortieTJ = [];
+            let retire = false, enAttente = 0, courant = [];
+            const vider = () => { if (courant.length) { sortieTJ.push(hexa(courant)); courant = []; } };
+            for (const el of elems) {
+              if (typeof el === 'number') {
                 if (enAttente) { sortieTJ.push(decalage(enAttente)); enAttente = 0; }
-                courant.push(...codes);
+                vider();
+                sortieTJ.push(String(el));
+                tm = mult([1, 0, 0, 1, -el / 1000 * tfs * th, 0], tm);
+                continue;
               }
-              tm = mult([1, 0, 0, 1, tx, 0], tm);
+              const octets = el && el.chaine;
+              if (!octets) continue;
+              for (let k = 0; k + police.octets <= octets.length; k += police.octets) {
+                const code = police.octets === 2 ? (octets[k] << 8) | octets[k + 1] : octets[k];
+                const w0 = police.largeur(code) || 0;
+                const tx = (w0 * tfs + tc + (police.octets === 1 && code === 32 ? tw : 0)) * th;
+                const trm = mult([tfs * th, 0, 0, tfs, 0, rise], mult(tm, ctm));
+                const [cx, cy] = appliquer(trm, (w0 * 0.5), 0.35);
+                const z = dans(cx, cy);
+                const codes = police.octets === 2 ? [octets[k], octets[k + 1]] : [octets[k]];
+                if (z >= 0 && w0 > 0) {
+                  compte[z]++;
+                  if (!compte.polices[z]) compte.polices[z] = { nom: nomPolice, infos: police, ref: refPolice };
+                  retire = true;
+                  vider();
+                  // Décalage TJ équivalent à l'avance du caractère retiré (en millièmes de taille)
+                  enAttente += tx / (tfs * th);
+                } else {
+                  if (enAttente) { sortieTJ.push(decalage(enAttente)); enAttente = 0; }
+                  courant.push(...codes);
+                }
+                tm = mult([1, 0, 0, 1, tx, 0], tm);
+              }
             }
+            if (retire) {
+              vider();
+              if (enAttente) sortieTJ.push(decalage(enAttente));
+              remplacements.push({ d: o.d, f: o.f, texte: `${prefixe}[${sortieTJ.join(' ')}] TJ` });
+            }
+            break;
           }
-          if (retire) {
-            vider();
-            if (enAttente) sortieTJ.push(decalage(enAttente));
-            remplacements.push({ d: o.d, f: o.f, texte: `${prefixe}[${sortieTJ.join(' ')}] TJ` });
-          }
-          break;
+          default: break;
         }
-        default: break;
       }
+      if (!remplacements.length) return null;
+      // Flux réécrit : tout est conservé à l'identique, sauf les opérations modifiées
+      const enc = new TextEncoder();
+      const parts = [];
+      let dern = 0;
+      for (const r of remplacements) { parts.push(b.subarray(dern, r.d), enc.encode(r.texte)); dern = r.f; }
+      parts.push(b.subarray(dern));
+      const n = parts.reduce((x, m) => x + m.length, 0);
+      const nouveau = new Uint8Array(n);
+      let q = 0;
+      for (const m of parts) { nouveau.set(m, q); q += m.length; }
+      return nouveau;
     }
-    if (!remplacements.length) return compte;
-    // Flux réécrit : tout est conservé à l'identique, sauf les opérations d'affichage de texte modifiées
-    const enc = new TextEncoder();
-    const parts = [];
-    let dern = 0;
-    for (const r of remplacements) { parts.push(b.subarray(dern, r.d), enc.encode(r.texte)); dern = r.f; }
-    parts.push(b.subarray(dern));
-    const n = parts.reduce((x, m) => x + m.length, 0);
-    const nouveau = new Uint8Array(n);
-    let q = 0;
-    for (const m of parts) { nouveau.set(m, q); q += m.length; }
-    page.node.set(PDFName.of('Contents'), sortie.context.register(sortie.context.flateStream(nouveau)));
+
+    const nouveau = await traiterFlux(b, page.node.Resources(), [1, 0, 0, 1, 0, 0],
+      { tc: 0, tw: 0, th: 1, tl: 0, rise: 0, tfs: 0, police: null, nomPolice: null, refPolice: null }, 0);
+    if (nouveau) page.node.set(PDFName.of('Contents'), sortie.context.register(sortie.context.flateStream(nouveau)));
     return compte;
   }
 

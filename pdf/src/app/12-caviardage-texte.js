@@ -107,8 +107,40 @@
       l.zone.w = x2 - l.zone.x; l.zone.h = y2 - l.zone.y;
     }
     lignes.forEach(l => { l.t = l.t.replace(/\s+$/, ''); });
+    if (natif.length) lignes.push(...lignesEnBiais(natif.filter(m => !(Math.abs(m.u[1] * d.h) < 0.5 && m.u[0] > 0) && m.t.trim()), d));
     return lignes;
   }
+  // Texte en biais (ou vertical) : mots regroupés par orientation, puis par ligne de base dans cette orientation.
+  // Repère en points, y vers le haut ; angle en degrés, sens inverse des aiguilles d'une montre sur la page affichée.
+  function lignesEnBiais(mots, d) {
+    const groupes = [];
+    for (const m of mots) {
+      const ux = m.u[0] * d.l, uy = -m.u[1] * d.h, lg = Math.hypot(ux, uy);
+      if (lg < 0.1) continue;
+      const angle = Math.atan2(uy, ux) * 180 / Math.PI;
+      const dir = [ux / lg, uy / lg], nor = [-dir[1], dir[0]];
+      const P = [m.b[0] * d.l, -m.b[1] * d.h];
+      const le = P[0] * dir[0] + P[1] * dir[1], tr = P[0] * nor[0] + P[1] * nor[1];
+      const g = groupes.find(x => Math.abs(x.angle - angle) < 1 && Math.abs(x.travers - tr) < 0.35 * x.taille && x.police === m.police
+        && Math.abs(x.taille - m.taille) < 0.3 * x.taille && le - x.fin < 1.2 * x.taille && le >= x.debut - 0.5);
+      if (!g) { groupes.push({ angle, dir, nor, travers: tr, debut: le, fin: le + lg, t: m.t, taille: m.taille, police: m.police, famille: m.famille, mots: [m] }); continue; }
+      if (le - g.fin > 0.18 * g.taille && !/\s$/.test(g.t) && !/^\s/.test(m.t)) g.t += ' ';
+      g.t += m.t;
+      g.fin = Math.max(g.fin, le + lg);
+      g.mots.push(m);
+    }
+    return groupes.map(g => {
+      // Rectangle incliné de la ligne (descendantes et ascendantes comprises), ramené en fractions de page
+      const pt = (le, tr) => [(g.dir[0] * le + g.nor[0] * tr) / d.l, -(g.dir[1] * le + g.nor[1] * tr) / d.h];
+      const coins = [pt(g.debut - 1, g.travers - 0.3 * g.taille), pt(g.fin + 1, g.travers - 0.3 * g.taille), pt(g.fin + 1, g.travers + 1.05 * g.taille), pt(g.debut - 1, g.travers + 1.05 * g.taille)];
+      const xs = coins.map(c => c[0]), ys = coins.map(c => c[1]);
+      const zone = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+      const [x, base] = pt(g.debut, g.travers);
+      return { t: g.t.replace(/\s+$/, ''), zone, coins, angle: Math.round(g.angle * 100) / 100, x, base, taille: g.taille, police: g.police, famille: g.famille };
+    });
+  }
+  // Polygone (fractions de page) -> clip-path CSS dans le cadre zone
+  const clipPolygone = (coins, zone) => `polygon(${coins.map(([u, v]) => `${((u - zone.x) / zone.w * 100).toFixed(2)}% ${((v - zone.y) / zone.h * 100).toFixed(2)}%`).join(', ')})`;
   async function preparerLignes() {
     const p = ed.page;
     if (!p) return;
@@ -130,6 +162,7 @@
       d.dataset.ligne = n;
       d.title = l.t;
       Object.assign(d.style, { left: `${l.zone.x * ed.L - 2}px`, top: `${l.zone.y * ed.H - 2}px`, width: `${l.zone.w * ed.L + 4}px`, height: `${l.zone.h * ed.H + 4}px` });
+      if (l.coins) { Object.assign(d.style, { left: `${l.zone.x * ed.L}px`, top: `${l.zone.y * ed.H}px`, width: `${l.zone.w * ed.L}px`, height: `${l.zone.h * ed.H}px`, clipPath: clipPolygone(l.coins, l.zone) }); d.classList.add('biais'); }
       return d;
     }).filter(Boolean);
   }
@@ -142,6 +175,7 @@
       fond.dataset.i = i;
       const m = 1.2 * ed.ech;
       Object.assign(fond.style, { left: `${e.zone.x * ed.L - m}px`, top: `${e.zone.y * ed.H - m}px`, width: `${e.zone.w * ed.L + 2 * m}px`, height: `${e.zone.h * ed.H + 2 * m}px`, background: e.fond || '#fff' });
+      if (e.coins) Object.assign(fond.style, { left: `${e.zone.x * ed.L}px`, top: `${e.zone.y * ed.H}px`, width: `${e.zone.w * ed.L}px`, height: `${e.zone.h * ed.H}px`, clipPath: clipPolygone(e.coins, e.zone) });
       res.push(fond);
     }
     const t = document.createElement('div');
@@ -150,6 +184,10 @@
     const taille = e.taille * ed.ech;
     Object.assign(t.style, { left: px(e.x, 'x'), top: `${e.base * ed.H - taille * 0.94}px`, fontSize: `${taille}px`, color: e.couleur || '#000',
       fontFamily: FAMILLES[e.police] || FAMILLES.helvetica, fontWeight: e.gras ? 'bold' : 'normal', fontStyle: e.italique ? 'italic' : 'normal' });
+    if (e.angle) {
+      // Texte en biais : tourné autour de son point de départ sur la ligne de base
+      Object.assign(t.style, { transformOrigin: `0 ${taille * 0.94}px`, transform: `rotate(${-e.angle}deg)` });
+    }
     if (e.paragraphe) {
       // Paragraphe : retour à la ligne automatique, interligne d'origine (ligne de base de la 1re ligne conservée)
       const il = e.paragraphe.interligne * ed.ech;
@@ -248,7 +286,8 @@
   }
   async function modifierLigne(l) {
     const st = styleDeLigne(l);
-    const e = nouvelElement('texteModifie', { zone: { ...l.zone }, x: l.x, base: l.base, texte: l.t, origine: l.t, taille: Math.round(l.taille * 10) / 10, ...st, nouveau: true });
+    const e = nouvelElement('texteModifie', { zone: { ...l.zone }, x: l.x, base: l.base, texte: l.t, origine: l.t, taille: Math.round(l.taille * 10) / 10, ...st, nouveau: true,
+      ...(l.coins ? { coins: l.coins.map(c => [...c]), angle: l.angle } : {}) });
     dessinerCalque();
     editerTexte(ed.elements.indexOf(e));
     ed.hist.pop();

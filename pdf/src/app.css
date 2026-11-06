@@ -217,6 +217,8 @@ svg.forme path.prise { stroke: transparent; fill: none; stroke-width: 14px; poin
 /* Modifier le texte du PDF */
 .ligne-texte { position: absolute; border: 1px dashed rgba(47,128,237,.55); background: rgba(47,128,237,.06); border-radius: 2px; cursor: text; }
 .ligne-texte:hover { background: rgba(47,128,237,.16); border-color: #2f80ed; }
+.ligne-texte.biais { border: 0; background: rgba(47,128,237,.14); }
+.ligne-texte.biais:hover { background: rgba(47,128,237,.32); }
 .el-fondtexte { position: absolute; cursor: move; }
 .el-texteModifie { line-height: 1.2; white-space: pre; padding: 0; cursor: move; min-width: 4px; min-height: 1em; }
 .el-texteModifie[contenteditable=true] { cursor: text; outline: 2px solid #2f80ed; outline-offset: 1px; user-select: text; }

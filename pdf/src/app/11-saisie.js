@@ -129,7 +129,7 @@
       const e0 = i != null ? ed.elements[i] : null;
       if (e0 && e0.type === 'texteModifie') { editerTexte(i); return; }
       const n = cible.dataset.ligne != null ? Number(cible.dataset.ligne) : ligneSous(depart);
-      if (n >= 0 && ed.lignes[n]) { if (ev.shiftKey) modifierParagraphe(n); else modifierLigne(ed.lignes[n]); }
+      if (n >= 0 && ed.lignes[n]) { if (ev.shiftKey && !ed.lignes[n].coins) modifierParagraphe(n); else modifierLigne(ed.lignes[n]); }
       return;
     }
     // Texte à la volée : clic puis frappe ; clic sur un texte ou une bulle existants = le corriger
