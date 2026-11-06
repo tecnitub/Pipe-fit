@@ -81,7 +81,7 @@ const Regulation = (() => {
           if (d.n > 1) params.push(p('Permutation de la priorité des générateurs', num(e.permutation, 168), 'h'));
           d.circuits.forEach(c => {
             const loi = c.rc[0] > c.rc[1] && ['radiateurs', 'plancher', 'radiant', 'aerotherme'].includes(c.emetteur);
-            if (loi && c.reg !== 'direct') { params.push(p(`Loi d'eau ${c.rep} : départ à ${nf(Tb, 0)} °C extérieur`, c.rc[0], '°C'), p(`Loi d'eau ${c.rep} : départ à 18 °C extérieur`, c.emetteur === 'plancher' ? 25 : 30, '°C')); }
+            if (loi && c.reg !== 'direct') { params.push(p(`Loi d'eau ${c.rep} : départ à ${nf(Tb, 0)} °C extérieur`, c.rc[0], '°C'), p(`Loi d'eau ${c.rep} : départ à 18 °C extérieur`, Sc().depMini ? Sc().depMini(e, c) : (c.emetteur === 'plancher' ? 25 : 30), '°C')); }
             else params.push(p(`Consigne de départ ${c.rep}`, c.rc[0], '°C'));
           });
           const cc = Sc().courbeChauffe ? Sc().courbeChauffe(d.co ? d.co.dC : d, e) : null;

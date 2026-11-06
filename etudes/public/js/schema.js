@@ -469,13 +469,15 @@ const Schema = ((D, C, N) => {
     return [blocVisa(), ...blocs];
   }
 
+  // Départ de la loi d'eau à 18 °C extérieur : saisi sur le circuit, sinon 30 °C (25 °C pour un plancher)
+  const depMini = (e, c) => { const x = ((e.circuits || []).find(y => String(y.rep || '').trim() === String(c.rep || '').trim()) || {}).depMini; const v = num(x, NaN); return Number.isFinite(v) && String(x).trim() !== '' ? v : c.emetteur === 'plancher' ? 25 : 30; };
   /* ---------- Courbe de chauffe (loi d'eau) de chaque circuit ---------- */
   // Départ linéaire entre (température de base, départ nominal) et (18 °C, départ mini) ; retour : écart proportionnel à la
   // charge ; arrêt du chauffage au-delà du seuil de non-chauffage. Équivalent « pente / déplacement parallèle » (type Synco).
   function courbeChauffe(d, e) {
-    const Tb = num(e.Tbase, -10), arret = num(e.nonChauffage, 17), Ta = 20;
+    const Tb = num(e.Tbase, -10), arret = Math.min(19, Math.max(Tb + 5, num(e.nonChauffage, 17))), Ta = 20;
     const circ = (d.circuits || []).filter(c => c.rc[0] > c.rc[1] && ['radiateurs', 'plancher', 'radiant', 'aerotherme'].includes(c.emetteur) && c.reg !== 'direct').map(c => {
-      const base = c.emetteur === 'plancher' ? 25 : 30, s = (c.rc[0] - base) / (18 - Tb);
+      const base = depMini(e, c), s = (c.rc[0] - base) / (18 - Tb);
       const dep = T => Math.max(base, Math.min(c.rc[0], c.rc[0] - s * (T - Tb))), ret = T => { const x = dep(T); return x - (c.rc[0] - c.rc[1]) * (x - Ta) / (c.rc[0] - Ta); };
       return { rep: c.rep, emetteur: c.emetteur, regime: c.rc, base, pente: s, deplacement: base - s * (Ta - 18) - Ta, dep, ret };
     });
@@ -530,7 +532,7 @@ const Schema = ((D, C, N) => {
     // Circuits
     d.circuits.forEach((c, i) => {
       const k = i + 1, nom = `circuit ${k} (${c.rep})`, rc = c.rc, loi = rc[0] > rc[1] && ['radiateurs', 'plancher', 'radiant', 'aerotherme'].includes(c.emetteur);
-      const base = c.emetteur === 'plancher' ? 25 : 30, txt = [];
+      const base = depMini(e, c), txt = [], arret = num(e.nonChauffage, 17);
       if (loi && c.reg !== 'direct') txt.push(`loi d'eau : départ à ${rc[0]} °C pour ${Tb} °C extérieur, ${base} °C pour 18 °C extérieur (courbe réglable, influence de la température ambiante possible)`);
       if (c.emetteur === 'cta') txt.push(`vanne pilotée par la régulation de la CTA (température de soufflage ou de reprise), pompe autorisée sur demande de la CTA${d.chaud ? ', protection antigel : vanne ouverte et pompe en marche si l\'air descend sous 5 °C' : ', déshumidification possible'}`);
       if (c.emetteur === 'ventilo') txt.push('vannes 2 voies sur chaque ventilo-convecteur commandées par les régulateurs terminaux, pompe à vitesse variable à pression différentielle constante, soupape différentielle en bout de réseau');
@@ -540,7 +542,7 @@ const Schema = ((D, C, N) => {
       if (c.emetteur === 'process') txt.push('consigne fixe donnée par le process, marche autorisée par le process');
       if (c.emetteur === 'sousstation') txt.push('pression différentielle disponible maintenue en tête de réseau');
       if (c.reg === '2v' && c.emetteur !== 'ventilo') txt.push('pompe à vitesse variable à pression différentielle constante');
-      if (d.chaud && !['ecs', 'cta', 'process'].includes(c.emetteur)) txt.push('arrêt de la pompe et fermeture de la vanne au-delà de 17 °C extérieur (réglable)');
+      if (d.chaud && !['ecs', 'cta', 'process'].includes(c.emetteur)) txt.push(`arrêt de la pompe et fermeture de la vanne au-delà de ${arret} °C extérieur (réglable)`);
       af.push(`Circuit ${k} — ${c.rep} (${c.em[0].split(' (')[0]}, ${REGULATIONS[c.reg].toLowerCase()}) : ${txt.join(' ; ') || 'marche selon la programmation horaire'}.`);
       pt(`TD${k}`, `Température de départ du ${nom}`, 'EA');
       if (c.reg !== 'direct') pt(`V${k}`, `Vanne de régulation du ${nom}`, 'SA', '0-10 V');
@@ -611,7 +613,8 @@ const Schema = ((D, C, N) => {
         { k: 'Pf', l: 'Puissance froid (kW)', si: e => e.reseau === 'co' },
         { k: 'bilan', l: 'Puissance reprise de', t: 's', o: (e, ctx) => [['', 'Saisie'], ...((ctx && ctx.notes) || []).map((n, i) => [n, i]).filter(([n]) => n.type === 'bilan').map(([n, i]) => [n.id, `N${i + 1} — ${n.titre}`])] },
         { k: 'annexe', l: 'Réseau annexe relié', t: 's', o: (e, ctx) => [['', '—'], ...((ctx && ctx.notes) || []).map((n, i) => [n, i]).filter(([n]) => ['arbo', 'reseau', 'cta'].includes(n.type) && !n.lien).map(([n, i]) => [n.id, `N${i + 1} — ${n.titre}`])] },
-        { k: 'regime', l: 'Régime (°C)', t: 't' }, { k: 'regulation', l: 'Régulation', t: 's', o: optListe(REGULATIONS) }, { k: 'L', l: 'Longueur aller + retour (m)' }] },
+        { k: 'regime', l: 'Régime (°C)', t: 't' }, { k: 'regulation', l: 'Régulation', t: 's', o: optListe(REGULATIONS) }, { k: 'L', l: 'Longueur aller + retour (m)' },
+        { k: 'depMini', l: 'Loi d\'eau : départ à 18 °C ext. (°C ; vide = 30, plancher 25)' }] },
       { k: 'robinetterie', l: 'Robinetterie et accessoires par circuit (vannes, clapets, filtres…) : ΔP ou Kv de la fiche technique, sinon valeur usuelle ; « 📄 » dans le tableau des fiches charge la fiche', t: 'lignes', d: [],
         colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'circuit', l: 'Circuit', t: 's', o: e => [['', '—'], ...(e.circuits || []).map((c, i) => c.rep || `C${i + 1}`).map(r => [r, r])] },
           { k: 'type', l: 'Organe', t: 's', o: Object.entries(ROBINETTERIE).map(([k, x]) => [k, x[0]]) }, { k: 'dn', l: 'DN (vide : celui du circuit)' }, { k: 'qte', l: 'Quantité sur le circuit' },
@@ -623,6 +626,7 @@ const Schema = ((D, C, N) => {
       { k: 'fluideFrigo', l: 'Fluide frigorigène', t: 's', o: Object.keys(FLUIDES_FRIGO).map(k => [k, k]), d: 'R32', si: e => /^(pac|gf)/.test(e.generateur || '') },
       { k: 'chargeFrigo', l: 'Charge totale de fluide (vide : estimée)', u: 'kg', d: '', si: e => /^(pac|gf)/.test(e.generateur || '') },
       { g: 'Régulation' }, { k: 'Tbase', l: 'Température extérieure de base (loi d\'eau)', u: '°C', d: -10 },
+      { k: 'nonChauffage', l: 'Arrêt du chauffage (non-chauffage) au-dessus de', u: '°C ext.', d: 17 },
       { k: 'reduit', l: 'Abaissement en période réduite', u: 'K', d: 3 },
       { k: 'cascadeMode', l: 'Gestion de la cascade', t: 's', o: [['sequence', 'Enclenchement séquentiel'], ['parallele', 'Modulation parallèle']], d: 'sequence', si: e => num(e.nGen, 1) > 1 },
       { k: 'permutation', l: 'Permutation de la priorité des générateurs', u: 'h', d: 168, si: e => num(e.nGen, 1) > 1 },
@@ -708,6 +712,6 @@ const Schema = ((D, C, N) => {
     try { const FT = typeof FichesTech !== 'undefined' ? FichesTech : require('../../../public/js/fiches-tech'); const a = FT.analyser({ texte: L.join('\n') }); fabricant = a.fabricant || ''; reference = (a.references || [])[0] || ''; } catch (err) { /* sans bibliothèque */ }
     return { valeurs: v, sources: src, fabricant, reference, nb: Object.keys(v).length };
   }
-  return { courbeChauffe, ROBINETTERIE, ORGANES_CALCUL, robinetterie, organe, lireFicheRobinet, lireAbaque, toursAbaque, REGIMES, GENERATEURS, EMETTEURS, REGULATIONS, FLUIDES_FRIGO, CONTENANCE, volumeEau, utiliserReglementation, dimensionner, dessiner, reglementation, regulation };
+  return { depMini, courbeChauffe, ROBINETTERIE, ORGANES_CALCUL, robinetterie, organe, lireFicheRobinet, lireAbaque, toursAbaque, REGIMES, GENERATEURS, EMETTEURS, REGULATIONS, FLUIDES_FRIGO, CONTENANCE, volumeEau, utiliserReglementation, dimensionner, dessiner, reglementation, regulation };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Notes !== 'undefined' ? Notes : require('./notes'));
 if (typeof module !== 'undefined') module.exports = Schema;

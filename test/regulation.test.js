@@ -117,3 +117,18 @@ test('courbe de chauffe (loi d\'eau) : départ et retour selon l\'extérieur, ar
   assert.ok(reg[0].svg && /tableau/.test(Object.keys(reg[1]).join()) && /pente ≈/.test(reg[2].liste[0]));
   assert.ok(r.schemas.some(s => /Courbe de chauffe/.test(s.titre)));
 });
+
+test('courbe de chauffe réglable : départ à 18 °C par circuit et seuil d\'arrêt du chauffage', () => {
+  const Sc = require('../etudes/public/js/schema');
+  const e = { ...N.defauts('pid'), Tbase: -7, nonChauffage: 15 };
+  e.circuits = e.circuits.map(c => (c.emetteur === 'radiateurs' ? { ...c, depMini: 35 } : c));
+  const d = Sc.dimensionner(e), c = Sc.courbeChauffe(d, e), rad = c.circuits.find(x => x.emetteur === 'radiateurs');
+  assert.strictEqual(rad.dep(18), 35);
+  assert.strictEqual(rad.dep(-7), rad.regime[0]);
+  assert.strictEqual(c.arret, 15);
+  assert.match(c.svg, /arrêt chauffage 15 °C/);
+  assert.strictEqual(c.tableau.entetes[c.tableau.entetes.length - 1], '15 °C ext.');
+  const af = N.calculer('pid', e).onglets.find(o => o.titre === 'Régulation').blocs.find(b => b.titre === 'Analyse fonctionnelle').liste.join(' ');
+  assert.match(af, /35 °C pour 18 °C extérieur/);
+  assert.match(af, /au-delà de 15 °C extérieur/);
+});
