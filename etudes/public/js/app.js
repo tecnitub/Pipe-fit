@@ -839,6 +839,7 @@ Vues.note = {
         ${n.type === 'sanitaire' ? `<button class="secondaire" id="san-foison" title="Compare le débit probable avec et sans foisonnement et choisit la méthode de calcul">⚖️ Foisonnement : ${esc({ dtu: 'DTU 60.11', saisi: `${Notes.num(n.entrees.coefSaisi, 60)} %`, aucun: 'aucun' }[n.entrees.foisonnement || 'dtu'] || '')}</button>` : ''}
         ${n.type === 'evacuation' ? '<button class="secondaire" id="evac-san" title="Une ligne par appareil du calcul sanitaire choisi (lavabos, WC, douches…), avec sa salle et son étage ; il reste à choisir le tronçon">🚽 Reprendre les appareils du calcul sanitaire</button>' : ''}
         ${n.type === 'terminaux' && et.notes.some(x => x.type === 'pieces') ? '<button class="secondaire" id="term-pieces" title="Un terminal par pièce du bilan pièce par pièce qui n\'en a pas, aux puissances de la pièce">🏠 Créer les terminaux des pièces</button>' : ''}
+        ${(Notes.TYPES[n.type].champs || []).some(c => c.k === 'troncons' && (c.colonnes || []).some(x => x.k === 'L')) ? '<button class="secondaire" id="longueurs-plan" title="Nomenclature de canalisations ou de gaines exportée de Revit (CSV, Excel) ou plan DXF (une couche par tronçon) : longueurs additionnées par repère et reportées sur les tronçons de même repère">📏 Longueurs depuis Revit / DXF</button>' : ''}
         ${n.type === 'arbo' ? '<button class="secondaire" id="arbo-emetteurs" title="Une branche par terminal ou batterie de CTA de l\'étude, reliée : puissance, débit et pertes de charge remplis ; il reste à choisir le tronçon amont et la longueur">🌀 Ajouter les émetteurs de l\'étude</button>' : ''}
         ${n.type === 'cable' ? '<button id="cable-reprendre">🔌 Reprendre les liaisons de l\'alimentation électrique</button>' : ''}<span class="espace"></span><button class="secondaire" id="supprimer">Supprimer ce calcul</button></div></div>`;
   },
@@ -1025,6 +1026,8 @@ Vues.note = {
       nv.forEach(x => { let r; do { r = `T-${String(k++).padStart(2, '0')}`; } while (reps.has(r)); reps.add(r); l.push({ rep: r, local: x.local, type: x.type, n: 1, Pch: x.Pch, Pfr: x.Pfr, batterie: '4t', vanne: '2v', Pvent: '', Pbe: '', tension: '', alim: 'cvc', regul: 'propre', ref: '' }); });
       enregistrer(et); App.render(); toast(`${nv.length} terminal(aux) créé(s) aux puissances des pièces : choisissez le modèle (fiche technique).`, 6000);
     };
+    const lp = root.querySelector('#longueurs-plan');
+    if (lp) lp.onclick = () => dialogueLongueurs(et, n);
     const ae = root.querySelector('#arbo-emetteurs');
     if (ae) ae.onclick = () => {
       // Réseau d'un circuit du schéma de principe : ses terminaux (et ceux non rattachés, qui le deviennent)
@@ -1147,6 +1150,40 @@ function dialogueVrac(et) {
   };
 }
 
+// Longueurs des tronçons depuis un export Revit (CSV, texte, Excel) ou un DXF : aperçu, puis report sur les tronçons
+function dialogueLongueurs(et, n) {
+  const b = Modal.open(`<h2>📏 Longueurs depuis les plans</h2><p class="muted petit">Revit : nomenclature de canalisations ou de gaines avec une colonne « Repère » (ou « Commentaires ») égale au repère du tronçon et une colonne « Longueur », exportée en CSV / texte ou Excel. DXF : une couche par tronçon, nommée par son repère. Les longueurs d'un même repère sont additionnées, les mm convertis en m.</p>
+    <p><label class="btn">📂 Choisir l'export (CSV, TXT, XLSX, DXF)<input type="file" id="lg-f" accept=".csv,.txt,.xlsx,.dxf" hidden></label></p>
+    <label class="case"><input type="checkbox" id="lg-div"${n.type === 'arbo' ? '' : ' disabled'}> Diviser par 2 (l'export contient l'aller et le retour sous le même repère ; le calcul attend la longueur aller)</label>
+    <div id="lg-res"></div><div class="actions"><button class="secondaire" id="lg-x">Fermer</button><button id="lg-ok" disabled>Reporter les longueurs</button></div>`);
+  let lu = null;
+  const tr = () => n.entrees.troncons || [];
+  const rendre = () => {
+    const z = b.querySelector('#lg-res'); if (!lu) { z.innerHTML = ''; return; }
+    if (lu.erreur) { z.innerHTML = `<p class="erreur">${esc(lu.erreur)}</p>`; return; }
+    const p = Longueurs.proposer(tr(), lu.parRep, { diviser: b.querySelector('#lg-div').checked });
+    b.querySelector('#lg-ok').disabled = !p.lignes.length;
+    z.innerHTML = `<p class="petit">${lu.lignes} ligne(s) lue(s) (${esc(lu.colonnes.join(' / '))}, ${esc(lu.unite)}) · ${p.lignes.length} tronçon(s) trouvé(s)</p>
+      ${p.lignes.length ? `<div class="defile-x"><table><thead><tr><th>Tronçon</th><th>Lu sous</th><th>Longueur actuelle (m)</th><th>Longueur des plans (m)</th></tr></thead><tbody>${p.lignes.map(x => `<tr><td>${esc(x.rep)}</td><td class="petit">${esc(x.cle)}</td><td>${esc(String(x.avant ?? '').replace('.', ','))}</td><td><strong>${String(x.apres).replace('.', ',')}</strong></td></tr>`).join('')}</tbody></table></div>` : ''}
+      ${p.nonUtilisees.length ? `<p class="petit muted">Sans tronçon de même repère : ${esc(p.nonUtilisees.slice(0, 30).join(', '))}${p.nonUtilisees.length > 30 ? '…' : ''}</p>` : ''}`;
+  };
+  b.querySelector('#lg-x').onclick = Modal.close;
+  b.querySelector('#lg-div').onchange = rendre;
+  b.querySelector('#lg-f').onchange = async ev => {
+    const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
+    try {
+      if (/\.dxf$/i.test(f.name)) lu = Longueurs.dxf(await f.text());
+      else if (/\.xlsx$/i.test(f.name)) { const fe = await XLSX.read(await f.arrayBuffer()); lu = fe.map(x => Longueurs.depuisTableau(x.rows)).find(x => !x.erreur) || Longueurs.depuisTableau((fe[0] || {}).rows); }
+      else lu = Longueurs.depuisTableau(Longueurs.csv(await f.text()));
+    } catch (e) { lu = { erreur: `Lecture impossible : ${e.message}`, parRep: new Map() }; }
+    rendre();
+  };
+  b.querySelector('#lg-ok').onclick = () => {
+    const p = Longueurs.proposer(tr(), lu.parRep, { diviser: b.querySelector('#lg-div').checked });
+    p.lignes.forEach(x => { tr()[x.i].L = x.apres; });
+    enregistrer(et); Modal.close(); App.render(); toast(`${p.lignes.length} longueur(s) reprise(s) des plans : pertes de charge et métré recalculés.`, 5000);
+  };
+}
 function dialogueFichesMes(et) {
   let liste = [];
   try { contexteEtude = et; liste = FichesMes.fiches(et, n => Liens.calculer(et, n)); } catch (e) { return toast(`Fiches impossibles : ${e.message}`, 6000); }
