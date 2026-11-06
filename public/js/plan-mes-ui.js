@@ -106,19 +106,20 @@ function bindPlanMes(z, a) {
   // Fiches de relevés Excel déjà remplies : une fiche → un PV de mise en service en brouillon sur ce chantier
   const imp = z.querySelector('#pm-import');
   if (imp) imp.onchange = async ev => {
-    let n = 0; const rejets = [];
+    let n = 0, lies = 0; const rejets = [], pris = new Set(), taches = tachesMes(Store.get('affaires', a.id));
     for (const f of ev.target.files) {
       try {
         const sheets = await XLSX.read(await f.arrayBuffer()), x = sheets.map(sh => Essais.lireFicheExcel(sh.rows)).find(Boolean);
         if (!x) { rejets.push(f.name); continue; }
-        const { chantier, ...pv } = x;
+        const { chantier, ...pv } = x, t = PlanMes.rattacher(pv, taches, pris);
+        if (t) { pris.add(t.cle); pv.planCle = t.cle; lies += 1; }
         Store.upsert('misesEnService', { affaireId: a.id, userId: Store.me.userId, date: x.date || isoDate(new Date()), heure: '', photos: [], signataireNom: '', signataireQualite: '', statut: 'Brouillon', numeroSerie: '', repere: '', resultat: Essais.conclusion(pv) || '', resultatAuto: true, importe: `${f.name}${chantier ? ` (${chantier})` : ''}`, ...pv });
         n += 1;
       } catch (e) { rejets.push(f.name); }
     }
     ev.target.value = '';
     afficherPlanMes(a.id);
-    App.toast(`${n} fiche(s) reprise(s) en PV brouillon${rejets.length ? ` ; non reconnue(s) : ${rejets.join(', ')}` : ''}. Rattachez-les à leur tâche puis signez.`, 7000);
+    App.toast(`${n} fiche(s) reprise(s) en PV brouillon, ${lies} rattachée(s) à leur tâche${n > lies ? ` (${n - lies} à rattacher à la main)` : ''}${rejets.length ? ` ; non reconnue(s) : ${rejets.join(', ')}` : ''}. Vérifiez puis signez.`, 8000);
   };
   const pdf = z.querySelector('#pm-pdf');
   if (pdf) pdf.onclick = () => PDF.telecharger(documentPlanMes(Store.get('affaires', a.id)), `Mises-en-service-${a.code || a.id}.pdf`.replace(/[^\w.-]+/g, '_')).catch(e => notify(e.message));

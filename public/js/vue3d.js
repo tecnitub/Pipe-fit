@@ -212,9 +212,9 @@ const Vue3D = (() => {
     return {
       // Réductions : repère « DN80×DN50 » (« Ø54×Ø42 » en tube à sertir), comme sur un isométrique
       reperes: placement.pieces.filter(pc => pc.t === 'tube' || pc.t === 'reduc' || pc.el.repere).map(pc => ({ pos: milieu(pc),
-        repere: pc.el.repere || (pc.t === 'reduc' ? (placement.sertir ? `Ø${pc.de}×Ø${pc.de2}` : `DN${pc.dn}×DN${pc.dn2}`) : ''), coupe: pc.t === 'tube' ? Math.round(pc.coupe || 0) : null, r: pc.de / 2, id: pc.id })),
+        repere: [pc.spool && placement.pieces.find(x => x.spool === pc.spool && (x.t === 'tube' || x.t === 'reduc' || x.el.repere)) === pc ? pc.spool : '', pc.el.repere || (pc.t === 'reduc' ? (placement.sertir ? `Ø${pc.de}×Ø${pc.de2}` : `DN${pc.dn}×DN${pc.dn2}`) : '')].filter(Boolean).join(' · '), coupe: pc.t === 'tube' ? Math.round(pc.coupe || 0) : null, r: pc.de / 2, id: pc.id })),
       cotes: placement.cotes || [], notes, triangles: placement.triangles || [],
-      soudures: (placement.soudures || []).map(s => s.p), sertissages: (placement.sertissages || []).map(s => s.p), joints: placement.pieces.flatMap(pc => pc.joints || []),
+      soudures: (placement.soudures || []).map(s => s.p), numeros: (placement.soudures || []).filter(x => x.no).map(x => ({ p: x.p, no: x.no })), sertissages: (placement.sertissages || []).map(s => s.p), joints: placement.pieces.flatMap(pc => pc.joints || []),
     };
   }
   // Étiquette encadrée centrée sur (x, y), tournée de a
@@ -295,6 +295,7 @@ const Vue3D = (() => {
     // Points verts : sertissages (tube à sertir)
     (labels.sertissages || []).forEach(j => { const P = proj(j); ctx.beginPath(); ctx.arc(P[0], P[1], 3.5 * s, 0, Math.PI * 2); ctx.fillStyle = '#1f9d55'; ctx.fill(); ctx.lineWidth = 1.5 * s; ctx.strokeStyle = '#fff'; ctx.stroke(); });
     labels.soudures.forEach(j => { const P = proj(j); ctx.beginPath(); ctx.arc(P[0], P[1], 4 * s, 0, Math.PI * 2); ctx.fillStyle = BLEU; ctx.fill(); ctx.lineWidth = 1.5 * s; ctx.strokeStyle = '#fff'; ctx.stroke(); });
+    if (etat.numeros !== false) { ctx.font = `bold ${Math.round(10 * s)}px system-ui, sans-serif`; (labels.numeros || []).forEach(x => { const P = proj(x.p); ctx.fillStyle = BLEU; ctx.fillText(x.no, P[0] + 9 * s, P[1] - 7 * s); }); ctx.font = `${opts.police || 12}px system-ui, sans-serif`; }
     if (etat.cotes) labels.cotes.forEach(c => cote(ctx, proj(c.a), proj(c.b), c.valeur, s));
     labels.reperes.forEach(l => {
       const txt = [l.repere, etat.coupes && l.coupe !== null ? `coupe ${fmtMm(l.coupe)}` : ''].filter(Boolean).join(' · ');
@@ -396,5 +397,43 @@ const Vue3D = (() => {
     dessiner(cv.getContext('2d'), w, h, faces, etiquettes(placement), { ...etatInitial(), centre: b.c, rayon: b.r, zoom: 1.3 }, { fond: '#ffffff', police: 20 });
     return cv.toDataURL('image/png');
   }
-  return { creer, etatInitial, image, maillage, VUES };
+  // Isométrique au trait (axe de la ligne, symboles, cotes à l'axe, repères, soudures numérotées) : SVG vectoriel,
+  // converti en DXF pour AutoCAD ; même projection que la vue isométrique
+  function svgIso(placement, titre = '') {
+    const cam = camera(ISO), P3 = p => [dot(p, cam.droite), -dot(p, cam.haut)];
+    const segs = [], symb = [], txt = [];
+    placement.pieces.forEach(pc => {
+      const a = P3(pc.p0), b = P3(pc.p1);
+      if (['coude', 'te'].includes(pc.t) && pc.centre) { const c = P3(pc.centre); segs.push([a, c], [c, b]); if (pc.pb) segs.push([c, P3(pc.pb)]); }
+      else if (pc.t === 'devoie') segs.push([a, b]);
+      else segs.push([a, b]);
+      if (['vanne', 'v3v'].includes(pc.t)) symb.push({ t: 'vanne', a, b });
+      (pc.joints || []).forEach(j => symb.push({ t: 'bride', p: P3(j), d: [b[0] - a[0], b[1] - a[1]] }));
+    });
+    const lab = etiquettes(placement);
+    lab.reperes.filter(x => x.repere || x.coupe !== null).forEach(x => { const p = P3(x.pos); txt.push({ x: p[0], y: p[1], s: [x.repere, x.coupe !== null ? `coupe ${fmtMm(x.coupe)}` : ''].filter(Boolean).join(' · '), dy: 1 }); });
+    (lab.numeros || []).forEach(x => { const p = P3(x.p); symb.push({ t: 'soudure', p }); txt.push({ x: p[0], y: p[1], s: x.no, dy: -1, c: '#1f5fbf' }); });
+    const cotes = (lab.cotes || []).map(c => ({ a: P3(c.a), b: P3(c.b), v: c.valeur }));
+    const pts = [...segs.flat(), ...txt.map(t => [t.x, t.y])];
+    if (!pts.length) return '';
+    const mn = [Math.min(...pts.map(p => p[0])), Math.min(...pts.map(p => p[1]))], mx = [Math.max(...pts.map(p => p[0])), Math.max(...pts.map(p => p[1]))];
+    const W = 1400, H = 950, m = 90, k = Math.min((W - 2 * m) / Math.max(1, mx[0] - mn[0]), (H - 2 * m - 40) / Math.max(1, mx[1] - mn[1]));
+    const X = p => m + (p[0] - mn[0]) * k, Y = p => m + 40 + (p[1] - mn[1]) * k, e = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const o = [`<rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>`, `<text x="20" y="32" font-size="18" font-weight="bold" fill="#222">${e(titre || 'Isométrique')}</text>`];
+    segs.forEach(([a, b]) => o.push(`<line x1="${X(a).toFixed(1)}" y1="${Y(a).toFixed(1)}" x2="${X(b).toFixed(1)}" y2="${Y(b).toFixed(1)}" stroke="#222" stroke-width="2.5"/>`));
+    symb.forEach(x => {
+      if (x.t === 'vanne') { const mx2 = (X(x.a) + X(x.b)) / 2, my = (Y(x.a) + Y(x.b)) / 2, dx = X(x.b) - X(x.a), dy = Y(x.b) - Y(x.a), L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux, h = 9, l = 10;
+        o.push(`<polygon points="${[[mx2 - ux * l + nx * h, my - uy * l + ny * h], [mx2 + ux * l - nx * h, my + uy * l - ny * h], [mx2 + ux * l + nx * h, my + uy * l + ny * h], [mx2 - ux * l - nx * h, my - uy * l - ny * h]].map(q => q.map(v => v.toFixed(1)).join(',')).join(' ')}" fill="#fff" stroke="#222" stroke-width="1.5"/>`); }
+      if (x.t === 'bride') { const L = Math.hypot(x.d[0], x.d[1]) || 1, nx = -x.d[1] / L * 9, ny = x.d[0] / L * 9, px = X(x.p), py = Y(x.p); o.push(`<line x1="${(px - nx).toFixed(1)}" y1="${(py - ny).toFixed(1)}" x2="${(px + nx).toFixed(1)}" y2="${(py + ny).toFixed(1)}" stroke="#222" stroke-width="2"/>`); }
+      if (x.t === 'soudure') o.push(`<circle cx="${X(x.p).toFixed(1)}" cy="${Y(x.p).toFixed(1)}" r="3.5" fill="#1f5fbf"/>`);
+    });
+    cotes.forEach(c => { const ax = X(c.a), ay = Y(c.a), bx = X(c.b), by = Y(c.b), L = Math.hypot(bx - ax, by - ay); if (L < 25) return; let nx = -(by - ay) / L, ny = (bx - ax) / L; if (ny > 0) { nx = -nx; ny = -ny; } const d = 22;
+      o.push(`<line x1="${(ax + nx * d).toFixed(1)}" y1="${(ay + ny * d).toFixed(1)}" x2="${(bx + nx * d).toFixed(1)}" y2="${(by + ny * d).toFixed(1)}" stroke="#14286e" stroke-width="0.8"/>`,
+        `<line x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" x2="${(ax + nx * (d + 4)).toFixed(1)}" y2="${(ay + ny * (d + 4)).toFixed(1)}" stroke="#14286e" stroke-width="0.5"/>`, `<line x1="${bx.toFixed(1)}" y1="${by.toFixed(1)}" x2="${(bx + nx * (d + 4)).toFixed(1)}" y2="${(by + ny * (d + 4)).toFixed(1)}" stroke="#14286e" stroke-width="0.5"/>`,
+        `<text x="${((ax + bx) / 2 + nx * (d + 6)).toFixed(1)}" y="${((ay + by) / 2 + ny * (d + 6)).toFixed(1)}" font-size="12" text-anchor="middle" fill="#14286e">${fmtMm(c.v)}</text>`); });
+    txt.forEach(t => o.push(`<text x="${(X([t.x, t.y]) + 6).toFixed(1)}" y="${(Y([t.x, t.y]) + (t.dy > 0 ? 16 : -6)).toFixed(1)}" font-size="${t.c ? 11 : 12}"${t.c ? ' font-weight="bold"' : ''} fill="${t.c || '#3c4650'}">${e(t.s)}</text>`));
+    o.push(`<text x="20" y="${H - 18}" font-size="11" fill="#555">Cotes à l'axe en mm · S1, S2… soudures · SP1, SP2… tronçons préfabriqués · Nord vers la droite en haut, Est vers la droite en bas</text>`);
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Arial, Helvetica, sans-serif">${o.join('')}</svg>`;
+  }
+  return { creer, etatInitial, image, maillage, svgIso, VUES };
 })();

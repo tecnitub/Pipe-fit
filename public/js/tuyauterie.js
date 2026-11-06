@@ -15,7 +15,15 @@ const Tuyauterie = (() => {
   const FOND = { 15: 25, 20: 25, 25: 38, 32: 38, 40: 38, 50: 38, 65: 38, 80: 51, 100: 64, 125: 76, 150: 89, 200: 102, 250: 127, 300: 152 };
   // Bride à collerette EN 1092-1 type 11 (ISO 7005-1) PN16 : diamètre extérieur et hauteur (valeurs indicatives)
   const BRIDE = { 15: [95, 35], 20: [105, 38], 25: [115, 38], 32: [140, 40], 40: [150, 42], 50: [165, 45], 65: [185, 45], 80: [200, 50], 100: [220, 52], 125: [250, 55], 150: [285, 55], 200: [340, 62], 250: [405, 70], 300: [460, 78] };
-  const JOINT = 2; // joint plat EN 1514-1 comprimé (mm)
+  // Joints entre brides : épaisseur retenue entre les faces (mm) ; spiralé : 4,5 mm nominal, ≈ 3,3 mm une fois serré
+  const JOINTS = { fibre: ['Joint plat fibre EN 1514-1 (2 mm)', 2, 'EN 1514-1', 'Joint plat'], ptfe: ['Joint plat PTFE (3 mm)', 3, 'EN 1514-1', 'Joint plat PTFE'], spirale: ['Joint spiralé EN 1514-2 (4,5 mm, ≈ 3,3 mm serré)', 3.3, 'EN 1514-2', 'Joint spiralé'] };
+  // Hauteur des brides par pression nominale : tables de l'entreprise (paramètres, fiches du fournisseur de brides) ;
+  // à défaut, valeurs PN16 indicatives ci-dessous. Contexte (PN, joint) fixé par le relevé en cours de calcul.
+  let hauteursBrides = {};
+  const ctx = { pn: 'PN16', joint: 'fibre', manque: false };
+  function definirBrides(cfg = {}) { hauteursBrides = cfg && cfg.hauteurs ? cfg.hauteurs : {}; return hauteursBrides; }
+  const hB = dn => { const t = hauteursBrides[ctx.pn] || {}, v = Number(String(t[dn] ?? '').replace(',', '.')); if (v > 0) return v; if (ctx.pn !== 'PN16' || (hauteursBrides.PN16 && !hauteursBrides.PN16[dn])) ctx.manque = true; const v16 = Number(String((hauteursBrides.PN16 || {})[dn] ?? '').replace(',', '.')); return v16 > 0 ? v16 : BRIDE[dn][1]; };
+  const jt = () => (JOINTS[ctx.joint] || JOINTS.fibre)[1];
   // Types de brides : à collerette à souder en bout (EN 1092-1 type 11), tournante sur collet à souder (type 02 + collet type 35).
   // « mixte » : assemblage d'une bride à collerette et d'une bride tournante. Même encombrement retenu (valeurs indicatives).
   const BRIDES_TYPES = { collerette: 'À collerette (type 11)', tournante: 'Tournante + collet (type 02 / 35)', mixte: 'Collerette + tournante' };
@@ -55,6 +63,31 @@ const Tuyauterie = (() => {
   definirCatalogue();
   const modeles = (type, dn) => catalogue.filter(x => (!type || x.type === type || (type === 'v2v' && x.type === 'v2v')) && (!dn || x.dimensions[String(dn)]));
   const modeleDe = el => (el && el.modele ? catalogue.find(x => x.id === el.modele) || null : null);
+  // Tableau de dimensions d'une fiche technique (texte reconnu) : une ligne par taille (12×17, 1/2", DN50…) et ses
+  // valeurs ; colonne proposée : la longueur la plus plausible (croissante avec le DN, entre 0,6 et 12 fois le DN)
+  const TAILLES_GAZ = { '8x13': 8, '12x17': 10, '15x21': 15, '20x27': 20, '26x34': 25, '33x42': 32, '40x49': 40, '50x60': 50, '66x76': 65, '80x90': 80, '102x114': 100 };
+  const POUCES_DN = { '1/4': 8, '3/8': 10, '1/2': 15, '3/4': 20, 1: 25, '1 1/4': 32, '1"1/4': 32, '1 1/2': 40, '1"1/2': 40, 2: 50, '2 1/2': 65, '2"1/2': 65, 3: 80, 4: 100 };
+  function lireCotesFiche(lignes) {
+    const L = (Array.isArray(lignes) ? lignes : String(lignes || '').split('\n')).map(x => String(x).replace(/\u00a0/g, ' ').trim()).filter(Boolean), out = [];
+    L.forEach(l => {
+      let m, dn = null, taille = '', reste = l;
+      if ((m = /^(\d{1,3})\s*[x×]\s*(\d{2,3})\b/i.exec(l)) && TAILLES_GAZ[`${m[1]}x${m[2]}`]) { dn = TAILLES_GAZ[`${m[1]}x${m[2]}`]; taille = `${m[1]}×${m[2]}`; reste = l.slice(m[0].length); }
+      else if ((m = /^DN\s*(\d{1,4})\b/i.exec(l))) { dn = +m[1]; taille = `DN${m[1]}`; reste = l.slice(m[0].length); }
+      else if ((m = /^(\d(?:\s?\d\/\d|"\d\/\d)?|\d\/\d)\s*(?:"|''|pouces?)/.exec(l)) && POUCES_DN[m[1].replace(/\s+/, ' ')]) { dn = POUCES_DN[m[1].replace(/\s+/, ' ')]; taille = `${m[1]}"`; reste = l.slice(m[0].length); }
+      if (!dn) return;
+      const valeurs = (reste.match(/\d+(?:[.,]\d+)?/g) || []).map(v => Number(v.replace(',', '.')));
+      if (valeurs.length && !out.some(x => x.dn === dn)) out.push({ dn, taille, valeurs });
+    });
+    const cols = Math.max(0, ...out.map(x => x.valeurs.length));
+    let colonne = 0, meilleur = -1;
+    for (let c = 0; c < cols; c++) {
+      const v = out.map(x => [x.dn, x.valeurs[c]]).filter(([, y]) => y > 0), plaus = v.filter(([d, y]) => y >= 0.6 * Math.max(d, 15) && y <= 12 * Math.max(d, 15)).length, croiss = v.every((p, i) => !i || p[1] >= v[i - 1][1]);
+      const note = plaus + (croiss ? 0.5 : 0) - (v.length < out.length ? 1 : 0);
+      if (note > meilleur) { meilleur = note; colonne = c; }
+    }
+    const titre = L.find(l => /^[A-ZÉÈ0-9][A-ZÉÈ0-9 /\-.]{3,40}$/.test(l) && !/FICHE TECHNIQUE|CARACT|DESCRIPTION|^F\d-\d{4}|DOCUMENT|WWW\./i.test(l)) || '';
+    return { lignes: out, colonne, taraude: out.some(x => /×|"/.test(x.taille)), modele: titre, fabricant: (L.find(l => /cgr|tecofi|imi|siemens|danfoss|honeywell|oventrop|comap|watts|flamco|ksb|grundfos|belimo/i.test(l)) || '').match(/cgr|tecofi|imi|siemens|danfoss|honeywell|oventrop|comap|watts|flamco|ksb|grundfos|belimo/i)?.[0].toUpperCase() || '' };
+  }
   const ANGLES_DEVOIEMENT = [45, 30, 60, 90];
   const RACCORDEMENTS = { bride: 'à brides', souder: 'à souder', taraude: 'taraudé', sertir: 'à sertir' };
   // Types de tube : diamètres, épaisseurs, raccords (à souder ou à sertir) et familles du chiffrage. Valeurs indicatives
@@ -114,10 +147,10 @@ const Tuyauterie = (() => {
   function vanneLong(el) {
     const v = VANNES[el.type] || VANNES.boisseau, mod = modeleDe(el), fab = mod && mod.dimensions[String(dnOk(el.dn))];
     const ftf = n(el.l) || fab || lire(el.rac === 'taraude' && v.taraude ? v.taraude : v.table, dnOk(el.dn)).v;
-    return el.rac === 'bride' || !el.rac ? ftf + 2 * (BRIDE[dnOk(el.dn)][1] + JOINT) : ftf;
+    return el.rac === 'bride' || !el.rac ? ftf + 2 * (hB(dnOk(el.dn)) + jt()) : ftf;
   }
   // Vanne 3 voies : cote axe-face = demi face à face (+ contre-bride et joint si à brides) sur les trois voies
-  const axeFaceV3V = el => r1((n(el.l) || SERIE_1[dnOk(el.dn)]) / 2 + (el.rac === 'bride' || !el.rac ? BRIDE[dnOk(el.dn)][1] + JOINT : 0));
+  const axeFaceV3V = el => r1((n(el.l) || SERIE_1[dnOk(el.dn)]) / 2 + (el.rac === 'bride' || !el.rac ? hB(dnOk(el.dn)) + jt() : 0));
   // Dévoiement : deux coudes de l'angle choisi ; cote axe-face de chacun
   const angleDev = el => (ANGLES_DEVOIEMENT.includes(+el.angle) ? +el.angle : 45);
   const axeFaceDev = el => axeFaceCoude({ dn: el.dn, angle: angleDev(el), rayon: el.rayon });
@@ -131,7 +164,7 @@ const Tuyauterie = (() => {
       case 'te': return 2 * axeFaceTe(el);
       case 'reduc': return n(el.l) || REDUC[Math.max(dnOk(el.dn), dnOk(el.dn2))];
       case 'vanne': return vanneLong(el);
-      case 'brides': return 2 * BRIDE[dnOk(el.dn)][1] + JOINT;
+      case 'brides': return 2 * hB(dnOk(el.dn)) + jt();
       case 'raccord': return n(el.l) || r1(DE[dnOk(el.dn)] * (el.type === 'manchon' ? 1.2 : 1.6));
       case 'fond': return n(el.l) || FOND[dnOk(el.dn)];
       default: return n(el.l) || 0;
@@ -170,6 +203,7 @@ const Tuyauterie = (() => {
 
   // Placement en 3D : pièces avec leur géométrie (points en mm), erreurs de saisie, encombrement total
   function placer(rel) {
+    Object.assign(ctx, { pn: (rel && rel.pn) || 'PN16', joint: JOINTS[rel && rel.joint] ? rel.joint : 'fibre', manque: false });
     const pieces = [], erreurs = [], cotes = [], triangles = [];
     // Cotes à l'axe : d'un nœud au suivant (départ, centre des coudes et des tés, extrémité)
     const coter = (a, b, chemin) => { const v = Math.round(len(add(b, a, -1))); if (v >= 1) cotes.push({ a, b, valeur: v, chemin }); };
@@ -221,9 +255,9 @@ const Tuyauterie = (() => {
         if (el.t === 'v3v') {
           const c = axeFaceV3V({ ...el, dn: dnEl }), centre = add(p, d, c), p1 = add(p, d, 2 * c);
           const v = DIRS[el.vers] || DIRS.B, perp = add(v, d, -dot(v, d)), brides = el.rac === 'bride' || !el.rac;
-          const t = (BRIDES_TYPES[el.typeBride] ? el.typeBride : rel.typeBride) === 'tournante' ? 'tournante' : 'collerette', h = BRIDE[dnEl][1] + JOINT / 2;
+          const t = (BRIDES_TYPES[el.typeBride] ? el.typeBride : rel.typeBride) === 'tournante' ? 'tournante' : 'collerette', h = hB(dnEl) + jt() / 2;
           const tg = DIRS[el.tige] || (Math.abs(d[2]) > 0.5 ? DIRS.E : DIRS.H);
-          const piece = { ...base, p1, centre, axeFace: c, dnB: dnEl, brides, ftf: 2 * c - (brides ? 2 * (BRIDE[dnEl][1] + JOINT) : 0) };
+          const piece = { ...base, p1, centre, axeFace: c, dnB: dnEl, brides, ftf: 2 * c - (brides ? 2 * (hB(dnEl) + jt()) : 0) };
           pieces.push(piece);
           coter(noeud, centre, chemin); noeud = centre;
           if (len(perp) < 1e-6) erreurs.push({ chemin: id, msg: 'Vanne 3 voies : la voie B doit partir perpendiculairement à la ligne' });
@@ -284,9 +318,9 @@ const Tuyauterie = (() => {
           const v = DIRS[el.tige] || (Math.abs(d[2]) > 0.5 ? DIRS.E : DIRS.H), perp = add(v, d, -dot(v, d));
           piece.tige = len(perp) < 1e-6 ? (Math.abs(d[0]) > 0.5 ? [0, 1, 0] : [1, 0, 0]) : unit(perp);
           piece.brides = el.rac === 'bride' || !el.rac;
-          piece.ftf = piece.brides ? L - 2 * (BRIDE[dnEl][1] + JOINT) : L;
+          piece.ftf = piece.brides ? L - 2 * (hB(dnEl) + jt()) : L;
           if (piece.brides) {
-            const t = typeB(el.typeBride) === 'tournante' ? 'tournante' : 'collerette', h = BRIDE[dnEl][1] + JOINT / 2;
+            const t = typeB(el.typeBride) === 'tournante' ? 'tournante' : 'collerette', h = hB(dnEl) + jt() / 2;
             piece.joints = [add(p, d, h), add(p1, d, -h)];
             piece.flanges = [t, t];
           }
@@ -337,7 +371,44 @@ const Tuyauterie = (() => {
     };
     const fin = marcher(prep(rel.elements, rel.dnDepart || 50, DIRS[rel.dirDepart] || DIRS.E), [0, 0, 0], DIRS[rel.dirDepart] || DIRS.E, dnOk(rel.dnDepart || 50), '', 0);
     const asm = sys.sertir ? sertissages(pieces) : [];
-    return { pieces, erreurs, fin, cotes, triangles, soudures: sys.sertir ? [] : soudures(pieces, rel), sertissages: asm, sertir: !!sys.sertir, depart: { p: [0, 0, 0], note: String(rel.noteDepart || '').trim() } };
+    if (ctx.manque && pieces.some(pc => (pc.joints || []).length)) erreurs.push({ chemin: '', msg: `Hauteur des brides ${ctx.pn} non renseignée pour certains DN (Paramètres › Brides et joints) : valeurs PN16 indicatives retenues` });
+    const out = { pieces, erreurs, fin, cotes, triangles, soudures: sys.sertir ? [] : soudures(pieces, rel), sertissages: asm, sertir: !!sys.sertir, depart: { p: [0, 0, 0], note: String(rel.noteDepart || '').trim() }, joint: ctx.joint };
+    troncons(out);
+    return out;
+  }
+  // Tronçons préfabriqués : suite d'éléments soudés entre deux assemblages démontables (brides, robinetterie à brides ou
+  // taraudée, raccords) ; repères SP1, SP2… sur les tubes et raccords soudés ; soudures numérotées S1, S2… et rattachées
+  function troncons(pl) {
+    const coupe = pc => (pc.joints || []).length || pc.t === 'brides' || pc.t === 'raccord' || (['vanne', 'v3v'].includes(pc.t) && (pc.el.rac === 'taraude' || pc.el.rac === 'bride' || !pc.el.rac));
+    const dernier = new Map(); let no = 0;
+    pl.pieces.forEach(pc => {
+      const k = pc.id.includes('.b.') ? pc.id.slice(0, pc.id.lastIndexOf('.b.')) : '', chaine = k ? `${k}.b` : '';
+      let prec = dernier.has(chaine) ? dernier.get(chaine) : (k ? (pl.pieces.find(x => x.id === k) || {}).spool ?? null : null);
+      if (coupe(pc)) { pc.spool = null; dernier.set(chaine, null); return; }
+      if (!prec) prec = `SP${++no}`;
+      pc.spool = prec; dernier.set(chaine, prec);
+    });
+    const proche = (a, b) => a && b && Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) < 1;
+    (pl.soudures || []).forEach((sd, i) => { sd.no = `S${i + 1}`; const pc = pl.pieces.find(x => x.spool && (proche(x.p0, sd.p) || proche(x.p1, sd.p) || proche(x.pb, sd.p) || proche(x.piquage, sd.p))); sd.spool = pc ? pc.spool : ''; });
+    const ids = [...new Set(pl.pieces.map(pc => pc.spool).filter(Boolean))];
+    pl.spools = ids.map(id => { const l = pl.pieces.filter(pc => pc.spool === id); return { id, elements: l.length, tube: r1(l.filter(pc => pc.t === 'tube').reduce((t, pc) => t + (pc.coupe || 0), 0)), dn: [...new Set(l.map(pc => pc.dn))], soudures: (pl.soudures || []).filter(sd => sd.spool === id).map(sd => sd.no) }; });
+    return pl.spools;
+  }
+  // Plan de débit des barres : longueurs de coupe rangées par DN sur des barres (6 m par défaut), trait de scie compris,
+  // la plus longue d'abord dans la première barre où elle tient ; une coupe plus longue qu'une barre est à abouter
+  function planDebit(deb, opts = {}) {
+    const barre = Math.max(1000, n(opts.barre) || 6000), trait = n(opts.trait) ?? 3, parDN = new Map();
+    (deb || []).filter(d => d.coupe > 0).forEach(d => { if (!parDN.has(d.dn)) parDN.set(d.dn, []); parDN.get(d.dn).push(d); });
+    return [...parDN.entries()].sort((a, b) => a[0] - b[0]).map(([dn, l]) => {
+      const barres = [], aAbouter = [];
+      [...l].sort((a, b) => b.coupe - a.coupe).forEach(d => {
+        if (d.coupe > barre) { aAbouter.push(d); return; }
+        const b = barres.find(x => x.reste >= d.coupe + (x.coupes.length ? trait : 0));
+        if (b) { b.reste -= d.coupe + (b.coupes.length ? trait : 0); b.coupes.push(d); } else barres.push({ coupes: [d], reste: barre - d.coupe });
+      });
+      return { dn, barre, trait, barres: barres.map((b, i) => ({ no: i + 1, coupes: b.coupes.map(d => ({ id: d.id, repere: d.repere, coupe: d.coupe })), chute: r1(b.reste) })), aAbouter, nbBarres: barres.length + aAbouter.reduce((t, d) => t + Math.ceil(d.coupe / barre), 0),
+        chute: r1(barres.reduce((t, b) => t + b.reste, 0)), utile: r1(l.reduce((t, d) => t + d.coupe, 0)) };
+    });
   }
   // Soudures bout à bout : extrémités des raccords à souder (coudes, tés, réductions, fonds), collerettes et collets des
   // brides, vannes à souder, tube contre tube, raccordement du départ sur l'existant. Les assemblages filetés n'en ont pas.
@@ -436,7 +507,7 @@ const Tuyauterie = (() => {
         if (systeme(rel).sertir) ajoute(`Té à sertir à piquage taraudé ½" ${taille(rel, pc.dn)}`, systeme(rel).normeRaccords, 1);
         else ajoute('Manchon à souder ½" (piquage)', 'EN 10241', 1);
       }
-      (pc.joints || []).forEach(() => { ajoute(`Joint plat DN${pc.dn} ${pn}`, 'EN 1514-1', 1); ajoute(`Jeu de boulonnerie DN${pc.dn} ${pn}`, 'ISO 4014 / ISO 4032', 1); });
+      (pc.joints || []).forEach(() => { ajoute(`${(JOINTS[rel.joint] || JOINTS.fibre)[3]} DN${pc.dn} ${pn}`, (JOINTS[rel.joint] || JOINTS.fibre)[2], 1); ajoute(`Jeu de boulonnerie DN${pc.dn} ${pn}`, 'ISO 4014 / ISO 4032', 1); });
     });
     return [...lignes.values()].sort((a, b) => (a.unite === 'm' ? 0 : 1) - (b.unite === 'm' ? 0 : 1) || a.designation.localeCompare(b.designation, 'fr'));
   }
@@ -453,7 +524,7 @@ const Tuyauterie = (() => {
     // Brides une à une (une tournante va avec son collet), un joint et une boulonnerie par assemblage
     const brides = pc => {
       (pc.flanges || []).forEach(t => { if (S.sertir) ajoute('Bride à sertir', `${pn} raccord à bride`, pc.dn, 1); else if (t === 'tournante') { ajoute('Bride tournante', `${pn} EN 1092-1 type 02`, pc.dn, 1); ajoute('Collet à souder', `${m} EN 1092-1 type 35`.trim(), pc.dn, 1); } else ajoute('Bride à collerette', `${pn} EN 1092-1 type 11`, pc.dn, 1); });
-      (pc.joints || []).forEach(() => { ajoute('Joint plat', `${pn} EN 1514-1`, pc.dn, 1); ajoute('Boulonnerie', `Jeu ${pn}`, pc.dn, 1); });
+      (pc.joints || []).forEach(() => { ajoute((JOINTS[rel.joint] || JOINTS.fibre)[3], `${pn} ${(JOINTS[rel.joint] || JOINTS.fibre)[2]}`, pc.dn, 1); ajoute('Boulonnerie', `Jeu ${pn}`, pc.dn, 1); });
     };
     placement.pieces.forEach(pc => {
       const el = pc.el;
@@ -499,7 +570,7 @@ const Tuyauterie = (() => {
       !((r.elements || []).length || (r.cotes || []).some(c => n(c.valeur) !== null)) && 'au moins une cote ou un élément de tuyauterie'].filter(Boolean);
   }
   const STATUTS = ['Brouillon', 'Relevé', 'Terminé'];
-  return { definirCatalogue, modeles, modeleDe, catalogue: () => catalogue, DN, DE, INSTRUMENTS, SYSTEMES, systeme, cleSysteme, taille, RAYON_3D, TE, REDUC, FOND, BRIDE, BRIDES_TYPES, VANNES, ANGLES_DEVOIEMENT, aBranche, axeFaceV3V, axeFaceDev, RACCORDEMENTS, RACCORDS, MATIERES, PN, TYPES, DIRS, DIRS_LIB, STATUTS,
+  return { lireCotesFiche, JOINTS, definirBrides, planDebit, troncons, definirCatalogue, modeles, modeleDe, catalogue: () => catalogue, DN, DE, INSTRUMENTS, SYSTEMES, systeme, cleSysteme, taille, RAYON_3D, TE, REDUC, FOND, BRIDE, BRIDES_TYPES, VANNES, ANGLES_DEVOIEMENT, aBranche, axeFaceV3V, axeFaceDev, RACCORDEMENTS, RACCORDS, MATIERES, PN, TYPES, DIRS, DIRS_LIB, STATUTS,
     lire, angle, axeFaceCoude, axeFaceTe, longueur, coupes, placer, trouver, listeDe, designation, nomenclature, bilanSoudures, lignesChiffrage, csvChiffrage, debit, manques };
 })();
 if (typeof module !== 'undefined') module.exports = Tuyauterie;

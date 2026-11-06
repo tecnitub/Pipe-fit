@@ -141,6 +141,19 @@ const PlanMes = (() => {
   }
   // Écart d'une mesure à la valeur attendue (%)
   const ecart = m => { const v = Number(String(m.valeur ?? '').replace(',', '.')), a = Number(m.attendu); return m.valeur === '' || m.valeur == null || !Number.isFinite(v) || !a ? null : Math.round((v - a) / a * 1000) / 10; };
-  return { GROUPES, ETATS, FINALES, typeMateriel, propre, pointsChantier, plan, bilan, marquer, lireAttendus, avecAttendus, ecart, norm };
+  // Fiche reprise (PV importé) → tâche de mise en service la plus proche : mots communs de la désignation, du local et
+  // du modèle avec le libellé de la tâche, bonus si le type d'équipement est le même ; null si rien d'assez proche
+  function rattacher(pv, taches, pris = new Set()) {
+    const mots = s => new Set(norm(s).split(' ').filter(w => w.length > 1 && !['de', 'du', 'la', 'le', 'les', 'des', 'et', 'en'].includes(w)));
+    const a = mots([pv.equipement, pv.localisation, pv.zone, pv.modele, pv.marque].filter(Boolean).join(' '));
+    let best = null, note = 0;
+    (taches || []).filter(t => t.nature === 'mes' && !pris.has(t.cle) && !(t.pv && t.pv.statut === 'Signé')).forEach(t => {
+      const b = mots([t.libelle, t.detail, t.local, t.modele].filter(Boolean).join(' ')), communs = [...a].filter(w => b.has(w)).length;
+      const n = (a.size && b.size ? communs / Math.min(a.size, b.size) : 0) + (t.type && t.type === pv.type ? 0.35 : 0) - (t.type && pv.type && t.type !== pv.type ? 0.3 : 0);
+      if (n > note) { note = n; best = t; }
+    });
+    return note >= 0.5 ? best : null;
+  }
+  return { rattacher, GROUPES, ETATS, FINALES, typeMateriel, propre, pointsChantier, plan, bilan, marquer, lireAttendus, avecAttendus, ecart, norm };
 })();
 if (typeof module !== 'undefined') module.exports = PlanMes;

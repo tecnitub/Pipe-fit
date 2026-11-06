@@ -617,6 +617,7 @@ Views.parametres = () => {
   ${reglagesDossierCarte()}
   ${reglagesReseauCarte()}
   ${reglagesAssistantCarte()}
+  ${typeof robinetterieCarte === 'function' ? robinetterieCarte() : ''}
 
   <h2>Comptes utilisateurs</h2>
   <p class="muted">Administrateur : tout. Chargé d'affaires : contacts, devis, chantiers, commandes, factures, planning, RH (pas de suppression de facture). Opérateur : pointage de ses propres heures et consultation du planning. Liez chaque compte opérateur à sa fiche dans « Équipe ».</p>
@@ -679,6 +680,7 @@ function accountModal(acc, onDone) {
 }
 
 Views.parametres.bind = root => {
+  if (typeof bindRobinetterie === 'function') bindRobinetterie(root);
   const on = (sel, fn) => { const el = root.querySelector(sel); if (el) el.onclick = fn; };
   on('#me-sessions', async () => {
     if (!(await ask('Déconnecter tous vos autres appareils (téléphones, autres ordinateurs) ? Celui-ci reste connecté.', 'Déconnecter', false))) return;

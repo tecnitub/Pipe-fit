@@ -225,3 +225,33 @@ test('robinetterie à cotes réelles : modèle du fabricant à la place de la co
   assert.strictEqual(T.longueur({ t: 'vanne', dn: 25, type: 'boisseau', rac: 'taraude', modele: 'Maison V1' }), 77);
   assert.ok(T.catalogue().length > 10); T.definirCatalogue();
 });
+
+test('brides par PN et joints, tronçons préfabriqués et soudures numérotées, plan de débit des barres, cotes lues sur une fiche', () => {
+  const ligne = (x = {}) => ({ matiere: 'Acier P235GH', dn: 80, pn: 'PN16', ...x, elements: [{ t: 'tube', dn: 80, auto: true, cote: 1500 }, { t: 'vanne', dn: 80, type: 'boisseau', rac: 'bride' }, { t: 'coude', dn: 80, angle: 90, vers: 'N' }, { t: 'tube', dn: 80, auto: true, cote: 2000 }] });
+  const vanne = pl => pl.pieces.find(pc => pc.t === 'vanne');
+  // Joint spiralé : 3,3 mm au lieu de 2 de chaque côté ; hauteur de bride PN25 saisie dans les paramètres
+  const L0 = T.longueur({ t: 'vanne', dn: 80, type: 'boisseau', rac: 'bride' });
+  T.placer(ligne({ joint: 'spirale' }));
+  assert.ok(Math.abs(T.longueur({ t: 'vanne', dn: 80, type: 'boisseau', rac: 'bride' }) - (L0 + 2 * 1.3)) < 1e-9);
+  T.definirBrides({ hauteurs: { PN25: { 80: 58 } } });
+  const p25 = T.placer(ligne({ pn: 'PN25' }));
+  assert.ok(Math.abs(vanne(p25).ftf - 310) < 1e-6, 'face à face inchangé');
+  assert.ok(!p25.erreurs.some(e => /Hauteur des brides/.test(e.msg)));
+  assert.ok(T.placer(ligne({ pn: 'PN40' })).erreurs.some(e => /Hauteur des brides PN40 non renseignée/.test(e.msg)));
+  T.definirBrides({}); T.placer(ligne());
+  assert.ok(T.nomenclature(ligne({ joint: 'spirale' })).some(l => /^Joint spiralé DN80 PN16/.test(l.designation)));
+  // Tronçons : la vanne à brides coupe la ligne en deux ; soudures S1… rattachées à leur tronçon
+  const pl = T.placer(ligne());
+  assert.deepStrictEqual(pl.spools.map(s => s.id), ['SP1', 'SP2']);
+  assert.strictEqual(vanne(pl).spool, null);
+  assert.ok(pl.soudures.every((s, i) => s.no === `S${i + 1}` && /^SP\d$/.test(s.spool)));
+  // Plan de débit : coupes rangées sur des barres de 6 m (trait de scie 3 mm), coupe trop longue à abouter
+  const p = T.planDebit([{ id: '0', dn: 50, coupe: 4000 }, { id: '1', dn: 50, coupe: 2500 }, { id: '2', dn: 50, coupe: 1990 }, { id: '3', dn: 50, coupe: 7000 }, { id: '4', dn: 80, coupe: 500 }], { barre: 6000 });
+  const d50 = p.find(x => x.dn === 50);
+  assert.deepStrictEqual(d50.barres.map(b => b.coupes.map(c => c.id)), [['0', '2'], ['1']]);
+  assert.deepStrictEqual([d50.barres[0].chute, d50.aAbouter.map(x => x.id), d50.nbBarres], [7, ['3'], 4]);
+  // Fiche technique lue : tailles gaz → DN, colonne de la longueur proposée
+  const f = T.lireCotesFiche(['ROBINET A SOUPAPE', '12 x 17 25 b. 100 46 0,30', '15 x 21 105 56 0,35', '20 x 27 135 62 0,68', 'DN 50 220 128 2,85']);
+  assert.deepStrictEqual(f.lignes.map(x => x.dn), [10, 15, 20, 50]);
+  assert.ok(f.taraude && f.lignes[1].valeurs.includes(56));
+});

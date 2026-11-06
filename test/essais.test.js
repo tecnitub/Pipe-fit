@@ -136,7 +136,7 @@ test('fiche de relevés de fonctionnement : plaque, mesures par côté, facteur 
   const h = D.miseEnService({ ...m, composants: 'Filtre F7 : 1 × 592 × 592 × 296 mm', reglages: 'Antigel = 5 °C' }, { img: () => '', technicien: 'T', societe: 'S', chantier: { code: 'C1', nom: 'Conservatoire' } });
   ['FICHE DE RELEVÉS DE FONCTIONNEMENT', 'CENTRALE DE TRAITEMENT D', 'SOUFFLAGE', 'EXTRACTION', 'Coefficient K', '3887', 'ÉQUIPEMENTS', 'AUTOCONTRÔLE', '>SO<', 'ÉQUILIBRAGE AÉRAULIQUE', '775x175', 'Débit prévu'].forEach(t => assert.ok(h.includes(t), t));
   const f = D.ficheExcel(m, { chantier: 'Conservatoire', technicien: 'T' });
-  assert.strictEqual(f.name, 'Rév.0'); assert.ok(f.rows.some(r => r[0] === 'Débit ventilateur (facteur K)' && r[1] === 3887));
+  assert.strictEqual(f.name, 'Rév.0'); assert.ok(f.rows.some(r => r[0] && r[0].v === 'Débit ventilateur (facteur K)' && r[4].v === 3887)); assert.ok(f.merges.includes('A1:H1') && f.rows[0][0].s === 'cadreTitre');
   assert.ok(X.build([f]).length > 1000);
   // Pompes : caractéristiques électriques communes, pompe 1 / pompe 2, débit et HMT attendus sur la pompe 1
   const p0 = E.modele('pompes'), pm = P.avecAttendus(p0.mesures, [{ libelle: 'Débit', unite: 'm³/h', valeur: 8.6 }, { libelle: 'Hauteur manométrique', unite: 'mCE', valeur: 6 }]);
@@ -185,4 +185,14 @@ test('plaque lue sur la photo, reprise d\'une fiche Excel, écart du facteur K, 
   const s = E.suiviMes([{ statut: 'Signé', controles: [{ libelle: 'a', etat: 'Non conforme' }], mesures: [{ libelle: 'Débit S-01 — B · soufflage', valeur: '150', attendu: 200 }, { libelle: 'Débit S-02 — B · soufflage', valeur: '', attendu: 100 }] },
     { statut: 'Brouillon', controles: [{ libelle: 'P1', pap: true, etat: 'OK', etatGtb: 'OK' }, { libelle: 'P2', pap: true, etat: 'OK', etatGtb: '' }], mesures: [] }]);
   assert.deepStrictEqual(s, { pv: 2, signes: 1, reserves: 1, lignes: 2, mesurees: 1, horsTolerance: 1, points: 2, pointsFaits: 1, pointsNc: 0 });
+});
+
+test('fiche reprise rattachée à la tâche de mise en service la plus proche', () => {
+  const P = require('../public/js/plan-mes');
+  const taches = [{ cle: 'a', nature: 'mes', type: 'cta', libelle: 'CTA — Ventilation salle orchestre' }, { cle: 'b', nature: 'mes', type: 'vmc', libelle: 'Ventilation — Extraction salles de répétition' }, { cle: 'c', nature: 'mes', type: 'pompes', libelle: 'Pompe du circuit CTA' }];
+  assert.strictEqual(P.rattacher({ type: 'cta', equipement: 'Orchestre', localisation: 'Toiture' }, taches).cle, 'a');
+  assert.strictEqual(P.rattacher({ type: 'vmc', equipement: 'Salles', localisation: 'Toiture' }, taches).cle, 'b');
+  assert.strictEqual(P.rattacher({ type: 'pompes', equipement: 'Pompes CTA' }, taches).cle, 'c');
+  assert.strictEqual(P.rattacher({ type: 'cta', equipement: 'Orchestre' }, taches, new Set(['a'])), null, 'tâche déjà prise');
+  assert.strictEqual(P.rattacher({ type: 'chaudiere', equipement: 'Chaudière gaz' }, taches), null);
 });

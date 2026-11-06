@@ -64,27 +64,47 @@ const EssaisDoc = (() => {
     <p><strong>Attestation.</strong> Je soussigné ${esc(x.technicien)}, technicien de ${esc(x.societe)}, atteste avoir procédé le ${dateFr(m.date)} aux relevés de fonctionnement de l'équipement « ${esc(m.equipement)} » du chantier ${esc(x.chantier.code || '')}.</p>
     ${photos(m.photos, x)}${signatures(m, x)}`;
   }
-  // Même fiche en classeur Excel (une feuille « Rév.0 », comme le modèle de l'entreprise)
+  // Même fiche en classeur Excel, mise en page du modèle de l'entreprise (feuille « Rév.0 », 8 colonnes, titres
+  // fusionnés, cellules encadrées) : en-tête, caractéristiques, mesures par côté, équipements, réglages, autocontrôle,
+  // équilibrage, observations
   function ficheExcel(m, x = {}) {
     const E = ESSAI(), f = (E.TYPES[m.type] || {}).fiche || { titre: (E.TYPES[m.type] || {}).libelle || 'Équipement' }, prevu = E.debitPrevu(m), rl = (m.mesures || []).filter(v => E.releve(v));
     const v = y => { const s = String(y ?? '').trim(); if (!s) return '/'; const n = Number(s.replace(',', '.')); return /^-?\d+([.,]\d+)?$/.test(s) && Number.isFinite(n) ? n : s; };
-    const B = t => ({ v: t, s: 'bold' }), H = t => ({ v: t, s: 'head' });
-    const rows = [[{ v: 'FICHE DE RELEVÉS DE FONCTIONNEMENT', s: 'title' }], [B(f.titre.toUpperCase())], [],
-      [B('CHANTIER :'), x.chantier || '', '', B('DATE :'), dateFr(m.date)], [B('LOCALISATION :'), [m.localisation, m.zone].filter(Boolean).join(' — '), '', B('DÉSIGNATION :'), m.equipement || ''],
-      [B('MARQUE :'), m.marque || '', '', B('RÉFÉRENCES :'), m.modele || ''], ...(prevu !== null ? [[B('DÉBIT PRÉVU :'), prevu, 'm³/h']] : []), []];
+    const rows = [], merges = [], hauteurs = {}, C = 'ABCDEFGH';
+    const ligne = (cells, fus = []) => { const r = rows.length + 1; rows.push(cells); fus.forEach(([a, b]) => merges.push(`${C[a]}${r}:${C[b]}${r}`)); return r; };
+    const cad = (val, s = 'cadre') => ({ v: val === '' || val === undefined ? ' ' : val, s });
+    const titre = t2 => { ligne([cad(t2, 'cadreSection'), ...Array(7).fill(cad('', 'cadreSection'))], [[0, 7]]); };
+    const r1 = ligne([cad('FICHE DE RELEVÉS\nDE FONCTIONNEMENT', 'cadreTitre'), ...Array(7).fill(cad('', 'cadreTitre'))], [[0, 7]]); hauteurs[r1 - 1] = 42;
+    ligne([]); ligne([cad(f.titre.toUpperCase(), 'cadreSection'), ...Array(7).fill(cad('', 'cadreSection'))], [[0, 7]]); ligne([]);
+    const paire = (l1, v1, l2, v2) => ligne([cad(l1, 'cadreLabel'), cad(''), cad(v1), cad(''), cad(l2, 'cadreLabel'), cad(v2), cad(''), cad('')], [[0, 1], [2, 3], [5, 7]]);
+    paire('CHANTIER :', x.chantier || '', 'DATE :', dateFr(m.date));
+    paire('LOCALISATION :', [m.localisation, m.zone].filter(Boolean).join(' — '), 'DÉSIGNATION :', m.equipement || '');
+    paire('MARQUE :', m.marque || '', 'RÉFÉRENCES :', m.modele || '');
+    if (prevu !== null) ligne([cad('DÉBIT PRÉVU :', 'cadreLabel'), cad(''), cad(''), cad(prevu, 'cadreNum'), cad('m³/h')], [[0, 2]]);
+    ligne([]);
     const pl = sec => (m.plaque || []).filter(p => (p.section || '') === sec), me = sec => (m.mesures || []).filter(y => !E.releve(y) && (y.section || '') === sec);
-    if (pl('').length) rows.push([H(m.type === 'pompes' ? 'CARACTÉRISTIQUES ÉLECTRIQUES' : 'CARACTÉRISTIQUES')], ...pl('').map(p => [p.libelle, v(p.valeur)]), []);
-    sectionsFiche(m).forEach(sec => {
-      if (sec) rows.push([H(sec.toUpperCase())], ...(pl(sec).length && sec ? [[B('CARACTÉRISTIQUES')], ...pl(sec).map(p => [p.libelle, v(p.valeur)])] : []));
-      if (me(sec).length) rows.push([B(sec ? 'MESURES ÉLECTRIQUES ET AÉRAULIQUES' : 'AUTRES RELEVÉS'), 'Valeur', 'Unité', 'Prévu (étude)'], ...me(sec).map(y => [y.libelle, v(y.valeur), y.unite || '', vide(y.attendu) ? '' : y.attendu]), []);
-    });
-    if (m.composants) rows.push([H('ÉQUIPEMENTS')], ...String(m.composants).split(/\n+/).map(t => [t]), []);
-    if (m.reglages) rows.push([H('RÉGLAGES')], ...String(m.reglages).split(/\n+/).map(t => [t]), []);
-    rows.push([H('AUTOCONTRÔLE // TESTS DES ÉQUIPEMENTS DE SÉCURITÉ')], ['NC = Non conforme', 'C = Conforme', 'SO = Sans objet'], ...(m.controles || []).map(c => [c.libelle, CNS[c.etat] || '', c.obs || '']), []);
-    if (rl.length) rows.push([H(`ÉQUILIBRAGE ${m.type === 'pompes' ? 'HYDRAULIQUE' : 'AÉRAULIQUE'}`)], [B('ANTENNE / LOCAL / DIFFUSEUR'), B('SECTION / DIAMÈTRE'), B('RÉGLAGE'), B('DÉBIT PRÉVU'), B('DÉBIT MESURÉ')],
-      ...rl.map(y => { const r = E.releve(y); return [`${r.repere}${r.piece ? ` — ${r.piece}` : ''} (${r.detail})`, y.dim || '', y.reglage || '/', vide(y.attendu) ? '' : y.attendu, v(y.valeur)]; }), []);
-    rows.push([H('OBSERVATIONS / REMARQUES')], [m.observations || ''], [], [B('CONCLUSION :'), m.resultat || ''], [B('TECHNICIEN :'), x.technicien || m.technicien || '']);
-    return { name: 'Rév.0', cols: [46, 22, 14, 18, 22], rows };
+    const plaque = sec => { if (!pl(sec).length) return; titre(m.type === 'pompes' && !sec ? 'CARACTÉRISTIQUES ÉLECTRIQUES' : 'CARACTÉRISTIQUES');
+      for (let i = 0; i < pl(sec).length; i += 2) { const a = pl(sec)[i], b = pl(sec)[i + 1]; ligne([cad(a.libelle, 'cadreLabel'), cad(''), cad(v(a.valeur), 'cadreNum'), cad(''), cad(b ? b.libelle : '', 'cadreLabel'), cad(''), cad(b ? v(b.valeur) : '', 'cadreNum'), cad('')], [[0, 1], [2, 3], [4, 5], [6, 7]]); } };
+    const mesures = sec => { if (!me(sec).length) return; titre(sec ? 'MESURES ÉLECTRIQUES ET AÉRAULIQUES' : (sectionsFiche(m).some(Boolean) ? 'AUTRES RELEVÉS' : 'MESURES'));
+      ligne([cad('Mesure', 'cadreGras'), cad('', 'cadreGras'), cad('', 'cadreGras'), cad('', 'cadreGras'), cad('Valeur', 'cadreGras'), cad('Unité', 'cadreGras'), cad('Prévu (étude)', 'cadreGras'), cad('', 'cadreGras')], [[0, 3], [6, 7]]);
+      me(sec).forEach(y => ligne([cad(y.libelle), cad(''), cad(''), cad(''), cad(v(y.valeur), 'cadreNum'), cad(y.unite || '', 'cadreNum'), cad(vide(y.attendu) ? '' : y.attendu, 'cadreNum'), cad('')], [[0, 3], [6, 7]])); };
+    plaque('');
+    sectionsFiche(m).filter(Boolean).forEach(sec => { ligne([]); ligne([cad(sec.toUpperCase(), 'cadreTitre'), ...Array(7).fill(cad('', 'cadreTitre'))], [[0, 7]]); plaque(sec); mesures(sec); });
+    if (me('').length) { ligne([]); mesures(''); }
+    const bloc = (t2, txt) => { if (!txt) return; ligne([]); titre(t2); String(txt).split(/\n+/).forEach(l => ligne([cad(`. ${l}`), ...Array(7).fill(cad(''))], [[0, 7]])); };
+    bloc('ÉQUIPEMENTS', m.composants); bloc('RÉGLAGES', m.reglages);
+    ligne([]); titre('AUTOCONTRÔLE // TESTS DES ÉQUIPEMENTS DE SÉCURITÉ');
+    ligne([cad('', 'cadreGras'), cad('NC = Non conforme', 'cadreGras'), cad('C = Conforme', 'cadreGras'), cad('SO = Sans objet', 'cadreGras'), cad('Contrôle', 'cadreGras'), cad('', 'cadreGras'), cad('', 'cadreGras'), cad('Observation', 'cadreGras')], [[4, 6]]);
+    (m.controles || []).filter(c => !c.pap).forEach(c => ligne([cad(''), cad(c.etat === 'Non conforme' ? 'X' : '', 'cadreNum'), cad(c.etat === 'OK' ? 'X' : '', 'cadreNum'), cad(c.etat === 'Sans objet' ? 'X' : '', 'cadreNum'), cad(c.libelle), cad(''), cad(''), cad(c.obs || '')], [[4, 6]]));
+    if (rl.length) {
+      ligne([]); titre(`ÉQUILIBRAGE ${m.type === 'pompes' || /eau/.test(E.releve(rl[0]).grandeur) ? 'HYDRAULIQUE' : 'AÉRAULIQUE'}`);
+      const rh = ligne([cad('ANTENNE / LOCAL / DIFFUSEUR', 'cadreGras'), cad('', 'cadreGras'), cad('', 'cadreGras'), cad('SECTION / DIAMÈTRE', 'cadreGras'), cad('RÉGLAGE', 'cadreGras'), cad('DÉBIT PRÉVU (m³/h)', 'cadreGras'), cad('', 'cadreGras'), cad('DÉBIT MESURÉ (m³/h)', 'cadreGras')], [[0, 2], [5, 6]]); hauteurs[rh - 1] = 30;
+      rl.forEach(y => { const r = E.releve(y); ligne([cad(`${r.repere}${r.piece ? ` — ${r.piece}` : ''} (${r.detail})`), cad(''), cad(''), cad(y.dim || '', 'cadreNum'), cad(y.reglage || '/', 'cadreNum'), cad(vide(y.attendu) ? '' : y.attendu, 'cadreNum'), cad(''), cad(v(y.valeur), 'cadreNum')], [[0, 2], [5, 6]]); });
+    }
+    ligne([]); titre('OBSERVATIONS / REMARQUES');
+    const ro = ligne([cad(m.observations || ''), ...Array(7).fill(cad(''))], [[0, 7]]); hauteurs[ro - 1] = 60;
+    ligne([]); paire('CONCLUSION :', m.resultat || '', 'TECHNICIEN :', x.technicien || m.technicien || '');
+    return { name: 'Rév.0', cols: [22, 14, 14, 14, 18, 12, 12, 16], rows, merges, hauteurs, ajuster: true };
   }
   function miseEnService(m, x) {
     const E = typeof Essais !== 'undefined' ? Essais : require('./essais'), type = E.TYPES[m.type] || {};

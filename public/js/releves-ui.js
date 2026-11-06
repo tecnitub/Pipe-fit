@@ -28,6 +28,7 @@ function nouveauReleve(query) {
 
 Views.releve = (params, query) => {
   Tuyauterie.definirCatalogue(((Store.data || {}).settings || {}).robinetterie || []);
+  Tuyauterie.definirBrides(((Store.data || {}).settings || {}).brides || {});
   const id = params[0] || 'new';
   const rec = id !== 'new' && Store.get('releves', id);
   if (id !== 'new' && !rec) return '<p>Relevé introuvable.</p>';
@@ -75,6 +76,8 @@ function releveForm(r) {
         <div class="field"><label for="rl-systeme">Type de tube</label><select id="rl-systeme">${Object.entries(Tuyauterie.SYSTEMES).map(([k, s]) => `<option value="${k}" ${Tuyauterie.cleSysteme(r) === k ? 'selected' : ''}>${esc(s.lib)}</option>`).join('')}</select></div>
         <div class="field"><label for="rl-matiere">Matière</label><select id="rl-matiere" data-rl="matiere">${optionsStr(Tuyauterie.MATIERES, r.matiere)}</select></div>
         <div class="field"><label for="rl-pn">Pression nominale</label><select id="rl-pn" data-rl="pn">${optionsStr(Tuyauterie.PN, r.pn)}</select></div>
+        <div class="field"><label for="rl-joint">Joints des brides</label><select id="rl-joint" data-rl="joint">${Object.entries(Tuyauterie.JOINTS).map(([k, j]) => `<option value="${k}" ${(r.joint || 'fibre') === k ? 'selected' : ''}>${esc(j[0])}</option>`).join('')}</select></div>
+        <div class="field"><label for="rl-barre">Longueur des barres (m)</label><input id="rl-barre" data-rl="barre" inputmode="decimal" value="${esc(String(r.barre || 6).replace('.', ','))}"></div>
         <div class="field"><label for="rl-typeBride">Brides de la ligne</label><select id="rl-typeBride" data-rl="typeBride">${Object.entries(Tuyauterie.BRIDES_TYPES).map(([k, l]) => `<option value="${k}" ${(r.typeBride || 'collerette') === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
       </div>
       ${deja.length ? `<p class="small muted">Déjà relevé sur ce chantier : ${deja.map(x => `<a href="#/releve/${esc(x.id)}">${esc(x.ligne)}</a> (${dateFr(x.date)})`).join(' · ')}</p>` : ''}
@@ -216,11 +219,28 @@ function calculsReleveHtml(r, pl) {
   return `<div class="table-wrap"><table class="compact"><tr><th>Élément</th><th>Repère</th><th>DN</th><th class="num">Ø ext.</th><th class="num">Cote axe à axe</th><th class="num">Longueur de coupe</th></tr>
     ${deb.map(d => `<tr><td>${esc(numeroEl(d.id))}</td><td>${esc(d.repere)}</td><td>${esc(Tuyauterie.taille(r, d.dn))}</td><td class="num">${fmt(d.de, 1)}</td><td class="num">${d.cote !== null ? `${fmt(d.cote)} mm` : '—'}</td><td class="num"><strong>${fmt(d.coupe)} mm</strong></td></tr>`).join('')}
     <tr class="total"><td colspan="5">Total tube ${Object.entries(parDN).map(([dn, l]) => `DN${dn} : ${fmt(l / 1000, 2)} m`).join(' · ')}</td><td class="num">${fmt(deb.reduce((s, d) => s + d.coupe, 0) / 1000, 2)} m</td></tr></table></div>
+  ${planDebitHtml(r, pl, 'compact')}${tronconsHtml(r, pl, 'compact')}
   ${souduresHtml(pl)}
   <div class="table-wrap"><table class="compact"><tr><th>Désignation</th><th>Norme</th><th class="num">Qté</th></tr>
     ${nom.map(l => `<tr><td>${esc(l.designation)}</td><td class="small">${esc(l.norme)}</td><td class="num">${fmt(l.quantite, l.unite === 'm' ? 2 : 0)} ${esc(l.unite)}</td></tr>`).join('')}</table></div>
-  <p class="small muted">Dimensions des accessoires : valeurs nominales des normes (ISO 3419 / EN 10253 pour les raccords à souder, EN 1092-1 pour les brides PN16, EN 558 pour la robinetterie). À confirmer avec les fiches techniques des fabricants avant découpe ; une longueur saisie remplace la valeur de la norme.</p>
+  <p class="small muted">Dimensions des accessoires : valeurs nominales des normes (ISO 3419 / EN 10253 pour les raccords à souder, EN 1092-1 pour les brides — hauteurs de l'entreprise si saisies dans les paramètres, sinon PN16 indicatives —, EN 558 pour la robinetterie sauf modèle du fabricant choisi). À confirmer avec les fiches techniques des fabricants avant découpe ; une longueur saisie remplace la valeur de la norme.</p>
   ${prixReleveHtml(r)}`;
+}
+// Plan de débit des barres : coupes rangées par DN sur des barres de la longueur choisie (6 m par défaut), trait de scie 3 mm
+function planDebitHtml(r, pl, cls = 'doc-lines compact') {
+  const p = Tuyauterie.planDebit(Tuyauterie.debit(pl), { barre: num(r.barre || 6) * 1000 });
+  if (!p.length) return '';
+  return `<h4 style="margin:.6em 0 .2em">Plan de débit — barres de ${fmt(num(r.barre || 6), 1)} m (trait de scie 3 mm) : ${p.map(x => `${Tuyauterie.taille(r, x.dn)} × ${x.nbBarres}`).join(' · ')}</h4>
+    <div class="table-wrap"><table class="${cls}"><tr><th>DN</th><th>Barre</th><th>Coupes (élément : longueur)</th><th class="num">Chute (mm)</th></tr>
+    ${p.flatMap(x => [...x.barres.map(b => `<tr><td>${esc(Tuyauterie.taille(r, x.dn))}</td><td>${b.no}</td><td>${b.coupes.map(c => `${esc(numeroEl(c.id))}${c.repere ? ` (${esc(c.repere)})` : ''} : <strong>${fmt(c.coupe)}</strong>`).join(' · ')}</td><td class="num">${fmt(b.chute)}</td></tr>`),
+      ...x.aAbouter.map(d => `<tr><td>${esc(Tuyauterie.taille(r, x.dn))}</td><td>à abouter</td><td>${esc(numeroEl(d.id))} : <strong>${fmt(d.coupe)}</strong> (plus longue qu'une barre : soudure de raboutage à prévoir)</td><td></td></tr>`)]).join('')}</table></div>`;
+}
+// Tronçons préfabriqués (spools) entre assemblages démontables, soudures numérotées
+function tronconsHtml(r, pl, cls = 'doc-lines compact') {
+  if (!(pl.spools || []).length) return '';
+  return `<h4 style="margin:.6em 0 .2em">Tronçons préfabriqués (atelier) et soudures</h4><div class="table-wrap"><table class="${cls}"><tr><th>Tronçon</th><th>DN</th><th class="num">Éléments</th><th class="num">Tube (mm)</th><th>Soudures</th></tr>
+    ${pl.spools.map(sp => `<tr><td><strong>${esc(sp.id)}</strong></td><td>${sp.dn.map(d => esc(Tuyauterie.taille(r, d))).join(', ')}</td><td class="num">${sp.elements}</td><td class="num">${fmt(sp.tube)}</td><td>${esc(sp.soudures.join(', ') || '—')}</td></tr>`).join('')}
+    ${(pl.soudures || []).some(sd => !sd.spool) ? `<tr><td>Montage</td><td></td><td></td><td></td><td>${esc(pl.soudures.filter(sd => !sd.spool).map(sd => sd.no).join(', '))}</td></tr>` : ''}</table></div>`;
 }
 // Soudures bout à bout (points bleus de l'isométrique)
 function souduresHtml(pl) {
@@ -297,7 +317,7 @@ Views.releve.bind = (root, params) => {
   };
   root.querySelectorAll('[data-rl]').forEach(el => el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
     r[el.dataset.rl] = el.value;
-    if (el.dataset.rl === 'typeBride') App.render(); else if (['matiere', 'pn'].includes(el.dataset.rl)) majCalculs();
+    if (el.dataset.rl === 'typeBride') App.render(); else if (['matiere', 'pn', 'joint', 'barre'].includes(el.dataset.rl)) majCalculs();
   }));
   $('#rl-aff').onchange = () => { r.affaireId = $('#rl-aff').value; r.visite = !r.affaireId; App.render(); };
   if ($('#rl-client')) $('#rl-client').onchange = () => { r.clientId = $('#rl-client').value; App.render(); };
@@ -444,7 +464,7 @@ function releveFicheVue(r) {
   const bureau = Store.me.role !== 'atelier';
   return `<div class="toolbar no-print"><a href="${retourReleve(r)}" class="btn secondary">← ${bureau ? 'Chantier' : 'Rapports'}</a><span class="spacer"></span>
     <a class="btn secondary" href="#/releve/${esc(r.id)}">${r.statut === 'Terminé' ? 'Modifier' : 'Compléter (photos après…)'}</a>
-    ${boutonsChiffrageReleve(r)}<button class="secondary print-btn" data-print>Imprimer</button><button class="secondary dl-btn" id="rl-pdf">PDF</button></div>
+    ${boutonsChiffrageReleve(r)}<button class="secondary print-btn" data-print>Imprimer</button><button class="secondary dl-btn" id="rl-pdf">PDF</button>${typeof Dxf !== 'undefined' ? '<button class="secondary dl-btn" id="rl-dxf" title="Isométrique au trait pour AutoCAD : axe, symboles, cotes, repères, soudures">Isométrique (DXF)</button>' : ''}</div>
   <h1 class="no-print">Prise de cotes ${esc(r.numero || '')} · ${esc(r.ligne)} ${badgeReleve(r)}</h1>
   <div class="doc-print">${releveDocument(r)}</div>`;
 }
@@ -460,7 +480,7 @@ function releveDocument(r) {
     <table class="doc-lines compact ppsps-t">${[l('Ligne', `<strong>${esc(r.ligne)}</strong>`), r.fluide ? l('Fluide', esc(r.fluide)) : '', l('Type de tube', esc(Tuyauterie.systeme(r).lib)), l('Matière, pression nominale', esc(`${r.matiere || ''} · ${r.pn || ''}`)),
       l('Relevé par', esc(r.technicien || userName(r.userId))), l('État', esc(r.statut || ''))].join('')}</table>
     ${pl.pieces.length ? `<h3 class="doc-h">Isométrique</h3><div class="rl-iso"><img src="${Vue3D.image(pl)}" alt="Isométrique de la ligne"></div><p class="small">Repère : Nord vers la droite en haut, Est vers la droite en bas. Cotes à l'axe en mm, d'un nœud au suivant (départ, centre des coudes 3D et des tés, extrémité). Point bleu : soudure bout à bout. Triangles hachurés : dévoiements (avance et décalages cotés).</p>` : ''}
-    ${annotationsHtml(r, pl)}${souduresHtml(pl)}
+    ${annotationsHtml(r, pl)}${souduresHtml(pl)}${tronconsHtml(r, pl)}${planDebitHtml(r, pl)}
     ${deb.length ? `<h3 class="doc-h">Fiche de débit</h3><div class="table-wrap"><table class="doc-lines compact"><tr><th>Élément</th><th>Repère</th><th>DN</th><th class="num">Ø ext.</th><th class="num">Cote axe à axe</th><th class="num">Longueur de coupe</th></tr>
       ${deb.map(d => `<tr><td>${esc(numeroEl(d.id))}</td><td>${esc(d.repere)}</td><td>${esc(Tuyauterie.taille(r, d.dn))}</td><td class="num">${fmt(d.de, 1)}</td><td class="num">${d.cote !== null ? fmt(d.cote) : '—'}</td><td class="num"><strong>${fmt(d.coupe)}</strong></td></tr>`).join('')}</table></div>` : ''}
     ${nom.length ? `<h3 class="doc-h">Nomenclature</h3><div class="table-wrap"><table class="doc-lines compact"><tr><th>Désignation</th><th>Norme</th><th class="num">Quantité</th></tr>
@@ -488,6 +508,8 @@ function relevesChantierHtml(a) {
 // Liste du matériel vers le chiffrage depuis plan (bureau) et en fichier .csv (Excel, logiciel de chiffrage, fournisseur)
 const boutonsChiffrageReleve = r => `${Store.can('write', 'chiffrages') && Store.me.role !== 'atelier' ? '<button class="secondary" id="rl-chiffrage">→ Chiffrage</button>' : ''}<button class="secondary dl-btn" id="rl-csv">Liste matériel (.csv)</button>`;
 function brancherChiffrageReleve(root, releve) {
+  const dx = root.querySelector('#rl-dxf');
+  if (dx) dx.onclick = () => { const r = releve(), svg = Vue3D.svgIso(Tuyauterie.placer(r), `Ligne ${r.ligne || ''} — relevé ${r.numero || ''}`.trim()); if (!svg) return notify('Ligne vide.'); download(`Isometrique-${r.numero || r.ligne || 'releve'}.dxf`.replace(/[^\w.-]+/g, '_'), Dxf.depuisSvg(svg).octets, 'application/dxf'); };
   const csv = root.querySelector('#rl-csv'), ch = root.querySelector('#rl-chiffrage');
   if (csv) csv.onclick = () => { const r = releve(); download(`Liste-materiel-${r.numero || r.ligne || 'releve'}.csv`.replace(/[^\w.-]+/g, '_'), `\ufeff${Tuyauterie.csvChiffrage(Tuyauterie.lignesChiffrage(r))}`, 'text/csv'); };
   if (ch) ch.onclick = () => envoyerAuChiffrage(releve());
