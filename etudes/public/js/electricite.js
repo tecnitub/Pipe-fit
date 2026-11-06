@@ -184,6 +184,14 @@ const Electricite = ((N, Sc) => {
     virt('horsGel', { rep: 'TE-HG', designation: 'Sonde extérieure de hors gel', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
     // Thermostats de sécurité décochés : retirés de la chaîne de sécurité (ceux repris de l'étude)
     if (!opt.has('thermostatSecu')) for (let i = listeEq.length - 1; i >= 0; i--) if (/thermostat de sécurité/i.test(listeEq[i].designation || '') && listeEq[i].src) listeEq.splice(i, 1);
+    // Moteurs doubles (pompes, ventilateurs, CTA) : deux moteurs M1 / M2, un seul en marche (permutation, secours)
+    for (let i = listeEq.length - 1; i >= 0; i--) {
+      const x = listeEq[i];
+      if (x.moteurs === 'double' && ['pompe', 'ventilateur', 'cta'].includes(x.type)) {
+        const rep0 = String(x.rep || '').trim() || `${(TYPES_EQ[x.type] || TYPES_EQ.autre)[5]}${i + 1}`;
+        listeEq.splice(i, 1, ...[1, 2].map(k => ({ ...x, rep: `${rep0}-M${k}`, designation: `${x.designation || (TYPES_EQ[x.type] || TYPES_EQ.autre)[0]} — moteur ${k}`, groupe: rep0, moteur2: k === 2, src: x.src ? `${x.src}#M${k}` : '' })));
+      }
+    }
     const eqs = listeEq.map((x, i) => {
       const t = TYPES_EQ[x.type] || TYPES_EQ.autre, rep = String(x.rep || `${t[5]}${i + 1}`).trim();
       if (reps.has(rep)) alertes.push(alerte('erreur', `Repère ${rep} en double.`)); reps.add(rep);
@@ -271,6 +279,7 @@ const Electricite = ((N, Sc) => {
       if (q.pilote && q.pilote.techno === 'synco' && app === 'terminaux' && q.regulation !== 'aucune' && q.regulation !== 'esclave') lst = ['Marche / arrêt', 'Consigne de température', 'Température ambiante', 'Mode (confort, réduit, hors gel)', 'Mode chaud / froid', 'État de marche', 'Défaut'].map(d => ['', d, 'Bus']);
       const protoLoc = q.pilote && q.pilote.techno === 'synco' && app === 'terminaux' ? 'KNX' : '';
       if (q.pilote && q.pilote.techno === 'integree' && q.regulation !== 'aucune') { lst = liste.filter(([, , t]) => t === 'ETOR' || t === 'Bus'); if (!lst.length) lst = [['', 'Défaut / état (régulation intégrée)', 'ETOR']]; }
+      if (q.groupe && !q.moteur2) lst = [...lst, ['', 'Commutateur M1 / M2 en position Auto', 'ETOR']];
       for (let k = 1; k <= nb; k++) lst.forEach(([, des, type]) => { const p = [nb > 1 ? `${q.rep}.${String(k).padStart(2, '0')}` : q.rep, `${des} — ${court}`, type, q.pilote ? q.pilote.rep : 'autonome', classeGtb(des, type), type === 'Bus' ? protoLoc || proto : '', `${q.rep} — ${court}${q.local && !court.includes(q.local) ? ` (${q.local})` : ''}`, des, q.src || '', app]; pts.push(p); if (q.pilote) q.pilote.pts.push(p); });
     });
     arm.forEach(a => { (a.sondes || '').split(/[;\n]+/).map(s => s.trim()).filter(Boolean).forEach(s => { const p = [`S-${a.rep}`, s, 'EA', a.rep, 'TM', '', `Mesures communes de l'armoire ${a.rep}`, s]; pts.push(p); a.pts.push(p); }); });
@@ -363,7 +372,9 @@ const Electricite = ((N, Sc) => {
         if (q.km) { add('Commande', 'Contacteur bobine 24 V', `${tri ? '3P' : '2P'} ${q.d.cal} A (AC-3)`); modules += tri ? 3 : 2; }
         if (q.depart === 'variateur') { add('Variation', 'Variateur de vitesse', `${nf(num(q.P), 2)} kW ${tri ? '400 V tri' : '230 V mono'}, entrée 0-10 V, relais de défaut`); add('Protection', 'Interrupteur différentiel 30 mA type B ou F', `${tri ? '4P' : '2P'} ${q.d.cal} A`); variateurs++; modules += tri ? 4 : 2; }
         if (q.depart === 'etoile') add('Commande', 'Démarreur progressif (ou étoile-triangle)', `${nf(num(q.P), 2)} kW`);
-        if (q.moteur && (q.km || q.depart === 'variateur')) { add('Façade', 'Commutateur arrêt / auto / manu', '3 positions'); add('Façade', 'Voyants marche (vert) et défaut (rouge)', 'LED 24 V', 2); }
+        if (q.groupe) { if (!q.moteur2) { add('Façade', 'Commutateur Moteur 1 / Moteur 2 / Auto / Arrêt', '4 positions, pompe ou ventilateur double'); add('Commande', 'Contacts auxiliaires de verrouillage mutuel M1 / M2', 'sur contacteurs', 2); } add('Façade', 'Voyants marche (vert) et défaut (rouge)', 'LED 24 V', 2); }
+        else if (q.type === 'cta' && !q.km && q.depart !== 'variateur') { add('Façade', 'Commutateur Manu / Auto / Arrêt', '3 positions'); add('Commande', 'Relais d\'autorisation de marche de la CTA', 'contact sec vers l\'armoire de la CTA'); add('Façade', 'Voyants marche (vert) et défaut (rouge)', 'LED 24 V', 2); }
+        else if (q.moteur && (q.km || q.depart === 'variateur')) { add('Façade', 'Commutateur Manu / Auto / Arrêt', '3 positions'); add('Façade', 'Voyants marche (vert) et défaut (rouge)', 'LED 24 V', 2); }
       });
       const n24 = b24.length, nVannes = b24.filter(q => ['vanne', 'regulateur'].includes(q.type)).length;
       void n24; void nVannes;
@@ -418,7 +429,10 @@ const Electricite = ((N, Sc) => {
         ['Total CVC au TGBT', `simultanéité ${nf(ksT * 100, 0)} %`, nf(bilan.reduce((s, x) => s + x.P, 0), 2), '', nf(Pappel, 2), Sappel ? nf(Pappel / Sappel, 2) : '—', nf(Sappel, 2), `${nf(Itgbt, 1)} (phases équilibrées)`]], total: true };
     // Analyse fonctionnelle : une phrase par équipement, puis les principes communs
     const af = eqs.map(q => `${q.rep} — ${q.designation || q.t[0]}${q.regulation !== 'aucune' ? '' : ''} : ${q.afAuto || (REGULS[q.regulation] || REGULS.aucune)[2]}${q.fonctionnement ? `. ${String(q.fonctionnement).trim().replace(/\.$/, '')}` : ''}${q.pilote ? ` (automate de l'armoire ${q.pilote.rep})` : q.regulation === 'aucune' ? '' : ' (régulation autonome)'}.`);
-    af.push(`Modes de marche de chaque départ : arrêt / automatique / marche forcée (commutateur en façade ou forçage depuis la ${e.gtb && e.gtb !== 'aucune' ? `GTB (${e.gtb})` : 'supervision'}) ; voyants de marche et de défaut.`);
+    const groupes = [...new Set(eqs.filter(q => q.groupe).map(q => q.groupe))], perm = num(e.permutation, 168);
+    groupes.forEach(g => af.push(`${g} — moteurs doubles ${g}-M1 / ${g}-M2 : commutateur Moteur 1 / Moteur 2 / Auto / Arrêt ; en Auto, un seul moteur en marche, permutation automatique toutes les ${nf(perm, 0)} h de fonctionnement et basculement immédiat sur l'autre moteur en cas de défaut (disjoncteur, variateur ou absence de retour de marche) avec alarme ; en position M1 ou M2, marche forcée du moteur choisi hors automate (sécurités câblées maintenues) ; verrouillage mutuel des contacteurs.`));
+    if (eqs.some(q => q.type === 'cta')) af.push('CTA : commutateur Manu / Auto / Arrêt en façade ; Auto = autorisation de marche par l\'automate (programmation horaire), Manu = autorisation forcée, la régulation propre de la CTA et ses sécurités (antigel, incendie) restant actives.');
+    af.push(`Modes de marche de chaque départ (commutateur Manu / Auto / Arrêt) : arrêt / automatique / marche forcée (commutateur en façade ou forçage depuis la ${e.gtb && e.gtb !== 'aucune' ? `GTB (${e.gtb})` : 'supervision'}) ; voyants de marche et de défaut.`);
     af.push('Programmation horaire et dérogations par zone ; hors gel des équipements à eau sous 3 °C extérieur ; dégommage hebdomadaire des pompes et des vannes en période d\'arrêt.');
     af.push('Coupure d\'urgence et sécurités câblées en dur (indépendantes de l\'automate) ; reprise automatique après coupure secteur avec démarrages échelonnés.');
     if (e.gtb && e.gtb !== 'aucune') af.push(`Communication ${e.gtb} avec la GTB : états, défauts, consignes, mesures, comptages et historiques.`);
@@ -447,7 +461,7 @@ const Electricite = ((N, Sc) => {
           ...(opt.has('cordonChauffant') ? [['Cordons chauffants', `Départ ${nf(num(e.cordonP, 0.5), 2)} kW protégé par différentiel 30 mA (NF C 15-100 § 753), thermostat d'ambiance extérieure, report de défaut`, 'Prévu']] : [])] : []),
         ['Très basse tension de sécurité (TBTS / TBTP)', 'Transformateurs de sécurité EN 61558-2-6 et alimentations EN 61558-2-16, primaire et secondaire protégés, circuits TBT séparés des circuits 230 / 400 V (goulottes ou séparation)', 'Prévu (alimentations TBT)'],
         ['Sectionnement des moteurs', loin.length ? `Interrupteur de proximité cadenassable près des moteurs hors de vue de l'armoire (${loin.map(q => q.rep).join(', ')})` : 'Moteurs en vue de l\'armoire : sectionnement par leur disjoncteur moteur cadenassable', loin.length ? 'À prévoir sur site' : 'Prévu'],
-        ['Commande locale et signalisation', 'Commutateur arrêt / auto / manu par moteur, voyants marche et défaut, voyant présence tension', 'Prévu (nomenclature)'],
+        ['Commande locale et signalisation', 'Commutateur Manu / Auto / Arrêt par moteur (Moteur 1 / Moteur 2 / Auto / Arrêt pour les pompes et ventilateurs doubles, verrouillage mutuel des contacteurs), voyants marche et défaut, voyant présence tension', 'Prévu (nomenclature)'],
         ['Enveloppe', `IP 54 minimum, ${(a.enveloppe || {}).H || ''} × ${(a.enveloppe || {}).L || ''} mm estimés, 20 % de réserve de place et de bornes, ventilation si variateurs`, 'Prévu'],
         ['Mise à la terre et repérage', 'Barrette de terre, tresse de porte, conducteurs repérés aux deux extrémités (PE vert / jaune, neutre bleu clair, TBT de couleur distincte), étiquetage des appareils', 'Prévu'],
         ['Dossier et vérifications', 'Schémas à jour, nomenclature, plan d\'adressage dans le porte-plans ; vérifications individuelles NF EN 61439 (câblage, continuité PE, isolement, essais fonctionnels, différentiels) et rapport', 'À réaliser à la livraison'],
@@ -606,8 +620,13 @@ const Electricite = ((N, Sc) => {
     a.eqs.forEach(q => {
       if (q.regulation === 'evGaz') lignes.push({ titre: `${q.rep} — ${q.designation || q.t[0]}`, el: [...(secu.length ? [{ t: 'NO', l: 'KA1' }] : []), { t: 'NO', l: adr(q.rep, 'STOR'), s: 'automate' }], fin: { t: 'bobine', l: q.rep, s: 'électrovanne NF' } });
       else if (q.regulation === 'mod' || (q.type === 'generateur' && q.regulation !== 'bus')) lignes.push({ titre: `${q.rep} — ${q.designation || q.t[0]}`, el: [...(secu.length ? [{ t: 'NO', l: 'KA1' }] : []), { t: 'NO', l: adr(q.rep, 'STOR'), s: 'automate' }], fin: { t: 'sortie', l: `${q.rep}`, s: 'autorisation (bornier du générateur)' } });
-      else if (q.km) lignes.push({ titre: `${q.rep} — ${q.designation || q.t[0]}`, el: [...(au ? [{ t: 'NO', l: 'KA-AU', s: 'arrêt d\'urgence' }] : []), { t: 'S3', l: `S-${q.rep}`, s: 'A / 0 / M' }, { t: 'NO', l: adr(q.rep, 'STOR'), s: 'automate' }, { t: 'NF', l: `Q-${q.rep}`, s: 'disj. moteur' }], fin: { t: 'bobine', l: `KM-${q.rep}`, s: `${q.d.cal} A` }, voyants: q.moteur });
-      else if (q.depart === 'variateur') lignes.push({ titre: `${q.rep} — ${q.designation || q.t[0]} (variateur)`, el: [...(au ? [{ t: 'NO', l: 'KA-AU', s: 'arrêt d\'urgence' }] : []), { t: 'S3', l: `S-${q.rep}`, s: 'A / 0 / M' }, { t: 'NO', l: adr(q.rep, 'STOR'), s: 'automate' }], fin: { t: 'sortie', l: `VAR-${q.rep}`, s: `marche ; vitesse ${adr(q.rep, 'SA') || '0-10 V'}` }, voyants: true });
+      else if (q.groupe) {
+        const autre = `${q.groupe}-M${q.moteur2 ? 1 : 2}`, sortie = q.km ? { t: 'bobine', l: `KM-${q.rep}`, s: `${q.d.cal} A` } : q.depart === 'variateur' ? { t: 'sortie', l: `VAR-${q.rep}`, s: 'marche' } : { t: 'bobine', l: `KA-${q.rep}`, s: 'autorisation' };
+        lignes.push({ titre: `${q.rep} — ${q.designation || q.t[0]} (commutateur S-${q.groupe} : M${q.moteur2 ? 2 : 1} = marche forcée, Auto = automate avec permutation et secours)`, el: [...(au ? [{ t: 'NO', l: 'KA-AU', s: 'arrêt d\'urgence' }] : []), { t: 'S3', l: `S-${q.groupe}`, s: 'M1 / M2 / Auto / 0' }, { t: 'NO', l: adr(q.rep, 'STOR'), s: 'automate (Auto)' }, { t: 'NF', l: `${q.km ? 'KM' : 'KA'}-${autre}`, s: 'verrouillage' }, ...(q.km ? [{ t: 'NF', l: `Q-${q.rep}`, s: 'disj. moteur' }] : [])], fin: sortie, voyants: true });
+      }
+      else if (q.type === 'cta' && !q.km && q.depart !== 'variateur') lignes.push({ titre: `${q.rep} — ${q.designation || q.t[0]} (autorisation de marche de la CTA)`, el: [...(au ? [{ t: 'NO', l: 'KA-AU', s: 'arrêt d\'urgence' }] : []), { t: 'S3', l: `S-${q.rep}`, s: 'Manu / Auto / Arrêt' }, { t: 'NO', l: adr(q.rep, 'STOR') || 'automate', s: 'automate (Auto)' }], fin: { t: 'bobine', l: `KA-${q.rep}`, s: 'contact vers l\'armoire CTA' }, voyants: true });
+      else if (q.km) lignes.push({ titre: `${q.rep} — ${q.designation || q.t[0]}`, el: [...(au ? [{ t: 'NO', l: 'KA-AU', s: 'arrêt d\'urgence' }] : []), { t: 'S3', l: `S-${q.rep}`, s: 'Manu / Auto / Arrêt' }, { t: 'NO', l: adr(q.rep, 'STOR'), s: 'automate' }, { t: 'NF', l: `Q-${q.rep}`, s: 'disj. moteur' }], fin: { t: 'bobine', l: `KM-${q.rep}`, s: `${q.d.cal} A` }, voyants: q.moteur });
+      else if (q.depart === 'variateur') lignes.push({ titre: `${q.rep} — ${q.designation || q.t[0]} (variateur)`, el: [...(au ? [{ t: 'NO', l: 'KA-AU', s: 'arrêt d\'urgence' }] : []), { t: 'S3', l: `S-${q.rep}`, s: 'Manu / Auto / Arrêt' }, { t: 'NO', l: adr(q.rep, 'STOR'), s: 'automate' }], fin: { t: 'sortie', l: `VAR-${q.rep}`, s: `marche ; vitesse ${adr(q.rep, 'SA') || '0-10 V'}` }, voyants: true });
     });
     if (!lignes.length) return '';
     const pas = 58, W = 980, H = 70 + lignes.length * pas, out = [], xG = 40, xD = W - 40;
@@ -621,7 +640,7 @@ const Electricite = ((N, Sc) => {
       tx(xG + 8, y - 16, l.titre, { a: 'start', fs: 9, c: '#555' });
       let x = xG;
       l.el.forEach(c => {
-        ln(x, y, x + 30, y); x += 30;
+        ln(x, y, x + 46, y); x += 46;
         if (c.t === 'NO' || c.t === 'NF') { ln(x, y - 9, x, y + 9); ln(x + 14, y - 9, x + 14, y + 9); if (c.t === 'NF') ln(x - 3, y + 8, x + 17, y - 8, 1); }
         else { out.push(`<rect x="${x}" y="${y - 9}" width="14" height="18" fill="#fff" stroke="#222"/>`); ln(x + 3, y + 6, x + 11, y - 6, 1); }
         tx(x + 7, y + 22, c.l, { fs: 8, b: true }); if (c.s) tx(x + 7, y + 32, c.s, { fs: 7, c: '#555' });
@@ -868,6 +887,7 @@ const Electricite = ((N, Sc) => {
           { k: 'sondes', l: 'Sondes d\'ambiance / mesures communes (séparées par ;)', t: 't' }] },
       { g: 'Options de l\'armoire CVC (la première armoire)' },
       { k: 'options', l: 'Cochez ce que l\'armoire doit comporter ; une sécurité de chaufferie décochée est retirée des points et de la chaîne de sécurité', t: 'cases', o: OPTIONS, d: OPTIONS_DEFAUT },
+      { k: 'permutation', l: 'Moteurs doubles : permutation automatique toutes les', u: 'h de fonctionnement', d: 168 },
       { k: 'cordonP', l: 'Puissance des cordons chauffants', u: 'kW', d: 0.5, si: e => (e.options || OPTIONS_DEFAUT).includes('cordonChauffant') },
       { k: 'marqueAutomate', l: 'Marque de l\'automate', t: 's', o: Object.entries(MARQUES), d: 'generique', si: e => !(e.armoires || []).length || (e.armoires || []).some(a => !a.techno || a.techno === 'automate') },
       { k: 'automate', l: 'Automate programmable : unité centrale, cartes d\'entrées / sorties et châssis (à reprendre de la fiche de l\'automate retenu)', t: 'lignes', si: e => !(e.armoires || []).length || (e.armoires || []).some(a => !a.techno || a.techno === 'automate'),
@@ -888,6 +908,7 @@ const Electricite = ((N, Sc) => {
           { k: 'P', l: 'P électrique (kW)' }, { k: 'tension', l: 'Tension', t: 's', o: selonType(Object.entries(TENSIONS)) },
           { k: 'alim', l: 'Alimenté par', t: 's', o: optAlim }, { k: 'depart', l: 'Départ', t: 's', o: selonType(Object.entries(DEPARTS)) }, { k: 'L', l: 'Longueur câble (m)' },
           { k: 'regulation', l: 'Régulation', t: 's', o: selonType(listeOpt(REGULS)) }, { k: 'pilote', l: 'Piloté par', t: 's', o: optPilote },
+          { k: 'moteurs', l: 'Moteurs (pompe, ventilateur, CTA)', t: 's', o: [['', 'Simple : Manu / Auto / Arrêt'], ['double', 'Double : moteur 1 / moteur 2 / Auto (basculement) / Arrêt']] },
           { k: 'Paux', l: 'Conso. TBT (W / VA ; vide : usuelle)' },
           { k: 'local', l: 'Local', t: 't' }, { k: 'fonctionnement', l: 'Fonctionnement particulier (analyse fonctionnelle)', t: 't' }] },
       { g: 'Lots et supervision' },

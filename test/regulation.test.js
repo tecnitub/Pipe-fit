@@ -245,7 +245,7 @@ test('armoire : alimentations 24 V DC / 24 V AC / 48 V dimensionnées, arrêt d\
   // Folios : auxiliaires, arrêt d'urgence en tête des lignes de contacteurs
   const svg = t => r.schemas.find(s => s.titre.startsWith(t)).svg;
   assert.match(svg('Alimentations et circuits auxiliaires'), /Parafoudre type 2[\s\S]*ID 30 mA[\s\S]*Transformateur|V DC/);
-  assert.match(svg('Folio de commande'), /KA-AU[\s\S]*A \/ 0 \/ M/);
+  assert.match(svg('Folio de commande'), /KA-AU[\s\S]*Manu \/ Auto \/ Arrêt/);
 });
 
 test('options de l\'armoire (cases à cocher) : sécurités de chaufferie, cordons chauffants, prise, serveur web, 4G, onduleur, reports', () => {
@@ -275,4 +275,29 @@ test('options de l\'armoire (cases à cocher) : sécurités de chaufferie, cordo
   // Toutes les options décochées : rien d'imposé, l'étude se calcule
   elec.entrees.options = [];
   assert.ok(L.calculer(et, elec).valeurs.listePoints.length);
+});
+
+test('commande des moteurs : simple Manu / Auto / Arrêt, double M1 / M2 / Auto / Arrêt avec basculement, CTA', () => {
+  const { et, elec } = etude('automate');
+  elec.entrees.equipements.push({ rep: 'PD1', designation: 'Pompe double circuit radiateurs', type: 'pompe', P: 0.4, tension: 'mono', depart: 'contacteur', regulation: 'tor', alim: 'AR1', moteurs: 'double' },
+    { rep: 'CTA2', designation: 'CTA hall', type: 'cta', P: 3, tension: 'tri', depart: 'direct', regulation: 'bus', alim: 'AR1' });
+  elec.entrees.permutation = 100;
+  const r = L.calculer(et, elec);
+  // Deux moteurs, chacun son départ et ses points ; commutateur en position Auto lu par l'automate
+  const pts = r.valeurs.listePoints.filter(p => /^PD1-M/.test(p[0]));
+  assert.deepStrictEqual([...new Set(pts.map(p => p[0]))], ['PD1-M1', 'PD1-M2']);
+  assert.ok(pts.some(p => p[0] === 'PD1-M1' && /position Auto/.test(p[1])));
+  const eqs = r.tableaux.find(t => /^Équipements/.test(t.titre)).lignes.map(l => l[0]);
+  assert.ok(eqs.includes('PD1-M1') && eqs.includes('PD1-M2'));
+  // Folio de commande : commutateur M1 / M2 / Auto / 0, verrouillage mutuel des contacteurs ; CTA : Manu / Auto / Arrêt et relais d'autorisation
+  const cmd = r.schemas.find(s => /^Folio de commande/.test(s.titre)).svg;
+  assert.match(cmd, /S-PD1<\/text><text[^>]*>M1 \/ M2 \/ Auto \/ 0/);
+  assert.match(cmd, /KM-PD1-M2<\/text><text[^>]*>verrouillage/);
+  assert.match(cmd, /S-CTA2<\/text><text[^>]*>Manu \/ Auto \/ Arrêt[\s\S]*KA-CTA2/);
+  // Nomenclature et analyse fonctionnelle
+  const nom = r.onglets.find(o => o.titre === 'Cahier des charges armoires').blocs.find(b => /^Nomenclature/.test(b.titre)).tableau.lignes.map(l => l[1]);
+  assert.ok(nom.includes('Commutateur Moteur 1 / Moteur 2 / Auto / Arrêt') && nom.includes('Commutateur Manu / Auto / Arrêt') && nom.includes('Relais d\'autorisation de marche de la CTA'));
+  const af = r.onglets.find(o => o.titre === 'Régulation').blocs.find(b => /^(Fonctionnement de chaque équipement|Analyse fonctionnelle)$/.test(b.titre)).liste.join(' ');
+  assert.match(af, /PD1 — moteurs doubles PD1-M1 \/ PD1-M2 .*permutation automatique toutes les 100 h .*basculement immédiat/);
+  assert.match(af, /CTA : commutateur Manu \/ Auto \/ Arrêt/);
 });
