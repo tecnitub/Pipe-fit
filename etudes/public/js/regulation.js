@@ -178,11 +178,19 @@ const Regulation = (() => {
   // Régulation de l'étude pour le DOE et la notice d'exploitation : technologie, analyse fonctionnelle et paramètres de
   // chaque installation, courbes de chauffe, liste des points GTB (calcul des armoires s'il existe)
   function pourDoe(etude, Liens) {
-    const notes = (etude && etude.notes) || [], N = Nt(), out = { installations: [], courbes: [], points: null };
+    const notes = (etude && etude.notes) || [], N = Nt(), out = { installations: [], courbes: [], points: null, bacs: null, comptages: null, sequences: [], echange: null, folios: [], unifilaire: '' };
     notes.filter(n => n.type === 'elec' && ((n.entrees || {}).equipements || []).length).forEach(elec => {
       try {
         const r = Liens.calculer(etude, elec), blocs = ((r.onglets || []).find(o => o.titre === 'Régulation') || {}).blocs || [], reg = (r.valeurs || {}).regulation || {};
         (reg.installations || []).filter(x => !out.installations.some(y => y.titre === x.titre)).forEach(x => { const b = blocs.find(y => (y.titre || '').startsWith(`Analyse fonctionnelle — ${x.titre}`)); out.installations.push({ titre: x.titre, techno: TECHNOS[x.techno] ? TECHNOS[x.techno][0] : '', af: (b && b.liste) || [], params: x.params || [] }); });
+        // GTB et BACS : classe et exigences, comptages par usage, séquences, table d'échange ; folios des armoires
+        const g = ((r.onglets || []).find(o => o.titre === 'GTB et BACS') || {}).blocs || [], tb = re => (g.find(y => re.test(y.titre || '')) || {}).tableau;
+        if (!out.bacs && (r.valeurs || {}).bacs) out.bacs = { ...r.valeurs.bacs, fonctions: (tb(/^Fonctions de régulation/) || {}).lignes || [], exigences: (tb(/^Exigences du décret BACS/) || {}).lignes || [] };
+        const cpt = tb(/^Comptage d'énergie par usage/); if (cpt && !out.comptages) out.comptages = cpt;
+        g.filter(y => /^Séquences — /.test(y.titre || '') && y.tableau && !out.sequences.some(z => z.titre === y.titre)).forEach(y => out.sequences.push({ titre: y.titre.replace(/^Séquences — /, ''), lignes: y.tableau.lignes }));
+        const ech = tb(/^Table d'échange GTB/); if (ech && ech.lignes.length) out.echange = { entetes: ech.entetes, lignes: [...((out.echange || {}).lignes || []), ...ech.lignes].slice(0, 800) };
+        out.folios.push(...[r.titreSchema, ...(r.schemas || []).map(s => s.titre)].filter(Boolean).map(t => ({ note: elec.titre || 'Armoires', titre: t })));
+        if (!out.unifilaire && r.schema && r.schema.length < 400000) out.unifilaire = r.schema;
         const pts = blocs.find(y => /^Liste des points GTB/.test(y.titre || ''));
         if (pts && pts.tableau && pts.tableau.lignes.length > 1) out.points = { entetes: pts.tableau.entetes, lignes: [...((out.points || {}).lignes || []), ...pts.tableau.lignes].slice(0, 600) };
       } catch (e) { /* calcul des armoires incomplet */ }

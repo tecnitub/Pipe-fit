@@ -12,6 +12,7 @@ const EssaisDoc = (() => {
   const signatures = (r, x) => `<div class="signatures signed">
       <div>Le technicien<br><strong>${esc(x.technicien)}</strong>${r.signeLe ? `<br><span class="small">signé sur écran le ${new Date(r.signeLe).toLocaleString('fr-FR')}</span>` : ''}${r.signatureTechId ? `<img src="${x.img(r.signatureTechId)}" alt="Signature du technicien">` : ''}</div>
       <div>Pour le client${r.signataireNom ? `<br><strong>${esc(r.signataireNom)}</strong>${r.signataireQualite ? `, ${esc(r.signataireQualite)}` : ''}` : ''}${r.signatureClientId ? `<img src="${x.img(r.signatureClientId)}" alt="Signature du client">` : '<br><span class="small">(non signé)</span>'}</div>
+      ${r.integrateur || r.signatureIntegrateurId ? `<div>Pour l'intégrateur GTB${r.integrateur ? `<br><strong>${esc(r.integrateur)}</strong>` : ''}${r.signatureIntegrateurId ? `<img src="${x.img(r.signatureIntegrateurId)}" alt="Signature de l'intégrateur">` : '<br><span class="small">(non signé)</span>'}</div>` : ''}
     </div>`;
   const choix = (val, options) => `<p class="pv-decision">${options.map(([v, lib]) => `${val === v ? '☒' : '☐'} ${lib}`).join('<br>')}</p>`;
 
@@ -34,8 +35,13 @@ const EssaisDoc = (() => {
       l('Marque, modèle, n° de série', esc([m.marque, m.modele, m.numeroSerie && `n° ${m.numeroSerie}`].filter(Boolean).join(' · ') || '—')), m.localisation || m.zone ? l('Localisation', esc([m.localisation, m.zone].filter(Boolean).join(' — '))) : '',
       m.fluide ? l('Fluide frigorigène', esc(`${m.fluide}${vide(m.charge) ? '' : ` · charge ${nb(m.charge)} kg`}`)) : '', l('Date', `${dateFr(m.date)}${m.heure ? ` à ${esc(m.heure)}` : ''}`)])}
     ${m.photoPlaqueId ? `<div class="doc-photos"><figure><img src="${x.img(m.photoPlaqueId)}" alt="Plaque signalétique"><figcaption>Plaque signalétique</figcaption></figure></div>` : ''}
-    <h3 class="doc-h">Points de contrôle</h3><table class="doc-lines compact"><tr><th>Contrôle</th><th>Résultat</th><th>Observation</th></tr>
-      ${(m.controles || []).map(c => `<tr><td>${esc(c.libelle)}</td><td>${c.etat === 'Non conforme' ? `<strong>${esc(c.etat)}</strong>` : esc(c.etat || '—')}</td><td>${esc(c.obs || '')}</td></tr>`).join('')}</table>
+    ${m.integrateur || m.automaticien ? table([m.integrateur ? l('Intégrateur GTB', esc(m.integrateur)) : '', m.automaticien ? l('Automaticien / tableautier', esc(m.automaticien)) : '']) : ''}
+    ${(m.controles || []).some(c => c.pap) ? (() => { const av = E.avancementPap ? E.avancementPap(m) : { nb: 0, faits: 0, nc: 0 }, et = v => (v === 'Non conforme' ? `<strong>${esc(v)}</strong>` : esc(v || '—'));
+      return `<h3 class="doc-h">Essais point à point — ${av.faits}/${av.nb} point(s) testé(s)${av.nc ? `, ${av.nc} non conforme(s)` : ''}</h3><table class="doc-lines compact"><tr><th>Point</th><th>Automate</th><th>GTB</th><th>Observation</th></tr>
+      ${m.controles.filter(c => c.pap).map(c => `<tr><td>${esc(c.libelle)}</td><td>${et(c.etat)}</td><td>${et(c.etatGtb)}</td><td>${esc(c.obs || '')}</td></tr>`).join('')}</table>`; })() : ''}
+    ${(E.reserves ? E.reserves(m) : []).length ? `<h3 class="doc-h">Réserves</h3><ol>${E.reserves(m).map(x => `<li>${esc(x.libelle)} — non conforme côté ${esc(x.cote)}${x.obs ? ` : ${esc(x.obs)}` : ''}</li>`).join('')}</ol>` : ''}
+    ${(m.controles || []).some(c => !c.pap) ? `<h3 class="doc-h">Points de contrôle</h3><table class="doc-lines compact"><tr><th>Contrôle</th><th>Résultat</th><th>Observation</th></tr>
+      ${(m.controles || []).filter(c => !c.pap).map(c => `<tr><td>${esc(c.libelle)}</td><td>${c.etat === 'Non conforme' ? `<strong>${esc(c.etat)}</strong>` : esc(c.etat || '—')}</td><td>${esc(c.obs || '')}</td></tr>`).join('')}</table>` : ''}
     ${(m.mesures || []).some(v => !vide(v.valeur) && !E.releve(v)) ? (() => { const att = m.mesures.some(v => !vide(v.valeur) && !vide(v.attendu) && !E.releve(v));
       const ec = v => { const a = Number(v.attendu), x = Number(String(v.valeur).replace(',', '.')); if (vide(v.attendu) || !a || !Number.isFinite(x)) return ''; const t = E.tolerance(v.libelle, v.unite);
         return t.abs !== undefined ? `${x >= a ? '+' : ''}${(x - a).toFixed(1).replace('.', ',')} ${/°C/.test(v.unite || '') ? 'K' : esc(v.unite || '')}` : `${x >= a ? '+' : ''}${((x - a) / a * 100).toFixed(1).replace('.', ',')} %`; };

@@ -72,14 +72,18 @@ const Essais = (() => {
   const mesuresAttendues = m => (m.mesures || []).filter(x => x.attendu !== null && x.attendu !== undefined && x.attendu !== '');
   // Conclusion proposée, comme le résultat d'une épreuve : contrôle non conforme ou mesure hors tolérance -> avec réserves ;
   // tous les contrôles faits et toutes les mesures attendues relevées dans la tolérance -> mis en service
+  // Point à point (GTB) : un contrôle porte deux états, côté automate (etat) et côté supervision (etatGtb)
+  const ncCtl = x => x.etat === 'Non conforme' || (x.pap && x.etatGtb === 'Non conforme'), faitCtl = x => !!x.etat && (!x.pap || !!x.etatGtb);
+  const reserves = m => (m.controles || []).filter(ncCtl).map(x => ({ libelle: x.libelle, cote: [x.etat === 'Non conforme' && 'automate', x.pap && x.etatGtb === 'Non conforme' && 'GTB'].filter(Boolean).join(' et '), obs: x.obs || '' }));
+  const avancementPap = m => { const l = (m.controles || []).filter(x => x.pap); return { nb: l.length, faits: l.filter(faitCtl).length, nc: l.filter(ncCtl).length }; };
   function conclusion(m) {
     const c = m.controles || [], att = mesuresAttendues(m);
-    if (c.some(x => x.etat === 'Non conforme') || att.some(x => conformeMesure(x) === false)) return 'Mis en service avec réserves';
-    return c.length && c.every(x => x.etat) && att.every(x => conformeMesure(x) !== null) ? 'Mis en service' : '';
+    if (c.some(ncCtl) || att.some(x => conformeMesure(x) === false)) return 'Mis en service avec réserves';
+    return c.length && c.every(faitCtl) && att.every(x => conformeMesure(x) !== null) ? 'Mis en service' : '';
   }
   const manquesMES = m => { const sansMesure = mesuresAttendues(m).filter(x => !aValeur(x.valeur));
     return [!m.affaireId && 'chantier', !String(m.equipement || '').trim() && 'équipement', !m.userId && 'technicien', !m.date && 'date',
-      (m.controles || []).some(x => !x.etat) && 'points de contrôle non renseignés', sansMesure.length && `mesure(s) attendue(s) non relevée(s) : ${sansMesure.map(x => x.libelle).join(', ')}`, !m.resultat && 'conclusion'].filter(Boolean); };
+      (m.controles || []).some(x => !faitCtl(x)) && 'points de contrôle non renseignés', sansMesure.length && `mesure(s) attendue(s) non relevée(s) : ${sansMesure.map(x => x.libelle).join(', ')}`, !m.resultat && 'conclusion'].filter(Boolean); };
 
   // Équilibrage : écart d'une bouche ou d'un organe, conformité, synthèse
   const ecart = l => (n(l.theorique) > 0 && n(l.mesure) !== null ? r1((n(l.mesure) - n(l.theorique)) / n(l.theorique) * 100) : null);
@@ -150,6 +154,6 @@ const Essais = (() => {
     });
     return k;
   }
-  return { versReleve, renumeroter, reprendreReleve, releve, TYPES, ETATS, modele, conclusion, manquesMES, tolerance, conformeMesure, ecart, conforme, synthese, manquesEQ, importerLignes };
+  return { versReleve, renumeroter, reprendreReleve, releve, TYPES, ETATS, modele, conclusion, reserves, avancementPap, manquesMES, tolerance, conformeMesure, ecart, conforme, synthese, manquesEQ, importerLignes };
 })();
 if (typeof module !== 'undefined') module.exports = Essais;

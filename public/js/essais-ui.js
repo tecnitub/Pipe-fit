@@ -19,7 +19,7 @@ function baseEssai(query) {
 }
 // Copie pour l'équipement ou l'installation suivante : mêmes réglages, nouvelles mesures
 function copieEssai(r) {
-  const { id, numero, _v, _at, _by, photos, signatureTechId, signatureClientId, signeLe, statut, photoPlaqueId, planCle, materiel, attendus, ...garde } = JSON.parse(JSON.stringify(r));
+  const { id, numero, _v, _at, _by, photos, signatureTechId, signatureClientId, signatureIntegrateurId, signeLe, statut, photoPlaqueId, planCle, materiel, attendus, ...garde } = JSON.parse(JSON.stringify(r));
   if (garde.mesures) garde.mesures = garde.mesures.map(({ attendu, ...m }) => m);
   return { ...garde, date: isoDate(new Date()), heure: heureMaintenant(), photos: [], statut: 'Brouillon', userId: Store.me.userId || garde.userId };
 }
@@ -55,7 +55,8 @@ const photosEssai = (e, lib) => `<div class="photos-grid">${(e.photos || []).map
 const signaturesEssai = e => `<fieldset class="hd-bloc"><legend>Signatures</legend><div class="sign-grid">
     <div><p><strong>Le technicien</strong> · ${esc(userName(e.userId))}</p><canvas class="sign-pad" id="es-sig-t" aria-label="Signature du technicien"></canvas><button class="small secondary" id="es-sig-t-clear">Effacer</button></div>
     <div><div class="grid2">${champEssai(e, 'signataireNom', 'Pour le client (facultatif) : nom')}${champEssai(e, 'signataireQualite', 'Qualité')}</div>
-      <canvas class="sign-pad" id="es-sig-c" aria-label="Signature du client"></canvas><button class="small secondary" id="es-sig-c-clear">Effacer</button></div></div></fieldset>
+      <canvas class="sign-pad" id="es-sig-c" aria-label="Signature du client"></canvas><button class="small secondary" id="es-sig-c-clear">Effacer</button></div>
+    ${e.type === 'gtb' ? `<div><p><strong>Pour l'intégrateur GTB</strong>${e.integrateur ? ` · ${esc(e.integrateur)}` : ''}</p><canvas class="sign-pad" id="es-sig-i" aria-label="Signature de l'intégrateur GTB"></canvas><button class="small secondary" id="es-sig-i-clear">Effacer</button></div>` : ''}</div></fieldset>
   <p class="neg small" id="es-err"></p>
   <div class="toolbar"><button class="secondary" id="es-brouillon">Enregistrer le brouillon</button><span class="spacer"></span><button class="big" id="es-signer">Valider et signer</button></div>`;
 
@@ -74,6 +75,7 @@ function bindEssai(root, kind, e, { manques, calc, maj }) {
   if (e.signatureClient) padC.charger(e.signatureClient);
   $('#es-sig-t-clear').onclick = () => { padT.effacer(); delete e.signatureTech; };
   $('#es-sig-c-clear').onclick = () => { padC.effacer(); delete e.signatureClient; };
+  if ($('#es-sig-i')) { const padI = signaturePad($('#es-sig-i'), img => { e.signatureIntegrateur = img; }); if (e.signatureIntegrateur) padI.charger(e.signatureIntegrateur); $('#es-sig-i-clear').onclick = () => { padI.effacer(); delete e.signatureIntegrateur; }; }
   const enregistrer = async signer => {
     const err = $('#es-err');
     Object.assign(e, calc(e));
@@ -85,10 +87,11 @@ function bindEssai(root, kind, e, { manques, calc, maj }) {
       for (const p of e.photos) photos.push(p.startsWith('data:') ? await envoyerImage(p) : p);
       const o = { ...e, photos, technicien: userName(e.userId) };
       if (e._plaque) o.photoPlaqueId = await envoyerImage(e._plaque);
-      ['signatureTech', 'signatureClient', '_plaque'].forEach(k => delete o[k]);
+      ['signatureTech', 'signatureClient', 'signatureIntegrateur', '_plaque'].forEach(k => delete o[k]);
       if (signer) {
         o.signatureTechId = await envoyerImage(e.signatureTech);
         if (e.signatureClient) o.signatureClientId = await envoyerImage(e.signatureClient);
+        if (e.signatureIntegrateur) o.signatureIntegrateurId = await envoyerImage(e.signatureIntegrateur);
         Object.assign(o, { statut: 'Signé', signeLe: new Date().toISOString() });
       } else o.statut = 'Brouillon';
       const r = Store.upsert(conf.col, o);
@@ -136,8 +139,8 @@ Views.mes = (params, query) => {
   // Ouvert depuis la liste des mises en service : valeurs attendues de l'étude (débit, HMT, pressions…) à côté des mesures
   const attendus = PlanMes.lireAttendus(query.get('att'));
   // Liste de points à tester reprise de l'étude (tests point à point de la GTB)
-  const ctlPlan = (() => { try { const l = JSON.parse(sessionStorage.getItem(`pf-plan-controles:${q0('plan')}`) || 'null'); return Array.isArray(l) ? l.slice(0, 400).map(x => String(x).slice(0, 120)) : null; } catch (e) { return null; } })();
-  const b = brouillonEssai('mes', params, query, base => { const m = Essais.modele(typeQ); if (ctlPlan && ctlPlan.length) m.controles = [...ctlPlan.map(libelle => ({ libelle, etat: '', obs: '' })), ...m.controles];
+  const ctlPlan = (() => { try { const l = JSON.parse(sessionStorage.getItem(`pf-plan-controles:${q0('plan')}`) || 'null'); return Array.isArray(l) ? l.slice(0, 400).map(x => String(x).slice(0, 160)) : null; } catch (e) { return null; } })();
+  const b = brouillonEssai('mes', params, query, base => { const m = Essais.modele(typeQ); if (ctlPlan && ctlPlan.length) m.controles = [...ctlPlan.map(libelle => ({ libelle, etat: '', obs: '', ...(typeQ === 'gtb' ? { pap: true, etatGtb: '' } : {}) })), ...m.controles];
     return { ...base, type: typeQ, equipement: q0('equipement'), repere: q0('repere'), localisation: q0('localisation'), zone: q0('zone'), marque: q0('marque'), modele: q0('modele'), numeroSerie: '', fluide: '', charge: '', reglages: '', resultat: '', ...(q0('materiel') ? { materiel: q0('materiel') } : {}),
       ...(q0('plan') ? { planCle: q0('plan') } : {}), ...(attendus.length ? { attendus } : {}), controles: m.controles, mesures: PlanMes.avecAttendus(m.mesures, attendus) }; });
   if (b.introuvable) return '<p>Procès-verbal introuvable.</p>';
@@ -154,8 +157,14 @@ Views.mes = (params, query) => {
         ${t.frigo ? `<div class="field"><label for="es-fluide">Fluide frigorigène</label><select id="es-fluide" data-k="fluide"><option value="">—</option>${optionsStr(Fluides.LISTE.map(x => x[0]), e.fluide)}</select></div>${champEssai(e, 'charge', 'Charge (kg)', 'number', 'step="0.01" min="0"')}` : ''}</div>
       ${cerfa ? `<p class="small">Équipement frigorifique : la mise en service s'accompagne de la <a href="${cerfa}">fiche d'intervention fluides (Cerfa)</a>.</p>` : ''}
     </fieldset>
+    ${e.type === 'gtb' ? `<div class="grid2">${champEssai(e, 'integrateur', 'Intégrateur GTB (société, intervenant)')}${champEssai(e, 'automaticien', 'Automaticien / tableautier')}</div>` : ''}
+    ${e.controles.some(c => c.pap) ? (() => { const av = Essais.avancementPap(e), opt = v => `<option value="">—</option>${Essais.ETATS.map(s => `<option ${v === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}`;
+      return `<fieldset class="hd-bloc"><legend>Essais point à point — <span id="es-pap-n">${av.faits}/${av.nb} testé(s)${av.nc ? `, ${av.nc} non conforme(s)` : ''}</span></legend>
+      <div style="overflow-x:auto;max-height:70vh"><table class="compact"><thead><tr><th>Point (repère — libellé, classe : essai)</th><th>Automate</th><th>GTB</th><th>Observation</th></tr></thead><tbody>
+      ${e.controles.map((c, i) => (c.pap ? `<tr><td class="small">${esc(c.libelle)}</td><td><select data-pap-a="${i}" aria-label="Automate">${opt(c.etat)}</select></td><td><select data-pap-g="${i}" aria-label="GTB">${opt(c.etatGtb)}</select></td><td><input data-ctlobs="${i}" value="${esc(c.obs || '')}" style="width:12em" aria-label="Observation"></td></tr>` : '')).join('')}</tbody></table></div>
+      <button class="small secondary" id="es-pap-a">Tout OK côté automate</button> <button class="small secondary" id="es-pap-g">Tout OK côté GTB</button></fieldset>`; })() : ''}
     <fieldset class="hd-bloc"><legend>Points de contrôle</legend>
-      ${e.controles.map((c, i) => `<div class="mes-ctl"><span>${esc(c.libelle)}</span><div class="seg">${Essais.ETATS.map(s => `<button type="button" class="small ${c.etat === s ? (s === 'Non conforme' ? 'danger' : '') : 'secondary'}" data-ctl="${i}" data-etat="${esc(s)}">${esc(s)}</button>`).join('')}</div>
+      ${e.controles.map((c, i) => c.pap ? '' : `<div class="mes-ctl"><span>${esc(c.libelle)}</span><div class="seg">${Essais.ETATS.map(s => `<button type="button" class="small ${c.etat === s ? (s === 'Non conforme' ? 'danger' : '') : 'secondary'}" data-ctl="${i}" data-etat="${esc(s)}">${esc(s)}</button>`).join('')}</div>
         ${c.etat === 'Non conforme' ? `<input data-ctlobs="${i}" value="${esc(c.obs || '')}" placeholder="Observation, action à mener" aria-label="Observation">` : ''}</div>`).join('')}
       <button class="small secondary" id="es-tout-ok">Tout OK</button>
     </fieldset>
@@ -194,7 +203,13 @@ Views.mes.bind = (root, params) => {
   };
   root.querySelectorAll('[data-ctl]').forEach(b => b.onclick = () => { const c = e.controles[+b.dataset.ctl]; c.etat = c.etat === b.dataset.etat ? '' : b.dataset.etat; proposer(); App.render(); });
   root.querySelectorAll('[data-ctlobs]').forEach(el => el.oninput = () => { e.controles[+el.dataset.ctlobs].obs = el.value; });
-  $('#es-tout-ok').onclick = () => { e.controles.forEach(c => { if (!c.etat) c.etat = 'OK'; }); proposer(); App.render(); };
+  $('#es-tout-ok').onclick = () => { e.controles.forEach(c => { if (!c.pap && !c.etat) c.etat = 'OK'; }); proposer(); App.render(); };
+  // Point à point : états automate / GTB sans redessiner la liste (jusqu'à 400 points)
+  const majPap = () => { const av = Essais.avancementPap(e), n = root.querySelector('#es-pap-n'); if (n) n.textContent = `${av.faits}/${av.nb} testé(s)${av.nc ? `, ${av.nc} non conforme(s)` : ''}`; proposer(); const r = root.querySelector('#es-res'); if (r && e.resultatAuto) r.value = e.resultat || ''; };
+  root.querySelectorAll('[data-pap-a]').forEach(s => s.onchange = () => { e.controles[+s.dataset.papA].etat = s.value; majPap(); });
+  root.querySelectorAll('[data-pap-g]').forEach(s => s.onchange = () => { e.controles[+s.dataset.papG].etatGtb = s.value; majPap(); });
+  if ($('#es-pap-a')) $('#es-pap-a').onclick = () => { e.controles.forEach(c => { if (c.pap && !c.etat) c.etat = 'OK'; }); proposer(); App.render(); };
+  if ($('#es-pap-g')) $('#es-pap-g').onclick = () => { e.controles.forEach(c => { if (c.pap && !c.etatGtb) c.etatGtb = 'OK'; }); proposer(); App.render(); };
   // Mesure saisie : écart, conformité et conclusion proposée mis à jour (comme le résultat d'une épreuve)
   root.querySelectorAll('[data-mes]').forEach(el => el.oninput = () => { const m = e.mesures[+el.dataset.mes]; m.valeur = el.value.trim(); const a = root.querySelector(`[data-att="${el.dataset.mes}"]`); if (a) a.innerHTML = a.dataset.court ? ecartHtml(m) : attenduHtml(m);
     const rn = root.querySelector('#es-releve-n'); if (rn) { const rl = e.mesures.filter(x => Essais.releve(x)); rn.textContent = `${rl.filter(x => String(x.valeur ?? '').trim() !== '').length}/${rl.length} mesuré(s)`; }

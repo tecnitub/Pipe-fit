@@ -132,7 +132,7 @@ test('chaufferie : sécurités reprises, bilan de puissance au TGBT, plan d\'adr
   assert.match(bil[bil.length - 1][0], /Total CVC au TGBT/);
   assert.ok(Math.abs(r.valeurs.Pappel - (ar.P * 0.8 + r.valeurs.Pelec) * 0.9) < 0.01);
   assert.match(r.schema, />KM</, 'contacteur des pompes commandées en marche / arrêt');
-  assert.deepStrictEqual(r.valeurs.feuilles.map(f => f.name), ['Bilan de puissance', 'Attentes lot élec', 'Équipements', 'Liste des points', "Table d'échange GTB", 'Essais point à point', 'E-S AR-CVC-01', 'Nomenclature AR-CVC-01']);
+  assert.deepStrictEqual(r.valeurs.feuilles.map(f => f.name), ['Bilan de puissance', 'Attentes lot élec', 'Équipements', 'Liste des points', "Table d'échange GTB", 'Essais point à point', 'E-S AR-CVC-01', 'Nomenclature AR-CVC-01', 'Carnet de câbles']);
   // Le classeur se construit
   const X = require('../public/js/xlsx');
   assert.ok(X.build(r.valeurs.feuilles.map(f => ({ name: f.name, rows: [f.entetes, ...f.lignes] }))).length > 1000);
@@ -167,7 +167,7 @@ test('folios : commande (contacteurs, variateurs, chaîne de sécurité), cartes
   const pid = { id: 'p', type: 'pid', titre: 'Chaufferie', entrees: N.defauts('pid') };
   const eqs = E.fusionner([], E.equipementsEtude({ notes: [pid] }, Liens)).lignes;
   const r = N.calculer('elec', { ...N.defauts('elec'), equipements: eqs });
-  assert.deepStrictEqual(r.schemas.map(s => s.titre.replace(/^F\d+ — /, "")), ['Alimentations et circuits auxiliaires — armoire AR-CVC-01', 'Folio de commande — armoire AR-CVC-01', 'Implantation de l\'automate — armoire AR-CVC-01 (1 châssis)', 'Cartes d\'entrées / sorties — armoire AR-CVC-01']);
+  assert.deepStrictEqual(r.schemas.map(s => s.titre.replace(/^F\d+ — /, "")).filter(t => !/^Synoptique/.test(t)), ['Alimentations et circuits auxiliaires — armoire AR-CVC-01', 'Folio de commande — armoire AR-CVC-01', 'Implantation de l\'automate — armoire AR-CVC-01 (1 châssis)', 'Cartes d\'entrées / sorties — armoire AR-CVC-01']);
   const [aux, cmd, implantation, cartes] = r.schemas.map(s => s.svg);
   assert.match(aux, /QG /); assert.match(aux, /Parafoudre/); assert.match(aux, /KA-AU/);
   assert.match(implantation, />UC</); assert.match(implantation, /utilisées</);

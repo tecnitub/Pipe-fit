@@ -58,7 +58,10 @@ const Gtb = (() => {
   const SECU = /sécurité|securite|gaz|incendie|ssi|manque d'eau|arrêt d'urgence|antigel|surchauffe/i;
   const SECU_EQ = /arrêt d'urgence|détection gaz|pressostat|manque d'eau|thermostat de sécurité|incendie|ssi/i;
   // pts : [repère, libellé, type, armoire, classe, protocole, équipement, libellé court, …] ; armoires : repères dans l'ordre
-  function echange(pts, armoires = []) {
+  // reglages : [{ rep, libelle, priorite, bas, haut, historique }] saisis dans l'étude, appliqués aux points concernés
+  // (repère identique ou « * », libellé contenant le texte saisi) ; la dernière ligne qui s'applique l'emporte
+  function echange(pts, armoires = [], reglages = []) {
+    const regl = (reglages || []).filter(r => r && (String(r.rep || '').trim() || String(r.libelle || '').trim()));
     const devices = new Map(armoires.map((a, i) => [a, 1000 + i + 1])), cpt = {};
     return pts.map(p => {
       const ar = p[3], des = p[7] || p[1], obj = objetDe(p[2], p[4], des), k = `${ar}|${obj}`, mb = MODBUS[obj];
@@ -69,10 +72,22 @@ const Gtb = (() => {
       const nom = `${ar}_${p[0]}_${mn}`.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9_.-]+/g, '').replace(/\./g, '_').toUpperCase();
       const alarme = p[4] === 'TA' ? ((SECU.test(des) || SECU_EQ.test(p[6] || '')) ? 'P1 (sécurité)' : 'P2 (défaut)') : /encrassement|filtre/i.test(des) ? 'P3 (maintenance)' : '';
       const histo = ['TM', 'TCP'].includes(p[4]) ? (p[4] === 'TCP' ? 'horaire + mensuel (5 ans)' : '15 min') : ['TS', 'TC', 'TA'].includes(p[4]) ? 'sur changement' : '';
-      return [ar, `${devices.get(ar)}`, p[0], des, p[2], p[4], obj, String(c.inst), `${mb[0]} ${mb[1]}${String(reg).padStart(4, '0')}`, unite, alarme, histo, nom];
+      const x = { alarme, histo, bas: '', haut: '' };
+      regl.filter(r => { const rr = String(r.rep || '').trim(), rl = String(r.libelle || '').trim().toLowerCase(); return (!rr || rr === '*' || rr === p[0] || String(p[0]).startsWith(`${rr}.`)) && (!rl || `${des} ${p[1]}`.toLowerCase().includes(rl)); })
+        .forEach(r => { if (r.priorite) x.alarme = r.priorite === 'aucune' ? '' : r.priorite; if (r.historique) x.histo = r.historique; if (String(r.bas ?? '') !== '') x.bas = String(r.bas); if (String(r.haut ?? '') !== '') x.haut = String(r.haut); });
+      return [ar, `${devices.get(ar)}`, p[0], des, p[2], p[4], obj, String(c.inst), `${mb[0]} ${mb[1]}${String(reg).padStart(4, '0')}`, unite, x.alarme, x.histo, nom, x.bas, x.haut];
     });
   }
-  const ENTETES_ECHANGE = ['Armoire', 'Device BACnet', 'Repère', 'Libellé', 'E/S', 'Classe', 'Objet BACnet', 'Instance', 'Registre Modbus', 'Unité', 'Alarme', 'Historique', 'Nom d\'objet'];
+  const ENTETES_ECHANGE = ['Armoire', 'Device BACnet', 'Repère', 'Libellé', 'E/S', 'Classe', 'Objet BACnet', 'Instance', 'Registre Modbus', 'Unité', 'Alarme', 'Historique', 'Nom d\'objet', 'Seuil bas', 'Seuil haut'];
+  // Export selon un profil (colonnes du logiciel de l'intégrateur ou de l'automaticien : nom de colonne ← donnée ou valeur fixe)
+  // profil : [{ colonne, source, fixe }] ; sans profil, toutes les colonnes de la table d'échange ; séparateur « ; », « , » ou tabulation
+  function exporter(lignes, profil = [], sep = ';') {
+    const p = (profil || []).filter(x => x && String(x.colonne || '').trim());
+    const ent = p.length ? p.map(x => String(x.colonne).trim()) : ENTETES_ECHANGE;
+    const ls = p.length ? lignes.map(l => p.map(x => (x.source === 'fixe' || !x.source ? String(x.fixe ?? '') : l[ENTETES_ECHANGE.indexOf(x.source)] ?? ''))) : lignes;
+    const s = sep === 'tab' ? '\t' : sep === ',' ? ',' : ';';
+    return [ent, ...ls].map(l => l.map(v => { const t = String(v ?? ''); return t.includes(s) || /["\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; }).join(s)).join('\r\n');
+  }
   const csv = (entetes, lignes) => [entetes, ...lignes].map(l => l.map(v => { const s = String(v ?? ''); return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }).join(';')).join('\r\n');
 
   /* ---------- Comptage d'énergie par usage ---------- */
@@ -153,6 +168,35 @@ const Gtb = (() => {
       ['Réarmement', 'Acquittement depuis la GTB', '—']];
   }
 
-  return { bacs, echange, ENTETES_ECHANGE, csv, comptages, essais, essai, ENTETES_ESSAIS, sequences };
+  /* ---------- Synoptique GTB d'une installation (base pour l'intégrateur) ---------- */
+  // Une vignette par équipement (symbole selon le type), reliées par la ligne du réseau ; sous chaque vignette, ses points
+  // avec leur classe (TA, TS, TM…) ; pts : liste des points du calcul des armoires
+  const ech = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const COUL = { TA: '#c0392b', TS: '#2471a3', TCP: '#7d3c98', TM: '#117a65', TC: '#b9770e', TR: '#a04000', LOG: '#555' };
+  function synoptique(titre, eqs, pts) {
+    const parRep = rep => pts.filter(p => p[0] === rep || String(p[0]).startsWith(`${rep}.`));
+    const l = eqs.filter(q => parRep(q.rep).length), parLigne = 7, lw = 150, haut = 250;
+    if (!l.length) return '';
+    const lignes = Math.ceil(l.length / parLigne), W = 40 + Math.min(l.length, parLigne) * lw, H = 60 + lignes * haut, out = [];
+    const t = (x, y, s, o = {}) => out.push(`<text x="${x}" y="${y}" font-size="${o.fs || 9}" text-anchor="${o.a || 'middle'}"${o.b ? ' font-weight="bold"' : ''} fill="${o.c || '#222'}">${ech(s)}</text>`);
+    t(12, 22, `Synoptique GTB — ${titre}`, { a: 'start', b: true, fs: 13 });
+    t(12, 40, 'Base de vue pour l\'intégrateur : équipements, points et classes (TA alarme, TS état, TM mesure, TC commande, TR réglage, TCP comptage)', { a: 'start', fs: 9, c: '#555' });
+    for (let r = 0; r < lignes; r++) { const y = 60 + r * haut + 60, n = Math.min(parLigne, l.length - r * parLigne); out.push(`<line x1="${40 + lw / 2}" y1="${y}" x2="${40 + (n - 0.5) * lw}" y2="${y}" stroke="#c0392b" stroke-width="3"/>`); }
+    l.forEach((q, i) => {
+      const x = 40 + (i % parLigne) * lw + lw / 2, y = 60 + Math.floor(i / parLigne) * haut + 60, ty = q.type;
+      if (ty === 'pompe') out.push(`<circle cx="${x}" cy="${y}" r="16" fill="#fff" stroke="#222" stroke-width="1.5"/><polygon points="${x - 8},${y - 10} ${x + 12},${y} ${x - 8},${y + 10}" fill="#222"/>`);
+      else if (ty === 'vanne') out.push(`<polygon points="${x - 14},${y - 9} ${x + 14},${y + 9} ${x + 14},${y - 9} ${x - 14},${y + 9}" fill="#fff" stroke="#222" stroke-width="1.5"/><line x1="${x}" y1="${y}" x2="${x}" y2="${y - 20}" stroke="#222"/><rect x="${x - 7}" y="${y - 28}" width="14" height="9" fill="#fff" stroke="#222"/>`);
+      else if (ty === 'sonde' || ty === 'securite') out.push(`<line x1="${x}" y1="${y}" x2="${x}" y2="${y - 22}" stroke="#222"/><circle cx="${x}" cy="${y - 28}" r="7" fill="#fff" stroke="#222" stroke-width="1.5"/>`);
+      else if (ty === 'ventilateur') out.push(`<circle cx="${x}" cy="${y}" r="17" fill="#fff" stroke="#222" stroke-width="1.5"/><path d="M${x} ${y} L${x - 9} ${y - 12} A15 15 0 0 1 ${x + 6} ${y - 14} Z M${x} ${y} L${x + 13} ${y + 5} A15 15 0 0 1 ${x + 3} ${y + 15} Z M${x} ${y} L${x - 12} ${y + 8} A15 15 0 0 1 ${x - 15} ${y - 6} Z" fill="#888"/>`);
+      else out.push(`<rect x="${x - 26}" y="${y - 18}" width="52" height="36" rx="4" fill="#fff" stroke="#222" stroke-width="1.5"/>`, `<text x="${x}" y="${y + 4}" font-size="9" text-anchor="middle" font-weight="bold">${ech(({ generateur: 'GÉN.', pac: 'PAC', cta: 'CTA', ventilo: 'VC', split: 'SPLIT', resistance: 'R', electrovanne: 'EV', regulateur: 'RÉG.' })[ty] || 'ÉQ.')}</text>`);
+      t(x, y + 34, q.rep, { b: true, fs: 10 }); t(x, y + 46, String(q.designation || '').slice(0, 26), { fs: 8, c: '#555' });
+      parRep(q.rep).slice(0, 9).forEach((p, k) => { const c = p[4] || 'TM', yy = y + 62 + k * 14;
+        out.push(`<rect x="${x - lw / 2 + 8}" y="${yy - 9}" width="26" height="11" rx="2" fill="${COUL[c] || '#555'}"/>`); t(x - lw / 2 + 21, yy, c, { fs: 7, b: true, c: '#fff' }); t(x - lw / 2 + 38, yy, String(p[7] || p[1]).slice(0, 24), { a: 'start', fs: 7.5 }); });
+      if (parRep(q.rep).length > 9) t(x, y + 62 + 9 * 14, `… ${parRep(q.rep).length - 9} autre(s) point(s)`, { fs: 7, c: '#777' });
+    });
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Arial, Helvetica, sans-serif"><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${out.join('')}</svg>`;
+  }
+
+  return { synoptique, exporter, bacs, echange, ENTETES_ECHANGE, csv, comptages, essais, essai, ENTETES_ESSAIS, sequences };
 })();
 if (typeof module !== 'undefined') module.exports = Gtb;

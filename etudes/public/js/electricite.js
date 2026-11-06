@@ -539,6 +539,34 @@ const Electricite = ((N, Sc) => {
     // Bornier de puissance : bornes numérotées à la suite, phases, neutre et terre par départ
     const borniersX1 = a => { let n = 1; return [...a.eqs.filter(q => q.tension !== '24V').map(q => { const c = q.d.tri ? (q.neutre ? ['L1', 'L2', 'L3', 'N', 'PE'] : ['L1', 'L2', 'L3', 'PE']) : ['L', 'N', 'PE'], b = `X1:${n}-${n + c.length - 1}`; n += c.length; return [b, `Q-${q.rep}`, `${q.rep} — ${q.designation || q.t[0]}`, c.join(' · '), q.d.cable, q.local || ''] }),
       ...a.enfants.map(c => { const b = `X1:${n}-${n + 4}`; n += 5; return [b, `Q-${c.rep}`, `Armoire divisionnaire ${c.rep}`, 'L1 · L2 · L3 · N · PE', c.dep.cable, c.local || ''] })]; };
+    // Carnet de câbles de chaque armoire : puissance (départs, divisionnaires), commande TOR, mesures 0-10 V / sondes, bus
+    const carnetCables = a => {
+      let n = 0; const W = () => `W${String(++n).padStart(3, '0')}`, out = [], Lq = q => (num(q.L) ? `${num(q.L)} m` : 'à métrer');
+      const vers = q => `${q.rep} — ${String(q.designation || q.t[0]).slice(0, 40)}${q.local ? ` (${q.local})` : ''}`;
+      a.eqs.filter(q => q.tension !== '24V' && q.d.cable).forEach(q => out.push([W(), 'Puissance', `${q.d.cable} (${q.d.tri ? '400 V' : '230 V'})`, `X1 — Q-${q.rep}`, vers(q), Lq(q), q.d.pose ? `pose ${q.d.pose}` : '']));
+      a.enfants.forEach(c => out.push([W(), 'Puissance', c.dep.cable, `X1 — Q-${c.rep}`, `Armoire ${c.rep}${c.local ? ` (${c.local})` : ''}`, num(c.L) ? `${num(c.L)} m` : 'à métrer', 'armoire divisionnaire']));
+      const parEq = new Map();
+      a.adresses.filter(x => x[2] && x[2] !== '—' && !/^(S-|LOG-)/.test(x[2])).forEach(x => { const r = String(x[2]).split('.')[0]; if (!parEq.has(r)) parEq.set(r, []); parEq.get(r).push(x); });
+      parEq.forEach((l, r) => {
+        const q = eqs.find(y => y.rep === r) || { rep: r, designation: '', t: [''] }, bo = ls => ls.map(x => x[1]).filter(Boolean).join(', ');
+        const tor = l.filter(x => ['ETOR', 'STOR'].includes(x[4])), ana = l.filter(x => ['EA', 'SA'].includes(x[4])), bus = l.filter(x => x[4] === 'Bus');
+        if (tor.length) { const c = [3, 4, 5, 7, 12, 19, 27].find(k => k >= tor.length * 2 + 1) || 27; out.push([W(), 'Commande (TOR)', `U1000 R2V ${c}G1,5 (${tor.length} point(s))`, `X2 ${bo(tor)}`, vers(q), Lq(q), 'conducteurs repérés aux deux extrémités']); }
+        if (ana.length) out.push([W(), 'Mesure / 0-10 V', `Câble blindé ${ana.length} paire(s) 0,8 mm²`, `X2 ${bo(ana)}`, vers(q), Lq(q), 'blindage relié à la terre côté armoire, cheminement séparé de la puissance']);
+        if (bus.length) out.push([W(), 'Bus', /KNX/i.test(bus[0][0]) ? 'Câble bus KNX 2 × 2 × 0,8 mm²' : 'Paire torsadée blindée RS485 (Modbus RTU / BACnet MS/TP), terminaison 120 Ω', 'Port de communication', vers(q), Lq(q), `${bus.length} point(s) communiqué(s), câblage en chaîne`]);
+      });
+      return out;
+    };
+    const ENT_CARNET = ['Câble', 'Nature', 'Composition', 'Tenant (armoire)', 'Aboutissant', 'Longueur', 'Observations'];
+    // Références de l'appareillage (tarif saisi ou collé) : la ligne dont le mot-clé (ou les mots séparés par « + ») est le plus
+    // précis et figure dans la désignation l'emporte ; chiffrage matériel de l'armoire
+    const refs = (e.appareillage || []).filter(x => x && String(x.motif || '').trim());
+    const refDe = l => { const t = `${l[0]} ${l[1]} ${l[2]}`.toLowerCase(); return refs.filter(x => String(x.motif).toLowerCase().split('+').map(m => m.trim()).filter(Boolean).every(m => t.includes(m))).sort((x, y) => String(y.motif).length - String(x.motif).length)[0]; };
+    arm.forEach(a => {
+      a.nomPrix = a.nomenclature.map(l => { const r = refDe(l), pu = r ? num(r.pu, 0) : 0; return [...l, r ? r.marque || '' : '', r ? r.reference || '' : '', pu ? nf(pu, 2) : '', pu ? nf(pu * l[3], 2) : '']; });
+      a.chiffrage = { total: a.nomenclature.reduce((x, l) => { const r = refDe(l); return x + (r ? num(r.pu, 0) * l[3] : 0); }, 0), sansPrix: a.nomenclature.filter(l => { const r = refDe(l); return !r || !num(r.pu, 0); }).length };
+    });
+    const ENT_NOM = ['Famille', 'Désignation', 'Caractéristiques', 'Qté', ...(refs.length ? ['Marque', 'Référence', 'PU HT (€)', 'Montant HT (€)'] : [])];
+    const lignesNom = a => (refs.length ? [...a.nomPrix.map(l => [l[0], l[1], l[2], String(l[3]), l[4], l[5], l[6], l[7]]), ['Total matériel', '', a.chiffrage.sansPrix ? `${a.chiffrage.sansPrix} ligne(s) sans prix` : '', '', '', '', '', nf(a.chiffrage.total, 2)]] : a.nomenclature.map(x => [x[0], x[1], x[2], String(x[3])]));
     // Bilan de puissance jusqu'au TGBT : armoires CVC (foisonnées) et attentes directes du lot électricité
     const ksT = num(e.ksTgbt, 90) / 100, descendants = a => a.enfants.flatMap(c => [c, ...descendants(c)]);
     const ligneBilan = (nom, alim, P, ks, S, Ib) => [nom, alim, nf(P, 2), `${nf(ks * 100, 0)} %`, nf(P * ks, 2), S ? nf(P / S, 2) : '—', nf(S * ks, 2), nf(Ib, 1)];
@@ -614,7 +642,8 @@ const Electricite = ((N, Sc) => {
         { liste: [`Enveloppe ${a.thermique.dims}, surface d'échange ${nf(a.thermique.Ae, 2)} m² ; local à ${nf(a.thermique.tLoc, 0)} °C, 40 °C maxi à l'intérieur : ${nf(a.thermique.Pnat, 0)} W évacuables par convection naturelle.`,
           a.thermique.mode === 'naturelle' ? `Convection naturelle suffisante (≈ ${nf(a.thermique.Tint, 0)} °C à l'intérieur).` : a.thermique.mode === 'ventilation' ? `Ventilation forcée : ${nf(a.thermique.Q, 0)} m³/h (V = 3,1 · (P − k · Ae · ΔT) / ΔT) → ventilateur à filtre ${a.thermique.choix} m³/h, entrée en bas, sortie filtrée en haut, thermostat réglé à 35 °C.` : `Local trop chaud pour ventiler (ΔT < 5 K) : climatiseur d'armoire ${a.thermique.choix} W froid (besoin ${nf(a.thermique.Pf, 0)} W).`] },
         { titre: `Bornier X1 (puissance) — armoire ${a.rep}`, tableau: { entetes: ['Bornes', 'Départ', 'Équipement', 'Conducteurs', 'Câble', 'Vers'], lignes: borniersX1(a) } },
-        { titre: `Nomenclature de l'appareillage — armoire ${a.rep}`, tableau: { entetes: ['Famille', 'Désignation', 'Caractéristiques', 'Qté'], lignes: a.nomenclature.map(x => [x[0], x[1], x[2], String(x[3])]) } },
+        { titre: `Nomenclature de l'appareillage — armoire ${a.rep}`, tableau: { entetes: ENT_NOM, lignes: lignesNom(a), total: refs.length > 0 } },
+        { titre: `Carnet de câbles — armoire ${a.rep}`, tableau: { entetes: ENT_CARNET, lignes: carnetCables(a) } },
         { titre: `Départs de l'armoire ${a.rep}`, tableau: { entetes: ['Repère', 'Équipement', 'P (kW)', 'Tension', 'Phase', 'Départ', 'Ib (A)', 'Protection', 'Câble'],
           lignes: [...a.eqs.map(q => [q.rep, q.designation || q.t[0], nf(num(q.P), 2), TENSIONS[q.tension] || q.tension, q.phase || '24 V', DEPARTS[q.depart] || q.depart, q.d.Ib ? nf(q.d.Ib, 1) : '—', q.d.cal ? `${q.d.cal} A ${q.d.courbe}` : '—', q.d.cable || '—']),
             ...a.enfants.map(c => [c.rep, `Armoire divisionnaire${c.local ? ` — ${c.local}` : ''}`, nf(c.P, 2), '400 V tri', 'L1-L2-L3', 'Départ armoire', nf(c.Ib, 1), `${c.cal} A C`, `${c.dep.cable}${num(c.L) ? ` (${num(c.L)} m)` : ''}`])] } },
@@ -645,18 +674,23 @@ const Electricite = ((N, Sc) => {
     const Pbacs = num(e.pBacs) || REG.installations.reduce((s, x) => s + num(x.puissance), 0);
     const bacs = Gt().bacs({ P: Pbacs, neuf: e.batimentNeuf === 'oui', eqs, REG, opt, gtb: e.gtb, pts });
     if (bacs.assujetti && !bacs.conforme) alertes.push(alerte('attention', `Décret BACS : bâtiment assujetti (${bacs.echeance}) ; classe de régulation estimée ${bacs.classe}, classe A ou B exigée (onglet « GTB et BACS »).`));
-    const echange = Gt().echange(pts, arm.map(a => a.rep)), comptes = eqs.filter(q => String(q.src || '').startsWith('comptage:'));
+    const echange = Gt().echange(pts, arm.map(a => a.rep), e.reglagesPoints), comptes = eqs.filter(q => String(q.src || '').startsWith('comptage:'));
     const seqs = REG.installations.map(x => ({ x, s: Gt().sequences(x, (REG.types || {})[x.noteId], { permutation: e.permutation }) })).filter(y => y.s);
     const regInstallations = REG.installations.map(x => ({ noteId: x.noteId, titre: x.titre, app: x.app, techno: techParNote[x.noteId] || (arm[0] ? arm[0].techno : 'integree'), params: x.params }));
     // Folios numérotés F01, F02… avec cartouche (affaire, indice, date) et renvois entre folios d'une même armoire
     const folios = [{ titre: 'Schéma unifilaire des armoires CVC', court: 'unifilaire', svg: unifilaire(arm, lot), arm: '' },
       ...arm.flatMap(a => [{ titre: `Alimentations et circuits auxiliaires — armoire ${a.rep}`, court: 'auxiliaires', svg: folioAux(a, lot) }, { titre: `Folio de commande — armoire ${a.rep}`, court: 'commande', svg: folioCommande(a) }, ...(a.techno === 'automate' && (a.chassis || []).some(c => c.modules.length) ? [{ titre: `Implantation de l'automate — armoire ${a.rep} (${a.chassis.length} châssis${a.extensions ? `, ${a.extensions} extension(s)` : ''})`, court: 'automate', svg: folioAutomate(a, cfgAut, gtb) }] : []), ...(a.techno === 'automate' && a.adresses.some(x => x[2] !== '—' && !/^Bus/.test(x[0])) ? [{ titre: `Cartes d'entrées / sorties — armoire ${a.rep}`, court: 'cartes E/S', svg: folioCartes(a) }] : [])].map(f => ({ ...f, arm: a.rep })))].filter(f => f.svg);
+    // Synoptiques GTB : un par installation de l'étude (équipements regroupés par calcul d'origine), puis les communs
+    const grp = new Map();
+    eqs.forEach(q => { const id = String(q.src || '').split(':')[0], x = REG.installations.find(y => y.noteId === id), k = x ? x.titre : 'Équipements communs (sécurités, comptages, options, ajoutés)'; if (!grp.has(k)) grp.set(k, []); grp.get(k).push(q); });
+    grp.forEach((l, titre) => { const svg = Gt().synoptique(titre, l, pts); if (svg) folios.push({ titre: `Synoptique GTB — ${titre}`, court: 'synoptique', svg, arm: '' }); });
     folios.forEach((f, i) => { f.no = `F${String(i + 1).padStart(2, '0')}`; });
+    folios.forEach(f => { f.svg = f.svg.replace(/§AUX§/g, (folios.find(g => g.arm === f.arm && g.court === 'auxiliaires') || {}).no || 'aux.').replace(/§UNI§/g, folios[0].no); });
     const renvois = rep => folios.filter(f => f.arm === rep).map(f => `${f.court} ${f.no}`).join(', '), aff = e._affaire || {};
     folios.forEach(f => { f.svg = cartouche(f.svg, { affaire: aff.objet || '', client: aff.client || '', indice: aff.indice || 'A', date: aff.date || '', auteur: aff.auteur || '', titre: f.titre, no: f.no, total: folios.length,
       renvois: f.arm ? `Armoire ${f.arm} : unifilaire ${folios[0].no}, ${renvois(f.arm)}` : arm.map(a => `${a.rep} : ${renvois(a.rep)}`).join(' — ') }); });
     return {
-      valeurs: { regulation: { installations: regInstallations, parametres }, bacs: { P: Pbacs, classe: bacs.classe, conforme: bacs.conforme, assujetti: bacs.assujetti, echeance: bacs.echeance }, echangeCsv: Gt().csv(Gt().ENTETES_ECHANGE, echange), listePoints: pts, Ptot, PCvc, Pelec, Pappel, Sappel, Itgbt, armoires: arm.map(a => ({ rep: a.rep, P: a.P, Ib: a.Ib, cal: a.cal, cartes: a.cartes, enveloppe: a.enveloppe, aux: (a.aux || []).map(x => ({ circuit: x.nom, P: x.P, choix: x.choix, materiel: x.materiel })), extensions: a.extensions || 0 })), points: pts.length,
+      valeurs: { regulation: { installations: regInstallations, parametres }, bacs: { P: Pbacs, classe: bacs.classe, conforme: bacs.conforme, assujetti: bacs.assujetti, echeance: bacs.echeance }, echangeCsv: Gt().exporter(echange, e.profilExport, e.sepExport), listePoints: pts, Ptot, PCvc, Pelec, Pappel, Sappel, Itgbt, armoires: arm.map(a => ({ rep: a.rep, P: a.P, Ib: a.Ib, cal: a.cal, cartes: a.cartes, enveloppe: a.enveloppe, aux: (a.aux || []).map(x => ({ circuit: x.nom, P: x.P, choix: x.choix, materiel: x.materiel })), extensions: a.extensions || 0 })), points: pts.length,
         // Classeur Excel : bilan, attentes, équipements, points, puis adressage et nomenclature de chaque armoire
         feuilles: [
           { name: 'Bilan de puissance', entetes: tableauBilan.entetes, lignes: tableauBilan.lignes },
@@ -666,10 +700,12 @@ const Electricite = ((N, Sc) => {
           { name: 'Table d\'échange GTB', entetes: Gt().ENTETES_ECHANGE, lignes: echange },
           { name: 'Essais point à point', entetes: ['Armoire', ...Gt().ENTETES_ESSAIS], lignes: arm.flatMap(a => Gt().essais(a.adresses).map(l => [a.rep, ...l])) },
           ...arm.flatMap(a => [{ name: `E-S ${a.rep}`, entetes: ['Adresse', 'Bornes', 'Repère', 'Désignation', 'Type', 'Signal'], lignes: a.adresses },
-            { name: `Nomenclature ${a.rep}`, entetes: ['Famille', 'Désignation', 'Caractéristiques', 'Qté'], lignes: a.nomenclature }])] },
+            { name: `Nomenclature ${a.rep}`, entetes: ENT_NOM, lignes: refs.length ? lignesNom(a) : a.nomenclature }]),
+          { name: 'Carnet de câbles', entetes: ['Armoire', ...ENT_CARNET], lignes: arm.flatMap(a => carnetCables(a).map(l => [a.rep, ...l])) }] },
       resume: [['Équipements', `${eqs.length} (${eqs.filter(q => q.alim === 'elec').length} sur attente électrique, ${eqs.filter(q => q.alim !== 'elec').length} sur armoire CVC)`],
         ['Puissance électrique installée', `${nf(Ptot, 1)} kW`], ['Dont armoires CVC (lot CVC, commande comprise)', `${nf(PCvc, 1)} kW`], ['Dont attentes du lot électricité', `${nf(Pelec, 1)} kW`],
         ...arm.map(a => [`Armoire ${a.rep}`, `${nf(a.P, 1)} kW installés, Ib ${nf(a.Ib, 1)} A → interrupteur ${a.cal} A, alimentation 5G${String(a.S).replace('.', ',')}`]),
+        ...(refs.length ? [['Chiffrage matériel des armoires (tarif saisi)', `${nf(arm.reduce((x, a) => x + a.chiffrage.total, 0), 0)} € HT${arm.some(a => a.chiffrage.sansPrix) ? ` — ${arm.reduce((x, a) => x + a.chiffrage.sansPrix, 0)} ligne(s) sans prix` : ''}`]] : []),
         ['Points automate', `${pts.length} (${compte(pts).filter(x => x[1]).map(([t, n]) => `${n} ${t}`).join(', ')})`],
         ['Puissance appelée au TGBT (CVC)', `${nf(Pappel, 1)} kW · ${nf(Sappel, 1)} kVA · ${nf(Itgbt, 1)} A sous 400 V`]],
       tableaux: [
@@ -810,28 +846,39 @@ const Electricite = ((N, Sc) => {
       else if (q.depart === 'variateur') lignes.push({ titre: `${q.rep} — ${q.designation || q.t[0]} (variateur)`, el: [...(au ? [{ t: 'NO', l: 'KA-AU', s: 'arrêt d\'urgence' }] : []), { t: 'S3', l: `S-${q.rep}`, s: 'Manu / Auto / Arrêt' }, { t: 'NO', l: adr(q.rep, 'STOR'), s: 'automate' }], fin: { t: 'sortie', l: `VAR-${q.rep}`, s: `marche ; vitesse ${adr(q.rep, 'SA') || '0-10 V'}` }, voyants: true });
     });
     if (!lignes.length) return '';
-    const pas = 58, W = 980, H = 70 + lignes.length * pas, out = [], xG = 40, xD = W - 40;
+    // Renvois : sous chaque bobine, les lignes de ses contacts ; sous chaque contact, la ligne de sa bobine (ou le folio
+    // des auxiliaires pour KA-AU, l'unifilaire pour les contacts de puissance) ; §AUX§ et §UNI§ remplacés par les n° de folio
+    const bobines = new Map(), contacts = new Map();
+    lignes.forEach((l, i) => { if (l.fin.t === 'bobine') bobines.set(l.fin.l, i + 1); l.el.forEach(c => { if (c.t === 'NO' || c.t === 'NF') { if (!contacts.has(c.l)) contacts.set(c.l, []); contacts.get(c.l).push(`${c.t === 'NO' ? 'F' : 'O'}/${i + 1}`); } }); });
+    const borne = l => (a.adresses.find(x => x[0] === l) || [])[1] || '';
+    let fil = 0;
+    const pas = 72, W = 980, H = 70 + lignes.length * pas, out = [], xG = 40, xD = W - 40;
     const tx = (x, y, s, o = {}) => out.push(`<text x="${x}" y="${y}" font-size="${o.fs || 10}" text-anchor="${o.a || 'middle'}"${o.b ? ' font-weight="bold"' : ''} fill="${o.c || '#222'}">${echapper(s)}</text>`);
     const ln = (x1, y1, x2, y2, w = 1.2) => out.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#222" stroke-width="${w}"/>`);
     tx(10, 18, `Armoire ${a.rep} — folio de commande 24 V AC${au ? ' (contacteurs et variateurs coupés par l\'arrêt d\'urgence KA-AU)' : ''}`, { a: 'start', b: true, fs: 12 });
     tx(xG, 40, '+24 V', { fs: 9 }); tx(xD, 40, '0 V', { fs: 9 });
+    tx((xG + xD) / 2, 40, 'n° de ligne en bleu à gauche · n° de fil sur chaque conducteur · F/n : contact à fermeture ligne n, O/n : à ouverture', { fs: 7.5, c: '#1f618d' });
     ln(xG, 46, xG, H - 10, 2); ln(xD, 46, xD, H - 10, 2);
     lignes.forEach((l, i) => {
       const y = 70 + i * pas;
+      tx(xG - 24, y + 4, String(i + 1), { fs: 10, b: true, c: '#1f618d' });
       tx(xG + 8, y - 16, l.titre, { a: 'start', fs: 9, c: '#555' });
       let x = xG;
       l.el.forEach(c => {
-        ln(x, y, x + 46, y); x += 46;
+        ln(x, y, x + 46, y); tx(x + 23, y - 4, String(++fil), { fs: 7, c: '#1f618d' }); x += 46;
         if (c.t === 'NO' || c.t === 'NF') { ln(x, y - 9, x, y + 9); ln(x + 14, y - 9, x + 14, y + 9); if (c.t === 'NF') ln(x - 3, y + 8, x + 17, y - 8, 1); }
         else { out.push(`<rect x="${x}" y="${y - 9}" width="14" height="18" fill="#fff" stroke="#222"/>`); ln(x + 3, y + 6, x + 11, y - 6, 1); }
         tx(x + 7, y + 22, c.l, { fs: 8, b: true }); if (c.s) tx(x + 7, y + 32, c.s, { fs: 7, c: '#555' });
+        const ref = bobines.has(c.l) ? `→ /${bobines.get(c.l)}` : c.l === 'KA-AU' ? '→ §AUX§' : /^Q-/.test(c.l) ? '→ §UNI§' : borne(c.l);
+        if (ref) tx(x + 7, y + 42, ref, { fs: 7, c: '#1f618d' });
         x += 14;
       });
       const xf = xD - 150;
-      ln(x, y, xf, y);
+      ln(x, y, xf, y); tx((x + xf) / 2, y - 4, String(++fil), { fs: 7, c: '#1f618d' });
       if (l.fin.t === 'bobine') { out.push(`<rect x="${xf}" y="${y - 10}" width="34" height="20" fill="#fff" stroke="#222" stroke-width="1.4"/>`); ln(xf + 34, y, xD, y); }
       else { out.push(`<polygon points="${xf},${y - 9} ${xf + 26},${y} ${xf},${y + 9}" fill="#fff" stroke="#222"/>`); }
       tx(xf + 17, y + 24, l.fin.l, { fs: 8, b: true }); tx(xf + 40, y - 12, l.fin.s, { a: 'start', fs: 8, c: '#555' });
+      if (l.fin.t === 'bobine') { const r = [...(contacts.get(l.fin.l) || []), ...(/^KM-/.test(l.fin.l) ? ['puissance §UNI§'] : [])]; if (r.length) tx(xf + 17, y + 36, r.join(' · '), { fs: 7, c: '#1f618d' }); }
       if (l.voyants) { tx(xf - 60, y + 24, 'H vert : marche · H rouge : défaut', { fs: 7, c: '#555' }); }
     });
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Arial, Helvetica, sans-serif"><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${out.join('')}</svg>`;
@@ -1106,6 +1153,16 @@ const Electricite = ((N, Sc) => {
       { g: 'GTB et décret BACS' },
       { k: 'pBacs', l: 'Puissance nominale chauffage + climatisation (vide : reprise des schémas de principe)', u: 'kW', d: '' },
       { k: 'batimentNeuf', l: 'Bâtiment', t: 's', o: [['non', 'Existant'], ['oui', 'Neuf (permis après le 21 juillet 2021)']], d: 'non' },
+      { k: 'reglagesPoints', l: 'Réglages des points GTB (priorité d\'alarme, seuils, historique) — repère (ou « * ») et texte du libellé ; prioritaires sur les valeurs déduites', t: 'lignes', d: [],
+        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'libelle', l: 'Libellé contient', t: 't' }, { k: 'priorite', l: 'Priorité d\'alarme', t: 's', o: [['', '—'], ['P1 (sécurité)', 'P1 (sécurité)'], ['P2 (défaut)', 'P2 (défaut)'], ['P3 (maintenance)', 'P3 (maintenance)'], ['aucune', 'Aucune alarme']] },
+          { k: 'bas', l: 'Seuil bas' }, { k: 'haut', l: 'Seuil haut' }, { k: 'historique', l: 'Historique', t: 't' }] },
+      { k: 'profilExport', l: 'Profil d\'export de la table d\'échange (colonnes du logiciel de l\'intégrateur ou de l\'automaticien, ex. Wit) — vide : toutes les colonnes', t: 'lignes', d: [],
+        colonnes: [{ k: 'colonne', l: 'Nom de colonne attendu', t: 't' }, { k: 'source', l: 'Donnée', t: 's', o: () => [['fixe', 'Valeur fixe'], ...Gt().ENTETES_ECHANGE.map(x => [x, x])] }, { k: 'fixe', l: 'Valeur fixe', t: 't' }] },
+      { k: 'sepExport', l: 'Séparateur du fichier exporté', t: 's', o: [[';', 'Point-virgule (Excel français)'], [',', 'Virgule'], ['tab', 'Tabulation']], d: ';' },
+      { g: 'Chiffrage de l\'appareillage' },
+      { k: 'appareillage', l: 'Références de l\'appareillage : mot-clé de la nomenclature (plusieurs mots : « Contacteur + 16 A ») → marque, référence, prix ; collez votre tarif depuis Excel', t: 'lignes', d: [],
+        colonnes: [{ k: 'motif', l: 'Mot-clé', t: 't' }, { k: 'marque', l: 'Marque', t: 't' }, { k: 'reference', l: 'Référence', t: 't' }, { k: 'pu', l: 'PU HT (€)' }] },
+      { g: 'Lot électricité' },
       { k: 'ksTgbt', l: 'Simultanéité des départs CVC au TGBT', u: '%', d: 90 },
       { k: 'iccTgbt', l: 'Courant de court-circuit au TGBT (donnée du lot électricité)', u: 'kA', d: 10 },
       { k: 'busEquip', l: 'Bus des équipements communicants', t: 's', o: [['Modbus RTU', 'Modbus RTU (RS485)'], ['Modbus TCP', 'Modbus TCP'], ['BACnet MS/TP', 'BACnet MS/TP'], ['BACnet/IP', 'BACnet/IP'], ['M-Bus', 'M-Bus (compteurs)']], d: 'Modbus RTU' },
