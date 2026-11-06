@@ -130,7 +130,8 @@ const MaterielRetenu = (() => {
   const NUM = v => (Number.isFinite(Number(v)) ? Number(v) : '');
   const debitsChantier = liens => (liens || []).filter(l => l.app === 'etudes').flatMap(l => ((l.resume || {}).debits || []).slice(0, 30).map(d => ({
     etude: txt((l.resume || {}).objet, 120), installation: txt(d.installation, 120), type: d.type === 'Hydraulique' ? 'Hydraulique' : 'Aéraulique', unite: ['m³/h', 'l/s', 'l/h'].includes(d.unite) ? d.unite : 'm³/h',
-    lignes: (d.lignes || []).slice(0, 500).map(x => ({ repere: txt(x.repere, 40), local: txt(x.local, 120), type: txt(x.type, 40), theorique: NUM(x.theorique), reglage: txt(x.reglage, 80) })) })));
+    lignes: (d.lignes || []).slice(0, 500).map(x => ({ repere: txt(x.repere, 40), local: txt(x.local, 120), type: txt(x.type, 40), theorique: NUM(x.theorique), reglage: txt(x.reglage, 80) })),
+    renumerotations: ((l.resume || {}).renumerotations || []).slice(-20).map(r => ({ date: txt(r.date, 10), map: Object.fromEntries(Object.entries(r.map || {}).slice(0, 500).map(([a, b]) => [txt(a, 40), txt(b, 40)])) })) })));
   /* ---------- Garanties et entretien des équipements en service ---------- */
   // Opérations d'entretien courantes par type d'équipement [opération, précision, périodicité en mois] — base d'un contrat,
   // à adapter aux notices des fabricants

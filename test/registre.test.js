@@ -283,3 +283,26 @@ test('équilibrage : repères des bouches, registres RG- et vannes VE- avec leur
   assert.strictEqual(Es.reprendreReleve(mesures, releves), 2);
   assert.deepStrictEqual(mesures.map(m => [m.valeur, m.reglage]), [['290', 'cône 3'], ['0,48', '2 tours'], ['', undefined]]);
 });
+
+test('relevé ↔ PV dans les deux sens ; renumérotation de l\'étude reportée sur les relevés et PV ouverts', () => {
+  const Es = require('../public/js/essais');
+  // PV → relevé : lignes sans mesure complétées (bouche, vanne VE-)
+  const lignes = [{ repere: 'B-01', mesure: '' }, { repere: 'VE-CA-01', mesure: '' }, { repere: 'B-02', mesure: '150' }];
+  const mises = [{ mesures: [{ libelle: 'Débit B-01 — Bureau · soufflage · branche S1', valeur: '205', reglage: 'cône 3' }, { libelle: 'Débit CA-01 — Bureau · vanne VE-CA-01 · branche C', valeur: '0,5' }, { libelle: 'Débit B-02 — X · soufflage · branche S1', valeur: '999' }] }];
+  assert.strictEqual(Es.versReleve(lignes, mises), 2);
+  assert.deepStrictEqual(lignes.map(l => [l.mesure, l.reglage]), [['205', 'cône 3'], ['0.5', undefined], ['150', undefined]]);
+  // Renumérotation complète des bouches dans l'étude : correspondance notée
+  const aero = note('aero', { structure: 'arborescence', bouchesL: [] }), et = { notes: [aero] };
+  V.appliquer(et, item('bouche', { local: 'Bureau 1 ; Open space ×2', branche: 'S1.1' }), `aero:${aero.id}`, note);
+  R.renumeroterBouches(et, { prefixe: 'reseau' });
+  assert.deepStrictEqual(et.renumerotations[0].map, { 'B-01': 'S-01', 'B-02': 'S-02', 'B-03': 'S-03' });
+  // Appliquée au relevé et au PV
+  const rel = [{ repere: 'B-02' }, { repere: 'R-09' }], pv = [{ libelle: 'Débit B-03 — Open space · soufflage · branche S1.1' }, { libelle: 'Débit de soufflage' }];
+  assert.strictEqual(Es.renumeroter(rel, et.renumerotations), 1);
+  assert.strictEqual(Es.renumeroter(pv, et.renumerotations), 1);
+  assert.deepStrictEqual([rel[0].repere, pv[0].libelle], ['S-02', 'Débit S-03 — Open space · soufflage · branche S1.1']);
+  // Transmise au CRM avec les débits du chantier
+  const MR = require('../public/js/materiel-retenu');
+  const d = MR.debitsChantier([{ app: 'etudes', resume: { debits: [{ installation: 'X', lignes: [] }], renumerotations: et.renumerotations } }]);
+  assert.deepStrictEqual(d[0].renumerotations[0].map['B-01'], 'S-01');
+});

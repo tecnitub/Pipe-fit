@@ -330,7 +330,13 @@ const Registre = (() => {
     const compte = {}, w = String(Math.max(0, debut - 1) + l.length).length > 2 ? 3 : 2;
     // Hors des schémas renumérotés, les repères restent pris
     const autres = new Set(schemasAir(et).filter(n => !sch.includes(n)).flatMap(n => (n.entrees.bouchesL || []).map(b => String(b.rep || '').trim())));
+    const avant = new Map(l.map(({ b }) => [b, String(b.rep || '').trim()])), vus = new Set(), doubles = new Set();
+    avant.forEach(r => { if (r && vus.has(r)) doubles.add(r); vus.add(r); });
     l.forEach(({ b }) => { const p = pf(b); let k = compte[p] === undefined ? Math.max(1, Math.round(Number(debut) || 1)) : compte[p]; let r; do { r = `${p}-${String(k++).padStart(w, '0')}`; } while (autres.has(r)); compte[p] = k; b.rep = r; });
+    // Correspondance ancien → nouveau (repères uniques seulement) : reprise dans les relevés et PV déjà ouverts sur le chantier
+    const map = {};
+    avant.forEach((r, b) => { if (r && !doubles.has(r) && r !== b.rep) map[r] = b.rep; });
+    if (Object.keys(map).length) { et.renumerotations = [...(et.renumerotations || []), { date: new Date().toISOString().slice(0, 10), type: 'bouches', map }].slice(-20); }
     return l.length;
   }
   /* ---------- Matériel retenu rempli depuis le registre (pas de ressaisie) ---------- */

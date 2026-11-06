@@ -125,6 +125,31 @@ const Essais = (() => {
     });
     return k;
   }
-  return { reprendreReleve, releve, TYPES, ETATS, modele, conclusion, manquesMES, tolerance, conformeMesure, ecart, conforme, synthese, manquesEQ, importerLignes };
+  // Sens inverse : débits et réglages relevés sur les PV de mise en service reportés sur les lignes du relevé d'équilibrage
+  // (ligne sans mesure seulement) ; renvoie le nombre de lignes complétées
+  function versReleve(lignes, mises) {
+    const par = new Map();
+    (mises || []).forEach(r => (r.mesures || []).forEach(m => {
+      const x = releve(m); if (!x || String(m.valeur ?? '').trim() === '') return;
+      par.set(x.repere, m); const ve = /vanne(?: partenaire)? ([^\s,]+)/.exec(x.detail); if (ve) par.set(ve[1], m);
+    }));
+    let k = 0;
+    (lignes || []).forEach(l => { if (String(l.mesure ?? '').trim() !== '') return; const m = par.get(String(l.repere || '').trim()); if (!m) return; l.mesure = String(m.valeur).replace(',', '.'); if (m.reglage && !l.reglage) l.reglage = m.reglage; k++; });
+    return k;
+  }
+  // Repères renumérotés dans l'étude (lots successifs ancien → nouveau) appliqués aux lignes d'un relevé ou d'un PV
+  function renumeroter(cible, lots) {
+    let k = 0;
+    (lots || []).forEach(lot => {
+      const map = (lot && lot.map) || {};
+      (cible || []).forEach(x => {
+        if (x.repere !== undefined) { const n = map[String(x.repere).trim()]; if (n) { x.repere = n; k++; } return; }
+        const r = releve(x); if (!r || !map[r.repere]) return;
+        x.libelle = x.libelle.replace(`${r.grandeur} ${r.repere}`, `${r.grandeur} ${map[r.repere]}`); k++;
+      });
+    });
+    return k;
+  }
+  return { versReleve, renumeroter, reprendreReleve, releve, TYPES, ETATS, modele, conclusion, manquesMES, tolerance, conformeMesure, ecart, conforme, synthese, manquesEQ, importerLignes };
 })();
 if (typeof module !== 'undefined') module.exports = Essais;

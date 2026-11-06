@@ -120,6 +120,12 @@ const bindEssaiVue = (root, kind, r) => { const b = root.querySelector('#es-pdf'
 /* ---------- PV de mise en service ---------- */
 // Valeur attendue (étude) et écart de la mesure saisie
 // Écart seul (relevé par bouche / émetteur, colonne du tableau)
+// Repères renumérotés dans les études du chantier (lots ancien → nouveau, sans doublon)
+async function renumerotationsChantier(affaireId) {
+  const l = await api('GET', `/api/liens/debits?affaireId=${encodeURIComponent(affaireId)}`), vus = new Set(), out = [];
+  (l || []).forEach(d => (d.renumerotations || []).forEach(r => { const k = JSON.stringify(r); if (!vus.has(k)) { vus.add(k); out.push(r); } }));
+  return out;
+}
 const ecartHtml = m => { if (m.attendu === undefined) return ''; const e = PlanMes.ecart(m), c = Essais.conformeMesure(m), t = Essais.tolerance(m.libelle, m.unite);
   return e === null ? `<span class="muted">${esc(t.texte)}</span>` : `<span class="${c ? 'pos' : 'neg'}">${e > 0 ? '+' : ''}${fmt(e, 1)} % ${c ? '✓' : '✕ hors tolérance'}</span>`; };
 const attenduHtml = m => { const e = PlanMes.ecart(m), c = Essais.conformeMesure(m), t = Essais.tolerance(m.libelle, m.unite);
@@ -164,7 +170,7 @@ Views.mes = (params, query) => {
           <td><input data-mes="${i}" inputmode="decimal" style="width:7em" value="${esc(m.valeur ?? '')}" aria-label="${esc(m.libelle)} mesuré"></td>
           <td><input data-mesreg="${i}" style="width:9em" value="${esc(m.reglage || '')}" placeholder="${esc((/préréglage ([\d,]+ tours)/.exec(r.detail) || [])[1] || 'position, ouverture')}" aria-label="Réglage ${esc(r.repere)}"></td><td class="small" data-att="${i}" data-court="1">${ecartHtml(m)}</td></tr>`).join('')}</tbody></table></div>
         ${(() => { const rel = Store.all('equilibrages').filter(x => x.affaireId && x.affaireId === e.affaireId), n = rel.length ? Essais.reprendreReleve(JSON.parse(JSON.stringify(e.mesures)), rel) : 0;
-          return n ? `<button class="small secondary" id="es-reprendre-releve">↙ Reprendre ${n} mesure(s) du relevé d'équilibrage (débits et réglages)</button>` : ''; })()}`; })()}
+          return `${n ? `<button class="small secondary" id="es-reprendre-releve">↙ Reprendre ${n} mesure(s) du relevé d'équilibrage (débits et réglages)</button> ` : ''}${e.affaireId ? '<button class="small secondary" id="es-renum">🔄 Repères renumérotés dans l\'étude</button>' : ''}`; })()}`; })()}
       ${(e.attendus || []).length ? '<p class="small muted">Valeurs attendues reprises de l\'étude : l\'écart s\'affiche dès la saisie de la mesure.</p>' : ''}
       <button class="small secondary" id="es-add-mes">+ Autre mesure</button></fieldset>
     <div class="field"><label for="es-reglages">Réglages effectués</label><textarea id="es-reglages" data-k="reglages" data-dictee rows="2" placeholder="Consignes, lois d'eau, programmations, débits…">${esc(e.reglages || '')}</textarea></div>
@@ -194,6 +200,8 @@ Views.mes.bind = (root, params) => {
     const rn = root.querySelector('#es-releve-n'); if (rn) { const rl = e.mesures.filter(x => Essais.releve(x)); rn.textContent = `${rl.filter(x => String(x.valeur ?? '').trim() !== '').length}/${rl.length} mesuré(s)`; }
     const avant = e.resultat; proposer(); if (e.resultat !== avant && $('#es-res')) $('#es-res').value = e.resultat; });
   root.querySelectorAll('[data-mesreg]').forEach(el => el.oninput = () => { e.mesures[+el.dataset.mesreg].reglage = el.value.trim(); });
+  const rn = $('#es-renum');
+  if (rn) rn.onclick = async () => { let lots; try { lots = await renumerotationsChantier(e.affaireId); } catch (err) { return notify(err.message); } const k = Essais.renumeroter(e.mesures, lots); App.render(); App.toast(k ? `${k} repère(s) mis à jour d'après l'étude` : 'Aucun repère renuméroté dans l\'étude pour ces lignes.', 4000); };
   const rr = $('#es-reprendre-releve');
   if (rr) rr.onclick = () => { const k = Essais.reprendreReleve(e.mesures, Store.all('equilibrages').filter(x => x.affaireId === e.affaireId)); proposer(); App.render(); App.toast(`${k} mesure(s) reprise(s) du relevé d'équilibrage : rien à ressaisir.`, 4000); };
   $('#es-add-mes').onclick = async () => { const lib = await askValue('Mesure (ex. Débit d\'eau, m³/h)', ''); if (!lib) return; const [l, u] = lib.split(','); e.mesures.push({ libelle: l.trim(), unite: (u || '').trim(), valeur: '' }); App.render(); };
@@ -240,7 +248,9 @@ Views.equilibrage = (params, query) => {
     </div></fieldset>
     <fieldset class="hd-bloc"><legend>Débits ${q.type === 'Hydraulique' ? 'par organe' : 'bouche par bouche'}</legend>
       <div class="toolbar" style="margin-top:0"><label class="btn small secondary">Importer les débits théoriques (Excel, CSV)<input type="file" id="es-import" accept=".xlsx,.csv" hidden></label>
-        ${q.affaireId ? '<button type="button" class="small secondary" id="es-etude">📐 Débits théoriques de l\'étude</button>' : ''}</div>
+        ${q.affaireId ? '<button type="button" class="small secondary" id="es-etude">📐 Débits théoriques de l\'étude</button>' : ''}
+        ${(() => { const mises = Store.all('misesEnService').filter(x => x.affaireId && x.affaireId === q.affaireId), n = mises.length ? Essais.versReleve(JSON.parse(JSON.stringify(q.lignes)), mises) : 0;
+          return `${n ? `<button type="button" class="small secondary" id="es-depuis-pv">↙ Reprendre ${n} mesure(s) des PV de mise en service</button>` : ''}${q.affaireId ? '<button type="button" class="small secondary" id="es-renum-eq">🔄 Repères renumérotés dans l\'étude</button>' : ''}`; })()}</div>
       <div class="table-wrap"><table class="eq-table"><tr><th>Repère</th><th>Local</th><th>Type</th><th class="num">Théorique</th><th class="num">Mesuré</th><th>Réglage</th><th class="num">Écart</th><th></th></tr>
         ${q.lignes.map((l, i) => `<tr><td><input data-l="${i}|repere" value="${esc(l.repere)}" aria-label="Repère"></td><td><input data-l="${i}|local" value="${esc(l.local)}" aria-label="Local"></td>
           <td><select data-l="${i}|type" aria-label="Type">${optionsStr(TYPES_BOUCHE, l.type || 'Soufflage')}</select></td>
@@ -267,6 +277,10 @@ Views.equilibrage.bind = (root, params) => {
   root.querySelectorAll('[data-rml]').forEach(b => b.onclick = () => { q.lignes.splice(+b.dataset.rml, 1); App.render(); });
   $('#es-add-ligne').onclick = () => { const d = q.lignes[q.lignes.length - 1] || {}; q.lignes.push({ repere: '', local: d.local || '', type: d.type || 'Soufflage', theorique: '', mesure: '', reglage: '' }); App.render(); };
   // Débits théoriques des études du chantier (schéma aéraulique : bouche par bouche ; réseau arborescent : par vanne)
+  const dp = $('#es-depuis-pv');
+  if (dp) dp.onclick = () => { const k = Essais.versReleve(q.lignes, Store.all('misesEnService').filter(x => x.affaireId === q.affaireId)); App.render(); App.toast(`${k} mesure(s) reprise(s) des PV de mise en service : rien à ressaisir.`, 4000); };
+  const rq = $('#es-renum-eq');
+  if (rq) rq.onclick = async () => { let lots; try { lots = await renumerotationsChantier(q.affaireId); } catch (err) { return notify(err.message); } const k = Essais.renumeroter(q.lignes, lots); App.render(); App.toast(k ? `${k} repère(s) mis à jour d'après l'étude` : 'Aucun repère renuméroté dans l\'étude pour ces lignes.', 4000); };
   const be = $('#es-etude');
   if (be) be.onclick = async () => {
     let installs;
