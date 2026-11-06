@@ -225,7 +225,8 @@ const Electricite = ((N, Sc) => {
     const compte = l => TYPES_PTS.map(t => [t, l.filter(p => p[2] === t).length]);
     const gtb = e.gtb && e.gtb !== 'aucune' ? e.gtb : '';
     // Plan d'adressage : points rangés par type sur les cartes de l'automate (20 % de réserve), bornier X2 (2 bornes par point)
-    const capa = {};
+    const capa = {}, cfgAut = {};
+    (e.automate || []).forEach(x => { if (x && x.type) cfgAut[x.type] = x; });
     (e.capaSynco || []).forEach(x => { if (x && x.app) capa[x.app] = [num(x.X, 8), num(x.Y, 4), num(x.Q, 6)]; });
     arm.forEach(a => {
       a.cartes = {}; a.adresses = []; a.synco = [];
@@ -251,12 +252,28 @@ const Electricite = ((N, Sc) => {
         a.bornesES = borne - 1;
         return;
       }
+      // Voies intégrées à l'UC d'abord, puis cartes (20 % de réserve) ; cartes réparties sur l'UC puis les châssis d'extension
+      a.capa = {}; a.uc = {};
       ['EA', 'SA', 'ETOR', 'STOR'].forEach(t => {
-        const l = a.pts.filter(p => p[2] === t), [cap, signal] = CARTES[t], nb = l.length ? Math.ceil(Math.ceil(l.length * 1.2) / cap) : 0;
-        a.cartes[t] = nb;
-        l.forEach((p, i) => { a.adresses.push([`${t}${Math.floor(i / cap) + 1}.${String(i % cap).padStart(2, '0')}`, `X2:${borne}-${borne + 1}`, p[0], p[1], t, signal]); borne += 2; });
-        if (nb * cap > l.length) a.adresses.push([`${t}${Math.floor(l.length / cap) + 1}.${String(l.length % cap).padStart(2, '0')} …`, '', '—', `Réserve : ${nb * cap - l.length} voie(s) libre(s)`, t, signal]);
+        const cfg = cfgAut[t] || {}, cap = Math.max(1, num(cfg.voies, CARTES[t][0])), integ = Math.max(0, Math.round(num(cfg.integrees, 0))), signal = CARTES[t][1];
+        a.capa[t] = [cap, signal, cfg.ref || `Carte ${cap} ${t}`];
+        const l = a.pts.filter(p => p[2] === t), surUC = Math.min(integ, l.length), reste = l.length - surUC, besoin = Math.ceil(l.length * 1.2) - integ, nb = reste > 0 || besoin > 0 ? Math.max(reste > 0 ? 1 : 0, Math.ceil(Math.max(0, besoin) / cap)) : 0;
+        a.cartes[t] = nb; a.uc[t] = [surUC, integ];
+        l.forEach((p, i) => {
+          if (i < surUC) a.adresses.push([`UC-${t}.${String(i).padStart(2, '0')}`, `X2:${borne}-${borne + 1}`, p[0], p[1], t, signal]);
+          else { const j = i - surUC; a.adresses.push([`${t}${Math.floor(j / cap) + 1}.${String(j % cap).padStart(2, '0')}`, `X2:${borne}-${borne + 1}`, p[0], p[1], t, signal]); }
+          borne += 2;
+        });
+        if (nb * cap > reste) a.adresses.push([`${t}${Math.floor(reste / cap) + 1}.${String(reste % cap).padStart(2, '0')} …`, '', '—', `Réserve : ${nb * cap - reste} voie(s) libre(s)${integ > surUC ? ` + ${integ - surUC} sur l'UC` : ''}`, t, signal]);
       });
+      // Châssis : l'UC porte « chassis » modules, chaque extension (coupleur + alimentation) en porte autant
+      const mods = ['EA', 'SA', 'ETOR', 'STOR'].flatMap(t => Array.from({ length: a.cartes[t] }, (_, k) => ({ nom: `${t}${k + 1}`, type: t, voies: a.capa[t][0], utilisees: Math.max(0, Math.min(a.capa[t][0], a.pts.filter(p => p[2] === t).length - a.uc[t][0] - k * a.capa[t][0])) })));
+      const parUC = Math.max(1, Math.round(num((cfgAut.UC || {}).chassis, 8))), parExt = Math.max(1, Math.round(num((cfgAut.EXT || {}).chassis, parUC)));
+      a.chassis = [{ nom: 'UC', modules: mods.slice(0, parUC) }];
+      for (let i = parUC; i < mods.length; i += parExt) a.chassis.push({ nom: `EXT${a.chassis.length}`, modules: mods.slice(i, i + parExt) });
+      a.chassis.forEach(c => c.modules.forEach((m, k) => { m.chassis = c.nom; m.emplacement = k + 1; }));
+      a.extensions = a.chassis.length - 1;
+      if (a.extensions > 3) alertes.push(alerte('attention', `Armoire ${a.rep} : ${a.extensions} châssis d'extension pour ${mods.length} cartes ; prévoir un automate de gamme supérieure ou des îlots d'entrées / sorties déportés (bus de terrain).`));
       a.pts.filter(p => p[2] === 'Bus').forEach(p => a.adresses.push([`Bus ${gtb || 'Modbus'}`, '', p[0], p[1], 'Bus', 'Communication']));
       a.bornesES = borne - 1;
     });
@@ -280,19 +297,20 @@ const Electricite = ((N, Sc) => {
       add('Commande', 'Disjoncteur du circuit de commande', '1P+N 2 A');
       add('Commande', 'Alimentation 24 V DC (automate, entrées, sondes)', `${nf(Math.max(2.5, Math.ceil((0.8 + n24 * 0.05 + a.pts.length * 0.01) * 2) / 2), 1)} A`);
       if (nVannes) add('Commande', 'Transformateur 230 / 24 V AC (servomoteurs)', `${Math.max(63, Math.ceil((nVannes * 12 + 20) / 25) * 25)} VA`);
-      if (a.techno === 'automate') add('Automatisme', `Automate programmable (unité centrale)${gtb ? ` + communication ${gtb}` : ''}`, 'Horloge, historiques, serveur web');
+      if (a.techno === 'automate') add('Automatisme', `${(cfgAut.UC || {}).ref || 'Automate programmable (unité centrale)'}${gtb ? ` + communication ${gtb}` : ''}`, `Horloge, historiques, serveur web${['EA', 'SA', 'ETOR', 'STOR'].some(t => a.uc && a.uc[t][1]) ? ` ; voies intégrées : ${['EA', 'SA', 'ETOR', 'STOR'].filter(t => a.uc[t][1]).map(t => `${a.uc[t][1]} ${t}`).join(', ')}` : ''}`);
       if (a.techno === 'synco') {
         a.synco.forEach(x => { add('Régulation', `Régulateur préprogrammé ${Rg().COURT[x.app]} — ${x.ref}`, `${x.entrees[1] - x.modules * ((capa.extension || Rg().CAPACITES.extension)[0])} entrées univ., ${x.sorties[1] - x.modules * ((capa.extension || Rg().CAPACITES.extension)[1])} sorties 0-10 V, ${x.relais[1] - x.modules * ((capa.extension || Rg().CAPACITES.extension)[2])} relais`); if (x.modules) add('Régulation', `Module d'extension — ${((e.capaSynco || []).find(y => y.app === 'extension') || {}).ref || 'module d\'extension'}`, 'Entrées / sorties supplémentaires', x.modules); });
         if (a.ambiance) add('Régulation', `Régulateur d'ambiance communicant (terminal) — ${Rg().APPS.terminaux[1]}`, 'Sonde et commande intégrées, bus KNX', a.ambiance);
         add('Régulation', `Interface de communication / serveur web${gtb ? ` (${gtb})` : ''}`, 'Accès à distance, passerelle vers la GTB');
       }
       if (a.techno === 'integree' && a.pts.some(p => p[2] === 'ETOR')) add('Commande', 'Relais d\'interface des reports d\'état et de défaut', 'Contact sec, 24 V', a.pts.filter(p => p[2] === 'ETOR').length);
-      Object.entries(a.cartes || {}).forEach(([t, n]) => { if (n) add('Automatisme', `Carte ${CARTES[t][0]} ${t}`, CARTES[t][1], n); });
+      Object.entries(a.cartes || {}).forEach(([t, n]) => { if (n) add('Automatisme', (a.capa && a.capa[t] ? a.capa[t][2] : `Carte ${CARTES[t][0]} ${t}`), `${(a.capa && a.capa[t] ? a.capa[t] : CARTES[t])[0]} voies ${t}, ${CARTES[t][1]}`, n); });
+      if (a.extensions) { add('Automatisme', (cfgAut.EXT || {}).ref || 'Coupleur d\'extension + alimentation (châssis d\'extension)', `${a.extensions} châssis d'extension`, a.extensions); add('Automatisme', 'Câble de liaison du bus d\'extension', 'Longueur selon implantation', a.extensions); }
       if (a.pts.some(p => p[2] === 'Bus')) add('Automatisme', 'Passerelle / port de communication des équipements', 'Modbus RTU ou BACnet MS/TP');
       add('Raccordement', 'Bornes de puissance (bornier X1)', 'Section selon départ', bornesP + 5);
       add('Raccordement', 'Bornes d\'entrées / sorties (bornier X2), sectionnables pour les mesures', '2,5 mm²', a.bornesES + Math.ceil(a.bornesES * 0.2));
       add('Enveloppe', 'Éclairage intérieur, prise de service 2P+T, porte-plans', '');
-      modules += 8 + Object.values(a.cartes).reduce((s, n) => s + 2 * n, 0);
+      modules += 8 + Object.values(a.cartes).reduce((s, n) => s + 2 * n, 0) + 6 * (a.extensions || 0);
       const rangees = Math.max(2, Math.ceil(modules * 1.2 / 24)), H = Math.min(2000, Math.ceil((rangees * 150 + 300 + (variateurs ? 400 : 0)) / 200) * 200), L = variateurs > 2 || rangees > 8 ? 800 : 600;
       add('Enveloppe', 'Armoire métallique IP 54 (estimation)', `≈ ${H} × ${L} × 300 mm, ${rangees} rangées DIN de 24 modules${variateurs ? ` + ${variateurs} variateur(s) sur plaque` : ''}, 20 % de réserve`);
       a.nomenclature = [...lignes.values()];
@@ -338,7 +356,7 @@ const Electricite = ((N, Sc) => {
           `Circuit de commande : transformateur ou alimentation 24 V, protection dédiée, alimentation de l'automate et des organes 24 V (${a.eqs.filter(q => q.tension === '24V').length} équipement(s) : vannes, sondes, régulateurs).`,
           a.techno === 'synco' ? `Régulation par régulateurs préprogrammés (${Rg().TECHNOS.synco[1]}) : ${a.synco.map(x => `${x.rep} ${Rg().COURT[x.app]} (${x.ref}${x.modules ? ` + ${x.modules} module(s)` : ''})`).join(', ') || 'aucun point câblé'}${a.ambiance ? ` ; ${a.ambiance} régulateur(s) d'ambiance communicant(s)` : ''} ; affectation des bornes suivant le plan d'adressage ; configuration (choix de l'application et paramètres) par le lot CVC ; ${e.gtb && e.gtb !== 'aucune' ? `communication ${e.gtb} vers la GTB par l'interface` : 'serveur web pour l\'exploitation'}.`
           : a.techno === 'integree' ? `Régulation intégrée aux équipements : l'armoire porte la puissance, les autorisations de marche et ${nb('ETOR')} report(s) d'état et de défaut (relais d'interface)${nb('Bus') ? ` ; ${nb('Bus')} équipement(s) communiquent directement avec la GTB par bus` : ''}.`
-          : `Automate programmable : ${nb('EA')} EA, ${nb('SA')} SA, ${nb('ETOR')} ETOR, ${nb('STOR')} STOR${nb('Bus') ? `, ${nb('Bus')} équipement(s) par bus` : ''}, plus 20 % de réserve câblée, soit ${Object.entries(a.cartes).filter(([, n]) => n).map(([t, n]) => `${n} carte(s) ${CARTES[t][0]} ${t}`).join(', ') || 'aucune carte'} ; ${e.gtb && e.gtb !== 'aucune' ? `communication ${e.gtb} vers la GTB` : 'interface opérateur en façade'}.`,
+          : `Automate programmable : ${nb('EA')} EA, ${nb('SA')} SA, ${nb('ETOR')} ETOR, ${nb('STOR')} STOR${nb('Bus') ? `, ${nb('Bus')} équipement(s) par bus` : ''}, plus 20 % de réserve câblée, soit ${Object.entries(a.cartes).filter(([, n]) => n).map(([t, n]) => `${n} carte(s) ${(a.capa ? a.capa[t] : CARTES[t])[0]} ${t}`).join(', ') || 'aucune carte'} sur ${(a.chassis || [1]).length} châssis (UC${a.extensions ? ` + ${a.extensions} extension(s)` : ', sans extension'}) ; ${e.gtb && e.gtb !== 'aucune' ? `communication ${e.gtb} vers la GTB` : 'interface opérateur en façade'}.`,
           `Enveloppe : IP 54 minimum (≈ ${a.enveloppe.H} × ${a.enveloppe.L} × 300 mm estimés), ventilation adaptée aux variateurs, 20 % de place disponible, éclairage et prise de service, porte-plans ; schémas, plan d'adressage et programme remis au DOE.`] },
         { titre: `Bornier X1 (puissance) — armoire ${a.rep}`, tableau: { entetes: ['Bornes', 'Départ', 'Équipement', 'Conducteurs', 'Câble', 'Vers'], lignes: borniersX1(a) } },
         { titre: `Nomenclature de l'appareillage — armoire ${a.rep}`, tableau: { entetes: ['Famille', 'Désignation', 'Caractéristiques', 'Qté'], lignes: a.nomenclature.map(x => [x[0], x[1], x[2], String(x[3])]) } },
@@ -398,7 +416,7 @@ const Electricite = ((N, Sc) => {
       synthese: `${eqs.length} équipement(s) · ${nf(Ptot, 1)} kW · ${arm.length} armoire(s) CVC · ${pts.length} point(s) automate`,
       schema: unifilaire(arm, lot),
       // Folios complémentaires par armoire : commande (contacteurs, variateurs, chaîne de sécurité) et cartes de l'automate
-      schemas: arm.flatMap(a => [{ titre: `Folio de commande — armoire ${a.rep}`, svg: folioCommande(a) }, ...(a.techno === 'automate' && a.adresses.some(x => x[2] !== '—' && !/^Bus/.test(x[0])) ? [{ titre: `Cartes d'entrées / sorties — armoire ${a.rep}`, svg: folioCartes(a) }] : [])]).filter(s => s.svg),
+      schemas: arm.flatMap(a => [{ titre: `Folio de commande — armoire ${a.rep}`, svg: folioCommande(a) }, ...(a.techno === 'automate' && (a.chassis || []).some(c => c.modules.length) ? [{ titre: `Implantation de l'automate — armoire ${a.rep} (${a.chassis.length} châssis${a.extensions ? `, ${a.extensions} extension(s)` : ''})`, svg: folioAutomate(a, cfgAut, gtb) }] : []), ...(a.techno === 'automate' && a.adresses.some(x => x[2] !== '—' && !/^Bus/.test(x[0])) ? [{ titre: `Cartes d'entrées / sorties — armoire ${a.rep}`, svg: folioCartes(a) }] : [])]).filter(s => s.svg),
       titreSchema: 'Schéma unifilaire des armoires CVC',
       onglets: [
         { titre: 'Bilan de puissance', blocs: [
@@ -419,7 +437,11 @@ const Electricite = ((N, Sc) => {
           { titre: 'Liste des points GTB (TA télé-alarme, TS télé-signalisation, TCP télécomptage, TM télémesure, TC télécommande, TR téléréglage, COM point communiqué, LOG point logiciel)', tableau: ptsGtb },
           { titre: 'Entrées / sorties par armoire', tableau: { entetes: ['Armoire', ...TYPES_PTS.map(t => LIB_PTS[t]), 'Total avec 20 % de réserve'],
             lignes: arm.map(a => { const io = compte(a.pts); return [a.rep, ...io.map(([, n]) => String(n)), String(io.filter(([t]) => t !== 'Bus').reduce((s, [, n]) => s + Math.ceil(n * 1.2), 0))]; }) } },
-          ...arm.map(a => ({ titre: `Plan d'adressage — armoire ${a.rep} (${Object.entries(a.cartes).filter(([, n]) => n).map(([t, n]) => `${n} × ${CARTES[t][0]} ${t}`).join(', ') || 'aucune carte'})`, tableau: { entetes: ['Adresse', 'Bornes', 'Repère', 'Désignation', 'Type', 'Signal'], lignes: a.adresses } }))] },
+          ...arm.filter(a => a.techno === 'automate' && (a.chassis || []).some(c => c.modules.length)).map(a => ({ titre: `Configuration de l'automate — armoire ${a.rep} : ${Object.values(a.cartes).reduce((x, n) => x + n, 0)} carte(s) sur ${a.chassis.length} châssis${a.extensions ? ` (UC + ${a.extensions} extension(s))` : ' (sans extension)'}`,
+            tableau: { entetes: ['Châssis', 'Emplacement', 'Module', 'Référence', 'Voies', 'Utilisées', 'Réserve'], lignes: [
+              ...['EA', 'SA', 'ETOR', 'STOR'].filter(t => a.uc[t][1]).map(t => ['UC', '—', `Voies intégrées ${t}`, (cfgAut.UC || {}).ref || 'UC', String(a.uc[t][1]), String(a.uc[t][0]), String(a.uc[t][1] - a.uc[t][0])]),
+              ...a.chassis.flatMap(c => c.modules.map(m => [c.nom === 'UC' ? 'UC' : `${c.nom} (extension)`, String(m.emplacement), m.nom, a.capa[m.type][2], String(m.voies), String(m.utilisees), String(m.voies - m.utilisees)]))] } })),
+          ...arm.map(a => ({ titre: `Plan d'adressage — armoire ${a.rep} (${Object.entries(a.cartes).filter(([, n]) => n).map(([t, n]) => `${n} × ${(a.capa ? a.capa[t] : CARTES[t])[0]} ${t}`).join(', ') || 'aucune carte'})`, tableau: { entetes: ['Adresse', 'Bornes', 'Repère', 'Désignation', 'Type', 'Signal'], lignes: a.adresses } }))] },
         { titre: 'Cahier des charges armoires', blocs: [{ titre: 'Objet', liste: [`Réalisation des armoires CVC (lot CVC) : puissance, commande et automatisme, d'après le schéma unifilaire et la liste des points ci-dessous. Les attentes électriques des armoires et des équipements alimentés directement sont dues par le ${lot}.`] },
           ...arm.flatMap(ccArmoire)] },
       ],
@@ -468,6 +490,26 @@ const Electricite = ((N, Sc) => {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Arial, Helvetica, sans-serif"><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${out.join('')}</svg>`;
   }
   // Cartes de l'automate : une colonne par carte, une ligne par voie (adresse, bornes, repère, désignation)
+  // Implantation de l'automate : un rail par châssis (alimentation, UC ou coupleur d'extension, puis les cartes dans leur
+  // emplacement, voies utilisées / disponibles), bus d'extension entre les châssis
+  function folioAutomate(a, cfg = {}, gtb = '') {
+    const ch = a.chassis || [], lm = 74, hm = 120, W = 40 + Math.max(...ch.map(c => c.modules.length + 2), 4) * (lm + 6) + 20, H = 50 + ch.length * (hm + 50), out = [];
+    const COUL = { EA: '#d6eaf8', SA: '#d5f5e3', ETOR: '#fdebd0', STOR: '#f5d5d5' };
+    const tx = (x, y, s, o = {}) => out.push(`<text x="${x}" y="${y}" font-size="${o.fs || 9}" text-anchor="${o.a || 'middle'}"${o.b ? ' font-weight="bold"' : ''} fill="${o.c || '#222'}">${echapper(s)}</text>`);
+    const bloc = (x, y, w, h, f, l1, l2, l3) => { out.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="${f}" stroke="#333" stroke-width="1.2"/>`); tx(x + w / 2, y + 22, l1, { b: true, fs: 11 }); if (l2) tx(x + w / 2, y + 40, l2, { fs: 8 }); if (l3) tx(x + w / 2, y + h - 10, l3, { fs: 8, c: '#555' }); };
+    tx(14, 22, `Armoire ${a.rep} — implantation de l'automate : ${ch.reduce((s, c) => s + c.modules.length, 0)} carte(s), ${ch.length} châssis${a.extensions ? ` dont ${a.extensions} d'extension` : ''}`, { a: 'start', b: true, fs: 13 });
+    ch.forEach((c, i) => {
+      const y = 44 + i * (hm + 50), uc = c.nom === 'UC';
+      out.push(`<rect x="20" y="${y - 6}" width="${W - 40}" height="${hm + 12}" fill="none" stroke="#999" stroke-dasharray="4 3"/>`);
+      tx(24, y - 10, uc ? 'Châssis principal (UC)' : `Châssis d'extension ${i}`, { a: 'start', fs: 9, c: '#555' });
+      let x = 30;
+      bloc(x, y, lm, hm, '#eee', 'ALIM', '24 V DC', uc ? '' : 'extension'); x += lm + 6;
+      bloc(x, y, lm, hm, uc ? '#e8daef' : '#ebedef', uc ? 'UC' : 'COUPLEUR', uc ? (gtb || 'automate') : 'd\'extension', uc ? ['EA', 'SA', 'ETOR', 'STOR'].filter(t => a.uc && a.uc[t][1]).map(t => `${a.uc[t][1]} ${t}`).join(' ') : ''); x += lm + 6;
+      c.modules.forEach(m => { bloc(x, y, lm, hm, COUL[m.type] || '#fff', m.nom, `${m.voies} ${m.type}`, `${m.utilisees}/${m.voies} utilisées`); tx(x + lm / 2, y + hm + 14, `empl. ${m.emplacement}`, { fs: 7, c: '#777' }); x += lm + 6; });
+      if (i < ch.length - 1) { const xb = 30 + lm + 6 + lm / 2; out.push(`<line x1="${xb}" y1="${y + hm}" x2="${xb}" y2="${y + hm + 44}" stroke="#7d3c98" stroke-width="2.4"/>`); tx(xb + 6, y + hm + 30, 'bus d\'extension', { a: 'start', fs: 8, c: '#7d3c98' }); }
+    });
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Arial, Helvetica, sans-serif"><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${out.join('')}</svg>`;
+  }
   function folioCartes(a) {
     const cartes = new Map();
     // Toutes les cartes prévues (réserve comprise), dans l'ordre EA, SA, ETOR, STOR
@@ -475,13 +517,13 @@ const Electricite = ((N, Sc) => {
     a.adresses.filter(x => x[2] !== '—' && !/^Bus/.test(x[0])).forEach(x => { const c = x[0].split('.')[0]; if (!cartes.has(c)) cartes.set(c, []); cartes.get(c).push(x); });
     [...cartes.keys()].forEach(c => { if (!cartes.get(c).length) cartes.get(c).type = c.replace(/\d+$/, ''); });
     if (!cartes.size) return '';
-    const larg = 235, hl = 15, maxV = Math.max(...[...cartes.values()].map(l => (CARTES[l.length ? l[0][4] : l.type] || [16])[0])), W = 20 + cartes.size * (larg + 15), H = 70 + maxV * hl + 20, out = [];
+    const CAP = t => (a.capa && a.capa[t] ? a.capa[t] : CARTES[t] || [16, '']), larg = 235, hl = 15, maxV = Math.max(...[...cartes.entries()].map(([c, l]) => (/^UC-/.test(c) ? (a.uc[(l[0] || [])[4] || c.slice(3)] || [16])[1] : CAP(l.length ? l[0][4] : l.type)[0]))), W = 20 + cartes.size * (larg + 15), H = 70 + maxV * hl + 20, out = [];
     const tx = (x, y, s, o = {}) => out.push(`<text x="${x}" y="${y}" font-size="${o.fs || 8}" text-anchor="${o.a || 'start'}"${o.b ? ' font-weight="bold"' : ''} fill="${o.c || '#222'}">${echapper(s)}</text>`);
     tx(10, 18, `Armoire ${a.rep} — cartes d'entrées / sorties de l'automate (réserve en grisé)`, { b: true, fs: 12 });
     [...cartes.entries()].forEach(([nom, l], k) => {
-      const x = 20 + k * (larg + 15), type = l.length ? l[0][4] : l.type, cap = (CARTES[type] || [16])[0];
+      const x = 20 + k * (larg + 15), type = l.length ? l[0][4] : l.type, cap = /^UC-/.test(nom) ? (a.uc[type] || [0, 16])[1] : CAP(type)[0];
       out.push(`<rect x="${x}" y="34" width="${larg}" height="${30 + cap * hl}" fill="#fff" stroke="#222" stroke-width="1.4"/>`);
-      tx(x + 6, 50, `${nom} — ${cap} ${type}`, { b: true, fs: 10 }); tx(x + larg - 6, 50, (CARTES[type] || [, ''])[1], { a: 'end', fs: 7, c: '#555' });
+      tx(x + 6, 50, `${/^UC-/.test(nom) ? `UC — ${cap} ${type} intégrées` : `${nom} — ${cap} ${type}`}`, { b: true, fs: 10 }); tx(x + larg - 6, 50, CAP(type)[1], { a: 'end', fs: 7, c: '#555' });
       for (let v = 0; v < cap; v++) {
         const y = 70 + v * hl, p = l.find(z => z[0] === `${nom}.${String(v).padStart(2, '0')}`);
         out.push(`<line x1="${x}" y1="${y - 11}" x2="${x + larg}" y2="${y - 11}" stroke="#ddd"/>`);
@@ -677,6 +719,11 @@ const Electricite = ((N, Sc) => {
           { k: 'regime', l: 'Liaison à la terre', t: 's', o: [['TT', 'TT'], ['TN-S', 'TN-S'], ['TN-C', 'TN-C'], ['IT', 'IT']] },
           { k: 'techno', l: 'Régulation', t: 's', o: [['automate', 'Automate programmable (programme + analyse fonctionnelle)'], ['synco', 'Régulateurs préprogrammés type Siemens Synco (paramétrage)'], ['integree', 'Régulation intégrée aux équipements (puissance et reports)']] },
           { k: 'sondes', l: 'Sondes d\'ambiance / mesures communes (séparées par ;)', t: 't' }] },
+      { k: 'automate', l: 'Automate programmable : unité centrale, cartes d\'entrées / sorties et châssis (à reprendre de la fiche de l\'automate retenu)', t: 'lignes', si: e => !(e.armoires || []).length || (e.armoires || []).some(a => !a.techno || a.techno === 'automate'),
+        d: [{ type: 'UC', ref: 'Automate programmable (UC)', voies: '', integrees: 0, chassis: 8 }, { type: 'EA', ref: 'Carte 8 EA', voies: 8, integrees: 0 }, { type: 'SA', ref: 'Carte 8 SA', voies: 8, integrees: 0 },
+          { type: 'ETOR', ref: 'Carte 16 ETOR', voies: 16, integrees: 0 }, { type: 'STOR', ref: 'Carte 16 STOR', voies: 16, integrees: 0 }, { type: 'EXT', ref: 'Coupleur d\'extension + alimentation (châssis d\'extension)', voies: '', integrees: '', chassis: 8 }],
+        colonnes: [{ k: 'type', l: 'Élément', t: 's', o: [['UC', 'Unité centrale'], ['EA', 'Carte EA'], ['SA', 'Carte SA'], ['ETOR', 'Carte ETOR'], ['STOR', 'Carte STOR'], ['EXT', 'Extension (châssis)']] }, { k: 'ref', l: 'Référence', t: 't' },
+          { k: 'voies', l: 'Voies par carte' }, { k: 'integrees', l: 'Voies intégrées à l\'UC' }, { k: 'chassis', l: 'Modules par châssis (UC / extension)' }] },
       { k: 'consignesZones', l: 'Consignes d\'ambiance par zone (zone des terminaux ; « Toutes zones » s\'applique partout) — reprises dans les paramètres et la mise en service', t: 'lignes',
         d: [{ zone: 'Toutes zones', confort: 20, clim: 26, inocc: 16, horsGel: 8 }],
         colonnes: [{ k: 'zone', l: 'Zone', t: 't' }, { k: 'confort', l: 'Confort chauffage (°C)' }, { k: 'clim', l: 'Confort rafraîchissement (°C)' }, { k: 'inocc', l: 'Inoccupation (°C)' }, { k: 'horsGel', l: 'Hors gel (°C)' }] },

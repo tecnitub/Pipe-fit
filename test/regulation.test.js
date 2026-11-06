@@ -193,3 +193,30 @@ test('fiches de mise en service vierges : relevé ligne par ligne séparé (rep�
   const r = FM.html(et, [l.find(f => /Réseau hydraulique/.test(f.titre))]);
   assert.match(r, /Relevé ligne par ligne \(3 émetteur\(s\)\)/);
 });
+
+test('automate : cartes selon les points, voies intégrées à l\'UC, châssis d\'extension, implantation dessinée', () => {
+  const { et, elec } = etude('automate');
+  let r = L.calculer(et, elec);
+  const a0 = r.valeurs.armoires[0];
+  const nbCartes = Object.values(a0.cartes).reduce((s, n) => s + n, 0);
+  assert.ok(nbCartes >= 3);
+  // Configuration : 4 modules par châssis, UC avec 4 EA et 8 ETOR intégrées, cartes ETOR de 8 voies
+  elec.entrees.automate = [{ type: 'UC', ref: 'UC test', integrees: '', chassis: 2 }, { type: 'EA', ref: 'EA8', voies: 8, integrees: 4 }, { type: 'SA', ref: 'SA4', voies: 4, integrees: 0 },
+    { type: 'ETOR', ref: 'DI8', voies: 8, integrees: 8 }, { type: 'STOR', ref: 'DO8', voies: 8, integrees: 0 }, { type: 'EXT', ref: 'Coupleur X', chassis: 2 }];
+  r = L.calculer(et, elec);
+  const reg = r.onglets.find(o => o.titre === 'Régulation').blocs, conf = reg.find(b => /^Configuration de l'automate — armoire AR1/.test(b.titre));
+  assert.ok(conf, reg.map(b => b.titre).join(' | '));
+  const n = Number(/: (\d+) carte\(s\) sur (\d+) châssis/.exec(conf.titre)[1]), ch = Number(/sur (\d+) châssis/.exec(conf.titre)[1]);
+  assert.strictEqual(ch, Math.ceil(n / 2));
+  assert.match(conf.titre, new RegExp(`UC \\+ ${ch - 1} extension`));
+  assert.ok(conf.tableau.lignes.some(l => l[0] === 'UC' && l[2] === 'Voies intégrées EA' && l[4] === '4'));
+  assert.ok(conf.tableau.lignes.some(l => /extension/.test(l[0])));
+  // Adresses sur l'UC, nomenclature avec coupleurs d'extension, implantation dessinée
+  const adr = reg.find(b => /^Plan d'adressage — armoire AR1/.test(b.titre)).tableau.lignes;
+  assert.ok(adr.some(l => /^UC-EA\.00$/.test(l[0])) && adr.some(l => /^UC-ETOR\.07$/.test(l[0])));
+  const nom = r.onglets.find(o => o.titre === 'Cahier des charges armoires').blocs.find(b => /^Nomenclature/.test(b.titre)).tableau.lignes;
+  assert.ok(nom.some(l => l[1] === 'Coupleur X' && Number(l[3]) === ch - 1), conf.titre + ' / ' + ch);
+  assert.ok(nom.some(l => l[1] === 'DI8'));
+  const svg = r.schemas.find(s => /^Implantation de l'automate — armoire AR1/.test(s.titre)).svg;
+  assert.match(svg, /COUPLEUR/); assert.match(svg, /bus d'extension/); assert.match(svg, />UC</);
+});
