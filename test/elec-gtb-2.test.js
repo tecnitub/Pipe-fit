@@ -82,11 +82,33 @@ test('cahier de programmation (automate Wit) : entrées / sorties, boucles, mote
   const o = r.onglets.find(x => x.titre === 'Programmation automate'), t = re => o.blocs.find(b => re.test(b.titre || '')).tableau.lignes;
   assert.match(o.blocs[0].titre, /Automate Wit/);
   const boucle = t(/Boucles de régulation/).find(l => l[0] === 'R-V1');
-  assert.match(boucle[2], /^TD1 EA/); assert.match(boucle[3], /^V1 SA/); assert.match(boucle[4], /départ à -10 °C extérieur 70 °C/); assert.match(boucle[4], /PI : bande 20 K/);
-  assert.ok(t(/Commandes des moteurs/).some(l => l[0] === 'PP1' && /STOR/.test(l[3]) && /retour de marche/.test(l[4])));
+  assert.match(boucle[2], /^TD1 P\d\d\.\d\d/); assert.match(boucle[3], /^V1 P\d\d\.\d\d/); assert.match(boucle[4], /départ à -10 °C extérieur 70 °C/); assert.match(boucle[4], /PI : bande 20 K/);
+  assert.ok(t(/Commandes des moteurs/).some(l => l[0] === 'PP1' && /P\d\d\.\d\d/.test(l[3]) && /retour de marche/.test(l[4])));
   assert.ok(t(/Horloges/).length >= 1 && t(/Sécurités et asservissements/).some(l => l[0] === 'HG') && t(/Sécurités et asservissements/).some(l => l[0] === 'KA1'));
   assert.ok(t(/Alarmes/).some(l => /P1 \(sécurité\), temporisation 0 s/.test(l[4])));
   assert.ok(t(/Entrées \/ sorties/).every(l => l[2] || l[3]));
   const f = r.valeurs.feuilles.find(x => x.name === 'Programmation AR-CVC-01');
   assert.ok(f && f.lignes.length > 30 && f.entetes[0] === 'Rubrique');
+});
+
+test('automate Wit : ULI REDY dimensionnée d\'après le catalogue (PLUG, embases, ressources, Box Chaufferie)', () => {
+  const r = Liens.calculer(etude({ marqueAutomate: 'wit' }), etude({ marqueAutomate: 'wit' }).notes[1]), a = r.valeurs.armoires[0];
+  const cc = r.onglets.find(o => o.titre === 'Cahier des charges armoires').blocs, nom = cc.find(b => /^Nomenclature/.test(b.titre)).tableau.lignes.map(l => l[1]);
+  const pts = t => r.valeurs.listePoints.filter(p => p[2] === t).length, plugs = n => nom.filter(x => x.startsWith(`PLUG I/O ${n}`)).length;
+  // 20 % de réserve : 7 DI par 7.0.0.0, 4 DO par 0.4.0.0, 2 AO (+ 2 AI) par 0.0.2.2, 4 AI par 0.0.4.0
+  assert.ok(nom.some(x => /PLUG UC REDY-PROCESS XS LAN \(PLUG801\)/.test(x)) && nom.some(x => /Connect-DIN UC REDY P6 \(PLUG310\)/.test(x)));
+  const reg = r.onglets.find(o => o.titre === 'Régulation').blocs.find(b => /Automate Wit REDY/.test(b.titre || '')).liste.join(' ');
+  const nb = re => Number((new RegExp(`(\\d+) × ${re}`).exec(reg) || [])[1] || 0);
+  assert.strictEqual(nb('7\\.0\\.0\\.0'), Math.ceil(Math.ceil(pts('ETOR') * 1.2) / 7));
+  assert.strictEqual(nb('0\\.4\\.0\\.0'), Math.ceil(Math.ceil(pts('STOR') * 1.2) / 4));
+  assert.strictEqual(nb('0\\.0\\.2\\.2'), Math.ceil(Math.ceil(pts('SA') * 1.2) / 2));
+  assert.ok(plugs('7.0.0.0') === 1 && plugs('0.0.2.2') === 1, 'une ligne de nomenclature par type de PLUG');
+  assert.match(reg, /taille de ressources XS \(100\)/); assert.match(reg, /Connect-DIN P9/);
+  assert.ok(a.extensions === 1);
+  // Petite installation : la Box Chaufferie REDY suffit (variante proposée)
+  const petit = Liens.calculer({ notes: [{ id: 'e', type: 'elec', titre: 'A', entrees: { ...N.defauts('elec'), marqueAutomate: 'wit', options: [], equipements: [{ rep: 'P1', type: 'pompe', P: 0.3, regulation: 'tor' }, { rep: 'V1', type: 'vanne', regulation: 'v010' }, { rep: 'TD', type: 'sonde', regulation: 'sonde' }] } }] }, { id: 'e', type: 'elec', titre: 'A', entrees: { ...N.defauts('elec'), marqueAutomate: 'wit', options: [], equipements: [{ rep: 'P1', type: 'pompe', P: 0.3, regulation: 'tor' }, { rep: 'V1', type: 'vanne', regulation: 'v010' }, { rep: 'TD', type: 'sonde', regulation: 'sonde' }] } });
+  assert.ok(petit.onglets.find(o => o.titre === 'Régulation').blocs.find(b => /Automate Wit REDY/.test(b.titre || '')).liste.some(x => /Box Chaufferie REDY/.test(x)));
+  // Une configuration saisie (autre automate) garde le calcul générique
+  const autre = Liens.calculer(etude({ marqueAutomate: 'wit', automate: [{ type: 'UC', ref: 'Mon automate', voies: '', integrees: 0, chassis: 8 }, { type: 'EA', ref: 'Carte 8 EA perso', voies: 8 }] }), etude({ marqueAutomate: 'wit', automate: [{ type: 'UC', ref: 'Mon automate', voies: '', integrees: 0, chassis: 8 }, { type: 'EA', ref: 'Carte 8 EA perso', voies: 8 }] }).notes[1]);
+  assert.ok(!autre.onglets.find(o => o.titre === 'Régulation').blocs.some(b => /Automate Wit REDY/.test(b.titre || '')));
 });

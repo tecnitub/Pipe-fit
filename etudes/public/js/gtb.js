@@ -259,6 +259,9 @@ const Gtb = (() => {
       sections.push({ titre: 'Historiques et comptages', lignes: ech.filter(l => l[11]).map(l => [l[2], l[3], `${l[6]} ${l[7]}`, '', l[11], l[5] === 'TCP' ? 'conservation 5 ans (décret BACS)' : '']) });
       sections.push({ titre: 'Communication', lignes: [[`Device ${ech[0] ? ech[0][1] : '—'}`, `Automate de l'armoire ${a.rep}`, ctx.gtb || 'protocole GTB à définir', '', `${ech.length} objet(s) publiés (voir la table d'échange)`, 'nommage des objets : ARMOIRE_REPÈRE_FONCTION'],
         ...pilotes.filter(q => q.regulation === 'bus').map(q => [q.rep, q.designation || q.rep, q.protocole || 'Modbus RTU / BACnet', '', 'adresse esclave et vitesse à relever sur l\'équipement', `${a.pts.filter(p => p[0] === q.rep && p[2] === 'Bus').length} point(s) lus / écrits`])] });
+      if (a.wit) sections.unshift({ titre: 'ULI Wit REDY : ressources et matériel', lignes: [
+        ['UC', a.wit.uc[0], `${a.pts.length} point(s)`, '', `taille ${a.wit.taille[0]} : ${a.wit.taille[1]} ressources (${a.wit.ressources} estimées)`, 'ressource = point d\'information, point de pilotage ou processus (catalogue Wit)'],
+        ...a.chassis.flatMap(c => c.modules.map(m => [`${c.nom}.${m.emplacement}`, `PLUG ${m.nom} (${m.ref})`, m.type === 'ETOR' || m.type === 'EA' ? `${m.utilisees}/${m.voies} voie(s)` : '', m.type === 'STOR' || m.type === 'SA' ? `${m.utilisees}/${m.voies} voie(s)` : m.type === 'Bus' ? `${m.utilisees} compteur(s)` : '', `embase ${c.embase[0]}`, m.lib || '']))] });
       return { armoire: a.rep, sections: sections.filter(x => x.lignes.length) };
     });
   }

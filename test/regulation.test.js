@@ -242,7 +242,7 @@ test('armoire : alimentations 24 V DC / 24 V AC / 48 V dimensionnées, arrêt d\
   ['Coupure générale', 'Arrêt d\'urgence', 'Protection des personnes', 'Protection contre les surtensions', 'Très basse tension de sécurité', 'Sectionnement des moteurs', 'Dossier et vérifications'].forEach(k => assert.ok(reg.some(x => x.startsWith(k)), k));
   const nom = cc.find(b => /^Nomenclature/.test(b.titre)).tableau.lignes.map(l => l[1]);
   assert.ok(nom.some(x => /coup de poing/i.test(x)) && nom.some(x => /Relais de sécurité/.test(x)) && nom.some(x => /300 mA sélectif/.test(x)) && nom.some(x => /30 mA/.test(x)));
-  assert.ok(nom.some(x => /^Automate Wit \(unité centrale, référence selon la fiche\)/.test(x)), nom.filter(x => /Automate/.test(x)).join(' | '));
+  assert.ok(nom.some(x => /^ULI Wit REDY — PLUG UC REDY-PROCESS XS LAN \(PLUG801\)/.test(x)) && nom.some(x => /^PLUG I\/O \d\.\d\.\d\.\d \(PLUG\d+\)/.test(x)) && nom.some(x => /Connect-DIN UC REDY P6 \(PLUG310\)/.test(x)), nom.filter(x => /Automate/.test(x)).join(' | '));
   assert.ok(cc.find(b => /^Armoire AR1/.test(b.titre)).liste.some(x => /Automate Wit.*télégestion/.test(x)));
   // Folios : auxiliaires, arrêt d'urgence en tête des lignes de contacteurs
   const svg = t => r.schemas.find(s => s.titre.replace(/^F\d+ — /, "").startsWith(t)).svg;

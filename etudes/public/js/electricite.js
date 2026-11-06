@@ -62,6 +62,19 @@ const Electricite = ((N, Sc) => {
   const VENTILOS = [20, 55, 105, 180, 300, 550, 900], CLIMS = [300, 500, 750, 1000, 1500, 2000, 3000, 4000];
   // Marques d'automate (désignation ; les capacités restent celles de la fiche retenue)
   const MARQUES = { generique: 'Automate programmable', wit: 'Automate Wit', siemens: 'Automate Siemens', schneider: 'Automate Schneider Electric', sauter: 'Automate Sauter', distech: 'Automate Distech Controls', trend: 'Automate Trend' };
+  // Automate Wit : unité locale intelligente REDY (catalogue produits Wit 2024 v6.2.3, p. 8 à 21). PLUG d'E/S nommés
+  // « DI.DO.AI.AO » ; embase UC P6 (UC + Power + 6 PLUG I/O), embases d'extension P9 / P3 / P1 (Power + Interface + 9 / 3 / 1
+  // PLUG I/O) ; taille de ressources de l'UC (point d'information, de pilotage ou processus) : XS 100 … XXL 5000.
+  const WIT = {
+    plugs: { DI: ['7.0.0.0', 'PLUG905', { ETOR: 7 }, 'Entrées TOR contact sec (alim. interne)'], DO: ['0.4.0.0', 'PLUG502', { STOR: 4 }, 'Sorties relais 1 A / 230 VAC'],
+      AI: ['0.0.4.0', 'PLUG903', { EA: 4 }, 'Entrées Pt100 / Pt1000 / Ni1000, 0-10 V, 0-20 mA'], AIAO: ['0.0.2.2', 'PLUG911', { EA: 2, SA: 2 }, '2 entrées analogiques + 2 sorties 0-10 V / 0-20 mA'] },
+    tailles: [['XS', 100, ''], ['S', 250, 'UPG807'], ['M', 500, 'UPG808'], ['L', 1000, 'UPG809'], ['XL', 2500, 'UPG810'], ['XXL', 5000, 'UPG811']],
+    uc: ['REDY-PROCESS XS LAN', 'PLUG801'], uc4G: ['REDY-PROCESS XS LAN & 3G/4G', 'PLUG804'], embaseUC: ['Connect-DIN UC REDY P6', 'PLUG310', 6], powerUC: ['PLUG Power 230V REDY', 'PLUG522'],
+    extensions: [['Connect-DIN P9', 'PLUG304', 9], ['Connect-DIN P3', 'PLUG306', 3], ['Connect-DIN P1', 'PLUG305', 1]], powerExt: ['PLUG Power 230V', 'PLUG510'], interface: ['PLUG Interface ExtenBUS / RS485', 'PLUG518'],
+    mbus5: ['PLUG M-Bus 5', 'PLUG528', 5], mbus30: ['PLUG M-Bus 30', 'PLUG529', 30],
+    box: { ref: 'SOL001', ref4G: 'SOL006', ETOR: 9, STOR: 8, EA: 8, SA: 4, ressources: 250 },
+    source: 'catalogue produits Wit 2024 (v6.2.3)',
+  };
   // Alimentations très basse tension : calibres normalisés (A, VA)
   const ALIM_DC = [2.5, 5, 10, 20, 40], TRANSFOS = [63, 100, 160, 250, 400, 630, 1000];
   // Consommation TBT par défaut d'un équipement alimenté par l'armoire : [circuit, W ou VA]
@@ -72,7 +85,8 @@ const Electricite = ((N, Sc) => {
     const C = { '24DC': { nom: '24 V DC — automate, cartes, capteurs, sécurités', u: 24, dc: true, l: [] }, '24ACcmd': { nom: '24 V AC — commande (bobines, relais, voyants)', u: 24, l: [] },
       '24AC': { nom: '24 V AC — servomoteurs (vannes, registres), régulateurs terminaux', u: 24, l: [] }, '48DC': { nom: '48 V DC — volets, clapets, organes 48 V', u: 48, dc: true, l: [] } };
     const add = (c, lib, n, p) => { if (n > 0 && p > 0) C[c].l.push([lib, n, p]); };
-    if (a.techno === 'automate') { const nc = Object.values(a.cartes || {}).reduce((x, n) => x + n, 0), pt = t => a.pts.filter(p => p[2] === t).length;
+    if (a.techno === 'automate' && a.wit) { const pt = t => a.pts.filter(p => p[2] === t).length; add('24DC', 'Capteurs actifs (entrées analogiques)', pt('EA'), 0.6); }
+    else if (a.techno === 'automate') { const nc = Object.values(a.cartes || {}).reduce((x, n) => x + n, 0), pt = t => a.pts.filter(p => p[2] === t).length;
       add('24DC', `${(cfgAut.UC || {}).ref && !/^Automate programmable \(UC\)$/.test(cfgAut.UC.ref) ? cfgAut.UC.ref : (MARQUES[marque] || MARQUES.generique) + ' (UC)'}`, 1, 10); add('24DC', 'Cartes d\'entrées / sorties', nc, 1.5); add('24DC', 'Capteurs actifs (entrées analogiques)', pt('EA'), 0.6); add('24DC', 'Entrées TOR', pt('ETOR'), 0.15); add('24DC', 'Relais d\'interface des sorties TOR', pt('STOR'), 0.4);
       if (a.extensions) add('24DC', 'Coupleurs d\'extension', a.extensions, 3); }
     if (a.techno === 'synco') { add('24ACcmd', 'Régulateurs préprogrammés', (a.synco || []).length, 8); add('24ACcmd', 'Modules d\'extension', (a.synco || []).reduce((x, r) => x + r.modules, 0), 2); }
@@ -435,6 +449,42 @@ const Electricite = ((N, Sc) => {
         a.bornesES = borne - 1;
         return;
       }
+      // Automate Wit sans configuration saisie : ULI REDY dimensionnée d'après le catalogue Wit (PLUG, embases, ressources)
+      if (e.marqueAutomate === 'wit' && (e.automate || []).every(x => !x || !x.ref || /^(Automate programmable \(UC\)|Carte \d+ (EA|SA|ETOR|STOR)|Coupleur d'extension)/.test(x.ref))) {
+        const n = t => a.pts.filter(p => p[2] === t).length, besoin = t => (n(t) ? Math.ceil(n(t) * 1.2) : 0);
+        const nAIAO = Math.ceil(besoin('SA') / 2), nAI = Math.ceil(Math.max(0, besoin('EA') - 2 * nAIAO) / 4), nDO = Math.ceil(besoin('STOR') / 4), nDI = Math.ceil(besoin('ETOR') / 7);
+        const liste = [...Array(nDI).fill('DI'), ...Array(nDO).fill('DO'), ...Array(nAI).fill('AI'), ...Array(nAIAO).fill('AIAO')].map((k, i) => ({ k, nom: `P${String(i + 1).padStart(2, '0')}`, plug: WIT.plugs[k], libres: { ...WIT.plugs[k][2] }, voies: Object.values(WIT.plugs[k][2]).reduce((x, y) => x + y, 0), utilisees: 0 }));
+        const signal = { EA: 'Pt1000 / 0-10 V / 4-20 mA', SA: '0-10 V', ETOR: 'Contact sec', STOR: 'Relais 1 A / 230 VAC' };
+        ['ETOR', 'STOR', 'EA', 'SA'].forEach(t => a.pts.filter(p => p[2] === t).forEach(p => {
+          const pl = liste.find(x => (x.libres[t] || 0) > 0); if (!pl) return;
+          const v = Object.entries(pl.plug[2]).reduce((acc, [tt, cap]) => acc + (tt === t ? 0 : 0), 0);
+          const ordre = Object.keys(pl.plug[2]), base = ordre.slice(0, ordre.indexOf(t)).reduce((x, tt) => x + pl.plug[2][tt], 0), idx = base + (pl.plug[2][t] - pl.libres[t]);
+          void v; pl.libres[t] -= 1; pl.utilisees += 1;
+          a.adresses.push([`${pl.nom}.${String(idx).padStart(2, '0')}`, `X2:${borne}-${borne + 1}`, p[0], p[1], t, signal[t]]); borne += 2;
+        }));
+        liste.forEach(pl => { const r = pl.voies - pl.utilisees; if (r > 0) a.adresses.push([`${pl.nom}.${String(pl.utilisees).padStart(2, '0')} …`, '', '—', `Réserve : ${r} voie(s) libre(s)`, Object.keys(pl.plug[2])[0], `PLUG ${pl.plug[0]}`]); });
+        // Compteurs M-Bus (comptage par usage) : un PLUG M-Bus 5 ou 30
+        const mbus = new Set(a.pts.filter(p => p[2] === 'Bus' && /^(CET|CPT-E)/.test(p[0])).map(p => p[0])).size;
+        if (mbus) liste.push({ nom: `P${String(liste.length + 1).padStart(2, '0')}`, plug: mbus <= 5 ? [WIT.mbus5[0], WIT.mbus5[1], { Bus: 5 }, 'Télérelève de compteurs M-Bus'] : [WIT.mbus30[0], WIT.mbus30[1], { Bus: 30 }, 'Télérelève de compteurs M-Bus'], voies: mbus <= 5 ? 5 : 30, utilisees: mbus, k: 'MBUS' });
+        // Embases : UC P6 (6 PLUG), puis extensions P9, la dernière en P3 / P1 si elle suffit
+        const mods = liste.map(pl => ({ nom: pl.plug[0], ref: pl.plug[1], type: pl.k === 'MBUS' ? 'Bus' : Object.keys(pl.plug[2])[0], voies: pl.voies, utilisees: pl.utilisees, plug: pl.nom, lib: pl.plug[3] }));
+        a.chassis = [{ nom: 'UC', embase: WIT.embaseUC, modules: mods.slice(0, WIT.embaseUC[2]) }];
+        for (let i = WIT.embaseUC[2]; i < mods.length; i += 9) { const reste = mods.length - i, emb = reste <= 1 ? WIT.extensions[2] : reste <= 3 ? WIT.extensions[1] : WIT.extensions[0]; a.chassis.push({ nom: `EXT${a.chassis.length}`, embase: emb, modules: mods.slice(i, i + emb[2]) }); }
+        a.chassis.forEach(c => c.modules.forEach((m, k) => { m.chassis = c.nom; m.emplacement = k + 1; }));
+        a.extensions = a.chassis.length - 1; a.cartes = {}; a.uc = { EA: [0, 0], SA: [0, 0], ETOR: [0, 0], STOR: [0, 0] }; a.capa = { EA: [4, signal.EA, 'PLUG 0.0.4.0'], SA: [2, signal.SA, 'PLUG 0.0.2.2'], ETOR: [7, signal.ETOR, 'PLUG 7.0.0.0'], STOR: [4, signal.STOR, 'PLUG 0.4.0.0'] };
+        a.plugs = Object.fromEntries(liste.map(pl => [pl.nom, { nom: pl.plug[0], ref: pl.plug[1], voies: pl.voies, types: pl.plug[2] }]));
+        // Ressources de l'UC : points (câblés, communiqués, logiciels) et processus (boucles, horloges, permutations, sécurités)
+        const process = a.eqs.filter(q => ['v3p', 'v010', 'v010r', 'var', 'mod'].includes(q.regulation)).length + REG.installations.length + new Set(a.eqs.filter(q => q.groupe).map(q => q.groupe)).size + 5;
+        const ress = a.pts.length + process, taille = WIT.tailles.find(x => x[1] >= ress * 1.2) || WIT.tailles[WIT.tailles.length - 1];
+        a.wit = { ressources: ress, taille, uc: a.opt && a.opt.has('modem4G') ? WIT.uc4G : WIT.uc, mbus };
+        if (ress * 1.2 > WIT.tailles[WIT.tailles.length - 1][1]) alertes.push(alerte('attention', `Armoire ${a.rep} : ${ress} ressources Wit estimées, au-delà de la taille XXL (5000) : répartir sur plusieurs ULI REDY.`));
+        if (mbus && mods.length) alertes.push(alerte('info', `Armoire ${a.rep} : PLUG M-Bus au format double largeur (56 mm) : vérifier la place sur l'embase.`));
+        const box = WIT.box, nb = t => a.pts.filter(p => p[2] === t).length;
+        a.wit.box = nb('ETOR') <= box.ETOR && nb('STOR') <= box.STOR && nb('EA') <= box.EA && nb('SA') <= box.SA && ress <= box.ressources;
+        a.pts.filter(p => p[2] === 'Bus').forEach(p => a.adresses.push([`Bus ${gtb || 'BACnet / Modbus'}`, '', p[0], p[1], 'Bus', 'Communication']));
+        a.bornesES = borne - 1;
+        return;
+      }
       // Voies intégrées à l'UC d'abord, puis cartes (20 % de réserve) ; cartes réparties sur l'UC puis les châssis d'extension
       a.capa = {}; a.uc = {};
       ['EA', 'SA', 'ETOR', 'STOR'].forEach(t => {
@@ -497,15 +547,25 @@ const Electricite = ((N, Sc) => {
       if (a.opt.has('cordonChauffant')) add('Protection', 'Interrupteur différentiel 30 mA du départ des cordons chauffants', '2P 25 A type A');
       if (String(a.regime || 'TT').toUpperCase() === 'TT') add('Protection', `Protection différentielle ${ddrTete(a).split(' type')[0]} en tête des départs (schéma TT)`, `4P ${a.cal} A type ${ddrTete(a).split(' type ')[1]}`);
       add('Raccordement', 'Barrette de terre principale, tresse de liaison de la porte', 'PE repéré vert / jaune');
-      if (a.techno === 'automate') add('Automatisme', `${(cfgAut.UC || {}).ref && !/^Automate programmable \(UC\)$/.test((cfgAut.UC || {}).ref) ? cfgAut.UC.ref : `${MARQUES[e.marqueAutomate] || MARQUES.generique} (unité centrale${e.marqueAutomate && e.marqueAutomate !== 'generique' ? ', référence selon la fiche' : ''})`}${gtb ? ` + communication ${gtb}` : ''}`, `Horloge, historiques, serveur web${['EA', 'SA', 'ETOR', 'STOR'].some(t => a.uc && a.uc[t][1]) ? ` ; voies intégrées : ${['EA', 'SA', 'ETOR', 'STOR'].filter(t => a.uc[t][1]).map(t => `${a.uc[t][1]} ${t}`).join(', ')}` : ''}`);
+      if (a.wit) {
+        const w = a.wit, src = WIT.source;
+        add('Automatisme', `ULI Wit REDY — PLUG UC ${w.uc[0]} (${w.uc[1]})`, `pilotage et mesure, BACnet IP / MS-TP, Modbus IP / RTU, serveur web ; ${src}`);
+        if (w.taille[2]) add('Automatisme', `Extension de ressources REDY-PROCESS XS → ${w.taille[0]} (${w.taille[2]})`, `${w.taille[1]} ressources pour ${w.ressources} estimées (points et processus)`);
+        add('Automatisme', `${WIT.embaseUC[0]} (${WIT.embaseUC[1]})`, 'UC + Power + 6 PLUG I/O, rail DIN 18 modules');
+        add('Automatisme', `${WIT.powerUC[0]} (${WIT.powerUC[1]})`, '230 VAC, batterie de secours, sortie auxiliaire 12 VDC');
+        a.chassis.slice(1).forEach(c => { add('Automatisme', `Embase d'extension ${c.embase[0]} (${c.embase[1]})`, `${c.embase[2]} PLUG I/O`); add('Automatisme', `${WIT.powerExt[0]} (${WIT.powerExt[1]})`, 'alimentation de l\'embase d\'extension'); add('Automatisme', `${WIT.interface[0]} (${WIT.interface[1]})`, 'ExtenBUS vers l\'UC + port RS485'); });
+        a.chassis.flatMap(c => c.modules).forEach(m => add('Automatisme', `PLUG I/O ${m.nom} (${m.ref})`, m.lib));
+        add('Automatisme', 'Câble ExtenBUS entre embases (RJ11 ou bornier)', 'longueur selon implantation', Math.max(0, a.chassis.length - 1));
+        if (w.box) add('Automatisme', `Variante : Box Chaufferie REDY (${WIT.box.ref}, ${WIT.box.ref4G} en 4G)`, `coffret prêt à poser 9 DI, 8 DO, 8 AI, 4 AO, REDY-PROCESS S (250 ressources) : suffit pour cette armoire`, 0);
+      } else       if (a.techno === 'automate') add('Automatisme', `${(cfgAut.UC || {}).ref && !/^Automate programmable \(UC\)$/.test((cfgAut.UC || {}).ref) ? cfgAut.UC.ref : `${MARQUES[e.marqueAutomate] || MARQUES.generique} (unité centrale${e.marqueAutomate && e.marqueAutomate !== 'generique' ? ', référence selon la fiche' : ''})`}${gtb ? ` + communication ${gtb}` : ''}`, `Horloge, historiques, serveur web${['EA', 'SA', 'ETOR', 'STOR'].some(t => a.uc && a.uc[t][1]) ? ` ; voies intégrées : ${['EA', 'SA', 'ETOR', 'STOR'].filter(t => a.uc[t][1]).map(t => `${a.uc[t][1]} ${t}`).join(', ')}` : ''}`);
       if (a.techno === 'synco') {
         a.synco.forEach(x => { add('Régulation', `Régulateur préprogrammé ${Rg().COURT[x.app]} — ${x.ref}`, `${x.entrees[1] - x.modules * ((capa.extension || Rg().CAPACITES.extension)[0])} entrées univ., ${x.sorties[1] - x.modules * ((capa.extension || Rg().CAPACITES.extension)[1])} sorties 0-10 V, ${x.relais[1] - x.modules * ((capa.extension || Rg().CAPACITES.extension)[2])} relais`); if (x.modules) add('Régulation', `Module d'extension — ${((e.capaSynco || []).find(y => y.app === 'extension') || {}).ref || 'module d\'extension'}`, 'Entrées / sorties supplémentaires', x.modules); });
         if (a.ambiance) add('Régulation', `Régulateur d'ambiance communicant (terminal) — ${Rg().APPS.terminaux[1]}`, 'Sonde et commande intégrées, bus KNX', a.ambiance);
         add('Régulation', `Interface de communication / serveur web${gtb ? ` (${gtb})` : ''}`, 'Accès à distance, passerelle vers la GTB');
       }
       if (a.techno === 'integree' && a.pts.some(p => p[2] === 'ETOR')) add('Commande', 'Relais d\'interface des reports d\'état et de défaut', 'Contact sec, 24 V', a.pts.filter(p => p[2] === 'ETOR').length);
-      Object.entries(a.cartes || {}).forEach(([t, n]) => { if (n) add('Automatisme', (a.capa && a.capa[t] ? a.capa[t][2] : `Carte ${CARTES[t][0]} ${t}`), `${(a.capa && a.capa[t] ? a.capa[t] : CARTES[t])[0]} voies ${t}, ${CARTES[t][1]}`, n); });
-      if (a.extensions) { add('Automatisme', (cfgAut.EXT || {}).ref || 'Coupleur d\'extension + alimentation (châssis d\'extension)', `${a.extensions} châssis d'extension`, a.extensions); add('Automatisme', 'Câble de liaison du bus d\'extension', 'Longueur selon implantation', a.extensions); }
+      if (!a.wit) Object.entries(a.cartes || {}).forEach(([t, n]) => { if (n) add('Automatisme', (a.capa && a.capa[t] ? a.capa[t][2] : `Carte ${CARTES[t][0]} ${t}`), `${(a.capa && a.capa[t] ? a.capa[t] : CARTES[t])[0]} voies ${t}, ${CARTES[t][1]}`, n); });
+      if (a.extensions && !a.wit) { add('Automatisme', (cfgAut.EXT || {}).ref || 'Coupleur d\'extension + alimentation (châssis d\'extension)', `${a.extensions} châssis d'extension`, a.extensions); add('Automatisme', 'Câble de liaison du bus d\'extension', 'Longueur selon implantation', a.extensions); }
       if (a.pts.some(p => p[2] === 'Bus')) add('Automatisme', 'Passerelle / port de communication des équipements', 'Modbus RTU ou BACnet MS/TP');
       add('Raccordement', 'Bornes de puissance (bornier X1)', 'Section selon départ', bornesP + 5);
       add('Raccordement', 'Bornes d\'entrées / sorties (bornier X2), sectionnables pour les mesures', '2,5 mm²', a.bornesES + Math.ceil(a.bornesES * 0.2));
@@ -752,7 +812,11 @@ const Electricite = ((N, Sc) => {
           ...arm.filter(a => a.techno === 'automate' && (a.chassis || []).some(c => c.modules.length)).map(a => ({ titre: `Configuration de l'automate — armoire ${a.rep} : ${Object.values(a.cartes).reduce((x, n) => x + n, 0)} carte(s) sur ${a.chassis.length} châssis${a.extensions ? ` (UC + ${a.extensions} extension(s))` : ' (sans extension)'}`,
             tableau: { entetes: ['Châssis', 'Emplacement', 'Module', 'Référence', 'Voies', 'Utilisées', 'Réserve'], lignes: [
               ...['EA', 'SA', 'ETOR', 'STOR'].filter(t => a.uc[t][1]).map(t => ['UC', '—', `Voies intégrées ${t}`, (cfgAut.UC || {}).ref || 'UC', String(a.uc[t][1]), String(a.uc[t][0]), String(a.uc[t][1] - a.uc[t][0])]),
-              ...a.chassis.flatMap(c => c.modules.map(m => [c.nom === 'UC' ? 'UC' : `${c.nom} (extension)`, String(m.emplacement), m.nom, a.capa[m.type][2], String(m.voies), String(m.utilisees), String(m.voies - m.utilisees)]))] } })),
+              ...a.chassis.flatMap(c => c.modules.map(m => [c.nom === 'UC' ? (c.embase ? `UC (${c.embase[0]})` : 'UC') : `${c.nom} (extension${c.embase ? ` ${c.embase[0]}` : ''})`, String(m.emplacement), m.plug ? `${m.plug} — PLUG ${m.nom}` : m.nom, m.ref || a.capa[m.type][2], String(m.voies), String(m.utilisees), String(m.voies - m.utilisees)]))] } })),
+          ...arm.filter(a => a.wit).map(a => ({ titre: `Automate Wit REDY — armoire ${a.rep}`, liste: [`Unité centrale ${a.wit.uc[0]} (${a.wit.uc[1]}), taille de ressources ${a.wit.taille[0]} (${a.wit.taille[1]}) pour ${a.wit.ressources} ressources estimées (${a.pts.length} points + boucles, horloges, permutations, logique) ; marge 20 %.`,
+            `${a.chassis.length} embase(s) : ${a.chassis.map(c => `${c.embase[0]} (${c.modules.length}/${c.embase[2]} PLUG)`).join(', ')} ; PLUG d'E/S « DI.DO.AI.AO » : ${Object.entries(a.chassis.flatMap(c => c.modules).reduce((o, m) => { o[m.nom] = (o[m.nom] || 0) + 1; return o; }, {})).map(([k, n]) => `${n} × ${k}`).join(', ')}.`,
+            ...(a.wit.box ? ['Variante possible : Box Chaufferie REDY (SOL001 / SOL006 en 4G), coffret prêt à poser 9 DI, 8 DO, 8 AI, 4 AO et 250 ressources, suffisant pour cette armoire.'] : []),
+            `Configuration par l'interface web embarquée du REDY (le catalogue ne décrit pas de format d'import) ; données et références : ${WIT.source}, à confirmer avec Wit.`] })),
           ...arm.map(a => ({ titre: `Plan d'adressage — armoire ${a.rep} (${Object.entries(a.cartes).filter(([, n]) => n).map(([t, n]) => `${n} × ${(a.capa ? a.capa[t] : CARTES[t])[0]} ${t}`).join(', ') || 'aucune carte'})`, tableau: { entetes: ['Adresse', 'Bornes', 'Repère', 'Désignation', 'Type', 'Signal'], lignes: a.adresses } }))] },
         ...(cahierProg.length ? [{ titre: 'Programmation automate', blocs: [
           { titre: `Cahier de programmation — ${nomAut}`, liste: [`À saisir dans l'outil de programmation ${e.marqueAutomate === 'wit' ? 'Wit' : 'de l\'automate'} : entrées / sorties, boucles de régulation, commandes des moteurs, horloges, consignes, sécurités, alarmes, historiques et communication, armoire par armoire. Repris des points, du plan d'adressage, de l'analyse fonctionnelle et de la table d'échange de cette étude.`,
@@ -902,12 +966,17 @@ const Electricite = ((N, Sc) => {
     ch.forEach((c, i) => {
       const y = 44 + i * (hm + 50), uc = c.nom === 'UC';
       out.push(`<rect x="20" y="${y - 6}" width="${W - 40}" height="${hm + 12}" fill="none" stroke="#999" stroke-dasharray="4 3"/>`);
-      tx(24, y - 10, uc ? 'Châssis principal (UC)' : `Châssis d'extension ${i}`, { a: 'start', fs: 9, c: '#555' });
+      tx(24, y - 10, c.embase ? `${uc ? 'Embase UC' : `Embase d'extension ${i}`} : ${c.embase[0]} (${c.embase[1]})` : uc ? 'Châssis principal (UC)' : `Châssis d'extension ${i}`, { a: 'start', fs: 9, c: '#555' });
       let x = 30;
-      bloc(x, y, lm, hm, '#eee', 'ALIM', '24 V DC', uc ? '' : 'extension'); x += lm + 6;
-      bloc(x, y, lm, hm, uc ? '#e8daef' : '#ebedef', uc ? 'UC' : 'COUPLEUR', uc ? (gtb || 'automate') : 'd\'extension', uc ? ['EA', 'SA', 'ETOR', 'STOR'].filter(t => a.uc && a.uc[t][1]).map(t => `${a.uc[t][1]} ${t}`).join(' ') : ''); x += lm + 6;
-      c.modules.forEach(m => { bloc(x, y, lm, hm, COUL[m.type] || '#fff', m.nom, `${m.voies} ${m.type}`, `${m.utilisees}/${m.voies} utilisées`); tx(x + lm / 2, y + hm + 14, `empl. ${m.emplacement}`, { fs: 7, c: '#777' }); x += lm + 6; });
-      if (i < ch.length - 1) { const xb = 30 + lm + 6 + lm / 2; out.push(`<line x1="${xb}" y1="${y + hm}" x2="${xb}" y2="${y + hm + 44}" stroke="#7d3c98" stroke-width="2.4"/>`); tx(xb + 6, y + hm + 30, 'bus d\'extension', { a: 'start', fs: 8, c: '#7d3c98' }); }
+      if (a.wit) bloc(x, y, lm, hm, '#eee', 'POWER', uc ? 'PLUG522 230 V' : 'PLUG510 230 V', 'batterie');
+      else bloc(x, y, lm, hm, '#eee', 'ALIM', '24 V DC', uc ? '' : 'extension');
+      x += lm + 6;
+      if (a.wit) bloc(x, y, lm, hm, uc ? '#e8daef' : '#ebedef', uc ? 'UC REDY' : 'INTERFACE', uc ? a.wit.uc[1] : 'PLUG518', uc ? `${a.wit.taille[0]} ${a.wit.taille[1]} ress.` : 'ExtenBUS RS485');
+      else bloc(x, y, lm, hm, uc ? '#e8daef' : '#ebedef', uc ? 'UC' : 'COUPLEUR', uc ? (gtb || 'automate') : 'd\'extension', uc ? ['EA', 'SA', 'ETOR', 'STOR'].filter(t => a.uc && a.uc[t][1]).map(t => `${a.uc[t][1]} ${t}`).join(' ') : '');
+      x += lm + 6;
+      c.modules.forEach(m => { const pg = (a.plugs || {})[m.plug], typ = pg ? Object.entries(pg.types).map(([t, n]) => `${n} ${({ EA: 'AI', SA: 'AO', ETOR: 'DI', STOR: 'DO', Bus: 'cpt' })[t] || t}`).join(' + ') : `${m.voies} ${m.type}`;
+        bloc(x, y, lm, hm, COUL[m.type] || '#fff', m.nom.replace(/^PLUG /, ''), typ, `${m.utilisees}/${m.voies} utilisées`); if (m.ref) tx(x + lm / 2, y + 56, m.ref, { fs: 7.5, c: '#555' }); tx(x + lm / 2, y + hm + 14, `empl. ${m.emplacement}`, { fs: 7, c: '#777' }); x += lm + 6; });
+      if (i < ch.length - 1) { const xb = 30 + lm + 6 + lm / 2; out.push(`<line x1="${xb}" y1="${y + hm}" x2="${xb}" y2="${y + hm + 44}" stroke="#7d3c98" stroke-width="2.4"/>`); tx(xb + 6, y + hm + 30, a.wit ? 'ExtenBUS' : 'bus d\'extension', { a: 'start', fs: 8, c: '#7d3c98' }); }
     });
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Arial, Helvetica, sans-serif"><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${out.join('')}</svg>`;
   }
@@ -915,6 +984,7 @@ const Electricite = ((N, Sc) => {
     const cartes = new Map();
     // Toutes les cartes prévues (réserve comprise), dans l'ordre EA, SA, ETOR, STOR
     Object.entries(a.cartes).forEach(([t, n]) => { for (let k = 1; k <= n; k++) cartes.set(`${t}${k}`, []); });
+    Object.keys(a.plugs || {}).forEach(k => cartes.set(k, []));
     a.adresses.filter(x => x[2] !== '—' && !/^Bus/.test(x[0])).forEach(x => { const c = x[0].split('.')[0]; if (!cartes.has(c)) cartes.set(c, []); cartes.get(c).push(x); });
     [...cartes.keys()].forEach(c => { if (!cartes.get(c).length) cartes.get(c).type = c.replace(/\d+$/, ''); });
     if (!cartes.size) return '';
@@ -922,9 +992,9 @@ const Electricite = ((N, Sc) => {
     const tx = (x, y, s, o = {}) => out.push(`<text x="${x}" y="${y}" font-size="${o.fs || 8}" text-anchor="${o.a || 'start'}"${o.b ? ' font-weight="bold"' : ''} fill="${o.c || '#222'}">${echapper(s)}</text>`);
     tx(10, 18, `Armoire ${a.rep} — cartes d'entrées / sorties de l'automate (réserve en grisé)`, { b: true, fs: 12 });
     [...cartes.entries()].forEach(([nom, l], k) => {
-      const x = 20 + k * (larg + 15), type = l.length ? l[0][4] : l.type, cap = /^UC-/.test(nom) ? (a.uc[type] || [0, 16])[1] : CAP(type)[0];
+      const pg = (a.plugs || {})[nom], x = 20 + k * (larg + 15), type = l.length ? l[0][4] : l.type || (pg ? Object.keys(pg.types)[0] : ''), cap = pg ? pg.voies : /^UC-/.test(nom) ? (a.uc[type] || [0, 16])[1] : CAP(type)[0];
       out.push(`<rect x="${x}" y="34" width="${larg}" height="${30 + cap * hl}" fill="#fff" stroke="#222" stroke-width="1.4"/>`);
-      tx(x + 6, 50, `${/^UC-/.test(nom) ? `UC — ${cap} ${type} intégrées` : `${nom} — ${cap} ${type}`}`, { b: true, fs: 10 }); tx(x + larg - 6, 50, CAP(type)[1], { a: 'end', fs: 7, c: '#555' });
+      tx(x + 6, 50, `${pg ? `${nom} — PLUG ${pg.nom} (${pg.ref})` : /^UC-/.test(nom) ? `UC — ${cap} ${type} intégrées` : `${nom} — ${cap} ${type}`}`, { b: true, fs: 10 }); tx(x + larg - 6, 50, CAP(type)[1], { a: 'end', fs: 7, c: '#555' });
       for (let v = 0; v < cap; v++) {
         const y = 70 + v * hl, p = l.find(z => z[0] === `${nom}.${String(v).padStart(2, '0')}`);
         out.push(`<line x1="${x}" y1="${y - 11}" x2="${x + larg}" y2="${y - 11}" stroke="#ddd"/>`);
