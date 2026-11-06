@@ -37,7 +37,7 @@ const NoticeExploitation = (() => {
     const eqs = (doe.equipements || []).filter(e => !vide(e.designation));
     const familles = (T.familles || []).filter(f => eqs.some(e => e.famille === f.id) || (doe.familles || []).includes(f.id));
     const maint = (doe.maintenance || []).length ? doe.maintenance : familles.flatMap(f => (T.maintenance[f.id] || []));
-    const mes = (essais.mes || []).filter(m => m.statut === 'Signé');
+    const mes = (essais.mes || []).filter(m => m.statut === 'Signé'), regulation = (opts.regulation || []).filter(Boolean);
     const tableau = (entetes, lignes) => `<table class="tn"><thead><tr>${entetes.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${lignes.map(l => `<tr>${l.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
     let n = 0; const ch = t => `<h2>${++n}. ${esc(t)}</h2>`;
     return `<div class="doe-doc notice">
@@ -50,6 +50,14 @@ const NoticeExploitation = (() => {
       ${familles.map(f => { const l = eqs.filter(e => e.famille === f.id); return l.length ? `<h3>${esc(f.titre)}</h3>${tableau(['Repère', 'Désignation', 'Marque', 'Référence', 'N° de série', 'Qté', 'Localisation'], l.map(e => [esc(e.repere), esc(e.designation), esc(e.marque), esc(e.reference), esc(e.serie), esc(e.quantite), esc(e.localisation)]))}` : ''; }).join('') || '<p>Liste des équipements à compléter dans le DOE (section 3).</p>'}
       ${ch('Consignes de conduite')}
       ${familles.filter(f => CONSIGNES[f.id]).map(f => `<h3>${esc(f.titre)}</h3>${CONSIGNES[f.id].map((l, i) => `<p><strong>${titres[i]}</strong></p><ul>${l.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`).join('')}`).join('')}
+      ${regulation.length ? `${ch('Régulation')}
+        <p class="petit">Analyse fonctionnelle, réglages et liste des points établis par l'étude d'exécution ; valeurs réglées relevées sur les PV de mise en service de la régulation.</p>
+        ${regulation.flatMap(r => r.installations || []).map(x => { const pv = mes.find(m => String(m.equipement || '').startsWith(`Régulation — ${x.titre}`)), regle = l => { const m = pv && (pv.mesures || []).find(y => y.libelle === l); return m && !vide(m.valeur) ? esc(String(m.valeur).replace('.', ',')) : '—'; };
+          return `<h3>${esc(x.titre)}${x.techno ? ` — ${esc(x.techno)}` : ''}</h3>${(x.af || []).length ? `<ul>${x.af.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+          ${(x.params || []).length ? tableau(['Paramètre', 'Valeur de l\'étude', 'Valeur réglée (PV)'], x.params.map(p => [esc(p.libelle), `${esc(String(p.valeur).replace('.', ','))} ${esc(p.unite || '')}`, regle(p.libelle)])) : ''}`; }).join('')}
+        ${regulation.flatMap(r => r.courbes || []).map(c => `<h3>${esc(c.titre)}</h3><p><img alt="${esc(c.titre)}" style="width:100%;max-width:640px" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(c.svg)}"></p>
+          ${c.tableau ? tableau(c.tableau.entetes.map(esc), c.tableau.lignes.map(l => l.map(esc))) : ''}${(c.reglages || []).length ? `<p class="petit">Réglage sur le régulateur : ${esc(c.reglages.join(' ; '))}.</p>` : ''}`).join('')}
+        ${regulation.some(r => r.points) ? `<h3>Liste des points GTB</h3>${regulation.filter(r => r.points).map(r => tableau(r.points.entetes.map(esc), r.points.lignes.map(l => l.map(esc)))).join('')}` : ''}` : ''}
       ${ch('Réglages et mesures relevés à la mise en service')}
       ${mes.length ? mes.map(m => `<h3>${esc(m.equipement)}${m.repere ? ` (${esc(m.repere)})` : ''} — PV ${esc(m.numero || '')} du ${dateFr(m.date)}</h3>
         ${[m.localisation, m.zone].filter(Boolean).length ? `<p class="petit">Localisation : ${esc([m.localisation, m.zone].filter(Boolean).join(' — '))}${m.marque || m.modele ? ` · ${esc([m.marque, m.modele].filter(Boolean).join(' '))}` : ''}${m.numeroSerie ? ` · n° ${esc(m.numeroSerie)}` : ''}</p>` : ''}

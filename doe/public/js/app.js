@@ -441,7 +441,10 @@ SECTIONS.s7 = {
       const b = ev.currentTarget; b.disabled = true; b.textContent = 'Mise en page…';
       try {
         const c = S.config.societe || {}, essais = doe.affaireId && typeof essaisPF === 'function' ? essaisPF(doe.affaireId) : { mes: [] };
-        const html = NoticeExploitation.html(doe, { trame: TRAME, essais, societe: { raison: c.raison, adresse: c.adresse, tel: c.tel, email: c.email } });
+        // Régulation des études du chantier (analyse fonctionnelle, paramètres, courbes de chauffe, points GTB)
+        let regulation = [];
+        if (doe.affaireId) { try { regulation = (await api('GET', `/api/pf/liens?affaireId=${encodeURIComponent(doe.affaireId)}`) || []).filter(l => l.app === 'etudes').map(l => (l.resume || {}).regulation).filter(Boolean); } catch (e) { regulation = []; } }
+        const html = NoticeExploitation.html(doe, { trame: TRAME, essais, regulation, societe: { raison: c.raison, adresse: c.adresse, tel: c.tel, email: c.email } });
         const bytes = await PDF.depuisHTML(html, 'Notice d\'exploitation et de maintenance', null, { margeHaut: 42, margeBas: 42 });
         const nom = `Notice_exploitation_${String(doe.operation || 'installation').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_').slice(0, 40)}_ind${doe.indice || 'A'}.pdf`;
         const f = await envoyerFichier(new File([bytes], nom, { type: 'application/pdf' }));

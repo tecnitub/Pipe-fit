@@ -175,6 +175,25 @@ const Regulation = (() => {
     if (!v.app && /module|extension/i.test(t + reference)) v.app = 'extension';
     return { valeurs: v, fabricant, reference, nb: Object.keys(v).length };
   }
-  return { exigencesCctp, lireFiche, COURT, TECHNOS, APPS, CAPACITES, CONTROLES, application, allouer, contexte };
+  // Régulation de l'étude pour le DOE et la notice d'exploitation : technologie, analyse fonctionnelle et paramètres de
+  // chaque installation, courbes de chauffe, liste des points GTB (calcul des armoires s'il existe)
+  function pourDoe(etude, Liens) {
+    const notes = (etude && etude.notes) || [], N = Nt(), out = { installations: [], courbes: [], points: null };
+    notes.filter(n => n.type === 'elec' && ((n.entrees || {}).equipements || []).length).forEach(elec => {
+      try {
+        const r = Liens.calculer(etude, elec), blocs = ((r.onglets || []).find(o => o.titre === 'Régulation') || {}).blocs || [], reg = (r.valeurs || {}).regulation || {};
+        (reg.installations || []).filter(x => !out.installations.some(y => y.titre === x.titre)).forEach(x => { const b = blocs.find(y => (y.titre || '').startsWith(`Analyse fonctionnelle — ${x.titre}`)); out.installations.push({ titre: x.titre, techno: TECHNOS[x.techno] ? TECHNOS[x.techno][0] : '', af: (b && b.liste) || [], params: x.params || [] }); });
+        const pts = blocs.find(y => /^Liste des points GTB/.test(y.titre || ''));
+        if (pts && pts.tableau && pts.tableau.lignes.length > 1) out.points = { entetes: pts.tableau.entetes, lignes: [...((out.points || {}).lignes || []), ...pts.tableau.lignes].slice(0, 600) };
+      } catch (e) { /* calcul des armoires incomplet */ }
+    });
+    if (!out.installations.length) { try { contexte(etude, Liens).installations.forEach(x => out.installations.push({ titre: x.titre, techno: '', af: x.af, params: x.params })); } catch (e) { /* étude incomplète */ } }
+    notes.filter(n => n.type === 'pid').forEach(n => {
+      try { const e = Liens.resoudre(etude, n).entrees, d = Sc().dimensionner(e), c = Sc().courbeChauffe(d.co ? d.co.dC : d, e); if (c) out.courbes.push({ titre: `Courbe de chauffe — ${n.titre}`, svg: c.svg, tableau: c.tableau, reglages: c.circuits.map(x => `${x.rep} : pente ≈ ${nf(x.pente, 2)}, déplacement parallèle ≈ ${x.deplacement >= 0 ? '+' : ''}${nf(x.deplacement, 1)} K`) }); } catch (e) { /* calcul incomplet */ }
+    });
+    void N;
+    return out.installations.length || out.courbes.length ? out : null;
+  }
+  return { pourDoe, exigencesCctp, lireFiche, COURT, TECHNOS, APPS, CAPACITES, CONTROLES, application, allouer, contexte };
 })();
 if (typeof module !== 'undefined') module.exports = Regulation;

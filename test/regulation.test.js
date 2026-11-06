@@ -160,3 +160,22 @@ test('compléments : points KNX des régulateurs d\'ambiance, consignes par zone
   assert.match(ex, /BACS/);
   assert.ok(r.alertes.some(a => /CCTP : communication Modbus/.test(a.texte)) && r.alertes.some(a => /CCTP : régulation par automate/.test(a.texte)));
 });
+
+test('DOE : régulation de l\'étude dans la notice d\'exploitation (analyse, paramètres étude / réglés, courbe, points GTB)', () => {
+  const { et } = etude('synco');
+  const r = Rg.pourDoe(et, L);
+  assert.ok(r.installations.some(x => /Chaufferie/.test(x.titre) && x.af.length && x.params.length && /préprogrammés/.test(x.techno)));
+  assert.ok(r.courbes.length && /^<svg/.test(r.courbes[0].svg) && r.courbes[0].reglages.length);
+  assert.ok(r.points && r.points.lignes.length > 10);
+  const Notice = require('../doe/public/js/notice');
+  const doe = { operation: 'Atelier', lot: 'CVC', equipements: [], maintenance: [], familles: [] };
+  const ins = r.installations.find(x => /CTA bureaux/.test(x.titre));
+  const pv = { statut: 'Signé', equipement: `Régulation — ${ins.titre} (x)`, date: '2026-11-06', mesures: [{ libelle: 'Consigne de soufflage hiver', valeur: '21,5', unite: '°C' }] };
+  const h = Notice.html(doe, { trame: { familles: [], maintenance: {}, formation: [] }, essais: { mes: [pv] }, regulation: [r] });
+  assert.match(h, /<h2>\d+\. Régulation<\/h2>/);
+  assert.match(h, /Consigne de soufflage hiver<\/td><td>21 °C<\/td><td>21,5<\/td>/);
+  assert.match(h, /<img alt="Courbe de chauffe — Chaufferie bâtiment A[^"]*" style="width:100%;max-width:640px" src="data:image\/svg\+xml/);
+  assert.match(h, /Liste des points GTB/);
+  // Sans régulation : pas de chapitre
+  assert.doesNotMatch(Notice.html(doe, { trame: { familles: [], maintenance: {}, formation: [] } }), /Régulation<\/h2>/);
+});
