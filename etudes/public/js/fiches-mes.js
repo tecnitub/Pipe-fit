@@ -47,18 +47,22 @@ const FichesMes = ((PM, Es) => {
       <h3>Points de contrôle</h3>
       <table class="tn"><thead><tr><th>Contrôle</th><th>État</th><th style="width:28%">Observation</th></tr></thead>
         <tbody>${f.controles.map(c => `<tr><td>${esc(c)}</td><td class="case">☐ OK ☐ NC ☐ SO</td><td></td></tr>`).join('')}</tbody></table>
-      ${f.mesures.length ? `<h3>Mesures et relevés</h3>
+      ${f.mesures.filter(m => !Es.releve(m)).length ? `<h3>Mesures et relevés</h3>
       <table class="tn mesures"><thead><tr><th>Mesure</th><th>Unité</th><th>Attendu (étude)</th><th>Tolérance</th><th style="width:16%">Mesuré</th><th style="width:11%">Écart</th><th>Conforme</th></tr></thead>
-        <tbody>${f.mesures.map(m => `<tr><td>${esc(m.libelle)}</td><td>${esc(m.unite)}</td><td class="attendu">${m.attendu === null ? '—' : esc(nf(m.attendu, dec(m.attendu)))}</td><td>${esc(m.tolerance)}</td><td></td><td></td><td class="case">☐ oui ☐ non</td></tr>`).join('')}
+        <tbody>${f.mesures.filter(m => !Es.releve(m)).map(m => `<tr><td>${esc(m.libelle)}</td><td>${esc(m.unite)}</td><td class="attendu">${m.attendu === null ? '—' : esc(nf(m.attendu, dec(m.attendu)))}</td><td>${esc(m.tolerance)}</td><td></td><td></td><td class="case">☐ oui ☐ non</td></tr>`).join('')}
         <tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td class="case">☐ oui ☐ non</td></tr></tbody></table>
       <p class="petit">Écart = (mesuré − attendu) / attendu. Valeurs attendues reprises des calculs de l'étude${et.indice ? ` (indice ${esc(et.indice)})` : ''}.</p>` : ''}
+      ${(() => { const rl = f.mesures.filter(m => Es.releve(m)); if (!rl.length) return '';
+        return `<h3>Relevé ligne par ligne (${rl.length} ${rl.some(m => /vanne/.test(Es.releve(m).detail)) ? 'émetteur(s)' : 'bouche(s)'}) — tolérance ${esc(rl[0].tolerance || '± 10 %')}</h3>
+      <table class="tn releve"><thead><tr><th>Repère</th><th>Pièce</th><th>Réseau, branche</th><th>Attendu</th><th style="width:13%">Mesuré</th><th style="width:15%">Réglage</th><th>Conforme</th></tr></thead>
+        <tbody>${rl.map(m => { const r = Es.releve(m); return `<tr><td><strong>${esc(r.repere)}</strong></td><td>${esc(r.piece)}</td><td class="petit">${esc(r.detail)}</td><td class="attendu">${m.attendu === null ? '—' : `${esc(nf(m.attendu, dec(m.attendu)))} ${esc(m.unite)}`}</td><td></td><td></td><td class="case">☐ oui ☐ non</td></tr>`; }).join('')}</tbody></table>`; })()}
       <h3>Réglages effectués</h3><div class="zone-ecrire"></div>
       <h3>Observations / réserves</h3><div class="zone-ecrire"></div>
       <h3>Conclusion</h3>
       <p>☐ Mis en service &nbsp;&nbsp; ☐ Mis en service avec réserves &nbsp;&nbsp; ☐ Non mis en service</p>
       <table class="tn signatures"><tbody><tr><th>Technicien (nom, date, signature)</th><th>Client / exploitant (nom, date, signature)</th></tr><tr><td class="signature"></td><td class="signature"></td></tr></tbody></table>`).join('')}
       <style>.fiches-mes .ident th { width: 18%; text-align: left; } .fiches-mes td.case { text-align: center; white-space: nowrap; } .fiches-mes td.attendu { font-weight: bold; }
-        .fiches-mes .zone-ecrire { border: 1px solid #999; height: 36px; } .fiches-mes td.signature { height: 50px; } .fiches-mes h3 { margin: 8px 0 4px; } .fiches-mes .mesures td { height: 22px; }</style></div>`;
+        .fiches-mes .zone-ecrire { border: 1px solid #999; height: 36px; } .fiches-mes td.signature { height: 50px; } .fiches-mes h3 { margin: 8px 0 4px; } .fiches-mes .mesures td { height: 22px; } .fiches-mes .releve td { height: 20px; } .fiches-mes .releve td.petit { font-size: 0.85em; }</style></div>`;
   }
   return { fiches, depuisPoint, html, tolerance };
 })(typeof PointsMes !== 'undefined' ? PointsMes : typeof require !== 'undefined' ? require('./points-mes') : null, typeof Essais !== 'undefined' ? Essais : require('../../../public/js/essais'));

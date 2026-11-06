@@ -179,3 +179,17 @@ test('DOE : régulation de l\'étude dans la notice d\'exploitation (analyse, pa
   // Sans régulation : pas de chapitre
   assert.doesNotMatch(Notice.html(doe, { trame: { familles: [], maintenance: {}, formation: [] } }), /Régulation<\/h2>/);
 });
+
+test('fiches de mise en service vierges : relevé ligne par ligne séparé (repère, pièce, branche, attendu, mesuré, réglage)', () => {
+  const FM = require('../etudes/public/js/fiches-mes');
+  const et = require('../etudes/demo-exemple')({ affaireId: 'a', client: 'c' });
+  const l = FM.fiches(et, n => L.calculer(et, n)), v = l.find(f => /Ventilation des bureaux/.test(f.titre));
+  const h = FM.html(et, [v]);
+  assert.match(h, /Relevé ligne par ligne \(6 bouche\(s\)\)/);
+  assert.match(h, /<tr><td><strong>S-01<\/strong><\/td><td>Bureau 1 \(Zone A, R\+1\)<\/td><td class="petit">soufflage, branche S1\.1<\/td><td class="attendu">200 m³\/h<\/td>/);
+  // Les lignes de relevé ne sont pas répétées dans le tableau des mesures
+  const mes = h.split('Relevé ligne par ligne')[0];
+  assert.doesNotMatch(mes, /Débit S-01/);
+  const r = FM.html(et, [l.find(f => /Réseau hydraulique/.test(f.titre))]);
+  assert.match(r, /Relevé ligne par ligne \(3 émetteur\(s\)\)/);
+});
