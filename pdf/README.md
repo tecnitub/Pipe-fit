@@ -52,8 +52,10 @@ Obtenir les fichiers : onglet **Actions** du dépôt GitHub → dernière exécu
   à la largeur d'origine.
 - **Commentaires PDF** (option) : annotations exportées comme commentaires Acrobat avec leur apparence, retirées et
   redevenues modifiables à la réouverture dans Atelier PDF.
-- **Pipe-Fit** : ouvrir un document d'un chantier, enregistrer le résultat comme nouveau document ou nouvel indice
-  (clé d'API ; le serveur accepte la page locale d'Atelier PDF uniquement avec une clé, cookies ignorés).
+- **Pipe-Fit** : ouvrir un document d'un chantier, enregistrer le résultat comme nouveau document ou nouvel indice.
+  Connexion personnelle (identifiant et mot de passe) : `POST /api/atelier/connexion` délivre un jeton `pfj_…` de 12 h,
+  révocable (`/api/atelier/deconnexion`) ; aucun secret permanent sur le poste. Le serveur accepte la page locale
+  d'Atelier PDF (origine « null ») uniquement avec un jeton ou une clé d'API, cookies ignorés.
 - **Mises à jour** : le lanceur cherche un Setup plus récent dans le dossier réseau d'installation.
 - **Numérotation** des pages, **filigrane**, titre et auteur du document, aplatissement des formulaires.
 - **Extraire** des pages, **diviser** (par document, par page, toutes les N pages, par plages).

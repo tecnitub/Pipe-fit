@@ -1,19 +1,39 @@
   // ---------- Pipe-Fit : documents des chantiers ----------
-  // Connexion par clé d'API (Pipe-Fit › Paramètres › API et automatisations) ; adresse et clé gardées sur ce PC
-  const PF = { url: '', cle: '' };
-  try { PF.url = localStorage.getItem('atelierpdf.pipefit.url') || ''; PF.cle = localStorage.getItem('atelierpdf.pipefit.cle') || ''; } catch { /* rien */ }
+  // Connexion personnelle : identifiant et mot de passe Pipe-Fit -> jeton temporaire (12 h), révoqué à la déconnexion.
+  // Aucun secret permanent n'est gardé sur le PC (une page locale peut lire le stockage des autres pages locales).
+  // Gardés : l'adresse du serveur et l'identifiant ; le jeton jusqu'à son expiration.
+  const PF = { url: '', login: '', jeton: '', expire: 0, nom: '' };
+  try {
+    PF.url = localStorage.getItem('atelierpdf.pipefit.url') || '';
+    PF.login = localStorage.getItem('atelierpdf.pipefit.login') || '';
+    const j = JSON.parse(localStorage.getItem('atelierpdf.pipefit.jeton') || 'null');
+    if (j && j.expire > Date.now()) Object.assign(PF, j);
+    localStorage.removeItem('atelierpdf.pipefit.cle'); // ancienne clé permanente (version 1.6) : effacée
+  } catch { /* rien */ }
+  const connecte = () => !!(PF.url && PF.jeton && PF.expire > Date.now() + 60000);
   const CATEGORIES_PF = ['Plan', 'Fiche technique', 'Notice', 'Demande client', 'Sécurité / PPSPS', 'PGC', 'Plan de prévention', 'Photo', 'Autre'];
   const echapper = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   async function pf(chemin, opts = {}) {
     let r;
     try {
-      r = await fetch(`${PF.url.replace(/\/+$/, '')}/api/${chemin}`, { ...opts, headers: { Authorization: `Bearer ${PF.cle}`, ...(opts.headers || {}) } });
+      r = await fetch(`${PF.url.replace(/\/+$/, '')}/api/${chemin}`, { ...opts, headers: { ...(PF.jeton ? { Authorization: `Bearer ${PF.jeton}` } : {}), ...(opts.headers || {}) } });
     } catch { throw new Error(`serveur injoignable (${PF.url}) : vérifiez l'adresse et que le PC est sur le réseau de l'entreprise`); }
     if (!r.ok) {
       const j = await r.json().catch(() => ({}));
-      throw new Error(r.status === 401 ? 'clé d\'API refusée' : r.status === 409 ? 'conflit' : (j.error || `erreur ${r.status}`));
+      if (r.status === 401 && PF.jeton) { oublierJeton(); throw new Error('session expirée'); }
+      throw new Error(r.status === 409 ? 'conflit' : (j.error || `erreur ${r.status}`));
     }
     return r;
+  }
+  const auteurPipeFit = () => (PF.nom ? `${PF.nom} (Atelier PDF)` : 'Atelier PDF');
+  function oublierJeton() {
+    Object.assign(PF, { jeton: '', expire: 0, nom: '' });
+    try { localStorage.removeItem('atelierpdf.pipefit.jeton'); } catch { /* rien */ }
+  }
+  async function deconnexionPipeFit() {
+    if (PF.jeton) { try { await pf('atelier/deconnexion', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); } catch { /* déjà expirée */ } }
+    oublierJeton();
+    note('Déconnecté de Pipe-Fit.', 'ok');
   }
   const dlg = {
     ouvrir(titre, html, ok = null) {
@@ -32,21 +52,31 @@
   function connexionPipeFit(ensuite = null) {
     dlg.ouvrir('Connexion à Pipe-Fit', `
       <label class="champ">Adresse de Pipe-Fit<input id="pf-url" placeholder="http://SERVEUR:3000" value="${echapper(PF.url)}"></label>
-      <label class="champ">Clé d'API<input id="pf-cle" type="password" placeholder="pf_…" value="${echapper(PF.cle)}"></label>
-      <p class="aide">La clé se crée dans Pipe-Fit : Paramètres › API et automatisations › Nouvelle clé. Elle donne les droits du compte qui l'a créée :
-      un compte qui peut modifier les chantiers est nécessaire pour y enregistrer des documents. Elle est gardée sur ce PC.</p>`,
+      <label class="champ">Identifiant Pipe-Fit<input id="pf-login" autocomplete="username" value="${echapper(PF.login)}"></label>
+      <label class="champ">Mot de passe<input id="pf-mdp" type="password" autocomplete="current-password"></label>
+      <p class="aide">Votre compte Pipe-Fit habituel : vos droits s'appliquent (modifier les chantiers pour y enregistrer des documents),
+      et Pipe-Fit note qui a enregistré quoi. La connexion dure 12 heures ; le mot de passe n'est pas gardé sur ce PC.</p>`,
     { texte: 'Se connecter', action: async () => {
-      PF.url = $('#pf-url').value.trim(); PF.cle = $('#pf-cle').value.trim();
+      PF.url = $('#pf-url').value.trim().replace(/\/+$/, '');
       if (!/^https?:\/\//i.test(PF.url)) PF.url = `http://${PF.url}`;
+      PF.login = $('#pf-login').value.trim();
+      oublierJeton();
       dlg.message('Connexion…');
       try {
-        const moi = await (await pf('me')).json();
-        try { localStorage.setItem('atelierpdf.pipefit.url', PF.url); localStorage.setItem('atelierpdf.pipefit.cle', PF.cle); } catch { /* rien */ }
-        note(`Connecté à Pipe-Fit (${moi.nom || moi.login}).`, 'ok');
+        const r = await (await pf('atelier/connexion', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ login: PF.login, password: $('#pf-mdp').value, appareil: 'Atelier PDF' }) })).json();
+        Object.assign(PF, { jeton: r.jeton, expire: r.expire, nom: r.nom });
+        try {
+          localStorage.setItem('atelierpdf.pipefit.url', PF.url);
+          localStorage.setItem('atelierpdf.pipefit.login', PF.login);
+          localStorage.setItem('atelierpdf.pipefit.jeton', JSON.stringify({ jeton: PF.jeton, expire: PF.expire, nom: PF.nom }));
+        } catch { /* rien */ }
+        note(`Connecté à Pipe-Fit (${r.nom}) jusqu'à ${new Date(r.expire).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}.`, 'ok');
         dlg.fermer();
         if (ensuite) ensuite();
       } catch (e) { dlg.message(`Connexion impossible : ${e.message}`, true); }
     } });
+    setTimeout(() => (PF.login ? $('#pf-mdp') : $('#pf-login')).focus(), 0);
   }
   async function chantiers() {
     const liste = await (await pf('records/affaires?limite=5000')).json();
@@ -72,10 +102,10 @@
     $('#pf-filtre').focus();
   }
   async function ouvrirDepuisPipeFit() {
-    if (!PF.url || !PF.cle) return connexionPipeFit(ouvrirDepuisPipeFit);
+    if (!connecte()) return connexionPipeFit(ouvrirDepuisPipeFit);
     dlg.ouvrir('Ouvrir un document d\'un chantier', '<p>Chargement des chantiers…</p>');
     let liste;
-    try { liste = await chantiers(); } catch (e) { dlg.message(e.message, true); if (/clé|injoignable/.test(e.message)) connexionPipeFit(ouvrirDepuisPipeFit); return; }
+    try { liste = await chantiers(); } catch (e) { if (/session expirée/.test(e.message)) return connexionPipeFit(ouvrirDepuisPipeFit); dlg.message(e.message, true); return; }
     const montrerDocs = a => {
       const docs = (a.documents || []).filter(d => /pdf|image/.test(d.mime || '') || /\.(pdf|png|jpe?g)$/i.test(d.nom || ''));
       $('#pf-titre').textContent = nomChantier(a);
@@ -102,11 +132,11 @@
   const indiceSuivant = i => (/^[A-Y]$/i.test(i || '') ? String.fromCharCode(i.toUpperCase().charCodeAt(0) + 1) : /^\d+$/.test(i || '') ? String(+i + 1) : i ? `${i}+` : 'B');
   async function enregistrerDansPipeFit() {
     if (!etat.pages.length) return;
-    if (!PF.url || !PF.cle) return connexionPipeFit(enregistrerDansPipeFit);
+    if (!connecte()) return connexionPipeFit(enregistrerDansPipeFit);
     if (!$('#editeur').hidden) validerEditeur();
     dlg.ouvrir('Enregistrer dans un chantier', '<p>Chargement des chantiers…</p>');
     let liste;
-    try { liste = await chantiers(); } catch (e) { dlg.message(e.message, true); return; }
+    try { liste = await chantiers(); } catch (e) { if (/session expirée/.test(e.message)) return connexionPipeFit(enregistrerDansPipeFit); dlg.message(e.message, true); return; }
     const origine = [...new Set(etat.pages.map(p => etat.sources.get(p.source)?.pipefit).filter(Boolean))][0];
     const formulaire = a => {
       const docs = (a.documents || []).filter(d => /pdf/.test(d.mime || '') || /\.pdf$/i.test(d.nom || ''));
@@ -147,9 +177,9 @@
           const d = doc && documents.find(x => x.id === doc.id);
           if (d) {
             d.anciens = [...(d.anciens || []), { fichierId: d.fichierId, indice: d.indice || 'A', date: d.date }];
-            Object.assign(d, { fichierId: envoi.id, mime: envoi.mime, taille: envoi.taille, indice: indiceSuivant(d.indice || 'A'), date: aujourdhui, par: 'Atelier PDF', visible: visible || d.visible });
+            Object.assign(d, { fichierId: envoi.id, mime: envoi.mime, taille: envoi.taille, indice: indiceSuivant(d.indice || 'A'), date: aujourdhui, par: auteurPipeFit(), visible: visible || d.visible });
           } else {
-            documents.push({ id: nouvelId('d'), fichierId: envoi.id, nom, categorie, indice: '', note: '', mime: envoi.mime, taille: envoi.taille, date: aujourdhui, par: 'Atelier PDF', visible });
+            documents.push({ id: nouvelId('d'), fichierId: envoi.id, nom, categorie, indice: '', note: '', mime: envoi.mime, taille: envoi.taille, date: aujourdhui, par: auteurPipeFit(), visible });
           }
           try {
             await pf(`records/affaires/${encodeURIComponent(a.id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: { ...actuel, documents }, version: actuel._v }) });
@@ -168,3 +198,4 @@
   $('#m-pf-ouvrir').onclick = () => { $('#menu-projet').hidden = true; ouvrirDepuisPipeFit(); };
   $('#m-pf-enregistrer').onclick = () => { $('#menu-projet').hidden = true; enregistrerDansPipeFit(); };
   $('#m-pf-connexion').onclick = () => { $('#menu-projet').hidden = true; connexionPipeFit(); };
+  $('#m-pf-deconnexion').onclick = () => { $('#menu-projet').hidden = true; deconnexionPipeFit(); };

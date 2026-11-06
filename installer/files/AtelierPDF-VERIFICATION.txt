@@ -45,7 +45,8 @@ C. TRAVAIL COURANT
 [ ] 20. Fermer la fenêtre en cours de travail, relancer : « Reprendre » retrouve tout.
 
 D. PIPE-FIT (si utilisé)
-[ ] 21. Projet > Connexion à Pipe-Fit (adresse http://SERVEUR:3000 + clé d'API) : connecté.
+[ ] 21. Projet > Connexion à Pipe-Fit (adresse http://SERVEUR:3000, identifiant et
+        mot de passe Pipe-Fit) : connecté. (Le serveur Pipe-Fit doit être à jour.)
 [ ] 22. Ouvrir un document d'un chantier, l'annoter, « Enregistrer dans un chantier »
         comme nouvel indice : visible dans Pipe-Fit avec l'indice suivant.
 

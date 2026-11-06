@@ -203,6 +203,7 @@ function ouvrirSession(req, accountId) {
 function currentAccount(req) {
   // Page locale (Atelier PDF) : la clé d'API seulement, jamais le cookie de session du navigateur
   const token = req.headers.origin === 'null' ? null : cookies(req).sid;
+  // (clés pf_… permanentes, ou jetons pfj_… temporaires d'Atelier PDF)
   // Clé d'API (automatisations) : les droits sont ceux du compte propriétaire de la clé
   if (!token) { const a = API.compteDeCle(db, req.headers.authorization); return a ? { ...a, token: null, cleApi: true } : null; }
   const h = empreinte(token);
@@ -266,15 +267,17 @@ async function api(req, res, url) {
 
   // Atelier PDF (logiciel du poste : page locale, d'origine « null ») : accès par clé d'API uniquement,
   // réponses lisibles par la page (CORS). Sans clé, refusé ; les cookies de session sont ignorés (currentAccount).
+  // Seule exception sans clé : la connexion d'Atelier PDF par identifiant et mot de passe (jeton temporaire)
+  const connexionAtelier = p[0] === 'atelier' && p[1] === 'connexion';
   if (req.headers.origin === 'null') {
     if (method === 'OPTIONS') {
       const demandes = String(req.headers['access-control-request-headers'] || '').toLowerCase().split(',').map(s => s.trim());
-      if (!demandes.includes('authorization')) return fail(res, 403, 'Origine de la requête refusée');
+      if (!demandes.includes('authorization') && !connexionAtelier) return fail(res, 403, 'Origine de la requête refusée');
       res.writeHead(204, { 'Access-Control-Allow-Origin': 'null', 'Access-Control-Allow-Methods': 'GET, POST, PUT',
         'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-PipeFit-Upload, X-Filename', 'Access-Control-Max-Age': '600', Vary: 'Origin' });
       return res.end();
     }
-    if (!/^Bearer\s+pf_/.test(String(req.headers.authorization || ''))) return fail(res, 403, 'Origine de la requête refusée');
+    if (!connexionAtelier && !/^Bearer\s+pfj?_/.test(String(req.headers.authorization || ''))) return fail(res, 403, 'Origine de la requête refusée');
     res.setHeader('Access-Control-Allow-Origin', 'null');
     res.setHeader('Vary', 'Origin');
   }
@@ -294,8 +297,8 @@ async function api(req, res, url) {
     catch (e) { return fail(res, 422, e.message); }
   }
 
-  // Écriture depuis la page d'un autre site : refusée
-  if (HS.origineRefusee(req)) return fail(res, 403, 'Origine de la requête refusée');
+  // Écriture depuis la page d'un autre site : refusée (connexion d'Atelier PDF exceptée : elle exige le mot de passe)
+  if (!(connexionAtelier && req.headers.origin === 'null') && HS.origineRefusee(req)) return fail(res, 403, 'Origine de la requête refusée');
 
   // Exception : envoi d'un document de chantier en fichier brut, avec l'en-tête X-PipeFit-Upload qu'un formulaire d'un autre site ne peut pas poser
   const envoiDocument = p[0] === 'documents' && p[1] === 'fichier' && method === 'POST' && req.headers['x-pipefit-upload'] === '1';
@@ -338,6 +341,29 @@ async function api(req, res, url) {
     failures.delete(ip); failures.delete(cleLogin);
     DB.audit(db, a.login, 'connexion', null, null, ip);
     return send(res, 200, publicAccount(a), { 'Set-Cookie': ouvrirSession(req, a.id) });
+  }
+
+  // Atelier PDF (logiciel du poste) : connexion par identifiant et mot de passe -> jeton temporaire, sans cookie
+  if (connexionAtelier && method === 'POST') {
+    const ip = HS.ipClient(req);
+    const { login, password, appareil } = await readBody(req);
+    const cleLogin = `login:${String(login || '').toLowerCase().slice(0, 100)}`;
+    if (tooManyFailures(ip) || tooManyFailures(cleLogin, 'login')) return fail(res, 429, 'Trop de tentatives, réessayez dans 15 minutes.');
+    const a = db.prepare('SELECT * FROM accounts WHERE login = ?').get(String(login || '').slice(0, 100));
+    const ok = DB.checkPassword(String(password || '').slice(0, 200), a ? a.pass : FACTICE);
+    if (!a || !ok) {
+      recordFailure(ip); recordFailure(cleLogin);
+      DB.audit(db, String(login || '').slice(0, 100), 'échec de connexion (Atelier PDF)', null, null, ip);
+      return fail(res, 401, 'Identifiant ou mot de passe incorrect');
+    }
+    failures.delete(ip); failures.delete(cleLogin);
+    const j = API.creerJeton(db, a.id, appareil);
+    DB.audit(db, a.login, 'connexion (Atelier PDF)', null, null, ip);
+    return send(res, 200, { jeton: j.jeton, expire: j.expires, nom: a.nom || a.login, login: a.login, dureeHeures: API.DUREE_JETON_H });
+  }
+  if (p[0] === 'atelier' && p[1] === 'deconnexion' && method === 'POST') {
+    API.revoquerJeton(db, req.headers.authorization);
+    return send(res, 200, { ok: true });
   }
 
   // Description OpenAPI (création d'un connecteur Power Automate / Make…)

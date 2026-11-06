@@ -300,3 +300,46 @@ test('ouverture depuis l\'Explorateur : page de démarrage du lanceur (blocs de 
   assert.deepStrictEqual(erreurs, []);
   await ctx.close();
 });
+
+test('Pipe-Fit : connexion personnelle, ouverture d\'un document de chantier, enregistrement en nouvel indice', { skip: ignorer }, async () => {
+  // Serveur Pipe-Fit de démonstration, dans ce processus
+  process.env.DB_FILE = F('pipefit.db');
+  process.env.ADMIN_PASSWORD = 'admin-essai-ui';
+  const { server } = require(path.join(racine, 'server/server.js'));
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const adresse = `127.0.0.1:${server.address().port}`;
+  try {
+    const page = await appli();
+    await page.click('#b-projet'); await page.click('#m-pf-ouvrir');
+    await page.fill('#pf-url', adresse); await page.fill('#pf-login', 'admin'); await page.fill('#pf-mdp', 'mauvais');
+    await page.click('#pf-ok');
+    await page.waitForFunction(() => /incorrect/.test(document.querySelector('#pf-message').textContent));
+    await page.fill('#pf-mdp', 'admin-essai-ui'); await page.click('#pf-ok');
+    await page.waitForSelector('#pf-chantiers li');
+    assert.strictEqual(await page.evaluate(() => localStorage.getItem('atelierpdf.pipefit.cle')), null, 'aucune clé permanente gardée');
+    assert.ok(!(await page.evaluate(() => localStorage.getItem('atelierpdf.pipefit.jeton'))).includes('admin-essai-ui'), 'mot de passe non gardé');
+    await page.fill('#pf-filtre', 'ch-2026-001');
+    await page.click('#pf-chantiers li >> nth=0');
+    await page.click('#pf-docs li >> nth=0');
+    await page.waitForFunction(() => AtelierPDF.etat.pages.length > 0, null, { timeout: 15000 });
+    await page.evaluate(() => { AtelierPDF.etat.pages[0].elements.push({ type: 'texte', x: 0.1, y: 0.05, texte: 'Vu sur site', taille: 12 }); });
+    await page.click('#b-projet'); await page.click('#m-pf-enregistrer');
+    await page.waitForSelector('input[name=pf-mode]:checked');
+    assert.strictEqual(await page.evaluate(() => document.querySelector('input[name=pf-mode]:checked').value), 'indice', 'nouvel indice proposé');
+    await page.click('#pf-ok');
+    await page.waitForSelector('#dlg-pf', { state: 'hidden', timeout: 20000 });
+    const r = await page.evaluate(async a => {
+      const j = JSON.parse(localStorage.getItem('atelierpdf.pipefit.jeton'));
+      const l = await (await fetch(`http://${a}/api/records/affaires?limite=50`, { headers: { Authorization: `Bearer ${j.jeton}` } })).json();
+      const d = l.find(x => x.code === 'CH-2026-001').documents[0];
+      return { indice: d.indice, anciens: d.anciens.map(x => x.indice), par: /\(Atelier PDF\)$/.test(d.par) };
+    }, adresse);
+    assert.deepStrictEqual(r, { indice: 'C', anciens: ['A', 'B'], par: true }, 'auteur : « Nom (Atelier PDF) »');
+    await page.click('#b-projet'); await page.click('#m-pf-deconnexion');
+    await page.waitForFunction(() => !localStorage.getItem('atelierpdf.pipefit.jeton'));
+    assert.deepStrictEqual(page.erreurs, []);
+    await page.context().close();
+  } finally {
+    server.close(); server.closeAllConnections();
+  }
+});

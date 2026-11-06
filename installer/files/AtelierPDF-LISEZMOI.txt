@@ -182,9 +182,10 @@ ANNOTATIONS EN COMMENTAIRES (ACROBAT)
 
 PIPE-FIT (documents des chantiers)
   Menu « Projet » :
-  - « Connexion à Pipe-Fit » : adresse du serveur (ex. http://SERVEUR:3000) et
-    clé d'API (Pipe-Fit > Paramètres > API et automatisations > Nouvelle clé ;
-    elle donne les droits du compte qui la crée).
+  - « Connexion à Pipe-Fit » : adresse du serveur (ex. http://SERVEUR:3000), votre
+    identifiant et votre mot de passe Pipe-Fit habituels. Vos droits Pipe-Fit
+    s'appliquent ; la connexion dure 12 heures, le mot de passe n'est pas gardé.
+    « Se déconnecter de Pipe-Fit » met fin à la connexion tout de suite.
   - « Ouvrir un document d'un chantier » : choisir le chantier puis le PDF.
   - « Enregistrer dans un chantier » : comme nouveau document (nom, catégorie),
     ou comme NOUVEL INDICE d'un document du chantier (l'indice précédent reste

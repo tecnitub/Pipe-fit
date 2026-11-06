@@ -6,6 +6,8 @@ const hacher = cle => crypto.createHash('sha256').update(cle).digest('hex');
 
 function initTables(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS api_keys (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, nom TEXT, prefixe TEXT, hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, last_used TEXT)`);
+  // Jetons temporaires (Atelier PDF) : délivrés à la connexion avec identifiant et mot de passe, valables quelques heures
+  db.exec(`CREATE TABLE IF NOT EXISTS api_jetons (hash TEXT PRIMARY KEY, account_id TEXT NOT NULL, appareil TEXT, created_at TEXT NOT NULL, expires INTEGER NOT NULL)`);
 }
 // Nouvelle clé : renvoyée une seule fois en clair, seule son empreinte est conservée
 function creerCle(db, accountId, nom) {
@@ -14,7 +16,26 @@ function creerCle(db, accountId, nom) {
   db.prepare('INSERT INTO api_keys (id, account_id, nom, prefixe, hash, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(id, accountId, String(nom || 'Clé API').slice(0, 80), cle.slice(0, 10), hacher(cle), new Date().toISOString());
   return { id, cle };
 }
+// Jeton temporaire : renvoyé une seule fois, seule son empreinte est conservée
+const DUREE_JETON_H = 12;
+function creerJeton(db, accountId, appareil) {
+  const jeton = 'pfj_' + crypto.randomBytes(32).toString('base64url');
+  const expires = Date.now() + DUREE_JETON_H * 3600000;
+  db.prepare('DELETE FROM api_jetons WHERE expires < ?').run(Date.now());
+  db.prepare('INSERT INTO api_jetons (hash, account_id, appareil, created_at, expires) VALUES (?, ?, ?, ?, ?)').run(hacher(jeton), accountId, String(appareil || '').slice(0, 80), new Date().toISOString(), expires);
+  return { jeton, expires };
+}
+function revoquerJeton(db, entete) {
+  const m = /^Bearer\s+(pfj_[A-Za-z0-9_-]{20,})$/.exec(String(entete || ''));
+  if (m) db.prepare('DELETE FROM api_jetons WHERE hash = ?').run(hacher(m[1]));
+}
 function compteDeCle(db, entete) {
+  const j = /^Bearer\s+(pfj_[A-Za-z0-9_-]{20,})$/.exec(String(entete || ''));
+  if (j) {
+    const t = db.prepare('SELECT account_id, expires FROM api_jetons WHERE hash = ?').get(hacher(j[1]));
+    if (!t || t.expires < Date.now()) return null;
+    return db.prepare('SELECT id, login, nom, role, user_id, email FROM accounts WHERE id = ?').get(t.account_id) || null;
+  }
   const m = /^Bearer\s+(pf_[A-Za-z0-9_-]{20,})$/.exec(String(entete || ''));
   if (!m) return null;
   const k = db.prepare('SELECT id, account_id FROM api_keys WHERE hash = ?').get(hacher(m[1]));
@@ -83,4 +104,4 @@ function openapi(DB, base) {
   };
 }
 
-module.exports = { initTables, creerCle, compteDeCle, listerCles, webhooks, emettre, envoyer, openapi };
+module.exports = { initTables, creerCle, creerJeton, revoquerJeton, DUREE_JETON_H, compteDeCle, listerCles, webhooks, emettre, envoyer, openapi };

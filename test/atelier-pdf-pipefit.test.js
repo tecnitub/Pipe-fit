@@ -48,3 +48,27 @@ test('page locale : préflight, accès par clé seulement, envoi d\'un document 
   assert.strictEqual(fichier.status, 200);
   assert.deepStrictEqual(Buffer.from(await fichier.arrayBuffer()), pdf);
 });
+
+test('connexion d\'Atelier PDF par identifiant : jeton temporaire, utilisable puis révoqué', async () => {
+  const H = { Origin: 'null', 'Content-Type': 'application/json' };
+  // Préflight sans Authorization : accepté pour la connexion seulement
+  const pre = await fetch(base + '/api/atelier/connexion', { method: 'OPTIONS', headers: { Origin: 'null', 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' } });
+  assert.strictEqual(pre.status, 204);
+  const pre2 = await fetch(base + '/api/records/affaires', { method: 'OPTIONS', headers: { Origin: 'null', 'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'content-type' } });
+  assert.strictEqual(pre2.status, 403, 'autres adresses : clé ou jeton obligatoire');
+  const mauvais = await fetch(base + '/api/atelier/connexion', { method: 'POST', headers: H, body: JSON.stringify({ login: 'admin', password: 'faux' }) });
+  assert.strictEqual(mauvais.status, 401);
+  const r = await fetch(base + '/api/atelier/connexion', { method: 'POST', headers: H, body: JSON.stringify({ login: 'admin', password: 'admin-test-pw', appareil: 'Atelier PDF' }) });
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual(r.headers.get('access-control-allow-origin'), 'null');
+  assert.ok(!r.headers.get('set-cookie'), 'aucun cookie');
+  const c = await r.json();
+  assert.match(c.jeton, /^pfj_[A-Za-z0-9_-]{40,}$/);
+  assert.ok(c.expire > Date.now() + 11 * 3600000);
+  const A = { Origin: 'null', Authorization: `Bearer ${c.jeton}` };
+  assert.strictEqual((await fetch(base + '/api/records/affaires?limite=1', { headers: A })).status, 200);
+  // Un jeton ne peut pas créer de clé permanente
+  assert.strictEqual((await fetch(base + '/api/cles', { method: 'POST', headers: { ...A, 'Content-Type': 'application/json' }, body: '{"nom":"x"}' })).status, 403);
+  assert.strictEqual((await fetch(base + '/api/atelier/deconnexion', { method: 'POST', headers: { ...A, 'Content-Type': 'application/json' }, body: '{}' })).status, 200);
+  assert.strictEqual((await fetch(base + '/api/records/affaires?limite=1', { headers: A })).status, 401, 'jeton révoqué');
+});
