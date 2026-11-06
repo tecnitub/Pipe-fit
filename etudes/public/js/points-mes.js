@@ -25,6 +25,7 @@ const PointsMes = (() => {
         case 'reseau':
         case 'arbo': {
           const Q = n.type === 'arbo' ? v.Qp : v.Qpompe;
+          if (n.type === 'arbo' && e.memeReseau === 'oui') break; // jumeau froid d'un réseau change-over : fiche du réseau chaud
           if (n.type === 'arbo') {
             // Une fiche par réseau hydraulique : pompe, puis une ligne par émetteur (repère de l'étude, pièce, branche,
             // préréglage de la vanne d'équilibrage) avec le débit attendu, à mesurer
@@ -167,6 +168,7 @@ const PointsMes = (() => {
     (et.notes || []).forEach(n => {
       try {
         if (n.type === 'aero') { const r = Liens.calculer(et, n), v = r.valeurs || {}; if ((v.debits || []).length) debits.push({ installation: Liens.resoudre(et, n).entrees.titreInstallation || n.titre, type: 'Aéraulique', unite: 'm³/h', lignes: v.debits.slice(0, 500) }); }
+        if (n.type === 'arbo' && (n.entrees || {}).memeReseau === 'oui') return;
         if (n.type === 'arbo') { const v = Liens.calculer(et, n).valeurs || {}; if ((v.vannes || []).length) debits.push({ installation: n.titre, type: 'Hydraulique', unite: 'm³/h', lignes: v.vannes.map(x => ({ repere: x.repVanne || x.rep, local: `${x.nom || x.rep}${x.terminal ? ` (émetteur ${x.rep})` : ' (antenne, vanne partenaire)'} · branche ${x.chemin || x.rep}`, type: 'Vanne d\'équilibrage', theorique: Math.round(x.Q * 1000) / 1000, reglage: x.tours ? `préréglage ${String(Math.round(x.tours * 10) / 10).replace('.', ',')} tours${x.ref ? ` (${x.ref})` : ''}` : '' })) }); }
         if (n.type === 'desenfumage') { const v = Liens.calculer(et, n).valeurs || {}; if ((v.debits || []).length) debits.push({ installation: `${n.titre}`, type: 'Aéraulique', unite: 'm³/h', lignes: v.debits }); }
         if (n.type === 'sanitaire') { const B = (Liens.calculer(et, n).valeurs || {}).bouclage; if (B && (B.vannes || []).length) debits.push({ installation: `${n.titre} — bouclage ECS`, type: 'Hydraulique', unite: 'L/h', lignes: B.vannes.map(x => ({ repere: `VT-${x.rep}`, local: x.nom || '', type: 'Vanne thermostatique de bouclage', theorique: Math.round(x.q) })) }); }

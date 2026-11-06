@@ -255,6 +255,33 @@ const Equilibrage = ((D, C, N) => {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" data-depart="${cD}" data-retour="${cR}"><rect width="${W}" height="${H}" fill="#fff"/>${out.join('')}</svg>`;
   }
 
-  return { VANNES, VREG, vannePour, emetteursEtude };
+  /* ---------- Réseaux 4 tubes : réseau jumeau de l'autre saison ---------- */
+  // Entrées du réseau jumeau (même arborescence, mêmes repères et émetteurs, saison opposée) ; meme : même réseau physique
+  // en change-over (une seule fiche de mise en service et un seul relevé) ; Tm : température moyenne de l'eau de la saison
+  const TOPO = ['rep', 'amont', 'nom', 'L', 'zeta', 'sing', 'emetteur'];
+  function jumeau(e, { id, meme = false, Tm, dT } = {}) {
+    const froid = e.saison !== 'froid', c = JSON.parse(JSON.stringify(e));
+    Object.assign(c, { saison: froid ? 'froid' : 'chaud', T: Tm !== undefined ? Tm : froid ? 10 : 60, dT: dT !== undefined ? dT : froid ? 5 : 15, jumeau: id || '', memeReseau: meme ? 'oui' : '', pompeRef: '', pompeCourbe: '', pompeFiche: null });
+    delete c.pompeEq;
+    c.troncons = (e.troncons || []).map(t => ({ ...Object.fromEntries(TOPO.filter(k => t[k] !== undefined).map(k => [k, t[k]])), tube: meme ? t.tube || '' : '', P: t.emetteur ? '' : t.P, Q: t.emetteur ? '' : t.Q, dpEm: t.emetteur ? '' : t.dpEm }));
+    c.robinetterie = meme ? c.robinetterie || [] : [];
+    return c;
+  }
+  // Arborescence du réseau source recopiée sur le jumeau (tronçons ajoutés, supprimés, déplacés, longueurs) ; les choix
+  // propres au jumeau (tube imposé, pompe, puissance saisie) sont gardés ; renvoie le nombre de tronçons changés
+  function recopierArbre(src, dst) {
+    const ancien = new Map((dst.troncons || []).map(t => [String(t.rep || '').trim(), t]));
+    let k = 0;
+    dst.troncons = (src.troncons || []).map(t => {
+      const x = ancien.get(String(t.rep || '').trim()) || {}, n = { ...x };
+      let ch = !ancien.has(String(t.rep || '').trim());
+      TOPO.forEach(c => { if (t[c] !== undefined && String(n[c] ?? '') !== String(t[c] ?? '')) { n[c] = t[c]; ch = true; } });
+      if (ch) k++;
+      return n;
+    });
+    k += [...ancien.keys()].filter(r => !(src.troncons || []).some(t => String(t.rep || '').trim() === r)).length;
+    return k;
+  }
+  return { VANNES, VREG, vannePour, emetteursEtude, jumeau, recopierArbre };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Notes !== 'undefined' ? Notes : require('./notes'));
 if (typeof module !== 'undefined') module.exports = Equilibrage;

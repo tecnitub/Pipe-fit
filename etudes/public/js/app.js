@@ -840,6 +840,7 @@ Vues.note = {
         ${n.type === 'evacuation' ? '<button class="secondaire" id="evac-san" title="Une ligne par appareil du calcul sanitaire choisi (lavabos, WC, douches…), avec sa salle et son étage ; il reste à choisir le tronçon">🚽 Reprendre les appareils du calcul sanitaire</button>' : ''}
         ${n.type === 'terminaux' && et.notes.some(x => x.type === 'pieces') ? '<button class="secondaire" id="term-pieces" title="Un terminal par pièce du bilan pièce par pièce qui n\'en a pas, aux puissances de la pièce">🏠 Créer les terminaux des pièces</button>' : ''}
         ${(Notes.TYPES[n.type].champs || []).some(c => c.k === 'troncons' && (c.colonnes || []).some(x => x.k === 'L')) ? '<button class="secondaire" id="longueurs-plan" title="Nomenclature de canalisations ou de gaines exportée de Revit (CSV, Excel) ou plan DXF (une couche par tronçon) : longueurs additionnées par repère et reportées sur les tronçons de même repère">📏 Longueurs depuis Revit / DXF</button>' : ''}
+        ${n.type === 'arbo' ? (n.entrees.jumeau && et.notes.some(x => x.id === n.entrees.jumeau) ? `<button class="secondaire" id="arbo-recopier" title="Tronçons, longueurs, branches et émetteurs repris du réseau jumeau (les tubes imposés et la pompe de ce réseau sont gardés)">🔄 Recopier l'arborescence de ${esc((et.notes.find(x => x.id === n.entrees.jumeau) || {}).titre || '')}</button>` : `<button class="secondaire" id="arbo-jumeau" title="Réseau de l'autre saison avec la même arborescence, les mêmes repères et émetteurs : réseau séparé (4 tubes) ou même réseau en change-over">${n.entrees.saison === 'froid' ? '🔥 Créer le réseau chaud' : '❄️ Créer le réseau froid'} (4 tubes / change-over)</button>`) : ''}
         ${n.type === 'arbo' ? '<button class="secondaire" id="arbo-emetteurs" title="Une branche par terminal ou batterie de CTA de l\'étude, reliée : puissance, débit et pertes de charge remplis ; il reste à choisir le tronçon amont et la longueur">🌀 Ajouter les émetteurs de l\'étude</button>' : ''}
         ${n.type === 'cable' ? '<button id="cable-reprendre">🔌 Reprendre les liaisons de l\'alimentation électrique</button>' : ''}<span class="espace"></span><button class="secondaire" id="supprimer">Supprimer ce calcul</button></div></div>`;
   },
@@ -1026,6 +1027,26 @@ Vues.note = {
       nv.forEach(x => { let r; do { r = `T-${String(k++).padStart(2, '0')}`; } while (reps.has(r)); reps.add(r); l.push({ rep: r, local: x.local, type: x.type, n: 1, Pch: x.Pch, Pfr: x.Pfr, batterie: '4t', vanne: '2v', Pvent: '', Pbe: '', tension: '', alim: 'cvc', regul: 'propre', ref: '' }); });
       enregistrer(et); App.render(); toast(`${nv.length} terminal(aux) créé(s) aux puissances des pièces : choisissez le modèle (fiche technique).`, 6000);
     };
+    const aj = root.querySelector('#arbo-jumeau');
+    if (aj) aj.onclick = () => {
+      const froid = n.entrees.saison !== 'froid';
+      const b = Modal.open(`<h2>${froid ? '❄️ Réseau froid' : '🔥 Réseau chaud'} de ${esc(n.titre)}</h2><p class="muted petit">Même arborescence, mêmes repères et mêmes émetteurs ; puissances, débits et pertes de charge repris des batteries ${froid ? 'froides' : 'chaudes'} de chaque émetteur.</p>
+        <label class="case" style="display:block"><input type="radio" name="jm" value="separe" checked> Réseau séparé (4 tubes) : ses tubes, ses vannes d'équilibrage, sa pompe, sa fiche de mise en service</label>
+        <label class="case" style="display:block"><input type="radio" name="jm" value="meme"> Même réseau en change-over (2 tubes) : vérification en saison ${froid ? 'froide' : 'chaude'}, une seule fiche de mise en service</label>
+        <div class="grille-champs"><label>Température moyenne de l'eau (°C)<input id="jm-t" value="${froid ? 9.5 : 60}"></label><label>Écart de température (K)<input id="jm-dt" value="${froid ? 5 : 15}"></label></div>
+        <div class="actions"><button class="secondaire" id="jm-x">Annuler</button><button id="jm-ok">Créer</button></div>`);
+      b.querySelector('#jm-x').onclick = Modal.close;
+      b.querySelector('#jm-ok').onclick = () => {
+        const j = nouvelleNote('arbo'), meme = b.querySelector('[name="jm"]:checked').value === 'meme';
+        j.titre = `${n.titre} — ${froid ? 'eau glacée' : 'eau chaude'}${meme ? ' (même réseau, change-over)' : ''}`;
+        j.entrees = Equilibrage.jumeau(n.entrees, { id: n.id, meme, Tm: Notes.num(b.querySelector('#jm-t').value, froid ? 9.5 : 60), dT: Notes.num(b.querySelector('#jm-dt').value, froid ? 5 : 15) });
+        n.entrees.jumeau = j.id;
+        et.notes.splice(et.notes.indexOf(n) + 1, 0, j); enregistrer(et); Modal.close();
+        location.hash = `#/etude/${et.id}/${j.id}`; toast(`${j.titre} créé : ${j.entrees.troncons.filter(t => t.emetteur).length} branche(s) d'émetteur reprises.`, 6000);
+      };
+    };
+    const ar = root.querySelector('#arbo-recopier');
+    if (ar) ar.onclick = () => { const src = et.notes.find(x => x.id === n.entrees.jumeau); if (!src) return; const k = Equilibrage.recopierArbre(src.entrees, n.entrees); enregistrer(et); App.render(); toast(k ? `${k} modification(s) d'arborescence reprise(s) de ${src.titre}` : 'Arborescences déjà identiques.', 5000); };
     const lp = root.querySelector('#longueurs-plan');
     if (lp) lp.onclick = () => dialogueLongueurs(et, n);
     const ae = root.querySelector('#arbo-emetteurs');

@@ -306,3 +306,30 @@ test('relevé ↔ PV dans les deux sens ; renumérotation de l\'étude reportée
   const d = MR.debitsChantier([{ app: 'etudes', resume: { debits: [{ installation: 'X', lignes: [] }], renumerotations: et.renumerotations } }]);
   assert.deepStrictEqual(d[0].renumerotations[0].map['B-01'], 'S-01');
 });
+
+test('réseaux 4 tubes : jumeau froid (mêmes repères et émetteurs), recopie de l\'arborescence, change-over sans doublon de fiche', () => {
+  const Eq = require('../etudes/public/js/equilibrage');
+  const PM = require('../etudes/public/js/points-mes');
+  const term = note('terminaux', { appareils: [] }), arbo = note('arbo'), et = { notes: [term, arbo] };
+  V.appliquer(et, item('terminal', { local: 'Bureau 1 ; Salle ×2', branche: `arbo:${arbo.id}|A2` }), `term:${term.id}`, note);
+  term.entrees.appareils.forEach(a => { a.batterie = '4t'; });
+  const f = note('arbo'); f.entrees = Eq.jumeau(arbo.entrees, { id: arbo.id, Tm: 9.5, dT: 5 }); arbo.entrees.jumeau = f.id; et.notes.push(f);
+  assert.strictEqual(f.entrees.saison, 'froid');
+  assert.deepStrictEqual(f.entrees.troncons.filter(t => t.emetteur).map(t => [t.rep, t.amont, t.emetteur]), arbo.entrees.troncons.filter(t => t.emetteur).map(t => [t.rep, t.amont, t.emetteur]));
+  // Puissances froides reprises des terminaux : 3,6 kW par cassette
+  const ef = Liens.resoudre(et, f).entrees.troncons.filter(t => t.emetteur);
+  assert.deepStrictEqual(ef.map(t => t.P), [3.6, 3.6, 3.6]);
+  assert.ok(Liens.calculer(et, f).valeurs.Qp > 0);
+  // Arborescence modifiée sur le réseau chaud : recopiée sur le froid (longueur, nouveau tronçon), choix propres gardés
+  f.entrees.troncons[0].tube = 'imposé';
+  arbo.entrees.troncons.find(t => t.rep === 'CA-01').L = 22; arbo.entrees.troncons.push({ rep: 'A3', amont: 'C', nom: 'Nouvelle antenne', L: 8 });
+  assert.strictEqual(Eq.recopierArbre(arbo.entrees, f.entrees), 2);
+  assert.strictEqual(f.entrees.troncons.find(t => t.rep === 'CA-01').L, 22);
+  assert.strictEqual(f.entrees.troncons[0].tube, 'imposé');
+  // Séparé : deux fiches réseau ; même réseau (change-over) : une seule fiche et un seul relevé
+  const fiches = () => PM.extraire(et, n => Liens.calculer(et, n)).filter(p => p.type === 'reseau').length;
+  assert.strictEqual(fiches(), 2);
+  f.entrees.memeReseau = 'oui';
+  assert.strictEqual(fiches(), 1);
+  assert.strictEqual(PM.debits(et, Liens).filter(d => d.type === 'Hydraulique').length, 1);
+});
