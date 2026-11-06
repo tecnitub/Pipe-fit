@@ -14,6 +14,7 @@ global.Sanitaire = require('../etudes/public/js/sanitaire');
 global.FicheCta = require('../etudes/public/js/fiche-cta');
 global.FicheEquip = require('../etudes/public/js/fiche-equipement');
 require('../etudes/public/js/cta');
+require('../etudes/public/js/desenfumage');
 global.SchemaAir = require('../etudes/public/js/aeraulique-schema');
 const Rg = require('../etudes/public/js/regulation');
 global.Regulation = Rg;
@@ -131,4 +132,31 @@ test('courbe de chauffe réglable : départ à 18 °C par circuit et seuil d\'ar
   const af = N.calculer('pid', e).onglets.find(o => o.titre === 'Régulation').blocs.find(b => b.titre === 'Analyse fonctionnelle').liste.join(' ');
   assert.match(af, /35 °C pour 18 °C extérieur/);
   assert.match(af, /au-delà de 15 °C extérieur/);
+});
+
+test('compléments : points KNX des régulateurs d\'ambiance, consignes par zone, désenfumage, exigences du CCTP', () => {
+  const { et, elec } = etude('synco');
+  // Terminaux sur régulateurs préprogrammés : points communiqués en KNX, pas d'entrées / sorties câblées
+  let r = L.calculer(et, elec);
+  const ca = r.valeurs.listePoints.filter(p => /^CA-0/.test(p[0]));
+  assert.ok(ca.length && ca.every(p => p[2] === 'Bus' && p[5] === 'KNX'), ca.map(p => p[2] + p[5]).join(','));
+  // Consignes par zone : zone des terminaux
+  elec.entrees.consignesZones = [{ zone: 'R+1 — Bâtiment A', confort: 21, clim: 25, inocc: 17, horsGel: 7 }];
+  r = L.calculer(et, elec);
+  const p = r.onglets.find(o => o.titre === 'Régulation').blocs.find(b => /^Paramètres à régler/.test(b.titre)).tableau.lignes;
+  assert.ok(p.some(l => l[1] === 'Consigne de confort chauffage — R+1 — Bâtiment A' && l[2] === '21'), p.filter(l => /Consigne de confort/.test(l[1])).map(l => l.join('|')).join('\n'));
+  // Désenfumage : hors régulation CVC, commandé par le CMSI
+  et.notes.push({ id: 'df', type: 'desenfumage', titre: 'Désenfumage atelier', entrees: { ...N.defauts('desenfumage') }, commentaire: '' });
+  r = L.calculer(et, elec);
+  const df = r.onglets.find(o => o.titre === 'Régulation').blocs.find(b => /Désenfumage atelier/.test(b.titre || ''));
+  assert.ok(df && /CMSI/.test(df.liste[0]));
+  // CCTP : protocole, automate, comptage exigés
+  et.inventaire = [{ designation: 'Régulation', prescrit: 'Automate programmable communiquant en Modbus TCP, comptage d\'énergie par circuit, décret BACS classe B', genre: 'regulation', categorie: 'auxiliaire' }];
+  elec.entrees.gtb = 'BACnet/IP';
+  r = L.calculer(et, elec);
+  const ex = r.onglets.find(o => o.titre === 'Régulation').blocs.find(b => b.titre === 'Exigences de régulation du CCTP').liste.join(' | ');
+  assert.match(ex, /Protocole exigé : Modbus — retenu : BACnet\/IP ✕/);
+  assert.match(ex, /Automate programmable demandé ✕/);
+  assert.match(ex, /BACS/);
+  assert.ok(r.alertes.some(a => /CCTP : communication Modbus/.test(a.texte)) && r.alertes.some(a => /CCTP : régulation par automate/.test(a.texte)));
 });

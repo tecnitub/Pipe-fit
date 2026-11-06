@@ -196,8 +196,10 @@ const Electricite = ((N, Sc) => {
       const proto = q.protocole || (e.busEquip || 'Modbus RTU'), app = Rg().application(q, REG.types);
       // Armoire en régulation intégrée : l'équipement se régule seul ; l'armoire ne reçoit que ses reports (et le bus)
       let lst = liste;
+      if (q.pilote && q.pilote.techno === 'synco' && app === 'terminaux' && q.regulation !== 'aucune' && q.regulation !== 'esclave') lst = ['Marche / arrêt', 'Consigne de température', 'Température ambiante', 'Mode (confort, réduit, hors gel)', 'Mode chaud / froid', 'État de marche', 'Défaut'].map(d => ['', d, 'Bus']);
+      const protoLoc = q.pilote && q.pilote.techno === 'synco' && app === 'terminaux' ? 'KNX' : '';
       if (q.pilote && q.pilote.techno === 'integree' && q.regulation !== 'aucune') { lst = liste.filter(([, , t]) => t === 'ETOR' || t === 'Bus'); if (!lst.length) lst = [['', 'Défaut / état (régulation intégrée)', 'ETOR']]; }
-      for (let k = 1; k <= nb; k++) lst.forEach(([, des, type]) => { const p = [nb > 1 ? `${q.rep}.${String(k).padStart(2, '0')}` : q.rep, `${des} — ${court}`, type, q.pilote ? q.pilote.rep : 'autonome', classeGtb(des, type), type === 'Bus' ? proto : '', `${q.rep} — ${court}${q.local && !court.includes(q.local) ? ` (${q.local})` : ''}`, des, q.src || '', app]; pts.push(p); if (q.pilote) q.pilote.pts.push(p); });
+      for (let k = 1; k <= nb; k++) lst.forEach(([, des, type]) => { const p = [nb > 1 ? `${q.rep}.${String(k).padStart(2, '0')}` : q.rep, `${des} — ${court}`, type, q.pilote ? q.pilote.rep : 'autonome', classeGtb(des, type), type === 'Bus' ? protoLoc || proto : '', `${q.rep} — ${court}${q.local && !court.includes(q.local) ? ` (${q.local})` : ''}`, des, q.src || '', app]; pts.push(p); if (q.pilote) q.pilote.pts.push(p); });
     });
     arm.forEach(a => { (a.sondes || '').split(/[;\n]+/).map(s => s.trim()).filter(Boolean).forEach(s => { const p = [`S-${a.rep}`, s, 'EA', a.rep, 'TM', '', `Mesures communes de l'armoire ${a.rep}`, s]; pts.push(p); a.pts.push(p); }); });
     // Points logiciels de chaque armoire : programmation horaire, consignes, alarmes de synthèse (présentation GTB)
@@ -352,6 +354,18 @@ const Electricite = ((N, Sc) => {
     eqs.forEach(q => { const id = String(q.src || '').split(':')[0]; if (id && !techParNote[id]) techParNote[id] = q.pilote ? q.pilote.techno : 'integree'; });
     const techDe = id => { const t = Rg().TECHNOS[techParNote[id] || (arm[0] ? arm[0].techno : 'integree')][0]; return t.charAt(0).toLowerCase() + t.slice(1); };
     const ouRegle = id => ({ automate: 'automate', synco: 'régulateur préprogrammé', integree: 'régulateur de l\'équipement' })[techParNote[id] || (arm[0] ? arm[0].techno : 'integree')];
+    // Exigences de régulation du CCTP comparées à l'étude
+    const cc = REG.cctp, exig = [];
+    if (cc) {
+      const gtbProto = String(e.gtb || '').toLowerCase(), techs = new Set(arm.map(a => a.techno));
+      if (cc.protocoles.length) { const ok = cc.protocoles.some(p => gtbProto.includes(p.toLowerCase())); exig.push(`Protocole exigé : ${cc.protocoles.join(', ')} — retenu : ${e.gtb || 'aucun'}${ok ? ' ✓' : ' ✕'}`); if (!ok) alertes.push(alerte('attention', `CCTP : communication ${cc.protocoles.join(' / ')} demandée, ${e.gtb && e.gtb !== 'aucune' ? `${e.gtb} retenu` : 'aucune GTB retenue'}.`)); }
+      if (cc.marques.length) exig.push(`Marque citée : ${cc.marques.join(', ')} (vérifier « ou équivalent » et le matériel retenu)`);
+      if (cc.automate && !techs.has('automate')) { exig.push('Automate programmable demandé ✕'); alertes.push(alerte('attention', 'CCTP : régulation par automate demandée, aucune armoire en automate programmable.')); }
+      if (cc.prepro && !techs.has('synco')) { exig.push('Régulateurs préprogrammés demandés ✕'); alertes.push(alerte('attention', 'CCTP : régulateurs préprogrammés demandés, aucune armoire en régulateurs préprogrammés.')); }
+      if (cc.integree) exig.push('Régulation intégrée des équipements citée : vérifier les interfaces (autorisation, consigne, reports).');
+      if (cc.comptage) { const ok = pts.some(p => /comptage|compteur|énergie/i.test(p[1])); exig.push(`Comptage d'énergie demandé${ok ? ' ✓' : ' ✕'}`); if (!ok) alertes.push(alerte('attention', 'CCTP : comptage d\'énergie demandé, aucun point de comptage dans la régulation (compteurs du schéma de principe).')); }
+      if (cc.bacs) exig.push('Décret BACS / classe GTB citée : historiques, suivi des consommations et détection des dérives à prévoir dans la supervision.');
+    }
     const parametres = REG.installations.flatMap(x => x.params.map(p => ({ ...p, installation: x.titre, ou: ouRegle(x.noteId) })));
     const regInstallations = REG.installations.map(x => ({ noteId: x.noteId, titre: x.titre, app: x.app, techno: techParNote[x.noteId] || (arm[0] ? arm[0].techno : 'integree'), params: x.params }));
     return {
@@ -398,6 +412,7 @@ const Electricite = ((N, Sc) => {
           ...(arm.length ? [{ titre: 'Technologie de régulation par armoire', liste: arm.map(a => `Armoire ${a.rep} : ${Rg().TECHNOS[a.techno][0]} — ${Rg().TECHNOS[a.techno][1]}.`) }] : []),
           ...REG.installations.map(x => ({ titre: `Analyse fonctionnelle — ${x.titre} (${techDe(x.noteId)})`, liste: x.af })),
           { titre: REG.installations.length ? 'Fonctionnement de chaque équipement' : 'Analyse fonctionnelle', liste: af },
+          ...(exig.length ? [{ titre: 'Exigences de régulation du CCTP', liste: exig }] : []),
           ...(parametres.length ? [{ titre: 'Paramètres à régler et vérifier à la mise en service', tableau: { entetes: ['Installation', 'Paramètre', 'Valeur', 'Unité', 'Réglé sur', 'Réglé le / par'], lignes: parametres.map(x => [x.installation, x.libelle, nf(x.valeur, x.valeur % 1 ? 1 : 0), x.unite, x.ou, '']) } }] : []),
           ...arm.filter(a => a.techno === 'synco' && a.synco.length).map(a => ({ titre: `Régulateurs préprogrammés — armoire ${a.rep}`, tableau: { entetes: ['Régulateur', 'Application', 'Référence', 'Modules d\'extension', 'Entrées univ. (utilisées / dispo.)', 'Sorties 0-10 V', 'Relais'],
             lignes: a.synco.map(x => [x.rep, Rg().APPS[x.app][0], x.ref, String(x.modules), `${x.entrees[0]} / ${x.entrees[1]}`, `${x.sorties[0]} / ${x.sorties[1]}`, `${x.relais[0]} / ${x.relais[1]}`]) } })),
@@ -662,6 +677,9 @@ const Electricite = ((N, Sc) => {
           { k: 'regime', l: 'Liaison à la terre', t: 's', o: [['TT', 'TT'], ['TN-S', 'TN-S'], ['TN-C', 'TN-C'], ['IT', 'IT']] },
           { k: 'techno', l: 'Régulation', t: 's', o: [['automate', 'Automate programmable (programme + analyse fonctionnelle)'], ['synco', 'Régulateurs préprogrammés type Siemens Synco (paramétrage)'], ['integree', 'Régulation intégrée aux équipements (puissance et reports)']] },
           { k: 'sondes', l: 'Sondes d\'ambiance / mesures communes (séparées par ;)', t: 't' }] },
+      { k: 'consignesZones', l: 'Consignes d\'ambiance par zone (zone des terminaux ; « Toutes zones » s\'applique partout) — reprises dans les paramètres et la mise en service', t: 'lignes',
+        d: [{ zone: 'Toutes zones', confort: 20, clim: 26, inocc: 16, horsGel: 8 }],
+        colonnes: [{ k: 'zone', l: 'Zone', t: 't' }, { k: 'confort', l: 'Confort chauffage (°C)' }, { k: 'clim', l: 'Confort rafraîchissement (°C)' }, { k: 'inocc', l: 'Inoccupation (°C)' }, { k: 'horsGel', l: 'Hors gel (°C)' }] },
       { k: 'capaSynco', l: 'Régulateurs préprogrammés : capacités (entrées universelles, sorties 0-10 V, relais) — à reprendre de la fiche du régulateur retenu', t: 'lignes', si: e => (e.armoires || []).some(a => a.techno === 'synco'),
         d: [{ app: 'production', ref: 'type Synco 700 RMK', X: 8, Y: 4, Q: 6 }, { app: 'chauffage', ref: 'type Synco 700 RMH', X: 8, Y: 4, Q: 6 }, { app: 'ventilation', ref: 'type Synco 700 RMU', X: 8, Y: 4, Q: 6 }, { app: 'extension', ref: 'module d\'extension', X: 4, Y: 2, Q: 2 }],
         colonnes: [{ k: 'app', l: 'Application', t: 's', o: [['production', 'Production'], ['chauffage', 'Chauffage et ECS'], ['ventilation', 'Ventilation, CTA'], ['autre', 'Auxiliaires'], ['extension', 'Module d\'extension']] }, { k: 'ref', l: 'Régulateur retenu', t: 't' },

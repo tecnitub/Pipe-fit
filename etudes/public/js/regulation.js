@@ -67,7 +67,17 @@ const Regulation = (() => {
   }
 
   // Analyse fonctionnelle et paramètres de chaque installation de l'étude, d'après ses calculs
-  function contexte(etude, Liens) {
+  // Exigences de régulation lues dans le CCTP / DPGF (inventaire du dossier de consultation)
+  function exigencesCctp(inventaire) {
+    const t = (inventaire || []).filter(x => x && x.inclus !== false).map(x => `${x.designation || ''} ${x.prescrit || ''} ${x.texte || ''}`).join(' \n ');
+    const n = String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (!n.trim()) return null;
+    const protocoles = [['BACnet', /bacnet/], ['Modbus', /modbus/], ['KNX', /\bknx\b/], ['LON', /\blon(works)?\b/], ['M-Bus', /m-?bus/]].filter(([, re]) => re.test(n)).map(([p]) => p);
+    const marques = [['Siemens', /siemens|synco|desigo/], ['Schneider', /schneider|ecostruxure|smartx/], ['Sauter', /sauter/], ['Distech', /distech/], ['Trend', /\btrend\b/], ['Honeywell', /honeywell/], ['Wit', /\bwit\b/]].filter(([, re]) => re.test(n)).map(([m]) => m);
+    return { protocoles, marques, comptage: /comptage|compteur d.energie|calorimetr/.test(n), bacs: /bacs|decret.{0,20}(2020-887|gtb)|classe [ab] .{0,20}(gtb|en 15232|en iso 52120)|en 15232|52120/.test(n),
+      automate: /automate programmable|\bapi\b|automate/.test(n), prepro: /regulateur.{0,30}(preprogramme|configurable)|synco|regulateur (de|d.)(chauffage|ventilation) /.test(n), integree: /regulation integree|regulation d.origine|regulation constructeur/.test(n) };
+  }
+  function contexte(etude, Liens, opts = {}) {
     const notes = (etude && etude.notes) || [], types = {}, installations = [], N = Nt();
     notes.forEach(n => { types[n.id] = n.type; });
     const res = n => { const e = Liens.resoudre(etude, n).entrees; return { e, v: (N.calculer(n.type, e).valeurs || {}) }; };
@@ -114,9 +124,21 @@ const Regulation = (() => {
         } else if (n.type === 'terminaux') {
           const { v } = res(n), l = v.lignes || [], nb = l.reduce((s, x) => s + (x.n || 1), 0), froid = l.some(x => x.Pfr > 0), co = l.some(x => x.b === '2t');
           if (!nb) return;
-          installations.push({ noteId: n.id, titre, app: 'terminaux', af: [`${nb} terminal(aux) : chacun régulé sur la température de sa pièce (consigne locale ajustable ± 3 K), programmation horaire par zone, réduit en inoccupation, hors gel ; ventilateur arrêté en inoccupation.`,
-            ...(co ? ['Terminaux 2 tubes : mode chaud / froid suivant l\'inversion (change-over) de la production.'] : []), 'Maîtres / esclaves : les esclaves suivent la consigne et la commande de leur maître.'],
-            params: [p('Consigne de confort chauffage', 20, '°C'), ...(froid ? [p('Consigne de confort rafraîchissement', 26, '°C')] : []), p('Consigne d\'inoccupation chauffage', 16, '°C'), p('Consigne hors gel', 8, '°C')].filter(Boolean) });
+          // Consignes par zone (calcul des armoires), sinon valeurs courantes ; une ligne « Toutes zones » s'applique partout
+          const zl = (opts.zones || []).filter(z => z && (z.zone || z.confort)), zones = [...new Set(l.map(x => String(x.zone || '').trim()).filter(Boolean))];
+          const consignes = z => { const r = zl.find(y => String(y.zone || '').trim() === z) || zl.find(y => /^toutes/i.test(String(y.zone || '').trim()) || !String(y.zone || '').trim()) || {}; return { confort: num(r.confort, 20), clim: num(r.clim, 26), inocc: num(r.inocc, 16), horsGel: num(r.horsGel, 8) }; };
+          const lz = zones.length && zl.length ? zones : [''];
+          const paramsZones = lz.flatMap(z => { const c = consignes(z), s = z ? ` — ${z}` : ''; return [p(`Consigne de confort chauffage${s}`, c.confort, '°C'), ...(froid ? [p(`Consigne de confort rafraîchissement${s}`, c.clim, '°C')] : []), p(`Consigne d'inoccupation chauffage${s}`, c.inocc, '°C'), p(`Consigne hors gel${s}`, c.horsGel, '°C')]; });
+          installations.push({ noteId: n.id, titre, app: 'terminaux', params: paramsZones.filter(Boolean), af: [`${nb} terminal(aux) : chacun régulé sur la température de sa pièce (consigne locale ajustable ± 3 K), programmation horaire par zone, réduit en inoccupation, hors gel ; ventilateur arrêté en inoccupation.`,
+            ...(co ? ['Terminaux 2 tubes : mode chaud / froid suivant l\'inversion (change-over) de la production.'] : []), 'Maîtres / esclaves : les esclaves suivent la consigne et la commande de leur maître.',
+            ...(zones.length > 1 && zl.length ? [`Consignes par zone (${zones.join(', ')}) : voir la liste des paramètres.`] : [])] });
+        } else if (n.type === 'desenfumage') {
+          const { v } = res(n);
+          installations.push({ noteId: n.id, titre, app: 'ventilation', securite: true, af: [
+            'Désenfumage hors régulation CVC : commandé par le CMSI du lot SSI (déclencheurs manuels, détection) ; la GTB surveille sans commander.',
+            `Sur ordre du CMSI : ouverture des volets du canton sinistré (contrôle de position par fins de course), fermeture des autres, démarrage du ventilateur d'extraction${v.QaMax > 0 ? ' et du ventilateur d\'amenée d\'air' : ''} en priorité, arrêt des CTA et ventilations de confort concernées (asservissement).`,
+            'Alimentation de sécurité (secours) et câbles CR1 ; commande prioritaire sur l\'automate ou le régulateur CVC ; reports d\'état (marche, défaut, position des volets) vers le CMSI et la GTB.'],
+            params: [p('Débit extrait du canton le plus exigeant', v.Qv ? v.Qv * 3600 : NaN, 'm³/h')].filter(Boolean) });
         } else if (n.type === 'sanitaire') {
           const { v } = res(n);
           if (v.bouclage) installations.push({ noteId: n.id, titre: `${titre} — bouclage ECS`, app: 'chauffage', af: ['Pompe de bouclage ECS en marche permanente (ou horloge hors occupation), vannes thermostatiques de bouclage réglées pour un retour ≥ 50 °C sur chaque antenne.'],
@@ -124,7 +146,7 @@ const Regulation = (() => {
         }
       } catch (err) { /* calcul incomplet : installation ignorée */ }
     });
-    return { types, installations };
+    return { types, installations, cctp: exigencesCctp(etude && etude.inventaire) };
   }
   // Points de contrôle de mise en service de la régulation selon la technologie
   const CONTROLES = {
@@ -153,6 +175,6 @@ const Regulation = (() => {
     if (!v.app && /module|extension/i.test(t + reference)) v.app = 'extension';
     return { valeurs: v, fabricant, reference, nb: Object.keys(v).length };
   }
-  return { lireFiche, COURT, TECHNOS, APPS, CAPACITES, CONTROLES, application, allouer, contexte };
+  return { exigencesCctp, lireFiche, COURT, TECHNOS, APPS, CAPACITES, CONTROLES, application, allouer, contexte };
 })();
 if (typeof module !== 'undefined') module.exports = Regulation;

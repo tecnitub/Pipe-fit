@@ -64,7 +64,7 @@ const Liens = ((N, Sc) => {
     // Terminaux : besoins des pièces des bilans pièce par pièce de l'étude
     if (note.type === 'terminaux' && notes.some(n => n.type === 'pieces')) { try { e._besoins = (typeof Pieces !== 'undefined' ? Pieces : require('./pieces')).besoinsEtude(etude); } catch (err) { /* sans bilan */ } }
     // Armoires CVC : analyse fonctionnelle et paramètres de chaque installation de l'étude (régulation)
-    if (note.type === 'elec') { try { e._regulation = (typeof Regulation !== 'undefined' ? Regulation : require('./regulation')).contexte(etude, { resoudre: (et, n) => resoudre(et, n, pile) }); } catch (err) { /* sans contexte */ } }
+    if (note.type === 'elec') { try { e._regulation = (typeof Regulation !== 'undefined' ? Regulation : require('./regulation')).contexte(etude, { resoudre: (et, n) => resoudre(et, n, pile) }, { zones: e.consignesZones }); } catch (err) { /* sans contexte */ } }
     // Réseau arborescent : branches reliées à un émetteur de l'étude (terminal, batterie de CTA)
     if (note.type === 'arbo') lienEmetteurs(etude, e, verrous, alertes, libelle, pile);
     // Schéma : puissance des circuits sans bilan ni réseau annexe = somme des terminaux qui y sont rattachés
