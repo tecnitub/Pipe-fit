@@ -54,7 +54,11 @@ function planMesHtml(a, mobile) {
   const tuiles = ts.length ? `<div class="pm-tuiles">${tuile('reste', reste, `reste à faire${b.enCours ? ` (${b.enCours} en cours)` : ''}`, reste ? 'a-faire' : 'ok')}${tuile('fait', b.faits, `fait${b.reserves ? ` (${b.reserves} avec réserves)` : ''}`, 'ok')}${b.ko ? tuile('reste', b.ko, 'non conforme(s)', 'ko') : ''}${tuile('tout', `${b.pourcent} %`, `avancement · ${signes} PV dans le DOE`, 'neutre')}</div>` : '';
   return `<h${mobile ? 2 : 3}>✅ Mises en service à faire ${ts.length ? `<span class="muted small">${b.faits}/${b.utiles} fait(s)${b.ko ? ` · ${b.ko} non conforme(s)` : ''}</span>` : ''}</h${mobile ? 2 : 3}>
     ${ts.length ? `<div class="pm-barre" title="${b.pourcent} % fait"><i style="width:${b.pourcent}%"></i></div>` : ''}
-    ${!mobile ? `<div class="toolbar" style="margin:4px 0 8px">${ts.length ? '<button class="small secondary" id="pm-pdf">🖨️ Liste à imprimer (PDF)</button>' : ''}${ts.some(t => t.nature === 'mes' && RESTE.includes(t.etat)) ? '<button class="small secondary" id="pm-fiches" title="Une fiche par équipement restant à mettre en service : contrôles, valeurs attendues, mesures à relever">📋 Fiches à remplir (PDF)</button>' : ''}${ts.length && bureau ? '<button class="small" id="pm-rapport">📘 Rapport de mise en service</button>' : ''}${bureau ? '<button class="small secondary" id="pm-ajout">+ Ajouter une tâche</button>' : ''}</div>` : ''}
+    ${!mobile ? `<div class="toolbar" style="margin:4px 0 8px">${ts.length ? '<button class="small secondary" id="pm-pdf">🖨️ Liste à imprimer (PDF)</button>' : ''}${ts.some(t => t.nature === 'mes' && RESTE.includes(t.etat)) ? '<button class="small secondary" id="pm-fiches" title="Une fiche par équipement restant à mettre en service : contrôles, valeurs attendues, mesures à relever">📋 Fiches à remplir (PDF)</button>' : ''}${ts.length && bureau ? '<button class="small" id="pm-rapport">📘 Rapport de mise en service</button>' : ''}${bureau ? '<button class="small secondary" id="pm-ajout">+ Ajouter une tâche</button>' : ''}${bureau && typeof XLSX !== 'undefined' ? '<label class="btn small secondary" title="Fiches de relevés de fonctionnement déjà remplies (CTA, extracteur, pompes) au format Excel de l\'entreprise : une fiche devient un PV en brouillon">📥 Reprendre des fiches Excel<input type="file" id="pm-import" accept=".xlsx" multiple hidden></label>' : ''}</div>` : ''}
+    ${(() => { const s = Essais.suiviMes(pvChantier('misesEnService', a.id)); return s.pv ? `<div class="pm-suivi small"><span>📋 <strong>${s.signes}</strong>/${s.pv} PV signé(s)</span>
+      <span class="${s.reserves ? 'neg' : ''}">⚠️ <strong>${s.reserves}</strong> réserve(s) ouverte(s)</span>
+      ${s.lignes ? `<span>🌬️ <strong>${s.mesurees}</strong>/${s.lignes} bouche(s) ou émetteur(s) mesuré(s)${s.horsTolerance ? ` · <span class="neg">${s.horsTolerance} hors tolérance</span>` : ''}</span>` : ''}
+      ${s.points ? `<span>🔌 <strong>${s.pointsFaits}</strong>/${s.points} point(s) GTB testé(s)${s.pointsNc ? ` · <span class="neg">${s.pointsNc} non conforme(s)</span>` : ''}</span>` : ''}</div>` : ''; })()}
     ${tuiles}
     ${groupes.map(([g, l]) => { const vis = l.filter(garde); return `<h4 class="pm-groupe">${esc(g)} <span class="muted small">${l.filter(t => FAIT.includes(t.etat)).length}/${l.filter(t => t.etat !== 'sansObjet').length}</span></h4>${vis.length ? `<ul class="plan-mes">${vis.map(ligne).join('')}</ul>` : `<p class="small muted">${filtrePlanMes === 'reste' ? '✓ Rien ne reste à faire dans ce groupe.' : 'Rien de fait pour l\'instant.'}</p>`}`; }).join('')
       || `<p class="muted small">${charge ? 'Aucun point de mise en service : reliez une étude à ce chantier (application Études) ; ses calculs, son matériel retenu et ses débits construisent la liste.' : 'Chargement de la liste…'}</p>`}
@@ -99,6 +103,23 @@ function bindPlanMes(z, a) {
   if (fi) fi.onclick = () => fichesPlanMes(Store.get('affaires', a.id), ts().filter(t => RESTE.includes(t.etat)));
   const rp = z.querySelector('#pm-rapport');
   if (rp) rp.onclick = () => dialogueRapportMes(Store.get('affaires', a.id));
+  // Fiches de relevés Excel déjà remplies : une fiche → un PV de mise en service en brouillon sur ce chantier
+  const imp = z.querySelector('#pm-import');
+  if (imp) imp.onchange = async ev => {
+    let n = 0; const rejets = [];
+    for (const f of ev.target.files) {
+      try {
+        const sheets = await XLSX.read(await f.arrayBuffer()), x = sheets.map(sh => Essais.lireFicheExcel(sh.rows)).find(Boolean);
+        if (!x) { rejets.push(f.name); continue; }
+        const { chantier, ...pv } = x;
+        Store.upsert('misesEnService', { affaireId: a.id, userId: Store.me.userId, date: x.date || isoDate(new Date()), heure: '', photos: [], signataireNom: '', signataireQualite: '', statut: 'Brouillon', numeroSerie: '', repere: '', resultat: Essais.conclusion(pv) || '', resultatAuto: true, importe: `${f.name}${chantier ? ` (${chantier})` : ''}`, ...pv });
+        n += 1;
+      } catch (e) { rejets.push(f.name); }
+    }
+    ev.target.value = '';
+    afficherPlanMes(a.id);
+    App.toast(`${n} fiche(s) reprise(s) en PV brouillon${rejets.length ? ` ; non reconnue(s) : ${rejets.join(', ')}` : ''}. Rattachez-les à leur tâche puis signez.`, 7000);
+  };
   const pdf = z.querySelector('#pm-pdf');
   if (pdf) pdf.onclick = () => PDF.telecharger(documentPlanMes(Store.get('affaires', a.id)), `Mises-en-service-${a.code || a.id}.pdf`.replace(/[^\w.-]+/g, '_')).catch(e => notify(e.message));
 }

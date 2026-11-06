@@ -132,7 +132,7 @@ test('chaufferie : sécurités reprises, bilan de puissance au TGBT, plan d\'adr
   assert.match(bil[bil.length - 1][0], /Total CVC au TGBT/);
   assert.ok(Math.abs(r.valeurs.Pappel - (ar.P * 0.8 + r.valeurs.Pelec) * 0.9) < 0.01);
   assert.match(r.schema, />KM</, 'contacteur des pompes commandées en marche / arrêt');
-  assert.deepStrictEqual(r.valeurs.feuilles.map(f => f.name), ['Bilan de puissance', 'Attentes lot élec', 'Équipements', 'Liste des points', "Table d'échange GTB", 'Essais point à point', 'E-S AR-CVC-01', 'Nomenclature AR-CVC-01', 'Carnet de câbles']);
+  assert.deepStrictEqual(r.valeurs.feuilles.map(f => f.name), ['Bilan de puissance', 'Attentes lot élec', 'Équipements', 'Liste des points', "Table d'échange GTB", 'Essais point à point', 'E-S AR-CVC-01', 'Nomenclature AR-CVC-01', 'Programmation AR-CVC-01', 'Carnet de câbles']);
   // Le classeur se construit
   const X = require('../public/js/xlsx');
   assert.ok(X.build(r.valeurs.feuilles.map(f => ({ name: f.name, rows: [f.entetes, ...f.lignes] }))).length > 1000);

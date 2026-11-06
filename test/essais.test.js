@@ -143,3 +143,46 @@ test('fiche de relevés de fonctionnement : plaque, mesures par côté, facteur 
   assert.ok(p0.plaque.every(p => p.section === '') && pm.find(x => x.section === 'Pompe 1' && x.libelle === 'Débit mesuré').attendu === 8.6 && pm.find(x => x.section === 'Pompe 1' && x.libelle === 'HMT mesurée').attendu === 6);
   assert.ok(D.miseEnService({ type: 'pompes', equipement: 'Pompes CTA', plaque: p0.plaque, mesures: pm, controles: p0.controles }, { img: () => '', technicien: 'T', societe: 'S', chantier: {} }).includes('CARACTÉRISTIQUES ÉLECTRIQUES'));
 });
+
+test('plaque lue sur la photo, reprise d\'une fiche Excel, écart du facteur K, point de la pompe, suivi du chantier', () => {
+  // 1. Plaque : caractéristiques reconnues, remplies côté soufflage puis côté extraction
+  const car = E.lireCaracteristiques(['ZIEHL-ABEGG RH35C-ZID.DC.1R', '3~ 380-480 V 50/60 Hz', '2,5 kW  4,0 A', 'n = 3000 min-1', 'K-Faktor = 121']);
+  assert.deepStrictEqual(car, { Puissance: '2,5 kW', Intensite: '4,0 A', Tension: '380 V', Vitesse: '3000 tr/min', K: '121' });
+  const m = { type: 'cta', ...E.modele('cta') };
+  assert.ok(E.remplirPlaque(m, car).every(x => /soufflage/.test(x)));
+  assert.ok(E.remplirPlaque(m, car).every(x => /extraction/.test(x)), 'deuxième photo : côté extraction');
+  // 2. Fiche Excel au format « Rév.0 » (structure de l'entreprise, valeurs fictives)
+  const rows = [['FICHE DE RELEVES \nDE FONCTIONNEMENT'], [], ['VENTILATEUR D\'EXTRACTION'], ['CHANTIER :', '', 'Chantier test', '', '', 'DATE :', '', 46000], ['LOCALISATION :', '', 'Toiture', '', 'DESIGNATION :', 'Extracteur sanitaires'],
+    ['MARQUE :', '', 'Marque X', '', 'REFERENCES :', 'Caisson 1500'], ['DEBIT PREVU :', '', '', 1000], [], ['CARACTERISTIQUES'], ['MOTO-VENTILATEUR', '', 'MARQUE', 'Moteur Y', '', 'PV', '', 'GV'],
+    ['', '', 'TYPE', 'T-90', 'PUISSANCE', '', '.', '400W'], ['', '', '', '', 'INTENSITE PLAQUEE', '', '.', '1,9A'], ['MESURES ELECTRIQUES ET AERAULIQUES'], ['', '', '', 'PV', '', 'GV'], ['', 'TENSION', '', '', '', '232V'], ['', 'INTENSITE', '', '', '', '1,3A'],
+    ['', 'DEBIT EXTRACTION', '', '', '', '950m3/h'], ['', 'PRESSION EXTRACTION', '', '', '', '-119Pa'], ['EQUIPEMENTS'], ['. Filtre G4 1 x 287 x 592'], ['Autocontrol // Tests des équipements de sécurités :'], ['', 'NC = Non conforme', 'C = Conforme', 'SO = Sans objet'], ['', '', true, '', '', 'Sens de rotation'],
+    ['EQUILIBRAGE AERAULIQUE'], ['ANTENNE / LOCAL / DIFFUSEUR', '', '', 'SECTION / DIAMETRE', 'REGLAGE', 'DEBIT + PRESSION PREVU\n(m³/h - Pa)', '', 'DEBIT + PRESSION MESURE\n(m³/h - Pa)'], ['R+1'], ['WC 1', '', '', 125, 'MR', 30, '', 32], ['Douche', '', '', 125, 'MR', 45, '', 40],
+    ['Pression de fin d\'antenne'], ['WC 1', '', '', '', 'MR', '>50 Pa', '', '-92 Pa'], ['REMARQUES // OBSERVATIONS'], ['> RAS']];
+  const x = E.lireFicheExcel(rows);
+  assert.deepStrictEqual([x.type, x.date, x.equipement, x.marque, x.modele], ['vmc', '2025-12-09', 'Extracteur sanitaires', 'Marque X', 'Caisson 1500']);
+  const v = l => x.mesures.find(y => y.libelle === l);
+  assert.deepStrictEqual([v('Tension').valeur, v('Intensité').valeur, v('Débit extraction').valeur, v('Débit extraction').attendu, v('Pression extraction').valeur, v('Pression de fin d\'antenne').valeur], ['232', '1.3', '950', 1000, '-119', '-92']);
+  assert.deepStrictEqual(x.plaque.filter(p => p.valeur).map(p => [p.libelle, p.valeur]), [['Marque du moto-ventilateur', 'Moteur Y'], ['Type du moto-ventilateur', 'T-90'], ['Puissance', '400W'], ['Intensité plaquée', '1,9A']]);
+  const rl = x.mesures.filter(y => E.releve(y));
+  assert.deepStrictEqual(rl.map(y => [E.releve(y).piece, y.attendu, y.valeur, y.dim]), [['WC 1', 30, '32', '125'], ['Douche', 45, '40', '125']]);
+  assert.strictEqual(x.controles.find(c => c.libelle === 'Sens de rotation').etat, 'OK');
+  assert.match(x.composants, /Filtre G4/); assert.strictEqual(x.observations, 'RAS');
+  // 3. Débit par le facteur K hors tolérance du débit prévu → réserve proposée
+  const c = { type: 'cta', ...E.modele('cta') };
+  c.mesures.find(y => y.section === 'Soufflage' && y.libelle === 'Débit mesuré').attendu = 3600;
+  c.plaque.find(p => p.section === 'Soufflage' && p.libelle === 'Coefficient K').valeur = '121';
+  c.mesures.find(y => y.section === 'Soufflage' && y.libelle === 'ΔP ventilateur').valeur = '700';
+  E.calculsFiche(c);
+  const k = c.mesures.find(y => y.section === 'Soufflage' && y.libelle === 'Débit ventilateur (facteur K)');
+  assert.deepStrictEqual([k.valeur, k.attendu, E.conformeMesure(k)], ['3201', 3600, false]);
+  c.controles.forEach(y => { y.etat = 'OK'; });
+  assert.strictEqual(E.conclusion(c), 'Mis en service avec réserves');
+  // 4. Pompe : point prévu, point mesuré et courbe de la pompe transmise par l'étude
+  const p = { type: 'reseau', mesures: [{ libelle: 'Débit de la pompe', unite: 'm³/h', valeur: '7,5', attendu: 8 }, { libelle: 'Hauteur manométrique', unite: 'mCE', valeur: '6', attendu: 5 }], courbePompe: [{ Q: 0, H: 9 }, { Q: 8, H: 6 }, { Q: 12, H: 3 }] };
+  assert.deepStrictEqual(E.pointsPompe(p).ecart, -6.2);
+  const svg = E.courbePompeSvg(p); assert.match(svg, /<svg/); assert.match(svg, /courbe de la pompe/); assert.match(svg, /-6,2 %/);
+  // 6. Suivi : PV signés, réserves, bouches hors tolérance, points GTB
+  const s = E.suiviMes([{ statut: 'Signé', controles: [{ libelle: 'a', etat: 'Non conforme' }], mesures: [{ libelle: 'Débit S-01 — B · soufflage', valeur: '150', attendu: 200 }, { libelle: 'Débit S-02 — B · soufflage', valeur: '', attendu: 100 }] },
+    { statut: 'Brouillon', controles: [{ libelle: 'P1', pap: true, etat: 'OK', etatGtb: 'OK' }, { libelle: 'P2', pap: true, etat: 'OK', etatGtb: '' }], mesures: [] }]);
+  assert.deepStrictEqual(s, { pv: 2, signes: 1, reserves: 1, lignes: 2, mesurees: 1, horsTolerance: 1, points: 2, pointsFaits: 1, pointsNc: 0 });
+});

@@ -675,6 +675,8 @@ const Electricite = ((N, Sc) => {
     const bacs = Gt().bacs({ P: Pbacs, neuf: e.batimentNeuf === 'oui', eqs, REG, opt, gtb: e.gtb, pts });
     if (bacs.assujetti && !bacs.conforme) alertes.push(alerte('attention', `Décret BACS : bâtiment assujetti (${bacs.echeance}) ; classe de régulation estimée ${bacs.classe}, classe A ou B exigée (onglet « GTB et BACS »).`));
     const echange = Gt().echange(pts, arm.map(a => a.rep), e.reglagesPoints), comptes = eqs.filter(q => String(q.src || '').startsWith('comptage:'));
+    const cahierProg = Gt().cahier({ arm, eqs, REG, echange, permutation: e.permutation, gtb: e.gtb && e.gtb !== 'aucune' ? e.gtb : '' });
+    const nomAut = MARQUES[e.marqueAutomate] || MARQUES.generique;
     const seqs = REG.installations.map(x => ({ x, s: Gt().sequences(x, (REG.types || {})[x.noteId], { permutation: e.permutation }) })).filter(y => y.s);
     const regInstallations = REG.installations.map(x => ({ noteId: x.noteId, titre: x.titre, app: x.app, techno: techParNote[x.noteId] || (arm[0] ? arm[0].techno : 'integree'), params: x.params }));
     // Folios numérotés F01, F02… avec cartouche (affaire, indice, date) et renvois entre folios d'une même armoire
@@ -701,6 +703,7 @@ const Electricite = ((N, Sc) => {
           { name: 'Essais point à point', entetes: ['Armoire', ...Gt().ENTETES_ESSAIS], lignes: arm.flatMap(a => Gt().essais(a.adresses).map(l => [a.rep, ...l])) },
           ...arm.flatMap(a => [{ name: `E-S ${a.rep}`, entetes: ['Adresse', 'Bornes', 'Repère', 'Désignation', 'Type', 'Signal'], lignes: a.adresses },
             { name: `Nomenclature ${a.rep}`, entetes: ENT_NOM, lignes: refs.length ? lignesNom(a) : a.nomenclature }]),
+          ...cahierProg.map(c => ({ name: `Programmation ${c.armoire}`, entetes: ['Rubrique', ...Gt().ENTETES_CAHIER], lignes: c.sections.flatMap(x => x.lignes.map(l => [x.titre, ...l])) })),
           { name: 'Carnet de câbles', entetes: ['Armoire', ...ENT_CARNET], lignes: arm.flatMap(a => carnetCables(a).map(l => [a.rep, ...l])) }] },
       resume: [['Équipements', `${eqs.length} (${eqs.filter(q => q.alim === 'elec').length} sur attente électrique, ${eqs.filter(q => q.alim !== 'elec').length} sur armoire CVC)`],
         ['Puissance électrique installée', `${nf(Ptot, 1)} kW`], ['Dont armoires CVC (lot CVC, commande comprise)', `${nf(PCvc, 1)} kW`], ['Dont attentes du lot électricité', `${nf(Pelec, 1)} kW`],
@@ -751,6 +754,10 @@ const Electricite = ((N, Sc) => {
               ...['EA', 'SA', 'ETOR', 'STOR'].filter(t => a.uc[t][1]).map(t => ['UC', '—', `Voies intégrées ${t}`, (cfgAut.UC || {}).ref || 'UC', String(a.uc[t][1]), String(a.uc[t][0]), String(a.uc[t][1] - a.uc[t][0])]),
               ...a.chassis.flatMap(c => c.modules.map(m => [c.nom === 'UC' ? 'UC' : `${c.nom} (extension)`, String(m.emplacement), m.nom, a.capa[m.type][2], String(m.voies), String(m.utilisees), String(m.voies - m.utilisees)]))] } })),
           ...arm.map(a => ({ titre: `Plan d'adressage — armoire ${a.rep} (${Object.entries(a.cartes).filter(([, n]) => n).map(([t, n]) => `${n} × ${(a.capa ? a.capa[t] : CARTES[t])[0]} ${t}`).join(', ') || 'aucune carte'})`, tableau: { entetes: ['Adresse', 'Bornes', 'Repère', 'Désignation', 'Type', 'Signal'], lignes: a.adresses } }))] },
+        ...(cahierProg.length ? [{ titre: 'Programmation automate', blocs: [
+          { titre: `Cahier de programmation — ${nomAut}`, liste: [`À saisir dans l'outil de programmation ${e.marqueAutomate === 'wit' ? 'Wit' : 'de l\'automate'} : entrées / sorties, boucles de régulation, commandes des moteurs, horloges, consignes, sécurités, alarmes, historiques et communication, armoire par armoire. Repris des points, du plan d'adressage, de l'analyse fonctionnelle et de la table d'échange de cette étude.`,
+            'Réglages des boucles : valeurs de départ usuelles, à ajuster à la mise en service (fiche de mise en service de la régulation).', 'Classeur Excel : une feuille « Programmation » par armoire (bouton 📊).'] },
+          ...cahierProg.flatMap(c => c.sections.map(x => ({ titre: `Armoire ${c.armoire} — ${x.titre}`, tableau: { entetes: Gt().ENTETES_CAHIER, lignes: x.lignes } })))] }] : []),
         { titre: 'GTB et BACS', blocs: [
           { titre: 'Décret BACS (articles R.175-1 à R.175-6 du code de la construction)', liste: [
             `Puissance nominale chauffage + climatisation : ${nf(Pbacs, 0)} kW${num(e.pBacs) ? ' (saisie)' : ' (reprise des schémas de principe de l\'étude)'} ; bâtiment ${e.batimentNeuf === 'oui' ? 'neuf' : 'existant'}, tertiaire.`,

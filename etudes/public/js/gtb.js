@@ -197,6 +197,72 @@ const Gtb = (() => {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Arial, Helvetica, sans-serif"><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${out.join('')}</svg>`;
   }
 
-  return { synoptique, exporter, bacs, echange, ENTETES_ECHANGE, csv, comptages, essais, essai, ENTETES_ESSAIS, sequences };
+  /* ---------- Cahier de programmation de l'automate (Wit ou autre) ---------- */
+  // Pour chaque armoire en automate : entrées / sorties, boucles de régulation (mesure, sortie, consigne, réglages par
+  // défaut), commandes des moteurs (retour de marche, défaut, permutation des doubles), horloges, consignes et paramètres,
+  // sécurités et asservissements, alarmes (priorité, temporisation, seuils), historiques et comptages, communication.
+  // Colonnes communes : [Repère, Désignation, Entrée(s), Sortie(s), Réglages / consignes, Remarque]
+  const ENTETES_CAHIER = ['Repère', 'Désignation', 'Entrée(s)', 'Sortie(s)', 'Réglages / consignes', 'Remarque'];
+  const TEMPO = { 'P1 (sécurité)': '0 s', 'P2 (défaut)': '30 s', 'P3 (maintenance)': '5 min' };
+  // ctx : { arm: [{ rep, techno, adresses, pts, eqs }], eqs, REG, echange, permutation, gtb, devices }
+  function cahier(ctx) {
+    const REG = ctx.REG || { installations: [] }, perm = num(ctx.permutation, 168);
+    const nomInst = q => { const id = String(q.src || '').split(':')[0], x = REG.installations.find(y => y.noteId === id); return x ? x.titre : ''; };
+    return (ctx.arm || []).filter(a => a.techno === 'automate').map(a => {
+      const adr = (rep, type) => (a.adresses.find(x => x[2] === rep && (!type || x[4] === type)) || [])[0] || '';
+      const adrs = (rep, type) => a.adresses.filter(x => x[2] === rep && x[4] === type).map(x => `${x[0]} (${String(x[3]).split(' — ')[0]})`).join(', ');
+      const pilotes = (ctx.eqs || []).filter(q => q.pilote && q.pilote.rep === a.rep), sections = [];
+      // Entrées / sorties câblées (échelle à paramétrer)
+      const echelle = x => (x[4] === 'EA' ? (/temp|sonde|départ|retour|extérieur/i.test(x[3]) ? 'PT1000 ou 0-10 V, −50 à +150 °C' : '0-10 V / 4-20 mA, échelle selon le capteur') : x[4] === 'SA' ? '0-10 V = 0-100 %' : x[4] === 'ETOR' ? 'contact sec, 1 = défaut / marche' : x[4] === 'STOR' ? 'relais, 1 = marche / ouverture' : '');
+      sections.push({ titre: 'Entrées / sorties', lignes: a.adresses.filter(x => x[2] && x[2] !== '—' && ['EA', 'SA', 'ETOR', 'STOR'].includes(x[4])).map(x => [x[2], x[3], ['EA', 'ETOR'].includes(x[4]) ? `${x[0]} · ${x[1]}` : '', ['SA', 'STOR'].includes(x[4]) ? `${x[0]} · ${x[1]}` : '', echelle(x), x[5] || '']) });
+      // Boucles de régulation
+      const sondes = pilotes.filter(q => ['sonde'].includes(q.type) || q.regulation === 'sonde');
+      const no = r => (/(\d+)$/.exec(String(r)) || [])[1];
+      const params = id => (REG.installations.find(y => y.noteId === id) || {}).params || [];
+      const boucles = [];
+      pilotes.forEach(q => {
+        const id = String(q.src || '').split(':')[0], circuit = String(q.designation || '').replace(/^(Vanne de régulation|Vanne)\s*/i, '').trim();
+        if (['v3p', 'v010', 'v010r'].includes(q.regulation)) {
+          const s = sondes.find(x => String(x.src || '').split(':')[0] === id && no(x.rep) && no(x.rep) === no(q.rep) && /^T/.test(x.rep)) || sondes.find(x => circuit && String(x.designation || '').includes(circuit));
+          const p = params(id).filter(x => circuit && x.libelle.includes(circuit.split(' ')[0]) && /loi d'eau|consigne|pente|déplacement/i.test(x.libelle));
+          boucles.push([`R-${q.rep}`, `Régulation ${circuit || q.rep}`, s ? `${s.rep} ${adr(s.rep, 'EA')}` : 'sonde à affecter', q.regulation === 'v3p' ? `${q.rep} ouverture ${adr(q.rep, 'STOR')} / fermeture (2e sortie)` : `${q.rep} ${adr(q.rep, 'SA')}`,
+            `${p.length ? p.map(x => `${x.libelle.replace(/^Loi d'eau [^:]*: /, '')} ${String(x.valeur).replace('.', ',')} ${x.unite}`).join(' ; ') : 'consigne selon l\'analyse fonctionnelle'} ; PI : bande 20 K, intégrale 240 s`,
+            q.regulation === 'v3p' ? 'action inverse ; temps de course du servomoteur à saisir (120 s usuel), sorties verrouillées entre elles' : `action inverse, limites 0-100 %${q.regulation === 'v010r' ? ', alarme d\'écart avec la recopie > 10 % pendant 5 min' : ''}`]);
+        }
+        if (q.regulation === 'var' || (q.depart === 'variateur' && q.regulation !== 'bus')) boucles.push([`R-${q.rep}`, `Vitesse ${q.designation || q.rep}`, q.type === 'pompe' ? 'pression différentielle (capteur à affecter) ou débit' : 'pression de gaine ou débit (capteur à affecter)', `${q.rep} ${adr(q.rep, 'SA')}`,
+          q.type === 'pompe' ? 'consigne Δp selon le calcul du réseau ; PI : bande 50 kPa, intégrale 60 s' : 'consigne de pression selon l\'équilibrage ; PI : bande 100 Pa, intégrale 60 s', 'vitesse mini 30 %, rampe 30 s ; repli à vitesse fixe sur défaut capteur']);
+        if (q.regulation === 'mod') boucles.push([`R-${q.rep}`, `Modulation ${q.designation || q.rep}`, 'température de départ production', `${q.rep} ${adr(q.rep, 'SA')}`, `consigne de départ : ${(params(id).find(x => /consigne de départ de la production/i.test(x.libelle)) || {}).valeur ?? 'loi d\'eau'} °C ; PI : bande 20 K, intégrale 240 s`, 'autorisation par la demande des circuits']);
+      });
+      sections.push({ titre: 'Boucles de régulation', lignes: boucles });
+      // Commandes des moteurs
+      sections.push({ titre: 'Commandes des moteurs', lignes: pilotes.filter(q => q.moteur || q.type === 'generateur' || q.regulation === 'evGaz').filter(q => adr(q.rep, 'STOR')).map(q => [q.rep, q.designation || q.rep,
+        [adrs(q.rep, 'ETOR')].filter(Boolean).join(' ; ') || '—', adrs(q.rep, 'STOR'),
+        q.groupe ? `${q.moteur2 ? 'secours' : 'principal'} du groupe ${q.groupe} : permutation toutes les ${perm} h de marche, basculement immédiat sur défaut ou absence de retour de marche (30 s)` : q.regulation === 'evGaz' ? 'ouverture si chaufferie autorisée et chaîne de sécurité fermée ; contrôle de fermeture 5 s' : 'retour de marche attendu sous 30 s ; anti-court-cycle 3 min ; dégommage hebdomadaire 30 s si arrêté',
+        q.groupe ? 'commutateur M1 / M2 / Auto / Arrêt lu en entrée ; en M1 / M2 : marche forcée hors automate' : 'commutateur Manu / Auto / Arrêt : l\'automate ne commande qu\'en Auto']) });
+      // Horloges et dérogations
+      const inst = REG.installations.filter(x => !x.securite && pilotes.some(q => String(q.src || '').split(':')[0] === x.noteId));
+      sections.push({ titre: 'Horloges et dérogations', lignes: inst.map((x, i) => [`H${i + 1}`, `Programme horaire — ${x.titre}`, 'calendrier, jours fériés', pilotes.filter(q => String(q.src || '').split(':')[0] === x.noteId && adr(q.rep, 'STOR')).map(q => q.rep).join(', ') || '—', 'occupation à saisir (par défaut lundi-vendredi 7 h-19 h), relance optimisée', 'dérogation locale ou GTB de 2 h ; réduit / hors gel hors occupation']) });
+      // Consignes et paramètres
+      sections.push({ titre: 'Consignes et paramètres', lignes: inst.flatMap(x => (x.params || []).map((p, k) => [`P${String(k + 1).padStart(2, '0')}`, `${x.titre} — ${p.libelle}`, '', '', `${String(p.valeur).replace('.', ',')} ${p.unite || ''}`.trim(), 'modifiable depuis la GTB (objet AV)'])) });
+      // Sécurités et asservissements
+      const secu = pilotes.filter(q => q.regulation === 'securite'), te = pilotes.find(q => /extérieur/i.test(q.designation || '') && (q.type === 'sonde' || q.regulation === 'sonde'));
+      const pompes = pilotes.filter(q => q.type === 'pompe').map(q => q.rep), vent = pilotes.filter(q => ['cta', 'ventilateur'].includes(q.type)).map(q => q.rep);
+      sections.push({ titre: 'Sécurités et asservissements', lignes: [
+        ...(secu.length ? [['KA1', 'Chaîne de sécurité câblée', secu.map(q => `${q.rep} ${adr(q.rep, 'ETOR')}`).join(', '), 'coupure en dur (relais KA1), indépendante de l\'automate', 'lecture de chaque sécurité pour l\'alarme et l\'historique', 'réarmement manuel sur site']] : []),
+        ...(te && pompes.length ? [['HG', 'Hors gel', `${te.rep} ${adr(te.rep, 'EA')}`, pompes.join(', '), 'marche des pompes si T ext. < 3 °C (hystérésis 1 K), vannes à 30 % mini', 'prioritaire sur l\'horloge']] : []),
+        ...(vent.length ? [['SSI', 'Arrêt incendie', 'contact SSI (entrée TOR)', vent.join(', '), 'arrêt immédiat des CTA et ventilateurs concernés', 'prioritaire sur tous les modes, y compris Manu (câblé)']] : []),
+        ...(pompes.length ? [['DG', 'Dégommage', '—', pompes.join(', '), 'marche 30 s chaque lundi 10 h si arrêtées depuis 7 jours', '']] : []),
+        ['RS', 'Reprise secteur', 'retour tension', 'tous les départs', 'redémarrages échelonnés de 10 s', '']] });
+      // Alarmes, historiques et comptages (table d'échange)
+      const ech = (ctx.echange || []).filter(l => l[0] === a.rep);
+      sections.push({ titre: 'Alarmes', lignes: ech.filter(l => l[10]).map(l => [l[2], l[3], l[8] ? `${l[6]} ${l[7]} · ${l[8]}` : l[6], '', `priorité ${l[10]}, temporisation ${TEMPO[l[10]] || '30 s'}${l[13] || l[14] ? `, seuils ${l[13] || '—'} / ${l[14] || '—'} ${l[9] || ''}` : ''}`, 'acquittement depuis la GTB ; report défaut général']) });
+      sections.push({ titre: 'Historiques et comptages', lignes: ech.filter(l => l[11]).map(l => [l[2], l[3], `${l[6]} ${l[7]}`, '', l[11], l[5] === 'TCP' ? 'conservation 5 ans (décret BACS)' : '']) });
+      sections.push({ titre: 'Communication', lignes: [[`Device ${ech[0] ? ech[0][1] : '—'}`, `Automate de l'armoire ${a.rep}`, ctx.gtb || 'protocole GTB à définir', '', `${ech.length} objet(s) publiés (voir la table d'échange)`, 'nommage des objets : ARMOIRE_REPÈRE_FONCTION'],
+        ...pilotes.filter(q => q.regulation === 'bus').map(q => [q.rep, q.designation || q.rep, q.protocole || 'Modbus RTU / BACnet', '', 'adresse esclave et vitesse à relever sur l\'équipement', `${a.pts.filter(p => p[0] === q.rep && p[2] === 'Bus').length} point(s) lus / écrits`])] });
+      return { armoire: a.rep, sections: sections.filter(x => x.lignes.length) };
+    });
+  }
+
+  return { cahier, ENTETES_CAHIER, synoptique, exporter, bacs, echange, ENTETES_ECHANGE, csv, comptages, essais, essai, ENTETES_ESSAIS, sequences };
 })();
 if (typeof module !== 'undefined') module.exports = Gtb;

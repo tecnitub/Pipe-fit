@@ -76,3 +76,17 @@ test('carnet de câbles, chiffrage de l\'appareillage, réglages par point, prof
   assert.ok(syn.length >= 1 && /Synoptique GTB — Chaufferie/.test(syn[0].titre) && />TA</.test(syn[0].svg) && /N° de folio/.test(syn[0].svg));
   assert.strictEqual(G.exporter([['a', 'b']], [], ';').split('\r\n')[0], G.ENTETES_ECHANGE.join(';'));
 });
+
+test('cahier de programmation (automate Wit) : entrées / sorties, boucles, moteurs, horloges, sécurités, alarmes', () => {
+  const et = etude({ marqueAutomate: 'wit' }), r = Liens.calculer(et, et.notes[1]);
+  const o = r.onglets.find(x => x.titre === 'Programmation automate'), t = re => o.blocs.find(b => re.test(b.titre || '')).tableau.lignes;
+  assert.match(o.blocs[0].titre, /Automate Wit/);
+  const boucle = t(/Boucles de régulation/).find(l => l[0] === 'R-V1');
+  assert.match(boucle[2], /^TD1 EA/); assert.match(boucle[3], /^V1 SA/); assert.match(boucle[4], /départ à -10 °C extérieur 70 °C/); assert.match(boucle[4], /PI : bande 20 K/);
+  assert.ok(t(/Commandes des moteurs/).some(l => l[0] === 'PP1' && /STOR/.test(l[3]) && /retour de marche/.test(l[4])));
+  assert.ok(t(/Horloges/).length >= 1 && t(/Sécurités et asservissements/).some(l => l[0] === 'HG') && t(/Sécurités et asservissements/).some(l => l[0] === 'KA1'));
+  assert.ok(t(/Alarmes/).some(l => /P1 \(sécurité\), temporisation 0 s/.test(l[4])));
+  assert.ok(t(/Entrées \/ sorties/).every(l => l[2] || l[3]));
+  const f = r.valeurs.feuilles.find(x => x.name === 'Programmation AR-CVC-01');
+  assert.ok(f && f.lignes.length > 30 && f.entetes[0] === 'Rubrique');
+});

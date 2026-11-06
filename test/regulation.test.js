@@ -185,10 +185,12 @@ test('fiches de mise en service vierges : relevé ligne par ligne séparé (rep�
   const et = require('../etudes/demo-exemple')({ affaireId: 'a', client: 'c' });
   const l = FM.fiches(et, n => L.calculer(et, n)), v = l.find(f => /Ventilation des bureaux/.test(f.titre));
   const h = FM.html(et, [v]);
-  assert.match(h, /Relevé ligne par ligne \(6 bouche\(s\)\)/);
-  assert.match(h, /<tr><td><strong>S-01<\/strong><\/td><td>Bureau 1 \(Zone A, R\+1\)<\/td><td class="petit">soufflage, branche S1\.1<\/td><td class="attendu">200 m³\/h<\/td>/);
+  // Ventilation au format « fiche de relevés » : tableau d'équilibrage (diffuseur, section, réglage, prévu, mesuré)
+  assert.match(h, /ÉQUILIBRAGE AÉRAULIQUE/);
+  assert.strictEqual((h.match(/<strong>S-0\d<\/strong>/g) || []).length + (h.match(/<strong>R-0\d<\/strong>/g) || []).length, 6);
+  assert.match(h, /<strong>S-01<\/strong> — Bureau 1 \(Zone A, R\+1\)<br><span class="petit">soufflage, branche S1\.1<\/span><\/td><td><\/td><td><\/td><td class="attendu">200 m³\/h<\/td>/);
   // Les lignes de relevé ne sont pas répétées dans le tableau des mesures
-  const mes = h.split('Relevé ligne par ligne')[0];
+  const mes = h.split('ÉQUILIBRAGE AÉRAULIQUE')[0];
   assert.doesNotMatch(mes, /Débit S-01/);
   const r = FM.html(et, [l.find(f => /Réseau hydraulique/.test(f.titre))]);
   assert.match(r, /Relevé ligne par ligne \(3 émetteur\(s\)\)/);

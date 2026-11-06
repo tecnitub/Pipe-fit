@@ -35,7 +35,10 @@ const PointsMes = (() => {
             const pr = e.pompeRef || (v.pompe && v.pompe.modele) || '';
             out.push({ ...base, nature: 'mes', type: 'reseau', cle: `reseau-hydro|${n.id}`, titre: `Réseau hydraulique — ${titre}`, marque: '', modele: txt(pr, 80),
               detail: `${lignes.length} émetteur(s) : une ligne par émetteur, débit attendu et mesuré`,
-              attendus: nettoie([att('Débit de la pompe', Q, 'm³/h', 2), att('Hauteur manométrique', v.HMT, 'mCE', 2), att('Puissance absorbée', v.Pabs, 'W', 0), ...lignes]) });
+              attendus: nettoie([att('Débit de la pompe', Q, 'm³/h', 2), att('Hauteur manométrique', v.HMT, 'mCE', 2), att('Puissance absorbée', v.Pabs, 'W', 0), ...lignes,
+                // Courbe de la pompe retenue (fiche du fabricant) : le PV place le point mesuré dessus
+                ...String(e.pompeCourbe || '').split(/[;|\n]+/).map(p => p.trim().split(/\s*[:=/]\s*/).map(x => Number(String(x).replace(',', '.')))).filter(p => p.length >= 2 && p[0] >= 0 && p[1] >= 0).slice(0, 15)
+                  .map(([q, h]) => att(`Courbe pompe ${String(q).replace('.', ',')} m³/h`, h, 'mCE', 2))]) });
             out.push({ ...base, nature: 'epreuve', titre, reseau: titre, natureReseau: natureHydro(e) });
             break;
           }

@@ -87,7 +87,7 @@ function bindEssai(root, kind, e, { manques, calc, maj }) {
       for (const p of e.photos) photos.push(p.startsWith('data:') ? await envoyerImage(p) : p);
       const o = { ...e, photos, technicien: userName(e.userId) };
       if (e._plaque) o.photoPlaqueId = await envoyerImage(e._plaque);
-      ['signatureTech', 'signatureClient', 'signatureIntegrateur', '_plaque'].forEach(k => delete o[k]);
+      ['signatureTech', 'signatureClient', 'signatureIntegrateur', '_plaque', '_calc'].forEach(k => delete o[k]);
       if (signer) {
         o.signatureTechId = await envoyerImage(e.signatureTech);
         if (e.signatureClient) o.signatureClientId = await envoyerImage(e.signatureClient);
@@ -140,12 +140,14 @@ Views.mes = (params, query) => {
   // Ouvert depuis le matériel retenu d'une étude : type, équipement, marque et modèle préremplis
   const q0 = k => String(query.get(k) || '').slice(0, 200), typeQ = Essais.TYPES[q0('type')] ? q0('type') : 'pac';
   // Ouvert depuis la liste des mises en service : valeurs attendues de l'étude (débit, HMT, pressions…) à côté des mesures
-  const attendus = PlanMes.lireAttendus(query.get('att'));
+  const attendusTous = PlanMes.lireAttendus(query.get('att')), attendus = attendusTous.filter(x => !/^Courbe pompe /.test(x.libelle));
+  const courbePompe = attendusTous.filter(x => /^Courbe pompe /.test(x.libelle)).map(x => ({ Q: Number(String((/([\d.,]+)\s*m³\/h/.exec(x.libelle) || [])[1] || '').replace(',', '.')), H: x.valeur })).filter(p => Number.isFinite(p.Q));
   // Liste de points à tester reprise de l'étude (tests point à point de la GTB)
   const ctlPlan = (() => { try { const l = JSON.parse(sessionStorage.getItem(`pf-plan-controles:${q0('plan')}`) || 'null'); return Array.isArray(l) ? l.slice(0, 400).map(x => String(x).slice(0, 160)) : null; } catch (e) { return null; } })();
   const b = brouillonEssai('mes', params, query, base => { const m = Essais.modele(typeQ); if (ctlPlan && ctlPlan.length) m.controles = [...ctlPlan.map(libelle => ({ libelle, etat: '', obs: '', ...(typeQ === 'gtb' ? { pap: true, etatGtb: '' } : {}) })), ...m.controles];
     return { ...base, type: typeQ, equipement: q0('equipement'), repere: q0('repere'), localisation: q0('localisation'), zone: q0('zone'), marque: q0('marque'), modele: q0('modele'), numeroSerie: '', fluide: '', charge: '', reglages: '', resultat: '', ...(q0('materiel') ? { materiel: q0('materiel') } : {}),
-      ...(q0('plan') ? { planCle: q0('plan') } : {}), ...(attendus.length ? { attendus } : {}), controles: m.controles, mesures: PlanMes.avecAttendus(m.mesures, attendus), ...(m.plaque ? { plaque: m.plaque, composants: '' } : {}) }; });
+      ...(q0('plan') ? { planCle: q0('plan') } : {}), ...(attendus.length ? { attendus } : {}), ...(courbePompe.length ? { courbePompe } : {}), controles: m.controles, mesures: PlanMes.avecAttendus(m.mesures, attendus), ...(m.plaque ? { plaque: m.plaque, composants: '' } : {}) }; });
+  if (b.e && !b.e._calc) { Essais.calculsFiche(b.e); b.e._calc = true; }
   if (b.introuvable) return '<p>Procès-verbal introuvable.</p>';
   if (b.signe) return essaiVue('mes', b.signe);
   const e = b.e, t = Essais.TYPES[e.type] || Essais.TYPES.autre, ph = e._plaque || (e.photoPlaqueId ? fileUrl(e.photoPlaqueId) : '');
@@ -190,6 +192,7 @@ Views.mes = (params, query) => {
       ${(e.attendus || []).length ? '<p class="small muted">Valeurs attendues reprises de l\'étude : l\'écart s\'affiche dès la saisie de la mesure.</p>' : ''}
       <button class="small secondary" id="es-add-mes">+ Autre mesure</button></fieldset>
     ${(e.plaque || []).length ? `<div class="field"><label for="es-composants">Équipements (filtres : nombre, dimensions et classe, thermostat antigel, accessoires)</label><textarea id="es-composants" data-k="composants" data-dictee rows="3" placeholder="Filtre air neuf F7 : 1 × 592 × 592 × 296 mm ePM1 80 %…">${esc(e.composants || '')}</textarea></div>` : ''}
+    ${Essais.pointsPompe(e) ? `<fieldset class="hd-bloc"><legend>Point de fonctionnement de la pompe</legend><div id="es-courbe">${Essais.courbePompeSvg(e)}</div></fieldset>` : ''}
     <div class="field"><label for="es-reglages">Réglages effectués</label><textarea id="es-reglages" data-k="reglages" data-dictee rows="2" placeholder="Consignes, lois d'eau, programmations, débits…">${esc(e.reglages || '')}</textarea></div>
     <div class="field"><label for="es-obs">Observations</label><textarea id="es-obs" data-k="observations" data-dictee rows="2">${esc(e.observations || '')}</textarea></div>
     <div class="field"><label for="es-res">Conclusion</label><select id="es-res" data-k="resultat"><option value="">—</option>${optionsStr(['Mis en service', 'Mis en service avec réserves', 'Non mis en service'], e.resultat)}</select></div>
@@ -220,7 +223,8 @@ Views.mes.bind = (root, params) => {
   if ($('#es-pap-g')) $('#es-pap-g').onclick = () => { e.controles.forEach(c => { if (c.pap && !c.etatGtb) c.etatGtb = 'OK'; }); proposer(); App.render(); };
   // Mesure saisie : écart, conformité et conclusion proposée mis à jour (comme le résultat d'une épreuve)
   // Facteur K : débit du ventilateur recalculé dès la saisie du coefficient ou du ΔP
-  const majK = () => { Essais.calculsFiche(e); e.mesures.forEach((m, i) => { if (m.auto) { const x = root.querySelector(`[data-mes="${i}"]`); if (x && x !== document.activeElement) x.value = m.valeur; } }); };
+  const majK = () => { Essais.calculsFiche(e); e.mesures.forEach((m, i) => { if (m.auto || m.attenduK) { const x = root.querySelector(`[data-mes="${i}"]`); if (x && x !== document.activeElement && m.auto) x.value = m.valeur; const a = root.querySelector(`[data-att="${i}"]`); if (a && m.attendu !== undefined) a.innerHTML = attenduHtml(m); } });
+    const c = root.querySelector('#es-courbe'); if (c) c.innerHTML = Essais.courbePompeSvg(e); };
   root.querySelectorAll('[data-plaque]').forEach(el => el.oninput = () => { e.plaque[+el.dataset.plaque].valeur = el.value.trim(); majK(); });
   root.querySelectorAll('[data-mesdim]').forEach(el => el.oninput = () => { e.mesures[+el.dataset.mesdim].dim = el.value.trim(); });
   root.querySelectorAll('[data-mes]').forEach(el => el.addEventListener('input', () => { const m = e.mesures[+el.dataset.mes]; m.valeur = el.value.trim(); if (m.libelle === 'Débit ventilateur (facteur K)') delete m.auto; majK(); }));
@@ -241,7 +245,9 @@ Views.mes.bind = (root, params) => {
     App.render();
     const etat = document.querySelector('#es-plaque-etat'); if (etat) etat.textContent = 'Lecture de la plaque…';
     try {
-      const p = Fluides.lirePlaque((await PdfLecture.lire(f)).lignes), lus = [];
+      const lignes = (await PdfLecture.lire(f)).lignes, p = Fluides.lirePlaque(lignes), lus = [];
+      // Fiche de relevés : caractéristiques de la plaque (puissance, intensité, tension, vitesse, cos φ, K) sur le premier côté vide
+      if ((e.plaque || []).length) { lus.push(...Essais.remplirPlaque(e, Essais.lireCaracteristiques(lignes))); Essais.calculsFiche(e); }
       [['marque', p.marque], ['modele', p.modele], ['numeroSerie', p.numeroSerie], ...(Essais.TYPES[e.type] || {}).frigo ? [['fluide', p.fluide], ['charge', p.charge]] : []].forEach(([k, v]) => { if (v !== '' && !e[k]) { e[k] = v; lus.push(v); } });
       App.render();
       const el = document.querySelector('#es-plaque-etat'); if (el) el.textContent = lus.length ? `Lu sur la plaque : ${lus.join(', ')}. Vérifiez.` : 'Plaque non lue : complétez les champs (la photo est gardée).';

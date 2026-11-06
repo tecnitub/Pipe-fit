@@ -52,6 +52,7 @@ const EssaisDoc = (() => {
     ${plaqueCommune.length ? `<h3 class="doc-h">${m.type === 'pompes' ? 'CARACTÉRISTIQUES ÉLECTRIQUES' : 'CARACTÉRISTIQUES'}</h3>${table(plaqueCommune.map(p => l(p.libelle, valeurFiche(p.valeur))))}` : ''}
     ${secs.map(sec => `<h3 class="doc-h">${esc(sec.toUpperCase())}</h3>${bloc(sec)}`).join('')}
     ${(m.mesures || []).some(v => !E.releve(v) && !v.section) ? `<h3 class="doc-h">${secs.length ? 'AUTRES RELEVÉS' : 'MESURES ÉLECTRIQUES ET AÉRAULIQUES'}</h3>${bloc('', false)}` : ''}
+    ${E.courbePompeSvg(m) ? `<h3 class="doc-h">POINT DE FONCTIONNEMENT DE LA POMPE</h3><div>${E.courbePompeSvg(m)}</div>` : ''}
     ${m.composants ? `<h3 class="doc-h">ÉQUIPEMENTS</h3><p class="pre">${esc(m.composants)}</p>` : ''}
     ${m.reglages ? `<h3 class="doc-h">RÉGLAGES</h3><p class="pre">${esc(m.reglages)}</p>` : ''}
     <h3 class="doc-h">AUTOCONTRÔLE — TESTS DES ÉQUIPEMENTS ET DES SÉCURITÉS</h3><p class="small">C = conforme · NC = non conforme · SO = sans objet</p>
@@ -108,6 +109,7 @@ const EssaisDoc = (() => {
       const ec = v => { const a = Number(v.attendu), x = Number(String(v.valeur).replace(',', '.')); return vide(v.attendu) || !a || vide(v.valeur) || !Number.isFinite(x) ? '' : `${x >= a ? '+' : ''}${((x - a) / a * 100).toFixed(1).replace('.', ',')} %`; };
       return `<h3 class="doc-h">Relevé ligne par ligne (${rl.length})</h3><table class="doc-lines compact"><tr><th>Repère</th><th>Pièce</th><th>Réseau, branche</th><th class="num">Attendu</th><th class="num">Mesuré</th><th>Réglage</th><th class="num">Écart</th><th>Conformité</th></tr>
       ${rl.map(v => { const r = E.releve(v), c = E.conformeMesure(v); return `<tr><td><strong>${esc(r.repere)}</strong></td><td>${esc(r.piece)}</td><td>${esc(r.detail)}</td><td class="num">${vide(v.attendu) ? '' : `${nb(v.attendu)} ${esc(v.unite || '')}`}</td><td class="num">${vide(v.valeur) ? '<em>non mesuré</em>' : `${esc(String(v.valeur).replace('.', ','))} ${esc(v.unite || '')}`}</td><td>${esc(v.reglage || '')}</td><td class="num">${ec(v)}</td><td>${c === null ? '' : c ? 'conforme' : '<strong>hors tolérance</strong>'}</td></tr>`; }).join('')}</table>`; })() : ''}
+    ${E.courbePompeSvg && E.courbePompeSvg(m) ? `<h3 class="doc-h">Point de fonctionnement de la pompe</h3><div>${E.courbePompeSvg(m)}</div>` : ''}
     ${m.reglages ? `<h3 class="doc-h">Réglages effectués</h3><p class="pre">${esc(m.reglages)}</p>` : ''}${m.observations ? `<h3 class="doc-h">Observations</h3><p class="pre">${esc(m.observations)}</p>` : ''}
     ${choix(m.resultat, [['Mis en service', 'Équipement <strong>mis en service</strong>, fonctionnement conforme'], ['Mis en service avec réserves', 'Équipement <strong>mis en service avec réserves</strong> (points non conformes ci-dessus)'], ['Non mis en service', 'Équipement <strong>non mis en service</strong>']])}
     <p><strong>Attestation.</strong> Je soussigné ${esc(x.technicien)}, technicien de ${esc(x.societe)}, atteste avoir procédé le ${dateFr(m.date)} à la mise en service de l'équipement « ${esc(m.equipement)} » du chantier ${esc(x.chantier.code || '')}, selon les contrôles et mesures ci-dessus.</p>

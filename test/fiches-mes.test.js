@@ -36,7 +36,8 @@ test('fiches : une par équipement, unités multiples éclatées, attendus de l\
 
 test('fiches : document une page par fiche, cases à cocher, colonnes à remplir', () => {
   const et = etude(), l = F.fiches(et, n => L.calculer(et, n)), h = F.html(et, l, { societe: { nom: 'TECNITUB' } });
-  assert.strictEqual((h.match(/FICHE DE MISE EN SERVICE/g) || []).length, l.length);
+  assert.strictEqual((h.match(/FICHE DE (MISE EN SERVICE|RELEVÉS DE FONCTIONNEMENT)/g) || []).length, l.length);
+  assert.ok(l.some(f => f.fiche) && /CARACTÉRISTIQUES/.test(h) && /☐ C ☐ NC ☐ SO/.test(h), "CTA et ventilateurs au format fiche de relevés");
   assert.strictEqual((h.match(/pdf-saut/g) || []).length, l.length - 1);
   assert.match(h, /Attendu \(étude\)/);
   assert.match(h, /Mesuré/);
