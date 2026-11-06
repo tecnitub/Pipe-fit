@@ -56,7 +56,9 @@
     }
     if (!$('#comparaison').hidden) {
       const fl = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[ev.key];
-      if (fl) { ev.preventDefault(); const pas = ev.shiftKey ? 10 : 1; decalerComparaison(fl[0] * pas, fl[1] * pas); }
+      // Flèches : décaler ; Alt + ←/→ : tourner (0,1°, Maj : 1°) ; Alt + ↑/↓ : échelle (0,1 %, Maj : 1 %)
+      if (fl && ev.altKey) { ev.preventDefault(); const pas = ev.shiftKey ? 10 : 1; decalerComparaison(0, 0, fl[0] * 0.1 * pas, -fl[1] * 0.001 * pas); }
+      else if (fl) { ev.preventDefault(); const pas = ev.shiftKey ? 10 : 1; decalerComparaison(fl[0] * pas, fl[1] * pas); }
       else if (ev.key === 'Escape') $('#cmp-fermer').click();
       return;
     }

@@ -1,5 +1,6 @@
   // ---------- Comparer deux pages (indices d'un plan) ----------
-  const cmp = { a: null, b: null, dx: 0, dy: 0, imgA: null, imgB: null, L: 0, H: 0, k: 1, zoom: 'ajuster', resultat: null };
+  // Recalage du nouveau sur l'ancien : décalage (dx, dy en pixels de calcul), rotation (degrés) et échelle autour du centre
+  const cmp = { a: null, b: null, dx: 0, dy: 0, rot: 0, ech: 1, imgA: null, imgB: null, L: 0, H: 0, k: 1, zoom: 'ajuster', resultat: null };
   const PX_CMP = 3000; // largeur de calcul (pixels) de la plus grande des deux pages
   async function rendreGris(p, k) {
     const c = document.createElement('canvas');
@@ -18,7 +19,7 @@
     const choisies = etat.pages.filter(p => etat.selection.has(p.id));
     if (choisies.length !== 2) { note('Sélectionnez exactement 2 pages (Ctrl+clic) : l\'ancien indice puis le nouveau.', 'erreur'); return; }
     [cmp.a, cmp.b] = choisies;
-    cmp.dx = cmp.dy = 0;
+    cmp.dx = cmp.dy = cmp.rot = 0; cmp.ech = 1;
     $('#comparaison').hidden = false;
     await preparerComparaison(true);
   }
@@ -38,30 +39,95 @@
     });
     afficherComparaison();
   }
-  // Recalage : décalage qui superpose le mieux les traits des deux pages (grossier puis fin)
+  // Point du nouveau (x, y) -> position sur l'ancien, selon le recalage t = { dx, dy, rot, ech } (centre de B : cx, cy)
+  const transformer = (t, cx, cy) => {
+    const a = t.rot * Math.PI / 180, c = Math.cos(a) * t.ech, s = Math.sin(a) * t.ech;
+    return (x, y) => [c * (x - cx) - s * (y - cy) + cx + t.dx, s * (x - cx) + c * (y - cy) + cy + t.dy];
+  };
+  // Recalage automatique : rotation, échelle et décalage qui superposent le mieux les traits des deux pages.
+  // Estimation (répartition des traits), recherche grossière sur des images réduites, puis affinage.
   function recalerAuto() {
     const reduire = (img, f) => {
       const l = Math.ceil(img.l / f), h = Math.ceil(img.h / f), o = new Uint8Array(l * h);
-      for (let y = 0; y < img.h; y++) for (let x = 0; x < img.l; x++) { const v = img.encre[y * img.l + x]; if (v > 80) o[((y / f) | 0) * l + ((x / f) | 0)] = 1; }
+      for (let y = 0; y < img.h; y++) for (let x = 0; x < img.l; x++) if (img.encre[y * img.l + x] > 80) o[((y / f) | 0) * l + ((x / f) | 0)] = 1;
       return { l, h, o };
     };
-    const score = (A, B, dx, dy) => {
+    const dilater1 = m => {
+      const o = new Uint8Array(m.o.length);
+      for (let y = 0; y < m.h; y++) for (let x = 0; x < m.l; x++) {
+        if (!m.o[y * m.l + x]) continue;
+        for (let j = Math.max(0, y - 1); j <= Math.min(m.h - 1, y + 1); j++) for (let i = Math.max(0, x - 1); i <= Math.min(m.l - 1, x + 1); i++) o[j * m.l + i] = 1;
+      }
+      return { ...m, o };
+    };
+    const points = (m, max) => {
+      const pts = [];
+      for (let y = 0; y < m.h; y++) for (let x = 0; x < m.l; x++) if (m.o[y * m.l + x]) pts.push(x, y);
+      if (pts.length / 2 <= max) return pts;
+      const pas = pts.length / 2 / max, ech = [];
+      for (let k = 0; k < max; k++) { const i = Math.floor(k * pas) * 2; ech.push(pts[i], pts[i + 1]); }
+      return ech;
+    };
+    // Cadre englobant des traits, sans 1 % des points de chaque côté (taches, annotations isolées) : sur un plan,
+    // c'est le cadre de la feuille et du cartouche, stable d'un indice à l'autre (le centre de gravité, lui, bouge
+    // dès qu'un équipement est ajouté)
+    const stats = pts => {
+      const xs = [], ys = [];
+      for (let i = 0; i < pts.length; i += 2) { xs.push(pts[i]); ys.push(pts[i + 1]); }
+      xs.sort((a, b) => a - b); ys.sort((a, b) => a - b);
+      const q = (t, f) => t[Math.min(t.length - 1, Math.max(0, Math.round(f * (t.length - 1))))] ?? 0;
+      const x0 = q(xs, 0.01), x1 = q(xs, 0.99), y0 = q(ys, 0.01), y1 = q(ys, 0.99);
+      return { mx: (x0 + x1) / 2, my: (y0 + y1) / 2, taille: Math.hypot(x1 - x0, y1 - y0) || 1 };
+    };
+    // Nombre de points du nouveau qui tombent sur un trait de l'ancien
+    const score = (A, pts, t, cx, cy) => {
+      const f = transformer(t, cx, cy);
       let n = 0;
-      for (let y = 0; y < A.h; y++) {
-        const yb = y - dy;
-        if (yb < 0 || yb >= B.h) continue;
-        for (let x = 0; x < A.l; x++) { const xb = x - dx; if (xb >= 0 && xb < B.l && A.o[y * A.l + x] && B.o[yb * B.l + xb]) n++; }
+      for (let i = 0; i < pts.length; i += 2) {
+        const [x, y] = f(pts[i], pts[i + 1]);
+        const xi = Math.round(x), yi = Math.round(y);
+        if (xi >= 0 && yi >= 0 && xi < A.l && yi < A.h && A.o[yi * A.l + xi]) n++;
       }
       return n;
     };
-    const f1 = 12, A1 = reduire(cmp.imgA, f1), B1 = reduire(cmp.imgB, f1);
-    let best = { dx: 0, dy: 0, s: score(A1, B1, 0, 0) };
-    for (let dy = -8; dy <= 8; dy++) for (let dx = -8; dx <= 8; dx++) { const sc = score(A1, B1, dx, dy); if (sc > best.s * 1.02) best = { dx, dy, s: sc }; }
-    const f2 = 3, A2 = reduire(cmp.imgA, f2), B2 = reduire(cmp.imgB, f2);
-    const cx = best.dx * f1 / f2, cy = best.dy * f1 / f2;
-    let fin = { dx: Math.round(cx), dy: Math.round(cy), s: -1 };
-    for (let dy = Math.round(cy) - 5; dy <= Math.round(cy) + 5; dy++) for (let dx = Math.round(cx) - 5; dx <= Math.round(cx) + 5; dx++) { const sc = score(A2, B2, dx, dy); if (sc > fin.s) fin = { dx, dy, s: sc }; }
-    cmp.dx = fin.dx * f2; cmp.dy = fin.dy * f2;
+    // 1. Grossier (≈ 250 px de large)
+    const f1 = Math.max(4, Math.round(cmp.imgA.l / 250));
+    const A1 = dilater1(reduire(cmp.imgA, f1)), B1 = reduire(cmp.imgB, f1);
+    const pA = points(reduire(cmp.imgA, f1), 6000), pB = points(B1, 3000);
+    const sA = stats(pA), sB = stats(pB);
+    const cx1 = B1.l / 2, cy1 = B1.h / 2;
+    const ech0 = Math.min(1.6, Math.max(0.6, sA.taille / sB.taille));
+    const echelles = [...new Set([...Array(17)].map((_, i) => +(1 + (i - 8) * 0.01).toFixed(3)).concat([...Array(9)].map((_, i) => +(ech0 * (1 + (i - 4) * 0.01)).toFixed(3))))];
+    let best = { s: -1 };
+    for (let rot = -6; rot <= 6; rot += 0.5) {
+      for (const ech of echelles) {
+        // Décalage qui superpose les centres de gravité des traits, puis petit voisinage
+        const f = transformer({ dx: 0, dy: 0, rot, ech }, cx1, cy1);
+        const [gx, gy] = f(sB.mx, sB.my);
+        const bx = Math.round(sA.mx - gx), by = Math.round(sA.my - gy);
+        for (let dy = by - 4; dy <= by + 4; dy++) for (let dx = bx - 4; dx <= bx + 4; dx++) {
+          const sc = score(A1, pB, { dx, dy, rot, ech }, cx1, cy1);
+          if (sc > best.s) best = { dx, dy, rot, ech, s: sc };
+        }
+      }
+    }
+    // 2. Affinage (≈ 1000 px de large)
+    const f2 = Math.max(1, Math.round(f1 / 4));
+    const A2 = dilater1(reduire(cmp.imgA, f2)), B2 = reduire(cmp.imgB, f2);
+    const pB2 = points(B2, 6000);
+    const cx2 = B2.l / 2, cy2 = B2.h / 2;
+    // Le décalage grossier se rapporte au centre de B1 : converti pour le centre de B2
+    let fin = { dx: Math.round(best.dx * f1 / f2), dy: Math.round(best.dy * f1 / f2), rot: best.rot, ech: best.ech, s: -1 };
+    const depart = { ...fin };
+    for (let rot = depart.rot - 0.5; rot <= depart.rot + 0.501; rot += 0.1) {
+      for (let ech = depart.ech - 0.012; ech <= depart.ech + 0.0121; ech += 0.003) {
+        for (let dy = depart.dy - 4; dy <= depart.dy + 4; dy++) for (let dx = depart.dx - 4; dx <= depart.dx + 4; dx++) {
+          const sc = score(A2, pB2, { dx, dy, rot, ech }, cx2, cy2);
+          if (sc > fin.s) fin = { dx, dy, rot: +rot.toFixed(2), ech: +ech.toFixed(4), s: sc };
+        }
+      }
+    }
+    Object.assign(cmp, { dx: fin.dx * f2, dy: fin.dy * f2, rot: fin.rot, ech: fin.ech });
   }
   // Rouge : seulement dans l'ancien ; vert : seulement dans le nouveau ; gris : dans les deux (à la tolérance près)
   function calculerDifferences() {
@@ -70,7 +136,20 @@
     const tol = Number($('#cmp-tolerance').value);
     const encreA = new Uint8Array(L * H), encreB = new Uint8Array(L * H);
     for (let y = 0; y < A.h; y++) for (let x = 0; x < A.l; x++) if (A.encre[y * A.l + x] > seuil) encreA[y * L + x] = 1;
-    for (let y = 0; y < B.h; y++) { const yy = y + dy; if (yy < 0 || yy >= H) continue; for (let x = 0; x < B.l; x++) { const xx = x + dx; if (xx >= 0 && xx < L && B.encre[y * B.l + x] > seuil) encreB[yy * L + xx] = 1; } }
+    if (!cmp.rot && cmp.ech === 1) {
+      for (let y = 0; y < B.h; y++) { const yy = y + dy; if (yy < 0 || yy >= H) continue; for (let x = 0; x < B.l; x++) { const xx = x + dx; if (xx >= 0 && xx < L && B.encre[y * B.l + x] > seuil) encreB[yy * L + xx] = 1; } }
+    } else {
+      // Pour chaque point de l'ancien : point correspondant du nouveau (transformation inverse)
+      const a = -cmp.rot * Math.PI / 180, c = Math.cos(a) / cmp.ech, sn = Math.sin(a) / cmp.ech, cx = B.l / 2, cy = B.h / 2;
+      for (let y = 0; y < H; y++) {
+        const vy = y - cy - dy;
+        for (let x = 0; x < L; x++) {
+          const vx = x - cx - dx;
+          const xb = Math.round(c * vx - sn * vy + cx), yb = Math.round(sn * vx + c * vy + cy);
+          if (xb >= 0 && yb >= 0 && xb < B.l && yb < B.h && B.encre[yb * B.l + xb] > seuil) encreB[y * L + x] = 1;
+        }
+      }
+    }
     // Dilatation (tolérance en pixels) : un trait déplacé d'un pixel n'est pas une modification
     const dilater = (m, r) => {
       if (!r) return m;
@@ -95,8 +174,10 @@
     const part = (rouges + verts) / (L * H);
     $('#cmp-info').textContent = (rouges + verts) < 20
       ? 'Aucune différence visible entre les deux pages.'
-      : `Différences : ${rouges ? 'supprimé (rouge)' : ''}${rouges && verts ? ' et ' : ''}${verts ? 'ajouté (vert)' : ''} — ${(part * 100).toFixed(2).replace('.', ',')} % de la surface. Flèches : décaler · Ctrl + molette : zoom · glisser : déplacer.`;
-    $('#cmp-decalage').textContent = `Décalage ${Math.round(dx / cmp.k)} ; ${Math.round(dy / cmp.k)} pt`;
+      : `Différences : ${rouges ? 'supprimé (rouge)' : ''}${rouges && verts ? ' et ' : ''}${verts ? 'ajouté (vert)' : ''} — ${(part * 100).toFixed(2).replace('.', ',')} % de la surface. Flèches : décaler · Alt + flèches : tourner, échelle · Ctrl + molette : zoom · glisser : déplacer.`;
+    $('#cmp-decalage').textContent = `Décalage ${Math.round(dx / cmp.k)} ; ${Math.round(dy / cmp.k)} pt`
+      + (cmp.rot ? ` · rotation ${cmp.rot.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}°` : '')
+      + (cmp.ech !== 1 ? ` · échelle ${(cmp.ech * 100).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} %` : '');
   }
   function afficherComparaison() {
     const c = $('#cmp-canvas');
@@ -113,14 +194,15 @@
   }
   const PX_PAR_PT_CMP = 96 / 72;
   let minuterieCmp = null;
-  function decalerComparaison(dx, dy) {
+  function decalerComparaison(dx, dy, rot = 0, ech = 0) {
     cmp.dx += dx; cmp.dy += dy;
+    cmp.rot = +(cmp.rot + rot).toFixed(2); cmp.ech = +(cmp.ech + ech).toFixed(4);
     clearTimeout(minuterieCmp);
     minuterieCmp = setTimeout(() => { calculerDifferences(); afficherComparaison(); }, 60);
   }
   $('#b-comparer').onclick = ouvrirComparaison;
   $('#cmp-fermer').onclick = () => { $('#comparaison').hidden = true; cmp.imgA = cmp.imgB = cmp.resultat = null; };
-  $('#cmp-inverser').onclick = () => { [cmp.a, cmp.b] = [cmp.b, cmp.a]; cmp.dx = -cmp.dx; cmp.dy = -cmp.dy; preparerComparaison(false); };
+  $('#cmp-inverser').onclick = () => { [cmp.a, cmp.b] = [cmp.b, cmp.a]; preparerComparaison(true); };
   $('#cmp-recaler').onclick = () => { recalerAuto(); calculerDifferences(); afficherComparaison(); };
   $('#cmp-tolerance').oninput = () => { calculerDifferences(); afficherComparaison(); };
   $('#cmp-zoom').onchange = () => { const v = $('#cmp-zoom').value; cmp.zoom = v === 'ajuster' ? v : Number(v); zoomComparaison(); };

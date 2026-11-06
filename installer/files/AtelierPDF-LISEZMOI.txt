@@ -120,7 +120,10 @@ COMPARER DEUX INDICES D'UN PLAN
   Sélectionnez les deux pages (Ctrl+clic), l'ancienne puis la nouvelle, puis
   « ⇆ Comparer » : rouge = seulement dans l'ancien (supprimé), vert = seulement
   dans le nouveau (ajouté), gris = identique. Les deux plans sont recalés
-  automatiquement (« ⌖ Recaler ») ; flèches du clavier pour ajuster à la main.
+  automatiquement (« ⌖ Recaler ») : décalage, mais aussi rotation (scan de
+  travers, jusqu'à 6°) et échelle (plan imprimé « ajusté à la page », A3 réduit).
+  À la main : flèches = décaler, Alt + ←/→ = tourner, Alt + ↑/↓ = échelle
+  (Maj : pas ×10).
   « Tolérance » : ignorer les écarts d'un trait. « Ajouter au document » : la
   comparaison devient une page du dossier.
 

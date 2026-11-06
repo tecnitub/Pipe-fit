@@ -343,3 +343,32 @@ test('Pipe-Fit : connexion personnelle, ouverture d\'un document de chantier, en
     server.close(); server.closeAllConnections();
   }
 });
+
+test('comparer un plan et son scan tourné et réduit : rotation et échelle retrouvées', { skip: ignorer, timeout: 120000 }, async () => {
+  const page = await appli();
+  // « Scan » du plan A : tourné de 2°, réduit à 96 %, décalé, avec un équipement ajouté
+  const b64 = await page.evaluate(async d => {
+    const doc = await pdfjsLib.getDocument({ data: Uint8Array.from(atob(d), c => c.charCodeAt(0)) }).promise;
+    const pg = await doc.getPage(1); const vp = pg.getViewport({ scale: 2 });
+    const c1 = document.createElement('canvas'); c1.width = vp.width; c1.height = vp.height;
+    await pg.render({ canvasContext: c1.getContext('2d'), viewport: vp }).promise;
+    const c2 = document.createElement('canvas'); c2.width = vp.width; c2.height = vp.height; const g = c2.getContext('2d');
+    g.fillStyle = '#f7f5ef'; g.fillRect(0, 0, c2.width, c2.height);
+    g.translate(c2.width / 2 + 25, c2.height / 2 - 15); g.rotate(2 * Math.PI / 180); g.scale(0.96, 0.96); g.translate(-c1.width / 2, -c1.height / 2);
+    g.drawImage(c1, 0, 0);
+    g.lineWidth = 4; g.strokeStyle = '#111'; g.strokeRect(1200, 500, 240, 160);
+    return c2.toDataURL('image/png').split(',')[1];
+  }, fs.readFileSync(F('plan-A.pdf')).toString('base64'));
+  fs.writeFileSync(F('scan-plan-B.png'), Buffer.from(b64, 'base64'));
+  await ajouter(page, ['plan-A.pdf', 'scan-plan-B.png'], 2);
+  await page.click('.carte:nth-child(1) .vignette');
+  await page.click('.carte:nth-child(2) .vignette', { modifiers: ['Control'] });
+  await page.click('#b-comparer');
+  await page.waitForSelector('#comparaison:not([hidden])');
+  await page.waitForFunction(() => document.querySelector('#occupe').hidden, null, { timeout: 60000 });
+  assert.match(await page.textContent('#cmp-decalage'), /rotation -2° · échelle 11\d,\d %/);
+  const part = Number((/— ([\d,]+) %/.exec(await page.textContent('#cmp-info')) || [])[1]?.replace(',', '.'));
+  assert.ok(part < 0.8, `peu de différences une fois recalé (${part} %) : seulement l'équipement ajouté`);
+  assert.deepStrictEqual(page.erreurs, []);
+  await page.context().close();
+});
