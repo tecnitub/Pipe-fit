@@ -8,6 +8,7 @@
 // rob (robinetterie d'un circuit ou d'un tronçon), pompe (pompe d'un circuit du schéma de principe), arbo (pompe du
 // réseau arborescent), cta, pid (production), vase, ecs, reseau (calcul entier : entrees.eq).
 const Registre = (() => {
+  const N = () => (typeof Notes !== 'undefined' ? Notes : (() => { try { return require('./notes'); } catch (e) { return null; } })());
   const T = () => (typeof Terminaux !== 'undefined' ? Terminaux : require('./terminaux'));
   const FC = () => (typeof FicheCta !== 'undefined' ? FicheCta : require('./fiche-cta'));
   const FE = () => (typeof FicheEquip !== 'undefined' ? FicheEquip : require('./fiche-equipement'));
@@ -17,10 +18,10 @@ const Registre = (() => {
   const val = x => (typeof x === 'string' && /^\s*-?\d+(?:[.,]\d+)?\s*$/.test(x) ? Number(x.replace(',', '.')) : x);
 
   const TYPES = { cta: 'Centrale de traitement d\'air', generateur: 'Générateur', pompe: 'Pompe, circulateur', terminal: 'Terminal', vase: 'Vase d\'expansion', ecs: 'Ballon, échangeur d\'ECS',
-    bouche: 'Bouche, diffuseur', robinet: 'Vanne, robinetterie', sanitaire: 'Appareil sanitaire' };
-  const TYPE_GENRE = { term: 'terminal', termp: 'pompe', aero: 'bouche', san: 'sanitaire', rob: 'robinet', pompe: 'pompe', arbo: 'pompe', cta: 'cta', pid: 'generateur', vase: 'vase', ecs: 'ecs', reseau: 'pompe' };
+    bouche: 'Bouche, diffuseur', robinet: 'Vanne, robinetterie', sanitaire: 'Appareil sanitaire', regulateur: 'Régulateur préprogrammé, module' };
+  const TYPE_GENRE = { regul: 'regulateur', term: 'terminal', termp: 'pompe', aero: 'bouche', san: 'sanitaire', rob: 'robinet', pompe: 'pompe', arbo: 'pompe', cta: 'cta', pid: 'generateur', vase: 'vase', ecs: 'ecs', reseau: 'pompe' };
   // Listes des calculs qui reçoivent des équipements : [champ de la note, genre de l'élément]
-  const LISTES = { terminaux: [['appareils', a => (a.type === 'pompeDist' ? 'termp' : 'term')]], aero: [['bouchesL', () => 'aero']], sanitaire: [['points', () => 'san']],
+  const LISTES = { elec: [['capaSynco', () => 'regul']], terminaux: [['appareils', a => (a.type === 'pompeDist' ? 'termp' : 'term')]], aero: [['bouchesL', () => 'aero']], sanitaire: [['points', () => 'san']],
     pid: [['robinetterie', () => 'rob'], ['pompesFab', () => 'pompe']], arbo: [['robinetterie', () => 'rob']] };
   const NIVEAU_NOTE = { cta: 'cta', pid: 'pid', vase: 'vase', ecs: 'ecs', reseau: 'reseau' };
   // Valeurs reprises au placement seulement (débit d'air de la CTA, débit d'une bouche : dimensionnés par le réseau)
@@ -33,7 +34,7 @@ const Registre = (() => {
     Object.entries(FC().LIBELLES).forEach(([k, d]) => { out[k] = d; });
     Object.entries(T().LIBELLES).forEach(([k, d]) => { out[k] = [d[0], d[1]]; });
     Object.assign(out, { Qair: ['Débit d\'air', 'm³/h'], Kvs: ['Kvs', ''], Qs: ['Débit soufflé', 'm³/h'], Qr: ['Débit repris', 'm³/h'], Lw: ['Puissance acoustique', 'dB(A)'], dn: ['DN', ''], kv: ['Kv (Kvs)', 'm³/h'],
-      tours: ['Nombre de tours', ''], abaque: ['Abaque tours:Kv', ''], q: ['Débit', 'L/s'], pMin: ['Pression minimale', 'bar'], courbe: ['Courbe Q:H', 'm³/h:mCE'] });
+      tours: ['Nombre de tours', ''], abaque: ['Abaque tours:Kv', ''], q: ['Débit', 'L/s'], pMin: ['Pression minimale', 'bar'], courbe: ['Courbe Q:H', 'm³/h:mCE'], X: ['Entrées universelles', ''], Y: ['Sorties 0-10 V', ''], Q: ['Sorties relais', ''], modulesMax: ['Modules d\'extension maxi', ''], app: ['Application', ''] });
     out.dp = ['Perte de charge', '(Pa ou kPa)'];
     return out;
   }
@@ -65,6 +66,7 @@ const Registre = (() => {
       case 'san': { const A = SAN().APPAREILS[el.type] || SAN().APPAREILS.lavabo || []; set('qEF', v.q); if (A[2]) set('qECS', v.q); set('pMin', v.pMin); set('ref', nom); break; }
       case 'rob': set('dn', v.dn); set('kv', v.kv); if (vide(v.kv) && !vide(v.dp)) set('dp', Math.round(v.dp * 100) / 100); if (el.type === 'equilibrage') { set('tours', v.tours); set('abaque', v.abaque); } set('ref', nom); break;
       case 'pompe': set('courbe', v.courbe); set('ref', nom); break;
+      case 'regul': set('X', v.X); set('Y', v.Y); set('Q', v.Q); set('ref', nom); break;
       case 'arbo': set('pompeCourbe', v.courbe); set('pompeRef', nom); break;
       case 'cta': FC().champs('cta', v).forEach(c => {
         if (!placement && (PLACEMENT_SEUL.cta.includes(c.k) || (['modeP', 'PchaudS', 'PfroidS'].includes(c.k) && ((note || {}).entrees || {}).modeP !== 'saisie'))) return;
@@ -84,6 +86,7 @@ const Registre = (() => {
       case 'san': set('q', el.qEF); set('pMin', el.pMin); break;
       case 'rob': set('dn', el.dn); set('kv', el.kv); if (vide(el.kv)) set('dp', el.dp); if (el.type === 'equilibrage') { set('tours', el.tours); set('abaque', el.abaque); } break;
       case 'pompe': set('courbe', el.courbe); break;
+      case 'regul': set('X', el.X); set('Y', el.Y); set('Q', el.Q); break;
       case 'arbo': set('courbe', el.pompeCourbe); break;
       default: { const f = ((note || {}).entrees || {}).fiche || {}; Object.entries(f).forEach(([k, y]) => { if (!['nom', 'fabricant', 'reference'].includes(k)) set(k, y); }); }
     }
@@ -259,6 +262,15 @@ const Registre = (() => {
       const t = ((n.entrees.troncons || []).find(y => String(y.rep || '').trim() === tc)) || {}, crees = [];
       locaux.forEach(local => { const el = { rep: opts.rep && locaux.length === 1 && !deja.has(opts.rep) ? opts.rep : prochain('B', deja), installation: n.id, reseau: t.reseau || 'soufflage', salle: local, zone: opts.zone || '', etage: '', type: 'plafond', troncon: tc }; deja.add(el.rep); l.push(el); poser(n, 'aero', el, 'bouchesL', l.length - 1); crees.push(el); });
       return `${crees.length} bouche(s) ${nom} ajoutée(s) dans ${n.titre} : ${crees.map(e => e.rep + (e.salle ? ` (${e.salle})` : '')).join(', ')}${tc ? ` — branche ${tc}` : ' (tronçon à choisir)'}`;
+    }
+    // Régulateur préprogrammé : capacités de l'application choisie dans le calcul des armoires
+    if (genre === 'reg') {
+      const n = notes.find(y => y.id === id && y.type === 'elec'); if (!n) return null;
+      const app = sous || v.app || 'autre', defaut = (N() ? (N().defauts('elec').capaSynco || []) : []);
+      const l = n.entrees.capaSynco = ((n.entrees.capaSynco && n.entrees.capaSynco.length ? n.entrees.capaSynco : defaut.map(x => ({ ...x }))) || []).filter(x => x.app !== app), el = { app };
+      l.push(el); poser(n, 'regul', el, 'capaSynco', l.length - 1);
+      const synco = (n.entrees.armoires || []).some(a => a.techno === 'synco');
+      return `${nom} : régulateur ${app} de ${n.titre}${synco ? '' : ' (choisissez « régulateurs préprogrammés » sur l\'armoire)'}`;
     }
     if (genre === 'san') {
       const n = notes.find(y => y.id === id && y.type === 'sanitaire'); if (!n) return null;

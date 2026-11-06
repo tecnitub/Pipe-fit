@@ -132,6 +132,27 @@ const Regulation = (() => {
     synco: ['Application préprogrammée choisie conforme au schéma de l\'installation', 'Entrées / sorties configurées (affectation des bornes)', 'Paramètres réglés suivant la liste', 'Date, heure et programmes horaires', 'Communication (KNX / bus) et serveur web testés', 'Sauvegarde de la configuration remise'],
     integree: ['Paramètres du régulateur intégré réglés (avec le fabricant si besoin)', 'Autorisation de marche depuis l\'armoire testée', 'Reports d\'état et de défaut testés', 'Communication bus avec la GTB testée'],
   };
-  return { COURT, TECHNOS, APPS, CAPACITES, CONTROLES, application, allouer, contexte };
+  // Fiche d'un régulateur préprogrammé ou d'un module : entrées universelles, sorties 0-10 V, relais, application
+  function lireFiche(lignes) {
+    const L = (Array.isArray(lignes) ? lignes : String(lignes || '').split(/\r?\n/)).map(String), v = {};
+    const n = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    let fabricant = '', reference = '';
+    L.forEach(l => {
+      const m = /^\s*([^:]+?)\s*:\s*(.+?)\s*$/.exec(l); if (!m) return;
+      const k = n(m[1]), val = m[2], x = /(\d+)/.exec(val);
+      if (/^fabricant|^marque/.test(k)) fabricant = val;
+      else if (/^reference|^modele/.test(k)) reference = val;
+      else if (x && /entrees? (universelle|analogique|mixte)|^entrees?$|\bui\b/.test(k)) v.X = (v.X || 0) + Number(x[1]);
+      else if (x && /entrees? (tor|digitale|numerique)/.test(k)) v.X = (v.X || 0) + Number(x[1]);
+      else if (x && /sorties? (analogique|0-10|0 a 10|modulante)|\bao\b/.test(k)) v.Y = Number(x[1]);
+      else if (x && /sorties? (relais|tor|digitale)|\bdo\b/.test(k)) v.Q = Number(x[1]);
+      else if (x && /modules? d.extension maxi|extensions? maxi/.test(k)) v.modulesMax = Number(x[1]);
+      else if (/^application|^type de regulateur/.test(k)) { const a = n(val); v.app = /extension|module/.test(a) ? 'extension' : /ventil|cta|air/.test(a) ? 'ventilation' : /chaudiere|chaufferie|production|cascade/.test(a) ? 'production' : /chauffage|ecs|circuit/.test(a) ? 'chauffage' : 'autre'; }
+    });
+    const t = L.find(l => /^\s*type\s*:/i.test(l)) || '';
+    if (!v.app && /module|extension/i.test(t + reference)) v.app = 'extension';
+    return { valeurs: v, fabricant, reference, nb: Object.keys(v).length };
+  }
+  return { lireFiche, COURT, TECHNOS, APPS, CAPACITES, CONTROLES, application, allouer, contexte };
 })();
 if (typeof module !== 'undefined') module.exports = Regulation;

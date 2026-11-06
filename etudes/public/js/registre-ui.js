@@ -4,6 +4,7 @@ function resumeEquipement(x) {
   const v = x.valeurs || {}, f = (y, d = 1) => (Number.isFinite(y) ? String(Math.round(y * 10 ** d) / 10 ** d).replace('.', ',') : '');
   const r = {
     cta: [v.Qs && `${f(v.Qs, 0)} m³/h`, v.PchBC && `chaud ${f(v.PchBC)} kW`, v.PfrBF && `froid ${f(v.PfrBF)} kW`],
+    regulateur: [v.app && `application ${v.app}`, v.X !== undefined && `${v.X} entrées`, v.Y !== undefined && `${v.Y} sorties 0-10 V`, v.Q !== undefined && `${v.Q} relais`],
     terminal: [v.Pch && `chaud ${f(v.Pch, 2)} kW`, v.Pfr && `froid ${f(v.Pfr, 2)} kW`, v.Pvent && `${f(v.Pvent, 0)} W`],
     bouche: [v.Q && `${f(v.Q, 0)} m³/h`, v.dp && `${f(v.dp, 0)} Pa`, v.Lw && `${f(v.Lw, 0)} dB(A)`],
     robinet: [v.dn && `DN ${v.dn}`, v.kv && `Kvs ${f(v.kv, 2)}`, v.dp && `${f(v.dp)} kPa`, v.abaque && 'abaque'],

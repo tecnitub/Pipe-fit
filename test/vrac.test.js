@@ -96,3 +96,23 @@ test('répartition : bouches et points de puisage', () => {
   V.appliquer(et, item('sanitaire'), `san:${san.id}`, note);
   assert.deepStrictEqual(san.entrees.points.map(p => [p.type, p.qEF, p.pMin]), [['lavabo', 0.15, 1.5]]);
 });
+
+test('régulateur : fiche reconnue, inscrite au registre, capacités reprises dans le calcul des armoires', () => {
+  global.Regulation = require('../etudes/public/js/regulation');
+  require('../etudes/public/js/electricite');
+  const l = fiche('regulateur');
+  assert.strictEqual(V.classer(l), 'regulateur');
+  assert.strictEqual(V.classer(l.filter(x => !/^Type/.test(x))), 'regulateur');
+  const lu = V.lire('regulateur', l);
+  assert.deepStrictEqual([lu.fabricant, lu.reference, lu.valeurs.X, lu.valeurs.Y, lu.valeurs.Q, lu.valeurs.app], ['Exemplair', 'RC-700', 8, 4, 6, 'chauffage']);
+  const el = note('elec', { armoires: [{ rep: 'AR1', techno: 'synco' }] }), et = { notes: [el] };
+  assert.ok(V.destinations(et, 'regulateur').some(d => d[0] === `reg:${el.id}|chauffage`));
+  lu.valeurs.X = 10;
+  V.appliquer(et, { nom: 'rc.txt', lignes: l, type: 'regulateur', lu, qte: 1 }, `reg:${el.id}|chauffage`, note);
+  const c = el.entrees.capaSynco.find(x => x.app === 'chauffage');
+  assert.deepStrictEqual([c.X, c.Y, c.Q, c.ref, !!c.eq], [10, 4, 6, 'Exemplair RC-700', true]);
+  assert.ok(el.entrees.capaSynco.some(x => x.app === 'extension')); // autres capacités par défaut conservées
+  // Correction dans le registre : reportée dans le calcul des armoires
+  et.equipements[0].valeurs.Q = 8; global.Registre.propager(et);
+  assert.strictEqual(c.Q, 8);
+});

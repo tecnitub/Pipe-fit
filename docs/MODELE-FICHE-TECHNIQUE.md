@@ -27,7 +27,7 @@ Règles strictes :
 6. Les trois premières lignes sont toujours « Type : … » (CTA, Pompe, Terminal, Générateur, Vase d'expansion, Ballon ECS, Bouche, Vanne…, Appareil sanitaire), « Fabricant : … » et « Référence : … ».
 7. Pour les courbes (pompe) et abaques (vanne), écris les points sur une seule ligne : « x:y ; x:y ; x:y ».
 8. Réponds uniquement avec le texte de la fiche, sans commentaire.
-Type d'équipement : [CTA | Pompe | Terminal | Générateur | Vase | Ballon ECS | Bouche | Vanne / robinetterie | Appareil sanitaire]
+Type d'équipement : [CTA | Pompe | Terminal | Générateur | Vase | Ballon ECS | Bouche | Vanne / robinetterie | Appareil sanitaire | Régulateur]
 [coller ici la section du modèle correspondant au type]
 ```
 
@@ -211,3 +211,23 @@ Pression minimale : 1,5 bar
 ```
 
 Le débit peut aussi s'écrire en L/min (`Débit : 9 l/min`).
+
+---
+
+## 10. Régulateur préprogrammé ou module d'extension
+
+Calcul **Alimentation électrique et régulation** (armoire en régulateurs préprogrammés) : les capacités remplacent les valeurs indicatives et l'affectation des entrées / sorties est refaite.
+
+<!-- fiche: regulateur -->
+```text
+Type : Régulateur préprogrammé
+Fabricant : Exemplair
+Référence : RC-700
+Application : chauffage
+Entrées universelles : 8
+Sorties analogiques 0-10 V : 4
+Sorties relais : 6
+Modules d'extension maxi : 3
+```
+
+Module d'extension : même fiche avec `Application : module d'extension` et ses entrées / sorties.
