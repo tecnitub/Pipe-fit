@@ -3,7 +3,8 @@
  * Sans argument : ouvre l'application (AtelierPDF.html, à côté du lanceur) dans une fenêtre Microsoft Edge.
  * Avec des fichiers (double-clic sur un PDF, « Ouvrir avec », plusieurs fichiers sélectionnés) : une page de
  * démarrage est écrite dans %LOCALAPPDATA%\AtelierPDF\ouverture ; c'est l'application, avec le contenu des
- * fichiers inclus (window.FICHIERS_A_OUVRIR), car une page locale ne peut pas lire elle-même un fichier du disque.
+ * fichiers inclus (blocs <script type="application/octet-stream"> en base64, non exécutés : rapides à charger),
+ * car une page locale ne peut pas lire elle-même un fichier du disque.
  * Les pages de démarrage de plus de deux jours sont effacées à chaque lancement.
  *
  * Construction : x86_64-w64-mingw32-gcc -municode -mwindows (voir installer/build-pdf.sh).
@@ -68,24 +69,25 @@ static BOOL ecrireBase64(HANDLE h, const unsigned char *d, DWORD n) {
   return p == 0 || ecrire(h, tampon, p);
 }
 
-/* Nom de fichier (sans le dossier) en chaîne JSON UTF-8 */
-static BOOL ecrireNomJson(HANDLE h, const wchar_t *chemin) {
+/* Nom de fichier (sans le dossier) en valeur d'attribut HTML, UTF-8 */
+static BOOL ecrireNomAttribut(HANDLE h, const wchar_t *chemin) {
   const wchar_t *nom = chemin;
   for (const wchar_t *c = chemin; *c; c++) if (*c == L'\\' || *c == L'/') nom = c + 1;
-  char utf8[4096], json[8192];
+  char utf8[4096], attr[16384];
   int n = WideCharToMultiByte(CP_UTF8, 0, nom, -1, utf8, sizeof(utf8), NULL, NULL);
   if (n <= 0) return FALSE;
   int p = 0;
-  json[p++] = '"';
-  for (int i = 0; utf8[i] && p < (int)sizeof(json) - 8; i++) {
+  attr[p++] = '"';
+  for (int i = 0; utf8[i] && p < (int)sizeof(attr) - 8; i++) {
     unsigned char c = (unsigned char)utf8[i];
-    if (c == '"' || c == '\\') { json[p++] = '\\'; json[p++] = c; }
-    else if (c < 32) p += sprintf(json + p, "\\u%04x", c);
-    else if (c == '<') p += sprintf(json + p, "\\u003c");
-    else json[p++] = c;
+    if (c == '&') p += sprintf(attr + p, "&amp;");
+    else if (c == '"') p += sprintf(attr + p, "&quot;");
+    else if (c == '<') p += sprintf(attr + p, "&lt;");
+    else if (c == '>') p += sprintf(attr + p, "&gt;");
+    else attr[p++] = c;
   }
-  json[p++] = '"';
-  return ecrire(h, json, p);
+  attr[p++] = '"';
+  return ecrire(h, attr, p);
 }
 
 /* Chemin Windows -> adresse file:/// (UTF-8, caractères spéciaux encodés) */
@@ -321,11 +323,17 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prec, PWSTR ligne, int affichage) 
     swprintf(page, MAX_CHEMIN, L"%ls\\Atelier-%lu-%lu.html", ouverture, GetCurrentProcessId(), GetTickCount());
     HANDLE h = CreateFileW(page, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE) { message(L"Impossible de préparer l'ouverture du fichier (dossier temporaire inaccessible)."); return 1; }
-    /* Les données sont placées juste après <head> : pas de texte avant le doctype (mode standard du navigateur) */
+    /* Les données sont placées juste après <meta charset="utf-8"> : le navigateur doit trouver l'encodage dans les
+       premiers octets du fichier (sinon les accents des noms sont mal lus), et rien avant le doctype (mode standard) */
     const char *debutTete = NULL;
-    for (DWORD i = 0; i + 6 <= tailleAppli && i < 4096; i++) if (!memcmp(html + i, "<head>", 6)) { debutTete = (const char *)html + i + 6; break; }
+    for (DWORD i = 0; i + 14 <= tailleAppli && i < 4096 && !debutTete; i++) {
+      if (!memcmp(html + i, "<meta charset=", 14)) {
+        for (DWORD k = i; k < tailleAppli && k < i + 64; k++) if (html[k] == '>') { debutTete = (const char *)html + k + 1; break; }
+      }
+    }
+    for (DWORD i = 0; !debutTete && i + 6 <= tailleAppli && i < 4096; i++) if (!memcmp(html + i, "<head>", 6)) { debutTete = (const char *)html + i + 6; break; }
     DWORD avant = debutTete ? (DWORD)(debutTete - (const char *)html) : 0;
-    BOOL ok = ecrire(h, html, avant) && ecrire(h, "\n<script>window.FICHIERS_A_OUVRIR=[", 35);
+    BOOL ok = ecrire(h, html, avant);
     int ouverts = 0;
     for (int i = 0; i < nbFichiers && ok; i++) {
       DWORD n = 0;
@@ -336,11 +344,13 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prec, PWSTR ligne, int affichage) 
         message(m);
         continue;
       }
-      ok = (!ouverts || ecrire(h, ",", 1)) && ecrire(h, "{\"nom\":", 7) && ecrireNomJson(h, fichiers[i]) && ecrire(h, ",\"donnees\":\"", 12) && ecrireBase64(h, d, n) && ecrire(h, "\"}", 2);
+      char debut[96];
+      int ld = sprintf(debut, "\n<script type=\"application/octet-stream\" id=\"atelier-fichier-%d\" data-nom=", ouverts);
+      ok = ecrire(h, debut, ld) && ecrireNomAttribut(h, fichiers[i]) && ecrire(h, ">", 1) && ecrireBase64(h, d, n) && ecrire(h, "</script>", 9);
       HeapFree(GetProcessHeap(), 0, d);
       ouverts++;
     }
-    ok = ok && ecrire(h, "];</script>\n", 12) && ecrire(h, html + avant, tailleAppli - avant);
+    ok = ok && ecrire(h, "\n", 1) && ecrire(h, html + avant, tailleAppli - avant);
     CloseHandle(h);
     HeapFree(GetProcessHeap(), 0, html);
     if (!ok) { DeleteFileW(page); message(L"Impossible de préparer l'ouverture du fichier (disque plein ?)."); return 1; }

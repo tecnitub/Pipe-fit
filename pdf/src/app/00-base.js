@@ -40,13 +40,22 @@
     $('#notes').appendChild(n);
     setTimeout(() => n.remove(), type === 'erreur' ? 8000 : 4000);
   }
-  async function occupe(texte, travail) {
+  // Fenêtre d'attente ; avec { arretable: true }, bouton « Arrêter » : avance.arrete devient vrai, le travail s'arrête
+  // proprement à la prochaine étape et garde ce qui est fait
+  async function occupe(texte, travail, { arretable = false } = {}) {
     const fen = $('#occupe');
     $('#occupe-texte').textContent = texte;
     $('#occupe-barre').value = 0;
+    const bouton = $('#occupe-arreter');
+    bouton.hidden = !arretable;
+    bouton.disabled = false;
+    bouton.textContent = 'Arrêter';
+    const avance = v => { $('#occupe-barre').value = v; };
+    avance.arrete = false;
+    bouton.onclick = () => { avance.arrete = true; bouton.disabled = true; bouton.textContent = 'Arrêt après la page en cours…'; };
     fen.hidden = false;
-    try { return await travail(v => { $('#occupe-barre').value = v; }); }
-    finally { fen.hidden = true; }
+    try { return await travail(avance); }
+    finally { fen.hidden = true; bouton.hidden = true; }
   }
   const sansExtension = n => n.replace(/\.[^.]+$/, '');
   const nomFichier = n => (n || 'Document').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'Document';

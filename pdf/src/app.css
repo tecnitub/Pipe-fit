@@ -168,6 +168,7 @@ svg.forme path.prise { stroke: transparent; fill: none; stroke-width: 14px; poin
 .occupe { position: fixed; inset: 0; z-index: 40; background: rgba(20,30,45,.45); display: flex; align-items: center; justify-content: center; }
 .boite-occupe { background: #fff; padding: 20px 28px; border-radius: 10px; text-align: center; min-width: 280px; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
 .boite-occupe progress { width: 100%; margin-top: 10px; }
+#occupe-arreter { margin-top: 12px; }
 .roue { width: 34px; height: 34px; border: 4px solid #d9e4f2; border-top-color: var(--accent); border-radius: 50%; margin: 0 auto 10px; animation: tourne 0.9s linear infinite; }
 @keyframes tourne { to { transform: rotate(360deg); } }
 

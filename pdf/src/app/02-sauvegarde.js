@@ -154,18 +154,29 @@
 
   // Fichiers transmis par le lanceur Windows (double-clic sur un PDF, « Ouvrir avec Atelier PDF »)
   const TYPES = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
+  // Le lanceur place chaque fichier dans un bloc de données de la page (base64, non exécuté : rapide même à 100 Mo).
+  // Ancienne forme (window.FICHIERS_A_OUVRIR) encore acceptée.
+  const base64VersOctets = b64 => {
+    if (Uint8Array.fromBase64) return Uint8Array.fromBase64(b64);
+    const bin = atob(b64), o = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) o[i] = bin.charCodeAt(i);
+    return o;
+  };
   async function ouvrirFichiersTransmis() {
-    const liste = window.FICHIERS_A_OUVRIR;
-    if (!Array.isArray(liste) || !liste.length) return false;
+    const blocs = [...document.querySelectorAll('script[type="application/octet-stream"][id^="atelier-fichier-"]')];
+    const liste = blocs.length ? blocs.map(el => ({ nom: el.dataset.nom, lire: () => el.textContent }))
+      : (Array.isArray(window.FICHIERS_A_OUVRIR) ? window.FICHIERS_A_OUVRIR.map(f => ({ nom: f.nom, lire: () => f.donnees })) : []);
+    if (!liste.length) return false;
     delete window.FICHIERS_A_OUVRIR;
     const fichiers = [];
     for (const f of liste) {
       try {
-        const octets = await (await fetch(`data:application/octet-stream;base64,${f.donnees}`)).arrayBuffer();
+        const octets = base64VersOctets(f.lire().trim());
         const ext = (/\.([^.]+)$/.exec(f.nom || '') || [])[1]?.toLowerCase() || '';
         fichiers.push(new File([octets], f.nom || 'document.pdf', { type: TYPES[ext] || '' }));
       } catch (e) { note(`« ${f.nom} » n'a pas pu être lu.`, 'erreur'); }
     }
+    blocs.forEach(el => el.remove()); // mémoire libérée
     if (!fichiers.length) return false;
     document.title = `${fichiers.length === 1 ? sansExtension(fichiers[0].name) : `${fichiers.length} documents`} – Atelier PDF`;
     await importer(fichiers);

@@ -175,7 +175,7 @@
     let nbMots = 0;
     try {
       await occupe(`Reconnaissance du texte (OCR) : ${aTraiter.length} page(s)…`, async avance => {
-        for (let i = 0; i < aTraiter.length; i++) {
+        for (let i = 0; i < aTraiter.length && !avance.arrete; i++) {
           const p = aTraiter[i];
           $('#occupe-texte').textContent = `Reconnaissance du texte : page ${i + 1} / ${aTraiter.length}…`;
           const d = dims(p);
@@ -190,7 +190,7 @@
           nbMots += mots.length;
           avance((i + 1) / aTraiter.length);
         }
-      });
+      }, { arretable: true });
     } catch (e) {
       console.error(e);
       note(`Reconnaissance interrompue : ${e.message || e}`, 'erreur');
@@ -199,7 +199,7 @@
     memoriser();
     for (const [p, mots] of resultats) { p.ocr = mots; p.texteNatif = null; }
     rafraichir();
-    note(`Texte reconnu sur ${resultats.size} page(s) (${nbMots} mots)${dejaTexte ? ` ; ${dejaTexte} page(s) avaient déjà du texte` : ''}. Le PDF enregistré sera interrogeable (Ctrl+F) et le texte sélectionnable.`, 'ok');
+    note(`${resultats.size < aTraiter.length ? `Reconnaissance arrêtée : ${resultats.size} page(s) sur ${aTraiter.length} lues. ` : ''}Texte reconnu sur ${resultats.size} page(s) (${nbMots} mots)${dejaTexte ? ` ; ${dejaTexte} page(s) avaient déjà du texte` : ''}. Le PDF enregistré sera interrogeable (Ctrl+F) et le texte sélectionnable.`, 'ok');
     return resultats.size;
   }
 

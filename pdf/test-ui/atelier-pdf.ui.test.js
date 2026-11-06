@@ -281,3 +281,22 @@ test('commentaires PDF : annotations exportées pour Acrobat', { skip: ignorer }
   assert.deepStrictEqual(page.erreurs, []);
   await page.context().close();
 });
+
+test('ouverture depuis l\'Explorateur : page de démarrage du lanceur (blocs de données, accents, plusieurs fichiers)', { skip: ignorer }, async () => {
+  // Même forme que la page écrite par installer/lanceur/lanceur.c : blocs base64 juste après <meta charset>
+  const html = fs.readFileSync(path.join(racine, 'dist/AtelierPDF.html'), 'utf8');
+  const i = html.indexOf('<meta charset="utf-8">') + '<meta charset="utf-8">'.length;
+  const bloc = (n, nom, f) => `\n<script type="application/octet-stream" id="atelier-fichier-${n}" data-nom="${nom}">${fs.readFileSync(F(f)).toString('base64')}</script>`;
+  fs.writeFileSync(F('demarrage.html'), html.slice(0, i) + bloc(0, 'DOE Lot 14 &amp; annexes été (rév. B).pdf', 'notice.pdf') + bloc(1, 'Plan RDC.pdf', 'plan.pdf') + html.slice(i));
+  const ctx = await navigateur.newContext({ viewport: { width: 1400, height: 900 } });
+  const page = await ctx.newPage();
+  const erreurs = []; page.on('pageerror', e => erreurs.push(e.message));
+  await page.goto(`file://${F('demarrage.html')}`);
+  await page.waitForFunction(() => window.AtelierPDF && AtelierPDF.etat.pages.length === 5);
+  assert.deepStrictEqual(await page.evaluate(() => [...AtelierPDF.etat.sources.values()].map(s => s.nom)), ['DOE Lot 14 & annexes été (rév. B)', 'Plan RDC']);
+  assert.strictEqual(await page.title(), '2 documents – Atelier PDF');
+  assert.strictEqual(await page.evaluate(() => document.querySelectorAll('script[type="application/octet-stream"]').length), 0, 'données libérées');
+  assert.ok(await page.isHidden('#reprise'), 'pas de proposition de reprise à l\'ouverture d\'un document');
+  assert.deepStrictEqual(erreurs, []);
+  await ctx.close();
+});
