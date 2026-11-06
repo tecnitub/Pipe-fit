@@ -24,6 +24,8 @@ Obtenir les fichiers : onglet **Actions** du dépôt GitHub → dernière exécu
 
 ## Fonctions
 
+- **Aide intégrée** : visite guidée au premier lancement ; « Comment faire ? » (F1 ou « ? ») avec des fiches
+  recherchables qui ouvrent directement l'outil concerné ou mettent le bouton en évidence.
 - **Compiler** plusieurs PDF, photos et scans (JPG, PNG, WebP…) en un seul PDF : glisser-déposer depuis
   l'Explorateur, réorganiser les pages à la souris, pivoter, dupliquer, supprimer, pages blanches et intercalaires.
 - **Sommaire** en tête avec liens cliquables et **signets** (un par document, titre modifiable).

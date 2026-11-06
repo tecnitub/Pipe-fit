@@ -46,6 +46,9 @@
     const ctrl = ev.ctrlKey || ev.metaKey;
     const touche = ev.key.toLowerCase();
     // Rechercher et imprimer : partout (sinon le navigateur imprimerait l'écran au lieu du document)
+    if (ev.key === 'F1') { ev.preventDefault(); ouvrirAide(); return; }
+    if (!$('#aide').hidden) { if (ev.key === 'Escape') $('#aide').hidden = true; return; }
+    if (!$('#visite').hidden) { if (ev.key === 'Escape') finirVisite(); return; }
     if (ctrl && touche === 'f' && !ev.shiftKey) { ev.preventDefault(); ouvrirRecherche(); return; }
     if (ctrl && touche === 'p') { ev.preventDefault(); imprimer(); return; }
     if (ev.key === 'F3') { ev.preventDefault(); if ($('#recherche').hidden) ouvrirRecherche(); else resultatSuivant(ev.shiftKey ? -1 : 1); return; }
@@ -82,6 +85,6 @@
   sauverOptions();
   rafraichir();
   // Ouvert avec des fichiers : on les affiche ; sinon, proposition de reprendre le travail laissé
-  ouvrirFichiersTransmis().then(ouverts => { if (!ouverts) proposerReprise(); });
+  ouvrirFichiersTransmis().then(async ouverts => { if (!ouverts) { await proposerReprise(); proposerVisite(); } });
   // Accès pour les tests automatisés
   window.AtelierPDF = { etat, importer, produire, options };

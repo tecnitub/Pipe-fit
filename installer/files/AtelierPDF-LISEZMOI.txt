@@ -7,6 +7,13 @@ Aucun fichier n'est envoyé sur Internet. Fonctionne sans connexion.
 DÉMARRER
   Icône « Atelier PDF » du bureau ou du menu Démarrer.
   L'application s'ouvre dans sa propre fenêtre (Microsoft Edge).
+  Au premier lancement, une courte visite guidée montre les boutons principaux.
+
+BESOIN D'AIDE ?
+  Touche F1 ou bouton « ? » : « Comment faire ? ». Tapez un mot (caviarder,
+  signature, échelle, comparer…) : la fiche explique la manipulation et le
+  bouton « Ouvrir cet outil » / « Montrer » vous amène au bon endroit.
+  « Revoir la visite guidée » relance la visite.
 
 OUVRIR LES PDF DE L'ORDINATEUR AVEC ATELIER PDF
   - Clic droit sur un PDF > Ouvrir avec > Atelier PDF.

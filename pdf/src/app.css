@@ -312,3 +312,18 @@ svg.forme path.prise { stroke: transparent; fill: none; stroke-width: 14px; poin
 @media (max-height: 800px) {
   .ed-aide { padding: 3px 12px; font-size: 11px; }
 }
+
+/* Aide */
+.aide-liste { overflow: auto; max-height: 58vh; margin-top: 10px; }
+.fiche { border-bottom: 1px solid #edf0f4; padding: 8px 2px; }
+.fiche summary { cursor: pointer; font-weight: 600; }
+.fiche p { margin: 6px 0; color: #384757; line-height: 1.45; }
+.fiche button { font-size: 12px; padding: 3px 9px; }
+.surbrillance-aide { animation: clignote-aide 1s ease-in-out 3; outline: 3px solid #ff9800 !important; outline-offset: 2px; position: relative; z-index: 5; }
+@keyframes clignote-aide { 50% { outline-color: transparent; } }
+/* Visite guidée */
+.visite { position: fixed; inset: 0; z-index: 60; }
+.visite-cadre { position: fixed; border-radius: 8px; box-shadow: 0 0 0 9999px rgba(15, 25, 40, .62); outline: 3px solid #ffb74d; transition: all .25s ease; pointer-events: none; }
+.visite-bulle { position: fixed; width: min(340px, 90vw); background: #fff; border-radius: 10px; padding: 14px 16px; box-shadow: 0 10px 40px rgba(0,0,0,.4); font-size: 14px; line-height: 1.45; }
+.visite-pied { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+.visite-pied span { flex: 1; color: var(--doux); font-size: 12px; }

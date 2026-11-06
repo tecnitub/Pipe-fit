@@ -67,7 +67,7 @@ after(async () => { if (navigateur) await navigateur.close(); fs.rmSync(dir, { r
 // ---------- Aides ----------
 async function appli(contexte = null) {
   const ctx = contexte || await navigateur.newContext({ viewport: { width: 1500, height: 950 }, acceptDownloads: true });
-  await ctx.addInitScript(() => { window.showSaveFilePicker = undefined; window.showDirectoryPicker = undefined; });
+  await ctx.addInitScript(() => { window.showSaveFilePicker = undefined; window.showDirectoryPicker = undefined; try { if (!sessionStorage.getItem('visite-essai')) localStorage.setItem('atelierpdf.visite', 'vue'); } catch { /* rien */ } });
   const page = await ctx.newPage();
   page.erreurs = [];
   page.on('pageerror', e => page.erreurs.push(e.message));
@@ -394,4 +394,49 @@ test('modifier un texte en biais : repéré, réécrit dans son orientation, anc
   assert.ok(!texte.includes('DN80'), 'ancien texte retiré');
   assert.deepStrictEqual(page.erreurs, []);
   await page.context().close();
+});
+
+test('aide : visite guidée au premier lancement, « Comment faire ? » (F1) et ses raccourcis', { skip: ignorer }, async () => {
+  const ctx = await navigateur.newContext({ viewport: { width: 1500, height: 950 } });
+  await ctx.addInitScript(() => { try { sessionStorage.setItem('visite-essai', '1'); } catch { /* rien */ } });
+  const page = await appli(ctx);
+  // Premier lancement : la visite démarre, 6 étapes, puis ne revient plus
+  await page.waitForSelector('#visite:not([hidden])');
+  assert.strictEqual(await page.textContent('#visite-etape'), '1 / 6');
+  for (let i = 0; i < 5; i++) await page.click('#visite-suivant');
+  assert.strictEqual(await page.textContent('#visite-suivant'), 'Terminer');
+  await page.click('#visite-suivant');
+  assert.ok(await page.isHidden('#visite'));
+  assert.strictEqual(await page.evaluate(() => localStorage.getItem('atelierpdf.visite')), 'vue');
+  await page.reload();
+  await page.waitForFunction(() => window.AtelierPDF);
+  await page.waitForTimeout(400);
+  assert.ok(await page.isHidden('#visite'), 'la visite ne revient pas');
+
+  // F1 : recherche dans les fiches, puis « Me montrer » ouvre le bon outil
+  await ajouter(page, ['notice.pdf'], 3);
+  await page.keyboard.press('F1');
+  await page.waitForSelector('#aide:not([hidden])');
+  await page.fill('#aide-recherche', 'caviarder');
+  const fiches = await page.locator('#aide-liste .fiche summary').allTextContents();
+  assert.ok(fiches.some(t => /Caviarder/.test(t)), fiches.join(' | '));
+  await page.locator('#aide-liste .fiche', { hasText: 'Caviarder une information' }).locator('button').click();
+  await page.waitForSelector('#editeur:not([hidden])');
+  assert.ok(await page.locator('[data-outil="caviarde"]').evaluate(b => b.classList.contains('actif')));
+  // Recherche sans résultat, puis Échap ferme l'aide
+  await page.keyboard.press('Escape');
+  await page.click('#ed-aide-bouton');
+  await page.fill('#aide-recherche', 'zzzz');
+  assert.match(await page.textContent('#aide-liste'), /Aucune fiche/);
+  await page.keyboard.press('Escape');
+  assert.ok(await page.isHidden('#aide'));
+  // La visite peut être relancée depuis l'aide, et passée
+  await page.click('#ed-fermer');
+  await page.click('#b-aide');
+  await page.click('#aide-visite');
+  await page.waitForSelector('#visite:not([hidden])');
+  await page.click('#visite-passer');
+  assert.ok(await page.isHidden('#visite'));
+  assert.deepStrictEqual(page.erreurs, []);
+  await ctx.close();
 });

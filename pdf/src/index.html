@@ -43,6 +43,7 @@
     <button id="b-diviser" title="Découper en plusieurs PDF">✂<span class="lib"> Diviser…</span></button>
     <button id="b-rechercher" title="Rechercher un mot dans le document (Ctrl+F)">🔎</button>
     <button id="b-imprimer" title="Imprimer le document (Ctrl+P)">🖨<span class="lib"> Imprimer</span></button>
+    <button id="b-aide" title="Comment faire ? Aide et visite guidée (F1)">❓<span class="lib"> Aide</span></button>
     <button id="b-enregistrer" class="principal" title="Compiler toutes les pages en un PDF (Ctrl+S)">⬇ Enregistrer le PDF</button>
   </div>
 </header>
@@ -211,6 +212,7 @@
       <button id="ed-prec" title="Page précédente (Page préc.)">◀</button>
       <span id="ed-num"></span>
       <button id="ed-suiv" title="Page suivante (Page suiv.)">▶</button>
+      <button id="ed-aide-bouton" title="Comment faire ? (F1)">❓</button>
       <button id="ed-fermer" class="principal">Terminé</button>
     </div>
   </div>
@@ -292,6 +294,23 @@
   </div>
 </div>
 
+<!-- Aide : « Comment faire ? » -->
+<div id="aide" class="modale dialogue" hidden>
+  <div class="boite boite-large">
+    <h2>Comment faire ?</h2>
+    <input id="aide-recherche" placeholder="Que voulez-vous faire ? (ex. caviarder, signature, échelle, imprimer)">
+    <div id="aide-liste" class="aide-liste"></div>
+    <div class="boutons"><button id="aide-visite">Revoir la visite guidée</button><button id="aide-fermer" class="principal">Fermer</button></div>
+  </div>
+</div>
+<!-- Visite guidée -->
+<div id="visite" class="visite" hidden>
+  <div id="visite-cadre" class="visite-cadre"></div>
+  <div id="visite-bulle" class="visite-bulle">
+    <div id="visite-texte"></div>
+    <div class="visite-pied"><span id="visite-etape"></span><button id="visite-passer">Passer</button><button id="visite-suivant" class="principal">Suivant</button></div>
+  </div>
+</div>
 <div id="occupe" class="occupe" hidden><div class="boite-occupe"><div class="roue"></div><div id="occupe-texte">Traitement…</div><progress id="occupe-barre" max="1" value="0"></progress><button id="occupe-arreter" hidden>Arrêter</button></div></div>
 <div id="notes" class="notes"></div>
 <input type="file" id="fichiers" multiple accept=".pdf,application/pdf,image/*,.atelierpdf" hidden>
