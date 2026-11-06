@@ -244,11 +244,15 @@ test('formulaire : champs texte, case, boutons radio et liste remplis puis figé
   for (const t of ['Ligne 1', 'Ligne 2 \x80', 'Thomas', 'Laiterie \x96 Rumilly']) assert.ok(tout.includes(hex(t)) || tout.includes(`(${t})`), `valeur « ${t} » écrite`);
 });
 
-test('fichiers de l\'application : syntaxe JavaScript valide', () => {
+test('fichiers de l\'application : syntaxe JavaScript valide (modules de l\'interface assemblés)', () => {
   const { execFileSync } = require('node:child_process');
-  for (const f of ['app.js', 'moteur.js', 'stockage.js', 'ocr.js']) {
+  for (const f of ['moteur.js', 'stockage.js', 'ocr.js']) {
     execFileSync(process.execPath, ['--check', path.join(__dirname, '../pdf/src', f)]);
   }
+  // Interface : modules assemblés (une seule portée) ; une erreur indique le module en cause
+  const { assemblerApp } = require('../pdf/assembler-app.js');
+  const vm = require('node:vm');
+  assert.doesNotThrow(() => new vm.Script(assemblerApp(), { filename: 'app (assemblé)' }));
 });
 
 test('annotations en commentaires PDF : types, apparence, retirées à la réouverture', async () => {

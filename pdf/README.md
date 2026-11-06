@@ -64,9 +64,10 @@ Mode d'emploi détaillé : [installer/files/AtelierPDF-LISEZMOI.txt](../installe
 
 ## Développement
 
-- `pdf/src/` : `index.html`, `app.css`, `app.js` (interface), `moteur.js` (assemblage avec pdf-lib, testé sous Node),
+- `pdf/src/` : `index.html`, `app.css`, `app/` (interface en modules numérotés, assemblés en une seule portée par
+  `pdf/assembler-app.js`), `moteur.js` (assemblage avec pdf-lib, testé sous Node),
   `stockage.js` (sauvegarde, projets, bibliothèque), `ocr.js` (Tesseract : moteur, worker et modèle inclus dans la page).
-  `pdf/src/index.html` s'ouvre directement dans un navigateur pour le développement.
+  Pour essayer une modification : `node pdf/build.js` puis ouvrir `dist/AtelierPDF.html`.
 - `node pdf/build.js` → `dist/AtelierPDF.html` (un seul fichier : pdf.js et pdf-lib inclus).
 - `bash installer/build-pdf.sh` → `dist/AtelierPDF-Setup-<version>.exe` (version dans `pdf/VERSION`).
 - Tests : `node --test test/atelier-pdf.test.js` (inclus dans `npm test`) ; interface dans Chromium :

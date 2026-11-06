@@ -8,6 +8,7 @@ const path = require('node:path');
 const racine = path.join(__dirname, '..');
 const src = path.join(__dirname, 'src');
 const tess = path.join(racine, 'public/vendor/tesseract');
+const { assemblerApp } = require('./assembler-app.js');
 const lire = f => fs.readFileSync(f, 'utf8');
 // Un « </script » dans du code inséré fermerait la balise : neutralisé
 const sur = js => js.replace(/<\/script/gi, '<\\/script');
@@ -17,7 +18,8 @@ let html = lire(path.join(src, 'index.html'));
 
 html = html.replace('<link rel="stylesheet" href="app.css">', () => `<style>\n${lire(path.join(src, 'app.css'))}</style>`);
 html = html.replace(/<script src="([^"]+)"( data-worker)?><\/script>/g, (_, fichier, worker) => {
-  const contenu = lire(path.resolve(src, fichier));
+  // Interface : modules de pdf/src/app/ assemblés en un seul script
+  const contenu = fichier === 'app.js' ? assemblerApp() : lire(path.resolve(src, fichier));
   if (worker) return `<script>window.PDFJS_WORKER_SRC = ${sur(JSON.stringify(contenu))};</script>`;
   // Lecture de texte (OCR) : moteur Tesseract, son worker et le modèle français inclus dans la page
   const ocr = path.basename(fichier) === 'ocr.js' ? `<script>window.TESS_SRC = ${sur(JSON.stringify({
