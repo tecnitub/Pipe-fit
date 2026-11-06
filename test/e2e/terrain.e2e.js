@@ -81,6 +81,10 @@ test('CRM : prise de cotes avec robinetterie du fabricant, plan de débit, tron�
   // Isométrique vectoriel et DXF
   const n = await p.evaluate(() => { const r = { matiere: 'Acier P235GH', dn: 50, elements: [{ t: 'tube', dn: 50, auto: true, cote: 1200 }, { t: 'coude', dn: 50, vers: 'N' }, { t: 'tube', dn: 50, l: 800 }] }; return Dxf.depuisSvg(Vue3D.svgIso(Tuyauterie.placer(r), 'e2e')).entites; });
   assert.ok(n > 5);
+  // Isométrique avec cartouche (numéro ISO-xx du chantier, indice) sur une page A3 paysage
+  const pdf = await p.evaluate(async () => { const r = { affaireId: Store.all('affaires')[0].id, ligne: 'EG-e2e', indice: 'C', date: '2026-11-06', matiere: 'Acier P235GH', dn: 50, elements: [{ t: 'tube', dn: 50, auto: true, cote: 1200 }, { t: 'coude', dn: 50, vers: 'N' }, { t: 'tube', dn: 50, l: 800 }] };
+    const svg = svgIsoReleve(r), b = PDF.imagesA3([await PDF.svgEnJpeg(svg, 1200)], 'e2e'); return { svg: /N° d'isométrique/.test(svg) && /ISO-\d\d \/ \d\d/.test(svg) && />C</.test(svg), entete: String.fromCharCode(...b.slice(0, 8)), a3: new TextDecoder('latin1').decode(b).includes('/MediaBox [0 0 1190.55 841.89]') }; });
+  assert.deepStrictEqual(pdf, { svg: true, entete: '%PDF-1.4', a3: true });
   // Paramètres : robinetterie et brides
   await p.evaluate(() => { location.hash = '#/parametres'; }); await p.waitForTimeout(1500);
   assert.ok(await p.$('#robi-table') && await p.$('#brides-save'));

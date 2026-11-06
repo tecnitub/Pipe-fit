@@ -4,6 +4,18 @@
 // fiche imprimable et PDF avec l'isométrique.
 
 const releveBrouillon = { cle: null, r: null, chemin: '', cam: null, vue: null };
+// Numéro d'isométrique d'un relevé : rang parmi les prises de cotes du chantier (ou du client pour une visite), par numéro puis date
+function numeroIso(r) {
+  const l = Store.all('releves').filter(x => (r.affaireId ? x.affaireId === r.affaireId : r.clientId && x.clientId === r.clientId && !x.affaireId) && x.id !== r.id).concat([r])
+    .sort((a, b) => `${a.numero || 'ZZZ'}${a.date}`.localeCompare(`${b.numero || 'ZZZ'}${b.date}`));
+  return { no: `ISO-${String(l.indexOf(r) + 1).padStart(2, '0')}`, total: l.length };
+}
+function cartoucheIso(r) {
+  const a = r.affaireId ? (Store.get('affaires', r.affaireId) || {}) : {}, n = numeroIso(r), S = Tuyauterie.systeme(r);
+  return { affaire: r.affaireId ? `${a.code || ''} – ${a.nom || ''}` : 'Visite commerciale', client: nomClientReleve(r), ligne: `Ligne ${r.ligne || '—'}${r.numero ? ` · relevé ${r.numero}` : ''}`,
+    details: [r.fluide, S.lib, r.pn].filter(Boolean).join(' · '), indice: r.indice || 'A', date: r.date, auteur: r.technicien || userName(r.userId), no: n.no, total: n.total };
+}
+const svgIsoReleve = r => Vue3D.svgIso(Tuyauterie.placer(r), `Ligne ${r.ligne || ''}`.trim(), cartoucheIso(r));
 const relevesDe = affaireId => Store.all('releves').filter(r => r.affaireId === affaireId).sort((a, b) => `${b.date}${b.numero || ''}`.localeCompare(`${a.date}${a.numero || ''}`));
 // Retour : chantier, ou visite commerciale (client, sinon liste des visites)
 const retourReleve = r => (Store.me.role === 'atelier' ? '#/pointage/rapports' : r.affaireId ? `#/chantier/${r.affaireId}` : r.clientId ? `#/entreprise/${r.clientId}` : '#/visites');
@@ -62,6 +74,7 @@ function releveForm(r) {
     <fieldset class="hd-bloc"><legend>Ligne relevée</legend>
       <div class="grid2">
         <div class="field"><label for="rl-aff">Chantier ou visite</label><select id="rl-aff" class="big-select">${Store.me.role === 'atelier' ? '' : `<option value="" ${r.affaireId ? '' : 'selected'}>Visite commerciale (sans chantier, pour chiffrer)</option>`}${options(chantiersActifs().concat(a.id && !chantiersActifs().includes(a) ? [a] : []), r.affaireId, affaireLabel, false)}</select></div>
+        <div class="field"><label for="rl-indice">Indice de l'isométrique</label><input id="rl-indice" data-rl="indice" value="${esc(r.indice || 'A')}" maxlength="4" style="max-width:6em"></div>
         <div class="field"><label for="rl-ligne">Repère de la ligne *</label><input id="rl-ligne" data-rl="ligne" list="rl-lignes" value="${esc(r.ligne)}" placeholder="Ex. EG-DN80-012, by-pass pompe P2, collecteur départ…">
           <datalist id="rl-lignes">${lignes.map(x => `<option>${esc(x)}</option>`).join('')}</datalist></div>
       </div>
@@ -464,7 +477,7 @@ function releveFicheVue(r) {
   const bureau = Store.me.role !== 'atelier';
   return `<div class="toolbar no-print"><a href="${retourReleve(r)}" class="btn secondary">← ${bureau ? 'Chantier' : 'Rapports'}</a><span class="spacer"></span>
     <a class="btn secondary" href="#/releve/${esc(r.id)}">${r.statut === 'Terminé' ? 'Modifier' : 'Compléter (photos après…)'}</a>
-    ${boutonsChiffrageReleve(r)}<button class="secondary print-btn" data-print>Imprimer</button><button class="secondary dl-btn" id="rl-pdf">PDF</button>${typeof Dxf !== 'undefined' ? '<button class="secondary dl-btn" id="rl-dxf" title="Isométrique au trait pour AutoCAD : axe, symboles, cotes, repères, soudures">Isométrique (DXF)</button>' : ''}</div>
+    ${boutonsChiffrageReleve(r)}<button class="secondary print-btn" data-print>Imprimer</button><button class="secondary dl-btn" id="rl-pdf">PDF</button><button class="secondary dl-btn" id="rl-a3" title="Isométrique au trait sur une page A3 paysage, avec cartouche">Isométrique A3 (PDF)</button>${typeof Dxf !== 'undefined' ? '<button class="secondary dl-btn" id="rl-dxf" title="Isométrique au trait pour AutoCAD : axe, symboles, cotes, repères, soudures, cartouche">Isométrique (DXF)</button>' : ''}</div>
   <h1 class="no-print">Prise de cotes ${esc(r.numero || '')} · ${esc(r.ligne)} ${badgeReleve(r)}</h1>
   <div class="doc-print">${releveDocument(r)}</div>`;
 }
@@ -479,7 +492,7 @@ function releveDocument(r) {
       <div>${r.affaireId ? `Chantier : <strong>${esc(a.code || '')} – ${esc(a.nom || '')}</strong>` : '<strong>Visite commerciale</strong> (relevé pour chiffrage)'}</div></div>
     <table class="doc-lines compact ppsps-t">${[l('Ligne', `<strong>${esc(r.ligne)}</strong>`), r.fluide ? l('Fluide', esc(r.fluide)) : '', l('Type de tube', esc(Tuyauterie.systeme(r).lib)), l('Matière, pression nominale', esc(`${r.matiere || ''} · ${r.pn || ''}`)),
       l('Relevé par', esc(r.technicien || userName(r.userId))), l('État', esc(r.statut || ''))].join('')}</table>
-    ${pl.pieces.length ? `<h3 class="doc-h">Isométrique</h3><div class="rl-iso"><img src="${Vue3D.image(pl)}" alt="Isométrique de la ligne"></div><p class="small">Repère : Nord vers la droite en haut, Est vers la droite en bas. Cotes à l'axe en mm, d'un nœud au suivant (départ, centre des coudes 3D et des tés, extrémité). Point bleu : soudure bout à bout. Triangles hachurés : dévoiements (avance et décalages cotés).</p>` : ''}
+    ${pl.pieces.length ? `<h3 class="doc-h">Isométrique ${esc(cartoucheIso(r).no)} / ${String(cartoucheIso(r).total).padStart(2, '0')} — indice ${esc(r.indice || 'A')}</h3><div class="rl-iso"><img src="${Vue3D.image(pl)}" alt="Isométrique de la ligne"></div><p class="small">Repère : Nord vers la droite en haut, Est vers la droite en bas. Cotes à l'axe en mm, d'un nœud au suivant (départ, centre des coudes 3D et des tés, extrémité). Point bleu : soudure bout à bout. Triangles hachurés : dévoiements (avance et décalages cotés).</p>` : ''}
     ${annotationsHtml(r, pl)}${souduresHtml(pl)}${tronconsHtml(r, pl)}${planDebitHtml(r, pl)}
     ${deb.length ? `<h3 class="doc-h">Fiche de débit</h3><div class="table-wrap"><table class="doc-lines compact"><tr><th>Élément</th><th>Repère</th><th>DN</th><th class="num">Ø ext.</th><th class="num">Cote axe à axe</th><th class="num">Longueur de coupe</th></tr>
       ${deb.map(d => `<tr><td>${esc(numeroEl(d.id))}</td><td>${esc(d.repere)}</td><td>${esc(Tuyauterie.taille(r, d.dn))}</td><td class="num">${fmt(d.de, 1)}</td><td class="num">${d.cote !== null ? fmt(d.cote) : '—'}</td><td class="num"><strong>${fmt(d.coupe)}</strong></td></tr>`).join('')}</table></div>` : ''}
@@ -497,9 +510,9 @@ function releveDocument(r) {
 function relevesChantierHtml(a) {
   const l = relevesDe(a.id);
   return `<h2>Prises de cotes <span class="muted small">${l.length}</span></h2>
-  <div class="toolbar"><a class="btn secondary small" href="#/releve/new?chantier=${esc(a.id)}">+ Prise de cotes</a></div>
-  ${l.length ? `<div class="table-wrap"><table data-colonnes="releves"><tr><th>N°</th><th>Date</th><th>Ligne</th><th>Matière</th><th class="num">Tube</th><th>Photos</th><th>Relevé par</th><th>État</th></tr>
-    ${l.map(r => `<tr class="clickable" data-go="#/releve/${esc(r.id)}${r.statut === 'Brouillon' ? '' : '/fiche'}"><td>${esc(r.numero || '')}</td><td>${dateFr(r.date)}</td><td>${esc(r.ligne)}</td><td>${esc(r.matiere || '')}</td>
+  <div class="toolbar"><a class="btn secondary small" href="#/releve/new?chantier=${esc(a.id)}">+ Prise de cotes</a>${l.some(r => (r.elements || []).length) ? `<button class="small secondary" data-iso-a3="${esc(a.id)}" title="Un isométrique par page A3 paysage, numérotés ISO-01, ISO-02… avec cartouche">🖨️ Isométriques du chantier (PDF A3)</button>` : ''}</div>
+  ${l.length ? `<div class="table-wrap"><table data-colonnes="releves"><tr><th>N°</th><th>Iso</th><th>Date</th><th>Ligne</th><th>Matière</th><th class="num">Tube</th><th>Photos</th><th>Relevé par</th><th>État</th></tr>
+    ${l.map(r => `<tr class="clickable" data-go="#/releve/${esc(r.id)}${r.statut === 'Brouillon' ? '' : '/fiche'}"><td>${esc(r.numero || '')}</td><td>${esc(numeroIso(r).no)} ind. ${esc(r.indice || 'A')}</td><td>${dateFr(r.date)}</td><td>${esc(r.ligne)}</td><td>${esc(r.matiere || '')}</td>
       <td class="num">${r.longueurTube ? `${fmt(r.longueurTube / 1000, 2)} m` : ''}</td><td>${[...(r.photosAvant || []).slice(0, 2), ...(r.photosApres || []).slice(0, 2)].map(p => `<img class="thumb" src="${fileUrl(p.photoId)}" alt="">`).join('')}</td>
       <td>${esc(userName(r.userId))}</td><td>${badgeReleve(r)}</td></tr>`).join('')}</table></div>`
   : '<p class="muted">Aucune prise de cotes. Le technicien la fait sur place (Pointage › Rapports › Prise de cotes) ou depuis ici.</p>'}`;
@@ -509,7 +522,9 @@ function relevesChantierHtml(a) {
 const boutonsChiffrageReleve = r => `${Store.can('write', 'chiffrages') && Store.me.role !== 'atelier' ? '<button class="secondary" id="rl-chiffrage">→ Chiffrage</button>' : ''}<button class="secondary dl-btn" id="rl-csv">Liste matériel (.csv)</button>`;
 function brancherChiffrageReleve(root, releve) {
   const dx = root.querySelector('#rl-dxf');
-  if (dx) dx.onclick = () => { const r = releve(), svg = Vue3D.svgIso(Tuyauterie.placer(r), `Ligne ${r.ligne || ''} — relevé ${r.numero || ''}`.trim()); if (!svg) return notify('Ligne vide.'); download(`Isometrique-${r.numero || r.ligne || 'releve'}.dxf`.replace(/[^\w.-]+/g, '_'), Dxf.depuisSvg(svg).octets, 'application/dxf'); };
+  const a3 = root.querySelector('#rl-a3');
+  if (a3) a3.onclick = () => { const r = releve(), svg = svgIsoReleve(r); if (!svg) return notify('Ligne vide.'); PDF.svgsA3([svg], `${cartoucheIso(r).no}-${r.ligne || r.numero || 'ligne'}-ind${r.indice || 'A'}.pdf`.replace(/[^\w.-]+/g, '_')).catch(e => notify(e.message)); };
+  if (dx) dx.onclick = () => { const r = releve(), svg = svgIsoReleve(r); if (!svg) return notify('Ligne vide.'); download(`Isometrique-${r.numero || r.ligne || 'releve'}.dxf`.replace(/[^\w.-]+/g, '_'), Dxf.depuisSvg(svg).octets, 'application/dxf'); };
   const csv = root.querySelector('#rl-csv'), ch = root.querySelector('#rl-chiffrage');
   if (csv) csv.onclick = () => { const r = releve(); download(`Liste-materiel-${r.numero || r.ligne || 'releve'}.csv`.replace(/[^\w.-]+/g, '_'), `\ufeff${Tuyauterie.csvChiffrage(Tuyauterie.lignesChiffrage(r))}`, 'text/csv'); };
   if (ch) ch.onclick = () => envoyerAuChiffrage(releve());
@@ -564,3 +579,13 @@ function relevesClientHtml(e) {
   const l = relevesVisite().filter(r => r.clientId === e.id);
   return `<h2>Prises de cotes de visite <span class="muted small">${l.length}</span></h2>${relevesVisiteHtml(l, `#/releve/new?client=${esc(e.id)}`)}`;
 }
+
+// Isométriques d'un chantier en un seul PDF A3 (ordre ISO-01, ISO-02…)
+document.addEventListener('click', ev => {
+  const b = ev.target.closest && ev.target.closest('[data-iso-a3]'); if (!b) return;
+  const l = relevesDe(b.dataset.isoA3).filter(r => (r.elements || []).length).sort((x, y) => numeroIso(x).no.localeCompare(numeroIso(y).no)), svgs = l.map(svgIsoReleve).filter(Boolean);
+  if (!svgs.length) return notify('Aucune ligne dessinée.');
+  const a = Store.get('affaires', b.dataset.isoA3) || {};
+  App.toast(`${svgs.length} isométrique(s) en préparation…`, 2500);
+  PDF.svgsA3(svgs, `Isometriques-${a.code || a.id}.pdf`.replace(/[^\w.-]+/g, '_')).catch(e => notify(e.message));
+});

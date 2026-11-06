@@ -399,7 +399,8 @@ const Vue3D = (() => {
   }
   // Isométrique au trait (axe de la ligne, symboles, cotes à l'axe, repères, soudures numérotées) : SVG vectoriel,
   // converti en DXF pour AutoCAD ; même projection que la vue isométrique
-  function svgIso(placement, titre = '') {
+  // c (cartouche) : { affaire, client, ligne, details, indice, date, auteur, no, total }
+  function svgIso(placement, titre = '', c = null) {
     const cam = camera(ISO), P3 = p => [dot(p, cam.droite), -dot(p, cam.haut)];
     const segs = [], symb = [], txt = [];
     placement.pieces.forEach(pc => {
@@ -417,8 +418,8 @@ const Vue3D = (() => {
     const pts = [...segs.flat(), ...txt.map(t => [t.x, t.y])];
     if (!pts.length) return '';
     const mn = [Math.min(...pts.map(p => p[0])), Math.min(...pts.map(p => p[1]))], mx = [Math.max(...pts.map(p => p[0])), Math.max(...pts.map(p => p[1]))];
-    const W = 1400, H = 950, m = 90, k = Math.min((W - 2 * m) / Math.max(1, mx[0] - mn[0]), (H - 2 * m - 40) / Math.max(1, mx[1] - mn[1]));
-    const X = p => m + (p[0] - mn[0]) * k, Y = p => m + 40 + (p[1] - mn[1]) * k, e = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const W = 1400, H = 950 + (c ? 80 : 0), m = 90, k = Math.min((W - 2 * m) / Math.max(1, mx[0] - mn[0]), (950 - 2 * m - 40) / Math.max(1, mx[1] - mn[1]));
+    const H0 = 950, X = p => m + (p[0] - mn[0]) * k, Y = p => m + 40 + (p[1] - mn[1]) * k, e = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
     const o = [`<rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>`, `<text x="20" y="32" font-size="18" font-weight="bold" fill="#222">${e(titre || 'Isométrique')}</text>`];
     segs.forEach(([a, b]) => o.push(`<line x1="${X(a).toFixed(1)}" y1="${Y(a).toFixed(1)}" x2="${X(b).toFixed(1)}" y2="${Y(b).toFixed(1)}" stroke="#222" stroke-width="2.5"/>`));
     symb.forEach(x => {
@@ -432,7 +433,16 @@ const Vue3D = (() => {
         `<line x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" x2="${(ax + nx * (d + 4)).toFixed(1)}" y2="${(ay + ny * (d + 4)).toFixed(1)}" stroke="#14286e" stroke-width="0.5"/>`, `<line x1="${bx.toFixed(1)}" y1="${by.toFixed(1)}" x2="${(bx + nx * (d + 4)).toFixed(1)}" y2="${(by + ny * (d + 4)).toFixed(1)}" stroke="#14286e" stroke-width="0.5"/>`,
         `<text x="${((ax + bx) / 2 + nx * (d + 6)).toFixed(1)}" y="${((ay + by) / 2 + ny * (d + 6)).toFixed(1)}" font-size="12" text-anchor="middle" fill="#14286e">${fmtMm(c.v)}</text>`); });
     txt.forEach(t => o.push(`<text x="${(X([t.x, t.y]) + 6).toFixed(1)}" y="${(Y([t.x, t.y]) + (t.dy > 0 ? 16 : -6)).toFixed(1)}" font-size="${t.c ? 11 : 12}"${t.c ? ' font-weight="bold"' : ''} fill="${t.c || '#3c4650'}">${e(t.s)}</text>`));
-    o.push(`<text x="20" y="${H - 18}" font-size="11" fill="#555">Cotes à l'axe en mm · S1, S2… soudures · SP1, SP2… tronçons préfabriqués · Nord vers la droite en haut, Est vers la droite en bas</text>`);
+    o.push(`<text x="20" y="${H0 - 18}" font-size="11" fill="#555">Cotes à l'axe en mm · S1, S2… soudures · SP1, SP2… tronçons préfabriqués · Nord vers la droite en haut, Est vers la droite en bas</text>`);
+    if (c) {
+      const y0 = H0 + 4, w = W - 16, col = [0, 0.32, 0.68, 0.76, 0.87, 1].map(f => 8 + f * w), t = (x, y, s2, o2 = {}) => o.push(`<text x="${x}" y="${y}" font-size="${o2.fs || 11}"${o2.b ? ' font-weight="bold"' : ''} fill="${o2.c || '#222'}">${e(s2)}</text>`);
+      o.push(`<rect x="8" y="${y0}" width="${w}" height="70" fill="#fff" stroke="#222" stroke-width="1.2"/>`, ...col.slice(1, -1).map(x => `<line x1="${x}" y1="${y0}" x2="${x}" y2="${y0 + 70}" stroke="#222"/>`));
+      t(col[0] + 6, y0 + 15, 'Affaire', { fs: 9, c: '#777' }); t(col[0] + 6, y0 + 34, String(c.affaire || '').slice(0, 48), { b: true, fs: 13 }); t(col[0] + 6, y0 + 52, String(c.client || '').slice(0, 55));
+      t(col[1] + 6, y0 + 15, 'Isométrique', { fs: 9, c: '#777' }); t(col[1] + 6, y0 + 34, String(c.ligne || '').slice(0, 55), { b: true, fs: 13 }); t(col[1] + 6, y0 + 52, String(c.details || '').slice(0, 70), { fs: 10 });
+      t(col[2] + 6, y0 + 15, 'Indice', { fs: 9, c: '#777' }); t(col[2] + 6, y0 + 44, c.indice || 'A', { b: true, fs: 20 });
+      t(col[3] + 6, y0 + 15, 'Date / établi par', { fs: 9, c: '#777' }); t(col[3] + 6, y0 + 34, String(c.date || '').replace(/^(\d{4})-(\d\d)-(\d\d).*/, '$3/$2/$1')); t(col[3] + 6, y0 + 52, String(c.auteur || '').slice(0, 20), { fs: 10 });
+      t(col[4] + 6, y0 + 15, 'N° d\'isométrique', { fs: 9, c: '#777' }); t(col[4] + 6, y0 + 44, `${c.no || 'ISO-01'}${c.total ? ` / ${String(c.total).padStart(2, '0')}` : ''}`, { b: true, fs: 18 });
+    }
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Arial, Helvetica, sans-serif">${o.join('')}</svg>`;
   }
   return { creer, etatInitial, image, maillage, svgIso, VUES };

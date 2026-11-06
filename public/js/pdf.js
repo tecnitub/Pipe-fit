@@ -216,7 +216,39 @@ const PDF = (() => {
     return bytes;
   }
 
+  // PDF de pages A3 paysage, une image JPEG pleine page chacune (isométriques, plans) : [{ jpeg (Uint8Array), w, h }]
+  function imagesA3(pages, titre = 'Plans') {
+    const W = 1190.55, H = 841.89, m = 14, objs = [], add = o => { objs.push(o); return objs.length; };
+    const bin = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return s; };
+    const cat = add(''), pagesId = add(''), kids = [];
+    pages.forEach(pg => {
+      const img = add(`<< /Type /XObject /Subtype /Image /Width ${pg.w} /Height ${pg.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${pg.jpeg.length} >>\nstream\n${bin(pg.jpeg)}\nendstream`);
+      const k = Math.min((W - 2 * m) / pg.w, (H - 2 * m) / pg.h), dw = pg.w * k, dh = pg.h * k, x = (W - dw) / 2, y = (H - dh) / 2, flux = `q ${dw.toFixed(2)} 0 0 ${dh.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm /Im0 Do Q`;
+      const cont = add(`<< /Length ${flux.length} >>\nstream\n${flux}\nendstream`);
+      kids.push(add(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /XObject << /Im0 ${img} 0 R >> >> /Contents ${cont} 0 R >>`));
+    });
+    objs[cat - 1] = `<< /Type /Catalog /Pages ${pagesId} 0 R >>`;
+    objs[pagesId - 1] = `<< /Type /Pages /Kids [${kids.map(k => `${k} 0 R`).join(' ')}] /Count ${kids.length} >>`;
+    const info = add(`<< /Title (${String(titre).replace(/[()\\]/g, ' ').replace(/[^\x20-\x7e]/g, '?')}) /Producer (Pipe-Fit) >>`);
+    let out = '%PDF-1.4\n%\xe2\xe3\xcf\xd3\n';
+    const offsets = objs.map((corps, i) => { const o = out.length; out += `${i + 1} 0 obj\n${corps}\nendobj\n`; return o; });
+    const xref = out.length;
+    out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map(o => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size ${objs.length + 1} /Root ${cat} 0 R /Info ${info} 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+    const bytes = new Uint8Array(out.length); for (let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 0xff;
+    return bytes;
+  }
+  // SVG → JPEG haute définition (navigateur) pour une page A3
+  async function svgEnJpeg(svg, largeur = 4200) {
+    const img = new Image(); img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`; await img.decode();
+    const cv = document.createElement('canvas'), k = largeur / img.naturalWidth; cv.width = largeur; cv.height = Math.round(img.naturalHeight * k);
+    const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(img, 0, 0, cv.width, cv.height);
+    const b64 = cv.toDataURL('image/jpeg', 0.9).split(',')[1], s = atob(b64), u8 = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u8[i] = s.charCodeAt(i);
+    return { jpeg: u8, w: cv.width, h: cv.height };
+  }
+
   return {
+    imagesA3, svgEnJpeg,
+    async svgsA3(svgs, nom) { const pages = []; for (const s of svgs) pages.push(await svgEnJpeg(s)); download(nom, imagesA3(pages, nom.replace(/\.pdf$/i, '')), 'application/pdf'); },
     async depuisHTML(html, titre, pj, opts) { return assembler(await relever(html), titre, pj, opts); },
     async telecharger(html, nom) { download(nom, await this.depuisHTML(html, nom.replace(/\.pdf$/i, '')), 'application/pdf'); },
   };
