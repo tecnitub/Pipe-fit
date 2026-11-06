@@ -204,7 +204,7 @@ const Registre = (() => {
   // aéraulique ; point de puisage → tronçon du calcul sanitaire. [valeur, libellé]
   function branches(et, cible) {
     const [genre, rest = ''] = String(cible || '').split(':'), [id] = rest.split('|'), notes = (et && et.notes) || [], lib = n => `N${notes.indexOf(n) + 1} — ${n.titre}`;
-    const trs = n => ((n.entrees || {}).troncons || []).filter(t => t && String(t.rep || '').trim());
+    const trs = n => ((n.entrees || {}).troncons || (N() && N().TYPES[n.type] ? N().defauts(n.type).troncons : null) || []).filter(t => t && String(t.rep || '').trim());
     if (genre === 'term') return notes.filter(n => n.type === 'arbo').flatMap(n => trs(n).map(t => [`arbo:${n.id}|${t.rep}`, `${lib(n)} : sous ${t.rep}${t.nom ? ` — ${t.nom}` : ''}`]));
     if (genre === 'aero' || genre === 'san') { const n = notes.find(y => y.id === id); return n ? trs(n).map(t => [t.rep, `${t.rep}${t.nom ? ` — ${t.nom}` : ''}${t.reseau && t.reseau !== 'soufflage' ? ` (${t.reseau})` : ''}`]) : []; }
     return [];
@@ -259,7 +259,7 @@ const Registre = (() => {
     if (genre === 'aero') {
       const n = notes.find(y => y.id === id && y.type === 'aero'); if (!n) return null;
       const l = n.entrees.bouchesL = n.entrees.bouchesL || [], deja = repsBouches(et), locaux = unites(opts.local, qte), tc = String(opts.branche || '');
-      const t = ((n.entrees.troncons || []).find(y => String(y.rep || '').trim() === tc)) || {}, crees = [];
+      const t = ((n.entrees.troncons || (N() && N().TYPES[n.type] ? N().defauts(n.type).troncons : null) || []).find(y => String(y.rep || '').trim() === tc)) || {}, crees = [];
       locaux.forEach(local => { const el = { rep: opts.rep && locaux.length === 1 && !deja.has(opts.rep) ? opts.rep : prochain('B', deja), installation: n.id, reseau: t.reseau || 'soufflage', salle: local, zone: opts.zone || '', etage: '', type: 'plafond', troncon: tc }; deja.add(el.rep); l.push(el); poser(n, 'aero', el, 'bouchesL', l.length - 1); crees.push(el); });
       return `${crees.length} bouche(s) ${nom} ajoutée(s) dans ${n.titre} : ${crees.map(e => e.rep + (e.salle ? ` (${e.salle})` : '')).join(', ')}${tc ? ` — branche ${tc}` : ' (tronçon à choisir)'}`;
     }
