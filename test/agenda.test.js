@@ -67,7 +67,11 @@ test('planning envoyé dans Outlook : création, mise à jour, suppression', asy
   const posts = appels.filter(a => a.m === 'POST' && a.u.includes('/events'));
   assert.ok(posts.length >= 5, `événements créés : ${posts.length}`);
   assert.ok(posts.every(a => a.u.includes(encodeURIComponent('kevin.roux@tecnitub.example'))), 'dans la boîte de Kevin uniquement');
-  assert.match(posts[0].b.subject, /CH-\d{4}-001/); assert.strictEqual(posts[0].b.reminderMinutesBeforeStart, 30);
+  // Le planning est lu sans ordre imposé (identifiants aléatoires) : Kevin a des journées sur deux chantiers,
+  // l'ordre des envois varie d'une exécution à l'autre
+  assert.ok(posts.every(a => /^CH-\d{4}-\d{3} /.test(a.b.subject)), 'chaque événement porte le code du chantier');
+  assert.ok(posts.some(a => /CH-\d{4}-001/.test(a.b.subject)), 'journées du chantier 001 envoyées');
+  assert.ok(posts.every(a => a.b.reminderMinutesBeforeStart === 30), 'rappel 30 min sur chaque événement');
   assert.strictEqual(r.crees, posts.length);
   // Rien n'a changé : aucun appel
   appels.length = 0; await AGENDA.synchroniser();

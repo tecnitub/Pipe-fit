@@ -82,7 +82,8 @@ function entetes(req, res) {
 function origineRefusee(req) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return false;
   const o = req.headers.origin;
-  if (!o || o === 'null') return o === 'null';
+  // Page locale (Atelier PDF) : acceptée seulement avec une clé d'API (aucun cookie n'est alors utilisé)
+  if (!o || o === 'null') return o === 'null' && !/^Bearer\s+pfj?_/.test(String(req.headers.authorization || ''));
   let hote;
   try { hote = new URL(o).host; } catch (e) { return true; }
   const attendus = [req.headers.host, ...String(proxyDeConfiance(req) ? req.headers['x-forwarded-host'] || '' : '').split(',').map(s => s.trim())].filter(Boolean);

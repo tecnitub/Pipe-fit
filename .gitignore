@@ -7,3 +7,4 @@ dist/
 installer/build/
 installer/.cache/
 /*.png
+installer/build-pdf/

@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atelier PDF</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="barre">
+  <div class="marque"><span class="logo">PDF</span><span>Atelier PDF</span></div>
+  <div class="outils">
+    <div class="menu">
+      <button id="b-projet" title="Nouveau, ouvrir ou enregistrer un projet ; documents des chantiers Pipe-Fit">📁<span class="lib"> Projet</span> ▾</button>
+      <div id="menu-projet" class="menu-liste" hidden>
+        <button id="m-nouveau">Nouveau (repartir de zéro)</button>
+        <button id="m-ouvrir">Ouvrir un projet ou un PDF…</button>
+        <button id="m-enregistrer">Enregistrer le projet… (.atelierpdf)</button>
+        <p class="aide">Le travail est aussi sauvegardé automatiquement sur ce PC et proposé à la réouverture.</p>
+        <hr>
+        <button id="m-pf-ouvrir">📂 Ouvrir un document d'un chantier (Pipe-Fit)…</button>
+        <button id="m-pf-enregistrer">📤 Enregistrer dans un chantier (Pipe-Fit)…</button>
+        <button id="m-pf-connexion">⚙ Connexion à Pipe-Fit…</button>
+        <button id="m-pf-deconnexion">⏏ Se déconnecter de Pipe-Fit</button>
+      </div>
+    </div>
+    <button id="b-ouvrir" class="principal-clair" title="Ajouter des PDF ou des images (Ctrl+O)">＋ Ajouter des fichiers</button>
+    <button id="b-blanche" title="Insérer une page blanche après la sélection">▯<span class="lib"> Page blanche</span></button>
+    <button id="b-intercalaire" title="Insérer une page de titre (intercalaire) après la sélection">❡<span class="lib"> Intercalaire</span></button>
+    <span class="sep"></span>
+    <button id="b-annuler" title="Annuler (Ctrl+Z)">↶</button>
+    <button id="b-retablir" title="Rétablir (Ctrl+Y)">↷</button>
+    <span class="sep"></span>
+    <button id="b-gauche" class="sel" title="Pivoter à gauche (Maj+R)">⟲</button>
+    <button id="b-droite" class="sel" title="Pivoter à droite (R)">⟳</button>
+    <button id="b-dupliquer" class="sel" title="Dupliquer (Ctrl+D)">⧉<span class="lib"> Dupliquer</span></button>
+    <button id="b-modifier" class="sel" title="Modifier la page : texte, masquer, surligner, signature… (double-clic)">✎<span class="lib"> Modifier</span></button>
+    <button id="b-comparer" title="Comparer deux pages (ex. indices A et B d'un plan) : sélectionnez-les avec Ctrl+clic">⇆<span class="lib"> Comparer</span></button>
+    <button id="b-ocr" title="Reconnaître le texte des scans et photos (OCR) : PDF interrogeable, texte sélectionnable, caviardage par recherche. Pages sélectionnées, ou toutes.">🔍<span class="lib"> OCR</span></button>
+    <button id="b-supprimer" class="sel danger" title="Supprimer les pages sélectionnées (Suppr)">🗑<span class="lib"> Supprimer</span></button>
+    <span class="sep"></span>
+    <button id="b-extraire" class="sel" title="Enregistrer seulement les pages sélectionnées dans un nouveau PDF">⇱<span class="lib"> Extraire</span></button>
+    <button id="b-diviser" title="Découper en plusieurs PDF">✂<span class="lib"> Diviser…</span></button>
+    <button id="b-rechercher" title="Rechercher un mot dans le document (Ctrl+F)">🔎</button>
+    <button id="b-imprimer" title="Imprimer le document (Ctrl+P)">🖨<span class="lib"> Imprimer</span></button>
+    <button id="b-aide" title="Comment faire ? Aide et visite guidée (F1)">❓<span class="lib"> Aide</span></button>
+    <button id="b-enregistrer" class="principal" title="Compiler toutes les pages en un PDF (Ctrl+S)">⬇ Enregistrer le PDF</button>
+  </div>
+</header>
+
+<div class="corps">
+  <aside class="cote">
+    <section>
+      <h2>Documents</h2>
+      <p class="aide" id="aide-docs">Les fichiers ajoutés apparaissent ici. Le nom sert de titre dans le sommaire et les signets.</p>
+      <ul id="sources" class="sources"></ul>
+    </section>
+
+    <section>
+      <h2>Compilation</h2>
+      <label class="champ">Titre du document<input id="o-titre" placeholder="ex. DOE – Lot CVC"></label>
+      <label class="champ">Auteur<input id="o-auteur" placeholder="ex. Tecnitub"></label>
+      <label class="case"><input type="checkbox" id="o-sommaire"> Page de sommaire en tête (liens cliquables)</label>
+      <label class="case"><input type="checkbox" id="o-signets" checked> Signets (un par document)</label>
+      <label class="case"><input type="checkbox" id="o-aplatir"> Aplatir les formulaires remplis</label>
+      <label class="case" title="Textes, bulles, flèches, cadres, surlignages, tampons, mesures : enregistrés comme commentaires PDF, que les collègues peuvent voir, déplacer ou supprimer dans Acrobat ou Edge. Décoché : intégrés à la page (impossibles à retirer)."><input type="checkbox" id="o-commentaires"> Annotations en commentaires (Acrobat)</label>
+      <label class="case" title="Le PDF garde de quoi retrouver les annotations : rouvert dans Atelier PDF, elles redeviennent modifiables. Sans effet pour les autres logiciels."><input type="checkbox" id="o-editable" checked> Annotations modifiables à la réouverture</label>
+    </section>
+
+    <section>
+      <label class="case titre"><input type="checkbox" id="o-num"> Numéroter les pages</label>
+      <div class="sous" id="sous-num">
+        <label class="champ">Format<input id="o-num-format" value="Page {n} / {total}"></label>
+        <div class="ligne">
+          <label class="champ">Position
+            <select id="o-num-position">
+              <option value="bas-centre">Bas, centre</option><option value="bas-droite">Bas, droite</option><option value="bas-gauche">Bas, gauche</option>
+              <option value="haut-centre">Haut, centre</option><option value="haut-droite">Haut, droite</option><option value="haut-gauche">Haut, gauche</option>
+            </select></label>
+          <label class="champ court">Taille<input id="o-num-taille" type="number" min="6" max="30" value="10"></label>
+        </div>
+        <div class="ligne">
+          <label class="champ court">Premier n°<input id="o-num-debut" type="number" min="0" value="1"></label>
+          <label class="champ court">Sans n° sur les<input id="o-num-ignorer" type="number" min="0" value="0" title="Nombre de premières pages sans numéro (page de garde, sommaire)"></label>
+        </div>
+        <p class="aide">{n} = numéro de la page, {total} = nombre de pages.</p>
+      </div>
+    </section>
+
+    <section>
+      <label class="case titre"><input type="checkbox" id="o-fil"> Filigrane</label>
+      <div class="sous" id="sous-fil">
+        <label class="champ">Texte<input id="o-fil-texte" value="COPIE"></label>
+        <div class="ligne">
+          <label class="champ court">Opacité<input id="o-fil-opacite" type="range" min="0.05" max="0.6" step="0.05" value="0.2"></label>
+          <label class="champ court">Couleur<input id="o-fil-couleur" type="color" value="#c62828"></label>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <label class="case titre"><input type="checkbox" id="o-compresser"> Réduire la taille du fichier</label>
+      <div class="sous" id="sous-compresser">
+        <label class="champ">Résolution
+          <select id="o-dpi"><option value="100">100 ppp (léger, écran)</option><option value="150" selected>150 ppp (bon compromis)</option><option value="200">200 ppp (impression)</option></select></label>
+        <p class="aide">Les pages sont converties en images : le texte ne sera plus sélectionnable. Utile pour les gros scans à envoyer par e-mail.</p>
+      </div>
+    </section>
+  </aside>
+
+  <main id="zone" class="zone">
+    <div id="reprise" class="reprise" hidden>
+      <span id="reprise-texte"></span>
+      <button id="reprise-oui" class="principal">Reprendre</button>
+      <button id="reprise-non">Ignorer</button>
+    </div>
+    <div id="vide" class="vide">
+      <div class="cadre-vide">
+        <div class="grand">Glissez vos PDF et images ici</div>
+        <p>ou</p>
+        <button id="b-ouvrir2" class="principal">Choisir des fichiers…</button>
+        <ul class="liste-fonctions">
+          <li><b>Compiler</b> plusieurs PDF, photos et scans en un seul document, avec sommaire et signets</li>
+          <li><b>Réorganiser</b> les pages par glisser-déposer, pivoter, dupliquer, supprimer</li>
+          <li><b>Modifier le texte</b> d'un PDF directement sur la page (l'ancien texte est retiré du fichier)</li>
+          <li><b>Annoter</b> une page : texte à la volée, bulles, traits, flèches, carrés, cercles, crayon, surlignage, images et signatures</li>
+          <li><b>Caviarder</b> les informations confidentielles (à la main ou en recherchant un mot) : elles sont réellement supprimées</li>
+          <li><b>Mesurer</b> sur les plans à l'échelle (cotes, longueurs, surfaces), poser des <b>tampons</b> et sa <b>signature</b></li>
+          <li><b>OCR</b> : rendre les scans interrogeables ; travail <b>sauvegardé automatiquement</b></li>
+          <li><b>Extraire</b> ou <b>diviser</b> en plusieurs fichiers, <b>numéroter</b>, ajouter un <b>filigrane</b>, <b>réduire la taille</b></li>
+        </ul>
+        <p class="aide">Tout se passe sur cet ordinateur : aucun fichier n'est envoyé sur Internet.</p>
+      </div>
+    </div>
+    <div id="grille" class="grille"></div>
+  </main>
+</div>
+
+<footer class="etat">
+  <span id="etat-texte">Aucune page</span>
+  <span id="etat-sauvegarde" class="sauvegarde"></span>
+  <span class="espace"></span>
+  <label class="zoom">Taille des vignettes <input id="zoom" type="range" min="100" max="340" step="10" value="170"></label>
+</footer>
+
+<!-- Éditeur de page -->
+<div id="editeur" class="modale" hidden>
+  <div class="ed-barre">
+    <div class="groupe-outils" id="ed-outils">
+      <button data-outil="selection" class="actif" title="Sélectionner, déplacer, redimensionner (V)">↖</button>
+      <span class="sep-ed"></span>
+      <button data-outil="editertexte" title="Modifier le texte du PDF : cliquer sur une ligne et la corriger ; l'ancien texte est retiré du fichier (scans : après OCR)">✏️<span class="lib">&nbsp;Modifier le texte</span></button>
+      <button data-outil="texte" title="Texte à la volée : cliquer sur la page et écrire (T)">T<span class="lib">&nbsp;Texte</span></button>
+      <button data-outil="bulle" title="Bulle : tracer la bulle (ou cliquer sur le point à commenter), puis écrire. Le point bleu règle la pointe (B)">💬<span class="lib">&nbsp;Bulle</span></button>
+      <span class="sep-ed"></span>
+      <button data-outil="ligne" title="Trait (L) – Maj : horizontal, vertical ou 45°">╱<span class="lib">&nbsp;Trait</span></button>
+      <button data-outil="fleche" title="Flèche (F) – Maj : horizontale, verticale ou 45°">↗<span class="lib">&nbsp;Flèche</span></button>
+      <button data-outil="cadre" title="Rectangle / carré (R)">▢<span class="lib">&nbsp;Carré</span></button>
+      <button data-outil="ellipse" title="Ellipse / cercle (E)">◯<span class="lib">&nbsp;Cercle</span></button>
+      <button data-outil="crayon" title="Dessin à main levée (C)">✎<span class="lib">&nbsp;Crayon</span></button>
+      <span class="sep-ed"></span>
+      <button data-outil="surligne" title="Surligner une zone (S)">▬<span class="lib">&nbsp;Surligner</span></button>
+      <button data-outil="masque" title="Masquer en blanc, blanc correcteur (M) – le contenu reste dans le fichier">▭<span class="lib">&nbsp;Masquer</span></button>
+      <button data-outil="caviarde" title="Caviarder (X) : zone noire, le contenu dessous est réellement supprimé à l'enregistrement">■<span class="lib">&nbsp;Caviarder</span></button>
+      <button data-outil="image" title="Insérer une image : signature, tampon, photo, logo (I) – ou Ctrl+V pour coller une image copiée">🖼<span class="lib">&nbsp;Image</span></button>
+      <button id="ed-tampon" data-outil-menu="tampon" title="Tampons (BON POUR EXÉCUTION, VISA, VU…) et signatures mémorisées">🔖<span class="lib">&nbsp;Tampon</span></button>
+      <span class="sep-ed"></span>
+      <button data-outil="cote" title="Cote : distance entre deux points, à l'échelle du plan (Maj : 0/45/90°)">📏<span class="lib">&nbsp;Cote</span></button>
+      <button data-outil="longueur" title="Longueur cumulée (ex. tuyauterie) : un clic par point, double-clic pour finir">〰<span class="lib">&nbsp;Longueur</span></button>
+      <button data-outil="surface" title="Surface : un clic par sommet, double-clic pour finir">⬠<span class="lib">&nbsp;Surface</span></button>
+      <button data-outil="angle" title="Angle : un clic sur un côté, un sur le sommet, un sur l'autre côté">∠<span class="lib">&nbsp;Angle</span></button>
+      <label title="Échelle du plan (toutes les pages de ce document)"><span class="lib">Échelle</span><span class="ico-seul">📐</span>
+        <select id="ed-echelle">
+          <option value="">non définie</option>
+          <option value="1/1">1/1</option><option value="1/5">1/5</option><option value="1/10">1/10</option><option value="1/20">1/20</option>
+          <option value="1/25">1/25</option><option value="1/50">1/50</option><option value="1/75">1/75</option><option value="1/100">1/100</option>
+          <option value="1/200">1/200</option><option value="1/250">1/250</option><option value="1/500">1/500</option><option value="1/1000">1/1000</option>
+          <option value="etalonnee" hidden>Étalonnée</option>
+          <option value="etalonner">Étalonner sur une cote connue…</option>
+          <option value="zone">Zone à une autre échelle (détail)…</option>
+        </select></label>
+    </div>
+    <div class="groupe-outils">
+      <label title="Couleur">🎨 <input type="color" id="ed-couleur" value="#000000"></label>
+      <label title="Épaisseur du trait (points)">Trait <input type="number" id="ed-epaisseur" min="0.5" max="30" step="0.5" value="2"></label>
+      <label title="Taille du texte (points)">Taille <input type="number" id="ed-taille" min="5" max="120" value="12"></label>
+      <label class="case-ed" title="Texte en gras"><input type="checkbox" id="ed-gras"> <b>G</b></label>
+      <span id="ed-police-zone" hidden>
+        <select id="ed-police" title="Police du texte modifié"><option value="helvetica">Arial / Helvetica</option><option value="times">Times</option><option value="courier">Courier</option></select>
+        <label class="case-ed" title="Italique"><input type="checkbox" id="ed-italique"> <i>I</i></label>
+      </span>
+      <button id="ed-dupl" title="Dupliquer l'élément (Ctrl+D)">⧉</button>
+      <button id="ed-memoriser" title="Garder cette image (signature, tampon) dans la bibliothèque, pour la réutiliser" hidden>☆ Mémoriser</button>
+      <button id="ed-suppr" title="Supprimer l'élément (Suppr)">🗑</button>
+    </div>
+    <div class="groupe-outils">
+      <button id="ed-caviarder" title="Rechercher un mot ou un nom dans tous les PDF et le caviarder partout">■<span class="lib"> Caviarder un mot…</span></button>
+      <button id="ed-csv" title="Exporter toutes les mesures du dossier dans un tableau (Excel)">⬇<span class="lib"> Mesures (CSV)</span></button>
+      <span class="zoom-ed" title="Zoom : Ctrl + molette (ou pincer le pavé tactile) ; Ctrl + / Ctrl − ; Ctrl 0 : page entière. Espace + glisser (ou bouton du milieu) pour déplacer la page.">
+        <button id="ed-zoom-moins" title="Zoom arrière (Ctrl −)">−</button>
+        <select id="ed-zoom">
+          <option value="actuel">100 %</option>
+          <option value="page">Page entière</option><option value="largeur">Pleine largeur</option>
+          <option value="0.5">50 %</option><option value="0.75">75 %</option><option value="1">100 %</option><option value="1.5">150 %</option>
+          <option value="2">200 %</option><option value="3">300 %</option><option value="4">400 %</option><option value="8">800 %</option>
+        </select>
+        <button id="ed-zoom-plus" title="Zoom avant (Ctrl +)">+</button>
+      </span>
+      <button id="ed-rechercher" title="Rechercher (Ctrl+F)">🔎</button>
+      <button id="ed-imprimer" title="Imprimer le document (Ctrl+P)">🖨</button>
+      <button id="ed-vignettes-bascule" title="Afficher ou masquer les vignettes des pages">▤</button>
+      <button id="ed-prec" title="Page précédente (Page préc.)">◀</button>
+      <span id="ed-num"></span>
+      <button id="ed-suiv" title="Page suivante (Page suiv.)">▶</button>
+      <button id="ed-aide-bouton" title="Comment faire ? (F1)">❓</button>
+      <button id="ed-fermer" class="principal">Terminé</button>
+    </div>
+  </div>
+  <div id="ed-tampons" class="tampons" hidden>
+    <div class="tp-entete">
+      <b>Tampons</b>
+      <label>Nom / société <input id="tp-nom" placeholder="ex. TECNITUB – C. Vert"></label>
+      <label class="case-ed"><input type="checkbox" id="tp-date" checked> Date du jour</label>
+    </div>
+    <div id="tp-liste" class="tp-liste"></div>
+    <button id="tp-perso">＋ Tampon personnalisé…</button>
+    <div class="tp-entete"><b>Mes signatures et images</b></div>
+    <div id="tp-biblio" class="tp-biblio"></div>
+  </div>
+  <div class="ed-corps">
+    <aside id="ed-vignettes" class="ed-vignettes" title="Cliquer : aller à la page · glisser : déplacer la page · déposer des PDF ou images : les insérer"></aside>
+    <div id="recherche" class="recherche" hidden>
+      <input id="rech-texte" placeholder="Rechercher dans le document…" autocomplete="off">
+      <span id="rech-compte"></span>
+      <button id="rech-prec" title="Précédent (Maj+Entrée)">▲</button><button id="rech-suiv" title="Suivant (Entrée, F3)">▼</button><button id="rech-fermer" title="Fermer (Échap)">✕</button>
+    </div>
+    <div class="ed-scene" id="ed-scene">
+      <div class="ed-page" id="ed-page">
+        <canvas id="ed-canvas"></canvas>
+        <div class="calque" id="ed-calque"></div>
+        <div class="champs-form" id="ed-champs"></div>
+        <div id="ed-accroche" class="accroche" hidden></div>
+      </div>
+    </div>
+  </div>
+  <div class="ed-aide"><span id="ed-recap" class="recap"></span> Glisser pour tracer · double-clic sur un texte ou une bulle pour le corriger · Ctrl+V colle une image ou un texte · Échap revient à la sélection · Ctrl+Z annule.
+    Pour <b>corriger</b> le texte du PDF : « ✏️ Modifier le texte ». Pour <b>supprimer</b> une information confidentielle : « Caviarder ».</div>
+</div>
+
+<!-- Comparaison de deux pages -->
+<div id="comparaison" class="modale" hidden>
+  <div class="ed-barre">
+    <div class="groupe-outils">
+      <b>Comparaison</b>
+      <span class="legende"><i class="pastille-l rouge"></i><span id="cmp-nom-a">ancien</span> seulement (supprimé)</span>
+      <span class="legende"><i class="pastille-l verte"></i><span id="cmp-nom-b">nouveau</span> seulement (ajouté)</span>
+      <span class="legende"><i class="pastille-l grise"></i>identique</span>
+    </div>
+    <div class="groupe-outils">
+      <button id="cmp-inverser" title="Échanger l'ancien et le nouveau">⇄ Inverser</button>
+      <button id="cmp-recaler" title="Recaler automatiquement les deux pages">⌖ Recaler</button>
+      <span id="cmp-decalage" title="Recalage du nouveau sur l'ancien. Flèches : décaler ; Alt + ←/→ : tourner ; Alt + ↑/↓ : échelle ; Maj : pas ×10"></span>
+      <label title="Sensibilité : plus haut = ignore les petits écarts (traits fins, anticrénelage)">Tolérance <input type="range" id="cmp-tolerance" min="0" max="3" step="1" value="1"></label>
+      <select id="cmp-zoom"><option value="ajuster">Ajuster</option><option value="1">100 %</option><option value="2">200 %</option><option value="4">400 %</option></select>
+      <button id="cmp-ajouter" title="Ajouter l'image de la comparaison au document, après la page la plus récente">＋ Ajouter au document</button>
+      <button id="cmp-fermer" class="principal">Fermer</button>
+    </div>
+  </div>
+  <div class="cmp-scene" id="cmp-scene"><canvas id="cmp-canvas"></canvas></div>
+  <div class="ed-aide" id="cmp-info">Flèches : décaler la nouvelle page · Alt + ←/→ : la tourner · Alt + ↑/↓ : changer son échelle (Maj : pas ×10) · Ctrl + molette : zoom · glisser : déplacer.</div>
+</div>
+
+<!-- Pipe-Fit : connexion, documents des chantiers -->
+<div id="dlg-pf" class="modale dialogue" hidden>
+  <div class="boite boite-large">
+    <h2 id="pf-titre">Pipe-Fit</h2>
+    <div id="pf-contenu"></div>
+    <p class="aide" id="pf-message"></p>
+    <div class="boutons"><button id="pf-annuler">Fermer</button><button id="pf-ok" class="principal" hidden>OK</button></div>
+  </div>
+</div>
+
+<!-- Dialogue « Diviser » -->
+<div id="dlg-diviser" class="modale dialogue" hidden>
+  <div class="boite">
+    <h2>Diviser en plusieurs PDF</h2>
+    <label class="radio"><input type="radio" name="mode" value="document" checked> Un fichier par document d'origine</label>
+    <label class="radio"><input type="radio" name="mode" value="page"> Un fichier par page</label>
+    <label class="radio"><input type="radio" name="mode" value="n"> Toutes les <input id="div-n" type="number" min="1" value="2" class="mini"> pages</label>
+    <label class="radio"><input type="radio" name="mode" value="plages"> Selon des plages : <input id="div-plages" placeholder="1-3, 4-10, 11-" class="moyen"></label>
+    <label class="champ">Nom des fichiers<input id="div-nom" value="Document"></label>
+    <p class="aide">Les options de la colonne de gauche (numérotation, filigrane…) s'appliquent à chaque fichier.</p>
+    <div class="boutons"><button id="div-annuler">Annuler</button><button id="div-ok" class="principal">Diviser</button></div>
+  </div>
+</div>
+
+<!-- Aide : « Comment faire ? » -->
+<div id="aide" class="modale dialogue" hidden>
+  <div class="boite boite-large">
+    <h2>Comment faire ?</h2>
+    <input id="aide-recherche" placeholder="Que voulez-vous faire ? (ex. caviarder, signature, échelle, imprimer)">
+    <div id="aide-liste" class="aide-liste"></div>
+    <div class="boutons"><button id="aide-visite">Revoir la visite guidée</button><button id="aide-fermer" class="principal">Fermer</button></div>
+  </div>
+</div>
+<!-- Visite guidée -->
+<div id="visite" class="visite" hidden>
+  <div id="visite-cadre" class="visite-cadre"></div>
+  <div id="visite-bulle" class="visite-bulle">
+    <div id="visite-texte"></div>
+    <div class="visite-pied"><span id="visite-etape"></span><button id="visite-passer">Passer</button><button id="visite-suivant" class="principal">Suivant</button></div>
+  </div>
+</div>
+<div id="occupe" class="occupe" hidden><div class="boite-occupe"><div class="roue"></div><div id="occupe-texte">Traitement…</div><progress id="occupe-barre" max="1" value="0"></progress><button id="occupe-arreter" hidden>Arrêter</button></div></div>
+<div id="notes" class="notes"></div>
+<input type="file" id="fichiers" multiple accept=".pdf,application/pdf,image/*,.atelierpdf" hidden>
+<input type="file" id="fichier-image" accept="image/*" hidden>
+
+<script src="../../doe/public/vendor/pdf-lib-1.17.1.min.js"></script>
+<script src="../../public/vendor/pdfjs/pdf.min.js"></script>
+<script src="../../public/vendor/pdfjs/pdf.worker.min.js" data-worker></script>
+<script src="../../public/vendor/tesseract/tesseract.min.js"></script>
+<script src="moteur.js"></script>
+<script src="stockage.js"></script>
+<script src="ocr.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

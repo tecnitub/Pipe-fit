@@ -1,5 +1,5 @@
 # Tests + construction de l'installateur Windows à chaque envoi.
-# Le fichier PipeFitCRM-Setup-x.y.z.exe est téléchargeable dans l'onglet Actions > exécution > Artifacts.
+# Les fichiers PipeFitCRM-Setup-x.y.z.exe et AtelierPDF-Setup-x.y.z.exe sont téléchargeables dans l'onglet Actions > exécution > Artifacts.
 name: Installateur Windows
 
 on:
@@ -15,9 +15,26 @@ jobs:
         with:
           node-version: 22
       - run: npm test
-      - run: sudo apt-get update && sudo apt-get install -y nsis
+      # Atelier PDF : tests de l'interface dans Chromium (fichier compilé ouvert en local, comme sur un poste)
+      - run: npm install --no-save playwright@1.63.0 && npx playwright install --with-deps chromium
+      - run: npm run test:ui
+      - run: sudo apt-get update && sudo apt-get install -y nsis gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64
       - run: bash installer/build.sh
       - uses: actions/upload-artifact@v4
         with:
           name: PipeFitCRM-Setup
-          path: dist/*.exe
+          path: dist/PipeFitCRM-Setup-*.exe
+      # Atelier PDF : installateur Windows et version « un seul fichier » (sans installation)
+      # Signature de code si les secrets ATELIERPDF_CERT_PFX_BASE64 et ATELIERPDF_CERT_PASSWORD existent
+      - run: |
+          if [ -n "$ATELIERPDF_CERT_PFX_BASE64" ]; then sudo apt-get install -y osslsigncode; fi
+          bash installer/build-pdf.sh
+        env:
+          ATELIERPDF_CERT_PFX_BASE64: ${{ secrets.ATELIERPDF_CERT_PFX_BASE64 }}
+          ATELIERPDF_CERT_PASSWORD: ${{ secrets.ATELIERPDF_CERT_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AtelierPDF-Setup
+          path: |
+            dist/AtelierPDF-Setup-*.exe
+            dist/AtelierPDF.html
