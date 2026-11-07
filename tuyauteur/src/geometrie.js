@@ -314,7 +314,7 @@
     vue.polyligne(arcA, 'COTES');
     vue.texte(-r * 0.4, -h * 0.4, h * 1.3, `${fmt(theta, 1)}°`, 'TEXTE', 'c');
     // Cotes
-    vue.cote([0, 0], [R * u[0], R * u[1]], r + 3 * h, fmt(R), h);
+    vue.cote([0, 0], [R * u[0], R * u[1]], r + 3 * h, `${fmt(R)} encombrement 90°`, h);
     if (L > 0) vue.cote([R * u[0], R * u[1]], [(R + L + g) * u[0], (R + L + g) * u[1]], r + 3 * h, `tube ${fmt(L)}`, h);
     vue.cote([IP2[0] - e2 * u[0], IP2[1] - e2 * u[1]], IP2, -h * 1.5, fmt(e2), h * 0.9);
     vue.cote(IP2, fin, h * 1.5, fmt(e2), h * 0.9);

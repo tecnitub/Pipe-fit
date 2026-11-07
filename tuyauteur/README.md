@@ -42,7 +42,7 @@ s'intercaler entre les deux (0 = bout à bout).
 - Calcul par **la hauteur** (entre l'axe d'arrivée et l'axe de sortie), par **l'horizontale** (de l'axe d'arrivée
   à la face de sortie, dans la vue dans l'axe de l'arrivée) ou par **l'angle**.
 - Formules, avec K = R + R·tan(θ/2) + tube + jeux : hauteur = K·sin θ ; horizontale = K·cos θ + R·tan(θ/2).
-- **Vue dans l'axe de l'arrivée** cotée : réduction du coude 90° (R), réductions de la tranche, arcs d'extrados et
+- **Vue dans l'axe de l'arrivée** cotée : encombrement du coude 90° (= rayon R), encombrement de la tranche R·tan(θ/2), arcs d'extrados et
   d'intrados, hauteur, horizontale, angle.
 - **Traçage de la tranche au trusquin** : le coude 90° est posé sur une face, on reporte les hauteurs
   (R + Ø/2)·sin θ à l'extrados et (R − Ø/2)·sin θ à l'intrados.

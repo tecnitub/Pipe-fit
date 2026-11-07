@@ -25,7 +25,7 @@
       </div>
       ${coude ? `<div class="deux">
         <label>Coude<select name="${px}_coude">${Normes.TYPES_COUDES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
-        <label>Rayon à l'axe (mm)<input name="${px}_rayon" type="number" step="0.1" min="1"></label>
+        <label>Rayon = encombrement 90° (mm)<input name="${px}_rayon" type="number" step="0.1" min="1"></label>
       </div>` : ''}`;
     const sel = div.querySelector(`[name=${px}_dn]`), de = div.querySelector(`[name=${px}_de]`), ep = div.querySelector(`[name=${px}_ep]`);
     const typeC = div.querySelector(`[name=${px}_coude]`), ray = div.querySelector(`[name=${px}_rayon]`);
@@ -272,7 +272,7 @@
         ...(roule ? [['Orientation des coudes (depuis l\'horizontale)', deg(R.roulis, 1), true]] : [['Orientation',R.projectionV ? 'coudes dans le plan vertical' : 'coudes dans le plan horizontal']]),
         ['Avance (entre sommets, le long de la ligne)', mm(R.avance)],
         ['Entraxe (sommet à sommet)', mm(R.entraxe)],
-        ['Réduction par coude (sommet → soudure)', mm(R.reduction)],
+        ['Encombrement de chaque coude (sommet → soudure)', mm(R.reduction)],
         ['Encombrement soudure à soudure', mm(R.encombrement)],
         ['Angle maximal possible', deg(R.angleMax, 1)],
       ],
@@ -311,7 +311,7 @@
         ['Horizontale', mm(R.horizontale), true],
         ['Tranche : extrados / intrados', `${fmt(R.extrados)} / ${fmt(R.intrados)} mm`],
         ['Trusquin : extrados / intrados', `${fmt(R.trusquinExtrados)} / ${fmt(R.trusquinIntrados)} mm`],
-        ['Réductions (90° / tranche)', `${fmt(R.reduction90)} / ${fmt(R.reductionTranche)} mm`],
+        ['Encombrement coude 90° / tranche', `${fmt(R.reduction90)} / ${fmt(R.reductionTranche)} mm`],
         ['Rotation du coude 90° sur l\'arrivée', `${fmt(R.inclinaison, 1)}° vers le ${monte ? 'haut' : 'bas'} = ${fmt(R.arcInclinaison)} mm`],
         ['Chute du coude recoupé', deg(R.chute, 1)],
       ],
