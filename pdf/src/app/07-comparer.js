@@ -127,7 +127,18 @@
         }
       }
     }
-    Object.assign(cmp, { dx: fin.dx * f2, dy: fin.dy * f2, rot: fin.rot, ech: fin.ech });
+    // 3. Décalage au pixel près (pleine résolution, rotation et échelle fixées) : l'étape 2 avance par pas de f2 pixels
+    let dxF = fin.dx * f2, dyF = fin.dy * f2;
+    if (f2 > 1) {
+      const A3 = dilater1(reduire(cmp.imgA, 1)), pB3 = points(reduire(cmp.imgB, 1), 12000);
+      const cx3 = cmp.imgB.l / 2, cy3 = cmp.imgB.h / 2, d0x = dxF, d0y = dyF;
+      let s3 = -1;
+      for (let dy = d0y - f2; dy <= d0y + f2; dy++) for (let dx = d0x - f2; dx <= d0x + f2; dx++) {
+        const sc = score(A3, pB3, { dx, dy, rot: fin.rot, ech: fin.ech }, cx3, cy3);
+        if (sc > s3) { s3 = sc; dxF = dx; dyF = dy; }
+      }
+    }
+    Object.assign(cmp, { dx: dxF, dy: dyF, rot: fin.rot, ech: fin.ech });
   }
   // Rouge : seulement dans l'ancien ; vert : seulement dans le nouveau ; gris : dans les deux (à la tolérance près)
   function calculerDifferences() {
