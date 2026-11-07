@@ -599,7 +599,7 @@ function openOuvrage(d, index, opts = {}) {
         ${F.map(({ c, i }) => `<tr><td>${c.articleId || locked ? `${esc(c.designation)}${c.unite ? ` <span class="muted">(${esc(c.unite)})</span>` : ''}` : `<input data-c="${i}" data-k="designation" value="${esc(c.designation)}" aria-label="Désignation de la fourniture">`}</td>
           <td class="num"><input data-c="${i}" data-k="qte" type="number" step="any" value="${esc(c.qte)}" style="width:80px" ${dis}></td>
           <td class="num"><input data-c="${i}" data-k="pu" type="number" step="0.01" value="${esc(c.pu)}" style="width:90px" ${dis}></td>
-          <td class="num">${c.articleId || locked ? `<span class="muted">${eur(c.cout)}</span>` : `<input data-c="${i}" data-k="cout" type="number" step="0.01" value="${esc(c.cout)}" style="width:90px" aria-label="Prix d'achat">`}</td><td class="num">${eur(num(c.qte) * num(c.pu))}</td>
+          <td class="num">${c.articleId || locked ? `<span class="muted">${eur(c.cout)}</span>${!locked && c.articleId ? choixFournisseurComposant(c, i) : ''}` : `<input data-c="${i}" data-k="cout" type="number" step="0.01" value="${esc(c.cout)}" style="width:90px" aria-label="Prix d'achat">`}</td><td class="num">${eur(num(c.qte) * num(c.pu))}</td>
           <td>${locked ? '' : `<button class="small danger" data-rm="${i}" aria-label="Retirer">✕</button>`}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Aucune fourniture.</td></tr>'}
       </table></div>
       ${locked ? '' : `<div class="toolbar" style="margin-top:8px">${articleSelect('o-art')}<input id="o-art-q" type="number" step="any" value="1" style="width:80px" aria-label="Quantité pour une unité"><button class="secondary" id="o-add-f">Ajouter</button><button class="secondary" id="o-add-libre">+ Fourniture libre</button></div>`}
@@ -631,6 +631,8 @@ function openOuvrage(d, index, opts = {}) {
     const applique = el => {
       const c = l.composants[+el.dataset.c], k = el.dataset.k;
       if (k === 'moId') { const m = moOf(el.value); Object.assign(c, { moId: el.value, libelle: m.libelle, taux: num(m.tauxVente), cout: num(m.tauxCout) }); }
+      // Fournisseur retenu pour le prix d'achat (défaut ou variante de la bibliothèque)
+      else if (k === 'fournisseurAchat') { const a = Store.get('articles', c.articleId), p = a && BiblioOutils.prixChez(a, el.value); c.fournisseurId = el.value; if (p !== null && p !== undefined) c.cout = p; }
       else c[k] = k === 'designation' ? el.value : +el.value;
     };
     // Les boutons ne prennent pas le focus : la saisie en cours est reprise par flush() au lieu de redessiner
@@ -679,6 +681,14 @@ function openOuvrage(d, index, opts = {}) {
     };
   };
   render();
+}
+
+// Choix du fournisseur d'une fourniture (prix d'achat de chacun ; le moins cher et le plus rapide signalés)
+function choixFournisseurComposant(c, i) {
+  const a = typeof BiblioOutils !== 'undefined' && Store.get('articles', c.articleId), o = a ? BiblioOutils.offres(a).filter(x => x.coutRevient !== null) : [];
+  if (o.length < 2) return '';
+  const m = BiblioOutils.moinsCher(a), r = BiblioOutils.plusRapide(a), cur = c.fournisseurId || a.fournisseurId;
+  return `<br><select class="small" data-c="${i}" data-k="fournisseurAchat" aria-label="Fournisseur de la fourniture">${o.map(x => `<option value="${esc(x.fid)}" ${x.fid === cur ? 'selected' : ''}>${esc(clientName(x.fid))} ${eur(x.coutRevient)}${m && m.fid === x.fid ? ' · moins cher' : ''}${r && r.fid === x.fid && x.delai !== null ? ` · ${fmt(x.delai, 0)} j` : ''}</option>`).join('')}</select>`;
 }
 
 /* ---------- Ouvrages types (bibliothèque d'ouvrages réutilisables) ---------- */

@@ -101,6 +101,7 @@ function rapprochementAchatHtml(x) {
       : `<strong>Écarts : ${a.ecart > 0 ? '+' : ''}${eur(a.ecart)} HT</strong> par rapport à la commande et aux livraisons`}
     ${r.statut === 'accepte' ? `<br><span class="small">Bon à payer validé par ${esc(r.par || '')} le ${dateFr(r.date)}${r.note ? ` : ${esc(r.note)}` : ''}</span>` : ''}
     ${r.statut === 'litige' ? `<br><span class="small">Litige ouvert par ${esc(r.par || '')} le ${dateFr(r.date)}${r.note ? ` : ${esc(r.note)}` : ''}</span>` : ''}
+    ${typeof prixFactureHtml === 'function' ? prixFactureHtml(x) : ''}
     <div class="toolbar" style="margin:8px 0 0">${a.statut === 'ecarts' && r.statut !== 'accepte' ? '<button class="small" id="rp-ok">Accepter les écarts (bon à payer)</button>' : ''}${a.statut === 'conforme' && r.statut !== 'accepte' ? '<button class="small" id="rp-ok">Bon à payer</button>' : ''}
       ${a.statut === 'ecarts' && r.statut !== 'litige' ? '<button class="small danger" id="rp-litige">Litige fournisseur</button>' : ''}${r.statut ? '<button class="small secondary" id="rp-raz">Annuler la décision</button>' : ''}</div>
   </div>`;
@@ -133,4 +134,5 @@ function bindRapprochementAchat(root, x, save) {
   const ok = root.querySelector('#rp-ok'); if (ok) ok.onclick = () => decider('accepte', analyseAchat(x).statut === 'ecarts' ? 'Motif de l\'acceptation (hausse convenue, reliquat livré…)' : '');
   const li = root.querySelector('#rp-litige'); if (li) li.onclick = () => decider('litige', 'Motif du litige (à réclamer au fournisseur) :');
   const raz = root.querySelector('#rp-raz'); if (raz) raz.onclick = () => { x.rapprochement = null; save(); };
+  if (typeof bindPrixFacture === 'function') bindPrixFacture(root, x);
 }

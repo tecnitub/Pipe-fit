@@ -4,13 +4,13 @@ function choisirMateriel({ titre = 'Matériel utilisé', affaireId = '', prix = 
   return new Promise(resolve => {
     const articles = Store.all('articles');
     const dejaIci = new Set(affaireId ? Store.all('consommations').filter(c => c.affaireId === affaireId && c.articleId).map(c => c.articleId) : []);
-    const st = { q: '', famille: '', sous: '', ici: false, panier: new Map(), libres: [] };
+    const st = { q: '', famille: '', sous: '', gamme: '', ici: false, panier: new Map(), libres: [] };
     const el = document.createElement('div');
     el.className = 'selecteur';
     el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', titre);
     el.innerHTML = `<div class="sel-tete"><button class="icon sel-fermer" aria-label="Fermer">✕</button><strong>${esc(titre)}</strong></div>
       <div class="sel-recherche"><input type="search" placeholder="Rechercher : coude 50, vanne, inox…" aria-label="Rechercher du matériel" autocomplete="off" enterkeyhint="search"></div>
-      <div class="sel-familles"></div><div class="sel-sous"></div>
+      <div class="sel-familles"></div><div class="sel-sous"></div><div class="sel-sous sel-gammes"></div>
       <ul class="sel-liste"></ul>
       <div class="sel-pied"><button class="secondary" data-libre>+ Matériel hors bibliothèque</button><button class="big" data-ok>Valider</button></div>`;
     document.body.appendChild(el);
@@ -25,15 +25,21 @@ function choisirMateriel({ titre = 'Matériel utilisé', affaireId = '', prix = 
       $('.sel-familles').innerHTML = (dejaIci.size ? p('ici', '1', '⭐ Déjà utilisé ici', st.ici) : '') + p('fam', '', 'Tout', !st.famille && !st.ici)
         + arbre.map(f => p('fam', f.nom, f.nom, st.famille === f.nom && !st.ici)).join('');
       const f = arbre.find(x => x.nom === st.famille);
-      $('.sel-sous').innerHTML = f && f.sous.length && !st.ici ? p('sous', '', 'Toutes', !st.sous) + f.sous.map(s => p('sous', s.nom, s.nom, st.sous === s.nom)).join('') : '';
-      $('.sel-sous').hidden = !$('.sel-sous').innerHTML;
+      const so = $('.sel-sous:not(.sel-gammes)'), ga = $('.sel-gammes');
+      so.innerHTML = f && f.sous.length && !st.ici ? p('sous', '', 'Toutes', !st.sous) + f.sous.map(s => p('sous', s.nom, s.nom, st.sous === s.nom)).join('') : '';
+      so.hidden = !so.innerHTML;
+      // 3e niveau : gammes de la sous-famille choisie
+      const s = f && f.sous.find(x => x.nom === st.sous);
+      ga.innerHTML = s && (s.gammes || []).length && !st.ici ? p('gam', '', 'Toutes', !st.gamme) + s.gammes.map(g => p('gam', g.nom, g.nom, st.gamme === g.nom)).join('') : '';
+      ga.hidden = !ga.innerHTML;
     }
     function liste() {
-      let l = RechercheArticles.filtrer(st.ici ? articles.filter(a => dejaIci.has(a.id)) : articles, { q: st.q, famille: st.ici ? '' : st.famille, sousFamille: st.ici ? '' : st.sous, fournisseurDe: a => (a.fournisseurId ? clientName(a.fournisseurId) : '') });
+      let l = RechercheArticles.filtrer(st.ici ? articles.filter(a => dejaIci.has(a.id)) : articles, { q: st.q, famille: st.ici ? '' : st.famille, sousFamille: st.ici ? '' : st.sous, gamme: st.ici ? '' : st.gamme, fournisseurDe: a => (a.fournisseurId ? clientName(a.fournisseurId) : '') });
       const n = l.length; l = l.slice(0, 150);
       $('.sel-liste').innerHTML = (st.libres.map((m, i) => `<li class="choisi"><div class="sel-art"><strong>${esc(m.designation)}</strong><span class="small muted">hors bibliothèque · ${qteTxt(m.qte)} ${esc(m.unite)}</span></div><button class="icon" data-rmlibre="${i}" aria-label="Retirer">✕</button></li>`).join(''))
         + (l.map(a => { const q = st.panier.get(a.id) || 0;
-          return `<li class="${q ? 'choisi' : ''}" data-art="${a.id}"><div class="sel-art"><strong>${esc(a.designation)}</strong><span class="small muted">${esc([a.ref, a.sousFamille || a.famille].filter(Boolean).join(' · '))}${prix && num(a.prixVente) ? ` · ${eur(a.prixVente)} / ${esc(a.unite || 'u')}` : ''}</span></div>
+          const cat = [a.famille, a.sousFamille, a.gamme].filter(Boolean).join(' › ');
+          return `<li class="${q ? 'choisi' : ''}" data-art="${a.id}">${a.photoId ? `<img class="sel-photo" src="${esc(typeof fileUrl === 'function' ? fileUrl(a.photoId) : '')}" alt="" loading="lazy">` : '<span class="sel-photo vide" aria-hidden="true">📦</span>'}<div class="sel-art"><strong>${esc(a.designation)}</strong><span class="small muted">${esc([a.ref, st.famille ? [a.sousFamille, a.gamme].filter(Boolean).join(' › ') : cat].filter(Boolean).join(' · '))}${prix && num(a.prixVente) ? ` · ${eur(a.prixVente)} / ${esc(a.unite || 'u')}` : ''}</span></div>
             ${q ? `<div class="stepper"><button data-moins="${a.id}" aria-label="Moins">−</button><input data-qte="${a.id}" value="${qteTxt(q)}" inputmode="decimal" aria-label="Quantité"><span class="small">${esc(a.unite || 'u')}</span><button data-plus="${a.id}" aria-label="Plus">+</button></div>` : `<button class="ajout" data-plus="${a.id}" aria-label="Ajouter ${esc(a.designation)}">+</button>`}</li>`; }).join('')
           || `<li class="vide muted">Rien trouvé${st.q ? ` pour « ${esc(st.q)} »` : ''}. Ajoutez-le en « matériel hors bibliothèque ».</li>`)
         + (n > l.length ? `<li class="vide muted small">${n - l.length} autres résultats : précisez la recherche.</li>` : '');
@@ -49,8 +55,9 @@ function choisirMateriel({ titre = 'Matériel utilisé', affaireId = '', prix = 
     el.addEventListener('click', ev => {
       const b = ev.target.closest('button, li[data-art]');
       if (!b) return;
-      if (b.dataset.fam !== undefined) { st.famille = b.dataset.fam; st.sous = ''; st.ici = false; pastilles(); liste(); return; }
-      if (b.dataset.sous !== undefined) { st.sous = b.dataset.sous; pastilles(); liste(); return; }
+      if (b.dataset.fam !== undefined) { st.famille = b.dataset.fam; st.sous = ''; st.gamme = ''; st.ici = false; pastilles(); liste(); return; }
+      if (b.dataset.sous !== undefined) { st.sous = b.dataset.sous; st.gamme = ''; pastilles(); liste(); return; }
+      if (b.dataset.gam !== undefined) { st.gamme = b.dataset.gam; pastilles(); liste(); return; }
       if (b.dataset.ici) { st.ici = !st.ici; pastilles(); liste(); return; }
       if (b.dataset.plus) { st.panier.set(b.dataset.plus, (st.panier.get(b.dataset.plus) || 0) + 1); liste(); return; }
       if (b.dataset.moins) { const q = (st.panier.get(b.dataset.moins) || 0) - 1; if (q > 0) st.panier.set(b.dataset.moins, q); else st.panier.delete(b.dataset.moins); liste(); return; }

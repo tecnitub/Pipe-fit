@@ -83,13 +83,17 @@ const ECHANGES = {
       // Catégories « Famille|Sous-famille|Gamme » du modèle
       if (v.categories !== '' && typeof ArticlesModele !== 'undefined') Object.assign(rec, ArticlesModele.categories(v.categories));
       ['coutRevient', 'prixVente', 'poidsUnitaire', 'marge'].forEach(k => { if (v[k] !== '') rec[k] = v[k]; });
-      // Prix de vente vide : d'après la marge du fichier (achat × (1 + marge)), sinon le coefficient choisi
+      // Prix de vente vide : d'après la marge du fichier (achat × (1 + marge)), sinon la marge de la catégorie, sinon le coefficient choisi
+      const mc = v.marge === '' && typeof BiblioOutils !== 'undefined' && typeof margesCategories === 'function' && BiblioOutils.margeCategorie(rec, margesCategories());
       if (v.prixVente === '' && v.coutRevient !== '' && v.marge !== '') rec.prixVente = Math.round(v.coutRevient * (1 + v.marge / 100) * 100) / 100;
+      else if (v.prixVente === '' && v.coutRevient !== '' && mc) rec.prixVente = Math.round(v.coutRevient * (1 + mc.marge / 100) * 100) / 100;
       else if (v.prixVente === '' && v.coutRevient !== '' && ctx.coef) rec.prixVente = Math.round(v.coutRevient * ctx.coef * 100) / 100;
       if (v.fournisseur) { const fid = entrepriseParNom(v.fournisseur, ctx, 'Fournisseur'); if (AM && fid) AM.changerDefaut(rec, fid); else rec.fournisseurId = fid; }
       if (!rec.unite) rec.unite = 'u';
       return rec;
     },
+    // Lignes à vérifier avant l'import (prix à 0, marge hors norme, unité inconnue, référence vide…)
+    controler: vals => (typeof BiblioOutils === 'undefined' ? [] : BiblioOutils.controlerImport(vals, { uniteConnue: u => (typeof ArticlesModele === 'undefined' ? true : ArticlesModele.uniteConnue(u)) })),
     preparer(vals, ctx) { const c = new Map(); vals.forEach(v => { if (v.fournisseur) c.set(v.fournisseur, (c.get(v.fournisseur) || 0) + 1); }); ctx.variantes = [...c.entries()]; ctx.rapprocher = true; },
     ligne: a => [a.id, a.ref, a.designation, a.famille, a.sousFamille || '', a.unite, num(a.coutRevient), num(a.prixVente), typeof ArticlesModele !== 'undefined' ? ArticlesModele.margeDe(a) : '', typeof ArticlesModele !== 'undefined' ? ArticlesModele.cheminCategories(a) : '', a.gamme || '', num(a.coutRevient) ? Math.round(num(a.prixVente) / num(a.coutRevient) * 100) / 100 : '', num(a.poidsUnitaire), a.fournisseurId ? clientName(a.fournisseurId) : ''],
     largeurs: [12, 16, 44, 16, 18, 9, 14, 14, 10, 34, 18, 11, 10, 28],
@@ -277,6 +281,7 @@ function importerExcel(type) {
     const ex = data[0] || [];
     const colOpts = sel => '<option value="">— ignorer —</option>' + header.map((h, i) => `<option value="${i}" ${String(sel) === String(i) ? 'selected' : ''}>${esc(cellTxt(h) || `Colonne ${i + 1}`)}</option>`).join('');
     const manquants = champs.filter(f => f.required && etat.map[f.key] === undefined);
+    const douteux = conf.controler && !manquants.length ? conf.controler(data.map((r, k) => ({ ...valeurs(r), _ligne: etat.entete + k + 2 }))) : [];
     const box = Modal.open(`<h2 style="margin-top:0">Importer des ${esc(conf.titre)}</h2>
       <p class="muted">${esc(etat.nom)} · <strong>${data.length} ligne(s)</strong> détectée(s)</p>
       ${etat.sheets.length > 1 ? `<div class="field"><label for="imp-sheet">Feuille</label><select id="imp-sheet">${etat.sheets.map((s, i) => `<option value="${i}" ${i === etat.feuille ? 'selected' : ''}>${esc(s.name)} (${s.rows.length} lignes)</option>`).join('')}</select></div>` : ''}
@@ -291,6 +296,10 @@ function importerExcel(type) {
         ${type === 'articles' || type === 'contacts' ? `<label class="check"><input type="checkbox" id="imp-creer" checked> Créer les ${type === 'articles' ? 'fournisseurs' : 'entreprises'} inconnu(e)s</label>` : ''}
       </div>
       ${type === 'entreprises' && etat.sheets.some(s => normTxt(s.name) === 'sites') ? '<p class="note">La feuille « Sites » sera aussi importée (adresses multiples).</p>' : ''}
+      ${douteux.length ? `<details class="card imp-douteux"><summary><strong>${douteux.length} ligne(s) à vérifier</strong> <span class="muted small">avant l'import</span></summary>
+        <div class="table-wrap" style="max-height:30vh"><table class="small"><tr><th>Ligne</th><th>Réf.</th><th>Désignation</th><th>À vérifier</th></tr>${douteux.slice(0, 200).map(d => `<tr><td>${d.ligne}</td><td>${esc(d.ref)}</td><td>${esc(d.designation)}</td><td class="warn-text">${esc(d.motifs.join(' · '))}</td></tr>`).join('')}</table></div>
+        ${douteux.length > 200 ? `<p class="small muted">… et ${douteux.length - 200} autre(s).</p>` : ''}
+        </details><label class="check"><input type="checkbox" id="imp-sans-douteux"> Ne pas importer les ${douteux.length} ligne(s) à vérifier</label>` : ''}
       ${manquants.length ? `<p class="neg">Colonne obligatoire non trouvée : ${manquants.map(f => esc(f.label)).join(', ')}.</p>` : ''}
       <div class="modal-actions"><button class="secondary" id="imp-back">Autre fichier</button><button id="imp-go" ${manquants.length || !data.length ? 'disabled' : ''}>Importer ${data.length} ligne(s)</button></div>`, true);
     const sel = box.querySelector('#imp-sheet');
@@ -305,6 +314,7 @@ function importerExcel(type) {
       coef: box.querySelector('#imp-coef') ? num(box.querySelector('#imp-coef').value) : 0,
       categorie: box.querySelector('#imp-cat') ? box.querySelector('#imp-cat').value : 'Client',
       creerEntreprises: box.querySelector('#imp-creer') ? box.querySelector('#imp-creer').checked : false,
+      exclure: box.querySelector('#imp-sans-douteux') && box.querySelector('#imp-sans-douteux').checked ? new Set(douteux.map(d => d.ligne)) : null,
     });
   };
 
@@ -316,6 +326,7 @@ function importerExcel(type) {
     lignesDonnees().forEach((r, k) => {
       const v = valeurs(r);
       const ligne = etat.entete + k + 2;
+      if (opts.exclure && opts.exclure.has(ligne)) { res.ignores.push(`ligne ${ligne} : écartée (à vérifier)`); return; }
       if (champs.some(f => f.required && v[f.key] === '')) { res.ignores.push(`ligne ${ligne} : ${champs.filter(f => f.required && v[f.key] === '').map(f => f.label).join(', ')} manquant`); return; }
       const parId = v.id && (sortie.get(v.id) || Store.get(conf.col, v.id));
       const cle = conf.cle(v), dejaVu = cle && cles.get(cle);

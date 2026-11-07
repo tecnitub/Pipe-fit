@@ -15,8 +15,26 @@ function besoinsChantier(affaireId, fournisseurId) {
     if (l.articleId && need[l.articleId] !== undefined) need[l.articleId] -= num(l.qte);
   }));
   return Object.entries(need).map(([id, q]) => ({ a: Store.get('articles', id), q: Math.ceil(q * 100) / 100 }))
-    .filter(x => x.a && x.q > 0 && (!fournisseurId || !x.a.fournisseurId || x.a.fournisseurId === fournisseurId));
+    .filter(x => x.a && x.q > 0 && (!fournisseurId || !x.a.fournisseurId || x.a.fournisseurId === fournisseurId || (x.a.fournisseursConsult || []).includes(fournisseurId)));
 }
+// Prix d'achat d'un article chez le fournisseur de la commande (variante comprise), sinon celui du fournisseur par défaut
+const puChez = (a, fid) => { const p = typeof BiblioOutils !== 'undefined' && fid ? BiblioOutils.prixChez(a, fid) : null; return p !== null && p !== undefined ? p : num(a.coutRevient); };
+// Comparatif de la commande chez les fournisseurs de ses articles (défaut + variantes)
+function comparatifCommandeHtml(c) {
+  if (typeof BiblioOutils === 'undefined') return '';
+  const r = BiblioOutils.comparerCommande(c.lignes || [], id => Store.get('articles', id));
+  if (r.fournisseurs.length < 2) return '';
+  const ici = r.fournisseurs.find(f => f.fid === c.fournisseurId), best = r.fournisseurs.find(f => f.complet);
+  return `<details class="card no-print cmp-four" ${best && ici && best.fid !== ici.fid && ici.complet ? 'open' : ''}><summary><strong>Comparatif fournisseurs</strong> <span class="muted small">(${r.nb} ligne(s) de la bibliothèque)</span>${best && ici && best.fid !== c.fournisseurId && ici.complet && best.total < ici.total ? ` · <span class="pos">${esc(clientName(best.fid))} : ${eur(ici.total - best.total)} de moins</span>` : ''}</summary>
+    <table class="small"><tr><th>Fournisseur</th><th class="num">Total HT</th><th class="num">Lignes connues</th><th class="num">Délai</th><th></th></tr>
+    ${r.fournisseurs.map(f => `<tr ${f.fid === c.fournisseurId ? 'class="actif"' : ''}><td>${esc(clientName(f.fid))}${f.fid === c.fournisseurId ? ' <span class="badge">cette commande</span>' : ''}</td><td class="num">${eur(f.total)}</td><td class="num">${f.lignes}/${r.nb}</td><td class="num">${f.delai === null ? '—' : `${fmt(f.delai, 0)} j`}</td>
+      <td>${f.fid !== c.fournisseurId ? `<button class="small secondary" data-passer="${esc(f.fid)}">Passer chez lui</button>` : ''}</td></tr>`).join('')}</table>
+    <p class="small muted">Lignes connues : articles dont le prix chez ce fournisseur est dans la bibliothèque ; une commande se passe chez un seul fournisseur.</p></details>`;
+}
+const conseilLigne = (c, l) => {
+  const a = l.articleId && typeof BiblioOutils !== 'undefined' && Store.get('articles', l.articleId), k = a && BiblioOutils.conseil(a, c.fournisseurId);
+  return k ? ` <span class="small pos" title="Prix de la bibliothèque">moins cher chez ${esc(clientName(k.fid))} : ${eur(k.prix)} (−${fmt(k.pct, 1)} %)</span>` : '';
+};
 
 Views.commandes = (params, query) => {
   if (params[0]) return commandeEditor(params[0]);
@@ -75,13 +93,14 @@ function commandeEditor(id) {
     <ul class="besoins">${besoins.map(x => `<li>${esc(x.a.designation)} : ${fmt(x.q, 2)} ${esc(x.a.unite)}</li>`).join('')}</ul>
     <button id="reprendre">Ajouter ces fournitures à la commande</button></div>` : ''}
 
+  ${comparatifCommandeHtml(c)}
   ${substitutionsCommandeHtml(c)}
   ${receptionsCommandeHtml(c)}
   <h2 class="no-print">Lignes</h2>
   ${horsBiblio(c).length ? `<p class="note no-print small">${horsBiblio(c).length} fourniture(s) hors bibliothèque. <button class="small secondary" id="c-biblio">📚 Les ajouter à la bibliothèque</button></p>` : ''}
   <div class="table-wrap no-print"><table>
     <tr><th>Désignation</th><th class="num">Qté</th><th>Unité</th><th class="num">PU achat HT</th><th class="num">Total HT</th><th></th></tr>
-    ${(c.lignes || []).map((l, i) => `<tr><td><input data-i="${i}" data-k="designation" value="${esc(l.designation)}" aria-label="Désignation">${l.refFournisseur ? `<span class="small muted">réf. fournisseur ${esc(l.refFournisseur)}</span>` : ''}${l.articleId ? '' : ` <button class="linklike small" data-biblio="${i}" title="Créer la fiche dans la bibliothèque des fournitures">+ bibliothèque</button>`}</td>
+    ${(c.lignes || []).map((l, i) => `<tr><td><input data-i="${i}" data-k="designation" value="${esc(l.designation)}" aria-label="Désignation">${l.refFournisseur ? `<span class="small muted">réf. fournisseur ${esc(l.refFournisseur)}</span>` : ''}${conseilLigne(c, l)}${l.articleId ? '' : ` <button class="linklike small" data-biblio="${i}" title="Créer la fiche dans la bibliothèque des fournitures">+ bibliothèque</button>`}</td>
       <td class="num"><input data-i="${i}" data-k="qte" type="number" step="any" value="${esc(l.qte)}" style="width:90px" aria-label="Quantité"></td><td>${esc(l.unite)}</td>
       <td class="num"><input data-i="${i}" data-k="pu" type="number" step="0.01" value="${esc(l.pu)}" style="width:100px" aria-label="Prix unitaire"></td>
       <td class="num">${eur(num(l.qte) * num(l.pu))}</td><td><button class="small danger" data-del="${i}" aria-label="Retirer">✕</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">Aucune ligne.</td></tr>'}
@@ -124,7 +143,16 @@ Views.commandes.bind = (root, params, query) => {
   if (!c) return;
   const save = () => { Store.upsert('commandes', c); App.render(); };
   const field = (sel, key) => { root.querySelector(sel).onchange = e => { c[key] = e.target.value; save(); }; };
-  field('#c-four', 'fournisseurId'); field('#c-aff', 'affaireId'); field('#c-date', 'date'); field('#c-liv', 'dateLivraison');
+  // Changement de fournisseur : prix des lignes repris chez lui quand la bibliothèque les connaît
+  const changerFournisseur = async fid => {
+    c.fournisseurId = fid;
+    const maj = (c.lignes || []).filter(l => { const a = l.articleId && Store.get('articles', l.articleId), p = a && typeof BiblioOutils !== 'undefined' && BiblioOutils.prixChez(a, fid); return p && Math.abs(p - num(l.pu)) > 0.0001; });
+    if (maj.length && await ask(`Reprendre le prix d'achat de ${clientName(fid)} sur ${maj.length} ligne(s) (prix de la bibliothèque) ?`, 'Reprendre', false)) maj.forEach(l => { l.pu = BiblioOutils.prixChez(Store.get('articles', l.articleId), fid); });
+    save();
+  };
+  root.querySelector('#c-four').onchange = e => changerFournisseur(e.target.value);
+  root.querySelectorAll('[data-passer]').forEach(b => b.onclick = () => changerFournisseur(b.dataset.passer));
+  field('#c-aff', 'affaireId'); field('#c-date', 'date'); field('#c-liv', 'dateLivraison');
   // Commande envoyée avec des fournitures hors bibliothèque : proposition de les y ajouter
   root.querySelector('#c-statut').onchange = async e => {
     c.statut = e.target.value; save();
@@ -139,7 +167,7 @@ Views.commandes.bind = (root, params, query) => {
   });
   root.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { c.lignes.splice(+b.dataset.del, 1); save(); });
   const recep = root.querySelector('#c-recep'); if (recep) recep.onclick = () => receptionnerCommande(c);
-  const ligne = (a, q) => ({ articleId: a.id, designation: a.designation, unite: a.unite, qte: q, pu: num(a.coutRevient) });
+  const ligne = (a, q) => ({ articleId: a.id, designation: a.designation, unite: a.unite, qte: q, pu: puChez(a, c.fournisseurId || a.fournisseurId) });
   root.querySelector('#c-add').onclick = () => {
     const a = Store.get('articles', root.querySelector('#c-art').value);
     if (!a) { notify('Choisissez une fourniture dans la liste.'); return; }

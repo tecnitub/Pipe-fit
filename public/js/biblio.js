@@ -11,6 +11,7 @@ const articleFields = [
   { key: 'prixVente', label: 'Prix de vente HT (calculé si la marge est saisie)', type: 'number', step: '0.01' },
   { key: 'poidsUnitaire', label: 'Poids / unité (kg)', type: 'number', step: '0.1' },
   { key: 'fournisseurId', label: 'Fournisseur par défaut', type: 'select', options: v => options(fournisseursList(), v) },
+  { key: 'delai', label: 'Délai de livraison chez ce fournisseur (jours)', type: 'number', step: '1' },
   // Stock de l'atelier (étiquette QR) : emplacement, minimum avant réassort, quantité commandée au réassort
   { key: 'stockGere', label: 'Géré en stock (étiquette QR)', type: 'select', options: v => optionsStr(['Non', 'Oui'], v === true || v === 'Oui' ? 'Oui' : 'Non') },
   { key: 'emplacement', label: 'Emplacement en stock' },
@@ -36,17 +37,22 @@ function editArticle(obj, base) {
   const o = base ? { ...base } : obj, titre = base ? obj.titre : 'Fourniture';
   editModal({ title: titre, col: 'articles', fields: articleFields, obj: o, beforeSave: x => {
     if (x.marge !== '' && x.marge !== undefined && x.marge !== null && Number.isFinite(+x.marge) && Number(x.coutRevient) > 0) x.prixVente = Math.round(Number(x.coutRevient) * (1 + Number(x.marge) / 100) * 100) / 100;
-    const sel = [...document.querySelectorAll('#modal [data-fc-autre]')].map(s => [s.value, s.closest('.fc-var').querySelector('[data-fc-prix]').value]).filter(([v]) => v && v !== x.fournisseurId);
+    else if ((x.prixVente === '' || x.prixVente === undefined || x.prixVente === null || Number(x.prixVente) === 0) && Number(x.coutRevient) > 0 && typeof BiblioOutils !== 'undefined') { const mc = BiblioOutils.margeCategorie(x, margesCategories()); if (mc) x.prixVente = Math.round(Number(x.coutRevient) * (1 + mc.marge / 100) * 100) / 100; }
+    const sel = [...document.querySelectorAll('#modal [data-fc-autre]')].map(s => { const r = s.closest('.fc-var'); return [s.value, r.querySelector('[data-fc-prix]').value, r.querySelector('[data-fc-delai]').value]; }).filter(([v]) => v && v !== x.fournisseurId);
     x.fournisseursConsult = [...new Set(sel.map(s => s[0]))].slice(0, ConsultTerrain.MAX_AUTRES);
-    const pf = {}; sel.forEach(([fid, p]) => { if (x.fournisseursConsult.includes(fid)) pf[fid] = { ...((o.prixFournisseurs || {})[fid] || {}), ...(p !== '' && Number.isFinite(+p) ? { coutRevient: +p } : {}) }; });
+    const pf = {}; sel.forEach(([fid, p, d]) => { if (!x.fournisseursConsult.includes(fid)) return; const v = { ...((o.prixFournisseurs || {})[fid] || {}) }; if (p !== '' && Number.isFinite(+p)) v.coutRevient = +p; else delete v.coutRevient; if (d !== '' && Number.isFinite(+d)) v.delai = +d; else delete v.delai; pf[fid] = v; });
     x.prixFournisseurs = Object.fromEntries(Object.entries(pf).filter(([, v]) => Object.keys(v).length));
   } });
   const box = document.querySelector('#modal .modal-box') || document.querySelector('.modal-box'), act = box && box.querySelector('.modal-actions');
   if (!act) return;
   const autres = (o.fournisseursConsult || []).slice(0, ConsultTerrain.MAX_AUTRES);
+  // Marge de la catégorie quand l'article n'a pas la sienne
+  const mc = typeof BiblioOutils !== 'undefined' && (o.marge === '' || o.marge === undefined || o.marge === null) && BiblioOutils.margeCategorie(o, margesCategories());
+  const im = box.querySelector('[name="marge"], #f-marge'); if (mc && im) { im.placeholder = `${mc.marge} % (catégorie ${mc.chemin.replace(/\|/g, ' › ')})`; }
   act.insertAdjacentHTML('beforebegin', `<fieldset class="hd-bloc"><legend>Variantes fournisseur : ${ConsultTerrain.MAX_AUTRES} autres au plus</legend>
     <p class="small muted" style="margin-top:0">La même fourniture chez d'autres fournisseurs, avec leur prix d'achat. Avec le fournisseur par défaut, ils reçoivent les demandes de prix de cet article (bureau et demandes du terrain).</p>
-    ${Array.from({ length: ConsultTerrain.MAX_AUTRES }, (_, i) => { const p = (o.prixFournisseurs || {})[autres[i]] || {}; return `<div class="grid2 fc-var"><div class="field"><label>Fournisseur ${i + 2}</label><select data-fc-autre="${i}"><option value="">—</option>${options(fournisseursList(), autres[i] || '')}</select></div><div class="field"><label>Prix d'achat HT chez ce fournisseur</label><input type="number" step="0.00001" data-fc-prix="${i}" value="${p.coutRevient ?? ''}"></div></div>`; }).join('')}</fieldset>`);
+    ${Array.from({ length: ConsultTerrain.MAX_AUTRES }, (_, i) => { const p = (o.prixFournisseurs || {})[autres[i]] || {}; return `<div class="grid2 fc-var"><div class="field"><label>Fournisseur ${i + 2}</label><select data-fc-autre="${i}"><option value="">—</option>${options(fournisseursList(), autres[i] || '')}</select></div><div class="field"><label>Prix d'achat HT chez ce fournisseur</label><input type="number" step="0.00001" data-fc-prix="${i}" value="${p.coutRevient ?? ''}"></div><div class="field"><label>Délai (jours)</label><input type="number" step="1" data-fc-delai="${i}" value="${p.delai ?? ''}"></div></div>`; }).join('')}</fieldset>
+    ${typeof offresArticleHtml === 'function' && o.id ? offresArticleHtml(o) + historiquePrixHtml(o) : ''}`);
 }
 // Fournisseurs consultés par famille (lignes libres des demandes du terrain, articles sans fournisseur)
 async function fournisseursParFamille() {
@@ -83,20 +89,21 @@ function biblioTabs(active) {
 const FAMILLES_TYPES = ['Tubes', 'Raccords', 'Robinetterie', 'Supportage', 'Visserie et joints', 'Calorifuge', 'Location', 'Contrôles', 'Sous-traitance'];
 const famillesArticles = () => [...new Set([...FAMILLES_TYPES, ...Store.all('articles').map(a => String(a.famille || '').trim()).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
 const sousFamillesArticles = fam => [...new Set(Store.all('articles').filter(a => !fam || a.famille === fam).map(a => String(a.sousFamille || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-const biblioEtat = { q: '', famille: '', sous: '', sel: new Set() };
+const biblioEtat = { q: '', famille: '', sous: '', gamme: '', sel: new Set() };
 const fournisseurArticle = a => (a.fournisseurId ? clientName(a.fournisseurId) : '');
 
 function arbreFamilles() {
   const tous = Store.all('articles'), e = biblioEtat;
-  const lien = (f, s, lib, n, extra = '') => `<div class="arb-l ${s ? 'sous' : ''} ${e.famille === f && e.sous === s ? 'actif' : ''}"><button class="linklike" data-f="${esc(f)}" data-s="${esc(s)}">${esc(lib)} <span class="count">${n}</span></button>${extra}</div>`;
+  const lien = (f, s, lib, n, extra = '', g = '') => `<div class="arb-l ${g ? 'sous gam' : s ? 'sous' : ''} ${e.famille === f && e.sous === s && (e.gamme || '') === g ? 'actif' : ''}" ${g ? 'style="padding-left:18px"' : ''}><button class="linklike" data-f="${esc(f)}" data-s="${esc(s)}" data-g="${esc(g)}">${esc(lib)} <span class="count">${n}</span></button>${extra}</div>`;
   const ren = (f, s) => (Store.can('write', 'articles') && f !== RechercheArticles.SANS ? `<button class="icon" data-ren="${esc(f)}" data-ren-s="${esc(s)}" title="Renommer" aria-label="Renommer">✎</button>` : '');
   return lien('', '', 'Toutes les fournitures', tous.length)
     + RechercheArticles.arbre(tous).map(f => lien(f.nom, '', f.nom, f.n, ren(f.nom, ''))
-      + (e.famille === f.nom || !e.famille ? f.sous.map(s => lien(f.nom, s.nom, s.nom, s.n, ren(f.nom, s.nom))).join('') : '')).join('');
+      + (e.famille === f.nom || !e.famille ? f.sous.map(s => lien(f.nom, s.nom, s.nom, s.n, ren(f.nom, s.nom))
+        + (e.famille === f.nom && e.sous === s.nom ? (s.gammes || []).map(g => lien(f.nom, s.nom, `› ${g.nom}`, g.n, '', g.nom)).join('') : '')).join('') : '')).join('');
 }
 function listeArticles() {
   const e = biblioEtat;
-  const list = RechercheArticles.filtrer(Store.all('articles'), { q: e.q, famille: e.famille, sousFamille: e.sous, fournisseurDe: fournisseurArticle });
+  const list = RechercheArticles.filtrer(Store.all('articles'), { q: e.q, famille: e.famille, sousFamille: e.sous, gamme: e.gamme || '', fournisseurDe: fournisseurArticle });
   const groupe = a => `${RechercheArticles.familleDe(a)}${a.sousFamille ? ` › ${a.sousFamille}` : ''}`;
   const lignes = list.map((a, i) => `${!e.q && (i === 0 || groupe(list[i - 1]) !== groupe(a)) ? `<tr class="grp"><td colspan="9">${esc(groupe(a))}</td></tr>` : ''}
     <tr class="clickable" data-id="${a.id}"><td class="sel-cell" data-nocl><input type="checkbox" data-sel-art="${a.id}" ${e.sel.has(a.id) ? 'checked' : ''} aria-label="Sélectionner ${esc(a.ref)}"></td><td>${esc(a.ref)}</td><td>${esc(a.designation)}</td>
@@ -113,14 +120,15 @@ Views.articles = () => {
     <button id="add">+ Fourniture</button>
     <button class="secondary" id="hausse">Révision des prix de vente %</button>
     <button class="secondary" id="fam-four">🏭 Fournisseurs par famille</button>
+    ${Store.can('write', 'articles') ? `<button class="secondary" id="bo-tarif">📥 Tarif fournisseur</button><button class="secondary" id="bo-marges">% Marges par catégorie</button><button class="secondary" id="bo-cat">🌳 Catégories</button><button class="secondary" id="bo-dbl">🧹 Doublons</button>` : ''}
     ${boutonsEchange('articles')}
   </div>
   <div class="biblio">
     <details class="arbre card" open><summary>Familles</summary><nav id="arbre">${arbreFamilles()}</nav></details>
     <section>
       <div class="recherche-art"><input id="search" type="search" value="${esc(e.q)}" placeholder="Rechercher : référence, désignation, DN, matière, fournisseur…" aria-label="Rechercher une fourniture" autocomplete="off">
-        <span id="nb" class="muted small">${l.n} fourniture${l.n > 1 ? 's' : ''}${e.famille ? ` · ${esc(e.famille)}${e.sous ? ` › ${esc(e.sous)}` : ''} <button class="linklike small" id="tout-voir">voir tout</button>` : ''}</span></div>
-      <div id="sel-barre" class="sel-barre" ${e.sel.size ? '' : 'hidden'}><span id="sel-n">${e.sel.size} sélectionnée(s)</span><button class="small" id="ranger">Ranger dans une famille…</button><button class="small" id="sel-stock">📦 Mettre en stock (QR)</button><button class="small secondary" id="sel-x">Désélectionner</button></div>
+        <span id="nb" class="muted small">${l.n} fourniture${l.n > 1 ? 's' : ''}${e.famille ? ` · ${esc(e.famille)}${e.sous ? ` › ${esc(e.sous)}` : ''}${e.gamme ? ` › ${esc(e.gamme)}` : ''} <button class="linklike small" id="tout-voir">voir tout</button>` : ''}</span></div>
+      <div id="sel-barre" class="sel-barre" ${e.sel.size ? '' : 'hidden'}><span id="sel-n">${e.sel.size} sélectionnée(s)</span><button class="small" id="ranger">Ranger dans une famille…</button><button class="small" id="sel-marge">% Marge…</button><button class="small" id="sel-stock">📦 Mettre en stock (QR)</button><button class="small secondary" id="sel-x">Désélectionner</button></div>
       <div id="liste-art">${l.html}</div>
     </section>
   </div>`;
@@ -149,6 +157,8 @@ async function majArticles(liste, fn) {
 Views.articles.bind = root => {
   const ff = root.querySelector('#fam-four'); if (ff) ff.onclick = fournisseursParFamille;
   const ms = root.querySelector('#sel-stock'); if (ms) ms.onclick = () => choisirArticlesStock([...biblioEtat.sel]);
+  [['#bo-tarif', () => importerTarif()], ['#bo-marges', () => editerMargesCategories()], ['#bo-cat', () => editerCategories()], ['#bo-dbl', () => editerDoublons()], ['#sel-marge', () => margeSelection([...biblioEtat.sel])]]
+    .forEach(([s, f]) => { const b = root.querySelector(s); if (b) b.onclick = f; });
   const e = biblioEtat;
   bindEchange(root);
   const lier = () => {
@@ -171,8 +181,8 @@ Views.articles.bind = root => {
     root.querySelector('#nb').firstChild.textContent = `${l.n} fourniture${l.n > 1 ? 's' : ''}`;
     lier();
   };
-  root.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { e.famille = b.dataset.f; e.sous = b.dataset.s; App.render(); });
-  const tv = root.querySelector('#tout-voir'); if (tv) tv.onclick = () => { e.famille = ''; e.sous = ''; App.render(); };
+  root.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { e.famille = b.dataset.f; e.sous = b.dataset.s; e.gamme = b.dataset.g || ''; App.render(); });
+  const tv = root.querySelector('#tout-voir'); if (tv) tv.onclick = () => { e.famille = ''; e.sous = ''; e.gamme = ''; App.render(); };
   root.querySelectorAll('[data-ren]').forEach(b => b.onclick = async () => {
     const f = b.dataset.ren, sf = b.dataset.renS;
     const nv = (await askValue(sf ? `Renommer la sous-famille « ${sf} » (${f})` : `Renommer la famille « ${f} »`, sf || f) || '').trim();

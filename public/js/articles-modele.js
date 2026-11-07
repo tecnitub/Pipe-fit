@@ -12,7 +12,10 @@ const ArticlesModele = (() => {
   // Unités : modèle → Pipe-Fit, et retour
   const VERS_PF = { piece: 'u', pieces: 'u', p: 'u', u: 'u', unite: 'u', '1': 'u', ml: 'ml', m: 'ml', metre: 'ml', m2: 'm²', 'm 2': 'm²', forfait: 'forfait', f: 'forfait', ft: 'forfait', 'heure s': 'h', heure: 'h', heures: 'h', h: 'h', kg: 'kg', ens: 'ens', ensemble: 'ens', jour: 'jour', semaine: 'semaine' };
   const VERS_MODELE = { u: 'Pièce', ml: 'Ml', 'm²': 'M2', forfait: 'Forfait', h: 'Heure(s)', kg: 'Kg', ens: 'Ensemble', jour: 'Jour', semaine: 'Semaine' };
-  const unitePF = v => VERS_PF[norm(v)] || (String(v || '').trim() ? String(v).trim() : 'u');
+  const UNITES_PF = ['u', 'ml', 'm²', 'kg', 'h', 'forfait', 'ens', 'semaine', 'jour'];
+  const cleUnite = v => norm(String(v ?? '').replace(/²/g, '2'));
+  const unitePF = v => (UNITES_PF.includes(String(v ?? '').trim()) ? String(v).trim() : VERS_PF[cleUnite(v)] || (String(v || '').trim() ? String(v).trim() : 'u'));
+  const uniteConnue = v => UNITES_PF.includes(String(v ?? '').trim()) || !!VERS_PF[cleUnite(v)];
   const uniteModele = u => VERS_MODELE[u] || u || 'Pièce';
   // Catégories « A|B|C » → famille, sous-famille, gamme (au-delà de 3 niveaux : regroupés dans la gamme)
   function categories(v) {
@@ -85,6 +88,6 @@ const ArticlesModele = (() => {
     });
     return out;
   }
-  return { ENTETES, MAX_VARIANTES, ajouterVariante, changerDefaut, lignesVariantes, norm, nombre, unitePF, uniteModele, categories, cheminCategories, prixVente, margeDe, lire, ligne, colonnes, estModele, lireFeuille, fournisseurProche };
+  return { ENTETES, UNITES_PF, uniteConnue, MAX_VARIANTES, ajouterVariante, changerDefaut, lignesVariantes, norm, nombre, unitePF, uniteModele, categories, cheminCategories, prixVente, margeDe, lire, ligne, colonnes, estModele, lireFeuille, fournisseurProche };
 })();
 if (typeof module !== 'undefined') module.exports = ArticlesModele;

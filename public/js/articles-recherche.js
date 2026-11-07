@@ -7,7 +7,7 @@ const RechercheArticles = (() => {
   const norm = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
     .replace(/×/g, 'x').replace(/\b(dn|pn|ep|sch)\s+(?=\d)/g, '$1').replace(/[^a-z0-9.,/x]+/g, ' ').trim();
   const mots = q => norm(q).split(' ').filter(Boolean);
-  const texte = (a, fournisseur) => norm([a.ref, a.designation, a.famille, a.sousFamille, fournisseur].filter(Boolean).join(' '));
+  const texte = (a, fournisseur) => norm([a.ref, a.designation, a.famille, a.sousFamille, a.gamme, ...(a.alias || []), fournisseur].filter(Boolean).join(' '));
   const familleDe = a => String(a.famille || '').trim() || SANS;
   const sousFamilleDe = a => String(a.sousFamille || '').trim();
 
@@ -42,8 +42,8 @@ const RechercheArticles = (() => {
   }
   // Articles correspondant à la recherche et aux filtres de rangement, les plus pertinents d'abord ;
   // les fautes de frappe ne sont tolérées que si la recherche exacte ne trouve rien
-  function filtrer(articles, { q = '', famille = '', sousFamille = '', fournisseurDe = () => '' } = {}) {
-    const rang = articles.filter(a => (!famille || familleDe(a) === famille) && (!sousFamille || sousFamilleDe(a) === sousFamille));
+  function filtrer(articles, { q = '', famille = '', sousFamille = '', gamme = '', fournisseurDe = () => '' } = {}) {
+    const rang = articles.filter(a => (!famille || familleDe(a) === famille) && (!sousFamille || sousFamilleDe(a) === sousFamille) && (!gamme || String(a.gamme || '').trim() === gamme));
     let res = rang.map(a => ({ a, s: score(a, q, fournisseurDe(a)) })).filter(x => x.s > 0);
     if (!res.length) res = rang.map(a => ({ a, s: score(a, q, fournisseurDe(a), true) })).filter(x => x.s > 0);
     return res
@@ -55,13 +55,15 @@ const RechercheArticles = (() => {
     const f = new Map();
     articles.forEach(a => {
       const fa = familleDe(a), sf = sousFamilleDe(a);
-      const n = f.get(fa) || { nom: fa, n: 0, sous: new Map() };
+      const n = f.get(fa) || { nom: fa, n: 0, sous: new Map(), gammes: new Map() };
       n.n++;
       if (sf) n.sous.set(sf, (n.sous.get(sf) || 0) + 1);
+      const g = String(a.gamme || '').trim();
+      if (sf && g) { const m = n.gammes.get(sf) || new Map(); m.set(g, (m.get(g) || 0) + 1); n.gammes.set(sf, m); }
       f.set(fa, n);
     });
     return [...f.values()].sort((x, y) => (x.nom === SANS) - (y.nom === SANS) || x.nom.localeCompare(y.nom))
-      .map(x => ({ nom: x.nom, n: x.n, sous: [...x.sous.entries()].sort((p, q) => p[0].localeCompare(q[0])).map(([nom, n]) => ({ nom, n })) }));
+      .map(x => ({ nom: x.nom, n: x.n, sous: [...x.sous.entries()].sort((p, q) => p[0].localeCompare(q[0])).map(([nom, n]) => ({ nom, n, gammes: [...(x.gammes.get(nom) || new Map()).entries()].sort((p, q) => p[0].localeCompare(q[0])).map(([g, k]) => ({ nom: g, n: k })) })) }));
   }
   return { SANS, norm, score, filtrer, arbre, familleDe, sousFamilleDe };
 })();
