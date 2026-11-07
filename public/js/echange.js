@@ -61,10 +61,17 @@ const ECHANGES = {
       { key: 'coef', label: 'Coefficient', num: true, export: true, syn: ['coef', 'coefficient'] },
       { key: 'poidsUnitaire', label: 'Poids (kg)', num: true, syn: ['poids', 'masse', 'kg', 'poids unitaire'] },
       { key: 'fournisseur', label: 'Fournisseur', syn: ['fournisseur habituel', 'fabricant', 'marque', 'distributeur'] },
+      { key: 'photoUrl', label: 'Photo (lien)', syn: ['photo', 'image', 'lien photo', 'url photo', 'lien image', 'url image', 'image url', 'visuel', 'photo produit', 'image produit', 'url visuel'] },
+      { key: 'ficheUrl', label: 'Fiche technique (lien)', syn: ['fiche technique', 'lien fiche technique', 'url fiche technique', 'fiche', 'lien fiche', 'url fiche', 'documentation', 'documentation technique', 'notice', 'lien pdf', 'pdf', 'ft'] },
     ],
     cle: v => normTxt(v.ref) || normTxt(v.designation),
     trouver: v => Store.all('articles').find(a => v.ref && normTxt(a.ref) === normTxt(v.ref)) || (!v.ref && Store.all('articles').find(a => normTxt(a.designation) === normTxt(v.designation))),
     appliquer(rec, v, ctx) {
+      const lien = u => /^https?:\/\/\S+$/i.test(String(u || '').trim());
+      // Liens photo / fiche technique seulement (articles existants : prix et désignations inchangés)
+      if (ctx.mode === 'medias') { if (lien(v.photoUrl)) rec.photoUrl = v.photoUrl.trim(); if (lien(v.ficheUrl)) rec.ficheUrl = v.ficheUrl.trim(); return rec; }
+      if (lien(v.photoUrl)) rec.photoUrl = v.photoUrl.trim();
+      if (lien(v.ficheUrl)) rec.ficheUrl = v.ficheUrl.trim();
       // Même article déjà lu dans ce fichier avec un autre fournisseur : variante (défaut + 3 autres), avec son prix
       const AM = typeof ArticlesModele !== 'undefined' ? ArticlesModele : null, vus = ctx.vus || (ctx.vus = new Set());
       if (AM && v.fournisseur && vus.has(rec.id)) {
@@ -93,7 +100,7 @@ const ECHANGES = {
       return rec;
     },
     // Lignes à vérifier avant l'import (prix à 0, marge hors norme, unité inconnue, référence vide…)
-    controler: vals => (typeof BiblioOutils === 'undefined' ? [] : BiblioOutils.controlerImport(vals, { uniteConnue: u => (typeof ArticlesModele === 'undefined' ? true : ArticlesModele.uniteConnue(u)) })),
+    controler: (vals, o = {}) => (typeof BiblioOutils === 'undefined' ? [] : BiblioOutils.controlerImport(vals, { ...o, uniteConnue: u => (typeof ArticlesModele === 'undefined' ? true : ArticlesModele.uniteConnue(u)) })),
     preparer(vals, ctx) { const c = new Map(); vals.forEach(v => { if (v.fournisseur) c.set(v.fournisseur, (c.get(v.fournisseur) || 0) + 1); }); ctx.variantes = [...c.entries()]; ctx.rapprocher = true; },
     ligne: a => [a.id, a.ref, a.designation, a.famille, a.sousFamille || '', a.unite, num(a.coutRevient), num(a.prixVente), typeof ArticlesModele !== 'undefined' ? ArticlesModele.margeDe(a) : '', typeof ArticlesModele !== 'undefined' ? ArticlesModele.cheminCategories(a) : '', a.gamme || '', num(a.coutRevient) ? Math.round(num(a.prixVente) / num(a.coutRevient) * 100) / 100 : '', num(a.poidsUnitaire), a.fournisseurId ? clientName(a.fournisseurId) : ''],
     largeurs: [12, 16, 44, 16, 18, 9, 14, 14, 10, 34, 18, 11, 10, 28],
@@ -281,7 +288,7 @@ function importerExcel(type) {
     const ex = data[0] || [];
     const colOpts = sel => '<option value="">— ignorer —</option>' + header.map((h, i) => `<option value="${i}" ${String(sel) === String(i) ? 'selected' : ''}>${esc(cellTxt(h) || `Colonne ${i + 1}`)}</option>`).join('');
     const manquants = champs.filter(f => f.required && etat.map[f.key] === undefined);
-    const douteux = conf.controler && !manquants.length ? conf.controler(data.map((r, k) => ({ ...valeurs(r), _ligne: etat.entete + k + 2 }))) : [];
+    const douteux = conf.controler && !manquants.length ? conf.controler(data.map((r, k) => ({ ...valeurs(r), _ligne: etat.entete + k + 2 })), { prixAttendu: etat.map.coutRevient !== undefined }) : [];
     const box = Modal.open(`<h2 style="margin-top:0">Importer des ${esc(conf.titre)}</h2>
       <p class="muted">${esc(etat.nom)} · <strong>${data.length} ligne(s)</strong> détectée(s)</p>
       ${etat.sheets.length > 1 ? `<div class="field"><label for="imp-sheet">Feuille</label><select id="imp-sheet">${etat.sheets.map((s, i) => `<option value="${i}" ${i === etat.feuille ? 'selected' : ''}>${esc(s.name)} (${s.rows.length} lignes)</option>`).join('')}</select></div>` : ''}
@@ -290,7 +297,7 @@ function importerExcel(type) {
           <td class="muted small">${etat.map[f.key] !== undefined ? esc(cellTxt(ex[etat.map[f.key]])) : ''}</td></tr>`).join('')}
       </table></div>
       <div class="grid2" style="margin-top:12px">
-        <div class="field"><label for="imp-mode">Fiches déjà présentes</label><select id="imp-mode"><option value="maj">Mettre à jour et ajouter les nouvelles</option><option value="ajout">Ajouter uniquement les nouvelles</option></select></div>
+        <div class="field"><label for="imp-mode">Fiches déjà présentes</label><select id="imp-mode"><option value="maj">Mettre à jour et ajouter les nouvelles</option><option value="ajout">Ajouter uniquement les nouvelles</option>${type === 'articles' ? '<option value="medias">Liens photo et fiche technique seulement (articles déjà présents)</option>' : ''}</select></div>
         ${type === 'articles' ? '<div class="field"><label for="imp-coef">Coefficient si le prix de vente est vide</label><input id="imp-coef" type="number" step="0.01" value="1.3"></div>' : ''}
         ${type === 'entreprises' ? `<div class="field"><label for="imp-cat">Catégorie si non précisée</label><select id="imp-cat">${optionsStr(CATEGORIES, 'Client')}</select></div>` : ''}
         ${type === 'articles' || type === 'contacts' ? `<label class="check"><input type="checkbox" id="imp-creer" checked> Créer les ${type === 'articles' ? 'fournisseurs' : 'entreprises'} inconnu(e)s</label>` : ''}
@@ -332,6 +339,7 @@ function importerExcel(type) {
       const cle = conf.cle(v), dejaVu = cle && cles.get(cle);
       const existant = parId || (dejaVu && sortie.get(dejaVu)) || conf.trouver(v, ctx);
       if (existant && opts.mode === 'ajout') { res.ignores.push(`ligne ${ligne} : déjà présente`); return; }
+      if (!existant && opts.mode === 'medias') { res.ignores.push(`ligne ${ligne} : absente de la bibliothèque`); return; }
       const base = existant ? JSON.parse(JSON.stringify(sortie.get(existant.id) || existant)) : { id: uid() };
       Object.keys(base).filter(x => x.startsWith('_')).forEach(x => delete base[x]);
       const rec = conf.appliquer(base, v, ctx);
@@ -373,9 +381,11 @@ function importerExcel(type) {
         ${ctx.nbVariantes ? `<li><strong>${ctx.nbVariantes}</strong> variante(s) fournisseur gardée(s) : même référence chez un autre fournisseur, avec son prix (1 par défaut + 3 autres au plus)</li>` : ''}
         ${ctx.variantesIgnorees && ctx.variantesIgnorees.length ? `<li>Au-delà de 3 autres fournisseurs, non repris : ${ctx.variantesIgnorees.slice(0, 5).map(esc).join(', ')}${ctx.variantesIgnorees.length > 5 ? '…' : ''}</li>` : ''}
         ${ctx.rapproches && ctx.rapproches.size ? `<li>Fournisseurs rapprochés (même entreprise) : ${[...ctx.rapproches].map(([a, b]) => `${esc(a)} → ${esc(b)}`).join(' · ')}</li>` : ''}
+        ${type === 'articles' && [...sortie.values()].some(a => a.photoUrl || a.ficheUrl) ? `<li>Liens photo / fiche technique : ${[...sortie.values()].filter(a => a.photoUrl).length} photo(s), ${[...sortie.values()].filter(a => a.ficheUrl).length} fiche(s). <button class="small" id="imp-medias">🖼 Récupérer les photos et les fiches</button></li>` : ''}
         ${res.ignores.length ? `<li><strong>${res.ignores.length}</strong> ligne(s) ignorée(s)<br><span class="muted small">${res.ignores.slice(0, 6).map(esc).join('<br>')}${res.ignores.length > 6 ? '<br>…' : ''}</span></li>` : ''}</ul>
       <div class="modal-actions"><button id="imp-ok">Fermer</button></div>`);
     box.querySelector('#imp-ok').onclick = () => { Modal.close(); App.render(); };
+    const md = box.querySelector('#imp-medias'); if (md && typeof recupererMedias === 'function') md.onclick = () => recupererMedias();
   };
 
   ecranFichier();

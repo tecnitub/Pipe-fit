@@ -10,6 +10,8 @@ const articleFields = [
   { key: 'marge', label: 'Marge (%) — prix de vente = achat × (1 + marge)', type: 'number', step: '0.01' },
   { key: 'prixVente', label: 'Prix de vente HT (calculé si la marge est saisie)', type: 'number', step: '0.01' },
   { key: 'poidsUnitaire', label: 'Poids / unité (kg)', type: 'number', step: '0.1' },
+  { key: 'photoUrl', label: 'Lien de la photo (récupérée par « 🖼 Photos et fiches »)' },
+  { key: 'ficheUrl', label: 'Lien de la fiche technique (PDF)' },
   { key: 'fournisseurId', label: 'Fournisseur par défaut', type: 'select', options: v => options(fournisseursList(), v) },
   { key: 'delai', label: 'Délai de livraison chez ce fournisseur (jours)', type: 'number', step: '1' },
   // Stock de l'atelier (étiquette QR) : emplacement, minimum avant réassort, quantité commandée au réassort
@@ -106,7 +108,7 @@ function listeArticles() {
   const list = RechercheArticles.filtrer(Store.all('articles'), { q: e.q, famille: e.famille, sousFamille: e.sous, gamme: e.gamme || '', fournisseurDe: fournisseurArticle });
   const groupe = a => `${RechercheArticles.familleDe(a)}${a.sousFamille ? ` › ${a.sousFamille}` : ''}`;
   const lignes = list.map((a, i) => `${!e.q && (i === 0 || groupe(list[i - 1]) !== groupe(a)) ? `<tr class="grp"><td colspan="9">${esc(groupe(a))}</td></tr>` : ''}
-    <tr class="clickable" data-id="${a.id}"><td class="sel-cell" data-nocl><input type="checkbox" data-sel-art="${a.id}" ${e.sel.has(a.id) ? 'checked' : ''} aria-label="Sélectionner ${esc(a.ref)}"></td><td>${esc(a.ref)}</td><td>${esc(a.designation)}</td>
+    <tr class="clickable" data-id="${a.id}"><td class="sel-cell" data-nocl><input type="checkbox" data-sel-art="${a.id}" ${e.sel.has(a.id) ? 'checked' : ''} aria-label="Sélectionner ${esc(a.ref)}"></td><td>${esc(a.ref)}</td><td>${a.photoId ? `<img class="vign-art" src="${esc(fileUrl(a.photoId))}" alt="" loading="lazy">` : ''}${esc(a.designation)}</td>
     <td class="small">${esc(a.famille || '')}${a.sousFamille ? `<br><span class="muted">${esc(a.sousFamille)}${a.gamme ? ` › ${esc(a.gamme)}` : ''}</span>` : ''}</td><td>${esc(a.unite)}</td>
     <td class="num">${eur(a.coutRevient)}</td><td class="num">${eur(a.prixVente)}</td><td class="num">${num(a.coutRevient) ? fmt(num(a.prixVente) / num(a.coutRevient), 2) : '—'}</td><td>${esc(fournisseurArticle(a))}</td></tr>`).join('');
   return { n: list.length, html: list.length ? `<div class="table-wrap"><table data-colonnes="articles" class="articles"><tr><th class="sel-cell"><input type="checkbox" id="sel-tout" aria-label="Tout sélectionner"></th><th>Réf.</th><th>Désignation</th><th>Famille</th><th>Unité</th><th class="num">Achat</th><th class="num">Vente</th><th class="num">Coef.</th><th>Fournisseur</th></tr>${lignes}</table></div>`
@@ -120,7 +122,7 @@ Views.articles = () => {
     <button id="add">+ Fourniture</button>
     <button class="secondary" id="hausse">Révision des prix de vente %</button>
     <button class="secondary" id="fam-four">🏭 Fournisseurs par famille</button>
-    ${Store.can('write', 'articles') ? `<button class="secondary" id="bo-tarif">📥 Tarif fournisseur</button><button class="secondary" id="bo-marges">% Marges par catégorie</button><button class="secondary" id="bo-cat">🌳 Catégories</button><button class="secondary" id="bo-dbl">🧹 Doublons</button>` : ''}
+    ${Store.can('write', 'articles') ? `<button class="secondary" id="bo-tarif">📥 Tarif fournisseur</button><button class="secondary" id="bo-marges">% Marges par catégorie</button><button class="secondary" id="bo-cat">🌳 Catégories</button><button class="secondary" id="bo-dbl">🧹 Doublons</button><button class="secondary" id="bo-medias">🖼 Photos et fiches</button>` : ''}
     ${boutonsEchange('articles')}
   </div>
   <div class="biblio">
@@ -157,7 +159,7 @@ async function majArticles(liste, fn) {
 Views.articles.bind = root => {
   const ff = root.querySelector('#fam-four'); if (ff) ff.onclick = fournisseursParFamille;
   const ms = root.querySelector('#sel-stock'); if (ms) ms.onclick = () => choisirArticlesStock([...biblioEtat.sel]);
-  [['#bo-tarif', () => importerTarif()], ['#bo-marges', () => editerMargesCategories()], ['#bo-cat', () => editerCategories()], ['#bo-dbl', () => editerDoublons()], ['#sel-marge', () => margeSelection([...biblioEtat.sel])]]
+  [['#bo-tarif', () => importerTarif()], ['#bo-marges', () => editerMargesCategories()], ['#bo-cat', () => editerCategories()], ['#bo-dbl', () => editerDoublons()], ['#bo-medias', () => recupererMedias()], ['#sel-marge', () => margeSelection([...biblioEtat.sel])]]
     .forEach(([s, f]) => { const b = root.querySelector(s); if (b) b.onclick = f; });
   const e = biblioEtat;
   bindEchange(root);

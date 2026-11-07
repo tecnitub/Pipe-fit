@@ -196,6 +196,7 @@ function creer({ DB, db, broadcast, racineDocuments }) {
   async function telecharger(url) {
     const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), 30000);
     try {
+      await require('./medias-articles').verifierUrl(url); // jamais vers le réseau interne
       const r = await fetch(url, { signal: ctrl.signal, redirect: 'follow', headers: { 'User-Agent': 'Pipe-Fit (fiches techniques)' } });
       if (!r.ok) throw new Error(`réponse ${r.status}`);
       if (Number(r.headers.get('content-length') || 0) > MAX) throw new Error('trop volumineux');

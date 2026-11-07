@@ -196,3 +196,30 @@ function bindPrixFacture(root, x) {
     App.render(); App.toast(`${l.length} prix d'achat mis à jour d'après la facture`);
   };
 }
+
+/* ---------- Photos et fiches techniques depuis les liens (export fournisseur) ---------- */
+async function recupererMedias() {
+  let r;
+  try { r = await api('GET', '/api/articles-medias'); } catch (e) { return notify(e.message); }
+  const box = Modal.open('<div id="md-c"></div>'); box.classList.add('wide');
+  const dessiner = () => {
+    const e = r.etat;
+    box.querySelector('#md-c').innerHTML = `<h2 style="margin-top:0">🖼 Photos et fiches techniques</h2>
+      <p class="small muted">Importez l'export Excel du fournisseur (Bibliothèque › Importer Excel) avec ses colonnes « Photo » et « Fiche technique » (liens) ; choisissez « Liens photo et fiche technique seulement » pour ne pas toucher aux prix. Le serveur télécharge ensuite chaque photo une fois et la range sur l'article ; les fiches PDF vont dans Fiches techniques, rangées par référence.</p>
+      <ul class="import-sum"><li><strong>${r.photos}</strong> photo(s) à récupérer · ${r.avecPhoto} article(s) ont déjà leur photo</li><li><strong>${r.fiches}</strong> fiche(s) technique(s) à récupérer</li></ul>
+      ${e ? `<div class="card"><strong>${e.enCours ? 'Récupération en cours…' : 'Dernière récupération'}</strong> : ${e.photos} photo(s) sur ${e.total}${e.fiches ? ` · ${e.fiches} fiche(s) confiée(s) au catalogue (voir Fiches techniques)` : ''}${e.enCours ? ` <progress max="${e.total || 1}" value="${e.faits}"></progress>` : ''}
+        ${e.erreurs.length ? `<details><summary class="warn-text">${e.erreurs.length} lien(s) en erreur</summary><div class="table-wrap" style="max-height:30vh"><table class="small"><tr><th>Réf.</th><th>Désignation</th><th>Erreur</th><th>Lien</th></tr>${e.erreurs.slice(0, 300).map(x => `<tr><td>${esc(x.ref || '')}</td><td>${esc(x.designation || '')}</td><td class="warn-text">${esc(x.erreur)}</td><td class="small"><a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">ouvrir</a></td></tr>`).join('')}</table></div></details>` : ''}</div>` : ''}
+      <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="md-x">Fermer</button><button id="md-go" ${(r.photos || r.fiches) && !(e && e.enCours) ? '' : 'disabled'}>Récupérer ${r.photos} photo(s) et ${r.fiches} fiche(s)</button></div>`;
+    box.querySelector('#md-x').onclick = () => { Modal.close(); App.render(); };
+    box.querySelector('#md-go').onclick = async () => { try { r = await api('POST', '/api/articles-medias', {}); dessiner(); suivre(); } catch (err) { notify(err.message); } };
+  };
+  const suivre = async () => {
+    if (!document.querySelector('#md-c')) return;
+    try { r = await api('GET', '/api/articles-medias'); } catch (e) { return; }
+    if (!document.querySelector('#md-c')) return;
+    dessiner();
+    if (r.etat && r.etat.enCours) setTimeout(suivre, 2000); else { await Store.load().catch(() => {}); }
+  };
+  dessiner();
+  if (r.etat && r.etat.enCours) suivre();
+}

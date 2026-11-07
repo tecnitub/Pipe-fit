@@ -254,6 +254,12 @@
       return [200, { user: JSON.parse(JSON.stringify(db.users[db.users.length - 1])), mission: acc.role === 'atelier' ? null : db.missions[db.missions.length - 1] }];
     }
     // Bibliothèque des fiches techniques (démonstration : pas de dossier sur un serveur ; PDF lus dans le navigateur)
+    // Photos et fiches des articles depuis des liens : téléchargées par le serveur dans la version installée
+    if (p[0] === 'articles-medias') {
+      const l = db.articles || [], lien = u => /^https?:\/\/\S+$/i.test(String(u || '').trim());
+      if (method === 'GET') return [200, { photos: l.filter(a => lien(a.photoUrl) && a.photoSource !== a.photoUrl.trim()).length, fiches: l.filter(a => lien(a.ficheUrl) && a.ficheSource !== a.ficheUrl.trim()).length, avecPhoto: l.filter(a => a.photoId).length, etat: null }];
+      return [400, { error: 'Démonstration : les photos et fiches sont téléchargées par le serveur dans la version installée (le navigateur ne peut pas les récupérer sur le site du fournisseur).' }];
+    }
     if (p[0] === 'fiches') {
       db.fichesTech = db.fichesTech || [];
       if (p[1] === 'trouver') return [200, FichesTech.trouver(db.fichesTech, body.demandes || [])];

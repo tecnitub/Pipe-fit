@@ -166,6 +166,7 @@ const DOSSIER = DossierDocuments.creer({ DB, db, broadcast, uid, TYPES: TYPES_DO
 const PJRESEAU = require('./pj-reseau').creer({ DB, db, racineDocuments: () => DOSSIER.config().chemin });
 // Bibliothèque des fiches techniques (dossier du serveur lu régulièrement, dépôts, catalogues fournisseurs)
 const FICHES = require('./fiches-tech').creer({ DB, db, broadcast, racineDocuments: () => DOSSIER.config().chemin });
+const MEDIAS = require('./medias-articles').creer({ DB, db, broadcast, FICHES });
 // Assistant (Claude) : tâches confiées en langage courant, préparées en brouillon avec les droits de la personne
 const LIENS = require('./liens-apps').creer({ db, broadcast });
 
@@ -639,6 +640,12 @@ async function api(req, res, url) {
 
   // Bibliothèque des fiches techniques : recherche (tous, utilisée aussi par les applications Études et DOE), dépôt,
   // catalogue, lecture du dossier et réglage (bureau)
+  // Photos et fiches techniques des articles depuis les liens d'un export fournisseur (bureau)
+  if (p[0] === 'articles-medias') {
+    if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
+    if (method === 'GET') return send(res, 200, MEDIAS.resume());
+    if (method === 'POST') { const b = await readBody(req); DB.audit(db, acc.login, 'photos et fiches des articles'); return send(res, 200, MEDIAS.lancer(acc.nom || acc.login, Array.isArray(b.ids) ? b.ids.slice(0, 20000) : null)); }
+  }
   if (p[0] === 'fiches') {
     if (p[1] === 'trouver' && method === 'POST') { const b = await readBody(req); return send(res, 200, FICHES.trouver(Array.isArray(b.demandes) ? b.demandes : [])); }
     if (p[1] === 'recherche' && method === 'GET') return send(res, 200, FICHES.rechercher(String(url.searchParams.get('q') || '').slice(0, 120)));

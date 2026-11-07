@@ -200,13 +200,13 @@ const BiblioOutils = (() => {
 
   /* ---------- Contrôle d'un import ---------- */
   // vals : lignes lues (ref, designation, unite, coutRevient, prixVente, marge, fournisseur) ; unitesConnues : fonction
-  function controlerImport(vals, { uniteConnue = () => true, margeMax = 300 } = {}) {
+  function controlerImport(vals, { uniteConnue = () => true, margeMax = 300, prixAttendu = true } = {}) {
     const vus = new Map(), out = [];
     vals.forEach((v, k) => {
       const m = [];
       if (!String(v.ref ?? '').trim()) m.push('référence vide');
       if (!String(v.designation ?? '').trim()) m.push('désignation vide');
-      if (v.coutRevient === '' || v.coutRevient === undefined) m.push('prix d\'achat vide');
+      if (v.coutRevient === '' || v.coutRevient === undefined) { if (prixAttendu) m.push('prix d\'achat vide'); }
       else if (n(v.coutRevient) === 0) m.push('prix d\'achat à 0');
       else if (n(v.coutRevient) < 0) m.push('prix d\'achat négatif');
       if (ok(v.marge) && n(v.marge) < 0) m.push(`marge négative (${n(v.marge)} %)`);

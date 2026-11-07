@@ -126,3 +126,23 @@ test('Commande, devis, facture : choix du fournisseur et prix facturés ; contr�
   await p.click('.selecteur .sel-fermer');
   assert.deepStrictEqual(erreurs, []);
 });
+
+test('Bibliothèque : liens photo et fiche technique d\'un export fournisseur (sans toucher aux prix)', { skip: sansPlaywright, timeout: 120000 }, async () => {
+  const { p, erreurs } = await ouvrir();
+  await p.evaluate(() => { location.hash = '#/articles'; }); await p.waitForTimeout(1000);
+  await p.click('[data-import="articles"]'); await p.waitForTimeout(300);
+  await p.setInputFiles('#imp-file', fichier('export_fournisseur.xlsx', [['Référence', 'Désignation', 'Prix', 'Image', 'Fiche technique'],
+    ['E2E-CO50', 'Coude', 99, 'https://images.exemple.fr/co50.jpg', 'https://docs.exemple.fr/co50.pdf'], ['INCONNU', 'x', 1, 'https://images.exemple.fr/x.jpg', '']]));
+  await p.waitForTimeout(1000);
+  assert.strictEqual(await p.$eval('[data-map="photoUrl"]', s => s.selectedOptions[0].textContent), 'Image');
+  assert.strictEqual(await p.$eval('[data-map="ficheUrl"]', s => s.selectedOptions[0].textContent), 'Fiche technique');
+  await p.selectOption('#imp-mode', 'medias');
+  await p.click('#imp-go'); await p.waitForTimeout(1200);
+  assert.match(await p.textContent('#modal'), /1 photo\(s\), 1 fiche\(s\)/);
+  assert.match(await p.textContent('#modal'), /absente de la bibliothèque/);
+  const a = await art(p, 'ae1');
+  assert.deepStrictEqual([a.photoUrl, a.ficheUrl, a.coutRevient, a.designation], ['https://images.exemple.fr/co50.jpg', 'https://docs.exemple.fr/co50.pdf', 10, 'Coude e2e DN50']);
+  await p.click('#imp-medias'); await p.waitForTimeout(600);
+  assert.match(await p.textContent('#md-c'), /1 photo\(s\) à récupérer/);
+  assert.deepStrictEqual(erreurs, []);
+});
