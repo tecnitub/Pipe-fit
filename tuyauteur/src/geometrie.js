@@ -1,7 +1,7 @@
 // Tuyauteur : calculs de tuyauterie industrielle et de chaudronnerie.
 //   piquage()      traçage d'un piquage (perpendiculaire, oblique, excentré) : gabarit de coupe et gabarit du trou
 //   baionnette()   baïonnette (renvoi parallèle à deux coudes), orientée dans l'espace, par l'angle ou par la distance
-//   coudeOriente() coude orienté à souder : un coude 90° + une tranche de coude, angle et rotation de la tranche
+//   coudeOriente() coude orienté : coude 90° incliné + tranche de coude pour rattraper un dénivelé
 //   developpe()    développés de tôlerie par triangulation : rond-carré, trémie carré-carré, rond-rond (cône)
 // Toutes les longueurs sont en millimètres, les angles en degrés. Chaque calcul renvoie ses résultats,
 // ses avertissements et les dessins (aperçu, PDF, DXF) construits avec Dessin.
@@ -224,181 +224,151 @@
     };
   }
 
-  // ---------------------------------------------------------------- Coude orienté : coude 90° + tranche de coude
-  // Repère du tuyauteur : X = sens d'arrivée du tube (vers l'avant), Y = à gauche, Z = vers le haut.
-  // Le tube arrive suivant +X, un coude 90° l'envoie dans la direction d1 (perpendiculaire à X, choisie par
-  // l'angle θ autour de X : 0° = haut, 90° = gauche, 180° = bas, 270° = droite), puis une tranche d'angle β,
-  // tournée de ψ par rapport au coude 90°, l'amène dans la direction de sortie d2.
-  // ψ = rotation de l'extrados de la tranche par rapport à l'extrados du coude 90°, sur la soudure entre les deux,
-  // comptée dans le sens horaire en regardant dans le sens de l'écoulement (du coude 90° vers la tranche) :
-  // ψ = 0° → la tranche continue le virage (90° + β) ; ψ = 180° → elle revient en arrière (90° − β).
-  // Modes : « direction » (sortie voulue → β et ψ) ou « tranche » (β et ψ connus → direction obtenue).
+  // ---------------------------------------------------------------- Coude orienté : coude 90° incliné + tranche de coude
+  // Montage : le tube arrive à l'horizontale (suivant X). En vue de dessus il tourne de 90° (à gauche ou à droite),
+  // mais la sortie est à une autre altitude. Le coude 90° est pivoté sur la partie droite d'un angle θ : sa sortie
+  // plonge (ou monte) de θ. Une tranche de coude de θ, tournée d'un quart de tour par rapport au coude 90°,
+  // ramène le tube à l'horizontale. Le dénivelé ΔH est rattrapé sur la partie en pente entre les deux.
+  // Repère : X = sens d'arrivée, Y = à gauche, Z = vers le haut ; sommet du coude 90° à l'origine.
+  // Calcul par : « angle » (θ imposé), « distance » (distance en plan entre les deux sommets, suivant la sortie),
+  // « boutAbout » (coude 90° et tranche soudés directement, sans tube entre les deux).
   function coudeOriente(p) {
     const de = positif(nb(p.de), 'Ø extérieur'), R = positif(nb(p.rayon), 'Rayon de coude'), jeu = nb(p.jeu) || 0;
     exiger(R >= de / 2, 'Le rayon de coude doit être au moins égal au rayon du tube.');
-    const d0 = [1, 0, 0];
+    const dH = positif(Math.abs(nb(p.denivele)), 'Dénivelé à rattraper');
+    const v = p.sens === 'monte' ? 1 : -1; // −1 : la sortie est plus basse
+    const s = p.virage === 'droite' ? -1 : 1; // +1 : virage à gauche
+    const lien = theta => R + R * Math.tan(theta * RAD / 2) + 2 * jeu; // sommets → tube nul entre les deux (2 soudures)
     const avert = [];
-    let d1, d2, theta;
-    const dirTheta = t => [0, Math.sin(t * RAD), Math.cos(t * RAD)]; // θ = 0 haut (+Z), θ = 90 gauche (+Y)
-    if (p.mode === 'tranche') {
-      theta = nb(p.theta) || 0;
-      d1 = dirTheta(theta);
-      const beta = nb(p.beta), psi = nb(p.psi) || 0;
-      exiger(beta >= 0 && beta <= 90, 'Angle de la tranche : entre 0° et 90°.');
-      // Extrados du coude 90° à sa sortie = +X ; extrados de la tranche = rotation de ψ (horaire vu dans le sens d1)
-      const ext = rotation(d0, d1, psi * RAD); // rotation directe autour de d1 = sens horaire vu dans le sens d1
-      const u = mul(ext, -1); // la tranche tourne vers son intrados
-      d2 = add(mul(d1, Math.cos(beta * RAD)), mul(u, Math.sin(beta * RAD)));
+    let theta;
+    if (p.mode === 'distance') {
+      const D = positif(nb(p.distance), 'Distance en plan');
+      theta = Math.atan2(dH, D) / RAD;
+    } else if (p.mode === 'boutAbout') {
+      // Coudes soudés directement : une seule soudure entre eux, ΔH = (R + R·tan(θ/2) + jeu)·sin θ
+      const f = t => (R + R * Math.tan(t * RAD / 2) + jeu) * Math.sin(t * RAD);
+      exiger(dH <= f(90) + 1e-6, `Dénivelé trop grand pour souder les coudes bout à bout (maxi ${fmt(f(90))} mm) : mettre un tube entre les deux.`);
+      let a = 0, b = 90;
+      for (let i = 0; i < 60; i++) { const m = (a + b) / 2; if (f(m) < dH) a = m; else b = m; }
+      theta = (a + b) / 2;
     } else {
-      // Direction de sortie : composantes ou angles (en plan depuis l'axe d'arrivée, pente)
-      if (p.saisie === 'angles') {
-        const az = (nb(p.azimut) || 0) * RAD, el = (nb(p.pente) || 0) * RAD;
-        d2 = [Math.cos(el) * Math.cos(az), Math.cos(el) * Math.sin(az), Math.sin(el)];
-      } else {
-        d2 = unit([nb(p.sx) || 0, nb(p.sy) || 0, nb(p.sz) || 0]);
-        exiger(d2, 'Direction de sortie : saisir au moins une composante non nulle.');
-      }
-      exiger(Math.abs(dot(d2, d0)) < 1 - 1e-9 || dot(d2, d0) < 0, 'Sortie dans l\'axe d\'arrivée : pas de coude à faire.');
-      if (p.coude90 === 'auto' || p.coude90 == null) {
-        // Coude 90° dans le plan qui contient la sortie : la plus petite tranche
-        const proj = unit(sub(d2, mul(d0, dot(d2, d0))));
-        exiger(proj, 'Sortie opposée à l\'arrivée (demi-tour) : faire deux coudes 90°.');
-        d1 = proj;
-        theta = (Math.atan2(d1[1], d1[2]) / RAD + 360) % 360;
-      } else {
-        theta = p.coude90 === 'libre' ? nb(p.theta) || 0 : +p.coude90;
-        d1 = dirTheta(theta);
-      }
+      theta = nb(p.angle);
+      exiger(theta > 0 && theta <= 90, 'Angle d\'inclinaison : entre 0 et 90°.');
     }
-    const beta = Math.acos(Math.max(-1, Math.min(1, dot(d1, d2)))) / RAD;
-    if (p.mode !== 'tranche' && beta > 90.05) {
-      const proj = unit(sub(d2, mul(d0, dot(d2, d0))));
-      const bAuto = proj ? Math.acos(Math.max(-1, Math.min(1, dot(proj, d2)))) / RAD : null;
-      const thAuto = proj ? (Math.atan2(proj[1], proj[2]) / RAD + 360) % 360 : null;
-      throw new ErreurSaisie(`La tranche devrait faire ${fmt(beta)}°, plus qu'un coude 90° : impossible avec ce sens du coude 90°.${bAuto != null && bAuto <= 90 ? ` En orientant le coude 90° à ${fmt(thAuto, 0)}° (automatique), la tranche fait ${fmt(bAuto)}°.` : ' Il faut deux coudes 90°.'}`);
+    const t = theta * RAD;
+    const L1 = dH / Math.sin(t), D = dH / Math.tan(t);
+    const E1 = R, E2 = R * Math.tan(t / 2);
+    const nbSoud = p.mode === 'boutAbout' ? 1 : 2;
+    const tube = L1 - E1 - E2 - nbSoud * jeu;
+    if (p.mode !== 'boutAbout') {
+      // Angle maxi pour ce dénivelé (tube nul)
+      let tMax = 0;
+      for (let x = 90; x > 0.05; x -= 0.05) if (dH / Math.sin(x * RAD) - lien(x) >= -1e-9) { tMax = x; break; }
+      exiger(tube >= -1e-6, `Impossible : le coude 90° et la tranche se chevauchent (il manque ${fmt(-tube)} mm). Angle maxi pour ${fmt(dH, 0)} mm de dénivelé : ${fmt(tMax)}°, ou choisir « coudes bout à bout ».`);
+      if (tube < Math.min(50, de)) avert.push(`Tube très court (${fmt(tube)} mm) entre le coude 90° et la tranche : souder plutôt bout à bout.`);
     }
-    // Rotation ψ entre extrados (extrados du 90° = +X à sa sortie ; extrados de la tranche = −u)
-    let psi = 0;
-    if (beta > 1e-4) {
-      const u = unit(sub(d2, mul(d1, dot(d2, d1))));
-      const ext = mul(u, -1);
-      psi = Math.atan2(dot(cross(d0, ext), d1), dot(d0, ext)) / RAD;
-      psi = ((psi % 360) + 360) % 360;
-      if (psi > 359.95) psi = 0;
-    } else avert.push('La sortie est déjà donnée par le coude 90° : pas de tranche à ajouter.');
-    if (p.mode === 'tranche' && Math.abs(beta - nb(p.beta)) > 0.01) avert.push('Angle de tranche recalculé.');
-    const devie = Math.acos(Math.max(-1, Math.min(1, dot(d0, d2)))) / RAD;
-    const b = beta * RAD;
-    const E90 = R, Et = R * Math.tan(b / 2);
-    const tranche = coupeCoude(R, de, beta);
-    // Positions : sommet du coude 90° à l'origine ; face d'entrée du 90° en −R·X
-    const IP1 = [0, 0, 0], IP2 = mul(d1, E90 + Et + jeu);
-    const faceEntree = mul(d0, -R), faceSortie = add(IP2, mul(d2, Et));
-    const sortieRel = sub(faceSortie, faceEntree);
-    const arc = psi / 360 * Math.PI * de;
-    const azimut = Math.atan2(d2[1], d2[0]) / RAD, pente = Math.asin(Math.max(-1, Math.min(1, d2[2]))) / RAD;
-    if (beta > 1e-4 && beta < 5) avert.push(`Tranche de ${fmt(beta)}° : très fine, la couper avec soin (ou la remplacer par une coupe biaise du tube).`);
-    if (beta > 85 && beta <= 90.05) avert.push('Tranche presque égale à un coude 90° complet.');
+    if (theta > 85) avert.push('Tranche presque égale à un coude 90° complet.');
+    const d0 = [1, 0, 0], d1 = [0, s * Math.cos(t), v * Math.sin(t)], d2 = [0, s, 0];
+    const IP2 = mul(d1, L1);
+    const faceEntree = mul(d0, -R), faceSortie = add(IP2, mul(d2, E2));
+    const sortie = sub(faceSortie, faceEntree);
+    const C = Math.PI * de;
+    const arcIncl = theta / 360 * C, arcQuart = C / 4;
+    const tranche = coupeCoude(R, de, theta);
+    const basHaut = v < 0 ? 'en dessous' : 'au-dessus';
 
-    // ---- Vue isométrique de l'assemblage
-    const c30 = Math.cos(30 * RAD);
-    // Vue : X vers la droite-avant, Y vers la gauche-arrière, Z vers le haut
-    const iso = q => [(q[0] - q[1]) * c30, q[2] + (q[0] + q[1]) * 0.5];
+    // ---- Vues : dessus (X, Y), élévation dans l'axe de la sortie (Y, Z), isométrique
     const Lt = Math.max(2 * de, 1.2 * R);
-    const sommets = [sub(IP1, mul(d0, R + Lt)), IP1, IP2, add(IP2, mul(d2, Et + Lt))];
-    const axe = beta > 1e-4 ? axeAvecCoudes(sommets, R) : axeAvecCoudes([sommets[0], IP1, add(IP2, mul(d1, Lt))], R);
-    const vue = Dessin.creer();
-    const axe2 = axe.map(iso);
-    const [g, dr] = parois(axe2, de);
-    vue.polyligne(g, 'DECOUPE'); vue.polyligne(dr, 'DECOUPE');
-    vue.polyligne(axe2, 'AXES');
-    // Soudures : entrée du 90°, 90°/tranche, sortie de la tranche
+    const sommets = [mul(d0, -(R + Lt)), [0, 0, 0], IP2, add(IP2, mul(d2, E2 + Lt))];
+    const axe = axeAvecCoudes(sommets, R);
     const h = Math.max(4, de / 7);
-    const marque = (P, dir) => {
-      const [x, y] = iso(P), [x2, y2] = iso(add(P, mul(dir, 1)));
-      const tx = x2 - x, ty = y2 - y, l = Math.hypot(tx, ty) || 1;
-      vue.ligne([x - ty / l * de * 0.65, y + tx / l * de * 0.65], [x + ty / l * de * 0.65, y - tx / l * de * 0.65], 'PLIAGE');
+    const vueDe = (proj, cotes) => {
+      const d = Dessin.creer();
+      const a2 = axe.map(proj);
+      const [g, dr] = parois(a2, de);
+      d.polyligne(g, 'DECOUPE'); d.polyligne(dr, 'DECOUPE'); d.polyligne(a2, 'AXES');
+      if (cotes) cotes(d, proj);
+      return d;
     };
-    marque(faceEntree, d0); marque(add(IP1, mul(d1, E90)), d1);
-    if (beta > 1e-4) { marque(sub(IP2, mul(d1, Et)), d1); marque(faceSortie, d2); }
-    const lab = (P, t) => { const [x, y] = iso(P); vue.texte(x + h, y + h, h, t, 'TEXTE'); };
-    lab(add(IP1, mul(add(mul(d0, -1), d1), R * 0.3)), 'coude 90°');
-    if (beta > 1e-4) lab(add(IP2, mul(d2, Et * 0.5)), `tranche ${fmt(beta)}°`);
-    lab(add(IP2, mul(d2, Et + Lt)), 'sortie');
-    // Trièdre
-    const bb = Dessin.boite(vue), o = [bb.x0 - 4 * h, bb.y0 - 2 * h];
-    for (const [v, nom] of [[[1, 0, 0], 'X avant'], [[0, 1, 0], 'Y gauche'], [[0, 0, 1], 'Z haut']]) {
-      const [x, y] = iso(mul(v, 4 * h));
-      vue.ligne(o, [o[0] + x, o[1] + y], 'COTES');
-      vue.texte(o[0] + x * 1.15, o[1] + y * 1.15, h * 0.8, nom, 'COTES');
-    }
+    const dessus = vueDe(q => [q[0], q[1]], (d, P) => {
+      d.cote(P(sommets[0]), P([0, 0, 0]), s * -(de + 2 * h), 'arrivée', h);
+      const ps = P(add(IP2, mul(d2, E2 + Lt * 0.5)));
+      d.texte(ps[0] + de * 0.7, ps[1], h, `sortie ${v < 0 ? 'plus basse' : 'plus haute'} de ${fmt(dH, 0)}`, 'TEXTE');
+      d.cote(P([0, 0, 0]), P(IP2), s * (de + 2 * h), `${fmt(D)} en plan`, h);
+      d.texte(de * 0.7, -s * de * 1.1, h, 'virage 90° vu de dessus', 'COTES');
+    });
+    // Élévation : on regarde dans le sens d'arrivée ; horizontale = Y (vers la sortie), verticale = Z
+    const elev = vueDe(q => [s * q[1], q[2]], (d, P) => {
+      const a = P([0, 0, 0]), b = P(IP2);
+      d.ligne([a[0] - de, b[1]], [b[0] + Lt, b[1]], 'TRACAGE');
+      // Tube d'arrivée vu en bout, derrière le coude 90°
+      d.cercle(a[0], a[1], de / 2, 'TRACAGE', 72);
+      d.texte(a[0] - de * 0.6, a[1] + de * 0.6, h, 'arrivée (vue en bout)', 'TEXTE', 'd');
+      d.cote([b[0] + Lt * 0.6, a[1]], [b[0] + Lt * 0.6, b[1]], v * 2 * h, `dénivelé ${fmt(dH, 0)}`, h);
+      d.cote(a, [b[0], a[1]], v * 1 * (de + 2 * h), `${fmt(D)}`, h);
+      d.cote(a, b, -v * (de * 0.8 + 2 * h), `sommets ${fmt(L1)}`, h);
+      d.texte(a[0] + de * 0.8, a[1] + v * h * 0.5, h, `${fmt(theta, 1)}°`, 'COTES');
+    });
+    const c30 = Math.cos(30 * RAD);
+    const iso = vueDe(q => [(q[0] - q[1]) * c30, q[2] + (q[0] + q[1]) * 0.5]);
 
-    // ---- Repérage sur la soudure 90° / tranche (vue dans le sens de l'écoulement)
+    // ---- Repérage (vue dans le sens de l'écoulement, sur la soudure coude 90° / tube incliné / tranche)
     const rep = Dessin.creer();
     const r = de / 2, hr = Math.max(3, de / 18);
     rep.cercle(0, 0, r, 'DECOUPE', 144);
     rep.ligne([-r - 10, 0], [r + 10, 0], 'AXES'); rep.ligne([0, -r - 10], [0, r + 10], 'AXES');
-    // Extrados du 90° en haut ; sens horaire = angle décroissant à l'écran
-    const pt = (a, k = 1) => [k * r * Math.sin(a * RAD), k * r * Math.cos(a * RAD)];
-    rep.ligne(pt(0, 0.8), pt(0, 1.25), 'COTES'); rep.texte(...pt(0, 1.32), hr, 'extrados coude 90°', 'TEXTE', 'c');
-    rep.ligne(pt(180, 0.8), pt(180, 1.25), 'TRACAGE'); rep.texte(pt(180, 1.32)[0] + hr * 0.6, pt(180, 1.32)[1] - hr * 0.4, hr * 0.85, 'intrados coude 90°', 'TEXTE', 'g');
-    if (beta > 1e-4) {
-      rep.ligne(pt(psi, 0.6), pt(psi, 1.25), 'PLIAGE');
-      const pe = pt(psi, 1.4);
-      rep.texte(pe[0], pe[1] - hr / 2, hr, 'extrados tranche', 'TEXTE', psi > 0 && psi < 180 ? 'g' : psi > 180 ? 'd' : 'c');
-      const pts = [];
-      for (let k = 0; k <= 48; k++) pts.push(pt(psi * k / 48, 1.1));
-      if (psi > 0.5) rep.polyligne(pts, 'COTES');
-      const pm = pt(psi / 2, 1.18);
-      rep.texte(pm[0], pm[1], hr * 0.9, `${fmt(psi, 1)}° = ${fmt(arc)} mm`, 'COTES', 'c');
-    }
-    rep.texte(0, -r - 6 * hr, hr, 'vue dans le sens de l\'écoulement (coude 90° vers tranche), sens horaire', 'TEXTE', 'c');
+    // On regarde dans la direction d1 : le dos (extrados) du coude 90° est du côté de l'arrivée, à l'horizontale ;
+    // le dos de la tranche est sur la génératrice basse (sortie plus basse) ou haute (plus haute).
+    const xExt = s * r; // dos du 90° (+X) : à droite pour un virage à gauche, à gauche pour un virage à droite
+    rep.ligne([xExt * 0.8, 0], [xExt * 1.25, 0], 'COTES');
+    rep.texte(xExt * 1.3, hr * 0.4, hr, 'dos du coude 90°', 'TEXTE', xExt < 0 ? 'd' : 'g');
+    const yT = v < 0 ? -r : r;
+    rep.ligne([0, yT * 0.6], [0, yT * 1.25], 'PLIAGE');
+    rep.texte(hr * 0.5, yT * 1.35 + (v < 0 ? -hr : 0), hr, 'dos de la tranche', 'TEXTE', 'g');
+    const arcPts = [];
+    const a0 = Math.atan2(0, xExt);
+    let da = Math.atan2(yT, 0) - a0;
+    da = Math.atan2(Math.sin(da), Math.cos(da)); // quart de tour par le plus court
+    for (let k = 0; k <= 24; k++) { const a = a0 + da * k / 24; arcPts.push([1.1 * r * Math.cos(a), 1.1 * r * Math.sin(a)]); }
+    rep.polyligne(arcPts, 'COTES');
+    rep.texte(xExt * 0.85, yT * 0.85, hr * 0.9, `1/4 de tour = ${fmt(arcQuart)} mm`, 'COTES', 'c');
+    rep.texte(0, -r - 6 * hr, hr, 'vue dans le sens de l\'écoulement, sur la soudure de la tranche', 'TEXTE', 'c');
 
-    // ---- Gabarit de repérage à enrouler (développé de la circonférence)
+    // ---- Bande de repérage 1:1 : quart de tour de la tranche, et inclinaison du coude 90°
     const gab = Dessin.creer();
-    const C = Math.PI * de, H = Math.max(40, de * 0.4);
-    gab.polyligne([[0, 0], [C, 0], [C, H], [0, H]], 'DECOUPE', true);
-    const trait = (x, t, calque) => { gab.ligne([x, 0], [x, H], calque); gab.texte(x + 1.5, H - 7, 3.5, t, 'TEXTE'); };
-    trait(0, 'EXT. 90°', 'COTES'); trait(C / 2, 'INT. 90°', 'TRACAGE');
-    if (beta > 1e-4) {
-      trait(arc % C, 'EXT. TRANCHE', 'PLIAGE');
-      trait((arc + C / 2) % C, 'INT. TRANCHE', 'TRACAGE');
-    }
-    gab.texte(C / 2, -6, 3.5, `Ø${fmt(de)} - circonférence ${fmt(C)} - enrouler sur la soudure, sens horaire vu dans le sens de l'écoulement`, 'TEXTE', 'c');
+    const Hb = Math.max(40, de * 0.4);
+    gab.polyligne([[0, 0], [C, 0], [C, Hb], [0, Hb]], 'DECOUPE', true);
+    const trait = (x, txt, calque) => { gab.ligne([x, 0], [x, Hb], calque); gab.texte(x + 1.5, Hb - 7, 3.5, txt, 'TEXTE'); };
+    trait(0, 'DOS COUDE 90°', 'COTES'); trait(arcQuart, `DOS TRANCHE (1/4 = ${fmt(arcQuart)})`, 'PLIAGE');
+    trait(arcIncl % C, `INCLINAISON ${fmt(theta, 1)}° = ${fmt(arcIncl)}`, 'TRACAGE');
+    gab.texte(C / 2, -6, 3.5, `Ø${fmt(de)} - circonférence ${fmt(C)} - à enrouler sur le tube`, 'TEXTE', 'c');
 
-    // ---- Recoupe de la tranche dans un coude 90° (vue dans le plan du coude)
+    // ---- Recoupe de la tranche dans un coude 90°
     const cp = Dessin.creer();
     const Re = R + de / 2, Ri = Math.max(0, R - de / 2);
-    const arcPts = (rr, a0, a1, n = 48) => Array.from({ length: n + 1 }, (_, k) => { const a = (a0 + (a1 - a0) * k / n) * RAD; return [rr * Math.cos(a), rr * Math.sin(a)]; });
-    cp.polyligne(arcPts(Re, 0, 90), 'DECOUPE'); cp.polyligne(arcPts(Ri, 0, 90), 'DECOUPE'); cp.polyligne(arcPts(R, 0, 90), 'AXES');
+    const arcs = (rr, a0, a1, n = 48) => Array.from({ length: n + 1 }, (_, k) => { const a = (a0 + (a1 - a0) * k / n) * RAD; return [rr * Math.cos(a), rr * Math.sin(a)]; });
+    cp.polyligne(arcs(Re, 0, 90), 'DECOUPE'); cp.polyligne(arcs(Ri, 0, 90), 'DECOUPE'); cp.polyligne(arcs(R, 0, 90), 'AXES');
     cp.ligne([Ri, 0], [Re, 0], 'DECOUPE'); cp.ligne([0, Ri], [0, Re], 'DECOUPE');
-    if (beta > 1e-4) {
-      const c = Math.cos(b), s = Math.sin(b);
-      cp.ligne([Ri * c - 5 * c, Ri * s - 5 * s], [Re * c + 10 * c, Re * s + 10 * s], 'PLIAGE');
-      const hc = Math.max(4, Re / 25);
-      cp.texte((Re + 12) * c, (Re + 12) * s, hc, `coupe à ${fmt(beta)}°`, 'TEXTE');
-      cp.texte(Re * Math.cos(b / 2) + hc, Re * Math.sin(b / 2), hc, `extrados ${fmt(tranche.extrados)}`, 'COTES');
-      cp.texte(R * Math.cos(b / 2) - hc, R * Math.sin(b / 2), hc * 0.85, `axe ${fmt(tranche.axe)}`, 'COTES', 'd');
-      cp.texte(Ri * Math.cos(b / 2) - hc, Ri * Math.sin(b / 2) - hc, hc, `intrados ${fmt(tranche.intrados)}`, 'COTES', 'd');
-      cp.texte(Re * 0.5, Re * 0.5 + hc * 3, hc, `chute : ${fmt(90 - beta)}°`, 'TEXTE', 'c');
-    }
+    const cc = Math.cos(t), ss = Math.sin(t), hc = Math.max(4, Re / 25);
+    cp.ligne([Ri * cc - 5 * cc, Ri * ss - 5 * ss], [Re * cc + 10 * cc, Re * ss + 10 * ss], 'PLIAGE');
+    cp.texte((Re + 12) * cc, (Re + 12) * ss, hc, `coupe à ${fmt(theta, 1)}°`, 'TEXTE');
+    cp.texte(Re * Math.cos(t / 2) + hc, Re * Math.sin(t / 2), hc, `extrados ${fmt(tranche.extrados)}`, 'COTES');
+    cp.texte(R * Math.cos(t / 2) - hc, R * Math.sin(t / 2), hc * 0.85, `axe ${fmt(tranche.axe)}`, 'COTES', 'd');
+    cp.texte(Ri * Math.cos(t / 2) - hc, Ri * Math.sin(t / 2) - hc, hc, `intrados ${fmt(tranche.intrados)}`, 'COTES', 'd');
 
     return {
       avertissements: avert,
       resultats: {
-        tranche: arr(beta, 2), rotation: arr(psi, 1), arcRotation: arr(arc, 1), devie: arr(devie, 2), theta: arr(theta, 1),
-        azimut: arr(azimut, 2), pente: arr(pente, 2), reduction90: arr(E90, 1), reductionTranche: arr(Et, 1),
-        entraxe: arr(E90 + Et + jeu, 1), sortieX: arr(sortieRel[0], 1) + 0, sortieY: arr(sortieRel[1], 1) + 0, sortieZ: arr(sortieRel[2], 1) + 0,
-        direction: d2.map(v => arr(v, 4) + 0), // + 0 : pas de « -0 »
+        inclinaison: arr(theta, 2), arcInclinaison: arr(arcIncl, 1), tranche: arr(theta, 2), quartDeTour: arr(arcQuart, 1),
+        entraxe: arr(L1, 1), distancePlan: arr(D, 1), tube: p.mode === 'boutAbout' ? 0 : arr(tube, 1), denivele: arr(dH, 1),
+        reduction90: arr(E1, 1), reductionTranche: arr(E2, 1),
+        sortieX: arr(sortie[0], 1) + 0, sortieY: arr(sortie[1], 1) + 0, sortieZ: arr(sortie[2], 1) + 0,
+        dosTranche: basHaut, virage: s > 0 ? 'gauche' : 'droite', sens: v < 0 ? 'descend' : 'monte',
       },
-      tranche, dessins: { vue, reperage: rep, gabarit: gab, recoupe: cp },
+      tranche, dessins: { dessus, elevation: elev, iso, reperage: rep, gabarit: gab, recoupe: cp },
     };
   }
-  // Rotation d'un vecteur v autour de l'axe k (unitaire), angle a en radians (règle de la main droite)
-  function rotation(v, k, a) {
-    const c = Math.cos(a), s = Math.sin(a);
-    return add(add(mul(v, c), mul(cross(k, v), s)), mul(k, dot(k, v) * (1 - c)));
-  }
+
 
   // ---------------------------------------------------------------- Développés (triangulation)
   // Contour bas (z = 0) et contour haut (z = H). Une « bande » est une suite d'échelons (point bas, point haut) ;

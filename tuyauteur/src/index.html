@@ -77,39 +77,26 @@
 <section class="module" id="coude">
   <form class="saisie" autocomplete="off">
     <h2>Coude orienté : coude 90° + tranche</h2>
+    <p class="aide">Vu de dessus, le tube fait un 90°, mais la sortie est à une autre hauteur. Le coude 90° est pivoté sur la partie droite pour descendre (ou monter) ; une tranche de coude, tournée d'un quart de tour, remet le tube à l'horizontale.</p>
     <fieldset><legend>Tube et coudes</legend>
       <div class="tube" data-prefixe="co" data-dn="100" data-coude="1"></div>
       <label>Jeu de soudure (mm)<input name="jeu" type="number" step="0.5" min="0" value="0"></label>
     </fieldset>
-    <fieldset><legend>Je connais…</legend>
+    <fieldset><legend>Montage</legend>
+      <div class="deux">
+        <label>Virage (vu de dessus)<select name="virage"><option value="gauche">à gauche</option><option value="droite">à droite</option></select></label>
+        <label>La sortie<select name="sens"><option value="descend">descend</option><option value="monte">monte</option></select></label>
+      </div>
+      <label>Différence de hauteur à rattraper (mm)<input name="denivele" type="number" step="1" min="0" value="300"><small>Entre l'axe d'arrivée et l'axe de sortie</small></label>
+    </fieldset>
+    <fieldset><legend>Calcul par…</legend>
       <div class="choix-mode">
-        <label class="radio"><input type="radio" name="mode" value="direction" checked> la direction de sortie voulue</label>
-        <label class="radio"><input type="radio" name="mode" value="tranche"> la tranche et sa rotation</label>
+        <label class="radio"><input type="radio" name="mode" value="angle" checked> l'angle d'inclinaison</label>
+        <label class="radio"><input type="radio" name="mode" value="distance"> la distance en plan</label>
+        <label class="radio"><input type="radio" name="mode" value="boutAbout"> coude 90° et tranche soudés bout à bout</label>
       </div>
-      <p class="aide">Le tube arrive suivant X (vers l'avant). Y = à gauche, Z = vers le haut. Le coude 90° est soudé en premier, la tranche ensuite. Si la tranche est avant le coude 90°, saisir la ligne en partant de la sortie.</p>
-    </fieldset>
-    <fieldset data-si="mode=direction"><legend>Direction de sortie</legend>
-      <label>Saisie<select name="saisie"><option value="angles">par deux angles (en plan et pente)</option><option value="composantes">par les cotes ΔX ΔY ΔZ de la ligne de sortie</option></select></label>
-      <div class="deux" data-si="saisie=angles">
-        <label>Angle en plan (°)<input name="azimut" type="number" step="0.5" value="60"><small>0 = tout droit, 90 = à gauche, −90 = à droite</small></label>
-        <label>Pente (°)<input name="pente" type="number" step="0.5" value="45"><small>+ monte, − descend</small></label>
-      </div>
-      <div data-si="saisie=composantes">
-        <div class="deux">
-          <label>ΔX avant<input name="sx" type="number" step="1" value="500"></label>
-          <label>ΔY gauche<input name="sy" type="number" step="1" value="300"></label>
-        </div>
-        <label>ΔZ haut<input name="sz" type="number" step="1" value="800"><small>Sur une longueur quelconque de la ligne de sortie : seule la direction compte</small></label>
-      </div>
-      <label>Coude 90° orienté vers
-        <select name="coude90"><option value="0">le haut</option><option value="90">la gauche</option><option value="180">le bas</option><option value="270">la droite</option><option value="libre">un angle libre…</option><option value="auto">automatique (plus petite tranche)</option></select>
-      </label>
-      <label data-si="coude90=libre">Angle du coude 90° (°)<input name="theta" type="number" step="1" value="45"><small>Autour de l'arrivée : 0 = haut, 90 = gauche, 180 = bas, 270 = droite</small></label>
-    </fieldset>
-    <fieldset data-si="mode=tranche"><legend>Tranche</legend>
-      <label>Coude 90° orienté à (°)<input name="thetaT" type="number" step="1" value="0"><small>0 = haut, 90 = gauche, 180 = bas, 270 = droite</small></label>
-      <label>Angle de la tranche (°)<input name="beta" type="number" step="0.5" min="0" max="90" value="30"></label>
-      <label>Rotation de la tranche (°)<input name="psi" type="number" step="1" value="90"><small>Extrados de la tranche par rapport à l'extrados du coude 90°, sens horaire en regardant dans le sens de l'écoulement. 0 = le virage continue, 180 = il revient.</small></label>
+      <label data-si="mode=angle">Inclinaison du coude 90° = angle de la tranche (°)<input name="angle" type="number" step="0.5" min="1" max="90" value="45"></label>
+      <label data-si="mode=distance">Distance en plan entre le coude 90° et la tranche (mm)<input name="distance" type="number" step="1" min="1" value="300"><small>Mesurée de sommet à sommet, dans le sens de la sortie</small></label>
     </fieldset>
   </form>
   <div class="sortie" data-sortie></div>
