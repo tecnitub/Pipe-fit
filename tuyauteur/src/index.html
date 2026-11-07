@@ -12,7 +12,7 @@
   <nav class="onglets" role="tablist">
     <button role="tab" data-onglet="piquage" class="actif">Piquages</button>
     <button role="tab" data-onglet="baionnette">Baïonnette</button>
-    <button role="tab" data-onglet="renvoi">Renvoi 3D</button>
+    <button role="tab" data-onglet="coude">Coude orienté</button>
     <button role="tab" data-onglet="developpe">Développés</button>
     <button role="tab" data-onglet="platine">Platines</button>
     <button role="tab" data-onglet="brides">Brides</button>
@@ -73,21 +73,43 @@
   <div class="sortie" data-sortie></div>
 </section>
 
-<!-- ======================= RENVOI 3D ======================= -->
-<section class="module" id="renvoi">
+<!-- ======================= COUDE ORIENTÉ ======================= -->
+<section class="module" id="coude">
   <form class="saisie" autocomplete="off">
-    <h2>Renvoi 3D : ligne par points</h2>
+    <h2>Coude orienté : coude 90° + tranche</h2>
     <fieldset><legend>Tube et coudes</legend>
-      <div class="tube" data-prefixe="rv" data-dn="100" data-coude="1"></div>
-      <label>Jeu de soudure (mm par soudure)<input name="jeu" type="number" step="0.5" min="0" value="0"></label>
+      <div class="tube" data-prefixe="co" data-dn="100" data-coude="1"></div>
+      <label>Jeu de soudure (mm)<input name="jeu" type="number" step="0.5" min="0" value="0"></label>
     </fieldset>
-    <fieldset><legend>Sommets (intersections des axes)</legend>
-      <label>Saisie
-        <select name="saisie"><option value="relatif">Relative : ΔX ΔY ΔZ depuis le point précédent</option><option value="absolu">Absolue : coordonnées X Y Z</option></select>
+    <fieldset><legend>Je connais…</legend>
+      <div class="choix-mode">
+        <label class="radio"><input type="radio" name="mode" value="direction" checked> la direction de sortie voulue</label>
+        <label class="radio"><input type="radio" name="mode" value="tranche"> la tranche et sa rotation</label>
+      </div>
+      <p class="aide">Le tube arrive suivant X (vers l'avant). Y = à gauche, Z = vers le haut. Le coude 90° est soudé en premier, la tranche ensuite. Si la tranche est avant le coude 90°, saisir la ligne en partant de la sortie.</p>
+    </fieldset>
+    <fieldset data-si="mode=direction"><legend>Direction de sortie</legend>
+      <label>Saisie<select name="saisie"><option value="angles">par deux angles (en plan et pente)</option><option value="composantes">par les cotes ΔX ΔY ΔZ de la ligne de sortie</option></select></label>
+      <div class="deux" data-si="saisie=angles">
+        <label>Angle en plan (°)<input name="azimut" type="number" step="0.5" value="60"><small>0 = tout droit, 90 = à gauche, −90 = à droite</small></label>
+        <label>Pente (°)<input name="pente" type="number" step="0.5" value="45"><small>+ monte, − descend</small></label>
+      </div>
+      <div data-si="saisie=composantes">
+        <div class="deux">
+          <label>ΔX avant<input name="sx" type="number" step="1" value="500"></label>
+          <label>ΔY gauche<input name="sy" type="number" step="1" value="300"></label>
+        </div>
+        <label>ΔZ haut<input name="sz" type="number" step="1" value="800"><small>Sur une longueur quelconque de la ligne de sortie : seule la direction compte</small></label>
+      </div>
+      <label>Coude 90° orienté vers
+        <select name="coude90"><option value="0">le haut</option><option value="90">la gauche</option><option value="180">le bas</option><option value="270">la droite</option><option value="libre">un angle libre…</option><option value="auto">automatique (plus petite tranche)</option></select>
       </label>
-      <p class="aide">X = Est, Y = Nord, Z = vers le haut (comme sur une isométrique).</p>
-      <table class="points"><thead><tr><th>Pt</th><th>X</th><th>Y</th><th>Z</th><th></th></tr></thead><tbody></tbody></table>
-      <div class="boutons-ligne"><button type="button" data-ajout-point>+ Ajouter un point</button><button type="button" data-exemple-points class="discret">Exemple</button></div>
+      <label data-si="coude90=libre">Angle du coude 90° (°)<input name="theta" type="number" step="1" value="45"><small>Autour de l'arrivée : 0 = haut, 90 = gauche, 180 = bas, 270 = droite</small></label>
+    </fieldset>
+    <fieldset data-si="mode=tranche"><legend>Tranche</legend>
+      <label>Coude 90° orienté à (°)<input name="thetaT" type="number" step="1" value="0"><small>0 = haut, 90 = gauche, 180 = bas, 270 = droite</small></label>
+      <label>Angle de la tranche (°)<input name="beta" type="number" step="0.5" min="0" max="90" value="30"></label>
+      <label>Rotation de la tranche (°)<input name="psi" type="number" step="1" value="90"><small>Extrados de la tranche par rapport à l'extrados du coude 90°, sens horaire en regardant dans le sens de l'écoulement. 0 = le virage continue, 180 = il revient.</small></label>
     </fieldset>
   </form>
   <div class="sortie" data-sortie></div>

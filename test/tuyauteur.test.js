@@ -70,19 +70,42 @@ test('baïonnette : formules du renvoi et coudes orientés', () => {
   assert.throws(() => G.baionnette({ de: 114.3, rayon: 152, decalageV: 200, mode: 'angle', angle: 90 }), /chevauchent.*Angle maximal/);
 });
 
-test('renvoi 3D : angles, rotations et longueurs de coupe', () => {
-  const r = G.renvoi3D({ de: 114.3, rayon: 152, jeu: 2, points: [[0, 0, 0], [1000, 0, 0], [1000, 1000, 0], [1000, 1000, 1000], [1000, 2000, 1000]] });
-  assert.deepStrictEqual(r.coudes.map(c => c.angle), [90, 90, 90]);
-  assert.strictEqual(r.coudes[1].rotation, 90);
-  // x → y → z → y : les deux derniers coudes forment un « S » dans le même plan, rotation 180°
-  proche(Math.abs(r.coudes[2].rotation), 180, 0.01);
-  // Premier tronçon : 1000 − réduction 152 − 1 soudure ; tronçon central : 1000 − 2×152 − 2 soudures
-  assert.strictEqual(r.segments[0].coupe, 846);
-  assert.strictEqual(r.segments[1].coupe, 692);
-  assert.strictEqual(r.segments[2].pente, 90);
-  // Longueur développée de l'axe : droites + 3 quarts de cercle
-  proche(r.resultats.longueurAxe, 4000 - 6 * 152 + 3 * 152 * Math.PI / 2, 0.5);
-  assert.throws(() => G.renvoi3D({ de: 60.3, rayon: 76, points: [[0, 0, 0], [0, 0, 0], [1, 0, 0]] }), /confondus/);
+test('coude orienté (90° + tranche) : tranche continuée, revenue, tournée', () => {
+  const T = o => G.coudeOriente({ de: 114.3, rayon: 152, ...o }).resultats;
+  // Coude 90° vers le haut, tranche 30° dans le même plan : déviation 90 + 30 ou 90 − 30
+  assert.strictEqual(T({ mode: 'tranche', theta: 0, beta: 30, psi: 0 }).devie, 120);
+  assert.strictEqual(T({ mode: 'tranche', theta: 0, beta: 30, psi: 180 }).devie, 60);
+  // Tranche tournée de 90° : la sortie reste à 90° de l'arrivée et penche de 30° sur le côté
+  const r = T({ mode: 'tranche', theta: 0, beta: 30, psi: 90 });
+  assert.strictEqual(r.devie, 90);
+  assert.deepStrictEqual(r.direction, [0, -0.5, 0.866]);
+  // Réductions : 90° = R ; tranche = R·tan(β/2) ; arc de rotation sur la circonférence
+  assert.strictEqual(r.reduction90, 152);
+  proche(r.reductionTranche, 152 * Math.tan(15 * Math.PI / 180), 0.05);
+  proche(r.arcRotation, Math.PI * 114.3 / 4, 0.05);
+  // Face de sortie : R + (R + E) le long de Z puis E le long de la sortie
+  const E = 152 * Math.tan(15 * Math.PI / 180);
+  proche(r.sortieZ, 152 + E + E * 0.8660254, 0.1);
+});
+
+test('coude orienté : calcul inverse depuis la direction de sortie', () => {
+  const C = o => G.coudeOriente({ de: 114.3, rayon: 152, ...o });
+  // Toutes les orientations retrouvent la tranche et la rotation qui ont donné la direction
+  for (const [theta, beta, psi] of [[0, 30, 90], [90, 45, 200], [180, 20, 315], [270, 60, 30], [37, 12.5, 150]]) {
+    const d = C({ mode: 'tranche', theta, beta, psi }).resultats.direction;
+    const r = C({ mode: 'direction', saisie: 'composantes', sx: d[0], sy: d[1], sz: d[2], coude90: 'libre', theta }).resultats;
+    proche(r.tranche, beta, 0.02, `tranche ${theta}/${beta}/${psi}`);
+    proche(r.rotation, psi, 0.05, `rotation ${theta}/${beta}/${psi}`);
+  }
+  // Par les angles : à gauche (90° en plan) et 45° de pente, coude 90° vers le haut → tranche 45°, extrados à 270°
+  const a = C({ mode: 'direction', saisie: 'angles', azimut: 90, pente: 45, coude90: '0' }).resultats;
+  assert.strictEqual(a.tranche, 45);
+  assert.strictEqual(a.rotation, 270);
+  // Automatique : coude 90° dans le plan de la sortie (vers la gauche), tranche de 60° qui revient (90 − 60 = 30°)
+  const auto = C({ mode: 'direction', saisie: 'angles', azimut: 30, pente: 0, coude90: 'auto' }).resultats;
+  proche(auto.tranche, 60, 0.01); assert.strictEqual(auto.theta, 90); assert.strictEqual(auto.rotation, 180);
+  // Tranche de plus de 90° : refus avec la solution automatique
+  assert.throws(() => C({ mode: 'direction', saisie: 'angles', azimut: 0, pente: -60, coude90: '0' }), /plus qu'un coude 90°.*automatique/);
 });
 
 test('développé cône : surface égale à celle du tronc de cône', () => {

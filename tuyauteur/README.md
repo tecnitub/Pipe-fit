@@ -35,11 +35,22 @@ réduction par coude R·tan(α/2), longueur du tube droit à couper (moins les j
 Pour recouper les coudes, le logiciel donne les arcs d'extrados, d'axe et d'intrados. Il refuse le calcul si les
 coudes se chevauchent et indique alors l'angle maximal possible.
 
-### Renvoi 3D (ligne par points)
-On saisit les sommets d'une isométrique, en coordonnées absolues ou en ΔX ΔY ΔZ (X = Est, Y = Nord, Z = haut). Pour
-chaque coude, le logiciel donne l'angle, la **rotation par rapport au coude précédent**, la réduction et les arcs de
-recoupe. Pour chaque tronçon, il donne la longueur entre sommets, la pente et la **longueur de coupe** (moins les
-réductions et les jeux de soudure). Il dessine aussi la vue isométrique. Le DXF contient l'axe réel de la ligne en 3D.
+### Coude orienté (coude 90° + tranche de coude)
+Changement de direction dans l'espace réalisé avec un coude 90° suivi d'une tranche de coude, soudés bout à bout.
+Repère : X = sens d'arrivée du tube, Y = à gauche, Z = vers le haut.
+- **Je connais la direction de sortie** : elle se saisit par deux angles (angle en plan et pente) ou par les cotes
+  ΔX ΔY ΔZ de la ligne de sortie. Le coude 90° peut être orienté vers le haut, le bas, la gauche, la droite, selon un
+  angle libre, ou automatiquement (dans le plan de la sortie, plus petite tranche). Le logiciel donne l'**angle de la
+  tranche** et sa **rotation**. Si la tranche devait dépasser 90°, il refuse et propose l'orientation automatique.
+- **Je connais la tranche et sa rotation** : le logiciel donne la direction de sortie obtenue.
+- **Rotation** : c'est l'angle entre l'extrados de la tranche et l'extrados du coude 90°, sur la soudure, compté
+  dans le sens horaire en regardant dans le sens de l'écoulement. Elle est aussi donnée en millimètres sur la
+  circonférence. 0° = le virage continue (90° + tranche) ; 180° = il revient (90° − tranche).
+- Résultats : déviation totale, réductions, distance entre sommets, position de la face de sortie par rapport à la
+  face d'entrée (ΔX ΔY ΔZ), longueurs de recoupe de la tranche dans un coude 90° (extrados, flancs, intrados, chute).
+- Dessins : vue isométrique, repérage sur la soudure, **bande de repérage** à enrouler (1:1, PDF ou DXF) et recoupe
+  de la tranche.
+- Si la tranche se trouve avant le coude 90°, il suffit de saisir la ligne en partant de la sortie.
 
 ### Développés de tôlerie (triangulation)
 - **Rond-carré** (rectangle A × B vers rond Ø D) ;
@@ -130,7 +141,7 @@ indicatives et la saisie reste libre. Les rayons doivent être vérifiés sur la
 ## Structure
 ```
 tuyauteur/src/normes.js     tables ISO / EN des tubes et des coudes
-tuyauteur/src/geometrie.js  calculs : piquage, baïonnette, renvoi 3D, développés
+tuyauteur/src/geometrie.js  calculs : piquage, baïonnette, coude orienté, développés
 tuyauteur/src/dessin.js     modèle de dessin commun, aperçu SVG, export DXF
 tuyauteur/src/pdf.js        PDF (pdf-lib) : fiche et feuilles 1:1
 tuyauteur/src/platine.js    platines percées

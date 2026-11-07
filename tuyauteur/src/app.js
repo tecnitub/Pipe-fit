@@ -102,7 +102,7 @@
     $('.extra', sortie).innerHTML = etat.html || '';
     $('.resultats', sortie).innerHTML = etat.resultats.map(([l, v, fort]) => `<div class="carte${fort ? ' forte' : ''}"><span>${esc(l)}</span><b>${esc(v)}</b></div>`).join('');
     $('.apercus', sortie).innerHTML = etat.dessins.map(d => `<figure><figcaption>${esc(d.titre)}</figcaption>${Dessin.versSVG(d.dessin, { classe: 'apercu' })}</figure>`).join('');
-    $('.tableaux', sortie).innerHTML = (etat.tableaux || []).map(t => `<h3>${esc(t.titre)}</h3><div class="tableau-defile"><table class="table"><thead><tr>${t.colonnes.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${t.lignes.map(l => `<tr>${l.map(c => `<td>${esc(c ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`).join('');
+    $('.tableaux', sortie).innerHTML = (etat.tableaux || []).map(t => `<h3>${esc(t.titre)}</h3><div class="tableau-defile"><table class="table"><thead><tr>${t.colonnes.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${t.lignes.map(l => `<tr>${l.map(c => `<td${typeof c === 'string' && c.length > 24 && /[a-zé]{3}/i.test(c) ? ' class="texte"' : ''}>${esc(c ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`).join('');
     const gab = (etat.export || etat).dessins.some(d => d.gabarit);
     $('[data-pdf]', sortie).textContent = etat.libellePDF || 'Télécharger le PDF';
     $('[data-dxf]', sortie).textContent = etat.libelleDXF || 'Télécharger le DXF';
@@ -291,60 +291,50 @@
     };
   });
 
-  // ------------------------------------------------------------ Renvoi 3D
-  module('renvoi', (v, ctx) => {
-    const T = ctx.tubes.rv.lire();
-    const lignes = $$('.points tbody tr', ctx.form).map(tr => $$('input', tr).map(i => +i.value || 0));
-    let pts = lignes;
-    if (v.saisie === 'relatif') { const acc = [0, 0, 0]; pts = lignes.map((d, i) => { if (i === 0) return [0, 0, 0]; acc[0] += d[0]; acc[1] += d[1]; acc[2] += d[2]; return [...acc]; }); }
-    const r = Geometrie.renvoi3D({ de: T.de, rayon: T.rayon, jeu: v.jeu, points: pts });
-    const R = r.resultats;
-    const titre = `Renvoi 3D Ø${fmt(T.de)} - ${R.nbCoudes} coude${R.nbCoudes > 1 ? 's' : ''}`;
+  // ------------------------------------------------------------ Coude orienté (coude 90° + tranche)
+  module('coude', (v, ctx) => {
+    const T = ctx.tubes.co.lire();
+    const r = Geometrie.coudeOriente({ de: T.de, rayon: T.rayon, jeu: v.jeu, mode: v.mode, saisie: v.saisie, azimut: v.azimut, pente: v.pente, sx: v.sx, sy: v.sy, sz: v.sz, coude90: v.coude90, theta: v.mode === 'tranche' ? v.thetaT : v.theta, beta: v.beta, psi: v.psi });
+    const R = r.resultats, C = r.tranche;
+    const sens = t => { const a = ((t % 360) + 360) % 360; return { 0: 'vers le haut', 90: 'vers la gauche', 180: 'vers le bas', 270: 'vers la droite' }[Math.round(a * 10) / 10] || `à ${fmt(a, 1)}° (0 = haut, 90 = gauche)`; };
+    const titre = `Coude orienté Ø${fmt(T.de)} - 90° + tranche ${fmt(R.tranche, 1)}°`;
+    const avecTranche = R.tranche > 1e-4;
     return {
-      pdf: { titre, sousTitre: 'Ligne par sommets : angles de coudes, rotations et longueurs de coupe', infos: [['Tube', `Ø ${fmt(T.de)} × ${fmt(T.ep)} mm`], ['Coudes', `${T.coude === 'libre' ? 'rayon libre' : T.coude} - R ${fmt(T.rayon)} mm`], ['Jeu de soudure', mm(+v.jeu || 0)], ['Sommets', String(pts.length)]], pied: titre },
+      pdf: {
+        titre, sousTitre: 'Un coude 90° et une tranche de coude soudés bout à bout',
+        infos: [['Tube', `Ø ${fmt(T.de)} × ${fmt(T.ep)} mm`], ['Coudes', `${T.coude === 'libre' ? 'rayon libre' : T.coude} - R ${fmt(T.rayon)} mm`], ['Jeu de soudure', mm(+v.jeu || 0)],
+          ['Repère', 'X = arrivée, Y = gauche, Z = haut'], ['Direction de sortie', `${fmt(R.azimut, 1)}° en plan, pente ${fmt(R.pente, 1)}°`]],
+        pied: titre,
+      },
       avertissements: r.avertissements,
-      resultats: [['Coudes', String(R.nbCoudes), true], ['Tube droit total', mm(R.longueurDroite), true], ['Longueur développée de l\'axe', mm(R.longueurAxe)]],
-      dessins: [{ titre: 'Vue isométrique (longueurs de coupe en bleu)', dessin: r.dessins.iso }],
-      polylignes3d: [{ pts: r.sommets, calque: 'TRACAGE' }, { pts: r.axe3D, calque: 'AXES' }],
-      tableaux: [
-        { titre: 'Coudes', colonnes: ['Sommet', 'Angle', 'Rotation / précédent', 'Réduction', 'Extrados', 'Axe', 'Intrados'], lignes: r.coudes.map(c => [`P${c.point}`, deg(c.angle), c.rotation == null ? '-' : deg(c.rotation, 1), fmt(c.reduction), fmt(c.extrados), fmt(c.axe), fmt(c.intrados)]) },
-        { titre: 'Tronçons droits', colonnes: ['Tronçon', 'ΔX', 'ΔY', 'ΔZ', 'Entre sommets', 'Pente', 'Longueur de coupe'], lignes: r.segments.map(s => [`P${s.de} → P${s.a}`, fmt(s.dx), fmt(s.dy), fmt(s.dz), fmt(s.longueur), deg(s.pente, 1), fmt(s.coupe)]) },
+      resultats: [
+        ['Tranche à couper', avecTranche ? deg(R.tranche) : 'aucune', true],
+        ...(avecTranche ? [['Rotation de la tranche (sens horaire)', `${fmt(R.rotation, 1)}° = ${fmt(R.arcRotation)} mm sur la circonférence${R.rotation > 180 ? ` (soit ${fmt(360 - R.rotation, 1)}° = ${fmt(Math.PI * T.de - R.arcRotation)} mm en sens inverse)` : ''}`, true]] : []),
+        ['Coude 90° orienté', sens(R.theta)],
+        ['Déviation totale', deg(R.deviation ?? R.devie)],
+        ['Sortie : angle en plan / pente', `${fmt(R.azimut, 1)}° / ${fmt(R.pente, 1)}°`],
+        ['Sommet 90° → sommet tranche', mm(R.entraxe)],
+        ['Face de sortie depuis la face d\'entrée', `ΔX ${fmt(R.sortieX)} · ΔY ${fmt(R.sortieY)} · ΔZ ${fmt(R.sortieZ)}`],
+        ['Réductions (90° / tranche)', `${fmt(R.reduction90)} / ${fmt(R.reductionTranche)} mm`],
       ],
+      dessins: [
+        { titre: 'Vue isométrique de l\'assemblage', dessin: r.dessins.vue },
+        ...(avecTranche ? [
+          { titre: 'Repérage sur la soudure coude 90° / tranche', dessin: r.dessins.reperage },
+          { titre: 'Bande de repérage à enrouler sur la soudure', dessin: r.dessins.gabarit, gabarit: true },
+          { titre: `Recoupe de la tranche de ${fmt(R.tranche, 1)}° dans un coude 90°`, dessin: r.dessins.recoupe },
+        ] : []),
+      ],
+      tableaux: avecTranche ? [
+        { titre: `Recoupe de la tranche (${fmt(R.tranche, 1)}°) dans un coude 90°, mesures depuis une extrémité`, colonnes: ['Mesure', 'Longueur d\'arc'], lignes: [['Extrados (dos)', mm(C.extrados)], ['Flancs (axe)', mm(C.axe)], ['Intrados (ventre)', mm(C.intrados)], ['Chute', `${fmt(90 - R.tranche, 1)}°`]] },
+        { titre: 'Mise en position', colonnes: ['Étape', 'Opération'], lignes: [
+          ['1', `Souder le coude 90° sur l'arrivée, orienté ${sens(R.theta)}.`],
+          ['2', 'Tracer l\'extrados du coude 90° sur sa face de sortie.'],
+          ['3', `Décaler de ${fmt(R.arcRotation)} mm (${fmt(R.rotation, 1)}°) dans le sens horaire, vu dans le sens de l'écoulement : c'est l'extrados de la tranche.`],
+          ['4', 'Pointer la tranche, contrôler la direction de sortie, puis souder.'],
+        ] },
+      ] : [],
     };
-  }, ctx => {
-    const tbody = $('.points tbody', ctx.form), saisie = $('[name=saisie]', ctx.form);
-    const ligne = (vals = [0, 0, 0]) => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td class="num"></td>${vals.map(x => `<td><input type="number" step="1" value="${x}"></td>`).join('')}<td><button type="button" class="suppr" title="Supprimer ce point">×</button></td>`;
-      tbody.appendChild(tr);
-      numeroter();
-    };
-    const numeroter = () => $$('tr', tbody).forEach((tr, i) => {
-      $('.num', tr).textContent = `P${i + 1}`;
-      // En saisie relative, le premier point est l'origine
-      $$('input', tr).forEach(inp => { inp.disabled = i === 0 && saisie.value === 'relatif'; if (inp.disabled) inp.value = 0; });
-    });
-    const remplir = pts => { tbody.innerHTML = ''; pts.forEach(p => ligne(p)); };
-    const EXEMPLE = [[0, 0, 0], [1500, 0, 0], [0, 1200, 0], [0, 0, 800], [1000, 600, 0]];
-    ctx.form.addEventListener('click', e => {
-      if (e.target.closest('[data-ajout-point]')) { ligne(); ctx.maj(); }
-      else if (e.target.closest('[data-exemple-points]')) { saisie.value = 'relatif'; remplir(EXEMPLE); ctx.maj(); }
-      else if (e.target.closest('.suppr')) { if ($$('tr', tbody).length > 3) { e.target.closest('tr').remove(); numeroter(); ctx.maj(); } }
-    });
-    // Passage relatif ↔ absolu : les points restent les mêmes dans l'espace
-    let modePrec = saisie.value;
-    saisie.addEventListener('change', () => {
-      const lig = $$('tr', tbody).map(tr => $$('input', tr).map(i => +i.value || 0));
-      if (!lig.length) { modePrec = saisie.value; return; }
-      if (modePrec !== saisie.value) {
-        if (saisie.value === 'absolu') { const acc = [0, 0, 0]; remplir(lig.map((d, i) => { if (i) { acc[0] += d[0]; acc[1] += d[1]; acc[2] += d[2]; } return [...acc]; })); }
-        else remplir(lig.map((p, i) => i ? [p[0] - lig[i - 1][0], p[1] - lig[i - 1][1], p[2] - lig[i - 1][2]] : [0, 0, 0]));
-      }
-      modePrec = saisie.value;
-      memo.renvoiPoints = $$('tr', tbody).map(tr => $$('input', tr).map(i => +i.value || 0)); sauver();
-    });
-    ctx.form.addEventListener('input', () => { memo.renvoiPoints = $$('tr', tbody).map(tr => $$('input', tr).map(i => +i.value || 0)); sauver(); });
-    ctx.apresRestauration = () => { modePrec = saisie.value; remplir(Array.isArray(memo.renvoiPoints) && memo.renvoiPoints.length >= 3 ? memo.renvoiPoints : EXEMPLE); };
   });
 
   // ------------------------------------------------------------ Développés

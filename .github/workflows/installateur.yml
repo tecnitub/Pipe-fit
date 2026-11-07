@@ -15,7 +15,7 @@ jobs:
         with:
           node-version: 22
       - run: npm test
-      # Tuyauteur : logiciel en un seul fichier (piquages, baïonnettes, renvois 3D, développés)
+      # Tuyauteur : logiciel en un seul fichier (piquages, baïonnettes, coudes orientés, développés…)
       - run: node tuyauteur/build.js
       - uses: actions/upload-artifact@v4
         with:
