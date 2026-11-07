@@ -440,3 +440,132 @@ test('aide : visite guidée au premier lancement, « Comment faire ? » (F1) et 
   assert.deepStrictEqual(page.erreurs, []);
   await ctx.close();
 });
+
+test('métré : réseaux et diamètres, comptage de symboles, légende, export Excel', { skip: ignorer }, async () => {
+  const page = await appli();
+  await ajouter(page, ['plan-A.pdf'], 1);
+  await ouvrirPage(page, 1);
+  await page.selectOption('#ed-echelle', '1/50');
+  const b = await page.locator('#ed-page').boundingBox();
+  const P = (x, y) => [b.x + x / 842 * b.width, b.y + (595 - y) / 595 * b.height];
+  // Longueur d'eau froide DN20 (240 pt au 1/50 = 4,23 m), puis d'eau chaude
+  await page.click('[data-outil=longueur]');
+  assert.ok(await page.isVisible('#ed-metre'));
+  await page.selectOption('#ed-reseau', 'EF');
+  await page.fill('#ed-dn', 'DN20'); await page.press('#ed-dn', 'Enter');
+  await page.mouse.click(...P(60, 500)); await page.mouse.dblclick(...P(300, 500));
+  await page.selectOption('#ed-reseau', 'ECS');
+  await page.fill('#ed-dn', ''); await page.press('#ed-dn', 'Enter');
+  await page.mouse.click(...P(60, 100)); await page.mouse.dblclick(...P(60, 400));
+  // Comptage : 3 radiateurs, un retiré, puis 2 vannes
+  await page.click('[data-outil=compte]');
+  assert.ok(await page.isVisible('#ed-symbole'));
+  await page.selectOption('#ed-reseau', '');
+  await page.fill('#ed-symbole', 'Radiateur'); await page.press('#ed-symbole', 'Enter');
+  for (const x of [120, 180, 240]) await page.mouse.click(...P(x, 200));
+  await page.mouse.click(...P(180, 200));
+  await page.fill('#ed-symbole', 'Vanne d\'arrêt'); await page.press('#ed-symbole', 'Enter');
+  for (const x of [400, 450]) await page.mouse.click(...P(x, 150));
+  const comptes = await page.evaluate(() => window.AtelierPDF.ed.elements.filter(e => e.type === 'compte').map(e => [e.symbole, e.points.length]));
+  assert.deepStrictEqual(comptes, [['Radiateur', 2], ['Vanne d\'arrêt', 2]]);
+  const couleurs = await page.evaluate(() => window.AtelierPDF.ed.elements.filter(e => e.type === 'longueur').map(e => [e.reseau, e.dn || '', e.couleur]));
+  assert.deepStrictEqual(couleurs, [['EF', 'DN20', '#1e88e5'], ['ECS', '', '#e53935']]);
+  assert.ok((await page.evaluate(() => [...document.querySelectorAll('.el-etiquette')].map(d => d.textContent))).includes('4,23 m · DN20'));
+  // Légende automatique
+  await page.click('#ed-legende');
+  const lignes = await page.evaluate(() => window.AtelierPDF.ed.elements.find(e => e.type === 'legende').lignes.map(l => l.texte));
+  assert.deepStrictEqual(lignes, ['ECS Eau chaude sanitaire : 5,29 m', 'EF Eau froide · DN20 : 4,23 m', 'Radiateur : 2', 'Vanne d\'arrêt : 2']);
+  // Réseau changé sur une mesure choisie : couleur et légende suivent
+  await page.click('[data-outil=selection]');
+  await page.evaluate(() => { const ed = window.AtelierPDF.ed; window.AtelierPDF.choisirElement(ed.elements.findIndex(e => e.type === 'longueur' && e.reseau === 'ECS')); });
+  await page.selectOption('#ed-reseau', 'CHD');
+  assert.ok((await page.evaluate(() => window.AtelierPDF.ed.elements.find(e => e.type === 'legende').lignes.map(l => l.texte))).includes('CHD Chauffage départ : 5,29 m'));
+  // Export Excel
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#ed-excel')]);
+  assert.match(dl.suggestedFilename(), /^Metre - .*\.xlsx$/);
+  const xlsx = fs.readFileSync(await dl.path());
+  assert.strictEqual(xlsx.subarray(0, 2).toString(), 'PK');
+  const contenu = xlsx.toString('utf8');
+  for (const t of ['EF – Eau froide', 'DN20', 'CHD – Chauffage départ', 'Radiateur', 'Vanne d&apos;arrêt'.replace('&apos;', '\'')]) assert.ok(contenu.includes(t), t);
+  assert.match(contenu, /<v>4\.23\d*<\/v>/);
+  // PDF : légende et numéros des symboles écrits dans la page
+  await page.click('#ed-fermer');
+  const [texte] = await texteDuPdf(page, await enregistrer(page));
+  assert.match(texte, /Légende [-–] échelle 1:50/);
+  assert.match(texte, /EF Eau froide · DN20 : 4,23 m/);
+  assert.match(texte, /Radiateur : 2/);
+  assert.deepStrictEqual(page.erreurs, []);
+  await page.context().close();
+});
+
+test('DOE : page de garde, sections, documents classés, sommaire à deux niveaux et signets', { skip: ignorer }, async () => {
+  await pdf('Fiche technique radiateur.pdf', [{}], (p, f) => p.drawText('Radiateur acier type 22', { x: 60, y: 760, size: 18, font: f }));
+  await pdf('PV essai etancheite reseau EF.pdf', [{}], (p, f) => p.drawText('Essai à 10 bar pendant 2 h', { x: 60, y: 760, size: 18, font: f }));
+  const page = await appli();
+  await ajouter(page, ['notice.pdf', 'plan.pdf', 'devis.pdf', 'Fiche technique radiateur.pdf', 'PV essai etancheite reseau EF.pdf'], 8);
+  await page.click('#b-doe');
+  await page.fill('#doe-chantier', 'Collège Jean Moulin');
+  await page.fill('#doe-moa', 'Département de la Savoie');
+  await page.click('#doe-ok');
+  const ordre = await page.evaluate(() => { const e = window.AtelierPDF.etat; return e.pages.map(p => p.doe === 'garde' ? 'garde' : p.doe ? p.titre : e.sources.get(p.source).nom); });
+  assert.deepStrictEqual(ordre, ['garde', '1. Pièces administratives et attestations', '2. Notices d\'exploitation et de maintenance', 'notice', 'notice', 'notice',
+    '3. Fiches techniques des matériels', 'Fiche technique radiateur', '4. Procès-verbaux d\'essais et de mise en service', 'PV essai etancheite reseau EF',
+    '5. Relevés d\'équilibrage et de mesures', '6. Plans de recollement', 'plan', 'plan', '7. Garanties et contrats d\'entretien', '8. Autres documents', 'devis']);
+  assert.strictEqual(await page.inputValue('#o-titre'), 'DOE – Collège Jean Moulin – Lot CVC – Plomberie');
+  const octets = await enregistrer(page);
+  const textes = await texteDuPdf(page, octets);
+  assert.strictEqual(textes.length, 18);
+  assert.match(textes[0], /TECNITUB.*DOSSIER DES OUVRAGES EX[ÉE]CUT[ÉE]S.*Collège Jean Moulin.*Département de la Savoie/);
+  assert.doesNotMatch(textes[0], /Page \d/);
+  assert.match(textes[1], /Sommaire.*1\. Pièces administratives.*2\. Notices d'exploitation.*notice.*3\. Fiches techniques.*Fiche technique radiateur/);
+  assert.match(textes[2], /Collège Jean Moulin .* 1  Pièces administratives et attestations  Page 2 \/ 17/);
+  // Signets : une entrée par section, les documents dessous
+  const signets = await page.evaluate(async b64 => {
+    const doc = await pdfjsLib.getDocument({ data: Uint8Array.from(atob(b64), c => c.charCodeAt(0)) }).promise;
+    return (await doc.getOutline()).map(o => [o.title, o.items.map(x => x.title)]);
+  }, Buffer.from(octets).toString('base64'));
+  assert.deepStrictEqual(signets.slice(0, 4), [['Sommaire', []], ['1. Pièces administratives et attestations', []], ['2. Notices d\'exploitation et de maintenance', ['notice']], ['3. Fiches techniques des matériels', ['Fiche technique radiateur']]]);
+  // Refaire le DOE après ajout d'un document : structure remplacée, pas dupliquée
+  await pdf('Attestation coupe-feu.pdf', [{}], (p, f) => p.drawText('Attestation de rebouchage coupe-feu', { x: 60, y: 760, size: 18, font: f }));
+  await ajouter(page, ['Attestation coupe-feu.pdf'], 18);
+  await page.click('#b-doe');
+  assert.strictEqual(await page.inputValue('#doe-chantier'), 'Collège Jean Moulin');
+  await page.click('#doe-ok');
+  const ordre2 = await page.evaluate(() => { const e = window.AtelierPDF.etat; return e.pages.map(p => p.doe === 'garde' ? 'garde' : p.doe ? p.titre : e.sources.get(p.source).nom); });
+  assert.strictEqual(ordre2.length, 18);
+  assert.deepStrictEqual(ordre2.slice(0, 3), ['garde', '1. Pièces administratives et attestations', 'Attestation coupe-feu']);
+  assert.deepStrictEqual(page.erreurs, []);
+  await page.context().close();
+});
+
+test('grands plans : mosaïque A3 à l\'échelle avec plan d\'assemblage, ou plan réduit', { skip: ignorer }, async () => {
+  await pdf('grand-plan.pdf', [{ taille: [2384, 1684] }], (p, f) => {
+    for (let x = 100; x < 2384; x += 400) p.drawLine({ start: { x, y: 50 }, end: { x, y: 1634 }, thickness: 2 });
+    p.drawText('Plan A1 chaufferie', { x: 120, y: 1500, size: 60, font: f });
+  });
+  const page = await appli();
+  await ajouter(page, ['grand-plan.pdf', 'devis.pdf'], 2);
+  await page.click('.carte:nth-child(1) .vignette');
+  await page.evaluate(() => { window.AtelierPDF.etat.pages[0].echelle = { mmParPt: 25.4 / 72 * 50, libelle: '1/50' }; });
+  await page.click('#b-plans');
+  assert.match(await page.textContent('#plans-info'), /1 page\(s\) sélectionnée\(s\), dont 1 grand\(s\) format\(s\) \(ex\. 841 × 594 mm\)/);
+  await page.selectOption('#plans-format', 'A3');
+  await page.check('input[name=plans-mode][value=mosaique]');
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#plans-enregistrer')]);
+  const doc = await PDFLib.PDFDocument.load(fs.readFileSync(await dl.path()));
+  // A1 sur A3 (marges et recouvrement compris) : 4 × 2 feuilles A3 à l'échelle réelle, plus le plan d'assemblage
+  assert.strictEqual(doc.getPageCount(), 9);
+  for (const p of doc.getPages()) { const { width, height } = p.getSize(); assert.deepStrictEqual([Math.round(Math.max(width, height)), Math.round(Math.min(width, height))], [1191, 842]); }
+  const textes = await texteDuPdf(page, fs.readFileSync(await dl.path()));
+  assert.match(textes[0], /Plan d'assemblage/);
+  assert.match(textes[1], /feuille A1 .*1\/50/);
+  // Réduit sur une feuille : nouvelle échelle indiquée
+  await page.click('#b-plans');
+  await page.check('input[name=plans-mode][value=reduire]');
+  const [dl2] = await Promise.all([page.waitForEvent('download'), page.click('#plans-enregistrer')]);
+  const textes2 = await texteDuPdf(page, fs.readFileSync(await dl2.path()));
+  assert.strictEqual(textes2.length, 1);
+  assert.match(textes2[0], /réduite à \d+(,\d)? % [-–] échelle du plan 1\/50, imprimé au 1\/108 environ/);
+  assert.deepStrictEqual(page.erreurs, []);
+  await page.context().close();
+});

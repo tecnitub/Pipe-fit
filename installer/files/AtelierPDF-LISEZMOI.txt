@@ -162,8 +162,8 @@ MESURER SUR UN PLAN (dans l'éditeur de page)
        Entrée pour finir : la longueur totale s'affiche ;
      - Surface : un clic par sommet, double-clic pour finir : surface en m².
      Les points bleus permettent de corriger un sommet.
-  3. Le total de la page s'affiche en bas. « ⬇ Mesures (CSV) » exporte toutes les
-     mesures du dossier dans un tableau qui s'ouvre avec Excel.
+  3. Le total de la page s'affiche en bas. « ⬇ Métré (Excel) » crée un classeur
+     Excel de tout le dossier (voir MÉTRÉ ci-dessous).
   Sans échelle, les valeurs sont celles du papier (signalées « (papier) »).
   Attention : un plan imprimé ou scanné « ajusté à la page » n'est plus à
   l'échelle indiquée ; dans ce cas, étalonnez sur une cote connue.
@@ -175,6 +175,50 @@ MESURER SUR UN PLAN (dans l'éditeur de page)
   Détail à une autre échelle sur la même feuille : liste « Échelle » >
   « Zone à une autre échelle », tracer le cadre du détail, indiquer son échelle ;
   les mesures commencées dans ce cadre utilisent cette échelle.
+
+MÉTRÉ : RÉSEAUX, DIAMÈTRES, COMPTAGES (dans l'éditeur de page)
+  - Avec un outil de mesure, la barre propose le RÉSEAU (EF, ECS, bouclage,
+    chauffage départ/retour, eau glacée, EU/EV, EP, gaz, frigorifique, soufflage,
+    reprise, incendie, ou « Autre réseau… ») et le DIAMÈTRE (DN20, Cu 14, PER 16,
+    Ø160… ou saisie libre). Choisissez-les AVANT de tracer : la longueur prend la
+    couleur du réseau et son étiquette indique le diamètre.
+    Pour corriger une mesure déjà tracée : outil Sélection, cliquer la mesure,
+    puis changer le réseau ou le diamètre.
+  - « 🔢 Compter » (touche N) : écrire le symbole (Radiateur, Bouche d'extraction,
+    Vanne…), puis un clic sur chaque symbole du plan ; chaque repère est numéroté.
+    Clic sur un repère : il est retiré. Le total s'affiche en bas.
+  - « ▤ Légende » : ajoute sur la page une légende (couleur de chaque réseau, sa
+    longueur, les symboles comptés), mise à jour automatiquement ; elle se
+    déplace et s'élargit à la souris, et s'imprime avec le plan.
+  - « ⬇ Métré (Excel) » : classeur avec les feuilles Longueurs (par réseau et
+    diamètre, avec total), Comptages, Surfaces et Détail (page par page).
+
+ASSEMBLER UN DOE (bouton « 📚 DOE… »)
+  1. Ajouter tous les documents : notices, fiches techniques, PV d'essais,
+     relevés d'équilibrage, plans, attestations, garanties…
+  2. « DOE… » : chantier, adresse, maître d'ouvrage, maître d'œuvre, lot, date,
+     indice ; liste des sections (une par ligne, modifiable).
+  3. « Créer le DOE » : page de garde TECNITUB, un intercalaire numéroté par
+     section, documents rangés sous leur section d'après le nom du fichier
+     (« Fiche technique… », « PV essai… », « Plan RDC… », « Attestation… ») ;
+     ceux qui ne sont pas reconnus vont dans « Autres documents ».
+  4. Vérifier, glisser les documents mal rangés sous la bonne section, puis
+     « Enregistrer le PDF » : sommaire à deux niveaux après la page de garde,
+     signets par section, pages numérotées (sauf la page de garde).
+  Ajout de documents plus tard : les ajouter puis refaire « DOE… » (les champs
+  sont gardés) : la structure est refaite, sans doublon.
+  La page de garde et les intercalaires se modifient comme toute page (double-clic),
+  par exemple pour y ajouter un logo (outil Image).
+
+IMPRIMER LES GRANDS PLANS (bouton « ▦ Grands plans… »)
+  Pages sélectionnées, ou toutes. Feuilles A3 ou A4 :
+  - En mosaïque, à l'échelle réelle : un plan d'assemblage (le plan réduit avec
+    le nom de chaque feuille : A1, A2, B1…), puis les feuilles. Elles se
+    recouvrent (10 mm par défaut) : couper le long des pointillés et aligner
+    les croix de repérage.
+  - Réduit sur une feuille : la nouvelle échelle est écrite au bas de la feuille
+    (ex. « plan 1/50, imprimé au 1/108 environ »).
+  Imprimer à 100 % / « taille réelle », sans « ajuster à la page ».
 
 RECONNAÎTRE LE TEXTE DES SCANS (OCR)
   Bouton « 🔍 OCR » : lit le texte des pages scannées et des photos (pages

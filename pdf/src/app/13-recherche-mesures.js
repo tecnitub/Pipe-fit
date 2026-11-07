@@ -224,8 +224,9 @@
       const v = valeurMesure(e, p, elements);
       if (v.type === 'angle') { e.etiquette = `${nombre(v.deg, 1)}°`; continue; }
       const aEchelle = p.echelle || zoneDe(e, elements);
-      e.etiquette = (v.type === 'surface' ? formatSurface(v.mm2) : formatLongueur(v.mm)) + (aEchelle ? '' : ' (papier)');
+      e.etiquette = (v.type === 'surface' ? formatSurface(v.mm2) : formatLongueur(v.mm)) + (aEchelle ? '' : ' (papier)') + (e.dn && v.type !== 'surface' ? ` · ${e.dn}` : '');
     }
+    majLegendes(elements, p);
   }
   function majRecapMesures() {
     const zone = $('#ed-recap');
@@ -243,7 +244,10 @@
       n++;
       if (v.type === 'surface') surf += v.mm2; else lg += v.mm;
     }
-    zone.textContent = n ? `Mesures de la page : ${n} · longueurs ${formatLongueur(lg)} · surfaces ${formatSurface(surf)}${ech ? '' : ' — échelle non définie'}` : '';
+    const comptes = new Map();
+    for (const e of ed.elements) if (e.type === 'compte') comptes.set(e.symbole, (comptes.get(e.symbole) || 0) + e.points.length);
+    const txtComptes = [...comptes].map(([s, k]) => `${s} ${k}`).join(' · ');
+    zone.textContent = [n ? `Mesures de la page : ${n} · longueurs ${formatLongueur(lg)}${surf ? ` · surfaces ${formatSurface(surf)}` : ''}${ech ? '' : ' — échelle non définie'}` : '', txtComptes ? `Comptés : ${txtComptes}` : ''].filter(Boolean).join(' — ');
   }
   // Échelle appliquée à toutes les pages du même document
   function appliquerEchelle(echelle) {
@@ -306,24 +310,3 @@
   });
   calque.addEventListener('dblclick', () => { if (ed.trace) terminerTrace(); });
 
-  // Relevé de toutes les mesures du dossier (tableur, séparateur « ; »)
-  function exporterMesures() {
-    validerEditeur();
-    const lignes = [['Page', 'Document', 'Type', 'Valeur', 'Unité', 'Échelle']];
-    let n = 0;
-    etat.pages.forEach((p, i) => {
-      const els = p.elements.filter(e => MESURES.includes(e.type));
-      els.forEach(e => {
-        const v = valeurMesure(e, p);
-        const type = { cote: 'Cote', longueur: 'Longueur', surface: 'Surface', angle: 'Angle' }[e.type];
-        const val = v.type === 'angle' ? nombre(v.deg, 1) : v.type === 'surface' ? nombre(v.mm2 / 1e6, 3) : nombre(v.mm / 1000, 3);
-        const ech = zoneDe(e, p.elements)?.echelle || p.echelle;
-        lignes.push([i + 1, etat.sources.get(p.source)?.nom || p.titre || '', type, val, v.type === 'angle' ? '°' : v.type === 'surface' ? 'm²' : 'm', v.type === 'angle' ? '' : ech ? (ech.libelle || 'étalonnée') : 'aucune']);
-        n++;
-      });
-    });
-    if (!n) { note('Aucune mesure dans le dossier.', 'erreur'); return; }
-    const csv = '﻿' + lignes.map(l => l.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\r\n');
-    telecharger(new Blob([csv], { type: 'text/csv' }), `Mesures - ${nomFichier($('#o-titre').value.trim() || 'dossier')}.csv`);
-    note(`${n} mesure(s) exportée(s) (fichier CSV, s'ouvre dans Excel).`, 'ok');
-  }

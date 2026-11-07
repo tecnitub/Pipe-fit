@@ -4,9 +4,10 @@
   //  ligne / fleche {x1,y1,x2,y2,couleur,epaisseur} · crayon {points,couleur,epaisseur}
   //  cadre / ellipse {x,y,w,h,couleur,epaisseur} · surligne / masque / caviarde {x,y,w,h} · image {x,y,w,h,image}
   //  tampon {x,y,w,h,texte,ligne2,couleur} · cote {x1,y1,x2,y2} · longueur / surface {points} (+ etiquette calculée)
-  const BOITES = ['masque', 'surligne', 'cadre', 'caviarde', 'ellipse', 'bulle', 'image', 'tampon', 'zoneEchelle'];
-  const EN_SVG = ['ligne', 'fleche', 'crayon', 'ellipse', 'bulle', 'tampon', 'cote', 'longueur', 'surface', 'angle'];
-  const SANS_DIV = ['ligne', 'fleche', 'crayon', 'ellipse', 'cote', 'longueur', 'surface', 'angle', 'texteModifie'];
+  //  compte {points, symbole, reseau} · legende {x,y,w,h,titre,lignes (calculées)} ; mesures et comptages : reseau, dn
+  const BOITES = ['masque', 'surligne', 'cadre', 'caviarde', 'ellipse', 'bulle', 'image', 'tampon', 'zoneEchelle', 'legende'];
+  const EN_SVG = ['ligne', 'fleche', 'crayon', 'ellipse', 'bulle', 'tampon', 'cote', 'longueur', 'surface', 'angle', 'compte', 'legende'];
+  const SANS_DIV = ['ligne', 'fleche', 'crayon', 'ellipse', 'cote', 'longueur', 'surface', 'angle', 'texteModifie', 'compte'];
   const MESURES = ['cote', 'longueur', 'surface', 'angle'];
   // Outils qui s'accrochent aux traits du plan (extrémités, puis traits)
   const ACCROCHE = ['cote', 'longueur', 'surface', 'angle', 'etalonner', 'ligne', 'fleche'];
@@ -351,6 +352,7 @@
     $('#ed-page').classList.toggle('outil-actif', o !== 'selection');
     calque.classList.toggle('ecrit', o === 'texte');
     if (reglages[o]) majReglagesAffiches(reglages[o]);
+    majZoneMetre();
     if (o === 'image') { $('#fichier-image').click(); }
     if (o === 'editertexte') preparerLignes();
     else if (ed.lignes) dessinerCalque();
@@ -410,6 +412,19 @@
       p.dataset.i = i;
       svg.appendChild(p);
     }
+    if (e.type === 'legende') {
+      for (const lg of MoteurPDF.lignesLegende(e, ed.L, ed.H, ed.ech)) {
+        const t = document.createElementNS(SVG_NS, 'text');
+        t.setAttribute('x', lg.x);
+        t.setAttribute('y', lg.y + lg.taille * 0.94);
+        t.setAttribute('font-size', lg.taille);
+        t.setAttribute('font-family', 'Helvetica, Arial, sans-serif');
+        t.setAttribute('font-weight', lg.gras ? 'bold' : 'normal');
+        t.setAttribute('fill', '#212121');
+        t.textContent = lg.texte;
+        svg.appendChild(t);
+      }
+    }
     if (e.type === 'tampon') {
       for (const lg of MoteurPDF.lignesTampon(e, ed.L, ed.H, ed.ech, mesureTexte)) {
         const t = document.createElementNS(SVG_NS, 'text');
@@ -428,7 +443,7 @@
   function noeudsEtiquettes(e, i) {
     return MoteurPDF.etiquettes(e, ed.L, ed.H, ed.ech).map(et => {
       const d = document.createElement('div');
-      d.className = 'el-etiquette';
+      d.className = et.sansCadre ? 'el-etiquette el-numero' : 'el-etiquette';
       d.dataset.i = i;
       Object.assign(d.style, { left: `${et.cx}px`, top: `${et.cy}px`, fontSize: `${et.taille}px`, color: et.couleur, borderColor: et.couleur });
       d.textContent = et.texte;
@@ -442,7 +457,7 @@
       const choisi = ed.choisi === i;
       if (EN_SVG.includes(e.type)) noeuds.push(noeudForme(e, i));
       if (e.type === 'texteModifie') noeuds.push(...noeudsTexteModifie(e, i));
-      if (MESURES.includes(e.type)) noeuds.push(...noeudsEtiquettes(e, i));
+      if (MESURES.includes(e.type) || e.type === 'compte') noeuds.push(...noeudsEtiquettes(e, i));
       if (e.type === 'bulle') {
         const t = document.createElement('div');
         t.className = 'el el-bulle';
@@ -484,7 +499,7 @@
         }
         if (BOITES.includes(e.type)) noeuds.push(poignee('redim', e.x + e.w, e.y + e.h));
         if (e.type === 'ligne' || e.type === 'fleche' || e.type === 'cote') noeuds.push(poignee('p1', e.x1, e.y1), poignee('p2', e.x2, e.y2));
-        if ((e.type === 'longueur' || e.type === 'surface') && ed.trace !== e) e.points.forEach(([x, y], k) => noeuds.push(poignee(`v${k}`, x, y)));
+        if ((e.type === 'longueur' || e.type === 'surface' || (e.type === 'compte' && ed.outil === 'selection')) && ed.trace !== e) e.points.forEach(([x, y], k) => noeuds.push(poignee(`v${k}`, x, y)));
         if (e.type === 'bulle') { const p = poignee('pointe', e.px, e.py); p.classList.add('pointe'); noeuds.push(p); }
       }
     });
@@ -499,6 +514,7 @@
     const e = ed.elements[ed.choisi];
     $('#ed-suppr').disabled = $('#ed-dupl').disabled = !e;
     $('#ed-memoriser').hidden = !(e && e.type === 'image');
+    majZoneMetre();
     if (!e) return;
     majReglagesAffiches(e);
   }

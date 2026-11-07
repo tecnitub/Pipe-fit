@@ -40,7 +40,14 @@ Obtenir les fichiers : onglet **Actions** du dépôt GitHub → dernière exécu
   à la main ou en recherchant un mot dans tous les PDF.
 - **Tampons** (BON POUR EXÉCUTION, VISA, VU… avec nom et date) et **signatures mémorisées** sur le poste.
 - **Mesures sur plan** à l'échelle (1/50, 1/100… ou étalonnage sur une cote) : cotes, longueurs cumulées, surfaces ;
-  total par page et export CSV de toutes les mesures.
+  total par page.
+- **Métré** : réseau (EF, ECS, chauffage, gaz…, couleur du réseau) et diamètre (DN, cuivre, PER, Ø) sur chaque
+  mesure, **comptage de symboles** (radiateurs, bouches, vannes…), **légende** automatique sur le plan, export
+  **Excel** (.xlsx : longueurs par réseau et diamètre, comptages, surfaces, détail).
+- **DOE** : page de garde, sections avec intercalaires, documents classés d'après leur nom, sommaire à deux niveaux
+  après la page de garde, signets par section, numérotation.
+- **Grands plans** sur A4/A3 : mosaïque à l'échelle réelle (recouvrement, repères, plan d'assemblage) ou plan
+  réduit avec l'échelle recalculée.
 - **OCR** (Tesseract, français, sur le poste) : scans et photos interrogeables, caviardage par recherche dans les scans.
 - **Sauvegarde automatique** du travail en cours (reprise à la réouverture) et **fichier projet** `.atelierpdf`.
 - **Réédition** : un PDF enregistré par Atelier PDF, rouvert dans Atelier PDF, retrouve ses annotations modifiables

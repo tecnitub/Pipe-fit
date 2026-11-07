@@ -89,6 +89,7 @@
       if (d.ocr) p.ocr = d.ocr;
       if (d.echelle) p.echelle = d.echelle;
       if (d.intercalaire) p.titre = d.intercalaire;
+      if (d.doe) p.doe = d.doe;
       const nom = d.groupe || s.nom;
       if (!parGroupe.size) { s.nom = nom; parGroupe.set(nom, s); }
       if (!parGroupe.has(nom)) {

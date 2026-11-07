@@ -119,7 +119,7 @@
   $('#ed-caviarder').addEventListener('click', caviarderRecherche);
   $('#ed-tampon').addEventListener('click', ouvrirTampons);
   $('#ed-memoriser').addEventListener('click', memoriserImage);
-  $('#ed-csv').addEventListener('click', exporterMesures);
+  $('#ed-excel').addEventListener('click', exporterMetre);
   $('#ed-fermer').addEventListener('click', fermerEditeur);
   $('#ed-prec').addEventListener('click', () => changerPage(-1));
   $('#ed-suiv').addEventListener('click', () => changerPage(1));
@@ -151,6 +151,6 @@
       return;
     }
     if (ctrl || ev.altKey) return;
-    const outils = { v: 'selection', t: 'texte', b: 'bulle', l: 'ligne', f: 'fleche', r: 'cadre', e: 'ellipse', c: 'crayon', s: 'surligne', m: 'masque', x: 'caviarde', i: 'image' };
+    const outils = { n: 'compte', v: 'selection', t: 'texte', b: 'bulle', l: 'ligne', f: 'fleche', r: 'cadre', e: 'ellipse', c: 'crayon', s: 'surligne', m: 'masque', x: 'caviarde', i: 'image' };
     if (outils[touche]) choisirOutil(outils[touche]);
   }

@@ -27,6 +27,7 @@
     <button id="b-ouvrir" class="principal-clair" title="Ajouter des PDF ou des images (Ctrl+O)">＋ Ajouter des fichiers</button>
     <button id="b-blanche" title="Insérer une page blanche après la sélection">▯<span class="lib"> Page blanche</span></button>
     <button id="b-intercalaire" title="Insérer une page de titre (intercalaire) après la sélection">❡<span class="lib"> Intercalaire</span></button>
+    <button id="b-doe" title="Assembler un DOE : page de garde, sections avec intercalaires, documents classés, sommaire">📚<span class="lib"> DOE…</span></button>
     <span class="sep"></span>
     <button id="b-annuler" title="Annuler (Ctrl+Z)">↶</button>
     <button id="b-retablir" title="Rétablir (Ctrl+Y)">↷</button>
@@ -43,6 +44,7 @@
     <button id="b-diviser" title="Découper en plusieurs PDF">✂<span class="lib"> Diviser…</span></button>
     <button id="b-rechercher" title="Rechercher un mot dans le document (Ctrl+F)">🔎</button>
     <button id="b-imprimer" title="Imprimer le document (Ctrl+P)">🖨<span class="lib"> Imprimer</span></button>
+    <button id="b-plans" title="Imprimer les grands plans (A0, A1, A2) sur des feuilles A4 ou A3 : en mosaïque à l'échelle, ou réduits">▦<span class="lib"> Grands plans…</span></button>
     <button id="b-aide" title="Comment faire ? Aide et visite guidée (F1)">❓<span class="lib"> Aide</span></button>
     <button id="b-enregistrer" class="principal" title="Compiler toutes les pages en un PDF (Ctrl+S)">⬇ Enregistrer le PDF</button>
   </div>
@@ -169,6 +171,7 @@
       <button data-outil="longueur" title="Longueur cumulée (ex. tuyauterie) : un clic par point, double-clic pour finir">〰<span class="lib">&nbsp;Longueur</span></button>
       <button data-outil="surface" title="Surface : un clic par sommet, double-clic pour finir">⬠<span class="lib">&nbsp;Surface</span></button>
       <button data-outil="angle" title="Angle : un clic sur un côté, un sur le sommet, un sur l'autre côté">∠<span class="lib">&nbsp;Angle</span></button>
+      <button data-outil="compte" title="Compter des symboles (radiateurs, bouches, vannes…) : un clic par symbole, clic sur un repère pour le retirer (N)">🔢<span class="lib">&nbsp;Compter</span></button>
       <label title="Échelle du plan (toutes les pages de ce document)"><span class="lib">Échelle</span><span class="ico-seul">📐</span>
         <select id="ed-echelle">
           <option value="">non définie</option>
@@ -179,6 +182,25 @@
           <option value="etalonner">Étalonner sur une cote connue…</option>
           <option value="zone">Zone à une autre échelle (détail)…</option>
         </select></label>
+      <span id="ed-metre" class="metre" hidden>
+        <select id="ed-reseau" title="Réseau de la mesure ou du comptage : couleur du réseau, totaux par réseau dans la légende et le métré Excel"></select>
+        <input id="ed-dn" list="liste-dn" placeholder="DN" title="Diamètre (ex. DN20, Cu 14, Ø160) : totaux par diamètre dans le métré" size="7">
+        <input id="ed-symbole" list="liste-symboles" placeholder="Symbole" title="Symbole compté (ex. Radiateur, Bouche d'extraction, Vanne)" size="16">
+        <button id="ed-legende" title="Ajouter sur la page une légende des réseaux, avec les longueurs et les quantités (mise à jour automatique)">▤<span class="lib"> Légende</span></button>
+      </span>
+      <datalist id="liste-dn">
+        <option value="DN10"><option value="DN15"><option value="DN20"><option value="DN25"><option value="DN32"><option value="DN40"><option value="DN50"><option value="DN65"><option value="DN80"><option value="DN100"><option value="DN125"><option value="DN150"><option value="DN200">
+        <option value="Cu 12"><option value="Cu 14"><option value="Cu 16"><option value="Cu 18"><option value="Cu 22"><option value="Cu 28"><option value="Cu 35"><option value="Cu 42"><option value="Cu 54">
+        <option value="PER 12"><option value="PER 16"><option value="PER 20"><option value="Multicouche 16"><option value="Multicouche 20"><option value="Multicouche 26">
+        <option value="PVC 32"><option value="PVC 40"><option value="PVC 50"><option value="PVC 100"><option value="PVC 125">
+        <option value="Ø80"><option value="Ø100"><option value="Ø125"><option value="Ø160"><option value="Ø200"><option value="Ø250"><option value="Ø315"><option value="Ø400">
+      </datalist>
+      <datalist id="liste-symboles">
+        <option value="Radiateur"><option value="Ventilo-convecteur"><option value="Bouche d'extraction"><option value="Bouche de soufflage"><option value="Grille de reprise"><option value="Diffuseur">
+        <option value="Vanne d'arrêt"><option value="Vanne d'équilibrage"><option value="Robinet thermostatique"><option value="Clapet coupe-feu"><option value="Purgeur"><option value="Compteur">
+        <option value="Lavabo"><option value="WC"><option value="Évier"><option value="Douche"><option value="Urinoir"><option value="Siphon de sol"><option value="Robinet de puisage">
+        <option value="Unité intérieure"><option value="Cassette"><option value="Détecteur"><option value="Sonde"><option value="Thermostat"><option value="Trappe de visite">
+      </datalist>
     </div>
     <div class="groupe-outils">
       <label title="Couleur">🎨 <input type="color" id="ed-couleur" value="#000000"></label>
@@ -195,7 +217,7 @@
     </div>
     <div class="groupe-outils">
       <button id="ed-caviarder" title="Rechercher un mot ou un nom dans tous les PDF et le caviarder partout">■<span class="lib"> Caviarder un mot…</span></button>
-      <button id="ed-csv" title="Exporter toutes les mesures du dossier dans un tableau (Excel)">⬇<span class="lib"> Mesures (CSV)</span></button>
+      <button id="ed-excel" title="Métré du dossier dans un classeur Excel : longueurs par réseau et diamètre, comptages, surfaces, détail">⬇<span class="lib"> Métré (Excel)</span></button>
       <span class="zoom-ed" title="Zoom : Ctrl + molette (ou pincer le pavé tactile) ; Ctrl + / Ctrl − ; Ctrl 0 : page entière. Espace + glisser (ou bouton du milieu) pour déplacer la page.">
         <button id="ed-zoom-moins" title="Zoom arrière (Ctrl −)">−</button>
         <select id="ed-zoom">
@@ -291,6 +313,39 @@
     <label class="champ">Nom des fichiers<input id="div-nom" value="Document"></label>
     <p class="aide">Les options de la colonne de gauche (numérotation, filigrane…) s'appliquent à chaque fichier.</p>
     <div class="boutons"><button id="div-annuler">Annuler</button><button id="div-ok" class="principal">Diviser</button></div>
+  </div>
+</div>
+
+<div id="dlg-doe" class="modale dialogue" hidden>
+  <div class="boite boite-large">
+    <h2>Assembler un DOE</h2>
+    <div class="grille-champs">
+      <label class="champ">Chantier<input id="doe-chantier" placeholder="ex. Collège Jean Moulin – Restructuration"></label>
+      <label class="champ">Adresse<input id="doe-adresse" placeholder="ex. 12 rue des Écoles, 73000 Chambéry"></label>
+      <label class="champ">Maître d'ouvrage<input id="doe-moa"></label>
+      <label class="champ">Maître d'œuvre<input id="doe-moe"></label>
+      <label class="champ">Lot<input id="doe-lot"></label>
+      <label class="champ">Entreprise<input id="doe-entreprise"></label>
+      <label class="champ">Date<input id="doe-date"></label>
+      <label class="champ">Indice<input id="doe-indice"></label>
+    </div>
+    <label class="champ">Sections (une par ligne, dans l'ordre) <button id="doe-defaut" type="button" class="lien">sections Tecnitub par défaut</button><textarea id="doe-sections" rows="8"></textarea></label>
+    <label class="case"><input type="checkbox" id="doe-classer" checked> Classer automatiquement les documents déjà ajoutés, d'après le nom de leur fichier (« Fiche technique… », « PV d'essai… », « Plan RDC… »)</label>
+    <p class="aide">Une page de garde et un intercalaire par section sont créés ; le sommaire (après la page de garde), les signets par section et la numérotation sont activés. Refaire « DOE… » après avoir ajouté des documents met la structure à jour.</p>
+    <div class="boutons"><button id="doe-annuler">Annuler</button><button id="doe-ok" class="principal">Créer le DOE</button></div>
+  </div>
+</div>
+
+<div id="dlg-plans" class="modale dialogue" hidden>
+  <div class="boite">
+    <h2>Imprimer les grands plans</h2>
+    <p class="aide" id="plans-info"></p>
+    <label class="champ">Feuilles de l'imprimante<select id="plans-format"><option value="A3">A3</option><option value="A4">A4</option></select></label>
+    <label class="radio"><input type="radio" name="plans-mode" value="mosaique" checked> En mosaïque, à l'échelle réelle : plusieurs feuilles à assembler, avec plan d'assemblage et repères de collage</label>
+    <label class="radio"><input type="radio" name="plans-mode" value="reduire"> Réduit sur une seule feuille (la nouvelle échelle est indiquée sur la feuille)</label>
+    <label class="champ court">Recouvrement (mm)<input id="plans-recouvrement" type="number" min="0" max="40" value="10"></label>
+    <p class="aide">Imprimez ensuite « à 100 % / taille réelle », sans « ajuster à la page ». Les annotations et mesures sont imprimées avec le plan.</p>
+    <div class="boutons"><button id="plans-annuler">Annuler</button><button id="plans-enregistrer">Enregistrer le PDF</button><button id="plans-imprimer" class="principal">Imprimer</button></div>
   </div>
 </div>
 

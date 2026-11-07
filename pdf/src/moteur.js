@@ -84,7 +84,7 @@
   // pixels à l'écran), k = unités par point (taille des pointes de flèche, épaisseurs, arrondis).
   // Résultat : [{ cmds: [['M',x,y],['L',x,y],['C',x1,y1,x2,y2,x,y],['Z']], trait, fond, epaisseur, rond, opacite }]
   const DEFAUTS = { ligne: '#d32f2f', fleche: '#d32f2f', crayon: '#1565c0', ellipse: '#d32f2f', cadre: '#d32f2f', bulle: '#1565c0', texte: '#000000',
-    tampon: '#2e7d32', cote: '#e65100', longueur: '#e65100', surface: '#6a1b9a', angle: '#00838f' };
+    tampon: '#2e7d32', cote: '#e65100', longueur: '#e65100', surface: '#6a1b9a', angle: '#00838f', compte: '#1565c0', legende: '#37474f' };
   const K_ELLIPSE = 0.5523;
 
   function cmdsRectArrondi(x, y, w, h, r) {
@@ -199,13 +199,53 @@
         if (pts.length < 2) return [];
         return [{ cmds: [...pts.map(([px, py], i) => [i ? 'L' : 'M', X(px), Y(py)]), ['Z']], trait: coul, epaisseur: ep, fond: coul, opaciteFond: 0.15 }];
       }
+      case 'compte': {
+        // Symboles comptés : un rond numéroté par symbole (numéro dessiné par etiquettes())
+        const r = RAYON_COMPTE * k;
+        return (e.points || []).map(([px, py]) => ({ cmds: cmdsEllipse(X(px) - r, Y(py) - r, 2 * r, 2 * r), trait: coul, epaisseur: 1.4 * k, fond: '#ffffff' }));
+      }
+      case 'legende': {
+        const x = X(e.x), y = Y(e.y), w = X(e.w), hh = Y(e.h);
+        const res = [{ cmds: cmdsRect(x, y, w, hh), trait: coul, epaisseur: 0.8 * k, fond: '#ffffff' }];
+        for (const m of reperesLegende(e, l, h, k)) {
+          if (m.forme === 'rond') res.push({ cmds: cmdsEllipse(m.x - m.t * 0.4, m.y - m.t * 0.4, m.t * 0.8, m.t * 0.8), trait: m.couleur, epaisseur: 1.2 * k, fond: '#ffffff' });
+          else if (m.forme === 'surface') res.push({ cmds: cmdsRect(m.x - m.t * 0.6, m.y - m.t * 0.35, m.t * 1.2, m.t * 0.7), trait: m.couleur, epaisseur: 0.8 * k, fond: m.couleur, opaciteFond: 0.3 });
+          else res.push({ cmds: [['M', m.x - m.t * 0.8, m.y], ['L', m.x + m.t * 0.8, m.y]], trait: m.couleur, epaisseur: m.t * 0.28, rond: true });
+        }
+        return res;
+      }
       default:
         return [];
     }
   }
 
+  // Légende : titre puis une ligne par réseau ou symbole ({ couleur, texte, forme: 'trait' | 'rond' | 'surface' })
+  const RAYON_COMPTE = 6.5;
+  function mesuresLegende(e, k) {
+    const t = (e.taille || 8) * k, pad = 6 * k, lh = t * 1.55;
+    return { t, pad, lh };
+  }
+  // Hauteur (points) d'une légende de n lignes
+  function hauteurLegende(n, taille = 8) { const { pad, lh } = mesuresLegende({ taille }, 1); return 2 * pad + lh * (n + 1); }
+  function reperesLegende(e, l, h, k) {
+    const { t, pad, lh } = mesuresLegende(e, k);
+    const x = e.x * l, y = e.y * h;
+    return (e.lignes || []).map((g, i) => ({ x: x + pad + t * 0.8, y: y + pad + lh * (i + 1) + lh / 2, t, couleur: g.couleur || '#000000', forme: g.forme }));
+  }
+  function lignesLegende(e, l, h, k) {
+    const { t, pad, lh } = mesuresLegende(e, k);
+    const x = e.x * l, y = e.y * h;
+    const res = [{ x: x + pad, y: y + pad + (lh - t) / 2, taille: t, texte: e.titre || 'Légende', gras: true }];
+    (e.lignes || []).forEach((g, i) => res.push({ x: x + pad + t * 2.1, y: y + pad + lh * (i + 1) + (lh - t) / 2, taille: t, texte: g.texte || '', gras: false }));
+    return res;
+  }
+
   // Étiquettes des mesures (valeur calculée par l'application dans e.etiquette), centrées en (cx, cy)
   function etiquettes(e, l, h, k = 1) {
+    if (e.type === 'compte') {
+      const taille = (RAYON_COMPTE - 0.5) * 1.15 * k;
+      return (e.points || []).map(([px, py], i) => ({ texte: String(i + 1), cx: px * l, cy: py * h, taille: String(i + 1).length > 2 ? taille * 0.75 : taille, couleur: e.couleur || DEFAUTS.compte, sansCadre: true }));
+    }
     if (!e.etiquette || !['cote', 'longueur', 'surface', 'angle'].includes(e.type)) return [];
     const taille = (e.taille || 10) * k;
     let cx, cy;
@@ -356,13 +396,22 @@
         const t = nettoyer(ctx.police, et.texte);
         const lt = ctx.police.widthOfTextAtSize(t, et.taille);
         const bw = lt + et.taille * 0.8, bh = et.taille * 1.35;
-        page.drawSvgPath(chemin(cmdsRectArrondi(et.cx - bw / 2, et.cy - bh / 2, bw, bh, et.taille * 0.3), versChemin), { x: 0, y: 0, color: couleur('#ffffff'), borderColor: couleur(et.couleur), borderWidth: 0.6 });
+        if (!et.sansCadre) page.drawSvgPath(chemin(cmdsRectArrondi(et.cx - bw / 2, et.cy - bh / 2, bw, bh, et.taille * 0.3), versChemin), { x: 0, y: 0, color: couleur('#ffffff'), borderColor: couleur(et.couleur), borderWidth: 0.6 });
         poserTexte(page, boite, r, ctx.police, { texte: t, u: (et.cx - lt / 2) / affiche.l, v: (et.cy - et.taille * 0.58) / affiche.h, taille: et.taille, coul: couleur(et.couleur) });
       }
       if (e.type === 'tampon') {
         const mesure = (t, gras, taille) => (gras ? ctx.policeGras : ctx.police).widthOfTextAtSize(nettoyer(gras ? ctx.policeGras : ctx.police, t), taille);
         for (const lg of lignesTampon(e, affiche.l, affiche.h, 1, mesure)) {
           poserTexte(page, boite, r, lg.gras ? ctx.policeGras : ctx.police, { texte: lg.texte, u: lg.x / affiche.l, v: lg.y / affiche.h, taille: lg.taille, coul: couleur(e.couleur || DEFAUTS.tampon) });
+        }
+      }
+      if (e.type === 'legende') {
+        for (const lg of lignesLegende(e, affiche.l, affiche.h, 1)) {
+          const police = lg.gras ? ctx.policeGras : ctx.police;
+          let t = nettoyer(police, lg.texte);
+          const max = (e.x + e.w) * affiche.l - lg.x - 4;
+          while (t.length > 3 && police.widthOfTextAtSize(t, lg.taille) > max) t = t.slice(0, -2);
+          poserTexte(page, boite, r, police, { texte: t, u: lg.x / affiche.l, v: lg.y / affiche.h, taille: lg.taille, coul: couleur('#212121') });
         }
       }
       if (e.type === 'bulle' && e.texte) {
@@ -402,24 +451,28 @@
       const titre = p.groupe || '';
       const dernier = res[res.length - 1];
       if (dernier && dernier.cle === (p.source ?? `blanc${i}`) && p.source != null) return;
-      res.push({ cle: p.source ?? `blanc${i}`, titre, debut: i, sansTitre: p.source == null });
+      res.push({ cle: p.source ?? `blanc${i}`, titre, debut: i, sansTitre: p.source == null, niveau: p.niveau || 0 });
     });
     return res.filter(g => !g.sansTitre && g.titre);
   }
+  // Sommaire à deux niveaux (sections d'un DOE, documents dessous) : sections en gras
+  const aNiveaux = entrees => entrees.some(e => e.niveau > 0);
 
-  const LIGNES_PAR_PAGE_SOMMAIRE = 32;
-  function ajouterSommaire(sortie, entrees, ctx, titreDoc, numeroDe) {
+  const LIGNES_PAR_PAGE_SOMMAIRE = 30;
+  function ajouterSommaire(sortie, entrees, ctx, titreDoc, numeroDe, position = 0) {
     const { rgb } = lib();
     const nb = Math.max(1, Math.ceil(entrees.length / LIGNES_PAR_PAGE_SOMMAIRE));
     const pagesS = [];
     for (let s = 0; s < nb; s++) {
-      const page = sortie.insertPage(s, A4);
+      const page = sortie.insertPage(position + s, A4);
       pagesS.push(page);
       const [L, H] = A4;
       let y = H - mm(25);
       if (s === 0) {
         if (titreDoc) {
-          page.drawText(nettoyer(ctx.policeGras, titreDoc), { x: mm(20), y, size: 18, font: ctx.policeGras, color: rgb(0.1, 0.1, 0.1) });
+          const t = nettoyer(ctx.policeGras, titreDoc);
+          const taille = Math.max(9, Math.min(18, (L - mm(40)) / Math.max(1, ctx.policeGras.widthOfTextAtSize(t, 1))));
+          page.drawText(t, { x: mm(20), y, size: taille, font: ctx.policeGras, color: rgb(0.1, 0.1, 0.1) });
           y -= 30;
         }
         page.drawText('Sommaire', { x: mm(20), y, size: 15, font: ctx.policeGras, color: rgb(0.15, 0.3, 0.55) });
@@ -430,17 +483,22 @@
       entrees.slice(s * LIGNES_PAR_PAGE_SOMMAIRE, (s + 1) * LIGNES_PAR_PAGE_SOMMAIRE).forEach(e => {
         const num = String(numeroDe(e.pageFinale));
         const largeurNum = ctx.police.widthOfTextAtSize(num, 11);
-        let titre = nettoyer(ctx.police, e.titre);
-        const max = L - mm(40) - largeurNum - 30;
-        while (titre.length > 3 && ctx.police.widthOfTextAtSize(titre, 11) > max) titre = titre.slice(0, -4) + '...';
-        const lt = ctx.police.widthOfTextAtSize(titre, 11);
-        page.drawText(titre, { x: mm(20), y, size: 11, font: ctx.police, color: rgb(0.1, 0.1, 0.1) });
+        const section = aNiveaux(entrees) && !e.niveau;
+        const police = section ? ctx.policeGras : ctx.police;
+        const x0 = mm(20) + (e.niveau ? mm(8) : 0);
+        if (section && y < H - mm(60)) y -= 6;
+        let titre = nettoyer(police, e.titre);
+        const max = L - mm(20) - x0 - largeurNum - 30;
+        while (titre.length > 3 && police.widthOfTextAtSize(titre, 11) > max) titre = titre.slice(0, -4) + '...';
+        const lt = police.widthOfTextAtSize(titre, 11);
+        page.drawText(titre, { x: x0, y, size: 11, font: police, color: section ? rgb(0.09, 0.2, 0.31) : rgb(0.1, 0.1, 0.1) });
         // Points de conduite
-        const debutPts = mm(20) + lt + 6, finPts = L - mm(20) - largeurNum - 6;
+        const debutPts = x0 + lt + 6, finPts = L - mm(20) - largeurNum - 6;
         if (finPts > debutPts) {
-          const pas = ctx.police.widthOfTextAtSize('.', 11) + 1.5;
+          // Points espacés, alignés à droite contre le numéro
+          const pas = ctx.police.widthOfTextAtSize(' .', 11);
           const n = Math.floor((finPts - debutPts) / pas);
-          page.drawText('.'.repeat(Math.max(0, n)), { x: debutPts, y, size: 11, font: ctx.police, color: rgb(0.6, 0.6, 0.6), characterSpacing: 1.5 });
+          if (n > 0) page.drawText(' .'.repeat(n), { x: finPts - n * pas, y, size: 11, font: ctx.police, color: rgb(0.6, 0.6, 0.6) });
         }
         page.drawText(num, { x: L - mm(20) - largeurNum, y, size: 11, font: ctx.police, color: rgb(0.1, 0.1, 0.1) });
         e.zone = { page, x: mm(20), y: y - 3, w: L - mm(40), h: 15 };
@@ -471,16 +529,26 @@
     if (!entrees.length) return;
     const c = sortie.context;
     const racine = c.nextRef();
-    const refs = entrees.map(() => c.nextRef());
-    entrees.forEach((e, i) => {
-      const d = c.obj({ Parent: racine, Dest: [sortie.getPage(e.pageFinale).ref, 'Fit'] });
-      d.set(PDFName.of('Title'), PDFHexString.fromText(e.titre));
-      if (i > 0) d.set(PDFName.of('Prev'), refs[i - 1]);
-      if (i < refs.length - 1) d.set(PDFName.of('Next'), refs[i + 1]);
-      c.assign(refs[i], d);
+    // Arbre : une entrée de niveau 1 se range sous l'entrée de niveau 0 qui la précède (section d'un DOE)
+    const noeuds = entrees.map(e => ({ e, ref: c.nextRef(), enfants: [] }));
+    const haut = [];
+    noeuds.forEach(n => { const parent = haut[haut.length - 1]; if (n.e.niveau > 0 && parent) parent.enfants.push(n); else haut.push(n); });
+    const ecrire = (liste, parentRef) => liste.forEach((n, i) => {
+      const d = c.obj({ Parent: parentRef, Dest: [sortie.getPage(n.e.pageFinale).ref, 'Fit'] });
+      d.set(PDFName.of('Title'), PDFHexString.fromText(n.e.titre));
+      if (i > 0) d.set(PDFName.of('Prev'), liste[i - 1].ref);
+      if (i < liste.length - 1) d.set(PDFName.of('Next'), liste[i + 1].ref);
+      if (n.enfants.length) {
+        d.set(PDFName.of('First'), n.enfants[0].ref);
+        d.set(PDFName.of('Last'), n.enfants[n.enfants.length - 1].ref);
+        d.set(PDFName.of('Count'), PDFNumber.of(n.enfants.length)); // section dépliée
+        ecrire(n.enfants, n.ref);
+      }
+      c.assign(n.ref, d);
     });
-    const dict = c.obj({ Type: 'Outlines', First: refs[0], Last: refs[refs.length - 1] });
-    dict.set(PDFName.of('Count'), PDFNumber.of(refs.length));
+    ecrire(haut, racine);
+    const dict = c.obj({ Type: 'Outlines', First: haut[0].ref, Last: haut[haut.length - 1].ref });
+    dict.set(PDFName.of('Count'), PDFNumber.of(noeuds.length));
     c.assign(racine, dict);
     sortie.catalog.set(PDFName.of('Outlines'), racine);
     sortie.catalog.set(PDFName.of('PageMode'), PDFName.of('UseOutlines'));
@@ -629,17 +697,19 @@
     }
 
     // Sommaire (inséré en tête) puis signets
-    const entrees = (options.sommaire || options.signets) ? groupes(pages).map(g => ({ titre: g.titre, pageInitiale: g.debut })) : [];
+    const entrees = (options.sommaire || options.signets) ? groupes(pages).map(g => ({ titre: g.titre, pageInitiale: g.debut, niveau: g.niveau })) : [];
     let nbSommaire = 0;
     const numNumerotation = options.numerotation && options.numerotation.actif;
     const ignorer = numNumerotation ? Math.max(0, Number(options.numerotation.ignorer) || 0) : 0;
+    // Sommaire après les premières pages (page de garde d'un DOE), en tête sinon
+    const posSommaire = Math.min(pages.length, Math.max(0, Number(options.sommaireApres) || 0));
     if (options.sommaire && entrees.length) {
       nbSommaire = Math.max(1, Math.ceil(entrees.length / LIGNES_PAR_PAGE_SOMMAIRE));
-      entrees.forEach(e => { e.pageFinale = e.pageInitiale + nbSommaire; });
+      entrees.forEach(e => { e.pageFinale = e.pageInitiale + (e.pageInitiale >= posSommaire ? nbSommaire : 0); });
       const premierNumero = numNumerotation ? (Number(options.numerotation.debut) || 1) : 1;
       // Numéro affiché dans le sommaire = numéro imprimé sur la page (ou rang dans le fichier si pas de numérotation)
       const numeroDe = i => numNumerotation ? (i - ignorer + premierNumero) : i + 1;
-      ajouterSommaire(sortie, entrees, ctx, options.titre, numeroDe);
+      ajouterSommaire(sortie, entrees, ctx, options.titre, numeroDe, posSommaire);
     } else {
       entrees.forEach(e => { e.pageFinale = e.pageInitiale; });
     }
@@ -648,7 +718,7 @@
     if (options.sommaire && nbSommaire) liensSommaire(sortie, entrees);
     if (options.signets) {
       const sig = entrees.slice();
-      if (nbSommaire) sig.unshift({ titre: 'Sommaire', pageFinale: 0 });
+      if (nbSommaire) sig.splice(entrees.filter(e => e.pageInitiale < posSommaire).length, 0, { titre: 'Sommaire', pageFinale: posSommaire, niveau: 0 });
       ajouterSignets(sortie, sig);
     }
     if (options.editable !== false) ecrireDonneesEdition(sortie, infosPages, images, options);
@@ -1065,7 +1135,7 @@
   }
 
   // ---------- Annotations en commentaires PDF ----------
-  const COMMENTABLES = ['texte', 'bulle', 'ligne', 'fleche', 'cadre', 'ellipse', 'crayon', 'surligne', 'image', 'tampon', 'cote', 'longueur', 'surface', 'angle'];
+  const COMMENTABLES = ['texte', 'bulle', 'ligne', 'fleche', 'cadre', 'ellipse', 'crayon', 'surligne', 'image', 'tampon', 'cote', 'longueur', 'surface', 'angle', 'compte', 'legende'];
   // Cadre (unités de la page affichée) occupé par le dessin d'un élément, marges comprises
   function cadreElement(e, l, h, mesureTexte) {
     const ep = (e.epaisseur || 2) + 2;
@@ -1280,5 +1350,166 @@
     return res;
   }
 
-  return { compiler, relire, retirerTexte, nomPoliceStandard, lirePlages, versPdf, tailleAffichee, rectPdf, normRot, A4, formes, chemin, couperLignes, etiquettes, lignesTampon, MARGE_BULLE, DEFAUTS };
+  // ---------- Classeur Excel (.xlsx) ----------
+  // feuilles : [{ nom, largeurs: [caractères], lignes: [[valeur | { v, gras, format }]] }] ; 1re ligne en gras.
+  // Format Office Open XML minimal, archive ZIP sans compression.
+  const TABLE_CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  function crc32(o) { let c = 0xffffffff; for (let i = 0; i < o.length; i++) c = TABLE_CRC[(c ^ o[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+  function zipSansCompression(fichiers) {
+    const enc = new TextEncoder();
+    const parts = [], central = [];
+    let pos = 0;
+    const u16 = v => [v & 0xff, (v >>> 8) & 0xff], u32 = v => [v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff];
+    for (const [nom, contenu] of fichiers) {
+      const n = enc.encode(nom), d = typeof contenu === 'string' ? enc.encode(contenu) : contenu, crc = crc32(d);
+      const commun = [...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(d.length), ...u32(d.length), ...u16(n.length), ...u16(0)];
+      const entete = Uint8Array.from([0x50, 0x4b, 3, 4, ...commun]);
+      parts.push(entete, n, d);
+      central.push(Uint8Array.from([0x50, 0x4b, 1, 2, ...u16(20), ...commun, ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(pos)]), n);
+      pos += entete.length + n.length + d.length;
+    }
+    const tailleCentral = central.reduce((a, b) => a + b.length, 0);
+    const fin = Uint8Array.from([0x50, 0x4b, 5, 6, ...u16(0), ...u16(0), ...u16(fichiers.length), ...u16(fichiers.length), ...u32(tailleCentral), ...u32(pos), ...u16(0)]);
+    const tout = [...parts, ...central, fin], sortie = new Uint8Array(tout.reduce((a, b) => a + b.length, 0));
+    let o = 0;
+    for (const b of tout) { sortie.set(b, o); o += b.length; }
+    return sortie;
+  }
+  function classeurXlsx(feuilles) {
+    const xml = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
+    const col = i => { let t = ''; i++; while (i) { const r = (i - 1) % 26; t = String.fromCharCode(65 + r) + t; i = Math.floor((i - 1) / 26); } return t; };
+    // Styles (cellXfs) : 0 normal, 1 gras, 2/4 « 0,00 », 5/6 « 0,000 », 7/8 entier (gras : second numéro)
+    const style = (gras, format) => (format === '0.000' ? (gras ? 6 : 5) : format === '0' ? (gras ? 8 : 7) : format ? (gras ? 4 : 2) : (gras ? 1 : 0));
+    const noms = feuilles.map((f, i) => (String(f.nom || `Feuille ${i + 1}`).replace(/[\\/?*[\]:]/g, ' ').slice(0, 31)));
+    const fichiers = [];
+    feuilles.forEach((f, i) => {
+      const lignes = (f.lignes || []).map((ligne, r) => `<row r="${r + 1}">${ligne.map((c, k) => {
+        if (c == null || c === '') return '';
+        const o = typeof c === 'object' ? c : { v: c };
+        const s = style(o.gras || r === 0, o.format);
+        const ref = `${col(k)}${r + 1}`;
+        if (typeof o.v === 'number' && Number.isFinite(o.v)) return `<c r="${ref}" s="${s}"><v>${o.v}</v></c>`;
+        return `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${xml(o.v)}</t></is></c>`;
+      }).join('')}</row>`).join('');
+      const cols = (f.largeurs || []).length ? `<cols>${f.largeurs.map((l, k) => `<col min="${k + 1}" max="${k + 1}" width="${l}" customWidth="1"/>`).join('')}</cols>` : '';
+      const fige = '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>';
+      fichiers.push([`xl/worksheets/sheet${i + 1}.xml`, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${fige}${cols}<sheetData>${lignes}</sheetData></worksheet>`]);
+    });
+    const n = feuilles.length;
+    return zipSansCompression([
+      ['[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${feuilles.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`],
+      ['_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
+      ['xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${noms.map((nm, i) => `<sheet name="${xml(nm)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`],
+      ['xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${feuilles.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${n + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`],
+      ['xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="0.000"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="9"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="2" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="2" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/><xf numFmtId="1" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="1" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'],
+      ...fichiers,
+    ]);
+  }
+
+  // ---------- Impression des grands plans ----------
+  // Chaque page du PDF est imprimée sur des feuilles A4 ou A3 : en « mosaïque » à l'échelle réelle (feuilles qui se
+  // recouvrent, avec repères de collage et plan d'assemblage) ou « réduite » sur une seule feuille (échelle recalculée).
+  // options : { format: 'A4' | 'A3', mode: 'mosaique' | 'reduire', recouvrement (mm), echelles: [n | null par page], titre }
+  const FEUILLES = { A4: [595.28, 841.89], A3: [841.89, 1190.55] };
+  async function mosaique(octets, options = {}) {
+    const { PDFDocument, StandardFonts, rgb, degrees, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } = lib();
+    const src = await PDFDocument.load(octets, { ignoreEncryption: true });
+    const sortie = await PDFDocument.create();
+    const police = await sortie.embedFont(StandardFonts.Helvetica), gras = await sortie.embedFont(StandardFonts.HelveticaBold);
+    const [fw, fh] = FEUILLES[options.format] || FEUILLES.A4;
+    const marge = mm(8), recouv = mm(options.recouvrement ?? 10);
+    const gris = rgb(0.45, 0.45, 0.45);
+    const pagesSrc = src.getPages();
+    // Page vide (sans contenu) : contenu vide ajouté, sinon elle ne peut pas être intégrée
+    for (const p of pagesSrc) if (!p.node.Contents()) p.node.set(lib().PDFName.of('Contents'), src.context.register(src.context.stream('')));
+    const integrees = await sortie.embedPages(pagesSrc, pagesSrc.map(p => { const b = p.getCropBox(); return { left: b.x, bottom: b.y, right: b.x + b.width, top: b.y + b.height }; }));
+    let feuilles = 0;
+    // Dessine la page source (affichée, rotation comprise) avec son coin haut-gauche en (x, yHaut), à l'échelle s
+    const poser = (page, emb, r, x, yHaut, s, dl, dh) => {
+      const w = emb.width * s, h = emb.height * s;
+      const o = r === 90 ? { x, y: yHaut, rot: -90 } : r === 180 ? { x: x + w, y: yHaut, rot: 180 } : r === 270 ? { x: x + h, y: yHaut - dh * s, rot: 90 } : { x, y: yHaut - dh * s, rot: 0 };
+      page.drawPage(emb, { x: o.x, y: o.y, xScale: s, yScale: s, rotate: degrees(o.rot) });
+      void dl;
+    };
+    const texte = (page, t, x, y, taille, f = police, c = gris) => page.drawText(nettoyer(f, t), { x, y, size: taille, font: f, color: c });
+    for (let i = 0; i < pagesSrc.length; i++) {
+      const p = pagesSrc[i], emb = integrees[i];
+      const r = normRot(p.getRotation().angle);
+      const dl = r % 180 ? emb.height : emb.width, dh = r % 180 ? emb.width : emb.height;
+      const nomPage = `${options.titre ? `${options.titre} – ` : ''}page ${i + 1}`;
+      const ech = options.echelles && options.echelles[i];
+      // Orientation de la feuille : celle qui demande le moins de feuilles
+      const orient = (w, h) => {
+        const uw = w - 2 * marge, uh = h - 2 * marge;
+        const nx = dl <= uw ? 1 : Math.ceil((dl - recouv) / (uw - recouv)), ny = dh <= uh ? 1 : Math.ceil((dh - recouv) / (uh - recouv));
+        return { w, h, uw, uh, nx, ny, n: nx * ny, s: Math.min(uw / dl, uh / dh) };
+      };
+      // Réduction : l'orientation qui donne le plus grand plan ; mosaïque : le moins de feuilles
+      const choix = [orient(fw, fh), orient(fh, fw)].sort((a, b) => (options.mode === 'reduire' ? b.s - a.s : a.n - b.n || b.s - a.s))[0];
+      const { w: W, h: H, uw, uh } = choix;
+      if (options.mode === 'reduire' || choix.n === 1) {
+        // Une seule feuille : réduite si nécessaire, centrée
+        const pied = mm(6);
+        const s = Math.min(1, uw / dl, (uh - pied) / dh);
+        const page = sortie.addPage([W, H]);
+        const x = (W - dl * s) / 2, yHaut = H - marge - (uh - pied - dh * s) / 2;
+        poser(page, emb, r, x, yHaut, s, dl, dh);
+        let info = s < 0.999 ? `${nomPage} – réduite à ${String(Math.round(s * 1000) / 10).replace('.', ',')} %` : nomPage;
+        if (ech && s < 0.999) info += ` – échelle du plan 1/${ech}, imprimé au 1/${Math.round(ech / s)} environ`;
+        else if (ech) info += ` – échelle 1/${ech}`;
+        texte(page, info, marge, marge * 0.6, 7);
+        feuilles++;
+        continue;
+      }
+      // Mosaïque : pas = zone utile moins le recouvrement ; la dernière colonne/rangée s'aligne sur le bord du plan
+      const { nx, ny } = choix;
+      const pasX = nx > 1 ? (dl - uw) / (nx - 1) : 0, pasY = ny > 1 ? (dh - uh) / (ny - 1) : 0;
+      const lettre = j => String.fromCharCode(65 + (j % 26)) + (j >= 26 ? Math.floor(j / 26) : '');
+      // Plan d'assemblage : le plan réduit, quadrillé, avec le nom de chaque feuille
+      {
+        const page = sortie.addPage([W, H]);
+        const s = Math.min(uw / dl, (uh - mm(20)) / dh);
+        const x0 = (W - dl * s) / 2, yHaut = H - marge - mm(14);
+        texte(page, `Plan d'assemblage – ${nomPage}`, marge, H - marge - 12, 12, gras, rgb(0.1, 0.1, 0.1));
+        texte(page, `${nx * ny} feuilles ${options.format || 'A4'} à l'échelle réelle${ech ? ` (1/${ech})` : ''}, recouvrement ${options.recouvrement ?? 10} mm : coupez le long des traits pointillés et alignez les croix.`, marge, H - marge - 26, 8);
+        poser(page, emb, r, x0, yHaut, s, dl, dh);
+        for (let yj = 0; yj < ny; yj++) for (let xi = 0; xi < nx; xi++) {
+          const cx = x0 + xi * pasX * s, cy = yHaut - yj * pasY * s;
+          page.drawRectangle({ x: cx, y: cy - uh * s, width: uw * s, height: uh * s, borderColor: rgb(0.08, 0.4, 0.75), borderWidth: 0.8 });
+          const nom = `${lettre(yj)}${xi + 1}`;
+          const tl = gras.widthOfTextAtSize(nom, 14);
+          page.drawRectangle({ x: cx + uw * s / 2 - tl / 2 - 3, y: cy - uh * s / 2 - 5, width: tl + 6, height: 19, color: rgb(1, 1, 1), opacity: 0.85 });
+          texte(page, nom, cx + uw * s / 2 - tl / 2, cy - uh * s / 2, 14, gras, rgb(0.08, 0.4, 0.75));
+        }
+        feuilles++;
+      }
+      for (let yj = 0; yj < ny; yj++) for (let xi = 0; xi < nx; xi++) {
+        const page = sortie.addPage([W, H]);
+        const ox = xi * pasX, oy = yj * pasY; // coin haut-gauche de la zone, dans le plan affiché (points)
+        page.pushOperators(pushGraphicsState(), rectangle(marge, marge, uw, uh), clip(), endPath());
+        poser(page, emb, r, marge - ox, H - marge + oy, 1, dl, dh);
+        page.pushOperators(popGraphicsState());
+        // Cadre de coupe et croix de repérage dans les bandes de recouvrement
+        page.drawRectangle({ x: marge, y: marge, width: uw, height: uh, borderColor: gris, borderWidth: 0.4, borderDashArray: [4, 3] });
+        const croix = (x, y) => { page.drawLine({ start: { x: x - 5, y }, end: { x: x + 5, y }, thickness: 0.5, color: rgb(0, 0, 0) }); page.drawLine({ start: { x, y: y - 5 }, end: { x, y: y + 5 }, thickness: 0.5, color: rgb(0, 0, 0) }); };
+        // Même point du plan sur les deux feuilles voisines : milieu de la bande commune
+        const bx = (uw - pasX) / 2, by = (uh - pasY) / 2;
+        for (const f of [0.25, 0.75]) {
+          if (xi > 0) croix(marge + bx, marge + uh * f);
+          if (xi < nx - 1) croix(marge + pasX + bx, marge + uh * f);
+          if (yj > 0) croix(marge + uw * f, H - marge - by);
+          if (yj < ny - 1) croix(marge + uw * f, H - marge - pasY - by);
+        }
+        texte(page, `${nomPage} – feuille ${lettre(yj)}${xi + 1} (rangée ${yj + 1}/${ny}, colonne ${xi + 1}/${nx})${ech ? ` – 1/${ech}` : ''} – imprimer à 100 %, sans ajustement`, marge, marge * 0.35, 7);
+        feuilles++;
+      }
+    }
+    sortie.setTitle(options.titre ? `${options.titre} – impression ${options.format || 'A4'}` : `Impression ${options.format || 'A4'}`);
+    sortie.setCreator('Atelier PDF');
+    const res = await sortie.save({ useObjectStreams: true });
+    res.feuilles = feuilles;
+    return res;
+  }
+
+  return { classeurXlsx, mosaique, hauteurLegende, lignesLegende, reperesLegende, RAYON_COMPTE, compiler, relire, retirerTexte, nomPoliceStandard, lirePlages, versPdf, tailleAffichee, rectPdf, normRot, A4, formes, chemin, couperLignes, etiquettes, lignesTampon, MARGE_BULLE, DEFAUTS };
 });
