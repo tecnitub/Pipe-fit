@@ -35,28 +35,20 @@ réduction par coude R·tan(α/2), longueur du tube droit à couper (moins les j
 Pour recouper les coudes, le logiciel donne les arcs d'extrados, d'axe et d'intrados. Il refuse le calcul si les
 coudes se chevauchent et indique alors l'angle maximal possible.
 
-### Coude orienté (coude 90° incliné + tranche de coude)
-Vu de dessus, le tube fait un 90° à gauche ou à droite, mais la sortie est à une autre hauteur. Le coude 90° est
-pivoté sur la partie droite d'un angle θ : sa sortie descend (ou monte). Une tranche de coude de θ, tournée d'un
-quart de tour par rapport au coude 90°, remet le tube à l'horizontale. La différence de hauteur est rattrapée sur la
-partie en pente.
-- On saisit le sens du virage, si la sortie descend ou monte, et la différence de hauteur à rattraper.
-- Trois façons de calculer :
-  - par **l'angle d'inclinaison** ;
-  - par **la distance en plan** entre le coude 90° et la tranche ;
-  - **coude 90° et tranche soudés bout à bout** (l'angle est alors calculé ; au plus 2 × R de différence de hauteur).
-- Résultats :
-  - inclinaison du coude 90°, en degrés et en mm sur la circonférence ;
-  - angle de la tranche ;
-  - longueur du tube entre le coude 90° et la tranche ;
-  - orientation de la tranche (quart de tour, dos en dessous si la sortie descend, au-dessus si elle monte) ;
-  - distances sommet à sommet et en plan ;
-  - position de la face de sortie ;
-  - recoupe de la tranche dans un coude 90° (extrados, flancs, intrados, chute) ;
-  - étapes de mise en position.
-- Dessins : vue de dessus (le 90°), élévation (la pente et la différence de hauteur), vue isométrique, orientation de
-  la tranche, bande de repérage 1:1 à enrouler, recoupe de la tranche.
-- Le logiciel refuse le calcul si le coude 90° et la tranche se chevauchent, et indique l'angle maximal.
+### Coude orienté (coude 90° + tranche de coude)
+Vu de dessus, le tube fait un 90°, mais la sortie est à une autre hauteur. Le coude 90° est pivoté d'un angle θ sur
+le tube d'arrivée ; une tranche de coude de θ, soudée dessus, remet le tube à l'horizontale. Un tube droit peut
+s'intercaler entre les deux (0 = bout à bout).
+- Calcul par **la hauteur** (entre l'axe d'arrivée et l'axe de sortie), par **l'horizontale** (de l'axe d'arrivée
+  à la face de sortie, dans la vue dans l'axe de l'arrivée) ou par **l'angle**.
+- Formules, avec K = R + R·tan(θ/2) + tube + jeux : hauteur = K·sin θ ; horizontale = K·cos θ + R·tan(θ/2).
+- **Vue dans l'axe de l'arrivée** cotée : réduction du coude 90° (R), réductions de la tranche, arcs d'extrados et
+  d'intrados, hauteur, horizontale, angle.
+- **Traçage de la tranche au trusquin** : le coude 90° est posé sur une face, on reporte les hauteurs
+  (R + Ø/2)·sin θ à l'extrados et (R − Ø/2)·sin θ à l'intrados.
+- Exemple (Ø 114, R 152, hauteur 125) : 37,8°, horizontale 213,3, extrados 137,8, intrados 62,6, trusquin 128,1 / 58,2.
+- Aussi : vue de dessus, vue isométrique, bande de repérage 1:1 (rotation du coude sur l'arrivée), étapes de mise en
+  position.
 
 ### Développés de tôlerie (triangulation)
 - **Rond-carré** (rectangle A × B vers rond Ø D) ;

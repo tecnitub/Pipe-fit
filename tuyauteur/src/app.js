@@ -294,44 +294,42 @@
   // ------------------------------------------------------------ Coude orienté (coude 90° incliné + tranche)
   module('coude', (v, ctx) => {
     const T = ctx.tubes.co.lire();
-    const r = Geometrie.coudeOriente({ de: T.de, rayon: T.rayon, jeu: v.jeu, denivele: v.denivele, sens: v.sens, virage: v.virage, mode: v.mode, angle: v.angle, distance: v.distance });
-    const R = r.resultats, C = r.tranche;
-    const desc = R.sens === 'descend';
-    const titre = `Coude orienté Ø${fmt(T.de)} - 90° à ${R.virage} ${desc ? 'descendant' : 'montant'} de ${fmt(R.denivele, 0)}`;
-    const bout = v.mode === 'boutAbout';
+    const r = Geometrie.coudeOriente({ de: T.de, rayon: T.rayon, jeu: v.jeu, tube: v.tube, sens: v.sens, virage: v.virage, mode: v.mode, denivele: v.denivele, horizontale: v.horizontale, angle: v.angle });
+    const R = r.resultats;
+    const monte = R.sens === 'monte';
+    const titre = `Coude orienté Ø${fmt(T.de)} - 90° + tranche ${fmt(R.tranche, 1)}° - hauteur ${fmt(R.hauteur)}`;
     return {
       pdf: {
-        titre, sousTitre: 'Coude 90° incliné et tranche de coude tournée d\'un quart de tour',
-        infos: [['Tube', `Ø ${fmt(T.de)} × ${fmt(T.ep)} mm`], ['Coudes', `${T.coude === 'libre' ? 'rayon libre' : T.coude} - R ${fmt(T.rayon)} mm`], ['Virage vu de dessus', `90° à ${R.virage}`], ['Différence de hauteur', `${fmt(R.denivele, 0)} mm, la sortie ${R.sens}`], ['Jeu de soudure', mm(+v.jeu || 0)]],
+        titre, sousTitre: 'Coude 90° pivoté sur l\'arrivée et tranche de coude qui remet le tube à l\'horizontale',
+        infos: [['Tube', `Ø ${fmt(T.de)} × ${fmt(T.ep)} mm`], ['Coudes', `${T.coude === 'libre' ? 'rayon libre' : T.coude} - R ${fmt(T.rayon)} mm`], ['Virage vu de dessus', `90° à ${R.virage}`], ['Sortie', monte ? 'plus haute' : 'plus basse'], ['Tube entre coude et tranche', R.tube ? mm(R.tube) : 'aucun (bout à bout)'], ['Jeu de soudure', mm(+v.jeu || 0)]],
         pied: titre,
       },
       avertissements: r.avertissements,
       resultats: [
-        ['Inclinaison du coude 90°', `${deg(R.inclinaison, 1)} vers le ${desc ? 'bas' : 'haut'} = ${fmt(R.arcInclinaison)} mm sur la circonférence`, true],
-        ['Tranche à couper', deg(R.tranche, 1), true],
-        ['Tube entre coude 90° et tranche', bout ? 'aucun (bout à bout)' : mm(R.tube), true],
-        ['Orientation de la tranche', `1/4 de tour, dos ${R.dosTranche} (${fmt(R.quartDeTour)} mm)`],
-        ['Sommet à sommet (en pente)', mm(R.entraxe)],
-        ['Distance en plan', mm(R.distancePlan)],
-        ['Face de sortie depuis la face d\'entrée', `${fmt(R.sortieX)} en avant · ${fmt(Math.abs(R.sortieY))} à ${R.virage} · ${fmt(Math.abs(R.sortieZ))} ${desc ? 'plus bas' : 'plus haut'}`],
+        ['Angle (coude 90° et tranche)', deg(R.tranche, 1), true],
+        ['Hauteur', mm(R.hauteur), true],
+        ['Horizontale', mm(R.horizontale), true],
+        ['Tranche : extrados / intrados', `${fmt(R.extrados)} / ${fmt(R.intrados)} mm`],
+        ['Trusquin : extrados / intrados', `${fmt(R.trusquinExtrados)} / ${fmt(R.trusquinIntrados)} mm`],
         ['Réductions (90° / tranche)', `${fmt(R.reduction90)} / ${fmt(R.reductionTranche)} mm`],
+        ['Rotation du coude 90° sur l\'arrivée', `${fmt(R.inclinaison, 1)}° vers le ${monte ? 'haut' : 'bas'} = ${fmt(R.arcInclinaison)} mm`],
+        ['Chute du coude recoupé', deg(R.chute, 1)],
       ],
       dessins: [
-        { titre: 'Vue de dessus : 90°', dessin: r.dessins.dessus },
-        { titre: 'Élévation dans le sens de la sortie : la pente qui rattrape la hauteur', dessin: r.dessins.elevation },
+        { titre: 'Vue dans l\'axe de l\'arrivée', dessin: r.dessins.vue },
+        { titre: `Traçage de la tranche de ${fmt(R.tranche, 1)}° au trusquin`, dessin: r.dessins.trusquin },
+        { titre: 'Vue de dessus', dessin: r.dessins.dessus },
         { titre: 'Vue isométrique', dessin: r.dessins.iso },
-        { titre: 'Orientation de la tranche (vue dans le sens de l\'écoulement)', dessin: r.dessins.reperage },
-        { titre: 'Bande de repérage à enrouler', dessin: r.dessins.gabarit, gabarit: true },
-        { titre: `Recoupe de la tranche de ${fmt(R.tranche, 1)}° dans un coude 90°`, dessin: r.dessins.recoupe },
+        { titre: 'Bande de repérage à enrouler sur l\'arrivée', dessin: r.dessins.gabarit, gabarit: true },
       ],
       tableaux: [
-        { titre: `Recoupe de la tranche (${fmt(R.tranche, 1)}°) dans un coude 90°, mesures depuis une extrémité`, colonnes: ['Mesure', 'Longueur d\'arc'], lignes: [['Extrados (dos)', mm(C.extrados)], ['Flancs (axe)', mm(C.axe)], ['Intrados (ventre)', mm(C.intrados)], ['Chute', `${fmt(90 - R.tranche, 1)}°`]] },
+        { titre: `Traçage de la tranche (${fmt(R.tranche, 1)}°) dans un coude 90°`, colonnes: ['Mesure', 'Arc depuis la face', 'Hauteur au trusquin'], lignes: [['Extrados (dos)', mm(R.extrados), mm(R.trusquinExtrados)], ['Flancs (axe)', mm(R.axe), mm(R.trusquinAxe)], ['Intrados (ventre)', mm(R.intrados), mm(R.trusquinIntrados)]] },
         { titre: 'Mise en position', colonnes: ['Étape', 'Opération'], lignes: [
-          ['1', `Présenter le coude 90° sur la partie droite, sortie à ${R.virage}, à l'horizontale.`],
-          ['2', `Le faire pivoter sur l'axe du tube de ${fmt(R.inclinaison, 1)}° vers le ${desc ? 'bas' : 'haut'} (${fmt(R.arcInclinaison)} mm sur la circonférence), pointer et souder.`],
-          ...(bout ? [] : [['3', `Souder le tube de ${fmt(R.tube)} mm dans le prolongement du coude.`]]),
-          [bout ? '3' : '4', `Présenter la tranche de ${fmt(R.tranche, 1)}°, dos ${R.dosTranche} : tournée d'un quart de tour (${fmt(R.quartDeTour)} mm) par rapport au dos du coude 90°.`],
-          [bout ? '4' : '5', 'Contrôler au niveau : la sortie doit être horizontale, puis souder.'],
+          ['1', `Tracer la tranche : coude 90° posé sur une face, reporter au trusquin ${fmt(R.trusquinExtrados)} mm à l'extrados et ${fmt(R.trusquinIntrados)} mm à l'intrados, puis couper.`],
+          ['2', `Souder le coude 90° sur l'arrivée, sortie à ${R.virage}, pivoté de ${fmt(R.inclinaison, 1)}° vers le ${monte ? 'haut' : 'bas'} (${fmt(R.arcInclinaison)} mm sur la circonférence).`],
+          ...(R.tube ? [['3', `Souder le tube de ${fmt(R.tube)} mm dans le prolongement du coude.`]] : []),
+          [R.tube ? '4' : '3', 'Présenter la tranche, la tourner pour que la sortie revienne à l\'horizontale (contrôle au niveau), pointer et souder.'],
+          [R.tube ? '5' : '4', `Contrôler : sortie ${fmt(R.hauteur)} mm ${monte ? 'plus haut' : 'plus bas'} que l'arrivée, face de sortie à ${fmt(R.horizontale)} mm de l'axe d'arrivée.`],
         ] },
       ],
     };

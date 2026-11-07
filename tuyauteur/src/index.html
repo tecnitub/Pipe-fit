@@ -77,26 +77,29 @@
 <section class="module" id="coude">
   <form class="saisie" autocomplete="off">
     <h2>Coude orienté : coude 90° + tranche</h2>
-    <p class="aide">Vu de dessus, le tube fait un 90°, mais la sortie est à une autre hauteur. Le coude 90° est pivoté sur la partie droite pour descendre (ou monter) ; une tranche de coude, tournée d'un quart de tour, remet le tube à l'horizontale.</p>
+    <p class="aide">Vu de dessus, le tube fait un 90°, mais la sortie est à une autre hauteur. Le coude 90° est pivoté sur le tube d'arrivée ; la tranche de coude, soudée dessus, remet le tube à l'horizontale.</p>
     <fieldset><legend>Tube et coudes</legend>
       <div class="tube" data-prefixe="co" data-dn="100" data-coude="1"></div>
-      <label>Jeu de soudure (mm)<input name="jeu" type="number" step="0.5" min="0" value="0"></label>
+    </fieldset>
+    <fieldset><legend>Calcul par…</legend>
+      <div class="choix-mode">
+        <label class="radio"><input type="radio" name="mode" value="hauteur" checked> la hauteur</label>
+        <label class="radio"><input type="radio" name="mode" value="horizontale"> l'horizontale</label>
+        <label class="radio"><input type="radio" name="mode" value="angle"> l'angle</label>
+      </div>
+      <label data-si="mode=hauteur">Hauteur entre l'axe d'arrivée et l'axe de sortie (mm)<input name="denivele" type="number" step="0.5" min="0" value="125"></label>
+      <label data-si="mode=horizontale">Horizontale : axe d'arrivée → face de sortie (mm)<input name="horizontale" type="number" step="0.5" min="0" value="213.3"><small>Mesurée dans l'axe de l'arrivée, comme sur la vue</small></label>
+      <label data-si="mode=angle">Angle du coude 90° = angle de la tranche (°)<input name="angle" type="number" step="0.5" min="1" max="90" value="37.8"></label>
     </fieldset>
     <fieldset><legend>Montage</legend>
       <div class="deux">
         <label>Virage (vu de dessus)<select name="virage"><option value="gauche">à gauche</option><option value="droite">à droite</option></select></label>
-        <label>La sortie<select name="sens"><option value="descend">descend</option><option value="monte">monte</option></select></label>
+        <label>La sortie<select name="sens"><option value="monte">monte</option><option value="descend">descend</option></select></label>
       </div>
-      <label>Différence de hauteur à rattraper (mm)<input name="denivele" type="number" step="1" min="0" value="300"><small>Entre l'axe d'arrivée et l'axe de sortie</small></label>
-    </fieldset>
-    <fieldset><legend>Calcul par…</legend>
-      <div class="choix-mode">
-        <label class="radio"><input type="radio" name="mode" value="angle" checked> l'angle d'inclinaison</label>
-        <label class="radio"><input type="radio" name="mode" value="distance"> la distance en plan</label>
-        <label class="radio"><input type="radio" name="mode" value="boutAbout"> coude 90° et tranche soudés bout à bout</label>
+      <div class="deux">
+        <label>Tube entre coude et tranche (mm)<input name="tube" type="number" step="1" min="0" value="0"><small>0 = soudés bout à bout</small></label>
+        <label>Jeu de soudure (mm)<input name="jeu" type="number" step="0.5" min="0" value="0"></label>
       </div>
-      <label data-si="mode=angle">Inclinaison du coude 90° = angle de la tranche (°)<input name="angle" type="number" step="0.5" min="1" max="90" value="45"></label>
-      <label data-si="mode=distance">Distance en plan entre le coude 90° et la tranche (mm)<input name="distance" type="number" step="1" min="1" value="300"><small>Mesurée de sommet à sommet, dans le sens de la sortie</small></label>
     </fieldset>
   </form>
   <div class="sortie" data-sortie></div>
