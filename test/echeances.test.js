@@ -94,7 +94,7 @@ test('demande de matériel du terrain : consultations par fournisseurs, sans Mic
   const cs = (await call('GET', '/api/data', null, admin)).body.consultations.filter(c => c.terrain);
   assert.strictEqual(cs.length, 2); assert.ok(cs.every(c => /^CS-/.test(c.ref)));
   // Fournisseurs par famille : bureau seulement
-  assert.strictEqual((await call('PUT', '/api/achats/familles-fournisseurs', { Divers: { prefere: 'e5', autres: ['e6', 'e5', 'e11', 'e12', 'e7', 'e9'] } }, admin)).body.Divers.autres.length, 4);
+  assert.strictEqual((await call('PUT', '/api/achats/familles-fournisseurs', { Divers: { prefere: 'e5', autres: ['e6', 'e5', 'e11', 'e12', 'e7', 'e9'] } }, admin)).body.Divers.autres.length, 3);
   assert.strictEqual((await call('GET', '/api/achats/familles-fournisseurs', null, k)).status, 403);
 });
 

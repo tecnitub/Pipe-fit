@@ -28,8 +28,17 @@ function entrepriseParNom(nom, ctx, categorie) {
   if (!n) return '';
   const found = Store.all('entreprises').find(e => normTxt(e.nom) === n) || ctx.nouvelles.find(e => normTxt(e.nom) === n);
   if (found) return found.id;
+  // Fournisseurs : variantes d'écriture rapprochées (« Descour » / « Descours », « PUM » / « PUM PLASTIQUES »)
+  if (ctx.rapprocher && typeof ArticlesModele !== 'undefined') {
+    const p = ArticlesModele.fournisseurProche(nom, [...Store.all('entreprises'), ...ctx.nouvelles]);
+    if (p) { (ctx.rapproches = ctx.rapproches || new Map()).set(cellTxt(nom), p.nom); return p.id; }
+  }
   if (!ctx.creerEntreprises) return '';
-  const e = { id: uid(), nom: cellTxt(nom), categorie, secteur: '', adresses: [] };
+  // Nom retenu : la variante la plus fréquente du fichier
+  const variantes = (ctx.variantes || []).filter(([v]) => typeof ArticlesModele !== 'undefined' && ArticlesModele.fournisseurProche(v, [{ nom }]));
+  const retenu = variantes.length ? variantes.sort((a, b) => b[1] - a[1])[0][0] : cellTxt(nom);
+  if (retenu !== cellTxt(nom)) (ctx.rapproches = ctx.rapproches || new Map()).set(cellTxt(nom), retenu);
+  const e = { id: uid(), nom: retenu, categorie, secteur: '', adresses: [] };
   ctx.nouvelles.push(e);
   return e.id;
 }
@@ -46,6 +55,9 @@ const ECHANGES = {
       { key: 'unite', label: 'Unité', syn: ['unite', 'u', 'unite de vente', 'uv', 'conditionnement'] },
       { key: 'coutRevient', label: "Prix d'achat HT", num: true, syn: ['prix achat', 'pa', 'achat', 'prix d achat', 'cout', 'prix net', 'pa ht', 'prix d achat ht', 'prix net ht'] },
       { key: 'prixVente', label: 'Prix de vente HT', num: true, syn: ['prix vente', 'pv', 'vente', 'prix public', 'prix public ht', 'pu public', 'pu public ht', 'tarif', 'tarif public', 'prix', 'pu', 'pu ht', 'pu vente', 'prix unitaire', 'prix unitaire ht', 'prix de vente', 'prix de vente ht'] },
+      { key: 'marge', label: 'Marge (%)', num: true, syn: ['marge', 'marge %', 'taux de marge', 'marge en %'] },
+      { key: 'categories', label: 'Catégories', syn: ['categories', 'arborescence', 'chemin', 'categorie complete'] },
+      { key: 'gamme', label: 'Gamme (3e niveau)', syn: ['gamme', 'sous sous famille', 'niveau 3'] },
       { key: 'coef', label: 'Coefficient', num: true, export: true, syn: ['coef', 'coefficient'] },
       { key: 'poidsUnitaire', label: 'Poids (kg)', num: true, syn: ['poids', 'masse', 'kg', 'poids unitaire'] },
       { key: 'fournisseur', label: 'Fournisseur', syn: ['fournisseur habituel', 'fabricant', 'marque', 'distributeur'] },
@@ -53,15 +65,34 @@ const ECHANGES = {
     cle: v => normTxt(v.ref) || normTxt(v.designation),
     trouver: v => Store.all('articles').find(a => v.ref && normTxt(a.ref) === normTxt(v.ref)) || (!v.ref && Store.all('articles').find(a => normTxt(a.designation) === normTxt(v.designation))),
     appliquer(rec, v, ctx) {
-      ['ref', 'designation', 'famille', 'sousFamille', 'unite'].forEach(k => { if (v[k] !== '') rec[k] = v[k]; });
-      ['coutRevient', 'prixVente', 'poidsUnitaire'].forEach(k => { if (v[k] !== '') rec[k] = v[k]; });
-      if (v.prixVente === '' && v.coutRevient !== '' && ctx.coef) rec.prixVente = Math.round(v.coutRevient * ctx.coef * 100) / 100;
-      if (v.fournisseur) rec.fournisseurId = entrepriseParNom(v.fournisseur, ctx, 'Fournisseur');
+      // Même article déjà lu dans ce fichier avec un autre fournisseur : variante (défaut + 3 autres), avec son prix
+      const AM = typeof ArticlesModele !== 'undefined' ? ArticlesModele : null, vus = ctx.vus || (ctx.vus = new Set());
+      if (AM && v.fournisseur && vus.has(rec.id)) {
+        const fid = entrepriseParNom(v.fournisseur, ctx, 'Fournisseur');
+        if (fid && rec.fournisseurId && fid !== rec.fournisseurId) {
+          const avant = (rec.fournisseursConsult || []).length;
+          AM.ajouterVariante(rec, fid, { coutRevient: v.coutRevient, marge: v.marge });
+          if ((rec.fournisseursConsult || []).length > avant || (rec.fournisseursConsult || []).includes(fid)) ctx.nbVariantes = (ctx.nbVariantes || 0) + 1;
+          else (ctx.variantesIgnorees = ctx.variantesIgnorees || []).push(`${v.ref || v.designation} (${v.fournisseur})`);
+          return rec;
+        }
+      }
+      vus.add(rec.id);
+      ['ref', 'designation', 'famille', 'sousFamille', 'gamme'].forEach(k => { if (v[k] !== '') rec[k] = v[k]; });
+      if (v.unite !== '') rec.unite = typeof ArticlesModele !== 'undefined' ? ArticlesModele.unitePF(v.unite) : v.unite;
+      // Catégories « Famille|Sous-famille|Gamme » du modèle
+      if (v.categories !== '' && typeof ArticlesModele !== 'undefined') Object.assign(rec, ArticlesModele.categories(v.categories));
+      ['coutRevient', 'prixVente', 'poidsUnitaire', 'marge'].forEach(k => { if (v[k] !== '') rec[k] = v[k]; });
+      // Prix de vente vide : d'après la marge du fichier (achat × (1 + marge)), sinon le coefficient choisi
+      if (v.prixVente === '' && v.coutRevient !== '' && v.marge !== '') rec.prixVente = Math.round(v.coutRevient * (1 + v.marge / 100) * 100) / 100;
+      else if (v.prixVente === '' && v.coutRevient !== '' && ctx.coef) rec.prixVente = Math.round(v.coutRevient * ctx.coef * 100) / 100;
+      if (v.fournisseur) { const fid = entrepriseParNom(v.fournisseur, ctx, 'Fournisseur'); if (AM && fid) AM.changerDefaut(rec, fid); else rec.fournisseurId = fid; }
       if (!rec.unite) rec.unite = 'u';
       return rec;
     },
-    ligne: a => [a.id, a.ref, a.designation, a.famille, a.sousFamille || '', a.unite, num(a.coutRevient), num(a.prixVente), num(a.coutRevient) ? Math.round(num(a.prixVente) / num(a.coutRevient) * 100) / 100 : '', num(a.poidsUnitaire), a.fournisseurId ? clientName(a.fournisseurId) : ''],
-    largeurs: [12, 16, 44, 16, 18, 9, 14, 14, 11, 10, 28],
+    preparer(vals, ctx) { const c = new Map(); vals.forEach(v => { if (v.fournisseur) c.set(v.fournisseur, (c.get(v.fournisseur) || 0) + 1); }); ctx.variantes = [...c.entries()]; ctx.rapprocher = true; },
+    ligne: a => [a.id, a.ref, a.designation, a.famille, a.sousFamille || '', a.unite, num(a.coutRevient), num(a.prixVente), typeof ArticlesModele !== 'undefined' ? ArticlesModele.margeDe(a) : '', typeof ArticlesModele !== 'undefined' ? ArticlesModele.cheminCategories(a) : '', a.gamme || '', num(a.coutRevient) ? Math.round(num(a.prixVente) / num(a.coutRevient) * 100) / 100 : '', num(a.poidsUnitaire), a.fournisseurId ? clientName(a.fournisseurId) : ''],
+    largeurs: [12, 16, 44, 16, 18, 9, 14, 14, 10, 34, 18, 11, 10, 28],
   },
   mainoeuvre: {
     titre: "taux de main-d'œuvre", col: 'mainoeuvre', fichier: 'bibliotheque-main-oeuvre', feuille: "Main-d'œuvre",
@@ -279,6 +310,7 @@ function importerExcel(type) {
 
   const lancer = async opts => {
     const ctx = { ...opts, nouvelles: [] };
+    if (conf.preparer) conf.preparer(lignesDonnees().map(valeurs), ctx);
     const res = { crees: 0, maj: 0, ignores: [] };
     const sortie = new Map(), cles = new Map();
     lignesDonnees().forEach((r, k) => {
@@ -327,6 +359,9 @@ function importerExcel(type) {
       <ul class="import-sum"><li><strong>${res.crees}</strong> ${esc(conf.titre)} ajouté(e)s</li><li><strong>${res.maj}</strong> mis(es) à jour</li>
         ${nbSites ? `<li><strong>${nbSites}</strong> site(s) importé(s)</li>` : ''}
         ${ctx.nouvelles.length ? `<li><strong>${ctx.nouvelles.length}</strong> entreprise(s) créée(s) : ${ctx.nouvelles.slice(0, 5).map(e => esc(e.nom)).join(', ')}${ctx.nouvelles.length > 5 ? '…' : ''}</li>` : ''}
+        ${ctx.nbVariantes ? `<li><strong>${ctx.nbVariantes}</strong> variante(s) fournisseur gardée(s) : même référence chez un autre fournisseur, avec son prix (1 par défaut + 3 autres au plus)</li>` : ''}
+        ${ctx.variantesIgnorees && ctx.variantesIgnorees.length ? `<li>Au-delà de 3 autres fournisseurs, non repris : ${ctx.variantesIgnorees.slice(0, 5).map(esc).join(', ')}${ctx.variantesIgnorees.length > 5 ? '…' : ''}</li>` : ''}
+        ${ctx.rapproches && ctx.rapproches.size ? `<li>Fournisseurs rapprochés (même entreprise) : ${[...ctx.rapproches].map(([a, b]) => `${esc(a)} → ${esc(b)}`).join(' · ')}</li>` : ''}
         ${res.ignores.length ? `<li><strong>${res.ignores.length}</strong> ligne(s) ignorée(s)<br><span class="muted small">${res.ignores.slice(0, 6).map(esc).join('<br>')}${res.ignores.length > 6 ? '<br>…' : ''}</span></li>` : ''}</ul>
       <div class="modal-actions"><button id="imp-ok">Fermer</button></div>`);
     box.querySelector('#imp-ok').onclick = () => { Modal.close(); App.render(); };
@@ -336,10 +371,17 @@ function importerExcel(type) {
 }
 
 // Boutons à placer dans la barre d'outils d'une liste
-const boutonsEchange = type => Store.can('write', ECHANGES[type].col)
+const boutonsEchange = type => (Store.can('write', ECHANGES[type].col)
   ? `<button class="secondary" data-import="${type}">Importer Excel</button><button class="secondary dl-btn" data-export="${type}">Exporter Excel</button>`
-  : `<button class="secondary dl-btn" data-export="${type}">Exporter Excel</button>`;
+  : `<button class="secondary dl-btn" data-export="${type}">Exporter Excel</button>`) + (type === 'articles' && typeof ArticlesModele !== 'undefined' ? '<button class="secondary dl-btn" data-export-modele title="Référence, Description, Fournisseur, Unité, Prix d\'achat, Marge, Catégories (A|B|C) : format du fichier d\'export de l\'entreprise">Exporter au format modèle</button>' : '');
+// Bibliothèque au format du modèle de l'entreprise (7 colonnes, feuille « Worksheet », textes « 4,83000 » et « 100,00 »)
+function exporterModeleArticles() {
+  const H = v => ({ v, s: 'head' }), l = Store.all('articles').slice().sort((a, b) => String(a.ref || '').localeCompare(String(b.ref || '')) || String(a.designation || '').localeCompare(String(b.designation || '')));
+  const rows = [ArticlesModele.ENTETES.map(H), ...l.flatMap(a => ArticlesModele.lignesVariantes(a, clientName))];
+  download(`export_${isoDate(new Date())}_1.xlsx`, XLSX.build([{ name: 'Worksheet', cols: [12, 48, 22, 10, 14, 10, 40], freeze: 1, rows }]), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+}
 function bindEchange(root) {
   root.querySelectorAll('[data-import]').forEach(b => { b.onclick = () => importerExcel(b.dataset.import); });
   root.querySelectorAll('[data-export]').forEach(b => { b.onclick = () => exporterExcel(b.dataset.export); });
+  root.querySelectorAll('[data-export-modele]').forEach(b => { b.onclick = exporterModeleArticles; });
 }

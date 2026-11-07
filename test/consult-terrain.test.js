@@ -10,8 +10,8 @@ const articles = [
 ];
 const parFamille = { Robinetterie: { prefere: 'e6', autres: ['e9'] }, Tubes: { prefere: 'e11', autres: ['e12', 'e13'] } };
 
-test('fournisseurs : préféré et 4 autres au plus, famille pour les lignes libres', () => {
-  assert.deepStrictEqual(C.fournisseursArticle(articles[0]), ['e5', 'e6', 'e7', 'e8', 'e9']);
+test('fournisseurs : préféré et 3 autres au plus, famille pour les lignes libres', () => {
+  assert.deepStrictEqual(C.fournisseursArticle(articles[0]), ['e5', 'e6', 'e7', 'e8']);
   assert.deepStrictEqual(C.fournisseursLigne({ articleId: 'a4' }, articles, parFamille), ['e11', 'e12', 'e13']);
   assert.deepStrictEqual(C.fournisseursLigne({ designation: 'Robinet à boisseau', famille: 'robinetterie' }, articles, parFamille), ['e6', 'e9']);
   assert.deepStrictEqual(C.fournisseursLigne({ designation: 'Bidule', famille: 'Divers' }, articles, parFamille), []);
@@ -24,7 +24,7 @@ test('demande du terrain : lignes regroupées par fournisseurs, sans fournisseur
   assert.deepStrictEqual(ls[0], { articleId: 'a1', designation: 'Coude DN50', ref: 'COU-50', famille: 'Raccords', unite: 'u', qte: 10, note: '' });
   const g = C.grouper(ls, articles, parFamille);
   assert.deepStrictEqual(g.groupes.map(x => [x.fournisseurs.join(','), x.lignes.map(l => l.designation)]), [
-    ['e5,e6,e7,e8,e9', ['Coude DN50']], ['e5,e6,e7', ['Bride DN100']], ['e6', ['Vanne DN50']], ['e6,e9', ['Robinet 1/4 tour DN20']]]);
+    ['e5,e6,e7,e8', ['Coude DN50']], ['e5,e6,e7', ['Bride DN100']], ['e6', ['Vanne DN50']], ['e6,e9', ['Robinet 1/4 tour DN20']]]);
   assert.deepStrictEqual(g.sansFournisseur.map(l => l.designation), ['Joint spécial']);
 });
 

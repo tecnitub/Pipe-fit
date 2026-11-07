@@ -1,13 +1,13 @@
 // Fournisseurs consultés par article et par famille, et demande de matériel du terrain envoyée automatiquement :
-// chaque article de la bibliothèque a son fournisseur préféré et jusqu'à 4 autres fournisseurs à consulter ; une ligne
+// chaque article de la bibliothèque a son fournisseur préféré et jusqu'à 3 autres fournisseurs à consulter ; une ligne
 // libre prend ceux de sa famille (type de matériel). Les lignes d'une demande sont regroupées par fournisseurs : une
 // consultation par groupe, envoyée par e-mail à chaque fournisseur à son adresse des demandes de prix.
 // Module pur (navigateur, serveur, démo, tests).
 const ConsultTerrain = (() => {
-  const MAX_AUTRES = 4;
+  const MAX_AUTRES = 3;
   const txt = (v, n = 200) => String(v == null ? '' : v).trim().slice(0, n);
   const uniques = ids => [...new Set((ids || []).map(x => txt(x, 64)).filter(Boolean))];
-  // Fournisseur préféré puis les autres (4 au plus) d'un article
+  // Fournisseur préféré puis les autres (3 au plus) d'un article
   const fournisseursArticle = a => uniques([a && a.fournisseurId, ...((a && a.fournisseursConsult) || [])]).slice(0, MAX_AUTRES + 1);
   // parFamille : { [famille]: { prefere, autres: [] } }
   const cleFamille = f => txt(f, 80).toLowerCase();

@@ -103,3 +103,30 @@ test('Études : onglet « Programmation automate » (cahier Wit) du calcul des a
   assert.match(t, /Cahier de programmation — Automate Wit/); assert.match(t, /Boucles de régulation|Entrées \/ sorties/);
   assert.deepStrictEqual(erreurs, []);
 });
+
+test('CRM : bibliothèque au format du modèle d\'export (marge, catégories, unités, variantes fournisseur)', { skip: sansPlaywright, timeout: 120000 }, async () => {
+  const { p, erreurs } = await ouvrir('pipefit-crm-demo.html');
+  const X = require(path.join(racine, 'public/js/xlsx'));
+  const rows = [['Référence', 'Description', 'Fournisseur', 'Unité', "Prix d'achat", 'Marge', 'Catégories'],
+    ['E2E-1', 'Coude e2e', 'Fournisseur E2E', 'Pièce', '4,83000', '100,00', 'Raccords|Acier|Coudes 90'],
+    ['E2E-1', 'Coude e2e', 'Fournisseurs E2E Bis', 'Pièce', '4,50000', '100,00', 'Raccords|Acier|Coudes 90'],
+    ['E2E-2', 'Pose e2e', 'Fournisseur E2E', 'Heure(s)', '40,00000', '25,00', 'Main d\'oeuvre'],
+    ['E2E-3', 'Tube e2e', 'fournisseur e2e', 'Ml', '2,00000', '50,00', '']];
+  const fichier = path.join(dir, 'export_modele.xlsx');
+  fs.writeFileSync(fichier, Buffer.from(X.build([{ name: 'Worksheet', rows }])));
+  await p.evaluate(() => { location.hash = '#/articles'; }); await p.waitForTimeout(1500);
+  await p.click('[data-import="articles"]'); await p.waitForTimeout(400);
+  await p.setInputFiles('#imp-file', fichier); await p.waitForTimeout(1200);
+  await p.click('#imp-go'); await p.waitForTimeout(2000);
+  const txt = await p.textContent('#modal');
+  assert.match(txt, /1<\/strong>|variante\(s\) fournisseur/);
+  const a = await p.evaluate(() => { const l = Store.all('articles').filter(x => /^E2E-/.test(x.ref)).sort((x, y) => x.ref.localeCompare(y.ref)); return l.map(x => ({ ref: x.ref, u: x.unite, pa: x.coutRevient, pv: x.prixVente, f: [x.famille, x.sousFamille, x.gamme], d: clientName(x.fournisseurId), v: (x.fournisseursConsult || []).map(clientName), pf: Object.values(x.prixFournisseurs || {}) })); });
+  assert.strictEqual(a.length, 3);
+  assert.deepStrictEqual(a[0], { ref: 'E2E-1', u: 'u', pa: 4.83, pv: 9.66, f: ['Raccords', 'Acier', 'Coudes 90'], d: 'Fournisseur E2E', v: ['Fournisseurs E2E Bis'], pf: [{ coutRevient: 4.5, marge: 100 }] });
+  assert.strictEqual(a[1].u, 'h'); assert.strictEqual(a[1].pv, 50); assert.strictEqual(a[2].u, 'ml');
+  assert.strictEqual(a[2].d, 'Fournisseur E2E');
+  assert.ok(await p.evaluate(() => { const l = Store.all('articles').find(x => x.ref === 'E2E-1'); return ArticlesModele.lignesVariantes(l, clientName).length === 2; }));
+  await p.evaluate(() => Modal.close()); await p.waitForTimeout(500);
+  assert.ok(await p.$('[data-export-modele]'));
+  assert.deepStrictEqual(erreurs, []);
+});

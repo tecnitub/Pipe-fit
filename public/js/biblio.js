@@ -4,11 +4,13 @@ const articleFields = [
   { key: 'designation', label: 'Désignation' },
   { key: 'famille', label: 'Famille', get datalist() { return famillesArticles(); } },
   { key: 'sousFamille', label: 'Sous-famille', get datalist() { return sousFamillesArticles(); } },
+  { key: 'gamme', label: 'Gamme (3e niveau de catégorie)' },
   { key: 'unite', label: 'Unité', type: 'select', options: v => optionsStr([...new Set([...UNITES, v || 'u'])], v || 'u') },
-  { key: 'coutRevient', label: "Prix d'achat HT", type: 'number', step: '0.01' },
-  { key: 'prixVente', label: 'Prix de vente HT', type: 'number', step: '0.01' },
+  { key: 'coutRevient', label: "Prix d'achat HT", type: 'number', step: '0.00001' },
+  { key: 'marge', label: 'Marge (%) — prix de vente = achat × (1 + marge)', type: 'number', step: '0.01' },
+  { key: 'prixVente', label: 'Prix de vente HT (calculé si la marge est saisie)', type: 'number', step: '0.01' },
   { key: 'poidsUnitaire', label: 'Poids / unité (kg)', type: 'number', step: '0.1' },
-  { key: 'fournisseurId', label: 'Fournisseur préféré', type: 'select', options: v => options(fournisseursList(), v) },
+  { key: 'fournisseurId', label: 'Fournisseur par défaut', type: 'select', options: v => options(fournisseursList(), v) },
   // Stock de l'atelier (étiquette QR) : emplacement, minimum avant réassort, quantité commandée au réassort
   { key: 'stockGere', label: 'Géré en stock (étiquette QR)', type: 'select', options: v => optionsStr(['Non', 'Oui'], v === true || v === 'Oui' ? 'Oui' : 'Non') },
   { key: 'emplacement', label: 'Emplacement en stock' },
@@ -29,19 +31,22 @@ const zoneFields = [
   { key: 'coutParTonne', label: 'Coût transporteur / tonne', type: 'number', step: '0.01' },
 ];
 
-// Fiche d'une fourniture : champs habituels, puis jusqu'à 4 autres fournisseurs consultés avec le préféré (demandes de prix)
+// Fiche d'une fourniture : champs habituels, puis un fournisseur par défaut et 3 autres (variantes, chacune avec son prix d'achat) avec le préféré (demandes de prix)
 function editArticle(obj, base) {
   const o = base ? { ...base } : obj, titre = base ? obj.titre : 'Fourniture';
   editModal({ title: titre, col: 'articles', fields: articleFields, obj: o, beforeSave: x => {
-    const sel = [...document.querySelectorAll('#modal [data-fc-autre]')].map(s => s.value).filter(v => v && v !== x.fournisseurId);
-    x.fournisseursConsult = [...new Set(sel)].slice(0, ConsultTerrain.MAX_AUTRES);
+    if (x.marge !== '' && x.marge !== undefined && x.marge !== null && Number.isFinite(+x.marge) && Number(x.coutRevient) > 0) x.prixVente = Math.round(Number(x.coutRevient) * (1 + Number(x.marge) / 100) * 100) / 100;
+    const sel = [...document.querySelectorAll('#modal [data-fc-autre]')].map(s => [s.value, s.closest('.fc-var').querySelector('[data-fc-prix]').value]).filter(([v]) => v && v !== x.fournisseurId);
+    x.fournisseursConsult = [...new Set(sel.map(s => s[0]))].slice(0, ConsultTerrain.MAX_AUTRES);
+    const pf = {}; sel.forEach(([fid, p]) => { if (x.fournisseursConsult.includes(fid)) pf[fid] = { ...((o.prixFournisseurs || {})[fid] || {}), ...(p !== '' && Number.isFinite(+p) ? { coutRevient: +p } : {}) }; });
+    x.prixFournisseurs = Object.fromEntries(Object.entries(pf).filter(([, v]) => Object.keys(v).length));
   } });
   const box = document.querySelector('#modal .modal-box') || document.querySelector('.modal-box'), act = box && box.querySelector('.modal-actions');
   if (!act) return;
   const autres = (o.fournisseursConsult || []).slice(0, ConsultTerrain.MAX_AUTRES);
-  act.insertAdjacentHTML('beforebegin', `<fieldset class="hd-bloc"><legend>Autres fournisseurs consultés (${ConsultTerrain.MAX_AUTRES} au plus)</legend>
-    <p class="small muted" style="margin-top:0">Avec le fournisseur préféré, ils reçoivent les demandes de prix de cet article (bureau et demandes du terrain), à leur adresse des demandes de prix.</p>
-    <div class="grid2">${Array.from({ length: ConsultTerrain.MAX_AUTRES }, (_, i) => `<div class="field"><label>Fournisseur ${i + 2}</label><select data-fc-autre="${i}"><option value="">—</option>${options(fournisseursList(), autres[i] || '')}</select></div>`).join('')}</div></fieldset>`);
+  act.insertAdjacentHTML('beforebegin', `<fieldset class="hd-bloc"><legend>Variantes fournisseur : ${ConsultTerrain.MAX_AUTRES} autres au plus</legend>
+    <p class="small muted" style="margin-top:0">La même fourniture chez d'autres fournisseurs, avec leur prix d'achat. Avec le fournisseur par défaut, ils reçoivent les demandes de prix de cet article (bureau et demandes du terrain).</p>
+    ${Array.from({ length: ConsultTerrain.MAX_AUTRES }, (_, i) => { const p = (o.prixFournisseurs || {})[autres[i]] || {}; return `<div class="grid2 fc-var"><div class="field"><label>Fournisseur ${i + 2}</label><select data-fc-autre="${i}"><option value="">—</option>${options(fournisseursList(), autres[i] || '')}</select></div><div class="field"><label>Prix d'achat HT chez ce fournisseur</label><input type="number" step="0.00001" data-fc-prix="${i}" value="${p.coutRevient ?? ''}"></div></div>`; }).join('')}</fieldset>`);
 }
 // Fournisseurs consultés par famille (lignes libres des demandes du terrain, articles sans fournisseur)
 async function fournisseursParFamille() {
@@ -95,7 +100,7 @@ function listeArticles() {
   const groupe = a => `${RechercheArticles.familleDe(a)}${a.sousFamille ? ` › ${a.sousFamille}` : ''}`;
   const lignes = list.map((a, i) => `${!e.q && (i === 0 || groupe(list[i - 1]) !== groupe(a)) ? `<tr class="grp"><td colspan="9">${esc(groupe(a))}</td></tr>` : ''}
     <tr class="clickable" data-id="${a.id}"><td class="sel-cell" data-nocl><input type="checkbox" data-sel-art="${a.id}" ${e.sel.has(a.id) ? 'checked' : ''} aria-label="Sélectionner ${esc(a.ref)}"></td><td>${esc(a.ref)}</td><td>${esc(a.designation)}</td>
-    <td class="small">${esc(a.famille || '')}${a.sousFamille ? `<br><span class="muted">${esc(a.sousFamille)}</span>` : ''}</td><td>${esc(a.unite)}</td>
+    <td class="small">${esc(a.famille || '')}${a.sousFamille ? `<br><span class="muted">${esc(a.sousFamille)}${a.gamme ? ` › ${esc(a.gamme)}` : ''}</span>` : ''}</td><td>${esc(a.unite)}</td>
     <td class="num">${eur(a.coutRevient)}</td><td class="num">${eur(a.prixVente)}</td><td class="num">${num(a.coutRevient) ? fmt(num(a.prixVente) / num(a.coutRevient), 2) : '—'}</td><td>${esc(fournisseurArticle(a))}</td></tr>`).join('');
   return { n: list.length, html: list.length ? `<div class="table-wrap"><table data-colonnes="articles" class="articles"><tr><th class="sel-cell"><input type="checkbox" id="sel-tout" aria-label="Tout sélectionner"></th><th>Réf.</th><th>Désignation</th><th>Famille</th><th>Unité</th><th class="num">Achat</th><th class="num">Vente</th><th class="num">Coef.</th><th>Fournisseur</th></tr>${lignes}</table></div>`
     : `<p class="muted">Aucune fourniture ne correspond${e.q ? ` à « ${esc(e.q)} »` : ''}.</p>` };
