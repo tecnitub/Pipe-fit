@@ -1,6 +1,6 @@
 {
   "name": "pipefit-crm",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "private": true,
   "description": "CRM multi-utilisateurs pour entreprise de tuyauterie industrielle : contacts, devis, facturation, livraison, planning, heures, rentabilité et REX",
   "main": "server/server.js",
