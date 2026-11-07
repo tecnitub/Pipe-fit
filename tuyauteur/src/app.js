@@ -111,7 +111,45 @@
     $('[data-format]', sortie).closest('label').hidden = !gab;
   }
 
-  function telecharger(nom, contenu, type) {
+  // Message bref en bas de l'écran (remplace alert(), bloqué dans certaines vues)
+  let minuteurMsg = null;
+  function annoncer(texte, erreur = false) {
+    let el = $('#annonce');
+    if (!el) { el = document.createElement('div'); el.id = 'annonce'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+    el.textContent = texte; el.className = erreur ? 'erreur-annonce' : ''; el.hidden = false;
+    clearTimeout(minuteurMsg); minuteurMsg = setTimeout(() => { el.hidden = true; }, 5000);
+  }
+
+  // Archive ZIP sans compression (un seul fichier) : sert à livrer un DXF là où seul le .zip est accepté
+  const CRC = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  function zipUnFichier(nom, contenu) {
+    const data = typeof contenu === 'string' ? new TextEncoder().encode(contenu) : new Uint8Array(contenu);
+    const n = new TextEncoder().encode(nom);
+    let crc = 0xffffffff; for (const o of data) crc = CRC[(crc ^ o) & 255] ^ (crc >>> 8); crc = (crc ^ 0xffffffff) >>> 0;
+    const loc = new DataView(new ArrayBuffer(30)), cen = new DataView(new ArrayBuffer(46)), fin = new DataView(new ArrayBuffer(22));
+    [[0, 0x04034b50, 4], [4, 20, 2], [14, crc, 4], [18, data.length, 4], [22, data.length, 4], [26, n.length, 2]].forEach(([o, v, t]) => t === 4 ? loc.setUint32(o, v, true) : loc.setUint16(o, v, true));
+    [[0, 0x02014b50, 4], [4, 20, 2], [6, 20, 2], [16, crc, 4], [20, data.length, 4], [24, data.length, 4], [28, n.length, 2]].forEach(([o, v, t]) => t === 4 ? cen.setUint32(o, v, true) : cen.setUint16(o, v, true));
+    const tailleLoc = 30 + n.length + data.length;
+    [[0, 0x06054b50, 4], [8, 1, 2], [10, 1, 2], [12, 46 + n.length, 4], [16, tailleLoc, 4]].forEach(([o, v, t]) => t === 4 ? fin.setUint32(o, v, true) : fin.setUint16(o, v, true));
+    return new Blob([loc, n, data, cen, n, fin]);
+  }
+
+  async function telecharger(nom, contenu, type) {
+    // Dans une page claude.ai, les fichiers passent par le lecteur (confirmation de l'utilisateur)
+    const enLecteur = window.claude && typeof window.claude.use === 'function';
+    if (enLecteur) {
+      const dl = await window.claude.use('downloads');
+      if (dl) {
+        const dxf = /\.dxf$/i.test(nom);
+        try {
+          await dl.save(dxf ? { filename: nom.replace(/\.dxf$/i, '.zip'), data: zipUnFichier(nom, contenu) } : { filename: nom, data: new Blob([contenu], { type }) });
+          if (dxf) annoncer('DXF enregistré dans un fichier .zip : le décompresser avant la découpe.');
+        } catch (e) {
+          if (e && e.code !== 'declined') annoncer(`Téléchargement impossible ici (${e.code || e.message}).`, true);
+        }
+        return;
+      }
+    }
     const url = URL.createObjectURL(new Blob([contenu], { type }));
     const a = document.createElement('a');
     a.href = url; a.download = nom;
@@ -173,7 +211,7 @@
         const ex = etat.export || etat;
         const octets = await ExportPDF.creer({ ...(ex.pdf || etat.pdf), resultats: ex.resultats.map(([l, v]) => [l, v]), avertissements: ex.avertissements, tableaux: ex.tableaux, dessins: ex.dessins, echelle1: $('[data-echelle1]', sortie).checked, format: $('[data-format]', sortie).value });
         telecharger(`${nomFichier((ex.pdf || etat.pdf).titre)}.pdf`, octets, 'application/pdf');
-      } catch (e) { console.error(e); alert(`PDF impossible : ${e.message}`); } finally { b.disabled = false; b.textContent = t; }
+      } catch (e) { console.error(e); annoncer(`PDF impossible : ${e.message}`, true); } finally { b.disabled = false; b.textContent = t; }
     });
     $('[data-dxf]', sortie).addEventListener('click', () => {
       if (!etat || etat.erreur) return;
@@ -506,7 +544,7 @@
     ctx.form.addEventListener('click', e => {
       if (e.target.closest('[data-carnet-ajout]')) {
         const vals = valeurs(ctx.form);
-        try { Supportage.support(paramsSupport(vals)); } catch (err) { alert(err.message); return; } // refuse un support incalculable
+        try { Supportage.support(paramsSupport(vals)); } catch (err) { annoncer(err.message, true); return; } // refuse un support incalculable
         if (ctx.enCours != null && memo.carnet[ctx.enCours]) memo.carnet[ctx.enCours] = vals; else memo.carnet.push(vals);
         ctx.enCours = null;
         $('[name=repere]', ctx.form).value = prochainRepere();
@@ -521,7 +559,9 @@
       else if (c) { const v = { ...memo.carnet[+c.dataset.carnetCopie] }; ctx.enCours = null; remplir(ctx.form, v); $('[name=repere]', ctx.form).value = prochainRepere(); ctx.maj(); }
       else if (s) {
         const i = +s.dataset.carnetSuppr;
-        if (confirm(`Supprimer le support ${memo.carnet[i].repere} du carnet ?`)) { memo.carnet.splice(i, 1); if (ctx.enCours === i) ctx.enCours = null; sauver(); ctx.maj(); }
+        // Suppression en deux temps (pas de fenêtre de confirmation)
+        if (s.dataset.confirme) { memo.carnet.splice(i, 1); if (ctx.enCours === i) ctx.enCours = null; sauver(); ctx.maj(); }
+        else { s.dataset.confirme = '1'; s.textContent = 'Supprimer ?'; s.classList.add('danger'); setTimeout(() => { if (s.isConnected) { delete s.dataset.confirme; s.textContent = '×'; s.classList.remove('danger'); } }, 4000); }
       }
     });
   });

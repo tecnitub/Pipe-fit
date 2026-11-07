@@ -22,3 +22,15 @@ fs.mkdirSync(dist, { recursive: true });
 const sortie = path.join(dist, 'Tuyauteur.html');
 fs.writeFileSync(sortie, html);
 console.log(`${path.relative(racine, sortie)} (${(html.length / 1024).toFixed(0)} ko, version ${version})`);
+
+// Variante pour une page claude.ai (démonstration sur téléphone) : sans enveloppe html/head/body, que la
+// plateforme fournit ; les téléchargements y passent par le lecteur (voir telecharger() dans app.js).
+const artefact = html
+  .replace(/<!doctype html>\s*/i, '').replace(/<html[^>]*>\s*/i, '').replace(/<\/html>\s*$/i, '')
+  .replace(/<head>\s*/i, '').replace(/<\/head>\s*/i, '').replace(/<body>\s*/i, '').replace(/<\/body>\s*/i, '')
+  .replace(/<meta charset="utf-8">\s*/i, '').replace(/<meta name="viewport"[^>]*>\s*/i, '')
+  // U+FFFD (présent dans pdf-lib, toujours dans des chaînes) écrit en séquence d'échappement : refusé tel quel à la publication
+  .replace(/�/g, '\\ufffd');
+const sortieA = path.join(dist, 'Tuyauteur-claude.html');
+fs.writeFileSync(sortieA, artefact);
+console.log(`${path.relative(racine, sortieA)} (page claude.ai)`);
