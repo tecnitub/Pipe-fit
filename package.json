@@ -8,6 +8,7 @@
     "start": "node --disable-warning=ExperimentalWarning server/server.js",
     "start:doe": "node --disable-warning=ExperimentalWarning doe/server.js",
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js",
+    "build:tuyauteur": "node tuyauteur/build.js",
     "test:ui": "node --test --test-concurrency=1 pdf/test-ui/*.test.js"
   },
   "engines": { "node": ">=22.13" }

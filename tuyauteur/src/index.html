@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pipe-Fit Tuyauteur</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="barre">
+  <div class="marque"><span class="logo">⌀</span><span>Pipe-Fit Tuyauteur</span></div>
+  <nav class="onglets" role="tablist">
+    <button role="tab" data-onglet="piquage" class="actif">Piquages</button>
+    <button role="tab" data-onglet="baionnette">Baïonnette</button>
+    <button role="tab" data-onglet="renvoi">Renvoi 3D</button>
+    <button role="tab" data-onglet="developpe">Développés</button>
+    <button role="tab" data-onglet="normes">Tubes et coudes</button>
+  </nav>
+</header>
+
+<main>
+<!-- ======================= PIQUAGE ======================= -->
+<section class="module actif" id="piquage">
+  <form class="saisie" autocomplete="off">
+    <h2>Traçage d'un piquage</h2>
+    <fieldset><legend>Collecteur (tube principal)</legend>
+      <div class="tube" data-prefixe="pqC" data-dn="150"></div>
+    </fieldset>
+    <fieldset><legend>Piquage</legend>
+      <div class="tube" data-prefixe="pqP" data-dn="100"></div>
+      <label>Angle entre les axes (°)<input name="angle" type="number" step="0.5" min="15" max="90" value="90"></label>
+      <label>Excentration de l'axe (mm)<input name="excentration" type="number" step="1" value="0"><small>0 = axes concourants ; sinon décalage latéral (piquage tangentiel)</small></label>
+      <label>Type de piquage
+        <select name="type"><option value="pose">Posé sur le collecteur (set-on)</option><option value="penetrant">Pénétrant (set-in)</option></select>
+      </label>
+      <label>Hauteur du piquage (mm, optionnel)<input name="hauteur" type="number" step="1" placeholder="depuis l'axe du collecteur"><small>Donne la longueur de chaque génératrice à couper</small></label>
+      <label>Nombre de divisions<select name="divisions"><option>8</option><option>12</option><option selected>16</option><option>24</option><option>32</option><option>48</option></select></label>
+    </fieldset>
+  </form>
+  <div class="sortie" data-sortie></div>
+</section>
+
+<!-- ======================= BAÏONNETTE ======================= -->
+<section class="module" id="baionnette">
+  <form class="saisie" autocomplete="off">
+    <h2>Baïonnette à coudes orientés</h2>
+    <fieldset><legend>Tube et coudes</legend>
+      <div class="tube" data-prefixe="bt" data-dn="100" data-coude="1"></div>
+    </fieldset>
+    <fieldset><legend>Décalage à rattraper</legend>
+      <label>Décalage vertical (mm)<input name="decalageV" type="number" step="1" value="300"></label>
+      <label>Décalage horizontal (mm)<input name="decalageH" type="number" step="1" value="400"><small>Les deux à la fois = baïonnette orientée (renvoi roulé)</small></label>
+    </fieldset>
+    <fieldset><legend>Calcul par…</legend>
+      <div class="choix-mode">
+        <label class="radio"><input type="radio" name="mode" value="angle" checked> l'angle des coudes</label>
+        <label class="radio"><input type="radio" name="mode" value="avance"> la distance (avance)</label>
+        <label class="radio"><input type="radio" name="mode" value="longueur"> l'entraxe des coudes</label>
+      </div>
+      <label data-mode="angle">Angle des coudes (°)
+        <select name="angleType"><option value="45" selected>45°</option><option value="30">30°</option><option value="60">60°</option><option value="90">90°</option><option value="22.5">22,5°</option><option value="15">15°</option><option value="libre">autre…</option></select>
+      </label>
+      <label data-mode="angle" data-libre>Angle libre (°)<input name="angle" type="number" step="0.1" min="0.1" max="90" value="45"></label>
+      <label data-mode="avance">Avance le long de la ligne (mm)<input name="avance" type="number" step="1" value="500"><small>Distance entre les sommets des deux coudes, mesurée parallèlement à la ligne</small></label>
+      <label data-mode="longueur">Entraxe des coudes (mm)<input name="longueur" type="number" step="1" value="700"><small>Longueur de la partie inclinée entre sommets</small></label>
+      <label>Jeu de soudure (mm par soudure)<input name="jeu" type="number" step="0.5" min="0" value="0"></label>
+    </fieldset>
+  </form>
+  <div class="sortie" data-sortie></div>
+</section>
+
+<!-- ======================= RENVOI 3D ======================= -->
+<section class="module" id="renvoi">
+  <form class="saisie" autocomplete="off">
+    <h2>Renvoi 3D : ligne par points</h2>
+    <fieldset><legend>Tube et coudes</legend>
+      <div class="tube" data-prefixe="rv" data-dn="100" data-coude="1"></div>
+      <label>Jeu de soudure (mm par soudure)<input name="jeu" type="number" step="0.5" min="0" value="0"></label>
+    </fieldset>
+    <fieldset><legend>Sommets (intersections des axes)</legend>
+      <label>Saisie
+        <select name="saisie"><option value="relatif">Relative : ΔX ΔY ΔZ depuis le point précédent</option><option value="absolu">Absolue : coordonnées X Y Z</option></select>
+      </label>
+      <p class="aide">X = Est, Y = Nord, Z = vers le haut (comme sur une isométrique).</p>
+      <table class="points"><thead><tr><th>Pt</th><th>X</th><th>Y</th><th>Z</th><th></th></tr></thead><tbody></tbody></table>
+      <div class="boutons-ligne"><button type="button" data-ajout-point>+ Ajouter un point</button><button type="button" data-exemple-points class="discret">Exemple</button></div>
+    </fieldset>
+  </form>
+  <div class="sortie" data-sortie></div>
+</section>
+
+<!-- ======================= DÉVELOPPÉS ======================= -->
+<section class="module" id="developpe">
+  <form class="saisie" autocomplete="off">
+    <h2>Développés de tôlerie</h2>
+    <fieldset><legend>Forme</legend>
+      <div class="choix-forme">
+        <label class="radio"><input type="radio" name="forme" value="rond-carre" checked> Rond-carré</label>
+        <label class="radio"><input type="radio" name="forme" value="carre-carre"> Trémie (carré-carré)</label>
+        <label class="radio"><input type="radio" name="forme" value="rond-rond"> Cône / réduction</label>
+      </div>
+    </fieldset>
+    <fieldset><legend>Dimensions (mm)</legend>
+      <label data-forme="rond-carre carre-carre">Côté A (bas, suivant X)<input name="A" type="number" step="1" value="600"></label>
+      <label data-forme="rond-carre carre-carre">Côté B (bas, suivant Y)<input name="B" type="number" step="1" value="400"></label>
+      <label data-forme="carre-carre">Côté A haut<input name="A2" type="number" step="1" value="300"></label>
+      <label data-forme="carre-carre">Côté B haut<input name="B2" type="number" step="1" value="200"></label>
+      <label data-forme="rond-carre rond-rond"><span data-forme-texte="rond-carre">Ø du rond (haut)</span><span data-forme-texte="rond-rond">Ø bas</span><input name="D" type="number" step="1" value="300"></label>
+      <label data-forme="rond-rond">Ø haut<input name="D2" type="number" step="1" value="200"></label>
+      <label>Hauteur (entre plans)<input name="hauteur" type="number" step="1" value="500"></label>
+      <label>Excentration X du haut<input name="ex" type="number" step="1" value="0"></label>
+      <label>Excentration Y du haut<input name="ey" type="number" step="1" value="0"><small>Décalage du centre du haut par rapport au centre du bas</small></label>
+    </fieldset>
+    <fieldset><legend>Tôle et fabrication</legend>
+      <label>Épaisseur (mm)<input name="epaisseur" type="number" step="0.5" min="0" value="2"></label>
+      <label>Les cotes sont
+        <select name="cotes"><option value="int">intérieures</option><option value="ext">extérieures</option><option value="moy">sur fibre neutre</option></select>
+      </label>
+      <label>Matière<select name="matiere"><option value="7.85">Acier (7,85)</option><option value="7.95">Inox (7,95)</option><option value="2.70">Aluminium (2,70)</option></select></label>
+      <label>Nombre de pièces<select name="parties"><option value="1">1 pièce (1 soudure)</option><option value="2" selected>2 pièces</option><option value="4">4 pièces</option></select></label>
+      <label>Divisions par quart de rond<select name="divisions"><option>3</option><option>4</option><option selected>6</option><option>8</option><option>12</option><option>24</option></select><small>Plus de divisions = contour plus lisse pour le laser</small></label>
+    </fieldset>
+  </form>
+  <div class="sortie" data-sortie></div>
+</section>
+
+<!-- ======================= NORMES ======================= -->
+<section class="module" id="normes">
+  <div class="sortie pleine">
+    <h2>Tubes ISO 4200 / EN 10220 et coudes EN 10253-2 / ISO 3419</h2>
+    <p class="aide">Rayons de cintrage à l'axe. Épaisseurs : valeurs usuelles indicatives. Vérifier la fiche du fabricant avant fabrication.</p>
+    <div class="tableau-defile"><table class="table" data-table-normes></table></div>
+  </div>
+</section>
+</main>
+
+<template id="tpl-sortie">
+  <div class="erreur" hidden></div>
+  <ul class="avertissements" hidden></ul>
+  <div class="resultats"></div>
+  <div class="apercus"></div>
+  <div class="exports">
+    <label class="case"><input type="checkbox" data-echelle1 checked> PDF avec gabarit 1:1</label>
+    <label class="case">Feuilles <select data-format><option>A4</option><option>A3</option></select></label>
+    <button type="button" data-pdf class="principal">Télécharger le PDF</button>
+    <button type="button" data-dxf>Télécharger le DXF</button>
+  </div>
+  <div class="tableaux"></div>
+</template>
+
+<script src="../../doe/public/vendor/pdf-lib-1.17.1.min.js"></script>
+<script src="normes.js"></script>
+<script src="dessin.js"></script>
+<script src="geometrie.js"></script>
+<script src="pdf.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
