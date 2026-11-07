@@ -14,6 +14,10 @@
     <button role="tab" data-onglet="baionnette">Baïonnette</button>
     <button role="tab" data-onglet="renvoi">Renvoi 3D</button>
     <button role="tab" data-onglet="developpe">Développés</button>
+    <button role="tab" data-onglet="platine">Platines</button>
+    <button role="tab" data-onglet="brides">Brides</button>
+    <button role="tab" data-onglet="escalier">Escaliers</button>
+    <button role="tab" data-onglet="supportage">Supportage</button>
     <button role="tab" data-onglet="normes">Tubes et coudes</button>
   </nav>
 </header>
@@ -124,6 +128,186 @@
   <div class="sortie" data-sortie></div>
 </section>
 
+<!-- ======================= PLATINES ======================= -->
+<section class="module" id="platine">
+  <form class="saisie" autocomplete="off">
+    <h2>Platine pour découpe laser</h2>
+    <fieldset><legend>Platine</legend>
+      <label>Repère<input name="repere" type="text" value="P1"></label>
+      <div class="choix-mode">
+        <label class="radio"><input type="radio" name="forme" value="rect" checked> Rectangulaire</label>
+        <label class="radio"><input type="radio" name="forme" value="rond"> Ronde (bride pleine, disque)</label>
+      </div>
+      <div class="deux" data-si="forme=rect">
+        <label>Longueur (mm)<input name="L" type="number" step="1" value="200"></label>
+        <label>Largeur (mm)<input name="l" type="number" step="1" value="200"></label>
+      </div>
+      <label data-si="forme=rond">Ø extérieur (mm)<input name="D" type="number" step="1" value="220"></label>
+      <div class="deux">
+        <label>Épaisseur (mm)<input name="epaisseur" type="number" step="1" min="1" value="10"></label>
+        <label>Quantité<input name="quantite" type="number" step="1" min="1" value="1"></label>
+      </div>
+      <div class="deux" data-si="forme=rect">
+        <label>Angles<select name="coins"><option value="vifs">vifs</option><option value="arrondis">arrondis</option><option value="chanfreins">chanfreinés</option></select></label>
+        <label data-si="coins=arrondis|chanfreins">Rayon / chanfrein<input name="rayon" type="number" step="1" min="0" value="15"></label>
+      </div>
+      <label>Matière<select name="masseVolumique"><option value="7.85">Acier (7,85)</option><option value="7.95">Inox (7,95)</option><option value="2.70">Aluminium (2,70)</option></select></label>
+    </fieldset>
+    <fieldset><legend>Trous</legend>
+      <label>Disposition<select name="disposition"><option value="coins">4 trous aux coins</option><option value="grille">Grille (lignes × colonnes)</option><option value="cercle">Sur un cercle (perçage de bride)</option><option value="aucun">Aucun trou de fixation</option></select></label>
+      <div class="deux">
+        <label>Ø des trous (mm)<input name="dTrou" type="number" step="0.5" min="0" value="14"></label>
+        <label>Trou central Ø (0 = aucun)<input name="dCentral" type="number" step="0.5" min="0" value="0"></label>
+      </div>
+      <div class="deux" data-si="disposition=coins">
+        <label>Pince en X (bord → axe)<input name="bordX" type="number" step="1" value="30"></label>
+        <label>Pince en Y (bord → axe)<input name="bordY" type="number" step="1" value="30"></label>
+      </div>
+      <div class="deux" data-si="disposition=grille">
+        <label>Trous en X<input name="nx" type="number" step="1" min="1" value="2"></label>
+        <label>Trous en Y<input name="ny" type="number" step="1" min="1" value="2"></label>
+        <label>Entraxe X (mm)<input name="entraxeX" type="number" step="1" value="140"></label>
+        <label>Entraxe Y (mm)<input name="entraxeY" type="number" step="1" value="140"></label>
+      </div>
+      <div class="deux" data-si="disposition=cercle">
+        <label>Nombre de trous<input name="n" type="number" step="1" min="1" value="8"></label>
+        <label>Ø de perçage (mm)<input name="pcd" type="number" step="0.5" value="180"></label>
+        <label>Angle du 1er trou (°)<input name="angleDepart" type="number" step="0.5" placeholder="à cheval sur l'axe"></label>
+      </div>
+    </fieldset>
+  </form>
+  <div class="sortie" data-sortie></div>
+</section>
+
+<!-- ======================= BRIDES ======================= -->
+<section class="module" id="brides">
+  <form class="saisie" autocomplete="off">
+    <h2>Brides</h2>
+    <fieldset><legend>Reconnaître une bride sans inscription</legend>
+      <p class="aide">Compter les trous et mesurer l'écartement de deux trous. Laisser la mesure vide pour ne pas utiliser la reconnaissance.</p>
+      <label>Nombre de trous<input name="rn" type="number" step="1" min="3" value="8"></label>
+      <label>Mesure prise
+        <select name="rmode"><option value="voisins">Centre à centre de deux trous voisins</option><option value="bord">Bord à bord de deux trous voisins (au plus près)</option><option value="opposes">Centre à centre de deux trous opposés</option></select>
+      </label>
+      <div class="deux">
+        <label>Mesure (mm)<input name="rmesure" type="number" step="0.5" min="0" placeholder="ex. 68,9"></label>
+        <label>Ø des trous (mm)<input name="rdTrou" type="number" step="0.5" min="0" placeholder="ex. 18"></label>
+      </div>
+      <label>Ø extérieur de la bride (optionnel)<input name="rD" type="number" step="1" min="0"></label>
+    </fieldset>
+    <fieldset><legend>Longueur des tiges du montage</legend>
+      <div class="deux">
+        <label>DN<select name="dn"></select></label>
+        <label>PN<select name="pn"><option>6</option><option>10</option><option selected>16</option><option>25</option><option>40</option></select></label>
+      </div>
+      <label>Montage<select name="montage"><option value="bride-bride">Bride / bride</option><option value="bride-filtre">Bride / filtre à brides</option><option value="papillon-wafer">Bride / vanne papillon à insérer / bride</option><option value="papillon-taraude">Bride / vanne papillon taraudée (oreilles)</option></select></label>
+      <label data-si="montage=bride-bride|bride-filtre|papillon-wafer">Fixation<select name="fixation"><option value="tige">Tiges filetées + 2 écrous</option><option value="vis">Vis H + écrou</option></select></label>
+      <div class="deux">
+        <label>Joint (mm)<select name="joint"><option value="2">2 (fibre / graphite)</option><option value="3">3 (fibre épaisse)</option><option value="4.5">4,5 (spiralé)</option><option value="0">sans joint</option></select></label>
+        <label>Épaisseur de bride<input name="epaisseur" type="number" step="1" min="0" placeholder="table EN 1092-1"></label>
+      </div>
+      <label data-si="montage=bride-filtre">Épaisseur de la bride du filtre<input name="epaisseur2" type="number" step="1" min="0" placeholder="= bride"></label>
+      <div class="deux" data-si="montage=papillon-wafer|papillon-taraude">
+        <label>Face à face vanne<input name="faceAFace" type="number" step="1" min="0" placeholder="EN 558 série 20"></label>
+        <label data-si="montage=papillon-taraude">Engagement dans l'oreille<input name="engagement" type="number" step="1" min="0" placeholder="= Ø de la vis"></label>
+      </div>
+      <label class="case" data-si="montage=papillon-wafer|papillon-taraude"><input type="checkbox" name="jointVanne"> Joints entre vanne et brides (vanne sans manchette)</label>
+      <label class="case"><input type="checkbox" name="rondelles" checked> Avec rondelles</label>
+    </fieldset>
+  </form>
+  <div class="sortie" data-sortie></div>
+</section>
+
+<!-- ======================= ESCALIERS ======================= -->
+<section class="module" id="escalier">
+  <form class="saisie" autocomplete="off">
+    <h2>Escalier et passerelle</h2>
+    <fieldset><legend>Ouvrage</legend>
+      <div class="choix-mode">
+        <label class="radio"><input type="radio" name="type" value="escalier" checked> Escalier (une volée)</label>
+        <label class="radio"><input type="radio" name="type" value="passerelle"> Passerelle : monte, partie droite, redescend</label>
+      </div>
+      <label><span data-si="type=escalier">Hauteur totale à monter (mm)</span><span data-si="type=passerelle">Hauteur de la montée (mm)</span><input name="H1" type="number" step="1" value="2800"></label>
+      <label data-si="type=passerelle">Hauteur de la descente (mm)<input name="H2" type="number" step="1" value="2800"></label>
+      <label><span data-si="type=passerelle">Longueur de la partie droite (mm)</span><span data-si="type=escalier">Palier d'arrivée (mm, 0 = aucun)</span><input name="droite" type="number" step="10" min="0" value="0"></label>
+      <label>Largeur de passage (mm)<input name="largeur" type="number" step="10" value="800"></label>
+    </fieldset>
+    <fieldset><legend>Marches</legend>
+      <div class="choix-mode">
+        <label class="radio"><input type="radio" name="mode" value="angle" checked> par l'angle</label>
+        <label class="radio"><input type="radio" name="mode" value="giron"> par la longueur de marche (giron)</label>
+      </div>
+      <label>Hauteur de marche visée (mm)<input name="hauteurMarche" type="number" step="1" value="200"><small>Arrondie pour tomber juste sur la hauteur totale</small></label>
+      <label data-si="mode=angle">Angle (°)<input name="angle" type="number" step="0.5" value="38"></label>
+      <label data-si="mode=giron">Giron, longueur de marche (mm)<input name="giron" type="number" step="1" value="250"></label>
+    </fieldset>
+    <fieldset><legend>Limons</legend>
+      <div class="deux">
+        <label>Largeur du limon (mm)<input name="limonL" type="number" step="5" value="200"></label>
+        <label>Épaisseur (mm)<input name="limonE" type="number" step="1" value="8"></label>
+      </div>
+      <label>Arête du limon au-dessus des nez (mm)<input name="surNez" type="number" step="5" value="60"></label>
+    </fieldset>
+    <fieldset><legend>Garde-corps</legend>
+      <label>Garde-corps<select name="gardeCorps"><option value="deux">des deux côtés</option><option value="un">d'un côté</option><option value="aucun">sans garde-corps</option></select></label>
+      <div class="deux" data-si="gardeCorps=deux|un">
+        <label>Hauteur palier (mm)<input name="hauteurGC" type="number" step="10" value="1100"></label>
+        <label>Main courante volée (mm)<input name="hauteurMC" type="number" step="10" value="1000"></label>
+      </div>
+      <label data-si="gardeCorps=deux|un">Espacement maxi des poteaux (mm)<input name="espacementPoteaux" type="number" step="50" value="1500"></label>
+      <label class="case" data-si="gardeCorps=deux|un"><input type="checkbox" name="lisse" checked> Lisse intermédiaire</label>
+      <label class="case" data-si="gardeCorps=deux|un"><input type="checkbox" name="plinthe" checked> Plinthe sur la partie droite</label>
+      <label class="case" data-si="gardeCorps=deux|un"><input type="checkbox" name="plintheVolees"> Plinthe aussi le long des volées</label>
+      <label data-si="gardeCorps=deux|un">Hauteur de plinthe (mm)<input name="hPlinthe" type="number" step="10" value="100"></label>
+    </fieldset>
+  </form>
+  <div class="sortie" data-sortie></div>
+</section>
+
+<!-- ======================= SUPPORTAGE ======================= -->
+<section class="module" id="supportage">
+  <form class="saisie" autocomplete="off">
+    <h2>Carnet de supportage</h2>
+    <fieldset><legend>Support</legend>
+      <div class="deux">
+        <label>Repère<input name="repere" type="text" value="S1"></label>
+        <label>Quantité<input name="quantite" type="number" step="1" min="1" value="1"></label>
+      </div>
+      <div class="tube" data-prefixe="sp" data-dn="100"></div>
+      <label>Maintien du tube<select name="maintien"><option value="etrier">Étrier (DIN 3570)</option><option value="collier">Collier 2 pièces à embase</option></select></label>
+      <label data-si="maintien=collier">Cote axe → embase du collier (mm)<input name="cotesCollier" type="number" step="1" placeholder="Ø/2 + 30"></label>
+      <label data-si="maintien=etrier">Cale sous le tube (mm)<input name="cale" type="number" step="1" min="0" value="0"></label>
+    </fieldset>
+    <fieldset><legend>Fixation</legend>
+      <label>Support<select name="fixation"><option value="sol">Au sol</option><option value="poteau">Contre un poteau</option></select></label>
+      <label data-si="fixation=poteau">Poteau<select name="materiau"><option value="beton">béton</option><option value="acier">acier</option><option value="bois">bois</option></select></label>
+      <label>Fixation<select name="mode"></select></label>
+      <label><span data-si="fixation=sol">Hauteur de l'axe du tube au sol (mm)</span><span data-si="fixation=poteau">Hauteur de l'axe au sol (mm, pour le traçage)</span><input name="hauteurAxe" type="number" step="1" value="800"></label>
+      <label data-si="fixation=poteau">Déport : face du poteau → axe du tube (mm)<input name="deport" type="number" step="1" value="300"></label>
+      <div class="deux" data-si="fixation=poteau">
+        <label>Largeur du poteau (mm)<input name="poteauL" type="number" step="1" value="200"></label>
+        <label>Profondeur du poteau (mm)<input name="poteauP" type="number" step="1" value="200"></label>
+      </div>
+      <label class="case" data-si="fixation=poteau"><input type="checkbox" name="poteauRond"> Poteau rond (largeur = Ø)</label>
+      <label data-si="fixation=poteau">Jambe de force<select name="jambe"><option value="auto">automatique (déport &gt; 500 mm)</option><option value="oui">oui</option><option value="non">non</option></select></label>
+    </fieldset>
+    <fieldset><legend>Profilés et platines</legend>
+      <label><span data-si="fixation=sol">Traverse</span><span data-si="fixation=poteau">Console</span><select name="profil" data-profils></select></label>
+      <label data-si="fixation=sol">Poteau<select name="profilPoteau" data-profils></select></label>
+      <div class="deux" data-si="fixation=sol">
+        <label>Platine de sol L<input name="platineL" type="number" step="10" value="200"></label>
+        <label>Platine de sol l<input name="platineLa" type="number" step="10" value="200"></label>
+      </div>
+      <label>Épaisseur des platines (mm)<input name="platineT" type="number" step="1" value="10"></label>
+    </fieldset>
+    <div class="boutons-ligne" data-hors-saisie>
+      <button type="button" class="principal" data-carnet-ajout>Ajouter au carnet</button>
+      <button type="button" data-carnet-nouveau class="discret">Nouveau support</button>
+    </div>
+  </form>
+  <div class="sortie" data-sortie></div>
+</section>
+
 <!-- ======================= NORMES ======================= -->
 <section class="module" id="normes">
   <div class="sortie pleine">
@@ -135,6 +319,7 @@
 </main>
 
 <template id="tpl-sortie">
+  <div class="extra"></div>
   <div class="erreur" hidden></div>
   <ul class="avertissements" hidden></ul>
   <div class="resultats"></div>
@@ -153,6 +338,10 @@
 <script src="dessin.js"></script>
 <script src="geometrie.js"></script>
 <script src="pdf.js"></script>
+<script src="platine.js"></script>
+<script src="brides.js"></script>
+<script src="escalier.js"></script>
+<script src="supportage.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

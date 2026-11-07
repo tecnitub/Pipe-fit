@@ -51,6 +51,67 @@ de l'épaisseur, les cotes extérieures diminuées. Le développé sort en 1, 2 
 côtés. Chaque flan est tourné pour occuper le plus petit rectangle sur la tôle. Le logiciel donne la surface, la masse
 (acier, inox ou aluminium) et le tableau des longueurs vraies pour tracer à la main.
 
+### Platines (découpe laser)
+Platine rectangulaire (angles vifs, arrondis ou chanfreinés) ou ronde, éventuellement avec un trou central. Les trous
+se placent de quatre façons : 4 trous aux coins (pinces en X et en Y), une grille (lignes × colonnes avec entraxes),
+un cercle (perçage de bride, angle du premier trou), ou aucun trou. Le logiciel contrôle les pinces et les entraxes
+(pince ≥ 1,2 × Ø, entraxe ≥ 2,2 × Ø) et signale les trous plus petits que l'épaisseur. Il donne la masse, la surface,
+la longueur de découpe et la position de chaque trou. Dans le DXF, les trous sont de **vrais cercles** (entité `CIRCLE`).
+
+### Brides
+- **Reconnaissance d'une bride sans inscription** : on compte les trous et on prend une mesure, au choix centre à
+  centre de deux trous voisins, bord à bord de deux trous voisins, ou centre à centre de deux trous opposés. Le Ø des
+  trous et le Ø extérieur, s'ils sont saisis, aident à départager les brides proches. Le logiciel calcule le Ø de
+  perçage (K = entraxe / sin(180°/n)) et propose les brides EN 1092-1 (PN 6 à 40) et ASME B16.5 (classes 150 et 300)
+  les plus proches, avec un niveau de certitude. Quand plusieurs PN ont le même perçage, ils sont regroupés
+  (ex. PN 10 / 16 jusqu'au DN 150). Un bouton crée directement la **bride pleine** dans l'onglet Platines.
+- **Longueur des tiges** d'un montage :
+  - bride / bride ;
+  - bride / filtre à brides (épaisseur de la bride du filtre modifiable) ;
+  - bride / vanne papillon à insérer / bride (tiges traversantes, face à face EN 558 série 20) ;
+  - bride / vanne papillon **taraudée** (à oreilles) : vis de chaque côté, avec contrôle de l'engagement dans l'oreille.
+
+  On choisit des tiges filetées + 2 écrous ou des vis + écrou, l'épaisseur du joint et les rondelles. La longueur
+  vaut serrage + écrous + 2 filets de dépassement, arrondie aux 5 mm pour les tiges et à la longueur normalisée
+  ISO 4017 pour les vis.
+- **Abaque** : la boulonnerie de chaque DN (15 à 600) et de chaque PN (6 à 40) pour le montage choisi.
+
+Les épaisseurs de brides (type 11 à collerette) et les face à face des vannes sont indicatifs et modifiables.
+
+### Escaliers et passerelles
+- **Escalier** d'une volée, avec ou sans palier d'arrivée, ou **passerelle** qui monte, suit une partie droite puis
+  redescend (les hauteurs de montée et de descente peuvent être différentes).
+- Calcul **par l'angle** ou **par la longueur de marche** (giron), à partir de la hauteur totale et d'une hauteur de
+  marche visée. Le nombre de marches est arrondi pour tomber juste sur la hauteur totale.
+- Résultats : hauteur de marche, giron, angle, g + 2h, reculement, rampant, et le traçage des nez de marche.
+- **Limons à plat** (DXF ou gabarit 1:1) : contour de découpe, angles de coupe au sol et en tête, traits de chaque marche.
+- **Garde-corps** d'un côté, des deux côtés ou sans. Main courante à 1 000 mm sur les volées et 1 100 mm sur la partie
+  droite, lisse intermédiaire, poteaux répartis (espacement maxi réglable). La **plinthe** est optionnelle, sur la
+  partie droite et, au choix, le long des volées.
+- **Débit** : limons, marches, plancher, main courante, lisse, poteaux, plinthe.
+- Contrôles (repères ISO 14122-3) : angle conseillé de 30° à 38°, 600 ≤ g + 2h ≤ 660 mm, volée de plus de 3 m,
+  garde-corps requis au-delà de 500 mm de chute, plinthe sur les passerelles.
+
+### Carnet de supportage
+Supports de tuyauterie fabriqués sur mesure. On les règle un par un, on les ajoute au carnet (conservé dans le
+navigateur), puis on peut les modifier, les copier ou les supprimer.
+- **Au sol** : platine chevillée, scellée ou soudée, poteau, puis traverse (étrier) ou platine de tête (collier). La
+  longueur du poteau est calculée à partir de la hauteur de l'axe du tube.
+- **Contre poteau** :
+  - **béton** : platine avec chevilles ou scellement chimique, ou ceinture ;
+  - **bois** : platine avec tire-fonds ou boulons traversants, ou ceinture ;
+  - **acier** : soudé, platine avec crapauds (sans soudure ni perçage), platine boulonnée ou ceinture.
+
+  La console est calculée à partir du déport (face du poteau → axe du tube). Une jambe de force à 45° est ajoutée
+  automatiquement au-delà de 500 mm de déport.
+- **Maintien du tube** : étrier DIN 3570 (entraxe et Ø de perçage) ou collier 2 pièces à embase.
+- Pour chaque support : croquis coté, débit des profilés (cornières, UPN, tubes carrés, HEA, IPE) avec les usinages,
+  platines à découper et quincaillerie. Pour le carnet : **PDF** avec le récapitulatif des profilés (barres de 6 m,
+  masse) et de la quincaillerie, et **DXF** de toutes les platines.
+
+Les tailles d'étriers, de colliers et de chevilles sont indicatives. Les supports ne sont pas calculés en
+résistance : il faut les valider selon les charges.
+
 ### Tubes et coudes
 Table des diamètres extérieurs ISO 4200 / EN 10220 (série 1, identiques à ISO 1127 en inox), des épaisseurs usuelles
 et des rayons de coudes EN 10253-2 / ISO 3419 : 2D, 3D (R ≈ 1,5 × DN) et 5D (R = 2,5 × Ø). Les épaisseurs sont
@@ -72,7 +133,11 @@ tuyauteur/src/normes.js     tables ISO / EN des tubes et des coudes
 tuyauteur/src/geometrie.js  calculs : piquage, baïonnette, renvoi 3D, développés
 tuyauteur/src/dessin.js     modèle de dessin commun, aperçu SVG, export DXF
 tuyauteur/src/pdf.js        PDF (pdf-lib) : fiche et feuilles 1:1
+tuyauteur/src/platine.js    platines percées
+tuyauteur/src/brides.js     brides EN 1092-1 / ASME B16.5 : reconnaissance, boulonnerie, abaque
+tuyauteur/src/escalier.js   escaliers et passerelles
+tuyauteur/src/supportage.js supports de tuyauterie
 tuyauteur/src/app.js        interface
 tuyauteur/build.js          assemble dist/Tuyauteur.html
-test/tuyauteur.test.js      tests : résultats comparés aux formules (npm test)
+test/tuyauteur*.test.js     tests : résultats comparés aux formules (npm test)
 ```

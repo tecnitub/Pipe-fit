@@ -55,29 +55,36 @@
 
   // ------------------------------------------------------------ Mémoire des saisies
   function restaurer(id, form) {
-    const m = memo[id];
-    if (!m) return;
-    // DN et types de coudes d'abord (ils remplissent les autres champs)
-    const ordre = el => /_(dn|coude)$/.test(el.name) ? 0 : 1;
-    $$('input, select', form).filter(el => el.name && m[el.name] !== undefined).sort((a, b) => ordre(a) - ordre(b)).forEach(el => {
-      if (el.type === 'radio') el.checked = el.value === m[el.name];
-      else { el.value = m[el.name]; el.dispatchEvent(new Event('change')); }
-    });
+    if (memo[id]) remplir(form, memo[id]);
   }
   function memoriser(id, form) {
     const m = {};
     for (const el of $$('input, select', form)) {
       if (!el.name) continue;
-      if (el.type === 'radio') { if (el.checked) m[el.name] = el.value; } else m[el.name] = el.value;
+      if (el.type === 'radio') { if (el.checked) m[el.name] = el.value; } else if (el.type === 'checkbox') m[el.name] = el.checked; else m[el.name] = el.value;
     }
     memo[id] = { ...memo[id], ...m };
     sauver();
   }
   const valeurs = form => {
     const v = {};
-    for (const el of $$('input, select', form)) if (el.name && (el.type !== 'radio' || el.checked)) v[el.name] = el.value;
+    for (const el of $$('input, select', form)) {
+      if (!el.name || el.closest('[data-hors-saisie]')) continue;
+      if (el.type === 'checkbox') v[el.name] = el.checked;
+      else if (el.type !== 'radio' || el.checked) v[el.name] = el.value;
+    }
     return v;
   };
+  // Remplit un formulaire avec des valeurs enregistrées (DN et coudes d'abord, ils remplissent les autres champs)
+  function remplir(form, m) {
+    const ordre = el => /_(dn|coude)$/.test(el.name) ? 0 : /^(fixation|materiau|forme|type)$/.test(el.name) ? 1 : 2;
+    $$('input, select', form).filter(el => el.name && m[el.name] !== undefined).sort((a, b) => ordre(a) - ordre(b)).forEach(el => {
+      if (el.type === 'radio') el.checked = el.value === m[el.name];
+      else if (el.type === 'checkbox') el.checked = m[el.name] === true;
+      else { el.value = m[el.name]; el.dispatchEvent(new Event('change')); }
+    });
+  }
+
 
   // ------------------------------------------------------------ Affichage commun
   function preparerSortie(section) {
@@ -91,11 +98,15 @@
     av.hidden = !(etat.avertissements || []).length;
     av.innerHTML = (etat.avertissements || []).map(a => `<li>${esc(a)}</li>`).join('');
     $('.exports', sortie).hidden = !!etat.erreur;
-    if (etat.erreur) { $('.resultats', sortie).innerHTML = ''; $('.apercus', sortie).innerHTML = ''; $('.tableaux', sortie).innerHTML = ''; return; }
+    if (etat.erreur) { $('.extra', sortie).innerHTML = etat.html || ''; $('.resultats', sortie).innerHTML = ''; $('.apercus', sortie).innerHTML = ''; $('.tableaux', sortie).innerHTML = ''; return; }
+    $('.extra', sortie).innerHTML = etat.html || '';
     $('.resultats', sortie).innerHTML = etat.resultats.map(([l, v, fort]) => `<div class="carte${fort ? ' forte' : ''}"><span>${esc(l)}</span><b>${esc(v)}</b></div>`).join('');
     $('.apercus', sortie).innerHTML = etat.dessins.map(d => `<figure><figcaption>${esc(d.titre)}</figcaption>${Dessin.versSVG(d.dessin, { classe: 'apercu' })}</figure>`).join('');
     $('.tableaux', sortie).innerHTML = (etat.tableaux || []).map(t => `<h3>${esc(t.titre)}</h3><div class="tableau-defile"><table class="table"><thead><tr>${t.colonnes.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${t.lignes.map(l => `<tr>${l.map(c => `<td>${esc(c ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`).join('');
-    const gab = etat.dessins.some(d => d.gabarit);
+    const gab = (etat.export || etat).dessins.some(d => d.gabarit);
+    $('[data-pdf]', sortie).textContent = etat.libellePDF || 'Télécharger le PDF';
+    $('[data-dxf]', sortie).textContent = etat.libelleDXF || 'Télécharger le DXF';
+    $('[data-dxf]', sortie).hidden = etat.dxf === false;
     $('[data-echelle1]', sortie).closest('label').hidden = !gab;
     $('[data-format]', sortie).closest('label').hidden = !gab;
   }
@@ -113,12 +124,23 @@
   function dxfDe(etat) {
     const tous = Dessin.creer();
     let x = 0;
-    for (const d of etat.dessins) {
+    // Les gabarits seuls (pièces à découper) s'il y en a, sinon tous les dessins
+    const ex = etat.export || etat;
+    const choix = ex.dessins.some(d => d.gabarit) ? ex.dessins.filter(d => d.gabarit) : ex.dessins;
+    for (const d of choix) {
       const b = Dessin.boite(d.dessin);
       Dessin.fusionner(tous, d.dessin, x - b.x0, -b.y0);
       x += b.l + 50;
     }
     return Dessin.versDXF(tous, { polylignes3d: etat.polylignes3d });
+  }
+
+  // Champs conditionnels : data-si="nom=valeur1|valeur2" (plusieurs conditions séparées par « ; »)
+  function visibilite(form) {
+    const v = valeurs(form);
+    $$('[data-si]', form).forEach(el => {
+      el.hidden = !el.dataset.si.split(';').every(c => { const [n, vals] = c.split('='); return vals.split('|').includes(String(v[n])); });
+    });
   }
 
   // ------------------------------------------------------------ Moteur d'un module
@@ -131,10 +153,11 @@
     if (ctx.apresRestauration) ctx.apresRestauration();
     let etat = null, minuteur = null;
     const maj = () => {
+      visibilite(form);
       if (ctx.visibilite) ctx.visibilite();
       try { etat = calculer(valeurs(form), ctx); } catch (e) {
-        if (!(e instanceof Geometrie.ErreurSaisie)) console.error(e);
-        etat = { erreur: e instanceof Geometrie.ErreurSaisie ? e.message : `Calcul impossible : ${e.message}` };
+        if (!(e instanceof Dessin.ErreurSaisie)) console.error(e);
+        etat = { erreur: e instanceof Dessin.ErreurSaisie ? e.message : `Calcul impossible : ${e.message}`, html: ctx.htmlErreur ? ctx.htmlErreur() : '' };
       }
       afficher(sortie, etat);
       memoriser(id, form);
@@ -147,13 +170,14 @@
       if (!etat || etat.erreur) return;
       const b = ev.currentTarget; b.disabled = true; const t = b.textContent; b.textContent = 'Préparation…';
       try {
-        const octets = await ExportPDF.creer({ ...etat.pdf, resultats: etat.resultats.map(([l, v]) => [l, v]), avertissements: etat.avertissements, tableaux: etat.tableaux, dessins: etat.dessins, echelle1: $('[data-echelle1]', sortie).checked, format: $('[data-format]', sortie).value });
-        telecharger(`${nomFichier(etat.pdf.titre)}.pdf`, octets, 'application/pdf');
+        const ex = etat.export || etat;
+        const octets = await ExportPDF.creer({ ...(ex.pdf || etat.pdf), resultats: ex.resultats.map(([l, v]) => [l, v]), avertissements: ex.avertissements, tableaux: ex.tableaux, dessins: ex.dessins, echelle1: $('[data-echelle1]', sortie).checked, format: $('[data-format]', sortie).value });
+        telecharger(`${nomFichier((ex.pdf || etat.pdf).titre)}.pdf`, octets, 'application/pdf');
       } catch (e) { console.error(e); alert(`PDF impossible : ${e.message}`); } finally { b.disabled = false; b.textContent = t; }
     });
     $('[data-dxf]', sortie).addEventListener('click', () => {
       if (!etat || etat.erreur) return;
-      telecharger(`${nomFichier(etat.pdf.titre)}.dxf`, dxfDe(etat), 'application/dxf');
+      telecharger(`${nomFichier(((etat.export && etat.export.pdf) || etat.pdf).titre)}.dxf`, dxfDe(etat), 'application/dxf');
     });
     maj();
     return ctx;
@@ -319,6 +343,187 @@
       $$('[data-forme-texte]', ctx.form).forEach(el => { el.hidden = el.dataset.formeTexte !== forme; });
       $('[name=divisions]', ctx.form).closest('label').hidden = forme === 'carre-carre';
     };
+  });
+
+  // ------------------------------------------------------------ Platines
+  const ctxPlatine = module('platine', v => {
+    const r = Platine.platine({ ...v, cotes: true });
+    const R = r.resultats;
+    const dims = r.forme === 'rond' ? `Ø${fmt(+v.D, 0)}` : `${fmt(+v.L, 0)} × ${fmt(+v.l, 0)}`;
+    const titre = `Platine ${v.repere || ''} ${dims} ép. ${fmt(+v.epaisseur, 0)}`.replace(/\s+/g, ' ');
+    return {
+      pdf: { titre, sousTitre: 'Platine pour découpe laser', infos: [['Dimensions', `${dims} mm`], ['Épaisseur', mm(+v.epaisseur, 0)], ['Trous', `${R.nbTrous} trou${R.nbTrous > 1 ? 's' : ''}`], ['Quantité', String(R.quantite)]], pied: titre },
+      avertissements: r.avertissements,
+      resultats: [['Masse unitaire', `${fmt(R.masse, 2)} kg`, true], ['Masse totale', `${fmt(R.masseTotale, 2)} kg`], ['Surface nette', `${fmt(R.aire, 4)} m²`], ['Longueur de découpe (total)', `${fmt(R.longueurDecoupe, 2)} m`], ['Trous', String(R.nbTrous)]],
+      dessins: [{ titre: `${v.repere || 'Platine'} - contour et trous`, dessin: r.dessin, gabarit: true }],
+      tableaux: r.trous.length ? [{ titre: 'Position des trous (depuis le coin bas gauche)', colonnes: ['N°', 'X', 'Y', 'Ø'], lignes: r.trous.map((t, i) => [i + 1, fmt(t.dx), fmt(t.dy), fmt(+v.dTrou)]) }] : [],
+    };
+  });
+  const ouvrirPlatine = vals => { remplir(ctxPlatine.form, vals); ctxPlatine.maj(); ouvrir('platine'); window.scrollTo(0, 0); };
+
+  // ------------------------------------------------------------ Brides
+  const ctxBrides = module('brides', (v, ctx) => {
+    let html = '', rec = null;
+    if (+v.rmesure > 0) {
+      try {
+        rec = Brides.reconnaitre({ n: v.rn, mode: v.rmode, mesure: v.rmesure, dTrou: v.rdTrou, D: v.rD });
+        ctx.candidats = rec.candidats;
+        const libC = { forte: 'certitude forte', moyenne: 'certitude moyenne', faible: 'certitude faible', aucune: 'aucune bride' }[rec.certitude];
+        html = `<h3>Bride reconnue <span class="badge ${rec.certitude}">${libC}</span></h3>
+          <p class="aide">Ø de perçage calculé : <b>${fmt(rec.K)} mm</b> (entraxe de deux trous voisins ${fmt(rec.entraxeVoisins)} mm).</p>
+          <div class="candidats">${rec.candidats.length ? rec.candidats.map((c, i) => `<div class="candidat${i ? '' : ' premier'}">
+            <div><b>${esc(c.designation)}</b><div class="doux">D ${fmt(c.D)} - perçage ${fmt(c.K)} (${c.ecartK >= 0 ? '+' : ''}${fmt(c.ecartK)}) - ${c.n} trous Ø${fmt(c.L)} - ${esc(c.filetage)}</div></div>
+            <div class="boutons">${c.norme === 'EN 1092-1' ? `<button type="button" data-utiliser="${i}">Boulonnerie</button>` : ''}<button type="button" data-platine-bride="${i}">Bride pleine (platine)</button></div>
+          </div>`).join('') : '<p>Aucune bride normalisée avec ce nombre de trous.</p>'}</div>`;
+      } catch (e) {
+        if (!(e instanceof Dessin.ErreurSaisie)) throw e;
+        html = `<div class="erreur">${esc(e.message)}</div>`;
+      }
+    } else ctx.candidats = [];
+    const opts = { montage: v.montage, fixation: v.fixation, joint: v.joint, rondelles: v.rondelles, jointVanne: v.jointVanne };
+    const b = Brides.boulonnerie({ ...opts, dn: v.dn, pn: v.pn, epaisseur: v.epaisseur, epaisseur2: v.epaisseur2, faceAFace: v.faceAFace, engagement: v.engagement });
+    const ab = Brides.abaque(opts);
+    const br = b.bride;
+    const titre = `Boulonnerie DN ${br.dn} PN ${br.pn} - ${Brides.MONTAGES[b.montage].split(' (')[0]}`;
+    const bDessin = rec && rec.candidats.length ? rec.candidats[0] : { ...br, designation: `DN ${br.dn} PN ${br.pn}` };
+    return {
+      html,
+      pdf: { titre, sousTitre: Brides.MONTAGES[b.montage], infos: [['Bride', `EN 1092-1 DN ${br.dn} PN ${br.pn}`], ['Perçage', `${br.n} trous Ø${br.L} sur Ø${br.K}`], ['Ø extérieur', mm(br.D, 0)], ['Joint', mm(+v.joint)], ['Rondelles', v.rondelles ? 'oui' : 'non']], pied: titre },
+      avertissements: b.avertissements,
+      resultats: [
+        ['Boulonnerie', b.designation, true],
+        ['Longueur calculée', mm(b.longueurCalc)],
+        ['Serrage (épaisseurs cumulées)', mm(b.serrage)],
+        ['Bride', `${br.n} trous Ø${br.L} sur Ø${br.K}`],
+        ...(b.rondelles ? [['Rondelles', `${b.rondelles}`]] : []),
+        ['Détail', b.detail],
+      ],
+      dessins: [{ titre: rec && rec.candidats.length ? `Bride reconnue : ${bDessin.designation}` : `Bride DN ${br.dn} PN ${br.pn}`, dessin: Brides.dessinBride(bDessin, rec ? rec.K : null) }],
+      tableaux: [{ titre: `Abaque des longueurs : ${Brides.MONTAGES[b.montage]}${v.fixation === 'vis' && b.montage !== 'papillon-taraude' ? ', vis + écrou' : b.montage === 'papillon-taraude' ? ', vis par côté' : ', tiges filetées'}`, colonnes: ['DN', ...Brides.PNS.map(p => `PN ${p}`)], lignes: ab.map(r => [r.dn, ...r.pns.map(c => c ? c.texte : '-')]) }],
+    };
+  }, ctx => {
+    $('[name=dn]', ctx.form).innerHTML = Brides.DNS.map(d => `<option value="${d}"${d === 100 ? ' selected' : ''}>DN ${d}</option>`).join('');
+    ctx.section.addEventListener('click', e => {
+      const u = e.target.closest('[data-utiliser]'), pl = e.target.closest('[data-platine-bride]');
+      if (u) {
+        const c = ctx.candidats[+u.dataset.utiliser];
+        $('[name=dn]', ctx.form).value = c.dn; $('[name=pn]', ctx.form).value = c.pns[c.pns.length - 1];
+        ctx.maj();
+      } else if (pl) {
+        const c = ctx.candidats[+pl.dataset.platineBride];
+        ouvrirPlatine({ repere: `Bride pleine ${c.norme === 'EN 1092-1' ? `DN${c.dn} PN${c.pns.join('-')}` : `${c.nps}" cl.${c.classe}`}`, forme: 'rond', D: c.D, disposition: 'cercle', n: c.n, pcd: c.K, dTrou: c.L, angleDepart: '', dCentral: 0 });
+      }
+    });
+  });
+  void ctxBrides;
+
+  // ------------------------------------------------------------ Escaliers et passerelles
+  module('escalier', v => {
+    const r = Escalier.calculer(v);
+    const passerelle = v.type === 'passerelle';
+    const titre = passerelle ? `Passerelle H ${fmt(+v.H1, 0)} / ${fmt(+v.H2, 0)} - partie droite ${fmt(+v.droite, 0)}` : `Escalier H ${fmt(+v.H1, 0)}`;
+    const noms = ['Montée', 'Descente'];
+    return {
+      pdf: { titre, sousTitre: 'Escalier industriel : marches, limons, garde-corps et débit', infos: [['Largeur de passage', mm(+v.largeur, 0)], ['Limons', `plat ${v.limonL} × ${v.limonE}`], ['Garde-corps', { deux: 'deux côtés', un: 'un côté', aucun: 'aucun' }[v.gardeCorps]], ['Plinthe', v.plinthe && v.gardeCorps !== 'aucun' ? `${v.hPlinthe} mm${v.plintheVolees ? ', volées comprises' : ''}` : 'non']], pied: titre },
+      avertissements: r.avertissements,
+      resultats: [
+        ...r.volees.flatMap((vl, i) => [[`${passerelle ? noms[i] : 'Marches'} : ${vl.n} hauteurs de`, mm(vl.h, 1), true], [`${passerelle ? noms[i] + ' : ' : ''}giron × angle`, `${fmt(vl.g)} mm × ${fmt(vl.alpha, 1)}°`]]),
+        ['Longueur au sol (limon à limon)', mm(r.emprise, 0)],
+        ...(r.poteaux ? [['Poteaux de garde-corps', String(r.poteaux)]] : []),
+      ],
+      dessins: [
+        { titre: 'Élévation', dessin: r.dessins.elevation },
+        ...r.dessins.limons.map(l => ({ titre: `${l.nom} à plat (×${l.quantite}) : traits des marches en tirets`, dessin: l.dessin, gabarit: true })),
+      ],
+      tableaux: [
+        { titre: 'Volées', colonnes: ['Volée', 'Hauteur', 'Hauteurs de marche', 'h', 'Giron', 'Angle', 'g + 2h', 'Reculement', 'Rampant'], lignes: r.volees.map((vl, i) => [passerelle ? noms[i] : 'Escalier', fmt(vl.H, 0), vl.n, fmt(vl.h, 1), fmt(vl.g, 1), `${fmt(vl.alpha, 1)}°`, fmt(vl.blondel, 0), fmt(vl.reculement, 0), fmt(vl.rampant, 0)]) },
+        { titre: 'Débit', colonnes: ['Pièce', 'Section', 'Qté', 'Longueur', 'Observations'], lignes: r.debit.map(d => [d[0], d[1], d[2], fmt(d[3], 0), d[4]]) },
+        { titre: 'Traçage des nez de marche (montée, depuis le pied de la 1re contremarche)', colonnes: ['Marche', 'X', 'Y'], lignes: r.tableauMarches.map(m => [m.k, fmt(m.x), fmt(m.y)]) },
+      ],
+    };
+  });
+
+  // ------------------------------------------------------------ Carnet de supportage
+  memo.carnet = Array.isArray(memo.carnet) ? memo.carnet : [];
+  const paramsSupport = vals => ({ ...vals, de: +vals.sp_de });
+  module('supportage', (v, ctx) => {
+    const cour = Supportage.support(paramsSupport(v));
+    const carnet = memo.carnet.map(c => { try { return Supportage.support(paramsSupport(c)); } catch (e) { return { repere: c.repere, erreur: e.message, pieces: [], platines: [], quincaillerie: [], masse: 0, resume: e.message }; } });
+    const enCours = ctx.enCours;
+    $('[data-carnet-ajout]', ctx.form).textContent = enCours != null && memo.carnet[enCours] ? `Mettre à jour ${memo.carnet[enCours].repere}` : 'Ajouter au carnet';
+    const html = `<h3>Carnet (${carnet.length} support${carnet.length > 1 ? 's' : ''})</h3>${carnet.length ? `<div class="tableau-defile"><table class="table carnet"><thead><tr><th>Repère</th><th>Qté</th><th>Tube</th><th>Description</th><th>Masse</th><th></th></tr></thead><tbody>${carnet.map((s, i) => `<tr class="${i === enCours ? 'encours' : ''}"><td>${esc(s.repere)}</td><td>${s.quantite || ''}</td><td>Ø${fmt(+memo.carnet[i].sp_de)}</td><td style="text-align:left;white-space:normal">${esc(s.resume)}</td><td>${fmt(s.masse)} kg</td><td><div class="boutons"><button type="button" data-carnet-modif="${i}">Modifier</button><button type="button" data-carnet-copie="${i}">Copier</button><button type="button" data-carnet-suppr="${i}">×</button></div></td></tr>`).join('')}</tbody></table></div>` : '<p class="aide">Le carnet est vide : régler un support à gauche puis « Ajouter au carnet ».</p>'}`;
+    const lignesSupport = s => s.pieces.map(x => [s.repere, x[0].replace(`${s.repere} `, ''), x[1], x[2] * (s.quantite || 1), fmt(x[3], 0), x[4]]);
+    const vue = s => [
+      { titre: `${s.repere} - ${s.resume} (×${s.quantite})`, dessin: s.dessin },
+      ...s.platines.map(pl => ({ titre: `${pl.nom} (×${pl.quantite})`, dessin: pl.dessin, gabarit: true })),
+    ];
+    const tabSupport = s => [
+      { titre: `${s.repere} : débit`, colonnes: ['Repère', 'Pièce', 'Profilé', 'Qté', 'Longueur', 'Usinage'], lignes: lignesSupport(s) },
+      { titre: `${s.repere} : quincaillerie`, colonnes: ['Article', 'Qté', 'Observations'], lignes: s.quincaillerie.map(qq => [qq[0], qq[1], qq[2]]) },
+    ];
+    // Export : tout le carnet s'il n'est pas vide, sinon le support en cours
+    const liste = carnet.filter(s => !s.erreur);
+    const base = liste.length ? liste : [cour];
+    const recap = Supportage.recapitulatif(base);
+    const exportCarnet = {
+      pdf: { titre: liste.length ? `Carnet de supportage (${liste.length} supports)` : `Support ${cour.repere}`, sousTitre: 'Supports de tuyauterie fabriqués sur mesure : débit, platines et quincaillerie', infos: [['Supports', String(base.length)], ['Pièces', String(base.reduce((t, s) => t + (s.quantite || 1), 0))]], pied: 'Carnet de supportage' },
+      resultats: [['Masse totale d\'acier', `${fmt(recap.masse)} kg`]],
+      avertissements: base.flatMap(s => (s.avertissements || []).map(a => `${s.repere} : ${a}`)),
+      tableaux: [
+        { titre: 'Récapitulatif des profilés', colonnes: ['Profilé', 'Pièces', 'Longueur totale', 'Barres de 6 m', 'Masse'], lignes: recap.profils.map(r => [r.prof, r.pieces, fmt(r.longueur, 0), r.barres6m, `${fmt(r.masse)} kg`]) },
+        { titre: 'Récapitulatif de la quincaillerie', colonnes: ['Article', 'Qté'], lignes: recap.quincaillerie.map(r => [r.nom, r.n]) },
+        { titre: 'Débit détaillé', colonnes: ['Repère', 'Pièce', 'Profilé', 'Qté', 'Longueur', 'Usinage'], lignes: base.flatMap(lignesSupport) },
+      ],
+      dessins: base.flatMap(vue),
+    };
+    return {
+      html,
+      libellePDF: liste.length ? `PDF du carnet (${liste.length})` : 'PDF du support',
+      libelleDXF: 'DXF des platines',
+      pdf: exportCarnet.pdf,
+      export: exportCarnet,
+      avertissements: cour.avertissements,
+      resultats: [['Support en cours', `${cour.repere} (×${cour.quantite})`, true], ['Masse', `${fmt(cour.masse)} kg`], ['Axe → dessus du profil', mm(cour.hauteurAxeProfil, 0)], ['Description', cour.resume]],
+      dessins: vue(cour),
+      tableaux: tabSupport(cour),
+    };
+  }, ctx => {
+    const opts = Object.entries(Supportage.PROFILS).map(([k, p]) => `<option value="${k}">${p[0]}</option>`).join('');
+    $$('[data-profils]', ctx.form).forEach(s => { s.innerHTML = opts; });
+    $('[name=profil]', ctx.form).value = 'L50'; $('[name=profilPoteau]', ctx.form).value = 'T60';
+    const modes = () => {
+      const f = $('[name=fixation]', ctx.form).value, m = $('[name=materiau]', ctx.form).value;
+      const sel = $('[name=mode]', ctx.form), ancien = sel.value;
+      const liste = Supportage.FIXATIONS[f === 'sol' ? 'sol' : m];
+      sel.innerHTML = liste.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+      if (liste.some(([v]) => v === ancien)) sel.value = ancien;
+    };
+    $('[name=fixation]', ctx.form).addEventListener('change', modes);
+    $('[name=materiau]', ctx.form).addEventListener('change', modes);
+    modes();
+    ctx.enCours = null;
+    const prochainRepere = () => { let n = memo.carnet.length + 1; while (memo.carnet.some(c => c.repere === `S${n}`)) n++; return `S${n}`; };
+    ctx.form.addEventListener('click', e => {
+      if (e.target.closest('[data-carnet-ajout]')) {
+        const vals = valeurs(ctx.form);
+        try { Supportage.support(paramsSupport(vals)); } catch (err) { alert(err.message); return; } // refuse un support incalculable
+        if (ctx.enCours != null && memo.carnet[ctx.enCours]) memo.carnet[ctx.enCours] = vals; else memo.carnet.push(vals);
+        ctx.enCours = null;
+        $('[name=repere]', ctx.form).value = prochainRepere();
+        sauver(); ctx.maj();
+      } else if (e.target.closest('[data-carnet-nouveau]')) {
+        ctx.enCours = null; $('[name=repere]', ctx.form).value = prochainRepere(); ctx.maj();
+      }
+    });
+    ctx.section.addEventListener('click', e => {
+      const m = e.target.closest('[data-carnet-modif]'), c = e.target.closest('[data-carnet-copie]'), s = e.target.closest('[data-carnet-suppr]');
+      if (m) { ctx.enCours = +m.dataset.carnetModif; remplir(ctx.form, memo.carnet[ctx.enCours]); ctx.maj(); window.scrollTo(0, 0); }
+      else if (c) { const v = { ...memo.carnet[+c.dataset.carnetCopie] }; ctx.enCours = null; remplir(ctx.form, v); $('[name=repere]', ctx.form).value = prochainRepere(); ctx.maj(); }
+      else if (s) {
+        const i = +s.dataset.carnetSuppr;
+        if (confirm(`Supprimer le support ${memo.carnet[i].repere} du carnet ?`)) { memo.carnet.splice(i, 1); if (ctx.enCours === i) ctx.enCours = null; sauver(); ctx.maj(); }
+      }
+    });
   });
 
   // ------------------------------------------------------------ Table des normes

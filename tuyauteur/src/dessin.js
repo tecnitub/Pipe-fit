@@ -15,6 +15,9 @@
     TEXTE: { aci: 2, ltype: 'CONTINUOUS', couleur: '#111111', ep: 0.15 },
   };
 
+  // Erreur de saisie commune à tous les calculs : affichée telle quelle à l'utilisateur
+  class ErreurSaisie extends Error {}
+
   function creer() {
     const d = { entites: [] };
     d.polyligne = (pts, calque = 'DECOUPE', ferme = false) => { if (pts.length > 1) d.entites.push({ type: 'polyligne', pts: pts.map(p => [p[0], p[1]]), calque, ferme }); return d; };
@@ -22,6 +25,12 @@
     // align : 'g' (gauche), 'c' (centre), 'd' (droite) ; angle en degrés
     d.texte = (x, y, h, texte, calque = 'TEXTE', align = 'g', angle = 0) => { d.entites.push({ type: 'texte', x, y, h, texte: String(texte), calque, align, angle }); return d; };
     d.cercle = (cx, cy, r, calque = 'DECOUPE', n = 72) => d.polyligne(Array.from({ length: n }, (_, i) => [cx + r * Math.cos(2 * Math.PI * i / n), cy + r * Math.sin(2 * Math.PI * i / n)]), calque, true);
+    // Trou : vrai cercle dans le DXF (entité CIRCLE, découpe laser propre), polygone fin ailleurs
+    d.trou = (cx, cy, r, calque = 'DECOUPE') => {
+      d.cercle(cx, cy, r, calque, Math.max(24, Math.min(144, Math.round(r * 2))));
+      d.entites[d.entites.length - 1].cercle = { cx, cy, r };
+      return d;
+    };
     // Cote alignée entre a et b, décalée de « decal » (vers la gauche du vecteur a→b)
     d.cote = (a, b, decal, texte, h = 3.5) => {
       const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy);
@@ -70,7 +79,10 @@
     const a = angle * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
     const f = ([x, y]) => [x * c - y * s + tx, x * s + y * c + ty];
     for (const e of d.entites) {
-      if (e.type === 'texte') { [e.x, e.y] = f([e.x, e.y]); e.angle += angle; } else e.pts = e.pts.map(f);
+      if (e.type === 'texte') { [e.x, e.y] = f([e.x, e.y]); e.angle += angle; } else {
+        e.pts = e.pts.map(f);
+        if (e.cercle) [e.cercle.cx, e.cercle.cy] = f([e.cercle.cx, e.cercle.cy]);
+      }
     }
     return d;
   }
@@ -78,7 +90,10 @@
   function fusionner(cible, source, tx = 0, ty = 0) {
     for (const e of source.entites) {
       const c = JSON.parse(JSON.stringify(e));
-      if (c.type === 'texte') { c.x += tx; c.y += ty; } else c.pts = c.pts.map(([x, y]) => [x + tx, y + ty]);
+      if (c.type === 'texte') { c.x += tx; c.y += ty; } else {
+        c.pts = c.pts.map(([x, y]) => [x + tx, y + ty]);
+        if (c.cercle) { c.cercle.cx += tx; c.cercle.cy += ty; }
+      }
       cible.entites.push(c);
     }
     return cible;
@@ -143,6 +158,8 @@
         g(0, 'TEXT'); g(8, e.calque); g(10, f6(e.x)); g(20, f6(e.y)); g(30, f6(0)); g(40, f6(e.h)); g(1, sansAccents(e.texte));
         if (e.angle) g(50, f6(e.angle));
         if (al) { g(72, al); g(11, f6(e.x)); g(21, f6(e.y)); g(31, f6(0)); }
+      } else if (e.cercle) {
+        g(0, 'CIRCLE'); g(8, e.calque); g(10, f6(e.cercle.cx)); g(20, f6(e.cercle.cy)); g(30, f6(0)); g(40, f6(e.cercle.r));
       } else if (e.pts.length === 2 && !e.ferme) {
         g(0, 'LINE'); g(8, e.calque); g(10, f6(e.pts[0][0])); g(20, f6(e.pts[0][1])); g(30, f6(0)); g(11, f6(e.pts[1][0])); g(21, f6(e.pts[1][1])); g(31, f6(0));
       } else {
@@ -161,5 +178,5 @@
     return L.join('\r\n') + '\r\n';
   }
 
-  return { CALQUES, creer, boite, transformer, fusionner, versSVG, versDXF, sansAccents };
+  return { ErreurSaisie, CALQUES, creer, boite, transformer, fusionner, versSVG, versDXF, sansAccents };
 }));

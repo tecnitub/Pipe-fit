@@ -12,6 +12,7 @@ body { background: var(--fond); color: var(--texte); font: 14px/1.45 system-ui, 
 .marque { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; }
 .logo { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; background: #fff; color: #0f2a5c; font-size: 18px; }
 .onglets { display: flex; gap: 4px; flex-wrap: wrap; }
+@media (max-width: 860px) { .onglets { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; } .onglets button { white-space: nowrap; } }
 .onglets button { border: 0; background: transparent; color: #c9d6f2; padding: 8px 12px; border-radius: 6px; font: inherit; cursor: pointer; }
 .onglets button:hover { background: rgba(255, 255, 255, .08); color: #fff; }
 .onglets button.actif { background: #fff; color: #0f2a5c; font-weight: 600; }
@@ -85,3 +86,19 @@ svg.apercu { display: block; width: 100%; height: auto; max-height: 520px; }
   .exports [data-pdf] { margin-left: 0; }
 }
 @media print { .barre, .saisie, .exports { display: none !important; } .module.actif { display: block; } }
+
+.extra:empty { display: none; }
+.extra { margin-bottom: 12px; }
+.candidats { display: grid; gap: 8px; }
+.candidat { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; border: 1px solid var(--bord); border-radius: 8px; padding: 8px 10px; }
+.candidat.premier { border-color: #c8d7fb; background: var(--accent-doux); }
+.candidat b { font-size: 15px; }
+.candidat .doux { color: var(--doux); font-size: 12.5px; }
+.candidat .boutons { margin-left: auto; display: flex; gap: 6px; }
+.candidat button { padding: 5px 10px; font-size: 13px; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 12px; font-weight: 600; background: #eef2f7; color: var(--doux); }
+.badge.forte { background: #dcfce7; color: #166534; } .badge.moyenne { background: #fef9c3; color: #854d0e; } .badge.faible { background: #fee2e2; color: #991b1b; }
+.abaque td.actif { background: var(--accent-doux); font-weight: 700; color: var(--accent); }
+.carnet td .boutons { display: flex; gap: 4px; justify-content: flex-end; }
+.carnet td button { padding: 3px 8px; font-size: 12.5px; }
+.carnet tr.encours td { background: var(--accent-doux); }

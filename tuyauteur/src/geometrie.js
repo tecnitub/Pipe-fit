@@ -14,7 +14,7 @@
   const nb = v => (v === '' || v == null || !isFinite(+v)) ? NaN : +v;
   const arr = (v, d = 1) => Math.round(v * 10 ** d) / 10 ** d;
   const fmt = (v, d = 1) => (Math.abs(v) < 0.5 * 10 ** -d ? 0 : v).toFixed(d).replace('.', ',');
-  class ErreurSaisie extends Error {}
+  const ErreurSaisie = Dessin.ErreurSaisie;
   const exiger = (cond, msg) => { if (!cond) throw new ErreurSaisie(msg); };
   const positif = (v, nom) => { exiger(v > 0, `${nom} : saisir une valeur positive.`); return v; };
 
