@@ -221,7 +221,7 @@ function creer({ DB, db, broadcast, racineDocuments }) {
             if (plus.length) enregistrer({ id: ex.id, references: [...(ex.references || []), ...plus] }, qui);
             c.deja++;
           } else {
-            const buf = await telecharger(url), pages = await textePages(buf), texte = pages.slice(0, 3).join('\n'), nom = decodeURIComponent((/([^/?#]+\.pdf)(?:[?#]|$)/i.exec(url) || [])[1] || `${refs[0] || 'fiche'}.pdf`);
+            const buf = await telecharger(url), pages = await textePages(buf), texte = pages.slice(0, 3).join('\n'), nom = decodeURIComponent((/([^/?#]+\.pdf)(?:[?#]|$)/i.exec(url) || [])[1] || `${(/([^/?#]+)\/?(?:[?#].*)?$/.exec(url.replace(/^https?:\/\/[^/]+\/?/, '')) || [])[1] || refs[0] || 'fiche'}.pdf`);
             const a = FT.analyser({ nom, chemin: nom, texte, fabricants: fab ? [fab] : fabricantsConnus() });
             const fichierId = nouveauBlob('application/pdf', buf);
             deposer({ fichierId, nom, fabricant: fab || a.fabricant, references: [...refs, ...a.references.filter(r => !refs.some(x => FT.cle(x) === FT.cle(r)))], designation: (ls.find(l => l.designation) || {}).designation || a.designation, famille: a.famille, type: FT.typeDocument(nom, nom, texte), date: a.date, source: 'catalogue', url, pages, sansVersions: true }, qui);

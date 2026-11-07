@@ -23,39 +23,60 @@ function historiquePrixHtml(a) {
 
 /* ---------- Tarif d'un fournisseur ---------- */
 function importerTarif() {
-  const four = fournisseursList().filter(e => Store.all('articles').some(a => a.fournisseurId === e.id || (a.fournisseursConsult || []).includes(e.id)));
   const box = Modal.open(`<h2 style="margin-top:0">📥 Tarif d'un fournisseur</h2>
-    <p class="small muted">Fichier Excel ou CSV du fournisseur avec une colonne référence (ou désignation) et une colonne prix. Ses prix sont comparés à ceux de la bibliothèque (fournisseur par défaut ou variante) : vous choisissez ensuite ce qui est mis à jour, avec un historique daté.</p>
-    <div class="grid2"><div class="field"><label for="tf-f">Fournisseur</label><select id="tf-f">${options(four, '')}</select></div>
+    <p class="small muted">Fichier Excel ou CSV du fournisseur (ex. « mes tarifs » CGR) : code produit, désignation, prix net, et s'il y en a les liens fiche technique / page produit / photo. Les articles sont retrouvés par la désignation (la référence ne compte que si la désignation ressemble aussi) ; vous cochez ce qui est mis à jour, avec un historique daté.</p>
+    <div class="grid2"><div class="field"><label for="tf-f">Fournisseur</label><select id="tf-f">${options(fournisseursList(), '')}</select></div>
       <div class="field"><label for="tf-file">Tarif (Excel, CSV)</label><input id="tf-file" type="file" accept=".xlsx,.csv"></div></div>
+    <label class="check"><input type="checkbox" id="tf-autres" checked> Ajouter ce fournisseur en variante (avec son prix) sur les articles identiques des autres fournisseurs</label>
+    <label class="check" id="tf-eco-l" hidden><input type="checkbox" id="tf-eco" checked> Prix net écotaxe incluse</label>
     <div id="tf-res"></div>
-    <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="tf-x">Fermer</button><button id="tf-ok" disabled>Mettre à jour les prix cochés</button></div>`);
+    <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="tf-x">Fermer</button><button id="tf-ok" disabled>Mettre à jour les articles cochés</button></div>`);
   box.classList.add('wide');
-  let comp = null;
+  let comp = null, rows = null;
   box.querySelector('#tf-x').onclick = Modal.close;
-  const lire = async () => {
-    const fid = box.querySelector('#tf-f').value, f = box.querySelector('#tf-file').files[0];
-    if (!fid || !f) return;
-    const buf = await f.arrayBuffer();
-    let sheets; try { sheets = /\.csv$/i.test(f.name) ? XLSX.readCSV(buf) : await XLSX.read(buf); } catch (e) { return notify(`Fichier illisible : ${e.message}`); }
-    // Première feuille et première ligne qui ressemble à un en-tête de tarif
-    let rows = null;
-    for (const s of sheets) { const k = s.rows.slice(0, 15).findIndex(r => BO().colonnesTarif(r)); if (k >= 0) { rows = s.rows.slice(k); break; } }
-    comp = rows && BO().comparerTarif(Store.all('articles'), fid, rows);
-    if (!comp) { box.querySelector('#tf-res').innerHTML = '<p class="warn-text">Colonnes non reconnues : il faut une colonne « Référence » (ou « Désignation ») et une colonne « Prix ».</p>'; return; }
-    box.querySelector('#tf-res').innerHTML = `<p><strong>${comp.lignes.length}</strong> article(s) reconnu(s) : <span class="neg">${comp.hausses} hausse(s)</span>, <span class="pos">${comp.baisses} baisse(s)</span>, ${comp.egaux} inchangé(s)${comp.nouveaux ? `, ${comp.nouveaux} sans prix jusqu'ici` : ''}${comp.nonTrouves.length ? ` · ${comp.nonTrouves.length} ligne(s) du tarif sans article chez ce fournisseur` : ''}.</p>
-      <div class="table-wrap" style="max-height:50vh"><table class="small"><tr><th><input type="checkbox" id="tf-tout" checked aria-label="Tout cocher"></th><th>Réf.</th><th>Désignation</th><th></th><th class="num">Ancien</th><th class="num">Nouveau</th><th class="num">Évolution</th></tr>
-      ${comp.lignes.filter(l => l.pct !== 0).sort((a, b) => Math.abs(b.pct ?? 0) - Math.abs(a.pct ?? 0)).map(l => `<tr><td><input type="checkbox" data-tf="${l.id}" checked></td><td>${esc(l.ref)}</td><td>${esc(l.designation)}</td><td class="muted">${l.role}</td><td class="num">${l.ancien === null ? '—' : eur(l.ancien)}</td><td class="num">${eur(l.nouveau)}</td><td class="num ${pctClasse(l.pct)}">${pctTxt(l.pct)}${Math.abs(l.pct ?? 0) > 20 ? ' ⚠' : ''}</td></tr>`).join('')}</table></div>`;
+  const ROLE = { 'défaut': 'fournisseur par défaut', variante: 'variante', 'nouvelle variante': 'nouvelle variante' };
+  const calculer = () => {
+    const fid = box.querySelector('#tf-f').value; if (!fid || !rows) return;
+    comp = BO().comparerTarif(Store.all('articles'), fid, rows, { autres: box.querySelector('#tf-autres').checked, ecotaxe: box.querySelector('#tf-eco').checked });
+    if (!comp) { box.querySelector('#tf-res').innerHTML = '<p class="warn-text">Colonnes non reconnues : il faut une colonne « Référence » ou « Code produit » (ou « Désignation ») et une colonne « Prix ».</p>'; return; }
+    box.querySelector('#tf-eco-l').hidden = !comp.colonneEcotaxe;
+    const l = comp.lignes.slice().sort((a, b) => (a.role === 'nouvelle variante') - (b.role === 'nouvelle variante') || Math.abs(b.pct ?? 0) - Math.abs(a.pct ?? 0));
+    box.querySelector('#tf-res').innerHTML = `<p><strong>${comp.lignes.length - comp.nouvellesVariantes}</strong> article(s) déjà chez ce fournisseur : <span class="neg">${comp.hausses} hausse(s)</span>, <span class="pos">${comp.baisses} baisse(s)</span>, ${comp.egaux} inchangé(s)${comp.nouvellesVariantes ? ` · <strong>${comp.nouvellesVariantes}</strong> article(s) d'autres fournisseurs où il devient une variante` : ''}${comp.liens ? ` · ${comp.liens} avec liens fiche / photo` : ''}${comp.ambigus ? ` · ${comp.ambigus} désignation(s) ambiguë(s) (plusieurs prix dans le tarif), non reprise(s)` : ''}. Écarts de plus de 50 % décochés : à vérifier.</p>
+      <div class="table-wrap" style="max-height:50vh"><table class="small"><tr><th><input type="checkbox" id="tf-tout" aria-label="Tout cocher"></th><th>Article</th><th>Chez le fournisseur</th><th></th><th class="num">Ancien</th><th class="num">Nouveau</th><th class="num">Évolution</th><th>Liens</th></tr>
+      ${l.map(x => `<tr><td><input type="checkbox" data-tf="${x.id}" ${Math.abs(x.pct ?? 0) > 50 ? '' : 'checked'}></td><td>${esc(x.ref)} · ${esc(x.designation)}</td><td class="muted">${esc(x.refFournisseur || '')}</td><td class="muted">${ROLE[x.role]}</td><td class="num">${x.ancien === null ? '—' : eur(x.ancien)}</td><td class="num">${eur(x.nouveau)}</td><td class="num ${pctClasse(x.pct)}">${pctTxt(x.pct)}${Math.abs(x.pct ?? 0) > 20 ? ' ⚠' : ''}</td><td>${x.ficheUrl ? '📄' : ''}${x.pageUrl || x.photoUrl ? '🖼' : ''}</td></tr>`).join('')}</table></div>`;
     const tout = box.querySelector('#tf-tout'); if (tout) tout.onchange = () => box.querySelectorAll('[data-tf]').forEach(c => { c.checked = tout.checked; });
-    box.querySelector('#tf-ok').disabled = !comp.lignes.some(l => l.pct !== 0);
+    box.querySelector('#tf-ok').disabled = !comp.lignes.length;
   };
-  box.querySelector('#tf-f').onchange = lire; box.querySelector('#tf-file').onchange = lire;
+  const lire = async () => {
+    const f = box.querySelector('#tf-file').files[0]; if (!f) return;
+    let sheets; try { const buf = await f.arrayBuffer(); sheets = /\.csv$/i.test(f.name) ? XLSX.readCSV(buf) : await XLSX.read(buf); } catch (e) { return notify(`Fichier illisible : ${e.message}`); }
+    // Première feuille et première ligne qui ressemble à un en-tête de tarif
+    rows = null;
+    for (const s of sheets) { const k = s.rows.slice(0, 15).findIndex(r => BO().colonnesTarif(r)); if (k >= 0) { rows = s.rows.slice(k); break; } }
+    if (!rows) { box.querySelector('#tf-res').innerHTML = '<p class="warn-text">Colonnes non reconnues : il faut une colonne « Référence » ou « Code produit » (ou « Désignation ») et une colonne « Prix ».</p>'; return; }
+    calculer();
+  };
+  box.querySelector('#tf-file').onchange = lire;
+  ['#tf-f', '#tf-autres', '#tf-eco'].forEach(s => { box.querySelector(s).onchange = calculer; });
   box.querySelector('#tf-ok').onclick = async () => {
     const fid = box.querySelector('#tf-f').value, ids = new Set([...box.querySelectorAll('[data-tf]:checked')].map(c => c.dataset.tf));
-    const nom = (box.querySelector('#tf-file').files[0] || {}).name || 'tarif';
+    const nom = (box.querySelector('#tf-file').files[0] || {}).name || 'tarif', parId = new Map(comp.lignes.map(x => [x.id, x]));
     const l = comp.lignes.filter(x => ids.has(x.id));
-    await majArticles(l.map(x => Store.get('articles', x.id)).filter(Boolean), a => BO().appliquerPrix(a, fid, comp.lignes.find(x => x.id === a.id).nouveau, { date: isoDate(new Date()), source: `tarif ${nom}` }));
-    Modal.close(); App.render(); App.toast(`${l.length} prix mis à jour (${clientName(fid)})`);
+    if (!l.length) return notify('Cochez au moins un article.');
+    let pleins = 0;
+    await majArticles(l.map(x => Store.get('articles', x.id)).filter(Boolean), a => {
+      const x = parId.get(a.id);
+      BO().appliquerPrix(a, fid, x.nouveau, { date: isoDate(new Date()), source: `tarif ${nom}` });
+      if (x.role === 'nouvelle variante' && !(a.fournisseursConsult || []).includes(fid)) pleins++;
+      // Liens du fournisseur : gardés s'il n'y en a pas déjà
+      ['ficheUrl', 'pageUrl', 'photoUrl'].forEach(k => { if (x[k] && !a[k]) { a[k] = x[k]; if (k === 'ficheUrl') a.ficheFournisseurId = fid; } });
+      if (x.refFournisseur && (a.fournisseurId === fid || (a.fournisseursConsult || []).includes(fid))) a.refsFournisseurs = { ...(a.refsFournisseurs || {}), [fid]: x.refFournisseur };
+      return a;
+    });
+    const liens = l.filter(x => x.ficheUrl || x.pageUrl || x.photoUrl).length;
+    Modal.close(); App.render();
+    App.toast(`${l.length - pleins} article(s) mis à jour chez ${clientName(fid)}${pleins ? ` · ${pleins} non repris (déjà 3 autres fournisseurs)` : ''}`, 5000);
+    if (liens && await ask(`${liens} article(s) ont un lien fiche technique ou page produit. Récupérer maintenant les photos et les fiches techniques ?`, 'Récupérer', false)) recupererMedias();
   };
 }
 

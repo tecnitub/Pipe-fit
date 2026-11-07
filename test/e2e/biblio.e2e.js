@@ -146,3 +146,29 @@ test('Bibliothèque : liens photo et fiche technique d\'un export fournisseur (s
   assert.match(await p.textContent('#md-c'), /1 photo\(s\) à récupérer/);
   assert.deepStrictEqual(erreurs, []);
 });
+
+test('Tarif au format CGR : prix net écotaxe incluse, rapprochement par désignation (pas par un code qui tombe sur un autre produit), nouvelle variante, liens', { skip: sansPlaywright, timeout: 120000 }, async () => {
+  const { p, erreurs } = await ouvrir();
+  await p.evaluate(async () => {
+    await Store.bulk('entreprises', [{ id: 'fcgr', nom: 'CGR E2E', categorie: 'Fournisseur', adresses: [] }]);
+    await Store.bulk('articles', [{ id: 'ac1', ref: '4120', designation: 'SOUCHE LAITON E2E 16-3/4', unite: 'u', coutRevient: 2, fournisseurId: 'fcgr' },
+      { id: 'ac2', ref: '9001', designation: 'ROBINET E2E SITOB FF PN25 12X17', unite: 'u', coutRevient: 3.9, fournisseurId: 'fcgr' }]);
+  });
+  await p.evaluate(() => { location.hash = '#/articles'; }); await p.waitForTimeout(1000);
+  await p.click('#bo-tarif'); await p.waitForTimeout(300);
+  await p.selectOption('#tf-f', 'fcgr');
+  await p.setInputFiles('#tf-file', fichier('mes-tarifs.xlsx', [['Code base', 'Code produit', 'Désignation', 'Prix de base', 'Prix net', 'EcoTaxe', 'Prix net EcoTaxe Incluse', 'Libellé sous-famille', 'Code Page', 'URL fiche technique', 'URL page produit'],
+    ['V41', '4120', 'VANNE PASSAGE DIRECTE E2E 20X27', 30, 20, 0, 20, 'Vannes', 'x', 'https://docs.exemple.fr/V41', 'https://www.exemple.fr/sku/v41'],
+    ['SITOB', 'SITO12B', 'ROBINET E2E SITOB FF PN25 12X17', 6.9, 4, 0.03, 4.03, 'Robinets', 'x', 'https://docs.exemple.fr/SITOB', 'https://www.exemple.fr/sku/sitob'],
+    ['T', 'T50', 'Tube e2e DN50', 9, 5.2, 0, 5.2, 'Tubes', 'x', '', '']]));
+  await p.waitForTimeout(1000);
+  const res = await p.textContent('#tf-res');
+  assert.match(res, /1<\/strong>|1 article/); assert.match(res, /variante/);
+  await p.click('#tf-ok'); await p.waitForTimeout(300);
+  await p.click('.dialog [data-v="0"]'); await p.waitForTimeout(800);
+  const [c1, c2, t] = await p.evaluate(() => ['ac1', 'ac2', 'ae2'].map(id => Store.get('articles', id)));
+  assert.strictEqual(c1.coutRevient, 2); // code 4120 = autre produit chez CGR : pas touché
+  assert.deepStrictEqual([c2.coutRevient, c2.pageUrl, c2.ficheUrl, c2.ficheFournisseurId, c2.refsFournisseurs], [4.03, 'https://www.exemple.fr/sku/sitob', 'https://docs.exemple.fr/SITOB', 'fcgr', { fcgr: 'SITO12B' }]);
+  assert.deepStrictEqual([t.fournisseurId, t.fournisseursConsult, t.prixFournisseurs.fcgr.coutRevient], ['fe1', ['fcgr'], 5.2]);
+  assert.deepStrictEqual(erreurs, []);
+});

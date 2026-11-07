@@ -43,3 +43,26 @@ test('récupération : photos rangées sur les articles (une seule fois par lien
   // Relance : seule la photo en erreur reste à faire
   assert.deepStrictEqual([S.resume().photos, S.resume().fiches], [1, 0]);
 });
+
+test('page produit : photo trouvée dans la page (og:image), page lue une fois pour plusieurs articles, fiche par référence interne et code fournisseur', async () => {
+  assert.strictEqual(M.imageDansPage('<head><meta property="og:image" content="/img/p1.webp"/></head>', 'https://www.exemple.fr/fr/p/x/'), 'https://www.exemple.fr/img/p1.webp');
+  assert.strictEqual(M.imageDansPage('<img src="/logo.svg" class="logo"><img class="product-img" data-src="https://cdn.exemple.fr/a.jpg">', 'https://www.exemple.fr/'), 'https://cdn.exemple.fr/a.jpg');
+  assert.strictEqual(M.imageDansPage('<p>rien</p>', 'https://www.exemple.fr/'), '');
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'pipefit-medias2-')), db = DB.open(path.join(d, 'x.db'));
+  const now = new Date().toISOString(), ins = (col, a) => db.prepare('INSERT INTO records (col, id, data, version, updated_at, updated_by) VALUES (?, ?, ?, 1, ?, ?)').run(col, a.id, JSON.stringify(a), now, 't');
+  ins('entreprises', { id: 'cgr', nom: 'CGR' });
+  ins('articles', { id: 'a1', ref: '101', designation: 'Robinet 12x17', pageUrl: 'https://www.exemple.fr/sku/r', ficheUrl: 'https://www.exemple.fr/productfile/technique/R-BASE', ficheFournisseurId: 'cgr', refsFournisseurs: { cgr: 'R12' } });
+  ins('articles', { id: 'a2', ref: '102', designation: 'Robinet 15x21', pageUrl: 'https://www.exemple.fr/sku/r' });
+  const appels = [], catalogue = [], webp = Buffer.from('RIFF0000WEBPVP8 0000');
+  const fetchFn = async u => { appels.push(u); const b = /sku/.test(u) ? Buffer.from('<meta property="og:image" content="https://www.exemple.fr/c/r.webp"/>') : webp; return { ok: true, url: /sku/.test(u) ? 'https://www.exemple.fr/fr/p/r/' : u, headers: new Map(), arrayBuffer: async () => b }; };
+  const S = M.creer({ DB, db, broadcast: () => {}, FICHES: { catalogue: l => { catalogue.push(...l); return {}; } }, fetchFn, verifier: async u => u, delai: 0 });
+  S.lancer('test');
+  for (let k = 0; k < 50 && S.resume().etat.enCours; k++) await new Promise(r => setTimeout(r, 10));
+  const get = id => JSON.parse(db.prepare('SELECT data FROM records WHERE col = ? AND id = ?').get('articles', id).data);
+  assert.deepStrictEqual([S.resume().etat.photos, S.resume().etat.erreurs], [2, []]);
+  assert.deepStrictEqual(appels, ['https://www.exemple.fr/sku/r', 'https://www.exemple.fr/c/r.webp']);
+  assert.strictEqual(get('a1').photoId, get('a2').photoId);
+  assert.deepStrictEqual([get('a1').photoImage, get('a1').photoSource], ['https://www.exemple.fr/c/r.webp', 'https://www.exemple.fr/sku/r']);
+  assert.deepStrictEqual(catalogue.map(l => [l.reference, l.fabricant]), [['101', 'CGR'], ['R12', 'CGR']]);
+  assert.strictEqual(S.resume().photos, 0);
+});

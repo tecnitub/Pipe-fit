@@ -76,31 +76,65 @@ const BiblioOutils = (() => {
     return a;
   }
   // Colonnes d'un tarif : référence (ou désignation) et prix
+  // Colonnes d'un tarif : référence (ou désignation), prix (le plus précis d'abord : « prix net » avant « prix de base »),
+  // écotaxe comprise si la colonne existe, liens fiche technique / page produit / photo
   function colonnesTarif(entete) {
-    const h = (entete || []).map(norm), i = l => h.findIndex(c => l.some(m => c === m || c.startsWith(`${m} `)));
-    const ref = i(['reference', 'ref', 'code article', 'code', 'ref fournisseur', 'article']), des = i(['designation', 'description', 'libelle']);
-    const prix = i(['prix net', 'net', 'prix d achat', 'prix achat', 'prix', 'tarif', 'pu', 'prix unitaire', 'pu ht', 'prix ht']);
-    return prix >= 0 && (ref >= 0 || des >= 0) ? { ref, des, prix } : null;
+    const h = (entete || []).map(norm);
+    const i = l => { for (const m of l) { const k = h.findIndex(c => c === m || c.startsWith(`${m} `)); if (k >= 0) return k; } return -1; };
+    const ref = i(['code produit', 'reference', 'ref fournisseur', 'code article', 'ref', 'code', 'article']), des = i(['designation', 'description', 'libelle']);
+    const prix = i(['prix net', 'net', 'prix d achat', 'prix achat', 'prix unitaire', 'pu ht', 'prix ht', 'pu', 'tarif', 'prix']);
+    const eco = h.findIndex(c => /^prix net .*eco ?taxe/.test(c) || /ecotaxe incluse|eco taxe incluse/.test(c));
+    const fiche = i(['url fiche technique', 'lien fiche technique', 'fiche technique', 'url fiche', 'documentation']);
+    const page = i(['url page produit', 'page produit', 'lien produit', 'url produit']);
+    const photo = i(['url image', 'url photo', 'lien image', 'lien photo', 'image', 'photo', 'visuel']);
+    return prix >= 0 && (ref >= 0 || des >= 0) ? { ref, des, prix, eco, fiche, page, photo } : null;
   }
-  // Lignes du tarif rapprochées des articles chez ce fournisseur (par défaut ou en variante) : par référence, sinon désignation
-  function comparerTarif(articles, fid, rows) {
+  const motsDes = s => new Set(norm(s).split(' ').filter(m => m.length > 1));
+  // Ressemblance de deux désignations (mots communs / mots de la plus courte)
+  const ressemble = (a, b) => { const x = motsDes(a), y = motsDes(b); if (!x.size || !y.size) return 0; let c = 0; x.forEach(m => { if (y.has(m)) c++; }); return c / Math.min(x.size, y.size); };
+  const cleDesTarif = s => norm(s).split(' ').filter(Boolean).sort().join(' ');
+  // Lignes du tarif rapprochées de la bibliothèque :
+  //  - articles chez ce fournisseur (par défaut ou en variante) : même référence ET désignation ressemblante, sinon même désignation ;
+  //  - autres articles de même désignation (autre fournisseur) : le fournisseur y est proposé en nouvelle variante (option autres) ;
+  //  - désignation présente plusieurs fois dans le tarif à des prix différents : ambiguë, non reprise.
+  function comparerTarif(articles, fid, rows, { autres = false, ecotaxe = true } = {}) {
     const c = colonnesTarif(rows[0]); if (!c) return null;
     const chez = articles.filter(a => a.fournisseurId === fid || (a.fournisseursConsult || []).includes(fid));
-    const parRef = new Map(), parDes = new Map();
-    chez.forEach(a => { if (a.ref) parRef.set(cleRef(a.ref), a); if (a.designation) parDes.set(norm(a.designation), a); });
+    const parRef = new Map(), parDes = new Map(), autresDes = new Map();
+    chez.forEach(a => { if (a.ref) parRef.set(cleRef(a.ref), a); if (a.designation) parDes.set(cleDesTarif(a.designation), a); });
+    if (autres) articles.forEach(a => { if (!chez.includes(a) && a.designation) { const k = cleDesTarif(a.designation); (autresDes.get(k) || autresDes.set(k, []).get(k)).push(a); } });
+    const txt = (r, k) => (k >= 0 ? String(r[k] ?? '').trim() : '');
+    const lus = rows.slice(1).map((r, k) => {
+      const prix = n(c.eco >= 0 && ecotaxe && ok(r[c.eco]) ? r[c.eco] : r[c.prix]);
+      const lien = k2 => { const u = txt(r, k2); return /^https?:\/\/\S+$/i.test(u) ? u : ''; };
+      return { ligne: k + 2, ref: txt(r, c.ref), designation: txt(r, c.des), prix, ficheUrl: lien(c.fiche), pageUrl: lien(c.page), photoUrl: lien(c.photo) };
+    }).filter(l => (l.ref || l.designation) && Number.isFinite(l.prix));
+    // Désignations du tarif : prix unique ou ambigu
+    const tarifDes = new Map();
+    lus.forEach(l => { if (!l.designation) return; const k = cleDesTarif(l.designation); (tarifDes.get(k) || tarifDes.set(k, []).get(k)).push(l); });
+    const unique = k => { const l = tarifDes.get(k) || []; return l.length && l.every(x => Math.abs(x.prix - l[0].prix) < 0.000005) ? l[0] : l.length ? 'ambigu' : null; };
     const lignes = [], nonTrouves = [], vus = new Set();
-    rows.slice(1).forEach((r, k) => {
-      const ref = c.ref >= 0 ? String(r[c.ref] ?? '').trim() : '', des = c.des >= 0 ? String(r[c.des] ?? '').trim() : '', prix = n(r[c.prix]);
-      if (!ref && !des) return;
-      if (!Number.isFinite(prix)) return;
-      const a = (ref && parRef.get(cleRef(ref))) || (des && parDes.get(norm(des)));
-      if (!a) { nonTrouves.push({ ligne: k + 2, ref, designation: des, prix }); return; }
+    let ambigus = 0;
+    const ajouter = (a, l, role) => {
       if (vus.has(a.id)) return; vus.add(a.id);
-      const ancien = a.fournisseurId === fid ? (ok(a.coutRevient) ? n(a.coutRevient) : null) : prixChez(a, fid);
-      lignes.push({ id: a.id, ref: a.ref || ref, designation: a.designation || des, role: a.fournisseurId === fid ? 'défaut' : 'variante', ancien, nouveau: r5(prix), pct: ancien === null ? null : pct(ancien, prix) });
+      const ancien = role === 'défaut' ? (ok(a.coutRevient) ? n(a.coutRevient) : null) : prixChez(a, fid);
+      lignes.push({ id: a.id, ref: a.ref || l.ref, designation: a.designation || l.designation, refFournisseur: l.ref, designationFournisseur: l.designation, role, ancien, nouveau: r5(l.prix), pct: ancien === null ? null : pct(ancien, l.prix),
+        ...(l.ficheUrl ? { ficheUrl: l.ficheUrl } : {}), ...(l.pageUrl ? { pageUrl: l.pageUrl } : {}), ...(l.photoUrl ? { photoUrl: l.photoUrl } : {}) });
+    };
+    lus.forEach(l => {
+      const parR = l.ref && parRef.get(cleRef(l.ref));
+      const a = parR && (!parR.designation || !l.designation || ressemble(parR.designation, l.designation) >= 0.5) ? parR : null;
+      if (a) return ajouter(a, l, a.fournisseurId === fid ? 'défaut' : 'variante');
+      const k = l.designation && cleDesTarif(l.designation), u = k && unique(k);
+      const b = k && parDes.get(k);
+      if (b) { if (u === 'ambigu') { if (!vus.has(b.id)) ambigus++; vus.add(b.id); return; } return ajouter(b, l, b.fournisseurId === fid ? 'défaut' : 'variante'); }
+      const o = k && autresDes.get(k);
+      if (o && u && u !== 'ambigu') { o.forEach(x => ajouter(x, l, 'nouvelle variante')); return; }
+      if (!o) nonTrouves.push(l);
     });
     const hausses = lignes.filter(l => l.pct > 0), baisses = lignes.filter(l => l.pct < 0), egaux = lignes.filter(l => l.pct === 0);
-    return { lignes, nonTrouves, hausses: hausses.length, baisses: baisses.length, egaux: egaux.length, nouveaux: lignes.filter(l => l.ancien === null).length };
+    return { lignes, nonTrouves, ambigus, ecotaxe: c.eco >= 0 && ecotaxe, colonneEcotaxe: c.eco >= 0, liens: lignes.filter(l => l.ficheUrl || l.pageUrl || l.photoUrl).length,
+      hausses: hausses.length, baisses: baisses.length, egaux: egaux.length, nouveaux: lignes.filter(l => l.ancien === null).length, nouvellesVariantes: lignes.filter(l => l.role === 'nouvelle variante').length };
   }
   // Prix facturé face au prix de la bibliothèque chez ce fournisseur
   function ecartFacture(a, fid, pu, seuil = 5) {
@@ -220,7 +254,7 @@ const BiblioOutils = (() => {
     return out;
   }
 
-  return { MAX_VARIANTES, norm, offres, prixChez, moinsCher, plusRapide, conseil, comparerCommande, appliquerPrix, colonnesTarif, comparerTarif, ecartFacture,
+  return { MAX_VARIANTES, norm, offres, prixChez, moinsCher, plusRapide, conseil, comparerCommande, appliquerPrix, colonnesTarif, comparerTarif, ressemble, ecartFacture,
     niveaux, chemin, margeCategorie, margeEffective, appliquerMarges, arbre, deplacer, doublons, fusionner, remplacerReferences, controlerImport };
 })();
 if (typeof module !== 'undefined') module.exports = BiblioOutils;
