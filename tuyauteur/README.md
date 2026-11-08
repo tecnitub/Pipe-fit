@@ -24,7 +24,7 @@ L'adresse de la page indique l'outil ouvert (ex. `#coudes`), ce qui permet d'en 
 Encombrement (centre à face, du sommet à la face) d'un coude : R × tan(angle / 2). Le coude 90° vaut le rayon,
 le 45° vaut R × tan 22,5° (DN 100 3D : 152 et 63 mm). On peut ajouter un angle quelconque. Le logiciel donne aussi
 les arcs d'extrados, d'axe et d'intrados, le dessin coté de chaque coude, et la table des encombrements 90° / 45°
-des coudes 3D et 5D pour tous les DN (les coudes 2D ne sont pas proposés dans cet outil). La table « Tubes et coudes » affiche aussi les encombrements à 45°.
+des coudes 3D et 5D pour tous les DN. La table « Tubes et coudes » affiche aussi les encombrements à 45°.
 
 
 ### Piquages
@@ -135,7 +135,7 @@ cuivre, laiton, fonte.
 
 ### Tubes et coudes
 Table des diamètres extérieurs ISO 4200 / EN 10220 (série 1, identiques à ISO 1127 en inox), des épaisseurs usuelles
-et des rayons de coudes EN 10253-2 / ISO 3419 : 2D, 3D (R ≈ 1,5 × DN) et 5D (R = 2,5 × Ø). Les épaisseurs sont
+et des rayons de coudes EN 10253-2 / ISO 3419 : 3D (R ≈ 1,5 × DN) et 5D (R = 2,5 × Ø). Les épaisseurs sont
 indicatives et la saisie reste libre. Les rayons doivent être vérifiés sur la fiche du fabricant.
 
 ## Exports

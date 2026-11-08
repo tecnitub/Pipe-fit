@@ -24,16 +24,17 @@
         <label>Épaisseur (mm)<input name="${px}_ep" type="number" step="0.1" min="0" list="${px}_eps"><datalist id="${px}_eps"></datalist></label>
       </div>
       ${coude ? `<div class="deux">
-        <label>Coude<select name="${px}_coude">${Normes.TYPES_COUDES.filter(([v]) => !(div.dataset.sans2d && v === '2D')).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
+        <label>Coude<select name="${px}_coude">${Normes.TYPES_COUDES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
         <label>Rayon = encombrement 90° (mm)<input name="${px}_rayon" type="number" step="0.1" min="1"></label>
       </div>` : ''}`;
     const sel = div.querySelector(`[name=${px}_dn]`), de = div.querySelector(`[name=${px}_de]`), ep = div.querySelector(`[name=${px}_ep]`);
     const typeC = div.querySelector(`[name=${px}_coude]`), ray = div.querySelector(`[name=${px}_rayon]`);
     const majRayon = () => {
       if (!typeC) return;
+      if (!typeC.value) typeC.value = '3D'; // type enregistré qui n'existe plus (ex. ancien coude 2D)
       const r = typeC.value === 'libre' ? null : Normes.rayonCoude(sel.value, typeC.value);
       ray.readOnly = typeC.value !== 'libre';
-      if (typeC.value !== 'libre') ray.value = r ?? (typeC.value === '5D' ? Math.round(2.5 * +de.value) : typeC.value === '2D' ? Math.round(+de.value) : Math.round(1.5 * +de.value));
+      if (typeC.value !== 'libre') ray.value = r ?? (typeC.value === '5D' ? Math.round(2.5 * +de.value) : Math.round(1.5 * +de.value));
     };
     const majDN = () => {
       const t = Normes.tube(sel.value);
@@ -607,7 +608,7 @@
   });
 
   // ------------------------------------------------------------ Table des normes
-  $('[data-table-normes]').innerHTML = `<thead><tr><th>DN</th><th>Ø ext. (mm)</th><th>Épaisseurs usuelles (mm)</th><th>2D 90°</th><th>2D 45°</th><th>3D 90°</th><th>3D 45°</th><th>5D 90°</th><th>5D 45°</th><th>Développé π×Ø</th></tr></thead><tbody>${Normes.TUBES.map(t => `<tr><td>${t.dn}</td><td>${fmt(t.de)}</td><td>${t.epaisseurs.map(e => fmt(e)).join(' - ')}</td><td>${f0(t.r2D)}</td><td>${f0(e45(t.r2D))}</td><td>${f0(t.r3D)}</td><td>${f0(e45(t.r3D))}</td><td>${f0(t.r5D)}</td><td>${f0(e45(t.r5D))}</td><td>${fmt(Math.PI * t.de)}</td></tr>`).join('')}</tbody>`;
+  $('[data-table-normes]').innerHTML = `<thead><tr><th>DN</th><th>Ø ext. (mm)</th><th>Épaisseurs usuelles (mm)</th><th>3D 90°</th><th>3D 45°</th><th>5D 90°</th><th>5D 45°</th><th>Développé π×Ø</th></tr></thead><tbody>${Normes.TUBES.map(t => `<tr><td>${t.dn}</td><td>${fmt(t.de)}</td><td>${t.epaisseurs.map(e => fmt(e)).join(' - ')}</td><td>${f0(t.r3D)}</td><td>${f0(e45(t.r3D))}</td><td>${f0(t.r5D)}</td><td>${f0(e45(t.r5D))}</td><td>${fmt(Math.PI * t.de)}</td></tr>`).join('')}</tbody>`;
 
   // ------------------------------------------------------------ Navigation : accueil à grosses touches, un outil par écran
   // L'adresse porte l'outil ouvert (#piquage…) : la touche « retour » du téléphone ramène au menu.

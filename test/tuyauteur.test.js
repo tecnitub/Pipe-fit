@@ -15,7 +15,8 @@ test('normes : diamètres ISO et rayons de coudes 3D', () => {
   assert.strictEqual(Normes.tube(100).de, 114.3);
   assert.strictEqual(Normes.tube(150).de, 168.3);
   assert.strictEqual(Normes.rayonCoude(100, '3D'), 152);
-  assert.strictEqual(Normes.rayonCoude(50, '2D'), 51);
+  assert.strictEqual(Normes.rayonCoude(50, '2D'), null); // coudes 2D retirés
+  assert.deepStrictEqual(Normes.TYPES_COUDES.map(t => t[0]), ['3D', '5D', 'libre']);
   assert.strictEqual(Normes.rayonCoude(100, '5D'), 286);
   assert.strictEqual(Normes.dnDepuisDiametre(219.1), 200);
 });
