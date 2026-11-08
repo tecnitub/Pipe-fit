@@ -348,6 +348,61 @@
 
   const aireContour = pts => Math.abs(pts.reduce((t, p, i) => { const q = pts[(i + 1) % pts.length]; return t + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
 
+  // Schéma coté des saisies d'un développé : vue de face et vue de dessus, cotes au nom des champs (A, B, Ø, H, ex, ey).
+  // Dessiné avec les valeurs saisies (proportions réelles) ; une valeur vide ou fausse prend une valeur d'exemple.
+  function schemaDeveloppe(p) {
+    const forme = p.forme || 'rond-carre';
+    const v = (x, d) => (nb(x) > 0 ? nb(x) : d);
+    const ex = nb(p.ex) || 0, ey = nb(p.ey) || 0;
+    let bas, haut; // { type: 'rect', a, b } | { type: 'rond', d }
+    if (forme === 'carre-carre') { bas = { type: 'rect', a: v(p.A, 800), b: v(p.B, 600) }; haut = { type: 'rect', a: v(p.A2, 300), b: v(p.B2, 200) }; }
+    else if (forme === 'rond-rond') { bas = { type: 'rond', d: v(p.D, 600) }; haut = { type: 'rond', d: v(p.D2, 300) }; }
+    else { bas = { type: 'rect', a: v(p.A, 600), b: v(p.B, 400) }; haut = { type: 'rond', d: v(p.D, 300) }; }
+    const H = v(p.hauteur, 500);
+    const largeur = s => s.type === 'rect' ? s.a : s.d, profondeur = s => s.type === 'rect' ? s.b : s.d;
+    const taille = Math.max(largeur(bas), largeur(haut) + Math.abs(ex), H, profondeur(bas));
+    const h = taille / 16; // hauteur des textes
+    const nomBas = forme === 'rond-rond' ? 'Ø bas' : 'A', nomHaut = forme === 'carre-carre' ? 'A haut' : forme === 'rond-rond' ? 'Ø haut' : 'Ø';
+    const d = Dessin.creer();
+    // ---- Vue de face (largeur suivant X, hauteur H)
+    const wb = largeur(bas), wh = largeur(haut);
+    d.polyligne([[-wb / 2, 0], [wb / 2, 0], [ex + wh / 2, H], [ex - wh / 2, H]], 'DECOUPE', true);
+    d.ligne([0, -h * 0.6], [0, H * 0.35], 'AXES'); d.ligne([ex, H * 0.65], [ex, H + h * 0.6], 'AXES');
+    d.cote([-wb / 2, 0], [wb / 2, 0], -2 * h, `${nomBas} = ${fmt(wb, 0)}`, h);
+    d.cote([ex - wh / 2, H], [ex + wh / 2, H], 1.6 * h, `${nomHaut} = ${fmt(wh, 0)}`, h);
+    const xH = Math.max(wb / 2, ex + wh / 2) + 2.5 * h;
+    d.cote([xH, 0], [xH, H], -1.2 * h, `H = ${fmt(H, 0)}`, h);
+    if (ex) d.cote([0, H + 4.2 * h], [ex, H + 4.2 * h], 1.2 * h, `ex = ${fmt(ex, 0)}`, h * 0.9);
+    d.texte(0, -5.4 * h, h * 1.1, 'Vue de face', 'TEXTE', 'c');
+    d.texte(ex, H + (ex ? 7.6 : 4.6) * h, h * 0.85, 'haut', 'TEXTE', 'c');
+    d.texte(-wb / 2, h * 0.35, h * 0.85, ' bas', 'TEXTE', 'g');
+    // ---- Vue de dessus, à droite (X vers la droite, Y vers le haut)
+    const ox = xH + 4 * h + Math.max(largeur(bas), largeur(haut) + 2 * Math.abs(ex)) / 2 + 3 * h;
+    const oy = H / 2;
+    const forme2D = (s, cx, cy, calque) => s.type === 'rect'
+      ? d.polyligne([[cx - s.a / 2, cy - s.b / 2], [cx + s.a / 2, cy - s.b / 2], [cx + s.a / 2, cy + s.b / 2], [cx - s.a / 2, cy + s.b / 2]], calque, true)
+      : d.cercle(cx, cy, s.d / 2, calque, 96);
+    forme2D(bas, ox, oy, 'DECOUPE');
+    forme2D(haut, ox + ex, oy + ey, 'PLIAGE');
+    d.ligne([ox - largeur(bas) / 2 - h, oy], [ox + largeur(bas) / 2 + h, oy], 'AXES');
+    d.ligne([ox, oy - profondeur(bas) / 2 - h], [ox, oy + profondeur(bas) / 2 + h], 'AXES');
+    const yb = oy - profondeur(bas) / 2;
+    if (bas.type === 'rect') {
+      d.cote([ox - bas.a / 2, yb], [ox + bas.a / 2, yb], -2 * h, `A = ${fmt(bas.a, 0)}`, h);
+      d.cote([ox - bas.a / 2, yb], [ox - bas.a / 2, oy + bas.b / 2], 2 * h, `B = ${fmt(bas.b, 0)}`, h);
+    } else d.cote([ox - bas.d / 2, yb], [ox + bas.d / 2, yb], -2 * h, `${nomBas} = ${fmt(bas.d, 0)}`, h);
+    if (haut.type === 'rect') {
+      d.texte(ox + ex, oy + ey + haut.b / 2 + h * 0.4, h * 0.85, `${fmt(haut.a, 0)} × ${fmt(haut.b, 0)} (A haut × B haut)`, 'PLIAGE', 'c');
+    } else d.texte(ox + ex, oy + ey + haut.d / 2 + h * 0.4, h * 0.85, `${nomHaut} = ${fmt(haut.d, 0)}`, 'PLIAGE', 'c');
+    if (ey) d.cote([ox + Math.max(largeur(bas) / 2, ex + largeur(haut) / 2) + 1.5 * h, oy], [ox + Math.max(largeur(bas) / 2, ex + largeur(haut) / 2) + 1.5 * h, oy + ey], -1.2 * h, `ey = ${fmt(ey, 0)}`, h * 0.9);
+    d.texte(ox, yb - 5.4 * h, h * 1.1, 'Vue de dessus', 'TEXTE', 'c');
+    d.texte(ox + largeur(bas) / 2 + h, oy - h * 1.3, h * 0.8, 'X', 'COTES');
+    d.texte(ox + h * 0.4, oy + profondeur(bas) / 2 + h * 0.4, h * 0.8, 'Y', 'COTES');
+    const cotes = { int: 'cotes intérieures', ext: 'cotes extérieures', moy: 'cotes sur fibre neutre' }[p.cotes];
+    if (cotes) d.texte(ox, yb - 7.2 * h, h * 0.8, `${cotes}, épaisseur ${fmt(nb(p.epaisseur) || 0, 1)}`, 'TEXTE', 'c');
+    return d;
+  }
+
   function developpe(p) {
     const forme = p.forme || 'rond-carre';
     const t = nb(p.epaisseur) || 0, H = positif(nb(p.hauteur), 'Hauteur');
@@ -426,5 +481,5 @@
     return { forme, titre, fibreNeutre: dims, pieces, lignesVraies, avertissements: avert, resultats: { pieces: pieces.length, aireTotale: arr(pieces.reduce((s, x) => s + x.aire, 0), 4), masseTotale: arr(pieces.reduce((s, x) => s + x.masse, 0), 2) } };
   }
 
-  return { piquage, baionnette, developpe, coude, axeAvecCoudes, coupeCoude, ErreurSaisie, fmt, _interne: { deplier, placer, dist } };
+  return { piquage, baionnette, developpe, schemaDeveloppe, coude, axeAvecCoudes, coupeCoude, ErreurSaisie, fmt, _interne: { deplier, placer, dist } };
 }));

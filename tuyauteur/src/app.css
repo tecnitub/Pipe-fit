@@ -142,3 +142,5 @@ button.danger { background: var(--erreur); border-color: var(--erreur); color: #
 #coudes .tableaux h3:first-child { margin-top: 0; }
 #coudes .resultats { margin-top: 14px; }
 @media (max-width: 600px) { .table { font-size: 12.5px; } .table th, .table td { padding: 5px 6px; } }
+.schema { margin: 4px 0 12px; border: 1px solid var(--bord); border-radius: 8px; background: var(--apercu); padding: 6px; }
+.schema svg { display: block; width: 100%; height: auto; max-height: 300px; }

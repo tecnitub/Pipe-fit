@@ -293,7 +293,10 @@
   });
 
   // ------------------------------------------------------------ Développés
-  module('developpe', v => {
+  module('developpe', (v, ctx) => {
+    // Schéma coté des saisies, redessiné à chaque frappe (même si le calcul échoue)
+    let schema = null;
+    try { schema = Geometrie.schemaDeveloppe(v); $('[data-schema]', ctx.form).innerHTML = Dessin.versSVG(schema); } catch (e) { console.error(e); }
     const r = Geometrie.developpe({ ...v, masseVolumique: v.matiere });
     const R = r.resultats, nq = r.forme === 'carre-carre' ? null : +v.divisions;
     const n = r.pieces.length;
@@ -316,7 +319,7 @@
         ['Surface totale', `${fmt(R.aireTotale, 3)} m²`],
         ['Masse totale', `${fmt(R.masseTotale, 1)} kg`],
       ],
-      dessins: r.pieces.map((p, i) => ({ titre: `Pièce ${i + 1}/${n} : contour de découpe et lignes de pliage`, dessin: p.dessin, gabarit: true })),
+      dessins: [...(schema ? [{ titre: 'Schéma des cotes saisies', dessin: schema, dxf: false }] : []), ...r.pieces.map((p, i) => ({ titre: `Pièce ${i + 1}/${n} : contour de découpe et lignes de pliage`, dessin: p.dessin, gabarit: true }))],
       tableaux: [{ titre: 'Longueurs vraies (traçage à la main)', colonnes: ['Bas', 'Haut', 'Longueur vraie', 'En plan'], lignes: r.lignesVraies.map(l => [l.bas, l.haut, fmt(l.vraie), fmt(l.projetee)]) }],
     };
   }, ctx => {

@@ -51,6 +51,9 @@ Pour recouper les coudes, le logiciel donne les arcs d'extrados, d'axe et d'intr
 coudes se chevauchent et indique alors l'angle maximal possible.
 
 ### Développés de tôlerie (triangulation)
+Un **schéma coté** au-dessus des champs montre ce qu'on saisit : vue de face (A ou Ø du bas, côté ou Ø du haut,
+hauteur H, excentration ex) et vue de dessus (A × B, haut en tirets rouges, excentration ey), dessinées avec les
+valeurs saisies et redessinées à chaque frappe. Le schéma est aussi repris dans le PDF.
 - **Rond-carré** (rectangle A × B vers rond Ø D) ;
 - **Trémie carré-carré** (rectangle bas vers rectangle haut) ;
 - **Cône / réduction** (rond vers rond).
