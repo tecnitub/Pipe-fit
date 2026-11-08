@@ -136,3 +136,9 @@ button.danger { background: var(--erreur); border-color: var(--erreur); color: #
   .barre { gap: 10px; }
   .barre .marque span:last-child { display: none; }
 }
+/* Coudes : le tableau des encombrements en premier, le reste dessous */
+#coudes .sortie { display: flex; flex-direction: column; }
+#coudes .tableaux { order: -1; }
+#coudes .tableaux h3:first-child { margin-top: 0; }
+#coudes .resultats { margin-top: 14px; }
+@media (max-width: 600px) { .table { font-size: 12.5px; } .table th, .table td { padding: 5px 6px; } }

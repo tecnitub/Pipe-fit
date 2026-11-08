@@ -600,8 +600,8 @@
       ],
       dessins: tous.map(c => ({ titre: `Coude ${fmt(c.angle, c.angle % 1 ? 1 : 0)}°`, dessin: c.dessin })),
       tableaux: [
-        { titre: 'Arcs le long du coude', colonnes: ['Coude', 'Encombrement', 'Extrados', 'Axe', 'Intrados'], lignes: tous.map(c => [`${fmt(c.angle, c.angle % 1 ? 1 : 0)}°`, fmt(c.encombrement), fmt(c.extrados), fmt(c.axe), fmt(c.intrados)]) },
         { titre: 'Encombrements EN 10253-2 : 90° / 45° (mm)', colonnes: ['DN', 'Ø ext.', '3D 90°', '3D 45°', '5D 90°', '5D 45°'], lignes: Normes.TUBES.map(t => [t.dn, fmt(t.de), f0(t.r3D), f0(e45(t.r3D)), f0(t.r5D), f0(e45(t.r5D))]) },
+        { titre: 'Arcs le long du coude', colonnes: ['Coude', 'Encombrement', 'Extrados', 'Axe', 'Intrados'], lignes: tous.map(c => [`${fmt(c.angle, c.angle % 1 ? 1 : 0)}°`, fmt(c.encombrement), fmt(c.extrados), fmt(c.axe), fmt(c.intrados)]) },
       ],
     };
   });
