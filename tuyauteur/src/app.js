@@ -24,7 +24,7 @@
         <label>Épaisseur (mm)<input name="${px}_ep" type="number" step="0.1" min="0" list="${px}_eps"><datalist id="${px}_eps"></datalist></label>
       </div>
       ${coude ? `<div class="deux">
-        <label>Coude<select name="${px}_coude">${Normes.TYPES_COUDES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
+        <label>Coude<select name="${px}_coude">${Normes.TYPES_COUDES.filter(([v]) => !(div.dataset.sans2d && v === '2D')).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
         <label>Rayon = encombrement 90° (mm)<input name="${px}_rayon" type="number" step="0.1" min="1"></label>
       </div>` : ''}`;
     const sel = div.querySelector(`[name=${px}_dn]`), de = div.querySelector(`[name=${px}_de]`), ep = div.querySelector(`[name=${px}_ep]`);
@@ -601,7 +601,7 @@
       dessins: tous.map(c => ({ titre: `Coude ${fmt(c.angle, c.angle % 1 ? 1 : 0)}°`, dessin: c.dessin })),
       tableaux: [
         { titre: 'Arcs le long du coude', colonnes: ['Coude', 'Encombrement', 'Extrados', 'Axe', 'Intrados'], lignes: tous.map(c => [`${fmt(c.angle, c.angle % 1 ? 1 : 0)}°`, fmt(c.encombrement), fmt(c.extrados), fmt(c.axe), fmt(c.intrados)]) },
-        { titre: 'Encombrements EN 10253-2 : 90° / 45° (mm)', colonnes: ['DN', 'Ø ext.', '2D 90°', '2D 45°', '3D 90°', '3D 45°', '5D 90°', '5D 45°'], lignes: Normes.TUBES.map(t => [t.dn, fmt(t.de), f0(t.r2D), f0(e45(t.r2D)), f0(t.r3D), f0(e45(t.r3D)), f0(t.r5D), f0(e45(t.r5D))]) },
+        { titre: 'Encombrements EN 10253-2 : 90° / 45° (mm)', colonnes: ['DN', 'Ø ext.', '3D 90°', '3D 45°', '5D 90°', '5D 45°'], lignes: Normes.TUBES.map(t => [t.dn, fmt(t.de), f0(t.r3D), f0(e45(t.r3D)), f0(t.r5D), f0(e45(t.r5D))]) },
       ],
     };
   });

@@ -24,7 +24,7 @@ L'adresse de la page indique l'outil ouvert (ex. `#coudes`), ce qui permet d'en 
 Encombrement (centre à face, du sommet à la face) d'un coude : R × tan(angle / 2). Le coude 90° vaut le rayon,
 le 45° vaut R × tan 22,5° (DN 100 3D : 152 et 63 mm). On peut ajouter un angle quelconque. Le logiciel donne aussi
 les arcs d'extrados, d'axe et d'intrados, le dessin coté de chaque coude, et la table des encombrements 90° / 45°
-des coudes 2D, 3D et 5D pour tous les DN. La table « Tubes et coudes » affiche aussi les encombrements à 45°.
+des coudes 3D et 5D pour tous les DN (les coudes 2D ne sont pas proposés dans cet outil). La table « Tubes et coudes » affiche aussi les encombrements à 45°.
 
 
 ### Piquages
