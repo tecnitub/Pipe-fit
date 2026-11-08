@@ -153,3 +153,25 @@ test('poids : tubes, profilés, tôles comparés aux tables', () => {
   assert.deepStrictEqual(l.parMatiere.map(m => m.matiere), ['Acier', 'Inox austénitique']);
   assert.throws(() => Poids.piece({ type: 'tube', de: 20, ep: 12, longueur: 1000 }), /Épaisseur trop forte/);
 });
+
+test('dilatation : allongement, effort bloqué, bras et lyre', () => {
+  const Dil = require('../tuyauteur/src/dilatation.js');
+  const r = Dil.calculer({ de: 114.3, ep: 3.6, rayon: 152, matiere: 'acier', longueur: 50, tPose: 10, tMax: 120, tMin: -10 }).resultats;
+  // α L ΔT : 12e-6 × 50 000 mm × 130 K = 78 mm ; 110 K à chaud, 20 K à froid
+  assert.strictEqual(r.course, 78); assert.strictEqual(r.dChaud, 66); assert.strictEqual(r.dFroid, 12);
+  // Effort bloqué : E A α ΔT
+  const A = Math.PI * (114.3 - 3.6) * 3.6;
+  proche(r.effort, 200000 * A * 12e-6 * 130 / 1000, 0.1, 'effort');
+  // Bras guidé : √(3 E D Δ / σ) ; lyre H = 2L/5 arrondie aux 50 mm, W = H/2
+  const L = Math.sqrt(3 * 200000 * 114.3 * 78 / 150);
+  proche(r.brasCalcule, L, 1, 'bras');
+  assert.strictEqual(r.H, Math.ceil(0.4 * L / 50) * 50);
+  assert.strictEqual(r.W, r.H / 2);
+  assert.strictEqual(r.jambe, r.H - 2 * 152);
+  assert.strictEqual(r.pretension, 39);
+  // Lyre carrée et matière inox
+  const c = Dil.calculer({ de: 114.3, ep: 3.6, rayon: 152, matiere: 'acier', longueur: 50, tPose: 10, tMax: 120, tMin: -10, largeur: 'egale' }).resultats;
+  assert.strictEqual(c.W, c.H);
+  proche(Dil.calculer({ de: 60.3, ep: 2, matiere: 'inox', longueur: 10, tPose: 20, tMax: 120 }).resultats.course, 16.5, 0.05);
+  assert.throws(() => Dil.calculer({ de: 60.3, ep: 2, longueur: 10, tPose: 20, tMax: 10 }), /maxi doit être supérieure/);
+});

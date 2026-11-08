@@ -584,6 +584,46 @@
     });
   });
 
+  // ------------------------------------------------------------ Dilatation et lyre
+  module('dilatation', (v, ctx) => {
+    const T = ctx.tubes.dl.lire();
+    const r = Dilatation.calculer({ ...v, de: T.de, ep: T.ep, rayon: T.rayon });
+    const R = r.resultats;
+    const ecart = (+v.tMax) - (v.tMin === '' ? +v.tPose : +v.tMin);
+    const titre = `Dilatation Ø${fmt(T.de)} - ${fmt(+v.longueur, 1)} m - ${fmt(R.course, 0)} mm`;
+    return {
+      pdf: {
+        titre, sousTitre: 'Dilatation entre points fixes, lyre en U et bras de dilatation (méthode simplifiée)',
+        infos: [['Tube', `Ø ${fmt(T.de)} × ${fmt(T.ep)} mm, ${r.matiere}`], ['Longueur entre points fixes', `${fmt(+v.longueur, 2)} m`], ['Températures', `pose ${v.tPose} °C, maxi ${v.tMax} °C, mini ${v.tMin === '' ? v.tPose : v.tMin} °C`], ['α / E / σ adm.', `${fmt(r.alpha, 1)}·10⁻⁶ /K / ${fmt(r.E / 1000, 0)} GPa / ${fmt(r.sigma, 0)} MPa`], ['Coudes de la lyre', `R ${fmt(T.rayon)} mm`]],
+        pied: titre,
+      },
+      avertissements: r.avertissements,
+      resultats: [
+        ['Dilatation totale (course)', mm(R.course), true],
+        ['Allongement à chaud / raccourcissement à froid', `${fmt(R.dChaud)} / ${fmt(R.dFroid)} mm`],
+        ['Par mètre de tube', `${fmt(R.parMetre, 2)} mm/m pour ${fmt(ecart, 0)} °C`],
+        ['Lyre : hauteur × largeur (axe à axe)', `${fmt(R.H, 0)} × ${fmt(R.W, 0)} mm`, true],
+        ['Bras de dilatation (changement de direction en L)', mm(R.bras, 0), true],
+        ['Prétension de la lyre au montage', `${fmt(R.pretension)} mm`],
+        ['Effort si la ligne était bloquée', `${fmt(R.effort, 0)} kN`],
+        ['Guides de part et d\'autre de la lyre', `à ${fmt(R.guide1, 0)} puis ${fmt(R.guide2, 0)} mm`],
+      ],
+      dessins: [
+        { titre: 'Ligne entre points fixes, lyre au milieu (vue de dessus)', dessin: r.dessins.ligne },
+        { titre: 'Lyre : cotes et longueurs de tube', dessin: r.dessins.lyre },
+      ],
+      tableaux: [
+        { titre: 'Débit de la lyre', colonnes: ['Pièce', 'Qté', 'Longueur'], lignes: [['Jambe droite', 2, mm(R.jambe, 0)], ['Traverse droite', 1, mm(R.traverse, 0)], [`Coude 90° R ${fmt(T.rayon)}`, 4, '-'], ['Longueur développée de la lyre', 1, mm(R.developpe, 0)]] },
+        { titre: 'Mise en œuvre', colonnes: ['Étape', 'Opération'], lignes: [
+          ['1', 'Poser les deux points fixes ; placer la lyre au milieu de la ligne.'],
+          ['2', `Poser les guides à ${fmt(R.guide1, 0)} mm (4 × Ø) puis ${fmt(R.guide2, 0)} mm (14 × Ø) de chaque côté de la lyre, puis des supports glissants.`],
+          ['3', `Prétension : écarter les branches de la lyre de ${fmt(R.pretension)} mm (moitié de la course) avant de souder la dernière soudure, à froid.`],
+          ['4', 'Lignes chaudes, gros DN ou appareils fragiles : faire valider par une note de calcul de flexibilité.'],
+        ] },
+      ],
+    };
+  });
+
   // ------------------------------------------------------------ Encombrement des coudes
   const e45 = R => R == null ? null : R * Math.tan(22.5 * Math.PI / 180);
   const f0 = v => v == null ? '-' : fmt(v, 0);

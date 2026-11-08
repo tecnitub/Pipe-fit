@@ -12,13 +12,27 @@ exécution → *Artifacts* → `Tuyauteur`. Les saisies sont mémorisées dans l
 
 ## Accueil et navigation
 L'écran d'accueil présente les outils en grosses touches, faciles à viser sur un smartphone, rangées en deux groupes :
-- **Pratique, atelier et chantier** : Piquages, Coudes, Baïonnette, Brides, Poids, Tubes et coudes ;
+- **Pratique, atelier et chantier** : Piquages, Coudes, Dilatation, Baïonnette, Brides, Poids, Tubes et coudes ;
 - **Étude, bureau d'études** : Développés, Platines, Escaliers, Supportage.
 
 Chaque outil s'ouvre en plein écran. Le bouton « ‹ Menu », ou la touche retour du téléphone, ramène à l'accueil.
 L'adresse de la page indique l'outil ouvert (ex. `#coudes`), ce qui permet d'en garder un en favori.
 
 ## Modules
+
+### Dilatation et lyre
+Pré-dimensionnement de la dilatation d'une ligne entre deux points fixes (acier carbone, inox, cuivre, aluminium) :
+- **dilatation** : α × L × ΔT, avec l'allongement à chaud, le raccourcissement à froid et la course totale (exemple :
+  50 m d'acier entre −10 et 120 °C → 78 mm) ;
+- **effort si la ligne était bloquée** entre les points fixes : E × A × α × ΔT ;
+- **bras de dilatation** (changement de direction en L) : L = √(3 × E × D × Δ / σ adm.) ;
+- **lyre en U** au milieu de la ligne : longueur développée L = 2H + W ; largeur = hauteur / 2 (H = 2L/5) ou
+  lyre carrée (H = L/3). Le logiciel donne les cotes axe à axe, le débit (jambes, traverse, 4 coudes 90°) et la
+  prétension de montage (moitié de la course) ;
+- **guides** à 4 × Ø puis 14 × Ø de chaque côté de la lyre.
+
+α, E et la contrainte admissible sont modifiables (réglages avancés). C'est une méthode simplifiée : une ligne
+critique se vérifie par une note de calcul de flexibilité (EN 13480-3, CODETI, ASME B31.3).
 
 ### Coudes (encombrement)
 Encombrement (centre à face, du sommet à la face) d'un coude : R × tan(angle / 2). Le coude 90° vaut le rayon,
@@ -165,6 +179,7 @@ tuyauteur/src/brides.js     brides EN 1092-1 / ASME B16.5 : reconnaissance, boul
 tuyauteur/src/escalier.js   escaliers et passerelles
 tuyauteur/src/supportage.js supports de tuyauterie
 tuyauteur/src/poids.js      calculateur de poids
+tuyauteur/src/dilatation.js dilatation, lyre et bras de dilatation
 tuyauteur/src/app.js        interface
 tuyauteur/build.js          assemble dist/Tuyauteur.html
 test/tuyauteur*.test.js     tests : résultats comparés aux formules (npm test)

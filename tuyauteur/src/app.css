@@ -145,3 +145,5 @@ button.danger { background: var(--erreur); border-color: var(--erreur); color: #
 .grandeur { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border: 1px solid var(--bord); border-radius: 8px; background: var(--fond); }
 .grandeur span { font-size: 12.5px; font-weight: 600; color: var(--doux); margin-right: 2px; }
 .exports button { min-height: 44px; }
+.avance { margin-top: 4px; }
+.avance summary { cursor: pointer; color: var(--accent); font-size: 13px; padding: 6px 0; }

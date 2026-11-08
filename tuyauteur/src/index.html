@@ -20,6 +20,7 @@
   <div class="tuiles pratique">
     <button type="button" class="tuile" data-onglet="piquage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 15h20M2 9h20M10 9V2M14 9V2"/></svg><span><b>Piquages</b><small>Gabarit de coupe et trou</small></span></button>
     <button type="button" class="tuile" data-onglet="coudes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21v-8a9 9 0 0 1 9-9h8"/><path d="M9 21v-8a4 4 0 0 1 4-4h8"/></svg><span><b>Coudes</b><small>Encombrement 90° et 45°</small></span></button>
+    <button type="button" class="tuile" data-onglet="dilatation"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 19h5V7h10v12h5"/><path d="M4 15l-2 2 2 2M20 15l2 2-2 2" opacity=".6"/></svg><span><b>Dilatation</b><small>Allongement, lyre, bras</small></span></button>
     <button type="button" class="tuile" data-onglet="baionnette"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 17h6l8-10h6"/><path d="M2 21h6l8-10h6" opacity=".5"/></svg><span><b>Baïonnette</b><small>Renvoi à deux coudes</small></span></button>
     <button type="button" class="tuile" data-onglet="brides"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><circle cx="12" cy="5.6" r="1"/><circle cx="12" cy="18.4" r="1"/><circle cx="5.6" cy="12" r="1"/><circle cx="18.4" cy="12" r="1"/></svg><span><b>Brides</b><small>Reconnaître, longueur des tiges</small></span></button>
     <button type="button" class="tuile" data-onglet="poids"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9h14l2 12H3z"/><circle cx="12" cy="5" r="2.2"/></svg><span><b>Poids</b><small>Tubes, profilés, tôles</small></span></button>
@@ -32,6 +33,35 @@
     <button type="button" class="tuile" data-onglet="escalier"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h4v-4h4v-4h4V9h4V5h2"/></svg><span><b>Escaliers</b><small>Escaliers et passerelles</small></span></button>
     <button type="button" class="tuile" data-onglet="supportage"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6" r="3.5"/><path d="M12 10v11M6 21h12M7 10h10"/></svg><span><b>Supportage</b><small>Carnet de supports</small></span></button>
   </div>
+</section>
+
+<!-- ======================= DILATATION ======================= -->
+<section class="module" id="dilatation">
+  <form class="saisie" autocomplete="off">
+    <h2>Dilatation et lyre</h2>
+    <p class="aide">Allongement de la ligne entre deux points fixes, effort si elle était bloquée, lyre en U au milieu et bras de dilatation. Méthode simplifiée de pré-dimensionnement.</p>
+    <fieldset><legend>Tube</legend>
+      <div class="tube" data-prefixe="dl" data-dn="100" data-coude="1"></div>
+      <label>Matière<select name="matiere"><option value="acier">Acier carbone (α 12)</option><option value="inox">Inox austénitique (α 16,5)</option><option value="cuivre">Cuivre (α 17)</option><option value="alu">Aluminium (α 23)</option></select></label>
+    </fieldset>
+    <fieldset><legend>Ligne</legend>
+      <label>Longueur entre points fixes (m)<input name="longueur" type="number" step="0.5" min="0" value="50"></label>
+      <div class="deux">
+        <label>Température de pose (°C)<input name="tPose" type="number" step="1" value="10"></label>
+        <label>Température maxi (°C)<input name="tMax" type="number" step="1" value="120"></label>
+      </div>
+      <label>Température mini (°C)<input name="tMin" type="number" step="1" placeholder="= pose"><small>Arrêt en hiver, fluide froid… vide = température de pose</small></label>
+    </fieldset>
+    <fieldset><legend>Lyre</legend>
+      <label>Forme<select name="largeur"><option value="demi">Largeur = hauteur / 2 (courante)</option><option value="egale">Largeur = hauteur (carrée)</option></select></label>
+      <details class="avance"><summary>Réglages avancés</summary>
+        <label>Coefficient α (10⁻⁶ /K)<input name="alpha" type="number" step="0.1" min="0" placeholder="selon la matière"></label>
+        <label>Module d'élasticité E (MPa)<input name="E" type="number" step="1000" min="0" placeholder="selon la matière"></label>
+        <label>Contrainte admissible σ (MPa)<input name="sigma" type="number" step="5" min="0" placeholder="selon la matière"></label>
+      </details>
+    </fieldset>
+  </form>
+  <div class="sortie" data-sortie></div>
 </section>
 
 <!-- ======================= COUDES ======================= -->
@@ -411,6 +441,7 @@
 <script src="escalier.js"></script>
 <script src="supportage.js"></script>
 <script src="poids.js"></script>
+<script src="dilatation.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
