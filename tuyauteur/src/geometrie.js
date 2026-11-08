@@ -1,5 +1,6 @@
 // Tuyauteur : calculs de tuyauterie industrielle et de chaudronnerie.
 //   piquage()      traçage d'un piquage (perpendiculaire, oblique, excentré) : gabarit de coupe et gabarit du trou
+//   coude()        encombrement d'un coude (90°, 45° ou angle quelconque)
 //   baionnette()   baïonnette (renvoi parallèle à deux coudes), orientée dans l'espace, par l'angle ou par la distance
 //   developpe()    développés de tôlerie par triangulation : rond-carré, trémie carré-carré, rond-rond (cône)
 // Toutes les longueurs sont en millimètres, les angles en degrés. Chaque calcul renvoie ses résultats,
@@ -155,6 +156,38 @@
   function coupeCoude(R, de, beta) {
     const b = beta * RAD;
     return { axe: arr(R * b), extrados: arr((R + de / 2) * b), intrados: arr(Math.max(0, R - de / 2) * b), reduction: arr(R * Math.tan(b / 2)) };
+  }
+
+  // ---------------------------------------------------------------- Encombrement d'un coude
+  // Encombrement (centre à face) d'un coude d'angle a et de rayon R : E = R·tan(a/2).
+  // 90° → E = R ; 45° → E = R·tan 22,5° ≈ 0,414·R. Dessin coté du coude dans son plan.
+  function coude(p) {
+    const de = positif(nb(p.de), 'Ø extérieur'), R = positif(nb(p.rayon), 'Rayon de coude');
+    const a = nb(p.angle);
+    exiger(a > 0 && a <= 90, 'Angle du coude : entre 0 et 90°.');
+    exiger(R > de / 2, 'Le rayon de coude doit être supérieur au rayon du tube.');
+    const t = a * RAD, r = de / 2, E = R * Math.tan(t / 2);
+    const c = coupeCoude(R, de, a);
+    // Coude dans son plan : entrée suivant +X en (0, 0), centre de courbure en (0, R)
+    const d = Dessin.creer();
+    const P = (rr, phi) => [rr * Math.sin(phi), R - rr * Math.cos(phi)];
+    const arc = rr => Array.from({ length: 49 }, (_, i) => P(rr, t * i / 48));
+    d.polyligne(arc(R + r), 'DECOUPE'); d.polyligne(arc(R - r), 'DECOUPE'); d.polyligne(arc(R), 'AXES');
+    d.ligne(P(R - r, 0), P(R + r, 0), 'DECOUPE'); d.ligne(P(R - r, t), P(R + r, t), 'DECOUPE');
+    const h = Math.max(4, R / 14);
+    {
+      // Axes prolongés jusqu'au sommet (intersection des axes) et cotes d'encombrement
+      const S = [E, 0], sortie = P(R, t);
+      d.ligne([-0.25 * R, 0], S, 'AXES'); d.ligne(S, [sortie[0] + (sortie[0] - S[0]) * 0.25, sortie[1] + (sortie[1] - S[1]) * 0.25], 'AXES');
+      d.cercle(S[0], S[1], Math.max(2, R / 60), 'COTES', 16);
+      d.cote([0, 0], S, -(r + 3 * h), `encombrement ${fmt(E)}`, h);
+      d.cote(S, sortie, -(r + 3 * h), fmt(E), h);
+    }
+    d.texte(P(R, t / 2)[0] - h * 0.5, P(R, t / 2)[1] + h * 0.6, h * 1.3, `${fmt(a, a % 1 ? 1 : 0)}°`, 'TEXTE', 'd');
+    d.texte(P(R + r, t * 0.6)[0] + h, P(R + r, t * 0.6)[1], h, `extrados ${fmt(c.extrados)}`, 'COTES');
+    d.texte(P(R - r, t * 0.6)[0] - h, P(R - r, t * 0.6)[1], h, `intrados ${fmt(c.intrados)}`, 'COTES', 'd');
+    d.texte(P(R, 0)[0], -r - 9 * h, h, `Ø${fmt(de)} - R ${fmt(R)}`, 'TEXTE', 'c');
+    return { angle: a, encombrement: arr(E, 1), axe: c.axe, extrados: c.extrados, intrados: c.intrados, dessin: d };
   }
 
   // ---------------------------------------------------------------- Baïonnette
@@ -393,5 +426,5 @@
     return { forme, titre, fibreNeutre: dims, pieces, lignesVraies, avertissements: avert, resultats: { pieces: pieces.length, aireTotale: arr(pieces.reduce((s, x) => s + x.aire, 0), 4), masseTotale: arr(pieces.reduce((s, x) => s + x.masse, 0), 2) } };
   }
 
-  return { piquage, baionnette, developpe, axeAvecCoudes, coupeCoude, ErreurSaisie, fmt, _interne: { deplier, placer, dist } };
+  return { piquage, baionnette, developpe, coude, axeAvecCoudes, coupeCoude, ErreurSaisie, fmt, _interne: { deplier, placer, dist } };
 }));

@@ -577,15 +577,54 @@
     });
   });
 
-  // ------------------------------------------------------------ Table des normes
-  $('[data-table-normes]').innerHTML = `<thead><tr><th>DN</th><th>Ø ext. (mm)</th><th>Épaisseurs usuelles (mm)</th><th>Coude 2D R</th><th>Coude 3D R</th><th>Coude 5D R</th><th>Développé π×Ø</th></tr></thead><tbody>${Normes.TUBES.map(t => `<tr><td>${t.dn}</td><td>${fmt(t.de)}</td><td>${t.epaisseurs.map(e => fmt(e)).join(' - ')}</td><td>${t.r2D ?? '-'}</td><td>${t.r3D ?? '-'}</td><td>${t.r5D}</td><td>${fmt(Math.PI * t.de)}</td></tr>`).join('')}</tbody>`;
+  // ------------------------------------------------------------ Encombrement des coudes
+  const e45 = R => R == null ? null : R * Math.tan(22.5 * Math.PI / 180);
+  const f0 = v => v == null ? '-' : fmt(v, 0);
+  module('coudes', (v, ctx) => {
+    const T = ctx.tubes.cd.lire();
+    const c90 = Geometrie.coude({ de: T.de, rayon: T.rayon, angle: 90 }), c45 = Geometrie.coude({ de: T.de, rayon: T.rayon, angle: 45 });
+    const a = +v.angle;
+    const cA = v.angle !== '' && a > 0 && a !== 90 && a !== 45 ? Geometrie.coude({ de: T.de, rayon: T.rayon, angle: a }) : null;
+    const type = T.coude === 'libre' ? `R ${fmt(T.rayon)}` : `${T.coude} (R ${fmt(T.rayon)})`;
+    const titre = `Encombrement coudes Ø${fmt(T.de)} ${type}`;
+    const tous = [c90, c45, ...(cA ? [cA] : [])];
+    return {
+      dxf: false,
+      pdf: { titre, sousTitre: 'Encombrement = R × tan(angle / 2), du sommet à la face', infos: [['Tube', `Ø ${fmt(T.de)} mm`], ['Coude', type]], pied: titre },
+      avertissements: [],
+      resultats: [
+        ['Encombrement coude 90°', mm(c90.encombrement), true],
+        ['Encombrement coude 45°', mm(c45.encombrement), true],
+        ...(cA ? [[`Encombrement coude ${fmt(a, a % 1 ? 1 : 0)}°`, mm(cA.encombrement), true]] : []),
+        ['Rayon à l\'axe', mm(T.rayon)],
+      ],
+      dessins: tous.map(c => ({ titre: `Coude ${fmt(c.angle, c.angle % 1 ? 1 : 0)}°`, dessin: c.dessin })),
+      tableaux: [
+        { titre: 'Arcs le long du coude', colonnes: ['Coude', 'Encombrement', 'Extrados', 'Axe', 'Intrados'], lignes: tous.map(c => [`${fmt(c.angle, c.angle % 1 ? 1 : 0)}°`, fmt(c.encombrement), fmt(c.extrados), fmt(c.axe), fmt(c.intrados)]) },
+        { titre: 'Encombrements EN 10253-2 : 90° / 45° (mm)', colonnes: ['DN', 'Ø ext.', '2D 90°', '2D 45°', '3D 90°', '3D 45°', '5D 90°', '5D 45°'], lignes: Normes.TUBES.map(t => [t.dn, fmt(t.de), f0(t.r2D), f0(e45(t.r2D)), f0(t.r3D), f0(e45(t.r3D)), f0(t.r5D), f0(e45(t.r5D))]) },
+      ],
+    };
+  });
 
-  // ------------------------------------------------------------ Onglets
-  const ouvrir = nom => {
-    $$('.onglets button').forEach(b => b.classList.toggle('actif', b.dataset.onglet === nom));
-    $$('.module').forEach(s => s.classList.toggle('actif', s.id === nom));
-    memo.onglet = nom; sauver();
+  // ------------------------------------------------------------ Table des normes
+  $('[data-table-normes]').innerHTML = `<thead><tr><th>DN</th><th>Ø ext. (mm)</th><th>Épaisseurs usuelles (mm)</th><th>2D 90°</th><th>2D 45°</th><th>3D 90°</th><th>3D 45°</th><th>5D 90°</th><th>5D 45°</th><th>Développé π×Ø</th></tr></thead><tbody>${Normes.TUBES.map(t => `<tr><td>${t.dn}</td><td>${fmt(t.de)}</td><td>${t.epaisseurs.map(e => fmt(e)).join(' - ')}</td><td>${f0(t.r2D)}</td><td>${f0(e45(t.r2D))}</td><td>${f0(t.r3D)}</td><td>${f0(e45(t.r3D))}</td><td>${f0(t.r5D)}</td><td>${f0(e45(t.r5D))}</td><td>${fmt(Math.PI * t.de)}</td></tr>`).join('')}</tbody>`;
+
+  // ------------------------------------------------------------ Navigation : accueil à grosses touches, un outil par écran
+  // L'adresse porte l'outil ouvert (#piquage…) : la touche « retour » du téléphone ramène au menu.
+  const TITRES = Object.fromEntries($$('.tuile').map(b => [b.dataset.onglet, b.querySelector('b').textContent]));
+  const naviguer = () => {
+    const nom = location.hash.slice(1);
+    const outil = TITRES[nom] && $(`#${nom}.module`) ? nom : null;
+    $$('.module').forEach(s => s.classList.toggle('actif', s.id === outil));
+    $('#accueil').classList.toggle('actif', !outil);
+    $('[data-accueil]').hidden = !outil;
+    $('[data-titre-module]').textContent = outil ? TITRES[outil] : '';
+    document.title = outil ? `${TITRES[outil]} - Pipe-Fit Tuyauteur` : 'Pipe-Fit Tuyauteur';
+    window.scrollTo(0, 0);
   };
-  $$('.onglets button').forEach(b => b.addEventListener('click', () => ouvrir(b.dataset.onglet)));
-  if (memo.onglet && $(`#${memo.onglet}`)) ouvrir(memo.onglet);
+  const ouvrir = nom => { if (location.hash.slice(1) === nom) naviguer(); else location.hash = nom; };
+  $$('.tuile').forEach(b => b.addEventListener('click', () => ouvrir(b.dataset.onglet)));
+  $('[data-accueil]').addEventListener('click', () => ouvrir('menu'));
+  window.addEventListener('hashchange', naviguer);
+  naviguer();
 }());

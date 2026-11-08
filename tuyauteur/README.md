@@ -10,7 +10,22 @@ node tuyauteur/build.js      # produit dist/Tuyauteur.html
 Le fichier `dist/Tuyauteur.html` est aussi produit par l'intégration continue : onglet **Actions** → dernière
 exécution → *Artifacts* → `Tuyauteur`. Les saisies sont mémorisées dans le navigateur.
 
+## Accueil et navigation
+L'écran d'accueil présente les outils en grosses touches, faciles à viser sur un smartphone, rangées en deux groupes :
+- **Pratique, atelier et chantier** : Piquages, Coudes, Baïonnette, Brides, Poids, Tubes et coudes ;
+- **Étude, bureau d'études** : Développés, Platines, Escaliers, Supportage.
+
+Chaque outil s'ouvre en plein écran. Le bouton « ‹ Menu », ou la touche retour du téléphone, ramène à l'accueil.
+L'adresse de la page indique l'outil ouvert (ex. `#coudes`), ce qui permet d'en garder un en favori.
+
 ## Modules
+
+### Coudes (encombrement)
+Encombrement (centre à face, du sommet à la face) d'un coude : R × tan(angle / 2). Le coude 90° vaut le rayon,
+le 45° vaut R × tan 22,5° (DN 100 3D : 152 et 63 mm). On peut ajouter un angle quelconque. Le logiciel donne aussi
+les arcs d'extrados, d'axe et d'intrados, le dessin coté de chaque coude, et la table des encombrements 90° / 45°
+des coudes 2D, 3D et 5D pour tous les DN. La table « Tubes et coudes » affiche aussi les encombrements à 45°.
+
 
 ### Piquages
 Traçage d'un piquage perpendiculaire, oblique (15° à 90°) ou excentré (tangentiel), posé ou pénétrant.

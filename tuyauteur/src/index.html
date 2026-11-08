@@ -8,23 +8,47 @@
 </head>
 <body>
 <header class="barre">
+  <button type="button" class="retour" data-accueil hidden aria-label="Retour au menu">‹ Menu</button>
   <div class="marque"><span class="logo">⌀</span><span>Pipe-Fit Tuyauteur</span></div>
-  <nav class="onglets" role="tablist">
-    <button role="tab" data-onglet="piquage" class="actif">Piquages</button>
-    <button role="tab" data-onglet="baionnette">Baïonnette</button>
-    <button role="tab" data-onglet="developpe">Développés</button>
-    <button role="tab" data-onglet="platine">Platines</button>
-    <button role="tab" data-onglet="brides">Brides</button>
-    <button role="tab" data-onglet="escalier">Escaliers</button>
-    <button role="tab" data-onglet="supportage">Supportage</button>
-    <button role="tab" data-onglet="poids">Poids</button>
-    <button role="tab" data-onglet="normes">Tubes et coudes</button>
-  </nav>
+  <div class="titre-module" data-titre-module></div>
 </header>
 
 <main>
+<!-- ======================= ACCUEIL ======================= -->
+<section class="accueil actif" id="accueil">
+  <h2 class="groupe pratique">Pratique <span>atelier et chantier</span></h2>
+  <div class="tuiles pratique">
+    <button type="button" class="tuile" data-onglet="piquage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 15h20M2 9h20M10 9V2M14 9V2"/></svg><span><b>Piquages</b><small>Gabarit de coupe et trou</small></span></button>
+    <button type="button" class="tuile" data-onglet="coudes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21v-8a9 9 0 0 1 9-9h8"/><path d="M9 21v-8a4 4 0 0 1 4-4h8"/></svg><span><b>Coudes</b><small>Encombrement 90° et 45°</small></span></button>
+    <button type="button" class="tuile" data-onglet="baionnette"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 17h6l8-10h6"/><path d="M2 21h6l8-10h6" opacity=".5"/></svg><span><b>Baïonnette</b><small>Renvoi à deux coudes</small></span></button>
+    <button type="button" class="tuile" data-onglet="brides"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><circle cx="12" cy="5.6" r="1"/><circle cx="12" cy="18.4" r="1"/><circle cx="5.6" cy="12" r="1"/><circle cx="18.4" cy="12" r="1"/></svg><span><b>Brides</b><small>Reconnaître, longueur des tiges</small></span></button>
+    <button type="button" class="tuile" data-onglet="poids"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9h14l2 12H3z"/><circle cx="12" cy="5" r="2.2"/></svg><span><b>Poids</b><small>Tubes, profilés, tôles</small></span></button>
+    <button type="button" class="tuile" data-onglet="normes"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 10h18M3 15h18M9 4v16"/></svg><span><b>Tubes et coudes</b><small>Tables ISO / EN</small></span></button>
+  </div>
+  <h2 class="groupe etude">Étude <span>bureau d'études</span></h2>
+  <div class="tuiles etude">
+    <button type="button" class="tuile" data-onglet="developpe"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 19 8 5h8l5 14z"/><path d="M8 5l4 14 4-14" opacity=".55"/></svg><span><b>Développés</b><small>Rond-carré, trémie, cône</small></span></button>
+    <button type="button" class="tuile" data-onglet="platine"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="7" cy="9" r="1.2"/><circle cx="17" cy="9" r="1.2"/><circle cx="7" cy="15" r="1.2"/><circle cx="17" cy="15" r="1.2"/></svg><span><b>Platines</b><small>Découpe laser, DXF</small></span></button>
+    <button type="button" class="tuile" data-onglet="escalier"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h4v-4h4v-4h4V9h4V5h2"/></svg><span><b>Escaliers</b><small>Escaliers et passerelles</small></span></button>
+    <button type="button" class="tuile" data-onglet="supportage"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6" r="3.5"/><path d="M12 10v11M6 21h12M7 10h10"/></svg><span><b>Supportage</b><small>Carnet de supports</small></span></button>
+  </div>
+</section>
+
+<!-- ======================= COUDES ======================= -->
+<section class="module" id="coudes">
+  <form class="saisie" autocomplete="off">
+    <h2>Encombrement des coudes</h2>
+    <p class="aide">Encombrement = distance du sommet (intersection des axes) à la face du coude : R × tan(angle / 2).</p>
+    <fieldset><legend>Tube et coude</legend>
+      <div class="tube" data-prefixe="cd" data-dn="100" data-coude="1"></div>
+      <label>Autre angle (°)<input name="angle" type="number" step="0.5" min="0" max="90" placeholder="ex. 30 ; vide = 90° et 45° seulement"></label>
+    </fieldset>
+  </form>
+  <div class="sortie" data-sortie></div>
+</section>
+
 <!-- ======================= PIQUAGE ======================= -->
-<section class="module actif" id="piquage">
+<section class="module" id="piquage">
   <form class="saisie" autocomplete="off">
     <h2>Traçage d'un piquage</h2>
     <fieldset><legend>Collecteur (tube principal)</legend>
@@ -351,7 +375,7 @@
 <section class="module" id="normes">
   <div class="sortie pleine">
     <h2>Tubes ISO 4200 / EN 10220 et coudes EN 10253-2 / ISO 3419</h2>
-    <p class="aide">Rayons de cintrage à l'axe. Épaisseurs : valeurs usuelles indicatives. Vérifier la fiche du fabricant avant fabrication.</p>
+    <p class="aide">Encombrements des coudes (sommet → face) : 90° = rayon à l'axe, 45° = rayon × tan 22,5°. Épaisseurs : valeurs usuelles indicatives. Vérifier la fiche du fabricant avant fabrication.</p>
     <div class="tableau-defile"><table class="table" data-table-normes></table></div>
   </div>
 </section>

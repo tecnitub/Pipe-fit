@@ -3,6 +3,8 @@
   --fond: #f4f6f9; --carte: #ffffff; --texte: #1f2937; --doux: #6b7280; --bord: #dfe3ea;
   --accent: #1d4ed8; --accent-doux: #e8efff; --erreur: #b42318; --erreur-fond: #fef3f2; --alerte: #9a6700; --alerte-fond: #fff8e6;
   --apercu: #ffffff;
+  --pratique: #1d4ed8; --pratique-fond: #eef3ff; --pratique-bord: #c9d8fb;
+  --etude: #b45309; --etude-fond: #fff6eb; --etude-bord: #f3d6b0;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -12,15 +14,12 @@ body { background: var(--fond); color: var(--texte); font: 14px/1.45 system-ui, 
 .barre { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; padding: 8px 16px; background: #0f2a5c; color: #fff; }
 .marque { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; }
 .logo { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; background: #fff; color: #0f2a5c; font-size: 18px; }
-.onglets { display: flex; gap: 4px; flex-wrap: wrap; }
-@media (max-width: 860px) { .onglets { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; } .onglets button { white-space: nowrap; } }
-.onglets button { border: 0; background: transparent; color: #c9d6f2; padding: 8px 12px; border-radius: 6px; font: inherit; cursor: pointer; }
-.onglets button:hover { background: rgba(255, 255, 255, .08); color: #fff; }
-.onglets button.actif { background: #fff; color: #0f2a5c; font-weight: 600; }
 
 main { max-width: 1500px; margin: 0 auto; padding: 16px; }
 .module { display: none; gap: 16px; grid-template-columns: minmax(280px, 360px) 1fr; align-items: start; }
 .module.actif { display: grid; }
+.accueil { display: none; }
+.accueil.actif { display: block; }
 #normes.module.actif { display: block; }
 
 .saisie, .sortie { background: var(--carte); border: 1px solid var(--bord); border-radius: 10px; padding: 14px 16px; min-width: 0; }
@@ -106,3 +105,34 @@ button.danger { background: var(--erreur); border-color: var(--erreur); color: #
 #poids .extra { order: 1; margin: 14px 0 0; }
 #poids .exports { order: 2; }
 #poids .tableaux { order: 3; }
+
+/* Barre : retour au menu et titre de l'outil ouvert */
+.retour { border: 1px solid rgba(255, 255, 255, .35); background: rgba(255, 255, 255, .1); color: #fff; padding: 9px 14px; font-weight: 600; min-height: 44px; }
+.retour:hover { background: rgba(255, 255, 255, .2); border-color: #fff; }
+.titre-module { font-weight: 600; font-size: 16px; color: #dbe5fb; }
+.titre-module:empty { display: none; }
+
+/* Accueil : deux groupes de grosses touches */
+.accueil { max-width: 1100px; margin: 0 auto; }
+.groupe { display: flex; align-items: baseline; gap: 10px; margin: 8px 0 12px; font-size: 20px; text-wrap: balance; }
+.groupe span { font-size: 14px; font-weight: 500; color: var(--doux); text-transform: uppercase; letter-spacing: .06em; }
+.groupe.pratique { color: var(--pratique); }
+.groupe.etude { color: var(--etude); margin-top: 28px; }
+.tuiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.tuile { display: flex; align-items: center; gap: 14px; min-height: 88px; padding: 14px 16px; text-align: left; border-radius: 12px; border: 1px solid var(--bord); background: var(--carte); color: var(--texte); font: inherit; cursor: pointer; }
+.tuile svg { flex: none; width: 40px; height: 40px; padding: 8px; border-radius: 10px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tuile b { display: block; font-size: 17px; }
+.tuile small { display: block; margin-top: 2px; color: var(--doux); font-size: 13px; }
+.pratique .tuile svg { color: var(--pratique); background: var(--pratique-fond); }
+.etude .tuile svg { color: var(--etude); background: var(--etude-fond); }
+.pratique .tuile:hover, .pratique .tuile:focus-visible { border-color: var(--pratique-bord); background: var(--pratique-fond); }
+.etude .tuile:hover, .etude .tuile:focus-visible { border-color: var(--etude-bord); background: var(--etude-fond); }
+.tuile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 600px) {
+  .tuiles { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tuile { flex-direction: column; align-items: flex-start; gap: 10px; min-height: 120px; padding: 14px; }
+  .tuile b { font-size: 16px; }
+  .groupe { font-size: 18px; flex-wrap: wrap; }
+  .barre { gap: 10px; }
+  .barre .marque span:last-child { display: none; }
+}

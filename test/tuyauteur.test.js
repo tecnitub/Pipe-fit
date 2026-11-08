@@ -130,3 +130,13 @@ test('PDF : fiche et feuilles 1:1 assemblables', async () => {
   assert.ok(a3.getPageCount() < avec.getPageCount());
   assert.strictEqual(ExportPDF.winAnsi('α ≥ 1 €'), 'a >= 1 €');
 });
+
+test('encombrement des coudes 90° et 45°', () => {
+  // 90° : encombrement = rayon ; 45° : R × tan 22,5° (DN 100 3D : 152 et 63)
+  const c90 = G.coude({ de: 114.3, rayon: 152, angle: 90 }), c45 = G.coude({ de: 114.3, rayon: 152, angle: 45 });
+  assert.strictEqual(c90.encombrement, 152);
+  proche(c45.encombrement, 63.0, 0.05);
+  proche(c45.extrados, (152 + 57.15) * Math.PI / 4, 0.1);
+  proche(G.coude({ de: 114.3, rayon: 152, angle: 30 }).encombrement, 152 * Math.tan(Math.PI / 12), 0.05);
+  assert.throws(() => G.coude({ de: 114.3, rayon: 152, angle: 120 }), /entre 0 et 90/);
+});
