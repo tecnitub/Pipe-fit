@@ -105,11 +105,10 @@
     $('.apercus', sortie).innerHTML = etat.dessins.map(d => `<figure><figcaption>${esc(d.titre)}</figcaption>${Dessin.versSVG(d.dessin, { classe: 'apercu' })}</figure>`).join('');
     $('.tableaux', sortie).innerHTML = (etat.tableaux || []).map(t => `<h3>${esc(t.titre)}</h3><div class="tableau-defile"><table class="table"><thead><tr>${t.colonnes.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${t.lignes.map(l => `<tr>${l.map(c => `<td${typeof c === 'string' && c.length > 24 && /[a-zé]{3}/i.test(c) ? ' class="texte"' : ''}>${esc(c ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`).join('');
     const gab = (etat.export || etat).dessins.some(d => d.gabarit);
-    $('[data-pdf]', sortie).textContent = etat.libellePDF || 'Télécharger le PDF';
-    $('[data-dxf]', sortie).textContent = etat.libelleDXF || 'Télécharger le DXF';
+    $('[data-pdf]', sortie).textContent = etat.libellePDF || 'PDF';
+    $('[data-dxf]', sortie).textContent = etat.libelleDXF || 'DXF';
     $('[data-dxf]', sortie).hidden = etat.dxf === false;
-    $('[data-echelle1]', sortie).closest('label').hidden = !gab;
-    $('[data-format]', sortie).closest('label').hidden = !gab;
+    $('[data-grandeur]', sortie).hidden = !gab;
   }
 
   // Message bref en bas de l'écran (remplace alert(), bloqué dans certaines vues)
@@ -205,15 +204,19 @@
     form.addEventListener('input', () => { clearTimeout(minuteur); minuteur = setTimeout(maj, 120); });
     form.addEventListener('change', () => { clearTimeout(minuteur); minuteur = setTimeout(maj, 30); });
     form.addEventListener('submit', e => e.preventDefault());
-    $('[data-pdf]', sortie).addEventListener('click', async ev => {
+    // PDF : la fiche seule, ou la fiche suivie des gabarits en grandeur réelle (feuilles A4, A3 ou une seule page)
+    const exporterPDF = async (b, grandeur) => {
       if (!etat || etat.erreur) return;
-      const b = ev.currentTarget; b.disabled = true; const t = b.textContent; b.textContent = 'Préparation…';
+      b.disabled = true; const t = b.textContent; b.textContent = 'Préparation…';
       try {
         const ex = etat.export || etat;
-        const octets = await ExportPDF.creer({ ...(ex.pdf || etat.pdf), resultats: ex.resultats.map(([l, v]) => [l, v]), avertissements: ex.avertissements, tableaux: ex.tableaux, dessins: ex.dessins, echelle1: $('[data-echelle1]', sortie).checked, format: $('[data-format]', sortie).value });
-        telecharger(`${nomFichier((ex.pdf || etat.pdf).titre)}.pdf`, octets, 'application/pdf');
+        const octets = await ExportPDF.creer({ ...(ex.pdf || etat.pdf), resultats: ex.resultats.map(([l, v]) => [l, v]), avertissements: ex.avertissements, tableaux: ex.tableaux, dessins: ex.dessins, echelle1: !!grandeur, format: grandeur || 'A4' });
+        const suffixe = grandeur ? `_1-1_${grandeur === 'page' ? '1page' : grandeur}` : '';
+        telecharger(`${nomFichier((ex.pdf || etat.pdf).titre)}${suffixe}.pdf`, octets, 'application/pdf');
       } catch (e) { console.error(e); annoncer(`PDF impossible : ${e.message}`, true); } finally { b.disabled = false; b.textContent = t; }
-    });
+    };
+    $('[data-pdf]', sortie).addEventListener('click', ev => exporterPDF(ev.currentTarget, null));
+    $$('[data-pdf11]', sortie).forEach(b => b.addEventListener('click', ev => exporterPDF(ev.currentTarget, b.dataset.pdf11)));
     $('[data-dxf]', sortie).addEventListener('click', () => {
       if (!etat || etat.erreur) return;
       telecharger(`${nomFichier(((etat.export && etat.export.pdf) || etat.pdf).titre)}.dxf`, dxfDe(etat), 'application/dxf');

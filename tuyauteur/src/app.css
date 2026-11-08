@@ -64,7 +64,6 @@ svg.apercu { display: block; width: 100%; height: auto; max-height: 520px; }
 
 .exports { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--bord); }
 .exports label.case { margin: 0; }
-.exports [data-pdf] { margin-left: auto; }
 
 .tableau-defile { overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 13px; }
@@ -76,7 +75,6 @@ svg.apercu { display: block; width: 100%; height: auto; max-height: 520px; }
   .module.actif { grid-template-columns: 1fr; }
   .saisie { position: static; max-height: none; }
   main { padding: 10px; }
-  .exports [data-pdf] { margin-left: 0; }
 }
 @media print { .barre, .saisie, .exports { display: none !important; } .module.actif { display: block; } }
 
@@ -144,3 +142,6 @@ button.danger { background: var(--erreur); border-color: var(--erreur); color: #
 @media (max-width: 600px) { .table { font-size: 12.5px; } .table th, .table td { padding: 5px 6px; } }
 .schema { margin: 4px 0 12px; border: 1px solid var(--bord); border-radius: 8px; background: var(--apercu); padding: 6px; }
 .schema svg { display: block; width: 100%; height: auto; max-height: 300px; }
+.grandeur { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border: 1px solid var(--bord); border-radius: 8px; background: var(--fond); }
+.grandeur span { font-size: 12.5px; font-weight: 600; color: var(--doux); margin-right: 2px; }
+.exports button { min-height: 44px; }

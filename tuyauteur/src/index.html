@@ -389,10 +389,14 @@
   <div class="resultats"></div>
   <div class="apercus"></div>
   <div class="exports">
-    <label class="case"><input type="checkbox" data-echelle1 checked> PDF avec gabarit 1:1</label>
-    <label class="case">Feuilles <select data-format><option>A4</option><option>A3</option></select></label>
-    <button type="button" data-pdf class="principal">Télécharger le PDF</button>
-    <button type="button" data-dxf>Télécharger le DXF</button>
+    <button type="button" data-pdf class="principal">PDF</button>
+    <div class="grandeur" data-grandeur>
+      <span>Grandeur réelle</span>
+      <button type="button" data-pdf11="A4">PDF A4</button>
+      <button type="button" data-pdf11="A3">PDF A3</button>
+      <button type="button" data-pdf11="page">PDF 1 page</button>
+    </div>
+    <button type="button" data-dxf>DXF</button>
   </div>
   <div class="tableaux"></div>
 </template>

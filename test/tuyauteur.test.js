@@ -141,3 +141,14 @@ test('encombrement des coudes 90° et 45°', () => {
   proche(G.coude({ de: 114.3, rayon: 152, angle: 30 }).encombrement, 152 * Math.tan(Math.PI / 12), 0.05);
   assert.throws(() => G.coude({ de: 114.3, rayon: 152, angle: 120 }), /entre 0 et 90/);
 });
+
+test('PDF grandeur réelle sur une seule page', async () => {
+  const d = G.developpe({ forme: 'rond-carre', A: 600, B: 400, D: 300, hauteur: 500, parties: 2 });
+  const etude = { titre: 'Rond-carré', dessins: d.pieces.map((p, i) => ({ titre: `Pièce ${i + 1}`, dessin: p.dessin, gabarit: true })) };
+  const doc = await PDFLib.PDFDocument.load(await ExportPDF.creer({ ...etude, echelle1: true, format: 'page' }));
+  // Fiche + une page par pièce, à la taille de la pièce (+ 15 mm de marge de chaque côté)
+  assert.strictEqual(doc.getPageCount(), 1 + d.pieces.length);
+  const [w, h] = doc.getPage(1).getSize().width ? [doc.getPage(1).getWidth(), doc.getPage(1).getHeight()] : [];
+  proche(w / (72 / 25.4), Math.max(210, d.pieces[0].largeur + 30), 0.5, 'largeur de page');
+  proche(h / (72 / 25.4), Math.max(150, d.pieces[0].hauteur + 50), 0.5, 'hauteur de page');
+});

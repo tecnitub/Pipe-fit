@@ -142,10 +142,13 @@ et des rayons de coudes EN 10253-2 / ISO 3419 : 3D (R ≈ 1,5 × DN) et 5D (R = 
 indicatives et la saisie reste libre. Les rayons doivent être vérifiés sur la fiche du fabricant.
 
 ## Exports
-- **PDF imprimable** : une fiche avec les données, les résultats, les tableaux et les dessins à une échelle normalisée
-  (1:1, 1:2, 1:5…). En option, le **gabarit en vraie grandeur** est découpé en feuilles A4 ou A3 à assembler bord à bord.
-  Chaque feuille porte un nom (A1, A2, B1…), les feuilles voisines, des croix de repérage et une **mire de 100 mm** pour
-  vérifier l'impression. Il faut imprimer en taille réelle (100 %).
+- **PDF** : la fiche (données, résultats, tableaux, dessins à une échelle normalisée 1:1, 1:2, 1:5…).
+- **Grandeur réelle** (outils qui produisent une pièce à découper ou un gabarit) :
+  - **PDF A4** ou **PDF A3** : la fiche, puis le gabarit 1:1 découpé en feuilles à assembler bord à bord. Chaque
+    feuille porte un nom (A1, A2, B1…), les noms des feuilles voisines, des croix de repérage et une mire de 100 mm.
+  - **PDF 1 page** : la fiche, puis chaque pièce entière en vraie grandeur sur une seule page à sa taille (marges
+    15 mm), pour un traceur ou un imprimeur grand format ; au-delà de 5 m, retour aux feuilles A3.
+  - Toujours imprimer en taille réelle (100 %) et contrôler la mire.
 - **DXF R12** en millimètres, pour la découpe laser ou plasma et pour les logiciels de CAO. Les tracés sont rangés par
   calques : `DECOUPE` (contour fermé), `PLIAGE` (lignes de pliage, en tirets), `TRACAGE`, `AXES`, `COTES` et `TEXTE`.
   Pour la découpe, il suffit de garder `DECOUPE` (et `PLIAGE` si la machine fait le marquage). Quand il y a

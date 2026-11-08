@@ -139,12 +139,15 @@
       const ox = marge + (lDispo - b.l * k) / 2 - b.x0 * k, oy = y - 6 - hD - b.y0 * k;
       tracer(page, polices, d.dessin, { ox, oy, k, texteMin: 4 });
       y = y - 6 - hD - 16;
-      if (d.gabarit && etude.echelle1) { texte('Gabarit en vraie grandeur : voir les feuilles 1:1 à la suite.', marge, y + 4, 8, false, gris); y -= 10; }
+      if (d.gabarit && etude.echelle1) { texte(etude.format === 'page' ? 'Gabarit en vraie grandeur : voir la page 1:1 à la suite.' : 'Gabarit en vraie grandeur : voir les feuilles 1:1 à la suite.', marge, y + 4, 8, false, gris); y -= 10; }
     }
     // Feuilles 1:1 assemblables
     if (etude.echelle1) {
-      const [FW, FH] = FORMATS[etude.format === 'A3' ? 'A3' : 'A4'];
-      for (const d of (etude.dessins || []).filter(x => x.gabarit)) feuilles11(doc, polices, d, FW, FH, etude);
+      for (const d of (etude.dessins || []).filter(x => x.gabarit)) {
+        // Une seule grande page en vraie grandeur (traceur, imprimeur) ; au-delà de 5 m, feuilles A3
+        if (etude.format === 'page' && !pageUnique(doc, polices, d, etude)) feuilles11(doc, polices, d, ...FORMATS.A3, etude);
+        else if (etude.format !== 'page') feuilles11(doc, polices, d, ...FORMATS[etude.format === 'A3' ? 'A3' : 'A4'], etude);
+      }
     }
     // Pied de page
     const toutes = doc.getPages();
@@ -155,6 +158,27 @@
     });
     return doc.save();
   }
+
+  // Dessin 1:1 sur une seule page à sa taille (marges 15 mm, bandeau 20 mm) ; false si la page dépasse 5 m
+  function pageUnique(doc, polices, d, etude) {
+    const L = lib();
+    const b = Dessin.boite(d.dessin), m = 15, bandeau = 20;
+    const w = Math.max(210, b.l + 2 * m), h = Math.max(150, b.h + 2 * m + bandeau);
+    if (w > 5000 || h > 5000) return false;
+    const page = doc.addPage([w * MM, h * MM]);
+    const ox = (w - b.l) / 2 - b.x0, oy = bandeau + m + (h - bandeau - 2 * m - b.h) / 2 - b.y0;
+    tracer(page, polices, d.dessin, { ox: ox * MM, oy: oy * MM, k: MM, texteMin: 0 });
+    const gris = L.rgb(0.42, 0.45, 0.5);
+    page.drawText(winAnsi(`${d.titre} - grandeur réelle 1:1 - page ${fmtMM(w)} × ${fmtMM(h)} mm`), { x: m * MM, y: 11 * MM, size: 9, font: polices.g });
+    page.drawText(winAnsi('Imprimer en taille réelle (100 %, sans ajustement), sur traceur ou grand format. Contrôler la mire : 100 mm.'), { x: m * MM, y: 6.5 * MM, size: 7, font: polices.n, color: gris });
+    const mx = (w - m - 100) * MM, my = 13 * MM;
+    page.drawLine({ start: { x: mx, y: my }, end: { x: mx + 100 * MM, y: my }, thickness: 0.8 });
+    for (let t = 0; t <= 10; t++) page.drawLine({ start: { x: mx + t * 10 * MM, y: my }, end: { x: mx + t * 10 * MM, y: my + (t % 5 ? 1.5 : 3) * MM }, thickness: 0.5 });
+    page.drawText('100 mm', { x: mx + 42 * MM, y: my + 1.2 * MM, size: 6.5, font: polices.n });
+    void etude;
+    return true;
+  }
+  const fmtMM = v => String(Math.round(v));
 
   // Découpe un dessin 1:1 en feuilles (orientation qui minimise le nombre de feuilles), avec cadres, repères et mire
   function feuilles11(doc, polices, d, FW, FH, etude) {
