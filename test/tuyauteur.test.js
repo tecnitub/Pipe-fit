@@ -70,37 +70,6 @@ test('baïonnette : formules du renvoi et coudes orientés', () => {
   assert.throws(() => G.baionnette({ de: 114.3, rayon: 152, decalageV: 200, mode: 'angle', angle: 90 }), /chevauchent.*Angle maximal/);
 });
 
-test('coude orienté : coude 90° + tranche bout à bout (cas Ø114, R152, hauteur 125)', () => {
-  const r = G.coudeOriente({ de: 114, rayon: 152, mode: 'hauteur', denivele: 125 }).resultats;
-  // Valeurs de référence d'une application de tuyauterie du commerce pour ce même cas
-  proche(r.tranche, 37.8, 0.05, 'angle');
-  proche(r.horizontale, 213.3, 0.1, 'horizontale');
-  proche(r.reductionTranche, 52.0, 0.05, 'réduction de la tranche');
-  proche(r.extrados, 137.8, 0.1); proche(r.intrados, 62.6, 0.1);
-  proche(r.trusquinExtrados, 128.1, 0.1); proche(r.trusquinIntrados, 58.2, 0.1);
-  proche(r.chute, 52.2, 0.05);
-  // Formules : hauteur = (R + R·tan(θ/2))·sin θ ; horizontale = (R + R·tan(θ/2))·cos θ + R·tan(θ/2)
-  const t = r.tranche * Math.PI / 180, e = 152 * Math.tan(t / 2);
-  proche((152 + e) * Math.sin(t), 125, 0.1);
-  // Par l'horizontale et par l'angle : on retrouve le même montage
-  proche(G.coudeOriente({ de: 114, rayon: 152, mode: 'horizontale', horizontale: r.horizontale }).resultats.hauteur, 125, 0.5);
-  proche(G.coudeOriente({ de: 114, rayon: 152, mode: 'angle', angle: 37.8 }).resultats.hauteur, 125, 0.2);
-});
-
-test('coude orienté : tube entre coude et tranche, jeu de soudure, limites', () => {
-  const C = o => G.coudeOriente({ de: 114.3, rayon: 152, ...o }).resultats;
-  // Avec un tube : la hauteur maxi augmente ; le sommet-sommet compte le tube et deux soudures
-  const r = C({ mode: 'angle', angle: 45, tube: 200, jeu: 3 });
-  proche(r.entraxe, 152 + 152 * Math.tan(Math.PI / 8) + 200 + 6, 0.1);
-  proche(r.hauteur, r.entraxe * Math.sin(Math.PI / 4), 0.1);
-  // Bout à bout : une seule soudure entre les deux
-  proche(C({ mode: 'angle', angle: 45, jeu: 3 }).entraxe, 152 + 152 * Math.tan(Math.PI / 8) + 3, 0.1);
-  assert.throws(() => C({ mode: 'hauteur', denivele: 400 }), /trop grande.*Ajouter un tube/);
-  assert.strictEqual(C({ mode: 'hauteur', denivele: 400, tube: 200 }).hauteur, 400);
-  assert.throws(() => C({ mode: 'horizontale', horizontale: 100 }), /impossible/);
-  assert.strictEqual(C({ mode: 'hauteur', denivele: 125, sens: 'descend' }).sens, 'descend');
-});
-
 test('développé cône : surface égale à celle du tronc de cône', () => {
   const d = G.developpe({ forme: 'rond-rond', D: 600, D2: 300, hauteur: 400, divisions: 24, parties: 1, epaisseur: 0 });
   const aire = Math.PI * (300 + 150) * Math.hypot(400, 150) / 1e6;

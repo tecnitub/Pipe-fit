@@ -35,21 +35,6 @@ réduction par coude R·tan(α/2), longueur du tube droit à couper (moins les j
 Pour recouper les coudes, le logiciel donne les arcs d'extrados, d'axe et d'intrados. Il refuse le calcul si les
 coudes se chevauchent et indique alors l'angle maximal possible.
 
-### Coude orienté (coude 90° + tranche de coude)
-Vu de dessus, le tube fait un 90°, mais la sortie est à une autre hauteur. Le coude 90° est pivoté d'un angle θ sur
-le tube d'arrivée ; une tranche de coude de θ, soudée dessus, remet le tube à l'horizontale. Un tube droit peut
-s'intercaler entre les deux (0 = bout à bout).
-- Calcul par **la hauteur** (entre l'axe d'arrivée et l'axe de sortie), par **l'horizontale** (de l'axe d'arrivée
-  à la face de sortie, dans la vue dans l'axe de l'arrivée) ou par **l'angle**.
-- Formules, avec K = R + R·tan(θ/2) + tube + jeux : hauteur = K·sin θ ; horizontale = K·cos θ + R·tan(θ/2).
-- **Vue dans l'axe de l'arrivée** cotée : encombrement du coude 90° (= rayon R), encombrement de la tranche R·tan(θ/2), arcs d'extrados et
-  d'intrados, hauteur, horizontale, angle.
-- **Traçage de la tranche au trusquin** : le coude 90° est posé sur une face, on reporte les hauteurs
-  (R + Ø/2)·sin θ à l'extrados et (R − Ø/2)·sin θ à l'intrados.
-- Exemple (Ø 114, R 152, hauteur 125) : 37,8°, horizontale 213,3, extrados 137,8, intrados 62,6, trusquin 128,1 / 58,2.
-- Aussi : vue de dessus, vue isométrique, bande de repérage 1:1 (rotation du coude sur l'arrivée), étapes de mise en
-  position.
-
 ### Développés de tôlerie (triangulation)
 - **Rond-carré** (rectangle A × B vers rond Ø D) ;
 - **Trémie carré-carré** (rectangle bas vers rectangle haut) ;
@@ -139,7 +124,7 @@ indicatives et la saisie reste libre. Les rayons doivent être vérifiés sur la
 ## Structure
 ```
 tuyauteur/src/normes.js     tables ISO / EN des tubes et des coudes
-tuyauteur/src/geometrie.js  calculs : piquage, baïonnette, coude orienté, développés
+tuyauteur/src/geometrie.js  calculs : piquage, baïonnette, développés
 tuyauteur/src/dessin.js     modèle de dessin commun, aperçu SVG, export DXF
 tuyauteur/src/pdf.js        PDF (pdf-lib) : fiche et feuilles 1:1
 tuyauteur/src/platine.js    platines percées

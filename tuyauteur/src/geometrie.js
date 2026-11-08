@@ -1,7 +1,6 @@
 // Tuyauteur : calculs de tuyauterie industrielle et de chaudronnerie.
 //   piquage()      traçage d'un piquage (perpendiculaire, oblique, excentré) : gabarit de coupe et gabarit du trou
 //   baionnette()   baïonnette (renvoi parallèle à deux coudes), orientée dans l'espace, par l'angle ou par la distance
-//   coudeOriente() coude orienté : coude 90° incliné + tranche de coude pour rattraper un dénivelé
 //   developpe()    développés de tôlerie par triangulation : rond-carré, trémie carré-carré, rond-rond (cône)
 // Toutes les longueurs sont en millimètres, les angles en degrés. Chaque calcul renvoie ses résultats,
 // ses avertissements et les dessins (aperçu, PDF, DXF) construits avec Dessin.
@@ -226,166 +225,6 @@
     };
   }
 
-  // ---------------------------------------------------------------- Coude orienté : coude 90° incliné + tranche de coude
-  // Montage : le tube arrive à l'horizontale (suivant X). Vu de dessus il tourne de 90° (à gauche ou à droite), mais la
-  // sortie est à une autre hauteur. Le coude 90° est pivoté sur l'axe d'arrivée d'un angle θ (vu dans l'axe de
-  // l'arrivée, sa sortie fait θ avec l'horizontale) ; une tranche de θ, soudée dessus (tournée d'un quart de tour),
-  // ramène le tube à l'horizontale. Un tube droit peut s'intercaler entre les deux (0 = bout à bout).
-  // Dans la vue dans l'axe de l'arrivée : sommet du 90° → sommet de la tranche = K(θ) = R + R·tan(θ/2) + tube + jeux,
-  //   hauteur  ΔH = K·sin θ   ;   horizontale (axe d'arrivée → face de sortie) = K·cos θ + R·tan(θ/2).
-  // Calcul par : « hauteur » (ΔH connu), « horizontale » (horizontale connue) ou « angle » (θ imposé).
-  function coudeOriente(p) {
-    const de = positif(nb(p.de), 'Ø extérieur'), R = positif(nb(p.rayon), 'Rayon de coude'), jeu = nb(p.jeu) || 0;
-    exiger(R > de / 2, 'Le rayon de coude doit être supérieur au rayon du tube.');
-    const L = Math.max(0, nb(p.tube) || 0);
-    const g = jeu * (L > 0 ? 2 : 1); // soudures entre le coude 90° et la tranche
-    const v = p.sens === 'descend' ? -1 : 1; // +1 : la sortie est plus haute
-    const s = p.virage === 'droite' ? -1 : 1; // +1 : virage à gauche
-    const r = de / 2;
-    const E2 = th => R * Math.tan(th * RAD / 2);
-    const K = th => R + E2(th) + L + g;
-    const hauteurDe = th => K(th) * Math.sin(th * RAD);
-    const horizDe = th => K(th) * Math.cos(th * RAD) + E2(th);
-    // Racine de f(θ) = cible sur ]0 ; 90], recherche par balayage puis dichotomie (la première trouvée)
-    const resoudre = (f, cible) => {
-      let a = 1e-6, fa = f(a) - cible;
-      for (let x = 0.05; x <= 90 + 1e-9; x += 0.05) {
-        const fx = f(x) - cible;
-        if (fa === 0) return a;
-        if (Math.sign(fx) !== Math.sign(fa)) {
-          let lo = a, hi = x;
-          for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (Math.sign(f(m) - cible) === Math.sign(fa)) lo = m; else hi = m; }
-          return (lo + hi) / 2;
-        }
-        a = x; fa = fx;
-      }
-      return null;
-    };
-    let theta;
-    if (p.mode === 'horizontale') {
-      const Hz = positif(nb(p.horizontale), 'Distance horizontale');
-      let mini = Infinity, maxi = -Infinity;
-      for (let x = 0.05; x <= 90; x += 0.05) { mini = Math.min(mini, horizDe(x)); maxi = Math.max(maxi, horizDe(x)); }
-      theta = resoudre(horizDe, Hz);
-      exiger(theta != null, `Distance horizontale impossible avec ce coude : entre ${fmt(mini)} et ${fmt(maxi)} mm${L ? ' (avec ce tube)' : ''}.`);
-      // L'horizontale passe par un maximum : un second angle peut donner la même valeur
-      const th0 = theta;
-      const autre = resoudre(x => (x <= th0 + 0.5 ? horizDe(th0 + 0.5) : horizDe(x)), Hz);
-      if (autre != null && autre > th0 + 0.5) p._autreAngle = autre;
-    } else if (p.mode === 'angle') {
-      theta = nb(p.angle);
-      exiger(theta > 0 && theta <= 90, 'Angle : entre 0 et 90°.');
-    } else {
-      const dH = positif(Math.abs(nb(p.denivele)), 'Différence de hauteur');
-      exiger(dH <= hauteurDe(90) + 1e-6, `Hauteur trop grande : au plus ${fmt(hauteurDe(90))} mm avec ${L ? 'ce tube' : 'le coude et la tranche bout à bout'}. Ajouter un tube droit entre le coude 90° et la tranche.`);
-      theta = resoudre(hauteurDe, dH);
-    }
-    const t = theta * RAD, e2 = E2(theta), k = K(theta);
-    const dH = hauteurDe(theta), Hz = horizDe(theta);
-    const tranche = coupeCoude(R, de, theta);
-    const C = Math.PI * de;
-    const avert = [];
-    if (theta > 85) avert.push('Tranche presque égale à un coude 90° complet.');
-    if (p._autreAngle) avert.push(`Un second angle donne la même horizontale : ${fmt(p._autreAngle, 1)}° (hauteur ${fmt(hauteurDe(p._autreAngle))} mm). Calculer par la hauteur pour lever le doute.`);
-    if (theta < 5) avert.push(`Tranche de ${fmt(theta)}° : très fine, la couper avec soin.`);
-    // Traçage au trusquin : coude posé sur une face, coupe à θ de la table
-    const trusquin = { extrados: (R + r) * Math.sin(t), axe: R * Math.sin(t), intrados: (R - r) * Math.sin(t) };
-
-    // ---- Vue dans l'axe de l'arrivée (le tube d'arrivée est vu en bout)
-    const vue = Dessin.creer();
-    const u = [Math.cos(t), Math.sin(t)];
-    const IP2 = [k * u[0], k * u[1]], fin = [IP2[0] + e2, IP2[1]];
-    const axe = axeAvecCoudes([[0, 0, 0], [IP2[0], IP2[1], 0], [fin[0], fin[1], 0]], R).map(q => [q[0], q[1]]);
-    const [pg, pd] = parois(axe, de);
-    vue.polyligne(pg, 'DECOUPE'); vue.polyligne(pd, 'DECOUPE');
-    vue.ligne(pg[pg.length - 1], pd[pd.length - 1], 'DECOUPE');
-    vue.polyligne(axe, 'AXES');
-    vue.cercle(0, 0, r, 'DECOUPE', 96);
-    vue.ligne([-r * 0.7, -r * 0.7], [r * 0.7, r * 0.7], 'AXES'); vue.ligne([-r * 0.7, r * 0.7], [r * 0.7, -r * 0.7], 'AXES');
-    // Soudure coude 90° / tranche (et tube éventuel)
-    const nrm = [-u[1], u[0]];
-    const soud = d => vue.ligne([d * u[0] + nrm[0] * r, d * u[1] + nrm[1] * r], [d * u[0] - nrm[0] * r, d * u[1] - nrm[1] * r], 'DECOUPE');
-    soud(R); if (L > 0) soud(R + L + g);
-    vue.cercle(IP2[0], IP2[1], Math.max(3, de / 25), 'COTES', 24);
-    const h = Math.max(5, de / 9);
-    // Angle θ depuis l'horizontale
-    vue.ligne([0, 0], [R * 1.3, 0], 'COTES');
-    const arcA = Array.from({ length: 25 }, (_, i) => { const a = t * i / 24; return [R * 0.85 * Math.cos(a), R * 0.85 * Math.sin(a)]; });
-    vue.polyligne(arcA, 'COTES');
-    vue.texte(-r * 0.4, -h * 0.4, h * 1.3, `${fmt(theta, 1)}°`, 'TEXTE', 'c');
-    // Cotes
-    vue.cote([0, 0], [R * u[0], R * u[1]], r + 3 * h, `${fmt(R)} encombrement 90°`, h);
-    if (L > 0) vue.cote([R * u[0], R * u[1]], [(R + L + g) * u[0], (R + L + g) * u[1]], r + 3 * h, `tube ${fmt(L)}`, h);
-    vue.cote([IP2[0] - e2 * u[0], IP2[1] - e2 * u[1]], IP2, -h * 1.5, fmt(e2), h * 0.9);
-    vue.cote(IP2, fin, h * 1.5, fmt(e2), h * 0.9);
-    vue.texte(IP2[0] + e2 * 0.2, IP2[1] + r + h * 1.8, h, `extrados ${fmt(tranche.extrados)}`, 'COTES', 'c');
-    vue.texte(IP2[0] + e2 * 0.6, IP2[1] - r - h * 2.2, h, `intrados ${fmt(tranche.intrados)}`, 'COTES', 'c');
-    vue.cote([fin[0] + r * 0.6, 0], [fin[0] + r * 0.6, dH], -2 * h, `hauteur ${fmt(dH)}`, h);
-    vue.cote([0, -r - 2 * h], [fin[0], -r - 2 * h], -2 * h, `horizontale ${fmt(Hz)}`, h);
-    // Sortie plus basse : la même vue retournée de haut en bas (textes gardés à l'endroit)
-    if (v < 0) {
-      for (const e of vue.entites) {
-        if (e.type === 'texte') { e.y = -e.y - e.h; e.angle = -e.angle; } else {
-          e.pts = e.pts.map(([x, y]) => [x, -y]);
-          if (e.cercle) e.cercle.cy = -e.cercle.cy;
-        }
-      }
-    }
-    const bv = Dessin.boite(vue);
-    vue.texte((bv.x0 + bv.x1) / 2, bv.y0 - 2 * h, h, `vue dans l'axe de l'arrivée, sortie plus ${v < 0 ? 'basse' : 'haute'}`, 'TEXTE', 'c');
-
-    // ---- Traçage de la tranche au trusquin : coude 90° posé sur une face, sur un marbre
-    const tr = Dessin.creer();
-    const Re = R + r, Ri = R - r;
-    const arcs = (rr, a0, a1, n = 48) => Array.from({ length: n + 1 }, (_, i) => { const a = (a0 + (a1 - a0) * i / n) * RAD; return [rr * Math.cos(a), rr * Math.sin(a)]; });
-    tr.polyligne(arcs(Re, 0, 90), 'DECOUPE'); tr.polyligne(arcs(Ri, 0, 90), 'DECOUPE'); tr.polyligne(arcs(R, 0, 90), 'AXES');
-    tr.ligne([Ri, 0], [Re, 0], 'DECOUPE'); tr.ligne([0, Ri], [0, Re], 'DECOUPE');
-    tr.ligne([Ri * Math.cos(t), Ri * Math.sin(t)], [Re * Math.cos(t), Re * Math.sin(t)], 'PLIAGE');
-    tr.ligne([-0.1 * Re, 0], [Re + 0.5 * Re, 0], 'TRACAGE');
-    const hc = Math.max(5, Re / 22);
-    tr.texte(Re * 1.05, -hc * 1.4, hc * 0.9, 'marbre', 'TEXTE');
-    const am = t / 2, au = (t + Math.PI / 2) / 2;
-    tr.texte(R * Math.cos(am), R * Math.sin(am), hc * 1.2, `${fmt(theta, 1)}°`, 'TEXTE', 'c');
-    tr.texte(R * Math.cos(au), R * Math.sin(au), hc * 1.2, `${fmt(90 - theta, 1)}°`, 'TRACAGE', 'c');
-    tr.cote([Re + 0.35 * Re, 0], [Re + 0.35 * Re, trusquin.extrados], -2 * hc, fmt(trusquin.extrados), hc);
-    tr.ligne([Re * Math.cos(t), trusquin.extrados], [Re + 0.4 * Re, trusquin.extrados], 'COTES');
-    tr.cote([-0.25 * Re, 0], [-0.25 * Re, trusquin.intrados], 2 * hc, fmt(trusquin.intrados), hc);
-    tr.ligne([-0.3 * Re, trusquin.intrados], [Ri * Math.cos(t), trusquin.intrados], 'COTES');
-    tr.texte(Re * 0.55, -hc * 3.2, hc, 'hauteurs à reporter au trusquin, coude posé sur sa face', 'TEXTE', 'c');
-
-    // ---- Vue de dessus (le 90°) et vue isométrique, en 3D
-    const d1 = [0, s * Math.cos(t), v * Math.sin(t)], d2 = [0, s, 0];
-    const IP2b = mul(d1, k);
-    const Lt = Math.max(2 * de, 1.2 * R);
-    const sommets = [[-(R + Lt), 0, 0], [0, 0, 0], IP2b, add(IP2b, mul(d2, e2 + Lt))];
-    const axe3 = axeAvecCoudes(sommets, R);
-    const vue3 = proj => { const d = Dessin.creer(); const a2 = axe3.map(proj); const [g1, g2] = parois(a2, de); d.polyligne(g1, 'DECOUPE'); d.polyligne(g2, 'DECOUPE'); d.polyligne(a2, 'AXES'); return d; };
-    const dessus = vue3(q => [q[0], q[1]]);
-    dessus.texte(de * 0.7, -s * de * 1.1, h, '90° vu de dessus', 'COTES');
-    const c30 = Math.cos(30 * RAD);
-    const iso = vue3(q => [(q[0] - q[1]) * c30, q[2] + (q[0] + q[1]) * 0.5]);
-
-    // ---- Bande de repérage 1:1 (rotation du coude 90° sur l'arrivée, quart de tour de la tranche)
-    const gab = Dessin.creer();
-    const Hb = Math.max(40, de * 0.4), arcIncl = theta / 360 * C;
-    gab.polyligne([[0, 0], [C, 0], [C, Hb], [0, Hb]], 'DECOUPE', true);
-    const trait = (x, txt, calque) => { gab.ligne([x, 0], [x, Hb], calque); gab.texte(x + 1.5, Hb - 7, 3.5, txt, 'TEXTE'); };
-    trait(0, 'HORIZONTALE', 'COTES'); trait(arcIncl, `ROTATION ${fmt(theta, 1)}° = ${fmt(arcIncl)}`, 'PLIAGE');
-    gab.texte(C / 2, -6, 3.5, `Ø${fmt(de)} - circonférence ${fmt(C)} - à enrouler sur le tube d'arrivée`, 'TEXTE', 'c');
-
-    return {
-      avertissements: avert,
-      resultats: {
-        inclinaison: arr(theta, 2), tranche: arr(theta, 2), chute: arr(90 - theta, 2), arcInclinaison: arr(arcIncl, 1), quartDeTour: arr(C / 4, 1),
-        hauteur: arr(dH, 1), horizontale: arr(Hz, 1), reduction90: arr(R, 1), reductionTranche: arr(e2, 1), entraxe: arr(k, 1), tube: arr(L, 1),
-        extrados: tranche.extrados, intrados: tranche.intrados, axe: tranche.axe,
-        trusquinExtrados: arr(trusquin.extrados, 1), trusquinAxe: arr(trusquin.axe, 1), trusquinIntrados: arr(trusquin.intrados, 1),
-        enAvant: arr(R, 1), virage: s > 0 ? 'gauche' : 'droite', sens: v < 0 ? 'descend' : 'monte', dosTranche: v < 0 ? 'en dessous' : 'au-dessus',
-      },
-      tranche, dessins: { vue, trusquin: tr, dessus, iso, gabarit: gab },
-    };
-  }
-
   // ---------------------------------------------------------------- Développés (triangulation)
   // Contour bas (z = 0) et contour haut (z = H). Une « bande » est une suite d'échelons (point bas, point haut) ;
   // deux échelons successifs partagent un point et forment un triangle, déplié à ses longueurs vraies.
@@ -554,5 +393,5 @@
     return { forme, titre, fibreNeutre: dims, pieces, lignesVraies, avertissements: avert, resultats: { pieces: pieces.length, aireTotale: arr(pieces.reduce((s, x) => s + x.aire, 0), 4), masseTotale: arr(pieces.reduce((s, x) => s + x.masse, 0), 2) } };
   }
 
-  return { piquage, baionnette, coudeOriente, developpe, axeAvecCoudes, coupeCoude, ErreurSaisie, fmt, _interne: { deplier, placer, dist } };
+  return { piquage, baionnette, developpe, axeAvecCoudes, coupeCoude, ErreurSaisie, fmt, _interne: { deplier, placer, dist } };
 }));

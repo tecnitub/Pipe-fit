@@ -52,7 +52,7 @@ administrateur `AtelierPDF-Setup-x.y.z.exe` (onglet **Actions** → *Artifacts* 
 
 Logiciel séparé, dans `tuyauteur/`, sous forme d'une page unique qui marche hors ligne. Il couvre le traçage des
 piquages (gabarit de coupe et gabarit du trou), les baïonnettes à coudes orientés (calcul par l'angle ou par la
-distance), les coudes orientés (coude 90° + tranche de coude) avec coudes ISO 2D, 3D ou 5D. Il fait aussi les développés rond-carré, les trémies et les
+distance) avec coudes ISO 2D, 3D ou 5D. Il fait aussi les développés rond-carré, les trémies et les
 cônes, les platines percées, la reconnaissance des brides (DN et PN à partir de l'entraxe des trous) avec l'abaque des
 longueurs de tiges, les escaliers et passerelles, et un carnet de supportage. Les exports sont un PDF imprimable (avec gabarit 1:1 sur feuilles A4 ou A3) et un DXF pour la découpe laser.
 `node tuyauteur/build.js` produit `dist/Tuyauteur.html` (également dans *Actions* → *Artifacts* → `Tuyauteur`).
