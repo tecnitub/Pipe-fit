@@ -125,3 +125,31 @@ test('supportage : support au sol et consoles sur poteaux', () => {
   assert.ok(r.masse > 0);
   assert.throws(() => Supportage.support({ de: 114.3, fixation: 'sol', hauteurAxe: 150 }), /Hauteur trop faible/);
 });
+
+test('poids : tubes, profilés, tôles comparés aux tables', () => {
+  const Poids = require('../tuyauteur/src/poids.js');
+  const kgm = o => Poids.piece({ longueur: 1000, ...o }).kgm;
+  proche(kgm({ type: 'tube', de: 114.3, ep: 3.6 }), 9.83, 0.01, 'tube Ø114,3 × 3,6');
+  proche(kgm({ type: 'tube', de: 60.3, ep: 2.9 }), 4.11, 0.01, 'tube Ø60,3 × 2,9');
+  proche(kgm({ type: 'corniere', H: 50, ep: 5 }), 3.77, 0.01, 'cornière 50 × 5');
+  proche(kgm({ type: 'corniere', H: 80, ep: 8 }), 9.63, 0.02, 'cornière 80 × 8');
+  proche(kgm({ type: 'tubeRect', H: 100, B: 100, ep: 5 }), 14.4, 0.05, 'tube carré 100 × 5');
+  proche(kgm({ type: 'tubeRect', H: 80, B: 40, ep: 3 }), 5.19, 0.05, 'tube rectangulaire 80 × 40 × 3');
+  proche(kgm({ type: 'plat', H: 50, ep: 10 }), 3.925, 0.001);
+  proche(kgm({ type: 'rond', de: 20 }), 2.47, 0.01);
+  assert.strictEqual(kgm({ type: 'HEA', taille: 200 }), 42.3);
+  // Autres matières au prorata de la masse volumique
+  proche(kgm({ type: 'plat', H: 50, ep: 10, matiere: 'alu' }), 3.925 * 2.70 / 7.85, 0.001);
+  // Tôle : 10 mm d'acier = 78,5 kg/m² ; quantité
+  const t = Poids.piece({ type: 'tole', L: 2000, l: 1000, epaisseur: 10, quantite: 3 });
+  assert.strictEqual(t.kgm2, 78.5); assert.strictEqual(t.unitaire, 157); assert.strictEqual(t.total, 471);
+  // Tube plein d'eau et calorifugé
+  const s = Poids.piece({ type: 'tube', de: 114.3, ep: 3.6, longueur: 1000, contenu: 'eau', isolant: 50, rhoIsolant: 100 }).service;
+  proche(s.contenu, Math.PI * 107.1 ** 2 / 4 / 1e6 * 1000, 0.01, 'eau');
+  proche(s.isolant, Math.PI * (214.3 ** 2 - 114.3 ** 2) / 4 / 1e6 * 100, 0.01, 'calorifuge');
+  // Liste : total et sous-total par matière
+  const l = Poids.liste([t, Poids.piece({ type: 'tole', L: 1000, l: 1000, epaisseur: 2, matiere: 'inox' })]);
+  assert.strictEqual(l.total, 486.86);
+  assert.deepStrictEqual(l.parMatiere.map(m => m.matiere), ['Acier', 'Inox austénitique']);
+  assert.throws(() => Poids.piece({ type: 'tube', de: 20, ep: 12, longueur: 1000 }), /Épaisseur trop forte/);
+});

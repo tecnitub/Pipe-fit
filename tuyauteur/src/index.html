@@ -17,6 +17,7 @@
     <button role="tab" data-onglet="brides">Brides</button>
     <button role="tab" data-onglet="escalier">Escaliers</button>
     <button role="tab" data-onglet="supportage">Supportage</button>
+    <button role="tab" data-onglet="poids">Poids</button>
     <button role="tab" data-onglet="normes">Tubes et coudes</button>
   </nav>
 </header>
@@ -287,6 +288,65 @@
   <div class="sortie" data-sortie></div>
 </section>
 
+<!-- ======================= POIDS ======================= -->
+<section class="module" id="poids">
+  <form class="saisie" autocomplete="off">
+    <h2>Calculateur de poids</h2>
+    <fieldset><legend>Pièce</legend>
+      <label>Type
+        <select name="type">
+          <option value="tube">Tube rond</option>
+          <option value="tubeRect">Tube carré / rectangulaire</option>
+          <option value="corniere">Cornière</option>
+          <option value="IPE">IPE</option><option value="HEA">HEA</option><option value="HEB">HEB</option><option value="UPN">UPN</option>
+          <option value="plat">Fer plat</option>
+          <option value="rond">Rond plein</option>
+          <option value="carre">Carré plein</option>
+          <option value="tole">Tôle</option>
+          <option value="disque">Disque / bride pleine</option>
+          <option value="virole">Virole</option>
+        </select>
+      </label>
+      <label>Matière<select name="matiere"><option value="acier">Acier (7,85)</option><option value="inox">Inox (7,93)</option><option value="galva">Acier galvanisé (7,85)</option><option value="alu">Aluminium (2,70)</option><option value="cuivre">Cuivre (8,96)</option><option value="laiton">Laiton (8,50)</option><option value="fonte">Fonte (7,20)</option></select></label>
+      <div data-si="type=tube"><div class="tube" data-prefixe="pd" data-dn="100"></div></div>
+      <label data-si="type=IPE|HEA|HEB|UPN">Taille<select name="taille"></select></label>
+      <div class="deux" data-si="type=tubeRect|corniere|plat|carre">
+        <label><span data-si="type=tubeRect">Hauteur (mm)</span><span data-si="type=corniere">Aile A (mm)</span><span data-si="type=plat">Largeur (mm)</span><span data-si="type=carre">Côté (mm)</span><input name="H" type="number" step="0.5" min="0" value="60"></label>
+        <label data-si="type=tubeRect|corniere"><span data-si="type=tubeRect">Largeur (mm)</span><span data-si="type=corniere">Aile B (vide = égale)</span><input name="B" type="number" step="0.5" min="0" value="60"></label>
+      </div>
+      <label data-si="type=tubeRect|corniere|plat">Épaisseur (mm)<input name="epProfil" type="number" step="0.5" min="0" value="4"></label>
+      <label data-si="type=rond">Ø (mm)<input name="dRond" type="number" step="0.5" min="0" value="20"></label>
+      <div class="deux" data-si="type=tole">
+        <label>Longueur (mm)<input name="L" type="number" step="1" min="0" value="2000"></label>
+        <label>Largeur (mm)<input name="l" type="number" step="1" min="0" value="1000"></label>
+      </div>
+      <div class="deux" data-si="type=disque|virole">
+        <label>Ø extérieur (mm)<input name="D" type="number" step="1" min="0" value="500"></label>
+        <label data-si="type=disque">Trou central Ø (mm)<input name="dInt" type="number" step="1" min="0" value="0"></label>
+        <label data-si="type=virole">Hauteur (mm)<input name="hauteur" type="number" step="1" min="0" value="1000"></label>
+      </div>
+      <label data-si="type=tole|disque|virole">Épaisseur (mm)<input name="epaisseur" type="number" step="0.5" min="0" value="10"></label>
+      <div class="deux">
+        <label data-si="type=tube|tubeRect|corniere|IPE|HEA|HEB|UPN|plat|rond|carre">Longueur (mm)<input name="longueur" type="number" step="1" min="0" value="6000"></label>
+        <label>Quantité<input name="quantite" type="number" step="1" min="1" value="1"></label>
+      </div>
+    </fieldset>
+    <fieldset data-si="type=tube"><legend>Tube en service (supportage)</legend>
+      <label>Contenu<select name="contenu"><option value="vide">vide</option><option value="eau">plein d'eau</option><option value="autre">autre fluide…</option></select></label>
+      <label data-si="contenu=autre">Densité du fluide<input name="densite" type="number" step="0.01" min="0" value="0.9"></label>
+      <div class="deux">
+        <label>Calorifuge (mm)<input name="isolant" type="number" step="5" min="0" value="0"></label>
+        <label>Masse vol. isolant (kg/m³)<input name="rhoIsolant" type="number" step="5" min="0" value="100"></label>
+      </div>
+    </fieldset>
+    <div class="boutons-ligne" data-hors-saisie>
+      <button type="button" class="principal" data-poids-ajout>Ajouter à la liste</button>
+      <button type="button" class="discret" data-poids-vider>Vider la liste</button>
+    </div>
+  </form>
+  <div class="sortie" data-sortie></div>
+</section>
+
 <!-- ======================= NORMES ======================= -->
 <section class="module" id="normes">
   <div class="sortie pleine">
@@ -321,6 +381,7 @@
 <script src="brides.js"></script>
 <script src="escalier.js"></script>
 <script src="supportage.js"></script>
+<script src="poids.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

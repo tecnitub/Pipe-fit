@@ -510,6 +510,73 @@
     });
   });
 
+  // ------------------------------------------------------------ Calculateur de poids
+  memo.poidsListe = Array.isArray(memo.poidsListe) ? memo.poidsListe : [];
+  const paramsPoids = (v, ctx) => {
+    const t = ctx ? ctx.tubes.pd.lire() : { de: +v.pd_de, ep: +v.pd_ep };
+    return { ...v, de: v.type === 'rond' ? v.dRond : t.de, ep: v.type === 'tube' ? t.ep : v.epProfil };
+  };
+  const kg = x => `${fmt(x, 2)} kg`;
+  module('poids', (v, ctx) => {
+    const cour = Poids.piece(paramsPoids(v, ctx));
+    const lignes = memo.poidsListe.map(l => { try { return Poids.piece(l); } catch (e) { return null; } }).filter(Boolean);
+    const tot = Poids.liste(lignes);
+    const tableau = lignes.length ? `<h3>Liste (${lignes.length} ligne${lignes.length > 1 ? 's' : ''}) : ${kg(tot.total)}</h3><div class="tableau-defile"><table class="table carnet"><thead><tr><th>Désignation</th><th>Matière</th><th>Qté</th><th>Unitaire</th><th>Total</th><th></th></tr></thead><tbody>${lignes.map((l, i) => `<tr><td style="text-align:left;white-space:normal">${esc(l.designation)}</td><td>${esc(l.matiere)}</td><td>${l.quantite}</td><td>${kg(l.unitaire)}</td><td>${kg(l.total)}</td><td><div class="boutons"><button type="button" data-poids-suppr="${i}">×</button></div></td></tr>`).join('')}</tbody></table></div>` : '<p class="aide">La liste est vide : régler une pièce à gauche puis « Ajouter à la liste ».</p>';
+    const res = [
+      ['Masse de la pièce', kg(cour.unitaire), true],
+      ...(cour.quantite > 1 ? [[`Masse × ${cour.quantite}`, kg(cour.total), true]] : []),
+      ...(cour.kgm != null ? [['Masse linéique', `${fmt(cour.kgm, 2)} kg/m`]] : []),
+      ...(cour.kgm2 != null ? [['Masse surfacique', `${fmt(cour.kgm2, 2)} kg/m²`]] : []),
+      ...(cour.service ? [['En service (tube + contenu + calorifuge)', `${fmt(cour.service.total, 2)} kg/m`, true], ['Contenu / calorifuge', `${fmt(cour.service.contenu, 2)} / ${fmt(cour.service.isolant, 2)} kg/m`]] : []),
+      ...(cour.detail ? [['Détail', cour.detail]] : []),
+    ];
+    const lignesTab = lignes.map(l => [l.designation, l.matiere, l.quantite, l.kgm != null ? fmt(l.kgm, 2) : `${fmt(l.kgm2, 2)} /m²`, fmt(l.unitaire, 2), fmt(l.total, 2)]);
+    return {
+      html: tableau,
+      libellePDF: lignes.length ? `PDF de la liste (${lignes.length})` : 'PDF de la pièce',
+      dxf: false,
+      pdf: { titre: `Poids : ${cour.designation}`, infos: [['Matière', cour.matiere], ['Quantité', String(cour.quantite)]], pied: 'Calculateur de poids' },
+      export: {
+        pdf: { titre: lignes.length ? `Liste de poids : ${fmt(tot.total, 1)} kg` : `Poids : ${cour.designation}`, sousTitre: 'Masses théoriques, tolérances de laminage non comprises', infos: [['Lignes', String(Math.max(1, lignes.length))]], pied: 'Calculateur de poids' },
+        resultats: lignes.length ? [['Masse totale', kg(tot.total)], ...tot.parMatiere.map(m => [m.matiere, kg(m.kg)])] : res.map(([a, b]) => [a, b]),
+        avertissements: [],
+        tableaux: lignes.length ? [{ titre: 'Liste des pièces', colonnes: ['Désignation', 'Matière', 'Qté', 'kg/m', 'Unitaire kg', 'Total kg'], lignes: [...lignesTab, ['Total', '', '', '', '', fmt(tot.total, 2)]] }] : [],
+        dessins: [],
+      },
+      avertissements: [],
+      resultats: res,
+      dessins: [],
+      tableaux: [],
+    };
+  }, ctx => {
+    const sel = $('[name=taille]', ctx.form), type = $('[name=type]', ctx.form);
+    const tailles = () => {
+      const t = Poids.POUTRELLES[type.value];
+      if (!t) return;
+      const ancien = sel.value;
+      sel.innerHTML = Object.keys(t).map(k => `<option value="${k}">${type.value} ${k}</option>`).join('');
+      sel.value = t[ancien] ? ancien : Object.keys(t)[Math.min(5, Object.keys(t).length - 1)];
+    };
+    type.addEventListener('change', tailles);
+    tailles();
+    ctx.form.addEventListener('click', e => {
+      if (e.target.closest('[data-poids-ajout]')) {
+        const vals = paramsPoids(valeurs(ctx.form), ctx);
+        try { Poids.piece(vals); } catch (err) { annoncer(err.message, true); return; }
+        memo.poidsListe.push(vals); sauver(); ctx.maj(); annoncer('Pièce ajoutée à la liste.');
+      } else if (e.target.closest('[data-poids-vider]')) {
+        const b = e.target.closest('[data-poids-vider]');
+        if (!memo.poidsListe.length) return;
+        if (b.dataset.confirme) { memo.poidsListe = []; sauver(); ctx.maj(); delete b.dataset.confirme; b.textContent = 'Vider la liste'; }
+        else { b.dataset.confirme = '1'; b.textContent = 'Confirmer : vider ?'; setTimeout(() => { delete b.dataset.confirme; b.textContent = 'Vider la liste'; }, 4000); }
+      }
+    });
+    ctx.section.addEventListener('click', e => {
+      const s = e.target.closest('[data-poids-suppr]');
+      if (s) { memo.poidsListe.splice(+s.dataset.poidsSuppr, 1); sauver(); ctx.maj(); }
+    });
+  });
+
   // ------------------------------------------------------------ Table des normes
   $('[data-table-normes]').innerHTML = `<thead><tr><th>DN</th><th>Ø ext. (mm)</th><th>Épaisseurs usuelles (mm)</th><th>Coude 2D R</th><th>Coude 3D R</th><th>Coude 5D R</th><th>Développé π×Ø</th></tr></thead><tbody>${Normes.TUBES.map(t => `<tr><td>${t.dn}</td><td>${fmt(t.de)}</td><td>${t.epaisseurs.map(e => fmt(e)).join(' - ')}</td><td>${t.r2D ?? '-'}</td><td>${t.r3D ?? '-'}</td><td>${t.r5D}</td><td>${fmt(Math.PI * t.de)}</td></tr>`).join('')}</tbody>`;
 

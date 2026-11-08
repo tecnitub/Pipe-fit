@@ -101,3 +101,8 @@ svg.apercu { display: block; width: 100%; height: auto; max-height: 520px; }
 #annonce.erreur-annonce { background: var(--erreur); }
 button.danger { background: var(--erreur); border-color: var(--erreur); color: #fff; }
 .table td.texte { text-align: left; white-space: normal; min-width: 220px; }
+/* Poids : la pièce en cours d'abord, la liste ensuite */
+#poids .sortie { display: flex; flex-direction: column; }
+#poids .extra { order: 1; margin: 14px 0 0; }
+#poids .exports { order: 2; }
+#poids .tableaux { order: 3; }

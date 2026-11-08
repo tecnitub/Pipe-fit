@@ -106,6 +106,18 @@ navigateur), puis on peut les modifier, les copier ou les supprimer.
 Les tailles d'étriers, de colliers et de chevilles sont indicatives. Les supports ne sont pas calculés en
 résistance : il faut les valider selon les charges.
 
+### Poids
+Masse des tubes ronds (DN ISO ou Ø libre), tubes carrés et rectangulaires, cornières, IPE, HEA, HEB, UPN, fers plats,
+ronds et carrés pleins, tôles, disques (brides pleines) et viroles. Matières : acier, inox, galvanisé, aluminium,
+cuivre, laiton, fonte.
+- Résultats : masse linéique (kg/m) ou surfacique (kg/m²), masse de la pièce, masse × quantité.
+- Pour les tubes, masse **en service** pour le supportage : tube + contenu (eau ou fluide de densité donnée) +
+  calorifuge.
+- **Liste de pièces** : on ajoute les pièces une à une, le logiciel donne le total et le sous-total par matière, et
+  le PDF de la liste.
+- Sources : tables EN 10365 pour les poutrelles et les UPN ; sections EN 10056-1 (cornières) et EN 10219-2 (tubes
+  carrés et rectangulaires) calculées avec les rayons d'angle. Masses théoriques, sans tolérances de laminage.
+
 ### Tubes et coudes
 Table des diamètres extérieurs ISO 4200 / EN 10220 (série 1, identiques à ISO 1127 en inox), des épaisseurs usuelles
 et des rayons de coudes EN 10253-2 / ISO 3419 : 2D, 3D (R ≈ 1,5 × DN) et 5D (R = 2,5 × Ø). Les épaisseurs sont
@@ -131,6 +143,7 @@ tuyauteur/src/platine.js    platines percées
 tuyauteur/src/brides.js     brides EN 1092-1 / ASME B16.5 : reconnaissance, boulonnerie, abaque
 tuyauteur/src/escalier.js   escaliers et passerelles
 tuyauteur/src/supportage.js supports de tuyauterie
+tuyauteur/src/poids.js      calculateur de poids
 tuyauteur/src/app.js        interface
 tuyauteur/build.js          assemble dist/Tuyauteur.html
 test/tuyauteur*.test.js     tests : résultats comparés aux formules (npm test)
