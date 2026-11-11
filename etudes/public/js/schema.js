@@ -526,6 +526,9 @@ const Schema = ((D, C, N) => {
       if (d.ppDeportees) { pt(`P${G}${i}`, `Commande de la pompe primaire ${i}`, 'STOR', 'Post-circulation 5 min'); pt(`P${G}${i}`, `Défaut de la pompe primaire ${i}`, 'ETOR'); }
       else if (d.n > 1) { pt(`VM${i}`, `Vanne d'isolement motorisée du générateur ${i}`, 'STOR'); pt(`VM${i}`, `Fin de course de la vanne ${i}`, 'ETOR'); }
     }
+    if (avecEchangeur(e) && e.pompeEchPrim === 'ajouter') af.push('Pompe primaire de l\'échangeur : en marche sur demande de chaleur (ou de froid), retour de marche contrôlé, post-circulation 3 min ; la vanne primaire de l\'échangeur régule la température de départ secondaire.');
+    if (avecEchangeur(e) && e.pompeEchSec === 'ajouter') af.push('Pompe secondaire de l\'échangeur : à vitesse variable sur la pression différentielle du réseau secondaire, en marche dès qu\'un circuit est en demande ; défaut variateur reporté.');
+    if (avecEchangeur(e) && [e.pompeEchPrim, e.pompeEchSec].includes('existante')) af.push('Pompe existante reliée à l\'échangeur : son autorisation de marche est asservie à la demande de l\'échangeur (contact sec ou ordre par la GTB) ; vérifier sa régulation existante.');
     if (d.ppIntegree) af.push('Pompe primaire intégrée au générateur : commandée par sa propre régulation (marche, post-circulation, protection antigel) ; l\'automate autorise le générateur et lit son état et ses défauts.');
     if (d.ppDeportees) af.push(`Pompes primaires asservies à leur générateur, avec post-circulation de 5 min à l'arrêt${d.bouteille && /cond|pac/.test(g(e)) ? ' ; vitesse variable pour limiter le débit primaire et garder un retour froid' : ''}.`);
     if (!d.pompesInd && d.n > 1) { af.push('Vannes d\'isolement motorisées : ouverture avant le démarrage du générateur, fermeture après sa post-circulation ; un générateur à l\'arrêt n\'est pas irrigué.'); if (d.bouteille) { pt('PP', 'Commande de la pompe primaire commune', 'STOR'); pt('PP', 'Défaut de la pompe primaire commune', 'ETOR'); pt('PP', 'Vitesse de la pompe primaire commune', 'SA'); } }
@@ -574,6 +577,11 @@ const Schema = ((D, C, N) => {
 
   /* ---------- Type de note ---------- */
   const optListe = t => Object.entries(t).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v]);
+  const avecEchangeur = e => e.bouteille === 'echangeur' || /^echangeur/.test(e.generateur || '');
+  // Pompes existantes de l'étude : réseaux et pompes, réseaux arborescents (pompe du réseau), circuits des schémas
+  const optPompesEtude = (e, et, v) => [['', '—'], ...(et ? (et.notes || []).map((n, i) => [n, i]).flatMap(([n, i]) => n.type === 'reseau' ? [[`reseau|${n.id}`, `N${i + 1} — ${n.titre}`]]
+    : n.type === 'arbo' ? [[`arbo|${n.id}`, `N${i + 1} — pompe de ${n.titre}`]]
+      : n.type === 'pid' ? ((n.entrees || {}).circuits || []).filter(c => c && c.rep).map(c => [`pid|${n.id}|${c.rep}`, `N${i + 1} — pompe du circuit ${c.rep}`]) : []) : v ? [[v, v]] : [])];
   N.TYPES.pid = {
     titre: 'Schéma de principe hydraulique (P&ID) eau chaude / eau glacée', icone: '🗺️', famille: 'Schémas',
     description: 'Production (un générateur ou une cascade), bouteille de découplage ou non, collecteurs et circuits vers les émetteurs : schéma dessiné automatiquement, débits, diamètres, pompes, vannes et bouteille dimensionnés.',
@@ -594,6 +602,11 @@ const Schema = ((D, C, N) => {
       { k: 'pompesPrim', l: 'Pompes de la cascade', t: 's', o: [['individuelles', 'Une pompe et un clapet par générateur'], ['commune', 'Pompe primaire commune et vannes motorisées']], d: 'individuelles', si: e => num(e.nGen, 1) > 1 },
       { k: 'tichelmann', l: 'Raccordement des générateurs', t: 's', o: [['non', 'Direct'], ['oui', 'En Tichelmann (retour inversé)']], d: 'non', si: e => num(e.nGen, 1) > 1 },
       { k: 'bouteille', l: 'Découplage production / distribution', t: 's', o: [['oui', 'Bouteille de découplage (4 piquages)'], ['bouteille3', 'Bouteille de découplage 3 piquages (retour commun)'], ['ballon', 'Ballon tampon de découplage (à la place de la bouteille)'], ['echangeur', 'Échangeur à plaques (circuits séparés)'], ['non', 'Aucun (raccordement direct)']], d: 'oui' },
+      // Échangeur (sous-station ou découplage) : pompes primaire et secondaire ajoutées, ou pompe existante d'un réseau reliée
+      { k: 'pompeEchPrim', l: 'Pompe primaire de l\'échangeur', t: 's', o: [['', 'Selon le montage (pompes des générateurs ; sous-station : pression du réseau primaire)'], ['ajouter', 'Pompe primaire à ajouter (à notre charge)'], ['existante', 'Pompe existante d\'un réseau (reliée)']], d: '', si: avecEchangeur },
+      { k: 'pompeEchPrimLien', l: 'Pompe existante côté primaire', t: 's', o: (e, et) => optPompesEtude(e, et, e.pompeEchPrimLien), d: '', si: e => avecEchangeur(e) && e.pompeEchPrim === 'existante' },
+      { k: 'pompeEchSec', l: 'Pompe secondaire de l\'échangeur', t: 's', o: [['', 'Pompes des circuits (pas de pompe secondaire générale)'], ['ajouter', 'Pompe secondaire à ajouter (à notre charge)'], ['existante', 'Pompe existante d\'un réseau (reliée)']], d: '', si: avecEchangeur },
+      { k: 'pompeEchSecLien', l: 'Pompe existante côté secondaire', t: 's', o: (e, et) => optPompesEtude(e, et, e.pompeEchSecLien), d: '', si: e => avecEchangeur(e) && e.pompeEchSec === 'existante' },
       { k: 'pincement', l: 'Pincement de l\'échangeur', u: 'K', d: 3, si: e => e.bouteille === 'echangeur' },
       { k: 'tampon', l: 'Ballon tampon en série', t: 's', o: [['non', 'Sans'], ['oui', 'Sur le retour (avant les générateurs)'], ['depart', 'Sur le départ (après les générateurs)']], d: 'non', si: e => e.bouteille !== 'ballon' },
       { k: 'ratioTampon', l: 'Volume d\'eau minimal exigé par le constructeur', u: 'L/kW', d: 10, si: e => ['oui', 'depart'].includes(e.tampon) || e.bouteille === 'ballon' },
@@ -649,6 +662,19 @@ const Schema = ((D, C, N) => {
       const d = dimensionner(e), alertes = [...d.alertes], vol = volumeEau(d, e.generateur), dr = d.co ? d.co.dC : d;
       if (!alertes.some(a => a.niveau === 'erreur')) alertes.unshift(alerte('ok', `${d.n > 1 ? `Cascade de ${d.n} × ${nf(d.Pg, 0)} kW` : `Générateur de ${nf(d.Pg, 0)} kW`} pour ${nf(d.Pdem, 0)} kW de besoins ; débit primaire ${nf(d.Qp, 2)} m³/h, secondaire ${nf(d.Qs, 2)} m³/h${d.bouteille && d.tb ? `, bouteille ${d.tb.nom}` : ''}.`));
       const cc = courbeChauffe(dr, e);
+      // Pompes de l'échangeur : débits à assurer ; pompe existante reliée : contrôle de son débit (lien de l'étude)
+      if (avecEchangeur(e)) {
+        const Qprim = d.echangeur ? (d.Qech || d.Qp) : d.Qp, Qsec = d.Qs;
+        if (e.pompeEchPrim === 'ajouter') alertes.push(alerte('ok', `Pompe primaire de l'échangeur à ajouter : ${nf(Qprim, 2)} m³/h (hauteur : échangeur côté primaire + liaison${/^echangeur/.test(e.generateur || '') ? ' + vannes de la sous-station' : ''}).`));
+        if (e.pompeEchSec === 'ajouter') alertes.push(alerte('ok', `Pompe secondaire de l'échangeur à ajouter : ${nf(Qsec, 2)} m³/h (débit appelé par les circuits) ; les circuits gardent leur pompe s'ils en ont besoin.`));
+        [['pompeEchPrim', 'pompeEchPrimLien', 'primaire', Qprim], ['pompeEchSec', 'pompeEchSecLien', 'secondaire', Qsec]].forEach(([k, kl, cote, Q]) => {
+          if (e[k] !== 'existante') return;
+          if (!e[kl]) { alertes.push(alerte('attention', `Pompe ${cote} de l'échangeur : choisissez la pompe existante reliée.`)); return; }
+          const q = num(e[`${kl}Q`], NaN);
+          if (Number.isFinite(q) && q > 0) alertes.push(alerte(q < Q * 0.95 ? 'erreur' : 'ok', `Pompe ${cote} de l'échangeur : pompe existante « ${e[`${kl}Nom`] || ''} » ${nf(q, 2)} m³/h pour ${nf(Q, 2)} m³/h nécessaires${q < Q * 0.95 ? ' — débit insuffisant' : ''}.`));
+          else alertes.push(alerte('attention', `Pompe ${cote} de l'échangeur : pompe existante « ${e[`${kl}Nom`] || e[kl]} » reliée — vérifier qu'elle assure ${nf(Q, 2)} m³/h.`));
+        });
+      }
       // Récupération d'énergie : chaleur rejetée = froid produit × (1 + 1 / EER) ; part récupérée selon le montage
       const froidGen = (GENERATEURS[e.generateur] || [])[1] !== 'chaud' && /^(gf|pac-rev)/.test(e.generateur || ''), Pfr = d.co ? d.co.dF.Pdem : d.chaud ? 0 : d.Pdem;
       const Precup = froidGen && e.recupGf && Pfr > 0 ? Math.round(Pfr * (1 + 1 / Math.max(1.5, num(e.eerRecup, 3.5))) * (e.recupGf === 'totale' ? 1 : 0.15) * 10) / 10 : 0;

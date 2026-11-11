@@ -147,3 +147,15 @@ test('pompes du groupe froid : primaire et récupération intégrées ou déport
   assert.deepStrictEqual(reps('integree', ''), ['PREC', 'VREC']);
   assert.deepStrictEqual(reps('integree', 'integree'), ['VREC']);
 });
+
+test('échangeur : pompe primaire / secondaire ajoutée ou pompe existante d\'un réseau reliée', () => {
+  const E = require('../etudes/public/js/electricite');
+  const res = { id: 'r', type: 'reseau', titre: 'Boucle primaire', entrees: N.defauts('reseau') };
+  const ss = { id: 's', type: 'pid', titre: 'Sous-station', entrees: { ...N.defauts('pid'), generateur: 'echangeur', nGen: '1', Pgen: 200, pompeEchPrim: 'existante', pompeEchPrimLien: 'reseau|r', pompeEchSec: 'ajouter' } };
+  const et = { notes: [res, ss] };
+  const r = L.calculer(et, ss);
+  assert.ok(r.alertes.some(a => /pompe existante « Boucle primaire »/.test(a.texte)));
+  const eqs = E.equipementsEtude(et, L).map(x => x.rep);
+  assert.ok(eqs.includes('PECH2')); assert.ok(!eqs.includes('PECH1'));
+  assert.ok(eqs.includes('P-N1'), 'la pompe existante reste comptée avec son réseau');
+});

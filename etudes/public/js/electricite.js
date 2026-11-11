@@ -1102,6 +1102,12 @@ const Electricite = ((N, Sc) => {
           ajout('fqn', { rep: 'FT-N', designation: 'Contrôleur de débit de l\'eau de nappe', type: 'securite', P: 0, tension: '24V', regulation: 'securite' });
           ajout('tn', { rep: 'TN', designation: 'Sonde de température de l\'eau de nappe (entrée échangeur)', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
         }
+        // Échangeur : pompes primaire et secondaire ajoutées (une pompe existante reliée est comptée avec son réseau)
+        if (es.bouteille === 'echangeur' || /^echangeur/.test(es.generateur || '')) {
+          const Qpr = d.echangeur ? (d.Qech || d.Qp) : d.Qp, pe = Q => Math.max(0.05, Math.round(Q * 8 / 367 / 0.45 * 100) / 100);
+          if (es.pompeEchPrim === 'ajouter') ajout('pech1', { rep: 'PECH1', designation: `Pompe primaire de l'échangeur (${nf(Qpr, 1)} m³/h)`, type: 'pompe', P: pe(Qpr), tension: Qpr > 25 ? 'tri' : 'mono', regulation: 'torRetour', alim: es.alimProd || '' });
+          if (es.pompeEchSec === 'ajouter') ajout('pech2', { rep: 'PECH2', designation: `Pompe secondaire de l'échangeur (${nf(d.Qs, 1)} m³/h)`, type: 'pompe', P: pe(d.Qs), tension: d.Qs > 25 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur', alim: es.alimProd || '' });
+        }
         // Récupération d'énergie sur le groupe froid : pompe du circuit de récupération, vanne de basculement récupération /
         // rejet, sondes départ et retour de l'eau récupérée, compteur d'énergie récupérée
         if (es.recupGf && num(v.Precup) > 0) {

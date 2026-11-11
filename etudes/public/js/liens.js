@@ -199,6 +199,18 @@ const Liens = ((N, Sc) => {
       const el = notes.find(n => n.type === 'elec');
       if (el) { const g = gtbPid((el.entrees || {}).gtb || (N.TYPES.elec ? N.defauts('elec').gtb : '')); if (g) imposer({ gtb: g }, libelle(el)); }
     }
+    // Échangeur du schéma : pompe existante d'un réseau reliée côté primaire ou secondaire (débit et nom repris)
+    if (t === 'pid') ['pompeEchPrimLien', 'pompeEchSecLien'].forEach(k => {
+      if (!e[k] || e[k.replace('Lien', '')] !== 'existante') return;
+      const [ty, id, rep] = String(e[k]).split('|'), src = notes.find(n => n.id === id);
+      if (!src || src === note || pile.has(src.id)) { if (!src) alertes.push({ niveau: 'attention', texte: 'La pompe existante reliée à l\'échangeur a été supprimée.' }); return; }
+      try {
+        const v = N.calculer(src.type, resoudre(etude, src, pile).entrees).valeurs || {};
+        const q = ty === 'pid' ? ((v.circuits || []).find(c => c.rep === rep) || {}).Q : ty === 'arbo' ? v.Qp : v.Qpompe;
+        e[`${k}Nom`] = ty === 'pid' ? `${src.titre} — circuit ${rep}` : src.titre;
+        if (Number.isFinite(q)) e[`${k}Q`] = Math.round(q * 100) / 100;
+      } catch (err) { /* calcul relié incomplet */ }
+    });
     // 4. Production d'ECS : puissance et régime du primaire repris du circuit du schéma de principe
     if (t === 'ecs' && e.circuitPrim) {
       const [id, rep] = String(e.circuitPrim).split('|'), src = notes.find(n => n.id === id && n.type === 'pid');
