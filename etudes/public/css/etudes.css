@@ -181,3 +181,9 @@ ul.af { padding-left: 18px; font-size: 13.5px; display: grid; gap: 6px; }
 .inst-libre { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--bord); overflow-wrap: anywhere; }
 .inst-raccord { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; max-width: 100%; }
 .inst-raccord select { max-width: min(420px, 100%); }
+/* Schéma aval (sous-station, boucle secondaire) imbriqué sous le circuit qui l'alimente */
+.inst-aval { margin: .4em 0; padding: 6px 0 2px 10px; border-left: 3px solid var(--bleu, #2f6fb3); }
+.inst-aval > summary { cursor: pointer; font-weight: 600; }
+.badge.ok { background: var(--ok-fond); color: var(--ok-texte); }
+.inst-global td { vertical-align: top; overflow-wrap: anywhere; }
+.inst-global td:first-child { min-width: 200px; }

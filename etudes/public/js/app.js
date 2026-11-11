@@ -782,11 +782,24 @@ function appliquerFiche(et, n, lignesTexte, nomFichier) {
 // ou nouveau, nommé comme le réseau) ; une fois relié, renommer le réseau renomme son circuit dans le schéma
 function placerSchemaHtml(et, n) {
   if (n.type === 'cta') return batteriesCtaHtml(et, n);
+  if (n.type === 'pid') return placerSousStationHtml(et, n);
   if (!['arbo', 'reseau'].includes(n.type) || n.lien || Liens.circuitDeAnnexe(et.notes, n)) return '';
   const pids = et.notes.map((x, i) => [x, i]).filter(([x]) => x.type === 'pid');
   const opts = pids.map(([p, i]) => `<optgroup label="Schéma de principe N${i + 1} — ${esc(p.titre)}"><option value="${p.id}|-1">➕ Nouveau circuit « ${esc(n.titre)} »</option>${((p.entrees || {}).circuits || []).map((c, k) => [c, k]).filter(([c]) => !c.annexe).map(([c, k]) => `<option value="${p.id}|${k}">Circuit existant : ${esc(c.rep || `C${k + 1}`)}</option>`).join('')}</optgroup>`).join('');
   return `<div class="bandeau-lien">🧭 Ce réseau n'apparaît pas encore dans le schéma de principe. ${opts ? `<select id="schema-circuit" aria-label="Circuit du schéma de principe">${opts}</select> <button class="secondaire petit" id="schema-relier">Placer dans le schéma</button>` : '<button class="secondaire petit" id="schema-creer">Créer le schéma de principe avec ce circuit</button>'}
     <span class="muted petit">Le circuit porte le nom du réseau (renommer le réseau le renomme dans le schéma) ; puissance et pertes de charge remontent au circuit.</span></div>`;
+}
+// Schéma de principe à échangeur (sous-station) ou sur boucle d'eau tempérée, pas encore alimenté : le relier au circuit
+// d'un autre schéma (existant ou nouveau) — puissance et pertes de charge côté primaire remontent, régime et pression
+// disponible redescendent
+function placerSousStationHtml(et, n) {
+  if (Liens.circuitDeAnnexe(et.notes, n)) return '';
+  let e; try { e = Liens.resoudre(et, n).entrees; } catch (err) { e = n.entrees || {}; }
+  if (!Schema.sousStation(e) && !Schema.sourceBoucle(e)) return '';
+  const aval = Liens.schemasAval(et.notes, n), pids = et.notes.map((x, i) => [x, i]).filter(([x]) => x.type === 'pid' && x.id !== n.id && !aval.has(x.id));
+  const opts = pids.map(([p, i]) => `<optgroup label="Schéma de principe N${i + 1} — ${esc(p.titre)}"><option value="${p.id}|-1">➕ Nouveau circuit « ${esc(n.titre)} »</option>${((p.entrees || {}).circuits || []).map((c, k) => [c, k]).filter(([c]) => !c.annexe).map(([c, k]) => `<option value="${p.id}|${k}">Circuit existant : ${esc(c.rep || `C${k + 1}`)}</option>`).join('')}</optgroup>`).join('');
+  return `<div class="bandeau-lien">🧭 ${Schema.sousStation(e) ? 'Sous-station' : 'Boucle d\'eau tempérée'} non reliée : quel circuit l'alimente ? ${opts ? `<select id="schema-circuit" aria-label="Circuit amont">${opts}</select> <button class="secondaire petit" id="schema-relier">Relier au circuit amont</button>` : '<button class="secondaire petit" id="schema-creer">Créer le schéma amont (chaufferie, réseau primaire) avec ce circuit</button>'}
+    <span class="muted petit">Le circuit amont reprend la puissance appelée (simultanéité comprise) et les pertes de charge côté primaire ; ce schéma reprend le régime primaire, le fluide et la pression disponible.</span></div>`;
 }
 // CTA : chaque batterie à eau raccordée à son réseau — branche du réseau arborescent chaud (batterie chaude) ou froid
 // (batterie froide), ou circuit du schéma de principe dont le régime la dessert
@@ -812,19 +825,36 @@ function installationHtml(et) {
   const lien = (id, txt) => `<a href="#/etude/${et.id}/${id}">${esc(txt)}</a>`;
   const val = (x, u, d = 1) => (x === null || x === undefined || !Number.isFinite(x) ? '' : `${nf(x, d)} ${u}`);
   const mesures = c => [val(c.P, 'kW'), val(c.Q, 'm³/h', 2), val(c.dp, 'kPa'), c.regime].filter(Boolean).map(esc).join(' · ');
-  const conso = c => `<span class="inst-conso">${({ circuit: '🔥', cta: '🌀', ecs: '🚿', arbo: '🌳', reseau: '🔁' })[c.type] || (c.saison === 'froid' ? '❄️' : '🌡️')} <strong>${esc(c.libelle)}</strong>
+  const conso = c => `<span class="inst-conso">${({ circuit: '🔥', cta: '🌀', ecs: '🚿', arbo: '🌳', reseau: '🔁', schema: '🏭' })[c.type] || (c.saison === 'froid' ? '❄️' : '🌡️')} <strong>${esc(c.libelle)}</strong>
     <span class="muted petit">${lien(c.source.id, c.source.libelle)}${mesures(c) ? ` · ${mesures(c)}` : ''}</span>${c.raccordements.length > 1 ? ' <span class="badge erreur">raccordé deux fois</span>' : ''}${c.raccordements.some(r => r.incompatible) ? ' <span class="badge erreur">régime incompatible</span>' : ''}</span>`;
   const reseau = r => `<li class="inst-reseau">🌳 ${lien(r.note, r.libelle)} <span class="muted petit">réseau ${r.saison === 'froid' ? 'd\'eau glacée' : 'd\'eau chaude'} · ${[val(r.P, 'kW'), val(r.Q, 'm³/h', 2), val(r.hmt, 'mCE', 2)].filter(Boolean).join(' · ')}</span>
     ${r.branches.length ? `<ul class="inst-branches">${r.branches.map(b => { const c = b.consommateur && parCle.get(b.consommateur);
       return `<li style="--niv:${Math.min(b.niveau, 6)}"><span class="muted">${esc(b.rep)}</span> ${c ? conso(c) : `${esc(b.nom)}${b.emetteur ? ' <span class="avert petit">(émetteur relié introuvable)</span>' : ''}${b.P ? ` <span class="muted petit">${val(b.P, 'kW')} saisis</span>` : ''}`}</li>`; }).join('')}</ul>` : '<p class="muted petit">Aucune branche.</p>'}</li>`;
-  const schema = s => `<details class="carte inst-pid" open><summary>🏭 ${lien(s.note, s.libelle)}</summary>
+  // Schéma de principe ; sous un circuit qui alimente un autre schéma (sous-station, boucle secondaire), le schéma aval
+  // et ses propres circuits, sur autant de niveaux que l'installation en compte
+  const schema = s => `<details class="${s.niveau ? 'inst-aval' : 'carte'} inst-pid" open><summary>🏭 ${lien(s.note, s.libelle)}${s.niveau ? ` <span class="badge">niveau ${s.niveau + 1}</span>` : ''}${s.cycle ? ' <span class="badge erreur">liens circulaires</span>' : ''}</summary>
     <p class="petit">${esc(s.nGen > 1 ? `${s.nGen} × ` : '')}${esc(s.generateur.toLowerCase())}${s.Pgen ? ` de ${nf(s.Pgen, 0)} kW` : ''} · ${esc(s.regime)}<br>
-      Production <strong>${val(s.Pprod, 'kW', 0) || '—'}</strong> · appelée <strong class="${s.Pdem > s.Pprod ? 'manque' : ''}">${val(s.Pdem, 'kW', 0) || '—'}</strong></p>
-    ${s.circuits.length ? `<ul class="inst-arbre">${s.circuits.map(c => `<li><strong>Circuit ${esc(c.rep)}</strong> <span class="muted petit">${esc(c.emetteur)} · ${esc(c.montage)}${c.regime ? ` · ${esc(c.regime)}` : ''} · ${[val(c.P, 'kW'), val(c.Q, 'm³/h', 2), val(c.hmt, 'mCE', 2)].filter(Boolean).join(' · ')}</span>
-      ${c.annexe && c.annexe.type !== 'arbo' ? `<div class="petit">Réseau annexe : ${lien(c.annexe.id, c.annexe.libelle)}</div>` : ''}
-      ${c.consommateurs.filter(k => k !== `${s.note}|${c.i}`).length ? `<ul>${c.consommateurs.filter(k => k !== `${s.note}|${c.i}`).map(k => `<li>${conso(parCle.get(k))}</li>`).join('')}</ul>`
-        : c.consommateurs.length ? '<div class="muted petit">Consommateur direct (puissance saisie dans le schéma)</div>' : ''}
-      ${c.reseau ? `<ul>${reseau(c.reseau)}</ul>` : ''}</li>`).join('')}</ul>` : '<p class="muted petit">Aucun circuit.</p>'}</details>`;
+      Production <strong>${val(s.Pprod, 'kW', 0) || '—'}</strong> · appelée <strong class="${s.Pdem > s.Pprod ? 'manque' : ''}">${val(s.Pdem, 'kW', 0) || '—'}</strong>
+      ${s.primaire ? `<br>Côté primaire (${esc(s.primaire.libelle)}${s.primaire.regime ? `, ${esc(s.primaire.regime)} °C` : ''}) : ${val(s.primaire.P, 'kW', 0)} appelés au circuit amont, ΔP ${val(s.primaire.dp, 'kPa')}${s.primaire.dispo !== null ? `, disponible <strong class="${s.primaire.dispo < s.primaire.dp ? 'manque' : ''}">${val(s.primaire.dispo, 'kPa')}</strong>` : ''}` : ''}</p>
+    ${s.circuits.length ? `<ul class="inst-arbre">${s.circuits.map(c => { const autres = c.consommateurs.filter(k => k !== `${s.note}|${c.i}` && !(c.schema && k === `${c.schema.note}:schema`));
+      return `<li><strong>Circuit ${esc(c.rep)}</strong> <span class="muted petit">${esc(c.emetteur)} · ${esc(c.montage)}${c.regime ? ` · ${esc(c.regime)}` : ''} · ${[val(c.P, 'kW'), val(c.Q, 'm³/h', 2), val(c.hmt, 'mCE', 2)].filter(Boolean).join(' · ')}</span>
+      ${c.annexe && !['arbo', 'pid'].includes(c.annexe.type) ? `<div class="petit">Réseau annexe : ${lien(c.annexe.id, c.annexe.libelle)}</div>` : ''}
+      ${c.annexe && c.annexe.type === 'pid' && !c.schema ? `<div class="petit avert">Schéma aval ${lien(c.annexe.id, c.annexe.libelle)} ignoré : liens circulaires.</div>` : ''}
+      ${autres.length ? `<ul>${autres.map(k => `<li>${conso(parCle.get(k))}</li>`).join('')}</ul>`
+        : c.consommateurs.length && !c.schema ? '<div class="muted petit">Consommateur direct (puissance saisie dans le schéma)</div>' : ''}
+      ${c.reseau ? `<ul>${reseau(c.reseau)}</ul>` : ''}${c.schema ? schema(c.schema) : ''}</li>`; }).join('')}</ul>` : '<p class="muted petit">Aucun circuit.</p>'}</details>`;
+  // Calcul hydraulique global : une ligne par pompe (sa boucle), chemin le plus défavorisé de bout en bout, débits
+  const H = A.hydraulique, ETAT_CL = { ok: 'ok', sur: 'attention', ko: 'erreur', choisir: '', integree: '', reseau: '' };
+  const globalHtml = !H || !H.boucles.length ? '' : `<div class="carte inst-global"><h3 style="margin-top:0">Calcul hydraulique global</h3>
+    <p class="muted petit">Chaque pompe ne voit que sa boucle : production, primaire de circuit, circuit avec son réseau aval (réseau arborescent jusqu'à la branche la plus défavorisée, ou côté primaire d'un schéma aval), branche à pompe placée.</p>
+    <div class="defile-x"><table class="liste compact"><thead><tr><th>Pompe / boucle</th><th>Débit (m³/h)</th><th>ΔP de la boucle (kPa)</th><th>HMT nécessaire (mCE)</th><th>Pompe retenue</th><th>État</th></tr></thead><tbody>
+      ${H.boucles.map(b => `<tr><td style="padding-left:${7 + b.niveau * 12}px"><strong>${esc(b.pompe)}</strong><br><span class="muted petit">${esc(b.boucle)}${b.autorite !== null && b.autorite !== undefined ? ` · autorité ${nf(b.autorite, 2)}` : ''}</span><br><span class="muted petit">${esc(b.detail || '')}</span></td>
+        <td>${b.Q === null ? '—' : nf(b.Q, 2)}</td><td>${b.dp === null ? '—' : nf(b.dp, 1)}</td><td>${b.hmt === null ? '—' : nf(b.hmt, 2)}</td>
+        <td>${b.retenue ? `${esc(b.retenue.ref)}${Number.isFinite(b.retenue.H) ? ` <span class="muted petit">(${nf(b.retenue.H, 2)} mCE)</span>` : ''}` : b.proposee ? `<span class="muted petit">proposée : ${esc(b.proposee)}</span>` : '—'}</td>
+        <td><span class="badge ${ETAT_CL[b.etat] || ''}">${esc(b.etatLibelle)}</span></td></tr>`).join('')}</tbody></table></div>
+    ${H.defavorise ? `<p class="petit"><strong>Chemin le plus défavorisé de bout en bout</strong> (${esc(H.defavorise.terminal)}) : ${H.defavorise.etapes.map(x => `${esc(x.libelle)}${x.dp ? ` ${nf(x.dp, 1)} kPa` : ''}`).join(' → ')} — <strong>${nf(H.defavorise.dp, 1)} kPa</strong> cumulés sur ${H.defavorise.etapes.filter(x => x.boucle !== undefined).length} boucle(s).</p>` : ''}
+    ${H.debits.length ? `<div class="defile-x"><table class="liste compact"><thead><tr><th>Schéma</th><th>Alimentation</th><th>Débit fourni (m³/h)</th><th>Débit appelé (m³/h)</th><th>Puissance (kW)</th><th>État</th></tr></thead><tbody>
+      ${H.debits.map(x => `<tr><td>${lien(x.note, x.schema)}</td><td>${esc(x.libelle)}</td><td>${nf(x.Qprod, 2)}</td><td>${nf(x.Qappel, 2)}</td><td>${nf(x.Pprod, 0)} / ${nf(x.Pdem, 0)} appelés</td><td><span class="badge ${x.etat === 'OK' ? 'ok' : 'attention'}">${esc(x.etat)}</span></td></tr>`).join('')}</tbody></table></div>` : ''}</div>`;
   const nr = A.nonRaccordes, ctl = A.controles;
   const aRaccorder = c => { const opts = c.cibles || [];
     return `<li class="inst-libre">${conso(c)}<span class="inst-raccord">${opts.length ? `<select data-inst-sel="${esc(c.cle)}" aria-label="Raccorder ${esc(c.libelle)} à"><option value="">Raccorder à…</option>${opts.map(o => `<option value="${esc(o.valeur)}">${esc(o.libelle)}</option>`).join('')}</select>
@@ -835,7 +865,8 @@ function installationHtml(et) {
     ${nr.length ? `<div class="carte"><h3 style="margin-top:0">Consommateurs non raccordés <span class="compte">${nr.length}</span></h3><ul class="inst-libres">${nr.map(aRaccorder).join('')}</ul></div>` : ''}
     <h2>Production et distribution</h2>
     ${A.schemas.length ? A.schemas.map(schema).join('') : '<p class="muted">Aucun schéma de principe dans l\'étude.</p>'}
-    ${A.reseaux.length ? `<div class="carte"><h3 style="margin-top:0">Réseaux arborescents non reliés à un schéma</h3><ul class="inst-arbre">${A.reseaux.map(reseau).join('')}</ul></div>` : ''}`;
+    ${A.reseaux.length ? `<div class="carte"><h3 style="margin-top:0">Réseaux arborescents non reliés à un schéma</h3><ul class="inst-arbre">${A.reseaux.map(reseau).join('')}</ul></div>` : ''}
+    ${globalHtml}`;
 }
 function lierInstallation(root, et) {
   root.querySelectorAll('[data-inst-raccorder]').forEach(b => b.onclick = () => {
@@ -1509,10 +1540,11 @@ Vues.note = {
       const [pidId, k] = v.split('|'), r = Liens.relierAuSchema(et, n, pidId, Number(k));
       if (!r) return;
       if (Number(k) >= 0 && n.titre.trim()) Liens.renommerCircuit(et, r.pid, r.i, n.titre);
-      enregistrer(et); App.render(); toast(`Réseau placé dans ${r.pid.titre} : circuit « ${r.pid.entrees.circuits[r.i].rep} ».`, 6000);
+      enregistrer(et); App.render(); toast(`${n.type === 'pid' ? 'Schéma relié' : 'Réseau placé'} dans ${r.pid.titre} : circuit « ${r.pid.entrees.circuits[r.i].rep} ».`, 6000);
     };
     if (sCree) sCree.onclick = () => {
       const p = nouvelleNote('pid'); p.entrees.circuits = []; et.notes.splice(et.notes.indexOf(n) + 1, 0, p);
+      if (n.type === 'pid') { p.titre = `Schéma amont — ${n.titre}`; p.entrees.titreInstallation = p.titre; }
       const r = Liens.relierAuSchema(et, n, p.id, -1); enregistrer(et); App.render();
       toast(`Schéma de principe créé avec le circuit « ${r.pid.entrees.circuits[r.i].rep} » : complétez la production.`, 6000);
     };
