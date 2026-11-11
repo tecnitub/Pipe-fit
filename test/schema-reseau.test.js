@@ -34,3 +34,20 @@ test('le réseau nommé devient un circuit du schéma, son renommage suit', () =
   assert.strictEqual(pid.entrees.circuits[0].annexe, 'a');
   assert.strictEqual(pid.entrees.circuits[1].annexe, undefined);
 });
+
+test('registre : un même équipement se place plusieurs fois (CTA, vase, ECS, générateurs)', () => {
+  require('../etudes/public/js/schema'); global.Notes = N;
+  const R = require('../etudes/public/js/registre');
+  let k = 0; const nn = t => ({ id: `n${++k}`, type: t, titre: N.TYPES[t].titre, entrees: N.defauts(t) });
+  const et = { notes: [nn('pid'), nn('cta')], equipements: [] };
+  const cta = R.ajouter(et, { type: 'cta', fabricant: 'F', reference: 'C1', valeurs: {} });
+  R.placer(et, cta, 'cta:n2', { qte: 1 }, nn); R.placer(et, cta, 'cta:n2', { qte: 2 }, nn);
+  const ctas = et.notes.filter(n => n.type === 'cta');
+  assert.strictEqual(ctas.length, 3);
+  assert.ok(ctas.every(n => n.entrees.eq === cta.id));
+  assert.strictEqual(new Set(ctas.map(n => n.titre)).size, 3);
+  assert.strictEqual(new Set(ctas.map(n => n.id)).size, 3);
+  const g = R.ajouter(et, { type: 'generateur', fabricant: 'F', reference: 'G1', valeurs: {} });
+  R.placer(et, g, 'pid:n1', { qte: 1 }, nn); R.placer(et, g, 'pid:n1', { qte: 1 }, nn);
+  assert.strictEqual(et.notes[0].entrees.nGen, '2');
+});

@@ -239,8 +239,29 @@ const Registre = (() => {
       const br = genre === 'term' ? raccorder(et, n, crees, opts.branche) : 0;
       return `${crees.length} ${genre === 'termp' ? 'pompe(s)' : 'terminal(aux)'} ${nom} ajouté(s) dans ${n.titre} : ${crees.map(e => e.rep + (e.local ? ` (${e.local})` : '')).join(', ')}${br ? ` — ${br} branche(s) raccordée(s) au réseau arborescent` : ''}`;
     }
-    if (genre === 'cta') { const n = cibleNote('cta'); if (!n) return null; noteEntiere(n, 'cta'); if (id === 'nouveau') n.titre = `CTA ${nom}`; return `${n.titre} : ${nom}`; }
-    if (genre === 'pid') { const n = notes.find(y => y.id === id && y.type === 'pid'); if (!n) return null; noteEntiere(n, 'pid'); return `${n.titre} : production ${nom}`; }
+    // CTA, vase, production d'ECS : un calcul par appareil. Calcul choisi déjà occupé, ou quantité > 1 : les appareils en
+    // plus ont chacun leur calcul, copie du calcul choisi (mêmes réglages), numéroté (2), (3)…
+    const unParNote = t => {
+      const n0 = cibleNote(t); if (!n0) return null;
+      if (id === 'nouveau' && t === 'cta') n0.titre = `CTA ${nom}`;
+      const base = String(n0.titre).replace(/ \(\d+\)$/, ''), cibles = n0.entrees.eq ? [] : [n0];
+      while (cibles.length < qte) {
+        const c = JSON.parse(JSON.stringify(n0)); c.id = nouvelleNote ? nouvelleNote(t).id : `${n0.id}-${cibles.length + 2}`;
+        delete c.emissions; delete c.lien;
+        let k = 2; while (notes.some(y => y.titre === `${base} (${k})`)) k++;
+        c.titre = `${base} (${k})`; notes.splice(notes.indexOf(n0) + 1 + cibles.length, 0, c); cibles.push(c);
+      }
+      cibles.forEach(n => noteEntiere(n, t));
+      return `${cibles.map(n => n.titre).join(', ')} : ${nom}`;
+    };
+    if (genre === 'cta') return unParNote('cta');
+    // Générateurs : même modèle placé à nouveau → un générateur de plus en cascade
+    if (genre === 'pid') {
+      const n = notes.find(y => y.id === id && y.type === 'pid'); if (!n) return null;
+      const meme = n.entrees.eq === x.id, nb = Math.min(6, (meme ? Math.max(1, Number(n.entrees.nGen) || 1) : 0) + qte);
+      noteEntiere(n, 'pid'); n.entrees.nGen = String(nb);
+      return `${n.titre} : production ${nom} — ${nb} générateur(s)${nb > 1 ? ' en cascade' : ''}`;
+    }
     if (genre === 'pidc') {
       const n = notes.find(y => y.id === id && y.type === 'pid'); if (!n) return null;
       if (x.type === 'pompe') { const l = n.entrees.pompesFab = (n.entrees.pompesFab || []).filter(p => p.circuit !== sous), el = { circuit: sous }; l.push(el); poser(n, 'pompe', el, 'pompesFab', l.length - 1); return `Pompe du circuit ${sous} : ${nom}${v.courbe ? ' (courbe)' : ''}`; }
@@ -255,7 +276,8 @@ const Registre = (() => {
       for (let k = 0; k < qte; k++) { const el = { rep: opts.rep && qte === 1 ? opts.rep : `${t.slice(0, 2).toUpperCase()}${l.length + 1}`, troncon: sous, type: t, qte: 1 }; l.push(el); poser(n, 'rob', el, 'robinetterie', l.length - 1); }
       return `${qte} organe(s) ${nom} sur le tronçon ${sous}`;
     }
-    if (genre === 'reseau' || genre === 'vase' || genre === 'ecs') { const n = cibleNote(genre); if (!n) return null; noteEntiere(n, genre); return `${n.titre} : ${nom}`; }
+    if (genre === 'vase' || genre === 'ecs') return unParNote(genre);
+    if (genre === 'reseau') { const n = cibleNote(genre); if (!n) return null; noteEntiere(n, genre); return `${n.titre} : ${nom}`; }
     if (genre === 'aero') {
       const n = notes.find(y => y.id === id && y.type === 'aero'); if (!n) return null;
       const l = n.entrees.bouchesL = n.entrees.bouchesL || [], deja = repsBouches(et), locaux = unites(opts.local, qte), tc = String(opts.branche || '');
