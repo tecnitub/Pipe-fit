@@ -119,18 +119,26 @@ const Metre = ((N, C, D, L, Sc) => {
       if (n.type === 'vanne' && v.vanne) equip(`vanne|${v.vanne.type}|${v.vanne.dn}|${v.vanne.Kvs}`, 'Équipements hydrauliques', `${N.libVanne(v.vanne)} motorisée`, 1, 2, { type: 'vanne', sorte: v.vanne.type, dn: v.vanne.dn, kvs: v.vanne.Kvs }, src);
       if (n.type === 'pid') {
         const d = Sc.dimensionner(e), G = d.gen[0];
-        equip(`gen|${e.generateur}|${d.Pg}`, 'Production', `${G} ${nf(d.Pg, 0)} kW${d.co ? ` (froid ${nf(d.co.dF.Pg, 0)} kW)` : ''}`, d.n, 16, { type: 'generateur', mots: G }, src);
+        if (d.multi) d.multi.forEach(x => equip(`gen|${x.type}|${x.P}`, 'Production', `${x.gen[0]} ${nf(x.P, 0)} kW`, 1, 16, { type: 'generateur', mots: x.gen[0] }, src));
+        else equip(`gen|${e.generateur}|${d.Pg}`, 'Production', `${G} ${nf(d.Pg, 0)} kW${d.co ? ` (froid ${nf(d.co.dF.Pg, 0)} kW)` : ''}`, d.n, 16, { type: 'generateur', mots: G }, src);
         equip(`soupape|${d.tg.dn}`, 'Production', `Soupape de sécurité sur générateur`, d.n, 0.5, { type: 'soupape' }, src);
         if (d.tb) equip(`bouteille|${d.tb.cle}`, 'Production', `Bouteille de découplage ${d.tb.nom}`, 1, 6, { type: 'bouteille' }, src);
         if (d.echangeur) equip(`echangeur|${Math.round(d.Pdem)}`, 'Production', `Échangeur à plaques ${nf(d.Pdem, 0)} kW (≈ ${nf(d.Aech, 1)} m²)`, 1, 8, { type: 'echangeur' }, src);
+        (d.ballons || []).forEach(b => equip(`ballon|${b.fonction}|${b.V}`, 'Production', `${b.lib} ${nf(b.V, 0)} L`, 1, b.V > 1000 ? 8 : 6, { type: 'tampon', volume: b.V }, src));
         if (d.tampon && d.tampon.V > 0) equip(`tampon|${d.tampon.V}`, 'Production', `Ballon tampon ${nf(d.tampon.V, 0)} L`, 1, 6, { type: 'tampon', volume: d.tampon.V }, src);
         if (e.desemboueur !== 'non') equip(`desemboueur|${d.tc.dn}`, 'Production', `Pot à boue / désemboueur DN ${d.tc.dn}`, 1, 3, { type: 'desemboueur', dn: d.tc.dn }, src);
         tube(e.serie, d.tc.cle, 2 * (d.circuits.length * 1.5 + 2), `${src} (collecteurs)`);
-        tube(e.serie, d.tg.cle, d.n * 6, `${src} (raccordement des générateurs)`);
-        if (d.ppDeportees) { const pp = (typeof Catalogue !== 'undefined' ? Catalogue : require('./catalogue')).pompesPour(d.Qg, 5)[0]; equip(`pompe|${pp ? pp.modele : 'primaire'}`, 'Production', pp ? `Pompe primaire ${N.libPompe(pp).replace(/, vitesse.*/, '')}` : 'Pompe primaire', d.n, 3, { type: 'pompe', modele: pp && pp.modele, dn: pp && pp.dn }, src); }
+        if (d.multi) d.multi.forEach(x => tube(e.serie, x.t.cle, 6, `${src} (raccordement de ${x.rep})`));
+        else tube(e.serie, d.tg.cle, d.n * 6, `${src} (raccordement des générateurs)`);
+        if (d.multi) d.multi.filter(x => x.pp).forEach(x => { const pp = (typeof Catalogue !== 'undefined' ? Catalogue : require('./catalogue')).pompesPour(x.Q, 5)[0]; equip(`pompe|${pp ? pp.modele : 'primaire'}`, 'Production', pp ? `Pompe primaire ${N.libPompe(pp).replace(/, vitesse.*/, '')}` : 'Pompe primaire', 1, 3, { type: 'pompe', modele: pp && pp.modele, dn: pp && pp.dn }, src); });
+        else if (d.ppDeportees) { const pp = (typeof Catalogue !== 'undefined' ? Catalogue : require('./catalogue')).pompesPour(d.Qg, 5)[0]; equip(`pompe|${pp ? pp.modele : 'primaire'}`, 'Production', pp ? `Pompe primaire ${N.libPompe(pp).replace(/, vitesse.*/, '')}` : 'Pompe primaire', d.n, 3, { type: 'pompe', modele: pp && pp.modele, dn: pp && pp.dn }, src); }
         d.circuits.forEach(c => {
           tube(e.serie, c.t.cle, c.L, src);
           if (c.pompe) equip(`pompe|${c.pompe.modele}`, 'Équipements hydrauliques', `Pompe ${N.libPompe(c.pompe).replace(/, vitesse.*/, '')}`, 1, 3, { type: 'pompe', modele: c.pompe.modele, dn: c.pompe.dn }, src);
+          if (c.prim && c.prim.pompe) equip(`pompe|${c.prim.pompe.modele}`, 'Équipements hydrauliques', `Pompe ${N.libPompe(c.prim.pompe).replace(/, vitesse.*/, '')}`, 1, 3, { type: 'pompe', modele: c.prim.pompe.modele, dn: c.prim.pompe.dn }, src);
+          if (c.bout) equip(`bouteille|${c.bout.tb ? c.bout.tb.cle : Math.round(c.bout.Db)}`, 'Équipements hydrauliques', `Bouteille de découplage de circuit ${c.bout.tb ? c.bout.tb.nom : `Ø ${nf(c.bout.Db, 0)} mm`}`, 1, 4, { type: 'bouteille' }, src);
+          if (c.ech) equip(`echangeur|${Math.round(c.P)}`, 'Équipements hydrauliques', `Échangeur à plaques ${nf(c.P, 0)} kW (≈ ${nf(c.ech.A, 1)} m²)`, 1, 6, { type: 'echangeur' }, src);
+          if (c.bypass) equip(`soupdiff|${c.t.dn}`, 'Équipements hydrauliques', `Soupape différentielle (by-pass) DN ${c.t.dn}`, 1, 1, { type: 'accessoire', dn: c.t.dn }, src);
           if (c.vanne) equip(`vanne|${c.vanne.type}|${c.vanne.dn}|${c.vanne.Kvs}`, 'Équipements hydrauliques', `${N.libVanne(c.vanne)} motorisée`, 1, 2, { type: 'vanne', sorte: c.vanne.type, dn: c.vanne.dn, kvs: c.vanne.Kvs }, src);
           // Robinetterie saisie (fiches techniques) ; sinon équipement usuel du circuit
           if ((c.rob || []).length) c.rob.forEach(x => equip(`rob|${x.type}|${x.dn}|${x.ref || (x.fiche ? x.fiche.reference : '') || ''}`, 'Équipements hydrauliques', `${x.lib} DN ${x.dn}${x.ref ? ` — ${x.ref}` : x.fiche && x.fiche.reference ? ` — ${[x.fiche.fabricant, x.fiche.reference].filter(Boolean).join(' ')}` : ''}`, x.qte, 0.3 + 0.01 * x.dn,
@@ -141,7 +149,8 @@ const Metre = ((N, C, D, L, Sc) => {
           }
           if (e.compteurs === 'oui') equip(`ce|${c.t.dn}`, 'Équipements hydrauliques', `Compteur d'énergie DN ${c.t.dn}`, 1, 2, { type: 'compteur', dn: c.t.dn }, src);
         });
-        equip(`isol|${d.tg.dn}`, 'Production', `Vanne d'isolement DN ${d.tg.dn}`, 2 * d.n, 0.3 + 0.01 * d.tg.dn, { type: 'isolement', dn: d.tg.dn }, src);
+        if (d.multi) d.multi.forEach(x => equip(`isol|${x.t.dn}`, 'Production', `Vanne d'isolement DN ${x.t.dn}`, 2, 0.3 + 0.01 * x.t.dn, { type: 'isolement', dn: x.t.dn }, src));
+        else equip(`isol|${d.tg.dn}`, 'Production', `Vanne d'isolement DN ${d.tg.dn}`, 2 * d.n, 0.3 + 0.01 * d.tg.dn, { type: 'isolement', dn: d.tg.dn }, src);
       }
     });
     const nCalc = notes.filter(n => !n.lien).length;

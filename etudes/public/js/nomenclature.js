@@ -26,11 +26,18 @@ const Nomenclature = ((N, Sc) => {
     const fg = e.fiche || {}, add = o => out.push({ circuit: '', dn: '', unite: 'u', fabricant: '', reference: '', fiche: '', dp: '', ...o });
     if (d) {
       const pac = /^(pac|gf)/.test(e.generateur || '');
-      if (!/^echangeur/.test(e.generateur || '')) add({ rep: d.n > 1 ? `${pac ? 'PAC' : 'G'}1 à ${d.n}` : `${pac ? 'PAC' : 'G'}1`, circuit: 'Production', famille: 'Production', designation: `${d.gen[0]} ${nf(d.Pg, 0)} kW`, qte: d.n, fabricant: fg.fabricant || '', reference: fg.reference || '', fiche: fg.nom || (fg.fabricant || fg.reference ? '✓' : '') });
-      if (d.ppDeportees) add({ rep: 'PP', circuit: 'Production', famille: 'Pompes', designation: `Pompe primaire ${nf(d.Qg, 2)} m³/h, avec clapet anti-retour`, qte: d.n });
+      // Production hétérogène : une ligne par générateur (type, puissance, rôle) et sa pompe primaire déportée
+      if (d.multi) d.multi.forEach((x, i) => {
+        if (!/^echangeur/.test(x.type)) add({ rep: x.rep, circuit: 'Production', famille: 'Production', designation: `${x.gen[0]} ${nf(x.P, 0)} kW (${(Sc.ROLES[x.role] || '').toLowerCase()})${x.regime ? ` — régime ${x.regime[0]}/${x.regime[1]} °C` : ''}`, qte: 1 });
+        if (x.pp) add({ rep: `PP${i + 1}`, circuit: 'Production', famille: 'Pompes', designation: `Pompe primaire ${nf(x.Q, 2)} m³/h, avec clapet anti-retour (${x.rep})`, qte: 1 });
+      });
+      else if (!/^echangeur/.test(e.generateur || '')) add({ rep: d.n > 1 ? `${pac ? 'PAC' : 'G'}1 à ${d.n}` : `${pac ? 'PAC' : 'G'}1`, circuit: 'Production', famille: 'Production', designation: `${d.gen[0]} ${nf(d.Pg, 0)} kW`, qte: d.n, fabricant: fg.fabricant || '', reference: fg.reference || '', fiche: fg.nom || (fg.fabricant || fg.reference ? '✓' : '') });
+      if (d.ppDeportees && !d.multi) add({ rep: 'PP', circuit: 'Production', famille: 'Pompes', designation: `Pompe primaire ${nf(d.Qg, 2)} m³/h, avec clapet anti-retour`, qte: d.n });
       if (d.bouteille && d.tb) add({ rep: 'BD', circuit: 'Production', famille: 'Équipements', designation: `Bouteille de découplage${d.decouplage === 'bouteille3' ? ' 3 piquages' : ''} ${d.tb.nom}`, qte: 1 });
       if (d.echangeur) add({ rep: 'EP', circuit: 'Production', famille: 'Équipements', designation: `Échangeur à plaques ${nf(d.Pdem, 0)} kW (≈ ${nf(d.Aech, 1)} m²)`, qte: 1 });
       if (d.tampon && d.tampon.V > 0) add({ rep: 'BT', circuit: 'Production', famille: 'Équipements', designation: `Ballon tampon ${nf(d.tampon.V, 0)} L${d.tampon.position === 'decouplage' ? ' de découplage (4 piquages)' : d.tampon.position === 'depart' ? ' (sur le départ)' : ' (sur le retour)'}`, qte: 1 });
+      // Ballons (éléments du schéma) : fonction, volume, piquages, doigts de gant des sondes
+      (d.ballons || []).forEach(b => add({ rep: b.rep, circuit: b.circuit || 'Production', famille: 'Équipements', designation: `${b.lib} ${nf(b.V, 0)} L, ${b.piquages} piquages, ${b.sondes.length} doigt(s) de gant (sondes ${b.sondes.map(x => Sc.SONDES[x]).join(', ') || '—'})`, qte: 1 }));
       if (d.tc) add({ rep: 'COL', circuit: 'Production', famille: 'Équipements', designation: `Collecteurs départ et retour ${d.tc.nom}`, dn: d.tc.dn, qte: 2 });
       if (e.desemboueur !== 'non') add({ rep: 'DS', circuit: 'Production', famille: 'Robinetterie', designation: 'Pot à boue / désemboueur magnétique', dn: d.tc ? d.tc.dn : '', qte: 1 });
       if (e.vase !== 'non') add({ rep: 'VE', circuit: 'Production', famille: 'Équipements', designation: 'Vase d\'expansion, soupape de sécurité, disconnecteur de remplissage (voir note du vase)', qte: 1 });
@@ -38,7 +45,13 @@ const Nomenclature = ((N, Sc) => {
     (v.circuits || []).forEach((c, i) => {
       const k = `${c.rep}`;
       add({ rep: `PC${i + 1}`, circuit: k, famille: 'Pompes', designation: c.pompe ? `Pompe ${c.pompe.replace(/, vitesse.*/, '')}` : `Pompe ${nf(c.Q, 2)} m³/h × ${nf(c.hmt, 2)} mCE`, qte: 1 });
-      if (c.reg !== 'direct') add({ rep: `V${i + 1}`, circuit: k, famille: 'Robinetterie', designation: c.vanne ? `${c.vanne} motorisée` : `Vanne de régulation ${c.reg === '3v' ? '3 voies' : '2 voies'} Kvs ${nf(c.kvs, 1)}`, qte: 1 });
+      const M = Sc.montage ? Sc.montage(c.reg) : { vanne: c.reg !== 'direct' ? c.reg : null };
+      if (M.vanne) add({ rep: `V${i + 1}`, circuit: k, famille: 'Robinetterie', designation: c.vanne ? `${c.vanne} motorisée` : `Vanne de régulation ${M.vanne === '3v' ? '3 voies' : '2 voies'} Kvs ${nf(c.kvs, 1)}`, qte: 1 });
+      // Montage hydraulique : pompe primaire de circuit, by-pass différentiel (2 voies), bouteille ou échangeur de circuit
+      if (c.Qprim) add({ rep: `PCP${i + 1}`, circuit: k, famille: 'Pompes', designation: c.pompePrim ? `Pompe primaire ${c.pompePrim.replace(/, vitesse.*/, '')}` : `Pompe primaire ${nf(c.Qprim, 2)} m³/h × ${nf(c.hmtPrim, 2)} mCE`, qte: 1 });
+      if (c.bypass) add({ rep: `BP${i + 1}`, circuit: k, famille: 'Robinetterie', designation: `By-pass différentiel (soupape différentielle) réglé vers ${nf(c.bypass, 0)} kPa`, dn: c.dn, qte: 1 });
+      if (c.bouteilleCircuit) add({ rep: `BD${i + 1}`, circuit: k, famille: 'Équipements', designation: `Bouteille de découplage du circuit ${c.bouteilleCircuit}`, qte: 1 });
+      if (c.Aech) add({ rep: `EP${i + 1}`, circuit: k, famille: 'Équipements', designation: `Échangeur à plaques du circuit (≈ ${nf(c.Aech, 1)} m²)`, qte: 1 });
       if (e.compteurs === 'oui') add({ rep: `CE${i + 1}`, circuit: k, famille: 'Robinetterie', designation: 'Compteur d\'énergie', dn: c.dn, qte: 1 });
       (c.rob || []).forEach(x => { const [fab, ...refs] = String(x.ref || '').split(/\s+/); add({ rep: x.rep, circuit: k, famille: 'Robinetterie', designation: x.lib, dn: x.dn, qte: x.qte,
         fabricant: x.fiche ? x.fiche.fabricant || '' : x.ref ? fab : '', reference: x.fiche ? x.fiche.reference || '' : refs.join(' '), fiche: x.fiche ? x.fiche.nom || '✓' : '', dp: x.dpTot }); });

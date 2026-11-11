@@ -1076,6 +1076,7 @@ const Electricite = ((N, Sc) => {
     const avecTerminaux = notes.some(n => n.type === 'terminaux' && ((n.entrees || {}).appareils || []).length);
     // Puissance électrique lue sur la fiche technique (kW), sinon saisie, sinon estimation
     const kwFiche = x => (x !== undefined && x !== '' && Number.isFinite(Number(x)) && Number(x) > 0 ? Number(x) : null);
+    let nbPid = 0, teAjoutee = false;
     notes.forEach((n, ni) => {
       let es, r;
       try { es = Liens.resoudre(etude, n).entrees; r = N.calculer(n.type, es); } catch (err) { return; }
@@ -1085,63 +1086,83 @@ const Electricite = ((N, Sc) => {
       const fiche = es.fiche || {};
       if (n.type === 'pid') {
         let d; try { d = Sc.dimensionner(es); } catch (err) { return; }
-        const G = Sc.GENERATEURS[es.generateur] || ['Générateur'], pac = /^(pac|gf)/.test(es.generateur || '');
-        for (let i = 1; i <= d.n; i++) {
+        // Plusieurs schémas dans l'étude : le premier garde ses repères, les suivants prennent le suffixe « -N<n° de note> »
+        const sfx = nbPid++ ? `-N${ni + 1}` : '', R = rep => `${rep}${sfx}`;
+        // Schéma de froid : sondes et sécurités générales rattachées à la production de froid (préfixe FR_ des points GTB)
+        const deFroid = !d.chaud && !d.co ? ' (production de froid)' : '';
+        const G = Sc.GENERATEURS[es.generateur] || ['Générateur'], pac = /^(pac|gf)/.test(es.generateur || ''), pfx = /^gf/.test(es.generateur || '') ? 'GF' : pac ? 'PAC' : 'G';
+        const pePompe = Q => Math.max(0.05, Math.round(Q * 8 / 367 / 0.45 * 100) / 100);
+        if (d.multi) {
+          // Production hétérogène : une ligne par générateur, puissance électrique estimée selon le type
+          d.multi.forEach((x, i) => {
+            if (/^echangeur/.test(x.type)) return;
+            const thermo = /^(pac|gf)/.test(x.type), role = (Sc.ROLES[x.role] || '').toLowerCase();
+            ajout(`gen${i + 1}`, { metre: `gen|${x.type}|${x.P}`, rep: R(x.rep), designation: `${x.gen[0]} ${x.rep} — ${role} ${nf(x.P, 0)} kW`, type: thermo ? 'pac' : 'generateur',
+              P: thermo ? Math.round(x.P / 3 * 10) / 10 : Math.max(0.2, Math.round(x.P * 0.003 * 10) / 10), tension: es.tensionGen || (thermo || x.P > 300 ? 'tri' : 'mono'), regulation: thermo ? 'bus' : 'mod', alim: x.alim || es.alimProd || '', role: x.role });
+            if (x.pp) ajout(`pp${i + 1}`, { rep: R(`PP${i + 1}`), designation: `Pompe primaire ${i + 1} (${x.rep})`, type: 'pompe', P: pePompe(x.Q), tension: 'mono', regulation: 'tor' });
+          });
+        } else for (let i = 1; i <= d.n; i++) {
           if (/^echangeur/.test(es.generateur || '')) continue;
           // Puissance électrique du générateur : saisie, sinon lue sur sa fiche technique (P absorbée), sinon estimée
           const pGen = kwFiche(es.PelecGen) ?? (kwFiche(fiche.P1) ? Math.round(fiche.P1 / 10) / 100 : null);
-          ajout(`gen${i}`, { metre: `gen|${es.generateur}|${d.Pg}`, rep: `${pac ? 'PAC' : 'G'}${i}`, designation: `${G[0]} ${i}${fiche.fabricant || fiche.reference ? ` — ${[fiche.fabricant, fiche.reference].filter(Boolean).join(' ')}` : ''}`, type: pac ? 'pac' : 'generateur',
+          ajout(`gen${i}`, { metre: `gen|${es.generateur}|${d.Pg}`, rep: R(`${pfx}${i}`), designation: `${G[0]} ${i}${fiche.fabricant || fiche.reference ? ` — ${[fiche.fabricant, fiche.reference].filter(Boolean).join(' ')}` : ''}`, type: pac ? 'pac' : 'generateur',
             P: pGen ?? (pac ? Math.round(d.Pg / 3 * 10) / 10 : Math.max(0.2, Math.round(d.Pg * 0.003 * 10) / 10)), tension: es.tensionGen || (pac || d.Pg > 300 ? 'tri' : 'mono'), regulation: pac ? 'bus' : 'mod', alim: es.alimProd || '', ...(pGen != null ? { pFiche: true } : {}) });
-          if (d.ppDeportees) ajout(`pp${i}`, { rep: `PP${i}`, designation: `Pompe primaire ${i}`, type: 'pompe', P: Math.max(0.05, Math.round(d.Qg * 8 / 367 / 0.45 * 100) / 100), tension: 'mono', regulation: 'tor' });
+          if (d.ppDeportees) ajout(`pp${i}`, { rep: R(`PP${i}`), designation: `Pompe primaire ${i}`, type: 'pompe', P: pePompe(d.Qg), tension: 'mono', regulation: 'tor' });
         }
         // PAC / groupe eau-eau sur nappe : pompe de forage, pompe de la boucle intermédiaire, contrôle de débit et température
         if (d.forage) {
           const F = d.forage;
-          ajout('pforage', { rep: 'PF', designation: `Pompe immergée du forage (${nf(F.Qn, 1)} m³/h, ${nf(F.H, 0)} mCE)`, type: 'pompe', P: Math.max(0.37, Math.round(F.Pel * 1.1 * 100) / 100), tension: F.Pel > 2.2 ? 'tri' : 'mono', regulation: 'torRetour', depart: F.Pel > 4 ? 'variateur' : 'contacteur', alim: es.alimProd || '' });
-          ajout('pinter', { rep: 'PBI', designation: 'Pompe de la boucle intermédiaire (échangeur de barrage)', type: 'pompe', P: Math.max(0.1, Math.round(F.Qi * 8 / 367 / 0.45 * 100) / 100), tension: 'mono', regulation: 'tor', alim: es.alimProd || '' });
-          ajout('fqn', { rep: 'FT-N', designation: 'Contrôleur de débit de l\'eau de nappe', type: 'securite', P: 0, tension: '24V', regulation: 'securite' });
-          ajout('tn', { rep: 'TN', designation: 'Sonde de température de l\'eau de nappe (entrée échangeur)', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
+          ajout('pforage', { rep: R('PF'), designation: `Pompe immergée du forage (${nf(F.Qn, 1)} m³/h, ${nf(F.H, 0)} mCE)`, type: 'pompe', P: Math.max(0.37, Math.round(F.Pel * 1.1 * 100) / 100), tension: F.Pel > 2.2 ? 'tri' : 'mono', regulation: 'torRetour', depart: F.Pel > 4 ? 'variateur' : 'contacteur', alim: es.alimProd || '' });
+          ajout('pinter', { rep: R('PBI'), designation: 'Pompe de la boucle intermédiaire (échangeur de barrage)', type: 'pompe', P: Math.max(0.1, Math.round(F.Qi * 8 / 367 / 0.45 * 100) / 100), tension: 'mono', regulation: 'tor', alim: es.alimProd || '' });
+          ajout('fqn', { rep: R('FT-N'), designation: 'Contrôleur de débit de l\'eau de nappe', type: 'securite', P: 0, tension: '24V', regulation: 'securite' });
+          ajout('tn', { rep: R('TN'), designation: 'Sonde de température de l\'eau de nappe (entrée échangeur)', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
         }
         // Échangeur : pompes primaire et secondaire ajoutées (une pompe existante reliée est comptée avec son réseau)
         if (es.bouteille === 'echangeur' || /^echangeur/.test(es.generateur || '')) {
-          const Qpr = d.echangeur ? (d.Qech || d.Qp) : d.Qp, pe = Q => Math.max(0.05, Math.round(Q * 8 / 367 / 0.45 * 100) / 100);
-          if (es.pompeEchPrim === 'ajouter') ajout('pech1', { rep: 'PECH1', designation: `Pompe primaire de l'échangeur (${nf(Qpr, 1)} m³/h)`, type: 'pompe', P: pe(Qpr), tension: Qpr > 25 ? 'tri' : 'mono', regulation: 'torRetour', alim: es.alimProd || '' });
-          if (es.pompeEchSec === 'ajouter') ajout('pech2', { rep: 'PECH2', designation: `Pompe secondaire de l'échangeur (${nf(d.Qs, 1)} m³/h)`, type: 'pompe', P: pe(d.Qs), tension: d.Qs > 25 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur', alim: es.alimProd || '' });
+          const Qpr = d.echangeur ? (d.Qech || d.Qp) : d.Qp;
+          if (es.pompeEchPrim === 'ajouter') ajout('pech1', { rep: R('PECH1'), designation: `Pompe primaire de l'échangeur (${nf(Qpr, 1)} m³/h)`, type: 'pompe', P: pePompe(Qpr), tension: Qpr > 25 ? 'tri' : 'mono', regulation: 'torRetour', alim: es.alimProd || '' });
+          if (es.pompeEchSec === 'ajouter') ajout('pech2', { rep: R('PECH2'), designation: `Pompe secondaire de l'échangeur (${nf(d.Qs, 1)} m³/h)`, type: 'pompe', P: pePompe(d.Qs), tension: d.Qs > 25 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur', alim: es.alimProd || '' });
         }
         // Récupération d'énergie sur le groupe froid : pompe du circuit de récupération, vanne de basculement récupération /
         // rejet, sondes départ et retour de l'eau récupérée, compteur d'énergie récupérée
         if (es.recupGf && num(v.Precup) > 0) {
           const [tD, tR] = String(es.regimeRecup || '45/40').split('/').map(x => num(x)), dTr = Math.max(2, Math.abs((tD || 45) - (tR || 40))), Qr = num(v.Precup) / (1.163 * dTr);
           const lib = es.recupGf === 'totale' ? 'récupération totale au condenseur' : 'désurchauffeur';
-          if (es.pompeRecup !== 'integree') ajout('prec', { rep: 'PREC', designation: `Pompe du circuit de récupération du groupe froid (${lib}, ${nf(Qr, 1)} m³/h)`, type: 'pompe', P: Math.max(0.05, Math.round(Qr * 8 / 367 / 0.45 * 100) / 100), tension: Qr > 25 ? 'tri' : 'mono', regulation: 'torRetour', alim: es.alimProd || '' });
-          ajout('vrec', { rep: 'VREC', designation: 'Vanne 3 voies de basculement récupération / rejet du groupe froid (condenseur à air ou tour)', type: 'vanne', P: 0.01, tension: '24V', regulation: 'v010r' });
-          ajout('tdrec', { rep: 'TDREC', designation: 'Sonde de départ de l\'eau récupérée sur le groupe froid', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
-          ajout('trrec', { rep: 'TRREC', designation: 'Sonde de retour de l\'eau récupérée sur le groupe froid', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
-          ajout('cerec', { rep: 'CEREC', designation: 'Compteur d\'énergie récupérée sur le groupe froid', type: 'sonde', P: 0, tension: '24V', regulation: 'impulsion' });
+          if (es.pompeRecup !== 'integree') ajout('prec', { rep: R('PREC'), designation: `Pompe du circuit de récupération du groupe froid (${lib}, ${nf(Qr, 1)} m³/h)`, type: 'pompe', P: pePompe(Qr), tension: Qr > 25 ? 'tri' : 'mono', regulation: 'torRetour', alim: es.alimProd || '' });
+          ajout('vrec', { rep: R('VREC'), designation: 'Vanne 3 voies de basculement récupération / rejet du groupe froid (condenseur à air ou tour)', type: 'vanne', P: 0.01, tension: '24V', regulation: 'v010r' });
+          ajout('tdrec', { rep: R('TDREC'), designation: 'Sonde de départ de l\'eau récupérée sur le groupe froid', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
+          ajout('trrec', { rep: R('TRREC'), designation: 'Sonde de retour de l\'eau récupérée sur le groupe froid', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
+          ajout('cerec', { rep: R('CEREC'), designation: 'Compteur d\'énergie récupérée sur le groupe froid', type: 'sonde', P: 0, tension: '24V', regulation: 'impulsion' });
         }
         d.circuits.forEach((c, i) => {
-          const k = i + 1;
-          ajout(`pc${k}`, { ...(c.pompe ? { metre: `pompe|${c.pompe.modele}` } : {}), rep: `PC${k}`, designation: `Pompe ${c.rep}`, type: 'pompe', P: c.pompe && c.pompe.P1 ? kW(c.pompe.P1) : Math.max(0.05, Math.round(c.Q * Math.max(2, c.hmt) / 367 / 0.45 * 100) / 100), tension: 'mono',
+          const k = i + 1, M = Sc.montage ? Sc.montage(c.reg) : { vanne: c.reg !== 'direct' };
+          ajout(`pc${k}`, { ...(c.pompe ? { metre: `pompe|${c.pompe.modele}` } : {}), rep: R(`PC${k}`), designation: `Pompe ${c.rep}${M.pp ? ' (secondaire)' : ''}`, type: 'pompe', P: c.pompe && c.pompe.P1 ? kW(c.pompe.P1) : Math.max(0.05, Math.round(c.Q * Math.max(2, c.hmt) / 367 / 0.45 * 100) / 100), tension: 'mono',
             regulation: c.reg === '2v' || c.emetteur === 'ventilo' ? 'var' : 'tor', depart: c.reg === '2v' || c.emetteur === 'ventilo' ? 'variateur' : undefined });
-          if (c.reg !== 'direct') ajout(`v${k}`, { rep: `V${k}`, designation: `Vanne de régulation ${c.rep}`, type: 'vanne', P: 0.01, tension: '24V', regulation: 'v010' });
-          ajout(`td${k}`, { rep: `TD${k}`, designation: `Sonde de départ ${c.rep}`, type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
-          if (es.compteurs === 'oui') ajout(`ce${k}`, { rep: `CE${k}`, designation: `Compteur d'énergie ${c.rep}`, type: 'sonde', P: 0, tension: '24V', regulation: 'impulsion' });
+          // Montages à pompe primaire de circuit (injection 3 voies, bouteille, échangeur de circuit)
+          if (M.pp && c.prim) ajout(`pcp${k}`, { ...(c.prim.pompe ? { metre: `pompe|${c.prim.pompe.modele}` } : {}), rep: R(`PCP${k}`), designation: `Pompe primaire ${c.rep}`, type: 'pompe', P: c.prim.pompe && c.prim.pompe.P1 ? kW(c.prim.pompe.P1) : Math.max(0.05, Math.round(c.prim.Q * Math.max(2, c.prim.hmt) / 367 / 0.45 * 100) / 100), tension: 'mono', regulation: 'tor' });
+          if (M.vanne) ajout(`v${k}`, { rep: R(`V${k}`), designation: `Vanne de régulation ${c.rep}`, type: 'vanne', P: 0.01, tension: '24V', regulation: 'v010' });
+          ajout(`td${k}`, { rep: R(`TD${k}`), designation: `Sonde de départ ${c.rep}`, type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
+          if (es.compteurs === 'oui') ajout(`ce${k}`, { rep: R(`CE${k}`), designation: `Compteur d'énergie ${c.rep}`, type: 'sonde', P: 0, tension: '24V', regulation: 'impulsion' });
           const annexe = ((es.circuits || [])[i] || {}).annexe, ctaReliee = annexe && (etude.notes || []).some(x => x.id === annexe && x.type === 'cta');
           const em = ctaReliee || (avecTerminaux && ['ventilo', 'aerotherme'].includes(c.emetteur)) ? null : { aerotherme: ['aerotherme', 0.5], ventilo: ['ventilo', 0.1], cta: ['cta', 3] }[c.emetteur];
-          if (em) ajout(`em${k}`, { rep: `E${k}`, designation: `${(Sc.EMETTEURS[c.emetteur] || [''])[0]} — ${c.rep} (puissance à préciser)`, type: em[0], P: em[1], tension: 'mono', regulation: em[0] === 'aerotherme' ? 'tor' : 'regul' });
+          if (em) ajout(`em${k}`, { rep: R(`E${k}`), designation: `${(Sc.EMETTEURS[c.emetteur] || [''])[0]} — ${c.rep} (puissance à préciser)`, type: em[0], P: em[1], tension: 'mono', regulation: em[0] === 'aerotherme' ? 'tor' : 'regul' });
         });
-        ajout('te', { rep: 'TE', designation: 'Sonde de température extérieure', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
+        // Ballons (éléments du schéma) : une sonde par position (haut, milieu, bas)
+        (d.ballons || []).forEach((b, i) => b.sondes.forEach(so => ajout(`bal${i + 1}${so}`, { rep: R(`${b.rep}-T${so[0].toUpperCase()}`), designation: `Sonde ${Sc.SONDES[so]} du ballon ${b.rep} (${b.lib.split(' (')[0].toLowerCase()})${deFroid}`, type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' })));
+        // Sonde extérieure : une seule pour toute l'étude
+        if (!teAjoutee) { teAjoutee = true; ajout('te', { rep: 'TE', designation: 'Sonde de température extérieure', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' }); }
         // Mesures et sécurités de la chaufferie / sous-station
-        const gen = es.generateur || '', gaz = /^chaudiere-(cond|gaz)/.test(gen), fioul = gen === 'chaudiere-fioul', combustion = gaz || fioul || gen === 'chaudiere-bois';
-        ajout('tdg', { rep: 'TDG', designation: 'Sonde de départ général (après découplage)', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
-        ajout('pr', { rep: 'PR', designation: 'Capteur de pression du réseau', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
-        ajout('pmq', { rep: 'PMQ', designation: 'Pressostat manque d\'eau', type: 'securite', P: 0, tension: '24V', regulation: 'securite' });
-        if (combustion) ajout('au', { rep: 'AU', designation: 'Arrêt d\'urgence de la chaufferie (coup de poing à l\'extérieur du local)', type: 'securite', P: 0, tension: '24V', regulation: 'securite' });
+        const types = d.multi ? d.multi.map(x => x.type) : [es.generateur || ''], aT = re => types.some(t => re.test(t));
+        const gaz = aT(/^chaudiere-(cond|gaz)/), fioul = aT(/^chaudiere-fioul$/), combustion = gaz || fioul || aT(/^chaudiere-bois$/);
+        ajout('tdg', { rep: R('TDG'), designation: `Sonde de départ général (après découplage)${deFroid}`, type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
+        ajout('pr', { rep: R('PR'), designation: `Capteur de pression du réseau${deFroid}`, type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
+        ajout('pmq', { rep: R('PMQ'), designation: `Pressostat manque d'eau${deFroid}`, type: 'securite', P: 0, tension: '24V', regulation: 'securite' });
+        if (combustion) ajout('au', { rep: R('AU'), designation: 'Arrêt d\'urgence de la chaufferie (coup de poing à l\'extérieur du local)', type: 'securite', P: 0, tension: '24V', regulation: 'securite' });
         if (gaz) {
-          ajout('dg', { rep: 'DG', designation: 'Centrale de détection gaz et capteurs', type: 'securite', P: 0.03, tension: 'mono', regulation: 'securite' });
-          ajout('evg', { rep: 'EVG', designation: 'Électrovanne gaz normalement fermée (coupure de la chaufferie)', type: 'electrovanne', P: 0.02, tension: 'mono', regulation: 'evGaz' });
+          ajout('dg', { rep: R('DG'), designation: 'Centrale de détection gaz et capteurs', type: 'securite', P: 0.03, tension: 'mono', regulation: 'securite' });
+          ajout('evg', { rep: R('EVG'), designation: 'Électrovanne gaz normalement fermée (coupure de la chaufferie)', type: 'electrovanne', P: 0.02, tension: 'mono', regulation: 'evGaz' });
         }
-        if (fioul) ajout('evg', { rep: 'EVF', designation: 'Vanne de police fioul (coupure de la chaufferie)', type: 'electrovanne', P: 0.02, tension: 'mono', regulation: 'evGaz' });
+        if (fioul) ajout('evg', { rep: R('EVF'), designation: 'Vanne de police fioul (coupure de la chaufferie)', type: 'electrovanne', P: 0.02, tension: 'mono', regulation: 'evGaz' });
       }
       // Plomberie sanitaire : pompe de bouclage d'ECS (asservie à la température de retour) et sonde de retour de boucle
       if (n.type === 'desenfumage' && v.Qv > 0) {
@@ -1185,7 +1206,8 @@ const Electricite = ((N, Sc) => {
         bats.filter(([b]) => !couvre.has(b)).forEach(([b, l]) => ajout(`v${b}`, { rep: `V${b.toUpperCase()}-N${ni + 1}`, designation: `Vanne de régulation de la batterie ${l} — ${titre}`, type: 'vanne', P: 0.01, tension: '24V', regulation: 'v010', alim: es.alim || '' }));
         // Batterie électrique : puissance saisie ou de la fiche, sinon calculée (batterie chaude électrique)
         const pBe = kwFiche(es.PelBe) ?? kwFiche(fiche.Pbe) ?? kwFiche(v.Pbe), libBe = { chaude: 'Batterie chaude électrique', prechauffage: 'Batterie électrique de préchauffage', appoint: 'Batterie électrique d\'appoint' }[es.batElec] || 'Batterie électrique';
-        if (pBe) ajout('be', { rep: `BE-N${ni + 1}`, designation: `${libBe} — ${titre}`, type: 'resistance', P: pBe, tension: es.tensionCta || (pBe > 3.6 ? 'tri' : 'mono'), regulation: 'tor', alim: es.alim || '' });
+        // Batterie chaude électrique principale : autorisation, consigne 0-10 V (gradateur) et défaut ; préchauffage et appoint : TOR
+        if (pBe) ajout('be', { rep: `BE-N${ni + 1}`, designation: `${libBe} — ${titre}`, type: 'resistance', P: pBe, tension: es.tensionCta || (pBe > 3.6 ? 'tri' : 'mono'), regulation: es.batElec === 'chaude' ? 'mod' : 'tor', ...(es.batElec === 'chaude' ? { regImpose: true } : {}), alim: es.alim || '' });
       }
     });
     // Matériel retenu choisi dans le catalogue des fabricants : sa puissance électrique remplace l'estimation
@@ -1215,7 +1237,7 @@ const Electricite = ((N, Sc) => {
         if (r.alim && ex.alim !== r.alim) ch.alim = r.alim;
         if (r.tension && r.pFiche && ex.tension !== r.tension) ch.tension = r.tension;
         if (r.regImpose && r.regulation && ex.regulation !== r.regulation) ch.regulation = r.regulation;
-        ['nb', 'pointsUnit', 'afAuto', 'local'].forEach(k => { if (r[k] !== undefined && JSON.stringify(ex[k]) !== JSON.stringify(r[k])) ch[k] = r[k]; });
+        ['nb', 'pointsUnit', 'afAuto', 'local', 'role'].forEach(k => { if (r[k] !== undefined && JSON.stringify(ex[k]) !== JSON.stringify(r[k])) ch[k] = r[k]; });
         if (Object.keys(ch).length) { Object.assign(ex, ch); n.majs++; }
       } else { garde.push({ ...r, alim: r.alim || '', depart: r.depart || '', pilote: '', L: '', fonctionnement: '' }); n.ajoutees++; }
     });

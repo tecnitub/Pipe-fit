@@ -36,7 +36,7 @@ const Regulation = (() => {
     if (t === 'terminaux') return 'terminaux';
     if (['cta', 'aero', 'aeraulique', 'desenfumage'].includes(t)) return 'ventilation';
     if (['ecs', 'sanitaire'].includes(t)) return 'chauffage';
-    if (t === 'pid') return /^(pc|v|td|ce|em)\d/.test(cle) ? 'chauffage' : 'production';
+    if (t === 'pid') return /^(pcp|pc|v|td|ce|em)\d/.test(cle) ? 'chauffage' : 'production';
     if (q.type === 'cta') return 'ventilation';
     if (['ventilo', 'split', 'regulateur'].includes(q.type)) return 'terminaux';
     if (['pac', 'generateur'].includes(q.type)) return 'production';
@@ -78,6 +78,8 @@ const Regulation = (() => {
     return { consignes: CP ? CP.consignesCctp(t) : null, protocoles, marques, comptage: /comptage|compteur d.energie|calorimetr/.test(n), bacs: /bacs|decret.{0,20}(2020-887|gtb)|classe [ab] .{0,20}(gtb|en 15232|en iso 52120)|en 15232|52120/.test(n),
       automate: /automate programmable|\bapi\b|automate/.test(n), prepro: /regulateur.{0,30}(preprogramme|configurable)|synco|regulateur (de|d.)(chauffage|ventilation) /.test(n), integree: /regulation integree|regulation d.origine|regulation constructeur/.test(n) };
   }
+  // Circuit à vanne de régulation (loi d'eau possible) selon son montage hydraulique
+  const aVanne = c => (Sc().montage ? !!Sc().montage(c.reg).vanne : c.reg !== 'direct');
   function contexte(etude, Liens, opts = {}) {
     const notes = (etude && etude.notes) || [], types = {}, installations = [], N = Nt();
     notes.forEach(n => { types[n.id] = n.type; });
@@ -90,9 +92,13 @@ const Regulation = (() => {
           const { e } = res(n), d = Sc().dimensionner(e), r = Sc().regulation(d, e), Tb = num(e.Tbase, -10);
           const params = [p('Consigne de départ de la production', d.Td, '°C'), p('Abaissement en période réduite', num(e.reduit, 3), 'K')];
           if (d.n > 1) params.push(p('Permutation de la priorité des générateurs', num(e.permutation, 168), 'h'));
+          // Production hétérogène : seuils d'enclenchement de la relève et de l'appoint, température de bivalence
+          if (d.multi && d.multi.some(x => ['releve', 'appoint'].includes(x.role))) params.push(p('Relève / appoint : enclenchement si le départ reste sous la consigne de plus de', num(e.seuilReleve, 3), 'K'), p('Relève / appoint : temporisation d\'enclenchement', num(e.tempoReleve, 10), 'min'));
+          if (Sc().bivalence && Sc().bivalence(d)) params.push(p(`Température extérieure de bivalence (${e.bivalence === 'alternatif' ? 'alternative' : 'parallèle'})`, num(e.Tbivalence, -3), '°C'));
+          (d.ballons || []).filter(b => ['tampon', 'decouplage', 'stockage'].includes(b.fonction)).forEach(b => params.push(p(`Ballon ${b.rep} : différentiel d'enclenchement (sondes ${b.sondes.join(' / ') || '—'})`, 5, 'K')));
           d.circuits.forEach(c => {
             const loi = c.rc[0] > c.rc[1] && ['radiateurs', 'plancher', 'radiant', 'aerotherme'].includes(c.emetteur);
-            if (loi && c.reg !== 'direct') { params.push(p(`Loi d'eau ${c.rep} : départ à ${nf(Tb, 0)} °C extérieur`, c.rc[0], '°C'), p(`Loi d'eau ${c.rep} : départ à 18 °C extérieur`, Sc().depMini ? Sc().depMini(e, c) : (c.emetteur === 'plancher' ? 25 : 30), '°C')); }
+            if (loi && aVanne(c)) { params.push(p(`Loi d'eau ${c.rep} : départ à ${nf(Tb, 0)} °C extérieur`, c.rc[0], '°C'), p(`Loi d'eau ${c.rep} : départ à 18 °C extérieur`, Sc().depMini ? Sc().depMini(e, c) : (c.emetteur === 'plancher' ? 25 : 30), '°C')); }
             else params.push(p(`Consigne de départ ${c.rep}`, c.rc[0], '°C'));
           });
           const cc = Sc().courbeChauffe ? Sc().courbeChauffe(d.co ? d.co.dC : d, e) : null;
@@ -104,7 +110,7 @@ const Regulation = (() => {
           // Données structurées pour les consignes du projet : régimes, circuits et lois d'eau
           const dC = d.co ? d.co.dC : d, dF = d.co ? d.co.dF : null;
           const donnees = { Tbase: Tb, Td: dC.Td, Tr: dC.Tr, chaud: !!d.chaud || dC.Td > dC.Tr, froid: dF ? { Td: dF.Td, Tr: dF.Tr } : (!d.chaud && d.Td < d.Tr ? { Td: d.Td, Tr: d.Tr } : null), changeOver: !!d.co, generateurs: d.n || 1,
-            circuits: d.circuits.map(c => { const loi = c.rc[0] > c.rc[1] && ['radiateurs', 'plancher', 'radiant', 'aerotherme'].includes(c.emetteur) && c.reg !== 'direct'; return { rep: c.rep, emetteur: c.emetteur || '', dep: (c.rcC || c.rc)[0], ret: (c.rcC || c.rc)[1], loi, d18: loi ? (Sc().depMini ? Sc().depMini(e, c) : (c.emetteur === 'plancher' ? 25 : 30)) : null }; }) };
+            circuits: d.circuits.map(c => { const loi = c.rc[0] > c.rc[1] && ['radiateurs', 'plancher', 'radiant', 'aerotherme'].includes(c.emetteur) && aVanne(c); return { rep: c.rep, emetteur: c.emetteur || '', dep: (c.rcC || c.rc)[0], ret: (c.rcC || c.rc)[1], loi, d18: loi ? (Sc().depMini ? Sc().depMini(e, c) : (c.emetteur === 'plancher' ? 25 : 30)) : null }; }) };
           installations.push({ noteId: n.id, titre, app: 'production', donnees, puissance: num(d.Pprod) + (d.co && d.co.dF ? num(d.co.dF.Pprod) : 0), af: [...(((Array.isArray(r) ? r.find(b => b.liste) : r) || {}).liste || r.af || []),
             ...(e.recupGf ? [`Récupération d'énergie (${e.recupGf === 'totale' ? 'totale au condenseur' : 'désurchauffeur'}) : la chaleur rejetée par le groupe froid est envoyée en priorité vers le schéma chaud (eau à ${e.regimeRecup || '45/40'} °C) ; sans besoin de chaleur, rejet par le condenseur à air / la tour (vanne de basculement).`] : []),
             ...(e.recupDe && num(e.Precup) > 0 ? [`Priorité à la récupération sur le groupe froid (${nf(num(e.Precup), 0)} kW disponibles quand le froid tourne) ; le générateur n'est enclenché qu'en appoint, si la température de départ reste sous la consigne, et en secours.`] : [])], params: params.filter(Boolean) });
