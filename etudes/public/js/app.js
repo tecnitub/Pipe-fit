@@ -791,12 +791,12 @@ function placerSchemaHtml(et, n) {
 function batteriesCtaHtml(et, n) {
   const bats = Liens.batteriesCta(et, n);
   if (!bats.length) return '';
-  const annexe = Liens.circuitDeAnnexe(et.notes, n), pids = et.notes.map((x, i) => [x, i]).filter(([x]) => x.type === 'pid');
+  const pids = et.notes.map((x, i) => [x, i]).filter(([x]) => x.type === 'pid');
   const ligne = x => {
     if (x.lien) return `<li>✅ ${esc(x.libelle)} : ${x.lien.type === 'arbo' ? `branche ${esc(x.lien.rep)} de <a href="#/etude/${et.id}/${x.lien.note.id}">${esc(x.lien.note.titre)}</a>${Liens.circuitDeAnnexe(et.notes, x.lien.note) ? '' : ' <span class="avert">(réseau pas encore en départ du schéma de principe)</span>'}` : `circuit « ${esc(x.lien.pid.entrees.circuits[x.lien.i].rep)} » de <a href="#/etude/${et.id}/${x.lien.pid.id}">${esc(x.lien.pid.titre)}</a>`}</li>`;
     const arbos = et.notes.map((a, i) => [a, i]).filter(([a]) => a.type === 'arbo' && ((a.entrees || {}).saison || 'chaud') === x.saison && Liens.batteriesLibres(et, n, a).some(y => y.cle === `${n.id}:${x.b}`));
     const opts = [...arbos.map(([a, i]) => `<option value="arbo|${a.id}">🌳 Branche du réseau ${x.saison} N${i + 1} — ${esc(a.titre)}</option>`),
-      ...(annexe ? [] : pids.map(([p, i]) => `<optgroup label="Schéma de principe N${i + 1} — ${esc(p.titre)}"><option value="${p.id}|-1">➕ Nouveau circuit « ${esc(n.titre)} »</option>${((p.entrees || {}).circuits || []).map((c, k) => [c, k]).filter(([c]) => !c.annexe).map(([c, k]) => `<option value="${p.id}|${k}">Circuit existant : ${esc(c.rep || `C${k + 1}`)}</option>`).join('')}</optgroup>`))].join('');
+      ...(pids.filter(([p]) => Liens.couvertParCircuit(et, p).has(x.b)).map(([p, i]) => `<optgroup label="Schéma de principe N${i + 1} — ${esc(p.titre)}"><option value="${p.id}|-1">➕ Nouveau circuit « ${esc(n.titre)} »</option>${((p.entrees || {}).circuits || []).map((c, k) => [c, k]).filter(([c]) => !c.annexe).map(([c, k]) => `<option value="${p.id}|${k}">Circuit existant : ${esc(c.rep || `C${k + 1}`)}</option>`).join('')}</optgroup>`))].join('');
     return `<li>⚠️ ${esc(x.libelle)} : ${opts ? `<select data-bat-sel="${x.b}" aria-label="Raccordement de la ${esc(x.libelle.toLowerCase())}">${opts}</select> <button class="secondaire petit" data-bat-relier="${x.b}">Raccorder</button>` : `<span class="muted">aucun réseau arborescent ${x.saison === 'froid' ? 'froid (eau glacée)' : 'chaud'} ni circuit du schéma disponible — créez le réseau (calcul « Réseau arborescent », batteries ${x.saison === 'froid' ? 'froides' : 'chaudes'})</span>`}</li>`;
   };
   const ok = bats.every(x => x.lien);

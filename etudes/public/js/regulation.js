@@ -98,11 +98,16 @@ const Regulation = (() => {
           const cc = Sc().courbeChauffe ? Sc().courbeChauffe(d.co ? d.co.dC : d, e) : null;
           if (cc) cc.circuits.forEach(c => { params.push(p(`Pente de la courbe de chauffe ${c.rep} (type Synco)`, Math.round(c.pente * 20) / 20, ''), p(`Déplacement parallèle ${c.rep}`, Math.round(c.deplacement * 2) / 2, 'K')); });
           if (d.chaud) params.push(p('Arrêt chauffage (non-chauffage) au-dessus de', cc ? cc.arret : 17, '°C ext.'));
+          // Récupération d'énergie sur groupe froid : côté froid (production de chaleur récupérée), côté chaud (priorité)
+          if (e.recupGf) params.push(p('Récupération : consigne de l\'eau récupérée (départ)', num(String(e.regimeRecup || '45/40').split('/')[0], 45), '°C'));
+          if (e.recupDe && num(e.Precup) > 0) params.push(p('Récupération sur groupe froid : puissance disponible', num(e.Precup), 'kW'), p('Appoint : enclenché si le départ reste sous la consigne de plus de', 3, 'K pendant 10 min'));
           // Données structurées pour les consignes du projet : régimes, circuits et lois d'eau
           const dC = d.co ? d.co.dC : d, dF = d.co ? d.co.dF : null;
           const donnees = { Tbase: Tb, Td: dC.Td, Tr: dC.Tr, chaud: !!d.chaud || dC.Td > dC.Tr, froid: dF ? { Td: dF.Td, Tr: dF.Tr } : (!d.chaud && d.Td < d.Tr ? { Td: d.Td, Tr: d.Tr } : null), changeOver: !!d.co, generateurs: d.n || 1,
             circuits: d.circuits.map(c => { const loi = c.rc[0] > c.rc[1] && ['radiateurs', 'plancher', 'radiant', 'aerotherme'].includes(c.emetteur) && c.reg !== 'direct'; return { rep: c.rep, emetteur: c.emetteur || '', dep: (c.rcC || c.rc)[0], ret: (c.rcC || c.rc)[1], loi, d18: loi ? (Sc().depMini ? Sc().depMini(e, c) : (c.emetteur === 'plancher' ? 25 : 30)) : null }; }) };
-          installations.push({ noteId: n.id, titre, app: 'production', donnees, puissance: num(d.Pprod) + (d.co && d.co.dF ? num(d.co.dF.Pprod) : 0), af: ((Array.isArray(r) ? r.find(b => b.liste) : r) || {}).liste || r.af || [], params: params.filter(Boolean) });
+          installations.push({ noteId: n.id, titre, app: 'production', donnees, puissance: num(d.Pprod) + (d.co && d.co.dF ? num(d.co.dF.Pprod) : 0), af: [...(((Array.isArray(r) ? r.find(b => b.liste) : r) || {}).liste || r.af || []),
+            ...(e.recupGf ? [`Récupération d'énergie (${e.recupGf === 'totale' ? 'totale au condenseur' : 'désurchauffeur'}) : la chaleur rejetée par le groupe froid est envoyée en priorité vers le schéma chaud (eau à ${e.regimeRecup || '45/40'} °C) ; sans besoin de chaleur, rejet par le condenseur à air / la tour (vanne de basculement).`] : []),
+            ...(e.recupDe && num(e.Precup) > 0 ? [`Priorité à la récupération sur le groupe froid (${nf(num(e.Precup), 0)} kW disponibles quand le froid tourne) ; le générateur n'est enclenché qu'en appoint, si la température de départ reste sous la consigne, et en secours.`] : [])], params: params.filter(Boolean) });
         } else if (n.type === 'cta') {
           const { e, v: vC } = res(n), f = e.froid || 'oui', recup = e.recup || '', co = f === 'co', bc = !['froide', 'aucune'].includes(f), bf = !['non', 'aucune'].includes(f), be = e.batElec || (num(e.PelBe) ? 'appoint' : '');
           const af = [

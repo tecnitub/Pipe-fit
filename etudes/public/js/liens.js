@@ -189,6 +189,12 @@ const Liens = ((N, Sc) => {
       if (t === 'elec' && ['oui', 'non'].includes(etude.neuf) && !saisis.batimentNeuf) e.batimentNeuf = etude.neuf;
     }
     // 3. Protocole de GTB du schéma de principe repris des armoires électriques de l'étude
+    // Récupération d'énergie : chaleur récupérée sur le groupe froid (schéma froid) reprise par le schéma chaud
+    if (t === 'pid' && e.recupDe) {
+      const src = notes.find(n => n.id === e.recupDe && n.type === 'pid' && n !== note);
+      if (!src) alertes.push({ niveau: 'attention', texte: 'Le schéma de principe froid de la récupération a été supprimé.' });
+      else if (!pile.has(src.id)) { try { const v = N.calculer('pid', resoudre(etude, src, pile).entrees).valeurs || {}; imposer({ Precup: v.Precup || 0 }, libelle(src)); } catch (err) { /* schéma froid incomplet */ } }
+    }
     if (t === 'pid') {
       const el = notes.find(n => n.type === 'elec');
       if (el) { const g = gtbPid((el.entrees || {}).gtb || (N.TYPES.elec ? N.defauts('elec').gtb : '')); if (g) imposer({ gtb: g }, libelle(el)); }
@@ -386,8 +392,10 @@ const Liens = ((N, Sc) => {
   function relierAuSchema(etude, note, pidId, i = -1) {
     const pid = ((etude && etude.notes) || []).find(n => n.id === pidId && n.type === 'pid');
     if (!pid || !ANNEXES.includes(note.type)) return null;
-    const anc = circuitDeAnnexe(etude.notes, note);
-    if (anc) delete anc.pid.entrees.circuits[anc.i].annexe;
+    if (note.type === 'cta') {
+      const nouv = couvertParCircuit(etude, pid);
+      circuitsDeAnnexe(etude.notes, note).filter(r => [...couvertParCircuit(etude, r.pid)].some(b => nouv.has(b))).forEach(r => { delete r.pid.entrees.circuits[r.i].annexe; });
+    } else { const anc = circuitDeAnnexe(etude.notes, note); if (anc) delete anc.pid.entrees.circuits[anc.i].annexe; }
     const cs = pid.entrees.circuits = pid.entrees.circuits || [];
     // CTA : la puissance du circuit est celle de ses batteries (plus celle d'un bilan)
     if (i >= 0 && cs[i]) { cs[i].annexe = note.id; if (note.type === 'cta') delete cs[i].bilan; return { pid, i }; }
@@ -408,11 +416,12 @@ const Liens = ((N, Sc) => {
     const f = (cta.entrees || {}).froid || 'oui', co = f === 'co', notes = (etude && etude.notes) || [];
     const bats = [...(!['froide', 'aucune'].includes(f) ? [{ b: 'bc', saison: 'chaud', libelle: co ? 'Batterie change-over (eau chaude)' : 'Batterie chaude' }] : []),
       ...(!['non', 'aucune'].includes(f) ? [{ b: 'bf', saison: 'froid', libelle: co ? 'Batterie change-over (eau glacée)' : 'Batterie froide' }] : [])];
-    const ref = circuitDeAnnexe(notes, cta), couvre = ref ? couvertParCircuit(etude, ref.pid) : new Set();
+    const refs = circuitsDeAnnexe(notes, cta).map(r => ({ ...r, couvre: couvertParCircuit(etude, r.pid) }));
     return bats.map(x => {
       const a = notes.find(n => n.type === 'arbo' && ((n.entrees || {}).troncons || []).some(t => t.emetteur === `${cta.id}:${x.b}`));
       if (a) return { ...x, lien: { type: 'arbo', note: a, rep: a.entrees.troncons.find(t => t.emetteur === `${cta.id}:${x.b}`).rep } };
-      if (ref && couvre.has(x.b)) return { ...x, lien: { type: 'pid', pid: ref.pid, i: ref.i } };
+      const ref = refs.find(r => r.couvre.has(x.b));
+      if (ref) return { ...x, lien: { type: 'pid', pid: ref.pid, i: ref.i } };
       return { ...x, lien: null };
     });
   }
@@ -451,6 +460,11 @@ const Liens = ((N, Sc) => {
     (etude.equipements || []).forEach(x => { if (x.circuit === ancien) x.circuit = rep; });
     return rep;
   }
+  // Tous les circuits qui alimentent une note (une CTA peut avoir sa batterie chaude sur le schéma chaud et sa batterie
+  // froide sur le schéma froid)
+  function circuitsDeAnnexe(notes, note) {
+    return notes.filter(n => n.type === 'pid').flatMap(pid => ((pid.entrees || {}).circuits || []).map((c, i) => [c, i]).filter(([c]) => c && c.annexe === note.id).map(([, i]) => ({ pid, i })));
+  }
   function lienHydro(etude, note, e, verrous, alertes, libelle, pile) {
     const notes = (etude && etude.notes) || [];
     const imposer = (vals, lib) => Object.entries(vals).forEach(([k, v]) => { e[k] = v; verrous[k] = lib; });
@@ -488,6 +502,20 @@ const Liens = ((N, Sc) => {
       return null;
     }
     if (!ANNEXES.includes(note.type)) return null;
+    if (note.type === 'cta') {
+      const refs = circuitsDeAnnexe(notes, note), vus = [];
+      refs.forEach(ref => {
+        let d2; try { d2 = Sc.dimensionner(resoudre(etude, ref.pid, pile).entrees); } catch (err) { return; }
+        const c2 = d2.circuits[ref.i]; if (!c2) return;
+        const lib2 = `${libelle(ref.pid)} (circuit ${c2.rep})`, r2 = c2.rc || c2.rcC;
+        if (c2.rcC) imposer({ TcAller: c2.rcC[0], TcRetour: c2.rcC[1], TfAller: c2.rcF[0], TfRetour: c2.rcF[1] }, lib2);
+        else if (r2[0] > r2[1]) imposer({ TcAller: r2[0], TcRetour: r2[1] }, lib2);
+        else imposer({ TfAller: r2[0], TfRetour: r2[1] }, lib2);
+        vus.push(lib2);
+      });
+      if (!vus.length) return null;
+      return { note: refs[0].pid, libelle: libelle(refs[0].pid), texte: `Batteries alimentées par ${vus.join(' et ')} : régimes d'eau repris ; puissances des batteries renvoyées aux circuits, dont les pompes sont dimensionnées en conséquence. Mise à jour automatique.` };
+    }
     const ref = circuitDeAnnexe(notes, note);
     if (!ref) return null;
     const lib = libelle(ref.pid), es = resoudre(etude, ref.pid, pile).entrees;
@@ -541,8 +569,7 @@ const Liens = ((N, Sc) => {
     delete note.lien;
     if (note.entrees.cta) note.entrees.cta = '';
     // Réseau annexe détaché de son circuit ; schéma détaché de ses réseaux annexes (valeurs conservées)
-    const ref = ANNEXES.includes(note.type) && circuitDeAnnexe(etude.notes || [], note);
-    if (ref) ref.pid.entrees.circuits[ref.i] = { ...resoudre(etude, ref.pid).entrees.circuits[ref.i], annexe: '' };
+    if (ANNEXES.includes(note.type)) circuitsDeAnnexe(etude.notes || [], note).forEach(ref => { ref.pid.entrees.circuits[ref.i] = { ...resoudre(etude, ref.pid).entrees.circuits[ref.i], annexe: '' }; });
     if (note.type === 'pid') (note.entrees.circuits || []).forEach(c => { delete c.annexe; });
     if (note.type === 'cta') reseauxDeCta(etude.notes || [], note).forEach(n => { n.entrees = resoudre(etude, n).entrees; n.entrees.cta = ''; });
     if (note.type === 'pid') (note.entrees.circuits || []).forEach(c => { delete c.bilan; });
@@ -609,7 +636,7 @@ const Liens = ((N, Sc) => {
     });
     return out;
   }
-  return { fichesInstallation, resoudre, calculer, changementsEtude, notesDepuisSchema, detacher, description, reseauxDeCta, circuitDeAnnexe, relierAuSchema, renommerCircuit, arbosDeCta, batteriesLibres, brancherSurArbo, batteriesCta, couvertParCircuit, nf,
+  return { fichesInstallation, resoudre, calculer, changementsEtude, notesDepuisSchema, detacher, description, reseauxDeCta, circuitDeAnnexe, circuitsDeAnnexe, relierAuSchema, renommerCircuit, arbosDeCta, batteriesLibres, brancherSurArbo, batteriesCta, couvertParCircuit, nf,
     climatEtude, climatDeVille, TYPES_BATIMENT, CHAMPS_ETUDE, champEtude, typeBatimentEtude, gtbPid, COMBUSTION, optPid, optCircuits, optTroncons };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'), typeof Schema !== 'undefined' ? Schema : require('./schema'));
 if (typeof module !== 'undefined') module.exports = Liens;

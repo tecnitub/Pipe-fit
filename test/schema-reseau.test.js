@@ -112,3 +112,27 @@ test('CTA : batterie chaude sur le réseau chaud, batterie froide sur le réseau
   assert.strictEqual(Math.round(P(ch)), Math.round(v.Pchaud)); assert.strictEqual(Math.round(P(fr)), Math.round(v.Pfroid));
   assert.deepStrictEqual(L.batteriesCta(et, cta).map(x => x.lien.note.id), ['q2', 'q3']);
 });
+
+test('schéma chaud + schéma froid : CTA sur les deux, récupération d\'énergie du groupe froid', () => {
+  const Rg = require('../etudes/public/js/regulation'), E = require('../etudes/public/js/electricite');
+  const fr = { id: 'sf', type: 'pid', titre: 'Production froid', entrees: { ...N.defauts('pid'), generateur: 'gf-air', reseau: 'eg-7-12', nGen: '1', Pgen: 300, recupGf: 'totale', eerRecup: 3.5, circuits: [{ rep: 'Ventilos', emetteur: 'ventilo', P: 150, regulation: '3v', L: 50 }] } };
+  const ch = { id: 'sc', type: 'pid', titre: 'Production chaud', entrees: { ...N.defauts('pid'), reseau: 'ch-45-35', recupDe: 'sf', circuits: [{ rep: 'Radiateurs', emetteur: 'radiateurs', P: 80, regulation: '3v', L: 50 }] } };
+  const cta = { id: 'ct', type: 'cta', titre: 'CTA', entrees: N.defauts('cta') };
+  const et = { notes: [fr, ch, cta] };
+  // A. Batterie chaude sur le schéma chaud, batterie froide sur le schéma froid
+  L.relierAuSchema(et, cta, 'sc'); L.relierAuSchema(et, cta, 'sf');
+  assert.strictEqual(L.circuitsDeAnnexe(et.notes, cta).length, 2);
+  assert.deepStrictEqual(L.batteriesCta(et, cta).map(x => x.lien.pid.id), ['sc', 'sf']);
+  const v = N.calculer('cta', cta.entrees).valeurs, rc = L.resoudre(et, ch).entrees.circuits[1], rf = L.resoudre(et, fr).entrees.circuits[1];
+  assert.strictEqual(rc.P, Math.round(v.Pchaud * 10) / 10); assert.strictEqual(rf.P, Math.round(v.Pfroid * 10) / 10);
+  const ec = L.resoudre(et, cta).entrees; assert.deepStrictEqual([ec.TcAller, ec.TcRetour, ec.TfAller, ec.TfRetour], [45, 35, 7, 12]);
+  // Vannes : chaque batterie est réglée par la vanne de son circuit
+  assert.deepStrictEqual(E.equipementsEtude(et, L).filter(x => /^VB[CF]-/.test(x.rep)), []);
+  // B. Récupération : chaleur rejetée = froid × (1 + 1/EER), reprise par le schéma chaud
+  const Pf = L.calculer(et, fr).valeurs.Pdem, Pr = L.calculer(et, fr).valeurs.Precup;
+  assert.strictEqual(Pr, Math.round(Pf * (1 + 1 / 3.5) * 10) / 10);
+  assert.strictEqual(L.resoudre(et, ch).entrees.Precup, Pr);
+  assert.ok(L.calculer(et, ch).alertes.some(a => /Récupération sur groupe froid/.test(a.texte)));
+  const inst = Rg.contexte(et, L).installations.find(i => i.noteId === 'sc');
+  assert.ok(inst.af.some(t => /Priorité à la récupération/.test(t)));
+});

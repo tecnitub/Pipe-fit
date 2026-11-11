@@ -1163,8 +1163,8 @@ const Electricite = ((N, Sc) => {
         // Vannes des batteries à eau : celles qu'un circuit dédié du schéma de principe ne règle pas déjà (CTA en bout de
         // branche d'un réseau arborescent, batterie froide d'une CTA dont le circuit dédié est chaud…)
         const fc = es.froid || 'non', bats = fc === 'co' ? [['co', 'change-over']] : [...(!['froide', 'aucune'].includes(fc) ? [['bc', 'chaude']] : []), ...(!['non', 'aucune'].includes(fc) ? [['bf', 'froide']] : [])];
-        const ref = Liens.circuitDeAnnexe ? Liens.circuitDeAnnexe(etude.notes || [], n) : null;
-        const couvre = ref && Liens.couvertParCircuit ? new Set([...Liens.couvertParCircuit(etude, ref.pid), ...(fc === 'co' ? ['co'] : [])]) : new Set();
+        const refs = Liens.circuitsDeAnnexe ? Liens.circuitsDeAnnexe(etude.notes || [], n) : [];
+        const couvre = new Set(refs.flatMap(r => [...Liens.couvertParCircuit(etude, r.pid), ...(fc === 'co' ? ['co'] : [])]));
         bats.filter(([b]) => !couvre.has(b)).forEach(([b, l]) => ajout(`v${b}`, { rep: `V${b.toUpperCase()}-N${ni + 1}`, designation: `Vanne de régulation de la batterie ${l} — ${titre}`, type: 'vanne', P: 0.01, tension: '24V', regulation: 'v010', alim: es.alim || '' }));
         // Batterie électrique : puissance saisie ou de la fiche, sinon calculée (batterie chaude électrique)
         const pBe = kwFiche(es.PelBe) ?? kwFiche(fiche.Pbe) ?? kwFiche(v.Pbe), libBe = { chaude: 'Batterie chaude électrique', prechauffage: 'Batterie électrique de préchauffage', appoint: 'Batterie électrique d\'appoint' }[es.batElec] || 'Batterie électrique';
