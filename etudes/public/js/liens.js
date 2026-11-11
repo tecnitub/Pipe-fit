@@ -389,9 +389,28 @@ const Liens = ((N, Sc) => {
     const anc = circuitDeAnnexe(etude.notes, note);
     if (anc) delete anc.pid.entrees.circuits[anc.i].annexe;
     const cs = pid.entrees.circuits = pid.entrees.circuits || [];
-    if (i >= 0 && cs[i]) { cs[i].annexe = note.id; return { pid, i }; }
+    // CTA : la puissance du circuit est celle de ses batteries (plus celle d'un bilan)
+    if (i >= 0 && cs[i]) { cs[i].annexe = note.id; if (note.type === 'cta') delete cs[i].bilan; return { pid, i }; }
     cs.push({ rep: repLibre(cs, String(note.titre || '').trim() || `C${cs.length + 1}`), emetteur: EMETTEUR_ANNEXE(note), P: '', regime: '', regulation: '3v', L: 0, annexe: note.id });
     return { pid, i: cs.length - 1 };
+  }
+  // CTA (batteries à eau) raccordée en bout de branche d'un réseau arborescent : réseaux où elle est déjà un émetteur
+  const Eqb = () => (typeof Equilibrage !== 'undefined' ? Equilibrage : require('./equilibrage'));
+  const arbosDeCta = (etude, cta) => ((etude && etude.notes) || []).filter(n => n.type === 'arbo' && ((n.entrees || {}).troncons || []).some(t => String(t.emetteur || '').startsWith(`${cta.id}:`)));
+  // Batteries de la CTA proposées à un réseau arborescent (selon la saison du réseau) et pas encore raccordées
+  const batteriesLibres = (etude, cta, arbo) => {
+    const pris = new Set(((etude && etude.notes) || []).filter(n => n.type === 'arbo').flatMap(n => ((n.entrees || {}).troncons || []).map(t => t.emetteur)).filter(Boolean));
+    return Eqb().emetteursEtude(etude, (arbo.entrees || {}).saison || 'chaud').filter(x => x.cle.startsWith(`${cta.id}:`) && !pris.has(x.cle));
+  };
+  // Nouvelle branche du réseau arborescent pour la batterie (sous le tronçon de départ) : puissance, débit et pertes de
+  // charge de la batterie repris et verrouillés ; il reste la longueur. Rend le repère de la branche.
+  function brancherSurArbo(etude, cta, arbo, cle) {
+    const x = batteriesLibres(etude, cta, arbo).find(y => y.cle === cle); if (!x) return null;
+    const tr = arbo.entrees.troncons = arbo.entrees.troncons || [], reps = new Set(tr.map(t => String(t.rep || '').trim()));
+    const racine = tr.find(t => String(t.rep || '').trim() && !String(t.amont || '').trim() && !t.emetteur);
+    let rep = x.rep, k = 2; while (reps.has(rep)) rep = `${x.rep}-${k++}`;
+    tr.push({ rep, amont: racine ? racine.rep : '', nom: x.nom, L: '', zeta: 5, tube: '', P: '', dpEm: '', emetteur: x.cle });
+    return rep;
   }
   const repLibre = (cs, r, sauf) => { let x = r, k = 2; while (cs.some((c, j) => j !== sauf && String(c.rep || '').trim() === x)) x = `${r} (${k++})`; return x; };
   // Renomme un circuit du schéma et suit partout : terminaux et notes reliés (« id|repère »), robinetterie et pompes du
@@ -424,7 +443,7 @@ const Liens = ((N, Sc) => {
         const src = notes.find(n => n.id === c.annexe && ANNEXES.includes(n.type)), rep = c.rep || `Circuit ${i + 1}`;
         if (!src) { alertes.push({ niveau: 'attention', texte: `${rep} : le réseau annexe relié a été supprimé, valeurs saisies conservées.` }); delete c.annexe; return; }
         const dc = d0 && d0.circuits[i], rc = dc && (dc.rc || dc.rcC), regime = rc && src.type !== 'cta' ? { fluide: e.fluide, T: Math.round((rc[0] + rc[1]) / 2 * 10) / 10, serie: e.serie, ...(src.type === 'arbo' ? { dT: Math.abs(rc[0] - rc[1]) } : {}) } : {};
-        const lib = libelle(src), v = N.calculer(src.type, { ...brut(src), ...regime }).valeurs || {}, lock = k => { verrous[`circuits.${i}.${k}`] = lib; };
+        const lib = libelle(src), tr = src.type === 'arbo' ? { troncons: resoudre(etude, src, pile).entrees.troncons } : {}, v = N.calculer(src.type, { ...brut(src), ...tr, ...regime }).valeurs || {}, lock = k => { verrous[`circuits.${i}.${k}`] = lib; };
         if (src.type === 'cta') {
           const co = e.reseau === 'co', froid = (() => { const r = Sc.REGIMES[e.reseau]; return e.reseau === 'perso' ? num(e.Tdep) < num(e.Tret) : r && r[1] < r[2]; })();
           if (!c.bilan) { c.P = Math.round((co || !froid ? v.Pchaud : v.Pfroid) * 10) / 10; lock('P'); }
@@ -569,7 +588,7 @@ const Liens = ((N, Sc) => {
     });
     return out;
   }
-  return { fichesInstallation, resoudre, calculer, changementsEtude, notesDepuisSchema, detacher, description, reseauxDeCta, circuitDeAnnexe, relierAuSchema, renommerCircuit, nf,
+  return { fichesInstallation, resoudre, calculer, changementsEtude, notesDepuisSchema, detacher, description, reseauxDeCta, circuitDeAnnexe, relierAuSchema, renommerCircuit, arbosDeCta, batteriesLibres, brancherSurArbo, nf,
     climatEtude, climatDeVille, TYPES_BATIMENT, CHAMPS_ETUDE, champEtude, typeBatimentEtude, gtbPid, COMBUSTION, optPid, optCircuits, optTroncons };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'), typeof Schema !== 'undefined' ? Schema : require('./schema'));
 if (typeof module !== 'undefined') module.exports = Liens;

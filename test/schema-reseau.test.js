@@ -58,3 +58,26 @@ test('registre : un même équipement se place plusieurs fois (CTA, vase, ECS, g
   assert.strictEqual(eqs.filter(x => /^VS-/.test(x.rep)).length, 3);
   assert.strictEqual(eqs.filter(x => /^TB-/.test(x.rep)).length, 2);
 });
+
+test('CTA à batterie à eau : alimentée par une branche du réseau arborescent (départ du schéma) ou par un circuit du schéma', () => {
+  let k = 0; const nn = t => ({ id: `c${++k}`, type: t, titre: N.TYPES[t].titre, entrees: N.defauts(t) });
+  const pid = nn('pid'), cta = nn('cta'), arbo = nn('arbo'); cta.titre = 'CTA salle';
+  const et = { notes: [pid, cta, arbo] };
+  const Pcta = L.calculer(et, cta).valeurs.Pchaud;
+  // 1. Par l'arborescence, elle-même départ du schéma
+  const libres = L.batteriesLibres(et, cta, arbo);
+  assert.deepStrictEqual(libres.map(x => x.cle), [`${cta.id}:bc`]);
+  const rep = L.brancherSurArbo(et, cta, arbo, libres[0].cle);
+  const t = L.resoudre(et, arbo).entrees.troncons.find(x => x.rep === rep);
+  assert.strictEqual(t.amont, 'C'); assert.strictEqual(Math.round(t.P), Math.round(Pcta));
+  assert.deepStrictEqual(L.arbosDeCta(et, cta), [arbo]);
+  assert.deepStrictEqual(L.batteriesLibres(et, cta, arbo), []);
+  const P0 = L.calculer(et, arbo).valeurs.Ptot;
+  const r = L.relierAuSchema(et, arbo, pid.id);
+  assert.strictEqual(L.resoudre(et, pid).entrees.circuits[r.i].P, Math.round(P0 * 10) / 10);
+  // 2. Directement sur un circuit du schéma qui avait un bilan : la puissance est celle de la CTA
+  const et2 = { notes: [nn('pid'), nn('cta'), nn('bilan')] }, p2 = et2.notes[0];
+  p2.entrees.circuits[0].bilan = et2.notes[2].id;
+  const r2 = L.relierAuSchema(et2, et2.notes[1], p2.id, 0);
+  assert.strictEqual(L.resoudre(et2, p2).entrees.circuits[r2.i].P, Math.round(L.calculer(et2, et2.notes[1]).valeurs.Pchaud * 10) / 10);
+});
