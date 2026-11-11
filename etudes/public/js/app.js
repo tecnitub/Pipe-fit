@@ -270,7 +270,12 @@ function lierCalculateur(root, type, e, changer, ctx = ctxSimple(type, e)) {
     const [k, i, col] = el.dataset.l.split('.');
     const ecrire = () => { const l = e[k] || (e[k] = []); (l[+i] || (l[+i] = {}))[col] = el.value; };
     // Une liste peut changer les champs verrouillés (puissance reprise d'un bilan) : formulaire redessiné
-    if (el.tagName === 'SELECT') el.onchange = () => { ecrire(); redessiner(); }; else el.oninput = () => { ecrire(); recalculer(); };
+    if (el.tagName === 'SELECT') el.onchange = () => { ecrire(); redessiner(); }; else el.oninput = () => { ecrire(); recalculer(); };    // Pièce, local, étage… : liste des valeurs de l'étude ouverte au clic, et une valeur nouvelle proposée tout de suite
+    // aux autres lignes (sans attendre que le formulaire soit redessiné)
+    if (el.list) {
+      el.addEventListener('mousedown', () => { if (!el.value && el.showPicker) setTimeout(() => { try { el.showPicker(); } catch (er) { /* navigateur sans showPicker */ } }, 0); });
+      el.addEventListener('change', () => { const v = el.value.trim(); if (v && ![...el.list.options].some(o => o.value === v)) { const o = document.createElement('option'); o.value = v; el.list.appendChild(o); } });
+    }
   });
   root.querySelectorAll('[data-ajout-ligne]').forEach(b => b.onclick = () => {
     const k = b.dataset.ajoutLigne, c = Notes.TYPES[type].champs.find(x => x.k === k), l = e[k] || (e[k] = []);
