@@ -25,6 +25,8 @@ const Liens = ((N, Sc) => {
     const notes = (etude && etude.notes) || [], libelle = n => `N${notes.indexOf(n) + 1} — ${n.titre}`;
     if (pile.has(note.id)) return { entrees: e, verrous, alertes: [{ niveau: 'erreur', texte: 'Liens circulaires entre calculs.' }], source: null };
     pile = new Set([...pile, note.id]);
+    // Données saisies une fois pour l'étude (climat, type de bâtiment) et choix reliés (circuit primaire, chaufferie, tronçon)
+    lienEtude(etude, note, e, verrous, alertes, libelle, pile);
     // Schéma : puissances des circuits reprises des bilans
     if (note.type === 'pid') {
       const froid = (() => { const r = Sc.REGIMES[e.reseau]; return e.reseau === 'perso' ? num(e.Tdep) < num(e.Tret) : r && r[1] < r[2]; })();
@@ -110,6 +112,168 @@ const Liens = ((N, Sc) => {
       return { entrees: e, verrous, alertes, source: { note: src, libelle: libelle(src), circuit: c ? c.rep : '' } };
     }
     return { entrees: e, verrous, alertes, source: null };
+  }
+
+  /* ---------- Données de l'étude saisies une fois : climat, type de bâtiment, neuf / existant ---------- */
+  const Dn = () => (typeof Donnees !== 'undefined' ? Donnees : require('./donnees'));
+  const normT = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  // Climat de l'étude : site de la liste (températures de base) ou températures saisies ; null si non défini
+  function climatEtude(et) {
+    const k = et && et.climat;
+    if (!k) return null;
+    if (k === 'perso') return { cle: 'perso', libelle: 'températures saisies', Tbase: num(et.Tbase, -7), Tete: num(et.Tete, 32), HRete: num(et.HRete, 40) };
+    const c = Dn().CLIMATS[k];
+    return c ? { cle: k, libelle: c[0], Tbase: c[1], Tete: c[2], HRete: c[3] } : null;
+  }
+  // Climat proposé d'après la ville (ou le code postal) du site du chantier
+  const DEPARTEMENTS = { '07': 'annonay', 69: 'lyon', 42: 'st-etienne', 43: 'st-etienne', 26: 'valence', 38: 'grenoble', 73: 'chambery', 74: 'chambery', 63: 'clermont', '03': 'clermont', 15: 'clermont',
+    21: 'dijon', 71: 'dijon', 75: 'paris', 77: 'paris', 78: 'paris', 91: 'paris', 92: 'paris', 93: 'paris', 94: 'paris', 95: 'paris', 59: 'lille', 62: 'lille', 67: 'strasbourg', 68: 'strasbourg',
+    54: 'nancy', 55: 'nancy', 57: 'nancy', 88: 'nancy', 87: 'limoges', 19: 'limoges', 23: 'limoges', 44: 'nantes', 85: 'nantes', 49: 'nantes', 35: 'rennes', 22: 'rennes', 56: 'rennes', 29: 'brest',
+    33: 'bordeaux', 31: 'toulouse', 34: 'montpellier', 30: 'montpellier', 13: 'marseille', 83: 'marseille', 84: 'marseille', '06': 'nice' };
+  function climatDeVille(ville, cp) {
+    const v = normT(ville);
+    if (v) {
+      // Ville citée dans le libellé du site (« Chambéry, Annecy », « Annonay, Ardèche nord (Davezieux) »)
+      const m = Object.entries(Dn().CLIMATS).find(([, c]) => normT(c[0]).split(' ').filter(w => w.length > 3 && !['ardeche', 'nord'].includes(w)).some(w => v === w || v.startsWith(`${w} `)))
+        || Object.entries(Dn().CLIMATS).find(([, c]) => normT(c[0].split(',')[0]) === v);
+      if (m) return m[0];
+    }
+    const d = String(cp || '').replace(/\s/g, '').slice(0, 2);
+    return /^\d\d$/.test(d) ? DEPARTEMENTS[d] || DEPARTEMENTS[+d] || '' : '';
+  }
+  // Type de bâtiment de l'étude → choix de chaque calcul (valeur par défaut : un choix fait dans le calcul reste)
+  const TYPES_BATIMENT = {
+    bureaux: ['Bureaux, tertiaire', { pid: 'tertiaire', sanitaire: 'bureau', evacuation: 'logement', aero: 'bureau', elec: 'bureaux' }],
+    enseignement: ['Enseignement (école, collège, lycée)', { pid: 'erp', sanitaire: 'creche', evacuation: 'collectif', aero: 'classe', elec: 'enseignement' }],
+    ehpad: ['EHPAD, établissement de soins', { pid: 'erp', sanitaire: 'sante', evacuation: 'collectif', aero: 'hotel', elec: 'ehpad' }],
+    creche: ['Crèche, petite enfance', { pid: 'erp', sanitaire: 'creche', evacuation: 'collectif', aero: 'classe', elec: 'creche' }],
+    gymnase: ['Salle de sport, gymnase', { pid: 'erp', sanitaire: 'vestiaire', evacuation: 'public', aero: 'open', elec: 'gymnase' }],
+    logement: ['Logements collectifs', { pid: 'habitation', sanitaire: 'logement', evacuation: 'logement', aero: 'log', elec: 'logement' }],
+    hotel: ['Hôtel', { pid: 'erp', sanitaire: 'hotel', evacuation: 'collectif', aero: 'hotel' }],
+    commerce: ['Commerce (ERP)', { pid: 'erp', sanitaire: 'bureau', evacuation: 'logement', aero: 'open' }],
+    restauration: ['Restauration', { pid: 'erp', sanitaire: 'restauration', evacuation: 'collectif', aero: 'open' }],
+    industrie: ['Industrie, ateliers', { pid: 'industrie', sanitaire: 'industrie', evacuation: 'labo', aero: 'atelier' }],
+  };
+  // Champs des calculs repris du type de bâtiment ou de « neuf / existant » de l'étude (le premier : type de bâtiment)
+  const CHAMPS_ETUDE = { pid: ['usage'], sanitaire: ['usage'], evacuation: ['usage'], aero: ['usageAcous'], elec: ['profilBatiment', 'batimentNeuf'] };
+  const champEtude = (type, k) => (CHAMPS_ETUDE[type] || []).includes(k);
+  const typeBatimentEtude = et => (et && TYPES_BATIMENT[et.typeBatiment] ? et.typeBatiment : '');
+  // Protocoles de GTB : libellés harmonisés entre les armoires électriques (« BACnet/IP ») et les schémas (« BACnet IP »)
+  const gtbPid = v => (/^bacnet/i.test(String(v || '')) ? 'BACnet IP' : /^modbus/i.test(String(v || '')) ? 'Modbus TCP' : String(v || ''));
+  // Générateurs à combustion : combustible et rendement PCI usuel (débit calorifique = puissance utile / rendement)
+  const COMBUSTION = { 'chaudiere-cond': ['gaz', 0.97], 'chaudiere-gaz': ['gaz', 0.92], 'chaudiere-fioul': ['fioul', 0.92], 'chaudiere-bois': ['bois', 0.85] };
+  // Listes de choix reliées à l'étude (sans étude : la valeur enregistrée seule)
+  const notesN = (et, f) => ((et && et.notes) || []).map((n, i) => [n, i]).filter(([n]) => f(n));
+  const optPid = (et, v) => [['', '—'], ...(et ? notesN(et, n => n.type === 'pid').map(([n, i]) => [n.id, `N${i + 1} — ${n.titre}`]) : v ? [[v, v]] : [])];
+  const optCircuits = (et, v) => [['', 'Saisie'], ...(et ? notesN(et, n => n.type === 'pid').flatMap(([n, i]) => ((n.entrees || {}).circuits || []).filter(c => c && c.rep).map(c => [`${n.id}|${c.rep}`, `N${i + 1} — ${c.rep}`])) : v ? [[v, v]] : [])];
+  // Tronçons des réseaux et pompes, circuits des schémas de principe : source d'une isolation, d'une dilatation, d'un supportage
+  const optTroncons = (et, v) => [['', 'Saisie'], ...(et ? notesN(et, n => n.type === 'reseau' || n.type === 'pid').flatMap(([n, i]) => (n.type === 'reseau'
+    ? ((n.entrees || {}).troncons || []).map((t, j) => [`${n.id}|t|${j}`, `N${i + 1} — ${(t && t.rep) || `Tronçon ${j + 1}`}`])
+    : ((n.entrees || {}).circuits || []).map((c, j) => [`${n.id}|c|${j}`, `N${i + 1} — circuit ${(c && c.rep) || `C${j + 1}`}`]))) : v ? [[v, v]] : [])];
+  function lienEtude(etude, note, e, verrous, alertes, libelle, pile) {
+    const notes = (etude && etude.notes) || [], t = note.type;
+    const imposer = (vals, lib) => Object.entries(vals).forEach(([k, v]) => { e[k] = v; verrous[k] = lib; });
+    // 1. Climat de l'étude : températures extérieures de base imposées (verrouillées)
+    const cl = climatEtude(etude);
+    if (cl) {
+      const lib = `climat de l'étude (${cl.libelle})`;
+      if (t === 'bilan') imposer(cl.cle === 'perso' ? { climat: 'perso', Te: cl.Tbase, TeEte: cl.Tete, HRete: cl.HRete } : { climat: cl.cle }, lib);
+      if (t === 'pieces') imposer({ Tbase: cl.Tbase, Tete: cl.Tete }, lib);
+      if (t === 'cta' && e.modeP !== 'saisie') imposer({ TeH: cl.Tbase, TeE: cl.Tete, HReE: cl.HRete }, lib);
+      if (t === 'pid') imposer({ Tbase: cl.Tbase }, lib);
+    }
+    // 2. Type de bâtiment et neuf / existant : valeur par défaut des calculs (sauf choix fait dans le calcul)
+    if (CHAMPS_ETUDE[t] && etude) {
+      const saisis = e._saisis || {}, k = CHAMPS_ETUDE[t][0], tb = typeBatimentEtude(etude), v = tb && TYPES_BATIMENT[tb][1][t];
+      if (v && !saisis[k]) e[k] = v;
+      if (t === 'elec' && ['oui', 'non'].includes(etude.neuf) && !saisis.batimentNeuf) e.batimentNeuf = etude.neuf;
+    }
+    // 3. Protocole de GTB du schéma de principe repris des armoires électriques de l'étude
+    if (t === 'pid') {
+      const el = notes.find(n => n.type === 'elec');
+      if (el) { const g = gtbPid((el.entrees || {}).gtb || (N.TYPES.elec ? N.defauts('elec').gtb : '')); if (g) imposer({ gtb: g }, libelle(el)); }
+    }
+    // 4. Production d'ECS : puissance et régime du primaire repris du circuit du schéma de principe
+    if (t === 'ecs' && e.circuitPrim) {
+      const [id, rep] = String(e.circuitPrim).split('|'), src = notes.find(n => n.id === id && n.type === 'pid');
+      if (!src) alertes.push({ niveau: 'attention', texte: 'Le schéma de principe du circuit primaire a été supprimé : puissance et régime saisis conservés.' });
+      else {
+        let c = null;
+        try { c = Sc.dimensionner(resoudre(etude, src, pile).entrees).circuits.find(x => x.rep === rep); } catch (err) { c = null; }
+        if (!c) alertes.push({ niveau: 'attention', texte: `Circuit « ${rep} » introuvable dans ${libelle(src)} : puissance et régime saisis conservés.` });
+        else {
+          const rc = c.rcC || c.rc, lib = `${libelle(src)} (circuit ${rep})`;
+          imposer({ P: Math.round(num(c.P) * 10) / 10, Tp1: rc[0], Tp2: rc[1] }, lib);
+          if (rc[0] < rc[1]) alertes.push({ niveau: 'erreur', texte: `Circuit « ${rep} » : régime ${rc[0]}/${rc[1]} °C, pas un régime d'eau chaude.` });
+        }
+      }
+    }
+    // 5. Gaz et ventilation de chaufferie : générateurs de la chaufferie de l'étude (schéma de principe)
+    if (['gaz', 'gazReseau', 'ventilation'].includes(t) && e.chaufferie) {
+      const src = notes.find(n => n.id === e.chaufferie && n.type === 'pid');
+      if (!src) alertes.push({ niveau: 'attention', texte: 'Le schéma de principe de la chaufferie a été supprimé : valeurs saisies conservées.' });
+      else {
+        const es = brut(src), n = Math.max(1, Math.min(6, Math.round(num(es.nGen, 1)))), Pg = num(es.Pgen), cb = COMBUSTION[es.generateur], lib = libelle(src);
+        const gen = (Sc.GENERATEURS[es.generateur] || ['Générateur'])[0];
+        if (!cb) alertes.push({ niveau: 'attention', texte: `${lib} : ${gen.toLowerCase()}, sans combustion : ${t === 'ventilation' ? 'ventilation de chaufferie à saisir' : 'aucun appareil gaz repris'}.` });
+        else if (t === 'ventilation') imposer({ P: Math.round(n * Pg * 10) / 10, combustible: cb[0], rendement: Math.round(cb[1] * 100) }, lib);
+        else if (cb[0] !== 'gaz') alertes.push({ niveau: 'attention', texte: `${lib} : ${gen.toLowerCase()} (${cb[0]}), aucun appareil gaz repris.` });
+        else {
+          // Lignes ajoutées après les appareils saisis (mêmes numéros de ligne que la saisie), verrouillées
+          const l = e.appareils = Array.isArray(e.appareils) ? e.appareils : [], i0 = l.length, nom = String(es.titreInstallation || src.titre || 'Chaufferie').trim();
+          const doublons = l.filter(a => a && /chaudi[eè]re|g[ée]n[ée]rateur/i.test(a.nom || '') && num(a.P) > 0);
+          if (doublons.length) alertes.push({ niveau: 'attention', texte: `Générateurs repris de ${lib} : ${doublons.map(a => a.nom).join(', ')} sans doute comptés deux fois — à retirer des appareils saisis.` });
+          for (let k = 0; k < n; k++) {
+            l.push({ nom: `${nom} — ${gen.toLowerCase()}${n > 1 ? ` ${k + 1}` : ''}`, P: Math.round(Pg / cb[1] * 10) / 10, ...(t === 'gazReseau' ? { troncon: e.troncChaufferie || '' } : {}), _auto: lib });
+            ['nom', 'P', ...(t === 'gazReseau' ? ['troncon'] : [])].forEach(c => { verrous[`appareils.${i0 + k}.${c}`] = lib; });
+          }
+        }
+      }
+    }
+    // 6. Isolation, dilatation, supportage : tube et températures d'un tronçon ou d'un circuit de l'étude
+    if (['isolation', 'dilatation', 'supportage'].includes(t) && e.source) {
+      const [id, sorte, j] = String(e.source).split('|'), src = notes.find(n => n.id === id);
+      let x = null;
+      try {
+        if (src && src.type === 'reseau' && sorte === 't') {
+          const es = resoudre(etude, src, pile).entrees, v = (N.calculer('reseau', es).valeurs.troncons || [])[+j], T = num(es.T);
+          if (v) x = { rep: v.rep, serie: v.serie, tube: v.tube, L: v.L, Tc: T, Tf: T, co: false, fluide: es.fluide };
+        } else if (src && src.type === 'pid' && sorte === 'c') {
+          const es = resoudre(etude, src, pile).entrees, c = Sc.dimensionner(es).circuits[+j];
+          if (c) { const rc = c.rcC || c.rc, rf = c.rcF || c.rc; x = { rep: c.rep, serie: es.serie, tube: c.t.cle, L: c.L, Tc: Math.max(rc[0], rc[1]), Tf: Math.min(rf[0], rf[1]), co: !!c.rcF, fluide: es.fluide }; }
+        }
+      } catch (err) { x = null; }
+      if (!x) alertes.push({ niveau: 'attention', texte: 'Le tronçon ou le circuit relié n\'existe plus dans l\'étude : valeurs saisies conservées.' });
+      else {
+        // Eau glacée (ou change-over) : la température froide gouverne la condensation ; eau chaude : la plus chaude
+        const lib = `${libelle(src)} (${x.rep})`, froid = x.co || x.Tc <= 25;
+        if (t === 'isolation') imposer({ serie: x.serie, tube: x.tube, L: x.L, Tf: froid ? x.Tf : x.Tc }, lib);
+        if (t === 'dilatation') imposer({ serie: x.serie, tube: x.tube, ...(x.Tc > 25 ? { Tmax: x.Tc } : {}), ...(froid ? { Tmin: Math.min(x.Tf, num(e.Tmin, 5)) } : {}) }, lib);
+        if (t === 'supportage') {
+          if (/acier|inox|cuivre/.test(x.serie)) imposer({ serie: x.serie, tube: x.tube }, lib);
+          else alertes.push({ niveau: 'attention', texte: `${lib} : série de tubes non métallique, portée à voir avec le fabricant.` });
+          imposer({ T: x.Tc > 25 ? x.Tc : x.Tf, contenu: !x.fluide || x.fluide === 'eau' ? '1000' : '1040' }, lib);
+        }
+      }
+    }
+    // 7. Bouches : surface et débit des locaux repris des pièces de l'étude (même nom)
+    if (t === 'bouches' && e.reprise === 'pieces') {
+      const P = typeof Pieces !== 'undefined' ? Pieces : require('./pieces'), b = P.besoinsEtude(etude), air = {};
+      const libP = p => libelle(notes.find(n => n.id === p.note));
+      notes.filter(n => n.type === 'aero').forEach(n => ((n.entrees || {}).bouchesL || []).forEach(x => {
+        if (!x || !String(x.salle || '').trim()) return;
+        const k = P.norm(x.salle), a = air[k] || (air[k] = { souf: 0, ext: 0, src: n });
+        if (x.reseau === 'soufflage' || (!x.reseau && x.type !== 'extraction')) a.souf += num(x.Q); else a.ext += num(x.Q);
+      }));
+      (e.locaux || []).forEach((l, i) => {
+        if (!l) return;
+        const k = P.norm(l.local), p = b[k], a = air[k], ext = l.type === 'extraction', q = a ? (ext ? a.ext : a.souf) : 0;
+        if (p) { l.S = Math.round(p.S * 10) / 10; verrous[`locaux.${i}.S`] = libP(p); }
+        if (q > 0) { l.Q = Math.round(q); verrous[`locaux.${i}.Q`] = `${libelle(a.src)} (bouches de la pièce)`; }
+        else if (p && !ext && p.Qair > 0) { l.Q = Math.round(p.Qair); verrous[`locaux.${i}.Q`] = `${libP(p)} (air neuf de la pièce)`; }
+        if (!p && !a && String(l.local || '').trim()) alertes.push({ niveau: 'info', texte: `${l.local} : pièce absente des bilans et des bouches de l'étude, surface et débit saisis.` });
+      });
+    }
   }
 
   /* ---------- Réseau arborescent ← émetteurs (terminaux, batteries de CTA) ---------- */
@@ -360,6 +524,7 @@ const Liens = ((N, Sc) => {
     out.forEach(x => { x.calcul = x.robinet === undefined || OC.includes(x.type); });
     return out;
   }
-  return { fichesInstallation, resoudre, calculer, notesDepuisSchema, detacher, description, reseauxDeCta, circuitDeAnnexe, nf };
+  return { fichesInstallation, resoudre, calculer, notesDepuisSchema, detacher, description, reseauxDeCta, circuitDeAnnexe, nf,
+    climatEtude, climatDeVille, TYPES_BATIMENT, CHAMPS_ETUDE, champEtude, typeBatimentEtude, gtbPid, COMBUSTION, optPid, optCircuits, optTroncons };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'), typeof Schema !== 'undefined' ? Schema : require('./schema'));
 if (typeof module !== 'undefined') module.exports = Liens;

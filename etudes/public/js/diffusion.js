@@ -129,6 +129,23 @@ function bindDocuments(root, et) {
 }
 
 /* ---------- Liste de diffusion ---------- */
+// Intervenants du chantier (client et son contact, maîtrise d'œuvre et son contact) ajoutés s'ils manquent ; renvoie le nombre ajouté
+function reprendreIntervenants(et, a, pf) {
+  if (!a) return 0;
+  et.diffusion = et.diffusion || [];
+  const ents = pf.entreprises || [], cts = pf.contacts || [], nomE = id => (ents.find(e => e.id === id) || {}).nom || '';
+  const nomC = c => [c.civilite, c.prenom, c.nom].filter(Boolean).join(' ');
+  const deja = d => et.diffusion.some(x => (d.email && x.email && x.email.toLowerCase() === d.email.toLowerCase()) || (!d.email && normTxt(x.societe) === normTxt(d.societe) && normTxt(x.nom) === normTxt(d.nom)));
+  let n = 0;
+  [[a.clientId, a.contactId, ROLES_DIFFUSION[2]], [a.moeId, a.moeContactId, ROLES_DIFFUSION[0]]].forEach(([eid, cid, role]) => {
+    if (!eid) return;
+    // Contact du chantier en premier, puis les autres contacts de la société qui ont une adresse e-mail
+    const liste = [cts.find(c => c.id === cid), ...cts.filter(c => c.entrepriseId === eid && c.id !== cid && c.email)].filter(Boolean);
+    const lignes = liste.length ? liste.map(c => ({ nom: nomC(c), societe: nomE(eid), role, email: c.email || '' })) : [{ nom: '', societe: nomE(eid), role, email: '' }];
+    lignes.filter(d => d.societe && !deja(d)).forEach(d => { et.diffusion.push({ id: uidE(), ...d, copie: false }); n++; });
+  });
+  return n;
+}
 function dialogueListeDiffusion(et) {
   et.diffusion = et.diffusion || [];
   const box = Modal.open('');
@@ -139,11 +156,13 @@ function dialogueListeDiffusion(et) {
         <td><select data-dl="${i}" data-k="role">${ROLES_DIFFUSION.map(r => `<option ${r === d.role ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></td>
         <td><input data-dl="${i}" data-k="email" type="email" value="${esc(d.email || '')}"></td><td><input type="checkbox" data-dl="${i}" data-k="copie" ${d.copie ? 'checked' : ''} title="En copie des e-mails"></td><td><button class="icone" data-dl-suppr="${i}">✕</button></td></tr>`).join('')}</table></div>
       <datalist id="dl-soc">${((S.pf || {}).entreprises || []).map(e => `<option value="${esc(e.nom)}">`).join('')}</datalist>
-      <div class="actions"><button class="secondaire" id="dl-ajout">+ Destinataire</button><span class="espace"></span><button id="dl-ok">Fermer</button></div>`;
+      <div class="actions"><button class="secondaire" id="dl-ajout">+ Destinataire</button>${affaireDe(et.affaireId) ? '<button class="secondaire" id="dl-chantier" title="Client et maîtrise d\'œuvre du chantier dans Pipe-Fit, avec leurs contacts">👥 Reprendre les intervenants du chantier</button>' : ''}<span class="espace"></span><button id="dl-ok">Fermer</button></div>`;
     box.querySelectorAll('[data-dl]').forEach(el => el.onchange = () => { et.diffusion[+el.dataset.dl][el.dataset.k] = el.type === 'checkbox' ? el.checked : el.value.trim(); enregistrer(et); });
     box.querySelectorAll('[data-dl-suppr]').forEach(b => b.onclick = () => { et.diffusion.splice(+b.dataset.dlSuppr, 1); enregistrer(et); rendu(); });
     box.querySelector('#dl-ajout').onclick = () => { et.diffusion.push({ id: uidE(), nom: '', societe: '', role: ROLES_DIFFUSION[0], email: '' }); enregistrer(et); rendu(); };
     box.querySelector('#dl-ok').onclick = () => { Modal.close(); App.render(); };
+    const ch = box.querySelector('#dl-chantier');
+    if (ch) ch.onclick = () => { const n = reprendreIntervenants(et, affaireDe(et.affaireId), S.pf || {}); enregistrer(et); rendu(); toast(n ? `${n} destinataire(s) ajouté(s) depuis le chantier.` : 'Les intervenants du chantier sont déjà dans la liste (ou n\'ont pas de contact).', 5000); };
   };
   rendu();
 }

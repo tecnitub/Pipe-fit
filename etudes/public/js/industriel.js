@@ -1,6 +1,7 @@
 // Calculs complémentaires du bureau d'études industriel : purgeurs et condensats, réseau de gaz, ventilation de chaufferie,
 // NPSH des pompes, coup de bélier, production d'eau chaude sanitaire (ballon et échangeur).
 const Industriel = ((D, C, N) => {
+  const Ln = () => (typeof Liens !== 'undefined' ? Liens : require('./liens'));
   const { nf, num } = N;
   const alerte = (niveau, texte) => ({ niveau, texte });
   const optSeries = f => Object.entries(D.SERIES).filter(([k]) => f(k)).map(([k, s]) => [k, s.libelle]);
@@ -57,7 +58,8 @@ const Industriel = ((D, C, N) => {
     champs: [{ g: 'Gaz' }, { k: 'gaz', l: 'Gaz distribué', t: 's', o: Object.entries(GAZ).map(([k, g]) => [k, g[0]]), d: 'g20' },
       { k: 'p', l: 'Pression de distribution', u: 'mbar rel.', d: 21 }, { k: 'dpmax', l: 'Perte de pression admissible (vide : 5 % en basse pression, 10 % au-delà de 100 mbar)', u: 'mbar', d: '' },
       { k: 'vmax', l: 'Vitesse maximale', u: 'm/s', d: 10 },
-      { g: 'Appareils' }, { k: 'appareils', l: 'Appareils raccordés', t: 'lignes', d: [{ nom: 'Chaudière 1', P: 150 }, { nom: 'Chaudière 2', P: 150 }, { nom: 'Cuisine', P: 40 }], colonnes: [{ k: 'nom', l: 'Appareil', t: 't' }, { k: 'P', l: 'Débit calorifique (kW PCI)' }] },
+      { g: 'Appareils' }, { k: 'chaufferie', l: 'Chaufferie de l\'étude (générateurs du schéma de principe ajoutés aux appareils, débit calorifique = P / rendement)', t: 's', o: (e, et) => Ln().optPid(et, e && e.chaufferie) },
+      { k: 'appareils', l: 'Appareils raccordés', t: 'lignes', d: [{ nom: 'Chaudière 1', P: 150 }, { nom: 'Chaudière 2', P: 150 }, { nom: 'Cuisine', P: 40 }], colonnes: [{ k: 'nom', l: 'Appareil', t: 't' }, { k: 'P', l: 'Débit calorifique (kW PCI)' }] },
       { k: 'simult', l: 'Coefficient de simultanéité', u: '%', d: 100 },
       { g: 'Canalisation' }, { k: 'serie', l: 'Série de tubes', t: 's', o: optSeries(k => /acier-10255|acier-10216|acier-sch40|cuivre|pehd/.test(k)), d: 'acier-10255' },
       { k: 'L', l: 'Longueur développée', u: 'm', d: 40 }, { k: 'zeta', l: 'Somme des coefficients singuliers Σζ', d: 8 }],
@@ -90,7 +92,8 @@ const Industriel = ((D, C, N) => {
   N.TYPES.ventilation = {
     titre: 'Ventilation de chaufferie (amenée d\'air, évacuation)', icone: '🪟', famille: 'Thermique',
     description: 'Débit d\'air de combustion et de ventilation, sections des amenées d\'air basse et évacuations haute.',
-    champs: [{ g: 'Chaufferie' }, { k: 'P', l: 'Puissance utile totale des générateurs', u: 'kW', d: 300 }, { k: 'rendement', l: 'Rendement (PCI)', u: '%', d: 95 },
+    champs: [{ g: 'Chaufferie' }, { k: 'chaufferie', l: 'Chaufferie de l\'étude (puissance, combustible et rendement repris du schéma de principe)', t: 's', o: (e, et) => Ln().optPid(et, e && e.chaufferie) },
+      { k: 'P', l: 'Puissance utile totale des générateurs', u: 'kW', d: 300 }, { k: 'rendement', l: 'Rendement (PCI)', u: '%', d: 95 },
       { k: 'combustible', l: 'Combustible', t: 's', o: [['gaz', 'Gaz naturel'], ['fioul', 'Fioul domestique'], ['bois', 'Bois']], d: 'gaz' },
       { k: 'type', l: 'Générateurs', t: 's', o: [['B', 'Type B (air de combustion pris dans le local)'], ['C', 'Type C (étanches, air pris à l\'extérieur par ventouse)']], d: 'B' },
       { k: 'pertes', l: 'Pertes au local (jaquettes, tuyauteries)', u: '% de P', d: 1.5 }, { k: 'dT', l: 'Échauffement admis de l\'air du local', u: 'K', d: 10 },
@@ -192,6 +195,7 @@ const Industriel = ((D, C, N) => {
       { k: 'n', l: 'Nombre (personnes, douches, repas, chambres)', d: 40, si: e => e.usage !== 'perso' }, { k: 'Vj', l: 'Besoin journalier à 60 °C', u: 'L/j', d: 1000, si: e => e.usage === 'perso' },
       { k: 'pointe', l: 'Part du besoin journalier dans la pointe (vide : usuelle)', u: '%', d: '' }, { k: 'tp', l: 'Durée de la pointe (vide : usuelle)', u: 'h', d: '' },
       { g: 'Production' }, { k: 'Tf', l: 'Température de l\'eau froide', u: '°C', d: 10 }, { k: 'Tc', l: 'Température de stockage', u: '°C', d: 60 },
+      { k: 'circuitPrim', l: 'Circuit primaire (schéma de principe : puissance et régime du primaire repris)', t: 's', o: (e, et) => Ln().optCircuits(et, e && e.circuitPrim) },
       { k: 'P', l: 'Puissance de réchauffage disponible', u: 'kW', d: 40 }, { k: 'entre', l: 'Temps entre deux pointes (réchauffage)', u: 'h', d: 8 },
       { g: 'Échangeur' }, { k: 'Tp1', l: 'Primaire : entrée', u: '°C', d: 75 }, { k: 'Tp2', l: 'Primaire : sortie', u: '°C', d: 55 }],
     calcul(e) {

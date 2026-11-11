@@ -89,11 +89,11 @@ const Evacuation = ((N) => {
       { k: 'troncons', l: 'Tronçons, décrits depuis le rejet (« se rejette dans » vide = sortie vers le réseau public)', t: 'lignes', d: [
         { rep: 'COL', amont: '', nom: 'Collecteur sous dallage', sorte: 'collecteur', L: 15, pente: '' }, { rep: 'CH1', amont: 'COL', nom: 'Chute sanitaires', sorte: 'chute', L: 6, pente: '' },
         { rep: 'B1', amont: 'CH1', nom: 'Branchement WC', sorte: 'branchement', L: 1.2, pente: 2 }, { rep: 'B2', amont: 'CH1', nom: 'Branchement lavabos', sorte: 'branchement', L: 3, pente: 2 }],
-        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'amont', l: 'Se rejette dans', t: 't' }, { k: 'nom', l: 'Désignation', t: 't' }, { k: 'sorte', l: 'Nature', t: 's', o: [['collecteur', 'Collecteur'], ['chute', 'Chute'], ['branchement', 'Branchement']] },
+        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'amont', l: 'Se rejette dans', t: 's', o: N.optAmont('troncons', '— (réseau public)'), libre: true }, { k: 'nom', l: 'Désignation', t: 't' }, { k: 'sorte', l: 'Nature', t: 's', o: [['collecteur', 'Collecteur'], ['chute', 'Chute'], ['branchement', 'Branchement']] },
           { k: 'L', l: 'Longueur (m)' }, { k: 'pente', l: 'Pente (%) (vide : par défaut)' }] },
       { k: 'appareils', l: 'Appareils, une ligne par appareil', t: 'lignes', d: [
         { rep: 'WC-01', salle: 'Sanitaires H', etage: 'R+1', type: 'wc', troncon: 'B1' }, { rep: 'LV-01', salle: 'Sanitaires H', etage: 'R+1', type: 'lavabo', troncon: 'B2' }, { rep: 'LV-02', salle: 'Sanitaires F', etage: 'R+1', type: 'lavabo', troncon: 'B2' }],
-        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'salle', l: 'Salle', t: 't' }, { k: 'etage', l: 'Étage', t: 't' }, { k: 'type', l: 'Appareil', t: 's', o: Object.entries(APPAREILS).map(([k, a]) => [k, a[0]]) },
+        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'salle', l: 'Salle', t: 't', lst: (e, et) => N.lieuxEtude(et).salles }, { k: 'etage', l: 'Étage', t: 't', lst: (e, et) => N.lieuxEtude(et).etages }, { k: 'type', l: 'Appareil', t: 's', o: Object.entries(APPAREILS).map(([k, a]) => [k, a[0]]) },
           { k: 'troncon', l: 'Tronçon', t: 's', o: e => [['', '—'], ...(e.troncons || []).filter(t => t.rep).map(t => [t.rep, `${t.rep}${t.nom ? ` — ${t.nom}` : ''}`])] }, { k: 'du', l: 'DU fiche (L/s)' }] }],
     calcul: calculer,
   };

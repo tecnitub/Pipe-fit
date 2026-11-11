@@ -49,7 +49,9 @@ test('affaires de Pipe-Fit : seules les informations utiles sont transmises', as
   const c = await connexion('jacky');
   const d = (await call(base, 'GET', '/api/pf/affaires', null, c)).body;
   assert.ok(d.affaires.length && d.entreprises.length);
-  assert.ok(Object.keys(d.affaires[0]).every(k => ['clientId', 'contactId', 'siteId', 'chargeId', 'code', 'id', 'nom', 'statut', 'type', 'documents', 'tousDocuments'].includes(k)) && d.affaires[0].id);
+  assert.ok(Object.keys(d.affaires[0]).every(k => ['clientId', 'contactId', 'siteId', 'chargeId', 'code', 'id', 'nom', 'statut', 'type', 'documents', 'tousDocuments', 'moeId', 'moeContactId', 'siteVille', 'siteCp'].includes(k)) && d.affaires[0].id);
+  // Contacts du client et de la maîtrise d'œuvre (liste de diffusion) : nom, fonction et e-mail seulement
+  assert.ok(Array.isArray(d.contacts) && d.contacts.every(x => Object.keys(x).every(k => ['id', 'entrepriseId', 'civilite', 'prenom', 'nom', 'fonction', 'email'].includes(k))));
   // Tous les documents (plans, fiches… joints aux documents émis de l'étude) : seulement de quoi les suivre et les lire
   assert.ok(d.affaires.every(a => (a.tousDocuments || []).every(x => Object.keys(x).every(k => ['id', 'nom', 'fichierId', 'mime', 'categorie', 'indice', 'date', 'etudeId'].includes(k)))));
   // Documents du chantier : seulement CCTP et DPGF (préremplissage de l'étude)

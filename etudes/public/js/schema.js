@@ -630,7 +630,7 @@ const Schema = ((D, C, N) => {
       { k: 'reduit', l: 'Abaissement en période réduite', u: 'K', d: 3 },
       { k: 'cascadeMode', l: 'Gestion de la cascade', t: 's', o: [['sequence', 'Enclenchement séquentiel'], ['parallele', 'Modulation parallèle']], d: 'sequence', si: e => num(e.nGen, 1) > 1 },
       { k: 'permutation', l: 'Permutation de la priorité des générateurs', u: 'h', d: 168, si: e => num(e.nGen, 1) > 1 },
-      { k: 'gtb', l: 'Communication avec la GTB', t: 's', o: [['BACnet IP', 'BACnet IP'], ['Modbus TCP', 'Modbus TCP'], ['KNX', 'KNX'], ['aucune', 'Aucune (régulateur autonome)']], d: 'BACnet IP' },
+      { k: 'gtb', l: 'Communication avec la GTB', t: 's', o: [['BACnet IP', 'BACnet IP'], ['Modbus TCP', 'Modbus TCP'], ['KNX', 'KNX'], ['LON', 'LON'], ['aucune', 'Aucune (régulateur autonome)']], d: 'BACnet IP' },
       { g: 'Accessoires' }, { k: 'vase', l: 'Vase d\'expansion et remplissage', t: 's', o: [['oui', 'Représentés'], ['non', 'Non représentés']], d: 'oui' },
       { k: 'desemboueur', l: 'Pot à boue / désemboueur', t: 's', o: [['oui', 'Représenté'], ['non', 'Non représenté']], d: 'oui' },
       { k: 'compteurs', l: 'Compteurs d\'énergie par circuit', t: 's', o: [['non', 'Non'], ['oui', 'Oui']], d: 'non' }],

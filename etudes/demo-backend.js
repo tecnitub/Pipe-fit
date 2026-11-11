@@ -39,11 +39,16 @@
   const lienCrm = id => ((crm() || {}).liens || []).find(l => l.app === 'etudes' && l.id === id && l.affaireId);
   const reprendreLiens = () => db.etudes.filter(e => !e.modele && !e.affaireId).forEach(e => { const l = lienCrm(e.id); if (l) { e.affaireId = l.affaireId; e._v += 1; e._at = new Date().toISOString(); } });
   const src = crm() || seed;
+  // Site du chantier (ville : climat de l'étude), contacts du client et de la maîtrise d'œuvre (liste de diffusion)
+  const siteDe = a => (((src.entreprises || []).find(e => e.id === a.clientId) || {}).adresses || []).find(s => s.id === a.siteId) || {};
+  const entsAff = new Set((src.affaires || []).flatMap(a => [a.clientId, a.moeId]).filter(Boolean));
   const pf = { affaires: (src.affaires || []).map(a => ({ id: a.id, code: a.code, nom: a.nom, clientId: a.clientId, contactId: a.contactId, siteId: a.siteId, chargeId: a.chargeId, statut: a.statut, type: a.type,
+    moeId: a.moeId || '', moeContactId: a.moeContactId || '', siteVille: siteDe(a).ville || '', siteCp: siteDe(a).cp || '',
     documents: (a.documents || []).filter(x => x.categorie === 'CCTP' || /\b(cctp|dpgf|dqe|bpu)\b/i.test(x.nom || '')).map(x => ({ id: x.id, nom: x.nom, fichierId: x.fichierId, mime: x.mime, categorie: x.categorie })),
     // Tous les documents du chantier (plans, fiches…) : joints aux documents émis de l'étude, indices suivis
     tousDocuments: (a.documents || []).filter(x => x.fichierId).map(x => ({ id: x.id, nom: x.nom, fichierId: x.fichierId, mime: x.mime, categorie: x.categorie, indice: x.indice || '', date: x.date || '', etudeId: x.etudeId || '' })) })),
     entreprises: (src.entreprises || []).map(e => ({ id: e.id, nom: e.nom, regimeTVA: e.regimeTVA })),
+    contacts: (src.contacts || []).filter(c => entsAff.has(c.entrepriseId)).map(c => ({ id: c.id, entrepriseId: c.entrepriseId, civilite: c.civilite || '', prenom: c.prenom || '', nom: c.nom || '', fonction: c.fonction || '', email: c.email || '' })),
     articles: (src.articles || []).map(a => ({ id: a.id, ref: a.ref, designation: a.designation, famille: a.famille, sousFamille: a.sousFamille, unite: a.unite, prixVente: a.prixVente, coutRevient: a.coutRevient, poidsUnitaire: a.poidsUnitaire })),
     devis: (src.devis || []).map(x => ({ id: x.id, numero: x.numero, objet: x.objet, clientId: x.clientId, statut: x.statut, affaireId: x.affaireId || '' })),
     mainoeuvre: (src.mainoeuvre || []).map(m => ({ id: m.id, code: m.code, libelle: m.libelle, tauxVente: m.tauxVente, tauxCout: m.tauxCout })) };

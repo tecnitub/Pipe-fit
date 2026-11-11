@@ -159,7 +159,7 @@ const Cables = ((N) => {
           { k: 'pose', l: 'Mode de pose', t: 's', o: Object.entries(POSES) }, { k: 'isolant', l: 'Isolant', t: 's', o: [['PR', 'PR (XLPE, 90 °C)'], ['PVC', 'PVC (70 °C)']] },
           { k: 'mat', l: 'Âme', t: 's', o: [['Cu', 'Cuivre'], ['Al', 'Aluminium']] }, { k: 'temp', l: 'T ambiante (°C)' }, { k: 'groupes', l: 'Circuits jointifs' },
           { k: 'In', l: 'Protection imposée (A)' }, { k: 'courbe', l: 'Courbe', t: 's', o: [['C', 'C'], ['D', 'D'], ['B', 'B']] },
-          { k: 'duMax', l: 'ΔU maxi cumulée (%)' }, { k: 'amont', l: 'Liaison amont (repère)', t: 't' }] },
+          { k: 'duMax', l: 'ΔU maxi cumulée (%)' }, { k: 'amont', l: 'Liaison amont (repère)', t: 's', o: N.optAmont('liaisons', '— (origine)'), libre: true }] },
     ],
     calcul: calculer,
   };

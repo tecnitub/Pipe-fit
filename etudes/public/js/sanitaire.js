@@ -216,12 +216,12 @@ const Sanitaire = ((D, C, N) => {
       { k: 'troncons', l: 'Tronçons (amont vide = compteur pour l\'EF, production pour l\'ECS)', t: 'lignes', d: [
         { rep: 'C', amont: '', nom: 'Colonne montante', L: 12, zeta: 4, reseaux: 'les2', boucle: '' }, { rep: 'R1', amont: 'C', nom: 'Distribution R+1', L: 15, zeta: 5, reseaux: 'les2', boucle: '' },
         { rep: 'R1.1', amont: 'R1', nom: 'Sanitaires R+1', L: 4, zeta: 6, reseaux: 'les2', boucle: '' }],
-        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'amont', l: 'Amont', t: 't' }, { k: 'nom', l: 'Désignation', t: 't' }, { k: 'L', l: 'Longueur (m)' }, { k: 'zeta', l: 'Σζ' },
+        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'amont', l: 'Amont', t: 's', o: N.optAmont('troncons'), libre: true }, { k: 'nom', l: 'Désignation', t: 't' }, { k: 'L', l: 'Longueur (m)' }, { k: 'zeta', l: 'Σζ' },
           { k: 'reseaux', l: 'Réseaux', t: 's', o: [['les2', 'EF et ECS'], ['ef', 'EF seule'], ['ecs', 'ECS seule']] }, { k: 'boucle', l: 'Bouclage', t: 's', o: [['', 'Auto (tronçons avec aval)'], ['oui', 'Bouclé'], ['non', 'Non bouclé']] }] },
       { k: 'points', l: 'Points de puisage, une ligne par appareil (salle et étage pour le repérage ; « 📄 » charge la fiche technique)', t: 'lignes', d: [
         { rep: 'LV-01', salle: 'Sanitaires H', etage: 'R+1', type: 'lavabo', troncon: 'R1.1' }, { rep: 'WC-01', salle: 'Sanitaires H', etage: 'R+1', type: 'wc', troncon: 'R1.1' },
         { rep: 'DO-01', salle: 'Vestiaire', etage: 'R+1', type: 'douche', troncon: 'R1.1' }, { rep: 'EV-01', salle: 'Office', etage: 'R+1', type: 'evier', troncon: 'R1' }],
-        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'salle', l: 'Salle', t: 't' }, { k: 'etage', l: 'Étage', t: 't' }, { k: 'type', l: 'Appareil', t: 's', o: Object.entries(APPAREILS).map(([k, a]) => [k, a[0]]) },
+        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'salle', l: 'Salle', t: 't', lst: (e, et) => N.lieuxEtude(et).salles }, { k: 'etage', l: 'Étage', t: 't', lst: (e, et) => N.lieuxEtude(et).etages }, { k: 'type', l: 'Appareil', t: 's', o: Object.entries(APPAREILS).map(([k, a]) => [k, a[0]]) },
           { k: 'troncon', l: 'Tronçon', t: 's', o: e => [['', '—'], ...(e.troncons || []).filter(t => t.rep).map(t => [t.rep, `${t.rep}${t.nom ? ` — ${t.nom}` : ''}`])] },
           { k: 'qEF', l: 'Débit EF fiche (L/s)' }, { k: 'qECS', l: 'Débit ECS fiche (L/s)' }, { k: 'pMin', l: 'Pression mini fiche (bar)' }, { k: 'ref', l: 'Fabricant, référence', t: 't' }] },
       { g: 'Bouclage de l\'ECS' }, { k: 'bouclage', l: 'Bouclage', t: 's', o: [['oui', 'Réseau d\'ECS bouclé (pompe de bouclage)'], ['non', 'Sans bouclage']], d: 'oui' },

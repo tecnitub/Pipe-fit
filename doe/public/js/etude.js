@@ -28,14 +28,42 @@ async function lireCctp(doe, progression = () => {}) {
   const { lignes, pages } = await PdfLecture.lire(await fichierEnFile(f), progression, { pagesMax: 200, ocr: false });
   if (lignes.join('').replace(/\s/g, '').length < 300) throw new Error('Ce CCTP ne contient pas de texte lisible (document scanné) : demandez la version PDF d\'origine au maître d\'œuvre.');
   const r = CctpLecture.analyser(lignes);
-  doe.cctpLu = { le: new Date().toISOString(), nom: f.nom, pages, refs: { lot: r.lot, lotLibelle: r.lotLibelle, indice: r.indice, date: r.date, dossier: r.dossier, bet: r.bet, moa: r.moa, moe: r.moe, operation: r.operation },
+  r.controle = r.controle || controleCctp(lignes);
+  doe.cctpLu = { le: new Date().toISOString(), nom: f.nom, pages, refs: { lot: r.lot, lotLibelle: r.lotLibelle, indice: r.indice, date: r.date, dossier: r.dossier, bet: r.bet, moa: r.moa, moe: r.moe, operation: r.operation, controle: r.controle },
     articles: r.articles, equipements: r.equipements };
+  return { n: appliquerRefsCctp(doe, r, typeof PF !== 'undefined' ? PF.all('entreprises') : []), lu: doe.cctpLu };
+}
+// Bureau de contrôle cité en tête du CCTP (« Bureau de contrôle : Socotec »)
+function controleCctp(lignes) {
+  const re = /\b(?:bureau de contr[ôo]le|contr[ôo]leur technique|organisme de contr[ôo]le)\s*[:\-–]\s*(.+)$/i;
+  for (const l of (lignes || []).slice(0, 120)) { const m = re.exec(l); if (m && m[1].trim()) return m[1].trim(); }
+  return '';
+}
+// Entreprise du CRM dont le nom correspond (nom normalisé, l'un contenant l'autre) : coordonnées du BET, du contrôleur
+const normNom = s => normE(s).replace(/\b(sas|sarl|sa|eurl|sasu|sci|ste|societe|groupe)\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+function entrepriseParNom(entreprises, nom) {
+  const n = normNom(nom);
+  if (n.length < 3) return null;
+  return (entreprises || []).find(e => normNom(e.nom) === n) || (entreprises || []).find(e => { const x = normNom(e.nom); return x.length >= 5 && (n.includes(x) || x.includes(n)); }) || null;
+}
+// Références lues dans le CCTP reportées dans le dossier (champs vides seulement) ; renvoie le nombre de champs remplis
+function appliquerRefsCctp(doe, r, entreprises = []) {
   let n = 0;
   const si = (o, k, v) => { if (v && vide(o[k])) { o[k] = v; n++; } };
+  doe.cctp = doe.cctp || {}; doe.intervenants = doe.intervenants || {};
   si(doe, 'lot', r.lot); si(doe.cctp, 'indice', r.indice); si(doe.cctp, 'date', r.date); si(doe.cctp, 'dossier', r.dossier); si(doe, 'affaireBet', r.dossier); si(doe.cctp, 'bet', r.bet);
-  if (r.bet && !(doe.intervenants.bet && doe.intervenants.bet.raison)) { doe.intervenants.bet = { ...(doe.intervenants.bet || {}), raison: r.bet }; n++; }
-  if (r.lotLibelle && (vide(doe.discipline) || doe.discipline === (S.config.disciplineDefaut || 'GÉNIE CLIMATIQUE / PLOMBERIE'))) { doe.discipline = r.lotLibelle.toUpperCase(); n++; }
-  return { n, lu: doe.cctpLu };
+  si(doe, 'operation', r.operation);
+  // Maître d'ouvrage, maîtrise d'œuvre, BET, bureau de contrôle : raison sociale si vide, coordonnées du CRM si l'entreprise y est
+  [['mo', r.moa], ['moe', r.moe], ['bet', r.bet], ['controle', r.controle]].forEach(([k, nom]) => {
+    if (!nom) return;
+    const i = doe.intervenants[k] = doe.intervenants[k] || {};
+    if (vide(i.raison)) { i.raison = nom; n++; }
+    if (k !== 'bet' && k !== 'controle') return;
+    const e = entrepriseParNom(entreprises, i.raison), v = e && typeof intervenantDe === 'function' ? intervenantDe(e.id) : null;
+    if (v) ['adresse', 'interlocuteur', 'tel', 'mail'].forEach(c => si(i, c, v[c]));
+  });
+  if (r.lotLibelle && (vide(doe.discipline) || doe.discipline === ((typeof S !== 'undefined' && S.config && S.config.disciplineDefaut) || 'GÉNIE CLIMATIQUE / PLOMBERIE'))) { doe.discipline = r.lotLibelle.toUpperCase(); n++; }
+  return n;
 }
 
 // Équipements du CCTP pas encore dans le dossier (même article et même repère, ou même article sans repère)

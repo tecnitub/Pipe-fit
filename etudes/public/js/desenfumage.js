@@ -45,7 +45,7 @@ const Desenfumage = ((N) => {
       { k: 'alim', l: 'Ventilateurs alimentés par', t: 's', o: (e, et) => (typeof Terminaux !== 'undefined' ? Terminaux : require('./terminaux')).optAlim(e, et, e.alim), d: '' },
       { g: 'Cantons' },
       { k: 'cantons', l: 'Cantons à désenfumer', t: 'lignes', d: [{ rep: 'C1', nom: 'Plateau bureaux', etage: 'R+1', nature: 'local', S: 450, H: 3, largeur: '', amenee: 'mecanique', Qimpose: '' }, { rep: 'C2', nom: 'Circulation', etage: 'R+1', nature: 'circulation', S: 120, H: 2.7, largeur: 1.4, amenee: 'naturelle', Qimpose: '' }],
-        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'nom', l: 'Désignation', t: 't' }, { k: 'etage', l: 'Étage', t: 't' }, { k: 'nature', l: 'Nature', t: 's', o: Object.entries(NATURES).map(([k, x]) => [k, x[0]]) },
+        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'nom', l: 'Désignation', t: 't', lst: (e, et) => N.lieuxEtude(et).salles }, { k: 'etage', l: 'Étage', t: 't', lst: (e, et) => N.lieuxEtude(et).etages }, { k: 'nature', l: 'Nature', t: 's', o: Object.entries(NATURES).map(([k, x]) => [k, x[0]]) },
           { k: 'S', l: 'Surface (m²)' }, { k: 'H', l: 'Hauteur (m)' }, { k: 'largeur', l: 'Largeur circulation (m)' }, { k: 'amenee', l: 'Amenée d\'air', t: 's', o: [['mecanique', 'Mécanique'], ['naturelle', 'Naturelle']] }, { k: 'Qimpose', l: 'Débit imposé (m³/s)' }] }],
     calcul: calculer,
   };

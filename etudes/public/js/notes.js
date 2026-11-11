@@ -24,6 +24,8 @@ const Notes = ((D, C) => {
   const optTubes = e => C.tubes(e.serie || 'acier-10216').map(t => [t.cle, t.nom]);
   const optMateriaux = Object.entries(D.MATERIAUX).map(([k, m]) => [k, m.libelle]);
   const optIsolants = Object.entries(D.ISOLANTS).map(([k, i]) => [k, i.libelle]);
+  // Tronçon d'un réseau et pompe ou circuit d'un schéma de principe de l'étude : tube et températures repris (liens.js)
+  const champSource = { k: 'source', l: 'Tronçon / circuit de l\'étude (tube et températures repris)', t: 's', o: (e, et) => (typeof Liens !== 'undefined' ? Liens : require('./liens')).optTroncons(et, e && e.source) };
   const champsFluide = [
     { k: 'fluide', l: 'Fluide', t: 's', o: optFluides, d: 'eau' },
     { k: 'T', l: 'Température moyenne du fluide', u: '°C', d: 70 },
@@ -407,7 +409,7 @@ const Notes = ((D, C) => {
   TYPES.isolation = {
     titre: 'Isolation des tuyauteries : pertes, condensation, épaisseur', icone: '🧣', famille: 'Thermique',
     description: 'Déperditions, température de surface, risque de condensation (eau glacée) et épaisseur d\'isolant à retenir.',
-    champs: [{ g: 'Tuyauterie' }, { k: 'serie', l: 'Série de tubes', t: 's', o: optSeries(), d: 'acier-10216' }, { k: 'tube', l: 'Tube', t: 's', o: optTubes, d: '60.3x2.9' },
+    champs: [{ g: 'Tuyauterie' }, champSource, { k: 'serie', l: 'Série de tubes', t: 's', o: optSeries(), d: 'acier-10216' }, { k: 'tube', l: 'Tube', t: 's', o: optTubes, d: '60.3x2.9' },
       { k: 'Tf', l: 'Température du fluide', u: '°C', d: 7 }, { k: 'L', l: 'Longueur', u: 'm', d: 100 }, { k: 'heures', l: 'Durée de fonctionnement annuelle', u: 'h/an', d: 3000 },
       { g: 'Ambiance' }, { k: 'Ta', l: 'Température ambiante', u: '°C', d: 26 }, { k: 'HR', l: 'Humidité relative', u: '%', d: 65 },
       { k: 'vent', l: 'Vitesse de l\'air (0 = intérieur calme)', u: 'm/s', d: 0 },
@@ -568,7 +570,7 @@ const Notes = ((D, C) => {
   TYPES.dilatation = {
     titre: 'Dilatation thermique et compensation', icone: '↔️', famille: 'Mécanique',
     description: 'Allongement entre points fixes, longueur du bras flexible (L, Z), lyre et course des compensateurs.',
-    champs: [{ g: 'Tuyauterie' }, { k: 'serie', l: 'Série de tubes', t: 's', o: optSeries(), d: 'acier-10216' }, { k: 'tube', l: 'Tube', t: 's', o: optTubes, d: '114.3x3.6' },
+    champs: [{ g: 'Tuyauterie' }, champSource, { k: 'serie', l: 'Série de tubes', t: 's', o: optSeries(), d: 'acier-10216' }, { k: 'tube', l: 'Tube', t: 's', o: optTubes, d: '114.3x3.6' },
       { k: 'materiau', l: 'Matériau (vide : celui de la série)', t: 's', o: [['', 'Selon la série'], ...optMateriaux], d: '' },
       { k: 'L', l: 'Distance entre points fixes', u: 'm', d: 40 },
       { g: 'Températures' }, { k: 'Tpose', l: 'Température de pose', u: '°C', d: 10 }, { k: 'Tmin', l: 'Température minimale', u: '°C', d: 5 }, { k: 'Tmax', l: 'Température maximale', u: '°C', d: 90 },
@@ -639,7 +641,7 @@ const Notes = ((D, C) => {
   TYPES.supportage = {
     titre: 'Portée entre supports', icone: '🏗️', famille: 'Mécanique',
     description: 'Espacement maximal des supports d\'une tuyauterie métallique horizontale (poids propre, fluide, isolant).',
-    champs: [{ g: 'Tuyauterie' }, { k: 'serie', l: 'Série de tubes', t: 's', o: optSeries(k => /acier|inox|cuivre/.test(k)), d: 'acier-10216' }, { k: 'tube', l: 'Tube', t: 's', o: optTubes, d: '114.3x3.6' },
+    champs: [{ g: 'Tuyauterie' }, champSource, { k: 'serie', l: 'Série de tubes', t: 's', o: optSeries(k => /acier|inox|cuivre/.test(k)), d: 'acier-10216' }, { k: 'tube', l: 'Tube', t: 's', o: optTubes, d: '114.3x3.6' },
       { k: 'contenu', l: 'Contenu', t: 's', o: [['1000', 'Eau'], ['1040', 'Eau glycolée'], ['0', 'Gaz / vapeur (tube vide)'], ['perso', 'Autre liquide']], d: '1000' },
       { k: 'rhoF', l: 'Masse volumique du liquide', u: 'kg/m³', d: 900, si: e => e.contenu === 'perso' }, { k: 'T', l: 'Température de service', u: '°C', d: 80 },
       { g: 'Isolation' }, { k: 'isolant', l: 'Isolant', t: 's', o: [['', 'Aucun'], ...optIsolants], d: 'laine-roche' }, { k: 'epIso', l: 'Épaisseur d\'isolant', u: 'mm', d: 40, si: e => !!e.isolant },
@@ -738,9 +740,32 @@ const Notes = ((D, C) => {
   // Valeurs par défaut d'un type (copie profonde des listes)
   function defauts(type) {
     const out = {};
-    TYPES[type].champs.forEach(c => { if (c.k) out[c.k] = JSON.parse(JSON.stringify(c.d)); });
+    // Champ sans valeur par défaut (d absent : choix relié à l'étude ajouté après coup) : absent des entrées
+    TYPES[type].champs.forEach(c => { if (c.k && c.d !== undefined) out[c.k] = JSON.parse(JSON.stringify(c.d)); });
     return out;
   }
+  /* ---------- Listes communes à toute l'étude ---------- */
+  // Pièces, étages et zones déjà saisis dans l'étude (bilans pièce par pièce, terminaux, bouches, points de puisage,
+  // appareils d'évacuation, cantons de désenfumage, locaux des bouches) : proposés en saisie (datalist)
+  const LIEUX = { pieces: [['pieces', 'nom', 'etage', '']], terminaux: [['appareils', 'local', '', 'zone']], aero: [['bouchesL', 'salle', 'etage', 'zone']],
+    sanitaire: [['points', 'salle', 'etage', '']], evacuation: [['appareils', 'salle', 'etage', '']], desenfumage: [['cantons', 'nom', 'etage', '']], bouches: [['locaux', 'local', '', '']] };
+  function lieuxEtude(et) {
+    const salles = new Set(), etages = new Set(), zones = new Set(), aj = (s, v) => { const t = String(v ?? '').trim(); if (t) s.add(t); };
+    ((et && et.notes) || []).forEach(n => (LIEUX[n.type] || []).forEach(([liste, kS, kE, kZ]) => ((n.entrees || {})[liste] || []).forEach(l => {
+      if (!l) return;
+      aj(salles, l[kS]); if (kE) aj(etages, l[kE]); if (kZ) aj(zones, l[kZ]);
+    })));
+    // Terminaux : « Étage / zone » sert aussi d'étage
+    const tri = s => [...s].sort((a, b) => a.localeCompare(b, 'fr', { numeric: true }));
+    return { salles: tri(salles), etages: tri(etages), zones: tri(new Set([...zones, ...etages])) };
+  }
+  // Colonne « amont » d'une arborescence : liste des autres repères de la même liste (la ligne elle-même exclue),
+  // valeur saisie conservée même si le repère n'existe plus
+  const optAmont = (liste, vide = '— (départ)') => (e, et, ligne) => {
+    const reps = [...new Set(((e && e[liste]) || []).map(t => String((t && t.rep) || '').trim()).filter(r => r && (!ligne || r !== String(ligne.rep || '').trim())))];
+    const v = ligne ? String(ligne.amont ?? '').trim() : '';
+    return [['', vide], ...reps.map(r => [r, r]), ...(v && !reps.includes(v) ? [[v, v]] : [])];
+  };
   function calculer(type, entrees) {
     const T = TYPES[type];
     if (!T) throw new Error(`Type de calcul inconnu : ${type}`);
@@ -761,6 +786,6 @@ const Notes = ((D, C) => {
     } catch (err) { return { valeurs: {}, resume: [], tableaux: [], alertes: [alerte('erreur', `Calcul impossible : ${err.message}`)], hypotheses: [], synthese: 'Erreur de calcul' }; }
   }
   const familles = () => [...new Set(Object.values(TYPES).map(t => t.famille))];
-  return { TYPES, defauts, calculer, familles, nf, num, libPompe, libVanne, optFluides };
+  return { TYPES, defauts, calculer, familles, nf, num, libPompe, libVanne, optFluides, lieuxEtude, optAmont };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'));
 if (typeof module !== 'undefined') module.exports = Notes;

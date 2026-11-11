@@ -111,7 +111,14 @@ const majEtatEnregistrement = t => { const e = document.getElementById('etat-enr
 /* ---------- Calculateur générique ---------- */
 // Étude affichée : contexte des listes qui proposent les autres notes (puissance reprise d'un bilan…)
 let contexteEtude = null;
-const optionsDe = (c, e) => (typeof c.o === 'function' ? c.o(e, contexteEtude) : c.o);
+// Options d'une liste ; pour une colonne, la ligne est passée (colonne « amont » : les autres repères de la liste)
+const optionsDe = (c, e, ligne) => (typeof c.o === 'function' ? c.o(e, contexteEtude, ligne) : c.o);
+// Propositions d'une colonne texte (« lst » : pièces, étages, zones de l'étude) : datalist commune à la colonne
+const idListe = (c, col) => `dl-${c.k}-${col.k}`;
+const datalistsHtml = (c, cols, e) => cols.filter(col => col.lst && col.t === 't').map(col => {
+  let v = []; try { v = col.lst(e, contexteEtude) || []; } catch (err) { v = []; }
+  return `<datalist id="${idListe(c, col)}">${[...new Set(v.map(String))].map(x => `<option value="${esc(x)}">`).join('')}</datalist>`;
+}).join('');
 const optionsHtml = (opts, v) => opts.map(([k, l]) => `<option value="${esc(k)}" ${String(k) === String(v ?? '') ? 'selected' : ''}>${esc(l)}</option>`).join('');
 const valeurChamp = v => (typeof v === 'number' ? String(v).replace('.', ',') : v ?? '');
 // Champs groupés par rubrique (« g »), sans ceux masqués par leur condition
@@ -139,9 +146,9 @@ function formulaireHtml(type, e, v = {}) {
     if (c.t === 'lignes') {
       const lignes = e[c.k] || [], cols = colonnesDe(c, e);
       return `<div class="large"><div class="petit muted">${esc(c.l)}</div><div class="defile-x"><table class="edit"><thead><tr>${cols.map(col => `<th>${esc(col.l)}</th>`).join('')}<th></th></tr></thead>
-        <tbody>${lignes.map((l, i) => `<tr>${cols.map(col => `<td>${col.t === 'cases' ? casesLigne(c, col, l, i, e) : col.t === 's' ? `<select data-l="${c.k}.${i}.${col.k}"${verrou(v, `${c.k}.${i}.${col.k}`)}>${optionsHtml(optionsDe(col, e), l[col.k])}</select>`
-          : `<input data-l="${c.k}.${i}.${col.k}" value="${esc(valeurChamp(l[col.k]))}" ${col.t === 't' ? '' : 'inputmode="decimal" class="nombre"'}${verrou(v, `${c.k}.${i}.${col.k}`)}>`}</td>`).join('')}
-          <td style="white-space:nowrap">${c.colonnes[0].k === 'rep' ? `<button class="icone" data-dup-ligne="${c.k}.${i}" title="Dupliquer : même équipement, repère suivant ; il reste à changer la pièce">⧉</button>` : ''}<button class="icone" data-suppr-ligne="${c.k}.${i}" title="Supprimer la ligne">✕</button></td></tr>`).join('')}</tbody></table></div>
+        <tbody>${lignes.map((l, i) => `<tr${l && l._auto ? ` class="ligne-auto" title="Ligne reprise de ${esc(l._auto)}"` : ''}>${cols.map(col => `<td>${col.t === 'cases' ? casesLigne(c, col, l, i, e) : col.t === 's' ? `<select data-l="${c.k}.${i}.${col.k}"${verrou(v, `${c.k}.${i}.${col.k}`)}>${optionsHtml(optionsDe(col, e, l), l[col.k])}</select>`
+          : `<input data-l="${c.k}.${i}.${col.k}" value="${esc(valeurChamp(l[col.k]))}" ${col.t === 't' ? (col.lst ? `list="${idListe(c, col)}" autocomplete="off"` : '') : 'inputmode="decimal" class="nombre"'}${verrou(v, `${c.k}.${i}.${col.k}`)}>`}</td>`).join('')}
+          <td style="white-space:nowrap">${l && l._auto ? '<span class="petit muted" title="Ligne reprise d\'un autre calcul">🔗</span>' : `${c.colonnes[0].k === 'rep' ? `<button class="icone" data-dup-ligne="${c.k}.${i}" title="Dupliquer : même équipement, repère suivant ; il reste à changer la pièce">⧉</button>` : ''}<button class="icone" data-suppr-ligne="${c.k}.${i}" title="Supprimer la ligne">✕</button>`}</td></tr>`).join('')}</tbody></table></div>${datalistsHtml(c, cols, e)}
         <button class="secondaire petit" data-ajout-ligne="${c.k}">+ Ajouter une ligne</button> <span class="petit muted">ou collez un tableau Excel dans une cellule</span></div>`;
     }
     const lib = `<span>${esc(c.l)}${c.u ? ` <span class="unite">(${esc(c.u)})</span>` : ''}</span>`;
@@ -202,7 +209,8 @@ function collerTableau(type, e, cle, texte) {
     r.forEach((v, dj) => {
       const col = cols[j0 + dj]; if (!col) return;
       let val = String(v).trim();
-      if (col.t === 's') { const o = optionsDe(col, e), m = o.find(([kk, lib]) => normTxt(kk) === normTxt(val) || normTxt(lib) === normTxt(val)) || o.find(([, lib]) => normTxt(val) && normTxt(lib).startsWith(normTxt(val))); if (!m) return; val = m[0]; }
+      // Liste « libre » (amont d'une arborescence) : un repère pas encore saisi est gardé tel quel
+      if (col.t === 's') { const o = optionsDe(col, e, ligne), m = o.find(([kk, lib]) => normTxt(kk) === normTxt(val) || normTxt(lib) === normTxt(val)) || o.find(([, lib]) => normTxt(val) && normTxt(lib).startsWith(normTxt(val))); if (!m && !(col.libre && val)) return; if (m) val = m[0]; }
       else if (col.t !== 't') val = val.replace(/\s/g, '').replace(',', '.');
       ligne[col.k] = val; n++;
     });
@@ -240,7 +248,8 @@ function lierCalculateur(root, type, e, changer, ctx = ctxSimple(type, e)) {
     redessiner();
   });
   root.querySelectorAll('[data-k]').forEach(el => {
-    if (el.tagName === 'SELECT') el.onchange = () => { e[el.dataset.k] = el.value; redessiner(); };
+    // Choix repris du type de bâtiment de l'étude : une fois choisi dans le calcul, il n'est plus remplacé
+    if (el.tagName === 'SELECT') el.onchange = () => { e[el.dataset.k] = el.value; if (Liens.champEtude(type, el.dataset.k)) e._saisis = { ...(e._saisis || {}), [el.dataset.k]: true }; redessiner(); };
     else el.oninput = () => { e[el.dataset.k] = el.value; recalculer(); };
   });
   // Tableau collé depuis Excel (cellules séparées par des tabulations) : rempli à partir de la cellule, lignes ajoutées
@@ -369,21 +378,47 @@ Vues.chantier = {
 const optionsAffaires = sel => `<option value="">— Sans affaire —</option>${S.pf.affaires.filter(a => a.type !== 'horsDevis').slice().sort((x, y) => String(y.code || '').localeCompare(String(x.code || '')))
   .map(a => `<option value="${esc(a.id)}" ${a.id === sel ? 'selected' : ''}>${esc(libelleAffaire(a))}</option>`).join('')}`;
 const modeleDe = id => Modeles.INTEGRES.find(m => m.id === id) || S.etudes.find(x => x.modele && x.id === id);
+// Données de l'étude reprises du chantier choisi : objet (si vide), climat d'après la ville du site (si non défini)
+function reprendreChantier(et, a) {
+  if (!a) return;
+  if (!String(et.objet || '').trim() && a.nom) et.objet = a.nom;
+  if (!et.climat) { const c = Liens.climatDeVille(a.siteVille, a.siteCp); if (c) et.climat = c; }
+}
+// Références des documents du chantier (CCTP, plans… avec indice et date) pour l'objet détaillé de l'étude
+function referencesDocuments(et, a) {
+  const docs = ((a && (a.tousDocuments || a.documents)) || []).filter(d => d && d.nom && (!d.etudeId || d.etudeId !== et.id) && d.categorie !== 'Note de calcul');
+  return docs.map(d => {
+    const nom = String(d.nom).replace(/\.[a-z0-9]{2,4}$/i, ''), cat = String(d.categorie || '').trim();
+    return `${cat && !normTxt(nom).includes(normTxt(cat)) ? `${cat === 'CCTP' ? cat : cat.toLowerCase()} ` : ''}${nom}${d.indice ? ` ind. ${d.indice}` : ''}${d.date ? ` du ${dateFr(d.date)}` : ''}`;
+  });
+}
+const optionsClimat = (et, a) => {
+  const sug = a ? Liens.climatDeVille(a.siteVille, a.siteCp) : '';
+  return `<option value="">Non défini (saisi dans chaque calcul)${sug ? ` — suggestion : ${esc(Donnees.CLIMATS[sug][0])}` : ''}</option>${Object.entries(Donnees.CLIMATS).map(([k, c]) => `<option value="${k}" ${k === et.climat ? 'selected' : ''}>${esc(c[0])} (${c[1]} °C / ${c[2]} °C)</option>`).join('')}<option value="perso" ${et.climat === 'perso' ? 'selected' : ''}>Autre (températures saisies)</option>`;
+};
+const optionsTypeBatiment = et => {
+  const d = ConsignesProjet.detecterProfil(et.objet);
+  return `<option value="">Non défini (choisi dans chaque calcul)${d && Liens.TYPES_BATIMENT[d] ? ` — suggestion : ${esc(Liens.TYPES_BATIMENT[d][0])}` : ''}</option>${Object.entries(Liens.TYPES_BATIMENT).map(([k, t]) => `<option value="${k}" ${k === et.typeBatiment ? 'selected' : ''}>${esc(t[0])}</option>`).join('')}`;
+};
 function dialogueNouvelleEtude(affaireId = '', apres, modeleId = '', opts = {}) {
   const perso = S.etudes.filter(x => x.modele), m0 = modeleDe(modeleId);
   const b = Modal.open(`<h2>Nouvelle étude</h2><form id="f-etude" class="grille-champs">
     ${apres ? '' : `<label class="large">Partir de<select name="modele"><option value="">Étude vide</option><optgroup label="Modèles intégrés">${Modeles.INTEGRES.map(m => `<option value="${m.id}" ${m.id === modeleId ? 'selected' : ''}>${esc(m.nom)}</option>`).join('')}</optgroup>
       ${perso.length ? `<optgroup label="Modèles enregistrés">${perso.map(m => `<option value="${m.id}" ${m.id === modeleId ? 'selected' : ''}>${esc(m.objet)}</option>`).join('')}</optgroup>` : ''}</select></label>`}
-    <label class="large">Objet de l'étude<input name="objet" required placeholder="Ex. : réseau eau glacée CTA bâtiment B" value="${esc(m0 ? m0.objet : opts.objet || '')}"></label>
+    <label class="large">Objet de l'étude<input name="objet" required placeholder="Ex. : réseau eau glacée CTA bâtiment B" value="${esc(m0 ? m0.objet : opts.objet || (affaireDe(affaireId) || {}).nom || '')}"></label>
     <label class="large">Affaire Pipe-Fit<select name="affaireId">${optionsAffaires(affaireId)}</select><span class="muted petit">Pas encore de commande : « Sans affaire » ; l'étude se relie au chantier plus tard (ici ou dans Pipe-Fit).</span></label>
     <div class="actions large"><button type="button" class="secondaire" id="annuler">Annuler</button><button>Créer</button></div></form>`);
   b.querySelector('#annuler').onclick = Modal.close;
   const sel = b.querySelector('[name="modele"]');
   if (sel) sel.onchange = () => { const m = modeleDe(sel.value), o = b.querySelector('[name="objet"]'); if (m && (!o.value || o.dataset.auto)) { o.value = m.objet; o.dataset.auto = '1'; } };
+  // Chantier choisi : son nom devient l'objet de l'étude s'il est vide
+  b.querySelector('[name="affaireId"]').onchange = ev => { const a = affaireDe(ev.target.value), o = b.querySelector('[name="objet"]'); if (a && a.nom && (!o.value.trim() || o.dataset.auto)) { o.value = a.nom; o.dataset.auto = '1'; } };
   b.querySelector('#f-etude').onsubmit = ev => {
     ev.preventDefault();
     const et = nouvelleEtude(ev.target.affaireId.value), m = sel && modeleDe(sel.value);
     et.objet = ev.target.objet.value.trim();
+    reprendreChantier(et, affaireDe(et.affaireId));
+    { const d = ConsignesProjet.detecterProfil(et.objet); if (d && Liens.TYPES_BATIMENT[d]) et.typeBatiment = d; }
     if (m) { et.notes = Modeles.instancier(m, uidE); if (m.description && !m.modele) et.description = m.description; }
     if (apres) apres(et);
     if (opts.preparer) opts.preparer(et);
@@ -433,7 +468,12 @@ Vues.etude = {
         <label>Rédacteur<input data-e="auteur" value="${esc(et.auteur)}"></label><label>Vérificateur<input data-e="verificateur" value="${esc(et.verificateur)}"></label>
         <label>Approbateur<input data-e="approbateur" value="${esc(et.approbateur || '')}"></label>
         <label>Statut de l'indice ${esc(et.indice)}<select data-e="statut">${Revisions.STATUTS.map(x => `<option ${x === (et.statut || 'Pour avis') ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
-        <label class="large">Objet détaillé, documents de référence (CCTP, plans, indices)<textarea data-e="description" rows="3">${esc(et.description)}</textarea></label></div>
+        <label title="Températures extérieures de base reprises (verrouillées) dans les bilans, les CTA et les lois d'eau des schémas de principe">Climat du site<select data-e="climat">${optionsClimat(et, a)}</select></label>
+        ${et.climat === 'perso' ? `<label>Température extérieure de base (hiver) (°C)<input data-e="Tbase" inputmode="decimal" value="${esc(et.Tbase ?? -7)}"></label><label>Température extérieure (été) (°C)<input data-e="Tete" inputmode="decimal" value="${esc(et.Tete ?? 32)}"></label><label>Humidité relative extérieure (été) (%)<input data-e="HRete" inputmode="decimal" value="${esc(et.HRete ?? 40)}"></label>` : ''}
+        <label title="Valeur par défaut de l'usage des schémas de principe, du sanitaire, de l'évacuation, de l'objectif acoustique et du profil de régulation ; un choix fait dans un calcul reste">Type de bâtiment<select data-e="typeBatiment">${optionsTypeBatiment(et)}</select></label>
+        <label>Bâtiment neuf ou existant<select data-e="neuf"><option value="">Non précisé</option><option value="non" ${et.neuf === 'non' ? 'selected' : ''}>Existant</option><option value="oui" ${et.neuf === 'oui' ? 'selected' : ''}>Neuf (permis après le 21 juillet 2021)</option></select></label>
+        <label class="large">Objet détaillé, documents de référence (CCTP, plans, indices)<textarea data-e="description" rows="3">${esc(et.description)}</textarea>
+          ${a && referencesDocuments(et, a).length ? '<span><button type="button" class="secondaire petit" id="docs-chantier" title="Ajoute les références des documents du chantier dans Pipe-Fit (CCTP, plans… avec indice et date)">📎 Insérer les documents du chantier</button></span>' : ''}</label></div>
         <div class="actions-ligne"><button class="secondaire petit" id="indice">Nouvel indice (${esc(suivantIndice(et.indice))})</button>
           ${et.historique.length ? `<span class="petit muted">Historique : ${et.historique.map(h => `${esc(h.indice)} du ${dateFr(h.date)}${h.motif ? ` (${esc(h.motif)})` : ''}`).join(' · ')}</span>` : ''}
           <span class="espace"></span><button class="secondaire petit" id="dupliquer">Dupliquer l'étude</button>${et.modele ? '' : '<button class="secondaire petit" id="modele">⭐ Enregistrer comme modèle</button>'}<button class="secondaire petit" id="supprimer">Supprimer</button></div></div>
@@ -467,7 +507,8 @@ Vues.etude = {
     root.querySelectorAll('[data-e]').forEach(el => {
       el.onchange = el.oninput = () => {
         et[el.dataset.e] = el.value;
-        if (el.dataset.e === 'affaireId') { et.client = clientDe(affaireDe(el.value)) || et.client; enregistrer(et); return App.render(); }
+        if (el.dataset.e === 'affaireId') { et.client = clientDe(affaireDe(el.value)) || et.client; reprendreChantier(et, affaireDe(el.value)); enregistrer(et); return App.render(); }
+        if (['climat', 'typeBatiment', 'neuf'].includes(el.dataset.e)) { enregistrer(et); return App.render(); }
         if (el.dataset.e === 'clientId') { et.client = (S.pf.entreprises.find(e => e.id === el.value) || {}).nom || et.client; if (et.devisId && (S.pf.devis.find(d => d.id === et.devisId) || {}).clientId !== el.value) et.devisId = ''; enregistrer(et); return App.render(); }
         if (el.dataset.e === 'devisId') { enregistrer(et); return; }
         if (el.dataset.e === 'objet') root.querySelector('.titre-etude').textContent = el.value;
@@ -475,6 +516,13 @@ Vues.etude = {
       };
     });
     root.querySelector('#pdf').onclick = () => genererNoteCalcul(et);
+    const dc = root.querySelector('#docs-chantier');
+    if (dc) dc.onclick = () => {
+      const d = String(et.description || ''), refs = referencesDocuments(et, affaireDe(et.affaireId)).filter(r => !d.includes(r));
+      if (!refs.length) return toast('Les documents du chantier sont déjà cités.', 4000);
+      et.description = `${d.trim()}${d.trim() ? '\n' : ''}Documents de référence : ${refs.join(' ; ')}.`;
+      enregistrer(et); App.render(); toast(`${refs.length} document(s) du chantier cité(s).`);
+    };
     bindDocuments(root, et);
     root.querySelector('#chiffrer').onclick = () => dialogueChiffrage(et);
     root.querySelectorAll('#materiel, #materiel2').forEach(b => { b.onclick = () => dialogueMateriel(et); });
@@ -835,7 +883,7 @@ Vues.note = {
     contexteEtude = et;
     // Consignes du projet : zones de l'étude préremplies (type de bâtiment choisi ou deviné) tant que la saisie est celle par défaut
     if (n.type === 'elec' && typeof ConsignesProjet !== 'undefined' && ConsignesProjet.estDefaut(n.entrees.consignesZones)) {
-      const zs = ConsignesProjet.zonesEtude(et), id = n.entrees.profilBatiment || ConsignesProjet.detecterProfil(et.objet);
+      const zs = ConsignesProjet.zonesEtude(et), id = Liens.resoudre(et, n).entrees.profilBatiment || ConsignesProjet.detecterProfil(et.objet);
       if (zs.length || id) { n.entrees.consignesZones = ConsignesProjet.zonesDepuis(zs, id); enregistrer(et); }
     }
     // Marque d'automate et protocole GTB repris du CCTP (une fois, tant qu'ils sont aux valeurs par défaut)
@@ -883,6 +931,7 @@ Vues.note = {
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="aero-vitesses" title="Même vitesse pour toutes les branches (ou les principales, ou les terminales) : les diamètres des gaines sont recalculés">💨 Changer toutes les vitesses</button>' : ''}
         ${n.type === 'sanitaire' ? `<button class="secondaire" id="san-foison" title="Compare le débit probable avec et sans foisonnement et choisit la méthode de calcul">⚖️ Foisonnement : ${esc({ dtu: 'DTU 60.11', saisi: `${Notes.num(n.entrees.coefSaisi, 60)} %`, aucun: 'aucun' }[n.entrees.foisonnement || 'dtu'] || '')}</button>` : ''}
         ${n.type === 'evacuation' ? '<button class="secondaire" id="evac-san" title="Une ligne par appareil du calcul sanitaire choisi (lavabos, WC, douches…), avec sa salle et son étage ; il reste à choisir le tronçon">🚽 Reprendre les appareils du calcul sanitaire</button>' : ''}
+        ${n.type === 'bouches' && et.notes.some(x => x.type === 'pieces' || x.type === 'aero') ? '<button class="secondaire" id="bouches-pieces" title="Une ligne par pièce de l\'étude (bilan pièce par pièce, bouches du schéma aéraulique) ; surface et débit repris et verrouillés">🏠 Reprendre les pièces de l\'étude</button>' : ''}
         ${n.type === 'terminaux' && et.notes.some(x => x.type === 'pieces') ? '<button class="secondaire" id="term-pieces" title="Un terminal par pièce du bilan pièce par pièce qui n\'en a pas, aux puissances de la pièce">🏠 Créer les terminaux des pièces</button>' : ''}
         ${(Notes.TYPES[n.type].champs || []).some(c => c.k === 'troncons' && (c.colonnes || []).some(x => x.k === 'L')) ? '<button class="secondaire" id="longueurs-plan" title="Nomenclature de canalisations ou de gaines exportée de Revit (CSV, Excel) ou plan DXF (une couche par tronçon) : longueurs additionnées par repère et reportées sur les tronçons de même repère">📏 Longueurs depuis Revit / DXF</button>' : ''}
         ${n.type === 'arbo' ? (n.entrees.jumeau && et.notes.some(x => x.id === n.entrees.jumeau) ? `<button class="secondaire" id="arbo-recopier" title="Tronçons, longueurs, branches et émetteurs repris du réseau jumeau (les tubes imposés et la pompe de ce réseau sont gardés)">🔄 Recopier l'arborescence de ${esc((et.notes.find(x => x.id === n.entrees.jumeau) || {}).titre || '')}</button>` : `<button class="secondaire" id="arbo-jumeau" title="Réseau de l'autre saison avec la même arborescence, les mêmes repères et émetteurs : réseau séparé (4 tubes) ou même réseau en change-over">${n.entrees.saison === 'froid' ? '🔥 Créer le réseau chaud' : '❄️ Créer le réseau froid'} (4 tubes / change-over)</button>`) : ''}
@@ -941,7 +990,7 @@ Vues.note = {
     // Profil de bâtiment : zones, consignes et horaires types
     const bp = root.querySelector('#elec-profil');
     if (bp) bp.onclick = () => {
-      const id = n.entrees.profilBatiment || ConsignesProjet.detecterProfil(et.objet) || 'bureaux', p = ConsignesProjet.profil(id), zs = ConsignesProjet.zonesEtude(et);
+      const id = Liens.resoudre(et, n).entrees.profilBatiment || ConsignesProjet.detecterProfil(et.objet) || 'bureaux', p = ConsignesProjet.profil(id), zs = ConsignesProjet.zonesEtude(et);
       n.entrees.consignesZones = ConsignesProjet.zonesDepuis(zs, id); enregistrer(et); App.render();
       toast(`${n.entrees.consignesZones.length} zone(s) préremplie(s)${zs.length ? ' depuis les zones de l\'étude' : ''} avec les consignes et horaires « ${p.nom} » : ajustez seulement ce qui diffère.`, 7000);
     };
@@ -1256,6 +1305,15 @@ Vues.note = {
       l.push(...nv); n.entrees.sanitaire = san.id; enregistrer(et); App.render(); toast(`${nv.length} appareil(s) repris : choisissez leur tronçon.`, 5000);
     };
     // Terminaux : un terminal par pièce sans terminal (bilan pièce par pièce)
+    // Bouches : une ligne par pièce de l'étude qui n'en a pas ; surface et débit repris des pièces (verrouillés)
+    const bpi = root.querySelector('#bouches-pieces');
+    if (bpi) bpi.onclick = () => {
+      const l = n.entrees.locaux = n.entrees.locaux || [], deja = new Set(l.map(x => Pieces.norm(x.local))), lx = Notes.lieuxEtude(et);
+      const nv = lx.salles.filter(s => !deja.has(Pieces.norm(s)) && (Pieces.besoinsEtude(et)[Pieces.norm(s)] || et.notes.some(x => x.type === 'aero' && ((x.entrees || {}).bouchesL || []).some(b => Pieces.norm(b.salle) === Pieces.norm(s)))));
+      nv.forEach(s => l.push({ local: s, S: '', Q: '', n: 1, type: 'plafond', portee: '', LpMax: 35 }));
+      n.entrees.reprise = 'pieces';
+      enregistrer(et); App.render(); toast(nv.length ? `${nv.length} pièce(s) ajoutée(s) : surface et débit repris de l'étude ; choisissez le type et le nombre de bouches.` : 'Surface et débit des locaux repris des pièces de l\'étude (même nom).', 6000);
+    };
     const tp = root.querySelector('#term-pieces');
     if (tp) tp.onclick = () => {
       const l = n.entrees.appareils = n.entrees.appareils || [], nv = Pieces.terminauxManquants(et, l);

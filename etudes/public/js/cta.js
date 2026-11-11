@@ -225,7 +225,8 @@ const Cta = ((D, C, N) => {
   N.TYPES.bouches = {
     titre: 'Sélection des bouches de soufflage et d\'extraction', icone: '🌬️', famille: 'Aéraulique',
     description: 'Taille, vitesse au col, perte de charge, portée du jet et niveau sonore de chaque bouche, local par local.',
-    champs: [{ g: 'Locaux' }, { k: 'h', l: 'Hauteur sous plafond', u: 'm', d: 2.7 }, { k: 'Tr', l: 'Durée de réverbération des locaux', u: 's', d: 0.6 },
+    champs: [{ g: 'Locaux' }, { k: 'reprise', l: 'Surface et débit des locaux', t: 's', o: [['', 'Saisis'], ['pieces', 'Repris des pièces de l\'étude (bilan pièce par pièce, bouches du schéma aéraulique) — même nom de local']] },
+      { k: 'h', l: 'Hauteur sous plafond', u: 'm', d: 2.7 }, { k: 'Tr', l: 'Durée de réverbération des locaux', u: 's', d: 0.6 },
       { k: 'vt', l: 'Vitesse terminale de la portée', u: 'm/s', d: 0.25 },
       { k: 'locaux', l: 'Bouches par local', t: 'lignes', d: [
         { local: 'Bureau 1', S: 20, Q: 120, n: 1, type: 'plafond', portee: 1.5, LpMax: 35 },
@@ -233,7 +234,7 @@ const Cta = ((D, C, N) => {
         { local: 'Salle de réunion', S: 40, Q: 600, n: 2, type: 'plafond', portee: 3, LpMax: 35 },
         { local: 'Atelier', S: 300, Q: 3000, n: 4, type: 'grille', portee: 12, LpMax: 55 },
         { local: 'Sanitaires', S: 15, Q: 150, n: 2, type: 'extraction', portee: '', LpMax: 40 }],
-      colonnes: [{ k: 'local', l: 'Local', t: 't' }, { k: 'S', l: 'Surface (m²)' }, { k: 'Q', l: 'Débit du local (m³/h)' }, { k: 'n', l: 'Nombre de bouches' },
+      colonnes: [{ k: 'local', l: 'Local', t: 't', lst: (e, et) => N.lieuxEtude(et).salles }, { k: 'S', l: 'Surface (m²)' }, { k: 'Q', l: 'Débit du local (m³/h)' }, { k: 'n', l: 'Nombre de bouches' },
         { k: 'type', l: 'Type', t: 's', o: Object.entries(BOUCHES).map(([k, b]) => [k, b.libelle]) }, { k: 'portee', l: 'Portée utile (m)' }, { k: 'LpMax', l: 'Niveau maxi (dB(A))' }] }],
     calcul(e) {
       const alertes = [], h = num(e.h, 2.7), Tr = num(e.Tr, 0.6), vt = num(e.vt, 0.25), rho = 1.2;

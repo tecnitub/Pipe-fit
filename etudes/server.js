@@ -75,13 +75,22 @@ async function pipefit(s, chemin, opts = {}) {
   return r;
 }
 // Seules les informations utiles aux études sont transmises au navigateur : affaires, clients, bibliothèque de prix, main-d'œuvre
+// Site du chantier (adresse du client) : la ville sert à proposer le climat de l'étude
+const siteAffaire = (d, a) => (((d.entreprises || []).find(e => e.id === a.clientId) || {}).adresses || []).find(s => s.id === a.siteId) || {};
+// Contacts du client et de la maîtrise d'œuvre des chantiers : liste de diffusion de l'étude
+const contactsPF = d => {
+  const ents = new Set((d.affaires || []).flatMap(a => [a.clientId, a.moeId]).filter(Boolean));
+  return (d.contacts || []).filter(c => ents.has(c.entrepriseId)).map(c => ({ id: c.id, entrepriseId: c.entrepriseId, civilite: c.civilite || '', prenom: c.prenom || '', nom: c.nom || '', fonction: c.fonction || '', email: c.email || '' }));
+};
 const extraitPF = d => ({
   affaires: (d.affaires || []).map(a => ({ id: a.id, code: a.code, nom: a.nom, clientId: a.clientId, contactId: a.contactId, siteId: a.siteId, chargeId: a.chargeId, statut: a.statut, type: a.type,
+    moeId: a.moeId || '', moeContactId: a.moeContactId || '', siteVille: siteAffaire(d, a).ville || '', siteCp: siteAffaire(d, a).cp || '',
     // CCTP et DPGF déposés dans les documents du chantier : lus pour préremplir l'étude
     documents: (a.documents || []).filter(x => x.categorie === 'CCTP' || /\b(cctp|dpgf|dqe|bpu)\b/i.test(x.nom || '')).map(x => ({ id: x.id, nom: x.nom, fichierId: x.fichierId, mime: x.mime, categorie: x.categorie })),
     // Tous les documents du chantier (plans, fiches…) : joints aux documents émis de l'étude, indices suivis
     tousDocuments: (a.documents || []).filter(x => x.fichierId).map(x => ({ id: x.id, nom: x.nom, fichierId: x.fichierId, mime: x.mime, categorie: x.categorie, indice: x.indice || '', date: x.date || '', etudeId: x.etudeId || '' })) })),
   entreprises: (d.entreprises || []).map(e => ({ id: e.id, nom: e.nom, regimeTVA: e.regimeTVA, categorie: e.categorie })),
+  contacts: contactsPF(d),
   // Devis (étude faite avant la commande, reliée à son devis)
   devis: (d.devis || []).map(x => ({ id: x.id, numero: x.numero, objet: x.objet, clientId: x.clientId, statut: x.statut, affaireId: x.affaireId || '' })),
   articles: (d.articles || []).map(a => ({ id: a.id, ref: a.ref, designation: a.designation, famille: a.famille, sousFamille: a.sousFamille, unite: a.unite, prixVente: a.prixVente, coutRevient: a.coutRevient, poidsUnitaire: a.poidsUnitaire })),

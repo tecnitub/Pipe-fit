@@ -169,7 +169,7 @@ const Terminaux = ((N) => {
       { k: 'TfAller', l: 'Eau glacée : départ', u: '°C', d: 7 }, { k: 'TfRetour', l: 'Eau glacée : retour', u: '°C', d: 12 }, { k: 'dpVanne', l: 'Perte de charge des vannes (Kvs)', u: 'kPa', d: 15 },
       { g: 'Terminaux' },
       { k: 'appareils', l: 'Appareils, une ligne par appareil (« + Ajouter une ligne » copie la précédente avec le repère suivant) — « 📄 Fiche technique » remplit une ligne', t: 'lignes', d: [{ rep: 'CA-01', local: 'Bureau 1', type: 'cassette2', Pch: 3.2, Pfr: 3.6, batterie: '2t', vanne: '2v', Pvent: 45, Pbe: '', tension: 'mono', alim: '', regul: 'propre', maitre: '', ref: '' }],
-        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'local', l: 'Pièce (repérage)', t: 't' }, { k: 'zone', l: 'Étage / zone', t: 't' }, { k: 'type', l: 'Type', t: 's', o: Object.entries(TYPES).map(([k, x]) => [k, x[0]]) },
+        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'local', l: 'Pièce (repérage)', t: 't', lst: (e, et) => N.lieuxEtude(et).salles }, { k: 'zone', l: 'Étage / zone', t: 't', lst: (e, et) => N.lieuxEtude(et).zones }, { k: 'type', l: 'Type', t: 's', o: Object.entries(TYPES).map(([k, x]) => [k, x[0]]) },
           { k: 'Pch', l: 'P chaud (kW/u)' }, { k: 'Pfr', l: 'P froid (kW/u)' }, { k: 'batterie', l: 'Batterie', t: 's', o: Object.entries(BATTERIES) }, { k: 'vanne', l: 'Vanne', t: 's', o: Object.entries(VANNES) },
           { k: 'dpEauC', l: 'ΔP eau chaud (kPa)' }, { k: 'dpEauF', l: 'ΔP eau froid (kPa)' },
           { k: 'Qp', l: 'Pompe : débit (m³/h)' }, { k: 'Hp', l: 'Pompe : HMT (mCE)' },

@@ -26,7 +26,7 @@ const Pieces = ((N) => {
     if (pcs.length) alertes.push(alerte('ok', `${pcs.length} pièce(s), ${nf(S, 0)} m² : ${nf(Pch, 1)} kW de chauffage (${nf(Pch * 1000 / Math.max(S, 1), 0)} W/m²), ${nf(Pfr, 1)} kW de froid (${nf(Pfr * 1000 / Math.max(S, 1), 0)} W/m²).`));
     alertes.push(alerte('attention', 'Bilan simplifié (méthode des coefficients G et des ratios) pour l\'avant-projet et le choix des terminaux ; un calcul réglementaire (NF EN 12831) reste à faire pour l\'exécution.'));
     return {
-      valeurs: { Pch, Pfr, S, pieces: pcs.map(p => ({ nom: p.nom, etage: p.etage, Pch: p.Pch, Pfr: p.Pfr, S: p.S })) },
+      valeurs: { Pch, Pfr, S, pieces: pcs.map(p => ({ nom: p.nom, etage: p.etage, Pch: p.Pch, Pfr: p.Pfr, S: p.S, Qair: p.Qair })) },
       resume: [['Surface', `${nf(S, 0)} m²`], ['Puissance de chauffage', `${nf(Pch, 2)} kW`], ['Puissance de froid', `${nf(Pfr, 2)} kW`], ['Températures', `hiver ${nf(Tb, 0)} / ${nf(Ti, 0)} °C · été ${nf(Te, 0)} / ${nf(Tc, 0)} °C`]],
       tableaux: [{ titre: 'Besoins par pièce', entetes: ['Pièce', 'Étage', 'Usage', 'Surface (m²)', 'Occupants', 'Air neuf (m³/h)', 'Parois (W)', 'Renouvellement d\'air (W)', 'Chauffage (kW)', 'Solaire (W)', 'Internes (W)', 'Froid (kW)'],
         lignes: pcs.map(p => [p.nom, p.etage, p.usage, nf(p.S, 1), nf(p.occ, 1), nf(p.Qair, 0), nf(p.parois, 0), nf(p.air, 0), nf(p.Pch, 2), nf(p.sol, 0), nf(p.occW + p.int, 0), nf(p.Pfr, 2)]) }],
@@ -45,7 +45,7 @@ const Pieces = ((N) => {
       { k: 'pieces', l: 'Pièces (le nom sert à retrouver les terminaux de la pièce)', t: 'lignes', d: [
         { nom: 'Bureau 1', etage: 'R+1', usage: 'bureau', S: 18, H: 2.7, vitrage: 4, orient: 'S', occ: '', Qair: '' }, { nom: 'Bureau 2', etage: 'R+1', usage: 'bureau', S: 15, H: 2.7, vitrage: 3, orient: 'O', occ: '', Qair: '' },
         { nom: 'Salle de réunion', etage: 'R+1', usage: 'reunion', S: 30, H: 2.7, vitrage: 6, orient: 'E', occ: '', Qair: '' }],
-        colonnes: [{ k: 'nom', l: 'Pièce', t: 't' }, { k: 'etage', l: 'Étage', t: 't' }, { k: 'usage', l: 'Usage', t: 's', o: Object.entries(USAGES).map(([k, x]) => [k, x[0]]) }, { k: 'S', l: 'Surface (m²)' }, { k: 'H', l: 'Hauteur (m)' },
+        colonnes: [{ k: 'nom', l: 'Pièce', t: 't' }, { k: 'etage', l: 'Étage', t: 't', lst: (e, et) => N.lieuxEtude(et).etages }, { k: 'usage', l: 'Usage', t: 's', o: Object.entries(USAGES).map(([k, x]) => [k, x[0]]) }, { k: 'S', l: 'Surface (m²)' }, { k: 'H', l: 'Hauteur (m)' },
           { k: 'vitrage', l: 'Vitrages (m²)' }, { k: 'orient', l: 'Orientation', t: 's', o: Object.keys(SOLAIRE).map(k => [k, k === 'aucune' ? 'Sans vitrage' : k]) }, { k: 'occ', l: 'Occupants (vide : selon l\'usage)' }, { k: 'Qair', l: 'Air neuf (m³/h) (vide : selon l\'usage)' }] }],
     calcul: calculer,
   };
@@ -53,8 +53,10 @@ const Pieces = ((N) => {
   // Besoins des pièces de l'étude (tous les bilans par pièce), indexés par nom de pièce normalisé
   function besoinsEtude(et) {
     const out = {};
+    // Climat de l'étude : températures extérieures imposées à tous les bilans (comme dans le calcul affiché)
+    let cl = null; try { cl = (typeof Liens !== 'undefined' ? Liens : require('./liens')).climatEtude(et); } catch (err) { cl = null; }
     ((et && et.notes) || []).filter(n => n.type === 'pieces').forEach(n => {
-      let v; try { v = N.calculer('pieces', { ...N.defauts('pieces'), ...(n.entrees || {}) }).valeurs; } catch (err) { return; }
+      let v; try { v = N.calculer('pieces', { ...N.defauts('pieces'), ...(n.entrees || {}), ...(cl ? { Tbase: cl.Tbase, Tete: cl.Tete } : {}) }).valeurs; } catch (err) { return; }
       v.pieces.forEach(p => { out[norm(p.nom)] = { ...p, note: n.id }; });
     });
     return out;

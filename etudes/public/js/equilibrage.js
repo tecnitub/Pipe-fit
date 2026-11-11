@@ -44,7 +44,7 @@ const Equilibrage = ((D, C, N) => {
         { rep: 'A2.1', amont: 'A2', nom: 'Radiateurs RDC', L: 6, zeta: 4, tube: '', P: 40, dpEm: 20 },
         { rep: 'A2.2', amont: 'A2', nom: 'Radiateurs R+1', L: 12, zeta: 4, tube: '', P: 20, dpEm: 10 },
         { rep: 'A3', amont: 'C', nom: 'CTA', L: 10, zeta: 6, tube: '', P: 60, dpEm: 25 }],
-      colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'amont', l: 'Amont (vide = pompe)', t: 't' }, { k: 'nom', l: 'Désignation', t: 't' },
+      colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'amont', l: 'Amont (vide = pompe)', t: 's', o: N.optAmont('troncons'), libre: true }, { k: 'nom', l: 'Désignation', t: 't' },
         { k: 'L', l: 'Longueur aller (m)' }, { k: 'zeta', l: 'Σζ aller + retour' }, { k: 'sing', l: 'Singularités de l\'aller (comptées aussi au retour ; remplacent Σζ)', t: 't' }, { k: 'tube', l: 'Tube', t: 's', o: e => [['', 'Auto'], ...optTubes(e)] },
         { k: 'emetteur', l: 'Émetteur de l\'étude (remplit puissance, débit et ΔP)', t: 's', o: (e, et) => [['', 'Saisie'], ...emetteursEtude(et, e.saison).map(x => [x.cle, x.libelle])] },
         { k: 'pompe', l: 'Pompe placée sur ce tronçon (dessert toute la branche en aval)', t: 's', o: (e, et) => [['', '—'], ...(typeof Terminaux !== 'undefined' ? Terminaux : require('./terminaux')).pompesEtude(et).map(x => [x.cle, x.libelle]), ...(e && !et ? (e.troncons || []).filter(t => t.pompe).map(t => [t.pompe, t.pompe]) : [])] },
