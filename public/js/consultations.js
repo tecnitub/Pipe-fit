@@ -134,8 +134,9 @@ function consultationEditeur(id) {
   </div></div>
 
   <h2>Fournitures demandées</h2>
+  <datalist id="cs-unites">${UNITES.map(u => `<option value="${esc(u)}">`).join('')}</datalist>
   <div class="table-wrap"><table class="compact cs-lignes"><tr><th>N°</th><th>Désignation</th><th>Unité</th><th class="num">Qté</th><th class="num">Prix bibliothèque</th><th></th></tr>
-    ${lignes.map((l, i) => `<tr data-i="${i}"><td>${i + 1}</td><td><input data-k="designation" value="${esc(l.designation)}" ${ouverte ? '' : 'disabled'}></td><td><input data-k="unite" value="${esc(l.unite || '')}" style="width:70px" ${ouverte ? '' : 'disabled'}></td>
+    ${lignes.map((l, i) => `<tr data-i="${i}"><td>${i + 1}</td><td><input data-k="designation" value="${esc(l.designation)}" ${ouverte ? '' : 'disabled'}></td><td><input data-k="unite" list="cs-unites" autocomplete="off" value="${esc(l.unite || '')}" style="width:80px" ${ouverte ? '' : 'disabled'}></td>
       <td class="num"><input data-k="qte" type="number" step="any" value="${esc(l.qte)}" style="width:90px" ${ouverte ? '' : 'disabled'}></td><td class="num muted">${l.articleId ? eur((Store.get('articles', l.articleId) || {}).coutRevient) : ''}</td>
       <td>${ouverte ? `<button class="small danger" data-ldel="${i}" aria-label="Retirer">✕</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Aucune ligne.</td></tr>'}</table></div>
   ${ouverte ? `<div class="toolbar">${articleSelect('cs-art')}<input id="cs-q" type="number" step="any" value="1" style="width:80px" aria-label="Quantité"><button class="secondary" id="cs-add">Ajouter</button><button class="secondary" id="cs-libre">Ligne libre</button><button class="secondary" id="cs-dicter">🎤 Dicter</button>

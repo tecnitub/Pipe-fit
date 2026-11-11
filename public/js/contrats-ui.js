@@ -20,6 +20,9 @@ function carnetMateriel(affaireId) {
   return ts.flatMap(t => (ENTRETIEN_TYPES[t.type] || MaterielRetenu.ENTRETIEN[t.type] || MaterielRetenu.ENTRETIEN.autre)
     .map(([op, prec, per]) => [t.libelle.slice(0, 120), `${op}${prec ? ` (${prec})` : ''}`, `${per} mois`, /frigo|étanchéité/i.test(op) ? 'Frigoriste certifié' : 'Mainteneur CVC']));
 }
+// Techniciens proposés pour une visite : les opérateurs, plus la personne connectée (choisie par défaut)
+const techniciensVisite = () => { const me = Store.get('users', moiTechnicien()); return [...operateurs(), ...(me && !operateurs().includes(me) ? [me] : [])].sort((x, y) => (x.nom || '').localeCompare(y.nom || '')); };
+const moiTechnicien = () => Store.me.userId || (Store.all('users').find(u => u.nom && u.nom === Store.me.nom) || {}).id || '';
 const ETAT_VISITE = { faite: ['b-ok', '✓ faite'], retard: ['b-bad', 'en retard'], bientot: ['b-warn', 'à planifier'], planifiee: ['b-info', 'planifiée'] };
 function contratChantierHtml(a) {
   const c = a.contrat, auj = isoDate(new Date()), bureau = Store.can('write', 'affaires');
@@ -41,7 +44,7 @@ function contratChantierHtml(a) {
           <td>${v.statut === 'faite' ? `<button class="small secondary" data-ct-cr="${esc(v.id)}">🖨️ Compte rendu</button>` : bureau || Store.me.role === 'atelier' ? `<button class="small" data-ct-faite="${esc(v.id)}">✓ Visite faite</button>` : ''}</td></tr>`; }).join('')}</table></div>
       ${ech.length ? `<h3>Facturation</h3><div class="table-wrap"><table><tr><th>Période</th><th class="num">Montant HT</th><th>Facture</th></tr>
         ${ech.map(x => { const f = x.factureId && Store.get('factures', x.factureId); return `<tr><td>${dateFr(x.du)} → ${dateFr(x.au)}</td><td class="num">${eur(x.montant)}</td>
-          <td>${f ? `<a href="#/factures/${esc(f.id)}">${esc(f.numero || 'facture')}</a> <span class="badge">${esc(f.statut)}</span>` : bureau && x.du <= auj ? `<button class="small" data-ct-fact="${esc(x.periode)}">🧾 Facturer</button>` : '<span class="muted small">à venir</span>'}</td></tr>`; }).join('')}</table></div>` : ''}
+          <td>${f ? `<a href="#/facture/${esc(f.id)}">${esc(f.numero || 'facture')}</a> <span class="badge">${esc(f.statut)}</span>` : bureau && x.du <= auj ? `<button class="small" data-ct-fact="${esc(x.periode)}">🧾 Facturer</button>` : '<span class="muted small">à venir</span>'}</td></tr>`; }).join('')}</table></div>` : ''}
       ${bureau && b.fin && b.fin <= Contrats.plusMois(auj, 2) ? '<button class="small secondary" id="ct-renouv">🔁 Renouveler le contrat</button>' : ''}
     </div>`;
 }
@@ -76,11 +79,11 @@ function bindContratChantier(root, a) {
     const m = Modal.open(`<h2>Visite d'entretien du ${dateFr(v.prevue)}</h2>
       ${v.operations.map((o, i) => `<label class="checkbox"><input type="checkbox" data-op="${i}" checked> ${esc(o.equipement)} : ${esc(o.operation)}</label>`).join('')}
       <div class="grid2"><div class="field"><label for="ctv-date">Faite le</label><input type="date" id="ctv-date" value="${isoDate(new Date())}"></div>
-        <div class="field"><label for="ctv-par">Technicien</label><input id="ctv-par" value="${esc(userName(Store.me.userId) || Store.me.nom || '')}"></div></div>
+        <div class="field"><label for="ctv-par">Technicien</label><select id="ctv-par">${options(techniciensVisite(), moiTechnicien())}</select></div></div>
       <div class="field"><label for="ctv-obs">Observations, pièces remplacées, réserves</label><textarea id="ctv-obs" rows="3" data-dictee></textarea></div>
       <div class="actions"><button class="secondary" id="ctv-x">Annuler</button><button id="ctv-ok">Enregistrer</button></div>`);
     m.querySelector('#ctv-x').onclick = Modal.close;
-    m.querySelector('#ctv-ok').onclick = () => { Contrats.marquerFaite(c, v.id, { date: m.querySelector('#ctv-date').value, par: m.querySelector('#ctv-par').value, observations: m.querySelector('#ctv-obs').value, operations: [...m.querySelectorAll('[data-op]')].map(x => x.checked) }); Modal.close(); maj(c, 'Visite enregistrée'); };
+    m.querySelector('#ctv-ok').onclick = () => { const parId = m.querySelector('#ctv-par').value; Contrats.marquerFaite(c, v.id, { date: m.querySelector('#ctv-date').value, parId, par: parId ? userName(parId) : '', observations: m.querySelector('#ctv-obs').value, operations: [...m.querySelectorAll('[data-op]')].map(x => x.checked) }); Modal.close(); maj(c, 'Visite enregistrée'); };
   });
   z.querySelectorAll('[data-ct-cr]').forEach(b => b.onclick = () => {
     const v = a.contrat.visites.find(x => x.id === b.dataset.ctCr), corps = () => `<h3 class="doc-h">Visite d'entretien</h3><p>Prévue le ${dateFr(v.prevue)}, réalisée le ${dateFr(v.faiteLe)}${v.par ? ` par ${esc(v.par)}` : ''}.</p>
@@ -89,9 +92,9 @@ function bindContratChantier(root, a) {
     PDF.telecharger(documentEssai('COMPTE RENDU DE VISITE D\'ENTRETIEN', { affaireId: a.id, numero: `${a.code || ''}-${v.id.slice(1)}`, date: v.faiteLe }, corps), `Entretien-${a.code || a.id}-${v.faiteLe}.pdf`.replace(/[^\w.-]+/g, '_')).catch(e => notify(e.message));
   });
   z.querySelectorAll('[data-ct-fact]').forEach(b => b.onclick = () => {
-    const c = JSON.parse(JSON.stringify(a.contrat)), e = Contrats.echeances(c).find(x => x.periode === b.dataset.ctFact), s = Store.data.settings;
-    const f = Store.upsert('factures', { numero: '', affaireId: a.id, clientId: a.clientId, contactId: a.contactId || '', siteId: a.siteId || '', chargeId: a.chargeId || '',
-      objet: `Contrat d'entretien ${a.code || ''} – ${a.nom || ''}`, date: isoDate(new Date()), echeance: isoDate(addDays(new Date(), num(s.delaiPaiement))), statut: 'Émise',
+    const c = JSON.parse(JSON.stringify(a.contrat)), e = Contrats.echeances(c).find(x => x.periode === b.dataset.ctFact), date = isoDate(new Date());
+    const f = Store.upsert('factures', { numero: '', affaireId: a.id, clientId: a.clientId, contactId: a.contactId || '', siteId: a.siteId || '', chargeId: a.chargeId || '', refCommande: a.refCommande || '',
+      objet: `Contrat d'entretien ${a.code || ''} – ${a.nom || ''}`, date, echeance: echeancePour(a.clientId, date), statut: 'Émise',
       lignes: Contrats.lignesFacture(c, e, `${a.code || ''} ${a.nom || ''}`.trim()), ajustements: [], zoneId: '', retenuePct: 0, ...tvaDuClient(a.clientId) });
     c.factures = [...(c.factures || []), { periode: e.periode, factureId: f.id }];
     maj(c, 'Facture de l\'échéance créée');

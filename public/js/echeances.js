@@ -39,6 +39,8 @@ const Echeances = (() => {
   const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const ajouterMois = (s, n) => { if (!s) return ''; const d = d12(s), j = d.getDate(); d.setDate(1); d.setMonth(d.getMonth() + Number(n)); d.setDate(Math.min(j, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate())); return iso(d); };
   const jours = (de, a) => Math.round((d12(a) - d12(de)) / 86400000);
+  // Échéance de paiement d'une facture : date + délai en jours, reportée au dernier jour du mois si « fin de mois »
+  const paiement = (date, delai, finDeMois) => { if (!date) return ''; const d = d12(date); d.setDate(d.getDate() + (Number(delai) || 0)); if (finDeMois) d.setDate(new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()); return iso(d); };
   // État d'une échéance : ok, bientôt (moins de SEUIL jours), expirée, ou non renseignée
   function etat(expire, auj, seuil = SEUIL) {
     if (!expire) return { etat: 'absent', jours: null };
@@ -63,6 +65,6 @@ const Echeances = (() => {
   const texte = a => (a.etat === 'expire' ? `expirée depuis ${-a.jours} j (${dateFrS(a.expire)})` : a.jours === 0 ? 'expire aujourd\'hui' : `expire dans ${a.jours} j (le ${dateFrS(a.expire)})`)
     + (a.cle === 'visite' ? (a.rdv ? ` – rendez-vous le ${dateFrS(a.rdv)}` : ' – prendre rendez-vous avec la médecine du travail') : '');
 
-  return { SEUIL, HABILITATIONS, COURT, PARC, VEHICULES, ajouterMois, jours, etat, libelleHab, alertesPersonne, alertesMateriel, texte, iso };
+  return { SEUIL, HABILITATIONS, COURT, PARC, VEHICULES, ajouterMois, jours, paiement, etat, libelleHab, alertesPersonne, alertesMateriel, texte, iso };
 })();
 if (typeof module !== 'undefined') module.exports = Echeances;

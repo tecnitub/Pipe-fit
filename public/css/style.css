@@ -100,6 +100,7 @@ tr.clickable:hover { background: var(--panel-alt); cursor: pointer; }
 .modal-box { background: var(--panel); color: var(--text); border-radius: 8px; padding: 20px; width: 100%; max-width: 760px; }
 .modal-box.wide { max-width: 1200px; }
 .dialog-box { max-width: 420px; }
+.dialog-box.rapide { max-width: 640px; width: min(640px, 100%); }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
 .totals { margin-left: auto; width: 320px; max-width: 100%; margin-top: 12px; }
 .totals td { border: 0; padding: 3px 8px; }

@@ -131,3 +131,13 @@ test('commande préparée sous le seuil du compagnon : rien ne part sans validat
   assert.strictEqual((await call('POST', `/api/consultations/${id}/retenir`, { entrepriseId: cmd.fournisseurId }, k)).status, 403);
   assert.ok((await call('GET', '/api/data', null, k)).body.notifications.some(n => n.type === 'demande-materiel' && n.texte.includes(cmd.numero)));
 });
+
+test('échéance de paiement d\'une facture : délai en jours, fin de mois', () => {
+  assert.strictEqual(E.paiement('2026-11-11', 45), '2026-12-26');
+  assert.strictEqual(E.paiement('2026-11-11', 45, true), '2026-12-31');
+  assert.strictEqual(E.paiement('2026-12-20', 30, false), '2027-01-19');
+  assert.strictEqual(E.paiement('2027-01-15', 30, true), '2027-02-28'); // février non bissextile
+  assert.strictEqual(E.paiement('2027-01-31', 0, true), '2027-01-31');
+  assert.strictEqual(E.paiement('2026-11-11', ''), '2026-11-11'); // comptant
+  assert.strictEqual(E.paiement('', 30), '');
+});

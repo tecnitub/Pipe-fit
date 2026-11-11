@@ -35,3 +35,11 @@ test('facturation par période et renouvellement', () => {
   assert.strictEqual(r.precedent.fin, '2027-11-01');
   assert.strictEqual(r.visites.length, c.visites.length);
 });
+
+test('visite faite : technicien choisi dans l\'équipe (identifiant et nom gardés)', () => {
+  const c = C.creer({ carnet, debut: '2026-11-01', dureeMois: 12 }), id = c.visites[0].id;
+  C.marquerFaite(c, id, { date: '2027-02-08', parId: 'u-paul', par: 'Paul Martin' });
+  assert.deepStrictEqual([c.visites[0].parId, c.visites[0].par], ['u-paul', 'Paul Martin']);
+  C.marquerFaite(c, c.visites[1].id, { date: '2027-05-02', par: 'Sous-traitant' });
+  assert.strictEqual(c.visites[1].parId, undefined);
+});

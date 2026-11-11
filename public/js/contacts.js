@@ -23,6 +23,15 @@ const siteOptions = (eid, sel) => '<option value="">—</option>' + (entreprise(
   .map(s => `<option value="${esc(s.id)}" ${s.id === sel ? 'selected' : ''}>${esc(siteLabel(s))}</option>`).join('');
 // Contact proposé par défaut : le chargé de travaux de l'entreprise
 const defaultContact = eid => (contactsOf(eid).find(c => /charg[ée] de travaux/i.test(c.fonction || '')) || contactsOf(eid)[0] || {}).id || '';
+// Site proposé par défaut : le seul site de l'entreprise quand elle n'en a qu'un
+const siteUnique = eid => { const a = entreprise(eid).adresses || []; return a.length === 1 ? a[0].id : ''; };
+
+// Conditions de paiement de l'entreprise (délai en jours, fin de mois), sinon délai par défaut (paramètres, ou 45 jours)
+const renseigne = v => v !== undefined && v !== null && v !== '';
+const delaiPaiementDe = (eid, defaut) => (renseigne(entreprise(eid).delaiPaiement) ? num(entreprise(eid).delaiPaiement)
+  : renseigne(defaut) ? num(defaut) : renseigne(Store.data.settings.delaiPaiement) ? num(Store.data.settings.delaiPaiement) : 45);
+const echeancePour = (eid, date = isoDate(new Date()), defaut) => Echeances.paiement(date || isoDate(new Date()), delaiPaiementDe(eid, defaut), entreprise(eid).finDeMois === '1');
+const conditionsPaiement = e => (renseigne(e.delaiPaiement) ? `${num(e.delaiPaiement)} jours${e.finDeMois === '1' ? ' fin de mois' : ''}` : e.finDeMois === '1' ? 'fin de mois' : '');
 
 const entrepriseFields = [
   { key: 'nom', label: 'Raison sociale' },
@@ -38,6 +47,8 @@ const entrepriseFields = [
   { key: 'emailConsultation', label: 'E-mail des demandes de prix (fournisseur : service commercial / ADV)', type: 'email' },
   { key: 'web', label: 'Site web' },
   { key: 'zoneId', label: 'Zone de livraison par défaut', type: 'select', options: v => options(Store.all('zones'), v) },
+  { key: 'delaiPaiement', label: 'Délai de paiement en jours (vide = délai habituel)', type: 'number' },
+  { key: 'finDeMois', label: 'Paiement fin de mois', type: 'select', options: v => `<option value="">Non</option><option value="1" ${v === '1' ? 'selected' : ''}>Oui</option>` },
   { key: 'notes', label: 'Notes', type: 'textarea' },
 ];
 const contactFields = [
@@ -46,7 +57,7 @@ const contactFields = [
   { key: 'nom', label: 'Nom' },
   { key: 'fonction', label: 'Fonction', datalist: FONCTIONS },
   { key: 'entrepriseId', label: 'Entreprise', type: 'select', options: v => options(Store.all('entreprises').slice().sort((a, b) => a.nom.localeCompare(b.nom)), v) },
-  { key: 'siteId', label: 'Site de rattachement', type: 'select', dynamic: true, options: (v, o) => siteOptions(o.entrepriseId, v) },
+  { key: 'siteId', label: 'Site de rattachement', type: 'select', dynamic: true, options: (v, o) => siteOptions(o.entrepriseId, v), suit: 'entrepriseId', defaut: o => siteUnique(o.entrepriseId), nouveau: 'site' },
   { key: 'tel', label: 'Téléphone fixe', type: 'tel' },
   { key: 'mobile', label: 'Portable', type: 'tel' },
   { key: 'email', label: 'E-mail', type: 'email' },
@@ -99,6 +110,43 @@ function openSite(ent, site) {
       save((ent.adresses || []).filter(s => s.id !== site.id));
     }
   };
+}
+
+// Création rapide depuis une liste (« + Nouveau… ») sans quitter l'écran en cours : renvoie l'id créé ('' si annulé)
+const NOUVEAUX = { client: '+ Nouveau client…', fournisseur: '+ Nouveau fournisseur…', contact: '+ Nouveau contact…', site: '+ Nouveau site…' };
+function creerRapide(type, eid) {
+  const ent = entreprise(eid), surEnt = type === 'contact' || type === 'site';
+  if (surEnt && !ent.id) { notify('Choisissez d\'abord l\'entreprise.'); return Promise.resolve(''); }
+  const garde = k => [...entrepriseFields, ...siteFields].filter(f => k.includes(f.key));
+  const fields = type === 'contact' ? contactFields.filter(f => !['entrepriseId', 'notes'].includes(f.key)) : type === 'site' ? siteFields
+    : garde(['nom', 'siret', 'tel', 'email', 'adresse', 'cp', 'ville', 'delaiPaiement', 'finDeMois']);
+  const obj = type === 'contact' ? { entrepriseId: eid, siteId: siteUnique(eid) } : type === 'site' ? { libelle: '', facturation: (ent.adresses || []).length ? '' : '1' } : {};
+  const titre = { client: 'Nouveau client', fournisseur: 'Nouveau fournisseur', contact: 'Nouveau contact', site: 'Nouveau site' }[type] + (surEnt ? ` · ${ent.nom}` : '');
+  return dialog(`<h2 style="margin-top:0">${esc(titre)}</h2>${formFields(fields, obj)}
+    <div class="modal-actions"><button class="secondary" data-v="0">Annuler</button><button data-v="1">Enregistrer</button></div>`, (wrap, done) => {
+    wrap.querySelector('.dialog-box').classList.add('rapide');
+    wrap.querySelector('[data-v="0"]').onclick = () => done('');
+    wrap.querySelector('[data-v="1"]').onclick = () => {
+      const v = readForm(wrap, fields, { ...obj });
+      if (!String(v.nom || v.prenom || v.libelle || '').trim()) return notify(type === 'site' ? 'Indiquez le nom du site.' : 'Indiquez le nom.');
+      if (type === 'contact') return done(Store.upsert('contacts', v).id);
+      if (type === 'site') {
+        const site = { ...v, id: uid(), facturation: v.facturation === '1' };
+        Store.upsert('entreprises', { ...ent, adresses: [...(ent.adresses || []).map(s => (site.facturation ? { ...s, facturation: false } : s)), site] });
+        return done(site.id);
+      }
+      const { adresse, cp, ville, ...e } = v;
+      done(Store.upsert('entreprises', { ...e, categorie: type === 'client' ? 'Client' : 'Fournisseur', adresses: adresse || cp || ville ? [{ id: uid(), libelle: 'Siège', adresse, cp, ville, facturation: true }] : [] }).id);
+    };
+    const premier = wrap.querySelector('input'); if (premier) premier.focus();
+  });
+}
+// Liste d'une page (hors formulaire générique) : « + Nouveau… » crée la fiche et renvoie son id ; null si annulé (la liste reprend sa valeur)
+async function choixOuNouveau(el, type, eid, avant) {
+  if (el.value !== NOUVEAU) return el.value;
+  const id = await creerRapide(type, eid);
+  if (!id) { el.value = avant || ''; return null; }
+  return id;
 }
 
 function contactsTabs(active) {
@@ -174,7 +222,7 @@ function personnesView(query) {
 }
 function bindPersonnes(root) {
   const fe = new URLSearchParams(location.hash.split('?')[1] || '').get('entreprise') || '';
-  root.querySelector('#add').onclick = () => openContact({ entrepriseId: fe });
+  root.querySelector('#add').onclick = () => openContact({ entrepriseId: fe, siteId: siteUnique(fe) });
   root.querySelector('#fe').onchange = e => { location.hash = `#/contacts/personnes?entreprise=${e.target.value}`; };
   root.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => openContact({ ...Store.get('contacts', tr.dataset.id) }));
   bindSearch(root);
@@ -186,7 +234,7 @@ Views.entreprise = params => {
   const contacts = contactsOf(e.id);
   const affaires = Store.all('affaires').filter(a => a.clientId === e.id);
   const info = [['SIRET', e.siret], ['TVA intracom.', e.tvaIntra], ['TVA appliquée', e.regimeTVA ? (REGIMES_TVA.find(x => x[0] === e.regimeTVA) || [])[1] : ''], ['Téléphone', e.tel], ['E-mail', e.email], ['Site web', e.web],
-    ['Zone de livraison', (Store.get('zones', e.zoneId) || {}).nom]].filter(([, v]) => v);
+    ['Zone de livraison', (Store.get('zones', e.zoneId) || {}).nom], ['Paiement', conditionsPaiement(e)]].filter(([, v]) => v);
   return `<div class="toolbar"><a href="#/contacts" class="btn secondary">← Entreprises</a><span class="spacer"></span>
     <button class="secondary" id="edit">Modifier</button></div>
   <h1>${esc(e.nom)} ${categoryBadge(e.categorie)}</h1>
@@ -209,7 +257,8 @@ Views.entreprise = params => {
       <td>${esc(siteLabel(siteOf(e.id, c.siteId)))}</td><td>${esc(c.mobile || c.tel)}</td><td>${esc(c.email)}</td></tr>`).join('')}</table></div>`
   : '<p class="muted">Aucun contact rattaché.</p>'}
 
-  ${isClient(e) ? `${plansPreventionClient(e)}<h2>Chantiers</h2>${chantierTable(affaires)}${relevesClientHtml(e)}${relancesClient(e.id)}` : ''}`;
+  ${isClient(e) ? `${plansPreventionClient(e)}<h2>Chantiers</h2>
+  <div class="toolbar"><button id="ent-devis">+ Devis</button><button class="secondary" id="ent-hd">+ Intervention hors devis</button></div>${chantierTable(affaires)}${relevesClientHtml(e)}${relancesClient(e.id)}` : ''}`;
 };
 Views.entreprise.bind = (root, params) => {
   const e = Store.get('entreprises', params[0]);
@@ -220,4 +269,7 @@ Views.entreprise.bind = (root, params) => {
   root.querySelectorAll('tr[data-site]').forEach(tr => tr.onclick = () => openSite(e, e.adresses.find(s => s.id === tr.dataset.site)));
   root.querySelectorAll('tr[data-contact]').forEach(tr => tr.onclick = () => openContact({ ...Store.get('contacts', tr.dataset.contact) }));
   if (isClient(e)) bindPlansPrevention(root, e);
+  // Devis et intervention préremplis avec ce client (contact par défaut, site unique, zone, TVA)
+  const nd = root.querySelector('#ent-devis'); if (nd) nd.onclick = () => { location.hash = `#/devis/${newDevis({ clientId: e.id }).id}`; };
+  const nh = root.querySelector('#ent-hd'); if (nh) nh.onclick = () => nouvelleInterventionHD({ clientId: e.id });
 };

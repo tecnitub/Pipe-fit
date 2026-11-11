@@ -13,9 +13,9 @@ const statutHD = a => (a.statut === 'Ouvert' && bonSigne(a) ? 'Terminé' : a.sta
 
 const hdFields = [
   { key: 'nom', label: "Objet de l'intervention (ex. machine à papier PM2 – collecteur de purge)" },
-  { key: 'clientId', label: 'Client', type: 'select', options: v => options(clientsList(), v) },
-  { key: 'contactId', label: 'Contact client (demandeur)', type: 'select', dynamic: true, options: (v, o) => contactOptions(o.clientId, v) },
-  { key: 'siteId', label: 'Nom du site', type: 'select', dynamic: true, options: (v, o) => siteOptions(o.clientId, v) },
+  { key: 'clientId', label: 'Client', type: 'select', options: v => options(clientsList(), v), nouveau: 'client' },
+  { key: 'contactId', label: 'Contact client (demandeur)', type: 'select', dynamic: true, options: (v, o) => contactOptions(o.clientId, v), suit: 'clientId', defaut: o => defaultContact(o.clientId), nouveau: 'contact' },
+  { key: 'siteId', label: 'Nom du site', type: 'select', dynamic: true, options: (v, o) => siteOptions(o.clientId, v), suit: 'clientId', defaut: o => siteUnique(o.clientId), nouveau: 'site' },
   { key: 'chargeId', label: "Chargé d'affaires", type: 'select', options: v => options(charges(), v) },
   { key: 'statut', label: 'Statut', type: 'select', options: v => optionsStr(STATUTS_HD, v || 'Ouvert') },
   { key: 'refCommande', label: 'N° de commande du client' },
@@ -31,21 +31,23 @@ const consoFields = [
   { key: 'userId', label: 'Saisi par', type: 'select', options: v => options(Store.all('users'), v) },
 ];
 
-function nouvelleInterventionHD() {
-  const me = Store.get('users', Store.me.userId);
+// prefill : client (contact par défaut et site unique repris de sa fiche), contact, site, chargé d'affaires
+function nouvelleInterventionHD(prefill = {}) {
+  const me = Store.get('users', Store.me.userId), c = prefill.clientId;
   editModal({ title: 'Nouvelle intervention hors devis', col: 'affaires', fields: hdFields,
-    obj: { type: 'horsDevis', code: '', statut: 'Ouvert', dateCreation: isoDate(new Date()), chargeId: me && me.role === 'charge' ? me.id : '', heuresPrevues: 0, rex: {} },
+    obj: { type: 'horsDevis', code: '', statut: 'Ouvert', dateCreation: isoDate(new Date()), chargeId: me && me.role === 'charge' ? me.id : '', heuresPrevues: 0, rex: {},
+      ...(c ? { contactId: defaultContact(c), siteId: siteUnique(c) } : {}), ...prefill },
     onSave: () => { const a = Store.all('affaires').filter(estHorsDevis).slice(-1)[0]; location.hash = `#/chantier/${a.id}`; } });
 }
 
 function facturerHD(a, retenuePct = 0) {
-  const v = Calc.horsDevis(a), s = Store.data.settings;
+  const v = Calc.horsDevis(a), date = isoDate(new Date());
   const lignes = [];
   if (v.mo.length) { lignes.push({ type: 'chapitre', titre: "Main-d'œuvre" }); v.mo.forEach(g => lignes.push({ designation: g.libelle, unite: 'h', qte: Math.round(g.heures * 100) / 100, pu: g.taux })); }
   if (v.consos.length) { lignes.push({ type: 'chapitre', titre: 'Fournitures et matériel' }); v.consos.forEach(c => lignes.push({ designation: c.designation, unite: c.unite, qte: num(c.qte), pu: num(c.pu) })); }
   const f = Store.upsert('factures', {
     numero: '', affaireId: a.id, clientId: a.clientId, contactId: a.contactId || '', siteId: a.siteId || '', chargeId: a.chargeId || '',
-    objet: `Intervention ${a.code} – ${a.nom}`, refCommande: a.refCommande || '', date: isoDate(new Date()), echeance: isoDate(addDays(new Date(), num(s.delaiPaiement))),
+    objet: `Intervention ${a.code} – ${a.nom}`, refCommande: a.refCommande || '', date, echeance: echeancePour(a.clientId, date),
     statut: 'Émise', lignes, ajustements: [], zoneId: '', retenuePct, ...tvaDuClient(a.clientId),
   });
   Object.assign(a, { statut: 'Facturé', factureId: f.id });

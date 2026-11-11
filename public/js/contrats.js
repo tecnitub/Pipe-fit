@@ -53,10 +53,10 @@ const Contrats = (() => {
     return { total: v.length, faites: e.filter(x => x === 'faite').length, retard: e.filter(x => x === 'retard').length, bientot: e.filter(x => x === 'bientot').length, prochaine, fin: c && c.debut ? plusMois(c.debut, c.dureeMois) : '' };
   }
   // Visite faite : opérations cochées, date, technicien, observations
-  function marquerFaite(c, id, { date, par, observations = '', operations } = {}) {
+  function marquerFaite(c, id, { date, par, parId, observations = '', operations } = {}) {
     const v = (c.visites || []).find(x => x.id === id); if (!v) return c;
     v.operations.forEach((o, i) => { o.faite = operations ? !!operations[i] : true; });
-    Object.assign(v, { statut: 'faite', faiteLe: txt(date, 10), par: txt(par, 80), observations: txt(observations, 2000) });
+    Object.assign(v, { statut: 'faite', faiteLe: txt(date, 10), par: txt(par, 80), observations: txt(observations, 2000) }, parId ? { parId: txt(parId, 40) } : {});
     return c;
   }
   // Renouvellement : nouveau contrat à la suite du précédent, mêmes opérations et conditions
