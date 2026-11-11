@@ -863,7 +863,7 @@ Vues.note = {
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-pompes" title="Une ligne par circuit pour saisir la pompe retenue et sa courbe (ou la lire sur la fiche du fabricant)">⚙️ Pompes retenues par circuit</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-rob" title="Pour chaque circuit sans robinetterie : vannes d\'isolement, vanne d\'équilibrage, filtre, manchettes, thermomètres ; à compléter avec les Kv des fiches">🔩 Robinetterie type par circuit</button><button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par circuit (repères, DN, fabricant, référence, fiche, ΔP) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
-        ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button><button class="secondaire" id="elec-csv">🔗 Table d\'échange GTB (CSV)</button><button class="secondaire" id="elec-cahier-docx">📄 Cahier de paramétrage (Word)</button><button class="secondaire" id="elec-cahier-xlsx">📑 Cahier (Excel, un onglet par rubrique)</button>' : ''}
+        ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button><button class="secondaire" id="elec-csv">🔗 Table d\'échange GTB (CSV)</button><button class="secondaire" id="elec-pressions">📏 Reprendre les pressions des CTA (mises en service du chantier)</button><button class="secondaire" id="elec-cahier-docx">📄 Cahier de paramétrage (Word)</button><button class="secondaire" id="elec-cahier-xlsx">📑 Cahier (Excel, un onglet par rubrique)</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="num-bouches" title="Numéro unique de chaque bouche : compléter les bouches sans repère ou en double, ou tout renuméroter (par zone et pièce, ou suivant les branches) quand l\'étude est au point">🔢 Numéroter les bouches</button>' : ''}
         ${n.type === 'terminaux' ? '<button class="secondaire" id="num-terminaux" title="Donne un repère unique à chaque terminal sans repère ou en double (CA-01, VC-02…) : une branche par terminal dans le réseau arborescent, une fiche de mise en service par terminal">🔢 Numéroter les terminaux</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="aero-vitesses" title="Même vitesse pour toutes les branches (ou les principales, ou les terminales) : les diamètres des gaines sont recalculés">💨 Changer toutes les vitesses</button>' : ''}
@@ -924,6 +924,17 @@ Vues.note = {
     // Cahier de paramétrage de l'automate : document Word modifiable, ou classeur avec un onglet par rubrique
     const cahierDe = () => { const r = Liens.calculer(et, n), c = (r.valeurs || {}).cahierProg || []; if (!c.length) toast('Aucune armoire en automate programmable : pas de cahier de paramétrage.', 6000); return { c, marque: (r.valeurs || {}).marqueAutomate || 'automate' }; };
     const nomCahier = ext => `Cahier_parametrage_${sansAccents(et.objet).slice(0, 40)}_Ind${sansAccents(et.indice) || 'A'}.${ext}`;
+    // Consignes de pression des CTA : relevées à la mise en service (PV du chantier dans Pipe-Fit)
+    const prCta = root.querySelector('#elec-pressions');
+    if (prCta) prCta.onclick = async () => {
+      if (!et.affaireId) return toast('Étude non rattachée à un chantier de Pipe-Fit : saisissez les pressions relevées dans « Consignes de pression des CTA ».', 7000);
+      let l = [];
+      try { l = await api('GET', `/api/pf/pressions-cta?affaireId=${encodeURIComponent(et.affaireId)}`); } catch (er) { return toast(er.message, 6000); }
+      if (!l.length) return toast('Aucune pression de soufflage ou de reprise relevée dans les mises en service de ce chantier pour l\'instant.', 7000);
+      const ex = (n.entrees.pressionsCta || []).filter(x => !l.some(y => String(y.cta).toLowerCase() === String(x.cta || '').toLowerCase()));
+      n.entrees.pressionsCta = [...ex, ...l]; enregistrer(et); App.render();
+      toast(`${l.length} CTA : pressions reprises des PV de mise en service (consignes des boucles et du cahier de paramétrage).`, 6000);
+    };
     const cd = root.querySelector('#elec-cahier-docx');
     if (cd) cd.onclick = () => {
       const { c, marque } = cahierDe(); if (!c.length || typeof Docx === 'undefined') return;

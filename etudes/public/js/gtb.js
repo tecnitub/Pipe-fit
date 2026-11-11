@@ -241,7 +241,8 @@ const Gtb = (() => {
 
   /* ---------- Logique de fonctionnement pas à pas (par installation de l'armoire) ---------- */
   // pilotes : équipements pilotés par l'armoire ; REG : installations de la régulation ; renvoie [[installation, n°, logique]]
-  function logique(pilotes, REG, { permutation = 168, noms = {} } = {}) {
+  function logique(pilotes, REG, { permutation = 168, noms = {}, projet = null } = {}) {
+    const co = projet ? projet.changeOver : { chaud: 30, froid: 18 }, pr = projet && projet.production, nfr = v => String(Math.round(v * 10) / 10).replace('.', ',');
     const out = [], P = id => ((REG.installations || []).find(x => x.noteId === id) || {}).params || [];
     const idDe = q => String(q.src || '').split(':')[0], tous = pilotes.map(q => q.designation || '').join(' ');
     const n = rep => noms[rep] || rep, ajoute = (inst, l) => l.filter(Boolean).forEach((t, i) => out.push([inst, String(i + 1), t]));
@@ -253,7 +254,8 @@ const Gtb = (() => {
       `Demande de chaleur si un circuit ou l'ECS demande ; sinon générateurs à l'arrêt.`,
       `Générateur pilote = celui qui a le moins d'heures de marche ; permutation chaque semaine (lundi 10 h).`,
       `Enclenchement du pilote : pompe primaire en marche, retour de marche contrôlé (30 s), puis autorisation (${gens.map(q => n(q.rep)).join(', ')}).`,
-      `Si ${tdg ? n(tdg.rep) : 'la température de départ général'} reste sous la consigne (${val(params, /consigne de départ de la production/i, 'loi d\'eau')}) de plus de 5 °C pendant 10 min : enclenchement du générateur suivant.`,
+      pr ? `Consigne de départ = plus haute demande des circuits + 5 K, plafonnée à ${nfr(pr.Td)} °C (${nfr(pr.consigneBase)} °C par grand froid)${pr.ecsMin ? ` ; ${nfr(pr.ecsMin)} °C au moins pendant une charge ECS` : ''}.` : '',
+      `Si ${tdg ? n(tdg.rep) : 'la température de départ général'} reste sous la consigne (${pr ? 'calculée ci-dessus' : val(params, /consigne de départ de la production/i, 'loi d\'eau')}) de plus de 5 °C pendant 10 min : enclenchement du générateur suivant.`,
       `Si elle dépasse la consigne de plus de 5 °C pendant 5 min : délestage du dernier enclenché ; sa pompe s'arrête 3 min après (post-circulation).`,
       `Un générateur en défaut sort de la séquence, le suivant prend le relais ; alarme P2.`]);
     else if (gens.length) ajoute(`Production (${gens[0].designation || gens[0].rep})`, [
@@ -286,22 +288,22 @@ const Gtb = (() => {
     // CTA (change-over si le réseau est réversible)
     const cta = pilotes.filter(q => q.type === 'cta' || /^cta\b|centrale de traitement/i.test(q.designation || ''));
     if (cta.length) {
-      const co = /change-over|réversible|reversible|2 tubes/i.test(tous), pc = P(idDe(cta[0]));
+      const coCta = /change-over|réversible|reversible|2 tubes/i.test(tous) || !!(projet && projet.circuits.length && (REG.installations || []).some(x => x.donnees && x.donnees.changeOver)), pc = P(idDe(cta[0]));
+      const pCta = projet && projet.pressionsCta.find(x => x.soufflage !== null);
       ajoute(`CTA${cta[0].designation ? ` (${String(cta[0].designation).replace(/^.*— /, '').replace(/\s*\(.*\)$/, '')})` : ''}`, [
-        co ? 'Mode chaud si la température d\'eau arrivée batterie > 30 °C, froid si < 18 °C, sinon le dernier mode est gardé ; inversion uniquement vanne de batterie fermée.' : '',
+        coCta ? `Mode chaud si la température d'eau arrivée batterie > ${co.chaud} °C, froid si < ${co.froid} °C (${projet ? projet.changeOver.source : 'valeurs courantes'}), sinon le dernier mode est gardé ; inversion uniquement vanne de batterie fermée.` : '',
         'Démarrage : registres air neuf / rejet ouverts (fin de course), attente 60 s ; ventilateur de reprise puis de soufflage à 10 s d\'écart ; contrôle des pressostats sous 30 s.',
         `Régulation de la température (reprise ou ambiance) : ${val(pc, /soufflage hiver|confort/i, '20 °C')} en chaud${val(pc, /soufflage été|rafraîchissement/i, '') ? `, ${val(pc, /soufflage été|rafraîchissement/i, '')} en froid` : ''} ; soufflage limité entre 16 et 30 °C ; séquence récupérateur ou volet de mélange, puis batterie.`,
-        'Débits : pressions de gaine soufflage et reprise tenues par la vitesse des ventilateurs (consignes relevées à l\'équilibrage) ; CO₂ > 1 000 ppm : débits augmentés progressivement.',
+        `Débits : pressions de gaine soufflage et reprise tenues par la vitesse des ventilateurs (${pCta ? `consignes ${pCta.soufflage} Pa${pCta.reprise !== null ? ` / ${pCta.reprise} Pa` : ''}, ${pCta.source}` : 'consignes relevées à la mise en service'}) ; CO₂ > 1 000 ppm : débits augmentés progressivement.`,
         `Arrêt : ventilateurs arrêtés, registres fermés ; vanne de batterie chaude maintenue à 20 % si la température extérieure < 3 °C.`,
         `Antigel (${val(pc, /antigel/i, '5 °C')}) ou incendie (SSI) : priorité absolue, ventilateurs arrêtés, registres fermés, vanne chaude 100 % sur antigel.`]);
     }
     // Terminaux : ventilo-convecteurs, cassettes (vitesses, maître / esclave)
     const term = pilotes.filter(q => q.type === 'ventilo' || /ventilo|cassette/i.test(q.designation || ''));
     if (term.length) ajoute(`Terminaux (${term.length} : ${term.slice(0, 4).map(q => n(q.rep)).join(', ')}${term.length > 4 ? '…' : ''})`, [
-      'Mode chaud / froid lu sur la température d\'eau d\'arrivée (mêmes seuils que la production : chaud > 30 °C, froid < 18 °C) ; sans circulation, vannes ouvertes 2 min toutes les heures pour relire le mode.',
-      'Consigne : 20 °C en chaud, 24 °C en froid, plus le décalage occupant (± 2 °C) ; zone neutre entre les deux.',
-      'Chaud : vanne ouverte si l\'ambiance < consigne − 0,5 °C, fermée à consigne + 0,5 °C ; froid : l\'inverse.',
-      'Vitesse selon l\'écart à la consigne : PV jusqu\'à 1 °C, MV jusqu\'à 2 °C, GV au-delà ; 2 min au moins entre deux changements ; une seule vitesse à la fois (verrouillage câblé et logiciel).',
+      `Mode chaud / froid lu sur la température d'eau d'arrivée (chaud > ${co.chaud} °C, froid < ${co.froid} °C) ; sans circulation, vannes ouvertes 2 min toutes les heures pour relire le mode.`,
+      ...((projet && projet.vitesses.length ? projet.vitesses : [{ zone: '', chaud: 20, froid: 24, decalage: 2, ouverture: 0.5, pv: 1, mv: 2 }]).map(v => `${v.zone ? `${v.zone} : ` : ''}consigne ${nfr(v.chaud)} °C en chaud, ${nfr(v.froid)} °C en froid, plus le décalage occupant (± ${nfr(v.decalage)} °C) ; vanne ouverte à consigne ∓ ${nfr(v.ouverture)} °C ; vitesse PV jusqu'à ${nfr(v.pv)} °C d'écart, MV jusqu'à ${nfr(v.mv)} °C, GV au-delà.`)),
+      '2 min au moins entre deux changements de vitesse ; une seule vitesse à la fois (verrouillage câblé et logiciel) ; zone neutre entre chaud et froid.',
       'Vanne ouverte seulement ventilateur en marche ; en chaud, ventilation retardée tant que l\'eau < 30 °C ; post-ventilation 2 min à l\'arrêt.',
       'Plusieurs terminaux d\'une même pièce : maître / esclave, le thermostat du maître commande, les esclaves suivent (vitesse et vanne).',
       'Contact de fenêtre ouvert ou hors programme horaire : arrêt (ou réduit) ; alarme condensats : seule la vanne du terminal concerné se ferme.']);
@@ -389,6 +391,8 @@ const Gtb = (() => {
           q.type === 'pompe' ? 'consigne Δp selon le calcul du réseau ; PI : bande 50 kPa, intégrale 60 s' : 'consigne de pression selon l\'équilibrage ; PI : bande 100 Pa, intégrale 60 s', 'vitesse mini 30 %, rampe 30 s ; repli à vitesse fixe sur défaut capteur']);
         if (q.regulation === 'mod') boucles.push([`R-${q.rep}`, `Modulation ${q.designation || q.rep}`, 'température de départ production', `${q.rep} ${adr(q.rep, 'SA')}`, `consigne de départ : ${(params(id).find(x => /consigne de départ de la production/i.test(x.libelle)) || {}).valeur ?? 'loi d\'eau'} °C ; PI : bande 20 K, intégrale 240 s`, 'autorisation par la demande des circuits']);
       });
+      // Réglages PID de départ selon l'organe (consignes du projet)
+      if (ctx.projet) boucles.forEach(b => { const x = ctx.projet.pid.find(y => `R-${y[0]}` === b[0]); if (x) b[4] = b[4].replace(/(PI|PID)[^;]*(;|$)/, `PI : bande ${x[3]}, intégrale ${x[4]}${x[5] !== '—' ? `, temps de course ${x[5]}` : ''}$2`); });
       sections.push({ titre: 'Boucles de régulation', lignes: boucles });
       // Commandes des moteurs
       sections.push({ titre: 'Commandes des moteurs', lignes: pilotes.filter(q => q.moteur || q.type === 'generateur' || q.regulation === 'evGaz').filter(q => adr(q.rep, 'STOR')).map(q => [q.rep, q.designation || q.rep,
@@ -397,7 +401,25 @@ const Gtb = (() => {
         q.groupe ? 'commutateur M1 / M2 / Auto / Arrêt lu en entrée ; en M1 / M2 : marche forcée hors automate' : 'commutateur Manu / Auto / Arrêt : l\'automate ne commande qu\'en Auto']) });
       // Horloges et dérogations
       const inst = REG.installations.filter(x => !x.securite && pilotes.some(q => String(q.src || '').split(':')[0] === x.noteId));
-      sections.push({ titre: 'Horloges et dérogations', lignes: inst.map((x, i) => [`H${i + 1}`, `Programme horaire — ${x.titre}`, 'calendrier, jours fériés', pilotes.filter(q => String(q.src || '').split(':')[0] === x.noteId && adr(q.rep, 'STOR')).map(q => q.rep).join(', ') || '—', 'occupation à saisir (par défaut lundi-vendredi 7 h-19 h), relance optimisée', 'dérogation locale ou GTB de 2 h ; réduit / hors gel hors occupation']) });
+      if (ctx.projet) {
+        const pj = ctx.projet;
+        sections.push({ titre: 'Plannings horaires', entetes: ['Planning', 'Agit sur', 'Occupation', 'Relance (h)', 'Hors occupation'], intro: `Jours fériés ${pj.feries[0][0].slice(0, 4)} (calendrier d'exception) : ${pj.feries.map(([d, l]) => `${d.slice(8, 10)}/${d.slice(5, 7)} ${l}`).join(', ')}. Dérogation locale ou GTB de 2 h.`,
+          lignes: pj.plannings.map(p => [p.nom, p.agit, p.occupation, p.relance ? String(p.relance).replace('.', ',') : '—', p.hors]) });
+      } else sections.push({ titre: 'Horloges et dérogations', lignes: inst.map((x, i) => [`H${i + 1}`, `Programme horaire — ${x.titre}`, 'calendrier, jours fériés', pilotes.filter(q => String(q.src || '').split(':')[0] === x.noteId && adr(q.rep, 'STOR')).map(q => q.rep).join(', ') || '—', 'occupation à saisir (par défaut lundi-vendredi 7 h-19 h), relance optimisée', 'dérogation locale ou GTB de 2 h ; réduit / hors gel hors occupation']) });
+      // Consignes du projet (saisie) et réglages qui en découlent
+      if (ctx.projet) {
+        const pj = ctx.projet, f1 = v => String(Math.round(v * 10) / 10).replace('.', ',');
+        sections.push({ titre: 'Consignes du projet (saisie)', entetes: ['Objet', 'Nom', 'Consignes', 'Occupation / régime', 'Origine'], lignes: pj.saisie });
+        sections.push({ titre: 'Réglages déduits des consignes', entetes: ['Réglage', 'Valeur', 'Déduit de'], lignes: [
+          ...(pj.production ? [['Consigne de départ de la production', `plus haute demande des circuits + 5 K, plafonnée à ${f1(pj.production.Td)} °C (${f1(pj.production.consigneBase)} °C par grand froid)`, 'lois d\'eau des circuits'],
+            ...(pj.production.ecsMin ? [['Priorité ECS', `départ production ≥ ${f1(pj.production.ecsMin)} °C pendant la charge`, 'consigne de stockage ECS + 10 K (70 °C mini)']] : []),
+            ...(pj.production.generateurs > 1 ? [['Cascade des générateurs', 'enclenchement si départ < consigne − 5 K pendant 10 min ; délestage si > consigne + 5 K pendant 5 min', 'consigne de départ']] : [])] : []),
+          ['Change-over', `chaud si eau > ${pj.changeOver.chaud} °C, froid si < ${pj.changeOver.froid} °C`, pj.changeOver.source],
+          ...pj.regimes.map(r => [`Réduit / hors gel / relance — ${r.quoi}`, `réduit ${f1(r.reduit)} K${/^Circuit/.test(r.quoi) ? ' (déplacement parallèle de la loi d\'eau)' : ''}, hors gel ${f1(r.horsGel)} °C, relance ${f1(r.relance)} h`, `consignes de la zone, inertie ${r.emetteur || 'de l\'émetteur'}`]),
+          ...pj.vitesses.map(v => [`Vitesses des terminaux — ${v.zone}`, `PV jusqu'à ${f1(v.pv)} K d'écart, MV jusqu'à ${f1(v.mv)} K, GV au-delà ; vanne à ± ${f1(v.ouverture)} K ; décalage occupant ± ${f1(v.decalage)} K`, 'différentiel de la zone']),
+          ...pj.pressionsCta.map(p => [`Pression de gaine — ${p.cta}`, p.soufflage !== null ? `soufflage ${p.soufflage} Pa${p.reprise !== null ? `, reprise ${p.reprise} Pa` : ''}` : 'à relever à la mise en service', p.soufflage !== null ? p.source : 'PV de mise en service de la CTA']),
+          ...pj.seuils.map(x => [`Seuil d'alarme — ${x.libelle}`, `${x.bas !== '' ? `< ${f1(x.bas)} °C` : ''}${x.bas !== '' && x.haut !== '' ? ' ou ' : ''}${x.haut !== '' ? `> ${f1(x.haut)} °C` : ''}, ${x.tempo}`, x.cible === 'ambiance' ? 'consignes de la zone' : x.cible === 'circuit' ? 'loi d\'eau et régime du circuit' : x.cible === 'soufflage' ? 'consignes de soufflage de la CTA' : 'consigne ECS'])] });
+      }
       // Consignes et paramètres
       sections.push({ titre: 'Consignes et paramètres', lignes: inst.flatMap(x => (x.params || []).map((p, k) => [`P${String(k + 1).padStart(2, '0')}`, `${x.titre} — ${p.libelle}`, '', '', `${String(p.valeur).replace('.', ',')} ${p.unite || ''}`.trim(), 'modifiable depuis la GTB (objet AV)'])) });
       // Sécurités et asservissements
@@ -411,13 +433,15 @@ const Gtb = (() => {
         ['RS', 'Reprise secteur', 'retour tension', 'tous les départs', 'redémarrages échelonnés de 10 s', '']] });
       // Alarmes, historiques et comptages (table d'échange)
       const ech = (ctx.echange || []).filter(l => l[0] === a.rep);
-      const nomEch = l => l[12] || `${l[2]}`;
+      const nomEch = l => l[12] || `${l[2]}`, f2 = v => String(Math.round(v * 10) / 10).replace('.', ',');
+      const derives = ctx.projet ? ctx.projet.seuils.filter(x => x.cible === 'ambiance' || x.cible === 'soufflage').map(x => [x.cible === 'ambiance' ? `ALM_AMB_${propre(x.zone).slice(0, 12)}` : `ALM_SOUF_${propre(x.cta).slice(0, 12)}`, x.libelle,
+        `${x.bas !== '' ? `< ${f2(x.bas)} °C` : ''}${x.haut !== '' ? ` ou > ${f2(x.haut)} °C` : ''}`, x.tempo, x.prio, x.cible === 'soufflage' ? 'vanne batterie chaude 100 % si trop froid en hiver' : '—']) : [];
       sections.push({ titre: 'Alarmes', entetes: ['Nom du point', 'Alarme', 'Condition', 'Tempo', 'Priorité', 'Action automatique'], lignes: ech.filter(l => l[10]).map(l => {
         const q = pilotes.find(y => y.rep === l[2]) || (ctx.eqs || []).find(y => y.rep === l[2]) || {};
         const cond = l[13] || l[14] ? [l[13] ? `< ${l[13]} ${l[9] || ''}`.trim() : '', l[14] ? `> ${l[14]} ${l[9] || ''}`.trim() : ''].filter(Boolean).join(' ou ') : /^B/.test(l[6]) ? `= ${/sécurité/.test(l[10]) ? 'Alarme' : 'Défaut'}` : 'hors plage';
-        return [nomEch(l), q.designation && !String(l[3]).includes(q.designation) ? `${l[3]} — ${q.designation}` : l[3], cond, TEMPO[l[10]] || '30 s', l[10], actionAlarme(l[3], q, l[10])];
-      }) });
-      const lg = logique(pilotes, REG, { permutation: perm, noms: nomRep });
+        return [nomEch(l), q.designation && !String(l[3]).includes(q.designation) ? `${l[3]} — ${q.designation}` : l[3], cond, /seuils|</.test(cond) && ctx.projet ? '30 min' : TEMPO[l[10]] || '30 s', l[10], actionAlarme(l[3], q, l[10])];
+      }).concat(derives) });
+      const lg = logique(pilotes, REG, { permutation: perm, noms: nomRep, projet: ctx.projet });
       if (lg.length) sections.push({ titre: 'Logique de fonctionnement pas à pas', entetes: ['Fonction', 'Étape', 'Logique'], lignes: lg });
       sections.push({ titre: 'Historiques et comptages', lignes: ech.filter(l => l[11]).map(l => [l[2], l[3], `${l[6]} ${l[7]}`, '', l[11], l[5] === 'TCP' ? 'conservation 5 ans (décret BACS)' : '']) });
       sections.push({ titre: 'Communication', lignes: [[`Device ${ech[0] ? ech[0][1] : '—'}`, `Automate de l'armoire ${a.rep}`, ctx.gtb || 'protocole GTB à définir', '', `${ech.length} objet(s) publiés (voir la table d'échange)`, ctx.nommage === 'armoire' ? 'nommage des objets : ARMOIRE_REPÈRE_FONCTION' : 'nommage des objets : INSTALLATION_REPÈRE_FONCTION (CH_, ECS_, CTA_…)'],

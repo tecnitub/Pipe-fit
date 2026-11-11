@@ -57,6 +57,7 @@ const Electricite = ((N, Sc) => {
   // Options par défaut d'une armoire divisionnaire (sans les sécurités de chaufferie)
   const OPTIONS_DIV = ['auArmoire', 'prise', 'eclairage', 'parafoudre', 'presenceTension', 'ventilation'];
   const Gt = () => (typeof Gtb !== 'undefined' ? Gtb : require('./gtb'));
+  const Cp = () => (typeof ConsignesProjet !== 'undefined' ? ConsignesProjet : require('./consignes-projet'));
   const Cb = () => (typeof Cables !== 'undefined' ? Cables : require('./cables'));
   // Ventilateurs à filtre (m³/h) et climatiseurs d'armoire (W froid) usuels
   const VENTILOS = [20, 55, 105, 180, 300, 550, 900], CLIMS = [300, 500, 750, 1000, 1500, 2000, 3000, 4000];
@@ -729,13 +730,20 @@ const Electricite = ((N, Sc) => {
       if (cc.comptage) { const ok = pts.some(p => /comptage|compteur|énergie/i.test(p[1])); exig.push(`Comptage d'énergie demandé${ok ? ' ✓' : ' ✕'}`); if (!ok) alertes.push(alerte('attention', 'CCTP : comptage d\'énergie demandé, aucun point de comptage dans la régulation (compteurs du schéma de principe).')); }
       if (cc.bacs) exig.push('Décret BACS / classe GTB citée : historiques, suivi des consommations et détection des dérives à prévoir dans la supervision.');
     }
+    // Consignes du projet : saisie des zones et des lois d'eau, tout le reste en découle
+    const annee = Number(String((e._affaire || {}).date || '').slice(0, 4)) || new Date().getFullYear();
+    const projet = Cp().calculer({ installations: REG.installations, zones: e.consignesZones, lois: e.loisEau, pressions: e.pressionsCta, eqs, annee });
+    projet.circuits.filter(c => c.source === 'saisie').forEach(c => REG.installations.forEach(x => (x.params || []).forEach(p => {
+      if (p.libelle.startsWith(`Loi d'eau ${c.rep} : départ à 18`)) p.valeur = c.d18 ?? p.valeur; else if (p.libelle.startsWith(`Loi d'eau ${c.rep} : départ à`)) p.valeur = c.base;
+    })));
+    projet.alertes.forEach(a => alertes.push(alerte(a.niveau === 'info' ? 'info' : 'attention', `Consignes : ${a.texte}`)));
     const parametres = REG.installations.flatMap(x => x.params.map(p => ({ ...p, installation: x.titre, ou: ouRegle(x.noteId) })));
     // GTB : décret BACS et classe NF EN ISO 52120-1, table d'échange, comptages, séquences
     const Pbacs = num(e.pBacs) || REG.installations.reduce((s, x) => s + num(x.puissance), 0);
     const bacs = Gt().bacs({ P: Pbacs, neuf: e.batimentNeuf === 'oui', eqs, REG, opt, gtb: e.gtb, pts });
     if (bacs.assujetti && !bacs.conforme) alertes.push(alerte('attention', `Décret BACS : bâtiment assujetti (${bacs.echeance}) ; classe de régulation estimée ${bacs.classe}, classe A ou B exigée (onglet « GTB et BACS »).`));
-    const echange = Gt().echange(pts, arm.map(a => a.rep), e.reglagesPoints, { nommage: e.nommagePoints || 'installation' }), comptes = eqs.filter(q => String(q.src || '').startsWith('comptage:'));
-    const cahierProg = Gt().cahier({ arm, eqs, REG, echange, permutation: e.permutation, gtb: e.gtb && e.gtb !== 'aucune' ? e.gtb : '', nommage: e.nommagePoints || 'installation' });
+    const echange = Gt().echange(pts, arm.map(a => a.rep), [...Cp().reglagesPoints(projet, eqs), ...(e.reglagesPoints || [])], { nommage: e.nommagePoints || 'installation' }), comptes = eqs.filter(q => String(q.src || '').startsWith('comptage:'));
+    const cahierProg = Gt().cahier({ arm, eqs, REG, echange, permutation: e.permutation, gtb: e.gtb && e.gtb !== 'aucune' ? e.gtb : '', nommage: e.nommagePoints || 'installation', projet });
     const nomAut = MARQUES[e.marqueAutomate] || MARQUES.generique;
     const seqs = REG.installations.map(x => ({ x, s: Gt().sequences(x, (REG.types || {})[x.noteId], { permutation: e.permutation }) })).filter(y => y.s);
     const regInstallations = REG.installations.map(x => ({ noteId: x.noteId, titre: x.titre, app: x.app, techno: techParNote[x.noteId] || (arm[0] ? arm[0].techno : 'integree'), params: x.params }));
@@ -752,7 +760,7 @@ const Electricite = ((N, Sc) => {
     folios.forEach(f => { f.svg = cartouche(f.svg, { affaire: aff.objet || '', client: aff.client || '', indice: aff.indice || 'A', date: aff.date || '', auteur: aff.auteur || '', titre: f.titre, no: f.no, total: folios.length,
       renvois: f.arm ? `Armoire ${f.arm} : unifilaire ${folios[0].no}, ${renvois(f.arm)}` : arm.map(a => `${a.rep} : ${renvois(a.rep)}`).join(' — ') }); });
     return {
-      valeurs: { regulation: { installations: regInstallations, parametres }, bacs: { P: Pbacs, classe: bacs.classe, conforme: bacs.conforme, assujetti: bacs.assujetti, echeance: bacs.echeance }, echangeCsv: Gt().exporter(echange, e.profilExport, e.sepExport), cahierProg, marqueAutomate: nomAut, listePoints: pts, Ptot, PCvc, Pelec, Pappel, Sappel, Itgbt, armoires: arm.map(a => ({ rep: a.rep, P: a.P, Ib: a.Ib, cal: a.cal, cartes: a.cartes, enveloppe: a.enveloppe, aux: (a.aux || []).map(x => ({ circuit: x.nom, P: x.P, choix: x.choix, materiel: x.materiel })), extensions: a.extensions || 0 })), points: pts.length,
+      valeurs: { regulation: { installations: regInstallations, parametres }, bacs: { P: Pbacs, classe: bacs.classe, conforme: bacs.conforme, assujetti: bacs.assujetti, echeance: bacs.echeance }, echangeCsv: Gt().exporter(echange, e.profilExport, e.sepExport), cahierProg, consignesProjet: projet, marqueAutomate: nomAut, listePoints: pts, Ptot, PCvc, Pelec, Pappel, Sappel, Itgbt, armoires: arm.map(a => ({ rep: a.rep, P: a.P, Ib: a.Ib, cal: a.cal, cartes: a.cartes, enveloppe: a.enveloppe, aux: (a.aux || []).map(x => ({ circuit: x.nom, P: x.P, choix: x.choix, materiel: x.materiel })), extensions: a.extensions || 0 })), points: pts.length,
         // Classeur Excel : bilan, attentes, équipements, points, puis adressage et nomenclature de chaque armoire
         feuilles: [
           { name: 'Bilan de puissance', entetes: tableauBilan.entetes, lignes: tableauBilan.lignes },
@@ -803,6 +811,8 @@ const Electricite = ((N, Sc) => {
           ...REG.installations.map(x => ({ titre: `Analyse fonctionnelle — ${x.titre} (${techDe(x.noteId)})`, liste: x.af })),
           { titre: REG.installations.length ? 'Fonctionnement de chaque équipement' : 'Analyse fonctionnelle', liste: af },
           ...(exig.length ? [{ titre: 'Exigences de régulation du CCTP', liste: exig }] : []),
+          { titre: 'Consignes du projet (saisie unique : production, alarmes, réduit, relance, plannings et vitesses en découlent)', tableau: { entetes: ['Objet', 'Nom', 'Consignes', 'Occupation / régime', 'Origine'], lignes: projet.saisie } },
+          { titre: 'Plannings horaires déduits des zones', tableau: { entetes: ['Planning', 'Agit sur', 'Occupation', 'Relance (h)', 'Hors occupation'], lignes: projet.plannings.map(p => [p.nom, p.agit, p.occupation, p.relance ? String(p.relance).replace('.', ',') : '—', p.hors]) } },
           ...(parametres.length ? [{ titre: 'Paramètres à régler et vérifier à la mise en service', tableau: { entetes: ['Installation', 'Paramètre', 'Valeur', 'Unité', 'Réglé sur', 'Réglé le / par'], lignes: parametres.map(x => [x.installation, x.libelle, nf(x.valeur, x.valeur % 1 ? 1 : 0), x.unite, x.ou, '']) } }] : []),
           ...arm.filter(a => a.techno === 'synco' && a.synco.length).map(a => ({ titre: `Régulateurs préprogrammés — armoire ${a.rep}`, tableau: { entetes: ['Régulateur', 'Application', 'Référence', 'Modules d\'extension', 'Entrées univ. (utilisées / dispo.)', 'Sorties 0-10 V', 'Relais'],
             lignes: a.synco.map(x => [x.rep, Rg().APPS[x.app][0], x.ref, String(x.modules), `${x.entrees[0]} / ${x.entrees[1]}`, `${x.sorties[0]} / ${x.sorties[1]}`, `${x.relais[0]} / ${x.relais[1]}`]) } })),
@@ -1202,9 +1212,16 @@ const Electricite = ((N, Sc) => {
           { type: 'ETOR', ref: 'Carte 16 ETOR', voies: 16, integrees: 0 }, { type: 'STOR', ref: 'Carte 16 STOR', voies: 16, integrees: 0 }, { type: 'EXT', ref: 'Coupleur d\'extension + alimentation (châssis d\'extension)', voies: '', integrees: '', chassis: 8 }],
         colonnes: [{ k: 'type', l: 'Élément', t: 's', o: [['UC', 'Unité centrale'], ['EA', 'Carte EA'], ['SA', 'Carte SA'], ['ETOR', 'Carte ETOR'], ['STOR', 'Carte STOR'], ['EXT', 'Extension (châssis)']] }, { k: 'ref', l: 'Référence', t: 't' },
           { k: 'voies', l: 'Voies par carte' }, { k: 'integrees', l: 'Voies intégrées à l\'UC' }, { k: 'chassis', l: 'Modules par châssis (UC / extension)' }] },
-      { k: 'consignesZones', l: 'Consignes d\'ambiance par zone (zone des terminaux ; « Toutes zones » s\'applique partout) — reprises dans les paramètres et la mise en service', t: 'lignes',
-        d: [{ zone: 'Toutes zones', confort: 20, clim: 26, inocc: 16, horsGel: 8 }],
-        colonnes: [{ k: 'zone', l: 'Zone', t: 't' }, { k: 'confort', l: 'Confort chauffage (°C)' }, { k: 'clim', l: 'Confort rafraîchissement (°C)' }, { k: 'inocc', l: 'Inoccupation (°C)' }, { k: 'horsGel', l: 'Hors gel (°C)' }] },
+      { g: 'Consignes du projet : à saisir, le reste de la régulation en découle' },
+      { k: 'consignesZones', l: 'Consignes d\'ambiance et horaires d\'occupation par zone (zone des terminaux ; « Toutes zones » s\'applique partout) — production, alarmes, réduit, relance, plannings, vitesses et mise en service en découlent', t: 'lignes',
+        d: [{ zone: 'Toutes zones', confort: 20, clim: 26, inocc: 16, horsGel: 8, jours: 'lun-ven', debut: '7:00', fin: '19:00', diff: 0.5, decalage: 2 }],
+        colonnes: [{ k: 'zone', l: 'Zone', t: 't' }, { k: 'confort', l: 'Confort chauffage (°C)' }, { k: 'clim', l: 'Confort rafraîchissement (°C)' }, { k: 'inocc', l: 'Inoccupation (°C)' }, { k: 'horsGel', l: 'Hors gel (°C)' },
+          { k: 'jours', l: 'Jours d\'occupation', t: 't' }, { k: 'debut', l: 'Début', t: 't' }, { k: 'fin', l: 'Fin', t: 't' }, { k: 'emetteur', l: 'Émetteur', t: 's', o: [['', '— selon l\'étude —'], ['radiateurs', 'Radiateurs'], ['plancher', 'Plancher chauffant'], ['ventilo', 'Ventilo-convecteurs'], ['cassette', 'Cassettes'], ['cta', 'CTA (air)'], ['aerotherme', 'Aérothermes']] },
+          { k: 'diff', l: 'Différentiel (K)' }, { k: 'decalage', l: 'Décalage occupant ± (K)' }] },
+      { k: 'loisEau', l: 'Lois d\'eau imposées (vide : calculées depuis le régime de chaque circuit) — nom du circuit tel que dans le schéma de principe', t: 'lignes', d: [],
+        colonnes: [{ k: 'circuit', l: 'Circuit', t: 't' }, { k: 'base', l: 'Départ par température de base (°C)' }, { k: 'd18', l: 'Départ à 18 °C extérieur (°C)' }] },
+      { k: 'pressionsCta', l: 'Consignes de pression des CTA (relevé de mise en service ; bouton « Reprendre les pressions des CTA » en version installée)', t: 'lignes', d: [],
+        colonnes: [{ k: 'cta', l: 'CTA (nom ou partie du nom)', t: 't' }, { k: 'soufflage', l: 'Pression de soufflage (Pa)' }, { k: 'reprise', l: 'Pression de reprise / extraction (Pa)' }, { k: 'source', l: 'Origine', t: 't' }] },
       { k: 'capaSynco', l: 'Régulateurs préprogrammés : capacités (entrées universelles, sorties 0-10 V, relais) — à reprendre de la fiche du régulateur retenu', t: 'lignes', si: e => (e.armoires || []).some(a => a.techno === 'synco'),
         d: [{ app: 'production', ref: 'type Synco 700 RMK', X: 8, Y: 4, Q: 6 }, { app: 'chauffage', ref: 'type Synco 700 RMH', X: 8, Y: 4, Q: 6 }, { app: 'ventilation', ref: 'type Synco 700 RMU', X: 8, Y: 4, Q: 6 }, { app: 'extension', ref: 'module d\'extension', X: 4, Y: 2, Q: 2 }],
         colonnes: [{ k: 'app', l: 'Application', t: 's', o: [['production', 'Production'], ['chauffage', 'Chauffage et ECS'], ['ventilation', 'Ventilation, CTA'], ['autre', 'Auxiliaires'], ['extension', 'Module d\'extension']] }, { k: 'ref', l: 'Régulateur retenu', t: 't' },

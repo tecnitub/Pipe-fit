@@ -791,6 +791,11 @@ async function api(req, res, url) {
       LIENS.liste({ app: 'etudes' }).filter(l => l.affaireId).forEach(l => { (parAffaire[l.affaireId] = parAffaire[l.affaireId] || []).push(l); });
       return send(res, 200, Object.fromEntries(Object.entries(parAffaire).map(([id, ls]) => [id, Installe.avancement(Installe.suiviCommandes(MaterielRetenu.pourChantier(ls, LIENS.suivis({ affaireId: id })), lignesCommandesPF(id)))]).filter(([, a]) => a.total)));
     }
+    // Pressions de gaine relevées à la mise en service des CTA du chantier (consignes de la régulation des études)
+    if (p[1] === 'pressions-cta' && method === 'GET') {
+      const affaireId = url.searchParams.get('affaireId') || '';
+      return send(res, 200, affaireId ? Essais.pressionsCta(recordsDe('misesEnService').filter(m => m.affaireId === affaireId)) : []);
+    }
     // Débits théoriques des études du chantier (relevés d'équilibrage, bureau et compagnons)
     if (p[1] === 'debits' && !p[2] && method === 'GET') {
       const affaireId = url.searchParams.get('affaireId') || '';

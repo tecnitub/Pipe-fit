@@ -84,7 +84,7 @@ test('cahier de programmation (automate Wit) : entrées / sorties, boucles, mote
   const boucle = t(/Boucles de régulation/).find(l => l[0] === 'R-V1');
   assert.match(boucle[2], /^TD1 P\d\d\.\d\d/); assert.match(boucle[3], /^V1 P\d\d\.\d\d/); assert.match(boucle[4], /départ à -10 °C extérieur 70 °C/); assert.match(boucle[4], /PI : bande 20 K/);
   assert.ok(t(/Commandes des moteurs/).some(l => l[0] === 'PP1' && /P\d\d\.\d\d/.test(l[3]) && /retour de marche/.test(l[4])));
-  assert.ok(t(/Horloges/).length >= 1 && t(/Sécurités et asservissements/).some(l => l[0] === 'HG') && t(/Sécurités et asservissements/).some(l => l[0] === 'KA1'));
+  assert.ok(t(/Plannings horaires/).length >= 1 && t(/Sécurités et asservissements/).some(l => l[0] === 'HG') && t(/Sécurités et asservissements/).some(l => l[0] === 'KA1'));
   assert.ok(t(/Alarmes/).some(l => l[4] === 'P1 (sécurité)' && l[3] === '0 s' && /coupure câblée/.test(l[5])));
   assert.ok(t(/^Armoire .* — Entrées \/ sorties$/).every(l => l[0] && l[2] && l[5]));
   const f = r.valeurs.feuilles.find(x => x.name === 'Programmation AR-CVC-01');
@@ -139,9 +139,9 @@ test('cahier de paramétrage au format de l\'automaticien : noms par installatio
   assert.match(al.find(l => l[0] === 'CH_AU_DEF')[5], /coupure câblée/);
   // 5. Logique pas à pas : cascade, ECS, CTA, cassettes maître / esclave
   const lg = s(/^Logique/).lignes, f = re => lg.filter(l => re.test(l[0])).map(l => l[2]).join(' ');
-  assert.match(f(/^Cascade/), /moins d'heures/); assert.match(f(/^Cascade/), /CH_TDG reste sous la consigne \(70 °C\) de plus de 5 °C pendant 10 min/);
+  assert.match(f(/^Cascade/), /moins d'heures/); assert.match(f(/^Cascade/), /CH_TDG reste sous la consigne .* de plus de 5 °C pendant 10 min/); assert.match(f(/^Cascade/), /plus haute demande des circuits \+ 5 K, plafonnée à 70 °C/);
   assert.match(f(/^ECS/), /anti-légionelle/); assert.match(f(/^CTA/), /reprise puis de soufflage/);
-  assert.match(f(/^Terminaux/), /PV jusqu'à 1 °C, MV jusqu'à 2 °C, GV/); assert.match(f(/^Terminaux/), /maître \/ esclave/);
+  assert.match(f(/^Terminaux/), /PV jusqu'à 1 °C d'écart, MV jusqu'à 2 °C, GV/); assert.match(f(/^Terminaux/), /maître \/ esclave/);
   // 6. À valider
   const av = s(/^À valider/);
   assert.ok(av.cases && av.lignes.every(l => l[0] === '☐') && av.lignes.some(l => /Wit/.test(l[1])) && av.lignes.some(l => /carnet sanitaire/.test(l[1])));

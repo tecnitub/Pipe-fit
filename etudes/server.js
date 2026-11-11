@@ -209,6 +209,11 @@ async function api(req, res, url) {
     if (!r.ok) return p[2] === 'liste' ? send(res, 200, []) : fail(res, r.status, 'Fiche indisponible');
     return send(res, 200, await r.json());
   }
+  // Pressions des CTA relevées à la mise en service du chantier (Pipe-Fit) : consignes de pression de la régulation
+  if (p[0] === 'pf' && p[1] === 'pressions-cta' && method === 'GET') {
+    const r = await pipefit(s, `/api/liens/pressions-cta?affaireId=${encodeURIComponent(url.searchParams.get('affaireId') || '')}`);
+    return r.ok ? send(res, 200, await r.json()) : send(res, 200, []);
+  }
   // Suivi du matériel retenu sur le chantier (soumission, pose, mise en service) : lu dans Pipe-Fit
   if (p[0] === 'pf' && p[1] === 'materiel-suivi' && method === 'GET') {
     const r = await pipefit(s, `/api/liens/materiel/suivi?etudeId=${encodeURIComponent(url.searchParams.get('etudeId') || '')}`);

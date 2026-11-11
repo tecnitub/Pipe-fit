@@ -336,6 +336,15 @@ const Essais = (() => {
     });
     return k;
   }
-  return { versReleve, renumeroter, reprendreReleve, releve, TYPES, ETATS, modele, conclusion, reserves, avancementPap, calculsFiche, debitPrevu, lireCaracteristiques, remplirPlaque, lireFicheExcel, pointsPompe, courbePompeSvg, suiviMes, manquesMES, tolerance, conformeMesure, ecart, conforme, synthese, manquesEQ, importerLignes };
+  // Pressions de gaine relevées à la mise en service des CTA (consignes de la régulation) : la plus récente par équipement
+  function pressionsCta(mises) {
+    const out = new Map(), val = (m, re) => { const x = (m.mesures || []).find(y => re.test(y.libelle || '') && n(y.valeur) !== null); return x ? n(x.valeur) : null; };
+    (mises || []).slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).forEach(m => {
+      const s = val(m, /^Pression de soufflage/i), r = val(m, /^Pression (de reprise|d'extraction)/i), cta = String(m.equipement || m.installation || '').trim();
+      if (cta && (s !== null || r !== null)) out.set(cta.toLowerCase(), { cta, soufflage: s === null ? '' : s, reprise: r === null ? '' : r, source: `PV ${m.numero || ''} du ${String(m.date || '').slice(0, 10)}`.replace(/\s+/g, ' ') });
+    });
+    return [...out.values()];
+  }
+  return { pressionsCta, versReleve, renumeroter, reprendreReleve, releve, TYPES, ETATS, modele, conclusion, reserves, avancementPap, calculsFiche, debitPrevu, lireCaracteristiques, remplirPlaque, lireFicheExcel, pointsPompe, courbePompeSvg, suiviMes, manquesMES, tolerance, conformeMesure, ecart, conforme, synthese, manquesEQ, importerLignes };
 })();
 if (typeof module !== 'undefined') module.exports = Essais;

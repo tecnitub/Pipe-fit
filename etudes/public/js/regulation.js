@@ -97,7 +97,11 @@ const Regulation = (() => {
           const cc = Sc().courbeChauffe ? Sc().courbeChauffe(d.co ? d.co.dC : d, e) : null;
           if (cc) cc.circuits.forEach(c => { params.push(p(`Pente de la courbe de chauffe ${c.rep} (type Synco)`, Math.round(c.pente * 20) / 20, ''), p(`Déplacement parallèle ${c.rep}`, Math.round(c.deplacement * 2) / 2, 'K')); });
           if (d.chaud) params.push(p('Arrêt chauffage (non-chauffage) au-dessus de', cc ? cc.arret : 17, '°C ext.'));
-          installations.push({ noteId: n.id, titre, app: 'production', puissance: num(d.Pprod) + (d.co && d.co.dF ? num(d.co.dF.Pprod) : 0), af: ((Array.isArray(r) ? r.find(b => b.liste) : r) || {}).liste || r.af || [], params: params.filter(Boolean) });
+          // Données structurées pour les consignes du projet : régimes, circuits et lois d'eau
+          const dC = d.co ? d.co.dC : d, dF = d.co ? d.co.dF : null;
+          const donnees = { Tbase: Tb, Td: dC.Td, Tr: dC.Tr, chaud: !!d.chaud || dC.Td > dC.Tr, froid: dF ? { Td: dF.Td, Tr: dF.Tr } : (!d.chaud && d.Td < d.Tr ? { Td: d.Td, Tr: d.Tr } : null), changeOver: !!d.co, generateurs: d.n || 1,
+            circuits: d.circuits.map(c => { const loi = c.rc[0] > c.rc[1] && ['radiateurs', 'plancher', 'radiant', 'aerotherme'].includes(c.emetteur) && c.reg !== 'direct'; return { rep: c.rep, emetteur: c.emetteur || '', dep: (c.rcC || c.rc)[0], ret: (c.rcC || c.rc)[1], loi, d18: loi ? (Sc().depMini ? Sc().depMini(e, c) : (c.emetteur === 'plancher' ? 25 : 30)) : null }; }) };
+          installations.push({ noteId: n.id, titre, app: 'production', donnees, puissance: num(d.Pprod) + (d.co && d.co.dF ? num(d.co.dF.Pprod) : 0), af: ((Array.isArray(r) ? r.find(b => b.liste) : r) || {}).liste || r.af || [], params: params.filter(Boolean) });
         } else if (n.type === 'cta') {
           const { e } = res(n), f = e.froid || 'oui', recup = e.recup || '', co = f === 'co';
           const af = [
@@ -112,7 +116,7 @@ const Regulation = (() => {
           ];
           const params = [p('Consigne de soufflage hiver', num(e.TsH, 20), '°C'), ...(['oui', 'froide', 'co'].includes(f) ? [p('Consigne de soufflage été', num(e.TsE, 16), '°C')] : []), p('Débit de soufflage', num(e.Qs), 'm³/h'), ...(num(e.Qr) ? [p('Débit de reprise', num(e.Qr), 'm³/h')] : []),
             ...(f !== 'froide' ? [p('Seuil de l\'antigel', 5, '°C')] : []), p('Temporisation du ventilateur de soufflage', 30, 's'), ...(e.humid === 'vapeur' ? [p('Humidité relative mini', num(e.HRmin, 40), '%')] : [])];
-          installations.push({ noteId: n.id, titre, app: 'ventilation', af, params: params.filter(Boolean) });
+          installations.push({ noteId: n.id, titre, app: 'ventilation', af, params: params.filter(Boolean), donnees: { cta: true, TsH: num(e.TsH, 20), TsE: num(e.TsE, 16), froid: f, changeOver: co } });
         } else if (n.type === 'aero' && !(n.entrees || {}).cta) {
           const { e, v } = res(n), ext = e.producteur === 'extraction';
           installations.push({ noteId: n.id, titre, app: 'ventilation', af: [`${ext ? 'Caisson d\'extraction' : 'Ventilateur'} en marche selon la programmation horaire${ext ? ' (ou en permanence en logement)' : ''}, retour de marche par pressostat ; débit ${nf(v.Qs || v.Qr, 0)} m³/h ; défaut reporté.`],
@@ -120,7 +124,7 @@ const Regulation = (() => {
         } else if (n.type === 'ecs') {
           const { e } = res(n), Tc = num(e.Tc, 60);
           installations.push({ noteId: n.id, titre, app: 'chauffage', af: [`Production d'ECS : consigne de stockage ${nf(Tc, 0)} °C (différentiel 5 K), priorité réglable sur le chauffage ; traitement anti-légionelle hebdomadaire (70 °C pendant 1 h, ou 60 °C maintenus) ; retour de bouclage ≥ 50 °C.`],
-            params: [p('Consigne de stockage ECS', Tc, '°C'), p('Différentiel de charge', 5, 'K'), p('Choc thermique anti-légionelle', 70, '°C')].filter(Boolean) });
+            donnees: { ecs: true, Tc }, params: [p('Consigne de stockage ECS', Tc, '°C'), p('Différentiel de charge', 5, 'K'), p('Choc thermique anti-légionelle', 70, '°C')].filter(Boolean) });
         } else if (n.type === 'terminaux') {
           const { v } = res(n), l = v.lignes || [], nb = l.reduce((s, x) => s + (x.n || 1), 0), froid = l.some(x => x.Pfr > 0), co = l.some(x => x.b === '2t');
           if (!nb) return;
@@ -129,7 +133,7 @@ const Regulation = (() => {
           const consignes = z => { const r = zl.find(y => String(y.zone || '').trim() === z) || zl.find(y => /^toutes/i.test(String(y.zone || '').trim()) || !String(y.zone || '').trim()) || {}; return { confort: num(r.confort, 20), clim: num(r.clim, 26), inocc: num(r.inocc, 16), horsGel: num(r.horsGel, 8) }; };
           const lz = zones.length && zl.length ? zones : [''];
           const paramsZones = lz.flatMap(z => { const c = consignes(z), s = z ? ` — ${z}` : ''; return [p(`Consigne de confort chauffage${s}`, c.confort, '°C'), ...(froid ? [p(`Consigne de confort rafraîchissement${s}`, c.clim, '°C')] : []), p(`Consigne d'inoccupation chauffage${s}`, c.inocc, '°C'), p(`Consigne hors gel${s}`, c.horsGel, '°C')]; });
-          installations.push({ noteId: n.id, titre, app: 'terminaux', params: paramsZones.filter(Boolean), af: [`${nb} terminal(aux) : chacun régulé sur la température de sa pièce (consigne locale ajustable ± 3 K), programmation horaire par zone, réduit en inoccupation, hors gel ; ventilateur arrêté en inoccupation.`,
+          installations.push({ noteId: n.id, titre, app: 'terminaux', donnees: { terminaux: nb, froid, changeOver: co, zones, emetteurs: [...new Set(l.map(x => x.type || x.emetteur || '').filter(Boolean))] }, params: paramsZones.filter(Boolean), af: [`${nb} terminal(aux) : chacun régulé sur la température de sa pièce (consigne locale ajustable ± 3 K), programmation horaire par zone, réduit en inoccupation, hors gel ; ventilateur arrêté en inoccupation.`,
             ...(co ? ['Terminaux 2 tubes : mode chaud / froid suivant l\'inversion (change-over) de la production.'] : []), 'Maîtres / esclaves : les esclaves suivent la consigne et la commande de leur maître.',
             ...(zones.length > 1 && zl.length ? [`Consignes par zone (${zones.join(', ')}) : voir la liste des paramètres.`] : [])] });
         } else if (n.type === 'desenfumage') {
