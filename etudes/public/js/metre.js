@@ -127,7 +127,7 @@ const Metre = ((N, C, D, L, Sc) => {
         if (e.desemboueur !== 'non') equip(`desemboueur|${d.tc.dn}`, 'Production', `Pot à boue / désemboueur DN ${d.tc.dn}`, 1, 3, { type: 'desemboueur', dn: d.tc.dn }, src);
         tube(e.serie, d.tc.cle, 2 * (d.circuits.length * 1.5 + 2), `${src} (collecteurs)`);
         tube(e.serie, d.tg.cle, d.n * 6, `${src} (raccordement des générateurs)`);
-        if (d.pompesInd && (d.bouteille || d.echangeur || d.n > 1)) { const pp = (typeof Catalogue !== 'undefined' ? Catalogue : require('./catalogue')).pompesPour(d.Qg, 5)[0]; equip(`pompe|${pp ? pp.modele : 'primaire'}`, 'Production', pp ? `Pompe primaire ${N.libPompe(pp).replace(/, vitesse.*/, '')}` : 'Pompe primaire', d.n, 3, { type: 'pompe', modele: pp && pp.modele, dn: pp && pp.dn }, src); }
+        if (d.ppDeportees) { const pp = (typeof Catalogue !== 'undefined' ? Catalogue : require('./catalogue')).pompesPour(d.Qg, 5)[0]; equip(`pompe|${pp ? pp.modele : 'primaire'}`, 'Production', pp ? `Pompe primaire ${N.libPompe(pp).replace(/, vitesse.*/, '')}` : 'Pompe primaire', d.n, 3, { type: 'pompe', modele: pp && pp.modele, dn: pp && pp.dn }, src); }
         d.circuits.forEach(c => {
           tube(e.serie, c.t.cle, c.L, src);
           if (c.pompe) equip(`pompe|${c.pompe.modele}`, 'Équipements hydrauliques', `Pompe ${N.libPompe(c.pompe).replace(/, vitesse.*/, '')}`, 1, 3, { type: 'pompe', modele: c.pompe.modele, dn: c.pompe.dn }, src);

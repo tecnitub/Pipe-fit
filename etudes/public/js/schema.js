@@ -108,7 +108,9 @@ const Schema = ((D, C, N) => {
     if (e.bouteille === 'non' && circuits.some(c => c.reg === '2v')) alertes.push(alerte('attention', 'Circuits à vanne 2 voies sans bouteille : prévoir une soupape différentielle ou un by-pass pour garantir le débit minimal des générateurs.'));
     if ((!chaud || /pac/.test(e.generateur)) && !['oui', 'depart'].includes(e.tampon) && decouplage !== 'ballon') alertes.push(alerte('attention', 'Vérifier le volume d\'eau minimal exigé par le constructeur (anti-courts-cycles) : ballon tampon si le réseau est trop court.'));
     if (bouteille && chaud === false && Qp < Qs) alertes.push(alerte('attention', 'En eau glacée, un débit secondaire supérieur au primaire réchauffe le départ : prévoir des pompes secondaires à vitesse variable.'));
-    const d = { Td, Tr, Tsd, Tsr, chaud, dT, f, s, n, Pg, Pprod, Pdem, gen, Qg, tg, Qp, Qs, bouteille, decouplage, echangeur, pinc, Aech, Qech, pompesInd, tichelmann, Qcoll, tc, tb, Db, circuits, alertes, regime: e.reseau === 'perso' ? `Régime ${Td}/${Tr} °C` : r[0] };
+    // Pompes primaires : déportées (à notre charge, câblées et pilotées) ou intégrées au groupe (kit hydraulique du fabricant)
+    const ppIntegree = e.pompeGen === 'integree', ppDeportees = pompesInd && !ppIntegree && (!!bouteille || !!echangeur || n > 1);
+    const d = { ppIntegree, ppDeportees, Td, Tr, Tsd, Tsr, chaud, dT, f, s, n, Pg, Pprod, Pdem, gen, Qg, tg, Qp, Qs, bouteille, decouplage, echangeur, pinc, Aech, Qech, pompesInd, tichelmann, Qcoll, tc, tb, Db, circuits, alertes, regime: e.reseau === 'perso' ? `Régime ${Td}/${Tr} °C` : r[0] };
     // PAC ou groupe eau/eau sur nappe : forage de pompage, échangeur de barrage (protège l'évaporateur de l'eau de nappe),
     // boucle intermédiaire côté générateur, puits de rejet
     if (/-eau$/.test(e.generateur || '') && e.sourceEau !== 'boucle') {
@@ -295,7 +297,7 @@ const Schema = ((D, C, N) => {
       croisement(xd, Y2); if (d.tichelmann) croisement(xd, Y3);
       dessus.push(point(xd, Y1, cD), point(xr, yRet, cR), vanne(xd, Y2 + 30), vanne(xr, yRet + 25), thermo(xd, yGen - 30));
       const yP = yRet + (d.tichelmann ? 60 : 75);
-      if (d.pompesInd && (decouple || nG > 1)) dessus.push(pompe(xr, yP, false), texte(xr + 16, yP + 4, `P${G}${i + 1}`, { fs: 9 }), clapet(xr, yP + 35, false));
+      if (d.pompesInd && !d.ppIntegree && (decouple || nG > 1)) dessus.push(pompe(xr, yP, false), texte(xr + 16, yP + 4, `P${G}${i + 1}`, { fs: 9 }), clapet(xr, yP + 35, false));
       else if (nG > 1) dessus.push(vanne2v(xr, yP + 10), texte(xr + 12, yP + 14, 'Vanne motorisée', { fs: 8.5 }));
       dessus.push(`<line x1="${xd}" y1="${yGen - 55}" x2="${xd - 22}" y2="${yGen - 55}" stroke="#222" stroke-width="1.2"/><path d="M${xd - 22} ${yGen - 62} l-12 7 l12 7 Z" fill="#fff" stroke="#222" stroke-width="1.2"/>`,
         texte(xd - 30, yGen - 66, 'Soupape', { fs: 8.5, a: 'middle' }));
@@ -521,10 +523,11 @@ const Schema = ((D, C, N) => {
     if (d.n > 1) af.push(`Permutation de l'ordre de priorité toutes les ${nf(perm, 0)} h de fonctionnement et basculement automatique sur le générateur suivant en cas de défaut (secours).`);
     for (let i = 1; i <= d.n; i++) {
       pt(`${G}${i}`, `Autorisation de marche du générateur ${i}`, 'STOR'); pt(`${G}${i}`, `Consigne ou modulation du générateur ${i}`, 'SA', '0-10 V ou bus constructeur'); pt(`${G}${i}`, `État de marche du générateur ${i}`, 'ETOR'); pt(`${G}${i}`, `Défaut du générateur ${i}`, 'ETOR');
-      if (d.pompesInd && (d.bouteille || d.echangeur || d.n > 1)) { pt(`P${G}${i}`, `Commande de la pompe primaire ${i}`, 'STOR', 'Post-circulation 5 min'); pt(`P${G}${i}`, `Défaut de la pompe primaire ${i}`, 'ETOR'); }
+      if (d.ppDeportees) { pt(`P${G}${i}`, `Commande de la pompe primaire ${i}`, 'STOR', 'Post-circulation 5 min'); pt(`P${G}${i}`, `Défaut de la pompe primaire ${i}`, 'ETOR'); }
       else if (d.n > 1) { pt(`VM${i}`, `Vanne d'isolement motorisée du générateur ${i}`, 'STOR'); pt(`VM${i}`, `Fin de course de la vanne ${i}`, 'ETOR'); }
     }
-    if (d.pompesInd && (d.bouteille || d.echangeur || d.n > 1)) af.push(`Pompes primaires asservies à leur générateur, avec post-circulation de 5 min à l'arrêt${d.bouteille && /cond|pac/.test(g(e)) ? ' ; vitesse variable pour limiter le débit primaire et garder un retour froid' : ''}.`);
+    if (d.ppIntegree) af.push('Pompe primaire intégrée au générateur : commandée par sa propre régulation (marche, post-circulation, protection antigel) ; l\'automate autorise le générateur et lit son état et ses défauts.');
+    if (d.ppDeportees) af.push(`Pompes primaires asservies à leur générateur, avec post-circulation de 5 min à l'arrêt${d.bouteille && /cond|pac/.test(g(e)) ? ' ; vitesse variable pour limiter le débit primaire et garder un retour froid' : ''}.`);
     if (!d.pompesInd && d.n > 1) { af.push('Vannes d\'isolement motorisées : ouverture avant le démarrage du générateur, fermeture après sa post-circulation ; un générateur à l\'arrêt n\'est pas irrigué.'); if (d.bouteille) { pt('PP', 'Commande de la pompe primaire commune', 'STOR'); pt('PP', 'Défaut de la pompe primaire commune', 'ETOR'); pt('PP', 'Vitesse de la pompe primaire commune', 'SA'); } }
     pt('TD', d.bouteille ? 'Température de départ commun (aval bouteille)' : 'Température du collecteur de départ', 'EA'); pt('TR', d.bouteille ? 'Température de retour commun (amont bouteille)' : 'Température du collecteur de retour', 'EA');
     pt('PI', 'Pression de l\'installation', 'EA', `Alarme basse sous ${nf(1, 1)} bar (réglable)`);
@@ -586,6 +589,8 @@ const Schema = ((D, C, N) => {
       { k: 'nGen', l: 'Nombre de générateurs', t: 's', o: [['1', '1 générateur (sans cascade)'], ['2', '2 en cascade'], ['3', '3 en cascade'], ['4', '4 en cascade'], ['5', '5 en cascade'], ['6', '6 en cascade']], d: '2' },
       { k: 'Pgen', l: 'Puissance unitaire (chauffage en change-over)', u: 'kW', d: 150 },
       { k: 'PgenF', l: 'Puissance frigorifique unitaire', u: 'kW', d: 130, si: e => e.reseau === 'co' },
+      { k: 'pompeGen', l: 'Pompe primaire du générateur', t: 's', o: [['', 'Déportée (fournie, câblée et pilotée par nous)'], ['integree', 'Intégrée au générateur / au groupe (kit hydraulique du fabricant)']], d: '' },
+      { k: 'pompeRecup', l: 'Pompe du circuit de récupération', t: 's', o: [['', 'Déportée (fournie, câblée et pilotée par nous)'], ['integree', 'Intégrée au groupe froid']], d: '', si: e => /^(gf|pac-rev)/.test(e.generateur || '') && !!e.recupGf },
       { k: 'pompesPrim', l: 'Pompes de la cascade', t: 's', o: [['individuelles', 'Une pompe et un clapet par générateur'], ['commune', 'Pompe primaire commune et vannes motorisées']], d: 'individuelles', si: e => num(e.nGen, 1) > 1 },
       { k: 'tichelmann', l: 'Raccordement des générateurs', t: 's', o: [['non', 'Direct'], ['oui', 'En Tichelmann (retour inversé)']], d: 'non', si: e => num(e.nGen, 1) > 1 },
       { k: 'bouteille', l: 'Découplage production / distribution', t: 's', o: [['oui', 'Bouteille de découplage (4 piquages)'], ['bouteille3', 'Bouteille de découplage 3 piquages (retour commun)'], ['ballon', 'Ballon tampon de découplage (à la place de la bouteille)'], ['echangeur', 'Échangeur à plaques (circuits séparés)'], ['non', 'Aucun (raccordement direct)']], d: 'oui' },
@@ -675,7 +680,7 @@ const Schema = ((D, C, N) => {
           lignes: d.circuits.map(c => [c.rep, c.pompe ? N.libPompe(c.pompe) : 'aucune pompe du catalogue', c.reg === 'direct' ? '—' : c.vanne ? N.libVanne(c.vanne) : 'aucune vanne du catalogue']) },
         { titre: 'Production', entetes: ['Générateur', 'P (kW)', 'Débit (m³/h)', 'Raccordement', 'Pompe primaire'],
           lignes: Array.from({ length: d.n }, (_, i) => [`${d.co ? 'PAC' : d.chaud ? 'G' : 'GF'}${i + 1} — ${d.gen[0]}`, d.co ? `${nf(d.co.dC.Pg, 0)} / ${nf(d.co.dF.Pg, 0)}` : nf(d.Pg, 0), nf(d.Qg, 2), d.tg.nom,
-            d.pompesInd && (d.bouteille || d.echangeur || d.n > 1) ? `${nf(d.Qg, 2)} m³/h, avec clapet` : d.n > 1 && d.bouteille ? `pompe commune ${nf(d.Qp, 2)} m³/h, vanne motorisée` : d.n > 1 ? 'vanne motorisée (pompes des circuits)' : 'sans (pompes des circuits)'] ) }],
+            d.ppIntegree ? 'intégrée au générateur (kit hydraulique) — hauteur disponible à vérifier sur la fiche' : d.ppDeportees ? `${nf(d.Qg, 2)} m³/h, avec clapet` : d.n > 1 && d.bouteille ? `pompe commune ${nf(d.Qp, 2)} m³/h, vanne motorisée` : d.n > 1 ? 'vanne motorisée (pompes des circuits)' : 'sans (pompes des circuits)'] ) }],
         alertes,
         hypotheses: ['Débits : Q = P / (ρ · cp · ΔT) au régime de chaque circuit ; un circuit à vanne 3 voies mélangeuse appelle sur le collecteur P / (ρ · cp · (départ réseau − retour circuit)).',
           'Diamètres : plus petit tube de la série respectant la vitesse et la perte de charge linéique maximales ; collecteurs limités à 1 m/s.',

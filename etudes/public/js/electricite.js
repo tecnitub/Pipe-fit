@@ -1092,7 +1092,7 @@ const Electricite = ((N, Sc) => {
           const pGen = kwFiche(es.PelecGen) ?? (kwFiche(fiche.P1) ? Math.round(fiche.P1 / 10) / 100 : null);
           ajout(`gen${i}`, { metre: `gen|${es.generateur}|${d.Pg}`, rep: `${pac ? 'PAC' : 'G'}${i}`, designation: `${G[0]} ${i}${fiche.fabricant || fiche.reference ? ` — ${[fiche.fabricant, fiche.reference].filter(Boolean).join(' ')}` : ''}`, type: pac ? 'pac' : 'generateur',
             P: pGen ?? (pac ? Math.round(d.Pg / 3 * 10) / 10 : Math.max(0.2, Math.round(d.Pg * 0.003 * 10) / 10)), tension: es.tensionGen || (pac || d.Pg > 300 ? 'tri' : 'mono'), regulation: pac ? 'bus' : 'mod', alim: es.alimProd || '', ...(pGen != null ? { pFiche: true } : {}) });
-          if (d.pompesInd && (d.bouteille || d.echangeur || d.n > 1)) ajout(`pp${i}`, { rep: `PP${i}`, designation: `Pompe primaire ${i}`, type: 'pompe', P: Math.max(0.05, Math.round(d.Qg * 8 / 367 / 0.45 * 100) / 100), tension: 'mono', regulation: 'tor' });
+          if (d.ppDeportees) ajout(`pp${i}`, { rep: `PP${i}`, designation: `Pompe primaire ${i}`, type: 'pompe', P: Math.max(0.05, Math.round(d.Qg * 8 / 367 / 0.45 * 100) / 100), tension: 'mono', regulation: 'tor' });
         }
         // PAC / groupe eau-eau sur nappe : pompe de forage, pompe de la boucle intermédiaire, contrôle de débit et température
         if (d.forage) {
@@ -1107,7 +1107,7 @@ const Electricite = ((N, Sc) => {
         if (es.recupGf && num(v.Precup) > 0) {
           const [tD, tR] = String(es.regimeRecup || '45/40').split('/').map(x => num(x)), dTr = Math.max(2, Math.abs((tD || 45) - (tR || 40))), Qr = num(v.Precup) / (1.163 * dTr);
           const lib = es.recupGf === 'totale' ? 'récupération totale au condenseur' : 'désurchauffeur';
-          ajout('prec', { rep: 'PREC', designation: `Pompe du circuit de récupération du groupe froid (${lib}, ${nf(Qr, 1)} m³/h)`, type: 'pompe', P: Math.max(0.05, Math.round(Qr * 8 / 367 / 0.45 * 100) / 100), tension: Qr > 25 ? 'tri' : 'mono', regulation: 'torRetour', alim: es.alimProd || '' });
+          if (es.pompeRecup !== 'integree') ajout('prec', { rep: 'PREC', designation: `Pompe du circuit de récupération du groupe froid (${lib}, ${nf(Qr, 1)} m³/h)`, type: 'pompe', P: Math.max(0.05, Math.round(Qr * 8 / 367 / 0.45 * 100) / 100), tension: Qr > 25 ? 'tri' : 'mono', regulation: 'torRetour', alim: es.alimProd || '' });
           ajout('vrec', { rep: 'VREC', designation: 'Vanne 3 voies de basculement récupération / rejet du groupe froid (condenseur à air ou tour)', type: 'vanne', P: 0.01, tension: '24V', regulation: 'v010r' });
           ajout('tdrec', { rep: 'TDREC', designation: 'Sonde de départ de l\'eau récupérée sur le groupe froid', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
           ajout('trrec', { rep: 'TRREC', designation: 'Sonde de retour de l\'eau récupérée sur le groupe froid', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });

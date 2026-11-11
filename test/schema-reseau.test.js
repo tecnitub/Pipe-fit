@@ -138,3 +138,12 @@ test('schéma chaud + schéma froid : CTA sur les deux, récupération d\'énerg
   // Électricité : pompe, vanne de basculement, sondes et compteur de la récupération (côté groupe froid)
   assert.deepStrictEqual(E.equipementsEtude(et, L).filter(x => /REC$/.test(x.rep)).map(x => x.rep), ['PREC', 'VREC', 'TDREC', 'TRREC', 'CEREC']);
 });
+
+test('pompes du groupe froid : primaire et récupération intégrées ou déportées', () => {
+  const E = require('../etudes/public/js/electricite');
+  const reps = (pompeGen, pompeRecup) => { const f = { id: 'g', type: 'pid', titre: 'Froid', entrees: { ...N.defauts('pid'), generateur: 'gf-air', reseau: 'eg-7-12', nGen: '2', Pgen: 150, pompeGen, pompeRecup, recupGf: 'totale', circuits: [{ rep: 'Ventilos', emetteur: 'ventilo', P: 150, regulation: '3v', L: 50 }] } };
+    return E.equipementsEtude({ notes: [f] }, L).filter(x => /^(PP|PREC|VREC)/.test(x.rep)).map(x => x.rep); };
+  assert.deepStrictEqual(reps('', ''), ['PP1', 'PP2', 'PREC', 'VREC']);
+  assert.deepStrictEqual(reps('integree', ''), ['PREC', 'VREC']);
+  assert.deepStrictEqual(reps('integree', 'integree'), ['VREC']);
+});
