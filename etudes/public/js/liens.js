@@ -468,6 +468,7 @@ const Liens = ((N, Sc) => {
       else if (o && typeof o === 'object') Object.keys(o).forEach(k => { if (o[k] === cleA) o[k] = cleN; else if (o[k] && typeof o[k] === 'object') suivre(o[k]); }); };
     (etude.notes || []).forEach(n => suivre(n.entrees));
     ['robinetterie', 'pompesFab'].forEach(k => (pid.entrees[k] || []).forEach(x => { if (String(x.circuit || '').trim() === ancien) x.circuit = rep; }));
+    (pid.entrees.ballons || []).forEach(x => { if (x.position === `circuit:${ancien}`) x.position = `circuit:${rep}`; });
     (etude.notes || []).filter(n => n.type === 'elec').forEach(n => ((n.entrees || {}).loisEau || []).forEach(x => { if (x.circuit === ancien) x.circuit = rep; }));
     (etude.equipements || []).forEach(x => { if (x.circuit === ancien) x.circuit = rep; });
     return rep;

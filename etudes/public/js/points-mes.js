@@ -100,7 +100,10 @@ const PointsMes = (() => {
           const G = (Sc.GENERATEURS || {})[e.generateur] || ['Générateur'], R = (Sc.REGIMES || {})[e.reseau], pac = /^(pac|gf)/.test(e.generateur || '');
           const Td = R && R[1] !== undefined ? R[1] : Number(e.Tdep) || null, Tr = R && R[2] !== undefined ? R[2] : Number(e.Tret) || null;
           const fg = e.fiche || {};
-          if (!/^echangeur/.test(e.generateur || '')) for (let i = 1; i <= (d.n || 1); i++) out.push({ ...base, nature: 'mes', type: pac ? 'pac' : /^chaudiere/.test(e.generateur || '') ? 'chaudiere' : 'autre', cle: `gen|${e.generateur}|${d.Pg}`, repere: `${pac ? 'PAC' : 'G'}${i}`,
+          if (d.multi) d.multi.filter(x => !/^echangeur/.test(x.type)).forEach(x => out.push({ ...base, nature: 'mes', type: /^(pac|gf)/.test(x.type) ? 'pac' : /^chaudiere/.test(x.type) ? 'chaudiere' : 'autre', cle: `gen|${x.type}|${x.P}`, repere: x.rep,
+            local: /^(pac|gf)/.test(x.type) ? 'Production (extérieur / local technique)' : 'Chaufferie', titre: `${x.gen[0]} ${x.rep} — ${titre}`,
+            attendus: nettoie([att('Puissance', x.P, 'kW', 0), att('Température départ eau', x.regime ? x.regime[0] : Td, '°C', 0), att('Température retour eau', x.regime ? x.regime[1] : Tr, '°C', 0), att('Débit', x.Q, 'm³/h', 2)]) }));
+          else if (!/^echangeur/.test(e.generateur || '')) for (let i = 1; i <= (d.n || 1); i++) out.push({ ...base, nature: 'mes', type: pac ? 'pac' : /^chaudiere/.test(e.generateur || '') ? 'chaudiere' : 'autre', cle: `gen|${e.generateur}|${d.Pg}`, repere: `${pac ? 'PAC' : 'G'}${i}`,
             local: pac ? 'Production (extérieur / local technique)' : 'Chaufferie', marque: txt(fg.fabricant, 60), modele: txt(fg.reference, 80), titre: `${G[0]} ${i} — ${titre}`,
             attendus: nettoie([att('Puissance', d.Pg, 'kW', 0), att('Température départ eau', Td, '°C', 0), att('Température retour eau', Tr, '°C', 0), att('Débit', d.Qg, 'm³/h', 2)]) });
           (v.circuits || []).forEach((c, k) => out.push({ ...base, nature: 'mes', type: 'pompes', cle: `pompe-circuit|${n.id}|${k}`, repere: `PC${k + 1}`, titre: `Pompe du circuit ${txt(c.rep, 60)}`, attendus: nettoie([att('Débit', c.Q, 'm³/h', 2), att('Hauteur manométrique', c.hmt, 'mCE', 2)]) }));

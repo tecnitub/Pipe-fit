@@ -250,9 +250,13 @@ const Gtb = (() => {
     const te = pilotes.find(q => /extérieur/i.test(q.designation || '') && (q.type === 'sonde' || q.regulation === 'sonde'));
     const tdg = pilotes.find(q => /départ général|collecteur|découplage/i.test(q.designation || '') && (q.type === 'sonde' || q.regulation === 'sonde'));
     const params = gens.length ? P(idDe(gens[0])) : [];
+    // Production hétérogène (rôles saisis sur le schéma) : ordre de priorité base → relève → appoint, secours en défaut
+    const ROLES = [['recuperation', 'récupération'], ['base', 'base'], ['releve', 'relève'], ['appoint', 'appoint']], roles = gens.some(q => q.role);
+    const parRole = r => gens.filter(q => q.role === r).map(q => n(q.rep));
     if (gens.length >= 2) ajoute('Cascade des générateurs', [
       `Demande de chaleur si un circuit ou l'ECS demande ; sinon générateurs à l'arrêt.`,
-      `Générateur pilote = celui qui a le moins d'heures de marche ; permutation chaque semaine (lundi 10 h).`,
+      roles ? `Ordre de priorité : ${ROLES.filter(([r]) => parRole(r).length).map(([r, l]) => `${l} (${parRole(r).join(', ')})`).join(' → ')}${parRole('secours').length ? ` ; secours (${parRole('secours').join(', ')}) seulement en défaut d'un générateur` : ''} ; permutation entre générateurs de même rôle chaque semaine (lundi 10 h).`
+        : `Générateur pilote = celui qui a le moins d'heures de marche ; permutation chaque semaine (lundi 10 h).`,
       `Enclenchement du pilote : pompe primaire en marche, retour de marche contrôlé (30 s), puis autorisation (${gens.map(q => n(q.rep)).join(', ')}).`,
       pr ? `Consigne de départ = plus haute demande des circuits + 5 K, plafonnée à ${nfr(pr.Td)} °C (${nfr(pr.consigneBase)} °C par grand froid)${pr.ecsMin ? ` ; ${nfr(pr.ecsMin)} °C au moins pendant une charge ECS` : ''}.` : '',
       `Si ${tdg ? n(tdg.rep) : 'la température de départ général'} reste sous la consigne (${pr ? 'calculée ci-dessus' : val(params, /consigne de départ de la production/i, 'loi d\'eau')}) de plus de 5 °C pendant 10 min : enclenchement du générateur suivant.`,
