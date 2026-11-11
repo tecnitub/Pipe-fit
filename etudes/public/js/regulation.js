@@ -74,7 +74,8 @@ const Regulation = (() => {
     if (!n.trim()) return null;
     const protocoles = [['BACnet', /bacnet/], ['Modbus', /modbus/], ['KNX', /\bknx\b/], ['LON', /\blon(works)?\b/], ['M-Bus', /m-?bus/]].filter(([, re]) => re.test(n)).map(([p]) => p);
     const marques = [['Siemens', /siemens|synco|desigo/], ['Schneider', /schneider|ecostruxure|smartx/], ['Sauter', /sauter/], ['Distech', /distech/], ['Trend', /\btrend\b/], ['Honeywell', /honeywell/], ['Wit', /\bwit\b/]].filter(([, re]) => re.test(n)).map(([m]) => m);
-    return { protocoles, marques, comptage: /comptage|compteur d.energie|calorimetr/.test(n), bacs: /bacs|decret.{0,20}(2020-887|gtb)|classe [ab] .{0,20}(gtb|en 15232|en iso 52120)|en 15232|52120/.test(n),
+    const CP = typeof ConsignesProjet !== 'undefined' ? ConsignesProjet : (() => { try { return require('./consignes-projet'); } catch (e) { return null; } })();
+    return { consignes: CP ? CP.consignesCctp(t) : null, protocoles, marques, comptage: /comptage|compteur d.energie|calorimetr/.test(n), bacs: /bacs|decret.{0,20}(2020-887|gtb)|classe [ab] .{0,20}(gtb|en 15232|en iso 52120)|en 15232|52120/.test(n),
       automate: /automate programmable|\bapi\b|automate/.test(n), prepro: /regulateur.{0,30}(preprogramme|configurable)|synco|regulateur (de|d.)(chauffage|ventilation) /.test(n), integree: /regulation integree|regulation d.origine|regulation constructeur/.test(n) };
   }
   function contexte(etude, Liens, opts = {}) {
@@ -182,7 +183,7 @@ const Regulation = (() => {
   // Régulation de l'étude pour le DOE et la notice d'exploitation : technologie, analyse fonctionnelle et paramètres de
   // chaque installation, courbes de chauffe, liste des points GTB (calcul des armoires s'il existe)
   function pourDoe(etude, Liens) {
-    const notes = (etude && etude.notes) || [], N = Nt(), out = { installations: [], courbes: [], points: null, bacs: null, comptages: null, sequences: [], echange: null, folios: [], unifilaire: '' };
+    const notes = (etude && etude.notes) || [], N = Nt(), out = { installations: [], courbes: [], points: null, bacs: null, comptages: null, sequences: [], echange: null, folios: [], unifilaire: '', consignes: null, plannings: [], alarmes: [] };
     notes.filter(n => n.type === 'elec' && ((n.entrees || {}).equipements || []).length).forEach(elec => {
       try {
         const r = Liens.calculer(etude, elec), blocs = ((r.onglets || []).find(o => o.titre === 'Régulation') || {}).blocs || [], reg = (r.valeurs || {}).regulation || {};
@@ -195,6 +196,10 @@ const Regulation = (() => {
         const ech = tb(/^Table d'échange GTB/); if (ech && ech.lignes.length) out.echange = { entetes: ech.entetes, lignes: [...((out.echange || {}).lignes || []), ...ech.lignes].slice(0, 800) };
         out.folios.push(...[r.titreSchema, ...(r.schemas || []).map(s => s.titre)].filter(Boolean).map(t => ({ note: elec.titre || 'Armoires', titre: t })));
         if (!out.unifilaire && r.schema && r.schema.length < 400000) out.unifilaire = r.schema;
+        // Consignes du projet, plannings et alarmes avec la conduite à tenir (notice d'exploitation)
+        const pj = (r.valeurs || {}).consignesProjet, G = typeof Gtb !== 'undefined' ? Gtb : require('./gtb');
+        if (pj && !out.consignes) { out.consignes = pj.saisie; out.plannings = pj.plannings.map(p => [p.nom, p.agit, p.occupation, p.hors]); out.feries = pj.feries; }
+        ((r.valeurs || {}).cahierProg || []).forEach(c => ((c.sections.find(s => s.titre === 'Alarmes') || { lignes: [] }).lignes).forEach(l => { if (out.alarmes.length < 150) out.alarmes.push([`${l[0]} — ${l[1]}`, `${l[2]} (${l[3]})`, l[4], l[5], G.queFaire(l[1], l[5])]); }));
         const pts = blocs.find(y => /^Liste des points GTB/.test(y.titre || ''));
         if (pts && pts.tableau && pts.tableau.lignes.length > 1) out.points = { entetes: pts.tableau.entetes, lignes: [...((out.points || {}).lignes || []), ...pts.tableau.lignes].slice(0, 600) };
       } catch (e) { /* calcul des armoires incomplet */ }

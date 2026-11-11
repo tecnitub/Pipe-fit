@@ -732,7 +732,7 @@ const Electricite = ((N, Sc) => {
     }
     // Consignes du projet : saisie des zones et des lois d'eau, tout le reste en découle
     const annee = Number(String((e._affaire || {}).date || '').slice(0, 4)) || new Date().getFullYear();
-    const projet = Cp().calculer({ installations: REG.installations, zones: e.consignesZones, lois: e.loisEau, pressions: e.pressionsCta, eqs, annee });
+    const projet = Cp().calculer({ installations: REG.installations, zones: e.consignesZones, lois: e.loisEau, pressions: e.pressionsCta, eqs, annee, profil: e.profilBatiment || '', cctp: REG.cctp && REG.cctp.consignes });
     projet.circuits.filter(c => c.source === 'saisie').forEach(c => REG.installations.forEach(x => (x.params || []).forEach(p => {
       if (p.libelle.startsWith(`Loi d'eau ${c.rep} : départ à 18`)) p.valeur = c.d18 ?? p.valeur; else if (p.libelle.startsWith(`Loi d'eau ${c.rep} : départ à`)) p.valeur = c.base;
     })));
@@ -1213,6 +1213,7 @@ const Electricite = ((N, Sc) => {
         colonnes: [{ k: 'type', l: 'Élément', t: 's', o: [['UC', 'Unité centrale'], ['EA', 'Carte EA'], ['SA', 'Carte SA'], ['ETOR', 'Carte ETOR'], ['STOR', 'Carte STOR'], ['EXT', 'Extension (châssis)']] }, { k: 'ref', l: 'Référence', t: 't' },
           { k: 'voies', l: 'Voies par carte' }, { k: 'integrees', l: 'Voies intégrées à l\'UC' }, { k: 'chassis', l: 'Modules par châssis (UC / extension)' }] },
       { g: 'Consignes du projet : à saisir, le reste de la régulation en découle' },
+      { k: 'profilBatiment', l: 'Type de bâtiment (bouton « Appliquer le profil » : zones, consignes et horaires types ; contrôle du code de l\'énergie)', t: 's', o: () => [['', '— Aucun —'], ...Object.entries(Cp().PROFILS).map(([k, p]) => [k, p.nom])], d: '' },
       { k: 'consignesZones', l: 'Consignes d\'ambiance et horaires d\'occupation par zone (zone des terminaux ; « Toutes zones » s\'applique partout) — production, alarmes, réduit, relance, plannings, vitesses et mise en service en découlent', t: 'lignes',
         d: [{ zone: 'Toutes zones', confort: 20, clim: 26, inocc: 16, horsGel: 8, jours: 'lun-ven', debut: '7:00', fin: '19:00', diff: 0.5, decalage: 2 }],
         colonnes: [{ k: 'zone', l: 'Zone', t: 't' }, { k: 'confort', l: 'Confort chauffage (°C)' }, { k: 'clim', l: 'Confort rafraîchissement (°C)' }, { k: 'inocc', l: 'Inoccupation (°C)' }, { k: 'horsGel', l: 'Hors gel (°C)' },

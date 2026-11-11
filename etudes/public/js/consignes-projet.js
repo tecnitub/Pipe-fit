@@ -30,7 +30,7 @@ const ConsignesProjet = (() => {
 
   // zones : [{ zone, confort, clim, inocc, horsGel, jours, debut, fin, diff, decalage }] ; lois : [{ circuit, base, d18 }] ;
   // pressions : [{ cta, soufflage, reprise }] ; installations : contexte de la régulation (donnees) ; eqs : équipements
-  function calculer({ installations = [], zones = [], lois = [], pressions = [], eqs = [], annee = new Date().getFullYear() } = {}) {
+  function calculer({ installations = [], zones = [], lois = [], pressions = [], eqs = [], annee = new Date().getFullYear(), profil: profilId = '', cctp = null } = {}) {
     const prod = installations.filter(x => x.donnees && x.donnees.circuits), ctas = installations.filter(x => x.donnees && x.donnees.cta);
     const ecs = installations.find(x => x.donnees && x.donnees.ecs), term = installations.filter(x => x.donnees && x.donnees.terminaux);
     const alertes = [], ajout = (niveau, t) => alertes.push({ niveau, texte: t });
@@ -97,7 +97,9 @@ const ConsignesProjet = (() => {
     if (ecs && num(ecs.donnees.Tc, 60) < 55) ajout('attention', `ECS : consigne de stockage ${nf(num(ecs.donnees.Tc), 0)} °C < 55 °C (risque légionelle).`);
     if (production && production.ecsMin && production.ecsMin > production.Td) ajout('attention', `Priorité ECS : ${nf(production.ecsMin, 0)} °C demandés, au-dessus du départ de la production (${nf(production.Td, 0)} °C).`);
     pressionsCta.filter(x => x.soufflage === null).forEach(x => ajout('info', `${x.cta} : consigne de pression de soufflage à relever à la mise en service (reprise automatique depuis le PV de mise en service du chantier).`));
-    return { saisie, Tbase, zones: zonesEff, circuits, production, seuils, changeOver, regimes, plannings, feries: feries(annee), pid, pressionsCta, vitesses, alertes };
+    const res = { saisie, Tbase, zones: zonesEff, circuits, production, seuils, changeOver, regimes, plannings, feries: feries(annee), pid, pressionsCta, vitesses, alertes, profil: profilId };
+    alertes.push(...controleReglementaire(zonesEff, profilId), ...comparerCctp(cctp, res));
+    return res;
   }
 
   // Réglages de points déduits (seuils bas / haut) pour la table d'échange : sondes de départ des circuits, ECS, bouclage
@@ -111,6 +113,133 @@ const ConsignesProjet = (() => {
     return out;
   }
 
-  return { calculer, reglagesPoints, feries, typeEmetteur, INERTIE, PID };
+  /* ---------- 1. Profils de bâtiment (consignes et horaires types) et contrôle réglementaire ---------- */
+  // Code de l'énergie : chauffage limité à 19 °C en moyenne (R.241-26) hors établissements de soins, crèches et
+  // logements de personnes âgées ; pas de climatisation en dessous de 26 °C (R.241-30)
+  const PROFILS = {
+    bureaux: { nom: 'Bureaux', zones: [{ zone: 'Toutes zones', confort: 19, clim: 26, inocc: 16, horsGel: 8, jours: 'lun-ven', debut: '7:00', fin: '19:00', diff: 0.5, decalage: 2 }] },
+    enseignement: { nom: 'Enseignement (collège, lycée, école)', zones: [{ zone: 'Salles de cours', confort: 19, clim: 26, inocc: 16, horsGel: 8, jours: 'lun-ven', debut: '7:30', fin: '18:00', diff: 0.5, decalage: 1 },
+      { zone: 'Restauration', confort: 19, clim: 26, inocc: 15, horsGel: 8, jours: 'lun-ven', debut: '10:30', fin: '14:30', diff: 0.5, decalage: 1 }, { zone: 'Gymnase', confort: 16, clim: 28, inocc: 12, horsGel: 7, jours: 'lun-sam', debut: '8:00', fin: '22:00', diff: 1, decalage: 1 }] },
+    ehpad: { nom: 'EHPAD, établissement de soins', exempte: true, zones: [{ zone: 'Chambres', confort: 22, clim: 26, inocc: 20, horsGel: 8, jours: 'lun-dim', debut: '0:00', fin: '24:00', diff: 0.5, decalage: 2 },
+      { zone: 'Parties communes', confort: 21, clim: 26, inocc: 19, horsGel: 8, jours: 'lun-dim', debut: '7:00', fin: '21:00', diff: 0.5, decalage: 1 }] },
+    creche: { nom: 'Crèche, petite enfance', exempte: true, zones: [{ zone: 'Toutes zones', confort: 21, clim: 26, inocc: 17, horsGel: 8, jours: 'lun-ven', debut: '7:00', fin: '19:00', diff: 0.5, decalage: 1 }] },
+    gymnase: { nom: 'Salle de sport, gymnase', zones: [{ zone: 'Salle', confort: 16, clim: 28, inocc: 12, horsGel: 7, jours: 'lun-dim', debut: '8:00', fin: '22:00', diff: 1, decalage: 1 },
+      { zone: 'Vestiaires', confort: 19, clim: 26, inocc: 15, horsGel: 8, jours: 'lun-dim', debut: '8:00', fin: '22:30', diff: 0.5, decalage: 1 }] },
+    logement: { nom: 'Logements collectifs', zones: [{ zone: 'Logements', confort: 19, clim: 26, inocc: 17, horsGel: 8, jours: 'lun-dim', debut: '6:00', fin: '22:00', diff: 0.5, decalage: 2 }] },
+  };
+  const profil = id => PROFILS[id] || null;
+  function controleReglementaire(zones, profilId) {
+    const out = [], ex = (PROFILS[profilId] || {}).exempte;
+    zones.forEach(z => {
+      if (!ex && z.confort > 19) out.push({ niveau: 'info', texte: `Zone ${z.zone} : chauffage à ${nf(z.confort, 1)} °C, au-dessus des 19 °C en moyenne du code de l'énergie (art. R.241-26), sauf soins, petite enfance ou personnes âgées.` });
+      if (z.clim < 26) out.push({ niveau: 'attention', texte: `Zone ${z.zone} : climatisation à ${nf(z.clim, 1)} °C ; le code de l'énergie (art. R.241-30) interdit de refroidir en dessous de 26 °C (hors locaux à exigences particulières).` });
+    });
+    return out;
+  }
+
+  /* ---------- 2. Exigences du CCTP comparées aux consignes ---------- */
+  // cctp : { chauffage: [°C], clim: [°C], regimes: [[dep, ret]], horaires: [[debut, fin]] } (lecture du CCTP)
+  function comparerCctp(cctp, r) {
+    if (!cctp) return [];
+    const out = [], z = r.zones;
+    if ((cctp.chauffage || []).length) { const c = cctp.chauffage[0]; z.filter(x => Math.abs(x.confort - c) >= 0.5).forEach(x => out.push({ niveau: 'attention', texte: `CCTP : ${nf(c, 1)} °C en chauffage ; saisi ${nf(x.confort, 1)} °C (zone ${x.zone}).` })); }
+    if ((cctp.clim || []).length) { const c = cctp.clim[0]; z.filter(x => Math.abs(x.clim - c) >= 0.5).forEach(x => out.push({ niveau: 'attention', texte: `CCTP : ${nf(c, 1)} °C en rafraîchissement ; saisi ${nf(x.clim, 1)} °C (zone ${x.zone}).` })); }
+    (cctp.regimes || []).forEach(([d, t]) => { if (r.circuits.length && !r.circuits.some(c => Math.abs(c.dep - d) < 1 && Math.abs(c.ret - t) < 1) && !(r.production && Math.abs(r.production.Td - d) < 1)) out.push({ niveau: 'attention', texte: `CCTP : régime ${d}/${t} °C cité, absent de l'étude (production et circuits).` }); });
+    (cctp.horaires || []).forEach(([d, f]) => { if (!z.some(x => Math.abs(x.debut - d) < 0.26 && Math.abs(x.fin - f) < 0.26)) out.push({ niveau: 'info', texte: `CCTP : horaires ${hTxt(d)} – ${hTxt(f)} cités ; à reporter sur la zone concernée.` }); });
+    return out;
+  }
+  // Lecture des consignes dans un texte de CCTP
+  function consignesCctp(texte) {
+    const t = String(texte || '').replace(/\s+/g, ' '), n = t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(), out = { chauffage: [], clim: [], regimes: [], horaires: [] };
+    for (const m of n.matchAll(/(\d{2}(?:[.,]\d)?)\s*°\s*c/g)) {
+      const v = num(m[1]), ctx = n.slice(Math.max(0, m.index - 90), m.index + 30);
+      if (v < 15 || v > 28) continue;
+      if (/ete|climatisation|rafraichissement|refroidissement|\bfroid\b/.test(ctx) && v >= 22) out.clim.push(v);
+      else if (/hiver|chauffage|confort|ambiance|interieure|temperature (de|des) locaux/.test(ctx) && v <= 23) out.chauffage.push(v);
+    }
+    for (const m of n.matchAll(/regime\s*(?:d'eau\s*)?(?:de\s*)?(\d{1,2})\s*\/\s*(\d{1,2})\s*°?\s*c?/g)) out.regimes.push([num(m[1]), num(m[2])]);
+    for (const m of n.matchAll(/(?:de|entre)?\s*(\d{1,2})\s*h\s*(\d{2})?\s*(?:a|-|–|et)\s*(\d{1,2})\s*h\s*(\d{2})?/g)) { const d = num(m[1]) + num(m[2]) / 60, f = num(m[3]) + num(m[4]) / 60; if (f > d && d >= 5 && f <= 24) out.horaires.push([d, f]); }
+    const uniq = l => [...new Set(l.map(x => JSON.stringify(x)))].map(x => JSON.parse(x));
+    return { chauffage: uniq(out.chauffage), clim: uniq(out.clim), regimes: uniq(out.regimes), horaires: uniq(out.horaires).slice(0, 4) };
+  }
+
+  /* ---------- 7. PV de réglage : valeurs attendues du cahier (valeur réglée saisie à la mise en service) ---------- */
+  function attendusReglage(r) {
+    const a = (libelle, valeur, unite) => (Number.isFinite(valeur) ? { libelle, valeur: Math.round(valeur * 10) / 10, unite } : null);
+    return [
+      ...(r.production ? [a('Consigne de départ de la production (grand froid)', r.production.consigneBase, '°C'), r.production.ecsMin ? a('Départ minimal pendant la charge ECS', r.production.ecsMin, '°C') : null] : []),
+      ...r.circuits.flatMap(c => (c.loi ? [a(`Loi d'eau ${c.rep} : départ par ${nf(r.Tbase, 0)} °C ext.`, c.base, '°C'), c.d18 !== null ? a(`Loi d'eau ${c.rep} : départ à 18 °C ext.`, c.d18, '°C') : null] : [a(`Consigne de départ ${c.rep}`, c.base, '°C')])),
+      ...r.zones.flatMap(z => [a(`Consigne confort chauffage — ${z.zone}`, z.confort, '°C'), a(`Consigne confort rafraîchissement — ${z.zone}`, z.clim, '°C'), a(`Consigne inoccupation — ${z.zone}`, z.inocc, '°C'), a(`Hors gel — ${z.zone}`, z.horsGel, '°C')]),
+      a('Change-over : seuil chaud (eau)', r.changeOver.chaud, '°C'), a('Change-over : seuil froid (eau)', r.changeOver.froid, '°C'),
+      ...r.pressionsCta.flatMap(p => [p.soufflage !== null ? a(`Pression de soufflage — ${p.cta}`, p.soufflage, 'Pa') : null, p.reprise !== null ? a(`Pression de reprise — ${p.cta}`, p.reprise, 'Pa') : null]),
+      ...r.seuils.flatMap(s => [s.bas !== '' ? a(`Seuil bas — ${s.libelle}`, s.bas, '°C') : null, s.haut !== '' ? a(`Seuil haut — ${s.libelle}`, s.haut, '°C') : null]),
+    ].filter(Boolean);
+  }
+  const controlesReglage = r => [...r.plannings.map(p => `Planning ${p.nom} (${p.agit}) : ${p.occupation} saisi`), 'Calendrier des jours fériés de l\'année chargé', ...r.pid.map(x => `Boucle R-${x[0]} : PI de départ ${x[3]} / ${x[4]} saisi`)];
+
+  /* ---------- 8. Essais des séquences (d'après la logique pas à pas et les alarmes du cahier) ---------- */
+  function essaisSequences(cahier) {
+    const out = [];
+    (cahier || []).forEach(c => {
+      const sec = re => (c.sections.find(s => re.test(s.titre)) || { lignes: [] }).lignes;
+      const lg = sec(/^Logique/), vus = new Set();
+      lg.forEach(l => { if (!vus.has(l[0])) { vus.add(l[0]); } });
+      [...vus].forEach(f => {
+        if (/^Cascade/.test(f)) out.push(`${f} : couper le générateur pilote → le suivant prend le relais et l'alarme remonte`, `${f} : abaisser la consigne de 10 K → délestage du dernier générateur après 5 min`);
+        else if (/^Pompes doubles/.test(f)) out.push(`${f} : déclencher la pompe en service → bascule sur l'autre et alarme`, `${f} : forcer la permutation → recouvrement de 5 s, une seule pompe en marche ensuite`);
+        else if (/^Pompes de circuit/.test(f)) out.push(`${f} : simuler une température extérieure < 3 °C hors occupation → marche hors gel des pompes`);
+        else if (/^Circuit/.test(f)) out.push(`${f} : simuler deux températures extérieures → la consigne de départ suit la loi d'eau`, `${f} : passer en inoccupation → départ abaissé (réduit)`);
+        else if (/^ECS/.test(f)) out.push(`${f} : abaisser la température du ballon → charge, priorité ECS sur le chauffage, arrêt à la consigne`, `${f} : lancer la montée en température anti-légionelle → consigne tenue 1 h`);
+        else if (/^CTA/.test(f)) out.push(`${f} : démarrage → registres ouverts avant les ventilateurs, reprise puis soufflage, pressostats sous 30 s`, `${f} : simuler l'antigel → ventilateurs arrêtés, registres fermés, vanne chaude 100 %`, `${f} : contact SSI → arrêt immédiat, prioritaire sur le mode Manu`);
+        else if (/^Terminaux/.test(f)) out.push(`${f} : écart de 0,5 / 1 / 2 K à la consigne → vanne ouverte, PV, puis MV, puis GV`, `${f} : ouvrir la fenêtre → arrêt des terminaux`, `${f} : alarme condensats → seule la vanne du terminal concerné se ferme`);
+        else out.push(`${f} : vérifier chaque étape de la logique`);
+      });
+      sec(/^Alarmes$/).filter(l => l[5] && l[5] !== '—').slice(0, 30).forEach(l => out.push(`Alarme ${l[0]} (${l[1]}) : provoquer → ${l[5]}, report GTB ${l[4] || ''}`.trim()));
+      out.push('Coupure secteur puis retour → redémarrages échelonnés, consignes et plannings conservés');
+    });
+    return [...new Set(out)].slice(0, 120);
+  }
+
+  /* ---------- 6. Chiffrage de la régulation (devis du CRM) ---------- */
+  // pts : liste des points ; nomenclature : [[famille, désignation, caractéristiques, qté…]] ; nbInst : installations
+  function chiffrage({ pts = [], nomenclature = [], boucles = 0, installations = 1 } = {}) {
+    const n = pts.filter(p => p[2] !== 'LOG').length, h = v => Math.round(v * 4) / 4;
+    const materiel = nomenclature.filter(l => /automat|capteur|sonde|régul|regul/i.test(l[0] || '')).map(l => ({ designation: [l[1], l[2]].filter(Boolean).join(' — '), qte: num(l[3], 1) || 1 }));
+    return { materiel, heures: [
+      ['Programmation de l\'automate (points, boucles, plannings, alarmes)', h(n * 0.25 + boucles * 1.5 + installations * 4)],
+      ['Essais point à point (automate et GTB)', h(n * 0.1 + 1)],
+      ['Mise en service, réglages et essais des séquences', h(installations * 4 + 4)]] };
+  }
+
+  /* ---------- 10. Suivi après réception : relevés de la GTB comparés aux consignes ---------- */
+  // rows : tableau (1re ligne = en-têtes) ; colonnes reconnues : date, température extérieure, départ <circuit>, ambiance <zone>
+  function analyserReleves(rows, r) {
+    const h = (rows[0] || []).map(x => String(x || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()), lignes = rows.slice(1);
+    const iExt = h.findIndex(x => /ext/.test(x) && /temp|t\b|°/.test(x) || /^text|exterieur/.test(x)), iDate = h.findIndex(x => /date|heure|horodat/.test(x));
+    if (iExt < 0) return { erreur: 'Colonne de température extérieure introuvable (en-tête contenant « ext »).' };
+    const norm = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const out = { circuits: [], zones: [], mesures: lignes.length };
+    r.circuits.filter(c => c.loi).forEach(c => {
+      const k = h.findIndex(x => x.includes(norm(c.rep)) || (x.includes('depart') && norm(c.rep).split(' ').some(m => m.length > 3 && x.includes(m))));
+      if (k < 0) return;
+      const pts = lignes.map(l => [num(l[iExt], NaN), num(l[k], NaN)]).filter(([e, d]) => Number.isFinite(e) && Number.isFinite(d) && e < 18);
+      if (pts.length < 5) return;
+      const loi = e => c.base + (Math.min(18, Math.max(r.Tbase, e)) - r.Tbase) * ((c.d18 ?? 30) - c.base) / (18 - r.Tbase);
+      const ecarts = pts.map(([e, d]) => d - loi(e)), moy = ecarts.reduce((s, x) => s + x, 0) / ecarts.length;
+      out.circuits.push({ circuit: c.rep, mesures: pts.length, ecartMoyen: Math.round(moy * 10) / 10, proposition: Math.abs(moy) < 2 ? 'loi d\'eau tenue : rien à corriger' : moy < 0 ? `départ ${nf(-moy, 1)} K sous la loi d'eau : vérifier la production (consigne, priorité ECS) et la vanne (course, encrassement) avant de toucher la courbe` : `départ ${nf(moy, 1)} K au-dessus de la loi d'eau : vérifier la vanne (fuite, servomoteur) et la sonde de départ` });
+    });
+    r.zones.forEach(z => {
+      const k = h.findIndex(x => /amb|salle|piece|zone/.test(x) && (norm(z.zone) === 'toutes zones' || x.includes(norm(z.zone).split(' ')[0])));
+      if (k < 0) return;
+      const jours = new Map();
+      lignes.forEach(l => { const v = num(l[k], NaN); if (!Number.isFinite(v)) return; const d = iDate >= 0 ? String(l[iDate]).slice(0, 10) : 'sans date'; const j = jours.get(d) || { n: 0, hors: 0, froid: 0, chaud: 0 }; j.n++; if (v < z.confort - 1) { j.hors++; j.froid++; } else if (v > z.clim + 1) { j.hors++; j.chaud++; } jours.set(d, j); });
+      if (!jours.size) return;
+      const horsJ = [...jours.values()].filter(j => j.hors / j.n > 0.25), froid = horsJ.filter(j => j.froid >= j.chaud).length;
+      out.zones.push({ zone: z.zone, jours: jours.size, joursHors: horsJ.length, proposition: !horsJ.length ? 'ambiance tenue' : froid >= horsJ.length / 2 ? `trop froid ${froid} jour(s) : relever la courbe de chauffe (déplacement parallèle +1 K) ou avancer la relance` : 'trop chaud : abaisser la courbe (déplacement parallèle −1 K) ou vérifier les apports internes' });
+    });
+    return out;
+  }
+
+  return { calculer, reglagesPoints, feries, typeEmetteur, INERTIE, PID, PROFILS, profil, controleReglementaire, comparerCctp, consignesCctp, attendusReglage, controlesReglage, essaisSequences, chiffrage, analyserReleves };
 })();
 if (typeof module !== 'undefined') module.exports = ConsignesProjet;

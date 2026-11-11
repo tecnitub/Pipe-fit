@@ -54,6 +54,31 @@ ${lignes.map(l => `<w:tr><w:trPr><w:cantSplit/></w:trPr>${Array.from({ length: n
     });
     return blocs;
   }
-  return { build, corps, cahierBlocs };
+  // Analyse fonctionnelle de la régulation (maîtrise d'œuvre, visa, DOE) : consignes, plannings, fonctionnement par
+  // installation (analyse de l'étude puis logique pas à pas), sécurités et alarmes avec la conduite à tenir
+  function analyseFonctionnelle({ cahier = [], projet = null, afs = [], queFaire = () => '', titre = 'Analyse fonctionnelle de la régulation', affaire = '', indice = '', date = '' } = {}) {
+    const blocs = [{ h1: titre }, { note: [affaire, indice ? `indice ${indice}` : '', date].filter(Boolean).join(' · ') },
+      { p: 'Fonctionnement attendu des installations de chauffage, ventilation et climatisation et de leur régulation : consignes, horaires, séquences de marche, sécurités et alarmes. Les valeurs sont celles de l\'étude, à confirmer à la mise en service.' }];
+    let k = 1;
+    if (projet) {
+      blocs.push({ h2: `${k++}. Consignes et horaires` }, { table: { entetes: ['Objet', 'Nom', 'Consignes', 'Occupation / régime', 'Origine'], lignes: projet.saisie } });
+      blocs.push({ h3: 'Plannings' }, { table: { entetes: ['Planning', 'Agit sur', 'Occupation', 'Relance (h)', 'Hors occupation'], lignes: projet.plannings.map(p => [p.nom, p.agit, p.occupation, p.relance ? String(p.relance).replace('.', ',') : '—', p.hors]) } });
+      blocs.push({ p: `Jours fériés ${projet.feries[0][0].slice(0, 4)} : ${projet.feries.map(([d, l]) => `${d.slice(8, 10)}/${d.slice(5, 7)} ${l}`).join(', ')}.` });
+    }
+    blocs.push({ h2: `${k++}. Fonctionnement des installations` });
+    afs.filter(a => (a.liste || []).length).forEach(a => blocs.push({ h3: a.titre }, { num: a.liste }));
+    cahier.forEach(c => {
+      const lg = (c.sections.find(s => /^Logique/.test(s.titre)) || { lignes: [] }).lignes, g = new Map();
+      lg.forEach(l => { if (!g.has(l[0])) g.set(l[0], []); g.get(l[0]).push(l[2]); });
+      if (g.size) blocs.push({ h3: `Séquences pas à pas — armoire ${c.armoire}` });
+      g.forEach((l, f) => blocs.push({ p: f, b: true }, { num: l }));
+    });
+    const al = cahier.flatMap(c => (c.sections.find(s => s.titre === 'Alarmes') || { lignes: [] }).lignes);
+    if (al.length) blocs.push({ h2: `${k++}. Alarmes et conduite à tenir` }, { table: { entetes: ['Alarme', 'Condition', 'Priorité', 'Action automatique', 'Que faire'], lignes: al.map(l => [`${l[0]} — ${l[1]}`, `${l[2]} (${l[3]})`, l[4], l[5], queFaire(l[1], l[5])]) } });
+    const secu = cahier.flatMap(c => (c.sections.find(s => /^Sécurités/.test(s.titre)) || { lignes: [] }).lignes);
+    if (secu.length) blocs.push({ h2: `${k++}. Sécurités et asservissements` }, { table: { entetes: ['Repère', 'Fonction', 'Entrée(s)', 'Agit sur', 'Fonctionnement', 'Remarque'], lignes: secu } });
+    return blocs;
+  }
+  return { build, corps, cahierBlocs, analyseFonctionnelle };
 })();
 if (typeof module !== 'undefined') module.exports = Docx;

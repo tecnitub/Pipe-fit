@@ -109,7 +109,7 @@ const Gtb = (() => {
       const ar = p[3], des = p[7] || p[1], obj = objetDe(p[2], p[4], des), k = `${ar}|${obj}`, mb = MODBUS[obj];
       if (!devices.has(ar)) devices.set(ar, 1000 + devices.size + 1);
       const c = cpt[k] || (cpt[k] = { inst: 0, reg: 0 }); c.inst += 1; const reg = c.reg; c.reg += mb[2];
-      const binaire = ['BI', 'BO', 'BV'].includes(obj), unite = binaire ? 'état' : obj === 'SCHEDULE' ? '—' : ((UNITES.find(([re]) => re.test(des)) || [, ''])[1]);
+      const binaire = ['BI', 'BO', 'BV'].includes(obj), unite = binaire ? 'état' : obj === 'SCHEDULE' ? '—' : ((UNITES.find(([re]) => re.test(des)) || UNITES.find(([re]) => re.test(`${p[1]} ${p[6] || ''}`)) || [, ''])[1]);
       const mn = (ABR.find(([re]) => re.test(des)) || [, String(des).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '').toUpperCase().slice(0, 8)])[1];
       const nom = nommage === 'installation' ? noms[ip] : `${ar}_${p[0]}_${mn}`.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9_.-]+/g, '').replace(/\./g, '_').toUpperCase();
       const alarme = p[4] === 'TA' ? ((SECU.test(des) || SECU_EQ.test(p[6] || '')) ? 'P1 (sécurité)' : 'P2 (défaut)') : /encrassement|filtre/i.test(des) ? 'P3 (maintenance)' : '';
@@ -325,6 +325,52 @@ const Gtb = (() => {
       'Essais de chaque point (point à point) puis de chaque séquence, consignés dans les PV de mise en service.'].filter(Boolean);
   }
 
+  /* ---------- Étiquettes de repérage de l'armoire (planches autocollantes ou étiqueteuse) ---------- */
+  // cahier : cahier de programmation ; feuilles : feuilles du classeur (E-S, carnet de câbles, équipements)
+  function etiquettes(cahier, feuilles) {
+    const f = re => (feuilles || []).filter(x => re.test(x.name));
+    const points = (cahier || []).flatMap(c => ((c.sections.find(s => s.titre === 'Entrées / sorties') || { lignes: [] }).lignes).map(l => ({ titre: l[0], sous: `${l[4]} · ${l[3]} · ${l[1]}` })));
+    const bornes = f(/^E-S /).flatMap(x => x.lignes.filter(l => l[1]).map(l => ({ titre: String(l[1]), sous: `${l[2]} ${String(l[3]).split(' — ')[0]}` })));
+    const cables = f(/^Carnet de câbles/).flatMap(x => x.lignes.map(l => ({ titre: String(l[1]), sous: `${l[4]} → ${l[5]}` })));
+    const facade = f(/^Équipements/).flatMap(x => x.lignes.filter(l => /armoire|AR-/i.test(String(l[4] || ''))).map(l => ({ titre: String(l[0]), sous: String(l[1] || '').slice(0, 60) })));
+    return { points, bornes, cables, facade };
+  }
+  /* ---------- Fichier EDE (Engineering Data Exchange, BACnet, version 2.3) pour l'intégrateur GTB ---------- */
+  // Liste des objets de la table d'échange (type, instance, nom, unité BACnet, seuils, inscriptible) + fichier des textes d'états
+  const TYPE_BACNET = { AI: 0, AO: 1, AV: 2, BI: 3, BO: 4, BV: 5, SCHEDULE: 17 };
+  const UNITE_BACNET = { '°C': 62, '%': 98, '%HR': 29, Pa: 53, kPa: 54, bar: 55, 'm³/h': 135, ppm: 96, kW: 48, kWh: 19, W: 47, 'm³': 80 };
+  function ede(lignes, { projet = 'Projet', auteur = 'Pipe-Fit', date = '' } = {}) {
+    const etatsRef = [], refDe = t => { const k = etatsRef.indexOf(t); if (k >= 0) return k + 1; etatsRef.push(t); return etatsRef.length; };
+    const cel = v => String(v ?? '').replace(/[;\r\n]+/g, ' ');
+    const devices = [...new Map(lignes.map(l => [l[1], l[0]])).entries()];
+    const tete = ['# Proposal_Engineering-Data-Exchange - B.I.G.-EU', `PROJECT_NAME;${cel(projet)}`, 'VERSION_OF_REFERENCEFILE;1', `TIMESTAMP_OF_LAST_CHANGE;${cel(date)}`, `AUTHOR_OF_LAST_CHANGE;${cel(auteur)}`, 'VERSION_OF_LAYOUT;2.3',
+      '#mandatory;mandatory;mandatory;mandatory;mandatory;optional;optional;optional;optional;optional;optional;optional;optional;optional;optional;optional',
+      '# keyname;device obj.-instance;object-name;object-type;object-instance;description;present-value-default;min-present-value;max-present-value;settable;supports COV;hi-limit;low-limit;state-text-reference;unit-code;vendor-specific-address'];
+    const corps = [...devices.map(([dev, arm]) => [`DEV_${cel(arm)}`, dev, cel(arm), 8, dev, `Automate de l'armoire ${cel(arm)}`, '', '', '', '', '', '', '', '', '', ''].join(';')),
+      ...lignes.map(l => {
+        const t = TYPE_BACNET[l[6]], bin = [3, 4, 5].includes(t), p = [l[2], l[3], l[4], l[0], l[5], '', '', l[3]];
+        const etat = bin ? etats(p).split(' / ').slice(0, 2) : null, ref = etat && etat.length === 2 ? refDe(etat.join(';')) : '';
+        return [cel(l[12]), l[1], cel(l[12]), t ?? '', l[7], cel(`${l[2]} — ${l[3]}`), '', '', '', [1, 4, 2, 5, 17].includes(t) ? 'Y' : 'N', 'Y', cel(l[14]), cel(l[13]), ref, bin || t === 17 ? '' : (UNITE_BACNET[l[9]] ?? 95), cel(l[8])].join(';');
+      })];
+    const etatsTxt = ['#State Text Reference', '#Reference-Number;Inactive-Text;Active-Text', ...etatsRef.map((t, i) => `${i + 1};${t}`)];
+    return { ede: [...tete, ...corps].join('\r\n'), etats: etatsTxt.join('\r\n'), objets: lignes.length, devices: devices.length };
+  }
+  // Que faire en cas d'alarme (notice d'exploitation) : d'après le libellé de l'alarme et l'action automatique
+  function queFaire(alarme, action = '') {
+    const t = `${alarme} ${action}`.toLowerCase();
+    if (/sécurité|coupure câblée|gaz|arrêt d'urgence|manque d'eau/.test(t)) return 'Ne pas réarmer avant d\'avoir trouvé la cause ; mettre en sécurité, prévenir le mainteneur (et les secours si odeur de gaz).';
+    if (/antigel/.test(t)) return 'Vérifier la production de chaleur, la vanne et la pompe de la batterie ; réarmer sur site une fois la batterie en température.';
+    if (/incendie|ssi/.test(t)) return 'Laisser le scénario SSI se dérouler ; réarmement après levée de l\'alarme incendie et accord du responsable sécurité.';
+    if (/générateur|chaudière|cascade/.test(t)) return 'Lire le code défaut sur le générateur, réarmer une fois ; si le défaut revient, appeler le mainteneur.';
+    if (/pompe|secours/.test(t)) return 'Vérifier le disjoncteur moteur et le relais thermique, réarmer ; contrôler la pompe (bruit, blocage) ; prévenir le mainteneur si la pompe de secours est aussi en défaut.';
+    if (/condensat/.test(t)) return 'Vérifier la pompe de relevage et l\'évacuation des condensats du terminal ; nettoyer le bac.';
+    if (/filtre|encrass/.test(t)) return 'Remplacer les filtres de la CTA (type et dimensions sur la fiche de maintenance).';
+    if (/ventilateur|cta/.test(t)) return 'Vérifier le variateur ou le disjoncteur du ventilateur et la courroie ; réarmer ; contrôler les registres.';
+    if (/ecs|bouclage/.test(t)) return 'Vérifier la production ECS et la pompe de bouclage ; prévenir l\'exploitant (risque légionelle) et lancer une montée en température.';
+    if (/ambiance|départ|soufflage|hors plage|trop bas|trop haut/.test(t)) return 'Vérifier le planning, les consignes et la vanne de régulation ; comparer la mesure avec un thermomètre de contrôle.';
+    return 'Lire le défaut sur l\'équipement, réarmer une fois ; prévenir le mainteneur s\'il revient.';
+  }
+
   /* ---------- Cahier de programmation de l'automate (Wit ou autre) ---------- */
   // Pour chaque armoire en automate : entrées / sorties, boucles de régulation (mesure, sortie, consigne, réglages par
   // défaut), commandes des moteurs (retour de marche, défaut, permutation des doubles), horloges, consignes et paramètres,
@@ -454,6 +500,6 @@ const Gtb = (() => {
     });
   }
 
-  return { cahier, ENTETES_CAHIER, logique, aValider, actionAlarme, nomPoint, nomsPoints, etats, installationPoint, synoptique, exporter, bacs, echange, ENTETES_ECHANGE, csv, comptages, essais, essai, ENTETES_ESSAIS, sequences };
+  return { etiquettes, ede, queFaire, TYPE_BACNET, UNITE_BACNET, cahier, ENTETES_CAHIER, logique, aValider, actionAlarme, nomPoint, nomsPoints, etats, installationPoint, synoptique, exporter, bacs, echange, ENTETES_ECHANGE, csv, comptages, essais, essai, ENTETES_ESSAIS, sequences };
 })();
 if (typeof module !== 'undefined') module.exports = Gtb;

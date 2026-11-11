@@ -45,7 +45,7 @@ test('consignes du projet : production, seuils, change-over, relance, plannings,
   // 9. Vitesses
   assert.deepStrictEqual(r.vitesses[0], { zone: 'Salle', chaud: 21, froid: 24, decalage: 2, ouverture: 0.5, pv: 1, mv: 2 });
   // 10. Cohérence
-  assert.deepStrictEqual(r.alertes.filter(a => a.niveau === 'attention').map(a => a.texte), ['Priorité ECS : 70 °C demandés, au-dessus du départ de la production (45 °C).']);
+  assert.deepStrictEqual(r.alertes.filter(a => a.niveau === 'attention').map(a => a.texte), ['Priorité ECS : 70 °C demandés, au-dessus du départ de la production (45 °C).', 'Zone Salle : climatisation à 24 °C ; le code de l\'énergie (art. R.241-30) interdit de refroidir en dessous de 26 °C (hors locaux à exigences particulières).']);
   const k = C.calculer({ installations: inst, zones: [{ zone: 'Hall', confort: 22, clim: 21, inocc: 23, horsGel: 8 }], lois: [{ circuit: 'Plancher', base: 55 }] });
   const t = k.alertes.map(a => a.texte).join(' ');
   assert.match(t, /rafraîchissement .* ≤ consigne de chauffage/); assert.match(t, /inoccupation ≥ consigne de confort/); assert.match(t, /plancher Plancher : départ 55 °C > 50 °C/); assert.match(t, /au-dessus du départ de la production/);

@@ -127,6 +127,12 @@ const PointsMes = (() => {
           ((v.regulation || {}).installations || []).forEach(x => out.push({ ...base, nature: 'mes', type: 'gtb', cle: `regul|${x.noteId}`, titre: `Régulation — ${txt(x.titre, 80)} (${(t => t.charAt(0).toLowerCase() + t.slice(1))((RG.TECHNOS[x.techno] || RG.TECHNOS.automate)[0])})`,
             detail: `${(x.params || []).length} paramètre(s) à régler et vérifier`, controles: (RG.CONTROLES[x.techno] || RG.CONTROLES.automate).slice(),
             attendus: nettoie((x.params || []).map(q => att(q.libelle, q.valeur, q.unite, 2))) }));
+          // Réglages du cahier de paramétrage (valeur attendue / valeur réglée) et essais des séquences
+          const CP = typeof ConsignesProjet !== 'undefined' ? ConsignesProjet : require('./consignes-projet');
+          if (v.consignesProjet) out.push({ ...base, nature: 'mes', type: 'gtb', cle: 'reglages', titre: `Réglages de la régulation — valeurs du cahier de paramétrage (${titre})`,
+            detail: 'Chaque consigne, loi d\'eau, seuil et pression : valeur attendue (cahier) face à la valeur réglée dans l\'automate', controles: CP.controlesReglage(v.consignesProjet).slice(0, 80), attendus: CP.attendusReglage(v.consignesProjet).slice(0, 150) });
+          const seq = CP.essaisSequences(v.cahierProg || []);
+          if (seq.length) out.push({ ...base, nature: 'mes', type: 'gtb', cle: 'sequences', titre: `Essais des séquences de fonctionnement (${titre})`, detail: 'Essais fonctionnels tirés de la logique pas à pas et des alarmes du cahier', controles: seq.map(t => txt(t, 200)), attendus: [] });
           break;
         }
         case 'desenfumage':

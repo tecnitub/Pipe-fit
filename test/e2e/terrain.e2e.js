@@ -112,6 +112,27 @@ test('Études : onglet « Programmation automate » (cahier Wit) du calcul des a
   assert.deepStrictEqual(erreurs, []);
 });
 
+test('Études : profil de bâtiment, EDE BACnet, analyse fonctionnelle, étiquettes, relevés de la GTB', { skip: sansPlaywright, timeout: 120000 }, async () => {
+  const { p, erreurs } = await ouvrir('etudes.html');
+  await p.evaluate(() => { const et = S.etudes.find(x => !x.modele && x.notes.some(n => n.type === 'elec')); const n = et.notes.find(x => x.type === 'elec'); n.entrees.marqueAutomate = 'wit'; n.entrees.profilBatiment = 'enseignement'; n.entrees.armoires.forEach(a => { a.techno = 'automate'; }); enregistrer(et); location.hash = `#/etude/${et.id}/${n.id}`; });
+  await p.waitForTimeout(2000);
+  await p.click('#elec-profil'); await p.waitForTimeout(800);
+  assert.deepStrictEqual(await p.evaluate(() => S.etudes.find(x => !x.modele && x.notes.some(n => n.type === 'elec')).notes.find(x => x.type === 'elec').entrees.consignesZones.map(z => z.zone)), ['Salles de cours', 'Restauration', 'Gymnase']);
+  const recus = []; p.on('download', d => recus.push(d));
+  const dl = async (sel, n = 1) => { const avant = recus.length; await p.click(sel); for (let k = 0; k < 60 && recus.length < avant + n; k++) await p.waitForTimeout(250); const out = []; for (const d of recus.slice(avant, avant + n)) out.push([d.suggestedFilename(), fs.readFileSync(await d.path())]); return out; };
+  const ede = await dl('#elec-ede', 2);
+  assert.ok(ede.some(([nom, b]) => /^EDE_.*\.csv$/.test(nom) && /VERSION_OF_LAYOUT;2\.3/.test(b.toString())) && ede.some(([nom]) => /_StateTexts\.csv$/.test(nom)));
+  const [[nomAf, af]] = await dl('#elec-af'); assert.ok(/^Analyse_fonctionnelle_.*\.docx$/.test(nomAf) && af.slice(0, 2).toString() === 'PK');
+  await p.click('#elec-etiq'); await p.waitForTimeout(400);
+  const [[nomEt, pdf]] = await dl('#et-pdf'); assert.ok(/\.pdf$/.test(nomEt) && pdf.slice(0, 5).toString() === '%PDF-');
+  await p.click('#et-fermer');
+  const csv = ['Date;T ext;Départ Radiateurs;Ambiance', ...Array.from({ length: 8 }, (_, i) => `2026-01-0${i + 1} 08:00;${-4 + i};55;18`)].join('\n');
+  const [fc] = await Promise.all([p.waitForEvent('filechooser'), p.click('#elec-releves')]);
+  await fc.setFiles({ name: 'releves.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) }); await p.waitForTimeout(1000);
+  assert.match(await p.textContent('.modal, #modal, body'), /Relevés de la GTB : 8 mesure/);
+  assert.deepStrictEqual(erreurs, []);
+});
+
 test('CRM : bibliothèque au format du modèle d\'export (marge, catégories, unités, variantes fournisseur)', { skip: sansPlaywright, timeout: 120000 }, async () => {
   const { p, erreurs } = await ouvrir('pipefit-crm-demo.html');
   const X = require(path.join(racine, 'public/js/xlsx'));

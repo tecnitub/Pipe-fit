@@ -863,7 +863,7 @@ Vues.note = {
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-pompes" title="Une ligne par circuit pour saisir la pompe retenue et sa courbe (ou la lire sur la fiche du fabricant)">⚙️ Pompes retenues par circuit</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-rob" title="Pour chaque circuit sans robinetterie : vannes d\'isolement, vanne d\'équilibrage, filtre, manchettes, thermomètres ; à compléter avec les Kv des fiches">🔩 Robinetterie type par circuit</button><button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par circuit (repères, DN, fabricant, référence, fiche, ΔP) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
-        ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button><button class="secondaire" id="elec-csv">🔗 Table d\'échange GTB (CSV)</button><button class="secondaire" id="elec-pressions">📏 Reprendre les pressions des CTA (mises en service du chantier)</button><button class="secondaire" id="elec-cahier-docx">📄 Cahier de paramétrage (Word)</button><button class="secondaire" id="elec-cahier-xlsx">📑 Cahier (Excel, un onglet par rubrique)</button>' : ''}
+        ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button><button class="secondaire" id="elec-csv">🔗 Table d\'échange GTB (CSV)</button><button class="secondaire" id="elec-profil">🏢 Appliquer le profil de bâtiment</button><button class="secondaire" id="elec-af">📄 Analyse fonctionnelle (Word)</button><button class="secondaire" id="elec-ede">🔗 Fichier EDE BACnet (intégrateur GTB)</button><button class="secondaire" id="elec-etiq">🏷️ Étiquettes de repérage</button><button class="secondaire" id="elec-devis-reg">💶 Chiffrer la régulation (devis Pipe-Fit)</button><button class="secondaire" id="elec-releves">📈 Analyser des relevés de la GTB</button><button class="secondaire" id="elec-pressions">📏 Reprendre les pressions des CTA (mises en service du chantier)</button><button class="secondaire" id="elec-cahier-docx">📄 Cahier de paramétrage (Word)</button><button class="secondaire" id="elec-cahier-xlsx">📑 Cahier (Excel, un onglet par rubrique)</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="num-bouches" title="Numéro unique de chaque bouche : compléter les bouches sans repère ou en double, ou tout renuméroter (par zone et pièce, ou suivant les branches) quand l\'étude est au point">🔢 Numéroter les bouches</button>' : ''}
         ${n.type === 'terminaux' ? '<button class="secondaire" id="num-terminaux" title="Donne un repère unique à chaque terminal sans repère ou en double (CA-01, VC-02…) : une branche par terminal dans le réseau arborescent, une fiche de mise en service par terminal">🔢 Numéroter les terminaux</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="aero-vitesses" title="Même vitesse pour toutes les branches (ou les principales, ou les terminales) : les diamètres des gaines sont recalculés">💨 Changer toutes les vitesses</button>' : ''}
@@ -924,6 +924,97 @@ Vues.note = {
     // Cahier de paramétrage de l'automate : document Word modifiable, ou classeur avec un onglet par rubrique
     const cahierDe = () => { const r = Liens.calculer(et, n), c = (r.valeurs || {}).cahierProg || []; if (!c.length) toast('Aucune armoire en automate programmable : pas de cahier de paramétrage.', 6000); return { c, marque: (r.valeurs || {}).marqueAutomate || 'automate' }; };
     const nomCahier = ext => `Cahier_parametrage_${sansAccents(et.objet).slice(0, 40)}_Ind${sansAccents(et.indice) || 'A'}.${ext}`;
+    // Profil de bâtiment : zones, consignes et horaires types
+    const bp = root.querySelector('#elec-profil');
+    if (bp) bp.onclick = () => {
+      const p = ConsignesProjet.profil(n.entrees.profilBatiment);
+      if (!p) return toast('Choisissez d\'abord le type de bâtiment (rubrique « Consignes du projet »).', 6000);
+      n.entrees.consignesZones = JSON.parse(JSON.stringify(p.zones)); enregistrer(et); App.render();
+      toast(`Profil « ${p.nom} » appliqué : ${p.zones.length} zone(s) avec consignes et horaires types, à ajuster.`, 6000);
+    };
+    // Fichier EDE (BACnet) pour l'intégrateur GTB : objets + textes d'états
+    const be = root.querySelector('#elec-ede');
+    if (be) be.onclick = async () => {
+      const r = Liens.calculer(et, n), f = ((r.valeurs || {}).feuilles || []).find(x => /^Table d'échange/.test(x.name));
+      if (!f || !f.lignes.length) return toast('Aucun point dans la table d\'échange.', 5000);
+      const d = Gtb.ede(f.lignes, { projet: et.objet || 'Projet', auteur: (S.me || {}).nom || 'Pipe-Fit', date: aujourdhui() });
+      const base = `EDE_${sansAccents(et.objet).slice(0, 40)}_Ind${sansAccents(et.indice) || 'A'}`, enc = t => new TextEncoder().encode(`﻿${t}`);
+      try {
+        await telecharger(`${base}.csv`, enc(d.ede), 'text/csv');
+        await telecharger(`${base}_StateTexts.csv`, enc(d.etats), 'text/csv');
+        toast(`Fichier EDE enregistré : ${d.objets} objet(s), ${d.devices} automate(s), avec le fichier des textes d'états.`, 6000);
+      } catch (er) { toast(er.message, 6000); }
+    };
+    // Analyse fonctionnelle (Word) : consignes, plannings, fonctionnement, alarmes et conduite à tenir
+    const ba = root.querySelector('#elec-af');
+    if (ba) ba.onclick = () => {
+      const r = Liens.calculer(et, n), v = r.valeurs || {}, blocsReg = ((r.onglets || []).find(o => o.titre === 'Régulation') || {}).blocs || [];
+      const afs = blocsReg.filter(b => /^Analyse fonctionnelle — /.test(b.titre || '') && b.liste).map(b => ({ titre: b.titre.replace(/^Analyse fonctionnelle — /, ''), liste: b.liste }));
+      const octets = Docx.build(Docx.analyseFonctionnelle({ cahier: v.cahierProg || [], projet: v.consignesProjet, afs, queFaire: Gtb.queFaire, affaire: [et.objet, et.client].filter(Boolean).join(' — '), indice: et.indice, date: et.date }));
+      Promise.resolve(telecharger(`Analyse_fonctionnelle_${sansAccents(et.objet).slice(0, 40)}_Ind${sansAccents(et.indice) || 'A'}.docx`, octets, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'))
+        .then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : 'Analyse fonctionnelle enregistrée (Word)')).catch(er => toast(er.message, 6000));
+    };
+    // Étiquettes de repérage : planches autocollantes (PDF) ou liste pour étiqueteuse (Excel)
+    const bt = root.querySelector('#elec-etiq');
+    if (bt) bt.onclick = () => {
+      const r = Liens.calculer(et, n), v = r.valeurs || {}, l = Gtb.etiquettes(v.cahierProg || [], v.feuilles || []);
+      const CAT = [['points', 'Entrées / sorties (nom du point, adresse)'], ['bornes', 'Bornier (bornes, repère)'], ['cables', 'Câbles (tenant → aboutissant)'], ['facade', 'Façade (départs)']];
+      const box = Modal.open(`<h2>🏷️ Étiquettes de repérage</h2>
+        ${CAT.map(([k, t]) => `<label class="ligne-case"><input type="checkbox" data-cat="${k}" ${l[k].length ? 'checked' : 'disabled'}> ${t} — ${l[k].length}</label>`).join('')}
+        <label>Planche <select id="et-modele">${Planches.MODELES.map(m => `<option value="${m[0]}" ${m[0] === 'L4732' ? 'selected' : ''}>${esc(m[1])}</option>`).join('')}</select></label>
+        <div class="actions"><button class="secondaire" id="et-fermer">Fermer</button><button class="secondaire" id="et-xlsx">Liste pour étiqueteuse (Excel)</button><button id="et-pdf">Planches (PDF)</button></div>`);
+      const choix = () => [...box.querySelectorAll('[data-cat]:checked')].flatMap(c => l[c.dataset.cat].map(x => ({ ...x, cat: CAT.find(y => y[0] === c.dataset.cat)[1] })));
+      box.querySelector('#et-fermer').onclick = () => Modal.close();
+      const nom = ext => `Etiquettes_${sansAccents(et.objet).slice(0, 40)}.${ext}`;
+      box.querySelector('#et-pdf').onclick = () => {
+        const items = choix(); if (!items.length) return toast('Rien à imprimer.');
+        let ctx; const mesure = (t, taille, gras) => { ctx = ctx || document.createElement('canvas').getContext('2d'); ctx.font = `${gras ? 'bold ' : ''}${taille}px Helvetica, Arial, sans-serif`; return ctx.measureText(t).width; };
+        const p = Planches.pdf(items.map(x => ({ titre: x.titre, sous: x.sous })), { modele: box.querySelector('#et-modele').value, mesure });
+        Promise.resolve(telecharger(nom('pdf'), p.octets, 'application/pdf')).then(() => toast(`${items.length} étiquette(s) sur ${p.pages} planche(s).`)).catch(er => toast(er.message, 6000));
+      };
+      box.querySelector('#et-xlsx').onclick = () => {
+        const items = choix(); if (!items.length) return toast('Rien à exporter.');
+        const H = v2 => ({ v: v2, s: 'head' });
+        Promise.resolve(telecharger(nom('xlsx'), XLSX.build([{ name: 'Etiquettes', cols: [30, 22, 50], rows: [['Catégorie', 'Texte', 'Complément'].map(H), ...items.map(x => [x.cat, x.titre, x.sous])] }]), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'))
+          .then(() => toast(`${items.length} étiquette(s) exportée(s).`)).catch(er => toast(er.message, 6000));
+      };
+    };
+    // Chiffrage de la régulation : devis brouillon dans Pipe-Fit (matériel automate + heures)
+    const bd2 = root.querySelector('#elec-devis-reg');
+    if (bd2) bd2.onclick = async () => {
+      if (!et.affaireId && !et.clientId) return toast('Rattachez l\'étude à un chantier ou à un client de Pipe-Fit pour créer le devis.', 6000);
+      const r = Liens.calculer(et, n), v = r.valeurs || {}, nom = (v.feuilles || []).filter(x => /^Nomenclature /.test(x.name)).flatMap(x => x.lignes);
+      const boucles = (v.cahierProg || []).reduce((s, c) => s + ((c.sections.find(x => x.titre === 'Boucles de régulation') || { lignes: [] }).lignes.length), 0);
+      const ch = ConsignesProjet.chiffrage({ pts: v.listePoints || [], nomenclature: nom, boucles, installations: ((v.regulation || {}).installations || []).length || 1 });
+      const mos = (S.pf || {}).mainoeuvre || [], mo = mos.find(m => /automat|régul|regul|électr|electr/i.test(m.libelle || '')) || mos[0];
+      const lignes = [{ type: 'chapitre', titre: 'Régulation et automatisme' },
+        ...ch.materiel.map(m => ({ type: 'ouvrage', libre: true, designation: m.designation, unite: 'u', qte: m.qte, composants: [{ type: 'f', articleId: '', designation: m.designation, unite: 'u', qte: 1, pu: 0, cout: 0, poids: 0 }] })),
+        ...ch.heures.map(([des, h]) => ({ type: 'ouvrage', designation: des, unite: 'forfait', qte: 1, ...(mo ? { composants: [{ type: 'mo', moId: mo.id, libelle: mo.libelle, heures: h, taux: Notes.num(mo.tauxVente), cout: Notes.num(mo.tauxCout) }] } : { libre: true, composants: [{ type: 'f', articleId: '', designation: `${des} (${h} h)`, unite: 'forfait', qte: 1, pu: 0, cout: 0, poids: 0 }] }) }))];
+      if (!(await confirmer(`Créer un devis brouillon « Régulation » dans Pipe-Fit : ${ch.materiel.length} ligne(s) de matériel (prix à saisir) et ${ch.heures.reduce((s, x) => s + x[1], 0)} h (programmation, essais point à point, mise en service) ?`))) return;
+      try {
+        const d = await api('POST', '/api/pf/devis', { affaireId: et.affaireId, clientId: et.clientId || '', etudeId: et.id, objet: `${et.objet} — régulation et automatisme`, lignes });
+        et.devisPF = [...(et.devisPF || []), { id: d.id, numero: d.numero, date: aujourdhui() }]; enregistrer(et);
+        toast(`Devis ${d.numero || ''} créé en brouillon dans Pipe-Fit.`, 6000);
+      } catch (er) { toast(er.message, 7000); }
+    };
+    // Suivi après réception : relevés de la GTB (CSV / Excel) comparés aux lois d'eau et aux consignes
+    const br = root.querySelector('#elec-releves');
+    if (br) br.onclick = () => {
+      const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.csv,.xlsx';
+      inp.onchange = async () => {
+        const fi = inp.files[0]; if (!fi) return;
+        let rows;
+        try { const buf = await fi.arrayBuffer(), fs = /\.xlsx$/i.test(fi.name) ? await XLSX.read(buf) : XLSX.readCSV(buf); rows = fs.sort((a, b) => b.rows.length - a.rows.length)[0].rows; } catch (er) { return toast(`Fichier illisible : ${er.message}`, 6000); }
+        const pj = (Liens.calculer(et, n).valeurs || {}).consignesProjet, a = pj && ConsignesProjet.analyserReleves(rows, pj);
+        if (!a || a.erreur) return toast((a && a.erreur) || 'Consignes du projet indisponibles.', 7000);
+        const tab = (e, l) => `<table><tr>${e.map(h => `<th>${esc(h)}</th>`).join('')}</tr>${l.map(x => `<tr>${x.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</table>`;
+        Modal.open(`<h2>📈 Relevés de la GTB : ${a.mesures} mesure(s)</h2>
+          ${a.circuits.length ? `<h3>Départs des circuits face à la loi d'eau</h3>${tab(['Circuit', 'Mesures', 'Écart moyen (K)', 'Proposition'], a.circuits.map(c => [c.circuit, c.mesures, String(c.ecartMoyen).replace('.', ','), c.proposition]))}` : '<p>Aucune colonne de départ reconnue (en-tête avec le nom du circuit).</p>'}
+          ${a.zones.length ? `<h3>Ambiances</h3>${tab(['Zone', 'Jours', 'Jours hors plage', 'Proposition'], a.zones.map(z => [z.zone, z.jours, z.joursHors, z.proposition]))}` : '<p>Aucune colonne d\'ambiance reconnue.</p>'}
+          <div class="actions"><button onclick="Modal.close()">Fermer</button></div>`);
+      };
+      inp.click();
+    };
     // Consignes de pression des CTA : relevées à la mise en service (PV du chantier dans Pipe-Fit)
     const prCta = root.querySelector('#elec-pressions');
     if (prCta) prCta.onclick = async () => {
