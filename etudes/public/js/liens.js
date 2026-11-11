@@ -524,7 +524,21 @@ const Liens = ((N, Sc) => {
     out.forEach(x => { x.calcul = x.robinet === undefined || OC.includes(x.type); });
     return out;
   }
-  return { fichesInstallation, resoudre, calculer, notesDepuisSchema, detacher, description, reseauxDeCta, circuitDeAnnexe, nf,
+  // Ce que changerait, calcul par calcul, l'application de données d'étude (climat, type de bâtiment…) :
+  // [{ noteId, note, champ, libelle, avant, apres }] — entrées résolues avant / après, champs simples seulement
+  function changementsEtude(etude, modifs) {
+    const apres = { ...etude, ...modifs }, out = [], val = v => (v === undefined || v === null ? '' : typeof v === 'object' ? null : String(v));
+    (etude.notes || []).forEach(n => {
+      let a, b;
+      try { a = resoudre(etude, n).entrees; b = resoudre(apres, n).entrees; } catch (e) { return; }
+      const champs = ((N.TYPES[n.type] || {}).champs || []).filter(c => c.k && c.t !== 'lignes');
+      champs.forEach(c => { const x = val(a[c.k]), y = val(b[c.k]); if (x === null || y === null || x === y) return;
+        const lib = o => { const opts = typeof c.o === 'function' ? (() => { try { return c.o(b, apres); } catch (e) { return []; } })() : c.o; const m = (opts || []).find(([k]) => String(k) === o); return m ? m[1] : o === '' ? '—' : `${o}${c.u ? ` ${c.u}` : ''}`; };
+        out.push({ noteId: n.id, note: n.titre || n.type, champ: c.k, libelle: c.l, avant: lib(x), apres: lib(y) }); });
+    });
+    return out;
+  }
+  return { fichesInstallation, resoudre, calculer, changementsEtude, notesDepuisSchema, detacher, description, reseauxDeCta, circuitDeAnnexe, nf,
     climatEtude, climatDeVille, TYPES_BATIMENT, CHAMPS_ETUDE, champEtude, typeBatimentEtude, gtbPid, COMBUSTION, optPid, optCircuits, optTroncons };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'), typeof Schema !== 'undefined' ? Schema : require('./schema'));
 if (typeof module !== 'undefined') module.exports = Liens;

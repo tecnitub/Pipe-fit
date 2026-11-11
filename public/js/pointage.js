@@ -1,6 +1,6 @@
 // Pointage mobile (seul ou en équipe : un chef d'équipe pointe ses compagnons et intérimaires), paniers,
 // notes de frais avec photo du justificatif, validation par le chargé d'affaires, synthèse RH et récap Excel.
-const TACHES = ['Préfabrication', 'Soudure', 'Montage', 'Manutention', 'Contrôles / essais', 'Déplacement', 'Études', 'Autre'];
+const TACHES = ['Préfabrication', 'Soudure', 'Montage', 'Manutention', 'Contrôles / essais', 'Programmation automate', 'Essais point à point', 'Mise en service / séquences', 'Déplacement', 'Études', 'Autre'];
 const CATEGORIES_FRAIS = [['Repas', 10], ['Carburant', 20], ['Péage', 20], ['Parking', 20], ['Hôtel', 10], ['Petites fournitures', 20], ['Autre', 20]];
 const nowHHMM = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 const toMin = h => { const [a, b] = String(h || '0:0').split(':').map(Number); return a * 60 + (b || 0); };

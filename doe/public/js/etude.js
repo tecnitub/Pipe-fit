@@ -208,6 +208,7 @@ function reporterMateriel(doe) {
     if (!m) return;
     if (m.valide && (!e.marque || e.marqueEtude)) { mettre(e, 'marque', m.fabricant); e.marqueEtude = true; }
     if (m.valide && (!e.reference || e.referenceEtude)) { mettre(e, 'reference', m.reference); e.referenceEtude = true; }
+    if (m.valide && e.aConfirmer) { delete e.aConfirmer; n++; }
     mettre(e, 'pose', m.poseLe); mettre(e, 'miseEnService', m.mesLe);
     const photos = (m.photos || []).map(p => p.fichierId);
     if (photos.length && JSON.stringify(photos) !== JSON.stringify(e.photosPlaque || [])) { e.photosPlaque = photos; n++; }
@@ -222,7 +223,9 @@ function ajouterEquipementsBE(doe) {
   const nouveaux = equipementsBE(doe).filter(x => !x.deja);
   nouveaux.forEach(({ et, e }) => {
     const t = CctpLecture.typeDe(e.designation) || [null, '3.7', ''];
-    doe.equipements.push({ id: uidD(), famille: t[1], repere: '', designation: e.designation, marque: '', reference: '', serie: '', quantite: e.qte > 1 ? String(e.qte) : '', localisation: '', champs: [],
+    // Fabricant et référence choisis par l'étude repris tout de suite, « à confirmer » jusqu'à la validation du client
+    const fab = String(e.fabricant || '').trim(), ref = String(e.reference || '').trim();
+    doe.equipements.push({ id: uidD(), famille: t[1], repere: '', designation: e.designation, marque: fab, reference: ref, ...(fab ? { marqueEtude: true } : {}), ...(ref ? { referenceEtude: true } : {}), ...(fab || ref ? { aConfirmer: true } : {}), serie: '', quantite: e.qte > 1 ? String(e.qte) : '', localisation: '', champs: [],
       garantie: '', sav: '', refCctp: '', prescrit: `Note de calcul « ${(et.resume || {}).objet || ''} » indice ${(et.resume || {}).indice || ''}`.trim(), caract: '', origines: [cleBE(et, e)] });
     if (!doe.familles.includes(t[1])) doe.familles.push(t[1]);
   });

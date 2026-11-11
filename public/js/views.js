@@ -147,6 +147,15 @@ Views.chantiers.bind = (root, params, query) => {
   if (ac) ac.onclick = () => archiver('affaires', Store.all('affaires').filter(a => !a.archive && a.statut === 'Clos' && (!f.client || a.clientId === f.client) && (!f.charge || a.chargeId === f.charge)));
 };
 
+// Budget d'heures par poste (devis acceptés face aux pointages) ; alerte à 80 % quand le PV du poste n'est pas signé
+function budgetHeuresHtml(a) {
+  if (typeof BudgetHeures === 'undefined') return '';
+  const l = BudgetHeures.calculer({ devis: Store.all('devis').filter(d => d.affaireId === a.id && d.statut === 'Accepté'), temps: Store.all('temps').filter(t => t.affaireId === a.id), mises: Store.all('misesEnService').filter(m => m.affaireId === a.id) });
+  if (!l.some(x => x.cle !== 'autres')) return '';
+  return `<h2>Heures par poste${l.some(x => x.alerte) ? ' <span class="badge b-bad">alerte</span>' : ''}</h2><div class="table-wrap"><table class="budget-heures"><tr><th>Poste</th><th class="num">Chiffré</th><th class="num">Pointé</th><th>Consommé</th><th>PV</th></tr>
+    ${l.map(x => `<tr class="${x.alerte ? 'rp-ko' : ''}"><td>${esc(x.libelle)}${x.alerte ? ` <span class="badge b-bad" title="Plus de ${Math.round(BudgetHeures.SEUIL * 100)} % des heures consommées, PV pas encore signé">${x.ratio >= 1 ? 'budget dépassé' : '≥ 80 %'}, PV à faire</span>` : x.depasse ? ' <span class="badge b-warn">dépassé</span>' : ''}</td><td class="num">${fmt(x.chiffre, 1)} h</td><td class="num">${fmt(x.pointe, 1)} h</td><td>${gauge(x.pointe, x.chiffre || x.pointe)}</td><td class="small">${esc(x.pv)}</td></tr>`).join('')}</table></div>
+  <p class="muted small">Heures classées par poste d'après la désignation des ouvrages du devis et la tâche du pointage (${BudgetHeures.TACHES_REGULATION.map(esc).join(', ')}).</p>`;
+}
 Views.chantier = params => {
   const a = Store.get('affaires', params[0]);
   if (!a) return '<p>Chantier introuvable. <a href="#/chantiers">Retour aux chantiers</a></p>';
@@ -199,6 +208,7 @@ Views.chantier = params => {
     <div class="card"><div class="label">Marge à terminaison</div><div class="value ${signClass(s.margeFin)}">${eur(s.margeFin)}</div><div class="sub">${marginBadge(s.margeFinPct)} ${s.termine ? 'réelle' : 'projetée'}</div></div>
   </div>
 
+  ${budgetHeuresHtml(a)}
   <h2>Pilotage : budget du devis face au réel</h2>
   <div class="table-wrap"><table>
     <tr><th>Poste</th><th class="num">Vendu</th><th class="num">Budget (coût)</th><th class="num">Réel à date</th><th>Consommé</th><th class="num">${s.termine ? 'Final' : 'Projection'}</th><th class="num">Écart</th></tr>

@@ -89,7 +89,7 @@ function manquesDOE(doe) {
   verif('s7', doe.notices.length > 0, 'Aucune notice d\'exploitation');
   doe.formation.forEach(f => verif('s8', !vide(f[3]), `Formation « ${f[0]} » : formateur`));
   (doe.controles['8.2'] || TRAME.controles['8.2'].items.map(l => ({ libelle: l }))).forEach(it => verif('s8', it.present || (it.fichiers || []).length, `8.2 ${it.libelle}`));
-  doe.equipements.filter(e => doe.familles.includes(e.famille)).forEach(e => { verif('s9', !vide(e.garantie), `${e.repere || e.designation} : durée de garantie`); verif('s9', !vide(e.sav), `${e.repere || e.designation} : contact SAV`); });
+  doe.equipements.filter(e => doe.familles.includes(e.famille)).forEach(e => { verif('s9', !vide(e.garantie), `${e.repere || e.designation} : durée de garantie`); verif('s9', !vide(e.sav), `${e.repere || e.designation} : contact SAV`); verif('s9', !e.aConfirmer, `${e.repere || e.designation} : marque / référence de l'étude à confirmer (validation du client ou commande)`); });
   verif('signatures', !vide(doe.signatures.date), 'Date de remise (« Fait à …, le … »)');
   if (typeof manquesEtude === 'function') manquesEtude(doe, verif);
   return { manques: m, total: m.length + ok.length, pct: Math.round(ok.length / Math.max(1, m.length + ok.length) * 100) };
@@ -301,7 +301,7 @@ SECTIONS.s3 = {
     <div class="actions-ligne"><button class="secondaire" id="import-pf">Importer le matériel du chantier (Pipe-Fit)</button><button class="secondaire" id="fiches-ajout">+ Joindre des fiches techniques</button><button class="secondaire" id="fiches-biblio" title="Fiche de chaque équipement (marque + référence) dans la bibliothèque Pipe-Fit, version en vigueur à la date de pose">📄 Fiches de la bibliothèque Pipe-Fit</button></div>
     ${doe.familles.slice().sort().map(fid => { const f = familleDe(fid), eqs = doe.equipements.map((e, i) => ({ e, i })).filter(x => x.e.famille === fid), fiches = doe.fiches.map((x, i) => ({ x, i })).filter(y => y.x.famille === fid);
       return `<div class="famille"><h3>${fid} ${esc(f.titre)}</h3>
-        ${eqs.map(({ e, i }) => `<details class="equipement" ${vide(e.repere) || vide(e.serie) ? 'open' : ''}><summary><strong>${esc(e.repere || 'Repère ?')}</strong> ${esc(e.designation || '')} ${esc([e.marque, e.reference].filter(Boolean).join(' '))}${e.quantite ? ` <span class="muted">× ${esc(e.quantite)}</span>` : ''}${['repere', 'marque', 'reference', 'serie'].some(k => vide(e[k])) ? ' <span class="badge">à compléter</span>' : ''}</summary>
+        ${eqs.map(({ e, i }) => `<details class="equipement" ${vide(e.repere) || vide(e.serie) ? 'open' : ''}><summary><strong>${esc(e.repere || 'Repère ?')}</strong> ${esc(e.designation || '')} ${esc([e.marque, e.reference].filter(Boolean).join(' '))}${e.aConfirmer ? ' <span class="badge" title="Matériel prévu par l\'étude, pas encore validé par le client">à confirmer</span>' : ''}${e.quantite ? ` <span class="muted">× ${esc(e.quantite)}</span>` : ''}${['repere', 'marque', 'reference', 'serie'].some(k => vide(e[k])) ? ' <span class="badge">à compléter</span>' : ''}</summary>
           <div class="grille-champs">${champ('Repère', `equipements.${i}.repere`, e.repere)}${champ('Désignation', `equipements.${i}.designation`, e.designation)}${champ('Marque', `equipements.${i}.marque`, e.marque)}${champ('Référence', `equipements.${i}.reference`, e.reference)}
             ${champ('N° de série', `equipements.${i}.serie`, e.serie)}${champ('Quantité', `equipements.${i}.quantite`, e.quantite, { ph: '' })}${champ('Localisation', `equipements.${i}.localisation`, e.localisation)}
             ${f.champs.map((c, j) => champ(c, `equipements.${i}.champs.${j}`, (e.champs || [])[j])).join('')}
@@ -376,7 +376,7 @@ function blocInstalle(doe) {
 }
 function bindInstalle(root, doe) {
   const r = () => installeDOE(doe);
-  const prendre = x => { const e = doe.equipements.find(y => y.id === x.id); if (!e || !x.ligne) return; e.reference = Installe.referenceCommandee(x.ligne, e.marque); e.designationCommandee = x.ligne.designation; e.referenceEtude = false; e.commande = Installe.commandeDe(x.ligne); };
+  const prendre = x => { const e = doe.equipements.find(y => y.id === x.id); if (!e || !x.ligne) return; e.reference = Installe.referenceCommandee(x.ligne, e.marque); delete e.aConfirmer; e.designationCommandee = x.ligne.designation; e.referenceEtude = false; e.commande = Installe.commandeDe(x.ligne); };
   root.querySelectorAll('[data-inst-ref]').forEach(btn => btn.onclick = () => { const x = r().resultats.find(y => y.id === btn.dataset.instRef); prendre(x); enregistrer(doe); App.render(); toast('Référence de la commande reprise : c\'est ce qui est installé'); });
   const tout = root.querySelector('#inst-tout');
   if (tout) tout.onclick = () => { const l = r().resultats.filter(x => ['reference-differente', 'a-completer'].includes(x.etat)); l.forEach(prendre); enregistrer(doe); App.render(); toast(`${l.length} référence(s) reprise(s) des commandes`); };

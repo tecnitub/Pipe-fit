@@ -378,6 +378,18 @@ Vues.chantier = {
 const optionsAffaires = sel => `<option value="">— Sans affaire —</option>${S.pf.affaires.filter(a => a.type !== 'horsDevis').slice().sort((x, y) => String(y.code || '').localeCompare(String(x.code || '')))
   .map(a => `<option value="${esc(a.id)}" ${a.id === sel ? 'selected' : ''}>${esc(libelleAffaire(a))}</option>`).join('')}`;
 const modeleDe = id => Modeles.INTEGRES.find(m => m.id === id) || S.etudes.find(x => x.modele && x.id === id);
+// Climat, type de bâtiment, neuf / existant de l'étude : ce qui change dans chaque calcul est montré avant d'appliquer
+function appliquerDonneesEtude(et, modifs) {
+  const ch = Liens.changementsEtude(et, modifs), emis = new Set((et.notes || []).filter(n => (n.emissions || []).length).map(n => n.id));
+  const valider = () => { Object.assign(et, modifs); enregistrer(et); Modal.close(); App.render(); toast(ch.length ? `${ch.length} valeur(s) mise(s) à jour dans ${new Set(ch.map(x => x.noteId)).size} calcul(s).` : 'Données de l\'étude enregistrées.', 6000); };
+  if (!ch.length) { Object.assign(et, modifs); enregistrer(et); return App.render(); }
+  const b = Modal.open(`<h2>Appliquer à toute l'étude</h2><p class="petit">${ch.length} valeur(s) changent dans ${new Set(ch.map(x => x.noteId)).size} calcul(s). Les calculs déjà émis devront être réémis.</p>
+    <div class="defile-x" style="max-height:50vh;overflow:auto"><table class="liste compact"><thead><tr><th>Calcul</th><th>Donnée</th><th>Avant</th><th>Après</th></tr></thead><tbody>
+    ${ch.map(x => `<tr><td>${esc(x.note)}${emis.has(x.noteId) ? ' <span class="badge">émis</span>' : ''}</td><td>${esc(x.libelle)}</td><td>${esc(x.avant)}</td><td><strong>${esc(x.apres)}</strong></td></tr>`).join('')}</tbody></table></div>
+    <div class="actions"><button class="secondaire" id="ad-x">Annuler</button><button id="ad-ok">Appliquer</button></div>`);
+  b.querySelector('#ad-x').onclick = () => { Modal.close(); App.render(); };
+  b.querySelector('#ad-ok').onclick = valider;
+}
 // Données de l'étude reprises du chantier choisi : objet (si vide), climat d'après la ville du site (si non défini)
 function reprendreChantier(et, a) {
   if (!a) return;
@@ -471,6 +483,7 @@ Vues.etude = {
         <label title="Températures extérieures de base reprises (verrouillées) dans les bilans, les CTA et les lois d'eau des schémas de principe">Climat du site<select data-e="climat">${optionsClimat(et, a)}</select></label>
         ${et.climat === 'perso' ? `<label>Température extérieure de base (hiver) (°C)<input data-e="Tbase" inputmode="decimal" value="${esc(et.Tbase ?? -7)}"></label><label>Température extérieure (été) (°C)<input data-e="Tete" inputmode="decimal" value="${esc(et.Tete ?? 32)}"></label><label>Humidité relative extérieure (été) (%)<input data-e="HRete" inputmode="decimal" value="${esc(et.HRete ?? 40)}"></label>` : ''}
         <label title="Valeur par défaut de l'usage des schémas de principe, du sanitaire, de l'évacuation, de l'objectif acoustique et du profil de régulation ; un choix fait dans un calcul reste">Type de bâtiment<select data-e="typeBatiment">${optionsTypeBatiment(et)}</select></label>
+        ${(() => { const sc = !et.climat && a ? Liens.climatDeVille(a.siteVille, a.siteCp) : '', st = !et.typeBatiment ? ConsignesProjet.detecterProfil(et.objet) : ''; return (sc || (st && Liens.TYPES_BATIMENT[st])) && (et.notes || []).length ? `<span><button type="button" class="secondaire petit" id="appliquer-sugg" title="Montre ce qui change dans chaque calcul avant d'appliquer">Appliquer ${[sc ? 'le climat' : '', st && Liens.TYPES_BATIMENT[st] ? 'le type de bâtiment' : ''].filter(Boolean).join(' et ')} proposés à toute l'étude</button></span>` : ''; })()}
         <label>Bâtiment neuf ou existant<select data-e="neuf"><option value="">Non précisé</option><option value="non" ${et.neuf === 'non' ? 'selected' : ''}>Existant</option><option value="oui" ${et.neuf === 'oui' ? 'selected' : ''}>Neuf (permis après le 21 juillet 2021)</option></select></label>
         <label class="large">Objet détaillé, documents de référence (CCTP, plans, indices)<textarea data-e="description" rows="3">${esc(et.description)}</textarea>
           ${a && referencesDocuments(et, a).length ? '<span><button type="button" class="secondaire petit" id="docs-chantier" title="Ajoute les références des documents du chantier dans Pipe-Fit (CCTP, plans… avec indice et date)">📎 Insérer les documents du chantier</button></span>' : ''}</label></div>
@@ -504,11 +517,15 @@ Vues.etude = {
     if (typeof lierParcours === 'function') lierParcours(root, et);
     const rg = root.querySelector('#registre');
     if (rg) rg.onclick = () => dialogueRegistre(et);
+    const ancienEtude = { climat: et.climat, typeBatiment: et.typeBatiment, neuf: et.neuf };
+    const sg = root.querySelector('#appliquer-sugg');
+    if (sg) sg.onclick = () => { const a = affaireDe(et.affaireId), m = {}; const sc = !et.climat && a ? Liens.climatDeVille(a.siteVille, a.siteCp) : '', st = !et.typeBatiment ? ConsignesProjet.detecterProfil(et.objet) : '';
+      if (sc) m.climat = sc; if (st && Liens.TYPES_BATIMENT[st]) m.typeBatiment = st; appliquerDonneesEtude(et, m); };
     root.querySelectorAll('[data-e]').forEach(el => {
       el.onchange = el.oninput = () => {
         et[el.dataset.e] = el.value;
         if (el.dataset.e === 'affaireId') { et.client = clientDe(affaireDe(el.value)) || et.client; reprendreChantier(et, affaireDe(el.value)); enregistrer(et); return App.render(); }
-        if (['climat', 'typeBatiment', 'neuf'].includes(el.dataset.e)) { enregistrer(et); return App.render(); }
+        if (['climat', 'typeBatiment', 'neuf'].includes(el.dataset.e)) { const v = el.value; et[el.dataset.e] = ancienEtude[el.dataset.e] ?? ''; return appliquerDonneesEtude(et, { [el.dataset.e]: v }); }
         if (el.dataset.e === 'clientId') { et.client = (S.pf.entreprises.find(e => e.id === el.value) || {}).nom || et.client; if (et.devisId && (S.pf.devis.find(d => d.id === et.devisId) || {}).clientId !== el.value) et.devisId = ''; enregistrer(et); return App.render(); }
         if (el.dataset.e === 'devisId') { enregistrer(et); return; }
         if (el.dataset.e === 'objet') root.querySelector('.titre-etude').textContent = el.value;

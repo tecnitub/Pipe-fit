@@ -24,7 +24,7 @@ function previsionTresorerie(auj = isoDate(new Date())) {
   // Situations proposées ou acceptées sans facture : facture à l'acceptation, réglée au délai de paiement
   Store.all('situations').filter(x => ['Proposée', 'Acceptée'].includes(x.statut) && !x.factureId).forEach(x => {
     const c = Calc.situation(x), base = x.statut === 'Proposée' ? addDays(new Date(`${x.date || auj}T12:00:00`), 10) : new Date(`${x.date || auj}T12:00:00`);
-    ajoute(isoDate(addDays(base < new Date() ? new Date() : base, num(s.delaiPaiement) || 45)), c.netAPayer, 'in', `Situation ${x.numero || ''} (${x.statut.toLowerCase()}) · ${affaireOf(x.affaireId).code || ''}`, `#/situations/${x.id}`, true);
+    ajoute(echeancePour(affaireOf(x.affaireId).clientId, isoDate(base < new Date() ? new Date() : base), num(s.delaiPaiement) || 45), c.netAPayer, 'in', `Situation ${x.numero || ''} (${x.statut.toLowerCase()}) · ${affaireOf(x.affaireId).code || ''}`, `#/situations/${x.id}`, true);
   });
   // Retenues de garantie libérables dans la période
   Store.all('affaires').forEach(a => {
@@ -38,7 +38,7 @@ function previsionTresorerie(auj = isoDate(new Date())) {
   const facturees = new Set(Store.all('achats').flatMap(x => (x.imputations || []).map(l => l.commandeId)).filter(Boolean));
   Store.all('commandes').filter(c => ['Envoyée', 'Réceptionnée', 'Livrée', 'Confirmée'].includes(c.statut) && !facturees.has(c.id)).forEach(c => {
     const ht = Calc.commande(c).total;
-    ajoute(isoDate(addDays(new Date(`${c.dateLivraison || c.date || auj}T12:00:00`), num(r.delaiFournisseurs))), ht * (1 + num(s.tva) / 100), 'out', `Commande ${c.numero || ''} · ${clientName(c.fournisseurId)} (à facturer par le fournisseur)`, `#/commandes/${c.id}`, true);
+    ajoute(echeancePour(c.fournisseurId, c.dateLivraison || c.date || auj, num(r.delaiFournisseurs) || 45), ht * (1 + num(s.tva) / 100), 'out', `Commande ${c.numero || ''} · ${clientName(c.fournisseurId)} (à facturer par le fournisseur)`, `#/commandes/${c.id}`, true);
   });
   // Notes de frais validées, remboursées en fin de mois
   const frais = sumBy(Store.all('frais').filter(f => f.statut === 'Validée'), f => num(f.montantTTC));
