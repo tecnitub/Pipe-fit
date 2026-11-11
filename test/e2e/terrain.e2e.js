@@ -133,6 +133,30 @@ test('Études : profil de bâtiment, EDE BACnet, analyse fonctionnelle, étiquet
   assert.deepStrictEqual(erreurs, []);
 });
 
+test('CRM : réception pilotée par les PV (réserves reprises, PV de régulation bloquant) ; Études : demande de prix du matériel de régulation', { skip: sansPlaywright, timeout: 120000 }, async () => {
+  const { p, erreurs } = await ouvrir('pipefit-crm-demo.html');
+  const id = await p.evaluate(() => {
+    const a = Store.all('affaires').find(x => !Store.all('receptions').some(r => r.affaireId === x.id && r.statut === 'Signé'));
+    Store.upsert('misesEnService', { affaireId: a.id, numero: 'MS-E2E', equipement: 'Réglages de la régulation — valeurs du cahier (e2e)', statut: 'Brouillon', date: '2026-11-10', controles: [{ libelle: 'Planning PL_Z1 saisi', etat: 'Non conforme', obs: 'samedi oublié' }], mesures: [] });
+    location.hash = `#/reception/${a.id}`; return a.id; });
+  await p.waitForTimeout(1500);
+  const t = await p.textContent('main, #app, body');
+  assert.match(t, /PV de régulation à signer avant la réception/); assert.match(t, /point\(s\) non conforme\(s\) dans les PV/);
+  await p.click('#mes-res'); await p.waitForTimeout(600);
+  assert.ok(await p.evaluate(x => Store.all('reserves').some(r => r.affaireId === x && /samedi oublié/.test(r.description) && r.cleMes), id));
+  assert.ok(!(await p.$('#mes-res')));
+  assert.match(await p.textContent('main, #app, body'), /la réception attend les PV de réglage et d'essais/);
+  assert.deepStrictEqual(erreurs, []);
+  // Études : demande de prix du matériel de régulation
+  const e2 = await ouvrir('etudes.html');
+  await e2.p.evaluate(() => { const et = S.etudes.find(x => !x.modele && x.notes.some(n => n.type === 'elec')); const n = et.notes.find(x => x.type === 'elec'); n.entrees.marqueAutomate = 'wit'; n.entrees.armoires.forEach(a => { a.techno = 'automate'; }); enregistrer(et); location.hash = `#/etude/${et.id}/${n.id}`; });
+  await e2.p.waitForTimeout(2000);
+  await e2.p.click('#elec-achat-reg'); await e2.p.waitForTimeout(500);
+  const m = await e2.p.textContent('#ar-c');
+  assert.match(m, /Matériel de régulation — demande de prix/); assert.match(m, /PLUG/);
+  assert.deepStrictEqual(e2.erreurs, []);
+});
+
 test('CRM : bibliothèque au format du modèle d\'export (marge, catégories, unités, variantes fournisseur)', { skip: sansPlaywright, timeout: 120000 }, async () => {
   const { p, erreurs } = await ouvrir('pipefit-crm-demo.html');
   const X = require(path.join(racine, 'public/js/xlsx'));

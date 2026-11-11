@@ -129,6 +129,7 @@
       return vraiFetch(dataUrl);
     }
     if (p[0] === 'pf' && p[1] === 'rex') return rep(200, RexPF(crm() || seed));
+    if (p[0] === 'pf' && p[1] === 'valeurs-reglees') return rep(200, typeof Essais === 'undefined' ? [] : Essais.valeursReglees(((crm() || seed).misesEnService || []).filter(m => m.affaireId === new URLSearchParams(u.split('?')[1] || '').get('affaireId'))));
     if (p[0] === 'pf' && p[1] === 'pressions-cta') return rep(200, typeof Essais === 'undefined' ? [] : Essais.pressionsCta(((crm() || seed).misesEnService || []).filter(m => m.affaireId === new URLSearchParams(u.split('?')[1] || '').get('affaireId'))));
     // Pièces des études (PDF émis, bordereaux, PDF annotés) : gardées sur l'appareil (taille limitée dans la démonstration)
     if (p[0] === 'fichiers' && !p[1] && method === 'POST') {

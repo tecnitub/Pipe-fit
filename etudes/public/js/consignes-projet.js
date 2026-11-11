@@ -240,6 +240,25 @@ const ConsignesProjet = (() => {
     return out;
   }
 
-  return { calculer, reglagesPoints, feries, typeEmetteur, INERTIE, PID, PROFILS, profil, controleReglementaire, comparerCctp, consignesCctp, attendusReglage, controlesReglage, essaisSequences, chiffrage, analyserReleves };
+  // Valeurs réglées sur site → saisie de l'étude (lois d'eau, consignes des zones, pressions des CTA) ; les autres
+  // (production, seuils, change-over : valeurs déduites) sont listées à part
+  function appliquerReglees(entrees, diffs, r) {
+    const e = JSON.parse(JSON.stringify({ consignesZones: entrees.consignesZones || [], loisEau: entrees.loisEau || [], pressionsCta: entrees.pressionsCta || [] })), appliques = [], ignores = [];
+    const zone = nom => { let z = e.consignesZones.find(x => String(x.zone || '').trim() === nom); if (!z) { const d = r.zones.find(x => x.zone === nom) || r.zones[0]; z = { zone: nom, confort: d.confort, clim: d.clim, inocc: d.inocc, horsGel: d.horsGel, jours: d.jours, debut: hTxt(d.debut).replace(' h', ':').replace(/:$/, ':00'), fin: hTxt(d.fin).replace(' h', ':').replace(/:$/, ':00'), diff: d.diff, decalage: d.decalage }; e.consignesZones.push(z); } return z; };
+    const loi = c => { let l = e.loisEau.find(x => String(x.circuit || '').trim().toLowerCase() === c.toLowerCase()); if (!l) { l = { circuit: c, base: '', d18: '' }; e.loisEau.push(l); } return l; };
+    const cta = c => { let l = e.pressionsCta.find(x => String(x.cta || '').trim().toLowerCase() === c.toLowerCase()); if (!l) { l = { cta: c, soufflage: '', reprise: '', source: '' }; e.pressionsCta.push(l); } return l; };
+    (diffs || []).forEach(d => {
+      let m;
+      if ((m = /^Loi d'eau (.+) : départ à 18 °C ext\.$/.exec(d.libelle))) { loi(m[1]).d18 = d.regle; appliques.push(d); }
+      else if ((m = /^Loi d'eau (.+) : départ par .* ext\.$/.exec(d.libelle)) || (m = /^Consigne de départ (?!de la production)(.+)$/.exec(d.libelle))) { loi(m[1]).base = d.regle; appliques.push(d); }
+      else if ((m = /^Consigne (confort chauffage|confort rafraîchissement|inoccupation) — (.+)$/.exec(d.libelle))) { zone(m[2])[{ 'confort chauffage': 'confort', 'confort rafraîchissement': 'clim', inoccupation: 'inocc' }[m[1]]] = d.regle; appliques.push(d); }
+      else if ((m = /^Hors gel — (.+)$/.exec(d.libelle))) { zone(m[1]).horsGel = d.regle; appliques.push(d); }
+      else if ((m = /^Pression de (soufflage|reprise) — (.+)$/.exec(d.libelle))) { const x = cta(m[2]); x[m[1] === 'soufflage' ? 'soufflage' : 'reprise'] = d.regle; x.source = d.source; appliques.push(d); }
+      else ignores.push(d);
+    });
+    return { entrees: e, appliques, ignores };
+  }
+  const indiceSuivant = i => (/^[A-Y]$/i.test(String(i || '').trim()) ? String.fromCharCode(String(i).trim().toUpperCase().charCodeAt(0) + 1) : /^\d+$/.test(String(i || '').trim()) ? String(Number(i) + 1) : 'B');
+  return { appliquerReglees, indiceSuivant, calculer, reglagesPoints, feries, typeEmetteur, INERTIE, PID, PROFILS, profil, controleReglementaire, comparerCctp, consignesCctp, attendusReglage, controlesReglage, essaisSequences, chiffrage, analyserReleves };
 })();
 if (typeof module !== 'undefined') module.exports = ConsignesProjet;

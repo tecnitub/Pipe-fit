@@ -336,6 +336,21 @@ const Essais = (() => {
     });
     return k;
   }
+  // Réception pilotée par les PV de mise en service : réserves tirées des PV (contrôles non conformes, mesures hors
+  // tolérance) et PV de régulation (réglages, séquences, point à point) non signés qui bloquent la réception
+  const PV_REGULATION = /^(Réglages de la régulation|Essais des séquences|Régulation —|Tests point à point)/i;
+  function reservesReception(mises) {
+    return (mises || []).flatMap(m => [
+      ...reserves(m).map(x => ({ cle: `${m.id}|${x.libelle}`, localisation: m.equipement || '', description: `${x.libelle}${x.cote ? ` (${x.cote})` : ''}${x.obs ? ` : ${x.obs}` : ''}`, source: m.numero || '' })),
+      ...(/^Réglages de la régulation/i.test(String(m.equipement || '')) ? [] : mesuresAttendues(m)).filter(x => conformeMesure(x) === false).map(x => ({ cle: `${m.id}|${x.libelle}`, localisation: m.equipement || '', description: `${x.libelle} : ${String(x.valeur).replace('.', ',')} ${x.unite || ''} mesuré pour ${String(x.attendu).replace('.', ',')} ${x.unite || ''} attendu`.replace(/\s+/g, ' '), source: m.numero || '' }))]);
+  }
+  const bloquantsReception = mises => (mises || []).filter(m => PV_REGULATION.test(String(m.equipement || '')) && m.statut !== 'Signé').map(m => ({ id: m.id, numero: m.numero || '', equipement: m.equipement, statut: m.statut || 'Brouillon' }));
+  // Valeurs réglées sur site différentes de l'étude (PV « Réglages de la régulation », le plus récent)
+  function valeursReglees(mises) {
+    const pv = (mises || []).filter(m => /^Réglages de la régulation/i.test(String(m.equipement || ''))).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))[0];
+    if (!pv) return [];
+    return mesuresAttendues(pv).filter(x => aValeur(x.valeur) && Math.abs(n(x.valeur) - n(x.attendu)) > 0.049).map(x => ({ libelle: x.libelle, unite: x.unite || '', attendu: n(x.attendu), regle: n(x.valeur), source: `PV ${pv.numero || ''} du ${String(pv.date || '').slice(0, 10)}`.replace(/\s+/g, ' ') }));
+  }
   // Pressions de gaine relevées à la mise en service des CTA (consignes de la régulation) : la plus récente par équipement
   function pressionsCta(mises) {
     const out = new Map(), val = (m, re) => { const x = (m.mesures || []).find(y => re.test(y.libelle || '') && n(y.valeur) !== null); return x ? n(x.valeur) : null; };
@@ -345,6 +360,6 @@ const Essais = (() => {
     });
     return [...out.values()];
   }
-  return { pressionsCta, versReleve, renumeroter, reprendreReleve, releve, TYPES, ETATS, modele, conclusion, reserves, avancementPap, calculsFiche, debitPrevu, lireCaracteristiques, remplirPlaque, lireFicheExcel, pointsPompe, courbePompeSvg, suiviMes, manquesMES, tolerance, conformeMesure, ecart, conforme, synthese, manquesEQ, importerLignes };
+  return { pressionsCta, reservesReception, bloquantsReception, valeursReglees, PV_REGULATION, versReleve, renumeroter, reprendreReleve, releve, TYPES, ETATS, modele, conclusion, reserves, avancementPap, calculsFiche, debitPrevu, lireCaracteristiques, remplirPlaque, lireFicheExcel, pointsPompe, courbePompeSvg, suiviMes, manquesMES, tolerance, conformeMesure, ecart, conforme, synthese, manquesEQ, importerLignes };
 })();
 if (typeof module !== 'undefined') module.exports = Essais;

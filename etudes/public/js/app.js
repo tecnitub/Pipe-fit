@@ -863,7 +863,7 @@ Vues.note = {
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-pompes" title="Une ligne par circuit pour saisir la pompe retenue et sa courbe (ou la lire sur la fiche du fabricant)">⚙️ Pompes retenues par circuit</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-rob" title="Pour chaque circuit sans robinetterie : vannes d\'isolement, vanne d\'équilibrage, filtre, manchettes, thermomètres ; à compléter avec les Kv des fiches">🔩 Robinetterie type par circuit</button><button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par circuit (repères, DN, fabricant, référence, fiche, ΔP) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
-        ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button><button class="secondaire" id="elec-csv">🔗 Table d\'échange GTB (CSV)</button><button class="secondaire" id="elec-profil">🏢 Appliquer le profil de bâtiment</button><button class="secondaire" id="elec-af">📄 Analyse fonctionnelle (Word)</button><button class="secondaire" id="elec-ede">🔗 Fichier EDE BACnet (intégrateur GTB)</button><button class="secondaire" id="elec-etiq">🏷️ Étiquettes de repérage</button><button class="secondaire" id="elec-devis-reg">💶 Chiffrer la régulation (devis Pipe-Fit)</button><button class="secondaire" id="elec-releves">📈 Analyser des relevés de la GTB</button><button class="secondaire" id="elec-pressions">📏 Reprendre les pressions des CTA (mises en service du chantier)</button><button class="secondaire" id="elec-cahier-docx">📄 Cahier de paramétrage (Word)</button><button class="secondaire" id="elec-cahier-xlsx">📑 Cahier (Excel, un onglet par rubrique)</button>' : ''}
+        ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button><button class="secondaire" id="elec-csv">🔗 Table d\'échange GTB (CSV)</button><button class="secondaire" id="elec-profil">🏢 Appliquer le profil de bâtiment</button><button class="secondaire" id="elec-af">📄 Analyse fonctionnelle (Word)</button><button class="secondaire" id="elec-ede">🔗 Fichier EDE BACnet (intégrateur GTB)</button><button class="secondaire" id="elec-etiq">🏷️ Étiquettes de repérage</button><button class="secondaire" id="elec-devis-reg">💶 Chiffrer la régulation (devis Pipe-Fit)</button><button class="secondaire" id="elec-releves">📈 Analyser des relevés de la GTB</button><button class="secondaire" id="elec-achat-reg">🛒 Matériel de régulation : demande de prix</button><button class="secondaire" id="elec-reglees">↩️ Reprendre les valeurs réglées sur site</button><button class="secondaire" id="elec-pressions">📏 Reprendre les pressions des CTA (mises en service du chantier)</button><button class="secondaire" id="elec-cahier-docx">📄 Cahier de paramétrage (Word)</button><button class="secondaire" id="elec-cahier-xlsx">📑 Cahier (Excel, un onglet par rubrique)</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="num-bouches" title="Numéro unique de chaque bouche : compléter les bouches sans repère ou en double, ou tout renuméroter (par zone et pièce, ou suivant les branches) quand l\'étude est au point">🔢 Numéroter les bouches</button>' : ''}
         ${n.type === 'terminaux' ? '<button class="secondaire" id="num-terminaux" title="Donne un repère unique à chaque terminal sans repère ou en double (CA-01, VC-02…) : une branche par terminal dans le réseau arborescent, une fiche de mise en service par terminal">🔢 Numéroter les terminaux</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="aero-vitesses" title="Même vitesse pour toutes les branches (ou les principales, ou les terminales) : les diamètres des gaines sont recalculés">💨 Changer toutes les vitesses</button>' : ''}
@@ -1014,6 +1014,66 @@ Vues.note = {
           <div class="actions"><button onclick="Modal.close()">Fermer</button></div>`);
       };
       inp.click();
+    };
+    // Demande de prix du matériel de régulation (automate, communication, sondes ; appareillage de l'armoire en option)
+    const bm = root.querySelector('#elec-achat-reg');
+    if (bm) bm.onclick = () => {
+      const r = Liens.calculer(et, n), v = r.valeurs || {}, nom = (v.feuilles || []).filter(x => /^Nomenclature /.test(x.name)).flatMap(x => x.lignes);
+      const eqf = ((v.feuilles || []).find(x => x.name === 'Équipements') || { lignes: [] }).lignes.filter(l => /sonde|capteur|pressostat|thermostat|détecteur|compteur/i.test(String(l[1] || '')));
+      const familles = [...new Set(nom.map(l => l[0]))], AUTO = /automatisme|communication/i;
+      const rendre = sel => {
+        const m = new Map();
+        nom.filter(l => sel.has(l[0])).forEach(l => { const k = String(l[1]); const x = m.get(k) || { designation: k, dn: '', fabricant: l[4] || '', reference: l[5] || '', unite: 'u', qte: 0, famille: l[0] }; x.qte += Notes.num(l[3]) || 1; m.set(k, x); });
+        if (sel.has('Sondes et capteurs')) eqf.forEach(l => { const k = String(l[1]); const x = m.get(k) || { designation: k, dn: '', fabricant: '', reference: '', unite: 'u', qte: 0, famille: 'Sondes et capteurs' }; x.qte += 1; m.set(k, x); });
+        return Nomenclature.prixAchats([...m.values()], (S.pf && S.pf.articles) || []);
+      };
+      const choix = new Set([...familles.filter(f => AUTO.test(f)), ...(eqf.length ? ['Sondes et capteurs'] : [])]);
+      const b = Modal.open('<div id="ar-c"></div>'); b.classList.add('large');
+      const dessiner = () => {
+        const liste = rendre(choix), eur = x => `${Notes.nf(x, 2)} €`;
+        b.querySelector('#ar-c').innerHTML = `<h2>🛒 Matériel de régulation — demande de prix</h2>
+          <p class="petit">${[...familles, ...(eqf.length ? ['Sondes et capteurs'] : [])].map(f => `<label class="ligne-case"><input type="checkbox" data-fam="${esc(f)}" ${choix.has(f) ? 'checked' : ''}> ${esc(f)}${AUTO.test(f) || f === 'Sondes et capteurs' ? '' : ' (armoire)'}</label>`).join(' ')}</p>
+          <p class="muted petit">${liste.length} article(s), ${liste.filter(x => x.pu).length} trouvé(s) dans la bibliothèque de Pipe-Fit (prix d'achat, fournisseur par défaut et variantes comparés dans la consultation).</p>
+          <div class="defile-x" style="max-height:46vh;overflow:auto"><table class="liste compact"><thead><tr><th>Famille</th><th>Désignation</th><th>Qté</th><th>Article de la bibliothèque</th><th>PU HT</th></tr></thead><tbody>
+          ${liste.map(x => `<tr><td class="petit">${esc(x.famille)}</td><td>${esc(x.designation)}</td><td>${Notes.nf(x.qte, 0)}</td><td class="petit">${x.articleId ? esc(`${x.articleRef ? `${x.articleRef} — ` : ''}${x.articleDesignation}`) : '<span class="muted">à chiffrer</span>'}</td><td>${x.pu ? eur(x.pu) : ''}</td></tr>`).join('')}</tbody></table></div>
+          ${et.affaireId ? '' : '<p class="petit alerte attention">Reliez l\'étude à un chantier pour lancer la consultation des fournisseurs.</p>'}
+          <div class="actions"><button class="secondaire" id="ar-x">Fermer</button>${et.affaireId ? '<button id="ar-cs">🛒 Consulter les fournisseurs dans Pipe-Fit</button>' : ''}</div>`;
+        b.querySelector('#ar-x').onclick = () => { b.classList.remove('large'); Modal.close(); };
+        b.querySelectorAll('[data-fam]').forEach(c => c.onchange = () => { if (c.checked) choix.add(c.dataset.fam); else choix.delete(c.dataset.fam); dessiner(); });
+        const cs = b.querySelector('#ar-cs');
+        if (cs) cs.onclick = async () => {
+          if (!liste.length) return toast('Rien à consulter.');
+          cs.disabled = true; cs.textContent = 'Création…';
+          try {
+            const rc = await api('POST', '/api/pf/consultation', { affaireId: et.affaireId, etudeId: et.id, noteId: n.id, objet: `Matériel de régulation — ${et.objet}`.slice(0, 200), lignes: Nomenclature.lignesConsultation(liste) });
+            cs.outerHTML = `<span class="badge ok">Consultation ${esc(rc.ref || '')} créée</span>`;
+            toast('Consultation créée dans Pipe-Fit : fournisseurs proposés d\'après la bibliothèque, demande de prix à envoyer ; l\'offre retenue devient la commande.', 7000);
+          } catch (e) { cs.disabled = false; cs.textContent = '🛒 Consulter les fournisseurs dans Pipe-Fit'; toast(e.message, 6000); }
+        };
+      };
+      dessiner();
+    };
+    // Valeurs réglées sur site (PV de réglage du chantier) reprises dans l'étude : nouvel indice du cahier
+    const bv = root.querySelector('#elec-reglees');
+    if (bv) bv.onclick = async () => {
+      if (!et.affaireId) return toast('Étude non rattachée à un chantier de Pipe-Fit.', 6000);
+      let d = [];
+      try { d = await api('GET', `/api/pf/valeurs-reglees?affaireId=${encodeURIComponent(et.affaireId)}`); } catch (er) { return toast(er.message, 6000); }
+      if (!d.length) return toast('Aucune valeur réglée différente de l\'étude dans le PV « Réglages de la régulation » du chantier.', 7000);
+      const pj = (Liens.calculer(et, n).valeurs || {}).consignesProjet, a = ConsignesProjet.appliquerReglees(n.entrees, d, pj), nv = ConsignesProjet.indiceSuivant(et.indice);
+      const nf = x => String(x).replace('.', ',');
+      const b = Modal.open(`<h2>↩️ Valeurs réglées sur site</h2><p class="petit">${esc(d[0].source)} : ${d.length} valeur(s) différente(s) de l'étude.</p>
+        <table class="liste compact"><thead><tr><th>Réglage</th><th>Étude</th><th>Réglé sur site</th><th></th></tr></thead><tbody>
+        ${d.map(x => `<tr><td>${esc(x.libelle)}</td><td>${nf(x.attendu)} ${esc(x.unite)}</td><td><strong>${nf(x.regle)} ${esc(x.unite)}</strong></td><td class="petit">${a.appliques.includes(x) ? 'repris dans la saisie' : '<span class="muted">valeur déduite : à vérifier</span>'}</td></tr>`).join('')}</tbody></table>
+        <p class="petit">${a.appliques.length} valeur(s) reprise(s) dans « Consignes du projet » ; cahier de paramétrage, table d'échange, EDE, analyse fonctionnelle et DOE suivent. L'étude passe à l'indice ${esc(nv)}.</p>
+        <div class="actions"><button class="secondaire" id="vr-x">Annuler</button><button id="vr-ok" ${a.appliques.length ? '' : 'disabled'}>Reprendre dans l'étude (indice ${esc(et.indice || 'A')} → ${esc(nv)})</button></div>`);
+      b.querySelector('#vr-x').onclick = () => Modal.close();
+      b.querySelector('#vr-ok').onclick = () => {
+        Object.assign(n.entrees, a.entrees);
+        et.historiqueIndices = [...(et.historiqueIndices || []), { indice: nv, date: aujourdhui(), motif: `Valeurs réglées sur site (${d[0].source}) : ${a.appliques.map(x => x.libelle).join(', ')}`.slice(0, 500) }];
+        et.indice = nv; enregistrer(et); Modal.close(); App.render();
+        toast(`${a.appliques.length} valeur(s) reprise(s) ; étude à l'indice ${nv}.`, 6000);
+      };
     };
     // Consignes de pression des CTA : relevées à la mise en service (PV du chantier dans Pipe-Fit)
     const prCta = root.querySelector('#elec-pressions');

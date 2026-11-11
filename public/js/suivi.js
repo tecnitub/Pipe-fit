@@ -161,6 +161,16 @@ function voirRapport(r) {
 const reservesDe = id => Store.all('reserves').filter(r => r.affaireId === id).sort((a, b) => num(a.numero) - num(b.numero));
 const pvDe = id => Store.all('receptions').filter(p => p.affaireId === id).sort((a, b) => (a.numero || '~').localeCompare(b.numero || '~'));
 const pvReception = id => pvDe(id).find(p => p.type === 'reception' && p.statut === 'Signé');
+// Réception pilotée par les PV de mise en service : réserves à reprendre, PV de régulation non signés (bloquants)
+const misesDe = id => Store.all('misesEnService').filter(m => m.affaireId === id);
+const etatMesReception = id => { const m = misesDe(id), res = reservesDe(id); return { aReprendre: Essais.reservesReception(m).filter(x => !res.some(r => r.cleMes === x.cle)), bloquants: Essais.bloquantsReception(m) }; };
+function mesReceptionHtml(a, pv) {
+  const e = etatMesReception(a.id);
+  if (!e.aReprendre.length && !e.bloquants.length) return '';
+  return `<div class="card ${e.bloquants.length ? 'note-card' : ''}"><strong>Mises en service</strong>
+    ${e.aReprendre.length ? `<p class="small">${e.aReprendre.length} point(s) non conforme(s) dans les PV de mise en service : ${e.aReprendre.slice(0, 4).map(x => esc(`${x.source} ${x.description}`)).join(' · ')}${e.aReprendre.length > 4 ? '…' : ''}</p>${!pv ? `<button class="small" id="mes-res">Reprendre ${e.aReprendre.length} réserve(s) des PV</button>` : ''}` : ''}
+    ${e.bloquants.length ? `<p class="small warn-text">PV de régulation à signer avant la réception : ${e.bloquants.map(b => `<a href="#/mes/${esc(b.id)}">${esc(`${b.numero} ${b.equipement}`)}</a> (${esc(b.statut)})`).join(' · ')}</p>` : ''}</div>`;
+}
 let photoReserve = null;
 
 Views.reception = params => {
@@ -185,6 +195,7 @@ Views.reception = params => {
       <td>${r.statut === 'Levée' ? `<span class="badge b-ok">Levée le ${dateFr(r.dateLevee)}</span>` : '<span class="badge b-warn">Ouverte</span>'}${r.pvId ? ' <span class="badge" title="Figée par le procès-verbal">PV</span>' : ''}</td>
       <td class="actions">${r.statut !== 'Levée' ? `<button class="small" data-lever="${r.id}">Lever</button>` : ''}${!r.pvId ? `<button class="small danger" data-delres="${r.id}" aria-label="Supprimer la réserve">✕</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Aucune réserve.</td></tr>'}
   </table></div>
+  ${mesReceptionHtml(a, pv)}
   ${!pv ? `<div class="card reserve-form">
     <strong>Nouvelle réserve</strong>
     <div class="grid2">
@@ -219,6 +230,7 @@ Views.reception = params => {
       <div><div class="field"><label for="pv-enom">Pour ${esc(Store.data.settings.societe)}</label><input id="pv-enom" value="${esc(userName(a.chargeId) !== '—' ? userName(a.chargeId) : Store.me.nom)}"></div>
         <canvas class="sign-pad" id="sig-ent" aria-label="Signature de l'entreprise"></canvas><button class="small secondary" id="sig-ent-clear">Effacer</button></div>
     </div>
+    ${signer === 'reception' && etatMesReception(a.id).bloquants.length ? `<p class="warn-text small">${etatMesReception(a.id).bloquants.length} PV de régulation non signé(s) : la réception attend les PV de réglage et d'essais.</p>${Store.can('admin') ? '<label class="check small"><input type="checkbox" id="pv-forcer"> Signer quand même (motif obligatoire, administrateur)</label><input id="pv-forcer-motif" placeholder="Motif (ex. essais reportés à la saison de chauffe)">' : ''}` : ''}
     <button class="big" id="pv-sign">Valider et signer le procès-verbal</button>
     <p class="muted small">Une fois signé, le procès-verbal et la liste des réserves sont figés.</p>
   </div>` : ''}`;
@@ -252,6 +264,11 @@ Views.reception.bind = (root, params) => {
   if (!cvC) return;
   const padC = signaturePad(cvC), padE = signaturePad(root.querySelector('#sig-ent'));
   on('#sig-client-clear', padC.effacer); on('#sig-ent-clear', padE.effacer);
+  on('#mes-res', () => {
+    const l = etatMesReception(a.id).aReprendre; let k = reservesDe(a.id).reduce((m, r) => Math.max(m, num(r.numero)), 0);
+    l.forEach(x => Store.upsert('reserves', { affaireId: a.id, numero: ++k, localisation: x.localisation, description: `${x.description} (PV ${x.source})`, responsable: 'Pipe-Fit', echeance: isoDate(addDays(new Date(), 15)), photoId: '', statut: 'Ouverte', pvId: '', cleMes: x.cle }));
+    App.render(); App.toast(`${l.length} réserve(s) reprise(s) des PV de mise en service`);
+  });
   on('#pv-sign', async () => {
     const pvRec = pvReception(a.id);
     const type = pvRec ? 'levee' : 'reception';
@@ -259,6 +276,8 @@ Views.reception.bind = (root, params) => {
     const ouvertes = reservesDe(a.id).filter(r => r.statut !== 'Levée');
     if (!root.querySelector('#pv-snom').value.trim()) { notify('Indiquez le nom du signataire pour le client.'); return; }
     if (padC.vide() || padE.vide()) { notify('Les deux signatures sont nécessaires.'); return; }
+    const bloq = type === 'reception' ? etatMesReception(a.id).bloquants : [], forcer = root.querySelector('#pv-forcer'), motif = ((root.querySelector('#pv-forcer-motif') || {}).value || '').trim();
+    if (bloq.length && !(forcer && forcer.checked && motif)) { notify(`Réception bloquée : ${bloq.length} PV de régulation (réglages, essais) à signer d'abord${Store.can('admin') ? ', ou cochez « Signer quand même » avec un motif' : ''}.`); return; }
     if (decision === 'Sans réserve' && ouvertes.length && !await ask(`${ouvertes.length} réserve(s) sont encore ouvertes. Signer quand même une réception sans réserve ?`, 'Signer sans réserve', false)) return;
     const btn = root.querySelector('#pv-sign'); btn.disabled = true; btn.textContent = 'Enregistrement…';
     try {
@@ -269,7 +288,7 @@ Views.reception.bind = (root, params) => {
         numero: '', affaireId: a.id, type, date: root.querySelector('#pv-date').value, lieu: root.querySelector('#pv-lieu').value, presents: root.querySelector('#pv-presents').value,
         contactId: a.contactId || '', signataireNom: root.querySelector('#pv-snom').value, signataireQualite: root.querySelector('#pv-squal').value, decision,
         reservesSnapshot: liste.map(snap), commentaire: root.querySelector('#pv-com').value, signatureClientId: sc, signatureEntrepriseId: se,
-        signataireEntreprise: root.querySelector('#pv-enom').value, signeLe: new Date().toISOString(), statut: 'Signé',
+        signataireEntreprise: root.querySelector('#pv-enom').value, signeLe: new Date().toISOString(), statut: 'Signé', ...(bloq.length ? { receptionForcee: { motif, pvNonSignes: bloq.map(b => b.numero || b.id), par: Store.me.nom || '' } } : {}),
       });
       if (type === 'reception') {
         liste.forEach(r => Store.upsert('reserves', { ...r, pvId: pv.id }));

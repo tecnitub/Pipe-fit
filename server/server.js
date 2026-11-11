@@ -791,6 +791,11 @@ async function api(req, res, url) {
       LIENS.liste({ app: 'etudes' }).filter(l => l.affaireId).forEach(l => { (parAffaire[l.affaireId] = parAffaire[l.affaireId] || []).push(l); });
       return send(res, 200, Object.fromEntries(Object.entries(parAffaire).map(([id, ls]) => [id, Installe.avancement(Installe.suiviCommandes(MaterielRetenu.pourChantier(ls, LIENS.suivis({ affaireId: id })), lignesCommandesPF(id)))]).filter(([, a]) => a.total)));
     }
+    // Valeurs réglées sur site différentes de l'étude (PV « Réglages de la régulation ») : reprises dans l'étude
+    if (p[1] === 'valeurs-reglees' && method === 'GET') {
+      const affaireId = url.searchParams.get('affaireId') || '';
+      return send(res, 200, affaireId ? Essais.valeursReglees(recordsDe('misesEnService').filter(m => m.affaireId === affaireId)) : []);
+    }
     // Pressions de gaine relevées à la mise en service des CTA du chantier (consignes de la régulation des études)
     if (p[1] === 'pressions-cta' && method === 'GET') {
       const affaireId = url.searchParams.get('affaireId') || '';
@@ -975,6 +980,11 @@ async function api(req, res, url) {
         if (col === 'releves' && obj.statut && obj.statut !== 'Brouillon') { const m = Tuyauterie.manques(obj); if (m.length) return { invalide: `Relevé incomplet : ${m.join(', ')}` }; }
         // PV de mise en service et relevé d'équilibrage signés : figés, sauf administrateur ; complets pour être signés
         if (['misesEnService', 'equilibrages'].includes(col) && existing && existing.statut === 'Signé' && acc.role !== 'admin') return { forbidden: 'Ce procès-verbal est signé : il ne peut plus être modifié.' };
+        // Réception pilotée par les PV : PV de régulation (réglages, essais des séquences, point à point) signés d'abord, sauf réception forcée par un administrateur avec motif
+        if (col === 'receptions' && obj.type === 'reception' && obj.statut === 'Signé' && !(existing && existing.statut === 'Signé')) {
+          const bl = Essais.bloquantsReception(recordsDe('misesEnService').filter(m => m.affaireId === obj.affaireId));
+          if (bl.length && !(acc.role === 'admin' && obj.receptionForcee && String(obj.receptionForcee.motif || '').trim())) return { invalide: `Réception bloquée : ${bl.length} PV de régulation à signer d'abord (${bl.map(b => b.numero || b.equipement).join(', ')})` };
+        }
         if (['misesEnService', 'equilibrages'].includes(col) && obj.statut === 'Signé') { const m = col === 'misesEnService' ? Essais.manquesMES(obj) : Essais.manquesEQ(obj); if (m.length) return { invalide: `Procès-verbal incomplet : ${m.join(', ')}` }; }
         // PV de réception signé : figé
         if (col === 'receptions' && existing && existing.statut === 'Signé' && acc.role !== 'admin') return { forbidden: 'Ce procès-verbal est signé : il ne peut plus être modifié.' };
