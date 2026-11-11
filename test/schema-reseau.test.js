@@ -75,6 +75,9 @@ test('CTA à batterie à eau : alimentée par une branche du réseau arborescent
   const P0 = L.calculer(et, arbo).valeurs.Ptot;
   const r = L.relierAuSchema(et, arbo, pid.id);
   assert.strictEqual(L.resoudre(et, pid).entrees.circuits[r.i].P, Math.round(P0 * 10) / 10);
+  // Électricité : vannes des batteries à eau de la CTA (aucun circuit dédié ne les règle)
+  const E = require('../etudes/public/js/electricite');
+  assert.deepStrictEqual(E.equipementsEtude(et, L).filter(x => /^VB[CF]-/.test(x.rep)).map(x => x.rep).sort(), ['VBC-N2', 'VBF-N2']);
   // 2. Directement sur un circuit du schéma qui avait un bilan : la puissance est celle de la CTA
   const et2 = { notes: [nn('pid'), nn('cta'), nn('bilan')] }, p2 = et2.notes[0];
   p2.entrees.circuits[0].bilan = et2.notes[2].id;

@@ -1160,6 +1160,13 @@ const Electricite = ((N, Sc) => {
         const tS = es.tensionCta || ((pS ?? v.PvS / 1000) > 2.2 ? 'tri' : 'mono'), tR = es.tensionCta || ((pR ?? v.PvR / 1000) > 2.2 ? 'tri' : 'mono');
         ajout('vs', { metre: `cta|${num(es.Qs)}`, rep: `VS-N${ni + 1}`, designation: `Ventilateur de soufflage — ${titre}${nomF}`, type: 'ventilateur', P: pS ?? Math.max(0.1, kW(v.PvS * 1.15)), tension: tS, regulation: 'var', depart: 'variateur', alim: es.alim || '', ...(pS != null ? { pFiche: true } : {}) });
         if (Number.isFinite(v.PvR) && v.PvR > 0) ajout('vr', { metre: `cta|${num(es.Qs)}`, rep: `VR-N${ni + 1}`, designation: `Ventilateur de reprise — ${titre}${nomF}`, type: 'ventilateur', P: pR ?? Math.max(0.1, kW(v.PvR * 1.15)), tension: tR, regulation: 'var', depart: 'variateur', alim: es.alim || '', ...(pR != null ? { pFiche: true } : {}) });
+        // Vannes des batteries à eau : celles qu'un circuit dédié du schéma de principe ne règle pas déjà (CTA en bout de
+        // branche d'un réseau arborescent, batterie froide d'une CTA dont le circuit dédié est chaud…)
+        const fc = es.froid || 'non', bats = fc === 'co' ? [['co', 'change-over']] : [...(fc !== 'froide' ? [['bc', 'chaude']] : []), ...(fc !== 'non' ? [['bf', 'froide']] : [])];
+        const ref = Liens.circuitDeAnnexe ? Liens.circuitDeAnnexe(etude.notes || [], n) : null;
+        const couvre = (() => { if (!ref) return new Set(); const ep = Liens.resoudre ? Liens.resoudre(etude, ref.pid).entrees : ref.pid.entrees, R = (typeof Schema !== 'undefined' ? Schema : require('./schema')).REGIMES[ep.reseau];
+          if (ep.reseau === 'co') return new Set(['bc', 'bf', 'co']); const fr = ep.reseau === 'perso' ? num(ep.Tdep) < num(ep.Tret) : R && R[1] < R[2]; return new Set(fr ? ['bf', 'co'] : ['bc', 'co']); })();
+        bats.filter(([b]) => !couvre.has(b)).forEach(([b, l]) => ajout(`v${b}`, { rep: `V${b.toUpperCase()}-N${ni + 1}`, designation: `Vanne de régulation de la batterie ${l} — ${titre}`, type: 'vanne', P: 0.01, tension: '24V', regulation: 'v010', alim: es.alim || '' }));
         const pBe = kwFiche(es.PelBe) ?? kwFiche(fiche.Pbe);
         if (pBe) ajout('be', { rep: `BE-N${ni + 1}`, designation: `Batterie électrique — ${titre}`, type: 'resistance', P: pBe, tension: es.tensionCta || (pBe > 3.6 ? 'tri' : 'mono'), regulation: 'tor', alim: es.alim || '' });
       }
