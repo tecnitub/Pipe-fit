@@ -63,7 +63,11 @@ const perpendiculaire = (d, pref) => pref.find(k => Math.abs(Tuyauterie.DIRS[k].
 
 function releveForm(r) {
   const a = Store.get('affaires', r.affaireId) || {}, pl = Tuyauterie.placer(r), b = releveBrouillon;
-  const lignes = [...new Set(Store.all('releves').filter(x => x.affaireId === r.affaireId).map(x => x.ligne).filter(Boolean))];
+  // Suggestions : lignes déjà relevées, réseaux de l'étude (épreuves à faire) et réseaux déjà éprouvés ; fluides du chantier
+  const rels = Store.all('releves').filter(x => x.affaireId === r.affaireId && x.id !== r.id);
+  const lignes = r.affaireId && typeof nomsListeChantier === 'function' ? nomsListeChantier('epreuve', r.affaireId, [...rels.map(x => x.ligne), ...Store.all('epreuves').filter(x => x.affaireId === r.affaireId).map(x => x.reseau)])
+    : [...new Set(rels.map(x => x.ligne).filter(Boolean))];
+  const fluides = [...new Set([...rels.map(x => x.fluide), ...Epreuve.NATURES.filter(n => n !== 'Autre')].filter(Boolean))];
   const f = (k, lib, type = 'text', extra = '') => `<div class="field"><label for="rl-${k}">${lib}</label><input id="rl-${k}" data-rl="${k}" type="${type}" value="${esc(r[k] ?? '')}" ${extra}></div>`;
   const deja = relevesDe(r.affaireId).filter(x => x.id !== r.id);
   const S = Tuyauterie.systeme(r);
@@ -76,7 +80,7 @@ function releveForm(r) {
         <div class="field"><label for="rl-aff">Chantier ou visite</label><select id="rl-aff" class="big-select">${Store.me.role === 'atelier' ? '' : `<option value="" ${r.affaireId ? '' : 'selected'}>Visite commerciale (sans chantier, pour chiffrer)</option>`}${options(chantiersActifs().concat(a.id && !chantiersActifs().includes(a) ? [a] : []), r.affaireId, affaireLabel, false)}</select></div>
         <div class="field"><label for="rl-indice">Indice de l'isométrique</label><input id="rl-indice" data-rl="indice" value="${esc(r.indice || 'A')}" maxlength="4" style="max-width:6em"></div>
         <div class="field"><label for="rl-ligne">Repère de la ligne *</label><input id="rl-ligne" data-rl="ligne" list="rl-lignes" value="${esc(r.ligne)}" placeholder="Ex. EG-DN80-012, by-pass pompe P2, collecteur départ…">
-          <datalist id="rl-lignes">${lignes.map(x => `<option>${esc(x)}</option>`).join('')}</datalist></div>
+          <datalist id="rl-lignes">${lignes.map(x => `<option>${esc(x)}</option>`).join('')}</datalist>${rels.length && !(r.elements || []).length ? '<p class="small muted">Ligne déjà relevée : fluide, type de tube, matière, PN et DN de départ sont repris.</p>' : ''}</div>
       </div>
       ${r.affaireId ? '' : `<div class="grid2">
         <div class="field"><label for="rl-client">Client</label><select id="rl-client" data-rl="clientId"><option value="">Prospect (saisir son nom)</option>${options(clientsList(), r.clientId, undefined, false)}</select></div>
@@ -85,7 +89,7 @@ function releveForm(r) {
       <div class="grid3">
         <div class="field"><label for="rl-userId">${r.affaireId ? 'Technicien' : 'Relevé par'}</label><select id="rl-userId" data-rl="userId">${options(Store.all('users').filter(u => !u.archive), r.userId)}</select></div>
         ${f('date', 'Date', 'date')}
-        ${f('fluide', 'Fluide véhiculé', 'text', 'placeholder="Eau glacée, vapeur, air comprimé…"')}
+        ${f('fluide', 'Fluide véhiculé', 'text', 'list="rl-fluides" placeholder="Eau glacée, vapeur, air comprimé…"')}<datalist id="rl-fluides">${fluides.map(x => `<option>${esc(x)}</option>`).join('')}</datalist>
         <div class="field"><label for="rl-systeme">Type de tube</label><select id="rl-systeme">${Object.entries(Tuyauterie.SYSTEMES).map(([k, s]) => `<option value="${k}" ${Tuyauterie.cleSysteme(r) === k ? 'selected' : ''}>${esc(s.lib)}</option>`).join('')}</select></div>
         <div class="field"><label for="rl-matiere">Matière</label><select id="rl-matiere" data-rl="matiere">${optionsStr(Tuyauterie.MATIERES, r.matiere)}</select></div>
         <div class="field"><label for="rl-pn">Pression nominale</label><select id="rl-pn" data-rl="pn">${optionsStr(Tuyauterie.PN, r.pn)}</select></div>
@@ -333,6 +337,12 @@ Views.releve.bind = (root, params) => {
     if (el.dataset.rl === 'typeBride') App.render(); else if (['matiere', 'pn', 'joint', 'barre'].includes(el.dataset.rl)) majCalculs();
   }));
   $('#rl-aff').onchange = () => { r.affaireId = $('#rl-aff').value; r.visite = !r.affaireId; App.render(); };
+  // Ligne connue choisie (nouvelle prise de cotes, rien de dessiné) : fluide, système, matière, PN et DN de départ repris du dernier relevé
+  $('#rl-ligne').addEventListener('change', () => {
+    const der = !(r.elements || []).length && Tuyauterie.reprendreLigne(Tuyauterie.dernierReleve(Store.all('releves').filter(x => x.id !== r.id), r.affaireId, r.ligne));
+    if (der) { Object.assign(r, der); App.render(); App.toast('Caractéristiques reprises de la ligne déjà relevée', 2500); }
+  });
+  if (r.affaireId && typeof preparerListeChantier === 'function') preparerListeChantier(r.affaireId);
   if ($('#rl-client')) $('#rl-client').onchange = () => { r.clientId = $('#rl-client').value; App.render(); };
   // Type de tube : matière proposée, diamètres ramenés à ceux du système (tube à sertir jusqu'au Ø108)
   $('#rl-systeme').onchange = () => {

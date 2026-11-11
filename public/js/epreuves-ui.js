@@ -7,6 +7,10 @@ const epreuveBrouillon = { cle: null, e: null };
 const heureMaintenant = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(Math.floor(d.getMinutes() / 5) * 5).padStart(2, '0')}`; };
 const manometres = () => Store.all('materiels').filter(m => !m.archive && /manom|capteur de pression|enregistreur/i.test(`${m.designation} ${m.categorie}`));
 const libelleManometre = m => [m.designation, m.numeroSerie && `n° ${m.numeroSerie}`].filter(Boolean).join(' · ');
+// Manomètre proposé : celui affecté au technicien ou au chantier, sinon le premier du parc
+const manometreDe = (me, affaireId) => manometres().find(m => m.affectation && (m.affectation.userId === me || m.affectation.affaireId === affaireId)) || manometres()[0];
+// Description de la ligne (matière, diamètres) reprise de la dernière prise de cotes du même réseau
+const descriptionReseau = e => { const r = typeof Tuyauterie !== 'undefined' && Tuyauterie.dernierReleve(Store.all('releves') || [], e.affaireId, e.reseau); return r ? Tuyauterie.descriptionLigne(r) : ''; };
 const epreuvesDe = affaireId => Store.all('epreuves').filter(e => e.affaireId === affaireId).sort((a, b) => `${b.date}${b.heureDebut}`.localeCompare(`${a.date}${a.heureDebut}`));
 const retourEpreuve = e => (Store.me.role === 'atelier' ? '#/pointage/rapports' : `#/chantier/${e.affaireId}`);
 
@@ -20,13 +24,13 @@ function nouvelleEpreuve(query) {
   }
   const prevu = me && planJour(me, isoDate(new Date()))[0];
   const affaireId = query.get('chantier') || (prevu ? prevu.affaireId : '');
-  const a = Store.get('affaires', affaireId) || {}, ct = Store.get('contacts', a.contactId) || {};
-  const mano = manometres().find(m => m.affectation && (m.affectation.userId === me || m.affectation.affaireId === affaireId)) || manometres()[0];
+  const mano = manometreDe(me, affaireId);
   // Ouvert depuis la liste des mises en service : réseau, nature, PS et pression d'épreuve de l'étude
   const qv = k => String(query.get(k) || '').slice(0, 200), nb = k => (Number(qv(k)) > 0 ? Number(qv(k)) : '');
-  return { affaireId, userId: me, date: isoDate(new Date()), heureDebut: heureMaintenant(), heureFin: '', reseau: qv('reseau'), nature: Epreuve.NATURES.includes(qv('nature')) ? qv('nature') : Epreuve.NATURES[0], description: '', fluideEssai: Epreuve.FLUIDES.includes(qv('fluide')) ? qv('fluide') : 'Eau',
+  const desc = descriptionReseau({ affaireId, reseau: qv('reseau') });
+  return { affaireId, userId: me, date: isoDate(new Date()), heureDebut: heureMaintenant(), heureFin: '', reseau: qv('reseau'), nature: Epreuve.NATURES.includes(qv('nature')) ? qv('nature') : Epreuve.NATURES[0], description: desc, descAuto: !!desc, fluideEssai: Epreuve.FLUIDES.includes(qv('fluide')) ? qv('fluide') : 'Eau',
     ...(qv('plan') ? { planCle: qv('plan') } : {}), pressionService: nb('ps') || '', pressionEpreuve: nb('pt') || (nb('ps') ? Epreuve.pressionConseillee(nb('ps')) : ''), peAuto: !nb('pt'), dureePrevue: 120, chuteAdmissible: 0, pressionDebut: '', pressionFin: '', temperature: '', manometreId: mano ? mano.id : '', manometre: mano ? libelleManometre(mano) : '',
-    observations: '', photos: [], signataireNom: ct.nom ? contactName(ct) : '', signataireQualite: ct.fonction || '', statut: 'Brouillon' };
+    observations: '', photos: [], ...signataireChantier(affaireId), statut: 'Brouillon', manoAuto: true };
 }
 
 Views.epreuve = (params, query) => {
@@ -36,26 +40,30 @@ Views.epreuve = (params, query) => {
   if (rec && rec.statut === 'Signé') return epreuveVue(rec);
   const cle = id === 'new' ? `new|${query.toString()}` : id;
   if (epreuveBrouillon.cle !== cle) Object.assign(epreuveBrouillon, { cle, e: rec ? JSON.parse(JSON.stringify(rec)) : nouvelleEpreuve(query) });
-  return epreuveForm(epreuveBrouillon.e);
+  const e = epreuveBrouillon.e, libre = id === 'new' && !e.planCle && !query.get('copie');
+  return epreuveForm(e, libre ? choixPointPvHtml('epreuve', e.affaireId) : '');
 };
 
-function epreuveForm(e) {
+function epreuveForm(e, choixPoint = '') {
   const a = Store.get('affaires', e.affaireId) || {}, m = Store.get('materiels', e.manometreId), et = Epreuve.etalonnage(m, e.date);
   const res = Epreuve.resultat(e), c = Epreuve.chute(e), d = Epreuve.duree(e.heureDebut, e.heureFin);
-  const reseaux = [...new Set(Store.all('epreuves').filter(x => x.affaireId === e.affaireId).map(x => x.reseau).filter(Boolean))];
+  // Suggestions : réseaux de l'étude (liste du chantier) et déjà éprouvés ; descriptions déjà saisies
+  const reseaux = nomsListeChantier('epreuve', e.affaireId, Store.all('epreuves').filter(x => x.affaireId === e.affaireId).map(x => x.reseau));
+  const descriptions = [...new Set([descriptionReseau(e), ...Store.all('epreuves').filter(x => x.affaireId === e.affaireId || !e.affaireId).map(x => x.description)].filter(Boolean))].slice(0, 40);
   const f = (k, lib, type = 'text', extra = '') => `<div class="field"><label for="ep-${k}">${lib}</label><input id="ep-${k}" data-ep="${k}" type="${type}" value="${esc(e[k] ?? '')}" ${extra}></div>`;
   const bar = (k, lib, extra = '') => f(k, lib, 'number', `inputmode="decimal" step="0.01" min="0" ${extra}`);
   const deja = epreuvesDe(e.affaireId).filter(x => x.id !== e.id);
   return `<div class="toolbar"><a href="${retourEpreuve(e)}" class="btn secondary">← ${Store.me.role === 'atelier' ? 'Rapports' : 'Chantier'}</a></div>
   <h1>PV d'épreuve hydraulique${e.numero ? ` ${esc(e.numero)}` : ''}</h1>
+  ${choixPoint}
   <div class="card epreuve-form">
     <fieldset class="hd-bloc"><legend>Chantier et réseau</legend>
       <div class="grid2">
         <div class="field"><label for="ep-aff">Chantier</label><select id="ep-aff" class="big-select">${options(chantiersActifs().concat(a.id && !chantiersActifs().includes(a) ? [a] : []), e.affaireId, affaireLabel)}</select></div>
         <div class="field"><label for="ep-reseau">Nom du réseau éprouvé *</label><input id="ep-reseau" data-ep="reseau" list="ep-reseaux" value="${esc(e.reseau)}" placeholder="Ex. Réseau chauffage aller/retour bât. B, NEP aller DN50…">
-          <datalist id="ep-reseaux">${reseaux.map(r => `<option>${esc(r)}</option>`).join('')}</datalist></div>
+          ${datalistHtml('ep-reseaux', reseaux)}</div>
         <div class="field"><label for="ep-nature">Nature du réseau</label><select id="ep-nature" data-ep="nature">${optionsStr(Epreuve.NATURES, e.nature)}</select></div>
-        ${f('description', 'Matériaux, diamètres, repérage', 'text', 'placeholder="Acier P235GH DN80, plans ISO-CH-02…"')}
+        ${f('description', 'Matériaux, diamètres, repérage', 'text', 'list="ep-descriptions" placeholder="Acier P235GH DN80, plans ISO-CH-02…"')}${datalistHtml('ep-descriptions', descriptions)}
       </div>
       ${deja.length ? `<p class="small muted">Déjà éprouvés sur ce chantier : ${deja.map(x => `${esc(x.reseau)} (${dateFr(x.date)}, ${esc(x.resultat || '')})`).join(' · ')}</p>` : ''}
     </fieldset>
@@ -112,6 +120,10 @@ Views.epreuve.bind = (root, params) => {
     const k = el.dataset.ep;
     e[k] = el.type === 'number' ? (el.value === '' ? '' : num(el.value)) : el.value;
     if (k === 'pressionEpreuve') e.peAuto = false;
+    if (/^signataire/.test(k)) e.signataireManuel = true;
+    if (k === 'description') e.descAuto = false;
+    // Réseau connu : matière et diamètres repris de sa prise de cotes (sauf description saisie à la main)
+    if (k === 'reseau' && (!e.description || e.descAuto)) { const d = descriptionReseau(e); if (d) { e.description = d; e.descAuto = true; $('#ep-description').value = d; } }
     if (k === 'pressionService') {
       const pc = Epreuve.pressionConseillee(e.pressionService);
       if (pc && (e.peAuto || e.pressionEpreuve === '')) { e.pressionEpreuve = pc; e.peAuto = true; $('#ep-pressionEpreuve').value = pc; }
@@ -119,8 +131,15 @@ Views.epreuve.bind = (root, params) => {
     }
     if (k === 'userId') App.render(); else majResultat();
   }));
-  $('#ep-aff').onchange = () => { e.affaireId = $('#ep-aff').value; App.render(); };
-  $('#ep-mano').onchange = () => { const m = Store.get('materiels', $('#ep-mano').value); Object.assign(e, { manometreId: m ? m.id : '', manometre: m ? libelleManometre(m) : '' }); App.render(); };
+  // Autre chantier : signataire de ce chantier (sauf saisi à la main) et manomètre qui lui est affecté (sauf choisi à la main)
+  $('#ep-aff').onchange = () => {
+    changerChantierPv(e, $('#ep-aff').value);
+    if (e.manoAuto !== false) { const m = manometreDe(e.userId, e.affaireId); Object.assign(e, { manometreId: m ? m.id : '', manometre: m ? libelleManometre(m) : '' }); }
+    App.render();
+  };
+  $('#ep-mano').onchange = () => { const m = Store.get('materiels', $('#ep-mano').value); Object.assign(e, { manometreId: m ? m.id : '', manometre: m ? libelleManometre(m) : '', manoAuto: false }); App.render(); };
+  brancherChoixPointPv(root);
+  if (e.affaireId && !e.planCle) preparerListeChantier(e.affaireId);
   $('#ep-photo').onchange = async ev => {
     for (const fi of ev.target.files) { try { e.photos.push(await compressImage(fi)); } catch (err) { notify('Photo illisible.'); } }
     App.render();
@@ -144,7 +163,7 @@ Views.epreuve.bind = (root, params) => {
       for (const p of e.photos) photos.push(p.startsWith('data:') ? await envoyerImage(p) : p);
       const et = Epreuve.etalonnage(Store.get('materiels', e.manometreId), e.date);
       const o = { ...e, photos, resultat: Epreuve.resultat(e), chute: Epreuve.chute(e), dureeReelle: Epreuve.duree(e.heureDebut, e.heureFin), technicien: userName(e.userId), etalonnage: et.connu ? et.valableJusquau : (e.etalonnage || '') };
-      delete o.signatureTech; delete o.signatureClient; delete o.peAuto;
+      ['signatureTech', 'signatureClient', 'peAuto', 'signataireManuel', 'descAuto', 'manoAuto'].forEach(k => delete o[k]);
       if (signer) {
         o.signatureTechId = await envoyerImage(e.signatureTech);
         if (e.signatureClient) o.signatureClientId = await envoyerImage(e.signatureClient);

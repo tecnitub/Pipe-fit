@@ -360,6 +360,20 @@ const Essais = (() => {
     });
     return [...out.values()];
   }
-  return { pressionsCta, reservesReception, bloquantsReception, valeursReglees, PV_REGULATION, versReleve, renumeroter, reprendreReleve, releve, TYPES, ETATS, modele, conclusion, reserves, avancementPap, calculsFiche, debitPrevu, lireCaracteristiques, remplirPlaque, lireFicheExcel, pointsPompe, courbePompeSvg, suiviMes, manquesMES, tolerance, conformeMesure, ecart, conforme, synthese, manquesEQ, importerLignes };
+  // Rapport d'intervention : journée d'un compagnon reprise de ses pointages (tâche, début, fin) et de ses PV du jour
+  // sur le chantier, ex. « 07:30–12:00 Soudure ; PV épreuve EP-012 réseau CH conforme »
+  function resumeJournee({ temps = [], epreuves = [], mises = [], equilibrages = [], releves = [] } = {}, userId, date, affaireId) {
+    const du = r => r && r.userId === userId && r.date === date && (!affaireId || r.affaireId === affaireId);
+    const hm = h => String(h || '').slice(0, 5), etat = r => (r.statut === 'Signé' ? String(r.resultat || '').toLowerCase() : 'brouillon');
+    const heures = temps.filter(du).sort((a, b) => hm(a.debut).localeCompare(hm(b.debut)))
+      .map(t => [t.debut ? `${hm(t.debut)}–${t.fin ? hm(t.fin) : '…'}` : Number(t.heures) ? `${String(Math.round(Number(t.heures) * 100) / 100).replace('.', ',')} h` : '', t.tache || 'Travaux'].filter(Boolean).join(' '));
+    const pv = [...epreuves.filter(du).map(r => [r.heureDebut, `PV épreuve ${r.numero || ''} réseau ${r.reseau || ''} ${etat(r)}`]),
+      ...mises.filter(du).map(r => [r.heure, `PV mise en service ${r.numero || ''} ${r.equipement || ''} ${etat(r)}`]),
+      ...equilibrages.filter(du).map(r => [r.heure, `Équilibrage ${r.numero || ''} ${r.installation || ''} ${etat(r)}`]),
+      ...releves.filter(du).map(r => [r.heure || '', `Prise de cotes ligne ${r.ligne || ''}`])]
+      .sort((a, b) => hm(a[0]).localeCompare(hm(b[0]))).map(x => x[1].replace(/\s+/g, ' ').trim());
+    return [...heures, ...pv].join(' ; ');
+  }
+  return { resumeJournee, pressionsCta, reservesReception, bloquantsReception, valeursReglees, PV_REGULATION, versReleve, renumeroter, reprendreReleve, releve, TYPES, ETATS, modele, conclusion, reserves, avancementPap, calculsFiche, debitPrevu, lireCaracteristiques, remplirPlaque, lireFicheExcel, pointsPompe, courbePompeSvg, suiviMes, manquesMES, tolerance, conformeMesure, ecart, conforme, synthese, manquesEQ, importerLignes };
 })();
 if (typeof module !== 'undefined') module.exports = Essais;

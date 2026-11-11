@@ -12,6 +12,50 @@ function tachesMes(a) {
   ts.filter(t => (t.controles || []).length).forEach(t => { try { sessionStorage.setItem(`pf-plan-controles:${t.cle}`, JSON.stringify(t.controles)); } catch (e) { /* stockage indisponible */ } });
   return ts;
 }
+
+/* ---------- PV ouvert sans point de la liste (bouton « PV » du compagnon, « + PV » du bureau) ---------- */
+// Liste du chantier chargée une fois (réseau, sinon copie gardée sur le téléphone) : points à faire et suggestions
+const listePvChargee = new Set();
+async function chargerListeChantier(affaireId) {
+  if (!affaireId || listePvChargee.has(affaireId)) return false;
+  listePvChargee.add(affaireId);
+  const q = encodeURIComponent(affaireId), relire = async cle => { try { return await HorsLigne.relire(cle); } catch (e) { return null; } };
+  if (!planMesCache.has(affaireId)) {
+    try {
+      const [points, debits] = await Promise.all([api('GET', `/api/liens/plan-mes?affaireId=${q}`), api('GET', `/api/liens/debits?affaireId=${q}`)]);
+      planMesCache.set(affaireId, { points, debits }); HorsLigne.garder(`planmes/${affaireId}`, { points, debits });
+    } catch (e) { const c = await relire(`planmes/${affaireId}`); if (c) planMesCache.set(affaireId, c); }
+  }
+  if (typeof materielChantier !== 'undefined' && !materielChantier.has(affaireId)) {
+    let ms = null;
+    try { ms = await api('GET', `/api/liens/materiel?affaireId=${q}`); HorsLigne.garder(`materiel/${affaireId}`, ms); } catch (e) { ms = await relire(`materiel/${affaireId}`); }
+    if (Array.isArray(ms)) materielChantier.set(affaireId, typeof appliquerEnAttente === 'function' ? appliquerEnAttente(JSON.parse(JSON.stringify(ms)), affaireId) : ms);
+  }
+  return true;
+}
+// Chargement puis nouvel affichage de la page (pas pendant une saisie : le choix apparaîtra au prochain affichage)
+function preparerListeChantier(affaireId) {
+  const h = location.hash;
+  chargerListeChantier(affaireId).then(nouveau => {
+    const saisie = ['INPUT', 'TEXTAREA', 'SELECT'].includes((document.activeElement || {}).tagName);
+    if (nouveau && !saisie && location.hash === h && tachesMes(Store.get('affaires', affaireId) || { id: affaireId }).length) App.render();
+  }).catch(() => {});
+}
+// Choix « Point de la liste du chantier » en tête du PV : le PV s'ouvre prérempli depuis le point
+function choixPointPvHtml(nature, affaireId) {
+  const a = affaireId && Store.get('affaires', affaireId);
+  if (!a) return '';
+  const l = PlanMes.pointsAFaire(tachesMes(a), nature);
+  return l.length ? `<div class="field pv-point"><label for="pv-point">Point de la liste du chantier</label><select id="pv-point" class="big-select"><option value="">— PV hors liste (saisie libre) —</option>
+    ${l.map(t => `<option value="${esc(t.lien)}">${esc(t.libelle)}${t.etat === 'enCours' ? ' (brouillon en cours)' : t.etat === 'ko' ? ' (à refaire)' : ''}</option>`).join('')}</select>
+    <p class="small muted">${l.length} point(s) à faire : le PV s'ouvre prérempli (repère, local, marque, modèle, valeurs attendues de l'étude).</p></div>` : '';
+}
+const brancherChoixPointPv = root => { const s = root.querySelector('#pv-point'); if (s) s.onchange = () => { if (s.value) location.hash = s.value; }; };
+// Suggestions de saisie : noms de la liste du chantier puis ceux des PV déjà faits
+const nomsListeChantier = (nature, affaireId, deja = []) => { const a = affaireId && Store.get('affaires', affaireId);
+  return [...new Set([...(a ? PlanMes.nomsPoints(tachesMes(a), nature) : []), ...deja].map(x => String(x || '').trim()).filter(Boolean))]; };
+const datalistHtml = (id, l) => `<datalist id="${id}">${l.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>`;
+
 const BADGE_MES = { aFaire: ['b-info', '○'], enCours: ['b-warn', '◔'], fait: ['b-ok', '✓'], reserves: ['b-warn', '✓'], ko: ['b-bad', '✕'], sansObjet: ['', '–'] };
 const ROUTE_PV = { mes: 'mes', epreuve: 'epreuve', equilibrage: 'equilibrage' };
 // Filtre de la liste (tout, reste à faire, fait) mémorisé pendant la session

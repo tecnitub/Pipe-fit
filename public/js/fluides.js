@@ -127,6 +127,20 @@ const Fluides = (() => {
     return out;
   }
 
-  return { LISTE, info, prg, famille, teqCO2, periodicite, detectionObligatoire, NATURES, libelleNature, CONTROLE, prochainControle, masseBouteille, erreur, bilan, plusMois, lirePlaque };
+  // Équipement du registre décrit par un PV de mise en service (équipement frigorifique) et son chantier
+  function equipementDepuisMes(pv, affaire) {
+    const a = affaire || {}, ch = Number(String(pv.charge ?? '').replace(',', '.'));
+    return { clientId: a.clientId || '', siteId: a.siteId || '', designation: String(pv.equipement || '').trim(), localisation: [pv.localisation, pv.zone].filter(Boolean).join(', '),
+      fluide: LISTE.some(x => x[0] === pv.fluide) ? pv.fluide : 'R32', charge: Number.isFinite(ch) && ch > 0 ? ch : '', marque: pv.marque || '', modele: pv.modele || '', numeroSerie: pv.numeroSerie || '',
+      ...(pv.photoPlaqueId ? { photoPlaqueId: pv.photoPlaqueId } : {}), miseEnService: pv.date || '', mesId: pv.id || '' };
+  }
+  // Équipement déjà au registre : même PV, sinon même client et même n° de série, sinon même désignation et localisation
+  function trouverEquipement(eqs, e) {
+    const n = s => String(s || '').trim().toLowerCase();
+    const l = (eqs || []).filter(x => !x.archive);
+    return (e.mesId && l.find(x => x.mesId === e.mesId)) || l.find(x => x.clientId === e.clientId && n(e.numeroSerie) && n(x.numeroSerie) === n(e.numeroSerie))
+      || l.find(x => x.clientId === e.clientId && n(e.designation) && n(x.designation) === n(e.designation) && n(x.localisation) === n(e.localisation)) || null;
+  }
+  return { equipementDepuisMes, trouverEquipement, LISTE, info, prg, famille, teqCO2, periodicite, detectionObligatoire, NATURES, libelleNature, CONTROLE, prochainControle, masseBouteille, erreur, bilan, plusMois, lirePlaque };
 })();
 if (typeof module !== 'undefined') module.exports = Fluides;

@@ -30,8 +30,11 @@ const brouillonRapport = { uid: null, affaireId: '', date: '', intervenants: nul
 function rapportsView(u) {
   const b = brouillonRapport;
   const team = equipeDe(u.id);
-  const dernier = Store.all('temps').filter(t => t.userId === u.id).sort((x, y) => y.date.localeCompare(x.date))[0] || {};
-  if (b.uid !== u.id) Object.assign(brouillonRapport, { uid: u.id, affaireId: (chantiersActifs().find(x => x.id === dernier.affaireId) || chantiersActifs()[0] || {}).id || '', date: isoDate(new Date()), intervenants: [u.id, ...team.map(x => x.id)], travaux: '', observations: '', besoins: '', photos: [], materiel: [], signature: null, signNom: '', signQual: '', signOpen: false, termine: true });
+  // Chantier proposé : prévu au planning aujourd'hui, sinon pointé aujourd'hui, sinon le dernier pointé
+  const auj = isoDate(new Date()), miens = Store.all('temps').filter(t => t.userId === u.id).sort((x, y) => `${y.date}${y.debut || ''}`.localeCompare(`${x.date}${x.debut || ''}`));
+  const prevu = planJour(u.id, auj)[0], pointe = miens.find(t => t.date === auj), dernier = miens[0] || {};
+  const defaut = [prevu && prevu.affaireId, pointe && pointe.affaireId, dernier.affaireId].map(id => chantiersActifs().find(x => x.id === id)).find(Boolean);
+  if (b.uid !== u.id) Object.assign(brouillonRapport, { uid: u.id, affaireId: (defaut || chantiersActifs()[0] || {}).id || '', date: isoDate(new Date()), intervenants: [u.id, ...team.map(x => x.id)], travaux: '', observations: '', besoins: '', photos: [], materiel: [], signature: null, signNom: '', signQual: '', signOpen: false, termine: true });
   const af = affaireOf(b.affaireId), hd = estHorsDevis(af), v = hd ? Calc.horsDevis(af) : null;
   const ct = Store.get('contacts', af.contactId) || {};
   const nomSign = b.signNom || (ct.nom ? contactName(ct) : ''), qualSign = b.signQual || ct.fonction || '';
@@ -50,7 +53,7 @@ function rapportsView(u) {
         <div class="field"><label for="r-date">Date</label><input id="r-date" type="date" value="${esc(b.date)}"></div>
       </div>
       ${team.length ? `<fieldset class="intervenants"><legend>Intervenants</legend>${[u, ...team].map(m => `<label class="check"><input type="checkbox" data-int="${m.id}" ${b.intervenants.includes(m.id) ? 'checked' : ''}> ${esc(m.nom)} ${interimBadge(m)}</label>`).join('')}</fieldset>` : ''}
-      <div class="field"><label for="r-travaux">Travaux réalisés *</label><textarea data-dictee id="r-travaux" rows="5" placeholder="Ex. pose de 40 ml de DN50 inox rack nord, soudure de 18 joints, essais…">${esc(b.travaux)}</textarea></div>
+      <div class="field"><label for="r-travaux">Travaux réalisés *</label><button type="button" class="small secondary" id="r-journee" title="Tâches pointées (heures) et PV du jour sur ce chantier">↙ Reprendre ma journée</button><textarea data-dictee id="r-travaux" rows="5" placeholder="Ex. pose de 40 ml de DN50 inox rack nord, soudure de 18 joints, essais…">${esc(b.travaux)}</textarea></div>
       <div class="field"><label for="r-obs">Observations, difficultés, incidents</label><textarea data-dictee id="r-obs" rows="3">${esc(b.observations)}</textarea></div>
       <div class="field"><label for="r-besoins">Besoins (matériel, informations, accès)</label><textarea data-dictee id="r-besoins" rows="2">${esc(b.besoins)}</textarea></div>
       ${hd ? `<fieldset class="materiel"><legend>Matériel utilisé (à facturer)</legend>
@@ -90,6 +93,14 @@ function bindRapports(root, uid) {
   };
   root.querySelectorAll('#r-date, #r-travaux, #r-obs, #r-besoins, [data-int], #r-snom, #r-squal, #r-termine').forEach(el => { el.onchange = garder; el.oninput = garder; });
   root.querySelector('#r-aff').onchange = () => { garder(); Object.assign(b, { materiel: [], signNom: '', signQual: '', signature: null }); App.render(); };
+  // Journée reprise : tâches pointées et PV du jour (épreuves, mises en service, équilibrages, prises de cotes)
+  root.querySelector('#r-journee').onclick = () => {
+    garder();
+    const txt = Essais.resumeJournee({ temps: Store.all('temps'), epreuves: Store.all('epreuves'), mises: Store.all('misesEnService'), equilibrages: Store.all('equilibrages'), releves: Store.all('releves') || [] }, uid, b.date, b.affaireId);
+    if (!txt) return notify('Rien de pointé ni de PV ce jour-là sur ce chantier.');
+    b.travaux = b.travaux.trim() ? `${b.travaux.trim()}\n${txt}` : txt;
+    root.querySelector('#r-travaux').value = b.travaux;
+  };
   // Signature : le pavé est initialisé à l'ouverture (il doit être visible pour être dimensionné)
   const det = root.querySelector('#r-sign');
   let pad = null;
@@ -196,10 +207,11 @@ Views.reception = params => {
       <td class="actions">${r.statut !== 'Levée' ? `<button class="small" data-lever="${r.id}">Lever</button>` : ''}${!r.pvId ? `<button class="small danger" data-delres="${r.id}" aria-label="Supprimer la réserve">✕</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Aucune réserve.</td></tr>'}
   </table></div>
   ${mesReceptionHtml(a, pv)}
-  ${!pv ? `<div class="card reserve-form">
+  ${!pv ? `<datalist id="rs-locs">${[...new Set([...res.map(r => r.localisation), ...Store.all('misesEnService').filter(m => m.affaireId === a.id).flatMap(m => [m.localisation, m.zone]), site && site.libelle].map(x => String(x || '').trim()).filter(Boolean))].map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+  <div class="card reserve-form">
     <strong>Nouvelle réserve</strong>
     <div class="grid2">
-      <div class="field"><label for="rs-loc">Localisation</label><input id="rs-loc" placeholder="Ex. local CIP, rack nord"></div>
+      <div class="field"><label for="rs-loc">Localisation</label><input id="rs-loc" list="rs-locs" placeholder="Ex. local CIP, rack nord"></div>
       <div class="field"><label for="rs-resp">Responsable</label><select id="rs-resp">${optionsStr(RESPONSABLES, 'Pipe-Fit')}</select></div>
       <div class="field"><label for="rs-ech">À lever avant le</label><input id="rs-ech" type="date" value="${isoDate(addDays(new Date(), 15))}"></div>
       <div class="field" style="grid-column:1/-1"><label for="rs-desc">Description</label><input id="rs-desc" placeholder="Ex. calorifuge manquant sur 3 m de ligne retour"></div>

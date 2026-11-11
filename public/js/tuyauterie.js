@@ -570,7 +570,30 @@ const Tuyauterie = (() => {
       !((r.elements || []).length || (r.cotes || []).some(c => n(c.valeur) !== null)) && 'au moins une cote ou un élément de tuyauterie'].filter(Boolean);
   }
   const STATUTS = ['Brouillon', 'Relevé', 'Terminé'];
-  return { lireCotesFiche, JOINTS, definirBrides, planDebit, troncons, definirCatalogue, modeles, modeleDe, catalogue: () => catalogue, DN, DE, INSTRUMENTS, SYSTEMES, systeme, cleSysteme, taille, RAYON_3D, TE, REDUC, FOND, BRIDE, BRIDES_TYPES, VANNES, ANGLES_DEVOIEMENT, aBranche, axeFaceV3V, axeFaceDev, RACCORDEMENTS, RACCORDS, MATIERES, PN, TYPES, DIRS, DIRS_LIB, STATUTS,
+  // Ligne déjà relevée sur le chantier (même repère, casse et accents ignorés) : la prise de cotes la plus récente
+  const normLigne = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  function dernierReleve(releves, affaireId, ligne) {
+    const k = normLigne(ligne);
+    if (!k) return null;
+    return (releves || []).filter(r => r && (!affaireId || r.affaireId === affaireId) && normLigne(r.ligne) === k)
+      .sort((a, b) => `${b.date || ''}${b.numero || ''}`.localeCompare(`${a.date || ''}${a.numero || ''}`))[0] || null;
+  }
+  // Diamètres d'un relevé (départ, éléments et piquages), du plus grand au plus petit
+  function diametres(rel) {
+    const out = new Set([Number(rel && rel.dnDepart) || 0]);
+    const voir = l => (l || []).forEach(e => { ['dn', 'dn2', 'dnB'].forEach(k => { if (Number(e[k]) > 0) out.add(Number(e[k])); }); voir(e.branche); });
+    voir(rel && rel.elements);
+    return [...out].filter(d => d > 0).sort((a, b) => b - a);
+  }
+  // Description pour le PV d'épreuve : « Acier P235GH DN80–DN50 »
+  function descriptionLigne(rel) {
+    if (!rel) return '';
+    const d = diametres(rel), mat = rel.matiere && rel.matiere !== 'Autre' ? rel.matiere : systeme(rel).matiere;
+    return [mat, d.length ? (d.length > 1 ? `DN${d[0]}–DN${d[d.length - 1]}` : `DN${d[0]}`) : ''].filter(Boolean).join(' ');
+  }
+  // Caractéristiques reprises d'une ligne déjà relevée (nouvelle prise de cotes de la même ligne)
+  const reprendreLigne = rel => (rel ? { fluide: rel.fluide || '', systeme: cleSysteme(rel), matiere: rel.matiere || systeme(rel).matiere, pn: rel.pn || 'PN16', dnDepart: Number(rel.dnDepart) || 50 } : null);
+  return { dernierReleve, diametres, descriptionLigne, reprendreLigne, lireCotesFiche, JOINTS, definirBrides, planDebit, troncons, definirCatalogue, modeles, modeleDe, catalogue: () => catalogue, DN, DE, INSTRUMENTS, SYSTEMES, systeme, cleSysteme, taille, RAYON_3D, TE, REDUC, FOND, BRIDE, BRIDES_TYPES, VANNES, ANGLES_DEVOIEMENT, aBranche, axeFaceV3V, axeFaceDev, RACCORDEMENTS, RACCORDS, MATIERES, PN, TYPES, DIRS, DIRS_LIB, STATUTS,
     lire, angle, axeFaceCoude, axeFaceTe, longueur, coupes, placer, trouver, listeDe, designation, nomenclature, bilanSoudures, lignesChiffrage, csvChiffrage, debit, manques };
 })();
 if (typeof module !== 'undefined') module.exports = Tuyauterie;
