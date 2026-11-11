@@ -20,6 +20,9 @@ const Cta = ((D, C, N) => {
   const RECUP = { aucun: ['Sans récupérateur', 0], plaques: ['Échangeur à plaques à contre-courant', 75], roue: ['Roue rotative', 80], glycol: ['Batteries à eau glycolée (boucle)', 50] };
   const CATEGORIES_SFP = [[500, 'SFP 1'], [750, 'SFP 2'], [1250, 'SFP 3'], [2000, 'SFP 4'], [3000, 'SFP 5'], [4500, 'SFP 6'], [Infinity, 'SFP 7']];
 
+  // Batteries à eau (champ « froid ») et batterie électrique (champ « batElec »), combinables
+  const bcEau = e => !['froide', 'aucune'].includes((e || {}).froid), bfEau = e => !['non', 'aucune'].includes((e || {}).froid);
+  const BAT_ELEC = { chaude: 'Batterie chaude électrique', prechauffage: 'Batterie électrique de préchauffage (antigel)', appoint: 'Batterie électrique d\'appoint (post-chauffage)' };
   N.TYPES.cta = {
     titre: 'Centrale de traitement d\'air', icone: '🏭', famille: 'Aéraulique',
     description: 'Schéma de principe de la CTA, évolutions de l\'air hiver et été, puissances et débits d\'eau des batteries, récupérateur, humidification, ventilateurs et SFP.',
@@ -31,10 +34,11 @@ const Cta = ((D, C, N) => {
       { k: 'eta', l: 'Efficacité du récupérateur (vide : valeur courante du type)', u: '%', d: '', si: e => e.type === 'double' && e.recup !== 'aucun' },
       { k: 'vf', l: 'Vitesse frontale des batteries', u: 'm/s', d: 2.5 },
       { g: 'Puissances des batteries' },
-      { k: 'froid', l: 'Batteries', t: 's', o: [['oui', 'Batterie chaude + batterie froide (eau glacée)'], ['non', 'Batterie chaude seule'], ['froide', 'Batterie froide seule'], ['co', 'Batterie change-over (eau chaude l\'hiver, eau glacée l\'été)']], d: 'oui' },
+      { k: 'froid', l: 'Batteries à eau', t: 's', o: [['oui', 'Batterie chaude + batterie froide (eau glacée)'], ['non', 'Batterie chaude seule'], ['froide', 'Batterie froide seule'], ['co', 'Batterie change-over (eau chaude l\'hiver, eau glacée l\'été)'], ['aucune', 'Sans batterie à eau']], d: 'oui' },
+      { k: 'batElec', l: 'Batterie électrique (en plus des batteries à eau, ou seule)', t: 's', o: [['', 'Aucune'], ...Object.entries(BAT_ELEC)], d: '' },
       { k: 'modeP', l: 'Puissances chaud et froid', t: 's', o: [['conditions', 'Calculées depuis les conditions extérieures et intérieures'], ['saisie', 'Saisies (fiche technique du fabricant)']], d: 'conditions' },
-      { k: 'PchaudS', l: 'Puissance chaud (batterie chaude ou change-over en hiver)', u: 'kW', d: '', si: e => e.modeP === 'saisie' && e.froid !== 'froide' },
-      { k: 'PfroidS', l: 'Puissance froid (batterie froide ou change-over en été)', u: 'kW', d: '', si: e => e.modeP === 'saisie' && e.froid !== 'non' },
+      { k: 'PchaudS', l: 'Puissance chaud (batterie chaude ou change-over en hiver)', u: 'kW', d: '', si: e => e.modeP === 'saisie' && (bcEau(e) || e.batElec === 'chaude') },
+      { k: 'PfroidS', l: 'Puissance froid (batterie froide ou change-over en été)', u: 'kW', d: '', si: e => e.modeP === 'saisie' && bfEau(e) },
       { g: 'Conditions d\'hiver' }, { k: 'TeH', l: 'Température extérieure de base', u: '°C', d: -7 , si: e => e.modeP !== 'saisie' }, { k: 'HReH', l: 'Humidité relative extérieure', u: '%', d: 90 , si: e => e.modeP !== 'saisie' },
       { k: 'TiH', l: 'Température intérieure (reprise)', u: '°C', d: 20 , si: e => e.modeP !== 'saisie' }, { k: 'HRiH', l: 'Humidité relative intérieure (reprise)', u: '%', d: 35 , si: e => e.modeP !== 'saisie' },
       { k: 'TsH', l: 'Température de soufflage', u: '°C', d: 20 , si: e => e.modeP !== 'saisie' },
@@ -43,25 +47,26 @@ const Cta = ((D, C, N) => {
       { g: 'Conditions d\'été' }, { k: 'TeE', l: 'Température extérieure de base', u: '°C', d: 32 , si: e => e.modeP !== 'saisie' }, { k: 'HReE', l: 'Humidité relative extérieure', u: '%', d: 40 , si: e => e.modeP !== 'saisie' },
       { k: 'TiE', l: 'Température intérieure (reprise)', u: '°C', d: 26 , si: e => e.modeP !== 'saisie' }, { k: 'HRiE', l: 'Humidité relative intérieure (reprise)', u: '%', d: 50 , si: e => e.modeP !== 'saisie' },
       { k: 'TsE', l: 'Température de soufflage', u: '°C', d: 16 , si: e => e.modeP !== 'saisie' }, 
-      { g: 'Régimes d\'eau' }, { k: 'TcAller', l: 'Eau chaude : départ', u: '°C', d: 70, si: e => e.froid !== 'froide' }, { k: 'TcRetour', l: 'Eau chaude : retour', u: '°C', d: 50, si: e => e.froid !== 'froide' },
-      { k: 'TfAller', l: 'Eau glacée : départ', u: '°C', d: 7, si: e => e.froid !== 'non' }, { k: 'TfRetour', l: 'Eau glacée : retour', u: '°C', d: 12, si: e => e.froid !== 'non' },
+      { g: 'Régimes d\'eau' }, { k: 'TcAller', l: 'Eau chaude : départ', u: '°C', d: 70, si: bcEau }, { k: 'TcRetour', l: 'Eau chaude : retour', u: '°C', d: 50, si: bcEau },
+      { k: 'TfAller', l: 'Eau glacée : départ', u: '°C', d: 7, si: bfEau }, { k: 'TfRetour', l: 'Eau glacée : retour', u: '°C', d: 12, si: bfEau },
       { g: 'Pertes de charge et ventilateurs' },
       { k: 'dpReseauS', l: 'Réseau de soufflage (hors CTA)', u: 'Pa', d: 250 }, { k: 'dpReseauR', l: 'Réseau de reprise (hors CTA)', u: 'Pa', d: 200, si: e => e.type !== 'simple' },
       { k: 'dpFiltreAN', l: 'Filtre d\'air neuf ePM1 (F7), perte moyenne', u: 'Pa', d: 150 }, { k: 'dpFiltreR', l: 'Filtre de reprise ePM10 (M5), perte moyenne', u: 'Pa', d: 100, si: e => e.type !== 'simple' },
       { k: 'dpRecup', l: 'Récupérateur (par flux)', u: 'Pa', d: 150, si: e => e.type === 'double' && e.recup !== 'aucun' },
-      { k: 'dpBC', l: 'Batterie chaude', u: 'Pa', d: 60, si: e => !['froide', 'co'].includes(e.froid) }, { k: 'dpBF', l: 'Batterie froide ou change-over (humide)', u: 'Pa', d: 120, si: e => e.froid !== 'non' },
+      { k: 'dpBC', l: 'Batterie chaude', u: 'Pa', d: 60, si: e => bcEau(e) && e.froid !== 'co' }, { k: 'dpBF', l: 'Batterie froide ou change-over (humide)', u: 'Pa', d: 120, si: bfEau },
+      { k: 'dpBE', l: 'Batterie électrique', u: 'Pa', d: 30, si: e => !!e.batElec },
       { k: 'dpDivers', l: 'Caissons, silencieux, volets', u: 'Pa', d: 80 }, { k: 'rendement', l: 'Rendement global des ventilateurs', u: '%', d: 60 },
       { g: 'Électricité (bilan de puissance de l\'étude)' },
       { k: 'PelecVS', l: 'Puissance électrique du ventilateur de soufflage (vide : calculée ; « 📄 Fiche technique » la remplit)', u: 'kW', d: '' },
       { k: 'PelecVR', l: 'Puissance électrique du ventilateur de reprise (vide : calculée)', u: 'kW', d: '', si: e => e.type !== 'simple' },
-      { k: 'PelBe', l: 'Batterie électrique (préchauffage, appoint)', u: 'kW', d: '' },
+      { k: 'PelBe', l: 'Puissance de la batterie électrique (vide : calculée pour une batterie chaude électrique ; fiche du fabricant sinon)', u: 'kW', d: '', si: e => !!e.batElec || num(e.PelBe) > 0 },
       { k: 'tensionCta', l: 'Tension', t: 's', o: [['', 'Selon la puissance'], ['mono', '230 V mono'], ['tri', '400 V tri']], d: '' },
       { k: 'alim', l: 'Alimentée par', t: 's', o: (e, et) => (typeof Terminaux !== 'undefined' ? Terminaux : require('./terminaux')).optAlim(e, et, e.alim), d: '' }],
     calcul(e) {
       const alertes = [], type = e.type || 'double', Qs = num(e.Qs), Qr = type === 'simple' ? 0 : num(e.Qr, Qs);
       const recup = type === 'double' ? (RECUP[e.recup] ? e.recup : 'plaques') : 'aucun', eta = recup === 'aucun' ? 0 : (e.eta === '' || e.eta === undefined ? RECUP[recup][1] : num(e.eta)) / 100;
       // Batteries : chaude + froide, chaude seule, froide seule ou batterie unique change-over
-      const fAN = type === 'melange' ? Math.min(1, Math.max(0, num(e.pAN, 30) / 100)) : 1, froid = e.froid !== 'non', chaude = e.froid !== 'froide', co = e.froid === 'co';
+      const fAN = type === 'melange' ? Math.min(1, Math.max(0, num(e.pAN, 30) / 100)) : 1, froid = bfEau(e), chaudeEau = bcEau(e), elecChaude = e.batElec === 'chaude' && !chaudeEau, chaude = chaudeEau || elecChaude, co = e.froid === 'co';
       const saison = (Te, HRe, Ti, HRi, Ts, hiver) => {
         const E = etat(Te, xDe(Te, HRe)), R = etat(Ti, xDe(Ti, HRi)), pts = [['Air neuf extérieur', E]];
         // Récupérateur sensible (rapport des débits pris en compte pour la température rejetée)
@@ -87,15 +92,19 @@ const Cta = ((D, C, N) => {
       const saisie = e.modeP === 'saisie';
       if (saisie) {
         H.P = chaude ? num(e.PchaudS) : 0; S.P = froid ? num(e.PfroidS) : 0; S.cond = 0; H.vapeur = 0; H.rejet = null;
-        if (chaude && !(H.P > 0)) alertes.push(alerte('attention', 'Puissance de la batterie chaude à saisir (fiche technique du fabricant).'));
+        if (chaude && !(H.P > 0)) alertes.push(alerte('attention', `Puissance de la batterie chaude${elecChaude ? ' électrique' : ''} à saisir (fiche technique du fabricant).`));
         if (froid && !(S.P > 0)) alertes.push(alerte('attention', 'Puissance de la batterie froide à saisir (fiche technique du fabricant).'));
       }
       const eauC = C.eau((num(e.TcAller, 70) + num(e.TcRetour, 50)) / 2), dTc = num(e.TcAller, 70) - num(e.TcRetour, 50);
       const eauF = C.eau((num(e.TfAller, 7) + num(e.TfRetour, 12)) / 2), dTf = num(e.TfRetour, 12) - num(e.TfAller, 7);
-      const QwC = chaude && dTc > 0 ? H.P * 1000 / (eauC.rho * eauC.cp * dTc) * 3600 : NaN, QwF = dTf > 0 ? S.P * 1000 / (eauF.rho * eauF.cp * dTf) * 3600 : NaN;
+      const QwC = chaudeEau && dTc > 0 ? H.P * 1000 / (eauC.rho * eauC.cp * dTc) * 3600 : NaN, QwF = dTf > 0 ? S.P * 1000 / (eauF.rho * eauF.cp * dTf) * 3600 : NaN;
+      // Batterie électrique : batterie chaude électrique (puissance de chauffe calculée), préchauffage ou appoint (fiche)
+      const Pbe = elecChaude ? (num(e.PelBe) > 0 ? num(e.PelBe) : Math.round(H.P * 100) / 100) : e.batElec ? num(e.PelBe) : 0;
+      if (e.batElec && !elecChaude && !(Pbe > 0)) alertes.push(alerte('attention', `${BAT_ELEC[e.batElec] || 'Batterie électrique'} : puissance à saisir (fiche technique du fabricant).`));
+      if (e.batElec === 'chaude' && chaudeEau) alertes.push(alerte('attention', 'Batterie chaude à eau et batterie chaude électrique : la batterie électrique est comptée en appoint (puissance à saisir).'));
       const Sf = Qs / 3600 / num(e.vf, 2.5);
       // Ventilateurs
-      const dpS = num(e.dpReseauS) + num(e.dpFiltreAN) + (recup !== 'aucun' ? num(e.dpRecup) : 0) + (chaude && !co ? num(e.dpBC) : 0) + (froid ? num(e.dpBF) : 0) + (e.humid === 'vapeur' ? 30 : 0) + num(e.dpDivers);
+      const dpS = num(e.dpReseauS) + num(e.dpFiltreAN) + (recup !== 'aucun' ? num(e.dpRecup) : 0) + (chaudeEau && !co ? num(e.dpBC) : 0) + (froid ? num(e.dpBF) : 0) + (e.batElec ? num(e.dpBE, 30) : 0) + (e.humid === 'vapeur' ? 30 : 0) + num(e.dpDivers);
       const dpR = type === 'simple' ? 0 : num(e.dpReseauR) + num(e.dpFiltreR) + (recup !== 'aucun' ? num(e.dpRecup) : 0) + num(e.dpDivers) / 2;
       const eta_v = num(e.rendement, 60) / 100, PvS = Qs / 3600 * dpS / eta_v, PvR = Qr / 3600 * dpR / eta_v;
       const sfpS = PvS / Math.max(Qs / 3600, 1e-9), sfpR = Qr ? PvR / (Qr / 3600) : 0, sfp = (PvS + PvR) / Math.max(Qs / 3600, 1e-9);
@@ -108,7 +117,7 @@ const Cta = ((D, C, N) => {
       if (type === 'double' && Qr && Math.abs(Qr - Qs) / Qs > 0.15) alertes.push(alerte('attention', `Débits soufflé et repris déséquilibrés de ${nf(Math.abs(Qr - Qs) / Qs * 100, 0)} % : vérifier la mise en pression des locaux.`));
       if (!saisie && !chaude && H.avantBatterie.T < num(e.TsH, 20) - 1) alertes.push(alerte('attention', `Sans batterie chaude, l'air est soufflé à ${nf(H.avantBatterie.T, 1)} °C en hiver.`));
       if (co) alertes.push(alerte('attention', `Batterie change-over : une seule batterie, alimentée en eau chaude l'hiver (${nf(H.P, 1)} kW) et en eau glacée l'été (${nf(S.P, 1)} kW) ; sélection sur le régime ${S.P >= H.P ? 'froid' : 'chaud'} (le plus contraignant), vanne d'inversion ou circuit change-over, sonde de basculement et bac à condensats.`));
-      if (!saisie && chaude && H.avantBatterie.T < 3 && num(e.TcAller, 70) > 0) alertes.push(alerte('attention', `Air à ${nf(H.avantBatterie.T, 1)} °C à l'entrée de la batterie chaude : thermostat antigel, pompe de batterie et vanne trois voies (ou eau glycolée).`));
+      if (!saisie && chaude && H.avantBatterie.T < 3 && chaudeEau && num(e.TcAller, 70) > 0) alertes.push(alerte('attention', `Air à ${nf(H.avantBatterie.T, 1)} °C à l'entrée de la batterie chaude : thermostat antigel, pompe de batterie et vanne trois voies (ou eau glycolée).`));
       if (!saisie && !froid && S.avantBatterie.T > num(e.TsE, 16) + 1) alertes.push(alerte('attention', `Sans batterie froide, l'air est soufflé à ${nf(S.avantBatterie.T, 1)} °C en été.`));
       if (!saisie && froid && S.cond > 0) alertes.push(alerte('attention', `Batterie froide en régime humide (${nf(S.cond, 1)} kg/h de condensats) : bac de condensats inox, siphon dimensionné à la dépression du caisson, pare-gouttelettes si v > 2,5 m/s.`));
       if (num(e.vf, 2.5) > 2.8) alertes.push(alerte('attention', 'Vitesse frontale élevée : pertes de charge, bruit et entraînement de gouttelettes sur la batterie froide.'));
@@ -116,14 +125,15 @@ const Cta = ((D, C, N) => {
       // Fiche technique chargée : pression disponible face au réseau, puissances des batteries et des ventilateurs
       if (e.fiche) { const FC = typeof FicheCta !== 'undefined' ? FicheCta : require('./fiche-cta');
         alertes.push(...FC.controles(e.fiche, { reseauS: num(e.dpReseauS), reseauR: type === 'simple' ? NaN : num(e.dpReseauR), Pchaud: H.P, Pfroid: froid ? S.P : NaN, Pvent: (PvS + PvR) / 1000, Qs })); }
-      alertes.push(alerte('ok', `${co ? `Batterie change-over ${nf(H.P, 1)} kW chaud / ${nf(S.P, 1)} kW froid` : [chaude && `Batterie chaude ${nf(H.P, 1)} kW`, froid && `batterie froide ${nf(S.P, 1)} kW`].filter(Boolean).join(', ')} ; ventilateurs ${nf((PvS + PvR) / 1000, 2)} kW, SFP ${nf(sfp, 0)} W/(m³/s).`));
+      alertes.push(alerte('ok', `${co ? `Batterie change-over ${nf(H.P, 1)} kW chaud / ${nf(S.P, 1)} kW froid` : [chaudeEau && `Batterie chaude ${nf(H.P, 1)} kW`, froid && `batterie froide ${nf(S.P, 1)} kW`, e.batElec && `${(BAT_ELEC[elecChaude ? 'chaude' : e.batElec] || 'batterie électrique').toLowerCase()} ${nf(Pbe, 1)} kW`].filter(Boolean).join(', ') || 'Sans batterie'} ; ventilateurs ${nf((PvS + PvR) / 1000, 2)} kW, SFP ${nf(sfp, 0)} W/(m³/s).`));
       const lig = (nom, s) => [nom, nf(s.T, 1), nf(s.HR, 0), nf(s.x * 1000, 2), nf(s.h, 1)];
       return {
-        valeurs: { Pchaud: H.P, Pfroid: S.P, QwC, QwF, condensats: S.cond, vapeur: H.vapeur, PvS, PvR, sfp, sfpS, sfpR, dpS, dpR, Sf, eta, hiver: H.pts.map(p => p[1]), ete: S.pts.map(p => p[1]) },
+        valeurs: { Pchaud: chaudeEau ? H.P : 0, Pbe, Pfroid: S.P, QwC, QwF, condensats: S.cond, vapeur: H.vapeur, PvS, PvR, sfp, sfpS, sfpR, dpS, dpR, Sf, eta, hiver: H.pts.map(p => p[1]), ete: S.pts.map(p => p[1]) },
         resume: [...(e.fiche && (e.fiche.fabricant || e.fiche.reference) ? [['Centrale (fiche technique)', [e.fiche.fabricant, e.fiche.reference].filter(Boolean).join(' ')]] : []), ['Débit soufflé / repris', `${nf(Qs, 0)} / ${nf(Qr, 0)} m³/h`], ...(eta ? [['Récupérateur', `${RECUP[recup][0]}, efficacité ${nf(eta * 100, 0)} %`]] : []),
           ...(saisie ? [['Puissances', 'saisies (fiche technique du fabricant), sans calcul des évolutions de l\'air']] : []),
           ...(co ? [['Batterie change-over (hiver)', `${nf(H.P, 1)} kW · ${nf(QwC, 2)} m³/h d'eau chaude (${nf(num(e.TcAller, 70), 0)}/${nf(num(e.TcRetour, 50), 0)} °C)`]]
-            : chaude ? [['Batterie chaude', `${nf(H.P, 1)} kW · ${nf(QwC, 2)} m³/h d'eau (${nf(num(e.TcAller, 70), 0)}/${nf(num(e.TcRetour, 50), 0)} °C)`]] : []),
+            : chaudeEau ? [['Batterie chaude', `${nf(H.P, 1)} kW · ${nf(QwC, 2)} m³/h d'eau (${nf(num(e.TcAller, 70), 0)}/${nf(num(e.TcRetour, 50), 0)} °C)`]] : []),
+          ...(e.batElec ? [[BAT_ELEC[elecChaude ? 'chaude' : e.batElec] || 'Batterie électrique', Pbe > 0 ? `${nf(Pbe, 1)} kW électriques` : 'puissance à saisir']] : []),
           ...(froid ? [[co ? 'Batterie change-over (été)' : 'Batterie froide', `${nf(S.P, 1)} kW · ${nf(QwF, 2)} m³/h d'eau (${nf(num(e.TfAller, 7), 0)}/${nf(num(e.TfRetour, 12), 0)} °C)`], ...(saisie ? [] : [['Condensats', `${nf(S.cond, 1)} kg/h`]])] : []),
           ...(H.vapeur ? [['Humidificateur', `${nf(H.vapeur, 1)} kg/h de vapeur`]] : []),
           ['Section frontale des batteries', `${nf(Sf, 2)} m² (${nf(num(e.vf, 2.5), 1)} m/s)`],
@@ -140,7 +150,7 @@ const Cta = ((D, C, N) => {
           'Récupérateur : efficacité sensible appliquée côté air neuf ; humidité de l\'air neuf inchangée (pas de transfert d\'humidité).',
           'Batterie froide : air en sortie à la température de soufflage, humidité relative limitée à 95 % (déshumidification si le point de rosée de l\'air entrant est supérieur).',
           'Puissance absorbée d\'un ventilateur = débit × perte de charge totale / rendement global ; SFP selon NF EN 16798-3 (catégories 1 à 7).'],
-        synthese: `${nf(Qs, 0)} m³/h · BC ${nf(H.P, 0)} kW${froid ? ` · BF ${nf(S.P, 0)} kW` : ''} · SFP ${nf(sfp, 0)}`,
+        synthese: `${nf(Qs, 0)} m³/h${chaudeEau ? ` · BC ${nf(H.P, 0)} kW` : ''}${froid ? ` · BF ${nf(S.P, 0)} kW` : ''}${Pbe > 0 ? ` · BE ${nf(Pbe, 0)} kW` : ''} · SFP ${nf(sfp, 0)}`,
         schema: dessinerCta(e, { type, recup, froid, H, S, Qs, Qr }),
       };
     },
@@ -148,7 +158,7 @@ const Cta = ((D, C, N) => {
 
   /* ---------- Schéma de principe de la CTA ---------- */
   function dessinerCta(e, { type, recup, froid, H, S, Qs, Qr }) {
-    const co = e.froid === 'co', chaude = e.froid !== 'froide';
+    const co = e.froid === 'co', chaude = bcEau(e), be = e.batElec ? [['batterie-c', e.batElec === 'chaude' ? 'Batterie électrique' : e.batElec === 'prechauffage' ? 'Préchauffage électrique' : 'Appoint électrique']] : [];
     const out = [], c = '#1f2937', bleu = '#2563eb', rouge = '#c0392b', vert = '#15803d';
     const R = (x, y, w, h, col = c) => out.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff" stroke="${col}" stroke-width="1.5"/>`);
     const L = (x1, y1, x2, y2, col = c, w = 1.2) => out.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="${w}"/>`);
@@ -169,7 +179,7 @@ const Cta = ((D, C, N) => {
     const etatTxt = (x, y, s, coul) => { T(x, y, `${nf(s.T, 1)} °C · ${nf(s.HR, 0)} %`, { fs: 9, c: coul }); };
     // Ligne de soufflage
     const sousf = [['volet', 'Volet air neuf'], ['filtre', 'Filtre ePM1'], ...(recup !== 'aucun' ? [['recup', '']] : []), ...(type === 'melange' ? [['melange', '']] : []),
-      ...(co ? [['batterie-f', 'Batterie change-over']] : [...(chaude ? [['batterie-c', 'Batterie chaude']] : []), ...(froid ? [['batterie-f', 'Batterie froide']] : [])]), ...(e.humid === 'vapeur' ? [['humid', 'Humidificateur']] : []), ['ventilo', 'Ventilateur'], ['silencieux', 'Silencieux']];
+      ...(e.batElec === 'prechauffage' ? be : []), ...(co ? [['batterie-f', 'Batterie change-over']] : [...(chaude ? [['batterie-c', 'Batterie chaude']] : []), ...(froid ? [['batterie-f', 'Batterie froide']] : [])]), ...(e.batElec && e.batElec !== 'prechauffage' ? be : []), ...(e.humid === 'vapeur' ? [['humid', 'Humidificateur']] : []), ['ventilo', 'Ventilateur'], ['silencieux', 'Silencieux']];
     let x = x0;
     const xRecup = {};
     L(20, yS + Hc / 2, x0, yS + Hc / 2, bleu, 2.5); fleche(x0 - 2, yS + Hc / 2, 1, bleu); T(48, yS + Hc / 2 - 10, 'Air neuf', { fs: 10, b: true });
@@ -321,7 +331,7 @@ const Cta = ((D, C, N) => {
   };
 
   // Batteries d'une CTA : chaude, froide, change-over (champ « froid » : oui, non, froide, co)
-  const batteries = e => ({ chaude: (e || {}).froid !== 'froide', froide: (e || {}).froid !== 'non', co: (e || {}).froid === 'co' });
-  return { pws, xDe, hDe, HRde, etat, BOUCHES, lwBouche, termeLocal, OBJECTIFS, batteries };
+  const batteries = e => ({ chaude: bcEau(e), froide: bfEau(e), co: (e || {}).froid === 'co', elec: (e || {}).batElec || '' });
+  return { pws, xDe, hDe, HRde, etat, BOUCHES, lwBouche, termeLocal, OBJECTIFS, batteries, bcEau, bfEau, BAT_ELEC };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Notes !== 'undefined' ? Notes : require('./notes'));
 if (typeof module !== 'undefined') module.exports = Cta;

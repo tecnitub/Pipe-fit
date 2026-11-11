@@ -1162,13 +1162,13 @@ const Electricite = ((N, Sc) => {
         if (Number.isFinite(v.PvR) && v.PvR > 0) ajout('vr', { metre: `cta|${num(es.Qs)}`, rep: `VR-N${ni + 1}`, designation: `Ventilateur de reprise — ${titre}${nomF}`, type: 'ventilateur', P: pR ?? Math.max(0.1, kW(v.PvR * 1.15)), tension: tR, regulation: 'var', depart: 'variateur', alim: es.alim || '', ...(pR != null ? { pFiche: true } : {}) });
         // Vannes des batteries à eau : celles qu'un circuit dédié du schéma de principe ne règle pas déjà (CTA en bout de
         // branche d'un réseau arborescent, batterie froide d'une CTA dont le circuit dédié est chaud…)
-        const fc = es.froid || 'non', bats = fc === 'co' ? [['co', 'change-over']] : [...(fc !== 'froide' ? [['bc', 'chaude']] : []), ...(fc !== 'non' ? [['bf', 'froide']] : [])];
+        const fc = es.froid || 'non', bats = fc === 'co' ? [['co', 'change-over']] : [...(!['froide', 'aucune'].includes(fc) ? [['bc', 'chaude']] : []), ...(!['non', 'aucune'].includes(fc) ? [['bf', 'froide']] : [])];
         const ref = Liens.circuitDeAnnexe ? Liens.circuitDeAnnexe(etude.notes || [], n) : null;
-        const couvre = (() => { if (!ref) return new Set(); const ep = Liens.resoudre ? Liens.resoudre(etude, ref.pid).entrees : ref.pid.entrees, R = (typeof Schema !== 'undefined' ? Schema : require('./schema')).REGIMES[ep.reseau];
-          if (ep.reseau === 'co') return new Set(['bc', 'bf', 'co']); const fr = ep.reseau === 'perso' ? num(ep.Tdep) < num(ep.Tret) : R && R[1] < R[2]; return new Set(fr ? ['bf', 'co'] : ['bc', 'co']); })();
+        const couvre = ref && Liens.couvertParCircuit ? new Set([...Liens.couvertParCircuit(etude, ref.pid), ...(fc === 'co' ? ['co'] : [])]) : new Set();
         bats.filter(([b]) => !couvre.has(b)).forEach(([b, l]) => ajout(`v${b}`, { rep: `V${b.toUpperCase()}-N${ni + 1}`, designation: `Vanne de régulation de la batterie ${l} — ${titre}`, type: 'vanne', P: 0.01, tension: '24V', regulation: 'v010', alim: es.alim || '' }));
-        const pBe = kwFiche(es.PelBe) ?? kwFiche(fiche.Pbe);
-        if (pBe) ajout('be', { rep: `BE-N${ni + 1}`, designation: `Batterie électrique — ${titre}`, type: 'resistance', P: pBe, tension: es.tensionCta || (pBe > 3.6 ? 'tri' : 'mono'), regulation: 'tor', alim: es.alim || '' });
+        // Batterie électrique : puissance saisie ou de la fiche, sinon calculée (batterie chaude électrique)
+        const pBe = kwFiche(es.PelBe) ?? kwFiche(fiche.Pbe) ?? kwFiche(v.Pbe), libBe = { chaude: 'Batterie chaude électrique', prechauffage: 'Batterie électrique de préchauffage', appoint: 'Batterie électrique d\'appoint' }[es.batElec] || 'Batterie électrique';
+        if (pBe) ajout('be', { rep: `BE-N${ni + 1}`, designation: `${libBe} — ${titre}`, type: 'resistance', P: pBe, tension: es.tensionCta || (pBe > 3.6 ? 'tri' : 'mono'), regulation: 'tor', alim: es.alim || '' });
       }
     });
     // Matériel retenu choisi dans le catalogue des fabricants : sa puissance électrique remplace l'estimation

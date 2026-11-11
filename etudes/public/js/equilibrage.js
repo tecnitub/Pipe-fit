@@ -18,7 +18,7 @@ const Equilibrage = ((D, C, N) => {
         if (a.rep && ok) out.push({ cle: `${n.id}:${a.rep}`, rep: a.rep, nom: a.local || '', libelle: `${a.rep}${a.local ? ` — ${a.local}` : ''} (${T && T.TYPES[a.type] ? T.TYPES[a.type][0] : 'terminal'})` });
       });
       const fc = (n.entrees || {}).froid;
-      if (n.type === 'cta' && (froid ? fc !== 'non' : fc !== 'froide')) out.push({ cle: `${n.id}:${froid ? 'bf' : 'bc'}`, rep: `BAT-N${ni + 1}`, nom: n.titre, libelle: `${n.titre} — batterie ${fc === 'co' ? `change-over (${froid ? 'froid' : 'chaud'})` : froid ? 'froide' : 'chaude'}` });
+      if (n.type === 'cta' && (froid ? !['non', 'aucune'].includes(fc) : !['froide', 'aucune'].includes(fc))) out.push({ cle: `${n.id}:${froid ? 'bf' : 'bc'}`, rep: `BAT-N${ni + 1}`, nom: n.titre, libelle: `${n.titre} — batterie ${fc === 'co' ? `change-over (${froid ? 'froid' : 'chaud'})` : froid ? 'froide' : 'chaude'}` });
     });
     return out;
   }

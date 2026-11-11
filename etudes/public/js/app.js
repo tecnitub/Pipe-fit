@@ -779,17 +779,29 @@ function appliquerFiche(et, n, lignesTexte, nomFichier) {
 // Réseau arborescent, réseau et pompe ou CTA pas encore dans un schéma de principe : le placer sur un circuit (existant
 // ou nouveau, nommé comme le réseau) ; une fois relié, renommer le réseau renomme son circuit dans le schéma
 function placerSchemaHtml(et, n) {
-  if (!['arbo', 'reseau', 'cta'].includes(n.type) || n.lien || Liens.circuitDeAnnexe(et.notes, n)) return '';
-  // CTA déjà en bout de branche d'un réseau arborescent : raccordée (le réseau remonte au schéma)
-  const cta = n.type === 'cta', arbos = cta ? et.notes.map((x, i) => [x, i]).filter(([x]) => x.type === 'arbo') : [];
-  const libres = cta ? arbos.flatMap(([a, i]) => Liens.batteriesLibres(et, n, a).map(b => [a, i, b])) : [];
-  if (cta && Liens.arbosDeCta(et, n).length && !libres.length) return '';
+  if (n.type === 'cta') return batteriesCtaHtml(et, n);
+  if (!['arbo', 'reseau'].includes(n.type) || n.lien || Liens.circuitDeAnnexe(et.notes, n)) return '';
   const pids = et.notes.map((x, i) => [x, i]).filter(([x]) => x.type === 'pid');
-  const opts = [...libres.map(([a, i, b]) => `<option value="arbo|${a.id}|${esc(b.cle)}">🌳 Branche de N${i + 1} — ${esc(a.titre)} (${esc(b.libelle.split(' — ').pop())})</option>`),
-    ...pids.map(([p, i]) => `<optgroup label="Schéma de principe N${i + 1} — ${esc(p.titre)}"><option value="${p.id}|-1">➕ Nouveau circuit « ${esc(n.titre)} »</option>${((p.entrees || {}).circuits || []).map((c, k) => [c, k]).filter(([c]) => !c.annexe).map(([c, k]) => `<option value="${p.id}|${k}">Circuit existant : ${esc(c.rep || `C${k + 1}`)}</option>`).join('')}</optgroup>`)].join('');
-  const quoi = cta ? (Liens.arbosDeCta(et, n).length ? 'Une batterie de cette CTA n\'est pas encore raccordée.' : 'Cette CTA n\'est raccordée ni à un réseau arborescent ni au schéma de principe.') : 'Ce réseau n\'apparaît pas encore dans le schéma de principe.';
-  return `<div class="bandeau-lien">🧭 ${quoi} ${opts ? `<select id="schema-circuit" aria-label="Raccordement">${opts}</select> <button class="secondaire petit" id="schema-relier">Raccorder</button>` : '<button class="secondaire petit" id="schema-creer">Créer le schéma de principe avec ce circuit</button>'}
-    <span class="muted petit">${cta ? 'Branche d\'un réseau arborescent : puissance, débit et pertes de charge de la batterie remplissent la branche, puis remontent avec le réseau au schéma de principe. Circuit du schéma : la CTA est seule sur son circuit, à sa puissance.' : 'Le circuit porte le nom du réseau (renommer le réseau le renomme dans le schéma) ; puissance et pertes de charge remontent au circuit.'}</span></div>`;
+  const opts = pids.map(([p, i]) => `<optgroup label="Schéma de principe N${i + 1} — ${esc(p.titre)}"><option value="${p.id}|-1">➕ Nouveau circuit « ${esc(n.titre)} »</option>${((p.entrees || {}).circuits || []).map((c, k) => [c, k]).filter(([c]) => !c.annexe).map(([c, k]) => `<option value="${p.id}|${k}">Circuit existant : ${esc(c.rep || `C${k + 1}`)}</option>`).join('')}</optgroup>`).join('');
+  return `<div class="bandeau-lien">🧭 Ce réseau n'apparaît pas encore dans le schéma de principe. ${opts ? `<select id="schema-circuit" aria-label="Circuit du schéma de principe">${opts}</select> <button class="secondaire petit" id="schema-relier">Placer dans le schéma</button>` : '<button class="secondaire petit" id="schema-creer">Créer le schéma de principe avec ce circuit</button>'}
+    <span class="muted petit">Le circuit porte le nom du réseau (renommer le réseau le renomme dans le schéma) ; puissance et pertes de charge remontent au circuit.</span></div>`;
+}
+// CTA : chaque batterie à eau raccordée à son réseau — branche du réseau arborescent chaud (batterie chaude) ou froid
+// (batterie froide), ou circuit du schéma de principe dont le régime la dessert
+function batteriesCtaHtml(et, n) {
+  const bats = Liens.batteriesCta(et, n);
+  if (!bats.length) return '';
+  const annexe = Liens.circuitDeAnnexe(et.notes, n), pids = et.notes.map((x, i) => [x, i]).filter(([x]) => x.type === 'pid');
+  const ligne = x => {
+    if (x.lien) return `<li>✅ ${esc(x.libelle)} : ${x.lien.type === 'arbo' ? `branche ${esc(x.lien.rep)} de <a href="#/etude/${et.id}/${x.lien.note.id}">${esc(x.lien.note.titre)}</a>${Liens.circuitDeAnnexe(et.notes, x.lien.note) ? '' : ' <span class="avert">(réseau pas encore en départ du schéma de principe)</span>'}` : `circuit « ${esc(x.lien.pid.entrees.circuits[x.lien.i].rep)} » de <a href="#/etude/${et.id}/${x.lien.pid.id}">${esc(x.lien.pid.titre)}</a>`}</li>`;
+    const arbos = et.notes.map((a, i) => [a, i]).filter(([a]) => a.type === 'arbo' && ((a.entrees || {}).saison || 'chaud') === x.saison && Liens.batteriesLibres(et, n, a).some(y => y.cle === `${n.id}:${x.b}`));
+    const opts = [...arbos.map(([a, i]) => `<option value="arbo|${a.id}">🌳 Branche du réseau ${x.saison} N${i + 1} — ${esc(a.titre)}</option>`),
+      ...(annexe ? [] : pids.map(([p, i]) => `<optgroup label="Schéma de principe N${i + 1} — ${esc(p.titre)}"><option value="${p.id}|-1">➕ Nouveau circuit « ${esc(n.titre)} »</option>${((p.entrees || {}).circuits || []).map((c, k) => [c, k]).filter(([c]) => !c.annexe).map(([c, k]) => `<option value="${p.id}|${k}">Circuit existant : ${esc(c.rep || `C${k + 1}`)}</option>`).join('')}</optgroup>`))].join('');
+    return `<li>⚠️ ${esc(x.libelle)} : ${opts ? `<select data-bat-sel="${x.b}" aria-label="Raccordement de la ${esc(x.libelle.toLowerCase())}">${opts}</select> <button class="secondaire petit" data-bat-relier="${x.b}">Raccorder</button>` : `<span class="muted">aucun réseau arborescent ${x.saison === 'froid' ? 'froid (eau glacée)' : 'chaud'} ni circuit du schéma disponible — créez le réseau (calcul « Réseau arborescent », batteries ${x.saison === 'froid' ? 'froides' : 'chaudes'})</span>`}</li>`;
+  };
+  const ok = bats.every(x => x.lien);
+  return `<div class="bandeau-lien">🧭 Raccordement des batteries à eau de la CTA${ok ? ' : complet' : ''}<ul style="margin:.3em 0">${bats.map(ligne).join('')}</ul>
+    <span class="muted petit">Branche d'un réseau arborescent : puissance, débit et pertes de charge de la batterie remplissent la branche, puis remontent avec le réseau (départ du schéma de principe). Circuit du schéma : la CTA est seule sur son circuit.</span></div>`;
 }
 function fichesInstallationHtml(et, n) {
   const l = Liens.fichesInstallation(et, n);
@@ -1428,6 +1440,19 @@ Vues.note = {
       if (!c || !n.titre.trim() || (String(c.rep || '').trim() && String(c.rep).trim() !== titreAvant.trim())) return;
       const r = Liens.renommerCircuit(et, ref.pid, ref.i, n.titre); enregistrer(et); App.render();
       toast(`Circuit renommé « ${r} » dans ${ref.pid.titre} (terminaux, robinetterie et régulation suivent).`, 5000);
+    });
+    root.querySelectorAll('[data-bat-relier]').forEach(bt => bt.onclick = () => {
+      const b = bt.dataset.batRelier, v = root.querySelector(`[data-bat-sel="${b}"]`).value;
+      if (v.startsWith('arbo|')) {
+        const a = et.notes.find(x => x.id === v.split('|')[1]), rep = a && Liens.brancherSurArbo(et, n, a, `${n.id}:${b}`);
+        if (!rep) return;
+        const dep = Liens.circuitDeAnnexe(et.notes, a);
+        enregistrer(et); App.render(); toast(`Branche ${rep} créée dans ${a.titre} : saisissez sa longueur et son tronçon amont. ${dep ? `Le réseau est le départ « ${dep.pid.entrees.circuits[dep.i].rep} » du schéma de principe.` : 'Ouvrez ce réseau pour le placer en départ dans le schéma de principe.'}`, 8000); return;
+      }
+      const [pidId, k] = v.split('|'), r = Liens.relierAuSchema(et, n, pidId, Number(k));
+      if (!r) return;
+      if (Number(k) >= 0 && n.titre.trim()) Liens.renommerCircuit(et, r.pid, r.i, n.titre);
+      enregistrer(et); App.render(); toast(`CTA placée dans ${r.pid.titre} : circuit « ${r.pid.entrees.circuits[r.i].rep} ».`, 6000);
     });
     const sr = root.querySelector('#schema-relier'), sCree = root.querySelector('#schema-creer');
     if (sr) sr.onclick = () => {

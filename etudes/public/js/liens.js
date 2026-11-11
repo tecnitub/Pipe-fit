@@ -329,17 +329,17 @@ const Liens = ((N, Sc) => {
     if ((note.type === 'aero' || note.type === 'aeraulique') && e.cta) {
       const src = notes.find(n => n.id === e.cta && n.type === 'cta');
       if (!src) { alertes.push({ niveau: 'attention', texte: 'Le calcul de CTA relié a été supprimé : choisissez-en un autre ou « Saisie ».' }); return null; }
-      const c = brut(src), lib = libelle(src), recup = c.type === 'double' ? c.recup : 'aucun', froid = c.froid !== 'non';
+      const c = brut(src), lib = libelle(src), recup = c.type === 'double' ? c.recup : 'aucun', froid = !['non', 'aucune'].includes(c.froid), chaudeEau = !['froide', 'aucune'].includes(c.froid), dpBE = c.batElec ? num(c.dpBE, 30) : 0;
       if (note.type === 'aero') {
-        imposer({ producteur: TYPE_AIR[c.type] || 'cta-df', recuperateur: RECUP_AIR[recup] || 'aucun', batChaude: c.froid !== 'froide' ? 'oui' : 'non', batFroide: froid ? 'oui' : 'non',
-          dpFiltreS: num(c.dpFiltreAN), dpFiltreR: c.type === 'simple' ? 0 : num(c.dpFiltreR), dpRecup: recup !== 'aucun' ? num(c.dpRecup) : 0, dpBatC: (['froide', 'co'].includes(c.froid) ? 0 : num(c.dpBC)) + (c.humid === 'vapeur' ? 30 : 0), dpBatF: froid ? num(c.dpBF) : 0,
+        imposer({ producteur: TYPE_AIR[c.type] || 'cta-df', recuperateur: RECUP_AIR[recup] || 'aucun', batChaude: chaudeEau || c.batElec === 'chaude' ? 'oui' : 'non', batFroide: froid ? 'oui' : 'non',
+          dpFiltreS: num(c.dpFiltreAN), dpFiltreR: c.type === 'simple' ? 0 : num(c.dpFiltreR), dpRecup: recup !== 'aucun' ? num(c.dpRecup) : 0, dpBatC: (!chaudeEau || c.froid === 'co' ? 0 : num(c.dpBC)) + dpBE + (c.humid === 'vapeur' ? 30 : 0), dpBatF: froid ? num(c.dpBF) : 0,
           // Caissons, silencieux et volets de la CTA : moitié à la prise d'air, moitié au silencieux (la reprise en compte la moitié)
           dpPrise: num(c.dpDivers) / 2, dpSil: num(c.dpDivers) / 2, dpRejet: 0, rendement: num(c.rendement, 60) }, lib);
         if (!String(e.titreInstallation || '').trim() || e.titreInstallation === N.defauts('aero').titreInstallation) e.titreInstallation = src.titre;
       } else {
         const reprise = e.ctaFlux === 'reprise' && c.type !== 'simple';
         const dpCta = reprise ? num(c.dpFiltreR) + (recup !== 'aucun' ? num(c.dpRecup) : 0) + num(c.dpDivers) / 2
-          : num(c.dpFiltreAN) + (recup !== 'aucun' ? num(c.dpRecup) : 0) + (['froide', 'co'].includes(c.froid) ? 0 : num(c.dpBC)) + (froid ? num(c.dpBF) : 0) + (c.humid === 'vapeur' ? 30 : 0) + num(c.dpDivers);
+          : num(c.dpFiltreAN) + (recup !== 'aucun' ? num(c.dpRecup) : 0) + (!chaudeEau || c.froid === 'co' ? 0 : num(c.dpBC)) + (froid ? num(c.dpBF) : 0) + dpBE + (c.humid === 'vapeur' ? 30 : 0) + num(c.dpDivers);
         imposer({ dpCta: Math.round(dpCta) }, lib);
         const doublons = (e.composants || []).filter(x => /filtre|batterie|recup|récup|echangeur|échangeur|roue/i.test(x.nom || '') && num(x.dp) > 0);
         if (doublons.length) alertes.push({ niveau: 'attention', texte: `Composants déjà comptés dans la CTA (${doublons.map(x => x.nom).join(', ')}) : à retirer de la liste des composants du réseau.` });
@@ -402,6 +402,27 @@ const Liens = ((N, Sc) => {
     const pris = new Set(((etude && etude.notes) || []).filter(n => n.type === 'arbo').flatMap(n => ((n.entrees || {}).troncons || []).map(t => t.emetteur)).filter(Boolean));
     return Eqb().emetteursEtude(etude, (arbo.entrees || {}).saison || 'chaud').filter(x => x.cle.startsWith(`${cta.id}:`) && !pris.has(x.cle));
   };
+  // Batteries à eau d'une CTA et leur raccordement : branche d'un réseau arborescent (chaud pour la batterie chaude,
+  // froid pour la batterie froide ; change-over : les deux) ou circuit du schéma de principe dont le régime la dessert
+  function batteriesCta(etude, cta) {
+    const f = (cta.entrees || {}).froid || 'oui', co = f === 'co', notes = (etude && etude.notes) || [];
+    const bats = [...(!['froide', 'aucune'].includes(f) ? [{ b: 'bc', saison: 'chaud', libelle: co ? 'Batterie change-over (eau chaude)' : 'Batterie chaude' }] : []),
+      ...(!['non', 'aucune'].includes(f) ? [{ b: 'bf', saison: 'froid', libelle: co ? 'Batterie change-over (eau glacée)' : 'Batterie froide' }] : [])];
+    const ref = circuitDeAnnexe(notes, cta), couvre = ref ? couvertParCircuit(etude, ref.pid) : new Set();
+    return bats.map(x => {
+      const a = notes.find(n => n.type === 'arbo' && ((n.entrees || {}).troncons || []).some(t => t.emetteur === `${cta.id}:${x.b}`));
+      if (a) return { ...x, lien: { type: 'arbo', note: a, rep: a.entrees.troncons.find(t => t.emetteur === `${cta.id}:${x.b}`).rep } };
+      if (ref && couvre.has(x.b)) return { ...x, lien: { type: 'pid', pid: ref.pid, i: ref.i } };
+      return { ...x, lien: null };
+    });
+  }
+  // Batteries desservies par un circuit du schéma de principe, selon son régime (change-over : chaude et froide)
+  function couvertParCircuit(etude, pid) {
+    let ep; try { ep = resoudre(etude, pid).entrees; } catch (err) { ep = pid.entrees || {}; }
+    if (ep.reseau === 'co') return new Set(['bc', 'bf']);
+    const R = Sc.REGIMES[ep.reseau], fr = ep.reseau === 'perso' ? num(ep.Tdep) < num(ep.Tret) : R && R[1] < R[2];
+    return new Set(fr ? ['bf'] : ['bc']);
+  }
   // Nouvelle branche du réseau arborescent pour la batterie (sous le tronçon de départ) : puissance, débit et pertes de
   // charge de la batterie repris et verrouillés ; il reste la longueur. Rend le repère de la branche.
   function brancherSurArbo(etude, cta, arbo, cle) {
@@ -588,7 +609,7 @@ const Liens = ((N, Sc) => {
     });
     return out;
   }
-  return { fichesInstallation, resoudre, calculer, changementsEtude, notesDepuisSchema, detacher, description, reseauxDeCta, circuitDeAnnexe, relierAuSchema, renommerCircuit, arbosDeCta, batteriesLibres, brancherSurArbo, nf,
+  return { fichesInstallation, resoudre, calculer, changementsEtude, notesDepuisSchema, detacher, description, reseauxDeCta, circuitDeAnnexe, relierAuSchema, renommerCircuit, arbosDeCta, batteriesLibres, brancherSurArbo, batteriesCta, couvertParCircuit, nf,
     climatEtude, climatDeVille, TYPES_BATIMENT, CHAMPS_ETUDE, champEtude, typeBatimentEtude, gtbPid, COMBUSTION, optPid, optCircuits, optTroncons };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'), typeof Schema !== 'undefined' ? Schema : require('./schema'));
 if (typeof module !== 'undefined') module.exports = Liens;

@@ -84,3 +84,31 @@ test('CTA à batterie à eau : alimentée par une branche du réseau arborescent
   const r2 = L.relierAuSchema(et2, et2.notes[1], p2.id, 0);
   assert.strictEqual(L.resoudre(et2, p2).entrees.circuits[r2.i].P, Math.round(L.calculer(et2, et2.notes[1]).valeurs.Pchaud * 10) / 10);
 });
+
+test('CTA : batteries à eau (ou aucune) combinées à une batterie électrique', () => {
+  require('../etudes/public/js/cta'); const E = require('../etudes/public/js/electricite'), Eq = require('../etudes/public/js/equilibrage');
+  const cta = (froid, batElec, PelBe = '') => ({ id: 'k1', type: 'cta', titre: 'CTA', entrees: { ...N.defauts('cta'), froid, batElec, PelBe } });
+  // Électrique seule : puissance de chauffe sur la batterie électrique, rien à raccorder au réseau d'eau
+  const a = cta('aucune', 'chaude'), va = N.calculer('cta', a.entrees).valeurs, eta = { notes: [a] };
+  assert.strictEqual(va.Pchaud, 0); assert.ok(va.Pbe > 0);
+  assert.strictEqual(Eq.emetteursEtude(eta, 'chaud').length + Eq.emetteursEtude(eta, 'froid').length, 0);
+  assert.deepStrictEqual(E.equipementsEtude(eta, L).filter(x => /^(BE|VB)/.test(x.rep)).map(x => [x.rep, x.P]), [['BE-N1', va.Pbe]]);
+  // Chaude + froide à eau + préchauffage électrique : trois batteries
+  const b = cta('oui', 'prechauffage', 6), etb = { notes: [b] };
+  assert.deepStrictEqual(E.equipementsEtude(etb, L).filter(x => /^(BE|VB)/.test(x.rep)).map(x => x.rep).sort(), ['BE-N1', 'VBC-N1', 'VBF-N1']);
+  assert.match(N.calculer('cta', b.entrees).synthese, /BC .* BF .* BE 6 kW/);
+});
+
+test('CTA : batterie chaude sur le réseau chaud, batterie froide sur le réseau froid', () => {
+  const cta = { id: 'q1', type: 'cta', titre: 'CTA', entrees: N.defauts('cta') };
+  const ch = { id: 'q2', type: 'arbo', titre: 'Chaud', entrees: N.defauts('arbo') }, fr = { id: 'q3', type: 'arbo', titre: 'Froid', entrees: { ...N.defauts('arbo'), saison: 'froid', T: 9.5, dT: 5 } };
+  const et = { notes: [cta, ch, fr] };
+  assert.deepStrictEqual(L.batteriesCta(et, cta).map(x => [x.b, x.lien]), [['bc', null], ['bf', null]]);
+  assert.deepStrictEqual(L.batteriesLibres(et, cta, ch).map(x => x.cle), ['q1:bc']);
+  assert.deepStrictEqual(L.batteriesLibres(et, cta, fr).map(x => x.cle), ['q1:bf']);
+  L.brancherSurArbo(et, cta, ch, 'q1:bc'); L.brancherSurArbo(et, cta, fr, 'q1:bf');
+  const v = N.calculer('cta', cta.entrees).valeurs;
+  const P = a => L.resoudre(et, a).entrees.troncons.find(t => String(t.emetteur).startsWith('q1:')).P;
+  assert.strictEqual(Math.round(P(ch)), Math.round(v.Pchaud)); assert.strictEqual(Math.round(P(fr)), Math.round(v.Pfroid));
+  assert.deepStrictEqual(L.batteriesCta(et, cta).map(x => x.lien.note.id), ['q2', 'q3']);
+});
