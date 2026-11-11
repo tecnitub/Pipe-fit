@@ -77,13 +77,14 @@ Views.dashboard.bind = (root, params, query) => bindFiltres(root, 'dashboard', l
 /* ---------------- Chantiers ---------------- */
 const chantierFields = [
   { key: 'nom', label: 'Intitulé du chantier' },
-  { key: 'clientId', label: 'Client', type: 'select', options: v => options(clientsList(), v) },
-  { key: 'contactId', label: 'Contact client (chargé de travaux)', type: 'select', dynamic: true, options: (v, o) => contactOptions(o.clientId, v) },
-  { key: 'siteId', label: "Site d'intervention", type: 'select', dynamic: true, options: (v, o) => siteOptions(o.clientId, v) },
+  { key: 'clientId', label: 'Client', type: 'select', options: v => options(clientsList(), v), nouveau: 'client' },
+  { key: 'contactId', label: 'Contact client (chargé de travaux)', type: 'select', dynamic: true, options: (v, o) => contactOptions(o.clientId, v), suit: 'clientId', defaut: o => defaultContact(o.clientId), nouveau: 'contact' },
+  { key: 'siteId', label: "Site d'intervention", type: 'select', dynamic: true, options: (v, o) => siteOptions(o.clientId, v), suit: 'clientId', defaut: o => siteUnique(o.clientId), nouveau: 'site' },
   { key: 'moeId', label: "Maîtrise d'œuvre (destinataire des situations)", type: 'select', options: v => options(moeList(), v) },
-  { key: 'moeContactId', label: "Contact maîtrise d'œuvre", type: 'select', dynamic: true, options: (v, o) => contactOptions(o.moeId, v) },
+  { key: 'moeContactId', label: "Contact maîtrise d'œuvre", type: 'select', dynamic: true, options: (v, o) => contactOptions(o.moeId, v), suit: 'moeId', defaut: o => defaultContact(o.moeId), nouveau: 'contact' },
   { key: 'chargeId', label: "Chargé d'affaires", type: 'select', options: v => options(charges(), v) },
   { key: 'statut', label: 'Statut', type: 'select', options: v => optionsStr(STATUTS_CHANTIER, v) },
+  { key: 'refCommande', label: 'N° de commande du client (repris sur les factures)' },
   { key: 'retenueGarantie', label: 'Retenue de garantie % (vide = aucune)', type: 'number', step: '0.5' },
   { key: 'caution', label: 'Retenue remplacée par une caution bancaire', type: 'select', options: v => `<option value="">Non</option><option value="1" ${v ? 'selected' : ''}>Oui</option>` },
   { key: 'dateReception', label: 'Date de réception des travaux', type: 'date' },
@@ -138,7 +139,7 @@ Views.chantiers.bind = (root, params, query) => {
   chargerAvancementMateriel(); // relu à chaque ouverture de la liste (un nouvel affichage suit la réponse)
   const f = lireFiltres('chantiers', query, FILTRES_CHANTIERS);
   bindFiltres(root, 'chantiers', f, FILTRES_CHANTIERS);
-  root.querySelector('#add-hd').onclick = nouvelleInterventionHD;
+  root.querySelector('#add-hd').onclick = () => nouvelleInterventionHD();
   root.querySelector('#add-hd-mail').onclick = nouvelleHDDepuisMail;
   const sel = selectionListe(root, ids => { root.querySelector('#sel-bar').classList.toggle('hidden', !ids.length); root.querySelector('#sel-n').textContent = `${ids.length} sélectionné(s)`; });
   root.querySelector('#sel-arch').onclick = () => archiver('affaires', sel().map(id => Store.get('affaires', id)), f.statut !== 'archives');
@@ -174,6 +175,8 @@ Views.chantier = params => {
     <a class="btn secondary" href="#/reception/${a.id}">Réserves et réception</a>
     <a class="btn secondary" href="#/commandes/new?chantier=${a.id}">+ Commande fournisseur</a>
     <button class="secondary" id="ch-consultation">+ Consultation fournisseurs</button>
+    <button class="secondary" id="ch-avenant" title="Devis prérempli (client, contact, site, chargé d'affaires), rattaché à ce chantier une fois accepté">+ Avenant</button>
+    <button class="secondary" id="ch-hd" title="Intervention en régie préremplie avec le client, le contact et le site du chantier">+ Intervention</button>
     ${dAcc ? '<button id="situation">+ Situation de travaux</button>' : ''}
     ${a.archive ? '' : `<button class="secondary" data-archiver="affaires|${a.id}">Archiver</button>`}</div>
   <h1>${esc(affaireLabel(a))} ${badge(a.statut)} ${a.okFacturation ? '<span class="badge b-ok">Réceptionné · OK pour facturation</span>' : ''}</h1>${chantierOnglets(a, 'apercu')}${bandeauArchive(a, 'affaires')}
@@ -183,8 +186,8 @@ Views.chantier = params => {
     ${a.contactId ? ` · Contact : ${esc(contactName(Store.get('contacts', a.contactId)))}` : ''}
     ${a.siteId ? ` · Site : ${esc(siteLabel(siteOf(a.clientId, a.siteId)))}` : ''}
     ${a.moeId ? ` · Maîtrise d'œuvre : ${esc(clientName(a.moeId))}${a.moeContactId ? ` (${esc(contactName(Store.get('contacts', a.moeContactId)))})` : ''}` : ''}
-    · Chargé d'affaires : ${esc(userName(a.chargeId))}
-    ${devis.length ? ` · Devis : ${devis.map(d => `<a href="#/devis/${d.id}">${esc(d.numero)}</a>`).join(', ')}` : ''}</p>
+    · Chargé d'affaires : ${esc(userName(a.chargeId))}${a.refCommande ? ` · Commande client n° ${esc(a.refCommande)}` : ''}
+    ${devis.length ? ` · Devis : ${devis.map(d => `<a href="#/devis/${d.id}">${esc(d.numero || '…')}</a>${d.statut === 'Accepté' ? '' : ` <span class="badge">${d.avenantDe ? 'avenant ' : ''}${esc(d.statut.toLowerCase())}</span>`}`).join(', ')}` : ''}</p>
 
   <div class="cards">
     <div class="card"><div class="label">Montant du marché</div><div class="value">${eur(s.caDevis)}</div>${gauge(s.caFacture, s.caDevis)}<div class="sub">Facturé ${eur(s.caFacture)} · reste ${eur(s.resteAFacturer)}</div></div>
@@ -276,7 +279,14 @@ Views.chantier.bind = (root, params) => {
     if (ok) { a.retenueLiberee = isoDate(new Date()); Store.upsert('affaires', a); App.render(); }
   });
   const sb = root.querySelector('#situation');
-  if (sb) sb.onclick = () => { const x = nouvelleSituation(a.id); if (x) location.hash = `#/situations/${x.id}`; };
+  if (sb) sb.onclick = async () => { const dv = await choisirDevisSituation(a.id); if (dv === null) return; const x = nouvelleSituation(a.id, dv); if (x) location.hash = `#/situations/${x.id}`; };
+  // Avenant et intervention préremplis depuis le chantier
+  const prefill = () => Object.fromEntries(Object.entries({ clientId: a.clientId, contactId: a.contactId, siteId: a.siteId, chargeId: a.chargeId }).filter(([, v]) => v));
+  root.querySelector('#ch-avenant').onclick = () => {
+    const d = newDevis({ ...prefill(), affaireId: a.id, avenantDe: (devisAcceptes(a.id)[0] || {}).id || '', objet: `Avenant – ${a.nom || ''}` });
+    location.hash = `#/devis/${d.id}`;
+  };
+  root.querySelector('#ch-hd').onclick = () => nouvelleInterventionHD(prefill());
   root.querySelector('#rex-save').onclick = () => {
     a.rex = { note: root.querySelector('#rex-note').value, positif: root.querySelector('#rex-positif').value,
       negatif: root.querySelector('#rex-negatif').value, actions: root.querySelector('#rex-actions').value };
@@ -324,6 +334,7 @@ Views.facture = params => {
     ${orig ? `<a href="#/facture/${orig.id}" class="btn secondary">Facture ${esc(orig.numero || '')}</a>` : ''}
     <span class="spacer"></span>
     <select id="f-statut" style="width:auto" aria-label="Statut">${optionsStr(av ? STATUTS_AVOIR : STATUTS_FACTURE, f.statut)}</select>
+    ${!av && Store.can('write', 'factures') ? `<label class="check small" title="Échéance de paiement imprimée sur la facture">Échéance <input type="date" id="f-ech" value="${esc(f.echeance || '')}" style="width:auto"></label>` : ''}
     <button class="secondary print-btn" data-print>Imprimer</button>${boutonsEnvoi(av ? 'avoir' : 'facture', f.id)}
     ${['admin', 'charge'].includes(Store.me.role) ? `<button class="secondary" data-efacture="${f.id}">Facture électronique</button>` : ''}
     ${!av && f.statut !== 'Annulée' && Store.can('write', 'factures') ? '<button class="secondary" id="avoir">Créer un avoir</button>' : ''}
@@ -371,6 +382,8 @@ Views.facture.bind = (root, params) => {
   const f = Store.get('factures', params[0]);
   if (!f) return;
   root.querySelector('#f-statut').onchange = e => { f.statut = e.target.value; Store.upsert('factures', f); App.toast('Statut mis à jour'); App.render(); };
+  const ech = root.querySelector('#f-ech');
+  if (ech) ech.onchange = () => { f.echeance = ech.value; Store.upsert('factures', f); App.toast('Échéance mise à jour'); App.render(); };
   const b = root.querySelector('#avoir');
   if (b) b.onclick = () => creerAvoir(f);
   const rg = root.querySelector('#f-rg'), rgp = root.querySelector('#f-rgpct');
@@ -476,21 +489,28 @@ function bindPlanningCharge(root) {
   root.querySelectorAll('td[data-u]').forEach(td => td.onclick = () => planningCell(td.dataset.u, td.dataset.w));
 }
 
+// Tâches proposées pour un chantier : titres des chapitres de ses devis acceptés, puis libellés déjà planifiés
+const tachesPlanning = affaireId => [...new Set([
+  ...Store.all('devis').filter(d => d.affaireId === affaireId && d.statut === 'Accepté').flatMap(d => (d.lignes || []).filter(l => l.type === 'chapitre' && l.titre).map(l => l.titre.trim())),
+  ...Store.all('planning').filter(p => p.affaireId === affaireId && p.libelle).map(p => p.libelle.trim())])].filter(Boolean);
+const tachesOptions = affaireId => (affaireId ? tachesPlanning(affaireId) : []).map(t => `<option value="${esc(t)}">`).join('');
 function planningCell(userId, semaine) {
   const items = Store.all('planning').filter(p => p.userId === userId && p.semaine === semaine && !p.date);
   const affs = chantiersActifs();
   const box = Modal.open(`<h2 style="margin-top:0">${esc(userName(userId))} – ${esc(semaine)}</h2>
     <table><tr><th>Chantier</th><th>Tâche</th><th class="num">Heures</th><th></th></tr>
-    ${items.map(p => `<tr data-id="${p.id}"><td><select data-k="affaireId">${options(Store.all('affaires'), p.affaireId, affaireLabel, false)}</select></td><td><input data-k="libelle" value="${esc(p.libelle)}"></td><td><input data-k="heuresPrevues" type="number" step="0.5" value="${esc(p.heuresPrevues)}" style="width:90px"></td><td><button class="small danger" data-del="${p.id}">✕</button></td></tr>`).join('')}
-    <tr><td><select id="n-aff">${options(affs, '', affaireLabel, false)}</select></td><td><input id="n-lib" placeholder="Tâche"></td><td><input id="n-h" type="number" step="0.5" style="width:90px"></td><td><button class="small" id="n-add">+</button></td></tr>
+    ${items.map(p => `<tr data-id="${p.id}"><td><select data-k="affaireId">${options(Store.all('affaires'), p.affaireId, affaireLabel, false)}</select></td><td><input data-k="libelle" list="pl-dl-${p.id}" autocomplete="off" value="${esc(p.libelle)}"><datalist id="pl-dl-${p.id}">${tachesOptions(p.affaireId)}</datalist></td><td><input data-k="heuresPrevues" type="number" step="0.5" value="${esc(p.heuresPrevues)}" style="width:90px"></td><td><button class="small danger" data-del="${p.id}">✕</button></td></tr>`).join('')}
+    <tr><td><select id="n-aff">${options(affs, '', affaireLabel, false)}</select></td><td><input id="n-lib" placeholder="Tâche" list="pl-dl-n" autocomplete="off"><datalist id="pl-dl-n">${tachesOptions((affs[0] || {}).id)}</datalist></td><td><input id="n-h" type="number" step="0.5" style="width:90px"></td><td><button class="small" id="n-add">+</button></td></tr>
     </table>
     <div class="modal-actions"><button id="close">Fermer</button></div>`);
   const refresh = () => { App.render(); planningCell(userId, semaine); };
   box.querySelectorAll('tr[data-id] [data-k]').forEach(el => el.onchange = () => {
     const p = Store.get('planning', el.closest('tr').dataset.id);
     p[el.dataset.k] = el.dataset.k === 'heuresPrevues' ? +el.value : el.value;
+    if (el.dataset.k === 'affaireId') box.querySelector(`#pl-dl-${p.id}`).innerHTML = tachesOptions(el.value);
     Store.upsert('planning', p); App.render();
   });
+  box.querySelector('#n-aff').onchange = e => { box.querySelector('#pl-dl-n').innerHTML = tachesOptions(e.target.value); };
   box.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { Store.remove('planning', b.dataset.del); refresh(); });
   box.querySelector('#n-add').onclick = () => {
     const h = +box.querySelector('#n-h').value;

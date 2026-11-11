@@ -8,12 +8,16 @@ const docChargeId = doc => doc.chargeId || affaireOf(doc.affaireId).chargeId;
 const moList = () => Store.all('mainoeuvre');
 const moOf = id => Store.get('mainoeuvre', id) || {};
 
+// Valeurs reprises du client choisi : contact par défaut, site s'il est unique, zone de livraison et régime de TVA de sa fiche
+const defautsClient = c => ({ clientId: c, contactId: defaultContact(c), siteId: siteUnique(c), ...(entreprise(c).zoneId ? { zoneId: entreprise(c).zoneId } : {}), ...(entreprise(c).regimeTVA ? tvaDuClient(c) : {}) });
+
+// Nouveau devis, prérempli (fields) : les valeurs données l'emportent sur celles reprises du client
 function newDevis(fields = {}) {
   const me = Store.get('users', Store.me.userId);
   return Store.upsert('devis', {
     numero: '', objet: '', clientId: '', contactId: '', siteId: '', chargeId: me && me.role === 'charge' ? me.id : '',
     date: isoDate(new Date()), validite: 30, statut: 'Brouillon', zoneId: '', ajustements: [], lignes: [], numAuto: true,
-    ...(fields.clientId ? tvaDuClient(fields.clientId) : {}), ...fields,
+    ...(fields.clientId ? { ...tvaDuClient(fields.clientId), ...defautsClient(fields.clientId) } : {}), ...fields,
   });
 }
 
@@ -151,7 +155,7 @@ Views.devis = (params, query) => {
   ${list.map(d => {
     const t = Calc.doc(d), ct = Store.get('contacts', d.contactId);
     return `<tr class="clickable ${d.archive ? 'archive' : ''}" data-go="#/devis/${d.id}"><td class="sel-cell"><input type="checkbox" data-sel-id="${d.id}" aria-label="Sélectionner ${esc(d.numero || '')}"></td><td>${esc(d.numero || '…')}</td><td>${dateFr(d.date)}</td><td>${esc(d.objet)}</td><td>${esc(clientName(docClientId(d)))}</td>
-      <td>${ct ? esc(contactName(ct)) : ''}</td><td>${esc(userName(docChargeId(d)))}</td><td>${badge(d.statut)}${d.affaireId ? ' <span class="badge b-ok">Chantier</span>' : ''}${d.statut === 'Refusé' && d.motifRefus ? `<br><span class="muted small">${esc(d.motifRefus)}</span>` : ''}</td>
+      <td>${ct ? esc(contactName(ct)) : ''}</td><td>${esc(userName(docChargeId(d)))}</td><td>${badge(d.statut)}${d.affaireId ? (d.statut === 'Accepté' ? ' <span class="badge b-ok">Chantier</span>' : ' <span class="badge b-info">Avenant</span>') : ''}${d.statut === 'Refusé' && d.motifRefus ? `<br><span class="muted small">${esc(d.motifRefus)}</span>` : ''}</td>
       <td class="num">${eur(t.totalHT)}</td><td class="num">${pct(t.partMOPct)}</td><td class="num">${marginBadge(t.margePrevPct)}</td>
       <td>${['Brouillon', 'Envoyé'].includes(d.statut) ? `<button class="small secondary" data-refuser="${d.id}" title="Marquer refusé">✕ Refusé</button>` : ''}</td></tr>`;
   }).join('')}</table></div>` : '<p class="muted">Aucun devis pour ces critères.</p>'}`;
@@ -260,31 +264,33 @@ function devisEditor(id) {
     ${urlEtudes('') ? `<a class="btn secondary" href="#/etudes-be?devis=${esc(d.id)}" title="Notes de calcul faites pour ce devis (avant la commande)">📐 Études</a>` : ''}
     <button class="secondary" id="dup">Dupliquer</button>
     <button class="secondary print-btn" data-print>Imprimer</button>${boutonsEnvoi('devis', d.id)}
-    ${!d.affaireId && d.statut !== 'Refusé' ? '<button id="accept">Accepté : créer le chantier</button>' : ''}
+    ${(!d.affaireId || !locked) && d.statut !== 'Refusé' ? `<button id="accept">${d.affaireId ? 'Accepté : rattacher au chantier' : 'Accepté : créer le chantier'}</button>` : ''}
     ${['Brouillon', 'Envoyé'].includes(d.statut) ? `<button class="secondary" data-refuser="${d.id}">Refusé…</button>` : ''}
     ${d.archive ? '' : `<button class="secondary" data-archiver="devis|${d.id}">Archiver</button>`}
-    ${d.affaireId ? `<a class="btn secondary" href="#/situations?devis=${d.id}">Situations</a>` : ''}
+    ${d.affaireId && locked ? `<a class="btn secondary" href="#/situations?devis=${d.id}">Situations</a>` : ''}
     <button class="danger" id="del">Supprimer</button>
   </div>
   <h1 class="no-print">Devis ${esc(d.numero || '')} ${badge(d.statut)}</h1>${envoisHtml('devis', d.id)}${bandeauArchive(d, 'devis')}
   ${d.statut === 'Refusé' && d.motifRefus ? `<p class="note no-print">Refusé le ${dateFr(d.dateRefus)} · ${esc(d.motifRefus)}${d.commentaireRefus ? ` : ${esc(d.commentaireRefus)}` : ''}</p>` : ''}
   ${locked ? '<p class="note no-print">Devis accepté : il sert de budget au chantier. Pour le modifier, dupliquez-le en avenant.</p>' : ''}
+  ${!locked && d.affaireId ? `<p class="note no-print">Avenant au chantier <a href="#/chantier/${esc(d.affaireId)}">${esc(affaireLabel(affaireOf(d.affaireId)))}</a> : une fois accepté, il s'ajoute au budget de ce chantier.</p>` : ''}
   ${!locked && lines.filter(aChiffrer).length ? `<p class="note warn no-print">${lines.filter(aChiffrer).length} ouvrage(s) à chiffrer : cliquez sur chaque désignation pour ajouter fournitures et main-d'œuvre.</p>` : ''}
 
   <div class="card no-print">
     <div class="grid2">
       <div class="field" style="grid-column:1/-1"><label for="d-objet">Objet des travaux</label><input id="d-objet" value="${esc(d.objet)}" ${locked ? 'disabled' : ''}></div>
-      <div class="field"><label for="d-client">Client</label><select id="d-client">${options(clientsList(), cid)}</select></div>
-      <div class="field"><label for="d-contact">Contact client (chargé de travaux)</label><select id="d-contact">${contactOptions(cid, d.contactId)}</select></div>
-      <div class="field"><label for="d-site">Site d'intervention</label><select id="d-site">${siteOptions(cid, d.siteId)}</select></div>
+      <div class="field"><label for="d-client">Client</label><select id="d-client">${options(clientsList(), cid)}${optNouveau('client')}</select></div>
+      <div class="field"><label for="d-contact">Contact client (chargé de travaux)</label><select id="d-contact">${contactOptions(cid, d.contactId)}${cid ? optNouveau('contact') : ''}</select></div>
+      <div class="field"><label for="d-site">Site d'intervention</label><select id="d-site">${siteOptions(cid, d.siteId)}${cid ? optNouveau('site') : ''}</select></div>
       <div class="field"><label for="d-charge">Chargé d'affaires (suivi des travaux)</label><select id="d-charge">${options(charges(), docChargeId(d))}</select></div>
       <div class="field"><label for="d-date">Date</label><input id="d-date" type="date" value="${esc(d.date)}"></div>
       <div class="field"><label for="d-validite">Validité (jours)</label><input id="d-validite" type="number" value="${esc(d.validite)}"></div>
-      <div class="field"><label for="d-statut">Statut</label><select id="d-statut" ${d.affaireId ? 'disabled' : ''}>${optionsStr(STATUTS_DEVIS, d.statut)}</select></div>
+      <div class="field"><label for="d-statut">Statut</label><select id="d-statut" ${d.affaireId && locked ? 'disabled' : ''}>${optionsStr(STATUTS_DEVIS, d.statut)}</select></div>
       <div class="field"><label for="d-zone">Livraison (zone)</label><select id="d-zone">${options(Store.all('zones'), d.zoneId)}</select></div>
       <div class="field"><label for="d-livman">Livraison forcée € HT (vide = calcul)</label><input id="d-livman" type="number" step="0.01" value="${esc(d.livraisonManuelle ?? '')}"></div>
       <div class="field"><label for="d-tva">TVA du devis</label><select id="d-tva" ${locked ? 'disabled' : ''}>${REGIMES_TVA.map(([k, l]) => `<option value="${k}" ${Calc.regimeTVA(d) === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="field"><label for="d-mtva">Mention TVA complémentaire <span class="muted small">(facultatif)</span></label><input id="d-mtva" value="${esc(d.mentionTVA || '')}" placeholder="ex. attestation du client du ${dateFr(isoDate(new Date()))}" ${locked ? 'disabled' : ''}></div>
+      <div class="field"><label for="d-refcde">N° de commande du client <span class="muted small">(repris sur les factures)</span></label><input id="d-refcde" value="${esc(d.refCommande || '')}"></div>
     </div>
   </div>
 
@@ -392,14 +398,16 @@ Views.devis.bind = (root, params, query) => {
   const on = (sel, ev, fn) => { const el = root.querySelector(sel); if (el) el[ev] = fn; };
   const field = (sel, key, isNum) => on(sel, 'onchange', e => { d[key] = isNum ? (e.target.value === '' ? '' : +e.target.value) : e.target.value; save(); });
 
-  on('#d-client', 'onchange', e => {
-    const c = e.target.value, sites = entreprise(c).adresses || [];
-    Object.assign(d, { clientId: c, contactId: defaultContact(c), siteId: sites.length === 1 ? sites[0].id : '' });
-    if (entreprise(c).zoneId) d.zoneId = entreprise(c).zoneId;
-    if (entreprise(c).regimeTVA) Object.assign(d, tvaDuClient(c));
+  // Client, contact, site : « + Nouveau… » crée la fiche puis la choisit ; le client reprend ses valeurs par défaut
+  on('#d-client', 'onchange', async e => {
+    const c = await choixOuNouveau(e.target, 'client', '', docClientId(d));
+    if (c === null) return;
+    Object.assign(d, defautsClient(c));
     save();
   });
-  field('#d-objet', 'objet'); field('#d-contact', 'contactId'); field('#d-site', 'siteId'); field('#d-charge', 'chargeId');
+  on('#d-contact', 'onchange', async e => { const v = await choixOuNouveau(e.target, 'contact', docClientId(d), d.contactId); if (v !== null) { d.contactId = v; save(); } });
+  on('#d-site', 'onchange', async e => { const v = await choixOuNouveau(e.target, 'site', docClientId(d), d.siteId); if (v !== null) { d.siteId = v; save(); } });
+  field('#d-objet', 'objet'); field('#d-charge', 'chargeId'); field('#d-refcde', 'refCommande');
   field('#d-date', 'date'); field('#d-validite', 'validite', true); field('#d-zone', 'zoneId'); field('#d-mtva', 'mentionTVA');
   on('#d-tva', 'onchange', e => { Calc.appliquerRegime(d, e.target.value); save(); });
   on('#d-livman', 'onchange', e => { d.livraisonManuelle = e.target.value === '' ? null : +e.target.value; save(); });
@@ -500,35 +508,60 @@ Views.devis.bind = (root, params, query) => {
   on('#del', 'onclick', () => ask(`Supprimer le devis ${d.numero} ?${d.affaireId ? ' Le chantier associé sera conservé.' : ''}`, 'Supprimer').then(ok => {
     if (ok) { Store.remove('devis', d.id); location.hash = '#/devis'; }
   }));
-  on('#dup', 'onclick', () => {
+  // Copie d'un devis accepté : avenant au même chantier (rattaché à son acceptation) ou simple copie pour une autre affaire
+  on('#dup', 'onclick', async () => {
+    const af = d.statut === 'Accepté' && d.affaireId && Store.get('affaires', d.affaireId);
+    const mode = af ? await choisir(`Ce devis est le budget du chantier ${affaireLabel(af)}. La copie est :`, [['avenant', 'Un avenant à ce chantier'], ['copie', 'Une simple copie (autre affaire)']]) : 'copie';
+    if (!mode) return;
     const copy = JSON.parse(JSON.stringify(d));
     Object.keys(copy).filter(k => k.startsWith('_')).forEach(k => delete copy[k]);
     delete copy.id;
-    Object.assign(copy, { numero: '', statut: 'Brouillon', date: isoDate(new Date()), affaireId: '', objet: d.objet + ' (copie)' });
+    Object.assign(copy, { numero: '', statut: 'Brouillon', date: isoDate(new Date()), refCommande: '' },
+      mode === 'avenant' ? { affaireId: af.id, avenantDe: d.id, objet: `Avenant – ${d.objet || ''}` } : { affaireId: '', avenantDe: '', objet: d.objet + ' (copie)' });
     const n = Store.upsert('devis', copy);
     location.hash = `#/devis/${n.id}`;
   });
 };
 
-// Devis accepté : création du chantier avec le devis comme budget
+// Devis accepté : création du chantier avec le devis comme budget, ou rattachement de l'avenant à son chantier (au choix) ;
+// le n° de commande du client, s'il est connu, est repris sur le chantier et ses factures
 async function acceptDevis(d) {
   if (!docClientId(d)) { notify('Choisissez d\'abord le client.'); return; }
-  if (!await ask(`Le client a accepté le devis ${d.numero} (${eur(Calc.doc(d).totalHT)} HT). Créer le chantier ?`, 'Créer le chantier', false)) return;
+  const ex = d.affaireId && Store.get('affaires', d.affaireId), avenant = !!ex && !estHorsDevis(ex);
+  const r = await dialog(`<p>Le client a accepté le devis ${esc(d.numero || '')} (${eur(Calc.doc(d).totalHT)} HT).</p>
+    ${avenant ? `<label class="check"><input type="radio" name="acc-mode" value="rattacher" checked> Avenant : rattacher au chantier <strong>${esc(affaireLabel(ex))}</strong></label>
+      <label class="check"><input type="radio" name="acc-mode" value="creer"> Créer un nouveau chantier</label>` : ''}
+    <label class="field"><span>N° de commande du client (facultatif, repris sur les factures)</span><input id="acc-cde" value="${esc(d.refCommande || '')}"></label>
+    <div class="modal-actions"><button class="secondary" data-v="0">Annuler</button><button data-v="1">${avenant ? 'Valider' : 'Créer le chantier'}</button></div>`, (wrap, done) => {
+    wrap.querySelector('[data-v="0"]').onclick = () => done(null);
+    wrap.querySelector('[data-v="1"]').onclick = () => done({ rattacher: avenant && wrap.querySelector('[name="acc-mode"]:checked').value === 'rattacher', cde: wrap.querySelector('#acc-cde').value.trim() });
+    wrap.querySelector('[data-v="1"]').focus();
+  });
+  if (!r) return;
+  if (r.rattacher) {
+    Object.assign(d, { statut: 'Accepté', refCommande: r.cde });
+    Store.upsert('devis', d);
+    if (r.cde && !ex.refCommande) { ex.refCommande = r.cde; Store.upsert('affaires', ex); }
+    App.toast(`Avenant rattaché au chantier ${ex.code || ''} : son montant s'ajoute au budget.`, 4000);
+    location.hash = `#/chantier/${ex.id}`;
+    return;
+  }
   const af = Store.upsert('affaires', {
     code: '', nom: d.objet || `Chantier ${clientName(docClientId(d))}`, clientId: docClientId(d), contactId: d.contactId || '', siteId: d.siteId || '',
-    chargeId: docChargeId(d) || '', statut: 'En préparation', devisId: d.id, dateCreation: isoDate(new Date()), heuresPrevues: 0, rex: {},
+    chargeId: docChargeId(d) || '', statut: 'En préparation', devisId: d.id, dateCreation: isoDate(new Date()), heuresPrevues: 0, rex: {}, refCommande: r.cde,
   });
-  Object.assign(d, { statut: 'Accepté', affaireId: af.id });
+  Object.assign(d, { statut: 'Accepté', affaireId: af.id, avenantDe: '', refCommande: r.cde });
   Store.upsert('devis', d);
   App.toast('Chantier créé : le devis devient son budget.', 4000);
   location.hash = `#/chantier/${af.id}`;
 }
 
 function facturerDevis(d) {
-  const s = Store.data.settings;
+  const cid = docClientId(d), date = isoDate(new Date());
   return Store.upsert('factures', {
-    numero: '', devisId: d.id, affaireId: d.affaireId || '', clientId: docClientId(d), contactId: d.contactId || '', siteId: d.siteId || '', chargeId: docChargeId(d) || '',
-    objet: d.objet, date: isoDate(new Date()), echeance: isoDate(addDays(new Date(), num(s.delaiPaiement))), statut: 'Émise',
+    numero: '', devisId: d.id, affaireId: d.affaireId || '', clientId: cid, contactId: d.contactId || '', siteId: d.siteId || '', chargeId: docChargeId(d) || '',
+    refCommande: d.refCommande || affaireOf(d.affaireId).refCommande || '',
+    objet: d.objet, date, echeance: echeancePour(cid, date), statut: 'Émise',
     lignes: JSON.parse(JSON.stringify(d.lignes)), ajustements: JSON.parse(JSON.stringify(d.ajustements || [])), remiseGlobale: d.remiseGlobale || 0,
     zoneId: d.zoneId, livraisonManuelle: d.livraisonManuelle, ...champsTVA(d),
   });

@@ -19,9 +19,19 @@ function facturationTabs(active) {
   </div>`;
 }
 
-// Nouvelle situation pour le devis accepté d'un chantier (une seule situation en cours à la fois)
-function nouvelleSituation(affaireId) {
-  const dv = Store.all('devis').find(d => d.affaireId === affaireId && d.statut === 'Accepté');
+// Devis acceptés d'un chantier : marché de base puis avenants (chaque devis a sa propre suite de situations)
+const devisAcceptes = affaireId => Store.all('devis').filter(d => d.affaireId === affaireId && d.statut === 'Accepté')
+  .sort((a, b) => (a.avenantDe ? 1 : 0) - (b.avenantDe ? 1 : 0) || (a.date || '').localeCompare(b.date || ''));
+// Plusieurs devis acceptés (avenants) : choix du devis de la situation ; '' s'il n'y en a qu'un, null si annulé
+function choisirDevisSituation(affaireId) {
+  const l = devisAcceptes(affaireId);
+  if (l.length < 2) return Promise.resolve('');
+  return choisir('Situation de travaux sur quel devis du chantier ?', l.map(d => [d.id, `${d.numero || '…'}${d.avenantDe ? ' (avenant)' : ''} – ${d.objet || ''} · ${eur(Calc.doc(d).totalHT)} HT`]));
+}
+
+// Nouvelle situation pour un devis accepté du chantier (le premier par défaut ; une seule situation en cours par devis)
+function nouvelleSituation(affaireId, devisId) {
+  const dv = devisAcceptes(affaireId).find(d => !devisId || d.id === devisId);
   if (!dv) { notify('Ce chantier n\'a pas de devis accepté.'); return null; }
   const enCours = situationsDe(dv.id).find(s => s.statut === 'Brouillon' || s.statut === 'Proposée');
   if (enCours) { App.toast(`La situation ${enCours.numero} est en cours : terminez-la d'abord.`, 4000); return enCours; }
@@ -31,15 +41,18 @@ function nouvelleSituation(affaireId) {
 }
 
 function facturerSituation(sit) {
-  const dv = Store.get('devis', sit.devisId), c = Calc.situation(sit), s = Store.data.settings;
+  const dv = Store.get('devis', sit.devisId), c = Calc.situation(sit);
   const lignes = [];
   c.rows.forEach(r => {
     if (r.chap) { lignes.push({ type: 'chapitre', titre: r.titre, niveau: r.niveau }); return; }
     if (Math.abs(r.montant) >= 0.005) lignes.push({ num: r.num || '', designation: `${r.designation} – avancement ${fmt(r.prec, 1)} % → ${fmt(r.cumul, 1)} %`, unite: '', qte: 1, pu: r2(r.montant), tva: r.tva });
   });
+  // Contact, site et chargé d'affaires du chantier d'abord (tenus à jour), sinon ceux du devis ; n° de commande de l'avenant ou du chantier
+  const a = affaireOf(sit.affaireId), cid = a.clientId || docClientId(dv), date = isoDate(new Date());
   const f = Store.upsert('factures', {
-    numero: '', situationId: sit.id, devisId: dv.id, affaireId: sit.affaireId, clientId: docClientId(dv), contactId: dv.contactId || '', siteId: dv.siteId || '', chargeId: docChargeId(dv) || '',
-    objet: `${dv.objet || ''} – situation n° ${situationRang(sit)}`, date: isoDate(new Date()), echeance: isoDate(addDays(new Date(), num(s.delaiPaiement))), statut: 'Émise',
+    numero: '', situationId: sit.id, devisId: dv.id, affaireId: sit.affaireId, clientId: cid, contactId: a.contactId || dv.contactId || '', siteId: a.siteId || dv.siteId || '', chargeId: a.chargeId || docChargeId(dv) || '',
+    refCommande: dv.refCommande || a.refCommande || '',
+    objet: `${dv.objet || ''} – situation n° ${situationRang(sit)}`, date, echeance: echeancePour(cid, date), statut: 'Émise',
     lignes: Calc.sansChapitresVides(lignes), ajustements: [], zoneId: '',
     retenuePct: c.retenuePct, ...champsTVA(dv),
   });
@@ -58,9 +71,8 @@ function situationsTabs(actif) {
     <a href="#/situations?vue=liste" class="${actif === 'liste' ? 'active' : ''}">Toutes les situations ${attente ? `<span class="count">${attente} en attente de validation</span>` : ''}</a>
     <a href="#/factures">Factures et avoirs</a></div>`;
 }
-// Bilan d'un chantier : marché, cumul validé, retenues, situation en cours
-function bilanSituations(a) {
-  const dv = Store.all('devis').find(d => d.affaireId === a.id && d.statut === 'Accepté');
+// Bilan d'un devis accepté du chantier (le premier par défaut) : marché, cumul validé, retenues, situation en cours
+function bilanSituations(a, dv = devisAcceptes(a.id)[0]) {
   const sits = dv ? situationsDe(dv.id) : [], validees = sits.filter(s => s.statut === 'Acceptée');
   const derniere = validees[validees.length - 1], c = derniere ? Calc.situation(derniere) : null;
   const marche = dv ? Calc.situation({ devisId: dv.id, affaireId: a.id, avancements: {} }).marche : 0;
@@ -75,15 +87,16 @@ Views.situations = (params, query) => {
     const chantiers = chantiersASituation();
     return `<h1>Situations de travaux</h1>${situationsTabs('chantiers')}
     <p class="muted">Facturez à l'avancement : choisissez les lignes et le pourcentage (ou la quantité) réalisé, envoyez la situation par e-mail ; dès qu'elle est validée, la facture est créée et prête à partir.</p>
-    ${chantiers.length ? `<div class="sit-chantiers">${chantiers.map(a => {
-      const b = bilanSituations(a), rg = retenueChantier(a);
+    ${chantiers.length ? `<div class="sit-chantiers">${chantiers.flatMap(a => devisAcceptes(a.id).map((dv, i, tous) => [a, dv, tous.length > 1])).map(([a, dv, plusieurs]) => {
+      const b = bilanSituations(a, dv), rg = retenueChantier(a);
       return `<div class="card sit-ch">
         <div class="sit-ch-tete"><a href="#/chantier/${a.id}"><strong>${esc(a.code || '')}</strong> ${esc(a.nom || '')}</a><span class="muted small">${esc(clientName(a.clientId))}</span></div>
+        ${plusieurs ? `<div class="small">Devis <a href="#/devis/${dv.id}">${esc(dv.numero || '…')}</a>${dv.avenantDe ? ' <span class="badge b-info">avenant</span>' : ''} ${esc(dv.objet || '')}</div>` : ''}
         <div class="sit-ch-chiffres"><span>Marché <strong>${eur(b.marche)}</strong></span><span>Facturé <strong>${eur(b.cumul)}</strong> (${pct(b.pct)})</span><span>Reste <strong>${eur(b.marche - b.cumul)}</strong></span></div>
         ${gauge(b.cumul, b.marche)}
         <div class="small muted">${b.validees.length} situation(s) validée(s) · retenue ${a.caution ? 'remplacée par une caution' : rg ? `${fmt(rg, 1)} % · ${eur(b.retenues)} retenus` : 'aucune'}</div>
         <div class="toolbar" style="margin:8px 0 0">${b.enCours ? `<a class="btn" href="#/situations/${b.enCours.id}">Reprendre la situation n° ${situationRang(b.enCours)} ${badge(b.enCours.statut)}</a>`
-          : b.pct >= 99.995 ? '<span class="badge b-ok">Marché entièrement facturé</span>' : `<button data-nouvelle="${a.id}">+ Situation n° ${b.sits.length + 1}</button>`}</div></div>`;
+          : b.pct >= 99.995 ? '<span class="badge b-ok">Marché entièrement facturé</span>' : `<button data-nouvelle="${a.id}" data-devis="${dv.id}">+ Situation n° ${b.sits.length + 1}</button>`}</div></div>`;
     }).join('')}</div>` : '<p class="muted">Aucun chantier avec un devis accepté.</p>'}`;
   }
   const f = lireFiltres('situations', query, FILTRES_SITUATIONS);
@@ -217,7 +230,7 @@ function blDocument(sit, c, a, dv) {
 Views.situations.bind = (root, params, query) => {
   if (!params[0]) {
     if (query.get('vue') === 'liste' || ['q', 'client', 'charge', 'statut'].some(k => query.has(k))) bindFiltres(root, 'situations', lireFiltres('situations', query, FILTRES_SITUATIONS), FILTRES_SITUATIONS);
-    root.querySelectorAll('[data-nouvelle]').forEach(b => b.onclick = () => { const s = nouvelleSituation(b.dataset.nouvelle); if (s) location.hash = `#/situations/${s.id}`; });
+    root.querySelectorAll('[data-nouvelle]').forEach(b => b.onclick = () => { const s = nouvelleSituation(b.dataset.nouvelle, b.dataset.devis); if (s) location.hash = `#/situations/${s.id}`; });
     return;
   }
   const sit = Store.get('situations', params[0]);

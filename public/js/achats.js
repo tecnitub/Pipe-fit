@@ -50,7 +50,7 @@ function achatEditeur(id, query) {
   <h1>Facture fournisseur ${esc(x.ref || '')} <span class="badge ${cls}">${lib}</span> ${badge(x.statut)}</h1>
   <div class="card">
     <div class="grid2">
-      <div class="field"><label for="ac-four">Fournisseur</label><select id="ac-four">${options(fournisseursList(), x.fournisseurId)}</select></div>
+      <div class="field"><label for="ac-four">Fournisseur</label><select id="ac-four">${options(fournisseursList(), x.fournisseurId)}${optNouveau('fournisseur')}</select></div>
       <div class="field"><label for="ac-num">N° de facture du fournisseur</label><input id="ac-num" value="${esc(x.numeroFournisseur || '')}"></div>
       <div class="field"><label for="ac-date">Date de facture</label><input id="ac-date" type="date" value="${esc(x.date || '')}"></div>
       <div class="field"><label for="ac-ech">Échéance</label><input id="ac-ech" type="date" value="${esc(x.echeance || '')}"></div>
@@ -103,11 +103,18 @@ Views.achats.bind = (root, params, query) => {
   x.imputations = x.imputations || [];
   const save = (rerender = true) => { Store.upsert('achats', x); if (rerender) App.render(); };
   const q = s => root.querySelector(s);
+  // Échéance selon les conditions de paiement du fournisseur (sinon délai fournisseurs de la trésorerie, 45 jours) :
+  // recalculée au changement de fournisseur ou de date tant qu'elle n'a pas été saisie à la main
+  const delaiF = () => (Store.data.settings.tresorerie || {}).delaiFournisseurs || 45;
+  const echeanceAuto = () => (x.fournisseurId ? echeancePour(x.fournisseurId, x.date, delaiF()) : '');
   [['#ac-four', 'fournisseurId'], ['#ac-num', 'numeroFournisseur'], ['#ac-date', 'date'], ['#ac-ech', 'echeance'], ['#ac-statut', 'statut'], ['#ac-notes', 'notes']].forEach(([s, k]) => {
-    q(s).onchange = () => {
-      x[k] = q(s).value;
-      if (k === 'fournisseurId' && !x.echeance) x.echeance = isoDate(addDays(new Date(x.date || new Date()), 45));
-      save(k === 'fournisseurId' || k === 'statut');
+    q(s).onchange = async () => {
+      const v = k === 'fournisseurId' ? await choixOuNouveau(q(s), 'fournisseur', '', x.fournisseurId) : q(s).value;
+      if (v === null) return;
+      const auto = !x.echeance || x.echeance === echeanceAuto();
+      x[k] = v;
+      if ((k === 'fournisseurId' || k === 'date') && auto) x.echeance = echeanceAuto();
+      save(k === 'fournisseurId' || k === 'statut' || k === 'date');
     };
   });
   ['#ac-ht', '#ac-tva'].forEach(s => { q(s).onchange = () => { x[s === '#ac-ht' ? 'montantHT' : 'montantTVA'] = q(s).value === '' ? '' : num(q(s).value); save(); }; });

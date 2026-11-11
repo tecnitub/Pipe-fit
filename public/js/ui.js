@@ -48,12 +48,17 @@ const options = (list, sel, labelFn = x => x.nom, empty = true) =>
   list.map(x => `<option value="${esc(x.id)}" ${x.id === sel ? 'selected' : ''}>${esc(labelFn(x))}</option>`).join('');
 const optionsStr = (list, sel) => list.map(x => `<option ${x === sel ? 'selected' : ''}>${esc(x)}</option>`).join('');
 
-// Formulaire générique : fields = [{key, label, type, options(valeur, objet), step, datalist, dynamic}]
+// Formulaire générique : fields = [{key, label, type, options(valeur, objet), step, datalist, dynamic, suit, defaut, nouveau}]
+// suit + defaut(objet) : valeur proposée quand le champ « suit » change (ex. contact par défaut du client choisi)
+// nouveau : fiche créée par le choix « + Nouveau… » en fin de liste ('client', 'fournisseur', 'contact', 'site')
+const NOUVEAU = '__nouveau';
+const optNouveau = type => `<option value="${NOUVEAU}">${esc((typeof NOUVEAUX !== 'undefined' && NOUVEAUX[type]) || '+ Nouveau…')}</option>`;
+const selectOptions = (f, v, obj) => f.options(v, obj) + (f.nouveau ? optNouveau(f.nouveau) : '');
 function formFields(fields, obj) {
   return '<div class="grid2">' + fields.map(f => {
     const v = obj[f.key] ?? '';
     let input;
-    if (f.type === 'select') input = `<select name="${f.key}" id="f-${f.key}">${f.options(v, obj)}</select>`;
+    if (f.type === 'select') input = `<select name="${f.key}" id="f-${f.key}">${selectOptions(f, v, obj)}</select>`;
     else if (f.type === 'textarea') input = `<textarea name="${f.key}" id="f-${f.key}">${esc(v)}</textarea>`;
     else {
       input = `<input name="${f.key}" id="f-${f.key}" type="${f.type || 'text'}" ${f.step ? `step="${f.step}"` : ''} ${f.datalist ? `list="dl-${f.key}" autocomplete="off"` : ''} value="${esc(v)}">`;
@@ -63,15 +68,27 @@ function formFields(fields, obj) {
   }).join('') + '</div>';
 }
 
-// Met à jour les listes qui dépendent d'un autre champ (ex. site selon l'entreprise choisie)
+// Met à jour les listes qui dépendent d'un autre champ (ex. site selon l'entreprise choisie), propose
+// les valeurs par défaut (contact, site unique) et crée la fiche demandée par « + Nouveau… » puis la choisit
 function bindDynamic(root, fields, obj) {
-  if (!fields.some(f => f.dynamic)) return;
-  root.addEventListener('change', e => {
+  if (!fields.some(f => f.dynamic || f.nouveau)) return;
+  const avant = readForm(root, fields, { ...obj });
+  root.addEventListener('change', async e => {
+    const fn = fields.find(f => f.nouveau && f.key === e.target.name);
+    if (fn && e.target.value === NOUVEAU) {
+      const cur = readForm(root, fields, { ...obj }), id = await creerRapide(fn.nouveau, cur[fn.suit]), v = id || avant[fn.key];
+      e.target.innerHTML = selectOptions(fn, v, { ...cur, [fn.key]: v });
+      if (id) e.target.dispatchEvent(new Event('change', { bubbles: true }));
+      return;
+    }
     const cur = readForm(root, fields, { ...obj });
     fields.filter(f => f.dynamic && f.key !== e.target.name).forEach(f => {
       const el = root.querySelector(`[name="${f.key}"]`);
-      if (el) el.innerHTML = f.options(cur[f.key], cur);
+      if (!el) return;
+      el.innerHTML = selectOptions(f, cur[f.key], cur);
+      if (f.defaut && f.suit === e.target.name && !el.value) el.value = f.defaut(cur);
     });
+    readForm(root, fields, avant);
   });
 }
 
@@ -127,6 +144,13 @@ function dialog(html, onReady) {
     const done = v => { wrap.remove(); resolve(v); };
     onReady(wrap, done);
   });
+}
+
+// Choix entre plusieurs réponses (choix = [[valeur, libellé], …]) : la valeur choisie, null si annulé
+function choisir(message, choix) {
+  return dialog(`<p>${esc(message)}</p><div class="modal-actions">
+      <button class="secondary" data-i="-1">Annuler</button>${choix.map(([, l], i) => `<button class="${i ? 'secondary' : ''}" data-i="${i}">${esc(l)}</button>`).join('')}</div>`,
+  (wrap, done) => { wrap.querySelectorAll('[data-i]').forEach(b => { b.onclick = () => done(+b.dataset.i < 0 ? null : choix[+b.dataset.i][0]); }); });
 }
 
 function ask(message, okLabel = 'Confirmer', danger = true) {
