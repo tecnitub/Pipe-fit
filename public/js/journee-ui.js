@@ -29,7 +29,7 @@ function choisirInterimaire({ date, affaireId, exclure = [] }) {
         <div class="field"><label for="ci-nom">Nom et prénom</label><input id="ci-nom" autocomplete="off" placeholder="Ex. Yanis Morel"></div>
         <div class="field"><label for="ci-ag">Agence d'intérim</label><select id="ci-ag"><option value="">Choisir…</option>${ags.map(a => `<option value="${a.id}">${esc(a.nom)}</option>`).join('')}<option value="autre">Autre agence</option></select></div>
         <div class="field" id="ci-agl-f" ${ags.length ? 'hidden' : ''}><label for="ci-agl">Nom de l'agence</label><input id="ci-agl" autocomplete="off" placeholder="Ex. Adecco Annecy"></div>
-        <div class="field"><label for="ci-qual">Métier (facultatif)</label><input id="ci-qual" autocomplete="off" placeholder="Ex. tuyauteur, soudeur TIG"></div>
+        <div class="field"><label for="ci-qual">Métier (facultatif)</label><input id="ci-qual" autocomplete="off" list="ci-quals" placeholder="Ex. tuyauteur, soudeur TIG"><datalist id="ci-quals">${[...new Set(Store.all('mainoeuvre').map(m => m.libelle).filter(Boolean))].map(l => `<option value="${esc(l)}"></option>`).join('')}</datalist></div>
         <p class="small muted">Le bureau est prévenu et complète son dossier (contrat de mise à disposition, registre du personnel).</p>
         <button id="ci-ok">Ajouter cet intérimaire</button></details>
       <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="ci-x">Annuler</button></div>`);

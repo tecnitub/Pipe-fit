@@ -184,3 +184,37 @@ test('CRM : bibliothèque au format du modèle d\'export (marge, catégories, un
   assert.ok(await p.$('[data-export-modele]'));
   assert.deepStrictEqual(erreurs, []);
 });
+
+test('CRM : PV ouvert sans point → choix du point de la liste du chantier (réseau, n° de série repris) ; fiche fluides préremplie depuis le PV de mise en service', { skip: sansPlaywright, timeout: 120000 }, async () => {
+  const { p, erreurs } = await ouvrir('pipefit-crm-demo.html');
+  // Liste du chantier connue (comme chargée depuis les études) : un réseau à éprouver, un circulateur dont la plaque a été lue
+  const id = await p.evaluate(() => {
+    const a = Store.all('affaires').find(x => x.clientId);
+    planMesCache.set(a.id, { points: [{ nature: 'epreuve', etudeId: 'e2e', noteId: 'n1', reseau: 'Réseau CH e2e', PS: 4, PT: 6 }], debits: [] });
+    materielChantier.set(a.id, [{ etudeId: 'e2e', cle: 'pompe|P1', designation: 'Circulateur e2e', fabricant: 'Marque', reference: 'P-50', valide: true, serie: 'SN-E2E-42', photos: [] }]);
+    location.hash = `#/epreuve/new?chantier=${a.id}`;
+    return a.id;
+  });
+  await p.waitForTimeout(1200);
+  const opts = await p.$$eval('#pv-point option', l => l.map(o => o.textContent));
+  assert.ok(opts.some(o => /Réseau CH e2e/.test(o)), opts.join(' | '));
+  await p.selectOption('#pv-point', { index: 1 }); await p.waitForTimeout(1200);
+  assert.strictEqual(await p.$eval('#ep-reseau', x => x.value), 'Réseau CH e2e');
+  assert.strictEqual(await p.$eval('#ep-pressionEpreuve', x => x.value), '6');
+  assert.ok(!await p.$('#pv-point'), 'plus de choix une fois le point choisi');
+  // Mise en service : le n° de série lu sur la plaque du matériel retenu est repris par le PV
+  await p.evaluate(x => { location.hash = `#/mes/new?chantier=${x}`; }, id); await p.waitForTimeout(1200);
+  await p.selectOption('#pv-point', { label: 'Circulateur e2e' }); await p.waitForTimeout(1200);
+  assert.strictEqual(await p.$eval('#es-equipement', x => x.value), 'Circulateur e2e');
+  assert.strictEqual(await p.$eval('#es-numeroSerie', x => x.value), 'SN-E2E-42');
+  // Fiche fluides (Cerfa) depuis un PV de mise en service d'une PAC : équipement créé au registre, nature « mise en service »
+  const mes = await p.evaluate(x => Store.upsert('misesEnService', { affaireId: x, type: 'pac', equipement: 'PAC e2e', localisation: 'Toiture', fluide: 'R410A', charge: 3.2, marque: 'Daikin', modele: 'ERGA', numeroSerie: 'SN-PAC', date: '2026-11-10', statut: 'Brouillon', userId: Store.me.userId || '', photos: [], controles: Essais.modele('pac').controles, mesures: Essais.modele('pac').mesures }).id, id);
+  await p.evaluate(x => { location.hash = `#/mes/${x}`; }, mes); await p.waitForTimeout(1000);
+  await p.click('a[href*="?mes="]'); await p.waitForTimeout(1500);
+  const eq = await p.evaluate(x => Store.all('equipementsFrigo').find(e => e.mesId === x), mes);
+  assert.ok(eq && eq.designation === 'PAC e2e' && eq.fluide === 'R410A' && eq.charge === 3.2 && eq.numeroSerie === 'SN-PAC' && eq.miseEnService === '2026-11-10', JSON.stringify(eq));
+  assert.strictEqual(await p.$eval('#ff-eq', x => x.value), eq.id);
+  assert.strictEqual(await p.$eval('#ff-nat', x => x.value), 'miseEnService');
+  assert.strictEqual(await p.$eval('#ff-aff', x => x.value), id);
+  assert.deepStrictEqual(erreurs, []);
+});

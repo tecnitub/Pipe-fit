@@ -4,7 +4,10 @@ function choisirMateriel({ titre = 'Matériel utilisé', affaireId = '', prix = 
   return new Promise(resolve => {
     const articles = Store.all('articles');
     const dejaIci = new Set(affaireId ? Store.all('consommations').filter(c => c.affaireId === affaireId && c.articleId).map(c => c.articleId) : []);
-    const st = { q: '', famille: '', sous: '', gamme: '', ici: false, panier: new Map(), libres: [] };
+    // Prévu au devis accepté du chantier (fournitures des ouvrages) ou commandé pour lui
+    const prevus = new Set(affaireId ? [...Store.all('devis').filter(d => d.affaireId === affaireId && d.statut === 'Accepté').flatMap(d => (d.lignes || []).flatMap(l => (l.composants || []).filter(c => c.type !== 'mo' && c.articleId).map(c => c.articleId))),
+      ...Store.all('commandes').filter(c => c.affaireId === affaireId && c.statut !== 'Annulée').flatMap(c => (c.lignes || []).map(l => l.articleId).filter(Boolean))] : []);
+    const st = { q: '', famille: '', sous: '', gamme: '', ici: false, prevu: false, panier: new Map(), libres: [] };
     const el = document.createElement('div');
     el.className = 'selecteur';
     el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', titre);
@@ -22,19 +25,20 @@ function choisirMateriel({ titre = 'Matériel utilisé', affaireId = '', prix = 
     function pastilles() {
       const arbre = RechercheArticles.arbre(articles);
       const p = (k, v, lib, actif) => `<button class="pastille ${actif ? 'on' : ''}" data-${k}="${esc(v)}">${esc(lib)}</button>`;
-      $('.sel-familles').innerHTML = (dejaIci.size ? p('ici', '1', '⭐ Déjà utilisé ici', st.ici) : '') + p('fam', '', 'Tout', !st.famille && !st.ici)
-        + arbre.map(f => p('fam', f.nom, f.nom, st.famille === f.nom && !st.ici)).join('');
+      $('.sel-familles').innerHTML = (prevus.size ? p('prevu', '1', '📋 Prévu au devis / commandé', st.prevu) : '') + (dejaIci.size ? p('ici', '1', '⭐ Déjà utilisé ici', st.ici) : '') + p('fam', '', 'Tout', !st.famille && !st.ici && !st.prevu)
+        + arbre.map(f => p('fam', f.nom, f.nom, st.famille === f.nom && !st.ici && !st.prevu)).join('');
       const f = arbre.find(x => x.nom === st.famille);
       const so = $('.sel-sous:not(.sel-gammes)'), ga = $('.sel-gammes');
-      so.innerHTML = f && f.sous.length && !st.ici ? p('sous', '', 'Toutes', !st.sous) + f.sous.map(s => p('sous', s.nom, s.nom, st.sous === s.nom)).join('') : '';
+      so.innerHTML = f && f.sous.length && !st.ici && !st.prevu ? p('sous', '', 'Toutes', !st.sous) + f.sous.map(s => p('sous', s.nom, s.nom, st.sous === s.nom)).join('') : '';
       so.hidden = !so.innerHTML;
       // 3e niveau : gammes de la sous-famille choisie
       const s = f && f.sous.find(x => x.nom === st.sous);
-      ga.innerHTML = s && (s.gammes || []).length && !st.ici ? p('gam', '', 'Toutes', !st.gamme) + s.gammes.map(g => p('gam', g.nom, g.nom, st.gamme === g.nom)).join('') : '';
+      ga.innerHTML = s && (s.gammes || []).length && !st.ici && !st.prevu ? p('gam', '', 'Toutes', !st.gamme) + s.gammes.map(g => p('gam', g.nom, g.nom, st.gamme === g.nom)).join('') : '';
       ga.hidden = !ga.innerHTML;
     }
     function liste() {
-      let l = RechercheArticles.filtrer(st.ici ? articles.filter(a => dejaIci.has(a.id)) : articles, { q: st.q, famille: st.ici ? '' : st.famille, sousFamille: st.ici ? '' : st.sous, gamme: st.ici ? '' : st.gamme, fournisseurDe: a => (a.fournisseurId ? clientName(a.fournisseurId) : '') });
+      const raccourci = st.ici || st.prevu;
+      let l = RechercheArticles.filtrer(raccourci ? articles.filter(a => (!st.ici || dejaIci.has(a.id)) && (!st.prevu || prevus.has(a.id))) : articles, { q: st.q, famille: raccourci ? '' : st.famille, sousFamille: raccourci ? '' : st.sous, gamme: raccourci ? '' : st.gamme, fournisseurDe: a => (a.fournisseurId ? clientName(a.fournisseurId) : '') });
       const n = l.length; l = l.slice(0, 150);
       $('.sel-liste').innerHTML = (st.libres.map((m, i) => `<li class="choisi"><div class="sel-art"><strong>${esc(m.designation)}</strong><span class="small muted">hors bibliothèque · ${qteTxt(m.qte)} ${esc(m.unite)}</span></div><button class="icon" data-rmlibre="${i}" aria-label="Retirer">✕</button></li>`).join(''))
         + (l.map(a => { const q = st.panier.get(a.id) || 0;
@@ -55,10 +59,11 @@ function choisirMateriel({ titre = 'Matériel utilisé', affaireId = '', prix = 
     el.addEventListener('click', ev => {
       const b = ev.target.closest('button, li[data-art]');
       if (!b) return;
-      if (b.dataset.fam !== undefined) { st.famille = b.dataset.fam; st.sous = ''; st.gamme = ''; st.ici = false; pastilles(); liste(); return; }
+      if (b.dataset.fam !== undefined) { st.famille = b.dataset.fam; st.sous = ''; st.gamme = ''; st.ici = false; st.prevu = false; pastilles(); liste(); return; }
       if (b.dataset.sous !== undefined) { st.sous = b.dataset.sous; st.gamme = ''; pastilles(); liste(); return; }
       if (b.dataset.gam !== undefined) { st.gamme = b.dataset.gam; pastilles(); liste(); return; }
-      if (b.dataset.ici) { st.ici = !st.ici; pastilles(); liste(); return; }
+      if (b.dataset.ici) { st.ici = !st.ici; st.prevu = false; pastilles(); liste(); return; }
+      if (b.dataset.prevu) { st.prevu = !st.prevu; st.ici = false; pastilles(); liste(); return; }
       if (b.dataset.plus) { st.panier.set(b.dataset.plus, (st.panier.get(b.dataset.plus) || 0) + 1); liste(); return; }
       if (b.dataset.moins) { const q = (st.panier.get(b.dataset.moins) || 0) - 1; if (q > 0) st.panier.set(b.dataset.moins, q); else st.panier.delete(b.dataset.moins); liste(); return; }
       if (b.dataset.rmlibre) { st.libres.splice(+b.dataset.rmlibre, 1); liste(); return; }

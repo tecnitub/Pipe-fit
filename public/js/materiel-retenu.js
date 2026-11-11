@@ -68,10 +68,12 @@ const MaterielRetenu = (() => {
     if (action === 'annulerPose') { delete d.poseLe; delete d.posePar; delete d.mesLe; delete d.mesPar; }
     if (action === 'annulerMes') { delete d.mesLe; delete d.mesPar; }
     if (action === 'photo') {
-      if (!/^[\w-]{1,64}$/.test(String(extra.fichierId || ''))) throw Object.assign(new Error('Photo manquante'), { status: 400 });
-      d.photos = [...(d.photos || []), { fichierId: String(extra.fichierId), le: quand, par: qui, nom: txt(extra.nom, 120) }].slice(-6);
-      // N° de série lu sur la plaque (photo)
-      if (txt(extra.serie, 60)) Object.assign(d, { serie: txt(extra.serie, 60), serieLue: true });
+      // Photo de la plaque et/ou n° de série (PV de mise en service signé : n° vérifié, photo déjà connue non doublée)
+      const id = String(extra.fichierId || '');
+      if (!/^[\w-]{1,64}$/.test(id) && !(id === '' && txt(extra.serie, 60))) throw Object.assign(new Error('Photo manquante'), { status: 400 });
+      if (id && !(d.photos || []).some(p => p.fichierId === id)) d.photos = [...(d.photos || []), { fichierId: id, le: quand, par: qui, nom: txt(extra.nom, 120) }].slice(-6);
+      // N° de série lu sur la plaque (photo), ou relevé sur le PV
+      if (txt(extra.serie, 60)) Object.assign(d, { serie: txt(extra.serie, 60), serieLue: extra.serieLue !== false });
     }
     // Matériel commandé (ou livré) différent de la référence validée : à refaire valider par le client
     if (action === 'substitution') {

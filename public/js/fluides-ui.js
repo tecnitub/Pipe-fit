@@ -42,8 +42,11 @@ Views.fluides = (params = []) => {
     : '<span class="warn-text">non renseignée (obligatoire pour manipuler les fluides)</span>'} ${Store.can('admin') ? '<button class="small secondary" id="fl-att">Modifier</button>' : ''}</div>
   ${corps}`;
 };
-Views.fluides.bind = (root, params = []) => {
+Views.fluides.bind = (root, params = [], query) => {
   const onglet = params[0] || '';
+  // Fiche d'intervention depuis un PV de mise en service (lien du PV) : ouverte préremplie
+  const mes = query && query.get('mes');
+  if (mes && Store.get('misesEnService', mes)) { history.replaceState(null, '', `#/fluides${onglet ? `/${onglet}` : ''}`); setTimeout(() => nouvelleFicheBureau('', mes), 0); }
   const att = root.querySelector('#fl-att');
   if (att) att.onclick = editerAttestation;
   const q = root.querySelector('#fl-q');
@@ -249,15 +252,33 @@ function editerBouteille(id) {
 
 /* ---------- Fiche d'intervention (bureau et téléphone) ---------- */
 const ficheBrouillon = { f: null };
-function ficheVide(equipementId) {
-  const e = equipementId && Store.get('equipementsFrigo', equipementId);
-  const prevu = Store.me.userId && planJour(Store.me.userId, isoDate(new Date()))[0];
-  return { equipementId: equipementId || '', clientId: e ? e.clientId : '', affaireId: prevu ? prevu.affaireId : '', date: isoDate(new Date()), nature: 'controlePeriodique', userId: Store.me.userId || '', fuites: [], statut: 'Brouillon',
-    detecteur: (Store.all('materiels').find(m => !m.archive && /détecteur|fuite|récupération/i.test(`${m.designation} ${m.categorie}`) && m.affectation && m.affectation.userId === Store.me.userId) || {}).designation || '' };
+// Détecteurs de fuites du parc : « désignation · n° · contrôlé le … » (comme le manomètre des épreuves)
+const detecteursFuites = () => Store.all('materiels').filter(m => !m.archive && /détecteur|detecteur|fuite/i.test(`${m.designation} ${m.categorie}`));
+const libelleDetecteur = m => { const d = (m.echeances || []).map(x => x.derniere).filter(Boolean).sort().pop();
+  return [m.designation, m.numeroSerie && `n° ${m.numeroSerie}`, d && `contrôlé le ${dateFr(d)}`].filter(Boolean).join(' · '); };
+// Équipement du PV de mise en service : retrouvé au registre (n° de série, désignation), sinon créé (à vérifier par le bureau
+// s'il vient du téléphone) ; les champs vides d'un équipement retrouvé sont complétés
+function equipementDuPv(pv, a) {
+  const x = Fluides.equipementDepuisMes(pv, a), ex = Fluides.trouverEquipement(Store.all('equipementsFrigo'), x);
+  if (ex) { const vides = Object.fromEntries(Object.entries(x).filter(([k, v]) => v !== '' && (ex[k] === undefined || ex[k] === ''))); return Object.keys(vides).length ? Store.upsert('equipementsFrigo', { ...ex, ...vides }) : ex; }
+  if (!x.clientId || !x.designation) return null;
+  return Store.upsert('equipementsFrigo', { ...x, ...(Store.me.role === 'atelier' ? { aValider: true, userId: Store.me.userId } : {}) });
+}
+// mesId : fiche de mise en service préremplie depuis le PV (équipement, fluide, charge, plaque, chantier)
+function ficheVide(equipementId, mesId) {
+  const prevu = Store.me.userId && planJour(Store.me.userId, isoDate(new Date()))[0], pv = mesId && Store.get('misesEnService', mesId);
+  const affaireId = pv ? pv.affaireId || '' : prevu ? prevu.affaireId : '', a = Store.get('affaires', affaireId) || {};
+  const e = (equipementId && Store.get('equipementsFrigo', equipementId)) || (pv ? equipementDuPv(pv, a) : null);
+  const det = detecteursFuites().find(m => m.affectation && m.affectation.userId === Store.me.userId) || detecteursFuites()[0];
+  return { equipementId: e ? e.id : '', clientId: e ? e.clientId : a.clientId || '', affaireId, date: (pv && pv.date) || isoDate(new Date()), nature: pv ? 'miseEnService' : 'controlePeriodique', userId: Store.me.userId || '', fuites: [], statut: 'Brouillon',
+    ...(pv ? { mesId: pv.id } : {}), ...signataireChantier(affaireId), detecteur: det ? libelleDetecteur(det) : '' };
 }
 function ficheFormHtml(f) {
   const e = Store.get('equipementsFrigo', f.equipementId), clients = clientsList();
-  const eqs = Store.all('equipementsFrigo').filter(x => !x.archive && (!f.clientId || x.clientId === f.clientId));
+  // Équipements du client, et du site du chantier quand il est connu
+  const site = (Store.get('affaires', f.affaireId) || {}).siteId || '';
+  const eqs = Store.all('equipementsFrigo').filter(x => !x.archive && (!f.clientId || x.clientId === f.clientId) && (!site || !x.siteId || x.siteId === site || x.id === f.equipementId));
+  const dets = detecteursFuites(), libDets = dets.map(libelleDetecteur), autreDet = !dets.length || !libDets.includes(f.detecteur);
   const bts = type => Store.all('bouteilles').filter(b => !b.archive && (!e || b.fluide === e.fluide) && (type === 'recuperation' ? b.type === 'recuperation' : b.type !== 'recuperation'));
   const optB = (type, sel) => `<option value="">—</option>${bts(type).map(b => `<option value="${esc(b.id)}" ${b.id === sel ? 'selected' : ''}>${esc(b.numero)} · ${esc(b.fluide)} · ${fmt(Fluides.masseBouteille(b, Store.all('fichesFluides')), 1)} kg${b.userId === Store.me.userId ? ' · mon véhicule' : ''}</option>`).join('')}`;
   const apt = aptitudeFluides(f.userId);
@@ -272,7 +293,8 @@ function ficheFormHtml(f) {
     <fieldset class="hd-bloc"><legend>Intervention</legend>
       <div class="grid2"><div class="field"><label for="ff-date">Date</label><input id="ff-date" data-ff="date" type="date" value="${esc(f.date || '')}"></div>
         <div class="field"><label for="ff-nat">Nature</label><select id="ff-nat" data-ff="nature">${Fluides.NATURES.map(([k, l]) => `<option value="${k}" ${f.nature === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div></div>
-      <div class="field"><label for="ff-det">Détecteur de fuites utilisé (identification, date de son dernier contrôle)</label><input id="ff-det" data-ff="detecteur" value="${esc(f.detecteur || '')}"></div>
+      ${dets.length ? `<div class="field"><label for="ff-detsel">Détecteur de fuites utilisé</label><select id="ff-detsel">${dets.map((m, i) => `<option value="${esc(libDets[i])}" ${!autreDet && f.detecteur === libDets[i] ? 'selected' : ''}>${esc(libDets[i])}</option>`).join('')}<option value="__autre" ${autreDet ? 'selected' : ''}>Autre détecteur (saisir)</option></select></div>` : ''}
+      ${autreDet ? `<div class="field"><label for="ff-det">Détecteur de fuites utilisé (identification, date de son dernier contrôle)</label><input id="ff-det" data-ff="detecteur" value="${esc(f.detecteur || '')}"></div>` : ''}
       <p class="small">Opérateur : <strong>${esc(userName(f.userId))}</strong>${apt ? ` · attestation d'aptitude ${apt.numero ? `n° ${esc(apt.numero)} ` : ''}${apt.expire ? `jusqu'au ${dateFr(apt.expire)}` : ''}${apt.expire && apt.expire < f.date ? ' <span class="neg">expirée</span>' : ''}` : ' · <span class="warn-text">attestation d\'aptitude non enregistrée (RH → Habilitations)</span>'}</p>
     </fieldset>
     <fieldset class="hd-bloc"><legend>Fuites constatées</legend>
@@ -304,6 +326,17 @@ function bindFicheForm(root, f, apres) {
   const garder = () => { root.querySelectorAll('[data-ff]').forEach(el => { f[el.dataset.ff] = el.type === 'number' ? (el.value === '' ? '' : num(el.value)) : el.value; }); };
   const redessiner = () => { garder(); App.render(); if (ficheBrouillon.modal) ficheBrouillon.modal(); };
   $('#ff-cl').onchange = () => { garder(); f.clientId = $('#ff-cl').value; f.equipementId = ''; redessiner(); };
+  // Chantier choisi : client (détenteur) et signataire repris du chantier (signataire gardé s'il a été saisi à la main)
+  $('#ff-aff').onchange = () => {
+    garder();
+    const a = Store.get('affaires', f.affaireId);
+    if (a && a.clientId && a.clientId !== f.clientId) { f.clientId = a.clientId; if ((Store.get('equipementsFrigo', f.equipementId) || {}).clientId !== a.clientId) f.equipementId = ''; }
+    if (!f.signataireManuel) Object.assign(f, signataireChantier(f.affaireId));
+    redessiner();
+  };
+  ['#ff-sn', '#ff-sq'].forEach(k => $(k).addEventListener('input', () => { f.signataireManuel = true; }));
+  const ds = $('#ff-detsel');
+  if (ds) ds.onchange = () => { garder(); f.detecteur = ds.value === '__autre' ? '' : ds.value; redessiner(); };
   $('#ff-eq').onchange = () => {
     garder();
     if ($('#ff-eq').value === '__nouveau') return nouvelEquipementTerrain(f, redessiner);
@@ -326,7 +359,7 @@ function bindFicheForm(root, f, apres) {
     $('#ff-envoyer').disabled = true;
     try {
       const o = { ...f };
-      delete o.signature;
+      delete o.signature; delete o.signataireManuel;
       if (envoyer && f.signature) Object.assign(o, { signatureClientId: await envoyerImage(f.signature), signeLe: new Date().toISOString() });
       o.statut = envoyer ? (f.signature ? 'Signée' : 'Envoyée') : 'Brouillon';
       o.clientId = eq ? eq.clientId : f.clientId;
@@ -341,7 +374,8 @@ function bindFicheForm(root, f, apres) {
 }
 // Équipement absent du registre : créé sur place (le bureau le vérifie ensuite)
 function nouvelEquipementTerrain(f, apres) {
-  const e = { clientId: f.clientId, fluide: 'R32', userId: Store.me.role === 'atelier' ? Store.me.userId : undefined, miseEnService: f.nature === 'miseEnService' ? f.date : '' };
+  const a = Store.get('affaires', f.affaireId) || {};
+  const e = { clientId: f.clientId || a.clientId || '', siteId: a.siteId && (!f.clientId || f.clientId === a.clientId) ? a.siteId : '', fluide: 'R32', userId: Store.me.role === 'atelier' ? Store.me.userId : undefined, miseEnService: f.nature === 'miseEnService' ? f.date : '' };
   const box = Modal.open(`<h2 style="margin-top:0">${f.nature === 'miseEnService' ? 'Mise en service : nouvel équipement' : 'Nouvel équipement'}</h2>${f.nature === 'miseEnService' ? '<p class="small muted">Commencez par la photo de la plaque signalétique : les champs se remplissent tout seuls.</p>' : ''}${champsEquipement(e)}
     <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="eq-x">Annuler</button><button id="eq-ok">Ajouter</button></div>`, true);
   brancherEquipement(box, e);
@@ -358,8 +392,8 @@ function nouvelEquipementTerrain(f, apres) {
   };
 }
 
-function nouvelleFicheBureau(equipementId) {
-  ficheBrouillon.f = ficheVide(equipementId);
+function nouvelleFicheBureau(equipementId, mesId) {
+  ficheBrouillon.f = ficheVide(equipementId, mesId);
   const ouvrir = () => {
     const box = Modal.open(`<h2 style="margin-top:0">Fiche d'intervention</h2>${ficheFormHtml(ficheBrouillon.f)}<div class="modal-actions"><button class="secondary" id="ff-fermer">Fermer</button></div>`, true);
     box.querySelector('#ff-fermer').onclick = () => { ficheBrouillon.modal = null; Modal.close(); };
@@ -412,7 +446,8 @@ function ficheFluideDocument(f) {
 /* ---------- Appli des compagnons : mes fiches d'intervention ---------- */
 const voitFluides = u => Store.me.role !== 'atelier' || !!aptitudeFluides(u.id) || Store.all('fichesFluides').some(f => f.userId === u.id);
 function fluidesCompagnon(u, sous) {
-  if (sous === 'miseEnService') { ficheBrouillon.f = { ...ficheVide(''), userId: u.id, nature: 'miseEnService', ouvrirEquipement: true }; sous = 'nouvelle'; }
+  // Mise en service : depuis le PV (?mes=) l'équipement est déjà au registre ; sinon il est créé d'abord (photo de la plaque)
+  if (sous === 'miseEnService') { const f = ficheVide('', new URLSearchParams(location.hash.split('?')[1] || '').get('mes')); ficheBrouillon.f = { ...f, userId: u.id, nature: 'miseEnService', ouvrirEquipement: !f.equipementId }; sous = 'nouvelle'; }
   if (sous === 'nouvelle') {
     if (!ficheBrouillon.f || ficheBrouillon.f.userId !== u.id) ficheBrouillon.f = { ...ficheVide(''), userId: u.id };
     ficheBrouillon.modal = null;

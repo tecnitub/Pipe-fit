@@ -41,6 +41,8 @@ const PlanMes = (() => {
   const meilleur = (recs, etatDe) => recs.map(r => ({ r, e: etatDe(r) })).sort((a, b) => ORDRE_ETAT[a.e] - ORDRE_ETAT[b.e] || String(b.r.date || '').localeCompare(String(a.r.date || '')))[0] || null;
   const q = o => Object.entries(o).filter(([, v]) => v !== '' && v !== null && v !== undefined).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
   const attendusQ = a => ((a || []).length ? JSON.stringify(a.slice(0, 400).map(x => [x.libelle, x.valeur, x.unite])) : '');
+  // Dernière photo de la plaque signalétique du matériel retenu (identifiant du fichier)
+  const photoPlaque = m => { const p = ((m && m.photos) || []).slice(-1)[0]; return p && /^[\w-]{1,64}$/.test(String(p.fichierId || '')) ? String(p.fichierId) : ''; };
 
   // affaireId ; materiel : lignes de /api/liens/materiel ; points : /api/liens/plan-mes ; debits : /api/liens/debits ;
   // pv : { mises, epreuves, equilibrages } du chantier ; suivi : affaire.planMes = { etats: { [cle]: { fait, sansObjet, le, par } }, manuelles: [{ id, libelle, groupe }] }
@@ -71,7 +73,8 @@ const PlanMes = (() => {
       const mat = `${m.etudeId}|${m.cle}`, cle = `mat|${mat}`, ref = [m.fabricant, m.reference].filter(Boolean).join(' ');
       taches.push({ cle, groupe: GROUPES[1], nature: 'mes', type, libelle: txt(m.designation), detail: [ref, m.qte > 1 ? `× ${m.qte}` : '', !m.valide ? 'non validé par le client' : !m.poseLe ? 'pas encore posé' : '', /^(pac|split)$/.test(type) ? 'fiche d\'intervention fluides (Cerfa) à établir' : ''].filter(Boolean).join(' · '),
         attendus, source: m.etude, sansPv: !!m.mesLe,
-        lien: `#/mes/new?${q({ chantier: affaireId, type, equipement: txt(m.designation), marque: m.fabricant, modele: m.reference, materiel: mat, plan: cle, att: attendusQ(attendus) })}`,
+        // N° de série et photo de la plaque déjà pris sur le matériel retenu : repris par le PV
+        lien: `#/mes/new?${q({ chantier: affaireId, type, equipement: txt(m.designation), marque: m.fabricant, modele: m.reference, serie: txt(m.serie, 60), plaque: photoPlaque(m), materiel: mat, plan: cle, att: attendusQ(attendus) })}`,
         trouver: r => r.planCle === cle || r.materiel === mat, recs: mises, etatDe: resultatMes });
     });
     pointsMes.filter(p => !utilises.has(p)).forEach(p => {
@@ -88,7 +91,7 @@ const PlanMes = (() => {
     debits.forEach(d => {
       const k = norm(d.installation), cle = `eq|${k}`;
       if (!k || taches.some(t => t.cle === cle)) return;
-      taches.push({ cle, groupe: GROUPES[2], nature: 'equilibrage', libelle: `Équilibrage ${d.type === 'Hydraulique' ? 'hydraulique' : 'aéraulique'} : ${txt(d.installation)}`,
+      taches.push({ cle, groupe: GROUPES[2], nature: 'equilibrage', installation: txt(d.installation), libelle: `Équilibrage ${d.type === 'Hydraulique' ? 'hydraulique' : 'aéraulique'} : ${txt(d.installation)}`,
         detail: `${(d.lignes || []).length} ${d.type === 'Hydraulique' ? 'organe(s)' : 'bouche(s)'}, débits théoriques repris de l'étude`, source: d.etude,
         lien: `#/equilibrage/new?${q({ chantier: affaireId, installation: txt(d.installation), type: d.type, unite: d.unite, plan: cle, etude: 1 })}`,
         trouver: r => r.planCle === cle || norm(r.installation) === k, recs: eqs, etatDe: resultatConf });
@@ -154,6 +157,15 @@ const PlanMes = (() => {
     });
     return note >= 0.5 ? best : null;
   }
-  return { rattacher, GROUPES, ETATS, FINALES, typeMateriel, propre, pointsChantier, plan, bilan, marquer, lireAttendus, avecAttendus, ecart, norm };
+  // PV ouvert sans point de la liste : points restant à faire de cette nature (mes, epreuve, equilibrage) ;
+  // un brouillon en cours est repris plutôt que d'en commencer un autre
+  function pointsAFaire(taches, nature) {
+    return (taches || []).filter(t => t.nature === nature && t.lien && ['aFaire', 'enCours', 'ko'].includes(t.etat))
+      .map(t => ({ cle: t.cle, libelle: t.libelle, detail: t.detail || '', etat: t.etat, lien: t.etat === 'enCours' && t.pv && t.pv.id ? `#/${nature}/${t.pv.id}` : t.lien }));
+  }
+  // Noms connus sur le chantier pour les suggestions du PV : équipements, réseaux ou installations de la liste
+  const nomsPoints = (taches, nature) => [...new Set((taches || []).filter(t => t.nature === nature)
+    .map(t => (nature === 'epreuve' ? t.reseau : nature === 'equilibrage' ? t.installation : t.libelle)).filter(Boolean))];
+  return { pointsAFaire, nomsPoints, photoPlaque, rattacher, GROUPES, ETATS, FINALES, typeMateriel, propre, pointsChantier, plan, bilan, marquer, lireAttendus, avecAttendus, ecart, norm };
 })();
 if (typeof module !== 'undefined') module.exports = PlanMes;

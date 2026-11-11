@@ -12,10 +12,15 @@ const appareilsMesure = re => Store.all('materiels').filter(m => !m.archive && /
 const essaisDe = (col, affaireId) => Store.all(col).filter(e => e.affaireId === affaireId).sort((a, b) => `${b.date}${b.heure || ''}`.localeCompare(`${a.date}${a.heure || ''}`));
 const retourEssai = e => (Store.me.role === 'atelier' ? '#/pointage/rapports' : `#/chantier/${e.affaireId}`);
 
+// Signataire pour le client : contact du chantier (PV d'épreuve, de mise en service, d'équilibrage, fiche fluides)
+const signataireChantier = affaireId => { const a = Store.get('affaires', affaireId) || {}, ct = Store.get('contacts', a.contactId) || {};
+  return { signataireNom: ct.nom ? contactName(ct) : '', signataireQualite: ct.fonction || '' }; };
+// Chantier changé sur le PV : signataire repris du nouveau chantier, sauf s'il a été saisi à la main
+const changerChantierPv = (e, affaireId) => { e.affaireId = affaireId; if (!e.signataireManuel) Object.assign(e, signataireChantier(affaireId)); };
 function baseEssai(query) {
   const me = Store.me.userId || '', prevu = me && planJour(me, isoDate(new Date()))[0];
-  const a = Store.get('affaires', query.get('chantier') || (prevu ? prevu.affaireId : '')) || {}, ct = Store.get('contacts', a.contactId) || {};
-  return { affaireId: a.id || '', userId: me, date: isoDate(new Date()), heure: heureMaintenant(), photos: [], observations: '', signataireNom: ct.nom ? contactName(ct) : '', signataireQualite: ct.fonction || '', statut: 'Brouillon' };
+  const a = Store.get('affaires', query.get('chantier') || (prevu ? prevu.affaireId : '')) || {};
+  return { affaireId: a.id || '', userId: me, date: isoDate(new Date()), heure: heureMaintenant(), photos: [], observations: '', ...signataireChantier(a.id), statut: 'Brouillon' };
 }
 // Copie pour l'équipement ou l'installation suivante : mêmes réglages, nouvelles mesures
 function copieEssai(r) {
@@ -65,9 +70,13 @@ function bindEssai(root, kind, e, { manques, calc, maj }) {
   const $ = s => root.querySelector(s), conf = ESSAIS[kind];
   root.querySelectorAll('[data-k]').forEach(el => el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
     e[el.dataset.k] = el.type === 'number' ? (el.value === '' ? '' : num(el.value)) : el.value;
+    if (/^signataire/.test(el.dataset.k)) e.signataireManuel = true;
     if (el.dataset.k === 'userId') App.render(); else if (maj) maj();
   }));
-  $('#es-aff').onchange = () => { e.affaireId = $('#es-aff').value; App.render(); };
+  $('#es-aff').onchange = () => { changerChantierPv(e, $('#es-aff').value); App.render(); };
+  // PV ouvert sans point de la liste : liste du chantier chargée pour proposer ses points et ses noms
+  brancherChoixPointPv(root);
+  if (e.affaireId && !e.planCle) preparerListeChantier(e.affaireId);
   $('#es-photo').onchange = async ev => { for (const f of ev.target.files) { try { e.photos.push(await compressImage(f)); } catch (err) { notify('Photo illisible.'); } } App.render(); };
   root.querySelectorAll('[data-rmph]').forEach(b => b.onclick = () => { e.photos.splice(+b.dataset.rmph, 1); App.render(); });
   const padT = signaturePad($('#es-sig-t'), img => { e.signatureTech = img; }), padC = signaturePad($('#es-sig-c'), img => { e.signatureClient = img; });
@@ -76,7 +85,8 @@ function bindEssai(root, kind, e, { manques, calc, maj }) {
   $('#es-sig-t-clear').onclick = () => { padT.effacer(); delete e.signatureTech; };
   $('#es-sig-c-clear').onclick = () => { padC.effacer(); delete e.signatureClient; };
   if ($('#es-sig-i')) { const padI = signaturePad($('#es-sig-i'), img => { e.signatureIntegrateur = img; }); if (e.signatureIntegrateur) padI.charger(e.signatureIntegrateur); $('#es-sig-i-clear').onclick = () => { padI.effacer(); delete e.signatureIntegrateur; }; }
-  const enregistrer = async signer => {
+  // suite(r) : adresse ouverte après l'enregistrement (sinon le PV signé ou le retour)
+  const enregistrer = async (signer, suite) => {
     const err = $('#es-err');
     Object.assign(e, calc(e));
     if (signer) { const m = manques(e); if (!e.signatureTech) m.push('signature du technicien'); if (m.length) { err.textContent = `À compléter : ${m.join(', ')}.`; return; } }
@@ -87,7 +97,7 @@ function bindEssai(root, kind, e, { manques, calc, maj }) {
       for (const p of e.photos) photos.push(p.startsWith('data:') ? await envoyerImage(p) : p);
       const o = { ...e, photos, technicien: userName(e.userId) };
       if (e._plaque) o.photoPlaqueId = await envoyerImage(e._plaque);
-      ['signatureTech', 'signatureClient', 'signatureIntegrateur', '_plaque', '_calc'].forEach(k => delete o[k]);
+      ['signatureTech', 'signatureClient', 'signatureIntegrateur', '_plaque', '_calc', 'signataireManuel'].forEach(k => delete o[k]);
       if (signer) {
         o.signatureTechId = await envoyerImage(e.signatureTech);
         if (e.signatureClient) o.signatureClientId = await envoyerImage(e.signatureClient);
@@ -100,20 +110,30 @@ function bindEssai(root, kind, e, { manques, calc, maj }) {
         const [etudeId, ...cle] = String(o.materiel).split('|');
         HorsLigne.appeler('POST', '/api/liens/materiel/suivi', { affaireId: o.affaireId, action: 'mes', lignes: [{ etudeId, cle: cle.join('|') }] }).catch(() => {});
       }
+      // N° de série et photo de la plaque du PV signé : remontés au suivi du matériel retenu (fiche chantier, DOE)
+      if (signer && kind === 'mes' && o.materiel && o.affaireId && (o.photoPlaqueId || String(o.numeroSerie || '').trim())) {
+        const [etudeId, ...cle] = String(o.materiel).split('|');
+        HorsLigne.appeler('POST', '/api/liens/materiel/suivi', { affaireId: o.affaireId, action: 'photo', lignes: [{ etudeId, cle: cle.join('|') }], ...(o.photoPlaqueId ? { fichierId: o.photoPlaqueId, nom: `Plaque ${o.numero || o.equipement || ''}`.trim() } : {}),
+          ...(String(o.numeroSerie || '').trim() ? { serie: String(o.numeroSerie).trim(), serieLue: false } : {}) }).catch(() => {});
+      }
       Object.assign(essaiBrouillon[kind], { cle: null, e: null });
       App.toast(signer ? `${conf.court} signé` : 'Brouillon enregistré', 4000);
-      location.hash = signer ? `#/${kind}/${r.id}` : retourEssai(o);
+      location.hash = suite ? suite(r) : signer ? `#/${kind}/${r.id}` : retourEssai(o);
     } catch (x) { $('#es-signer').disabled = false; $('#es-brouillon').disabled = false; err.textContent = x.message; }
   };
   $('#es-brouillon').onclick = () => enregistrer(false);
   $('#es-signer').onclick = () => enregistrer(true);
+  return enregistrer;
 }
 
+// Fiche d'intervention fluides (Cerfa) préremplie depuis le PV de mise en service d'un équipement frigorifique
+const lienCerfa = mesId => `${Store.me.role === 'atelier' ? '#/pointage/fluides/miseEnService' : '#/fluides/interventions'}?mes=${encodeURIComponent(mesId)}`;
 // PV signé : document, impression, PDF, e-mail, copie pour le suivant
 function essaiVue(kind, r) {
   const conf = ESSAIS[kind], bureau = Store.me.role !== 'atelier', ok = /^(Conforme|Mis en service)$/.test(r.resultat || '');
   return `<div class="toolbar no-print"><a href="${retourEssai(r)}" class="btn secondary">← ${bureau ? 'Chantier' : 'Rapports'}</a><span class="spacer"></span>
     <a class="btn secondary" href="#/${kind}/new?copie=${esc(r.id)}">${kind === 'mes' ? 'Copier pour un autre équipement' : 'Copier pour une autre installation'}</a>
+    ${kind === 'mes' && (Essais.TYPES[r.type] || {}).frigo ? `<a class="btn secondary" href="${lienCerfa(r.id)}">❄️ Fiche fluides (Cerfa)</a>` : ''}
     <button class="secondary print-btn" data-print>Imprimer</button><button class="secondary" id="es-pdf">PDF</button>${kind === 'mes' && typeof XLSX !== 'undefined' ? '<button class="secondary" id="es-xlsx">Fiche Excel</button>' : ''}${bureau ? boutonsEnvoi(kind, r.id) : ''}</div>
   <h1 class="no-print">${conf.court} ${esc(r.numero || '')} · ${esc(conf.nom(r))} <span class="badge ${ok ? 'b-ok' : 'b-bad'}">${esc(r.resultat || '')}</span></h1>${bureau ? envoisHtml(conf.col, r.id) : ''}
   <div class="doc-print">${documentEssai(conf.titre, r, conf.corps)}</div>`;
@@ -145,22 +165,24 @@ Views.mes = (params, query) => {
   // Liste de points à tester reprise de l'étude (tests point à point de la GTB)
   const ctlPlan = (() => { try { const l = JSON.parse(sessionStorage.getItem(`pf-plan-controles:${q0('plan')}`) || 'null'); return Array.isArray(l) ? l.slice(0, 400).map(x => String(x).slice(0, 160)) : null; } catch (e) { return null; } })();
   const b = brouillonEssai('mes', params, query, base => { const m = Essais.modele(typeQ); if (ctlPlan && ctlPlan.length) m.controles = [...ctlPlan.map(libelle => ({ libelle, etat: '', obs: '', ...(typeQ === 'gtb' ? { pap: true, etatGtb: '' } : {}) })), ...m.controles];
-    return { ...base, type: typeQ, equipement: q0('equipement'), repere: q0('repere'), localisation: q0('localisation'), zone: q0('zone'), marque: q0('marque'), modele: q0('modele'), numeroSerie: '', fluide: '', charge: '', reglages: '', resultat: '', ...(q0('materiel') ? { materiel: q0('materiel') } : {}),
+    return { ...base, type: typeQ, equipement: q0('equipement'), repere: q0('repere'), localisation: q0('localisation'), zone: q0('zone'), marque: q0('marque'), modele: q0('modele'), numeroSerie: q0('serie'), ...(/^[\w-]{1,64}$/.test(q0('plaque')) ? { photoPlaqueId: q0('plaque') } : {}), fluide: '', charge: '', reglages: '', resultat: '', ...(q0('materiel') ? { materiel: q0('materiel') } : {}),
       ...(q0('plan') ? { planCle: q0('plan') } : {}), ...(attendus.length ? { attendus } : {}), ...(courbePompe.length ? { courbePompe } : {}), controles: m.controles, mesures: PlanMes.avecAttendus(m.mesures, attendus), ...(m.plaque ? { plaque: m.plaque, composants: '' } : {}) }; });
   if (b.e && !b.e._calc) { Essais.calculsFiche(b.e); b.e._calc = true; }
   if (b.introuvable) return '<p>Procès-verbal introuvable.</p>';
   if (b.signe) return essaiVue('mes', b.signe);
   const e = b.e, t = Essais.TYPES[e.type] || Essais.TYPES.autre, ph = e._plaque || (e.photoPlaqueId ? fileUrl(e.photoPlaqueId) : '');
-  const cerfa = t.frigo ? (Store.me.role === 'atelier' ? '#/pointage/fluides/miseEnService' : '#/fluides') : '';
+  const cerfa = t.frigo ? (e.id ? lienCerfa(e.id) : '#') : '';
+  const libre = !e.id && !e.planCle && !e.materiel && !query.get('copie');
   return `${enteteEssai(e, 'mes', 'PV de mise en service')}
+  ${libre ? choixPointPvHtml('mes', e.affaireId) : ''}
   <div class="card epreuve-form">
     <fieldset class="hd-bloc"><legend>Chantier et équipement</legend><div class="grid2">${chantierTechEssai(e)}
       <div class="field"><label for="es-type">Type d'équipement</label><select id="es-type">${Object.entries(Essais.TYPES).map(([k, x]) => `<option value="${k}" ${k === e.type ? 'selected' : ''}>${esc(x.libelle)}</option>`).join('')}</select></div>
-      ${champEssai(e, 'equipement', 'Équipement *', 'text', 'placeholder="PAC air/eau bâtiment B, CTA 1 bureaux…"')}${champEssai(e, 'repere', 'Repère (plans)')}${champEssai(e, 'localisation', 'Localisation (pièce)')}${champEssai(e, 'zone', 'Étage / zone / bâtiment')}</div>
+      ${champEssai(e, 'equipement', 'Équipement *', 'text', 'list="es-equipements" placeholder="PAC air/eau bâtiment B, CTA 1 bureaux…"')}${datalistHtml('es-equipements', nomsListeChantier('mes', e.affaireId, essaisDe('misesEnService', e.affaireId).map(x => x.equipement)))}${champEssai(e, 'repere', 'Repère (plans)')}${champEssai(e, 'localisation', 'Localisation (pièce)')}${champEssai(e, 'zone', 'Étage / zone / bâtiment')}</div>
       <div class="eq-plaque">${ph ? `<img src="${ph}" alt="Plaque signalétique">` : ''}<label class="btn secondary">📷 ${ph ? 'Reprendre la plaque' : 'Photo de la plaque signalétique'}<input type="file" id="es-plaque" accept="image/*" capture="environment" hidden></label><span class="small muted" id="es-plaque-etat"></span></div>
       <div class="grid3">${champEssai(e, 'marque', 'Marque')}${champEssai(e, 'modele', 'Modèle')}${champEssai(e, 'numeroSerie', 'N° de série')}
         ${t.frigo ? `<div class="field"><label for="es-fluide">Fluide frigorigène</label><select id="es-fluide" data-k="fluide"><option value="">—</option>${optionsStr(Fluides.LISTE.map(x => x[0]), e.fluide)}</select></div>${champEssai(e, 'charge', 'Charge (kg)', 'number', 'step="0.01" min="0"')}` : ''}</div>
-      ${cerfa ? `<p class="small">Équipement frigorifique : la mise en service s'accompagne de la <a href="${cerfa}">fiche d'intervention fluides (Cerfa)</a>.</p>` : ''}
+      ${cerfa ? `<p class="small">Équipement frigorifique : la mise en service s'accompagne de la <a href="${cerfa}" id="es-cerfa">fiche d'intervention fluides (Cerfa)</a>, préremplie depuis ce PV.</p>` : ''}
     </fieldset>
     ${e.type === 'gtb' ? `<div class="grid2">${champEssai(e, 'integrateur', 'Intégrateur GTB (société, intervenant)')}${champEssai(e, 'automaticien', 'Automaticien / tableautier')}</div>` : ''}
     ${e.controles.some(c => c.pap) ? (() => { const av = Essais.avancementPap(e), opt = v => `<option value="">—</option>${Essais.ETATS.map(s => `<option ${v === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}`;
@@ -253,7 +275,10 @@ Views.mes.bind = (root, params) => {
       const el = document.querySelector('#es-plaque-etat'); if (el) el.textContent = lus.length ? `Lu sur la plaque : ${lus.join(', ')}. Vérifiez.` : 'Plaque non lue : complétez les champs (la photo est gardée).';
     } catch (err) { const el = document.querySelector('#es-plaque-etat'); if (el) el.textContent = 'Lecture impossible : la photo est gardée.'; }
   };
-  bindEssai(root, 'mes', e, { manques: Essais.manquesMES, calc: x => ({ resultat: x.resultat || Essais.conclusion(x) }) });
+  const enregistrer = bindEssai(root, 'mes', e, { manques: Essais.manquesMES, calc: x => ({ resultat: x.resultat || Essais.conclusion(x) }) });
+  // Fiche fluides depuis un PV pas encore enregistré : brouillon enregistré d'abord, la fiche reprend ses données
+  const cf = $('#es-cerfa');
+  if (cf && !e.id) cf.onclick = ev => { ev.preventDefault(); enregistrer(false, r => lienCerfa(r.id)); };
 };
 
 /* ---------- Relevé d'équilibrage ---------- */
@@ -271,10 +296,12 @@ Views.equilibrage = (params, query) => {
   if (b.introuvable) return '<p>Relevé introuvable.</p>';
   if (b.signe) return essaiVue('equilibrage', b.signe);
   const q = b.e;
+  const libre = !q.id && !q.planCle && !query.get('copie');
   return `${enteteEssai(q, 'equilibrage', 'Relevé d\'équilibrage')}
+  ${libre ? choixPointPvHtml('equilibrage', q.affaireId) : ''}
   <div class="card epreuve-form">
     <fieldset class="hd-bloc"><legend>Installation</legend><div class="grid2">${chantierTechEssai(q)}
-      ${champEssai(q, 'installation', 'Installation *', 'text', 'placeholder="CTA 1 bureaux R+1, VMC logements bât. A, circuit radiateurs nord…"')}
+      ${champEssai(q, 'installation', 'Installation *', 'text', 'list="es-installations" placeholder="CTA 1 bureaux R+1, VMC logements bât. A, circuit radiateurs nord…"')}${datalistHtml('es-installations', nomsListeChantier('equilibrage', q.affaireId, essaisDe('equilibrages', q.affaireId).map(x => x.installation)))}
       <div class="field"><label for="es-type">Type</label><select id="es-type" data-k="type">${optionsStr(['Aéraulique', 'Hydraulique'], q.type)}</select></div>
       <div class="field"><label for="es-unite">Unité des débits</label><select id="es-unite" data-k="unite">${optionsStr(['m³/h', 'l/s', 'l/h'], q.unite)}</select></div>
       ${champEssai(q, 'tolerance', 'Tolérance (± %)', 'number', 'step="1" min="0"')}
@@ -322,7 +349,7 @@ Views.equilibrage.bind = (root, params) => {
     const voulues = installs.filter(x => (x.type === 'Hydraulique') === (q.type === 'Hydraulique'));
     if (!voulues.length) return notify(`Aucun débit ${q.type === 'Hydraulique' ? 'hydraulique' : 'aéraulique'} dans les études de ce chantier.`);
     const nommee = voulues.find(x => PlanMes.norm(x.installation) === PlanMes.norm(q.installation));
-    const choisir = nommee || voulues.length === 1 ? nommee || voulues[0] : voulues[(await askValue(`Installation (1 à ${voulues.length}) : ${voulues.map((x, i) => `${i + 1}. ${x.installation}`).join(' · ')}`, '1') | 0) - 1];
+    const choisir = nommee || voulues.length === 1 ? nommee || voulues[0] : await choisirInstallationEtude(voulues);
     if (!choisir) return;
     q.installation = q.installation || choisir.installation; q.unite = choisir.unite || q.unite;
     q.lignes = [...q.lignes.filter(x => x.repere || x.local || x.theorique !== ''), ...choisir.lignes.map(l => ({ repere: l.repere, local: l.local, type: TYPES_BOUCHE.includes(l.type) ? l.type : 'Autre', theorique: l.theorique, mesure: '', reglage: l.reglage || '' }))];
@@ -342,6 +369,18 @@ Views.equilibrage.bind = (root, params) => {
   };
   bindEssai(root, 'equilibrage', q, { manques: Essais.manquesEQ, calc: x => ({ resultat: Essais.synthese(x).resultat }), maj });
 };
+
+// Plusieurs installations dans les études : un bouton par installation (comme le choix d'un collègue)
+function choisirInstallationEtude(voulues) {
+  return dialog(`<h2 style="margin-top:0">📐 Débits théoriques de l'étude</h2>
+    <p class="muted small">Quelle installation équilibrez-vous ?</p>
+    <div class="rc-res">${voulues.map((x, i) => `<button type="button" class="ligne-t" data-inst="${i}"><span><strong>${esc(x.installation)}</strong> <span class="small muted">${(x.lignes || []).length} ${x.type === 'Hydraulique' ? 'organe(s)' : 'bouche(s)'}${x.etude ? ` · ${esc(x.etude)}` : ''}</span></span></button>`).join('')}</div>
+    <div class="modal-actions"><span style="flex:1"></span><button type="button" class="secondary" id="inst-x">Annuler</button></div>`,
+  (wrap, done) => {
+    wrap.querySelectorAll('[data-inst]').forEach(b => b.onclick = () => done(voulues[+b.dataset.inst]));
+    wrap.querySelector('#inst-x').onclick = () => done(null);
+  });
+}
 
 /* ---------- Fiche chantier et téléphone ---------- */
 function essaisChantierHtml(a) {
