@@ -5,6 +5,8 @@ const Modeles = ((N, L) => {
   // toute valeur « @cle… » des entrées désigne la note de cette clé (« @pid|Circuit », « @term:VC-01 », « @froid ») ;
   // liees : schémas dont on crée les notes (réseau et pompe, vanne, vase)
   const VC4T = ['01', '02', '03', '04', '05', '06'];
+  // Zones de la boucle d'eau tempérée : [zone, puissance PAC (kW), longueur du circuit (m), plancher (kW), ventilos (kW)]
+  const ZONES_BOUCLE = [['A', 60, 80, 35, 20], ['B', 70, 120, 40, 25], ['C', 45, 160, 25, 15]];
   const INTEGRES = [
     { id: 'chaufferie-cascade', nom: 'Chaufferie gaz : 2 chaudières à condensation en cascade', objet: 'Chaufferie gaz — cascade de 2 chaudières à condensation',
       description: 'Bouteille de découplage, radiateurs, CTA, plancher chauffant, ECS ; réseaux et pompes, vannes, vase, isolation.',
@@ -60,15 +62,14 @@ const Modeles = ((N, L) => {
             { rep: 'CTA (batterie chaude)', emetteur: 'cta', P: '', regime: '', regulation: '3v', L: 60, annexe: '@cta' }] } },
         { cle: 'cta', type: 'cta', titre: 'CTA double flux (batteries chaude et froide)', entrees: { Qs: 8000, Qr: 8000, froid: 'oui' } }], liees: ['froid', 'chaud'] },
     { id: 'boucle-eau-temperee', nom: 'Boucle d\'eau tempérée et PAC eau/eau réparties', objet: 'Boucle d\'eau tempérée — PAC eau/eau par zone',
-      description: 'Boucle d\'eau tempérée maintenue par des chaudières, PAC eau/eau de zone représentées par des circuits « process » de la boucle, et schéma type d\'une PAC de zone sur la boucle.',
+      description: 'Boucle d\'eau tempérée maintenue par des chaudières ; chaque PAC eau/eau de zone est un schéma de principe aval relié à son circuit de la boucle (puissance appelée et pertes de charge remontées, régime de la boucle repris).',
       notes: [
-        { cle: 'boucle', type: 'pid', titre: 'Schéma de la boucle d\'eau tempérée', commentaire: 'Boucle d\'eau tempérée (25/20 °C) : chaque PAC eau/eau de zone est représentée par un circuit « process » de la boucle, dont la puissance est celle prélevée à son évaporateur (puissance chaud de la PAC × (1 − 1/COP)). Le schéma aval de chaque PAC (côté émetteurs) se décrit dans un schéma de principe propre, sur le modèle du schéma « PAC de zone A » (source d\'eau : boucle). Les chaudières maintiennent la boucle en hiver ; en été, la chaleur rejetée par les PAC en froid est à évacuer (aéroréfrigérant, non représenté).',
+        { cle: 'boucle', type: 'pid', titre: 'Schéma de la boucle d\'eau tempérée', commentaire: 'Boucle d\'eau tempérée (25/20 °C) : chaque circuit alimente le schéma de la PAC eau/eau de sa zone (schéma aval). La puissance de chaque circuit est la puissance prélevée par la PAC sur la boucle ; l\'évacuation de la chaleur en été (aéroréfrigérant) reste à ajouter.',
           entrees: { titreInstallation: 'Boucle d\'eau tempérée', reseau: 'perso', Tdep: 25, Tret: 20, generateur: 'chaudiere-cond', nGen: '2', Pgen: 90, bouteille: 'oui',
-            circuits: [{ rep: 'PAC zone A', emetteur: 'process', P: 45, regime: '', regulation: 'direct', L: 80 }, { rep: 'PAC zone B', emetteur: 'process', P: 60, regime: '', regulation: 'direct', L: 120 },
-              { rep: 'PAC zone C', emetteur: 'process', P: 35, regime: '', regulation: 'direct', L: 160 }] } },
-        { cle: 'zoneA', type: 'pid', titre: 'PAC de zone A (eau/eau sur la boucle)', commentaire: 'Schéma aval de la PAC eau/eau de la zone A, alimentée par la boucle d\'eau tempérée (circuit « PAC zone A » du schéma de la boucle).',
-          entrees: { titreInstallation: 'PAC eau/eau zone A', reseau: 'ch-45-35', generateur: 'pac-eau', nGen: '1', Pgen: 60, sourceEau: 'boucle', copForage: 4.5, bouteille: 'non', tampon: 'oui',
-            circuits: [{ rep: 'Plancher chauffant zone A', emetteur: 'plancher', P: 35, regime: '35/30', regulation: '3v', L: 50, depMini: 25 }, { rep: 'Ventilos zone A', emetteur: 'ventilo', P: 20, regime: '', regulation: '2v', L: 70 }] } }], liees: ['boucle'] },
+            circuits: ZONES_BOUCLE.map(([k, , L]) => ({ rep: `PAC zone ${k}`, emetteur: 'process', P: '', regime: '', regulation: 'direct', L, annexe: `@zone${k}` })) } },
+        ...ZONES_BOUCLE.map(([k, P, , pl, vc]) => ({ cle: `zone${k}`, type: 'pid', titre: `PAC de zone ${k} (eau/eau sur la boucle)`, commentaire: `Schéma aval de la PAC eau/eau de la zone ${k}, alimentée par le circuit « PAC zone ${k} » de la boucle d'eau tempérée.`,
+          entrees: { titreInstallation: `PAC eau/eau zone ${k}`, reseau: 'ch-45-35', generateur: 'pac-eau', nGen: '1', Pgen: P, sourceEau: 'boucle', copForage: 4.5, bouteille: 'non', tampon: 'oui',
+            circuits: [{ rep: `Plancher chauffant zone ${k}`, emetteur: 'plancher', P: pl, regime: '35/30', regulation: '3v', L: 50, depMini: 25 }, { rep: `Ventilos zone ${k}`, emetteur: 'ventilo', P: vc, regime: '', regulation: '2v', L: 70 }] } }))], liees: ['boucle'] },
     { id: 'sous-station', nom: 'Sous-station de réseau de chaleur', objet: 'Sous-station — raccordement au réseau de chaleur',
       description: 'Échangeur à plaques entre réseau primaire et secondaire, pompe secondaire d\'échangeur, radiateurs, CTA reliée et production d\'ECS reliée au calcul d\'ECS.',
       notes: [

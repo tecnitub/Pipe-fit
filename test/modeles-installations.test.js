@@ -88,8 +88,12 @@ test('thermofrigopompe : chaleur récupérée sur le groupe froid reprise côté
 test('boucle d\'eau tempérée : circuits « process » et PAC de zone sur la boucle', () => {
   const et = instancier('boucle-eau-temperee'), boucle = note(et, n => n.type === 'pid' && n.entrees.reseau === 'perso'), zone = note(et, n => n.type === 'pid' && n.entrees.generateur === 'pac-eau');
   assert.ok(boucle.commentaire.length > 50);
-  assert.ok(boucle.entrees.circuits.every(c => c.emetteur === 'process'));
-  assert.strictEqual(calc(et, boucle).valeurs.Pdem, 140);
+  assert.ok(boucle.entrees.circuits.every(c => c.emetteur === 'process' && c.annexe));
+  // Chaque PAC de zone est un schéma aval : la boucle fournit ses besoins × (1 − 1/COP)
+  const zones = et.notes.filter(n => n.type === 'pid' && n.entrees.generateur === 'pac-eau');
+  assert.strictEqual(zones.length, 3);
+  const attendu = zones.reduce((s, z) => s + calc(et, z).valeurs.Pdem * (1 - 1 / 4.5), 0);
+  assert.ok(Math.abs(calc(et, boucle).valeurs.Pdem - attendu) < 1, `${calc(et, boucle).valeurs.Pdem} ≈ ${attendu}`);
   assert.strictEqual(zone.entrees.sourceEau, 'boucle');
   assert.ok(calc(et, zone).valeurs.Pdem > 0);
 });
@@ -128,4 +132,14 @@ test('étude enregistrée comme modèle : liens entre notes reportés sur les no
   const vc = copie.find(n => n.type === 'cta');
   assert.ok(L.resoudre({ notes: copie }, chaud).entrees.Precup > 0);
   assert.ok(vc);
+});
+
+test('boucle d\'eau tempérée : régulation enchaînée entre la boucle et les PAC de zone', () => {
+  const Rg = require('../etudes/public/js/regulation');
+  const et = instancier('boucle-eau-temperee'), inst = Rg.contexte(et, L).installations.filter(i => i.app === 'production');
+  const boucle = inst.find(i => /boucle/i.test(i.titre) && !/zone/i.test(i.titre)), zones = inst.filter(i => /zone/i.test(i.titre));
+  assert.strictEqual(zones.length, 3);
+  assert.ok(zones.every(z => z.af.some(t => /Alimenté par le circuit .*entre 15 et 30 °C/.test(t))));
+  assert.ok(zones.every(z => z.params.some(p => /Boucle d'eau tempérée/.test(p.libelle))));
+  assert.strictEqual(boucle.af.filter(t => /alimente le schéma PAC de zone/.test(t)).length, 3);
 });

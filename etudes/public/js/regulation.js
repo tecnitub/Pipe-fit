@@ -106,6 +106,7 @@ const Regulation = (() => {
           if (d.chaud) params.push(p('Arrêt chauffage (non-chauffage) au-dessus de', cc ? cc.arret : 17, '°C ext.'));
           // Récupération d'énergie sur groupe froid : côté froid (production de chaleur récupérée), côté chaud (priorité)
           if (e.recupGf) params.push(p('Récupération : consigne de l\'eau récupérée (départ)', num(String(e.regimeRecup || '45/40').split('/')[0], 45), '°C'));
+          if (/-eau$/.test(e.generateur || '') && e.sourceEau === 'boucle' && Liens.circuitDeAnnexe && Liens.circuitDeAnnexe(etude.notes || [], n)) params.push(p('Boucle d\'eau tempérée : arrivée mini pour autoriser la PAC', 15, '°C'), p('Boucle d\'eau tempérée : arrivée maxi pour autoriser la PAC', 30, '°C'));
           if (e.recupDe && num(e.Precup) > 0) params.push(p('Récupération sur groupe froid : puissance disponible', num(e.Precup), 'kW'), p('Appoint : enclenché si le départ reste sous la consigne de plus de', 3, 'K pendant 10 min'));
           // Données structurées pour les consignes du projet : régimes, circuits et lois d'eau
           const dC = d.co ? d.co.dC : d, dF = d.co ? d.co.dF : null;
@@ -113,7 +114,13 @@ const Regulation = (() => {
             circuits: d.circuits.map(c => { const loi = c.rc[0] > c.rc[1] && ['radiateurs', 'plancher', 'radiant', 'aerotherme'].includes(c.emetteur) && aVanne(c); return { rep: c.rep, emetteur: c.emetteur || '', dep: (c.rcC || c.rc)[0], ret: (c.rcC || c.rc)[1], loi, d18: loi ? (Sc().depMini ? Sc().depMini(e, c) : (c.emetteur === 'plancher' ? 25 : 30)) : null }; }) };
           installations.push({ noteId: n.id, titre, app: 'production', donnees, puissance: num(d.Pprod) + (d.co && d.co.dF ? num(d.co.dF.Pprod) : 0), af: [...(((Array.isArray(r) ? r.find(b => b.liste) : r) || {}).liste || r.af || []),
             ...(e.recupGf ? [`Récupération d'énergie (${e.recupGf === 'totale' ? 'totale au condenseur' : 'désurchauffeur'}) : la chaleur rejetée par le groupe froid est envoyée en priorité vers le schéma chaud (eau à ${e.regimeRecup || '45/40'} °C) ; sans besoin de chaleur, rejet par le condenseur à air / la tour (vanne de basculement).`] : []),
-            ...(e.recupDe && num(e.Precup) > 0 ? [`Priorité à la récupération sur le groupe froid (${nf(num(e.Precup), 0)} kW disponibles quand le froid tourne) ; le générateur n'est enclenché qu'en appoint, si la température de départ reste sous la consigne, et en secours.`] : [])], params: params.filter(Boolean) });
+            ...(e.recupDe && num(e.Precup) > 0 ? [`Priorité à la récupération sur le groupe froid (${nf(num(e.Precup), 0)} kW disponibles quand le froid tourne) ; le générateur n'est enclenché qu'en appoint, si la température de départ reste sous la consigne, et en secours.`] : []),
+            // Schémas imbriqués : schéma aval alimenté par un circuit d'un autre schéma, et circuits qui alimentent un schéma aval
+            ...(() => { const amont = Liens.circuitDeAnnexe && Liens.circuitDeAnnexe(etude.notes || [], n), c = amont && (amont.pid.entrees.circuits || [])[amont.i];
+              if (!c) return [];
+              const boucle = /-eau$/.test(e.generateur || '') && e.sourceEau === 'boucle', ss = /^echangeur/.test(e.generateur || '');
+              return [`Alimenté par le circuit « ${c.rep} » de ${amont.pid.titre} : demande de marche envoyée à la régulation amont (pompe du circuit en marche, consigne de départ amont relevée si besoin) ; ${boucle ? 'la PAC n\'est autorisée que si l\'eau de la boucle arrive entre 15 et 30 °C (protection de l\'évaporateur), arrêt et alarme sinon' : ss ? 'la vanne primaire de l\'échangeur n\'est ouverte qu\'avec la pompe amont en marche' : 'production autorisée avec la pompe amont en marche'} ; défaut de la source reporté.`]; })(),
+            ...(e.circuits || []).filter(c => c && c.annexe && (etude.notes || []).some(x => x.id === c.annexe && x.type === 'pid')).map(c => `Circuit « ${c.rep} » : alimente le schéma ${((etude.notes || []).find(x => x.id === c.annexe) || {}).titre || ''} ; pompe en marche sur sa demande, sans vanne de mélange si le schéma aval régule lui-même (échangeur ou PAC), post-circulation 3 min.`)], params: params.filter(Boolean) });
         } else if (n.type === 'cta') {
           const { e, v: vC } = res(n), f = e.froid || 'oui', recup = e.recup || '', co = f === 'co', bc = !['froide', 'aucune'].includes(f), bf = !['non', 'aucune'].includes(f), be = e.batElec || (num(e.PelBe) ? 'appoint' : '');
           const af = [
