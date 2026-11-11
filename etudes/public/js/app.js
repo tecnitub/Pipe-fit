@@ -833,6 +833,20 @@ Vues.note = {
     const t = Notes.TYPES[n.type], i = et.notes.indexOf(n);
     n.entrees = completer(n.type, n.entrees || {});
     contexteEtude = et;
+    // Consignes du projet : zones de l'étude préremplies (type de bâtiment choisi ou deviné) tant que la saisie est celle par défaut
+    if (n.type === 'elec' && typeof ConsignesProjet !== 'undefined' && ConsignesProjet.estDefaut(n.entrees.consignesZones)) {
+      const zs = ConsignesProjet.zonesEtude(et), id = n.entrees.profilBatiment || ConsignesProjet.detecterProfil(et.objet);
+      if (zs.length || id) { n.entrees.consignesZones = ConsignesProjet.zonesDepuis(zs, id); enregistrer(et); }
+    }
+    // Marque d'automate et protocole GTB repris du CCTP (une fois, tant qu'ils sont aux valeurs par défaut)
+    if (n.type === 'elec' && !n.entrees.repriseCctp && typeof Regulation !== 'undefined' && (et.inventaire || []).length) {
+      const cc = Regulation.exigencesCctp(et.inventaire) || {}, M = { Wit: 'wit', Siemens: 'siemens', Schneider: 'schneider', Sauter: 'sauter', Distech: 'distech', Trend: 'trend' }, P = { BACnet: 'BACnet/IP', Modbus: 'Modbus TCP', KNX: 'KNX', LON: 'LON' };
+      const m = (cc.marques || []).filter(x => M[x]), p = (cc.protocoles || []).filter(x => P[x]), faits = [];
+      if (m.length === 1 && (!n.entrees.marqueAutomate || n.entrees.marqueAutomate === 'generique')) { n.entrees.marqueAutomate = M[m[0]]; faits.push(`automate ${m[0]}`); }
+      if (p.length && !p.includes('BACnet') && n.entrees.gtb === 'BACnet/IP') { n.entrees.gtb = P[p[0]]; faits.push(`GTB ${P[p[0]]}`); }
+      n.entrees.repriseCctp = true; enregistrer(et);
+      if (faits.length) setTimeout(() => toast(`Repris du CCTP : ${faits.join(', ')}.`, 6000), 300);
+    }
     const lien = Liens.description(et, n), ctx = ctxEtude(et, n);
     const nReg = typeof Registre !== 'undefined' ? Registre.emplacements({ notes: [n] }).filter(p => Registre.parId(et, p.eq)).length : 0;
     // Alimentation électrique : équipements de l'étude repris automatiquement (terminaux, CTA, producteurs, réseaux),
@@ -863,7 +877,7 @@ Vues.note = {
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-pompes" title="Une ligne par circuit pour saisir la pompe retenue et sa courbe (ou la lire sur la fiche du fabricant)">⚙️ Pompes retenues par circuit</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-rob" title="Pour chaque circuit sans robinetterie : vannes d\'isolement, vanne d\'équilibrage, filtre, manchettes, thermomètres ; à compléter avec les Kv des fiches">🔩 Robinetterie type par circuit</button><button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par circuit (repères, DN, fabricant, référence, fiche, ΔP) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
-        ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button><button class="secondaire" id="elec-csv">🔗 Table d\'échange GTB (CSV)</button><button class="secondaire" id="elec-profil">🏢 Appliquer le profil de bâtiment</button><button class="secondaire" id="elec-af">📄 Analyse fonctionnelle (Word)</button><button class="secondaire" id="elec-ede">🔗 Fichier EDE BACnet (intégrateur GTB)</button><button class="secondaire" id="elec-etiq">🏷️ Étiquettes de repérage</button><button class="secondaire" id="elec-devis-reg">💶 Chiffrer la régulation (devis Pipe-Fit)</button><button class="secondaire" id="elec-releves">📈 Analyser des relevés de la GTB</button><button class="secondaire" id="elec-achat-reg">🛒 Matériel de régulation : demande de prix</button><button class="secondaire" id="elec-reglees">↩️ Reprendre les valeurs réglées sur site</button><button class="secondaire" id="elec-pressions">📏 Reprendre les pressions des CTA (mises en service du chantier)</button><button class="secondaire" id="elec-cahier-docx">📄 Cahier de paramétrage (Word)</button><button class="secondaire" id="elec-cahier-xlsx">📑 Cahier (Excel, un onglet par rubrique)</button>' : ''}
+        ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button><button class="secondaire" id="elec-csv">🔗 Table d\'échange GTB (CSV)</button><button class="secondaire" id="elec-profil">🏢 Préremplir les zones (étude + type de bâtiment)</button><button class="secondaire" id="elec-af">📄 Analyse fonctionnelle (Word)</button><button class="secondaire" id="elec-ede">🔗 Fichier EDE BACnet (intégrateur GTB)</button><button class="secondaire" id="elec-etiq">🏷️ Étiquettes de repérage</button><button class="secondaire" id="elec-devis-reg">💶 Chiffrer la régulation (devis Pipe-Fit)</button><button class="secondaire" id="elec-releves">📈 Analyser des relevés de la GTB</button><button class="secondaire" id="elec-achat-reg">🛒 Matériel de régulation : demande de prix</button><button class="secondaire" id="elec-reglees">↩️ Reprendre les valeurs réglées sur site</button><button class="secondaire" id="elec-pressions">📏 Reprendre les pressions des CTA (mises en service du chantier)</button><button class="secondaire" id="elec-cahier-docx">📄 Cahier de paramétrage (Word)</button><button class="secondaire" id="elec-cahier-xlsx">📑 Cahier (Excel, un onglet par rubrique)</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="num-bouches" title="Numéro unique de chaque bouche : compléter les bouches sans repère ou en double, ou tout renuméroter (par zone et pièce, ou suivant les branches) quand l\'étude est au point">🔢 Numéroter les bouches</button>' : ''}
         ${n.type === 'terminaux' ? '<button class="secondaire" id="num-terminaux" title="Donne un repère unique à chaque terminal sans repère ou en double (CA-01, VC-02…) : une branche par terminal dans le réseau arborescent, une fiche de mise en service par terminal">🔢 Numéroter les terminaux</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="aero-vitesses" title="Même vitesse pour toutes les branches (ou les principales, ou les terminales) : les diamètres des gaines sont recalculés">💨 Changer toutes les vitesses</button>' : ''}
@@ -927,10 +941,9 @@ Vues.note = {
     // Profil de bâtiment : zones, consignes et horaires types
     const bp = root.querySelector('#elec-profil');
     if (bp) bp.onclick = () => {
-      const p = ConsignesProjet.profil(n.entrees.profilBatiment);
-      if (!p) return toast('Choisissez d\'abord le type de bâtiment (rubrique « Consignes du projet »).', 6000);
-      n.entrees.consignesZones = JSON.parse(JSON.stringify(p.zones)); enregistrer(et); App.render();
-      toast(`Profil « ${p.nom} » appliqué : ${p.zones.length} zone(s) avec consignes et horaires types, à ajuster.`, 6000);
+      const id = n.entrees.profilBatiment || ConsignesProjet.detecterProfil(et.objet) || 'bureaux', p = ConsignesProjet.profil(id), zs = ConsignesProjet.zonesEtude(et);
+      n.entrees.consignesZones = ConsignesProjet.zonesDepuis(zs, id); enregistrer(et); App.render();
+      toast(`${n.entrees.consignesZones.length} zone(s) préremplie(s)${zs.length ? ' depuis les zones de l\'étude' : ''} avec les consignes et horaires « ${p.nom} » : ajustez seulement ce qui diffère.`, 7000);
     };
     // Fichier EDE (BACnet) pour l'intégrateur GTB : objets + textes d'états
     const be = root.querySelector('#elec-ede');

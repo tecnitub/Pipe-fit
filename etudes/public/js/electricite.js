@@ -58,6 +58,8 @@ const Electricite = ((N, Sc) => {
   const OPTIONS_DIV = ['auArmoire', 'prise', 'eclairage', 'parafoudre', 'presenceTension', 'ventilation'];
   const Gt = () => (typeof Gtb !== 'undefined' ? Gtb : require('./gtb'));
   const Cp = () => (typeof ConsignesProjet !== 'undefined' ? ConsignesProjet : require('./consignes-projet'));
+  // Options d'une liste déroulante : valeurs uniques (la valeur déjà saisie reste proposée), libellé de la ligne vide
+  const liste = (vals, vide = '') => [...(vide ? [['', vide]] : []), ...[...new Set(vals.map(v => String(v ?? '').trim()).filter(Boolean))].map(v => [v, v])];
   const Cb = () => (typeof Cables !== 'undefined' ? Cables : require('./cables'));
   // Ventilateurs à filtre (m³/h) et climatiseurs d'armoire (W froid) usuels
   const VENTILOS = [20, 55, 105, 180, 300, 550, 900], CLIMS = [300, 500, 750, 1000, 1500, 2000, 3000, 4000];
@@ -732,7 +734,11 @@ const Electricite = ((N, Sc) => {
     }
     // Consignes du projet : saisie des zones et des lois d'eau, tout le reste en découle
     const annee = Number(String((e._affaire || {}).date || '').slice(0, 4)) || new Date().getFullYear();
-    const projet = Cp().calculer({ installations: REG.installations, zones: e.consignesZones, lois: e.loisEau, pressions: e.pressionsCta, eqs, annee, profil: e.profilBatiment || '', cctp: REG.cctp && REG.cctp.consignes });
+    // Profil choisi, sinon deviné d'après l'objet ; zones de l'étude préremplies tant que la saisie est celle par défaut
+    const profilEff = e.profilBatiment || Cp().detecterProfil(`${(e._affaire || {}).objet || ''}`), zonesAuto = Cp().estDefaut(e.consignesZones) && ((REG.zonesEtude || []).length || profilEff);
+    const zonesProjet = zonesAuto ? Cp().zonesDepuis(REG.zonesEtude || [], profilEff) : e.consignesZones;
+    const projet = Cp().calculer({ installations: REG.installations, zones: zonesProjet, lois: e.loisEau, pressions: e.pressionsCta, eqs, annee, profil: profilEff, cctp: REG.cctp && REG.cctp.consignes,
+      origineZones: zonesAuto ? `déduit (${[(REG.zonesEtude || []).length ? 'zones de l\'étude' : '', profilEff ? `profil ${e.profilBatiment ? 'choisi' : 'détecté d\'après l\'objet'}` : 'consignes standard'].filter(Boolean).join(', ')})` : '' });
     projet.circuits.filter(c => c.source === 'saisie').forEach(c => REG.installations.forEach(x => (x.params || []).forEach(p => {
       if (p.libelle.startsWith(`Loi d'eau ${c.rep} : départ à 18`)) p.valeur = c.d18 ?? p.valeur; else if (p.libelle.startsWith(`Loi d'eau ${c.rep} : départ à`)) p.valeur = c.base;
     })));
@@ -1213,16 +1219,18 @@ const Electricite = ((N, Sc) => {
         colonnes: [{ k: 'type', l: 'Élément', t: 's', o: [['UC', 'Unité centrale'], ['EA', 'Carte EA'], ['SA', 'Carte SA'], ['ETOR', 'Carte ETOR'], ['STOR', 'Carte STOR'], ['EXT', 'Extension (châssis)']] }, { k: 'ref', l: 'Référence', t: 't' },
           { k: 'voies', l: 'Voies par carte' }, { k: 'integrees', l: 'Voies intégrées à l\'UC' }, { k: 'chassis', l: 'Modules par châssis (UC / extension)' }] },
       { g: 'Consignes du projet : à saisir, le reste de la régulation en découle' },
-      { k: 'profilBatiment', l: 'Type de bâtiment (bouton « Appliquer le profil » : zones, consignes et horaires types ; contrôle du code de l\'énergie)', t: 's', o: () => [['', '— Aucun —'], ...Object.entries(Cp().PROFILS).map(([k, p]) => [k, p.nom])], d: '' },
+      { k: 'profilBatiment', l: 'Type de bâtiment (consignes et horaires types, contrôle du code de l\'énergie)', t: 's', o: (e, et) => { const d = Cp().detecterProfil(et && et.objet); return [['', `Automatique${d ? ` : ${Cp().PROFILS[d].nom}` : ''} (d'après l'objet de l'étude)`], ...Object.entries(Cp().PROFILS).map(([k, p]) => [k, p.nom])]; }, d: '' },
       { k: 'consignesZones', l: 'Consignes d\'ambiance et horaires d\'occupation par zone (zone des terminaux ; « Toutes zones » s\'applique partout) — production, alarmes, réduit, relance, plannings, vitesses et mise en service en découlent', t: 'lignes',
         d: [{ zone: 'Toutes zones', confort: 20, clim: 26, inocc: 16, horsGel: 8, jours: 'lun-ven', debut: '7:00', fin: '19:00', diff: 0.5, decalage: 2 }],
-        colonnes: [{ k: 'zone', l: 'Zone', t: 't' }, { k: 'confort', l: 'Confort chauffage (°C)' }, { k: 'clim', l: 'Confort rafraîchissement (°C)' }, { k: 'inocc', l: 'Inoccupation (°C)' }, { k: 'horsGel', l: 'Hors gel (°C)' },
-          { k: 'jours', l: 'Jours d\'occupation', t: 't' }, { k: 'debut', l: 'Début', t: 't' }, { k: 'fin', l: 'Fin', t: 't' }, { k: 'emetteur', l: 'Émetteur', t: 's', o: [['', '— selon l\'étude —'], ['radiateurs', 'Radiateurs'], ['plancher', 'Plancher chauffant'], ['ventilo', 'Ventilo-convecteurs'], ['cassette', 'Cassettes'], ['cta', 'CTA (air)'], ['aerotherme', 'Aérothermes']] },
+        colonnes: [{ k: 'zone', l: 'Zone', t: 's', o: (e, et) => liste(['Toutes zones', ...Cp().zonesEtude(et).map(z => z.zone), ...(e.consignesZones || []).map(z => z.zone)]) },
+          { k: 'confort', l: 'Confort chauffage (°C)' }, { k: 'clim', l: 'Confort rafraîchissement (°C)' }, { k: 'inocc', l: 'Inoccupation (°C)' }, { k: 'horsGel', l: 'Hors gel (°C)' },
+          { k: 'jours', l: 'Jours d\'occupation', t: 's', o: e => liste([...Cp().JOURS_OPTIONS, ...(e.consignesZones || []).map(z => z.jours)]) }, { k: 'debut', l: 'Début', t: 's', o: e => liste([...Cp().HEURES_OPTIONS, ...(e.consignesZones || []).map(z => z.debut)]) },
+          { k: 'fin', l: 'Fin', t: 's', o: e => liste([...Cp().HEURES_OPTIONS, ...(e.consignesZones || []).map(z => z.fin)]) }, { k: 'emetteur', l: 'Émetteur', t: 's', o: [['', '— selon l\'étude —'], ['radiateurs', 'Radiateurs'], ['plancher', 'Plancher chauffant'], ['ventilo', 'Ventilo-convecteurs'], ['cassette', 'Cassettes'], ['cta', 'CTA (air)'], ['aerotherme', 'Aérothermes']] },
           { k: 'diff', l: 'Différentiel (K)' }, { k: 'decalage', l: 'Décalage occupant ± (K)' }] },
       { k: 'loisEau', l: 'Lois d\'eau imposées (vide : calculées depuis le régime de chaque circuit) — nom du circuit tel que dans le schéma de principe', t: 'lignes', d: [],
-        colonnes: [{ k: 'circuit', l: 'Circuit', t: 't' }, { k: 'base', l: 'Départ par température de base (°C)' }, { k: 'd18', l: 'Départ à 18 °C extérieur (°C)' }] },
+        colonnes: [{ k: 'circuit', l: 'Circuit', t: 's', o: (e, et) => liste([...((et && et.notes) || []).filter(n => n.type === 'pid').flatMap(n => ((n.entrees || {}).circuits || []).map(c => c.rep)), ...(e.loisEau || []).map(l => l.circuit)], '— Circuit —') }, { k: 'base', l: 'Départ par température de base (°C)' }, { k: 'd18', l: 'Départ à 18 °C extérieur (°C)' }] },
       { k: 'pressionsCta', l: 'Consignes de pression des CTA (relevé de mise en service ; bouton « Reprendre les pressions des CTA » en version installée)', t: 'lignes', d: [],
-        colonnes: [{ k: 'cta', l: 'CTA (nom ou partie du nom)', t: 't' }, { k: 'soufflage', l: 'Pression de soufflage (Pa)' }, { k: 'reprise', l: 'Pression de reprise / extraction (Pa)' }, { k: 'source', l: 'Origine', t: 't' }] },
+        colonnes: [{ k: 'cta', l: 'CTA', t: 's', o: (e, et) => liste([...((et && et.notes) || []).filter(n => n.type === 'cta').map(n => n.titre), ...(e.pressionsCta || []).map(l => l.cta)], '— CTA —') }, { k: 'soufflage', l: 'Pression de soufflage (Pa)' }, { k: 'reprise', l: 'Pression de reprise / extraction (Pa)' }, { k: 'source', l: 'Origine', t: 't' }] },
       { k: 'capaSynco', l: 'Régulateurs préprogrammés : capacités (entrées universelles, sorties 0-10 V, relais) — à reprendre de la fiche du régulateur retenu', t: 'lignes', si: e => (e.armoires || []).some(a => a.techno === 'synco'),
         d: [{ app: 'production', ref: 'type Synco 700 RMK', X: 8, Y: 4, Q: 6 }, { app: 'chauffage', ref: 'type Synco 700 RMH', X: 8, Y: 4, Q: 6 }, { app: 'ventilation', ref: 'type Synco 700 RMU', X: 8, Y: 4, Q: 6 }, { app: 'extension', ref: 'module d\'extension', X: 4, Y: 2, Q: 2 }],
         colonnes: [{ k: 'app', l: 'Application', t: 's', o: [['production', 'Production'], ['chauffage', 'Chauffage et ECS'], ['ventilation', 'Ventilation, CTA'], ['autre', 'Auxiliaires'], ['extension', 'Module d\'extension']] }, { k: 'ref', l: 'Régulateur retenu', t: 't' },

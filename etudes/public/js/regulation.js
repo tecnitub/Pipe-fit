@@ -151,7 +151,8 @@ const Regulation = (() => {
         }
       } catch (err) { /* calcul incomplet : installation ignorée */ }
     });
-    return { types, installations, cctp: exigencesCctp(etude && etude.inventaire) };
+    const CPz = typeof ConsignesProjet !== 'undefined' ? ConsignesProjet : (() => { try { return require('./consignes-projet'); } catch (e) { return null; } })();
+    return { types, installations, cctp: exigencesCctp(etude && etude.inventaire), zonesEtude: CPz ? CPz.zonesEtude(etude) : [] };
   }
   // Points de contrôle de mise en service de la régulation selon la technologie
   const CONTROLES = {

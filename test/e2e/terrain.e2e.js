@@ -117,7 +117,8 @@ test('Études : profil de bâtiment, EDE BACnet, analyse fonctionnelle, étiquet
   await p.evaluate(() => { const et = S.etudes.find(x => !x.modele && x.notes.some(n => n.type === 'elec')); const n = et.notes.find(x => x.type === 'elec'); n.entrees.marqueAutomate = 'wit'; n.entrees.profilBatiment = 'enseignement'; n.entrees.armoires.forEach(a => { a.techno = 'automate'; }); enregistrer(et); location.hash = `#/etude/${et.id}/${n.id}`; });
   await p.waitForTimeout(2000);
   await p.click('#elec-profil'); await p.waitForTimeout(800);
-  assert.deepStrictEqual(await p.evaluate(() => S.etudes.find(x => !x.modele && x.notes.some(n => n.type === 'elec')).notes.find(x => x.type === 'elec').entrees.consignesZones.map(z => z.zone)), ['Salles de cours', 'Restauration', 'Gymnase']);
+  const zp = await p.evaluate(() => { const et = S.etudes.find(x => !x.modele && x.notes.some(n => n.type === 'elec')), zs = ConsignesProjet.zonesEtude(et).map(z => z.zone); return { saisies: et.notes.find(x => x.type === 'elec').entrees.consignesZones.map(z => z.zone), attendues: zs.length ? zs : ['Salles de cours', 'Restauration', 'Gymnase'] }; });
+  assert.deepStrictEqual(zp.saisies, zp.attendues);
   const recus = []; p.on('download', d => recus.push(d));
   const dl = async (sel, n = 1) => { const avant = recus.length; await p.click(sel); for (let k = 0; k < 60 && recus.length < avant + n; k++) await p.waitForTimeout(250); const out = []; for (const d of recus.slice(avant, avant + n)) out.push([d.suggestedFilename(), fs.readFileSync(await d.path())]); return out; };
   const ede = await dl('#elec-ede', 2);

@@ -25,10 +25,10 @@ test('1-2. profils de bâtiment, code de l\'énergie, consignes du CCTP', () => 
   assert.deepStrictEqual(C.controleReglementaire([{ zone: 'Chambres', confort: 22, clim: 26 }], 'ehpad'), []);
   const cc = C.consignesCctp('Température intérieure en hiver : 19 °C. En été la climatisation maintiendra 26 °C. Régime d\'eau 70/50 °C. Occupation de 7h30 à 18h, du lundi au vendredi.');
   assert.deepStrictEqual(cc, { chauffage: [19], clim: [26], regimes: [[70, 50]], horaires: [[7.5, 18]] });
-  const et = etude({ consignesZones: [{ zone: 'Toutes zones', confort: 20, clim: 26, inocc: 16, horsGel: 8, jours: 'lun-ven', debut: '7:00', fin: '19:00' }], profilBatiment: 'bureaux' });
+  const et = etude({ consignesZones: [{ zone: 'Toutes zones', confort: 20.5, clim: 26, inocc: 16, horsGel: 8, jours: 'lun-ven', debut: '7:00', fin: '19:00' }], profilBatiment: 'bureaux' });
   et.inventaire = [{ designation: 'Chauffage', texte: 'Température de confort en hiver 19 °C. Régime 80/60 °C.' }];
   const r = Liens.calculer(et, et.notes[1]), t = r.alertes.map(a => a.texte).join(' | ');
-  assert.match(t, /CCTP : 19 °C en chauffage ; saisi 20 °C/); assert.match(t, /régime 80\/60 °C cité, absent de l'étude/); assert.match(t, /au-dessus des 19 °C en moyenne du code de l'énergie/);
+  assert.match(t, /CCTP : 19 °C en chauffage ; saisi 20,5 °C/); assert.match(t, /régime 80\/60 °C cité, absent de l'étude/); assert.match(t, /au-dessus des 19 °C en moyenne du code de l'énergie/);
 });
 
 test('3. fichier EDE BACnet : objets, types, unités, états, inscriptibles', () => {
@@ -97,4 +97,24 @@ test('10. relevés de la GTB comparés aux lois d\'eau et aux consignes', () => 
   assert.strictEqual(a.circuits[0].circuit, 'Radiateurs bureaux'); assert.strictEqual(a.circuits[0].ecartMoyen, -6); assert.match(a.circuits[0].proposition, /sous la loi d'eau/);
   assert.deepStrictEqual([a.zones[0].jours, a.zones[0].joursHors], [5, 5]); assert.match(a.zones[0].proposition, /trop froid/);
   assert.match(C.analyserReleves([['a', 'b']], pj).erreur, /température extérieure/);
+});
+
+test('saisie reliée à l\'étude : profil deviné, zones de l\'étude préremplies, listes déroulantes structurées', () => {
+  assert.deepStrictEqual(['Collège des Tilleuls', 'EHPAD Les Lilas', 'Siège social', 'Gymnase municipal', 'Résidence 40 logements', 'Atelier'].map(C.detecterProfil), ['enseignement', 'ehpad', 'bureaux', 'gymnase', 'logement', '']);
+  const et = etude();
+  et.notes.push({ id: 't', type: 'terminaux', titre: 'Cassettes', entrees: { appareils: [{ rep: 'VC1', zone: 'Gymnase', type: 'cassette' }, { rep: 'VC2', zone: 'Salles de cours R+1', type: 'ventilo' }, { rep: 'VC3', zone: 'Salles de cours R+1', type: 'ventilo' }] } });
+  assert.deepStrictEqual(C.zonesEtude(et), [{ zone: 'Gymnase', emetteur: 'cassette' }, { zone: 'Salles de cours R+1', emetteur: 'ventilo' }]);
+  const z = C.zonesDepuis(C.zonesEtude(et), 'enseignement');
+  assert.deepStrictEqual(z.map(x => [x.zone, x.confort, x.debut, x.emetteur]), [['Gymnase', 16, '8:00', 'cassette'], ['Salles de cours R+1', 19, '7:30', 'ventilo']]);
+  // Calcul : saisie par défaut → zones déduites (profil « Collège » détecté), origine indiquée
+  const r = Liens.calculer(et, et.notes[1]), pj = r.valeurs.consignesProjet;
+  assert.deepStrictEqual(pj.zones.map(x => x.zone), ['Gymnase', 'Salles de cours R+1']);
+  assert.ok(pj.saisie.some(l => l[0] === 'Bâtiment' && /Enseignement/.test(l[1])) && pj.saisie.filter(l => l[0] === 'Zone').every(l => /déduit \(zones de l'étude, profil détecté/.test(l[4])));
+  // Listes déroulantes : zones, jours, heures, circuits et CTA tirés de l'étude
+  const champs = N.TYPES.elec.champs, col = (k, c) => champs.find(x => x.k === k).colonnes.find(x => x.k === c);
+  const e = et.notes[1].entrees;
+  assert.deepStrictEqual(col('consignesZones', 'zone').o(e, et).map(x => x[0]), ['Toutes zones', 'Gymnase', 'Salles de cours R+1']);
+  assert.ok(col('consignesZones', 'debut').o(e, et).some(x => x[0] === '7:30') && col('consignesZones', 'jours').o(e, et).some(x => x[0] === 'lun-sam'));
+  assert.deepStrictEqual(col('loisEau', 'circuit').o(e, et).map(x => x[0]), ['', 'Radiateurs bureaux', 'CTA atelier', 'Plancher vestiaires', 'Ballon ECS']);
+  assert.ok(/Automatique : Enseignement/.test(champs.find(x => x.k === 'profilBatiment').o(e, et)[0][1]));
 });

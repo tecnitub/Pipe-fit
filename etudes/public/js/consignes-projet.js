@@ -30,7 +30,7 @@ const ConsignesProjet = (() => {
 
   // zones : [{ zone, confort, clim, inocc, horsGel, jours, debut, fin, diff, decalage }] ; lois : [{ circuit, base, d18 }] ;
   // pressions : [{ cta, soufflage, reprise }] ; installations : contexte de la régulation (donnees) ; eqs : équipements
-  function calculer({ installations = [], zones = [], lois = [], pressions = [], eqs = [], annee = new Date().getFullYear(), profil: profilId = '', cctp = null } = {}) {
+  function calculer({ installations = [], zones = [], lois = [], pressions = [], eqs = [], annee = new Date().getFullYear(), profil: profilId = '', cctp = null, origineZones = '' } = {}) {
     const prod = installations.filter(x => x.donnees && x.donnees.circuits), ctas = installations.filter(x => x.donnees && x.donnees.cta);
     const ecs = installations.find(x => x.donnees && x.donnees.ecs), term = installations.filter(x => x.donnees && x.donnees.terminaux);
     const alertes = [], ajout = (niveau, t) => alertes.push({ niveau, texte: t });
@@ -44,7 +44,8 @@ const ConsignesProjet = (() => {
       const base = s && !vide(s.base) ? num(s.base) : c.loi ? c.dep : null, d18 = s && !vide(s.d18) ? num(s.d18) : c.d18;
       return { rep: c.rep, emetteur: typeEmetteur(c.emetteur) || c.emetteur, dep: c.dep, ret: c.ret, loi: c.loi || !!(s && !vide(s.base)), base: base ?? c.dep, d18: d18 ?? null, source: s && (!vide(s.base) || !vide(s.d18)) ? 'saisie' : 'étude', Td: x.donnees.Td };
     }));
-    const saisie = [...zonesEff.map(z => ['Zone', z.zone, `confort ${nf(z.confort, 1)} °C · rafraîchissement ${nf(z.clim, 1)} °C · inoccupation ${nf(z.inocc, 1)} °C · hors gel ${nf(z.horsGel, 1)} °C`, `${z.jours} ${hTxt(z.debut)} – ${hTxt(z.fin)}`, Z.length ? 'saisie' : 'par défaut']),
+    const saisie = [...(profilId && PROFILS[profilId] ? [['Bâtiment', PROFILS[profilId].nom, 'consignes et horaires types, contrôle du code de l\'énergie', '', origineZones && /profil/.test(origineZones) ? origineZones : 'choisi']] : []),
+      ...zonesEff.map(z => ['Zone', z.zone, `confort ${nf(z.confort, 1)} °C · rafraîchissement ${nf(z.clim, 1)} °C · inoccupation ${nf(z.inocc, 1)} °C · hors gel ${nf(z.horsGel, 1)} °C`, `${z.jours} ${hTxt(z.debut)} – ${hTxt(z.fin)}`, origineZones || (Z.length ? 'saisie' : 'par défaut')]),
       ...circuits.map(c => ['Circuit', c.rep, c.loi ? `loi d'eau : ${nf(c.base, 0)} °C par ${nf(Tbase, 0)} °C ext., ${nf(c.d18 ?? 30, 0)} °C par 18 °C ext.` : `consigne fixe ${nf(c.base, 0)} °C`, `régime ${nf(c.dep, 0)}/${nf(c.ret, 0)} °C${c.emetteur ? `, ${c.emetteur}` : ''}`, c.source])];
     // 2. Production : plus haute demande + 5 K (plafonnée au régime), priorité ECS
     const chauffe = circuits.filter(c => c.emetteur !== 'ecs'), maxCircuit = chauffe.length ? Math.max(...chauffe.map(c => c.base)) : null, TdProd = prod.length ? prod[0].donnees.Td : null;
@@ -128,6 +129,30 @@ const ConsignesProjet = (() => {
     logement: { nom: 'Logements collectifs', zones: [{ zone: 'Logements', confort: 19, clim: 26, inocc: 17, horsGel: 8, jours: 'lun-dim', debut: '6:00', fin: '22:00', diff: 0.5, decalage: 2 }] },
   };
   const profil = id => PROFILS[id] || null;
+  // Type de bâtiment deviné d'après l'objet de l'étude (« Collège des Tilleuls » → enseignement)
+  const PROFIL_MOTS = [[/coll[eè]ge|lyc[ée]e|[ée]cole|groupe scolaire|enseignement|universit|campus/i, 'enseignement'], [/ehpad|h[oô]pital|clinique|sant[ée]|maison de retraite|soins|foyer/i, 'ehpad'],
+    [/cr[eè]che|petite enfance|multi-?accueil/i, 'creche'], [/gymnase|salle de sport|complexe sportif|dojo|salle polyvalente/i, 'gymnase'], [/logements?|r[ée]sidence|immeuble/i, 'logement'], [/bureaux?|si[eè]ge|administratif|mairie|agence|tertiaire/i, 'bureaux']];
+  const detecterProfil = texte => (PROFIL_MOTS.find(([re]) => re.test(String(texte || ''))) || [])[1] || '';
+  // Zones de l'étude : terminaux (étage / zone, type d'appareil), pièces des réseaux aérauliques
+  function zonesEtude(et) {
+    const m = new Map(), aj = (z, em) => { const k = String(z || '').trim(); if (!k) return; const x = m.get(k) || { zone: k, types: {} }; if (em) x.types[em] = (x.types[em] || 0) + 1; m.set(k, x); };
+    ((et && et.notes) || []).forEach(n => {
+      const e = n.entrees || {};
+      if (n.type === 'terminaux') (e.appareils || []).forEach(a => aj(a.zone, typeEmetteur(a.type) || 'ventilo'));
+      (e.salles || e.pieces || []).forEach(sl => aj(sl.zone));
+    });
+    return [...m.values()].map(x => ({ zone: x.zone, emetteur: (Object.entries(x.types).sort((a, b) => b[1] - a[1])[0] || [''])[0] }));
+  }
+  // Zones préremplies : zones de l'étude, consignes et horaires du profil (zone du profil de même nom, sinon la première)
+  function zonesDepuis(zones, profilId) {
+    const p = PROFILS[profilId] || PROFILS.bureaux, cl = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    if (!(zones || []).length) return JSON.parse(JSON.stringify(p.zones));
+    return zones.map(z => { const m = p.zones.find(x => cl(x.zone).split(' ').some(w => w.length > 3 && cl(z.zone).includes(w.replace(/s$/, '')))) || p.zones[0]; return { ...JSON.parse(JSON.stringify(m)), zone: z.zone, ...(z.emetteur ? { emetteur: z.emetteur } : {}) }; });
+  }
+  const ZONES_DEFAUT = [{ zone: 'Toutes zones', confort: 20, clim: 26, inocc: 16, horsGel: 8, jours: 'lun-ven', debut: '7:00', fin: '19:00', diff: 0.5, decalage: 2 }];
+  const estDefaut = l => !(l || []).length || JSON.stringify((l || []).map(z => [z.zone, +z.confort, +z.clim, +z.inocc, +z.horsGel, z.jours, z.debut, z.fin])) === JSON.stringify(ZONES_DEFAUT.map(z => [z.zone, z.confort, z.clim, z.inocc, z.horsGel, z.jours, z.debut, z.fin]));
+  const JOURS_OPTIONS = ['lun-ven', 'lun-sam', 'lun-dim', 'lun-jeu', 'mar-sam', 'sam-dim'];
+  const HEURES_OPTIONS = Array.from({ length: 49 }, (_, i) => `${Math.floor(i / 2)}:${i % 2 ? '30' : '00'}`);
   function controleReglementaire(zones, profilId) {
     const out = [], ex = (PROFILS[profilId] || {}).exempte;
     zones.forEach(z => {
@@ -228,8 +253,9 @@ const ConsignesProjet = (() => {
       const ecarts = pts.map(([e, d]) => d - loi(e)), moy = ecarts.reduce((s, x) => s + x, 0) / ecarts.length;
       out.circuits.push({ circuit: c.rep, mesures: pts.length, ecartMoyen: Math.round(moy * 10) / 10, proposition: Math.abs(moy) < 2 ? 'loi d\'eau tenue : rien à corriger' : moy < 0 ? `départ ${nf(-moy, 1)} K sous la loi d'eau : vérifier la production (consigne, priorité ECS) et la vanne (course, encrassement) avant de toucher la courbe` : `départ ${nf(moy, 1)} K au-dessus de la loi d'eau : vérifier la vanne (fuite, servomoteur) et la sonde de départ` });
     });
-    r.zones.forEach(z => {
-      const k = h.findIndex(x => /amb|salle|piece|zone/.test(x) && (norm(z.zone) === 'toutes zones' || x.includes(norm(z.zone).split(' ')[0])));
+    r.zones.forEach((z, iz) => {
+      let k = h.findIndex(x => /amb|salle|piece|zone/.test(x) && norm(z.zone) !== 'toutes zones' && x.includes(norm(z.zone).split(' ')[0]));
+      if (k < 0 && (iz === 0 || norm(z.zone) === 'toutes zones')) k = h.findIndex(x => /amb/.test(x) && !r.zones.some(y => norm(y.zone) !== 'toutes zones' && x.includes(norm(y.zone).split(' ')[0])));
       if (k < 0) return;
       const jours = new Map();
       lignes.forEach(l => { const v = num(l[k], NaN); if (!Number.isFinite(v)) return; const d = iDate >= 0 ? String(l[iDate]).slice(0, 10) : 'sans date'; const j = jours.get(d) || { n: 0, hors: 0, froid: 0, chaud: 0 }; j.n++; if (v < z.confort - 1) { j.hors++; j.froid++; } else if (v > z.clim + 1) { j.hors++; j.chaud++; } jours.set(d, j); });
@@ -259,6 +285,6 @@ const ConsignesProjet = (() => {
     return { entrees: e, appliques, ignores };
   }
   const indiceSuivant = i => (/^[A-Y]$/i.test(String(i || '').trim()) ? String.fromCharCode(String(i).trim().toUpperCase().charCodeAt(0) + 1) : /^\d+$/.test(String(i || '').trim()) ? String(Number(i) + 1) : 'B');
-  return { appliquerReglees, indiceSuivant, calculer, reglagesPoints, feries, typeEmetteur, INERTIE, PID, PROFILS, profil, controleReglementaire, comparerCctp, consignesCctp, attendusReglage, controlesReglage, essaisSequences, chiffrage, analyserReleves };
+  return { detecterProfil, zonesEtude, zonesDepuis, ZONES_DEFAUT, estDefaut, JOURS_OPTIONS, HEURES_OPTIONS, appliquerReglees, indiceSuivant, calculer, reglagesPoints, feries, typeEmetteur, INERTIE, PID, PROFILS, profil, controleReglementaire, comparerCctp, consignesCctp, attendusReglage, controlesReglage, essaisSequences, chiffrage, analyserReleves };
 })();
 if (typeof module !== 'undefined') module.exports = ConsignesProjet;
