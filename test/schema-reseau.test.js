@@ -135,4 +135,6 @@ test('schéma chaud + schéma froid : CTA sur les deux, récupération d\'énerg
   assert.ok(L.calculer(et, ch).alertes.some(a => /Récupération sur groupe froid/.test(a.texte)));
   const inst = Rg.contexte(et, L).installations.find(i => i.noteId === 'sc');
   assert.ok(inst.af.some(t => /Priorité à la récupération/.test(t)));
+  // Électricité : pompe, vanne de basculement, sondes et compteur de la récupération (côté groupe froid)
+  assert.deepStrictEqual(E.equipementsEtude(et, L).filter(x => /REC$/.test(x.rep)).map(x => x.rep), ['PREC', 'VREC', 'TDREC', 'TRREC', 'CEREC']);
 });

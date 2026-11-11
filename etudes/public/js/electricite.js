@@ -1102,6 +1102,17 @@ const Electricite = ((N, Sc) => {
           ajout('fqn', { rep: 'FT-N', designation: 'Contrôleur de débit de l\'eau de nappe', type: 'securite', P: 0, tension: '24V', regulation: 'securite' });
           ajout('tn', { rep: 'TN', designation: 'Sonde de température de l\'eau de nappe (entrée échangeur)', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
         }
+        // Récupération d'énergie sur le groupe froid : pompe du circuit de récupération, vanne de basculement récupération /
+        // rejet, sondes départ et retour de l'eau récupérée, compteur d'énergie récupérée
+        if (es.recupGf && num(v.Precup) > 0) {
+          const [tD, tR] = String(es.regimeRecup || '45/40').split('/').map(x => num(x)), dTr = Math.max(2, Math.abs((tD || 45) - (tR || 40))), Qr = num(v.Precup) / (1.163 * dTr);
+          const lib = es.recupGf === 'totale' ? 'récupération totale au condenseur' : 'désurchauffeur';
+          ajout('prec', { rep: 'PREC', designation: `Pompe du circuit de récupération du groupe froid (${lib}, ${nf(Qr, 1)} m³/h)`, type: 'pompe', P: Math.max(0.05, Math.round(Qr * 8 / 367 / 0.45 * 100) / 100), tension: Qr > 25 ? 'tri' : 'mono', regulation: 'torRetour', alim: es.alimProd || '' });
+          ajout('vrec', { rep: 'VREC', designation: 'Vanne 3 voies de basculement récupération / rejet du groupe froid (condenseur à air ou tour)', type: 'vanne', P: 0.01, tension: '24V', regulation: 'v010r' });
+          ajout('tdrec', { rep: 'TDREC', designation: 'Sonde de départ de l\'eau récupérée sur le groupe froid', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
+          ajout('trrec', { rep: 'TRREC', designation: 'Sonde de retour de l\'eau récupérée sur le groupe froid', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
+          ajout('cerec', { rep: 'CEREC', designation: 'Compteur d\'énergie récupérée sur le groupe froid', type: 'sonde', P: 0, tension: '24V', regulation: 'impulsion' });
+        }
         d.circuits.forEach((c, i) => {
           const k = i + 1;
           ajout(`pc${k}`, { ...(c.pompe ? { metre: `pompe|${c.pompe.modele}` } : {}), rep: `PC${k}`, designation: `Pompe ${c.rep}`, type: 'pompe', P: c.pompe && c.pompe.P1 ? kW(c.pompe.P1) : Math.max(0.05, Math.round(c.Q * Math.max(2, c.hmt) / 367 / 0.45 * 100) / 100), tension: 'mono',
