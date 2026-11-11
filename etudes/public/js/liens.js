@@ -380,6 +380,37 @@ const Liens = ((N, Sc) => {
     }
     return null;
   }
+  // Réseau (arborescent, réseau et pompe, CTA) placé dans le schéma de principe : relié à un circuit existant (i) ou à un
+  // nouveau circuit qui prend le nom du réseau (i < 0). Rend { pid, i } ou null.
+  const EMETTEUR_ANNEXE = n => (n.type === 'cta' ? 'cta' : n.type === 'arbo' && (n.entrees || {}).saison === 'froid' ? 'ventilo' : 'radiateurs');
+  function relierAuSchema(etude, note, pidId, i = -1) {
+    const pid = ((etude && etude.notes) || []).find(n => n.id === pidId && n.type === 'pid');
+    if (!pid || !ANNEXES.includes(note.type)) return null;
+    const anc = circuitDeAnnexe(etude.notes, note);
+    if (anc) delete anc.pid.entrees.circuits[anc.i].annexe;
+    const cs = pid.entrees.circuits = pid.entrees.circuits || [];
+    if (i >= 0 && cs[i]) { cs[i].annexe = note.id; return { pid, i }; }
+    cs.push({ rep: repLibre(cs, String(note.titre || '').trim() || `C${cs.length + 1}`), emetteur: EMETTEUR_ANNEXE(note), P: '', regime: '', regulation: '3v', L: 0, annexe: note.id });
+    return { pid, i: cs.length - 1 };
+  }
+  const repLibre = (cs, r, sauf) => { let x = r, k = 2; while (cs.some((c, j) => j !== sauf && String(c.rep || '').trim() === x)) x = `${r} (${k++})`; return x; };
+  // Renomme un circuit du schéma et suit partout : terminaux et notes reliés (« id|repère »), robinetterie et pompes du
+  // schéma, lois d'eau de la régulation, registre des équipements. Rend le repère retenu (unique dans le schéma).
+  function renommerCircuit(etude, pid, i, nouveau) {
+    const cs = (pid.entrees || {}).circuits || [], c = cs[i];
+    if (!c) return null;
+    const ancien = String(c.rep || '').trim(), rep = repLibre(cs, String(nouveau || '').trim() || ancien, i);
+    if (!rep || rep === ancien) return ancien;
+    c.rep = rep;
+    const cleA = `${pid.id}|${ancien}`, cleN = `${pid.id}|${rep}`;
+    const suivre = o => { if (Array.isArray(o)) o.forEach((v, k) => { if (v === cleA) o[k] = cleN; else if (v && typeof v === 'object') suivre(v); });
+      else if (o && typeof o === 'object') Object.keys(o).forEach(k => { if (o[k] === cleA) o[k] = cleN; else if (o[k] && typeof o[k] === 'object') suivre(o[k]); }); };
+    (etude.notes || []).forEach(n => suivre(n.entrees));
+    ['robinetterie', 'pompesFab'].forEach(k => (pid.entrees[k] || []).forEach(x => { if (String(x.circuit || '').trim() === ancien) x.circuit = rep; }));
+    (etude.notes || []).filter(n => n.type === 'elec').forEach(n => ((n.entrees || {}).loisEau || []).forEach(x => { if (x.circuit === ancien) x.circuit = rep; }));
+    (etude.equipements || []).forEach(x => { if (x.circuit === ancien) x.circuit = rep; });
+    return rep;
+  }
   function lienHydro(etude, note, e, verrous, alertes, libelle, pile) {
     const notes = (etude && etude.notes) || [];
     const imposer = (vals, lib) => Object.entries(vals).forEach(([k, v]) => { e[k] = v; verrous[k] = lib; });
@@ -538,7 +569,7 @@ const Liens = ((N, Sc) => {
     });
     return out;
   }
-  return { fichesInstallation, resoudre, calculer, changementsEtude, notesDepuisSchema, detacher, description, reseauxDeCta, circuitDeAnnexe, nf,
+  return { fichesInstallation, resoudre, calculer, changementsEtude, notesDepuisSchema, detacher, description, reseauxDeCta, circuitDeAnnexe, relierAuSchema, renommerCircuit, nf,
     climatEtude, climatDeVille, TYPES_BATIMENT, CHAMPS_ETUDE, champEtude, typeBatimentEtude, gtbPid, COMBUSTION, optPid, optCircuits, optTroncons };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'), typeof Schema !== 'undefined' ? Schema : require('./schema'));
 if (typeof module !== 'undefined') module.exports = Liens;

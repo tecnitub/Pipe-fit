@@ -776,6 +776,15 @@ function appliquerFiche(et, n, lignesTexte, nomFichier) {
 
 // Fiches techniques de tous les éléments de l'installation (production, terminaux, pompes, CTA) vues depuis le schéma
 // de principe ou le réseau arborescent : chargées ici, elles vont dans le calcul de l'élément et reviennent partout
+// Réseau arborescent, réseau et pompe ou CTA pas encore dans un schéma de principe : le placer sur un circuit (existant
+// ou nouveau, nommé comme le réseau) ; une fois relié, renommer le réseau renomme son circuit dans le schéma
+function placerSchemaHtml(et, n) {
+  if (!['arbo', 'reseau', 'cta'].includes(n.type) || n.lien || Liens.circuitDeAnnexe(et.notes, n)) return '';
+  const pids = et.notes.map((x, i) => [x, i]).filter(([x]) => x.type === 'pid');
+  const opts = pids.map(([p, i]) => `<optgroup label="N${i + 1} — ${esc(p.titre)}"><option value="${p.id}|-1">➕ Nouveau circuit « ${esc(n.titre)} »</option>${((p.entrees || {}).circuits || []).map((c, k) => [c, k]).filter(([c]) => !c.annexe).map(([c, k]) => `<option value="${p.id}|${k}">Circuit existant : ${esc(c.rep || `C${k + 1}`)}</option>`).join('')}</optgroup>`).join('');
+  return `<div class="bandeau-lien">🧭 Ce réseau n'apparaît pas encore dans le schéma de principe. ${pids.length ? `<select id="schema-circuit" aria-label="Circuit du schéma de principe">${opts}</select> <button class="secondaire petit" id="schema-relier">Placer dans le schéma</button>` : '<button class="secondaire petit" id="schema-creer">Créer le schéma de principe avec ce circuit</button>'}
+    <span class="muted petit">Le circuit porte le nom du réseau (renommer le réseau le renomme dans le schéma) ; puissance et pertes de charge remontent au circuit.</span></div>`;
+}
 function fichesInstallationHtml(et, n) {
   const l = Liens.fichesInstallation(et, n);
   if (!l.length) return '';
@@ -933,6 +942,7 @@ Vues.note = {
         <input class="titre-note" data-n="titre" value="${esc(n.titre)}" aria-label="Titre du calcul"><span class="muted petit" id="etat-enreg"></span></div>
       <p class="muted petit">${esc(t.description)}</p>
       ${lien ? `<div class="bandeau-lien">🔗 ${esc(lien)} <button class="secondaire petit" id="detacher">Détacher</button></div>` : ''}
+      ${placerSchemaHtml(et, n)}
       <div class="onglets vues-note" role="tablist">${VUES_NOTE.map(([k, l]) => `<button role="tab" class="onglet${k === vueNote ? ' actif' : ''}" aria-selected="${k === vueNote}" data-vue-note="${k}">${l}</button>`).join('')}</div>
       <div class="vue-note" data-vue="${vueNote}">
       ${calculateurHtml(n.type, n.entrees, ctx)}
@@ -1404,6 +1414,27 @@ Vues.note = {
       toast(`${r.ajoutees} équipement(s) ajouté(s)${r.majs ? `, ${r.majs} mis à jour` : ''} : choisissez pour chacun son alimentation et sa régulation.`, 6000);
     };
     root.querySelectorAll('[data-n]').forEach(el => el.oninput = () => { n[el.dataset.n] = el.value; enregistrer(et); });
+    // Réseau relié au schéma de principe : son nom est celui du circuit (s'il le portait déjà)
+    const titreAvant = n.titre, tn = root.querySelector('.titre-note');
+    if (tn) tn.addEventListener('input', () => root.querySelectorAll('#schema-circuit option[value$="|-1"]').forEach(o => { o.textContent = `➕ Nouveau circuit « ${tn.value} »`; }));
+    if (tn) tn.addEventListener('change', () => {
+      const ref = Liens.circuitDeAnnexe(et.notes, n), c = ref && ref.pid.entrees.circuits[ref.i];
+      if (!c || !n.titre.trim() || (String(c.rep || '').trim() && String(c.rep).trim() !== titreAvant.trim())) return;
+      const r = Liens.renommerCircuit(et, ref.pid, ref.i, n.titre); enregistrer(et); App.render();
+      toast(`Circuit renommé « ${r} » dans ${ref.pid.titre} (terminaux, robinetterie et régulation suivent).`, 5000);
+    });
+    const sr = root.querySelector('#schema-relier'), sCree = root.querySelector('#schema-creer');
+    if (sr) sr.onclick = () => {
+      const [pidId, k] = root.querySelector('#schema-circuit').value.split('|'), r = Liens.relierAuSchema(et, n, pidId, Number(k));
+      if (!r) return;
+      if (Number(k) >= 0 && n.titre.trim()) Liens.renommerCircuit(et, r.pid, r.i, n.titre);
+      enregistrer(et); App.render(); toast(`Réseau placé dans ${r.pid.titre} : circuit « ${r.pid.entrees.circuits[r.i].rep} ».`, 6000);
+    };
+    if (sCree) sCree.onclick = () => {
+      const p = nouvelleNote('pid'); p.entrees.circuits = []; et.notes.splice(et.notes.indexOf(n) + 1, 0, p);
+      const r = Liens.relierAuSchema(et, n, p.id, -1); enregistrer(et); App.render();
+      toast(`Schéma de principe créé avec le circuit « ${r.pid.entrees.circuits[r.i].rep} » : complétez la production.`, 6000);
+    };
     root.querySelector('#pdf-note').onclick = () => genererNoteCalcul(et, [n.id]);
     root.querySelector('#emettre-note').onclick = () => emettreNote(et, n);
     root.querySelectorAll('[data-retour]').forEach(b => b.onclick = () => dialogueRetour(et, n, b.dataset.retour));
