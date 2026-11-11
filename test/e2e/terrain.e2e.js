@@ -101,6 +101,14 @@ test('Études : onglet « Programmation automate » (cahier Wit) du calcul des a
   await p.click('[data-onglet="Programmation automate"]'); await p.waitForTimeout(800);
   const t = await p.innerText('#resultats');
   assert.match(t, /Cahier de programmation — Automate Wit/); assert.match(t, /Boucles de régulation|Entrées \/ sorties/);
+  assert.match(t, /Synthèse des entrées \/ sorties/); assert.match(t, /Logique de fonctionnement pas à pas/); assert.match(t, /À valider avant la saisie/);
+  // Cahier de paramétrage : Word (document modifiable) et Excel (un onglet par rubrique)
+  for (const [btn, ext] of [['#elec-cahier-docx', 'docx'], ['#elec-cahier-xlsx', 'xlsx']]) {
+    const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 15000 }), p.click(btn)]);
+    assert.ok(dl.suggestedFilename().endsWith(`.${ext}`), dl.suggestedFilename());
+    const b = fs.readFileSync(await dl.path()); assert.strictEqual(b.slice(0, 2).toString(), 'PK');
+    if (ext === 'docx') assert.ok(b.includes(Buffer.from('word/document.xml')));
+  }
   assert.deepStrictEqual(erreurs, []);
 });
 

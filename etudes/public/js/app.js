@@ -863,7 +863,7 @@ Vues.note = {
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-pompes" title="Une ligne par circuit pour saisir la pompe retenue et sa courbe (ou la lire sur la fiche du fabricant)">⚙️ Pompes retenues par circuit</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-rob" title="Pour chaque circuit sans robinetterie : vannes d\'isolement, vanne d\'équilibrage, filtre, manchettes, thermomètres ; à compléter avec les Kv des fiches">🔩 Robinetterie type par circuit</button><button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par circuit (repères, DN, fabricant, référence, fiche, ΔP) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
-        ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button><button class="secondaire" id="elec-csv">🔗 Table d\'échange GTB (CSV)</button>' : ''}
+        ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button><button class="secondaire" id="elec-csv">🔗 Table d\'échange GTB (CSV)</button><button class="secondaire" id="elec-cahier-docx">📄 Cahier de paramétrage (Word)</button><button class="secondaire" id="elec-cahier-xlsx">📑 Cahier (Excel, un onglet par rubrique)</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="num-bouches" title="Numéro unique de chaque bouche : compléter les bouches sans repère ou en double, ou tout renuméroter (par zone et pièce, ou suivant les branches) quand l\'étude est au point">🔢 Numéroter les bouches</button>' : ''}
         ${n.type === 'terminaux' ? '<button class="secondaire" id="num-terminaux" title="Donne un repère unique à chaque terminal sans repère ou en double (CA-01, VC-02…) : une branche par terminal dans le réseau arborescent, une fiche de mise en service par terminal">🔢 Numéroter les terminaux</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="aero-vitesses" title="Même vitesse pour toutes les branches (ou les principales, ou les terminales) : les diamètres des gaines sont recalculés">💨 Changer toutes les vitesses</button>' : ''}
@@ -920,6 +920,29 @@ Vues.note = {
         rows: [[{ v: `${x.name} — ${et.objet} (indice ${et.indice})`, s: 'title' }], [], x.entetes.map(H), ...x.lignes.map(l => l.map(val))] })));
       Promise.resolve(telecharger(`Electricite_${sansAccents(et.objet).slice(0, 40)}_Ind${sansAccents(et.indice) || 'A'}.xlsx`, octets, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'))
         .then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : `Classeur enregistré : ${f.length} feuilles`)).catch(er => toast(er.message, 6000));
+    };
+    // Cahier de paramétrage de l'automate : document Word modifiable, ou classeur avec un onglet par rubrique
+    const cahierDe = () => { const r = Liens.calculer(et, n), c = (r.valeurs || {}).cahierProg || []; if (!c.length) toast('Aucune armoire en automate programmable : pas de cahier de paramétrage.', 6000); return { c, marque: (r.valeurs || {}).marqueAutomate || 'automate' }; };
+    const nomCahier = ext => `Cahier_parametrage_${sansAccents(et.objet).slice(0, 40)}_Ind${sansAccents(et.indice) || 'A'}.${ext}`;
+    const cd = root.querySelector('#elec-cahier-docx');
+    if (cd) cd.onclick = () => {
+      const { c, marque } = cahierDe(); if (!c.length || typeof Docx === 'undefined') return;
+      const octets = Docx.build(Docx.cahierBlocs(c, { titre: `Cahier de paramétrage — ${marque}`, affaire: [et.objet, et.client].filter(Boolean).join(' — '), indice: et.indice, date: et.date, entetesDefaut: Gtb.ENTETES_CAHIER }));
+      Promise.resolve(telecharger(nomCahier('docx'), octets, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'))
+        .then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : 'Cahier de paramétrage enregistré (Word)')).catch(er => toast(er.message, 6000));
+    };
+    const cx = root.querySelector('#elec-cahier-xlsx');
+    if (cx) cx.onclick = () => {
+      const { c } = cahierDe(); if (!c.length || typeof XLSX === 'undefined') return;
+      const H = v => ({ v, s: 'head' }), feuilles = [];
+      c.forEach(a => a.sections.forEach((s, i) => {
+        const ent = s.entetes || Gtb.ENTETES_CAHIER;
+        feuilles.push({ name: `${c.length > 1 ? `${a.armoire} ` : ''}${i + 1}. ${s.titre}`.replace(/[\[\]:*?/\\]/g, '-').slice(0, 31), freeze: s.intro ? 5 : 3,
+          cols: ent.map(h => (/Libellé|Logique|À valider|Action|Désignation|Remarque|Réglages/.test(h) ? 60 : /Installation|Fonction|Alarme|Unité|Signal|Condition/.test(h) ? 30 : 16)),
+          rows: [[{ v: `${s.titre} — armoire ${a.armoire} — ${et.objet} (indice ${et.indice})`, s: 'title' }], ...(s.intro ? [[s.intro], []] : [[]]), ent.map(H), ...s.lignes] });
+      }));
+      Promise.resolve(telecharger(nomCahier('xlsx'), XLSX.build(feuilles), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'))
+        .then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : `Cahier enregistré : ${feuilles.length} onglets`)).catch(er => toast(er.message, 6000));
     };
     // Table d'échange GTB au format neutre (CSV « ; », UTF-8 avec BOM pour Excel) : objets BACnet, registres Modbus
     const ecsv = root.querySelector('#elec-csv');

@@ -80,7 +80,7 @@ test('table d\'échange : objets BACnet, instances et registres Modbus par armoi
     ['V1', 'Consigne de vitesse', 'SA', 'A2', 'TR', '', 'V1 — Ventilateur', 'Consigne de vitesse']];
   const t = G.echange(pts, ['A1', 'A2']);
   assert.deepStrictEqual(t.map(l => [l[1], l[6], l[7], l[8], l[9]]), [['1001', 'BO', '1', 'Coil 0x0000', 'état'], ['1001', 'AI', '1', 'IR 3x0000', '°C'], ['1001', 'AI', '2', 'IR 3x0002', '°C'], ['1001', 'BI', '1', 'DI 1x0000', 'état'], ['1002', 'AO', '1', 'HR 4x0000', '%']]);
-  assert.strictEqual(t[3][10], 'P1 (sécurité)'); assert.strictEqual(t[1][11], '15 min'); assert.strictEqual(t[0][12], 'A1_P1_CMD');
+  assert.strictEqual(t[3][10], 'P1 (sécurité)'); assert.strictEqual(t[1][11], '15 min'); assert.strictEqual(t[0][12], 'CVC_P1_CMD'); assert.strictEqual(G.echange(pts, ['A1', 'A2'], [], { nommage: 'armoire' })[0][12], 'A1_P1_CMD');
   const csv = G.csv(G.ENTETES_ECHANGE, t).split('\r\n');
   assert.strictEqual(csv.length, 6); assert.match(csv[0], /^Armoire;Device BACnet;/);
 });

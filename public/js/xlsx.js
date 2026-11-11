@@ -194,6 +194,6 @@ const XLSX = (() => {
     return [{ name: 'CSV', rows: rows.filter(r => r.some(c => c !== '')) }];
   }
 
-  return { build, read, readCSV };
+  return { build, read, readCSV, zip };
 })();
 if (typeof module !== 'undefined') module.exports = XLSX;

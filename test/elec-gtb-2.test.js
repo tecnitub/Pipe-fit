@@ -85,8 +85,8 @@ test('cahier de programmation (automate Wit) : entrées / sorties, boucles, mote
   assert.match(boucle[2], /^TD1 P\d\d\.\d\d/); assert.match(boucle[3], /^V1 P\d\d\.\d\d/); assert.match(boucle[4], /départ à -10 °C extérieur 70 °C/); assert.match(boucle[4], /PI : bande 20 K/);
   assert.ok(t(/Commandes des moteurs/).some(l => l[0] === 'PP1' && /P\d\d\.\d\d/.test(l[3]) && /retour de marche/.test(l[4])));
   assert.ok(t(/Horloges/).length >= 1 && t(/Sécurités et asservissements/).some(l => l[0] === 'HG') && t(/Sécurités et asservissements/).some(l => l[0] === 'KA1'));
-  assert.ok(t(/Alarmes/).some(l => /P1 \(sécurité\), temporisation 0 s/.test(l[4])));
-  assert.ok(t(/Entrées \/ sorties/).every(l => l[2] || l[3]));
+  assert.ok(t(/Alarmes/).some(l => l[4] === 'P1 (sécurité)' && l[3] === '0 s' && /coupure câblée/.test(l[5])));
+  assert.ok(t(/^Armoire .* — Entrées \/ sorties$/).every(l => l[0] && l[2] && l[5]));
   const f = r.valeurs.feuilles.find(x => x.name === 'Programmation AR-CVC-01');
   assert.ok(f && f.lignes.length > 30 && f.entetes[0] === 'Rubrique');
 });
@@ -111,4 +111,48 @@ test('automate Wit : ULI REDY dimensionnée d\'après le catalogue (PLUG, embase
   // Une configuration saisie (autre automate) garde le calcul générique
   const autre = Liens.calculer(etude({ marqueAutomate: 'wit', automate: [{ type: 'UC', ref: 'Mon automate', voies: '', integrees: 0, chassis: 8 }, { type: 'EA', ref: 'Carte 8 EA perso', voies: 8 }] }), etude({ marqueAutomate: 'wit', automate: [{ type: 'UC', ref: 'Mon automate', voies: '', integrees: 0, chassis: 8 }, { type: 'EA', ref: 'Carte 8 EA perso', voies: 8 }] }).notes[1]);
   assert.ok(!autre.onglets.find(o => o.titre === 'Régulation').blocs.some(b => /Automate Wit REDY/.test(b.titre || '')));
+});
+
+test('cahier de paramétrage au format de l\'automaticien : noms par installation, états, synthèse, actions, logique, à valider, Word', () => {
+  const et = etude({ marqueAutomate: 'wit' });
+  et.notes[1].entrees.equipements.push({ rep: 'VC1', type: 'ventilo', designation: 'Cassette salle (maître)', P: 0.1, regulation: 'tor' }, { rep: 'VC2', type: 'ventilo', designation: 'Cassette salle (esclave)', P: 0.1, regulation: 'tor' });
+  const r = Liens.calculer(et, et.notes[1]), c = r.valeurs.cahierProg[0], s = re => c.sections.find(x => re.test(x.titre));
+  // 1. Noms par installation (table d'échange et cahier)
+  const noms = r.valeurs.feuilles.find(x => /^Table/.test(x.name)).lignes.map(l => l[12]);
+  ['CH_G1_AUT', 'CH_G1_CSG', 'CH_PP1_CMD', 'CH_V1_CSG', 'CH_TD1_T', 'ECS_PC4_CMD', 'CTA_V2_CSG', 'CAS_VC1_CMD', 'CH_AU_DEF'].forEach(n => assert.ok(noms.includes(n), n));
+  assert.strictEqual(new Set(noms).size, noms.length, 'noms uniques');
+  // 2. Unité / états
+  const es = s(/^Entrées \/ sorties$/);
+  assert.deepStrictEqual(es.entetes, ['Nom du point', 'Repère', 'Libellé', 'Type', 'Adresse · bornes', 'Unité / états', 'Signal / échelle', 'Remarque']);
+  const ligne = n => es.lignes.find(l => l[0] === n);
+  assert.deepStrictEqual([ligne('CH_G1_DEF')[3], ligne('CH_G1_DEF')[5]], ['DI', 'Normal / Défaut']);
+  assert.strictEqual(ligne('CH_AU_DEF')[5], 'Normal / Alarme');
+  assert.strictEqual(ligne('CH_PP1_CMD')[5], 'Arrêt / Marche');
+  assert.strictEqual(ligne('CH_V1_CSG')[5], '0-100 %'); assert.strictEqual(ligne('CH_TD1_T')[5], '°C');
+  // 3. Synthèse par installation avec 20 % de réserve
+  const sy = s(/^Synthèse/), tot = sy.lignes.find(l => l[0] === 'Total'), res = sy.lignes.find(l => /réserve/.test(l[0]));
+  assert.ok(sy.lignes.some(l => l[0] === 'Chaufferie / production') && sy.lignes.some(l => l[0] === 'Eau chaude sanitaire') && sy.lignes.some(l => l[0] === 'Cassettes'));
+  assert.strictEqual(res[1], String(Math.ceil(Number(tot[1]) * 1.2)));
+  // 4. Alarmes : action automatique
+  const al = s(/^Alarmes$/).lignes;
+  assert.match(al.find(l => l[0] === 'CH_G1_DEF')[5], /retiré de la cascade/);
+  assert.match(al.find(l => l[0] === 'CH_AU_DEF')[5], /coupure câblée/);
+  // 5. Logique pas à pas : cascade, ECS, CTA, cassettes maître / esclave
+  const lg = s(/^Logique/).lignes, f = re => lg.filter(l => re.test(l[0])).map(l => l[2]).join(' ');
+  assert.match(f(/^Cascade/), /moins d'heures/); assert.match(f(/^Cascade/), /CH_TDG reste sous la consigne \(70 °C\) de plus de 5 °C pendant 10 min/);
+  assert.match(f(/^ECS/), /anti-légionelle/); assert.match(f(/^CTA/), /reprise puis de soufflage/);
+  assert.match(f(/^Terminaux/), /PV jusqu'à 1 °C, MV jusqu'à 2 °C, GV/); assert.match(f(/^Terminaux/), /maître \/ esclave/);
+  // 6. À valider
+  const av = s(/^À valider/);
+  assert.ok(av.cases && av.lignes.every(l => l[0] === '☐') && av.lignes.some(l => /Wit/.test(l[1])) && av.lignes.some(l => /carnet sanitaire/.test(l[1])));
+  // Nommage par armoire conservé en option
+  const et2 = etude({ marqueAutomate: 'wit', nommagePoints: 'armoire' }), r2 = Liens.calculer(et2, et2.notes[1]);
+  assert.ok(r2.valeurs.feuilles.find(x => /^Table/.test(x.name)).lignes.every(l => l[12].startsWith('AR-CVC-01_') || l[12].startsWith('ARCVC01_') || /^AR/.test(l[12])));
+  // 7. Document Word : archive, une rubrique numérotée par section, tableaux et cases
+  global.XLSX = require('../public/js/xlsx'); const Docx = require('../etudes/public/js/docx');
+  const blocs = Docx.cahierBlocs(r.valeurs.cahierProg, { titre: 'Cahier de paramétrage — Wit REDY', affaire: 'Collège', indice: 'A', entetesDefaut: G.ENTETES_CAHIER });
+  assert.ok(blocs.some(b => b.h3 === '2. Synthèse des entrées / sorties') && blocs.some(b => b.cases) && blocs.some(b => b.num) && blocs.some(b => b.table && b.table.entetes[0] === 'Nom du point'));
+  const z = Buffer.from(Docx.build(blocs));
+  assert.strictEqual(z.slice(0, 2).toString(), 'PK');
+  assert.ok(z.includes(Buffer.from('word/document.xml')) && z.includes(Buffer.from('CH_G1_AUT')) && z.includes(Buffer.from('w:orient="landscape"')));
 });

@@ -734,8 +734,8 @@ const Electricite = ((N, Sc) => {
     const Pbacs = num(e.pBacs) || REG.installations.reduce((s, x) => s + num(x.puissance), 0);
     const bacs = Gt().bacs({ P: Pbacs, neuf: e.batimentNeuf === 'oui', eqs, REG, opt, gtb: e.gtb, pts });
     if (bacs.assujetti && !bacs.conforme) alertes.push(alerte('attention', `Décret BACS : bâtiment assujetti (${bacs.echeance}) ; classe de régulation estimée ${bacs.classe}, classe A ou B exigée (onglet « GTB et BACS »).`));
-    const echange = Gt().echange(pts, arm.map(a => a.rep), e.reglagesPoints), comptes = eqs.filter(q => String(q.src || '').startsWith('comptage:'));
-    const cahierProg = Gt().cahier({ arm, eqs, REG, echange, permutation: e.permutation, gtb: e.gtb && e.gtb !== 'aucune' ? e.gtb : '' });
+    const echange = Gt().echange(pts, arm.map(a => a.rep), e.reglagesPoints, { nommage: e.nommagePoints || 'installation' }), comptes = eqs.filter(q => String(q.src || '').startsWith('comptage:'));
+    const cahierProg = Gt().cahier({ arm, eqs, REG, echange, permutation: e.permutation, gtb: e.gtb && e.gtb !== 'aucune' ? e.gtb : '', nommage: e.nommagePoints || 'installation' });
     const nomAut = MARQUES[e.marqueAutomate] || MARQUES.generique;
     const seqs = REG.installations.map(x => ({ x, s: Gt().sequences(x, (REG.types || {})[x.noteId], { permutation: e.permutation }) })).filter(y => y.s);
     const regInstallations = REG.installations.map(x => ({ noteId: x.noteId, titre: x.titre, app: x.app, techno: techParNote[x.noteId] || (arm[0] ? arm[0].techno : 'integree'), params: x.params }));
@@ -752,7 +752,7 @@ const Electricite = ((N, Sc) => {
     folios.forEach(f => { f.svg = cartouche(f.svg, { affaire: aff.objet || '', client: aff.client || '', indice: aff.indice || 'A', date: aff.date || '', auteur: aff.auteur || '', titre: f.titre, no: f.no, total: folios.length,
       renvois: f.arm ? `Armoire ${f.arm} : unifilaire ${folios[0].no}, ${renvois(f.arm)}` : arm.map(a => `${a.rep} : ${renvois(a.rep)}`).join(' — ') }); });
     return {
-      valeurs: { regulation: { installations: regInstallations, parametres }, bacs: { P: Pbacs, classe: bacs.classe, conforme: bacs.conforme, assujetti: bacs.assujetti, echeance: bacs.echeance }, echangeCsv: Gt().exporter(echange, e.profilExport, e.sepExport), listePoints: pts, Ptot, PCvc, Pelec, Pappel, Sappel, Itgbt, armoires: arm.map(a => ({ rep: a.rep, P: a.P, Ib: a.Ib, cal: a.cal, cartes: a.cartes, enveloppe: a.enveloppe, aux: (a.aux || []).map(x => ({ circuit: x.nom, P: x.P, choix: x.choix, materiel: x.materiel })), extensions: a.extensions || 0 })), points: pts.length,
+      valeurs: { regulation: { installations: regInstallations, parametres }, bacs: { P: Pbacs, classe: bacs.classe, conforme: bacs.conforme, assujetti: bacs.assujetti, echeance: bacs.echeance }, echangeCsv: Gt().exporter(echange, e.profilExport, e.sepExport), cahierProg, marqueAutomate: nomAut, listePoints: pts, Ptot, PCvc, Pelec, Pappel, Sappel, Itgbt, armoires: arm.map(a => ({ rep: a.rep, P: a.P, Ib: a.Ib, cal: a.cal, cartes: a.cartes, enveloppe: a.enveloppe, aux: (a.aux || []).map(x => ({ circuit: x.nom, P: x.P, choix: x.choix, materiel: x.materiel })), extensions: a.extensions || 0 })), points: pts.length,
         // Classeur Excel : bilan, attentes, équipements, points, puis adressage et nomenclature de chaque armoire
         feuilles: [
           { name: 'Bilan de puissance', entetes: tableauBilan.entetes, lignes: tableauBilan.lignes },
@@ -763,7 +763,7 @@ const Electricite = ((N, Sc) => {
           { name: 'Essais point à point', entetes: ['Armoire', ...Gt().ENTETES_ESSAIS], lignes: arm.flatMap(a => Gt().essais(a.adresses).map(l => [a.rep, ...l])) },
           ...arm.flatMap(a => [{ name: `E-S ${a.rep}`, entetes: ['Adresse', 'Bornes', 'Repère', 'Désignation', 'Type', 'Signal'], lignes: a.adresses },
             { name: `Nomenclature ${a.rep}`, entetes: ENT_NOM, lignes: refs.length ? lignesNom(a) : a.nomenclature }]),
-          ...cahierProg.map(c => ({ name: `Programmation ${c.armoire}`, entetes: ['Rubrique', ...Gt().ENTETES_CAHIER], lignes: c.sections.flatMap(x => x.lignes.map(l => [x.titre, ...l])) })),
+          ...cahierProg.map(c => ({ name: `Programmation ${c.armoire}`, entetes: ['Rubrique', 'Colonnes de la rubrique'], lignes: c.sections.flatMap(x => [[x.titre, ...(x.entetes || Gt().ENTETES_CAHIER)], ...x.lignes.map(l => [x.titre, ...l]), []]) })),
           { name: 'Carnet de câbles', entetes: ['Armoire', ...ENT_CARNET], lignes: arm.flatMap(a => carnetCables(a).map(l => [a.rep, ...l])) }] },
       resume: [['Équipements', `${eqs.length} (${eqs.filter(q => q.alim === 'elec').length} sur attente électrique, ${eqs.filter(q => q.alim !== 'elec').length} sur armoire CVC)`],
         ['Puissance électrique installée', `${nf(Ptot, 1)} kW`], ['Dont armoires CVC (lot CVC, commande comprise)', `${nf(PCvc, 1)} kW`], ['Dont attentes du lot électricité', `${nf(Pelec, 1)} kW`],
@@ -820,8 +820,8 @@ const Electricite = ((N, Sc) => {
           ...arm.map(a => ({ titre: `Plan d'adressage — armoire ${a.rep} (${Object.entries(a.cartes).filter(([, n]) => n).map(([t, n]) => `${n} × ${(a.capa ? a.capa[t] : CARTES[t])[0]} ${t}`).join(', ') || 'aucune carte'})`, tableau: { entetes: ['Adresse', 'Bornes', 'Repère', 'Désignation', 'Type', 'Signal'], lignes: a.adresses } }))] },
         ...(cahierProg.length ? [{ titre: 'Programmation automate', blocs: [
           { titre: `Cahier de programmation — ${nomAut}`, liste: [`À saisir dans l'outil de programmation ${e.marqueAutomate === 'wit' ? 'Wit' : 'de l\'automate'} : entrées / sorties, boucles de régulation, commandes des moteurs, horloges, consignes, sécurités, alarmes, historiques et communication, armoire par armoire. Repris des points, du plan d'adressage, de l'analyse fonctionnelle et de la table d'échange de cette étude.`,
-            'Réglages des boucles : valeurs de départ usuelles, à ajuster à la mise en service (fiche de mise en service de la régulation).', 'Classeur Excel : une feuille « Programmation » par armoire (bouton 📊).'] },
-          ...cahierProg.flatMap(c => c.sections.map(x => ({ titre: `Armoire ${c.armoire} — ${x.titre}`, tableau: { entetes: Gt().ENTETES_CAHIER, lignes: x.lignes } })))] }] : []),
+            'Réglages des boucles : valeurs de départ usuelles, à ajuster à la mise en service (fiche de mise en service de la régulation).', 'Cahier de paramétrage complet : boutons « 📄 Cahier de paramétrage (Word) » et « 📑 Cahier (Excel, un onglet par rubrique) » ; aussi une feuille « Programmation » par armoire dans le classeur 📊.'] },
+          ...cahierProg.flatMap(c => c.sections.flatMap(x => [{ titre: `Armoire ${c.armoire} — ${x.titre}`, tableau: { entetes: x.entetes || Gt().ENTETES_CAHIER, lignes: x.lignes } }, ...(x.intro ? [{ texte: [x.intro] }] : [])]))] }] : []),
         { titre: 'GTB et BACS', blocs: [
           { titre: 'Décret BACS (articles R.175-1 à R.175-6 du code de la construction)', liste: [
             `Puissance nominale chauffage + climatisation : ${nf(Pbacs, 0)} kW${num(e.pBacs) ? ' (saisie)' : ' (reprise des schémas de principe de l\'étude)'} ; bâtiment ${e.batimentNeuf === 'oui' ? 'neuf' : 'existant'}, tertiaire.`,
@@ -1229,6 +1229,7 @@ const Electricite = ((N, Sc) => {
       { k: 'duTgbt', l: 'Chute de tension en amont du TGBT', u: '%', d: 0.5 },
       { g: 'GTB et décret BACS' },
       { k: 'pBacs', l: 'Puissance nominale chauffage + climatisation (vide : reprise des schémas de principe)', u: 'kW', d: '' },
+      { k: 'nommagePoints', l: 'Noms des points automate / GTB', t: 's', o: [['installation', 'Par installation : CH_, ECS_, CTA_, VC_… + repère + fonction'], ['armoire', 'Par armoire : ARMOIRE_REPÈRE_FONCTION']], d: 'installation' },
       { k: 'batimentNeuf', l: 'Bâtiment', t: 's', o: [['non', 'Existant'], ['oui', 'Neuf (permis après le 21 juillet 2021)']], d: 'non' },
       { k: 'reglagesPoints', l: 'Réglages des points GTB (priorité d\'alarme, seuils, historique) — repère (ou « * ») et texte du libellé ; prioritaires sur les valeurs déduites', t: 'lignes', d: [],
         colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'libelle', l: 'Libellé contient', t: 't' }, { k: 'priorite', l: 'Priorité d\'alarme', t: 's', o: [['', '—'], ['P1 (sécurité)', 'P1 (sécurité)'], ['P2 (défaut)', 'P2 (défaut)'], ['P3 (maintenance)', 'P3 (maintenance)'], ['aucune', 'Aucune alarme']] },

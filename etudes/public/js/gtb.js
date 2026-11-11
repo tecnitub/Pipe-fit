@@ -60,16 +60,58 @@ const Gtb = (() => {
   // pts : [repère, libellé, type, armoire, classe, protocole, équipement, libellé court, …] ; armoires : repères dans l'ordre
   // reglages : [{ rep, libelle, priorite, bas, haut, historique }] saisis dans l'étude, appliqués aux points concernés
   // (repère identique ou « * », libellé contenant le texte saisi) ; la dernière ligne qui s'applique l'emporte
-  function echange(pts, armoires = [], reglages = []) {
+  /* ---------- Nommage des points par installation (CH_, ECS_, CTA_…), états et unités ---------- */
+  // p : point de la liste des points [repère, libellé, type E/S, armoire, classe, —, « REP — équipement », fonction, src, app]
+  const PREFIXES = [[/\becs\b|eau chaude sanitaire|ballon|bouclage|légionelle/i, 'ECS', 'Eau chaude sanitaire'], [/cassette/i, 'CAS', 'Cassettes'], [/ventilo/i, 'VC', 'Ventilo-convecteurs'],
+    [/\bcta\b|centrale de traitement|traitement d'air/i, 'CTA', 'CTA'], [/désenfumage|desenfumage/i, 'DES', 'Désenfumage'], [/\bvmc\b|extraction|extracteur|caisson/i, 'VMC', 'Ventilation'],
+    [/compteur|comptage/i, 'CPT', 'Comptages'], [/surpresseur|adoucisseur|eau froide sanitaire/i, 'SAN', 'Sanitaire']];
+  const PAR_APP = { production: ['CH', 'Chaufferie / production'], chauffage: ['CH', 'Chaufferie / production'], ventilation: ['VENT', 'Ventilation'], terminaux: ['TERM', 'Terminaux'], autre: ['CVC', 'Communs'] };
+  function installationPoint(p) {
+    const t = `${p[6] || ''} ${p[1] || ''}`, m = PREFIXES.find(([re]) => re.test(t));
+    if (m) return { prefixe: m[1], nom: m[2] };
+    if (p[9] === 'production' && /froid|eau glacée|refroidisseur|groupe frigorifique|tour aéro/i.test(t)) return { prefixe: 'FR', nom: 'Production de froid' };
+    const a = PAR_APP[p[9]] || PAR_APP.autre;
+    return { prefixe: a[0], nom: a[1] };
+  }
+  const FCT = [[/autorisation/i, 'AUT'], [/commande de marche|marche \/ arrêt/i, 'CMD'], [/retour de marche|état de marche/i, 'RET'], [/défaut|defaut|alarme/i, 'DEF'], [/consigne|modulation/i, 'CSG'],
+    [/vitesse/i, 'VIT'], [/ouverture/i, 'OUV'], [/fermeture/i, 'FER'], [/recopie|position/i, 'POS'], [/mode chaud|change-over|inversion/i, 'CO'], [/encrassement|filtre/i, 'FILT'],
+    [/co2|co₂/i, 'CO2'], [/humidit/i, 'HR'], [/température|temperature|sonde/i, 'T'], [/pression/i, 'P'], [/débit/i, 'Q'], [/énergie|index|comptage|impulsion/i, 'NRJ'], [/puissance/i, 'PUI'],
+    [/programme horaire/i, 'PH'], [/commutateur/i, 'COMM'], [/mesure/i, 'MES'], [/commande/i, 'CMD']];
+  const propre = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '').toUpperCase();
+  function nomPoint(p) {
+    const f = FCT.find(([re]) => re.test(p[7] || '')) || FCT.find(([re]) => re.test(p[1] || ''));
+    let c = f ? f[1] : propre(p[7] || p[1]).slice(0, 6) || 'PT';
+    if (p[2] === 'SA' && c === 'CMD') c = 'CSG'; // sortie 0-10 V : consigne / position demandée
+    if (p[2] === 'EA' && c === 'MES') { const g = FCT.find(([re]) => re.test(p[6] || '')); if (g && ['T', 'P', 'Q', 'HR', 'CO2'].includes(g[1])) c = g[1]; }
+    return `${installationPoint(p).prefixe}_${propre(p[0]) || 'PT'}_${c}`;
+  }
+  // Noms uniques d'une liste de points (doublon : suffixe _2, _3…)
+  function nomsPoints(pts) {
+    const vus = {};
+    return pts.map(p => { const n = nomPoint(p); vus[n] = (vus[n] || 0) + 1; return vus[n] > 1 ? `${n}_${vus[n]}` : n; });
+  }
+  // États (points TOR) ou unité (points analogiques)
+  function etats(p) {
+    const t = `${p[7] || ''} ${p[1] || ''}`, eq = String(p[6] || '');
+    if (p[2] === 'ETOR') return SECU_EQ.test(eq) || SECU.test(p[7] || '') ? 'Normal / Alarme' : /défaut|defaut/i.test(t) ? 'Normal / Défaut' : /encrass|filtre/i.test(t) ? 'Propre / Encrassé'
+      : /fenêtre|fenetre|fin de course|position|ouvert/i.test(t) ? 'Fermé / Ouvert' : /commutateur/i.test(t) ? 'Arrêt / Manu / Auto' : /mode|chaud \/ froid|été|hiver/i.test(t) ? 'Chaud / Froid' : 'Arrêt / Marche';
+    if (p[2] === 'STOR') return /mode|change-over|inversion|chaud \/ froid/i.test(t) ? 'Chaud / Froid' : /vanne|volet|registre|ouverture|fermeture|clapet/i.test(`${t} ${eq}`) && !/pompe|ventilateur|chaudière|brûleur/i.test(eq) ? 'Fermée / Ouverte' : 'Arrêt / Marche';
+    if (p[2] === 'SA') return '0-100 %';
+    if (p[2] === 'EA') return ((UNITES.find(([re]) => re.test(t)) || [, ''])[1]) || 'selon le capteur';
+    return p[2] === 'Bus' ? 'valeurs lues sur le bus' : '';
+  }
+  const TYPE_ES = { STOR: 'DO', ETOR: 'DI', SA: 'AO', EA: 'AI', Bus: 'Bus' };
+
+  function echange(pts, armoires = [], reglages = [], { nommage = 'installation' } = {}) {
     const regl = (reglages || []).filter(r => r && (String(r.rep || '').trim() || String(r.libelle || '').trim()));
-    const devices = new Map(armoires.map((a, i) => [a, 1000 + i + 1])), cpt = {};
-    return pts.map(p => {
+    const devices = new Map(armoires.map((a, i) => [a, 1000 + i + 1])), cpt = {}, noms = nomsPoints(pts);
+    return pts.map((p, ip) => {
       const ar = p[3], des = p[7] || p[1], obj = objetDe(p[2], p[4], des), k = `${ar}|${obj}`, mb = MODBUS[obj];
       if (!devices.has(ar)) devices.set(ar, 1000 + devices.size + 1);
       const c = cpt[k] || (cpt[k] = { inst: 0, reg: 0 }); c.inst += 1; const reg = c.reg; c.reg += mb[2];
       const binaire = ['BI', 'BO', 'BV'].includes(obj), unite = binaire ? 'état' : obj === 'SCHEDULE' ? '—' : ((UNITES.find(([re]) => re.test(des)) || [, ''])[1]);
       const mn = (ABR.find(([re]) => re.test(des)) || [, String(des).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '').toUpperCase().slice(0, 8)])[1];
-      const nom = `${ar}_${p[0]}_${mn}`.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9_.-]+/g, '').replace(/\./g, '_').toUpperCase();
+      const nom = nommage === 'installation' ? noms[ip] : `${ar}_${p[0]}_${mn}`.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9_.-]+/g, '').replace(/\./g, '_').toUpperCase();
       const alarme = p[4] === 'TA' ? ((SECU.test(des) || SECU_EQ.test(p[6] || '')) ? 'P1 (sécurité)' : 'P2 (défaut)') : /encrassement|filtre/i.test(des) ? 'P3 (maintenance)' : '';
       const histo = ['TM', 'TCP'].includes(p[4]) ? (p[4] === 'TCP' ? 'horaire + mensuel (5 ans)' : '15 min') : ['TS', 'TC', 'TA'].includes(p[4]) ? 'sur changement' : '';
       const x = { alarme, histo, bas: '', haut: '' };
@@ -197,6 +239,90 @@ const Gtb = (() => {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Arial, Helvetica, sans-serif"><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${out.join('')}</svg>`;
   }
 
+  /* ---------- Logique de fonctionnement pas à pas (par installation de l'armoire) ---------- */
+  // pilotes : équipements pilotés par l'armoire ; REG : installations de la régulation ; renvoie [[installation, n°, logique]]
+  function logique(pilotes, REG, { permutation = 168, noms = {} } = {}) {
+    const out = [], P = id => ((REG.installations || []).find(x => x.noteId === id) || {}).params || [];
+    const idDe = q => String(q.src || '').split(':')[0], tous = pilotes.map(q => q.designation || '').join(' ');
+    const n = rep => noms[rep] || rep, ajoute = (inst, l) => l.filter(Boolean).forEach((t, i) => out.push([inst, String(i + 1), t]));
+    const gens = pilotes.filter(q => q.type === 'generateur' || q.type === 'pac');
+    const te = pilotes.find(q => /extérieur/i.test(q.designation || '') && (q.type === 'sonde' || q.regulation === 'sonde'));
+    const tdg = pilotes.find(q => /départ général|collecteur|découplage/i.test(q.designation || '') && (q.type === 'sonde' || q.regulation === 'sonde'));
+    const params = gens.length ? P(idDe(gens[0])) : [];
+    if (gens.length >= 2) ajoute('Cascade des générateurs', [
+      `Demande de chaleur si un circuit ou l'ECS demande ; sinon générateurs à l'arrêt.`,
+      `Générateur pilote = celui qui a le moins d'heures de marche ; permutation chaque semaine (lundi 10 h).`,
+      `Enclenchement du pilote : pompe primaire en marche, retour de marche contrôlé (30 s), puis autorisation (${gens.map(q => n(q.rep)).join(', ')}).`,
+      `Si ${tdg ? n(tdg.rep) : 'la température de départ général'} reste sous la consigne (${val(params, /consigne de départ de la production/i, 'loi d\'eau')}) de plus de 5 °C pendant 10 min : enclenchement du générateur suivant.`,
+      `Si elle dépasse la consigne de plus de 5 °C pendant 5 min : délestage du dernier enclenché ; sa pompe s'arrête 3 min après (post-circulation).`,
+      `Un générateur en défaut sort de la séquence, le suivant prend le relais ; alarme P2.`]);
+    else if (gens.length) ajoute(`Production (${gens[0].designation || gens[0].rep})`, [
+      `Autorisation de ${n(gens[0].rep)} si un circuit ou l'ECS demande ; consigne de départ ${val(params, /consigne de départ de la production/i, 'selon la loi d\'eau')}.`,
+      'Arrêt sur fin de demande, post-circulation de la pompe primaire 3 min.', 'Défaut : alarme P2, sécurités câblées en dur (coupure indépendante de l\'automate).']);
+    // Pompes doubles et pompes de circuit
+    const grp = [...new Set(pilotes.filter(q => q.groupe).map(q => q.groupe))];
+    if (grp.length) ajoute('Pompes doubles', [
+      `Une seule pompe en service par groupe (${grp.join(', ')}) ; permutation toutes les ${permutation} h de marche, avec 5 s de recouvrement.`,
+      'Défaut ou discordance (ordre sans retour de marche sous 30 s) de la pompe en service : bascule immédiate sur l\'autre et alarme P2.']);
+    const circ = pilotes.filter(q => q.type === 'pompe' && !q.groupe && !/primaire|bouclage|ecs/i.test(q.designation || ''));
+    if (circ.length) ajoute('Pompes de circuit', [
+      `Marche si le programme horaire du circuit est en occupation (relance comprise)${te ? `, ou si ${n(te.rep)} < 3 °C (hors gel, hystérésis 1 K)` : ''}.`,
+      'Arrêt hors occupation après fermeture de la vanne du circuit ; dégommage 30 s chaque lundi 10 h si arrêtée depuis 7 jours.']);
+    pilotes.filter(q => ['v3p', 'v010', 'v010r'].includes(q.regulation) && !/ecs|ballon/i.test(q.designation || '')).forEach(q => {
+      const circuit = String(q.designation || '').replace(/^(Vanne de régulation|Vanne)\s*/i, '').trim(), p = P(idDe(q)).filter(x => /loi d'eau|pente|consigne/i.test(x.libelle) && (!circuit || x.libelle.includes(circuit.split(' ')[0])));
+      const loi = p.some(x => /loi d'eau|pente/i.test(x.libelle)), txt = p.map(x => `${x.libelle.replace(/^Loi d'eau [^:]*: /, '')} ${String(x.valeur).replace('.', ',')} ${x.unite || ''}`.trim()).join(' ; ');
+      ajoute(`Circuit ${circuit || q.rep}`, [loi ? `Loi d'eau sur ${te ? n(te.rep) : 'la température extérieure'} : ${txt}.` : `Consigne : ${txt || 'selon l\'analyse fonctionnelle'}.`,
+        `${n(q.rep)} régule la température de départ (PI, bande 20 K, intégrale 240 s) ; réduit de 4 °C hors occupation, hors gel toujours actif.`]);
+    });
+    // ECS
+    const ecs = pilotes.filter(q => /\becs\b|ballon|bouclage/i.test(q.designation || ''));
+    if (ecs.length) {
+      const pe = P(idDe(ecs[0])), cons = val(pe, /stockage/i, '60 °C');
+      ajoute('ECS', [`Charge du ballon quand sa température passe sous ${cons} − 5 K ; arrêt à ${cons}.`,
+        'Pendant la charge : pompe primaire ECS en marche, priorité ECS sur les circuits de chauffage (consigne de production portée à 70 °C au moins).',
+        ecs.some(q => /bouclage/i.test(q.designation || '')) ? 'Pompe de bouclage en marche permanente ; retour de bouclage ≥ 50 °C (alarme sinon).' : 'Bouclage : retour ≥ 50 °C à contrôler.',
+        `Montée en température anti-légionelle ${val(pe, /légionelle/i, '70 °C')} pendant 1 h, fréquence selon le carnet sanitaire.`]);
+    }
+    // CTA (change-over si le réseau est réversible)
+    const cta = pilotes.filter(q => q.type === 'cta' || /^cta\b|centrale de traitement/i.test(q.designation || ''));
+    if (cta.length) {
+      const co = /change-over|réversible|reversible|2 tubes/i.test(tous), pc = P(idDe(cta[0]));
+      ajoute(`CTA${cta[0].designation ? ` (${String(cta[0].designation).replace(/^.*— /, '').replace(/\s*\(.*\)$/, '')})` : ''}`, [
+        co ? 'Mode chaud si la température d\'eau arrivée batterie > 30 °C, froid si < 18 °C, sinon le dernier mode est gardé ; inversion uniquement vanne de batterie fermée.' : '',
+        'Démarrage : registres air neuf / rejet ouverts (fin de course), attente 60 s ; ventilateur de reprise puis de soufflage à 10 s d\'écart ; contrôle des pressostats sous 30 s.',
+        `Régulation de la température (reprise ou ambiance) : ${val(pc, /soufflage hiver|confort/i, '20 °C')} en chaud${val(pc, /soufflage été|rafraîchissement/i, '') ? `, ${val(pc, /soufflage été|rafraîchissement/i, '')} en froid` : ''} ; soufflage limité entre 16 et 30 °C ; séquence récupérateur ou volet de mélange, puis batterie.`,
+        'Débits : pressions de gaine soufflage et reprise tenues par la vitesse des ventilateurs (consignes relevées à l\'équilibrage) ; CO₂ > 1 000 ppm : débits augmentés progressivement.',
+        `Arrêt : ventilateurs arrêtés, registres fermés ; vanne de batterie chaude maintenue à 20 % si la température extérieure < 3 °C.`,
+        `Antigel (${val(pc, /antigel/i, '5 °C')}) ou incendie (SSI) : priorité absolue, ventilateurs arrêtés, registres fermés, vanne chaude 100 % sur antigel.`]);
+    }
+    // Terminaux : ventilo-convecteurs, cassettes (vitesses, maître / esclave)
+    const term = pilotes.filter(q => q.type === 'ventilo' || /ventilo|cassette/i.test(q.designation || ''));
+    if (term.length) ajoute(`Terminaux (${term.length} : ${term.slice(0, 4).map(q => n(q.rep)).join(', ')}${term.length > 4 ? '…' : ''})`, [
+      'Mode chaud / froid lu sur la température d\'eau d\'arrivée (mêmes seuils que la production : chaud > 30 °C, froid < 18 °C) ; sans circulation, vannes ouvertes 2 min toutes les heures pour relire le mode.',
+      'Consigne : 20 °C en chaud, 24 °C en froid, plus le décalage occupant (± 2 °C) ; zone neutre entre les deux.',
+      'Chaud : vanne ouverte si l\'ambiance < consigne − 0,5 °C, fermée à consigne + 0,5 °C ; froid : l\'inverse.',
+      'Vitesse selon l\'écart à la consigne : PV jusqu\'à 1 °C, MV jusqu\'à 2 °C, GV au-delà ; 2 min au moins entre deux changements ; une seule vitesse à la fois (verrouillage câblé et logiciel).',
+      'Vanne ouverte seulement ventilateur en marche ; en chaud, ventilation retardée tant que l\'eau < 30 °C ; post-ventilation 2 min à l\'arrêt.',
+      'Plusieurs terminaux d\'une même pièce : maître / esclave, le thermostat du maître commande, les esclaves suivent (vitesse et vanne).',
+      'Contact de fenêtre ouvert ou hors programme horaire : arrêt (ou réduit) ; alarme condensats : seule la vanne du terminal concerné se ferme.']);
+    return out;
+  }
+  // Liste « À valider avant la saisie dans l'automate »
+  function aValider(pilotes, { wit = false, gtb = '' } = {}) {
+    const has = re => pilotes.some(q => re.test(`${q.type} ${q.designation || ''}`));
+    return [
+      wit ? 'Composition matérielle (UC, PLUG d\'E/S, embases, alimentations) validée avec Wit ou son distributeur.' : 'Composition matérielle de l\'automate (UC, cartes, alimentations) validée avec le fournisseur.',
+      wit ? 'Applications types REDY (chaufferie, CTA, ventilo-convecteurs) demandées à l\'assistance technique Wit.' : '',
+      has(/generateur|pac|chaudi/i) ? 'Générateurs : pilotage par contact + 0-10 V ou par bus Modbus / BACnet, échelle de la consigne relevée sur la notice.' : '',
+      'Lois d\'eau, consignes et régimes d\'eau confirmés par le bureau d\'études.',
+      has(/cta|ventilateur/i) ? 'Consignes de pression des CTA reprises du relevé d\'équilibrage ; scénario incendie validé avec le SSI.' : '',
+      has(/\becs\b|ballon|bouclage/i) ? 'Exigences ECS et fréquence des montées en température conformes au carnet sanitaire.' : '',
+      'Type de chaque sonde (PT1000, NTC, 0-10 V…) relevé et entrées configurées en conséquence.',
+      'Plannings réels d\'occupation, jours fériés et vacances donnés par l\'exploitant.',
+      gtb ? `Objets publiés vers la GTB (${gtb}) et adresses validés avec l'intégrateur.` : '',
+      'Essais de chaque point (point à point) puis de chaque séquence, consignés dans les PV de mise en service.'].filter(Boolean);
+  }
+
   /* ---------- Cahier de programmation de l'automate (Wit ou autre) ---------- */
   // Pour chaque armoire en automate : entrées / sorties, boucles de régulation (mesure, sortie, consigne, réglages par
   // défaut), commandes des moteurs (retour de marche, défaut, permutation des doubles), horloges, consignes et paramètres,
@@ -205,6 +331,22 @@ const Gtb = (() => {
   const ENTETES_CAHIER = ['Repère', 'Désignation', 'Entrée(s)', 'Sortie(s)', 'Réglages / consignes', 'Remarque'];
   const TEMPO = { 'P1 (sécurité)': '0 s', 'P2 (défaut)': '30 s', 'P3 (maintenance)': '5 min' };
   // ctx : { arm: [{ rep, techno, adresses, pts, eqs }], eqs, REG, echange, permutation, gtb, devices }
+  // Action automatique d'une alarme (d'après l'équipement et la nature du défaut)
+  function actionAlarme(lib, q, prio) {
+    const t = `${lib} ${q.designation || ''}`;
+    if (q.type === 'generateur' || q.type === 'pac') return 'générateur retiré de la cascade, le suivant prend le relais';
+    if (/antigel/i.test(t)) return 'ventilateurs arrêtés, registres fermés, vanne batterie chaude 100 %';
+    if (/incendie|ssi|dad/i.test(t)) return 'scénario SSI (arrêt ou désenfumage), prioritaire sur tout';
+    if (q.type === 'securite' || q.regulation === 'securite' || SECU_EQ.test(q.designation || '') || /sécurité/.test(prio || '')) return 'coupure câblée en dur (chaîne de sécurité), report et réarmement sur site';
+    if (/condensat/i.test(t)) return 'vanne du terminal concerné fermée';
+    if (/encrass|filtre/i.test(t)) return '— (maintenance)';
+    if (q.groupe) return 'bascule sur la pompe de secours du groupe';
+    if (q.type === 'pompe' && /primaire/i.test(q.designation || '')) return 'générateur associé retiré de la cascade, alarme';
+    if (q.type === 'pompe') return 'commande retombée, circuit en défaut (hors gel assuré par les autres circuits)';
+    if (q.type === 'cta' || q.type === 'ventilateur') return 'arrêt de la CTA / du ventilateur, registres fermés';
+    if (q.type === 'ventilo') return 'terminal arrêté, vanne fermée';
+    return '—';
+  }
   function cahier(ctx) {
     const REG = ctx.REG || { installations: [] }, perm = num(ctx.permutation, 168);
     const nomInst = q => { const id = String(q.src || '').split(':')[0], x = REG.installations.find(y => y.noteId === id); return x ? x.titre : ''; };
@@ -212,9 +354,23 @@ const Gtb = (() => {
       const adr = (rep, type) => (a.adresses.find(x => x[2] === rep && (!type || x[4] === type)) || [])[0] || '';
       const adrs = (rep, type) => a.adresses.filter(x => x[2] === rep && x[4] === type).map(x => `${x[0]} (${String(x[3]).split(' — ')[0]})`).join(', ');
       const pilotes = (ctx.eqs || []).filter(q => q.pilote && q.pilote.rep === a.rep), sections = [];
-      // Entrées / sorties câblées (échelle à paramétrer)
+      // Noms des points (préfixe d'installation), synthèse des E/S par installation avec 20 % de réserve
+      const noms = nomsPoints(a.pts), nomDe = new Map(a.pts.map((p, i) => [`${p[0]}|${p[1]}|${p[2]}`, noms[i]])), ptDe = new Map(a.pts.map(p => [`${p[0]}|${p[1]}|${p[2]}`, p]));
+      const nomRep = {}; a.pts.forEach((p, i) => { if (!nomRep[p[0]]) nomRep[p[0]] = `${installationPoint(p).prefixe}_${propre(p[0])}`; });
+      const groupes = new Map();
+      a.pts.forEach(p => { const k = installationPoint(p).nom, g = groupes.get(k) || { STOR: 0, ETOR: 0, SA: 0, EA: 0, Bus: 0 }; if (g[p[2]] !== undefined) g[p[2]]++; groupes.set(k, g); });
+      const tot = { STOR: 0, ETOR: 0, SA: 0, EA: 0, Bus: 0 }; groupes.forEach(g => Object.keys(tot).forEach(k => { tot[k] += g[k]; }));
+      const T5 = ['STOR', 'ETOR', 'SA', 'EA', 'Bus'];
+      sections.push({ titre: 'Synthèse des entrées / sorties', entetes: ['Installation', 'Sorties TOR (DO)', 'Entrées TOR (DI)', 'Sorties 0-10 V (AO)', 'Entrées analogiques (AI)', 'Points bus'],
+        intro: `${tot.STOR} DO, ${tot.ETOR} DI, ${tot.SA} AO et ${tot.EA} AI câblées${tot.Bus ? `, ${tot.Bus} point(s) bus` : ''} ; ${T5.slice(0, 4).map(k => Math.ceil(tot[k] * 1.2)).join(' / ')} avec 20 % de réserve. Préfixes : ${[...new Set(a.pts.map(p => `${installationPoint(p).prefixe}_ ${installationPoint(p).nom.toLowerCase()}`))].join(', ')}.`,
+        lignes: [...[...groupes].filter(([, g]) => T5.some(t => g[t])).map(([k, g]) => [k, ...T5.map(t => String(g[t]))]), ['Total', ...T5.map(t => String(tot[t]))], ['Avec 20 % de réserve', ...T5.map(t => (t === 'Bus' ? '—' : String(Math.ceil(tot[t] * 1.2))))]] });
+      // Entrées / sorties câblées : nom du point, unité / états, échelle à paramétrer
       const echelle = x => (x[4] === 'EA' ? (/temp|sonde|départ|retour|extérieur/i.test(x[3]) ? 'PT1000 ou 0-10 V, −50 à +150 °C' : '0-10 V / 4-20 mA, échelle selon le capteur') : x[4] === 'SA' ? '0-10 V = 0-100 %' : x[4] === 'ETOR' ? 'contact sec, 1 = défaut / marche' : x[4] === 'STOR' ? 'relais, 1 = marche / ouverture' : '');
-      sections.push({ titre: 'Entrées / sorties', lignes: a.adresses.filter(x => x[2] && x[2] !== '—' && ['EA', 'SA', 'ETOR', 'STOR'].includes(x[4])).map(x => [x[2], x[3], ['EA', 'ETOR'].includes(x[4]) ? `${x[0]} · ${x[1]}` : '', ['SA', 'STOR'].includes(x[4]) ? `${x[0]} · ${x[1]}` : '', echelle(x), x[5] || '']) });
+      const es = a.adresses.filter(x => x[2] && x[2] !== '—' && ['EA', 'SA', 'ETOR', 'STOR'].includes(x[4])).map(x => { const k = `${x[2]}|${x[3]}|${x[4]}`, p = ptDe.get(k) || [x[2], x[3], x[4], a.rep, '', '', x[3], x[3], '', '']; return { x, p, nom: nomDe.get(k) || nomPoint(p) }; });
+      const ordre = [...new Set(es.map(e => installationPoint(e.p).prefixe))];
+      es.sort((u, v) => ordre.indexOf(installationPoint(u.p).prefixe) - ordre.indexOf(installationPoint(v.p).prefixe));
+      sections.push({ titre: 'Entrées / sorties', entetes: ['Nom du point', 'Repère', 'Libellé', 'Type', 'Adresse · bornes', 'Unité / états', 'Signal / échelle', 'Remarque'],
+        lignes: es.map(({ x, p, nom }) => [nom, x[2], x[3], TYPE_ES[x[4]] || x[4], `${x[0]} · ${x[1]}`, etats(p), echelle(x), x[5] || '']) });
       // Boucles de régulation
       const sondes = pilotes.filter(q => ['sonde'].includes(q.type) || q.regulation === 'sonde');
       const no = r => (/(\d+)$/.exec(String(r)) || [])[1];
@@ -255,17 +411,25 @@ const Gtb = (() => {
         ['RS', 'Reprise secteur', 'retour tension', 'tous les départs', 'redémarrages échelonnés de 10 s', '']] });
       // Alarmes, historiques et comptages (table d'échange)
       const ech = (ctx.echange || []).filter(l => l[0] === a.rep);
-      sections.push({ titre: 'Alarmes', lignes: ech.filter(l => l[10]).map(l => [l[2], l[3], l[8] ? `${l[6]} ${l[7]} · ${l[8]}` : l[6], '', `priorité ${l[10]}, temporisation ${TEMPO[l[10]] || '30 s'}${l[13] || l[14] ? `, seuils ${l[13] || '—'} / ${l[14] || '—'} ${l[9] || ''}` : ''}`, 'acquittement depuis la GTB ; report défaut général']) });
+      const nomEch = l => l[12] || `${l[2]}`;
+      sections.push({ titre: 'Alarmes', entetes: ['Nom du point', 'Alarme', 'Condition', 'Tempo', 'Priorité', 'Action automatique'], lignes: ech.filter(l => l[10]).map(l => {
+        const q = pilotes.find(y => y.rep === l[2]) || (ctx.eqs || []).find(y => y.rep === l[2]) || {};
+        const cond = l[13] || l[14] ? [l[13] ? `< ${l[13]} ${l[9] || ''}`.trim() : '', l[14] ? `> ${l[14]} ${l[9] || ''}`.trim() : ''].filter(Boolean).join(' ou ') : /^B/.test(l[6]) ? `= ${/sécurité/.test(l[10]) ? 'Alarme' : 'Défaut'}` : 'hors plage';
+        return [nomEch(l), q.designation && !String(l[3]).includes(q.designation) ? `${l[3]} — ${q.designation}` : l[3], cond, TEMPO[l[10]] || '30 s', l[10], actionAlarme(l[3], q, l[10])];
+      }) });
+      const lg = logique(pilotes, REG, { permutation: perm, noms: nomRep });
+      if (lg.length) sections.push({ titre: 'Logique de fonctionnement pas à pas', entetes: ['Fonction', 'Étape', 'Logique'], lignes: lg });
       sections.push({ titre: 'Historiques et comptages', lignes: ech.filter(l => l[11]).map(l => [l[2], l[3], `${l[6]} ${l[7]}`, '', l[11], l[5] === 'TCP' ? 'conservation 5 ans (décret BACS)' : '']) });
-      sections.push({ titre: 'Communication', lignes: [[`Device ${ech[0] ? ech[0][1] : '—'}`, `Automate de l'armoire ${a.rep}`, ctx.gtb || 'protocole GTB à définir', '', `${ech.length} objet(s) publiés (voir la table d'échange)`, 'nommage des objets : ARMOIRE_REPÈRE_FONCTION'],
+      sections.push({ titre: 'Communication', lignes: [[`Device ${ech[0] ? ech[0][1] : '—'}`, `Automate de l'armoire ${a.rep}`, ctx.gtb || 'protocole GTB à définir', '', `${ech.length} objet(s) publiés (voir la table d'échange)`, ctx.nommage === 'armoire' ? 'nommage des objets : ARMOIRE_REPÈRE_FONCTION' : 'nommage des objets : INSTALLATION_REPÈRE_FONCTION (CH_, ECS_, CTA_…)'],
         ...pilotes.filter(q => q.regulation === 'bus').map(q => [q.rep, q.designation || q.rep, q.protocole || 'Modbus RTU / BACnet', '', 'adresse esclave et vitesse à relever sur l\'équipement', `${a.pts.filter(p => p[0] === q.rep && p[2] === 'Bus').length} point(s) lus / écrits`])] });
       if (a.wit) sections.unshift({ titre: 'ULI Wit REDY : ressources et matériel', lignes: [
         ['UC', a.wit.uc[0], `${a.pts.length} point(s)`, '', `taille ${a.wit.taille[0]} : ${a.wit.taille[1]} ressources (${a.wit.ressources} estimées)`, 'ressource = point d\'information, point de pilotage ou processus (catalogue Wit)'],
         ...a.chassis.flatMap(c => c.modules.map(m => [`${c.nom}.${m.emplacement}`, `PLUG ${m.nom} (${m.ref})`, m.type === 'ETOR' || m.type === 'EA' ? `${m.utilisees}/${m.voies} voie(s)` : '', m.type === 'STOR' || m.type === 'SA' ? `${m.utilisees}/${m.voies} voie(s)` : m.type === 'Bus' ? `${m.utilisees} compteur(s)` : '', `embase ${c.embase[0]}`, m.lib || '']))] });
+      sections.push({ titre: 'À valider avant la saisie dans l\'automate', entetes: ['Fait', 'À valider'], cases: true, lignes: aValider(pilotes, { wit: !!a.wit, gtb: ctx.gtb }).map(t => ['☐', t]) });
       return { armoire: a.rep, sections: sections.filter(x => x.lignes.length) };
     });
   }
 
-  return { cahier, ENTETES_CAHIER, synoptique, exporter, bacs, echange, ENTETES_ECHANGE, csv, comptages, essais, essai, ENTETES_ESSAIS, sequences };
+  return { cahier, ENTETES_CAHIER, logique, aValider, actionAlarme, nomPoint, nomsPoints, etats, installationPoint, synoptique, exporter, bacs, echange, ENTETES_ECHANGE, csv, comptages, essais, essai, ENTETES_ESSAIS, sequences };
 })();
 if (typeof module !== 'undefined') module.exports = Gtb;
