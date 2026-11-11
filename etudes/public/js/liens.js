@@ -408,7 +408,8 @@ const Liens = ((N, Sc) => {
       const nouv = couvertParCircuit(etude, pid);
       circuitsDeAnnexe(etude.notes, note).filter(r => [...couvertParCircuit(etude, r.pid)].some(b => nouv.has(b))).forEach(r => { delete r.pid.entrees.circuits[r.i].annexe; });
     } else { const anc = circuitDeAnnexe(etude.notes, note); if (anc) delete anc.pid.entrees.circuits[anc.i].annexe; }
-    const cs = pid.entrees.circuits = pid.entrees.circuits || [];
+    // Circuits par défaut du schéma (jamais modifiés, donc pas encore enregistrés) gardés : on ajoute à ce que l'on voit
+    const cs = pid.entrees.circuits = pid.entrees.circuits || copie(N.defauts('pid').circuits || []);
     // CTA : la puissance du circuit est celle de ses batteries (plus celle d'un bilan)
     if (i >= 0 && cs[i]) { cs[i].annexe = note.id; if (note.type === 'cta') delete cs[i].bilan; return { pid, i }; }
     cs.push({ rep: repLibre(cs, String(note.titre || '').trim() || `C${cs.length + 1}`), emetteur: EMETTEUR_ANNEXE(note), P: '', regime: '', regulation: '3v', L: 0, annexe: note.id });
@@ -448,7 +449,7 @@ const Liens = ((N, Sc) => {
   // charge de la batterie repris et verrouillés ; il reste la longueur. Rend le repère de la branche.
   function brancherSurArbo(etude, cta, arbo, cle) {
     const x = batteriesLibres(etude, cta, arbo).find(y => y.cle === cle); if (!x) return null;
-    const tr = arbo.entrees.troncons = arbo.entrees.troncons || [], reps = new Set(tr.map(t => String(t.rep || '').trim()));
+    const tr = arbo.entrees.troncons = arbo.entrees.troncons || copie(N.defauts('arbo').troncons || []), reps = new Set(tr.map(t => String(t.rep || '').trim()));
     const racine = tr.find(t => String(t.rep || '').trim() && !String(t.amont || '').trim() && !t.emetteur);
     let rep = x.rep, k = 2; while (reps.has(rep)) rep = `${x.rep}-${k++}`;
     tr.push({ rep, amont: racine ? racine.rep : '', nom: x.nom, L: '', zeta: 5, tube: '', P: '', dpEm: '', emetteur: x.cle });
