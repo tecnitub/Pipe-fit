@@ -50,4 +50,11 @@ test('registre : un même équipement se place plusieurs fois (CTA, vase, ECS, g
   const g = R.ajouter(et, { type: 'generateur', fabricant: 'F', reference: 'G1', valeurs: {} });
   R.placer(et, g, 'pid:n1', { qte: 1 }, nn); R.placer(et, g, 'pid:n1', { qte: 1 }, nn);
   assert.strictEqual(et.notes[0].entrees.nGen, '2');
+  // Électricité et régulation : deux générateurs, deux CTA, une sonde par ballon ECS
+  const E = require('../etudes/public/js/electricite');
+  et.notes.push(nn('ecs'), nn('ecs'));
+  const eqs = E.equipementsEtude(et, L);
+  assert.strictEqual(eqs.filter(x => x.type === 'generateur').length, 2);
+  assert.strictEqual(eqs.filter(x => /^VS-/.test(x.rep)).length, 3);
+  assert.strictEqual(eqs.filter(x => /^TB-/.test(x.rep)).length, 2);
 });

@@ -1152,6 +1152,8 @@ const Electricite = ((N, Sc) => {
         if (v.Qs > 0 && Number.isFinite(v.PvS)) ajout('vs', { metre: cleAero, rep: `${cta ? 'VS' : 'VI'}-N${ni + 1}`, designation: `Ventilateur de ${cta ? 'soufflage' : 'insufflation'} — ${nom}`, type: 'ventilateur', P: Math.max(0.1, kW(v.PvS * 1.15)), tension: v.PvS > 2200 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur' });
         if (v.Qr > 0 && Number.isFinite(v.PvR)) ajout('vr', { metre: cleAero, rep: `${cta ? 'VR' : 'VE'}-N${ni + 1}`, designation: `Ventilateur ${cta ? 'de reprise' : 'd\'extraction'} — ${nom}`, type: 'ventilateur', P: Math.max(0.1, kW(v.PvR * 1.15)), tension: v.PvR > 2200 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur' });
       }
+      // Production d'ECS : une sonde par ballon (chaque calcul ECS est un ballon ou un échangeur)
+      if (n.type === 'ecs') ajout('tb', { rep: `TB-N${ni + 1}`, designation: `Sonde du ballon ECS — ${titre}`, type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
       if (n.type === 'cta' && Number.isFinite(v.PvS)) {
         // Ventilateurs : puissance saisie, sinon celle de la fiche technique de la centrale, sinon calculée (+ 15 %)
         const pS = kwFiche(es.PelecVS) ?? kwFiche(fiche.PelS), pR = kwFiche(es.PelecVR) ?? kwFiche(fiche.PelR), nomF = fiche.fabricant || fiche.reference ? ` — ${[fiche.fabricant, fiche.reference].filter(Boolean).join(' ')}` : '';
