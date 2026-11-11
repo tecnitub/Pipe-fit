@@ -469,6 +469,7 @@ Vues.etude = {
     const et = etudeDe(id);
     if (!et) return '<p class="erreur">Étude introuvable.</p><p><a href="#/">Retour aux études</a></p>';
     if (noteId === 'comparer') return Vues.comparer.html(et, ids);
+    if (noteId === 'installation') return installationHtml(et);
     if (noteId) return Vues.note.html(et, noteId);
     // Études faites avant le registre : fiches déjà chargées inscrites au registre des équipements
     if (!et.modele && typeof Registre !== 'undefined' && !et.equipements) { try { if (Registre.collecter(et)) enregistrer(et); else et.equipements = []; } catch (e) { /* étude incomplète */ } }
@@ -502,7 +503,7 @@ Vues.etude = {
       ${typeof carteMateriel === 'function' ? carteMateriel(et) : ''}
       ${carteDocuments(et)}
       ${tableauBordHtml(et)}
-      <div class="barre"><h2>Calculs <span class="compte">${et.notes.length}</span></h2><button id="ajout">+ Ajouter un calcul</button><button class="secondaire" id="vrac" title="Charger toutes les fiches techniques du chantier d'un coup, puis les répartir dans les calculs (terminaux, CTA, production, pompes, vase, ballon, bouches, robinetterie…) sans ressaisie">📥 Matériel en vrac</button><span class="espace"></span>
+      <div class="barre"><h2>Calculs <span class="compte">${et.notes.length}</span></h2><button id="ajout">+ Ajouter un calcul</button>${et.notes.some(n => ['pid', 'arbo', 'terminaux', 'cta', 'ecs'].includes(n.type)) ? `<a class="secondaire btn" id="installation" href="#/etude/${et.id}/installation" title="Schémas de principe, circuits, réseaux arborescents, branches et consommateurs d'eau : raccordements et contrôles de cohérence">💧 Installation hydraulique</a>` : ''}<button class="secondaire" id="vrac" title="Charger toutes les fiches techniques du chantier d'un coup, puis les répartir dans les calculs (terminaux, CTA, production, pompes, vase, ballon, bouches, robinetterie…) sans ressaisie">📥 Matériel en vrac</button><span class="espace"></span>
         ${et.notes.length ? '<button class="secondaire" id="fiches-mes" title="Une fiche par équipement (générateurs, pompes, terminaux, CTA…) : points de contrôle, valeurs attendues de l\'étude, mesures à relever">📋 Fiches de mise en service</button>' : ''}
         ${et.notes.length > 1 ? '<button class="secondaire" id="comparer" disabled title="Cocher au moins deux calculs">⚖️ Comparer la sélection</button>' : ''}</div>
       ${et.notes.length ? `<div class="notes">${et.notes.map((n, i) => { const t = Notes.TYPES[n.type], r = Liens.calculer(et, n), err = r.alertes.filter(x => x.niveau === 'erreur').length, att = r.alertes.filter(x => x.niveau === 'attention').length;
@@ -515,6 +516,7 @@ Vues.etude = {
     const et = etudeDe(id);
     if (!et) return;
     if (noteId === 'comparer') return Vues.comparer.bind(root, et, ids);
+    if (noteId === 'installation') return lierInstallation(root, et);
     if (noteId) return Vues.note.bind(root, et, noteId);
     const fm = root.querySelector('#fiches-mes');
     if (fm) fm.onclick = () => dialogueFichesMes(et);
@@ -802,6 +804,47 @@ function batteriesCtaHtml(et, n) {
   const ok = bats.every(x => x.lien);
   return `<div class="bandeau-lien">🧭 Raccordement des batteries à eau de la CTA${ok ? ' : complet' : ''}<ul style="margin:.3em 0">${bats.map(ligne).join('')}</ul>
     <span class="muted petit">Branche d'un réseau arborescent : puissance, débit et pertes de charge de la batterie remplissent la branche, puis remontent avec le réseau (départ du schéma de principe). Circuit du schéma : la CTA est seule sur son circuit.</span></div>`;
+}
+// Installation hydraulique de l'étude : contrôles de cohérence, consommateurs à raccorder, puis l'arbre complet
+// schémas de principe (production) → circuits → réseaux arborescents → branches → consommateurs
+function installationHtml(et) {
+  const A = Installation.arbre(et), nf = Notes.nf, parCle = new Map(A.consommateurs.map(c => [c.cle, c]));
+  const lien = (id, txt) => `<a href="#/etude/${et.id}/${id}">${esc(txt)}</a>`;
+  const val = (x, u, d = 1) => (x === null || x === undefined || !Number.isFinite(x) ? '' : `${nf(x, d)} ${u}`);
+  const mesures = c => [val(c.P, 'kW'), val(c.Q, 'm³/h', 2), val(c.dp, 'kPa'), c.regime].filter(Boolean).map(esc).join(' · ');
+  const conso = c => `<span class="inst-conso">${({ circuit: '🔥', cta: '🌀', ecs: '🚿', arbo: '🌳', reseau: '🔁' })[c.type] || (c.saison === 'froid' ? '❄️' : '🌡️')} <strong>${esc(c.libelle)}</strong>
+    <span class="muted petit">${lien(c.source.id, c.source.libelle)}${mesures(c) ? ` · ${mesures(c)}` : ''}</span>${c.raccordements.length > 1 ? ' <span class="badge erreur">raccordé deux fois</span>' : ''}${c.raccordements.some(r => r.incompatible) ? ' <span class="badge erreur">régime incompatible</span>' : ''}</span>`;
+  const reseau = r => `<li class="inst-reseau">🌳 ${lien(r.note, r.libelle)} <span class="muted petit">réseau ${r.saison === 'froid' ? 'd\'eau glacée' : 'd\'eau chaude'} · ${[val(r.P, 'kW'), val(r.Q, 'm³/h', 2), val(r.hmt, 'mCE', 2)].filter(Boolean).join(' · ')}</span>
+    ${r.branches.length ? `<ul class="inst-branches">${r.branches.map(b => { const c = b.consommateur && parCle.get(b.consommateur);
+      return `<li style="--niv:${Math.min(b.niveau, 6)}"><span class="muted">${esc(b.rep)}</span> ${c ? conso(c) : `${esc(b.nom)}${b.emetteur ? ' <span class="avert petit">(émetteur relié introuvable)</span>' : ''}${b.P ? ` <span class="muted petit">${val(b.P, 'kW')} saisis</span>` : ''}`}</li>`; }).join('')}</ul>` : '<p class="muted petit">Aucune branche.</p>'}</li>`;
+  const schema = s => `<details class="carte inst-pid" open><summary>🏭 ${lien(s.note, s.libelle)}</summary>
+    <p class="petit">${esc(s.nGen > 1 ? `${s.nGen} × ` : '')}${esc(s.generateur.toLowerCase())}${s.Pgen ? ` de ${nf(s.Pgen, 0)} kW` : ''} · ${esc(s.regime)}<br>
+      Production <strong>${val(s.Pprod, 'kW', 0) || '—'}</strong> · appelée <strong class="${s.Pdem > s.Pprod ? 'manque' : ''}">${val(s.Pdem, 'kW', 0) || '—'}</strong></p>
+    ${s.circuits.length ? `<ul class="inst-arbre">${s.circuits.map(c => `<li><strong>Circuit ${esc(c.rep)}</strong> <span class="muted petit">${esc(c.emetteur)} · ${esc(c.montage)}${c.regime ? ` · ${esc(c.regime)}` : ''} · ${[val(c.P, 'kW'), val(c.Q, 'm³/h', 2), val(c.hmt, 'mCE', 2)].filter(Boolean).join(' · ')}</span>
+      ${c.annexe && c.annexe.type !== 'arbo' ? `<div class="petit">Réseau annexe : ${lien(c.annexe.id, c.annexe.libelle)}</div>` : ''}
+      ${c.consommateurs.filter(k => k !== `${s.note}|${c.i}`).length ? `<ul>${c.consommateurs.filter(k => k !== `${s.note}|${c.i}`).map(k => `<li>${conso(parCle.get(k))}</li>`).join('')}</ul>`
+        : c.consommateurs.length ? '<div class="muted petit">Consommateur direct (puissance saisie dans le schéma)</div>' : ''}
+      ${c.reseau ? `<ul>${reseau(c.reseau)}</ul>` : ''}</li>`).join('')}</ul>` : '<p class="muted petit">Aucun circuit.</p>'}</details>`;
+  const nr = A.nonRaccordes, ctl = A.controles;
+  const aRaccorder = c => { const opts = c.cibles || [];
+    return `<li class="inst-libre">${conso(c)}<span class="inst-raccord">${opts.length ? `<select data-inst-sel="${esc(c.cle)}" aria-label="Raccorder ${esc(c.libelle)} à"><option value="">Raccorder à…</option>${opts.map(o => `<option value="${esc(o.valeur)}">${esc(o.libelle)}</option>`).join('')}</select>
+      <button class="secondaire petit" data-inst-raccorder="${esc(c.cle)}">Raccorder</button>` : `<span class="muted petit">Aucun réseau ni circuit ${c.saison === 'froid' ? 'd\'eau glacée' : 'd\'eau chaude'} disponible : créez un schéma de principe ou un réseau arborescent.</span>`}</span></li>`; };
+  return `<div class="barre"><a href="#/etude/${et.id}" class="secondaire btn petit">← ${esc(et.objet)}</a><h1>💧 Installation hydraulique</h1></div>
+    <p class="muted petit">${A.consommateurs.length} consommateur(s) d'eau dans l'étude, ${A.consommateurs.length - nr.length} raccordé(s). Un raccordement se fait par une branche de réseau arborescent ou un circuit de schéma de principe : puissances, débits et pertes de charge remontent jusqu'à la production.</p>
+    <div class="carte"><h3 style="margin-top:0">Contrôles de cohérence</h3><ul class="a-faire">${ctl.map(x => `<li class="${x.niveau}">${x.note ? `${esc(x.texte)} ${lien(x.note, 'ouvrir')}` : esc(x.texte)}</li>`).join('')}</ul></div>
+    ${nr.length ? `<div class="carte"><h3 style="margin-top:0">Consommateurs non raccordés <span class="compte">${nr.length}</span></h3><ul class="inst-libres">${nr.map(aRaccorder).join('')}</ul></div>` : ''}
+    <h2>Production et distribution</h2>
+    ${A.schemas.length ? A.schemas.map(schema).join('') : '<p class="muted">Aucun schéma de principe dans l\'étude.</p>'}
+    ${A.reseaux.length ? `<div class="carte"><h3 style="margin-top:0">Réseaux arborescents non reliés à un schéma</h3><ul class="inst-arbre">${A.reseaux.map(reseau).join('')}</ul></div>` : ''}`;
+}
+function lierInstallation(root, et) {
+  root.querySelectorAll('[data-inst-raccorder]').forEach(b => b.onclick = () => {
+    const cle = b.dataset.instRaccorder, sel = [...root.querySelectorAll('[data-inst-sel]')].find(x => x.dataset.instSel === cle);
+    if (!sel || !sel.value) return toast('Choisissez d\'abord où raccorder ce consommateur.');
+    const r = Installation.raccorder(et, cle, sel.value);
+    if (!r.ok) return toast(r.texte, 6000);
+    enregistrer(et); avecFocus(() => App.render()); toast(r.texte, 6000);
+  });
 }
 function fichesInstallationHtml(et, n) {
   const l = Liens.fichesInstallation(et, n);

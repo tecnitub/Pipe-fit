@@ -169,3 +169,15 @@ ul.af { padding-left: 18px; font-size: 13.5px; display: grid; gap: 6px; }
 .cases-ligne summary { cursor: pointer; white-space: nowrap; }
 .cases-ligne[open] { min-width: 300px; }
 .cases-ligne .case { display: flex; gap: .4em; align-items: flex-start; font-weight: normal; font-size: .85em; }
+
+/* Installation hydraulique : arbre production → circuits → réseaux → branches → consommateurs */
+.inst-pid > summary { cursor: pointer; font-weight: 600; font-size: 1.05em; }
+.inst-arbre, .inst-arbre ul { list-style: none; margin: .3em 0; padding-left: 14px; border-left: 2px solid var(--bord); }
+.inst-arbre li { margin: .35em 0; overflow-wrap: anywhere; }
+.inst-branches { list-style: none; padding-left: 0; border-left: 0; }
+.inst-branches li { padding-left: calc(var(--niv, 0) * 14px); font-size: .93em; }
+.inst-conso .muted { display: inline; }
+.inst-libres { list-style: none; margin: 0; padding: 0; }
+.inst-libre { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--bord); overflow-wrap: anywhere; }
+.inst-raccord { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; max-width: 100%; }
+.inst-raccord select { max-width: min(420px, 100%); }
