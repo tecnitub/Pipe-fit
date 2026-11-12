@@ -336,6 +336,71 @@ test('DPGF à titres numérotés : désignations sur plusieurs lignes, variantes
   assert.deepStrictEqual(I.versElec(inv).filter(l => l.type === 'resistance').map(l => l.P), [1, 1, 3]);
 });
 
+// DPGF fictif : trois CTA (titre « [CTA n] », désignation sur deux lignes, unité « ens » suivie d'espaces, quantité « 1.0 »,
+// débit « AS/AR … m3 »), régulation de la CTA, ventilos par taille sous un parent écrit sur deux lignes, prestations et
+// accessoires sous des parents d'équipement, réseaux d'eau chaude / froide d'un chapitre de plomberie sanitaire
+const ctaFictive = k => [
+  [`6-${k + 2}`, `VENTILATION DOUBLE FLUX - GENERALE [CTA ${k}]`, '', '', '', ''],
+  [`6-${k + 2}-1`, 'Centrale de ventilation double flux', '', '', '', ''],
+  ['', `Centrale type DF-${k + 7} de MARQUE ou équivalent - AS/AR ${3000 + k * 190} m3`, '', '', '', ''],
+  ['', '- avec tous ses accessoires telle que décrite y compris batterie chaude et froide', 'ens  ', '1.0', 15000, 15000],
+  [`6-${k + 2}-2`, 'Régulation de la CTA', '', '', '', ''],
+  ['', 'Configuration des points CTA telle que décrite', 'ens', 1, 800, 800],
+  ['', 'Analyse fonctionnelle de la CTA', 'Ens.', 1, 400, 400],
+  [`6-${k + 2}`, `VENTILATION DOUBLE FLUX - GENERALE [CTA ${k}] - Total €HT`, '', '', '', 16200],
+];
+const DPGF_CTA = [
+  ['Article', 'Désignation', 'U', 'Qté', 'PU', 'PT'],
+  ['4', 'CHAUFFAGE', '', '', '', ''],
+  ['4-5-2-2', 'Ventilo convecteur 2 tubes / 2 fils', '', '', '', ''],
+  ['', 'Ventilo convecteur 2 tubes type VX P de marque ACME avec tous ses', '', '', '', ''],
+  ['', 'accessoires tel que décrit y compris résistance électrique :', '', '', '', ''],
+  ['', 'Taille 200', 'u', 3, 600, 1800], ['', 'Taille 300', 'u', 8, 600, 4800], ['', 'Taille 350', 'u', 6, 600, 3600],
+  ['', 'Taille 400', 'U', 2, 600, 1200], ['', 'Taille 450', 'u ', 14, 600, 8400],
+  ['4-5-2-2', 'Ventilo convecteurs 2 tubes / 2 fils- Total €HT', '', '', '', 19800],
+  ['4-5-2-3', 'Régulation', '', '', '', ''],
+  ['', 'Bouton de "relance confort" pour chaque ventilo-convecteur et aérotherme', 'ens', 20, 50, 1000],
+  ['4-6', 'Radiateurs', '', '', '', ''],
+  ['', 'Radiateurs fonte tel que décrit', '', '', '', ''],
+  ['', 'Type15 - l1400 - ht500 - ep200', 'u', 5, 400, 2000],
+  ['', 'Équilibrage et relevé de débits tel que décrit', 'ens', 1, 500, 500],
+  ['4-7', 'Accessoires hydrauliques', '', '', '', ''],
+  ['', 'Filtre à boue magnétique y compris vanne de chasse, pompe, vanne de réglage', 'u', 1, 900, 900],
+  ...ctaFictive(1), ...ctaFictive(2), ...ctaFictive(3),
+  ['9', 'PLOMBERIE SANITAIRE', '', '', '', ''],
+  ['9-1', 'RESEAU D\'ALIMENTATION EAU CHAUDE, EAU FROIDE', '', '', '', ''],
+  ['', 'Distribution d\'eau froide / eau chaude', 'ens', 1, 3000, 3000],
+  ['', 'Tube cuivre calorifugé ECS tel que décrit', '', '', '', ''],
+  ['', 'Ø 22', 'ml', 40, 30, 1200],
+  ['', 'Repérage du réseau par étiquette', 'ens', 1, 200, 200],
+  ['', 'Vanne d\'isolement et de vidange', 'u', 4, 40, 160],
+  ['9-2', 'Production d\'eau chaude sanitaire', '', '', '', ''],
+  ['', 'Ballon d\'eau chaude sanitaire électrique 200 L', 'u', 1, 900, 900],
+];
+
+test('DPGF à titres numérotés : CTA « [CTA n] », régulation, ventilos par taille, prestations, réseaux sanitaires', () => {
+  const { items, reseaux } = I.depuisDpgf(DPGF_CTA), g = k => items.filter(x => x.genre === k);
+  // Trois CTA, chacune avec son repère et son débit AS/AR ; leur régulation n'est pas une CTA
+  assert.deepStrictEqual(g('cta').map(x => [x.repere, x.Q, x.qte, x.details.batteries]), [1, 2, 3].map(k => [`CTA-${k}`, 3000 + k * 190, 1, { chaude: true, froide: true }]));
+  assert.ok(g('regulation').some(x => /^Configuration des points CTA/.test(x.designation)) && g('regulation').some(x => /^Analyse fonctionnelle/.test(x.designation)));
+  // Ventilo-convecteurs par taille : parent sur deux lignes, 2 tubes 2 fils, marque et type du parent, 33 unités
+  const vc = g('ventilo');
+  assert.deepStrictEqual(vc.map(x => [x.designation.replace(/^.* (Taille \d+)$/, '$1'), x.qte]), [['Taille 200', 3], ['Taille 300', 8], ['Taille 350', 6], ['Taille 400', 2], ['Taille 450', 14]]);
+  assert.strictEqual(vc.reduce((s, x) => s + x.qte, 0), 33);
+  assert.ok(vc.every(x => x.details.tubes === '2t' && x.details.batteries.elec && x.details.marque === 'ACME' && x.details.reference === 'VX P'));
+  assert.ok(!vc.some(x => /relance confort/.test(x.designation)), 'le bouton de relance confort est de la régulation');
+  // Prestations et accessoires : ni pompe, ni radiateur, ni production d'ECS
+  assert.deepStrictEqual(g('radiateurs').map(x => x.qte), [5]);
+  assert.strictEqual(g('pompe').length, 0, 'filtre à boue : accessoire');
+  assert.deepStrictEqual(g('ecs').map(x => x.designation), ['Ballon d\'eau chaude sanitaire électrique 200 L']);
+  assert.deepStrictEqual(items.map(x => x.genre).sort(), ['cta', 'cta', 'cta', 'ecs', 'radiateurs', ...Array(7).fill('regulation'), ...Array(5).fill('ventilo')].sort());
+  ['Équilibrage et relevé de débits', 'Filtre à boue magnétique', 'Repérage du réseau par étiquette', 'Vanne d\'isolement et de vidange'].forEach(t => assert.strictEqual(I.classer(t), null, t));
+  // Plomberie sanitaire : eau chaude / eau froide = ECS et plomberie, jamais du chauffage
+  assert.ok(reseaux.length && reseaux.every(r => ['plomberie', 'ecs'].includes(r.nature)), JSON.stringify(reseaux.map(r => [r.nom, r.nature])));
+  assert.ok(!reseaux.some(r => r.nature === 'chauffage'));
+  assert.strictEqual(I.natureReseau('Distribution d\'eau froide / eau chaude'), 'chauffage', 'hors chapitre de plomberie, la lecture reste celle du chauffage');
+});
+
 test('guide « Reste à faire » : ordre d\'une étude, étape suivante, sources des valeurs à vérifier, progression', () => {
   const { inv, reseaux } = lire();
   const et = { id: 'e1', objet: 'Maison de santé', notes: [], inventaire: inv, inventaireReseaux: reseaux, inventaireEcarts: I.ecarts(inv) };
