@@ -863,12 +863,50 @@ function installationHtml(et) {
     <p class="muted petit">${A.consommateurs.length} consommateur(s) d'eau dans l'étude, ${A.consommateurs.length - nr.length} raccordé(s). Un raccordement se fait par une branche de réseau arborescent ou un circuit de schéma de principe : puissances, débits et pertes de charge remontent jusqu'à la production.</p>
     <div class="carte"><h3 style="margin-top:0">Contrôles de cohérence</h3><ul class="a-faire">${ctl.map(x => `<li class="${x.niveau}">${x.note ? `${esc(x.texte)} ${lien(x.note, 'ouvrir')}` : esc(x.texte)}</li>`).join('')}</ul></div>
     ${nr.length ? `<div class="carte"><h3 style="margin-top:0">Consommateurs non raccordés <span class="compte">${nr.length}</span></h3><ul class="inst-libres">${nr.map(aRaccorder).join('')}</ul></div>` : ''}
+    ${ensembleHtml(et, A)}
     <h2>Production et distribution</h2>
     ${A.schemas.length ? A.schemas.map(schema).join('') : '<p class="muted">Aucun schéma de principe dans l\'étude.</p>'}
     ${A.reseaux.length ? `<div class="carte"><h3 style="margin-top:0">Réseaux arborescents non reliés à un schéma</h3><ul class="inst-arbre">${A.reseaux.map(reseau).join('')}</ul></div>` : ''}
     ${globalHtml}`;
 }
+// Schéma d'ensemble de l'installation (un dessin pour toute l'installation hydraulique) et documents de l'installation
+function ensembleHtml(et, A) {
+  let svg = '';
+  try { svg = Ensemble.svg(A, { titre: et.objet }); } catch (e) { svg = ''; }
+  return `<div class="carte inst-ensemble"><h3 style="margin-top:0">Schéma d'ensemble de l'installation</h3>
+    <div class="actions-ensemble"><button class="secondaire petit" id="ens-imprimer">🖨️ Imprimer (A3 paysage)</button><button class="secondaire petit" id="ens-pdf">📄 PDF A3</button><button class="secondaire petit" id="ens-dxf">📐 DXF</button><button class="secondaire petit" id="ens-af">📄 Analyse fonctionnelle de l'installation (Word)</button></div>
+    ${svg ? `<div class="defile-x ensemble-svg" role="img" aria-label="Schéma d'ensemble de l'installation hydraulique">${svg}</div>` : '<p class="muted petit">Schéma d\'ensemble indisponible (calcul incomplet).</p>'}
+    <p class="muted petit">Productions racines à gauche, puis circuits (pompe, montage, régime, puissance), schémas aval, réseaux et consommateurs. DXF : un calque par niveau.</p></div>`;
+}
+const nomFichierEtude = (et, prefixe) => `${prefixe}_${sansAccents(et.objet).slice(0, 40)}_Ind${sansAccents(et.indice) || 'A'}`;
+// Analyse fonctionnelle de l'installation complète (Word), par niveau, d'après l'arbre de l'installation et la régulation
+function telechargerAfInstallation(et) {
+  try {
+    const blocs = Docx.analyseInstallation({ arbre: Installation.arbre(et), installations: Regulation.contexte(et, Liens).installations, notes: et.notes,
+      affaire: [et.objet, et.client].filter(Boolean).join(' — '), indice: et.indice, date: et.date });
+    return Promise.resolve(telecharger(`${nomFichierEtude(et, 'AF_installation')}.docx`, Docx.build(blocs), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'))
+      .then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : 'Analyse fonctionnelle de l\'installation enregistrée (Word)')).catch(er => toast(er.message, 6000));
+  } catch (er) { toast(er.message, 6000); return null; }
+}
+// Impression du schéma d'ensemble : cadre caché, page A3 paysage, dessin ajusté à la page
+function imprimerSvgA3(svg, titre) {
+  const f = document.createElement('iframe');
+  f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
+  f.srcdoc = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${esc(titre)}</title><style>@page { size: A3 landscape; margin: 8mm; } html, body { margin: 0; } svg { width: 100%; height: auto; max-height: 277mm; }</style></head><body>${svg}</body></html>`;
+  f.onload = () => { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { toast('Impression impossible dans ce navigateur : utilisez le PDF A3.', 6000); } setTimeout(() => f.remove(), 60000); };
+  document.body.appendChild(f);
+}
 function lierInstallation(root, et) {
+  const ens = () => Ensemble.dessiner(Installation.arbre(et), { titre: et.objet });
+  const fin = p => Promise.resolve(p).then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : 'Schéma d\'ensemble enregistré')).catch(er => toast(er.message, 6000));
+  const bi = root.querySelector('#ens-imprimer'), bp = root.querySelector('#ens-pdf'), bd = root.querySelector('#ens-dxf'), ba = root.querySelector('#ens-af');
+  if (bi) bi.onclick = () => imprimerSvgA3(ens().svg, `Schéma d'ensemble — ${et.objet}`);
+  if (bp) bp.onclick = () => {
+    if (typeof PDFLib === 'undefined') return toast('Module PDF indisponible', 5000);
+    fin(schemaPdfA3(ens().svg).then(o => telecharger(`${nomFichierEtude(et, 'Schema_ensemble')}_A3.pdf`, o, 'application/pdf')));
+  };
+  if (bd) bd.onclick = () => fin(telecharger(`${nomFichierEtude(et, 'Schema_ensemble')}.dxf`, Dxf.depuisSvg(ens().svg, { polylignes: true }).octets, 'application/dxf'));
+  if (ba) ba.onclick = () => telechargerAfInstallation(et);
   root.querySelectorAll('[data-inst-raccorder]').forEach(b => b.onclick = () => {
     const cle = b.dataset.instRaccorder, sel = [...root.querySelectorAll('[data-inst-sel]')].find(x => x.dataset.instSel === cle);
     if (!sel || !sel.value) return toast('Choisissez d\'abord où raccorder ce consommateur.');
@@ -1049,7 +1087,7 @@ Vues.note = {
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-pompes" title="Une ligne par circuit pour saisir la pompe retenue et sa courbe (ou la lire sur la fiche du fabricant)">⚙️ Pompes retenues par circuit</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-rob" title="Pour chaque circuit sans robinetterie : vannes d\'isolement, vanne d\'équilibrage, filtre, manchettes, thermomètres ; à compléter avec les Kv des fiches">🔩 Robinetterie type par circuit</button><button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par circuit (repères, DN, fabricant, référence, fiche, ΔP) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
-        ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button><button class="secondaire" id="elec-csv">🔗 Table d\'échange GTB (CSV)</button><button class="secondaire" id="elec-profil">🏢 Préremplir les zones (étude + type de bâtiment)</button><button class="secondaire" id="elec-af">📄 Analyse fonctionnelle (Word)</button><button class="secondaire" id="elec-ede">🔗 Fichier EDE BACnet (intégrateur GTB)</button><button class="secondaire" id="elec-etiq">🏷️ Étiquettes de repérage</button><button class="secondaire" id="elec-devis-reg">💶 Chiffrer la régulation (devis Pipe-Fit)</button><button class="secondaire" id="elec-releves">📈 Analyser des relevés de la GTB</button><button class="secondaire" id="elec-achat-reg">🛒 Matériel de régulation : demande de prix</button><button class="secondaire" id="elec-reglees">↩️ Reprendre les valeurs réglées sur site</button><button class="secondaire" id="elec-pressions">📏 Reprendre les pressions des CTA (mises en service du chantier)</button><button class="secondaire" id="elec-cahier-docx">📄 Cahier de paramétrage (Word)</button><button class="secondaire" id="elec-cahier-xlsx">📑 Cahier (Excel, un onglet par rubrique)</button>' : ''}
+        ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button><button class="secondaire" id="elec-csv">🔗 Table d\'échange GTB (CSV)</button><button class="secondaire" id="elec-profil">🏢 Préremplir les zones (étude + type de bâtiment)</button><button class="secondaire" id="elec-af">📄 Analyse fonctionnelle (Word)</button><button class="secondaire" id="elec-af-inst">📄 Analyse fonctionnelle de l\'installation (Word)</button><button class="secondaire" id="elec-ede">🔗 Fichier EDE BACnet (intégrateur GTB)</button><button class="secondaire" id="elec-etiq">🏷️ Étiquettes de repérage</button><button class="secondaire" id="elec-devis-reg">💶 Chiffrer la régulation (devis Pipe-Fit)</button><button class="secondaire" id="elec-releves">📈 Analyser des relevés de la GTB</button><button class="secondaire" id="elec-achat-reg">🛒 Matériel de régulation : demande de prix</button><button class="secondaire" id="elec-reglees">↩️ Reprendre les valeurs réglées sur site</button><button class="secondaire" id="elec-pressions">📏 Reprendre les pressions des CTA (mises en service du chantier)</button><button class="secondaire" id="elec-cahier-docx">📄 Cahier de paramétrage (Word)</button><button class="secondaire" id="elec-cahier-xlsx">📑 Cahier (Excel, un onglet par rubrique)</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="num-bouches" title="Numéro unique de chaque bouche : compléter les bouches sans repère ou en double, ou tout renuméroter (par zone et pièce, ou suivant les branches) quand l\'étude est au point">🔢 Numéroter les bouches</button>' : ''}
         ${n.type === 'terminaux' ? '<button class="secondaire" id="num-terminaux" title="Donne un repère unique à chaque terminal sans repère ou en double (CA-01, VC-02…) : une branche par terminal dans le réseau arborescent, une fiche de mise en service par terminal">🔢 Numéroter les terminaux</button>' : ''}
         ${n.type === 'aero' && n.entrees.structure === 'arborescence' ? '<button class="secondaire" id="aero-vitesses" title="Même vitesse pour toutes les branches (ou les principales, ou les terminales) : les diamètres des gaines sont recalculés">💨 Changer toutes les vitesses</button>' : ''}
@@ -1140,6 +1178,9 @@ Vues.note = {
       Promise.resolve(telecharger(`Analyse_fonctionnelle_${sansAccents(et.objet).slice(0, 40)}_Ind${sansAccents(et.indice) || 'A'}.docx`, octets, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'))
         .then(x => toast(x === 'refuse' ? 'Téléchargement annulé' : 'Analyse fonctionnelle enregistrée (Word)')).catch(er => toast(er.message, 6000));
     };
+    // Analyse fonctionnelle de l'installation complète (Word), organisée par niveau de l'installation hydraulique
+    const bai = root.querySelector('#elec-af-inst');
+    if (bai) bai.onclick = () => telechargerAfInstallation(et);
     // Étiquettes de repérage : planches autocollantes (PDF) ou liste pour étiqueteuse (Excel)
     const bt = root.querySelector('#elec-etiq');
     if (bt) bt.onclick = () => {

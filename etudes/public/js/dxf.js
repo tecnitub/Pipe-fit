@@ -1,6 +1,8 @@
 // Export DXF (AutoCAD R12, lisible par AutoCAD, BricsCAD, DraftSight, LibreCAD…) des schémas dessinés en SVG par l'application :
 // lignes, rectangles, cercles, tracés (M L H V Z, relatifs, courbes quadratiques) et textes, avec translations et rotations.
-// Calques : DEPART et RETOUR (couleurs des réseaux, indiquées par data-depart / data-retour sur la racine), SYMBOLES, TEXTES.
+// Calques : DEPART et RETOUR (couleurs des réseaux, indiquées par data-depart / data-retour sur la racine), SYMBOLES, TEXTES ;
+// un groupe <g data-calque="NOM"> range tout son contenu (traits et textes) sur le calque NOM (schéma d'ensemble : un calque
+// par niveau). Option { polylignes: true } : tracés et rectangles en POLYLINE (une entité par contour) au lieu de LINE.
 // 1 unité DXF = 1 px du schéma (unités : mm).
 const Dxf = (() => {
   const rgb = h => { const m = /^#?([0-9a-f]{6})$/i.exec(String(h || '')); return m ? [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16)) : null; };
@@ -54,13 +56,18 @@ const Dxf = (() => {
     return out;
   }
 
-  function depuisSvg(svg) {
+  function depuisSvg(svg, opts = {}) {
     const racine = attrs((/<svg([^>]*)>/.exec(svg) || [])[1] || ''), H = parseFloat(racine.height) || 1000;
     const calques = { [String(racine['data-depart'] || '').toLowerCase()]: 'DEPART', [String(racine['data-retour'] || '').toLowerCase()]: 'RETOUR' };
-    const ents = [], pile = [[0, 0]], calqueDe = c => calques[String(c || '').toLowerCase()] || 'SYMBOLES';
+    const ents = [], pile = [[0, 0, '']], groupe = () => pile[pile.length - 1][2], calqueDe = c => groupe() || calques[String(c || '').toLowerCase()] || 'SYMBOLES';
     const P = (x, y) => { const [tx, ty] = pile[pile.length - 1]; return [x + tx, H - (y + ty)]; };
     const ligne = (a, b, c) => ents.push(['LINE', 8, calqueDe(c), 62, aci(c), 10, n(a[0]), 20, n(a[1]), 30, 0, 11, n(b[0]), 21, n(b[1]), 31, 0]);
-    const poly = (pts, c) => { for (let k = 1; k < pts.length; k++) ligne(pts[k - 1], pts[k], c); };
+    // Polyligne R12 : en-tête POLYLINE, sommets VERTEX, fin SEQEND (fermée si le dernier point rejoint le premier)
+    const polyligne = (pts, c) => {
+      const ferme = pts.length > 2 && Math.abs(pts[0][0] - pts[pts.length - 1][0]) < 1e-6 && Math.abs(pts[0][1] - pts[pts.length - 1][1]) < 1e-6, l = ferme ? pts.slice(0, -1) : pts, cq = calqueDe(c);
+      ents.push(['POLYLINE', 8, cq, 62, aci(c), 66, 1, 10, 0, 20, 0, 30, 0, 70, ferme ? 1 : 0], ...l.map(([x, y]) => ['VERTEX', 8, cq, 10, n(x), 20, n(y), 30, 0]), ['SEQEND', 8, cq]);
+    };
+    const poly = (pts, c) => { if (opts.polylignes && pts.length > 2) return polyligne(pts, c); for (let k = 1; k < pts.length; k++) ligne(pts[k - 1], pts[k], c); };
     const re = /<(\/?)(\w+)([^>]*?)(\/?)>|([^<]+)/g;
     let m, texteOuvert = null;
     while ((m = re.exec(svg))) {
@@ -68,7 +75,8 @@ const Dxf = (() => {
       if (contenu !== undefined) { if (texteOuvert) texteOuvert.t += contenu; continue; }
       if (ferme) { if (tag === 'g') pile.pop(); if (tag === 'text' && texteOuvert) { const o = texteOuvert; texteOuvert = null; ecrireTexte(o); } continue; }
       const a = attrs(at), trait = a.stroke && a.stroke !== 'none' ? a.stroke : null, couleur = trait || a.fill;
-      if (tag === 'g') { const t = /translate\(([-\d.]+)[ ,]+([-\d.]+)\)/.exec(a.transform || ''), [tx, ty] = pile[pile.length - 1]; pile.push(t ? [tx + +t[1], ty + +t[2]] : [tx, ty]); if (auto) pile.pop(); }
+      if (tag === 'g') { const t = /translate\(([-\d.]+)[ ,]+([-\d.]+)\)/.exec(a.transform || ''), [tx, ty, cq] = pile[pile.length - 1], nom = String(a['data-calque'] || '').toUpperCase().replace(/[^A-Z0-9_-]+/g, '_').slice(0, 31);
+        pile.push(t ? [tx + +t[1], ty + +t[2], nom || cq] : [tx, ty, nom || cq]); if (auto) pile.pop(); }
       else if (tag === 'line') ligne(P(+a.x1, +a.y1), P(+a.x2, +a.y2), couleur);
       else if (tag === 'rect' && trait) { const x = +a.x || 0, y = +a.y || 0, w = +a.width, h = +a.height; poly([P(x, y), P(x + w, y), P(x + w, y + h), P(x, y + h), P(x, y)], trait); }
       else if (tag === 'circle') { const [cx, cy] = P(+a.cx, +a.cy); ents.push(['CIRCLE', 8, calqueDe(couleur), 62, aci(couleur), 10, n(cx), 20, n(cy), 30, 0, 40, n(+a.r)]); }
@@ -79,10 +87,11 @@ const Dxf = (() => {
       const txt = entites(t).trim();
       if (!txt) return;
       const [x, y] = P(+a.x, +a.y), fs = parseFloat(a['font-size']) || 11, rot = /rotate\(([-\d.]+)/.exec(a.transform || ''), just = { middle: 1, end: 2 }[a['text-anchor']] || 0;
-      ents.push(['TEXT', 8, 'TEXTES', 62, aci(a.fill), 10, n(x), 20, n(y), 30, 0, 40, n(fs * 0.72), 1, txt, ...(rot ? [50, n(-parseFloat(rot[1]))] : []),
+      ents.push(['TEXT', 8, groupe() || 'TEXTES', 62, aci(a.fill), 10, n(x), 20, n(y), 30, 0, 40, n(fs * 0.72), 1, txt, ...(rot ? [50, n(-parseFloat(rot[1]))] : []),
         ...(just ? [72, just, 11, n(x), 21, n(y), 31, 0] : [])]);
     }
     const calquesDxf = [['DEPART', aci(racine['data-depart'])], ['RETOUR', aci(racine['data-retour'])], ['SYMBOLES', 7], ['TEXTES', 7]];
+    [...new Set(ents.map(e => e[2]))].filter(c => !calquesDxf.some(([k]) => k === c)).forEach(c => calquesDxf.push([c, 7]));
     const lignes = ['0', 'SECTION', '2', 'HEADER', '9', '$ACADVER', '1', 'AC1009', '9', '$INSUNITS', '70', '4', '9', '$DWGCODEPAGE', '3', 'ANSI_1252', '0', 'ENDSEC',
       '0', 'SECTION', '2', 'TABLES', '0', 'TABLE', '2', 'LTYPE', '70', '1', '0', 'LTYPE', '2', 'CONTINUOUS', '70', '0', '3', 'Solid line', '72', '65', '73', '0', '40', '0.0', '0', 'ENDTAB',
       '0', 'TABLE', '2', 'LAYER', '70', String(calquesDxf.length), ...calquesDxf.flatMap(([nom, c]) => ['0', 'LAYER', '2', nom, '70', '0', '62', String(c), '6', 'CONTINUOUS']), '0', 'ENDTAB', '0', 'ENDSEC',

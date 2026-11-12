@@ -170,7 +170,18 @@ const PointsMes = (() => {
         default:
       }
     });
-    return out.slice(0, 200);
+    // Essais des séquences entre niveaux de l'installation hydraulique (schéma aval → pompe amont, boucle d'eau tempérée,
+    // relève / appoint, secours, récupération, pompes d'échangeur) : un PV « Essais des séquences » de plus pour le chantier
+    let inter = null;
+    try {
+      if ((et.notes || []).some(n => n.type === 'pid')) {
+        const I = typeof Installation !== 'undefined' ? Installation : require('./installation'), CP = typeof ConsignesProjet !== 'undefined' ? ConsignesProjet : require('./consignes-projet');
+        const parId = new Map((et.notes || []).map(n => [n.id, n])), ess = CP.essaisInterNiveaux(I.arbre(et), id => (parId.has(id) ? entrees(parId.get(id)) : {}));
+        if (ess.length) inter = { noteId: 'installation', source: 'Installation hydraulique', nature: 'mes', type: 'gtb', cle: 'sequences-installation', titre: 'Essais des séquences entre niveaux de l\'installation hydraulique',
+          detail: `${ess.length} essai(s) : demandes entre schémas, relève / appoint, secours, récupération, boucle d'eau tempérée, échangeurs`, controles: ess.map(x => txt(x.texte, 120)), attendus: [] };
+      }
+    } catch (err) { inter = null; }
+    return inter ? [...out.slice(0, 199), inter] : out.slice(0, 200);
   }
 
   // Débits théoriques des relevés d'équilibrage (schémas aérauliques bouche par bouche et registres, réseaux arborescents

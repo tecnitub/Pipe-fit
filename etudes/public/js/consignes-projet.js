@@ -225,6 +225,66 @@ const ConsignesProjet = (() => {
     return [...new Set(out)].slice(0, 120);
   }
 
+  // Essais des séquences entre niveaux de l'installation hydraulique (d'après Installation.arbre) : demande d'un schéma
+  // aval → pompe du circuit amont, défaut de la source, plage de la boucle d'eau tempérée, relève / appoint et délestage,
+  // secours, basculement de la récupération d'énergie, pompes d'échangeur.
+  // arbre : Installation.arbre(et) ; entreesDe(noteId) : entrées du schéma de principe (valeurs par défaut comprises).
+  // Rend [{ niveau, note, schema, libelle, conditions, attendu, texte }] ; texte (≤ 120 caractères) est le point de
+  // contrôle du PV « Essais des séquences » (OK / non conforme / observation).
+  function essaisInterNiveaux(arbre, entreesDe = () => ({})) {
+    const out = [], court = (t, n) => { const s = String(t || '').trim(); return s.length > n ? `${s.slice(0, n - 1)}…` : s; };
+    const ajouter = (s, libelle, conditions, attendu) => {
+      // Nom court du schéma : sans « Schéma de principe » ni précision entre parenthèses (le PV limite le texte à 120 caractères)
+      const nom = String(s.titre || '').replace(/^sch[ée]ma\s+(de\s+principe\s+|de\s+la\s+|du\s+|des\s+|de\s+l['’]|d['’]|de\s+)?/i, '').replace(/\s*\([^)]*\)\s*/g, ' ').trim() || s.titre;
+      const l = `${court(nom.charAt(0).toUpperCase() + nom.slice(1), 26)} — ${libelle}`;
+      let texte = `${l} : ${conditions} → ${attendu}`;
+      if (texte.length > 120) texte = `${texte.slice(0, 119)}…`;
+      out.push({ niveau: s.niveau + 1, note: s.note, schema: s.titre, libelle: l, conditions, attendu, texte });
+    };
+    // Schémas dans l'ordre de l'arbre (production racine puis schémas aval)
+    const tous = [], parcourir = s => { tous.push(s); s.circuits.forEach(c => { if (c.schema) parcourir(c.schema); }); };
+    ((arbre && arbre.schemas) || []).forEach(parcourir);
+    tous.forEach(s => {
+      const e = entreesDe(s.note) || {}, gk = String(e.generateur || ''), boucle = /-eau$/.test(gk) && e.sourceEau === 'boucle', ech = /^echangeur/.test(gk);
+      // 1. Schéma aval : demande vers l'amont, fin de demande, défaut de la source, plage de la boucle d'eau tempérée
+      if (s.amont) {
+        const rep = court(s.amont.rep, 18);
+        ajouter(s, 'demande', 'schéma mis en demande', `pompe du circuit ${rep} en marche, retour de marche`);
+        ajouter(s, 'fin de demande', 'demande supprimée', `pompe ${rep} arrêtée après 3 min de post-circulation`);
+        ajouter(s, 'défaut source', `pompe ${rep} en défaut`, `${boucle ? 'PAC arrêtée' : ech ? 'vanne primaire fermée' : 'production arrêtée'} + alarme`);
+        if (boucle) {
+          ajouter(s, 'boucle < 15 °C', 'eau de la boucle à 13 °C', 'PAC arrêtée + alarme, relance entre 15 et 30 °C');
+          ajouter(s, 'boucle > 30 °C', 'eau de la boucle à 32 °C', 'PAC arrêtée + alarme, relance entre 15 et 30 °C');
+        }
+      }
+      // 2. Production hétérogène : relève / appoint dans la temporisation, délestage, secours
+      const gens = (Array.isArray(e.generateurs) ? e.generateurs : []).filter(g => g && num(g.P) > 0).map((g, i) => ({ rep: String(g.rep || `G${i + 1}`), role: g.role || 'base' }));
+      const par = r => gens.filter(g => g.role === r).map(g => g.rep), base = par('base'), suite = [...par('releve'), ...par('appoint')], tempo = num(e.tempoReleve, 10), seuil = num(e.seuilReleve, 3);
+      if (base.length && suite.length) {
+        ajouter(s, 'relève / appoint', `${base.join(', ')} coupé, départ < consigne − ${nf(seuil, 1)} K`, `${suite.join(', ')} en marche après ${nf(tempo, 0)} min, pas avant`);
+        ajouter(s, 'délestage', 'départ > consigne + 2 K pendant 5 min', `${[...suite].reverse().join(', ')} arrêté(s) dans l'ordre inverse`);
+      }
+      const enDefaut = base[0] || (gens.find(g => g.role !== 'secours') || {}).rep;
+      par('secours').forEach(sec => { if (enDefaut) ajouter(s, 'secours', `${enDefaut} en défaut`, `${sec} (secours) enclenché + alarme`); });
+      if (!par('secours').length && gens.filter(g => g.role !== 'recuperation').length > 1) ajouter(s, 'défaut générateur', `${gens[0].rep} en défaut`, 'le générateur suivant prend le relais + alarme');
+      // 3. Récupération d'énergie sur le groupe froid : basculement rejet / récupération ; côté chaud, appoint
+      if (e.recupGf) {
+        ajouter(s, 'récupération', 'froid en marche, aucun besoin de chaleur', 'vanne de basculement sur le rejet (condenseur)');
+        ajouter(s, 'récupération', 'froid en marche, besoin de chaleur', `basculement sur la récupération (${e.regimeRecup || '45/40'} °C)`);
+      }
+      if (e.recupDe && tous.some(x => x.note === e.recupDe)) ajouter(s, 'appoint', 'récupération seule, départ < consigne − 3 K, 10 min', 'générateur enclenché en appoint');
+      // 4. Échangeur (sous-station) : pompes primaire et secondaire, vanne primaire
+      if (ech) {
+        if (e.pompeEchPrim === 'ajouter') ajouter(s, 'pompe primaire échangeur', 'demande au secondaire', 'pompe primaire en marche, la vanne primaire régule');
+        else if (e.pompeEchPrim === 'existante') ajouter(s, 'pompe primaire échangeur', 'demande au secondaire', 'pompe existante autorisée, retour de marche');
+        if (e.pompeEchSec === 'ajouter') ajouter(s, 'pompe secondaire échangeur', 'un circuit en demande', 'pompe secondaire en marche, vitesse variable');
+        else if (e.pompeEchSec === 'existante') ajouter(s, 'pompe secondaire échangeur', 'un circuit en demande', 'pompe existante autorisée, retour de marche');
+        ajouter(s, 'vanne primaire', 'aucune demande au secondaire', 'vanne primaire fermée, pompes arrêtées après 3 min');
+      }
+    });
+    return out;
+  }
+
   /* ---------- 6. Chiffrage de la régulation (devis du CRM) ---------- */
   // pts : liste des points ; nomenclature : [[famille, désignation, caractéristiques, qté…]] ; nbInst : installations
   function chiffrage({ pts = [], nomenclature = [], boucles = 0, installations = 1 } = {}) {
@@ -285,6 +345,6 @@ const ConsignesProjet = (() => {
     return { entrees: e, appliques, ignores };
   }
   const indiceSuivant = i => (/^[A-Y]$/i.test(String(i || '').trim()) ? String.fromCharCode(String(i).trim().toUpperCase().charCodeAt(0) + 1) : /^\d+$/.test(String(i || '').trim()) ? String(Number(i) + 1) : 'B');
-  return { detecterProfil, zonesEtude, zonesDepuis, ZONES_DEFAUT, estDefaut, JOURS_OPTIONS, HEURES_OPTIONS, appliquerReglees, indiceSuivant, calculer, reglagesPoints, feries, typeEmetteur, INERTIE, PID, PROFILS, profil, controleReglementaire, comparerCctp, consignesCctp, attendusReglage, controlesReglage, essaisSequences, chiffrage, analyserReleves };
+  return { detecterProfil, zonesEtude, zonesDepuis, ZONES_DEFAUT, estDefaut, JOURS_OPTIONS, HEURES_OPTIONS, appliquerReglees, indiceSuivant, calculer, reglagesPoints, feries, typeEmetteur, INERTIE, PID, PROFILS, profil, controleReglementaire, comparerCctp, consignesCctp, attendusReglage, controlesReglage, essaisSequences, essaisInterNiveaux, chiffrage, analyserReleves };
 })();
 if (typeof module !== 'undefined') module.exports = ConsignesProjet;

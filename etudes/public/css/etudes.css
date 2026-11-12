@@ -187,3 +187,8 @@ ul.af { padding-left: 18px; font-size: 13.5px; display: grid; gap: 6px; }
 .badge.ok { background: var(--ok-fond); color: var(--ok-texte); }
 .inst-global td { vertical-align: top; overflow-wrap: anywhere; }
 .inst-global td:first-child { min-width: 200px; }
+/* Schéma d'ensemble de l'installation : dessin à la largeur de la carte, défilement horizontal sur téléphone */
+.inst-ensemble .actions-ensemble { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.ensemble-svg { border: 1px solid var(--bord, #d6dbe1); border-radius: 6px; background: #fff; }
+.ensemble-svg svg { display: block; width: 100%; height: auto; min-width: 720px; }
+@media (max-width: 700px) { .ensemble-svg svg { width: auto; min-width: 0; max-width: none; } }
