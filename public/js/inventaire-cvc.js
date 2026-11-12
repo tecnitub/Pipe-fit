@@ -60,6 +60,8 @@ const InventaireCVC = (() => {
     const t = norm(texte).replace(/^(?:(?:moins|plus)[- ]?values?\s*:?\s*)/, '').replace(/^(?:fourniture,? (?:et |& )?pose (?:de |d'|du |des )?(?:la |le |l'|les )?)/, '');
     if (!t || EXCLU.test(t)) return null;
     if (REGUL_PREST.test(t)) return { categorie: 'auxiliaire', genre: 'regulation' };
+    // Accessoire d'un terminal (« Grille de diffusion … ventilo-convecteur en allège », « Plenum … cassette ») : pas un terminal
+    if (/^(?:grilles?|plenums?|habillages?|carrosseries?|socles?|pieds?|consoles?|kits?)\b.*\b(?:ventilo|convecteurs?|radiateurs?|cassettes?|terminaux|unites? interieures?)\b/.test(t)) return null;
     if (ACCESSOIRE.test(t)) return /regulation|automate|gtc|gtb|armoire/.test(t) ? { categorie: 'auxiliaire', genre: 'regulation' } : null;
     const r = REGLES.find(([re]) => re.test(t));
     return r ? { categorie: r[1], genre: r[2] } : null;

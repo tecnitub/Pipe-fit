@@ -462,3 +462,10 @@ test('guide « Reste à faire » : étude vide, sans inventaire', () => {
   assert.deepStrictEqual([r.pct, r.suivante.action[0]], [0, 'champ:climat']);
   assert.strictEqual(G.restesAFaire({ id: 'e', notes: [], climat: 'H2b', typeBatiment: 'ecole' }).suivante.action[0], 'inventaire');
 });
+
+test('DPGF : accessoire d\'un terminal (grille de diffusion d\'un ventilo) pas compté comme terminal', () => {
+  const I = require('../public/js/inventaire-cvc');
+  assert.strictEqual(I.classer('Grille de diffusion telle que décrite ventilo convecteur en allège'), null);
+  assert.strictEqual(I.classer('Plenum de raccordement pour cassette 4 voies'), null);
+  assert.strictEqual(I.classer('Ventilo-convecteur 2 tubes allège').genre, 'ventilo');
+});
