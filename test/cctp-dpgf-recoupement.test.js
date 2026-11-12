@@ -325,8 +325,8 @@ test('DPGF à titres numérotés : désignations sur plusieurs lignes, variantes
   I.rattacher(inv, reseaux);
   const { entrees, alertes } = I.versSchema(inv, Sc, reseaux);
   assert.deepStrictEqual([entrees.generateur, entrees.recupGf, entrees.reseau], ['pac-rev', 'totale', 'co']);
-  // Production réversible : les deux ballons tampons (EC et EG) restent dans le schéma ; dans un schéma chaud, le ballon EG irait au schéma froid
-  assert.deepStrictEqual(entrees.ballons.map(x => x.fonction), ['tampon', 'tampon']);
+  // Ballons tampons du primaire : découplage par ballon ; dans un schéma chaud seul, le ballon EG irait au schéma froid
+  assert.strictEqual(entrees.bouteille, 'ballon');
   const chaud = I.versSchema(inv.map(x => (x.genre === 'pac-rev' ? { ...x, genre: 'pac-air' } : x)), Sc, reseaux);
   assert.ok(chaud.alertes.some(a => /Ballon tampon type T-300.*schéma froid/.test(a)));
   assert.ok(!entrees.circuits.some(c => /électrique/i.test(c.rep)), 'émetteurs électriques hors schéma hydraulique');
@@ -399,6 +399,96 @@ test('DPGF à titres numérotés : CTA « [CTA n] », régulation, ventilos par 
   assert.ok(reseaux.length && reseaux.every(r => ['plomberie', 'ecs'].includes(r.nature)), JSON.stringify(reseaux.map(r => [r.nom, r.nature])));
   assert.ok(!reseaux.some(r => r.nature === 'chauffage'));
   assert.strictEqual(I.natureReseau('Distribution d\'eau froide / eau chaude'), 'chauffage', 'hors chapitre de plomberie, la lecture reste celle du chauffage');
+});
+
+// DPGF fictif d'une thermofrigopompe : tronçons primaires (collecteur, tube acier, ballons tampons EC / EG), circuits de
+// distribution (radiateurs, change-over, départs EC / EG), pompes secondaires et libellés des vannes, émetteurs, CTA
+const DPGF_INST = [
+  ['Article', 'Désignation', 'U', 'Qté', 'PU', 'PT'],
+  ['4', 'PRODUCTION DE CHAUD / FROID PAR THERMOFRIGOPOMPE', '', '', '', ''],
+  ['4-1', 'Thermofrigopompe', '', '', '', ''],
+  ['', 'Thermofrigopompe type TF-100 de marque ACME ou équivalent', '', '', '', ''],
+  ['', 'Pchaud 100,7 kW (60/40°C) Pfroid 69 kW (7/12 °C) - R32', 'u', 1, 80000, 80000],
+  ['4-2', 'Circuit primaire chauffage', '', '', '', ''],
+  ['', 'Collecteur primaire Ø70/76 départ EC', 'ml', 12, 90, 1080],
+  ['', 'EC : Circuit en tube acier', '', '', '', ''],
+  ['', 'DN 65', 'ml', 25, 80, 2000],
+  ['', 'Ballon tampon primaire EC', '', '', '', ''],
+  ['', 'Ballon tampon type T-500 4 bars de marque BALLOX 500 litres', 'u', 1, 1500, 1500],
+  ['4-3', 'Circuit primaire eau glacée', '', '', '', ''],
+  ['', 'EG : Collecteur retour Ø70/76', 'ml', 10, 90, 900],
+  ['', 'Ballon tampon primaire EG', '', '', '', ''],
+  ['', 'Ballon tampon type T-300 4 bars de marque BALLOX 300 litres', 'u', 1, 1200, 1200],
+  ['5', 'DISTRIBUTION', '', '', '', ''],
+  ['5-1', 'Circuits de distribution radiateurs', '', '', '', ''],
+  ['', 'Tube acier DN 32', 'ml', 687, 40, 27480],
+  ['5-2', 'Circuits de distribution ventilo convecteur EC ou EG (change over)', '', '', '', ''],
+  ['', 'Tube acier DN 40', 'ml', 781, 45, 35145],
+  ['5-3', 'Départ CTA et ventilo convecteur EC', '', '', '', ''],
+  ['', 'Tube acier DN 50', 'ml', 120, 50, 6000],
+  ['5-4', 'Départ CTA et ventilo convecteur EG', '', '', '', ''],
+  ['', 'Tube acier DN 65', 'ml', 110, 60, 6600],
+  ['5-5', 'Pompes et vannes circuits secondaires', '', '', '', ''],
+  ['', 'Pompe double P1 - 1,6 m3/h 10,6 mCE', 'u', 1, 1500, 1500],
+  ['', 'Pompe double P2 - 9,9 m3/h 14,3 mCE', 'u', 1, 2500, 2500],
+  ['', 'Pompe simple P3 - 9,5 m3/h 13,2 mCE', 'u', 1, 2000, 2000],
+  ['', 'Pompe simple P4 - 8,6 m3/h 14,9 mCE', 'u', 1, 2000, 2000],
+  ['', 'Vanne d\'isolement', '', '', '', ''],
+  ['', 'DN 32 (radiateurs EC)', 'u', 2, 60, 120],
+  ['', 'DN 50 (CTA / ventilo convecteurs EC)', 'u', 2, 90, 180],
+  ['', 'DN 50 (CTA EG)', 'u', 2, 90, 180],
+  ['', 'DN 65 (ventilo convecteurs EG)', 'u', 2, 110, 220],
+  ['6', 'ÉMETTEURS', '', '', '', ''],
+  ['6-1', 'Radiateurs', '', '', '', ''],
+  ['', 'Radiateurs fonte tel que décrit', '', '', '', ''],
+  ['', 'Type15 - l1400 - ht500 - ep200', 'u', 40, 400, 16000],
+  ['', 'Type22 - l1000 - ht600 - ep200', 'u', 35, 380, 13300],
+  ['', 'Radiateur sèche-serviettes électrique 1000W', 'u', 4, 200, 800],
+  ['6-2', 'Ventilo convecteur 2 tubes / 2 fils', '', '', '', ''],
+  ['', 'Ventilo convecteur 2 tubes type VX P de marque ACME avec tous ses', '', '', '', ''],
+  ['', 'accessoires tel que décrit y compris résistance électrique :', '', '', '', ''],
+  ['', 'Taille 200', 'u', 3, 600, 1800], ['', 'Taille 300', 'u', 8, 600, 4800], ['', 'Taille 450', 'u', 14, 600, 8400],
+  ['7', 'VENTILATION DOUBLE FLUX [CTA 1]', '', '', '', ''],
+  ['', 'Centrale type DF-08 de MARQUE ou équivalent - AS/AR 3190 m3', '', '', '', ''],
+  ['', '- avec tous ses accessoires telle que décrite y compris batterie chaude', 'ens ', '1.0', 15000, 15000],
+];
+
+test('calculs depuis un DPGF de thermofrigopompe : schémas froid et chaud, circuits de distribution, pompes, ballons, terminaux', () => {
+  const d = I.depuisDpgf(DPGF_INST);
+  // Tronçons primaires (production → ballons, collecteurs) / réseaux de distribution
+  assert.deepStrictEqual(d.reseaux.map(r => [r.nom.slice(0, 30), I.estPrimaire(r)]), [['Circuit primaire chauffage', true], ['EC : Circuit en tube acier', true], ['Circuit primaire eau glacée', true],
+    ['Circuits de distribution radia', false], ['Circuits de distribution venti', false], ['Départ CTA et ventilo convecte', false], ['Départ CTA et ventilo convecte', false]]);
+  // Pompes secondaires : circuit d'après le libellé des vannes du même chapitre ; ballons tampons du primaire : découplage
+  assert.deepStrictEqual(d.items.filter(x => x.genre === 'pompe').map(x => [x.repere, x.details.circuit, !!x.details.double]),
+    [['P1', 'radiateurs EC', true], ['P2', 'CTA / ventilo convecteurs EC', true], ['P3', 'CTA EG', false], ['P4', 'ventilo convecteurs EG', false]]);
+  assert.deepStrictEqual(d.items.filter(x => x.genre === 'tampon').map(x => [x.details.fluide, x.details.ballon, x.carac.volume]), [['chaud', 'decouplage', 500], ['froid', 'decouplage', 300]]);
+  const inv = I.fusionner([], d.items);
+  I.rattacher(inv, d.reseaux);
+  const { schemas } = I.versSchemas(inv, Sc, d.reseaux), [F, C] = schemas;
+  assert.deepStrictEqual(schemas.map(x => x.cle), ['froid', 'chaud']);
+  // Schéma froid : groupe froid de la puissance froid, 7/12, récupération totale à 60/40, découplage par ballon EG
+  assert.deepStrictEqual([F.entrees.generateur, F.entrees.Pgen, F.entrees.reseau, F.entrees.recupGf, F.entrees.regimeRecup, F.entrees.bouteille, F.entrees.Vtampon], ['gf-air', 69, 'eg-7-12', 'totale', '60/40', 'ballon', 300]);
+  // Schéma chaud : la TFP en PAC (pas d'appoint au dossier), 60/40, reprend la récupération du froid, ballon EC
+  assert.deepStrictEqual([C.entrees.generateur, C.entrees.Pgen, C.entrees.reseau, C.entrees.Tdep, C.entrees.Tret, C.entrees.recupDe, C.entrees.bouteille, C.entrees.Vtampon], ['pac-air', 100.7, 'perso', 60, 40, '@froid', 'ballon', 500]);
+  assert.match(F.commentaire, /modèle « thermofrigopompe »/); assert.match(C.commentaire, /Aucun appoint au dossier/);
+  // Circuits : réseaux de distribution seulement (EC au chaud, EG au froid, change-over dans les deux), longueurs du DPGF
+  const circ = x => x.entrees.circuits.map(c => [c.rep.slice(0, 30), c.emetteur, c.L]);
+  assert.deepStrictEqual(circ(C), [['Circuits de distribution radia', 'radiateurs', 687], ['Circuits de distribution venti', 'ventilo', 781], ['Départ CTA et ventilo convecte', 'cta', 120]]);
+  assert.deepStrictEqual(circ(F), [['Circuits de distribution venti', 'ventilo', 781], ['Départ CTA et ventilo convecte', 'cta', 110]]);
+  assert.ok(![...C.entrees.circuits, ...F.entrees.circuits].some(c => /primaire|collecteur|tube acier/i.test(c.rep)));
+  assert.ok(C.alertes.some(a => /Tronçons primaires .*Circuit primaire chauffage.* 12 m/.test(a)));
+  // Pompes retenues : circuit, référence (pompe double = jumelée), courbe d'un point débit:HMT
+  assert.deepStrictEqual(C.entrees.pompesFab.map(p => [p.circuit.slice(0, 30), p.ref, p.courbe]), [['Circuits de distribution radia', 'Pompe double P1 (jumelée)', '1,6:10,6'], ['Départ CTA et ventilo convecte', 'Pompe double P2 (jumelée)', '9,9:14,3']]);
+  assert.deepStrictEqual(F.entrees.pompesFab.map(p => [p.circuit.slice(0, 30), p.ref, p.courbe]), [['Départ CTA et ventilo convecte', 'Pompe simple P3', '9,5:13,2'], ['Circuits de distribution venti', 'Pompe simple P4', '8,6:14,9']]);
+  schemas.forEach(x => { const r = N.calculer('pid', { ...N.defauts('pid'), ...x.entrees, recupDe: '' }); assert.ok(!r.alertes.some(a => a.niveau === 'erreur'), r.alertes.map(a => a.texte).join(' | ')); });
+  // Terminaux : radiateur à eau « chaude », électrique « elec », ventilo 2 tubes / 2 fils « froide + électrique » ;
+  // 60 appareils au plus, répartis entre toutes les lignes du dossier
+  const t = I.versTerminaux(inv);
+  assert.strictEqual(t.appareils.length, 60);
+  assert.deepStrictEqual([...new Set(t.appareils.map(a => `${a.type}:${a.batterie}`))], ['radiateur:chaude', 'radElec:elec', 'vc2:froide+elec']);
+  assert.ok(inv.filter(x => ['radiateurs', 'ventilo'].includes(x.genre)).every(x => t.alertes.some(a => a.startsWith(`${x.designation} : `) && /détaillé/.test(a))), 'chaque ligne a sa part');
+  // CTA : « y compris batterie chaude » seule → batterie chaude seule
+  assert.deepStrictEqual(I.versSchemaAir(inv, d.reseaux).ctas.map(c => [c.entrees.froid, c.entrees.Qs]), [['non', 3190]]);
 });
 
 test('guide « Reste à faire » : ordre d\'une étude, étape suivante, sources des valeurs à vérifier, progression', () => {
