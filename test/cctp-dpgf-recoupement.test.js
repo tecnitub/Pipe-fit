@@ -236,6 +236,106 @@ test('CTA, terminaux, régulation et alimentation électrique remplis depuis l\'
   assert.ok(!re.alertes.some(a => a.niveau === 'erreur'), re.alertes.map(a => a.texte).join(' | '));
 });
 
+// DPGF fictif au format « n° d'article sur les titres seulement » (« 4-3-1 ») : désignations sur deux lignes, variantes sous
+// un parent (« Taille 200 », « DN 50 »), sous-totaux « … - Total €HT », abréviations EC / EG / EF / TFP, récapitulatif final
+const DPGF_TFP = [
+  ['LOT 14 – CVC PLOMBERIE (dossier fictif)'], [],
+  ['Article', 'Désignation', 'U', 'Qté', 'PU', 'PT'],
+  ['4', 'PRODUCTION DE CHAUD / FROID PAR THERMOFRIGOPOMPE', '', '', '', ''],
+  ['4-3-1', 'TFP', '', '', '', ''],
+  ['', 'Pompe à chaleur réversible type ZX90 de marque ACME ou équivalent', '', '', '', ''],
+  ['', 'Pchaud 95,0 kW (55/45°C) Pfroid 70 kW (7/12 °C) - R32', 'u', 1, 52000, 52000],
+  ['4-3-1', 'TFP - Total €HT', '', '', '', 52000],
+  ['4-3-2', 'Circuit primaire chauffage', '', '', '', ''],
+  ['', 'Collecteur primaire Ø70/76 départ EC', 'u', 1, 800, 800],
+  ['', 'Ballon tampon primaire EC', '', '', '', ''],
+  ['', 'Ballon tampon type T-500 4 bars de marque BALLOX', 'u', 1, 1500, 1500],
+  ['', 'Vase d\'expansion type VX de marque BALLOX 200 L', 'u', 1, 600, 600],
+  ['4-3-3', 'Circuit primaire eau glacée', '', '', '', ''],
+  ['', 'Ballon tampon primaire EG', '', '', '', ''],
+  ['', 'Ballon tampon type T-300 4 bars de marque BALLOX', 'u', 1, 1200, 1200],
+  ['4-3-3', 'Circuit primaire eau glacée - Total € HT', '', '', '', 2700],
+  ['5', 'DISTRIBUTION', '', '', '', ''],
+  ['5-1', 'Pompes et vannes circuits secondaires', '', '', '', ''],
+  ['', 'Pompe double P2 - 9,9 m3/h 14,3 mCE', 'u', 1, 2500, 2500],
+  ['', 'Vanne d\'isolement', '', '', '', ''],
+  ['', 'DN 50 (CTA / ventilo EC)', 'u', 3, 90, 270],
+  ['', 'DN 40 (radiateurs EC)', 'u', 2, 70, 140],
+  ['5-2', 'Émetteurs', '', '', '', ''],
+  ['', 'Ventilo-convecteur 2 tubes 2 fils type VX de marque ACME ou équivalent y compris résistance électrique :', '', '', '', ''],
+  ['', 'Taille 200', 'u', 3, 600, 1800],
+  ['', 'Taille 300', 'u', 8, 700, 5600],
+  ['', 'Radiateurs fonte tel que décrit', '', '', '', ''],
+  ['', 'Type15 - l1400 - ht500 - ep200', 'u', 5, 400, 2000],
+  ['', 'Radiateur sèche-serviettes électrique 1000W', 'u', 2, 200, 400],
+  ['', 'Aérotherme électrique 3 kW', 'u', 1, 300, 300],
+  ['6', 'VENTILATION DOUBLE FLUX [CTA 1]', '', '', '', ''],
+  ['', 'Centrale double flux type DF-12 de MARQUE ou équivalent - AS/AR 3200 m3/h', '', '', '', ''],
+  ['', '- avec tous ses accessoires y compris batterie chaude et froide', 'ens', 1, 18000, 18000],
+  ['7', 'VENTILATIONS SIMPLE FLUX', '', '', '', ''],
+  ['', 'Extracteur V1 type EX-04 de MARQUE ou équivalent', '', '', '', ''],
+  ['', 'AR : 270 m3/h - avec tous ses accessoires', 'ens', 1, 900, 900],
+  ['8', 'CLIMATISATION LOCAL INFORMATIQUE', '', '', '', ''],
+  ['', 'Unité intérieure murale à détente directe 3,5 kW', 'u', 1, 900, 900],
+  ['', 'Unité extérieure à détente directe 3,5 kW', 'u', 1, 1100, 1100],
+  ['9', 'PLOMBERIE SANITAIRE', '', '', '', ''],
+  ['', 'Réseau eau froide EF cuivre Ø 22', 'ml', 40, 30, 1200],
+  ['10', 'GTB / GTC', '', '', '', ''],
+  ['', 'Automate de régulation Siemens, supervision BACnet/IP', 'ens', 1, 9000, 9000],
+  ['', 'RÉCAPITULATIF', '', '', '', ''],
+  ['4', 'PRODUCTION DE CHAUD / FROID PAR THERMOFRIGOPOMPE', '', '', '', 54700],
+  ['6', 'VENTILATION DOUBLE FLUX [CTA 1]', 'ens', 1, '', 18000],
+  ['', 'Total général € HT', '', '', '', 100000],
+];
+test('DPGF à titres numérotés : désignations sur plusieurs lignes, variantes, totaux et récapitulatif ignorés', () => {
+  const { items, reseaux } = I.depuisDpgf(DPGF_TFP), g = k => items.filter(x => x.genre === k);
+  // Aucun double comptage : le récapitulatif ne crée rien, une seule production, une seule CTA
+  assert.deepStrictEqual(items.map(x => x.genre), ['pac-rev', 'tampon', 'vase', 'tampon', 'pompe', 'ventilo', 'ventilo', 'radiateurs', 'radiateurs', 'aerotherme', 'cta', 'ventilateur', 'split', 'split', 'regulation']);
+  // Production : thermofrigopompe (chapitre « TFP »), puissances et régimes chaud / froid, marque, n° à points
+  const tfp = g('pac-rev')[0];
+  assert.deepStrictEqual([tfp.P, tfp.Pfr, tfp.carac.regimeChaud, tfp.carac.regimeFroid, tfp.carac.frigorigene, tfp.details.recup, tfp.details.marque, tfp.details.reference, tfp.sources[0]],
+    [95, 70, '55/45', '7/12', 'R32', 'totale', 'ACME', 'ZX90', 'DPGF 4.3.1']);
+  assert.match(tfp.designation, /^Pompe à chaleur réversible type ZX90 .* Pfroid 70 kW/);
+  // Ballons tampons : chaud (« … primaire EC ») et froid (« … primaire EG ») ; vase de 200 L
+  assert.deepStrictEqual(g('tampon').map(x => [x.details.fluide, x.details.reference, x.designation]), [['chaud', 'T-500', 'Ballon tampon type T-500 4 bars de marque BALLOX'], ['froid', 'T-300', 'Ballon tampon type T-300 4 bars de marque BALLOX']]);
+  assert.strictEqual(g('vase')[0].carac.volume, 200);
+  // Pompe double P2 : débit et hauteur
+  assert.deepStrictEqual([g('pompe')[0].repere, g('pompe')[0].Q, g('pompe')[0].carac.HMT, g('pompe')[0].details.double], ['P2', 9.9, 14.3, true]);
+  // Vannes d'isolement « DN 50 (CTA / ventilo EC) » : pas des CTA
+  assert.strictEqual(g('cta').length, 1);
+  assert.ok(!items.some(x => /^Vanne/.test(x.designation)));
+  assert.deepStrictEqual(I.classer('Vanne d\'isolement DN 50 (CTA / ventilo EC)'), null);
+  // Ventilo-convecteurs par taille, 2 tubes 2 fils (résistance électrique), marque du parent
+  assert.deepStrictEqual(g('ventilo').map(x => [x.designation.replace(/^.* (Taille \d+)$/, '$1'), x.qte, x.details.tubes, x.details.fils2, x.details.marque]), [['Taille 200', 3, '2t', true, 'ACME'], ['Taille 300', 8, '2t', true, 'ACME']]);
+  // Radiateurs fonte (variante du parent « tel que décrit ») et radiateur électrique ; aérotherme électrique
+  assert.deepStrictEqual(g('radiateurs').map(x => [x.qte, x.alim === 'electrique', x.Pel]), [[5, false, NaN], [2, true, 1]]);
+  assert.deepStrictEqual([g('aerotherme')[0].alim, g('aerotherme')[0].Pel], ['electrique', 3]);
+  // CTA du chapitre « [CTA 1] » : débit, batteries chaude et froide ; extracteur V1 et son débit ; splits
+  const cta = g('cta')[0];
+  assert.deepStrictEqual([cta.repere, cta.Q, cta.details.batteries, cta.details.reference], ['CTA-1', 3200, { chaude: true, froide: true }, 'DF-12']);
+  assert.deepStrictEqual([g('ventilateur')[0].repere, g('ventilateur')[0].Q], ['V1', 270]);
+  assert.strictEqual(g('split').length, 2);
+  assert.deepStrictEqual(g('regulation')[0].details.regulation, { marque: 'siemens', gtb: 'BACnet/IP', techno: 'automate' });
+  // Abréviations : EC = chauffage (pas ECS), EG = eau glacée (pas plomberie), EF = plomberie
+  assert.deepStrictEqual([I.natureReseau('Collecteur primaire Ø70/76 départ EC'), I.natureReseau('Réseau EG'), I.natureReseau('Réseau ECS'), I.natureReseau('Réseau eau froide EF')], ['chauffage', 'eau-glacee', 'ecs', 'plomberie']);
+  assert.deepStrictEqual(reseaux.filter(r => r.nature).map(r => [r.nom, r.nature]), [['Circuit primaire chauffage', 'chauffage'], ['Circuit primaire eau glacée', 'eau-glacee'], ['Réseau eau froide EF cuivre Ø 22', 'plomberie']]);
+  // Calculs : production réversible à récupération, émetteurs électriques hors schéma, ballon froid laissé au schéma froid,
+  // terminaux 2 tubes 2 fils (eau froide + résistance), radiateur électrique
+  const inv = I.fusionner([], items);
+  I.rattacher(inv, reseaux);
+  const { entrees, alertes } = I.versSchema(inv, Sc, reseaux);
+  assert.deepStrictEqual([entrees.generateur, entrees.recupGf, entrees.reseau], ['pac-rev', 'totale', 'co']);
+  // Production réversible : les deux ballons tampons (EC et EG) restent dans le schéma ; dans un schéma chaud, le ballon EG irait au schéma froid
+  assert.deepStrictEqual(entrees.ballons.map(x => x.fonction), ['tampon', 'tampon']);
+  const chaud = I.versSchema(inv.map(x => (x.genre === 'pac-rev' ? { ...x, genre: 'pac-air' } : x)), Sc, reseaux);
+  assert.ok(chaud.alertes.some(a => /Ballon tampon type T-300.*schéma froid/.test(a)));
+  assert.ok(!entrees.circuits.some(c => /électrique/i.test(c.rep)), 'émetteurs électriques hors schéma hydraulique');
+  const t = I.versTerminaux(inv).appareils;
+  assert.deepStrictEqual([...new Set(t.filter(a => a.type === 'vc2').map(a => a.batterie))], ['froide+elec']);
+  assert.deepStrictEqual(t.filter(a => a.type === 'radElec').map(a => [a.batterie, a.Pbe]), [['elec', 1], ['elec', 1]]);
+  assert.deepStrictEqual(I.versElec(inv).filter(l => l.type === 'resistance').map(l => l.P), [1, 1, 3]);
+});
+
 test('guide « Reste à faire » : ordre d\'une étude, étape suivante, sources des valeurs à vérifier, progression', () => {
   const { inv, reseaux } = lire();
   const et = { id: 'e1', objet: 'Maison de santé', notes: [], inventaire: inv, inventaireReseaux: reseaux, inventaireEcarts: I.ecarts(inv) };

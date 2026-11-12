@@ -2,13 +2,20 @@
 // dans les documents du chantier Pipe-Fit ; producteurs, émetteurs et auxiliaires reconnus, vérifiés dans un tableau, puis
 // schéma de principe et alimentation électrique préremplis.
 
+// Classeur : Excel 97-2003 (.xls, conteneur OLE2), CSV, sinon .xlsx
+async function lireClasseur(fichier) {
+  const buf = await fichier.arrayBuffer();
+  if (/\.xls$/i.test(fichier.name) || (typeof Xls !== 'undefined' && Xls.estXls(buf))) return Xls.lire(buf);
+  return /\.csv$/i.test(fichier.name) ? XLSX.readCSV(buf) : XLSX.read(buf);
+}
+
 // Lecture d'un fichier : CCTP → équipements des articles (et tableaux d'équipements du texte) ; DPGF → lignes d'ouvrages ;
 // annexe → tableau des équipements (repère, local, débit, puissance)
 async function lireDossier(fichier, nature, progression) {
   const pdf = /\.pdf$/i.test(fichier.name) || fichier.type === 'application/pdf';
   if (nature === 'annexe') {
     if (pdf) { const { lignes } = await PdfLecture.lire(fichier, progression, { pagesMax: 120, ocr: false }); return { items: [], annexe: InventaireCVC.tableauEquipements(lignes.map(l => String(l).split('\t')), `Annexe ${fichier.name}`) }; }
-    const buf = await fichier.arrayBuffer(), feuilles = /\.csv$/i.test(fichier.name) ? XLSX.readCSV(buf) : await XLSX.read(buf);
+    const feuilles = await lireClasseur(fichier);
     return { items: [], annexe: feuilles.flatMap(f => InventaireCVC.tableauEquipements(f.rows || [], `Annexe ${fichier.name}`)) };
   }
   if (nature === 'cctp') {
@@ -21,7 +28,7 @@ async function lireDossier(fichier, nature, progression) {
     return { items: InventaireCVC.depuisCctp(analyse.equipements, reseaux, analyse.articlesDetail), reseaux, annexe };
   }
   if (pdf) { const { lignes } = await PdfLecture.lire(fichier, progression, { pagesMax: 120, ocr: false }); return InventaireCVC.depuisDpgfTexte(lignes); }
-  const buf = await fichier.arrayBuffer(), feuilles = /\.csv$/i.test(fichier.name) ? XLSX.readCSV(buf) : await XLSX.read(buf);
+  const feuilles = await lireClasseur(fichier);
   // Feuille qui donne le plus d'équipements
   const lus = feuilles.map(f => InventaireCVC.depuisDpgf(f.rows || [])).sort((a, b) => b.items.length - a.items.length);
   if (!lus.length || (!lus[0].items.length && lus[0].erreur)) throw new Error(`${fichier.name} : ${(lus[0] || {}).erreur || 'aucune feuille lisible'}`);
@@ -36,8 +43,8 @@ function dialogueInventaire(et) {
   const b = Modal.open(`<h2>📑 CCTP et DPGF</h2>
     <p class="muted petit">Les producteurs, émetteurs et auxiliaires du dossier de consultation sont reconnus puis vérifiés ici : le schéma de principe et l'alimentation électrique en sont préremplis. CCTP en PDF ; DPGF en Excel, CSV ou PDF.</p>
     ${docs.length ? `<fieldset><legend>Documents du chantier ${esc(a.code || '')} dans Pipe-Fit</legend>${docs.map(d => `<label class="case"><input type="checkbox" data-doc="${esc(d.id)}" checked> ${esc(d.nom)} <span class="badge pf">${{ dpgf: 'DPGF', cctp: 'CCTP', annexe: 'Annexe' }[natureDe(d.nom)]}</span></label>`).join('')}</fieldset>` : ''}
-    <div class="grille-champs"><label>CCTP (PDF)<input type="file" id="inv-cctp" accept=".pdf,application/pdf"></label><label>DPGF (Excel, CSV ou PDF)<input type="file" id="inv-dpgf" accept=".xlsx,.csv,.pdf"></label>
-      <label>Liste des équipements / annexe (PDF, Excel, CSV) <span class="muted petit">facultatif : repères, locaux, débits, puissances</span><input type="file" id="inv-annexe" accept=".xlsx,.csv,.pdf"></label></div>
+    <div class="grille-champs"><label>CCTP (PDF)<input type="file" id="inv-cctp" accept=".pdf,application/pdf"></label><label>DPGF (Excel, CSV ou PDF)<input type="file" id="inv-dpgf" accept=".xls,.xlsx,.csv,.pdf"></label>
+      <label>Liste des équipements / annexe (PDF, Excel, CSV) <span class="muted petit">facultatif : repères, locaux, débits, puissances</span><input type="file" id="inv-annexe" accept=".xls,.xlsx,.csv,.pdf"></label></div>
     <p id="inv-etat" class="petit muted"></p>
     <div class="actions">${(et.inventaire || []).length ? '<button class="secondaire" id="inv-actuel">Revoir l\'inventaire enregistré</button>' : ''}<button class="secondaire" id="inv-x">Annuler</button><button id="inv-lire">Lire</button></div>`);
   b.classList.add('large');
