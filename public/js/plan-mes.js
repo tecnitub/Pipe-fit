@@ -27,7 +27,7 @@ const PlanMes = (() => {
     nature: p.nature, noteId: txt(p.noteId, 64), source: txt(p.source), titre: txt(p.titre, 200), type: txt(p.type, 20), cle: txt(p.cle, 200), detail: txt(p.detail, 600),
     reseau: txt(p.reseau, 200), natureReseau: txt(p.natureReseau, 60), fluideEssai: txt(p.fluideEssai, 20), PS: num(p.PS), PT: num(p.PT), categorie: num(p.categorie),
     repere: txt(p.repere, 40), local: txt(p.local, 80), zone: txt(p.zone, 60), marque: txt(p.marque, 60), modele: txt(p.modele, 80),
-    controles: (Array.isArray(p.controles) ? p.controles : []).slice(0, 400).map(c => txt(c, 120)).filter(Boolean),
+    controles: (Array.isArray(p.controles) ? p.controles : []).slice(0, 400).map(c => txt(c, 300)).filter(Boolean),
     attendus: (Array.isArray(p.attendus) ? p.attendus : []).slice(0, 400).map(a => ({ libelle: txt(a && a.libelle, 160), valeur: num(a && a.valeur), unite: txt(a && a.unite, 12) })).filter(a => a.libelle && a.valeur !== null),
   } : null);
   // Points des études du chantier (serveur) : [{ etudeId, etude, ...point }]
