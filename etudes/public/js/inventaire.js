@@ -84,6 +84,18 @@ function dialogueInventaire(et) {
 
 // Inventaire à vérifier : genre, désignation, quantité, puissance, régime ; puis création des calculs
 // Sources d'une ligne en bref : premier article du CCTP, première ligne du DPGF (le détail en infobulle)
+// Rapprochement de l'article du CCTP et de la ligne du DPGF, détails techniques lus, provenance de chaque valeur
+const LIB_RAPPROCHEMENT = { numero: 'n° d\'article', designation: 'désignation', chapitre: 'chapitre', genre: 'seul de son genre' };
+const LIB_DETAILS = { montage: { '3v': 'vanne 3 voies', '2v': 'vanne 2 voies', '4v': 'vanne 4 voies', injection3: 'injection 3 voies', injection2: 'injection 2 voies', decharge: 'décharge', bouteille: 'bouteille de circuit', echangeur: 'échangeur de circuit' },
+  pompe: { integree: 'pompe intégrée', deportee: 'pompe déportée' }, recup: { desurchauffeur: 'désurchauffeur', totale: 'récupération totale' }, role: { base: 'en base', appoint: 'en appoint', releve: 'en relève', secours: 'en secours', recuperation: 'en récupération' },
+  recuperateur: { plaques: 'récupérateur à plaques', roue: 'roue', glycol: 'boucle glycolée', aucun: 'sans récupérateur' } };
+function detailsTexte(x) {
+  const d = x.details || {}, b = d.batteries || {};
+  return [d.role && LIB_DETAILS.role[d.role], d.montage && LIB_DETAILS.montage[d.montage], d.pompe && LIB_DETAILS.pompe[d.pompe], d.recup && LIB_DETAILS.recup[d.recup], d.recuperateur && LIB_DETAILS.recuperateur[d.recuperateur],
+    Object.keys(b).length && `batteries ${[b.chaude && 'eau chaude', b.froide && 'eau glacée', b.co && 'change-over', b.elec && `électrique (${b.elec})`].filter(Boolean).join(' + ')}${d.PelBe ? ` ${Notes.nf(d.PelBe, 1)} kW` : ''}`,
+    d.reference && `réf. ${d.reference}`, d.equivalent && 'ou équivalent', d.regulation && `régulation ${[d.regulation.marque, d.regulation.gtb, d.regulation.bus].filter(Boolean).join(' · ')}`].filter(Boolean).join(' · ');
+}
+const titreProvenance = x => [(x.sources || []).join(', '), ...Object.entries(x.champs || {}).map(([k, c]) => `${(InventaireCVC.LIB_CHAMP[k] || { libelle: k }).libelle} : ${InventaireCVC.valeurChamp(k, c.v)} — ${c.source} (confiance ${c.confiance})${c.autre ? ` ; autre document : ${InventaireCVC.valeurChamp(k, c.autre.v)} (${c.autre.source})` : ''}`)].join('\n');
 const sourcesCourtes = l => { const c = (l || []).find(x => /^CCTP/.test(x)), d = (l || []).find(x => /^DPGF/.test(x)); return [c, d].filter(Boolean).join(' · ').replace('CCTP art. ', 'CCTP ') || (l || []).join(', '); };
 function tableauInventaire(et, inv, erreurs, reseaux = [], info = {}) {
   const ecarts = info.ecarts || et.inventaireEcarts || [];
@@ -107,7 +119,8 @@ function tableauInventaire(et, inv, erreurs, reseaux = [], info = {}) {
     ${ecarts.length ? `<h3>Écarts entre le CCTP et le DPGF <span class="compte">${ecarts.length}</span></h3>
       <p class="muted petit">Questions à poser pendant la consultation (sécurisent le chiffrage) : équipements décrits mais non chiffrés, chiffrés mais non décrits, quantités ou marques différentes.</p>
       <div class="defile-x"><table class="liste compact"><thead><tr><th>Écart</th><th>Équipement</th><th>Détail</th></tr></thead><tbody>${ecarts.map(e => `<tr><td><span class="badge ${e.type === 'marque' || e.type === 'quantite' ? 'attention' : 'erreur'}">${esc(InventaireCVC.LIB_ECART[e.type])}</span></td><td>${esc(e.designation)}</td><td class="petit">${esc(e.texte)}</td></tr>`).join('')}</tbody></table></div>
-      <div class="actions-ligne"><button class="secondaire petit" id="ti-ecarts-copier">📋 Copier les questions</button><button class="secondaire petit" id="ti-ecarts-csv">CSV</button></div>` : ''}
+      <div class="actions-ligne"><button class="secondaire petit" id="ti-ecarts-copier">📋 Copier les questions</button><button class="secondaire petit" id="ti-ecarts-csv">CSV</button>
+        <button class="${et.inventaireEcartsTraites ? '' : 'secondaire '}petit" id="ti-ecarts-traites" title="Questions posées ou écarts tranchés : retirés du « Reste à faire » de l'étude">${et.inventaireEcartsTraites ? '✓ Écarts traités' : 'Marquer les écarts comme traités'}</button></div>` : ''}
     <h3>Équipements</h3>
     <p class="muted petit">Décochez ce qui ne concerne pas l'étude, corrigez le genre, la quantité ou les puissances (unitaires, kW : <strong>chaud</strong> pour le schéma de chauffage, <strong>froid</strong> pour l'eau glacée, <strong>électrique</strong> pour le bilan électrique). Les quantités viennent du DPGF, les repères et prescriptions du CCTP${info.annexe ? ', le détail par repère du tableau d\'équipements' : ''}. Vos corrections sont retenues pour les prochains dossiers${(info.regles || []).length ? ` (${info.regles.length} règle(s) apprise(s))` : ''}.</p>
     <div class="defile-x"><table class="edit"><thead><tr><th></th><th>Genre</th><th>Désignation</th><th>Repère</th><th>Qté</th><th>P chaud</th><th>P froid</th><th>P élec.</th><th>Débit (m³/h)</th><th>Régime</th><th>Réseau</th><th>Source, prescription, caractéristiques</th></tr></thead><tbody>
@@ -116,16 +129,17 @@ function tableauInventaire(et, inv, erreurs, reseaux = [], info = {}) {
       <td><select data-i="${i}" data-k="genre">${Object.entries(G).map(([k, g]) => `<option value="${k}" ${k === x.genre ? 'selected' : ''}>${esc(g.libelle)}</option>`).join('')}</select></td>
       <td><input data-i="${i}" data-k="designation" value="${esc(x.designation)}" style="min-width:300px" title="${esc(x.designation)}">${x.chapitre && !x.designation.includes(x.chapitre) ? `<br><span class="petit muted">${esc(x.chapitre)}</span>` : ''}${x.local ? `<br><span class="petit muted">📍 ${esc(x.local)}</span>` : ''}${x.appris ? '<br><span class="ligne-auto">↺ corrigé d\'après une correction précédente</span>' : ''}${x.horsSchema ? `<br><span class="petit avert">${esc(x.horsSchema)} : hors schéma hydraulique</span>` : ''}</td><td><input data-i="${i}" data-k="repere" value="${esc(x.repere || '')}" style="width:80px"></td>
       <td><input data-i="${i}" data-k="qte" value="${esc(x.qte)}" class="nombre" style="width:60px"></td><td><input data-i="${i}" data-k="P" value="${esc(x.P ?? '')}" class="nombre" style="width:62px" title="Puissance calorifique unitaire (kW)"></td><td><input data-i="${i}" data-k="Pfr" value="${esc(x.Pfr ?? '')}" class="nombre" style="width:62px" title="Puissance frigorifique unitaire (kW)"></td><td><input data-i="${i}" data-k="Pel" value="${esc(x.Pel ?? '')}" class="nombre" style="width:62px" title="Puissance électrique unitaire (kW), reprise par l'alimentation électrique"></td><td><input data-i="${i}" data-k="Q" value="${esc(x.Q ?? '')}" class="nombre" style="width:70px" title="Débit d'air par bouche ou de l'équipement"></td>
-      <td><input data-i="${i}" data-k="regime" value="${esc(x.regime || '')}" placeholder="70/50" style="width:70px"></td><td><select data-i="${i}" data-k="reseau" style="max-width:170px">${optReseaux(x.reseau)}</select>${x.rattache && x.reseau ? `<br><span class="ligne-auto" title="Rattaché automatiquement">↳ d'après ${x.rattache === 'texte' ? 'le texte (alimentation)' : 'le chapitre de la production'}</span>` : ''}</td><td class="petit muted" style="min-width:260px" title="${esc((x.sources || []).join(', '))}">${esc(sourcesCourtes(x.sources))}${x.prescrit ? `<br>${esc(x.prescrit)}` : ''}${InventaireCVC.caracTexte(x.carac) ? `<br><span style="color:var(--texte)">${esc(InventaireCVC.caracTexte(x.carac))}</span>` : ''}</td></tr>`).join('')}` : ''; }).join('')}
+      <td><input data-i="${i}" data-k="regime" value="${esc(x.regime || '')}" placeholder="70/50" style="width:70px"></td><td><select data-i="${i}" data-k="reseau" style="max-width:170px">${optReseaux(x.reseau)}</select>${x.rattache && x.reseau ? `<br><span class="ligne-auto" title="Rattaché automatiquement">↳ d'après ${x.rattache === 'texte' ? 'le texte (alimentation)' : x.rattache === 'numero' ? 'le numéro d\'article' : 'le chapitre de la production'}</span>` : ''}</td><td class="petit muted" style="min-width:260px" title="${esc(titreProvenance(x))}">${esc(sourcesCourtes(x.sources))}${x.rapprochement && LIB_RAPPROCHEMENT[x.rapprochement] ? ` <span class="badge">${LIB_RAPPROCHEMENT[x.rapprochement]}</span>` : ''}${x.prescrit ? `<br>${esc(x.prescrit)}` : ''}${InventaireCVC.caracTexte(x.carac) ? `<br><span style="color:var(--texte)">${esc(InventaireCVC.caracTexte(x.carac))}</span>` : ''}${detailsTexte(x) ? `<br><span style="color:var(--texte)">${esc(detailsTexte(x))}</span>` : ''}
+        ${InventaireCVC.aVerifier(x).length ? `<br>${InventaireCVC.aVerifier(x).map(v => `<span class="${v.conflit ? 'avert' : ''}">⚠ ${esc(v.libelle)} : ${esc(v.texte)}</span>`).join('<br>')}<br><label class="case petit"><input type="checkbox" data-i="${i}" data-k="verifie" ${x.verifie ? 'checked' : ''}> valeurs vérifiées</label>` : ''}</td></tr>`).join('')}` : ''; }).join('')}
     </tbody></table></div>
     <div class="actions"><button class="secondaire" id="ti-x">Fermer</button><button class="secondaire" id="ti-ok">Enregistrer l'inventaire</button>
-      <button id="ti-pid">🗺️ Créer le schéma de principe</button><button id="ti-aero">🌬️ Créer le schéma aéraulique</button><button id="ti-elec">⚡ Créer l'alimentation électrique</button></div>`;
+      <button data-creer="pid">🗺️ Créer le schéma de principe</button><button data-creer="aero">🌬️ Créer le schéma aéraulique et les CTA</button><button data-creer="terminaux">🌀 Créer les terminaux</button><button data-creer="elec">⚡ Créer l'alimentation électrique et la régulation</button></div>`;
   const b = Modal.open(rendu());
   b.classList.add('large');
   const lier = () => {
     b.querySelectorAll('[data-i]').forEach(el => el.onchange = () => {
       const x = inv[+el.dataset.i], k = el.dataset.k;
-      x[k] = k === 'inclus' ? el.checked : ['qte', 'P', 'Pfr', 'Pel', 'Q'].includes(k) ? (el.value === '' ? '' : Notes.num(el.value)) : el.value;
+      x[k] = ['inclus', 'verifie'].includes(k) ? el.checked : ['qte', 'P', 'Pfr', 'Pel', 'Q'].includes(k) ? (el.value === '' ? '' : Notes.num(el.value)) : el.value;
       if (k === 'reseau') delete x.rattache;
       if (k === 'genre' || k === 'reseau') { if (k === 'genre') x.categorie = G[el.value].categorie; b.innerHTML = rendu(); lier(); }
     });
@@ -146,38 +160,69 @@ function tableauInventaire(et, inv, erreurs, reseaux = [], info = {}) {
     const bx = b.querySelector('#ti-ecarts-csv');
     if (bx) bx.onclick = () => enregistrerFichier(b, `Ecarts_CCTP_DPGF_${sansAccents(et.objet || 'etude').slice(0, 40)}.csv`, new TextEncoder().encode(`\uFEFFÉcart;Équipement;Détail\n${ecarts.map(e => [InventaireCVC.LIB_ECART[e.type], e.designation, e.texte].map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\n')}`), 'text/csv');
     b.querySelector('#ti-ok').onclick = () => { garder(); Modal.close(); App.render(); toast(`Inventaire enregistré : ${inv.filter(x => x.inclus !== false).length} équipement(s).`); };
-    b.querySelector('#ti-pid').onclick = () => {
-      garder();
-      const { entrees, alertes } = InventaireCVC.versSchema(inv, Schema, reseaux);
-      const n = nouvelleNote('pid', { ...Notes.defauts('pid'), ...entrees, circuits: entrees.circuits.length ? entrees.circuits : Notes.defauts('pid').circuits });
-      n.titre = `Schéma de principe — ${entrees.titreInstallation || 'd\'après le CCTP / DPGF'}`;
-      n.commentaire = `Prérempli d'après le dossier de consultation (CCTP / DPGF).${alertes.length ? ` À vérifier : ${alertes.join(' ')}` : ''}`;
-      et.notes.push(n); enregistrer(et); Modal.close();
-      location.hash = `#/etude/${et.id}/${n.id}`;
-      toast(alertes.length ? `Schéma créé. À vérifier : ${alertes[0]}${alertes.length > 1 ? ` (+${alertes.length - 1})` : ''}` : 'Schéma de principe créé d\'après le dossier.', 8000);
-    };
-    b.querySelector('#ti-aero').onclick = () => {
-      garder();
-      const { entrees, alertes } = InventaireCVC.versSchemaAir(inv, reseaux);
-      const n = nouvelleNote('aero', { ...Notes.defauts('aero'), ...entrees, zones: entrees.zones.length ? entrees.zones : Notes.defauts('aero').zones });
-      n.titre = `Schéma aéraulique — ${entrees.titreInstallation || 'd\'après le CCTP / DPGF'}`;
-      n.commentaire = `Prérempli d'après le dossier de consultation (CCTP / DPGF) : vérifier les distances des zones au ventilateur et les longueurs d'antenne.${alertes.length ? ` À vérifier : ${alertes.join(' ')}` : ''}`;
-      et.notes.push(n); enregistrer(et); Modal.close();
-      location.hash = `#/etude/${et.id}/${n.id}`;
-      toast(alertes.length ? `Schéma aéraulique créé. À vérifier : ${alertes[0]}${alertes.length > 1 ? ` (+${alertes.length - 1})` : ''}` : 'Schéma aéraulique créé d\'après le dossier.', 8000);
-    };
-    b.querySelector('#ti-elec').onclick = () => {
-      garder();
-      const lignes = InventaireCVC.versElec(inv);
-      if (!lignes.length) return toast('Aucun équipement alimenté électriquement dans l\'inventaire.');
-      const ex = et.notes.find(x => x.type === 'elec');
-      if (ex) { ex.entrees = { ...ex.entrees, equipements: Electricite.fusionner((ex.entrees || {}).equipements, lignes).lignes }; enregistrer(et); Modal.close(); location.hash = `#/etude/${et.id}/${ex.id}`; toast('Équipements ajoutés au calcul d\'alimentation électrique existant.', 6000); return; }
-      const n = nouvelleNote('elec', { ...Notes.defauts('elec'), equipements: Electricite.fusionner([], lignes).lignes });
-      n.commentaire = 'Équipements repris du dossier de consultation (CCTP / DPGF) : choisissez pour chacun son alimentation et sa régulation.';
-      et.notes.push(n); enregistrer(et); Modal.close();
-      location.hash = `#/etude/${et.id}/${n.id}`;
-      toast(`${lignes.length} équipement(s) repris : choisissez leur alimentation et leur régulation.`, 6000);
-    };
+    b.querySelectorAll('[data-creer]').forEach(bt => bt.onclick = () => { garder(); Modal.close(); creerCalculInventaire(et, bt.dataset.creer); });
+    const tr = b.querySelector('#ti-ecarts-traites');
+    if (tr) tr.onclick = () => { et.inventaireEcartsTraites = !et.inventaireEcartsTraites; garder(); b.innerHTML = rendu(); lier(); };
   };
   lier();
+}
+
+// Calculs créés d'après l'inventaire enregistré de l'étude : schéma de principe (générateurs et rôles, montages, ballons,
+// découplage, récupération), schéma aéraulique et CTA (batteries, récupérateur), terminaux, alimentation électrique et
+// régulation (marque de l'automate, GTB, bus). Les notes créées sont marquées « origine : inventaire ».
+function creerCalculInventaire(et, quoi) {
+  const inv = et.inventaire || [], reseaux = et.inventaireReseaux || [];
+  if (!inv.length) { toast('Inventaire vide : lisez d\'abord le CCTP et le DPGF.'); return dialogueInventaire(et); }
+  const marquer = n => { n.origine = 'inventaire'; return n; };
+  const aller = (n, msg, alertes = []) => { enregistrer(et); if (typeof Modal !== 'undefined' && Modal.close) Modal.close(); location.hash = `#/etude/${et.id}/${n.id}`; toast(alertes.length ? `${msg} À vérifier : ${alertes[0]}${alertes.length > 1 ? ` (+${alertes.length - 1})` : ''}` : msg, 8000); };
+  if (quoi === 'pid') {
+    const { entrees, alertes } = InventaireCVC.versSchema(inv, Schema, reseaux);
+    const n = marquer(nouvelleNote('pid', { ...Notes.defauts('pid'), ...entrees, circuits: entrees.circuits.length ? entrees.circuits : Notes.defauts('pid').circuits }));
+    n.titre = `Schéma de principe — ${entrees.titreInstallation || 'd\'après le CCTP / DPGF'}`;
+    n.commentaire = `Prérempli d'après le dossier de consultation (CCTP / DPGF).${alertes.length ? ` À vérifier : ${alertes.join(' ')}` : ''}`;
+    et.notes.push(n);
+    return aller(n, entrees.generateurs ? `Schéma créé : ${entrees.generateurs.length} générateurs détaillés.` : 'Schéma de principe créé d\'après le dossier.', alertes);
+  }
+  if (quoi === 'aero') {
+    const { entrees, alertes, ctas } = InventaireCVC.versSchemaAir(inv, reseaux);
+    // Une note « CTA » par centrale (pas deux fois la même)
+    const nouvelles = (ctas || []).filter(c => !et.notes.some(n => n.type === 'cta' && n.titre === c.titre)).map(c => {
+      const n = marquer(nouvelleNote('cta', { ...Notes.defauts('cta'), ...c.entrees }));
+      n.titre = c.titre; n.commentaire = `Reprise du dossier de consultation (${c.sources.join(', ')}) : batteries, récupérateur, débits et puissances à vérifier.`;
+      et.notes.push(n); return n;
+    });
+    const bouches = (entrees.zones || []).length;
+    if (!bouches && nouvelles.length) return aller(nouvelles[0], `${nouvelles.length} CTA créée(s) d'après le dossier (pas de bouches reconnues pour le schéma aéraulique).`);
+    const n = marquer(nouvelleNote('aero', { ...Notes.defauts('aero'), ...entrees, zones: bouches ? entrees.zones : Notes.defauts('aero').zones }));
+    n.titre = `Schéma aéraulique — ${entrees.titreInstallation || 'd\'après le CCTP / DPGF'}`;
+    n.commentaire = `Prérempli d'après le dossier de consultation (CCTP / DPGF) : vérifier les distances des zones au ventilateur et les longueurs d'antenne.${alertes.length ? ` À vérifier : ${alertes.join(' ')}` : ''}`;
+    et.notes.push(n);
+    return aller(n, `Schéma aéraulique créé${nouvelles.length ? ` et ${nouvelles.length} CTA` : ''} d'après le dossier.`, alertes);
+  }
+  if (quoi === 'terminaux') {
+    const { appareils, alertes } = InventaireCVC.versTerminaux(inv);
+    if (!appareils.length) return toast('Aucun terminal (ventilo-convecteur, cassette, aérotherme, split, radiateur) dans l\'inventaire.');
+    const n = marquer(nouvelleNote('terminaux', { ...Notes.defauts('terminaux'), appareils }));
+    n.titre = 'Terminaux — d\'après le CCTP / DPGF';
+    n.commentaire = `Terminaux repris du dossier de consultation : locaux, puissances, batteries et vannes à vérifier.${alertes.length ? ` À vérifier : ${alertes.join(' ')}` : ''}`;
+    et.notes.push(n);
+    return aller(n, `${appareils.length} terminal(aux) repris du dossier.`, alertes);
+  }
+  if (quoi === 'elec') {
+    const lignes = InventaireCVC.versElec(inv), reg = InventaireCVC.versRegulation(inv).entrees;
+    if (!lignes.length) return toast('Aucun équipement alimenté électriquement dans l\'inventaire.');
+    // Régulation : marque de l'automate, supervision et bus lus au CCTP ; techno « régulateurs préprogrammés » sur l'armoire
+    const regul = e => {
+      const d = Notes.defauts('elec');
+      ['marqueAutomate', 'gtb', 'busEquip'].forEach(k => { if (reg[k] !== undefined && (e[k] === undefined || e[k] === d[k])) e[k] = reg[k]; });
+      if (reg.techno && (e.armoires || []).length && (e.armoires || []).every(a => !a.techno || a.techno === 'automate')) e.armoires = e.armoires.map(a => ({ ...a, techno: reg.techno }));
+      return e;
+    };
+    const ex = et.notes.find(x => x.type === 'elec');
+    if (ex) { ex.entrees = regul({ ...ex.entrees, equipements: Electricite.fusionner((ex.entrees || {}).equipements, lignes).lignes }); return aller(ex, 'Équipements et régulation ajoutés au calcul d\'alimentation électrique existant.'); }
+    const n = marquer(nouvelleNote('elec', regul({ ...Notes.defauts('elec'), equipements: Electricite.fusionner([], lignes).lignes })));
+    n.commentaire = `Équipements repris du dossier de consultation (CCTP / DPGF) : choisissez pour chacun son alimentation et sa régulation.${Object.keys(reg).length ? ` Régulation reprise du CCTP : ${[reg.marqueAutomate, reg.gtb, reg.busEquip].filter(Boolean).join(', ')}.` : ''}`;
+    et.notes.push(n);
+    return aller(n, `${lignes.length} équipement(s) repris : choisissez leur alimentation et leur régulation.`);
+  }
 }

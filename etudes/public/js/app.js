@@ -498,6 +498,7 @@ Vues.etude = {
           <span class="espace"></span><button class="secondaire petit" id="dupliquer">Dupliquer l'étude</button>${et.modele ? '' : '<button class="secondaire petit" id="modele">⭐ Enregistrer comme modèle</button>'}<button class="secondaire petit" id="supprimer">Supprimer</button></div></div>
       ${(et.inventaire || []).length ? (() => { const inc = et.inventaire.filter(x => x.inclus !== false), nb = c => inc.filter(x => x.categorie === c).reduce((t, x) => t + (Notes.num(x.qte) || 1), 0), lignes = c => inc.filter(x => x.categorie === c).length;
         return `<div class="carte petit">📑 <strong>Inventaire du dossier de consultation</strong> : ${nb('producteur')} producteur(s), ${lignes('emetteur')} type(s) d'émetteurs, ${lignes('auxiliaire')} type(s) d'auxiliaires — ${esc([...new Set(inc.map(x => InventaireCVC.GENRES[x.genre] && InventaireCVC.GENRES[x.genre].libelle).filter(Boolean))].join(', '))} <button class="secondaire petit" id="inventaire2">Voir / préremplir</button></div>`; })() : ''}
+      ${typeof GuideEtude !== 'undefined' ? GuideEtude.html(et) : ''}
       ${typeof parcoursHtml === 'function' ? parcoursHtml(et) : ''}
       ${typeof carteRegistre === 'function' ? carteRegistre(et) : ''}
       ${typeof carteMateriel === 'function' ? carteMateriel(et) : ''}
@@ -522,6 +523,7 @@ Vues.etude = {
     if (fm) fm.onclick = () => dialogueFichesMes(et);
     root.querySelectorAll('#vrac, #vrac2').forEach(b => { b.onclick = () => dialogueVrac(et); });
     if (typeof lierParcours === 'function') lierParcours(root, et);
+    if (typeof GuideEtude !== 'undefined') GuideEtude.lier(root, et);
     const rg = root.querySelector('#registre');
     if (rg) rg.onclick = () => dialogueRegistre(et);
     const ancienEtude = { climat: et.climat, typeBatiment: et.typeBatiment, neuf: et.neuf };

@@ -192,3 +192,20 @@ ul.af { padding-left: 18px; font-size: 13.5px; display: grid; gap: 6px; }
 .ensemble-svg { border: 1px solid var(--bord, #d6dbe1); border-radius: 6px; background: #fff; }
 .ensemble-svg svg { display: block; width: 100%; height: auto; min-width: 720px; }
 @media (max-width: 700px) { .ensemble-svg svg { width: auto; min-width: 0; max-width: none; } }
+
+/* Guide « Reste à faire » de l'étude */
+.guide-etude { border-left: 4px solid #e08a00; }
+.guide-suivante { display: flex; gap: .7em; align-items: center; flex-wrap: wrap; padding: .6em .7em; border-radius: 8px; background: rgba(224, 138, 0, .1); outline: 2px solid rgba(224, 138, 0, .45); }
+.guide-ico { font-size: 1.5em; flex: none; }
+.guide-txt { display: flex; flex-direction: column; gap: .15em; flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+.guide-actions { display: flex; gap: .4em; flex-wrap: wrap; }
+.guide-liste { margin-top: .6em; }
+.guide-liste > summary { cursor: pointer; font-weight: 600; padding: .3em 0; }
+.guide-liste h4 { margin: .7em 0 .3em; font-size: .95em; }
+.guide-liste ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .4em; }
+.guide-liste li { display: flex; gap: .6em; align-items: center; flex-wrap: wrap; padding: .45em .55em; border-radius: 8px; background: rgba(127, 127, 127, .06); }
+.guide-cible { outline: 3px solid #e08a00 !important; outline-offset: 2px; }
+@media (max-width: 600px) {
+  .guide-actions { width: 100%; }
+  .guide-actions button { flex: 1 1 auto; }
+}
