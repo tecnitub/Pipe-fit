@@ -52,7 +52,7 @@ function importerDPGF(d) {
   const ecranFichier = () => {
     const box = Modal.open(`<h2 style="margin-top:0">Importer un DPGF</h2>
       <p>Fichier Excel (.xlsx) ou CSV du dossier de consultation. Les chapitres, les ouvrages et leurs quantités sont repris dans le devis ; il ne reste qu'à chiffrer chaque ouvrage (fournitures + main-d'œuvre).</p>
-      <label class="photo-drop" for="dp-file"><span class="photo-icon" aria-hidden="true">📄</span><span>Choisir le DPGF</span><input id="dp-file" type="file" accept=".xlsx,.csv" hidden></label>
+      <label class="photo-drop" for="dp-file"><span class="photo-icon" aria-hidden="true">📄</span><span>Choisir le DPGF</span><input id="dp-file" type="file" accept=".xls,.xlsx,.csv" hidden></label>
       <div class="modal-actions"><button class="secondary" id="dp-close">Annuler</button></div>`);
     box.querySelector('#dp-close').onclick = Modal.close;
     box.querySelector('#dp-file').onchange = async e => {
@@ -60,7 +60,8 @@ function importerDPGF(d) {
       if (!file) return;
       try {
         const buf = await file.arrayBuffer();
-        etat.sheets = /\.csv$/i.test(file.name) ? XLSX.readCSV(buf) : await XLSX.read(buf);
+        // Excel 97-2003 (.xls) : lecteur BIFF8 ; .xlsx et CSV inchangés
+        etat.sheets = typeof Xls !== 'undefined' && (/\.xls$/i.test(file.name) || Xls.estXls(buf)) ? Xls.lire(buf) : /\.csv$/i.test(file.name) ? XLSX.readCSV(buf) : await XLSX.read(buf);
         etat.nom = file.name;
         // Feuille la plus probable : celle dont l'en-tête reconnaît le plus de colonnes
         let best = -1;
