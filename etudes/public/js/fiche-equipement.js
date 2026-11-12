@@ -30,6 +30,11 @@ const FicheEquip = (() => {
         const kw = apres(x, 'puissance(?: calorifique| thermique| utile| nominale| de chauffage| chaud)?|output|capacity', 'kw');
         if (/froid|frigorifique|refroidissement|cooling/.test(x)) pose('Pfr', kw, i, 0.5, 20000); else pose('P', kw, i, 0.5, 20000);
       }
+      // Perte de charge côté eau (générateur, échangeur) : kPa, ou mCE / mbar convertis
+      if (/perte de charge|pertes de charge|\bpdc\b|delta ?p|chute de pression/.test(x) && !/air|gaine|filtre/.test(x)) {
+        const k = apres(x, 'perte(?:s)? de charge(?: cote eau| hydraulique| eau| evaporateur| condenseur| primaire| secondaire)?|\\bpdc\\b|delta ?p|chute de pression', 'kpa'), mb = k === undefined ? apres(x, 'perte(?:s)? de charge[^0-9]{0,30}|\\bpdc\\b', 'mbar') : undefined, m = k === undefined && mb === undefined ? apres(x, 'perte(?:s)? de charge[^0-9]{0,30}|\\bpdc\\b', 'm\\s*ce|mce') : undefined;
+        pose('dpEau', k !== undefined ? k : mb !== undefined ? mb / 10 : m !== undefined ? m * 9.81 : undefined, i, 0.1, 500);
+      }
       if (/scop|cop|rendement (?:utile|saisonnier|pci|pcs)|etas/.test(x) && !/pompe/.test(x)) pose('rendGen', apres(x, 'rendement (?:utile|saisonnier|pci|pcs)|etas', '%'), i, 30, 115);
     });
     // Débit et hauteur sans « point de fonctionnement » : lignes « débit … m3/h », « HMT … m »
@@ -46,7 +51,7 @@ const FicheEquip = (() => {
 
   const LIBELLES = { Q: ['Débit au point de fonctionnement', 'm³/h'], H: ['Hauteur au point de fonctionnement', 'mCE'], Qmax: ['Débit maximal', 'm³/h'], Hmax: ['Hauteur maximale', 'mCE'],
     P1: ['Puissance absorbée P1', 'W'], rendement: ['Rendement de la pompe', '%'], V: ['Volume', 'L'], p0: ['Pression de gonflage (usine)', 'bar'], pmax: ['Pression maximale de service', 'bar'],
-    P: ['Puissance', 'kW'], Pfr: ['Puissance froid', 'kW'], rendGen: ['Rendement du générateur', '%'] };
+    P: ['Puissance', 'kW'], Pfr: ['Puissance froid', 'kW'], rendGen: ['Rendement du générateur', '%'], dpEau: ['Perte de charge côté eau', 'kPa'] };
   // Champs du calcul remplis par la fiche
   function champs(type, v) {
     const out = [], a = (k, cle, val) => { if (val !== undefined && Number.isFinite(val)) out.push({ k, cle, val: Math.round(val * 100) / 100, libelle: LIBELLES[cle][0], unite: LIBELLES[cle][1] }); };
@@ -57,7 +62,7 @@ const FicheEquip = (() => {
       if (eta !== undefined) out.push({ k: 'rendement', cle: 'rendement', val: Math.round(eta), libelle: v.rendement !== undefined ? 'Rendement de la pompe' : 'Rendement de la pompe (ρ·g·Q·H / P1)', unite: '%' });
     }
     if (t === 'ecs') a('P', 'P', v.P);
-    if (t === 'generateur') { a('Pgen', 'P', v.P); a('PgenF', 'Pfr', v.Pfr); if (v.P1 !== undefined) out.push({ k: 'PelecGen', cle: 'P1', val: Math.round(v.P1 / 10) / 100, libelle: 'Puissance électrique absorbée', unite: 'kW' }); }
+    if (t === 'generateur') { a('Pgen', 'P', v.P); a('PgenF', 'Pfr', v.Pfr); a('dpGen', 'dpEau', v.dpEau); if (v.P1 !== undefined) out.push({ k: 'PelecGen', cle: 'P1', val: Math.round(v.P1 / 10) / 100, libelle: 'Puissance électrique absorbée', unite: 'kW' }); }
     return out;
   }
   // Fiche gardée avec le calcul (contrôles)

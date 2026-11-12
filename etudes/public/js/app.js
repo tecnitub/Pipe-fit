@@ -1046,7 +1046,7 @@ Vues.note = {
         ${TYPES_FICHE.includes(n.type) ? `<button class="secondaire" id="fiche-tech" title="Fiche du fabricant (PDF de l'ordinateur ou de la bibliothèque Pipe-Fit) : remplit le calcul et contrôle le matériel choisi">📄 Fiche technique${['cta', 'aero'].includes(n.type) ? ' de la CTA' : { reseau: ' de la pompe', arbo: ' de la pompe', vase: ' du vase', ecs: ' du ballon / échangeur', pid: ' du générateur', terminaux: ' d\'un terminal' }[n.type] || ''}${n.entrees.fiche && (n.entrees.fiche.fabricant || n.entrees.fiche.reference) ? ` ✓` : ''}</button>` : ''}
         ${n.type === 'cta' ? `<button class="secondaire" id="cta-reseau">🌬️ ${Liens.reseauxDeCta(et.notes, n).some(x => x.type === 'aero') ? 'Ouvrir le schéma aéraulique relié' : 'Créer le schéma aéraulique relié (gaines, bouches)'}</button>` : ''}
         ${n.type === 'arbo' ? '<button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par tronçon (tubes, vannes d\'équilibrage avec préréglage, robinetterie, pompe) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
-        ${n.type === 'pid' ? '<button class="secondaire" id="pid-pompes" title="Une ligne par circuit pour saisir la pompe retenue et sa courbe (ou la lire sur la fiche du fabricant)">⚙️ Pompes retenues par circuit</button>' : ''}
+        ${n.type === 'pid' ? '<button class="secondaire" id="pid-pompes" title="Une ligne par circuit et par pompe de production (primaires PP, échangeur PECH1 / PECH2, récupération PREC, refroidissement PEV) pour saisir la pompe retenue et sa courbe (ou la lire sur la fiche du fabricant)">⚙️ Pompes retenues</button><button class="secondaire" id="pid-vannes" title="Vannes d\'autorité inférieure à 0,5 : Kvs cible, Kvs normalisé et vanne du catalogue proposés, appliqués après confirmation">🎚️ Redimensionner les vannes (autorité ≥ 0,5)</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-rob" title="Pour chaque circuit sans robinetterie : vannes d\'isolement, vanne d\'équilibrage, filtre, manchettes, thermomètres ; à compléter avec les Kv des fiches">🔩 Robinetterie type par circuit</button><button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par circuit (repères, DN, fabricant, référence, fiche, ΔP) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="notes-liees">🔗 Créer les notes liées (réseaux et pompes, vannes, vase)</button>' : ''}
         ${n.type === 'elec' ? '<button class="secondaire" id="elec-reprendre">⚡ Mettre à jour depuis l\'étude</button><button class="secondaire" id="elec-cables">🔌 Dimensionner les câbles à notre charge</button><button class="secondaire" id="elec-excel">📊 Classeur Excel (bilan, attentes, points, adressage, nomenclature)</button><button class="secondaire" id="elec-csv">🔗 Table d\'échange GTB (CSV)</button><button class="secondaire" id="elec-profil">🏢 Préremplir les zones (étude + type de bâtiment)</button><button class="secondaire" id="elec-af">📄 Analyse fonctionnelle (Word)</button><button class="secondaire" id="elec-ede">🔗 Fichier EDE BACnet (intégrateur GTB)</button><button class="secondaire" id="elec-etiq">🏷️ Étiquettes de repérage</button><button class="secondaire" id="elec-devis-reg">💶 Chiffrer la régulation (devis Pipe-Fit)</button><button class="secondaire" id="elec-releves">📈 Analyser des relevés de la GTB</button><button class="secondaire" id="elec-achat-reg">🛒 Matériel de régulation : demande de prix</button><button class="secondaire" id="elec-reglees">↩️ Reprendre les valeurs réglées sur site</button><button class="secondaire" id="elec-pressions">📏 Reprendre les pressions des CTA (mises en service du chantier)</button><button class="secondaire" id="elec-cahier-docx">📄 Cahier de paramétrage (Word)</button><button class="secondaire" id="elec-cahier-xlsx">📑 Cahier (Excel, un onglet par rubrique)</button>' : ''}
@@ -1372,9 +1372,29 @@ Vues.note = {
     // Schéma de principe : robinetterie type par circuit, nomenclature et liste d'achat
     const pp = root.querySelector('#pid-pompes');
     if (pp) pp.onclick = () => {
-      const l = n.entrees.pompesFab = n.entrees.pompesFab || [], deja = new Set(l.map(x => x.circuit)), c = (n.entrees.circuits || []).map((x, i) => x.rep || `C${i + 1}`).filter(r => !deja.has(r));
-      if (!c.length) return toast('Chaque circuit a déjà sa pompe.', 4000);
+      // Circuits, puis pompes de production (primaires, échangeur, récupération, refroidissement)
+      let prod = []; try { const eR = Liens.resoudre(et, n).entrees; prod = Schema.pompesProduction(eR, Schema.dimensionner(eR)).map(p => p.cle); } catch (er) { prod = []; }
+      const l = n.entrees.pompesFab = n.entrees.pompesFab || [], deja = new Set(l.map(x => x.circuit)), c = [...(n.entrees.circuits || []).map((x, i) => x.rep || `C${i + 1}`), ...prod].filter(r => !deja.has(r));
+      if (!c.length) return toast('Chaque circuit et chaque pompe de production a déjà sa ligne.', 4000);
       c.forEach(r => l.push({ circuit: r, ref: '', courbe: '' })); enregistrer(et); App.render(); toast(`${c.length} pompe(s) à renseigner : chargez la fiche (tableau des fiches) ou saisissez la courbe Q:H.`, 6000);
+    };
+    // Redimensionnement des vannes : autorité ≥ 0,5 (Kvs normalisé retenu, vanne du catalogue), appliqué après confirmation
+    const pv = root.querySelector('#pid-vannes');
+    if (pv) pv.onclick = () => {
+      let mods; try { mods = Schema.redimensionnerVannes(Liens.resoudre(et, n).entrees); } catch (er) { return toast(er.message, 5000); }
+      if (!mods.length) return toast('Toutes les vannes ont une autorité d\'au moins 0,5 : rien à modifier.', 4000);
+      const nf = Notes.nf, b = Modal.open(`<h2>🎚️ Redimensionner les vannes — ${esc(n.titre)}</h2>
+        <p class="muted petit">Autorité visée ≥ 0,5 : ΔP de vanne au moins égale à la ΔP de la partie à débit variable ; Kvs normalisé immédiatement inférieur au Kv cible (vanne plus résistante). Les pompes des circuits sont recalculées avec la nouvelle ΔP.</p>
+        <div class="defile-x"><table class="liste compact"><thead><tr><th>Circuit</th><th>Vanne</th><th>Débit (m³/h)</th><th>Avant : Kvs · ΔP · autorité</th><th>Kv cible</th><th>Après : Kvs · ΔP · autorité</th><th>Vanne du catalogue</th></tr></thead><tbody>
+        ${mods.map(m => `<tr><td>${esc(m.rep)}</td><td>${m.type === '3v' ? '3 voies' : '2 voies'}</td><td>${nf(m.Qv, 2)}</td><td>${m.kvsAvant ? nf(m.kvsAvant, m.kvsAvant < 1 ? 2 : 1) : '—'} · ${nf(m.dpAvant, 1)} kPa · ${nf(m.autoriteAvant, 2)}</td><td>${nf(m.kvCible, 2)}</td>
+          <td><strong>${nf(m.kvs, m.kvs < 1 ? 2 : 1)}</strong> · ${nf(m.dpApres, 1)} kPa · <strong>${nf(m.autoriteApres, 2)}</strong></td><td class="petit">${esc(m.vanne || '—')}</td></tr>`).join('')}</tbody></table></div>
+        <div class="actions"><button class="secondaire" id="rv-x">Annuler</button><button id="rv-ok">Appliquer (${mods.length} vanne${mods.length > 1 ? 's' : ''})</button></div>`);
+      b.querySelector('#rv-x').onclick = Modal.close;
+      b.querySelector('#rv-ok').onclick = () => {
+        if (!Array.isArray(n.entrees.circuits)) n.entrees.circuits = JSON.parse(JSON.stringify(Notes.defauts('pid').circuits || []));
+        const k = Schema.appliquerVannes(n.entrees, mods); enregistrer(et); Modal.close(); App.render();
+        toast(`${k} vanne(s) redimensionnée(s) : Kvs retenu dans la colonne « Kvs retenu » des circuits (autorité ≥ 0,5).`, 6000);
+      };
     };
     const pr = root.querySelector('#pid-rob');
     if (pr) pr.onclick = () => {
