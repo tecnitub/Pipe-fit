@@ -183,12 +183,17 @@ function creerCalculInventaire(et, quoi) {
   const marquer = n => { n.origine = 'inventaire'; return n; };
   const aller = (n, msg, alertes = []) => { enregistrer(et); if (typeof Modal !== 'undefined' && Modal.close) Modal.close(); location.hash = `#/etude/${et.id}/${n.id}`; toast(alertes.length ? `${msg} À vérifier : ${alertes[0]}${alertes.length > 1 ? ` (+${alertes.length - 1})` : ''}` : msg, 8000); };
   if (quoi === 'pid') {
-    const { entrees, alertes } = InventaireCVC.versSchema(inv, Schema, reseaux);
-    const n = marquer(nouvelleNote('pid', { ...Notes.defauts('pid'), ...entrees, circuits: entrees.circuits.length ? entrees.circuits : Notes.defauts('pid').circuits }));
-    n.titre = `Schéma de principe — ${entrees.titreInstallation || 'd\'après le CCTP / DPGF'}`;
-    n.commentaire = `Prérempli d'après le dossier de consultation (CCTP / DPGF).${alertes.length ? ` À vérifier : ${alertes.join(' ')}` : ''}`;
-    et.notes.push(n);
-    return aller(n, entrees.generateurs ? `Schéma créé : ${entrees.generateurs.length} générateurs détaillés.` : 'Schéma de principe créé d\'après le dossier.', alertes);
+    // Un schéma, ou deux (froid + chaud : thermofrigopompe, productions chaud et froid distinctes), reliés par la récupération
+    const { schemas } = InventaireCVC.versSchemas(inv, Schema, reseaux), cree = {};
+    schemas.forEach(sc => {
+      const n = marquer(nouvelleNote('pid', { ...Notes.defauts('pid'), ...sc.entrees, circuits: sc.entrees.circuits.length ? sc.entrees.circuits : Notes.defauts('pid').circuits }));
+      n.titre = `Schéma de principe — ${sc.titre}`;
+      n.commentaire = [`Prérempli d'après le dossier de consultation (CCTP / DPGF).`, sc.commentaire, sc.alertes.length ? `À vérifier : ${sc.alertes.join(' ')}` : ''].filter(Boolean).join(' ');
+      cree[sc.cle] = n; et.notes.push(n);
+    });
+    Object.values(cree).forEach(n => { if (n.entrees.recupDe === '@froid') n.entrees.recupDe = cree.froid ? cree.froid.id : ''; });
+    const premier = cree.chaud || Object.values(cree)[0], alertes = schemas.flatMap(x => x.alertes);
+    return aller(premier, schemas.length > 1 ? `${schemas.length} schémas de principe créés (froid et chaud, reliés par la récupération).` : schemas[0].entrees.generateurs ? `Schéma créé : ${schemas[0].entrees.generateurs.length} générateurs détaillés.` : 'Schéma de principe créé d\'après le dossier.', alertes);
   }
   if (quoi === 'aero') {
     const { entrees, alertes, ctas } = InventaireCVC.versSchemaAir(inv, reseaux);

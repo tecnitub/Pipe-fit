@@ -385,7 +385,8 @@ const InventaireCVC = (() => {
     // Un même intitulé (« Réseau de soufflage / air neuf ») dans deux chapitres = deux réseaux, nommés par leur chapitre
     const ajouterReseau = (nom, num) => {
       const p = profondeur(num), parent = num && p > 1 ? String(titres[p - 1] || '').replace(/^[\d.\s-]+/, '').trim() : '', id = `${idReseau(nom)}${parent ? ` @ ${idReseau(parent)}` : ''}`;
-      const r = reseaux.get(id) || { ...nouveauReseau(nom, `DPGF${num ? ` ${num}` : ''}`), id, chapEq: ctxEq ? ctxEq.titre : '', chapitre: parent };
+      const r = reseaux.get(id) || { ...nouveauReseau(nom, `DPGF${num ? ` ${num}` : ''}`), id, chapEq: ctxEq ? ctxEq.titre : '', chapitre: parent,
+        contexte: [...Object.keys(titres).sort((a, b) => a - b).map(k => titres[k]), sousTitre].filter(t => t && t !== nom).join(' ').slice(0, 200) };
       if (sanitaire() && !reseaux.has(id)) { r.nature = natureSanitaire(nom, r.nature); r.hydro = !!(NATURE[r.nature] || {}).hydro; }
       reseaux.set(id, r); return r;
     };
@@ -396,6 +397,7 @@ const InventaireCVC = (() => {
     const chiffrees = lignes.filter(r => nombre((r || [])[map.qte]) > 0);
     const sansNum = map.num !== undefined && chiffrees.filter(r => !numDe(r)).length > chiffrees.filter(r => numDe(r)).length;
     let attente = null, sousTitre = '', numCourant = '', fin = false;
+    const libellesCircuits = {};
     lignes.forEach(r => {
       if (fin) return;
       let des = String((r || [])[map.designation] ?? '').trim();
@@ -482,6 +484,9 @@ const InventaireCVC = (() => {
       }
       // Ligne « Réseau … » chiffrée au forfait : le réseau lui-même
       if (!c && !variante && /^(?:ens|ft|forfait)$/.test(unite) && titreReseau(des) && natureReseau(des)) { ajouterReseau(des, num); return; }
+      // Libellé de circuit d'une vanne ou d'un accessoire (« DN 50 (CTA / ventilo EC) ») : nomme les circuits secondaires
+      const lc = /\(([^()]*?(?:\bEC\b|\bEG\b|chauffage|eau glac[ée]e|radiateurs?|ventilo|CTA|plancher|ECS)[^()]*)\)/i.exec(des);
+      if (lc && c && c.genre !== 'pompe' || lc && !c) { const k = numCourant || '-'; const l = (libellesCircuits[k] = libellesCircuits[k] || []); if (!l.includes(lc[1].trim())) l.push(lc[1].trim()); }
       if (!c) return;
       // Gros équipement : la désignation du chapitre est souvent plus parlante (« Pompe à chaleur EAU / EAU R454B »)
       const gros = GROS.includes(c.categorie) || GROS_GENRES.includes(c.genre);
@@ -496,6 +501,11 @@ const InventaireCVC = (() => {
       if (res && res.montage && !det.montage) det.montage = res.montage;
       // Fluide du chapitre le plus proche (« Ballon tampon primaire EG » : froid ; « … EC » : chauffage)
       const fl = [sousTitre, ...Object.keys(titres).sort((a, b) => b - a).map(k => titres[k]), des].map(fluideDe).find(Boolean); if (fl) det.fluide = fl;
+      // Pompe du primaire (production → ballon, collecteur) : pas une pompe de circuit ; ballon tampon du primaire ou à
+      // 4 piquages, entre production et départs : découplage
+      const cx = norm(`${chapitres} ${des}`);
+      if (c.genre === 'pompe' && /primaire/.test(cx) && !/secondaire/.test(cx)) det.primaire = true;
+      if (c.genre === 'tampon' && (/4 piquages/.test(x) || /primaire/.test(cx))) det.ballon = 'decouplage';
       // Repère cité dans la ligne (« Pompe double P2 », « Extracteur V1 ») ou dans le titre du chapitre (« [CTA 1] »)
       const rp = repereDe(des) || (ctxEq && gros && ctxEq.genre === c.genre ? repereDe(ctxEq.titre) : '');
       // Émetteur électrique (« Radiateur … électrique 1000W », « aérotherme électrique ») : pas un émetteur à eau
@@ -504,10 +514,17 @@ const InventaireCVC = (() => {
       if (elecSeul && !Number.isFinite(pw.Pel)) { pw.Pel = Number.isFinite(pw.P) ? pw.P : NaN; pw.P = NaN; }
       items.push({ ...c, designation: libelle, qte: q, unite, ...pw, carac, alim: elecSeul ? 'electrique' : alimentation(contexte, c.genre), regime: regime(des) || (res ? res.regime : ''), Q: Number.isFinite(carac.Q) ? carac.Q : NaN, repere: rp, prescrit: [marque ? `marque ${marque[1]}` : '', marqueCol && !(marque && norm(marqueCol) === norm(marque[1])) ? `marque prévue au DPGF : ${marqueCol}` : ''].filter(Boolean).join(', '), reseau: res && !variante ? res.id : '',
         chapitre: ctxEq && gros ? ctxEq.titre : '', principal: gros && !variante, ...(variante ? { variante: true } : {}), sources: [`DPGF${num || (sansNum && numCourant) ? ` ${num || numCourant}` : ''}`],
-        details: det, chapitreDpgf: chapitres.slice(0, 160), ...(det.local ? { local: det.local } : {}) });
+        details: det, chapitreDpgf: chapitres.slice(0, 160), _chap: numCourant || '-', ...(det.local ? { local: det.local } : {}) });
     });
     // Réseaux vides (titres seuls, sans tuyauterie ni équipement) ou sans nature : écartés
     [...reseaux.values()].filter(r => (!r.nature || !r.L) && !items.some(x => x.reseau === r.id)).forEach(r => reseaux.delete(r.id));
+    // Pompes d'un chapitre (« Pompes et vannes circuits secondaires ») : autant que de libellés de circuits des vannes du même
+    // chapitre → chaque pompe prend le sien, dans l'ordre (à vérifier)
+    Object.entries(libellesCircuits).forEach(([k, l]) => {
+      const p = items.filter(x => x.genre === 'pompe' && x._chap === k && !x.details.primaire);
+      if (p.length === l.length) p.forEach((x, i) => { x.details.circuit = l[i]; });
+    });
+    items.forEach(x => { delete x._chap; });
     return { items, reseaux: [...reseaux.values()].map(r => ({ ...r, L: Math.round(r.L * 10) / 10 })) };
   }
   // DPGF en PDF : lignes « n° désignation … unité quantité [prix] »
@@ -604,7 +621,7 @@ const InventaireCVC = (() => {
     ['volume', 'Volume', 'L'], ['tension', 'Tension', ''], ['frigorigene', 'Fluide frigorigène', ''], ['Pdispo', 'Pression disponible', 'Pa'], ['HMT', 'HMT', 'mCE'],
     ['marque', 'Marque', ''], ['reference', 'Référence', ''], ['local', 'Local / pièce', ''], ['reseau', 'Réseau de rattachement', ''], ['montage', 'Montage / régulation', ''], ['alim', 'Alimentation', ''],
     ['pompe', 'Pompe du générateur', ''], ['recup', 'Récupération d\'énergie', ''], ['recuperateur', 'Récupérateur de chaleur', ''], ['batteries', 'Batteries', ''], ['PelBe', 'Batterie électrique', 'kW'],
-    ['role', 'Rôle du générateur', ''], ['ballon', 'Fonction du ballon', ''], ['regulation', 'Régulation / GTB', '']];
+    ['role', 'Rôle du générateur', ''], ['circuit', 'Circuit desservi', ''], ['ballon', 'Fonction du ballon', ''], ['regulation', 'Régulation / GTB', '']];
   const LIB_CHAMP = Object.fromEntries(CHAMPS.map(([k, l, u]) => [k, { libelle: l, unite: u }]));
   const texteBatteries = b => [b.chaude && 'eau chaude', b.froide && 'eau glacée', b.co && 'change-over', b.elec && `électrique (${b.elec})`].filter(Boolean).join(' + ');
   // Valeurs d'un côté (article du CCTP ou ligne du DPGF) : { clé: [valeur, sûre] } — « sûre » : valeur nommée (« puissance
@@ -621,7 +638,7 @@ const InventaireCVC = (() => {
     met('marque', d.marque || (/marque\s+([A-Za-z][\w&'-]+)/.exec(x.prescrit || '') || [])[1]);
     met('reference', d.reference); met('local', d.local || x.local); met('reseau', x.reseau, false); met('montage', d.montage); met('alim', x.alim, false);
     met('pompe', d.pompe); met('recup', d.recup); met('recuperateur', d.recuperateur); if (d.batteries) met('batteries', texteBatteries(d.batteries)); met('PelBe', d.PelBe);
-    met('role', d.role); met('ballon', d.ballon); if (d.regulation) met('regulation', [d.regulation.marque, d.regulation.gtb, d.regulation.bus].filter(Boolean).join(' · '));
+    met('role', d.role); met('circuit', d.circuit, false); met('ballon', d.ballon); if (d.regulation) met('regulation', [d.regulation.marque, d.regulation.gtb, d.regulation.bus].filter(Boolean).join(' · '));
     return v;
   }
   // Valeurs compatibles : un « ballon tampon » au DPGF et un « ballon tampon de découplage » au CCTP ne se contredisent pas
@@ -840,6 +857,90 @@ const InventaireCVC = (() => {
   const pTherm = (x, froid) => { const c = nombre(x.P), f = nombre(x.Pfr); return froid ? (Number.isFinite(f) ? f : c) : (Number.isFinite(c) ? c : f); };
 
   /* ---------- Vers le schéma de principe ---------- */
+  // Tronçon primaire : réseau entre la production et le ballon tampon ou le collecteur (« Collecteur primaire … »,
+  // « EC : circuit en tube acier » sous « Circuit primaire chauffage »)
+  const PRIMAIRE = /primaire|collecteurs?|nourrices?|entre (?:la |le |les )?(?:tfp|thermofrigopompe|pac|pompe a chaleur|chaudiere|production|groupe)[^.]*(?:ballon|collecteur|bouteille)/;
+  const estPrimaire = r => PRIMAIRE.test(norm(`${r.nom} ${r.chapitre || ''} ${r.contexte || ''}`)) && !/distribution|secondaire|departs? (?:cta|ventilo|radiateur|plancher)/.test(norm(r.nom));
+  // Fluide d'un émetteur : réseau, texte (EC / EG), batterie (ventilo 2 tubes / 2 fils : eau froide, chauffage électrique)
+  function emetteurDe(x, schema, parId) {
+    const d = x.details || {}, r = parId.get(x.reseau), nat = r ? r.nature : '';
+    if (nat === 'change-over') return true;
+    if (nat === 'eau-glacee') return schema === 'froid';
+    if (nat === 'chauffage' || nat === 'ecs') return schema === 'chaud';
+    if (x.genre === 'ecs' || ['radiateurs', 'plancher', 'radiant', 'aerotherme'].includes(x.genre)) return schema === 'chaud';
+    if (x.genre === 'plafond') return schema === 'froid';
+    const fl = d.fluide || fluideDe(x.designation);
+    if (d.fils2 || (d.tubes === '2t' && (d.batteries || {}).elec)) return schema === 'froid';
+    if (x.alim === 'change-over') return true;
+    if (x.alim === 'eau-glacee' || fl === 'froid') return schema === 'froid';
+    if (x.alim === 'chauffage' || fl === 'chaud') return schema === 'chaud';
+    return schema === 'froid' ? nombre(x.Pfr) > 0 : nombre(x.P) > 0 || !(nombre(x.Pfr) > 0);
+  }
+  // Pompes secondaires (« Pompe double P2 - 9,9 m3/h 14,3 mCE ») : chacune sur son circuit — celui de son réseau, celui que
+  // nomme le libellé des vannes du même chapitre (« DN 50 (CTA / ventilo EC) »), sinon un circuit créé pour elle ; la
+  // pompe (débit, HMT) va dans « pompesFab » (courbe d'un point, à compléter par la fiche du fabricant)
+  function pompesCircuits(e, inc, schema, Sc, alertes) {
+    const pompes = inc.filter(x => x.genre === 'pompe' && !x.variante && !(x.details || {}).primaire && (nombre(x.Q) > 0 || (x.details || {}).circuit));
+    const avecPompe = new Set();
+    pompes.forEach(x => {
+      const d = x.details || {}, lib = d.circuit || '', fl = fluideDe(lib || x.designation);
+      if (schema && fl && fl !== schema) return;
+      if (schema === 'froid' && !fl) return;
+      let c = e.circuits.find(z => z.reseau && z.reseau === x.reseau && !avecPompe.has(z));
+      if (!c && lib) c = e.circuits.map(z => [z, ressemblance(z.rep, lib)]).filter(([z, s]) => s >= 0.5 && !avecPompe.has(z)).sort((a, b) => b[1] - a[1]).map(([z]) => z)[0];
+      if (!c) {
+        const t = norm(lib || x.designation), emet = /radiateur/.test(t) ? 'radiateurs' : /plancher/.test(t) ? 'plancher' : /ventilo|cassette/.test(t) ? 'ventilo' : /\bcta\b|centrale/.test(t) ? 'cta' : /\becs\b|ballon/.test(t) ? 'ecs' : schema === 'froid' ? 'ventilo' : 'radiateurs';
+        c = { rep: (lib ? `Circuit ${lib}` : `Circuit ${x.repere || x.designation.split(' - ')[0]}`).slice(0, 40), emetteur: emet, P: '', regime: '', regulation: montageCircuit('', emet, Sc), L: 50 };
+        e.circuits.push(c);
+        alertes.push(`${c.rep} : circuit créé d'après la pompe ${x.repere || x.designation.split(' - ')[0]}${lib ? ' et le libellé des vannes du chapitre' : ''} ; puissance et longueur à saisir.`);
+      }
+      avecPompe.add(c);
+      const Q = nombre(x.Q), H = nombre((x.carac || {}).HMT);
+      (e.pompesFab = e.pompesFab || []).push({ circuit: c.rep, ref: `${x.designation.split(' - ')[0].slice(0, 50)}${d.double ? ' (jumelée)' : ''}`, courbe: Q > 0 && H > 0 ? `${f1(Q)}:${f1(H)}` : '' });
+    });
+  }
+  // Clé de Schema.REGIMES d'un régime « 60/40 » (sinon « perso » et ses températures)
+  const regimeSchema = (reg, Sc) => { const [d, r] = String(reg || '').split('/').map(Number); const k = Object.entries(Sc.REGIMES).find(([, v]) => v[1] === d && v[2] === r); return k ? { reseau: k[0] } : d > 0 ? { reseau: 'perso', Tdep: d, Tret: r } : {}; };
+  // Schémas de principe de l'inventaire : un seul en général ; deux (froid + chaud) quand la production sépare les fluides
+  // — thermofrigopompe (chaud et froid produits ensemble : schéma froid à récupération totale + schéma chaud qui la
+  // reprend, comme le modèle « thermofrigopompe »), ou productions chaud et froid distinctes. Circuits EC au chaud, EG
+  // au froid ; change-over : dans les deux (chaque production doit pouvoir le servir, la saison choisit laquelle)
+  function versSchemas(inventaire, Sc, reseaux = []) {
+    const inc = (inventaire || []).filter(x => x.inclus !== false && !x.variante), prod = inc.filter(x => x.categorie === 'producteur'), det = x => x.details || {};
+    const autres = inc.filter(x => x.categorie !== 'producteur');
+    const tfp = prod.find(x => det(x).recup === 'totale' && nombre(x.P) > 0 && nombre(x.Pfr) > 0);
+    const froids = prod.filter(x => x !== tfp && usageGen(x.genre, Sc) === 'froid'), chauds = prod.filter(x => x !== tfp && usageGen(x.genre, Sc) !== 'froid');
+    if (!tfp && !(froids.length && chauds.length)) { const r = versSchema(inventaire, Sc, reseaux); return { schemas: [{ cle: 'pid', titre: r.entrees.titreInstallation || 'd\'après le CCTP / DPGF', entrees: r.entrees, alertes: r.alertes, commentaire: '' }] }; }
+    const optsF = { fluides: ['eau-glacee', 'change-over'], schema: 'froid' }, optsC = { fluides: ['chauffage', 'ecs', 'change-over'], schema: 'chaud' };
+    const nettoyer = x => ({ ...x, details: { ...det(x) } });
+    let invF, invC, commentaireF, commentaireC;
+    if (tfp) {
+      const c = tfp.carac || {}, rf = c.regimeFroid || '7/12', rc = c.regimeChaud || tfp.regime || '45/40', rev = tfp.genre === 'pac-rev' || /reversible/.test(norm(tfp.designation));
+      const gf = { ...nettoyer(tfp), genre: rev ? 'pac-rev' : 'gf-air', P: '', regime: rf, alim: 'eau-glacee' }; delete gf.details.role;
+      invF = [gf, ...froids, ...autres];
+      const appoint = chauds.filter(x => !/^pac/.test(x.genre) || det(x).role);
+      const pacChaud = { ...nettoyer(tfp), genre: 'pac-air', Pfr: '', regime: rc, alim: 'chauffage' }; delete pacChaud.details.recup; pacChaud.details.role = 'base';
+      invC = [...(appoint.length ? appoint.map(x => ({ ...nettoyer(x), regime: x.regime || rc })) : [pacChaud]), ...autres];
+      commentaireF = `Thermofrigopompe ${tfp.repere ? `${tfp.repere} ` : ''}(${tfp.designation.replace(/\s+P(?:chaud|froid)\b.*$/i, '').slice(0, 70)}) : production simultanée de chaud et de froid. Modélisée comme le modèle « thermofrigopompe » : ce schéma froid (${f1(nombre(tfp.Pfr))} kW, ${rf} °C) avec récupération totale au condenseur (${rc} °C), reprise par le schéma chaud. Circuits change-over présents dans les deux schémas.`;
+      commentaireC = `Schéma chaud de la thermofrigopompe : la chaleur récupérée vient du schéma froid (« Récupération de chaleur d'un groupe froid »). ${appoint.length ? `Générateur d'appoint du dossier : ${appoint.map(x => x.designation.slice(0, 40)).join(', ')}.` : `Aucun appoint au dossier : la thermofrigopompe en mode pompe à chaleur seule (${f1(nombre(tfp.P))} kW, ${rc} °C) est le générateur de base — à ajuster si elle ne fonctionne qu'en récupération.`} Circuits change-over présents dans les deux schémas.`;
+    } else {
+      invF = [...froids, ...autres]; invC = [...chauds, ...froids.filter(x => det(x).recup), ...autres];
+      commentaireF = 'Production de froid du dossier : schéma eau glacée (circuits EG et change-over).';
+      commentaireC = 'Production de chaleur du dossier : schéma eau chaude (circuits EC, ECS et change-over).';
+    }
+    const F = versSchema(invF, Sc, reseaux, optsF), C = versSchema(invC, Sc, reseaux, optsC);
+    if (tfp) {
+      const c = tfp.carac || {}, rc = c.regimeChaud || '45/40';
+      Object.assign(F.entrees, { Pgen: nombre(tfp.Pfr), recupGf: 'totale', regimeRecup: rc, ...(nombre(c.EER) > 1 ? { eerRecup: nombre(c.EER) } : {}) }, regimeSchema(c.regimeFroid || '7/12', Sc));
+      if (F.entrees.reseau !== 'perso') { delete F.entrees.Tdep; delete F.entrees.Tret; }
+      C.entrees.recupDe = '@froid';
+      Object.assign(C.entrees, regimeSchema(rc, Sc));
+      if (C.entrees.reseau !== 'perso') { delete C.entrees.Tdep; delete C.entrees.Tret; }
+      F.entrees.titreInstallation = `Thermofrigopompe — eau glacée`; C.entrees.titreInstallation = 'Thermofrigopompe — chauffage';
+    }
+    return { schemas: [{ cle: 'froid', titre: F.entrees.titreInstallation || 'Production de froid', entrees: F.entrees, alertes: F.alertes, commentaire: commentaireF },
+      { cle: 'chaud', titre: C.entrees.titreInstallation || 'Production de chaleur', entrees: C.entrees, alertes: C.alertes, commentaire: commentaireC }] };
+  }
   // Montage d'un circuit (Schema.REGULATIONS) d'après le montage lu ; ECS : départ direct ; vanne 4 voies des terminaux :
   // circuit à débit constant (mélange 3 voies)
   function montageCircuit(m, emet, Sc) {
@@ -861,7 +962,7 @@ const InventaireCVC = (() => {
     return hetero ? { compat, recup } : null;
   }
   // Production hétérogène, ballons, découplage, pompes intégrées, récupération, sous-station : champs du schéma
-  function completerSchema(e, { inc, prod, principal, reg, Sc, alertes, rev }) {
+  function completerSchema(e, { inc, prod, principal, reg, Sc, alertes, schema }) {
     const det = x => x.details || {};
     if (principal) {
       const gd = generateursDetailles(prod, principal[0], Sc);
@@ -904,6 +1005,8 @@ const InventaireCVC = (() => {
     const uP = principal ? usageGen(principal[0], Sc) : '';
     inc.filter(x => x.genre === 'tampon' || (x.genre === 'ecs' && !x.horsSchema)).forEach(x => {
       const fl = det(x).fluide;
+      if (schema && x.genre === 'tampon' && (fl || 'chaud') !== schema) return;
+      if (schema && x.genre === 'ecs' && schema === 'froid') return;
       if (x.genre === 'tampon' && fl && uP && uP !== 'mixte' && fl !== uP) { alertes.push(`${x.designation} : ballon ${fl === 'froid' ? 'd\'eau glacée' : 'd\'eau chaude'}, à placer dans le schéma ${fl === 'froid' ? 'froid' : 'chaud'}.`); return; }
       const V = nombre((x.carac || {}).volume), fct = x.genre === 'ecs' ? 'ecs' : ['decouplage', 'stockage'].includes(det(x).ballon) ? det(x).ballon : 'tampon';
       if (fct === 'decouplage' && (!e.bouteille || e.bouteille === 'ballon')) { e.bouteille = 'ballon'; if (V > 0) e.Vtampon = V; return; }
@@ -914,7 +1017,9 @@ const InventaireCVC = (() => {
     return e;
   }
   // Entrées du schéma : générateur principal (le genre le plus représenté), nombre et puissance unitaire, un circuit par émetteur
-  function versSchema(inventaire, Sc, reseaux = []) {
+  // opts (schémas séparés chaud / froid, voir versSchemas) : fluides (natures de réseaux reprises), schema ('chaud' |
+  // 'froid' : ballons, émetteurs et pompes de ce fluide seulement)
+  function versSchema(inventaire, Sc, reseaux = [], opts = {}) {
     const inc = inventaire.filter(x => x.inclus !== false), alertes = [];
     const prod = inc.filter(x => x.categorie === 'producteur');
     const parGenre = {}, det = x => x.details || {};
@@ -946,20 +1051,23 @@ const InventaireCVC = (() => {
     if (rev) { e.reseau = 'co'; delete e.Tdep; delete e.Tret; }
     // ECS électrique ou solaire : pas un circuit de la production
     inc.filter(x => x.horsSchema).forEach(x => alertes.push(`${x.designation} : ${x.horsSchema}, hors schéma hydraulique${x.horsSchema === 'ECS électrique' ? ' (repris dans l\'alimentation électrique)' : ''}.`));
-    const em = inc.filter(x => x.categorie === 'emetteur' && Sc.EMETTEURS[x.genre] && !x.horsSchema);
+    const em = inc.filter(x => x.categorie === 'emetteur' && Sc.EMETTEURS[x.genre] && !x.horsSchema && (!opts.schema || emetteurDe(x, opts.schema, new Map((reseaux || []).map(r => [r.id, r])))));
     // Réseaux hydrauliques reconnus (hors plomberie, ECS sanitaire traitée comme un émetteur) : un circuit par réseau,
     // avec ses émetteurs (puissance cumulée), son régime et la longueur de ses tuyauteries
     // Réseaux du fluide de la production : eau chaude (et ECS) pour une chaudière ou une PAC, eau glacée pour un groupe
     // froid, les deux en change-over (PAC réversible)
-    const fluide = e.reseau === 'co' || rev ? ['chauffage', 'ecs', 'eau-glacee', 'change-over'] : (principal && /^gf/.test(principal[0])) || /^eg/.test(e.reseau || '') ? ['eau-glacee'] : ['chauffage', 'ecs', 'change-over'];
-    const parId = new Map((reseaux || []).map(r => [r.id, r])), hydro = (reseaux || []).filter(r => r.hydro && fluide.includes(r.nature));
-    (reseaux || []).filter(r => r.hydro && r.nature !== 'vapeur' && !fluide.includes(r.nature)).forEach(r => alertes.push(`Réseau « ${r.nom} » (${(NATURE[r.nature] || {}).libelle || r.nature}) : autre fluide que la production principale, à traiter dans un second schéma.`));
+    const fluide = opts.fluides || (e.reseau === 'co' || rev ? ['chauffage', 'ecs', 'eau-glacee', 'change-over'] : (principal && /^gf/.test(principal[0])) || /^eg/.test(e.reseau || '') ? ['eau-glacee'] : ['chauffage', 'ecs', 'change-over']);
+    // Tronçons primaires (production → ballon tampon ou collecteur) : liaison de la production, pas un circuit
+    const primaires = (reseaux || []).filter(r => r.hydro && estPrimaire(r));
+    if (primaires.length) alertes.push(`Tronçons primaires (liaison de la production, pas des circuits) : ${primaires.map(r => `« ${r.nom} »${r.L ? ` ${Math.round(r.L)} m` : ''}`).join(', ')}.`);
+    const parId = new Map((reseaux || []).map(r => [r.id, r])), hydro = (reseaux || []).filter(r => r.hydro && fluide.includes(r.nature) && !primaires.includes(r));
+    if (!opts.schema) (reseaux || []).filter(r => r.hydro && r.nature !== 'vapeur' && !fluide.includes(r.nature) && !primaires.includes(r)).forEach(r => alertes.push(`Réseau « ${r.nom} » (${(NATURE[r.nature] || {}).libelle || r.nature}) : autre fluide que la production principale, à traiter dans un second schéma.`));
     // Réseau d'ECS sans ballon alimenté par la production (ballons électriques ou solaires) : pas un circuit
     const circuitsReseaux = hydro.filter(r => r.nature !== 'ecs' || em.some(x => x.reseau === r.id) || !inc.some(x => x.genre === 'ecs' && x.horsSchema)).map(r => {
       const ems = em.filter(x => x.reseau === r.id);
       const dominant = ems.length ? ems.reduce((m, x) => ((nombre(x.qte) || 1) > (nombre(m.qte) || 1) ? x : m), ems[0]).genre : (classer(r.nom) || {}).genre;
       const emet = Sc.EMETTEURS[dominant] ? dominant : r.nature === 'ecs' ? 'ecs' : r.nature === 'eau-glacee' ? 'ventilo' : 'radiateurs';
-      const froid = r.nature === 'eau-glacee' || (r.nature === 'change-over' && principal && /^gf/.test(principal[0]));
+      const froid = r.nature === 'eau-glacee' || (r.nature === 'change-over' && ((principal && /^gf/.test(principal[0])) || opts.schema === 'froid'));
       const Ps = ems.map(x => { const P = pTherm(x, froid), q = nombre(x.qte) || 1; return Number.isFinite(P) && P > 0 ? P * q : NaN; });
       const P = Ps.length && Ps.every(Number.isFinite) ? Math.round(Ps.reduce((s, v) => s + v, 0) * 10) / 10 : nombre(r.P) > 0 ? nombre(r.P) : '';
       if (P === '') alertes.push(`Réseau « ${r.nom} » : puissance ${ems.length ? 'de certains émetteurs' : 'des émetteurs'} non trouvée, à saisir dans le schéma.`);
@@ -968,14 +1076,25 @@ const InventaireCVC = (() => {
       return { rep: r.nom.slice(0, 40), emetteur: emet, P, regime: r.regime && r.regime !== reg ? r.regime : '', regulation: mt, L: r.L > 0 ? Math.round(r.L) : 50, reseau: r.id };
     });
     // Émetteurs hors réseau reconnu : un circuit chacun ; ceux d'un réseau d'un autre fluide ne sont pas repris ici
-    const sansReseau = em.filter(x => !x.reseau || !parId.has(x.reseau) || (!parId.get(x.reseau).hydro && !['soufflage', 'reprise', 'extraction', 'air-neuf'].includes(parId.get(x.reseau).nature)));
+    const sansReseau0 = em.filter(x => !x.reseau || !parId.has(x.reseau) || estPrimaire(parId.get(x.reseau)) || (!parId.get(x.reseau).hydro && !['soufflage', 'reprise', 'extraction', 'air-neuf'].includes(parId.get(x.reseau).nature)));
+    // Émetteur sans réseau quand un circuit de distribution porte son nom (« Circuits de distribution radiateurs ») : sur ce
+    // circuit (sa puissance s'y ajoute), pas un circuit de plus
+    const sansReseau = sansReseau0.filter(x => {
+      const c = circuitsReseaux.find(z => z.emetteur === x.genre && (classer(parId.get(z.reseau).nom) || {}).genre === x.genre) || circuitsReseaux.find(z => z.emetteur === x.genre);
+      if (!c) return true;
+      const P = pTherm(x, opts.schema === 'froid' || parId.get(c.reseau).nature === 'eau-glacee'), q = nombre(x.qte) || 1;
+      if (Number.isFinite(P) && P > 0 && (c.P === '' || c._ems)) c.P = Math.round(((c._ems ? c.P : 0) + P * q) * 10) / 10;
+      c._ems = true;
+      return false;
+    });
     e.circuits = [...circuitsReseaux, ...sansReseau.map(x => {
       // Puissance citée = puissance unitaire (« aérotherme 25 kW », quantité 4 → circuit de 100 kW)
-      const P = pTherm(x, fluide.length === 1 && fluide[0] === 'eau-glacee'), q = nombre(x.qte) || 1, total = Number.isFinite(P) && P > 0 ? Math.round(P * q * 10) / 10 : '';
+      const P = pTherm(x, opts.schema ? opts.schema === 'froid' : fluide.length === 1 && fluide[0] === 'eau-glacee'), q = nombre(x.qte) || 1, total = Number.isFinite(P) && P > 0 ? Math.round(P * q * 10) / 10 : '';
       return { rep: `${x.designation.slice(0, 40)}${q > 1 && !/^\d/.test(x.designation) ? ` (×${q})` : ''}`, emetteur: x.genre, P: total, regime: x.regime && x.regime !== reg ? x.regime : '', regulation: montageCircuit(det(x).montage, x.genre, Sc), L: 50, _x: x };
     })];
-    completerSchema(e, { inc, prod, principal, reg, Sc, alertes, rev });
-    e.circuits.forEach(c => { delete c._x; });
+    completerSchema(e, { inc, prod, principal, reg, Sc, alertes, rev, schema: opts.schema });
+    pompesCircuits(e, inc, opts.schema, Sc, alertes);
+    e.circuits.forEach(c => { delete c._x; delete c._ems; });
     sansReseau.filter(x => !Number.isFinite(pTherm(x, false))).forEach(x => alertes.push(`${x.designation} : puissance non trouvée, à saisir dans le schéma.`));
     if (!em.length) alertes.push('Aucun émetteur hydraulique reconnu : ajoutez les circuits dans le schéma.');
     inc.filter(x => x.genre === 'split').forEach(x => alertes.push(`${x.designation} : détente directe, hors schéma hydraulique (repris dans l'alimentation électrique).`));
@@ -1045,17 +1164,24 @@ const InventaireCVC = (() => {
   const TERM_MAX = 60;
   function versTerminaux(inventaire) {
     const inc = (inventaire || []).filter(x => x.inclus !== false && !x.variante), alertes = [], appareils = [], compteur = {};
-    inc.filter(x => ['ventilo', 'split', 'aerotherme', 'plafond', 'radiateurs'].includes(x.genre)).forEach(x => {
-      const d = x.details || {}, t = norm(x.designation), q = Math.max(1, Math.round(nombre(x.qte) || 1));
+    const liste = inc.filter(x => ['ventilo', 'split', 'aerotherme', 'plafond', 'radiateurs'].includes(x.genre)), qte = x => Math.max(1, Math.round(nombre(x.qte) || 1));
+    // Au-delà de TERM_MAX appareils, une part pour chaque ligne du dossier (au prorata, au moins un) plutôt que les premières
+    const total = liste.reduce((s, x) => s + qte(x), 0), quota = new Map(liste.map(x => [x, total > TERM_MAX ? Math.max(1, Math.floor(qte(x) * TERM_MAX / total)) : qte(x)]));
+    while ([...quota.values()].reduce((s, v) => s + v, 0) > TERM_MAX) { const [x] = [...quota.entries()].sort((a, b) => b[1] - a[1])[0]; quota.set(x, quota.get(x) - 1); }
+    // Places restantes : aux lignes les moins détaillées (en proportion)
+    while (total > TERM_MAX && [...quota.values()].reduce((s, v) => s + v, 0) < TERM_MAX) { const [x] = [...quota.entries()].filter(([y, v]) => v < qte(y)).sort((a, b) => a[1] / qte(a[0]) - b[1] / qte(b[0]))[0]; quota.set(x, quota.get(x) + 1); }
+    liste.forEach(x => {
+      const d = x.details || {}, t = norm(x.designation), q = quota.get(x);
       const type = x.genre === 'split' ? 'split' : x.genre === 'aerotherme' ? (/rideau/.test(t) ? 'rideau' : 'aerotherme') : x.genre === 'plafond' ? 'poutre' : x.genre === 'radiateurs' ? (x.alim === 'electrique' ? 'radElec' : 'radiateur')
         : /cassette/.test(t) || d.forme === 'cassette' ? (d.tubes === '4t' ? 'cassette4' : 'cassette2') : /gainable/.test(t) || d.forme === 'gainable' ? 'gainable' : d.tubes === '4t' ? 'vc4' : 'vc2';
       const P = nombre(x.P), Pfr = nombre(x.Pfr);
       const be = (d.batteries || {}).elec;
-      const batterie = type === 'split' ? 'aucune' : x.alim === 'electrique' ? 'elec' : d.tubes === '4t' ? '4t' : d.tubes === '2t' && (d.fils2 || be) ? 'froide+elec' : d.tubes === '2t' || x.alim === 'change-over' ? '2t'
+      // Radiateur à eau : batterie chaude (jamais 2 tubes) ; radiateur électrique : électrique
+      const batterie = type === 'split' ? 'aucune' : x.alim === 'electrique' || type === 'radElec' ? 'elec' : type === 'radiateur' ? 'chaude' : d.tubes === '4t' ? '4t' : d.tubes === '2t' && (d.fils2 || be) ? 'froide+elec' : d.tubes === '2t' || x.alim === 'change-over' ? '2t'
         : x.alim === 'eau-glacee' || (Pfr > 0 && !(P > 0)) ? 'froide' : x.alim === 'chauffage' || ['aerotherme', 'radiateur', 'rideau'].includes(type) || !(Pfr > 0) ? 'chaude' : '2t';
       const vanne = ['radiateur', 'radElec'].includes(type) ? 'aucune' : ['2v', '3v', '4v'].includes(d.montage) ? d.montage : '2v';
       const pre = x.repere ? x.repere.replace(/[-_. ]?\d+$/, '') : { split: 'SPL', aerotherme: 'AT', rideau: 'RA', poutre: 'PF', radiateur: 'R' }[type] || (/cassette/.test(type) ? 'CA' : 'VC');
-      if (appareils.length + q > TERM_MAX) { alertes.push(`${x.designation} (×${q}) : trop d'unités pour une ligne chacune, à saisir dans le calcul des terminaux.`); return; }
+      if (q < qte(x)) alertes.push(`${x.designation} : ${q} appareil(s) détaillé(s) sur ${qte(x)} (limite de ${TERM_MAX} lignes), les autres à ajouter dans le calcul des terminaux.`);
       const ref = [d.marque, d.reference].filter(Boolean).join(' ');
       for (let k = 0; k < q; k++) {
         compteur[pre] = (compteur[pre] || 0) + 1;
@@ -1115,6 +1241,6 @@ const InventaireCVC = (() => {
     return out;
   }
 
-  return { ecarts, ecartsTexte, LIB_ECART, cleRegle, appliquerRegles, apprendre, tableauEquipements, fusionnerAnnexe, caracteristiques, caracTexte, puissances, alimentation, rattacher, NATURES, NATURE, natureReseau, estReseau, reseauxCctp, fusionnerReseaux, REGLES, GENRES, classer, puissance, regime, debitAir, depuisCctp, depuisDpgf, depuisDpgfTexte, fusionner, versSchema, versSchemaAir, versElec, norm, details, provenance, aVerifier, valeurChamp, CHAMPS, LIB_CHAMP, versCta, versTerminaux, versRegulation, montageCircuit };
+  return { ecarts, ecartsTexte, LIB_ECART, cleRegle, appliquerRegles, apprendre, tableauEquipements, fusionnerAnnexe, caracteristiques, caracTexte, puissances, alimentation, rattacher, NATURES, NATURE, natureReseau, estReseau, reseauxCctp, fusionnerReseaux, REGLES, GENRES, classer, puissance, regime, debitAir, depuisCctp, depuisDpgf, depuisDpgfTexte, fusionner, versSchema, versSchemaAir, versElec, norm, details, provenance, aVerifier, valeurChamp, CHAMPS, LIB_CHAMP, versCta, versTerminaux, versRegulation, montageCircuit, versSchemas, estPrimaire };
 })();
 if (typeof module !== 'undefined') module.exports = InventaireCVC;
