@@ -158,6 +158,16 @@ const Installation = ((N, Sc, L) => {
         if (!c || c.annexe || pris.has(`${pid.id}|${i}`)) return;
         const dc = d && d.circuits[i], s = saisonsCircuit(et, ctx, pid, i), em = (Sc.EMETTEURS[c.emetteur] || Sc.EMETTEURS.radiateurs)[0], rep = c.rep || `C${i + 1}`;
         const saison = s.has('chaud') ? 'chaud' : 'froid';
+        // Change-over : le circuit est compté en chaud (puissance P, débit chaud) et en froid (puissance froid Pf, débit froid)
+        if (s.size > 1 && dc && dc.rcF) {
+          const lien = lienPid(et, ctx, pid, i, s), dp = arrondi(dc.hmt * 9.81, 1);
+          const xC = { cle: `${pid.id}|${i}`, type: 'circuit', libelle: `${rep} — ${em.toLowerCase()} (change-over, chaud)`, source: source(pid), saison: 'chaud', emetteur: null, changeOver: true,
+            P: arrondi(dc.P), Q: arrondi(dc.Qc, 3), dp, regime: `${dc.rcC[0]}/${dc.rcC[1]} °C` };
+          const xF = { cle: `${pid.id}|${i}@froid`, type: 'circuit', libelle: `${rep} — ${em.toLowerCase()} (change-over, froid)`, source: source(pid), saison: 'froid', emetteur: null, changeOver: true,
+            P: arrondi(dc.Pf), Q: arrondi(dc.Qf, 3), dp, regime: `${dc.rcF[0]}/${dc.rcF[1]} °C` };
+          repartir([xC], [lien]); repartir([xF], [lien]);
+          return;
+        }
         const x = { cle: `${pid.id}|${i}`, type: 'circuit', libelle: `${rep} — ${em.toLowerCase()}${s.size > 1 ? ' (change-over)' : ''}`, source: source(pid), saison, emetteur: null,
           P: arrondi(dc ? dc.P : num(c.P)), Q: arrondi(dc ? dc.Q : NaN, 3), dp: dc ? arrondi(dc.hmt * 9.81, 1) : null, regime: regimeCircuit(ctx, pid, i) };
         repartir([x], [lienPid(et, ctx, pid, i, s)]);
@@ -254,6 +264,8 @@ const Installation = ((N, Sc, L) => {
       if (!c.raccordements.length) out.push({ niveau: 'attention', cle: c.cle, note: c.source.id, texte: c.type === 'arbo' ? `Réseau arborescent « ${c.source.titre} » non relié à un schéma de principe : sa puissance n'est comptée dans aucune production.` : `${c.libelle} (${c.source.libelle}) : non raccordé.` });
       if (bons.length > 1) out.push({ niveau: 'erreur', cle: c.cle, note: c.source.id, texte: `${c.libelle} : raccordé ${bons.length} fois (${bons.map(r => r.libelle).join(' ; ')}) — puissance comptée en double.` });
       mauvais.forEach(r => out.push({ niveau: 'erreur', cle: c.cle, note: c.source.id, texte: `${c.libelle} (${SAISONS[c.saison]}) : régime incompatible avec ${r.libelle} (${r.saisons.map(s => SAISONS[s]).join(' / ')}).` }));
+      // Circuit change-over : chaud et froid comptés séparément ; une puissance froid absente n'est comptée nulle part
+      if (c.changeOver && c.saison === 'froid' && !(c.P > 0)) out.push({ niveau: 'attention', cle: c.cle, note: c.source.id, texte: `${c.libelle} (${c.source.libelle}) : puissance froid non renseignée (colonne « Puissance froid » du circuit) — le froid de ce circuit n'est pas compté.` });
     });
     notes.filter(n => n.type === 'pid').forEach(pid => {
       const r = ctx.calc(pid), v = (r && r.valeurs) || {}, d = ctx.dim(pid);
@@ -333,27 +345,32 @@ const Installation = ((N, Sc, L) => {
   // Rend { boucles: [{ id, type, note, schema, niveau, pompe, boucle, Q (m³/h), dp (kPa), hmt (mCE), retenue, proposee,
   //   etat, etatLibelle, autorite, detail }], chemins: [{ etapes: [{ libelle, dp, boucle }], dp, terminal }], defavorise,
   //   debits: [{ schema, libelle, Qprod, Qappel, Pprod, Pdem, etat }], alertes }
-  // Pertes de charge usuelles d'un générateur côté eau (kPa) : ordres de grandeur, la fiche technique fait foi
-  const DP_GEN = t => (/^chaudiere/.test(t) ? 10 : /^(pac|gf)/.test(t) ? 40 : /^echangeur/.test(t) ? Sc.DP_ECH : 15);
+  // Pertes de charge côté eau (générateurs, échangeurs, bouteille, vanne primaire) : celles du schéma de principe
+  // (saisies, reprises des fiches, sinon forfaits) ; pompes de production retenues : point sur leur courbe
   const ETATS = { ok: 'OK', sur: 'surdimensionnée', ko: 'insuffisante', choisir: 'à choisir', integree: 'intégrée (fiche à vérifier)', reseau: 'réseau primaire (pression à obtenir)' };
   function hydrauliqueGlobal(et, ctx = contexte(et)) {
     const notes = notesDe(et), boucles = [], chemins = [], debits = [], alertes = [], nf = N.nf;
     const mCE = (dp, rho) => dp * 1000 / (rho * 9.81), kPa = (h, rho) => h * rho * 9.81 / 1000, r1 = x => arrondi(x, 1), r2 = x => arrondi(x, 2);
     const ajouter = b => { b.id = boucles.length; boucles.push(b); return b; };
     const etat = ret => (!ret ? 'choisir' : ret.ok === false ? 'ko' : ret.ecart > 25 ? 'sur' : 'ok');
+    const retenue = pf => (pf ? { ref: pf.ref || 'courbe saisie', H: Number.isFinite(pf.Hpompe) ? pf.Hpompe : null, ok: !!pf.ok, ecart: pf.ecart } : null);
+    // Plusieurs pompes primaires (une par générateur) : la plus défavorable ; une pompe sans courbe → à choisir
+    const retenues = l => { if (!l.length || l.some(p => !p.pf)) return null; const ko = l.find(p => !p.pf.ok), pire = ko || l.reduce((a, p) => (p.pf.ecart > a.pf.ecart ? p : a), l[0]);
+      return { ref: l.map(p => `${p.cle} ${p.pf.ref || 'courbe saisie'}`).join(' ; '), H: Number.isFinite(pire.pf.Hpompe) ? pire.pf.Hpompe : null, ok: !ko, ecart: pire.pf.ecart }; };
     const parcourir = (pid, chemin, niveau, amont, vus) => {
       const e = ctx.entrees(pid), d = ctx.dim(pid);
       if (!d) return;
       const rho = d.f.rho, lib = libNote(et, pid), pa = Sc.primaireAmont(e, d), ss = Sc.sousStation(e), titre = pid.titre || lib;
+      let pompesProd; try { pompesProd = Sc.pompesProduction(e, d); } catch (er) { pompesProd = []; }
       let etapes = chemin;
       if (!amont) {
         // Boucle de production : générateur(s), liaisons et découplage (bouteille, échangeur) ; sans découplage la
         // pompe du générateur et celles des circuits sont en série
-        const types = d.multi ? d.multi.map(x => x.type) : [d.gk || e.generateur || ''], dpGen = Math.max(...types.map(DP_GEN));
-        const dpDec = d.echangeur ? Sc.DP_ECH : d.bouteille ? 1 : 0, dp = dpGen + 5 + dpDec, primaireReseau = ss && e.pompeEchPrim !== 'ajouter';
+        const P = d.prod, dp = P.dp, primaireReseau = ss && e.pompeEchPrim !== 'ajouter', pp = pompesProd.filter(p => /^PP\d*$/.test(p.cle)), ret = primaireReseau || d.ppIntegree ? null : retenues(pp);
         const b = ajouter({ type: 'production', note: pid.id, schema: lib, niveau, pompe: primaireReseau ? 'Réseau primaire (réseau de chaleur ou de froid)' : d.ppIntegree ? 'Pompe(s) intégrée(s) au générateur' : `Pompe${d.n > 1 ? 's' : ''} primaire${d.n > 1 ? `s (${d.n})` : ''} des générateurs`,
-          boucle: `Production — ${titre}`, Q: r2(d.Qp), dp: r1(dp), hmt: r2(mCE(dp, rho)), retenue: null, proposee: '', etat: primaireReseau ? 'reseau' : d.ppIntegree ? 'integree' : 'choisir', autorite: null,
-          detail: `générateur ≈ ${dpGen} kPa + liaisons 5 kPa${dpDec ? ` + ${d.echangeur ? 'échangeur' : 'bouteille'} ${dpDec} kPa` : ''}` });
+          boucle: `Production — ${titre}`, Q: r2(d.Qp), dp: r1(dp), hmt: r2(mCE(dp, rho)), retenue: ret, proposee: '', etat: primaireReseau ? 'reseau' : d.ppIntegree ? 'integree' : etat(ret), autorite: null,
+          detail: `${P.gens.map(g => `${d.multi ? g.rep : 'générateur'} ${nf(g.dp.v, 1)} kPa (${g.dp.src})`).join(d.multi ? ', ' : '')}${d.multi && P.gens.length > 1 ? ` → le plus résistant ${nf(P.dpGen, 1)} kPa` : ''} + liaisons 5 kPa (forfait)${P.dec ? ` + ${P.decLib} ${nf(P.dec.v, 1)} kPa (${P.dec.src})` : ''}` });
+        if (b.etat === 'ko') alertes.push({ niveau: 'erreur', note: pid.id, pompe: true, texte: `${lib} : pompe primaire ${ret.ref} insuffisante pour la boucle de production (${nf(dp, 1)} kPa).` });
         etapes = [...chemin, { libelle: b.boucle, dp: b.dp, boucle: b.id }];
         if (!d.bouteille && !d.echangeur && d.circuits.length) alertes.push({ niveau: 'attention', note: pid.id, texte: `${lib} : production sans découplage — pompe(s) des générateurs et pompes des circuits en série ; bouteille de découplage ou générateurs à débit variable conseillés.` });
         debits.push({ schema: lib, note: pid.id, libelle: 'Production', Qprod: r2(d.Qp), Qappel: r2(d.Qs), Pprod: r1(d.Pprod), Pdem: r1(d.Pdem),
@@ -362,12 +379,13 @@ const Installation = ((N, Sc, L) => {
         const ac = amont.c, alib = `circuit ${ac.rep} de ${amont.lib}`;
         // Primaire de la sous-station : pompe du circuit amont, ou pompe primaire ajoutée (alors en série avec elle)
         if (ss && e.pompeEchPrim === 'ajouter') {
-          ajouter({ type: 'primaire', note: pid.id, schema: lib, niveau, pompe: 'Pompe primaire de la sous-station', boucle: `${titre} — primaire de l'échangeur`, Q: r2(ac.Q), dp: r1(pa.dp), hmt: r2(mCE(pa.dp, rho)), retenue: null, proposee: '', etat: 'choisir', autorite: null, detail: pa.postes.map(([l, v]) => `${l} ${v} kPa`).join(' + ') });
+          const ret = retenue(Sc.pointPompe(e, 'PECH1', ac.Q, mCE(pa.dp, rho)));
+          ajouter({ type: 'primaire', note: pid.id, schema: lib, niveau, pompe: `Pompe primaire de la sous-station${ret ? ` (PECH1 ${ret.ref})` : ''}`, boucle: `${titre} — primaire de l'échangeur`, Q: r2(ac.Q), dp: r1(pa.dp), hmt: r2(mCE(pa.dp, rho)), retenue: ret, proposee: '', etat: etat(ret), autorite: null, detail: pa.postes.map(([l, v, o]) => `${l} ${nf(v, 1)} kPa${o ? ` (${o})` : ''}`).join(' + ') });
           alertes.push({ niveau: 'attention', note: pid.id, texte: `${lib} : pompe primaire de la sous-station en série avec la pompe du ${alib} — n'en garder qu'une, ou découpler (by-pass neutre, bouteille).` });
         }
         if (ss && e.pompeEchSec === 'ajouter') {
-          const dp = Sc.DP_ECH + 5;
-          ajouter({ type: 'secondaire', note: pid.id, schema: lib, niveau, pompe: 'Pompe secondaire de la sous-station', boucle: `${titre} — secondaire de l'échangeur`, Q: r2(d.Qs), dp: r1(dp), hmt: r2(mCE(dp, rho)), retenue: null, proposee: '', etat: 'choisir', autorite: null, detail: `échangeur côté secondaire ${Sc.DP_ECH} kPa + collecteurs 5 kPa` });
+          const s2 = d.dpEchS || { v: Sc.DP_ECH, src: 'forfait' }, dp = s2.v + 5, ret = retenue(Sc.pointPompe(e, 'PECH2', d.Qs, mCE(dp, rho)));
+          ajouter({ type: 'secondaire', note: pid.id, schema: lib, niveau, pompe: `Pompe secondaire de la sous-station${ret ? ` (PECH2 ${ret.ref})` : ''}`, boucle: `${titre} — secondaire de l'échangeur`, Q: r2(d.Qs), dp: r1(dp), hmt: r2(mCE(dp, rho)), retenue: ret, proposee: '', etat: etat(ret), autorite: null, detail: `échangeur côté secondaire ${nf(s2.v, 1)} kPa (${s2.src}) + collecteurs 5 kPa (forfait)` });
         }
         if (pa.montage === 'direct') alertes.push({ niveau: 'attention', note: pid.id, texte: `${lib} raccordé en direct sur le ${alib} : la pompe du circuit amont et les pompes des circuits de ce schéma sont en série sans découplage (bouteille, échangeur ou by-pass neutre conseillé).` });
         const besoin = ['bouteille', 'direct'].includes(pa.montage) ? d.Qs : ac.Q;
@@ -375,6 +393,11 @@ const Installation = ((N, Sc, L) => {
         if (ac.Q < besoin * 0.95) alertes.push({ niveau: 'attention', note: pid.id, texte: `${lib} : débit du ${alib} (${nf(ac.Q, 2)} m³/h) inférieur au débit appelé par ses circuits (${nf(besoin, 2)} m³/h) : le retour se recycle ${pa.montage === 'bouteille' ? 'dans la bouteille' : 'dans le collecteur'} et ${d.chaud ? 'abaisse' : 'relève'} le départ.` });
         if (e.dpDispo !== '' && Number.isFinite(num(e.dpDispo, NaN)) && num(e.dpDispo) < pa.dp - 0.05) alertes.push({ niveau: 'erreur', note: pid.id, pompe: true, texte: `${lib} : pression disponible ${nf(num(e.dpDispo), 1)} kPa pour ${nf(pa.dp, 1)} kPa côté primaire.` });
       }
+      // Pompes de production hors boucle principale : échangeur de découplage (racine), récupération, refroidissement
+      pompesProd.filter(p => (p.cle === 'PECH1' || p.cle === 'PECH2') ? !ss : ['PREC', 'PEV'].includes(p.cle)).forEach(p => {
+        const ret = retenue(p.pf), b = ajouter({ type: p.cle === 'PEV' ? 'refroidissement' : p.cle === 'PREC' ? 'recuperation' : 'echangeur', note: pid.id, schema: lib, niveau, pompe: p.cle, boucle: `${titre} — ${p.lib.toLowerCase()}`, Q: r2(p.Q), dp: r1(p.dp), hmt: r2(p.hmt), retenue: ret, proposee: '', etat: etat(ret), autorite: null, detail: p.detail });
+        if (b.etat === 'ko') alertes.push({ niveau: 'erreur', note: pid.id, pompe: true, texte: `${lib} : ${p.cle} (${p.lib.toLowerCase()}) — pompe ${ret.ref} insuffisante pour ${nf(p.Q, 2)} m³/h sous ${nf(p.hmt, 2)} mCE.` });
+      });
       d.circuits.forEach((c, i) => {
         const ec = (e.circuits || [])[i] || {}, an = ec.annexe ? notes.find(n => n.id === ec.annexe) : null, nomC = `${titre} — circuit ${c.rep}`;
         // Pompe primaire du circuit (injection, bouteille, échangeur de circuit)
@@ -389,7 +412,7 @@ const Installation = ((N, Sc, L) => {
         const dp = kPa(c.hmt, rho), aval = an ? (an.type === 'pid' ? `schéma aval ${an.titre}` : an.type === 'arbo' ? `réseau ${an.titre}` : an.titre) : c.em[0].toLowerCase();
         const b = ajouter({ type: 'circuit', note: pid.id, schema: lib, niveau, pompe, boucle: `${nomC}${an ? ` → ${an.titre}` : ''}`, Q: r2(c.Q), dp: r1(dp), hmt: r2(c.hmt), retenue: ret, proposee: c.pompe ? N.libPompe(c.pompe) : '', etat: etat(ret),
           autorite: c.autorite === null || c.autorite === undefined ? null : r2(c.autorite),
-          detail: `liaison ${nf(c.dpL, 1)} + ${c.M.vanne ? `vanne ${nf(c.dpV, 1)}` : c.prim ? 'séparation' : 'sans vanne'} + robinetterie ${nf((c.rob || []).length ? c.dpRob : 5, 1)} + ${aval} ${nf(c.dpEm, 1)} kPa` });
+          detail: `liaison ${nf(c.dpL, 1)} + ${c.M.vanne ? `vanne ${nf(c.dpV, 1)}${c.kvsImpose ? ` (Kvs ${nf(c.kvs, 1)} retenu)` : ''}` : c.prim ? 'séparation' : 'sans vanne'} + robinetterie ${nf((c.rob || []).length ? c.dpRob : 5, 1)}${(c.rob || []).length ? '' : ' (forfait)'}${c.dpEchC ? ` + échangeur ${nf(c.dpEchC.s, 1)} (${c.dpEchC.src})` : ''} + ${aval} ${nf(c.dpEm, 1)} kPa` });
         if (b.etat === 'ko') alertes.push({ niveau: 'erreur', note: pid.id, pompe: true, texte: `${nomC} : pompe ${ret.ref} insuffisante pour ${nf(c.Q, 2)} m³/h sous ${nf(c.hmt, 2)} mCE.` });
         if (b.autorite !== null && b.autorite < 0.5) alertes.push({ niveau: 'attention', note: pid.id, texte: `${nomC} : autorité de la vanne ${nf(b.autorite, 2)} < 0,5 (vanne ${nf(c.dpV, 1)} kPa) — vanne plus résistante ou régulateur de pression différentielle.` });
         const suite = [...etapes, { libelle: `Circuit ${c.rep}`, dp: b.dp, boucle: b.id }];

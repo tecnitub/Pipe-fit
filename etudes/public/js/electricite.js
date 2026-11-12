@@ -1134,6 +1134,16 @@ const Electricite = ((N, Sc) => {
           ajout('trrec', { rep: R('TRREC'), designation: 'Sonde de retour de l\'eau récupérée sur le groupe froid', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
           ajout('cerec', { rep: R('CEREC'), designation: 'Compteur d\'énergie récupérée sur le groupe froid', type: 'sonde', P: 0, tension: '24V', regulation: 'impulsion' });
         }
+        // Évacuation de la chaleur (aéroréfrigérant, tour) : ventilateurs à vitesse variable, pompe du circuit de
+        // refroidissement, sonde de sortie, vanne 3 voies de by-pass hivernal (tour : électrovanne d'appoint d'eau)
+        if (d.evac) {
+          const ev = d.evac, aero = ev.type === 'aero';
+          ajout('evac', { rep: R(aero ? 'AR' : 'TRF'), designation: `${ev.lib} — ${ev.nVent} ventilateur(s) à vitesse variable (${nf(ev.P, 0)} kW évacués)`, type: 'ventilateur', P: Math.max(0.1, Math.round(ev.Pvent * 100) / 100), tension: ev.Pvent > 2.2 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur', alim: es.alimProd || '' });
+          ajout('pev', { rep: R('PEV'), designation: `Pompe du circuit de refroidissement (${nf(ev.Q, 1)} m³/h, ${nf(ev.hmt, 1)} mCE)`, type: 'pompe', P: ev.Ppompe, tension: ev.Ppompe > 2.2 ? 'tri' : 'mono', regulation: 'torRetour', alim: es.alimProd || '' });
+          ajout('tev', { rep: R('TEV'), designation: `Sonde de température de sortie de l'eau refroidie (${aero ? 'aéroréfrigérant' : 'tour'})`, type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
+          ajout('vbp', { rep: R('VBP'), designation: 'Vanne 3 voies de by-pass hivernal du circuit de refroidissement', type: 'vanne', P: 0.01, tension: '24V', regulation: 'v010' });
+          if (!aero) ajout('eva', { rep: R('EVA'), designation: 'Électrovanne d\'appoint d\'eau de la tour (niveau bas)', type: 'vanne', P: 0.02, tension: 'mono', regulation: 'tor' });
+        }
         d.circuits.forEach((c, i) => {
           const k = i + 1, M = Sc.montage ? Sc.montage(c.reg) : { vanne: c.reg !== 'direct' };
           ajout(`pc${k}`, { ...(c.pompe ? { metre: `pompe|${c.pompe.modele}` } : {}), rep: R(`PC${k}`), designation: `Pompe ${c.rep}${M.pp ? ' (secondaire)' : ''}`, type: 'pompe', P: c.pompe && c.pompe.P1 ? kW(c.pompe.P1) : Math.max(0.05, Math.round(c.Q * Math.max(2, c.hmt) / 367 / 0.45 * 100) / 100), tension: 'mono',

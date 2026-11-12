@@ -38,6 +38,16 @@ const Nomenclature = ((N, Sc) => {
       if (d.tampon && d.tampon.V > 0) add({ rep: 'BT', circuit: 'Production', famille: 'Équipements', designation: `Ballon tampon ${nf(d.tampon.V, 0)} L${d.tampon.position === 'decouplage' ? ' de découplage (4 piquages)' : d.tampon.position === 'depart' ? ' (sur le départ)' : ' (sur le retour)'}`, qte: 1 });
       // Ballons (éléments du schéma) : fonction, volume, piquages, doigts de gant des sondes
       (d.ballons || []).forEach(b => add({ rep: b.rep, circuit: b.circuit || 'Production', famille: 'Équipements', designation: `${b.lib} ${nf(b.V, 0)} L, ${b.piquages} piquages, ${b.sondes.length} doigt(s) de gant (sondes ${b.sondes.map(x => Sc.SONDES[x]).join(', ') || '—'})`, qte: 1 }));
+      // Évacuation de la chaleur : aéroréfrigérant ou tour, pompe PEV, vanne de by-pass hivernal, sonde, tube du circuit
+      if (d.evac) {
+        const ev = d.evac, R = ev.type === 'aero' ? 'AR' : 'TRF';
+        add({ rep: R, circuit: 'Refroidissement', famille: 'Production', designation: `${ev.lib} ${nf(ev.P, 0)} kW, eau ${ev.Tc}/${ev.Tf} °C (${ev.fluideLib.toLowerCase()}), ${ev.nVent} ventilateur(s) à vitesse variable ≈ ${nf(ev.Pvent, 1)} kW`, qte: 1, dp: ev.dpE.v });
+        add({ rep: 'PEV', circuit: 'Refroidissement', famille: 'Pompes', designation: `Pompe du circuit de refroidissement ${nf(ev.Q, 2)} m³/h × ${nf(ev.hmt, 2)} mCE`, qte: 1 });
+        add({ rep: 'VBP', circuit: 'Refroidissement', famille: 'Robinetterie', designation: 'Vanne 3 voies motorisée de by-pass hivernal', dn: ev.t.dn, qte: 1 });
+        add({ rep: 'TEV', circuit: 'Refroidissement', famille: 'Robinetterie', designation: 'Sonde de température de sortie de l\'eau refroidie (doigt de gant)', qte: 1 });
+        if (ev.ech) add({ rep: 'EPR', circuit: 'Refroidissement', famille: 'Équipements', designation: `Échangeur à plaques intermédiaire ${nf(ev.P, 0)} kW`, qte: 1, dp: Sc.DP_ECH });
+        if (ev.L > 0) add({ rep: 'TR', circuit: 'Refroidissement', famille: 'Tuyauterie', designation: `Tube ${ev.t.nom} (aller + retour)`, dn: ev.t.dn, qte: Math.round(ev.L * 10) / 10, unite: 'ml' });
+      }
       if (d.tc) add({ rep: 'COL', circuit: 'Production', famille: 'Équipements', designation: `Collecteurs départ et retour ${d.tc.nom}`, dn: d.tc.dn, qte: 2 });
       if (e.desemboueur !== 'non') add({ rep: 'DS', circuit: 'Production', famille: 'Robinetterie', designation: 'Pot à boue / désemboueur magnétique', dn: d.tc ? d.tc.dn : '', qte: 1 });
       if (e.vase !== 'non') add({ rep: 'VE', circuit: 'Production', famille: 'Équipements', designation: 'Vase d\'expansion, soupape de sécurité, disconnecteur de remplissage (voir note du vase)', qte: 1 });

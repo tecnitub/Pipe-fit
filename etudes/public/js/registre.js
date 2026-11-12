@@ -6,7 +6,8 @@
 //
 // Emplacements (genre) : term / termp (ligne de terminaux, pompe de distribution), aero (bouche), san (point de puisage),
 // rob (robinetterie d'un circuit ou d'un tronçon), pompe (pompe d'un circuit du schéma de principe), arbo (pompe du
-// réseau arborescent), cta, pid (production), vase, ecs, reseau (calcul entier : entrees.eq).
+// réseau arborescent), cta, pid (production), gen (générateur d'une production détaillée : ligne de « generateurs »), vase,
+// ecs, reseau (calcul entier : entrees.eq).
 const Registre = (() => {
   const N = () => (typeof Notes !== 'undefined' ? Notes : (() => { try { return require('./notes'); } catch (e) { return null; } })());
   const T = () => (typeof Terminaux !== 'undefined' ? Terminaux : require('./terminaux'));
@@ -19,10 +20,10 @@ const Registre = (() => {
 
   const TYPES = { cta: 'Centrale de traitement d\'air', generateur: 'Générateur', pompe: 'Pompe, circulateur', terminal: 'Terminal', vase: 'Vase d\'expansion', ecs: 'Ballon, échangeur d\'ECS',
     bouche: 'Bouche, diffuseur', robinet: 'Vanne, robinetterie', sanitaire: 'Appareil sanitaire', regulateur: 'Régulateur préprogrammé, module' };
-  const TYPE_GENRE = { regul: 'regulateur', term: 'terminal', termp: 'pompe', aero: 'bouche', san: 'sanitaire', rob: 'robinet', pompe: 'pompe', arbo: 'pompe', cta: 'cta', pid: 'generateur', vase: 'vase', ecs: 'ecs', reseau: 'pompe' };
+  const TYPE_GENRE = { gen: 'generateur', regul: 'regulateur', term: 'terminal', termp: 'pompe', aero: 'bouche', san: 'sanitaire', rob: 'robinet', pompe: 'pompe', arbo: 'pompe', cta: 'cta', pid: 'generateur', vase: 'vase', ecs: 'ecs', reseau: 'pompe' };
   // Listes des calculs qui reçoivent des équipements : [champ de la note, genre de l'élément]
   const LISTES = { elec: [['capaSynco', () => 'regul']], terminaux: [['appareils', a => (a.type === 'pompeDist' ? 'termp' : 'term')]], aero: [['bouchesL', () => 'aero']], sanitaire: [['points', () => 'san']],
-    pid: [['robinetterie', () => 'rob'], ['pompesFab', () => 'pompe']], arbo: [['robinetterie', () => 'rob']] };
+    pid: [['robinetterie', () => 'rob'], ['pompesFab', () => 'pompe'], ['generateurs', () => 'gen']], arbo: [['robinetterie', () => 'rob']] };
   const NIVEAU_NOTE = { cta: 'cta', pid: 'pid', vase: 'vase', ecs: 'ecs', reseau: 'reseau' };
   // Valeurs reprises au placement seulement (débit d'air de la CTA, débit d'une bouche : dimensionnés par le réseau)
   const PLACEMENT_SEUL = { cta: ['Qs', 'Qr'], aero: ['Q'] };
@@ -66,6 +67,8 @@ const Registre = (() => {
       case 'san': { const A = SAN().APPAREILS[el.type] || SAN().APPAREILS.lavabo || []; set('qEF', v.q); if (A[2]) set('qECS', v.q); set('pMin', v.pMin); set('ref', nom); break; }
       case 'rob': set('dn', v.dn); set('kv', v.kv); if (vide(v.kv) && !vide(v.dp)) set('dp', Math.round(v.dp * 100) / 100); if (el.type === 'equilibrage') { set('tours', v.tours); set('abaque', v.abaque); } set('ref', nom); break;
       case 'pompe': set('courbe', v.courbe); set('ref', nom); break;
+      // Générateur d'une production détaillée : puissance et perte de charge côté eau (fiche du fabricant)
+      case 'gen': set('P', v.P); set('dp', v.dpEau); break;
       case 'regul': set('X', v.X); set('Y', v.Y); set('Q', v.Q); set('ref', nom); break;
       case 'arbo': set('pompeCourbe', v.courbe); set('pompeRef', nom); break;
       case 'cta': FC().champs('cta', v).forEach(c => {
@@ -86,6 +89,7 @@ const Registre = (() => {
       case 'san': set('q', el.qEF); set('pMin', el.pMin); break;
       case 'rob': set('dn', el.dn); set('kv', el.kv); if (vide(el.kv)) set('dp', el.dp); if (el.type === 'equilibrage') { set('tours', el.tours); set('abaque', el.abaque); } break;
       case 'pompe': set('courbe', el.courbe); break;
+      case 'gen': set('P', el.P); set('dpEau', el.dp); break;
       case 'regul': set('X', el.X); set('Y', el.Y); set('Q', el.Q); break;
       case 'arbo': set('courbe', el.pompeCourbe); break;
       default: { const f = ((note || {}).entrees || {}).fiche || {}; Object.entries(f).forEach(([k, y]) => { if (!['nom', 'fabricant', 'reference'].includes(k)) set(k, y); }); }

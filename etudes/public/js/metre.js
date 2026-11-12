@@ -125,6 +125,9 @@ const Metre = ((N, C, D, L, Sc) => {
         if (d.tb) equip(`bouteille|${d.tb.cle}`, 'Production', `Bouteille de découplage ${d.tb.nom}`, 1, 6, { type: 'bouteille' }, src);
         if (d.echangeur) equip(`echangeur|${Math.round(d.Pdem)}`, 'Production', `Échangeur à plaques ${nf(d.Pdem, 0)} kW (≈ ${nf(d.Aech, 1)} m²)`, 1, 8, { type: 'echangeur' }, src);
         (d.ballons || []).forEach(b => equip(`ballon|${b.fonction}|${b.V}`, 'Production', `${b.lib} ${nf(b.V, 0)} L`, 1, b.V > 1000 ? 8 : 6, { type: 'tampon', volume: b.V }, src));
+        // Évacuation de la chaleur : aéroréfrigérant ou tour, pompe et vanne de by-pass du circuit de refroidissement
+        if (d.evac) { const ev = d.evac; equip(`evac|${ev.type}|${Math.round(ev.P)}`, 'Production', `${ev.lib} ${nf(ev.P, 0)} kW (${ev.Tc}/${ev.Tf} °C, ${ev.nVent} ventilateur(s))`, 1, 16, { type: 'generateur', mots: ev.lib }, src);
+          equip('vanne|3v|by-pass-evac', 'Production', 'Vanne 3 voies motorisée de by-pass hivernal (refroidissement)', 1, 2, { type: 'vanne', sorte: '3v' }, src); tube(e.serie, ev.t.cle, ev.L, `${src} (circuit de refroidissement)`); }
         if (d.tampon && d.tampon.V > 0) equip(`tampon|${d.tampon.V}`, 'Production', `Ballon tampon ${nf(d.tampon.V, 0)} L`, 1, 6, { type: 'tampon', volume: d.tampon.V }, src);
         if (e.desemboueur !== 'non') equip(`desemboueur|${d.tc.dn}`, 'Production', `Pot à boue / désemboueur DN ${d.tc.dn}`, 1, 3, { type: 'desemboueur', dn: d.tc.dn }, src);
         tube(e.serie, d.tc.cle, 2 * (d.circuits.length * 1.5 + 2), `${src} (collecteurs)`);

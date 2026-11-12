@@ -105,6 +105,8 @@ const Regulation = (() => {
           if (cc) cc.circuits.forEach(c => { params.push(p(`Pente de la courbe de chauffe ${c.rep} (type Synco)`, Math.round(c.pente * 20) / 20, ''), p(`Déplacement parallèle ${c.rep}`, Math.round(c.deplacement * 2) / 2, 'K')); });
           if (d.chaud) params.push(p('Arrêt chauffage (non-chauffage) au-dessus de', cc ? cc.arret : 17, '°C ext.'));
           // Récupération d'énergie sur groupe froid : côté froid (production de chaleur récupérée), côté chaud (priorité)
+          // Évacuation de la chaleur : consigne de sortie, by-pass hivernal
+          if (d.evac) params.push(p(`${d.evac.lib} : consigne de température de sortie de l'eau`, d.evac.Tf, '°C'), p(`${d.evac.lib} : ouverture du by-pass hivernal sous`, Math.max(5, d.evac.Tf - 10), '°C'));
           if (e.recupGf) params.push(p('Récupération : consigne de l\'eau récupérée (départ)', num(String(e.regimeRecup || '45/40').split('/')[0], 45), '°C'));
           if (/-eau$/.test(e.generateur || '') && e.sourceEau === 'boucle' && Liens.circuitDeAnnexe && Liens.circuitDeAnnexe(etude.notes || [], n)) params.push(p('Boucle d\'eau tempérée : arrivée mini pour autoriser la PAC', 15, '°C'), p('Boucle d\'eau tempérée : arrivée maxi pour autoriser la PAC', 30, '°C'));
           if (e.recupDe && num(e.Precup) > 0) params.push(p('Récupération sur groupe froid : puissance disponible', num(e.Precup), 'kW'), p('Appoint : enclenché si le départ reste sous la consigne de plus de', 3, 'K pendant 10 min'));
