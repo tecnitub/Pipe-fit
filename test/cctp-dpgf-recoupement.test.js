@@ -637,3 +637,21 @@ test('DPGF : accessoire d\'un terminal (grille de diffusion d\'un ventilo) pas c
   assert.strictEqual(I.classer('Plenum de raccordement pour cassette 4 voies'), null);
   assert.strictEqual(I.classer('Ventilo-convecteur 2 tubes allège').genre, 'ventilo');
 });
+
+test('DPGF : suite de désignation « accessoires … », trois groupes de vannes, émetteurs vers le réseau qui les nomme', () => {
+  const I = require('../public/js/inventaire-cvc');
+  const L = (a, b = '', u = '', q = '') => [a, b, u, q, '', ''];
+  const rows = [L('Article', 'Désignation des ouvrages', 'U', 'Qté'),
+    L('4', 'CHAUFFAGE'), L('4-3', 'PRODUCTION'), L('4-3-2-3', 'Ballon tampon primaire EC'),
+    L('', 'Ballon tampon type TB-500 4bars de marque ACME ou équivalent avec tous ses'), L('', 'accessoires tel que décrit', 'ens', 1),
+    L('4-4', 'DISTRIBUTION'), L('4-4-1', 'Circuits de distribution radiateurs'), L('', 'DN20', 'm', 100),
+    L('4-4-3', 'Pompes et vannes circuits secondaires'),
+    L('', 'Pompe double P1 - 1,6 m3/h 10,6 mCE telle que décrite', 'u', 1), L('', 'Pompe simple P2 - 3 m3/h 9 mCE telle que décrite', 'u', 1),
+    L('', "Vanne d'isolement"), L('', 'DN 32 (radiateurs EC)', 'u', 3), L('', 'DN 50 (ventilo convecteurs EC)', 'u', 3),
+    L('', "Vanne d'équilibrage à 2 prises de pression"), L('', 'DN 32 (radiateurs EC)', 'u', 1), L('', 'DN 50 (ventilo convecteurs EC)', 'u', 1),
+    L('', 'Vanne 3 voies'), L('', 'DN32 (radiateurs)', 'u', 1), L('', 'DN50 (général EC)', 'u', 1)];
+  const r = I.depuisDpgf(rows);
+  assert.ok(r.items.some(x => x.genre === 'tampon' && /TB-500/.test(x.designation)), 'ballon gardé malgré « accessoires … »');
+  const p = r.items.filter(x => x.genre === 'pompe');
+  assert.deepStrictEqual(p.map(x => x.details.circuit), ['radiateurs EC', 'ventilo convecteurs EC']);
+});

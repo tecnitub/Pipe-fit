@@ -430,7 +430,10 @@ const InventaireCVC = (() => {
         const t = des.replace(/^[-–•\s]+/, ''), cl = classer(t), ca = classer(attente.texte);
         const variante = /^(?:tailles?|type\s?\d|t\s?\d|dn\s?\d|ø|diam|mod[eè]le|l\s?\d|ht\s?\d|puissance\s?\d|\d)/i.test(t);
         if (variante || !cl) {
-          const prest = EXCLU.test(norm(t)) || ACCESSOIRE.test(norm(t)) || REGUL_PREST.test(norm(t));
+          // Suite de la désignation en minuscule (« accessoires tel que décrit | ens | 1 » sous « Ballon tampon type … avec tous ses ») :
+          // c'est l'ouvrage du parent, pas un accessoire ni une prestation
+          const suite = !variante && /^[a-zà-ÿ]/.test(t) && !attente.parent;
+          const prest = !suite && (EXCLU.test(norm(t)) || ACCESSOIRE.test(norm(t)) || REGUL_PREST.test(norm(t)));
           const chap = (() => { const k = Object.keys(titres).sort((a, b) => b - a)[0], cc = k ? classer(titres[k]) : null; return cc && (cc.categorie === 'producteur' || GROS_GENRES.includes(cc.genre)) ? cc : null; })();
           des = `${attente.texte} ${t}`; x = norm(des); cParent = prest ? classer(t) : ca || chap; enfant = true; attente.utilise = true;
           if (!attente.parent && !variante) attente = null;
@@ -532,6 +535,8 @@ const InventaireCVC = (() => {
       // Libellés du chapitre, sinon des chapitres frères (« 5.5.1 Pompes », « 5.5.2 Vannes »), sans doublon
       let l = libellesCircuits[k] || [];
       if (l.length !== p.length && k.includes('.')) { const par = k.split('.').slice(0, -1).join('.'); l = []; Object.entries(libellesCircuits).filter(([kk]) => kk === par || kk.startsWith(`${par}.`)).forEach(([, ll]) => ll.forEach(y => { if (!l.some(z => motsDe(z) === motsDe(y))) l.push(y); })); }
+      // Plusieurs groupes de vannes (isolement, équilibrage, puis 3 voies…) : le premier groupe nomme les circuits dans l'ordre
+      if (l.length > p.length && (libellesCircuits[k] || []).length >= p.length) l = (libellesCircuits[k] || []).slice(0, p.length);
       if (p.length === l.length) p.forEach((x, i) => { x.details.circuit = l[i]; });
     });
     items.forEach(x => { delete x._chap; });
@@ -870,6 +875,12 @@ const InventaireCVC = (() => {
   // Tronçon primaire : réseau entre la production et le ballon tampon ou le collecteur (« Collecteur primaire … »,
   // « EC : circuit en tube acier » sous « Circuit primaire chauffage »)
   const motsDe = t => norm(t).replace(/[^a-z0-9]+/g, ' ').trim();
+  // Émetteur d'un réseau d'après son nom : terminaux d'abord (« distribution ventilo-convecteurs … et CTA » = ventilos)
+  // (le premier émetteur cité l'emporte : « Départ CTA et ventilo » = CTA, « distribution ventilo … et CTA » = ventilos)
+  const genreReseau = nom => {
+    const t = norm(nom), cands = [[/ventilo|cassette/, 'ventilo'], [/radiateur/, 'radiateurs'], [/plancher/, 'plancher'], [/\bcta\b|centrale/, 'cta']].map(([re, g]) => [t.search(re), g]).filter(([i]) => i >= 0).sort((a, b) => a[0] - b[0]);
+    return cands.length ? cands[0][1] : (classer(nom) || {}).genre;
+  };
   const estPrimaire = r => {
     const nom = motsDe(r.nom), tout = motsDe(`${r.nom} ${r.chapitre || ''} ${r.contexte || ''}`);
     // Collecteur, nourrice, tronçon « entre … et le ballon / la bouteille / le collecteur » : toujours la production
@@ -1088,7 +1099,7 @@ const InventaireCVC = (() => {
     // Réseau d'ECS sans ballon alimenté par la production (ballons électriques ou solaires) : pas un circuit
     const circuitsReseaux = hydro.filter(r => r.nature !== 'ecs' || em.some(x => x.reseau === r.id) || !inc.some(x => x.genre === 'ecs' && x.horsSchema)).map(r => {
       const ems = em.filter(x => x.reseau === r.id);
-      const dominant = ems.length ? ems.reduce((m, x) => ((nombre(x.qte) || 1) > (nombre(m.qte) || 1) ? x : m), ems[0]).genre : (classer(r.nom) || {}).genre;
+      const dominant = ems.length ? ems.reduce((m, x) => ((nombre(x.qte) || 1) > (nombre(m.qte) || 1) ? x : m), ems[0]).genre : genreReseau(r.nom);
       const emet = Sc.EMETTEURS[dominant] ? dominant : r.nature === 'ecs' ? 'ecs' : r.nature === 'eau-glacee' ? 'ventilo' : 'radiateurs';
       const froid = r.nature === 'eau-glacee' || (r.nature === 'change-over' && ((principal && /^gf/.test(principal[0])) || opts.schema === 'froid'));
       const Ps = ems.map(x => { const P = pTherm(x, froid), q = nombre(x.qte) || 1; return Number.isFinite(P) && P > 0 ? P * q : NaN; });
@@ -1104,7 +1115,10 @@ const InventaireCVC = (() => {
     // circuit (sa puissance s'y ajoute), pas un circuit de plus
     const parGenreEm = new Map();
     const sansReseau = sansReseau0.filter(x => {
-      const c = circuitsReseaux.find(z => z.emetteur === x.genre && (classer(parId.get(z.reseau).nom) || {}).genre === x.genre) || circuitsReseaux.find(z => z.emetteur === x.genre);
+      const motEm = { ventilo: /ventilo|cassette/, radiateurs: /radiateur/, plancher: /plancher/, aerotherme: /aerotherme/ }[x.genre];
+      const c = circuitsReseaux.find(z => z.emetteur === x.genre && (classer(parId.get(z.reseau).nom) || {}).genre === x.genre) || circuitsReseaux.find(z => z.emetteur === x.genre)
+        // Circuit dont le réseau nomme l'émetteur (« distribution ventilo-convecteurs … et CTA ») même s'il dessert aussi des CTA
+        || (motEm && circuitsReseaux.find(z => motEm.test(norm(parId.get(z.reseau).nom))));
       if (!c) {
         // Plusieurs lignes du même émetteur (ventilos par taille, radiateurs par type) : un seul circuit pour elles
         const g = parGenreEm.get(x.genre);
