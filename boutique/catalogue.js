@@ -41,6 +41,7 @@
   // Familles de produits du catalogue
   const FAMILLES = [
     { id: 'spool', nom: 'Spools préfabriqués', icone: 'spool', texte: 'Tronçons soudés en atelier selon votre tracé, livrés prêts à poser.' },
+    { id: 'collecteur', nom: 'Collecteurs et nourrices', icone: 'collecteur', texte: 'Corps droit avec 1 à 5 piquages, brides ou fonds bombés.' },
     { id: 'tube', nom: 'Tubes coupés à longueur', icone: 'tube', texte: 'Tubes soudés recuits, coupés et chanfreinés à la cote.' },
     { id: 'coude', nom: 'Coudes', icone: 'coude', texte: 'Coudes à souder 90° et 45°, rayon 1,5 D.' },
     { id: 'te', nom: 'Tés', icone: 'te', texte: 'Tés égaux à souder, emboutis.' },
@@ -52,7 +53,9 @@
 
   // Articles : prix calculé à partir de la masse de matière (ou d'un prix de base par DN), de la nuance et de la finition
   const PRODUITS = [
-    { id: 'spool-sur-mesure', famille: 'spool', nom: 'Spool sur mesure (configurateur)', configurateur: true,
+    { id: 'collecteur-sur-mesure', famille: 'collecteur', nom: 'Collecteur sur mesure (configurateur)', configurateur: 'collecteur',
+      texte: "Corps droit et 1 à 5 piquages : diamètre, position, orientation, hauteur et raccordement de chaque départ. Piquages percés, collet tiré et soudés TIG. Délai : 10 jours ouvrés.", delai: 10 },
+    { id: 'spool-sur-mesure', famille: 'spool', nom: 'Spool sur mesure (configurateur)', configurateur: 'spool',
       texte: "Dessinez votre tracé (longueurs, changements de direction, extrémités) : le spool est soudé en atelier par soudure orbitale TIG, contrôlé et livré prêt à poser. Délai : 10 jours ouvrés.", delai: 10 },
     { id: 'tube', famille: 'tube', nom: 'Tube soudé recuit coupé à longueur', unite: 'm', longueur: true,
       texte: 'Tube soudé longitudinalement, recuit, décapé. Coupe à la scie, ébavurage et chanfrein 30° inclus.', delai: 3 },
@@ -108,6 +111,10 @@
     din: { nom: 'Douille filetée DIN 11851', prix: c => prixRaccord(5.5, c) },
   };
 
+  // Fermeture possible des extrémités du corps d'un collecteur
+  const EXTREMITES_CORPS = { ...EXTREMITES, fond: { nom: 'Fond bombé soudé', prix: c => prixRaccord(9, c) } };
+  const ORIENTATIONS = { H: 'Dessus', B: 'Dessous', N: 'Arrière', S: 'Avant' };
+
   // Spool : suite de tronçons droits dans les 6 directions ; un coude 90° est posé à chaque changement de direction
   const DIRECTIONS = { E: [1, 0, 0], O: [-1, 0, 0], N: [0, 1, 0], S: [0, -1, 0], H: [0, 0, 1], B: [0, 0, -1] };
   const NOM_DIR = { E: 'Est (→ X+)', O: 'Ouest (← X−)', N: 'Nord (Y+)', S: 'Sud (Y−)', H: 'Haut (Z+)', B: 'Bas (Z−)' };
@@ -155,6 +162,57 @@
     return { ...a, lignes, total: arrondi(lignes.reduce((s, l) => s + l.montant, 0)) };
   }
 
+  // Collecteur : corps droit le long de X, de l'extrémité A (x = 0) à B (x = longueur), avec 1 à 5 piquages perpendiculaires.
+  // Chaque piquage : diamètre (au plus celui du corps), position de son axe depuis A, orientation, hauteur (axe du corps → extrémité).
+  const epPiquage = (serie, dn, epCorps) => { const d = dimension(serie, dn); const ok = d.ep.filter(e => e <= epCorps); return ok.length ? Math.max(...ok) : d.ep[0]; };
+  function analyserCollecteur(co) {
+    const { d } = verifierConfig(co);
+    const L = +co.longueur;
+    if (!(L >= 200 && L <= 6000)) throw new Error('Longueur du corps entre 200 et 6 000 mm');
+    const dims = SERIES[co.serie].dims, iCorps = dims.indexOf(d);
+    const pq = Array.isArray(co.piquages) ? co.piquages : [];
+    if (pq.length < 1 || pq.length > 5) throw new Error('Un collecteur comporte de 1 à 5 piquages');
+    const ext = co.ext || {};
+    ['a', 'b'].forEach(k => { if (!EXTREMITES_CORPS[ext[k] || 'chanfrein']) throw new Error('Extrémité du corps inconnue'); });
+    const det = pq.map((p, i) => {
+      const n = `Piquage ${i + 1}`, dp = dims.find(x => x.dn === p.dn);
+      if (!dp) throw new Error(`${n} : diamètre inconnu`);
+      if (dims.indexOf(dp) > iCorps) throw new Error(`${n} : diamètre supérieur à celui du corps`);
+      if (!ORIENTATIONS[p.orient]) throw new Error(`${n} : orientation inconnue`);
+      if (!EXTREMITES[p.ext || 'chanfrein']) throw new Error(`${n} : extrémité inconnue`);
+      const pos = +p.pos, h = +p.h, marge = dp.de / 2 + 40;
+      if (!(pos >= marge && pos <= L - marge)) throw new Error(`${n} : axe à ${Math.ceil(marge)} mm au moins de chaque extrémité du corps`);
+      const hMin = Math.ceil(d.de / 2 + 60);
+      if (!(h >= hMin && h <= 2000)) throw new Error(`${n} : hauteur entre ${hMin} et 2 000 mm (axe du corps → extrémité)`);
+      return { ...p, pos, h, de: dp.de, ep: epPiquage(co.serie, dp.dn, +co.ep) };
+    });
+    // Écartement entre piquages : place pour souder (diamètres + 50 mm entre les bords)
+    const tries = [...det].sort((a, b) => a.pos - b.pos);
+    for (let i = 1; i < tries.length; i++) {
+      const a = tries[i - 1], b = tries[i];
+      if (b.pos - a.pos < (a.de + b.de) / 2 + 50) throw new Error(`Piquages ${det.indexOf(a) + 1} et ${det.indexOf(b) + 1} trop proches : ${Math.ceil((a.de + b.de) / 2 + 50)} mm au moins entre axes`);
+    }
+    const soudures = det.length + det.filter(p => (p.ext || 'chanfrein') !== 'chanfrein').length + ['a', 'b'].filter(k => (ext[k] || 'chanfrein') !== 'chanfrein').length;
+    return { d, L, piquages: det, soudures };
+  }
+  function prixCollecteur(co) {
+    const a = analyserCollecteur(co), ext = co.ext || {};
+    const cfgP = p => ({ ...co, dn: p.dn, ep: p.ep });
+    const tubePiq = a.piquages.reduce((s, p) => s + (p.h - a.d.de / 2) / 1000 * prixTubeM(cfgP(p)), 0);
+    const lignes = [
+      { lib: `Corps ${co.dn} — ${(a.L / 1000).toFixed(2).replace('.', ',')} m`, montant: arrondi(a.L / 1000 * prixTubeM(co)) },
+      { lib: `Tube des ${a.piquages.length} piquage(s)`, montant: arrondi(tubePiq) },
+      { lib: `Perçage, collet tiré et soudure de ${a.piquages.length} piquage(s)`, montant: arrondi(a.piquages.reduce((s, p) => s + 12 + prixSoudure(cfgP(p)) * 1.6, 0)) },
+      { lib: `Extrémités A / B : ${EXTREMITES_CORPS[ext.a || 'chanfrein'].nom} / ${EXTREMITES_CORPS[ext.b || 'chanfrein'].nom}`,
+        montant: arrondi(EXTREMITES_CORPS[ext.a || 'chanfrein'].prix(co) + EXTREMITES_CORPS[ext.b || 'chanfrein'].prix(co)) },
+      { lib: 'Raccordements des piquages', montant: arrondi(a.piquages.reduce((s, p) => s + EXTREMITES[p.ext || 'chanfrein'].prix(cfgP(p)), 0)) },
+      { lib: `Soudures bout à bout des raccordements`, montant: arrondi(['a', 'b'].filter(k => (ext[k] || 'chanfrein') !== 'chanfrein').length * prixSoudure(co)
+        + a.piquages.filter(p => (p.ext || 'chanfrein') !== 'chanfrein').reduce((s, p) => s + prixSoudure(cfgP(p)), 0)) },
+      { lib: 'Repérage, décapage-passivation des soudures', montant: arrondi(18 + a.soudures * 4) },
+    ];
+    return { ...a, lignes, total: arrondi(lignes.reduce((s, l) => s + l.montant, 0)) };
+  }
+
   // Prix unitaire HT d'une ligne de panier ; lève une erreur si la configuration est invalide
   function prixLigne(l) {
     const p = PRODUITS.find(x => x.id === l.produit);
@@ -164,7 +222,8 @@
     if (p.finitionImposee && c.finition === 'decape') throw new Error('Finition polie obligatoire pour cet article');
     if (p.sansFinition) c.finition = 'decape';
     let pu;
-    if (p.configurateur) pu = prixSpool(c).total;
+    if (p.configurateur === 'spool') pu = prixSpool(c).total;
+    else if (p.configurateur === 'collecteur') pu = prixCollecteur(c).total;
     else if (p.longueur) {
       const lg = +c.longueur;
       if (!(lg >= 100 && lg <= 6000)) throw new Error('Longueur de coupe entre 100 et 6 000 mm');
@@ -214,12 +273,13 @@
     const parts = [p.nom, d ? `${c.dn} Ø${String(d.de).replace('.', ',')} × ${String(c.ep).replace('.', ',')}` : '', c.nuance,
       p.sansFinition ? '' : (FINITIONS[c.finition] || {}).nom];
     if (p.longueur) parts.push(`L = ${c.longueur} mm`);
-    if (p.configurateur && Array.isArray(c.troncons)) parts.push(c.troncons.map(t => `${t.l}${t.dir}`).join('-'));
+    if (p.configurateur === 'collecteur') parts.push(`L = ${c.longueur} mm`, (c.piquages || []).map(q => `${q.dn} ${q.orient}@${q.pos}`).join(', '));
+    if (p.configurateur === 'spool' && Array.isArray(c.troncons)) parts.push(c.troncons.map(t => `${t.l}${t.dir}`).join('-'));
     if (c.repere) parts.push(`repère ${c.repere}`);
     return parts.filter(Boolean).join(' · ');
   }
 
-  const API = { SERIES, NUANCES, FINITIONS, OPTIONS, FAMILLES, PRODUITS, EXTREMITES, DIRECTIONS, NOM_DIR, FRANCO, PORT, TVA,
-    masseM, dimension, prixTubeM, prixRaccord, prixSoudure, analyserSpool, prixSpool, prixLigne, remiseQte, totaliser, designation, arrondi };
+  const API = { SERIES, NUANCES, FINITIONS, OPTIONS, FAMILLES, PRODUITS, EXTREMITES, EXTREMITES_CORPS, ORIENTATIONS, DIRECTIONS, NOM_DIR, FRANCO, PORT, TVA,
+    masseM, dimension, prixTubeM, prixRaccord, prixSoudure, analyserSpool, prixSpool, analyserCollecteur, prixCollecteur, epPiquage, prixLigne, remiseQte, totaliser, designation, arrondi };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else racine.Catalogue = API;
 })(typeof window !== 'undefined' ? window : globalThis);

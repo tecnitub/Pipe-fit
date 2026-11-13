@@ -29,6 +29,12 @@ une seule fois dans la console.
 - **Spool sur mesure** : tracé tronçon par tronçon (6 directions, cotes entre axes), extrémités (chanfrein, collerette +
   bride tournante, bride plate, clamp, DIN 11851), vue isométrique cotée en direct et prix détaillé (tube net des coudes,
   coudes 3D, soudures orbitales, extrémités, décapage).
+- **Collecteur sur mesure** : corps droit et 1 à 5 piquages perpendiculaires (diamètre au plus celui du corps, orientation
+  dessus / dessous / arrière / avant, position de l'axe depuis l'extrémité A, hauteur, raccordement), extrémités du corps
+  avec fond bombé possible ; vue isométrique cotée et prix détaillé (corps, tube des piquages, perçage et soudure des
+  piquages, raccordements). Modèles : de 1 à 5 piquages en un clic sur le corps choisi, nourrice chaufferie 4 départs +
+  vidange, collecteur air comprimé 3 descentes, collecteur NEP 5 vannes (DIN, poli), manchette d'instrumentation,
+  collecteur eau glacée 2 départs. Contrôles : écartement entre piquages, distance aux extrémités, hauteur minimale.
 - **Options qualité** : certificats 3.1, épreuve hydraulique avec PV, radiographie, bouchonnage.
 - **Panier** et **commande** : coordonnées de la société, livraison sur chantier, paiement par virement ou sur compte
   (30 jours fin de mois, SIRET obligatoire), franco de port à 800 € HT.

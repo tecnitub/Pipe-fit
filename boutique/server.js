@@ -106,6 +106,7 @@ function ligne(l = {}) {
   const config = { serie: texte(c.serie, 10), dn: texte(c.dn, 10), ep: +c.ep, nuance: texte(c.nuance, 10), finition: texte(c.finition, 20), repere: texte(c.repere, 40) };
   if (c.longueur != null) config.longueur = Math.round(+c.longueur);
   if (Array.isArray(c.troncons)) config.troncons = c.troncons.slice(0, 31).map(t => ({ dir: texte(t.dir, 1), l: Math.round(+t.l) }));
+  if (Array.isArray(c.piquages)) config.piquages = c.piquages.slice(0, 6).map(q => ({ dn: texte(q.dn, 10), orient: texte(q.orient, 1), pos: Math.round(+q.pos), h: Math.round(+q.h), ext: texte(q.ext, 20) || 'chanfrein' }));
   if (c.ext) config.ext = { a: texte(c.ext.a, 20) || 'chanfrein', b: texte(c.ext.b, 20) || 'chanfrein' };
   return { produit: texte(l.produit, 40), qte: +l.qte, config, options: Array.isArray(l.options) ? l.options.slice(0, 10).map(o => texte(o, 20)) : [] };
 }

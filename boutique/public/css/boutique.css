@@ -79,7 +79,7 @@ main { min-height: 60vh; outline: none; }
 .bloc-int { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
 .bloc-int.etroit { max-width: 760px; }
 .bloc-chapo { color: var(--texte-doux); font-size: 1.05rem; max-width: 52em; margin-top: -4px; }
-.grille-familles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 24px; }
+.grille-familles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px; }
 .carte-famille, .carte-produit { display: flex; flex-direction: column; background: #fff; border: 1px solid var(--ligne); border-radius: var(--rayon); padding: 20px; text-decoration: none; color: inherit; transition: border-color .15s, box-shadow .15s, transform .15s; }
 .carte-famille:hover, .carte-produit:hover { border-color: var(--marine); box-shadow: var(--ombre); transform: translateY(-2px); }
 .carte-famille p, .carte-produit p { color: var(--texte-doux); font-size: .9rem; margin: 0; }
@@ -156,6 +156,17 @@ legend { font-weight: 700; color: var(--marine); padding: 0 6px; }
 .troncon-l { flex: 1; display: flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--texte-doux); }
 .troncon-l input { text-align: right; }
 fieldset > .btn-petit { margin-bottom: 10px; }
+.puce.actif { background: var(--marine); color: #fff; border-color: var(--marine); }
+.piquage { display: grid; grid-template-columns: 26px 1fr 34px; gap: 10px; align-items: start; padding: 10px 0; border-bottom: 1px dashed var(--ligne); }
+.piquage-champs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.piquage-champs .champ-large { grid-column: span 2; }
+.piquage:last-child { border-bottom: 0; }
+.piquage .troncon-num { margin-top: 22px; }
+.piquage .btn-icone { margin-top: 20px; }
+.piquage .champ { font-size: .75rem; font-weight: 600; }
+.piquage .champ select, .piquage .champ input { padding: 8px; font-size: .9rem; }
+#piquages + .modeles { margin-top: 10px; }
+.iso-cote-pos { fill: var(--accent-fonce); }
 .devis-spool { margin-bottom: 14px; }
 .detail, .totaux { width: 100%; border-collapse: collapse; font-size: .93rem; }
 .detail td, .totaux td { padding: 6px 0; border-bottom: 1px solid var(--ligne); }
@@ -245,6 +256,7 @@ fieldset > .btn-petit { margin-bottom: 10px; }
   .pied-int { grid-template-columns: 1fr; }
   .suivi { grid-template-columns: 1fr; }
   .troncon { flex-wrap: wrap; }
+  .piquage-champs { grid-template-columns: 1fr 1fr; }
   .troncon select { flex: 1 1 60%; }
   .table-panier thead { display: none; }
   .table-panier, .table-panier tbody, .table-panier tr, .table-panier td { display: block; width: 100%; }

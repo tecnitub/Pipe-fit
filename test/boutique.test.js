@@ -35,6 +35,23 @@ test('calculs du catalogue', () => {
   assert.throws(() => C.prixSpool({ ...cfg, troncons: [{ dir: 'E', l: 800 }, { dir: 'O', l: 600 }] }), /demi-tour/);
   assert.throws(() => C.prixLigne({ produit: 'tube', qte: 1, config: { ...cfg, ep: 9, longueur: 3000 } }), /Épaisseur/);
   assert.throws(() => C.prixLigne({ produit: 'union-din', qte: 1, config: cfg }), /Série/);
+  // Collecteur : 1 à 5 piquages, diamètre au plus celui du corps, écartement et marges contrôlés
+  const co = { ...cfg, dn: 'DN100', longueur: 1500, ext: { a: 'fond', b: 'collerette' },
+    piquages: [{ dn: 'DN50', orient: 'H', pos: 400, h: 300, ext: 'collerette' }, { dn: 'DN25', orient: 'B', pos: 1100, h: 200, ext: 'chanfrein' }] };
+  const pc = C.prixCollecteur(co);
+  assert.strictEqual(pc.soudures, 2 + 1 + 2); // 2 piquages + collerette du piquage 1 + fond bombé et collerette du corps
+  assert.ok(pc.total > 0);
+  assert.ok(C.prixLigne({ produit: 'collecteur-sur-mesure', qte: 1, config: co, options: [] }) === pc.total);
+  const cinq = { ...co, longueur: 2000, piquages: [300, 650, 1000, 1350, 1700].map(pos => ({ dn: 'DN40', orient: 'H', pos, h: 250 })) };
+  assert.strictEqual(C.analyserCollecteur(cinq).piquages.length, 5);
+  assert.throws(() => C.prixCollecteur({ ...cinq, piquages: [...cinq.piquages, { dn: 'DN40', orient: 'H', pos: 1900, h: 250 }] }), /1 à 5/);
+  assert.throws(() => C.prixCollecteur({ ...co, piquages: [] }), /1 à 5/);
+  assert.throws(() => C.prixCollecteur({ ...co, piquages: [{ dn: 'DN150', orient: 'H', pos: 700, h: 300 }] }), /supérieur/);
+  assert.throws(() => C.prixCollecteur({ ...co, piquages: [{ dn: 'DN50', orient: 'H', pos: 400, h: 300 }, { dn: 'DN50', orient: 'H', pos: 450, h: 300 }] }), /trop proches/);
+  assert.throws(() => C.prixCollecteur({ ...co, piquages: [{ dn: 'DN50', orient: 'H', pos: 20, h: 300 }] }), /extrémité/);
+  assert.throws(() => C.prixCollecteur({ ...co, piquages: [{ dn: 'DN50', orient: 'H', pos: 400, h: 60 }] }), /hauteur/);
+  assert.throws(() => C.prixSpool({ ...cfg, troncons: [{ dir: 'E', l: 800 }], ext: { a: 'fond' } }), /Extrémité/); // pas de fond bombé sur un spool
+
   // Franco de port et remise quantité
   const t = C.totaliser([{ produit: 'coude90', qte: 20, config: cfg, options: [] }]);
   assert.strictEqual(t.lignes[0].remise, 0.08);
@@ -44,6 +61,7 @@ test('calculs du catalogue', () => {
 
 test('commande : prix recalculés par le serveur, contrôles du formulaire', async () => {
   const lignes = [{ produit: 'coude90', qte: 12, config: cfg, options: ['cert31'], pu: 0.01, montant: 0.01 },
+    { produit: 'collecteur-sur-mesure', qte: 1, config: { ...cfg, dn: 'DN80', longueur: 1200, ext: { a: 'collerette', b: 'fond' }, piquages: [{ dn: 'DN40', orient: 'H', pos: 400, h: 250, ext: 'clamp' }, { dn: 'DN40', orient: 'H', pos: 800, h: 250, ext: 'clamp' }] }, options: [] },
     { produit: 'spool-sur-mesure', qte: 2, config: { ...cfg, troncons: [{ dir: 'E', l: 1000 }, { dir: 'H', l: 500 }], ext: { a: 'bride', b: 'chanfrein' } }, options: ['epreuve'] }];
   const attendu = C.totaliser(lignes.map(({ produit, qte, config, options }) => ({ produit, qte, config, options })));
   let r = await call('POST', '/api/commandes', { client, paiement: 'virement', cgv: true, lignes });

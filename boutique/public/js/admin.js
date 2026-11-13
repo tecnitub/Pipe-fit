@@ -82,7 +82,8 @@
         <div>
           <table><thead><tr><th>Désignation</th><th>Qté</th><th class="n">P.U. HT</th><th class="n">Montant HT</th></tr></thead><tbody>
           ${c.lignes.map(l => `<tr><td>${esc(l.designation)}${l.options.length ? `<br><span class="discret">${l.options.map(o => esc((C.OPTIONS[o] || {}).nom || o)).join(', ')}</span>` : ''}
-            ${l.config.troncons ? `<br><span class="discret">Extrémités : ${esc((C.EXTREMITES[l.config.ext.a] || {}).nom)} / ${esc((C.EXTREMITES[l.config.ext.b] || {}).nom)}</span>` : ''}</td>
+            ${l.config.ext ? `<br><span class="discret">Extrémités A / B : ${esc((C.EXTREMITES_CORPS[l.config.ext.a] || {}).nom)} / ${esc((C.EXTREMITES_CORPS[l.config.ext.b] || {}).nom)}</span>` : ''}
+            ${l.config.piquages ? l.config.piquages.map((q, i) => `<br><span class="discret">Piquage ${i + 1} : ${esc(q.dn)}, ${esc(C.ORIENTATIONS[q.orient] || q.orient)}, axe à ${q.pos} mm de A, hauteur ${q.h} mm, ${esc((C.EXTREMITES[q.ext] || {}).nom)}</span>`).join('') : ''}</td>
             <td>${l.qte}</td><td class="n">${eur(l.pu)}</td><td class="n">${eur(l.montant)}${l.remise ? `<br><span class="discret">−${l.remise * 100} %</span>` : ''}</td></tr>`).join('')}
           ${c.certificats ? `<tr><td colspan="3">Certificats 3.1</td><td class="n">${eur(c.certificats)}</td></tr>` : ''}
           <tr><td colspan="3">Transport</td><td class="n">${eur(c.port)}</td></tr>

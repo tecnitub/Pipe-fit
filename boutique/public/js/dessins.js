@@ -20,6 +20,12 @@
     hygienique: () => tube('M8 50 L44 50', 14) + bride(47, 50, 26, 6) + bride(53, 50, 26, 6) + '<path d="M44 34 Q50 26 56 34 M44 66 Q50 74 56 66" fill="none" stroke="var(--acier-fonce)" stroke-width="3"/>' + tube('M56 50 L92 50', 14),
     support: () => '<path d="M50 8 L50 30" stroke="var(--acier-fonce)" stroke-width="4"/>' + tube('M8 55 L92 55', 16) +
       '<circle cx="50" cy="55" r="17" fill="none" stroke="var(--accent)" stroke-width="5"/><rect x="44" y="30" width="12" height="9" fill="var(--acier-fonce)"/>',
+    collecteur: () => tube('M8 68 L92 68', 15) + tube('M28 68 L28 30', 9) + tube('M50 68 L50 30', 9) + tube('M72 68 L72 30', 9) +
+      `<rect x="17" y="24" width="22" height="6" rx="1.5" fill="var(--acier)" stroke="var(--acier-fonce)" stroke-width="1.5"/>
+      <rect x="39" y="24" width="22" height="6" rx="1.5" fill="var(--acier)" stroke="var(--acier-fonce)" stroke-width="1.5"/>
+      <rect x="61" y="24" width="22" height="6" rx="1.5" fill="var(--acier)" stroke="var(--acier-fonce)" stroke-width="1.5"/>
+      <path d="M8 58 Q2 68 8 78" fill="var(--acier)" stroke="var(--acier-fonce)" stroke-width="2"/>` + bride(92, 68, 30, 6) +
+      '<circle cx="28" cy="58" r="2.6" fill="var(--accent)"/><circle cx="50" cy="58" r="2.6" fill="var(--accent)"/><circle cx="72" cy="58" r="2.6" fill="var(--accent)"/>',
     spool: () => tube('M8 70 L35 70 Q45 70 45 60 L45 35 Q45 25 55 25 L80 25', 11) + bride(83, 25, 30, 6) + bride(8, 70, 30, 6) +
       '<circle cx="35" cy="70" r="2.6" fill="var(--accent)"/><circle cx="45" cy="60" r="2.6" fill="var(--accent)"/><circle cx="45" cy="35" r="2.6" fill="var(--accent)"/><circle cx="55" cy="25" r="2.6" fill="var(--accent)"/>',
   };
@@ -89,5 +95,77 @@
     return svg + '</svg>';
   }
 
-  window.Dessins = { picto, isometrique, PICTOS, NS };
+  // Ajuste un ensemble de points 2D (projetés) dans le cadre ; renvoie la fonction de passage mm → écran et l'échelle
+  function cadrer(points, largeur, hauteur, marge) {
+    const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
+    const w = Math.max(1, Math.max(...xs) - Math.min(...xs)), h = Math.max(1, Math.max(...ys) - Math.min(...ys));
+    const ech = Math.min((largeur - 2 * marge) / w, (hauteur - 2 * marge) / h, 0.6);
+    const ox = (largeur - w * ech) / 2 - Math.min(...xs) * ech, oy = (hauteur - h * ech) / 2 - Math.min(...ys) * ech;
+    return { ech, ecran: p3 => { const [x, y] = projeter(p3); return [x * ech + ox, y * ech + oy]; } };
+  }
+  const f1 = n => n.toFixed(1);
+  // Extrémité dessinée au bout d'une branche (a → b) : bride, férule ou fond bombé, et pastille repère
+  function extremite(a, b, type, ep, lettre) {
+    const vx = b[0] - a[0], vy = b[1] - a[1], l = Math.hypot(vx, vy) || 1, ang = Math.atan2(vy, vx) * 180 / Math.PI;
+    let svg = '';
+    if (type === 'fond') svg += `<path d="M0 ${f1(-ep / 2)} Q${f1(ep * 0.9)} 0 0 ${f1(ep / 2)}" class="iso-bride" transform="translate(${f1(b[0])} ${f1(b[1])}) rotate(${f1(ang)})"/>`;
+    else if (type && type !== 'chanfrein') {
+      const hb = ep * (type === 'bride' || type === 'collerette' ? 2.4 : 1.7);
+      svg += `<rect x="${f1(-ep * 0.35)}" y="${f1(-hb / 2)}" width="${f1(ep * 0.7)}" height="${f1(hb)}" rx="2" class="iso-bride" transform="translate(${f1(b[0])} ${f1(b[1])}) rotate(${f1(ang)})"/>`;
+    }
+    if (lettre) {
+      const lx = b[0] + vx / l * (ep + 16), ly = b[1] + vy / l * (ep + 16);
+      svg += `<circle cx="${f1(lx)}" cy="${f1(ly)}" r="11" class="iso-pastille"/><text x="${f1(lx)}" y="${f1(ly + 4)}" text-anchor="middle" class="iso-pastille-txt">${esc(lettre)}</text>`;
+    }
+    return svg;
+  }
+
+  // Vue isométrique d'un collecteur : corps le long de X (A → B), piquages perpendiculaires numérotés, cotes de position et de hauteur
+  const ORIENT = { H: [0, 0, 1], B: [0, 0, -1], N: [0, 1, 0], S: [0, -1, 0] };
+  function isometriqueCollecteur(co, { largeur = 640, hauteur = 420, cotes = true, legende = true } = {}) {
+    const L = Math.max(100, +co.longueur || 1000), de = +co.de || 100;
+    const pq = (co.piquages || []).filter(p => ORIENT[p.orient] && +p.h > 0);
+    const bouts = pq.map(p => { const v = ORIENT[p.orient]; return [+p.pos + 0, v[1] * p.h, v[2] * p.h]; });
+    const pts3 = [[0, 0, 0], [L, 0, 0], ...pq.map(p => [+p.pos, 0, 0]), ...bouts];
+    const { ech, ecran } = cadrer(pts3.map(projeter), largeur, hauteur, 70);
+    const epC = Math.max(8, Math.min(26, de * ech * 1.1 + 6));
+    const epP = p => Math.max(5, Math.min(epC, (+p.de || de / 2) * ech * 1.1 + 4));
+    const A = ecran([0, 0, 0]), B = ecran([L, 0, 0]);
+    let svg = `<svg viewBox="0 0 ${largeur} ${hauteur}" class="iso" role="img" aria-label="Vue isométrique du collecteur">`;
+    if (legende) {
+      const o = [44, hauteur - 40], fl = (v, l) => { const [x, y] = projeter(v.map(k => k * 26)); return `<line x1="${o[0]}" y1="${o[1]}" x2="${o[0] + x}" y2="${o[1] + y}" class="iso-axe"/><text x="${o[0] + x * 1.35}" y="${o[1] + y * 1.35 + 4}" class="iso-axe-txt" text-anchor="middle">${l}</text>`; };
+      svg += `<g>${fl([1, 0, 0], 'X')}${fl([0, 1, 0], 'Y')}${fl([0, 0, 1], 'Z')}</g>`;
+    }
+    // Piquages vers l'arrière ou le bas dessinés avant le corps (cachés derrière lui), les autres après
+    const branche = (p, i) => {
+      const a = ecran([+p.pos, 0, 0]), b = ecran(bouts[i]), e = epP(p);
+      let g = tube(`M${f1(a[0])} ${f1(a[1])} L${f1(b[0])} ${f1(b[1])}`, e) + extremite(a, b, p.ext, e, String(i + 1));
+      if (cotes) {
+        const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, vx = b[0] - a[0], vy = b[1] - a[1], l = Math.hypot(vx, vy) || 1;
+        g += `<text x="${f1(mx - vy / l * (e / 2 + 14))}" y="${f1(my + vx / l * (e / 2 + 14) + 4)}" text-anchor="middle" class="iso-cote">${esc(p.h)}</text>`;
+      }
+      return g;
+    };
+    const derriere = i => ['N', 'B'].includes(pq[i].orient);
+    pq.forEach((p, i) => { if (derriere(i)) svg += branche(p, i); });
+    svg += tube(`M${f1(A[0])} ${f1(A[1])} L${f1(B[0])} ${f1(B[1])}`, epC);
+    svg += extremite(B, A, co.ext && co.ext.a, epC, 'A') + extremite(A, B, co.ext && co.ext.b, epC, 'B');
+    pq.forEach((p, i) => { if (!derriere(i)) svg += branche(p, i); });
+    // Soudures de piquage
+    pq.forEach(p => { const [x, y] = ecran([+p.pos, 0, 0]); svg += `<circle cx="${f1(x)}" cy="${f1(y)}" r="${f1(Math.max(2.5, epC / 5))}" class="iso-soudure"/>`; });
+    // Cotes de position depuis A : du côté du corps opposé au piquage ; longueur du corps en légende
+    if (cotes) {
+      const bx = B[0] - A[0], by = B[1] - A[1], bl = Math.hypot(bx, by) || 1;
+      let nx = -by / bl, ny = bx / bl; // normale au corps à l'écran
+      pq.forEach((p, i) => {
+        const [sx, sy] = ecran([+p.pos, 0, 0]), [ex, ey] = ecran(bouts[i]);
+        const cote = ((ex - sx) * nx + (ey - sy) * ny) > 0 ? -1 : 1, off = epC / 2 + 14;
+        svg += `<text x="${f1(sx + nx * off * cote)}" y="${f1(sy + ny * off * cote + 4)}" text-anchor="middle" class="iso-cote iso-cote-pos">${esc(p.pos)}</text>`;
+      });
+      svg += `<text x="${largeur - 14}" y="22" text-anchor="end" class="iso-cote">Corps L = ${esc(L)} mm</text>`;
+    }
+    return svg + '</svg>';
+  }
+
+  window.Dessins = { picto, isometrique, isometriqueCollecteur, PICTOS, NS };
 })();

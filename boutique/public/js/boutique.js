@@ -108,7 +108,7 @@
         <h2>Le catalogue</h2>
         <p class="bloc-chapo">Tous les éléments sont disponibles en 304L et 316L, de DN15 à DN200, en séries industrielle et agroalimentaire.</p>
         <div class="grille-familles">
-          ${C.FAMILLES.map(f => `<a class="carte-famille" href="${f.id === 'spool' ? '#/spool' : `#/catalogue/${f.id}`}">
+          ${C.FAMILLES.map(f => `<a class="carte-famille" href="${['spool', 'collecteur'].includes(f.id) ? `#/${f.id}` : `#/catalogue/${f.id}`}">
             ${D.picto(f.icone)}<h3>${esc(f.nom)}</h3><p>${esc(f.texte)}</p></a>`).join('')}
         </div>
       </div>
@@ -160,7 +160,7 @@
         </aside>
         <div class="grille-produits">
           ${produits.map(p => { const pm = prixMini(p); return `
-            <a class="carte-produit" href="${p.configurateur ? '#/spool' : `#/produit/${p.id}`}">
+            <a class="carte-produit" href="${p.configurateur ? `#/${p.configurateur}` : `#/produit/${p.id}`}">
               <div class="carte-visuel">${D.picto(C.FAMILLES.find(x => x.id === p.famille).icone)}</div>
               <h3>${esc(p.nom)}</h3>
               <p>${esc(p.texte)}</p>
@@ -174,7 +174,7 @@
   /* --- Fiche produit avec configuration --- */
   function produit(id) {
     const p = C.PRODUITS.find(x => x.id === id);
-    if (!p || p.configurateur) { location.hash = p ? '#/spool' : '#/catalogue'; return ''; }
+    if (!p || p.configurateur) { location.hash = p ? `#/${p.configurateur}` : '#/catalogue'; return ''; }
     const fam = C.FAMILLES.find(x => x.id === p.famille);
     const etat = { c: corrigerConfig(configDefaut(p), p), qte: 1, longueur: 3000 };
     setTimeout(() => {
@@ -316,6 +316,7 @@
             <div class="modeles">Exemples : ${Object.entries(MODELES).map(([k, m]) => `<button type="button" class="puce" data-action="modele" data-modele="${k}">${esc(m.nom)}</button>`).join('')}</div>
             <div id="troncons"></div>
             <button type="button" class="btn btn-secondaire btn-petit" data-action="ajout">+ Ajouter un tronçon</button>
+            <p class="discret">Un départ avec des piquages ? <a href="#/collecteur">Configurer un collecteur (1 à 5 piquages)</a></p>
           </fieldset>
           <fieldset><legend>Extrémités</legend><div class="grille-champs">
             <label class="champ"><span>Extrémité A (départ)</span><select name="extA">${extOpts(spool.ext.a)}</select></label>
@@ -337,6 +338,154 @@
     </div></section>`;
   }
 
+  /* --- Configurateur de collecteur (corps droit + 1 à 5 piquages) --- */
+  // Modèles métier : corps, extrémités et piquages complets
+  const MODELES_COLLECTEUR = {
+    nourrice: { nom: 'Nourrice chaufferie 4 départs + vidange', serie: 'iso', dn: 'DN100', ep: 2, finition: 'decape', longueur: 1600, ext: { a: 'collerette', b: 'fond' },
+      piquages: [300, 600, 900, 1200].map(pos => ({ dn: 'DN50', orient: 'H', pos, h: 300, ext: 'collerette' })).concat([{ dn: 'DN15', orient: 'B', pos: 1450, h: 150, ext: 'chanfrein' }]) },
+    air: { nom: 'Collecteur air comprimé 3 descentes', serie: 'iso', dn: 'DN50', ep: 2, finition: 'decape', longueur: 2400, ext: { a: 'chanfrein', b: 'fond' },
+      piquages: [500, 1200, 1900].map(pos => ({ dn: 'DN20', orient: 'H', pos, h: 150, ext: 'chanfrein' })) },
+    nep: { nom: 'Collecteur NEP 5 vannes (DIN, poli)', serie: 'din', dn: 'DN65', ep: 2, finition: 'poli', longueur: 2000, ext: { a: 'clamp', b: 'fond' },
+      piquages: [300, 650, 1000, 1350, 1700].map(pos => ({ dn: 'DN40', orient: 'B', pos, h: 180, ext: 'clamp' })) },
+    instrum: { nom: "Manchette d'instrumentation", serie: 'iso', dn: 'DN80', ep: 2, finition: 'decape', longueur: 500, ext: { a: 'collerette', b: 'collerette' },
+      piquages: [{ dn: 'DN15', orient: 'H', pos: 170, h: 120, ext: 'chanfrein' }, { dn: 'DN15', orient: 'N', pos: 330, h: 120, ext: 'chanfrein' }] },
+    eau: { nom: 'Collecteur eau glacée 2 départs', serie: 'iso', dn: 'DN150', ep: 2.6, finition: 'decape', longueur: 1400, ext: { a: 'collerette', b: 'fond' },
+      piquages: [{ dn: 'DN80', orient: 'H', pos: 400, h: 350, ext: 'collerette' }, { dn: 'DN80', orient: 'H', pos: 900, h: 350, ext: 'collerette' }] },
+  };
+  // Modèle générique à n piquages sur le corps choisi : piquages deux diamètres en dessous, répartis régulièrement sur le dessus
+  function modeleN(co, n) {
+    const dims = C.SERIES[co.serie].dims, iC = dims.findIndex(x => x.dn === co.dn), dp = dims[Math.max(0, iC - 2)];
+    const pas = Math.ceil(Math.max(250, dp.de + 150) / 50) * 50;
+    co.longueur = Math.max(500, pas * (n + 1));
+    const ext = (co.piquages && co.piquages[0] && co.piquages[0].ext) || 'collerette';
+    co.piquages = Array.from({ length: n }, (_, i) => ({ dn: dp.dn, orient: 'H', pos: pas * (i + 1), h: Math.ceil((C.dimension(co.serie, co.dn).de / 2 + 200) / 10) * 10, ext }));
+  }
+  const repartir = co => co.piquages.forEach((p, i) => { p.pos = Math.round(co.longueur * (i + 1) / (co.piquages.length + 1) / 10) * 10; });
+  const copieModele = m => ({ ...m, piquages: m.piquages.map(p => ({ ...p })), ext: { ...m.ext } });
+  let collecteur = stock.lire('collecteur', null) || { ...copieModele(MODELES_COLLECTEUR.nourrice), nuance: '316L', qte: 1, options: [], repere: '' };
+
+  function pageCollecteur() {
+    setTimeout(() => {
+      const form = $('#form-collecteur');
+      const co = collecteur;
+      const dimsPiq = () => { const dims = C.SERIES[co.serie].dims; return dims.slice(0, dims.findIndex(x => x.dn === co.dn) + 1); };
+      // Diamètres de piquages ramenés dans ce que permet le corps
+      const corrigerPiquages = () => { const ok = dimsPiq(); co.piquages.forEach(p => { if (!ok.some(x => x.dn === p.dn)) p.dn = ok[Math.max(0, ok.length - 3)].dn; }); };
+      const rendrePiquages = () => {
+        const ok = dimsPiq();
+        $('#piquages').innerHTML = co.piquages.map((p, i) => `
+          <div class="piquage" data-i="${i}">
+            <span class="troncon-num">${i + 1}</span>
+            <div class="piquage-champs">
+            <label class="champ"><span>Diamètre</span><select data-champ="dn">${options(ok.map(x => [x.dn, x.dn]), p.dn)}</select></label>
+            <label class="champ"><span>Orientation</span><select data-champ="orient">${options(Object.entries(C.ORIENTATIONS), p.orient)}</select></label>
+            <label class="champ"><span>Position depuis A</span><input type="number" data-champ="pos" min="0" max="6000" step="10" value="${p.pos}" inputmode="numeric"></label>
+            <label class="champ"><span>Hauteur (axe → bout)</span><input type="number" data-champ="h" min="50" max="2000" step="10" value="${p.h}" inputmode="numeric"></label>
+            <label class="champ champ-large"><span>Raccordement</span><select data-champ="ext">${options(Object.entries(C.EXTREMITES).map(([k, x]) => [k, x.nom]), p.ext)}</select></label>
+            </div>
+            <button type="button" class="btn-icone" data-action="suppr" title="Supprimer le piquage"${co.piquages.length > 1 ? '' : ' disabled'}>✕</button>
+          </div>`).join('');
+        form.querySelector('[data-action="ajout"]').disabled = co.piquages.length >= 5;
+        $$('[data-n]').forEach(b => b.classList.toggle('actif', +b.dataset.n === co.piquages.length));
+      };
+      const ligneCollecteur = () => ({ produit: 'collecteur-sur-mesure', qte: co.qte, options: co.options,
+        config: { serie: co.serie, dn: co.dn, ep: co.ep, nuance: co.nuance, finition: co.finition, longueur: co.longueur, ext: { ...co.ext }, piquages: co.piquages.map(p => ({ ...p })), repere: co.repere } });
+      const maj = tout => {
+        lireConfig(form, co); corrigerConfig(co, {});
+        if (tout) { $('#champs-config').innerHTML = champsConfig(co, {}); corrigerPiquages(); rendrePiquages(); }
+        co.longueur = Math.round(+form.elements.longueur.value || 0);
+        co.ext = { a: form.elements.extA.value, b: form.elements.extB.value };
+        co.qte = Math.max(1, Math.min(999, Math.floor(+form.elements.qte.value || 1)));
+        co.options = lireOptions(form);
+        co.repere = form.elements.repere.value.trim();
+        stock.ecrire('collecteur', co);
+        const d = C.dimension(co.serie, co.dn);
+        $('#vue-iso').innerHTML = D.isometriqueCollecteur({ ...co, de: d.de, piquages: co.piquages.map(p => ({ ...p, de: (C.dimension(co.serie, p.dn) || {}).de })) });
+        const btn = form.querySelector('button[type=submit]');
+        try {
+          const r = C.prixCollecteur(co), pu = C.prixLigne(ligneCollecteur()), rem = C.remiseQte(co.qte);
+          $('#devis-collecteur').innerHTML = `
+            <table class="detail">${r.lignes.filter(l => l.montant).map(l => `<tr><td>${esc(l.lib)}</td><td>${eur(l.montant)}</td></tr>`).join('')}
+            ${pu > r.total ? `<tr><td>Options par pièce</td><td>${eur(pu - r.total)}</td></tr>` : ''}
+            <tr class="total"><td>Prix unitaire HT</td><td>${eur(pu)}</td></tr>
+            ${rem ? `<tr><td>× ${co.qte} avec remise −${rem * 100} %</td><td>${eur(pu * co.qte * (1 - rem))}</td></tr>` : co.qte > 1 ? `<tr><td>× ${co.qte}</td><td>${eur(pu * co.qte)}</td></tr>` : ''}
+            </table>
+            <p class="discret">${r.piquages.length} piquage(s), ${r.soudures} soudure(s) · masse ≈ ${num((co.longueur / 1000 * C.masseM(d.de, co.ep) * 1.15).toFixed(1))} kg</p>`;
+          btn.disabled = false;
+        } catch (e) { $('#devis-collecteur').innerHTML = `<p class="erreur">${esc(e.message)}</p>`; btn.disabled = true; }
+      };
+      const champPiquage = e => {
+        const row = e.target.closest('.piquage'); if (!row) return false;
+        const k = e.target.dataset.champ, p = co.piquages[+row.dataset.i];
+        p[k] = ['pos', 'h'].includes(k) ? Math.round(+e.target.value) : e.target.value;
+        return true;
+      };
+      form.addEventListener('change', e => { champPiquage(e); maj(['serie', 'dn'].includes(e.target.name)); });
+      form.addEventListener('input', e => { if ((e.target.type === 'number' && champPiquage(e)) || ['qte', 'repere', 'longueur'].includes(e.target.name)) maj(); });
+      form.addEventListener('click', e => {
+        const b = e.target.closest('button[data-action]'); if (!b) return;
+        const a = b.dataset.action, row = b.closest('.piquage');
+        if (a === 'suppr') co.piquages.splice(+row.dataset.i, 1);
+        else if (a === 'ajout') {
+          if (co.piquages.length >= 5) return;
+          const der = co.piquages[co.piquages.length - 1] || { dn: dimsPiq()[0].dn, orient: 'H', h: 250, ext: 'collerette' };
+          co.piquages.push({ ...der }); repartir(co);
+        } else if (a === 'repartir') repartir(co);
+        else if (a === 'n') { modeleN(co, +b.dataset.n); form.elements.longueur.value = co.longueur; }
+        else if (a === 'modele') {
+          const m = copieModele(MODELES_COLLECTEUR[b.dataset.modele]);
+          Object.assign(co, m);
+          form.elements.longueur.value = co.longueur; form.elements.extA.value = co.ext.a; form.elements.extB.value = co.ext.b;
+          $('#champs-config').innerHTML = champsConfig(co, {});
+        } else return;
+        rendrePiquages(); maj();
+      });
+      form.addEventListener('submit', e => { e.preventDefault(); maj(); try { C.prixLigne(ligneCollecteur()); ajouter(ligneCollecteur()); } catch (err) { toast(err.message, 'erreur'); } });
+      corrigerPiquages(); rendrePiquages(); maj();
+    });
+    const extOpts = v => options(Object.entries(C.EXTREMITES_CORPS).map(([k, x]) => [k, x.nom]), v);
+    return `
+    <section class="bloc"><div class="bloc-int">
+      <nav class="fil"><a href="#/">Accueil</a> › <a href="#/catalogue/collecteur">Collecteurs et nourrices</a> › Configurateur</nav>
+      <h1>Collecteur sur mesure</h1>
+      <p class="bloc-chapo">Un corps droit de l'extrémité A vers l'extrémité B, et de 1 à 5 piquages perpendiculaires. Partez d'un modèle, puis ajustez diamètres, positions (axe du piquage depuis l'extrémité A) et hauteurs (de l'axe du corps au bout du piquage).</p>
+      <form id="form-collecteur" class="configurateur" novalidate>
+        <div class="config-gauche">
+          <fieldset><legend>Modèles</legend>
+            <div class="modeles">Nombre de piquages : ${[1, 2, 3, 4, 5].map(n => `<button type="button" class="puce" data-action="n" data-n="${n}">${n}</button>`).join('')}</div>
+            <div class="modeles">${Object.entries(MODELES_COLLECTEUR).map(([k, m]) => `<button type="button" class="puce" data-action="modele" data-modele="${k}">${esc(m.nom)}</button>`).join('')}</div>
+          </fieldset>
+          <fieldset><legend>Corps</legend>
+            <div class="grille-champs" id="champs-config">${champsConfig(collecteur, {})}</div>
+            <div class="grille-champs">
+              <label class="champ"><span>Longueur du corps (mm)</span><input type="number" name="longueur" min="200" max="6000" step="10" value="${collecteur.longueur}" inputmode="numeric"></label>
+              <label class="champ"><span>Extrémité A</span><select name="extA">${extOpts(collecteur.ext.a)}</select></label>
+              <label class="champ"><span>Extrémité B</span><select name="extB">${extOpts(collecteur.ext.b)}</select></label>
+            </div>
+          </fieldset>
+          <fieldset><legend>Piquages</legend>
+            <div id="piquages"></div>
+            <div class="modeles">
+              <button type="button" class="btn btn-secondaire btn-petit" data-action="ajout">+ Ajouter un piquage</button>
+              <button type="button" class="btn btn-lien btn-petit" data-action="repartir">Répartir régulièrement</button>
+            </div>
+          </fieldset>
+          ${champsOptions(collecteur.options)}
+        </div>
+        <div class="config-droite">
+          <div class="vue-iso" id="vue-iso"></div>
+          <div class="grille-champs">
+            <label class="champ"><span>Quantité</span><input type="number" name="qte" min="1" max="999" value="${collecteur.qte}" inputmode="numeric"></label>
+            <label class="champ"><span>Repère</span><input name="repere" maxlength="40" value="${esc(collecteur.repere)}" placeholder="ex. COL-01"></label>
+          </div>
+          <div id="devis-collecteur" class="devis-spool"></div>
+          <button type="submit" class="btn btn-primaire btn-large">Ajouter au panier</button>
+          <p class="discret">Plus de 5 piquages, piquages inclinés ou réduits sur té ? <a href="#/devis">Envoyez votre plan</a>. Délai : 10 jours ouvrés après confirmation.</p>
+        </div>
+      </form>
+    </div></section>`;
+  }
+
   function ajouter(l) {
     panier.push({ ...l, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6) });
     sauverPanier();
@@ -344,6 +493,11 @@
   }
 
   /* --- Panier --- */
+  function miniIso(p, c) {
+    const o = { largeur: 160, hauteur: 110, cotes: false, legende: false }, de = C.dimension(c.serie, c.dn).de;
+    if (p.configurateur === 'collecteur') return D.isometriqueCollecteur({ ...c, de, piquages: c.piquages.map(q => ({ ...q, de: C.dimension(c.serie, q.dn).de })) }, o);
+    return D.isometrique({ ...c, de }, o);
+  }
   function pagePanier() {
     if (!panier.length) return `<section class="bloc"><div class="bloc-int vide-panier">
       <h1>Panier</h1><p>Votre panier est vide.</p><p><a class="btn btn-primaire" href="#/catalogue">Voir le catalogue</a> <a class="btn btn-secondaire" href="#/spool">Configurer un spool</a></p></div></section>`;
@@ -374,7 +528,7 @@
           <thead><tr><th>Article</th><th>Prix unitaire HT</th><th>Qté</th><th>Montant HT</th><th></th></tr></thead>
           <tbody>${t.lignes.map((l, i) => { const p = C.PRODUITS.find(x => x.id === l.produit); return `
             <tr data-id="${esc(panier[i].id)}">
-              <td class="art">${p.configurateur ? `<div class="mini-iso">${D.isometrique({ ...l.config, de: C.dimension(l.config.serie, l.config.dn).de }, { largeur: 160, hauteur: 110, cotes: false, legende: false })}</div>` : D.picto(C.FAMILLES.find(f => f.id === p.famille).icone, 'picto picto-mini')}
+              <td class="art">${p.configurateur ? `<div class="mini-iso">${miniIso(p, l.config)}</div>` : D.picto(C.FAMILLES.find(f => f.id === p.famille).icone, 'picto picto-mini')}
                 <div><strong>${esc(p.nom)}</strong><br><span class="discret">${esc(C.designation(l).split(' · ').slice(1).join(' · '))}</span>
                 ${l.options.length ? `<br><span class="discret">Options : ${l.options.map(o => esc(C.OPTIONS[o].nom)).join(', ')}</span>` : ''}</div></td>
               <td data-titre="Prix unitaire">${eur(l.pu)}</td>
@@ -632,7 +786,7 @@
   /* ---------- Navigation ---------- */
   function route() {
     const [, page = '', arg] = (location.hash || '#/').slice(1).split('/');
-    const vues = { '': accueil, catalogue: () => catalogue(arg), produit: () => produit(arg), spool: pageSpool, panier: pagePanier, commande: pageCommande,
+    const vues = { '': accueil, catalogue: () => catalogue(arg), produit: () => produit(arg), spool: pageSpool, collecteur: pageCollecteur, panier: pagePanier, commande: pageCommande,
       confirmation: () => confirmation(arg), devis: pageDevis, suivi: () => pageSuivi(arg), 'savoir-faire': savoirFaire, cgv };
     const html = (vues[page] || accueil)();
     if (html === '') return;
@@ -640,7 +794,7 @@
     document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('actif', a.dataset.nav === page || (page === 'produit' && a.dataset.nav === 'catalogue')));
     document.getElementById('nav').classList.remove('ouvert');
     document.querySelector('.burger').setAttribute('aria-expanded', 'false');
-    const titres = { catalogue: 'Catalogue', produit: 'Produit', spool: 'Spool sur mesure', panier: 'Panier', commande: 'Commande', devis: 'Devis sur plan', suivi: 'Suivi de commande', 'savoir-faire': 'Savoir-faire', cgv: 'CGV' };
+    const titres = { catalogue: 'Catalogue', produit: 'Produit', spool: 'Spool sur mesure', collecteur: 'Collecteur sur mesure', panier: 'Panier', commande: 'Commande', devis: 'Devis sur plan', suivi: 'Suivi de commande', 'savoir-faire': 'Savoir-faire', cgv: 'CGV' };
     document.title = `${titres[page] ? titres[page] + ' — ' : ''}TECNITUB — Tuyauterie inox préfabriquée`;
     window.scrollTo(0, 0);
   }
