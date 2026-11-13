@@ -95,3 +95,15 @@ test('.xls : DPGF lu comme un classeur .xlsx (en-tête, ouvrages)', () => {
   const d = I.depuisDpgf(Xls.lire(cfb(wb, true))[0].rows);
   assert.deepStrictEqual(d.items.map(x => [x.genre, x.qte, x.P, x.sources[0]]), [['chaudiere-cond', 2, 150, 'DPGF 3.1']]);
 });
+
+test('.xls : cellules fusionnées (MERGEDCELLS), texte caché d\'un ancien modèle retiré', () => {
+  // B2:C2 fusionnées : C2 garde un texte invisible dans Excel (reste d'un autre dossier)
+  const sst = ['Désignation', 'Qté', 'Pompe double ACME', 'Pompe simple ANCIEN MODELE'];
+  const feuille = Buffer.concat([bof(0x10), rec(0x00fd, cell(0, 1), u32(0)), rec(0x00fd, cell(0, 3), u32(1)),
+    rec(0x00fd, cell(1, 1), u32(2)), rec(0x00fd, cell(1, 2), u32(3)), rec(0x027e, cell(1, 3), u32(rkInt(1))),
+    rec(0x00e5, u16(1), u16(1), u16(1), u16(1), u16(2)), EOF]);
+  const glob = p => Buffer.concat([bof(0x05), rec(0x0085, u32(p), Buffer.from([0, 0, 4, 0]), Buffer.from('DPGF', 'latin1')), rec(0x00fc, u32(4), u32(4), ...sst.map(t => xlStr(t))), EOF]);
+  const wb = Buffer.concat([glob(glob(0).length), feuille]);
+  const r = Xls.lire(cfb(wb, true))[0].rows;
+  assert.deepStrictEqual([r[1][1], r[1][2], r[1][3]], ['Pompe double ACME', '', 1]);
+});

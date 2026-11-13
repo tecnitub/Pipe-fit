@@ -44,10 +44,10 @@ async function lireDossier(fichier, nature, progression) {
   if (nature === 'cctp') return lireCctp([fichier], progression);
   if (pdf) return InventaireCVC.depuisDpgfTexte(await lignesPdf(fichier, progression, 120));
   const feuilles = await lireClasseur(fichier);
-  // Feuille qui donne le plus d'équipements
-  const lus = feuilles.map(f => InventaireCVC.depuisDpgf(f.rows || [])).sort((a, b) => b.items.length - a.items.length);
-  if (!lus.length || (!lus[0].items.length && lus[0].erreur)) throw new Error(`${fichier.name} : ${(lus[0] || {}).erreur || 'aucune feuille lisible'}`);
-  return lus[0];
+  // Feuilles d'ouvrages (une par zone, tranche, PSE…) réunies ; page de garde et récapitulatif écartés
+  const lu = InventaireCVC.depuisFeuilles(feuilles);
+  if (!lu.items.length && lu.erreur) throw new Error(`${fichier.name} : ${lu.erreur}`);
+  return lu;
 }
 const natureDe = nom => (/annexe|liste des equipements|liste des équipements|carnet|nomenclature|tableau des/i.test(nom) ? 'annexe' : /dpgf|dqe|bpu|\.xlsx?$|\.csv$/i.test(nom) ? 'dpgf' : 'cctp');
 // Règles apprises des corrections faites dans le tableau (partagées par le bureau d'études)
@@ -108,7 +108,7 @@ function dialogueInventaire(et) {
 // Inventaire à vérifier : genre, désignation, quantité, puissance, régime ; puis création des calculs
 // Sources d'une ligne en bref : premier article du CCTP, première ligne du DPGF (le détail en infobulle)
 // Rapprochement de l'article du CCTP et de la ligne du DPGF, détails techniques lus, provenance de chaque valeur
-const LIB_RAPPROCHEMENT = { numero: 'n° d\'article', designation: 'désignation', chapitre: 'chapitre', genre: 'seul de son genre' };
+const LIB_RAPPROCHEMENT = { numero: 'n° d\'article', designation: 'désignation', chapitre: 'chapitre', genre: 'seul de son genre', capacite: 'même capacité' };
 const LIB_DETAILS = { montage: { '3v': 'vanne 3 voies', '2v': 'vanne 2 voies', '4v': 'vanne 4 voies', injection3: 'injection 3 voies', injection2: 'injection 2 voies', decharge: 'décharge', bouteille: 'bouteille de circuit', echangeur: 'échangeur de circuit' },
   pompe: { integree: 'pompe intégrée', deportee: 'pompe déportée' }, recup: { desurchauffeur: 'désurchauffeur', totale: 'récupération totale' }, role: { base: 'en base', appoint: 'en appoint', releve: 'en relève', secours: 'en secours', recuperation: 'en récupération' },
   recuperateur: { plaques: 'récupérateur à plaques', roue: 'roue', glycol: 'boucle glycolée', aucun: 'sans récupérateur' } };

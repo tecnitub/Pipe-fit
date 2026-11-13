@@ -1,7 +1,8 @@
 // Lecture des classeurs Excel 97-2003 (.xls) sans bibliothèque externe : conteneur OLE2 / CFB (secteurs, FAT, mini-FAT,
 // répertoire), flux « Workbook » au format BIFF8, enregistrements des feuilles (BOUNDSHEET), table des chaînes (SST et ses
 // CONTINUE), cellules LABELSST, LABEL, NUMBER, RK, MULRK, BOOLERR, FORMULA (+ STRING pour un résultat texte) ; BLANK et
-// MULBLANK ignorés. Rend les feuilles comme le lecteur .xlsx : [{ name, rows: [[valeur]] }]. Module commun navigateur / tests.
+// MULBLANK ignorés ; cellules fusionnées (MERGEDCELLS) : seule la première garde sa valeur. Rend les feuilles comme le
+// lecteur .xlsx : [{ name, rows: [[valeur]] }]. Module commun navigateur / tests.
 const Xls = (() => {
   const SIGNATURE = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
   const FIN = 0xfffffffe, LIBRE = 0xffffffff;
@@ -123,9 +124,10 @@ const Xls = (() => {
     return feuilles.filter(f => f.type === 0).map(f => {
       const rows = [], mettre = (r, col, v) => { (rows[r] = rows[r] || [])[col] = v; };
       let formuleTexte = null;
+      const fusions = [];
       for (const r of enregistrements(w, f.pos)) {
         const d = new DataView(r.data.buffer, r.data.byteOffset, r.data.byteLength);
-        if (r.lg < 4 && r.type !== 0x0207) continue;
+        if (r.lg < 4 && r.type !== 0x0207 && r.type !== 0x00e5) continue;
         const ro = r.lg >= 4 ? d.getUint16(0, true) : 0, co = r.lg >= 4 ? d.getUint16(2, true) : 0;
         switch (r.type) {
           case 0x00fd: mettre(ro, co, chaines[d.getUint32(6, true)] ?? ''); break; // LABELSST
@@ -139,11 +141,14 @@ const Xls = (() => {
             else mettre(ro, co, d.getFloat64(6, true));
             break;
           }
+          case 0x00e5: { const n = d.getUint16(0, true); for (let k = 0; k < n && 2 + k * 8 + 8 <= r.lg; k++) fusions.push([0, 2, 4, 6].map(x => d.getUint16(2 + k * 8 + x, true))); break; } // MERGEDCELLS
           case 0x0207: if (formuleTexte) { mettre(formuleTexte[0], formuleTexte[1], chaineCourte(d, 0).t); formuleTexte = null; } break; // STRING
           default: break; // BLANK, MULBLANK, mises en forme… ignorés
         }
       }
       for (let i = 0; i < rows.length; i++) rows[i] = rows[i] || [];
+      // Cellules fusionnées : seule la première s'affiche ; le texte resté dans les autres (invisible dans Excel) est retiré
+      fusions.forEach(([r1, r2, c1, c2]) => { for (let a = r1; a <= r2 && a < rows.length; a++) for (let b = c1; b <= c2; b++) if ((a !== r1 || b !== c1) && rows[a][b] !== undefined) rows[a][b] = ''; });
       return { name: f.name, rows };
     });
   }

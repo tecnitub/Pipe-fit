@@ -133,6 +133,10 @@ const XLSX = (() => {
   const byTag = (node, tag) => Array.from(node.getElementsByTagName(tag));
   const colIndex = ref => { let n = 0; for (const ch of ref.replace(/[0-9]/g, '')) n = n * 26 + ch.charCodeAt(0) - 64; return n - 1; };
 
+  // Plage fusionnée : valeurs des cellules autres que la première effacées
+  function masquerFusion(rows, r1, r2, c1, c2) {
+    for (let r = r1; r <= r2 && r < rows.length; r++) for (let c = c1; c <= c2; c++) if ((r !== r1 || c !== c1) && rows[r] && rows[r][c] !== undefined) rows[r][c] = '';
+  }
   async function read(buf) {
     const z = await unzip(buf);
     const wb = xml(await z.text('xl/workbook.xml') || '');
@@ -165,6 +169,9 @@ const XLSX = (() => {
         });
       });
       for (let i = 0; i < rows.length; i++) rows[i] = rows[i] || [];
+      // Cellules fusionnées : seule la première (en haut à gauche) s'affiche ; le texte resté dans les autres, invisible
+      // dans Excel (reste d'un ancien modèle), est retiré
+      byTag(doc, 'mergeCell').forEach(m => { const ref = /^([A-Z]+)(\d+):([A-Z]+)(\d+)$/.exec(m.getAttribute('ref') || ''); if (ref) masquerFusion(rows, +ref[2] - 1, +ref[4] - 1, colIndex(ref[1]), colIndex(ref[3])); });
       sheets.push({ name: sh.getAttribute('name'), rows });
     }
     return sheets;
@@ -194,6 +201,6 @@ const XLSX = (() => {
     return [{ name: 'CSV', rows: rows.filter(r => r.some(c => c !== '')) }];
   }
 
-  return { build, read, readCSV, zip };
+  return { build, read, readCSV, zip, masquerFusion };
 })();
 if (typeof module !== 'undefined') module.exports = XLSX;
