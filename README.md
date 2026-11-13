@@ -40,6 +40,12 @@ hydraulique en annexe F ; PV d'épreuve hydraulique, relevés d'équilibrage aé
 Les pièces correspondantes des listes de contrôle des sections 5 et 6 sont cochées (« Pipe-Fit »). Avec les plans,
 fiches techniques, notices et le PV de réception déjà repris, « Générer le DOE » produit le dossier complet en un clic.
 
+## Boutique en ligne (tuyauterie inox préfabriquée)
+
+Site de vente aux professionnels dans `boutique/` : catalogue 304L / 316L, configurateur de spools avec vue isométrique,
+panier, commande, devis sur plan et administration des commandes. `npm run start:boutique` le démarre sur le port 3200.
+Voir [boutique/README.md](boutique/README.md).
+
 ## Atelier PDF (compilation et modification de PDF)
 
 Logiciel Windows séparé, dans `pdf/` : compiler PDF, photos et scans en un document (sommaire, signets, numérotation),

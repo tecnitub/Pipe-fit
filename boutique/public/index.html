@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TECNITUB — Tuyauterie inox préfabriquée</title>
+<meta name="description" content="Spools inox 304L et 316L préfabriqués en atelier, tubes coupés à longueur, coudes, tés, brides et raccords hygiéniques. Configurateur en ligne, devis sur plan, livraison en France.">
+<link rel="icon" href="logo-tecnitub.png">
+<link rel="stylesheet" href="css/boutique.css">
+</head>
+<body>
+<header class="entete">
+  <div class="entete-int">
+    <a href="#/" class="marque" aria-label="Accueil TECNITUB">
+      <img src="logo-tecnitub.png" alt="TECNITUB" class="logo">
+      <span class="marque-sous">Tuyauterie inox préfabriquée</span>
+    </a>
+    <button class="burger" type="button" aria-label="Menu" aria-expanded="false" data-action="menu"><span></span><span></span><span></span></button>
+    <nav class="nav" id="nav">
+      <a href="#/catalogue" data-nav="catalogue">Catalogue</a>
+      <a href="#/spool" data-nav="spool">Spool sur mesure</a>
+      <a href="#/devis" data-nav="devis">Devis sur plan</a>
+      <a href="#/savoir-faire" data-nav="savoir-faire">Savoir-faire</a>
+      <a href="#/suivi" data-nav="suivi">Suivi</a>
+      <a href="#/panier" data-nav="panier" class="nav-panier">Panier <span class="badge" id="badge-panier">0</span></a>
+    </nav>
+  </div>
+</header>
+
+<main id="app" tabindex="-1"></main>
+
+<footer class="pied">
+  <div class="pied-int">
+    <div>
+      <strong>TECNITUB SARL</strong><br>
+      Chaudronnerie · Tuyauterie<br>
+      251 rue du Ruisseau d'Aumas, Z.A. Le Mas<br>07430 Davézieux
+    </div>
+    <div>
+      <strong>Nous joindre</strong><br>
+      <a href="tel:+33475324231">04 75 32 42 31</a><br>
+      Du lundi au vendredi, 8 h – 12 h / 13 h 30 – 17 h<br>
+      <a href="#/devis">Demander un devis</a>
+    </div>
+    <div>
+      <strong>Informations</strong><br>
+      <a href="#/savoir-faire">Savoir-faire et qualité</a><br>
+      <a href="#/cgv">Conditions générales de vente</a><br>
+      <a href="#/suivi">Suivre une commande</a>
+    </div>
+    <div class="pied-mentions">
+      Vente réservée aux professionnels. Prix indiqués hors taxes, départ atelier.<br>
+      SIRET 331 721 647 00039 · APE 3320A
+    </div>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="catalogue.js"></script>
+<script src="js/dessins.js"></script>
+<script src="js/boutique.js"></script>
+</body>
+</html>

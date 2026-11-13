@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Administration — Boutique TECNITUB</title>
+<link rel="icon" href="logo-tecnitub.png">
+<link rel="stylesheet" href="css/boutique.css">
+<link rel="stylesheet" href="css/admin.css">
+</head>
+<body class="admin">
+<header class="entete">
+  <div class="entete-int">
+    <a href="./" class="marque"><img src="logo-tecnitub.png" alt="TECNITUB" class="logo"><span class="marque-sous">Administration de la boutique</span></a>
+    <nav class="nav ouvert-admin" id="nav-admin" hidden>
+      <a href="#commandes" data-onglet="commandes">Commandes</a>
+      <a href="#devis" data-onglet="devis">Demandes de devis</a>
+      <button type="button" class="btn btn-lien" id="deconnexion">Déconnexion</button>
+    </nav>
+  </div>
+</header>
+<main id="admin" class="bloc"><div class="bloc-int" id="contenu"></div></main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="catalogue.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>
