@@ -43,6 +43,7 @@ const App = {
     });
     document.getElementById('recherche-globale').hidden = Store.me.role === 'atelier';
     Notifs.majCloche();
+    Ergonomie.navMobile();
   },
 
   // Modification faite par un autre utilisateur : on rafraîchit sauf si une saisie est en cours.
