@@ -20,7 +20,7 @@ const PARTAGES = { '/shared/pdf.js': path.join(__dirname, '..', 'public', 'js', 
   '/shared/pdf-lib.min.js': path.join(__dirname, '..', 'doe', 'public', 'vendor', 'pdf-lib-1.17.1.min.js'),
   '/logo-tecnitub.png': path.join(__dirname, '..', 'doe', 'public', 'logo-tecnitub.png'),
   // Lecture du CCTP et du DPGF (inventaire des producteurs et émetteurs) : texte des PDF, classeurs Excel
-  ...Object.fromEntries(['ocr.js', 'pdf-lecture.js', 'cctp-lecture.js', 'xlsx.js', 'xls.js', 'inventaire-cvc.js', 'materiel-retenu.js', 'fiches-tech.js', 'essais.js', 'planches.js'].map(f => [`/shared/${f}`, path.join(__dirname, '..', 'public', 'js', f)])),
+  ...Object.fromEntries(['ocr.js', 'pdf-lecture.js', 'cctp-lecture.js', 'xlsx.js', 'xls.js', 'inventaire-cvc.js', 'dce.js', 'materiel-retenu.js', 'fiches-tech.js', 'essais.js', 'planches.js'].map(f => [`/shared/${f}`, path.join(__dirname, '..', 'public', 'js', f)])),
   ...Object.fromEntries(['pdf.min.js', 'pdf.worker.min.js'].map(f => [`/vendor/pdfjs/${f}`, path.join(__dirname, '..', 'public', 'vendor', 'pdfjs', f)])),
   // Lecture des caractères (CCTP scannés) : mêmes fichiers que le CRM
   ...Object.fromEntries(['tesseract.min.js', 'worker.min.js', 'tesseract-core-simd-lstm.wasm.js', 'fra.traineddata.gz'].map(f => [`/vendor/tesseract/${f}`, path.join(__dirname, '..', 'public', 'vendor', 'tesseract', f)])) };
@@ -88,7 +88,7 @@ const extraitPF = d => ({
   affaires: (d.affaires || []).map(a => ({ id: a.id, code: a.code, nom: a.nom, clientId: a.clientId, contactId: a.contactId, siteId: a.siteId, chargeId: a.chargeId, statut: a.statut, type: a.type,
     moeId: a.moeId || '', moeContactId: a.moeContactId || '', siteVille: siteAffaire(d, a).ville || '', siteCp: siteAffaire(d, a).cp || '',
     // CCTP et DPGF déposés dans les documents du chantier : lus pour préremplir l'étude
-    documents: (a.documents || []).filter(x => x.categorie === 'CCTP' || /\b(cctp|dpgf|dqe|bpu)\b/i.test(x.nom || '')).map(x => ({ id: x.id, nom: x.nom, fichierId: x.fichierId, mime: x.mime, categorie: x.categorie })),
+    documents: (a.documents || []).filter(x => x.categorie === 'CCTP' || x.categorie === 'DPGF' || /(?<![a-z])(cctp|dpgf|dqe|bpu)(?![a-z])/i.test(x.nom || '')).map(x => ({ id: x.id, nom: x.nom, fichierId: x.fichierId, mime: x.mime, categorie: x.categorie })),
     // Tous les documents du chantier (plans, fiches…) : joints aux documents émis de l'étude, indices suivis
     tousDocuments: (a.documents || []).filter(x => x.fichierId).map(x => ({ id: x.id, nom: x.nom, fichierId: x.fichierId, mime: x.mime, categorie: x.categorie, indice: x.indice || '', date: x.date || '', etudeId: x.etudeId || '' })) })),
   entreprises: (d.entreprises || []).map(e => ({ id: e.id, nom: e.nom, regimeTVA: e.regimeTVA, categorie: e.categorie })),

@@ -44,7 +44,7 @@
   const entsAff = new Set((src.affaires || []).flatMap(a => [a.clientId, a.moeId]).filter(Boolean));
   const pf = { affaires: (src.affaires || []).map(a => ({ id: a.id, code: a.code, nom: a.nom, clientId: a.clientId, contactId: a.contactId, siteId: a.siteId, chargeId: a.chargeId, statut: a.statut, type: a.type,
     moeId: a.moeId || '', moeContactId: a.moeContactId || '', siteVille: siteDe(a).ville || '', siteCp: siteDe(a).cp || '',
-    documents: (a.documents || []).filter(x => x.categorie === 'CCTP' || /\b(cctp|dpgf|dqe|bpu)\b/i.test(x.nom || '')).map(x => ({ id: x.id, nom: x.nom, fichierId: x.fichierId, mime: x.mime, categorie: x.categorie })),
+    documents: (a.documents || []).filter(x => x.categorie === 'CCTP' || x.categorie === 'DPGF' || /(?<![a-z])(cctp|dpgf|dqe|bpu)(?![a-z])/i.test(x.nom || '')).map(x => ({ id: x.id, nom: x.nom, fichierId: x.fichierId, mime: x.mime, categorie: x.categorie })),
     // Tous les documents du chantier (plans, fiches…) : joints aux documents émis de l'étude, indices suivis
     tousDocuments: (a.documents || []).filter(x => x.fichierId).map(x => ({ id: x.id, nom: x.nom, fichierId: x.fichierId, mime: x.mime, categorie: x.categorie, indice: x.indice || '', date: x.date || '', etudeId: x.etudeId || '' })) })),
     entreprises: (src.entreprises || []).map(e => ({ id: e.id, nom: e.nom, regimeTVA: e.regimeTVA })),

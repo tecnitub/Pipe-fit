@@ -1,7 +1,7 @@
 // Documents du chantier (plans, fiches techniques, notices, sécurité…) déposés par le bureau et transmis aux compagnons,
 // et fiche chantier du compagnon sur son téléphone : documents, matériel prévu (sans prix ni heures, selon les réglages),
 // commandes et livraisons attendues.
-const CATEGORIES_DOC = [['Demande client', '📧'], ['CCTP', '📑'], ['Plan', '📐'], ['Fiche technique', '📄'], ['Notice', '📘'], ['Note de calcul', '🧮'], ['Matériel à valider', '🏷️'], ['Rapport de mise en service', '📗'], ['Sécurité / PPSPS', '⛑️'], ['PGC', '🦺'], ['Plan de prévention', '🛡️'], ['Compte rendu de réunion', '🗒️'], ['Photo', '🖼️'], ['Autre', '📁']];
+const CATEGORIES_DOC = [['Demande client', '📧'], ['CCTP', '📑'], ['DPGF', '💶'], ['Plan', '📐'], ['Fiche technique', '📄'], ['Notice', '📘'], ['Note de calcul', '🧮'], ['Matériel à valider', '🏷️'], ['Rapport de mise en service', '📗'], ['Sécurité / PPSPS', '⛑️'], ['PGC', '🦺'], ['Plan de prévention', '🛡️'], ['Compte rendu de réunion', '🗒️'], ['Photo', '🖼️'], ['Autre', '📁']];
 const iconeDoc = c => (CATEGORIES_DOC.find(x => x[0] === c) || CATEGORIES_DOC[CATEGORIES_DOC.length - 1])[1];
 const categorieDevinee = Classement.categorieDevinee;
 const tailleLisible = o => (o > 1048576 ? `${fmt(o / 1048576, 1)} Mo` : `${Math.max(1, Math.round(o / 1024))} Ko`);
@@ -81,14 +81,39 @@ function bindDocumentsChantier(root, a) {
   bindDossierChantier(root, a);
   const enreg = () => { Store.upsert('affaires', a); App.render(); };
   const indiceSuivant = i => (/^[A-Y]$/i.test(i || '') ? String.fromCharCode(i.toUpperCase().charCodeAt(0) + 1) : /^\d+$/.test(i || '') ? String(+i + 1) : i ? `${i}+` : 'B');
-  const deposer = async files => {
+  const deposer = async liste => {
     const prog = root.querySelector('#doc-progres'), visible = (root.querySelector('#doc-transmettre') || {}).checked !== false;
-    const ajoutes = [];
-    for (const [k, f] of [...files].entries()) {
+    const ajoutes = [], files = [], infos = new Map();
+    // Dossier de consultation en zip : proposé éclaté en pièces rangées par catégorie (CCTP, DPGF, plans, sécurité…)
+    for (const f of [...liste]) {
+      if (/\.zip$/i.test(f.name) && typeof Dce !== 'undefined' && await ask(`« ${f.name} » est une archive : l'éclater en pièces rangées par catégorie (CCTP, DPGF, plans…) ?`, 'Éclater l\'archive', false)) {
+        try {
+          prog.textContent = `Décompression de ${f.name}…`;
+          const brutes = await Dce.decompresser(await f.arrayBuffer()), textes = {};
+          // Classeur sans nature dans son nom (« LOT 07 PLOMBERIE.xls ») : premières lignes lues pour reconnaître un DPGF
+          for (const p of brutes.filter(x => /^(xlsx?|csv)$/.test(Dce.ext(x.nom)) && !Dce.natureNom(x.nom))) {
+            try {
+              const buf = p.data.buffer.slice(p.data.byteOffset, p.data.byteOffset + p.data.length);
+              const feuilles = typeof Xls !== 'undefined' && Xls.estXls(buf) ? Xls.lire(buf) : Dce.ext(p.nom) === 'csv' ? XLSX.readCSV(buf) : await XLSX.read(buf);
+              textes[p.chemin] = feuilles.flatMap(s => (s.rows || []).slice(0, 40)).map(r => (r || []).join(' ')).join('\n');
+            } catch (e) { /* tri d'après le nom */ }
+          }
+          const pieces = Dce.trier(brutes, { archive: f.name, textes });
+          pieces.forEach(p => {
+            const g = new File([p.data], p.nom, { type: { pdf: 'application/pdf', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', csv: 'text/csv' }[Dce.ext(p.nom)] || '' });
+            infos.set(g, { categorie: { cctp: 'CCTP', dpgf: 'DPGF', plan: 'Plan' }[p.nature] || categorieDevinee(p.nom), note: [`Archive ${f.name}${p.dossier ? ` / ${p.dossier}` : ''}`, p.lot && p.lot.cvc === false ? `lot ${p.lot.numero} hors CVC` : ''].filter(Boolean).join(' · ') });
+            files.push(g);
+          });
+          continue;
+        } catch (e) { notify(`${f.name} : ${e.message} — archive déposée telle quelle.`); }
+      }
+      files.push(f);
+    }
+    for (const [k, f] of files.entries()) {
       prog.textContent = `Envoi ${k + 1}/${files.length} : ${f.name}…`;
       try {
-        const r = await envoyerFichierDocument(f);
-        ajoutes.push({ id: uid(), fichierId: r.id, nom: f.name, categorie: categorieDevinee(f.name), indice: '', note: '', mime: r.mime, taille: r.taille, date: isoDate(new Date()), par: Store.me.nom, visible });
+        const r = await envoyerFichierDocument(f), info = infos.get(f) || {};
+        ajoutes.push({ id: uid(), fichierId: r.id, nom: f.name, categorie: info.categorie || categorieDevinee(f.name), indice: '', note: info.note || '', mime: r.mime, taille: r.taille, date: isoDate(new Date()), par: Store.me.nom, visible });
       } catch (e) { notify(`${f.name} : ${e.message}`); }
     }
     prog.textContent = '';

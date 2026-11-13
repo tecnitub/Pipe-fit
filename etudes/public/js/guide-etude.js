@@ -56,6 +56,9 @@ const GuideEtude = (() => {
     if (inv.length || !notes.length) a('dossier', 'import', 'Lire le CCTP et le DPGF', inv.length, inv.length ? `${inv.length} équipement(s) à l'inventaire` : 'Équipements, réseaux et caractéristiques repris du dossier', ['inventaire', '📑 Lire le dossier']);
     const ecarts = (et.inventaireEcarts || []).length;
     if (ecarts) a('dossier', 'ecarts', 'Lever les écarts CCTP / DPGF', et.inventaireEcartsTraites, `${ecarts} écart(s) : questions à poser pendant la consultation`, ['inventaire-revoir', '❓ Voir les écarts']);
+    // Questions au maître d'œuvre (écarts et caractéristiques manquantes) : faites quand toutes sont posées
+    const qm = typeof Dce !== 'undefined' && inv.length ? Dce.avecSuivi(Dce.questions(et.inventaireEcarts || [], et.inventaire || []), et.questionsMoe) : [];
+    if (qm.length) { const p = qm.filter(q => q.posee || q.recue).length, r = qm.filter(q => q.recue).length; a('dossier', 'questions-moe', 'Questions au maître d\'œuvre', p === qm.length, `${qm.length} question(s) : ${p} posée(s), ${r} réponse(s) reçue(s)`, ['questions-moe', '❓ Préparer les questions']); }
 
     // 3. Calculs à créer d'après l'inventaire
     if (inv.length) {
@@ -174,6 +177,7 @@ const GuideEtude = (() => {
       }
       if (code === 'inventaire') return dialogueInventaire(et);
       if (code === 'inventaire-revoir') return tableauInventaire(et, (et.inventaire || []).map(x => ({ ...x })), [], (et.inventaireReseaux || []).map(r => ({ ...r })), { ecarts: et.inventaireEcarts || [] });
+      if (code === 'questions-moe') return dialogueQuestionsMoe(et);
       if (code === 'creer') return creerCalculInventaire(et, arg);
       if (code === 'ajout') { const n = nouvelleNote(arg); et.notes.push(n); enregistrer(et); location.hash = `#/etude/${et.id}/${n.id}`; return; }
       if (code === 'note') { location.hash = `#/etude/${et.id}/${arg}`; return; }

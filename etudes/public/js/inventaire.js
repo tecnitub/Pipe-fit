@@ -22,7 +22,8 @@ async function lignesPdf(fichier, progression, pagesMax) {
 async function lireCctp(fichiers, progression) {
   const lignes = [];
   for (const f of [...fichiers].sort((a, b) => String(a.name).localeCompare(String(b.name), 'fr', { numeric: true }))) {
-    if (!/\.pdf$/i.test(f.name) && f.type !== 'application/pdf') throw new Error(`${f.name} : le CCTP se lit en PDF.`);
+    if (/\.docx$/i.test(f.name)) { lignes.push(...await lignesDocx(f)); continue; }
+    if (!/\.pdf$/i.test(f.name) && f.type !== 'application/pdf') throw new Error(`${f.name} : le CCTP se lit en PDF (ou Word .docx).`);
     lignes.push(...await lignesPdf(f, p => progression(`${f.name} : ${typeof p === 'number' ? `${Math.round(p * 100)} %` : p}`), 400));
   }
   if (lignes.join('').replace(/\s/g, '').length < 300) throw new Error(`${[...fichiers].map(f => f.name).join(', ')} : pas de texte lisible (document scanné) ; demandez le PDF d'origine.`);
@@ -49,7 +50,57 @@ async function lireDossier(fichier, nature, progression) {
   if (!lu.items.length && lu.erreur) throw new Error(`${fichier.name} : ${lu.erreur}`);
   return lu;
 }
+// Lignes d'un document Word (.docx) : un paragraphe par ligne, cellules d'un tableau séparées par des tabulations
+async function lignesDocx(fichier) {
+  const z = await XLSX.unzip(await fichier.arrayBuffer(), `${fichier.name} : document Word illisible.`);
+  const xml = await z.text('word/document.xml') || '';
+  const ent = t => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  return xml.replace(/<w:tab\/>/g, '\t').replace(/<\/w:tc>/g, '\u0001').replace(/<\/w:p>/g, '\n').replace(/<[^>]+>/g, '').split(/\n/)
+    .map(l => ent(l).replace(/\u0001\s*$/, '').replace(/\u0001/g, '\t').trim()).filter(Boolean);
+}
 const natureDe = nom => (/annexe|liste des equipements|liste des équipements|carnet|nomenclature|tableau des/i.test(nom) ? 'annexe' : /dpgf|dqe|bpu|\.xlsx?$|\.csv$/i.test(nom) ? 'dpgf' : 'cctp');
+// Dossier de consultation en zip (ou pièces déposées en vrac) : pièces décompressées, triées d'après le nom et le début
+// de leur contenu (Dce.trier : CCTP, DPGF, annexes ; plans et pièces administratives listés ; lots hors CVC décochés)
+const MIME_DCE = { pdf: 'application/pdf', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', xlsm: 'application/vnd.ms-excel.sheet.macroEnabled.12', csv: 'text/csv', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+const fichierPiece = p => new File([p.data], p.nom, { type: MIME_DCE[Dce.ext(p.nom)] || '' });
+async function texteDebutPiece(p) {
+  const e = Dce.ext(p.nom);
+  try {
+    if (e === 'pdf' && typeof PdfLecture !== 'undefined') return (await PdfLecture.lire(fichierPiece(p), undefined, { pagesMax: 2, ocr: false })).lignes.join('\n');
+    if (/^(xlsx?|xlsm|csv)$/.test(e)) return (await lireClasseur(fichierPiece(p))).flatMap(f => (f.rows || []).slice(0, 40)).map(r => (r || []).join(' ')).join('\n');
+    if (e === 'docx') return (await lignesDocx(fichierPiece(p))).slice(0, 80).join('\n');
+  } catch (err) { /* contenu illisible : tri d'après le nom seul */ }
+  return '';
+}
+async function piecesDce(fichiers, etat) {
+  const pieces = [];
+  let archive = '';
+  for (const f of fichiers) {
+    if (/\.zip$/i.test(f.name) || f.type === 'application/zip' || f.type === 'application/x-zip-compressed') {
+      etat(`Décompression de ${f.name}…`); archive = archive || f.name;
+      pieces.push(...await Dce.decompresser(await f.arrayBuffer()));
+    } else pieces.push({ chemin: f.name, nom: f.name, dossier: '', data: new Uint8Array(await f.arrayBuffer()), taille: f.size });
+  }
+  const textes = {};
+  for (const [k, p] of pieces.entries()) {
+    // Contenu regardé quand le nom ne suffit pas (ou pour un classeur nommé « annexe » qui serait un DPGF)
+    const n = Dce.natureNom(p.nom);
+    if (!n || n === 'annexe') { etat(`Tri des pièces ${k + 1}/${pieces.length} : ${p.nom}…`); textes[p.chemin] = await texteDebutPiece(p); }
+  }
+  return Dce.trier(pieces, { textes, archive });
+}
+const tailleCourte = o => (o >= 1048576 ? `${(o / 1048576).toFixed(1).replace('.', ',')} Mo` : `${Math.max(1, Math.round(o / 1024))} ko`);
+function listeDce(pieces) {
+  if (!pieces.length) return '';
+  const nb = pieces.filter(p => p.retenu).length;
+  return `<fieldset><legend>Dossier de consultation : ${pieces.length} pièce(s), ${nb} à lire</legend>
+    <p class="muted petit">Pièces triées d'après leur nom et leur contenu. Seuls le CCTP, le DPGF et les annexes techniques des lots CVC / plomberie sont lus ; les plans et pièces administratives sont listés pour mémoire. Corrigez la nature ou cochez au besoin.</p>
+    <div class="defile-x"><table class="liste compact dce-pieces"><thead><tr><th></th><th>Pièce</th><th>Nature</th><th>Lot</th></tr></thead><tbody>
+    ${pieces.map((p, i) => `<tr${p.retenu ? '' : ' class="muted"'}><td><input type="checkbox" data-dce="${i}" ${p.retenu ? 'checked' : ''} aria-label="Lire ${esc(p.nom)}"></td>
+      <td style="word-break:break-word;min-width:160px">${esc(p.nom)}${p.dossier ? `<br><span class="petit muted">📁 ${esc(p.dossier)}</span>` : ''}<br><span class="petit muted">${tailleCourte(p.taille)}${p.source === 'contenu' ? ' · reconnu au contenu' : ''}${p.raison ? ` · ${esc(p.raison)}` : ''}</span></td>
+      <td><select data-dce-nature="${i}" aria-label="Nature">${Object.entries(Dce.NATURES).map(([k, l]) => `<option value="${k}" ${k === p.nature ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></td>
+      <td class="petit">${p.lot ? `${esc(p.lot.numero)}${p.lot.intitule ? ` ${esc(p.lot.intitule.slice(0, 40))}` : ''}${p.lot.cvc === false ? ' <span class="badge attention">hors CVC</span>' : ''}` : '—'}</td></tr>`).join('')}</tbody></table></div></fieldset>`;
+}
 // Règles apprises des corrections faites dans le tableau (partagées par le bureau d'études)
 async function reglesInventaire() { try { return await api('GET', '/api/regles-inventaire'); } catch (e) { return []; } }
 
@@ -58,21 +109,44 @@ function dialogueInventaire(et) {
   const b = Modal.open(`<h2>📑 CCTP et DPGF</h2>
     <p class="muted petit">Les producteurs, émetteurs et auxiliaires du dossier de consultation sont reconnus puis vérifiés ici : le schéma de principe et l'alimentation électrique en sont préremplis. CCTP en PDF ; DPGF en Excel, CSV ou PDF.</p>
     ${docs.length ? `<fieldset><legend>Documents du chantier ${esc(a.code || '')} dans Pipe-Fit</legend>${docs.map(d => `<label class="case"><input type="checkbox" data-doc="${esc(d.id)}" checked> ${esc(d.nom)} <span class="badge pf">${{ dpgf: 'DPGF', cctp: 'CCTP', annexe: 'Annexe' }[natureDe(d.nom)]}</span></label>`).join('')}</fieldset>` : ''}
-    <div class="grille-champs"><label>CCTP (PDF ; plusieurs fichiers si le CCTP est en parties)<input type="file" id="inv-cctp" accept=".pdf,application/pdf" multiple></label><label>DPGF (Excel, CSV ou PDF)<input type="file" id="inv-dpgf" accept=".xls,.xlsx,.csv,.pdf"></label>
+    <label class="dce-depot" id="inv-dce-zone">📦 <strong>Dossier de consultation (zip)</strong> <span class="muted petit">— ou glissez ici l'archive ou les pièces : CCTP, DPGF et annexes sont triés automatiquement</span><input type="file" id="inv-dce" accept=".zip,application/zip,.pdf,.xls,.xlsx,.xlsm,.csv,.docx,.dwg" multiple></label>
+    <div id="inv-dce-liste"></div>
+    <p class="muted petit">Ou pièce par pièce :</p>
+    <div class="grille-champs"><label>CCTP (PDF ; plusieurs fichiers si le CCTP est en parties)<input type="file" id="inv-cctp" accept=".pdf,application/pdf,.docx" multiple></label><label>DPGF (Excel, CSV ou PDF)<input type="file" id="inv-dpgf" accept=".xls,.xlsx,.csv,.pdf"></label>
       <label>Liste des équipements / annexe (PDF, Excel, CSV) <span class="muted petit">facultatif : repères, locaux, débits, puissances</span><input type="file" id="inv-annexe" accept=".xls,.xlsx,.csv,.pdf"></label></div>
     <p id="inv-etat" class="petit muted"></p>
     <div class="actions">${(et.inventaire || []).length ? '<button class="secondaire" id="inv-actuel">Revoir l\'inventaire enregistré</button>' : ''}<button class="secondaire" id="inv-x">Annuler</button><button id="inv-lire">Lire</button></div>`);
   b.classList.add('large');
   const etat = t => { const e = b.querySelector('#inv-etat'); if (e) e.textContent = t; };
   b.querySelector('#inv-x').onclick = Modal.close;
+  let dce = [];
+  const rendreDce = () => {
+    b.querySelector('#inv-dce-liste').innerHTML = listeDce(dce);
+    b.querySelectorAll('[data-dce]').forEach(cb => cb.onchange = () => { dce[+cb.dataset.dce].retenu = cb.checked; rendreDce(); });
+    b.querySelectorAll('[data-dce-nature]').forEach(sl => sl.onchange = () => { const p = dce[+sl.dataset.dceNature]; p.nature = sl.value; p.retenu = Dce.LUES.includes(sl.value); p.raison = ''; rendreDce(); });
+  };
+  const chargerDce = async fichiers => {
+    if (!fichiers.length) return;
+    try { dce = [...dce, ...await piecesDce(fichiers, etat)]; etat(`${dce.filter(p => p.retenu).length} pièce(s) retenue(s) sur ${dce.length} : vérifiez le tri puis « Lire ».`); } catch (e) { etat(e.message); }
+    rendreDce();
+  };
+  const zd = b.querySelector('#inv-dce-zone'), id = b.querySelector('#inv-dce');
+  id.onchange = () => { chargerDce([...id.files]); id.value = ''; };
+  b.ondragover = e => { e.preventDefault(); zd.classList.add('survol'); };
+  b.ondragleave = () => zd.classList.remove('survol');
+  b.ondrop = e => { e.preventDefault(); zd.classList.remove('survol'); chargerDce([...((e.dataTransfer && e.dataTransfer.files) || [])]); };
   const act = b.querySelector('#inv-actuel');
   if (act) act.onclick = async () => tableauInventaire(et, et.inventaire.map(x => ({ ...x })), [], (et.inventaireReseaux || []).map(r => ({ ...r })), { regles: await reglesInventaire() });
   b.querySelector('#inv-lire').onclick = async () => {
     const sources = [];
     for (const cb of b.querySelectorAll('[data-doc]:checked')) {
       const d = docs.find(x => x.id === cb.dataset.doc);
-      sources.push({ nature: natureDe(d.nom), charger: async () => { const r = await fetch(`/api/pf/fichier/${encodeURIComponent(d.fichierId)}`); if (!r.ok) throw new Error(`${d.nom} : fichier indisponible`); return new File([await r.blob()], d.nom, { type: d.mime || '' }); } });
+      sources.push({ nature: d.categorie === 'DPGF' ? 'dpgf' : natureDe(d.nom), charger: async () => { const r = await fetch(`/api/pf/fichier/${encodeURIComponent(d.fichierId)}`); if (!r.ok) throw new Error(`${d.nom} : fichier indisponible`); return new File([await r.blob()], d.nom, { type: d.mime || '' }); } });
     }
+    // Pièces du dossier de consultation : CCTP en parties lus ensemble, DPGF et annexes un par un
+    const dl = dce.filter(p => p.retenu && Dce.LUES.includes(p.nature)), dc = dl.filter(p => p.nature === 'cctp').map(fichierPiece);
+    if (dc.length) sources.push({ nature: 'cctp', fichiers: dc });
+    dl.filter(p => p.nature !== 'cctp').forEach(p => sources.push({ nature: p.nature, charger: async () => fichierPiece(p) }));
     const fc = [...b.querySelector('#inv-cctp').files], fd = b.querySelector('#inv-dpgf').files[0], fa = b.querySelector('#inv-annexe').files[0];
     if (fc.length) sources.push({ nature: 'cctp', fichiers: fc });
     if (fd) sources.push({ nature: 'dpgf', charger: async () => fd });
@@ -156,7 +230,7 @@ function tableauInventaire(et, inv, erreurs, reseaux = [], info = {}) {
       <td><input data-i="${i}" data-k="regime" value="${esc(x.regime || '')}" placeholder="70/50" style="width:70px"></td><td><select data-i="${i}" data-k="reseau" style="max-width:170px">${optReseaux(x.reseau)}</select>${x.rattache && x.reseau ? `<br><span class="ligne-auto" title="Rattaché automatiquement">↳ d'après ${x.rattache === 'texte' ? 'le texte (alimentation)' : x.rattache === 'numero' ? 'le numéro d\'article' : 'le chapitre de la production'}</span>` : ''}</td><td class="petit muted" style="min-width:260px" title="${esc(titreProvenance(x))}">${esc(sourcesCourtes(x.sources))}${x.rapprochement && LIB_RAPPROCHEMENT[x.rapprochement] ? ` <span class="badge">${LIB_RAPPROCHEMENT[x.rapprochement]}</span>` : ''}${x.prescrit ? `<br>${esc(x.prescrit)}` : ''}${InventaireCVC.caracTexte(x.carac) ? `<br><span style="color:var(--texte)">${esc(InventaireCVC.caracTexte(x.carac))}</span>` : ''}${detailsTexte(x) ? `<br><span style="color:var(--texte)">${esc(detailsTexte(x))}</span>` : ''}
         ${InventaireCVC.aVerifier(x).length ? `<br>${InventaireCVC.aVerifier(x).map(v => `<span class="${v.conflit ? 'avert' : ''}">⚠ ${esc(v.libelle)} : ${esc(v.texte)}</span>`).join('<br>')}<br><label class="case petit"><input type="checkbox" data-i="${i}" data-k="verifie" ${x.verifie ? 'checked' : ''}> valeurs vérifiées</label>` : ''}</td></tr>`).join('')}` : ''; }).join('')}
     </tbody></table></div>
-    <div class="actions"><button class="secondaire" id="ti-x">Fermer</button><button class="secondaire" id="ti-ok">Enregistrer l'inventaire</button>
+    <div class="actions"><button class="secondaire" id="ti-x">Fermer</button><button class="secondaire" id="ti-questions" title="Questions à poser pendant la consultation : écarts CCTP / DPGF, caractéristiques manquantes">❓ Questions au maître d'œuvre</button><button class="secondaire" id="ti-ok">Enregistrer l'inventaire</button>
       <button data-creer="pid">🗺️ Créer le schéma de principe</button><button data-creer="aero">🌬️ Créer le schéma aéraulique et les CTA</button><button data-creer="terminaux">🌀 Créer les terminaux</button><button data-creer="elec">⚡ Créer l'alimentation électrique et la régulation</button>${inv.some(x => x.genre === 'sanitaire' && x.inclus !== false) ? '<button data-creer="sanitaire">🚰 Créer le calcul sanitaire</button>' : ''}</div>`;
   const b = Modal.open(rendu());
   b.classList.add('large');
@@ -183,6 +257,7 @@ function tableauInventaire(et, inv, erreurs, reseaux = [], info = {}) {
     if (bc) bc.onclick = async () => { try { await navigator.clipboard.writeText(InventaireCVC.ecartsTexte(ecarts)); toast('Questions copiées : à coller dans la plateforme de consultation ou un mail.'); } catch (e) { toast('Copie impossible : utilisez le CSV.'); } };
     const bx = b.querySelector('#ti-ecarts-csv');
     if (bx) bx.onclick = () => enregistrerFichier(b, `Ecarts_CCTP_DPGF_${sansAccents(et.objet || 'etude').slice(0, 40)}.csv`, new TextEncoder().encode(`\uFEFFÉcart;Équipement;Détail\n${ecarts.map(e => [InventaireCVC.LIB_ECART[e.type], e.designation, e.texte].map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\n')}`), 'text/csv');
+    b.querySelector('#ti-questions').onclick = () => { garder(); dialogueQuestionsMoe(et); };
     b.querySelector('#ti-ok').onclick = () => { garder(); Modal.close(); App.render(); toast(`Inventaire enregistré : ${inv.filter(x => x.inclus !== false).length} équipement(s).`); };
     b.querySelectorAll('[data-creer]').forEach(bt => bt.onclick = () => { garder(); Modal.close(); creerCalculInventaire(et, bt.dataset.creer); });
     const tr = b.querySelector('#ti-ecarts-traites');
@@ -264,4 +339,61 @@ function creerCalculInventaire(et, quoi) {
     et.notes.push(n);
     return aller(n, `${lignes.length} équipement(s) repris : choisissez leur alimentation et leur régulation.`);
   }
+}
+
+// Questions au maître d'œuvre (période de consultation) : écarts CCTP / DPGF et caractéristiques manquantes, regroupées
+// par chapitre et numérotées ; suivi « posée » / « réponse reçue » et réponse mémorisés dans l'étude (et.questionsMoe) ;
+// une réponse qui tranche une valeur (quantité, puissance, débit, régime) corrige l'inventaire
+function dialogueQuestionsMoe(et) {
+  const inv = et.inventaire || [];
+  if (!inv.length) { toast('Inventaire vide : lisez d\'abord le CCTP et le DPGF.'); return dialogueInventaire(et); }
+  const qs = Dce.avecSuivi(Dce.questions(et.inventaireEcarts || [], inv), et.questionsMoe);
+  let nonPosees = false;
+  const garder = () => { et.questionsMoe = Dce.suiviDe(qs, et.questionsMoe); enregistrer(et); };
+  const choisies = () => (nonPosees ? qs.filter(q => !q.posee && !q.recue) : qs);
+  const affaire = () => [et.objet, et.client].filter(Boolean).join(' — ');
+  const rendu = () => {
+    const posees = qs.filter(q => q.posee || q.recue).length, recues = qs.filter(q => q.recue).length;
+    return `<h2>❓ Questions au maître d'œuvre <span class="compte">${qs.length}</span></h2>
+    <p class="muted petit">À poser pendant la consultation pour sécuriser le chiffrage : équipements décrits mais non chiffrés (ou l'inverse), quantités, valeurs ou marques différentes entre le CCTP et le DPGF, caractéristiques manquantes pour dimensionner. ${posees} posée(s), ${recues} réponse(s) reçue(s).</p>
+    ${qs.length ? [...new Set(qs.map(q => q.chapitre))].map(c => `<h3>${esc(c)}</h3>${qs.filter(q => q.chapitre === c).map(q => { const i = qs.indexOf(q); return `<div class="carte petit question-moe${q.recue ? ' muted' : ''}">
+      <p><strong>${q.n}.</strong> ${esc(q.texte)}${(q.refs || []).length ? `<br><span class="muted">${esc(q.refs.join(' · '))}</span>` : ''}</p>
+      <div class="actions-ligne"><label class="case"><input type="checkbox" data-q="${i}" data-qk="posee" ${q.posee ? 'checked' : ''}> posée</label><label class="case"><input type="checkbox" data-q="${i}" data-qk="recue" ${q.recue ? 'checked' : ''}> réponse reçue</label>
+        ${(q.choix || []).length ? `<label class="petit">Valeur retenue <select data-q="${i}" data-qk="retenu"><option value="">—</option>${q.choix.map((c, k) => `<option value="${k}" ${q.retenu !== undefined && String(q.retenu) === String(c.v) ? 'selected' : ''}>${esc(c.libelle)}</option>`).join('')}</select></label>` : ''}</div>
+      ${q.recue || q.reponse ? `<textarea data-q="${i}" data-qk="reponse" rows="2" placeholder="Réponse du maître d'œuvre" aria-label="Réponse" style="width:100%">${esc(q.reponse || '')}</textarea>` : ''}</div>`; }).join('')}`).join('')
+      : '<p class="muted">Aucune question : pas d\'écart entre le CCTP et le DPGF, et les caractéristiques des gros équipements sont renseignées.</p>'}
+    <label class="case petit"><input type="checkbox" id="qm-nonposees" ${nonPosees ? 'checked' : ''}> n'exporter que les questions pas encore posées</label>
+    <div class="actions"><button class="secondaire" id="qm-x">Fermer</button><button class="secondaire" id="qm-copier">📋 Copier pour un mail</button><button id="qm-word">📝 Word</button></div>`;
+  };
+  const b = Modal.open(rendu());
+  b.classList.add('large');
+  const lier = () => {
+    b.querySelector('#qm-x').onclick = () => { garder(); Modal.close(); App.render(); };
+    b.querySelector('#qm-nonposees').onchange = e => { nonPosees = e.target.checked; };
+    b.querySelectorAll('[data-q]').forEach(el => { el[el.tagName === 'TEXTAREA' ? 'oninput' : 'onchange'] = () => {
+      const q = qs[+el.dataset.q], k = el.dataset.qk;
+      if (k === 'reponse') { q.reponse = el.value; q.recue = q.recue || !!el.value.trim(); q.date = q.date || new Date().toISOString().slice(0, 10); return garder(); }
+      if (k === 'retenu') {
+        if (el.value === '') delete q.retenu;
+        else {
+          const c = q.choix[+el.value], n = Dce.appliquerReponse(inv, q, c.v);
+          Object.assign(q, { retenu: c.v, recue: true, posee: true });
+          if (n) toast(`Inventaire corrigé : ${q.designation} — ${c.libelle}.`);
+        }
+      } else { q[k] = el.checked; if (k === 'recue' && el.checked) q.posee = true; if (el.checked) q.date = new Date().toISOString().slice(0, 10); }
+      garder(); b.innerHTML = rendu(); lier();
+    }; });
+    b.querySelector('#qm-copier').onclick = async () => {
+      const l = choisies();
+      if (!l.length) return toast('Aucune question à copier.');
+      try { await navigator.clipboard.writeText(Dce.questionsTexte(l, { objet: affaire() })); toast(`${l.length} question(s) copiée(s) : à coller dans un mail ou la plateforme de consultation.`); }
+      catch (e) { toast('Copie impossible : utilisez l\'export Word.'); }
+    };
+    b.querySelector('#qm-word').onclick = () => {
+      const l = choisies();
+      if (!l.length) return toast('Aucune question à exporter.');
+      telecharger(`Questions_MOE_${sansAccents(et.objet || 'etude').slice(0, 40)}.docx`, Docx.build(Dce.questionsBlocs(l, { affaire: affaire(), date: new Date().toLocaleDateString('fr-FR') })), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    };
+  };
+  lier();
 }

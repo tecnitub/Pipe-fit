@@ -1,4 +1,13 @@
 /* Pipe-Fit Études — complète la feuille de style commune de l'application DOE (charte TECNITUB) */
+/* Dépôt du dossier de consultation (zip) dans le dialogue d'import CCTP / DPGF ; questions au maître d'œuvre */
+.dce-depot { display: block; margin: 10px 0; padding: 12px; border: 2px dashed var(--bord); border-radius: 8px; cursor: pointer; }
+.dce-depot.survol { border-color: var(--texte); background: var(--retenu); }
+.dce-depot input[type=file] { display: block; margin-top: 6px; max-width: 100%; }
+.dce-pieces select { max-width: 160px; }
+.question-moe p { margin: 0 0 6px; }
+.question-moe .actions-ligne { flex-wrap: wrap; gap: 6px 14px; }
+/* Boutons d'un dialogue renvoyés à la ligne sur téléphone (sinon les premiers sortent de l'écran à gauche) */
+.modal-box .actions { flex-wrap: wrap; }
 :root { --ok-fond: #dcf3e2; --ok-texte: #1d6b31; --att-fond: #fff3d6; --att-texte: #7a4b00; --err-fond: #fde2e2; --err-texte: #9b1c1c; --retenu: #e3f0ff; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ok-fond: #183a24; --ok-texte: #8fdca6; --att-fond: #3d2f10; --att-texte: #f3cf7a; --err-fond: #451b1b; --err-texte: #f4a5a5; --retenu: #1d3150; } }
 :root[data-theme="dark"] { --ok-fond: #183a24; --ok-texte: #8fdca6; --att-fond: #3d2f10; --att-texte: #f3cf7a; --err-fond: #451b1b; --err-texte: #f4a5a5; --retenu: #1d3150; }

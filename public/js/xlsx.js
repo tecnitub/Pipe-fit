@@ -57,13 +57,14 @@ const XLSX = (() => {
     const enc = new TextEncoder(), parts = [], central = [];
     let offset = 0;
     for (const f of files) {
-      const name = enc.encode(f.name), data = enc.encode(f.data), crc = crc32(data);
+      // Données : texte ou octets ; nom : UTF-8 (drapeau 0x0800), ou octets bruts (`nomOctets`, ancien codage CP437, sans drapeau)
+      const name = f.nomOctets || enc.encode(f.name), data = f.data instanceof Uint8Array ? f.data : enc.encode(f.data), crc = crc32(data), drap = f.nomOctets ? 0 : 0x0800;
       const h = new DataView(new ArrayBuffer(30));
-      h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
+      h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, drap, true); h.setUint16(8, 0, true);
       h.setUint32(14, crc, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true); h.setUint16(26, name.length, true);
       parts.push(new Uint8Array(h.buffer), name, data);
       const c = new DataView(new ArrayBuffer(46));
-      c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true);
+      c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, drap, true);
       c.setUint32(16, crc, true); c.setUint32(20, data.length, true); c.setUint32(24, data.length, true); c.setUint16(28, name.length, true); c.setUint32(42, offset, true);
       central.push(new Uint8Array(c.buffer), name);
       offset += 30 + name.length + data.length;
@@ -101,26 +102,37 @@ const XLSX = (() => {
     const out = await new Response(new Blob([bytes]).stream().pipeThrough(ds)).arrayBuffer();
     return new Uint8Array(out);
   }
-  async function unzip(buf) {
+  // Noms des entrées : UTF-8 si le drapeau 0x0800 est mis (ou si les octets en sont de l'UTF-8 valide), sinon l'ancien codage
+  // DOS CP437 des archives faites par l'explorateur de Windows (« N° » = 4E F8)
+  const CP437 = 'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■\u00a0';
+  function nomEntree(octets, drapeaux) {
+    if (drapeaux & 0x0800) return new TextDecoder().decode(octets);
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(octets); } catch (e) { return Array.from(octets, o => (o < 128 ? String.fromCharCode(o) : CP437[o - 128])).join(''); }
+  }
+  async function unzip(buf, messageErreur) {
+    if (buf instanceof Uint8Array) buf = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
     const u8 = new Uint8Array(buf), dv = new DataView(buf);
     let eocd = -1;
     for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
-    if (eocd < 0) throw new Error('Ce fichier n\'est pas un classeur Excel (.xlsx) valide.');
+    if (eocd < 0) throw new Error(messageErreur || 'Ce fichier n\'est pas un classeur Excel (.xlsx) valide.');
     const count = dv.getUint16(eocd + 10, true);
     let p = dv.getUint32(eocd + 16, true);
     const files = {}, dec = new TextDecoder();
     for (let n = 0; n < count; n++) {
       if (dv.getUint32(p, true) !== 0x02014b50) break;
-      const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+      const flags = dv.getUint16(p + 8, true), method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
       const nameLen = dv.getUint16(p + 28, true), extraLen = dv.getUint16(p + 30, true), comLen = dv.getUint16(p + 32, true);
       const local = dv.getUint32(p + 42, true);
-      const name = dec.decode(u8.subarray(p + 46, p + 46 + nameLen));
+      const name = nomEntree(u8.subarray(p + 46, p + 46 + nameLen), flags);
       const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
       files[name] = { method, data: u8.subarray(start, start + csize) };
       p += 46 + nameLen + extraLen + comLen;
     }
+    const octets = async name => { const f = files[name]; return !f ? null : f.method === 8 ? inflate(f.data) : f.method === 0 ? f.data : Promise.reject(new Error(`${name} : compression non prise en charge`)); };
     return {
       has: name => !!files[name],
+      noms: () => Object.keys(files),
+      octets,
       async text(name) {
         const f = files[name];
         if (!f) return null;
@@ -201,6 +213,6 @@ const XLSX = (() => {
     return [{ name: 'CSV', rows: rows.filter(r => r.some(c => c !== '')) }];
   }
 
-  return { build, read, readCSV, zip, masquerFusion };
+  return { build, read, readCSV, zip, unzip, masquerFusion };
 })();
 if (typeof module !== 'undefined') module.exports = XLSX;
