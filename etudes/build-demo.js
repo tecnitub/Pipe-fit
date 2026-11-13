@@ -15,7 +15,7 @@ const logo = `data:image/png;base64,${fs.readFileSync(path.join(root, 'doe', 'pu
 const avecLogo = s => s.replace(/(["'])logo-tecnitub\.png\1/g, `$1${logo}$1`);
 // Fichiers partagés servis par le serveur Études (voir PARTAGES dans etudes/server.js)
 const PARTAGES = { 'shared/pdf.js': 'public/js/pdf.js', 'shared/pdf-lib.min.js': 'doe/public/vendor/pdf-lib-1.17.1.min.js',
-  ...Object.fromEntries(['pdf-lecture.js', 'cctp-lecture.js', 'xlsx.js', 'xls.js', 'inventaire-cvc.js', 'materiel-retenu.js', 'fiches-tech.js', 'essais.js', 'planches.js'].map(f => [`shared/${f}`, `public/js/${f}`])) };
+  ...Object.fromEntries(['ocr.js', 'pdf-lecture.js', 'cctp-lecture.js', 'xlsx.js', 'xls.js', 'inventaire-cvc.js', 'materiel-retenu.js', 'fiches-tech.js', 'essais.js', 'planches.js'].map(f => [`shared/${f}`, `public/js/${f}`])) };
 
 const html = read('etudes/public/index.html');
 const body = html.slice(html.indexOf('>', html.indexOf('<body')) + 1, html.indexOf('</body>'));
@@ -30,6 +30,8 @@ const page = [
   `<style>\n${read('doe/public/css/doe.css')}\n${read('etudes/public/css/etudes.css')}\n.bandeau-demo { font-size: 12px; background: #fde68a; color: #713f12; padding: 3px 10px; border-radius: 6px; }\n</style>`,
   avecLogo(markup),
   inlineScript("document.body.classList.add('deconnecte');"),
+  // Lecture des caractères (CCTP scannés) : fichiers Tesseract publiés avec la démo du CRM (vendor/tesseract/)
+  ...(cleCrm ? [inlineScript("window.OCR_MODELE_JS = 'fra-traineddata.js';")] : []),
   ...(cleCrm ? [inlineScript(`window.PIPEFIT_CRM_KEY = ${JSON.stringify(cleCrm)};`)] : []),
   inlineScript(read('server/demo-images.js')),
   inlineScript(`window.DemoSeed = (function (module) {\n${read('server/demo.js')}\nreturn module.exports;\n})({});`),

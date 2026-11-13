@@ -9,25 +9,40 @@ async function lireClasseur(fichier) {
   return /\.csv$/i.test(fichier.name) ? XLSX.readCSV(buf) : XLSX.read(buf);
 }
 
+// Lignes d'un PDF : texte du document ; s'il n'y en a pas (scan, « Imprimer en PDF » d'images), lecture des caractères
+// (OCR, sur l'appareil) des pages sans texte — longue : environ 5 à 10 s par page
+async function lignesPdf(fichier, progression, pagesMax) {
+  const r = await PdfLecture.lire(fichier, progression, { pagesMax, ocr: false });
+  if (r.lignes.join('').replace(/\s/g, '').length >= 300 || typeof OCR === 'undefined') return r.lignes;
+  const n = Math.min(r.pages || pagesMax, pagesMax);
+  if (typeof confirmer === 'function' && !(await confirmer(`${fichier.name} ne contient pas de texte (document scanné ou imprimé en PDF). Lire ses ${n} page(s) par reconnaissance des caractères ? Compter environ ${Math.max(1, Math.round(n * 7 / 60))} min ; la lecture se fait sur cet ordinateur, rien n'est envoyé.`, 'Lire les pages'))) return r.lignes;
+  return (await PdfLecture.lire(fichier, p => progression(typeof p === 'number' ? `lecture des caractères ${Math.round(p * 100)} %` : p), { pagesMax, ocr: true })).lignes;
+}
+// CCTP en plusieurs fichiers (parties A, B, C…) : textes mis bout à bout dans l'ordre des noms, puis lus comme un seul CCTP
+async function lireCctp(fichiers, progression) {
+  const lignes = [];
+  for (const f of [...fichiers].sort((a, b) => String(a.name).localeCompare(String(b.name), 'fr', { numeric: true }))) {
+    if (!/\.pdf$/i.test(f.name) && f.type !== 'application/pdf') throw new Error(`${f.name} : le CCTP se lit en PDF.`);
+    lignes.push(...await lignesPdf(f, p => progression(`${f.name} : ${typeof p === 'number' ? `${Math.round(p * 100)} %` : p}`), 400));
+  }
+  if (lignes.join('').replace(/\s/g, '').length < 300) throw new Error(`${[...fichiers].map(f => f.name).join(', ')} : pas de texte lisible (document scanné) ; demandez le PDF d'origine.`);
+  const analyse = CctpLecture.analyser(lignes), reseaux = InventaireCVC.reseauxCctp(analyse);
+  // Tableaux d'équipements écrits dans le CCTP (liste des repères, carnet des CTA…)
+  const annexe = InventaireCVC.tableauEquipements(lignes.map(l => String(l).split('\t')), 'Tableau du CCTP');
+  return { items: InventaireCVC.depuisCctp(analyse.equipements, reseaux, analyse.articlesDetail), reseaux, annexe };
+}
+
 // Lecture d'un fichier : CCTP → équipements des articles (et tableaux d'équipements du texte) ; DPGF → lignes d'ouvrages ;
 // annexe → tableau des équipements (repère, local, débit, puissance)
 async function lireDossier(fichier, nature, progression) {
   const pdf = /\.pdf$/i.test(fichier.name) || fichier.type === 'application/pdf';
   if (nature === 'annexe') {
-    if (pdf) { const { lignes } = await PdfLecture.lire(fichier, progression, { pagesMax: 120, ocr: false }); return { items: [], annexe: InventaireCVC.tableauEquipements(lignes.map(l => String(l).split('\t')), `Annexe ${fichier.name}`) }; }
+    if (pdf) { const lignes = await lignesPdf(fichier, progression, 120); return { items: [], annexe: InventaireCVC.tableauEquipements(lignes.map(l => String(l).split('\t')), `Annexe ${fichier.name}`) }; }
     const feuilles = await lireClasseur(fichier);
     return { items: [], annexe: feuilles.flatMap(f => InventaireCVC.tableauEquipements(f.rows || [], `Annexe ${fichier.name}`)) };
   }
-  if (nature === 'cctp') {
-    if (!pdf) throw new Error(`${fichier.name} : le CCTP se lit en PDF.`);
-    const { lignes } = await PdfLecture.lire(fichier, progression, { pagesMax: 250, ocr: false });
-    if (lignes.join('').replace(/\s/g, '').length < 300) throw new Error(`${fichier.name} : pas de texte lisible (document scanné) ; demandez le PDF d'origine.`);
-    const analyse = CctpLecture.analyser(lignes), reseaux = InventaireCVC.reseauxCctp(analyse);
-    // Tableaux d'équipements écrits dans le CCTP (liste des repères, carnet des CTA…)
-    const annexe = InventaireCVC.tableauEquipements(lignes.map(l => String(l).split('\t')), 'Tableau du CCTP');
-    return { items: InventaireCVC.depuisCctp(analyse.equipements, reseaux, analyse.articlesDetail), reseaux, annexe };
-  }
-  if (pdf) { const { lignes } = await PdfLecture.lire(fichier, progression, { pagesMax: 120, ocr: false }); return InventaireCVC.depuisDpgfTexte(lignes); }
+  if (nature === 'cctp') return lireCctp([fichier], progression);
+  if (pdf) return InventaireCVC.depuisDpgfTexte(await lignesPdf(fichier, progression, 120));
   const feuilles = await lireClasseur(fichier);
   // Feuille qui donne le plus d'équipements
   const lus = feuilles.map(f => InventaireCVC.depuisDpgf(f.rows || [])).sort((a, b) => b.items.length - a.items.length);
@@ -43,7 +58,7 @@ function dialogueInventaire(et) {
   const b = Modal.open(`<h2>📑 CCTP et DPGF</h2>
     <p class="muted petit">Les producteurs, émetteurs et auxiliaires du dossier de consultation sont reconnus puis vérifiés ici : le schéma de principe et l'alimentation électrique en sont préremplis. CCTP en PDF ; DPGF en Excel, CSV ou PDF.</p>
     ${docs.length ? `<fieldset><legend>Documents du chantier ${esc(a.code || '')} dans Pipe-Fit</legend>${docs.map(d => `<label class="case"><input type="checkbox" data-doc="${esc(d.id)}" checked> ${esc(d.nom)} <span class="badge pf">${{ dpgf: 'DPGF', cctp: 'CCTP', annexe: 'Annexe' }[natureDe(d.nom)]}</span></label>`).join('')}</fieldset>` : ''}
-    <div class="grille-champs"><label>CCTP (PDF)<input type="file" id="inv-cctp" accept=".pdf,application/pdf"></label><label>DPGF (Excel, CSV ou PDF)<input type="file" id="inv-dpgf" accept=".xls,.xlsx,.csv,.pdf"></label>
+    <div class="grille-champs"><label>CCTP (PDF ; plusieurs fichiers si le CCTP est en parties)<input type="file" id="inv-cctp" accept=".pdf,application/pdf" multiple></label><label>DPGF (Excel, CSV ou PDF)<input type="file" id="inv-dpgf" accept=".xls,.xlsx,.csv,.pdf"></label>
       <label>Liste des équipements / annexe (PDF, Excel, CSV) <span class="muted petit">facultatif : repères, locaux, débits, puissances</span><input type="file" id="inv-annexe" accept=".xls,.xlsx,.csv,.pdf"></label></div>
     <p id="inv-etat" class="petit muted"></p>
     <div class="actions">${(et.inventaire || []).length ? '<button class="secondaire" id="inv-actuel">Revoir l\'inventaire enregistré</button>' : ''}<button class="secondaire" id="inv-x">Annuler</button><button id="inv-lire">Lire</button></div>`);
@@ -58,8 +73,8 @@ function dialogueInventaire(et) {
       const d = docs.find(x => x.id === cb.dataset.doc);
       sources.push({ nature: natureDe(d.nom), charger: async () => { const r = await fetch(`/api/pf/fichier/${encodeURIComponent(d.fichierId)}`); if (!r.ok) throw new Error(`${d.nom} : fichier indisponible`); return new File([await r.blob()], d.nom, { type: d.mime || '' }); } });
     }
-    const fc = b.querySelector('#inv-cctp').files[0], fd = b.querySelector('#inv-dpgf').files[0], fa = b.querySelector('#inv-annexe').files[0];
-    if (fc) sources.push({ nature: 'cctp', charger: async () => fc });
+    const fc = [...b.querySelector('#inv-cctp').files], fd = b.querySelector('#inv-dpgf').files[0], fa = b.querySelector('#inv-annexe').files[0];
+    if (fc.length) sources.push({ nature: 'cctp', fichiers: fc });
     if (fd) sources.push({ nature: 'dpgf', charger: async () => fd });
     if (fa) sources.push({ nature: 'annexe', charger: async () => fa });
     if (!sources.length) return toast('Choisissez le CCTP et / ou le DPGF.');
@@ -67,9 +82,10 @@ function dialogueInventaire(et) {
     const cctp = [], dpgf = [], resC = [], resD = [], annexe = [], erreurs = [], lus = { cctp: false, dpgf: false };
     for (const s of sources) {
       try {
-        const f = await s.charger();
+        const f = s.fichiers ? { name: s.fichiers.map(x => x.name).join(', ') } : await s.charger();
         etat(`Lecture de ${f.name}…`);
-        const r = await lireDossier(f, s.nature, p => etat(`Lecture de ${f.name}… ${typeof p === 'number' ? `${Math.round(p * 100)} %` : p || ''}`));
+        const suivi = p => etat(`Lecture de ${f.name}… ${typeof p === 'number' ? `${Math.round(p * 100)} %` : p || ''}`);
+        const r = s.fichiers ? await lireCctp(s.fichiers, suivi) : await lireDossier(f, s.nature, suivi);
         (s.nature === 'cctp' ? cctp : dpgf).push(...r.items); (s.nature === 'cctp' ? resC : resD).push(...(r.reseaux || [])); annexe.push(...(r.annexe || []));
         if (s.nature !== 'annexe') lus[s.nature] = true;
       } catch (e) { erreurs.push(e.message); }
