@@ -1,7 +1,23 @@
 # Studio Diaporama
 
-Logiciel de montage de diaporamas et de petites vidéos, **en un seul fichier** (`index.html`).
-Rien à installer : double-cliquer sur `index.html` pour l'ouvrir dans Chrome, Edge ou Firefox.
+Logiciel de montage de diaporamas et de petites vidéos.
+
+## Installation sur Windows
+
+Double-cliquer sur **`StudioDiaporama-Setup-x.y.z.exe`** et suivre l'assistant (aucun droit administrateur).
+Une icône « Studio Diaporama » est créée sur le bureau et dans le menu Démarrer ; l'application s'ouvre dans sa
+propre fenêtre (Microsoft Edge en mode application, présent sur Windows 10/11) et fonctionne **sans connexion**
+(polices incluses). Les projets `.diapo` s'ouvrent par double-clic. « Enregistrer » et « Exporter la vidéo »
+demandent où ranger le fichier. Désinstallation : Paramètres Windows › Applications.
+**Mise à jour** : relancer un Setup plus récent.
+
+Obtenir l'installateur : onglet **Actions** du dépôt GitHub → dernière exécution « Installateur Windows »
+→ *Artifacts* → `StudioDiaporama-Setup`, ou le construire avec `bash installer/build-diaporama.sh`
+(Linux/macOS : paquets `nsis` et `gcc-mingw-w64-x86-64`, accès à Internet pour récupérer les polices).
+Version : `diaporama/VERSION`.
+
+Sans installation : `index.html` s'ouvre aussi directement dans Chrome, Edge ou Firefox
+(les polices des thèmes viennent alors d'Internet).
 
 ## Démarrage : l'assistant « Quel diaporama voulez-vous créer ? »
 

@@ -1,5 +1,5 @@
 # Tests + construction de l'installateur Windows à chaque envoi.
-# Les fichiers PipeFitCRM-Setup-x.y.z.exe et AtelierPDF-Setup-x.y.z.exe sont téléchargeables dans l'onglet Actions > exécution > Artifacts.
+# Les fichiers PipeFitCRM-Setup-x.y.z.exe, AtelierPDF-Setup-x.y.z.exe et StudioDiaporama-Setup-x.y.z.exe sont téléchargeables dans l'onglet Actions > exécution > Artifacts.
 name: Installateur Windows
 
 on:
@@ -38,3 +38,14 @@ jobs:
           path: |
             dist/AtelierPDF-Setup-*.exe
             dist/AtelierPDF.html
+      # Studio Diaporama : installateur Windows (polices intégrées) et version « un seul fichier »
+      - run: bash installer/build-diaporama.sh
+        env:
+          ATELIERPDF_CERT_PFX_BASE64: ${{ secrets.ATELIERPDF_CERT_PFX_BASE64 }}
+          ATELIERPDF_CERT_PASSWORD: ${{ secrets.ATELIERPDF_CERT_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StudioDiaporama-Setup
+          path: |
+            dist/StudioDiaporama-Setup-*.exe
+            dist/StudioDiaporama.html

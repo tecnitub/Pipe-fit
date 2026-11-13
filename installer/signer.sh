@@ -7,5 +7,5 @@ f="$1"
 horodatage=(-t "${ATELIERPDF_HORODATAGE:-http://timestamp.sectigo.com}")
 [ "${ATELIERPDF_HORODATAGE:-}" = "aucun" ] && horodatage=()
 osslsigncode sign -pkcs12 "$ATELIERPDF_CERT_PFX" -pass "${ATELIERPDF_CERT_PASSWORD:-}" \
-  -n "Atelier PDF" -i "https://www.tecnitub.com" "${horodatage[@]}" -in "$f" -out "$f.signe"
+  -n "${SIGNATURE_NOM:-Atelier PDF}" -i "https://www.tecnitub.com" "${horodatage[@]}" -in "$f" -out "$f.signe"
 mv -f "$f.signe" "$f"

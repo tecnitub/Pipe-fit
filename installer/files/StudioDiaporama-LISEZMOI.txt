@@ -1,0 +1,48 @@
+﻿STUDIO DIAPORAMA - Mode d'emploi
+================================
+
+Studio Diaporama crée des diaporamas et de petits films avec vos photos,
+vos vidéos, du texte et de la musique. Tout se fait sur ce PC, sans
+connexion : aucune photo n'est envoyée sur Internet.
+
+DÉMARRER
+  Icône « Studio Diaporama » du bureau ou du menu Démarrer.
+  L'application s'ouvre dans sa propre fenêtre (Microsoft Edge).
+
+CRÉER UN DIAPORAMA D'ANNIVERSAIRE (ou autre occasion)
+  1. Au démarrage, cliquez sur « Anniversaire » (ou Mariage, Naissance,
+     Voyage, Fête, Noël, Fête des mères/pères, Retraite, Hommage, Autre).
+  2. Saisissez le prénom, l'âge, votre message et la signature.
+  3. « Choisir des photos » : sélectionnez vos photos et vidéos
+     (Ctrl+A dans le dossier pour toutes les prendre).
+  4. « Créer mon diaporama » : titre, âge, photos, message de fin et
+     musique « Joyeux anniversaire » sont prêts. Appuyez sur Lecture.
+  Le bouton « Nouveau » relance cet assistant.
+
+MODIFIER
+  - Cliquez sur une diapo à gauche : titre, texte, position, taille,
+    couleur, animation (machine à écrire…), durée, transition.
+  - Glissez les diapos dans la liste pour changer leur ordre.
+  - Onglet « Thèmes » : 23 ambiances (ballons, neige, cinéma, néon…).
+  - Onglet « Bande-son » : importez vos musiques (mp3, wav…) ou ajoutez
+    une musique intégrée. Plusieurs musiques peuvent jouer ensemble ;
+    glissez les blocs bleus dans la frise pour les décaler.
+    « Caler les diapos » ajuste la durée des photos à la musique.
+
+ENREGISTRER ET REPRENDRE PLUS TARD
+  « Enregistrer » (ou Ctrl+S) crée un fichier .diapo qui contient tout :
+  photos, textes, musiques. Double-cliquez sur ce fichier pour le rouvrir.
+  Ctrl+Maj+S : enregistrer sous un autre nom.
+
+FAIRE LA VIDÉO
+  « Exporter la vidéo » : choisissez où enregistrer le fichier MP4, puis
+  laissez la fenêtre ouverte et visible pendant l'export (il dure autant
+  que le diaporama). La vidéo se lit sur téléphone, télé, WhatsApp, etc.
+
+RACCOURCIS
+  Espace : lecture / pause     Flèches gauche / droite : -1 s / +1 s
+  Ctrl+S : enregistrer         Ctrl + molette sur la frise : zoom
+
+DÉSINSTALLER
+  Menu Démarrer > Studio Diaporama > Désinstaller, ou Paramètres Windows >
+  Applications. Vos projets .diapo et vos vidéos ne sont pas supprimés.

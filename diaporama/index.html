@@ -191,7 +191,7 @@ aside{background:var(--panel);overflow:auto;min-height:0}
       <h2>Quel diaporama voulez-vous <span>créer</span> ?</h2>
       <p class="lead">Choisissez l'occasion : le thème, la musique et les diapos de titre sont préparés pour vous. Tout reste modifiable ensuite.</p>
       <div class="occ" id="occ"></div>
-      <div class="wfoot"><button id="wSkip">Partir d'un projet vide</button></div>
+      <div class="wfoot"><button id="wOpen">Ouvrir un projet enregistré…</button><button id="wSkip">Partir d'un projet vide</button></div>
     </div>
     <div id="w2" hidden>
       <h2 id="w2t">Anniversaire</h2>
@@ -1021,10 +1021,25 @@ function pickMime(){
   const c = ['video/mp4;codecs="avc1.42E01E,mp4a.40.2"','video/mp4;codecs=avc1,opus','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
   return c.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
 }
-function exportVideo(){
+/* Choix de l'emplacement du fichier (Edge / Chrome) ; sinon téléchargement classique */
+const nomFichier = () => ((S.slides.find(s=>s.title)||{}).title || 'diaporama').replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/g,' ').trim().slice(0,60) || 'diaporama';
+async function choisirFichier(nom, desc, mime, ext){
+  if (!window.showSaveFilePicker) return null;
+  try { return await showSaveFilePicker({ suggestedName: nom, types:[{ description: desc, accept: { [mime]: ['.'+ext] } }] }); }
+  catch(e){ return e.name==='AbortError' ? 'annule' : null; }
+}
+async function ecrireFichier(handle, blob, nom){
+  if (handle){ const w = await handle.createWritable(); await w.write(blob); await w.close(); return handle.name; }
+  nom = nom.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^\x20-\x7e]/g,'_').replace(/\s*!\s*(?=\.)/,'');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nom; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 60000); return nom;
+}
+async function exportVideo(){
   if (!S.slides.length) return toast('Ajoutez des diapos avant d\'exporter');
   if (!window.MediaRecorder || !cv.captureStream) return toast('Votre navigateur ne permet pas l\'export (essayez Chrome ou Edge)');
   const mime = pickMime(); const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+  const handle = await choisirFichier(nomFichier()+'.'+ext, 'Vidéo '+ext.toUpperCase(), 'video/'+ext, ext);
+  if (handle==='annule') return;
   const m = document.createElement('div'); m.id='modal';
   m.innerHTML = `<div class="box"><h3>Export en cours…</h3>
     <p class="hint">La vidéo est enregistrée en temps réel (${fmt(total())}). Gardez cet onglet ouvert et visible jusqu'à la fin.</p>
@@ -1036,12 +1051,12 @@ function exportVideo(){
   const rec = new MediaRecorder(stream, Object.assign({ videoBitsPerSecond: W*H>1.5e6 ? 12e6 : 7e6, audioBitsPerSecond: 192000 }, mime?{mimeType:mime}:{}));
   const chunks = []; let cancelled = false;
   rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-  rec.onstop = () => {
+  rec.onstop = async () => {
     clearInterval(iv); m.remove(); vs.getTracks().forEach(t=>t.stop());
     if (cancelled) return toast('Export annulé');
     const blob = new Blob(chunks, {type: mime || 'video/webm'});
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `diaporama.${ext}`; document.body.appendChild(a); a.click(); a.remove();
-    toast(`Vidéo exportée (${(blob.size/1048576).toFixed(1)} Mo, ${ext.toUpperCase()})`);
+    try { const nom = await ecrireFichier(handle, blob, nomFichier()+'.'+ext); toast(`Vidéo enregistrée : ${nom} (${(blob.size/1048576).toFixed(1)} Mo)`); }
+    catch(e){ toast('Impossible d\'écrire la vidéo : '+e.message); }
   };
   const iv = setInterval(()=>{ const p = Math.min(100, P.t/total()*100); $('#xbar').style.width = p+'%'; $('#xtxt').textContent = Math.floor(p)+' %'; }, 200);
   $('#xcancel').onclick = () => { cancelled = true; P.onEnd = null; pause(); rec.stop(); };
@@ -1055,13 +1070,15 @@ function exportVideo(){
    ENREGISTRER / OUVRIR UN PROJET (.diapo)
    ================================================================ */
 const toData = blob => new Promise(r=>{ const f=new FileReader(); f.onload=()=>r(f.result); f.readAsDataURL(blob); });
-async function saveProject(){
-  toast('Préparation du fichier…');
+let projetHandle = null;
+async function saveProject(sous){
+  if (!projetHandle || sous){ const h = await choisirFichier(nomFichier()+'.diapo', 'Projet Studio Diaporama', 'application/json', 'diapo'); if (h==='annule') return; projetHandle = h; }
+  toast('Enregistrement…');
   const slides = []; for (const s of S.slides){ const o = {type:s.type,name:s.name,dur:s.dur,title:s.title,text:s.text,pos:s.pos,size:s.size,tr:s.tr,anim:s.anim,kb:s.kb,fit:s.fit,seed:s.seed,color:s.color,trim:s.trim,vol:s.vol}; if (s.blob) o.data = await toData(s.blob); slides.push(o); }
   const tracks = []; for (const t of S.tracks){ const o = {name:t.name,start:t.start,vol:t.vol,fin:t.fin,fout:t.fout,loop:t.loop,trim:t.trim,mute:t.mute,gen:t.gen}; if (!t.gen && t.blob) o.data = await toData(t.blob); tracks.push(o); }
   const json = JSON.stringify({app:'studio-diaporama', v:1, theme:S.theme, format:`${W}x${H}`, slides, tracks});
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([json],{type:'application/json'})); a.download = 'mon-diaporama.diapo'; document.body.appendChild(a); a.click(); a.remove();
-  toast('Projet enregistré');
+  try { const nom = await ecrireFichier(projetHandle, new Blob([json],{type:'application/json'}), nomFichier()+'.diapo'); toast('Projet enregistré : '+nom); }
+  catch(e){ projetHandle = null; toast('Enregistrement impossible : '+e.message); }
 }
 async function openProject(file){
   try {
@@ -1075,7 +1092,7 @@ async function openProject(file){
       if (t.gen){ const buf = await genMusic(t.gen); addTrack(Object.assign({}, t, {buffer:buf})); }
       else if (t.data){ const blob = await (await fetch(t.data)).blob(); blob.name = t.name; await addAudioFile(blob, t); }
     }
-    S.sel = S.slides[0]?.id || null; P.t = 0;
+    S.sel = S.slides[0]?.id || null; P.t = 0; projetHandle = null;
     await ensureFont(); refreshAll(); refreshTracks(); toast('Projet ouvert');
   } catch(e){ toast('Ce fichier n\'est pas un projet Studio Diaporama'); }
 }
@@ -1098,7 +1115,7 @@ $('#bStop').onclick = () => { pause(); seek(0); };
 $('#seek').oninput = e => seek(e.target.value/1000*total());
 $('#selFormat').onchange = e => setFormat(e.target.value);
 $('#bExport').onclick = exportVideo;
-$('#bSave').onclick = saveProject;
+$('#bSave').onclick = () => saveProject(false);
 $('#bOpen').onclick = () => $('#fProj').click();
 $('#fProj').onchange = e => { if (e.target.files[0]) openProject(e.target.files[0]); e.target.value=''; };
 $('#bFull').onclick = () => { const st=$('#stage'); (st.requestFullscreen ? st.requestFullscreen() : Promise.reject()).catch(()=>toast('Plein écran indisponible')); };
@@ -1122,6 +1139,7 @@ document.addEventListener('drop', e=>{ if (!e.dataTransfer.files.length) return;
   else if ($('#wiz').hidden) addFiles(e.dataTransfer.files); });
 
 document.addEventListener('keydown', e=>{
+  if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='s'){ e.preventDefault(); saveProject(e.shiftKey); return; }
   if (e.target.matches('input,textarea,select') || !$('#wiz').hidden) return;
   if (e.code==='Space'){ e.preventDefault(); P.playing ? pause() : play(); }
   else if (e.key==='ArrowRight') seek(P.t+1);
@@ -1239,8 +1257,9 @@ async function wizCreate(){
   $('#wGo').disabled = false; $('#wGo').textContent = 'Créer mon diaporama';
   toast(WZ.files.length ? 'Diaporama prêt ! Appuyez sur Lecture.' : 'Diaporama prêt ! Ajoutez vos photos avec « Photos / vidéos ».');
 }
-$('#bNew').onclick = openWizard;
+$('#bNew').onclick = () => { projetHandle = null; openWizard(); };
 $('#wSkip').onclick = () => { $('#wiz').hidden = true; };
+$('#wOpen').onclick = () => { $('#wiz').hidden = true; $('#fProj').click(); };
 $('#wBack').onclick = () => { $('#w1').hidden = false; $('#w2').hidden = true; };
 $('#wPhotos').onclick = () => $('#wFiles').click();
 $('#wFiles').onchange = e => { WZ.files.push(...e.target.files); e.target.value=''; const n=WZ.files.length; $('#wCount').textContent = `${n} fichier${n>1?'s':''} sélectionné${n>1?'s':''}`; };
@@ -1256,7 +1275,13 @@ S.slides.push(
 );
 S.sel = S.slides[0].id;
 refreshAll(); refreshTracks();
-openWizard();
+/* Projet transmis par le lanceur Windows (double-clic sur un fichier .diapo) */
+const projetJoint = document.getElementById('diapo-projet');
+if (projetJoint){
+  $('#wiz').hidden = true;
+  fetch('data:application/json;base64,'+projetJoint.textContent.trim()).then(r=>r.blob()).then(openProject);
+  projetJoint.remove();
+} else openWizard();
 document.fonts.ready.then(()=>ensureFont()).then(()=>{ refreshList(); draw(); if (!$('#wiz').hidden && $('#w2').hidden) openWizard(); });
 </script>
 </body>
