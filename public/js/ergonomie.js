@@ -93,13 +93,40 @@ const Ergonomie = (() => {
     racine.querySelectorAll('.table-wrap').forEach(w => {
       if (w.closest('.modal, .dp-preview')) return;
       w.classList.remove('tw-plein');
-      if (w.scrollWidth <= w.clientWidth + 1) w.classList.add('tw-plein');
+      // Largeur du tableau lui-même (la poignée de largeur des colonnes dépasse de quelques pixels)
+      const t = w.querySelector(':scope > table');
+      if (t && t.offsetWidth <= w.clientWidth + 1) w.classList.add('tw-plein');
+    });
+  }
+
+  /* ---------- Barres d'actions du téléphone : actions secondaires repliées derrière « Plus d'actions » ---------- */
+  const SEUIL_ACTIONS = 4;
+  function barres(racine) {
+    if (!mobile()) return;
+    racine.querySelectorAll('.toolbar:not(.tb-vue)').forEach(tb => {
+      tb.classList.add('tb-vue');
+      const actions = [...tb.children].filter(x => x.matches('button, a.btn') && !x.hidden && !x.classList.contains('tb-plus'));
+      if (actions.length <= SEUIL_ACTIONS) return;
+      // Gardés en vue : le retour (« ← … »), puis les actions principales (boutons pleins), au plus trois en tout
+      let gardes = 0;
+      actions.forEach((x, i) => {
+        const garde = (i === 0 && /^\s*←/.test(x.textContent)) || (!x.classList.contains('secondary') && !x.classList.contains('danger') && gardes < 3);
+        if (garde) { gardes++; x.classList.add('tb-garde'); }
+      });
+      const caches = actions.filter(x => !x.classList.contains('tb-garde')).length;
+      if (caches < 2) { actions.forEach(x => x.classList.add('tb-garde')); return; }
+      const plus = document.createElement('button');
+      plus.type = 'button'; plus.className = 'secondary tb-plus'; plus.setAttribute('aria-expanded', 'false');
+      plus.innerHTML = `⋯ Plus d'actions <span class="count">${caches}</span>`;
+      plus.onclick = () => { const o = tb.classList.toggle('tb-ouvert'); plus.setAttribute('aria-expanded', String(o)); plus.firstChild.textContent = o ? '▴ Moins d\'actions ' : '⋯ Plus d\'actions '; };
+      tb.classList.add('tb-repli');
+      tb.appendChild(plus);
     });
   }
 
   /* ---------- Passage après chaque affichage (écran, dialogue, partie réaffichée) ---------- */
   let prevu = 0;
-  function passer() { prevu = 0; champs(document.body); tableaux(document.getElementById('app') || document.body); }
+  function passer() { prevu = 0; champs(document.body); barres(document.getElementById('app') || document.body); tableaux(document.getElementById('app') || document.body); }
   function planifier() { if (!prevu) prevu = requestAnimationFrame(passer); }
 
   function demarrer() {
