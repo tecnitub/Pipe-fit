@@ -42,6 +42,12 @@ une seule fois dans la console.
 - **Suivi de commande** : numéro + e-mail, frise des étapes, numéro de suivi transporteur.
 - **Administration** (`/admin`) : commandes (statut, suivi transporteur, note interne), demandes de devis et plans joints.
 
+## Démonstration sans serveur
+
+`node boutique/build-demo.js` produit `dist/boutique-demo/` : la boutique (`index.html`) et l'administration (`admin.html`)
+en pages autonomes, avec un serveur simulé dans le navigateur (`demo-backend.js`). Commandes et devis restent sur
+l'appareil, avec deux exemples marqués « Exemple » ; tout mot de passe ouvre l'administration. Utile pour tester sur téléphone.
+
 ## Prix
 
 Tout le calcul est dans `catalogue.js`, partagé par le navigateur (affichage) et le serveur (qui recalcule chaque
