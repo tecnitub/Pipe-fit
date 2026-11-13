@@ -126,6 +126,7 @@ function tableauInventaire(et, inv, erreurs, reseaux = [], info = {}) {
   // Gros équipements d'abord (production, CTA, caissons, ECS, splits), puis le reste ; variantes et moins-values à part
   const GROUPES = [['Gros équipements — production, CTA, caissons, ECS', x => !x.variante && (x.categorie === 'producteur' || x.principal)],
     ['Émetteurs', x => !x.variante && !x.principal && x.categorie === 'emetteur'], ['Auxiliaires', x => !x.variante && !x.principal && x.categorie === 'auxiliaire'],
+    ['Appareils sanitaires (points de puisage)', x => !x.variante && !x.principal && x.categorie === 'sanitaire'],
     ['Variantes, options et moins-values (non retenues par défaut)', x => !!x.variante]];
   const nb = r => inv.filter(x => x.reseau === r.id && x.inclus !== false).length;
   const optReseaux = v => `<option value="">—</option>${reseaux.map(r => `<option value="${esc(r.id)}" ${r.id === v ? 'selected' : ''}>${esc(r.nom.slice(0, 40))}</option>`).join('')}`;
@@ -156,7 +157,7 @@ function tableauInventaire(et, inv, erreurs, reseaux = [], info = {}) {
         ${InventaireCVC.aVerifier(x).length ? `<br>${InventaireCVC.aVerifier(x).map(v => `<span class="${v.conflit ? 'avert' : ''}">⚠ ${esc(v.libelle)} : ${esc(v.texte)}</span>`).join('<br>')}<br><label class="case petit"><input type="checkbox" data-i="${i}" data-k="verifie" ${x.verifie ? 'checked' : ''}> valeurs vérifiées</label>` : ''}</td></tr>`).join('')}` : ''; }).join('')}
     </tbody></table></div>
     <div class="actions"><button class="secondaire" id="ti-x">Fermer</button><button class="secondaire" id="ti-ok">Enregistrer l'inventaire</button>
-      <button data-creer="pid">🗺️ Créer le schéma de principe</button><button data-creer="aero">🌬️ Créer le schéma aéraulique et les CTA</button><button data-creer="terminaux">🌀 Créer les terminaux</button><button data-creer="elec">⚡ Créer l'alimentation électrique et la régulation</button></div>`;
+      <button data-creer="pid">🗺️ Créer le schéma de principe</button><button data-creer="aero">🌬️ Créer le schéma aéraulique et les CTA</button><button data-creer="terminaux">🌀 Créer les terminaux</button><button data-creer="elec">⚡ Créer l'alimentation électrique et la régulation</button>${inv.some(x => x.genre === 'sanitaire' && x.inclus !== false) ? '<button data-creer="sanitaire">🚰 Créer le calcul sanitaire</button>' : ''}</div>`;
   const b = Modal.open(rendu());
   b.classList.add('large');
   const lier = () => {
@@ -235,6 +236,16 @@ function creerCalculInventaire(et, quoi) {
     n.commentaire = `Terminaux repris du dossier de consultation : locaux, puissances, batteries et vannes à vérifier.${alertes.length ? ` À vérifier : ${alertes.join(' ')}` : ''}`;
     et.notes.push(n);
     return aller(n, `${appareils.length} terminal(aux) repris du dossier.`, alertes);
+  }
+  if (quoi === 'sanitaire') {
+    // Appareils sanitaires du dossier → points de puisage (un par appareil) ; production d'ECS citée en commentaire
+    const { points, alertes, ecs } = InventaireCVC.versSanitaire(inv);
+    if (!points.length) return toast('Aucun appareil sanitaire (lavabo, WC, douche, évier…) dans l\'inventaire.');
+    const n = marquer(nouvelleNote('sanitaire', { ...Notes.defauts('sanitaire'), points }));
+    n.titre = 'Eau froide et eau chaude sanitaires — d\'après le CCTP / DPGF';
+    n.commentaire = `Appareils repris du dossier de consultation : tronçons, salles et étages à compléter.${ecs.length ? ` Production d'ECS du dossier : ${ecs.join(' ; ')}.` : ''}`;
+    et.notes.push(n);
+    return aller(n, `${points.length} point(s) de puisage repris du dossier.`, alertes);
   }
   if (quoi === 'elec') {
     const lignes = InventaireCVC.versElec(inv), reg = InventaireCVC.versRegulation(inv).entrees;

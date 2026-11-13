@@ -422,3 +422,102 @@ test('DPGF sans libellé de désignation, codes « 2,1.1 », plafond réglementa
     eq('2.6.3', 'Robinet avec bouton poussoir ECS', 'Robinet temporisé alimenté en eau chaude sanitaire.')]);
   assert.deepStrictEqual(items.map(x => x.designation), ['Chaudière murale gaz']);
 });
+
+// CCTP en texte libre : intertitres en capitales dans un long article, puces de police à symboles (caractères de contrôle),
+// groupes énumérés du type de l'article, renvoi et titre d'accessoire sans équipement
+const CCTP_LIBRE = ['1 VENTILATION', '1.1 VENTILATION DES BUREAUX', 'Extraction dans les locaux humides.',
+  '1.1.1 VENTILATEUR D\'EXTRACTION', '\x01 Caissons de ventilation en faux plafond.', '\x01 1 groupe pour accueil (archives, sanitaires) et étage (bureaux)',
+  '\x01 Débit maxi : 450 m3/h', 'Marque ACME modèle CX 600 ou équivalent', '\x01 1 groupe pour salle de réunion et office', '\x01 Débit maxi : 380 m3/h',
+  '1.1.2 REJET', 'VMC RDC :', 'Rejet en façade en sortie du caisson d\'extraction, grille pare-pluie.',
+  '2 PLOMBERIE', '2.3 PRODUCTION EAU CHAUDE', '2.3.1 LOCAL ENTRETIEN', 'Production par le ballon de la PAC décrite plus loin (voir chapitre « CHAUFFAGE »)',
+  '3 CHAUFFAGE', '3.1 ZONE ATELIERS', 'POMPE A CHALEUR', 'Fourniture et pose d\'une PAC air / eau de marque ACME.',
+  'UNITE EXTERIEURE NON REVERSIBLE', 'Puissance calorifique nominale sans résistance = 14 kW. COP = 3,9', 'MODULE HYDRAULIQUE', 'Résistance électrique : 2 KW',
+  'BALLON ECS DEPORTE', 'Ballon de marque ACME ou équivalent', '\x02 Capacité : 150 litres (environ trois douches quotidiennes)', 'ACCESSOIRES', 'Thermostat.',
+  'PLANCHER CHAUFFANT BASSE TEMPERATURE', 'Tube PER 16/20 sous chape.', '3.2 CHAUFFAGE DES GARAGES', 'AEROTHERMES', 'Aérothermes hélicoïdes ACME, batterie électrique, résistance blindée.',
+  'COMMANDES ET REGULATION', 'Commande par thermostat d\'ambiance pour :', '2 aérothermes (garage A)', '1 aérotherme (garage B)',
+  '3.4 PSE : CLIMATISATION DU LOCAL SERVEUR', '3.4.1 UNITE EXTERIEURE REVERSIBLE', 'Pfroid= 2.2 KW', '3.4.2 UNITE MURALE', 'Unité murale ACME.'];
+test('CCTP en texte libre : intertitres en capitales, puces à symboles, groupes énumérés, renvoi et rejet sans équipement', () => {
+  const a = CL.analyser(CCTP_LIBRE), ic = I.depuisCctp(a.equipements, I.reseauxCctp(a), a.articlesDetail);
+  assert.deepStrictEqual(ic.map(x => [x.genre, x.sources[0], x.qte]), [['ventilateur', 'CCTP art. 1.1.1', 1], ['ventilateur', 'CCTP art. 1.1.1', 1], ['pac-air', 'CCTP art. 3.1', 1],
+    ['ecs', 'CCTP art. 3.1', 1], ['plancher', 'CCTP art. 3.1', 1], ['aerotherme', 'CCTP art. 3.2', 2], ['aerotherme', 'CCTP art. 3.2', 1], ['split', 'CCTP art. 3.4.1', 1], ['split', 'CCTP art. 3.4.2', 1]]);
+  assert.deepStrictEqual(ic.filter(x => x.genre === 'ventilateur').map(x => x.Q), [450, 380]);
+  assert.match(ic[0].designation, /^Groupe pour accueil \(archives, sanitaires\) et étage/);
+  assert.strictEqual(ic[2].P, 14, 'puissance « sans résistance » : la machine');
+  assert.strictEqual(ic[3].carac.volume, 150, 'capacité annoncée comme telle');
+  assert.ok(ic.filter(x => x.genre === 'aerotherme').every(x => x.alim === 'electrique'));
+  assert.strictEqual(ic[7].Pfr, 2.2);
+});
+
+// DPGF en feuilles par chapitre (n° sur les titres seulement), puces « – » et « → », désignation continuée après « avec »
+const DPGF_FEUILLES = [
+  { name: '1', rows: [['ITEM', 'DESIGNATION DU POSTE', 'Unité', 'Qté'], [], ['1', 'VENTILATION'], ['', ' - Rejet en toiture :'], ['', '     - Chapeau DN 200 + étanchéité', 'Nbr', 1], [],
+    ['', ' - Groupe ACME compact 500, équivalent', 'Nbr', 2], ['', '    - Suspensions, manchettes souples'], [], ['', ' - Bouton poussoir temporisé', 'Ens', 2]] },
+  { name: '3', rows: [['ITEM', 'DESIGNATION DU POSTE', 'Unité', 'Qté'], ['3', 'CHAUFFAGE'], ['3.1', 'ZONE ATELIERS'], ['', '– Unité extérieure chauffage seul ACME-12 + support', 'Nbr', 1],
+    ['', '– Module hydraulique ACME-M', 'Nbr', 1], ['', '– Ballon déporté ACME-150 avec'], ['', '   Résistance électrique et sonde de température', 'Nbr', 1],
+    ['', '– Aquastat de sécurité plancher chauffant', 'Nbr', 1], ['', '– Mise en route PAC par fabricant', 'Ens', 1],
+    ['3.2', 'CHAUFFAGE DES GARAGES'], ['', '→ Aérotherme électrique :'], ['', '    - ACME série X, P=2-3 KW', 'Nbr', 3], ['', '    - Kit support mural', 'Nbr', 3], ['', '    - Contact à feuillure sur porte', 'Nbr', 4]] },
+  { name: '4', rows: [['ITEM', 'DESIGNATION DU POSTE', 'Unité', 'Qté'], ['3.3', 'PSE : CLIMATISATION DU LOCAL SERVEUR'], ['', 'Ensemble des prestations suivant CCTP, comprenant :'],
+    ['', '    - Unité extérieure réversible (Pf=2,2KW)', 'Nbr', 1], ['', '    - Unité intérieure murale', 'Nbr', 1]] },
+];
+test('DPGF par chapitres : unité extérieure « chauffage seul » de PAC, ballon continué après « avec », accessoires et mise en route écartés ; recoupement avec le CCTP', () => {
+  const d = I.depuisFeuilles(DPGF_FEUILLES).items;
+  assert.deepStrictEqual(d.map(x => [x.genre, x.qte]), [['ventilateur', 2], ['regulation', 2], ['pac-air', 1], ['ecs', 1], ['aerotherme', 3], ['split', 1], ['split', 1]]);
+  assert.strictEqual(d[0].designation.replace(/\s*\(\d\)$/, ''), 'Groupe ACME compact 500, équivalent');
+  assert.match(d[3].designation, /^Ballon déporté ACME-150 avec Résistance/);
+  assert.strictEqual(d[5].Pfr, 2.2, '« Pf = » : puissance froid');
+  assert.ok(d[5].variante && d[6].variante, 'PSE');
+  const a = CL.analyser(CCTP_LIBRE), ic = I.depuisCctp(a.equipements, I.reseauxCctp(a), a.articlesDetail);
+  const inv = I.fusionner(ic, d), deux = x => x.sources.some(s => /^CCTP/.test(s)) && x.sources.some(s => /^DPGF/.test(s));
+  // Deux caissons au CCTP, une ligne « 2 » au DPGF ; 2 + 1 aérothermes, une ligne « 3 » : chacun reçoit la ligne
+  assert.deepStrictEqual(inv.filter(x => ['ventilateur', 'aerotherme'].includes(x.genre)).map(x => [x.genre, x.qte, deux(x)]), [['ventilateur', 1, true], ['ventilateur', 1, true], ['aerotherme', 2, true], ['aerotherme', 1, true]]);
+  // PSE numérotée 3.4 au CCTP, 3.3 au DPGF : rapprochée par l'intitulé
+  assert.deepStrictEqual(inv.filter(x => x.genre === 'split').map(deux), [true, true]);
+  assert.ok(inv.find(x => x.genre === 'pac-air' && deux(x)) && inv.find(x => x.genre === 'ecs' && deux(x)));
+});
+
+test('DPGF à long préambule : en-tête lointaine, n° sans intitulé, sous-chapitres « A/ », rooftop sur plusieurs lignes, tubes radiants gaz, rideau d\'air, liaisons', () => {
+  const rows = [...Array.from({ length: 55 }, (_, i) => ['', `Clause du préambule n° ${i + 1}`]), ['', 'Description', 'Unité', 'Qté', 'Prix unitaire', 'Prix partiel'], [],
+    ['1', 'TRAITEMENT D\'AIR DU MAGASIN'], ['A/', 'ROOFTOP'], ['', 'Rooftop posé sur costière en toiture'], ['', 'de marque ACME modèle RT 40 (imposé)'], ['', ' - 5200 m³/h '],
+    ['', ' - Pfroid : 31,5 KW'], ['', ' - Pchaud : 20,4 KW + 12 KW batterie électrique chaud'], ['', 'et options :'], ['', ' - sonde de CO2'], ['', ' - DAD'],
+    ['', 'raccordements laissés en attente', 'Ens', 1], [], ['', 'Manutention par grutage'], ['', '(en deux temps)', 'Ens', 1], [],
+    ['', 'Liaison électrique entre rooftop et sondes'], ['', ' - Sonde d\'ambiance / rooftop', 'Ens', 1],
+    ['2', 'CHAUFFAGE DE L\'ATELIER'], ['A', 'TUBES RAYONNANTS GAZ'], ['', 'Tubes radiants gaz ACME'], ['', 'tel que défini au CCTP'], ['', ' - Modèle R 12 (8/11 KW)', 'Nb', 3],
+    ['3', 'RIDEAU D\'AIR'], ['', 'Rideau d\'air chaud électrique ACME'], ['', 'de puissance 6 KW électrique'], ['', 'longueur 150 cm', 'Ens', 1],
+    ['4', 'DIVERS'], ['', 'DN 50 (passage alimentation VMC)', 'u', 1], ['', ' - entre unité extérieure et unités intérieures', 'Ens', 1]];
+  const d = I.depuisDpgf(rows);
+  assert.ok(!d.erreur, d.erreur);
+  assert.deepStrictEqual(d.items.map(x => [x.genre, x.qte, x.sources[0]]), [['cta', 1, 'DPGF 1.A'], ['radiant', 3, 'DPGF 2.A'], ['aerotherme', 1, 'DPGF 3']]);
+  const [rt, tr, ra] = d.items;
+  assert.deepStrictEqual([rt.Q, rt.Pfr, rt.P, rt.details.PelBe, !!rt.variante, rt.alim], [5200, 31.5, 20.4, 12, false, 'detente']);
+  assert.deepStrictEqual([tr.P, tr.alim], [11, 'gaz']);
+  assert.deepStrictEqual([ra.alim, ra.Pel], ['electrique', 6]);
+});
+
+test('petit lot : sigles à points, n° « 05.1 », extension de réseau, quantité d\'un accessoire, chauffe-eau sans tiret, appareils sanitaires et calcul sanitaire', () => {
+  const a = CL.analyser(['7.4.2.1 APPAREIL DE V.M.C. HYGROREGLABLE', 'Groupe simple flux hygroréglable de marque ACME.', '• bouches d\'extraction dans pièces : 3 unités dans la salle',
+    '7.5.3.1 MODIFICATION ET EXTENSION DU RESEAU VMC', 'Extension du réseau de VMC existant, 2 bouches.', '7.5.2.3 CUVETTE DE WC SUR BATI SUPPORT', 'Cuvette suspendue.',
+    '7.5.2.4 VASQUE SUR MEUBLE', 'Vasque en céramique.', '7.5.2.6 BARRE ET ENSEMBLE DE DOUCHE', 'Barre de douche.', '6.4 CHAUFFE EAU de 50 LITRES', '1 chauffe eau de 50 litres 1,5 kW monophasé.']);
+  const ic = I.depuisCctp(a.equipements, I.reseauxCctp(a), a.articlesDetail);
+  assert.deepStrictEqual(ic.map(x => [x.genre, x.sources[0], x.qte]), [['ventilateur', 'CCTP art. 7.4.2.1', 1], ['sanitaire', 'CCTP art. 7.5.2.3', 1], ['sanitaire', 'CCTP art. 7.5.2.4', 1], ['ecs', 'CCTP art. 6.4', 1]]);
+  const L = (n, des, u = '', q = '') => [n, '', des, u, '', q];
+  const d = I.depuisDpgf([['N°', 'Ref.', 'Désignation', 'U', '', 'Qté'], L('07.4.2.1', 'APPAREIL DE V.M.C. HYGROREGLABLE', 'u', 1), L('07.5.3.1', 'MODIFICATION ET EXTENSION DU RESEAU VMC', 'u', 1),
+    L('07.5.2.3', 'CUVETTE DE WC SUR BATI SUPPORT', 'u', 2), L('07.5.2.4', 'VASQUE SUR MEUBLE', 'u', 2), L('07.5.2.5', 'RECEVEUR DE DOUCHE', 'u', 1), L('07.5.2.6', 'BARRE ET ENSEMBLE DE DOUCHE', 'ens', 1)]).items;
+  assert.deepStrictEqual(d.map(x => x.genre), ['ventilateur', 'sanitaire', 'sanitaire', 'sanitaire']);
+  const inv = I.fusionner(ic, d);
+  assert.ok(inv.filter(x => ['ventilateur', 'sanitaire'].includes(x.genre) && x.sources.some(s => /^CCTP/.test(s))).every(x => x.rapprochement === 'numero'), 'n° « 07.4.2.1 » = « 7.4.2.1 »');
+  assert.strictEqual(inv.find(x => x.genre === 'ventilateur').qte, 1, '« 3 unités » : les bouches, pas le groupe');
+  const s = I.versSanitaire(inv);
+  assert.deepStrictEqual(s.points.map(p => [p.rep, p.type]), [['WC-01', 'wc'], ['WC-02', 'wc'], ['LV-01', 'lavabo'], ['LV-02', 'lavabo'], ['DO-01', 'douche']]);
+  assert.deepStrictEqual(s.ecs.length, 1);
+  assert.deepStrictEqual(['Attentes EF / EU lave linge', 'Distributeur de papier WC', 'Bouche d\'extraction WC', 'Robinet de puisage DN 15', 'Lave-mains PMR'].map(t => (I.classer(t) || {}).genre),
+    ['sanitaire', undefined, 'bouche-extraction', 'sanitaire', 'sanitaire']);
+  assert.deepStrictEqual(['Attentes EF / EU lave linge', 'Robinet de puisage DN 15', 'Lave-mains PMR', 'Vidoir porte-seau', 'Urinoir'].map(I.appareilSanitaire), ['lavelinge', 'puisage', 'laveMains', 'videSeau', 'urinoir']);
+});
+
+test('DPGF : ligne « suivant CCTP » sous un titre numéroté, prise du titre ; puissance au libellé le plus proche', () => {
+  const L = (code, des, u = '', q = '') => [code, des, u, q];
+  const d = I.depuisDpgf([['Code', 'Désignation', 'Unité', 'Quantité'], L('2.1', 'Installation'), L('2,1.3', 'Ventilation mécanique du local technique'), L('', 'suivant CCTP', 'Ens', 1),
+    L('2.6', 'Production ECS'), L('2,6.3', 'Robinet avec bouton poussoir ECS'), L('', 'Suivant CCTP', 'U', 3)]).items;
+  assert.deepStrictEqual(d.map(x => [x.genre, x.qte]), [['ventilateur', 1]]);
+  assert.deepStrictEqual(I.puissances('Pfroid : 9,5 KW - Pchaud : 7,2 KW'), { Pfr: 9.5, Pch: 7.2 });
+});

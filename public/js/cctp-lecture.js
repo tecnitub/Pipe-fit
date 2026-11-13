@@ -19,20 +19,20 @@ const CctpLecture = (() => {
     [/rooftop/, '3.1', 'RT'], [/chaudiere/, '3.1', 'CH'],
     [/^ventilations? (?:du |des |de la )?(?:locale?s?|locaux)\b/, '3.5', 'EXT'],
     [/centrales? de traitement d'air|\bcta\b|centrales? (?:d'air )?(?:de (?:vmc|ventilation) )?(?:double flux|de soufflage)|\bvmc double flux|caissons? double flux/, '3.4', 'CTA'], [/desenfumage/, '3.6', 'DSF'],
-    [/\bvmc\b|ventilation mecanique|caisson d'(?:extraction|insufflation)/, '3.5', 'VMC'], [/extracteur|tourelle|caisson (?:d'extraction|de ventilation)|hotte/, '3.5', 'EXT'],
-    [/split|detente directe|unites? (?:exterieures?|interieures?)|groupes? de condensation|\b(?:drv|vrv|vrf)\b/, '3.3', 'SPL'],
-    [/ventilo-?convecteur|cassette/, '3.2', 'VC'], [/radiateur/, '3.2', 'RAD'], [/aerotherme|aero-?chauffeur/, '3.2', 'AER'], [/plancher chauffant|plafonds? rayonnants?|panneaux? rayonnants?/, '3.2', 'EM'],
+    [/\bvmc\b|ventilation mecanique|caisson d'(?:extraction|insufflation)/, '3.5', 'VMC'], [/extracteur|tourelle|caisson (?:d'extraction|de ventilation)|ventilateurs? d'(?:extraction|insufflation)|groupes? (?:moto-?ventilateurs?|(?:de |d')?(?:ventilation|vmc|extraction))|hotte/, '3.5', 'EXT'],
+    [/split|detente directe|unites? (?:exterieures?|interieures?|murales?)|groupes? de condensation|\b(?:drv|vrv|vrf)\b/, '3.3', 'SPL'],
+    [/ventilo-?convecteur|cassette/, '3.2', 'VC'], [/radiateur/, '3.2', 'RAD'], [/aerotherme|aero-?chauffeur|rideaux? d'air/, '3.2', 'AER'], [/plancher chauffant|plafonds? rayonnants?|panneaux? rayonnants?|tubes? (?:radiants?|rayonnants?)/, '3.2', 'EM'],
     [/circulateurs?|pompes? (?:de circulation|doubles?|simples?|de relevage|de bouclage)|surpresseur|groupe de (?:surpression|maintien)/, '3.7', 'P'],
     [/vases? d'expansion/, '3.7', 'VE'], [/vannes? (?:3|trois) voies|\bv3v\b/, '3.7', 'V3V'], [/vannes? (?:2|deux) voies|\bv2v\b/, '3.7', 'V2V'],
     [/echangeur/, '3.7', 'ECH'], [/pot de decantation|desemboueur|filtre a tamis|filtre magnetique/, '3.7', 'FLT'], [/compteur/, '3.7', 'CPT'],
     [/robinetterie|vannes? d'equilibrage|vannes? d'isolement|clapet/, '3.7', 'V'],
-    [/disconnecteur/, '3.9', 'DIS'], [/adoucisseur/, '3.9', 'ADO'], [/ballon|preparateur|chauffe-eau|cumulus|production d'eau chaude|\becs\b/, '3.9', 'BAL'],
-    [/appareils sanitaires|lavabo|\bwc\b|douche|evier/, '3.9', 'SAN'],
+    [/disconnecteur/, '3.9', 'DIS'], [/adoucisseur/, '3.9', 'ADO'], [/ballon|preparateur|chauffe[- ]?eau|cumulus|production d'eau chaude|\becs\b/, '3.9', 'BAL'],
+    [/appareils sanitaires|lavabo|lave-?mains|vasque|\bwc\b|cuvette|urinoir|vidoir|douche|receveur|evier|baignoire|bidet/, '3.9', 'SAN'],
     [/tuyauteries?|reseaux? (?:hydrauliques?|d'eau|vapeur|process|eau glacee|eau chaude)|canalisations?/, '3.8', 'RES'],
   ];
   // Articles de prescriptions générales : jamais des équipements (mais gardés dans la liste de contrôle)
   const GENERAL = /generalit|principes? generaux|principe general|objet du|consistance|normes?\b|reglementa|prescriptions? (?:generales|communes)|textes|documents? (?:a fournir|d'execution)|limites? de prestation|garantie|nettoyage|repli|reception|\bdoe\b|dossier des ouvrages|plan(?:s)? d'execution|planning|hygiene|securite|essais|mise en service|calorifug|peinture|reperage|etiquet|formation|maintenance|\bcontroles?\b|base de calcul|hypothese|definition|presentation|sommaire/;
-  const typeDe = titre => { const t = norm(titre); return GENERAL.test(t) ? null : (TYPES.find(([re]) => re.test(t)) || null); };
+  const typeDe = titre => { const t = norm(titre).replace(/\b(?:[a-z]\.){2,}[a-z]?\.?/g, a => a.replace(/\./g, '')); return GENERAL.test(t) ? null : (TYPES.find(([re]) => re.test(t)) || null); };
   // Type et texte qui l'a fait reconnaître (« panneaux rayonnants » dans « … les corps de chauffe sont des panneaux rayonnants »)
   const objetDe = texte => { const t = norm(texte); for (const ty of TYPES) { const m = ty[0].exec(t); if (m) return { type: ty, objet: m[0] }; } return null; };
   const PREFIXES = '(TFP|PAC|GF|RT|CH|CTA|DSF|VMC|EXT|SPL|UE|UI|VC|RAD|AER|P|PO|CI|VE|V3V|V2V|ECH|FLT|CPT|DIS|ADO|BAL|TA|CE|CR)';
@@ -62,7 +62,8 @@ const CctpLecture = (() => {
   const LIGATURE2 = /([A-Za-zÀ-ÿ]{3,}) sa (ons?)\b/g; // « Clima sa on » : deux « ti » perdus
   function reparer(lignes) {
     // « Ɵ », « Ʃ » : glyphes des ligatures « ti », « tt » de certaines polices, tel que pdf.js le rend (« restauraƟon »)
-    let L = lignes.map(x => String(x ?? '').normalize('NFKC').replace(/Ɵ/g, 'ti').replace(/Ʃ/g, 'tt'));
+    // Puces de polices à symboles sans correspondance (caractères de contrôle, zone privée « \uf0a7 ») : une puce « • »
+    let L = lignes.map(x => String(x ?? '').normalize('NFKC').replace(/Ɵ/g, 'ti').replace(/Ʃ/g, 'tt').replace(/^(\s*)[\x00-\x08\x0b\x0c\x0e-\x1f\uf000-\uf0ff]+\s*/, '$1• ').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, ' '));
     // Exposant écrit sur sa propre ligne (« 3 » au-dessus de « 2 290 m /h ») : unité recollée, ligne de l'exposant retirée
     L = L.filter((l, i) => !(/^[\s\t23]+$/.test(l) && /\bm \/ ?[hs]\b/.test(L[i + 1] || ''))).map(l => l.replace(/\bm \/ ?h\b/g, 'm³/h'));
     const n =L.reduce((s, l) => s + (l.match(LIGATURE) || []).length + (l.match(LIGATURE2) || []).length, 0);
@@ -72,8 +73,8 @@ const CctpLecture = (() => {
   // Numéro d'article seul sur sa ligne, titre à la ligne suivante : réunis
   // En-têtes et pieds de page (lignes courtes répétées sur beaucoup de pages, « Page 16/70 ») : retirés pour ne pas couper
   // un titre d'article de son numéro
-  // Pied de page : « Page 16/70 », « … Page : 27 », « Dossier n° … Page - 15 »
-  const PIED = /^page \d+\s*\/\s*\d+$|^.{0,80}\bpage\s*[:\-]?\s*\d{1,3}(?:\s*\/\s*\d{1,3})?$/i;
+  // Pied de page : « Page 16/70 », « … Page : 27 », « Dossier n° … Page - 15 », « … Page 12. »
+  const PIED = /^page \d+\s*\/\s*\d+$|^.{0,80}\bpage\s*[:\-]?\s*\d{1,3}(?:\s*\/\s*\d{1,3})?\.?$/i;
   function sansEntetes(L) {
     const n = new Map(), cle = l => String(l).replace(/\s+/g, ' ').trim();
     L.forEach(l => { const k = cle(l); if (k && k.length < 120) n.set(k, (n.get(k) || 0) + 1); });
@@ -123,16 +124,17 @@ const CctpLecture = (() => {
   // Équipements énumérés dans le texte d'un article (« 1 pompe double de circulation … type … : » puis « Puissance absorbée :
   // 850 W », « Débit = 9 m3/h ») : un équipement par énumération, ses caractéristiques sur les lignes qui suivent ; la
   // phrase qui l'annonce nomme son circuit (« Le circuit alimentant les panneaux rayonnants sera équipé »)
-  const PUCE = /^(?:[-–•➢▪●*]|o(?=\s))\s*/;
+  const PUCE = /^(?:[-–−•➢▪●*✓□→⇒]|o(?=\s))\s*/;
   // Nombre en chiffres, ou en lettres derrière une puce (« - deux vases … ») : pas « une centrale … » au fil d'une phrase
-  const ENUM = /^(?:[-–•➢▪●*]\s*(\d{1,3}|une?|deux|trois|quatre)|(\d{1,3}))\s+(?:x\s+)?((?:pompes?|circulateurs?|vases?|ballons?|chauffe-eau|preparateurs?|aerothermes?|aero-?chauffeurs?|centrales?|caissons?|extracteurs?|unites?|cassettes?|ventilo-?convecteurs?|groupes?|chaudieres?|echangeurs?|adoucisseurs?|surpresseurs?|thermofrigopompes?)\b.*)$/;
+  const ENUM = /^(?:(?:[-–•➢▪●*]|\.(?=\s))\s*(\d{1,3}|une?|deux|trois|quatre)|(\d{1,3}))\s+(?:x\s+)?((?:pompes?|circulateurs?|vases?|ballons?|chauffe[- ]?eau|preparateurs?|aerothermes?|aero-?chauffeurs?|centrales?|caissons?|extracteurs?|unites?|cassettes?|ventilo-?convecteurs?|groupes?|chaudieres?|echangeurs?|adoucisseurs?|surpresseurs?|thermofrigopompes?)\b.*)$/;
   const CARAC = /^(?:[-–•➢▪●*]\s*)?(?:puissances?|p ?(?:calo|abs|elec|froid|chaud)\w*|debits?|pressions?|hmt|hauteur|tension|intensite|capacite|volume|contenance|regime|marque|type|modele|reference|alimentation|niveau|rendement|cop|scop|eer|seer|temperature|vitesse|frigorigene|fluide|poids|dimensions?)\b/;
   const NOMBRES = { un: 1, une: 1, deux: 2, trois: 3, quatre: 4 };
-  function enumeres(corps) {
+  // type : celui de l'article (« Ventilateur d'extraction ») ; « 1 groupe pour le RDC … » sans autre nom en est un
+  function enumeres(corps, type = null) {
     const out = [];
     for (let i = 0; i < corps.length; i++) {
       const m = ENUM.exec(norm(corps[i]));
-      const o = m && objetDe(m[3].slice(0, 80));
+      const o = m && (objetDe(m[3].slice(0, 80)) || (type && /^(?:groupes?|caissons?|unites?|centrales?)\b(?!\s+(?:de\s+)?(?:securite|electrogene))/.test(m[3]) ? { type, objet: m[3].split(/\s/)[0] } : null));
       if (!o || ['RES', 'V', 'FLT', 'CPT', 'SAN'].includes(o.type[2])) continue;
       const lignes = [corps[i]];
       let j = i + 1;
@@ -146,7 +148,8 @@ const CctpLecture = (() => {
       const avant = i > 0 ? corps[i - 1] : '';
       const circuit = /\b(?:circuits?|reseaux?|alimentant|departs?|boucles?|bouclage|primaire|secondaire)\b/.test(norm(avant)) && !ENUM.test(norm(avant)) && avant.length < 160
         ? avant.replace(/\s+(?:ser(?:a|ont)\s+(?:[ée]quip|muni)|comprendr?a\b|comportera\b).*$/i, '').replace(/^(?:le|la|les|chaque)\s+/i, '').trim() : '';
-      const nom = corps[i].replace(PUCE, '').replace(/^(?:\d{1,3}|une?|deux|trois|quatre)\s+(?:x\s+)?/i, '').split(/,\s|\s:\s*$/)[0].trim();
+      // Nom : jusqu'à la première virgule hors parenthèses (« groupe pour le RDC (accueil, bureaux) et l'étage »)
+      const nom = corps[i].replace(PUCE, '').replace(/^\.\s+/, '').replace(/^(?:\d{1,3}|une?|deux|trois|quatre)\s+(?:x\s+)?/i, '').split(/,\s(?![^()]*\))|\s:\s*$/)[0].trim();
       out.push({ type: o.type, objet: o.objet, quantite: NOMBRES[m[1]] || +(m[1] || m[2]) || 1, texte: lignes.join(' '), nom, designation: `${nom.charAt(0).toUpperCase()}${nom.slice(1, 90)}${circuit ? ` — ${circuit}` : ''}`, circuit });
       i = j - 1;
     }
@@ -271,11 +274,36 @@ const CctpLecture = (() => {
     // Titre de réseau, d'électricité ou de régulation : l'équipement cité dans son texte n'est pas l'objet de l'article
     // Prestation, accessoire ou description d'ensemble (« Remplissage », « Câblage », « Spécifications techniques », « Pièges à
     // sons », « Implantation des … ») : l'équipement cité dans le texte n'est pas l'objet de l'article
-    const PAS_EQUIPEMENT = /^(?:reseaux?|gaines?|distribution|electricite|regulation|raccordements?|dispositifs? de securite|vitesses?|traitement|remplissage|cablage|specifications?|implantation|alarmes?|silencieux|pieges? a sons?|batteries?|accessoires?|armoires?|vidange|peinture|reperage|programmation|asservissement|automatisme|configuration|principes?|besoins?|architecture|supervision|vues?|analyse|fonctionnement|robinetterie|tuyauteries?|isolation|fourreaux?|protections?|dispositions?|ventilations? (?:basse|haute)|evacuations?|condensats?|supports?|fixations?|attentes?|etiquetage|commande)/;
+    const PAS_EQUIPEMENT = /^(?:reseaux?|gaines?|distribution|electricite|regulation|raccordements?|dispositifs? de securite|vitesses?|traitement|remplissage|cablage|specifications?|implantation|alarmes?|silencieux|pieges? a sons?|batteries?|accessoires?|armoires?|vidange|peinture|reperage|programmation|asservissement|automatisme|configuration|principes?|besoins?|architecture|supervision|vues?|analyse|fonctionnement|robinetterie|tuyauteries?|isolation|fourreaux?|protections?|dispositions?|ventilations? (?:basse|haute)|evacuations?|condensats?|supports?|fixations?|attentes?|etiquetage|commande|rejets?|prises? d'air|entrees? d'air|bouches?|grilles?|alimentations?|variations?)/;
     // Titre d'émission ou de terminaux (« Émission de chauffage des locaux ») : l'émetteur nommé au texte compte aussi
     const EMISSION = /^(?:emission|emetteurs?|terminaux|corps de chauffe|chauffage (?:des|du|de la)|diffusion)/;
-    // Équipements : articles d'équipement (titre reconnu), un par repère trouvé, sinon une ligne à numéroter
+    // Article sans titre d'équipement (« Zone A ») décrivant plusieurs équipements sous des intertitres en capitales
+    // non numérotés (« POMPE A CHALEUR », « BALLON ECS », « PLANCHER CHAUFFANT … ») : un article par intertitre reconnu ;
+    // un intertitre non reconnu (« MODULE HYDRAULIQUE », « ACCESSOIRES ») complète celui qui le précède, et l'unité
+    // extérieure qui suit une pompe à chaleur en fait partie
+    const INTERTITRE = l => l.length >= 5 && l.length <= 70 && /^[A-ZÀ-Ý]/.test(l) && !/[a-zà-ÿ]/.test(l) && (l.match(/[A-ZÀ-Ý]/g) || []).length >= 5 && !/:\s*$/.test(l) && !PUCE.test(l);
+    const decoupes = [];
     for (const a of tous) {
+      if (general(a) || typeDe(a.titre) || GENERAL.test(norm(a.titre))) { decoupes.push(a); continue; }
+      const blocs = [];
+      // Intertitre reconnu : l'équipement en est le sujet, nommé en tête (« BALLON ECS … », pas « ORGANES DE REGULATION DE LA CTA »)
+      // Intertitre repéré par une lettre ou un chiffre (« B - ROOFTOPS », « A/ UNITE MURALE ») : repère retiré
+      const sansRepere = l => l.replace(/^(?:[A-Z]|\d{1,2})\s*[-–/.)]\s*/, '');
+      a.corps.forEach((l, k) => { if (INTERTITRE(l)) { const ty = typeDe(l), en = ty && ty[0].exec(norm(sansRepere(l)).replace(/^(?:les?|la|l'|des)\s*/, '')); blocs.push({ k, titre: l, type: en && en.index === 0 && !['RES', 'SAN', 'V', 'FLT', 'CPT'].includes(ty[2]) ? ty : null }); } });
+      if (!blocs.some(b => b.type)) { decoupes.push(a); continue; }
+      const debut = blocs[0].k, sous = [];
+      blocs.forEach((b, n) => {
+        const fin = n + 1 < blocs.length ? blocs[n + 1].k : a.corps.length, prec = sous[sous.length - 1];
+        const corps = a.corps.slice(b.k + 1, fin), brut = a.brut.slice(b.k + 1, fin);
+        const partie = prec && (!b.type || (b.type[2] === 'SPL' && prec.type[1] === '3.1' && /unites? exterieures?/.test(norm(b.titre))));
+        if (partie) { prec.corps.push(b.titre, ...corps); prec.brut.push(b.titre, ...brut); return; }
+        const tt = sansRepere(b.titre);
+        if (b.type) sous.push({ num: a.num, titre: `${tt.charAt(0)}${tt.slice(1).toLowerCase()}`, corps, brut, type: b.type });
+      });
+      decoupes.push({ ...a, corps: a.corps.slice(0, debut), brut: a.brut.slice(0, debut) }, ...sous);
+    }
+    // Équipements : articles d'équipement (titre reconnu), un par repère trouvé, sinon une ligne à numéroter
+    for (const a of decoupes) {
       if (general(a)) continue;
       const corps = a.corps.join(' ');
       // Titre non parlant (« Compensation Cuisine », « Extraction Locaux techniques ») : gros équipement nommé au début du texte
@@ -288,21 +316,25 @@ const CctpLecture = (() => {
         const tp = parent ? typeDe(parent) : null;
         if (tp && ['3.1', '3.4', '3.5', '3.6'].includes(tp[1])) { t = tp; titre = `${parent.charAt(0)}${parent.slice(1).toLowerCase()}`; }
       }
-      if (!t && a.num.split('.').length >= 3 && !PAS_EQUIPEMENT.test(norm(a.titre)) && !GENERAL.test(norm(a.titre))) {
+      // Article qui renvoie à un autre (« … voir le chapitre X ») : rien de plus
+      const renvoi = corps.length < 400 && /\b(?:voir|cf\.?)\s+(?:le\s+|au\s+)?(?:chapitre|article|paragraphe|§|lot)/i.test(corps);
+      if (!t && !renvoi && a.num.split('.').length >= 3 && !PAS_EQUIPEMENT.test(norm(a.titre)) && !GENERAL.test(norm(a.titre))) {
         const g = objetDe(corps.slice(0, 260));
         if (g && (['3.1', '3.3', '3.4', '3.5', '3.6'].includes(g.type[1]) || (EMISSION.test(norm(a.titre)) && g.type[1] === '3.2'))) { t = g.type; objet = g.objet; }
       }
       // Équipements énumérés au texte (« 1 pompe double … », « 1 vase d'expansion … ») et blocs de caractéristiques
       // (« Modèle en recyclage : » puis « • Débit … », « • Puissance … ») : un équipement chacun
       // Un seul équipement énuméré du type de l'article (« Deux chaudières repères CH-01 et CH-02 … ») : c'est l'article lui-même
-      const en0 = GENERAL.test(norm(a.titre)) ? [] : enumeres(a.corps), en = t && en0.filter(e => e.type[2] === t[2]).length < 2 ? en0.filter(e => e.type[2] !== t[2]) : en0, bl = t ? blocsCaracteristiques(a.corps) : [];
+      const en0 = GENERAL.test(norm(a.titre)) ? [] : enumeres(a.corps, t), en = t && en0.filter(e => e.type[2] === t[2]).length < 2 ? en0.filter(e => e.type[2] !== t[2]) : en0, bl = t ? blocsCaracteristiques(a.corps) : [];
       // Pompe énumérée sans phrase qui nomme son circuit, dans un article de circuit (« Bouclage ») : le circuit de l'article
       en.forEach(e => { if (!e.circuit && e.type[2] === 'P' && /^(?:bouclage|circuits?|reseaux?|primaire|secondaire|departs?)\b/.test(norm(a.titre))) { e.circuit = a.titre.trim(); e.designation = `${e.designation} — ${e.circuit}`; } });
       en.forEach(e => r.equipements.push({ article: a.num, designation: e.designation, famille: e.type[1], prefixe: e.type[2], objet: e.objet, prescrit: prescription(e.texte), caract: '', texte: `${e.texte}${e.circuit ? ` Circuit : ${e.circuit}.` : ''}`, quantiteLue: true, repere: '', quantite: e.quantite, enumere: true, nom: e.nom, ...(e.circuit ? { circuit: e.circuit } : {}) }));
       if (!t || en.some(e => e.type[2] === t[2])) continue;
       const reps = reperes(`${a.titre} ${corps}`).filter(x => x.split('-')[0] === t[2] || (t[2] === 'P' && /^(PO|CI)-/.test(x)) || (t[2] === 'SPL' && /^(UE|UI)-/.test(x)));
       // Quantité annoncée au début de l'article (plus loin, « Nombre : 3 sur chaque gaine » parle d'un accessoire)
-      const debut = corps.slice(0, 700), q = /(?:quantit[ée]|nombre|qt[ée])\s*[:=]?\s*(\d{1,4})\b(?!\s*(?:sur|par)\s)/i.exec(debut) || /\b(\d{1,3})\s*(?:unit[ée]s?|exemplaires?|ensembles?)\b/i.exec(debut);
+      // « bouches : N unités dans la pièce » : la quantité d'un accessoire, pas celle de l'équipement
+      const debut = corps.slice(0, 700), q = /(?:quantit[ée]|nombre|qt[ée])\s*[:=]?\s*(\d{1,4})\b(?!\s*(?:sur|par)\s)/i.exec(debut)
+        || [...debut.matchAll(/\b(\d{1,3})\s*(?:unit[ée]s?|exemplaires?|ensembles?)\b/gi)].find(x => !/(?:bouches?|grilles?|entr[ée]es? d'air|diffuseurs?|vannes?|robinets?)[^.;•:]*:?[^.;•]{0,30}$/i.test(debut.slice(Math.max(0, x.index - 60), x.index)));
       const caract = [...new Set([...corps.matchAll(/(\d+(?:[.,]\d+)?)\s*kW\b/g)].map(x => `${x[1]} kW`).slice(0, 2).concat([...corps.matchAll(/(\d[\d\s]{0,6}(?:[.,]\d+)?)\s*m(?:3|³)\s*\/\s*h/g)].map(x => `${x[1].replace(/\s/g, ' ').trim()} m³/h`).slice(0, 2)))].join(' · ');
       // Régime de température cité (« régime 70/50 °C »), utile au schéma de principe de l'étude
       const reg = /(\d{1,2})\s*\/\s*(\d{1,2})\s*°\s*C\b/.exec(corps);
