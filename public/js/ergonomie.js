@@ -76,6 +76,7 @@ const Ergonomie = (() => {
     if (!t && lab) t = texte(lab);
     if (!t && el.tagName === 'SELECT' && el.options.length && el.options[0].value === '') t = el.options[0].text.replace(/^—\s*$/, '');
     if (!t) { const p = el.previousElementSibling; if (p && /^(SPAN|STRONG|B|LABEL)$/.test(p.tagName)) t = texte(p); }
+    if (!t && el.parentElement && el.parentElement.tagName === 'SPAN') t = texte(el.parentElement);
     if (t) el.setAttribute('aria-label', t.replace(/\s*[:*]\s*$/, ''));
   }
   function clavier(el) {

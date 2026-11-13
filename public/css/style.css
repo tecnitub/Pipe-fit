@@ -506,10 +506,10 @@ details.preview > .doc-print, .doc-print.feuille { max-width: 794px; margin-left
 
 /* Pastilles des personnes (avatars) et anneaux de charge */
 .av { --taille: 34px; position: relative; flex: 0 0 auto; width: var(--taille); height: var(--taille); border-radius: 50%; padding: 0; border: 2px solid var(--panel); display: inline-grid; place-items: center;
-  background: hsl(var(--h) 55% 42%); color: #fff; font-weight: 700; font-size: calc(var(--taille) * .36); letter-spacing: .02em; cursor: pointer; box-shadow: 0 1px 2px rgb(0 0 0 / 18%); transition: transform .12s; }
-.av:hover { transform: translateY(-2px) scale(1.06); background: hsl(var(--h) 55% 38%); }
+  background: hsl(var(--h) 55% 31%); color: #fff; font-weight: 700; font-size: calc(var(--taille) * .36); letter-spacing: .02em; cursor: pointer; box-shadow: 0 1px 2px rgb(0 0 0 / 18%); transition: transform .12s; }
+.av:hover { transform: translateY(-2px) scale(1.06); background: hsl(var(--h) 55% 26%); }
 .av.petit { --taille: 28px; } .av.moyen { --taille: 40px; } .av.grand { --taille: 64px; font-size: 22px; }
-.av.libre { opacity: .85; }
+.av.libre { filter: saturate(.55); }
 .av[draggable="true"] { cursor: grab; }
 .av.drag { opacity: .35; }
 .av i { position: absolute; right: -6px; bottom: -6px; font-style: normal; font-size: 13px; }
@@ -817,7 +817,7 @@ fieldset.mi-titre[hidden] { display: none; }
 .secu-mobile .small { margin: 3px 0; }
 .secu-urgences { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; margin-bottom: 8px; }
 .secu-urgences .btn { display: flex; flex-direction: column; align-items: center; padding: 8px; font-weight: 600; font-size: 1.05em; text-decoration: none; }
-.secu-urgences .btn .small { font-weight: normal; font-size: .8em; }
+.secu-urgences .btn .small { font-weight: normal; font-size: 12px; }
 .docs-mobile .fds-sans { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 10px; }
 .doc h3.doc-h, .doc-h { color: var(--doc-accent, #8f2f1a); font-size: 11pt; margin: 14px 0 6px; border-bottom: 1px solid currentColor; padding-bottom: 2px; }
 .ppsps-t th { text-align: left; width: 30%; font-weight: 600; vertical-align: top; }
