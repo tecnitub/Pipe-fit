@@ -248,7 +248,7 @@ fieldset.replie button.replier::before { transform: rotate(-90deg); }
 .titre-lignes { margin-bottom: 3px; }
 table.edit.lignes.vide thead { display: none; }
 table.edit.lignes.vide { border: 0; }
-table.edit.lignes th { vertical-align: bottom; line-height: 1.25; }
+table.edit.lignes th { vertical-align: bottom; line-height: 1.25; min-width: 6.5em; }
 table.edit.lignes .aide-i { color: #c9d6ee; }
 @media (min-width: 701px) {
   .calc-saisie .defile-x:has(> table.edit.lignes) { max-height: 70vh; overflow: auto; border-radius: 10px; }

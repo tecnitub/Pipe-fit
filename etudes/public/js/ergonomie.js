@@ -26,7 +26,7 @@
       const u = s.slice(i + 2).split(/[;,)]/)[0].trim();
       if (u && u.length <= 8 && !/\s/.test(u) && !/^(vide|ex\.?|si|«)/i.test(u)) court += ` (${u})`;
     }
-    return { court, aide: s };
+    return { court, aide: court === s ? '' : s };
   }
 
   // Groupes repliés : « type|titre du groupe », gardés sur ce poste

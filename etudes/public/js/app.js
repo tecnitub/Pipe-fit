@@ -149,10 +149,11 @@ const casesLigne = (c, col, l, i, e) => {
   return `<details class="cases-ligne"><summary>${val.length} coché(s)</summary>${opts.map(([k, lib, aide]) => `<label class="case" title="${esc(aide || '')}"><input type="checkbox" data-lcase="${c.k}.${i}.${col.k}" value="${esc(k)}" ${val.includes(k) ? 'checked' : ''}> ${esc(lib)}</label>`).join('')}</details>`;
 };
 // Libellé court (le texte complet en aide : infobulle, et affiché sous le champ quand il a le focus)
-const courtDe = l => (typeof Ergonomie !== 'undefined' ? Ergonomie.libelleCourt(l) : { court: String(l ?? ''), aide: '' });
+const courtDe = (l, max) => (typeof Ergonomie !== 'undefined' ? Ergonomie.libelleCourt(l, max) : { court: String(l ?? ''), aide: '' });
 const libelleChamp = (l, u) => { const { court, aide } = courtDe(l);
   return `<span class="lib"${aide ? ` title="${esc(aide)}"` : ''}>${esc(court)}${u ? ` <span class="unite">(${esc(u)})</span>` : ''}${aide ? '<span class="aide-i" aria-hidden="true">ⓘ</span>' : ''}</span>${aide ? `<span class="aide-texte">${esc(aide)}</span>` : ''}`; };
-const enteteColonne = l => { const { court, aide } = courtDe(l); return `<th${aide ? ` title="${esc(aide)}"` : ''} data-court="${esc(court)}">${esc(court)}${aide ? ' <span class="aide-i" aria-hidden="true">ⓘ</span>' : ''}</th>`; };
+// En-tête de colonne : libellé plus court encore (24 caractères), largeur mini selon sa longueur (au plus deux ou trois lignes)
+const enteteColonne = l => { const { court, aide } = courtDe(l, 24), mini = Math.min(12, Math.max(6.5, Math.round(court.length * 3.3) / 10)); return `<th${aide ? ` title="${esc(aide)}"` : ''} data-court="${esc(court)}" style="min-width:${mini}em">${esc(court)}${aide ? ' <span class="aide-i" aria-hidden="true">ⓘ</span>' : ''}</th>`; };
 const estReplie = (type, titre) => typeof Ergonomie !== 'undefined' && !!titre && Ergonomie.estReplie(type, titre);
 function formulaireHtml(type, e, v = {}) {
   return rubriques(type, e).map(r => `<fieldset${estReplie(type, r.titre) ? ' class="replie"' : ''}>${r.titre ? `<legend><button type="button" class="replier" data-replier="${esc(r.titre)}" data-type="${esc(type)}" aria-expanded="${!estReplie(type, r.titre)}">${esc(r.titre)}</button></legend>` : ''}<div class="grille-champs">${r.champs.map(c => {
