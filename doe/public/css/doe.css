@@ -158,3 +158,31 @@ details.equipement[open] summary { margin-bottom: 10px; }
 .pv-pf .signatures img, .pv-pf img.sig { display: block; max-width: 180px; max-height: 60px; margin-top: 4px; }
 .badge.refus { background: #fde2e1; color: #9b1c1c; }
 .nowrap { white-space: nowrap; }
+
+/* Ergonomie commune (DOE et Études) : focus clavier visible, boutons des dialogues toujours à portée,
+   cibles tactiles d'au moins 40 px et dialogues en plein écran (feuille montante) sur téléphone */
+:where(button, .btn, a, summary, [tabindex]):focus-visible { outline: 3px solid #2a6df4; outline-offset: 2px; }
+:where(input, select, textarea):focus-visible { outline: 3px solid color-mix(in srgb, #2a6df4 55%, transparent); outline-offset: 1px; border-color: #1F3864; }
+.visuel-cache { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.modal-box > .actions:last-child { position: sticky; bottom: -18px; z-index: 3; background: var(--panneau); margin: 14px -18px -18px; padding: 10px 18px 14px; border-top: 1px solid var(--bord); }
+@media (max-width: 700px) {
+  .haut { padding: 6px 12px; gap: 2px 12px; }
+  .marque span { display: none; }
+  #nav { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+  #nav a { padding: 10px 12px; white-space: nowrap; }
+  .session { font-size: 12.5px; }
+  main { padding: 10px 12px; }
+  button, .btn, select, input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]) { min-height: 40px; }
+  button.petit, .btn.petit { padding: 8px 12px; }
+  button.icone { min-width: 40px; }
+  summary { padding-block: 9px; }
+  label.case, .case { min-height: 40px; }
+  input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; }
+  #nav a, .sections a { min-height: 40px; display: flex; align-items: center; }
+  .modal { padding: 0; place-items: end stretch; }
+  .modal-box { width: 100%; max-height: 100dvh; border-radius: 14px 14px 0 0; padding: 14px; }
+  .modal-box.large { width: 100%; }
+  .modal-box > .actions:last-child { bottom: -14px; margin: 12px -14px -14px; padding: 8px 14px calc(10px + env(safe-area-inset-bottom)); }
+  .modal-box .actions button { flex: 1 1 auto; }
+  .badge, .pastille { font-size: 12px; }
+}

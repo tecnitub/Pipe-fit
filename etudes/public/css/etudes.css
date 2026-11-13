@@ -220,3 +220,81 @@ ul.af { padding-left: 18px; font-size: 13.5px; display: grid; gap: 6px; }
   .guide-actions { width: 100%; }
   .guide-actions button { flex: 1 1 auto; }
 }
+
+/* ---------- Ergonomie (ordinateur et téléphone) ---------- */
+/* Grand écran : largeur utile augmentée (tableaux de lignes, résultats à côté de la saisie) */
+@media (min-width: 1700px) { main { max-width: 1760px; } }
+.unite, .badge, .badge.estime, .pastille { font-size: 12px; }
+/* Libellés courts : le texte complet en infobulle, et sous le champ tant qu'il a le focus */
+.grille-champs label { position: relative; }
+.lib[title], th[title] { cursor: help; }
+.aide-i { color: var(--bleu); font-size: 12px; margin-left: 3px; opacity: .75; }
+.aide-texte { display: none; }
+.grille-champs label:focus-within > .aide-texte { display: block; position: absolute; z-index: 5; top: 100%; left: 0; right: 0; margin-top: 2px; padding: 6px 8px; border-radius: 6px;
+  background: var(--texte); color: var(--panneau); font-size: 12.5px; line-height: 1.35; box-shadow: 0 4px 14px rgb(0 0 0 / 25%); pointer-events: none; }
+/* Groupes de saisie repliables */
+.calc-saisie legend { padding: 0; }
+button.replier { background: none; color: var(--bleu); font-weight: 700; padding: 2px 6px; border-radius: 6px; display: inline-flex; gap: 6px; align-items: center; }
+button.replier::before { content: '▾'; font-size: .9em; transition: transform .15s; }
+button.replier:hover { background: var(--bleu-clair); filter: none; }
+fieldset.replie { padding-bottom: 4px; }
+fieldset.replie > .grille-champs { display: none; }
+fieldset.replie button.replier::before { transform: rotate(-90deg); }
+.saisie-outils { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; margin-bottom: -4px; }
+/* Tableaux de lignes : en-tête et première colonne collants, défilement dans le cadre, indice de défilement */
+.defile-x.a-droite { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), rgb(0 0 0 / 25%)); mask-image: linear-gradient(to right, #000 calc(100% - 36px), rgb(0 0 0 / 25%)); }
+.defile-x.a-gauche { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 36px), rgb(0 0 0 / 25%)); mask-image: linear-gradient(to left, #000 calc(100% - 36px), rgb(0 0 0 / 25%)); }
+.defile-x.a-gauche.a-droite { -webkit-mask-image: linear-gradient(to right, rgb(0 0 0 / 25%), #000 36px, #000 calc(100% - 36px), rgb(0 0 0 / 25%)); mask-image: linear-gradient(to right, rgb(0 0 0 / 25%), #000 36px, #000 calc(100% - 36px), rgb(0 0 0 / 25%)); }
+.titre-lignes { margin-bottom: 3px; }
+table.edit.lignes.vide thead { display: none; }
+table.edit.lignes.vide { border: 0; }
+table.edit.lignes th { vertical-align: bottom; line-height: 1.25; }
+table.edit.lignes .aide-i { color: #c9d6ee; }
+@media (min-width: 701px) {
+  .calc-saisie .defile-x:has(> table.edit.lignes) { max-height: 70vh; overflow: auto; border-radius: 10px; }
+  table.edit.lignes { overflow: visible; border-collapse: separate; border-spacing: 0; }
+  table.edit.lignes thead th { position: sticky; top: 0; z-index: 2; }
+  table.edit.lignes td:first-child { position: sticky; left: 0; z-index: 1; background: var(--panneau); box-shadow: 1px 0 0 var(--bord); }
+  table.edit.lignes thead th:first-child { left: 0; z-index: 3; }
+  table.edit.lignes tr.ligne-auto td:first-child { background: var(--att-fond); }
+}
+/* Téléphone : une carte par ligne (intitulé de la colonne au-dessus de chaque valeur) */
+@media (max-width: 700px) {
+  table.edit.lignes, table.edit.lignes tbody { display: block; border: 0; background: none; overflow: visible; }
+  table.edit.lignes thead { display: none; }
+  table.edit.lignes tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; padding: 10px; margin-bottom: 8px; border: 1px solid var(--bord); border-radius: 10px; background: var(--panneau); }
+  table.edit.lignes td { display: block; padding: 0; border: 0; min-width: 0; }
+  table.edit.lignes td::before { content: attr(data-col); display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 2px; }
+  table.edit.lignes td:first-child { grid-column: 1 / -1; }
+  table.edit.lignes td:first-child input { font-weight: 700; }
+  table.edit.lignes td.actions-l { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 4px; }
+  table.edit.lignes td.actions-l::before { display: none; }
+  table.edit.lignes input, table.edit.lignes select, table.edit.lignes td:first-child input { min-width: 0; width: 100%; }
+  .cases-ligne[open] { min-width: 0; }
+  .calc-saisie .defile-x:has(> table.edit.lignes) { overflow: visible; }
+}
+/* Schémas : barre de zoom, cadre défilant, déplacement à la souris */
+.zoom-barre { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 4px 0 6px; }
+.zoom-barre .zoom-val { min-width: 54px; text-align: center; }
+.zoom-barre button { min-width: 36px; }
+.schema.zoome, .ensemble-svg.zoome, .schema-svg.zoome { max-height: 80vh; overflow: auto; cursor: grab; }
+.glisse { cursor: grabbing !important; user-select: none; }
+@media (max-width: 700px) { .zoom-aide { display: none; } }
+/* Téléphone : actions d'un calcul regroupées dans « Plus d'actions » */
+details.plus-actions { position: relative; }
+details.plus-actions > summary { list-style: none; }
+details.plus-actions > summary::-webkit-details-marker { display: none; }
+details.plus-actions .plus-liste { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 20; display: grid; gap: 4px; width: min(340px, calc(100vw - 24px)); max-height: 60vh; overflow: auto; padding: 8px;
+  background: var(--panneau); border: 1px solid var(--bord); border-radius: 10px; box-shadow: 0 8px 28px rgb(0 0 0 / 25%); }
+details.plus-actions .plus-liste > * { text-align: left; width: 100%; }
+@media (max-width: 700px) {
+  .actions-note { position: sticky; bottom: 0; z-index: 10; background: var(--panneau); margin: 12px -16px -16px; padding: 8px 16px 10px; border-top: 1px solid var(--bord); }
+  .actions-note > button, .actions-note > details { flex: 1 1 auto; }
+  .actions-note > details > summary { width: 100%; text-align: center; }
+  .barre > .btn.petit:first-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .titre-note { flex-basis: 100%; }
+  .note-actions .case, .note-actions button { min-height: 40px; }
+  .onglets { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .onglet { white-space: nowrap; min-height: 40px; }
+  .inst-global td:first-child { min-width: 140px; }
+}

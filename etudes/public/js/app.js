@@ -148,17 +148,23 @@ const casesLigne = (c, col, l, i, e) => {
   const val = Array.isArray(l[col.k]) ? l[col.k] : (col.d || []), opts = optionsDe(col, e);
   return `<details class="cases-ligne"><summary>${val.length} coché(s)</summary>${opts.map(([k, lib, aide]) => `<label class="case" title="${esc(aide || '')}"><input type="checkbox" data-lcase="${c.k}.${i}.${col.k}" value="${esc(k)}" ${val.includes(k) ? 'checked' : ''}> ${esc(lib)}</label>`).join('')}</details>`;
 };
+// Libellé court (le texte complet en aide : infobulle, et affiché sous le champ quand il a le focus)
+const courtDe = l => (typeof Ergonomie !== 'undefined' ? Ergonomie.libelleCourt(l) : { court: String(l ?? ''), aide: '' });
+const libelleChamp = (l, u) => { const { court, aide } = courtDe(l);
+  return `<span class="lib"${aide ? ` title="${esc(aide)}"` : ''}>${esc(court)}${u ? ` <span class="unite">(${esc(u)})</span>` : ''}${aide ? '<span class="aide-i" aria-hidden="true">ⓘ</span>' : ''}</span>${aide ? `<span class="aide-texte">${esc(aide)}</span>` : ''}`; };
+const enteteColonne = l => { const { court, aide } = courtDe(l); return `<th${aide ? ` title="${esc(aide)}"` : ''} data-court="${esc(court)}">${esc(court)}${aide ? ' <span class="aide-i" aria-hidden="true">ⓘ</span>' : ''}</th>`; };
+const estReplie = (type, titre) => typeof Ergonomie !== 'undefined' && !!titre && Ergonomie.estReplie(type, titre);
 function formulaireHtml(type, e, v = {}) {
-  return rubriques(type, e).map(r => `<fieldset>${r.titre ? `<legend>${esc(r.titre)}</legend>` : ''}<div class="grille-champs">${r.champs.map(c => {
+  return rubriques(type, e).map(r => `<fieldset${estReplie(type, r.titre) ? ' class="replie"' : ''}>${r.titre ? `<legend><button type="button" class="replier" data-replier="${esc(r.titre)}" data-type="${esc(type)}" aria-expanded="${!estReplie(type, r.titre)}">${esc(r.titre)}</button></legend>` : ''}<div class="grille-champs">${r.champs.map(c => {
     if (c.t === 'lignes') {
       const lignes = e[c.k] || [], cols = colonnesDe(c, e);
-      return `<div class="large"><div class="petit muted">${esc(c.l)}</div><div class="defile-x"><table class="edit"><thead><tr>${cols.map(col => `<th>${esc(col.l)}</th>`).join('')}<th></th></tr></thead>
+      return `<div class="large"><div class="petit muted titre-lignes">${esc(c.l)}${lignes.length ? ` <span class="compte">${lignes.length}</span>` : ''}</div><div class="defile-x"><table class="edit lignes${lignes.length ? '' : ' vide'}"><thead><tr>${cols.map(col => enteteColonne(col.l)).join('')}<th><span class="visuel-cache">Actions</span></th></tr></thead>
         <tbody>${lignes.map((l, i) => `<tr${l && l._auto ? ` class="ligne-auto" title="Ligne reprise de ${esc(l._auto)}"` : ''}>${cols.map(col => `<td>${col.t === 'cases' ? casesLigne(c, col, l, i, e) : col.t === 's' ? `<select data-l="${c.k}.${i}.${col.k}"${verrou(v, `${c.k}.${i}.${col.k}`)}>${optionsHtml(optionsDe(col, e, l), l[col.k])}</select>`
           : `<input data-l="${c.k}.${i}.${col.k}" value="${esc(valeurChamp(l[col.k]))}" ${col.t === 't' ? (col.lst ? `list="${idListe(c, col)}" autocomplete="off"` : '') : 'inputmode="decimal" class="nombre"'}${verrou(v, `${c.k}.${i}.${col.k}`)}>${badgeEstime(l, col.k, v, `${c.k}.${i}.${col.k}`)}`}</td>`).join('')}
-          <td style="white-space:nowrap">${l && l._auto ? '<span class="petit muted" title="Ligne reprise d\'un autre calcul">🔗</span>' : `${c.colonnes[0].k === 'rep' ? `<button class="icone" data-dup-ligne="${c.k}.${i}" title="Dupliquer : même équipement, repère suivant ; il reste à changer la pièce">⧉</button>` : ''}<button class="icone" data-suppr-ligne="${c.k}.${i}" title="Supprimer la ligne">✕</button>`}</td></tr>`).join('')}</tbody></table></div>${datalistsHtml(c, cols, e)}
+          <td class="actions-l" style="white-space:nowrap">${l && l._auto ? '<span class="petit muted" title="Ligne reprise d\'un autre calcul">🔗</span>' : `${c.colonnes[0].k === 'rep' ? `<button class="icone" data-dup-ligne="${c.k}.${i}" title="Dupliquer : même équipement, repère suivant ; il reste à changer la pièce">⧉</button>` : ''}<button class="icone" data-suppr-ligne="${c.k}.${i}" title="Supprimer la ligne">✕</button>`}</td></tr>`).join('')}</tbody></table></div>${datalistsHtml(c, cols, e)}
         <button class="secondaire petit" data-ajout-ligne="${c.k}">+ Ajouter une ligne</button> <span class="petit muted">ou collez un tableau Excel dans une cellule</span></div>`;
     }
-    const lib = `<span>${esc(c.l)}${c.u ? ` <span class="unite">(${esc(c.u)})</span>` : ''}</span>`;
+    const lib = libelleChamp(c.l, c.u);
     if (c.t === 'cases') { const val = Array.isArray(e[c.k]) ? e[c.k] : (c.d || []), opts = optionsDe(c, e);
       return `<div class="large"><div class="petit muted">${esc(c.l)}</div><div class="cases-choix">${opts.map(([k, l, aide]) => `<label class="case" title="${esc(aide || '')}"><input type="checkbox" data-case="${c.k}" value="${esc(k)}" ${val.includes(k) ? 'checked' : ''}> ${esc(l)}</label>`).join('')}</div></div>`; }
     if (c.t === 's') return `<label>${lib}<select data-k="${c.k}"${verrou(v, c.k)}>${optionsHtml(optionsDe(c, e), e[c.k])}</select></label>`;
@@ -194,10 +200,25 @@ const tousSchemas = r => [...(r.schema ? [{ titre: r.titreSchema || 'Schéma de 
 const schemaHtml = r => tousSchemas(r).map((s, i) => `<div class="barre"><h2>${esc(s.titre)}</h2><span class="espace"></span><button class="secondaire petit" data-dl-schema="${i}">Télécharger (SVG)</button><button class="secondaire petit" data-dl-dxf="${i}">Télécharger pour AutoCAD (DXF)</button><button class="secondaire petit" data-dl-pdf="${i}">PDF A3</button></div><div class="schema">${s.svg}</div>`).join('');
 // ctx : entrées effectives (avec les valeurs reprises d'autres notes) et calcul ; par défaut, la saisie seule
 const ctxSimple = (type, e) => ({ effectives: () => ({ entrees: e, verrous: {} }), calcul: () => Notes.calculer(type, e) });
+// Rendu d'un écran qui calcule plusieurs fois les mêmes notes (tableau de bord, guide, parcours, mises en service,
+// installation) : un même calcul (type et entrées identiques) n'est fait qu'une fois pendant ce rendu
+function avecCalculsMemorises(fn) {
+  if (Notes._memo) return fn();
+  const orig = Notes.calculer, memo = new Map();
+  Notes._memo = true;
+  Notes.calculer = (type, e, ...r) => {
+    if (r.length) return orig(type, e, ...r);
+    let k; try { k = `${type}\u0000${JSON.stringify(e)}`; } catch (er) { return orig(type, e); }
+    if (!memo.has(k)) memo.set(k, orig(type, e));
+    return memo.get(k);
+  };
+  try { return fn(); } finally { Notes.calculer = orig; delete Notes._memo; }
+}
 const ctxEtude = (et, n) => ({ effectives: () => Liens.resoudre(et, n), calcul: () => Liens.calculer(et, n) });
 function calculateurHtml(type, e, ctx = ctxSimple(type, e)) {
   const r = ctx.calcul(), eff = ctx.effectives();
-  return `<div class="calc"><div class="calc-saisie">${formulaireHtml(type, eff.entrees, eff.verrous)}</div><div class="calc-resultats carte" id="resultats">${resultatsHtml(r)}</div></div>
+  const nbGroupes = rubriques(type, eff.entrees).filter(x => x.titre).length;
+  return `<div class="calc"><div class="calc-saisie">${nbGroupes > 2 ? '<div class="saisie-outils"><button type="button" class="secondaire petit" data-replier-tout="1">Replier les groupes</button><button type="button" class="secondaire petit" data-replier-tout="0">Tout déplier</button></div>' : ''}${formulaireHtml(type, eff.entrees, eff.verrous)}</div><div class="calc-resultats carte" id="resultats">${resultatsHtml(r)}</div></div>
     <div class="carte schema-carte" id="schema" ${tousSchemas(r).length ? '' : 'hidden'}>${schemaHtml(r)}</div>`;
 }
 // Collage d'un tableau (Excel, CSV à tabulations) dans une liste de lignes : colonnes visibles à partir de la cellule
@@ -472,7 +493,8 @@ Vues.nouvelle = {
 
 // Étude : en-tête, indices, liste des notes de calcul
 Vues.etude = {
-  html: ([id, noteId, ids]) => {
+  html: p => (p[1] && !['comparer', 'installation'].includes(p[1]) ? Vues.etude.html0(p) : avecCalculsMemorises(() => Vues.etude.html0(p))),
+  html0: ([id, noteId, ids]) => {
     const et = etudeDe(id);
     if (!et) return '<p class="erreur">Étude introuvable.</p><p><a href="#/">Retour aux études</a></p>';
     if (noteId === 'comparer') return Vues.comparer.html(et, ids);
@@ -1089,7 +1111,7 @@ Vues.note = {
       </div>
       <div class="carte"><label class="champ-libre">Commentaire (repris dans la note de calcul)<textarea data-n="commentaire" rows="3">${esc(n.commentaire)}</textarea></label>
       ${emissionsHtml(et, n)}
-      <div class="actions-ligne"><button id="emettre-note">🖋️ Émettre l'indice ${esc(Revisions.prochainIndice(n))} (PDF avec cartouche)</button><button class="secondaire" id="pdf-note">📄 Brouillon PDF</button><button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="dupliquer">Dupliquer</button>
+      <div class="actions-ligne actions-note" data-plus="2"><button id="emettre-note">🖋️ Émettre l'indice ${esc(Revisions.prochainIndice(n))} (PDF avec cartouche)</button><button class="secondaire" id="pdf-note">📄 Brouillon PDF</button><button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="dupliquer">Dupliquer</button>
         ${TYPES_FICHE.includes(n.type) ? `<button class="secondaire" id="fiche-tech" title="Fiche du fabricant (PDF de l'ordinateur ou de la bibliothèque Pipe-Fit) : remplit le calcul et contrôle le matériel choisi">📄 Fiche technique${['cta', 'aero'].includes(n.type) ? ' de la CTA' : { reseau: ' de la pompe', arbo: ' de la pompe', vase: ' du vase', ecs: ' du ballon / échangeur', pid: ' du générateur', terminaux: ' d\'un terminal' }[n.type] || ''}${n.entrees.fiche && (n.entrees.fiche.fabricant || n.entrees.fiche.reference) ? ` ✓` : ''}</button>` : ''}
         ${n.type === 'cta' ? `<button class="secondaire" id="cta-reseau">🌬️ ${Liens.reseauxDeCta(et.notes, n).some(x => x.type === 'aero') ? 'Ouvrir le schéma aéraulique relié' : 'Créer le schéma aéraulique relié (gaines, bouches)'}</button>` : ''}
         ${n.type === 'arbo' ? '<button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par tronçon (tubes, vannes d\'équilibrage avec préréglage, robinetterie, pompe) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
