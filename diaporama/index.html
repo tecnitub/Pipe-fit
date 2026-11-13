@@ -91,6 +91,26 @@ aside{background:var(--panel);overflow:auto;min-height:0}
 .bar i{display:block;height:100%;width:0;background:var(--accent)}
 #toast{position:fixed;bottom:170px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);padding:8px 14px;border-radius:8px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:60}
 #toast.on{opacity:1}
+[hidden]{display:none!important}
+#wiz{position:fixed;inset:0;background:rgba(8,9,12,.82);backdrop-filter:blur(6px);z-index:40;overflow:auto;padding:24px max(16px,env(safe-area-inset-left,0px))}
+#wiz .wbox{max-width:980px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px}
+#wiz h2{margin:0 0 4px;font-size:24px;text-wrap:balance}
+#wiz h2 span{color:var(--accent)}
+#wiz .lead{color:var(--muted);margin:0 0 18px}
+.occ{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
+.oc{padding:0;overflow:hidden;border-radius:10px;text-align:left;background:var(--panel2);display:flex;flex-direction:column}
+.oc:hover{border-color:var(--accent)}
+.oc canvas{display:block;width:100%;aspect-ratio:16/9}
+.oc b{display:block;padding:8px 10px 0}
+.oc small{display:block;padding:0 10px 10px;color:var(--muted);font-size:12px}
+.oc.big{grid-column:span 2;grid-row:span 2}
+.oc.big b{font-size:18px}
+.oc.big canvas{flex:1;min-height:0;object-fit:cover}
+.wform{display:grid;grid-template-columns:1fr 340px;gap:22px}
+.wform .pv canvas{width:100%;aspect-ratio:16/9;border-radius:8px;background:#000;display:block}
+.wfoot{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;flex-wrap:wrap}
+.pcount{color:var(--muted);font-size:12px}
+@media (max-width:700px){.wform{grid-template-columns:1fr}.oc.big{grid-column:span 1;grid-row:auto}}
 .empty{color:var(--muted);text-align:center;font-size:12px;padding:10px}
 @media (max-width:900px){
   body{overflow:auto}
@@ -105,6 +125,7 @@ aside{background:var(--panel);overflow:auto;min-height:0}
 <body>
 <header>
   <h1>Studio <span>Diaporama</span></h1>
+  <button id="bNew">Nouveau</button>
   <button id="bAddMedia" class="primary">＋ Photos / vidéos</button>
   <button id="bAddText">＋ Diapo texte</button>
   <input id="fMedia" type="file" accept="image/*,video/*" multiple hidden>
@@ -164,6 +185,44 @@ aside{background:var(--panel);overflow:auto;min-height:0}
 
 <div id="timeline"><div id="tlin"></div></div>
 <div id="toast"></div>
+<div id="wiz">
+  <div class="wbox">
+    <div id="w1">
+      <h2>Quel diaporama voulez-vous <span>créer</span> ?</h2>
+      <p class="lead">Choisissez l'occasion : le thème, la musique et les diapos de titre sont préparés pour vous. Tout reste modifiable ensuite.</p>
+      <div class="occ" id="occ"></div>
+      <div class="wfoot"><button id="wSkip">Partir d'un projet vide</button></div>
+    </div>
+    <div id="w2" hidden>
+      <h2 id="w2t">Anniversaire</h2>
+      <p class="lead">Remplissez ce qui vous plaît : les champs vides sont simplement ignorés.</p>
+      <div class="wform">
+        <div>
+          <div class="row">
+            <div><label for="wName" id="lName">Prénom</label><input id="wName" type="text"></div>
+            <div><label for="wExtra" id="lExtra">Âge</label><input id="wExtra" type="text"></div>
+          </div>
+          <label for="wMsg" id="lMsg">Votre message (diapo de fin)</label><textarea id="wMsg"></textarea>
+          <label for="wFrom">Signé (facultatif)</label><input id="wFrom" type="text" placeholder="Ex. : Toute la famille">
+          <label>Vos photos et vidéos</label>
+          <div class="row"><button id="wPhotos" class="primary" style="flex:none">＋ Choisir des photos</button><span class="pcount" id="wCount">Aucune photo pour l'instant (vous pourrez en ajouter après)</span></div>
+          <input id="wFiles" type="file" accept="image/*,video/*" multiple hidden>
+          <div class="row">
+            <div><label for="wTheme">Thème</label><select id="wTheme"></select></div>
+            <div><label for="wMusic">Musique</label><select id="wMusic"></select></div>
+          </div>
+          <div class="row">
+            <div><label for="wDur">Durée par photo</label><select id="wDur"><option value="3">3 s (rythmé)</option><option value="4" selected>4 s</option><option value="5">5 s</option><option value="7">7 s (posé)</option><option value="fit">Calée sur la musique</option></select></div>
+            <div><label for="wFormat">Format</label><select id="wFormat"></select></div>
+          </div>
+        </div>
+        <div class="pv"><label>Aperçu de la diapo d'ouverture</label><canvas id="wPv" width="640" height="360"></canvas>
+          <p class="hint">L'aperçu suit le thème et le texte saisis.</p></div>
+      </div>
+      <div class="wfoot"><button id="wBack">← Retour</button><button id="wGo" class="primary">Créer mon diaporama</button></div>
+    </div>
+  </div>
+</div>
 
 <script>
 'use strict';
@@ -188,7 +247,7 @@ const THEMES = [
  {name:'Noir & blanc', bg:['#1a1a1a','#000000'], font:'Playfair Display', w:700, title:'#ffffff', text:'#dddddd', accent:'#ffffff', box:'shadow', deco:'vignette', media:'full', tr:'fade', filter:'grayscale(1) contrast(1.1)', align:'center'},
  {name:'Romantique', bg:['#ffd6e0','#f7a1b8'], font:'Great Vibes', w:400, title:'#8a1f3d', text:'#7a2a42', accent:'#e84a77', box:'none', glow:'rgba(255,255,255,.9)', deco:'hearts', media:'rounded', tr:'fade', align:'center', big:1.25},
  {name:'Mariage', bg:['#fbf7ef','#efe5d3'], font:'Cormorant Garamond', w:700, title:'#6b5426', text:'#5d4f3a', accent:'#b8963e', box:'card', boxBg:'rgba(251,247,239,.9)', deco:'frame', media:'rounded', tr:'fade', align:'center', big:1.1},
- {name:'Anniversaire', bg:['#ffe259','#ffa751'], font:'Fredoka', w:700, title:'#ffffff', text:'#ffffff', accent:'#ff3d7f', box:'outline', deco:'confetti', media:'polaroid', tr:'zoom', align:'center'},
+ {name:'Anniversaire', bg:['#ffe259','#ffa751'], font:'Fredoka', w:700, title:'#ffffff', text:'#ffffff', accent:'#ff3d7f', box:'outline', deco:'balloons', media:'polaroid', tr:'zoom', align:'center'},
  {name:'Voyage', bg:['#0f5e6e','#11998e'], font:'Montserrat', w:800, title:'#ffffff', text:'#eafffb', accent:'#ffb347', box:'band', bandBg:'rgba(0,40,48,.6)', deco:'none', media:'polaroid', tr:'slide', align:'left', upper:true},
  {name:'Nature', bg:['#2f5d34','#a8c66c'], font:'Lora', w:700, title:'#ffffff', text:'#f1f7e8', accent:'#d7f171', box:'shadow', deco:'bokehGreen', media:'full', tr:'fade', align:'center'},
  {name:'Océan', bg:['#1c3f94','#2bc0e4'], font:'Quicksand', w:700, title:'#ffffff', text:'#e2f6ff', accent:'#7ff3ff', box:'shadow', deco:'bubbles', media:'rounded', tr:'wipe', align:'center'},
@@ -259,6 +318,14 @@ function drawDeco(c,w,h,th,t){
   case 'grain': { drawGrain(c,w,h,t); const g=c.createRadialGradient(w/2,h/2,Math.min(w,h)*.3,w/2,h/2,Math.max(w,h)*.7); g.addColorStop(0,'rgba(60,30,0,0)'); g.addColorStop(1,'rgba(60,30,0,.45)'); c.fillStyle=g; c.fillRect(0,0,w,h); break; }
   case 'frame': { const m=Math.min(w,h)*.04; c.strokeStyle=th.accent; c.lineWidth=2*s; c.strokeRect(m,m,w-2*m,h-2*m); c.lineWidth=1*s; c.strokeRect(m+8*s,m+8*s,w-2*m-16*s,h-2*m-16*s); break; }
   case 'hearts': for(let i=0;i<18;i++){ const sp=.04+rnd(i)*.06; const y=((1-((rnd(i+50)+t*sp)%1))*(h+80))-40; const x=rnd(i+9)*w+Math.sin(t+i)*20*s; heart(c,x,y,(10+rnd(i+3)*18)*s,`rgba(232,74,119,${.25+rnd(i+7)*.4})`);} break;
+  case 'balloons': {
+    const cols=['#ff3d7f','#3db8ff','#7cdb5a','#a26bff','#ff8a2a','#ffffff'];
+    for(let i=0;i<26;i++){ const sp=.05+rnd(i)*.08; const y=((rnd(i+20)+t*sp)%1)*(h+40)-20; const x=rnd(i+3)*w+Math.sin(t*1.5+i)*15*s; c.save(); c.translate(x,y); c.rotate(t*2+i); c.fillStyle=cols[i%5]; c.globalAlpha=.8; c.fillRect(-4*s,-7*s,8*s,14*s); c.restore(); }
+    for(let i=0;i<9;i++){ const r=(30+rnd(i+40)*24)*s, sp=.035+rnd(i+41)*.04; const y=(1-((rnd(i+42)+t*sp)%1))*(h+r*5)-r*1.5; const side = i%2 ? rnd(i+43)*.22 : .78+rnd(i+43)*.22; const x=side*w+Math.sin(t*.7+i)*14*s;
+      c.save(); c.globalAlpha=.92; c.strokeStyle='rgba(80,60,60,.5)'; c.lineWidth=1.2*s; c.beginPath(); c.moveTo(x,y+r); c.quadraticCurveTo(x+Math.sin(t+i)*12*s,y+r*2,x,y+r*3); c.stroke();
+      c.fillStyle=cols[i%cols.length]; c.beginPath(); c.ellipse(x,y,r*.84,r,0,0,7); c.fill(); c.beginPath(); c.moveTo(x-r*.12,y+r*1.08); c.lineTo(x+r*.12,y+r*1.08); c.lineTo(x,y+r*.95); c.fill();
+      c.fillStyle='rgba(255,255,255,.45)'; c.beginPath(); c.ellipse(x-r*.32,y-r*.38,r*.16,r*.28,-.5,0,7); c.fill(); c.restore(); }
+    break; }
   case 'confetti': case 'goldConfetti': { const cols = th.deco==='goldConfetti'?['#ffd166','#f4c95d','#fff1c1','#e0a800']:['#ff3d7f','#3dd6ff','#7cff6b','#ffd23d','#a26bff'];
     for(let i=0;i<60;i++){ const sp=.05+rnd(i)*.08; const y=((rnd(i+20)+t*sp)%1)*(h+40)-20; const x=rnd(i+3)*w+Math.sin(t*1.5+i)*15*s; c.save(); c.translate(x,y); c.rotate(t*2+i); c.fillStyle=cols[i%cols.length]; c.globalAlpha=.85; c.fillRect(-4*s,-7*s,8*s,14*s); c.restore(); } break; }
   case 'bokehGreen': case 'bubbles': { const up = th.deco==='bubbles';
@@ -592,6 +659,8 @@ function addTrack(o){
    MUSIQUES GÉNÉRÉES (synthèse)
    ================================================================ */
 const GEN = {
+  anniv:  { name:'Joyeux anniversaire', bpm:108, meter:3, lead:1, reps:3, mel:[[67,.75],[67,.25],[69,1],[67,1],[72,1],[71,2],[67,.75],[67,.25],[69,1],[67,1],[74,1],[72,2],[67,.75],[67,.25],[79,1],[76,1],[72,1],[71,1],[69,1],[77,.75],[77,.25],[76,1],[72,1],[74,1],[72,3]], chords:'CGGCCFCC' },
+  noel:   { name:'Vive le vent (Noël)', bpm:150, meter:4, lead:0, reps:3, mel:[[76,1],[76,1],[76,2],[76,1],[76,1],[76,2],[76,1],[79,1],[72,1.5],[74,.5],[76,4],[77,1],[77,1],[77,1.5],[77,.5],[77,1],[76,1],[76,1],[76,.5],[76,.5],[76,1],[74,1],[74,1],[76,1],[74,2],[79,2],[76,1],[76,1],[76,2],[76,1],[76,1],[76,2],[76,1],[79,1],[72,1.5],[74,.5],[76,4],[77,1],[77,1],[77,1.5],[77,.5],[77,1],[76,1],[76,1],[76,.5],[76,.5],[79,1],[79,1],[77,1],[74,1],[72,4]], chords:'CCCCFCDGCCCCFCGC' },
   calme:  { name:'Calme (nappes)', bpm:70 },
   piano:  { name:'Piano doux', bpm:84 },
   joyeux: { name:'Joyeux (ukulélé)', bpm:118 },
@@ -603,7 +672,9 @@ const GEN = {
 };
 const mf = m => 440*Math.pow(2,(m-69)/12);
 async function genMusic(kind){
-  const cfg = GEN[kind], sr = 44100, beat = 60/cfg.bpm, bars = 16, dur = bars*4*beat + 2;
+  const cfg = GEN[kind], sr = 44100, beat = 60/cfg.bpm, bars = 16;
+  const melLen = cfg.mel ? cfg.mel.reduce((a,n)=>a+n[1],0) : 0;
+  const dur = cfg.mel ? (cfg.reps*(melLen+cfg.meter) )*beat + 3 : bars*4*beat + 2;
   const oc = new OfflineAudioContext(2, Math.ceil(sr*dur), sr);
   const out = oc.createGain(); out.gain.value = .55; out.connect(oc.destination);
   // réverbération
@@ -631,6 +702,24 @@ async function genMusic(kind){
   const snare = (t,v=.35) => { nz(t,.18,v,1800,'bandpass'); note(50,t,.05,{type:'triangle',g:.15,r:.08,dest:out}); };
   const tom = (t,m=40) => { const o=oc.createOscillator(), g=oc.createGain(); o.frequency.setValueAtTime(mf(m)*1.6,t); o.frequency.exponentialRampToValueAtTime(mf(m),t+.2); g.gain.setValueAtTime(.6,t); g.gain.exponentialRampToValueAtTime(.001,t+.6); o.connect(g); g.connect(out); o.start(t); o.stop(t+.7); };
 
+  if (cfg.mel){
+    const CH = { C:{b:36,c:[60,64,67]}, G:{b:43,c:[59,62,65]}, F:{b:41,c:[60,65,69]}, D:{b:38,c:[60,62,66]} };
+    const M = cfg.meter, gap = M; // une mesure d'air entre les reprises
+    for (let r=0;r<cfg.reps;r++){
+      const t0 = r*(melLen+gap)*beat;
+      let tb = 0;
+      for (const [m,d] of cfg.mel){ const t=t0+tb*beat; note(m,t,d*beat*.92,{type:'triangle',g:.16,decay:.25,r:.35,h2:.45}); if (r>0) note(m+12,t,d*beat*.8,{type:'sine',g:.04,decay:.2,r:.3}); tb+=d; }
+      [...cfg.chords].forEach((k,i)=>{
+        const ch = CH[k], tm = t0 + (cfg.lead + i*M)*beat;
+        note(ch.b,tm,beat*.9,{type:'sine',g:.26,r:.15});
+        if (M===3){ for (const bb of [1,2]) ch.c.forEach(n=>note(n,tm+bb*beat,beat*.5,{type:'triangle',g:.035,decay:.3,r:.1})); }
+        else { note(ch.b+7,tm+2*beat,beat*.9,{type:'sine',g:.2,r:.15}); for (const bb of [1,3]) ch.c.forEach(n=>note(n,tm+bb*beat,beat*.5,{type:'triangle',g:.035,decay:.3,r:.1}));
+               for (let q=0;q<8;q++) hat(tm+q*beat/2, q%2?.05:.09); }
+      });
+      if (M===3 && r>0) for (let i=0;i<(melLen+1)/M;i++) hat(t0+(cfg.lead+i*M)*beat,.05);
+    }
+    return await oc.startRendering();
+  }
   // progressions (accords en notes MIDI)
   const C=[60,64,67], Am=[57,60,64], F=[53,57,60], G=[55,59,62], Em=[52,55,59], Dm=[50,53,57];
   const prog = { calme:[Am,F,C,G], piano:[C,Am,F,G], joyeux:[C,G,Am,F], lofi:[Dm,G,C,Am], epique:[Am,F,C,G], electro:[Am,F,C,G], romance:[F,G,Em,Am], fete:[C,F,G,C] }[kind];
@@ -1028,10 +1117,12 @@ Object.entries(GEN).forEach(([k,g])=>{
 const drop = $('#drop');
 ['dragenter','dragover'].forEach(ev=>document.addEventListener(ev, e=>{ if ([...e.dataTransfer.types].includes('Files')){ e.preventDefault(); drop.classList.add('hot'); } }));
 ['dragleave','drop'].forEach(ev=>document.addEventListener(ev, ()=>drop.classList.remove('hot')));
-document.addEventListener('drop', e=>{ if (e.dataTransfer.files.length){ e.preventDefault(); addFiles(e.dataTransfer.files); } });
+document.addEventListener('drop', e=>{ if (!e.dataTransfer.files.length) return; e.preventDefault();
+  if (!$('#wiz').hidden && !$('#w2').hidden){ const f=[...e.dataTransfer.files].filter(f=>/^(image|video)\//.test(f.type)); WZ.files.push(...f); const n=WZ.files.length; $('#wCount').textContent = `${n} fichier${n>1?'s':''} sélectionné${n>1?'s':''}`; }
+  else if ($('#wiz').hidden) addFiles(e.dataTransfer.files); });
 
 document.addEventListener('keydown', e=>{
-  if (e.target.matches('input,textarea,select')) return;
+  if (e.target.matches('input,textarea,select') || !$('#wiz').hidden) return;
   if (e.code==='Space'){ e.preventDefault(); P.playing ? pause() : play(); }
   else if (e.key==='ArrowRight') seek(P.t+1);
   else if (e.key==='ArrowLeft') seek(P.t-1);
@@ -1042,6 +1133,122 @@ window.addEventListener('resize', ()=>refreshTimeline());
 /* ================================================================
    DÉMARRAGE : un petit exemple prêt à lire
    ================================================================ */
+/* ---------- ASSISTANT « Nouveau diaporama » ---------- */
+const OCC = [
+ {k:'anniv', name:'Anniversaire', sub:'Prénom, âge, ballons et « Joyeux anniversaire »', theme:7, music:'anniv', big:true,
+  f:['Prénom','Âge (facultatif)','Votre message (diapo de fin)'], ph:['Léa','30','Plein de bonheur pour cette nouvelle année !'],
+  build:v=>({ intro:[ {title:`Joyeux anniversaire${v.name?' '+v.name:''} !`, text:v.extra?'':'Une année de plus et tant de souvenirs', dur:5},
+                      ...(v.extra?[{title:`${v.extra.replace(/\s*ans?$/i,'')} ans`, text:'Déjà !', size:1.9, tr:'zoom', dur:3.5}]:[]) ],
+              outro:[ {title:'Joyeux anniversaire !', text:v.msg, anim:'type', dur:6} ] }) },
+ {k:'mariage', name:'Mariage', sub:'Les mariés, la date, une musique douce', theme:6, music:'romance',
+  f:['Prénoms des mariés','Date','Message de fin'], ph:['Julie & Thomas','14 juin 2026','Merci d\'avoir partagé ce jour avec nous'],
+  build:v=>({ intro:[{title:v.name||'Notre mariage', text:v.extra, dur:5}], outro:[{title:'Merci !', text:v.msg, dur:6}] }) },
+ {k:'naissance', name:'Naissance, baptême', sub:'Bienvenue au bébé', theme:18, music:'piano',
+  f:['Prénom du bébé','Date de naissance','Message'], ph:['Gabriel','3 mars 2026','Bienvenue dans la famille !'],
+  build:v=>({ intro:[{title:`Bienvenue${v.name?' '+v.name:''} !`, text:v.extra?'Né(e) le '+v.extra:'', dur:5}], outro:[{title:v.name||'Bienvenue', text:v.msg, dur:6}] }) },
+ {k:'voyage', name:'Voyage, vacances', sub:'Une destination, des souvenirs', theme:8, music:'joyeux',
+  f:['Destination','Dates','Message de fin'], ph:['Bretagne','Été 2026','À la prochaine aventure !'],
+  build:v=>({ intro:[{title:v.name||'Nos vacances', text:v.extra, dur:5}], outro:[{title:'Fin du voyage', text:v.msg, dur:5}] }) },
+ {k:'fete', name:'Fête, soirée', sub:'Confettis dorés et musique entraînante', theme:22, music:'fete',
+  f:['Nom de la fête','Date','Message de fin'], ph:['La soirée de l\'année','31 décembre 2026','Merci à tous !'],
+  build:v=>({ intro:[{title:v.name||'C\'est la fête !', text:v.extra, dur:4}], outro:[{title:'Merci à tous !', text:v.msg, dur:5}] }) },
+ {k:'noel', name:'Noël, nouvel an', sub:'Neige et « Vive le vent »', theme:12, music:'noel',
+  f:['Titre','Année','Vos vœux'], ph:['Joyeux Noël','2026','Belles fêtes de fin d\'année à tous !'],
+  build:v=>({ intro:[{title:v.name||'Joyeux Noël', text:v.extra, dur:5}], outro:[{title:'Meilleurs vœux', text:v.msg, dur:6}] }) },
+ {k:'parents', name:'Fête des mères / pères', sub:'Un mot doux pour maman ou papa', theme:5, music:'romance',
+  f:['Pour qui ?','Sous-titre','Votre message'], ph:['Maman','Pour toi','Merci pour tout, on t\'aime !'],
+  build:v=>({ intro:[{title:`Bonne fête${v.name?' '+v.name:''} !`, text:v.extra, dur:5}], outro:[{title:'On t\'aime', text:v.msg, anim:'type', dur:6}] }) },
+ {k:'retraite', name:'Départ, retraite', sub:'Hommage d\'équipe', theme:17, music:'joyeux',
+  f:['Prénom','Années (ex. 1992 – 2026)','Message de l\'équipe'], ph:['Michel','1992 – 2026','Merci pour toutes ces années !'],
+  build:v=>({ intro:[{title:`Bonne retraite${v.name?' '+v.name:''} !`, text:v.extra, dur:5}], outro:[{title:'Merci !', text:v.msg, dur:6}] }) },
+ {k:'hommage', name:'Hommage, souvenir', sub:'Sobre et apaisé', theme:21, music:'piano',
+  f:['Nom de la personne','Dates','Message'], ph:['Jeanne','1942 – 2026','Tu restes dans nos cœurs'],
+  build:v=>({ intro:[{title:v.name||'En souvenir', text:v.extra, dur:6}], outro:[{title:v.msg||'Pour toujours', text:'', dur:7}] }) },
+ {k:'autre', name:'Autre', sub:'Un diaporama libre', theme:0, music:'calme',
+  f:['Titre','Sous-titre','Message de fin'], ph:['Mon diaporama','',''],
+  build:v=>({ intro:[{title:v.name||'Mon diaporama', text:v.extra, dur:4}], outro:v.msg?[{title:'',text:v.msg,dur:5}]:[] }) },
+];
+const WZ = { occ:null, files:[] };
+function wizPreviewCanvas(cnv, themeIdx, sl){
+  const g = cnv.getContext('2d'), old = S.theme; S.theme = themeIdx;
+  const vw = 720*cnv.width/cnv.height;
+  g.save(); g.scale(cnv.width/vw, cnv.height/720); drawSlide(g,vw,720,sl,sl.dur*.6,2); g.restore(); S.theme = old;
+}
+function openWizard(){
+  pause();
+  $('#w1').hidden = false; $('#w2').hidden = true; $('#wiz').hidden = false;
+  const box = $('#occ'); box.innerHTML = '';
+  OCC.forEach(o=>{
+    const b = document.createElement('button'); b.className = 'oc'+(o.big?' big':'');
+    b.innerHTML = `<canvas width="${o.big?580:320}" height="${o.big?500:180}"></canvas><b>${esc(o.name)}</b><small>${esc(o.sub)}</small>`;
+    b.onclick = () => wizStep2(o);
+    box.appendChild(b);
+    const v = {name:o.ph[0], extra:o.ph[1], msg:o.ph[2]};
+    wizPreviewCanvas(b.querySelector('canvas'), o.theme, newSlide(Object.assign({type:'text', pos:'center', anim:'none'}, o.build(v).intro[0], {anim:'none'})));
+  });
+}
+function wizStep2(o){
+  WZ.occ = o; WZ.files = [];
+  $('#w1').hidden = true; $('#w2').hidden = false; $('#w2t').textContent = o.name;
+  $('#lName').textContent = o.f[0]; $('#lExtra').textContent = o.f[1]; $('#lMsg').textContent = o.f[2];
+  $('#wName').value = ''; $('#wExtra').value = ''; $('#wMsg').value = ''; $('#wFrom').value = '';
+  $('#wName').placeholder = 'Ex. : '+o.ph[0]; $('#wExtra').placeholder = o.ph[1] ? 'Ex. : '+o.ph[1] : ''; $('#wMsg').placeholder = o.ph[2] ? 'Ex. : '+o.ph[2] : '';
+  $('#wTheme').innerHTML = THEMES.map((t,i)=>`<option value="${i}"${i===o.theme?' selected':''}>${i+1}. ${esc(t.name)}</option>`).join('');
+  $('#wMusic').innerHTML = Object.entries(GEN).map(([k,g])=>`<option value="${k}"${k===o.music?' selected':''}>${esc(g.name)}</option>`).join('') + '<option value="">Aucune (j\'importerai la mienne)</option>';
+  $('#wFormat').innerHTML = $('#selFormat').innerHTML; $('#wFormat').value = `${W}x${H}`;
+  $('#wCount').textContent = 'Aucune photo pour l\'instant (vous pourrez en ajouter après)';
+  const th = THEMES[o.theme]; document.fonts.load(`${th.w} 40px "${th.font}"`).finally(wizPv);
+  setTimeout(()=>$('#wName').focus(), 30);
+}
+function wizValues(){ return { name:$('#wName').value.trim(), extra:$('#wExtra').value.trim(), msg:$('#wMsg').value.trim(), from:$('#wFrom').value.trim() }; }
+function wizPv(){
+  if (!WZ.occ) return;
+  const v = wizValues(); const ti = +$('#wTheme').value;
+  const first = WZ.occ.build(v).intro[0];
+  const sl = newSlide(Object.assign({type:'text', pos:'center'}, first, {anim:'none'}));
+  wizPreviewCanvas($('#wPv'), ti, sl);
+}
+async function wizCreate(){
+  const o = WZ.occ, v = wizValues(), plan = o.build(v);
+  if (v.from){ const last = plan.outro[plan.outro.length-1]; if (last) last.text = (last.text ? last.text+'\n' : '') + '— ' + v.from; else plan.outro.push({title:'', text:'— '+v.from, dur:4}); }
+  const music = $('#wMusic').value, durSel = $('#wDur').value;
+  $('#wGo').disabled = true; $('#wGo').textContent = 'Préparation…';
+  pause();
+  for (const s of S.slides) if (s.type==='video') s.el.pause();
+  S.slides = []; S.tracks = []; S.sel = null; P.t = 0;
+  S.theme = +$('#wTheme').value; setFormat($('#wFormat').value);
+  await ensureFont();
+  const T = d => newSlide(Object.assign({type:'text', pos:'center'}, d));
+  plan.intro.forEach(d=>S.slides.push(T(d)));
+  const pd = durSel==='fit' ? 4 : +durSel;
+  WZ.files.forEach(f => addMedia(f, f.name, f.type.startsWith('video/')?'video':'image', {dur: f.type.startsWith('video/') ? 0 : pd}));
+  plan.outro.forEach(d=>S.slides.push(T(d)));
+  S.sel = S.slides[0]?.id || null;
+  $('#wiz').hidden = true;
+  refreshAll(); refreshTracks();
+  if (music){
+    try { ac(); const buf = await genMusic(music); const tr = addTrack({name:GEN[music].name, buffer:buf, gen:music});
+      if (durSel==='fit' && WZ.files.length){
+        const fixed = S.slides.filter(s=>s.type!=='image').reduce((a,s)=>a+s.dur,0);
+        const imgs = S.slides.filter(s=>s.type==='image');
+        const per = clamp(Math.round((buf.duration - fixed)/imgs.length*10)/10, 2, 8);
+        imgs.forEach(s=>s.dur = per); tr.loop = false; refreshAll(); refreshTracks();
+      }
+    } catch(e){ toast('Musique non générée, vous pouvez en ajouter une dans l\'onglet Bande-son'); }
+  }
+  $('#wGo').disabled = false; $('#wGo').textContent = 'Créer mon diaporama';
+  toast(WZ.files.length ? 'Diaporama prêt ! Appuyez sur Lecture.' : 'Diaporama prêt ! Ajoutez vos photos avec « Photos / vidéos ».');
+}
+$('#bNew').onclick = openWizard;
+$('#wSkip').onclick = () => { $('#wiz').hidden = true; };
+$('#wBack').onclick = () => { $('#w1').hidden = false; $('#w2').hidden = true; };
+$('#wPhotos').onclick = () => $('#wFiles').click();
+$('#wFiles').onchange = e => { WZ.files.push(...e.target.files); e.target.value=''; const n=WZ.files.length; $('#wCount').textContent = `${n} fichier${n>1?'s':''} sélectionné${n>1?'s':''}`; };
+['wName','wExtra','wMsg'].forEach(id=>$('#'+id).addEventListener('input', wizPv));
+$('#wTheme').onchange = () => { const th = THEMES[+$('#wTheme').value]; document.fonts.load(`${th.w} 40px "${th.font}"`).finally(wizPv); };
+$('#wGo').onclick = wizCreate;
+document.addEventListener('keydown', e=>{ if (e.key==='Escape' && !$('#wiz').hidden) $('#wiz').hidden = true; });
+
 S.slides.push(
   newSlide({type:'text', title:'Mon diaporama', text:'Un titre, quelques mots, une musique', pos:'center', dur:4}),
   newSlide({type:'text', title:'Ajoutez vos photos', text:'Bouton « Photos / vidéos » ou glisser-déposer', pos:'center', dur:4}),
@@ -1049,7 +1256,8 @@ S.slides.push(
 );
 S.sel = S.slides[0].id;
 refreshAll(); refreshTracks();
-document.fonts.ready.then(()=>ensureFont()).then(()=>{ refreshList(); draw(); });
+openWizard();
+document.fonts.ready.then(()=>ensureFont()).then(()=>{ refreshList(); draw(); if (!$('#wiz').hidden && $('#w2').hidden) openWizard(); });
 </script>
 </body>
 </html>
