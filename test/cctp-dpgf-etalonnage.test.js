@@ -395,3 +395,30 @@ test('batteries : un document qui en nomme moins ne contredit pas l\'autre ; eau
     [{ categorie: 'emetteur', genre: 'cta', designation: 'Centrale salle', qte: 1, P: NaN, Pfr: NaN, Pel: NaN, Q: NaN, carac: {}, details: { batteries: { chaude: true, froide: true } }, sources: ['DPGF 6.4'] }]);
   assert.deepStrictEqual(inv[0].details.batteries, { chaude: true, froide: true });
 });
+
+test('DPGF sans libellé de désignation, codes « 2,1.1 », plafond réglementaire et titres de prestation du CCTP', () => {
+  // En-tête « Code | (vide) | | | Unité | Quantité | P.U. HT | Montant HT » : désignation = colonne qui porte les textes
+  const L = (code, des, u = '', q = '') => [code, des, '', '', u, q, '', ''];
+  const rows = [['', '', '', 'D.P.G.F'], ['Dossier fictif'], [], ['Code', '', '', '', 'Unité', 'Quantité', 'P.U. HT', 'Montant HT'],
+    L('2', 'DESCRIPTIF TECHNIQUE'), L('2.3', 'Mise en place d\'une nouvelle production de chauffage'),
+    L('2,3.1', 'Chaudière murale gaz.'), L('', 'Chaudière gaz 30 kW suivant CCTP', 'Ens', 2), L('', 'Sonde extérieure', 'U', 1),
+    L('2,3.2', 'Kit pour montage en cascade.'), L('', 'suivant CCTP', 'Ens', 1),
+    L('2,3.5', 'Circulateur du réseau secondaire.'), L('', 'Double circulateurs suivant CCTP', 'U', 1),
+    L('2,3.7', 'Autres accessoires'), L('', 'Vase d\'expansion', 'U', 1), L('', 'Soupape de sécurité', 'U', 2)];
+  const d = I.depuisDpgf(rows);
+  assert.ok(!d.erreur, d.erreur);
+  const ch = d.items.find(x => x.genre === 'chaudiere-gaz');
+  assert.deepStrictEqual([ch.qte, ch.P], [2, 30]);
+  assert.ok(ch.sources[0].includes('2.3.1'), 'code « 2,3.1 » lu « 2.3.1 »');
+  assert.ok(d.items.some(x => x.genre === 'pompe') && d.items.some(x => x.genre === 'vase'));
+  // Plafond réglementaire : pas la puissance de la chaudière
+  assert.deepStrictEqual(I.puissances('Puissance utile : 30 kW. Attention la somme des puissances utiles des deux chaudières devra être inférieure ou égale à 70 kW.'), { P: 30 });
+  // CCTP : titres de prestation ou d'accessoire qui citent la chaudière
+  const eq = (article, designation, texte) => ({ article, designation, texte, famille: 'production' });
+  const items = I.depuisCctp([eq('2.2.1', 'Dépose des éléments de la chaufferie existante', 'Dépose de la chaudière fioul existante.'),
+    eq('2.3.1', 'Chaudière murale gaz', 'Chaudière murale à condensation. Puissance utile : 30 kW'),
+    eq('2.3.2', 'Kit pour montage en cascade', 'Les deux chaudières murales seront raccordées par un kit.'),
+    eq('2.3.3', 'Station de neutralisation des condensats', 'Pour les condensats des chaudières.'),
+    eq('2.6.3', 'Robinet avec bouton poussoir ECS', 'Robinet temporisé alimenté en eau chaude sanitaire.')]);
+  assert.deepStrictEqual(items.map(x => x.designation), ['Chaudière murale gaz']);
+});

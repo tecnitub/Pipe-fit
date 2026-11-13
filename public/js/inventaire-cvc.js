@@ -91,6 +91,9 @@ const InventaireCVC = (() => {
       const avant = norm(t.slice(Math.max(0, m.index - 80), m.index)).split(/[.;|•]\s|,\s|\s-\s|\n/).pop();
       // Charge du local ou donnée d'entrée (« Déperditions = 2.8 kW », « Apports totaux », « 230 W dont 155 W latent » par occupant) :
       // pas la puissance d'un équipement
+      // Plafond ou total réglementaire (« la somme des puissances … inférieure ou égale à 70 kW », « ne dépassera pas ») : pas
+      // la puissance d'un équipement
+      if (/somme des puissances|inferieure?s? ou egale?s?|superieure?s? ou egale?s?|ne (?:doit|devra|devront|pourra) pas depasser|ne depassera|\blimitee?s? a\b|plafonnee?s? a\b/.test(avant)) continue;
       if (/deperditions?|apports?|metabolisme|occupants?\b|\boccupation|par personne|\(\s*\d+\s*p\b|\bdont\s*$/.test(avant) || /^\s*dont\b/.test(norm(t.slice(m.index + m[0].length, m.index + m[0].length + 8)))) continue;
       const suf0 = String(m[4] || '').toLowerCase(), apres = norm(t.slice(m.index + m[0].length, m.index + m[0].length + 25));
       // Qualificatif écrit juste après (« 69 kW froid », « 12 kW électrique »)
@@ -353,6 +356,7 @@ const InventaireCVC = (() => {
   // articles : analyse.articles (facultatif) — variantes reconnues au titre du chapitre, sous-articles réunis à leur équipement
   const PAR_PREFIXE = { CTA: { categorie: 'emetteur', genre: 'cta' }, EXT: { categorie: 'auxiliaire', genre: 'ventilateur' }, VMC: { categorie: 'auxiliaire', genre: 'ventilateur' },
     SPL: { categorie: 'emetteur', genre: 'split' }, DSF: { categorie: 'auxiliaire', genre: 'desenfumage' }, GF: { categorie: 'producteur', genre: 'gf-air' }, CH: { categorie: 'producteur', genre: 'chaudiere-gaz' } };
+  const TITRE_NON_EQ = /^(?:depose|demontage|vidange|desembouage|kits?\b|stations? de neutralisation|neutraliseurs?|robinets?|conduits? (?:de fumee|d'evacuation des fumees)|traitement des boues)/;
   function depuisCctp(equipements, reseaux = [], articles = []) {
     const titres = new Map((articles || []).map(a => [a.num, a.titre]));
     const ancetres = num => { const p = String(num).split('.'), out = []; for (let k = p.length - 1; k >= 1; k--) { const t = titres.get(p.slice(0, k).join('.')); if (t) out.push(t); } return out; };
@@ -364,6 +368,9 @@ const InventaireCVC = (() => {
       const c = (x.enumere && classer(x.nom || x.objet || '')) || classer(`${x.designation} ${x.caract || ''}`) || (x.objet ? classer(x.objet) : null) || PAR_PREFIXE[x.prefixe] || null;
       if (!c || (titreReseau(x.designation) && c.genre !== 'pompe')) return null;
       // Article d'un accessoire ou d'une prestation (« Batteries CTA », « Pièges à sons ») : pas l'équipement qu'il cite
+      // Prestation ou accessoire nommé en tête du titre (« Dépose des éléments de la chaufferie existante », « Kit pour montage en
+      // cascade », « Station de neutralisation des condensats », « Robinet … ECS », « Conduits de fumée ») : jamais l'équipement cité
+      if (!x.enumere && TITRE_NON_EQ.test(norm(x.designation))) return null;
       if (!x.enumere && !x.objet && (ACCESSOIRE.test(norm(x.designation)) || EXCLU.test(norm(x.designation))) && !/regulation|automate|gtb|gtc/.test(norm(x.designation))) return null;
       return c;
     };
@@ -470,7 +477,7 @@ const InventaireCVC = (() => {
   // Numéro écrit en tête de la désignation (pas de colonne de n°) : « III.1.1. Production », « III-02.2 - Centrale »,
   // « CHAPITRE IV - … », « I – 03.1 Branchement », « 4.3 Production » ; rendu sous la forme commune (« III.2.2 »)
   const NUM_TETE = /^\s*(chapitre\s+|article\s+)?((?:[IVX]{1,5}|\d{1,2})(?:\s?[.\-–]\s?\d{1,2}){0,4})(\s?[.\-–:)])?\s+(?=[A-Za-zÀ-ÿ'«"(])(.*)$/i;
-  const numeroCanon = n => String(n || '').trim().replace(/\s*[.\-–—]\s*/g, '.').replace(/^\.+|\.+$/g, '').split('.').map(p => (/^\d+$/.test(p) ? String(+p) : p.toUpperCase())).join('.');
+  const numeroCanon = n => String(n || '').trim().replace(/^(\d+),(\d+)(?=[.\s]|$)/, '$1.$2').replace(/\s*[.\-–—]\s*/g, '.').replace(/^\.+|\.+$/g, '').split('.').map(p => (/^\d+$/.test(p) ? String(+p) : p.toUpperCase())).join('.');
   function numeroEnTete(des) {
     const m = NUM_TETE.exec(String(des || ''));
     if (!m) return null;
@@ -504,6 +511,12 @@ const InventaireCVC = (() => {
       (rows[i] || []).forEach((c, j) => { const k = cle(c); Object.entries(SYN).forEach(([f, syn]) => { if (m[f] === undefined && syn.includes(k)) m[f] = j; }); });
       // Désignation reconnue à ses mots, quantité à son abréviation (« Qtés », « Q »), cellules courtes seulement
       if (m.designation === undefined) (rows[i] || []).forEach((c, j) => { const k = cle(c); if (m.designation === undefined && k.length < 40 && DESIGNATION.test(k) && j !== m.qte) m.designation = j; });
+      if (m.designation === undefined && m.qte !== undefined && (m.unite !== undefined || m.num !== undefined)) {
+        const pris = new Set([m.qte, m.unite, m.num, m.pu, m.total].filter(v => v !== undefined));
+        const textes = j => rows.slice(i + 1, i + 300).filter(r => { const v = (r || [])[j]; return typeof v === 'string' && /[a-zà-ÿ]{3}/i.test(v); }).length;
+        const cands = [...Array(Math.max(m.qte, m.unite ?? 0)).keys()].filter(j => !pris.has(j)).map(j => [j, textes(j)]).sort((a, b) => b[1] - a[1]);
+        if (cands.length && cands[0][1] >= 5) m.designation = cands[0][0];
+      }
       if (m.designation !== undefined && m.qte !== undefined) { entete = i; map = m; }
     }
     if (entete < 0) return { items: [], erreur: 'En-tête du DPGF non reconnue (colonnes « Désignation » et « Quantité »).' };
@@ -530,7 +543,7 @@ const InventaireCVC = (() => {
       reseaux.set(id, r); return r;
     };
     const GROS = ['producteur'], GROS_GENRES = ['cta', 'ventilateur', 'ecs', 'split', 'desenfumage'];
-    const lignes = rows.slice(entete + 1), numCol = r => (map.num !== undefined ? String((r || [])[map.num] ?? '').trim() : '');
+    const lignes = rows.slice(entete + 1), numCol = r => (map.num !== undefined ? String((r || [])[map.num] ?? '').trim().replace(/^(\d+),(\d+)(?=\.)/, '$1.$2') : ''); // « 2,1.1 » tapé pour « 2.1.1 »
     // Pas de colonne de n° (ou vide) : n° écrits en tête des titres (« III.1.1. Production de chauffage »)
     const enTete = lignes.filter(r => numCol(r)).length < 3 && lignes.filter(r => numeroEnTete((r || [])[map.designation])).length >= 2;
     const numDe = r => (enTete ? ((numeroEnTete((r || [])[map.designation]) || {}).num || '') : numCol(r));
