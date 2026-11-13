@@ -11,33 +11,36 @@ const GuideEtude = (() => {
   const Rg = () => essai(() => (typeof Registre !== 'undefined' ? Registre : require('./registre')));
   const Cp = () => essai(() => (typeof ConsignesProjet !== 'undefined' ? ConsignesProjet : require('./consignes-projet')));
   const Ic = () => essai(() => (typeof InventaireCVC !== 'undefined' ? InventaireCVC : require('../../../public/js/inventaire-cvc')));
+  const Es = () => essai(() => (typeof Estimations !== 'undefined' ? Estimations : require('./estimations')));
   const num = v => { const n = parseFloat(String(v ?? '').replace(/\s/g, '').replace(',', '.')); return Number.isFinite(n) ? n : NaN; };
   const vide = v => v === '' || v === undefined || v === null;
   const libNote = (et, n) => `N${(et.notes || []).indexOf(n) + 1} — ${n.titre || n.type}`;
 
   // Groupes, dans l'ordre d'une étude
   const GROUPES = [['donnees', '🏢', 'Données de l\'étude'], ['dossier', '📑', 'Dossier de consultation'], ['calculs', '🧮', 'Calculs à créer'], ['bilans', '🌡️', 'Bilans'],
-    ['valeurs', '✏️', 'Valeurs à confirmer'], ['verifier', '🔎', 'Valeurs reprises à vérifier'], ['raccordement', '🌀', 'Raccordements'], ['fiches', '📄', 'Fiches techniques'],
+    ['valeurs', '✏️', 'Valeurs à confirmer'], ['estimees', '📐', 'Valeurs estimées à confirmer'], ['verifier', '🔎', 'Valeurs reprises à vérifier'], ['raccordement', '🌀', 'Raccordements'], ['fiches', '📄', 'Fiches techniques'],
     ['regulation', '🎛️', 'Régulation'], ['electricite', '⚡', 'Électricité'], ['emission', '📨', 'Émission des notes'], ['chantier', '🏗️', 'Envoi au chantier']];
   const GROUPE = Object.fromEntries(GROUPES.map(([k, i, l]) => [k, { ico: i, libelle: l }]));
 
   // Lignes « à saisir » d'un calcul (liste, colonne de puissance ou de débit vide) : circuits, terminaux, zones, générateurs
   const COLONNES_CLES = { pid: [['circuits', ['P'], 'Puissance du circuit'], ['generateurs', ['P'], 'Puissance du générateur']], terminaux: [['appareils', ['Pch', 'Pfr'], 'Puissance du terminal']],
     aero: [['zones', ['Q'], 'Débit de la zone']], elec: [['equipements', ['P'], 'Puissance électrique']] };
-  // Valeurs vides (un champ qui a une valeur par défaut mais qu'on a vidé) et valeurs restées par défaut d'un calcul
-  function valeursNote(n) {
+  // Valeurs vides (un champ qui a une valeur par défaut mais qu'on a vidé) et valeurs restées par défaut d'un calcul ;
+  // avec l'étude : valeurs reprises d'un autre calcul (terminaux reliés, réseau annexe, bilan…) ni vides ni à confirmer
+  function valeursNote(n, et) {
     const N = Nt(), T = N && N.TYPES[n.type];
     if (!T) return { vides: [], defauts: [] };
-    const e = n.entrees || {}, vides = [], defauts = [];
+    const L = et ? Ln() : null, r = L ? essai(() => L.resoudre(et, n)) : null, v = (r && r.verrous) || {};
+    const e = (r && r.entrees) || n.entrees || {}, vides = [], defauts = [];
     (T.champs || []).forEach(c => {
-      if (!c.k || c.t === 'lignes' || c.t === 'cases' || !c.u) return;
+      if (!c.k || c.t === 'lignes' || c.t === 'cases' || !c.u || v[c.k]) return;
       if (c.si && !essai(() => c.si(e))) return;
       if (c.d === undefined || vide(c.d)) return;
       if (vide(e[c.k])) vides.push(c.l);
       else if (num(e[c.k]) === num(c.d)) defauts.push(c.l);
     });
     (COLONNES_CLES[n.type] || []).forEach(([k, cols, lib]) => (e[k] || []).forEach((l, i) => {
-      if (l && cols.every(c => vide(l[c]))) vides.push(`${lib} « ${l.rep || l.designation || i + 1} »`);
+      if (l && cols.every(c => vide(l[c]) && !v[`${k}.${i}.${c}`])) vides.push(`${lib} « ${l.rep || l.designation || i + 1} »`);
     }));
     return { vides, defauts };
   }
@@ -63,9 +66,16 @@ const GuideEtude = (() => {
     // 3. Calculs à créer d'après l'inventaire
     if (inv.length) {
       const G = g => inv.some(x => g.includes(x.genre));
-      if (inv.some(x => x.categorie === 'producteur') || G(['radiateurs', 'plancher', 'radiant', 'plafond'])) a('calculs', 'creer-pid', 'Schéma de principe', aType('pid'), aType('pid') ? 'Créé' : 'Production, circuits, ballons et montages repris du dossier', ['creer:pid', '🗺️ Créer le schéma']);
-      if (G(['cta', 'bouche-soufflage', 'bouche-extraction', 'ventilateur'])) a('calculs', 'creer-aero', 'Schéma aéraulique et CTA', aType('aero') || aType('cta'), aType('aero') || aType('cta') ? 'Créé' : 'Batteries, récupérateur, débits et bouches repris du dossier', ['creer:aero', '🌬️ Créer']);
-      if (G(['ventilo', 'split', 'aerotherme'])) a('calculs', 'creer-terminaux', 'Terminaux', aType('terminaux'), aType('terminaux') ? 'Créés' : 'Type, puissances, batterie et vanne de chaque terminal', ['creer:terminaux', '🌀 Créer les terminaux']);
+      // Émetteurs à eau (un tube radiant gaz, un radiateur électrique ne demandent pas de schéma hydraulique)
+      const eau = inv.some(x => ['radiateurs', 'plancher', 'radiant', 'plafond'].includes(x.genre) && !x.horsSchema);
+      // Tout en un clic : calculs, réseaux, raccordements et estimations (etude-auto.js)
+      const attendus = [inv.some(x => x.categorie === 'producteur') || eau ? 'pid' : '', G(['cta', 'bouche-soufflage', 'bouche-extraction', 'ventilateur']) ? (aType('aero') ? 'aero' : 'cta') : '',
+        G(['ventilo', 'split', 'aerotherme']) ? 'terminaux' : '', G(['sanitaire']) ? 'sanitaire' : ''].filter(Boolean), manquants = attendus.filter(t => !aType(t));
+      // (bouton « ⚡ Créer toute l'étude » sur chaque calcul à créer)
+      const tout = manquants.length ? { tout: ['creer-tout', '⚡ Créer toute l\'étude'] } : {};
+      if (inv.some(x => x.categorie === 'producteur') || eau) a('calculs', 'creer-pid', 'Schéma de principe', aType('pid'), aType('pid') ? 'Créé' : 'Production, circuits, ballons et montages repris du dossier', ['creer:pid', '🗺️ Créer le schéma'], tout);
+      if (G(['cta', 'bouche-soufflage', 'bouche-extraction', 'ventilateur'])) a('calculs', 'creer-aero', 'Schéma aéraulique et CTA', aType('aero') || aType('cta'), aType('aero') || aType('cta') ? 'Créé' : 'Batteries, récupérateur, débits et bouches repris du dossier', ['creer:aero', '🌬️ Créer'], tout);
+      if (G(['ventilo', 'split', 'aerotherme'])) a('calculs', 'creer-terminaux', 'Terminaux', aType('terminaux'), aType('terminaux') ? 'Créés' : 'Type, puissances, batterie et vanne de chaque terminal', ['creer:terminaux', '🌀 Créer les terminaux'], tout);
     }
 
     // 4. Bilans : les puissances des circuits et des terminaux doivent être justifiées
@@ -76,13 +86,27 @@ const GuideEtude = (() => {
 
     // 5. Valeurs vides ou restées par défaut dans chaque calcul
     notes.forEach(n => {
-      const { vides, defauts } = valeursNote(n);
+      const { vides, defauts } = valeursNote(n, et);
       if (!vides.length && !defauts.length) return;
       const l = [...vides.map(x => `${x} (vide)`), ...defauts].slice(0, 4).join(', '), reste = vides.length + defauts.length - 4;
       a('valeurs', `valeurs:${n.id}`, `Confirmer les valeurs de ${libNote(et, n)}`, !vides.length && (!defauts.length || n.defautsConfirmes),
         `${vides.length ? `${vides.length} vide(s)` : ''}${vides.length && defauts.length ? ', ' : ''}${defauts.length ? `${defauts.length} par défaut` : ''} : ${l}${reste > 0 ? ` et ${reste} autre(s)` : ''}`,
         [`note:${n.id}`, '✏️ Ouvrir le calcul'], vides.length ? {} : { confirmer: `confirmer:${n.id}` });
     });
+
+    // 5 bis. Valeurs estimées (ratios, surfaces) : à confirmer ou à remplacer par une valeur réelle ; zones sans surface
+    const E = Es();
+    if (E) {
+      const parNote = new Map();
+      (essai(() => E.enPlace(et)) || []).forEach(x => { const l = parNote.get(x.note) || []; l.push(x); parNote.set(x.note, l); });
+      parNote.forEach((l, id) => {
+        const n = notes.find(y => y.id === id); if (!n) return;
+        a('estimees', `estimees:${id}`, `Confirmer les valeurs estimées de ${libNote(et, n)}`, false, `${l.length} valeur(s) estimée(s) — à confirmer : ${l.slice(0, 3).map(x => `${x.libelle} = ${x.v} (${x.origine})`).join(' ; ')}${l.length > 3 ? ` et ${l.length - 3} autre(s)` : ''}`,
+          [`note:${id}`, '✏️ Ouvrir le calcul'], { confirmer: `confirmer-estimes:${id}` });
+      });
+      const m = notes.length ? (essai(() => E.appliquer(et, { simulation: true })) || {}).manquantes || [] : [];
+      if (m.length) a('estimees', 'surfaces', 'Surfaces des zones', false, `${m.length} zone(s) sans surface : ${m.slice(0, 3).map(z => z.nom).join(', ')}${m.length > 3 ? '…' : ''} — puissances ou débits manquants à estimer`, ['surfaces', '📐 Saisir les surfaces']);
+    }
 
     // 6. Valeurs reprises du dossier avec une faible confiance (conflit CCTP / DPGF, valeur déduite) : à vérifier, source citée
     const I = Ic();
@@ -156,7 +180,7 @@ const GuideEtude = (() => {
     const r = essai(() => restesAFaire(et));
     if (!r || !r.total) return '';
     const s = r.suivante, restes = r.etapes.filter(x => !x.fait);
-    const bouton = (x, principal) => `${x.action ? `<button class="${principal ? '' : 'secondaire '}petit" data-guide="${esc(x.action[0])}">${esc(x.action[1])}</button>` : ''}${x.confirmer ? `<button class="secondaire petit" data-guide="${esc(x.confirmer)}" title="Les valeurs par défaut conviennent">✓ C'est bon</button>` : ''}`;
+    const bouton = (x, principal) => `${x.tout ? `<button class="petit" data-guide="${esc(x.tout[0])}" title="Tous les calculs d'après l'inventaire, raccordés, puissances manquantes estimées">${esc(x.tout[1])}</button>` : ''}${x.action ? `<button class="${principal ? '' : 'secondaire '}petit" data-guide="${esc(x.action[0])}">${esc(x.action[1])}</button>` : ''}${x.confirmer ? `<button class="secondaire petit" data-guide="${esc(x.confirmer)}" title="Les valeurs par défaut conviennent">✓ C'est bon</button>` : ''}`;
     const parGroupe = GROUPES.map(([g]) => [g, restes.filter(x => x.groupe === g)]).filter(([, l]) => l.length);
     return `<div class="carte guide-etude" id="guide-etude"><div class="parcours-tete"><strong>${r.pct === 100 ? '✅ Reste à faire : rien, l\'étude est complète' : `📝 Reste à faire — ${r.pct} %`}</strong>
         <div class="parcours-barre" role="progressbar" aria-valuenow="${r.pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${r.pct}%"></span></div><span class="petit muted">${r.faits} / ${r.total}</span></div>
@@ -179,6 +203,9 @@ const GuideEtude = (() => {
       if (code === 'inventaire-revoir') return tableauInventaire(et, (et.inventaire || []).map(x => ({ ...x })), [], (et.inventaireReseaux || []).map(r => ({ ...r })), { ecarts: et.inventaireEcarts || [] });
       if (code === 'questions-moe') return dialogueQuestionsMoe(et);
       if (code === 'creer') return creerCalculInventaire(et, arg);
+      if (code === 'creer-tout') return EtudeAuto.lancer(et);
+      if (code === 'surfaces') return EtudeAuto.dialogueSurfaces(et);
+      if (code === 'confirmer-estimes') { const n = et.notes.find(x => x.id === arg); if (n) { Estimations.confirmer(n); enregistrer(et); App.render(); } return; }
       if (code === 'ajout') { const n = nouvelleNote(arg); et.notes.push(n); enregistrer(et); location.hash = `#/etude/${et.id}/${n.id}`; return; }
       if (code === 'note') { location.hash = `#/etude/${et.id}/${arg}`; return; }
       if (code === 'confirmer') { const n = et.notes.find(x => x.id === arg); if (n) { n.defautsConfirmes = true; enregistrer(et); App.render(); } return; }
@@ -189,6 +216,8 @@ const GuideEtude = (() => {
       if (code === 'diffuser') { const d = document.querySelector('#doc-diffuser'); if (d && !d.disabled) { d.scrollIntoView({ behavior: 'smooth', block: 'center' }); d.click(); } else { const c = document.querySelector('#doc-liste') || d; if (c) c.scrollIntoView({ behavior: 'smooth', block: 'center' }); toast('Émettez d\'abord une note de calcul (PDF), puis diffusez-la.', 5000); } }
     });
   }
-  return { restesAFaire, valeursNote, html, lier, GROUPES };
+  // Liste détaillée ouverte au prochain affichage (après « Créer toute l'étude »)
+  const ouvrir = () => { ouvert = true; };
+  return { restesAFaire, valeursNote, html, lier, ouvrir, GROUPES };
 })();
 if (typeof module !== 'undefined') module.exports = GuideEtude;

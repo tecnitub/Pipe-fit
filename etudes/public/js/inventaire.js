@@ -231,7 +231,8 @@ function tableauInventaire(et, inv, erreurs, reseaux = [], info = {}) {
         ${InventaireCVC.aVerifier(x).length ? `<br>${InventaireCVC.aVerifier(x).map(v => `<span class="${v.conflit ? 'avert' : ''}">⚠ ${esc(v.libelle)} : ${esc(v.texte)}</span>`).join('<br>')}<br><label class="case petit"><input type="checkbox" data-i="${i}" data-k="verifie" ${x.verifie ? 'checked' : ''}> valeurs vérifiées</label>` : ''}</td></tr>`).join('')}` : ''; }).join('')}
     </tbody></table></div>
     <div class="actions"><button class="secondaire" id="ti-x">Fermer</button><button class="secondaire" id="ti-questions" title="Questions à poser pendant la consultation : écarts CCTP / DPGF, caractéristiques manquantes">❓ Questions au maître d'œuvre</button><button class="secondaire" id="ti-ok">Enregistrer l'inventaire</button>
-      <button data-creer="pid">🗺️ Créer le schéma de principe</button><button data-creer="aero">🌬️ Créer le schéma aéraulique et les CTA</button><button data-creer="terminaux">🌀 Créer les terminaux</button><button data-creer="elec">⚡ Créer l'alimentation électrique et la régulation</button>${inv.some(x => x.genre === 'sanitaire' && x.inclus !== false) ? '<button data-creer="sanitaire">🚰 Créer le calcul sanitaire</button>' : ''}</div>`;
+      <button data-creer="pid">🗺️ Créer le schéma de principe</button><button data-creer="aero">🌬️ Créer le schéma aéraulique et les CTA</button><button data-creer="terminaux">🌀 Créer les terminaux</button><button data-creer="elec">⚡ Créer l'alimentation électrique et la régulation</button>${inv.some(x => x.genre === 'sanitaire' && x.inclus !== false) ? '<button data-creer="sanitaire">🚰 Créer le calcul sanitaire</button>' : ''}
+      <button id="ti-tout" title="Schémas de principe, réseaux, CTA, terminaux, sanitaire, ECS, électricité et régulation en une fois, chaque consommateur raccordé à sa production, puissances manquantes estimées">⚡ Créer toute l'étude</button></div>`;
   const b = Modal.open(rendu());
   b.classList.add('large');
   const lier = () => {
@@ -260,6 +261,7 @@ function tableauInventaire(et, inv, erreurs, reseaux = [], info = {}) {
     b.querySelector('#ti-questions').onclick = () => { garder(); dialogueQuestionsMoe(et); };
     b.querySelector('#ti-ok').onclick = () => { garder(); Modal.close(); App.render(); toast(`Inventaire enregistré : ${inv.filter(x => x.inclus !== false).length} équipement(s).`); };
     b.querySelectorAll('[data-creer]').forEach(bt => bt.onclick = () => { garder(); Modal.close(); creerCalculInventaire(et, bt.dataset.creer); });
+    b.querySelector('#ti-tout').onclick = () => { garder(); Modal.close(); EtudeAuto.lancer(et); };
     const tr = b.querySelector('#ti-ecarts-traites');
     if (tr) tr.onclick = () => { et.inventaireEcartsTraites = !et.inventaireEcartsTraites; garder(); b.innerHTML = rendu(); lier(); };
   };

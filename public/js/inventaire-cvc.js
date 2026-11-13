@@ -1128,7 +1128,7 @@ const InventaireCVC = (() => {
   // local, débit, puissance…), puis un équipement par repère avec son local, son débit et ses puissances
   const COL_ANNEXE = [['repere', /^(?:rep(?:ere)?\.?|tag|n° ?(?:d'?)?(?:equipement|appareil)|code equipement|reference equipement|id)$/], ['designation', /designation|equipement|appareil|description|libelle|^type$|^nature$/],
     ['local', /local|zone|piece|desserte|batiment|niveau|emplacement|secteur/], ['Q', /debit|m3 ?\/ ?h|m³ ?\/ ?h|soufflage|air neuf/], ['Pfr', /(?:puissance|p\.?) ?(?:froid|frigo)/],
-    ['Pel', /(?:puissance|p\.?) ?(?:elec|absorbee)|kw ?e\b/], ['P', /(?:puissance|p\.?) ?(?:chaud|calo|thermique)|^puissance|^p ?\(?kw|kw$/], ['marque', /marque|fabricant/], ['modele', /modele|reference|gamme|serie/], ['qte', /^(?:qte|quantite|nombre|nb)$/]];
+    ['Pel', /(?:puissance|p\.?) ?(?:elec|absorbee)|kw ?e\b/], ['P', /(?:puissance|p\.?) ?(?:chaud|calo|thermique)|^puissance|^p ?\(?kw|kw$/], ['marque', /marque|fabricant/], ['modele', /modele|reference|gamme|serie/], ['qte', /^(?:qte|quantite|nombre|nb)$/], ['S', /^surface|\bm2\b|m²/]];
   const REPERE_ANNEXE = /^[A-Z]{1,5}[-_. ]?\d{1,3}[A-Z]?(?:[-_.]\d{1,2})?$/;
   const PAR_PREFIXE_ANNEXE = { PAC: 'pac-air', GF: 'gf-air', CH: 'chaudiere-gaz', CTA: 'cta', VC: 'ventilo', VCV: 'ventilo', CAS: 'ventilo', AT: 'aerotherme', AER: 'aerotherme', RAD: 'radiateurs', R: 'radiateurs', UE: 'split', UI: 'split', SPL: 'split', VMC: 'ventilateur', EXT: 'ventilateur', CE: 'ventilateur', CI: 'ventilateur', TE: 'ventilateur', BAL: 'ecs', BECS: 'ecs', P: 'pompe', PO: 'pompe', CI2: 'pompe', DSF: 'desenfumage' };
   function tableauEquipements(rows, source = 'Annexe') {
@@ -1150,7 +1150,7 @@ const InventaireCVC = (() => {
       const c = classer(`${des} ${v('modele')}`) || (PAR_PREFIXE_ANNEXE[pre] ? { categorie: GENRES[PAR_PREFIXE_ANNEXE[pre]].categorie, genre: PAR_PREFIXE_ANNEXE[pre] } : null);
       if (!c) return;
       const n = k => { const x = nbr(v(k)); return Number.isFinite(x) ? x : NaN; };
-      out.push({ ...c, designation: des || rep, repere: REPERE_ANNEXE.test(v('repere')) ? rep : '', local: v('local'), qte: n('qte') > 0 ? n('qte') : 1, Q: n('Q'), P: n('P'), Pfr: n('Pfr'), Pel: n('Pel'),
+      out.push({ ...c, designation: des || rep, repere: REPERE_ANNEXE.test(v('repere')) ? rep : '', local: v('local'), ...(n('S') > 0 ? { S: n('S') } : {}), qte: n('qte') > 0 ? n('qte') : 1, Q: n('Q'), P: n('P'), Pfr: n('Pfr'), Pel: n('Pel'),
         prescrit: [v('marque') && `marque ${v('marque')}`, v('modele') && `type ${v('modele')}`].filter(Boolean).join(', '), carac: {}, sources: [source], annexe: true });
     });
     return out;
@@ -1164,7 +1164,7 @@ const InventaireCVC = (() => {
       // « CTA-1 » et « CTA-01 » : le même repère
       const cleRep = r => String(r).toUpperCase().replace(/[-_ .]/g, '').replace(/([A-Z])0+(\d)/, '$1$2');
       const memeRep = a.repere && inv.find(x => x.repere && cleRep(x.repere) === cleRep(a.repere));
-      if (memeRep) { Object.assign(memeRep, { Q: garder(memeRep.Q, a.Q), P: garder(memeRep.P, a.P), Pfr: garder(memeRep.Pfr, a.Pfr), Pel: garder(memeRep.Pel, a.Pel), local: memeRep.local || a.local, sources: [...memeRep.sources, ...a.sources] }); return; }
+      if (memeRep) { Object.assign(memeRep, { Q: garder(memeRep.Q, a.Q), P: garder(memeRep.P, a.P), Pfr: garder(memeRep.Pfr, a.Pfr), Pel: garder(memeRep.Pel, a.Pel), local: memeRep.local || a.local, ...(a.S > 0 && !(memeRep.S > 0) ? { S: a.S } : {}), sources: [...memeRep.sources, ...a.sources] }); return; }
       if (!parGenre.has(a.genre)) parGenre.set(a.genre, []);
       parGenre.get(a.genre).push(a);
     });
@@ -1466,7 +1466,7 @@ const InventaireCVC = (() => {
       if (P === '') alertes.push(`Réseau « ${r.nom} » : puissance ${ems.length ? 'de certains émetteurs' : 'des émetteurs'} non trouvée, à saisir dans le schéma.`);
       // Montage du circuit : celui du réseau (« circuit plancher en injection »), sinon celui de ses émetteurs
       const mt = montageCircuit(r.montage || (ems.find(x => det(x).montage) ? det(ems.find(x => det(x).montage)).montage : ''), emet, Sc);
-      return { rep: r.nom.slice(0, 40), emetteur: emet, P, regime: r.regime && r.regime !== reg ? r.regime : '', regulation: mt, L: r.L > 0 ? Math.round(r.L) : 50, reseau: r.id };
+      return { rep: r.nom.slice(0, 40), emetteur: emet, P, regime: r.regime && r.regime !== reg ? r.regime : '', regulation: mt, L: r.L > 0 ? Math.round(r.L) : 50, reseau: r.id, inv: ems.map(x => x.id).filter(Boolean) };
     });
     // Émetteurs hors réseau reconnu : un circuit chacun ; ceux d'un réseau d'un autre fluide ne sont pas repris ici
     const sansReseau0 = em.filter(x => !x.reseau || !parId.has(x.reseau) || estPrimaire(parId.get(x.reseau)) || (!parId.get(x.reseau).hydro && !['soufflage', 'reprise', 'extraction', 'air-neuf'].includes(parId.get(x.reseau).nature)));
@@ -1487,6 +1487,7 @@ const InventaireCVC = (() => {
       const P = pTherm(x, opts.schema === 'froid' || parId.get(c.reseau).nature === 'eau-glacee'), q = nombre(x.qte) || 1;
       if (Number.isFinite(P) && P > 0 && (c.P === '' || c._ems)) c.P = Math.round(((c._ems ? c.P : 0) + P * q) * 10) / 10;
       c._ems = true;
+      if (x.id) c.inv = [...(c.inv || []), x.id];
       return false;
     });
     e.circuits = [...circuitsReseaux, ...sansReseau.map(x => {
@@ -1494,8 +1495,8 @@ const InventaireCVC = (() => {
       const fr = opts.schema ? opts.schema === 'froid' : fluide.length === 1 && fluide[0] === 'eau-glacee', grp = [x, ...((parGenreEm.get(x.genre) || {}).x === x ? parGenreEm.get(x.genre).autres : [])];
       const Ps = grp.map(y => { const P = pTherm(y, fr); return Number.isFinite(P) && P > 0 ? P * (nombre(y.qte) || 1) : NaN; });
       const q = grp.reduce((t, y) => t + (nombre(y.qte) || 1), 0), total = Ps.every(Number.isFinite) ? Math.round(Ps.reduce((t, v) => t + v, 0) * 10) / 10 : '';
-      if (grp.length > 1) return { rep: `${(GENRES[x.genre] || { libelle: x.genre }).libelle} (×${q})`.slice(0, 40), emetteur: x.genre, P: total, regime: x.regime && x.regime !== reg ? x.regime : '', regulation: montageCircuit((x.details || {}).montage, x.genre, Sc), L: 50, _x: x };
-      return { rep: `${x.designation.slice(0, 40)}${q > 1 && !/^\d/.test(x.designation) ? ` (×${q})` : ''}`, emetteur: x.genre, P: total, regime: x.regime && x.regime !== reg ? x.regime : '', regulation: montageCircuit(det(x).montage, x.genre, Sc), L: 50, _x: x };
+      if (grp.length > 1) return { rep: `${(GENRES[x.genre] || { libelle: x.genre }).libelle} (×${q})`.slice(0, 40), emetteur: x.genre, P: total, regime: x.regime && x.regime !== reg ? x.regime : '', regulation: montageCircuit((x.details || {}).montage, x.genre, Sc), L: 50, _x: x, inv: grp.map(y => y.id).filter(Boolean) };
+      return { rep: `${x.designation.slice(0, 40)}${q > 1 && !/^\d/.test(x.designation) ? ` (×${q})` : ''}`, emetteur: x.genre, P: total, regime: x.regime && x.regime !== reg ? x.regime : '', regulation: montageCircuit(det(x).montage, x.genre, Sc), L: 50, _x: x, inv: grp.map(y => y.id).filter(Boolean) };
     })];
     completerSchema(e, { inc, prod, principal, reg, Sc, alertes, rev, schema: opts.schema });
     pompesCircuits(e, inc, opts.schema, Sc, alertes, parId);

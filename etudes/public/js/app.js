@@ -85,6 +85,8 @@ function enregistrer(etude) {
       Registre.synchroniser(etude);
     } catch (e) { /* étude incomplète */ }
   }
+  // Valeurs estimées : retirées dès qu'une valeur réelle existe (saisie, bilan, fiche, calcul relié), rafraîchies sinon
+  if (!etude.modele && typeof Estimations !== 'undefined') { try { if (Estimations.enPlace(etude).length || JSON.stringify(etude.notes || []).includes('"_estimes"')) Estimations.appliquer(etude, { rafraichir: true }); } catch (e) { /* étude incomplète */ } }
   const st = S.enCours.get(etude.id) || {};
   clearTimeout(st.t);
   st.t = setTimeout(async () => {
@@ -135,6 +137,11 @@ function rubriques(type, e) {
 const colonnesDe = (c, e) => c.colonnes.filter(col => !col.si || col.si(e));
 // verrous : champs repris d'une autre note (« champ » ou « liste.ligne.colonne » → libellé de la source), affichés non modifiables
 const verrou = (v, cle) => (v[cle] ? ` disabled data-verrou title="Repris de ${esc(v[cle])}"` : '');
+// Valeur estimée (estimations.js : ratios, surfaces) encore en place : badge « estimée — à confirmer », origine en infobulle
+const badgeEstime = (o, k, v, cle) => {
+  const m = !v[cle] && typeof Estimations !== 'undefined' ? Estimations.marque(o, k) : null;
+  return m ? `<span class="badge estime" title="${esc(`Estimée : ${m.origine}. Remplacée dès qu'une valeur réelle existe (saisie, bilan, fiche).`)}">estimée — à confirmer</span>` : '';
+};
 // Colonne « cases à cocher » d'une ligne (options d'une armoire…) : liste repliable
 const casesLigne = (c, col, l, i, e) => {
   if (col.sauf0 && i === 0) return `<span class="petit muted">${esc(col.sauf0)}</span>`;
@@ -147,7 +154,7 @@ function formulaireHtml(type, e, v = {}) {
       const lignes = e[c.k] || [], cols = colonnesDe(c, e);
       return `<div class="large"><div class="petit muted">${esc(c.l)}</div><div class="defile-x"><table class="edit"><thead><tr>${cols.map(col => `<th>${esc(col.l)}</th>`).join('')}<th></th></tr></thead>
         <tbody>${lignes.map((l, i) => `<tr${l && l._auto ? ` class="ligne-auto" title="Ligne reprise de ${esc(l._auto)}"` : ''}>${cols.map(col => `<td>${col.t === 'cases' ? casesLigne(c, col, l, i, e) : col.t === 's' ? `<select data-l="${c.k}.${i}.${col.k}"${verrou(v, `${c.k}.${i}.${col.k}`)}>${optionsHtml(optionsDe(col, e, l), l[col.k])}</select>`
-          : `<input data-l="${c.k}.${i}.${col.k}" value="${esc(valeurChamp(l[col.k]))}" ${col.t === 't' ? (col.lst ? `list="${idListe(c, col)}" autocomplete="off"` : '') : 'inputmode="decimal" class="nombre"'}${verrou(v, `${c.k}.${i}.${col.k}`)}>`}</td>`).join('')}
+          : `<input data-l="${c.k}.${i}.${col.k}" value="${esc(valeurChamp(l[col.k]))}" ${col.t === 't' ? (col.lst ? `list="${idListe(c, col)}" autocomplete="off"` : '') : 'inputmode="decimal" class="nombre"'}${verrou(v, `${c.k}.${i}.${col.k}`)}>${badgeEstime(l, col.k, v, `${c.k}.${i}.${col.k}`)}`}</td>`).join('')}
           <td style="white-space:nowrap">${l && l._auto ? '<span class="petit muted" title="Ligne reprise d\'un autre calcul">🔗</span>' : `${c.colonnes[0].k === 'rep' ? `<button class="icone" data-dup-ligne="${c.k}.${i}" title="Dupliquer : même équipement, repère suivant ; il reste à changer la pièce">⧉</button>` : ''}<button class="icone" data-suppr-ligne="${c.k}.${i}" title="Supprimer la ligne">✕</button>`}</td></tr>`).join('')}</tbody></table></div>${datalistsHtml(c, cols, e)}
         <button class="secondaire petit" data-ajout-ligne="${c.k}">+ Ajouter une ligne</button> <span class="petit muted">ou collez un tableau Excel dans une cellule</span></div>`;
     }
@@ -155,7 +162,7 @@ function formulaireHtml(type, e, v = {}) {
     if (c.t === 'cases') { const val = Array.isArray(e[c.k]) ? e[c.k] : (c.d || []), opts = optionsDe(c, e);
       return `<div class="large"><div class="petit muted">${esc(c.l)}</div><div class="cases-choix">${opts.map(([k, l, aide]) => `<label class="case" title="${esc(aide || '')}"><input type="checkbox" data-case="${c.k}" value="${esc(k)}" ${val.includes(k) ? 'checked' : ''}> ${esc(l)}</label>`).join('')}</div></div>`; }
     if (c.t === 's') return `<label>${lib}<select data-k="${c.k}"${verrou(v, c.k)}>${optionsHtml(optionsDe(c, e), e[c.k])}</select></label>`;
-    return `<label>${lib}<input data-k="${c.k}" value="${esc(valeurChamp(e[c.k]))}" ${c.t === 't' ? '' : 'inputmode="decimal" class="nombre"'}${verrou(v, c.k)}></label>`;
+    return `<label>${lib}<input data-k="${c.k}" value="${esc(valeurChamp(e[c.k]))}" ${c.t === 't' ? '' : 'inputmode="decimal" class="nombre"'}${verrou(v, c.k)}>${badgeEstime(e, c.k, v, c.k)}</label>`;
   }).join('')}</div></fieldset>`).join('');
 }
 // Onglets complémentaires d'un calcul (réglementation, régulation…) : blocs d'exigences, listes, tableaux, textes
