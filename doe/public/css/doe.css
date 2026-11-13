@@ -45,7 +45,7 @@ h3 { font-size: 15px; color: var(--bleu); margin: 16px 0 8px; }
 .anneau { --p: 0; flex: 0 0 auto; width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--ok) calc(var(--p) * 1%), var(--bord) 0); }
 .anneau span { width: 42px; height: 42px; border-radius: 50%; background: var(--panneau); display: grid; place-items: center; font-size: 12px; font-weight: 700; }
 .anneau.grand { width: 74px; height: 74px; } .anneau.grand span { width: 58px; height: 58px; font-size: 15px; }
-.badge { display: inline-block; font-size: 11.5px; padding: 1px 8px; border-radius: 10px; background: #fff3d6; color: #7a4b00; }
+.badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 10px; background: #fff3d6; color: #7a4b00; }
 .badge.ok { background: #dcf3e2; color: #1d6b31; }
 .badge.pf { background: var(--bleu-clair); color: var(--bleu); }
 table.liste, table.edit { width: 100%; border-collapse: collapse; background: var(--panneau); border: 1px solid var(--bord); border-radius: 10px; overflow: hidden; }
@@ -57,7 +57,7 @@ table.edit input, table.edit select { padding: 4px 6px; }
 .sections a { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; text-decoration: none; color: var(--texte); font-size: 14px; }
 .sections a.actif { background: var(--bleu-clair); color: var(--bleu); font-weight: 700; }
 .sections a:hover { background: var(--bleu-clair); }
-.pastille { font-style: normal; font-size: 11px; background: #fff3d6; color: #7a4b00; border-radius: 9px; padding: 0 7px; }
+.pastille { font-style: normal; font-size: 12px; background: #fff3d6; color: #7a4b00; border-radius: 9px; padding: 0 7px; }
 .sections .ok { font-style: normal; color: var(--ok); }
 .progression { display: grid; justify-items: center; gap: 4px; padding: 12px 0 4px; border-top: 1px solid var(--bord); margin-top: 6px; text-align: center; }
 .contenu { background: var(--panneau); border: 1px solid var(--bord); border-radius: 12px; padding: 4px 18px 18px; min-width: 0; }
@@ -185,4 +185,10 @@ details.equipement[open] summary { margin-bottom: 10px; }
   .modal-box > .actions:last-child { bottom: -14px; margin: 12px -14px -14px; padding: 8px 14px calc(10px + env(safe-area-inset-bottom)); }
   .modal-box .actions button { flex: 1 1 auto; }
   .badge, .pastille { font-size: 12px; }
+}
+@media (max-width: 700px) {
+  .marque { min-height: 40px; align-items: center; }
+  summary { min-height: 40px; }
+  input[type="file"] { min-height: 40px; }
+  td > input[type="checkbox"], th > input[type="checkbox"] { width: 32px; height: 32px; }
 }

@@ -380,7 +380,7 @@ Vues.accueil = {
     const q = (sessionStorage.getItem('etudes-q') || '').toLowerCase();
     const etudes = S.etudes.filter(x => !x.modele && (!q || `${x.objet} ${x.client} ${libelleAffaire(affaireDe(x.affaireId))}`.toLowerCase().includes(q)));
     const modeles = S.etudes.filter(x => x.modele);
-    return `<div class="barre"><h1>Études</h1><button id="nouvelle">+ Nouvelle étude</button><input type="search" id="q" placeholder="Rechercher une étude, une affaire…" value="${esc(q)}"></div>
+    return `<div class="barre"><h1>Études</h1><button id="nouvelle">+ Nouvelle étude</button><input type="search" id="q" aria-label="Rechercher une étude" placeholder="Rechercher une étude, une affaire…" value="${esc(q)}"></div>
       <section>${listeEtudes(etudes)}</section>
       <section><h2>Modèles d'études <span class="compte">${Modeles.INTEGRES.length + modeles.length}</span></h2><p class="muted petit">« Nouvelle étude » permet de partir d'un modèle ; une étude s'enregistre comme modèle depuis sa page.</p>
         <div class="types">${Modeles.INTEGRES.map(m => `<button class="carte type" data-modele="${m.id}"><span class="ico">📐</span><span><strong>${esc(m.nom)}</strong><span class="muted petit">${esc(m.description)}</span></span></button>`).join('')}
@@ -734,11 +734,11 @@ function dialogueFiche(et, n) {
   const b = Modal.open(`<h2>📄 Fiche technique</h2><p class="muted petit">Les caractéristiques lues remplissent le calcul et contrôlent le matériel choisi.</p>
     <p><label class="btn">💻 Choisir le PDF (ou la fiche texte) sur l'ordinateur<input type="file" id="ft-fichier" accept=".pdf,application/pdf,image/*,.txt,.md,text/plain" hidden></label></p>
     <details><summary>📋 Coller une fiche au format Pipe-Fit (texte « clé : valeur »)</summary>
-      <textarea id="ft-texte" rows="8" style="width:100%" placeholder="Fabricant : …&#10;Référence : …&#10;Puissance chaud : 3,2 kW&#10;…"></textarea>
+      <textarea id="ft-texte" aria-label="Texte de la fiche technique" rows="8" style="width:100%" placeholder="Fabricant : …&#10;Référence : …&#10;Puissance chaud : 3,2 kW&#10;…"></textarea>
       <p class="petit muted">Texte préparé avec le modèle de fiche Pipe-Fit (une valeur par ligne, unité écrite) : il est lu comme une fiche PDF.</p>
       <button class="secondaire petit" id="ft-lire">Lire le texte collé</button></details>
     <h3>📚 Bibliothèque des fiches techniques de Pipe-Fit</h3>
-    <input type="search" id="ft-q" value="${esc(q0)}" placeholder="Fabricant, référence, désignation…" style="width:100%">${ret ? `<p class="petit muted">Matériel retenu pour ce calcul : ${esc(q0)}</p>` : ''}
+    <input type="search" id="ft-q" aria-label="Rechercher dans la bibliothèque" value="${esc(q0)}" placeholder="Fabricant, référence, désignation…" style="width:100%">${ret ? `<p class="petit muted">Matériel retenu pour ce calcul : ${esc(q0)}</p>` : ''}
     <div id="ft-liste" class="ft-liste"><p class="muted petit">Recherche…</p></div>
     <div class="actions"><button class="secondaire" id="ft-x">Annuler</button></div>`);
   b.querySelector('#ft-x').onclick = Modal.close;
@@ -1659,7 +1659,7 @@ function dialogueVrac(et) {
   let items = [];
   const b = Modal.open(`<h2>📥 Matériel en vrac</h2><p class="muted petit">Chargez toutes les fiches techniques du chantier en une fois (PDF, fiches texte au format Pipe-Fit) ou collez plusieurs fiches séparées par une ligne <code>---</code>. Chaque fiche est reconnue (CTA, pompe, terminal, générateur, vase, ballon, bouche, vanne, appareil sanitaire), lue, puis vous choisissez où la répartir : rien n'est ressaisi.</p>
     <p><label class="btn">💻 Choisir les fiches (plusieurs à la fois)<input type="file" id="vr-fichiers" multiple accept=".pdf,application/pdf,image/*,.txt,.md,text/plain" hidden></label></p>
-    <details><summary>📋 Coller des fiches au format Pipe-Fit</summary><textarea id="vr-texte" rows="8" style="width:100%" placeholder="Type : Terminal&#10;Fabricant : …&#10;Référence : …&#10;Puissance chaud : 3,2 kW&#10;---&#10;Type : Pompe&#10;…"></textarea>
+    <details><summary>📋 Coller des fiches au format Pipe-Fit</summary><textarea id="vr-texte" aria-label="Fiches au format Pipe-Fit" rows="8" style="width:100%" placeholder="Type : Terminal&#10;Fabricant : …&#10;Référence : …&#10;Puissance chaud : 3,2 kW&#10;---&#10;Type : Pompe&#10;…"></textarea>
       <button class="secondaire petit" id="vr-coller">Ajouter les fiches collées</button></details>
     <div id="vr-liste"></div>
     <div class="actions"><button class="secondaire" id="vr-x">Fermer</button><button id="vr-ok" disabled>Inscrire au registre et répartir</button></div>`);

@@ -7,22 +7,22 @@
 // - sur téléphone, actions nombreuses d'un calcul regroupées dans un menu « Plus d'actions ».
 (function (racine) {
   // Raccourci d'un libellé : partie avant la première précision (« (vide : … », « — … », « : … »), unité gardée
-  function libelleCourt(l, max = 34) {
+  function libelleCourt(l, max = 40) {
     const s = String(l ?? '').trim();
     if (s.length <= max) return { court: s, aide: '' };
     const coupes = [' (', ' — ', ' – ', ' : ', ' ; ', ', '].map(c => s.indexOf(c, 4)).filter(i => i > 0);
-    let i = coupes.length ? Math.min(...coupes) : -1, court;
-    if (i < 0 || i > 48) {
-      // Pas de précision : coupe sur un espace
-      const j = s.lastIndexOf(' ', max - 1);
-      court = `${s.slice(0, j > 12 ? j : max - 1)}…`;
-    } else {
-      court = s.slice(0, i);
-      if (s.slice(i, i + 2) === ' (') {
-        // Unité en tête de la parenthèse (« (kPa ; vide : forfait) ») : gardée dans le libellé court
-        const u = s.slice(i + 2).split(/[;,:)]/)[0].trim();
-        if (u && u.length <= 8 && !/\s/.test(u) && !/^(vide|ex\.?|si|«)/i.test(u)) court += ` (${u})`;
-      }
+    const i = coupes.length ? Math.min(...coupes) : -1;
+    if (i < 0 || i > 64) {
+      // Pas de précision : libellé gardé entier s'il reste raisonnable, sinon coupé sur un espace
+      if (s.length <= 70) return { court: s, aide: '' };
+      const j = s.lastIndexOf(' ', 50);
+      return { court: `${s.slice(0, j > 12 ? j : 50)}…`, aide: s };
+    }
+    let court = s.slice(0, i);
+    if (s.slice(i, i + 2) === ' (') {
+      // Unité en tête de la parenthèse (« (kPa ; vide : forfait) ») : gardée dans le libellé court
+      const u = s.slice(i + 2).split(/[;,:)]/)[0].trim();
+      if (u && u.length <= 8 && !/\s/.test(u) && !/^(vide|ex\.?|si|«)/i.test(u)) court += ` (${u})`;
     }
     return { court, aide: s };
   }

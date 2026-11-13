@@ -134,7 +134,7 @@ Vues.accueil = {
     const q = (sessionStorage.getItem('doe-q') || '').toLowerCase();
     const dossiers = S.does.map(d => ({ d, a: PF.get('affaires', d.affaireId) || {}, m: manquesDOE(d) })).filter(x => !q || `${x.a.code} ${x.a.nom} ${x.d.operation}`.toLowerCase().includes(q));
     const sans = chantiersPF().filter(x => !doeDe(x.a.id) && (!q || `${x.a.code} ${x.a.nom}`.toLowerCase().includes(q)));
-    return `<div class="barre"><h1>Dossiers des ouvrages exécutés</h1><input type="search" id="q" placeholder="Rechercher un chantier…" value="${esc(q)}"></div>
+    return `<div class="barre"><h1>Dossiers des ouvrages exécutés</h1><input type="search" id="q" aria-label="Rechercher un chantier" placeholder="Rechercher un chantier…" value="${esc(q)}"></div>
     <section><h2>Dossiers <span class="compte">${dossiers.length}</span></h2>
       ${dossiers.length ? `<div class="grille">${dossiers.map(({ d, a, m }) => `<a class="carte dossier" href="#/doe/${d.id}/${d.statut === 'Étude' ? 'etude' : 'garde'}">
         <div class="anneau" style="--p:${m.pct}"><span>${m.pct}%</span></div>
