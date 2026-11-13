@@ -45,7 +45,7 @@ h3 { font-size: 15px; color: var(--bleu); margin: 16px 0 8px; }
 .anneau { --p: 0; flex: 0 0 auto; width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--ok) calc(var(--p) * 1%), var(--bord) 0); }
 .anneau span { width: 42px; height: 42px; border-radius: 50%; background: var(--panneau); display: grid; place-items: center; font-size: 12px; font-weight: 700; }
 .anneau.grand { width: 74px; height: 74px; } .anneau.grand span { width: 58px; height: 58px; font-size: 15px; }
-.badge { display: inline-block; font-size: 11.5px; padding: 1px 8px; border-radius: 10px; background: #fff3d6; color: #7a4b00; }
+.badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 10px; background: #fff3d6; color: #7a4b00; }
 .badge.ok { background: #dcf3e2; color: #1d6b31; }
 .badge.pf { background: var(--bleu-clair); color: var(--bleu); }
 table.liste, table.edit { width: 100%; border-collapse: collapse; background: var(--panneau); border: 1px solid var(--bord); border-radius: 10px; overflow: hidden; }
@@ -57,7 +57,7 @@ table.edit input, table.edit select { padding: 4px 6px; }
 .sections a { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; text-decoration: none; color: var(--texte); font-size: 14px; }
 .sections a.actif { background: var(--bleu-clair); color: var(--bleu); font-weight: 700; }
 .sections a:hover { background: var(--bleu-clair); }
-.pastille { font-style: normal; font-size: 11px; background: #fff3d6; color: #7a4b00; border-radius: 9px; padding: 0 7px; }
+.pastille { font-style: normal; font-size: 12px; background: #fff3d6; color: #7a4b00; border-radius: 9px; padding: 0 7px; }
 .sections .ok { font-style: normal; color: var(--ok); }
 .progression { display: grid; justify-items: center; gap: 4px; padding: 12px 0 4px; border-top: 1px solid var(--bord); margin-top: 6px; text-align: center; }
 .contenu { background: var(--panneau); border: 1px solid var(--bord); border-radius: 12px; padding: 4px 18px 18px; min-width: 0; }
@@ -158,3 +158,37 @@ details.equipement[open] summary { margin-bottom: 10px; }
 .pv-pf .signatures img, .pv-pf img.sig { display: block; max-width: 180px; max-height: 60px; margin-top: 4px; }
 .badge.refus { background: #fde2e1; color: #9b1c1c; }
 .nowrap { white-space: nowrap; }
+
+/* Ergonomie commune (DOE et Études) : focus clavier visible, boutons des dialogues toujours à portée,
+   cibles tactiles d'au moins 40 px et dialogues en plein écran (feuille montante) sur téléphone */
+:where(button, .btn, a, summary, [tabindex]):focus-visible { outline: 3px solid #2a6df4; outline-offset: 2px; }
+:where(input, select, textarea):focus-visible { outline: 3px solid color-mix(in srgb, #2a6df4 55%, transparent); outline-offset: 1px; border-color: #1F3864; }
+.visuel-cache { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.modal-box > .actions:last-child { position: sticky; bottom: -18px; z-index: 3; background: var(--panneau); margin: 14px -18px -18px; padding: 10px 18px 14px; border-top: 1px solid var(--bord); }
+@media (max-width: 700px) {
+  .haut { padding: 6px 12px; gap: 2px 12px; }
+  .marque span { display: none; }
+  #nav { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+  #nav a { padding: 10px 12px; white-space: nowrap; }
+  .session { font-size: 12.5px; }
+  main { padding: 10px 12px; }
+  button, .btn, select, input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]) { min-height: 40px; }
+  button.petit, .btn.petit { padding: 8px 12px; }
+  button.icone { min-width: 40px; }
+  summary { padding-block: 9px; }
+  label.case, .case { min-height: 40px; }
+  input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; }
+  #nav a, .sections a { min-height: 40px; display: flex; align-items: center; }
+  .modal { padding: 0; place-items: end stretch; }
+  .modal-box { width: 100%; max-height: 100dvh; border-radius: 14px 14px 0 0; padding: 14px; }
+  .modal-box.large { width: 100%; }
+  .modal-box > .actions:last-child { bottom: -14px; margin: 12px -14px -14px; padding: 8px 14px calc(10px + env(safe-area-inset-bottom)); }
+  .modal-box .actions button { flex: 1 1 auto; }
+  .badge, .pastille { font-size: 12px; }
+}
+@media (max-width: 700px) {
+  .marque { min-height: 40px; align-items: center; }
+  summary { min-height: 40px; }
+  input[type="file"] { min-height: 40px; }
+  td > input[type="checkbox"], th > input[type="checkbox"] { width: 32px; height: 32px; }
+}
