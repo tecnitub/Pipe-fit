@@ -288,7 +288,7 @@ details.plus-actions .plus-liste { position: absolute; right: 0; bottom: calc(10
   background: var(--panneau); border: 1px solid var(--bord); border-radius: 10px; box-shadow: 0 8px 28px rgb(0 0 0 / 25%); }
 details.plus-actions .plus-liste > * { text-align: left; width: 100%; }
 @media (max-width: 700px) {
-  .actions-note { position: sticky; bottom: 0; z-index: 10; background: var(--panneau); margin: 12px -16px -16px; padding: 8px 16px 10px; border-top: 1px solid var(--bord); }
+  .actions-note { border-top: 1px solid var(--bord); padding-top: 10px; }
   .actions-note > button, .actions-note > details { flex: 1 1 auto; }
   .actions-note > details > summary { width: 100%; text-align: center; }
   .barre > .btn.petit:first-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
