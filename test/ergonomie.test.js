@@ -12,6 +12,8 @@ test('libellé court : précision entre parenthèses passée en aide, unité gar
   assert.match(r.aide, /récupération/);
   // « vide : … » n'est pas une unité
   assert.strictEqual(E.libelleCourt('Repère du générateur principal (vide : G1, PAC2…)').court, 'Repère du générateur principal');
+  // Pas de coupure au milieu d'une citation « … »
+  assert.strictEqual(E.libelleCourt('Courbe de la pompe « Q:H ; … » (m³/h:mCE, fiche du fabricant)').court, 'Courbe de la pompe « Q:H ; … » (m³/h:mCE)');
 });
 
 test('libellé court : texte sans précision gardé entier s\'il reste raisonnable', () => {

@@ -10,7 +10,9 @@
   function libelleCourt(l, max = 40) {
     const s = String(l ?? '').trim();
     if (s.length <= max) return { court: s, aide: '' };
-    const coupes = [' (', ' — ', ' – ', ' : ', ' ; ', ', '].map(c => s.indexOf(c, 4)).filter(i => i > 0);
+    const coupes = [' (', ' — ', ' – ', ' : ', ' ; ', ', '].map(c => s.indexOf(c, 4))
+      // jamais au milieu d'une citation « … »
+      .filter(i => i > 0 && (s.slice(0, i).match(/«/g) || []).length <= (s.slice(0, i).match(/»/g) || []).length);
     const i = coupes.length ? Math.min(...coupes) : -1;
     if (i < 0 || i > 64) {
       // Pas de précision : libellé gardé entier s'il reste raisonnable, sinon coupé sur un espace
@@ -21,7 +23,7 @@
     let court = s.slice(0, i);
     if (s.slice(i, i + 2) === ' (') {
       // Unité en tête de la parenthèse (« (kPa ; vide : forfait) ») : gardée dans le libellé court
-      const u = s.slice(i + 2).split(/[;,:)]/)[0].trim();
+      const u = s.slice(i + 2).split(/[;,)]/)[0].trim();
       if (u && u.length <= 8 && !/\s/.test(u) && !/^(vide|ex\.?|si|«)/i.test(u)) court += ` (${u})`;
     }
     return { court, aide: s };
