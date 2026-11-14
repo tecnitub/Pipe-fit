@@ -24,6 +24,16 @@ const AnnexesFroid = ((N) => {
     lignes.forEach(x => { const k = norm(x.l.rep); nb.set(k, (nb.get(k) || 0) + 1); });
     return lignes.map(x => (nb.get(norm(x.l.rep)) > 1 ? { ...x.l, rep: `${x.l.rep}-N${x.num}` } : x.l));
   }
+  // Repère saisi de l'unité extérieure d'un calcul DRV
+  const repSaisiUE = n => String(((n.entrees || {}).repUE ?? N.defauts('drv').repUE) || 'UE1').trim() || 'UE1';
+  // Règle commune des repères d'unités extérieures DRV : repère saisi s'il est unique dans l'étude ; sinon chaque calcul
+  // de ce repère est numéroté « UE1-N3 », « UE1-N4 » (n° de sa note). Même repère dans l'armoire, le métré
+  // (« annexe|drv|UE1-N3 ») et le calcul des fluides (valeurs.repUE du calcul résolu).
+  function repereUE(etude, note) {
+    const tous = (etude && etude.notes) || [], rep = repSaisiUE(note);
+    const n = tous.filter(x => x.type === 'drv' && norm(repSaisiUE(x)) === norm(rep)).length;
+    return n > 1 && tous.includes(note) ? `${rep}-N${tous.indexOf(note) + 1}` : rep;
+  }
 
   /* ---------- Fluides frigorigènes ---------- */
   // [libellé, PRP AR4 (règlement (UE) 517/2014, annexes I et IV), PRP AR5 (GIEC 5e rapport, 100 ans), classe de sécurité (ISO 817 / EN 378-1),
@@ -151,8 +161,8 @@ const AnnexesFroid = ((N) => {
     const lignesUI = uis.map(u => { const d = diam(DIAM_UI, u.Pfr); return [`${u.auto ? '🔗 ' : ''}${u.rep}`, u.local, TYPES_UI[u.type], String(u.n), nf(u.Pfr, 2), nf(u.Pch, 2), Number.isFinite(u.L) ? nf(u.L, 1) : '—', nf(u.H, 1), `${d[1]} / ${d[2]}`]; });
     return VR() ? VR().marquer(resultatDrv(), clesFluide(e.fluide)) : resultatDrv();
     function resultatDrv() { return {
-      valeurs: { Pui, PuiC, PfrUE, PchUE, tc, nUI, Lloin, Leq, Ltot, dHui, chargeComp, chargeUsine, chargeTot, tCO2e: t, fluide: e.fluide || 'R410A', Smin, Hmin: Hloc, PelUE, repUE: e.repUE || 'UE1' },
-      resume: [['Unité extérieure', `${e.repUE || 'UE1'} · ${nf(PfrUE, 1)} kW froid / ${nf(PchUE, 1)} kW chaud · ${f[0]}`], ['Unités intérieures', `${nUI} · ${nf(Pui, 1)} kW froid / ${nf(PuiC, 1)} kW chaud`],
+      valeurs: { Pui, PuiC, PfrUE, PchUE, tc, nUI, Lloin, Leq, Ltot, dHui, chargeComp, chargeUsine, chargeTot, tCO2e: t, fluide: e.fluide || 'R410A', Smin, Hmin: Hloc, PelUE, repUE: e._repUE || e.repUE || 'UE1', repUESaisi: e.repUE || 'UE1' },
+      resume: [['Unité extérieure', `${e._repUE || e.repUE || 'UE1'} ·${nf(PfrUE, 1)} kW froid / ${nf(PchUE, 1)} kW chaud · ${f[0]}`], ['Unités intérieures', `${nUI} · ${nf(Pui, 1)} kW froid / ${nf(PuiC, 1)} kW chaud`],
         ['Taux de connexion', Number.isFinite(tc) ? `${nf(tc, 0)} % (admis ${nf(tcMin, 0)}–${nf(tcMax, 0)} %)` : '—'], ['UI la plus éloignée', loin ? `${loin.rep} : ${nf(Lloin, 1)} m réels, ${nf(Leq, 1)} m équivalents` : '—'],
         ['Liaison principale (indicatif)', dp ? `liquide ${dp[1]} / gaz ${dp[2]} mm` : '—'], ['Charge complémentaire', `${nf(chargeComp, 2)} kg`], ['Charge totale', `${nf(chargeTot, 2)} kg · ${nf(t, 2)} tCO₂e (PRP ${ref} ${prp(f, ref)})`],
         ['Puissance électrique de l\'UE', `${nf(PelUE, 1)} kW${num(e.PelUE) > 0 ? '' : ` (estimée, EER ${nf(eer, 1)})`}`]],
@@ -170,6 +180,8 @@ const AnnexesFroid = ((N) => {
   }
   N.TYPES.drv = {
     titre: 'Détente directe DRV / VRF (taux de connexion, liaisons, charge)', icone: '❄️', famille: FAMILLE, annexe: true, theme: THEME,
+    // Repères déjà propres à chaque calcul dans l'étude (règle repereUE) : pas de suffixe « -N » ajouté par le métré
+    reperesEtude: true,
     description: 'Unité extérieure et unités intérieures (reprises des terminaux), taux de connexion, longueurs et dénivelés contrôlés, diamètres indicatifs, charge complémentaire et charge totale.',
     champs: [{ g: 'Unité extérieure' }, { k: 'repUE', l: 'Repère de l\'unité extérieure', t: 't', d: 'UE1' }, { k: 'fluide', l: 'Fluide frigorigène', t: 's', o: optFluides, d: 'R410A' },
       { k: 'PfrUE', l: 'Puissance frigorifique nominale', u: 'kW', d: 28 }, { k: 'PchUE', l: 'Puissance calorifique nominale', u: 'kW', d: 31.5 },
@@ -200,10 +212,14 @@ const AnnexesFroid = ((N) => {
     calcul: calculerDrv,
     lier(ctx) {
       const { e, notes } = ctx;
-      // Plusieurs unités extérieures : repère en double dans l'étude signalé (le calcul des fluides les numérote)
+      // Plusieurs unités extérieures de même repère dans l'étude : signalé, et repère numéroté par la règle commune
+      // (repereUE) repris tel quel par le bilan électrique, le métré et le calcul des fluides
       const tous = (ctx.etude && ctx.etude.notes) || [], rep = String(e.repUE || 'UE1').trim();
-      const memes = tous.filter(n => n !== ctx.note && n.type === 'drv' && norm(String(((n.entrees || {}).repUE ?? N.defauts('drv').repUE) || 'UE1').trim()) === norm(rep));
-      if (memes.length) ctx.alertes.push(alerte('attention', `Repère « ${rep} » de l'unité extérieure aussi utilisé par ${memes.map(ctx.libelle).join(', ')} : donnez un repère distinct à chaque unité extérieure (UE1, UE2…). En attendant, le calcul des fluides les numérote ${[ctx.note, ...memes].map(n => tous.indexOf(n) + 1).sort((a, b) => a - b).map(i => `${rep}-N${i}`).join(', ')}.`));
+      const memes = tous.filter(n => n !== ctx.note && n.type === 'drv' && norm(repSaisiUE(n)) === norm(rep));
+      if (memes.length) {
+        e._repUE = repereUE(ctx.etude, ctx.note);
+        ctx.alertes.push(alerte('attention', `Repère « ${rep} » de l'unité extérieure aussi utilisé par ${memes.map(ctx.libelle).join(', ')} : donnez un repère distinct à chaque unité extérieure (UE1, UE2…). En attendant, les unités sont numérotées ${[ctx.note, ...memes].sort((a, b) => tous.indexOf(a) - tous.indexOf(b)).map(n => repereUE(ctx.etude, n)).join(', ')} (bilan électrique, métré, fluides) ; celle-ci : ${e._repUE}.`));
+      }
       if (e.reprise === 'saisie') return;
       const auto = [];
       notes.filter(n => n.type === 'terminaux').forEach(n => {
@@ -279,9 +295,9 @@ const AnnexesFroid = ((N) => {
       ctx.notes.filter(n => n.type === 'drv' || n.type === 'chambreFroide').forEach(n => {
         const v = ctx.calculer(n).valeurs || {}, es = ctx.resoudre(n);
         if (!(v.chargeTot > 0)) return;
-        auto.push({ num: ((ctx.etude && ctx.etude.notes) || []).indexOf(n) + 1, l: { rep: n.type === 'drv' ? String(es.repUE || n.titre) : String(es.repGroupe || n.titre), fluide: v.fluide, charge: Math.round(v.chargeTot * 100) / 100, hermetique: 'non', detection: 'non', S: v.Smin || '', H: v.Hmin || '', pos: n.type === 'drv' ? es.posUI || 'mur' : 'plafond', _auto: ctx.libelle(n) } });
+        auto.push({ num: ((ctx.etude && ctx.etude.notes) || []).indexOf(n) + 1, saisi: n.type === 'drv' ? String(v.repUESaisi || es.repUE || n.titre) : null, l: { rep: n.type === 'drv' ? String(v.repUE || es.repUE || n.titre) : String(es.repGroupe || n.titre), fluide: v.fluide, charge: Math.round(v.chargeTot * 100) / 100, hermetique: 'non', detection: 'non', S: v.Smin || '', H: v.Hmin || '', pos: n.type === 'drv' ? es.posUI || 'mur' : 'plafond', _auto: ctx.libelle(n) } });
       });
-      const lignes = repDistincts(auto), renum = lignes.filter((l, k) => l.rep !== auto[k].l.rep);
+      const lignes = repDistincts(auto), renum = lignes.filter((l, k) => l.rep !== (auto[k].saisi || auto[k].l.rep)); // DRV : déjà numérotés par repereUE
       if (renum.length) ctx.alertes.push(alerte('info', `Repères en double dans l'étude, numérotés d'après la note d'origine : ${renum.map(l => `${l.rep} (${l._auto})`).join(', ')} — à renommer dans les calculs d'origine (UE1, UE2…).`));
       reprendre(ctx, 'equipements', lignes, 'rep');
     },
@@ -407,6 +423,6 @@ const AnnexesFroid = ((N) => {
     },
   };
 
-  return { FLUIDES, SEUILS_FGAZ, controleFgaz, chargeMaxLocal, H0, DIAM_PRINC, DIAM_UI, TUBES_LIQ, gParM, RENOUV, renouvellement, DENREES, chaleurPersonne, pws, xDe, hDe, calculerDrv, calculerFluides, calculerChambre, reprendre, estDX };
+  return { FLUIDES, SEUILS_FGAZ, controleFgaz, chargeMaxLocal, H0, DIAM_PRINC, DIAM_UI, TUBES_LIQ, gParM, RENOUV, renouvellement, DENREES, chaleurPersonne, pws, xDe, hDe, calculerDrv, calculerFluides, calculerChambre, reprendre, estDX, repereUE };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'));
 if (typeof module !== 'undefined') module.exports = AnnexesFroid;

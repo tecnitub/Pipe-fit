@@ -171,7 +171,7 @@ const Metre = ((N, C, D, L, Sc) => {
         desemboueurSchema: dims.some(({ e }) => e.desemboueur !== 'non') };
       const vus = {};
       annexes.forEach(n => {
-        const T = N.TYPES[n.type], ni = notes.indexOf(n), sfx = vus[n.type] ? `-N${ni + 1}` : ''; vus[n.type] = true;
+        const T = N.TYPES[n.type], ni = notes.indexOf(n), sfx = vus[n.type] && !T.reperesEtude ? `-N${ni + 1}` : ''; vus[n.type] = true; // DRV : repères déjà numérotés (règle commune)
         if (typeof T.versMetre !== 'function') return;
         let postesAnn = [];
         try { const { e, v } = calc.get(n.id); postesAnn = T.versMetre(v, e, n, ctx) || []; } catch (err) { return; }
@@ -180,6 +180,8 @@ const Metre = ((N, C, D, L, Sc) => {
           const cle = `annexe|${n.type}|${x.rep}${sfx}`, recherche = x.type ? { type: x.type, ...(x.dn ? { dn: x.dn } : {}) } : { type: 'mots', mots: x.mots || [] };
           if ((x.unite || 'u') === 'u') equip(cle, x.chapitre || 'Équipements hydrauliques', x.designation, x.qte, x.heures, recherche, titre(n));
           else ajouter(cle, { chapitre: x.chapitre || 'Équipements hydrauliques', designation: x.designation, unite: x.unite, qte: x.qte, heures: x.heures, mo: 'monteur', source: titre(n), recherche });
+          // Matériel principal du calcul (unité extérieure, échangeur, groupe, extracteur…) : reçoit le modèle du registre
+          if (x.modele && postes.has(cle)) postes.get(cle).modele = true;
         });
       });
     }

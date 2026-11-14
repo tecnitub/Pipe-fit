@@ -363,7 +363,7 @@ const AnnexesElec = ((N) => {
       if (!(v.Q > 0)) return [];
       const r = e.repE || 'EXT-CUI';
       return [it(`HOTTE-${r}`, 'Aéraulique', `Hotte de cuisine professionnelle ${f1(num(e.Lh, 3))} × ${f1(num(e.lh, 1.2))} m, filtres à graisses`, 1, 8, { mots: ['hotte'] }),
-        it(r, 'Aéraulique', `Extracteur de la hotte de cuisine ${f0(v.Q)} m³/h, ${f0(num(e.dpE, 500))} Pa`, 1, 6, { mots: ['extracteur'] }),
+        it(r, 'Aéraulique', `Extracteur de la hotte de cuisine ${f0(v.Q)} m³/h, ${f0(num(e.dpE, 500))} Pa`, 1, 6, { mots: ['extracteur'], modele: true }),
         ...(v.PeC > 0 ? [it(`${r}-COMP`, 'Aéraulique', `Caisson d'air de compensation de la cuisine ${f0(v.Qc)} m³/h`, 1, 6, { mots: ['caisson'] })] : []),
         ...(v.nFiltres > 0 ? [it(`FILTRES-${r}`, 'Aéraulique', `Filtre à graisses ${f1(num(e.lf, 0.5))} × ${f1(num(e.hf, 0.5))} m`, v.nFiltres, 0.1, { mots: ['filtre', 'graisse'] })] : []),
         it(`EVG-${r}`, REG_S, 'Électrovanne gaz de la cuisine asservie à l\'extraction (coffret de commande, réarmement manuel)', 1, 2, { mots: ['electrovanne', 'gaz'] }),
@@ -372,12 +372,12 @@ const AnnexesElec = ((N) => {
     parking: (v, e) => {
       if (!(v.QGV > 0)) return [];
       const r = e.repExt || 'EXT-PK';
-      return [it(r, 'Aéraulique', `Extracteur de parking ${f0(v.Qext)} m³/h, ${f0(num(e.dp, 300))} Pa, deux vitesses`, v.niveaux * v.nExt, 6, { mots: ['extracteur'] }),
+      return [it(r, 'Aéraulique', `Extracteur de parking ${f0(v.Qext)} m³/h, ${f0(num(e.dp, 300))} Pa, deux vitesses`, v.niveaux * v.nExt, 6, { mots: ['extracteur'], modele: true }),
         ...(v.Pam > 0 ? [it(`${r}-AM`, 'Aéraulique', 'Ventilateur d\'amenée d\'air du parking', v.niveaux * v.nExt, 6, { mots: ['ventilateur'] })] : []),
         ...(v.nDet > 0 ? [it(`${r}-DET`, REG_S, `Centrale de détection ${(e.gaz || 'co+no2') === 'co' ? 'CO' : (e.gaz === 'no2' ? 'NO₂' : 'CO / NO₂')} du parking, signalisation`, 1, 4, { mots: ['centrale', 'detection'] }),
           it(`${r}-CO`, REG_S, `Détecteur ${(e.gaz || 'co+no2') === 'co' ? 'CO' : (e.gaz === 'no2' ? 'NO₂' : 'CO / NO₂')} du parking`, v.nDet, 1, { mots: ['detecteur'] })] : [])];
     },
-    piscine: (v, e) => (v.Pvent > 0 ? [it(e.rep || 'CTA-PISC', 'Aéraulique', `Centrale de déshumidification de la piscine ${f0(v.Qsouffle)} m³/h (récupération, ${e.deshu === 'thermo' ? 'pompe à chaleur' : 'air neuf modulé'})`, 1, 24, { type: 'cta' }),
+    piscine: (v, e) => (v.Pvent > 0 ? [it(e.rep || 'CTA-PISC', 'Aéraulique', `Centrale de déshumidification de la piscine ${f0(v.Qsouffle)} m³/h (récupération, ${e.deshu === 'thermo' ? 'pompe à chaleur' : 'air neuf modulé'})`, 1, 24, { type: 'cta', modele: true }),
       it('SONDES-PISC', REG_S, 'Sondes du hall (hygrométrie, température) et de l\'eau du bassin', 3, 0.5, { mots: ['sonde'] })] : []),
     puitsCanadien: (v, e) => (v.Q > 0 ? [
       it('TUBE-PC', 'Aéraulique', `Tube de puits canadien Ø ${f0(num(e.D, 0.2) * 1000)} mm alimentaire, pente vers la purge (terrassement hors lot)`, Math.round(num(e.nTubes, 3) * num(e.L, 40)), 0.25, { unite: 'ml', mots: ['tube', 'puits'] }),
@@ -388,14 +388,14 @@ const AnnexesElec = ((N) => {
     chambreFroide: (v, e) => {
       if (!(v.Pevap > 0)) return [];
       const g = v.repGroupe || 'CF';
-      return [it(g, 'Froid', `Groupe frigorifique de la chambre froide ${f1(v.Pevap)} kW à ${f0(num(e.Ti, 2))} °C (${v.fluide || 'fluide à choisir'})`, 1, 16, { mots: ['groupe', 'frigorifique'] }),
+      return [it(g, 'Froid', `Groupe frigorifique de la chambre froide ${f1(v.Pevap)} kW à ${f0(num(e.Ti, 2))} °C (${v.fluide || 'fluide à choisir'})`, 1, 16, { mots: ['groupe', 'frigorifique'], modele: true }),
         it(`${g}-EV`, 'Froid', 'Évaporateur ventilé de la chambre froide', 1, 6, { mots: ['evaporateur'] }),
         it(`${g}-SEC`, REG_S, 'Alarme de personne enfermée et contact de porte de la chambre froide', 1, 2, { mots: ['alarme'] })];
     },
     drv: v => {
       if (!(v.PelUE > 0)) return [];
       const ue = v.repUE || 'UE1';
-      return [it(ue, 'Froid', `Unité extérieure DRV ${f1(v.PfrUE)} kW froid / ${f1(v.PchUE)} kW chaud (${v.fluide || ''})`, 1, 16, { mots: ['unite', 'exterieure'] }),
+      return [it(ue, 'Froid', `Unité extérieure DRV ${f1(v.PfrUE)} kW froid / ${f1(v.PchUE)} kW chaud (${v.fluide || ''})`, 1, 16, { mots: ['unite', 'exterieure'], modele: true }),
         ...(v.nUI > 0 ? [it(`UI-${ue}`, 'Froid', 'Unité intérieure DRV (raccordement frigorifique, condensats, commande)', v.nUI, 4, { mots: ['unite', 'interieure'] })] : []),
         ...(v.Ltot > 0 ? [it(`LIAISONS-${ue}`, 'Froid', 'Liaisons frigorifiques cuivre isolées (liquide et gaz), brasées sous azote', Math.round(v.Ltot), 0.6, { unite: 'ml', mots: ['liaison', 'frigorifique'] })] : []),
         it(`GW-${ue}`, REG_S, 'Passerelle de communication DRV ↔ GTC (Modbus / BACnet)', 1, 2, { mots: ['passerelle'] })];
@@ -412,7 +412,7 @@ const AnnexesElec = ((N) => {
     plafonds: v => [it('DC-PF', REG_S, 'Détecteur de condensation (plafonds / poutres froides)', Math.max(1, nbLocaux(v)), 0.5, { mots: ['detecteur', 'condensation'] }),
       it('HR-PF', REG_S, 'Sonde d\'hygrométrie d\'ambiance', 1, 0.5, { mots: ['sonde', 'hygrometrie'] })],
     // Échangeur relié à un échangeur du schéma de principe : déjà compté par le schéma
-    echangeurPlaques: (v, e, n, c) => (v.P > 0 && !(e.source && c.echangeurSchema) ? [it('ECH', 'Production', `Échangeur à plaques ${f0(v.P)} kW (≈ ${f1(v.A)} m²)`, 1, 8, { type: 'echangeur' }),
+    echangeurPlaques: (v, e, n, c) => (v.P > 0 && !(e.source && c.echangeurSchema) ? [it('ECH', 'Production', `Échangeur à plaques ${f0(v.P)} kW (≈ ${f1(v.A)} m²)`, 1, 8, { type: 'echangeur', modele: true }),
       it('SONDES-ECH', REG_S, 'Sonde de température à plongeur (départ secondaire, retour primaire)', 2, 0.5, { mots: ['sonde', 'temperature'] })] : []),
     // Désemboueur : compté par le schéma de principe s'il en porte un
     traitementEau: (v, e, n, c) => (v.V > 0 ? [it('CPT-APP', 'Équipements hydrauliques', 'Compteur d\'eau d\'appoint à émetteur d\'impulsions', 1, 1, { mots: ['compteur', 'eau'] }),

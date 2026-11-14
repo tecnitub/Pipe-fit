@@ -100,7 +100,7 @@ const Regulation = (() => {
       if (x && nomMat(x) && (n.type === 'cta' || n.type === 'pid')) M.note[n.id] = { nom: nomMat(x), types: n.type === 'cta' ? ['cta', 'ventilateur'] : ['generateur', 'pac'] };
       const T = N.TYPES[n.type];
       if (!A || !T || !T.annexe || typeof T.versMetre !== 'function') return;
-      const sfx = vus[n.type] ? `-N${ni + 1}` : ''; vus[n.type] = true;
+      const sfx = vus[n.type] && !T.reperesEtude ? `-N${ni + 1}` : ''; vus[n.type] = true;
       if (!Object.keys(M.metre).some(k => k.startsWith(`annexe|${n.type}|`))) return;
       try {
         const e = Liens ? Liens.resoudre(et, n).entrees : e0, v = N.calculer(n.type, e).valeurs || {};
@@ -166,7 +166,9 @@ const Regulation = (() => {
               if (!c) return [];
               const boucle = /-eau$/.test(e.generateur || '') && e.sourceEau === 'boucle', ss = /^echangeur/.test(e.generateur || '');
               return [`Alimenté par le circuit « ${c.rep} » de ${amont.pid.titre} : demande de marche envoyée à la régulation amont (pompe du circuit en marche, consigne de départ amont relevée si besoin) ; ${boucle ? 'la PAC n\'est autorisée que si l\'eau de la boucle arrive entre 15 et 30 °C (protection de l\'évaporateur), arrêt et alarme sinon' : ss ? 'la vanne primaire de l\'échangeur n\'est ouverte qu\'avec la pompe amont en marche' : 'production autorisée avec la pompe amont en marche'} ; défaut de la source reporté.`]; })(),
-            ...(e.circuits || []).filter(c => c && c.annexe && (etude.notes || []).some(x => x.id === c.annexe && x.type === 'pid')).map(c => `Circuit « ${c.rep} » : alimente le schéma ${((etude.notes || []).find(x => x.id === c.annexe) || {}).titre || ''} ; pompe en marche sur sa demande, sans vanne de mélange si le schéma aval régule lui-même (échangeur ou PAC), post-circulation 3 min.`)], params: params.filter(Boolean) });
+            ...(e.circuits || []).filter(c => c && c.annexe && (etude.notes || []).some(x => x.id === c.annexe && x.type === 'pid')).map(c => `Circuit « ${c.rep} » : alimente le schéma ${((etude.notes || []).find(x => x.id === c.annexe) || {}).titre || ''} ; pompe en marche sur sa demande, sans vanne de mélange si le schéma aval régule lui-même (échangeur ou PAC), post-circulation 3 min.`),
+            // Circuits qui alimentent les batteries d'une CTA (réseau annexe effectif : liaison saisie ou automatique)
+            ...(e.circuits || []).filter(c => c && c.annexe && (etude.notes || []).some(x => x.id === c.annexe && x.type === 'cta')).map(c => `Circuit « ${c.rep} » : alimente les batteries de la CTA ${((etude.notes || []).find(x => x.id === c.annexe) || {}).titre || ''}${c._autoCta ? ' (liaison automatique)' : ''} ; pompe en marche sur demande de la CTA (centrale en marche, antigel), arrêt temporisé.`)], params: params.filter(Boolean) });
         } else if (n.type === 'cta') {
           const { e, v: vC } = res(n), f = e.froid || 'oui', recup = e.recup || '', co = f === 'co', bc = !['froide', 'aucune'].includes(f), bf = !['non', 'aucune'].includes(f), be = e.batElec || (num(e.PelBe) ? 'appoint' : '');
           const af = [
@@ -179,9 +181,12 @@ const Regulation = (() => {
             ...(be ? [`${be === 'prechauffage' ? 'Préchauffage électrique : enclenché quand l\'air neuf passe sous −5 °C (protection du récupérateur et de la batterie à eau). ' : ''}Batterie électrique${num(vC && vC.Pbe) ? ` (${nf(num(vC.Pbe), 1)} kW)` : ''} : verrouillée sur le débit d\'air (pressostat), post-ventilation de 2 min à l\'arrêt, thermostat de sécurité à réarmement manuel.`] : []),
             'Filtres : pressostats d\'encrassement (alarme de maintenance) ; arrêt : fermeture des registres après l\'arrêt des ventilateurs ; programmation horaire et dérogation.',
           ];
+          // Batteries à eau alimentées par un circuit de schéma de principe (liaison saisie ou automatique) : demande de marche
+          const alim = (Liens.circuitsDeAnnexe ? Liens.circuitsDeAnnexe(notes, n) : []).map(r => ({ rep: (((r.pid.entrees || {}).circuits || [])[r.i] || {}).rep || `C${r.i + 1}`, schema: r.pid.titre || '', auto: !!r.auto })).filter(x => x.rep);
+          alim.forEach(x => af.splice(af.length - 1, 0, `Batterie(s) à eau alimentée(s) par le circuit « ${x.rep} » de ${x.schema}${x.auto ? ' (liaison automatique)' : ''} : demande de marche de la pompe du circuit envoyée à la production quand la centrale fonctionne (et sur antigel) ; la vanne du circuit module la batterie suivant la consigne de soufflage.`));
           const params = [p('Consigne de soufflage hiver', num(e.TsH, 20), '°C'), ...(bf ? [p('Consigne de soufflage été', num(e.TsE, 16), '°C')] : []), p('Débit de soufflage', num(e.Qs), 'm³/h'), ...(num(e.Qr) ? [p('Débit de reprise', num(e.Qr), 'm³/h')] : []),
             ...(bc ? [p('Seuil de l\'antigel', 5, '°C')] : []), ...(be === 'prechauffage' ? [p('Enclenchement du préchauffage électrique', -5, '°C air neuf')] : []), p('Temporisation du ventilateur de soufflage', 30, 's'), ...(e.humid === 'vapeur' ? [p('Humidité relative mini', num(e.HRmin, 40), '%')] : [])];
-          installations.push({ noteId: n.id, titre, app: 'ventilation', af, params: params.filter(Boolean), donnees: { cta: true, TsH: num(e.TsH, 20), TsE: num(e.TsE, 16), froid: f, changeOver: co, batElec: be } });
+          installations.push({ noteId: n.id, titre, app: 'ventilation', af, params: params.filter(Boolean), donnees: { cta: true, TsH: num(e.TsH, 20), TsE: num(e.TsE, 16), froid: f, changeOver: co, batElec: be, alimentation: alim } });
         } else if (n.type === 'aero' && !(n.entrees || {}).cta) {
           const { e, v } = res(n), ext = e.producteur === 'extraction';
           installations.push({ noteId: n.id, titre, app: 'ventilation', af: [`${ext ? 'Caisson d\'extraction' : 'Ventilateur'} en marche selon la programmation horaire${ext ? ' (ou en permanence en logement)' : ''}, retour de marche par pressostat ; débit ${nf(v.Qs || v.Qr, 0)} m³/h ; défaut reporté.`],
