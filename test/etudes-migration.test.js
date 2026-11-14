@@ -11,6 +11,7 @@ const N = require('../etudes/public/js/notes');
 const Liens = require('../etudes/public/js/liens');
 const M = require('../etudes/public/js/metre');
 const PM = require('../etudes/public/js/points-mes');
+['emetteurs', 'energie', 'froid', 'air', 'plomberie', 'reglementaire'].forEach(t => require(`../etudes/public/js/annexes-${t}`));
 const types = Object.keys(N.TYPES);
 
 test('migration : tous les types de calcul existent (contrôle de la liste)', () => {

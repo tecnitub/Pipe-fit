@@ -58,6 +58,7 @@ button.carte.type { background: var(--panneau); color: var(--texte); border: 1px
 .badge.attention { background: var(--att-fond); color: var(--att-texte); }
 .badge.estime { background: var(--att-fond); color: var(--att-texte); display: inline-block; margin-top: 2px; font-size: 11px; white-space: nowrap; cursor: help; }
 td > .badge.estime { display: block; white-space: normal; line-height: 1.2; }
+.badge.repris { background: var(--bleu-clair); color: var(--bleu); display: inline-block; margin-top: 2px; font-size: 11px; white-space: nowrap; cursor: help; }
 .ok-texte { color: var(--ok-texte); }
 .manque { color: var(--err-texte); }
 .avert { color: var(--att-texte); }

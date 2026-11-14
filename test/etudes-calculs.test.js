@@ -9,6 +9,7 @@ const Schema = require('../etudes/public/js/schema');
 const I = require('../etudes/public/js/industriel');
 const Eq = require('../etudes/public/js/equilibrage');
 const Cta = require('../etudes/public/js/cta');
+['emetteurs', 'energie', 'froid', 'air', 'plomberie', 'reglementaire'].forEach(t => require(`../etudes/public/js/annexes-${t}`));
 
 const proche = (v, ref, tol, msg) => assert.ok(Math.abs(v - ref) <= tol, `${msg || ''} ${v} ≠ ${ref} ± ${tol}`);
 

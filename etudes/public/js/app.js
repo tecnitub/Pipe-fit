@@ -138,6 +138,8 @@ const colonnesDe = (c, e) => c.colonnes.filter(col => !col.si || col.si(e));
 // verrous : champs repris d'une autre note (« champ » ou « liste.ligne.colonne » → libellé de la source), affichés non modifiables
 const verrou = (v, cle) => (v[cle] ? ` disabled data-verrou title="Repris de ${esc(v[cle])}"` : '');
 // Valeur estimée (estimations.js : ratios, surfaces) encore en place : badge « estimée — à confirmer », origine en infobulle
+// Valeur proposée depuis l'étude (calcul annexe : liens « proposer ») tant qu'elle n'est pas saisie
+const badgeRepris = (o, k) => (o && o._repris && o._repris[k] ? `<span class="badge repris" title="${esc(`Proposée d'après ${o._repris[k]} ; une saisie la remplace.`)}">repris de ${esc(o._repris[k])}</span>` : '');
 const badgeEstime = (o, k, v, cle) => {
   const m = !v[cle] && typeof Estimations !== 'undefined' ? Estimations.marque(o, k) : null;
   return m ? `<span class="badge estime" title="${esc(`Estimée : ${m.origine}. Remplacée dès qu'une valeur réelle existe (saisie, bilan, fiche).`)}">estimée — à confirmer</span>` : '';
@@ -159,7 +161,7 @@ function formulaireHtml(type, e, v = {}) {
   return rubriques(type, e).map(r => `<fieldset${estReplie(type, r.titre) ? ' class="replie"' : ''}>${r.titre ? `<legend><button type="button" class="replier" data-replier="${esc(r.titre)}" data-type="${esc(type)}" aria-expanded="${!estReplie(type, r.titre)}">${esc(r.titre)}</button></legend>` : ''}<div class="grille-champs">${r.champs.map(c => {
     if (c.t === 'lignes') {
       const lignes = e[c.k] || [], cols = colonnesDe(c, e);
-      return `<div class="large"><div class="petit muted titre-lignes">${esc(c.l)}${lignes.length ? ` <span class="compte">${lignes.length}</span>` : ''}</div><div class="defile-x"><table class="edit lignes${lignes.length ? '' : ' vide'}"><thead><tr>${cols.map(col => enteteColonne(col.l)).join('')}<th><span class="visuel-cache">Actions</span></th></tr></thead>
+      return `<div class="large"><div class="petit muted titre-lignes">${esc(c.l)}${lignes.length ? ` <span class="compte">${lignes.length}</span>` : ''}${badgeRepris(e, c.k)}</div><div class="defile-x"><table class="edit lignes${lignes.length ? '' : ' vide'}"><thead><tr>${cols.map(col => enteteColonne(col.l)).join('')}<th><span class="visuel-cache">Actions</span></th></tr></thead>
         <tbody>${lignes.map((l, i) => `<tr${l && l._auto ? ` class="ligne-auto" title="Ligne reprise de ${esc(l._auto)}"` : ''}>${cols.map(col => `<td>${col.t === 'cases' ? casesLigne(c, col, l, i, e) : col.t === 's' ? `<select data-l="${c.k}.${i}.${col.k}"${verrou(v, `${c.k}.${i}.${col.k}`)}>${optionsHtml(optionsDe(col, e, l), l[col.k])}</select>`
           : `<input data-l="${c.k}.${i}.${col.k}" value="${esc(valeurChamp(l[col.k]))}" ${col.t === 't' ? (col.lst ? `list="${idListe(c, col)}" autocomplete="off"` : '') : 'inputmode="decimal" class="nombre"'}${verrou(v, `${c.k}.${i}.${col.k}`)}>${badgeEstime(l, col.k, v, `${c.k}.${i}.${col.k}`)}`}</td>`).join('')}
           <td class="actions-l" style="white-space:nowrap">${l && l._auto ? '<span class="petit muted" title="Ligne reprise d\'un autre calcul">🔗</span>' : `${c.colonnes[0].k === 'rep' ? `<button class="icone" data-dup-ligne="${c.k}.${i}" title="Dupliquer : même équipement, repère suivant ; il reste à changer la pièce">⧉</button>` : ''}<button class="icone" data-suppr-ligne="${c.k}.${i}" title="Supprimer la ligne">✕</button>`}</td></tr>`).join('')}</tbody></table></div>${datalistsHtml(c, cols, e)}
@@ -168,8 +170,8 @@ function formulaireHtml(type, e, v = {}) {
     const lib = libelleChamp(c.l, c.u);
     if (c.t === 'cases') { const val = Array.isArray(e[c.k]) ? e[c.k] : (c.d || []), opts = optionsDe(c, e);
       return `<div class="large"><div class="petit muted">${esc(c.l)}</div><div class="cases-choix">${opts.map(([k, l, aide]) => `<label class="case" title="${esc(aide || '')}"><input type="checkbox" data-case="${c.k}" value="${esc(k)}" ${val.includes(k) ? 'checked' : ''}> ${esc(l)}</label>`).join('')}</div></div>`; }
-    if (c.t === 's') return `<label>${lib}<select data-k="${c.k}"${verrou(v, c.k)}>${optionsHtml(optionsDe(c, e), e[c.k])}</select></label>`;
-    return `<label>${lib}<input data-k="${c.k}" value="${esc(valeurChamp(e[c.k]))}" ${c.t === 't' ? '' : 'inputmode="decimal" class="nombre"'}${verrou(v, c.k)}>${badgeEstime(e, c.k, v, c.k)}</label>`;
+    if (c.t === 's') return `<label>${lib}<select data-k="${c.k}"${verrou(v, c.k)}>${optionsHtml(optionsDe(c, e), e[c.k])}</select>${badgeRepris(e, c.k)}</label>`;
+    return `<label>${lib}<input data-k="${c.k}" value="${esc(valeurChamp(e[c.k]))}" ${c.t === 't' ? '' : 'inputmode="decimal" class="nombre"'}${verrou(v, c.k)}>${badgeEstime(e, c.k, v, c.k)}${badgeRepris(e, c.k)}</label>`;
   }).join('')}</div></fieldset>`).join('');
 }
 // Onglets complémentaires d'un calcul (réglementation, régulation…) : blocs d'exigences, listes, tableaux, textes
@@ -297,7 +299,11 @@ function lierCalculateur(root, type, e, changer, ctx = ctxSimple(type, e)) {
   });
   root.querySelectorAll('[data-l]').forEach(el => {
     const [k, i, col] = el.dataset.l.split('.');
-    const ecrire = () => { const l = e[k] || (e[k] = []); (l[+i] || (l[+i] = {}))[col] = el.value; };
+    // Liste seulement proposée (reprise d'une autre note, pas encore saisie) : recopiée en entier avant la première modification
+    const ecrire = () => {
+      if (!(Array.isArray(e[k]) && e[k].length)) { try { const ef = ctx.effectives().entrees[k]; if (Array.isArray(ef) && ef.length && !ef.some(l => l && l._auto)) e[k] = JSON.parse(JSON.stringify(ef)); } catch (x) { /* pas de proposition */ } }
+      const l = e[k] || (e[k] = []); (l[+i] || (l[+i] = {}))[col] = el.value;
+    };
     // Une liste peut changer les champs verrouillés (puissance reprise d'un bilan) : formulaire redessiné
     if (el.tagName === 'SELECT') el.onchange = () => { ecrire(); redessiner(); }; else el.oninput = () => { ecrire(); recalculer(); };    // Pièce, local, étage… : liste des valeurs de l'étude ouverte au clic, et une valeur nouvelle proposée tout de suite
     // aux autres lignes (sans attendre que le formulaire soit redessiné)
