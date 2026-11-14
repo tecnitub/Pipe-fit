@@ -1929,12 +1929,45 @@ function carteValeursRegl(admin) {
     <p class="muted petit">Valeurs de référence utilisées par les calculs annexes (fluides frigorigènes, F-gaz, parking, ventilation, légionelle, chaufferie…), à confirmer dans l'édition en vigueur des textes. Une valeur modifiée ici s'applique à tous les calculs dont le champ correspondant est laissé vide ; la note de calcul le signale (hypothèse et alerte).</p>
     <div class="actions-ligne"><span class="badge ${n ? 'avert' : 'ok'}">${n ? `${n} valeur(s) modifiée(s)` : 'valeurs par défaut'}</span>
       ${admin ? '<button class="petit" id="vr-enreg">Enregistrer les valeurs réglementaires</button><button class="secondaire petit" id="vr-defaut">Revenir aux valeurs par défaut</button>' : ''}</div>
+    ${(() => { const m = typeof MajValeurs !== 'undefined' ? MajValeurs.detecter(S.etudes) : []; return `<div class="actions-ligne"><span class="badge ${m.length ? 'avert' : 'ok'}" id="vr-maj-nb">${m.length ? `${m.length} champ(s) d'anciennes études figé(s) sur l'ancien défaut` : 'études à jour'}</span>${admin ? '<button class="secondaire petit" id="vr-maj" title="Champs « vide : Réglages » des notes enregistrées avant les Réglages, remplis avec l\'ancien défaut : aperçu, puis vidés (ils suivent les Réglages) ou mis à la valeur des Réglages">🔄 Mettre à jour les études…</button>' : ''}</div>`; })()}
     ${VR.groupes().map(g => { const lg = l.filter(x => x.groupe === g), ng = lg.filter(x => x.surchargee).length;
       return `<details${ng ? ' open' : ''}><summary><strong>${esc(g)}</strong> <span class="muted petit">${lg.length} valeur(s)${ng ? ` · ${ng} modifiée(s)` : ''}</span></summary>
         <div class="defile-x"><table class="liste compact"><thead><tr><th>Valeur</th><th>Retenue</th><th>Unité</th><th>Défaut</th><th>Source</th><th>Date</th><th></th></tr></thead><tbody>${lg.map(x => `<tr${x.surchargee ? ' class="avert"' : ''}>
           <td>${esc(x.libelle)}</td><td><input style="width:7em" inputmode="decimal" aria-label="${esc(x.libelle)}" data-vreg="${esc(x.cle)}" value="${esc(f(x.valeur))}" ${dis}></td><td class="petit">${esc(x.unite)}</td>
           <td class="petit">${esc(f(x.defaut))}</td><td class="petit">${esc(x.source)}</td><td class="petit">${esc(/^\d{4}-\d{2}-\d{2}$/.test(x.date) ? dateFr(x.date) : x.date)}</td>
           <td>${admin && x.surchargee ? `<button class="icone" data-vreg-defaut="${esc(x.cle)}" title="Remettre la valeur par défaut (puis enregistrer)">↺</button>` : ''}</td></tr>`).join('')}</tbody></table></div></details>`; }).join('')}</div>`;
+}
+// Anciennes études : champs « vide : Réglages » restés sur l'ancien défaut (qPlace = 600…) ; aperçu, choix, puis vidés ou
+// mis à la valeur des Réglages (MajValeurs : une valeur réellement saisie, différente de l'ancien défaut, n'est jamais touchée)
+function dialogueMajValeurs() {
+  let tous = false;
+  const f = x => (x === '' || x === undefined || x === null ? '—' : String(x).replace('.', ','));
+  const dessiner = () => {
+    const l = MajValeurs.detecter(S.etudes, { tous });
+    const b = Modal.open(`<h2>Mettre à jour les études</h2>
+      <p class="muted petit">Champs des calculs annexes enregistrés avec l'ancienne valeur par défaut, alors qu'ils suivent désormais les valeurs réglementaires des Réglages quand ils sont vides. Une valeur saisie différente de l'ancien défaut n'est jamais proposée.</p>
+      <label class="petit"><input type="checkbox" id="mv-tous" ${tous ? 'checked' : ''}> Inclure les champs dont la valeur des Réglages est égale à l'ancien défaut (le résultat ne change pas)</label>
+      ${l.length ? `<div class="defile-x"><table class="liste compact"><thead><tr><th><input type="checkbox" id="mv-tout" checked aria-label="Tout cocher"></th><th>Étude</th><th>Note</th><th>Champ</th><th>Ancienne → nouvelle valeur</th></tr></thead><tbody>${l.map((x, i) => `<tr data-mv-ligne="${i}">
+        <td><input type="checkbox" data-mv="${i}" checked></td><td>${esc(x.etude)}${x.modele ? ' <span class="badge">modèle</span>' : ''}</td><td>${esc(x.note)}</td><td>${esc(x.libelle)} <span class="muted petit">(${esc(x.champ)})</span></td>
+        <td>${esc(f(x.ancienne))} → <strong>${esc(f(x.nouvelle))}</strong>${x.unite ? ` ${esc(x.unite)}` : ''}${x.differe ? '' : ' <span class="muted petit">(inchangée)</span>'}</td></tr>`).join('')}</tbody></table></div>
+        <fieldset class="petit"><label><input type="radio" name="mv-mode" value="vider" checked> Vider les champs : ils suivront les Réglages</label>
+          <label><input type="radio" name="mv-mode" value="valeur"> Écrire la valeur des Réglages dans les champs</label></fieldset>` : '<p id="mv-rien">Aucun champ à mettre à jour : les notes enregistrées suivent les Réglages ou portent une valeur saisie.</p>'}
+      <div class="actions"><button class="secondaire" id="mv-annuler">Fermer</button>${l.length ? '<button id="mv-ok">Mettre à jour les champs cochés</button>' : ''}</div>`);
+    b.querySelector('#mv-annuler').onclick = Modal.close;
+    b.querySelector('#mv-tous').onchange = e => { tous = e.target.checked; dessiner(); };
+    const tout = b.querySelector('#mv-tout');
+    if (tout) tout.onchange = () => b.querySelectorAll('[data-mv]').forEach(c => { c.checked = tout.checked; });
+    const ok = b.querySelector('#mv-ok');
+    if (ok) ok.onclick = () => {
+      const choix = l.filter((x, i) => b.querySelector(`[data-mv="${i}"]`).checked), mode = (b.querySelector('[name="mv-mode"]:checked') || {}).value || 'vider';
+      if (!choix.length) return toast('Aucun champ coché.');
+      const r = MajValeurs.appliquer(S.etudes, choix, mode);
+      r.etudes.forEach(et => enregistrer(et));
+      Modal.close(); App.render();
+      toast(`${r.n} champ(s) mis à jour dans ${r.etudes.length} étude(s)${mode === 'vider' ? ' : ils suivent désormais les Réglages' : ''}.`, 5000);
+    };
+  };
+  dessiner();
 }
 const ecrireChemin = (o, chemin, v) => { const k = chemin.split('.'); k.slice(0, -1).reduce((a, x) => (a[x] = a[x] || {}), o)[k[k.length - 1]] = v; };
 Vues.reglages = {
@@ -2040,6 +2073,8 @@ Vues.reglages = {
     };
     const vrd = root.querySelector('#vr-defaut');
     if (vrd) vrd.onclick = async () => { if (await confirmer('Revenir aux valeurs réglementaires par défaut pour tous les calculs ?', 'Revenir')) { await majConfig({ ...S.config, valeursRegl: {} }); toast('Valeurs réglementaires par défaut rétablies'); } };
+    const vrm = root.querySelector('#vr-maj');
+    if (vrm) vrm.onclick = dialogueMajValeurs;
     root.querySelectorAll('[data-vreg-defaut]').forEach(b => b.onclick = () => { const el = root.querySelector(`[data-vreg="${b.dataset.vregDefaut}"]`); if (el) el.value = String(ValeursRegl.defaut(b.dataset.vregDefaut)).replace('.', ','); });
     const lireRatios = () => { const r = copie(Metre.ratios()); root.querySelectorAll('[data-mr]').forEach(el => { const k = el.dataset.mr.split('.'), v = parseFloat(el.value); if (!Number.isFinite(v) || v < 0) return; k.slice(0, -1).reduce((o, x) => o[x], r)[k[k.length - 1]] = v; }); return r; };
     const enregistrerMetre = async (m, msg) => { await majConfig({ ...S.config, metre: m }); toast(msg); };

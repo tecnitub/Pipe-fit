@@ -52,7 +52,13 @@ const AnnexesFroid = ((N) => {
   const fluide = k => { const c = FLUIDES[k] ? k : 'R410A', f = FLUIDES[c].slice(); f[1] = vReg(`fluide.${c}.ar4`, f[1]); f[2] = vReg(`fluide.${c}.ar5`, f[2]); f[4] = vReg(`fluide.${c}.lp`, f[4]); f[5] = vReg(`fluide.${c}.lfl`, f[5]); return f; };
   const clesFluide = k => [`fluide.${FLUIDES[k] ? k : 'R410A'}.`];
   const CLES_FGAZ = ['fgaz.seuil1', 'fgaz.seuil2', 'fgaz.seuil3', 'fgaz.mois1', 'fgaz.mois1d', 'fgaz.mois2', 'fgaz.mois2d', 'fgaz.mois3', 'fgaz.mois3d', 'fgaz.detection', 'fgaz.hermetique'];
-  const optFluides = Object.entries(FLUIDES).map(([k, f]) => [k, `${f[0]} — ${f[3]}, PRP ${f[1]}`]);
+  // Liste des fluides : PRP retenu (Réglages, sinon défaut ; AR5 quand la note le retient), « ✱ Réglages » et défaut quand il est surchargé
+  const libFluide = (k, ref) => {
+    const R = VR(), a = ref === 'AR5' ? 'ar5' : 'ar4', cle = `fluide.${k}.${a}`, f = FLUIDES[k], d = ref === 'AR5' ? f[2] : f[1], x = vReg(cle, d);
+    const s = !!(R && R.surchargee && R.surchargee(cle)), t = y => String(y).replace('.', ',');
+    return `${f[0]} — ${f[3]}, PRP${ref === 'AR5' ? ' AR5' : ''} ${t(x)}${s ? ` ✱ Réglages (défaut ${t(d)})` : ''}`;
+  };
+  const optFluides = e => Object.keys(FLUIDES).map(k => [k, libFluide(k, e && e.refPrp)]);
   const inflammable = f => /2L|2|3/.test(f[3]);
   const prp = (f, ref) => (ref === 'AR5' ? f[2] : f[1]);
   // Contrôles d'étanchéité (règlement (UE) 517/2014 art. 4 et 5, repris par le règlement (UE) 2024/573) : [seuil tCO₂e, mois sans détection, mois avec détection]
