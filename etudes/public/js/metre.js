@@ -137,7 +137,9 @@ const Metre = ((N, C, D, L, Sc) => {
         else if (d.ppDeportees) { const pp = (typeof Catalogue !== 'undefined' ? Catalogue : require('./catalogue')).pompesPour(d.Qg, 5)[0]; equip(`pompe|${pp ? pp.modele : 'primaire'}`, 'Production', pp ? `Pompe primaire ${N.libPompe(pp).replace(/, vitesse.*/, '')}` : 'Pompe primaire', d.n, 3, { type: 'pompe', modele: pp && pp.modele, dn: pp && pp.dn }, src); }
         d.circuits.forEach(c => {
           tube(e.serie, c.t.cle, c.L, src);
-          if (c.pompe) equip(`pompe|${c.pompe.modele}`, 'Équipements hydrauliques', `Pompe ${N.libPompe(c.pompe).replace(/, vitesse.*/, '')}`, 1, 3, { type: 'pompe', modele: c.pompe.modele, dn: c.pompe.dn }, src);
+          // Pompe retenue sur la fiche du fabricant (tableau « pompesFab ») : elle remplace la pompe du catalogue
+          if (c.pf && c.pf.ref) equip(`pompe|fab|${c.pf.ref}`, 'Équipements hydrauliques', `Pompe ${c.pf.ref}`, 1, 3, { type: 'pompe', dn: c.pompe ? c.pompe.dn : undefined }, src);
+          else if (c.pompe) equip(`pompe|${c.pompe.modele}`, 'Équipements hydrauliques', `Pompe ${N.libPompe(c.pompe).replace(/, vitesse.*/, '')}`, 1, 3, { type: 'pompe', modele: c.pompe.modele, dn: c.pompe.dn }, src);
           if (c.prim && c.prim.pompe) equip(`pompe|${c.prim.pompe.modele}`, 'Équipements hydrauliques', `Pompe ${N.libPompe(c.prim.pompe).replace(/, vitesse.*/, '')}`, 1, 3, { type: 'pompe', modele: c.prim.pompe.modele, dn: c.prim.pompe.dn }, src);
           if (c.bout) equip(`bouteille|${c.bout.tb ? c.bout.tb.cle : Math.round(c.bout.Db)}`, 'Équipements hydrauliques', `Bouteille de découplage de circuit ${c.bout.tb ? c.bout.tb.nom : `Ø ${nf(c.bout.Db, 0)} mm`}`, 1, 4, { type: 'bouteille' }, src);
           if (c.ech) equip(`echangeur|${Math.round(c.P)}`, 'Équipements hydrauliques', `Échangeur à plaques ${nf(c.P, 0)} kW (≈ ${nf(c.ech.A, 1)} m²)`, 1, 6, { type: 'echangeur' }, src);

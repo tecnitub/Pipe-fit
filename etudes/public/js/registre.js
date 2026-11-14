@@ -66,9 +66,9 @@ const Registre = (() => {
       case 'aero': if (placement) set('Q', v.Q); set('dp', v.dp); set('Lw', v.Lw); set('ref', nom); break;
       case 'san': { const A = SAN().APPAREILS[el.type] || SAN().APPAREILS.lavabo || []; set('qEF', v.q); if (A[2]) set('qECS', v.q); set('pMin', v.pMin); set('ref', nom); break; }
       case 'rob': set('dn', v.dn); set('kv', v.kv); if (vide(v.kv) && !vide(v.dp)) set('dp', Math.round(v.dp * 100) / 100); if (el.type === 'equilibrage') { set('tours', v.tours); set('abaque', v.abaque); } set('ref', nom); break;
-      case 'pompe': set('courbe', v.courbe); set('ref', nom); break;
+      case 'pompe': set('courbe', v.courbe); set('P1', v.P1); set('ref', nom); break;
       // Générateur d'une production détaillée : puissance et perte de charge côté eau (fiche du fabricant)
-      case 'gen': set('P', v.P); set('dp', v.dpEau); break;
+      case 'gen': set('P', v.P); set('dp', v.dpEau); if (Number.isFinite(Number(v.P1)) && Number(v.P1) > 0) set('Pel', Math.round(Number(v.P1) / 10) / 100); set('ref', nom); break;
       case 'regul': set('X', v.X); set('Y', v.Y); set('Q', v.Q); set('ref', nom); break;
       case 'arbo': set('pompeCourbe', v.courbe); set('pompeRef', nom); break;
       case 'cta': FC().champs('cta', v).forEach(c => {
@@ -88,8 +88,8 @@ const Registre = (() => {
       case 'aero': set('dp', el.dp); set('Lw', el.Lw); break;
       case 'san': set('q', el.qEF); set('pMin', el.pMin); break;
       case 'rob': set('dn', el.dn); set('kv', el.kv); if (vide(el.kv)) set('dp', el.dp); if (el.type === 'equilibrage') { set('tours', el.tours); set('abaque', el.abaque); } break;
-      case 'pompe': set('courbe', el.courbe); break;
-      case 'gen': set('P', el.P); set('dpEau', el.dp); break;
+      case 'pompe': set('courbe', el.courbe); set('P1', el.P1); break;
+      case 'gen': set('P', el.P); set('dpEau', el.dp); if (!vide(el.Pel)) set('P1', Math.round(val(el.Pel) * 1000)); break;
       case 'regul': set('X', el.X); set('Y', el.Y); set('Q', el.Q); break;
       case 'arbo': set('courbe', el.pompeCourbe); break;
       default: { const f = ((note || {}).entrees || {}).fiche || {}; Object.entries(f).forEach(([k, y]) => { if (!['nom', 'fabricant', 'reference'].includes(k)) set(k, y); }); }
@@ -390,7 +390,10 @@ const Registre = (() => {
       for (const n of notes.filter(y => srcs.includes(src(y)))) {
         const e = n.entrees || {};
         let x = null;
-        if ((pref === 'cta' && n.type === 'cta') || (pref === 'gen' && n.type === 'pid') || (pref === 'vase' && n.type === 'vase') || (pref === 'pompe' && n.type === 'reseau')) x = e.eq && parId(et, e.eq);
+        // Pompe d'un circuit retenue sur fiche : ligne « pompe|fab|<modèle> » ; générateur d'une production détaillée : type et puissance
+        if (pref === 'pompe' && n.type === 'pid' && p.cle.startsWith('pompe|fab|')) x = [...new Set((e.pompesFab || []).filter(r => r && r.eq).map(r => r.eq))].map(id => parId(et, id)).find(y => y && p.cle === `pompe|fab|${nomEq(y)}`) || null;
+        else if (pref === 'gen' && n.type === 'pid' && (e.generateurs || []).some(g => g && g.eq)) { const [, ty, P] = p.cle.split('|'), g = (e.generateurs || []).find(r => r && r.eq && r.type === ty && Math.abs(Number(r.P) - Number(P)) < 0.5); x = g ? parId(et, g.eq) : null; }
+        else if ((pref === 'cta' && n.type === 'cta') || (pref === 'gen' && n.type === 'pid') || (pref === 'vase' && n.type === 'vase') || (pref === 'pompe' && n.type === 'reseau')) x = e.eq && parId(et, e.eq);
         else if (pref === 'pompe' && n.type === 'arbo') x = e.pompeEq && parId(et, e.pompeEq);
         // Bouches : la ligne du métré porte la référence de la fiche (taille = modèle) ; les bouches génériques restent à choisir
         else if (pref === 'bouche' && n.type === 'aero') x = [...new Set((e.bouchesL || []).filter(b => b && b.eq).map(b => b.eq))].map(id => parId(et, id)).find(y => y && p.cle.endsWith(`|${nomEq(y)}`)) || null;

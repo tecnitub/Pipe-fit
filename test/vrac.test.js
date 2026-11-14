@@ -116,3 +116,45 @@ test('régulateur : fiche reconnue, inscrite au registre, capacités reprises da
   et.equipements[0].valeurs.Q = 8; global.Registre.propager(et);
   assert.strictEqual(c.Q, 8);
 });
+
+test('destination la plus cohérente : pompe au plus près de son point, générateur et CTA à la bonne puissance / au bon débit', () => {
+  const pid = note('pid', { generateur: 'chaudiere-cond', Pgen: 140, circuits: [{ rep: 'Radiateurs', emetteur: 'radiateurs', P: 60, regulation: '3v', L: 50 }, { rep: 'CTA', emetteur: 'cta', P: 20, regulation: '3v', L: 40 }] });
+  const pid2 = note('pid', { generateur: 'pac-air', Pgen: 40, circuits: [{ rep: 'Plancher', emetteur: 'plancher', P: 35, regulation: '3v', L: 60 }] });
+  const c1 = note('cta', { Qs: 2000 }), c2 = note('cta', { Qs: 6000 }), et = { notes: [pid, pid2, c1, c2] };
+  const S = global.Schema, d = S.dimensionner(pid.entrees), cta = d.circuits.find(c => c.rep === 'CTA');
+  assert.ok(V.destinations(et, 'pompe').some(x => x[0] === `pidc:${pid.id}|PP`), 'pompes de production proposées');
+  const pris = new Set(), p1 = V.proposer(et, 'pompe', { valeurs: { Q: cta.Q * 1.1, H: cta.hmt * 1.1 } }, pris);
+  assert.strictEqual(p1, `pidc:${pid.id}|CTA`);
+  pris.add(p1);
+  assert.notStrictEqual(V.proposer(et, 'pompe', { valeurs: { Q: cta.Q * 1.1, H: cta.hmt * 1.1 } }, pris), p1, 'une destination par fiche du lot');
+  assert.strictEqual(V.proposer(et, 'generateur', { valeurs: { P: 38 } }), `pid:${pid2.id}`);
+  assert.strictEqual(V.proposer(et, 'cta', { valeurs: { Qs: 5800 } }), `cta:${c2.id}`);
+  c2.entrees.eq = 'autre';
+  assert.strictEqual(V.proposer(et, 'cta', { valeurs: { Qs: 5800 } }), `cta:${c1.id}`, 'CTA déjà pourvue d\'un autre modèle évitée');
+});
+
+test('pompe sur fiche : puissance absorbée au bilan électrique, ligne du métré et matériel retenu', () => {
+  global.Metre = require('../etudes/public/js/metre');
+  const E = require('../etudes/public/js/electricite'), L = require('../etudes/public/js/liens');
+  const pid = note('pid', { generateur: 'chaudiere-cond', Pgen: 100, circuits: [{ rep: 'Radiateurs', emetteur: 'radiateurs', P: 60, regulation: '3v', L: 50 }] }), et = { notes: [pid] };
+  V.appliquer(et, item('pompe'), `pidc:${pid.id}|Radiateurs`);
+  const pc = E.equipementsEtude(et, L).find(q => /Pompe Radiateurs/.test(q.designation));
+  assert.strictEqual(pc.P, 0.32);
+  assert.match(pc.designation, /Exemplair CX 40-8/);
+  const postes = global.Metre.metre(et).filter(global.Metre.estEquipement);
+  assert.ok(postes.some(p => p.cle === 'pompe|fab|Exemplair CX 40-8'));
+  global.Registre.versMateriel(et, postes);
+  assert.deepStrictEqual([et.materiel['pompe|fab|Exemplair CX 40-8'].fabricant, et.materiel['pompe|fab|Exemplair CX 40-8'].reference], ['Exemplair', 'CX 40-8']);
+});
+
+test('générateur détaillé sur fiche : puissance électrique et référence au bilan électrique', () => {
+  const E = require('../etudes/public/js/electricite'), L = require('../etudes/public/js/liens');
+  const pid = note('pid', { generateurs: [{ rep: 'PAC1', type: 'pac-air', P: 150, role: 'base' }, { rep: 'G1', type: 'chaudiere-cond', P: 80, role: 'appoint' }], circuits: [{ rep: 'Radiateurs', emetteur: 'radiateurs', P: 120, regulation: '3v', L: 50 }] }), et = { notes: [pid] };
+  const x = global.Registre.ajouter(et, { type: 'generateur', fabricant: 'Exemplair', reference: 'PAC-AE 150', valeurs: item('generateur').lu.valeurs });
+  const el = pid.entrees.generateurs[0]; el.eq = x.id;
+  global.Registre.propager(et);
+  assert.strictEqual(el.Pel, 38);
+  const g = E.equipementsEtude(et, L).find(q => /PAC1/.test(q.designation));
+  assert.strictEqual(g.P, 38);
+  assert.match(g.designation, /Exemplair PAC-AE 150/);
+});

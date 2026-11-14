@@ -1679,7 +1679,9 @@ function dialogueVrac(et) {
   const circuitsPid = () => et.notes.filter(n => n.type === 'pid').flatMap(n => (n.entrees.circuits || []).filter(c => c.rep).map(c => c.rep));
   const ajouter = (nom, lignes) => {
     const type = Vrac.classer(lignes, nom), lu = Vrac.lire(type === 'inconnu' ? 'generateur' : type, lignes), d = Vrac.destinations(et, type);
-    items.push({ nom, lignes, type, lu, qte: 1, rep: '', local: '', circuit: '', cible: d.length ? d[0][0] : '' });
+    // Destination la plus cohérente (débit et hauteur d'une pompe, puissance d'un générateur, débit d'une CTA), une par fiche du lot
+    const pris = new Set(items.map(x => x.cible).filter(Boolean)), cible = d.length ? (Vrac.proposer ? Vrac.proposer(et, type, lu, pris) : d[0][0]) : '';
+    items.push({ nom, lignes, type, lu, qte: 1, rep: '', local: '', circuit: '', cible });
   };
   const rendre = () => {
     const z = b.querySelector('#vr-liste'), circ = [...new Set(circuitsPid())];

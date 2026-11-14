@@ -1095,14 +1095,18 @@ const Electricite = ((N, Sc) => {
         const deFroid = !d.chaud && !d.co ? ' (production de froid)' : '';
         const G = Sc.GENERATEURS[es.generateur] || ['Générateur'], pac = /^(pac|gf)/.test(es.generateur || ''), pfx = /^gf/.test(es.generateur || '') ? 'GF' : pac ? 'PAC' : 'G';
         const pePompe = Q => Math.max(0.05, Math.round(Q * 8 / 367 / 0.45 * 100) / 100);
+        // Pompe de production retenue (fiche du fabricant, tableau « pompesFab ») : puissance absorbée et référence
+        const pProd = cle => ((v && v.pompesProd) || []).find(p => p.cle === cle && (p.ref || p.P1 > 0)) || null;
+        const pePP = (cle, Q, repli) => { const p = pProd(cle) || (repli ? pProd(repli) : null); return p && p.P1 > 0 ? kW(p.P1) : pePompe(Q); };
+        const refPP = (cle, repli) => { const p = pProd(cle) || (repli ? pProd(repli) : null); return p && p.ref ? ` — ${p.ref}` : ''; };
         if (d.multi) {
           // Production hétérogène : une ligne par générateur, puissance électrique estimée selon le type
           d.multi.forEach((x, i) => {
             if (/^echangeur/.test(x.type)) return;
             const thermo = /^(pac|gf)/.test(x.type), role = (Sc.ROLES[x.role] || '').toLowerCase();
-            ajout(`gen${i + 1}`, { metre: `gen|${x.type}|${x.P}`, rep: R(x.rep), designation: `${x.gen[0]} ${x.rep} — ${role} ${nf(x.P, 0)} kW`, type: thermo ? 'pac' : 'generateur',
-              P: thermo ? Math.round(x.P / 3 * 10) / 10 : Math.max(0.2, Math.round(x.P * 0.003 * 10) / 10), tension: es.tensionGen || (thermo || x.P > 300 ? 'tri' : 'mono'), regulation: thermo ? 'bus' : 'mod', alim: x.alim || es.alimProd || '', role: x.role });
-            if (x.pp) ajout(`pp${i + 1}`, { rep: R(`PP${i + 1}`), designation: `Pompe primaire ${i + 1} (${x.rep})`, type: 'pompe', P: pePompe(x.Q), tension: 'mono', regulation: 'tor' });
+            ajout(`gen${i + 1}`, { metre: `gen|${x.type}|${x.P}`, rep: R(x.rep), designation: `${x.gen[0]} ${x.rep} — ${role} ${nf(x.P, 0)} kW${x.ref ? ` — ${x.ref}` : ''}`, type: thermo ? 'pac' : 'generateur',
+              P: x.Pel > 0 ? x.Pel : thermo ? Math.round(x.P / 3 * 10) / 10 : Math.max(0.2, Math.round(x.P * 0.003 * 10) / 10), tension: es.tensionGen || (thermo || x.P > 300 ? 'tri' : 'mono'), regulation: thermo ? 'bus' : 'mod', alim: x.alim || es.alimProd || '', role: x.role });
+            if (x.pp) ajout(`pp${i + 1}`, { rep: R(`PP${i + 1}`), designation: `Pompe primaire ${i + 1} (${x.rep})${refPP(`PP${i + 1}`, 'PP')}`, type: 'pompe', P: pePP(`PP${i + 1}`, x.Q, 'PP'), tension: 'mono', regulation: 'tor' });
           });
         } else for (let i = 1; i <= d.n; i++) {
           if (/^echangeur/.test(es.generateur || '')) continue;
@@ -1110,7 +1114,7 @@ const Electricite = ((N, Sc) => {
           const pGen = kwFiche(es.PelecGen) ?? (kwFiche(fiche.P1) ? Math.round(fiche.P1 / 10) / 100 : null);
           ajout(`gen${i}`, { metre: `gen|${es.generateur}|${d.Pg}`, rep: R(`${pfx}${i}`), designation: `${G[0]} ${i}${fiche.fabricant || fiche.reference ? ` — ${[fiche.fabricant, fiche.reference].filter(Boolean).join(' ')}` : ''}`, type: pac ? 'pac' : 'generateur',
             P: pGen ?? (pac ? Math.round(d.Pg / 3 * 10) / 10 : Math.max(0.2, Math.round(d.Pg * 0.003 * 10) / 10)), tension: es.tensionGen || (pac || d.Pg > 300 ? 'tri' : 'mono'), regulation: pac ? 'bus' : 'mod', alim: es.alimProd || '', ...(pGen != null ? { pFiche: true } : {}) });
-          if (d.ppDeportees) ajout(`pp${i}`, { rep: R(`PP${i}`), designation: `Pompe primaire ${i}`, type: 'pompe', P: pePompe(d.Qg), tension: 'mono', regulation: 'tor' });
+          if (d.ppDeportees) ajout(`pp${i}`, { rep: R(`PP${i}`), designation: `Pompe primaire ${i}${refPP(`PP${i}`, 'PP')}`, type: 'pompe', P: pePP(`PP${i}`, d.Qg, 'PP'), tension: 'mono', regulation: 'tor' });
         }
         // PAC / groupe eau-eau sur nappe : pompe de forage, pompe de la boucle intermédiaire, contrôle de débit et température
         if (d.forage) {
@@ -1123,15 +1127,15 @@ const Electricite = ((N, Sc) => {
         // Échangeur : pompes primaire et secondaire ajoutées (une pompe existante reliée est comptée avec son réseau)
         if (es.bouteille === 'echangeur' || /^echangeur/.test(es.generateur || '')) {
           const Qpr = d.echangeur ? (d.Qech || d.Qp) : d.Qp;
-          if (es.pompeEchPrim === 'ajouter') ajout('pech1', { rep: R('PECH1'), designation: `Pompe primaire de l'échangeur (${nf(Qpr, 1)} m³/h)`, type: 'pompe', P: pePompe(Qpr), tension: Qpr > 25 ? 'tri' : 'mono', regulation: 'torRetour', alim: es.alimProd || '' });
-          if (es.pompeEchSec === 'ajouter') ajout('pech2', { rep: R('PECH2'), designation: `Pompe secondaire de l'échangeur (${nf(d.Qs, 1)} m³/h)`, type: 'pompe', P: pePompe(d.Qs), tension: d.Qs > 25 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur', alim: es.alimProd || '' });
+          if (es.pompeEchPrim === 'ajouter') ajout('pech1', { rep: R('PECH1'), designation: `Pompe primaire de l'échangeur (${nf(Qpr, 1)} m³/h)${refPP('PECH1')}`, type: 'pompe', P: pePP('PECH1', Qpr), tension: Qpr > 25 ? 'tri' : 'mono', regulation: 'torRetour', alim: es.alimProd || '' });
+          if (es.pompeEchSec === 'ajouter') ajout('pech2', { rep: R('PECH2'), designation: `Pompe secondaire de l'échangeur (${nf(d.Qs, 1)} m³/h)${refPP('PECH2')}`, type: 'pompe', P: pePP('PECH2', d.Qs), tension: d.Qs > 25 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur', alim: es.alimProd || '' });
         }
         // Récupération d'énergie sur le groupe froid : pompe du circuit de récupération, vanne de basculement récupération /
         // rejet, sondes départ et retour de l'eau récupérée, compteur d'énergie récupérée
         if (es.recupGf && num(v.Precup) > 0) {
           const [tD, tR] = String(es.regimeRecup || '45/40').split('/').map(x => num(x)), dTr = Math.max(2, Math.abs((tD || 45) - (tR || 40))), Qr = num(v.Precup) / (1.163 * dTr);
           const lib = es.recupGf === 'totale' ? 'récupération totale au condenseur' : 'désurchauffeur';
-          if (es.pompeRecup !== 'integree') ajout('prec', { rep: R('PREC'), designation: `Pompe du circuit de récupération du groupe froid (${lib}, ${nf(Qr, 1)} m³/h)`, type: 'pompe', P: pePompe(Qr), tension: Qr > 25 ? 'tri' : 'mono', regulation: 'torRetour', alim: es.alimProd || '' });
+          if (es.pompeRecup !== 'integree') ajout('prec', { rep: R('PREC'), designation: `Pompe du circuit de récupération du groupe froid (${lib}, ${nf(Qr, 1)} m³/h)${refPP('PREC')}`, type: 'pompe', P: pePP('PREC', Qr), tension: Qr > 25 ? 'tri' : 'mono', regulation: 'torRetour', alim: es.alimProd || '' });
           ajout('vrec', { rep: R('VREC'), designation: 'Vanne 3 voies de basculement récupération / rejet du groupe froid (condenseur à air ou tour)', type: 'vanne', P: 0.01, tension: '24V', regulation: 'v010r' });
           ajout('tdrec', { rep: R('TDREC'), designation: 'Sonde de départ de l\'eau récupérée sur le groupe froid', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
           ajout('trrec', { rep: R('TRREC'), designation: 'Sonde de retour de l\'eau récupérée sur le groupe froid', type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
@@ -1142,17 +1146,17 @@ const Electricite = ((N, Sc) => {
         if (d.evac) {
           const ev = d.evac, aero = ev.type === 'aero';
           ajout('evac', { rep: R(aero ? 'AR' : 'TRF'), designation: `${ev.lib} — ${ev.nVent} ventilateur(s) à vitesse variable (${nf(ev.P, 0)} kW évacués)`, type: 'ventilateur', P: Math.max(0.1, Math.round(ev.Pvent * 100) / 100), tension: ev.Pvent > 2.2 ? 'tri' : 'mono', regulation: 'var', depart: 'variateur', alim: es.alimProd || '' });
-          ajout('pev', { rep: R('PEV'), designation: `Pompe du circuit de refroidissement (${nf(ev.Q, 1)} m³/h, ${nf(ev.hmt, 1)} mCE)`, type: 'pompe', P: ev.Ppompe, tension: ev.Ppompe > 2.2 ? 'tri' : 'mono', regulation: 'torRetour', alim: es.alimProd || '' });
+          ajout('pev', { rep: R('PEV'), designation: `Pompe du circuit de refroidissement (${nf(ev.Q, 1)} m³/h, ${nf(ev.hmt, 1)} mCE)${refPP('PEV')}`, type: 'pompe', P: pProd('PEV') && pProd('PEV').P1 > 0 ? kW(pProd('PEV').P1) : ev.Ppompe, tension: ev.Ppompe > 2.2 ? 'tri' : 'mono', regulation: 'torRetour', alim: es.alimProd || '' });
           ajout('tev', { rep: R('TEV'), designation: `Sonde de température de sortie de l'eau refroidie (${aero ? 'aéroréfrigérant' : 'tour'})`, type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
           ajout('vbp', { rep: R('VBP'), designation: 'Vanne 3 voies de by-pass hivernal du circuit de refroidissement', type: 'vanne', P: 0.01, tension: '24V', regulation: 'v010' });
           if (!aero) ajout('eva', { rep: R('EVA'), designation: 'Électrovanne d\'appoint d\'eau de la tour (niveau bas)', type: 'vanne', P: 0.02, tension: 'mono', regulation: 'tor' });
         }
         d.circuits.forEach((c, i) => {
           const k = i + 1, M = Sc.montage ? Sc.montage(c.reg) : { vanne: c.reg !== 'direct' };
-          ajout(`pc${k}`, { ...(c.pompe ? { metre: `pompe|${c.pompe.modele}` } : {}), rep: R(`PC${k}`), designation: `Pompe ${c.rep}${M.pp ? ' (secondaire)' : ''}`, type: 'pompe', P: c.pompe && c.pompe.P1 ? kW(c.pompe.P1) : Math.max(0.05, Math.round(c.Q * Math.max(2, c.hmt) / 367 / 0.45 * 100) / 100), tension: 'mono',
+          ajout(`pc${k}`, { ...(c.pompe ? { metre: `pompe|${c.pompe.modele}` } : {}), rep: R(`PC${k}`), designation: `Pompe ${c.rep}${M.pp ? ' (secondaire)' : ''}${c.pf && c.pf.ref ? ` — ${c.pf.ref}` : ''}`, type: 'pompe', P: c.pf && c.pf.P1 > 0 ? kW(c.pf.P1) : c.pompe && c.pompe.P1 ? kW(c.pompe.P1) : Math.max(0.05, Math.round(c.Q * Math.max(2, c.hmt) / 367 / 0.45 * 100) / 100), tension: 'mono',
             regulation: c.reg === '2v' || c.emetteur === 'ventilo' ? 'var' : 'tor', depart: c.reg === '2v' || c.emetteur === 'ventilo' ? 'variateur' : undefined });
           // Montages à pompe primaire de circuit (injection 3 voies, bouteille, échangeur de circuit)
-          if (M.pp && c.prim) ajout(`pcp${k}`, { ...(c.prim.pompe ? { metre: `pompe|${c.prim.pompe.modele}` } : {}), rep: R(`PCP${k}`), designation: `Pompe primaire ${c.rep}`, type: 'pompe', P: c.prim.pompe && c.prim.pompe.P1 ? kW(c.prim.pompe.P1) : Math.max(0.05, Math.round(c.prim.Q * Math.max(2, c.prim.hmt) / 367 / 0.45 * 100) / 100), tension: 'mono', regulation: 'tor' });
+          if (M.pp && c.prim) ajout(`pcp${k}`, { ...(c.prim.pompe ? { metre: `pompe|${c.prim.pompe.modele}` } : {}), rep: R(`PCP${k}`), designation: `Pompe primaire ${c.rep}`, type: 'pompe', P: c.prim.pf && c.prim.pf.P1 > 0 ? kW(c.prim.pf.P1) : c.prim.pompe && c.prim.pompe.P1 ? kW(c.prim.pompe.P1) : Math.max(0.05, Math.round(c.prim.Q * Math.max(2, c.prim.hmt) / 367 / 0.45 * 100) / 100), tension: 'mono', regulation: 'tor' });
           if (M.vanne) ajout(`v${k}`, { rep: R(`V${k}`), designation: `Vanne de régulation ${c.rep}`, type: 'vanne', P: 0.01, tension: '24V', regulation: 'v010' });
           ajout(`td${k}`, { rep: R(`TD${k}`), designation: `Sonde de départ ${c.rep}`, type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
           if (es.compteurs === 'oui') ajout(`ce${k}`, { rep: R(`CE${k}`), designation: `Compteur d'énergie ${c.rep}`, type: 'sonde', P: 0, tension: '24V', regulation: 'impulsion' });

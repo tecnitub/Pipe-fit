@@ -64,11 +64,13 @@ const Vrac = (() => {
     const notes = (et && et.notes) || [], lib = n => `N${notes.indexOf(n) + 1} — ${n.titre}`, de = t => notes.filter(n => n.type === t);
     const circuits = de('pid').flatMap(n => ((n.entrees || {}).circuits || []).filter(c => c.rep).map(c => [`pidc:${n.id}|${c.rep}`, `${lib(n)} : circuit ${c.rep}`]));
     const nouveau = (t, l) => [[`${t}:nouveau`, `Nouveau calcul « ${l} »`]];
+    // Pompes de la production (primaires, échangeur, récupération, refroidissement) : même tableau « pompesFab »
+    const pompesProd = () => de('pid').flatMap(n => { try { return Sc().pompesProduction(n.entrees, Sc().dimensionner(n.entrees)).map(p => [`pidc:${n.id}|${p.cle}`, `${lib(n)} : ${p.lib} (${p.cle})`]); } catch (e) { return []; } });
     switch (type) {
       case 'terminal': return [...de('terminaux').map(n => [`term:${n.id}`, lib(n)]), ...nouveau('term', 'Terminaux')];
       case 'cta': return [...de('cta').map(n => [`cta:${n.id}`, lib(n)]), ...nouveau('cta', 'Centrale de traitement d\'air')];
       case 'generateur': return de('pid').map(n => [`pid:${n.id}`, `${lib(n)} : production`]);
-      case 'pompe': return [...circuits.map(([k, l]) => [k, `${l} (pompe du circuit)`]), ...de('arbo').map(n => [`arbo:${n.id}`, `${lib(n)} : pompe du réseau`]), ...de('reseau').map(n => [`reseau:${n.id}`, lib(n)]),
+      case 'pompe': return [...circuits.map(([k, l]) => [k, `${l} (pompe du circuit)`]), ...pompesProd(), ...de('arbo').map(n => [`arbo:${n.id}`, `${lib(n)} : pompe du réseau`]), ...de('reseau').map(n => [`reseau:${n.id}`, lib(n)]),
         ...de('terminaux').map(n => [`termp:${n.id}`, `${lib(n)} : pompe de distribution (à placer sur une branche)`])];
       case 'vase': return [...de('vase').map(n => [`vase:${n.id}`, lib(n)]), ...nouveau('vase', 'Vase d\'expansion')];
       case 'ecs': return [...de('ecs').map(n => [`ecs:${n.id}`, lib(n)]), ...nouveau('ecs', 'Production d\'ECS')];
@@ -87,9 +89,36 @@ const Vrac = (() => {
     const x = versRegistre(et, item);
     return cible ? Rg().placer(et, x, cible, { qte: item.qte, rep: item.rep, local: item.local, circuit: item.circuit, branche: item.branche, texte: (item.lignes || []).join(' ') }, nouvelleNote) : `${Rg().nomEq(x)} : inscrit au registre (à placer)`;
   }
+  // Destination la plus cohérente pour une fiche lue (au lieu de la première de la liste) : pompe sur le circuit dont le débit
+  // et la hauteur calculés sont les plus proches de son point de fonctionnement, générateur sur la production de puissance la
+  // plus proche, CTA sur la centrale de débit le plus proche encore sans modèle (ou celle qui porte déjà ce modèle), vase et
+  // ballon sur le calcul encore libre. pris : destinations déjà choisies pour les autres fiches du même lot (une par fiche).
+  const ecartLog = (a, b) => (a > 0 && b > 0 ? Math.abs(Math.log(a / b)) : 9);
+  function proposer(et, type, lu, pris = new Set()) {
+    const d = destinations(et, type);
+    if (!d.length) return '';
+    const v = (lu && lu.valeurs) || {}, notes = (et && et.notes) || [], note = id => notes.find(n => n.id === id), x0 = lu && (lu.fabricant || lu.reference) ? Rg().nomEq({ fabricant: lu.fabricant, reference: lu.reference }) : '';
+    const meme = n => { const e = (n && n.entrees) || {}, x = e.eq && Rg().parId(et, e.eq); return !!(x && x0 && Rg().nomEq(x) === x0); };
+    const libres = d.filter(([k]) => !pris.has(k) || /:nouveau$/.test(k)), cands = libres.length ? libres : d;
+    const meilleur = score => { let best = null, s0 = Infinity; cands.forEach(([k]) => { const s = score(k); if (s < s0) { s0 = s; best = k; } }); return best || cands[0][0]; };
+    if (type === 'pompe') {
+      const dims = new Map(), dim = id => { if (!dims.has(id)) { try { const e = note(id).entrees, dd = Sc().dimensionner(e); dims.set(id, { e, dd, prod: Sc().pompesProduction(e, dd) }); } catch (er) { dims.set(id, null); } } return dims.get(id); };
+      return meilleur(k => {
+        const m = /^pidc:([^|]+)\|(.+)$/.exec(k); if (!m) return 50;
+        const D = dim(m[1]); if (!D) return 40;
+        const c = (D.dd.circuits || []).find(y => y.rep === m[2]) || D.prod.find(y => y.cle === m[2]); if (!c) return 40;
+        const occupe = (D.e.pompesFab || []).some(p => p && p.circuit === m[2] && String(p.courbe || '').trim()) ? 3 : 0;
+        return (v.Q > 0 && v.H > 0 ? ecartLog(v.Q, c.Q) + ecartLog(v.H, c.hmt) : 1) + occupe;
+      });
+    }
+    if (type === 'generateur') return meilleur(k => { const n = note(k.split(':')[1]), e = (n && n.entrees) || {}; return meme(n) ? -1 : ecartLog(v.P || v.Pfr, Number(e.Pgen) || 0) + (e.eq ? 3 : 0); });
+    if (type === 'cta') return meilleur(k => { if (/:nouveau$/.test(k)) return 5; const n = note(k.split(':')[1]), e = (n && n.entrees) || {}; return meme(n) ? -1 : (e.eq ? 6 : 0) + (v.Qs > 0 ? ecartLog(v.Qs, Number(e.Qs) || 0) : 0.5); });
+    if (type === 'vase' || type === 'ecs') return meilleur(k => { if (/:nouveau$/.test(k)) return 5; const n = note(k.split(':')[1]); return meme(n) ? -1 : (n && n.entrees && n.entrees.eq ? 6 : 0); });
+    return cands[0][0];
+  }
   const typeTerminal = (texte, v) => Rg().typeTerminal(texte, v);
   // Fiches au format Pipe-Fit collées les unes à la suite (séparées par une ligne « --- ») : une fiche par bloc
   const decouper = texte => String(texte || '').split(/^\s*-{3,}\s*$/m).map(b => b.split(/\r?\n/).filter(l => l.trim())).filter(b => b.length);
-  return { TYPES, classer, lire, destinations, appliquer, versRegistre, decouper, typeTerminal };
+  return { TYPES, classer, lire, destinations, proposer, appliquer, versRegistre, decouper, typeTerminal };
 })();
 if (typeof module !== 'undefined') module.exports = Vrac;

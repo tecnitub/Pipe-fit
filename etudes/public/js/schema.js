@@ -67,7 +67,7 @@ const Schema = ((D, C, N) => {
       const pompe = x.pompe === 'integree' || (!x.pompe && e.pompeGen === 'integree') ? 'integree' : '';
       // Perte de charge côté eau : colonne « ΔP » (saisie, ou reprise de la fiche du registre), sinon forfait selon le type
       const dpe = dpOuForfait(x.dp, DP_GEN(x.type), !!(x.eq && x.fiche));
-      return { i, rep: String(x.rep || '').trim() || `${prefixeGen(x.type)}${i + 1}`, type: x.type, gen: GENERATEURS[x.type], P, role, pompe, regime: rg, Q, t, alim: x.alim || '', pp: pompesInd && pompe !== 'integree', dpEau: dpe.v, dpSrc: dpe.src };
+      return { i, rep: String(x.rep || '').trim() || `${prefixeGen(x.type)}${i + 1}`, type: x.type, gen: GENERATEURS[x.type], P, role, pompe, regime: rg, Q, t, alim: x.alim || '', pp: pompesInd && pompe !== 'integree', dpEau: dpe.v, dpSrc: dpe.src, Pel: num(x.Pel) > 0 ? num(x.Pel) : null, ref: String(x.ref || '').trim() };
     });
   }
 
@@ -339,6 +339,8 @@ const Schema = ((D, C, N) => {
     const PO = typeof Pompes !== 'undefined' ? Pompes : require('./pompes'), pf = PO.point(x.p.courbe, Q, hmt);
     if (!pf) return null;
     pf.ref = x.p.ref || ''; pf.k = x.k; pf.fiche = x.p.fiche || null;
+    // Puissance absorbée : lue sur la courbe (troisième valeur), sinon P1 nominale de la fiche du fabricant (W)
+    if (!(pf.P1 > 0) && num(x.p.P1) > 0) pf.P1 = num(x.p.P1);
     return pf;
   }
   const ETATS_POMPE = { ok: 'OK', sur: 'surdimensionnée', ko: 'insuffisante', choisir: 'à choisir' };
@@ -1211,7 +1213,7 @@ const Schema = ((D, C, N) => {
           ...(c.bypass ? { bypass: c.bypass.dp } : {}), ...(c.bout ? { bouteilleCircuit: c.bout.tb ? c.bout.tb.nom : `Ø ${nf(c.bout.Db, 0)} mm` } : {}), ...(c.ech ? { Aech: c.ech.A } : {}) })),
           ...(d.multi ? { generateurs: d.multi.map(x => ({ rep: x.rep, type: x.type, lib: x.gen[0], P: x.P, role: x.role, Q: x.Q, tube: x.t.nom, dn: x.t.dn, pompe: x.pompe, pp: x.pp, regime: x.regime, alim: x.alim, dp: x.dpEau, dpSrc: x.dpSrc })) } : {}),
           prod: { dp: d.prod.dp, hmt: d.prod.hmt, postes: d.prod.postes },
-          pompesProd: pProd.map(p => ({ cle: p.cle, lib: p.lib, Q: p.Q, dp: p.dp, hmt: p.hmt, etat: p.etat, ref: p.pf ? p.pf.ref : '', vitesse: p.pf ? p.pf.vitesse : null, fiche: p.pf ? p.pf.fiche : null })),
+          pompesProd: pProd.map(p => ({ cle: p.cle, lib: p.lib, Q: p.Q, dp: p.dp, hmt: p.hmt, etat: p.etat, ref: p.pf ? p.pf.ref : '', vitesse: p.pf ? p.pf.vitesse : null, fiche: p.pf ? p.pf.fiche : null, P1: p.pf && p.pf.P1 > 0 ? p.pf.P1 : null })),
           ...(d.evac ? { evac: { type: d.evac.type, lib: d.evac.lib, mode: d.evac.mode, P: d.evac.P, Q: d.evac.Q, dp: d.evac.dp, hmt: d.evac.hmt, Pvent: d.evac.Pvent, nVent: d.evac.nVent, Ppompe: d.evac.Ppompe, regime: [d.evac.Tc, d.evac.Tf], fluide: d.evac.fluide, tube: d.evac.t.nom, dn: d.evac.t.dn } } : {}),
           ...(d.ballons ? { ballons: d.ballons.map(b => ({ rep: b.rep, fonction: b.fonction, lib: b.lib, V: b.V, Vcalc: b.Vcalc, position: b.position, circuit: b.circuit, piquages: b.piquages, sondes: b.sondes })) } : {}) },
         resume: [['Réseau', `${d.regime} — ${d.f.libelle}`], ['Production', d.multi ? `${d.multi.map(x => `${x.rep} ${x.gen[0].toLowerCase()} ${nf(x.P, 0)} kW (${ROLES[x.role].toLowerCase()})`).join(' + ')} = ${nf(d.Pprod, 0)} kW hors secours` : `${d.n} × ${d.gen[0].toLowerCase()} de ${nf(d.Pg, 0)} kW = ${nf(d.Pprod, 0)} kW`],
