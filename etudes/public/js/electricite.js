@@ -1085,7 +1085,11 @@ const Electricite = ((N, Sc) => {
       if (n.type === 'terminaux' && typeof Terminaux !== 'undefined') { Terminaux.versElec(n, r).forEach(o => out.push(o)); return; }
       // Calculs annexes qui consomment de l'électricité (extracteurs de parking, hotte, déshumidificateur, pompes…) : leurs lignes
       const TN = N.TYPES[n.type];
-      if (TN && typeof TN.versElec === 'function') { try { (TN.versElec(v, es, n) || []).forEach((o, k) => ajout(`ann${k}`, { rep: o.rep || `X${k + 1}-N${ni + 1}`, tension: 'mono', regulation: 'tor', ...o })); } catch (err) { /* annexe incomplète */ } return; }
+      // Mesures, sécurités et comptages des calculs annexes (annexes-elec.js) : branchés une fois les modules chargés
+      if (typeof AnnexesElec !== 'undefined') AnnexesElec.brancher(); else if (TN && TN.annexe && typeof window === 'undefined') { try { require('./annexes-elec').brancher(); } catch (err) { /* module absent */ } }
+      // Repère déjà pris par un autre calcul (deux calculs du même type) : suffixe du numéro de note
+      const repLibre = r => (out.some(q => q.rep === r) ? `${r}-N${ni + 1}` : r);
+      if (TN && typeof TN.versElec === 'function') { try { (TN.versElec(v, es, n) || []).forEach((o, k) => ajout(`ann${k}`, { tension: 'mono', regulation: 'tor', ...o, rep: repLibre(o.rep || `X${k + 1}-N${ni + 1}`) })); } catch (err) { /* annexe incomplète */ } return; }
       const fiche = es.fiche || {};
       if (n.type === 'pid') {
         let d; try { d = Sc.dimensionner(es); } catch (err) { return; }
