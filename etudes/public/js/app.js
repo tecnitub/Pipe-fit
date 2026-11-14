@@ -69,8 +69,11 @@ function resumePF(et) {
   // Points de mise en service (valeurs attendues, réseaux à éprouver, contrôles) : liste des mises en service du chantier
   let mes = [];
   try { if (typeof PointsMes !== 'undefined') mes = PointsMes.extraire(et, n => Liens.calculer(et, n)); } catch (e) { mes = []; }
+  // Visites et contrôles d'entretien induits par les calculs annexes (carnet du DOE, contrat d'entretien du chantier)
+  let entretien = [];
+  try { if (typeof AnnexesExploitation !== 'undefined') entretien = AnnexesExploitation.entretien(et, Liens).map(({ noteId, ...o }) => o); } catch (e) { entretien = []; }
   return allegerResume({ objet: et.objet, client: et.client || '', clientId: et.clientId || '', devisId: et.devisId || '', indice: et.indice, date: et.date, auteur: et.auteur || '', verificateur: et.verificateur || '', description: String(et.description || '').slice(0, 500),
-    notes, erreurs: notes.reduce((s, n) => s + n.erreurs, 0), attention: notes.reduce((s, n) => s + n.attention, 0), equipements, materiel, debits, mes, regulation: (() => { try { return Regulation.pourDoe(et, Liens); } catch (e) { return null; } })(), renumerotations: (et.renumerotations || []).slice(-20), devis: (et.devisPF || []).slice(-10) });
+    notes, erreurs: notes.reduce((s, n) => s + n.erreurs, 0), attention: notes.reduce((s, n) => s + n.attention, 0), equipements, materiel, debits, mes, entretien, regulation: (() => { try { return Regulation.pourDoe(et, Liens); } catch (e) { return null; } })(), renumerotations: (et.renumerotations || []).slice(-20), devis: (et.devisPF || []).slice(-10) });
 }
 const corpsEtude = et => { let resume; try { resume = et.modele ? undefined : resumePF(et); } catch (e) { resume = undefined; } return { data: et, version: et._v, resume }; };
 // Enregistrement différé (une requête à la fois par étude, contrôle de version)
@@ -542,6 +545,7 @@ Vues.etude = {
       ${typeof carteMateriel === 'function' ? carteMateriel(et) : ''}
       ${carteDocuments(et)}
       ${tableauBordHtml(et)}
+      ${typeof carteExploitation === 'function' ? carteExploitation(et) : ''}
       <div class="barre"><h2>Calculs <span class="compte">${et.notes.length}</span></h2><button id="ajout">+ Ajouter un calcul</button>${et.notes.some(n => ['pid', 'arbo', 'terminaux', 'cta', 'ecs'].includes(n.type)) ? `<a class="secondaire btn" id="installation" href="#/etude/${et.id}/installation" title="Schémas de principe, circuits, réseaux arborescents, branches et consommateurs d'eau : raccordements et contrôles de cohérence">💧 Installation hydraulique</a>` : ''}<button class="secondaire" id="vrac" title="Charger toutes les fiches techniques du chantier d'un coup, puis les répartir dans les calculs (terminaux, CTA, production, pompes, vase, ballon, bouches, robinetterie…) sans ressaisie">📥 Matériel en vrac</button><span class="espace"></span>
         ${et.notes.length ? '<button class="secondaire" id="fiches-mes" title="Une fiche par équipement (générateurs, pompes, terminaux, CTA…) : points de contrôle, valeurs attendues de l\'étude, mesures à relever">📋 Fiches de mise en service</button>' : ''}
         ${et.notes.length > 1 ? '<button class="secondaire" id="comparer" disabled title="Cocher au moins deux calculs">⚖️ Comparer la sélection</button>' : ''}</div>
@@ -562,6 +566,10 @@ Vues.etude = {
     if (noteId) return Vues.note.bind(root, et, noteId);
     const fm = root.querySelector('#fiches-mes');
     if (fm) fm.onclick = () => dialogueFichesMes(et);
+    const rc = root.querySelector('#reserves-conformite');
+    if (rc) rc.onclick = () => dialogueReservesConformite(et);
+    const ve = root.querySelector('#visites-entretien');
+    if (ve) ve.onclick = () => dialogueEntretien(et);
     root.querySelectorAll('#vrac, #vrac2').forEach(b => { b.onclick = () => dialogueVrac(et); });
     if (typeof lierParcours === 'function') lierParcours(root, et);
     if (typeof GuideEtude !== 'undefined') GuideEtude.lier(root, et);
@@ -1819,6 +1827,53 @@ function dialogueFichesMes(et) {
       b.querySelector('#f').onclick = Modal.close; b.querySelector('#dl').onclick = () => enregistrerFichier(b, nom, bytes, 'application/pdf');
     } catch (e) { b.innerHTML = `<h2>Génération impossible</h2><p class="erreur">${esc(e.message)}</p><div class="actions"><button id="f">Fermer</button></div>`; b.querySelector('#f').onclick = Modal.close; }
   };
+}
+// Exploitation des calculs annexes (annexes-exploitation.js) : réserves de conformité à lever avec le bureau de contrôle
+// (liste à cocher enregistrée dans l'étude, PDF) et visites d'entretien transmises au carnet du DOE / contrat d'entretien
+const annexesEtude = et => (et.notes || []).some(n => (Notes.TYPES[n.type] || {}).annexe);
+function carteExploitation(et) {
+  if (et.modele || typeof AnnexesExploitation === 'undefined' || !annexesEtude(et)) return '';
+  let l = [], ops = [];
+  try { contexteEtude = et; l = AnnexesExploitation.reserves(et, Liens); ops = AnnexesExploitation.entretien(et, Liens); } catch (e) { return ''; }
+  const d = AnnexesExploitation.etat(et, l), obl = ops.filter(o => o.niveau === 'obligatoire').length;
+  return `<div class="carte petit exploitation-etude" id="carte-exploitation">🛡️ <strong>Réserves de conformité</strong> : ${d.total ? `${d.faits} / ${d.total} levée(s)${d.restent ? ` — <strong>${d.restent} à lever</strong> avec le bureau de contrôle` : ''}` : 'aucune'}
+    · 🔧 <strong>Entretien</strong> : ${ops.length} visite(s) ou contrôle(s) dont ${obl} obligatoire(s), repris par le carnet du DOE et le contrat d'entretien
+    <span class="espace"></span><button class="secondaire petit" id="reserves-conformite">📋 Récapitulatif des réserves</button> <button class="secondaire petit" id="visites-entretien">🔧 Visites d'entretien</button></div>`;
+}
+function dialogueReservesConformite(et) {
+  let liste = [];
+  try { contexteEtude = et; liste = AnnexesExploitation.reserves(et, Liens); } catch (e) { return toast(`Récapitulatif impossible : ${e.message}`, 6000); }
+  const s = () => et.reservesConformite || {};
+  const rendre = () => {
+    const d = AnnexesExploitation.etat(et, liste);
+    b.querySelector('#rc-corps').innerHTML = `<p class="petit">${d.faits} / ${d.total} levée(s). Cochez un point quand le bureau de contrôle l'a validé (date et auteur enregistrés dans l'étude) ; les points non cochés restent dans « Reste à faire ».</p>
+      ${AnnexesExploitation.CATEGORIES.map(c => { const g = liste.map((x, i) => [x, i]).filter(([x]) => x.categorie === c); return g.length ? `<h3>${esc(c)} <span class="compte">${g.length}</span></h3>
+        <table class="liste compact petit"><tr><th></th><th>Point</th><th>Valeur</th><th>Référence</th><th>Note d'origine</th><th>Observation</th></tr>${g.map(([x, i]) => { const e = s()[x.cle] || {};
+          return `<tr><td><input type="checkbox" data-rc="${i}" aria-label="Levé" ${e.le ? 'checked' : ''}></td><td>${esc(x.texte)}${e.le ? `<br><span class="muted">levé le ${dateFr(e.le)}${e.par ? ` par ${esc(e.par)}` : ''}</span>` : ''}</td><td>${esc(x.valeur)}</td><td class="muted">${esc(x.reference)}</td>
+            <td>${x.noteId ? `<a href="#/etude/${esc(et.id)}/${esc(x.noteId)}" data-rc-note>${esc(x.origine)}</a>` : esc(x.origine)}</td><td><input data-rc-obs="${i}" value="${esc(e.obs || '')}" aria-label="Observation" style="min-width:8em"></td></tr>`; }).join('')}</table>` : ''; }).join('') || '<p class="muted">Aucune réserve : aucun calcul annexe ne signale de point à valider.</p>'}`;
+    b.querySelectorAll('[data-rc]').forEach(x => { x.onchange = () => { AnnexesExploitation.cocher(et, liste[+x.dataset.rc].cle, x.checked, { le: aujourdhui(), par: (S.me || {}).nom || (S.me || {}).login || '' }); enregistrer(et); rendre(); }; });
+    b.querySelectorAll('[data-rc-obs]').forEach(x => { x.onchange = () => { const k = liste[+x.dataset.rcObs].cle, e = s()[k] || {}; AnnexesExploitation.cocher(et, k, !!e.le, { le: e.le, par: e.par, obs: x.value }); enregistrer(et); }; });
+    b.querySelectorAll('[data-rc-note]').forEach(x => { x.onclick = () => Modal.close(); });
+  };
+  const b = Modal.open(`<h2>🛡️ Récapitulatif des réserves de conformité</h2><p class="muted petit">Paramètres « à valider » des séquences de régulation, valeurs réglementaires modifiées dans les Réglages, obligations détectées par les calculs (détection de fuite, classement de chaufferie, ICPE, légionelle, EN 378, asservissement du gaz en cuisine…) : à transmettre au bureau de contrôle. Seuils et fréquences : valeurs usuelles, à vérifier dans les textes en vigueur.</p>
+    <div id="rc-corps" style="max-height:55vh;overflow:auto"></div><div class="actions"><button class="secondaire" id="rc-x">Fermer</button><button id="rc-pdf">🖨️ PDF pour le bureau de contrôle</button></div>`);
+  rendre();
+  b.querySelector('#rc-x').onclick = () => { Modal.close(); App.render(); };
+  b.querySelector('#rc-pdf').onclick = async () => {
+    try {
+      const bytes = await PDF.depuisHTML(pourPdf(AnnexesExploitation.html(et, liste, { societe: (S.config || {}).societe })), 'Réserves de conformité', null, { margeHaut: 36, margeBas: 36 });
+      enregistrerFichier(b, `Reserves_conformite_${String(et.objet).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_').slice(0, 40)}.pdf`, bytes, 'application/pdf');
+    } catch (e) { toast(`PDF impossible : ${e.message}`, 6000); }
+  };
+}
+function dialogueEntretien(et) {
+  let ops = [];
+  try { contexteEtude = et; ops = AnnexesExploitation.entretien(et, Liens); } catch (e) { return toast(`Entretien impossible : ${e.message}`, 6000); }
+  const b = Modal.open(`<h2>🔧 Visites et contrôles d'entretien</h2><p class="muted petit">Induits par les calculs annexes de l'étude ; transmis avec l'étude au chantier : carnet de maintenance du DOE (« Reprendre l'entretien des études ») et contrat d'entretien. Fréquences et références : valeurs usuelles, à vérifier dans l'édition en vigueur des textes.</p>
+    <div style="max-height:55vh;overflow:auto">${ops.length ? `<table class="liste compact petit"><tr><th>Équipement</th><th>Opération</th><th>Fréquence</th><th>Niveau</th><th>Référence</th><th>Intervenant</th><th>Note</th></tr>
+      ${ops.map(o => `<tr><td>${esc(o.equipement)}</td><td>${esc(o.operation)}</td><td>${esc(o.frequence)}</td><td>${o.niveau === 'obligatoire' ? '<strong>obligatoire</strong>' : 'recommandé'}</td><td class="muted">${esc(o.reference)}</td><td>${esc(o.intervenant)}</td><td class="muted">${esc(o.source)}</td></tr>`).join('')}</table>` : '<p class="muted">Aucune visite induite par les calculs annexes.</p>'}</div>
+    <div class="actions"><button id="ve-x">Fermer</button></div>`);
+  b.querySelector('#ve-x').onclick = Modal.close;
 }
 // Tableau de bord de l'étude : calculs en erreur, points d'attention, fiches techniques à charger, notes non émises ou
 // modifiées depuis leur émission ; chaque point mène au calcul concerné

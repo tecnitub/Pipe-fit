@@ -44,7 +44,7 @@ const lienEtudeDemo = (() => {
     const E = J('electricite'); et.notes.filter(n => n.type === 'elec').forEach(n => { n.entrees.equipements = E.fusionner([], E.equipementsEtude(et, L), new Set(et.notes.map(x => x.id))).lignes; });
     const mes = PM.extraire(et, n => L.calculer(et, n));
     return { app: 'etudes', id: et.id, affaireId: af.id || '', devisId: '', clientId: af.clientId || '', par: et.auteur, relie: null,
-      resume: { objet: et.objet, client, indice: et.indice, date: et.date, auteur: et.auteur, notes: [], erreurs: 0, attention: 0, equipements: [], materiel: [], debits: PM.debits(et, L), mes, regulation: J('regulation').pourDoe(et, L), devis: [] } };
+      resume: { objet: et.objet, client, indice: et.indice, date: et.date, auteur: et.auteur, notes: [], erreurs: 0, attention: 0, equipements: [], materiel: [], debits: PM.debits(et, L), mes, entretien: (() => { try { return J('annexes-exploitation').entretien(et, L).map(({ noteId, ...o }) => o); } catch (e) { return []; } })(), regulation: J('regulation').pourDoe(et, L), devis: [] } };
   } catch (e) { console.warn(`Étude d'exemple non reliée à la démonstration : ${e.message}`); return null; }
 })();
 // Le faux serveur doit être chargé avant l'application (après ui.js pour les dialogues).

@@ -5,6 +5,23 @@ async function chargerCarnetDoe(affaireId) {
     const l = await api('GET', `/api/liens?affaireId=${encodeURIComponent(affaireId)}&app=doe`);
     carnetsDoe.set(affaireId, ((l || []).map(x => (x.resume || {}).maintenance || []).find(m => m.length)) || []);
   } catch (e) { carnetsDoe.set(affaireId, carnetsDoe.get(affaireId) || []); }
+  await chargerEntretienEtudes(affaireId);
+}
+// Visites et contrôles induits par les calculs annexes des études reliées (F-gaz, chaudière, légionelles, détection CO…) :
+// ajoutés au carnet du contrat quand le carnet du DOE ne les contient pas déjà
+const entretiensEtudes = new Map();
+async function chargerEntretienEtudes(affaireId) {
+  try {
+    const l = await api('GET', `/api/liens?affaireId=${encodeURIComponent(affaireId)}&app=etudes`);
+    entretiensEtudes.set(affaireId, (l || []).flatMap(x => ((x.resume || {}).entretien || []).filter(o => o && o.operation)).slice(0, 200)
+      .map(o => [String(o.equipement || ''), `${o.operation}${o.niveau === 'recommandé' ? ' — recommandé' : ''}${o.reference ? ` (réf. : ${o.reference})` : ''}`, String(o.frequence || '12 mois'), String(o.intervenant || 'Mainteneur CVC')]));
+  } catch (e) { entretiensEtudes.set(affaireId, entretiensEtudes.get(affaireId) || []); }
+}
+// Carnet du contrat : carnet du DOE (ou opérations usuelles des équipements), complété par l'entretien des études
+const opCle = l => `${String(l[0] || '').toLowerCase()}|${String(l[1] || '').split(' (réf. : ')[0].replace(/ — recommandé$/, '').toLowerCase()}`;
+function carnetContrat(affaireId, base) {
+  const vus = new Set((base || []).map(l => opCle(Array.isArray(l) ? l : [l.equipement, l.operation])));
+  return [...(base || []), ...(entretiensEtudes.get(affaireId) || []).filter(l => { const k = opCle(l); if (vus.has(k)) return false; vus.add(k); return true; })];
 }
 // Carnet par défaut : opérations usuelles des équipements mis en service (matériel retenu de l'étude)
 const ENTRETIEN_TYPES = { terminal: [['Filtres et bac à condensats', 'nettoyage ou remplacement', 6], ['Vanne, ventilateur, régulation', 'contrôle de fonctionnement', 12]],
@@ -28,7 +45,7 @@ function contratChantierHtml(a) {
   const c = a.contrat, auj = isoDate(new Date()), bureau = Store.can('write', 'affaires');
   if (!c || !c.actif) {
     const doe = carnetsDoe.get(a.id) || [], mat = carnetMateriel(a.id);
-    return `<h2>Contrat d'entretien</h2><div class="card"><p class="muted small">Après la réception : visites d'entretien planifiées à partir du carnet de maintenance du DOE${doe.length ? ` (${doe.length} opération(s))` : ''}${!doe.length && mat.length ? `, ou des opérations usuelles des équipements du chantier (${mat.length} opération(s))` : ''}, rappels, comptes rendus et facturation des échéances.</p>
+    return `<h2>Contrat d'entretien</h2><div class="card"><p class="muted small">Après la réception : visites d'entretien planifiées à partir du carnet de maintenance du DOE${doe.length ? ` (${doe.length} opération(s))` : ''}${!doe.length && mat.length ? `, ou des opérations usuelles des équipements du chantier (${mat.length} opération(s))` : ''}${(entretiensEtudes.get(a.id) || []).length ? `, complété par ${entretiensEtudes.get(a.id).length} visite(s) ou contrôle(s) réglementaire(s) des études (F-gaz, chaudière, légionelles…)` : ''}, rappels, comptes rendus et facturation des échéances.</p>
       ${bureau ? '<button class="small" id="ct-creer">🔧 Créer le contrat d\'entretien</button>' : ''}</div>`;
   }
   const b = Contrats.bilan(c, auj), ech = Contrats.echeances(c);
@@ -56,6 +73,7 @@ function bindContratChantier(root, a) {
     const recep = (Store.all('receptions').find(p => p.affaireId === a.id && p.statut === 'Signé') || {}).date || isoDate(new Date());
     const m = Modal.open(`<h2>${c0 ? 'Contrat d\'entretien' : 'Créer le contrat d\'entretien'}</h2>
       ${c0 ? '' : `<p class="small">${src ? `Opérations reprises ${src === 'carnet du DOE' ? 'du carnet du DOE' : 'des équipements du chantier'} (${(doe.length ? doe : mat).length}).` : 'Aucun carnet : le contrat sera créé vide (ajoutez les opérations dans le DOE puis recréez-le).'}</p>`}
+      ${c0 ? '' : (() => { const n = carnetContrat(a.id, doe.length ? doe : mat).length - (doe.length ? doe : mat).length; return n > 0 ? `<p class="small">+ ${n} visite(s) ou contrôle(s) réglementaire(s) induit(s) par les calculs annexes des études (F-gaz, chaudière, légionelles…), fréquences et références à vérifier.</p>` : ''; })()}
       <div class="grid2"><div class="field"><label for="ct-debut">Début</label><input type="date" id="ct-debut" value="${esc(c0 ? c0.debut : recep)}"></div>
         <div class="field"><label for="ct-duree">Durée (mois)</label><input type="number" id="ct-duree" min="1" max="60" value="${c0 ? c0.dureeMois : 12}"></div>
         <div class="field"><label for="ct-montant">Montant annuel HT (€)</label><input type="number" id="ct-montant" min="0" step="10" value="${c0 ? c0.montantAnnuel || '' : ''}"></div>
@@ -68,7 +86,7 @@ function bindContratChantier(root, a) {
       const o = { debut: v('#ct-debut'), dureeMois: num(v('#ct-duree')) || 12, montantAnnuel: num(v('#ct-montant')), facturation: v('#ct-fact') };
       Modal.close();
       if (c0) { const garde = c0.debut === o.debut && c0.dureeMois === o.dureeMois; maj(garde ? { ...c0, ...o } : { ...Contrats.creer({ carnet: c0.carnet, ...o, origine: c0.origine }), factures: c0.factures || [] }, 'Contrat mis à jour'); }
-      else maj(Contrats.creer({ carnet: doe.length ? doe : mat, ...o, origine: src }), 'Contrat d\'entretien créé : visites planifiées');
+      else maj(Contrats.creer({ carnet: carnetContrat(a.id, doe.length ? doe : mat), ...o, origine: [src, (entretiensEtudes.get(a.id) || []).length ? 'contrôles réglementaires des études' : ''].filter(Boolean).join(' + ') }), 'Contrat d\'entretien créé : visites planifiées');
     };
   };
   const cr = z.querySelector('#ct-creer'); if (cr) cr.onclick = () => parametres(null);

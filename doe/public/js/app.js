@@ -429,13 +429,22 @@ SECTIONS.s6 = { html: doe => `<h2>6. Essais, contrôles et mesures</h2>${control
 SECTIONS.s7 = {
   html: doe => `<h2>7. Maintenance et exploitation</h2><h3>7.1 Carnet de maintenance préventive</h3>
     ${tableEditable('maintenance', doe.maintenance, [{ lib: 'Équipement' }, { lib: 'Opération' }, { lib: 'Fréquence' }, { lib: 'Intervenant' }])}
-    <button class="secondaire petit" id="maint-auto">Proposer selon les familles d'équipements</button>
+    <button class="secondaire petit" id="maint-auto">Proposer selon les familles d'équipements</button>${doe.affaireId ? ' <button class="secondaire petit" id="maint-etudes" title="Visites et contrôles obligatoires ou recommandés induits par les calculs annexes des études du chantier (F-gaz, chaudière, légionelles, détection CO, hottes…), avec fréquence et référence">Reprendre l\'entretien des études</button>' : ''}
     <h3>7.2 Notices d'exploitation</h3><ul class="pieces">${doe.notices.map((n, i) => `<li>${lienFichier(n.fichier)} <input data-ch="notices.${i}.libelle" value="${esc(n.libelle)}"><button class="icone" data-retirer="notices.${i}">✕</button></li>`).join('') || '<li class="manque">Aucune notice</li>'}</ul>
     <button class="secondaire petit" id="notice-ajout">+ Joindre des notices</button> <button class="petit" id="notice-generer" title="Notice de l'installation : équipements posés, consignes de conduite et de sécurité, réglages et mesures des PV de mise en service signés, carnet d'entretien, formation, contacts">📘 Générer la notice d'exploitation</button>
     <h3>7.3 Pièces de rechange recommandées</h3>${tableEditable('pieces', doe.pieces, [{ lib: 'Équipement' }, { lib: 'Pièce' }, { lib: 'Référence constructeur' }, { lib: 'Qté min.' }])}`,
   bind: (root, doe) => {
     bindTables(root, doe, { maintenance: Object.assign(() => doe.maintenance, { tableau: true }), pieces: Object.assign(() => doe.pieces, { tableau: true }) });
     root.querySelector('#maint-auto').onclick = () => { const deja = new Set(doe.maintenance.map(l => `${l[0]}|${l[1]}`)); let n = 0; doe.familles.forEach(f => (TRAME.maintenance[f] || []).forEach(l => { if (!deja.has(`${l[0]}|${l[1]}`)) { doe.maintenance.push([...l]); n++; } })); enregistrer(doe); App.render(); toast(`${n} opération(s) ajoutée(s)`); };
+    // Entretien induit par les calculs annexes des études reliées (resume.entretien) : ajouté au carnet sans doublon
+    const me = root.querySelector('#maint-etudes');
+    if (me) me.onclick = async () => {
+      let ops = [];
+      try { ops = (await api('GET', `/api/pf/liens?affaireId=${encodeURIComponent(doe.affaireId)}`) || []).filter(l => l.app === 'etudes').flatMap(l => (l.resume || {}).entretien || []); } catch (e) { return toast(`Études indisponibles : ${e.message}`); }
+      const deja = new Set(doe.maintenance.map(l => `${l[0]}|${String(l[1]).split(' (réf. : ')[0].replace(/ — recommandé$/, '')}`)); let n = 0;
+      ops.forEach(o => { if (!o || !o.operation || deja.has(`${o.equipement}|${o.operation}`)) return; deja.add(`${o.equipement}|${o.operation}`); doe.maintenance.push([String(o.equipement || ''), `${o.operation}${o.niveau === 'recommandé' ? ' — recommandé' : ''}${o.reference ? ` (réf. : ${o.reference})` : ''}`, String(o.frequence || ''), String(o.intervenant || '')].map(x => x.slice(0, 200))); n++; });
+      enregistrer(doe); App.render(); toast(ops.length ? `${n} opération(s) ajoutée(s) depuis les études (fréquences et références à vérifier)` : 'Aucune visite d\'entretien dans les études reliées au chantier');
+    };
     // Notice générée depuis le DOE et les PV signés : PDF joint en 7.2 (remplace la version générée précédente)
     root.querySelector('#notice-generer').onclick = async ev => {
       const b = ev.currentTarget; b.disabled = true; b.textContent = 'Mise en page…';

@@ -167,7 +167,15 @@ const PointsMes = (() => {
             detail: `Marquage CE et déclaration UE de conformité des équipements et ensembles${v.categorieMax >= 2 ? ', attestation de l\'organisme notifié, QMOS et qualifications des soudeurs, certificats matière 3.1' : ''} ; notice d'instructions remise ; suivi en service (arrêté du 20/11/2017) : déclaration de mise en service si requise.` });
           break;
         }
-        default:
+        default: {
+          // Calculs annexes qui posent du matériel (hotte, parking, solaire, bouclage, plancher, DRV…) : fiches de mise en
+          // service tirées de leurs séquences et paramètres (versMes, annexes-exploitation.js)
+          const T = N().TYPES[n.type];
+          if (T && T.annexe) {
+            const A = typeof AnnexesExploitation !== 'undefined' ? AnnexesExploitation : (typeof window === 'undefined' ? (() => { try { return require('./annexes-exploitation'); } catch (err) { return null; } })() : null);
+            if (A) out.push(...A.pointsNote(et, n, v, e).map(p => ({ ...base, ...p })));
+          }
+        }
       }
     });
     // Essais des séquences entre niveaux de l'installation hydraulique (schéma aval → pompe amont, boucle d'eau tempérée,
