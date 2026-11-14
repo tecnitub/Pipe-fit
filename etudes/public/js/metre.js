@@ -4,7 +4,7 @@
 const Metre = ((N, C, D, L, Sc) => {
   const nf = N.nf, num = N.num;
   const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[×x]/g, ' x ').replace(/,/g, '.');
-  const CHAPITRES = ['Études', 'Production', 'Tuyauteries', 'Équipements hydrauliques', 'Plomberie sanitaire', 'Appareils sanitaires', 'Évacuations', 'Calorifuge', 'Aéraulique', 'Désenfumage'];
+  const CHAPITRES = ['Études', 'Production', 'Énergies renouvelables', 'Froid', 'Tuyauteries', 'Équipements hydrauliques', 'Émetteurs', 'Plomberie sanitaire', 'Appareils sanitaires', 'Évacuations', 'Calorifuge', 'Aéraulique', 'Désenfumage', 'Régulation et sécurités'];
   // Mots-clés de matériau par série de tubes
   const MATIERE = { acier: ['acier', 'p235', 'p265', 'noir', 'e235', 'st37'], galva: ['galva'], inox: ['inox', '316', '304', '1.44', '1.43'], cuivre: ['cuivre'], pehd: ['pehd', 'pe100', 'polyethylene'], multicouche: ['multicouche', 'per-al', 'pert'] };
   const matiereDe = serie => (/galva/.test(serie) ? 'galva' : /inox/.test(serie) ? 'inox' : /cuivre/.test(serie) ? 'cuivre' : /pehd/.test(serie) ? 'pehd' : /multicouche/.test(serie) ? 'multicouche' : 'acier');
@@ -47,9 +47,12 @@ const Metre = ((N, C, D, L, Sc) => {
         recherche: { type: 'tube', matiere: mat, dn: t.dn, de: t.de }, accessoires: [{ type: 'coude', matiere: mat, dn: t.dn, de: t.de, qte: R.coudesParMl }, { type: 'support', qte: R.supportsParMl }] });
     };
     const equip = (cle, chapitre, designation, qte, heures, recherche, source) => { const r = R.equip[recherche.type]; if (qte > 0) ajouter(cle, { chapitre, designation, unite: 'u', qte, heures: r === undefined ? heures : lin(r, recherche.dn), mo: 'monteur', recherche, source }); };
-    const notes = etude.notes || [], titre = n => `N${notes.indexOf(n) + 1}`;
+    const notes = etude.notes || [], titre = n => `N${notes.indexOf(n) + 1}`, calc = new Map(), annexes = [];
     notes.forEach(n => {
       const e = L.resoudre(etude, n).entrees, r = N.calculer(n.type, e), v = r.valeurs || {}, src = titre(n);
+      calc.set(n.id, { e, v });
+      // Calculs annexes (géothermie, solaire, hotte, parking, chambre froide…) : comptés après les autres notes
+      if (N.TYPES[n.type] && N.TYPES[n.type].annexe) { annexes.push(n); return; }
       // Notes créées depuis un schéma : déjà comptées par le schéma (pas de double compte)
       if (n.lien && n.lien.note && notes.some(x => x.id === n.lien.note) && n.lien.role !== 'vase') return;
       if (n.type === 'reseau') (v.troncons || []).forEach(t => tube(t.serie, t.tube, t.L, src));
@@ -158,6 +161,28 @@ const Metre = ((N, C, D, L, Sc) => {
         else equip(`isol|${d.tg.dn}`, 'Production', `Vanne d'isolement DN ${d.tg.dn}`, 2 * d.n, 0.3 + 0.01 * d.tg.dn, { type: 'isolement', dn: d.tg.dn }, src);
       }
     });
+    // Calculs annexes : postes donnés par le type (versMetre, annexes-elec.js), clé « annexe|<type>|<repère> » ; ce que le
+    // schéma de principe compte déjà (échangeur relié, désemboueur) et la pompe de bouclage du sanitaire sont écartés
+    if (annexes.length) {
+      try { const A = typeof AnnexesElec !== 'undefined' ? AnnexesElec : (typeof window === 'undefined' ? require('./annexes-elec') : null); if (A) A.brancher(); } catch (err) { /* module absent */ }
+      const pids = notes.filter(n => n.type === 'pid'), dims = pids.map(n => { try { return { e: calc.get(n.id).e, d: Sc.dimensionner(calc.get(n.id).e) }; } catch (err) { return null; } }).filter(Boolean);
+      const ctx = { etude, notes, valeurs: id => calc.get(id) || null,
+        echangeurSchema: dims.some(({ e, d }) => d.echangeur || /^echangeur/.test(e.generateur || '') || e.bouteille === 'echangeur' || (d.circuits || []).some(c => c.ech)),
+        desemboueurSchema: dims.some(({ e }) => e.desemboueur !== 'non') };
+      const vus = {};
+      annexes.forEach(n => {
+        const T = N.TYPES[n.type], ni = notes.indexOf(n), sfx = vus[n.type] ? `-N${ni + 1}` : ''; vus[n.type] = true;
+        if (typeof T.versMetre !== 'function') return;
+        let postesAnn = [];
+        try { const { e, v } = calc.get(n.id); postesAnn = T.versMetre(v, e, n, ctx) || []; } catch (err) { return; }
+        postesAnn.forEach(x => {
+          if (!(x && x.qte > 0 && x.designation)) return;
+          const cle = `annexe|${n.type}|${x.rep}${sfx}`, recherche = x.type ? { type: x.type, ...(x.dn ? { dn: x.dn } : {}) } : { type: 'mots', mots: x.mots || [] };
+          if ((x.unite || 'u') === 'u') equip(cle, x.chapitre || 'Équipements hydrauliques', x.designation, x.qte, x.heures, recherche, titre(n));
+          else ajouter(cle, { chapitre: x.chapitre || 'Équipements hydrauliques', designation: x.designation, unite: x.unite, qte: x.qte, heures: x.heures, mo: 'monteur', source: titre(n), recherche });
+        });
+      });
+    }
     const nCalc = notes.filter(n => !n.lien).length;
     if (nCalc) ajouter('be', { chapitre: 'Études', designation: 'Études d\'exécution, notes de calcul et schémas', unite: 'forfait', qte: 1, heures: lin(R.be, nCalc), mo: 'be', source: 'étude', recherche: { type: 'aucune' } });
     // Matériel retenu (fabricant et référence exacte choisis) : repris dans la désignation, donc dans le devis
@@ -199,6 +224,8 @@ const Metre = ((N, C, D, L, Sc) => {
       case 'calorifuge-gaine': return /calorif|isolant|laine/.test(t) && /gaine|m2|m²/.test(t) ? 2 : 0;
       case 'gaine': return /gaine|conduit/.test(t) && t.includes(norm(r.nom).replace(/\s+/g, ' ').replace('o ', '')) ? 3 : 0;
       case 'generateur': return norm(r.mots).split(' ').filter(m => m.length > 3).every(m => t.includes(m)) ? 2 : 0;
+      // Équipements des calculs annexes : tous les mots-clés présents (sans accent, en minuscules)
+      case 'mots': return (r.mots || []).length && r.mots.every(m => t.includes(norm(m))) ? 1 + Math.min(2, r.mots.length) : 0;
       default: return 0;
     }
   }

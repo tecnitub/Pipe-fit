@@ -37,6 +37,9 @@ const Regulation = (() => {
     if (['cta', 'aero', 'aeraulique', 'desenfumage'].includes(t)) return 'ventilation';
     if (['ecs', 'sanitaire'].includes(t)) return 'chauffage';
     if (t === 'pid') return /^(pcp|pc|v|td|ce|em)\d/.test(cle) ? 'chauffage' : 'production';
+    // Calculs annexes : application déclarée par le type (annexes-elec.js)
+    const T = t && Nt().TYPES ? Nt().TYPES[t] : null;
+    if (T && T.annexe && T.appRegulation) return q.type === 'cta' ? 'ventilation' : T.appRegulation;
     if (q.type === 'cta') return 'ventilation';
     if (['ventilo', 'split', 'regulateur'].includes(q.type)) return 'terminaux';
     if (['pac', 'generateur'].includes(q.type)) return 'production';
@@ -78,11 +81,52 @@ const Regulation = (() => {
     return { consignes: CP ? CP.consignesCctp(t) : null, protocoles, marques, comptage: /comptage|compteur d.energie|calorimetr/.test(n), bacs: /bacs|decret.{0,20}(2020-887|gtb)|classe [ab] .{0,20}(gtb|en 15232|en iso 52120)|en 15232|52120/.test(n),
       automate: /automate programmable|\bapi\b|automate/.test(n), prepro: /regulateur.{0,30}(preprogramme|configurable)|synco|regulateur (de|d.)(chauffage|ventilation) /.test(n), integree: /regulation integree|regulation d.origine|regulation constructeur/.test(n) };
   }
+  // Séquences, métré et application des calculs annexes (annexes-elec.js) : branchés une fois les modules chargés
+  const annexes = () => { try { const A = typeof AnnexesElec !== 'undefined' ? AnnexesElec : (typeof window === 'undefined' ? require('./annexes-elec') : null); if (A) A.brancher(); return A; } catch (e) { return null; } };
+  const nomMat = x => [x && x.fabricant, x && x.reference].map(s => String(s || '').trim()).filter(Boolean).join(' ');
+  // Repère d'un poste du métré qui couvre une ligne d'équipement (EXT-PK couvre EXT-PK-1, EXT-PK-N2-1…)
+  const couvre = (pr, r) => { const a = String(pr || ''), b = String(r || ''); return a && (a === b || (b.startsWith(`${a}-`) && /^(-N?\d+)+$/.test(b.slice(a.length)))); };
+  // Matériel retenu (fabricant + référence) d'une étude, pour le citer dans l'analyse fonctionnelle et la table d'échange :
+  // par clé du métré (et.materiel), par ligne d'équipement d'un calcul annexe (src « note:annK », repère « note|rep »),
+  // par note reliée à un modèle du registre (CTA, production : lignes de ses types) et liste des modèles du registre
+  function materiel(etude, Liens) {
+    const et = etude || {}, N = Nt(), A = annexes(), M = { metre: {}, src: {}, rep: {}, note: {}, noms: [] };
+    Object.entries(et.materiel || {}).forEach(([k, x]) => { if (x && String(x.reference || '').trim()) M.metre[k] = nomMat(x); });
+    const reg = et.equipements || [];
+    reg.forEach(x => { const s = nomMat(x); if (s && !M.noms.includes(s)) M.noms.push(s); });
+    const vus = {};
+    (et.notes || []).forEach((n, ni) => {
+      const e0 = n.entrees || {}, x = e0.eq && reg.find(y => y.id === e0.eq);
+      if (x && nomMat(x) && (n.type === 'cta' || n.type === 'pid')) M.note[n.id] = { nom: nomMat(x), types: n.type === 'cta' ? ['cta', 'ventilateur'] : ['generateur', 'pac'] };
+      const T = N.TYPES[n.type];
+      if (!A || !T || !T.annexe || typeof T.versMetre !== 'function') return;
+      const sfx = vus[n.type] ? `-N${ni + 1}` : ''; vus[n.type] = true;
+      if (!Object.keys(M.metre).some(k => k.startsWith(`annexe|${n.type}|`))) return;
+      try {
+        const e = Liens ? Liens.resoudre(et, n).entrees : e0, v = N.calculer(n.type, e).valeurs || {};
+        const postes = T.versMetre(v, e, n, {}).map(p => ({ rep: p.rep, ref: M.metre[A.cleMetre(n.type, p.rep, sfx)] })).filter(p => p.ref);
+        postes.forEach(p => { M.rep[`${n.id}|${p.rep}`] = p.ref; });
+        (typeof T.versElec === 'function' ? T.versElec(v, e, n) || [] : []).forEach((l, k) => { const p = postes.find(y => couvre(y.rep, l.rep)); if (p) { M.src[`${n.id}:ann${k}`] = p.ref; M.rep[`${n.id}|${l.rep}`] = p.ref; } });
+      } catch (err) { /* calcul incomplet */ }
+    });
+    return M;
+  }
+  // Fabricant + référence d'une ligne d'équipement (q : ligne du calcul des armoires) ; '' si aucun matériel retenu
+  function materielDe(M, q) {
+    if (!M || !q) return '';
+    const id = String(q.src || '').split(':')[0], des = String(q.designation || ''), rep = String(q.rep || '');
+    const parRep = Object.entries(M.rep || {}).find(([k]) => { const [i, r] = k.split('|'); return i === id && couvre(r, rep.replace(/-N\d+$/, '')); });
+    const no = (M.note || {})[id];
+    return (q.metre && (M.metre || {})[q.metre]) || (M.src || {})[q.src] || (parRep && parRep[1]) || (no && no.types.includes(q.type) ? no.nom : '') || (M.noms || []).find(s => des.includes(s)) || '';
+  }
+  // Désignation suivie du matériel retenu (« Pompe Radiateurs — Exemplair CX 40-8 »), sans doublon
+  const avecMateriel = (designation, ref) => (ref && !String(designation || '').includes(ref) ? `${designation} — ${ref}` : String(designation || ''));
   // Circuit à vanne de régulation (loi d'eau possible) selon son montage hydraulique
   const aVanne = c => (Sc().montage ? !!Sc().montage(c.reg).vanne : c.reg !== 'direct');
   function contexte(etude, Liens, opts = {}) {
     const notes = (etude && etude.notes) || [], types = {}, installations = [], N = Nt();
     notes.forEach(n => { types[n.id] = n.type; });
+    const A = annexes(), mat = materiel(etude, Liens), annVus = {};
     const res = n => { const e = Liens.resoudre(etude, n).entrees; return { e, v: (N.calculer(n.type, e).valeurs || {}) }; };
     const p = (libelle, valeur, unite) => (Number.isFinite(valeur) ? { libelle, valeur: Math.round(valeur * 100) / 100, unite } : null);
     notes.forEach(n => {
@@ -168,11 +212,18 @@ const Regulation = (() => {
           const { v } = res(n);
           if (v.bouclage) installations.push({ noteId: n.id, titre: `${titre} — bouclage ECS`, app: 'chauffage', af: ['Pompe de bouclage ECS en marche permanente (ou horloge hors occupation), vannes thermostatiques de bouclage réglées pour un retour ≥ 50 °C sur chaque antenne.'],
             params: [p('Température mini de retour de bouclage', 50, '°C')].filter(Boolean) });
+        } else if (N.TYPES[n.type] && N.TYPES[n.type].annexe && typeof N.TYPES[n.type].versRegulation === 'function') {
+          // Calcul annexe qui pose du matériel (hotte, parking, géothermie, solaire, bouclage, plancher…) : son analyse
+          // fonctionnelle, ses séquences et ses paramètres par défaut (annexes-elec.js), le matériel retenu cité
+          const T = N.TYPES[n.type], { e, v } = res(n), ni = notes.indexOf(n), sfx = annVus[n.type] ? `-N${ni + 1}` : ''; annVus[n.type] = true;
+          const ref = r => { const k = Object.keys(mat.rep).find(x => { const [i, rr] = x.split('|'); return i === n.id && couvre(rr, r); }); const s = k ? mat.rep[k] : (A ? mat.metre[A.cleMetre(n.type, r, sfx)] : ''); return s ? ` — ${s}` : ''; };
+          const x = T.versRegulation(v, e, n, { etude, ref });
+          if (x && ((x.af || []).length || (x.sequences || []).length)) installations.push({ noteId: n.id, titre, app: x.app || T.appRegulation || 'autre', annexe: n.type, af: x.af || [], sequences: x.sequences || null, params: (x.params || []).filter(Boolean) });
         }
       } catch (err) { /* calcul incomplet : installation ignorée */ }
     });
     const CPz = typeof ConsignesProjet !== 'undefined' ? ConsignesProjet : (() => { try { return require('./consignes-projet'); } catch (e) { return null; } })();
-    return { types, installations, cctp: exigencesCctp(etude && etude.inventaire), zonesEtude: CPz ? CPz.zonesEtude(etude) : [] };
+    return { types, installations, materiel: mat, cctp: exigencesCctp(etude && etude.inventaire), zonesEtude: CPz ? CPz.zonesEtude(etude) : [] };
   }
   // Points de contrôle de mise en service de la régulation selon la technologie
   const CONTROLES = {
@@ -232,6 +283,6 @@ const Regulation = (() => {
     void N;
     return out.installations.length || out.courbes.length ? out : null;
   }
-  return { pourDoe, exigencesCctp, lireFiche, COURT, TECHNOS, APPS, CAPACITES, CONTROLES, application, allouer, contexte };
+  return { materiel, materielDe, avecMateriel, couvre, pourDoe, exigencesCctp, lireFiche, COURT, TECHNOS, APPS, CAPACITES, CONTROLES, application, allouer, contexte };
 })();
 if (typeof module !== 'undefined') module.exports = Regulation;

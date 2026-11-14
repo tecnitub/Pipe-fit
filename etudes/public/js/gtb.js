@@ -102,7 +102,9 @@ const Gtb = (() => {
   }
   const TYPE_ES = { STOR: 'DO', ETOR: 'DI', SA: 'AO', EA: 'AI', Bus: 'Bus' };
 
-  function echange(pts, armoires = [], reglages = [], { nommage = 'installation' } = {}) {
+  // materiel : { repère: « Fabricant Référence » } du matériel retenu (colonne « Matériel retenu »)
+  function echange(pts, armoires = [], reglages = [], { nommage = 'installation', materiel = {} } = {}) {
+    const mat = rep => { const r = String(rep || ''); return (materiel || {})[r] || (materiel || {})[r.replace(/\.\d+$/, '')] || ''; };
     const regl = (reglages || []).filter(r => r && (String(r.rep || '').trim() || String(r.libelle || '').trim()));
     const devices = new Map(armoires.map((a, i) => [a, 1000 + i + 1])), cpt = {}, noms = nomsPoints(pts);
     return pts.map((p, ip) => {
@@ -117,10 +119,10 @@ const Gtb = (() => {
       const x = { alarme, histo, bas: '', haut: '' };
       regl.filter(r => { const rr = String(r.rep || '').trim(), rl = String(r.libelle || '').trim().toLowerCase(); return (!rr || rr === '*' || rr === p[0] || String(p[0]).startsWith(`${rr}.`)) && (!rl || `${des} ${p[1]}`.toLowerCase().includes(rl)); })
         .forEach(r => { if (r.priorite) x.alarme = r.priorite === 'aucune' ? '' : r.priorite; if (r.historique) x.histo = r.historique; if (String(r.bas ?? '') !== '') x.bas = String(r.bas); if (String(r.haut ?? '') !== '') x.haut = String(r.haut); });
-      return [ar, `${devices.get(ar)}`, p[0], des, p[2], p[4], obj, String(c.inst), `${mb[0]} ${mb[1]}${String(reg).padStart(4, '0')}`, unite, x.alarme, x.histo, nom, x.bas, x.haut];
+      return [ar, `${devices.get(ar)}`, p[0], des, p[2], p[4], obj, String(c.inst), `${mb[0]} ${mb[1]}${String(reg).padStart(4, '0')}`, unite, x.alarme, x.histo, nom, x.bas, x.haut, mat(p[0])];
     });
   }
-  const ENTETES_ECHANGE = ['Armoire', 'Device BACnet', 'Repère', 'Libellé', 'E/S', 'Classe', 'Objet BACnet', 'Instance', 'Registre Modbus', 'Unité', 'Alarme', 'Historique', 'Nom d\'objet', 'Seuil bas', 'Seuil haut'];
+  const ENTETES_ECHANGE = ['Armoire', 'Device BACnet', 'Repère', 'Libellé', 'E/S', 'Classe', 'Objet BACnet', 'Instance', 'Registre Modbus', 'Unité', 'Alarme', 'Historique', 'Nom d\'objet', 'Seuil bas', 'Seuil haut', 'Matériel retenu'];
   // Export selon un profil (colonnes du logiciel de l'intégrateur ou de l'automaticien : nom de colonne ← donnée ou valeur fixe)
   // profil : [{ colonne, source, fixe }] ; sans profil, toutes les colonnes de la table d'échange ; séparateur « ; », « , » ou tabulation
   function exporter(lignes, profil = [], sep = ';') {
@@ -171,6 +173,8 @@ const Gtb = (() => {
   const val = (params, re, d, u = '') => { const p = (params || []).find(x => re.test(x.libelle)); return p ? `${nf(p.valeur, p.valeur % 1 ? 1 : 0)} ${p.unite || u}`.trim() : d; };
   function sequences(inst, type, opts = {}) {
     const P = inst.params || [], perm = num(opts.permutation, 168);
+    // Séquences propres de l'installation (calculs annexes : hotte, parking, géothermie, solaire, bouclage…)
+    if (Array.isArray(inst.sequences) && inst.sequences.length) return inst.sequences;
     if (inst.securite) return null;
     if (inst.app === 'production') return [
       ['Démarrage', 'Autorisation par la programmation horaire et la demande des circuits ; pompes primaires puis générateur(s) après retour de marche', 'Temporisation de démarrage 30 s'],
@@ -401,6 +405,9 @@ const Gtb = (() => {
   }
   function cahier(ctx) {
     const REG = ctx.REG || { installations: [] }, perm = num(ctx.permutation, 168);
+    // Désignation d'un équipement suivie du matériel retenu (fabricant + référence) s'il est connu
+    const Rg = typeof Regulation !== 'undefined' ? Regulation : (() => { try { return require('./regulation'); } catch (e) { return null; } })();
+    const desig = q => (Rg && REG.materiel ? Rg.avecMateriel(q.designation || q.rep, Rg.materielDe(REG.materiel, q)) : q.designation || q.rep);
     const nomInst = q => { const id = String(q.src || '').split(':')[0], x = REG.installations.find(y => y.noteId === id); return x ? x.titre : ''; };
     return (ctx.arm || []).filter(a => a.techno === 'automate').map(a => {
       const adr = (rep, type) => (a.adresses.find(x => x[2] === rep && (!type || x[4] === type)) || [])[0] || '';
@@ -445,7 +452,7 @@ const Gtb = (() => {
       if (ctx.projet) boucles.forEach(b => { const x = ctx.projet.pid.find(y => `R-${y[0]}` === b[0]); if (x) b[4] = b[4].replace(/(PI|PID)[^;]*(;|$)/, `PI : bande ${x[3]}, intégrale ${x[4]}${x[5] !== '—' ? `, temps de course ${x[5]}` : ''}$2`); });
       sections.push({ titre: 'Boucles de régulation', lignes: boucles });
       // Commandes des moteurs
-      sections.push({ titre: 'Commandes des moteurs', lignes: pilotes.filter(q => q.moteur || q.type === 'generateur' || q.regulation === 'evGaz').filter(q => adr(q.rep, 'STOR')).map(q => [q.rep, q.designation || q.rep,
+      sections.push({ titre: 'Commandes des moteurs', lignes: pilotes.filter(q => q.moteur || q.type === 'generateur' || q.regulation === 'evGaz').filter(q => adr(q.rep, 'STOR')).map(q => [q.rep, desig(q),
         [adrs(q.rep, 'ETOR')].filter(Boolean).join(' ; ') || '—', adrs(q.rep, 'STOR'),
         q.groupe ? `${q.moteur2 ? 'secours' : 'principal'} du groupe ${q.groupe} : permutation toutes les ${perm} h de marche, basculement immédiat sur défaut ou absence de retour de marche (30 s)` : q.regulation === 'evGaz' ? 'ouverture si chaufferie autorisée et chaîne de sécurité fermée ; contrôle de fermeture 5 s' : 'retour de marche attendu sous 30 s ; anti-court-cycle 3 min ; dégommage hebdomadaire 30 s si arrêté',
         q.groupe ? 'commutateur M1 / M2 / Auto / Arrêt lu en entrée ; en M1 / M2 : marche forcée hors automate' : 'commutateur Manu / Auto / Arrêt : l\'automate ne commande qu\'en Auto']) });
@@ -495,7 +502,7 @@ const Gtb = (() => {
       if (lg.length) sections.push({ titre: 'Logique de fonctionnement pas à pas', entetes: ['Fonction', 'Étape', 'Logique'], lignes: lg });
       sections.push({ titre: 'Historiques et comptages', lignes: ech.filter(l => l[11]).map(l => [l[2], l[3], `${l[6]} ${l[7]}`, '', l[11], l[5] === 'TCP' ? 'conservation 5 ans (décret BACS)' : '']) });
       sections.push({ titre: 'Communication', lignes: [[`Device ${ech[0] ? ech[0][1] : '—'}`, `Automate de l'armoire ${a.rep}`, ctx.gtb || 'protocole GTB à définir', '', `${ech.length} objet(s) publiés (voir la table d'échange)`, ctx.nommage === 'armoire' ? 'nommage des objets : ARMOIRE_REPÈRE_FONCTION' : 'nommage des objets : INSTALLATION_REPÈRE_FONCTION (CH_, ECS_, CTA_…)'],
-        ...pilotes.filter(q => q.regulation === 'bus').map(q => [q.rep, q.designation || q.rep, q.protocole || 'Modbus RTU / BACnet', '', 'adresse esclave et vitesse à relever sur l\'équipement', `${a.pts.filter(p => p[0] === q.rep && p[2] === 'Bus').length} point(s) lus / écrits`])] });
+        ...pilotes.filter(q => q.regulation === 'bus').map(q => [q.rep, desig(q), q.protocole || 'Modbus RTU / BACnet', '', 'adresse esclave et vitesse à relever sur l\'équipement', `${a.pts.filter(p => p[0] === q.rep && p[2] === 'Bus').length} point(s) lus / écrits`])] });
       if (a.wit) sections.unshift({ titre: 'ULI Wit REDY : ressources et matériel', lignes: [
         ['UC', a.wit.uc[0], `${a.pts.length} point(s)`, '', `taille ${a.wit.taille[0]} : ${a.wit.taille[1]} ressources (${a.wit.ressources} estimées)`, 'ressource = point d\'information, point de pilotage ou processus (catalogue Wit)'],
         ...a.chassis.flatMap(c => c.modules.map(m => [`${c.nom}.${m.emplacement}`, `PLUG ${m.nom} (${m.ref})`, m.type === 'ETOR' || m.type === 'EA' ? `${m.utilisees}/${m.voies} voie(s)` : '', m.type === 'STOR' || m.type === 'SA' ? `${m.utilisees}/${m.voies} voie(s)` : m.type === 'Bus' ? `${m.utilisees} compteur(s)` : '', `embase ${c.embase[0]}`, m.lib || '']))] });

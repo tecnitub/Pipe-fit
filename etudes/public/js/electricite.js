@@ -642,7 +642,7 @@ const Electricite = ((N, Sc) => {
       lignes: [...bilan.map(x => ligneBilan(x.nom, x.alim, x.P, x.ks, x.S, x.Ib)),
         ['Total CVC au TGBT', `simultanéité ${nf(ksT * 100, 0)} %`, nf(bilan.reduce((s, x) => s + x.P, 0), 2), '', nf(Pappel, 2), Sappel ? nf(Pappel / Sappel, 2) : '—', nf(Sappel, 2), `${nf(Itgbt, 1)} (phases équilibrées)`]], total: true };
     // Analyse fonctionnelle : une phrase par équipement, puis les principes communs
-    const af = eqs.map(q => `${q.rep} — ${q.designation || q.t[0]}${q.regulation !== 'aucune' ? '' : ''} : ${q.afAuto || (REGULS[q.regulation] || REGULS.aucune)[2]}${q.fonctionnement ? `. ${String(q.fonctionnement).trim().replace(/\.$/, '')}` : ''}${q.pilote ? ` (automate de l'armoire ${q.pilote.rep})` : q.regulation === 'aucune' ? '' : ' (régulation autonome)'}.`);
+    const af = eqs.map(q => `${q.rep} — ${REG.materiel ? Rg().avecMateriel(q.designation || q.t[0], Rg().materielDe(REG.materiel, q)) : q.designation || q.t[0]}${q.regulation !== 'aucune' ? '' : ''} : ${q.afAuto || (REGULS[q.regulation] || REGULS.aucune)[2]}${q.fonctionnement ? `. ${String(q.fonctionnement).trim().replace(/\.$/, '')}` : ''}${q.pilote ? ` (automate de l'armoire ${q.pilote.rep})` : q.regulation === 'aucune' ? '' : ' (régulation autonome)'}.`);
     const groupes = [...new Set(eqs.filter(q => q.groupe).map(q => q.groupe))], perm = num(e.permutation, 168);
     groupes.forEach(g => af.push(`${g} — moteurs doubles ${g}-M1 / ${g}-M2 : commutateur Moteur 1 / Moteur 2 / Auto / Arrêt ; en Auto, un seul moteur en marche, permutation automatique toutes les ${nf(perm, 0)} h de fonctionnement et basculement immédiat sur l'autre moteur en cas de défaut (disjoncteur, variateur ou absence de retour de marche) avec alarme ; en position M1 ou M2, marche forcée du moteur choisi hors automate (sécurités câblées maintenues) ; verrouillage mutuel des contacteurs.`));
     if (eqs.some(q => q.type === 'cta')) af.push('CTA : commutateur Manu / Auto / Arrêt en façade ; Auto = autorisation de marche par l\'automate (programmation horaire), Manu = autorisation forcée, la régulation propre de la CTA et ses sécurités (antigel, incendie) restant actives.');
@@ -748,7 +748,9 @@ const Electricite = ((N, Sc) => {
     const Pbacs = num(e.pBacs) || REG.installations.reduce((s, x) => s + num(x.puissance), 0);
     const bacs = Gt().bacs({ P: Pbacs, neuf: e.batimentNeuf === 'oui', eqs, REG, opt, gtb: e.gtb, pts });
     if (bacs.assujetti && !bacs.conforme) alertes.push(alerte('attention', `Décret BACS : bâtiment assujetti (${bacs.echeance}) ; classe de régulation estimée ${bacs.classe}, classe A ou B exigée (onglet « GTB et BACS »).`));
-    const echange = Gt().echange(pts, arm.map(a => a.rep), [...Cp().reglagesPoints(projet, eqs), ...(e.reglagesPoints || [])], { nommage: e.nommagePoints || 'installation' }), comptes = eqs.filter(q => String(q.src || '').startsWith('comptage:'));
+    // Matériel retenu (registre, matériel retenu de l'étude) cité dans la table d'échange
+    const matRep = {}; if (REG.materiel) eqs.forEach(q => { const m = Rg().materielDe(REG.materiel, q); if (m) matRep[q.rep] = m; });
+    const echange = Gt().echange(pts, arm.map(a => a.rep), [...Cp().reglagesPoints(projet, eqs), ...(e.reglagesPoints || [])], { nommage: e.nommagePoints || 'installation', materiel: matRep }), comptes = eqs.filter(q => String(q.src || '').startsWith('comptage:'));
     const cahierProg = Gt().cahier({ arm, eqs, REG, echange, permutation: e.permutation, gtb: e.gtb && e.gtb !== 'aucune' ? e.gtb : '', nommage: e.nommagePoints || 'installation', projet });
     const nomAut = MARQUES[e.marqueAutomate] || MARQUES.generique;
     const seqs = REG.installations.map(x => ({ x, s: Gt().sequences(x, (REG.types || {})[x.noteId], { permutation: e.permutation }) })).filter(y => y.s);
