@@ -11,6 +11,9 @@ const AnnexesFroid = ((N) => {
   const norm = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
   const P_ = () => (typeof Pieces !== 'undefined' ? Pieces : (() => { try { return require('./pieces'); } catch (e) { return null; } })());
   const L_ = () => (typeof Liens !== 'undefined' ? Liens : (() => { try { return require('./liens'); } catch (e) { return null; } })());
+  // Valeurs réglementaires (PRP, limites EN 378, seuils F-gaz) : défauts des tables ci-dessous, surchargeables dans les Réglages
+  const VR = () => (typeof ValeursRegl !== 'undefined' ? ValeursRegl : (() => { try { return require('./valeurs-regl'); } catch (e) { return null; } })());
+  const vReg = (cle, d) => { const R = VR(); return R ? R.v(cle, d) : d; };
 
   /* ---------- Lignes reprises de l'étude ---------- */
   // Lignes « auto » (reprises d'une autre note) ajoutées après les lignes saisies, toutes leurs cellules verrouillées ;
@@ -49,17 +52,24 @@ const AnnexesFroid = ((N) => {
     R744: ['R744 (CO₂)', 1, 1, 'A1', 0.1, 0, 710, false],
     R717: ['R717 (ammoniac)', 0, 0, 'B2L', 0.00035, 0.116, 603, false],
   };
+  // Fluide avec ses PRP, limite pratique et LFL des Réglages (valeurs réglementaires)
+  const fluide = k => { const c = FLUIDES[k] ? k : 'R410A', f = FLUIDES[c].slice(); f[1] = vReg(`fluide.${c}.ar4`, f[1]); f[2] = vReg(`fluide.${c}.ar5`, f[2]); f[4] = vReg(`fluide.${c}.lp`, f[4]); f[5] = vReg(`fluide.${c}.lfl`, f[5]); return f; };
+  const clesFluide = k => [`fluide.${FLUIDES[k] ? k : 'R410A'}.`];
+  const CLES_FGAZ = ['fgaz.seuil1', 'fgaz.seuil2', 'fgaz.seuil3', 'fgaz.mois1', 'fgaz.mois1d', 'fgaz.mois2', 'fgaz.mois2d', 'fgaz.mois3', 'fgaz.mois3d', 'fgaz.detection', 'fgaz.hermetique'];
   const optFluides = Object.entries(FLUIDES).map(([k, f]) => [k, `${f[0]} — ${f[3]}, PRP ${f[1]}`]);
   const inflammable = f => /2L|2|3/.test(f[3]);
   const prp = (f, ref) => (ref === 'AR5' ? f[2] : f[1]);
   // Contrôles d'étanchéité (règlement (UE) 517/2014 art. 4 et 5, repris par le règlement (UE) 2024/573) : [seuil tCO₂e, mois sans détection, mois avec détection]
   const SEUILS_FGAZ = [[500, 3, 6], [50, 6, 12], [5, 12, 24]];
+  // Seuils retenus (Réglages) : [seuil tCO₂e, mois sans détection, mois avec détection], du plus haut au plus bas
+  const seuilsFgaz = () => [3, 2, 1].map(i => [vReg(`fgaz.seuil${i}`, SEUILS_FGAZ[3 - i][0]), vReg(`fgaz.mois${i}`, SEUILS_FGAZ[3 - i][1]), vReg(`fgaz.mois${i}d`, SEUILS_FGAZ[3 - i][2])]).sort((a, b) => b[0] - a[0]);
   function controleFgaz(t, f, { hermetique = false, detection = false } = {}) {
+    const S = seuilsFgaz(), sH = vReg('fgaz.hermetique', 10), sD = vReg('fgaz.detection', 500);
     if (!f[7]) return { mois: 0, texte: 'Hors règlement F-gaz (fluide non fluoré) : maintenance selon EN 378-4 et notice', detObl: false };
-    if (hermetique && t < 10) return { mois: 0, texte: 'Équipement hermétiquement scellé < 10 tCO₂e : pas de contrôle périodique F-gaz', detObl: false };
-    const s = SEUILS_FGAZ.find(([x]) => t >= x);
-    if (!s) return { mois: 0, texte: 'Moins de 5 tCO₂e : pas de contrôle périodique F-gaz (bonnes pratiques EN 378-4)', detObl: false };
-    const detObl = t >= 500, mois = detection ? s[2] : s[1];
+    if (hermetique && t < sH) return { mois: 0, texte: `Équipement hermétiquement scellé < ${nf(sH, 0)} tCO₂e : pas de contrôle périodique F-gaz`, detObl: false };
+    const s = S.find(([x]) => t >= x);
+    if (!s) return { mois: 0, texte: `Moins de ${nf(S[S.length - 1][0], 0)} tCO₂e : pas de contrôle périodique F-gaz (bonnes pratiques EN 378-4)`, detObl: false };
+    const detObl = t >= sD, mois = detection ? s[2] : s[1];
     return { mois, texte: `Contrôle d'étanchéité tous les ${mois} mois${detection ? ' (détection de fuite installée)' : ''}`, detObl };
   }
   // Charge maxi par local (EN 378-1 annexe C) : limite pratique × volume ; pour A2L / A3 en confort, m_max = 2,5 · LFL^(5/4) · h₀ · A^(1/2)
@@ -86,7 +96,7 @@ const AnnexesFroid = ((N) => {
   const typeUI = t => (t === 'split' ? 'mural' : /^cassette/.test(t || '') ? 'cassette' : /gainable/.test(t || '') ? 'gainable' : /^vc/.test(t || '') ? 'console' : 'autre');
 
   function calculerDrv(e) {
-    const alertes = [], f = FLUIDES[e.fluide] || FLUIDES.R410A, PfrUE = num(e.PfrUE), PchUE = num(e.PchUE);
+    const alertes = [], f = fluide(e.fluide), PfrUE = num(e.PfrUE), PchUE = num(e.PchUE);
     const uis = (e.uis || []).filter(u => u && (u.rep || num(u.Pfr) > 0)).map((u, i) => ({ rep: String(u.rep || `UI${i + 1}`), local: u.local || '', type: TYPES_UI[u.type] ? u.type : 'autre', n: Math.max(1, Math.round(num(u.n, 1))), Pfr: num(u.Pfr), Pch: num(u.Pch), L: num(u.L, NaN), H: num(u.H, 0), auto: u._auto || '' }));
     const Pui = uis.reduce((a, u) => a + u.n * u.Pfr, 0), PuiC = uis.reduce((a, u) => a + u.n * u.Pch, 0), nUI = uis.reduce((a, u) => a + u.n, 0);
     const tc = PfrUE > 0 && Pui > 0 ? Pui / PfrUE * 100 : NaN, tcMin = num(e.tcMin, 50), tcMax = num(e.tcMax, 130);
@@ -113,7 +123,13 @@ const AnnexesFroid = ((N) => {
     // Diamètres indicatifs
     const dp = diam(DIAM_PRINC, Math.max(PfrUE, Pui));
     // Charge
-    const chargeComp = liq.reduce((a, x) => a + x.m, 0), chargeUsine = num(e.chargeUsine), chargeTot = chargeUsine + chargeComp;
+    // Longueur préchargée en usine (fiche de l'unité extérieure) : charge complémentaire au-delà seulement (au prorata de la ligne liquide)
+    const Lpre = num(e.Lprecharge), chargeLiq = liq.reduce((a, x) => a + x.m, 0), chargeComp = Lpre > 0 && Ltot > 0 ? chargeLiq * Math.max(0, Ltot - Lpre) / Ltot : chargeLiq;
+    const chargeUsine = num(e.chargeUsine), chargeTot = chargeUsine + chargeComp;
+    if (Lpre > 0 && Ltot > 0) alertes.push(alerte('info', `Unité préchargée pour ${nf(Lpre, 0)} m de liaison : charge complémentaire comptée sur ${nf(Math.max(0, Ltot - Lpre), 1)} m de ligne liquide (au prorata des diamètres ; table du fabricant à confirmer).`));
+    const nUImax = Math.round(num(e.nUImax));
+    if (nUImax > 0 && nUI > nUImax) alertes.push(alerte('erreur', `${nUI} unités intérieures raccordées pour ${nUImax} au plus sur cette unité extérieure (fiche du fabricant).`));
+    else if (nUImax > 0 && nUI) alertes.push(alerte('ok', `${nUI} unités intérieures sur ${nUImax} raccordables (fiche du fabricant).`));
     if (!(chargeUsine > 0)) alertes.push(alerte('attention', 'Charge usine de l\'unité extérieure à saisir (plaque signalétique / notice) : charge totale incomplète.'));
     if (!liq.length) alertes.push(alerte('attention', 'Lignes liquide (diamètre, longueur) à saisir pour la charge complémentaire.'));
     if (liq.some(x => !x.saisi)) alertes.push(alerte('info', 'Charge complémentaire calculée ligne liquide pleine (masse volumique du liquide à 25 °C × section intérieure) : à remplacer par les g/m de la notice du fabricant.'));
@@ -131,7 +147,8 @@ const AnnexesFroid = ((N) => {
     const eer = num(e.EER, 3.5), PelUE = num(e.PelUE) > 0 ? num(e.PelUE) : PfrUE / Math.max(eer, 0.5);
     alertes.push(alerte('attention', 'Limites de longueur, de dénivelé et de taux de connexion : valeurs usuelles par défaut, à remplacer par celles de la notice de la gamme retenue (elles varient selon le fabricant et la puissance).'));
     const lignesUI = uis.map(u => { const d = diam(DIAM_UI, u.Pfr); return [`${u.auto ? '🔗 ' : ''}${u.rep}`, u.local, TYPES_UI[u.type], String(u.n), nf(u.Pfr, 2), nf(u.Pch, 2), Number.isFinite(u.L) ? nf(u.L, 1) : '—', nf(u.H, 1), `${d[1]} / ${d[2]}`]; });
-    return {
+    return VR() ? VR().marquer(resultatDrv(), clesFluide(e.fluide)) : resultatDrv();
+    function resultatDrv() { return {
       valeurs: { Pui, PuiC, PfrUE, PchUE, tc, nUI, Lloin, Leq, Ltot, dHui, chargeComp, chargeUsine, chargeTot, tCO2e: t, fluide: e.fluide || 'R410A', Smin, Hmin: Hloc, PelUE, repUE: e.repUE || 'UE1' },
       resume: [['Unité extérieure', `${e.repUE || 'UE1'} · ${nf(PfrUE, 1)} kW froid / ${nf(PchUE, 1)} kW chaud · ${f[0]}`], ['Unités intérieures', `${nUI} · ${nf(Pui, 1)} kW froid / ${nf(PuiC, 1)} kW chaud`],
         ['Taux de connexion', Number.isFinite(tc) ? `${nf(tc, 0)} % (admis ${nf(tcMin, 0)}–${nf(tcMax, 0)} %)` : '—'], ['UI la plus éloignée', loin ? `${loin.rep} : ${nf(Lloin, 1)} m réels, ${nf(Leq, 1)} m équivalents` : '—'],
@@ -147,7 +164,7 @@ const AnnexesFroid = ((N) => {
         `Charge complémentaire = Σ longueur de liquide × g/m ; g/m par défaut = ρ liquide à 25 °C (${f[6]} kg/m³) × section intérieure (tube EN 12735-1).`,
         'Diamètres indicatifs : ordre de grandeur des notices DRV (R410A / R32), à confirmer par le logiciel de sélection du fabricant.', 'tCO₂e = charge (kg) × PRP / 1000.'],
       synthese: `${nUI} UI · ${Number.isFinite(tc) ? `${nf(tc, 0)} %` : '—'} · charge ${nf(chargeTot, 1)} kg`,
-    };
+    }; }
   }
   N.TYPES.drv = {
     titre: 'Détente directe DRV / VRF (taux de connexion, liaisons, charge)', icone: '❄️', famille: FAMILLE, annexe: true, theme: THEME,
@@ -155,6 +172,7 @@ const AnnexesFroid = ((N) => {
     champs: [{ g: 'Unité extérieure' }, { k: 'repUE', l: 'Repère de l\'unité extérieure', t: 't', d: 'UE1' }, { k: 'fluide', l: 'Fluide frigorigène', t: 's', o: optFluides, d: 'R410A' },
       { k: 'PfrUE', l: 'Puissance frigorifique nominale', u: 'kW', d: 28 }, { k: 'PchUE', l: 'Puissance calorifique nominale', u: 'kW', d: 31.5 },
       { k: 'chargeUsine', l: 'Charge usine de l\'unité extérieure (plaque signalétique)', u: 'kg', d: '' },
+      { k: 'Lprecharge', l: 'Longueur de liaison préchargée en usine (vide : aucune)', u: 'm', d: '' }, { k: 'nUImax', l: 'Nombre maximal d\'unités intérieures raccordables (fiche)', d: '' },
       { k: 'PelUE', l: 'Puissance électrique absorbée (vide : estimée selon l\'EER)', u: 'kW', d: '' }, { k: 'EER', l: 'EER indicatif pour l\'estimation', d: 3.5 },
       { k: 'tension', l: 'Tension', t: 's', o: [['tri', '400 V tri'], ['mono', '230 V mono']], d: 'tri' },
       { k: 'refPrp', l: 'PRP retenu', t: 's', o: [['AR4', 'AR4 (règlement 517/2014, étiquetage)'], ['AR5', 'AR5 (GIEC, 5e rapport)']], d: 'AR4' },
@@ -204,10 +222,10 @@ const AnnexesFroid = ((N) => {
   function calculerFluides(e) {
     const alertes = [], ref = e.refPrp === 'AR5' ? 'AR5' : 'AR4';
     const eqs = (e.equipements || []).filter(x => x && (x.rep || num(x.charge) > 0)).map((x, i) => {
-      const f = FLUIDES[x.fluide] || FLUIDES.R410A, charge = num(x.charge), t = charge * prp(f, ref) / 1000, rep = String(x.rep || `EQ${i + 1}`);
+      const f = fluide(x.fluide), charge = num(x.charge), t = charge * prp(f, ref) / 1000, rep = String(x.rep || `EQ${i + 1}`);
       const det = x.detection === 'oui', c = controleFgaz(t, f, { hermetique: x.hermetique === 'oui', detection: det });
       const S = num(x.S), H = num(x.H, 2.5), loc = S > 0 ? chargeMaxLocal(f, S, H, x.pos || 'mur', { lp: e.lpSaisie, lfl: e.lflSaisie }) : null;
-      if (c.detObl && !det) alertes.push(alerte('erreur', `${rep} : ${nf(t, 0)} tCO₂e ≥ 500 : système de détection de fuite obligatoire (règlement F-gaz).`));
+      if (c.detObl && !det) alertes.push(alerte('erreur', `${rep} : ${nf(t, 0)} tCO₂e ≥ ${nf(vReg('fgaz.detection', 500), 0)} : système de détection de fuite obligatoire (règlement F-gaz).`));
       if (!(charge > 0)) alertes.push(alerte('attention', `${rep} : charge en fluide à saisir.`));
       if (loc) {
         if (charge > loc.mMax) alertes.push(alerte('erreur', `${rep} : ${nf(charge, 1)} kg dans un local de ${nf(loc.V, 0)} m³ — au-delà de ${nf(loc.mMax, 2)} kg (${loc.mConf < loc.mPL ? `formule A2L/A3 2,5·LFL^1,25·h₀·√A` : `limite pratique ${nf(loc.PL, 3)} kg/m³ × volume`}) : mesures de l'EN 378-3 (détection, ventilation, vannes d'isolement) ou réduction de charge.`));
@@ -221,7 +239,8 @@ const AnnexesFroid = ((N) => {
     const tTot = eqs.reduce((a, x) => a + x.t, 0), cTot = eqs.reduce((a, x) => a + x.charge, 0);
     if (eqs.some(x => x.f[7] && x.t >= 5)) alertes.push(alerte('attention', 'Registre de l\'équipement (fiches d\'intervention CERFA 15497), opérateur titulaire de l\'attestation de capacité, contrôle d\'étanchéité à la mise en service.'));
     alertes.push(alerte('info', `PRP ${ref} retenu. Le règlement (UE) 2024/573 a remplacé le 517/2014 : seuils et PRP de son annexe I à vérifier pour l'étiquetage et le registre.`));
-    return {
+    const SF = seuilsFgaz(), mq = r => (VR() ? VR().marquer(r, [...CLES_FGAZ, ...[...new Set((e.equipements || []).filter(Boolean).map(x => x.fluide))].flatMap(clesFluide)]) : r);
+    return mq({
       valeurs: { tCO2e: tTot, charge: cTot, equipements: eqs.map(x => ({ rep: x.rep, fluide: x.f[0], charge: x.charge, tCO2e: x.t, mois: x.c.mois })) },
       resume: [['Équipements', String(eqs.length)], ['Charge totale', `${nf(cTot, 2)} kg`], ['Équivalent CO₂', `${nf(tTot, 2)} tCO₂e (PRP ${ref})`],
         ['Contrôle le plus fréquent', (() => { const m = eqs.filter(x => x.c.mois).map(x => x.c.mois); return m.length ? `tous les ${Math.min(...m)} mois` : 'aucun contrôle périodique F-gaz'; })()]],
@@ -230,11 +249,11 @@ const AnnexesFroid = ((N) => {
         { titre: 'Registre des équipements (à tenir à jour)', entetes: ['Équipement', 'Fluide', 'Charge (kg)', 'tCO₂e', 'Périodicité', 'Date de mise en service', 'Dernier contrôle', 'Opérateur (attestation de capacité)'], lignes: eqs.map(x => [x.rep, x.f[0], nf(x.charge, 2), nf(x.t, 2), x.c.mois ? `${x.c.mois} mois` : '—', '', '', '']) }],
       alertes,
       hypotheses: ['tCO₂e = charge × PRP / 1000 ; PRP AR4 (règlement (UE) 517/2014) ou AR5 (GIEC) au choix.',
-        'Contrôles d\'étanchéité : ≥ 5 tCO₂e tous les 12 mois, ≥ 50 tous les 6 mois, ≥ 500 tous les 3 mois ; périodicité doublée avec un système de détection de fuite ; détection obligatoire à partir de 500 tCO₂e ; équipements hermétiquement scellés exemptés sous 10 tCO₂e.',
+        `Contrôles d'étanchéité : ${SF.slice().reverse().map(([x, m], i) => `≥ ${nf(x, 0)}${i ? '' : ' tCO₂e'} tous les ${nf(m, 0)} mois`).join(', ')} ; périodicité allongée avec un système de détection de fuite (${SF.slice().reverse().map(x => nf(x[2], 0)).join(' / ')} mois) ; détection obligatoire à partir de ${nf(vReg('fgaz.detection', 500), 0)} tCO₂e ; équipements hermétiquement scellés exemptés sous ${nf(vReg('fgaz.hermetique', 10), 0)} tCO₂e.`,
         'Limite de charge par local (EN 378-1 annexe C) : limite pratique × volume du plus petit local desservi ; fluides inflammables (A2L, A3) en confort : m_max = 2,5 × LFL^1,25 × h₀ × √A (h₀ selon la position de l\'unité) ; m₁ = 4 m³ × LFL, m₂ = 26 m³ × LFL, m₃ = 130 m³ × LFL.',
         'Limites pratiques, LFL et PRP : valeurs indicatives (EN 378-1 annexe C, fiches de données de sécurité), saisissables ; à vérifier dans les éditions en vigueur.'],
       synthese: `${eqs.length} équipement(s) · ${nf(cTot, 1)} kg · ${nf(tTot, 1)} tCO₂e`,
-    };
+    });
   }
   N.TYPES.fluides = {
     titre: 'Fluides frigorigènes (F-gaz, tCO₂e, EN 378)', icone: '🧪', famille: FAMILLE, annexe: true, theme: THEME,
@@ -319,11 +338,15 @@ const AnnexesFroid = ((N) => {
     // Groupe : COP estimé (Carnot × rendement), T évaporation = Ti − ΔT évaporateur, T condensation = air extérieur + 15 K
     const Tev = Ti - num(e.dTevap, 8), Tco = num(e.Tcond, 32) + 15, cop = Math.max(1, num(e.etaCarnot, 0.45) * (Tev + 273.15) / Math.max(5, Tco - Tev));
     const Pcomp = num(e.Pgroupe) > 0 ? num(e.Pgroupe) : Pevap / cop;
+    // Groupe retenu (fiche du fabricant) : puissance frigorifique à sa température d'évaporation face au besoin
+    const PfrG = num(e.PfrGroupe), TevF = num(e.TevapFab, NaN);
+    if (PfrG > 0) alertes.push(alerte(PfrG >= Pevap ? 'ok' : 'erreur', `Groupe retenu : ${nf(PfrG, 2)} kW frigorifiques${Number.isFinite(TevF) ? ` à ${nf(TevF, 0)} °C d'évaporation` : ''} pour ${nf(Pevap, 2)} kW nécessaires${PfrG >= Pevap ? '' : ' : insuffisant'}.`));
+    if (PfrG > 0 && Number.isFinite(TevF) && Math.abs(TevF - Tev) > 2) alertes.push(alerte('attention', `Température d'évaporation de la fiche (${nf(TevF, 0)} °C) différente de celle du bilan (${nf(Tev, 0)} °C = chambre − ${nf(num(e.dTevap, 8), 0)} K) : puissance du groupe à relire au bon régime.`));
     alertes.push(alerte('ok', `Évaporateur : ${nf(Pevap, 2)} kW (${nf(Etot, 1)} kWh/j sur ${nf(tFonct, 0)} h/j) pour ${nf(V, 1)} m³ à ${nf(Ti, 0)} °C ; groupe ≈ ${nf(Pcomp, 2)} kW électriques${num(e.Pgroupe) > 0 ? '' : ` (COP estimé ${nf(cop, 2)})`}.`));
     alertes.push(alerte('attention', 'Bilan d\'avant-projet : propriétés des denrées, renouvellements et dégivrage indicatifs ; sélection finale de l\'évaporateur et du groupe aux conditions du fabricant (ΔT, givrage, régime).'));
     const postes = [['Parois', Eparois], ['Renouvellement d\'air', Eair], ['Denrées (refroidissement, congélation)', Eden], ['Respiration des denrées', Eresp], ['Éclairage', Eecl], ['Personnes', Epers], ['Autres apports', Eautres], ['Ventilateurs de l\'évaporateur', Event], ['Dégivrage (part restituée)', Edeg]];
     return {
-      valeurs: { V, Ssol, Pevap, Etot, tFonct, Pvent, Pdeg, Pcomp, cop, Wparois, Eair, Eden, n, fluide: e.fluide || 'R449A', chargeTot: num(e.charge), Smin: Ssol, Hmin: H, repGroupe: e.repGroupe || 'GF-CF' },
+      valeurs: { V, Ssol, Pevap, Etot, tFonct, Pvent, Pdeg, Pcomp, cop, PfrGroupe: PfrG, Wparois, Eair, Eden, n, fluide: e.fluide || 'R449A', chargeTot: num(e.charge), Smin: Ssol, Hmin: H, repGroupe: e.repGroupe || 'GF-CF' },
       resume: [['Chambre', `${nf(L, 2)} × ${nf(l, 2)} × ${nf(H, 2)} m = ${nf(V, 1)} m³ à ${nf(Ti, 0)} °C (${neg ? 'négative' : 'positive'})`], ['Besoin journalier', `${nf(Etot, 1)} kWh/j (sécurité ${nf(num(e.securite, 10), 0)} % comprise)`],
         ['Puissance de l\'évaporateur', `${nf(Pevap, 2)} kW sur ${nf(tFonct, 0)} h/j`], ['Renouvellement d\'air', `${nf(n, 1)} vol/24 h`], ['Groupe (électrique)', `${nf(Pcomp, 2)} kW${num(e.Pgroupe) > 0 ? '' : ` (COP ≈ ${nf(cop, 2)})`}`], ['Ventilateurs / dégivrage', `${nf(Pvent, 2)} kW / ${nf(Pdeg, 2)} kW`]],
       tableaux: [{ titre: 'Bilan journalier', entetes: ['Poste', 'kWh/j', 'Part'], lignes: [...postes.map(([p, x]) => [p, nf(x, 2), `${nf(x / Math.max(Etot, 1e-9) * 100, 0)} %`]), ['Total (sécurité comprise)', nf(Etot, 2), '100 %']] },
@@ -359,6 +382,7 @@ const AnnexesFroid = ((N) => {
       { k: 'Pdeg', l: 'Puissance des résistances de dégivrage', u: 'kW', d: 0 }, { k: 'nDeg', l: 'Dégivrages par jour', d: '' }, { k: 'dDeg', l: 'Durée d\'un dégivrage', u: 'min', d: 30 }, { k: 'partDeg', l: 'Part du dégivrage restituée à la chambre', u: '%', d: 30 },
       { k: 'dTevap', l: 'Écart chambre − évaporation', u: 'K', d: 8 }, { k: 'Tcond', l: 'Température de l\'air au condenseur (vide : été du climat de l\'étude)', u: '°C', d: '' }, { k: 'etaCarnot', l: 'Rendement par rapport au cycle de Carnot', d: 0.45 },
       { k: 'Pgroupe', l: 'Puissance électrique du groupe (fiche ; vide : estimée)', u: 'kW', d: '' }, { k: 'repGroupe', l: 'Repère du groupe', t: 't', d: 'GF-CF' },
+      { k: 'PfrGroupe', l: 'Puissance frigorifique du groupe retenu (fiche ; vide : pas de contrôle)', u: 'kW', d: '' }, { k: 'TevapFab', l: 'Température d\'évaporation de cette puissance (fiche)', u: '°C', d: '' },
       { k: 'fluide', l: 'Fluide frigorigène', t: 's', o: optFluides, d: 'R449A' }, { k: 'charge', l: 'Charge en fluide (fiche)', u: 'kg', d: '' },
       { k: 'tension', l: 'Tension du groupe', t: 's', o: [['tri', '400 V tri'], ['mono', '230 V mono']], d: 'tri' }],
     calcul: calculerChambre,

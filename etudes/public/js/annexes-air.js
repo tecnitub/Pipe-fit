@@ -13,6 +13,13 @@ const AnnexesAir = ((N) => {
   const P_ = () => (typeof Pieces !== 'undefined' ? Pieces : mod('Pieces', './pieces')());
   const L_ = () => (typeof Liens !== 'undefined' ? Liens : mod('Liens', './liens')());
   const C_ = () => (typeof Cta !== 'undefined' ? Cta : mod('Cta', './cta')());
+  // Valeurs réglementaires (débits RSDT et code du travail, parking, seuils CO / NO₂, températures du sol…) : défauts des tables
+  // ci-dessous, surchargeables dans les Réglages ; mq(r, clés) signale dans la note une valeur modifiée qui a servi
+  const VR = () => (typeof ValeursRegl !== 'undefined' ? ValeursRegl : mod('ValeursRegl', './valeurs-regl')());
+  const vReg = (cle, d) => { const R = VR(); return R ? R.v(cle, d) : d; };
+  const mq = (r, cles) => { const R = VR(); return R ? R.marquer(r, cles) : r; };
+  // Matériel retenu (fiche du fabricant, registre des équipements) : tension « 400 V tri » / « 230 V mono »
+  const tensionFiche = (t, d) => (/mono|230/.test(String(t || '')) ? 'mono' : /tri|400/.test(String(t || '')) ? 'tri' : d);
   const climat = et => { const L = L_(); try { return L && L.climatEtude ? L.climatEtude(et) : null; } catch (e) { return null; } };
   // Liste de choix reliée à l'étude, évaluée sans étude (Notes.calculer) : valeur choisie conservée
   const garder = (e, k) => (e && e[k] ? [[e[k], String(e[k])]] : []);
@@ -57,7 +64,7 @@ const AnnexesAir = ((N) => {
     perso: ['Débit par occupant saisi', null, null, 0.1, 'perso'],
   };
   // Extraction des locaux à pollution spécifique (RSDT art. 64.2, valeurs indicatives à vérifier dans le RSD du département) : m³/h
-  const POLLUTION = { wc: N => (N > 1 ? 30 + 15 * N : 30), sdb: () => 45, sdbwc: () => 60, groupes: N => 30 + 15 * Math.max(1, N) };
+  const POLLUTION = { wc: N => (N > 1 ? vReg('rsdt.wc', 30) + vReg('rsdt.wcSup', 15) * N : vReg('rsdt.wc', 30)), sdb: () => vReg('rsdt.sdb', 45), sdbwc: () => vReg('rsdt.sdbwc', 60), groupes: N => vReg('rsdt.groupes', 30) + vReg('rsdt.groupesN', 15) * Math.max(1, N) };
   // Logement (arrêté du 24 mars 1982, art. 3 et 4) : [pièces principales, cuisine, salle de bains, autre salle d'eau, WC unique, WC multiples, débit total minimal, cuisine réduit]
   const LOGEMENT = [[1, 75, 15, 15, 15, 15, 35, 20], [2, 90, 15, 15, 15, 15, 60, 30], [3, 105, 30, 15, 15, 15, 75, 45], [4, 120, 30, 15, 30, 15, 90, 45],
     [5, 135, 30, 15, 30, 15, 105, 45], [6, 135, 30, 15, 30, 15, 120, 45], [7, 135, 30, 15, 30, 15, 135, 45]];
@@ -68,7 +75,7 @@ const AnnexesAir = ((N) => {
   function debitLocal(l, ctx = {}) {
     const U = USAGES[l.usage] || USAGES.bureau, S = num(l.S), occ = num(l.occ) > 0 ? num(l.occ) : Math.round(S * U[3] * 10) / 10, Nq = Math.max(1, Math.round(num(l.N, 1)));
     if (U[4] === 'occ' || U[4] === 'perso') {
-      const ct = U[1], rs = U[2], q = U[4] === 'perso' ? num(l.q) : num(l.q) > 0 ? num(l.q) : l.regle === 'ct' ? ct : l.regle === 'rsdt' ? rs : Math.max(ct || 0, rs || 0) || null;
+      const cu = USAGES[l.usage] ? l.usage : 'bureau', ct = U[1] === null ? null : vReg(`airNeuf.ct.${cu}`, U[1]), rs = U[2] === null ? null : vReg(`airNeuf.rsdt.${cu}`, U[2]), q = U[4] === 'perso' ? num(l.q) : num(l.q) > 0 ? num(l.q) : l.regle === 'ct' ? ct : l.regle === 'rsdt' ? rs : Math.max(ct || 0, rs || 0) || null;
       const regle = num(l.q) > 0 || U[4] === 'perso' ? 'débit par occupant saisi' : (l.regle === 'ct' || (l.regle !== 'rsdt' && (ct || 0) >= (rs || 0))) && ct ? `code du travail R.4222-6 : ${ct} m³/h/occ.` : rs ? `RSDT art. 64 : ${rs} m³/h/occ.` : 'aucune règle';
       return { souffle: (q || 0) * occ, extrait: 0, occ, q: q || 0, regle, sansRegle: !q };
     }
@@ -94,7 +101,7 @@ const AnnexesAir = ((N) => {
         : alerte('ok', `${c.lib} : ${nf(c.Qs, 0)} m³/h soufflés ≥ ${nf(c.besoin, 0)} m³/h d'air neuf requis (débit d'air neuf de la centrale à vérifier si elle recycle).`)));
     }
     alertes.push(alerte('attention', 'Débits minimaux réglementaires (code du travail R.4222-6, RSDT art. 64, arrêté du 24 mars 1982) : RSD du département, locaux à pollution spécifique et effectifs à confirmer.'));
-    return {
+    return mq({
       valeurs: { Qs, Qe, occ, locaux: lignes.map(l => ({ nom: l.nom, souffle: l.souffle, extrait: l.extrait, occ: l.occ })), ctas: parCta },
       resume: [['Locaux', String(lignes.length)], ['Occupants', nf(occ, 0)], ['Air neuf soufflé', `${nf(Qs, 0)} m³/h`], ['Extraction (pollution spécifique, logements)', `${nf(Qe, 0)} m³/h`],
         ...(parCta.length ? [['CTA de l\'étude', parCta.map(c => `${c.lib} : ${nf(c.Qs, 0)} / ${nf(c.besoin, 0)} m³/h`).join(' ; ')]] : [])],
@@ -107,7 +114,7 @@ const AnnexesAir = ((N) => {
         'Logements (arrêté du 24 mars 1982) : débit de pointe = cuisine + salle de bains + WC unique du type de logement ; débit total minimal indiqué.',
         'Règle « la plus exigeante » : maximum du code du travail et du RSDT pour l\'usage ; occupants vides : densité indicative de l\'usage.'],
       synthese: `${lignes.length} local(aux) · ${nf(Qs, 0)} m³/h soufflés · ${nf(Qe, 0)} m³/h extraits`,
-    };
+    }, ['airNeuf.', 'rsdt.']);
   }
   N.TYPES.airNeuf = {
     titre: 'Débits d\'air neuf réglementaires par local', icone: '🌿', famille: FAMILLE, annexe: true, theme: THEME,
@@ -164,11 +171,14 @@ const AnnexesAir = ((N) => {
     alertes.push(alerte(vF > vMax || vF < vMin ? 'attention' : 'ok', `Filtres à graisses : ${nf0} × ${nf(num(e.lf, 0.5), 2)} × ${nf(num(e.hf, 0.5), 2)} m, ${nf(vF, 2)} m/s (plage ${nf(vMin, 1)}–${nf(vMax, 1)} m/s, notice du filtre).`));
     const vFront = Q / 3600 / Math.max(Lh * lh, 1e-9);
     // Ventilateurs
-    const PeE = pFan(Q, num(e.dpE, 500), num(e.eta, 0.5)), meca = e.compType !== 'transfert', PeC = meca ? pFan(Qc, num(e.dpC, 300), num(e.eta, 0.5)) : 0;
+    // Extracteur retenu (fiche du fabricant) : sa puissance remplace l'estimation, son débit est contrôlé
+    const QfE = num(e.QextFab), PfE = num(e.PextFab);
+    const PeE = PfE > 0 ? PfE : pFan(Q, num(e.dpE, 500), num(e.eta, 0.5)), meca = e.compType !== 'transfert', PeC = meca ? pFan(Qc, num(e.dpC, 300), num(e.eta, 0.5)) : 0;
+    if (QfE > 0) alertes.push(alerte(QfE >= Q ? 'ok' : 'erreur', `Extracteur retenu : ${nf(QfE, 0)} m³/h à ${nf(num(e.dpE, 500), 0)} Pa pour ${nf(Q, 0)} m³/h d'extraction${QfE >= Q ? '' : ' : insuffisant'}.`));
     alertes.push(alerte('ok', `Extraction ${nf(Q, 0)} m³/h (${nf(Q / Math.max(Ptot, 1e-9), 0)} m³/h par kW raccordé), compensation ${nf(Qc, 0)} m³/h${meca ? ' mécanique' : ' par transfert'} ; ventilateur d'extraction ≈ ${nf(PeE, 2)} kW.`));
     alertes.push(alerte('attention', 'Chaleurs convectives et simultanéités indicatives : à confirmer (VDI 2052, cuisiniste). Conduit d\'extraction et ventilateur selon la réglementation incendie des cuisines (ERP : GC), nettoyage des conduits, air de compensation tempéré.'));
     return {
-      valeurs: { Q, Qc, Vth, PeE, PeC, vF, nFiltres: nf0, vFront, Ptot },
+      valeurs: { Q, Qc, Vth, PeE, PeC, vF, nFiltres: nf0, vFront, Ptot, QextFab: QfE, tensionE: tensionFiche(e.tensionExt, PeE > 1.5 ? 'tri' : 'mono') },
       resume: [['Appareils', `${app.length} · ${nf(Ptot, 1)} kW raccordés`], ['Débit d\'extraction', `${nf(Q, 0)} m³/h (panaches ${nf(Vth, 0)} m³/h + ${nf((maj - 1) * 100, 0)} %)`], ['Air de compensation', `${nf(Qc, 0)} m³/h (${nf(pc, 0)} %)`],
         ['Filtres', `${nf0} filtres, ${nf(vF, 2)} m/s`], ['Vitesse frontale de la hotte', `${nf(vFront, 2)} m/s`], ['Ventilateurs', `extraction ≈ ${nf(PeE, 2)} kW${meca ? ` · compensation ≈ ${nf(PeC, 2)} kW` : ''}`]],
       tableaux: [{ titre: 'Appareils (VDI 2052, méthode thermique)', entetes: ['Appareil', 'Type', 'Puissance (kW)', 'Simultanéité', 'W conv./kW', 'Chaleur convective (W)', 'Plan (m)', 'Débit du panache (m³/h)'],
@@ -176,7 +186,7 @@ const AnnexesAir = ((N) => {
       alertes,
       hypotheses: ['VDI 2052 (méthode thermique) : V = 18 · Q_conv^(1/3) · (z + 1,7 · d_h)^(5/3) · r par appareil ; Q_conv = puissance × simultanéité × chaleur convective par kW ; d_h = 2ab/(a+b).',
         `Facteur de position r = ${nf(r, 2)} (îlot 1, mural 0,63, angle 0,4), z = ${nf(z, 2)} m ; majoration de ${nf((maj - 1) * 100, 0)} % (perturbations, courants d'air).`,
-        'Puissance des ventilateurs = débit × pression / rendement.'],
+        `Puissance des ventilateurs = débit × pression / rendement${PfE > 0 ? ' (extraction : puissance absorbée de la fiche de l\'extracteur retenu)' : ''}.`],
       synthese: `${nf(Q, 0)} m³/h extraits · ${nf(Qc, 0)} m³/h compensés`,
     };
   }
@@ -195,11 +205,13 @@ const AnnexesAir = ((N) => {
       { k: 'lf', l: 'Largeur d\'un filtre', u: 'm', d: 0.5 }, { k: 'hf', l: 'Hauteur d\'un filtre', u: 'm', d: 0.5 }, { k: 'nFiltres', l: 'Nombre de filtres (vide : calculé)', d: '' },
       { k: 'vFiltre', l: 'Vitesse cible aux filtres', u: 'm/s', d: 1.2 }, { k: 'vFmin', l: 'Vitesse mini aux filtres', u: 'm/s', d: 0.5 }, { k: 'vFmax', l: 'Vitesse maxi aux filtres', u: 'm/s', d: 1.5 },
       { g: 'Ventilateurs' }, { k: 'dpE', l: 'Pression du ventilateur d\'extraction', u: 'Pa', d: 500 }, { k: 'dpC', l: 'Pression du ventilateur de compensation', u: 'Pa', d: 300 }, { k: 'eta', l: 'Rendement des ventilateurs', d: 0.5 },
-      { k: 'repE', l: 'Repère de l\'extracteur', t: 't', d: 'EXT-CUI' }],
+      { k: 'repE', l: 'Repère de l\'extracteur', t: 't', d: 'EXT-CUI' },
+      { g: 'Extracteur retenu (fiche du fabricant)' }, { k: 'QextFab', l: 'Débit de l\'extracteur à la pression ci-dessus (vide : pas de contrôle)', u: 'm³/h', d: '' },
+      { k: 'PextFab', l: 'Puissance absorbée de l\'extracteur (vide : estimée)', u: 'kW', d: '' }, { k: 'tensionExt', l: 'Tension de l\'extracteur', t: 's', o: [['', 'Selon la puissance'], ['tri', '400 V tri'], ['mono', '230 V mono']], d: '' }],
     calcul: calculerHotte,
     versElec(v, e) {
       const r = e.repE || 'EXT-CUI', out = [];
-      if (v.PeE > 0) out.push({ rep: r, designation: `Extracteur de la hotte de cuisine (${nf(v.Q, 0)} m³/h)`, type: 'ventilateur', P: Math.round(v.PeE * 100) / 100, tension: v.PeE > 1.5 ? 'tri' : 'mono', regulation: 'var' });
+      if (v.PeE > 0) out.push({ rep: r, designation: `Extracteur de la hotte de cuisine (${nf(v.Q, 0)} m³/h)`, type: 'ventilateur', P: Math.round(v.PeE * 100) / 100, tension: v.tensionE || (v.PeE > 1.5 ? 'tri' : 'mono'), regulation: 'var' });
       if (v.PeC > 0) out.push({ rep: `${r}-COMP`, designation: `Ventilateur d'air de compensation de la cuisine (${nf(v.Qc, 0)} m³/h)`, type: 'ventilateur', P: Math.round(v.PeC * 100) / 100, tension: v.PeC > 1.5 ? 'tri' : 'mono', regulation: 'var' });
       return out;
     },
@@ -207,10 +219,13 @@ const AnnexesAir = ((N) => {
 
   /* ---------- 15. Ventilation de parking ---------- */
   function calculerParking(e) {
-    const alertes = [], places = Math.max(0, Math.round(num(e.places, 100))), niv = Math.max(1, Math.round(num(e.niveaux, 1))), q = num(e.qPlace, 600), pv = num(e.pv, 50) / 100;
+    const alertes = [], places = Math.max(0, Math.round(num(e.places, 100))), niv = Math.max(1, Math.round(num(e.niveaux, 1))), q = num(e.qPlace, vReg('parking.qPlace', 600)), pv = num(e.pv, 50) / 100;
     const parNiv = Math.ceil(places / niv), S = num(e.S) > 0 ? num(e.S) : places * num(e.sPlace, 25), Sniv = S / niv, V = S * num(e.H, 2.5);
     const QGV = places * q, QPV = QGV * pv, nExt = Math.max(1, Math.round(num(e.nExt, 2))), QnivGV = parNiv * q, Qext = QnivGV / nExt;
-    const dp = num(e.dp, 300), eta = num(e.eta, 0.5), Pext = pFan(Qext, dp, eta), Ptot = Pext * nExt * niv, PPV = Ptot * pv ** 3;
+    // Extracteur retenu (fiche du fabricant) : sa puissance remplace l'estimation, son débit est contrôlé
+    const QfE = num(e.QextFab), PfE = num(e.PextFab);
+    const dp = num(e.dp, 300), eta = num(e.eta, 0.5), Pext = PfE > 0 ? PfE : pFan(Qext, dp, eta), Ptot = Pext * nExt * niv, PPV = Ptot * pv ** 3;
+    if (QfE > 0) alertes.push(alerte(QfE >= Qext ? 'ok' : 'erreur', `Extracteur retenu : ${nf(QfE, 0)} m³/h à ${nf(dp, 0)} Pa pour ${nf(Qext, 0)} m³/h par extracteur${QfE >= Qext ? '' : ' : insuffisant (plus d\'extracteurs ou un modèle plus grand)'}.`));
     const gaz = e.gaz || 'co+no2', sDet = num(e.sDet, 400), nDet = Math.ceil(Sniv / Math.max(sDet, 1)) * niv;
     const amenee = e.amenee || 'naturelle', Samen = QGV / 3600 / Math.max(num(e.vAmenee, 2), 0.1);
     if (!places) alertes.push(alerte('erreur', 'Nombre de places à saisir.'));
@@ -219,10 +234,10 @@ const AnnexesAir = ((N) => {
     if (amenee === 'naturelle') alertes.push(alerte('info', `Amenée d'air naturelle : ≈ ${nf(Samen, 2)} m² libres (${nf(num(e.vAmenee, 2), 1)} m/s), bien répartis à l'opposé des extractions.`));
     if (places > 1000) alertes.push(alerte('attention', 'Plus de 1 000 places : exigences renforcées (désenfumage, compartimentage) — voir le calcul de désenfumage et le bureau de contrôle.'));
     alertes.push(alerte('attention', `Débit de ${nf(q, 0)} m³/h par véhicule : valeur usuelle, réglementation à confirmer (habitation : arrêté du 31 janvier 1986 ; ERP : arrêté du 9 mai 2006, PS ; lieux de travail : code du travail). Seuils de détection indicatifs (valeurs limites d'exposition professionnelle, directive (UE) 2017/164) à valider.`));
-    const det = [['co', 'CO', e.coPV, 20, e.coGV, 50, e.coAl, 100, 'ppm'], ['no2', 'NO₂', e.noPV, 0.5, e.noGV, 1, e.noAl, 1, 'ppm']].filter(([k]) => gaz.includes(k));
+    const det = [['co', 'CO', e.coPV, vReg('parking.coPV', 20), e.coGV, vReg('parking.coGV', 50), e.coAl, vReg('parking.coAl', 100), 'ppm'], ['no2', 'NO₂', e.noPV, vReg('parking.noPV', 0.5), e.noGV, vReg('parking.noGV', 1), e.noAl, vReg('parking.noAl', 1), 'ppm']].filter(([k]) => gaz.includes(k));
     const Pam = amenee === 'mecanique' ? pFan(QGV / niv / nExt, dp * 0.7, eta) * nExt * niv : 0;
-    return {
-      valeurs: { QGV, QPV, Qext, Pext, Ptot, PPV, nExt, niveaux: niv, nDet, Samen, Pam, S },
+    return mq({
+      valeurs: { QGV, QPV, Qext, Pext, Ptot, PPV, nExt, niveaux: niv, nDet, Samen, Pam, S, QextFab: QfE, tensionE: tensionFiche(e.tensionExt, 'tri') },
       resume: [['Parking', `${places} places sur ${niv} niveau(x), ${nf(S, 0)} m²`], ['Grande vitesse', `${nf(QGV, 0)} m³/h (${nf(q, 0)} m³/h/véhicule)`], ['Petite vitesse', `${nf(QPV, 0)} m³/h (${nf(pv * 100, 0)} %)`],
         ['Extracteurs', `${nExt * niv} × ${nf(Qext, 0)} m³/h, ${nf(dp, 0)} Pa, ≈ ${nf(Pext, 2)} kW (total ${nf(Ptot, 1)} kW, ${nf(PPV, 1)} kW en petite vitesse)`],
         ['Détection', `${nDet} détecteur(s) ${det.map(d => d[1]).join(' + ')} (1 pour ${nf(sDet, 0)} m²)`], ['Amenée d\'air', amenee === 'naturelle' ? `naturelle, ≈ ${nf(Samen, 1)} m² libres` : `mécanique, ≈ ${nf(Pam, 1)} kW`]],
@@ -232,24 +247,26 @@ const AnnexesAir = ((N) => {
       hypotheses: [`Grande vitesse = places × ${nf(q, 0)} m³/h ; petite vitesse = ${nf(pv * 100, 0)} % (puissance ∝ débit³).`, 'Extracteurs : débit × pression / rendement, au moins deux par niveau.',
         `Détecteurs : 1 par ${nf(sDet, 0)} m² (rayon d'action selon le fabricant), CO pour l'essence, NO₂ pour le gazole.`, 'Seuils : petite vitesse vers la VLEP 8 h, alarme au plus tard à la VLCT 15 min (CO 20 / 100 ppm, NO₂ 0,5 / 1 ppm, directive (UE) 2017/164).'],
       synthese: `${places} places · ${nf(QGV, 0)} m³/h GV · ${nExt * niv} extracteur(s)`,
-    };
+    }, [vide(e.qPlace) ? 'parking.qPlace' : '', ...['coPV', 'coGV', 'coAl', 'noPV', 'noGV', 'noAl'].filter(c => vide(e[c])).map(c => `parking.${c}`)].filter(Boolean));
   }
   N.TYPES.parking = {
     titre: 'Ventilation de parking (CO / NO₂, deux vitesses)', icone: '🚗', famille: FAMILLE, annexe: true, theme: THEME,
     description: 'Débit par véhicule, petite et grande vitesse, extracteurs par niveau (bilan électrique), détection CO / NO₂ et amenée d\'air.',
     champs: [{ g: 'Parking' }, { k: 'places', l: 'Nombre de places', d: 100 }, { k: 'niveaux', l: 'Niveaux', d: 1 }, { k: 'S', l: 'Surface totale (vide : places × surface par place)', u: 'm²', d: '' },
       { k: 'sPlace', l: 'Surface brute par place', u: 'm²', d: 25 }, { k: 'H', l: 'Hauteur sous plafond', u: 'm', d: 2.5 },
-      { g: 'Ventilation' }, { k: 'qPlace', l: 'Débit par véhicule (grande vitesse, réglementation à confirmer)', u: 'm³/h', d: 600 }, { k: 'pv', l: 'Petite vitesse', u: '% de la grande', d: 50 },
+      { g: 'Ventilation' }, { k: 'qPlace', l: 'Débit par véhicule (grande vitesse ; vide : valeur réglementaire des Réglages, 600 par défaut)', u: 'm³/h', d: '' }, { k: 'pv', l: 'Petite vitesse', u: '% de la grande', d: 50 },
       { k: 'nExt', l: 'Extracteurs par niveau', d: 2 }, { k: 'dp', l: 'Pression des extracteurs', u: 'Pa', d: 300 }, { k: 'eta', l: 'Rendement', d: 0.5 },
       { k: 'amenee', l: 'Amenée d\'air', t: 's', o: [['naturelle', 'Naturelle (rampes, ouvrants)'], ['mecanique', 'Mécanique']], d: 'naturelle' }, { k: 'vAmenee', l: 'Vitesse dans les amenées naturelles', u: 'm/s', d: 2, si: e => e.amenee !== 'mecanique' },
       { k: 'repExt', l: 'Repère des extracteurs', t: 't', d: 'EXT-PK' },
       { g: 'Détection (seuils indicatifs)' }, { k: 'gaz', l: 'Gaz détectés', t: 's', o: [['co+no2', 'CO et NO₂'], ['co', 'CO seul'], ['no2', 'NO₂ seul']], d: 'co+no2' }, { k: 'sDet', l: 'Surface couverte par détecteur', u: 'm²', d: 400 },
-      { k: 'coPV', l: 'CO : petite vitesse', u: 'ppm', d: 20 }, { k: 'coGV', l: 'CO : grande vitesse', u: 'ppm', d: 50 }, { k: 'coAl', l: 'CO : alarme', u: 'ppm', d: 100 },
-      { k: 'noPV', l: 'NO₂ : petite vitesse', u: 'ppm', d: 0.5 }, { k: 'noGV', l: 'NO₂ : grande vitesse', u: 'ppm', d: 1 }, { k: 'noAl', l: 'NO₂ : alarme', u: 'ppm', d: 1 }],
+      { k: 'coPV', l: 'CO : petite vitesse (vide : Réglages, 20)', u: 'ppm', d: '' }, { k: 'coGV', l: 'CO : grande vitesse (vide : Réglages, 50)', u: 'ppm', d: '' }, { k: 'coAl', l: 'CO : alarme (vide : Réglages, 100)', u: 'ppm', d: '' },
+      { k: 'noPV', l: 'NO₂ : petite vitesse (vide : Réglages, 0,5)', u: 'ppm', d: '' }, { k: 'noGV', l: 'NO₂ : grande vitesse (vide : Réglages, 1)', u: 'ppm', d: '' }, { k: 'noAl', l: 'NO₂ : alarme (vide : Réglages, 1)', u: 'ppm', d: '' },
+      { g: 'Extracteur retenu (fiche du fabricant)' }, { k: 'QextFab', l: 'Débit d\'un extracteur à la pression ci-dessus (vide : pas de contrôle)', u: 'm³/h', d: '' },
+      { k: 'PextFab', l: 'Puissance absorbée d\'un extracteur (vide : estimée)', u: 'kW', d: '' }, { k: 'tensionExt', l: 'Tension des extracteurs', t: 's', o: [['', '400 V tri'], ['tri', '400 V tri (fiche)'], ['mono', '230 V mono (fiche)']], d: '' }],
     calcul: calculerParking,
     versElec(v, e) {
       const out = [], r = e.repExt || 'EXT-PK';
-      for (let n = 1; n <= v.niveaux; n++) for (let k = 1; k <= v.nExt; k++) out.push({ rep: `${r}${v.niveaux > 1 ? `-N${n}` : ''}-${k}`, designation: `Extracteur du parking${v.niveaux > 1 ? ` niveau ${n}` : ''} (${nf(v.Qext, 0)} m³/h, deux vitesses)`, type: 'ventilateur', P: Math.round(v.Pext * 100) / 100, tension: 'tri', regulation: 'var' });
+      for (let n = 1; n <= v.niveaux; n++) for (let k = 1; k <= v.nExt; k++) out.push({ rep: `${r}${v.niveaux > 1 ? `-N${n}` : ''}-${k}`, designation: `Extracteur du parking${v.niveaux > 1 ? ` niveau ${n}` : ''} (${nf(v.Qext, 0)} m³/h, deux vitesses)`, type: 'ventilateur', P: Math.round(v.Pext * 100) / 100, tension: v.tensionE || 'tri', regulation: 'var' });
       if (v.Pam > 0) out.push({ rep: `${r}-AM`, designation: 'Ventilateurs d\'amenée d\'air du parking', type: 'ventilateur', P: Math.round(v.Pam * 100) / 100, tension: 'tri', regulation: 'var' });
       if (v.nDet > 0) out.push({ rep: `${r}-DET`, designation: `Centrale de détection CO / NO₂ (${v.nDet} détecteurs)`, type: 'securite', P: 0.05, tension: 'mono', regulation: 'securite' });
       return out;
@@ -270,7 +287,7 @@ const AnnexesAir = ((N) => {
     const alertes = [], S = num(e.S, 250), Tw = num(e.Tw, 28), Ta = num(e.Ta, 30), HR = num(e.HR, 60), Nb = num(e.N, 0), ev = evaporation(e), m = ev.m;
     const xi = xDe(Ta, HR), TeE = num(e.TeE, 32), HReE = num(e.HReE, 40), TeH = num(e.TeH, -7), xeE = xDe(TeE, HReE), xeH = xDe(TeH, 90), rho = rhoAir(Ta);
     const dil = xe => (xi - xe > 0.0005 ? m / (rho * (xi - xe)) : Infinity);
-    const QdilE = dil(xeE), QdilH = dil(xeH), Qhyg = Nb * num(e.qBaigneur, 22), Vh = num(e.Shall, S * 1.5) * num(e.Hhall, 6), Qbr = Vh * num(e.brassage, 4);
+    const QdilE = dil(xeE), QdilH = dil(xeH), Qhyg = Nb * num(e.qBaigneur, vReg('piscine.qBaigneur', 22)), Vh = num(e.Shall, S * 1.5) * num(e.Hhall, 6), Qbr = Vh * num(e.brassage, 4);
     const thermo = !Number.isFinite(QdilE) || e.deshu === 'thermo';
     const Qan = Math.max(Qhyg, thermo ? 0 : QdilE), Qsouffle = Math.max(Qan, Qbr), Plat = m * 2450 / 3600;
     if (!Number.isFinite(QdilE)) alertes.push(alerte('attention', `Air extérieur d'été (${nf(xeE * 1000, 1)} g/kg) aussi humide que le hall (${nf(xi * 1000, 1)} g/kg) : déshumidification thermodynamique nécessaire en été.`));
@@ -283,9 +300,13 @@ const AnnexesAir = ((N) => {
     alertes.push(alerte('ok', `Évaporation ${nf(m, 1)} kg/h (${ev.formule}) soit ${nf(Plat, 1)} kW latents ; air neuf ${nf(Qan, 0)} m³/h, soufflage ${nf(Qsouffle, 0)} m³/h.`));
     alertes.push(alerte('info', `Point de rosée du hall ${nf(Tr, 1)} °C : surfaces intérieures des parois et vitrages à maintenir au-dessus (pont thermique, soufflage le long des vitrages).`));
     alertes.push(alerte('attention', 'Coefficients d\'évaporation et débits indicatifs (VDI 2089 / Bernier) ; nuit : bâche ou ralenti ; débit d\'air neuf hygiénique et traitement d\'eau à confirmer (RSDT, ARS).'));
-    const Pvent = pFan(Qsouffle, num(e.dp, 600), 0.55) * 2;
-    return {
-      valeurs: { m, Plat, Qan, Qsouffle, QdilE, QdilH, Qhyg, Pan, Prec, Ptot, Pvent, xi, Tr },
+    // Centrale retenue (fiche du fabricant) : capacité de déshumidification, débit d'air, puissance électrique
+    const mF = num(e.mFab), QF = num(e.Qfab), PelF = num(e.PelFab);
+    if (mF > 0) alertes.push(alerte(mF >= m ? 'ok' : 'erreur', `Centrale retenue : ${nf(mF, 1)} kg/h de déshumidification pour ${nf(m, 1)} kg/h évaporés${mF >= m ? '' : ' : insuffisante'}${thermo ? '' : ' (déshumidification par air neuf : la capacité thermodynamique est un complément)'}.`));
+    if (QF > 0) alertes.push(alerte(QF >= Qsouffle * 0.95 ? 'ok' : 'attention', `Débit d'air de la centrale ${nf(QF, 0)} m³/h pour ${nf(Qsouffle, 0)} m³/h de soufflage calculés${QF >= Qsouffle * 0.95 ? '' : ' : brassage ou air neuf à revoir'}.`));
+    const Pvent = PelF > 0 ? PelF : pFan(Qsouffle, num(e.dp, 600), 0.55) * 2;
+    return mq({
+      valeurs: { m, Plat, Qan, Qsouffle, QdilE, QdilH, Qhyg, Pan, Prec, Ptot, Pvent, xi, Tr, mFab: mF, Qfab: QF },
       resume: [['Bassin', `${nf(S, 0)} m² · eau ${nf(Tw, 0)} °C · air ${nf(Ta, 0)} °C / ${nf(HR, 0)} %`], ['Évaporation', `${nf(m, 1)} kg/h (${ev.formule}${ev.beta ? `, β = ${nf(ev.beta, 1)} m/h` : ''}) · ${nf(m / Math.max(S, 1e-9) * 1000, 0)} g/h·m²`],
         ['Puissance de déshumidification', `${nf(m, 1)} kg/h · ${nf(Plat, 1)} kW latents`], ['Air neuf de déshumidification', `été ${Number.isFinite(QdilE) ? `${nf(QdilE, 0)} m³/h` : 'impossible'} · hiver ${Number.isFinite(QdilH) ? `${nf(QdilH, 0)} m³/h` : '—'}`],
         ['Air neuf retenu', `${nf(Qan, 0)} m³/h (hygiène ${nf(Qhyg, 0)} m³/h)`], ['Soufflage', `${nf(Qsouffle, 0)} m³/h (brassage ${nf(num(e.brassage, 4), 0)} vol/h : ${nf(Qbr, 0)} m³/h)`],
@@ -296,7 +317,7 @@ const AnnexesAir = ((N) => {
         'Air neuf de déshumidification = m / (ρ · (x hall − x extérieur)), été au climat de l\'étude, hiver à 90 % d\'humidité ; hygiène : 22 m³/h par baigneur (RSDT).',
         'Récupération : efficacité appliquée à l\'écart hall / extérieur d\'hiver ; chaleur latente de vaporisation 2 450 kJ/kg.'],
       synthese: `${nf(m, 1)} kg/h évaporés · ${nf(Qan, 0)} m³/h d'air neuf`,
-    };
+    }, vide(e.qBaigneur) ? ['piscine.qBaigneur'] : []);
   }
   N.TYPES.piscine = {
     titre: 'Piscine : évaporation et déshumidification', icone: '🏊', famille: FAMILLE, annexe: true, theme: THEME,
@@ -309,8 +330,10 @@ const AnnexesAir = ((N) => {
       { k: 'Shall', l: 'Surface du hall (vide : 1,5 × bassin)', u: 'm²', d: '' }, { k: 'Hhall', l: 'Hauteur moyenne du hall', u: 'm', d: 6 }, { k: 'brassage', l: 'Brassage', u: 'vol/h', d: 4 },
       { g: 'Air extérieur (climat de l\'étude)' }, { k: 'TeE', l: 'Température extérieure d\'été', u: '°C', d: 32 }, { k: 'HReE', l: 'Humidité relative d\'été', u: '%', d: 40 }, { k: 'TeH', l: 'Température extérieure d\'hiver', u: '°C', d: -7 },
       { g: 'Traitement' }, { k: 'deshu', l: 'Déshumidification', t: 's', o: [['air', 'Par air neuf (dilution)'], ['thermo', 'Thermodynamique (air neuf hygiénique seul)']], d: 'air' },
-      { k: 'qBaigneur', l: 'Air neuf hygiénique par baigneur', u: 'm³/h', d: 22 }, { k: 'recup', l: 'Efficacité de la récupération', u: '%', d: 60 }, { k: 'dp', l: 'Pression des ventilateurs', u: 'Pa', d: 600 },
-      { k: 'rep', l: 'Repère de la centrale', t: 't', d: 'CTA-PISC' }],
+      { k: 'qBaigneur', l: 'Air neuf hygiénique par baigneur (vide : Réglages, 22)', u: 'm³/h', d: '' }, { k: 'recup', l: 'Efficacité de la récupération', u: '%', d: 60 }, { k: 'dp', l: 'Pression des ventilateurs', u: 'Pa', d: 600 },
+      { k: 'rep', l: 'Repère de la centrale', t: 't', d: 'CTA-PISC' },
+      { g: 'Centrale retenue (fiche du fabricant)' }, { k: 'mFab', l: 'Capacité de déshumidification (vide : pas de contrôle)', u: 'kg/h', d: '' },
+      { k: 'Qfab', l: 'Débit d\'air de la centrale', u: 'm³/h', d: '' }, { k: 'PelFab', l: 'Puissance électrique absorbée (vide : ventilateurs estimés)', u: 'kW', d: '' }],
     calcul: calculerPiscine,
     lier(ctx) { const c = climat(ctx.etude); if (c) { const src = `climat de l'étude (${c.libelle})`; ctx.imposer({ TeE: c.Tete, HReE: c.HRete, TeH: c.Tbase }, src); } },
     versElec(v, e) { return v.Pvent > 0 ? [{ rep: e.rep || 'CTA-PISC', designation: `Centrale de déshumidification de la piscine (${nf(v.Qsouffle, 0)} m³/h, soufflage et reprise)`, type: 'cta', P: Math.round(v.Pvent * 100) / 100, tension: 'tri', regulation: 'bus' }] : []; },
@@ -352,10 +375,10 @@ const AnnexesAir = ((N) => {
     if (ta < 10 || ta > 30 || clo > 2 || met > 4 || v > 1) alertes.push(alerte('attention', 'Données hors du domaine de validité de l\'ISO 7730 (ta 10–30 °C, v ≤ 1 m/s, met 0,8–4, clo 0–2).'));
     alertes.push(alerte(cat === 'hors catégorie' ? 'attention' : 'ok', `PMV ${nf(r.pmv, 2)}, PPD ${nf(r.ppd, 1)} %, inconfort dû aux courants d'air ${nf(dr, 1)} % : ${cat === 'hors catégorie' ? 'hors des catégories A à C' : `catégorie ${cat}`} (ISO 7730).`));
     // Jet de la bouche
-    const K = num(e.K, 1.4), A = num(e.A, 0.03), q = num(e.q, 150), dT = num(e.dT, -8), x = num(e.x, 2), vt = num(e.vt, 0.25), j = jet({ K, A, q, dT, x, vt, c: num(e.cKoestel, 0.42), Tair: ta });
+    const K = num(e.K, 1.4), A = num(e.A, 0.03), q = num(e.q, 150), dT = num(e.dT, -8), x = num(e.x, 2), vt = num(e.vt, 0.25), j = jet({ K, A, q, dT, x, vt, c: num(e.cKoestel, vReg('jet.cKoestel', 0.42)), Tair: ta });
     if (Number.isFinite(j.vx) && j.vx > v + 0.05 && j.vx > 0.25) alertes.push(alerte('attention', `Vitesse du jet ${nf(j.vx, 2)} m/s à ${nf(x, 1)} m : supérieure à la vitesse d'air retenue en zone occupée (${nf(v, 2)} m/s) — portée à revoir.`));
     if (Number.isFinite(j.chute) && dT < 0 && j.chute > num(e.hDispo, 0.8)) alertes.push(alerte('attention', `Chute du jet froid ${nf(j.chute, 2)} m à ${nf(x, 1)} m, plus que les ${nf(num(e.hDispo, 0.8), 2)} m disponibles au-dessus de la zone d'occupation : effet Coanda, ΔT ou vitesse à revoir.`));
-    return {
+    return mq({
       valeurs: { pmv: r.pmv, ppd: r.ppd, to, dr, categorie: cat, vx: j.vx, portee: j.portee, chute: j.chute, u0: j.u0, Ar: j.Ar },
       resume: [['PMV / PPD', `${nf(r.pmv, 2)} / ${nf(r.ppd, 1)} %`], ['Température opérative', `${nf(to, 1)} °C`], ['Courants d\'air (DR)', `${nf(dr, 1)} %`], ['Catégorie ISO 7730', cat],
         ['Bouche', `${nf(q, 0)} m³/h, ${nf(A * 1e4, 0)} cm², u₀ = ${nf(j.u0, 2)} m/s`], ['Portée (v = ' + nf(vt, 2) + ' m/s)', `${nf(j.portee, 2)} m`], [`Vitesse à ${nf(x, 1)} m`, `${nf(j.vx, 2)} m/s`], [`Chute à ${nf(x, 1)} m`, dT ? `${nf(j.chute, 2)} m (Ar₀ = ${nf(j.Ar, 4)})` : 'jet isotherme']],
@@ -364,7 +387,7 @@ const AnnexesAir = ((N) => {
       hypotheses: ['PMV / PPD : algorithme de Fanger de l\'ISO 7730 (annexe D) ; vitesse relative = v + 0,3 (met − 1) pour une activité > 1 met.', 'Température opérative : to = A·ta + (1 − A)·tr (A = 0,5 / 0,6 / 0,7 selon la vitesse).',
         'Courants d\'air : DR = (34 − ta)(v − 0,05)^0,62 (0,37 v Tu + 3,14).', 'Jet : v_x = K·q/(√A·x), portée à la vitesse terminale, chute y = c·Ar₀·x³/(K·d₀²) (relation de Koestel, coefficient c saisissable ; ordre de grandeur, confirmer par les abaques du fabricant).'],
       synthese: `PMV ${nf(r.pmv, 2)} · PPD ${nf(r.ppd, 0)} % · cat. ${cat}`,
-    };
+    }, vide(e.cKoestel) ? ['jet.cKoestel'] : []);
   }
   // Bouches de l'étude (calcul « Sélection des bouches ») : options « note|ligne »
   const optBouches = (e, et) => [['', '— (caractéristiques saisies)'], ...(et ? [] : garder(e, 'bouche')), ...((et && et.notes) || []).filter(n => n.type === 'bouches').flatMap(n => ((n.entrees || {}).locaux || []).map((l, i) => [`${n.id}|${i}`, `${n.titre} — ${l.local || `ligne ${i + 1}`}`]))];
@@ -385,7 +408,7 @@ const AnnexesAir = ((N) => {
       { g: 'Bouche' }, { k: 'bouche', l: 'Bouche de l\'étude', t: 's', o: optBouches, d: '' },
       { k: 'K', l: 'Constante de jet K (vide : 1,4)', d: '' }, { k: 'A', l: 'Section effective (vide : 0,03)', u: 'm²', d: '' }, { k: 'q', l: 'Débit par bouche (vide : 150)', u: 'm³/h', d: '' },
       { k: 'dT', l: 'Écart soufflage − ambiance (négatif en froid)', u: 'K', d: -8 }, { k: 'x', l: 'Distance jusqu\'à la zone d\'occupation', u: 'm', d: 2 }, { k: 'vt', l: 'Vitesse terminale de la portée', u: 'm/s', d: 0.25 },
-      { k: 'hDispo', l: 'Hauteur disponible au-dessus de la zone d\'occupation', u: 'm', d: 0.8 }, { k: 'cKoestel', l: 'Coefficient de chute (Koestel)', d: 0.42 }],
+      { k: 'hDispo', l: 'Hauteur disponible au-dessus de la zone d\'occupation', u: 'm', d: 0.8 }, { k: 'cKoestel', l: 'Coefficient de chute (Koestel ; vide : Réglages, 0,42)', d: '' }],
     calcul: calculerConfort,
     lier(ctx) {
       const { e, notes } = ctx;
@@ -459,7 +482,11 @@ const AnnexesAir = ((N) => {
     calcul: calculerPuits,
     lier(ctx) {
       const c = climat(ctx.etude);
-      if (c) { const src = `climat de l'étude (${c.libelle})`; ctx.proposer({ TeH: c.Tbase, TeE: c.Tete, HReE: c.HRete, ...(TMOY[c.cle] ? { Tm: TMOY[c.cle] } : {}) }, src); }
+      if (c) {
+        const src = `climat de l'étude (${c.libelle})`, cs = `sol.${c.cle}`, Tm = TMOY[c.cle] ? vReg(cs, TMOY[c.cle]) : undefined, R = VR();
+        ctx.proposer({ TeH: c.Tbase, TeE: c.Tete, HReE: c.HRete, ...(Tm !== undefined ? { Tm } : {}) }, src);
+        if (Tm !== undefined && R && R.surchargee(cs) && vide((ctx.note.entrees || {}).Tm)) ctx.alertes.push(alerte('attention', `Température moyenne du sol modifiée dans les Réglages : ${R.texte(cs)}.`));
+      }
       const ctas = ctx.notes.filter(n => n.type === 'cta');
       if (ctas.length) { const n = ctas[0], Qs = num(ctx.resoudre(n).Qs); if (Qs > 0) ctx.proposer({ Q: Qs }, ctx.libelle(n)); }
     },

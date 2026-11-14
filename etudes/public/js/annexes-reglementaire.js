@@ -11,6 +11,9 @@ const AnnexesReglementaire = ((N) => {
   const Ln = () => (typeof Liens !== 'undefined' ? Liens : require('./liens'));
   const vide = v => v === undefined || v === null || String(v).trim() === '';
   const ou = (v, d) => (vide(v) ? d : num(v, d));
+  // Valeurs réglementaires (seuils de chaufferie et ICPE) : défauts des champs vides, surchargeables dans les Réglages
+  const VR = () => (typeof ValeursRegl !== 'undefined' ? ValeursRegl : (() => { try { return require('./valeurs-regl'); } catch (e) { return null; } })());
+  const vReg = (cle, d) => { const R = VR(); return R ? R.v(cle, d) : d; };
   const THEME = 'Réglementation et contrôle', FAMILLE = 'Calculs annexes';
   const notesDe = (ctx, type) => (ctx.notes || []).filter(n => n.type === type);
 
@@ -62,7 +65,8 @@ const AnnexesReglementaire = ((N) => {
   function calculerChauff(e) {
     const alertes = [], P = ou(e.P, 300), comb = COMBUSTIBLES[e.combustible] ? e.combustible : 'gaz', bat = BATIMENTS[e.batiment] ? e.batiment : 'bureaux', impl = IMPLANTATIONS[e.implantation] ? e.implantation : 'local';
     const eta = ou(e.rendement, COMBUSTIBLES[comb][1] * 100) / 100, combustion = !['elec', 'reseau'].includes(comb), gazeux = ['gaz', 'gpl'].includes(comb);
-    const sCh = ou(e.sChauff, 70), sDC = ou(e.sIcpeDC, 1000), sE = ou(e.sIcpeE, 20000), sA = ou(e.sIcpeA, 50000);
+    const sCh = ou(e.sChauff, vReg('chaufferie.seuil', 70)), sDC = ou(e.sIcpeDC, vReg('icpe.dc', 1000)), sE = ou(e.sIcpeE, vReg('icpe.e', 20000)), sA = ou(e.sIcpeA, vReg('icpe.a', 50000));
+    const clesRegl = [['sChauff', 'chaufferie.seuil'], ['sIcpeDC', 'icpe.dc'], ['sIcpeE', 'icpe.e'], ['sIcpeA', 'icpe.a']].filter(([k]) => vide(e[k])).map(x => x[1]);
     // Puissance thermique nominale (ICPE) : puissance maximale de combustible consommée, en PCI = puissance utile / rendement
     const Pth = combustion ? P / Math.max(0.3, eta) : 0;
     const chauff = P > sCh && impl !== 'exterieur', implLocal = !['exterieur', 'nonDedie'].includes(impl);
@@ -86,7 +90,7 @@ const AnnexesReglementaire = ((N) => {
     if (restent.length) alertes.push(alerte('attention', `${restent.length} obligation(s) à vérifier ou à réaliser : ${restent.map(o => o.lib.split(' (')[0].split(',')[0]).join(' ; ')}.`));
     else if (liste.length) alertes.push(alerte('ok', 'Toutes les obligations applicables sont cochées.'));
     if (combustion && !e._ventilation) alertes.push(alerte('attention', 'Ventilation haute et basse : ajouter un calcul « Ventilation de chaufferie » à l\'étude (sections des amenées d\'air et des évacuations).'));
-    return {
+    const r0 = {
       valeurs: { P, Pth, eta, combustible: comb, classe, chaufferie: chauff, icpe: icpeClasse, obligations: liste.length, restent: restent.length },
       resume: [['Puissance utile totale', `${nf(P, 0)} kW`], ['Combustible', COMBUSTIBLES[comb][0]], ['Puissance thermique nominale (PCI)', combustion ? `${nf(Pth, 0)} kW (rendement ${nf(eta * 100, 0)} %)` : 'sans objet'],
         ['Bâtiment', BATIMENTS[bat]], ['Classement du local', classe], ['ICPE (rubrique 2910)', LIB_ICPE[icpeClasse]],
@@ -104,6 +108,7 @@ const AnnexesReglementaire = ((N) => {
         'Les degrés coupe-feu, le nombre d\'accès et les dispositifs de détection dépendent du texte applicable (habitation, ERP, code du travail) et de la puissance : liste de contrôle à confirmer sur les textes en vigueur.'],
       synthese: `${nf(P, 0)} kW · ${COMBUSTIBLES[comb][0].split(' (')[0]} · ${chauff ? 'chaufferie' : impl === 'exterieur' ? 'extérieur' : '≤ 70 kW'} · ICPE ${icpeClasse === 'non' ? 'sans objet' : icpeClasse}${restent.length ? ` · ${restent.length} à faire` : ''}`,
     };
+    return VR() ? VR().marquer(r0, clesRegl) : r0;
   }
 
   N.TYPES.chaufferie = {
@@ -115,8 +120,8 @@ const AnnexesReglementaire = ((N) => {
       { k: 'rendement', l: 'Rendement PCI (vide : valeur usuelle du combustible)', u: '%', d: '' },
       { g: 'Bâtiment et local' }, { k: 'batiment', l: 'Type de bâtiment (vide : repris de l\'étude)', t: 's', o: [['', '— (repris de l\'étude, sinon bureaux)'], ...Object.entries(BATIMENTS)], d: '' },
       { k: 'implantation', l: 'Implantation', t: 's', o: Object.entries(IMPLANTATIONS), d: 'local' },
-      { g: 'Seuils (indicatifs, saisissables)' }, { k: 'sChauff', l: 'Seuil de chaufferie (puissance utile)', u: 'kW', d: 70 },
-      { k: 'sIcpeDC', l: 'ICPE 2910 : seuil de déclaration (PCI)', u: 'kW', d: 1000 }, { k: 'sIcpeE', l: 'ICPE 2910 : seuil d\'enregistrement (PCI)', u: 'kW', d: 20000 }, { k: 'sIcpeA', l: 'Seuil de la rubrique 3110 (PCI)', u: 'kW', d: 50000 },
+      { g: 'Seuils (indicatifs, saisissables)' }, { k: 'sChauff', l: 'Seuil de chaufferie (puissance utile ; vide : Réglages, 70)', u: 'kW', d: '' },
+      { k: 'sIcpeDC', l: 'ICPE 2910 : seuil de déclaration (PCI ; vide : Réglages, 1 000)', u: 'kW', d: '' }, { k: 'sIcpeE', l: 'ICPE 2910 : seuil d\'enregistrement (PCI ; vide : Réglages, 20 000)', u: 'kW', d: '' }, { k: 'sIcpeA', l: 'Seuil de la rubrique 3110 (PCI ; vide : Réglages, 50 000)', u: 'kW', d: '' },
       { g: 'Check-list' }, { k: 'faits', l: 'Obligations réalisées ou vérifiées (seules les obligations applicables sont reprises dans les résultats)', t: 'cases', o: Object.entries(OBLIGATIONS).map(([k, [l, ref]]) => [k, l, ref]), d: [] }],
     calcul: calculerChauff,
     // Puissance et combustible repris des générateurs du schéma de principe ; type de bâtiment de l'étude ; calcul de ventilation

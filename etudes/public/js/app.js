@@ -1897,6 +1897,21 @@ Vues.reference = {
 };
 
 /* ---------- Réglages ---------- */
+// Valeurs réglementaires des calculs annexes (PRP, seuils F-gaz, EN 378, parking, RSDT, légionelle, chaufferie…) : tableau
+// éditable par groupe, défaut, source et date ; une valeur modifiée est signalée dans les notes de calcul qui l'utilisent
+function carteValeursRegl(admin) {
+  const VR = ValeursRegl, l = VR.liste(), n = l.filter(x => x.surchargee).length, dis = admin ? '' : 'disabled', f = x => String(x).replace('.', ',');
+  return `<div class="carte" id="valeurs-regl"><h2>Valeurs réglementaires des calculs annexes</h2>
+    <p class="muted petit">Valeurs de référence utilisées par les calculs annexes (fluides frigorigènes, F-gaz, parking, ventilation, légionelle, chaufferie…), à confirmer dans l'édition en vigueur des textes. Une valeur modifiée ici s'applique à tous les calculs dont le champ correspondant est laissé vide ; la note de calcul le signale (hypothèse et alerte).</p>
+    <div class="actions-ligne"><span class="badge ${n ? 'avert' : 'ok'}">${n ? `${n} valeur(s) modifiée(s)` : 'valeurs par défaut'}</span>
+      ${admin ? '<button class="petit" id="vr-enreg">Enregistrer les valeurs réglementaires</button><button class="secondaire petit" id="vr-defaut">Revenir aux valeurs par défaut</button>' : ''}</div>
+    ${VR.groupes().map(g => { const lg = l.filter(x => x.groupe === g), ng = lg.filter(x => x.surchargee).length;
+      return `<details${ng ? ' open' : ''}><summary><strong>${esc(g)}</strong> <span class="muted petit">${lg.length} valeur(s)${ng ? ` · ${ng} modifiée(s)` : ''}</span></summary>
+        <div class="defile-x"><table class="liste compact"><thead><tr><th>Valeur</th><th>Retenue</th><th>Unité</th><th>Défaut</th><th>Source</th><th>Date</th><th></th></tr></thead><tbody>${lg.map(x => `<tr${x.surchargee ? ' class="avert"' : ''}>
+          <td>${esc(x.libelle)}</td><td><input style="width:7em" inputmode="decimal" aria-label="${esc(x.libelle)}" data-vreg="${esc(x.cle)}" value="${esc(f(x.valeur))}" ${dis}></td><td class="petit">${esc(x.unite)}</td>
+          <td class="petit">${esc(f(x.defaut))}</td><td class="petit">${esc(x.source)}</td><td class="petit">${esc(/^\d{4}-\d{2}-\d{2}$/.test(x.date) ? dateFr(x.date) : x.date)}</td>
+          <td>${admin && x.surchargee ? `<button class="icone" data-vreg-defaut="${esc(x.cle)}" title="Remettre la valeur par défaut (puis enregistrer)">↺</button>` : ''}</td></tr>`).join('')}</tbody></table></div></details>`; }).join('')}</div>`;
+}
 const ecrireChemin = (o, chemin, v) => { const k = chemin.split('.'); k.slice(0, -1).reduce((a, x) => (a[x] = a[x] || {}), o)[k[k.length - 1]] = v; };
 Vues.reglages = {
   html: () => { const c = S.config, admin = S.me.role === 'admin', dis = admin ? '' : 'disabled';
@@ -1915,6 +1930,7 @@ Vues.reglages = {
         <label>Valable jusqu'au<input type="date" id="rg-val" value="${esc((c.reglementation || {}).validite || '')}" ${dis}></label>
         <label class="large">Exigences complémentaires de l'entreprise (une par ligne)<textarea id="rg-comp" rows="3" ${dis}>${esc((c.reglementation || {}).complements || '')}</textarea></label></div>
       <div class="actions-ligne">${(c.reglementation || {}).date ? `<span class="badge ok">Visée le ${dateFr(c.reglementation.date)}</span>` : '<span class="badge">Non visée</span>'}${admin ? '<button class="petit" id="rg-viser">Enregistrer le visa</button>' : ''}</div></div>
+    ${carteValeursRegl(admin)}
     <div class="carte" id="metre-ratios"><h2>Métré et chiffrage : ratios</h2>
       <p class="muted petit">Heures de pose utilisées par le métré des études (avant les coefficients de calage). Pour les tubes et le calorifuge : heures par mètre = a + b × DN. Les coefficients de calage multiplient les heures de chaque main-d'œuvre ; ils se calculent sur les chantiers terminés de Pipe-Fit (heures pointées face aux heures prévues aux devis).</p>
       ${(() => { const r = Metre.ratios(), inp = (ch, v, pas = '0.001', st = '') => `<input type="number" min="0" step="${pas}" data-mr="${ch}" value="${v}" ${st ? `style="${st}"` : ''} ${dis}>`;
@@ -1969,7 +1985,7 @@ Vues.reglages = {
     };
     if (zr) api('GET', '/api/regles-inventaire').then(rendreRegles).catch(() => { zr.textContent = 'Indisponible.'; });
     root.querySelectorAll('[data-cfg]').forEach(el => el.onchange = async () => { const c = copie(S.config); ecrireChemin(c, el.dataset.cfg, el.value); S.config = await api('PUT', '/api/config', c); toast('Réglages enregistrés'); });
-    const majConfig = async c => { S.config = await api('PUT', '/api/config', c); Catalogue.utiliser(S.config.catalogues); Calculs.utiliserFluides(S.config.fluides); Schema.utiliserReglementation(S.config.reglementation); Metre.utiliser(S.config.metre); App.render(); };
+    const majConfig = async c => { S.config = await api('PUT', '/api/config', c); ValeursRegl.utiliser(S.config.valeursRegl); Catalogue.utiliser(S.config.catalogues); Calculs.utiliserFluides(S.config.fluides); Schema.utiliserReglementation(S.config.reglementation); Metre.utiliser(S.config.metre); App.render(); };
     const fichierTexte = (accept, suite) => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = accept; inp.onchange = async () => { const f = inp.files[0]; if (!f) return; const brut = new Uint8Array(await f.arrayBuffer()); let t = new TextDecoder('utf-8').decode(brut); if (t.includes('\uFFFD')) t = new TextDecoder('windows-1252').decode(brut); suite(t); }; inp.click(); };
     const flm = root.querySelector('#fl-modele');
     if (flm) flm.onclick = () => Promise.resolve(telecharger('fluides-caloporteurs.csv', new TextEncoder().encode('fluide;concentration_%;T_C;rho_kg_m3;cp_kJ_kgK;mu_mPa_s;gel_C\nNom du fluide (exemple de format, valeurs à remplacer par la fiche);30;0;1000;3,8;5;-15\nNom du fluide (exemple de format, valeurs à remplacer par la fiche);30;80;980;3,9;0,8;-15\n'), 'text/csv')).catch(e => toast(e.message, 6000));
@@ -1989,6 +2005,18 @@ Vues.reglages = {
       if (!v.relecteur || !v.date) return toast('Indiquer le relecteur et la date de relecture.');
       await majConfig({ ...S.config, reglementation: v }); toast('Visa de la synthèse réglementaire enregistré');
     };
+    // Valeurs réglementaires des calculs annexes : surcharges enregistrées avec les réglages (config.valeursRegl)
+    const vre = root.querySelector('#vr-enreg');
+    if (vre) vre.onclick = async () => {
+      const lu = {}; root.querySelectorAll('[data-vreg]').forEach(el => { if (el.value.trim() !== '') lu[el.dataset.vreg] = el.value.trim(); });
+      const faux = Object.keys(lu).filter(k => !Number.isFinite(Number(String(lu[k]).replace(',', '.'))));
+      if (faux.length) return toast(`Valeur non numérique : ${faux.map(k => ValeursRegl.DEFS[k].libelle).join(', ')}`, 6000);
+      const v = ValeursRegl.nettoyer(lu);
+      await majConfig({ ...S.config, valeursRegl: v }); toast(`${Object.keys(v).length} valeur(s) réglementaire(s) modifiée(s) enregistrée(s) ; les notes de calcul le signalent.`, 5000);
+    };
+    const vrd = root.querySelector('#vr-defaut');
+    if (vrd) vrd.onclick = async () => { if (await confirmer('Revenir aux valeurs réglementaires par défaut pour tous les calculs ?', 'Revenir')) { await majConfig({ ...S.config, valeursRegl: {} }); toast('Valeurs réglementaires par défaut rétablies'); } };
+    root.querySelectorAll('[data-vreg-defaut]').forEach(b => b.onclick = () => { const el = root.querySelector(`[data-vreg="${b.dataset.vregDefaut}"]`); if (el) el.value = String(ValeursRegl.defaut(b.dataset.vregDefaut)).replace('.', ','); });
     const lireRatios = () => { const r = copie(Metre.ratios()); root.querySelectorAll('[data-mr]').forEach(el => { const k = el.dataset.mr.split('.'), v = parseFloat(el.value); if (!Number.isFinite(v) || v < 0) return; k.slice(0, -1).reduce((o, x) => o[x], r)[k[k.length - 1]] = v; }); return r; };
     const enregistrerMetre = async (m, msg) => { await majConfig({ ...S.config, metre: m }); toast(msg); };
     const mre = root.querySelector('#mr-enreg');
@@ -2060,7 +2088,7 @@ async function demarrer() {
   // Les affaires Pipe-Fit sont facultatives : l'application reste utilisable si Pipe-Fit ne répond pas
   try { S.pf = await api('GET', '/api/pf/affaires'); } catch (e) { toast(`Affaires Pipe-Fit indisponibles : ${e.message}`, 5000); }
   S.etudes.forEach(et => { et.notes = et.notes || []; et.historique = et.historique || []; });
-  Catalogue.utiliser(S.config.catalogues); Calculs.utiliserFluides(S.config.fluides); Schema.utiliserReglementation(S.config.reglementation); Metre.utiliser(S.config.metre);
+  ValeursRegl.utiliser(S.config.valeursRegl); Catalogue.utiliser(S.config.catalogues); Calculs.utiliserFluides(S.config.fluides); Schema.utiliserReglementation(S.config.reglementation); Metre.utiliser(S.config.metre);
   App.render();
   window.addEventListener('hashchange', () => { Modal.close(); App.render(); });
 }
