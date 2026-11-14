@@ -390,14 +390,14 @@ const Liens = ((N, Sc) => {
       const c = brut(src), lib = libelle(src), recup = c.type === 'double' ? c.recup : 'aucun', froid = !['non', 'aucune'].includes(c.froid), chaudeEau = !['froide', 'aucune'].includes(c.froid), dpBE = c.batElec ? num(c.dpBE, 30) : 0;
       if (note.type === 'aero') {
         imposer({ producteur: TYPE_AIR[c.type] || 'cta-df', recuperateur: RECUP_AIR[recup] || 'aucun', batChaude: chaudeEau || c.batElec === 'chaude' ? 'oui' : 'non', batFroide: froid ? 'oui' : 'non',
-          dpFiltreS: num(c.dpFiltreAN), dpFiltreR: c.type === 'simple' ? 0 : num(c.dpFiltreR), dpRecup: recup !== 'aucun' ? num(c.dpRecup) : 0, dpBatC: (!chaudeEau || c.froid === 'co' ? 0 : num(c.dpBC)) + dpBE + (c.humid === 'vapeur' ? 30 : 0), dpBatF: froid ? num(c.dpBF) : 0,
+          dpFiltreS: num(c.dpFiltreAN), dpFiltreR: c.type === 'simple' ? 0 : num(c.dpFiltreR), dpRecup: recup !== 'aucun' ? num(c.dpRecup) : 0, dpBatC: (!chaudeEau || c.froid === 'co' ? 0 : num(c.dpBC)) + dpBE + (c.humid === 'vapeur' ? 30 : c.humid === 'adiabatique' ? num(c.dpHum, 60) : 0), dpBatF: froid ? num(c.dpBF) : 0,
           // Caissons, silencieux et volets de la CTA : moitié à la prise d'air, moitié au silencieux (la reprise en compte la moitié)
           dpPrise: num(c.dpDivers) / 2, dpSil: num(c.dpDivers) / 2, dpRejet: 0, rendement: num(c.rendement, 60) }, lib);
         if (!String(e.titreInstallation || '').trim() || e.titreInstallation === N.defauts('aero').titreInstallation) e.titreInstallation = src.titre;
       } else {
         const reprise = e.ctaFlux === 'reprise' && c.type !== 'simple';
         const dpCta = reprise ? num(c.dpFiltreR) + (recup !== 'aucun' ? num(c.dpRecup) : 0) + num(c.dpDivers) / 2
-          : num(c.dpFiltreAN) + (recup !== 'aucun' ? num(c.dpRecup) : 0) + (!chaudeEau || c.froid === 'co' ? 0 : num(c.dpBC)) + (froid ? num(c.dpBF) : 0) + dpBE + (c.humid === 'vapeur' ? 30 : 0) + num(c.dpDivers);
+          : num(c.dpFiltreAN) + (recup !== 'aucun' ? num(c.dpRecup) : 0) + (!chaudeEau || c.froid === 'co' ? 0 : num(c.dpBC)) + (froid ? num(c.dpBF) : 0) + dpBE + (c.humid === 'vapeur' ? 30 : c.humid === 'adiabatique' ? num(c.dpHum, 60) : 0) + num(c.dpDivers);
         imposer({ dpCta: Math.round(dpCta) }, lib);
         const doublons = (e.composants || []).filter(x => /filtre|batterie|recup|récup|echangeur|échangeur|roue/i.test(x.nom || '') && num(x.dp) > 0);
         if (doublons.length) alertes.push({ niveau: 'attention', texte: `Composants déjà comptés dans la CTA (${doublons.map(x => x.nom).join(', ')}) : à retirer de la liste des composants du réseau.` });
