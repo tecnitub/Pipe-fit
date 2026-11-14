@@ -12,6 +12,7 @@ const GuideEtude = (() => {
   const Cp = () => essai(() => (typeof ConsignesProjet !== 'undefined' ? ConsignesProjet : require('./consignes-projet')));
   const Ic = () => essai(() => (typeof InventaireCVC !== 'undefined' ? InventaireCVC : require('../../../public/js/inventaire-cvc')));
   const Es = () => essai(() => (typeof Estimations !== 'undefined' ? Estimations : require('./estimations')));
+  const Ax = () => essai(() => (typeof AnnexesExploitation !== 'undefined' ? AnnexesExploitation : require('./annexes-exploitation')));
   const num = v => { const n = parseFloat(String(v ?? '').replace(/\s/g, '').replace(',', '.')); return Number.isFinite(n) ? n : NaN; };
   const vide = v => v === '' || v === undefined || v === null;
   const libNote = (et, n) => `N${(et.notes || []).indexOf(n) + 1} — ${n.titre || n.type}`;
@@ -19,7 +20,7 @@ const GuideEtude = (() => {
   // Groupes, dans l'ordre d'une étude
   const GROUPES = [['donnees', '🏢', 'Données de l\'étude'], ['dossier', '📑', 'Dossier de consultation'], ['calculs', '🧮', 'Calculs à créer'], ['bilans', '🌡️', 'Bilans'],
     ['valeurs', '✏️', 'Valeurs à confirmer'], ['estimees', '📐', 'Valeurs estimées à confirmer'], ['verifier', '🔎', 'Valeurs reprises à vérifier'], ['raccordement', '🌀', 'Raccordements'], ['fiches', '📄', 'Fiches techniques'],
-    ['regulation', '🎛️', 'Régulation'], ['electricite', '⚡', 'Électricité'], ['emission', '📨', 'Émission des notes'], ['chantier', '🏗️', 'Envoi au chantier']];
+    ['regulation', '🎛️', 'Régulation'], ['electricite', '⚡', 'Électricité'], ['conformite', '🛡️', 'Réserves de conformité'], ['emission', '📨', 'Émission des notes'], ['chantier', '🏗️', 'Envoi au chantier']];
   const GROUPE = Object.fromEntries(GROUPES.map(([k, i, l]) => [k, { ico: i, libelle: l }]));
 
   // Lignes « à saisir » d'un calcul (liste, colonne de puissance ou de débit vide) : circuits, terminaux, zones, générateurs
@@ -50,6 +51,7 @@ const GuideEtude = (() => {
     const notes = (et && et.notes) || [], inv = ((et && et.inventaire) || []).filter(x => x.inclus !== false && !x.variante), out = [];
     const a = (groupe, id, titre, fait, info, action, extra = {}) => out.push({ id, groupe, titre, fait: !!fait, info: info || '', action: action || null, ...extra });
     const aType = t => notes.some(n => n.type === t);
+    const N0 = Nt();
 
     // 1. Données de l'étude
     a('donnees', 'climat', 'Climat du site', et.climat, et.climat ? 'Températures de base reprises dans les calculs' : 'Températures extérieures de base des bilans, CTA et lois d\'eau', ['champ:climat', '🌡️ Choisir le climat']);
@@ -159,6 +161,14 @@ const GuideEtude = (() => {
       }
     }
 
+    // 10 bis. Réserves de conformité des calculs annexes (paramètres à valider, valeurs réglementaires modifiées,
+    // obligations détectées) : levées une à une avec le bureau de contrôle (liste cochée dans l'étude)
+    const AX = Ax();
+    if (AX && L && notes.some(n => ((N0 || {}).TYPES || {})[n.type] && N0.TYPES[n.type].annexe)) {
+      const l = essai(() => AX.reserves(et, L)) || [], d = AX.etat(et, l), cochees = (et && et.reservesConformite) || {};
+      if (l.length) a('conformite', 'reserves-conformite', 'Lever les réserves de conformité', !d.restent, d.restent ? `${d.restent} point(s) à lever avec le bureau de contrôle sur ${d.total} : ${l.filter(x => !(cochees[x.cle] || {}).le).slice(0, 3).map(x => x.texte.slice(0, 60)).join(' ; ')}${d.restent > 3 ? '…' : ''}` : `${d.total} point(s), tous levés`, ['reserves-conformite', '🛡️ Récapitulatif des réserves']);
+    }
+
     // 11. Émission des notes, 12. envoi au chantier
     if (notes.length) {
       const nonEmises = notes.filter(n => !(n.emissions || []).length);
@@ -212,6 +222,7 @@ const GuideEtude = (() => {
       if (code === 'installation') { location.hash = `#/etude/${et.id}/installation`; return; }
       if (code === 'vrac') return dialogueVrac(et);
       if (code === 'registre') return dialogueRegistre(et);
+      if (code === 'reserves-conformite') return dialogueReservesConformite(et);
       if (code === 'pdf') return genererNoteCalcul(et);
       if (code === 'diffuser') { const d = document.querySelector('#doc-diffuser'); if (d && !d.disabled) { d.scrollIntoView({ behavior: 'smooth', block: 'center' }); d.click(); } else { const c = document.querySelector('#doc-liste') || d; if (c) c.scrollIntoView({ behavior: 'smooth', block: 'center' }); toast('Émettez d\'abord une note de calcul (PDF), puis diffusez-la.', 5000); } }
     });
