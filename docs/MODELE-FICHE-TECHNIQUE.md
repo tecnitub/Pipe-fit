@@ -8,7 +8,7 @@ Ce modèle sert à **réécrire une fiche technique de fabricant** (PDF, catalog
 
 Les valeurs reconnues sont proposées une par une avant d'être reprises dans le calcul.
 
-**Tout le matériel d'un coup** : sur la page de l'étude, **📥 Matériel en vrac** accepte plusieurs PDF ou fichiers texte, ou plusieurs fiches collées à la suite, **séparées par une ligne `---`**. Chaque fiche est reconnue grâce à sa ligne `Type : …`, puis inscrite une seule fois au **🗂️ registre des équipements** de l'étude et répartie dans les calculs (terminaux, CTA, production, pompes, robinetterie, vase, ballon, bouches, points de puisage). Les calculs reprennent les valeurs du registre, verrouillées : corriger une valeur ou remplacer la fiche dans le registre met à jour tous les emplacements.
+**Tout le matériel d'un coup** : sur la page de l'étude, **📥 Matériel en vrac** accepte plusieurs PDF ou fichiers texte, ou plusieurs fiches collées à la suite, **séparées par une ligne `---`**. Chaque fiche est reconnue grâce à sa ligne `Type : …`, puis inscrite une seule fois au **🗂️ registre des équipements** de l'étude et répartie dans les calculs (terminaux, CTA, production, pompes, robinetterie, vase, ballon, bouches, points de puisage, et calculs annexes : DRV, radiateurs, échangeur à plaques, piscine, chambre froide, hotte de cuisine, parking). Les calculs reprennent les valeurs du registre, verrouillées : corriger une valeur ou remplacer la fiche dans le registre met à jour tous les emplacements.
 
 ---
 
@@ -24,10 +24,10 @@ Règles strictes :
 3. Écris toujours l'unité après le nombre (kW, W, m3/h, mCE, kPa, Pa, °C, %, L, bar, dB(A), L/s).
 4. Virgule ou point décimal acceptés ; pas de séparateur de milliers (écris 6000 et non 6 000).
 5. Si une valeur n'est pas dans la fiche, SUPPRIME la ligne (n'invente rien, n'écris pas « NC »).
-6. Les trois premières lignes sont toujours « Type : … » (CTA, Pompe, Terminal, Générateur, Vase d'expansion, Ballon ECS, Bouche, Vanne…, Appareil sanitaire), « Fabricant : … » et « Référence : … ».
+6. Les trois premières lignes sont toujours « Type : … » (CTA, Pompe, Terminal, Générateur, Vase d'expansion, Ballon ECS, Bouche, Vanne…, Appareil sanitaire, Unité extérieure DRV, Radiateur, Échangeur à plaques, Déshumidificateur, Groupe de chambre froide, Extracteur), « Fabricant : … » et « Référence : … ».
 7. Pour les courbes (pompe) et abaques (vanne), écris les points sur une seule ligne : « x:y ; x:y ; x:y ».
 8. Réponds uniquement avec le texte de la fiche, sans commentaire.
-Type d'équipement : [CTA | Pompe | Terminal | Générateur | Vase | Ballon ECS | Bouche | Vanne / robinetterie | Appareil sanitaire | Régulateur]
+Type d'équipement : [CTA | Pompe | Terminal | Générateur | Vase | Ballon ECS | Bouche | Vanne / robinetterie | Appareil sanitaire | Régulateur | Unité extérieure DRV | Radiateur | Échangeur à plaques | Déshumidificateur | Groupe de chambre froide | Extracteur]
 [coller ici la section du modèle correspondant au type]
 ```
 
@@ -231,3 +231,113 @@ Modules d'extension maxi : 3
 ```
 
 Module d'extension : même fiche avec `Application : module d'extension` et ses entrées / sorties.
+
+---
+
+## 11. Unité extérieure DRV / VRF
+
+Calcul annexe **Détente directe DRV / VRF** : puissances, EER, puissance électrique, fluide et charge usine de l'unité extérieure ; la longueur préchargée réduit la charge complémentaire, le nombre maxi d'unités intérieures est contrôlé.
+
+<!-- fiche: drvUE -->
+```text
+Type : Unité extérieure DRV
+Fabricant : Exemplair
+Référence : VRX-280
+Puissance frigorifique nominale : 28 kW
+Puissance calorifique nominale : 31,5 kW
+EER : 3,9
+COP : 4,2
+Puissance électrique absorbée : 7,2 kW
+Fluide : R32
+Charge usine : 9,5 kg
+Longueur préchargée : 30 m
+Nombre maxi d'unités intérieures : 32
+```
+
+---
+
+## 12. Radiateur
+
+Calcul annexe **Sélection de radiateurs (NF EN 442)** : le nombre de radiateurs du modèle est calculé local par local au régime réel, avec la contenance en eau.
+
+<!-- fiche: radiateur -->
+```text
+Type : Radiateur
+Fabricant : Exemplair
+Référence : RP 22-600-1200
+Puissance à ΔT50 : 1900 W
+Exposant n : 1,32
+Hauteur : 600 mm
+Longueur : 1200 mm
+Contenance en eau : 6,8 L
+```
+
+---
+
+## 13. Échangeur à plaques
+
+Calcul annexe **Échangeur à plaques** : puissance et surface contrôlées, pertes de charge de la sélection reprises.
+
+<!-- fiche: echangeur -->
+```text
+Type : Échangeur à plaques
+Fabricant : Exemplair
+Référence : EP-45
+Puissance : 250 kW
+Perte de charge primaire : 18 kPa
+Perte de charge secondaire : 22 kPa
+Surface d'échange : 4,6 m2
+Nombre de plaques : 45
+```
+
+---
+
+## 14. Déshumidificateur, centrale de piscine
+
+Calcul annexe **Piscine : évaporation et déshumidification** : capacité de déshumidification et débit d'air contrôlés, puissance électrique reprise au bilan électrique.
+
+<!-- fiche: deshu -->
+```text
+Type : Déshumidificateur (centrale de piscine)
+Fabricant : Exemplair
+Référence : DH-9000
+Capacité de déshumidification : 32 kg/h
+Débit d'air : 9000 m3/h
+Puissance électrique absorbée : 11 kW
+```
+
+---
+
+## 15. Groupe de chambre froide
+
+Calcul annexe **Bilan frigorifique d'une chambre froide** : puissance frigorifique à la température d'évaporation de la fiche face au besoin, puissance absorbée, fluide et charge (repris par le calcul des fluides frigorigènes).
+
+<!-- fiche: groupeFroid -->
+```text
+Type : Groupe de chambre froide
+Fabricant : Exemplair
+Référence : GCF-52
+Puissance frigorifique à -10 °C : 5,2 kW
+Puissance absorbée : 2,4 kW
+Fluide : R449A
+Charge : 3,2 kg
+```
+
+La température d'évaporation peut aussi s'écrire sur sa propre ligne : `Température d'évaporation : -10 °C`.
+
+---
+
+## 16. Extracteur, tourelle, caisson
+
+Calculs annexes **Hotte de cuisine professionnelle** et **Ventilation de parking** : débit contrôlé à la pression de la fiche, puissance et tension reprises au bilan électrique.
+
+<!-- fiche: extracteur -->
+```text
+Type : Extracteur (tourelle)
+Fabricant : Exemplair
+Référence : TX-2500
+Débit : 2500 m3/h
+Pression disponible : 250 Pa
+Puissance absorbée : 0,75 kW
+Tension : 400 V tri
+```

@@ -7,24 +7,29 @@
 // Emplacements (genre) : term / termp (ligne de terminaux, pompe de distribution), aero (bouche), san (point de puisage),
 // rob (robinetterie d'un circuit ou d'un tronçon), pompe (pompe d'un circuit du schéma de principe), arbo (pompe du
 // réseau arborescent), cta, pid (production), gen (générateur d'une production détaillée : ligne de « generateurs »), vase,
-// ecs, reseau (calcul entier : entrees.eq).
+// ecs, reseau (calcul entier : entrees.eq) ; calculs annexes (calcul entier : entrees.eq) : drv (unité extérieure DRV),
+// radiateurs (modèle de radiateur), echangeurPlaques, piscine (déshumidificateur), chambreFroide (groupe), hotte et parking (extracteur).
 const Registre = (() => {
   const N = () => (typeof Notes !== 'undefined' ? Notes : (() => { try { return require('./notes'); } catch (e) { return null; } })());
   const T = () => (typeof Terminaux !== 'undefined' ? Terminaux : require('./terminaux'));
   const FC = () => (typeof FicheCta !== 'undefined' ? FicheCta : require('./fiche-cta'));
   const FE = () => (typeof FicheEquip !== 'undefined' ? FicheEquip : require('./fiche-equipement'));
   const SAN = () => (typeof Sanitaire !== 'undefined' ? Sanitaire : require('./sanitaire'));
+  const FA = () => (typeof FicheAnnexes !== 'undefined' ? FicheAnnexes : require('./fiche-annexes'));
   const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
   const vide = x => x === undefined || x === null || x === '';
   const val = x => (typeof x === 'string' && /^\s*-?\d+(?:[.,]\d+)?\s*$/.test(x) ? Number(x.replace(',', '.')) : x);
 
   const TYPES = { cta: 'Centrale de traitement d\'air', generateur: 'Générateur', pompe: 'Pompe, circulateur', terminal: 'Terminal', vase: 'Vase d\'expansion', ecs: 'Ballon, échangeur d\'ECS',
-    bouche: 'Bouche, diffuseur', robinet: 'Vanne, robinetterie', sanitaire: 'Appareil sanitaire', regulateur: 'Régulateur préprogrammé, module' };
-  const TYPE_GENRE = { gen: 'generateur', regul: 'regulateur', term: 'terminal', termp: 'pompe', aero: 'bouche', san: 'sanitaire', rob: 'robinet', pompe: 'pompe', arbo: 'pompe', cta: 'cta', pid: 'generateur', vase: 'vase', ecs: 'ecs', reseau: 'pompe' };
+    bouche: 'Bouche, diffuseur', robinet: 'Vanne, robinetterie', sanitaire: 'Appareil sanitaire', regulateur: 'Régulateur préprogrammé, module',
+    drvUE: 'Unité extérieure DRV / VRF', radiateur: 'Radiateur', echangeur: 'Échangeur à plaques', deshu: 'Déshumidificateur, centrale de piscine', groupeFroid: 'Groupe de chambre froide', extracteur: 'Extracteur, tourelle, caisson' };
+  // Calculs annexes recevant un modèle entier (genre = type du calcul) → type de fiche
+  const ANNEXES = { drv: 'drvUE', radiateurs: 'radiateur', echangeurPlaques: 'echangeur', piscine: 'deshu', chambreFroide: 'groupeFroid', hotte: 'extracteur', parking: 'extracteur' };
+  const TYPE_GENRE = { gen: 'generateur', regul: 'regulateur', term: 'terminal', termp: 'pompe', aero: 'bouche', san: 'sanitaire', rob: 'robinet', pompe: 'pompe', arbo: 'pompe', cta: 'cta', pid: 'generateur', vase: 'vase', ecs: 'ecs', reseau: 'pompe', ...ANNEXES };
   // Listes des calculs qui reçoivent des équipements : [champ de la note, genre de l'élément]
   const LISTES = { elec: [['capaSynco', () => 'regul']], terminaux: [['appareils', a => (a.type === 'pompeDist' ? 'termp' : 'term')]], aero: [['bouchesL', () => 'aero']], sanitaire: [['points', () => 'san']],
     pid: [['robinetterie', () => 'rob'], ['pompesFab', () => 'pompe'], ['generateurs', () => 'gen']], arbo: [['robinetterie', () => 'rob']] };
-  const NIVEAU_NOTE = { cta: 'cta', pid: 'pid', vase: 'vase', ecs: 'ecs', reseau: 'reseau' };
+  const NIVEAU_NOTE = { cta: 'cta', pid: 'pid', vase: 'vase', ecs: 'ecs', reseau: 'reseau', ...Object.fromEntries(Object.keys(ANNEXES).map(t => [t, t])) };
   // Valeurs reprises au placement seulement (débit d'air de la CTA, débit d'une bouche : dimensionnés par le réseau)
   const PLACEMENT_SEUL = { cta: ['Qs', 'Qr'], aero: ['Q'] };
 
@@ -34,6 +39,7 @@ const Registre = (() => {
     Object.entries(FE().LIBELLES).forEach(([k, d]) => { out[k] = d; });
     Object.entries(FC().LIBELLES).forEach(([k, d]) => { out[k] = d; });
     Object.entries(T().LIBELLES).forEach(([k, d]) => { out[k] = [d[0], d[1]]; });
+    Object.entries(FA().LIBELLES).forEach(([k, d]) => { if (!out[k]) out[k] = d; });
     Object.assign(out, { Qair: ['Débit d\'air', 'm³/h'], Kvs: ['Kvs', ''], Qs: ['Débit soufflé', 'm³/h'], Qr: ['Débit repris', 'm³/h'], Lw: ['Puissance acoustique', 'dB(A)'], dn: ['DN', ''], kv: ['Kv (Kvs)', 'm³/h'],
       tours: ['Nombre de tours', ''], abaque: ['Abaque tours:Kv', ''], q: ['Débit', 'L/s'], pMin: ['Pression minimale', 'bar'], courbe: ['Courbe Q:H', 'm³/h:mCE'], X: ['Entrées universelles', ''], Y: ['Sorties 0-10 V', ''], Q: ['Sorties relais', ''], modulesMax: ['Modules d\'extension maxi', ''], app: ['Application', ''] });
     out.dp = ['Perte de charge', '(Pa ou kPa)'];
@@ -75,7 +81,8 @@ const Registre = (() => {
         if (!placement && (PLACEMENT_SEUL.cta.includes(c.k) || (['modeP', 'PchaudS', 'PfroidS'].includes(c.k) && ((note || {}).entrees || {}).modeP !== 'saisie'))) return;
         o[c.k] = c.val; }); break;
       case 'pid': case 'vase': case 'ecs': case 'reseau': FE().champs(genre, v).forEach(c => { o[c.k] = c.val; }); break;
-      default: break;
+      // Calcul annexe : valeurs de la fiche dans les champs « matériel retenu » (et puissances, fluide, charge…)
+      default: if (ANNEXES[genre]) FA().champs(genre, v).forEach(c => { o[c.k] = c.val; }); break;
     }
     return o;
   }
@@ -92,6 +99,12 @@ const Registre = (() => {
       case 'gen': set('P', el.P); set('dpEau', el.dp); if (!vide(el.Pel)) set('P1', Math.round(val(el.Pel) * 1000)); break;
       case 'regul': set('X', el.X); set('Y', el.Y); set('Q', el.Q); break;
       case 'arbo': set('courbe', el.pompeCourbe); break;
+      case 'drv': case 'radiateurs': case 'echangeurPlaques': case 'piscine': case 'chambreFroide': case 'hotte': case 'parking': {
+        // Fiche gardée avec le calcul, sinon champs du calcul (études faites avant le registre)
+        const f = el.fiche || {}, de = Object.keys(f).filter(k => !['nom', 'fabricant', 'reference'].includes(k));
+        if (de.length) de.forEach(k => set(k, f[k])); else Object.entries(FA().inverse(genre, el)).forEach(([k, y]) => set(k, y));
+        break;
+      }
       default: { const f = ((note || {}).entrees || {}).fiche || {}; Object.entries(f).forEach(([k, y]) => { if (!['nom', 'fabricant', 'reference'].includes(k)) set(k, y); }); }
     }
     return o;
@@ -248,6 +261,7 @@ const Registre = (() => {
     const unParNote = t => {
       const n0 = cibleNote(t); if (!n0) return null;
       if (id === 'nouveau' && t === 'cta') n0.titre = `CTA ${nom}`;
+      else if (id === 'nouveau' && ANNEXES[t]) n0.titre = `${n0.titre} — ${nom}`;
       const base = String(n0.titre).replace(/ \(\d+\)$/, ''), cibles = n0.entrees.eq ? [] : [n0];
       while (cibles.length < qte) {
         const c = JSON.parse(JSON.stringify(n0)); c.id = nouvelleNote ? nouvelleNote(t).id : `${n0.id}-${cibles.length + 2}`;
@@ -281,6 +295,12 @@ const Registre = (() => {
       return `${qte} organe(s) ${nom} sur le tronçon ${sous}`;
     }
     if (genre === 'vase' || genre === 'ecs') return unParNote(genre);
+    // Calculs annexes : un modèle par calcul (unité extérieure, échangeur, centrale de piscine, groupe : un calcul par appareil ;
+    // radiateurs, extracteur de hotte ou de parking : le modèle du calcul, la quantité est calculée)
+    if (ANNEXES[genre]) {
+      if (!['drv', 'echangeurPlaques', 'piscine', 'chambreFroide'].includes(genre)) { const n = cibleNote(genre); if (!n) return null; if (id === 'nouveau') n.titre = `${n.titre} — ${nom}`; noteEntiere(n, genre); return id === 'nouveau' ? `Nouveau calcul « ${n.titre} »` : `${n.titre} : ${nom}`; }
+      return unParNote(genre);
+    }
     if (genre === 'reseau') { const n = cibleNote(genre); if (!n) return null; noteEntiere(n, genre); return `${n.titre} : ${nom}`; }
     if (genre === 'aero') {
       const n = notes.find(y => y.id === id && y.type === 'aero'); if (!n) return null;
@@ -438,6 +458,6 @@ const Registre = (() => {
     schemasAir(et).forEach(x => (x.entrees.bouchesL || []).filter(remplie).forEach(b => { const r = String(b.rep || '').trim(); if (!r || vus.has(r)) n++; vus.add(r); }));
     return n;
   }
-  return { versMateriel, numeroterTout, reperesAReprendre, schemasAir, repSuivant, repsBouches, completerBouches, renumeroterBouches, unites, branches, raccorder, numeroter, TYPES, TYPE_GENRE, libelles, ajouter, champs, inverse, emplacements, libelleEmplacement, collecter, propager, synchroniser, verrous, lier, detacher, supprimer, placer, bilan, nomEq, parId, typeTerminal, typeOrgane };
+  return { ANNEXES, versMateriel, numeroterTout, reperesAReprendre, schemasAir, repSuivant, repsBouches, completerBouches, renumeroterBouches, unites, branches, raccorder, numeroter, TYPES, TYPE_GENRE, libelles, ajouter, champs, inverse, emplacements, libelleEmplacement, collecter, propager, synchroniser, verrous, lier, detacher, supprimer, placer, bilan, nomEq, parId, typeTerminal, typeOrgane };
 })();
 if (typeof module !== 'undefined') module.exports = Registre;

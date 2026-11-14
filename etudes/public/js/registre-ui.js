@@ -14,7 +14,7 @@ function resumeEquipement(x) {
     ecs: [v.V && `${f(v.V, 0)} L`, v.P && `${f(v.P)} kW`],
     generateur: [v.P && `${f(v.P, 0)} kW`, v.Pfr && `froid ${f(v.Pfr, 0)} kW`, v.P1 && `${f(v.P1 / 1000)} kW élec.`],
   }[x.type] || [];
-  return r.filter(Boolean).join(' · ') || `${Object.keys(v).length} valeur(s)`;
+  return r.filter(Boolean).join(' · ') || (typeof FicheAnnexes !== 'undefined' && FicheAnnexes.resume(x.type, v)) || `${Object.keys(v).length} valeur(s)`;
 }
 
 function carteRegistre(et) {
