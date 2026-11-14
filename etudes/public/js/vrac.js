@@ -9,12 +9,23 @@ const Vrac = (() => {
   const FE = () => (typeof FicheEquip !== 'undefined' ? FicheEquip : require('./fiche-equipement')), T = () => (typeof Terminaux !== 'undefined' ? Terminaux : require('./terminaux'));
   const Sc = () => (typeof Schema !== 'undefined' ? Schema : require('./schema')), PO = () => (typeof Pompes !== 'undefined' ? Pompes : require('./pompes'));
   const SA = () => (typeof SchemaAir !== 'undefined' ? SchemaAir : require('./aeraulique-schema')), SAN = () => (typeof Sanitaire !== 'undefined' ? Sanitaire : require('./sanitaire'));
+  const FA = () => (typeof FicheAnnexes !== 'undefined' ? FicheAnnexes : require('./fiche-annexes'));
   const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const TYPES = { cta: 'Centrale de traitement d\'air', generateur: 'Générateur (chaudière, PAC, groupe froid)', pompe: 'Pompe, circulateur', terminal: 'Terminal (cassette, ventilo-convecteur…)',
-    vase: 'Vase d\'expansion', ecs: 'Ballon, échangeur d\'ECS', bouche: 'Bouche, diffuseur, grille', robinet: 'Vanne, robinetterie, accessoire', sanitaire: 'Appareil sanitaire', regulateur: 'Régulateur, module d\'extension', inconnu: 'Non reconnu' };
+    vase: 'Vase d\'expansion', ecs: 'Ballon, échangeur d\'ECS', bouche: 'Bouche, diffuseur, grille', robinet: 'Vanne, robinetterie, accessoire', sanitaire: 'Appareil sanitaire', regulateur: 'Régulateur, module d\'extension',
+    // Matériel des calculs annexes (fiche-annexes.js)
+    drvUE: 'Unité extérieure DRV / VRF', radiateur: 'Radiateur', echangeur: 'Échangeur à plaques', deshu: 'Déshumidificateur, centrale de piscine', groupeFroid: 'Groupe de chambre froide', extracteur: 'Extracteur, tourelle, caisson', inconnu: 'Non reconnu' };
+  const ANNEXES = ['drvUE', 'radiateur', 'echangeur', 'deshu', 'groupeFroid', 'extracteur'];
   // Type d'équipement : ligne « Type : … » du format Pipe-Fit, sinon mots de la fiche et du nom du fichier
   const REGLES = [['sanitaire', /lavabo|lave-mains|mitigeur|douche|\bwc\b|cuvette|evier|vidoir|vide-seau|urinoir|bidet|baignoire|appareil sanitaire/],
-    ['cta', /centrale de traitement|\bcta\b|double flux|air handling|unite de traitement d.air/], ['vase', /vase d.expansion|expansion vessel|\bvase\b/],
+    ['deshu', /deshumidif|dehumidif|centrale (?:de traitement d.air )?(?:de |pour )?piscine/],
+    ['cta', /centrale de traitement|\bcta\b|double flux|air handling|unite de traitement d.air/],
+    ['drvUE', /\bdrv\b|\bvrf\b|\bvrv\b|debit de refrigerant variable|detente directe|unite exterieure/],
+    ['groupeFroid', /chambre froide|groupe de condensation|unite de condensation|condensing unit|monobloc frigorifique|groupe logette/],
+    ['echangeur', /echangeur a plaques?|plate heat exchanger|echangeur brase/],
+    ['radiateur', /^(?!.*terminal).*(?:radiateur|radiator|seche-serviettes)/],
+    ['extracteur', /extracteur|tourelle|caisson (?:d.extraction|de ventilation|simple flux)|ventilateur (?:d.extraction|de desenfumage|helicoide|centrifuge|de toiture)|roof fan|exhaust fan/],
+    ['vase', /vase d.expansion|expansion vessel|\bvase\b/],
     ['generateur', /chaudiere|pompe a chaleur|\bpac\b|groupe (?:froid|de production|d.eau glacee)|chiller|heat pump|boiler|generateur/],
     ['terminal', /cassette|ventilo|gainable|aerotherme|poutre (?:froide|climatique)|radiateur|rideau d.air|unite interieure|\bsplit\b|terminal/],
     ['pompe', /circulateur|\bpompe\b|\bpump\b|accelerateur/], ['bouche', /diffuseur|grille|bouche|buse|plafonnier|diffuser|\bgrille\b/],
@@ -24,6 +35,13 @@ const Vrac = (() => {
   // Indices tirés des libellés « clé : valeur » (fiche au format Pipe-Fit ou fiche bien structurée)
   function indices(L) {
     const x = norm(L.join('\n')), a = re => re.test(x);
+    // Matériel des calculs annexes : libellés propres à chaque fiche
+    if (a(/unites? interieures?\s*:|longueur prechargee|nombre maxi(?:mal)? d.unites/)) return 'drvUE';
+    if (a(/(?:δ|δ|delta)\s*t\s*=?\s*50|dt\s*50\s*:|en 442|exposant n/)) return 'radiateur';
+    if (a(/nombre de plaques|perte de charge (?:primaire|secondaire)/)) return 'echangeur';
+    if (a(/deshumidification\s*:|capacite de deshumidification/)) return 'deshu';
+    if (a(/puissance frigorifique a -?\d|temperature d.evaporation/) && !a(/chambre/)) return 'groupeFroid';
+    if (a(/debit\s*:\s*[\d.,]+\s*m(?:3|³)\s*\/\s*h/) && a(/pression(?: disponible| statique)?\s*:\s*[\d.,]+\s*pa\b/) && a(/tension|puissance absorbee/) && !a(/batterie|recuperateur|puissance (?:chaud|froid|calorifique|frigorifique)|\bhmt\b|courbe/)) return 'extracteur';
     if (a(/entrees? universelles?\s*:|sorties? relais\s*:|sorties? 0-10/)) return 'regulateur';
     if (a(/pression de gonflage|pression de prechargement|precharge/)) return 'vase';
     if (a(/abaque|nombre de tours|\bkvs?\s*:/) && !a(/puissance (?:chaud|froid|calorifique|frigorifique)/)) return 'robinet';
@@ -53,6 +71,7 @@ const Vrac = (() => {
     else if (type === 'robinet') { r = Sc().lireFicheRobinet(L); const v = r.valeurs; resume = [v.dn && `DN ${v.dn}`, v.kv && `Kvs ${nf(v.kv, 2)}`, v.dp && `${nf(v.dp)} kPa`, v.abaque && 'abaque']; }
     else if (type === 'regulateur') { r = (typeof Regulation !== 'undefined' ? Regulation : require('./regulation')).lireFiche(L); const v = r.valeurs; resume = [v.app && `application ${v.app}`, v.X !== undefined && `${v.X} entrées`, v.Y !== undefined && `${v.Y} sorties 0-10 V`, v.Q !== undefined && `${v.Q} relais`]; }
     else if (type === 'sanitaire') { r = SAN().lireFichePoint(L); const v = r.valeurs; resume = [v.q && `${nf(v.q, 2)} L/s`, v.pMin && `${nf(v.pMin)} bar`]; }
+    else if (ANNEXES.includes(type)) { r = FA().lire(type, L); resume = [FA().resume(type, r.valeurs)]; }
     else { r = FE().lire(L); const v = r.valeurs, c = type === 'pompe' ? PO().lireFiche(L) : '';
       if (c) v.courbe = c;
       resume = type === 'pompe' ? [v.Q && v.H && `${nf(v.Q, 2)} m³/h × ${nf(v.H)} mCE`, v.P1 && `${nf(v.P1, 0)} W`, c && 'courbe'] : type === 'vase' ? [v.V && `${nf(v.V, 0)} L`, v.p0 && `${nf(v.p0)} bar`]
@@ -77,6 +96,9 @@ const Vrac = (() => {
       case 'bouche': { const SA = typeof SchemaAir !== 'undefined' ? SchemaAir : require('./aeraulique-schema'), I = new Map(SA.installationsAir(et)); return de('aero').filter(n => (n.entrees || {}).structure === 'arborescence').map(n => [`aero:${n.id}`, `Bouches de ${I.get(n.id) || lib(n)}`]); }
       case 'robinet': return [...circuits.map(([k, l]) => [k, `${l} (robinetterie)`]), ...de('arbo').flatMap(n => ((n.entrees || {}).troncons || []).filter(t => t.rep).map(t => [`arbot:${n.id}|${t.rep}`, `${lib(n)} : tronçon ${t.rep}`]))];
       case 'sanitaire': return de('sanitaire').map(n => [`san:${n.id}`, `${lib(n)} : points de puisage`]);
+      // Matériel des calculs annexes : calculs de l'étude du type qui le reçoit, et nouveau calcul
+      case 'drvUE': case 'radiateur': case 'echangeur': case 'deshu': case 'groupeFroid': case 'extracteur':
+        return FA().CALCULS[type].flatMap(t => [...de(t).map(n => [`${t}:${n.id}`, lib(n)]), ...nouveau(t, N().TYPES[t] ? N().TYPES[t].titre : t)]);
       case 'regulateur': return de('elec').flatMap(n => [['production', 'production'], ['chauffage', 'chauffage et ECS'], ['ventilation', 'ventilation, CTA'], ['autre', 'auxiliaires'], ['extension', 'modules d\'extension']].map(([a, l]) => [`reg:${n.id}|${a}`, `${lib(n)} : régulateur ${l}`]));
       default: return [];
     }
@@ -113,6 +135,18 @@ const Vrac = (() => {
     }
     if (type === 'generateur') return meilleur(k => { const n = note(k.split(':')[1]), e = (n && n.entrees) || {}; return meme(n) ? -1 : ecartLog(v.P || v.Pfr, Number(e.Pgen) || 0) + (e.eq ? 3 : 0); });
     if (type === 'cta') return meilleur(k => { if (/:nouveau$/.test(k)) return 5; const n = note(k.split(':')[1]), e = (n && n.entrees) || {}; return meme(n) ? -1 : (e.eq ? 6 : 0) + (v.Qs > 0 ? ecartLog(v.Qs, Number(e.Qs) || 0) : 0.5); });
+    // Calculs annexes : celui dont la puissance (ou le débit) calculée est la plus proche de la fiche, encore sans modèle
+    if (ANNEXES.includes(type)) {
+      const calc = (n, k) => { try { return (N().calculer(n.type, n.entrees || {}).valeurs || {})[k]; } catch (er) { return undefined; } };
+      const repere = { drvUE: [v.Pfr, n => Number((n.entrees || {}).PfrUE) || calc(n, 'Pui')], radiateur: [0, () => 0], echangeur: [v.P, n => calc(n, 'P')], deshu: [v.mDeshu, n => calc(n, 'm')],
+        groupeFroid: [v.Pfr, n => calc(n, 'Pevap')], extracteur: [v.Qair, n => calc(n, n.type === 'parking' ? 'Qext' : 'Q')] }[type];
+      return meilleur(k => {
+        const [t, id] = k.split(':'); if (id === 'nouveau') return 5 + FA().CALCULS[type].indexOf(t) * 0.1;
+        const n = note(id); if (meme(n)) return -1;
+        const c = repere[1](n);
+        return (n && n.entrees && n.entrees.eq ? 6 : 0) + (repere[0] > 0 ? ecartLog(repere[0], c) : 0.5);
+      });
+    }
     if (type === 'vase' || type === 'ecs') return meilleur(k => { if (/:nouveau$/.test(k)) return 5; const n = note(k.split(':')[1]); return meme(n) ? -1 : (n && n.entrees && n.entrees.eq ? 6 : 0); });
     return cands[0][0];
   }

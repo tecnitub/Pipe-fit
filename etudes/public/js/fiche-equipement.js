@@ -96,7 +96,9 @@ const FicheEquip = (() => {
     }
     return out;
   }
-  const gere = type => !!TYPES[type];
+  // Calculs annexes reliés au registre (fiche-annexes.js) : contrôles faits par le calcul lui-même, matériel rappelé au résumé
+  const ANNEXES = ['drv', 'radiateurs', 'echangeurPlaques', 'piscine', 'chambreFroide', 'hotte', 'parking'];
+  const gere = type => !!TYPES[type] || ANNEXES.includes(type);
   return { lire, champs, fiche, controles, gere, LIBELLES, TYPES };
 })();
 if (typeof module !== 'undefined') module.exports = FicheEquip;

@@ -255,13 +255,22 @@ const AnnexesEmetteurs = ((N) => {
     if (Td - Tr < 10 && Td > Tr) alertes.push(alerte('attention', `Écart de ${nf(Td - Tr, 0)} K seulement : débits élevés, réseau et robinets à vérifier.`));
     if (Td <= 55 && F0 < 0.5) alertes.push(alerte('attention', `Basse température (facteur ${nf(F0, 2)}) : radiateurs plus de deux fois plus grands qu'à ΔT 50 ; vérifier la place disponible ou préférer un plancher chauffant.`));
     if (ok.length) alertes.push(alerte('ok', `${nbTot} radiateur(s) pour ${nf(Ptot, 2)} kW au régime ${nf(Td, 0)}/${nf(Tr, 0)} °C : ${nf(P50tot, 2)} kW au catalogue à ΔT 50 (facteur ${nf(F0, 3)}), ${nf(Qtot, 0)} L/h.`));
+    // Modèle retenu (fiche du fabricant) : nombre de radiateurs de ce modèle par local et contenance en eau
+    const P50f = num(e.P50fab), Vf = num(e.Vfab), fab = P50f > 0 ? ok.map(l => { const Pm = P50f * l.F, nbM = Math.max(1, Math.ceil(l.P * 1000 / Pm - 1e-9)); return { nom: l.nom, P: l.P, Pm, nbM, nb: l.nb, V: nbM * Vf }; }) : [];
+    const nbFab = fab.reduce((a, x) => a + x.nbM, 0), Vrad = fab.reduce((a, x) => a + x.V, 0);
+    if (fab.length) {
+      const plus = fab.filter(x => x.nbM > x.nb);
+      alertes.push(alerte(plus.length ? 'attention' : 'ok', `Modèle retenu (${nf(P50f, 0)} W à ΔT 50${num(e.Hfab) > 0 ? `, ${nf(num(e.Hfab), 0)} mm` : ''}${num(e.Lfab) > 0 ? ` × ${nf(num(e.Lfab), 0)} mm` : ''}) : ${nbFab} radiateur(s)${Vf > 0 ? `, ${nf(Vrad, 1)} L d'eau` : ''}${plus.length ? ` ; plus de radiateurs que prévu dans ${plus.map(x => `${x.nom} (${x.nbM} pour ${x.nb})`).join(', ')}` : ''}.`));
+    }
     alertes.push(alerte('attention', 'Dimensions indicatives (puissances moyennes de radiateurs à panneaux) : choisir au catalogue du fabricant la puissance à ΔT 50 indiquée ; préréglage des robinets thermostatiques à lire sur l\'abaque du fabricant pour le Kv donné.'));
     return {
-      valeurs: { P: Ptot, P50: P50tot, nb: nbTot, Q: Qtot, F: F0, locaux: ok.map(l => ({ local: l.nom, nb: l.nb, P50: l.P50, type: l.ch.type, H: +l.H, L: l.ch.L, Q: l.Q, kv: l.kvR })) },
+      valeurs: { P: Ptot, P50: P50tot, nb: nbTot, Q: Qtot, F: F0, nbFab, Vrad, locaux: ok.map(l => ({ local: l.nom, nb: l.nb, P50: l.P50, type: l.ch.type, H: +l.H, L: l.ch.L, Q: l.Q, kv: l.kvR })) },
       resume: [['Régime', `${nf(Td, 0)}/${nf(Tr, 0)} °C, ambiance ${nf(Ti0, 0)} °C`], ['Facteur de correction (ΔT/50)^n', `${nf(F0, 3)} (n = ${nf(n, 2)})`], ['Besoin total', `${nf(Ptot, 2)} kW`], ['Puissance au catalogue à ΔT 50', `${nf(P50tot, 2)} kW`],
         ['Radiateurs', String(nbTot)], ['Débit total', `${nf(Qtot, 0)} L/h`]],
       tableaux: [{ titre: 'Radiateurs par local', entetes: ['Local', 'Étage', 'Besoin (W)', 'Radiateurs', 'ΔT eau − air (K)', 'Facteur', 'Puissance requise à ΔT 50 (W)', 'Type', 'Hauteur (mm)', 'Longueur (mm)', 'Puissance au régime (W)', 'Débit (L/h)', 'Kv robinet thermostatique', 'Kv té de réglage'],
-        lignes: ok.map(l => [l.nom, l.etage, nf(l.P * 1000, 0), String(l.nb), nf(l.dT, 1), nf(l.F, 3), nf(l.P50, 0), l.ch.type, l.H, String(l.ch.L), nf(l.Preel, 0), nf(l.Q, 1), nf(l.kvR, 3), nf(l.kvT, 3)]) }],
+        lignes: ok.map(l => [l.nom, l.etage, nf(l.P * 1000, 0), String(l.nb), nf(l.dT, 1), nf(l.F, 3), nf(l.P50, 0), l.ch.type, l.H, String(l.ch.L), nf(l.Preel, 0), nf(l.Q, 1), nf(l.kvR, 3), nf(l.kvT, 3)]) },
+        ...(fab.length ? [{ titre: 'Modèle retenu (fiche du fabricant)', entetes: ['Local', 'Besoin (W)', 'Puissance du modèle au régime (W)', 'Radiateurs nécessaires', 'Prévus', 'Contenance (L)'],
+          lignes: [...fab.map(x => [x.nom, nf(x.P * 1000, 0), nf(x.Pm, 0), String(x.nbM), String(x.nb), Vf > 0 ? nf(x.V, 1) : '—']), ['Total', '', '', String(nbFab), String(nbTot), Vf > 0 ? nf(Vrad, 1) : '—']] }] : [])],
       alertes,
       hypotheses: ['NF EN 442 : Φ = Φ50 · (ΔT / 50)^n, ΔT = (θ1 − θ2) / ln((θ1 − θi) / (θ2 − θi)) (écart logarithmique), n ≈ 1,3 pour les radiateurs à panneaux.',
         'Longueurs : puissance moyenne indicative à ΔT 50 de radiateurs à panneaux acier (W/m pour 600 mm : 11 ≈ 830, 21 ≈ 1 200, 22 ≈ 1 580, 33 ≈ 2 250 ; hauteur : 300 mm × 0,56 … 900 mm × 1,38), longueurs courantes de 400 à 3 000 mm ; type automatique : le plus mince qui tient en 1,6 m.',
@@ -276,6 +285,8 @@ const AnnexesEmetteurs = ((N) => {
       { k: 'Td', l: 'Température de départ (vide : 70 °C)', u: '°C', d: '' }, { k: 'Tr', l: 'Température de retour (vide : 50 °C)', u: '°C', d: '' }, { k: 'Ti', l: 'Température intérieure', u: '°C', d: 20 },
       { k: 'n', l: 'Exposant n des radiateurs', d: 1.3 }, { k: 'marge', l: 'Majoration des besoins (relance)', u: '%', d: 0 },
       { k: 'dpRobinet', l: 'ΔP du robinet thermostatique', u: 'kPa', d: 10 }, { k: 'dpTe', l: 'ΔP du té de réglage', u: 'kPa', d: 3 },
+      { g: 'Modèle retenu (fiche du fabricant)' }, { k: 'P50fab', l: 'Puissance du modèle à ΔT 50 (vide : dimensions indicatives seulement)', u: 'W', d: '' },
+      { k: 'Hfab', l: 'Hauteur du modèle', u: 'mm', d: '' }, { k: 'Lfab', l: 'Longueur du modèle', u: 'mm', d: '' }, { k: 'Vfab', l: 'Contenance en eau d\'un radiateur', u: 'L', d: '' },
       { g: 'Locaux' }, { k: 'reprise', l: 'Locaux repris de l\'étude (terminaux « radiateur », sinon bilans pièce par pièce)', t: 's', o: [['toutes', 'Toutes les pièces'], ['listees', 'Seulement les locaux saisis (même nom)'], ['saisie', 'Aucune (saisie)']], d: 'toutes' },
       { k: 'locaux', l: 'Locaux', t: 'lignes', d: [],
         colonnes: [{ k: 'local', l: 'Local', t: 't', lst: (e, et) => N.lieuxEtude(et).salles }, { k: 'etage', l: 'Étage', t: 't', lst: (e, et) => N.lieuxEtude(et).etages }, { k: 'P', l: 'Besoin (kW)' }, { k: 'nb', l: 'Nombre de radiateurs' },
@@ -392,13 +403,18 @@ const AnnexesEmetteurs = ((N) => {
     }
     const dp1 = val(e.dp1, 30), dp2 = val(e.dp2, 30);
     if (dp1 > 60 || dp2 > 60) alertes.push(alerte('attention', 'Perte de charge supérieure à 60 kPa : vérifier la consommation des pompes ; 20 à 50 kPa par côté sont usuels.'));
-    alertes.push(alerte('attention', 'Surface et pertes de charge indicatives : sélection (nombre de plaques, ΔP réelles) à faire avec le logiciel du fabricant aux régimes ci-dessus.'));
+    // Échangeur retenu (fiche du fabricant) : puissance et surface face au besoin
+    const Pf = num(e.Pfab), Af = num(e.Afab), nPl = Math.round(num(e.nPlaques));
+    if (Pf > 0) alertes.push(alerte(Pf >= P * 0.98 ? 'ok' : 'erreur', `Échangeur retenu : ${nf(Pf, 1)} kW pour ${nf(P, 1)} kW à échanger${Pf >= P * 0.98 ? '' : ' : insuffisant'}${Af > 0 ? ` ; ${nf(Af, 2)} m²${nPl > 0 ? ` (${nPl} plaques)` : ''} pour ≈ ${nf(A, 1)} m² estimés` : ''}.`));
+    if (Pf > 0) alertes.push(alerte('info', 'Pertes de charge reprises de la sélection du fabricant : vérifier que ses régimes sont ceux de ce calcul.'));
+    else alertes.push(alerte('attention', 'Surface et pertes de charge indicatives : sélection (nombre de plaques, ΔP réelles) à faire avec le logiciel du fabricant aux régimes ci-dessus.'));
     const lib1 = e.lib1 || 'Primaire', lib2 = e.lib2 || 'Secondaire';
     return {
-      valeurs: { P, dtlm, pinc, A, U, Q1, Q2, dp1, dp2, eps, NTU, croise: Tco > Tho },
+      valeurs: { P, dtlm, pinc, A, U, Q1, Q2, dp1, dp2, eps, NTU, croise: Tco > Tho, Pfab: Pf, Afab: Af, nPlaques: nPl },
       resume: [['Puissance', `${nf(P, 1)} kW`], [lib1, `${nf(Te1, 1)} → ${nf(Ts1, 1)} °C · ${nf(Q1, 2)} m³/h · ${f1[0]}`], [lib2, `${nf(Te2, 1)} → ${nf(Ts2, 1)} °C · ${nf(Q2, 2)} m³/h · ${f2[0]}`],
         ['ΔTLM (contre-courant)', `${nf(dtlm, 2)} K`], ['Pincement', `${nf(pinc, 1)} K`], ['Surface indicative', `${nf(A, 1)} m² (U ${nf(U, 0)} W/m²·K)`], ['Efficacité / NTU', `${nf(eps * 100, 0)} % · ${nf(NTU, 2)}`],
-        ['Pertes de charge retenues', `${nf(dp1, 0)} kPa (${lib1.toLowerCase()}) · ${nf(dp2, 0)} kPa (${lib2.toLowerCase()})`]],
+        ['Pertes de charge retenues', `${nf(dp1, 0)} kPa (${lib1.toLowerCase()}) · ${nf(dp2, 0)} kPa (${lib2.toLowerCase()})`],
+        ...(Pf > 0 ? [['Échangeur retenu', `${nf(Pf, 1)} kW${Af > 0 ? ` · ${nf(Af, 2)} m²` : ''}${nPl > 0 ? ` · ${nPl} plaques` : ''}`]] : [])],
       tableaux: [{ titre: 'Côtés de l\'échangeur', entetes: ['Côté', 'Fluide', 'Entrée (°C)', 'Sortie (°C)', 'Écart (K)', 'Débit (m³/h)', 'ΔP retenue (kPa)'],
         lignes: [[lib1, f1[0], nf(Te1, 1), nf(Ts1, 1), nf(dT1, 1), nf(Q1, 2), nf(dp1, 0)], [lib2, f2[0], nf(Te2, 1), nf(Ts2, 1), nf(dT2, 1), nf(Q2, 2), nf(dp2, 0)]] }],
       alertes,
@@ -431,7 +447,9 @@ const AnnexesEmetteurs = ((N) => {
       { k: 'lib2', l: 'Nom du côté 2', t: 't', d: 'Secondaire' }, { k: 'fluide2', l: 'Fluide du côté 2', t: 's', o: Object.entries(FLUIDES_ECH).map(([k, x]) => [k, x[0]]), d: 'eau' },
       { k: 'Te2', l: 'Côté 2 : entrée (retour, vide : 50 °C)', u: '°C', d: '' }, { k: 'Ts2', l: 'Côté 2 : sortie (départ, vide : 70 °C)', u: '°C', d: '' },
       { g: 'Échange' }, { k: 'U', l: 'Coefficient d\'échange (vide : usuel)', u: 'W/m²·K', d: '' }, { k: 'encrassement', l: 'Marge d\'encrassement sur la surface', u: '%', d: 10 },
-      { k: 'dp1', l: 'Perte de charge côté 1', u: 'kPa', d: 30 }, { k: 'dp2', l: 'Perte de charge côté 2', u: 'kPa', d: 30 }],
+      { k: 'dp1', l: 'Perte de charge côté 1', u: 'kPa', d: 30 }, { k: 'dp2', l: 'Perte de charge côté 2', u: 'kPa', d: 30 },
+      { g: 'Échangeur retenu (fiche du fabricant)' }, { k: 'Pfab', l: 'Puissance de l\'échangeur retenu (vide : pas de contrôle)', u: 'kW', d: '' },
+      { k: 'Afab', l: 'Surface d\'échange', u: 'm²', d: '' }, { k: 'nPlaques', l: 'Nombre de plaques', d: '' }],
     calcul: calculerEchangeur,
     lier(ctx) {
       const { e } = ctx;

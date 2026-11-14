@@ -12,6 +12,9 @@ const AnnexesPlomberie = ((N) => {
   // Valeur saisie, sinon valeur par défaut (indicative) ; « defaut » indique si la valeur par défaut a servi
   const ou = (v, d) => (vide(v) ? d : num(v, d));
   const THEME = 'Plomberie', FAMILLE = 'Calculs annexes';
+  // Valeurs réglementaires (températures et volumes de l'arrêté du 30/11/2005) : surchargeables dans les Réglages
+  const VR = () => (typeof ValeursRegl !== 'undefined' ? ValeursRegl : (() => { try { return require('./valeurs-regl'); } catch (e) { return null; } })());
+  const vReg = (cle, d) => { const R = VR(); return R ? R.v(cle, d) : d; };
   const notesDe = (ctx, type) => (ctx.notes || []).filter(n => n.type === type);
 
   /* =====================================================================================================================
@@ -294,6 +297,7 @@ const AnnexesPlomberie = ((N) => {
     const alertes = [], C = Ca(), D = Dn();
     const Tprod = ou(e.Tprod, 60), Tdep = ou(e.Tdep, 60), Tret = ou(e.Tret, 55), Ta = ou(e.Tamb, 20), Vst = ou(e.Vstock, 500);
     const iso = D.ISOLANTS[e.isolant] ? e.isolant : 'elastomere', eps = (D.REVETEMENTS[e.revetement] || ['', 0.9])[1], Tm = (Tdep + Tret) / 2;
+    const TstR = vReg('legionelle.Tstock', 55), VstR = vReg('legionelle.Vstock', 400), TretR = vReg('legionelle.Tret', 50), VantR = vReg('legionelle.Vant', 3);
     const fl = C.liquide('eau', Tm), dT = Tdep - Tret;
     // Pertes thermiques de la boucle (aller et retour) : tube nu et isolé (même méthode que la note « isolation »)
     const lignes = (e.boucle || []).filter(l => l && (l.rep || num(l.L) > 0)).map((l, i) => {
@@ -308,20 +312,20 @@ const AnnexesPlomberie = ((N) => {
     const nus = lignes.filter(l => l.ep <= 0 && l.L > 0 && l.de > 0);
     if (nus.length) alertes.push(alerte('attention', `${nus.map(l => l.rep).join(', ')} : boucle non calorifugée (${nf(nus.reduce((a, l) => a + l.qNu * l.L, 0), 0)} W perdus) : calorifuger.`));
     // Débit de bouclage : pertes / (ρ · cp · ΔT) ; débit minimal pour garder 50 °C au retour
-    const Qb = dT > 0 ? Pboucle / (fl.rho * fl.cp * dT) * 3600 : NaN, Qmin50 = Tdep > 50 ? Pboucle / (fl.rho * fl.cp * (Tdep - 50)) * 3600 : NaN; // m³/h
+    const Qb = dT > 0 ? Pboucle / (fl.rho * fl.cp * dT) * 3600 : NaN, Qmin50 = Tdep > TretR ? Pboucle / (fl.rho * fl.cp * (Tdep - TretR)) * 3600 : NaN; // m³/h
     if (!(dT > 0)) alertes.push(alerte('erreur', 'Chute de température de la boucle nulle ou négative : le retour doit être plus froid que le départ.'));
     // Températures réglementaires
-    if (Vst >= 400 && Tprod < 55) alertes.push(alerte('erreur', `Stockage de ${nf(Vst, 0)} L (≥ 400 L) : eau à ${nf(Tprod, 0)} °C en sortie de production, au moins 55 °C en permanence (ou montée quotidienne à 60 °C pendant 1 h, arrêté du 30/11/2005).`));
-    else if (Tprod < 55) alertes.push(alerte('attention', `Production à ${nf(Tprod, 0)} °C : 55 °C au moins conseillés (stockage < 400 L).`));
-    if (Tdep < 55) alertes.push(alerte('attention', `Départ de boucle à ${nf(Tdep, 0)} °C : 55 °C au moins conseillés pour garder 50 °C en tout point.`));
-    if (Tret < 50) alertes.push(alerte('erreur', `Retour de boucle à ${nf(Tret, 0)} °C : au moins 50 °C en tout point du réseau bouclé (arrêté du 30/11/2005).`));
-    else alertes.push(alerte('ok', `Boucle ${nf(Tdep, 0)} / ${nf(Tret, 0)} °C : ${nf(Pboucle, 0)} W de pertes, débit de bouclage ${nf(Qb * 1000, 0)} L/h (au moins ${nf(Qmin50 * 1000, 0)} L/h pour 50 °C au retour).`));
+    if (Vst >= VstR && Tprod < TstR) alertes.push(alerte('erreur', `Stockage de ${nf(Vst, 0)} L (≥ ${nf(VstR, 0)} L) : eau à ${nf(Tprod, 0)} °C en sortie de production, au moins ${nf(TstR, 0)} °C en permanence (ou montée quotidienne à 60 °C pendant 1 h, arrêté du 30/11/2005).`));
+    else if (Tprod < TstR) alertes.push(alerte('attention', `Production à ${nf(Tprod, 0)} °C : ${nf(TstR, 0)} °C au moins conseillés (stockage < ${nf(VstR, 0)} L).`));
+    if (Tdep < TstR) alertes.push(alerte('attention', `Départ de boucle à ${nf(Tdep, 0)} °C : ${nf(TstR, 0)} °C au moins conseillés pour garder ${nf(TretR, 0)} °C en tout point.`));
+    if (Tret < TretR) alertes.push(alerte('erreur', `Retour de boucle à ${nf(Tret, 0)} °C : au moins ${nf(TretR, 0)} °C en tout point du réseau bouclé (arrêté du 30/11/2005).`));
+    else alertes.push(alerte('ok', `Boucle ${nf(Tdep, 0)} / ${nf(Tret, 0)} °C : ${nf(Pboucle, 0)} W de pertes, débit de bouclage ${nf(Qb * 1000, 0)} L/h (au moins ${nf(Qmin50 * 1000, 0)} L/h pour ${nf(TretR, 0)} °C au retour).`));
     if (Tdep > Tprod) alertes.push(alerte('attention', 'Départ de boucle plus chaud que la production : vérifier les températures.'));
     // Volumes hors boucle : antennes vers les points de puisage (≤ 3 L)
     const ant = (e.antennes || []).filter(a => a && (a.rep || num(a.L) > 0)).map((a, i) => { const di = num(a.di), L = num(a.L); return { rep: a.rep || `A${i + 1}`, di, L, V: volume(di, L) }; });
-    const trop = ant.filter(a => a.V > 3);
-    trop.forEach(a => alertes.push(alerte('erreur', `${a.rep} : ${nf(a.V, 2)} L entre la boucle et le point de puisage (> 3 L, arrêté du 30/11/2005) : boucler l'antenne, la raccourcir ou réduire son diamètre.`)));
-    if (ant.length && !trop.length) alertes.push(alerte('ok', `${ant.length} antenne(s) hors boucle, toutes ≤ 3 L (la plus grande : ${nf(Math.max(...ant.map(a => a.V)), 2)} L).`));
+    const trop = ant.filter(a => a.V > VantR);
+    trop.forEach(a => alertes.push(alerte('erreur', `${a.rep} : ${nf(a.V, 2)} L entre la boucle et le point de puisage (> ${nf(VantR, 1)} L, arrêté du 30/11/2005) : boucler l'antenne, la raccourcir ou réduire son diamètre.`)));
+    if (ant.length && !trop.length) alertes.push(alerte('ok', `${ant.length} antenne(s) hors boucle, toutes ≤ ${nf(VantR, 1)} L (la plus grande : ${nf(Math.max(...ant.map(a => a.V)), 2)} L).`));
     // Pompe de bouclage
     const H = ou(e.Hpompe, 3), etaP = ou(e.rendPompe, 25) / 100, Pel = Number.isFinite(Qb) ? Math.max(15, fl.rho * 9.81 * Qb / 3600 * H / Math.max(0.05, etaP)) : 15;
     // Choc thermique curatif : énergie pour porter le stockage et le réseau de la température de départ à Tchoc
@@ -335,7 +339,8 @@ const AnnexesPlomberie = ((N) => {
     const prel = [['Sortie de la production d\'ECS (ou point le plus proche)', 1], ['Fond de ballon (le cas échéant)', nB], ['Retour de boucle (ou point le plus proche)', nBo], ['Points d\'usage à risque les plus représentatifs ou les plus éloignés', nUsage]];
     const nPrel = prel.reduce((a, x) => a + x[1], 0);
     if (etab) alertes.push(alerte('attention', `Surveillance des légionelles (arrêté du 01/02/2010) : ${nPrel} points de prélèvement indicatifs par campagne, analyses au moins annuelles par un laboratoire accrédité, températures relevées mensuellement en sortie de production et au retour de boucle.`));
-    return {
+    const R = VR(), mq = r => (R ? R.marquer(r, ['legionelle.Tstock', 'legionelle.Vstock', 'legionelle.Tret', 'legionelle.Vant']) : r);
+    return mq({
       valeurs: { Tprod, Tdep, Tret, Pboucle, Qb, Qmin50, H, Pel, Vres, Echoc, nPrel, antennesHors: trop.length, lignes: lignes.length },
       resume: [['Températures', `production ${nf(Tprod, 0)} °C · départ ${nf(Tdep, 0)} °C · retour ${nf(Tret, 0)} °C`], ['Pertes thermiques de la boucle', `${nf(Pboucle, 0)} W${forfait ? ' (forfait)' : ` sur ${nf(lignes.reduce((a, l) => a + l.L, 0), 0)} m`}`],
         ['Débit de bouclage', `${nf(Qb * 1000, 0)} L/h (ΔT ${nf(dT, 1)} K) · minimum pour 50 °C au retour : ${nf(Qmin50 * 1000, 0)} L/h`], ['Pompe de bouclage', `${nf(Qb, 3)} m³/h sous ${nf(H, 1)} mCE · ≈ ${nf(Pel, 0)} W`],
@@ -343,7 +348,7 @@ const AnnexesPlomberie = ((N) => {
         ['Choc thermique curatif', `${nf(Tchoc, 0)} °C pendant ${nf(tChoc, 0)} min en tout point · ≈ ${nf(Echoc, 1)} kWh`], ['Points de prélèvement (indicatif)', etab ? `${nPrel} par campagne` : 'établissement non soumis (à préciser)']],
       tableaux: [...(lignes.length ? [{ titre: 'Boucle : pertes thermiques (tube nu et calorifugé)', entetes: ['Tronçon', 'Sens', 'De (mm)', 'Di (mm)', 'L (m)', 'Isolant (mm)', 'q nu (W/m)', 'q isolé (W/m)', 'Pertes (W)', 'Volume (L)', 'v au débit de bouclage (m/s)'],
         lignes: lignes.map(l => [l.rep, l.sens, nf(l.de, 1), nf(l.di, 1), nf(l.L, 1), nf(l.ep, 0), nf(l.qNu, 1), nf(l.q, 1), nf(l.P, 0), nf(l.V, 1), l.di > 0 && Number.isFinite(Qb) ? nf(Qb / 3600 / (Math.PI * (l.di / 2000) ** 2), 2) : '—']) }] : []),
-        ...(ant.length ? [{ titre: 'Antennes hors boucle (volume entre la boucle et le point de puisage)', entetes: ['Antenne', 'Di (mm)', 'L (m)', 'Volume (L)', '≤ 3 L'], lignes: ant.map(a => [a.rep, nf(a.di, 1), nf(a.L, 1), nf(a.V, 2), a.V > 3 ? 'non' : 'oui']) }] : []),
+        ...(ant.length ? [{ titre: 'Antennes hors boucle (volume entre la boucle et le point de puisage)', entetes: ['Antenne', 'Di (mm)', 'L (m)', 'Volume (L)', '≤ 3 L'], lignes: ant.map(a => [a.rep, nf(a.di, 1), nf(a.L, 1), nf(a.V, 2), a.V > VantR ? 'non' : 'oui']) }] : []),
         { titre: 'Points de prélèvement (arrêté du 01/02/2010, nombre indicatif)', entetes: ['Point', 'Nombre'], lignes: [...prel.map(([l, n]) => [l, String(n)]), ['Total par campagne', String(nPrel)]], total: true }],
       onglets: [{ titre: 'Réglementation', blocs: [{ titre: 'Températures et surveillance', items: [
         { niveau: 'obligatoire', texte: 'Stockage ≥ 400 L : eau ≥ 55 °C en permanence en sortie de production, ou portée au moins une fois par 24 h à 70 °C pendant 2 min, 65 °C pendant 4 min ou 60 °C pendant 60 min.', ref: 'Arrêté du 30/11/2005, art. 2' },
@@ -361,7 +366,7 @@ const AnnexesPlomberie = ((N) => {
         'Énergie du choc thermique : échauffement du stockage et du réseau de la température de départ à la température de choc, plus les pertes du réseau pendant la durée du choc.',
         `Points de prélèvement : sortie de production, fonds de ballon, retours de boucle et un point d'usage pour ${nf(ou(e.ratioPoints, 50), 0)} points de puisage (nombre indicatif, à adapter à la stratégie d'échantillonnage du fichier sanitaire).`],
       synthese: `${nf(Tdep, 0)}/${nf(Tret, 0)} °C · ${nf(Pboucle, 0)} W · ${nf(Qb * 1000, 0)} L/h${trop.length ? ` · ${trop.length} antenne(s) > 3 L` : ''}`,
-    };
+    });
   }
 
   N.TYPES.legionelle = {
