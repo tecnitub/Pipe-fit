@@ -299,3 +299,10 @@ details.plus-actions .plus-liste > * { text-align: left; width: 100%; }
   .inst-global td:first-child { min-width: 140px; }
 }
 @media (max-width: 700px) { .zoom-barre button { min-width: 40px; } }
+
+/* Calculs annexes : section repliable de l'étude, thèmes du dialogue d'ajout */
+.annexes-etude { margin-top: 1em; }
+.annexes-etude > summary { cursor: pointer; padding: .4em 0; }
+.annexes-types { margin-top: 1em; border-top: 1px solid var(--bord, #d6dbe1); padding-top: .5em; }
+.annexes-types > summary { cursor: pointer; }
+.annexes-types h4 { margin: .8em 0 .3em; }

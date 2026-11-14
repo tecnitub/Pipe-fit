@@ -27,6 +27,21 @@ const Liens = ((N, Sc) => {
     pile = new Set([...pile, note.id]);
     // Données saisies une fois pour l'étude (climat, type de bâtiment) et choix reliés (circuit primaire, chaufferie, tronçon)
     lienEtude(etude, note, e, verrous, alertes, libelle, pile);
+    // Calculs annexes (et tout type qui le déclare) : données reprises des autres notes de l'étude par leur fonction « lier »
+    //  - imposer(vals, source) : valeur reprise et verrouillée ; proposer(vals, source) : remplit seulement un champ vide
+    //    (jamais une valeur saisie) ; resoudre(n) / calculer(n) : entrées et résultats d'une autre note
+    const T = N.TYPES[note.type];
+    if (T && typeof T.lier === 'function') {
+      const imposer = (vals, src) => Object.entries(vals || {}).forEach(([k, v]) => { if (v === undefined || v === null || v === '' || (typeof v === 'number' && !Number.isFinite(v))) return; e[k] = v; verrous[k] = src; });
+      const vide = v => v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length);
+      const proposer = (vals, src) => Object.entries(vals || {}).forEach(([k, v]) => { if (vide(v) || (typeof v === 'number' && !Number.isFinite(v))) return; const saisi = note.entrees && !vide(note.entrees[k]); if (!saisi) { e[k] = v; (e._repris = e._repris || {})[k] = src; } });
+      const autres = notes.filter(n => n !== note && !pile.has(n.id));
+      try {
+        T.lier({ etude, note, notes: autres, e, imposer, proposer, alertes, libelle,
+          resoudre: n => resoudre(etude, n, pile).entrees,
+          calculer: n => { try { return N.calculer(n.type, resoudre(etude, n, pile).entrees); } catch (err) { return { valeurs: {}, alertes: [] }; } } });
+      } catch (err) { alertes.push({ niveau: 'attention', texte: `Données de l'étude non reprises : ${err.message}` }); }
+    }
     // Schéma alimenté par le circuit d'un autre schéma : fluide et régime repris avant tout calcul de ses circuits
     const amont = note.type === 'pid' ? lienAmont(etude, note, e, verrous, alertes, libelle, pile) : null;
     // Schéma : puissances des circuits reprises des bilans

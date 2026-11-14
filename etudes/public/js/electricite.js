@@ -1083,6 +1083,9 @@ const Electricite = ((N, Sc) => {
       const v = r.valeurs || {}, titre = n.titre || '';
       const ajout = (cle, o) => { if (!dejaInv.has(o.type) || o.type === 'sonde') out.push({ src: `${n.id}:${cle}`, ...o }); };
       if (n.type === 'terminaux' && typeof Terminaux !== 'undefined') { Terminaux.versElec(n, r).forEach(o => out.push(o)); return; }
+      // Calculs annexes qui consomment de l'électricité (extracteurs de parking, hotte, déshumidificateur, pompes…) : leurs lignes
+      const TN = N.TYPES[n.type];
+      if (TN && typeof TN.versElec === 'function') { try { (TN.versElec(v, es, n) || []).forEach((o, k) => ajout(`ann${k}`, { rep: o.rep || `X${k + 1}-N${ni + 1}`, tension: 'mono', regulation: 'tor', ...o })); } catch (err) { /* annexe incomplète */ } return; }
       const fiche = es.fiche || {};
       if (n.type === 'pid') {
         let d; try { d = Sc.dimensionner(es); } catch (err) { return; }
