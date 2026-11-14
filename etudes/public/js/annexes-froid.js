@@ -7,23 +7,19 @@ const AnnexesFroid = ((N) => {
   const { nf, num } = N;
   const alerte = (niveau, texte) => ({ niveau, texte });
   const THEME = 'Froid et climatisation', FAMILLE = 'Calculs annexes';
-  const vide = v => v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length);
   const norm = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
   const P_ = () => (typeof Pieces !== 'undefined' ? Pieces : (() => { try { return require('./pieces'); } catch (e) { return null; } })());
   const L_ = () => (typeof Liens !== 'undefined' ? Liens : (() => { try { return require('./liens'); } catch (e) { return null; } })());
 
   /* ---------- Lignes reprises de l'étude ---------- */
-  // Lignes « auto » (reprises d'une autre note) ajoutées après les lignes saisies, toutes leurs cellules verrouillées ;
-  // une ligne saisie de même clé (repère, local) remplace la ligne reprise et en reprend les cellules laissées vides.
-  function reprendre(ctx, liste, auto, cle) {
-    const e = ctx.e, l = e[liste] = Array.isArray(e[liste]) ? e[liste].slice() : [];
-    const verr = (i, k, src) => { const key = `${liste}.${i}.${k}`; ctx.imposer({ [key]: 1 }, src); delete e[key]; };
-    auto.forEach(a => {
-      const j = l.findIndex(x => x && !x._auto && norm(x[cle]) && norm(x[cle]) === norm(a[cle]));
-      if (j >= 0) { const x = l[j] = { ...l[j] }; Object.keys(a).filter(k => k[0] !== '_' && vide(x[k]) && !vide(a[k])).forEach(k => { x[k] = a[k]; }); return; }
-      const i = l.length; l.push({ ...a }); Object.keys(a).filter(k => k[0] !== '_').forEach(k => verr(i, k, a._auto));
-    });
-    return l;
+  // Méthode commune des calculs annexes (Liens, ctx.reprendreLignes) : lignes « auto » ajoutées après les lignes saisies,
+  // cellules verrouillées ; une ligne saisie de même clé (repère) remplace la ligne reprise et en reprend les cellules vides.
+  const reprendre = (ctx, liste, auto, cle) => ctx.reprendreLignes(liste, auto, { cle });
+  // Repères en double entre lignes reprises (deux DRV « UE1 ») : numérotés « UE1-N3 », « UE1-N4 » (n° de la note d'origine)
+  function repDistincts(lignes) {
+    const nb = new Map();
+    lignes.forEach(x => { const k = norm(x.l.rep); nb.set(k, (nb.get(k) || 0) + 1); });
+    return lignes.map(x => (nb.get(norm(x.l.rep)) > 1 ? { ...x.l, rep: `${x.l.rep}-N${x.num}` } : x.l));
   }
 
   /* ---------- Fluides frigorigènes ---------- */
@@ -180,6 +176,10 @@ const AnnexesFroid = ((N) => {
     calcul: calculerDrv,
     lier(ctx) {
       const { e, notes } = ctx;
+      // Plusieurs unités extérieures : repère en double dans l'étude signalé (le calcul des fluides les numérote)
+      const tous = (ctx.etude && ctx.etude.notes) || [], rep = String(e.repUE || 'UE1').trim();
+      const memes = tous.filter(n => n !== ctx.note && n.type === 'drv' && norm(String(((n.entrees || {}).repUE ?? N.defauts('drv').repUE) || 'UE1').trim()) === norm(rep));
+      if (memes.length) ctx.alertes.push(alerte('attention', `Repère « ${rep} » de l'unité extérieure aussi utilisé par ${memes.map(ctx.libelle).join(', ')} : donnez un repère distinct à chaque unité extérieure (UE1, UE2…). En attendant, le calcul des fluides les numérote ${[ctx.note, ...memes].map(n => tous.indexOf(n) + 1).sort((a, b) => a - b).map(i => `${rep}-N${i}`).join(', ')}.`));
       if (e.reprise === 'saisie') return;
       const auto = [];
       notes.filter(n => n.type === 'terminaux').forEach(n => {
@@ -254,9 +254,11 @@ const AnnexesFroid = ((N) => {
       ctx.notes.filter(n => n.type === 'drv' || n.type === 'chambreFroide').forEach(n => {
         const v = ctx.calculer(n).valeurs || {}, es = ctx.resoudre(n);
         if (!(v.chargeTot > 0)) return;
-        auto.push({ rep: n.type === 'drv' ? String(es.repUE || n.titre) : String(es.repGroupe || n.titre), fluide: v.fluide, charge: Math.round(v.chargeTot * 100) / 100, hermetique: 'non', detection: 'non', S: v.Smin || '', H: v.Hmin || '', pos: n.type === 'drv' ? es.posUI || 'mur' : 'plafond', _auto: ctx.libelle(n) });
+        auto.push({ num: ((ctx.etude && ctx.etude.notes) || []).indexOf(n) + 1, l: { rep: n.type === 'drv' ? String(es.repUE || n.titre) : String(es.repGroupe || n.titre), fluide: v.fluide, charge: Math.round(v.chargeTot * 100) / 100, hermetique: 'non', detection: 'non', S: v.Smin || '', H: v.Hmin || '', pos: n.type === 'drv' ? es.posUI || 'mur' : 'plafond', _auto: ctx.libelle(n) } });
       });
-      reprendre(ctx, 'equipements', auto, 'rep');
+      const lignes = repDistincts(auto), renum = lignes.filter((l, k) => l.rep !== auto[k].l.rep);
+      if (renum.length) ctx.alertes.push(alerte('info', `Repères en double dans l'étude, numérotés d'après la note d'origine : ${renum.map(l => `${l.rep} (${l._auto})`).join(', ')} — à renommer dans les calculs d'origine (UE1, UE2…).`));
+      reprendre(ctx, 'equipements', lignes, 'rep');
     },
   };
 

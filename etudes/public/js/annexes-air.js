@@ -8,7 +8,6 @@ const AnnexesAir = ((N) => {
   const alerte = (niveau, texte) => ({ niveau, texte });
   const THEME = 'Ventilation et traitement d\'air', FAMILLE = 'Calculs annexes';
   const vide = v => v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length);
-  const norm = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
   const mod = (g, f) => () => (typeof globalThis[g] !== 'undefined' ? globalThis[g] : (() => { try { return require(f); } catch (e) { return null; } })());
   const P_ = () => (typeof Pieces !== 'undefined' ? Pieces : mod('Pieces', './pieces')());
   const L_ = () => (typeof Liens !== 'undefined' ? Liens : mod('Liens', './liens')());
@@ -18,18 +17,9 @@ const AnnexesAir = ((N) => {
   const garder = (e, k) => (e && e[k] ? [[e[k], String(e[k])]] : []);
   const ctasEtude = et => ((et && et.notes) || []).filter(n => n.type === 'cta');
 
-  // Lignes « auto » reprises d'une autre note (après les lignes saisies, cellules verrouillées) ; une ligne saisie de même clé
-  // remplace la ligne reprise et en reprend les cellules laissées vides
-  function reprendre(ctx, liste, auto, cle) {
-    const e = ctx.e, l = e[liste] = Array.isArray(e[liste]) ? e[liste].slice() : [];
-    const verr = (i, k, src) => { const key = `${liste}.${i}.${k}`; ctx.imposer({ [key]: 1 }, src); delete e[key]; };
-    auto.forEach(a => {
-      const j = l.findIndex(x => x && !x._auto && norm(x[cle]) && norm(x[cle]) === norm(a[cle]));
-      if (j >= 0) { const x = l[j] = { ...l[j] }; Object.keys(a).filter(k => k[0] !== '_' && vide(x[k]) && !vide(a[k])).forEach(k => { x[k] = a[k]; }); return; }
-      const i = l.length; l.push({ ...a }); Object.keys(a).filter(k => k[0] !== '_').forEach(k => verr(i, k, a._auto));
-    });
-    return l;
-  }
+  // Lignes « auto » reprises d'une autre note : méthode commune des calculs annexes (Liens, ctx.reprendreLignes) — après les
+  // lignes saisies, cellules verrouillées ; une ligne saisie de même clé remplace la ligne reprise et en reprend les cellules vides
+  const reprendre = (ctx, liste, auto, cle) => ctx.reprendreLignes(liste, auto, { cle });
 
   /* ---------- Psychrométrie (101 325 Pa) ---------- */
   const pws = T => (T >= 0 ? 610.94 * Math.exp(17.625 * T / (T + 243.04)) : 611.21 * Math.exp(22.587 * T / (T + 273.86)));

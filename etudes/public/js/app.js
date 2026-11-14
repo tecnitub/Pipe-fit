@@ -851,13 +851,14 @@ function batteriesCtaHtml(et, n) {
   if (!bats.length) return '';
   const pids = et.notes.map((x, i) => [x, i]).filter(([x]) => x.type === 'pid');
   const ligne = x => {
+    if (!x.lien && x.auto) return `<li>✅ ${esc(x.libelle)} : circuit « ${esc(x.auto.rep)} » de <a href="#/etude/${et.id}/${x.auto.pid.id}">${esc(x.auto.pid.titre)}</a> <span class="muted petit">(liaison automatique : seul circuit « batterie de CTA » libre ; autre choix dans « Réseau annexe relié » du schéma)</span></li>`;
     if (x.lien) return `<li>✅ ${esc(x.libelle)} : ${x.lien.type === 'arbo' ? `branche ${esc(x.lien.rep)} de <a href="#/etude/${et.id}/${x.lien.note.id}">${esc(x.lien.note.titre)}</a>${Liens.circuitDeAnnexe(et.notes, x.lien.note) ? '' : ' <span class="avert">(réseau pas encore en départ du schéma de principe)</span>'}` : `circuit « ${esc(x.lien.pid.entrees.circuits[x.lien.i].rep)} » de <a href="#/etude/${et.id}/${x.lien.pid.id}">${esc(x.lien.pid.titre)}</a>`}</li>`;
     const arbos = et.notes.map((a, i) => [a, i]).filter(([a]) => a.type === 'arbo' && ((a.entrees || {}).saison || 'chaud') === x.saison && Liens.batteriesLibres(et, n, a).some(y => y.cle === `${n.id}:${x.b}`));
     const opts = [...arbos.map(([a, i]) => `<option value="arbo|${a.id}">🌳 Branche du réseau ${x.saison} N${i + 1} — ${esc(a.titre)}</option>`),
       ...(pids.filter(([p]) => Liens.couvertParCircuit(et, p).has(x.b)).map(([p, i]) => `<optgroup label="Schéma de principe N${i + 1} — ${esc(p.titre)}"><option value="${p.id}|-1">➕ Nouveau circuit « ${esc(n.titre)} »</option>${((p.entrees || {}).circuits || []).map((c, k) => [c, k]).filter(([c]) => !c.annexe).map(([c, k]) => `<option value="${p.id}|${k}">Circuit existant : ${esc(c.rep || `C${k + 1}`)}</option>`).join('')}</optgroup>`))].join('');
     return `<li>⚠️ ${esc(x.libelle)} : ${opts ? `<select data-bat-sel="${x.b}" aria-label="Raccordement de la ${esc(x.libelle.toLowerCase())}">${opts}</select> <button class="secondaire petit" data-bat-relier="${x.b}">Raccorder</button>` : `<span class="muted">aucun réseau arborescent ${x.saison === 'froid' ? 'froid (eau glacée)' : 'chaud'} ni circuit du schéma disponible — créez le réseau (calcul « Réseau arborescent », batteries ${x.saison === 'froid' ? 'froides' : 'chaudes'})</span>`}</li>`;
   };
-  const ok = bats.every(x => x.lien);
+  const ok = bats.every(x => x.lien || x.auto);
   return `<div class="bandeau-lien">🧭 Raccordement des batteries à eau de la CTA${ok ? ' : complet' : ''}<ul style="margin:.3em 0">${bats.map(ligne).join('')}</ul>
     <span class="muted petit">Branche d'un réseau arborescent : puissance, débit et pertes de charge de la batterie remplissent la branche, puis remontent avec le réseau (départ du schéma de principe). Circuit du schéma : la CTA est seule sur son circuit.</span></div>`;
 }
@@ -1126,6 +1127,7 @@ Vues.note = {
       <div class="actions-ligne actions-note" data-plus="2"><button id="emettre-note">🖋️ Émettre l'indice ${esc(Revisions.prochainIndice(n))} (PDF avec cartouche)</button><button class="secondaire" id="pdf-note">📄 Brouillon PDF</button><button class="secondaire" id="defauts">Valeurs par défaut</button><button class="secondaire" id="dupliquer">Dupliquer</button>
         ${TYPES_FICHE.includes(n.type) ? `<button class="secondaire" id="fiche-tech" title="Fiche du fabricant (PDF de l'ordinateur ou de la bibliothèque Pipe-Fit) : remplit le calcul et contrôle le matériel choisi">📄 Fiche technique${['cta', 'aero'].includes(n.type) ? ' de la CTA' : { reseau: ' de la pompe', arbo: ' de la pompe', vase: ' du vase', ecs: ' du ballon / échangeur', pid: ' du générateur', terminaux: ' d\'un terminal' }[n.type] || ''}${n.entrees.fiche && (n.entrees.fiche.fabricant || n.entrees.fiche.reference) ? ` ✓` : ''}</button>` : ''}
         ${n.type === 'cta' ? `<button class="secondaire" id="cta-reseau">🌬️ ${Liens.reseauxDeCta(et.notes, n).some(x => x.type === 'aero') ? 'Ouvrir le schéma aéraulique relié' : 'Créer le schéma aéraulique relié (gaines, bouches)'}</button>` : ''}
+        ${n.type === 'batiment' ? '<button class="secondaire" id="bat-production" title="Schéma de principe proposé selon le mode (chaudière ou PAC, groupe froid, PAC réversible) à la puissance du bâtiment, avec un circuit dont la puissance est reprise de ce calcul ; ou circuit ajouté à un schéma existant">🏭 Production depuis ce bâtiment (schéma de principe)</button>' : ''}
         ${n.type === 'arbo' ? '<button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par tronçon (tubes, vannes d\'équilibrage avec préréglage, robinetterie, pompe) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-pompes" title="Une ligne par circuit et par pompe de production (primaires PP, échangeur PECH1 / PECH2, récupération PREC, refroidissement PEV) pour saisir la pompe retenue et sa courbe (ou la lire sur la fiche du fabricant)">⚙️ Pompes retenues</button><button class="secondaire" id="pid-vannes" title="Vannes d\'autorité inférieure à 0,5 : Kvs cible, Kvs normalisé et vanne du catalogue proposés, appliqués après confirmation">🎚️ Redimensionner les vannes (autorité ≥ 0,5)</button>' : ''}
         ${n.type === 'pid' ? '<button class="secondaire" id="pid-rob" title="Pour chaque circuit sans robinetterie : vannes d\'isolement, vanne d\'équilibrage, filtre, manchettes, thermomètres ; à compléter avec les Kv des fiches">🔩 Robinetterie type par circuit</button><button class="secondaire" id="pid-nomenc" title="Classeur Excel : nomenclature par circuit (repères, DN, fabricant, référence, fiche, ΔP) et liste d\'achat regroupée">📦 Nomenclature et liste d\'achat (Excel)</button>' : ''}
@@ -1158,6 +1160,28 @@ Vues.note = {
       let a = Liens.reseauxDeCta(et.notes, n).find(x => x.type === 'aero');
       if (!a) { a = nouvelleNote('aero'); a.entrees.cta = n.id; a.entrees.titreInstallation = n.titre; a.titre = `Réseau aéraulique — ${n.titre}`; et.notes.splice(et.notes.indexOf(n) + 1, 0, a); enregistrer(et); toast('Schéma aéraulique créé et relié à la CTA : saisissez les zones et les bouches, débits et pertes de charge remontent dans la CTA.', 7000); }
       location.hash = `#/etude/${et.id}/${a.id}`;
+    };
+    // Puissance d'un bâtiment : production proposée (nouveau schéma de principe) ou circuit ajouté à un schéma existant
+    const bprod = root.querySelector('#bat-production');
+    if (bprod) bprod.onclick = () => {
+      const appliquer = pidId => {
+        const r = Liens.productionDepuisBatiment(et, n, uidE, pidId ? { pid: pidId } : {});
+        if (!r) return;
+        if (!r.nouvelles.length && !r.circuits.length) return toast(r.texte || 'Rien à ajouter : la production reprend déjà ce bâtiment.', 7000);
+        et.notes.splice(et.notes.indexOf(n) + 1, 0, ...r.nouvelles); enregistrer(et);
+        toast([...r.alertes.filter(a => a.niveau === 'ok').map(a => a.texte), r.texte].filter(Boolean).join(' '), 9000);
+        const cible = r.nouvelles[0] || r.completees[0];
+        if (cible) location.hash = `#/etude/${et.id}/${cible.id}`; else App.render();
+      };
+      const pids = et.notes.map((x, i) => [x, i]).filter(([x]) => x.type === 'pid');
+      if (!pids.length) return appliquer('');
+      const reg = p => (Schema.REGIMES[(p.entrees || {}).reseau || Notes.defauts('pid').reseau] || [''])[0];
+      const b = Modal.open(`<h2>🏭 Production du bâtiment</h2><p class="muted petit">Un schéma de principe existe déjà : ajoutez-y le circuit du bâtiment (puissance reprise de ce calcul), ou créez une nouvelle production à la puissance du bâtiment. Un besoin que le schéma choisi ne dessert pas (froid sur un schéma chaud…) reçoit sa propre production.</p>
+        <div class="choix-production">${pids.map(([p, i], k) => `<label style="display:flex;gap:.6em;align-items:center;margin:.4em 0;font-weight:normal"><input type="radio" style="width:auto;flex:none" name="bat-prod" value="${p.id}"${k ? '' : ' checked'}> <span>Ajouter le circuit au schéma N${i + 1} — ${esc(p.titre)} <span class="muted petit">(${esc(reg(p))})</span></span></label>`).join('')}
+        <label style="display:flex;gap:.6em;align-items:center;margin:.4em 0;font-weight:normal"><input type="radio" style="width:auto;flex:none" name="bat-prod" value=""> Créer une nouvelle production</label></div>
+        <div class="actions"><button class="secondaire" data-r="0">Annuler</button><button data-r="1" id="bat-prod-ok">Valider</button></div>`);
+      b.querySelector('[data-r="0"]').onclick = () => Modal.close();
+      b.querySelector('#bat-prod-ok').onclick = () => { const v = (b.querySelector('input[name="bat-prod"]:checked') || {}).value || ''; Modal.close(); appliquer(v); };
     };
     const liees = root.querySelector('#notes-liees');
     if (liees) liees.onclick = () => {

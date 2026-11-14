@@ -867,12 +867,20 @@ const Notes = ((D, C) => {
     const v = ligne ? String(ligne.amont ?? '').trim() : '';
     return [['', vide], ...reps.map(r => [r, r]), ...(v && !reps.includes(v) ? [[v, v]] : [])];
   };
-  function calculer(type, entrees) {
+  // ctx (facultatif) : étude, pour les listes de choix qui en dépendent
+  function calculer(type, entrees, ctx) {
     const T = TYPES[type];
     if (!T) throw new Error(`Type de calcul inconnu : ${type}`);
     const e = { ...defauts(type), ...(entrees || {}) };
-    // Tube choisi absent de la série (série modifiée) : premier tube de la série
-    T.champs.filter(c => c.t === 's' && typeof c.o === 'function').forEach(c => { const o = c.o(e); if (!o.some(([v]) => v === e[c.k])) e[c.k] = o[0][0]; });
+    // Tube choisi absent de la série (série modifiée) : premier tube de la série. Liste qui dépend de l'étude (fonction à
+    // deux paramètres : notes, circuits, CTA…) : sans étude, elle serait vide ou incomplète, la valeur choisie est gardée ;
+    // liste vide ou en échec : valeur gardée
+    T.champs.filter(c => c.t === 's' && typeof c.o === 'function').forEach(c => {
+      if (c.o.length >= 2 && !ctx) return;
+      let o; try { o = c.o(e, ctx); } catch (err) { return; }
+      if (!Array.isArray(o) || !o.length || !Array.isArray(o[0])) return;
+      if (!o.some(([v]) => v === e[c.k] || (v !== '' && e[c.k] !== '' && e[c.k] !== undefined && e[c.k] !== null && String(v) === String(e[c.k])))) e[c.k] = o[0][0];
+    });
     try {
       const r = T.calcul(e);
       // Fiche technique chargée (pompe, vase, ballon, générateur) : contrôles du matériel choisi face au calcul
