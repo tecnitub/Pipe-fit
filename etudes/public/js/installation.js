@@ -147,7 +147,7 @@ const Installation = ((N, Sc, L) => {
       if (!refs.length && !Sc.sousStation(e) && !Sc.sourceBoucle(e)) return;
       refs.forEach(r => pris.add(`${r.pid.id}|${r.i}`));
       const d = ctx.dim(p), pa = d ? Sc.primaireAmont(e, d) : null, dc = refs.length ? ((ctx.dim(refs[0].pid) || {}).circuits || [])[refs[0].i] : null;
-      const c = { cle: `${p.id}:schema`, type: 'schema', libelle: `${p.titre || 'Schéma de principe'} (schéma aval${pa ? ` : ${pa.libelle}` : ''})`, source: source(p), saison: !d || d.co || d.chaud ? 'chaud' : 'froid', emetteur: null,
+      const c = { cle: `${p.id}:schema`, type: 'schema', libelle: `${p.titre || 'Schéma de principe'} (schéma aval${pa ? ` : ${pa.libelle}` : ''})`, source: source(p), saison: saisonsSchema(et, p).has('chaud') ? 'chaud' : 'froid', emetteur: null,
         P: pa ? arrondi(pa.P, 1) : null, Q: dc ? arrondi(dc.Q, 3) : null, dp: pa ? arrondi(pa.dp, 1) : null, regime: e.regimePrim && (Sc.sousStation(e) || Sc.sourceBoucle(e)) ? `primaire ${e.regimePrim} °C` : d ? d.regime : '' };
       repartir([c], refs.map(({ pid, i }) => lienPid(et, ctx, pid, i)));
     });

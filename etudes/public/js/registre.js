@@ -399,11 +399,13 @@ const Registre = (() => {
   }
   /* ---------- Matériel retenu rempli depuis le registre (pas de ressaisie) ---------- */
   // Lignes du métré dont le calcul a un modèle du registre : fabricant et référence repris (jamais un choix déjà fait) ;
-  // terminaux (absents du métré) : une ligne par modèle placé, quantité = nombre d'emplacements. Renvoie le nombre de changements
+  // calculs annexes : ligne de leur matériel principal ; terminaux et radiateurs (absents du métré) : une ligne par modèle
+  // placé, quantité = nombre d'emplacements (radiateurs : nombre calculé). Ligne validée ou soumise jamais modifiée dans
+  // son choix. Renvoie le nombre de changements
   function versMateriel(et, postes) {
     const m = et.materiel = et.materiel || {}, notes = (et && et.notes) || [], src = n => `N${notes.indexOf(n) + 1}`;
     let k = 0;
-    const remplir = (cle, x) => { const s = m[cle] || {}; if (String(s.reference || '').trim() || !(x.fabricant || x.reference)) return; m[cle] = { ...s, fabricant: x.fabricant || '', reference: x.reference || '', registre: x.id }; k++; };
+    const remplir = (cle, x) => { const s = m[cle] || {}; if (String(s.reference || '').trim() || /Valid|Soumis/.test(String(s.statut || '')) || !(x.fabricant || x.reference)) return; m[cle] = { ...s, fabricant: x.fabricant || '', reference: x.reference || '', registre: x.id }; k++; };
     (postes || []).forEach(p => {
       if (!p.cle || p.unite !== 'u') return;
       const pref = p.cle.split('|')[0], srcs = [...(p.sources || [])];
@@ -417,8 +419,20 @@ const Registre = (() => {
         else if (pref === 'pompe' && n.type === 'arbo') x = e.pompeEq && parId(et, e.pompeEq);
         // Bouches : la ligne du métré porte la référence de la fiche (taille = modèle) ; les bouches génériques restent à choisir
         else if (pref === 'bouche' && n.type === 'aero') x = [...new Set((e.bouchesL || []).filter(b => b && b.eq).map(b => b.eq))].map(id => parId(et, id)).find(y => y && p.cle.endsWith(`|${nomEq(y)}`)) || null;
+        // Calcul annexe relié à un modèle (unité extérieure DRV, échangeur, déshumidificateur, groupe de chambre froide,
+        // extracteur) : ligne « annexe|<type>|<repère> » de son matériel principal (poste marqué « modele » par le métré)
+        else if (pref === 'annexe' && p.modele && ANNEXES[n.type] && p.cle.startsWith(`annexe|${n.type}|`) && e.eq) { const y = parId(et, e.eq); x = y && y.type === ANNEXES[n.type] ? y : null; }
         if (x) { remplir(p.cle, x); break; }
       }
+    });
+    // Radiateurs (absents du métré) : une ligne par modèle relié à une sélection de radiateurs, quantité = radiateurs de
+    // ce modèle calculés (sinon radiateurs prévus) sur toutes les sélections qui l'utilisent
+    const radiateurs = new Map();
+    notes.filter(n => n.type === 'radiateurs' && (n.entrees || {}).eq).forEach(n => {
+      const x = parId(et, n.entrees.eq); if (!x || x.type !== 'radiateur') return;
+      let v = {};
+      try { const L = typeof Liens !== 'undefined' ? Liens : require('./liens'); v = N().calculer('radiateurs', L.resoudre(et, n).entrees).valeurs || {}; } catch (err) { v = {}; }
+      radiateurs.set(x.id, (radiateurs.get(x.id) || 0) + (Number(v.nbFab) > 0 ? Number(v.nbFab) : Number(v.nb) > 0 ? Number(v.nb) : 0));
     });
     // Terminaux : une ligne par modèle placé
     const emp = emplacements(et), vus = new Set();
@@ -429,6 +443,15 @@ const Registre = (() => {
       const s = m[cle] || {}, d = `${TYPES.terminal} ${nomEq(x)}`;
       if (s.qte !== q || !s.libre || s.designation !== d || (!String(s.reference || '').trim() && x.reference)) {
         m[cle] = { ...s, libre: true, registre: x.id, chapitre: 'Terminaux', designation: d, qte: q, ...(String(s.reference || '').trim() ? {} : { fabricant: x.fabricant || '', reference: x.reference || '' }) }; k++;
+      }
+    });
+    radiateurs.forEach((q, id) => {
+      const x = parId(et, id), cle = `reg|${id}`;
+      if (!x || !(q > 0)) return;
+      vus.add(cle);
+      const s = m[cle] || {}, d = `${TYPES.radiateur} ${nomEq(x)}`, garde = String(s.reference || '').trim() || /Valid|Soumis/.test(String(s.statut || ''));
+      if (s.qte !== q || !s.libre || s.designation !== d || (!garde && x.reference && s.reference !== x.reference)) {
+        m[cle] = { ...s, libre: true, registre: x.id, chapitre: 'Émetteurs', designation: d, qte: q, ...(garde ? {} : { fabricant: x.fabricant || '', reference: x.reference || '' }) }; k++;
       }
     });
     Object.keys(m).forEach(cle => { if (/^reg\|/.test(cle) && !vus.has(cle) && !/Valid|Soumis/.test(String(m[cle].statut || ''))) { delete m[cle]; k++; } });
