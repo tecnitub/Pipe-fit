@@ -57,6 +57,11 @@ const ocrDir = path.join(path.dirname(out), 'vendor', 'tesseract');
 fs.mkdirSync(ocrDir, { recursive: true });
 ['tesseract.min.js', 'worker.min.js', 'tesseract-core-simd-lstm.wasm.js'].forEach(f => fs.copyFileSync(path.join(root, 'public/vendor/tesseract', f), path.join(ocrDir, f)));
 fs.writeFileSync(path.join(ocrDir, 'fra-traineddata.js'), `window.OCR_MODELE_B64 = '${fs.readFileSync(path.join(root, 'public/vendor/tesseract/fra.traineddata.gz')).toString('base64')}';\n`);
+// Démo ouverte depuis un fichier (file://) : le worker de Tesseract ne peut pas charger ses scripts (importScripts refusé) ;
+// leurs sources sont fournies dans un script (window.OCR_SOURCES_FICHIER), le worker est construit en Blob par ocr.js.
+// Caractères non ASCII (dont U+FFFD) écrits en séquences d'échappement.
+const enChaine = f => JSON.stringify(fs.readFileSync(path.join(root, 'public/vendor/tesseract', f), 'utf8')).replace(/[\u007f-\uffff]/g, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+fs.writeFileSync(path.join(ocrDir, 'ocr-fichier.js'), `window.OCR_SOURCES_FICHIER = { coeur: ${enChaine('tesseract-core-simd-lstm.wasm.js')}, worker: ${enChaine('worker.min.js')} };\n`);
 
 // Lecture des offres et devis fournisseurs (pdf.js) : publiés à côté de la page dans vendor/pdfjs/
 const pdfDir = path.join(path.dirname(out), 'vendor', 'pdfjs');

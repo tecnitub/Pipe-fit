@@ -143,13 +143,35 @@ const PdfLecture = (() => {
     if (typeof OCR === 'undefined') throw new Error('Lecture des scans indisponible');
     return String(await OCR.lire(dataUrl, progression)).split(/\r?\n/);
   }
+  // OCR indisponible (démo ouverte depuis un fichier, module non publié, worker refusé) : la lecture continue sans OCR,
+  // le résultat est marqué (ocrIndisponible, message) et l'interface prévenue (message affiché, événement « ocr-indisponible »)
+  function messageOcr(e) {
+    if (typeof location !== 'undefined' && location.protocol === 'file:' && typeof OCR !== 'undefined' && OCR.MESSAGE_FICHIER) return OCR.MESSAGE_FICHIER;
+    const m = String((e && e.message) || e || '');
+    return /^OCR indisponible|^Lecture des caractères \(OCR\) indisponible/.test(m) ? m : `Lecture des caractères (OCR) indisponible${m ? ` : ${m}` : ''} ; texte des pages scannées non lu.`;
+  }
+  function signaler(message) {
+    try {
+      if (typeof toast === 'function') toast(message, 8000);
+      else if (typeof App !== 'undefined' && App && typeof App.toast === 'function') App.toast(message, 8000);
+      if (typeof window !== 'undefined' && typeof CustomEvent === 'function') window.dispatchEvent(new CustomEvent('ocr-indisponible', { detail: { message } }));
+    } catch (err) { /* sans interface */ }
+  }
 
   // Fichier (PDF ou image) -> { lignes, ocr, pages } ; opts : pagesMax (12 par défaut), ocr (false : pages scannées ignorées)
+  // OCR indisponible : { …, ocrIndisponible: true, message } (pages scannées laissées sans texte, jamais d'échec de la lecture)
   async function lire(fichier, progression = () => {}, opts = {}) {
     if (!fichier || typeof fichier.arrayBuffer !== 'function') throw new Error('Aucun fichier à lire');
+    let indispo = null;
+    const parOcr = async (dataUrl, prog) => {
+      if (indispo) return [];
+      try { return await ocrImage(dataUrl, prog); } catch (e) { indispo = messageOcr(e); signaler(indispo); return []; }
+    };
+    const marque = () => (indispo ? { ocrIndisponible: true, message: indispo } : {});
     if (/^image\//.test(fichier.type) || /\.(jpe?g|png|webp)$/i.test(fichier.name || '')) {
       const dataUrl = await new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = ko; r.readAsDataURL(fichier); });
-      return { lignes: await ocrImage(dataUrl, progression), ocr: true, pages: 1 };
+      const lignes = await parOcr(dataUrl, progression);
+      return { lignes, ocr: !indispo, pages: 1, ...marque() };
     }
     const lib = await charger();
     const doc = await lib.getDocument({ data: new Uint8Array(await fichier.arrayBuffer()), isEvalSupported: false, disableFontFace: true, useSystemFonts: false }).promise;
@@ -164,15 +186,16 @@ const PdfLecture = (() => {
       if (illisible) charabias++;
       if (l.join('').replace(/\s/g, '').length > 40) { lignes.push(...l); continue; }
       if (opts.ocr === false) continue;
-      // Page sans texte (scan) : rendue en image puis lue
-      ocr = true;
+      // Page sans texte (scan) : rendue en image puis lue (OCR indisponible : page laissée sans texte)
+      if (indispo) continue;
       const vue = page.getViewport({ scale: 2 }), c = document.createElement('canvas');
       c.width = vue.width; c.height = vue.height;
       await page.render({ canvasContext: c.getContext('2d'), viewport: vue }).promise;
-      lignes.push(...await ocrImage(c.toDataURL('image/png'), x => progression((p - 1 + x) / n)));
+      const lu = await parOcr(c.toDataURL('image/png'), x => progression((p - 1 + x) / n));
+      if (!indispo) { ocr = true; lignes.push(...lu); }
     }
     progression(1);
-    return { lignes, ocr, pages: doc.numPages, ...(charabias ? { illisible: charabias } : {}) };
+    return { lignes, ocr, pages: doc.numPages, ...(charabias ? { illisible: charabias } : {}), ...marque() };
   }
   return { lire, enLignes, reparer, ligatures, accents, charabia };
 })();

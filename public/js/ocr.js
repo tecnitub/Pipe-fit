@@ -12,7 +12,33 @@ const OCR = (() => {
     r.onerror = () => ko(new Error('Stockage du navigateur indisponible'));
     r.onsuccess = () => { const t = r.result.transaction('keyval', 'readwrite'); t.objectStore('keyval').put(valeur, cle); t.oncomplete = () => { r.result.close(); ok(); }; t.onerror = () => ko(t.error); };
   });
+  // Page ouverte depuis un fichier (démo en file://) : le navigateur refuse importScripts d'un fichier local dans le worker.
+  // Le worker est alors construit en Blob depuis les sources fournies en script (ocr-fichier.js, produit par demo/build.js :
+  // window.OCR_SOURCES_FICHIER = { coeur, worker }) ; le modèle français (window.OCR_MODELE_B64) lui est servi par un fetch
+  // remplacé dans le worker, sans cache du navigateur.
+  const MESSAGE_FICHIER = 'OCR indisponible dans la démo ouverte depuis un fichier : ouvrez l\'application installée ou servez la démo en HTTP';
+  const enFichier = () => typeof location !== 'undefined' && location.protocol === 'file:';
+  const indisponible = (message, cause) => Object.assign(new Error(message), { code: 'OCR_INDISPONIBLE', cause });
+  // Promesse bornée : un worker qui ne répond pas ne bloque pas la lecture
+  const borne = (p, ms) => Promise.race([p, new Promise((ok, ko) => setTimeout(() => ko(new Error('délai dépassé')), ms))]);
+  async function workerFichier() {
+    if (!window.OCR_SOURCES_FICHIER) await chargerScript(`${dossier()}ocr-fichier.js`);
+    if (!window.OCR_MODELE_B64) await chargerScript(`${dossier()}${window.OCR_MODELE_JS || 'fra-traineddata.js'}`);
+    const S = window.OCR_SOURCES_FICHIER || {};
+    if (!S.coeur || !S.worker || !window.OCR_MODELE_B64) throw new Error('sources du module absentes');
+    const fetchLangue = `self.OCR_LANGUE_B64 = ${JSON.stringify(window.OCR_MODELE_B64)};\n(() => { const f = self.fetch; self.fetch = (u, o) => (/\\.traineddata/.test(String(u)) ? Promise.resolve(new Response(Uint8Array.from(atob(self.OCR_LANGUE_B64), c => c.charCodeAt(0)))) : f(u, o)); })();\n`;
+    const url = URL.createObjectURL(new Blob([fetchLangue, S.coeur, '\n;\n', S.worker], { type: 'application/javascript' }));
+    return Tesseract.createWorker('fra', 1, {
+      workerPath: url, workerBlobURL: false, langPath: 'ocr-fichier', cacheMethod: 'none',
+      logger: m => { if (suivi && m.status === 'recognizing text') suivi(m.progress); },
+    });
+  }
   async function preparer() {
+    if (enFichier()) {
+      if (!worker) worker = (async () => { if (!window.Tesseract) await chargerScript(`${dossier()}tesseract.min.js`); return borne(workerFichier(), 120000); })()
+        .catch(e => { worker = null; throw indisponible(MESSAGE_FICHIER, e); });
+      return worker;
+    }
     if (!window.Tesseract) await chargerScript(`${dossier()}tesseract.min.js`);
     if (!worker) {
       // Démo en ligne : le modèle français est fourni dans un script (window.OCR_MODELE_JS) au lieu du fichier .gz,
@@ -24,7 +50,7 @@ const OCR = (() => {
       worker = Tesseract.createWorker('fra', 1, {
         workerPath: `${dossier()}worker.min.js`, corePath: `${dossier()}tesseract-core-simd-lstm.wasm.js`, langPath: dossier().replace(/\/$/, ''),
         logger: m => { if (suivi && m.status === 'recognizing text') suivi(m.progress); },
-      }).catch(e => { worker = null; throw e; });
+      }).catch(e => { worker = null; throw indisponible(`Lecture des caractères (OCR) indisponible : ${(e && e.message) || e}`, e); });
     }
     return worker;
   }
@@ -50,6 +76,7 @@ const OCR = (() => {
     });
   }
   return {
+    MESSAGE_FICHIER,
     // Texte du ticket ; progression(0..1) pendant la lecture
     async lire(dataUrl, progression) {
       suivi = progression || null;
