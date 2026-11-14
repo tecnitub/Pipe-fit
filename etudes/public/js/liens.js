@@ -10,6 +10,7 @@
 const Liens = ((N, Sc) => {
   const nf = N.nf, num = N.num;
   const copie = o => JSON.parse(JSON.stringify(o));
+  const normL = s => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
   const ROLES = { reseau: 'réseau et pompe', vanne: 'vanne de régulation', vase: 'vase d\'expansion' };
 
   // Entrées effectives d'une note : { entrees, verrous: { champ ou 'liste.i.colonne': libellé de la source }, alertes, source }
@@ -36,12 +37,31 @@ const Liens = ((N, Sc) => {
       const vide = v => v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length);
       const proposer = (vals, src) => Object.entries(vals || {}).forEach(([k, v]) => { if (vide(v) || (typeof v === 'number' && !Number.isFinite(v))) return; const saisi = note.entrees && !vide(note.entrees[k]); if (!saisi) { e[k] = v; (e._repris = e._repris || {})[k] = src; } });
       const autres = notes.filter(n => n !== note && !pile.has(n.id));
+      // Lignes reprises de l'étude (méthode commune des calculs annexes) : lignes « _auto » ajoutées après les lignes
+      // saisies, cellules verrouillées (« liste.i.colonne ») ; une ligne saisie de même clé remplace la ligne reprise et
+      // en récupère les cellules laissées vides (l'utilisateur complète une ligne reprise en saisissant son repère)
+      const reprendreLignes = (liste, lignesSource, { cle = 'rep', colonnesVerrouillees, libelle: lib } = {}) => {
+        const l = e[liste] = Array.isArray(e[liste]) ? e[liste].slice() : [];
+        (lignesSource || []).forEach(a => {
+          if (!a || typeof a !== 'object') return;
+          const src = a._auto || lib || 'l\'étude', k0 = normL(a[cle]);
+          const j = k0 ? l.findIndex(x => x && !x._auto && normL(x[cle]) === k0) : -1;
+          if (j >= 0) { const x = l[j] = { ...l[j] }; Object.keys(a).filter(k => k[0] !== '_' && vide(x[k]) && !vide(a[k])).forEach(k => { x[k] = a[k]; }); return; }
+          const i = l.length; l.push({ ...a, _auto: src });
+          const cols = typeof colonnesVerrouillees === 'function' ? colonnesVerrouillees(a) : Array.isArray(colonnesVerrouillees) ? colonnesVerrouillees : Object.keys(a).filter(k => k[0] !== '_');
+          cols.forEach(k => { verrous[`${liste}.${i}.${k}`] = src; });
+        });
+        return l;
+      };
       try {
-        T.lier({ etude, note, notes: autres, e, imposer, proposer, alertes, libelle,
+        T.lier({ etude, note, notes: autres, e, imposer, proposer, reprendreLignes, alertes, libelle,
           resoudre: n => resoudre(etude, n, pile).entrees,
           calculer: n => { try { return N.calculer(n.type, resoudre(etude, n, pile).entrees); } catch (err) { return { valeurs: {}, alertes: [] }; } } });
       } catch (err) { alertes.push({ niveau: 'attention', texte: `Données de l'étude non reprises : ${err.message}` }); }
     }
+    // CTA ↔ schéma de principe sans liaison manuelle : circuit « batterie de CTA » relié automatiquement à la seule CTA
+    // qui peut s'y raccorder (et réciproquement) ; ambiguïté signalée, rien n'est relié
+    if (note.type === 'pid' || note.type === 'cta') autoCta(etude, note, e, alertes, libelle);
     // Schéma alimenté par le circuit d'un autre schéma : fluide et régime repris avant tout calcul de ses circuits
     const amont = note.type === 'pid' ? lienAmont(etude, note, e, verrous, alertes, libelle, pile) : null;
     // Schéma : puissances des circuits reprises des bilans
@@ -54,6 +74,8 @@ const Liens = ((N, Sc) => {
         const v = N.calculer(src.type, resoudre(etude, src, pile).entrees).valeurs;
         c.P = Math.round((froid ? v.Pfroid : v.Pchauf) / 100) / 10;
         verrous[`circuits.${i}.P`] = libelle(src);
+        // Change-over : puissance froid du circuit reprise elle aussi (bilan ou bâtiment chaud et froid)
+        if (e.reseau === 'co' && v.Pfroid > 0) { c.Pf = Math.round(v.Pfroid / 100) / 10; verrous[`circuits.${i}.Pf`] = libelle(src); }
       });
     }
     // Terminaux : régimes d'eau chaude et glacée repris de la production choisie (schéma de principe)
@@ -483,12 +505,15 @@ const Liens = ((N, Sc) => {
     const bats = [...(!['froide', 'aucune'].includes(f) ? [{ b: 'bc', saison: 'chaud', libelle: co ? 'Batterie change-over (eau chaude)' : 'Batterie chaude' }] : []),
       ...(!['non', 'aucune'].includes(f) ? [{ b: 'bf', saison: 'froid', libelle: co ? 'Batterie change-over (eau glacée)' : 'Batterie froide' }] : [])];
     const refs = circuitsDeAnnexe(notes, cta).map(r => ({ ...r, couvre: couvertParCircuit(etude, r.pid) }));
+    // Liaison automatique (seul circuit « batterie de CTA » libre) : donnée à part (auto), la batterie reste à raccorder
+    const autos = liaisonsAutoCta(etude).liens.filter(l => l.cta === cta);
     return bats.map(x => {
       const a = notes.find(n => n.type === 'arbo' && ((n.entrees || {}).troncons || []).some(t => t.emetteur === `${cta.id}:${x.b}`));
       if (a) return { ...x, lien: { type: 'arbo', note: a, rep: a.entrees.troncons.find(t => t.emetteur === `${cta.id}:${x.b}`).rep } };
       const ref = refs.find(r => r.couvre.has(x.b));
       if (ref) return { ...x, lien: { type: 'pid', pid: ref.pid, i: ref.i } };
-      return { ...x, lien: null };
+      const au = autos.find(l => l.bats.includes(x.b));
+      return { ...x, lien: null, ...(au ? { auto: { type: 'pid', pid: au.pid, i: au.i, rep: au.rep } } : {}) };
     });
   }
   // Batteries desservies par un circuit du schéma de principe, selon son régime (change-over : chaude et froide)
@@ -532,6 +557,82 @@ const Liens = ((N, Sc) => {
   function circuitsDeAnnexe(notes, note) {
     return notes.filter(n => n.type === 'pid').flatMap(pid => ((pid.entrees || {}).circuits || []).map((c, i) => [c, i]).filter(([c]) => c && c.annexe === note.id).map(([, i]) => ({ pid, i })));
   }
+
+  /* ---------- CTA ↔ schéma de principe : liaison automatique ---------- */
+  // Batteries à eau d'une CTA selon « Batteries à eau » : bc (chaude ou change-over), bf (froide ou change-over)
+  const BATS_CTA = f => [...(!['froide', 'aucune'].includes(f || 'oui') ? ['bc'] : []), ...(!['non', 'aucune'].includes(f || 'oui') ? ['bf'] : [])];
+  const libBat = (cta, b) => ((brut(cta).froid === 'co') ? 'batterie change-over' : b === 'bf' ? 'batterie froide' : 'batterie chaude');
+  // Batteries desservies par un schéma d'après ses entrées saisies (sans résolution : pas de liens circulaires)
+  function couvreBrut(pid) {
+    const ep = brut(pid);
+    if (ep.reseau === 'co') return new Set(['bc', 'bf']);
+    const R = Sc.REGIMES[ep.reseau], fr = ep.reseau === 'perso' ? num(ep.Tdep) < num(ep.Tret) : R && R[1] < R[2];
+    return new Set(fr ? ['bf'] : ['bc']);
+  }
+  // Circuit relié automatiquement (marque « _autoCta », recopiée si l'utilisateur modifie une liste encore proposée) :
+  // compté comme libre, jamais comme une liaison manuelle
+  const auto = c => !!(c && c._autoCta && c.annexe === c._autoCta);
+  // Liaisons automatiques de l'étude : { liens: [{ cta, pid, i, rep, bats }], ambigus: [{ type: 'batterie', cta, b, cands }
+  // | { type: 'circuit', pid, i, rep, ctas }] }. Règles :
+  //  - circuit libre : émetteur « Batterie de CTA », sans réseau annexe ni bilan relié, repère saisi (réseau annexe
+  //    choisi « — » : refus explicite, pas de liaison automatique) ;
+  //  - batterie libre : batterie à eau d'une CTA qui n'est ni sur une branche de réseau arborescent ni sur un circuit
+  //    relié à la main dont le régime la dessert (chaud pour la batterie chaude, froid pour la froide, change-over : les deux) ;
+  //  - liaison si la batterie n'a qu'un circuit possible et que ce circuit n'est demandé que par cette CTA ;
+  //  - « Détacher » (schéma ou CTA) supprime la liaison automatique (lienAuto: false).
+  function liaisonsAutoCta(etude) {
+    const notes = (etude && etude.notes) || [], out = { liens: [], ambigus: [] };
+    const pids = notes.filter(n => n.type === 'pid'), ctas = notes.filter(n => n.type === 'cta' && (n.entrees || {}).lienAuto !== false);
+    if (!pids.length || !ctas.length) return out;
+    const couv = new Map(pids.map(p => [p.id, couvreBrut(p)]));
+    const libres = pids.flatMap(p => (brut(p).circuits || []).map((c, i) => ({ pid: p, i, c, rep: String((c && c.rep) || '').trim() }))
+      .filter(({ c, rep }) => c && c.emetteur === 'cta' && (c.annexe === undefined || c.annexe === null || auto(c)) && !c.bilan && c.lienAuto !== false && rep));
+    if (!libres.length) return out;
+    const surArbo = new Set(notes.filter(n => n.type === 'arbo').flatMap(n => ((n.entrees || {}).troncons || []).map(t => t && t.emetteur)).filter(Boolean));
+    const bats = [];
+    ctas.forEach(cta => {
+      const manu = new Set();
+      circuitsDeAnnexe(notes, cta).forEach(r => { if (!auto(r.pid.entrees.circuits[r.i])) couv.get(r.pid.id).forEach(b => manu.add(b)); });
+      BATS_CTA(brut(cta).froid).forEach(b => { if (!manu.has(b) && !surArbo.has(`${cta.id}:${b}`)) bats.push({ cta, b, cands: libres.filter(x => couv.get(x.pid.id).has(b)) }); });
+    });
+    const cle = x => `${x.pid.id}|${x.i}`, demandes = new Map();
+    bats.forEach(x => x.cands.forEach(k => { if (!demandes.has(cle(k))) demandes.set(cle(k), new Set()); demandes.get(cle(k)).add(x.cta); }));
+    const liens = new Map();
+    bats.forEach(x => {
+      if (x.cands.length !== 1) return;
+      const k = x.cands[0];
+      if (demandes.get(cle(k)).size !== 1) return;
+      if (!liens.has(cle(k))) liens.set(cle(k), { cta: x.cta, pid: k.pid, i: k.i, rep: k.rep, bats: BATS_CTA(brut(x.cta).froid).filter(b => couv.get(k.pid.id).has(b)) });
+    });
+    out.liens = [...liens.values()];
+    const couvertes = new Set(out.liens.flatMap(l => l.bats.map(b => `${l.cta.id}:${b}`)));
+    bats.filter(x => x.cands.length > 1 && !couvertes.has(`${x.cta.id}:${x.b}`)).forEach(x => out.ambigus.push({ type: 'batterie', cta: x.cta, b: x.b, cands: x.cands.map(k => ({ pid: k.pid, i: k.i, rep: k.rep })) }));
+    libres.filter(k => !liens.has(cle(k)) && (demandes.get(cle(k)) || new Set()).size > 1).forEach(k => out.ambigus.push({ type: 'circuit', pid: k.pid, i: k.i, rep: k.rep, ctas: [...demandes.get(cle(k))] }));
+    return out;
+  }
+  // Pose les liaisons automatiques dans les entrées effectives (schéma : réseau annexe du circuit) et les alertes
+  function autoCta(etude, note, e, alertes, libelle) {
+    if (note.type === 'pid') (e.circuits || []).forEach(c => { if (c && c._autoCta) { if (c.annexe === c._autoCta) delete c.annexe; delete c._autoCta; } });
+    const A = liaisonsAutoCta(etude), libC = k => `« ${k.rep} » de ${libelle(k.pid)}`;
+    if (note.type === 'pid') {
+      A.liens.filter(l => l.pid === note).forEach(l => {
+        const c = (e.circuits || [])[l.i]; if (!c || c.annexe) return;
+        c.annexe = l.cta.id; c._autoCta = l.cta.id;
+        alertes.push({ niveau: 'ok', texte: `Circuit « ${l.rep} » relié automatiquement à la CTA ${libelle(l.cta)} (${l.bats.map(b => libBat(l.cta, b)).join(', ')}) : seule CTA de l'étude à raccorder sur ce circuit, puissance de batterie reprise. Autre choix (ou « — » pour ne rien relier) : « Réseau annexe relié » du circuit.` });
+      });
+      A.ambigus.forEach(x => {
+        if (x.type === 'circuit' && x.pid === note) alertes.push({ niveau: 'attention', texte: `Circuit « ${x.rep} » (batterie de CTA) : ${x.ctas.length} CTA peuvent s'y raccorder (${x.ctas.map(libelle).join(', ')}) — rien n'est relié automatiquement : choisissez la CTA dans « Réseau annexe relié » du circuit (ou « Raccorder » depuis la note de la CTA).` });
+        if (x.type === 'batterie' && x.cands.some(k => k.pid === note)) alertes.push({ niveau: 'attention', texte: `${libelle(x.cta)} (${libBat(x.cta, x.b)}) : ${x.cands.length} circuits « batterie de CTA » possibles (${x.cands.map(libC).join(', ')}) — rien n'est relié automatiquement : choisissez la CTA dans « Réseau annexe relié » du bon circuit.` });
+      });
+    } else {
+      A.liens.filter(l => l.cta === note).forEach(l => alertes.push({ niveau: 'ok', texte: `${l.bats.map(b => libBat(note, b)).join(' et ').replace(/^b/, 'B')} reliée(s) automatiquement au circuit ${libC(l)} (seul circuit « batterie de CTA » libre) : régime d'eau repris, puissance renvoyée au circuit.` }));
+      A.ambigus.forEach(x => {
+        if (x.type === 'batterie' && x.cta === note) alertes.push({ niveau: 'attention', texte: `${libBat(note, x.b).replace(/^b/, 'B')} : ${x.cands.length} circuits « batterie de CTA » possibles (${x.cands.map(libC).join(', ')}) — rien n'est relié automatiquement : raccordez-la au bon circuit (« Raccorder » ci-dessus, ou « Réseau annexe relié » dans le schéma).` });
+        if (x.type === 'circuit' && x.ctas.includes(note)) alertes.push({ niveau: 'attention', texte: `Circuit ${libC(x)} : ${x.ctas.length} CTA peuvent s'y raccorder (${x.ctas.map(libelle).join(', ')}) — rien n'est relié automatiquement : raccordez chaque CTA à son circuit.` });
+      });
+    }
+    return A;
+  }
   function lienHydro(etude, note, e, verrous, alertes, libelle, pile, amont) {
     const notes = (etude && etude.notes) || [];
     const imposer = (vals, lib) => Object.entries(vals).forEach(([k, v]) => { e[k] = v; verrous[k] = lib; });
@@ -562,9 +663,10 @@ const Liens = ((N, Sc) => {
         const lib = libelle(src), tr = src.type === 'arbo' ? { troncons: resoudre(etude, src, pile).entrees.troncons } : {}, v = N.calculer(src.type, { ...brut(src), ...tr, ...regime }).valeurs || {}, lock = k => { verrous[`circuits.${i}.${k}`] = lib; };
         if (src.type === 'cta') {
           const co = e.reseau === 'co', froid = (() => { const r = Sc.REGIMES[e.reseau]; return e.reseau === 'perso' ? num(e.Tdep) < num(e.Tret) : r && r[1] < r[2]; })();
-          if (!c.bilan) { c.P = Math.round((co || !froid ? v.Pchaud : v.Pfroid) * 10) / 10; lock('P'); }
-          if (co) { c.Pf = Math.round(v.Pfroid * 10) / 10; lock('Pf'); }
-          if (c.emetteur !== 'cta') { c.emetteur = 'cta'; lock('emetteur'); }
+          const libA = c._autoCta ? `CTA ${lib} (liaison automatique)` : lib, lockA = k => { verrous[`circuits.${i}.${k}`] = libA; };
+          if (!c.bilan) { c.P = Math.round((co || !froid ? v.Pchaud : v.Pfroid) * 10) / 10; lockA('P'); }
+          if (co) { c.Pf = Math.round(v.Pfroid * 10) / 10; lockA('Pf'); }
+          if (c.emetteur !== 'cta') { c.emetteur = 'cta'; lockA('emetteur'); }
           return;
         }
         // Réseau arborescent ou réseau et pompe : il décrit la distribution depuis le collecteur (longueur du circuit à 0)
@@ -597,10 +699,12 @@ const Liens = ((N, Sc) => {
     if (!ANNEXES.includes(note.type)) return null;
     if (note.type === 'cta') {
       const refs = circuitsDeAnnexe(notes, note), vus = [];
+      // Circuits reliés automatiquement (seul circuit « batterie de CTA » libre pour cette CTA)
+      liaisonsAutoCta(etude).liens.filter(l => l.cta === note && !refs.some(r => r.pid === l.pid && r.i === l.i)).forEach(l => refs.push({ pid: l.pid, i: l.i, auto: true }));
       refs.forEach(ref => {
         let d2; try { d2 = Sc.dimensionner(resoudre(etude, ref.pid, pile).entrees); } catch (err) { return; }
         const c2 = d2.circuits[ref.i]; if (!c2) return;
-        const lib2 = `${libelle(ref.pid)} (circuit ${c2.rep})`, r2 = c2.rc || c2.rcC;
+        const lib2 = `${libelle(ref.pid)} (circuit ${c2.rep}${ref.auto ? ', liaison automatique' : ''})`, r2 = c2.rc || c2.rcC;
         if (c2.rcC) imposer({ TcAller: c2.rcC[0], TcRetour: c2.rcC[1], TfAller: c2.rcF[0], TfRetour: c2.rcF[1] }, lib2);
         else if (r2[0] > r2[1]) imposer({ TcAller: r2[0], TcRetour: r2[1] }, lib2);
         else imposer({ TfAller: r2[0], TfRetour: r2[1] }, lib2);
@@ -658,7 +762,11 @@ const Liens = ((N, Sc) => {
   // Détache une note de ses sources : les valeurs reprises deviennent des valeurs saisies
   function detacher(etude, note) {
     const r = resoudre(etude, note), aval = note.type === 'pid' && circuitsDeAnnexe(etude.notes || [], note).length > 0;
+    // Liaison automatique CTA ↔ schéma : supprimée (et plus reproposée) au détachement
+    const autoLiee = note.type === 'cta' && liaisonsAutoCta(etude).liens.some(l => l.cta === note);
     note.entrees = r.entrees;
+    if (autoLiee) note.entrees.lienAuto = false;
+    if (note.type === 'pid') (note.entrees.circuits || []).forEach(c => { if (c && c._autoCta) { if (c.annexe === c._autoCta) { delete c.annexe; c.lienAuto = false; } delete c._autoCta; } });
     delete note.lien;
     if (note.entrees.cta) note.entrees.cta = '';
     // Réseau annexe détaché de son circuit ; schéma détaché de ses réseaux annexes (valeurs conservées)
@@ -717,6 +825,73 @@ const Liens = ((N, Sc) => {
     out.forEach(x => { x.calcul = x.robinet === undefined || OC.includes(x.type); });
     return out;
   }
+  /* ---------- Puissance d'un bâtiment → production (schéma de principe) ---------- */
+  // Puissance de générateur arrondie au-dessus : au kW sous 20 kW, à 5 kW sous 100 kW, à 10 kW au-delà
+  const arrondiP = P => (!(P > 0) ? 0 : P < 20 ? Math.ceil(P) : P < 100 ? Math.ceil(P / 5) * 5 : Math.ceil(P / 10) * 10);
+  // Production proposée selon le mode du bâtiment et ses puissances (kW) :
+  //  - chaud : PAC air/eau (45/35) en bâtiment neuf (étude « neuf : oui »), sinon chaudière gaz à condensation (55/45) ;
+  //  - froid : groupe froid air/eau (7/12) ;
+  //  - chaud et froid : PAC réversible en change-over si les deux puissances sont proches (la plus grande ≤ 1,5 × la plus
+  //    petite), sinon PAC air/eau (chaud) + groupe froid air/eau (froid), deux schémas ;
+  //  - au-delà de 100 kW : 2 générateurs en cascade, puissance unitaire = moitié arrondie.
+  // opts.generateur impose le générateur chaud ('chaudiere-cond', 'pac-air'…).
+  function choixProduction(besoins, Pch, Pfr, neuf, gen) {
+    const casc = P => (P > 100 ? 2 : 1), un = (P, n) => arrondiP(P / n);
+    const chaud = (g = gen || (neuf ? 'pac-air' : 'chaudiere-cond')) => ({ besoin: 'chaud', generateur: g, reseau: /^pac/.test(g) ? 'ch-45-35' : 'ch-55-45', nGen: casc(Pch), Pgen: un(Pch, casc(Pch)) });
+    const froid = () => ({ besoin: 'froid', generateur: 'gf-air', reseau: 'eg-7-12', nGen: casc(Pfr), Pgen: un(Pfr, casc(Pfr)) });
+    if (besoins.includes('chaud') && besoins.includes('froid')) {
+      if (Math.max(Pch, Pfr) <= 1.5 * Math.min(Pch, Pfr) && !gen) { const n = casc(Math.max(Pch, Pfr)); return [{ besoin: 'co', generateur: 'pac-rev', reseau: 'co', nGen: n, Pgen: un(Pch, n), PgenF: un(Pfr, n) }]; }
+      return [chaud(gen || 'pac-air'), froid()];
+    }
+    return besoins.includes('chaud') ? [chaud()] : besoins.includes('froid') ? [froid()] : [];
+  }
+  // Crée ou complète la production d'une note « Puissance d'un bâtiment » : un circuit dont la puissance est reprise du
+  // bâtiment (c.bilan) dans un schéma de principe existant (opts.pid, s'il dessert le besoin) et, pour les besoins non
+  // desservis, un nouveau schéma (générateur proposé, puissance = puissance du bâtiment arrondie). nouvelId : fonction
+  // qui rend un identifiant (ou identifiant de base). Rend { nouvelles, completees, circuits: [{ pid, rep }], alertes, texte }
+  // — les nouvelles notes sont à insérer dans l'étude par l'appelant (comme notesDepuisSchema).
+  function productionDepuisBatiment(et, note, nouvelId, opts = {}) {
+    if (!et || !note || note.type !== 'batiment') return null;
+    const es = resoudre(et, note).entrees, v = N.calculer('batiment', es).valeurs || {}, mode = es.mode || 'les-deux';
+    const Pch = num(v.Pchauf) / 1000, Pfr = num(v.Pfroid) / 1000, out = { nouvelles: [], completees: [], circuits: [], alertes: [] };
+    let besoins = [...(mode !== 'froid' && Pch > 0 ? ['chaud'] : []), ...(mode !== 'chaud' && Pfr > 0 ? ['froid'] : [])];
+    if (!besoins.length) { out.alertes.push({ niveau: 'erreur', texte: 'Puissance du bâtiment nulle : renseignez la surface et les parois.' }); out.texte = out.alertes[0].texte; return out; }
+    const nom = String(es.nom || note.titre || 'Bâtiment').trim() || 'Bâtiment', ids = typeof nouvelId === 'function' ? nouvelId : (() => { let k = 0; return () => (k++ ? `${nouvelId}-${k}` : String(nouvelId)); })();
+    const LIB = { chaud: 'chauffage', froid: 'climatisation', co: 'chauffage et climatisation' };
+    const circuit = (pid, besoin) => {
+      const cs = pid.entrees.circuits = Array.isArray(pid.entrees.circuits) ? pid.entrees.circuits : copie(N.defauts('pid').circuits || []);
+      const deja = cs.find(c => c && c.bilan === note.id);
+      if (deja) { out.alertes.push({ niveau: 'info', texte: `${pid.titre} : le circuit « ${deja.rep} » reprend déjà la puissance de ce bâtiment.` }); return; }
+      const rep = repLibre(cs, `${nom} — ${LIB[besoin]}`);
+      cs.push({ rep, emetteur: besoin === 'chaud' ? 'radiateurs' : 'ventilo', P: '', regime: '', regulation: besoin === 'chaud' ? '3v' : '2v', L: 60, bilan: note.id });
+      out.circuits.push({ pid, rep });
+    };
+    // 1. Schéma existant choisi : circuit ajouté pour les besoins que son régime dessert
+    const exist = opts.pid ? (et.notes || []).find(n => n.id === opts.pid && n.type === 'pid') : null;
+    if (opts.pid && !exist) out.alertes.push({ niveau: 'attention', texte: 'Schéma de principe choisi introuvable : nouvelle production créée.' });
+    if (exist) {
+      const cv = couvertParCircuit(et, exist), sert = besoins.filter(b => cv.has(b === 'froid' ? 'bf' : 'bc'));
+      if (!sert.length) out.alertes.push({ niveau: 'attention', texte: `${exist.titre} : régime ${exist.entrees && exist.entrees.reseau ? `« ${(Sc.REGIMES[exist.entrees.reseau] || [exist.entrees.reseau])[0]} »` : ''} sans rapport avec le besoin du bâtiment (${besoins.map(b => LIB[b]).join(', ')}) : nouvelle production créée.` });
+      else {
+        circuit(exist, sert.length > 1 ? 'co' : sert[0]); out.completees.push(exist);
+        // Production du schéma plus petite que le besoin : signalée (générateur laissé tel quel)
+        const eb = brut(exist), Pprod = (multiP(eb)) || num(eb.nGen, 1) * num(eb.Pgen);
+        if (sert.includes('chaud') && Pprod > 0 && Pprod < Pch) out.alertes.push({ niveau: 'attention', texte: `${exist.titre} : production ${nf(Pprod, 0)} kW pour ${nf(Pch, 1)} kW de chauffage du bâtiment (en plus des autres circuits) : générateur à revoir.` });
+        besoins = besoins.filter(b => !sert.includes(b));
+      }
+    }
+    // 2. Besoins restants : nouvelle production
+    const neuf = et.neuf === 'oui', prods = choixProduction(besoins, Pch, Pfr, neuf, opts.generateur);
+    prods.forEach(p => {
+      const titre = `Production — ${nom}${prods.length > 1 ? ` (${p.besoin === 'froid' ? 'froid' : 'chaud'})` : ''}`;
+      const pid = { id: ids(), type: 'pid', titre, commentaire: '', entrees: { ...N.defauts('pid'), titreInstallation: titre, reseau: p.reseau, generateur: p.generateur, nGen: String(p.nGen), Pgen: p.Pgen, ...(p.PgenF ? { PgenF: p.PgenF } : {}), circuits: [] } };
+      circuit(pid, p.besoin); out.nouvelles.push(pid);
+      out.alertes.push({ niveau: 'ok', texte: `${titre} : ${p.nGen > 1 ? `${p.nGen} × ` : ''}${(Sc.GENERATEURS[p.generateur] || [p.generateur])[0].toLowerCase()} de ${nf(p.Pgen, 0)} kW${p.PgenF ? ` (${nf(p.PgenF, 0)} kW froid)` : ''} pour ${[p.besoin !== 'froid' ? `${nf(Pch, 1)} kW de chauffage` : '', p.besoin !== 'chaud' ? `${nf(Pfr, 1)} kW de climatisation` : ''].filter(Boolean).join(' et ')}.` });
+    });
+    out.texte = [...out.circuits.map(c => `Circuit « ${c.rep} » ajouté à ${c.pid.titre} (puissance reprise du bâtiment).`), ...out.alertes.filter(a => a.niveau !== 'ok').map(a => a.texte)].join(' ');
+    return out;
+  }
+  const multiP = e => (Array.isArray(e.generateurs) && e.generateurs.some(g => g && g.type) ? e.generateurs.filter(g => g && g.type).reduce((a, g) => a + num(g.P), 0) : 0);
   // Ce que changerait, calcul par calcul, l'application de données d'étude (climat, type de bâtiment…) :
   // [{ noteId, note, champ, libelle, avant, apres }] — entrées résolues avant / après, champs simples seulement
   function changementsEtude(etude, modifs) {
@@ -732,6 +907,7 @@ const Liens = ((N, Sc) => {
     return out;
   }
   return { fichesInstallation, resoudre, calculer, changementsEtude, notesDepuisSchema, detacher, description, reseauxDeCta, circuitDeAnnexe, circuitsDeAnnexe, relierAuSchema, renommerCircuit, schemasAval, cycleSchema, chaineAmont, ANNEXES, arbosDeCta, batteriesLibres, brancherSurArbo, batteriesCta, couvertParCircuit, nf,
-    climatEtude, climatDeVille, TYPES_BATIMENT, CHAMPS_ETUDE, champEtude, typeBatimentEtude, gtbPid, COMBUSTION, optPid, optCircuits, optTroncons };
+    climatEtude, climatDeVille, TYPES_BATIMENT, CHAMPS_ETUDE, champEtude, typeBatimentEtude, gtbPid, COMBUSTION, optPid, optCircuits, optTroncons,
+    liaisonsAutoCta, productionDepuisBatiment, choixProduction, arrondiP };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'), typeof Schema !== 'undefined' ? Schema : require('./schema'));
 if (typeof module !== 'undefined') module.exports = Liens;
