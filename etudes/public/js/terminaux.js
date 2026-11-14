@@ -142,7 +142,7 @@ const Terminaux = ((N) => {
       }
       if (/debit d'air|debit air|air flow|airflow/.test(x)) { const q = nombres(x, 'm3/h').filter(n => n >= 50 && n < 20000); if (q.length) pose('Qair', Math.max(...q), i); }
       if (/\bkvs\b/.test(x)) { const m = /kvs[^0-9]{0,10}(\d+(?:[.,]\d+)?)/.exec(x); if (m) pose('Kvs', Number(m[1].replace(',', '.')), i); }
-      if (/alimentation|tension|power supply|supply/.test(x)) { if (/400\s*v|3\s*~|3\s*ph|tri/.test(x)) { if (!v.tension) { v.tension = 'tri'; src.tension = L[i].trim().slice(0, 140); } } else if (/230\s*v|220-240|1\s*~|mono/.test(x) && !v.tension) { v.tension = 'mono'; src.tension = L[i].trim().slice(0, 140); } }
+      if (/alimentation|tension|power supply|supply/.test(x)) { if (/400\s*v|3\s*~|3\s*ph|3\s*x\s*400|tri/.test(x)) { if (!v.tension) { v.tension = 'tri'; src.tension = L[i].trim().slice(0, 140); } } else if (/230\s*v|220-240|1\s*~|mono/.test(x) && !v.tension) { v.tension = 'mono'; src.tension = L[i].trim().slice(0, 140); } }
     });
     // Pompe : point de fonctionnement et puissance absorbée (lecture des fiches de pompes)
     try {

@@ -18,7 +18,13 @@ const PdfLecture = (() => {
   // Éléments de texte d'une page -> lignes (même hauteur), cellules (écart horizontal important), puis lignes de tableau :
   // une désignation écrite sur plusieurs lignes dans sa case est rattachée à la ligne qui porte les prix.
   function enLignes(items) {
-    const el = items.filter(i => i.str && i.str.trim()).map(i => ({ s: i.str, x: i.transform[4], y: i.transform[5], w: i.width || 0, h: Math.abs(i.transform[3]) || i.height || 8 }));
+    // Gras simulé par surimpression (même texte répété au même endroit, à un point près) : gardé une fois
+    const el = [], vus = new Map();
+    items.filter(i => i && i.str && i.str.trim() && i.transform).forEach(i => {
+      const e = { s: i.str, x: i.transform[4], y: i.transform[5], w: i.width || 0, h: Math.abs(i.transform[3]) || i.height || 8 }, memes = vus.get(e.s) || [];
+      if (memes.some(d => Math.abs(d.x - e.x) < 1.5 && Math.abs(d.y - e.y) < 1.5)) return;
+      memes.push(e); vus.set(e.s, memes); el.push(e);
+    });
     el.sort((a, b) => b.y - a.y || a.x - b.x);
     const lignes = [];
     el.forEach(e => {
@@ -76,6 +82,63 @@ const PdfLecture = (() => {
     return out;
   }
 
+  // ---- Réparations du texte extrait (pdf.js) -------------------------------------------------------------------------
+  // Ligatures sans correspondance Unicode dans la police : pdf.js rend « fi », « fl », « ffi » par un caractère nul (ou
+  // U+FFFD) : « frigori\0que », « \0uide », « E\0cacité ». La ligature est devinée d'après les lettres voisines.
+  function ligatures(s) {
+    if (!/[\u0000�]/.test(s)) return s;
+    return s.replace(/[\u0000�]/g, (c, i, t) => {
+      const av = t.slice(Math.max(0, i - 4), i).toLowerCase(), ap = t.slice(i + 1, i + 6).toLowerCase();
+      if (/^(?:cac|cien|san|cul)/.test(ap) && /[a-z]$/.test(av)) return 'ffi';
+      if (/(?:sou|insu|bou)$/.test(av) && /^(?:a|e|é)/.test(ap)) return 'ffl';
+      if (/^(?:oul|ab|n|l|x|g|c|ch|e[lr]|ss|t)/.test(ap)) return 'fi';
+      if (/^[éè]/.test(ap)) return /r[ée]$/.test(av) ? 'fl' : 'fi';
+      if (/^(?:u|o|a[mnc]|e[xu])/.test(ap)) return 'fl';
+      return 'fi';
+    });
+  }
+  // Accents posés à côté de la lettre (polices TeX, logiciels de sélection) : « d ́ebit », « Pi`ece », « Cˆable », « Fran ̧cais »
+  const MARQUES = { '´': '́', '`': '̀', 'ˆ': '̂', '¨': '̈' };
+  function accents(s) {
+    if (!/[̀-̧´`ˆ¨¸]/.test(s)) return s;
+    return s
+      // Marque combinante portée par une espace (la marque précède la lettre) : l'espace est retirée
+      .replace(/ ?([́̀̂̈])([A-Za-z])/g, (m, a, l) => l + a).replace(/ ?̧([cC])/g, '$1̧')
+      // Marque d'espacement collée devant une voyelle (ou une cédille devant c)
+      .replace(/([´`ˆ¨])([aeiouyAEIOUY])/g, (m, a, l) => l + MARQUES[a]).replace(/¸([cC])/g, '$1̧')
+      .normalize('NFC');
+  }
+  // Exposants perdus : « m /h » (m³/h, le « 3 » est passé sur la ligne au-dessus), « m§/h » (police symbole)
+  const unites = s => s.replace(/\bm(?: |§|\*)\/(h|s)\b/gi, (m, u) => `m³/${u.toLowerCase()}`);
+  // Espace rendue par un glyphe de symbole (« Débit⮎soufflage ») : un même symbole répété entre les mots d'une ligne
+  const espaces = s => { const m = s.match(/(?<=\S)[←-⯿-](?=\S)/g); if (!m || m.length < 2) return s; const c = m.sort((a, b) => m.filter(x => x === b).length - m.filter(x => x === a).length)[0]; return s.split(c).join(' '); };
+  // Polices sous-ensemble dont les codes sont les numéros de glyphe (ordre Macintosh standard) : « 7HVW » = « Test » ;
+  // une cellule qui contient des caractères de contrôle est décalée de 29 (espace = 3)
+  const MAC = { 98: 'Ä', 99: 'Å', 100: 'Ç', 101: 'É', 102: 'Ñ', 103: 'Ö', 104: 'Ü', 105: 'á', 106: 'à', 107: 'â', 108: 'ä', 109: 'ã', 110: 'å', 111: 'ç', 112: 'é', 113: 'è', 114: 'ê', 115: 'ë', 116: 'í', 117: 'ì', 118: 'î', 119: 'ï', 120: 'ñ', 121: 'ó', 122: 'ò', 123: 'ô', 124: 'ö', 125: 'õ', 126: 'ú', 127: 'ù', 128: 'û', 129: 'ü', 182: '’', 191: 'fi', 192: 'fl' };
+  const decaler = t => [...t].map(c => { const k = c.codePointAt(0); return k >= 3 && k <= 97 && k !== 32 ? String.fromCharCode(k + 29) : MAC[k] || c; }).join('');
+  const CTRL = /[\u0001-\u0008\u000B-\u001F]/, CTRLG = /[\u0001-\u0008\u000B-\u001F]/g;
+  const cellules = l => String(l).split('\t').map(c => (CTRL.test(c) ? decaler(c) : c)).join('\t');
+  // Part des mots « lisibles » (lettres avec une voyelle, sans suite de consonnes improbable) parmi les mots d'une page
+  function lisible(lignes) {
+    const mots = lignes.join(' ').split(/\s+/).filter(m => /[A-Za-zÀ-ÿ]/.test(m));
+    if (mots.length < 15) return 1;
+    const ok = mots.filter(m => {
+      const x = m.replace(/^[("'«“‘\-–•·]+|[)"'»”’.,;:!?%]+$/g, '');
+      return /^[A-Za-zÀ-ÿ0-9'’./°²³+\-–]+$/.test(x) && (/[aeiouyàâéèêëîïôöûü]/i.test(x) || /\d/.test(x)) && !/[bcdfghjklmnpqrstvwxz]{5}/i.test(x);
+    }).length;
+    return ok / mots.length;
+  }
+  // Charabia : police à encodage personnalisé (« !"#$% & ' ( ) ») ; caractères de contrôle nombreux, peu de mots lisibles
+  // même une fois les glyphes décalés
+  function charabia(lignes) {
+    const t = lignes.join(''), n = t.replace(/\s/g, '').length;
+    if (n < 40) return false;
+    return (t.match(CTRLG) || []).length / n > 0.03 && lisible(lignes.map(cellules)) < 0.6;
+  }
+  // Ligne réparée : glyphes décalés, ligatures (sans code, de compatibilité NFKC, « Ɵ » pour « ti », « Ʃ » pour « tt »),
+  // accents détachés, exposants perdus
+  const reparer = l => unites(espaces(accents(ligatures(CTRL.test(l) ? cellules(l) : String(l)).normalize('NFKC').replace(/Ɵ/g, 'ti').replace(/Ʃ/g, 'tt'))));
+
   async function ocrImage(dataUrl, progression) {
     if (typeof OCR === 'undefined') throw new Error('Lecture des scans indisponible');
     return String(await OCR.lire(dataUrl, progression)).split(/\r?\n/);
@@ -83,6 +146,7 @@ const PdfLecture = (() => {
 
   // Fichier (PDF ou image) -> { lignes, ocr, pages } ; opts : pagesMax (12 par défaut), ocr (false : pages scannées ignorées)
   async function lire(fichier, progression = () => {}, opts = {}) {
+    if (!fichier || typeof fichier.arrayBuffer !== 'function') throw new Error('Aucun fichier à lire');
     if (/^image\//.test(fichier.type) || /\.(jpe?g|png|webp)$/i.test(fichier.name || '')) {
       const dataUrl = await new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = ko; r.readAsDataURL(fichier); });
       return { lignes: await ocrImage(dataUrl, progression), ocr: true, pages: 1 };
@@ -90,12 +154,14 @@ const PdfLecture = (() => {
     const lib = await charger();
     const doc = await lib.getDocument({ data: new Uint8Array(await fichier.arrayBuffer()), isEvalSupported: false, disableFontFace: true, useSystemFonts: false }).promise;
     const n = Math.min(doc.numPages, opts.pagesMax || 12), lignes = [];
-    let ocr = false;
+    let ocr = false, charabias = 0;
     for (let p = 1; p <= n; p++) {
       progression((p - 1) / n);
       const page = await doc.getPage(p);
-      // Ligatures des polices : « ﬁ », « ﬂ » (NFKC) et « Ɵ » pour « ti » (« restauraƟon »), « Ʃ » pour « tt » (« hoƩe »)
-      const l = enLignes((await page.getTextContent()).items).map(x => String(x).normalize('NFKC').replace(/Ɵ/g, 'ti').replace(/Ʃ/g, 'tt'));
+      // Texte réparé (ligatures, accents, exposants) ; texte illisible (police à encodage personnalisé) : lu par OCR
+      const brut = enLignes((await page.getTextContent()).items), illisible = charabia(brut);
+      const l = illisible ? [] : brut.map(reparer);
+      if (illisible) charabias++;
       if (l.join('').replace(/\s/g, '').length > 40) { lignes.push(...l); continue; }
       if (opts.ocr === false) continue;
       // Page sans texte (scan) : rendue en image puis lue
@@ -106,7 +172,8 @@ const PdfLecture = (() => {
       lignes.push(...await ocrImage(c.toDataURL('image/png'), x => progression((p - 1 + x) / n)));
     }
     progression(1);
-    return { lignes, ocr, pages: doc.numPages };
+    return { lignes, ocr, pages: doc.numPages, ...(charabias ? { illisible: charabias } : {}) };
   }
-  return { lire, enLignes };
+  return { lire, enLignes, reparer, ligatures, accents, charabia };
 })();
+if (typeof module !== 'undefined') module.exports = PdfLecture;

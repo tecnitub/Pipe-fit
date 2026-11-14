@@ -4,7 +4,7 @@
 // équipements : valeurs reprises et verrouillées), résumé lisible. Module pur (navigateur, node, tests).
 const FicheAnnexes = (() => {
   const norm = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[’‘`]/g, "'")
-    .replace(/m\s*(?:³|3)\s*\/\s*h/g, 'm3/h').replace(/m\s*²|m2\b/g, 'm2').replace(/[δΔ]\s*/g, 'delta ').replace(/\s+/g, ' ').trim();
+    .replace(/m\s*(?:³|3)\s*\/\s*h/g, 'm3/h').replace(/m\s*²|m2\b/g, 'm2').replace(/[δΔ∆]\s*/g, 'delta ').replace(/\s+/g, ' ').trim();
   const nb = s => Number(String(s).replace(/[\s  ]/g, '').replace(',', '.'));
   const NUM = '(-?\\d+(?:[.,]\\d+)?)';
   // Types de fiche (registre, vrac) → calcul annexe qui les reçoit
@@ -14,7 +14,7 @@ const FicheAnnexes = (() => {
   const GENRE_TYPE = { drv: 'drvUE', radiateurs: 'radiateur', echangeurPlaques: 'echangeur', piscine: 'deshu', chambreFroide: 'groupeFroid', hotte: 'extracteur', parking: 'extracteur' };
   const LIBELLES = { Pfr: ['Puissance frigorifique', 'kW'], Pch: ['Puissance calorifique', 'kW'], EER: ['EER', ''], COP: ['COP', ''], Pel: ['Puissance électrique absorbée', 'kW'],
     fluide: ['Fluide frigorigène', ''], charge: ['Charge en fluide (usine)', 'kg'], Lpre: ['Longueur de liaison préchargée', 'm'], nUImax: ['Unités intérieures raccordables (maxi)', ''],
-    P50: ['Puissance à ΔT 50', 'W'], nExp: ['Exposant n', ''], Hmm: ['Hauteur', 'mm'], Lmm: ['Longueur', 'mm'], Veau: ['Contenance en eau', 'L'],
+    P50: ['Puissance à ΔT 50', 'W'], P50ml: ['Puissance à ΔT 50 par mètre', 'W/m'], nExp: ['Exposant n', ''], Hmm: ['Hauteur', 'mm'], Lmm: ['Longueur', 'mm'], Veau: ['Contenance en eau', 'L'],
     P: ['Puissance', 'kW'], dp1: ['Perte de charge primaire', 'kPa'], dp2: ['Perte de charge secondaire', 'kPa'], Sech: ['Surface d\'échange', 'm²'], nPlaques: ['Nombre de plaques', ''],
     mDeshu: ['Capacité de déshumidification', 'kg/h'], Qair: ['Débit d\'air', 'm³/h'], Tevap: ['Température d\'évaporation', '°C'], Pabs: ['Puissance absorbée', 'kW'],
     pDispo: ['Pression disponible', 'Pa'], tension: ['Tension', ''] };
@@ -77,6 +77,10 @@ const FicheAnnexes = (() => {
         break;
       }
     });
+    // Radiateur, panneau rayonnant : tableau des émissions (ΔT, puissance par mètre) et tableau des modèles (longueur,
+    // contenance) d'une documentation de gamme → exposant n, puissance à ΔT 50 de chaque modèle
+    let gamme = '', modeles = [];
+    if (type === 'radiateur') { const t = tableauRadiateur(L); if (t) { Object.entries(t.valeurs).forEach(([k, y]) => { if (v[k] === undefined) { v[k] = y; src[k] = t.source; } }); modeles = t.modeles; if (modeles.length >= 2) { gamme = `${modeles.length} modèles`; delete v.P50; } } }
     if (v.nUImax !== undefined) v.nUImax = Math.round(v.nUImax);
     if (v.nPlaques !== undefined) v.nPlaques = Math.round(v.nPlaques);
     // Fabricant et référence sans ligne dédiée : bibliothèque des fiches techniques de Pipe-Fit, sinon première ligne
@@ -86,7 +90,43 @@ const FicheAnnexes = (() => {
         const a = FT.analyser({ texte: L.join('\n') }); fabricant = fabricant || a.fabricant || ''; reference = reference || (a.references || [])[0] || '';
       } catch (e) { /* sans bibliothèque */ }
     }
-    return { valeurs: v, sources: src, fabricant, reference, nb: Object.keys(v).length };
+    return { valeurs: v, sources: src, fabricant, reference: gamme ? '' : reference, nb: Object.keys(v).length, ...(gamme ? { gamme, modeles } : {}) };
+  }
+  function tableauRadiateur(L) {
+    const X = L.map(norm), pts = [];
+    let par = 1, src = '';
+    X.forEach((x, i) => {
+      if (!/delta ?tm?\b.*puissance/.test(x)) return;
+      const u = X[i + 1] || '', parM = /w\/ml|w\/m\b/.test(u);
+      for (let j = i + 2; j < X.length; j++) {
+        const c = L[j].split('\t').map(t => nb(t.trim()));
+        if (c.length < 2 || c.length % 2 || !c.every(Number.isFinite)) break;
+        // Colonnes (ΔT, puissance) répétées ; seulement le premier tableau (émissions calorifiques)
+        for (let k = 0; k < c.length; k += 2) if (c[k] >= 10 && c[k] <= 100 && c[k + 1] > 0) pts.push([c[k], c[k + 1]]);
+      }
+      if (pts.length && !src) { src = L[i].trim().slice(0, 140); par = parM ? 1 : 0; }
+    });
+    if (pts.length < 3) return null;
+    // Exposant n : régression de ln P sur ln ΔT ; puissance à ΔT 50 (lue, sinon P = a · ΔT^n)
+    const lx = pts.map(p => Math.log(p[0])), ly = pts.map(p => Math.log(p[1])), mx = lx.reduce((a, b) => a + b) / lx.length, my = ly.reduce((a, b) => a + b) / ly.length;
+    const n = lx.reduce((a, x, k) => a + (x - mx) * (ly[k] - my), 0) / lx.reduce((a, x) => a + (x - mx) ** 2, 0);
+    const p50 = (pts.find(p => p[0] === 50) || [50, Math.exp(my + n * (Math.log(50) - mx))])[1];
+    const valeurs = { nExp: Math.round(n * 1000) / 1000, ...(par ? { P50ml: Math.round(p50) } : { P50: Math.round(p50) }) };
+    // Modèles : « Modèle | Longueur (A) | … | Contenance en eau » puis une ligne par modèle
+    const modeles = [];
+    X.forEach((x, i) => {
+      if (!/^modele\b.*longueur/.test(x)) return;
+      const tete = L[i].split('\t').map(norm), kL = tete.findIndex(t => /longueur/.test(t)), kV = tete.findIndex(t => /contenance|volume/.test(t));
+      for (let j = i + 1; j < Math.min(L.length, i + 40); j++) {
+        const c = L[j].split('\t').map(t => t.trim());
+        if (/^(?:mm|kg|litres?|\(mm\))$/i.test(c[0])) continue;
+        if (c.length < 2 || !/[A-Za-z]/.test(c[0])) break;
+        const lg = nb(c[kL]), ve = kV >= 0 ? nb(c[kV]) : NaN;
+        if (!Number.isFinite(lg) || lg < 200) break;
+        modeles.push({ ref: c[0], Lmm: lg, ...(Number.isFinite(ve) ? { Veau: ve } : {}), ...(par ? { P50: Math.round(p50 * lg / 1000) } : {}) });
+      }
+    });
+    return { valeurs, modeles, source: src };
   }
 
   const nf = (x, d = 1) => (Number.isFinite(x) ? String(Math.round(x * 10 ** d) / 10 ** d).replace('.', ',') : '');

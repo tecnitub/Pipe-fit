@@ -11,17 +11,26 @@ const FichesTech = (() => {
   const memeFab = (a, b) => { const x = cleFab(a), y = cleFab(b); return !!x && !!y && (x === y || (Math.min(x.length, y.length) >= 4 && (x.includes(y) || y.includes(x)))); };
 
   // Mots qui ressemblent à une référence mais n'en sont pas : normes, diamètres, indices, fluides, unités, dates
-  const PAS_REF = /^(?:ISO|EN|NF|NFEN|DIN|DTU|DN|PN|IP|IK|CE|RAL|HZ|KW|KWH|PAGE|ART|ARTICLE|REV|V|VER|VERSION|ED|R\d{2,4}[A-Z]?|ERP|ECO|A\+*|CLASSE|TYPE|NO|N|FIG|TAB|ANNEXE|EDITION|CEDEX|BP|CS|TEL|FAX|SIRET|APE|TVA|RCS)$/;
+  const PAS_REF = /^(?:ISO|EN|NF|NFEN|DIN|DTU|DN|PN|IP|IK|CE|RAL|HZ|KW|KWH|PAGE|ART|ARTICLE|REV|V|VER|VERSION|ED|R\d{2,4}[A-Z]?|ERP|ECO|A\+*|CLASSE|TYPE|NO|N|FIG|TAB|ANNEXE|EDITION|CEDEX|BP|CS|TEL|FAX|SIRET|SIREN|EORI|NAF|APE|TVA|RCS)$/;
+  // Forme d'une référence de matériel : lettres et chiffres ; ni norme (« EN 13384-1 », « NF EN ISO 9227 »), ni code postal
+  // (« D-12345 »), ni bus de terrain (« RS 485 »), ni diamètre, ni numéro de page ou de tarif, ni numéro de document ou
+  // d'identification (« ABC1234-56789 », « TVA FR… », « EORI … »), ni texte courant
+  const IDENTIFIANTS = /^(?:TEL|FAX|SIRET|SIREN|EORI|NAF|APE|TVA|RCS|CEDEX|BP|CS)$/;
+  function estReference(r) {
+    const x = String(r || '').trim(), k = cle(x), mots = x.split(/[\s-]/);
+    if (k.length < 3 || k.length > 30 || !/[A-Z]/.test(k) || !/\d/.test(k) || (PAS_REF.test(cle(mots[0])) && mots.length <= 2) || IDENTIFIANTS.test(cle(mots[0])) || /^\d{1,2}[A-Z]?$/.test(k) || /^(?:19|20)\d{2}$/.test(k)) return false;
+    if (/^\d+(?:[.,]\d+)?\s*(?:mm|m|kg|kw|w|v|a|pa|db|l|m3|bar|°c|hz|%)$/i.test(x)) return false;
+    if (/^(?:NF\s*)?(?:EN|ISO|DIN|IEC|DTU|NF|UNI|CEI)(?:\s*(?:EN|ISO|IEC))?\s*\d/i.test(x) || /^[A-Z]{1,2}-\d{4,5}$/.test(x) || /\bRS\s*-?\s*(?:485|232|422)\b|\bmodbus\b|\bbacnet\b/i.test(x)) return false;
+    if (/^DN\s*\d+$/i.test(x) || /\b(?:PAGE|TARIFS?|VOIR)\b/i.test(x) || /^[a-zà-ÿ]/.test(x) || /\s[a-zà-ÿ]{2,}$/.test(x)) return false;
+    return !(/^[A-Z]{2,5}\d{4,}-\d{3,}$/.test(x) || /^[A-Z]{1,4}\d{7,}/.test(k) || /^FR\d{5,}$/.test(k) || /^[A-Z] \d{1,3}$/.test(x));
+  }
   function referencesDans(texte) {
     const t = String(texte || ''), out = [];
     // Mots courants accrochés en fin de référence (« DFC 160 DE MARQUE ») : retirés
     const VIDES = /(?:\s+(?:DE|DU|DES|LA|LE|LES|ET|EN|AU|AUX|OU|A|AVEC|POUR|SUR|PAR|THE|AND|FOR))+$/;
     const ajouter = r => {
-      const x = String(r || '').replace(/[,;:)\]]+$/, '').replace(/\s{2,}/g, ' ').trim().replace(VIDES, '');
-      const k = cle(x), lettres = /[A-Z]/.test(k), chiffres = /\d/.test(k);
-      if (k.length < 3 || k.length > 30 || !(lettres && chiffres) || PAS_REF.test(cle(x.split(/[\s-]/)[0])) && x.split(/[\s-]/).length <= 2 || /^\d{1,2}[A-Z]?$/.test(k) || /^(?:19|20)\d{2}$/.test(k)) return;
-      if (/^\d+(?:[.,]\d+)?\s*(?:mm|m|kg|kw|w|v|a|pa|db|l|m3|bar|°c|hz|%)$/i.test(x)) return;
-      if (!out.some(y => cle(y) === k)) out.push(x);
+      const x = String(r || '').replace(/[,;:)\]]+$/, '').replace(/\s{2,}/g, ' ').trim().replace(VIDES, ''), k = cle(x);
+      if (estReference(x) && !out.some(y => cle(y) === k)) out.push(x);
     };
     // Après « Référence », « Réf. », « Modèle », « Type », « Code article »
     for (const m of t.matchAll(/(?:r[ée]f[ée]rences?|r[ée]f\.?|mod[eè]les?|code(?: article| produit)?)\s*[:\-–n°]*\s*([A-Z0-9][A-Za-z0-9.\-/+]*(?: [A-Z0-9][A-Za-z0-9.\-/+]*){0,2})/gi)) ajouter(m[1]);
@@ -226,6 +235,6 @@ const FichesTech = (() => {
       .sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, max)
       .map(f => ({ id: f.id, fichierId: f.fichierId, fabricant: f.fabricant, references: f.references || [], designation: f.designation, famille: f.famille || '', date: f.date || '', nom: f.nom, mime: f.mime || 'application/pdf' }));
   }
-  return { liste, TYPES_DOC, typeDocument, extraitPour, doublons, fabricantsProches, anciennes, fabricantRetenu, repereDemande, trouver, pdfMinimal, cle, cleFab, memeFab, referencesDans, dateDans, familleDe, analyser, score, chercher, enVigueur, versions, lireCatalogue, nomFichier };
+  return { estReference, liste, TYPES_DOC, typeDocument, extraitPour, doublons, fabricantsProches, anciennes, fabricantRetenu, repereDemande, trouver, pdfMinimal, cle, cleFab, memeFab, referencesDans, dateDans, familleDe, analyser, score, chercher, enVigueur, versions, lireCatalogue, nomFichier };
 })();
 if (typeof module !== 'undefined') module.exports = FichesTech;
