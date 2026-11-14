@@ -13,6 +13,10 @@ function resumeEquipement(x) {
     vase: [v.V && `${f(v.V, 0)} L`, v.p0 && `${f(v.p0)} bar`],
     ecs: [v.V && `${f(v.V, 0)} L`, v.P && `${f(v.P)} kW`],
     generateur: [v.P && `${f(v.P, 0)} kW`, v.Pfr && `froid ${f(v.Pfr, 0)} kW`, v.P1 && `${f(v.P1 / 1000)} kW élec.`],
+    tampon: [v.V && `${f(v.V, 0)} L`, v.pmax && `${f(v.pmax)} bar`],
+    fumee: [v.P && `${f(v.P, 0)} kW`, v.D && `Ø ${f(v.D, 0)} mm`, v.H && `H ${f(v.H)} m`, v.Tf && `fumées ${f(v.Tf, 0)} °C`],
+    capteur: [v.grandeur && `capteur de ${Registre.GRANDEURS[v.grandeur] || v.grandeur}`, v.sortie && `sortie ${Vrac.SORTIES[v.sortie] || v.sortie}`, v.alim && `alim. ${v.alim === '24V' ? '24 V' : v.alim === 'mono' ? '230 V' : v.alim}`],
+    accessoireSan: [`sans calcul : matériel retenu et DOE${x.qte > 1 ? ` · ${x.qte} u` : ''}`],
   }[x.type] || [];
   return r.filter(Boolean).join(' · ') || (typeof FicheAnnexes !== 'undefined' && FicheAnnexes.resume(x.type, v)) || `${Object.keys(v).length} valeur(s)`;
 }
@@ -27,6 +31,10 @@ function dialogueRegistre(et) {
   const box = Modal.open('');
   box.classList.add('large');
   const ouverts = new Map(); // modèle → zone ouverte (valeurs, fiche, placer)
+  const attente = new Map(); // modèle → fiche de gamme lue, en attente du choix du modèle (remplacement de la fiche)
+  // Modèle de gamme conseillé d'après le premier emplacement du modèle (puissance, volume, débit, DN du calcul)
+  const conseil = (x, lu) => { const p = Registre.emplacements(et).find(y => y.eq === x.id); return Vrac.modeleConseille(et, x.type, lu, p ? Vrac.cibleEmplacement(p) : ''); };
+  const choixModele = (id, modeles, k) => `<label class="petit">Modèle de la gamme <select id="${id}"><option value="">— à choisir —</option>${modeles.map((m, j) => `<option value="${j}" ${j === k ? 'selected' : ''}>${esc(Vrac.libelleModele(m))}</option>`).join('')}</select></label>`;
   const changer = msg => { const k = Registre.propager(et); enregistrer(et); rendu(); if (msg) toast(`${msg}${k ? ` — ${k} valeur(s) mise(s) à jour dans les calculs` : ''}`, 5000); };
   const zoneHtml = (x, z) => {
     if (z === 'valeurs') {
@@ -35,11 +43,20 @@ function dialogueRegistre(et) {
         <p class="petit"><label>Ajouter une donnée <select id="rg-vplus"><option value="">—</option>${Object.entries(L).filter(([k]) => !cles.includes(k)).map(([k, d]) => `<option value="${esc(k)}">${esc(d[0])}${d[1] ? ` (${esc(d[1])})` : ''}</option>`).join('')}</select></label></p>
         <div class="actions" style="justify-content:flex-start"><button class="petit" id="rg-vok">Enregistrer les valeurs</button></div>`;
     }
+    if (z === 'fiche' && attente.has(x.id)) {
+      const { lu } = attente.get(x.id);
+      return `<p class="petit">Documentation de gamme (${esc(lu.gamme)}) : choisissez le modèle retenu ; ses valeurs remplacent celles du modèle partout où il est placé.</p>
+        ${choixModele('rg-fmodele', lu.modeles, conseil(x, lu))}
+        <div class="actions" style="justify-content:flex-start"><button class="petit" id="rg-fmok">Remplacer par ce modèle</button><button class="secondaire petit" id="rg-fmx">Annuler</button></div>`;
+    }
     if (z === 'fiche') return `<p class="petit muted">La nouvelle fiche remplace le modèle partout où il est placé (même type d'équipement).</p>
       <p><label class="btn petit">💻 Choisir le PDF ou la fiche texte<input type="file" id="rg-ffichier" accept=".pdf,application/pdf,image/*,.txt,.md,text/plain" hidden></label></p>
       <textarea id="rg-ftexte" rows="5" style="width:100%" placeholder="Ou collez la fiche au format Pipe-Fit"></textarea><button class="secondaire petit" id="rg-flire">Lire la fiche collée</button>`;
     if (z === 'placer') {
       const d = Vrac.destinations(et, x.type), circ = [...new Set(et.notes.filter(n => n.type === 'pid').flatMap(n => (n.entrees.circuits || []).filter(c => c.rep).map(c => c.rep)))];
+      // Matériel sans calcul (accessoire sanitaire) : quantité de la ligne du matériel retenu
+      if (!d.length && Registre.LIBRES[x.type]) return `<p class="petit muted">Matériel sans calcul : une ligne du matériel retenu (et du DOE) pour ce modèle.</p>
+        <div class="grille-champs"><label>Quantité<input id="rg-lqte" type="number" min="1" value="${esc(String(x.qte || 1))}"></label></div><div class="actions" style="justify-content:flex-start"><button class="petit" id="rg-lok">Enregistrer la quantité</button></div>`;
       if (!d.length) return '<p class="petit muted">Aucun calcul de l\'étude ne reçoit ce type d\'équipement : ajoutez d\'abord le calcul (schéma de principe, réseau arborescent, schéma aéraulique en arborescence, sanitaire…).</p>';
       return `<div class="grille-champs"><label>Placer dans<select id="rg-pcible">${d.map(([k, l]) => `<option value="${esc(k)}">${esc(l)}</option>`).join('')}</select></label>
         <label>Quantité<input id="rg-pqte" type="number" min="1" value="1"></label><label>Local (plusieurs : « Bureau 1 ; Salle ×2 »)<input id="rg-plocal" placeholder="Bureau 1 ; Salle de réunion ×2"></label>
@@ -56,7 +73,8 @@ function dialogueRegistre(et) {
       <div class="actions" style="justify-content:flex-start"><button id="rg-vrac">📥 Ajouter des fiches (matériel en vrac)</button></div>
       ${b.length ? types.map(t => `<h3>${esc(Registre.TYPES[t])}</h3>${b.filter(y => y.x.type === t).map(y => {
         const x = y.x, z = ouverts.get(x.id);
-        return `<div class="carte" style="margin:.4em 0"><strong>${esc(y.nom)}</strong>${x.variante ? ` <span class="badge">variante ${x.variante}</span>` : ''} <span class="muted petit">${esc(resumeEquipement(x))}</span>
+        return `<div class="carte" style="margin:.4em 0"><strong>${esc(y.nom)}</strong>${x.variante ? ` <span class="badge">variante ${x.variante}</span>` : ''}${x.gamme ? ' <span class="badge avert" title="Documentation de gamme : les valeurs du modèle ne sont reprises qu\'une fois le modèle choisi">gamme : modèle à choisir</span>' : ''} <span class="muted petit">${esc(resumeEquipement(x))}</span>
+          ${x.gamme && (x.gamme.modeles || []).length ? `<div class="petit">${choixModele(`rg-gm-${x.id}`, x.gamme.modeles, conseil(x, x.gamme))} <button class="petit" data-rg-gamme="${x.id}">Retenir ce modèle</button></div>` : ''}
           <div class="petit">${y.emplacements.length ? `Placé ${y.emplacements.length} fois : ${y.emplacements.map((p, k) => `<span class="puce" style="white-space:nowrap">${esc(p.libelle)} <button class="icone" data-rg-det="${x.id}|${k}" title="Détacher : valeurs gardées, modifiables à la main">✂️</button></span>`).join(' · ')}` : '<span class="avert">À placer dans un calcul</span>'}</div>
           <div class="actions" style="justify-content:flex-start;margin:.3em 0 0">${[['valeurs', '✏️ Valeurs'], ['fiche', '🔁 Remplacer la fiche'], ['placer', '➕ Placer']].map(([k, l]) => `<button class="${z === k ? '' : 'secondaire '}petit" data-rg-z="${x.id}|${k}">${l}</button>`).join('')}<button class="secondaire petit" data-rg-suppr="${x.id}">🗑️ Retirer</button></div>
           ${z ? `<div class="rg-zone" data-rg-zone="${x.id}">${zoneHtml(x, z)}</div>` : ''}</div>`; }).join('')}`).join('') : '<p class="muted">Registre vide : ajoutez les fiches du chantier (matériel en vrac) ou chargez une fiche dans un calcul.</p>'}
@@ -64,6 +82,12 @@ function dialogueRegistre(et) {
     box.querySelector('#rg-x').onclick = () => { Modal.close(); App.render(); };
     box.querySelector('#rg-vrac').onclick = () => dialogueVrac(et);
     box.querySelectorAll('[data-rg-z]').forEach(el => el.onclick = () => { const [id, z] = el.dataset.rgZ.split('|'); ouverts.set(id, ouverts.get(id) === z ? '' : z); rendu(); });
+    // Modèle de la gamme retenu : valeurs et référence reportées dans tous les calculs où le modèle est placé
+    box.querySelectorAll('[data-rg-gamme]').forEach(el => el.onclick = () => {
+      const x = Registre.parId(et, el.dataset.rgGamme), s = box.querySelector(`#rg-gm-${x.id}`);
+      if (!s || s.value === '') return toast('Choisissez d\'abord le modèle de la gamme.', 3000);
+      Registre.choisirModele(x, +s.value); changer(`Modèle retenu : ${Registre.nomEq(x)}`);
+    });
     box.querySelectorAll('[data-rg-det]').forEach(el => el.onclick = () => {
       const [id, k] = el.dataset.rgDet.split('|'), y = b.find(w => w.x.id === id), p = y && y.emplacements[+k]; if (!p) return;
       Registre.detacher(p); enregistrer(et); rendu(); toast(`${p.libelle} : détaché du registre, valeurs modifiables à la main`, 4000);
@@ -83,10 +107,11 @@ function dialogueRegistre(et) {
       }
       if (q('#rg-flire')) {
         const remplacer = (lignes, nom) => {
-          const lu = Vrac.lire(x.type, lignes);
-          if (!lu.nb) return toast('Aucune caractéristique reconnue dans cette fiche.', 4000);
-          Object.assign(x, { fabricant: lu.fabricant || x.fabricant, reference: lu.reference || x.reference, valeurs: lu.valeurs, nom: String(nom || '').slice(0, 120) }); delete x.variante;
-          ouverts.set(x.id, ''); changer(`Fiche remplacée : ${Registre.nomEq(x)}`);
+          const lu = Vrac.lire(x.type, lignes, nom);
+          // Documentation de gamme : choix du modèle avant de remplacer la fiche
+          if (lu.modeles && lu.modeles.length) { attente.set(x.id, { lu, nom }); return rendu(); }
+          if (!lu.nb && !lu.gamme) return toast('Aucune caractéristique reconnue dans cette fiche.', 4000);
+          remplacerPar(lu, nom);
         };
         q('#rg-flire').onclick = () => { const t = q('#rg-ftexte').value; if (t.trim()) remplacer(t.split(/\r?\n/), 'Fiche au format Pipe-Fit'); };
         q('#rg-ffichier').onchange = async ev => {
@@ -94,6 +119,17 @@ function dialogueRegistre(et) {
           try { remplacer(/^text\//.test(f.type || '') || /\.(txt|md)$/i.test(f.name || '') ? (await f.text()).split(/\r?\n/) : (await PdfLecture.lire(f, () => {}, { pagesMax: 12, ocr: typeof OCR !== 'undefined' })).lignes, f.name); } catch (e) { toast(`Lecture impossible : ${e.message}`, 5000); }
         };
       }
+      // Fiche remplacée par un modèle (ou par une gamme dont le modèle reste à choisir : aucune valeur de modèle reprise)
+      function remplacerPar(lu, nom) {
+        Object.assign(x, { fabricant: lu.fabricant || x.fabricant, reference: lu.reference || (lu.gamme ? '' : x.reference), valeurs: lu.valeurs, nom: String(nom || '').slice(0, 120) }); delete x.variante;
+        if (Vrac.aChoisir(lu)) x.gamme = { titre: lu.gamme, modeles: lu.modeles || [], ...(lu.refGamme ? { refGamme: lu.refGamme } : {}) }; else delete x.gamme;
+        attente.delete(x.id); ouverts.set(x.id, ''); changer(`Fiche remplacée : ${Registre.nomEq(x)}${x.gamme ? ' (gamme : modèle à choisir)' : ''}`);
+      }
+      if (q('#rg-fmok')) {
+        q('#rg-fmok').onclick = () => { const { lu, nom } = attente.get(x.id), k = q('#rg-fmodele').value; remplacerPar(k === '' ? lu : Vrac.choisirModele(lu, +k), nom); };
+        q('#rg-fmx').onclick = () => { attente.delete(x.id); rendu(); };
+      }
+      if (q('#rg-lok')) q('#rg-lok').onclick = () => { x.qte = Math.max(1, Math.round(Number(q('#rg-lqte').value) || 1)); ouverts.set(x.id, ''); changer(`${Registre.nomEq(x)} : quantité ${x.qte}`); };
       if (q('#rg-pbranche')) {
         const majBr = () => { const br = Registre.branches(et, q('#rg-pcible').value); q('#rg-pbranche').innerHTML = `<option value="">${br.length ? '— à choisir plus tard —' : 'aucune branche pour cette destination'}</option>${br.map(([k, l]) => `<option value="${esc(k)}">${esc(l)}</option>`).join('')}`; };
         q('#rg-pcible').onchange = majBr; majBr();

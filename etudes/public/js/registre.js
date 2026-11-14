@@ -22,14 +22,25 @@ const Registre = (() => {
 
   const TYPES = { cta: 'Centrale de traitement d\'air', generateur: 'Générateur', pompe: 'Pompe, circulateur', terminal: 'Terminal', vase: 'Vase d\'expansion', ecs: 'Ballon, échangeur d\'ECS',
     bouche: 'Bouche, diffuseur', robinet: 'Vanne, robinetterie', sanitaire: 'Appareil sanitaire', regulateur: 'Régulateur préprogrammé, module',
-    drvUE: 'Unité extérieure DRV / VRF', radiateur: 'Radiateur', echangeur: 'Échangeur à plaques', deshu: 'Déshumidificateur, centrale de piscine', groupeFroid: 'Groupe de chambre froide', extracteur: 'Extracteur, tourelle, caisson' };
+    drvUE: 'Unité extérieure DRV / VRF', radiateur: 'Radiateur', echangeur: 'Échangeur à plaques', deshu: 'Déshumidificateur, centrale de piscine', groupeFroid: 'Groupe de chambre froide', extracteur: 'Extracteur, tourelle, caisson',
+    tampon: 'Ballon tampon', fumee: 'Conduit de fumée', capteur: 'Capteur, instrumentation', accessoireSan: 'Accessoire sanitaire', document: 'Document commercial' };
+  // Types jamais inscrits au registre (document commercial : joint au matériel retenu ou à la consultation)
+  const NON_INSCRITS = ['document'];
+  // Matériel sans calcul (ou hors métré) : une ligne « libre » du matériel retenu par modèle, [chapitre, désignation]
+  const LIBRES = { accessoireSan: ['Équipements sanitaires', 'Accessoire sanitaire'], capteur: ['Régulation, instrumentation', 'Capteur'] };
   // Calculs annexes recevant un modèle entier (genre = type du calcul) → type de fiche
   const ANNEXES = { drv: 'drvUE', radiateurs: 'radiateur', echangeurPlaques: 'echangeur', piscine: 'deshu', chambreFroide: 'groupeFroid', hotte: 'extracteur', parking: 'extracteur' };
-  const TYPE_GENRE = { gen: 'generateur', regul: 'regulateur', term: 'terminal', termp: 'pompe', aero: 'bouche', san: 'sanitaire', rob: 'robinet', pompe: 'pompe', arbo: 'pompe', cta: 'cta', pid: 'generateur', vase: 'vase', ecs: 'ecs', reseau: 'pompe', ...ANNEXES };
+  const TYPE_GENRE = { gen: 'generateur', regul: 'regulateur', term: 'terminal', termp: 'pompe', aero: 'bouche', san: 'sanitaire', rob: 'robinet', pompe: 'pompe', arbo: 'pompe', cta: 'cta', pid: 'generateur', vase: 'vase', ecs: 'ecs', reseau: 'pompe',
+    tamp: 'tampon', bal: 'tampon', capt: 'capteur', conduitFumee: 'fumee', ...ANNEXES };
   // Listes des calculs qui reçoivent des équipements : [champ de la note, genre de l'élément]
-  const LISTES = { elec: [['capaSynco', () => 'regul']], terminaux: [['appareils', a => (a.type === 'pompeDist' ? 'termp' : 'term')]], aero: [['bouchesL', () => 'aero']], sanitaire: [['points', () => 'san']],
-    pid: [['robinetterie', () => 'rob'], ['pompesFab', () => 'pompe'], ['generateurs', () => 'gen']], arbo: [['robinetterie', () => 'rob']] };
-  const NIVEAU_NOTE = { cta: 'cta', pid: 'pid', vase: 'vase', ecs: 'ecs', reseau: 'reseau', ...Object.fromEntries(Object.keys(ANNEXES).map(t => [t, t])) };
+  const LISTES = { elec: [['capaSynco', () => 'regul'], ['equipements', () => 'capt']], terminaux: [['appareils', a => (a.type === 'pompeDist' ? 'termp' : 'term')]], aero: [['bouchesL', () => 'aero']], sanitaire: [['points', () => 'san']],
+    pid: [['robinetterie', () => 'rob'], ['pompesFab', () => 'pompe'], ['generateurs', () => 'gen'], ['ballons', () => 'bal']], arbo: [['robinetterie', () => 'rob']] };
+  const NIVEAU_NOTE = { cta: 'cta', pid: 'pid', vase: 'vase', ecs: 'ecs', reseau: 'reseau', conduitFumee: 'conduitFumee', ...Object.fromEntries(Object.keys(ANNEXES).map(t => [t, t])) };
+  // Note de conduit de fumée : valeurs reportées dans le calcul annexe (le générateur raccordé n'est pas repris)
+  const FUMEE = ['P', 'combustible', 'CO2', 'Tf', 'D', 'H', 'Lr', 'altitude'];
+  // Signal de sortie d'un capteur → régulation de sa ligne d'armoire
+  const REGUL_CAPTEUR = { '4-20mA': 'sonde', '0-10V': 'sonde', impulsion: 'impulsion', relais: 'contact', bus: 'bus' };
+  const GRANDEURS = { debit: 'débit', pression: 'pression', temperature: 'température', niveau: 'niveau', 'qualite d\'air': 'qualité d\'air' };
   // Valeurs reprises au placement seulement (débit d'air de la CTA, débit d'une bouche : dimensionnés par le réseau)
   const PLACEMENT_SEUL = { cta: ['Qs', 'Qr'], aero: ['Q'] };
 
@@ -54,13 +65,26 @@ const Registre = (() => {
   const compatibles = (a, b) => Object.keys(b).every(k => vide(a[k]) || vide(b[k]) || (typeof a[k] === 'number' && typeof b[k] === 'number' ? Math.abs(a[k] - b[k]) < 1e-6 : String(a[k]) === String(b[k])));
 
   // Ajoute un modèle au registre (ou met à jour celui de même type, fabricant et référence : la dernière fiche lue l'emporte)
-  function ajouter(et, { type, fabricant = '', reference = '', valeurs = {}, nom = '' }) {
+  // qte : quantité du matériel sans calcul (accessoire sanitaire…) ; gamme : documentation de gamme dont le modèle reste à
+  // choisir ({ titre, modeles }) — deux gammes d'un même fabricant ne sont pas confondues (pas de référence)
+  function ajouter(et, { type, fabricant = '', reference = '', valeurs = {}, nom = '', qte, gamme }) {
+    if (NON_INSCRITS.includes(type)) return null;
     const v = Object.fromEntries(Object.entries(valeurs || {}).filter(([, x]) => !vide(x)));
-    const ex = (fabricant || reference) && liste(et).find(x => cleEq(x.type, x.fabricant, x.reference) === cleEq(type, fabricant, reference));
-    if (ex) { Object.assign(ex.valeurs, v); if (nom) ex.nom = String(nom).slice(0, 120); return ex; }
-    const x = { id: uid(), type, fabricant: fabricant || '', reference: reference || '', valeurs: v, nom: String(nom || '').slice(0, 120) };
+    const q = Math.max(1, Math.round(Number(qte) || 0)) || undefined;
+    const ex = (fabricant || reference) && liste(et).find(x => cleEq(x.type, x.fabricant, x.reference) === cleEq(type, fabricant, reference) && (reference || (!gamme && !x.gamme) || norm(x.nom) === norm(nom)));
+    if (ex) { Object.assign(ex.valeurs, v); if (nom) ex.nom = String(nom).slice(0, 120); if (gamme) ex.gamme = gamme; else delete ex.gamme; if (qte !== undefined && LIBRES[type]) ex.qte = q; return ex; }
+    const x = { id: uid(), type, fabricant: fabricant || '', reference: reference || '', valeurs: v, nom: String(nom || '').slice(0, 120), ...(gamme ? { gamme } : {}), ...(qte !== undefined && LIBRES[type] ? { qte: q } : {}) };
     liste(et).push(x);
     return x;
+  }
+  // Modèle k de la gamme d'un équipement du registre : valeurs et référence de ce modèle (reportées partout à la propagation)
+  function choisirModele(x, k) {
+    const m = ((x && x.gamme && x.gamme.modeles) || [])[k]; if (!m) return false;
+    const { ref, ...val } = m;
+    x.reference = /^DN \d+$/.test(ref || '') && x.gamme.refGamme ? `${x.gamme.refGamme} ${ref}` : ref || x.reference;
+    x.valeurs = { ...(x.valeurs || {}), ...Object.fromEntries(Object.entries(val).filter(([, y]) => !vide(y))) };
+    delete x.gamme;
+    return true;
   }
 
   // Valeurs d'un modèle reportées sur un élément d'un genre donné : { champ: valeur }
@@ -77,6 +101,12 @@ const Registre = (() => {
       case 'gen': set('P', v.P); set('dp', v.dpEau); if (Number.isFinite(Number(v.P1)) && Number(v.P1) > 0) set('Pel', Math.round(Number(v.P1) / 10) / 100); set('ref', nom); break;
       case 'regul': set('X', v.X); set('Y', v.Y); set('Q', v.Q); set('ref', nom); break;
       case 'arbo': set('pompeCourbe', v.courbe); set('pompeRef', nom); break;
+      // Ballon tampon : en série ou de découplage (volume imposé du schéma de principe), ou ballon élément du schéma
+      case 'tamp': set('Vtampon', v.V); break;
+      case 'bal': set('V', v.V); break;
+      // Capteur sur une ligne d'armoire : régulation selon le signal de sortie, alimentation, consommation en TBT
+      case 'capt': set('regulation', REGUL_CAPTEUR[v.sortie]); set('tension', v.alim === 'mono' ? 'mono' : v.alim === '24V' ? '24V' : ''); if (v.alim === '24V') set('Paux', v.Paux); break;
+      case 'conduitFumee': FUMEE.forEach(k => set(k, v[k])); break;
       case 'cta': FC().champs('cta', v).forEach(c => {
         if (!placement && (PLACEMENT_SEUL.cta.includes(c.k) || (['modeP', 'PchaudS', 'PfroidS'].includes(c.k) && ((note || {}).entrees || {}).modeP !== 'saisie'))) return;
         o[c.k] = c.val; }); break;
@@ -99,6 +129,10 @@ const Registre = (() => {
       case 'gen': set('P', el.P); set('dpEau', el.dp); if (!vide(el.Pel)) set('P1', Math.round(val(el.Pel) * 1000)); break;
       case 'regul': set('X', el.X); set('Y', el.Y); set('Q', el.Q); break;
       case 'arbo': set('courbe', el.pompeCourbe); break;
+      case 'tamp': set('V', el.Vtampon); break;
+      case 'bal': set('V', el.V); break;
+      case 'capt': { const s = Object.entries(REGUL_CAPTEUR).find(([, r]) => r === el.regulation); if (s) set('sortie', s[0]); set('alim', el.tension === 'mono' ? 'mono' : el.tension === '24V' ? '24V' : ''); set('Paux', el.Paux); break; }
+      case 'conduitFumee': FUMEE.forEach(k => set(k, el[k])); break;
       case 'drv': case 'radiateurs': case 'echangeurPlaques': case 'piscine': case 'chambreFroide': case 'hotte': case 'parking': {
         // Fiche gardée avec le calcul, sinon champs du calcul (études faites avant le registre)
         const f = el.fiche || {}, de = Object.keys(f).filter(k => !['nom', 'fabricant', 'reference'].includes(k));
@@ -117,13 +151,15 @@ const Registre = (() => {
       const e = n.entrees || {};
       (LISTES[n.type] || []).forEach(([k, g]) => (e[k] || []).forEach((el, i) => { if (el && (el.eq || avecLibres)) out.push({ eq: el.eq, note: n, genre: g(el), liste: k, i, el }); }));
       if (NIVEAU_NOTE[n.type] && (e.eq || avecLibres)) out.push({ eq: e.eq, note: n, genre: NIVEAU_NOTE[n.type], liste: null, el: e });
-      if (n.type === 'arbo' && (e.pompeEq || avecLibres)) out.push({ eq: e.pompeEq, note: n, genre: 'arbo', liste: null, el: e, champEq: 'pompeEq' });
+      if (n.type === 'arbo' && (e.pompeEq || avecLibres)) out.push({ eq: e.pompeEq, note: n, genre: 'arbo', liste: null, el: e, champEq: 'pompeEq', champFiche: 'pompeFiche' });
+      // Ballon tampon en série ou de découplage du schéma de principe
+      if (n.type === 'pid' && (e.tamponEq || (avecLibres && e.tamponFiche))) out.push({ eq: e.tamponEq, note: n, genre: 'tamp', liste: null, el: e, champEq: 'tamponEq', champFiche: 'tamponFiche' });
     });
     return out;
   }
   const libelleEmplacement = (et, p) => {
     const n = p.note, lib = `N${et.notes.indexOf(n) + 1} — ${n.titre}`, el = p.el;
-    if (!p.liste) return p.genre === 'arbo' ? `${lib} : pompe du réseau` : p.genre === 'pid' ? `${lib} : production` : lib;
+    if (!p.liste) return p.genre === 'arbo' ? `${lib} : pompe du réseau` : p.genre === 'pid' ? `${lib} : production` : p.genre === 'tamp' ? `${lib} : ballon tampon` : lib;
     const qui = el.rep || el.circuit || `ligne ${p.i + 1}`, ou = el.local || el.salle || el.circuit || el.troncon || '';
     return `${lib} : ${qui}${ou && ou !== qui ? ` (${ou})` : ''}`;
   };
@@ -134,7 +170,7 @@ const Registre = (() => {
     const o = champs(x, p.genre, p.el, p.note, placement);
     let k = 0;
     Object.entries(o).forEach(([c, y]) => { if (String(p.el[c]) !== String(y)) { p.el[c] = y; k++; } });
-    if (p.genre === 'arbo') { const f = ficheElement(x); if (JSON.stringify(p.el.pompeFiche) !== JSON.stringify(f)) { p.el.pompeFiche = f; k++; } }
+    if (p.champFiche) { const f = ficheElement(x); if (JSON.stringify(p.el[p.champFiche]) !== JSON.stringify(f)) { p.el[p.champFiche] = f; k++; } }
     else if (p.liste) { const f = ficheElement(x); if (JSON.stringify(p.el.fiche) !== JSON.stringify(f)) { p.el.fiche = f; k++; } }
     else { const f = ficheNote(x, p.genre); if (JSON.stringify(p.el.fiche) !== JSON.stringify(f)) { p.el.fiche = f; k++; } }
     return k;
@@ -147,7 +183,7 @@ const Registre = (() => {
     let k = 0;
     emplacements(et, true).forEach(p => {
       if (p.el[p.champEq || 'eq'] !== undefined) return; // relié, ou détaché volontairement (eq vide)
-      const f = p.genre === 'arbo' ? p.el.pompeFiche : p.el.fiche;
+      const f = p.el[p.champFiche || 'fiche'];
       if (!f || !(f.fabricant || f.reference)) return;
       const type = TYPE_GENRE[p.genre], v = inverse(p.genre, p.el, p.note);
       let x = liste(et).find(y => cleEq(y.type, y.fabricant, y.reference) === cleEq(type, f.fabricant, f.reference) && compatibles(y.valeurs, v));
@@ -185,7 +221,7 @@ const Registre = (() => {
   function lier(et, note, el, extra = {}) {
     const p = emplacements({ notes: [note] }, true).find(y => y.el === el);
     if (!p) return null;
-    const f = p.genre === 'arbo' ? el.pompeFiche : el.fiche;
+    const f = el[p.champFiche || 'fiche'];
     if (!f || !(f.fabricant || f.reference)) { lierEl(p, ''); return null; }
     const x = ajouter(et, { type: TYPE_GENRE[p.genre], fabricant: f.fabricant, reference: f.reference, nom: f.nom, valeurs: { ...extra, ...inverse(p.genre, el, note) } });
     lierEl(p, x.id);
@@ -318,6 +354,35 @@ const Registre = (() => {
       const synco = (n.entrees.armoires || []).some(a => a.techno === 'synco');
       return `${nom} : régulateur ${app} de ${n.titre}${synco ? '' : ' (choisissez « régulateurs préprogrammés » sur l\'armoire)'}`;
     }
+    // Ballon tampon : en série / de découplage (volume imposé), ballon élément existant (b<index>) ou nouveau ballon (+)
+    if (genre === 'tamp') {
+      const n = notes.find(y => y.id === id && y.type === 'pid'); if (!n) return null;
+      if (!sous) { n.entrees.tamponEq = x.id; reporter(x, { note: n, genre: 'tamp', el: n.entrees, liste: null, champEq: 'tamponEq', champFiche: 'tamponFiche' }, true); return `${n.titre} : ballon tampon ${nom}${v.V ? ` (${v.V} L)` : ''}`; }
+      const l = n.entrees.ballons = n.entrees.ballons || [];
+      let i = /^b\d+$/.test(sous) ? Number(sous.slice(1)) : -1;
+      if (!l[i]) { const deja = new Set(l.map(b => String((b && b.rep) || '').trim())); l.push({ rep: prochain('BT', deja), fonction: 'tampon', V: '', position: 'production' }); i = l.length - 1; }
+      poser(n, 'bal', l[i], 'ballons', i);
+      return `${n.titre} : ballon ${l[i].rep || `BAL${i + 1}`} — ${nom}${v.V ? ` (${v.V} L)` : ''}`;
+    }
+    // Capteur, instrumentation : une ligne « sonde » par appareil dans les équipements de l'armoire
+    if (genre === 'capt') {
+      const n = notes.find(y => y.id === id && y.type === 'elec'); if (!n) return null;
+      const l = n.entrees.equipements = n.entrees.equipements || [], deja = new Set(l.map(e => String((e && e.rep) || '').trim())), locaux = unites(opts.local, qte);
+      const pf = { debit: 'FT', pression: 'PT', temperature: 'TT', niveau: 'LT' }[v.grandeur] || 'CAP', crees = [];
+      locaux.forEach(local => {
+        const el = { rep: opts.rep && locaux.length === 1 && !deja.has(opts.rep) ? opts.rep : prochain(pf, deja), designation: `${v.grandeur ? `Capteur de ${GRANDEURS[v.grandeur] || v.grandeur}` : 'Capteur'} ${nom}`.slice(0, 120), type: 'sonde', P: 0, tension: '24V', regulation: 'sonde', local };
+        deja.add(el.rep); l.push(el); poser(n, 'capt', el, 'equipements', l.length - 1); crees.push(el);
+      });
+      return `${crees.length} capteur(s) ${nom} dans ${n.titre} : ${crees.map(e => `${e.rep} (${e.regulation})`).join(', ')}`;
+    }
+    // Note de conduit de fumée : calcul annexe « conduit de fumée » (valeurs saisies)
+    if (genre === 'fumee') {
+      const n = cibleNote('conduitFumee'); if (!n) return null;
+      n.entrees.eq = x.id; reporter(x, { note: n, genre: 'conduitFumee', el: n.entrees, liste: null }, true);
+      const k = Object.keys(champs(x, 'conduitFumee')).length;
+      if (k) n.entrees.source = '';
+      return `${k} valeur(s) reportée(s) dans ${n.titre || 'le calcul de conduit de fumée'}`;
+    }
     if (genre === 'san') {
       const n = notes.find(y => y.id === id && y.type === 'sanitaire'); if (!n) return null;
       const l = n.entrees.points = n.entrees.points || [], deja = new Set(l.map(p => p.rep));
@@ -417,6 +482,9 @@ const Registre = (() => {
         else if (pref === 'gen' && n.type === 'pid' && (e.generateurs || []).some(g => g && g.eq)) { const [, ty, P] = p.cle.split('|'), g = (e.generateurs || []).find(r => r && r.eq && r.type === ty && Math.abs(Number(r.P) - Number(P)) < 0.5); x = g ? parId(et, g.eq) : null; }
         else if ((pref === 'cta' && n.type === 'cta') || (pref === 'gen' && n.type === 'pid') || (pref === 'vase' && n.type === 'vase') || (pref === 'pompe' && n.type === 'reseau')) x = e.eq && parId(et, e.eq);
         else if (pref === 'pompe' && n.type === 'arbo') x = e.pompeEq && parId(et, e.pompeEq);
+        // Ballon tampon du schéma de principe (en série ou de découplage) et ballons éléments du schéma : même volume
+        else if (pref === 'tampon' && n.type === 'pid') x = e.tamponEq && parId(et, e.tamponEq);
+        else if (pref === 'ballon' && n.type === 'pid') { const V = Number(p.cle.split('|')[2]), b = (e.ballons || []).find(y => y && y.eq && Number(y.V) === V); x = b ? parId(et, b.eq) : null; }
         // Bouches : la ligne du métré porte la référence de la fiche (taille = modèle) ; les bouches génériques restent à choisir
         else if (pref === 'bouche' && n.type === 'aero') x = [...new Set((e.bouchesL || []).filter(b => b && b.eq).map(b => b.eq))].map(id => parId(et, id)).find(y => y && p.cle.endsWith(`|${nomEq(y)}`)) || null;
         // Calcul annexe relié à un modèle (unité extérieure DRV, échangeur, déshumidificateur, groupe de chambre froide,
@@ -454,6 +522,16 @@ const Registre = (() => {
         m[cle] = { ...s, libre: true, registre: x.id, chapitre: 'Émetteurs', designation: d, qte: q, ...(garde ? {} : { fabricant: x.fabricant || '', reference: x.reference || '' }) }; k++;
       }
     });
+    // Matériel sans calcul (accessoires sanitaires) et capteurs : une ligne par modèle, quantité = emplacements (capteurs placés
+    // sur une armoire), sinon quantité saisie au chargement
+    liste(et).filter(x => LIBRES[x.type]).forEach(x => {
+      const cle = `reg|${x.id}`, n = emp.filter(p => p.eq === x.id).length, q = n || Math.max(1, Number(x.qte) || 1), [chapitre, lib] = LIBRES[x.type];
+      vus.add(cle);
+      const s = m[cle] || {}, d = `${lib} ${nomEq(x)}`, garde = String(s.reference || '').trim() || /Valid|Soumis/.test(String(s.statut || ''));
+      if (s.qte !== q || !s.libre || s.designation !== d || s.chapitre !== chapitre || (!garde && (x.fabricant || x.reference) && (s.reference !== x.reference || s.fabricant !== x.fabricant))) {
+        m[cle] = { ...s, libre: true, registre: x.id, chapitre, designation: d, qte: q, ...(garde ? {} : { fabricant: x.fabricant || '', reference: x.reference || '' }) }; k++;
+      }
+    });
     Object.keys(m).forEach(cle => { if (/^reg\|/.test(cle) && !vus.has(cle) && !/Valid|Soumis/.test(String(m[cle].statut || ''))) { delete m[cle]; k++; } });
     return k;
   }
@@ -481,6 +559,6 @@ const Registre = (() => {
     schemasAir(et).forEach(x => (x.entrees.bouchesL || []).filter(remplie).forEach(b => { const r = String(b.rep || '').trim(); if (!r || vus.has(r)) n++; vus.add(r); }));
     return n;
   }
-  return { ANNEXES, versMateriel, numeroterTout, reperesAReprendre, schemasAir, repSuivant, repsBouches, completerBouches, renumeroterBouches, unites, branches, raccorder, numeroter, TYPES, TYPE_GENRE, libelles, ajouter, champs, inverse, emplacements, libelleEmplacement, collecter, propager, synchroniser, verrous, lier, detacher, supprimer, placer, bilan, nomEq, parId, typeTerminal, typeOrgane };
+  return { ANNEXES, GRANDEURS, LIBRES, NON_INSCRITS, REGUL_CAPTEUR, choisirModele, versMateriel, numeroterTout, reperesAReprendre, schemasAir, repSuivant, repsBouches, completerBouches, renumeroterBouches, unites, branches, raccorder, numeroter, TYPES, TYPE_GENRE, libelles, ajouter, champs, inverse, emplacements, libelleEmplacement, collecter, propager, synchroniser, verrous, lier, detacher, supprimer, placer, bilan, nomEq, parId, typeTerminal, typeOrgane };
 })();
 if (typeof module !== 'undefined') module.exports = Registre;

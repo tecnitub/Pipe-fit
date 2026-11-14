@@ -1709,12 +1709,25 @@ function dialogueVrac(et) {
     <div class="actions"><button class="secondaire" id="vr-x">Fermer</button><button id="vr-ok" disabled>Inscrire au registre et répartir</button></div>`);
   b.classList.add('large');
   const circuitsPid = () => et.notes.filter(n => n.type === 'pid').flatMap(n => (n.entrees.circuits || []).filter(c => c.rep).map(c => c.rep));
-  const ajouter = (nom, lignes) => {
-    const type = Vrac.classer(lignes, nom), lu = Vrac.lire(type === 'inconnu' ? 'generateur' : type, lignes), d = Vrac.destinations(et, type);
-    // Destination la plus cohérente (débit et hauteur d'une pompe, puissance d'un générateur, débit d'une CTA), une par fiche du lot
-    const pris = new Set(items.map(x => x.cible).filter(Boolean)), cible = d.length ? (Vrac.proposer ? Vrac.proposer(et, type, lu, pris) : d[0][0]) : '';
-    items.push({ nom, lignes, type, lu, qte: 1, rep: '', local: '', circuit: '', cible });
+  // Documentation de gamme : modèle le plus proche du besoin de la destination (puissance, volume, débit, DN), sinon à choisir
+  const gamme = x => {
+    x.gammeLu = x.lu.modeles && x.lu.modeles.length ? x.lu : null;
+    if (!x.gammeLu || x.modeleManuel) return;
+    const k = Vrac.modeleConseille(et, x.type, x.gammeLu, x.cible);
+    x.modele = k >= 0 ? String(k) : '';
+    x.lu = k >= 0 ? Vrac.choisirModele(x.gammeLu, k) : x.gammeLu;
   };
+  const lire = x => { x.lu = Vrac.lire(x.type === 'inconnu' ? 'generateur' : x.type, x.lignes, x.nom); x.modele = ''; x.modeleManuel = false; };
+  const ajouter = (nom, lignes, fichier) => {
+    const type = Vrac.classer(lignes, nom), x = { nom, lignes, type, qte: 1, rep: '', local: '', circuit: '', fichier };
+    lire(x);
+    const d = Vrac.destinations(et, type);
+    // Destination la plus cohérente (débit et hauteur d'une pompe, puissance d'un générateur, débit d'une CTA), une par fiche du lot
+    const pris = new Set(items.map(y => y.cible).filter(Boolean));
+    x.cible = d.length ? (Vrac.proposer ? Vrac.proposer(et, type, x.lu, pris) : d[0][0]) : '';
+    gamme(x); items.push(x);
+  };
+  const libreSeul = { document: 'Ignorer (ni registre ni pièce jointe)' };
   const rendre = () => {
     const z = b.querySelector('#vr-liste'), circ = [...new Set(circuitsPid())];
     b.querySelector('#vr-ok').disabled = !items.some(x => x.type !== 'inconnu');
@@ -1723,19 +1736,23 @@ function dialogueVrac(et) {
       const d = Vrac.destinations(et, x.type);
       return `<tr><td class="petit">${esc(x.nom)}</td>
         <td><select data-vr="${i}" data-k="type">${Object.entries(Vrac.TYPES).map(([k, l]) => `<option value="${k}" ${k === x.type ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></td>
-        <td class="petit"><strong>${esc([x.lu.fabricant, x.lu.reference].filter(Boolean).join(' ') || '—')}</strong><br><span class="muted">${esc(x.lu.resume || `${x.lu.nb} valeur(s)`)}</span></td>
+        <td class="petit"><strong>${esc([x.lu.fabricant, x.lu.reference].filter(Boolean).join(' ') || '—')}</strong><br><span class="muted">${esc(x.lu.resume || `${x.lu.nb} valeur(s)`)}</span>
+          ${x.gammeLu ? `<br><label class="petit">Modèle de la gamme <select data-vr="${i}" data-k="modele"><option value="">— à choisir —</option>${x.gammeLu.modeles.map((m, k) => `<option value="${k}" ${String(k) === x.modele ? 'selected' : ''}>${esc(Vrac.libelleModele(m))}</option>`).join('')}</select></label>` : ''}
+          ${Vrac.aChoisir(x.lu) ? `<br><span class="badge avert" title="Documentation de gamme : aucune valeur de modèle n'est reprise tant que le modèle n'est pas choisi">gamme : modèle à choisir</span>` : ''}</td>
         <td><input type="number" min="1" style="width:4em" data-vr="${i}" data-k="qte" value="${x.qte}"></td>
         <td><input style="width:6em" data-vr="${i}" data-k="rep" value="${esc(x.rep)}" placeholder="auto"></td>
         <td><input style="width:10em" data-vr="${i}" data-k="local" value="${esc(x.local)}" placeholder="Bureau 1 ; Salle ×2" title="Plusieurs pièces : « Bureau 1 ; Salle de réunion ×2 » (la quantité devient le total)"></td>
-        <td>${d.length ? `<select data-vr="${i}" data-k="cible"><option value="">Registre seulement (à placer plus tard)</option>${d.map(([k, l]) => `<option value="${esc(k)}" ${k === x.cible ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : `<span class="petit muted">${x.type === 'inconnu' ? 'Choisissez le type' : 'Registre seulement : aucun calcul ne reçoit encore ce type'}</span>`}</td>
+        <td>${d.length ? `<select data-vr="${i}" data-k="cible"><option value="">${libreSeul[x.type] || 'Registre seulement (à placer plus tard)'}</option>${d.map(([k, l]) => `<option value="${esc(k)}" ${k === x.cible ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : `<span class="petit muted">${x.type === 'inconnu' ? 'Choisissez le type' : Registre.LIBRES[x.type] ? 'Registre, matériel retenu et DOE (sans calcul)' : 'Registre seulement : aucun calcul ne reçoit encore ce type'}</span>`}</td>
         <td>${(() => { const br = Registre.branches(et, x.cible); return br.length ? `<select style="max-width:12em" data-vr="${i}" data-k="branche"><option value="">—</option>${br.map(([k, l]) => `<option value="${esc(k)}" ${k === x.branche ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : ''; })()}</td>
         <td>${x.type === 'terminal' && circ.length ? `<select data-vr="${i}" data-k="circuit"><option value="">—</option>${circ.map(c => `<option ${c === x.circuit ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>` : ''}</td>
         <td><button class="icone" data-vr-suppr="${i}" title="Retirer">✕</button></td></tr>`; }).join('')}</tbody></table></div>`;
     z.querySelectorAll('[data-vr]').forEach(el => el.onchange = () => {
       const x = items[+el.dataset.vr], k = el.dataset.k;
       x[k] = el.value;
-      if (k === 'cible') { x.branche = ''; rendre(); return; }
-      if (k === 'type') { x.lu = Vrac.lire(x.type === 'inconnu' ? 'generateur' : x.type, x.lignes); const d = Vrac.destinations(et, x.type); x.cible = d.length ? d[0][0] : ''; rendre(); }
+      // Modèle de la gamme choisi à la main : ses valeurs et sa référence (aucun : valeurs de la gamme seulement)
+      if (k === 'modele') { x.modeleManuel = true; x.lu = el.value === '' ? x.gammeLu : Vrac.choisirModele(x.gammeLu, +el.value); rendre(); return; }
+      if (k === 'cible') { x.branche = ''; gamme(x); rendre(); return; }
+      if (k === 'type') { lire(x); const d = Vrac.destinations(et, x.type); x.cible = d.length ? (Vrac.proposer ? Vrac.proposer(et, x.type, x.lu) : d[0][0]) : ''; gamme(x); rendre(); }
       else b.querySelector('#vr-ok').disabled = !items.some(y => y.type !== 'inconnu');
     });
     z.querySelectorAll('[data-vr-suppr]').forEach(el => el.onclick = () => { items.splice(+el.dataset.vrSuppr, 1); rendre(); });
@@ -1753,15 +1770,24 @@ function dialogueVrac(et) {
     for (const [k, f] of fichiers.entries()) {
       z.insertAdjacentHTML('afterbegin', `<p class="petit muted vr-lecture">Lecture ${k + 1}/${fichiers.length} : ${esc(f.name)}…</p>`);
       try {
-        if (/^text\//.test(f.type || '') || /\.(txt|md)$/i.test(f.name || '')) Vrac.decouper(await f.text()).forEach((l, j, t) => ajouter(t.length > 1 ? `${f.name} (${j + 1}/${t.length})` : f.name, l));
-        else ajouter(f.name, (await PdfLecture.lire(f, () => {}, { pagesMax: 12, ocr: typeof OCR !== 'undefined' })).lignes);
+        if (/^text\//.test(f.type || '') || /\.(txt|md)$/i.test(f.name || '')) Vrac.decouper(await f.text()).forEach((l, j, t) => ajouter(t.length > 1 ? `${f.name} (${j + 1}/${t.length})` : f.name, l, t.length > 1 ? null : f));
+        else ajouter(f.name, (await PdfLecture.lire(f, () => {}, { pagesMax: 12, ocr: typeof OCR !== 'undefined' })).lignes, f);
       } catch (e) { toast(`${f.name} : lecture impossible (${e.message})`, 5000); }
     }
     rendre();
   };
-  b.querySelector('#vr-ok').onclick = () => {
+  // Document commercial joint au matériel retenu ou à la consultation : pièce de l'étude (fichier gardé quand il a été chargé)
+  const joindre = async x => {
+    const dest = x.cible === 'doc:consultation' ? 'consultation' : 'materiel';
+    let f = null;
+    try { if (x.fichier) f = await garderPdf(x.nom, new Uint8Array(await x.fichier.arrayBuffer())); } catch (e) { f = null; }
+    Revisions.nouvellePiece(et, codeAffaire(et), { type: 'doc', titre: `${x.nom} — document commercial (${dest === 'consultation' ? 'consultation' : 'matériel retenu'})`, source: { commercial: true, destination: dest }, ...(f ? { fichier: { id: f.id, nom: x.nom } } : {}), indice: 'A', date: aujourdhui() });
+  };
+  b.querySelector('#vr-ok').onclick = async () => {
     const comptes = [];
-    items.filter(x => x.type !== 'inconnu').forEach(x => { try { const m = Vrac.appliquer(et, x, x.cible, nouvelleNote); if (m) comptes.push(m); } catch (e) { comptes.push(`${x.nom} : ${e.message}`); } });
+    for (const x of items.filter(y => y.type !== 'inconnu')) {
+      try { const m = Vrac.appliquer(et, x, x.cible, nouvelleNote); if (x.type === 'document' && /^doc:/.test(x.cible || '')) await joindre(x); if (m) comptes.push(m); } catch (e) { comptes.push(`${x.nom} : ${e.message}`); }
+    }
     if (!comptes.length) return toast('Rien à répartir.', 3000);
     enregistrer(et); Modal.close(); App.render();
     const r = Modal.open(`<h2>📥 Matériel réparti</h2><ul>${comptes.map(c => `<li>${esc(c)}</li>`).join('')}</ul><p class="muted petit">Chaque modèle est inscrit une fois au registre des équipements ; les calculs reprennent ses valeurs. Complétez ce qui reste à choisir (tronçon d'une bouche ou d'un point de puisage, branche d'une pompe).</p><div class="actions"><button class="secondaire" id="vr-reg">Ouvrir le registre</button><button id="vr-fin">OK</button></div>`);
