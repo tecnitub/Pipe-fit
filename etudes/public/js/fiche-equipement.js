@@ -154,7 +154,7 @@ const FicheEquip = (() => {
         const vals = (X[j].split(/(?:^|\s)kw\s/)[1] || '').trim().split(/\s+/).map(nb).filter(Number.isFinite);
         if (vals.length !== mods.length || !/puissance/.test(X.slice(Math.max(0, j - 2), j + 2).join(' '))) continue;
         const pref = (() => { const m = new RegExp(`\\b([A-Z]{2,6})\\s?${mods[0]}\\b`).exec(L.join('\n')); return m ? `${m[1]} ` : ''; })();
-        return { titre: (annonce && annonce[0]) || `${mods.length} modèles`, cle: 'P', cles: ['P', 'Pfr'], modeles: mods.map((m, k) => ({ ref: `${pref}${m}`.trim(), P: vals[k] })) };
+        return { titre: (annonce && annonce[0].replace(/modeles/, 'modèles')) || `${mods.length} modèles`, cle: 'P', cles: ['P', 'Pfr'], modeles: mods.map((m, k) => ({ ref: `${pref}${m}`.trim(), P: vals[k] })) };
       }
     }
     // Vertical : lignes qui commencent par une capacité croissante (« 200 », « 1 000 »), suivies de cotes
@@ -164,11 +164,67 @@ const FicheEquip = (() => {
     if (croissant.length >= 4 && /capacite|volume|litres/.test(X.join(' '))) return { titre: (annonce && annonce[0]) || `${croissant.length} capacités`, cle: 'V', cles: ['V'], modeles: croissant.map(n => ({ ref: `${n} L`, V: n })) };
     return annonce && Number(annonce[1] || 0) >= 2 ? { titre: annonce[0], cle: '', cles: ['P', 'V', 'Pfr'], modeles: [] } : null;
   }
+  // Gamme de robinetterie (vannes, robinets à papillon…) : un modèle par DN. Tableau des dimensions en ligne (« DN 32-40 50
+  // 65 … » puis « Poids … »), tableau des Kv par DN (une ligne par DN, colonnes d'ouverture : Kvs = pleine ouverture, ou
+  // colonne « Kvs »), servomoteur par DN. Plage annoncée (« DN 32 à DN 250 ») : DN hors plage écartés.
+  // Renvoie { titre, modeles: [{ ref: 'DN 50', dn, kv?, poids?, servo? }] } ou null (moins de 4 DN)
+  function gammeRobinet(lignes) {
+    const L = (Array.isArray(lignes) ? lignes : String(lignes || '').split(/\r?\n/)).map(String).filter(l => l.trim()), X = L.map(norm);
+    const cel = l => l.split('\t').map(t => t.trim()).filter(Boolean), num = t => (/^\d+(?:[.,]\d+)?$/.test(t) ? nb(t) : NaN);
+    const parDn = new Map(), m = dn => { if (!parDn.has(dn)) parDn.set(dn, { dn }); return parDn.get(dn); };
+    // Tableau horizontal : ligne « DN » suivie de 4 DN au moins (« 32-40 » : deux DN de mêmes dimensions)
+    for (let i = 0; i < L.length; i++) {
+      const c = cel(L[i]); if (!/^dn$/i.test(c[0] || '') || c.length < 5) continue;
+      const cols = c.slice(1).map(t => (/^\d{2,3}(?:[-/]\d{2,3})?$/.test(t) ? t.split(/[-/]/).map(Number) : null));
+      if (cols.some(x => !x)) continue;
+      cols.flat().forEach(m);
+      for (let j = i + 1; j < Math.min(L.length, i + 30); j++) {
+        const lab = norm(cel(L[j])[0] || ''), d = cel(L[j]), vals = d.slice(1).map(num), suiv = cel(L[j + 1] || '').map(num);
+        const ligne = vals.length === cols.length && vals.every(Number.isFinite) ? vals : d.length === 1 && suiv.length === cols.length && suiv.every(Number.isFinite) ? suiv : null;
+        const k = /^poids/.test(lab) ? 'poids' : /^kvs?\b/.test(lab) ? 'kv' : /^couple/.test(lab) ? 'couple' : '';
+        if (k && ligne) cols.forEach((dns, z) => dns.forEach(dn => { if (m(dn)[k] === undefined) m(dn)[k] = ligne[z]; }));
+      }
+      break;
+    }
+    // Tableau des Kv : en-tête « Kv » puis une ligne par DN (DN, puis valeurs) ; Kvs = colonne « Kvs », sinon pleine ouverture
+    for (let i = 0; i < L.length; i++) {
+      if (!/\bkvs?\b|coefficient de debit/.test(X[i])) continue;
+      let col = -1, angles = false, vu = 0;
+      for (let j = i; j < Math.min(L.length, i + 40); j++) {
+        const c = cel(L[j]), v = c.map(num);
+        if (Number.isFinite(v[0]) && v[0] >= 10 && v[0] <= 1000 && Number.isInteger(v[0]) && c.length >= 2 && v.every(Number.isFinite)) {
+          const kv = col > 0 && c.length > col ? v[col] : angles || c.length === 2 ? Math.max(...v.slice(1)) : NaN;
+          if (Number.isFinite(kv)) { const x = m(v[0]); if (x.kv === undefined) x.kv = kv; vu++; }
+          continue;
+        }
+        if (vu) break;
+        const h = cel(L[j]).map(norm);
+        if (h.some(t => /^kvs\b/.test(t))) col = h.findIndex(t => /^kvs\b/.test(t)) + (/^dn/.test(h[0]) ? 0 : 1);
+        if (h.filter(t => /^\d{1,2}\s*°$/.test(t)).length >= 3) angles = true;
+      }
+      if (vu >= 3) break;
+    }
+    // Servomoteur par DN : « 50 <tab> XX-05N <tab> … » sous un en-tête « servomoteur »
+    for (let i = 0; i < L.length; i++) {
+      if (!/servomoteur|actionneur|actuator/.test(X[i])) continue;
+      for (let j = i + 1; j < Math.min(L.length, i + 30); j++) {
+        const c = cel(L[j]), r = /^(\d{2,3})(?:\/(\d{2,3}))?$/.exec(c[0] || '');
+        if (r && c[1] && /^[A-Z]{2,}[\s-]?\d+[A-Z]*$/i.test(c[1])) [r[1], r[2]].filter(Boolean).map(Number).forEach(dn => { if (parDn.has(dn) && m(dn).servo === undefined) m(dn).servo = c[1]; });
+      }
+    }
+    const plage = /\bdn\s*(\d{2,3})\s*(?:a|-|–)\s*(?:dn\s*)?(\d{2,3})\b/.exec(X.join('\n'));
+    const lo = plage ? +plage[1] : 0, hi = plage ? +plage[2] : 1e9;
+    const modeles = [...parDn.values()].filter(x => x.dn >= lo && x.dn <= hi && (x.kv !== undefined || x.poids !== undefined)).sort((a, b) => a.dn - b.dn).map(x => ({ ref: `DN ${x.dn}`, ...x }));
+    if (modeles.length < 4) return null;
+    return { titre: plage ? `DN ${lo} à DN ${hi}` : `${modeles.length} DN`, modeles };
+  }
   // Modèle choisi dans une documentation de gamme : ses valeurs remplacent celles de la fiche
   function choisir(lu, k) {
     const m = ((lu && lu.modeles) || [])[k]; if (!m) return lu;
     const { ref, ...val } = m;
-    return { ...lu, reference: ref || lu.reference, valeurs: { ...(lu.valeurs || {}), ...val }, modele: ref };
+    // Gamme de robinetterie : « référence de la gamme DN 50 »
+    const reference = /^DN \d+$/.test(ref || '') && lu.refGamme ? `${lu.refGamme} ${ref}` : ref || lu.reference;
+    return { ...lu, reference, valeurs: { ...(lu.valeurs || {}), ...val }, modele: ref };
   }
 
   // ---- Fabricant et référence ----
@@ -223,7 +279,9 @@ const FicheEquip = (() => {
     Pcond: ['Puissance au condenseur', 'kW'], Qeau: ['Débit d\'eau (évaporateur)', 'm³/h'], Qcond: ['Débit d\'eau (condenseur)', 'm³/h'], dpCond: ['Perte de charge condenseur', 'kPa'],
     TfDep: ['Eau glacée : départ', '°C'], TfRet: ['Eau glacée : retour', '°C'], TcDep: ['Eau chaude : départ', '°C'], TcRet: ['Eau chaude : retour', '°C'], TcondE: ['Condenseur : entrée', '°C'], TcondS: ['Condenseur : sortie', '°C'],
     Imax: ['Intensité maximale', 'A'], Idem: ['Intensité de démarrage', 'A'], tension: ['Tension', ''], poids: ['Poids', 'kg'], longueur: ['Longueur', 'mm'], largeur: ['Largeur', 'mm'], hauteur: ['Hauteur', 'mm'], Lw: ['Puissance acoustique', 'dB(A)'],
-    Vmin: ['Volume minimal (note de sélection)', 'L'], Ve: ['Volume d\'expansion calculé', 'L'] };
+    Vmin: ['Volume minimal (note de sélection)', 'L'], Ve: ['Volume d\'expansion calculé', 'L'],
+    // Robinetterie (gamme par DN), capteurs et instrumentation
+    servo: ['Servomoteur', ''], couple: ['Couple', 'N·m'], grandeur: ['Grandeur mesurée', ''], sortie: ['Signal de sortie', ''], alim: ['Alimentation', ''], Paux: ['Consommation', 'W / VA'], ip: ['Indice de protection IP', ''], plage: ['Plage de mesure', ''] };
   // Champs du calcul remplis par la fiche
   function champs(type, v) {
     const out = [], a = (k, cle, val) => { if (val !== undefined && Number.isFinite(val)) out.push({ k, cle, val: Math.round(val * 100) / 100, libelle: LIBELLES[cle][0], unite: LIBELLES[cle][1] }); };
@@ -271,6 +329,6 @@ const FicheEquip = (() => {
   // Calculs annexes reliés au registre (fiche-annexes.js) : contrôles faits par le calcul lui-même, matériel rappelé au résumé
   const ANNEXES = ['drv', 'radiateurs', 'echangeurPlaques', 'piscine', 'chambreFroide', 'hotte', 'parking'];
   const gere = type => !!TYPES[type] || ANNEXES.includes(type);
-  return { lire, champs, fiche, controles, gere, identifier, choisir, gammeDe, LIBELLES, TYPES };
+  return { lire, champs, fiche, controles, gere, identifier, choisir, gammeDe, gammeRobinet, LIBELLES, TYPES };
 })();
 if (typeof module !== 'undefined') module.exports = FicheEquip;
