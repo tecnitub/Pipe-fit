@@ -297,7 +297,7 @@ const AnnexesPlomberie = ((N) => {
     const fl = C.liquide('eau', Tm), dT = Tdep - Tret;
     // Pertes thermiques de la boucle (aller et retour) : tube nu et isolé (même méthode que la note « isolation »)
     const lignes = (e.boucle || []).filter(l => l && (l.rep || num(l.L) > 0)).map((l, i) => {
-      const de = num(l.de), di = ou(l.di, Math.max(0, de - 2)), L = num(l.L), ep = num(l.ep);
+      const de = num(l.de), di = ou(l.di, Math.max(0, de - 2)), L = num(l.L), ep = ou(l.ep, ou(e.epDefaut, 19));
       const nu = de > 0 ? C.isolation({ De: de / 1000, e: 0, Tf: Tm, Ta, isolant: iso, emissivite: 0.9 }) : { q: 0 };
       const is = de > 0 && ep > 0 ? C.isolation({ De: de / 1000, e: ep / 1000, Tf: Tm, Ta, isolant: iso, emissivite: eps }) : nu;
       if (!(de > 0)) alertes.push(alerte('attention', `${l.rep || `Ligne ${i + 1}`} : diamètre extérieur à saisir.`));
@@ -305,7 +305,7 @@ const AnnexesPlomberie = ((N) => {
     });
     const forfait = !lignes.length, Pboucle = forfait ? ou(e.qForfait, 10) * ou(e.Lforfait, 100) : lignes.reduce((a, l) => a + l.P, 0);
     if (forfait) alertes.push(alerte('attention', `Pertes de la boucle forfaitaires (${nf(ou(e.Lforfait, 100), 0)} m à ${nf(ou(e.qForfait, 10), 1)} W/m) : saisir les tronçons de boucle ou relier le calcul sanitaire.`));
-    const nus = lignes.filter(l => l.ep <= 0 && l.L > 0);
+    const nus = lignes.filter(l => l.ep <= 0 && l.L > 0 && l.de > 0);
     if (nus.length) alertes.push(alerte('attention', `${nus.map(l => l.rep).join(', ')} : boucle non calorifugée (${nf(nus.reduce((a, l) => a + l.qNu * l.L, 0), 0)} W perdus) : calorifuger.`));
     // Débit de bouclage : pertes / (ρ · cp · ΔT) ; débit minimal pour garder 50 °C au retour
     const Qb = dT > 0 ? Pboucle / (fl.rho * fl.cp * dT) * 3600 : NaN, Qmin50 = Tdep > 50 ? Pboucle / (fl.rho * fl.cp * (Tdep - 50)) * 3600 : NaN; // m³/h
@@ -354,7 +354,7 @@ const AnnexesPlomberie = ((N) => {
         { niveau: 'conseil', texte: `Choc thermique curatif : ${nf(Tchoc, 0)} °C pendant ${nf(tChoc, 0)} min à chaque point de puisage (après information des usagers, risque de brûlure), à défaut traitement chimique.`, ref: 'Guides techniques (CSTB, circulaire DGS 2002/243)' },
         { niveau: 'conseil', texte: 'Vannes thermostatiques d\'équilibrage sur chaque boucle, thermomètres au départ et au retour, purges en points bas, suppression des bras morts.', ref: 'NF DTU 60.11, guide CSTB' }] }] }],
       alertes,
-      hypotheses: [`Pertes de la boucle à la température moyenne ${nf(Tm, 1)} °C, ambiance ${nf(Ta, 0)} °C : conduction radiale dans l'isolant (${D.ISOLANTS[iso].libelle}) et échanges extérieurs par convection naturelle et rayonnement (même méthode que la note « Isolation des tuyauteries »).`,
+      hypotheses: [`Pertes de la boucle à la température moyenne ${nf(Tm, 1)} °C, ambiance ${nf(Ta, 0)} °C : conduction radiale dans l'isolant (${D.ISOLANTS[iso].libelle}) et échanges extérieurs par convection naturelle et rayonnement (même méthode que la note « Isolation des tuyauteries ») ; épaisseur non saisie : ${nf(ou(e.epDefaut, 19), 0)} mm (indicatif).`,
         'Débit de bouclage Qb = P / (ρ · cp · ΔT), ΔT = départ − retour ; débit minimal = P / (ρ · cp · (départ − 50 °C)). Le réglage des boucles se fait par vannes thermostatiques.',
         `Pompe de bouclage : P = ρ · g · Q · H / η (η = ${nf(etaP * 100, 0)} %), 15 W minimum ; H repris du calcul sanitaire ou saisi.`,
         'Volume d\'une antenne : π · Di² / 4 · L ; limite de 3 L de l\'arrêté du 30/11/2005.',
@@ -376,7 +376,8 @@ const AnnexesPlomberie = ((N) => {
       { k: 'revetement', l: 'Surface extérieure', t: 's', o: () => Object.entries(Dn().REVETEMENTS).map(([k, [l]]) => [k, l]), d: 'pvc' },
       { k: 'boucle', l: 'Tronçons de la boucle (aller et retour)', t: 'lignes', d: [],
         colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'sens', l: 'Sens', t: 's', o: [['aller', 'Aller'], ['retour', 'Retour']] }, { k: 'de', l: 'Ø extérieur (mm)' }, { k: 'di', l: 'Ø intérieur (mm)' },
-          { k: 'L', l: 'Longueur (m)' }, { k: 'ep', l: 'Épaisseur d\'isolant (mm, 0 = nu)' }] },
+          { k: 'L', l: 'Longueur (m)' }, { k: 'ep', l: 'Épaisseur d\'isolant (mm ; vide : par défaut, 0 = nu)' }] },
+      { k: 'epDefaut', l: 'Épaisseur d\'isolant par défaut des tronçons (indicatif)', u: 'mm', d: 19 },
       { k: 'Lforfait', l: 'Sans tronçons : longueur de boucle forfaitaire', u: 'm', d: 100, si: e => !(e.boucle || []).length }, { k: 'qForfait', l: 'Sans tronçons : pertes linéiques forfaitaires', u: 'W/m', d: 10, si: e => !(e.boucle || []).length },
       { k: 'antennes', l: 'Antennes hors boucle vers les points de puisage', t: 'lignes', d: [],
         colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'di', l: 'Ø intérieur (mm)' }, { k: 'L', l: 'Longueur (m)' }] },
