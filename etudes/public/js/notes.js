@@ -566,6 +566,107 @@ const Notes = ((D, C) => {
     },
   };
 
+  /* ---------- 10 bis. Puissance d'un bâtiment (surface, niveaux, hauteur) : chauffage et / ou climatisation ---------- */
+  // Usages : [libellé, m² par personne, éclairage W/m², bureautique / petits équipements W/m², air neuf m³/h par personne, activité, T hiver, T été]
+  const USAGES_BAT = {
+    bureaux: ['Bureaux', 12, 8, 12, 25, 'bureau', 20, 26], commerce: ['Commerce, magasin', 5, 15, 5, 25, 'leger', 19, 26],
+    enseignement: ['Enseignement (classes)', 2.5, 8, 5, 18, 'bureau', 19, 26], sante: ['EHPAD, santé, hébergement', 25, 6, 5, 25, 'bureau', 22, 26],
+    logement: ['Logements', 30, 4, 4, 15, 'bureau', 19, 26], restauration: ['Restauration (salle)', 1.5, 10, 5, 25, 'bureau', 20, 26],
+    atelier: ['Atelier, production', 50, 10, 0, 45, 'moyen', 17, 28], entrepot: ['Entrepôt, stockage', 200, 6, 0, 25, 'moyen', 12, 30],
+    salle: ['Salle de réunion, de spectacle', 1.5, 10, 2, 25, 'bureau', 20, 26],
+  };
+  const COMPENSATIONS = { exterieur: 'Air extérieur non traité (entrées d\'air, ouvrants)', traite: 'Air neuf traité par une CTA (sans récupération)', transfert: 'Air transféré d\'un local voisin (sans effet)' };
+  TYPES.batiment = {
+    titre: 'Puissance d\'un bâtiment (chaud et / ou froid)', icone: '🏢', famille: 'Thermique',
+    description: 'Estimation rapide de la puissance de chauffage ou de climatisation d\'un bâtiment entier : surface, niveaux et hauteur, type de murs, toiture et fenêtres, apports des machines et des occupants, extractions d\'air et air neuf.',
+    champs: [{ g: 'Bâtiment' }, { k: 'nom', l: 'Désignation', t: 't', d: 'Bâtiment' },
+      { k: 'mode', l: 'Puissance recherchée', t: 's', o: [['les-deux', 'Chauffage et climatisation'], ['chaud', 'Chauffage seulement'], ['froid', 'Climatisation seulement']], d: 'les-deux' },
+      { k: 'usage', l: 'Usage (valeurs par défaut : occupants, éclairage, air neuf, températures)', t: 's', o: Object.entries(USAGES_BAT).map(([k, v]) => [k, v[0]]), d: 'bureaux' },
+      { k: 'S', l: 'Surface par niveau', u: 'm²', d: 500 }, { k: 'niveaux', l: 'Nombre de niveaux', d: 2 }, { k: 'h', l: 'Hauteur d\'un niveau (sous plafond)', u: 'm', d: 2.7 },
+      { k: 'forme', l: 'Forme en plan (longueur / largeur)', d: 2 },
+      { k: 'facades', l: 'Façades sur l\'extérieur', t: 's', o: [['4', '4 façades (bâtiment isolé)'], ['3', '3 façades (un pignon mitoyen chauffé)'], ['2', '2 façades'], ['1', '1 façade']], d: '4' },
+      { k: 'Ti', l: 'Température intérieure en hiver (vide : selon l\'usage)', u: '°C', d: '' }, { k: 'TiEte', l: 'Température intérieure en été (vide : selon l\'usage)', u: '°C', d: '' },
+      { g: 'Climat' }, { k: 'climat', l: 'Site', t: 's', o: [...optListe(D.CLIMATS), ['perso', 'Autre (températures saisies)']], d: 'annonay' },
+      { k: 'Te', l: 'Température extérieure de base en hiver', u: '°C', d: -10, si: e => e.climat === 'perso' },
+      { k: 'TeEte', l: 'Température extérieure en été', u: '°C', d: 32, si: e => e.climat === 'perso' }, { k: 'HRete', l: 'Humidité relative extérieure en été', u: '%', d: 40, si: e => e.climat === 'perso' },
+      { g: 'Murs, toiture, plancher' }, { k: 'mur', l: 'Type de murs', t: 's', o: optU(D.MURS), d: 'parpaing-iso' }, { k: 'Umur', l: 'U des murs', u: 'W/m²·K', d: 0.5, si: e => e.mur === 'perso' },
+      { k: 'toit', l: 'Toiture (dernier niveau)', t: 's', o: optU(D.TOITURES), d: 'terrasse-iso' }, { k: 'Utoit', l: 'U de la toiture', u: 'W/m²·K', d: 0.3, si: e => e.toit === 'perso' },
+      { k: 'teinte', l: 'Teinte de la toiture (été)', t: 's', o: [['claire', 'Claire'], ['foncee', 'Foncée']], d: 'claire' },
+      { k: 'plancher', l: 'Plancher bas (premier niveau)', t: 's', o: optU(D.PLANCHERS), d: 'dallage-iso' }, { k: 'Uplancher', l: 'U du plancher', u: 'W/m²·K', d: 0.4, si: e => e.plancher === 'perso' },
+      { k: 'ponts', l: 'Ponts thermiques (majoration des parois)', t: 's', o: [['0', 'Négligés'], ['10', '+ 10 % (bâtiment isolé courant)'], ['20', '+ 20 % (isolation intérieure, nombreuses liaisons)'], ['30', '+ 30 % (bâtiment ancien)']], d: '10' },
+      { g: 'Fenêtres et portes' }, { k: 'vitrage', l: 'Type de fenêtres', t: 's', o: optU(D.VITRAGES), d: 'double-recent' }, { k: 'Uvitrage', l: 'U des fenêtres', u: 'W/m²·K', d: 2, si: e => e.vitrage === 'perso' },
+      { k: 'saisieVitrage', l: 'Surface des fenêtres', t: 's', o: [['pct', 'En % des façades'], ['m2', 'En m²']], d: 'pct' },
+      { k: 'pctVitrage', l: 'Part vitrée des façades', u: '%', d: 25, si: e => e.saisieVitrage !== 'm2' }, { k: 'Svitrage', l: 'Surface des fenêtres', u: 'm²', d: 100, si: e => e.saisieVitrage === 'm2' },
+      { k: 'orientation', l: 'Orientation des fenêtres', t: 's', o: [['reparti', 'Réparties sur les façades'], ...optListe(D.SOLAIRE).filter(([k]) => k !== 'horizontal').map(([k, l]) => [k, `Surtout au ${l.toLowerCase()}`])], d: 'reparti' },
+      { k: 'protection', l: 'Protection solaire', t: 's', o: [['1', 'Aucune'], ['0.6', 'Store intérieur'], ['0.3', 'Brise-soleil, store extérieur']], d: '0.6' },
+      { k: 'porte', l: 'Portes extérieures', t: 's', o: optU(D.PORTES), d: 'vitree' }, { k: 'Uporte', l: 'U des portes', u: 'W/m²·K', d: 3, si: e => e.porte === 'perso' },
+      { k: 'Sporte', l: 'Surface des portes', u: 'm²', d: 8 },
+      { g: 'Air : infiltrations, air neuf, extractions' }, { k: 'infiltration', l: 'Infiltrations', t: 's', o: Object.entries(D.INFILTRATIONS).map(([k, v]) => [k, `${v[0]} — ${nf(v[1], 1)} vol/h`]), d: 'standard' },
+      { k: 'qv', l: 'Air neuf de ventilation (vide : occupants × débit de l\'usage)', u: 'm³/h', d: '' }, { k: 'recup', l: 'Récupération de chaleur sur l\'air neuf (0 : simple flux)', u: '%', d: 0 },
+      { k: 'extractions', l: 'Extractions d\'air (hottes, cabines, process, sanitaires…)', t: 'lignes', d: [],
+        colonnes: [{ k: 'nom', l: 'Extraction', t: 't' }, { k: 'Q', l: 'Débit (m³/h)' }, { k: 'comp', l: 'Air de compensation', t: 's', o: Object.entries(COMPENSATIONS) }, { k: 'simult', l: 'Fonctionnement simultané (%)' }] },
+      { g: 'Apports internes' }, { k: 'occupants', l: 'Nombre de personnes (vide : selon l\'usage)', d: '' },
+      { k: 'activite', l: 'Activité (vide : selon l\'usage)', t: 's', o: [['', '— selon l\'usage —'], ...optListe(D.ACTIVITES)], d: '' },
+      { k: 'eclairage', l: 'Éclairage (vide : selon l\'usage)', u: 'W/m²', d: '' }, { k: 'bureautique', l: 'Bureautique, petits équipements (vide : selon l\'usage)', u: 'W/m²', d: '' },
+      { k: 'machines', l: 'Machines et équipements (puissance dissipée dans le bâtiment)', t: 'lignes', d: [],
+        colonnes: [{ k: 'nom', l: 'Machine', t: 't' }, { k: 'qte', l: 'Nombre' }, { k: 'P', l: 'Puissance dissipée unitaire (kW)' }, { k: 'simult', l: 'Simultanéité (%)' }, { k: 'sensible', l: 'Part sensible (%)' }] },
+      { k: 'processHiver', l: 'Apports des machines déduits du chauffage', t: 's', o: [['0', 'Aucun (chauffage dimensionné machines à l\'arrêt)'], ['50', '50 % des apports'], ['100', '100 % (fonctionnement permanent)']], d: '0' },
+      { g: 'Puissances' }, { k: 'relance', l: 'Majoration pour relance (chauffage intermittent)', t: 's', o: [['0', 'Aucune (chauffage continu)'], ['10', '+ 10 %'], ['20', '+ 20 % (arrêt le week-end)']], d: '10' },
+      { k: 'marge', l: 'Marge de sécurité sur la climatisation', u: '%', d: 10 }],
+    calcul(e) {
+      const U0 = USAGES_BAT[e.usage] || USAGES_BAT.bureaux, vide = x => x === undefined || x === null || String(x).trim() === '';
+      const S = num(e.S), nv = Math.max(1, Math.round(num(e.niveaux, 1))), h = num(e.h, 2.7), H = nv * h, Stot = S * nv, r = Math.max(1, num(e.forme, 1.5));
+      const l = Math.sqrt(S / r), L = r * l, f = num(e.facades, 4), alertes = [];
+      const perimetre = { 4: 2 * (L + l), 3: 2 * Math.max(L, l) + Math.min(L, l), 2: L + l, 1: Math.max(L, l) }[f] || 2 * (L + l), Sfac = perimetre * H;
+      const Sv = e.saisieVitrage === 'm2' ? num(e.Svitrage) : Sfac * Math.min(90, Math.max(0, num(e.pctVitrage, 25))) / 100;
+      const occ = vide(e.occupants) ? Math.round(Stot / U0[1]) : num(e.occupants), act = vide(e.activite) ? U0[5] : e.activite;
+      const ecl = vide(e.eclairage) ? U0[2] : num(e.eclairage), bur = vide(e.bureautique) ? U0[3] : num(e.bureautique);
+      const qvBase = vide(e.qv) ? occ * U0[4] : num(e.qv), Ti = vide(e.Ti) ? U0[6] : num(e.Ti), TiEte = vide(e.TiEte) ? U0[7] : num(e.TiEte);
+      // Extractions : compensées par l'air extérieur (déperdition comme une infiltration), par de l'air neuf traité (ajouté à la
+      // ventilation) ou par de l'air de transfert (sans effet sur la puissance du bâtiment)
+      const ext = (e.extractions || []).filter(x => x && num(x.Q) > 0).map(x => ({ nom: x.nom || 'Extraction', comp: COMPENSATIONS[x.comp] ? x.comp : 'exterieur', Q: num(x.Q) * num(x.simult, 100) / 100 }));
+      const qExtExt = ext.filter(x => x.comp === 'exterieur').reduce((a, x) => a + x.Q, 0), qExtTraite = ext.filter(x => x.comp === 'traite').reduce((a, x) => a + x.Q, 0);
+      const process = [...(e.machines || []).filter(x => x && num(x.P) > 0).map(x => ({ nom: `${x.nom || 'Machine'}${num(x.qte, 1) !== 1 ? ` × ${nf(num(x.qte, 1), 0)}` : ''}`, P: num(x.P) * num(x.qte, 1), simult: x.simult, sensible: x.sensible })),
+        ...(bur > 0 ? [{ nom: `Bureautique, petits équipements (${nf(bur, 0)} W/m²)`, P: bur * Stot / 1000, simult: 100, sensible: 100 }] : [])];
+      // Moteur commun avec le bilan d'un local : un volume L × l × (niveaux × hauteur), apports par m² ramenés à la surface totale ;
+      // soleil compté à part (fenêtres réparties sur les façades ou orientation dominante)
+      const eb = { ...e, L, l, H, facades: String(f), Ti, TiEte, Svitrage: Sv, lanterneau: 'polycarbonate', Slanterneau: 0, orientation: 'sud', protection: '0',
+        qv: qvBase + qExtTraite, recup: num(e.recup) * (qvBase / Math.max(1e-9, qvBase + qExtTraite)), qext: qExtExt, occupants: occ, activite: act, eclairage: ecl * nv, process };
+      const rb = TYPES.bilan.calcul(eb), v = rb.valeurs;
+      const gv = e.vitrage === 'perso' ? 0.6 : D.VITRAGES[e.vitrage][2], prot = num(e.protection, 1);
+      const I = e.orientation === 'reparti' || !D.SOLAIRE[e.orientation] ? ['nord', 'est', 'sud', 'ouest'].reduce((a, o) => a + D.SOLAIRE[o][1], 0) / 4 : D.SOLAIRE[e.orientation][1];
+      const Psol = Sv * I * gv * prot, marge = 1 + num(e.marge, 10) / 100, Ss = v.Ss + Psol, Pfroid = (Ss + v.Sla) * marge, Pchauf = v.Pchauf;
+      const chaud = e.mode !== 'froid', froid = e.mode !== 'chaud', k = x => nf(x / 1000, 1);
+      if (!(S > 0)) alertes.push(alerte('erreur', 'Surface du bâtiment à renseigner.'));
+      if (Sv + num(e.Sporte) > Sfac) alertes.push(alerte('erreur', 'Fenêtres et portes plus grandes que les façades.'));
+      if (chaud) alertes.push(alerte('ok', `Chauffage : ${k(Pchauf)} kW, soit ${nf(Pchauf / Math.max(Stot, 1), 0)} W/m² sur ${nf(Stot, 0)} m² (${nf(Ti, 0)} °C intérieur par ${nf(v.Te, 0)} °C extérieur).`));
+      if (froid) alertes.push(alerte('ok', `Climatisation : ${k(Pfroid)} kW avec marge, soit ${nf(Pfroid / Math.max(Stot, 1), 0)} W/m² (sensible ${k(Ss * marge)} kW, latent ${k(v.Sla * marge)} kW ; ${nf(TiEte, 0)} °C par ${nf(v.TeEte, 0)} °C).`));
+      // Alertes du moteur commun utiles ici (déduction des machines, poids de l'air, parois non isolées) ; hauteur seulement en simple niveau
+      rb.alertes.filter(a => a.niveau !== 'ok' && !/^Dimensions/.test(a.texte) && (nv === 1 || !/^Grande hauteur/.test(a.texte)) && (chaud || !/chauffage|déperditions|parois/i.test(a.texte))).forEach(a => alertes.push(a));
+      if (froid && Psol > 0.3 * Ss && prot === 1) alertes.push(alerte('attention', `Le soleil fait ${nf(Psol / Ss * 100, 0)} % des apports sensibles : une protection extérieure (brise-soleil, stores) réduirait nettement la climatisation.`));
+      if (ext.length && qExtExt > 0) alertes.push(alerte('attention', `${nf(qExtExt, 0)} m³/h extraits compensés par de l'air extérieur non traité : ${k(0.34 * qExtExt * (Ti - v.Te))} kW de chauffage à eux seuls ; un air neuf traité (ou récupéré) est à étudier.`));
+      const [tCh, tFr] = rb.tableaux;
+      const tSol = { ...tFr, lignes: [...tFr.lignes.slice(0, -1), ...(Psol > 0 ? [[`Soleil par les fenêtres (${nf(Sv, 0)} m², ${e.orientation === 'reparti' ? 'réparties' : D.SOLAIRE[e.orientation][0].toLowerCase()})`, nf(Psol / 1000, 2), '0']] : []), [`Total avec marge de ${nf(num(e.marge, 10), 0)} %`, nf(Ss * marge / 1000, 2), nf(v.Sla * marge / 1000, 2)]] };
+      return {
+        valeurs: { ...v, Stot, S, niveaux: nv, Sv, occupants: occ, qv: qvBase, qExt: qExtExt + qExtTraite, Psol, Ss, Pfroid, Pchauf, Pchaud: Pchauf, ratioChaud: Pchauf / Math.max(Stot, 1), ratioFroid: Pfroid / Math.max(Stot, 1) },
+        resume: [['Bâtiment', `${e.nom || '—'} : ${nf(S, 0)} m² × ${nv} niveau(x) de ${nf(h, 2)} m — ${U0[0]}`], ['Surface totale / volume', `${nf(Stot, 0)} m² / ${nf(Stot * h, 0)} m³`],
+          ['Emprise (forme ' + nf(r, 1) + ')', `${nf(L, 1)} × ${nf(l, 1)} m, ${nf(Sfac, 0)} m² de façades dont ${nf(Sv, 0)} m² de fenêtres`],
+          ['Températures de base (hiver / été)', `${nf(v.Te, 0)} °C / ${nf(v.TeEte, 0)} °C`], ['Occupants / air neuf', `${nf(occ, 0)} personnes / ${nf(qvBase, 0)} m³/h`],
+          ...(ext.length ? [['Extractions', `${nf(qExtExt + qExtTraite, 0)} m³/h (${nf(qExtExt, 0)} compensés par l'air extérieur)`]] : []),
+          ...(chaud ? [['Déperditions parois / air', `${k(v.Ptr)} kW / ${k(v.Pve)} kW`], ['Puissance de chauffage', `${k(Pchauf)} kW (${nf(Pchauf / Math.max(Stot, 1), 0)} W/m²)`]] : []),
+          ...(froid ? [['Apports du soleil', `${k(Psol)} kW`], ['Puissance de climatisation', `${k(Pfroid)} kW (${nf(Pfroid / Math.max(Stot, 1), 0)} W/m²)`]] : [])],
+        tableaux: [...(chaud ? [tCh] : []), ...(froid ? [tSol] : [])],
+        alertes,
+        hypotheses: [`Bâtiment ramené à un volume de ${nf(L, 1)} × ${nf(l, 1)} m sur ${nf(H, 1)} m (${nv} niveau(x)) : toiture sur le dernier niveau, plancher bas sur le premier, planchers intermédiaires entre locaux chauffés.`,
+          `Valeurs de l'usage « ${U0[0]} » quand le champ est vide : ${U0[1]} m² par personne, éclairage ${U0[2]} W/m², bureautique ${U0[3]} W/m², air neuf ${U0[4]} m³/h par personne.`,
+          e.orientation === 'reparti' ? 'Fenêtres réparties sur les quatre orientations : rayonnement moyen des façades (pointes non simultanées).' : 'Toutes les fenêtres comptées à l\'orientation dominante (pointe d\'ensoleillement).',
+          'Extractions : air extérieur non traité compté comme une infiltration, air neuf traité ajouté à la ventilation, air de transfert sans effet.',
+          ...rb.hypotheses.filter(x => /NF EN 12831|Coefficients U/.test(x)), 'Estimation de puissance : à confirmer par un bilan pièce par pièce pour le choix des terminaux.'],
+        synthese: [chaud ? `chaud ${k(Pchauf)} kW` : '', froid ? `froid ${k(Pfroid)} kW` : ''].filter(Boolean).join(' · ') + ` · ${nf(Stot, 0)} m²`,
+      };
+    },
+  };
+
   /* ---------- 11. Dilatation thermique ---------- */
   TYPES.dilatation = {
     titre: 'Dilatation thermique et compensation', icone: '↔️', famille: 'Mécanique',

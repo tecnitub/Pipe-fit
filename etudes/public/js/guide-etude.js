@@ -80,7 +80,7 @@ const GuideEtude = (() => {
 
     // 4. Bilans : les puissances des circuits et des terminaux doivent être justifiées
     if (notes.some(n => ['pid', 'terminaux', 'cta', 'arbo'].includes(n.type)) || inv.length) {
-      const bil = notes.filter(n => ['bilan', 'pieces'].includes(n.type));
+      const bil = notes.filter(n => ['bilan', 'batiment', 'pieces'].includes(n.type));
       a('bilans', 'bilans', 'Bilans thermiques', bil.length, bil.length ? `${bil.length} bilan(s)` : 'Puissances reprises du dossier à justifier (déperditions, apports)', ['ajout:pieces', '🌡️ Faire le bilan pièce par pièce']);
     }
 

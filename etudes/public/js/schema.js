@@ -1133,7 +1133,7 @@ const Schema = ((D, C, N) => {
         { rep: 'Ballon ECS', emetteur: 'ecs', P: 40, regime: '', regulation: 'direct', L: 20 }],
       colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'emetteur', l: 'Émetteur', t: 's', o: optListe(EMETTEURS) }, { k: 'P', l: 'Puissance (kW)' },
         { k: 'Pf', l: 'Puissance froid (kW)', si: e => e.reseau === 'co' },
-        { k: 'bilan', l: 'Puissance reprise de', t: 's', o: (e, ctx) => [['', 'Saisie'], ...((ctx && ctx.notes) || []).map((n, i) => [n, i]).filter(([n]) => n.type === 'bilan').map(([n, i]) => [n.id, `N${i + 1} — ${n.titre}`])] },
+        { k: 'bilan', l: 'Puissance reprise de', t: 's', o: (e, ctx) => [['', 'Saisie'], ...((ctx && ctx.notes) || []).map((n, i) => [n, i]).filter(([n]) => n.type === 'bilan' || n.type === 'batiment').map(([n, i]) => [n.id, `N${i + 1} — ${n.titre}`])] },
         { k: 'annexe', l: 'Réseau annexe relié (réseau, CTA, schéma aval : sous-station, boucle secondaire)', t: 's', o: optAnnexes },
         { k: 'regime', l: 'Régime (°C)', t: 't' }, { k: 'regulation', l: 'Régulation', t: 's', o: optListe(REGULATIONS) }, { k: 'L', l: 'Longueur aller + retour (m)' },
         { k: 'depMini', l: 'Loi d\'eau : départ à 18 °C ext. (°C ; vide = 30, plancher 25)' },

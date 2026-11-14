@@ -194,7 +194,7 @@ const Liens = ((N, Sc) => {
     const cl = climatEtude(etude);
     if (cl) {
       const lib = `climat de l'étude (${cl.libelle})`;
-      if (t === 'bilan') imposer(cl.cle === 'perso' ? { climat: 'perso', Te: cl.Tbase, TeEte: cl.Tete, HRete: cl.HRete } : { climat: cl.cle }, lib);
+      if (t === 'bilan' || t === 'batiment') imposer(cl.cle === 'perso' ? { climat: 'perso', Te: cl.Tbase, TeEte: cl.Tete, HRete: cl.HRete } : { climat: cl.cle }, lib);
       if (t === 'pieces') imposer({ Tbase: cl.Tbase, Tete: cl.Tete }, lib);
       if (t === 'cta' && e.modeP !== 'saisie') imposer({ TeH: cl.Tbase, TeE: cl.Tete, HReE: cl.HRete }, lib);
       if (t === 'pid') imposer({ Tbase: cl.Tbase }, lib);
