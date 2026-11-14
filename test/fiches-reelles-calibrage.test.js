@@ -69,8 +69,9 @@ test('CTA simple flux par composant : batteries additionnées, filtre de dimensi
   assert.deepStrictEqual([v.dpFiltreAN, v.PdispoS, v.Pbe, v.humid, v.froid], [140, 380, 33.6, 'adiabatique', undefined]);
   assert.deepStrictEqual([v.LwS, v.SFP, v.PelS, v.Pmot, v.Imot, v.poids], [82, 1850, 6.2, 7.5, 14.9, 1450]);
   assert.strictEqual(r.fabricant, 'Exemplair');
-  // L'humidificateur adiabatique reste un contrôle : le calcul de CTA ne connaît que la vapeur
-  assert.ok(!FC.champs('cta', v).some(c => c.k === 'humid'));
+  // L'humidificateur adiabatique est repris dans le calcul de CTA (option « adiabatique ») ; son débit d'eau reste un contrôle
+  assert.ok(FC.champs('cta', v).some(c => c.k === 'humid' && c.val === 'adiabatique'));
+  assert.strictEqual(FC.fiche(r).mHum, 90.5);
   assert.ok(FC.fiche(r).Imot === 14.9);
 });
 

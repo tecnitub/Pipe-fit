@@ -1231,6 +1231,13 @@ const Electricite = ((N, Sc) => {
         const pBe = kwFiche(es.PelBe) ?? kwFiche(fiche.Pbe) ?? kwFiche(v.Pbe), libBe = { chaude: 'Batterie chaude électrique', prechauffage: 'Batterie électrique de préchauffage', appoint: 'Batterie électrique d\'appoint' }[es.batElec] || 'Batterie électrique';
         // Batterie chaude électrique principale : autorisation, consigne 0-10 V (gradateur) et défaut ; préchauffage et appoint : TOR
         if (pBe) ajout('be', { rep: `BE-N${ni + 1}`, designation: `${libBe} — ${titre}`, type: 'resistance', P: pBe, tension: es.tensionCta || (pBe > 3.6 ? 'tri' : 'mono'), regulation: es.batElec === 'chaude' ? 'mod' : 'tor', ...(es.batElec === 'chaude' ? { regImpose: true } : {}), alim: es.alim || '' });
+        // Humidificateur adiabatique : pompe de recirculation, électrovannes d'alimentation et de vidange, conductivité de l'eau
+        if (es.humid === 'adiabatique') {
+          ajout('phum', { rep: `PH-N${ni + 1}`, designation: `Pompe de recirculation de l'humidificateur adiabatique — ${titre}`, type: 'pompe', P: kwFiche(es.PpompeHum) ?? 0.37, tension: 'mono', regulation: 'tor', alim: es.alim || '' });
+          ajout('evah', { rep: `EVA-N${ni + 1}`, designation: `Électrovanne d'alimentation en eau de l'humidificateur — ${titre}`, type: 'vanne', P: 0.02, tension: 'mono', regulation: 'tor', alim: es.alim || '' });
+          ajout('evvh', { rep: `EVV-N${ni + 1}`, designation: `Électrovanne de vidange / déconcentration de l'humidificateur — ${titre}`, type: 'vanne', P: 0.02, tension: 'mono', regulation: 'tor', alim: es.alim || '' });
+          ajout('cond', { rep: `CE-N${ni + 1}`, designation: `Sonde de conductivité de l'eau de l'humidificateur — ${titre}`, type: 'sonde', P: 0, tension: '24V', regulation: 'sonde' });
+        }
       }
     });
     // Matériel retenu choisi dans le catalogue des fabricants : sa puissance électrique remplace l'estimation

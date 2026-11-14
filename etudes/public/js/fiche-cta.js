@@ -262,7 +262,7 @@ const FicheCta = (() => {
       if (CONTROLES.includes(cle) || !LIBELLES[cle]) return;
       if (type === 'cta') {
         if (cle === 'LwS' || cle === 'LwR' || cle === 'Pbe') return;
-        if (cle === 'humid') { if (val === 'vapeur') ajoute(cle, 'humid', 'vapeur'); return; }
+        if (cle === 'humid') { if (val === 'vapeur' || val === 'adiabatique') ajoute(cle, 'humid', val); return; }
         ajoute(cle, cle, val);
       } else if (type === 'aero') {
         const k = { recup: 'recuperateur', froid: 'batFroide', dpFiltreAN: 'dpFiltreS', dpFiltreR: 'dpFiltreR', dpRecup: 'dpRecup', dpBC: 'dpBatC', dpBF: 'dpBatF', rendement: 'rendement', LwS: 'LwFabS', LwR: 'LwFabR' }[cle];
@@ -296,6 +296,8 @@ const FicheCta = (() => {
     if (Number.isFinite(f.PfrBF) && Number.isFinite(calc.Pfroid) && calc.Pfroid > 0) a(f.PfrBF >= calc.Pfroid * 0.97 ? 'ok' : 'erreur', `Batterie froide de la fiche : ${fx(f.PfrBF, 1)} kW pour ${fx(calc.Pfroid, 1)} kW calculés${f.PfrBF >= calc.Pfroid * 0.97 ? '' : ' : insuffisante'}.`);
     const pel = (f.PelS || 0) + (f.PelR || 0);
     if (pel > 0 && Number.isFinite(calc.Pvent) && calc.Pvent > 0) a(Math.abs(pel - calc.Pvent) / calc.Pvent <= 0.25 ? 'ok' : 'attention', `Ventilateurs : ${fx(pel, 2)} kW électriques sur la fiche, ${fx(calc.Pvent, 2)} kW estimés par le calcul${Math.abs(pel - calc.Pvent) / calc.Pvent <= 0.25 ? '' : ' : vérifier les pertes de charge et le rendement saisis'}.`);
+    // Humidificateur : eau évaporée (adiabatique) ou vapeur produite selon la fiche, face au besoin calculé
+    if (Number.isFinite(f.mHum) && Number.isFinite(calc.mHum) && calc.mHum > 0) a(f.mHum >= calc.mHum * 0.95 ? 'ok' : 'attention', `Humidificateur de la fiche : ${fx(f.mHum, 1)} kg/h pour ${fx(calc.mHum, 1)} kg/h calculés${f.mHum >= calc.mHum * 0.95 ? '' : ' : insuffisant (vérifier l\'humidité de consigne, l\'efficacité d\'un humidificateur adiabatique et les conditions d\'hiver)'}.`);
     if (Number.isFinite(f.Qs) && Number.isFinite(calc.Qs) && calc.Qs > 0 && Math.abs(f.Qs - calc.Qs) / calc.Qs > 0.05) a('attention', `Débit de soufflage de la fiche (${fx(f.Qs)} m³/h) différent du débit calculé (${fx(calc.Qs)} m³/h).`);
     return out;
   }
