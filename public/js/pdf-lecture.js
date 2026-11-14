@@ -86,8 +86,8 @@ const PdfLecture = (() => {
   // Ligatures sans correspondance Unicode dans la police : pdf.js rend « fi », « fl », « ffi » par un caractère nul (ou
   // U+FFFD) : « frigori\0que », « \0uide », « E\0cacité ». La ligature est devinée d'après les lettres voisines.
   function ligatures(s) {
-    if (!/[\u0000�]/.test(s)) return s;
-    return s.replace(/[\u0000�]/g, (c, i, t) => {
+    if (!/[\u0000\uFFFD]/.test(s)) return s;
+    return s.replace(/[\u0000\uFFFD]/g, (c, i, t) => {
       const av = t.slice(Math.max(0, i - 4), i).toLowerCase(), ap = t.slice(i + 1, i + 6).toLowerCase();
       if (/^(?:cac|cien|san|cul)/.test(ap) && /[a-z]$/.test(av)) return 'ffi';
       if (/(?:sou|insu|bou)$/.test(av) && /^(?:a|e|é)/.test(ap)) return 'ffl';
