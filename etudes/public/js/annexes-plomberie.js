@@ -392,7 +392,7 @@ const AnnexesPlomberie = ((N) => {
       const ecs = (san && (ctx.notes || []).find(n => n.type === 'ecs' && n.id === (ctx.resoudre(san).production || ''))) || notesDe(ctx, 'ecs')[0];
       if (ecs) {
         const ee = ctx.resoudre(ecs), v = ctx.calculer(ecs).valeurs || {};
-        ctx.proposer({ Tprod: num(ee.Tc, NaN), Vstock: v.choisi > 0 ? v.choisi : NaN }, ctx.libelle(ecs));
+        ctx.proposer({ Tprod: num(ee.Tc, NaN), Vstock: Number.isFinite(v.choisi) ? v.choisi : NaN }, ctx.libelle(ecs));
       }
       if (san) {
         const es = ctx.resoudre(san), r = ctx.calculer(san), v = r.valeurs || {}, B = v.bouclage, src = ctx.libelle(san), C = Ca();
