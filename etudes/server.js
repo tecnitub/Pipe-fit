@@ -46,6 +46,31 @@ const BiblioModeles = require('./public/js/bibliotheque-modeles');
 // Versions des études, corbeille des calculs supprimés, présence (qui a l'étude ouverte)
 const Historique = require('./historique')(db, { reglages: () => ({ max: process.env.ETUDES_VERSIONS_MAX, jours: process.env.ETUDES_VERSIONS_JOURS, intervalleMin: process.env.ETUDES_VERSIONS_INTERVALLE, ...(lireConfig().versions || {}) }) });
 
+/* ---------- Auteur des études et corbeille des études supprimées ---------- */
+const CorbeilleEtudes = require('./public/js/corbeille-etudes');
+// Auteur (compte qui a créé l'étude) : colonnes ajoutées ; une étude d'avant reprend le nom de l'auteur de sa première
+// version (ou du dernier enregistrement), sans identifiant : ce nom suffit à la reconnaître
+{
+  const cols = db.prepare('PRAGMA table_info(etudes)').all().map(c => c.name);
+  if (!cols.includes('auteur_login')) {
+    db.exec('ALTER TABLE etudes ADD COLUMN auteur_login TEXT; ALTER TABLE etudes ADD COLUMN auteur_nom TEXT;');
+    const premiere = db.prepare("SELECT auteur FROM etudes_versions WHERE etude_id = ? AND auteur <> '' ORDER BY id LIMIT 1");
+    db.prepare('SELECT id, updated_by FROM etudes').all().forEach(r => db.prepare('UPDATE etudes SET auteur_nom = ? WHERE id = ?').run(((premiere.get(r.id) || {}).auteur) || r.updated_by || '', r.id));
+  }
+}
+// Étude supprimée : la ligne entière, son auteur, le dernier état transmis à Pipe-Fit (resume) pour la restauration ;
+// ses versions et sa corbeille de calculs restent dans leurs tables jusqu'à l'effacement définitif
+db.exec(`CREATE TABLE IF NOT EXISTS etudes_supprimees (id TEXT PRIMARY KEY, affaire_id TEXT, data TEXT NOT NULL, version INTEGER NOT NULL, updated_at TEXT, updated_by TEXT,
+  auteur_login TEXT, auteur_nom TEXT, resume TEXT, supprime_at TEXT NOT NULL, supprime_par TEXT, supprime_par_login TEXT)`);
+const auteurDe = r => ({ login: r.auteur_login || '', nom: r.auteur_nom || '' });
+const joursCorbeille = () => CorbeilleEtudes.jours(lireConfig().corbeilleJours || process.env.ETUDES_CORBEILLE_JOURS);
+// Effacement définitif des études restées plus longtemps que la durée réglée (au démarrage, puis toutes les 6 heures)
+function purgerCorbeille(maintenant = new Date().toISOString()) {
+  const ids = CorbeilleEtudes.aPurger(db.prepare('SELECT id, supprime_at AS supprimeLe FROM etudes_supprimees').all(), joursCorbeille(), maintenant);
+  ids.forEach(id => { db.prepare('DELETE FROM etudes_supprimees WHERE id = ?').run(id); Historique.supprimer(id); });
+  return ids.length;
+}
+
 // Identité de l'entreprise sur les notes de calcul (la même que pour les DOE), modifiable dans Réglages
 const CONFIG_DEFAUT = require('../doe/config-defaut');
 const lireConfig = () => { const r = db.prepare("SELECT value FROM config WHERE key = 'etudes'").get(); const c = r ? JSON.parse(r.value) : {}; return { ...CONFIG_DEFAUT, ...c, societe: { ...CONFIG_DEFAUT.societe, ...(c.societe || {}) } }; };
@@ -351,12 +376,51 @@ async function api(req, res, url) {
   }
 
   // Études : en-tête (affaire, objet, indice) et notes de calcul ; contrôle de version à l'enregistrement
-  const ligne = r => ({ ...JSON.parse(r.data), id: r.id, _v: r.version, _at: r.updated_at, _by: r.updated_by });
+  const ligne = r => ({ ...JSON.parse(r.data), id: r.id, _v: r.version, _at: r.updated_at, _by: r.updated_by, _auteur: r.auteur_nom || '', _auteurLogin: r.auteur_login || '' });
+  // Études supprimées : liste (toutes, pour le bureau), restauration et effacement définitif (auteur ou administrateur)
+  if (p[0] === 'etudes-supprimees') {
+    const jours = joursCorbeille();
+    if (!p[1] && method === 'GET') {
+      return send(res, 200, { jours, etudes: db.prepare('SELECT * FROM etudes_supprimees ORDER BY supprime_at DESC').all().map(r => {
+        const d = JSON.parse(r.data);
+        return { id: r.id, objet: d.objet || '', client: d.client || '', affaireId: r.affaire_id || '', indice: d.indice || '', calculs: (d.notes || []).length, modele: !!d.modele, version: r.version,
+          auteur: r.auteur_nom || '', supprimeLe: r.supprime_at, supprimePar: r.supprime_par || '', purgeLe: CorbeilleEtudes.purgeLe(r.supprime_at, jours),
+          versions: db.prepare('SELECT COUNT(*) AS n FROM etudes_versions WHERE etude_id = ?').get(r.id).n, peutRestaurer: CorbeilleEtudes.peutGerer(auteurDe(r), s) };
+      }) });
+    }
+    if (!/^[\w-]{1,64}$/.test(String(p[1] || ''))) return fail(res, 400, 'Identifiant invalide');
+    const r = db.prepare('SELECT * FROM etudes_supprimees WHERE id = ?').get(p[1]);
+    if (!r) return fail(res, 404, 'Étude introuvable dans les études supprimées');
+    if (!CorbeilleEtudes.peutGerer(auteurDe(r), s)) return fail(res, 403, CorbeilleEtudes.REFUS);
+    if (p[2] === 'restaurer' && method === 'POST') {
+      if (db.prepare('SELECT 1 FROM etudes WHERE id = ?').get(r.id)) return fail(res, 409, 'Une étude porte déjà cet identifiant');
+      const now = new Date().toISOString(), v = r.version + 1;
+      db.exec('BEGIN');
+      try {
+        db.prepare('INSERT INTO etudes (id, affaire_id, data, version, updated_at, updated_by, auteur_login, auteur_nom) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+          .run(r.id, r.affaire_id || '', r.data, v, now, `${s.nom || s.login} (restaurée)`, r.auteur_login, r.auteur_nom);
+        db.prepare('DELETE FROM etudes_supprimees WHERE id = ?').run(r.id);
+        db.exec('COMMIT');
+      } catch (e) { db.exec('ROLLBACK'); throw e; }
+      // De nouveau visible dans Pipe-Fit (dernier état transmis avant la suppression)
+      const d = JSON.parse(r.data);
+      if (!d.modele) { let resume = null; try { resume = JSON.parse(r.resume || 'null'); } catch (e) { resume = null; } signalerPF(s, r.id, String(d.affaireId || r.affaire_id || ''), resume || { objet: d.objet || '' }, { clientId: String(d.clientId || ''), devisId: String(d.devisId || '') }); }
+      return send(res, 200, ligne(db.prepare('SELECT * FROM etudes WHERE id = ?').get(r.id)));
+    }
+    if (!p[2] && method === 'DELETE') {
+      db.prepare('DELETE FROM etudes_supprimees WHERE id = ?').run(r.id);
+      Historique.supprimer(r.id);
+      return send(res, 200, { ok: true });
+    }
+    return fail(res, 404, 'Route inconnue');
+  }
   if (p[0] === 'etudes' && !p[1] && method === 'GET') await reprendreLiens(s);
   if (p[0] === 'etudes' && !p[1] && method === 'GET') return send(res, 200, db.prepare('SELECT * FROM etudes ORDER BY updated_at DESC').all().map(ligne));
   if (p[0] === 'etudes' && p[1]) {
     if (!/^[\w-]{1,64}$/.test(p[1])) return fail(res, 400, 'Identifiant invalide');
     const exist = db.prepare('SELECT * FROM etudes WHERE id = ?').get(p[1]);
+    // Étude dans la corbeille : ni lue ni réécrite (un onglet resté ouvert ne la recrée pas) tant qu'elle n'est pas restaurée
+    if (!exist && db.prepare('SELECT 1 FROM etudes_supprimees WHERE id = ?').get(p[1])) return fail(res, 410, 'Cette étude a été supprimée : restaurez-la depuis « Études supprimées ».', { supprimee: true });
     // Présence : qui d'autre a l'étude ouverte (signalé par le navigateur toutes les 30 s), version enregistrée
     if (p[2] === 'presence' && !p[3] && method === 'POST') {
       const b = await lireJSON(req), autres = Historique.presence(p[1], s, { quitte: b.quitte === true });
@@ -386,9 +450,10 @@ async function api(req, res, url) {
       if (actuel && (!exist || actuel.version !== exist.version)) return fail(res, 409, `Modifiée entre-temps par ${actuel.updated_by}`, { record: ligne(actuel) });
       const propre = Object.fromEntries(Object.entries(data).filter(([k]) => !k.startsWith('_') && k !== 'id'));
       const v = exist ? exist.version + 1 : 1, now = new Date().toISOString();
-      db.prepare(`INSERT INTO etudes (id, affaire_id, data, version, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)
+      // Auteur : le compte qui crée l'étude (jamais modifié ensuite)
+      db.prepare(`INSERT INTO etudes (id, affaire_id, data, version, updated_at, updated_by, auteur_login, auteur_nom) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET affaire_id = excluded.affaire_id, data = excluded.data, version = excluded.version, updated_at = excluded.updated_at, updated_by = excluded.updated_by`)
-        .run(p[1], data.affaireId || '', JSON.stringify(propre), v, now, s.nom || s.login);
+        .run(p[1], data.affaireId || '', JSON.stringify(propre), v, now, s.nom || s.login, s.login, s.nom || s.login);
       // Historique : version (ou mise à jour de la version de la séance), calculs supprimés mis à la corbeille
       try { Historique.apresEnregistrement(p[1], exist ? JSON.parse(exist.data) : null, propre, { version: v, auteur: s.nom || s.login, motif: typeof motif === 'string' ? motif : '', maintenant: now }); }
       catch (e) { console.warn(`Études : historique de ${p[1]} non enregistré (${e.message})`); }
@@ -398,7 +463,25 @@ async function api(req, res, url) {
       else signalerPF(s, p[1], String(data.affaireId || ''), resume, { clientId: String(data.clientId || ''), devisId: String(data.devisId || '') });
       return send(res, 200, ligne(db.prepare('SELECT * FROM etudes WHERE id = ?').get(p[1])));
     }
-    if (method === 'DELETE') { db.prepare('DELETE FROM etudes WHERE id = ?').run(p[1]); Historique.supprimer(p[1]); if (exist) signalerPF(s, p[1], null, null); return send(res, 200, { ok: true }); }
+    // Suppression : réservée à l'auteur ou à l'administrateur ; l'étude va dans la corbeille avec ses versions
+    if (method === 'DELETE') {
+      if (!exist) return fail(res, 404, 'Étude introuvable');
+      if (!CorbeilleEtudes.peutGerer(auteurDe(exist), s)) return fail(res, 403, CorbeilleEtudes.REFUS);
+      // Dernier état transmis à Pipe-Fit (étapes, matériel retenu…) gardé pour le republier à la restauration
+      const lien = JSON.parse(exist.data).modele ? null : await PF.lienEtude((chemin, opts) => pipefit(s, chemin, opts), p[1]).catch(() => null);
+      const now = new Date().toISOString();
+      db.exec('BEGIN');
+      try {
+        db.prepare(`INSERT OR REPLACE INTO etudes_supprimees (id, affaire_id, data, version, updated_at, updated_by, auteur_login, auteur_nom, resume, supprime_at, supprime_par, supprime_par_login)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(exist.id, exist.affaire_id || '', exist.data, exist.version, exist.updated_at, exist.updated_by, exist.auteur_login, exist.auteur_nom,
+          lien && lien.resume ? JSON.stringify(lien.resume) : null, now, s.nom || s.login, s.login);
+        db.prepare('DELETE FROM etudes WHERE id = ?').run(p[1]);
+        db.exec('COMMIT');
+      } catch (e) { db.exec('ROLLBACK'); throw e; }
+      Historique.presence(p[1], s, { quitte: true });
+      signalerPF(s, p[1], null, null);
+      return send(res, 200, { ok: true, corbeille: true, purgeLe: CorbeilleEtudes.purgeLe(now, joursCorbeille()) });
+    }
   }
 
   // Corrections de l'inventaire CCTP / DPGF retenues (règles partagées par le bureau d'études, enregistrées par tous)
@@ -441,6 +524,7 @@ async function api(req, res, url) {
     if (method === 'PUT') {
       if (s.role !== 'admin') return fail(res, 403, 'Réservé à l\'administrateur');
       const b = await lireJSON(req), c = { ...lireConfig(), ...b, societe: { ...lireConfig().societe, ...(b.societe || {}) } };
+      if (b.corbeilleJours !== undefined) c.corbeilleJours = CorbeilleEtudes.jours(b.corbeilleJours);
       db.prepare("INSERT INTO config (key, value) VALUES ('etudes', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(c));
       return send(res, 200, c);
     }
@@ -478,6 +562,10 @@ const server = SERVEUR.server;
 
 if (require.main === module) {
   SERVEUR.surveiller();
+  // Corbeille des études : effacement définitif après la durée réglée
+  const purger = () => { try { const n = purgerCorbeille(); if (n) console.log(`Études : ${n} étude(s) supprimée(s) effacée(s) définitivement`); } catch (e) { console.error('Corbeille des études :', e.message); } };
+  purger();
+  setInterval(purger, 6 * 3600000).unref();
   server.listen(PORT, HOST, () => console.log(`Pipe-Fit Études : ${SERVEUR.etat.https ? 'https' : 'http'}://localhost:${PORT}  (Pipe-Fit : ${PIPEFIT}, base : ${DB_FILE})`));
 }
-module.exports = { server, db };
+module.exports = { server, db, purgerCorbeille };

@@ -294,6 +294,31 @@
     // Études déjà sur l'appareil (étude d'exemple comprise) : état transmis à la page du CRM après l'affichage
     if (dansCrm && p[0] === 'etudes' && !p[1]) { reprendreLiens(); save(); setTimeout(() => db.etudes.filter(e => !e.modele).forEach(e => { try { if (!e.avancement && typeof SuiviEtapes !== 'undefined') { const b = SuiviEtapes.etapesEtude(e); if (b) e.avancement = SuiviEtapes.avancement(e, SuiviEtapes.decorer(e, b)); } signalerCrm(e.id, e.affaireId, resumePF(e)); } catch (er) { /* calcul incomplet */ } }), 800); }
     if (p[0] === 'etudes' && !p[1]) return rep(200, db.etudes.slice().sort((x, y) => y._at.localeCompare(x._at)));
+    // Études supprimées (comme le serveur) : corbeille gardée sur l'appareil, restauration par l'auteur ou l'administrateur,
+    // effacement définitif après la durée réglée
+    const CE = typeof CorbeilleEtudes !== 'undefined' ? CorbeilleEtudes : null;
+    const joursCb = () => (CE ? CE.jours((db.config || {}).corbeilleJours) : 30);
+    const auteurDemo = e => ({ login: e._auteurLogin || '', nom: e._auteur || '' });
+    const peutGererDemo = e => (CE ? CE.peutGerer(auteurDemo(e), s) : s.role === 'admin');
+    db.supprimees = db.supprimees || [];
+    if (CE) { const ids = CE.aPurger(db.supprimees.map(x => ({ id: x.etude.id, supprimeLe: x.supprimeLe })), joursCb()); if (ids.length) { db.supprimees = db.supprimees.filter(x => !ids.includes(x.etude.id)); ids.forEach(id => { if (db.versions) delete db.versions[id]; if (db.corbeille) delete db.corbeille[id]; }); save(); } }
+    if (p[0] === 'etudes-supprimees') {
+      if (!p[1] && method === 'GET') return rep(200, { jours: joursCb(), etudes: db.supprimees.slice().sort((x, y) => y.supprimeLe.localeCompare(x.supprimeLe)).map(x => ({ id: x.etude.id, objet: x.etude.objet || '', client: x.etude.client || '',
+        affaireId: x.etude.affaireId || '', indice: x.etude.indice || '', calculs: (x.etude.notes || []).length, modele: !!x.etude.modele, version: x.etude._v, auteur: x.etude._auteur || '', supprimeLe: x.supprimeLe,
+        supprimePar: x.par, purgeLe: CE ? CE.purgeLe(x.supprimeLe, joursCb()) : x.supprimeLe, versions: ((db.versions || {})[x.etude.id] || []).length, peutRestaurer: peutGererDemo(x.etude) })) });
+      const x = db.supprimees.find(y => y.etude.id === p[1]);
+      if (!x) return err(404, 'Étude introuvable dans les études supprimées');
+      if (!peutGererDemo(x.etude)) return err(403, CE ? CE.REFUS : 'Réservé à l\'auteur ou à l\'administrateur');
+      if (p[2] === 'restaurer' && method === 'POST') {
+        if (db.etudes.some(e => e.id === x.etude.id)) return err(409, 'Une étude porte déjà cet identifiant');
+        const rec = { ...x.etude, _v: x.etude._v + 1, _at: new Date().toISOString(), _by: `${s.nom} (restaurée)` };
+        db.etudes.push(rec); db.supprimees = db.supprimees.filter(y => y !== x);
+        if (!rec.modele) signalerCrm(rec.id, rec.affaireId, (() => { try { return resumePF(rec); } catch (e) { return null; } })());
+        save(); return rep(200, rec);
+      }
+      if (!p[2] && method === 'DELETE') { db.supprimees = db.supprimees.filter(y => y !== x); if (db.versions) delete db.versions[x.etude.id]; if (db.corbeille) delete db.corbeille[x.etude.id]; save(); return rep(200, { ok: true }); }
+      return err(404, 'Route inconnue');
+    }
     // Présence (autres onglets de la démo ouverts sur l'étude), versions et corbeille des calculs supprimés
     if (p[0] === 'etudes' && p[2]) {
       const exist = db.etudes.find(d => d.id === p[1]);
@@ -316,13 +341,21 @@
     if (p[0] === 'etudes') {
       const i = db.etudes.findIndex(d => d.id === p[1]), exist = db.etudes[i];
       if (method === 'GET') return exist ? rep(200, exist) : err(404, 'Étude introuvable');
-      if (method === 'DELETE') { if (exist) { db.etudes.splice(i, 1); signalerCrm(exist.id, '', null, true); } if (db.versions) delete db.versions[p[1]]; if (db.corbeille) delete db.corbeille[p[1]]; save(); return rep(200, { ok: true }); }
+      if (!exist && db.supprimees.some(x => x.etude.id === p[1])) return err(410, 'Cette étude a été supprimée : restaurez-la depuis « Études supprimées ».', { supprimee: true });
+      // Suppression : auteur ou administrateur ; l'étude va dans les études supprimées avec ses versions
+      if (method === 'DELETE') {
+        if (!exist) return err(404, 'Étude introuvable');
+        if (!peutGererDemo(exist)) return err(403, CE ? CE.REFUS : 'Réservé à l\'auteur ou à l\'administrateur');
+        const now = new Date().toISOString();
+        db.etudes.splice(i, 1); db.supprimees.push({ etude: exist, supprimeLe: now, par: s.nom }); signalerCrm(exist.id, '', null, true);
+        save(); return rep(200, { ok: true, corbeille: true, purgeLe: CE ? CE.purgeLe(now, joursCb()) : now });
+      }
       const { data, version, resume, motif } = body();
       if (!data || !String(data.objet || '').trim() || !Array.isArray(data.notes)) return err(400, 'Données manquantes (objet de l\'étude, notes)');
       if (exist && version !== exist._v) return err(409, `Modifiée entre-temps par ${exist._by}`, { record: exist });
       const propre = Object.fromEntries(Object.entries(data).filter(([k]) => !k.startsWith('_') && k !== 'id'));
       if (!propre.modele && !propre.affaireId && lienCrm(p[1])) propre.affaireId = lienCrm(p[1]).affaireId;
-      const rec = { ...propre, id: p[1], _v: exist ? exist._v + 1 : 1, _at: new Date().toISOString(), _by: s.nom };
+      const rec = { ...propre, id: p[1], _v: exist ? exist._v + 1 : 1, _at: new Date().toISOString(), _by: s.nom, _auteur: exist ? exist._auteur || '' : s.nom, _auteurLogin: exist ? exist._auteurLogin || '' : s.login };
       if (exist) db.etudes[i] = rec; else db.etudes.push(rec);
       try { historiser(p[1], exist ? Object.fromEntries(Object.entries(exist).filter(([k]) => !k.startsWith('_') && k !== 'id')) : null, propre, rec._v, s.nom, typeof motif === 'string' ? motif.slice(0, 200) : ''); } catch (e) { console.warn(e); }
       presenceDemo(p[1], s, { modifie: true });
@@ -348,7 +381,7 @@
     if (p[0] === 'config') {
       if (method === 'GET') return rep(200, config());
       if (s.role !== 'admin') return err(403, 'Réservé à l\'administrateur');
-      const b = body(); db.config = { ...db.config, ...b }; save(); return rep(200, config());
+      const b = body(); db.config = { ...db.config, ...b }; if (b.corbeilleJours !== undefined && CE) db.config.corbeilleJours = CE.jours(b.corbeilleJours); save(); return rep(200, config());
     }
     return err(404, 'Route inconnue');
   };

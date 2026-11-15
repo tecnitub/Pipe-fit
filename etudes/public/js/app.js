@@ -417,6 +417,38 @@ const listeEtudes = etudes => (etudes.length ? `<table class="liste"><thead><tr>
     <td class="petit">${x._at ? `${new Date(x._at).toLocaleDateString('fr-FR')} · ${esc(x._by || '')}` : ''}</td></tr>`; }).join('')}</tbody></table>`
   : '<p class="muted">Aucune étude pour l\'instant.</p>');
 const lierListe = root => root.querySelectorAll('tr[data-href]').forEach(tr => tr.onclick = ev => { if (!ev.target.closest('a')) location.hash = tr.dataset.href; });
+// Suppression d'une étude : son auteur ou l'administrateur (même règle que le serveur)
+const peutSupprimerEtude = et => CorbeilleEtudes.peutGerer({ login: et._auteurLogin || '', nom: et._auteur || '' }, S.me);
+
+// Études supprimées : corbeille des études (restauration par l'auteur ou l'administrateur, effacement après N jours)
+Vues.supprimees = {
+  html: () => '<div class="barre"><h1>🗑️ Études supprimées</h1><a class="btn secondaire" href="#/">← Études</a></div><div id="sup-liste"><p class="muted">Chargement…</p></div>',
+  bind: async root => {
+    const z = root.querySelector('#sup-liste');
+    let r;
+    try { r = await api('GET', '/api/etudes-supprimees'); } catch (e) { z.innerHTML = `<p class="erreur">${esc(e.message)}</p>`; return; }
+    z.innerHTML = `<p class="muted petit">Une étude supprimée est gardée ${r.jours} jours avec son historique de versions, puis effacée définitivement. Seul son auteur ou l'administrateur peut la restaurer.</p>
+      ${r.etudes.length ? `<div class="defile-x"><table class="liste" id="sup-table"><thead><tr><th>Objet</th><th>Affaire</th><th>Auteur</th><th>Supprimée</th><th>Effacée le</th><th></th></tr></thead><tbody>
+      ${r.etudes.map(x => { const a = affaireDe(x.affaireId); return `<tr data-sup="${esc(x.id)}"><td><strong>${esc(x.objet)}</strong>${x.modele ? ' <span class="badge">modèle</span>' : ''}<div class="muted petit">${x.calculs} calcul(s) · ${x.versions} version(s)${x.client ? ` · ${esc(x.client)}` : ''}</div></td>
+        <td>${a ? esc(libelleAffaire(a)) : '<span class="muted">—</span>'}</td><td>${esc(x.auteur || '—')}</td><td class="petit">${dateFr(String(x.supprimeLe).slice(0, 10))} · ${esc(x.supprimePar)}</td><td class="petit">${dateFr(String(x.purgeLe).slice(0, 10))}</td>
+        <td>${x.peutRestaurer ? `<button class="petit" data-restaurer="${esc(x.id)}">Restaurer</button> <button class="secondaire petit" data-effacer="${esc(x.id)}">Effacer</button>` : '<span class="muted petit">auteur ou administrateur</span>'}</td></tr>`; }).join('')}</tbody></table></div>`
+        : '<p class="muted" id="sup-vide">Aucune étude supprimée.</p>'}`;
+    z.querySelectorAll('[data-restaurer]').forEach(b => b.onclick = async () => {
+      try {
+        const et = await api('POST', `/api/etudes-supprimees/${encodeURIComponent(b.dataset.restaurer)}/restaurer`, {});
+        et.notes = et.notes || []; et.historique = et.historique || [];
+        S.etudes = [et, ...S.etudes.filter(x => x.id !== et.id)];
+        if (typeof Collaboration !== 'undefined') Collaboration.memoriser(et.id, Collaboration.instantane(et));
+        toast(`Étude « ${et.objet} » restaurée.`, 4000); location.hash = `#/etude/${et.id}`;
+      } catch (e) { toast(e.message, 5000); }
+    });
+    z.querySelectorAll('[data-effacer]').forEach(b => b.onclick = async () => {
+      const x = r.etudes.find(y => y.id === b.dataset.effacer);
+      if (!(await confirmer(`Effacer définitivement l'étude « ${x.objet} » et ses ${x.versions} version(s) ? Elle ne pourra plus être restaurée.`, 'Effacer définitivement'))) return;
+      try { await api('DELETE', `/api/etudes-supprimees/${encodeURIComponent(x.id)}`); toast('Étude effacée définitivement.'); App.render(); } catch (e) { toast(e.message, 5000); }
+    });
+  },
+};
 
 // Accueil : études enregistrées et accès aux calculs rapides
 Vues.accueil = {
@@ -426,7 +458,7 @@ Vues.accueil = {
     const modeles = S.etudes.filter(x => x.modele);
     return `<div class="barre"><h1>Études</h1><button id="nouvelle">+ Nouvelle étude</button><input type="search" id="q" aria-label="Rechercher une étude" placeholder="Rechercher une étude, une affaire…" value="${esc(q)}"></div>
       ${portefeuilleHtml(etudes)}
-      <section>${listeEtudes(etudes)}</section>
+      <section>${listeEtudes(etudes)}<p class="petit"><a href="#/supprimees" id="lien-supprimees">🗑️ Études supprimées</a></p></section>
       <section><h2>Modèles d'études <span class="compte">${Modeles.INTEGRES.length + modeles.length}</span></h2><p class="muted petit">« Nouvelle étude » permet de partir d'un modèle ; une étude s'enregistre comme modèle depuis sa page.</p>
         <div class="types">${Modeles.INTEGRES.map(m => `<button class="carte type" data-modele="${m.id}"><span class="ico">📐</span><span><strong>${esc(m.nom)}</strong><span class="muted petit">${esc(m.description)}</span></span></button>`).join('')}
         ${modeles.map(m => `<a class="carte type" href="#/etude/${m.id}"><span class="ico">⭐</span><span><strong>${esc(m.objet)}</strong><span class="muted petit">Modèle enregistré · ${m.notes.length} calcul(s)${m._by ? ` · ${esc(m._by)}` : ''}</span></span></a>`).join('')}</div></section>
@@ -631,7 +663,7 @@ Vues.etude = {
           ${a && referencesDocuments(et, a).length ? '<span><button type="button" class="secondaire petit" id="docs-chantier" title="Ajoute les références des documents du chantier dans Pipe-Fit (CCTP, plans… avec indice et date)">📎 Insérer les documents du chantier</button></span>' : ''}</label></div>
         <div class="actions-ligne"><button class="secondaire petit" id="indice">Nouvel indice (${esc(suivantIndice(et.indice))})</button>
           ${et.historique.length ? `<span class="petit muted">Historique : ${et.historique.map(h => `${esc(h.indice)} du ${dateFr(h.date)}${h.motif ? ` (${esc(h.motif)})` : ''}`).join(' · ')}</span>` : ''}
-          <span class="espace"></span><button class="secondaire petit" id="dupliquer">Dupliquer l'étude</button>${et.modele ? '' : '<button class="secondaire petit" id="modele">⭐ Enregistrer comme modèle</button>'}<button class="secondaire petit" id="supprimer">Supprimer</button></div></details>
+          <span class="espace"></span><button class="secondaire petit" id="dupliquer">Dupliquer l'étude</button>${et.modele ? '' : '<button class="secondaire petit" id="modele">⭐ Enregistrer comme modèle</button>'}${peutSupprimerEtude(et) ? '<button class="secondaire petit" id="supprimer" title="L\'étude va dans « Études supprimées » : restaurable par son auteur ou l\'administrateur">Supprimer</button>' : `<button class="secondaire petit" id="supprimer" disabled title="${esc(CorbeilleEtudes.REFUS)}${et._auteur ? ` Auteur : ${esc(et._auteur)}.` : ''}">Supprimer</button>`}</div></details>
       ${(et.inventaire || []).length ? (() => { const inc = et.inventaire.filter(x => x.inclus !== false), nb = c => inc.filter(x => x.categorie === c).reduce((t, x) => t + (Notes.num(x.qte) || 1), 0), lignes = c => inc.filter(x => x.categorie === c).length;
         return `<div class="carte petit">📑 <strong>Inventaire du dossier de consultation</strong> : ${nb('producteur')} producteur(s), ${lignes('emetteur')} type(s) d'émetteurs, ${lignes('auxiliaire')} type(s) d'auxiliaires — ${esc([...new Set(inc.map(x => InventaireCVC.GENRES[x.genre] && InventaireCVC.GENRES[x.genre].libelle).filter(Boolean))].join(', '))} <button class="secondaire petit" id="inventaire2">Voir / préremplir</button></div>`; })() : ''}
       ${typeof GuideEtude !== 'undefined' ? GuideEtude.html(et) : ''}
@@ -735,9 +767,10 @@ Vues.etude = {
       };
     };
     root.querySelector('#supprimer').onclick = async () => {
-      if (!(await confirmer(`Supprimer l'étude « ${et.objet} » et ses ${et.notes.length} calcul(s) ?`, 'Supprimer'))) return;
-      await api('DELETE', `/api/etudes/${et.id}`).catch(e => toast(e.message));
+      if (!(await confirmer(`Supprimer l'étude « ${et.objet} » et ses ${et.notes.length} calcul(s) ? Elle va dans « Études supprimées » avec ses versions : son auteur ou l'administrateur peut la restaurer pendant ${CorbeilleEtudes.jours(S.config.corbeilleJours)} jours.`, 'Supprimer'))) return;
+      try { await api('DELETE', `/api/etudes/${et.id}`); } catch (e) { toast(e.message, 5000); return; }
       S.etudes = S.etudes.filter(x => x !== et); location.hash = '#/';
+      toast('Étude placée dans « Études supprimées » (restaurable).', 5000);
     };
     const bc = root.querySelector('#comparer');
     if (bc) {
@@ -2341,6 +2374,9 @@ Vues.reglages = {
         <label>Valable jusqu'au<input type="date" id="rg-val" value="${esc((c.reglementation || {}).validite || '')}" ${dis}></label>
         <label class="large">Exigences complémentaires de l'entreprise (une par ligne)<textarea id="rg-comp" rows="3" ${dis}>${esc((c.reglementation || {}).complements || '')}</textarea></label></div>
       <div class="actions-ligne">${(c.reglementation || {}).date ? `<span class="badge ok">Visée le ${dateFr(c.reglementation.date)}</span>` : '<span class="badge">Non visée</span>'}${admin ? '<button class="petit" id="rg-viser">Enregistrer le visa</button>' : ''}</div></div>
+    <div class="carte" id="carte-corbeille"><h2>Études supprimées</h2>
+      <p class="muted petit">Une étude supprimée (par son auteur ou l'administrateur) est gardée avec ses versions, restaurable, puis effacée définitivement après cette durée.</p>
+      <label>Durée de conservation (jours)<input type="number" min="1" max="365" step="1" id="cfg-corbeille" value="${esc(CorbeilleEtudes.jours(c.corbeilleJours))}" ${dis}></label> <a class="petit" href="#/supprimees">Voir les études supprimées</a></div>
     ${carteValeursRegl(admin)}
     <div class="carte" id="metre-ratios"><h2>Métré et chiffrage : ratios</h2>
       <p class="muted petit">Heures de pose utilisées par le métré des études (avant les coefficients de calage). Pour les tubes et le calorifuge : heures par mètre = a + b × DN. Les coefficients de calage multiplient les heures de chaque main-d'œuvre ; ils se calculent sur les chantiers terminés de Pipe-Fit (heures pointées face aux heures prévues aux devis).</p>
@@ -2395,6 +2431,8 @@ Vues.reglages = {
       zr.querySelectorAll('[data-regle]').forEach(x => x.onclick = async () => { const n = l.filter((_, k) => k !== +x.dataset.regle); try { rendreRegles(await api('PUT', '/api/regles-inventaire', n)); } catch (e) { toast(e.message); } });
     };
     if (zr) api('GET', '/api/regles-inventaire').then(rendreRegles).catch(() => { zr.textContent = 'Indisponible.'; });
+    const cc = root.querySelector('#cfg-corbeille');
+    if (cc) cc.onchange = async () => { try { S.config = await api('PUT', '/api/config', { ...S.config, corbeilleJours: Number(cc.value) }); cc.value = CorbeilleEtudes.jours(S.config.corbeilleJours); toast('Réglages enregistrés'); } catch (e) { toast(e.message); } };
     root.querySelectorAll('[data-cfg]').forEach(el => el.onchange = async () => { const c = copie(S.config); ecrireChemin(c, el.dataset.cfg, el.value); S.config = await api('PUT', '/api/config', c); toast('Réglages enregistrés'); });
     const majConfig = async c => { S.config = await api('PUT', '/api/config', c); ValeursRegl.utiliser(S.config.valeursRegl); Catalogue.utiliser(S.config.catalogues); Calculs.utiliserFluides(S.config.fluides); Schema.utiliserReglementation(S.config.reglementation); Metre.utiliser(S.config.metre); App.render(); };
     const fichierTexte = (accept, suite) => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = accept; inp.onchange = async () => { const f = inp.files[0]; if (!f) return; const brut = new Uint8Array(await f.arrayBuffer()); let t = new TextDecoder('utf-8').decode(brut); if (t.includes('\uFFFD')) t = new TextDecoder('windows-1252').decode(brut); suite(t); }; inp.click(); };

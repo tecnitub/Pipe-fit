@@ -87,7 +87,7 @@ test('études versionnées : création, conflit, suppression', async () => {
   assert.strictEqual(liste.length, 1);
   assert.strictEqual(liste[0].notes[0].entrees.Q, 12);
   assert.strictEqual((await call(base, 'DELETE', '/api/etudes/e1', null, c)).status, 200);
-  assert.strictEqual((await call(base, 'GET', '/api/etudes/e1', null, c)).status, 404);
+  assert.strictEqual((await call(base, 'GET', '/api/etudes/e1', null, c)).status, 410, 'dans les études supprimées');
 });
 
 test('protections : JSON obligatoire, origine contrôlée, réglages réservés à l\'administrateur', async () => {

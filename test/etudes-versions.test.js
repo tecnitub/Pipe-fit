@@ -102,8 +102,11 @@ test('versions : séance de travail regroupée, autre personne, calcul supprimé
   assert.deepStrictEqual(vs[0].resume.notesSupprimees, ['ECS']);
   // Calcul revenu dans l'étude : sorti de la corbeille ; ECS y entre
   assert.deepStrictEqual((await call(base, 'GET', '/api/etudes/co2/corbeille', null, j)).body.map(x => x.noteId), ['n3']);
-  // Suppression de l'étude : historique retiré
+  // Suppression de l'étude : dans les études supprimées avec son historique ; effacé avec elle après la durée réglée
   await call(base, 'DELETE', '/api/etudes/co2', {}, j);
+  assert.strictEqual(edb.prepare("SELECT COUNT(*) AS n FROM etudes_versions WHERE etude_id = 'co2'").get().n, 4);
+  edb.prepare("UPDATE etudes_supprimees SET supprime_at = '2020-01-01T00:00:00.000Z' WHERE id = 'co2'").run();
+  require('../etudes/server').purgerCorbeille();
   assert.strictEqual(edb.prepare("SELECT COUNT(*) AS n FROM etudes_versions WHERE etude_id = 'co2'").get().n, 0);
 });
 
