@@ -225,7 +225,8 @@ const FichesTech = (() => {
     return `${out}xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${pos.map(p => `${String(p).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${x}\n%%EOF`;
   }
   // Nom de fichier propre (dossier réseau Windows / Linux)
-  const nomFichier = s => sansAccents(s).replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim().slice(0, 120) || 'fiche';
+  // Nom de dossier ou de fichier sûr : ni séparateur, ni « . » / « .. » (sortie du dossier de la bibliothèque)
+  const nomFichier = s => sansAccents(s).replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim().slice(0, 120).replace(/^\.+$/, '') || 'fiche';
   // Fiches proposées dans un choix (application Études) : versions en vigueur, mots cherchés dans le fabricant, les
   // références, la désignation et la famille ; les plus récentes d'abord
   function liste(fiches, q = '', max = 40) {

@@ -9,6 +9,8 @@ const crypto = require('node:crypto');
 const FacturX = require('../public/js/facturx');
 
 const MAX_FICHIER = 10 * 1024 * 1024;
+// Flux compressé d'un PDF reçu : décompressé à 32 Mo au plus (quelques Ko peuvent se décompresser en Go)
+const MAX_FLUX = 32 * 1024 * 1024;
 const config = (DB, db) => DB.getConfig(db, 'efacture') || {};
 
 // Enregistre une facture reçue (doublon ignoré : même émetteur et même numéro, ou même fichier PDF).
@@ -19,7 +21,7 @@ async function recevoir(DB, db, buffer, nom, origine, broadcast, mail = null) {
   if (buffer.length > MAX_FICHIER) throw new Error('Fichier trop volumineux (10 Mo maximum)');
   const bytes = new Uint8Array(buffer);
   let lu;
-  try { lu = await FacturX.lireFichier(bytes, b => zlib.inflateSync(Buffer.from(b))); }
+  try { lu = await FacturX.lireFichier(bytes, b => zlib.inflateSync(Buffer.from(b), { maxOutputLength: MAX_FLUX })); }
   catch (e) { if (!estPDF(bytes)) throw e; lu = null; }
   const facture = lu ? lu.facture : { format: 'PDF', type: 'facture', numero: '', date: '', echeance: '', vendeur: { nom: mail ? mail.de || '' : '', email: mail ? mail.deEmail || '' : '' }, lignes: [], notes: [], totalHT: 0, totalTVA: 0, totalTTC: 0 };
   const cle = lu ? `${facture.vendeur.siren || facture.vendeur.tva || facture.vendeur.nom}|${facture.numero}` : `pdf|${crypto.createHash('sha256').update(buffer).digest('hex')}`;

@@ -478,6 +478,8 @@ function recordFailure(cle) {
   f.count++; failures.set(cle, f);
   if (failures.size > 10000) for (const [k, v] of failures) if (Date.now() - v.first > 15 * 60 * 1000) failures.delete(k);
 }
+// Routes coûteuses (lecture d'un PDF par le serveur, import de factures) : 30 appels par minute et par compte
+const LIMITE_LECTURE = HS.limiteur({ max: 30, fenetreMs: 60000 });
 // Empreinte factice : un identifiant inconnu prend le même temps qu'un mauvais mot de passe (pas de devinette des comptes)
 const FACTICE = DB.hashPassword(crypto.randomBytes(16).toString('hex'));
 
@@ -720,7 +722,7 @@ async function api(req, res, url) {
         return send(res, 200, { config: c, ...FICHES.etat() });
       }
       if (p[1] === 'synchro' && method === 'POST') { await FICHES.synchroniser(); return send(res, 200, { config: FICHES.config(), ...FICHES.etat() }); }
-      if (p[1] === 'analyser' && method === 'POST') { const b = await readBody(req); return send(res, 200, await FICHES.analyserFichier(b.fichierId, String(b.nom || ''), String(b.texte || '').slice(0, 200000))); }
+      if (p[1] === 'analyser' && method === 'POST') { const att = LIMITE_LECTURE(`analyser:${acc.id}`); if (att) return fail(res, 429, `Trop de lectures de fiches à la suite : réessayez dans ${att} s.`); const b = await readBody(req); return send(res, 200, await FICHES.analyserFichier(b.fichierId, String(b.nom || ''), String(b.texte || '').slice(0, 200000))); }
       // Texte d'une fiche scannée lu dans le navigateur (reconnaissance de caractères)
       if (p[1] === 'texte' && method === 'POST') { const b = await readBody(req); return send(res, 200, FICHES.texteOcr(b.id, b.texte)); }
       // État de la bibliothèque : doublons, fabricants à uniformiser, fiches anciennes, scans, références sans fiche
@@ -1429,6 +1431,7 @@ async function api(req, res, url) {
       return send(res, 200, { ok: true, a: x.mail.deEmail });
     }
     if (p[1] === 'import' && method === 'POST') {
+      const att = LIMITE_LECTURE(`efacture:${acc.id}`); if (att) return fail(res, 429, `Trop d'imports à la suite : réessayez dans ${att} s.`);
       const b = await readBody(req);
       try { const r = await EF.recevoir(DB, db, Buffer.from(String(b.base64 || ''), 'base64'), String(b.nom || 'import'), acc.login, broadcast); return send(res, 200, { ...r.record, doublon: !!r.doublon }); }
       catch (e) { return fail(res, 422, e.message); }

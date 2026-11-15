@@ -97,10 +97,21 @@ const XLSX = (() => {
   }
   /* ---------- Lecture d'un classeur .xlsx (ou d'un fichier CSV) ---------- */
   // Décompression des entrées ZIP « deflate » avec l'API native du navigateur
-  async function inflate(bytes) {
-    const ds = new DecompressionStream('deflate-raw');
-    const out = await new Response(new Blob([bytes]).stream().pipeThrough(ds)).arrayBuffer();
-    return new Uint8Array(out);
+  // Décompression limitée (archive piégée : quelques Ko qui se décompressent en Go bloqueraient la page)
+  const MAX_DECOMPRESSE = 300 * 1024 * 1024;
+  async function inflate(bytes, max = MAX_DECOMPRESSE) {
+    const lecteur = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader(), parts = [];
+    let n = 0;
+    for (;;) {
+      const { done, value } = await lecteur.read();
+      if (done) break;
+      n += value.length;
+      if (n > max) { await lecteur.cancel().catch(() => {}); throw new Error(`Archive : contenu décompressé trop volumineux (plus de ${Math.round(max / 1048576)} Mo), fichier refusé`); }
+      parts.push(value);
+    }
+    const out = new Uint8Array(n);
+    let p = 0; for (const x of parts) { out.set(x, p); p += x.length; }
+    return out;
   }
   // Noms des entrées : UTF-8 si le drapeau 0x0800 est mis (ou si les octets en sont de l'UTF-8 valide), sinon l'ancien codage
   // DOS CP437 des archives faites par l'explorateur de Windows (« N° » = 4E F8)
@@ -109,7 +120,8 @@ const XLSX = (() => {
     if (drapeaux & 0x0800) return new TextDecoder().decode(octets);
     try { return new TextDecoder('utf-8', { fatal: true }).decode(octets); } catch (e) { return Array.from(octets, o => (o < 128 ? String.fromCharCode(o) : CP437[o - 128])).join(''); }
   }
-  async function unzip(buf, messageErreur) {
+  async function unzip(buf, messageErreur, opts = {}) {
+    const max = opts.max || MAX_DECOMPRESSE;
     if (buf instanceof Uint8Array) buf = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
     const u8 = new Uint8Array(buf), dv = new DataView(buf);
     let eocd = -1;
@@ -128,7 +140,7 @@ const XLSX = (() => {
       files[name] = { method, data: u8.subarray(start, start + csize) };
       p += 46 + nameLen + extraLen + comLen;
     }
-    const octets = async name => { const f = files[name]; return !f ? null : f.method === 8 ? inflate(f.data) : f.method === 0 ? f.data : Promise.reject(new Error(`${name} : compression non prise en charge`)); };
+    const octets = async name => { const f = files[name]; return !f ? null : f.method === 8 ? inflate(f.data, max) : f.method === 0 ? f.data : Promise.reject(new Error(`${name} : compression non prise en charge`)); };
     return {
       has: name => !!files[name],
       noms: () => Object.keys(files),
@@ -136,7 +148,7 @@ const XLSX = (() => {
       async text(name) {
         const f = files[name];
         if (!f) return null;
-        const raw = f.method === 8 ? await inflate(f.data) : f.data;
+        const raw = f.method === 8 ? await inflate(f.data, max) : f.data;
         return dec.decode(raw);
       },
     };

@@ -64,8 +64,59 @@
   let db;
   try { db = JSON.parse(storage.get(KEY)); } catch (e) { db = null; }
   if (!db || !Array.isArray(db.etudes)) db = { etudes: [exemple()], config: {} };
-  const save = () => { if (!storage.set(KEY, JSON.stringify(db))) console.warn('Stockage local indisponible : les études restent en mémoire.'); };
-  const me = () => COMPTES.find(c => c.login === storage.get(ME_KEY)) || (storage.get(ME_KEY) === 'deconnecte' ? null : compteCrm());
+  // Plusieurs onglets ouverts sur la démo : la base est relue à chaque requête (un autre onglet a pu enregistrer),
+  // comme le ferait le serveur ; versions et corbeille limitées pour tenir dans le stockage du navigateur
+  let horsStockage = false;
+  const LIMITES_DEMO = { max: 8, jours: 30, intervalleMin: 15, corbeilleMax: 15, corbeilleJours: 90 };
+  const save = () => {
+    if (storage.set(KEY, JSON.stringify(db))) { horsStockage = false; return; }
+    // Stockage plein : les versions les plus anciennes sont retirées d'abord
+    const vs = Object.values(db.versions || {});
+    while (vs.some(l => l.length > 1)) { vs.filter(l => l.length > 1).forEach(l => l.shift()); if (storage.set(KEY, JSON.stringify(db))) { horsStockage = false; return; } }
+    horsStockage = true; console.warn('Stockage local indisponible : les études restent en mémoire.');
+  };
+  const relire = () => { if (horsStockage) return; try { const d = JSON.parse(storage.get(KEY)); if (d && Array.isArray(d.etudes)) db = d; } catch (e) { /* base en mémoire */ } };
+  // Compte de l'onglet (deux onglets, deux personnes) : gardé pour l'onglet, le dernier choisi sert aux nouveaux onglets
+  const ses = {
+    get(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { sessionStorage.setItem(k, v); } catch (e) { /* stockage indisponible */ } },
+    del(k) { try { sessionStorage.removeItem(k); } catch (e) { /* stockage indisponible */ } },
+  };
+  // Le compte de l'onglet ne prime que si un autre onglet s'est connecté depuis (dernier onglet connecté mémorisé)
+  const DERNIER_KEY = 'pipefit-etudes-demo-dernier-onglet';
+  const loginOnglet = () => (ses.get(ME_KEY) && storage.get(DERNIER_KEY) && storage.get(DERNIER_KEY) !== ONGLET ? ses.get(ME_KEY) : storage.get(ME_KEY));
+  const me = () => COMPTES.find(c => c.login === loginOnglet()) || (loginOnglet() === 'deconnecte' ? null : compteCrm());
+  const ONGLET = ses.get('pipefit-etudes-demo-onglet') || `o${Math.random().toString(36).slice(2, 10)}`;
+  ses.set('pipefit-etudes-demo-onglet', ONGLET);
+  const PRES_KEY = 'pipefit-etudes-demo-presence';
+  function presenceDemo(id, s, { quitte = false, modifie = false } = {}) {
+    let t; try { t = JSON.parse(storage.get(PRES_KEY)) || {}; } catch (e) { t = {}; }
+    const now = new Date().toISOString(), l = t[id] = t[id] || {};
+    if (quitte) delete l[ONGLET]; else l[ONGLET] = { login: s.login, nom: s.nom, vu: now, modifie: modifie ? now : ((l[ONGLET] || {}).modifie || '') };
+    Object.values(t).forEach(x => Object.keys(x).forEach(o => { if (Date.now() - Date.parse(x[o].vu) > 86400000) delete x[o]; }));
+    storage.set(PRES_KEY, JSON.stringify(t));
+    const vus = new Map();
+    Object.entries(l).forEach(([o, x]) => { if (o !== ONGLET && x.login !== s.login && Date.now() - Date.parse(x.vu) < 90000 && !vus.has(x.login)) vus.set(x.login, x); });
+    return [...vus.values()];
+  }
+  // Historique de la démo : même règle que le serveur (versions-etude.js), données non compressées
+  function historiser(id, avant, apres, version, auteur, motif) {
+    if (typeof VersionsEtude === 'undefined') return;
+    const VE = VersionsEtude, now = new Date().toISOString(), reg = VE.reglages({ ...LIMITES_DEMO, ...((db.config || {}).versions || {}) });
+    db.versions = db.versions || {}; db.corbeille = db.corbeille || {};
+    const l = db.versions[id] = db.versions[id] || [], nv = (data, o) => l.push({ id: (l.length ? l[l.length - 1].id : 0) + 1, version: o.version, data: JSON.parse(JSON.stringify(data)), resume: o.resume, motif: o.motif || '', auteur: o.auteur || '', created_at: now, updated_at: now });
+    if (!l.length && avant) nv(avant, { version: version - 1, resume: VE.resumer(null, avant), motif: 'État avant le suivi des versions' });
+    const der = l[l.length - 1], dec = VE.politique(der || null, VE.resumer(der ? der.data : null, apres), { auteur, maintenant: now, motif, reglages: reg });
+    if (dec === 'ajouter') nv(apres, { version, resume: VE.resumer(der ? der.data : null, apres), motif, auteur });
+    else if (dec === 'remplacer') Object.assign(der, { data: JSON.parse(JSON.stringify(apres)), resume: VE.resumer(l.length > 1 ? l[l.length - 2].data : null, apres), version, updated_at: now });
+    const purge = VE.aPurger(l.map(v => ({ id: v.id, date: v.updated_at })), { reglages: reg, maintenant: now });
+    db.versions[id] = l.filter(v => !purge.includes(v.id));
+    const cb = db.corbeille[id] = (db.corbeille[id] || []).filter(c => !(apres.notes || []).some(n => n.id === c.noteId));
+    VE.notesSupprimees(avant, apres).forEach(n => cb.push({ id: (cb.length ? cb[cb.length - 1].id : 0) + 1, noteId: n.id, titre: n.titre || '', type: n.type || '', date: now, par: auteur, note: JSON.parse(JSON.stringify(n)) }));
+    const pc = VE.aPurger(cb.map(c => ({ id: c.id, date: c.date })), { reglages: { ...reg, max: reg.corbeilleMax, jours: reg.corbeilleJours }, maintenant: now });
+    db.corbeille[id] = cb.filter(c => !pc.includes(c.id));
+  }
+  const metaVersion = v => ({ id: v.id, version: v.version, date: v.updated_at, debut: v.created_at, auteur: v.auteur, motif: v.motif, resume: v.resume, texte: typeof VersionsEtude === 'undefined' ? '' : VersionsEtude.texte(v.resume) });
   // Démo : petit catalogue matériel d'exemple (marques fictives) tant qu'aucun catalogue n'est importé
   const CATALOGUE_DEMO = [
     ['Exemplair', 'DF4-160', 'bouche', 'Diffuseur plafond carré 4 directions', '160', 80, 260, '', 22], ['Exemplair', 'DF4-200', 'bouche', 'Diffuseur plafond carré 4 directions', '200', 150, 400, '', 25],
@@ -121,15 +172,16 @@
     if (!u.startsWith('/api/')) return vraiFetch(url, opts);
     const method = (opts.method || 'GET').toUpperCase(), p = u.split('?')[0].split('/').slice(2).map(decodeURIComponent);
     const body = () => JSON.parse(opts.body || '{}');
+    relire();
     if (p[0] === 'login' && method === 'POST') {
       const b = body(), c = COMPTES.find(x => x.login === String(b.login || '').trim().toLowerCase());
       if (!c || !b.password) return err(401, 'Identifiant ou mot de passe incorrect');
       if (!['admin', 'charge'].includes(c.role)) return err(403, 'Application réservée au bureau (administrateur, chargé d\'affaires)');
-      storage.set(ME_KEY, c.login); return rep(200, c);
+      storage.set(ME_KEY, c.login); storage.set(DERNIER_KEY, ONGLET); ses.set(ME_KEY, c.login); return rep(200, c);
     }
     const s = me();
     if (!s) return err(401, 'Non connecté');
-    if (p[0] === 'logout') { if (crm()) storage.set(ME_KEY, 'deconnecte'); else storage.del(ME_KEY); return rep(200, { ok: true }); }
+    if (p[0] === 'logout') { ses.del(ME_KEY); if (crm()) storage.set(ME_KEY, 'deconnecte'); else storage.del(ME_KEY); return rep(200, { ok: true }); }
     if (p[0] === 'me') return rep(200, { ...s, pipefit: '' });
     if (p[0] === 'pf' && p[1] === 'affaires') return rep(200, pf);
     // Fichier d'un document du chantier (CCTP, DPGF) : celui de la démo du CRM
@@ -242,17 +294,38 @@
     // Études déjà sur l'appareil (étude d'exemple comprise) : état transmis à la page du CRM après l'affichage
     if (dansCrm && p[0] === 'etudes' && !p[1]) { reprendreLiens(); save(); setTimeout(() => db.etudes.filter(e => !e.modele).forEach(e => { try { if (!e.avancement && typeof SuiviEtapes !== 'undefined') { const b = SuiviEtapes.etapesEtude(e); if (b) e.avancement = SuiviEtapes.avancement(e, SuiviEtapes.decorer(e, b)); } signalerCrm(e.id, e.affaireId, resumePF(e)); } catch (er) { /* calcul incomplet */ } }), 800); }
     if (p[0] === 'etudes' && !p[1]) return rep(200, db.etudes.slice().sort((x, y) => y._at.localeCompare(x._at)));
+    // Présence (autres onglets de la démo ouverts sur l'étude), versions et corbeille des calculs supprimés
+    if (p[0] === 'etudes' && p[2]) {
+      const exist = db.etudes.find(d => d.id === p[1]);
+      if (p[2] === 'presence' && method === 'POST') return rep(200, { autres: presenceDemo(p[1], s, { quitte: body().quitte === true }), ...(exist ? { _v: exist._v, _at: exist._at, _by: exist._by } : {}) });
+      if (!exist) return err(404, 'Étude introuvable');
+      if (p[2] === 'versions' && method === 'GET') {
+        const l = ((db.versions || {})[p[1]] || []).slice().reverse();
+        if (!p[3]) return rep(200, l.map(metaVersion));
+        const v = l.find(x => String(x.id) === p[3]);
+        return v ? rep(200, { ...metaVersion(v), data: v.data }) : err(404, 'Version introuvable');
+      }
+      if (p[2] === 'corbeille' && method === 'GET') {
+        const l = ((db.corbeille || {})[p[1]] || []).slice().reverse();
+        if (!p[3]) return rep(200, l.map(({ note, ...c }) => c));
+        const c = l.find(x => String(x.id) === p[3]);
+        return c ? rep(200, c) : err(404, 'Calcul introuvable dans la corbeille');
+      }
+      return err(404, 'Route inconnue');
+    }
     if (p[0] === 'etudes') {
       const i = db.etudes.findIndex(d => d.id === p[1]), exist = db.etudes[i];
       if (method === 'GET') return exist ? rep(200, exist) : err(404, 'Étude introuvable');
-      if (method === 'DELETE') { if (exist) { db.etudes.splice(i, 1); signalerCrm(exist.id, '', null, true); } save(); return rep(200, { ok: true }); }
-      const { data, version, resume } = body();
+      if (method === 'DELETE') { if (exist) { db.etudes.splice(i, 1); signalerCrm(exist.id, '', null, true); } if (db.versions) delete db.versions[p[1]]; if (db.corbeille) delete db.corbeille[p[1]]; save(); return rep(200, { ok: true }); }
+      const { data, version, resume, motif } = body();
       if (!data || !String(data.objet || '').trim() || !Array.isArray(data.notes)) return err(400, 'Données manquantes (objet de l\'étude, notes)');
       if (exist && version !== exist._v) return err(409, `Modifiée entre-temps par ${exist._by}`, { record: exist });
       const propre = Object.fromEntries(Object.entries(data).filter(([k]) => !k.startsWith('_') && k !== 'id'));
       if (!propre.modele && !propre.affaireId && lienCrm(p[1])) propre.affaireId = lienCrm(p[1]).affaireId;
       const rec = { ...propre, id: p[1], _v: exist ? exist._v + 1 : 1, _at: new Date().toISOString(), _by: s.nom };
       if (exist) db.etudes[i] = rec; else db.etudes.push(rec);
+      try { historiser(p[1], exist ? Object.fromEntries(Object.entries(exist).filter(([k]) => !k.startsWith('_') && k !== 'id')) : null, propre, rec._v, s.nom, typeof motif === 'string' ? motif.slice(0, 200) : ''); } catch (e) { console.warn(e); }
+      presenceDemo(p[1], s, { modifie: true });
       if (rec.modele) { if (exist) signalerCrm(rec.id, '', null, true); } else signalerCrm(rec.id, rec.affaireId, resume || (() => { try { return resumePF(rec); } catch (e) { return null; } })());
       save(); return rep(200, rec);
     }

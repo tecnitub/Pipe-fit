@@ -155,6 +155,7 @@ function creer({ DB, db, broadcast, racineDocuments }) {
       let n = `${base}.pdf`, k = 2;
       while (fs.existsSync(path.join(c.chemin, dossier, n))) n = `${base} (${k++}).pdf`;
       const abs = path.join(c.chemin, dossier, n);
+      if (!path.resolve(abs).startsWith(path.resolve(c.chemin) + path.sep)) throw new Error('Nom de fichier refusé');
       fs.writeFileSync(abs, buf);
       const st = fs.statSync(abs), rel = `${dossier}/${n}`;
       db.prepare('INSERT INTO fiches_sync (rel, fiche_id, taille, mtime) VALUES (?, ?, ?, ?) ON CONFLICT(rel) DO UPDATE SET fiche_id = excluded.fiche_id, taille = excluded.taille, mtime = excluded.mtime').run(rel, fiche, st.size, st.mtimeMs);
@@ -196,8 +197,8 @@ function creer({ DB, db, broadcast, racineDocuments }) {
   async function telecharger(url) {
     const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), 30000);
     try {
-      await require('./medias-articles').verifierUrl(url); // jamais vers le réseau interne
-      const r = await fetch(url, { signal: ctrl.signal, redirect: 'follow', headers: { 'User-Agent': 'Pipe-Fit (fiches techniques)' } });
+      // Jamais vers le réseau interne, redirections comprises (contrôlées avant d'être suivies)
+      const r = await require('./medias-articles').recupererSur(url, { signal: ctrl.signal, headers: { 'User-Agent': 'Pipe-Fit (fiches techniques)' } });
       if (!r.ok) throw new Error(`réponse ${r.status}`);
       if (Number(r.headers.get('content-length') || 0) > MAX) throw new Error('trop volumineux');
       const buf = Buffer.from(await r.arrayBuffer());
