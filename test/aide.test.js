@@ -96,8 +96,8 @@ test('pages : bouton « ? Aide » dans l\'en-tête, moteur puis contenu chargés
     assert.ok(pos.every(x => x > 0) && pos[0] < pos[1], `${app} : scripts de l'aide`);
     assert.ok(h.indexOf('js/app.js') < pos[0], `${app} : aide chargée après l'application`);
   }
-  assert.match(fs.readFileSync(path.join(racine, 'etudes/server.js'), 'utf8'), /'aide\.js'\]\.map\(f => \[`\/shared\/\$\{f\}`/);
-  assert.match(fs.readFileSync(path.join(racine, 'etudes/build-demo.js'), 'utf8'), /'aide\.js'\]\.map\(f => \[`shared\/\$\{f\}`/);
+  assert.match(fs.readFileSync(path.join(racine, 'etudes/server.js'), 'utf8'), /'aide\.js'[^\]]*\]\.map\(f => \[`\/shared\/\$\{f\}`/);
+  assert.match(fs.readFileSync(path.join(racine, 'etudes/build-demo.js'), 'utf8'), /'aide\.js'[^\]]*\]\.map\(f => \[`shared\/\$\{f\}`/);
   assert.match(fs.readFileSync(path.join(racine, 'doe/server.js'), 'utf8'), /'\/shared\/aide\.js': path\.join\(PF_PUBLIC, 'js', 'aide\.js'\)/);
   for (const f of ['public/js/aide.js', 'public/js/aide-contenu.js', 'etudes/public/js/aide-contenu.js', 'doe/public/js/aide-contenu.js']) {
     assert.ok(!fs.readFileSync(path.join(racine, f), 'utf8').includes('�'), f);
