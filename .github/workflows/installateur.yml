@@ -1,5 +1,6 @@
 # Tests + construction de l'installateur Windows à chaque envoi.
-# Les fichiers PipeFitCRM-Setup-x.y.z.exe et AtelierPDF-Setup-x.y.z.exe sont téléchargeables dans l'onglet Actions > exécution > Artifacts.
+# Les fichiers PipeFitCRM-Setup-x.y.z.exe, AtelierPDF-Setup-x.y.z.exe et PipeFit-Revit-Isometries-x.y.z.zip sont téléchargeables
+# dans l'onglet Actions > exécution > Artifacts.
 name: Installateur Windows
 
 on:
@@ -38,3 +39,14 @@ jobs:
           path: |
             dist/AtelierPDF-Setup-*.exe
             dist/AtelierPDF.html
+      # Complément Revit « Pipe-Fit Isométries » (Revit 2023 à 2027) : tests du cœur de calcul, compilation, paquet zip
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - run: bash revit/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PipeFit-Revit-Isometries
+          path: dist/PipeFit-Revit-Isometries-*.zip

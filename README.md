@@ -48,6 +48,15 @@ mesures sur plan à l'échelle, OCR des scans, caviarder, extraire, diviser ; sa
 administrateur `AtelierPDF-Setup-x.y.z.exe` (onglet **Actions** → *Artifacts* → `AtelierPDF-Setup`, ou
 `bash installer/build-pdf.sh`). Voir [pdf/README.md](pdf/README.md).
 
+## Isométries de fabrication (complément Revit)
+
+Complément Revit 2023 à 2027, dans `revit/` : onglet **Pipe-Fit → Fabrication → Isométries spools**. À partir du
+numéro de spool renseigné sur les canalisations, raccords et accessoires de la maquette 3D, il crée pour chaque spool
+une feuille d'isométrie de fabrication (vue 3D isolée et verrouillée, repères, nomenclature, liste de débit,
+soudures en pouces-diamètre) et exporte PDF, PCF (Isogen) et CSV (importable dans *Chiffrage depuis plan*).
+Paquet `PipeFit-Revit-Isometries-x.y.z.zip` (onglet **Actions** → *Artifacts*, ou `bash revit/build.sh`), installé
+par `Installer.bat` sans droits administrateur. Voir [revit/README.md](revit/README.md).
+
 ## Installation manuelle (Linux, Windows, macOS)
 
 Prérequis : **Node.js 22.13 ou plus récent** (aucune autre dépendance, la base SQLite est intégrée à Node.js).

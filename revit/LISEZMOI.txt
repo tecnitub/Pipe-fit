@@ -1,0 +1,47 @@
+﻿PIPE-FIT ISOMÉTRIES – complément Revit (2023 à 2027)
+=====================================================
+
+Une isométrie de fabrication par numéro de spool, en un clic, depuis la maquette 3D.
+
+INSTALLATION
+  1. Fermer Revit.
+  2. Double-cliquer sur Installer.bat (aucun droit administrateur nécessaire).
+  3. Relancer Revit : onglet « Pipe-Fit » > groupe « Fabrication » > « Isométries spools ».
+  Désinstaller : Installer.bat -Desinstaller
+
+AVANT DE LANCER
+  Le numéro de spool doit être renseigné dans un paramètre texte des canalisations, raccords et accessoires
+  (ex. paramètre partagé « Numéro de spool »), ou dans la propriété « Spool » des pièces de fabrication MEP.
+  Les éléments doivent être raccordés entre eux (connecteurs), comme pour un réseau Revit normal.
+
+UTILISATION
+  1. Choisir le paramètre qui contient le numéro de spool : la liste des spools se remplit.
+     Les éléments sans numéro sont signalés (lien pour les sélectionner dans le modèle).
+  2. Cocher les spools à générer (tous par défaut, ou ceux des éléments sélectionnés avant de lancer).
+  3. Choisir le cartouche (ou le cadre A3 fourni), l'orientation et la représentation (unifilaire ou détaillée),
+     les étiquettes, et les exports.
+  4. « Générer les isométries ».
+
+CE QUI EST CRÉÉ POUR CHAQUE SPOOL
+  - Vue 3D « ISO <spool> » : isométrique, limitée au spool (zone de coupe + isolement), verrouillée.
+  - Repères écrits dans les éléments (paramètre « Marque » par défaut) : T1, T2… pour les tubes dans l'ordre
+    de la ligne, 1, 2, 3… pour les raccords et accessoires (= numéro de la nomenclature), puis étiquetés.
+  - Numéros de soudure S1, S2… et de raccordement chantier R1, R2… posés sur la vue.
+  - Feuille « <préfixe><spool> » : vue à l'échelle normalisée qui tient, flèche du nord, tableaux
+    SPOOL (système, matière, DN, longueur développée), NOMENCLATURE, LISTE DE DÉBIT, ASSEMBLAGES
+    (soudures atelier en pouces-diamètre, joints boulonnés, raccordements chantier).
+  - Exports dans le dossier choisi : ISO <spool>.pdf, ISO <spool>.pcf (Isogen, Spoolgen…),
+    « Nomenclature spools.csv » (importable dans Pipe-Fit : Devis > Chiffrage depuis plan)
+    et « Soudures spools.csv ».
+
+  Relancer la génération met à jour les feuilles et vues existantes (option « Remplacer »).
+  Toute la génération s'annule en une fois avec Ctrl+Z.
+
+BON À SAVOIR
+  - Un assemblage entre deux brides, ou entre une bride et une vanne / un accessoire, est compté comme joint
+    boulonné ; tous les autres assemblages internes au spool comme soudures atelier.
+  - Les étiquettes affichent ce que prévoit leur famille : pour voir les repères T1, 2…, choisir une étiquette
+    qui affiche la « Marque » (ou le paramètre de repère choisi).
+  - Les codes SKEY du PCF sont les codes Isogen usuels (soudés bout à bout, brides à collerette) : à adapter
+    à votre configuration Isogen si besoin.
+  - Réglages mémorisés dans %AppData%\PipeFit\Isometries.ini.

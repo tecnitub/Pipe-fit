@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>Pipe-Fit Isométries</Name>
+    <Assembly>PipeFit.Isometries\PipeFit.Isometries.dll</Assembly>
+    <FullClassName>PipeFit.Isometries.Revit.App</FullClassName>
+    <ClientId>D9F64467-8642-5B90-AFC4-092A1FE5A6FB</ClientId>
+    <VendorId>TECNITUB</VendorId>
+    <VendorDescription>TECNITUB – Pipe-Fit</VendorDescription>
+  </AddIn>
+</RevitAddIns>
