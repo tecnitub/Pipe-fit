@@ -551,6 +551,7 @@ const GuideEtude = (() => {
   let etapeOuverte = null; // étape dont le détail est ouvert (une seule à la fois), gardée au rafraîchissement du guide
   const derniers = new Map(); // étude → dernières étapes affichées (confirmations, éditeurs)
   const restantes = new Map(); // étude → identifiants des étapes restantes au dernier affichage (historique « fait »)
+  const observees = new Set(); // études dont les changements entre deux sessions ont été notés (SuiviEtapes.observer)
   // Données du chantier lues dans Pipe-Fit (retour du chantier, suivi du matériel et des achats) : cache par étude
   const chantierCache = new Map(), DUREE_CACHE = 2 * 60e3;
   const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -591,6 +592,13 @@ const GuideEtude = (() => {
     derniers.set(et.id, r.etapes);
     const Sx = Sv(), avant = restantes.get(et.id);
     if (avant && Sx && Sx.noterFait) r.etapes.filter(x => x.fait && avant.has(x.id)).forEach(x => essai(() => Sx.noterFait(et, x)));
+    // Première vue de l'étude dans la session, données du chantier lues : étapes faites ou rouvertes depuis le dernier
+    // enregistrement notées (date d'observation, source), état gardé dans l'étude pour la session suivante
+    if (!observees.has(et.id) && !et.modele && Sx && Sx.observer && (!et.affaireId || (c && c.data))) {
+      observees.add(et.id);
+      const vus = essai(() => Sx.observer(et, r.etapes)) || [];
+      if (vus.length && typeof enregistrer === 'function') setTimeout(() => essai(() => enregistrer(et)), 0);
+    }
     restantes.set(et.id, new Set(r.etapes.filter(x => !x.fait).map(x => x.id)));
     // Résumé d'avancement de l'étude (portefeuille, CRM) aligné sur ce que montre le guide, données du chantier comprises ;
     // envoyé au CRM au prochain enregistrement

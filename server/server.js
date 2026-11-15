@@ -135,6 +135,7 @@ const pourCompagnon = (acc, col, rec) => Acces.filtrer(restrictionsDe(acc), col,
 /* ---------- Temps réel (Server-Sent Events) ---------- */
 const clients = new Map(); // flux -> compte connecté
 function broadcast(event, payload) {
+  try { signalerEtapesChantier(event, payload); } catch (e) { /* démarrage : suivi des étapes pas encore prêt */ }
   const msg = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
   let regles = null, ctx = null, settings = null;
   for (const [res, acc] of clients) {
@@ -174,7 +175,40 @@ const MEDIAS = require('./medias-articles').creer({ DB, db, broadcast, FICHES })
 const LIENS = require('./liens-apps').creer({ db, broadcast });
 // Suivi des étapes des études : étapes d'une personne (appli des compagnons), relances (échéances, blocages)
 const SuiviEtapes = require('../etudes/public/js/suivi-etapes');
-const RELANCES = require('./relances-etapes').creer({ DB, db, LIENS, NOTIFS });
+const RELANCES = require('./relances-etapes').creer({ DB, db, LIENS, NOTIFS, recordsDe: c => recordsDe(c) });
+const OffreEtude = require('../public/js/offre-etude');
+const DevisLecture = require('../public/js/devis-lecture');
+// Avancement des étapes tenu à jour dans le CRM sans attendre l'enregistrement de l'étude dans Études : étapes faites sur
+// le terrain, réserves de l'étude levées, PV de réception signé (ou chantier terminé). Recalé exactement au prochain
+// enregistrement de l'étude, puis ces données sont réappliquées (elles peuvent être plus récentes que celles lues par Études).
+function ajusterEtapesChantier(affaireIds) {
+  const liens = LIENS.liste({ app: 'etudes' }).filter(l => l.affaireId && (l.resume || {}).avancement && (!affaireIds || affaireIds.includes(l.affaireId)));
+  if (!liens.length) return 0;
+  const reserves = recordsDe('reserves'), receptions = recordsDe('receptions'), terrain = LIENS.etapesTerrain();
+  let n = 0;
+  liens.forEach(l => {
+    const etats = SuiviEtapes.etatsChantier({ affaire: DB.getRecord(db, 'affaires', l.affaireId), reserves: reserves.filter(r => r.affaireId === l.affaireId), receptions: receptions.filter(r => r.affaireId === l.affaireId) }, l.id);
+    const ch = Object.entries(etats).map(([id, fait]) => ({ id, fait }));
+    if (ch.length && LIENS.ajusterAvancement('etudes', l.id, av => SuiviEtapes.ajusterAvancement(av, ch, { source: 'chantier', par: 'Pipe-Fit' }))) n++;
+    const faits = terrain.filter(t => t.etudeId === l.id && t.fait);
+    faits.forEach(t => { if (LIENS.ajusterAvancement('etudes', l.id, av => SuiviEtapes.ajusterAvancement(av, [{ id: t.etapeId, fait: true }], { source: 'terrain', par: t.par || '', le: t.maj }))) n++; });
+  });
+  return n;
+}
+// Changement d'une réserve, d'un PV de réception ou d'un chantier : ajustement regroupé (une demi-seconde)
+const COLS_ETAPES_CHANTIER = new Set(['reserves', 'receptions', 'affaires']);
+let etapesChantierAttente = new Set(), etapesChantierMinuteur = null;
+function signalerEtapesChantier(event, payload) {
+  if ((event !== 'change' && event !== 'delete') || !payload || !COLS_ETAPES_CHANTIER.has(payload.col)) return;
+  const r = payload.record || {};
+  etapesChantierAttente.add(payload.col === 'affaires' ? r.id || payload.id || '*' : r.affaireId || '*');
+  if (etapesChantierMinuteur) return;
+  etapesChantierMinuteur = setTimeout(() => {
+    const l = [...etapesChantierAttente]; etapesChantierAttente = new Set(); etapesChantierMinuteur = null;
+    try { ajusterEtapesChantier(l.includes('*') ? null : l); } catch (e) { console.error('Avancement des étapes :', e.message); }
+  }, 500);
+  if (etapesChantierMinuteur.unref) etapesChantierMinuteur.unref();
+}
 // Étapes affectées à la personne connectée (un compagnon ne voit que les siennes : nominatives, ou « compagnon » sur un
 // chantier où il est prévu au planning)
 function etapesDe(acc, affaireId) {
@@ -510,6 +544,8 @@ async function api(req, res, url) {
     }
     failures.delete(ip); failures.delete(cleLogin);
     DB.audit(db, a.login, 'connexion', null, null, ip);
+    // Ouverture de session : relances des étapes dues traitées sans attendre le contrôle périodique
+    RELANCES.aLaConnexion();
     return send(res, 200, publicAccount(a), { 'Set-Cookie': ouvrirSession(req, a.id) });
   }
 
@@ -801,9 +837,21 @@ async function api(req, res, url) {
         if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
         const affaires = new Map(recordsDe('affaires').map(a => [a.id, a]));
         return send(res, 200, LIENS.liste({ app: 'etudes' }).filter(l => (l.resume || {}).avancement).map(l => { const a = affaires.get(l.affaireId) || {};
-          return { etudeId: l.id, objet: String(l.resume.objet || ''), affaireId: l.affaireId, affaire: [a.code, a.nom].filter(Boolean).join(' — '), chargeId: a.chargeId || '', avancement: l.resume.avancement, maj: l.maj }; }));
+          return { etudeId: l.id, objet: String(l.resume.objet || ''), affaireId: l.affaireId, affaire: [a.code, a.nom].filter(Boolean).join(' — '), chargeId: a.chargeId || '', avancement: l.resume.avancement, maj: l.maj, fraicheur: SuiviEtapes.fraicheur(l.resume.avancement) }; }));
       }
       if (p[2] === 'mes' && method === 'GET') return send(res, 200, etapesDe(acc, q('affaireId')));
+      // Étapes qui attendent la personne (affichées à l'ouverture de sa session) : les siennes seulement
+      if (p[2] === 'dues' && method === 'GET') return send(res, 200, RELANCES.duesPour(acc));
+      // Récapitulatif des relances par e-mail : préférence de la personne (désinscription)
+      if (p[2] === 'preferences') {
+        if (!acc.user_id) return fail(res, 400, 'Compte sans fiche de l\'équipe : pas de relance');
+        if (method === 'GET') return send(res, 200, { ...RELANCES.preference(acc.user_id), adresse: !!acc.email });
+        if (method === 'PUT') {
+          const b = await readBody(req), r = RELANCES.choisirPreference(acc.user_id, { email: b.email !== false });
+          DB.audit(db, acc.login, r.email ? 'relances des étapes par e-mail : activées' : 'relances des étapes par e-mail : désactivées');
+          return send(res, 200, { ...r, adresse: !!acc.email });
+        }
+      }
       if (p[2] === 'terrain' && method === 'GET') {
         if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
         return send(res, 200, q('etudeId') ? LIENS.etapesTerrain({ etudeId: q('etudeId') }) : []);
@@ -818,10 +866,63 @@ async function api(req, res, url) {
         try {
           const r = LIENS.noterEtapeTerrain(etudeId, etapeId, e.affaireId, { fait: true, le: new Date().toISOString().slice(0, 10), par: acc.nom || acc.login, parId: acc.user_id || '', commentaire, photoId, cle: crypto.randomBytes(6).toString('hex') });
           DB.audit(db, acc.login, 'étape faite sur le terrain', 'affaires', e.affaireId, `${e.titre}`.slice(0, 120));
+          // Avancement du CRM ajusté tout de suite (recalé au prochain enregistrement de l'étude)
+          LIENS.ajusterAvancement('etudes', etudeId, av => SuiviEtapes.ajusterAvancement(av, [{ id: etapeId, fait: true }], { source: 'terrain', par: acc.nom || acc.login, le: r.maj }));
           return send(res, 200, r);
         } catch (er) { return fail(res, er.status || 500, er.message); }
       }
       return fail(res, 404, 'Route inconnue');
+    }
+    // Devis fournisseur lu dans Études → offre de la consultation du chantier (retrouvée par le lien { etudeId, cle } de
+    // ses lignes, créée sinon) avec ses lignes rapprochées, le PDF et la source ; même fournisseur + n° : complétée
+    if (p[1] === 'offre-etude' && method === 'POST') {
+      if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
+      const b = await readBody(req), etudeId = String(b.etudeId || '').slice(0, 64), lien = etudeId ? LIENS.un('etudes', etudeId) : null;
+      if (!lien || !lien.affaireId || !DB.getRecord(db, 'affaires', lien.affaireId)) return fail(res, 400, 'Étude non reliée à un chantier dans Pipe-Fit');
+      const devis = b.devis && typeof b.devis === 'object' ? b.devis : {}, txt = (v, k) => String(v == null ? '' : v).trim().slice(0, k);
+      const lignes = (Array.isArray(devis.lignes) ? devis.lignes : []).slice(0, 300).filter(l => l && l.cle && Number(l.pu) > 0)
+        .map(l => ({ cle: txt(l.cle, 200), pu: Number(l.pu), reference: txt(l.reference, 60), designation: txt(l.designation, 200), qte: Number(l.qte) || 0 }));
+      if (!lignes.length) return fail(res, 400, 'Aucune ligne du devis rapprochée du matériel retenu');
+      const par = acc.nom || acc.login, jour = new Date().toISOString().slice(0, 10);
+      // Fournisseur choisi, ou retrouvé par le nom lu sur le devis, créé sinon
+      let ent = b.entrepriseId ? DB.getRecord(db, 'entreprises', String(b.entrepriseId)) : OffreEtude.trouverFournisseur(recordsDe('entreprises'), devis.fournisseur), entCree = false;
+      if (ent && ent.categorie === 'Client') return fail(res, 400, 'Cette entreprise est un client, pas un fournisseur');
+      if (!ent) {
+        const nom = txt(devis.fournisseur, 120);
+        if (!nom) return fail(res, 400, 'Nom du fournisseur manquant');
+        ent = ecrireRecord('entreprises', { id: uid(), nom, categorie: 'Fournisseur', notes: 'Créé depuis un devis lu dans l\'application Études' }, par); entCree = true;
+        DB.audit(db, acc.login, 'création', 'entreprises', ent.id, `${nom} (devis lu dans Études)`);
+      }
+      // PDF du devis gardé comme pièce de l'offre (repris dans la commande)
+      let pieceId = '';
+      if (b.pdf && b.pdf.base64) {
+        const buf = Buffer.from(String(b.pdf.base64), 'base64');
+        if (!buf.length || buf.length > 7.5 * 1024 * 1024 || buf.subarray(0, 4).toString() !== '%PDF') return fail(res, 400, 'PDF du devis invalide ou de plus de 7 Mo');
+        pieceId = crypto.randomBytes(12).toString('hex');
+        db.prepare('INSERT INTO files (id, mime, data, created_by, created_at) VALUES (?, ?, ?, ?, ?)').run(pieceId, 'application/pdf', buf, acc.login, new Date().toISOString());
+      }
+      const materiel = (Array.isArray(b.materiel) ? b.materiel : []).slice(0, 400).filter(m => m && m.cle);
+      let c = OffreEtude.trouverConsultation(recordsDe('consultations'), { affaireId: lien.affaireId, etudeId, cles: lignes.map(l => l.cle) }), cree = false;
+      if (c) c = DB.clean(c);
+      else {
+        c = { id: uid(), ...OffreEtude.nouvelleConsultation({ affaireId: lien.affaireId, etudeId, objet: `Matériel retenu — ${txt((lien.resume || {}).objet, 150)}`, jour }), dateLimite: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) };
+        c.ref = DB.nextNumber(db, 'consultations', c); cree = true;
+      }
+      // Nouvelle consultation : tout le matériel retenu (autres fournisseurs à consulter) ; sinon les lignes chiffrées qui manquent
+      const parCle = new Map(materiel.map(m => [String(m.cle), m]));
+      const { index, ajoutees } = OffreEtude.completerLignes(c, etudeId, cree && materiel.length ? materiel : lignes.map(l => parCle.get(l.cle) || l));
+      const source = DevisLecture.source({ fournisseur: ent.nom, numero: txt(devis.numero, 60), date: txt(devis.date, 10) });
+      const r = OffreEtude.appliquerOffre(c, ent.id, { ...devis, lignes }, index, { etudeId, devisId: txt(b.devisId, 64), pieceId, pieceNom: txt(b.pdf && b.pdf.nom, 150), par, jour, source });
+      ecrireRecord('consultations', c, par);
+      DB.audit(db, acc.login, `offre ${r.etat === 'creee' ? 'créée' : r.etat === 'completee' ? 'complétée' : 'remplacée'} depuis Études`, 'consultations', c.id, `${c.ref} — ${ent.nom} — ${r.lignes} ligne(s)`);
+      return send(res, 200, { consultationId: c.id, ref: c.ref, cree, offre: r.etat, lignes: r.lignes, ajoutees, fournisseur: ent.nom, entrepriseId: ent.id, fournisseurCree: entCree, piece: !!pieceId });
+    }
+    // Sens inverse : offres reçues (saisies ou lues) dans les consultations du chantier pour le matériel retenu de l'étude
+    if (p[1] === 'offres-etude' && method === 'GET') {
+      if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
+      const etudeId = url.searchParams.get('etudeId') || '', lien = etudeId ? LIENS.un('etudes', etudeId) : null;
+      if (!lien || !lien.affaireId) return send(res, 200, []);
+      return send(res, 200, OffreEtude.offresEtude(recordsDe('consultations').filter(c => c.affaireId === lien.affaireId), etudeId, nomEntreprise));
     }
     // Matériel retenu par les études du chantier (fabricant, référence, validation) : aussi pour les compagnons, sans prix
     if (p[1] === 'materiel' && !p[2] && method === 'GET') {
@@ -913,7 +1014,12 @@ async function api(req, res, url) {
           DB.audit(db, acc.login, 'étude reliée', 'affaires', l.affaireId || null, `${(l.resume || {}).objet || p[2]}${l.affaireId ? ` → ${(DB.getRecord(db, 'affaires', l.affaireId) || {}).code || ''}` : ''}${l.devisId ? ` (devis ${(DB.getRecord(db, 'devis', l.devisId) || {}).numero || ''})` : ''}`);
           return send(res, 200, l);
         }
-        if (method === 'PUT') return send(res, 200, LIENS.enregistrer(p[1], p[2], await readBody(req), acc.nom || acc.login) || { ok: true });
+        if (method === 'PUT') {
+          const l = LIENS.enregistrer(p[1], p[2], await readBody(req), acc.nom || acc.login);
+          // Étude enregistrée (avancement recalculé) : étapes du terrain et données du chantier plus récentes réappliquées
+          if (l && p[1] === 'etudes' && l.affaireId) { try { if (ajusterEtapesChantier([l.affaireId])) return send(res, 200, LIENS.un(p[1], p[2])); } catch (e) { console.error('Avancement des étapes :', e.message); } }
+          return send(res, 200, l || { ok: true });
+        }
         if (method === 'DELETE') { LIENS.supprimer(p[1], p[2]); return send(res, 200, { ok: true }); }
       } catch (e) { return fail(res, e.status || 500, e.message); }
     }

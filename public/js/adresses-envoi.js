@@ -10,6 +10,8 @@ const AdressesEnvoi = (() => {
     { id: 'commandes', label: 'Commandes fournisseurs', exemple: 'achats@votre-domaine.fr', types: ['commande', 'demandePrix'] },
     { id: 'consultations', label: 'Demandes de prix (consultations)', exemple: 'achats@votre-domaine.fr', types: ['consultation'] },
     { id: 'chantier', label: 'Attachements, bons d\'intervention, PV, habilitations et PPSPS', exemple: 'travaux@votre-domaine.fr', types: ['attachement', 'bon', 'pv', 'habilitations', 'ppsps'] },
+    // Récapitulatif quotidien des étapes des études (envoi automatique : sans expéditeur, l'adresse de la société)
+    { id: 'etapes', label: 'Relances des étapes des études (récapitulatif quotidien)', exemple: 'pipefit@votre-domaine.fr', types: ['relance-etapes'] },
   ];
   const EMAIL = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/;
   const groupe = type => GROUPES.find(g => g.types.includes(type)) || null;
