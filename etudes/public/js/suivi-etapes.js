@@ -283,14 +283,25 @@ const SuiviEtapes = (() => {
   const sauver = et => { if (cfg.enregistrer) return cfg.enregistrer(et); if (typeof enregistrer === 'function') return enregistrer(et); return null; };
   const badgeEch = e => (e.echeance ? `<span class="badge ${e.etatEcheance === 'retard' ? 'erreur' : e.etatEcheance === 'bientot' ? 'attention' : 'info'} suivi-ech" title="${e.etatEcheance === 'retard' ? 'Échéance dépassée' : 'Échéance'}">${e.etatEcheance === 'retard' ? '⏰ en retard · ' : '📅 '}${dateFr(e.echeance)}</span>` : '');
   // HTML additionnel d'une étape (badges, boutons) : etape décorée (decorer), ou brute (décorée ici)
-  function htmlEtape(et, etape) {
-    const e = etape && etape.historique ? etape : decorer(et, [etape], { today: today() })[0];
+  const decoree = (et, etape) => (etape && etape.historique ? etape : decorer(et, [etape], { today: today() })[0]);
+  // Badges seuls (responsable, échéance, sans objet, fait sur le terrain) : ligne compacte d'une étape du guide
+  function badgesEtape(et, etape) {
+    const e = decoree(et, etape);
+    if (!e) return '';
+    return `${e.responsable ? `<span class="badge info suivi-resp" title="Responsable">👤 ${esc(libelleResponsable(e.responsable))}</span>` : ''}${badgeEch(e)}${e.sansObjet ? `<span class="badge suivi-so" title="Sans objet : ${esc(e.motif)}${e.sansObjetPar ? ` (${esc(e.sansObjetPar)})` : ''}">⊘ sans objet</span>` : ''}${e.faitTerrain ? `<span class="badge ok" title="${esc(e.faitTerrain.commentaire)}">📱 fait par ${esc(e.faitTerrain.par)}</span>` : ''}`;
+  }
+  // Boutons de suivi seuls (affecter, sans objet / rétablir, historique) : détail d'une étape du guide
+  function actionsEtape(et, etape) {
+    const e = decoree(et, etape);
     if (!e) return '';
     const id = esc(e.id);
-    return `<span class="suivi-etape">${e.responsable ? `<span class="badge info suivi-resp" title="Responsable">👤 ${esc(libelleResponsable(e.responsable))}</span>` : ''}${badgeEch(e)}
-      ${e.sansObjet ? `<span class="badge suivi-so" title="Sans objet : ${esc(e.motif)}${e.sansObjetPar ? ` (${esc(e.sansObjetPar)})` : ''}">⊘ sans objet</span>` : ''}${e.faitTerrain ? `<span class="badge ok" title="${esc(e.faitTerrain.commentaire)}">📱 fait par ${esc(e.faitTerrain.par)}</span>` : ''}
-      <span class="suivi-actions">${e.sansObjet ? `<button type="button" class="secondaire petit" data-suivi-action="retablir" data-suivi-id="${id}">Rétablir</button>` : `${e.fait ? '' : `<button type="button" class="secondaire petit" data-suivi-action="affecter" data-suivi-id="${id}" title="Responsable et échéance">Affecter…</button>`}${e.faitGuide ? '' : `<button type="button" class="secondaire petit" data-suivi-action="sans-objet" data-suivi-id="${id}" title="L'étape ne s'applique pas à cette affaire (motif demandé)">Sans objet</button>`}`}
-      ${e.historique.length ? `<button type="button" class="secondaire petit" data-suivi-action="historique" data-suivi-id="${id}" title="Qui, quand, quoi">Historique</button>` : ''}</span></span>`;
+    return `<span class="suivi-actions">${e.sansObjet ? `<button type="button" class="secondaire petit" data-suivi-action="retablir" data-suivi-id="${id}">Rétablir</button>` : `${e.fait ? '' : `<button type="button" class="secondaire petit" data-suivi-action="affecter" data-suivi-id="${id}" title="Responsable et échéance">Affecter…</button>`}${e.faitGuide ? '' : `<button type="button" class="secondaire petit" data-suivi-action="sans-objet" data-suivi-id="${id}" title="L'étape ne s'applique pas à cette affaire (motif demandé)">Sans objet</button>`}`}${e.historique.length ? `<button type="button" class="secondaire petit" data-suivi-action="historique" data-suivi-id="${id}" title="Qui, quand, quoi">Historique</button>` : ''}</span>`;
+  }
+  function htmlEtape(et, etape) {
+    const e = decoree(et, etape);
+    if (!e) return '';
+    return `<span class="suivi-etape">${badgesEtape(et, e)}
+      ${actionsEtape(et, e)}</span>`;
   }
   const optionsResponsable = sel => {
     const v = sel ? (sel.type === 'role' ? `role:${sel.role}` : `user:${sel.id}`) : '';
@@ -418,6 +429,6 @@ const SuiviEtapes = (() => {
 
   return { PHASES, PHASE, PHASES_TERRAIN, ROLES, ROLE, ROLES_COMPTE, normPhase, phaseDe, libelleResponsable, responsableValide, correspond, suivi, historique, estSansObjet,
     affecter, marquerSansObjet, retablir, noterFait, noterRouvert, suivreEtats, fusionnerTerrain, etatEcheance, decorer, mesEtapes, avancement, mettreAJour, etapesEtude,
-    portefeuille, responsables, etapesPour, relances, purgerDeja, configurer, htmlEtape, lier, vue, filtre, choisirFiltre, FILTRES, htmlPdf, genererPdf, dialogueHistorique, ACTIONS };
+    portefeuille, responsables, etapesPour, relances, purgerDeja, configurer, htmlEtape, badgesEtape, actionsEtape, lier, vue, filtre, choisirFiltre, FILTRES, htmlPdf, genererPdf, dialogueHistorique, ACTIONS };
 })();
 if (typeof module !== 'undefined') module.exports = SuiviEtapes;

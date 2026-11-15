@@ -548,6 +548,7 @@ const GuideEtude = (() => {
   // Liste détaillée et phases ouvertes ou fermées par l'utilisateur : gardées d'un affichage à l'autre
   let ouvert = null;
   const phasesOuvertes = new Map();
+  let etapeOuverte = null; // étape dont le détail est ouvert (une seule à la fois), gardée au rafraîchissement du guide
   const derniers = new Map(); // étude → dernières étapes affichées (confirmations, éditeurs)
   const restantes = new Map(); // étude → identifiants des étapes restantes au dernier affichage (historique « fait »)
   // Données du chantier lues dans Pipe-Fit (retour du chantier, suivi du matériel et des achats) : cache par étude
@@ -604,7 +605,7 @@ const GuideEtude = (() => {
     const vus = new Set(), u = l.filter(a => !vus.has(a[0]) && vus.add(a[0])).slice(0, 2);
     return `<span class="petit guide-bloque">🔒 bloquée : ${esc(x.motifBlocage)}${u.length ? ` — débloquer : ${u.map(a => `<button type="button" class="lien petit" data-guide="${esc(a[0])}">${esc(a[1])}</button>`).join(' ')}` : ''}</span>`;
   };
-  function editeurHtml(et, x) {
+  function editeurHtml(et, x, deplie) {
     const ed = x.editeur; if (!ed) return '';
     let corps = '';
     if (ed.type === 'climat' && typeof optionsClimat === 'function') corps = `<label>Climat du site <select data-ed-champ="climat">${essai(() => optionsClimat(et, typeof affaireDe === 'function' ? affaireDe(et.affaireId) : null)) || ''}</select></label>`;
@@ -620,6 +621,8 @@ const GuideEtude = (() => {
       }
     }
     if (!corps) return '';
+    // Dans le détail d'une étape (déjà ouvert à la demande) : éditeur affiché directement
+    if (deplie) return `<div class="guide-editeur deplie" data-ed="${esc(x.id)}"><span class="petit muted">✏️ Corriger ici</span><div class="guide-ed-corps">${corps}<span class="guide-ed-actions"><button type="button" class="petit" data-ed-ok="${esc(x.id)}">✓ Confirmer</button></span></div></div>`;
     return `<details class="guide-editeur" data-ed="${esc(x.id)}"><summary class="petit">✏️ Corriger ici</summary><div class="guide-ed-corps">${corps}<span class="guide-ed-actions"><button type="button" class="petit" data-ed-ok="${esc(x.id)}">✓ Confirmer</button></span></div></details>`;
   }
   function html(et) {
@@ -635,7 +638,25 @@ const GuideEtude = (() => {
     const V = S && S.vue ? essai(() => S.vue(et, r.etapes)) : null;
     const suivi = x => (S && S.htmlEtape ? essai(() => S.htmlEtape(et, x)) || '' : '');
     const bouton = (x, principal) => (x.fait ? '' : `${x.tout ? `<button class="petit" data-guide="${esc(x.tout[0])}" title="Tous les calculs d'après l'inventaire, raccordés, puissances manquantes estimées">${esc(x.tout[1])}</button>` : ''}${x.action ? `<button class="${principal && !x.bloquee ? '' : 'secondaire '}petit" data-guide="${esc(x.action[0])}">${esc(x.action[1])}</button>` : ''}${x.confirmer ? `<button class="secondaire petit" data-guide="${esc(x.confirmer)}" title="${x.libConfirmer ? 'Marquer l\'étape comme faite' : 'Les valeurs par défaut conviennent'}">${esc(x.libConfirmer || '✓ C\'est bon')}</button>` : ''}`);
-    const ligne = (x, phase) => `<li class="guide-etape${x.bloquee ? ' bloquee' : ''}${x.etatEcheance === 'retard' ? ' suivi-retard' : ''}" data-etape="${esc(x.id)}"><span class="guide-txt">${phase ? `<span class="petit muted">${PHASE[x.phase].ico} ${esc(PHASE[x.phase].libelle)} · ${esc(GROUPE[x.groupe].libelle)}</span>` : ''}<strong>${x.bloquee ? '🔒 ' : ''}${esc(x.titre)}</strong><span class="petit">${esc(x.sansObjet ? `Motif : ${x.motif}${x.sansObjetPar ? ` (${x.sansObjetPar})` : ''}` : x.info)}</span>${x.bloquee ? lienBlocage(x, parId) : ''}${suivi(x)}</span><span class="guide-actions">${bouton(x, false)}</span>${x.fait ? '' : editeurHtml(et, x)}</li>`;
+    // Étape de la liste : une ligne compacte (titre, info tronquée, badges responsable / échéance, bouton d'action
+    // principal) ; le reste (info complète, blocage, autres boutons, suivi, correction sur place) dans un détail ouvert
+    // au clic sur l'étape, une seule étape ouverte à la fois
+    const badges = x => (S && S.badgesEtape ? essai(() => S.badgesEtape(et, x)) || '' : '');
+    const actionsSuivi = x => (S && S.actionsEtape ? essai(() => S.actionsEtape(et, x)) || '' : '');
+    const boutons = x => (x.fait ? [] : [
+      x.action && [1, `<button class="secondaire petit" data-guide="${esc(x.action[0])}">${esc(x.action[1])}</button>`],
+      x.confirmer && [2, `<button class="secondaire petit" data-guide="${esc(x.confirmer)}" title="${x.libConfirmer ? 'Marquer l\'étape comme faite' : 'Les valeurs par défaut conviennent'}">${esc(x.libConfirmer || '✓ C\'est bon')}</button>`],
+      x.tout && [3, `<button class="secondaire petit" data-guide="${esc(x.tout[0])}" title="Tous les calculs d'après l'inventaire, raccordés, puissances manquantes estimées">${esc(x.tout[1])}</button>`],
+    ].filter(Boolean));
+    let nLigne = 0;
+    const ligne = (x, phase) => {
+      const k = `guide-detail-${nLigne++}`, ouv = etapeOuverte === x.id, b = boutons(x), info = x.sansObjet ? `Motif : ${x.motif}${x.sansObjetPar ? ` (${x.sansObjetPar})` : ''}` : x.info || '';
+      return `<li class="guide-etape${ouv ? ' ouverte' : ''}${x.bloquee ? ' bloquee' : ''}${x.etatEcheance === 'retard' ? ' suivi-retard' : ''}" data-etape="${esc(x.id)}">
+        <div class="guide-ligne"><button type="button" class="guide-tete" aria-expanded="${ouv}" aria-controls="${k}" title="${esc(info)}"><span class="guide-chevron" aria-hidden="true"></span><strong class="guide-titre">${phase ? `${PHASE[x.phase].ico} ` : ''}${x.bloquee ? '🔒 ' : ''}${esc(x.titre)}</strong><span class="guide-resume petit muted">${esc(info)}</span></button>
+        <span class="guide-badges">${badges(x)}</span><span class="guide-actions">${b.length ? b[0][1] : ''}</span></div>
+        <div class="guide-detail" id="${k}"${ouv ? '' : ' hidden'}>${phase ? `<span class="petit muted">${PHASE[x.phase].ico} ${esc(PHASE[x.phase].libelle)} · ${esc(GROUPE[x.groupe].libelle)}</span>` : ''}${info ? `<p class="petit">${esc(info)}</p>` : ''}${x.bloquee ? lienBlocage(x, parId) : ''}
+          ${b.length > 1 ? `<span class="guide-actions">${b.slice(1).map(y => y[1]).join('')}</span>` : ''}${actionsSuivi(x)}${x.fait ? '' : editeurHtml(et, x, true)}</div></li>`;
+    };
     const puces = r.phases.filter(p => p.total || !p.active).map(p => `<span class="guide-puce${p.active ? '' : ' a-venir'}${p.active && p.pct === 100 ? ' faite' : ''}" title="${esc(p.active ? `${p.faits} / ${p.total} étape(s) faite(s)` : 'Phase à venir : l\'étude n\'est pas encore reliée à un chantier')}">${p.ico} ${esc(p.libelle)} <b>${p.active ? `${p.pct} %` : 'à venir'}</b></span>`).join('');
     let corps;
     if (V && V.liste) corps = V.liste.length ? `<ul class="guide-filtree">${V.liste.map(x => ligne(x, true)).join('')}</ul>` : `<p class="muted petit guide-vide">${esc(V.vide)}</p>`;
@@ -665,6 +686,16 @@ const GuideEtude = (() => {
     const dl = root.querySelector('.guide-liste');
     if (dl) dl.addEventListener('toggle', () => { ouvert = dl.open; });
     root.querySelectorAll('.guide-phase').forEach(d => d.addEventListener('toggle', () => { phasesOuvertes.set(d.dataset.phase, d.open); }));
+    // Détail d'une étape : ouvert au clic (ou Entrée / Espace) sur sa ligne, l'étape ouverte avant se referme
+    root.querySelectorAll('.guide-tete').forEach(t => t.onclick = () => {
+      const li = t.closest('.guide-etape'), ouvrir = t.getAttribute('aria-expanded') !== 'true';
+      root.querySelectorAll('.guide-tete[aria-expanded="true"]').forEach(o => {
+        o.setAttribute('aria-expanded', 'false'); o.closest('.guide-etape').classList.remove('ouverte');
+        const d = document.getElementById(o.getAttribute('aria-controls')); if (d) d.hidden = true;
+      });
+      if (ouvrir) { t.setAttribute('aria-expanded', 'true'); li.classList.add('ouverte'); const d = document.getElementById(t.getAttribute('aria-controls')); if (d) d.hidden = false; }
+      etapeOuverte = ouvrir ? li.dataset.etape : null;
+    });
     const recharger = () => { if (typeof App !== 'undefined' && App.render) App.render(); };
     const sauver = () => { if (typeof enregistrer === 'function') enregistrer(et); };
     root.querySelectorAll('[data-guide]').forEach(b => b.onclick = () => {

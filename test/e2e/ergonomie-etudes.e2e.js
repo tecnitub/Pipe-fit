@@ -133,6 +133,21 @@ test('Études : page de l\'étude — suivi des étapes dans le guide « Reste �
   assert.strictEqual(await p.$('#guide-etude .guide-liste'), null, 'vue par phase encore affichée');
   await p.click('#guide-etude [data-suivi-filtre="phases"]'); await p.waitForTimeout(300);
   assert.strictEqual(await p.$('#guide-etude .guide-filtree'), null);
+  // Liste compacte : une ligne par étape, détail (suivi, correction sur place) ouvert au clic, une étape à la fois
+  await p.evaluate(() => { const d = document.querySelector('#guide-etude .guide-liste'); if (d) d.open = true; document.querySelectorAll('#guide-etude .guide-phase').forEach(x => { x.open = true; }); });
+  const lignes = await p.$$eval('#guide-etude .guide-liste li.guide-etape', ls => ls.map(l => ({ h: l.getBoundingClientRect().height, tete: !!l.querySelector('button.guide-tete[aria-expanded="false"]'), cache: l.querySelector('.guide-detail').hidden, suivi: !!l.querySelector('.guide-ligne [data-suivi-action], .guide-ligne .guide-editeur') })));
+  assert.ok(lignes.length > 3, 'étapes de la liste absentes');
+  assert.ok(lignes.every(l => l.tete && l.cache && !l.suivi), 'ligne d\'étape non compacte');
+  assert.ok(lignes.every(l => l.h < 60), `ligne d'étape trop haute : ${Math.max(...lignes.map(l => l.h))} px`);
+  const tetes = await p.$$('#guide-etude .guide-liste .guide-tete');
+  await tetes[0].click();
+  assert.strictEqual(await tetes[0].getAttribute('aria-expanded'), 'true');
+  assert.ok(await p.$eval('#guide-etude .guide-liste .guide-tete[aria-expanded="true"]', t => !document.getElementById(t.getAttribute('aria-controls')).hidden && !!document.getElementById(t.getAttribute('aria-controls')).querySelector('[data-suivi-action]')), 'détail sans suivi');
+  await tetes[1].focus(); await p.keyboard.press('Enter'); await p.waitForTimeout(100);
+  assert.deepStrictEqual(await p.$$eval('#guide-etude .guide-tete[aria-expanded="true"]', ts => ts.length), 1, 'une seule étape ouverte');
+  assert.strictEqual(await tetes[1].getAttribute('aria-expanded'), 'true');
+  // L'étape suivante mise en avant reste détaillée
+  assert.ok(await p.$('#guide-etude .guide-suivante [data-suivi-action]'), 'étape suivante sans détail');
   // Ordre : guide, calculs, puis outils (équipements et matériel ; chantier et exploitation) ; fiche de l'étude repliée
   // quand l'étude a des calculs
   const ordre = await p.evaluate(() => ['#guide-etude', '#ajout', '#groupe-equipements', '#groupe-chantier'].map(s => { const e = document.querySelector(s); return e ? e.getBoundingClientRect().top + scrollY : -1; }));

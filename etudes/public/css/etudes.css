@@ -214,8 +214,8 @@ ul.af { padding-left: 18px; font-size: 13.5px; display: grid; gap: 6px; }
 .guide-liste { margin-top: .6em; }
 .guide-liste > summary { cursor: pointer; font-weight: 600; padding: .3em 0; }
 .guide-liste h4 { margin: .7em 0 .3em; font-size: .95em; }
-.guide-liste ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .4em; }
-.guide-liste li { display: flex; gap: .6em; align-items: center; flex-wrap: wrap; padding: .45em .55em; border-radius: 8px; background: rgba(127, 127, 127, .06); }
+.guide-liste ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .25em; }
+.guide-liste li { padding: .3em .55em; border-radius: 8px; background: rgba(127, 127, 127, .06); }
 .guide-cible { outline: 3px solid #e08a00 !important; outline-offset: 2px; }
 @media (max-width: 600px) {
   .guide-actions { width: 100%; }
@@ -335,7 +335,7 @@ details.plus-actions .plus-liste > * { text-align: left; width: 100%; }
 .suivi-liste { list-style: none; margin: 0; padding: 0; display: grid; gap: .4em; }
 .suivi-liste li { display: flex; gap: .6em; align-items: center; flex-wrap: wrap; padding: .45em .55em; border-radius: 8px; background: rgba(127, 127, 127, .06); }
 .guide-filtree { list-style: none; margin: 0; padding: 0; display: grid; gap: .4em; }
-.guide-filtree li { display: flex; gap: .6em; align-items: center; flex-wrap: wrap; padding: .45em .55em; border-radius: 8px; background: rgba(127, 127, 127, .06); }
+.guide-filtree li { padding: .3em .55em; border-radius: 8px; background: rgba(127, 127, 127, .06); }
 .guide-vide { margin: .3em 0; }
 .suivi-filtres button.a-retard:not([aria-pressed="true"]) { color: var(--err-texte); border-color: var(--err-texte); }
 .suivi-liste li.suivi-retard, .guide-etude li.suivi-retard { outline: 2px solid var(--err-texte); outline-offset: -2px; }
@@ -403,4 +403,38 @@ details.aide-intro > summary { cursor: pointer; }
 @media (min-width: 701px) {
   .guide-etude .suivi-actions button { background: none; border: 0; box-shadow: none; padding: 2px 4px; min-height: 0; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; font-size: 12.5px; }
   .guide-etude .suivi-actions button:hover { color: var(--texte); }
+}
+/* Guide « Reste à faire » : une ligne par étape (titre, info tronquée, badges, action principale) ; le détail (info
+   complète, suivi, correction sur place) s'ouvre au clic sur l'étape, une seule à la fois */
+.guide-liste ul, .guide-filtree { grid-template-columns: minmax(0, 1fr); }
+.guide-etape { min-width: 0; }
+.guide-ligne { display: flex; align-items: center; gap: .5em; min-width: 0; }
+button.guide-tete { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: .55em; background: none; color: var(--texte); border: 0; padding: .35em .2em; text-align: left; border-radius: 6px; }
+button.guide-tete:hover { background: rgba(127, 127, 127, .1); filter: none; }
+.guide-chevron::before { content: '▸'; display: inline-block; color: var(--muted); transition: transform .15s; }
+.guide-tete[aria-expanded="true"] .guide-chevron::before { transform: rotate(90deg); }
+.guide-titre { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.guide-resume { flex: 1 1 0; min-width: 3em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.guide-badges { display: inline-flex; gap: .3em; flex: none; }
+.guide-badges:empty { display: none; }
+.guide-badges .badge { white-space: nowrap; }
+.guide-ligne > .guide-actions { flex: none; flex-wrap: nowrap; }
+.guide-ligne > .guide-actions button { white-space: nowrap; }
+.guide-etape.ouverte { background: rgba(224, 138, 0, .08); box-shadow: inset 3px 0 0 #e08a00; }
+.guide-detail { display: flex; flex-direction: column; align-items: flex-start; gap: .4em; padding: .2em .3em .45em 1.7em; overflow-wrap: anywhere; }
+.guide-detail[hidden] { display: none; }
+.guide-detail > p { margin: 0; }
+.guide-editeur.deplie { display: flex; flex-direction: column; gap: .2em; align-self: stretch; }
+@media (max-width: 700px) {
+  /* Téléphone : titre en entier (deux lignes au plus) sur toute la largeur, puis badges et action principale */
+  .guide-ligne { flex-wrap: wrap; gap: .2em .4em; }
+  button.guide-tete { flex: 1 1 100%; min-height: 40px; align-items: center; }
+  .guide-titre { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .guide-resume { display: none; }
+  .guide-badges { flex-wrap: wrap; flex: 1 1 auto; min-width: 0; padding-left: 1.6em; }
+  .guide-badges:empty { display: block; }
+  .guide-ligne > .guide-actions { width: auto; margin-left: auto; }
+  .guide-ligne > .guide-actions button { min-height: 40px; }
+  .guide-detail { padding-left: .3em; }
+  .guide-detail .guide-actions { width: 100%; }
 }
