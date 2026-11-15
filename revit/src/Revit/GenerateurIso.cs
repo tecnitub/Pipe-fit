@@ -152,6 +152,15 @@ namespace PipeFit.Isometries.Revit
             var page = MiseEnPage.Ranger(zoneTableaux, MiseEnPage.Tableaux(spool, projet, date), HauteurLigneMm);
             var zoneVue = new Rect(cadre.X0, cadre.Y0, page.ZoneVue.X1, cadre.Y1);
             foreach (var p in page.Tableaux) DessinerTableau(feuille, p);
+            // Légende des symboles présents, en bande sous le dessin (à gauche du cartouche)
+            var zoneBas = zoneVue;
+            var entrees = Legende.Pour(spool).Where(x =>
+                (r.NumerosSoudure || (x.Code != "SOUD" && x.Code != "SOUDCH")) && (r.Cotation || x.Code != "COTE")
+                && (r.SymbolesRobinetterie || !Enum.TryParse(x.Code, true, out GenreRobinet _))).ToList();
+            var legende = Legende.Compacte(entrees);
+            var hLeg = legende.Hauteur(HauteurLigneMm);
+            DessinerTableau(feuille, new Placement { Tableau = legende, X = zoneVue.X0, Y = zoneVue.Y0 + 8 + hLeg });
+            zoneVue = new Rect(zoneVue.X0, zoneVue.Y0 + 8 + hLeg + 3, zoneVue.X1, zoneVue.Y1);
 
             // Vue sur la feuille, à l'échelle qui tient dans la zone (marge pour les étiquettes)
             var centre = new XYZ(Compat.Pieds((zoneVue.X0 + zoneVue.X1) / 2), Compat.Pieds((zoneVue.Y0 + zoneVue.Y1) / 2), 0);
@@ -183,7 +192,6 @@ namespace PipeFit.Isometries.Revit
                 var obs = new Obstacles();
                 foreach (var seg in Segments(spool, projection)) obs.Traits.Add(seg);
                 obs.Durs.Add(new Rect(zoneVue.X0, zoneVue.Y1 - 32, zoneVue.X0 + 32, zoneVue.Y1));   // flèche du nord
-                obs.Durs.Add(new Rect(zoneVue.X0, zoneVue.Y0, zoneVue.X0 + 150, zoneVue.Y0 + 7));   // échelle
                 obs.Durs.Add(cartouche == null ? new Rect(220, 10, 410, 45) : new Rect(cadre.X1 - 180, cadre.Y0 - 12, cadre.X1 + 12, cadre.Y0 + 50)); // cartouche
                 if (r.Cotation) Coter(feuille, projection, spool, res, obs);
                 if (r.SymbolesRobinetterie) Symboliser(feuille, projection, spool, res, obs);
@@ -192,7 +200,7 @@ namespace PipeFit.Isometries.Revit
             }
 
             DessinerNord(feuille, vue, zoneVue);
-            EcrireEchelle(feuille, zoneVue, res.Echelle);
+            EcrireEchelle(feuille, zoneBas, res.Echelle);
             return res;
         }
 
@@ -466,12 +474,19 @@ namespace PipeFit.Isometries.Revit
                     // Texte au milieu, ou glissé le long de la ligne s'il recouvrirait un autre texte
                     var lt = PlacementEtiquettes.LargeurTexte(cote.Valeur, HauteurTexteMm) + 1;
                     double mx = 0, my = 0; Rect cadre = null;
-                    foreach (var t in new[] { 0.5, 0.35, 0.65, 0.22, 0.78, 0.1, 0.9 })
+                    // Le long de la ligne, au-dessus puis de l'autre côté de la ligne de cote
+                    var libre = false;
+                    foreach (var cote2 in new[] { 2.2, -2.2 })
                     {
-                        mx = ax + (bx - ax) * t + nx * 2.2; my = ay + (by - ay) * t + ny * 2.2;
-                        cadre = PlacementEtiquettes.CadreTourne(mx, my, lt, HauteurTexteMm + 0.8, angle);
-                        if (!obs.Durs.Any(o => PlacementEtiquettes.Recouvre(cadre, o))) break;
+                        foreach (var t in new[] { 0.5, 0.35, 0.65, 0.22, 0.78, 0.1, 0.9 })
+                        {
+                            mx = ax + (bx - ax) * t + nx * cote2; my = ay + (by - ay) * t + ny * cote2;
+                            cadre = PlacementEtiquettes.CadreTourne(mx, my, lt, HauteurTexteMm + 0.8, angle);
+                            if (!obs.Durs.Any(o => PlacementEtiquettes.Recouvre(cadre, o))) { libre = true; break; }
+                        }
+                        if (libre) break;
                     }
+                    if (!libre) { mx = (ax + bx) / 2 + nx * 2.2; my = (ay + by) / 2 + ny * 2.2; cadre = PlacementEtiquettes.CadreTourne(mx, my, lt, HauteurTexteMm + 0.8, angle); }
                     obs.Durs.Add(cadre);
                     TextNote.Create(doc, f.Id, P(mx, my), cote.Valeur, opt);
                 }
@@ -700,21 +715,21 @@ namespace PipeFit.Isometries.Revit
         void DessinerTableau(ViewSheet f, Placement pl)
         {
             var t = pl.Tableau;
-            double x = pl.X, y = pl.Y, w = t.Largeur, h = HauteurLigneMm;
+            double x = pl.X, y = pl.Y, w = t.Largeur, h = HauteurLigneMm, hl = h * t.Interligne;
             bool entete = t.Colonnes.Any(c => c.Titre != "");
-            int nbLignes = t.Lignes.Count + (entete ? 2 : 1);
-            double bas = y - nbLignes * h;
+            int haut = entete ? 2 : 1;
+            double bas = y - t.Hauteur(h);
+            double Ligne(int i) => i <= haut ? y - i * h : y - haut * h - (i - haut) * hl; // ordonnée du bas de la ligne i
 
             // Cadre et lignes horizontales
             Trait(f, x, y, x + w, y); Trait(f, x, bas, x + w, bas);
             Trait(f, x, y, x, bas); Trait(f, x + w, y, x + w, bas);
-            for (int i = 1; i < nbLignes; i++) Trait(f, x, y - i * h, x + w, y - i * h);
+            for (int i = 1; i < haut + t.Lignes.Count; i++) Trait(f, x, Ligne(i), x + w, Ligne(i));
             // Colonnes (sous le titre)
             double cx = x;
             for (int j = 0; j < t.Colonnes.Count - 1; j++) { cx += t.Colonnes[j].LargeurMm; Trait(f, cx, y - h, cx, bas); }
 
             Texte(f, x + 1.5, y - h / 2, t.Titre, gras: true);
-            int ligne = 1;
             if (entete)
             {
                 cx = x;
@@ -723,19 +738,58 @@ namespace PipeFit.Isometries.Revit
                     Texte(f, c.Droite ? cx + c.LargeurMm - 1.5 : cx + 1.5, y - h * 1.5, MiseEnPage.Tronquer(c.Titre, c.LargeurMm, HauteurTexteMm), gras: true, droite: c.Droite);
                     cx += c.LargeurMm;
                 }
-                ligne = 2;
             }
-            foreach (var l in t.Lignes)
+            for (int i = 0; i < t.Lignes.Count; i++)
             {
+                var l = t.Lignes[i];
+                double ym = (Ligne(haut + i) + Ligne(haut + i + 1)) / 2;
                 cx = x;
                 for (int j = 0; j < t.Colonnes.Count && j < l.Length; j++)
                 {
                     var c = t.Colonnes[j];
-                    Texte(f, c.Droite ? cx + c.LargeurMm - 1.5 : cx + 1.5, y - h * (ligne + 0.5), MiseEnPage.Tronquer(l[j], c.LargeurMm, HauteurTexteMm), droite: c.Droite);
+                    if (l[j] != null && l[j].StartsWith(Legende.Marque)) DessinerSymbole(f, cx + c.LargeurMm / 2, ym, l[j].Substring(Legende.Marque.Length));
+                    else Texte(f, c.Droite ? cx + c.LargeurMm - 1.5 : cx + 1.5, ym, MiseEnPage.Tronquer(l[j], c.LargeurMm, HauteurTexteMm), droite: c.Droite);
                     cx += c.LargeurMm;
                 }
-                ligne++;
             }
+        }
+
+        /// <summary>Symbole de légende dessiné dans une case (centre x, y en mm papier).</summary>
+        void DessinerSymbole(ViewSheet f, double x, double y, string code)
+        {
+            var d = Legende.Dessin(code);
+            foreach (var s in d.Traits) Trait(f, x + s.U1, y + s.V1, x + s.U2, y + s.V2);
+            foreach (var t in d.Textes) Texte(f, x + t.U, y + t.V, t.Texte, gras: t.Gras, centre: true);
+        }
+
+        /// <summary>Feuille « LÉGENDE DES SYMBOLES » : tous les symboles des isométries, à joindre au dossier.</summary>
+        public ViewSheet FeuilleLegende(string numero)
+        {
+            var ancienne = new FilteredElementCollector(doc).OfClass(typeof(ViewSheet)).Cast<ViewSheet>().FirstOrDefault(v => v.SheetNumber == numero);
+            if (ancienne != null && ancienne.Id != vueActive) doc.Delete(ancienne.Id);
+            else if (ancienne != null) ancienne.SheetNumber = numero + " (ancienne)";
+            var feuille = ViewSheet.Create(doc, cartouche?.Id ?? ElementId.InvalidElementId);
+            feuille.SheetNumber = numero;
+            feuille.Name = "Légende des symboles";
+            doc.Regenerate();
+            Rect cadre;
+            if (cartouche != null && FilteredElementCollectorCartouche(feuille) is Element tb && tb.get_BoundingBox(feuille) is BoundingBoxXYZ bb)
+                cadre = new Rect(Compat.Mm(bb.Min.X) + 12, Compat.Mm(bb.Min.Y) + 72, Compat.Mm(bb.Max.X) - 12, Compat.Mm(bb.Max.Y) - 12);
+            else
+            {
+                DessinerCadreA3(feuille, "LÉGENDE DES SYMBOLES DES ISOMÉTRIES", "", numero);
+                cadre = new Rect(15, 50, 405, 282);
+            }
+            // Deux colonnes : repérage et cotation, puis robinetterie
+            var toutes = Legende.Toutes().ToList();
+            var tableaux = new List<Tableau>
+            {
+                Legende.Tableau(toutes.Where(x => !Enum.TryParse(x.Code, true, out GenreRobinet _)), "REPÈRES, SOUDURES, COTES"),
+                Legende.Tableau(toutes.Where(x => Enum.TryParse(x.Code, true, out GenreRobinet _)), "ROBINETTERIE ET ACCESSOIRES"),
+            };
+            var page = MiseEnPage.Ranger(new Rect(cadre.X0, cadre.Y0, cadre.X0 + 270, cadre.Y1), tableaux, HauteurLigneMm);
+            foreach (var p in page.Tableaux) DessinerTableau(feuille, p);
+            return feuille;
         }
 
         /// <summary>Cadre A3 paysage et cartouche simple, quand aucun cartouche n'est choisi.</summary>

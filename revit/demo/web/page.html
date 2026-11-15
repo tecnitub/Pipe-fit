@@ -91,6 +91,10 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
 .rep-intro { font-size: 14px; color: var(--muted); padding: 8px 10px 0; margin: 0; max-width: 80ch }
 #rep { display: block; width: 100%; height: auto; background: var(--paper) }
 .rep-wrap { padding: 10px; display: grid; gap: 12px }
+.leg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 18px; padding: 10px }
+.leg-item { display: flex; align-items: center; gap: 10px; min-width: 0; border-bottom: 1px solid var(--line); padding-block: 4px }
+.leg-item svg { flex: none; width: 96px; height: 34px; background: var(--paper); border-radius: 4px }
+.leg-item span { font-size: 14px; min-width: 0 }
 @media (prefers-reduced-motion: no-preference) { .sheet-scroll svg { transition: width .15s ease } }
 </style>
 
@@ -119,6 +123,12 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
     </div>
     <div class="sheet-scroll" id="scroll"><svg id="sheet" xmlns="http://www.w3.org/2000/svg" role="img"></svg></div>
     <div class="hint">Feuille A3 paysage, cotes en mm. Agrandissez avec + puis faites glisser pour parcourir le dessin.</div>
+  </section>
+
+  <section class="sheet-card" aria-label="Légende des symboles">
+    <div class="sheet-bar"><span class="name">Légende des symboles des isométries</span></div>
+    <p class="rep-intro">Tableau LÉGENDE de chaque isométrie (symboles présents sur la feuille) et feuille « ISO-LÉGENDE » de tous les symboles, créée avec les isométries.</p>
+    <div class="leg-grid" id="legende"></div>
   </section>
 
   <section class="sheet-card" aria-label="Repérage des spools pour le montage">
@@ -151,6 +161,7 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
 <script>
 (() => {
   const ALL = JSON.parse(document.getElementById('data').textContent);
+  // (la légende est lue plus bas, une fois les outils de dessin définis)
   const D = ALL.spools, REP = ALL.reperage;
   const NS = 'http://www.w3.org/2000/svg';
   const ORIENTS = [
@@ -230,6 +241,14 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
     return { placer, recouvre, coupe, bord, tourne, largeur };
   })();
 
+  // Symbole de légende (dessin du cœur du complément) centré en (x, y), mm de la feuille
+  const LEG = Object.fromEntries((ALL.legende || []).map(l => [l.code, l]));
+  function symbole(g, x, y, code, line, text) {
+    const d = LEG[code]; if (!d) return;
+    d.traits.forEach(([u1, v1, u2, v2]) => line(x + u1, y + v1, x + u2, y + v2, d.soudure ? 'k-ink' : 'k-ink', 0.22));
+    d.textes.forEach(([u, v, t, gras]) => text(x + u, y + v, t, { anchor: 'middle', size: 2.1, bold: gras, cls: d.soudure ? 'k-weldtxt' : 'k-txt' }));
+  }
+
   function el(tag, attrs, parent, text) {
     const e = document.createElementNS(NS, tag);
     for (const k in attrs) e.setAttribute(k, attrs[k]);
@@ -260,15 +279,22 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
 
     // Tableaux, positions calculées par le complément
     s.tableaux.forEach(t => {
-      const h = 5, entete = t.colonnes.some(c => c.t), n = t.lignes.length + (entete ? 2 : 1), w = t.colonnes.reduce((a, c) => a + c.w, 0), bas = t.y - n * h;
-      el('rect', { x: t.x, y: Y(t.y), width: w, height: n * h, class: 'k-ink', 'stroke-width': 0.25 }, g);
-      for (let i = 1; i < n; i++) line(t.x, t.y - i * h, t.x + w, t.y - i * h, 'k-ink', i === 1 ? 0.35 : 0.18);
+      const h = 5, hl = h * (t.il || 1), entete = t.colonnes.some(c => c.t), haut = entete ? 2 : 1, w = t.colonnes.reduce((a, c) => a + c.w, 0);
+      const bas_ = i => i <= haut ? t.y - i * h : t.y - haut * h - (i - haut) * hl, bas = bas_(haut + t.lignes.length);
+      el('rect', { x: t.x, y: Y(t.y), width: w, height: t.y - bas, class: 'k-ink', 'stroke-width': 0.25 }, g);
+      for (let i = 1; i < haut + t.lignes.length; i++) line(t.x, bas_(i), t.x + w, bas_(i), 'k-ink', i === 1 ? 0.35 : 0.18);
       let cx = t.x;
       t.colonnes.slice(0, -1).forEach(c => { cx += c.w; line(cx, t.y - h, cx, bas, 'k-ink', 0.18); });
       text(t.x + 1.5, t.y - h / 2, t.titre, { bold: true });
-      let ligne = 1;
-      if (entete) { cx = t.x; t.colonnes.forEach(c => { text(c.d ? cx + c.w - 1.5 : cx + 1.5, t.y - h * 1.5, tronquer(c.t, c.w), { bold: true, anchor: c.d ? 'end' : 'start' }); cx += c.w; }); ligne = 2; }
-      t.lignes.forEach(l => { cx = t.x; t.colonnes.forEach((c, j) => { text(c.d ? cx + c.w - 1.5 : cx + 1.5, t.y - h * (ligne + .5), tronquer(l[j], c.w), { anchor: c.d ? 'end' : 'start' }); cx += c.w; }); ligne++; });
+      if (entete) { cx = t.x; t.colonnes.forEach(c => { text(c.d ? cx + c.w - 1.5 : cx + 1.5, t.y - h * 1.5, tronquer(c.t, c.w), { bold: true, anchor: c.d ? 'end' : 'start' }); cx += c.w; }); }
+      t.lignes.forEach((l, i) => {
+        const ym = (bas_(haut + i) + bas_(haut + i + 1)) / 2; cx = t.x;
+        t.colonnes.forEach((c, j) => {
+          if (String(l[j]).startsWith('§')) symbole(g, cx + c.w / 2, ym, l[j].slice(1), line, text);
+          else text(c.d ? cx + c.w - 1.5 : cx + 1.5, ym, tronquer(l[j], c.w), { anchor: c.d ? 'end' : 'start' });
+          cx += c.w;
+        });
+      });
     });
 
     // Projection de la vue, échelle normalisée qui tient dans la zone (marge pour étiquettes et cotes)
@@ -316,7 +342,7 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
 
     // Annotations : d'abord ce qui est fixe (tuyauterie, cotes, symboles, nord, échelle, cartouche), puis les étiquettes
     // placées sans chevauchement (renvois, soudures, bulles, cadres de tubes) : mêmes règles que le complément
-    const obs = { durs: [...symboles.durs, [zv.x0, zv.y1 - 32, zv.x0 + 32, zv.y1], [zv.x0, zv.y0, zv.x0 + 150, zv.y0 + 7], [220, 10, 410, 45]], traits: [], forts: [...symboles.forts] };
+    const obs = { durs: [...symboles.durs, [zv.x0, zv.y1 - 32, zv.x0 + 32, zv.y1], [220, 10, 410, 45]], traits: [], forts: [...symboles.forts] };
     s.composants.forEach(c => {
       const e = c.ext.map(x => F(x.p));
       if (c.axe) { const a = F(c.axe); e.forEach(p => obs.traits.push([p[0], p[1], a[0], a[1]])); }
@@ -340,11 +366,16 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
       let ang = Math.atan2(uy, ux); if (ang > Math.PI / 2 + 1e-9) ang -= Math.PI; if (ang <= -Math.PI / 2 + 1e-9) ang += Math.PI;
       const lt = Pl.largeur(c.v, 2.5) + 1;
       let mx, my, cadre;
-      for (const t of [0.5, 0.35, 0.65, 0.22, 0.78, 0.1, 0.9]) {
-        mx = ax + (bx - ax) * t + nx * 2.2; my = ay + (by - ay) * t + ny * 2.2;
-        cadre = Pl.tourne(mx, my, lt, 3.3, ang);
-        if (!obs.durs.some(o => Pl.recouvre(cadre, o))) break;
+      let libre = false;
+      for (const cote2 of [2.2, -2.2]) {
+        for (const t of [0.5, 0.35, 0.65, 0.22, 0.78, 0.1, 0.9]) {
+          mx = ax + (bx - ax) * t + nx * cote2; my = ay + (by - ay) * t + ny * cote2;
+          cadre = Pl.tourne(mx, my, lt, 3.3, ang);
+          if (!obs.durs.some(o => Pl.recouvre(cadre, o))) { libre = true; break; }
+        }
+        if (libre) break;
       }
+      if (!libre) { mx = (ax + bx) / 2 + nx * 2.2; my = (ay + by) / 2 + ny * 2.2; cadre = Pl.tourne(mx, my, lt, 3.3, ang); }
       obs.durs.push(cadre);
       text(mx, my, c.v, { cls: 'k-dimtxt', anchor: 'middle', rot: -ang * 180 / Math.PI });
     });
@@ -416,7 +447,7 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
       line(ox, oy, tx, ty, 'k-ink', 0.35);
       [0.4, -0.4].forEach(d => line(tx, ty, tx - 4 * Math.cos(a + d), ty - 4 * Math.sin(a + d), 'k-ink', 0.35));
       text(tx + dx * 4, ty + dy * 4, 'N', { bold: true, anchor: 'middle' }); }
-    text(zv.x0 + 2, zv.y0 + 4, `Échelle 1:${n}   –   cotes en mm   –   ${ORIENTS[st.o].txt}`);
+    text(zv.x0 + 2, 19, `Échelle 1:${n}   –   cotes en mm   –   ${ORIENTS[st.o].txt}`);
 
     document.getElementById('sheetName').textContent = `Feuille ISO-${s.nom} · 1:${n}`;
     appliquerZoom();
@@ -531,6 +562,22 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
       (G ? `<p class="note">${esc(G.nom)} : les autres spools en gris, vue cadrée sur la zone. On prolonge ce qui est déjà monté : le premier spool se pose contre celui de l'ensemble voisin.</p>` : '') +
       (G ? '' : '<p class="note">Ordre de montage : on part du spool raccordé à la CTA (arrivée de l\'eau), puis de proche en proche ; la branche du té vient juste après lui. « Posé contre » : le spool ou l\'équipement déjà en place.</p>');
   }
+
+  // Carte « Légende des symboles » : tous les symboles, même dessin que sur la feuille
+  function legende() {
+    const box = document.getElementById('legende');
+    box.innerHTML = '';
+    (ALL.legende || []).forEach(l => {
+      const item = document.createElement('div'); item.className = 'leg-item';
+      const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '-12 -4.5 24 9'); svg.setAttribute('aria-hidden', 'true');
+      const ln = (x1, y1, x2, y2) => el('line', { x1, y1: -y1, x2, y2: -y2, stroke: 'var(--ink)', 'stroke-width': 0.3, 'stroke-linecap': 'round' }, svg);
+      const tx = (x, y, t, o) => el('text', { x, y: -y, 'font-size': 2.3, 'font-weight': o.bold ? 700 : 400, 'text-anchor': 'middle', 'dominant-baseline': 'central', fill: o.cls === 'k-weldtxt' ? 'var(--weld)' : 'var(--ink)', 'font-family': 'Arial, sans-serif' }, svg, t);
+      symbole(svg, 0, 0, l.code, ln, tx);
+      const sp = document.createElement('span'); sp.textContent = l.libelle;
+      item.append(svg, sp); box.appendChild(item);
+    });
+  }
+  legende();
 
   function tout() { boutons(); stats(); dessiner(); panneau(); reperage(); save(); }
 

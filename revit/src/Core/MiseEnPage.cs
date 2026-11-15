@@ -30,8 +30,10 @@ namespace PipeFit.Isometries.Core
         public List<Colonne> Colonnes = new List<Colonne>();
         public List<string[]> Lignes = new List<string[]>();
         public double Largeur => Colonnes.Sum(c => c.LargeurMm);
+        /// <summary>Hauteur des lignes du corps, en multiple de la hauteur de ligne (1,6 pour la légende des symboles).</summary>
+        public double Interligne = 1;
         /// <summary>Hauteur : titre + en-tête + lignes.</summary>
-        public double Hauteur(double hLigne) => (Lignes.Count + (Colonnes.Any(c => c.Titre != "") ? 2 : 1)) * hLigne;
+        public double Hauteur(double hLigne) => ((Colonnes.Any(c => c.Titre != "") ? 2 : 1) + Lignes.Count * Interligne) * hLigne;
     }
 
     public sealed class Placement

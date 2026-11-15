@@ -262,6 +262,11 @@ static class Demo
         {
             var tabs = MiseEnPage.Tableaux(s, "Démonstration Pipe-Fit", date);
             var page = MiseEnPage.Ranger(new Rect(15, 50, 405, 282), tabs, 5);
+            // Légende des symboles présents, en bande sous le dessin (comme le complément)
+            var leg = Legende.Compacte(Legende.Pour(s));
+            var hLeg = leg.Hauteur(5);
+            page.Tableaux.Add(new Placement { Tableau = leg, X = 15, Y = 15 + 8 + hLeg });
+            var basVue = 15 + 8 + hLeg + 3;
             return new
             {
                 nom = s.Nom, systeme = s.Systeme, materiau = s.Materiau, dnMax = s.DnMax, longueur = Math.Round(s.LongueurDeveloppeeMm),
@@ -279,18 +284,24 @@ static class Demo
                 assemblages = s.Assemblages.Select(x => new { n = x.Numero, nature = x.Nature.ToString(), p = P(x.Position), dn = x.DnMm, pd = x.PoucesDiametre, s = x.SurlongueurMm }),
                 tableaux = page.Tableaux.Select(pl => new
                 {
-                    x = pl.X, y = pl.Y, titre = pl.Tableau.Titre,
+                    x = pl.X, y = pl.Y, titre = pl.Tableau.Titre, il = pl.Tableau.Interligne,
                     colonnes = pl.Tableau.Colonnes.Select(k => new { t = k.Titre, w = k.LargeurMm, d = k.Droite }),
                     lignes = pl.Tableau.Lignes,
                 }),
-                zoneVue = new[] { page.ZoneVue.X0, 15.0, page.ZoneVue.X1, 282.0 },
+                zoneVue = new[] { page.ZoneVue.X0, basVue, page.ZoneVue.X1, 282.0 },
                 soudures = s.Nombre(NatureAssemblage.Soudure), pouces = s.PoucesDiametre(NatureAssemblage.Soudure),
                 pcf = ExportPcf.Generer(s, "Demonstration Pipe-Fit"),
                 csv = ExportCsv.Nomenclature(new[] { s }),
                 quantitatif = Quantitatif.Csv(new[] { s }),
             };
         });
-        var json = JsonSerializer.Serialize(new { spools = sortie, reperage = Reperage() }, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
+        // Légende : dessins des symboles, définis dans le cœur du complément
+        var legende = Legende.Toutes().Select(t =>
+        {
+            var d = Legende.Dessin(t.Code);
+            return new { code = t.Code, libelle = t.Libelle, soudure = d.Soudure, traits = d.Traits.Select(x => new[] { x.U1, x.V1, x.U2, x.V2 }), textes = d.Textes.Select(x => new object[] { x.U, x.V, x.Texte, x.Gras }) };
+        });
+        var json = JsonSerializer.Serialize(new { spools = sortie, reperage = Reperage(), legende }, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
         File.WriteAllText(args.Length > 0 ? args[0] : "demo.json", json);
         if (args.Length > 1) File.WriteAllText(args[1], Quantitatif.Csv(spools)); // exemple de quantitatif pour la démo du CRM
         foreach (var e in Montage.Ordonner(Reseau()))

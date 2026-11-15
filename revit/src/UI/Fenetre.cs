@@ -45,6 +45,7 @@ namespace PipeFit.Isometries.Revit
             ckCotes = Case("Cotes d'axe en axe et d'axe à bride (ou à bout de tube)"),
             ckSymboles = Case("Robinetterie en symboles normalisés (papillon, réglage, clapet, compensateur…)"),
             ckFeuille = Case("Repères et n° de soudure placés sans chevauchement (sinon étiquettes Revit ci-dessus)"),
+            ckLegende = Case("Feuille de légende de tous les symboles (ISO-LÉGENDE)"),
             ckPdf = Case("PDF (une feuille par spool)"), ckPcf = Case("PCF (Isogen, Spoolgen…)"), ckCsv = Case("CSV nomenclature, soudures et cotes (Pipe-Fit)");
         readonly NumericUpDown nudSurl = new NumericUpDown { Minimum = 0, Maximum = 2000, Increment = 50 };
         readonly Label lblInfo = new Label { AutoSize = false, ForeColor = Color.DarkRed }, lblCompte = new Label { AutoSize = false };
@@ -63,8 +64,8 @@ namespace PipeFit.Isometries.Revit
             FormBorderStyle = FormBorderStyle.Sizable;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(900, 700);
-            MinimumSize = new Size(840, 660);
+            ClientSize = new Size(900, 740);
+            MinimumSize = new Size(840, 700);
 
             // ----- Colonne de gauche : spools -----
             // Panneaux à leur taille définitive avant d'y placer les contrôles (sinon les ancrages en bas sont faussés)
@@ -100,7 +101,7 @@ namespace PipeFit.Isometries.Revit
             Ligne(gFeuille, "Orientation :", cbOrientation, 84);
             Ligne(gFeuille, "Représentation :", cbRepr, 114);
 
-            var gAnnot = Groupe("Repères, étiquettes et cotes", ref y, 288);
+            var gAnnot = Groupe("Repères, étiquettes et cotes", ref y, 314);
             Ligne(gAnnot, "Canalisations :", cbTagTube, 24);
             Ligne(gAnnot, "Raccords :", cbTagRaccord, 54);
             Ligne(gAnnot, "Accessoires :", cbTagAccessoire, 84);
@@ -121,6 +122,8 @@ namespace PipeFit.Isometries.Revit
             };
             gAnnot.Controls.Add(btSymboles);
             ckFeuille.SetBounds(12, 256, 500, 22);
+            ckLegende.SetBounds(12, 282, 500, 22);
+            gAnnot.Controls.Add(ckLegende);
             gAnnot.Controls.AddRange(new Control[] { ckRepere, cbParamRepere, ckSoudures, ckCotes, nudSurl, ckSymboles, ckFeuille });
 
             var gExport = Groupe("Exports", ref y, 120);
@@ -173,7 +176,7 @@ namespace PipeFit.Isometries.Revit
             Choisir(cbParamRepere, r.ParametreRepere == "" ? Marque : r.ParametreRepere);
             tbPrefixe.Text = r.PrefixeFeuille;
             tbDossier.Text = r.Dossier;
-            ckRemplacer.Checked = r.Remplacer; ckRepere.Checked = r.EcrireRepere; ckSoudures.Checked = r.NumerosSoudure; ckCotes.Checked = r.Cotation; ckSymboles.Checked = r.SymbolesRobinetterie; ckFeuille.Checked = r.RepereFeuille;
+            ckRemplacer.Checked = r.Remplacer; ckRepere.Checked = r.EcrireRepere; ckSoudures.Checked = r.NumerosSoudure; ckCotes.Checked = r.Cotation; ckSymboles.Checked = r.SymbolesRobinetterie; ckFeuille.Checked = r.RepereFeuille; ckLegende.Checked = r.FeuilleLegende;
             nudSurl.Value = (decimal)Math.Max(0, Math.Min(2000, r.SurlongueurMm));
             ckPdf.Checked = r.ExportPdf; ckPcf.Checked = r.ExportPcf; ckCsv.Checked = r.ExportCsv;
             foreach (var s in d.Preselection) coches.Add(s);
@@ -277,6 +280,7 @@ namespace PipeFit.Isometries.Revit
             r.Cotation = ckCotes.Checked;
             r.SymbolesRobinetterie = ckSymboles.Checked;
             r.RepereFeuille = ckFeuille.Checked;
+            r.FeuilleLegende = ckLegende.Checked;
             r.SurlongueurMm = (double)nudSurl.Value;
             r.Remplacer = ckRemplacer.Checked;
             r.ExportPdf = ckPdf.Checked; r.ExportPcf = ckPcf.Checked; r.ExportCsv = ckCsv.Checked;

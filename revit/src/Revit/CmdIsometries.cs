@@ -101,6 +101,7 @@ namespace PipeFit.Isometries.Revit
                 {
                     t.Start();
                     gen.Preparer();
+                    if (r.FeuilleLegende) { try { gen.FeuilleLegende((r.PrefixeFeuille ?? "") + "LÉGENDE"); } catch { } }
                     t.Commit();
                 }
                 foreach (var nom in r.Spools)

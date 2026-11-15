@@ -64,6 +64,14 @@ rappel évitent de traverser les étiquettes. Le texte d'une cote glisse le long
 Si une vue est trop chargée pour tout placer, un avertissement le signale (agrandir l'échelle ou la feuille).
 Option décochée : étiquettes Revit (familles d'étiquettes choisies), placées par Revit.
 
+## Légende des symboles
+
+- Sur chaque isométrie, bande **LÉGENDE** sous le dessin (à gauche du cartouche, deux symboles par ligne) : les
+  symboles présents sur la feuille, dessinés comme sur le dessin (repère de tube, repère de nomenclature, soudure
+  atelier, soudure chantier et surlongueur, cote, renvoi, nord, et chaque type de robinetterie présent).
+- Feuille **ISO-LÉGENDE** (option « Feuille de légende de tous les symboles », cochée) créée avec les isométries :
+  tous les symboles, en deux tableaux (repères, soudures, cotes ; robinetterie et accessoires), à joindre au dossier.
+
 ## Robinetterie
 
 - **Genre reconnu d'après le nom du TYPE de l'accessoire** (« Vanne papillon DN100 », « Clapet à battant », « STAD-F »,

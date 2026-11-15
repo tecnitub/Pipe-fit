@@ -32,6 +32,8 @@ namespace PipeFit.Isometries.Revit
         public bool SymbolesRobinetterie = true;
         /// <summary>Repères et numéros de soudure dessinés sur la feuille par le placeur (sans chevauchement) ; sinon étiquettes Revit.</summary>
         public bool RepereFeuille = true;
+        /// <summary>Feuille « ISO-LÉGENDE » avec tous les symboles, créée avec les isométries.</summary>
+        public bool FeuilleLegende = true;
         /// <summary>Surlongueur laissée sur les tubes à toutes les soudures chantier, à recouper sur place (mm).</summary>
         public double SurlongueurMm;
         /// <summary>Surlongueur proposée en marquant une soudure chantier (transport, incertitude).</summary>
@@ -117,6 +119,7 @@ namespace PipeFit.Isometries.Revit
                         case "Cotation": r.Cotation = v == "1"; break;
                         case "SymbolesRobinetterie": r.SymbolesRobinetterie = v == "1"; break;
                         case "RepereFeuille": r.RepereFeuille = v == "1"; break;
+                        case "FeuilleLegende": r.FeuilleLegende = v == "1"; break;
                         case "SurlongueurMm": if (double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var sl) && sl >= 0) r.SurlongueurMm = sl; break;
                         case "SurlongueurMarqueMm": if (double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var sm) && sm >= 0) r.SurlongueurMarqueMm = sm; break;
                         case "ExportPdf": r.ExportPdf = v == "1"; break;
@@ -148,7 +151,7 @@ namespace PipeFit.Isometries.Revit
                     "ParametreSpool=" + ParametreSpool, "Cartouche=" + Cartouche, "PrefixeFeuille=" + PrefixeFeuille,
                     "Orientation=" + Orientation, "Unifilaire=" + B(Unifilaire), "Remplacer=" + B(Remplacer),
                     "EtiquetteTube=" + EtiquetteTube, "EtiquetteRaccord=" + EtiquetteRaccord, "EtiquetteAccessoire=" + EtiquetteAccessoire,
-                    "EcrireRepere=" + B(EcrireRepere), "ParametreRepere=" + ParametreRepere, "NumerosSoudure=" + B(NumerosSoudure), "Cotation=" + B(Cotation), "SymbolesRobinetterie=" + B(SymbolesRobinetterie), "RepereFeuille=" + B(RepereFeuille),
+                    "EcrireRepere=" + B(EcrireRepere), "ParametreRepere=" + ParametreRepere, "NumerosSoudure=" + B(NumerosSoudure), "Cotation=" + B(Cotation), "SymbolesRobinetterie=" + B(SymbolesRobinetterie), "RepereFeuille=" + B(RepereFeuille), "FeuilleLegende=" + B(FeuilleLegende),
                     "SurlongueurMm=" + SurlongueurMm.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     "SurlongueurMarqueMm=" + SurlongueurMarqueMm.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     "ExportPdf=" + B(ExportPdf), "ExportPcf=" + B(ExportPcf), "ExportCsv=" + B(ExportCsv), "Dossier=" + Dossier,

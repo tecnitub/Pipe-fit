@@ -421,6 +421,25 @@ static class Tests
             Verifier(PlacementEtiquettes.Croise((0, 0, 10, 10), (0, 10, 10, 0)) && !PlacementEtiquettes.Croise((0, 0, 10, 0), (0, 5, 10, 5)), "segments croisés");
         }
 
+        // Légende des symboles
+        {
+            var toutes = Legende.Toutes().ToList();
+            Verifier(toutes.Count == 14 && toutes.All(t => Legende.Dessin(t.Code).Traits.Count > 0), "légende : 14 symboles, tous dessinés");
+            Verifier(toutes.All(t => Legende.Dessin(t.Code).Traits.All(x => Math.Abs(x.U1) <= 11 && Math.Abs(x.U2) <= 11 && Math.Abs(x.V1) <= 3.6 && Math.Abs(x.V2) <= 3.6)),
+                "chaque symbole tient dans sa case (22 × 7 mm)");
+            var spl = Exemple(); AnalyseSpool.Analyser(spl);
+            var codes = Legende.Pour(spl).Select(x => x.Code).ToList();
+            Verifier(codes.Contains("SOUD") && codes.Contains("TUBE") && codes.Contains("COTE") && !codes.Contains("PAPILLON") && !codes.Contains("SOUDCH"),
+                "légende de l'isométrie : seulement les symboles présents (" + string.Join(",", codes) + ")");
+            var tleg = Legende.Compacte(Legende.Pour(spl));
+            Verifier(tleg.Titre == "LÉGENDE" && tleg.Largeur == 168 && tleg.Lignes.Count == (codes.Count + 1) / 2 && tleg.Lignes.All(l => l[0].StartsWith(Legende.Marque))
+                && Math.Abs(tleg.Hauteur(5) - (1 + tleg.Lignes.Count * 1.5) * 5) < 1e-9, "légende compacte : deux symboles par ligne, 168 mm");
+            var compl = Legende.Compacte(Legende.Toutes());
+            Verifier(compl.Lignes.SelectMany(l => new[] { l[1], l[3] }).All(x => MiseEnPage.Tronquer(x, 62, 2.5) == x), "légende compacte : aucun libellé tronqué");
+            var tout = Legende.Tableau(Legende.Toutes());
+            Verifier(tout.Lignes.Count == 14 && tout.Largeur <= 130.001, "légende complète : 14 lignes");
+        }
+
         // Bride contre bride (ou vanne) : joint boulonné
         var b = new Spool { Nom = "B" };
         b.Composants.Add(C("a", "Bride", "PN16", TypeComposant.Bride, 80, 0, null, E(0, 0, 0, 80, "x"), E(10, 0, 0, 80, "b")));
