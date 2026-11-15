@@ -1344,3 +1344,8 @@ body:has(.modal:not(.hidden)) .as-fab, body.menu-ouvert .as-fab, body.selecteur-
 .mes-etapes li.etape-retard { border-color: var(--bad); }
 .mes-etapes .etape-bientot { color: var(--warn, #b45309); font-weight: 600; }
 .mes-etapes button { min-height: 40px; }
+
+/* Étapes des études : filtre (libellé et liste ensemble), phases lisibles */
+.etf-champ { display: inline-flex; align-items: center; gap: 6px; }
+.etf-phases .etf-phase { display: inline-block; margin-right: 6px; }
+@media (max-width: 700px) { .etf-champ { flex: 1 1 100%; } .etf-champ select { flex: 1; } }

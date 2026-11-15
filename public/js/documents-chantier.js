@@ -210,6 +210,7 @@ function ficheChantierCompagnon(u, id) {
   const m = R.materiel ? materielPrevu(a) : null;
   const commandes = R.commandes ? Store.all('commandes').filter(c => c.affaireId === a.id && c.statut !== 'Annulée').sort((x, y) => (x.dateLivraison || '').localeCompare(y.dateLivraison || '')) : [];
   const qte = (v, unite) => (v === undefined ? '' : `<strong>${fmt(v, 2).replace(/,00$/, '')}</strong> ${esc(unite || '')}`);
+  // Ce que le compagnon a à faire sur ce chantier (réserves à lever, étapes) : en tête, avant les consignes et les documents
   return `<div class="pointage"><h1>${esc(a.code || '')} <span class="muted small">${esc(a.nom || '')}</span></h1>${pointageTabs('chantiers', u.id)}
     <div class="card" style="--h:${teinte(a.id)}">
       ${R.client && clientName(a.clientId) ? `<div><strong>${esc(clientName(a.clientId))}</strong></div>` : ''}
@@ -219,13 +220,13 @@ function ficheChantierCompagnon(u, id) {
       ${R.heuresBudget && num(a.heuresPrevues) ? `<div class="small">⏱️ ${fmt(a.heuresPrevues, 0)} h prévues sur le chantier</div>` : ''}
       ${jours.length ? `<div class="small">📅 Vous y êtes prévu : ${jours.map(p => esc(NotifPlanning.jourCourt(p.date))).join(', ')}</div>` : ''}
     </div>
+    ${typeof mesReservesHtml === 'function' ? mesReservesHtml(u, a) : ''}
+    ${typeof mesEtapesZone === 'function' ? mesEtapesZone(a.id) : ''}
     ${securiteCompagnon(u, a)}
     ${R.documents ? `<h2>📎 Documents <span class="muted small">${docs.length}</span></h2>
       ${docs.length ? `<ul class="docs-mobile">${docs.map(d => `<li><a href="${lienDocument(d)}" target="_blank" rel="noopener"><span class="doc-ic">${iconeDoc(d.categorie)}</span>
         <span><strong>${esc(d.nom)}</strong>${[...nouveaux].some(t => t.includes(d.nom)) ? ' <span class="badge b-warn">nouveau</span>' : ''}<br><span class="small muted">${esc(d.categorie)}${d.indice ? ` · indice ${esc(d.indice)}` : ''} · ${dateFr(d.date)} · ${tailleLisible(num(d.taille))}</span></span></a></li>`).join('')}</ul>`
         : '<p class="muted small">Aucun document transmis pour ce chantier.</p>'}` : ''}
-    ${typeof mesReservesHtml === 'function' ? mesReservesHtml(u, a) : ''}
-    ${typeof mesEtapesZone === 'function' ? mesEtapesZone(a.id) : ''}
     ${R.materiel ? `<div id="mat-retenu" data-mobile="1" data-affaire="${esc(a.id)}">${materielRetenuHtml(materielChantier.get(a.id), true)}</div>` : ''}
     ${R.materiel ? `<div id="plan-mes" data-mobile="1" data-affaire="${esc(a.id)}">${planMesHtml(a, true)}</div>` : ''}
     ${m ? `<h2>🔩 Matériel prévu</h2>
