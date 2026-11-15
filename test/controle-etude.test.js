@@ -123,3 +123,12 @@ test('guide « Reste à faire » : étape « Contrôler l\'étude avant l\'envoi
   assert.ok(s.fait && /15\/11\/2026 \(2 bloquant/.test(s.info));
   assert.ok(!C.controler(et).some(p => p.categorie === 'guide' && /Contrôler l'étude/.test(p.texte)));
 });
+
+test('étape du guide déclarée « sans objet » (suivi des étapes, motif tracé) : plus signalée par le contrôle', () => {
+  const SE = require('../etudes/public/js/suivi-etapes');
+  const et = etude(), guide = () => de(C.controler(et), 'guide');
+  const x = G.restesAFaire(et).etapes.find(e => !e.fait && guide().some(p => p.texte.startsWith(e.titre)));
+  assert.ok(x, 'une étape du guide relevée');
+  SE.marquerSansObjet(et, x.id, 'Hors marché (essai)', { nom: 'Essai' });
+  assert.ok(!guide().some(p => p.texte.startsWith(x.titre)));
+});

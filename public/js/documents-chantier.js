@@ -159,6 +159,7 @@ const docsNonVus = affaireId => Notifs.nonLues().filter(n => n.type === 'documen
 function chantiersCompagnon(u) {
   const liste = chantiersDuCompagnon(u), R = reglesCompagnon();
   return `<div class="pointage"><h1>Mes chantiers</h1>${pointageTabs('chantiers', u.id)}
+    ${typeof mesEtapesZone === 'function' ? mesEtapesZone('') : ''}
     ${liste.length ? liste.map(({ a, prochain }) => {
       const site = siteOf(a.clientId, a.siteId), nd = documentsVisibles(a).length, nv = docsNonVus(a.id);
       return `<a class="card ch-carte" href="#/pointage/chantier/${a.id}" style="--h:${teinte(a.id)}">
@@ -224,6 +225,7 @@ function ficheChantierCompagnon(u, id) {
         <span><strong>${esc(d.nom)}</strong>${[...nouveaux].some(t => t.includes(d.nom)) ? ' <span class="badge b-warn">nouveau</span>' : ''}<br><span class="small muted">${esc(d.categorie)}${d.indice ? ` · indice ${esc(d.indice)}` : ''} · ${dateFr(d.date)} · ${tailleLisible(num(d.taille))}</span></span></a></li>`).join('')}</ul>`
         : '<p class="muted small">Aucun document transmis pour ce chantier.</p>'}` : ''}
     ${typeof mesReservesHtml === 'function' ? mesReservesHtml(u, a) : ''}
+    ${typeof mesEtapesZone === 'function' ? mesEtapesZone(a.id) : ''}
     ${R.materiel ? `<div id="mat-retenu" data-mobile="1" data-affaire="${esc(a.id)}">${materielRetenuHtml(materielChantier.get(a.id), true)}</div>` : ''}
     ${R.materiel ? `<div id="plan-mes" data-mobile="1" data-affaire="${esc(a.id)}">${planMesHtml(a, true)}</div>` : ''}
     ${m ? `<h2>🔩 Matériel prévu</h2>
@@ -241,6 +243,7 @@ function bindFicheChantierCompagnon(root, id) {
   chargerMaterielRetenu(root, id);
   chargerPlanMes(root, id);
   if (typeof bindMesReserves === 'function') bindMesReserves(root);
+  if (typeof chargerMesEtapes === 'function') chargerMesEtapes(root, id);
   root.querySelectorAll('[data-matmode]').forEach(b => b.onclick = () => { ficheCompagnonSel.mode = b.dataset.matmode; App.render(); });
   // Documents vus : les notifications du chantier passent en « lues » (le badge « nouveau » reste jusqu'au prochain affichage)
   Notifs.nonLues().filter(n => n.type === 'document' && n.affaireId === id).forEach(n => Notifs.marquerLue(n));

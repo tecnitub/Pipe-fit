@@ -368,7 +368,7 @@ Views.pointage.bind = (root, params, query) => {
   if (params[0] === 'fluides') return bindFluidesCompagnon(root, Store.get('users', uid), params[1]);
   if (params[0] === 'comptoir') return bindComptoirCompagnon(root, Store.get('users', uid));
   if (params[0] === 'calculs') return CalculsChantier.brancher(root, params[1]);
-  if (params[0] === 'chantiers') return;
+  if (params[0] === 'chantiers') { if (typeof chargerMesEtapes === 'function') chargerMesEtapes(root, ''); return; }
   const on = (sel, fn) => { const el = root.querySelector(sel); if (el) el.onclick = fn; };
   const tache = () => (root.querySelector('input[name=p-tache]:checked') || {}).value || '';
   const panier = () => !!(root.querySelector('#p-panier') || {}).checked;

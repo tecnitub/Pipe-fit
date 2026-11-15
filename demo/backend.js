@@ -119,6 +119,36 @@
     db.notifications.push(rec); save();
     if (typeof Store !== 'undefined' && Store.data && Store.data.notifications) { Store._put('notifications', JSON.parse(JSON.stringify(rec))); if (typeof Notifs !== 'undefined') Notifs.recu(rec); }
   }
+  // Relances des étapes des études (simulation locale du contrôle périodique du serveur) : échéance à J-2 ou dépassée,
+  // étape bloquante ; une notification par personne, une seule fois par étape, échéance et état
+  function relancesEtapesDemo() {
+    if (typeof SuiviEtapes === 'undefined') return 0;
+    const auj = isoLocal(new Date()), deja = SuiviEtapes.purgerDeja(db.relancesEtapes || {}, auj);
+    const liste = SuiviEtapes.relances((db.liens || []).filter(l => l.app === 'etudes'), { today: auj, deja, terrain: db.etapesTerrain || [] });
+    if (!liste.length) return 0;
+    const cs = db.accounts || [], par = new Map();
+    const dest = (r, a) => {
+      if (!r) return [];
+      if (r.type === 'user') { if (cs.some(c => c.userId === r.id)) return [r.id]; const u = (db.users || []).find(x => x.id === r.id); return u && u.chefId && cs.some(c => c.userId === u.chefId) ? [u.chefId] : []; }
+      if (r.role === 'conducteur' || r.role === 'compagnon') return a && a.chargeId ? [a.chargeId] : [];
+      if (r.role === 'be') return cs.filter(c => c.role === 'charge').map(c => c.userId);
+      return [];
+    };
+    liste.forEach(x => {
+      const a = (db.affaires || []).find(y => y.id === x.affaireId);
+      [...new Set(dest(x.responsable, a).filter(Boolean))].forEach(uid => { if (!par.has(uid)) par.set(uid, []); par.get(uid).push({ ...x, code: a ? a.code || '' : '' }); });
+      deja[x.cle] = auj;
+    });
+    db.notifications = db.notifications || [];
+    par.forEach((l, uid) => {
+      const bureau = cs.some(c => c.userId === uid && ['admin', 'charge'].includes(c.role)), now = new Date().toISOString();
+      const titre = `${l.some(x => x.type === 'retard') ? '⏰' : '🔔'} ${l.length === 1 ? `Étape ${l[0].type === 'retard' ? 'en retard' : l[0].type === 'bloque' ? 'qui bloque' : 'à échéance'}` : `${l.length} étapes à suivre`}`;
+      db.notifications.push({ id: 'nt' + DemoSeed.uid(), type: 'etape', userId: uid, affaireId: l[0].affaireId || '', titre, texte: l.map(x => `${x.code ? `${x.code} · ` : ''}${x.texte}`).join('\n'),
+        lien: bureau ? '#/etapes' : l[0].affaireId ? `#/pointage/chantier/${l[0].affaireId}` : '#/pointage/chantiers', date: now, lu: false, _v: 1, _at: now, _by: 'Pipe-Fit' });
+    });
+    db.relancesEtapes = deja; save();
+    return liste.length;
+  }
   function planningModifie(acc, avant, apres) {
     if (typeof NotifPlanning === 'undefined' || !NotifPlanning.change(avant, apres)) return;
     const auj = isoLocal(new Date());
@@ -351,6 +381,34 @@
       Installe.lignesCommandes(db.commandes || [], aff, nomEntDemo, id => (db.articles || []).find(a => a.id === id)), (db.consultations || []).filter(c => c.affaireId === aff), nomEntDemo);
     // État des applications Études et DOE par chantier (envoyé par leurs cadres dans la démonstration)
     if (p[0] === 'liens') {
+      // Suivi des étapes des études (comme le serveur) : portefeuille, mes étapes, étape faite sur le terrain
+      if (p[1] === 'etapes') {
+        db.etapesTerrain = db.etapesTerrain || [];
+        const etudesL = () => (db.liens || []).filter(l => l.app === 'etudes');
+        const etapesDe = (a, affaireId) => {
+          if (!a.userId && a.role === 'atelier') return [];
+          return SuiviEtapes.etapesPour(etudesL().filter(l => !affaireId || l.affaireId === affaireId), { id: a.userId || '', role: a.role, nom: a.nom }, { chargeDe: id => ((db.affaires || []).find(x => x.id === id) || {}).chargeId || '',
+            planifie: (uid, aid) => (db.planning || []).some(x => x.userId === uid && x.affaireId === aid), terrain: db.etapesTerrain.filter(t => !affaireId || t.affaireId === affaireId) });
+        };
+        relancesEtapesDemo();
+        if (!p[2] && method === 'GET') {
+          if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Réservé au bureau' }];
+          return [200, etudesL().filter(l => (l.resume || {}).avancement).map(l => { const a = (db.affaires || []).find(x => x.id === l.affaireId) || {};
+            return { etudeId: l.id, objet: String(l.resume.objet || ''), affaireId: l.affaireId, affaire: [a.code, a.nom].filter(Boolean).join(' — '), chargeId: a.chargeId || '', avancement: l.resume.avancement, maj: l.maj }; })];
+        }
+        if (p[2] === 'mes' && method === 'GET') return [200, etapesDe(acc, query.get('affaireId') || '')];
+        if (p[2] === 'terrain' && method === 'GET') return ['admin', 'charge'].includes(acc.role) ? [200, db.etapesTerrain.filter(t => t.etudeId === (query.get('etudeId') || ''))] : [403, { error: 'Réservé au bureau' }];
+        if (p[2] === 'fait' && method === 'POST') {
+          const e = etapesDe(acc).find(x => x.etudeId === String(body.etudeId || '') && x.id === String(body.etapeId || ''));
+          if (!e) return [403, { error: 'Étape non affectée à votre compte' }];
+          const commentaire = String(body.commentaire || '').trim().slice(0, 500), photoId = String(body.photoId || '');
+          if (!commentaire && !photoId) return [400, { error: 'Photo ou commentaire attendu' }];
+          const rec = { etudeId: e.etudeId, etapeId: e.id, affaireId: e.affaireId, fait: true, le: isoLocal(new Date()), par: acc.nom, parId: acc.userId || '', commentaire, photoId, cle: DemoSeed.uid(), maj: new Date().toISOString() };
+          db.etapesTerrain = db.etapesTerrain.filter(t => !(t.etudeId === rec.etudeId && t.etapeId === rec.etapeId)).concat([rec]);
+          save(); return [200, rec];
+        }
+        return [404, { error: 'Route inconnue' }];
+      }
       // Retour du chantier vers une étude et retour d'expérience des modèles (comme le serveur)
       if (p[1] === 'retour' && method === 'GET') return ['admin', 'charge'].includes(acc.role) ? [200, RetourChantier.collecter({ misesEnService: db.misesEnService, equilibrages: db.equilibrages, reserves: db.reserves, suivis: (db.materielSuivi || []).filter(x => x.etudeId === (query.get('etudeId') || '')) }, query.get('affaireId') || '', query.get('etudeId') || '')] : [403, { error: 'Réservé au bureau' }];
       if (p[1] === 'rex-modeles' && method === 'GET') return ['admin', 'charge'].includes(acc.role) ? [200, RexEquipements.historique((db.affaires || []).map(a => ({ id: a.id, code: a.code || '', interventions: (a.contrat || {}).interventions || [],
@@ -569,6 +627,7 @@
       return [200, { id }];
     }
     if (p[0] === 'data') {
+      relancesEtapesDemo();
       const out = { settings: db.settings };
       COLLECTIONS.forEach(c => { out[c] = JSON.parse(JSON.stringify(db[c])); });
       // Compagnon : mêmes données filtrées que sur le serveur (prix, montants, budgets d'heures…)

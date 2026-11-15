@@ -4,6 +4,18 @@ const EtudeDemoExemple = ({ affaireId, client } = {}) => ({
     id: 'demo-etude-1', objet: 'Chaufferie vapeur atelier — distribution vapeur et réseau eau chaude', affaireId: affaireId || '', client: client || '',
     indice: 'B', date: new Date().toISOString().slice(0, 10), auteur: 'Jacky (bureau d\'études)', verificateur: 'Claire Martin', motifIndice: 'Débit vapeur porté à 1 800 kg/h',
     description: 'CCTP lot 14 indice C, plans de principe PID-CH-001 indice B.', historique: [{ indice: 'A', date: '2026-09-15', motif: 'Première émission' }],
+    // Suivi des étapes du « Reste à faire » (responsable, échéance, sans objet) : portefeuille, relances, appli des compagnons
+    suiviEtapes: (() => {
+      const j = n => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+      const le = n => `${j(n)}T09:00:00.000Z`, aff = (qui, ech, n) => ({ le: le(n), par: 'Claire Martin', parId: 'u1', action: 'affecte', detail: `${qui}, échéance ${ech.split('-').reverse().join('/')}` });
+      return {
+        diffusion: { responsable: { type: 'user', id: 'u1', nom: 'Claire Martin' }, echeance: j(1), historique: [aff('Claire Martin', j(1), -6)] },
+        controle: { responsable: { type: 'role', role: 'be' }, echeance: j(-3), historique: [aff('Bureau d\'études', j(-3), -10)] },
+        fiches: { responsable: { type: 'user', id: 'o1', nom: 'Kevin Roux' }, echeance: j(2), historique: [aff('Kevin Roux', j(2), -4)] },
+        bilans: { sansObjet: true, motif: 'Bilans thermiques fournis par le BET du maître d\'œuvre (note du 12/09)', sansObjetLe: le(-8), sansObjetPar: 'Claire Martin',
+          historique: [{ le: le(-8), par: 'Claire Martin', parId: 'u1', action: 'sans-objet', detail: 'Bilans thermiques fournis par le BET du maître d\'œuvre (note du 12/09)' }] },
+      };
+    })(),
     notes: [
       { id: 'n1', type: 'vapeur', titre: 'Collecteur vapeur 7 bar → ateliers', entrees: { p: 7, mode: 'debit', m: 1800, serie: 'acier-10216', L: 95, zeta: 9, vmax: 25, dpmax: 0.5, pc: 0.5, vflash: 15 }, commentaire: 'Purges de ligne tous les 40 m, poches de purge DN 80.' },
       { id: 'n2', type: 'reseau', titre: 'Boucle eau chaude 80/60 °C — pompe P1', entrees: {}, commentaire: '' },

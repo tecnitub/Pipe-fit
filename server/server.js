@@ -172,6 +172,18 @@ const FICHES = require('./fiches-tech').creer({ DB, db, broadcast, racineDocumen
 const MEDIAS = require('./medias-articles').creer({ DB, db, broadcast, FICHES });
 // Assistant (Claude) : tâches confiées en langage courant, préparées en brouillon avec les droits de la personne
 const LIENS = require('./liens-apps').creer({ db, broadcast });
+// Suivi des étapes des études : étapes d'une personne (appli des compagnons), relances (échéances, blocages)
+const SuiviEtapes = require('../etudes/public/js/suivi-etapes');
+const RELANCES = require('./relances-etapes').creer({ DB, db, LIENS, NOTIFS });
+// Étapes affectées à la personne connectée (un compagnon ne voit que les siennes : nominatives, ou « compagnon » sur un
+// chantier où il est prévu au planning)
+function etapesDe(acc, affaireId) {
+  const user = { id: acc.user_id || '', role: acc.role, nom: acc.nom };
+  if (!user.id && acc.role === 'atelier') return [];
+  const charges = new Map(recordsDe('affaires').map(a => [a.id, a.chargeId || ''])), planning = recordsDe('planning');
+  return SuiviEtapes.etapesPour(LIENS.liste({ app: 'etudes', ...(affaireId ? { affaireId } : {}) }), user, { chargeDe: id => charges.get(id) || '',
+    planifie: (uid, aid) => planning.some(x => x.userId === uid && x.affaireId === aid), terrain: LIENS.etapesTerrain(affaireId ? { affaireId } : {}) });
+}
 
 /* ---------- Fiches techniques : références du matériel retenu sans fiche, demandes aux fournisseurs ---------- */
 function fichesManquantes() {
@@ -782,6 +794,35 @@ async function api(req, res, url) {
 
   // État des applications Études et DOE par chantier (envoyé par leurs serveurs avec le compte de la personne ; bureau)
   if (p[0] === 'liens') {
+    // Suivi des étapes des études : portefeuille (bureau), mes étapes (tous, compagnon : les siennes), fait sur le terrain
+    if (p[1] === 'etapes') {
+      const q = k => url.searchParams.get(k) || '';
+      if (!p[2] && method === 'GET') {
+        if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
+        const affaires = new Map(recordsDe('affaires').map(a => [a.id, a]));
+        return send(res, 200, LIENS.liste({ app: 'etudes' }).filter(l => (l.resume || {}).avancement).map(l => { const a = affaires.get(l.affaireId) || {};
+          return { etudeId: l.id, objet: String(l.resume.objet || ''), affaireId: l.affaireId, affaire: [a.code, a.nom].filter(Boolean).join(' — '), chargeId: a.chargeId || '', avancement: l.resume.avancement, maj: l.maj }; }));
+      }
+      if (p[2] === 'mes' && method === 'GET') return send(res, 200, etapesDe(acc, q('affaireId')));
+      if (p[2] === 'terrain' && method === 'GET') {
+        if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
+        return send(res, 200, q('etudeId') ? LIENS.etapesTerrain({ etudeId: q('etudeId') }) : []);
+      }
+      if (p[2] === 'fait' && method === 'POST') {
+        const b = await readBody(req), etudeId = String(b.etudeId || ''), etapeId = String(b.etapeId || '');
+        // Seulement une étape affectée à la personne (un compagnon ne voit et ne coche que les siennes)
+        const e = etapesDe(acc).find(x => x.etudeId === etudeId && x.id === etapeId);
+        if (!e) return fail(res, 403, 'Étape non affectée à votre compte');
+        const commentaire = String(b.commentaire || '').trim().slice(0, 500), photoId = /^[\w-]{1,64}$/.test(String(b.photoId || '')) ? String(b.photoId) : '';
+        if (!commentaire && !photoId) return fail(res, 400, 'Photo ou commentaire attendu');
+        try {
+          const r = LIENS.noterEtapeTerrain(etudeId, etapeId, e.affaireId, { fait: true, le: new Date().toISOString().slice(0, 10), par: acc.nom || acc.login, parId: acc.user_id || '', commentaire, photoId, cle: crypto.randomBytes(6).toString('hex') });
+          DB.audit(db, acc.login, 'étape faite sur le terrain', 'affaires', e.affaireId, `${e.titre}`.slice(0, 120));
+          return send(res, 200, r);
+        } catch (er) { return fail(res, er.status || 500, er.message); }
+      }
+      return fail(res, 404, 'Route inconnue');
+    }
     // Matériel retenu par les études du chantier (fabricant, référence, validation) : aussi pour les compagnons, sans prix
     if (p[1] === 'materiel' && !p[2] && method === 'GET') {
       if (estCompagnon(acc) && !reglesCompagnon().materiel) return send(res, 200, []);
@@ -1499,7 +1540,7 @@ function serveStatic(req, res, url) {
   if (!file.startsWith(PUBLIC_DIR + path.sep)) { res.writeHead(403); return res.end(); }
   envoyerFichier(res, file);
 }
-const PARTAGES_ETUDES = Object.fromEntries(['donnees.js', 'calculs.js', 'fiches-mes.js', 'dxf.js'].map(f => [`/js/etudes/${f}`, path.join(__dirname, '..', 'etudes', 'public', 'js', f)]));
+const PARTAGES_ETUDES = Object.fromEntries(['donnees.js', 'calculs.js', 'fiches-mes.js', 'dxf.js', 'suivi-etapes.js'].map(f => [`/js/etudes/${f}`, path.join(__dirname, '..', 'etudes', 'public', 'js', f)]));
 function envoyerFichier(res, file) {
   fs.readFile(file, (err, buf) => {
     if (err) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Introuvable'); }
@@ -1538,6 +1579,10 @@ if (require.main === module) {
   const verifierDerives = () => NOTIFS.derives().catch(e => console.error('Dérive des chantiers :', e.message));
   setTimeout(verifierDerives, 60000).unref();
   setInterval(verifierDerives, 2 * 3600000).unref();
+  // Relances des étapes des études (échéance dans deux jours ou dépassée, étape bloquante) : au démarrage puis toutes les 3 heures
+  const relancerEtapes = () => RELANCES.verifier().catch(e => console.error('Relances des étapes :', e.message));
+  setTimeout(relancerEtapes, 90000).unref();
+  setInterval(relancerEtapes, 3 * 3600000).unref();
   DOSSIER.demarrer();
   PJRESEAU.demarrer();
   FICHES.demarrer();
@@ -1556,4 +1601,4 @@ if (require.main === module) {
     if (!hasAccounts()) console.log(`Première utilisation : ouvrez ${schema}://localhost:${PORT} sur ce poste pour créer le compte administrateur.`);
   });
 }
-module.exports = { server, db, NOTIFS, DOSSIER, AGENDA };
+module.exports = { server, db, NOTIFS, DOSSIER, AGENDA, RELANCES };

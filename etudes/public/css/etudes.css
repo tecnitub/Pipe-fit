@@ -326,3 +326,29 @@ details.plus-actions .plus-liste > * { text-align: left; width: 100%; }
 .annexes-types { margin-top: 1em; border-top: 1px solid var(--bord, #d6dbe1); padding-top: .5em; }
 .annexes-types > summary { cursor: pointer; }
 .annexes-types h4 { margin: .8em 0 .3em; }
+
+/* Suivi des étapes : responsable, échéance, sans objet, historique ; portefeuille des études */
+.suivi-etapes { border-left: 4px solid #3b7dd8; }
+.suivi-etapes > summary, .portefeuille > details > summary { cursor: pointer; padding: .3em 0; }
+.suivi-phases { display: flex; flex-wrap: wrap; gap: .4em .9em; margin: .5em 0; }
+.suivi-phase { font-size: .9em; }
+.suivi-filtres { display: flex; flex-wrap: wrap; gap: .4em; align-items: center; margin: .4em 0 .6em; }
+.suivi-liste { list-style: none; margin: 0; padding: 0; display: grid; gap: .4em; }
+.suivi-liste li { display: flex; gap: .6em; align-items: center; flex-wrap: wrap; padding: .45em .55em; border-radius: 8px; background: rgba(127, 127, 127, .06); }
+.suivi-liste li.suivi-retard { outline: 2px solid var(--err-texte); outline-offset: -2px; }
+.suivi-etape { display: inline-flex; flex-wrap: wrap; gap: .35em; align-items: center; }
+.suivi-actions { display: inline-flex; flex-wrap: wrap; gap: .35em; }
+.txt-erreur { color: var(--err-texte); font-weight: 600; }
+.pf-filtres { display: flex; flex-wrap: wrap; gap: .5em 1em; align-items: flex-end; margin: .5em 0; }
+.pf-filtres label.case { display: flex; flex-direction: row; gap: .4em; align-items: center; min-height: 40px; }
+.pf-filtres label.case input { width: auto; }
+.pf-barre { display: inline-block; vertical-align: middle; width: 90px; min-width: 60px; }
+.pf-phase { white-space: nowrap; }
+.pf-phase.complete { color: var(--ok-texte); }
+@media (max-width: 700px) {
+  .suivi-filtres button, .suivi-actions button, .suivi-etape .btn { min-height: 40px; }
+  .suivi-filtres .espace { display: none; }
+  .suivi-actions, .suivi-etape { width: 100%; }
+  .suivi-actions button { flex: 1 1 auto; }
+  .pf-filtres label { flex: 1 1 140px; }
+}

@@ -98,7 +98,26 @@ function creer({ db, broadcast }) {
     signaler('etudes', affaireId);
     return ligneSuivi(db.prepare('SELECT * FROM materiel_suivi WHERE etude_id = ? AND cle = ?').get(String(etudeId), String(cle)));
   }
-  return { APPS, liste, un, enregistrer, relier, relierDevis, supprimer, suivis, suivre };
+  /* ---------- Étapes de l'étude faites sur le terrain (appli des compagnons) ---------- */
+  // Une ligne par (étude, étape) : fait le, par, commentaire, photo ; relue par l'application Études (suivi des étapes)
+  db.exec(`CREATE TABLE IF NOT EXISTS etapes_terrain (etude_id TEXT NOT NULL, etape_id TEXT NOT NULL, affaire_id TEXT NOT NULL DEFAULT '', data TEXT NOT NULL,
+    updated_at TEXT NOT NULL, PRIMARY KEY (etude_id, etape_id)); CREATE INDEX IF NOT EXISTS etapes_terrain_affaire ON etapes_terrain (affaire_id);`);
+  const ligneTerrain = r => ({ etudeId: r.etude_id, etapeId: r.etape_id, affaireId: r.affaire_id, ...JSON.parse(r.data), maj: r.updated_at });
+  function etapesTerrain(f = {}) {
+    if (f.etudeId) return db.prepare('SELECT * FROM etapes_terrain WHERE etude_id = ?').all(String(f.etudeId)).map(ligneTerrain);
+    if (f.affaireId) return db.prepare('SELECT * FROM etapes_terrain WHERE affaire_id = ?').all(String(f.affaireId)).map(ligneTerrain);
+    return db.prepare('SELECT * FROM etapes_terrain').all().map(ligneTerrain);
+  }
+  function noterEtapeTerrain(etudeId, etapeId, affaireId, data) {
+    if (!/^[\w-]{1,64}$/.test(String(etudeId || ''))) throw Object.assign(new Error('Étude invalide'), { status: 400 });
+    if (!etapeId || String(etapeId).length > 120) throw Object.assign(new Error('Étape invalide'), { status: 400 });
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO etapes_terrain (etude_id, etape_id, affaire_id, data, updated_at) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(etude_id, etape_id) DO UPDATE SET affaire_id = excluded.affaire_id, data = excluded.data, updated_at = excluded.updated_at`).run(String(etudeId), String(etapeId), String(affaireId || ''), JSON.stringify(data), now);
+    signaler('etudes', affaireId);
+    return ligneTerrain(db.prepare('SELECT * FROM etapes_terrain WHERE etude_id = ? AND etape_id = ?').get(String(etudeId), String(etapeId)));
+  }
+  return { APPS, liste, un, enregistrer, relier, relierDevis, supprimer, suivis, suivre, etapesTerrain, noterEtapeTerrain };
 }
 
 module.exports = { creer, APPS };

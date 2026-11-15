@@ -4,7 +4,7 @@
   const KEY = 'pipefit-etudes-demo-v2', ME_KEY = 'pipefit-etudes-demo-me';
   const COMPTES = [
     { login: 'jacky', nom: 'Jacky (bureau d\'études)', role: 'charge' },
-    { login: 'claire', nom: 'Claire Martin', role: 'charge' },
+    { login: 'claire', nom: 'Claire Martin', role: 'charge', userId: 'u1' },
     { login: 'admin', nom: 'Administrateur', role: 'admin' },
     { login: 'kevin', nom: 'Kevin Roux (soudeur)', role: 'atelier' },
   ];
@@ -21,7 +21,7 @@
   const compteCrm = () => {
     const c = crm(); if (!c) return null;
     const a = (c.accounts || []).find(x => x.id === storage.get('pipefit-crm-demo-me')) || (c.accounts || [])[0];
-    return a && ['admin', 'charge'].includes(a.role) ? { login: a.login, nom: a.nom, role: a.role } : null;
+    return a && ['admin', 'charge'].includes(a.role) ? { login: a.login, nom: a.nom, role: a.role, userId: a.userId || '' } : null;
   };
   const attentes = new Map();
   if (dansCrm) window.addEventListener('message', e => {
@@ -52,6 +52,8 @@
     articles: (src.articles || []).map(a => ({ id: a.id, ref: a.ref, designation: a.designation, famille: a.famille, sousFamille: a.sousFamille, unite: a.unite, prixVente: a.prixVente, coutRevient: a.coutRevient, poidsUnitaire: a.poidsUnitaire })),
     devis: (src.devis || []).map(x => ({ id: x.id, numero: x.numero, objet: x.objet, clientId: x.clientId, statut: x.statut, affaireId: x.affaireId || '' })),
     mainoeuvre: (src.mainoeuvre || []).map(m => ({ id: m.id, code: m.code, libelle: m.libelle, tauxVente: m.tauxVente, tauxCout: m.tauxCout })),
+    // Équipe (responsables des étapes) : identifiant, nom et rôle seulement
+    users: (src.users || []).filter(u => u && u.id && !u.archive && u.actif !== false).map(u => ({ id: u.id, nom: String(u.nom || ''), role: u.role || '' })),
     // Prix des offres reçues dans les consultations (derniers prix connus de la bibliothèque de modèles)
     prixFournisseurs: (src.consultations || []).flatMap(c => (c.fournisseurs || []).filter(f => f.offre && f.offre.prix).flatMap(f => Object.entries(f.offre.prix).map(([i, prix]) => ({ designation: ((c.lignes || [])[+i] || {}).designation || '', unite: ((c.lignes || [])[+i] || {}).unite || 'u',
       fournisseur: ((src.entreprises || []).find(e => e.id === f.entrepriseId) || {}).nom || '', prix: Number(prix), date: String(f.offre.date || c.date || '').slice(0, 10), consultation: c.ref || '' })))).filter(x => x.fournisseur && x.prix > 0) };
@@ -137,6 +139,8 @@
       return vraiFetch(dataUrl);
     }
     if (p[0] === 'pf' && p[1] === 'rex') return rep(200, RexPF(crm() || seed));
+    // Étapes faites sur le terrain dans l'appli des compagnons de la démo du CRM (même appareil)
+    if (p[0] === 'pf' && p[1] === 'etapes-terrain') { const eid = new URL(url, 'http://x').searchParams.get('etudeId') || ''; return rep(200, ((crm() || {}).etapesTerrain || []).filter(x => x.etudeId === eid)); }
     if (p[0] === 'pf' && p[1] === 'valeurs-reglees') return rep(200, typeof Essais === 'undefined' ? [] : Essais.valeursReglees(((crm() || seed).misesEnService || []).filter(m => m.affaireId === new URLSearchParams(u.split('?')[1] || '').get('affaireId'))));
     if (p[0] === 'pf' && p[1] === 'pressions-cta') return rep(200, typeof Essais === 'undefined' ? [] : Essais.pressionsCta(((crm() || seed).misesEnService || []).filter(m => m.affaireId === new URLSearchParams(u.split('?')[1] || '').get('affaireId'))));
     // Pièces des études (PDF émis, bordereaux, PDF annotés) : gardées sur l'appareil (taille limitée dans la démonstration)
@@ -207,7 +211,7 @@
       return rep(200, { id: `demo-${numero}`, numero });
     }
     // Études déjà sur l'appareil (étude d'exemple comprise) : état transmis à la page du CRM après l'affichage
-    if (dansCrm && p[0] === 'etudes' && !p[1]) { reprendreLiens(); save(); setTimeout(() => db.etudes.filter(e => !e.modele).forEach(e => { try { signalerCrm(e.id, e.affaireId, resumePF(e)); } catch (er) { /* calcul incomplet */ } }), 800); }
+    if (dansCrm && p[0] === 'etudes' && !p[1]) { reprendreLiens(); save(); setTimeout(() => db.etudes.filter(e => !e.modele).forEach(e => { try { if (!e.avancement && typeof SuiviEtapes !== 'undefined') { const b = SuiviEtapes.etapesEtude(e); if (b) e.avancement = SuiviEtapes.avancement(e, SuiviEtapes.decorer(e, b)); } signalerCrm(e.id, e.affaireId, resumePF(e)); } catch (er) { /* calcul incomplet */ } }), 800); }
     if (p[0] === 'etudes' && !p[1]) return rep(200, db.etudes.slice().sort((x, y) => y._at.localeCompare(x._at)));
     if (p[0] === 'etudes') {
       const i = db.etudes.findIndex(d => d.id === p[1]), exist = db.etudes[i];

@@ -107,13 +107,13 @@ function avancementMaterielHtml(id) {
 }
 function chantierTable(list, selection = false) {
   if (!list.length) return '<p class="muted">Aucun chantier pour ces critères.</p>';
-  return `<div class="table-wrap"><table data-colonnes="chantiers"><tr>${selection ? '<th class="sel-cell"><input type="checkbox" data-sel-tout aria-label="Tout sélectionner"></th>' : ''}<th>Chantier</th><th>Client</th><th>Chargé</th><th>Statut</th><th class="num">Montant HT</th><th>Heures</th><th>Fournitures</th><th class="num">Marge à terminaison</th><th>Matériel</th></tr>
+  return `<div class="table-wrap"><table data-colonnes="chantiers"><tr>${selection ? '<th class="sel-cell"><input type="checkbox" data-sel-tout aria-label="Tout sélectionner"></th>' : ''}<th>Chantier</th><th>Client</th><th>Chargé</th><th>Statut</th><th class="num">Montant HT</th><th>Heures</th><th>Fournitures</th><th class="num">Marge à terminaison</th><th>Matériel</th><th>Étapes</th></tr>
   ${list.map(a => {
     const s = Calc.affaire(a);
     return `<tr class="clickable ${a.archive ? 'archive' : ''}" data-go="#/chantier/${a.id}">${selection ? `<td class="sel-cell"><input type="checkbox" data-sel-id="${a.id}" aria-label="Sélectionner ${esc(a.code || '')}"></td>` : ''}<td><strong>${esc(a.code || '…')}</strong>${estHorsDevis(a) ? ` <span class="badge b-warn">Hors devis</span>${aCompleterHD(a) ? ' <span class="badge b-bad">À compléter</span>' : ''}` : ''}${a.archive ? ' <span class="badge">Archivé</span>' : ''}<br>${esc(a.nom)}</td><td>${esc(a.clientId ? clientName(a.clientId) : a.clientLibre || '')}</td><td>${esc(userName(a.chargeId))}</td><td>${badge(estHorsDevis(a) ? statutHD(a) : a.statut)}</td>
       <td class="num">${eur(s.caDevis)}</td><td>${gauge(s.heuresPassees, s.heuresPrevues)}<span class="muted small">${fmt(s.heuresPassees)} / ${fmt(s.heuresPrevues)} h</span></td>
       <td>${gauge(s.achats, s.budgetF)}</td><td class="num">${s.caDevis ? marginBadge(s.margeFinPct) : '—'}</td>
-      <td>${avancementMaterielHtml(a.id)}</td></tr>`;
+      <td>${avancementMaterielHtml(a.id)}</td><td>${typeof etapesChantierHtml === 'function' ? etapesChantierHtml(a.id) : ''}</td></tr>`;
   }).join('')}</table></div>`;
 }
 
@@ -128,7 +128,7 @@ Views.chantiers = (params, query) => {
   const statuts = [['', 'En cours (hors clos)'], ['tous', 'Tous (hors archivés)'], ...[...new Set([...STATUTS_CHANTIER, ...STATUTS_HD])].map(s => [s, s]), ['archives', 'Archivés']];
   return `<h1>Chantiers</h1>
   <p class="muted">Un chantier est créé lorsqu'un devis est accepté : le devis devient son budget (fournitures et main-d'œuvre). Archivez les chantiers terminés pour alléger les listes.</p>
-  <div class="toolbar"><button id="add-hd">+ Intervention hors devis</button><button class="secondary" id="add-hd-mail" title="Créer l'intervention à partir de l'e-mail du client (glisser depuis Outlook)">📧 Depuis un mail</button><span class="spacer"></span>
+  <div class="toolbar"><button id="add-hd">+ Intervention hors devis</button><button class="secondary" id="add-hd-mail" title="Créer l'intervention à partir de l'e-mail du client (glisser depuis Outlook)">📧 Depuis un mail</button><a class="btn secondary" href="#/etapes" title="Avancement des études par phase, étapes en retard, ce qui attend chaque personne">📊 Étapes des études</a><span class="spacer"></span>
     ${archivables.length && f.statut !== 'archives' ? `<button class="secondary" id="arch-clos">Archiver les ${archivables.length} chantier(s) clos</button>` : ''}</div>
   ${barreFiltres(f, { clients: [...new Set(Store.all('affaires').map(a => a.clientId))], statuts, defauts: FILTRES_CHANTIERS })}
   <div class="toolbar sel-bar hidden" id="sel-bar"><span id="sel-n"></span><button class="secondary" id="sel-arch">${f.statut === 'archives' ? 'Sortir des archives' : 'Archiver la sélection'}</button></div>
@@ -137,6 +137,7 @@ Views.chantiers = (params, query) => {
 };
 Views.chantiers.bind = (root, params, query) => {
   chargerAvancementMateriel(); // relu à chaque ouverture de la liste (un nouvel affichage suit la réponse)
+  if (typeof chargerEtapesPF === 'function') chargerEtapesPF(); // avancement des étapes des études (résumés envoyés par Études)
   const f = lireFiltres('chantiers', query, FILTRES_CHANTIERS);
   bindFiltres(root, 'chantiers', f, FILTRES_CHANTIERS);
   root.querySelector('#add-hd').onclick = () => nouvelleInterventionHD();

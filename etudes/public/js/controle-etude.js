@@ -13,7 +13,8 @@ const ControleEtude = (() => {
   const M = (g, chemin) => () => essai(() => g()) || essai(() => require(chemin));
   const G = { Notes: M(() => Notes, './notes'), Liens: M(() => Liens, './liens'), GuideEtude: M(() => GuideEtude, './guide-etude'), Estimations: M(() => Estimations, './estimations'),
     AnnexesExploitation: M(() => AnnexesExploitation, './annexes-exploitation'), Registre: M(() => Registre, './registre'), Metre: M(() => Metre, './metre'),
-    MaterielRetenu: M(() => MaterielRetenu, '../../../public/js/materiel-retenu'), Installation: M(() => Installation, './installation'), Electricite: M(() => Electricite, './electricite'), Schema: M(() => Schema, './schema') };
+    MaterielRetenu: M(() => MaterielRetenu, '../../../public/js/materiel-retenu'), Installation: M(() => Installation, './installation'), Electricite: M(() => Electricite, './electricite'), Schema: M(() => Schema, './schema'),
+    SuiviEtapes: M(() => SuiviEtapes, './suivi-etapes') };
   const num = v => { const n = parseFloat(String(v ?? '').replace(/\s/g, '').replace(',', '.')); return Number.isFinite(n) ? n : NaN; };
   const nf = (v, d = 0) => (Number.isFinite(v) ? v.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—');
   const norm = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -141,7 +142,9 @@ const ControleEtude = (() => {
 
     // 9. Reste à faire du guide (étapes non couvertes ci-dessus)
     if (Gu) { const r = essai(() => Gu.restesAFaire(et)) || { etapes: [] };
-      r.etapes.filter(x => !x.fait && (!x.phase || x.phase === 'etude') && !['valeurs', 'estimees', 'conformite'].includes(x.groupe) && x.id !== 'erreurs' && x.id !== 'installation-erreurs' && x.id !== 'controle').forEach(x => add('guide', 'info', `${x.titre}${x.info ? ` : ${x.info}` : ''}`, { origine: 'Guide de l\'étude', action: x.action || null })); }
+      // Étape déclarée « sans objet » (motif tracé dans le suivi des étapes) : plus signalée
+      const SE = G.SuiviEtapes();
+      r.etapes.filter(x => !x.fait && (!x.phase || x.phase === 'etude') && !(SE && SE.estSansObjet(et, x.id)) && !['valeurs', 'estimees', 'conformite'].includes(x.groupe) && x.id !== 'erreurs' && x.id !== 'installation-erreurs' && x.id !== 'controle').forEach(x => add('guide', 'info', `${x.titre}${x.info ? ` : ${x.info}` : ''}`, { origine: 'Guide de l\'étude', action: x.action || null })); }
 
     return out.sort((a, b) => CATEGORIES.findIndex(c => c[0] === a.categorie) - CATEGORIES.findIndex(c => c[0] === b.categorie) || RANG[a.gravite] - RANG[b.gravite]);
   }
