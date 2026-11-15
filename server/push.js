@@ -55,8 +55,18 @@ function chiffrer(texte, p256dh, auth, impose = {}) {
 const abonnementsDe = (db, accountIds) => (accountIds.length
   ? db.prepare(`SELECT * FROM push_subs WHERE account_id IN (${accountIds.map(() => '?').join(',')})`).all(...accountIds) : []);
 
+// Adresse d'envoi d'un service de notification : jamais une machine du réseau interne (adresse privée, nom sans domaine,
+// .local / .lan / .internal) : le serveur y posterait à la demande de n'importe quel compte
+function adresseRefusee(endpoint) {
+  let h;
+  try { h = new URL(endpoint).hostname.replace(/^\[|\]$/g, '').toLowerCase(); } catch (e) { return true; }
+  const net = require('node:net'), { adressePrivee } = require('./medias-articles');
+  if (net.isIP(h)) return adressePrivee(h);
+  return !h.includes('.') || /(^|\.)(localhost|local|lan|internal|intranet|home|corp)$/.test(h);
+}
 function abonner(db, accountId, sub, appareil) {
   if (!sub || !/^https:\/\//.test(sub.endpoint || '') || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) throw Object.assign(new Error('Abonnement invalide'), { status: 400 });
+  if (adresseRefusee(sub.endpoint)) throw Object.assign(new Error('Adresse du service de notification refusée'), { status: 400 });
   if (deb64u(sub.keys.p256dh).length !== 65 || deb64u(sub.keys.auth).length < 16) throw Object.assign(new Error('Clés d\'abonnement invalides'), { status: 400 });
   db.prepare(`INSERT INTO push_subs (endpoint, account_id, p256dh, auth, appareil, created_at) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(endpoint) DO UPDATE SET account_id = excluded.account_id, p256dh = excluded.p256dh, auth = excluded.auth, appareil = excluded.appareil`)
@@ -69,6 +79,8 @@ async function envoyer(DB, db, accountIds, message, contact) {
   const v = vapid(DB, db), corps = JSON.stringify(message), res = [];
   for (const s of abonnementsDe(db, accountIds)) {
     let statut;
+    // Abonnement enregistré avant ce contrôle : ignoré s'il vise le réseau interne
+    if (adresseRefusee(s.endpoint)) { res.push({ appareil: s.appareil, statut: 'adresse refusée' }); continue; }
     try {
       const r = await fetch(s.endpoint, { method: 'POST', body: chiffrer(corps, s.p256dh, s.auth), signal: AbortSignal.timeout(10000),
         headers: { 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', TTL: '86400', Urgency: 'normal', Topic: String(message.tag || 'pipefit').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32) || 'pipefit',

@@ -26,6 +26,10 @@ const PARTAGES = { '/shared/pdf.js': path.join(__dirname, '..', 'public', 'js', 
   ...Object.fromEntries(['tesseract.min.js', 'worker.min.js', 'tesseract-core-simd-lstm.wasm.js', 'fra.traineddata.gz'].map(f => [`/vendor/tesseract/${f}`, path.join(__dirname, '..', 'public', 'vendor', 'tesseract', f)])) };
 const MAX_JSON = 25 * 1024 * 1024, SESSION_JOURS = 14; // note de calcul PDF transmise en JSON (base64)
 const ROLES_ETUDES = ['admin', 'charge'];
+// Routes coûteuses : dépôt de fichiers (60 par minute et par compte), fichiers du chantier lus au travers de Pipe-Fit
+// (CCTP, DPGF lus et reconnus dans le navigateur : 120 par minute), données Pipe-Fit complètes (retour d'expérience)
+const LIMITES = { depot: HS.limiteur({ max: 60, fenetreMs: 60000 }), lecture: HS.limiteur({ max: 120, fenetreMs: 60000 }), donnees: HS.limiteur({ max: 20, fenetreMs: 60000 }) };
+const tropDeDemandes = (res, limite, cle) => { const att = LIMITES[limite](cle); if (att) { fail(res, 429, `Trop de demandes à la suite : réessayez dans ${att} s.`, {}); return true; } return false; };
 
 fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
 const db = new DatabaseSync(DB_FILE);
@@ -191,15 +195,18 @@ async function api(req, res, url) {
 
   // Fichier d'un document du chantier (CCTP, DPGF), lu par Pipe-Fit avec les droits de la personne
   if (p[0] === 'pf' && p[1] === 'fichier' && p[2] && method === 'GET') {
+    if (tropDeDemandes(res, 'lecture', s.login)) return;
     const r = await pipefit(s, `/api/files/${encodeURIComponent(p[2])}`);
     if (!r.ok) return fail(res, 404, 'Fichier Pipe-Fit introuvable');
     const buf = Buffer.from(await r.arrayBuffer());
-    res.writeHead(200, { 'Content-Type': r.headers.get('content-type') || 'application/octet-stream', 'Cache-Control': 'private, max-age=600', 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': 'attachment' });
+    // Téléchargé, jamais interprété par le navigateur (bac à sable si le type annoncé n'est pas une image ou un PDF)
+    res.writeHead(200, { 'Content-Type': r.headers.get('content-type') || 'application/octet-stream', 'Cache-Control': 'private, max-age=600', 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': 'attachment', 'Content-Security-Policy': 'sandbox' });
     return res.end(buf);
   }
 
   // Retour d'expérience pour caler le métré : chantiers terminés, heures prévues (devis acceptés) et heures pointées par main-d'œuvre
   if (p[0] === 'pf' && p[1] === 'rex' && method === 'GET') {
+    if (tropDeDemandes(res, 'donnees', s.login)) return;
     const r = await pipefit(s, '/api/data');
     if (!r.ok) return fail(res, 502, 'Lecture des données Pipe-Fit impossible');
     return send(res, 200, RexPF(await r.json()));
@@ -207,6 +214,7 @@ async function api(req, res, url) {
 
   // Pièces jointes des études (PDF annoté retourné par le maître d'œuvre, visa) : envoyées en JSON (base64)
   if (p[0] === 'fichiers' && !p[1] && method === 'POST') {
+    if (tropDeDemandes(res, 'depot', s.login)) return;
     const b = await lireJSON(req), nom = String(b.nom || '').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 150), ext = (/\.([a-z0-9]+)$/i.exec(nom) || [])[1] || '';
     const mime = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' }[ext.toLowerCase()];
     if (!mime) return fail(res, 415, 'PDF, JPG ou PNG attendu');

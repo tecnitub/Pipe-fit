@@ -25,6 +25,19 @@ async function verifierUrl(u) {
   if (!ips.length || ips.some(adressePrivee)) throw new Error('adresse du réseau interne refusée');
   return url.href;
 }
+// Requête vers un lien externe : les redirections sont suivies une à une et chaque adresse est contrôlée AVANT d'être
+// contactée (un lien public qui redirige vers le réseau interne est refusé sans que le serveur interne soit appelé)
+async function recupererSur(u, { fetchFn = (...a) => fetch(...a), verifier = verifierUrl, signal, headers = {}, max = 5 } = {}) {
+  let href = await verifier(u);
+  for (let i = 0; i <= max; i++) {
+    const r = await fetchFn(href, { signal, redirect: 'manual', headers });
+    const st = r.status || (r.ok ? 200 : 0), loc = r.headers && r.headers.get && r.headers.get('location');
+    if (st >= 300 && st < 400 && loc) { href = await verifier(new URL(loc, href).href); continue; }
+    if (st >= 300 && st < 400) throw new Error(`redirection sans adresse (${st})`);
+    return Object.assign(r, { urlFinale: href });
+  }
+  throw new Error('trop de redirections');
+}
 // Type d'une image d'après ses premiers octets
 function typeImage(buf) {
   if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
@@ -57,11 +70,11 @@ function creer({ DB, db, broadcast, FICHES, fetchFn = (...a) => fetch(...a), ver
     broadcast('change', { col: COL, record: DB.getRecord(db, COL, id), client: null });
   }
   async function telechargerPage(u) {
-    const href = await verifier(u), ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), 30000);
+    const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), 30000);
     try {
-      const r = await fetchFn(href, { signal: ctrl.signal, redirect: 'follow', headers: { 'User-Agent': 'Pipe-Fit (photos des articles)', Accept: 'text/html' } });
+      const r = await recupererSur(u, { fetchFn, verifier, signal: ctrl.signal, headers: { 'User-Agent': 'Pipe-Fit (photos des articles)', Accept: 'text/html' } });
       if (!r.ok) throw new Error(`page produit : réponse ${r.status}`);
-      const fin = r.url || href; if (fin !== href) await verifier(fin);
+      const fin = r.urlFinale;
       const buf = Buffer.from(await r.arrayBuffer());
       if (buf.length > 3e6) throw new Error('page produit trop lourde');
       const img = imageDansPage(buf.toString('utf8'), fin);
@@ -70,11 +83,10 @@ function creer({ DB, db, broadcast, FICHES, fetchFn = (...a) => fetch(...a), ver
     } catch (e) { throw new Error(e.name === 'AbortError' ? 'délai dépassé' : e.message); } finally { clearTimeout(t); }
   }
   async function telechargerPhoto(u) {
-    const href = await verifier(u), ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), 30000);
+    const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), 30000);
     try {
-      const r = await fetchFn(href, { signal: ctrl.signal, redirect: 'follow', headers: { 'User-Agent': 'Pipe-Fit (photos des articles)' } });
+      const r = await recupererSur(u, { fetchFn, verifier, signal: ctrl.signal, headers: { 'User-Agent': 'Pipe-Fit (photos des articles)' } });
       if (!r.ok) throw new Error(`réponse ${r.status}`);
-      if (r.url && r.url !== href) await verifier(r.url); // redirection : même contrôle
       if (Number(r.headers.get('content-length') || 0) > MAX_PHOTO) throw new Error('image trop lourde (5 Mo au plus)');
       const buf = Buffer.from(await r.arrayBuffer());
       if (buf.length > MAX_PHOTO) throw new Error('image trop lourde (5 Mo au plus)');
@@ -127,4 +139,4 @@ function creer({ DB, db, broadcast, FICHES, fetchFn = (...a) => fetch(...a), ver
   return { resume, lancer, aFaire };
 }
 
-module.exports = { creer, adressePrivee, verifierUrl, typeImage, lienValide, imageDansPage };
+module.exports = { creer, adressePrivee, verifierUrl, recupererSur, typeImage, lienValide, imageDansPage };

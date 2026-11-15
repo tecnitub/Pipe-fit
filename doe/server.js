@@ -27,6 +27,8 @@ const MAX_JSON = 5 * 1024 * 1024, MAX_FICHIER = 60 * 1024 * 1024, SESSION_JOURS 
 const TYPES = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', dwg: 'image/vnd.dwg', dxf: 'image/vnd.dxf',
   ifc: 'application/x-step', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', zip: 'application/zip' };
 const ROLES_DOE = ['admin', 'charge'];
+// Dépôt de pièces jointes (jusqu'à 60 Mo chacune) : 60 par minute et par compte
+const LIMITE_DEPOT = HS.limiteur({ max: 60, fenetreMs: 60000 });
 
 fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
 const db = new DatabaseSync(DB_FILE);
@@ -210,6 +212,7 @@ async function api(req, res, url) {
 
   // Pièces jointes du DOE (plans, fiches techniques, PV, notices, attestations…)
   if (envoiFichier) {
+    const att = LIMITE_DEPOT(s.login); if (att) return fail(res, 429, `Trop de pièces envoyées à la suite : réessayez dans ${att} s.`);
     const nom = (() => { try { return decodeURIComponent(String(req.headers['x-filename'] || '')); } catch (e) { return ''; } })().slice(0, 200);
     const mime = TYPES[String((/\.([a-z0-9]+)$/i.exec(nom) || [])[1] || '').toLowerCase()];
     if (!mime) return fail(res, 415, `Type de fichier non accepté (${Object.keys(TYPES).join(', ')})`);

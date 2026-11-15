@@ -89,6 +89,19 @@ function origineRefusee(req) {
   return !attendus.includes(hote);
 }
 
+// Limite de débit des routes coûteuses (lecture de PDF, fichiers, extraction de données) : au plus `max` appels par
+// fenêtre glissante et par clé (compte ou adresse) ; renvoie le nombre de secondes à attendre, ou 0
+function limiteur({ max, fenetreMs }) {
+  const appels = new Map();
+  return cle => {
+    const now = Date.now(), l = (appels.get(cle) || []).filter(t => now - t < fenetreMs);
+    if (l.length >= max) { appels.set(cle, l); return Math.max(1, Math.ceil((fenetreMs - (now - l[0])) / 1000)); }
+    l.push(now); appels.set(cle, l);
+    if (appels.size > 5000) for (const [k, v] of appels) if (!v.some(t => now - t < fenetreMs)) appels.delete(k);
+    return 0;
+  };
+}
+
 // Serveur HTTP ou HTTPS selon la présence d'un certificat.
 // Avec un certificat, un seul port reçoit les deux : HTTPS normalement ; HTTP venant du réseau renvoyé vers HTTPS ;
 // HTTP venant du serveur lui-même (raccourci du poste serveur, application DOE, reverse proxy local) servi tel quel.
@@ -139,4 +152,4 @@ function creerServeur(handler, { dossierDonnees, nom = 'Pipe-Fit' } = {}) {
   return { server, etat, surveiller, redirection };
 }
 
-module.exports = { CSP, entetes, origineRefusee, ipClient, estLocal, estHttps, proxyDeConfiance, creerServeur, chargerTLS, infosCertificat };
+module.exports = { CSP, entetes, origineRefusee, limiteur, ipClient, estLocal, estHttps, proxyDeConfiance, creerServeur, chargerTLS, infosCertificat };
