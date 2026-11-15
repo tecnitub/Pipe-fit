@@ -44,7 +44,8 @@ namespace PipeFit.Isometries.Revit
                 && active.CanViewBeDuplicated(ViewDuplicateOption.Duplicate);
             bool depuisActive, feuilleVoulue, gris, soudures, zone;
             Montage.Regroupement par;
-            using (var f = new FenetreReperage(dupliquable ? active.Name : null, groupes.Count))
+            var avecEnsembles = tous.Any(e => (e.LookupParameter(ParametreSpool.NomEnsemble)?.AsString() ?? "") != "");
+            using (var f = new FenetreReperage(dupliquable ? active.Name : null, groupes.Count, avecEnsembles))
             {
                 if (f.ShowDialog(new FenetreRevit(data.Application.MainWindowHandle)) != System.Windows.Forms.DialogResult.OK) return Result.Cancelled;
                 depuisActive = f.DepuisActive; feuilleVoulue = f.Feuille; gris = f.Gris; soudures = f.Soudures; par = f.Par; zone = f.Zone;
@@ -318,7 +319,7 @@ namespace PipeFit.Isometries.Revit
         public Montage.Regroupement Par => (Montage.Regroupement)Math.Max(0, cbPar.SelectedIndex);
         public bool Zone => ckZone.Checked && cbPar.SelectedIndex > 0;
 
-        public FenetreReperage(string vueActive, int nbSpools)
+        public FenetreReperage(string vueActive, int nbSpools, bool avecEnsembles = false)
         {
             Text = "Pipe-Fit – Repérage des spools pour le montage";
             Font = new System.Drawing.Font("Segoe UI", 9f);
@@ -338,11 +339,12 @@ namespace PipeFit.Isometries.Revit
             (vueActive != null ? rbActive : rb3D).Checked = true;
             Controls.Add(new System.Windows.Forms.Label { Text = "Une vue par :", Location = new System.Drawing.Point(14, 111), AutoSize = true });
             cbPar.Items.AddRange(new object[] { "une seule vue pour tous les spools", "système", "ensemble (zone de montage)", "système et ensemble" });
-            cbPar.SelectedIndex = 0;
+            // Système → spools → ensembles : par défaut une vue par système et ensemble (ou par système sans ensembles)
+            cbPar.SelectedIndex = avecEnsembles ? 3 : 1;
             cbPar.SetBounds(110, 108, 376, 24);
             ckZone.SetBounds(30, 136, 456, 22);
             cbPar.SelectedIndexChanged += (s, e) => ckZone.Enabled = cbPar.SelectedIndex > 0;
-            ckZone.Enabled = false;
+            ckZone.Enabled = cbPar.SelectedIndex > 0;
             ckFeuille.SetBounds(14, 176, 472, 22); ckGris.SetBounds(14, 202, 472, 22); ckSoudures.SetBounds(14, 228, 472, 22);
             Controls.AddRange(new System.Windows.Forms.Control[] { rbActive, rb3D, cbPar, ckZone, ckFeuille, ckGris, ckSoudures });
             var ok = new System.Windows.Forms.Button { Text = "Créer la vue", DialogResult = System.Windows.Forms.DialogResult.OK };

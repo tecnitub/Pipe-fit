@@ -26,6 +26,8 @@ namespace PipeFit.Isometries.Revit
         public double LongueurMaxMm;
         public double LongueurManuelleMm; // tube du spool numéroté à la main
         public string Erreur = "";
+        /// <summary>Ensemble de chaque nouveau spool (numérotation automatique), par numéro.</summary>
+        public Dictionary<string, string> Ensembles = new Dictionary<string, string>();
 
         public string Apercu()
         {
@@ -40,6 +42,7 @@ namespace PipeFit.Isometries.Revit
                 : Spools.Count + " spools, " + n + " éléments : " + Spools[0].Numero + " à " + Spools[Spools.Count - 1].Numero);
             if (Ignores > 0) sb.Append(" · " + Ignores + " déjà numéroté(s), conservé(s)");
             if (Isoles > 0) sb.Append(" · " + Isoles + " vanne(s) entre brides, non numérotée(s)");
+            if (Ensembles.Count > 0) sb.Append(" · " + Ensembles.Values.Distinct().Count() + " ensemble(s) de montage");
             var m = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
             if (TropLongs > 0) sb.Append("\n⚠ " + TropLongs + " tube(s) de plus de " + (LongueurMaxMm / 1000).ToString("0.#", m) + " m d'un seul tenant : à diviser dans Revit (Modifier → Diviser l'élément).");
             if (LongueurMaxMm > 0 && LongueurManuelleMm > LongueurMaxMm + 0.5)
@@ -110,9 +113,13 @@ namespace PipeFit.Isometries.Revit
                     try { param = ParametreSpool.Creer(doc, data.Application.Application); doc.Regenerate(); }
                     catch (Exception ex) { t.RollBack(); message = "Création du paramètre « " + ParametreSpool.Nom + " » impossible : " + ex.Message; return Result.Failed; }
                 }
+                if (plan.Ensembles.Count > 0) { try { ParametreSpool.CreerEnsemble(doc, data.Application.Application); doc.Regenerate(); } catch { } }
                 foreach (var (num, elements) in plan.Spools)
                     foreach (var e in elements)
+                    {
                         if (Ecrire(e, param, num)) ecrits++; else refus++;
+                        if (plan.Ensembles.TryGetValue(num, out var ens)) e.LookupParameter(ParametreSpool.NomEnsemble)?.Set(ens);
+                    }
                 t.Commit();
             }
 
@@ -275,6 +282,26 @@ namespace PipeFit.Isometries.Revit
                 if (!compteurs.TryGetValue(prefixe, out var n)) n = Decoupage.Prochain(existants, prefixe);
                 compteurs[prefixe] = n + 1;
                 plan.Spools.Add((Decoupage.Format(prefixe, n, r.Chiffres), g.Select(c => parCle[c.Id]).ToList()));
+            }
+
+            // Chaque système découpé en spools, regroupés en ensembles de montage (ordre de montage, N spools par ensemble)
+            if (r.EnsemblesAuto && groupes.Count > 0)
+            {
+                var spools = groupes.Select((g, i) => new Spool { Nom = plan.Spools[i].Numero, Composants = g }).ToList();
+                var tousIds = new HashSet<string>(spools.SelectMany(x => x.Composants).Select(c => c.Id));
+                foreach (var sp in spools)
+                {
+                    foreach (var e in sp.Composants.SelectMany(c => c.Extremites).Where(e => e.ConnecteA != null && !tousIds.Contains(e.ConnecteA)))
+                        sp.NomsExterieurs[e.ConnecteA] = e.ConnecteA; // équipement ou spool existant : point de départ du montage
+                    AnalyseSpool.Analyser(sp);
+                }
+                // Ensembles déjà formés dans chaque système : les nouveaux continuent après
+                var ensemblesExistants = param == CreerParametre ? new Dictionary<string, int>() : tous
+                    .Where(e => (e.LookupParameter(ParametreSpool.NomEnsemble)?.AsString() ?? "") != "")
+                    .GroupBy(e => e.get_Parameter(BuiltInParameter.RBS_SYSTEM_NAME_PARAM)?.AsString() ?? "")
+                    .ToDictionary(g => g.Key, g => g.Select(e => e.LookupParameter(ParametreSpool.NomEnsemble).AsString()).Distinct().Count());
+                foreach (var kv in Montage.EnsemblesAuto(spools, r.TailleEnsemble, sys => ensemblesExistants.TryGetValue(sys, out var k) ? k : 0))
+                    plan.Ensembles[kv.Key.Nom] = kv.Value;
             }
             return plan;
         }

@@ -78,7 +78,22 @@ namespace PipeFit.Isometries.Revit
                 return refus > 0 ? refus + " élément(s) sans le paramètre (catégorie non liée)." : "";
             }
 
-            using (var f = new FenetreEnsembles(infos, selection, Affecter))
+            // Automatique : chaque système des spools choisis découpé en ensembles de N spools, dans l'ordre de montage
+            string Auto(List<InfoSpool> choix, int taille)
+            {
+                var spools = choix.Select(i => LectureModele.Convertir(doc, i.Nom, i.Elements, param)).ToList();
+                var autres = infos.Except(choix).Where(i => i.Ensemble != "").ToList();
+                var parSys = Montage.EnsemblesAuto(spools, taille, sys => autres.Where(i => i.Systeme == sys).Select(i => i.Ensemble).Distinct().Count());
+                var avert = new List<string>();
+                foreach (var g in parSys.GroupBy(kv => kv.Value))
+                {
+                    var a = Affecter(g.Key, choix.Where(i => g.Any(kv => kv.Key.Nom == i.Nom)).ToList());
+                    if (a != "") avert.Add(a);
+                }
+                return string.Join("\n", avert.Distinct());
+            }
+
+            using (var f = new FenetreEnsembles(infos, selection, Affecter, Auto))
                 f.ShowDialog(new FenetreRevit(data.Application.MainWindowHandle));
 
             if (journal.Count > 0)
@@ -102,7 +117,10 @@ namespace PipeFit.Isometries.Revit
         readonly HashSet<string> coches = new HashSet<string>();
         bool remplissage;
 
-        public FenetreEnsembles(List<InfoSpool> infos, HashSet<string> selection, Func<string, List<InfoSpool>, string> affecter)
+        readonly NumericUpDown nudTaille = new NumericUpDown { Minimum = 1, Maximum = 200, Value = 10 };
+
+        public FenetreEnsembles(List<InfoSpool> infos, HashSet<string> selection, Func<string, List<InfoSpool>, string> affecter,
+            Func<List<InfoSpool>, int, string> auto)
         {
             this.infos = infos; this.affecter = affecter;
             Text = "Pipe-Fit – Ensembles de spools (zones de montage)";
@@ -139,9 +157,24 @@ namespace PipeFit.Isometries.Revit
             gEns.Controls.AddRange(new Control[] { cbEnsemble, btAffecter, btRetirer });
             Controls.Add(gEns);
 
-            lblInfo.SetBounds(430, 300, 276, 120);
-            lblInfo.Text = "Exemple : cochez la plage SP-001 à SP-010, nommez « Ensemble A », Affecter ; puis la plage suivante en « Ensemble B ». "
-                + "L'affectation est enregistrée aussitôt (annulable avec Ctrl+Z après fermeture).";
+            var gAuto = new GroupBox { Text = "Automatique, par système", Location = new Point(430, 298), Size = new Size(276, 96) };
+            gAuto.Controls.Add(new Label { Text = "Ensembles de", Location = new Point(12, 28), AutoSize = true });
+            nudTaille.SetBounds(100, 25, 56, 24);
+            gAuto.Controls.Add(new Label { Text = "spools", Location = new Point(162, 28), AutoSize = true });
+            var btAuto = new Button { Text = "Former les ensembles" }; btAuto.SetBounds(12, 56, 250, 30);
+            gAuto.Controls.AddRange(new Control[] { nudTaille, btAuto });
+            Controls.Add(gAuto);
+            btAuto.Click += (s, e) =>
+            {
+                // Les spools cochés, sinon tous ; chaque système à part, dans l'ordre de montage
+                var choix = coches.Count > 0 ? infos.Where(i => coches.Contains(i.Nom)).ToList() : infos.ToList();
+                var avert = auto(choix, (int)nudTaille.Value);
+                if (avert != "") MessageBox.Show(this, avert, Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                coches.Clear(); MajEnsembles(); Afficher();
+            };
+            lblInfo.SetBounds(430, 402, 276, 66);
+            lblInfo.Text = "Chaque système est découpé en spools, regroupés en ensembles. À la main : plage SP-001 à SP-010 → « Ensemble A ». "
+                + "Enregistré aussitôt (Ctrl+Z après fermeture).";
             Controls.Add(lblInfo);
             var btFermer = new Button { Text = "Fermer", DialogResult = DialogResult.OK }; btFermer.SetBounds(614, 476, 92, 30);
             Controls.Add(btFermer);

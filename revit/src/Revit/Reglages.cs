@@ -54,6 +54,9 @@ namespace PipeFit.Isometries.Revit
         /// <summary>0 : la sélection (complétée) forme un spool ; 1 : découpage automatique ; 2 : choix manuel élément par élément.</summary>
         public int ModeNumerotation;
         public bool RemplacerNumeros;
+        /// <summary>Numérotation automatique : former aussi les ensembles de spools (par système, ordre de montage).</summary>
+        public bool EnsemblesAuto = true;
+        public int TailleEnsemble = 10;
 
         static string Fichier => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PipeFit", "Isometries.ini");
 
@@ -133,6 +136,8 @@ namespace PipeFit.Isometries.Revit
                         case "CompleterBrides": r.CompleterBrides = v == "1"; break;
                         case "ModeNumerotation": r.ModeNumerotation = v == "1" ? 1 : v == "2" ? 2 : 0; break;
                         case "RemplacerNumeros": r.RemplacerNumeros = v == "1"; break;
+                        case "EnsemblesAuto": r.EnsemblesAuto = v == "1"; break;
+                        case "TailleEnsemble": if (int.TryParse(v, out var te) && te >= 1 && te <= 200) r.TailleEnsemble = te; break;
                     }
                 }
             }
@@ -156,7 +161,7 @@ namespace PipeFit.Isometries.Revit
                     "SurlongueurMarqueMm=" + SurlongueurMarqueMm.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     "ExportPdf=" + B(ExportPdf), "ExportPcf=" + B(ExportPcf), "ExportCsv=" + B(ExportCsv), "Dossier=" + Dossier,
                     "PrefixeSpool=" + PrefixeSpool, "Chiffres=" + Chiffres, "ReseauDevant=" + ReseauDevant, "LongueurMaxM=" + LongueurMaxM.ToString(System.Globalization.CultureInfo.InvariantCulture), "CompleterBrides=" + B(CompleterBrides),
-                    "ModeNumerotation=" + ModeNumerotation, "RemplacerNumeros=" + B(RemplacerNumeros),
+                    "ModeNumerotation=" + ModeNumerotation, "RemplacerNumeros=" + B(RemplacerNumeros), "EnsemblesAuto=" + B(EnsemblesAuto), "TailleEnsemble=" + TailleEnsemble,
                 }, Encoding.UTF8);
             }
             catch { /* pas bloquant */ }

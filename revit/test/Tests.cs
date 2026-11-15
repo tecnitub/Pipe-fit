@@ -316,6 +316,12 @@ static class Tests
             Verifier(ebB.Count == 2 && ebB.All(e => e.PoseContre == "SP-1"), "ensemble B : chaque morceau posé contre le spool de l'ensemble A");
             Verifier(MiseEnPage.Tableaux(sA, "", "")[0].Lignes.Any(l => l[0] == "Ensemble" && l[1] == "Ensemble A"), "ensemble dans le tableau SPOOL de l'isométrie");
 
+            // Ensembles automatiques : par système, dans l'ordre de montage, 2 spools par ensemble
+            var ea = Montage.EnsemblesAuto(new List<Spool> { sA, sB, sC, sD, sE }, 2);
+            Verifier(ea[sA] == "Ensemble A" && ea[sB] == "Ensemble A" && ea[sC] == "Ensemble B" && ea[sD] == "Ensemble B" && ea[sE] == "Ensemble A",
+                "ensembles automatiques par système (EGD : A, A, B, B ; EGR : A) : " + string.Join(",", new[] { sA, sB, sC, sD, sE }.Select(x => x.Nom + "=" + ea[x])));
+            Verifier(Montage.NomEnsemble(0) == "Ensemble A" && Montage.NomEnsemble(25) == "Ensemble Z" && Montage.NomEnsemble(26) == "Ensemble AA", "noms d'ensembles");
+
             var tm = Montage.Tableau(et, sp => "bleu", sp => "ISO-" + sp.Nom);
             Verifier(tm.Largeur <= 130.001 && tm.Lignes[0][1] == et[0].Spool.Nom && tm.Lignes.Any(l => l[1] == "SP-2" && l[4] == "2,0 m"), "tableau ordre de montage");
         }

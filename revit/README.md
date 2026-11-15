@@ -122,11 +122,17 @@ Option décochée : étiquettes Revit (familles d'étiquettes choisies), placée
 
 ## Ensembles de spools (zones de montage)
 
-Bouton **Ensembles spools** : regroupe les spools en ensembles de montage, par exemple « Ensemble A » = spools 1 à 10
-d'une zone du bâtiment. Cocher des spools (ou une plage « du n° … au n° … », ou ceux de la sélection Revit), nommer
-l'ensemble (« Ensemble A, B, C… » proposés), « Affecter » ; on enchaîne les ensembles sans fermer la fenêtre.
-L'ensemble est écrit dans le paramètre partagé « Ensemble de spools » de tous les éléments du spool (créé au besoin,
-aussi par « Paramètres Pipe-Fit ») et figure dans le tableau SPOOL des isométries.
+Organisation : **système → spools → ensembles**. Chaque système de canalisation est découpé en spools, eux-mêmes
+regroupés en ensembles de montage pour le repérage. Un ensemble est propre à son système (« Ensemble A » d'EGD et
+« Ensemble A » d'EGR sont distincts ; le repérage les nomme « EGD – Ensemble A »).
+
+- **Automatique à la numérotation** (case « Former les ensembles de montage par système », N spools par ensemble,
+  10 par défaut) : après le découpage automatique, chaque système est découpé en ensembles de N spools qui se suivent
+  dans l'ordre de montage (spools voisins sur la ligne) ; les lettres continuent après les ensembles déjà formés du système.
+- **Bouton Ensembles spools** : « Former les ensembles » (automatique, par système, sur les spools cochés ou tous), ou
+  à la main : cocher des spools (plage « du n° … au n° … », sélection Revit), nommer l'ensemble, « Affecter ».
+- L'ensemble est écrit dans le paramètre partagé « Ensemble de spools » de tous les éléments du spool et figure dans le
+  tableau SPOOL des isométries.
 
 ## Repérage des spools pour le montage
 
@@ -139,7 +145,7 @@ Bouton **Repérage spools** : vue de repérage pour le chantier.
 - Feuille « REP-… » avec le tableau **ORDRE DE MONTAGE** (n°, spool, couleur, posé contre, longueur de tube, feuille
   d'isométrie) et la légende. L'ordre part du spool d'arrivée (écoulement connu par Revit, sinon spool raccordé à un
   équipement, sinon le plus bas) et avance de proche en proche ; une branche de té vient juste après le spool du té.
-- **Une vue par système, par ensemble, ou par système et ensemble** (ou une seule vue) : chaque vue montre ses spools
+- **Une vue par système et ensemble** (proposé d'office quand des ensembles existent), par système, par ensemble, ou une seule vue : chaque vue montre ses spools
   en couleur et les autres en gris, cadrée sur leur zone (zone de coupe en 3D, cadrage en plan ou en coupe), avec sa
   feuille et son ordre de montage. Dans un ensemble, on prolonge ce qui est déjà monté : le premier spool se pose contre
   le spool de l'ensemble voisin.

@@ -37,6 +37,8 @@ namespace PipeFit.Isometries.Revit
         readonly ComboBox cbReseau = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
         readonly NumericUpDown nudLongueur = new NumericUpDown { Minimum = 0, Maximum = 24, DecimalPlaces = 1, Increment = 0.5m };
         readonly CheckBox ckRemplacer = new CheckBox { Text = "Renuméroter les éléments qui ont déjà un numéro", AutoSize = false };
+        readonly CheckBox ckEnsembles = new CheckBox { Text = "Former les ensembles de montage par système :", AutoSize = false };
+        readonly NumericUpDown nudEnsemble = new NumericUpDown { Minimum = 1, Maximum = 200 };
         readonly Label lblApercu = new Label { AutoSize = false, Font = new Font("Segoe UI", 9f, FontStyle.Bold) };
         bool pret;
 
@@ -50,7 +52,7 @@ namespace PipeFit.Isometries.Revit
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(560, 590);
+            ClientSize = new Size(560, 620);
 
             int y = 14;
             Controls.Add(new Label { Text = "Paramètre du numéro de spool :", Location = new Point(14, y + 3), AutoSize = true });
@@ -70,7 +72,7 @@ namespace PipeFit.Isometries.Revit
             Controls.Add(gMode);
             y += 242;
 
-            var gFormat = new GroupBox { Text = "Découpage et format du numéro", Location = new Point(14, y), Size = new Size(530, 172) };
+            var gFormat = new GroupBox { Text = "Découpage et format du numéro", Location = new Point(14, y), Size = new Size(530, 202) };
             gFormat.Controls.Add(new Label { Text = "Préfixe :", Location = new Point(12, 27), AutoSize = true });
             tbPrefixe.SetBounds(80, 24, 90, 24);
             gFormat.Controls.Add(new Label { Text = "Chiffres :", Location = new Point(190, 27), AutoSize = true });
@@ -82,9 +84,12 @@ namespace PipeFit.Isometries.Revit
             gFormat.Controls.Add(new Label { Text = "m  (barre du commerce ; 0 = sans limite)", Location = new Point(214, 91), AutoSize = true, ForeColor = SystemColors.GrayText });
             ckRemplacer.SetBounds(12, 122, 500, 22);
             gFormat.Controls.Add(new Label { Text = "Un spool ne mélange jamais deux systèmes (départ / retour, fluides différents).", Location = new Point(12, 146), AutoSize = true, ForeColor = SystemColors.GrayText });
-            gFormat.Controls.AddRange(new Control[] { tbPrefixe, nudChiffres, cbReseau, nudLongueur, ckRemplacer });
+            ckEnsembles.SetBounds(12, 170, 300, 22);
+            nudEnsemble.SetBounds(312, 168, 56, 24);
+            gFormat.Controls.Add(new Label { Text = "spools par ensemble (auto)", Location = new Point(372, 172), AutoSize = true, ForeColor = SystemColors.GrayText });
+            gFormat.Controls.AddRange(new Control[] { tbPrefixe, nudChiffres, cbReseau, nudLongueur, ckRemplacer, ckEnsembles, nudEnsemble });
             Controls.Add(gFormat);
-            y += 182;
+            y += 212;
 
             lblApercu.SetBounds(14, y, 530, 52);
             Controls.Add(lblApercu);
@@ -112,10 +117,12 @@ namespace PipeFit.Isometries.Revit
             cbReseau.SelectedIndex = Math.Max(0, Math.Min(2, r.ReseauDevant));
             nudLongueur.Value = (decimal)Math.Max(0, Math.Min(24, r.LongueurMaxM));
             ckRemplacer.Checked = r.RemplacerNumeros;
+            ckEnsembles.Checked = r.EnsemblesAuto;
+            nudEnsemble.Value = Math.Max(1, Math.Min(200, r.TailleEnsemble));
 
             // Mise à jour de l'aperçu
             EventHandler maj = (s, e) => Maj(s == tbNumero);
-            foreach (var c in new Control[] { cbParam, rbSel, rbManuel, rbAuto, ckCompleter, tbPrefixe, nudChiffres, cbReseau, nudLongueur, ckRemplacer, tbNumero })
+            foreach (var c in new Control[] { cbParam, rbSel, rbManuel, rbAuto, ckCompleter, tbPrefixe, nudChiffres, cbReseau, nudLongueur, ckRemplacer, ckEnsembles, nudEnsemble, tbNumero })
                 switch (c)
                 {
                     case ComboBox cb: cb.SelectedIndexChanged += maj; break;
@@ -144,6 +151,8 @@ namespace PipeFit.Isometries.Revit
             r.ReseauDevant = Math.Max(0, cbReseau.SelectedIndex);
             r.LongueurMaxM = (double)nudLongueur.Value;
             r.RemplacerNumeros = ckRemplacer.Checked;
+            r.EnsemblesAuto = ckEnsembles.Checked;
+            r.TailleEnsemble = (int)nudEnsemble.Value;
         }
 
         void Maj(bool saisieNumero)
@@ -154,6 +163,7 @@ namespace PipeFit.Isometries.Revit
             lblNumero.Enabled = tbNumero.Enabled = rbSel.Checked || rbManuel.Checked;
             lblManuel.Enabled = rbManuel.Checked;
             lblPortee.Enabled = rbAuto.Checked;
+            ckEnsembles.Enabled = nudEnsemble.Enabled = rbAuto.Checked;
             if (saisieNumero) NumeroSaisi = tbNumero.Text.Trim() != "";
             // Numéro proposé : le prochain libre, tant que l'utilisateur ne l'a pas changé lui-même
             if (!saisieNumero && !NumeroSaisi && (rbSel.Checked || rbManuel.Checked))

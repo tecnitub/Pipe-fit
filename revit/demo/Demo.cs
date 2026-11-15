@@ -197,8 +197,7 @@ static class Demo
         var res = new List<Spool>();
         for (int i = 0; i < groupes.Count; i++)
         {
-            // Ensembles de montage : A = spools 1 à 3 (côté CTA), B = spools 4 à 6
-            var s = new Spool { Nom = noms[i], Composants = groupes[i], SurlongueurMm = 100, Ensemble = i < 3 ? "Ensemble A" : "Ensemble B" };
+            var s = new Spool { Nom = noms[i], Composants = groupes[i], SurlongueurMm = 100 };
             foreach (var e in s.Composants.SelectMany(c => c.Extremites).Where(e => e.ConnecteA != null && !s.Composants.Any(c => c.Id == e.ConnecteA)))
             {
                 if (spoolDe.TryGetValue(e.ConnecteA, out var autre)) { s.NomsExterieurs[e.ConnecteA] = autre; s.ExterieursSpool.Add(e.ConnecteA); }
@@ -209,6 +208,8 @@ static class Demo
             AnalyseSpool.Analyser(s);
             res.Add(s);
         }
+        // Le système est découpé en spools, regroupés en ensembles de montage de 3 spools dans l'ordre de montage
+        foreach (var kv in Montage.EnsemblesAuto(res, 3)) kv.Key.Ensemble = kv.Value;
         return res;
     }
 

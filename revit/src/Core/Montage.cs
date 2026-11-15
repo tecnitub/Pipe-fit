@@ -86,6 +86,31 @@ namespace PipeFit.Isometries.Core
 
         public enum Regroupement { Tout, Systeme, Ensemble, SystemeEtEnsemble }
 
+        /// <summary>Nom du n-ième ensemble d'un système : Ensemble A, B… Z, puis AA, AB…</summary>
+        public static string NomEnsemble(int n)
+        {
+            string lettres = "";
+            for (int k = n; k >= 0; k = k / 26 - 1) lettres = (char)('A' + k % 26) + lettres;
+            return "Ensemble " + lettres;
+        }
+
+        /// <summary>
+        /// Découpe chaque système en ensembles de « taille » spools qui se suivent dans l'ordre de montage (donc voisins sur
+        /// la ligne) : Ensemble A, B… recommencent à A pour chaque système. Renvoie l'ensemble de chaque spool.
+        /// </summary>
+        public static Dictionary<Spool, string> EnsemblesAuto(List<Spool> spools, int taille, Func<string, int> premier = null)
+        {
+            var res = new Dictionary<Spool, string>();
+            taille = Math.Max(1, taille);
+            foreach (var sys in spools.GroupBy(s => s.Systeme).OrderBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase))
+            {
+                var ordre = Ordonner(sys.ToList());
+                var debut = premier?.Invoke(sys.Key) ?? 0;   // ensembles déjà formés dans ce système : on continue après
+                for (int i = 0; i < ordre.Count; i++) res[ordre[i].Spool] = NomEnsemble(debut + i / taille);
+            }
+            return res;
+        }
+
         /// <summary>Groupes de spools pour les vues de repérage : un par système, par ensemble, ou par système et ensemble.</summary>
         public static List<(string Nom, List<Spool> Spools)> Grouper(List<Spool> spools, Regroupement par)
         {
