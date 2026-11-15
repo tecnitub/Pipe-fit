@@ -70,6 +70,34 @@ static class Tests
         Verifier(s.Assemblages.Where(a => a.Nature == NatureAssemblage.Soudure).Select(a => a.Numero).SequenceEqual(new[] { "S1", "S2", "S3", "S4", "S5" }), "soudures numérotées S1…S5");
         Verifier(Math.Abs(s.LongueurDeveloppeeMm - 2874) < 0.1, "longueur développée");
 
+        // Cotation : axe coude → axe té (1500), axe té → face de bride (120), axe té → bout de tube (674),
+        // bout de tube de départ → axe coude (1000)
+        var cotes = s.Cotes.Select(c => c.Valeur + " " + c.Libelle).OrderBy(x => x).ToList();
+        Verifier(cotes.Count == 4, "4 cotes : " + string.Join(", ", cotes));
+        Verifier(cotes.Contains("1500 axe / axe"), "cote d'axe en axe coude/té");
+        Verifier(cotes.Contains("120 axe / bride"), "cote d'axe à bride");
+        Verifier(cotes.Contains("674 axe / extrémité"), "cote d'axe à bout de tube (branche)");
+        Verifier(cotes.Contains("1000 extrémité / axe") || cotes.Contains("1000 axe / extrémité"), "cote bout de tube / axe coude");
+
+        // Point d'axe par intersection des directions des connecteurs (coude dont l'insertion n'est pas au sommet)
+        var coudeDir = C("k", "Coude", "", TypeComposant.Coude, 50, 0, new Point3(978, 0, 22), E(924, 0, 0, 50, null), E(1000, 0, 76, 50, null));
+        coudeDir.Extremites[0].Direction = new Point3(-1, 0, 0); coudeDir.Extremites[1].Direction = new Point3(0, 0, 1);
+        var pa = Cotation.PointAxe(coudeDir);
+        Verifier(pa.Distance(new Point3(1000, 0, 0)) < 0.01, "sommet du coude = intersection des axes : " + pa);
+
+        // Ligne droite bride – tube – vanne – bride – tube – bride : bride/bride à chaque joint boulonné
+        var d = new Spool { Nom = "D" };
+        d.Composants.Add(C("f1", "Bride", "PN16", TypeComposant.Bride, 80, 0, null, E(0, 0, 0, 80, "EXT1"), E(50, 0, 0, 80, "t1")));
+        d.Composants.Add(C("t1", "Tuyau", "Acier", TypeComposant.Tube, 80, 500, null, E(50, 0, 0, 80, "f1"), E(550, 0, 0, 80, "f2")));
+        d.Composants.Add(C("f2", "Bride", "PN16", TypeComposant.Bride, 80, 0, null, E(550, 0, 0, 80, "t1"), E(600, 0, 0, 80, "v")));
+        d.Composants.Add(C("v", "Vanne", "", TypeComposant.Vanne, 80, 0, null, E(600, 0, 0, 80, "f2"), E(800, 0, 0, 80, "f3")));
+        d.Composants.Add(C("f3", "Bride", "PN16", TypeComposant.Bride, 80, 0, null, E(800, 0, 0, 80, "v"), E(850, 0, 0, 80, "t2")));
+        d.Composants.Add(C("t2", "Tuyau", "Acier", TypeComposant.Tube, 80, 300, null, E(850, 0, 0, 80, "f3"), E(1150, 0, 0, 80, null)));
+        AnalyseSpool.Analyser(d);
+        var cd = d.Cotes.Select(c => c.Valeur + " " + c.Libelle).OrderBy(x => x).ToList();
+        Verifier(cd.Count == 3 && cd.Contains("600 bride / bride") && cd.Contains("200 bride / bride") && cd.Contains("350 bride / extrémité"),
+            "chaîne droite coupée aux joints boulonnés : " + string.Join(", ", cd));
+
         // Bride contre bride (ou vanne) : joint boulonné
         var b = new Spool { Nom = "B" };
         b.Composants.Add(C("a", "Bride", "PN16", TypeComposant.Bride, 80, 0, null, E(0, 0, 0, 80, "x"), E(10, 0, 0, 80, "b")));

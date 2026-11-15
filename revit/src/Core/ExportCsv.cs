@@ -38,6 +38,17 @@ namespace PipeFit.Isometries.Core
             return sb.ToString();
         }
 
+        public static string Cotes(IEnumerable<Spool> spools)
+        {
+            var sb = new StringBuilder();
+            Ligne(sb, "Spool", "Cote (mm)", "De / à", "X1", "Y1", "Z1", "X2", "Y2", "Z2");
+            foreach (var s in spools)
+                foreach (var c in s.Cotes)
+                    Ligne(sb, s.Nom, c.Valeur, c.Libelle, c.A.X.ToString("0", Fr), c.A.Y.ToString("0", Fr), c.A.Z.ToString("0", Fr),
+                        c.B.X.ToString("0", Fr), c.B.Y.ToString("0", Fr), c.B.Z.ToString("0", Fr));
+            return sb.ToString();
+        }
+
         public static string Nature(NatureAssemblage n)
         {
             switch (n)

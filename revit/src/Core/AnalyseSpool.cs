@@ -58,6 +58,7 @@ namespace PipeFit.Isometries.Core
             if (s.Materiau == "") s.Materiau = PlusFrequent(s.Composants.Select(c => c.Materiau));
             s.DnMax = s.Composants.Count == 0 ? 0 : s.Composants.Max(c => c.DnMm);
             s.LongueurDeveloppeeMm = s.Composants.Where(c => c.Type == TypeComposant.Tube).Sum(c => c.LongueurMm);
+            s.Cotes = Cotation.Calculer(s);
         }
 
         // ---------- Type de composant ----------
@@ -283,7 +284,7 @@ namespace PipeFit.Isometries.Core
             return res;
         }
 
-        static bool Boulonnable(Composant c) =>
+        public static bool Boulonnable(Composant c) =>
             c.Type == TypeComposant.Bride || c.Type == TypeComposant.Vanne || c.Type == TypeComposant.Accessoire;
 
         // ---------- Outils ----------

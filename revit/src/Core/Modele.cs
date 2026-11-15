@@ -28,6 +28,8 @@ namespace PipeFit.Isometries.Core
     {
         public Point3 Position;
         public double DnMm;
+        /// <summary>Direction de l'axe du connecteur, vers l'extérieur du composant (si connue).</summary>
+        public Point3? Direction;
         /// <summary>Identifiant du composant raccordé (dans ou hors du spool), null si l'extrémité est libre.</summary>
         public string ConnecteA;
     }
@@ -103,6 +105,8 @@ namespace PipeFit.Isometries.Core
         public List<LigneNomenclature> Nomenclature = new List<LigneNomenclature>();
         public List<Debit> Debits = new List<Debit>();
         public List<Assemblage> Assemblages = new List<Assemblage>();
+        /// <summary>Cotes de fabrication : axe/axe, axe/bride, axe/extrémité (Cotation.Calculer).</summary>
+        public List<Cote> Cotes = new List<Cote>();
         public string Systeme = "";
         public string Materiau = "";
         public double DnMax;

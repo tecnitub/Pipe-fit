@@ -168,7 +168,8 @@ namespace PipeFit.Isometries.Revit
                     var utf8 = new UTF8Encoding(true);
                     File.WriteAllText(Path.Combine(r.Dossier, "Nomenclature spools.csv"), ExportCsv.Nomenclature(spools), utf8);
                     File.WriteAllText(Path.Combine(r.Dossier, "Soudures spools.csv"), ExportCsv.Soudures(spools), utf8);
-                    notes.Add("CSV : « Nomenclature spools.csv » et « Soudures spools.csv »");
+                    File.WriteAllText(Path.Combine(r.Dossier, "Cotes spools.csv"), ExportCsv.Cotes(spools), utf8);
+                    notes.Add("CSV : « Nomenclature spools.csv », « Soudures spools.csv » et « Cotes spools.csv »");
                 }
                 catch (Exception ex) { notes.Add("CSV : " + ex.Message); }
             }

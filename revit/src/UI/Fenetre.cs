@@ -40,7 +40,8 @@ namespace PipeFit.Isometries.Revit
         readonly CheckedListBox lstSpools = new CheckedListBox { CheckOnClick = true, IntegralHeight = false };
         readonly CheckBox ckRemplacer = Case("Remplacer les isométries déjà générées"), ckRepere = Case("Écrire le repère dans :"),
             ckSoudures = Case("Numéros de soudure (S1…) et de raccordement (R1…) sur la vue"),
-            ckPdf = Case("PDF (une feuille par spool)"), ckPcf = Case("PCF (Isogen, Spoolgen…)"), ckCsv = Case("CSV nomenclature + soudures (Pipe-Fit)");
+            ckCotes = Case("Cotes d'axe en axe et d'axe à bride (ou à bout de tube)"),
+            ckPdf = Case("PDF (une feuille par spool)"), ckPcf = Case("PCF (Isogen, Spoolgen…)"), ckCsv = Case("CSV nomenclature, soudures et cotes (Pipe-Fit)");
         readonly Label lblInfo = new Label { AutoSize = false, ForeColor = Color.DarkRed }, lblCompte = new Label { AutoSize = false };
         readonly LinkLabel lnkSansSpool = new LinkLabel { Text = "Sélectionner ces éléments dans le modèle", AutoSize = true, Visible = false };
 
@@ -94,7 +95,7 @@ namespace PipeFit.Isometries.Revit
             Ligne(gFeuille, "Orientation :", cbOrientation, 84);
             Ligne(gFeuille, "Représentation :", cbRepr, 114);
 
-            var gAnnot = Groupe("Repères et étiquettes", ref y, 180);
+            var gAnnot = Groupe("Repères, étiquettes et cotes", ref y, 206);
             Ligne(gAnnot, "Canalisations :", cbTagTube, 24);
             Ligne(gAnnot, "Raccords :", cbTagRaccord, 54);
             Ligne(gAnnot, "Accessoires :", cbTagAccessoire, 84);
@@ -102,7 +103,8 @@ namespace PipeFit.Isometries.Revit
             cbParamRepere.SetBounds(166, 114, 330, 24);
             cbParamRepere.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             ckSoudures.SetBounds(12, 146, 480, 22);
-            gAnnot.Controls.AddRange(new Control[] { ckRepere, cbParamRepere, ckSoudures });
+            ckCotes.SetBounds(12, 172, 480, 22);
+            gAnnot.Controls.AddRange(new Control[] { ckRepere, cbParamRepere, ckSoudures, ckCotes });
 
             var gExport = Groupe("Exports", ref y, 120);
             ckPdf.SetBounds(12, 22, 240, 22); ckPcf.SetBounds(260, 22, 240, 22); ckCsv.SetBounds(12, 48, 300, 22);
@@ -154,7 +156,7 @@ namespace PipeFit.Isometries.Revit
             Choisir(cbParamRepere, r.ParametreRepere == "" ? Marque : r.ParametreRepere);
             tbPrefixe.Text = r.PrefixeFeuille;
             tbDossier.Text = r.Dossier;
-            ckRemplacer.Checked = r.Remplacer; ckRepere.Checked = r.EcrireRepere; ckSoudures.Checked = r.NumerosSoudure;
+            ckRemplacer.Checked = r.Remplacer; ckRepere.Checked = r.EcrireRepere; ckSoudures.Checked = r.NumerosSoudure; ckCotes.Checked = r.Cotation;
             ckPdf.Checked = r.ExportPdf; ckPcf.Checked = r.ExportPcf; ckCsv.Checked = r.ExportCsv;
             foreach (var s in d.Preselection) coches.Add(s);
 
@@ -254,6 +256,7 @@ namespace PipeFit.Isometries.Revit
             var rep = cbParamRepere.SelectedItem as string ?? Marque;
             r.ParametreRepere = rep == Marque ? "" : rep;
             r.NumerosSoudure = ckSoudures.Checked;
+            r.Cotation = ckCotes.Checked;
             r.Remplacer = ckRemplacer.Checked;
             r.ExportPdf = ckPdf.Checked; r.ExportPcf = ckPcf.Checked; r.ExportCsv = ckCsv.Checked;
             r.Dossier = tbDossier.Text.Trim();

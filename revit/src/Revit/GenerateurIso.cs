@@ -164,6 +164,8 @@ namespace PipeFit.Isometries.Revit
             if (r.NumerosSoudure) NumeroterAssemblages(vue, spool, res);
             doc.Regenerate();
             vp.SetBoxCenter(centre);
+            doc.Regenerate();
+            if (r.Cotation) Coter(feuille, vue, vp, spool, res);
 
             DessinerNord(feuille, vue, zoneVue);
             EcrireEchelle(feuille, zoneVue, res.Echelle);
@@ -309,6 +311,71 @@ namespace PipeFit.Isometries.Revit
                     return;
                 }
             }
+        }
+
+        // ---------- Cotation ----------
+
+        /// <summary>
+        /// Cotes de fabrication dessinées sur la feuille, projetées sur la vue isométrique : lignes d'attache,
+        /// ligne de cote décalée vers l'extérieur du spool, traits obliques aux extrémités, valeur en mm alignée.
+        /// </summary>
+        void Coter(ViewSheet f, View3D vue, Viewport vp, Spool spool, Resultat res)
+        {
+            if (spool.Cotes.Count == 0) return;
+            Transform versProjection, versFeuille;
+            try
+            {
+                versProjection = vue.GetModelToProjectionTransforms().First().GetModelToProjectionTransform();
+                versFeuille = vp.GetProjectionToSheetTransform();
+            }
+            catch (Exception ex) { res.Avertissements.Add("cotes non dessinées (" + ex.Message + ") : voir « Cotes spools.csv »"); return; }
+
+            (double x, double y) Feuille(Point3 p)
+            {
+                var q = versFeuille.OfPoint(versProjection.OfPoint(new XYZ(Compat.Pieds(p.X), Compat.Pieds(p.Y), Compat.Pieds(p.Z))));
+                return (Compat.Mm(q.X), Compat.Mm(q.Y));
+            }
+
+            // Centre du dessin : les cotes sont rejetées du côté opposé
+            double cx = 0, cy = 0; int n = 0;
+            foreach (var c in spool.Composants)
+                foreach (var e in c.Extremites) { var q = Feuille(e.Position); cx += q.x; cy += q.y; n++; }
+            if (n > 0) { cx /= n; cy /= n; }
+
+            const double decalage = 7, attache = 1.5, trait = 1.3;
+            int echecs = 0;
+            foreach (var cote in spool.Cotes)
+            {
+                var a = Feuille(cote.A); var b = Feuille(cote.B);
+                double vx = b.x - a.x, vy = b.y - a.y, l = Math.Sqrt(vx * vx + vy * vy);
+                if (l < 2) continue; // tronçon vu en bout : pas de cote lisible
+                double ux = vx / l, uy = vy / l, nx = -uy, ny = ux;
+                if (((a.x + b.x) / 2 - cx) * nx + ((a.y + b.y) / 2 - cy) * ny < 0) { nx = -nx; ny = -ny; }
+                try
+                {
+                    Trait(f, a.x + nx * attache, a.y + ny * attache, a.x + nx * (decalage + attache), a.y + ny * (decalage + attache));
+                    Trait(f, b.x + nx * attache, b.y + ny * attache, b.x + nx * (decalage + attache), b.y + ny * (decalage + attache));
+                    double ax = a.x + nx * decalage, ay = a.y + ny * decalage, bx = b.x + nx * decalage, by = b.y + ny * decalage;
+                    Trait(f, ax, ay, bx, by);
+                    double tx = (ux + nx) / Math.Sqrt(2) * trait, ty = (uy + ny) / Math.Sqrt(2) * trait;
+                    Trait(f, ax - tx, ay - ty, ax + tx, ay + ty);
+                    Trait(f, bx - tx, by - ty, bx + tx, by + ty);
+
+                    var angle = Math.Atan2(uy, ux);
+                    if (angle > Math.PI / 2 + 1e-9) angle -= Math.PI;
+                    if (angle <= -Math.PI / 2 + 1e-9) angle += Math.PI;
+                    var opt = new TextNoteOptions(texte)
+                    {
+                        HorizontalAlignment = HorizontalTextAlignment.Center,
+                        VerticalAlignment = VerticalTextAlignment.Middle,
+                        Rotation = angle,
+                    };
+                    double mx = (ax + bx) / 2 + nx * 2.2, my = (ay + by) / 2 + ny * 2.2;
+                    TextNote.Create(doc, f.Id, P(mx, my), cote.Valeur, opt);
+                }
+                catch { echecs++; }
+            }
+            if (echecs > 0) res.Avertissements.Add(echecs + " cote(s) non dessinée(s)");
         }
 
         // ---------- Dessin sur la feuille ----------

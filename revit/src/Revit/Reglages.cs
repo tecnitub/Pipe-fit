@@ -25,6 +25,8 @@ namespace PipeFit.Isometries.Revit
         /// <summary>Paramètre texte qui reçoit le repère (T1, 2…) ; vide = paramètre « Marque » de Revit.</summary>
         public string ParametreRepere = "";
         public bool NumerosSoudure = true;
+        /// <summary>Cotes d'axe en axe et d'axe à bride sur la feuille.</summary>
+        public bool Cotation = true;
         public bool ExportPdf = true;
         public bool ExportPcf = true;
         public bool ExportCsv = true;
@@ -58,6 +60,7 @@ namespace PipeFit.Isometries.Revit
                         case "EcrireRepere": r.EcrireRepere = v == "1"; break;
                         case "ParametreRepere": r.ParametreRepere = v; break;
                         case "NumerosSoudure": r.NumerosSoudure = v == "1"; break;
+                        case "Cotation": r.Cotation = v == "1"; break;
                         case "ExportPdf": r.ExportPdf = v == "1"; break;
                         case "ExportPcf": r.ExportPcf = v == "1"; break;
                         case "ExportCsv": r.ExportCsv = v == "1"; break;
@@ -80,7 +83,7 @@ namespace PipeFit.Isometries.Revit
                     "ParametreSpool=" + ParametreSpool, "Cartouche=" + Cartouche, "PrefixeFeuille=" + PrefixeFeuille,
                     "Orientation=" + Orientation, "Unifilaire=" + B(Unifilaire), "Remplacer=" + B(Remplacer),
                     "EtiquetteTube=" + EtiquetteTube, "EtiquetteRaccord=" + EtiquetteRaccord, "EtiquetteAccessoire=" + EtiquetteAccessoire,
-                    "EcrireRepere=" + B(EcrireRepere), "ParametreRepere=" + ParametreRepere, "NumerosSoudure=" + B(NumerosSoudure),
+                    "EcrireRepere=" + B(EcrireRepere), "ParametreRepere=" + ParametreRepere, "NumerosSoudure=" + B(NumerosSoudure), "Cotation=" + B(Cotation),
                     "ExportPdf=" + B(ExportPdf), "ExportPcf=" + B(ExportPcf), "ExportCsv=" + B(ExportCsv), "Dossier=" + Dossier,
                 }, Encoding.UTF8);
             }

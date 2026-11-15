@@ -55,7 +55,8 @@ namespace PipeFit.Isometries.Core
             var sb = new StringBuilder();
             void L(string ligne) => sb.Append(ligne).Append("\r\n");
             void Bout(Extremite x) => L("    END-POINT " + Pt(x.Position) + " " + Bore(x.DnMm));
-            Point3 centre = c.Centre ?? (e.Count >= 2 ? (e[0].Position + e[1].Position) * 0.5 : e.Count == 1 ? e[0].Position : new Point3());
+            Point3 centre = Cotation.EstNoeud(c) ? Cotation.PointAxe(c)
+                : c.Centre ?? (e.Count >= 2 ? (e[0].Position + e[1].Position) * 0.5 : e.Count == 1 ? e[0].Position : new Point3());
 
             switch (c.Type)
             {

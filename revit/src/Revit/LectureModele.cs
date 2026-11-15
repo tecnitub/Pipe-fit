@@ -112,6 +112,7 @@ namespace PipeFit.Isometries.Revit
             {
                 var ext = new Extremite { DnMm = Math.Round(Compat.Mm(cn.Radius * 2), 1) };
                 try { ext.Position = P(cn.Origin); } catch { continue; }
+                try { var z = cn.CoordinateSystem?.BasisZ; if (z != null) ext.Direction = new Point3(z.X, z.Y, z.Z); } catch { }
                 foreach (Connector r in cn.AllRefs)
                 {
                     var owner = r.Owner;
