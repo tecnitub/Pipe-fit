@@ -12,12 +12,19 @@ const Pieces = ((N) => {
     chambre: ['Chambre', 0.05, 25, 5], sejour: ['Séjour', 0.05, 25, 8], restaurant: ['Restaurant', 0.6, 22, 15], commerce: ['Commerce', 0.2, 22, 30], informatique: ['Local informatique', 0.02, 25, 300], sanitaires: ['Sanitaires', 0, 30, 5], circulation: ['Circulation', 0, 0, 5] };
   // Apport solaire par m² de vitrage (W/m², vitrage avec protection) selon l'orientation
   const SOLAIRE = { N: 40, NE: 90, E: 160, SE: 170, S: 140, SO: 180, O: 190, NO: 100, aucune: 0 };
+  // Vitrages sur plusieurs façades (import IFC) : « S 4,2 ; O 2 » ; pris en compte seulement si leur somme est la surface
+  // vitrée de la pièce (sinon la surface et l'orientation saisies font foi)
+  function detailVitrages(t, total) {
+    const l = []; String(t || '').replace(/\b(NE|NO|SE|SO|N|E|S|O)\s*[:=]?\s*(\d+(?:[.,]\d+)?)/g, (m, o, v) => { l.push({ orient: o, S: Number(v.replace(',', '.')) }); return m; });
+    const S = l.reduce((a, x) => a + x.S, 0);
+    return l.length && Math.abs(S - total) <= 0.05 + 0.01 * total ? l : null;
+  }
   function calculer(e) {
     const alertes = [], Tb = num(e.Tbase, -7), Ti = num(e.Tint, 19), Te = num(e.Tete, 32), Tc = num(e.Tclim, 26), dTh = Ti - Tb, dTe = Te - Tc, G = (ISOLATION[e.isolation] || ISOLATION.rt2000)[1], rec = num(e.recup, 0) / 100;
     const pcs = (e.pieces || []).filter(p => p && (p.nom || num(p.S) > 0)).map(p => {
       const U = USAGES[p.usage] || USAGES.bureau, S = num(p.S), H = num(p.H, 2.7), V = S * H, occ = num(p.occ) > 0 ? num(p.occ) : Math.round(S * U[1] * 10) / 10, Qair = num(p.Qair) > 0 ? num(p.Qair) : occ * U[2];
       const parois = G * V * dTh, air = 0.34 * Qair * dTh * (1 - rec), Pch = (parois + air) * 1.1 / 1000;
-      const vit = num(p.vitrage), sol = vit * (SOLAIRE[p.orient] ?? 0), occW = occ * 75, int = S * U[3], airE = 0.34 * Qair * dTe * (1 - rec), cond = G * V * dTe * 0.5;
+      const vit = num(p.vitrage), det = detailVitrages(p.vitragesDetail, vit), sol = det ? det.reduce((x, d) => x + d.S * (SOLAIRE[d.orient] ?? 0), 0) : vit * (SOLAIRE[p.orient] ?? 0), occW = occ * 75, int = S * U[3], airE = 0.34 * Qair * dTe * (1 - rec), cond = G * V * dTe * 0.5;
       const Pfr = (sol + occW + int + airE + cond) * 1.1 / 1000;
       return { nom: p.nom || 'Pièce', etage: p.etage || '', usage: U[0], S, V, occ, Qair, parois, air, Pch, sol, occW, int, Pfr };
     });
@@ -46,7 +53,8 @@ const Pieces = ((N) => {
         { nom: 'Bureau 1', etage: 'R+1', usage: 'bureau', S: 18, H: 2.7, vitrage: 4, orient: 'S', occ: '', Qair: '' }, { nom: 'Bureau 2', etage: 'R+1', usage: 'bureau', S: 15, H: 2.7, vitrage: 3, orient: 'O', occ: '', Qair: '' },
         { nom: 'Salle de réunion', etage: 'R+1', usage: 'reunion', S: 30, H: 2.7, vitrage: 6, orient: 'E', occ: '', Qair: '' }],
         colonnes: [{ k: 'nom', l: 'Pièce', t: 't' }, { k: 'etage', l: 'Étage', t: 't', lst: (e, et) => N.lieuxEtude(et).etages }, { k: 'usage', l: 'Usage', t: 's', o: Object.entries(USAGES).map(([k, x]) => [k, x[0]]) }, { k: 'S', l: 'Surface (m²)' }, { k: 'H', l: 'Hauteur (m)' },
-          { k: 'vitrage', l: 'Vitrages (m²)' }, { k: 'orient', l: 'Orientation', t: 's', o: Object.keys(SOLAIRE).map(k => [k, k === 'aucune' ? 'Sans vitrage' : k]) }, { k: 'occ', l: 'Occupants (vide : selon l\'usage)' }, { k: 'Qair', l: 'Air neuf (m³/h) (vide : selon l\'usage)' }] }],
+          { k: 'vitrage', l: 'Vitrages (m²)' }, { k: 'orient', l: 'Orientation', t: 's', o: Object.keys(SOLAIRE).map(k => [k, k === 'aucune' ? 'Sans vitrage' : k]) }, { k: 'occ', l: 'Occupants (vide : selon l\'usage)' }, { k: 'Qair', l: 'Air neuf (m³/h) (vide : selon l\'usage)' },
+          { k: 'vitragesDetail', l: 'Vitrages par façade (maquette IFC, ex. « S 4 ; O 2 »)', t: 't' }] }],
     calcul: calculer,
   };
   const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -66,6 +74,6 @@ const Pieces = ((N) => {
     const b = besoinsEtude(et), deja = new Set((appareils || []).map(a => norm(a.local)));
     return Object.values(b).filter(p => !deja.has(norm(p.nom))).map(p => ({ local: p.nom, type, Pch: Math.ceil(p.Pch * 10) / 10, Pfr: Math.ceil(p.Pfr * 10) / 10 }));
   }
-  return { ISOLATION, USAGES, SOLAIRE, calculer, besoinsEtude, terminauxManquants, norm };
+  return { ISOLATION, USAGES, SOLAIRE, detailVitrages, calculer, besoinsEtude, terminauxManquants, norm };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'));
 if (typeof module !== 'undefined') module.exports = Pieces;

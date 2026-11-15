@@ -18,7 +18,8 @@ test('fichier STEP : chaînes encodées, listes, valeurs typées, instructions s
   assert.deepStrictEqual(erreurs, []);
   assert.strictEqual(ents.get(42).a[2], 'Pset_ACME; dimensions');
   assert.strictEqual(ents.get(10).a[2], 'Bâtiment A');
-  assert.throws(() => Ifc.lire('<ifcXML/>'), /STEP/);
+  assert.throws(() => Ifc.lire('bonjour'), /STEP/);
+  assert.deepStrictEqual(Ifc.lire('<ifcXML/>').espaces, [], 'IFC XML accepté');
 });
 
 test('espaces : numéro, nom, étage, surface (quantités ou propriétés), hauteur en mm convertie, hauteur déduite du volume', () => {
