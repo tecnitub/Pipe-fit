@@ -180,7 +180,38 @@ static class Tests
             Verifier(gv.Count == 2 && !gv.Any(g => g.Any(c => c.Id == "v")), "vanne entre brides : non numérotée, 2 spools");
             Verifier(Decoupage.Prochain(new[] { "SP-001", "SP-007", "EG-SP-020", "SP-x", null }, "SP-") == 8, "prochain numéro libre");
             Verifier(Decoupage.Format("SP-", 8, 3) == "SP-008" && Decoupage.Format("", 12, 2) == "12", "format du numéro");
-            Verifier(Decoupage.Prefixe("SP-", true, "EG-101") == "EG-101-SP-" && Decoupage.Prefixe("SP-", false, "EG-101") == "SP-", "préfixe par réseau");
+            Verifier(Decoupage.Prefixe("SP-", "EGD") == "EGD-SP-" && Decoupage.Prefixe("SP-", "") == "SP-" && Decoupage.Prefixe("", "EGD") == "EGD-"
+                && Decoupage.Prefixe("", "") == "SP-", "préfixe par système");
+
+            // Systèmes : un spool ne mélange jamais départ et retour
+            var S2 = new List<Composant>
+            {
+                C("s1", "Tuyau", "", TypeComposant.Tube, 50, 1000, null, E(0, 0, 0, 50, null), E(1000, 0, 0, 50, "s2")),
+                C("s2", "Tuyau", "", TypeComposant.Tube, 50, 1000, null, E(1000, 0, 0, 50, "s1"), E(2000, 0, 0, 50, null)),
+            };
+            S2[0].Systeme = "EG départ"; S2[1].Systeme = "EG retour"; S2[0].Abreviation = "EGD";
+            Verifier(Decoupage.Spools(S2).Count == 2, "changement de système : deux spools");
+            Verifier(Decoupage.Reseau(new[] { S2[0] }, true) == "EGD" && Decoupage.Reseau(new[] { S2[1] }, true) == "EG retour", "abréviation, sinon nom du système");
+
+            // Longueur maxi : 10 tubes de 1,5 m soudés bout à bout (15 m) → 3 spools de 6 m, 6 m et 3 m, d'un seul tenant
+            var B = new List<Composant>();
+            for (int i = 0; i < 10; i++)
+                B.Add(C("t" + i, "Tuyau", "", TypeComposant.Tube, 50, 1500, null,
+                    E(i * 1500, 0, 0, 50, i > 0 ? "t" + (i - 1) : null), E((i + 1) * 1500, 0, 0, 50, i < 9 ? "t" + (i + 1) : null)));
+            var gb = Decoupage.Spools(B, 6000);
+            Verifier(gb.Select(g => Decoupage.LongueurTube(g)).SequenceEqual(new double[] { 6000, 6000, 3000 }), "découpe à 6 m : " + string.Join(" / ", gb.Select(g => Decoupage.LongueurTube(g))));
+            Verifier(gb[0].Any(c => c.Id == "t0") && gb.All(g => Decoupage.Etendre(g, new[] { g[0].Id }).Count == g.Count), "morceaux d'un seul tenant, depuis l'extrémité basse");
+            Verifier(Decoupage.Spools(B, 0).Count == 1, "sans limite : un seul spool");
+            // Coudes inclus avec le tube qui les précède ; un tube de 8 m seul est signalé
+            var T = new List<Composant>
+            {
+                C("u1", "Tuyau", "", TypeComposant.Tube, 50, 5000, null, E(0, 0, 0, 50, null), E(5000, 0, 0, 50, "k1")),
+                C("k1", "Coude", "", TypeComposant.Coude, 50, 0, new Point3(5076, 0, 0), E(5000, 0, 0, 50, "u1"), E(5076, 0, 76, 50, "u2")),
+                C("u2", "Tuyau", "", TypeComposant.Tube, 50, 8000, null, E(5076, 0, 76, 50, "k1"), E(5076, 0, 8076, 50, null)),
+            };
+            var gt = Decoupage.Spools(T, 6000, out var tlong);
+            Verifier(gt.Count == 2 && gt[0].Select(c => c.Id).OrderBy(x => x).SequenceEqual(new[] { "k1", "u1" }) && tlong.Count == 1 && tlong[0].Id == "u2",
+                "coude avec le premier tube, tube de 8 m signalé");
         }
 
         // Bride contre bride (ou vanne) : joint boulonné

@@ -19,6 +19,9 @@ namespace PipeFit.Isometries.Revit
         public List<(string Numero, List<Element> Elements)> Spools = new List<(string, List<Element>)>();
         public int Ignores;   // déjà numérotés, laissés tels quels
         public int Isoles;    // vannes / accessoires entre deux joints boulonnés
+        public int TropLongs; // tubes de plus que la longueur maxi à eux seuls
+        public double LongueurMaxMm;
+        public double LongueurManuelleMm; // tube du spool numéroté à la main
         public string Erreur = "";
 
         public string Apercu()
@@ -32,6 +35,11 @@ namespace PipeFit.Isometries.Revit
                 : Spools.Count + " spools, " + n + " éléments : " + Spools[0].Numero + " à " + Spools[Spools.Count - 1].Numero);
             if (Ignores > 0) sb.Append(" · " + Ignores + " déjà numéroté(s), conservé(s)");
             if (Isoles > 0) sb.Append(" · " + Isoles + " vanne(s) entre brides, non numérotée(s)");
+            var m = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
+            if (TropLongs > 0) sb.Append("\n⚠ " + TropLongs + " tube(s) de plus de " + (LongueurMaxMm / 1000).ToString("0.#", m) + " m d'un seul tenant : à diviser dans Revit (Modifier → Diviser l'élément).");
+            if (LongueurMaxMm > 0 && LongueurManuelleMm > LongueurMaxMm + 0.5)
+                sb.Append("\n⚠ " + (LongueurManuelleMm / 1000).ToString("0.0", m) + " m de tube dans ce spool : plus de " + (LongueurMaxMm / 1000).ToString("0.#", m)
+                    + " m. Sélectionnez moins, décochez « compléter », ou utilisez le découpage automatique.");
             return sb.ToString();
         }
     }
@@ -67,8 +75,8 @@ namespace PipeFit.Isometries.Revit
             PlanNumerotation Planifier(Reglages rg, string param, string numeroManuel) => Plan(doc, tous, parCle, selection, Composants(), rg, param, numeroManuel);
             string Suggerer(Reglages rg, string param)
             {
-                var reseau = selection.Select(id => parCle[id].get_Parameter(BuiltInParameter.RBS_SYSTEM_NAME_PARAM)?.AsString() ?? "").FirstOrDefault(x => x != "") ?? "";
-                var prefixe = Decoupage.Prefixe(rg.PrefixeSpool, rg.ParReseau, reseau);
+                var reseau = rg.ReseauDevant == 0 ? "" : Decoupage.Reseau(selection.Select(id => Composants()[id]), rg.ReseauDevant == 1);
+                var prefixe = Decoupage.Prefixe(rg.PrefixeSpool, reseau);
                 return Decoupage.Format(prefixe, Decoupage.Prochain(Valeurs(tous, param), prefixe), rg.Chiffres);
             }
 
@@ -116,7 +124,7 @@ namespace PipeFit.Isometries.Revit
         static PlanNumerotation Plan(Document doc, List<Element> tous, Dictionary<string, Element> parCle, List<string> selection,
             Dictionary<string, Composant> composants, Reglages r, string param, string numeroManuel)
         {
-            var plan = new PlanNumerotation();
+            var plan = new PlanNumerotation { LongueurMaxMm = Math.Max(0, r.LongueurMaxM) * 1000 };
             var numerotes = new HashSet<string>(param == CreerParametre ? Enumerable.Empty<string>()
                 : parCle.Where(kv => LectureModele.ValeurSpool(kv.Value, param) != "").Select(kv => kv.Key));
             var bloques = r.RemplacerNumeros ? new HashSet<string>() : numerotes;
@@ -131,6 +139,7 @@ namespace PipeFit.Isometries.Revit
                 if (depart.Count == 0) { plan.Erreur = "Les éléments sélectionnés ont déjà un numéro : cochez « Renuméroter les éléments qui ont déjà un numéro » pour le changer."; return plan; }
                 var ids = r.CompleterBrides ? Decoupage.Etendre(tousComp, depart, bloques) : new HashSet<string>(depart);
                 if (ids.Count > 0) plan.Spools.Add((numeroManuel.Trim(), ids.Select(id => parCle[id]).ToList()));
+                plan.LongueurManuelleMm = Decoupage.LongueurTube(ids.Select(id => composants[id]));
                 return plan;
             }
 
@@ -139,15 +148,16 @@ namespace PipeFit.Isometries.Revit
             var libres = portee.Where(id => !bloques.Contains(id)).ToList();
             plan.Ignores = portee.Count - libres.Count;
             var sousEnsemble = libres.Select(id => composants[id]).ToList();
-            var groupes = Decoupage.Spools(sousEnsemble);
+            var groupes = Decoupage.Spools(sousEnsemble, plan.LongueurMaxMm, out var tropLongs);
+            plan.TropLongs = tropLongs.Count;
             plan.Isoles = sousEnsemble.Count - groupes.Sum(g => g.Count);
 
             var existants = Valeurs(tous, param).ToList();
             var compteurs = new Dictionary<string, int>();
             foreach (var g in groupes)
             {
-                var reseau = g.Select(c => c.Systeme).Where(s => s != "").GroupBy(s => s).OrderByDescending(x => x.Count()).Select(x => x.Key).FirstOrDefault() ?? "";
-                var prefixe = Decoupage.Prefixe(r.PrefixeSpool, r.ParReseau, reseau);
+                var reseau = r.ReseauDevant == 0 ? "" : Decoupage.Reseau(g, r.ReseauDevant == 1);
+                var prefixe = Decoupage.Prefixe(r.PrefixeSpool, reseau);
                 if (!compteurs.TryGetValue(prefixe, out var n)) n = Decoupage.Prochain(existants, prefixe);
                 compteurs[prefixe] = n + 1;
                 plan.Spools.Add((Decoupage.Format(prefixe, n, r.Chiffres), g.Select(c => parCle[c.Id]).ToList()));

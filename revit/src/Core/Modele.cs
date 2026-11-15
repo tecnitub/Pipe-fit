@@ -71,6 +71,8 @@ namespace PipeFit.Isometries.Core
         public double DnMm;
         public string Materiau = "";
         public string Systeme = "";
+        /// <summary>Abréviation du système Revit (ex. « EGD » pour eau glacée départ).</summary>
+        public string Abreviation = "";
         public double LongueurMm;
         public Point3? Centre;
         public List<Extremite> Extremites = new List<Extremite>();

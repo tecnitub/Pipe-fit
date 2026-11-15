@@ -134,6 +134,7 @@ namespace PipeFit.Isometries.Revit
             c.TypeNom = type?.Name ?? e.Name ?? "";
             c.Famille = type?.FamilyName ?? e.Category?.Name ?? "";
             c.Systeme = Texte(e, BuiltInParameter.RBS_SYSTEM_NAME_PARAM);
+            c.Abreviation = Texte(e, BuiltInParameter.RBS_SYSTEM_ABBREVIATION_PARAM);
             if (c.Systeme == "") c.Systeme = Texte(e, BuiltInParameter.RBS_PIPING_SYSTEM_TYPE_PARAM);
             c.Taille = Texte(e, BuiltInParameter.RBS_CALCULATED_SIZE);
             c.EstAccessoire = Compat.EstCategorie(e, BuiltInCategory.OST_PipeAccessory);

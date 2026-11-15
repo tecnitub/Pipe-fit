@@ -12,8 +12,11 @@ INSTALLATION
 NUMÉROTER LES SPOOLS (bouton « Numéroter spools »)
   - À la main : sélectionner dans Revit un élément du spool (un tube suffit), cliquer « Numéroter spools » :
     tout ce qui lui est soudé jusqu'aux brides reçoit le prochain numéro libre (SP-001, SP-002…).
-  - Automatique : sans sélection, toute la tuyauterie sans numéro est découpée en spools aux brides et vannes
-    et numérotée à la suite. Les vannes entre deux brides ne sont dans aucun spool.
+  - Automatique : sans sélection, toute la tuyauterie sans numéro est découpée en spools et numérotée à la suite,
+    système par système (EGD-SP-001, EGR-SP-001…). On coupe aux brides et vannes, au changement de système
+    (départ / retour, fluides différents) et dès que le spool dépasserait 6 m de tube (barre du commerce,
+    réglable). Les vannes entre deux brides ne sont dans aucun spool. Un tube de plus de 6 m d'un seul tenant
+    est signalé : le diviser dans Revit (Modifier > Diviser l'élément).
   - Le paramètre « Numéro de spool » est créé dans le projet s'il n'existe pas.
   - Les éléments déjà numérotés sont conservés (case à cocher pour les renuméroter).
 

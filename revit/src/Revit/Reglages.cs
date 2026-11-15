@@ -35,7 +35,10 @@ namespace PipeFit.Isometries.Revit
         // Numérotation des spools
         public string PrefixeSpool = "SP-";
         public int Chiffres = 3;
-        public bool ParReseau;
+        /// <summary>Système devant le numéro : 0 aucun, 1 abréviation du système (EGD-SP-001), 2 nom du système.</summary>
+        public int ReseauDevant = 1;
+        /// <summary>Longueur de tube maximale d'un spool, en mètres (barre du commerce : 6 m) ; 0 = sans limite.</summary>
+        public double LongueurMaxM = 6;
         public bool CompleterBrides = true;
         /// <summary>0 : la sélection forme un spool ; 1 : découpage automatique aux joints boulonnés.</summary>
         public int ModeNumerotation;
@@ -76,7 +79,8 @@ namespace PipeFit.Isometries.Revit
                         case "Dossier": r.Dossier = v; break;
                         case "PrefixeSpool": r.PrefixeSpool = v; break;
                         case "Chiffres": if (int.TryParse(v, out var ch) && ch >= 1 && ch <= 6) r.Chiffres = ch; break;
-                        case "ParReseau": r.ParReseau = v == "1"; break;
+                        case "ReseauDevant": if (int.TryParse(v, out var rd) && rd >= 0 && rd <= 2) r.ReseauDevant = rd; break;
+                        case "LongueurMaxM": if (double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var lm) && lm >= 0) r.LongueurMaxM = lm; break;
                         case "CompleterBrides": r.CompleterBrides = v == "1"; break;
                         case "ModeNumerotation": r.ModeNumerotation = v == "1" ? 1 : 0; break;
                         case "RemplacerNumeros": r.RemplacerNumeros = v == "1"; break;
@@ -100,7 +104,7 @@ namespace PipeFit.Isometries.Revit
                     "EtiquetteTube=" + EtiquetteTube, "EtiquetteRaccord=" + EtiquetteRaccord, "EtiquetteAccessoire=" + EtiquetteAccessoire,
                     "EcrireRepere=" + B(EcrireRepere), "ParametreRepere=" + ParametreRepere, "NumerosSoudure=" + B(NumerosSoudure), "Cotation=" + B(Cotation),
                     "ExportPdf=" + B(ExportPdf), "ExportPcf=" + B(ExportPcf), "ExportCsv=" + B(ExportCsv), "Dossier=" + Dossier,
-                    "PrefixeSpool=" + PrefixeSpool, "Chiffres=" + Chiffres, "ParReseau=" + B(ParReseau), "CompleterBrides=" + B(CompleterBrides),
+                    "PrefixeSpool=" + PrefixeSpool, "Chiffres=" + Chiffres, "ReseauDevant=" + ReseauDevant, "LongueurMaxM=" + LongueurMaxM.ToString(System.Globalization.CultureInfo.InvariantCulture), "CompleterBrides=" + B(CompleterBrides),
                     "ModeNumerotation=" + ModeNumerotation, "RemplacerNumeros=" + B(RemplacerNumeros),
                 }, Encoding.UTF8);
             }

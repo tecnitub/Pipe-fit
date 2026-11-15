@@ -16,10 +16,19 @@ canalisations, raccords, accessoires et pièces de fabrication) est créé dans 
 - **À la main** : sélectionner un élément du spool dans Revit (un tube suffit), cliquer : tout ce qui lui est soudé,
   jusqu'aux brides, reçoit le prochain numéro libre (`SP-008` après `SP-007`), modifiable avant de valider.
 - **Automatique** : sans sélection (ou en choisissant le découpage automatique), toute la tuyauterie sans numéro est
-  découpée en spools aux joints boulonnés (bride contre bride, bride contre vanne) et numérotée à la suite, réseau par
-  réseau, du plus bas au plus haut. Une vanne prise entre deux brides n'est dans aucun spool (pièce livrée à part).
-- Format : préfixe (`SP-`), nombre de chiffres, réseau devant le numéro au choix (`EG-101-SP-001`). Les éléments déjà
+  découpée en spools et numérotée à la suite, système par système, du plus bas au plus haut. On coupe :
+  - aux joints boulonnés (bride contre bride, bride contre vanne) ; une vanne prise entre deux brides n'est dans aucun
+    spool (pièce livrée à part) ;
+  - au changement de système : un système Revit par fluide et par sens (départ, retour), jamais deux dans un spool ;
+  - à la longueur de tube maximale (6 m par défaut, une barre du commerce) : en suivant la ligne depuis son extrémité
+    basse, un nouveau spool commence dès que le tube suivant ferait dépasser 6 m ; la coupe tombe sur une soudure, qui
+    devient une soudure de chantier sur les isométries et dans le quantitatif. Un tube Revit de plus de 6 m d'un seul
+    tenant est signalé (à diviser dans Revit : Modifier → Diviser l'élément).
+- Numérotation par système : l'abréviation du système devant le numéro (`EGD-SP-001`, `EGR-SP-001`…), ou son nom, ou
+  rien (`SP-001`) ; préfixe et nombre de chiffres réglables. Chaque système a sa propre suite de numéros. Les éléments déjà
   numérotés sont conservés, sauf demande de renumérotation ; l'aperçu indique avant validation les numéros attribués.
+- À la main, la sélection complétée jusqu'aux brides s'arrête aussi au changement de système, et l'aperçu prévient si
+  le spool dépasse 6 m de tube.
 - Les éléments numérotés restent sélectionnés : contrôle visuel, puis **Isométries spools**.
 
 ## Ce que fait la commande
