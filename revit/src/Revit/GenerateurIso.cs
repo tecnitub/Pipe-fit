@@ -167,17 +167,28 @@ namespace PipeFit.Isometries.Revit
 
             var symbolises = new HashSet<string>(r.SymbolesRobinetterie
                 ? spool.Composants.Where(c => c.Genre != GenreRobinet.Aucun && c.Extremites.Count >= 2).Select(c => c.Id) : Enumerable.Empty<string>());
-            Etiqueter(vue, elements.Where(e => !symbolises.Contains(Compat.Cle(e.Id))).ToList(), res);
-            if (r.NumerosSoudure) NumeroterAssemblages(vue, spool, res);
+            if (!r.RepereFeuille)
+            {
+                Etiqueter(vue, elements.Where(e => !symbolises.Contains(Compat.Cle(e.Id))).ToList(), res);
+                if (r.NumerosSoudure) NumeroterAssemblages(vue, spool, res);
+            }
             doc.Regenerate();
             vp.SetBoxCenter(centre);
             doc.Regenerate();
             var projection = Projection(vue, vp, res);
             if (projection != null)
             {
-                if (r.Cotation) Coter(feuille, projection, spool, res);
-                Renvoyer(feuille, projection, spool, zoneVue, res);
-                if (r.SymbolesRobinetterie) Symboliser(feuille, projection, spool, res);
+                // Annotations sur la feuille : d'abord ce qui est fixe (tuyauterie, cotes, symboles, nord, échelle),
+                // puis les étiquettes placées sans chevauchement (renvois, soudures, bulles, cadres de tubes)
+                var obs = new Obstacles();
+                foreach (var seg in Segments(spool, projection)) obs.Traits.Add(seg);
+                obs.Durs.Add(new Rect(zoneVue.X0, zoneVue.Y1 - 32, zoneVue.X0 + 32, zoneVue.Y1));   // flèche du nord
+                obs.Durs.Add(new Rect(zoneVue.X0, zoneVue.Y0, zoneVue.X0 + 150, zoneVue.Y0 + 7));   // échelle
+                obs.Durs.Add(cartouche == null ? new Rect(220, 10, 410, 45) : new Rect(cadre.X1 - 180, cadre.Y0 - 12, cadre.X1 + 12, cadre.Y0 + 50)); // cartouche
+                if (r.Cotation) Coter(feuille, projection, spool, res, obs);
+                if (r.SymbolesRobinetterie) Symboliser(feuille, projection, spool, res, obs);
+                Renvoyer(feuille, projection, spool, zoneVue, res, obs);
+                Reperer(feuille, projection, spool, zoneVue, res, obs, r.RepereFeuille ? null : symbolises);
             }
 
             DessinerNord(feuille, vue, zoneVue);
@@ -415,7 +426,7 @@ namespace PipeFit.Isometries.Revit
         /// Cotes de fabrication dessinées sur la feuille, projetées sur la vue isométrique : lignes d'attache,
         /// ligne de cote décalée vers l'extérieur du spool, traits obliques aux extrémités, valeur en mm alignée.
         /// </summary>
-        void Coter(ViewSheet f, Func<Point3, (double x, double y)> Feuille, Spool spool, Resultat res)
+        void Coter(ViewSheet f, Func<Point3, (double x, double y)> Feuille, Spool spool, Resultat res, Obstacles obs)
         {
             if (spool.Cotes.Count == 0) return;
             // Centre du dessin : les cotes sont rejetées du côté opposé
@@ -434,8 +445,11 @@ namespace PipeFit.Isometries.Revit
                 {
                     Trait(f, a.x + nx * attache, a.y + ny * attache, a.x + nx * (decalage + attache), a.y + ny * (decalage + attache));
                     Trait(f, b.x + nx * attache, b.y + ny * attache, b.x + nx * (decalage + attache), b.y + ny * (decalage + attache));
+                    obs.Traits.Add((a.x + nx * attache, a.y + ny * attache, a.x + nx * (decalage + attache), a.y + ny * (decalage + attache)));
+                    obs.Traits.Add((b.x + nx * attache, b.y + ny * attache, b.x + nx * (decalage + attache), b.y + ny * (decalage + attache)));
                     double ax = a.x + nx * decalage, ay = a.y + ny * decalage, bx = b.x + nx * decalage, by = b.y + ny * decalage;
                     Trait(f, ax, ay, bx, by);
+                    obs.TraitsForts.Add((ax, ay, bx, by));
                     double tx = (ux + nx) / Math.Sqrt(2) * trait, ty = (uy + ny) / Math.Sqrt(2) * trait;
                     Trait(f, ax - tx, ay - ty, ax + tx, ay + ty);
                     Trait(f, bx - tx, by - ty, bx + tx, by + ty);
@@ -449,7 +463,16 @@ namespace PipeFit.Isometries.Revit
                         VerticalAlignment = VerticalTextAlignment.Middle,
                         Rotation = angle,
                     };
-                    double mx = (ax + bx) / 2 + nx * 2.2, my = (ay + by) / 2 + ny * 2.2;
+                    // Texte au milieu, ou glissé le long de la ligne s'il recouvrirait un autre texte
+                    var lt = PlacementEtiquettes.LargeurTexte(cote.Valeur, HauteurTexteMm) + 1;
+                    double mx = 0, my = 0; Rect cadre = null;
+                    foreach (var t in new[] { 0.5, 0.35, 0.65, 0.22, 0.78, 0.1, 0.9 })
+                    {
+                        mx = ax + (bx - ax) * t + nx * 2.2; my = ay + (by - ay) * t + ny * 2.2;
+                        cadre = PlacementEtiquettes.CadreTourne(mx, my, lt, HauteurTexteMm + 0.8, angle);
+                        if (!obs.Durs.Any(o => PlacementEtiquettes.Recouvre(cadre, o))) break;
+                    }
+                    obs.Durs.Add(cadre);
                     TextNote.Create(doc, f.Id, P(mx, my), cote.Valeur, opt);
                 }
                 catch { echecs++; }
@@ -463,9 +486,8 @@ namespace PipeFit.Isometries.Revit
         /// Symbole normalisé de chaque vanne / accessoire (papillon, réglage, clapet avec flèche d'écoulement, compensateur…),
         /// orienté sur le tube dans le sens de l'écoulement, avec sa bulle de repère.
         /// </summary>
-        void Symboliser(ViewSheet f, Func<Point3, (double x, double y)> Feuille, Spool spool, Resultat res)
+        void Symboliser(ViewSheet f, Func<Point3, (double x, double y)> Feuille, Spool spool, Resultat res, Obstacles obs)
         {
-            var (cx, cy) = CentreDessin(spool, Feuille);
             int echecs = 0;
             foreach (var c in spool.Composants.Where(x => x.Genre != GenreRobinet.Aucun && x.Extremites.Count >= 2))
             {
@@ -476,22 +498,130 @@ namespace PipeFit.Isometries.Revit
                     double mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, dx = b.x - a.x, dy = b.y - a.y, l = Math.Sqrt(dx * dx + dy * dy);
                     if (l < 0.3) { dx = 1; dy = 0; l = 1; } // vu en bout
                     dx /= l; dy /= l;
-                    foreach (var s in Robinetterie.Placer(Robinetterie.Symbole(c.Genre), mx, my, dx, dy)) Trait(f, s.x1, s.y1, s.x2, s.y2);
-                    // Bulle de repère côté intérieur du dessin (les cotes sont à l'extérieur)
-                    double nx = -dy, ny = dx;
-                    if ((mx - cx) * nx + (my - cy) * ny > 0) { nx = -nx; ny = -ny; }
-                    double bx = mx + nx * 9, by = my + ny * 9, rb = 2.4;
-                    Trait(f, mx + nx * 3.4, my + ny * 3.4, bx - nx * rb, by - ny * rb);
-                    for (int i = 0; i < 12; i++)
-                    {
-                        double t1 = Math.PI * i / 6, t2 = Math.PI * (i + 1) / 6;
-                        Trait(f, bx + rb * Math.Cos(t1), by + rb * Math.Sin(t1), bx + rb * Math.Cos(t2), by + rb * Math.Sin(t2));
-                    }
-                    Texte(f, bx, by, c.Repere, gras: true, centre: true);
+                    var segs = Robinetterie.Placer(Robinetterie.Symbole(c.Genre), mx, my, dx, dy);
+                    foreach (var s in segs) { Trait(f, s.x1, s.y1, s.x2, s.y2); obs.TraitsForts.Add(s); }
+                    obs.Durs.Add(new Rect(segs.Min(s => Math.Min(s.x1, s.x2)), segs.Min(s => Math.Min(s.y1, s.y2)), segs.Max(s => Math.Max(s.x1, s.x2)), segs.Max(s => Math.Max(s.y1, s.y2))));
                 }
                 catch { echecs++; }
             }
             if (echecs > 0) res.Avertissements.Add(echecs + " symbole(s) de robinetterie non dessiné(s)");
+        }
+
+        // ---------- Repères placés sans chevauchement ----------
+
+        /// <summary>Tuyauterie projetée sur la feuille (pour que les étiquettes l'évitent).</summary>
+        static IEnumerable<(double x1, double y1, double x2, double y2)> Segments(Spool spool, Func<Point3, (double x, double y)> Feuille)
+        {
+            foreach (var c in spool.Composants)
+            {
+                if (Cotation.EstNoeud(c))
+                {
+                    var axe = Feuille(Cotation.PointAxe(c));
+                    foreach (var e in c.Extremites) { var p = Feuille(e.Position); yield return (p.x, p.y, axe.x, axe.y); }
+                }
+                else if (c.Extremites.Count >= 2)
+                {
+                    var a = Feuille(c.Extremites[0].Position); var b = Feuille(c.Extremites[1].Position);
+                    yield return (a.x, a.y, b.x, b.y);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Numéros de soudure, bulles de repère (robinetterie, raccords) et cadres des tubes, placés sans chevauchement.
+        /// seulement : si non null, seuls ces composants (robinetterie symbolisée) sont repérés ici (les autres ont leurs étiquettes Revit).
+        /// </summary>
+        void Reperer(ViewSheet f, Func<Point3, (double x, double y)> Feuille, Spool spool, Rect zone, Resultat res, Obstacles obs, HashSet<string> seulement)
+        {
+            var (cx, cy) = CentreDessin(spool, Feuille);
+            var liste = new List<(Etiquette e, string forme)>();
+            var h = HauteurTexteMm;
+
+            if (seulement == null && r.NumerosSoudure)
+                foreach (var a in spool.Assemblages.Where(x => x.Nature == NatureAssemblage.Soudure || x.Nature == NatureAssemblage.RaccordementChantier))
+                {
+                    var t = a.Numero + (a.SurlongueurMm > 0 ? " +" + a.SurlongueurMm.ToString("0", CultureInfo.InvariantCulture) : "");
+                    var p = Feuille(a.Position);
+                    liste.Add((new Etiquette { Texte = t, Largeur = PlacementEtiquettes.LargeurTexte(t, h, true) + 0.6, Hauteur = h + 0.4,
+                        Ancrages = { (p.x, p.y) }, Direction = (0, -1), DistanceMin = 1.2, DistanceMax = 9, Rappel = false }, "soudure"));
+                }
+
+            (double x, double y) Normale(double dx, double dy, double mx, double my)
+            {
+                double l = Math.Sqrt(dx * dx + dy * dy);
+                if (l < 1e-6) return (0, 1);
+                double nx = -dy / l, ny = dx / l;
+                return (mx - cx) * nx + (my - cy) * ny < 0 ? (-nx, -ny) : (nx, ny);
+            }
+            Etiquette Bulle(string texte, double x, double y, (double, double) dir)
+            {
+                var d = Math.Max(4.8, PlacementEtiquettes.LargeurTexte(texte, h, true) + 1.6);
+                return new Etiquette { Texte = texte, Largeur = d, Hauteur = d, Ancrages = { (x, y) }, Direction = dir };
+            }
+
+            var robinets = spool.Composants.Where(c => c.Genre != GenreRobinet.Aucun && c.Extremites.Count >= 2);
+            var raccords = spool.Composants.Where(c => c.Type != TypeComposant.Tube && !(c.Genre != GenreRobinet.Aucun && c.Extremites.Count >= 2));
+            foreach (var c in robinets.Concat(raccords))
+            {
+                if (seulement != null && !seulement.Contains(c.Id)) continue;
+                double mx, my, dx = 1, dy = 0;
+                if (Cotation.EstNoeud(c)) { var p = Feuille(Cotation.PointAxe(c)); mx = p.x; my = p.y; dx = 0; dy = 0; }
+                else if (c.Extremites.Count >= 2)
+                {
+                    var a = Feuille(c.Extremites[0].Position); var b = Feuille(c.Extremites[1].Position);
+                    mx = (a.x + b.x) / 2; my = (a.y + b.y) / 2; dx = b.x - a.x; dy = b.y - a.y;
+                }
+                else if (c.Extremites.Count == 1) { var p = Feuille(c.Extremites[0].Position); mx = p.x; my = p.y; }
+                else continue;
+                liste.Add((Bulle(c.Repere, mx, my, dx == 0 && dy == 0 ? (mx - cx, my - cy) : Normale(dx, dy, mx, my)), "bulle"));
+            }
+
+            if (seulement == null)
+                foreach (var c in spool.Composants.Where(x => x.Type == TypeComposant.Tube && x.Extremites.Count >= 2))
+                {
+                    var a = Feuille(c.Extremites[0].Position); var b = Feuille(c.Extremites[1].Position);
+                    var e = new Etiquette { Texte = c.Repere, Largeur = PlacementEtiquettes.LargeurTexte(c.Repere, h, true) + 2.4, Hauteur = h + 1.7,
+                        Direction = Normale(b.x - a.x, b.y - a.y, (a.x + b.x) / 2, (a.y + b.y) / 2) };
+                    foreach (var t in new[] { 0.5, 0.3, 0.7, 0.15, 0.85 }) e.Ancrages.Add((a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t));
+                    liste.Add((e, "cadre"));
+                }
+
+            PlacementEtiquettes.Placer(liste.Select(x => x.e), obs, zone);
+            int chevauchent = 0;
+            foreach (var (e, forme) in liste)
+            {
+                if (e.Chevauche) chevauchent++;
+                var (rx, ry) = PlacementEtiquettes.Bord(e, e.X, e.Y, e.Ancrage);
+                if (forme == "soudure")
+                {
+                    // Point de soudure et numéro ; trait de rappel si le numéro s'est éloigné
+                    for (int i = 0; i < 8; i++)
+                    {
+                        double t1 = Math.PI * i / 4, t2 = Math.PI * (i + 1) / 4;
+                        Trait(f, e.Ancrage.x + 0.6 * Math.Cos(t1), e.Ancrage.y + 0.6 * Math.Sin(t1), e.Ancrage.x + 0.6 * Math.Cos(t2), e.Ancrage.y + 0.6 * Math.Sin(t2));
+                    }
+                    if (Math.Sqrt((rx - e.Ancrage.x) * (rx - e.Ancrage.x) + (ry - e.Ancrage.y) * (ry - e.Ancrage.y)) > 3) Trait(f, e.Ancrage.x, e.Ancrage.y, rx, ry);
+                    Texte(f, e.X, e.Y, e.Texte, gras: true, centre: true);
+                    continue;
+                }
+                Trait(f, e.Ancrage.x, e.Ancrage.y, rx, ry);
+                if (forme == "bulle")
+                {
+                    var rb = e.Largeur / 2;
+                    for (int i = 0; i < 16; i++)
+                    {
+                        double t1 = Math.PI * i / 8, t2 = Math.PI * (i + 1) / 8;
+                        Trait(f, e.X + rb * Math.Cos(t1), e.Y + rb * Math.Sin(t1), e.X + rb * Math.Cos(t2), e.Y + rb * Math.Sin(t2));
+                    }
+                }
+                else
+                {
+                    var c0 = e.Cadre;
+                    Trait(f, c0.X0, c0.Y0, c0.X1, c0.Y0); Trait(f, c0.X1, c0.Y0, c0.X1, c0.Y1); Trait(f, c0.X1, c0.Y1, c0.X0, c0.Y1); Trait(f, c0.X0, c0.Y1, c0.X0, c0.Y0);
+                }
+                Texte(f, e.X, e.Y, e.Texte, gras: true, centre: true);
+            }
+            if (chevauchent > 0) res.Avertissements.Add(chevauchent + " étiquette(s) sans place libre (vue trop chargée : agrandir l'échelle ou la feuille)");
         }
 
         // ---------- Provenance / destination ----------
@@ -500,7 +630,7 @@ namespace PipeFit.Isometries.Revit
         /// Renvoi à chaque extrémité du spool : flèche dans le sens de l'écoulement (vers le spool à l'arrivée,
         /// vers l'extérieur au départ) et cartouche « VIENT DE SP-100 » / « VA VERS POMPE P1 ».
         /// </summary>
-        void Renvoyer(ViewSheet f, Func<Point3, (double x, double y)> Feuille, Spool spool, Rect zone, Resultat res)
+        void Renvoyer(ViewSheet f, Func<Point3, (double x, double y)> Feuille, Spool spool, Rect zone, Resultat res, Obstacles obs)
         {
             var (cx, cy) = CentreDessin(spool, Feuille);
             int echecs = 0;
@@ -528,14 +658,18 @@ namespace PipeFit.Isometries.Revit
                     foreach (var d in new[] { 0.35, -0.35 })
                         Trait(f, px, py, px - 3 * Math.Cos(a + d), py - 3 * Math.Sin(a + d));
 
-                    // Cartouche de renvoi au bout de la flèche
+                    obs.TraitsForts.Add((x0, y0, x1, y1));
+                    // Cartouche de renvoi au bout de la flèche, placé sans chevauchement
                     var txt = MiseEnPage.Tronquer(l.Numero + "  " + l.Libelle, 110, HauteurTexteMm);
-                    double w = txt.Length * 0.68 * HauteurTexteMm + 4, h = 6;
-                    double bx0 = dx >= 0 ? x1 + 1 : x1 - 1 - w, by0 = y1 - h / 2;
-                    bx0 = Math.Max(zone.X0 + 1, Math.Min(bx0, zone.X1 - w - 1)); // reste dans la zone de la vue
-                    Trait(f, bx0, by0, bx0 + w, by0); Trait(f, bx0 + w, by0, bx0 + w, by0 + h);
-                    Trait(f, bx0 + w, by0 + h, bx0, by0 + h); Trait(f, bx0, by0 + h, bx0, by0);
-                    Texte(f, bx0 + 2, y1, txt, gras: true);
+                    var et = new Etiquette { Texte = txt, Largeur = PlacementEtiquettes.LargeurTexte(txt, HauteurTexteMm, true) + 4, Hauteur = 6,
+                        Ancrages = { (x1, y1) }, Direction = (dx, dy), DistanceMin = 0.8, DistanceMax = 30 };
+                    PlacementEtiquettes.Placer(new[] { et }, obs, zone);
+                    var c0 = et.Cadre;
+                    Trait(f, c0.X0, c0.Y0, c0.X1, c0.Y0); Trait(f, c0.X1, c0.Y0, c0.X1, c0.Y1);
+                    Trait(f, c0.X1, c0.Y1, c0.X0, c0.Y1); Trait(f, c0.X0, c0.Y1, c0.X0, c0.Y0);
+                    var (rx, ry) = PlacementEtiquettes.Bord(et, et.X, et.Y, et.Ancrage);
+                    Trait(f, x1, y1, rx, ry);
+                    Texte(f, c0.X0 + 2, et.Y, txt, gras: true);
                 }
                 catch { echecs++; }
             }

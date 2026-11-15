@@ -366,6 +366,44 @@ static class Tests
             Verifier(Math.Abs(pl[0].x1 - 10) < 1e-9 && Math.Abs(pl[0].y1 - 21) < 1e-9 && Math.Abs(pl[0].x2 - 9) < 1e-9 && Math.Abs(pl[0].y2 - 20) < 1e-9, "symbole tourné sur l'axe du tube");
         }
 
+        // Placement des étiquettes sans chevauchement
+        {
+            var zone = new Rect(0, 0, 200, 150);
+            var obs = new Obstacles();
+            // Tuyauterie : une ligne horizontale et une verticale ; une cote et un cartouche déjà posés
+            obs.Traits.Add((20, 75, 180, 75)); obs.Traits.Add((100, 20, 100, 130));
+            obs.Durs.Add(new Rect(60, 80, 80, 86));
+            var ets = new List<Etiquette>();
+            // 25 étiquettes ancrées presque au même endroit : le pire cas (brides serrées autour d'une vanne)
+            for (int i = 0; i < 25; i++)
+                ets.Add(new Etiquette { Texte = (i + 1).ToString(), Largeur = 4.8, Hauteur = 4.8, Ancrages = { (95 + i * 0.4, 75) }, Direction = (0, 1) });
+            for (int i = 0; i < 6; i++)
+                ets.Add(new Etiquette { Texte = "T" + i, Largeur = 6.8, Hauteur = 4.2, Ancrages = { (30 + i * 3, 75), (40 + i * 3, 75) }, Direction = (0, 1) });
+            for (int i = 0; i < 8; i++)
+                ets.Add(new Etiquette { Texte = "S" + i, Largeur = 4, Hauteur = 2.4, Ancrages = { (100, 30 + i * 2) }, DistanceMin = 1.5, DistanceMax = 12, Rappel = false });
+            PlacementEtiquettes.Placer(ets, obs, zone);
+            int chevauchements = 0;
+            for (int i = 0; i < ets.Count; i++)
+                for (int j = i + 1; j < ets.Count; j++)
+                    if (PlacementEtiquettes.Recouvre(ets[i].Cadre, ets[j].Cadre)) chevauchements++;
+            Verifier(chevauchements == 0 && ets.All(x => !x.Chevauche), "aucune étiquette ne se chevauche (" + chevauchements + ")");
+            Verifier(ets.All(x => !PlacementEtiquettes.Recouvre(x.Cadre, new Rect(60, 80, 80, 86))), "aucune étiquette sur la cote / le cartouche");
+            Verifier(ets.All(x => x.Cadre.X0 >= 0 && x.Cadre.Y0 >= 0 && x.Cadre.X1 <= 200 && x.Cadre.Y1 <= 150), "toutes dans la zone");
+            // Cas saturé (25 bulles au même point) : quelques-unes peuvent mordre un tube plutôt que croiser d'autres bulles
+            Verifier(ets.Take(25).Count(x => PlacementEtiquettes.Coupe(x.Cadre, (20, 75, 180, 75)) || PlacementEtiquettes.Coupe(x.Cadre, (100, 20, 100, 130))) <= 6, "cas saturé : peu de bulles sur la tuyauterie");
+            // Cas courant : bulles réparties le long d'une ligne coudée, jamais sur la tuyauterie
+            var obs2 = new Obstacles(); obs2.Traits.Add((20, 40, 120, 40)); obs2.Traits.Add((120, 40, 120, 120));
+            var ets2 = Enumerable.Range(0, 12).Select(i => new Etiquette { Largeur = 4.8, Hauteur = 4.8, Direction = (0, 1),
+                Ancrages = { i < 6 ? (25 + i * 16.0, 40.0) : (120.0, 50 + (i - 6) * 12.0) } }).ToList();
+            PlacementEtiquettes.Placer(ets2, obs2, zone);
+            Verifier(ets2.All(x => !PlacementEtiquettes.Coupe(x.Cadre, (20, 40, 120, 40)) && !PlacementEtiquettes.Coupe(x.Cadre, (120, 40, 120, 120))), "cas courant : aucune bulle sur la tuyauterie");
+            var seule = new Etiquette { Largeur = 4.8, Hauteur = 4.8, Ancrages = { (50, 50) }, Direction = (0, 1) };
+            PlacementEtiquettes.Placer(new[] { seule }, new Obstacles(), zone);
+            Verifier(Math.Abs(seule.X - 50) < 0.01 && seule.Y > 50 && seule.Y < 60, "sans gêne : au plus près, dans la direction préférée");
+            Verifier(PlacementEtiquettes.Coupe(new Rect(0, 0, 10, 10), (-5, 5, 15, 5)) && !PlacementEtiquettes.Coupe(new Rect(0, 0, 10, 10), (-5, 15, 15, 15)), "segment / rectangle");
+            Verifier(PlacementEtiquettes.Croise((0, 0, 10, 10), (0, 10, 10, 0)) && !PlacementEtiquettes.Croise((0, 0, 10, 0), (0, 5, 10, 5)), "segments croisés");
+        }
+
         // Bride contre bride (ou vanne) : joint boulonné
         var b = new Spool { Nom = "B" };
         b.Composants.Add(C("a", "Bride", "PN16", TypeComposant.Bride, 80, 0, null, E(0, 0, 0, 80, "x"), E(10, 0, 0, 80, "b")));

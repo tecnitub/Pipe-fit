@@ -95,6 +95,10 @@ QUANTITATIF POUR LE CHIFFRAGE (bouton « Quantitatif chiffrage »)
     atelier / chantier selon le pourcentage réglé dans le chiffrage.
   Pipe-Fit chiffre alors les soudures réelles à la place de son estimation par famille.
 
+ÉTIQUETTES SANS CHEVAUCHEMENT
+  Bulles de repère, cadres T1…, n° de soudure, renvois et textes de cote sont placés sur la feuille sans
+  jamais se recouvrir (option cochée par défaut ; décochée, ce sont les étiquettes Revit).
+
 ROBINETTERIE
   Vannes papillon, de réglage, clapets, boisseaux, filtres et compensateurs (Dilatoflex) sont reconnus par
   le nom de leur famille et dessinés sur l'isométrie avec leur symbole normalisé (le clapet avec la flèche

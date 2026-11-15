@@ -42,6 +42,7 @@ namespace PipeFit.Isometries.Revit
             ckSoudures = Case("Numéros de soudure (S1…) et de raccordement (R1…) sur la vue"),
             ckCotes = Case("Cotes d'axe en axe et d'axe à bride (ou à bout de tube)"),
             ckSymboles = Case("Robinetterie en symboles normalisés (papillon, réglage, clapet, compensateur…)"),
+            ckFeuille = Case("Repères et n° de soudure placés sans chevauchement (sinon étiquettes Revit ci-dessus)"),
             ckPdf = Case("PDF (une feuille par spool)"), ckPcf = Case("PCF (Isogen, Spoolgen…)"), ckCsv = Case("CSV nomenclature, soudures et cotes (Pipe-Fit)");
         readonly NumericUpDown nudSurl = new NumericUpDown { Minimum = 0, Maximum = 2000, Increment = 50 };
         readonly Label lblInfo = new Label { AutoSize = false, ForeColor = Color.DarkRed }, lblCompte = new Label { AutoSize = false };
@@ -97,7 +98,7 @@ namespace PipeFit.Isometries.Revit
             Ligne(gFeuille, "Orientation :", cbOrientation, 84);
             Ligne(gFeuille, "Représentation :", cbRepr, 114);
 
-            var gAnnot = Groupe("Repères, étiquettes et cotes", ref y, 262);
+            var gAnnot = Groupe("Repères, étiquettes et cotes", ref y, 288);
             Ligne(gAnnot, "Canalisations :", cbTagTube, 24);
             Ligne(gAnnot, "Raccords :", cbTagRaccord, 54);
             Ligne(gAnnot, "Accessoires :", cbTagAccessoire, 84);
@@ -110,7 +111,8 @@ namespace PipeFit.Isometries.Revit
             nudSurl.SetBounds(226, 202, 70, 24);
             gAnnot.Controls.Add(new Label { Text = "mm à recouper sur place (0 = aucune)", AutoSize = true, Location = new Point(300, 205), ForeColor = SystemColors.GrayText });
             ckSymboles.SetBounds(12, 230, 500, 22);
-            gAnnot.Controls.AddRange(new Control[] { ckRepere, cbParamRepere, ckSoudures, ckCotes, nudSurl, ckSymboles });
+            ckFeuille.SetBounds(12, 256, 500, 22);
+            gAnnot.Controls.AddRange(new Control[] { ckRepere, cbParamRepere, ckSoudures, ckCotes, nudSurl, ckSymboles, ckFeuille });
 
             var gExport = Groupe("Exports", ref y, 120);
             ckPdf.SetBounds(12, 22, 240, 22); ckPcf.SetBounds(260, 22, 240, 22); ckCsv.SetBounds(12, 48, 300, 22);
@@ -162,7 +164,7 @@ namespace PipeFit.Isometries.Revit
             Choisir(cbParamRepere, r.ParametreRepere == "" ? Marque : r.ParametreRepere);
             tbPrefixe.Text = r.PrefixeFeuille;
             tbDossier.Text = r.Dossier;
-            ckRemplacer.Checked = r.Remplacer; ckRepere.Checked = r.EcrireRepere; ckSoudures.Checked = r.NumerosSoudure; ckCotes.Checked = r.Cotation; ckSymboles.Checked = r.SymbolesRobinetterie;
+            ckRemplacer.Checked = r.Remplacer; ckRepere.Checked = r.EcrireRepere; ckSoudures.Checked = r.NumerosSoudure; ckCotes.Checked = r.Cotation; ckSymboles.Checked = r.SymbolesRobinetterie; ckFeuille.Checked = r.RepereFeuille;
             nudSurl.Value = (decimal)Math.Max(0, Math.Min(2000, r.SurlongueurMm));
             ckPdf.Checked = r.ExportPdf; ckPcf.Checked = r.ExportPcf; ckCsv.Checked = r.ExportCsv;
             foreach (var s in d.Preselection) coches.Add(s);
@@ -265,6 +267,7 @@ namespace PipeFit.Isometries.Revit
             r.NumerosSoudure = ckSoudures.Checked;
             r.Cotation = ckCotes.Checked;
             r.SymbolesRobinetterie = ckSymboles.Checked;
+            r.RepereFeuille = ckFeuille.Checked;
             r.SurlongueurMm = (double)nudSurl.Value;
             r.Remplacer = ckRemplacer.Checked;
             r.ExportPdf = ckPdf.Checked; r.ExportPcf = ckPcf.Checked; r.ExportCsv = ckCsv.Checked;

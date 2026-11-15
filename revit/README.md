@@ -53,6 +53,17 @@ canalisations, raccords, accessoires et pièces de fabrication) est créé dans 
   le spool dépasse 6 m de tube.
 - Les éléments numérotés restent sélectionnés : contrôle visuel, puis **Isométries spools**.
 
+## Étiquettes sans chevauchement
+
+Par défaut (option « Repères et n° de soudure placés sans chevauchement »), les bulles de repère, les cadres des tubes
+(T1…), les numéros de soudure (S1, R1 +100…) et les cartouches de renvoi sont dessinés sur la feuille par un placeur :
+chaque étiquette essaie 16 directions à des distances croissantes autour de son point (et plusieurs points le long d'un
+tube) et ne retient jamais une position qui recouvre une autre étiquette, un texte de cote, un symbole, la flèche du
+nord, l'échelle ou le cartouche ; elle évite aussi de couvrir la tuyauterie et les lignes de cote, et les lignes de
+rappel évitent de traverser les étiquettes. Le texte d'une cote glisse le long de sa ligne s'il tomberait sur un autre.
+Si une vue est trop chargée pour tout placer, un avertissement le signale (agrandir l'échelle ou la feuille).
+Option décochée : étiquettes Revit (familles d'étiquettes choisies), placées par Revit.
+
 ## Robinetterie
 
 - **Genre reconnu** d'après le nom de la famille (français ou anglais) : vanne (opercule), vanne papillon, vanne de

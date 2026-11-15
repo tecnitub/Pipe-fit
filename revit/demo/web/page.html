@@ -178,6 +178,58 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
   }
   const tronquer = (t, w, h = 2.5) => { t = t || ''; const max = Math.floor((w - 2) / (0.62 * h)); return max < 2 ? '' : t.length <= max ? t : t.slice(0, max - 1).trimEnd() + '…'; };
 
+  // Placement des étiquettes sans chevauchement : portage fidèle de PlacementEtiquettes (cœur du complément)
+  const Pl = (() => {
+    const MARGE = 0.7;
+    const recouvre = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+    const coupe = (r, s) => {
+      let t0 = 0, t1 = 1; const dx = s[2] - s[0], dy = s[3] - s[1];
+      for (const [p, q] of [[-dx, s[0] - r[0]], [dx, r[2] - s[0]], [-dy, s[1] - r[1]], [dy, r[3] - s[1]]]) {
+        if (Math.abs(p) < 1e-12) { if (q < 0) return false; continue; }
+        const t = q / p;
+        if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; } else { if (t < t0) return false; if (t < t1) t1 = t; }
+      }
+      return true;
+    };
+    const croise = (a, b) => {
+      const d = (ax, ay, bx, by, cx, cy) => (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+      return d(a[0], a[1], a[2], a[3], b[0], b[1]) * d(a[0], a[1], a[2], a[3], b[2], b[3]) < -1e-9 && d(b[0], b[1], b[2], b[3], a[0], a[1]) * d(b[0], b[1], b[2], b[3], a[2], a[3]) < -1e-9;
+    };
+    const bord = (e, cx, cy, anc) => {
+      const dx = anc[0] - cx, dy = anc[1] - cy;
+      const tx = Math.abs(dx) < 1e-9 ? Infinity : e.w / 2 / Math.abs(dx), ty = Math.abs(dy) < 1e-9 ? Infinity : e.h / 2 / Math.abs(dy);
+      const t = Math.min(1, tx, ty); return [cx + dx * t, cy + dy * t];
+    };
+    const tourne = (cx, cy, l, h, a) => { const c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a)), hw = (l * c + h * s) / 2, hh = (l * s + h * c) / 2; return [cx - hw, cy - hh, cx + hw, cy + hh]; };
+    const largeur = (t, h, gras) => String(t ?? '').length * h * (gras ? 0.68 : 0.62);
+    function placer(liste, obs, z) {
+      liste.forEach(e => {
+        const dmin = e.dmin ?? 6, dmax = e.dmax ?? 36, rappel = e.rappel ?? true;
+        const base = e.dir ? Math.atan2(e.dir[1], e.dir[0]) : Math.PI / 2;
+        const angles = [...Array(16).keys()].map(k => { const j = Math.floor((k + 1) / 2) * (k % 2 === 0 ? 1 : -1); return [base + j * Math.PI / 8, Math.abs(j)]; });
+        let meilleur = Infinity, choix = null;
+        for (const anc of e.ancrages)
+          for (let d = dmin; d <= dmax + 1e-9; d += 2.5)
+            for (const [a, ecart] of angles) {
+              const ux = Math.cos(a), uy = Math.sin(a), demi = Math.abs(ux) * e.w / 2 + Math.abs(uy) * e.h / 2;
+              const cx = anc[0] + ux * (d + demi), cy = anc[1] + uy * (d + demi);
+              const r = [cx - e.w / 2 - MARGE, cy - e.h / 2 - MARGE, cx + e.w / 2 + MARGE, cy + e.h / 2 + MARGE];
+              if (r[0] < z.x0 || r[1] < z.y0 || r[2] > z.x1 || r[3] > z.y1) continue;
+              let pen = d + ecart * 0.8 + obs.durs.filter(o => recouvre(r, o)).length * 10000;
+              if (pen >= meilleur) continue;
+              pen += obs.traits.filter(s => coupe(r, s)).length * 250 + obs.forts.filter(s => coupe(r, s)).length * 400;
+              if (rappel) { const [bx, by] = bord(e, cx, cy, anc), ra = [anc[0], anc[1], bx, by]; pen += obs.durs.filter(o => coupe(o, ra)).length * 500 + obs.forts.filter(s => croise(s, ra)).length * 40; }
+              if (pen < meilleur) { meilleur = pen; choix = [cx, cy, anc]; }
+            }
+        if (!choix) { const anc = e.ancrages[0]; choix = [anc[0], anc[1] + dmin + e.h / 2, anc]; meilleur = 10000; }
+        [e.x, e.y, e.ancrage] = choix; e.chevauche = meilleur >= 10000;
+        obs.durs.push([e.x - e.w / 2, e.y - e.h / 2, e.x + e.w / 2, e.y + e.h / 2]);
+        if (rappel) { const [bx, by] = bord(e, e.x, e.y, e.ancrage); obs.forts.push([e.ancrage[0], e.ancrage[1], bx, by]); }
+      });
+    }
+    return { placer, recouvre, coupe, bord, tourne, largeur };
+  })();
+
   function el(tag, attrs, parent, text) {
     const e = document.createElementNS(NS, tag);
     for (const k in attrs) e.setAttribute(k, attrs[k]);
@@ -233,7 +285,7 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
     const centre = [cxs + (gc[0] - cxm) / n, cys + (gc[1] - cym) / n];
 
     // Géométrie unifilaire
-    const TRAIT = 0.7;
+    const TRAIT = 0.7, symboles = { forts: [], durs: [] };
     const perp = (a, b, l) => { const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1; return [-dy / L * l, dx / L * l]; };
     s.composants.forEach(c => {
       const e = c.ext.map(x => F(x.p));
@@ -249,7 +301,9 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
         const o0 = F(c.o[0]), o1 = F(c.o[1]);
         let dx = o1[0] - o0[0], dy = o1[1] - o0[1]; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
         const mx = (o0[0] + o1[0]) / 2, my = (o0[1] + o1[1]) / 2, px = -dy, py = dx;
-        c.sym.forEach(([u1, v1, u2, v2]) => line(mx + u1 * dx + v1 * px, my + u1 * dy + v1 * py, mx + u2 * dx + v2 * px, my + u2 * dy + v2 * py, 'k-ink', 0.3));
+        const segs = c.sym.map(([u1, v1, u2, v2]) => [mx + u1 * dx + v1 * px, my + u1 * dy + v1 * py, mx + u2 * dx + v2 * px, my + u2 * dy + v2 * py]);
+        segs.forEach(q => { line(q[0], q[1], q[2], q[3], 'k-ink', 0.3); symboles.forts.push(q); });
+        symboles.durs.push([Math.min(...segs.map(q => Math.min(q[0], q[2]))), Math.min(...segs.map(q => Math.min(q[1], q[3]))), Math.max(...segs.map(q => Math.max(q[0], q[2]))), Math.max(...segs.map(q => Math.max(q[1], q[3])))]);
       } else if (c.type === 'Vanne' || c.type === 'Accessoire') {
         const q = perp(a, b, 2.4);
         el('path', { d: `M${a[0]+q[0]} ${Y(a[1]+q[1])}L${b[0]-q[0]} ${Y(b[1]-q[1])}L${b[0]+q[0]} ${Y(b[1]+q[1])}L${a[0]-q[0]} ${Y(a[1]-q[1])}Z`, class: 'k-ink', 'stroke-width': 0.35, 'stroke-linejoin': 'round' }, g);
@@ -260,42 +314,16 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
       } else line(a[0], a[1], b[0], b[1], 'k-ink', TRAIT);
     });
 
-    // Repères (bulles), décalés vers le haut, alternés gauche / droite
-    if (st.rep) {
-      let i = 0;
-      s.composants.forEach(c => {
-        if (c.sym) {
-          // Bulle de repère de la robinetterie, côté intérieur du dessin (les cotes sont à l'extérieur)
-          const o0 = F(c.o[0]), o1 = F(c.o[1]);
-          let dx = o1[0] - o0[0], dy = o1[1] - o0[1]; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
-          const mx = (o0[0] + o1[0]) / 2, my = (o0[1] + o1[1]) / 2; let nx = -dy, ny = dx;
-          if ((mx - centre[0]) * nx + (my - centre[1]) * ny > 0) { nx = -nx; ny = -ny; }
-          const bx = mx + nx * 9, by = my + ny * 9;
-          line(mx + nx * 3.4, my + ny * 3.4, bx - nx * 2.4, by - ny * 2.4, 'k-ink', 0.18);
-          el('circle', { cx: bx, cy: Y(by), r: 2.4, class: 'k-ink', 'stroke-width': 0.25, fill: 'var(--paper)' }, g);
-          text(bx, by, c.repere, { anchor: 'middle', size: 2.3, bold: true });
-          return;
-        }
-        const pts2 = c.ext.map(x => F(x.p));
-        const m = c.axe ? F(c.axe) : [pts2.reduce((a, p) => a + p[0], 0) / pts2.length, pts2.reduce((a, p) => a + p[1], 0) / pts2.length];
-        const sens = i++ % 2 ? -1 : 1, hx = m[0] + sens * 5, hy = m[1] + 8;
-        line(m[0], m[1], hx, hy - 2.3, 'k-ink', 0.18);
-        if (c.type === 'Tube') { el('rect', { x: hx - 3.4, y: Y(hy + 2.1), width: 6.8, height: 4.2, class: 'k-ink', 'stroke-width': 0.25, fill: 'var(--paper)' }, g); }
-        else el('circle', { cx: hx, cy: Y(hy), r: 2.4, class: 'k-ink', 'stroke-width': 0.25, fill: 'var(--paper)' }, g);
-        text(hx, hy, c.repere, { anchor: 'middle', size: 2.3, bold: true });
-      });
-    }
-
-    // Soudures et raccordements chantier
-    if (st.sou) s.assemblages.forEach(a => {
-      if (a.nature !== 'Soudure' && a.nature !== 'RaccordementChantier') return;
-      const p = F(a.p);
-      if (a.nature === 'Soudure') el('circle', { cx: p[0], cy: Y(p[1]), r: 0.75, class: 'k-weld' }, g);
-      else el('path', { d: `M${p[0]} ${Y(p[1])}l1.4 -2.4l-2.8 0Z`, class: 'k-weld' }, g);
-      text(p[0], p[1] - 3.2, a.n + (a.s > 0 ? ' +' + Math.round(a.s) : ''), { cls: 'k-weldtxt', anchor: 'middle', size: 2.1 });
+    // Annotations : d'abord ce qui est fixe (tuyauterie, cotes, symboles, nord, échelle, cartouche), puis les étiquettes
+    // placées sans chevauchement (renvois, soudures, bulles, cadres de tubes) : mêmes règles que le complément
+    const obs = { durs: [...symboles.durs, [zv.x0, zv.y1 - 32, zv.x0 + 32, zv.y1], [zv.x0, zv.y0, zv.x0 + 150, zv.y0 + 7], [220, 10, 410, 45]], traits: [], forts: [...symboles.forts] };
+    s.composants.forEach(c => {
+      const e = c.ext.map(x => F(x.p));
+      if (c.axe) { const a = F(c.axe); e.forEach(p => obs.traits.push([p[0], p[1], a[0], a[1]])); }
+      else if (e.length >= 2) obs.traits.push([e[0][0], e[0][1], e[1][0], e[1][1]]);
     });
 
-    // Cotes : même construction que le complément (attaches, ligne décalée vers l'extérieur, traits obliques)
+    // Cotes : même construction que le complément ; le texte glisse le long de la ligne s'il recouvrirait un autre texte
     if (st.cot) s.cotes.forEach(c => {
       const a = F(c.a), b = F(c.b);
       let vx = b[0] - a[0], vy = b[1] - a[1]; const l = Math.hypot(vx, vy);
@@ -303,30 +331,83 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
       const ux = vx / l, uy = vy / l; let nx = -uy, ny = ux;
       if (((a[0] + b[0]) / 2 - centre[0]) * nx + ((a[1] + b[1]) / 2 - centre[1]) * ny < 0) { nx = -nx; ny = -ny; }
       const dec = 7, att = 1.5, tr = 1.3;
-      line(a[0] + nx * att, a[1] + ny * att, a[0] + nx * (dec + att), a[1] + ny * (dec + att), 'k-dim', 0.18);
-      line(b[0] + nx * att, b[1] + ny * att, b[0] + nx * (dec + att), b[1] + ny * (dec + att), 'k-dim', 0.18);
+      const e1 = [a[0] + nx * att, a[1] + ny * att, a[0] + nx * (dec + att), a[1] + ny * (dec + att)], e2 = [b[0] + nx * att, b[1] + ny * att, b[0] + nx * (dec + att), b[1] + ny * (dec + att)];
+      line(...e1, 'k-dim', 0.18); line(...e2, 'k-dim', 0.18); obs.traits.push(e1, e2);
       const ax = a[0] + nx * dec, ay = a[1] + ny * dec, bx = b[0] + nx * dec, by = b[1] + ny * dec;
-      line(ax, ay, bx, by, 'k-dim', 0.22);
+      line(ax, ay, bx, by, 'k-dim', 0.22); obs.forts.push([ax, ay, bx, by]);
       const tx = (ux + nx) / Math.SQRT2 * tr, ty = (uy + ny) / Math.SQRT2 * tr;
       line(ax - tx, ay - ty, ax + tx, ay + ty, 'k-dim', 0.35); line(bx - tx, by - ty, bx + tx, by + ty, 'k-dim', 0.35);
       let ang = Math.atan2(uy, ux); if (ang > Math.PI / 2 + 1e-9) ang -= Math.PI; if (ang <= -Math.PI / 2 + 1e-9) ang += Math.PI;
-      text((ax + bx) / 2 + nx * 2.2, (ay + by) / 2 + ny * 2.2, c.v, { cls: 'k-dimtxt', anchor: 'middle', rot: -ang * 180 / Math.PI });
+      const lt = Pl.largeur(c.v, 2.5) + 1;
+      let mx, my, cadre;
+      for (const t of [0.5, 0.35, 0.65, 0.22, 0.78, 0.1, 0.9]) {
+        mx = ax + (bx - ax) * t + nx * 2.2; my = ay + (by - ay) * t + ny * 2.2;
+        cadre = Pl.tourne(mx, my, lt, 3.3, ang);
+        if (!obs.durs.some(o => Pl.recouvre(cadre, o))) break;
+      }
+      obs.durs.push(cadre);
+      text(mx, my, c.v, { cls: 'k-dimtxt', anchor: 'middle', rot: -ang * 180 / Math.PI });
     });
 
-    // Renvois : d'où vient le spool, où il va (flèche dans le sens de l'écoulement + cartouche)
+    // Renvois : flèche dans le sens de l'écoulement, cartouche placé sans chevauchement
     s.liaisons.forEach(l => {
       const p = F(l.p);
       let dx = p[0] - centre[0], dy = p[1] - centre[1];
       if (l.d) { const q = F([l.p[0] + l.d[0] * 1000, l.p[1] + l.d[1] * 1000, l.p[2] + l.d[2] * 1000]); if (Math.hypot(q[0] - p[0], q[1] - p[1]) > 1e-6) { dx = q[0] - p[0]; dy = q[1] - p[1]; } }
       const lg = Math.hypot(dx, dy) || 1; dx /= lg; dy /= lg;
       const x0 = p[0] + dx * 2, y0 = p[1] + dy * 2, x1 = p[0] + dx * 13, y1 = p[1] + dy * 13;
-      line(x0, y0, x1, y1, 'k-ink', 0.35);
+      line(x0, y0, x1, y1, 'k-ink', 0.35); obs.forts.push([x0, y0, x1, y1]);
       const px = l.entree ? x0 : x1, py = l.entree ? y0 : y1, a = Math.atan2(dy, dx) + (l.entree ? Math.PI : 0);
       el('path', { d: `M${px} ${Y(py)}L${px - 3 * Math.cos(a + .35)} ${Y(py - 3 * Math.sin(a + .35))}L${px - 3 * Math.cos(a - .35)} ${Y(py - 3 * Math.sin(a - .35))}Z`, fill: 'var(--ink)' }, g);
-      const txt = l.n + '  ' + l.texte, w = txt.length * 0.62 * 2.5 + 4, h = 6;
-      const bx0 = Math.max(zv.x0 + 1, Math.min(dx >= 0 ? x1 + 1 : x1 - 1 - w, zv.x1 - w - 1));
-      el('rect', { x: bx0, y: Y(y1 + h / 2), width: w, height: h, class: 'k-ink', 'stroke-width': 0.35, fill: 'var(--paper)' }, g);
-      text(bx0 + 2, y1, txt, { bold: true });
+      const txt = l.n + '  ' + l.texte;
+      const e = { w: Pl.largeur(txt, 2.5, true) + 4, h: 6, ancrages: [[x1, y1]], dir: [dx, dy], dmin: 0.8, dmax: 30, rappel: true };
+      Pl.placer([e], obs, zv);
+      const [rx, ry] = Pl.bord(e, e.x, e.y, e.ancrage);
+      line(x1, y1, rx, ry, 'k-ink', 0.25);
+      el('rect', { x: e.x - e.w / 2, y: Y(e.y + e.h / 2), width: e.w, height: e.h, class: 'k-ink', 'stroke-width': 0.35, fill: 'var(--paper)' }, g);
+      text(e.x - e.w / 2 + 2, e.y, txt, { bold: true });
+    });
+
+    // Étiquettes : numéros de soudure, bulles (robinetterie puis raccords), cadres des tubes
+    const etiq = [];
+    const normale = (dx, dy, mx, my) => { const l = Math.hypot(dx, dy); if (l < 1e-6) return [0, 1]; let nx = -dy / l, ny = dx / l; return (mx - centre[0]) * nx + (my - centre[1]) * ny < 0 ? [-nx, -ny] : [nx, ny]; };
+    if (st.sou) s.assemblages.forEach(a => {
+      if (a.nature !== 'Soudure' && a.nature !== 'RaccordementChantier') return;
+      const p = F(a.p), t = a.n + (a.s > 0 ? ' +' + Math.round(a.s) : '');
+      etiq.push({ forme: 'soudure', chantier: a.nature !== 'Soudure', texte: t, w: Pl.largeur(t, 2.1, true) + 0.6, h: 2.5, ancrages: [p], dir: [0, -1], dmin: 1.2, dmax: 9, rappel: false });
+    });
+    if (st.rep) {
+      const bulle = (c, x, y, dir) => { const d = Math.max(4.8, Pl.largeur(c.repere, 2.3, true) + 1.6); etiq.push({ forme: 'bulle', texte: c.repere, w: d, h: d, ancrages: [[x, y]], dir }); };
+      s.composants.filter(c => c.sym).forEach(c => {
+        const o0 = F(c.o[0]), o1 = F(c.o[1]), mx = (o0[0] + o1[0]) / 2, my = (o0[1] + o1[1]) / 2;
+        bulle(c, mx, my, normale(o1[0] - o0[0], o1[1] - o0[1], mx, my));
+      });
+      s.composants.filter(c => !c.sym && c.type !== 'Tube').forEach(c => {
+        if (c.axe) { const a = F(c.axe); bulle(c, a[0], a[1], [a[0] - centre[0], a[1] - centre[1]]); return; }
+        const e = c.ext.map(x => F(x.p));
+        if (e.length >= 2) { const mx = (e[0][0] + e[1][0]) / 2, my = (e[0][1] + e[1][1]) / 2; bulle(c, mx, my, normale(e[1][0] - e[0][0], e[1][1] - e[0][1], mx, my)); }
+        else if (e.length === 1) bulle(c, e[0][0], e[0][1], [e[0][0] - centre[0], e[0][1] - centre[1]]);
+      });
+      s.composants.filter(c => c.type === 'Tube' && c.ext.length >= 2).forEach(c => {
+        const a = F(c.ext[0].p), b = F(c.ext[1].p);
+        etiq.push({ forme: 'cadre', texte: c.repere, w: Pl.largeur(c.repere, 2.3, true) + 2.4, h: 4.2, dir: normale(b[0] - a[0], b[1] - a[1], (a[0] + b[0]) / 2, (a[1] + b[1]) / 2),
+          ancrages: [0.5, 0.3, 0.7, 0.15, 0.85].map(t => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]) });
+      });
+    }
+    Pl.placer(etiq, obs, zv);
+    etiq.forEach(e => {
+      const [rx, ry] = Pl.bord(e, e.x, e.y, e.ancrage);
+      if (e.forme === 'soudure') {
+        if (e.chantier) el('path', { d: `M${e.ancrage[0]} ${Y(e.ancrage[1])}l1.4 -2.4l-2.8 0Z`, class: 'k-weld' }, g);
+        else el('circle', { cx: e.ancrage[0], cy: Y(e.ancrage[1]), r: 0.75, class: 'k-weld' }, g);
+        if (Math.hypot(rx - e.ancrage[0], ry - e.ancrage[1]) > 3) line(e.ancrage[0], e.ancrage[1], rx, ry, 'k-dim', 0.15);
+        text(e.x, e.y, e.texte, { cls: 'k-weldtxt', anchor: 'middle', size: 2.1 });
+        return;
+      }
+      line(e.ancrage[0], e.ancrage[1], rx, ry, 'k-ink', 0.18);
+      if (e.forme === 'bulle') el('circle', { cx: e.x, cy: Y(e.y), r: e.w / 2, class: 'k-ink', 'stroke-width': 0.25, fill: 'var(--paper)' }, g);
+      else el('rect', { x: e.x - e.w / 2, y: Y(e.y + e.h / 2), width: e.w, height: e.h, class: 'k-ink', 'stroke-width': 0.25, fill: 'var(--paper)' }, g);
+      text(e.x, e.y, e.texte, { anchor: 'middle', size: 2.3, bold: true });
     });
 
     // Flèche du nord projetée et échelle
