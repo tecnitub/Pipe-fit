@@ -157,6 +157,116 @@ const Revisions = (() => {
     const a = marquerSvg(svgA, tb, '#c62828'), b = marquerSvg(svgB, ta, '#2e7d32');
     return { avant: a.svg, apres: b.svg, retires: a.marques, ajoutes: b.marques, listeRetires: ta.filter(t => !tb.includes(t)), listeAjoutes: tb.filter(t => !ta.includes(t)) };
   }
-  return { TYPES_PIECE, TYPES_DOC, numeroPiece, nouvellePiece, synchroniserPiece, STATUTS, AVIS, suivant, derniere, prochainIndice, comparer, comparerResultats, resume, modifieDepuis, numero, emission, figer, rang, documentsEtude, etatDiffusion, observationsOuvertes, ajouterRetour, lever, textesSvg, marquerSvg, comparerSchemas };
+  /* ---------- Conséquences d'un changement après émission / validation ---------- */
+  // L'état des équipements (Reperes.etat : repères, puissances, protections, résultats importants, modèles, nombre
+  // d'appareils, matériel retenu, points GTC, valeurs attendues de mise en service) est figé quand l'étude s'engage
+  // (émission d'un calcul, nouvel indice, matériel soumis ou validé) ; l'état courant lui est comparé.
+  const VALIDES_MAT = ['Validé', 'Validé avec réserves'], ENGAGES_MAT = [...VALIDES_MAT, 'Soumis au client'];
+  const CATEGORIES = { armoire: 'Armoire électrique à revoir', materiel: 'Matériel à resoumettre au client', commande: 'Commandes déjà passées', mes: 'PV / mises en service à refaire', gtb: 'Points GTC changés', repere: 'Repères changés', doe: 'DOE à réémettre' };
+  // Signature de l'engagement de l'étude : change à chaque émission, nouvel indice ou matériel soumis / validé
+  function signatureReference(et) {
+    const em = (et.notes || []).reduce((s, n) => s + (n.emissions || []).length, 0);
+    const mat = Object.entries(et.materiel || {}).filter(([, s]) => s && ENGAGES_MAT.includes(s.statut)).map(([k, s]) => `${k}=${s.statut}`).sort();
+    return { engage: em > 0 || mat.length > 0, cle: `${et.indice || ''}|${em}|${mat.join(',')}` };
+  }
+  const kw = v => `${nf(Math.round((Number(v) || 0) * 100) / 100)} kW`;
+  const ecartRes = (a, b) => { const m = new Map((a || []).map(([k, v]) => [k, v])), out = []; (b || []).forEach(([k, v]) => { if (m.has(k) && m.get(k) !== v) out.push(`${k} : ${m.get(k)} → ${v}`); }); return out; };
+  // ref, cur : états (Reperes.etat) ; opts : { materiel (saisies courantes), suivis (chantier : [{ cle, poseLe, mesLe, commande }]), chantier }
+  // → [{ cle, categorie, titre, detail, action?, cible?, signature }]
+  function consequences(ref, cur, opts = {}) {
+    if (!ref || !cur) return [];
+    const out = [], add = (categorie, cle, titre, detail, x = {}) => out.push({ cle: `${categorie}|${cle}`, categorie, titre, detail, signature: `${titre}|${detail}`.slice(0, 400), ...x });
+    const saisies = opts.materiel || {}, suivi = new Map((opts.suivis || []).map(s => [s.cle, s]));
+    // Calculs dont une valeur importante a changé (puissance, débit, nombre d'appareils, modèle du registre)
+    const notesCh = new Map();
+    Object.entries(cur.notes || {}).forEach(([id, n]) => {
+      const a = (ref.notes || {})[id]; if (!a) return;
+      const l = [...ecartRes(a.res, n.res)];
+      Object.keys({ ...(a.nb || {}), ...(n.nb || {}) }).forEach(k => { if ((a.nb || {})[k] !== (n.nb || {})[k]) l.push(`Nombre (${k === 'appareils' ? 'appareils' : k === 'bouchesL' ? 'bouches' : k}) : ${(a.nb || {})[k] || 0} → ${(n.nb || {})[k] || 0}`); });
+      const ma = (a.modeles || []).join(', '), mb = (n.modeles || []).join(', ');
+      if (ma !== mb) l.push(`Modèle du registre : ${ma || '—'} → ${mb || '—'}`);
+      if (l.length) notesCh.set(n.n, { id, titre: n.titre, l });
+    });
+    // Armoire : puissance ou protection changée, équipement ajouté ou retiré
+    const eqA = ref.eq || {}, eqB = cur.eq || {};
+    Object.entries(eqB).forEach(([k, b]) => {
+      const a = eqA[k];
+      if (!a) { if (b.P > 0) add('armoire', k, `${b.rep} ajouté`, `${b.des} — ${kw(b.P)}${b.cal ? `, protection ${b.cal} A` : ''} : départ à créer dans l'armoire`); return; }
+      if (Math.abs((a.P || 0) - (b.P || 0)) > 0.005 || (a.cal || 0) !== (b.cal || 0)) add('armoire', k, `${b.rep} : puissance ${kw(a.P)} → ${kw(b.P)}`, `${b.des}${a.cal !== b.cal ? ` — protection ${a.cal || '—'} A → ${b.cal || '—'} A, câble à vérifier` : ' — bilan de l\'armoire à revoir'}`);
+      if (a.rep && b.rep && a.rep !== b.rep) add('repere', k, `${a.rep} → ${b.rep}`, `${b.des} : étiquettes QR / plaques, PV, table d'échange GTC et DOE portent l'ancien repère`);
+    });
+    Object.entries(eqA).forEach(([k, a]) => { if (!eqB[k] && a.P > 0) add('armoire', k, `${a.rep} retiré`, `${a.des} — ${kw(a.P)} : départ à supprimer de l'armoire`); });
+    // Matériel soumis / validé : dimension changée (poste disparu), quantité, calcul source ou puissance changés
+    const parMetre = new Map();
+    Object.entries(eqB).forEach(([k, b]) => { if (b.metre) { if (!parMetre.has(b.metre)) parMetre.set(b.metre, []); parMetre.get(b.metre).push([k, b]); } });
+    Object.entries(ref.materiel || {}).forEach(([cle, m]) => {
+      if (!ENGAGES_MAT.includes(m.statut)) return;
+      const s = saisies[cle] || {};
+      if (!ENGAGES_MAT.includes(s.statut)) return; // déjà repassé à soumettre
+      const pa = (ref.postes || {})[cle], pb = (cur.postes || {})[cle], raisons = [];
+      if (pa && !pb && !/^reg\|/.test(cle)) raisons.push('équipement redimensionné : ce poste n\'existe plus dans l\'étude');
+      if (pa && pb && pa.qte !== pb.qte) raisons.push(`quantité ${pa.qte} → ${pb.qte}`);
+      ((pb || pa || {}).src || []).forEach(n => { const c = notesCh.get(n); if (c) raisons.push(`${n} — ${c.titre} : ${c.l.slice(0, 3).join(' ; ')}`); });
+      (parMetre.get(cle) || []).forEach(([k, b]) => { const a = eqA[k]; if (a && Math.abs((a.P || 0) - (b.P || 0)) > 0.005) raisons.push(`${b.rep} : puissance ${kw(a.P)} → ${kw(b.P)}`); });
+      if (!raisons.length) return;
+      const lib = m.ref || cle, detail = raisons.join(' ; ');
+      add('materiel', cle, `${lib} (${s.statut})`, detail, { action: 'resoumettre', cible: cle });
+      const sv = suivi.get(cle) || {};
+      if (s.substitution || s.commande || s.commandeLe || sv.commande || sv.poseLe) add('commande', cle, `${lib}`, `${sv.poseLe ? `posé le ${sv.poseLe}` : 'commande déjà passée'} : vérifier avec les achats / le fournisseur (${detail.slice(0, 160)})`);
+      else if (opts.chantier && VALIDES_MAT.includes(s.statut)) add('commande', cle, `${lib}`, `Validé : si la commande est déjà passée, la reprendre avec le fournisseur (${detail.slice(0, 160)})`);
+    });
+    // Mise en service : valeurs attendues changées
+    Object.entries(cur.mes || {}).forEach(([k, b]) => {
+      const a = (ref.mes || {})[k]; if (!a) return;
+      const ma = new Map((a.att || []).map(x => [x.split('=')[0], x.split('=').slice(1).join('=')])), d = [];
+      (b.att || []).forEach(x => { const [l, ...v] = x.split('='); if (ma.has(l) && ma.get(l) !== v.join('=')) d.push(`${l} : ${ma.get(l)} → ${v.join('=')}`); });
+      if (!d.length) return;
+      const sv = b.cle && suivi.get(b.cle);
+      add('mes', k, b.titre, `${sv && sv.mesLe ? `mise en service faite le ${sv.mesLe} : PV à refaire — ` : 'fiche de mise en service et PV préremplis à régénérer — '}${d.slice(0, 4).join(' ; ')}`);
+    });
+    // Points GTC : ajoutés / retirés (table d'échange à retransmettre à l'intégrateur)
+    Object.entries(cur.gtb || {}).forEach(([id, l]) => {
+      const a = new Set((ref.gtb || {})[id] || []), b = new Set(l), plus = l.filter(x => !a.has(x)), moins = [...a].filter(x => !b.has(x));
+      if (!(ref.gtb || {})[id] || (!plus.length && !moins.length)) return;
+      add('gtb', id, `${plus.length ? `+${plus.length}` : ''}${plus.length && moins.length ? ' / ' : ''}${moins.length ? `−${moins.length}` : ''} point(s)`, `${[...plus.slice(0, 3).map(x => `+ ${x}`), ...moins.slice(0, 3).map(x => `− ${x}`)].join(' ; ')}${plus.length + moins.length > 6 ? ' ; …' : ''} : table d'échange et liste des points à retransmettre, essais point à point à mettre à jour`);
+    });
+    if (out.length && opts.chantier) add('doe', 'etude', 'Dossier des ouvrages exécutés', `${out.length} changement(s) depuis l'émission : si le DOE est déjà émis, le réémettre (liste des équipements, PV, table d'échange, schémas)`);
+    return out;
+  }
+  // Liste suivie dans l'étude (et.consequences) : nouvelles conséquences ouvertes, celles revenues à l'état émis retirées
+  // (sauf figées) ; figer : l'état de référence change (nouvelle émission), les conséquences ouvertes sont gardées
+  function suivreConsequences(et, live, { figer: fig = false, date = '' } = {}) {
+    const l = (et.consequences || []).filter(x => x.fige || live.some(y => y.cle === x.cle));
+    live.forEach(y => {
+      const x = l.find(z => z.cle === y.cle && !z.fige);
+      if (!x) l.push({ ...y, statut: 'ouvert', le: date });
+      else if (x.signature !== y.signature) Object.assign(x, y, { statut: x.statut === 'fait' ? 'fait' : 'ouvert', le: date });
+    });
+    if (fig) l.forEach((x, i) => { if (!x.fige) { x.fige = true; x.cle = `${x.cle}@${date || 'ref'}#${i}`; } });
+    et.consequences = l.slice(-200);
+    return et.consequences.filter(x => x.statut === 'ouvert');
+  }
+  const marquerVu = (et, cle, date = '') => { const x = (et.consequences || []).find(y => y.cle === cle); if (x) { x.statut = 'vu'; x.vuLe = date; } return !!x; };
+  // Ligne du matériel validée / soumise dont le dimensionnement a changé : repasse « à soumettre », motif en observation
+  function repasserASoumettre(et, cle, motif = '', date = '') {
+    const s = (et.materiel || {})[cle];
+    if (!s) return false;
+    Object.assign(s, { statut: 'À soumettre', dateSoumission: '', dateValidation: '', obs: `Dimensionnement modifié${date ? ` le ${date}` : ''} : ${motif}`.slice(0, 300) + (s.obs ? ` — ${s.obs}` : '').slice(0, 200) });
+    (et.consequences || []).filter(x => x.cible === cle && x.categorie === 'materiel').forEach(x => { x.statut = 'fait'; x.faitLe = date; });
+    return true;
+  }
+  // À chaque enregistrement : état de référence pris au premier engagement, conséquences suivies, référence avancée
+  // (conséquences ouvertes figées) quand l'étude s'engage de nouveau ; etatFn : () => Reperes.etat(et)
+  function suivreReference(et, etatFn, { date = '', suivis } = {}) {
+    const sig = signatureReference(et);
+    if (!sig.engage) return [];
+    if (!et.etatReference) { et.etatReference = { sig: sig.cle, le: date, etat: etatFn() }; return []; }
+    const cur = etatFn(), live = consequences(et.etatReference.etat, cur, { materiel: et.materiel, suivis, chantier: !!et.affaireId });
+    if (et.etatReference.sig === sig.cle) return suivreConsequences(et, live, { date });
+    const r = suivreConsequences(et, live, { figer: true, date });
+    et.etatReference = { sig: sig.cle, le: date, etat: cur };
+    return r;
+  }
+  return { CATEGORIES, signatureReference, suivreReference, consequences, suivreConsequences, marquerVu, repasserASoumettre, TYPES_PIECE, TYPES_DOC, numeroPiece, nouvellePiece, synchroniserPiece, STATUTS, AVIS, suivant, derniere, prochainIndice, comparer, comparerResultats, resume, modifieDepuis, numero, emission, figer, rang, documentsEtude, etatDiffusion, observationsOuvertes, ajouterRetour, lever, textesSvg, marquerSvg, comparerSchemas };
 })();
 if (typeof module !== 'undefined') module.exports = Revisions;

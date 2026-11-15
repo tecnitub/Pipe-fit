@@ -1249,6 +1249,9 @@ const Electricite = ((N, Sc) => {
       const partage = ls.length > 1 && ls.every(o => o.type === 'ventilateur'), tot = ls.reduce((s, o) => s + (num(o.P) || 0), 0) || ls.length;
       ls.forEach(o => { o.P = Math.round((partage ? pe * (num(o.P) || 1) / tot : pe) * 100) / 100; o.designation = `${o.designation} — ${ref}`; o.catalogue = ref; });
     });
+    // Repères renommés dans la table des repères (reperes.js) quand le calcul ne porte pas le repère : { [src]: { de, vers } }
+    const ren = etude.renommesReperes || {};
+    out.forEach(o => { const r = o.src && ren[o.src]; if (r && (r.vers || typeof r === 'string')) o.rep = r.vers || r; });
     return out;
   }
   // Fusion avec les lignes déjà saisies : les choix (alimentation, départ, régulation, longueur…) des lignes déjà reprises sont gardés

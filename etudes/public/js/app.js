@@ -7,7 +7,7 @@ const aujourdhui = () => new Date().toISOString().slice(0, 10);
 const uidE = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('');
 const copie = o => JSON.parse(JSON.stringify(o));
 // Copie d'une étude (duplication, modèle) : les calculs repartent sans émission
-const sansEmissions = et => ({ ...et, notes: (et.notes || []).map(n => ({ ...n, emissions: [], indice: '' })) });
+const sansEmissions = et => { const c = { ...et, notes: (et.notes || []).map(n => ({ ...n, emissions: [], indice: '' })) }; delete c.etatReference; delete c.consequences; return c; };
 async function api(method, url, body) {
   const r = await fetch(url, { method, headers: body !== undefined ? { 'Content-Type': 'application/json' } : {}, body: body !== undefined ? JSON.stringify(body) : undefined });
   const j = await r.json().catch(() => ({}));
@@ -68,7 +68,7 @@ function resumePF(et) {
   const debits = PointsMes.debits(et, Liens);
   // Points de mise en service (valeurs attendues, réseaux à éprouver, contrôles) : liste des mises en service du chantier
   let mes = [];
-  try { if (typeof PointsMes !== 'undefined') mes = PointsMes.extraire(et, n => Liens.calculer(et, n)); } catch (e) { mes = []; }
+  try { if (typeof PointsMes !== 'undefined') mes = PointsMes.extraire(et, n => Liens.calculer(et, n)); if (typeof Reperes !== 'undefined') mes = Reperes.appliquerMes(et, mes); } catch (e) { mes = []; }
   // Visites et contrôles d'entretien induits par les calculs annexes (carnet du DOE, contrat d'entretien du chantier)
   let entretien = [];
   try { if (typeof AnnexesExploitation !== 'undefined') entretien = AnnexesExploitation.entretien(et, Liens).map(({ noteId, ...o }) => o); } catch (e) { entretien = []; }
@@ -88,6 +88,8 @@ function enregistrer(etude) {
       Registre.synchroniser(etude);
     } catch (e) { /* étude incomplète */ }
   }
+  // Conséquences d'un changement : état de référence pris (ou avancé) quand l'étude s'engage (émission, matériel validé)
+  if (!etude.modele && typeof suivreEngagement === 'function') suivreEngagement(etude, false);
   // Valeurs estimées : retirées dès qu'une valeur réelle existe (saisie, bilan, fiche, calcul relié), rafraîchies sinon
   if (!etude.modele && typeof Estimations !== 'undefined') { try { if (Estimations.enPlace(etude).length || JSON.stringify(etude.notes || []).includes('"_estimes"')) Estimations.appliquer(etude, { rafraichir: true }); } catch (e) { /* étude incomplète */ } }
   const st = S.enCours.get(etude.id) || {};
@@ -545,6 +547,7 @@ Vues.etude = {
       ${typeof carteMateriel === 'function' ? carteMateriel(et) : ''}
       ${carteDocuments(et)}
       ${tableauBordHtml(et)}
+      ${typeof carteReperes === 'function' ? carteReperes(et) : ''}
       ${typeof carteExploitation === 'function' ? carteExploitation(et) : ''}
       <div class="barre"><h2>Calculs <span class="compte">${et.notes.length}</span></h2><button id="ajout">+ Ajouter un calcul</button>${et.notes.some(n => ['pid', 'arbo', 'terminaux', 'cta', 'ecs'].includes(n.type)) ? `<a class="secondaire btn" id="installation" href="#/etude/${et.id}/installation" title="Schémas de principe, circuits, réseaux arborescents, branches et consommateurs d'eau : raccordements et contrôles de cohérence">💧 Installation hydraulique</a>` : ''}<button class="secondaire" id="vrac" title="Charger toutes les fiches techniques du chantier d'un coup, puis les répartir dans les calculs (terminaux, CTA, production, pompes, vase, ballon, bouches, robinetterie…) sans ressaisie">📥 Matériel en vrac</button><span class="espace"></span>
         ${et.notes.length ? '<button class="secondaire" id="fiches-mes" title="Une fiche par équipement (générateurs, pompes, terminaux, CTA…) : points de contrôle, valeurs attendues de l\'étude, mesures à relever">📋 Fiches de mise en service</button>' : ''}
@@ -566,6 +569,7 @@ Vues.etude = {
     if (noteId) return Vues.note.bind(root, et, noteId);
     const fm = root.querySelector('#fiches-mes');
     if (fm) fm.onclick = () => dialogueFichesMes(et);
+    if (typeof lierReperes === 'function') lierReperes(root, et);
     const rc = root.querySelector('#reserves-conformite');
     if (rc) rc.onclick = () => dialogueReservesConformite(et);
     const ve = root.querySelector('#visites-entretien');
@@ -1832,7 +1836,7 @@ function dialogueLongueurs(et, n) {
 }
 function dialogueFichesMes(et) {
   let liste = [];
-  try { contexteEtude = et; liste = FichesMes.fiches(et, n => Liens.calculer(et, n)); } catch (e) { return toast(`Fiches impossibles : ${e.message}`, 6000); }
+  try { contexteEtude = et; liste = FichesMes.fiches(et, n => Liens.calculer(et, n)); if (typeof Reperes !== 'undefined') liste = Reperes.appliquerMes(et, liste); } catch (e) { return toast(`Fiches impossibles : ${e.message}`, 6000); }
   if (!liste.length) return toast('Aucun équipement à mettre en service dans les calculs de l\'étude (production, pompes, terminaux, CTA…).', 6000);
   const groupes = [...new Set(liste.map(f => f.libType))];
   const b = Modal.open(`<h2>📋 Fiches de mise en service</h2><p class="muted petit">Une fiche par équipement : points de contrôle à cocher, valeurs attendues reprises de l'étude, colonnes « Mesuré », « Écart » et « Conforme » à remplir sur place, réglages, conclusion et signatures.</p>
@@ -1865,6 +1869,118 @@ function carteExploitation(et) {
   return `<div class="carte petit exploitation-etude" id="carte-exploitation">🛡️ <strong>Réserves de conformité</strong> : ${d.total ? `${d.faits} / ${d.total} levée(s)${d.restent ? ` — <strong>${d.restent} à lever</strong> avec le bureau de contrôle` : ''}` : 'aucune'}
     · 🔧 <strong>Entretien</strong> : ${ops.length} visite(s) ou contrôle(s) dont ${obl} obligatoire(s), repris par le carnet du DOE et le contrat d'entretien
     <span class="espace"></span><button class="secondaire petit" id="reserves-conformite">📋 Récapitulatif des réserves</button> <button class="secondaire petit" id="visites-entretien">🔧 Visites d'entretien</button></div>`;
+}
+/* ---------- Repères des équipements (reperes.js) et conséquences d'un changement après émission (revisions.js) ---------- */
+// État de référence et conséquences : complet = recalcul de l'état courant (page de l'étude) ; sinon seulement quand
+// l'étude s'engage de nouveau (enregistrement après une émission, un nouvel indice, du matériel soumis / validé)
+function suivreEngagement(et, complet) {
+  if (et.modele || typeof Reperes === 'undefined') return [];
+  const sig = Revisions.signatureReference(et);
+  if (!complet && (!sig.engage || (et.etatReference && et.etatReference.sig === sig.cle))) return null;
+  if (!sig.engage) return [];
+  // Étude inchangée depuis le dernier passage (simple affichage) : pas de nouveau calcul de l'état
+  let cle = '';
+  try { cle = JSON.stringify([et.notes, et.materiel, et.equipements, et.renommesReperes, et.affaireId, sig.cle, (et.etatReference || {}).sig]); } catch (e) { cle = ''; }
+  const c = suivreEngagement.cache || (suivreEngagement.cache = new Map());
+  if (complet && cle && c.get(et.id) === cle) return (et.consequences || []).filter(x => x.statut === 'ouvert');
+  try { contexteEtude = et; const r = avecCalculsMemorises(() => Revisions.suivreReference(et, () => Reperes.etat(et), { date: aujourdhui() })); if (cle) c.set(et.id, JSON.stringify([et.notes, et.materiel, et.equipements, et.renommesReperes, et.affaireId, Revisions.signatureReference(et).cle, (et.etatReference || {}).sig])); return r; } catch (e) { return []; }
+}
+function carteReperes(et) {
+  if (et.modele || typeof Reperes === 'undefined' || !(et.notes || []).length) return '';
+  let t = { lignes: [], conflits: [] }, cons = [];
+  try { contexteEtude = et; t = avecCalculsMemorises(() => Reperes.table(et, { gtb: false, mes: false, metre: false })); } catch (e) { /* étude incomplète */ }
+  const avant = JSON.stringify(et.consequences || []);
+  cons = suivreEngagement(et, true) || [];
+  if (JSON.stringify(et.consequences || []) !== avant) setTimeout(() => enregistrer(et), 0);
+  const ref = et.etatReference;
+  return `<div class="carte petit reperes-etude" id="carte-reperes">🏷️ <strong>Repères des équipements</strong> : ${t.lignes.length} équipement(s)${t.conflits.length ? ` — <strong class="erreur">${t.conflits.length} conflit(s)</strong>` : ' — un seul repère par équipement'}
+    · 🔁 <strong>Conséquences du changement</strong> : ${ref ? (cons.length ? `<strong>${cons.length} à traiter</strong> depuis l'état émis du ${dateFr(ref.le)}` : `aucune depuis l'état émis du ${dateFr(ref.le)}`) : 'rien d\'émis ni de validé pour l\'instant'}
+    <span class="espace"></span><button class="secondaire petit" id="table-reperes">🏷️ Table des repères</button> <button class="secondaire petit" id="voir-consequences" ${ref ? '' : 'disabled'}>🔁 Conséquences du changement${cons.length ? ` (${cons.length})` : ''}</button></div>`;
+}
+function lierReperes(root, et) {
+  const a = root.querySelector('#table-reperes');
+  if (a) a.onclick = () => dialogueReperes(et);
+  const b = root.querySelector('#voir-consequences');
+  if (b) b.onclick = () => dialogueConsequences(et);
+}
+// Table des repères : recherche, sources de chaque équipement, conflits, renommage à un seul endroit
+function dialogueReperes(et, filtre = '') {
+  let t;
+  try { contexteEtude = et; t = avecCalculsMemorises(() => Reperes.table(et)); } catch (e) { return toast(`Table des repères impossible : ${e.message}`, 6000); }
+  const b = Modal.open(`<h2>🏷️ Table des repères</h2><p class="muted petit">Un seul repère par équipement : le renommer ici le change dans le calcul qui le porte, la ligne de l'armoire, les points GTC, le métré et le matériel retenu (statut, fabricant et référence gardés), les réserves et les fiches de mise en service. Ce qui est hors de l'étude (étiquettes imprimées, commandes, DOE émis) est listé après le renommage.</p>
+    <div id="rp-conflits"></div>
+    <label class="petit">Rechercher <input id="rp-q" type="search" value="${esc(filtre)}" placeholder="Repère, désignation, calcul…" style="min-width:16em"></label>
+    <div style="max-height:52vh;overflow:auto"><table class="liste compact petit" id="rp-table"><thead><tr><th>Repère</th><th>Équipement</th><th>Calcul</th><th>Où il figure</th><th></th></tr></thead><tbody></tbody></table></div>
+    <div class="actions"><button class="secondaire" id="rp-x">Fermer</button></div>`);
+  const conf = b.querySelector('#rp-conflits');
+  conf.innerHTML = t.conflits.length ? `<div class="carte petit avert"><strong>${t.conflits.length} conflit(s)</strong><ul>${t.conflits.map((c, i) => `<li>${esc(c.texte)} ${c.nature === 'doublon' ? `<button class="secondaire petit" data-rp-filtre="${esc(c.rep)}">Voir</button>`
+    : c.nature === 'deuxReperes' ? c.reps.map(r => `<button class="secondaire petit" data-rp-garder="${i}" data-rep="${esc(r)}">Garder ${esc(r)}</button>`).join(' ')
+    : c.vers ? `<button class="secondaire petit" data-rp-realigner="${i}">Réaligner sur ${esc(c.vers.rep)}</button>` : ''}</li>`).join('')}</ul></div>` : '<p class="petit">✓ Aucun conflit : chaque repère désigne un seul équipement et chaque équipement porte le même repère partout.</p>';
+  const rendre = () => {
+    const q = String(b.querySelector('#rp-q').value || '').toLowerCase().trim();
+    const l = t.lignes.filter(x => !q || `${x.rep} ${x.designation} ${x.note} ${x.sources.join(' ')}`.toLowerCase().includes(q));
+    const doublons = new Set(t.conflits.filter(c => c.nature === 'doublon').map(c => c.rep));
+    b.querySelector('#rp-table tbody').innerHTML = l.slice(0, 400).map(x => `<tr data-cle="${esc(x.cle)}"><td><strong>${esc(x.rep)}</strong>${doublons.has(x.rep) ? ' <span class="badge erreur">doublon</span>' : ''}${x.derive && x.derive !== x.rep ? ` <span class="badge attention" title="Repère du calcul">calcul : ${esc(x.derive)}</span>` : ''}</td>
+      <td>${esc(x.designation)}</td><td class="muted">${esc(x.note.split(' — ')[0])}</td><td>${x.sources.map(s => `<span class="badge">${esc(s)}</span>`).join(' ')}${x.points.length ? `<details><summary class="muted">points GTC</summary>${x.points.slice(0, 12).map(p => esc(p)).join('<br>')}</details>` : ''}</td>
+      <td style="white-space:nowrap"><button class="secondaire petit" data-rp-ren="${esc(x.cle)}" title="Renommer ce repère partout dans l'étude">✎ Renommer</button></td></tr>`).join('') + (l.length > 400 ? `<tr><td colspan="5" class="muted">… ${l.length - 400} autre(s) : précisez la recherche</td></tr>` : '') || '<tr><td colspan="5" class="muted">Aucun repère trouvé.</td></tr>';
+    b.querySelectorAll('[data-rp-ren]').forEach(x => { x.onclick = () => {
+      const ligne = t.lignes.find(y => y.cle === x.dataset.rpRen), td = x.parentElement;
+      td.innerHTML = `<input class="rp-nouveau" value="${esc(ligne.rep)}" aria-label="Nouveau repère" style="width:9em"> <button class="petit" data-rp-ok>OK</button>`;
+      const inp = td.querySelector('input'); inp.focus(); inp.select();
+      const valider = () => appliquerRenommage(et, ligne, inp.value, filtre => { dialogueReperes(et, filtre); });
+      td.querySelector('[data-rp-ok]').onclick = valider;
+      inp.onkeydown = ev => { if (ev.key === 'Enter') valider(); if (ev.key === 'Escape') rendre(); };
+    }; });
+  };
+  b.querySelector('#rp-q').oninput = rendre;
+  b.querySelector('#rp-x').onclick = () => { Modal.close(); App.render(); };
+  b.querySelectorAll('[data-rp-filtre]').forEach(x => { x.onclick = () => { b.querySelector('#rp-q').value = x.dataset.rpFiltre; rendre(); }; });
+  b.querySelectorAll('[data-rp-garder]').forEach(x => { x.onclick = () => {
+    const c = t.conflits[+x.dataset.rpGarder], ligne = t.lignes.find(y => y.cle === c.cles[0]), r = x.dataset.rep;
+    // Garder le repère du calcul : la ligne d'armoire est renommée ; garder celui de l'armoire : le calcul suit
+    const res = avecCalculsMemorises(() => Reperes.aligner(et, ligne.cle, r, { date: aujourdhui() }));
+    if (!res.ok) return toast(res.erreur, 6000);
+    enregistrer(et); compteRenduRenommage(et, res, r === ligne.derive ? ligne.rep : ligne.derive, r);
+  }; });
+  b.querySelectorAll('[data-rp-realigner]').forEach(x => { x.onclick = () => { const k = Reperes.realigner(et, t.conflits[+x.dataset.rpRealigner]); enregistrer(et); toast(k ? 'Ligne d\'armoire réalignée sur le repère du calcul (choix d\'alimentation gardés).' : 'Rien à réaligner.', 5000); dialogueReperes(et, filtre); }; });
+  rendre();
+}
+function appliquerRenommage(et, ligne, valeur, rouvrir) {
+  const nv = String(valeur || '').trim();
+  if (!nv || nv === ligne.rep) return rouvrir('');
+  let r;
+  try { contexteEtude = et; r = avecCalculsMemorises(() => Reperes.renommer(et, ligne.rep, nv, { cle: ligne.cle, date: aujourdhui() })); } catch (e) { return toast(`Renommage impossible : ${e.message}`, 6000); }
+  if (!r.ok) return toast(r.erreur, 6000);
+  enregistrer(et);
+  compteRenduRenommage(et, r, ligne.rep, nv);
+}
+function compteRenduRenommage(et, r, ancien, nouveau) {
+  const grp = l => [...new Set(l.map(x => x.ou))].map(ou => `<li><strong>${esc(ou)}</strong> : ${l.filter(x => x.ou === ou).map(x => esc(x.detail)).join(' ; ')}</li>`).join('');
+  const b = Modal.open(`<h2>🏷️ ${esc(ancien)} → ${esc(nouveau)}</h2><p class="petit">${esc(r.equipement.designation || '')}${r.equipement.note ? ` — ${esc(r.equipement.note)}` : ''}</p>
+    <h3>Mis à jour dans l'étude</h3><ul class="petit">${grp(r.modifs)}</ul>
+    <h3>Hors de l'étude : à reprendre</h3><p class="muted petit">Ces pièces ne sont pas modifiées automatiquement.</p><ul class="petit">${grp(r.horsEtude)}</ul>
+    <div class="actions"><button class="secondaire" id="cr-table">↩ Table des repères</button><button id="cr-x">Fermer</button></div>`);
+  b.querySelector('#cr-x').onclick = () => { Modal.close(); App.render(); };
+  b.querySelector('#cr-table').onclick = () => dialogueReperes(et, nouveau);
+}
+// Conséquences du changement : liste par catégorie, actions « repasser à soumettre » et « marquer vu »
+function dialogueConsequences(et) {
+  const rendre = () => {
+    const l = (et.consequences || []).filter(x => x.statut === 'ouvert'), vues = (et.consequences || []).filter(x => x.statut !== 'ouvert');
+    const ref = et.etatReference;
+    b.querySelector('#cs-corps').innerHTML = `<p class="petit">Comparaison de l'étude avec son état émis${ref ? ` du ${dateFr(ref.le)}` : ''} (émission d'un calcul, nouvel indice, matériel soumis ou validé) : puissance, débit, modèle du registre, nombre d'appareils, repères.</p>
+      ${l.length ? Object.entries(Revisions.CATEGORIES).map(([k, lib]) => { const g = l.filter(x => x.categorie === k); return g.length ? `<h3>${esc(lib)} <span class="compte">${g.length}</span></h3><table class="liste compact petit">${g.map(x => `<tr><td><strong>${esc(x.titre)}</strong><br><span class="muted">${esc(x.detail)}</span></td>
+        <td style="white-space:nowrap">${x.action === 'resoumettre' && ((et.materiel || {})[x.cible] || {}).statut ? `<button class="petit" data-cs-res="${esc(x.cle)}">↺ Repasser à soumettre</button> ` : ''}<button class="secondaire petit" data-cs-vu="${esc(x.cle)}">✓ Marquer vu</button></td></tr>`).join('')}</table>` : ''; }).join('')
+        : '<p class="muted">✓ Aucune conséquence à traiter.</p>'}
+      ${vues.length ? `<details><summary class="petit muted">${vues.length} déjà traitée(s)</summary><ul class="petit muted">${vues.slice(-30).map(x => `<li>${esc(Revisions.CATEGORIES[x.categorie] || '')} — ${esc(x.titre)} (${x.statut === 'fait' ? 'fait' : 'vu'})</li>`).join('')}</ul></details>` : ''}`;
+    b.querySelectorAll('[data-cs-vu]').forEach(x => { x.onclick = () => { Revisions.marquerVu(et, x.dataset.csVu, aujourdhui()); enregistrer(et); rendre(); }; });
+    b.querySelectorAll('[data-cs-res]').forEach(x => { x.onclick = () => { const c = et.consequences.find(y => y.cle === x.dataset.csRes); Revisions.repasserASoumettre(et, c.cible, c.detail, aujourdhui()); enregistrer(et); toast('Ligne du matériel repassée « à soumettre » : à renvoyer au client avec la nouvelle fiche.', 5000); rendre(); }; });
+  };
+  const b = Modal.open(`<h2>🔁 Conséquences du changement</h2><div id="cs-corps" style="max-height:60vh;overflow:auto"></div>
+    <div class="actions"><button class="secondaire" id="cs-tout">✓ Tout marquer vu</button><button id="cs-x">Fermer</button></div>`);
+  b.querySelector('#cs-x').onclick = () => { Modal.close(); App.render(); };
+  b.querySelector('#cs-tout').onclick = () => { (et.consequences || []).filter(x => x.statut === 'ouvert').forEach(x => Revisions.marquerVu(et, x.cle, aujourdhui())); enregistrer(et); rendre(); };
+  rendre();
 }
 function dialogueReservesConformite(et) {
   let liste = [];

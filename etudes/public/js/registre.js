@@ -539,9 +539,14 @@ const Registre = (() => {
   /* ---------- Repères : tout numéroter d'un clic (terminaux, bouches de toute l'étude) ---------- */
   function numeroterTout(et) {
     let k = 0;
+    const changes = [];
     ((et && et.notes) || []).filter(n => n.type === 'terminaux').forEach(n => {
-      k += numeroter(n.entrees.appareils || [], a => typeTerminal((T().TYPES[a.type] || [''])[0], a).prefixe, 'rep', a => a.type || a.rep);
+      const l = n.entrees.appareils || [], avant = l.map(a => String((a && a.rep) || '').trim());
+      k += numeroter(l, a => typeTerminal((T().TYPES[a.type] || [''])[0], a).prefixe, 'rep', a => a.type || a.rep);
+      // Repère changé (doublon renuméroté) : ligne d'armoire et PV du chantier suivent (table des repères, reperes.js)
+      l.forEach((a, i) => { if (a && avant[i] && avant[i] !== a.rep) changes.push({ noteId: n.id, de: avant[i], vers: a.rep, prefixe: `${n.id}:t${i}:`, ambigu: l.some(b => b && b.rep === avant[i]) }); });
     });
+    if (changes.length) { try { const R = typeof Reperes !== 'undefined' ? Reperes : require('./reperes'); R.apresNumerotation(et, changes); } catch (e) { /* table des repères absente */ } }
     const pris = new Set();
     schemasAir(et).forEach(n => (n.entrees.bouchesL || []).forEach(b => {
       if (!remplie(b)) return;
