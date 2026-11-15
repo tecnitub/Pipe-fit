@@ -171,3 +171,67 @@ test('énergie : étude sans autres notes, liens tolérants', () => {
   et.notes.forEach(n => { assert.doesNotThrow(() => L.calculer(et, n), n.type); assert.deepStrictEqual(L.calculer(et, n).alertes.filter(a => a.niveau === 'erreur'), [], n.type); });
   assert.strictEqual(L.resoudre(et, et.notes[4]).entrees.zone, 'H3');
 });
+
+/* ---------- Auxiliaires et ventilation (électricité des pompes, brûleurs, ventilateurs) ---------- */
+test('énergie annuelle : auxiliaires et ventilation, valeurs calculées à la main', () => {
+  const r = N.calculer('energieAnnuelle', { site: 'paris', DJU: 2400, Ti: 19, Tbase: -7, Pch: 100, intermittence: 85, Pfr: 0, Vj: 0, auxSource: '',
+    hPompes: 5800, chargeVar: 50, hVentil: 3000, occupation: 70, qmin: 30,
+    solutions: [{ nom: 'Gaz', energie: 'gaz', rendCh: 0.95, seer: '', prix: 0.1 }],
+    auxiliaires: [
+      { rep: 'P1', designation: 'Pompe radiateurs', usage: 'auxiliaires', P: 0.5, regulation: 'fixe', profil: 'chauffage', heures: '', taux: '' },
+      { rep: 'P2', designation: 'Pompe plancher', usage: 'auxiliaires', P: 1.2, regulation: 'variable', profil: 'chauffage', heures: '', taux: '' },
+      { rep: 'G1', designation: 'Brûleur chaudière', usage: 'auxiliaires', P: 0.3, regulation: 'fixe', profil: 'prodChaud', heures: '', taux: '' },
+      { rep: 'VS', designation: 'Soufflage CTA', usage: 'ventilation', P: 2.2, regulation: 'variable', profil: 'occupation', heures: '', taux: '' },
+      { rep: 'VR', designation: 'Reprise CTA', usage: 'ventilation', P: 1.5, regulation: 'fixe', profil: 'occupation', heures: 2000, taux: 80 }] });
+  const Bch = 100 * 24 * 2400 * 0.85 / 26, v = r.valeurs;
+  // P1 : 0,5 × 5 800 × 1 = 2 900 ; P2 : 1,2 × 5 800 × 0,5 = 3 480 ; G1 : 0,3 × (B / P = 1 883,08 h) = 564,92 kWh
+  proche(v.auxiliaires[0].E, 2900, 1e-9); proche(v.auxiliaires[1].E, 3480, 1e-9); proche(v.auxiliaires[2].E, 0.3 * Bch / 100, 1e-9);
+  proche(v.Eaux, 2900 + 3480 + 564.923, 0.001);
+  // VS : 2,2 × 3 000 × max(0,3 ; 0,7)² = 2,2 × 3 000 × 0,49 = 3 234 ; VR saisie : 1,5 × 2 000 × 0,8 = 2 400
+  proche(v.auxiliaires[3].E, 3234, 1e-9); proche(v.auxiliaires[4].E, 2400, 1e-9); proche(v.Event, 5634, 1e-9);
+  assert.deepStrictEqual(v.auxiliaires.map(x => x.aValider), [true, true, true, true, false]);
+  assert.ok(r.alertes.some(a => /à valider/.test(a.texte)), 'hypothèses à valider signalées');
+  // Communs aux solutions : la comparaison des solutions ne change pas
+  proche(v.solutions[0].Cfin, Bch / 0.95, 1e-6);
+  const t = r.tableaux.find(x => /Auxiliaires et ventilation/.test(x.titre)); assert.ok(t && t.lignes.length === 5);
+  t.lignes.forEach(l => assert.strictEqual(l.length, t.entetes.length));
+  // Débit minimal au-dessus de l'occupation : 4 × 1 000 × max(0,5 ; 0,3)² = 1 000 kWh
+  proche(N.calculer('energieAnnuelle', { auxSource: '', occupation: 30, qmin: 50, hVentil: 1000, auxiliaires: [{ usage: 'ventilation', P: 4, regulation: 'variable' }] }).valeurs.Event, 1000, 1e-9);
+  // Prévu par usage (comparaison aux compteurs)
+  const p = A.prevuParUsage(v);
+  proche(p.consommations.auxiliaires, v.Eaux, 1e-9); proche(p.consommations.ventilation, 5634, 1e-9);
+  // Sans ligne : rien d'ajouté (résultat par défaut inchangé)
+  const d = N.calculer('energieAnnuelle', {});
+  assert.strictEqual(d.valeurs.Eaux, 0); assert.ok(!d.tableaux.some(x => /Auxiliaires/.test(x.titre)));
+});
+
+test('énergie annuelle : auxiliaires repris du bilan électrique (pompes, CTA PelS / PelR), comptages complets', () => {
+  const et = etude(), cta = note('a', 'cta', { fiche: { PelS: 2.2, PelR: 1.5 } }, 'CTA bureaux'), en = note('e', 'energieAnnuelle');
+  et.notes.push(cta, en);
+  const r = L.resoudre(et, en), l = r.entrees.auxiliaires;
+  const vs = l.find(x => /^VS-/.test(x.rep)), vr = l.find(x => /^VR-/.test(x.rep));
+  assert.ok(vs && vr, JSON.stringify(l.map(x => x.rep)));
+  assert.deepStrictEqual([vs.P, vs.usage, vs.regulation, vs.profil], [2.2, 'ventilation', 'variable', 'occupation']);
+  assert.strictEqual(vr.P, 1.5);
+  assert.ok(l.some(x => x.usage === 'auxiliaires' && /Pompe/.test(x.designation)), 'pompes des schémas');
+  assert.ok(l.some(x => x.profil === 'prodChaud'), 'auxiliaires des chaudières');
+  assert.ok(!l.some(x => /secours|désenfumage/i.test(x.designation)));
+  const i = l.indexOf(vs); assert.ok(r.verrous[`auxiliaires.${i}.P`], 'puissance reprise verrouillée');
+  assert.ok(!r.verrous[`auxiliaires.${i}.heures`], 'heures saisissables');
+  const v = L.calculer(et, en).valeurs;
+  proche(v.Event, 2.2 * 3000 * 0.49 + 1.5 * 3000 * 0.49, 1e-6);
+  // Saisie : rien de repris
+  const s = note('s2', 'energieAnnuelle', { auxSource: '' }); et.notes.push(s);
+  assert.deepStrictEqual(L.resoudre(et, s).entrees.auxiliaires, []);
+  // Bilan électrique de l'étude toujours calculable (pas de boucle)
+  assert.ok(E.equipementsEtude(et, L).length > 0);
+  // Comptages : compteurs des auxiliaires et de la ventilation comparés au prévu (prorata des jours)
+  const C = require('../etudes/public/js/comptages');
+  const ctx = { energie: A.prevuParUsage(v) }, rel = [
+    { date: '2026-01-01', compteur: 'CPT-E-VENT', index: 0 }, { date: '2026-07-02', compteur: 'CPT-E-VENT', index: 2000 },
+    { date: '2026-01-01', compteur: 'CPT-E-AUX', index: 0 }, { date: '2026-07-02', compteur: 'CPT-E-AUX', index: 1000 }];
+  const b = C.bilan({ releves: rel, prevus: [], ctx });
+  const lv = b.parUsage.find(x => x.usage === 'ventilation'), la = b.parUsage.find(x => x.usage === 'auxiliaires');
+  proche(lv.prevu, Math.round(v.Event * 182 / 365), 1); assert.strictEqual(lv.reel, 2000); assert.strictEqual(lv.unite, 'kWh');
+  proche(la.prevu, Math.round(v.Eaux * 182 / 365), 1);
+});

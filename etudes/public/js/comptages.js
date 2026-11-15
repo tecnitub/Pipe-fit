@@ -11,7 +11,7 @@ const Comptages = (() => {
   const cle = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, '');
   const essai = f => { try { return f(); } catch (e) { return null; } };
   const JOUR = 864e5;
-  const USAGES = { chauffage: 'Chauffage', froid: 'Refroidissement', ecs: 'Eau chaude sanitaire', gaz: 'Gaz (chauffage, ECS)', production: 'Électricité de la production', auxiliaires: 'Auxiliaires (pompes)',
+  const USAGES = { chauffage: 'Chauffage', froid: 'Refroidissement', ecs: 'Eau chaude sanitaire', gaz: 'Gaz (chauffage, ECS)', production: 'Électricité de la production', auxiliaires: 'Auxiliaires (pompes, brûleurs)',
     ventilation: 'Ventilation', eauEcs: 'Eau froide de l\'ECS', appoint: 'Eau d\'appoint du réseau', electricite: 'Électricité', autre: 'Autre' };
   // Usage d'un compteur d'après son repère (compteurs posés par la GTC de l'étude) ou sa désignation
   function usageDe(rep, designation = '') {
@@ -139,10 +139,14 @@ const Comptages = (() => {
         if (c.usage === 'ecs') { prevu = E.besoins.ecs * an; base = 'besoin d\'ECS (énergie utile)'; }
         if (c.usage === 'gaz' && gaz) { prevu = E.consommations.chauffage * dju + E.consommations.ecs * an; base = `consommation de gaz de « ${E.solution} »`; }
         if (c.usage === 'production') { prevu = (elec ? E.consommations.chauffage * dju + E.consommations.ecs * an : 0) + E.consommations.froid * an; base = `électricité de la production de « ${E.solution} »`; if (!(prevu > 0)) prevu = null; }
+        // Auxiliaires et ventilation : électricité des pompes, brûleurs et ventilateurs (prorata des jours)
+        const Cx = E.consommations || {};
+        if (c.usage === 'auxiliaires' && Cx.auxiliaires > 0) { prevu = Cx.auxiliaires * an; base = 'auxiliaires (pompes, brûleurs, ventilateurs de production)'; }
+        if (c.usage === 'ventilation' && Cx.ventilation > 0) { prevu = Cx.ventilation * an; base = 'ventilation (CTA, caissons)'; }
         if (c.usage === 'eauEcs' && E.Vj > 0) { prevu = E.Vj * jours / 1000; base = 'besoin d\'ECS (L/j)'; }
       }
-      const reel = ['gaz', 'production', 'chauffage', 'froid', 'ecs'].includes(c.usage) ? versKwh(total, unite, coefGaz) : ['appoint', 'eauEcs'].includes(c.usage) ? versM3(total, unite) : total;
-      const uniteBilan = ['gaz', 'production', 'chauffage', 'froid', 'ecs'].includes(c.usage) ? 'kWh' : ['appoint', 'eauEcs'].includes(c.usage) ? 'm³' : unite;
+      const reel = ['gaz', 'production', 'chauffage', 'froid', 'ecs', 'auxiliaires', 'ventilation'].includes(c.usage) ? versKwh(total, unite, coefGaz) : ['appoint', 'eauEcs'].includes(c.usage) ? versM3(total, unite) : total;
+      const uniteBilan = ['gaz', 'production', 'chauffage', 'froid', 'ecs', 'auxiliaires', 'ventilation'].includes(c.usage) ? 'kWh' : ['appoint', 'eauEcs'].includes(c.usage) ? 'm³' : unite;
       const ecart = prevu > 0 ? r((reel - prevu) / prevu * 100, 1) : null;
       const ligne = { compteur: c.compteur, rep: c.rep || '', usage: c.usage, libelle: USAGES[c.usage] || c.usage, du: P[0].du, au: P[P.length - 1].au, jours, reel: r(reel, uniteBilan === 'm³' ? 2 : 0), prevu: prevu !== null ? r(prevu, uniteBilan === 'm³' ? 2 : 0) : null, unite: uniteBilan, ecart, base, prevuGtc: !!c.rep, hors: ecart !== null && Math.abs(ecart) > tol };
       parUsage.push(ligne);

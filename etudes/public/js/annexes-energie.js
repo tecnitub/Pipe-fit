@@ -284,6 +284,26 @@ const AnnexesEnergie = ((N) => {
   const ENERGIES = { gaz: ['Gaz naturel', 0.227, 0.227, 1, 0.11], fioul: ['Fioul domestique', 0.324, 0.324, 1, 0.12], propane: ['Propane', 0.272, 0.272, 1, 0.16], bois: ['Bois (granulés)', 0.030, 0.030, 1, 0.09],
     elec: ['Électricité', 0.079, 0.065, null, 0.20], reseau: ['Réseau de chaleur', 0.15, 0.15, 1, 0.10] };
   const CO2_FROID = 0.064; // kg CO₂/kWh électrique, usage refroidissement
+  // Auxiliaires et ventilation : profils d'heures de fonctionnement (hypothèses de la note, à valider)
+  const PROFILS = { chauffage: 'Saison de chauffe', froid: 'Saison de froid', prodChaud: 'Marche du générateur (heures équivalentes de chauffage)', prodFroid: 'Marche de la production de froid (heures équivalentes de froid)',
+    occupation: 'Horaires d\'occupation', permanent: 'Permanent (8 760 h)' };
+  const REGULS_AUX = [['fixe', 'Vitesse fixe / débit constant'], ['variable', 'Vitesse variable / débit variable']];
+  // Consommation d'une ligne : E = P (kW) × heures × taux de charge ; heures et taux vides : hypothèses générales
+  //  - pompe / auxiliaire : vitesse fixe 100 %, vitesse variable « chargeVar » (pression différentielle régulée)
+  //  - ventilation : débit constant 100 %, débit variable max(débit mini, occupation)² (loi des ventilateurs atténuée
+  //    par le maintien de pression dans le réseau : exposant 2)
+  function auxiliaires(e, H) {
+    const hyp = { chauffage: val(e.hPompes, 5800), froid: val(e.hPompesFroid, 1500), occupation: val(e.hVentil, 3000), permanent: 8760, prodChaud: H.chaud, prodFroid: H.froid };
+    const cVar = val(e.chargeVar, 50) / 100, occ = Math.min(1, val(e.occupation, 70) / 100), qmin = Math.min(1, val(e.qmin, 30) / 100), fVent = Math.max(qmin, occ) ** 2;
+    const l = (Array.isArray(e.auxiliaires) ? e.auxiliaires : []).filter(x => x && num(x.P) > 0).map((x, k) => {
+      const usage = x.usage === 'ventilation' ? 'ventilation' : 'auxiliaires', varia = x.regulation === 'variable', profil = PROFILS[x.profil] ? x.profil : usage === 'ventilation' ? 'occupation' : 'chauffage';
+      const hSaisi = !vide(x.heures), tSaisi = !vide(x.taux), h = hSaisi ? num(x.heures) : hyp[profil];
+      const t = tSaisi ? num(x.taux) / 100 : !varia ? 1 : usage === 'ventilation' ? fVent : cVar;
+      return { rep: x.rep || `A${k + 1}`, designation: x.designation || '', usage, profil, regulation: varia ? 'variable' : 'fixe', P: num(x.P), h, t, E: num(x.P) * h * t, aValider: !hSaisi || !tSaisi, auto: !!x._auto };
+    });
+    const somme = u => l.filter(x => x.usage === u).reduce((a, x) => a + x.E, 0);
+    return { lignes: l, Eaux: somme('auxiliaires'), Event: somme('ventilation'), hyp, fVent, cVar };
+  }
   function coutGlobal(I, E1, M, ans, a, g) { let s = I; for (let t = 1; t <= ans; t++) s += (E1 * (1 + g) ** (t - 1) + M) / (1 + a) ** t; return s; }
   function calculerEnergie(e) {
     const alertes = [], s = site(e.site), DJU = vide(e.DJU) ? s[0] : num(e.DJU), Ti = val(e.Ti, 19), Tb = val(e.Tbase, -7), i = val(e.intermittence, 85) / 100;
@@ -301,6 +321,9 @@ const AnnexesEnergie = ((N) => {
       return { nom: x.nom || `Solution ${k + 1}`, en, rch, recs, seer, prix, Cch, Cecs, Cfr, CO2, Eexp, M, I, CG, EP, Cfin: Cch + Cecs + Cfr };
     });
     if (!sol.length) alertes.push(alerte('attention', 'Ajoutez 2 ou 3 solutions à comparer.'));
+    // Auxiliaires (pompes, brûleurs, ventilateurs de production) et ventilation (CTA, caissons) : électricité commune aux solutions
+    const AX = auxiliaires(e, { chaud: Pch > 0 ? Bch / Pch : val(e.hPompes, 5800), froid: hF }), Eav = AX.Eaux + AX.Event;
+    if (AX.lignes.some(x => x.aValider)) alertes.push(alerte('attention', `Auxiliaires et ventilation : heures de fonctionnement et taux de charge pris des hypothèses générales (pompes ${nf(AX.hyp.chauffage, 0)} h, ventilation ${nf(AX.hyp.occupation, 0)} h, vitesse variable ${nf(AX.cVar * 100, 0)} %) : à valider avec l'exploitant (horaires, régulation).`));
     const best = sol.reduce((b, x) => (!b || x.CG < b.CG ? x : b), null);
     if (best && sol.length > 1) {
       alertes.push(alerte('ok', `Coût global le plus bas sur ${ans} ans : ${best.nom} (${nf(best.CG, 0)} € actualisés).`));
@@ -309,17 +332,22 @@ const AnnexesEnergie = ((N) => {
     if (!(Pch > 0) && !(Vj > 0) && !(Pfr > 0)) alertes.push(alerte('attention', 'Saisir la puissance de chauffage (ou relier l\'étude), les besoins de froid et d\'ECS.'));
     alertes.push(alerte('attention', 'Prix des énergies et facteurs d\'émission indicatifs : à remplacer par les tarifs du contrat et les facteurs en vigueur (Base Empreinte ADEME, arrêté du réseau de chaleur). Méthode des DJU : ordre de grandeur, pas un calcul réglementaire (RE 2020, DPE).'));
     return {
-      valeurs: { DJU, Bch, Bfr, Becs, Vj, solutions: sol.map(x => ({ nom: x.nom, Cfin: x.Cfin, Eexp: x.Eexp, CO2: x.CO2, CG: x.CG, energie: x.en, Cch: x.Cch, Cecs: x.Cecs, Cfr: x.Cfr })), meilleure: best ? best.nom : '' },
+      valeurs: { DJU, Bch, Bfr, Becs, Vj, Eaux: AX.Eaux, Event: AX.Event, auxiliaires: AX.lignes.map(x => ({ rep: x.rep, designation: x.designation, usage: x.usage, P: x.P, h: x.h, t: x.t, E: x.E, aValider: x.aValider })), solutions: sol.map(x => ({ nom: x.nom, Cfin: x.Cfin, Eexp: x.Eexp, CO2: x.CO2, CG: x.CG, energie: x.en, Cch: x.Cch, Cecs: x.Cecs, Cfr: x.Cfr })), meilleure: best ? best.nom : '' },
       resume: [['Site', `${libSite(e.site || 'H1')} : ${nf(DJU, 0)} DJU (base 18 °C)`], ['Besoin de chauffage', `${nf(Bch, 0)} kWh/an (${nf(Pch, 1)} kW, ${nf(Ti, 0)} / ${nf(Tb, 0)} °C, intermittence ${nf(i * 100, 0)} %)`],
         ['Besoin de froid', `${nf(Bfr, 0)} kWh/an (${nf(Pfr, 1)} kW × ${nf(hF, 0)} h)`], ['Besoin d\'ECS', `${nf(Becs, 0)} kWh/an (${nf(Vj, 0)} L/j, pertes ${nf(pertes * 100, 0)} %)`],
+        ...(AX.lignes.length ? [['Auxiliaires (pompes, brûleurs, ventilateurs de production)', `${nf(AX.Eaux, 0)} kWh/an électriques`], ['Ventilation (CTA, caissons)', `${nf(AX.Event, 0)} kWh/an électriques`],
+          ['Coût des auxiliaires et de la ventilation', `${nf(Eav * pE, 0)} €/an (${nf(pE, 2)} €/kWh, commun aux solutions, hors coût global)`]] : []),
         ['Durée de l\'analyse', `${ans} ans, actualisation ${nf(a * 100, 1)} %, hausse des énergies ${nf(g * 100, 1)} %/an`], ['Solution au coût global le plus bas', best ? `${best.nom} — ${nf(best.CG, 0)} €` : '—']],
       tableaux: [{ titre: 'Comparaison des solutions', entetes: ['Solution', 'Énergie', 'Rendement / SCOP chauffage', 'Chauffage (kWh)', 'ECS (kWh)', 'Froid (kWh élec.)', 'Énergie primaire (kWh EP)', 'CO₂ (t/an)', 'Exploitation an 1 (€)', 'Maintenance (€/an)', 'Investissement (€)', `Coût global ${ans} ans (€)`],
-        lignes: sol.map(x => [x.nom, ENERGIES[x.en][0], nf(x.rch, 2), nf(x.Cch, 0), nf(x.Cecs, 0), nf(x.Cfr, 0), nf(x.EP, 0), nf(x.CO2, 2), nf(x.Eexp, 0), nf(x.M, 0), nf(x.I, 0), nf(x.CG, 0)]), surligne: best ? sol.indexOf(best) : -1 }],
+        lignes: sol.map(x => [x.nom, ENERGIES[x.en][0], nf(x.rch, 2), nf(x.Cch, 0), nf(x.Cecs, 0), nf(x.Cfr, 0), nf(x.EP, 0), nf(x.CO2, 2), nf(x.Eexp, 0), nf(x.M, 0), nf(x.I, 0), nf(x.CG, 0)]), surligne: best ? sol.indexOf(best) : -1 },
+        ...(AX.lignes.length ? [{ titre: 'Auxiliaires et ventilation (électricité)', entetes: ['Repère', 'Équipement', 'Usage', 'Puissance absorbée (kW)', 'Régulation', 'Heures (h/an)', 'Taux de charge (%)', 'Consommation (kWh/an)', 'Hypothèses'],
+          lignes: AX.lignes.map(x => [x.rep, x.designation, x.usage === 'ventilation' ? 'Ventilation' : 'Auxiliaires', nf(x.P, 2), x.regulation === 'variable' ? 'Variable' : 'Fixe', nf(x.h, 0), nf(x.t * 100, 0), nf(x.E, 0), x.aValider ? 'à valider' : 'saisies']) }] : [])],
       alertes,
       hypotheses: ['Chauffage : B = P × 24 × DJU × i / (θi − θbase) (méthode des degrés-jours, DJU base 18 °C indicatifs du site) ; consommation = B / rendement saisonnier (ou SCOP).',
         'Froid : P × heures équivalentes à pleine charge / SEER (électricité) ; ECS : V × 365 × 1,163 × ΔT × (1 + pertes de stockage et de bouclage) / rendement.',
         `CO₂ : facteurs usuels ADEME / méthode DPE 2021 (gaz 0,227 ; fioul 0,324 ; propane 0,272 ; granulés 0,030 ; électricité 0,079 en chauffage, 0,065 en ECS, 0,064 en froid kg/kWh ; réseau de chaleur selon son arrêté) ; énergie primaire de l'électricité × ${nf(cep, 1)}.`,
-        'Coût global actualisé : CG = I + Σ (E₁ (1 + g)^(t−1) + M) / (1 + a)^t sur la durée de l\'analyse (exploitation = énergies + abonnement).'],
+        'Coût global actualisé : CG = I + Σ (E₁ (1 + g)^(t−1) + M) / (1 + a)^t sur la durée de l\'analyse (exploitation = énergies + abonnement).',
+        ...(AX.lignes.length ? [`Auxiliaires et ventilation : E = P absorbée × heures × taux de charge ; pompes à vitesse fixe 100 %, à vitesse variable ${nf(AX.cVar * 100, 0)} % ; ventilation à débit variable max(débit mini, occupation)² = ${nf(AX.fVent * 100, 0)} % ; brûleurs : heures équivalentes de chauffage (B / P) ; puissances reprises du bilan électrique de l'étude (fiches des pompes, des CTA), sinon saisies ; hors coût global (communes aux solutions).`] : [])],
       synthese: best ? `${nf(Bch + Becs, 0)} kWh/an · meilleur coût global : ${best.nom}` : `${nf(Bch + Becs, 0)} kWh/an`,
     };
   }
@@ -339,7 +367,17 @@ const AnnexesEnergie = ((N) => {
         { nom: 'PAC air/eau réversible', energie: 'elec', rendCh: 3.2, rendEcs: 2.5, seer: 4, prix: '', co2: '', abonnement: 300, invest: 85000, maintenance: 1800 }],
         colonnes: [{ k: 'nom', l: 'Solution', t: 't' }, { k: 'energie', l: 'Énergie (chauffage, ECS)', t: 's', o: Object.entries(ENERGIES).map(([k, x]) => [k, x[0]]) }, { k: 'rendCh', l: 'Rendement saisonnier / SCOP chauffage' },
           { k: 'rendEcs', l: 'Rendement / COP ECS' }, { k: 'seer', l: 'SEER froid (vide : pas de froid)' }, { k: 'prix', l: 'Prix (€/kWh, vide : indicatif)' }, { k: 'co2', l: 'CO₂ (kg/kWh, vide : usuel)' },
-          { k: 'abonnement', l: 'Abonnement (€/an)' }, { k: 'invest', l: 'Investissement (€)' }, { k: 'maintenance', l: 'Maintenance (€/an)' }] }],
+          { k: 'abonnement', l: 'Abonnement (€/an)' }, { k: 'invest', l: 'Investissement (€)' }, { k: 'maintenance', l: 'Maintenance (€/an)' }] },
+      { g: 'Auxiliaires et ventilation (hypothèses à valider)' },
+      { k: 'auxSource', l: 'Équipements repris de l\'étude (bilan électrique : pompes, brûleurs, ventilateurs des CTA et caissons)', t: 's', o: [['auto', 'Automatique'], ['', 'Saisie']], d: 'auto' },
+      { k: 'hPompes', l: 'Heures des pompes de chauffage (saison de chauffe, à valider)', u: 'h/an', d: 5800 }, { k: 'hPompesFroid', l: 'Heures des pompes de froid (à valider)', u: 'h/an', d: 1500 },
+      { k: 'chargeVar', l: 'Taux de charge moyen d\'une pompe à vitesse variable (à valider)', u: '%', d: 50 },
+      { k: 'hVentil', l: 'Heures de la ventilation (horaires d\'occupation, à valider)', u: 'h/an', d: 3000 }, { k: 'occupation', l: 'Taux d\'occupation moyen (débit variable, à valider)', u: '%', d: 70 },
+      { k: 'qmin', l: 'Débit minimal d\'une ventilation à débit variable', u: '%', d: 30 },
+      { k: 'auxiliaires', l: 'Auxiliaires et ventilateurs (🔗 repris du bilan électrique ; heures et taux vides : hypothèses ci-dessus, à valider)', t: 'lignes', d: [],
+        colonnes: [{ k: 'rep', l: 'Repère', t: 't' }, { k: 'designation', l: 'Équipement', t: 't' }, { k: 'usage', l: 'Usage', t: 's', o: [['auxiliaires', 'Auxiliaires'], ['ventilation', 'Ventilation']] },
+          { k: 'P', l: 'Puissance absorbée (kW)' }, { k: 'regulation', l: 'Régulation', t: 's', o: REGULS_AUX }, { k: 'profil', l: 'Heures selon', t: 's', o: Object.entries(PROFILS) },
+          { k: 'heures', l: 'Heures (h/an, vide : hypothèse)' }, { k: 'taux', l: 'Taux de charge (%, vide : selon la régulation)' }] }],
     calcul: calculerEnergie,
     lier(ctx) {
       const { e } = ctx, cl = lierSite(ctx);
@@ -353,6 +391,36 @@ const AnnexesEnergie = ((N) => {
       const w = besoinEcs(ctx);
       if (w) ctx.imposer({ Vj: w.Vj, Tecs: w.Tc }, w.src);
     },
+  };
+  // Lignes d'auxiliaires et de ventilation reprises du bilan électrique de l'étude (Electricite.equipementsEtude) :
+  // pompes (P1 des fiches), auxiliaires des générateurs à combustion, ventilateurs d'évacuation de la chaleur,
+  // ventilateurs des CTA (PelS / PelR de la fiche) et des caissons ; désenfumage, pompes de secours, PAC et terminaux exclus
+  function auxDepuisEquipements(eq) {
+    return (eq || []).filter(x => x && num(x.P) > 0 && ['pompe', 'generateur', 'ventilateur'].includes(x.type)).map(x => {
+      const d = String(x.designation || ''), rep = String(x.rep || ''), varia = x.regulation === 'var' || x.depart === 'variateur';
+      if (/d[ée]senfumage/i.test(d) || /^VD[EA]\b/.test(rep) || /secours/i.test(d)) return null;
+      let usage = 'auxiliaires', profil = 'chauffage';
+      if (x.type === 'generateur') profil = 'prodChaud';
+      else if (x.type === 'ventilateur') { if (/^(AR|TRF)\b/.test(rep) || /refroidissement|a[ée]ror[ée]frig|tour/i.test(d)) profil = 'prodFroid'; else { usage = 'ventilation'; profil = 'occupation'; } }
+      else if (/bouclage/i.test(d)) profil = 'permanent';
+      else if (/froid|refroid|glac[ée]e|récupération/i.test(d) || /^(PEV|PREC)/.test(rep)) profil = 'froid';
+      else if (/surpresseur|humidificateur/i.test(d)) profil = 'occupation';
+      return { rep, designation: d, usage, P: r2(num(x.P)), regulation: varia ? 'variable' : 'fixe', profil };
+    }).filter(Boolean);
+  }
+  let auxEnCours = false;
+  const lierEnergie = N.TYPES.energieAnnuelle.lier;
+  N.TYPES.energieAnnuelle.lier = function (ctx) {
+    lierEnergie(ctx);
+    if (ctx.e.auxSource !== 'auto' || auxEnCours || !ctx.etude) return;
+    let El = null; try { El = typeof Electricite !== 'undefined' ? Electricite : require('./electricite'); } catch (err) { El = null; }
+    if (!El || typeof El.equipementsEtude !== 'function') return;
+    // Garde de réentrance : le bilan électrique résout toutes les notes de l'étude, dont celle-ci
+    auxEnCours = true;
+    let eq = [];
+    try { eq = El.equipementsEtude(ctx.etude, Ln()); } catch (err) { eq = []; } finally { auxEnCours = false; }
+    const lignes = auxDepuisEquipements(eq);
+    if (lignes.length) ctx.reprendreLignes('auxiliaires', lignes, { cle: 'rep', libelle: 'bilan électrique de l\'étude', colonnesVerrouillees: ['rep', 'designation', 'usage', 'P'] });
   };
 
   /* =====================================================================================================
@@ -428,9 +496,9 @@ const AnnexesEnergie = ((N) => {
     const sol = ((v && v.solutions) || []), s = sol.find(x => x.nom === nom) || sol.find(x => x.nom === (v && v.meilleure)) || sol[0] || null;
     return { DJU: v ? v.DJU : null, solution: s ? s.nom : '', energie: s ? s.energie : '', Vj: v ? v.Vj || 0 : 0,
       besoins: { chauffage: v ? v.Bch || 0 : 0, froid: v ? v.Bfr || 0 : 0, ecs: v ? v.Becs || 0 : 0 },
-      consommations: s ? { chauffage: s.Cch || 0, ecs: s.Cecs || 0, froid: s.Cfr || 0 } : { chauffage: 0, ecs: 0, froid: 0 } };
+      consommations: { ...(s ? { chauffage: s.Cch || 0, ecs: s.Cecs || 0, froid: s.Cfr || 0 } : { chauffage: 0, ecs: 0, froid: 0 }), auxiliaires: v ? v.Eaux || 0 : 0, ventilation: v ? v.Event || 0 : 0 } };
   }
   return { SITES, COMBUSTIBLES, CONDUITS, TERRAINS, SONDES, ORIENTATIONS, CAPTEURS, ENERGIES, FICHES, pAtm, tirage, qSpecifique, couverture, coutGlobal,
-    calculerConduit, calculerGeothermie, calculerSolaire, calculerEnergie, calculerCee, prevuParUsage };
+    calculerConduit, calculerGeothermie, calculerSolaire, calculerEnergie, calculerCee, prevuParUsage, auxDepuisEquipements, PROFILS };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'));
 if (typeof module !== 'undefined') module.exports = AnnexesEnergie;
