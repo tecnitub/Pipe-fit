@@ -66,7 +66,7 @@ function htmlReception(doe) {
   const r = receptionPF(doe.affaireId);
   return `<div class="doe-doc"><h2>PV DE RÉCEPTION ET LEVÉE DES RÉSERVES</h2><p class="petit">Repris de Pipe-Fit (chantier ${esc((PF.get('affaires', doe.affaireId) || {}).code || '')}).</p>
     ${r.pv.map(p => `<h3>${esc(p.numero || 'PV')} — ${esc(p.type === 'reception' ? 'Procès-verbal de réception' : 'Procès-verbal de levée des réserves')}</h3>${lignes2([['Date', dateFr(p.date)], ['Lieu', val(p.lieu)], ['Décision', val(p.decision)], ['Présents', val(p.presents)], ['Signataire (maître d\'ouvrage)', `${esc(p.signataireNom || '')}${p.signataireQualite ? `, ${esc(p.signataireQualite)}` : ''}`], ['Statut', `${esc(p.statut || '')}${p.signeLe ? ` le ${new Date(p.signeLe).toLocaleDateString('fr-FR')}` : ''}`]])}`).join('') || '<p>Aucun PV de réception enregistré.</p>'}
-    <h3>Réserves</h3>${r.reserves.length ? tableau(['N°', 'Localisation', 'Description', 'Statut', 'Levée le'], r.reserves.map(x => [String(x.numero || ''), esc(x.localisation || ''), esc(x.description || ''), esc(x.statut || ''), x.dateLevee ? dateFr(x.dateLevee) : '—'])) : '<p>Aucune réserve.</p>'}</div>`;
+    <h3>Réserves</h3>${r.reserves.length ? tableau(['N°', 'Localisation', 'Description', 'Statut', 'Levée le'], r.reserves.map(x => [String(x.numero || ''), esc(x.localisation || ''), `${esc(x.description || '')}${x.commentaireLevee ? `<br><em>Levée${x.leveePar ? ` par ${esc(x.leveePar)}` : ''} : ${esc(x.commentaireLevee)}</em>` : ''}`, esc(x.statut || ''), x.dateLevee ? dateFr(x.dateLevee) : '—'])) : '<p>Aucune réserve.</p>'}</div>`;
 }
 // PV signé dans Pipe-Fit (même mise en page que dans Pipe-Fit, sous l'en-tête du DOE)
 function htmlEssaiPF(doe, p) {

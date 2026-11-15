@@ -213,6 +213,8 @@ function reporterMateriel(doe) {
     const photos = (m.photos || []).map(p => p.fichierId);
     if (photos.length && JSON.stringify(photos) !== JSON.stringify(e.photosPlaque || [])) { e.photosPlaque = photos; n++; }
     if (!e.serie && m.serie) mettre(e, 'serie', m.serie); // lu sur la photo de la plaque
+    // Fabricant et modèle lus sur la plaque, comparés au modèle retenu (substitution signalée dans la fiche)
+    if (typeof PlaqueRegistre !== 'undefined') n += PlaqueRegistre.ficheDoe(e, m);
     if (!e.garantie && m.mesLe) mettre(e, 'garantie', `Constructeur, à compter de la mise en service du ${dateFr(m.mesLe)}`);
     const pv = pvs.find(r => r.materiel === `${m.etudeId}|${m.cle}`);
     if (pv) { if (!e.serie && pv.numeroSerie) mettre(e, 'serie', pv.numeroSerie); mettre(e, 'pvMes', pv.numero || pv.id); }

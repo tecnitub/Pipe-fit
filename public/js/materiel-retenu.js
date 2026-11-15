@@ -74,6 +74,8 @@ const MaterielRetenu = (() => {
       if (id && !(d.photos || []).some(p => p.fichierId === id)) d.photos = [...(d.photos || []), { fichierId: id, le: quand, par: qui, nom: txt(extra.nom, 120) }].slice(-6);
       // N° de série lu sur la plaque (photo), ou relevé sur le PV
       if (txt(extra.serie, 60)) Object.assign(d, { serie: txt(extra.serie, 60), serieLue: extra.serieLue !== false });
+      // Fabricant et modèle lus sur la plaque : comparés au modèle retenu (PlaqueRegistre.comparer), substitution signalée
+      if (txt(extra.marqueLue, 80) || txt(extra.modeleLu, 120)) d.plaque = { marque: txt(extra.marqueLue, 80), modele: txt(extra.modeleLu, 120), le: quand, par: qui };
     }
     // Matériel commandé (ou livré) différent de la référence validée : à refaire valider par le client
     if (action === 'substitution') {
@@ -99,7 +101,7 @@ const MaterielRetenu = (() => {
       const s = parCle.get(`${l.id}|${m.cle}`) || {};
       out.push({ etude: txt((l.resume || {}).objet, 120), etudeId: l.id, affaireId: txt(l.affaireId, 64), cle: txt(m.cle, 200), chapitre: txt(m.chapitre, 60), designation: txt(m.designation), qte: Number(m.qte) || 0, fabricant: txt(m.fabricant, 80), reference: txt(m.reference, 120),
         statut: STATUTS.includes(m.statut) ? m.statut : 'À soumettre', valide: VALIDES.includes(m.statut), dateValidation: txt(m.dateValidation, 10), obs: txt(m.obs, 500), fiche: /^https?:\/\//.test(m.fiche || '') ? txt(m.fiche, 500) : '',
-        soumisLe: txt(s.soumisLe || m.dateSoumission, 10), relances: s.relances || [], poseLe: txt(s.poseLe, 10), posePar: txt(s.posePar, 80), mesLe: txt(s.mesLe, 10), mesPar: txt(s.mesPar, 80), photos: s.photos || [], serie: txt(s.serie, 60), substitutionDemandee: s.substitution || null });
+        soumisLe: txt(s.soumisLe || m.dateSoumission, 10), relances: s.relances || [], poseLe: txt(s.poseLe, 10), posePar: txt(s.posePar, 80), mesLe: txt(s.mesLe, 10), mesPar: txt(s.mesPar, 80), photos: s.photos || [], serie: txt(s.serie, 60), serieLue: !!s.serieLue, plaque: s.plaque || null, substitutionDemandee: s.substitution || null });
     }));
     return out.sort((a, b) => Number(b.valide) - Number(a.valide) || a.chapitre.localeCompare(b.chapitre, 'fr') || a.designation.localeCompare(b.designation, 'fr'));
   }

@@ -223,6 +223,7 @@ function ficheChantierCompagnon(u, id) {
       ${docs.length ? `<ul class="docs-mobile">${docs.map(d => `<li><a href="${lienDocument(d)}" target="_blank" rel="noopener"><span class="doc-ic">${iconeDoc(d.categorie)}</span>
         <span><strong>${esc(d.nom)}</strong>${[...nouveaux].some(t => t.includes(d.nom)) ? ' <span class="badge b-warn">nouveau</span>' : ''}<br><span class="small muted">${esc(d.categorie)}${d.indice ? ` · indice ${esc(d.indice)}` : ''} · ${dateFr(d.date)} · ${tailleLisible(num(d.taille))}</span></span></a></li>`).join('')}</ul>`
         : '<p class="muted small">Aucun document transmis pour ce chantier.</p>'}` : ''}
+    ${typeof mesReservesHtml === 'function' ? mesReservesHtml(u, a) : ''}
     ${R.materiel ? `<div id="mat-retenu" data-mobile="1" data-affaire="${esc(a.id)}">${materielRetenuHtml(materielChantier.get(a.id), true)}</div>` : ''}
     ${R.materiel ? `<div id="plan-mes" data-mobile="1" data-affaire="${esc(a.id)}">${planMesHtml(a, true)}</div>` : ''}
     ${m ? `<h2>🔩 Matériel prévu</h2>
@@ -239,6 +240,7 @@ function ficheChantierCompagnon(u, id) {
 function bindFicheChantierCompagnon(root, id) {
   chargerMaterielRetenu(root, id);
   chargerPlanMes(root, id);
+  if (typeof bindMesReserves === 'function') bindMesReserves(root);
   root.querySelectorAll('[data-matmode]').forEach(b => b.onclick = () => { ficheCompagnonSel.mode = b.dataset.matmode; App.render(); });
   // Documents vus : les notifications du chantier passent en « lues » (le badge « nouveau » reste jusqu'au prochain affichage)
   Notifs.nonLues().filter(n => n.type === 'document' && n.affaireId === id).forEach(n => Notifs.marquerLue(n));
@@ -474,7 +476,7 @@ function materielRetenuHtml(ms, mobile) {
     ${m.commande ? `<br><span class="small">🧾 Commandé : ${esc(m.commande.numero || 'brouillon')}${m.commande.fournisseur ? ` · ${esc(m.commande.fournisseur)}` : ''}${m.livraison ? ` · ${esc(m.livraison)}` : ''}</span>` : ''}
       ${m.substitution ? `<br><span class="small neg">⚠️ ${m.commande.refRecue ? 'Livré' : 'Commandé'} : « ${esc(m.commande.refRecue || m.commande.designation)} » au lieu de « ${esc([m.fabricant, m.reference].filter(Boolean).join(' '))} »${m.substitutionDemandee ? ' — substitution en cours de validation' : ''}</span>
         ${!mobile && !m.substitutionDemandee ? `<button type="button" class="small secondary" data-subst="${i}">Faire valider la substitution</button>` : ''}` : ''}
-      ${m.serie ? `<br><span class="small muted">N° de série ${esc(m.serie)}${m.serieLue ? ' (lu sur la plaque)' : ''}</span>` : ''}</span>
+      ${m.serie ? `<br><span class="small muted">N° de série ${esc(m.serie)}${m.serieLue ? ' (lu sur la plaque)' : ''}</span>` : ''}${plaqueMaterielHtml(m, i, mobile)}</span>
     <span><span class="badge ${BADGE_MAT[m.statut] || ''}">${m.valide ? '✓ ' : ''}${esc(m.statut === 'Soumis au client' || m.statut === 'À soumettre' ? 'en attente de validation' : m.statut)}</span>
       ${!mobile && MaterielRetenu.aRelancer(m, auj) ? '<br><span class="badge b-bad">à relancer</span>' : ''}${etatPose(m) ? `<br>${etatPose(m)}` : ''}${m.enAttente ? '<br><span class="badge b-warn">⏳ à envoyer</span>' : ''}</span>`;
   const av = Installe.avancement(ms), aCommander = ms.filter(m => m.valide && !m.commande).length, pc = n => Math.round(n / Math.max(1, av.total) * 100);
@@ -489,6 +491,13 @@ function materielRetenuHtml(ms, mobile) {
       return g.length ? `<p class="small">🛡️ Garanties constructeur (${num((Store.data.settings || {}).garantieMois) || 24} mois après la mise en service) : ${g.length - finies.length} en cours${bientot.length ? ` · <span class="warn-text">${bientot.length} se termine(nt) sous 60 jours : ${bientot.map(x => `${esc(x.designation)} le ${dateFr(x.fin)}`).join(', ')}</span>` : ''}${finies.length ? ` · ${finies.length} terminée(s)` : ''}
         <button class="small secondary" id="mat-entretien">📋 Base du contrat d'entretien (CSV)</button></p>` : ''; })()}
     <ul class="mat-liste">${ms.map((m, i) => `${i === 0 || ms[i - 1].chapitre !== m.chapitre ? `<li class="mat-famille">${esc(m.chapitre || 'Équipements')}</li>` : ''}<li>${ligne(m, i)}</li>`).join('')}</ul>`;
+}
+// Modèle lu sur la plaque comparé au modèle retenu : confirmation, ou alerte de substitution (bureau : à faire valider)
+function plaqueMaterielHtml(m, i, mobile) {
+  if (!m.plaque || typeof PlaqueRegistre === 'undefined') return '';
+  const c = PlaqueRegistre.comparer(m, m.plaque);
+  if (c.etat === 'nonLu') return '';
+  return `<br><span class="small ${c.etat === 'substitution' ? 'neg' : c.etat === 'conforme' ? 'pos' : 'warn-text'}" data-plaque-etat="${c.etat}">${c.etat === 'substitution' ? '⚠️' : c.etat === 'conforme' ? '✓' : '?'} ${esc(c.texte)}</span>${c.etat === 'substitution' && !mobile && !m.substitutionDemandee ? ` <button type="button" class="small secondary" data-subst-plaque="${i}">Faire valider la substitution</button>` : ''}`;
 }
 // Fiche technique de la bibliothèque : gardée sur le téléphone (service worker) pour être lue sans réseau sur le chantier
 const urlFicheTech = f => { const u = fileUrl(f.fichierId); return u.startsWith('/api/') ? `${u}?horsLigne=1` : u; };
@@ -552,6 +561,13 @@ function bindMaterielRetenu(z, affaireId) {
       Modal.close(); App.toast(`Commande brouillon créée (${choix.length} équipement(s)) : prix et délais à compléter`, 5000); location.hash = `#/commandes/${c.id}`;
     };
   };
+  // Substitution vue sur la plaque (modèle posé différent du modèle retenu) : signalée à l'étude comme une substitution
+  z.querySelectorAll('[data-subst-plaque]').forEach(b => b.onclick = async () => {
+    const m = ms[+b.dataset.substPlaque], ref = [m.plaque.marque, m.plaque.modele].filter(Boolean).join(' ');
+    if (!await ask(`Signaler la substitution « ${ref} » (lue sur la plaque) au bureau d'études ? La ligne repassera « à soumettre » au client avec cette référence.`, 'Signaler', false)) return;
+    HorsLigne.appeler('POST', CHEMIN_SUIVI, { affaireId, action: 'substitution', lignes: [{ etudeId: m.etudeId, cle: m.cle }], reference: ref, designation: `Lu sur la plaque signalétique${m.serie ? ` (n° ${m.serie})` : ''}`, commande: '' })
+      .then(() => { App.toast('Substitution signalée : à refaire valider par le client'); return chargerMaterielRetenu(document, affaireId); }).catch(e => notify(e.message));
+  });
   // Substitution (commandé ou livré différent de la référence validée) : signalée à l'étude, la ligne repasse « à soumettre »
   z.querySelectorAll('[data-subst]').forEach(b => b.onclick = async () => {
     const m = ms[+b.dataset.subst], c = m.commande || {};
@@ -578,10 +594,13 @@ function bindMaterielRetenu(z, affaireId) {
     try {
       const id = await HorsLigne.envoyerImage(await compressImage(f, 1600, 0.8));
       // Lecture de la plaque (n° de série, marque, modèle) : remontée au DOE ; sans lecture, la photo est gardée
-      let serie = '';
-      try { if (typeof Fluides !== 'undefined' && typeof PdfLecture !== 'undefined') { App.toast('Lecture de la plaque…', 2500); const p = Fluides.lirePlaque((await PdfLecture.lire(f)).lignes); serie = p.numeroSerie || ''; } } catch (err) { serie = ''; }
-      await suivre(m, 'photo', { fichierId: id, nom: f.name, ...(serie ? { serie } : {}) });
-      if (serie) App.toast(`N° de série lu sur la plaque : ${serie} (à vérifier)`, 5000);
+      // Fabricant et modèle lus : comparés au modèle retenu (alerte de substitution ou confirmation)
+      let lu = {};
+      try { if (typeof Fluides !== 'undefined' && typeof PdfLecture !== 'undefined') { App.toast('Lecture de la plaque…', 2500); lu = PlaqueRegistre.extraPhoto(Fluides.lirePlaque((await PdfLecture.lire(f)).lignes)); } } catch (err) { lu = {}; }
+      await suivre(m, 'photo', { fichierId: id, nom: f.name, ...lu });
+      const c = lu.marqueLue || lu.modeleLu ? PlaqueRegistre.comparer(m, { marque: lu.marqueLue, modele: lu.modeleLu }) : null;
+      if (c && c.etat === 'substitution') notify(`${c.texte}. Le bureau est prévenu par la fiche du chantier.`);
+      else if (lu.serie || c) App.toast([lu.serie ? `N° de série lu sur la plaque : ${lu.serie} (à vérifier)` : '', c ? c.texte : ''].filter(Boolean).join(' · '), 6000);
     } catch (e) { notify(`Photo : ${e.message}`); }
   });
 }

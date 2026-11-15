@@ -20,7 +20,7 @@ const PARTAGES = { '/shared/pdf.js': path.join(__dirname, '..', 'public', 'js', 
   '/shared/pdf-lib.min.js': path.join(__dirname, '..', 'doe', 'public', 'vendor', 'pdf-lib-1.17.1.min.js'),
   '/logo-tecnitub.png': path.join(__dirname, '..', 'doe', 'public', 'logo-tecnitub.png'),
   // Lecture du CCTP et du DPGF (inventaire des producteurs et émetteurs) : texte des PDF, classeurs Excel
-  ...Object.fromEntries(['ocr.js', 'pdf-lecture.js', 'cctp-lecture.js', 'xlsx.js', 'xls.js', 'inventaire-cvc.js', 'dce.js', 'materiel-retenu.js', 'fiches-tech.js', 'essais.js', 'planches.js'].map(f => [`/shared/${f}`, path.join(__dirname, '..', 'public', 'js', f)])),
+  ...Object.fromEntries(['ocr.js', 'pdf-lecture.js', 'cctp-lecture.js', 'xlsx.js', 'xls.js', 'inventaire-cvc.js', 'dce.js', 'materiel-retenu.js', 'fiches-tech.js', 'essais.js', 'planches.js', 'plaque-registre.js', 'reserves-terrain.js', 'retour-chantier.js', 'rex-equipements.js'].map(f => [`/shared/${f}`, path.join(__dirname, '..', 'public', 'js', f)])),
   ...Object.fromEntries(['pdf.min.js', 'pdf.worker.min.js'].map(f => [`/vendor/pdfjs/${f}`, path.join(__dirname, '..', 'public', 'vendor', 'pdfjs', f)])),
   // Lecture des caractères (CCTP scannés) : mêmes fichiers que le CRM
   ...Object.fromEntries(['tesseract.min.js', 'worker.min.js', 'tesseract-core-simd-lstm.wasm.js', 'fra.traineddata.gz'].map(f => [`/vendor/tesseract/${f}`, path.join(__dirname, '..', 'public', 'vendor', 'tesseract', f)])) };
@@ -242,6 +242,15 @@ async function api(req, res, url) {
   // Pressions des CTA relevées à la mise en service du chantier (Pipe-Fit) : consignes de pression de la régulation
   if (p[0] === 'pf' && p[1] === 'pressions-cta' && method === 'GET') {
     const r = await pipefit(s, `/api/liens/pressions-cta?affaireId=${encodeURIComponent(url.searchParams.get('affaireId') || '')}`);
+    return r.ok ? send(res, 200, await r.json()) : send(res, 200, []);
+  }
+  // Retour du chantier (mesures de mise en service, réserves levées, suivi du matériel) et retour d'expérience des modèles
+  if (p[0] === 'pf' && p[1] === 'retour' && method === 'GET') {
+    const r = await pipefit(s, `/api/liens/retour?affaireId=${encodeURIComponent(url.searchParams.get('affaireId') || '')}&etudeId=${encodeURIComponent(url.searchParams.get('etudeId') || '')}`);
+    return r.ok ? send(res, 200, await r.json()) : fail(res, r.status === 403 ? 403 : 502, 'Retour du chantier indisponible dans Pipe-Fit');
+  }
+  if (p[0] === 'pf' && p[1] === 'rex-modeles' && method === 'GET') {
+    const r = await pipefit(s, '/api/liens/rex-modeles');
     return r.ok ? send(res, 200, await r.json()) : send(res, 200, []);
   }
   // Suivi du matériel retenu sur le chantier (soumission, pose, mise en service) : lu dans Pipe-Fit

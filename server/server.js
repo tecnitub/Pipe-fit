@@ -34,6 +34,9 @@ const Tuyauterie = require('../public/js/tuyauterie');
 const Essais = require('../public/js/essais');
 const Acces = require('../public/js/acces');
 const Fluides = require('../public/js/fluides');
+const ReservesTerrain = require('../public/js/reserves-terrain');
+const RetourChantier = require('../public/js/retour-chantier');
+const RexEquipements = require('../public/js/rex-equipements');
 
 const PORT = +process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -811,6 +814,20 @@ async function api(req, res, url) {
       const affaireId = url.searchParams.get('affaireId') || '';
       return send(res, 200, affaireId ? PlanMes.pointsChantier(LIENS.liste({ affaireId, app: 'etudes' })) : []);
     }
+    // Retour du chantier vers une étude : mesures (relevés d'équilibrage, PV de mise en service), réserves levées, suivi du matériel
+    if (p[1] === 'retour' && method === 'GET') {
+      if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
+      const affaireId = url.searchParams.get('affaireId') || '', etudeId = url.searchParams.get('etudeId') || '';
+      if (!affaireId) return send(res, 200, RetourChantier.collecter({}, '', ''));
+      return send(res, 200, RetourChantier.collecter({ misesEnService: recordsDe('misesEnService'), equilibrages: recordsDe('equilibrages'), reserves: recordsDe('reserves'), suivis: etudeId ? LIENS.suivis({ etudeId }) : [] }, affaireId, etudeId));
+    }
+    // Retour d'expérience par modèle (fabricant + référence) : interventions des contrats d'entretien de toutes les affaires
+    if (p[1] === 'rex-modeles' && method === 'GET') {
+      if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
+      const affaires = recordsDe('affaires'), ids = new Set([...LIENS.liste({ app: 'etudes' }).map(l => l.affaireId).filter(Boolean), ...affaires.filter(a => ((a.contrat || {}).interventions || []).length).map(a => a.id)]);
+      return send(res, 200, RexEquipements.historique(affaires.filter(a => ids.has(a.id)).map(a => ({ id: a.id, code: a.code || '', interventions: (a.contrat || {}).interventions || [],
+        materiel: MaterielRetenu.pourChantier(LIENS.liste({ affaireId: a.id, app: 'etudes' }), LIENS.suivis({ affaireId: a.id })) })), new Date().toISOString().slice(0, 10)));
+    }
     // Suivi d'une ligne : soumission au client (bureau), pose / mise en service / photo de la plaque (bureau et compagnons)
     if (p[1] === 'materiel' && p[2] === 'suivi') {
       if (method === 'GET') { if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau'); return send(res, 200, LIENS.suivis({ etudeId: url.searchParams.get('etudeId') || '', affaireId: url.searchParams.get('affaireId') || '' })); }
@@ -951,7 +968,8 @@ async function api(req, res, url) {
       // un chargé d'affaires crée et modifie les fiches des intérimaires (pas celles des salariés)
       const fiche = col === 'users' && DB.getRecord(db, 'users', id);
       const interimaire = acc.role === 'charge' && col === 'users' && data && data.type === 'interimaire' && (!fiche || fiche.type === 'interimaire');
-      if (!canWrite(acc, col) && !(estCompagnon(acc) && col === 'affaires') && !interimaire) return fail(res, 403, 'Droits insuffisants');
+      // Réserve affectée à un compagnon : il en renseigne la levée (photo, commentaire), règle appliquée plus bas
+      if (!canWrite(acc, col) && !(estCompagnon(acc) && ['affaires', 'reserves'].includes(col)) && !interimaire) return fail(res, 403, 'Droits insuffisants');
       if (!data || typeof data !== 'object' || Array.isArray(data)) return fail(res, 400, 'Données manquantes');
       const inv = referenceInvalide(data);
       if (inv) return fail(res, 400, `Identifiant invalide (${inv})`);
@@ -1002,7 +1020,12 @@ async function api(req, res, url) {
         // Traçabilité : qui a créé le chantier ou l'intervention, et quand
         if (col === 'affaires' && !existing && !obj.creeLe) Object.assign(obj, { creePar: acc.nom || acc.login, creeParId: acc.user_id || '', creeLe: new Date().toISOString() });
         if (col === 'affaires' && existing) ['creePar', 'creeParId', 'creeLe'].forEach(k => { if (existing[k]) obj[k] = existing[k]; });
-        const refus = col === 'affaires' ? null : atelierRefus(acc, col, obj, existing);
+        if (col === 'reserves' && estCompagnon(acc)) {
+          const e = ReservesTerrain.ecritureCompagnon(existing && DB.clean(existing), obj, acc.user_id);
+          if (e.refus) return { forbidden: e.refus };
+          obj = { ...e.obj, id, leveePar: acc.nom || acc.login };
+        }
+        const refus = col === 'affaires' || (col === 'reserves' && estCompagnon(acc)) ? null : atelierRefus(acc, col, obj, existing);
         if (refus) return { forbidden: refus };
         // Fiche d'intervention fluides envoyée ou signée : rubriques réglementaires complètes
         if (col === 'fichesFluides' && obj.statut !== 'Brouillon') { const e = Fluides.erreur(obj, obj.equipementId && DB.getRecord(db, 'equipementsFrigo', obj.equipementId)); if (e) return { invalide: e }; }

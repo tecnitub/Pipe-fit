@@ -309,7 +309,7 @@ const AnnexesEnergie = ((N) => {
     if (!(Pch > 0) && !(Vj > 0) && !(Pfr > 0)) alertes.push(alerte('attention', 'Saisir la puissance de chauffage (ou relier l\'étude), les besoins de froid et d\'ECS.'));
     alertes.push(alerte('attention', 'Prix des énergies et facteurs d\'émission indicatifs : à remplacer par les tarifs du contrat et les facteurs en vigueur (Base Empreinte ADEME, arrêté du réseau de chaleur). Méthode des DJU : ordre de grandeur, pas un calcul réglementaire (RE 2020, DPE).'));
     return {
-      valeurs: { DJU, Bch, Bfr, Becs, solutions: sol.map(x => ({ nom: x.nom, Cfin: x.Cfin, Eexp: x.Eexp, CO2: x.CO2, CG: x.CG })), meilleure: best ? best.nom : '' },
+      valeurs: { DJU, Bch, Bfr, Becs, Vj, solutions: sol.map(x => ({ nom: x.nom, Cfin: x.Cfin, Eexp: x.Eexp, CO2: x.CO2, CG: x.CG, energie: x.en, Cch: x.Cch, Cecs: x.Cecs, Cfr: x.Cfr })), meilleure: best ? best.nom : '' },
       resume: [['Site', `${libSite(e.site || 'H1')} : ${nf(DJU, 0)} DJU (base 18 °C)`], ['Besoin de chauffage', `${nf(Bch, 0)} kWh/an (${nf(Pch, 1)} kW, ${nf(Ti, 0)} / ${nf(Tb, 0)} °C, intermittence ${nf(i * 100, 0)} %)`],
         ['Besoin de froid', `${nf(Bfr, 0)} kWh/an (${nf(Pfr, 1)} kW × ${nf(hF, 0)} h)`], ['Besoin d\'ECS', `${nf(Becs, 0)} kWh/an (${nf(Vj, 0)} L/j, pertes ${nf(pertes * 100, 0)} %)`],
         ['Durée de l\'analyse', `${ans} ans, actualisation ${nf(a * 100, 1)} %, hausse des énergies ${nf(g * 100, 1)} %/an`], ['Solution au coût global le plus bas', best ? `${best.nom} — ${nf(best.CG, 0)} €` : '—']],
@@ -422,7 +422,15 @@ const AnnexesEnergie = ((N) => {
     },
   };
 
+  // Prévu annuel par usage d'un calcul « Énergie annuelle » (bilan réel des comptages) : besoins utiles (compteurs
+  // d'énergie thermique) et consommations finales de la solution retenue (nom, sinon la meilleure, sinon la première)
+  function prevuParUsage(v, nom) {
+    const sol = ((v && v.solutions) || []), s = sol.find(x => x.nom === nom) || sol.find(x => x.nom === (v && v.meilleure)) || sol[0] || null;
+    return { DJU: v ? v.DJU : null, solution: s ? s.nom : '', energie: s ? s.energie : '', Vj: v ? v.Vj || 0 : 0,
+      besoins: { chauffage: v ? v.Bch || 0 : 0, froid: v ? v.Bfr || 0 : 0, ecs: v ? v.Becs || 0 : 0 },
+      consommations: s ? { chauffage: s.Cch || 0, ecs: s.Cecs || 0, froid: s.Cfr || 0 } : { chauffage: 0, ecs: 0, froid: 0 } };
+  }
   return { SITES, COMBUSTIBLES, CONDUITS, TERRAINS, SONDES, ORIENTATIONS, CAPTEURS, ENERGIES, FICHES, pAtm, tirage, qSpecifique, couverture, coutGlobal,
-    calculerConduit, calculerGeothermie, calculerSolaire, calculerEnergie, calculerCee };
+    calculerConduit, calculerGeothermie, calculerSolaire, calculerEnergie, calculerCee, prevuParUsage };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'));
 if (typeof module !== 'undefined') module.exports = AnnexesEnergie;

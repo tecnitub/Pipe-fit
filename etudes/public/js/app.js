@@ -72,8 +72,11 @@ function resumePF(et) {
   // Visites et contrôles d'entretien induits par les calculs annexes (carnet du DOE, contrat d'entretien du chantier)
   let entretien = [];
   try { if (typeof AnnexesExploitation !== 'undefined') entretien = AnnexesExploitation.entretien(et, Liens).map(({ noteId, ...o }) => o); } catch (e) { entretien = []; }
+  // Réserves de conformité pas encore levées : reprises sur le chantier, affectées aux compagnons (levée remontée ici)
+  let reserves = [];
+  try { if (typeof AnnexesExploitation !== 'undefined' && typeof ReservesTerrain !== 'undefined' && (et.notes || []).some(n => (Notes.TYPES[n.type] || {}).annexe)) reserves = ReservesTerrain.pourCrm(AnnexesExploitation.reserves(et, Liens), et.reservesConformite || {}); } catch (e) { reserves = []; }
   return allegerResume({ objet: et.objet, client: et.client || '', clientId: et.clientId || '', devisId: et.devisId || '', indice: et.indice, date: et.date, auteur: et.auteur || '', verificateur: et.verificateur || '', description: String(et.description || '').slice(0, 500),
-    notes, erreurs: notes.reduce((s, n) => s + n.erreurs, 0), attention: notes.reduce((s, n) => s + n.attention, 0), equipements, materiel, debits, mes, entretien, regulation: (() => { try { return Regulation.pourDoe(et, Liens); } catch (e) { return null; } })(), renumerotations: (et.renumerotations || []).slice(-20), devis: (et.devisPF || []).slice(-10) });
+    notes, erreurs: notes.reduce((s, n) => s + n.erreurs, 0), attention: notes.reduce((s, n) => s + n.attention, 0), equipements, materiel, debits, mes, entretien, reserves, regulation: (() => { try { return Regulation.pourDoe(et, Liens); } catch (e) { return null; } })(), renumerotations: (et.renumerotations || []).slice(-20), devis: (et.devisPF || []).slice(-10) });
 }
 const corpsEtude = et => { let resume; try { resume = et.modele ? undefined : resumePF(et); } catch (e) { resume = undefined; } return { data: et, version: et._v, resume }; };
 // Enregistrement différé (une requête à la fois par étude, contrôle de version)
@@ -550,6 +553,7 @@ Vues.etude = {
       ${tableauBordHtml(et)}
       ${typeof carteReperes === 'function' ? carteReperes(et) : ''}
       ${typeof carteExploitation === 'function' ? carteExploitation(et) : ''}
+      ${typeof carteRetourChantier === 'function' ? carteRetourChantier(et) : ''}
       <div class="barre"><h2>Calculs <span class="compte">${et.notes.length}</span></h2><button id="ajout">+ Ajouter un calcul</button>${et.notes.some(n => ['pid', 'arbo', 'terminaux', 'cta', 'ecs'].includes(n.type)) ? `<a class="secondaire btn" id="installation" href="#/etude/${et.id}/installation" title="Schémas de principe, circuits, réseaux arborescents, branches et consommateurs d'eau : raccordements et contrôles de cohérence">💧 Installation hydraulique</a>` : ''}<button class="secondaire" id="vrac" title="Charger toutes les fiches techniques du chantier d'un coup, puis les répartir dans les calculs (terminaux, CTA, production, pompes, vase, ballon, bouches, robinetterie…) sans ressaisie">📥 Matériel en vrac</button><span class="espace"></span>
         ${et.notes.length ? '<button class="secondaire" id="fiches-mes" title="Une fiche par équipement (générateurs, pompes, terminaux, CTA…) : points de contrôle, valeurs attendues de l\'étude, mesures à relever">📋 Fiches de mise en service</button>' : ''}
         ${et.notes.length > 1 ? '<button class="secondaire" id="comparer" disabled title="Cocher au moins deux calculs">⚖️ Comparer la sélection</button>' : ''}</div>
@@ -575,6 +579,7 @@ Vues.etude = {
     if (rc) rc.onclick = () => dialogueReservesConformite(et);
     const ve = root.querySelector('#visites-entretien');
     if (ve) ve.onclick = () => dialogueEntretien(et);
+    if (typeof lierRetourChantier === 'function') lierRetourChantier(root, et);
     root.querySelectorAll('#vrac, #vrac2').forEach(b => { b.onclick = () => dialogueVrac(et); });
     if (typeof lierParcours === 'function') lierParcours(root, et);
     if (typeof GuideEtude !== 'undefined') GuideEtude.lier(root, et);

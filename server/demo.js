@@ -433,7 +433,15 @@ function demoData() {
     appareil: 'Valise d\'équilibrage hydraulique', lignes: [
       { repere: 'V1', local: 'Colonne A1', type: 'Vanne d\'équilibrage', theorique: 1850, mesure: 1810, reglage: '3,2 tours' }, { repere: 'V2', local: 'Colonne A2', type: 'Vanne d\'équilibrage', theorique: 1650, mesure: 1700, reglage: '2,8 tours' },
       { repere: 'V3', local: 'Colonne A3', type: 'Vanne d\'équilibrage', theorique: 1420, mesure: 1395, reglage: '2,4 tours' }, { repere: 'V4', local: 'Colonne A4', type: 'Vanne d\'équilibrage', theorique: 1200, mesure: 1240, reglage: '2,1 tours' }],
-    observations: 'Pompe réglée en pression différentielle constante 4,5 mCE.', photos: [], resultat: 'Conforme', ...signe(-5, '12:00') }];
+    observations: 'Pompe réglée en pression différentielle constante 4,5 mCE.', photos: [], resultat: 'Conforme', ...signe(-5, '12:00') },
+    // Relevés du chantier de l'étude d'exemple (repères de l'étude) : repris dans l'étude, « Retour du chantier » → réglages proposés
+    { id: 'eq2', numero: `EQ-${Y}-0002`, affaireId: 'af1', userId: 'o1', technicien: 'Kevin Roux', date: d(-2), heure: '10:00', installation: 'Réseau eau chaude des cassettes — R+1', type: 'Hydraulique', unite: 'm³/h', tolerance: 10,
+      appareil: 'Valise d\'équilibrage hydraulique', lignes: [
+        { repere: 'VE-CA-01', local: 'Bureau 1', type: 'Vanne d\'équilibrage', theorique: 0.516, mesure: 0.66, reglage: '1,9 tours' }, { repere: 'VE-CA-02', local: 'Bureau 2', type: 'Vanne d\'équilibrage', theorique: 0.516, mesure: 0.5, reglage: '2,1 tours' },
+        { repere: 'VE-CA-03', local: 'Salle de réunion', type: 'Vanne d\'équilibrage', theorique: 0.774, mesure: 0.62, reglage: '3 tours' }], observations: '', photos: [], resultat: '', statut: 'Brouillon' },
+    { id: 'eq3', numero: `EQ-${Y}-0003`, affaireId: 'af1', userId: 'o1', technicien: 'Kevin Roux', date: d(-2), heure: '14:00', installation: 'Bureaux R+1', type: 'Aéraulique', unite: 'm³/h', tolerance: 10,
+      appareil: 'Cône de mesure', lignes: [{ repere: 'S-01', local: 'Bureau 1', type: 'plafond', theorique: 200, mesure: 160, reglage: '' }, { repere: 'S-02', local: 'Bureau 2', type: 'plafond', theorique: 200, mesure: 205, reglage: '' },
+        { repere: 'S-03', local: 'Bureau 3', type: 'plafond', theorique: 200, mesure: 196, reglage: '' }, { repere: 'S-04', local: 'Salle de réunion', type: 'plafond', theorique: 450, mesure: 470, reglage: '' }], observations: '', photos: [], resultat: '', statut: 'Brouillon' }];
   // Facture électronique reçue de la plateforme : vannes de la commande CF-0002 (rapprochement automatique)
   const efactures = [{ id: 'ef1', cle: '445666777|RIA-F-26-3317', statut: 'Reçue', recueLe: d(-1) + 'T06:42:00', origine: 'plateforme', nomFichier: 'RIA-F-26-3317.xml', format: 'CII', type: 'facture', typeCode: '380',
     numero: 'RIA-F-26-3317', date: d(-2), echeance: d(43), devise: 'EUR', refCommande: `CF-${Y}-0002`, refAcheteur: `CH-${Y}-001`, refFacture: '', iban: 'FR7600000000000000000000000',
