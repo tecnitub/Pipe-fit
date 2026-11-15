@@ -66,10 +66,16 @@ Option décochée : étiquettes Revit (familles d'étiquettes choisies), placée
 
 ## Robinetterie
 
-- **Genre reconnu** d'après le nom de la famille (français ou anglais) : vanne (opercule), vanne papillon, vanne de
-  réglage / d'équilibrage (STAD, TBV…), clapet anti-retour, vanne à boisseau, filtre, compensateur de dilatation
-  (Dilatoflex, manchette antivibratile, soufflet). La désignation de la nomenclature le précise au besoin
-  (« Compensateur de dilatation Dilatoflex »). La robinetterie garde sa propre matière (pas celle du tube).
+- **Genre reconnu d'après le nom du TYPE de l'accessoire** (« Vanne papillon DN100 », « Clapet à battant », « STAD-F »,
+  « Dilatoflex »…), puis d'après le nom de la famille si le type ne dit rien : vanne (opercule), vanne papillon, vanne de
+  réglage / d'équilibrage (STAD, TBV, MSV…), clapet anti-retour, vanne à boisseau, filtre, compensateur de dilatation
+  (Dilatoflex, manchette antivibratile, soufflet). Mots-clés français et anglais.
+- **Correspondances par type** : bouton « Symboles… » de la fenêtre des isométries ; il liste les types d'accessoires
+  du projet avec le symbole trouvé (et s'il vient du type ou de la famille), et permet de le corriger type par type
+  (ex. « BOA-H DN80 » → vanne de réglage). Choix mémorisés dans `%AppData%\PipeFit\Symboles robinetterie.ini`, valables
+  pour toutes les commandes et tous les projets.
+- **Désignation** de la nomenclature : le nom du type, précédé du genre s'il ne le dit pas (« Vanne de réglage STAD-F
+  DN100 »). La robinetterie garde sa propre matière (pas celle du tube).
 - **Symboles d'isométrie normalisés** (option cochée par défaut) : les familles de robinetterie sont masquées dans la
   vue et le symbole de leur genre est dessiné sur la feuille, orienté sur le tube, avec sa bulle de repère : papillon
   (disque), réglage (cercle, tige, flèche de réglage), clapet (moitié aval hachurée et flèche d'écoulement), boisseau,

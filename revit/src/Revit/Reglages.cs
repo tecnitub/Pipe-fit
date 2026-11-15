@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace PipeFit.Isometries.Revit
@@ -54,8 +55,41 @@ namespace PipeFit.Isometries.Revit
 
         static string Fichier => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PipeFit", "Isometries.ini");
 
+        static string FichierSymboles => Path.Combine(Path.GetDirectoryName(Fichier), "Symboles robinetterie.ini");
+
+        /// <summary>Correspondances nom de type d'accessoire → symbole (fichier « Symboles robinetterie.ini », lignes « type=Genre »).</summary>
+        public static Dictionary<string, PipeFit.Isometries.Core.GenreRobinet> ChargerSymboles()
+        {
+            var d = new Dictionary<string, PipeFit.Isometries.Core.GenreRobinet>();
+            try
+            {
+                if (File.Exists(FichierSymboles))
+                    foreach (var ligne in File.ReadAllLines(FichierSymboles, Encoding.UTF8))
+                    {
+                        var i = ligne.LastIndexOf('=');
+                        if (i > 0 && Enum.TryParse(ligne.Substring(i + 1).Trim(), out PipeFit.Isometries.Core.GenreRobinet g))
+                            d[PipeFit.Isometries.Core.Robinetterie.Cle(ligne.Substring(0, i))] = g;
+                    }
+            }
+            catch { }
+            return d;
+        }
+
+        public static void EnregistrerSymboles(Dictionary<string, PipeFit.Isometries.Core.GenreRobinet> d)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(FichierSymboles));
+                File.WriteAllLines(FichierSymboles, d.OrderBy(k => k.Key, StringComparer.Ordinal).Select(k => k.Key + "=" + k.Value), Encoding.UTF8);
+            }
+            catch { }
+            PipeFit.Isometries.Core.Robinetterie.Correspondances = d;
+        }
+
         public static Reglages Charger()
         {
+            // Correspondances des symboles : utilisées par toutes les commandes (isométries, numérotation, quantitatif, repérage)
+            PipeFit.Isometries.Core.Robinetterie.Correspondances = ChargerSymboles();
             var r = new Reglages();
             try
             {

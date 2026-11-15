@@ -92,13 +92,13 @@ sealed class Ligne
         return this;
     }
 
-    public Ligne Vanne(double axe, string fam, double faceAFace)
+    public Ligne Vanne(double axe, string fam, double faceAFace, string type = "PN16")
     {
         var lf = Bride(Dn);
         Tube(axe - lf);
         Droit("Bride à collerette", "PN16", lf);
         var a = Pos; var b = Pos + Dir * faceAFace;
-        var v = Ajouter(fam, "PN16", Dn, (a + b) * 0.5, 0, (a, Dir * -1, Dn), (b, Dir, Dn));
+        var v = Ajouter(fam, type, Dn, (a + b) * 0.5, 0, (a, Dir * -1, Dn), (b, Dir, Dn));
         v.EstAccessoire = true;
         Relier(v, 0); Ouvert = v; Bout = 1; Pos = b;
         Droit("Bride à collerette", "PN16", lf);
@@ -147,8 +147,9 @@ static class Demo
         // vanne de réglage (équilibrage) et compensateur Dilatoflex, chacun entre deux brides
         var d = new Spool { Nom = "SP-104" };
         new Ligne(d, "EG-104", "Acier P235GH").Depart(new Point3(0, 0, 0), X, 100, "POMPE-P2").Arrivee()
-            .Vanne(700, "Vanne papillon", 52).Vanne(600, "Clapet à battant", 190).Coude(800, Z)
-            .Vanne(500, "Vanne d'équilibrage STAD-F", 290).Coude(700, Y).Vanne(500, "Dilatoflex", 130).FinBride(600, "CTA-03");
+            // Famille générique : c'est le nom du type qui donne le symbole (STAD-F → vanne de réglage)
+            .Vanne(700, "Robinetterie à brides", 52, "Vanne papillon DN100 PN16").Vanne(600, "Robinetterie à brides", 190, "Clapet à battant DN100").Coude(800, Z)
+            .Vanne(500, "Robinetterie à brides", 290, "STAD-F DN100").Coude(700, Y).Vanne(500, "Robinetterie à brides", 130, "Dilatoflex DN100 L130").FinBride(600, "CTA-03");
         res.Add(d);
 
         // SP-103 : retour process DN80 réduit en DN50

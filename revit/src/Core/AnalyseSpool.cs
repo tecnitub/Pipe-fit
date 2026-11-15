@@ -141,6 +141,13 @@ namespace PipeFit.Isometries.Core
             string d;
             if (c.Type == TypeComposant.Tube)
                 d = "Tube" + (type != "" ? " " + type : fam != "" && !Normaliser(fam).StartsWith("tub") ? " " + fam : "");
+            else if (c.EstAccessoire && Robinetterie.Genre(c, out var parType) is var gt && parType && SansDefaut(c.TypeNom) != "")
+            {
+                // Robinetterie reconnue par le nom de son type : la désignation est ce nom (précédé du genre s'il ne le dit pas)
+                d = c.TypeNom.Trim();
+                var lib = Robinetterie.Libelle(gt);
+                if (gt != GenreRobinet.Vanne && !Normaliser(d).Contains(Robinetterie.MotCle(gt))) d = lib + " " + d;
+            }
             else
             {
                 d = fam == "" ? Libelle(c.Type) : fam;

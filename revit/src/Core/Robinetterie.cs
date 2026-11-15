@@ -11,11 +11,37 @@ namespace PipeFit.Isometries.Core
 
     public static class Robinetterie
     {
-        /// <summary>Genre d'un accessoire ou d'une vanne, d'après le nom de sa famille et de son type.</summary>
-        public static GenreRobinet Genre(Composant c)
+        /// <summary>
+        /// Correspondances choisies par l'utilisateur : nom du type d'accessoire (normalisé) → symbole. Elles passent avant
+        /// la recherche par mots-clés (ex. « KSB BOA-H » → vanne de réglage).
+        /// </summary>
+        public static Dictionary<string, GenreRobinet> Correspondances = new Dictionary<string, GenreRobinet>();
+
+        public static string Cle(string typeNom) => AnalyseSpool.Normaliser(typeNom);
+
+        /// <summary>
+        /// Genre d'un accessoire ou d'une vanne : correspondance choisie pour son type, sinon recherche des mots-clés dans le
+        /// nom du TYPE, sinon dans le nom de la famille. parType : le genre vient du nom du type.
+        /// </summary>
+        public static GenreRobinet Genre(Composant c) => Genre(c, out _);
+
+        public static GenreRobinet Genre(Composant c, out bool parType)
         {
+            parType = false;
             if (!c.EstAccessoire && c.Type != TypeComposant.Vanne && c.Type != TypeComposant.Accessoire) return GenreRobinet.Aucun;
-            var n = AnalyseSpool.Normaliser(c.Famille + " " + c.TypeNom);
+            if (Correspondances.TryGetValue(Cle(c.TypeNom), out var choisi) && choisi != GenreRobinet.Aucun) { parType = true; return choisi; }
+            var g = ParMots(c.TypeNom);
+            if (g != GenreRobinet.Aucun) { parType = true; return g; }
+            g = ParMots(c.Famille);
+            if (g != GenreRobinet.Aucun) return g;
+            return c.EstAccessoire ? GenreRobinet.Vanne : GenreRobinet.Aucun;
+        }
+
+        /// <summary>Genre reconnu par mots-clés dans un nom (Aucun si rien ne correspond).</summary>
+        public static GenreRobinet ParMots(string nom)
+        {
+            var n = AnalyseSpool.Normaliser(nom);
+            if (n == "") return GenreRobinet.Aucun;
             if (Regex.IsMatch(n, @"compensateur|dilatoflex|dilatation|soufflet|manchette|antivibrat|lyre|bellows|expansion")) return GenreRobinet.Compensateur;
             if (Regex.IsMatch(n, @"clapet|anti ?retour|\bcheck\b|non ?return")) return GenreRobinet.Clapet;
             if (Regex.IsMatch(n, @"reglage|equilibrage|balancing|\bstad|\btbv|\bmsv|regulat|debit")) return GenreRobinet.Reglage;
@@ -23,7 +49,7 @@ namespace PipeFit.Isometries.Core
             if (Regex.IsMatch(n, @"boisseau|quart de tour|\bball\b|sphere|\bbille")) return GenreRobinet.Boisseau;
             if (Regex.IsMatch(n, @"filtre|strainer|tamis")) return GenreRobinet.Filtre;
             if (Regex.IsMatch(n, @"vanne|robinet|valve|opercule|guillotine|soupape|\bpointeau")) return GenreRobinet.Vanne;
-            return c.EstAccessoire ? GenreRobinet.Vanne : GenreRobinet.Aucun;
+            return GenreRobinet.Aucun;
         }
 
         public static string Libelle(GenreRobinet g)
@@ -38,6 +64,21 @@ namespace PipeFit.Isometries.Core
                 case GenreRobinet.Compensateur: return "Compensateur de dilatation";
                 case GenreRobinet.Vanne: return "Vanne";
                 default: return "";
+            }
+        }
+
+        /// <summary>Mot qui dit le genre dans une désignation (« STAD-F » ne dit pas « réglage » : on le précise).</summary>
+        public static string MotCle(GenreRobinet g)
+        {
+            switch (g)
+            {
+                case GenreRobinet.Papillon: return "papillon";
+                case GenreRobinet.Reglage: return "reglage";
+                case GenreRobinet.Clapet: return "clapet";
+                case GenreRobinet.Boisseau: return "boisseau";
+                case GenreRobinet.Filtre: return "filtre";
+                case GenreRobinet.Compensateur: return "compensateur";
+                default: return "vanne";
             }
         }
 

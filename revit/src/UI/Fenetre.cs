@@ -22,6 +22,8 @@ namespace PipeFit.Isometries.Revit
         /// <summary>Pour un paramètre : nombre d'éléments par spool et nombre d'éléments sans numéro.</summary>
         public Func<string, (Dictionary<string, int> spools, int sansSpool)> Compter;
         public HashSet<string> Preselection = new HashSet<string>();
+        /// <summary>Types d'accessoires de canalisation du projet : (famille, type).</summary>
+        public List<(string Famille, string Type)> TypesAccessoires = new List<(string, string)>();
     }
 
     sealed class Fenetre : Form
@@ -110,7 +112,14 @@ namespace PipeFit.Isometries.Revit
             gAnnot.Controls.Add(new Label { Text = "Surlongueur aux soudures chantier :", AutoSize = true, Location = new Point(12, 205) });
             nudSurl.SetBounds(226, 202, 70, 24);
             gAnnot.Controls.Add(new Label { Text = "mm à recouper sur place (0 = aucune)", AutoSize = true, Location = new Point(300, 205), ForeColor = SystemColors.GrayText });
-            ckSymboles.SetBounds(12, 230, 500, 22);
+            ckSymboles.SetBounds(12, 230, 400, 22);
+            var btSymboles = new Button { Text = "Symboles…", Anchor = AnchorStyles.Top | AnchorStyles.Right };
+            btSymboles.SetBounds(416, 228, 96, 26);
+            btSymboles.Click += (s, e) =>
+            {
+                using (var fs = new FenetreSymboles(d.TypesAccessoires)) fs.ShowDialog(this);
+            };
+            gAnnot.Controls.Add(btSymboles);
             ckFeuille.SetBounds(12, 256, 500, 22);
             gAnnot.Controls.AddRange(new Control[] { ckRepere, cbParamRepere, ckSoudures, ckCotes, nudSurl, ckSymboles, ckFeuille });
 

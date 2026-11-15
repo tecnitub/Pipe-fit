@@ -331,6 +331,23 @@ static class Tests
             Verifier(AnalyseSpool.Classer(Acc("Dilatoflex")) == TypeComposant.Accessoire && AnalyseSpool.Classer(Acc("Clapet à battant")) == TypeComposant.Vanne,
                 "compensateur = accessoire, clapet = vanne");
 
+            // Le nom du TYPE décide : famille générique, types parlants ; correspondance choisie pour un type muet
+            var gen = Acc("Accessoire de canalisation", "Vanne papillon DN100");
+            Verifier(Robinetterie.Genre(gen) == GenreRobinet.Papillon, "genre lu dans le nom du type");
+            var contra = Acc("Vanne à opercule", "Clapet à battant PN16");
+            Verifier(Robinetterie.Genre(contra) == GenreRobinet.Clapet, "le nom du type passe avant celui de la famille");
+            var muet = Acc("Robinetterie KSB", "BOA-H DN80");
+            Verifier(Robinetterie.Genre(muet) == GenreRobinet.Vanne, "type muet : genre de la famille (vanne)");
+            Robinetterie.Correspondances[Robinetterie.Cle("BOA-H DN80")] = GenreRobinet.Reglage;
+            Verifier(Robinetterie.Genre(muet) == GenreRobinet.Reglage, "correspondance choisie pour le type");
+            var spm = new Spool { Nom = "M" }; var cm = Acc("Robinetterie KSB", "BOA-H DN80"); cm.Type = TypeComposant.Autre; spm.Composants.Add(cm); AnalyseSpool.Analyser(spm);
+            Verifier(cm.Genre == GenreRobinet.Reglage && cm.Designation == "Vanne de réglage BOA-H DN80", "désignation d'après le type : " + cm.Designation);
+            Robinetterie.Correspondances.Clear();
+            var spp = new Spool { Nom = "P" }; var cp = Acc("Accessoire de canalisation", "Vanne papillon DN100"); cp.Type = TypeComposant.Autre; spp.Composants.Add(cp); AnalyseSpool.Analyser(spp);
+            Verifier(cp.Designation == "Vanne papillon DN100", "désignation = nom du type parlant : " + cp.Designation);
+            var sps = new Spool { Nom = "S" }; var cs = Acc("Robinetterie à brides", "STAD-F DN100"); cs.Type = TypeComposant.Autre; sps.Composants.Add(cs); AnalyseSpool.Analyser(sps);
+            Verifier(cs.Genre == GenreRobinet.Reglage && cs.Designation == "Vanne de réglage STAD-F DN100", "type STAD-F : genre précisé : " + cs.Designation);
+
             // Ligne tube – clapet – tube, arrivée du fluide par le bout gauche
             Spool Ligne(bool depuisGauche)
             {

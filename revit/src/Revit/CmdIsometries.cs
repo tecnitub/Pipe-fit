@@ -42,6 +42,9 @@ namespace PipeFit.Isometries.Revit
                 EtiquettesTube = GenerateurIso.Etiquettes(doc, BuiltInCategory.OST_PipeTags).Select(GenerateurIso.NomType).ToList(),
                 EtiquettesRaccord = GenerateurIso.Etiquettes(doc, BuiltInCategory.OST_PipeFittingTags).Select(GenerateurIso.NomType).ToList(),
                 EtiquettesAccessoire = GenerateurIso.Etiquettes(doc, BuiltInCategory.OST_PipeAccessoryTags).Select(GenerateurIso.NomType).ToList(),
+                TypesAccessoires = tous.Where(e => Compat.EstCategorie(e, BuiltInCategory.OST_PipeAccessory))
+                    .Select(e => doc.GetElement(e.GetTypeId()) as ElementType).Where(t => t != null)
+                    .Select(t => (t.FamilyName ?? "", t.Name ?? "")).Distinct().OrderBy(t => t.Item1).ThenBy(t => t.Item2).ToList(),
                 ParametresRepere = candidats.Where(c => c != LectureModele.SpoolFabrication).ToList(),
                 Compter = param =>
                 {
