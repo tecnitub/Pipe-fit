@@ -122,6 +122,27 @@ test('DOE : numérotation des sections cohérente (navigation, écran, document 
   assert.deepStrictEqual(erreurs, []);
 });
 
+test('Études : Réglages — ratios du métré affichés avec une virgule, saisis avec virgule ou point, enregistrés en nombre', { skip: sansPlaywright, timeout: 120000 }, async () => {
+  const { p, erreurs } = await ouvrir('etudes.html', { width: 1400, height: 900 }, false);
+  // Réglages modifiables par l'administrateur
+  await p.evaluate(() => { localStorage.setItem('pipefit-etudes-demo-me', 'admin'); location.hash = '#/reglages'; location.reload(); }); await p.waitForTimeout(1500);
+  assert.ok(await p.$('#mr-enreg'), 'bouton « Enregistrer les ratios » absent (compte administrateur)');
+  const champs = await p.$$eval('#metre-ratios [data-mr]', els => els.map(e => ({ type: e.type, mode: e.inputMode, v: e.value })));
+  assert.ok(champs.length > 10 && champs.every(c => c.type === 'text' && c.mode === 'decimal'), 'champs des ratios');
+  assert.ok(champs.some(c => c.v.includes(',')) && !champs.some(c => /\d\.\d/.test(c.v)), `décimales avec un point : ${champs.map(c => c.v).join(' ')}`);
+  {
+    await p.fill('[data-mr="gaine"]', '0.35'); await p.fill('[data-mr="coefs.monteur"]', '1,2');
+    await p.click('#mr-enreg'); await p.waitForTimeout(600);
+    assert.deepStrictEqual(await p.evaluate(() => [S.config.metre.gaine, S.config.metre.coefs.monteur]), [0.35, 1.2]);
+    assert.strictEqual(await p.$eval('[data-mr="gaine"]', e => e.value), '0,35');
+    // Saisie non numérique : signalée, rien n'est enregistré
+    await p.fill('[data-mr="gaine"]', 'abc'); await p.click('#mr-enreg'); await p.waitForTimeout(300);
+    assert.strictEqual(await p.$eval('[data-mr="gaine"]', e => e.getAttribute('aria-invalid')), 'true');
+    assert.strictEqual(await p.evaluate(() => S.config.metre.gaine), 0.35);
+  }
+  assert.deepStrictEqual(erreurs, []);
+});
+
 test('Ergonomie Études : ordinateur (tableaux collants, Entrée, groupes repliables, zoom, dialogue)', { skip: sansPlaywright, timeout: 120000 }, async () => {
   const { p, erreurs } = await ouvrir('etudes.html', { width: 1400, height: 900 }, false);
   const r = await p.evaluate(() => { const et = S.etudes.filter(x => !x.modele).sort((a, b) => b.notes.length - a.notes.length)[0]; return { id: et.id, arbo: et.notes.find(n => n.type === 'arbo').id, pid: et.notes.find(n => n.type === 'pid').id }; });

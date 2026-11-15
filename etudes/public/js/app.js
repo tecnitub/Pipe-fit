@@ -6,6 +6,12 @@ const dateFr = iso => (iso ? new Date(`${String(iso).slice(0, 10)}T12:00:00`).to
 const aujourdhui = () => new Date().toISOString().slice(0, 10);
 const uidE = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('');
 const copie = o => JSON.parse(JSON.stringify(o));
+// Champs décimaux des réglages et dialogues : affichés avec une virgule, saisis avec une virgule ou un point (espaces
+// de milliers tolérés), enregistrés en nombre. Champ texte (inputmode « decimal ») : le navigateur ne réécrit pas la
+// valeur selon sa propre langue, comme il le fait pour type="number".
+const decFr = v => (v === '' || v === null || v === undefined ? '' : String(v).replace('.', ','));
+const lireDecimal = s => { const t = String(s ?? '').replace(/[\s  ]/g, '').replace(',', '.'); return /^-?(\d+\.?\d*|\.\d+)$/.test(t) ? Number(t) : NaN; };
+const champDecimal = (attrs, v) => `<input type="text" inputmode="decimal" autocomplete="off" ${attrs} value="${esc(decFr(v))}">`;
 // Copie d'une étude (duplication, modèle) : les calculs repartent sans émission
 const sansEmissions = et => { const c = { ...et, notes: (et.notes || []).map(n => ({ ...n, emissions: [], indice: '' })) }; delete c.etatReference; delete c.consequences; return c; };
 async function api(method, url, body) {
@@ -2317,14 +2323,14 @@ Vues.reglages = {
     ${carteValeursRegl(admin)}
     <div class="carte" id="metre-ratios"><h2>Métré et chiffrage : ratios</h2>
       <p class="muted petit">Heures de pose utilisées par le métré des études (avant les coefficients de calage). Pour les tubes et le calorifuge : heures par mètre = a + b × DN. Les coefficients de calage multiplient les heures de chaque main-d'œuvre ; ils se calculent sur les chantiers terminés de Pipe-Fit (heures pointées face aux heures prévues aux devis).</p>
-      ${(() => { const r = Metre.ratios(), inp = (ch, v, pas = '0.001', st = '') => `<input type="number" min="0" step="${pas}" data-mr="${ch}" value="${v}" ${st ? `style="${st}"` : ''} ${dis}>`;
+      ${(() => { const r = Metre.ratios(), inp = (ch, v, pas, st = '') => champDecimal(`data-mr="${ch}" style="width:6em;${st}" ${dis}`, v);
         const MAT = { acier: 'Acier soudé', galva: 'Acier galvanisé', inox: 'Inox', cuivre: 'Cuivre', pehd: 'PEHD', multicouche: 'Multicouche' };
         return `<div class="deux-col"><table class="liste compact"><thead><tr><th>Tuyauterie (h/ml)</th><th>a</th><th>b (par DN)</th></tr></thead><tbody>
           ${Object.entries(MAT).map(([k, l]) => `<tr><td>${l}</td><td>${inp(`tube.${k}.0`, r.tube[k][0])}</td><td>${inp(`tube.${k}.1`, r.tube[k][1], '0.0001')}</td></tr>`).join('')}
           <tr><td>Calorifuge</td><td>${inp('calorifuge.0', r.calorifuge[0])}</td><td>${inp('calorifuge.1', r.calorifuge[1], '0.0001')}</td></tr>
           <tr><td>Études (forfait + par note)</td><td>${inp('be.0', r.be[0], '0.5')}</td><td>${inp('be.1', r.be[1], '0.5')}</td></tr></tbody></table>
           <table class="liste compact"><thead><tr><th>Équipement (h/u)</th><th>Heures</th></tr></thead><tbody>
-          ${Object.entries(Metre.LIBELLES_EQUIP).map(([k, l]) => `<tr><td>${esc(l)}</td><td>${Array.isArray(r.equip[k]) ? `<span style="white-space:nowrap">${inp(`equip.${k}.0`, r.equip[k][0], '0.001', 'width:6em;display:inline-block')} + ${inp(`equip.${k}.1`, r.equip[k][1], '0.0001', 'width:6em;display:inline-block')} × DN</span>` : inp(`equip.${k}`, r.equip[k], '0.05')}</td></tr>`).join('')}</tbody></table></div>
+          ${Object.entries(Metre.LIBELLES_EQUIP).map(([k, l]) => `<tr><td>${esc(l)}</td><td>${Array.isArray(r.equip[k]) ? `<span style="white-space:nowrap">${inp(`equip.${k}.0`, r.equip[k][0], '0.001', 'display:inline-block')} + ${inp(`equip.${k}.1`, r.equip[k][1], '0.0001', 'display:inline-block')} × DN</span>` : inp(`equip.${k}`, r.equip[k], '0.05')}</td></tr>`).join('')}</tbody></table></div>
           <div class="grille-champs"><label>Gaine (h/ml)${inp('gaine', r.gaine, '0.05')}</label><label>Coudes par mètre de tube${inp('coudesParMl', r.coudesParMl, '0.05')}</label>
             <label>Supports par mètre de tube${inp('supportsParMl', r.supportsParMl, '0.05')}</label><label>Chutes sur les tubes (%)${inp('chute', r.chute, '0.5')}</label></div>
           <h3>Coefficients de calage</h3><div class="grille-champs">${[['monteur', 'Monteurs, tuyauteurs, soudeurs'], ['calorifugeur', 'Calorifugeurs'], ['be', 'Bureau d\'études']].map(([k, l]) => `<label>${l}${inp(`coefs.${k}`, r.coefs[k], '0.01')}</label>`).join('')}</div>
@@ -2403,10 +2409,21 @@ Vues.reglages = {
     const vrm = root.querySelector('#vr-maj');
     if (vrm) vrm.onclick = dialogueMajValeurs;
     root.querySelectorAll('[data-vreg-defaut]').forEach(b => b.onclick = () => { const el = root.querySelector(`[data-vreg="${b.dataset.vregDefaut}"]`); if (el) el.value = String(ValeursRegl.defaut(b.dataset.vregDefaut)).replace('.', ','); });
-    const lireRatios = () => { const r = copie(Metre.ratios()); root.querySelectorAll('[data-mr]').forEach(el => { const k = el.dataset.mr.split('.'), v = parseFloat(el.value); if (!Number.isFinite(v) || v < 0) return; k.slice(0, -1).reduce((o, x) => o[x], r)[k[k.length - 1]] = v; }); return r; };
+    // Ratios saisis (virgule ou point) ; une valeur non numérique ou négative est signalée et rien n'est enregistré
+    const lireRatios = () => {
+      const r = copie(Metre.ratios()), faux = [];
+      root.querySelectorAll('[data-mr]').forEach(el => {
+        const k = el.dataset.mr.split('.'), v = lireDecimal(el.value), ok = Number.isFinite(v) && v >= 0;
+        el.setAttribute('aria-invalid', String(!ok));
+        if (!ok) { faux.push(el); return; }
+        k.slice(0, -1).reduce((o, x) => o[x], r)[k[k.length - 1]] = v;
+      });
+      if (faux.length) { toast(`${faux.length} ratio(s) non numérique(s) ou négatif(s) : corrigez les champs signalés (virgule ou point acceptés).`, 6000); faux[0].focus(); return null; }
+      return r;
+    };
     const enregistrerMetre = async (m, msg) => { await majConfig({ ...S.config, metre: m }); toast(msg); };
     const mre = root.querySelector('#mr-enreg');
-    if (mre) mre.onclick = () => enregistrerMetre({ ...lireRatios(), calage: (S.config.metre || {}).calage || null }, 'Ratios du métré enregistrés');
+    if (mre) mre.onclick = () => { const r = lireRatios(); if (r) enregistrerMetre({ ...r, calage: (S.config.metre || {}).calage || null }, 'Ratios du métré enregistrés'); };
     const mrd = root.querySelector('#mr-defaut');
     if (mrd) mrd.onclick = async () => { if (await confirmer('Revenir aux ratios et coefficients par défaut ?', 'Revenir')) await enregistrerMetre({}, 'Ratios par défaut rétablis'); };
     const mrr = root.querySelector('#mr-rex');
@@ -2423,7 +2440,7 @@ Vues.reglages = {
       calc(); b.querySelectorAll('[data-rex]').forEach(x => x.onchange = calc);
       b.querySelector('[data-fermer]').onclick = () => Modal.close();
       b.querySelector('#rex-ok').onclick = async () => { const { ids, c } = calc(); if (!ids.length) return toast('Cocher au moins un chantier.');
-        const r = lireRatios(); Object.entries(c.coefs).forEach(([k, v]) => { if (v !== null) r.coefs[k] = v; });
+        const r = lireRatios(); if (!r) return Modal.close(); Object.entries(c.coefs).forEach(([k, v]) => { if (v !== null) r.coefs[k] = v; });
         Modal.close(); await enregistrerMetre({ ...r, calage: { date: aujourdhui(), n: ids.length, affaires: ids } }, 'Coefficients calés sur le REX Pipe-Fit'); };
     };
     const enregistrerCatalogue = async (genre, liste) => {

@@ -73,7 +73,7 @@ function dialogueMesures(et) {
       try { contexteEtude = et; res = MesuresRetour.comparer({ et, L: Liens, equilibrages: d.equilibrages || [], mises: d.mises || [], tolerance: g.tolerance }); } catch (e) { res = { lignes: [], reglages: [], bilan: { comparees: 0, conformes: 0, horsTolerance: 0 }, tolerance: g.tolerance }; }
       b.innerHTML = `<h2>📏 Mesures de mise en service et réglages</h2>
         <p class="petit">${(d.equilibrages || []).length} relevé(s) d'équilibrage et ${(d.mises || []).length} PV de mise en service du chantier : ${res.bilan.comparees} mesure(s) comparée(s) aux valeurs calculées, <strong>${res.bilan.horsTolerance} hors tolérance</strong>.
-          <label class="ligne-case">Tolérance ± <input type="number" id="mr-tol" min="1" max="50" step="1" value="${esc(g.tolerance)}" style="width:4.5em"> %</label></p>
+          <label class="ligne-case">Tolérance ± ${champDecimal('id="mr-tol" aria-label="Tolérance des mesures en %" style="width:4.5em"', g.tolerance)} %</label></p>
         <div style="max-height:52vh;overflow:auto">
           <h3>Réglages proposés <span class="compte">${res.reglages.length}</span></h3>
           ${res.reglages.length ? `<table class="liste compact petit"><tr><th>Niveau</th><th>Organe</th><th>Écart</th><th>Actuel</th><th>Proposé</th><th>Méthode</th></tr>${res.reglages.map(x => `<tr><td>${esc(MesuresRetour.NIVEAUX[x.niveau] || x.niveau)}</td><td>${esc(x.organe)}</td><td>${pct(x.ecart)}</td><td>${esc(x.actuel)}</td><td><strong>${esc(x.propose)}</strong></td><td class="muted">${esc(x.detail)}</td></tr>`).join('')}</table>` : '<p class="muted">Aucun réglage à reprendre.</p>'}
@@ -83,7 +83,7 @@ function dialogueMesures(et) {
         </div>
         <div class="actions"><button class="secondaire" id="mr-x">Fermer</button><button id="mr-pdf" ${res.lignes.length ? '' : 'disabled'}>🖨️ Tableau « Réglages proposés » (PDF)</button></div>`;
       b.querySelector('#mr-x').onclick = () => { b.classList.remove('large'); Modal.close(); };
-      b.querySelector('#mr-tol').onchange = e => { const v = Number(e.target.value); if (v > 0 && v <= 50) { et.retourChantier = { ...reglagesRetour(et), tolerance: v }; enregistrer(et); } dessiner(); };
+      b.querySelector('#mr-tol').onchange = e => { const v = lireDecimal(e.target.value); if (v > 0 && v <= 50) { et.retourChantier = { ...reglagesRetour(et), tolerance: v }; enregistrer(et); } dessiner(); };
       b.querySelector('#mr-pdf').onclick = async () => {
         try { const bytes = await PDF.depuisHTML(pourPdf(MesuresRetour.html(et, res, { societe: (S.config || {}).societe, date: dateFr(aujourdhui()) })), 'Réglages proposés', null, { margeHaut: 36, margeBas: 36 }); enregistrerFichier(b, nomFichier('Reglages_proposes', et), bytes, 'application/pdf'); }
         catch (e) { toast(`PDF impossible : ${e.message}`, 6000); }
@@ -148,14 +148,14 @@ async function dialogueFiabilite(et) {
     const g = reglagesRetour(et), a = alertesRex(et, h), retenus = new Set(lignes.map(l => RexEquipements.modele(l.fabricant, l.reference)));
     b.innerHTML = `<h2>⚠️ Fiabilité des modèles</h2>
       <p class="petit">Interventions des contrats d'entretien (pannes, pièces changées) de toutes les affaires, rattachées aux équipements par n° de série ou repère. Alerte quand un modèle retenu dans cette étude atteint le seuil.
-        <label class="ligne-case">Seuil <input type="number" id="fb-seuil" min="5" max="300" step="5" value="${esc(g.seuilPannes)}" style="width:4.5em"> % de pannes par équipement installé</label>
+        <label class="ligne-case">Seuil ${champDecimal('id="fb-seuil" aria-label="Seuil de pannes en %" style="width:4.5em"', g.seuilPannes)} % de pannes par équipement installé</label>
         <label class="ligne-case">sur au moins <input type="number" id="fb-min" min="1" max="50" step="1" value="${esc(g.minInstalles)}" style="width:3.5em"> équipement(s) en service</label></p>
       ${a.length ? `<p class="alerte attention">${a.map(x => `<strong>${esc(x.designation)}</strong> — ${esc(x.texte)}`).join('<br>')}</p>` : '<p class="alerte ok petit">Aucun modèle retenu au-dessus du seuil.</p>'}
       <div style="max-height:42vh;overflow:auto"><table class="liste compact petit"><tr><th>Modèle</th><th>En service</th><th>Affaires</th><th>Pannes</th><th>Taux</th><th>Par an</th><th>Pièces changées</th></tr>
         ${h.filter(x => x.installes || x.pannes).slice(0, 80).map(x => `<tr${retenus.has(x.modele) ? ' class="surligne"' : ''}><td>${esc([x.fabricant, x.reference].filter(Boolean).join(' '))}${retenus.has(x.modele) ? ' <span class="badge">retenu ici</span>' : ''}</td><td>${x.installes}</td><td>${x.affaires}</td><td>${x.pannes}</td><td>${x.taux === null ? '—' : `${Math.round(x.taux * 100)} %`}</td><td>${x.tauxAnnuel === null ? '—' : nfR(x.tauxAnnuel, 2)}</td><td class="muted">${esc(x.pieces.map(p => `${p.designation} × ${p.qte}`).join(', '))}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">Aucun historique : les interventions se saisissent dans le contrat d\'entretien du chantier (Pipe-Fit).</td></tr>'}</table></div>
       <div class="actions"><button id="fb-x">Fermer</button></div>`;
     b.querySelector('#fb-x').onclick = () => { b.classList.remove('large'); Modal.close(); App.render(); };
-    const maj = (k, el, min, max) => { const v = Number(el.value); if (v >= min && v <= max) { et.retourChantier = { ...reglagesRetour(et), [k]: v }; enregistrer(et); } dessiner(); };
+    const maj = (k, el, min, max) => { const v = lireDecimal(el.value); if (v >= min && v <= max) { et.retourChantier = { ...reglagesRetour(et), [k]: v }; enregistrer(et); } dessiner(); };
     b.querySelector('#fb-seuil').onchange = e => maj('seuilPannes', e.target, 5, 300);
     b.querySelector('#fb-min').onchange = e => maj('minInstalles', e.target, 1, 50);
   };
@@ -172,8 +172,8 @@ function dialogueComptages(et) {
     b.querySelector('#cp-c').innerHTML = `<h2>📈 Comptages de la GTC — bilan réel</h2>
       <p class="petit">Relevés des compteurs (CSV ou Excel : date, compteur ou repère, index ou consommation) comparés aux compteurs prévus par la GTC (${prev.length ? esc(prev.map(p => p.rep).join(', ')) : 'aucun : cochez « comptage par usage » dans l\'armoire de régulation'}) et au calcul « Énergie annuelle »${ctx.energie ? ` (solution « ${esc(ctx.energie.solution)} »)` : ' (absent de l\'étude : pas de prévu)'}.</p>
       <p class="petit"><label class="btn secondaire petit">📥 Importer des relevés<input type="file" id="cp-f" accept=".csv,.txt,.xlsx" hidden></label> ${rel.length ? `${rel.length} relevé(s) du ${dateFr(rel.map(x => x.date).sort()[0])} au ${dateFr(rel.map(x => x.date).sort().slice(-1)[0])} <button class="secondaire petit" id="cp-vider">Effacer</button>` : ''}
-        <label class="ligne-case">Tolérance ± <input type="number" id="cp-tol" min="1" max="80" value="${esc(g.toleranceComptage)}" style="width:4em"> %</label>
-        <label class="ligne-case">DJU réels de la période <input type="number" id="cp-dju" min="0" step="1" value="${esc(g.djuReel)}" placeholder="prorata" style="width:6em"></label></p>
+        <label class="ligne-case">Tolérance ± ${champDecimal('id="cp-tol" aria-label="Tolérance des comptages en %" style="width:4.5em"', g.toleranceComptage)} %</label>
+        <label class="ligne-case">DJU réels de la période ${champDecimal('id="cp-dju" aria-label="DJU réels de la période" placeholder="prorata" style="width:6em"', g.djuReel)}</label></p>
       ${bl ? `${bl.alertes.length ? `<div class="petit">${bl.alertes.map(a => `<p class="alerte ${a.niveau === 'erreur' ? 'erreur' : a.niveau === 'attention' ? 'attention' : ''}">${esc(a.texte)}</p>`).join('')}</div>` : '<p class="alerte ok petit">Consommations dans la tolérance, pas de dérive ni de fuite détectée.</p>'}
         <div style="max-height:36vh;overflow:auto"><table class="liste compact petit"><tr><th>Compteur</th><th>Usage</th><th>Période</th><th>Réel</th><th>Prévu</th><th>Écart</th><th>Base du prévu</th></tr>
           ${bl.parUsage.map(x => `<tr${x.hors ? ' class="hors-tolerance"' : ''}><td>${esc(x.compteur)}${x.prevuGtc ? '' : ' <span class="badge">hors GTC</span>'}</td><td>${esc(x.libelle)}</td><td>${dateFr(x.du)} → ${dateFr(x.au)} (${x.jours} j)</td><td>${nfR(x.reel, x.unite === 'm³' ? 2 : 0)} ${esc(x.unite)}</td><td>${x.prevu === null ? '—' : `${nfR(x.prevu, x.unite === 'm³' ? 2 : 0)} ${esc(x.unite)}`}</td><td>${x.hors ? `<span class="badge erreur">${pct(x.ecart)}</span>` : pct(x.ecart)}</td><td class="muted">${esc(x.base)}</td></tr>`).join('')}</table></div>
@@ -183,8 +183,8 @@ function dialogueComptages(et) {
     const z = b.querySelector('#cp-c');
     z.querySelector('#cp-x').onclick = () => { b.classList.remove('large'); Modal.close(); App.render(); };
     const reg = (k, v) => { et.retourChantier = { ...reglagesRetour(et), [k]: v }; enregistrer(et); dessiner(); };
-    z.querySelector('#cp-tol').onchange = e => { const v = Number(e.target.value); if (v > 0 && v <= 80) reg('toleranceComptage', v); };
-    z.querySelector('#cp-dju').onchange = e => reg('djuReel', e.target.value === '' ? '' : Math.max(0, Number(e.target.value) || 0));
+    z.querySelector('#cp-tol').onchange = e => { const v = lireDecimal(e.target.value); if (v > 0 && v <= 80) reg('toleranceComptage', v); };
+    z.querySelector('#cp-dju').onchange = e => reg('djuReel', e.target.value.trim() === '' ? '' : Math.max(0, lireDecimal(e.target.value) || 0));
     const vd = z.querySelector('#cp-vider'); if (vd) vd.onclick = () => { et.comptages = { releves: [] }; enregistrer(et); dessiner(); };
     z.querySelector('#cp-f').onchange = async e => {
       const f = e.target.files && e.target.files[0]; if (!f) return;

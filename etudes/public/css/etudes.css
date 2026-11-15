@@ -1,4 +1,6 @@
 /* Pipe-Fit Études — complète la feuille de style commune de l'application DOE (charte TECNITUB) */
+/* Champ décimal refusé à l'enregistrement (ratios du métré…) */
+input[aria-invalid="true"] { border-color: var(--err-texte, #c92a2a); box-shadow: 0 0 0 2px rgba(201, 42, 42, .25); }
 /* Dépôt du dossier de consultation (zip) dans le dialogue d'import CCTP / DPGF ; questions au maître d'œuvre */
 .dce-depot { display: block; margin: 10px 0; padding: 12px; border: 2px dashed var(--bord); border-radius: 8px; cursor: pointer; }
 .dce-depot.survol { border-color: var(--texte); background: var(--retenu); }
