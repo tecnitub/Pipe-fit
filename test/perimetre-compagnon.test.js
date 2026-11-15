@@ -192,3 +192,16 @@ test('réglages de l\'administrateur : période du planning et accès à tous le
   await regler({});
   assert.deepStrictEqual(ids((await call('GET', '/api/data', null, C.kevin)).body.affaires), ['A1', 'A3']);
 });
+
+test('étapes des études : « compagnon » sur un chantier de son périmètre seulement ; nominatives toujours ; « fait » refusé ailleurs', async () => {
+  // A4 : Kevin y est prévu dans 60 jours (hors période), Zoé demain
+  const restes = [{ id: 'et-c', titre: 'Purger le réseau', phase: 'execution', responsable: { type: 'role', role: 'compagnon' } },
+    { id: 'et-k', titre: 'Photo du compteur', phase: 'execution', responsable: { type: 'user', id: 'k' } }];
+  assert.strictEqual((await call('PUT', '/api/liens/etudes/es4', { affaireId: 'A4', resume: { objet: 'Étude A4', avancement: { pct: 10, restes } } }, C.jacky)).status, 200);
+  const mes = async c => (await call('GET', '/api/liens/etapes/mes', null, c)).body.map(e => `${e.etudeId}:${e.id}`).sort();
+  assert.deepStrictEqual(await mes(C.kevin), ['es4:et-k'], 'seule l\'étape qui lui est affectée nommément');
+  assert.deepStrictEqual(await mes(C.zoe), ['es4:et-c']);
+  assert.strictEqual((await call('POST', '/api/liens/etapes/fait', { etudeId: 'es4', etapeId: 'et-c', commentaire: 'fait' }, C.kevin)).status, 403);
+  assert.strictEqual((await call('POST', '/api/liens/etapes/fait', { etudeId: 'es4', etapeId: 'et-k', commentaire: 'photo prise' }, C.kevin)).status, 200);
+  assert.strictEqual((await call('POST', '/api/liens/etapes/fait', { etudeId: 'es4', etapeId: 'et-c', commentaire: 'fait' }, C.zoe)).status, 200);
+});

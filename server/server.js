@@ -951,7 +951,13 @@ async function api(req, res, url) {
       }
       if (p[2] === 'mes' && method === 'GET') return send(res, 200, etapesDe(acc, q('affaireId')));
       // Étapes qui attendent la personne (affichées à l'ouverture de sa session) : les siennes seulement
-      if (p[2] === 'dues' && method === 'GET') return send(res, 200, RELANCES.duesPour(acc));
+      if (p[2] === 'dues' && method === 'GET') {
+        const dues = RELANCES.duesPour(acc);
+        if (!estCompagnon(acc)) return send(res, 200, dues);
+        // Compagnon : étapes de ses chantiers, ou qui lui sont affectées nommément (même règle que « Mes étapes »)
+        const miennes = new Set(etapesDe(acc).map(e => `${e.etudeId}|${e.id}`));
+        return send(res, 200, dues.filter(x => !chantierRefuse(acc, x.affaireId) || miennes.has(`${x.etudeId}|${x.etapeId}`)));
+      }
       // Récapitulatif des relances par e-mail : préférence de la personne (désinscription)
       if (p[2] === 'preferences') {
         if (!acc.user_id) return fail(res, 400, 'Compte sans fiche de l\'équipe : pas de relance');
