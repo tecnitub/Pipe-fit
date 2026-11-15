@@ -134,6 +134,17 @@ async function pipefit(s, chemin, opts = {}) {
   if (r.status === 401) { db.prepare('DELETE FROM sessions WHERE sid = ?').run(s.sid); throw Object.assign(new Error('Session Pipe-Fit expirée : reconnectez-vous.'), { status: 401 }); }
   return r;
 }
+// Compte toujours du bureau dans Pipe-Fit : revérifié toutes les 5 minutes avec le jeton de la session (un compte
+// supprimé ou passé hors du bureau perd l'accès à l'application, à ses données et à ses fichiers ; Pipe-Fit injoignable :
+// la session continue)
+const verifications = new Map();
+async function verifierCompte(s) {
+  const t = verifications.get(s.sid);
+  if (t && Date.now() - t < 300000) return;
+  try { await (await pipefit(s, '/api/me')).arrayBuffer(); } catch (e) { if (e.status === 401) throw e; }
+  if (verifications.size > 5000) verifications.clear();
+  verifications.set(s.sid, Date.now());
+}
 // Seules les informations utiles aux études sont transmises au navigateur : affaires, clients, bibliothèque de prix, main-d'œuvre
 // Site du chantier (adresse du client) : la ville sert à proposer le climat de l'étude
 const siteAffaire = (d, a) => (((d.entreprises || []).find(e => e.id === a.clientId) || {}).adresses || []).find(s => s.id === a.siteId) || {};
@@ -207,10 +218,12 @@ async function api(req, res, url) {
     const { me } = c, sid = crypto.randomBytes(24).toString('base64url'), h = empreinte(sid);
     db.prepare('INSERT INTO sessions (sid, login, nom, role, pf_cookie, created_at, user_id, pf_jeton, pf_expire) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)')
       .run(h, me.login, me.nom, me.role, new Date().toISOString(), me.userId || null, SecretLocal.chiffrer(CLE, c.jeton, h), c.expire || null);
+    verifications.set(h, Date.now());
     return send(res, 200, { login: me.login, nom: me.nom, role: me.role }, { 'Set-Cookie': cookieSession(req, sid, SESSION_JOURS * 86400) });
   }
   const s = session(req);
   if (!s) return fail(res, 401, 'Non connecté');
+  if (!(p[0] === 'logout' && method === 'POST')) await verifierCompte(s);
   if (p[0] === 'logout' && method === 'POST') {
     await pipefit(s, '/api/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
     db.prepare('DELETE FROM sessions WHERE sid = ?').run(s.sid); cacheDonnees.delete(s.sid);
@@ -269,8 +282,14 @@ async function api(req, res, url) {
     return send(res, 200, { id, nom, mime, taille: buf.length });
   }
   if (p[0] === 'fichiers' && p[1] && method === 'GET') {
-    const f = db.prepare('SELECT nom, mime, data FROM fichiers WHERE id = ?').get(p[1]);
+    const f = db.prepare('SELECT nom, mime, data, created_by FROM fichiers WHERE id = ?').get(p[1]);
     if (!f) return fail(res, 404, 'Fichier introuvable');
+    // Application du bureau : fichier d'une étude ouverte à tout le bureau ; fichier rattaché seulement à une étude
+    // supprimée : à son auteur, à l'administrateur ou au déposant (comme la restauration de l'étude)
+    if (s.role !== 'admin' && f.created_by !== s.login && !db.prepare('SELECT 1 FROM etudes WHERE instr(data, ?) > 0 LIMIT 1').get(p[1])) {
+      const sup = db.prepare('SELECT auteur_login, auteur_nom FROM etudes_supprimees WHERE instr(data, ?) > 0').all(p[1]);
+      if (sup.length && !sup.some(r => CorbeilleEtudes.peutGerer(auteurDe(r), s))) return fail(res, 403, 'Fichier d\'une étude supprimée : réservé à son auteur ou à l\'administrateur');
+    }
     res.writeHead(200, { 'Content-Type': f.mime, 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': `inline; filename="${encodeURIComponent(f.nom)}"` });
     return res.end(Buffer.from(f.data));
   }

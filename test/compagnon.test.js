@@ -80,10 +80,12 @@ test('compagnon : données filtrées, réglages, documents et notification', asy
   const up = await call('POST', '/api/documents/fichier', pdf, claire, hdr('Plan chaufferie indice B.pdf'));
   assert.strictEqual(up.status, 200); assert.strictEqual(up.body.mime, 'application/pdf');
   const dwg = await call('POST', '/api/documents/fichier', Buffer.from('AC1027'), claire, { ...hdr('implantation.dwg'), 'Content-Type': 'application/octet-stream' });
-  const f1 = await fetch(`${base}/api/files/${up.body.id}?nom=${encodeURIComponent('Plan chaufferie indice B.pdf')}`, { headers: { Cookie: kevin } });
+  const f1 = await fetch(`${base}/api/files/${up.body.id}?nom=${encodeURIComponent('Plan chaufferie indice B.pdf')}`, { headers: { Cookie: claire } });
   assert.match(f1.headers.get('content-disposition'), /^inline; filename="Plan chaufferie indice B.pdf"/);
-  const f2 = await fetch(`${base}/api/files/${dwg.body.id}?nom=implantation.dwg`, { headers: { Cookie: kevin } });
+  const f2 = await fetch(`${base}/api/files/${dwg.body.id}?nom=implantation.dwg`, { headers: { Cookie: claire } });
   assert.match(f2.headers.get('content-disposition'), /^attachment/); assert.strictEqual(f2.headers.get('content-security-policy'), 'sandbox');
+  // Pas encore rattaché à un chantier : le compagnon ne l'ouvre pas
+  assert.strictEqual((await fetch(`${base}/api/files/${up.body.id}`, { headers: { Cookie: kevin } })).status, 403);
 
   // Document transmis sur CH-004 : Kevin, planifié dessus la semaine prochaine, est prévenu
   const debut = new Date().toISOString();
@@ -97,4 +99,9 @@ test('compagnon : données filtrées, réglages, documents et notification', asy
   assert.match(n[0].texte, /Plan : Plan chaufferie indice B\.pdf \(indice B\)/); assert.ok(!n[0].texte.includes('implantation'));
   // Le document non transmis n'arrive pas chez le compagnon
   assert.deepStrictEqual((await call('GET', '/api/records/affaires/af4', null, kevin)).body.documents.map(x => x.id), ['dc6', 'dc9']);
+  // Transmis sur son chantier : il l'ouvre ; le document non transmis reste fermé
+  const f3 = await fetch(`${base}/api/files/${up.body.id}?nom=${encodeURIComponent('Plan chaufferie indice B.pdf')}`, { headers: { Cookie: kevin } });
+  assert.strictEqual(f3.status, 200);
+  assert.match(f3.headers.get('content-disposition'), /^inline; filename="Plan chaufferie indice B.pdf"/);
+  assert.strictEqual((await fetch(`${base}/api/files/${dwg.body.id}`, { headers: { Cookie: kevin } })).status, 403);
 });

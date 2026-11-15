@@ -111,6 +111,17 @@ async function pipefit(s, chemin, opts = {}) {
   if (r.status === 401) { db.prepare('DELETE FROM sessions WHERE sid = ?').run(s.sid); throw Object.assign(new Error('Session Pipe-Fit expirée : reconnectez-vous.'), { status: 401 }); }
   return r;
 }
+// Compte toujours du bureau dans Pipe-Fit : revérifié toutes les 5 minutes avec le jeton de la session (un compte
+// supprimé ou passé hors du bureau perd l'accès à l'application, à ses données et à ses fichiers ; Pipe-Fit injoignable :
+// la session continue)
+const verifications = new Map();
+async function verifierCompte(s) {
+  const t = verifications.get(s.sid);
+  if (t && Date.now() - t < 300000) return;
+  try { await (await pipefit(s, '/api/me')).arrayBuffer(); } catch (e) { if (e.status === 401) throw e; }
+  if (verifications.size > 5000) verifications.clear();
+  verifications.set(s.sid, Date.now());
+}
 const cacheDonnees = new Map(); // sid -> { t, data }
 
 // Étude et DOE ↔ fiche chantier de Pipe-Fit, en arrière-plan après chaque enregistrement (un dossier à la fois) :
@@ -157,10 +168,12 @@ async function api(req, res, url) {
     const { me } = c, sid = crypto.randomBytes(24).toString('base64url'), h = empreinte(sid);
     db.prepare('INSERT INTO sessions (sid, login, nom, role, pf_cookie, created_at, pf_jeton, pf_expire) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)')
       .run(h, me.login, me.nom, me.role, new Date().toISOString(), SecretLocal.chiffrer(CLE, c.jeton, h), c.expire || null);
+    verifications.set(h, Date.now());
     return send(res, 200, { login: me.login, nom: me.nom, role: me.role }, { 'Set-Cookie': cookieSession(req, sid, SESSION_JOURS * 86400) });
   }
   const s = session(req);
   if (!s) return fail(res, 401, 'Non connecté');
+  if (!(p[0] === 'logout' && method === 'POST')) await verifierCompte(s);
   if (p[0] === 'logout' && method === 'POST') {
     await pipefit(s, '/api/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
     db.prepare('DELETE FROM sessions WHERE sid = ?').run(s.sid); cacheDonnees.delete(s.sid);

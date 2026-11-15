@@ -143,6 +143,39 @@ function contexteCompagnon(acc) {
 }
 // Périmètre envoyé à chaque compagnon avec ses données (/api/data) : comparé au nouveau à chaque modification des sources
 const signaturesChargees = new Map();
+// Fichiers (/api/files) qu'un compagnon peut ouvrir : ceux rattachés à ce qu'il voit (fiches filtrées de son périmètre :
+// documents transmis des chantiers, photos des bons, réserves, frais, PV…), au suivi du matériel et aux étapes de ses
+// chantiers, aux fiches techniques de la bibliothèque (matériel retenu, selon le réglage) ; recalculés à chaque modification
+let generationDonnees = 0;
+const fichiersCompagnons = new Map();
+const ID_FICHIER = /^[A-Za-z0-9_.-]{1,64}$/;
+function collecterIds(o, out, prof = 0) {
+  if (o == null || prof > 12) return;
+  if (typeof o === 'string') { if (ID_FICHIER.test(o)) out.add(o); return; }
+  if (typeof o !== 'object') return;
+  for (const v of Array.isArray(o) ? o : Object.values(o)) collecterIds(v, out, prof + 1);
+}
+function fichiersVisibles(acc) {
+  const k = acc.id, c = fichiersCompagnons.get(k);
+  if (c && c.gen === generationDonnees && Date.now() - c.t < 30000) return c.ids;
+  const ctx = contexteCompagnon(acc), R = reglesCompagnon(), ids = new Set();
+  collecterIds(Acces.filtrerTout(restrictionsDe(acc), Compagnon.filtrerTout(DB.allData(db), R, ctx)), ids);
+  const chantiers = ctx.chantiers ? [...ctx.chantiers.keys()] : recordsDe('affaires').map(a => a.id);
+  chantiers.forEach(affaireId => {
+    if (R.materiel) collecterIds(LIENS.suivis({ affaireId }), ids);
+    collecterIds(LIENS.etapesTerrain({ affaireId }), ids);
+  });
+  if (R.materiel) FICHES.fiches().forEach(f => collecterIds([f.fichierId, f.documents, f.autres], ids));
+  if (fichiersCompagnons.size > 500) fichiersCompagnons.clear();
+  fichiersCompagnons.set(k, { ids, gen: generationDonnees, t: Date.now() });
+  return ids;
+}
+// Droit d'ouvrir un fichier : bureau et administrateur toujours ; compagnon : le déposant, ou fichier rattaché à ce qu'il voit
+function fichierAutorise(acc, id, f) {
+  if (['admin', 'charge'].includes(acc.role)) return true;
+  if (f.created_by && f.created_by === acc.login) return true;
+  return estCompagnon(acc) && fichiersVisibles(acc).has(id);
+}
 const signaturePerimetre = ctx => (ctx.chantiers ? [...ctx.chantiers.entries()].map(e => e.join(':')).sort().join(',') : '*');
 // Chantier hors du périmètre d'un compagnon (bureau, administrateur : jamais)
 const REFUS_PERIMETRE = 'Ce chantier ne fait pas partie de vos chantiers ni de ceux de votre équipe : demandez au bureau de vous l\'affecter au planning.';
@@ -166,6 +199,7 @@ const pourCompagnon = (acc, col, rec) => Acces.filtrer(restrictionsDe(acc), col,
 const clients = new Map(); // flux -> compte connecté
 function broadcast(event, payload) {
   try { signalerEtapesChantier(event, payload); } catch (e) { /* démarrage : suivi des étapes pas encore prêt */ }
+  generationDonnees++; // fichiers accessibles aux compagnons : recalculés
   const msg = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
   let regles = null, ctx = null, settings = null;
   // Données sources du périmètre des compagnons modifiées : périmètres recalculés ; un compagnon connecté dont les
@@ -757,8 +791,9 @@ async function api(req, res, url) {
     return send(res, 200, { id });
   }
   if (p[0] === 'files' && method === 'GET' && p[1]) {
-    const f = db.prepare('SELECT mime, data FROM files WHERE id = ?').get(p[1]);
+    const f = db.prepare('SELECT mime, data, created_by FROM files WHERE id = ?').get(p[1]);
     if (!f) return fail(res, 404, 'Fichier introuvable');
+    if (!fichierAutorise(acc, p[1], f)) return fail(res, 403, 'Fichier d\'un chantier ou d\'une fiche que votre compte ne peut pas ouvrir');
     // PDF et images affichés ; tout le reste (XML, DWG, Excel…) téléchargé, jamais interprété par le navigateur
     const affiche = /^(image\/(jpeg|png|webp)|application\/pdf)$/.test(f.mime);
     const nom = String(url.searchParams.get('nom') || (/xml/.test(f.mime) ? 'facture.xml' : 'document')).replace(/[^\w .()-]+/g, '_').slice(0, 120) || 'document';
