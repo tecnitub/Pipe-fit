@@ -22,6 +22,8 @@ const PARTAGES = { '/shared/pdf.js': PDF_MOTEUR, '/shared/essais.js': path.join(
   // Lecture du CCTP : texte du PDF (pdf.js) et analyse des articles et équipements
   '/shared/materiel-retenu.js': path.join(PF_PUBLIC, 'js', 'materiel-retenu.js'), '/shared/installe.js': path.join(PF_PUBLIC, 'js', 'installe.js'), '/shared/plaque-registre.js': path.join(PF_PUBLIC, 'js', 'plaque-registre.js'), '/shared/fiches-tech.js': path.join(PF_PUBLIC, 'js', 'fiches-tech.js'),
   '/shared/pdf-lecture.js': path.join(PF_PUBLIC, 'js', 'pdf-lecture.js'), '/shared/cctp-lecture.js': path.join(PF_PUBLIC, 'js', 'cctp-lecture.js'),
+  // Guide d'utilisation intégré : moteur commun aux trois applications
+  '/shared/aide.js': path.join(PF_PUBLIC, 'js', 'aide.js'),
   '/vendor/pdfjs/pdf.min.js': path.join(PF_PUBLIC, 'vendor', 'pdfjs', 'pdf.min.js'), '/vendor/pdfjs/pdf.worker.min.js': path.join(PF_PUBLIC, 'vendor', 'pdfjs', 'pdf.worker.min.js') };
 const MAX_JSON = 5 * 1024 * 1024, MAX_FICHIER = 60 * 1024 * 1024, SESSION_JOURS = 14;
 const TYPES = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', dwg: 'image/vnd.dwg', dxf: 'image/vnd.dxf',

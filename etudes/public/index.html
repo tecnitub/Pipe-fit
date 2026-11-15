@@ -12,7 +12,7 @@
 <header class="haut">
   <a class="marque" href="#/"><strong>ÉTUDES</strong><span>Bureau d'études fluides · CVC · tuyauterie industrielle</span></a>
   <nav id="nav"><a href="#/">Études</a><a href="#/reference">Données de référence</a><a href="#/reglages">Réglages</a><a id="lien-pf" hidden target="_blank" rel="noopener">Pipe-Fit ↗</a></nav>
-  <div class="session"><span id="qui"></span><button class="secondaire petit" id="deconnexion">Déconnexion</button></div>
+  <div class="session"><button type="button" class="secondaire petit aide-bouton" id="aide-bouton" title="Aide de cet écran (F1)" aria-label="Aide de cet écran" aria-haspopup="dialog">?<span class="aide-lib"> Aide</span></button><span id="qui"></span><button class="secondaire petit" id="deconnexion">Déconnexion</button></div>
 </header>
 <main id="app"></main>
 <div id="modal" class="modal" hidden><div class="modal-box"></div></div>
@@ -104,5 +104,7 @@
 <script src="js/materiel.js"></script>
 <script src="js/controle-etude.js"></script>
 <script src="js/bibliotheque-modeles.js"></script>
+<script src="shared/aide.js"></script>
+<script src="js/aide-contenu.js"></script>
 </body>
 </html>
