@@ -1,0 +1,4 @@
+Bibliothèques tierces (licence MIT, voir LICENSE-*) :
+- mp4-muxer 5.2.2 (Vanilagy) : https://github.com/Vanilagy/mp4-muxer
+- webm-muxer 5.1.4 (Vanilagy) : https://github.com/Vanilagy/webm-muxer
+Copiées telles quelles depuis npm (build/*.js). Intégrées dans dist/StudioDiaporama.html par diaporama/build.js.

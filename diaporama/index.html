@@ -111,6 +111,17 @@ aside{background:var(--panel);overflow:auto;min-height:0}
 .wfoot{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;flex-wrap:wrap}
 .pcount{color:var(--muted);font-size:12px}
 @media (max-width:700px){.wform{grid-template-columns:1fr}.oc.big{grid-column:span 1;grid-row:auto}}
+.xbox{width:min(600px,94vw)!important;max-height:92vh;overflow:auto}
+.xfmt{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
+.xfmt label{margin:0;display:flex;gap:8px;align-items:flex-start;border:1px solid var(--line);border-radius:8px;padding:10px;cursor:pointer;color:var(--fg);font-size:13px}
+.xfmt label:has(input:checked){border-color:var(--accent);background:#2a2018}
+.xfmt input{width:auto;margin-top:3px;accent-color:var(--accent)}
+.xfmt small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.xinfo{background:#121317;border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:14px;font-size:13px;line-height:1.5}
+.xinfo b{color:var(--accent)}
+.xvid{width:100%;max-height:52vh;border-radius:8px;background:#000;display:block;margin:10px 0}
+#fin{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);background:rgba(20,21,24,.92);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;box-shadow:0 8px 30px #0009;max-width:calc(100% - 24px)}
+#fin b{margin-right:4px}
 .empty{color:var(--muted);text-align:center;font-size:12px;padding:10px}
 @media (max-width:900px){
   body{overflow:auto}
@@ -151,7 +162,8 @@ aside{background:var(--panel);overflow:auto;min-height:0}
   </aside>
 
   <section id="center">
-    <div id="stage"><canvas id="cv" width="1280" height="720"></canvas></div>
+    <div id="stage"><canvas id="cv" width="1280" height="720"></canvas>
+      <div id="fin" hidden><b>Fin du diaporama</b><button id="finReplay">↻ Revoir</button><button id="finExport" class="primary">Exporter en vidéo</button></div></div>
     <div id="transport">
       <button id="bPlay" style="min-width:90px">▶ Lecture</button>
       <button id="bStop" title="Revenir au début">⏮</button>
@@ -224,6 +236,8 @@ aside{background:var(--panel);overflow:auto;min-height:0}
   </div>
 </div>
 
+<script src="vendor/mp4-muxer.js"></script>
+<script src="vendor/webm-muxer.js"></script>
 <script>
 'use strict';
 /* ================================================================
@@ -470,8 +484,7 @@ function locate(t){
   return null;
 }
 
-function renderFrame(t){
-  const c = cx;
+function renderFrame(t, c = cx){
   if (!S.slides.length){
     const th=theme(); drawBg(c,W,H,th,t); drawDeco(c,W,H,th,t);
     drawText(c,W,H,{type:'text',title:'Studio Diaporama',text:'Ajoutez des photos, des vidéos ou une diapo texte pour commencer',dur:99,anim:'none',pos:'center',size:1,tr:'none'},5,th);
@@ -546,7 +559,10 @@ function hookVideoAudio(sl){
 let live = [];
 function startAudio(from){
   stopAudio();
-  const T = total(), now = AC.currentTime + .05;
+  scheduleTracks(AC, master, from, AC.currentTime + .05, live);
+}
+function scheduleTracks(ctx, dest, from, now, list){
+  const T = total();
   const at = tt => now + (tt - from);
   for (const tr of S.tracks){
     if (!tr.buffer || tr.mute) continue;
@@ -555,16 +571,16 @@ function startAudio(from){
     if (end <= from || tr.start >= T) continue;
     const s0 = Math.max(from, tr.start);
     const env = tt => { let g = tr.vol; if (tr.fin>0) g *= clamp((tt-tr.start)/tr.fin,0,1); if (tr.fout>0) g *= clamp((end-tt)/tr.fout,0,1); return g; };
-    const src = AC.createBufferSource(); src.buffer = tr.buffer;
+    const src = ctx.createBufferSource(); src.buffer = tr.buffer;
     if (tr.loop){ src.loop = true; src.loopStart = tr.trim; src.loopEnd = tr.buffer.duration; }
-    const g = AC.createGain(); src.connect(g); g.connect(master);
+    const g = ctx.createGain(); src.connect(g); g.connect(dest);
     g.gain.setValueAtTime(env(s0), at(s0));
     const pts = [tr.start+tr.fin, end-tr.fout, end].filter(p=>p>s0).sort((a,b)=>a-b);
     for (const p of pts) g.gain.linearRampToValueAtTime(env(p), at(p));
     let off = s0 - tr.start; if (tr.loop) off = off % len;
     src.start(at(s0), tr.trim + off);
     src.stop(at(end) + .02);
-    live.push(src);
+    list.push(src);
   }
 }
 function stopAudio(){ for (const s of live){ try{s.stop();}catch(e){} } live=[]; }
@@ -577,6 +593,7 @@ function play(){
   if (!S.slides.length) return toast('Ajoutez d\'abord une diapo');
   ac(); AC.resume();
   if (P.t >= total()-.05) P.t = 0;
+  $('#fin').hidden = true;
   P.playing = true; P.t0 = P.t; P.c0 = AC.currentTime + .05;
   startAudio(P.t);
   $('#bPlay').textContent = '⏸ Pause';
@@ -592,13 +609,14 @@ function loop(){
   if (!P.playing) return;
   P.t = P.t0 + Math.max(0, AC.currentTime - P.c0);
   const T = total();
-  if (P.t >= T){ P.t = T; renderFrame(T-.001); updUI(); pause(); if (P.onEnd){ const f=P.onEnd; P.onEnd=null; f(); } return; }
+  if (P.t >= T){ P.t = T; renderFrame(T-.001); updUI(); pause(); if (P.onEnd){ const f=P.onEnd; P.onEnd=null; f(); } else $('#fin').hidden = false; return; }
   renderFrame(P.t); updUI();
   P.raf = requestAnimationFrame(loop);
 }
-function seek(t){ P.t = clamp(t,0,total()); if (P.playing){ P.t0=P.t; P.c0=AC.currentTime+.05; startAudio(P.t); } draw(); }
+function seek(t){ $('#fin').hidden = true; P.t = clamp(t,0,total()); if (P.playing){ P.t0=P.t; P.c0=AC.currentTime+.05; startAudio(P.t); } draw(); }
 let drawQ = false;
-function draw(){ if (drawQ) return; drawQ = true; requestAnimationFrame(()=>{ drawQ=false; if(!P.playing){ renderFrame(Math.min(P.t, Math.max(0,total()-.001))); updUI(); } }); }
+let EXPORTING = false;
+function draw(){ if (drawQ || EXPORTING) return; drawQ = true; requestAnimationFrame(()=>{ drawQ=false; if(!P.playing){ const T = total(); renderFrame(P.t >= T-.001 && T > 2 ? T-.85 : Math.min(P.t, Math.max(0,T-.001))); updUI(); } }); }
 function updUI(){
   const T = total();
   $('#time').textContent = fmt(P.t)+' / '+fmt(T);
@@ -631,7 +649,7 @@ function addMedia(blob, name, type, opts={}, at){
   } else {
     const v = document.createElement('video'); v.src = url; v.preload = 'auto'; v.playsInline = true;
     v.onloadedmetadata = () => { if (!opts.dur) sl.dur = Math.max(1, Math.round(Math.min(v.duration, 60)*10)/10); v.currentTime = .01; refreshAll(); };
-    v.onseeked = () => { if (!P.playing) draw(); refreshThumb(sl); };
+    v.onseeked = () => { if (EXPORTING) return; if (!P.playing) draw(); refreshThumb(sl); };
     sl.el = v; sl.vol = opts.vol ?? 1; sl.trim = opts.trim ?? 0; sl.dur = opts.dur || 5;
     hookVideoAudio(sl);
   }
@@ -1017,10 +1035,6 @@ function setFormat(v){
 /* ================================================================
    EXPORT VIDÉO
    ================================================================ */
-function pickMime(){
-  const c = ['video/mp4;codecs="avc1.42E01E,mp4a.40.2"','video/mp4;codecs=avc1,opus','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
-  return c.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
-}
 /* Choix de l'emplacement du fichier (Edge / Chrome) ; sinon téléchargement classique */
 const nomFichier = () => ((S.slides.find(s=>s.title)||{}).title || 'diaporama').replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/g,' ').trim().slice(0,60) || 'diaporama';
 async function choisirFichier(nom, desc, mime, ext){
@@ -1034,36 +1048,245 @@ async function ecrireFichier(handle, blob, nom){
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nom; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href), 60000); return nom;
 }
-async function exportVideo(){
-  if (!S.slides.length) return toast('Ajoutez des diapos avant d\'exporter');
-  if (!window.MediaRecorder || !cv.captureStream) return toast('Votre navigateur ne permet pas l\'export (essayez Chrome ou Edge)');
-  const mime = pickMime(); const ext = mime.includes('mp4') ? 'mp4' : 'webm';
-  const handle = await choisirFichier(nomFichier()+'.'+ext, 'Vidéo '+ext.toUpperCase(), 'video/'+ext, ext);
-  if (handle==='annule') return;
-  const m = document.createElement('div'); m.id='modal';
-  m.innerHTML = `<div class="box"><h3>Export en cours…</h3>
-    <p class="hint">La vidéo est enregistrée en temps réel (${fmt(total())}). Gardez cet onglet ouvert et visible jusqu'à la fin.</p>
-    <div class="bar"><i id="xbar"></i></div><div class="row"><span class="hint" id="xtxt">0 %</span><button id="xcancel" style="flex:none">Annuler</button></div></div>`;
+/* ---------- Réglages d'export ---------- */
+const XP_Q = { leger:{l:'Légère (envoi par message)', bpp:.045}, std:{l:'Standard', bpp:.09}, haute:{l:'Haute', bpp:.16} };
+const XP_RES = [['projet',''],['480','480p (léger)'],['720','HD 720p'],['1080','Full HD 1080p'],['2160','4K']];
+function xpPrefs(){ const d = {fmt:'mp4', res:'projet', q:'std', fps:30}; try { return Object.assign(d, JSON.parse(localStorage.getItem('studio-diaporama-export')||'{}')); } catch(e){ return d; } }
+function xpRemember(o){ try { localStorage.setItem('studio-diaporama-export', JSON.stringify({fmt:o.fmt,res:o.res,q:o.q,fps:o.fps})); } catch(e){} }
+function xpSize(res){
+  if (res==='projet') return [W - W%2, H - H%2];
+  const k = +res / Math.min(W,H), ev = v => Math.max(2, Math.round(v*k/2)*2);
+  return [ev(W), ev(H)];
+}
+const xpBitrate = (w,h,fps,q) => Math.round(clamp(w*h*fps*XP_Q[q].bpp, 6e5, 4e7));
+const fmtMo = n => (n/1048576).toLocaleString('fr-FR',{maximumFractionDigits:1})+' Mo';
+
+/* Codecs disponibles pour l'export rapide (WebCodecs) ; null : export en temps réel */
+async function xpCodecs(fmt, w, h, fps, br){
+  if (!window.VideoEncoder || !window.AudioEncoder || !window.VideoFrame || !window.AudioData) return null;
+  const lib = fmt==='mp4' ? window.Mp4Muxer : window.WebMMuxer; if (!lib) return null;
+  const vlist = fmt==='mp4' ? ['avc1.640033','avc1.640028','avc1.4d0028','avc1.42003e','avc1.42001f'] : ['vp09.00.40.08','vp09.00.10.08','vp8'];
+  let video = null, audio = null;
+  for (const codec of vlist){
+    const cfg = { codec, width:w, height:h, bitrate:br, framerate:fps, latencyMode:'quality' };
+    if (fmt==='mp4') cfg.avc = { format:'avc' };
+    try { if ((await VideoEncoder.isConfigSupported(cfg)).supported){ video = cfg; break; } } catch(e){}
+  }
+  if (!video) return null;
+  for (const codec of (fmt==='mp4' ? ['mp4a.40.2','opus'] : ['opus'])){
+    const cfg = { codec, sampleRate:48000, numberOfChannels:2, bitrate:192000 };
+    try { if ((await AudioEncoder.isConfigSupported(cfg)).supported){ audio = cfg; break; } } catch(e){}
+  }
+  return { video, audio, lib };
+}
+
+/* Mixage de toutes les bandes-son et du son des vidéos, hors temps réel */
+async function xpMixAudio(T){
+  const sr = 48000, oc = new OfflineAudioContext(2, Math.ceil(T*sr)+1, sr);
+  const dest = oc.createGain(); dest.connect(oc.destination);
+  scheduleTracks(oc, dest, 0, 0, []);
+  let acc = 0, son = S.tracks.some(t=>t.buffer && !t.mute);
+  for (const sl of S.slides){
+    if (sl.type==='video' && (sl.vol??1) > 0 && sl.blob){
+      if (sl.abuf===undefined){ try { sl.abuf = await ac().decodeAudioData(await sl.blob.arrayBuffer()); } catch(e){ sl.abuf = null; } }
+      const off = sl.trim||0, d = sl.abuf ? Math.min(sl.dur, sl.abuf.duration-off) : 0;
+      if (d > 0){ const src = oc.createBufferSource(); src.buffer = sl.abuf; const g = oc.createGain(); g.gain.value = sl.vol??1; src.connect(g); g.connect(dest); src.start(acc, off, d); son = true; }
+    }
+    acc += sl.dur;
+  }
+  return son ? await oc.startRendering() : null;
+}
+
+/* Place les vidéos des diapos exactement à l'instant t (attend la fin du positionnement) */
+async function xpVideos(t){
+  const L = locate(t), want = [[S.slides[L.i], L.lt]];
+  if (L.i>0 && L.lt < trDur(S.slides[L.i])){ const pr = S.slides[L.i-1]; want.push([pr, pr.dur+L.lt]); }
+  for (const [sl,lt] of want){
+    if (sl.type!=='video') continue;
+    const v = sl.el, d = clamp(lt+(sl.trim||0), 0, Math.max(0,(v.duration||0)-.05));
+    if (Math.abs(v.currentTime-d) > .001 || v.seeking) await new Promise(r=>{
+      const fin = () => { v.removeEventListener('seeked',fin); clearTimeout(to); r(); };
+      const to = setTimeout(fin, 3000); v.addEventListener('seeked',fin); v.currentTime = d;
+    });
+  }
+}
+
+/* Export rapide : chaque image est calculée puis encodée, sans attendre la lecture */
+async function xpRapide(o, prog, annule){
+  const [w,h] = o.size, fps = o.fps, T = total(), N = Math.max(1, Math.ceil(T*fps));
+  const { video, audio, lib } = o.codecs;
+  prog(0, 'Mixage du son…');
+  const abuf = audio ? await xpMixAudio(T) : null;
+  const target = new lib.ArrayBufferTarget();
+  const mo = { target };
+  if (o.fmt==='mp4'){ mo.video = {codec:'avc', width:w, height:h, frameRate:fps}; mo.fastStart = 'in-memory'; if (abuf) mo.audio = {codec: audio.codec==='opus'?'opus':'aac', sampleRate:48000, numberOfChannels:2}; }
+  else { mo.video = {codec: video.codec==='vp8'?'V_VP8':'V_VP9', width:w, height:h, frameRate:fps}; if (abuf) mo.audio = {codec:'A_OPUS', sampleRate:48000, numberOfChannels:2}; }
+  const muxer = new lib.Muxer(mo);
+  let erreur = null;
+  const ve = new VideoEncoder({ output:(c,m)=>muxer.addVideoChunk(c,m), error:e=>{ erreur = e; } });
+  ve.configure(video);
+  let ae = null;
+  if (abuf){
+    ae = new AudioEncoder({ output:(c,m)=>muxer.addAudioChunk(c,m), error:e=>{ erreur = e; } });
+    ae.configure(audio);
+    const Lc = abuf.getChannelData(0), Rc = abuf.getChannelData(1), BLOC = 4800;
+    for (let i=0;i<Lc.length;i+=BLOC){
+      const n = Math.min(BLOC, Lc.length-i), d = new Float32Array(n*2); d.set(Lc.subarray(i,i+n),0); d.set(Rc.subarray(i,i+n),n);
+      const ad = new AudioData({ format:'f32-planar', sampleRate:48000, numberOfFrames:n, numberOfChannels:2, timestamp:Math.round(i/48000*1e6), data:d });
+      ae.encode(ad); ad.close();
+    }
+  }
+  const can = document.createElement('canvas'); can.width = w; can.height = h;
+  const c = can.getContext('2d');
+  const oW = W, oH = H; W = w; H = h;
+  const t0 = performance.now();
+  try {
+    for (let i=0;i<N;i++){
+      if (annule()) return null;
+      if (erreur) throw erreur;
+      const t = Math.min(i/fps, T-.001);
+      await xpVideos(t);
+      renderFrame(t, c);
+      const f = new VideoFrame(can, { timestamp:Math.round(i*1e6/fps), duration:Math.round(1e6/fps) });
+      ve.encode(f, { keyFrame: i % (fps*2) === 0 }); f.close();
+      while (ve.encodeQueueSize > 6) await new Promise(r=>setTimeout(r,4));
+      if (i % 4 === 0){
+        const ecoule = (performance.now()-t0)/1000, reste = i>10 ? ecoule/(i+1)*(N-i-1) : null;
+        prog(i/N, `Image ${i+1} / ${N}` + (reste!=null ? ` · encore ${reste<60 ? Math.ceil(reste)+' s' : Math.ceil(reste/60)+' min'}` : ''));
+        await new Promise(r=>setTimeout(r,0));
+      }
+    }
+    prog(1, 'Finalisation…');
+    await ve.flush(); if (ae) await ae.flush();
+    if (erreur) throw erreur;
+    muxer.finalize();
+  } finally {
+    W = oW; H = oH;
+    try { ve.close(); } catch(e){}
+    try { ae && ae.close(); } catch(e){}
+  }
+  return new Blob([target.buffer], { type: o.fmt==='mp4' ? 'video/mp4' : 'video/webm' });
+}
+
+/* Export en temps réel (navigateurs sans WebCodecs) : la lecture est enregistrée */
+function xpMime(fmt){
+  const c = fmt==='mp4' ? ['video/mp4;codecs="avc1.42E01E,mp4a.40.2"','video/mp4;codecs=avc1,opus','video/mp4'] : ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
+  return c.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
+}
+function xpTempsReel(o, prog, annule){
+  return new Promise((resolve, reject) => {
+    if (!window.MediaRecorder || !cv.captureStream) return reject(new Error('ce navigateur ne sait pas enregistrer de vidéo (utilisez Edge ou Chrome)'));
+    const mime = xpMime(o.fmt);
+    if (!mime) return reject(new Error(`le format ${o.fmt.toUpperCase()} n'est pas disponible dans ce navigateur : choisissez l'autre format`));
+    const [w,h] = o.size, oW = W, oH = H;
+    W = cv.width = w; H = cv.height = h;
+    pause(); ac(); AC.resume();
+    const vs = cv.captureStream(o.fps);
+    const rec = new MediaRecorder(new MediaStream([...vs.getVideoTracks(), ...recDest.stream.getAudioTracks()]), { mimeType:mime, videoBitsPerSecond:o.br, audioBitsPerSecond:192000 });
+    const chunks = [];
+    const fini = () => { clearInterval(iv); vs.getTracks().forEach(t=>t.stop()); W = cv.width = oW; H = cv.height = oH; draw(); };
+    rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    rec.onstop = () => { fini(); resolve(annule() ? null : new Blob(chunks, { type: mime.split(';')[0] })); };
+    const iv = setInterval(() => {
+      if (annule() && rec.state!=='inactive'){ P.onEnd = null; pause(); rec.stop(); return; }
+      prog(Math.min(1, P.t/total()), `Lecture enregistrée en temps réel · ${fmt(P.t)} / ${fmt(total())} · gardez la fenêtre visible`);
+    }, 250);
+    P.t = 0; renderFrame(0);
+    rec.start(500);
+    P.onEnd = () => setTimeout(() => { if (rec.state!=='inactive') rec.stop(); }, 300);
+    setTimeout(play, 150);
+  });
+}
+
+/* ---------- Fenêtres d'export ---------- */
+function xpModal(html){
+  closeModal();
+  const m = document.createElement('div'); m.id = 'modal';
+  m.innerHTML = `<div class="box xbox">${html}</div>`;
   document.body.appendChild(m);
-  pause(); ac(); AC.resume();
-  const vs = cv.captureStream(30);
-  const stream = new MediaStream([...vs.getVideoTracks(), ...recDest.stream.getAudioTracks()]);
-  const rec = new MediaRecorder(stream, Object.assign({ videoBitsPerSecond: W*H>1.5e6 ? 12e6 : 7e6, audioBitsPerSecond: 192000 }, mime?{mimeType:mime}:{}));
-  const chunks = []; let cancelled = false;
-  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-  rec.onstop = async () => {
-    clearInterval(iv); m.remove(); vs.getTracks().forEach(t=>t.stop());
-    if (cancelled) return toast('Export annulé');
-    const blob = new Blob(chunks, {type: mime || 'video/webm'});
-    try { const nom = await ecrireFichier(handle, blob, nomFichier()+'.'+ext); toast(`Vidéo enregistrée : ${nom} (${(blob.size/1048576).toFixed(1)} Mo)`); }
+  return m;
+}
+function closeModal(){ const m = document.getElementById('modal'); if (m){ m.querySelectorAll('video').forEach(v=>{ v.pause(); v.removeAttribute('src'); v.load(); }); m.remove(); } }
+
+function exportVideo(){
+  if (!S.slides.length) return toast('Ajoutez des diapos avant d\'exporter');
+  pause(); $('#fin').hidden = true;
+  const pr = xpPrefs(), T = total();
+  const resOpts = XP_RES.map(([k,l]) => { const [w,h] = xpSize(k); return `<option value="${k}"${k===pr.res?' selected':''}>${k==='projet' ? 'Comme le projet' : l} (${w}×${h})</option>`; }).join('');
+  const m = xpModal(`
+    <h3>Exporter en vidéo</h3>
+    <p class="hint">Durée ${fmt(T)} · ${S.slides.length} diapo${S.slides.length>1?'s':''} · ${S.tracks.length} bande${S.tracks.length>1?'s':''}-son</p>
+    <label>Format du fichier</label>
+    <div class="xfmt">
+      <label><input type="radio" name="xFmt" value="mp4"${pr.fmt==='mp4'?' checked':''}><span><b>MP4</b> (recommandé)<small>Se lit partout : téléphone, télé, WhatsApp, Facebook, YouTube, clé USB.</small></span></label>
+      <label><input type="radio" name="xFmt" value="webm"${pr.fmt==='webm'?' checked':''}><span><b>WebM</b><small>Format ouvert, plus léger. Navigateurs, VLC, YouTube.</small></span></label>
+    </div>
+    <div class="row">
+      <div style="flex:1.6"><label for="xRes">Résolution</label><select id="xRes">${resOpts}</select></div>
+      <div><label for="xQ">Qualité</label><select id="xQ">${Object.entries(XP_Q).map(([k,v])=>`<option value="${k}"${k===pr.q?' selected':''}>${v.l}</option>`).join('')}</select></div>
+      <div style="flex:.6"><label for="xFps">Images / s</label><select id="xFps">${[25,30,60].map(f=>`<option${f===+pr.fps?' selected':''}>${f}</option>`).join('')}</select></div>
+    </div>
+    <div class="xinfo" id="xInfo">Calcul…</div>
+    <div class="wfoot"><button id="xNo">Annuler</button><button id="xGo" class="primary">Créer la vidéo</button></div>`);
+  const lire = () => {
+    const o = { fmt: m.querySelector('input[name=xFmt]:checked').value, res: $('#xRes').value, q: $('#xQ').value, fps: +$('#xFps').value };
+    o.size = xpSize(o.res); o.br = xpBitrate(o.size[0], o.size[1], o.fps, o.q); return o;
+  };
+  let jeton = 0, courant = null;
+  const maj = async () => {
+    const o = lire(), j = ++jeton;
+    o.codecs = await xpCodecs(o.fmt, o.size[0], o.size[1], o.fps, o.br);
+    if (j !== jeton) return;
+    courant = o;
+    const taille = (o.br + 192000) * T / 8;
+    let mode;
+    if (o.codecs) mode = `<b>Export rapide</b> : la vidéo est calculée image par image, sans attendre la lecture.` + (o.fmt==='mp4' && o.codecs.audio?.codec==='opus' ? '<br>Son au format Opus (AAC indisponible sur ce poste) : lisible dans VLC et les navigateurs.' : '') + (!o.codecs.audio && S.tracks.length ? '<br>Attention : l\'encodage du son n\'est pas disponible, la vidéo sera muette.' : '');
+    else if (xpMime(o.fmt)) mode = `<b>Export en temps réel</b> (${fmt(T)}) : ce navigateur enregistre la lecture. Gardez la fenêtre ouverte et visible jusqu'à la fin.`;
+    else mode = `<b>Le format ${o.fmt.toUpperCase()} n'est pas disponible dans ce navigateur.</b> Choisissez l'autre format.`;
+    $('#xInfo').innerHTML = `${o.size[0]}×${o.size[1]} · ${o.fps} images/s · taille estimée <b>${fmtMo(taille)}</b><br>${mode}`;
+    $('#xGo').disabled = !o.codecs && !xpMime(o.fmt);
+  };
+  m.querySelectorAll('input,select').forEach(e => e.onchange = maj);
+  $('#xNo').onclick = closeModal;
+  $('#xGo').onclick = () => { if (courant){ xpRemember(courant); xpLancer(courant); } };
+  maj();
+}
+
+async function xpLancer(o){
+  const m = xpModal(`<h3>Création de la vidéo…</h3>
+    <p class="hint">${o.fmt.toUpperCase()} · ${o.size[0]}×${o.size[1]} · ${o.fps} images/s</p>
+    <div class="bar"><i id="xbar"></i></div>
+    <div class="row"><span class="hint" id="xtxt">Préparation…</span><button id="xcancel" style="flex:none">Annuler</button></div>`);
+  let stop = false;
+  $('#xcancel').onclick = () => { stop = true; $('#xcancel').disabled = true; $('#xtxt').textContent = 'Annulation…'; };
+  const prog = (p, txt) => { const b = document.getElementById('xbar'); if (!b) return; b.style.width = Math.round(p*100)+'%'; if (!stop) $('#xtxt').textContent = Math.floor(p*100)+' % · '+txt; };
+  EXPORTING = !!o.codecs; pause();
+  const debut = performance.now();
+  let blob = null;
+  try { blob = o.codecs ? await xpRapide(o, prog, () => stop) : await xpTempsReel(o, prog, () => stop); }
+  catch(e){ EXPORTING = false; closeModal(); draw(); return toast('Export impossible : '+(e.message||e)); }
+  EXPORTING = false; draw();
+  if (!blob){ closeModal(); return toast('Export annulé'); }
+  xpPrete(o, blob, (performance.now()-debut)/1000);
+}
+
+/* Vidéo terminée : aperçu, enregistrement, autre format */
+function xpPrete(o, blob, secondes){
+  const url = URL.createObjectURL(blob), ext = o.fmt;
+  const m = xpModal(`<h3>Votre vidéo est prête</h3>
+    <video class="xvid" controls playsinline src="${url}"></video>
+    <p class="hint">${ext.toUpperCase()} · ${o.size[0]}×${o.size[1]} · ${o.fps} images/s · ${fmt(total())} · <b>${fmtMo(blob.size)}</b> · créée en ${secondes<60 ? Math.round(secondes)+' s' : Math.round(secondes/60)+' min'}</p>
+    <div class="wfoot"><button id="rOther">Exporter dans un autre format</button><button id="rClose">Fermer</button><button id="rSave" class="primary">Enregistrer la vidéo…</button></div>`);
+  const fermer = () => { closeModal(); setTimeout(()=>URL.revokeObjectURL(url), 1000); };
+  $('#rClose').onclick = fermer;
+  $('#rOther').onclick = () => { fermer(); exportVideo(); };
+  $('#rSave').onclick = async () => {
+    const h = await choisirFichier(nomFichier()+'.'+ext, 'Vidéo '+ext.toUpperCase(), 'video/'+ext, ext);
+    if (h==='annule') return;
+    try { const nom = await ecrireFichier(h, blob, nomFichier()+'.'+ext); $('#rSave').textContent = 'Enregistrée ✓ (encore ?)'; toast('Vidéo enregistrée : '+nom); }
     catch(e){ toast('Impossible d\'écrire la vidéo : '+e.message); }
   };
-  const iv = setInterval(()=>{ const p = Math.min(100, P.t/total()*100); $('#xbar').style.width = p+'%'; $('#xtxt').textContent = Math.floor(p)+' %'; }, 200);
-  $('#xcancel').onclick = () => { cancelled = true; P.onEnd = null; pause(); rec.stop(); };
-  P.t = 0; renderFrame(0);
-  rec.start(500);
-  P.onEnd = () => setTimeout(()=>{ if (rec.state!=='inactive') rec.stop(); }, 300);
-  setTimeout(play, 150);
+  void m;
 }
 
 /* ================================================================
@@ -1115,6 +1338,8 @@ $('#bStop').onclick = () => { pause(); seek(0); };
 $('#seek').oninput = e => seek(e.target.value/1000*total());
 $('#selFormat').onchange = e => setFormat(e.target.value);
 $('#bExport').onclick = exportVideo;
+$('#finExport').onclick = exportVideo;
+$('#finReplay').onclick = () => { seek(0); play(); };
 $('#bSave').onclick = () => saveProject(false);
 $('#bOpen').onclick = () => $('#fProj').click();
 $('#fProj').onchange = e => { if (e.target.files[0]) openProject(e.target.files[0]); e.target.value=''; };
@@ -1140,7 +1365,7 @@ document.addEventListener('drop', e=>{ if (!e.dataTransfer.files.length) return;
 
 document.addEventListener('keydown', e=>{
   if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='s'){ e.preventDefault(); saveProject(e.shiftKey); return; }
-  if (e.target.matches('input,textarea,select') || !$('#wiz').hidden) return;
+  if (e.target.matches('input,textarea,select') || !$('#wiz').hidden || document.getElementById('modal')) return;
   if (e.code==='Space'){ e.preventDefault(); P.playing ? pause() : play(); }
   else if (e.key==='ArrowRight') seek(P.t+1);
   else if (e.key==='ArrowLeft') seek(P.t-1);
@@ -1266,7 +1491,7 @@ $('#wFiles').onchange = e => { WZ.files.push(...e.target.files); e.target.value=
 ['wName','wExtra','wMsg'].forEach(id=>$('#'+id).addEventListener('input', wizPv));
 $('#wTheme').onchange = () => { const th = THEMES[+$('#wTheme').value]; document.fonts.load(`${th.w} 40px "${th.font}"`).finally(wizPv); };
 $('#wGo').onclick = wizCreate;
-document.addEventListener('keydown', e=>{ if (e.key==='Escape' && !$('#wiz').hidden) $('#wiz').hidden = true; });
+document.addEventListener('keydown', e=>{ if (e.key!=='Escape') return; if (!$('#wiz').hidden) $('#wiz').hidden = true; else if (document.getElementById('modal') && !document.getElementById('xcancel')) closeModal(); });
 
 S.slides.push(
   newSlide({type:'text', title:'Mon diaporama', text:'Un titre, quelques mots, une musique', pos:'center', dur:4}),

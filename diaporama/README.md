@@ -45,8 +45,13 @@ sont choisis selon l'occasion (thème Anniversaire avec ballons et confettis, m�
   et « Caler les diapos » pour ajuster la durée des diapos à la musique.
 - **Transitions** : fondu, glissement, zoom, volet, cercle, flou ; zoom lent « Ken Burns » sur les photos.
 - **Formats** : 16:9 HD / Full HD, carré, vertical (story), 4:3.
-- **Export vidéo** en MP4 (Chrome / Edge récents) ou WebM, son compris. L'export se fait en temps réel :
-  garder l'onglet visible jusqu'à la fin.
+- **Export vidéo** (bouton « Exporter la vidéo », ou encart « Exporter en vidéo » à la fin de la lecture) :
+  format MP4 (H.264) ou WebM (VP9), résolution 480p à 4K, qualité, 25/30/60 images/s, taille estimée.
+  La vidéo est calculée image par image (WebCodecs, plus rapide que la lecture), son mixé compris
+  (bandes-son + son des vidéos), puis l'écran « Votre vidéo est prête » permet de la regarder,
+  de l'enregistrer où l'on veut, ou d'en exporter une autre version. Son en AAC quand le poste le permet
+  (Edge sous Windows), sinon en Opus. Sur un navigateur sans WebCodecs, la lecture est enregistrée en temps réel.
+  Multiplexeurs : `vendor/mp4-muxer.js` et `vendor/webm-muxer.js` (licence MIT).
 - **Enregistrer / Ouvrir** un projet (`.diapo`, photos et musiques incluses).
 
 Raccourcis : Espace = lecture/pause, ← → = ±1 s, Ctrl + molette sur la frise = zoom.

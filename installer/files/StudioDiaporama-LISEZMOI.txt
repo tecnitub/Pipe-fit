@@ -35,9 +35,18 @@ ENREGISTRER ET REPRENDRE PLUS TARD
   Ctrl+Maj+S : enregistrer sous un autre nom.
 
 FAIRE LA VIDÉO
-  « Exporter la vidéo » : choisissez où enregistrer le fichier MP4, puis
-  laissez la fenêtre ouverte et visible pendant l'export (il dure autant
-  que le diaporama). La vidéo se lit sur téléphone, télé, WhatsApp, etc.
+  Bouton « Exporter la vidéo » (en haut), ou « Exporter en vidéo » qui
+  apparaît à la fin de la lecture du diaporama.
+  1. Choisissez le format : MP4 (recommandé, se lit partout : téléphone,
+     télé, WhatsApp, YouTube) ou WebM.
+  2. Choisissez la résolution (480p léger, HD 720p, Full HD 1080p, 4K),
+     la qualité (« Légère » pour envoyer par message) et les images/s.
+     La taille estimée du fichier s'affiche.
+  3. « Créer la vidéo » : la vidéo est calculée image par image, souvent
+     plus vite que la durée du diaporama.
+  4. « Votre vidéo est prête » : regardez-la, puis « Enregistrer la
+     vidéo… » pour choisir où la ranger. « Exporter dans un autre format »
+     permet d'en faire une deuxième version (ex. une version légère).
 
 RACCOURCIS
   Espace : lecture / pause     Flèches gauche / droite : -1 s / +1 s

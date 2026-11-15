@@ -39,7 +39,10 @@ async function telecharger(url, binaire) {
     }
     sortie += bloc;
   }
-  let html = source
+  // Bibliothèques d'export vidéo (vendor/) incluses dans le fichier
+  let html = source.replace(/<script src="vendor\/([a-z0-9-]+\.js)"><\/script>/g, (_, f) =>
+    `<script>/* ${f} : licence MIT, voir diaporama/vendor */\n${fs.readFileSync(path.join(__dirname, 'vendor', f), 'utf8')}\n</script>`);
+  html = html
     .replace(/<link rel="preconnect"[^>]*>\n?/, '')
     .replace(lien[0], `<style>/* Polices intégrées (Google Fonts, licences libres SIL OFL / Apache) */\n${sortie}</style>`)
     .replace('<title>Studio Diaporama</title>', `<title>Studio Diaporama</title>\n<meta name="version" content="${version}">`);
