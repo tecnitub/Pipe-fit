@@ -185,7 +185,8 @@ static class Demo
         var res = new List<Spool>();
         for (int i = 0; i < groupes.Count; i++)
         {
-            var s = new Spool { Nom = noms[i], Composants = groupes[i], SurlongueurMm = 100 };
+            // Ensembles de montage : A = spools 1 à 3 (côté CTA), B = spools 4 à 6
+            var s = new Spool { Nom = noms[i], Composants = groupes[i], SurlongueurMm = 100, Ensemble = i < 3 ? "Ensemble A" : "Ensemble B" };
             foreach (var e in s.Composants.SelectMany(c => c.Extremites).Where(e => e.ConnecteA != null && !s.Composants.Any(c => c.Id == e.ConnecteA)))
             {
                 if (spoolDe.TryGetValue(e.ConnecteA, out var autre)) { s.NomsExterieurs[e.ConnecteA] = autre; s.ExterieursSpool.Add(e.ConnecteA); }
@@ -203,6 +204,17 @@ static class Demo
     {
         var spools = Reseau();
         var etapes = Montage.Ordonner(spools);
+        string[] coul = { "bleu", "orange", "vert", "rouge", "violet", "turquoise", "marron", "rose", "olive", "marine", "or", "gris-bleu" };
+        var groupesEns = Montage.Grouper(spools, Montage.Regroupement.Ensemble).Select(g =>
+        {
+            var et = Montage.Ordonner(g.Spools);
+            return new
+            {
+                nom = g.Nom,
+                ordre = et.Select(e => new { spool = e.Spool.Nom, ordre = e.Ordre, couleur = (e.Ordre - 1) % coul.Length }),
+                tableau = Montage.Tableau(et, x => coul[(et.First(e => e.Spool == x).Ordre - 1) % coul.Length], x => "ISO-" + x.Nom).Lignes,
+            };
+        }).ToList();
         string[] couleurs = { "bleu", "orange", "vert", "rouge", "violet", "turquoise", "marron", "rose", "olive", "marine", "or", "gris-bleu" };
         var idx = new Dictionary<Spool, int>();
         for (int i = 0; i < etapes.Count; i++) idx[etapes[i].Spool] = i % couleurs.Length;
@@ -211,9 +223,10 @@ static class Demo
             .Where(a => vus.Add(Math.Round(a.Position.X) + "|" + Math.Round(a.Position.Y) + "|" + Math.Round(a.Position.Z))).Select(a => P(a.Position)).ToList();
         return new
         {
+            groupes = groupesEns,
             spools = etapes.Select(e => new
             {
-                nom = e.Spool.Nom, ordre = e.Ordre, couleur = idx[e.Spool],
+                nom = e.Spool.Nom, ordre = e.Ordre, couleur = idx[e.Spool], ensemble = e.Spool.Ensemble,
                 segments = e.Spool.Composants.SelectMany(c => Cotation.EstNoeud(c)
                     ? c.Extremites.Select(x => new[] { P(x.Position), P(Cotation.PointAxe(c)) })
                     : c.Extremites.Count >= 2 ? new[] { new[] { P(c.Extremites[0].Position), P(c.Extremites[1].Position) } } : new double[0][][]).ToList(),

@@ -1,6 +1,7 @@
 // Repérage des spools pour le montage : ordre de pose et voisins de chaque spool. Les spools sont reliés par leurs
 // raccordements chantier ; dans chaque ensemble raccordé, le montage part du spool d'arrivée (sens d'écoulement connu
-// par Revit, sinon spool raccordé à un équipement, sinon le plus bas) et avance de proche en proche.
+// par Revit, sinon spool raccordé à un spool d'un autre groupe déjà monté, sinon à un équipement, sinon le plus bas)
+// et avance de proche en proche.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -45,8 +46,12 @@ namespace PipeFit.Isometries.Core
 
             Point3 Bas(Spool s) => s.Composants.SelectMany(c => c.Extremites).Select(e => e.Position)
                 .DefaultIfEmpty(new Point3()).OrderBy(p => p.Z).ThenBy(p => p.X).ThenBy(p => p.Y).First();
-            Liaison Arrivee(Spool s, bool connue) => s.Liaisons.FirstOrDefault(l => l.Sens == SensFlux.Entree && (!connue || l.SensConnu) && !l.AutreSpool);
+            // Un spool raccordé à un spool d'un autre groupe (autre ensemble, autre zone) se pose contre lui
+            var noms = new HashSet<string>(spools.Select(x => x.Nom));
+            bool Dehors(Liaison l) => !l.AutreSpool || !noms.Contains(l.RaccordeA);
+            Liaison Arrivee(Spool s, bool connue) => s.Liaisons.FirstOrDefault(l => l.Sens == SensFlux.Entree && (!connue || l.SensConnu) && l.RaccordeA != "" && Dehors(l));
             Liaison Equipement(Spool s) => s.Liaisons.FirstOrDefault(l => l.RaccordeA != "" && !l.AutreSpool);
+            Liaison AutreGroupe(Spool s) => s.Liaisons.FirstOrDefault(l => l.AutreSpool && Dehors(l));
 
             var res = new List<EtapeMontage>();
             int ordre = 0, n = 0;
@@ -55,6 +60,8 @@ namespace PipeFit.Isometries.Core
             {
                 n++;
                 var depart = g.FirstOrDefault(s => Arrivee(s, true) != null)
+                    // On prolonge ce qui est déjà monté (spool d'un autre ensemble) avant de partir d'un équipement
+                    ?? g.FirstOrDefault(s => AutreGroupe(s) != null)
                     ?? g.FirstOrDefault(s => Equipement(s) != null)
                     ?? g.OrderBy(s => Bas(s).Z).ThenBy(s => Bas(s).X).ThenBy(s => Bas(s).Y).First();
                 var parent = new Dictionary<Spool, Spool>();
@@ -64,7 +71,7 @@ namespace PipeFit.Isometries.Core
                 {
                     var s = file.Dequeue();
                     var contre = parent.TryGetValue(s, out var p) ? p.Nom
-                        : (Arrivee(s, true) ?? Equipement(s))?.RaccordeA ?? "";
+                        : (Arrivee(s, true) ?? AutreGroupe(s) ?? Equipement(s))?.RaccordeA ?? "";
                     res.Add(new EtapeMontage
                     {
                         Ordre = ++ordre, Spool = s, PoseContre = contre, Ensemble = n,
@@ -75,6 +82,25 @@ namespace PipeFit.Isometries.Core
                 }
             }
             return res;
+        }
+
+        public enum Regroupement { Tout, Systeme, Ensemble, SystemeEtEnsemble }
+
+        /// <summary>Groupes de spools pour les vues de repérage : un par système, par ensemble, ou par système et ensemble.</summary>
+        public static List<(string Nom, List<Spool> Spools)> Grouper(List<Spool> spools, Regroupement par)
+        {
+            string Ens(Spool s) => s.Ensemble != "" ? s.Ensemble : "sans ensemble";
+            string Sys(Spool s) => s.Systeme != "" ? s.Systeme : "sans système";
+            Func<Spool, string> cle;
+            switch (par)
+            {
+                case Regroupement.Systeme: cle = Sys; break;
+                case Regroupement.Ensemble: cle = Ens; break;
+                case Regroupement.SystemeEtEnsemble: cle = s => Sys(s) + " – " + Ens(s); break;
+                default: cle = s => ""; break;
+            }
+            return spools.GroupBy(cle).OrderBy(g => g.Key, Comparer<string>.Create(AnalyseSpool.ComparerNaturel))
+                .Select(g => (g.Key, g.OrderBy(s => s.Nom, Comparer<string>.Create(AnalyseSpool.ComparerNaturel)).ToList())).ToList();
         }
 
         /// <summary>Tableau « ORDRE DE MONTAGE » pour la feuille de repérage.</summary>

@@ -154,6 +154,8 @@ namespace PipeFit.Isometries.Core
         public string Nom = "";
         /// <summary>Tuyauterie pas encore découpée en spools (un groupe par réseau) : soudures à répartir atelier / chantier.</summary>
         public bool HorsSpool;
+        /// <summary>Ensemble de montage (zone géographique) : « Ensemble A » regroupe par exemple les spools 1 à 10.</summary>
+        public string Ensemble = "";
         /// <summary>Surlongueur laissée sur les tubes aux soudures chantier, à recouper sur place (mm).</summary>
         public double SurlongueurMm;
         public List<Composant> Composants = new List<Composant>();

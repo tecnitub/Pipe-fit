@@ -26,6 +26,16 @@ namespace PipeFit.Isometries.Revit
         public const string NomSoudures = "Soudures chantier (Pipe-Fit)";
         static readonly Guid GuidSoudures = new Guid("b2c74e19-3f6a-4d8b-a1e5-7c0d9f2b6e48");
 
+        /// <summary>Ensemble de montage (zone géographique) du spool : « Ensemble A »…</summary>
+        public const string NomEnsemble = "Ensemble de spools";
+        static readonly Guid GuidEnsemble = new Guid("5a8e1f37-c62d-4b90-9e14-7d3b0a6c2f85");
+
+        /// <summary>Crée le paramètre « Ensemble de spools » s'il manque.</summary>
+        public static void CreerEnsemble(Document doc, Application app)
+        {
+            if (!Existe(doc, NomEnsemble)) Creer(doc, app, NomEnsemble, GuidEnsemble, "Ensemble de montage (zone géographique) du spool, affecté par le bouton Ensembles spools.");
+        }
+
         /// <summary>Pouces-diamètre des soudures portées par l'élément, écrits à la génération des isométries.</summary>
         public const string NomPouces = "Pouces soudures (Pipe-Fit)";
         static readonly Guid GuidPouces = new Guid("d47a2c6e-91b3-4f05-8e7d-3a6b2f1c9e57");
@@ -40,6 +50,7 @@ namespace PipeFit.Isometries.Revit
             foreach (var (nom, guid, spec, desc) in new[]
             {
                 (Nom, Guid, SpecTypeId.String.Text, "Numéro du spool de préfabrication (Pipe-Fit Isométries)."),
+                (NomEnsemble, GuidEnsemble, SpecTypeId.String.Text, "Ensemble de montage (zone géographique) du spool, affecté par le bouton Ensembles spools."),
                 (NomSoudures, GuidSoudures, SpecTypeId.String.Text, "Connecteurs marqués soudure chantier par Pipe-Fit (n° de connecteur:surlongueur en mm). Se règle avec le bouton Soudure chantier."),
                 (NomPouces, GuidPouces, SpecTypeId.Number, "Pouces-diamètre des soudures portées par l'élément (écrits par Isométries spools)."),
             })

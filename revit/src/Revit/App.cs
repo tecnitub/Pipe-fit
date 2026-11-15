@@ -49,6 +49,14 @@ namespace PipeFit.Isometries.Revit
                 Image = Image("soudure16.png"),
             });
             panneau.AddItem(bouton);
+            panneau.AddItem(new PushButtonData("PipeFitEnsembles", "Ensembles\nspools", Assembly.GetExecutingAssembly().Location, typeof(CmdEnsembles).FullName)
+            {
+                ToolTip = "Regroupe les spools en ensembles de montage (zones géographiques) : « Ensemble A » = spools 1 à 10…",
+                LongDescription = "Cochez des spools (ou une plage, ou ceux de la sélection) et nommez leur ensemble ; écrit dans le paramètre « Ensemble de spools ». "
+                    + "Le repérage peut ensuite faire une vue par ensemble, par système, ou par système et ensemble.",
+                LargeImage = Image("ensembles32.png"),
+                Image = Image("ensembles16.png"),
+            });
             panneau.AddItem(new PushButtonData("PipeFitReperage", "Repérage\nspools", Assembly.GetExecutingAssembly().Location, typeof(CmdReperage).FullName)
             {
                 ToolTip = "Vue de repérage pour le montage : chaque spool dans sa couleur, son numéro et son ordre de montage, soudures de chantier marquées.",

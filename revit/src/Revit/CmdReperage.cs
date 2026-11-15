@@ -42,76 +42,134 @@ namespace PipeFit.Isometries.Revit
             var active = uidoc.ActiveView;
             var dupliquable = (active is ViewPlan || active is View3D || active is ViewSection) && !active.IsTemplate
                 && active.CanViewBeDuplicated(ViewDuplicateOption.Duplicate);
-            bool depuisActive, feuilleVoulue, gris, soudures;
+            bool depuisActive, feuilleVoulue, gris, soudures, zone;
+            Montage.Regroupement par;
             using (var f = new FenetreReperage(dupliquable ? active.Name : null, groupes.Count))
             {
                 if (f.ShowDialog(new FenetreRevit(data.Application.MainWindowHandle)) != System.Windows.Forms.DialogResult.OK) return Result.Cancelled;
-                depuisActive = f.DepuisActive; feuilleVoulue = f.Feuille; gris = f.Gris; soudures = f.Soudures;
+                depuisActive = f.DepuisActive; feuilleVoulue = f.Feuille; gris = f.Gris; soudures = f.Soudures; par = f.Par; zone = f.Zone;
             }
 
             var spools = groupes.OrderBy(g => g.Key, Comparer<string>.Create(AnalyseSpool.ComparerNaturel))
                 .Select(g => LectureModele.Convertir(doc, g.Key, g.Value, param, r.SurlongueurMm)).ToList();
-            var etapes = Montage.Ordonner(spools);
-            var couleur = new Dictionary<Spool, int>();
-            for (int i = 0; i < etapes.Count; i++) couleur[etapes[i].Spool] = i % Palette.Length;
             var feuillesIso = new FilteredElementCollector(doc).OfClass(typeof(ViewSheet)).Cast<ViewSheet>().Select(v => v.SheetNumber).ToHashSet();
+            var lots = Montage.Grouper(spools, par);
 
-            View vue; ViewSheet feuille = null;
+            var creees = new List<string>();
+            View premiere = null;
             var avertissements = new List<string>();
-            using (var t = new Transaction(doc, "Pipe-Fit : repérage des spools"))
+            using (var tg = new TransactionGroup(doc, "Pipe-Fit : repérage des spools"))
             {
-                var opt = t.GetFailureHandlingOptions(); opt.SetFailuresPreprocessor(new SansAvertissements()); t.SetFailureHandlingOptions(opt);
-                t.Start();
-                var gen = new GenerateurIso(doc, r, active.Id);
-                gen.Preparer();
-
-                var nom = "REPÉRAGE SPOOLS" + (depuisActive ? " – " + active.Name : "");
-                foreach (var ancienne in new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>().Where(v => !v.IsTemplate && v.Name == nom && v.Id != active.Id).ToList())
-                    doc.Delete(ancienne.Id);
-                vue = depuisActive ? (View)doc.GetElement(active.Duplicate(ViewDuplicateOption.Duplicate)) : Vue3D(doc, r, tous);
-                if (vue.ViewTemplateId != ElementId.InvalidElementId) vue.ViewTemplateId = ElementId.InvalidElementId;
-                try { vue.Name = nom; } catch { vue.Name = nom + " " + DateTime.Now.ToString("HHmmss", CultureInfo.InvariantCulture); }
-                if (vue is View3D v3 && !v3.IsLocked && !v3.IsPerspective) { try { v3.SaveOrientationAndLock(); } catch { } }
-
-                // Feuille d'abord : l'échelle fixe la taille des étiquettes
-                if (feuilleVoulue)
+                tg.Start();
+                foreach (var (nomLot, lot) in lots)
                 {
-                    var legende = new Tableau { Titre = "LÉGENDE" };
-                    legende.Colonnes.Add(new Colonne("", 130));
-                    legende.Lignes.Add(new[] { "Une couleur par spool (voir ORDRE DE MONTAGE)" });
-                    legende.Lignes.Add(new[] { "Étiquette : n° de spool · ordre de montage" });
-                    if (soudures) legende.Lignes.Add(new[] { "× : soudure de chantier" });
-                    if (gris) legende.Lignes.Add(new[] { "Gris : tuyauterie sans numéro de spool" });
-                    var tableaux = new List<Tableau>
+                    var etapes = Montage.Ordonner(lot);
+                    var couleur = new Dictionary<Spool, int>();
+                    for (int i = 0; i < etapes.Count; i++) couleur[etapes[i].Spool] = i % Palette.Length;
+                    using (var t = new Transaction(doc, "Pipe-Fit : repérage " + (nomLot != "" ? nomLot : "des spools")))
                     {
-                        Montage.Tableau(etapes, s => Palette[couleur[s]].Nom, s => feuillesIso.Contains(GenerateurIso.NumeroFeuille(r, s.Nom)) ? GenerateurIso.NumeroFeuille(r, s.Nom) : "à générer"),
-                        legende,
-                    };
-                    var systemes = string.Join(", ", spools.Select(s => s.Systeme).Where(x => x != "").Distinct());
-                    feuille = gen.Feuille(vue, "REP-" + (depuisActive ? Court(active.Name) : "3D"), "Repérage des spools – " + (depuisActive ? active.Name : "3D"),
-                        "REPÉRAGE DES SPOOLS POUR LE MONTAGE", systemes, tableaux, out _, out var zone);
-                    if (vue is View3D v3d) gen.Nord(feuille, v3d, zone);
-                }
-                else if (!depuisActive) vue.Scale = 50;
+                        var opt = t.GetFailureHandlingOptions(); opt.SetFailuresPreprocessor(new SansAvertissements()); t.SetFailureHandlingOptions(opt);
+                        t.Start();
+                        var gen = new GenerateurIso(doc, r, active.Id);
+                        gen.Preparer();
 
-                Colorer(doc, vue, spools, couleur, tous, gris);
-                Etiqueter(doc, vue, spools, etapes, couleur, groupes, avertissements);
-                if (soudures) MarquerSoudures(doc, vue, spools, avertissements);
-                t.Commit();
+                        var suffixe = (depuisActive ? " – " + active.Name : "") + (nomLot != "" ? " – " + nomLot : "");
+                        var nom = "REPÉRAGE SPOOLS" + suffixe;
+                        foreach (var ancienne in new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>().Where(v => !v.IsTemplate && v.Name == nom && v.Id != active.Id).ToList())
+                            doc.Delete(ancienne.Id);
+                        var elementsLot = lot.SelectMany(x => groupes[x.Nom]).ToList();
+                        var vue = depuisActive ? (View)doc.GetElement(active.Duplicate(ViewDuplicateOption.Duplicate)) : Vue3D(doc, r, tous, zone ? elementsLot : null);
+                        if (vue.ViewTemplateId != ElementId.InvalidElementId) vue.ViewTemplateId = ElementId.InvalidElementId;
+                        try { vue.Name = nom; } catch { vue.Name = nom + " " + DateTime.Now.ToString("HHmmss", CultureInfo.InvariantCulture); }
+                        if (depuisActive && zone) Cadrer(vue, elementsLot, avertissements);
+                        if (vue is View3D v3 && !v3.IsLocked && !v3.IsPerspective) { try { v3.SaveOrientationAndLock(); } catch { } }
+
+                        // Feuille d'abord : l'échelle fixe la taille des étiquettes
+                        if (feuilleVoulue)
+                        {
+                            var legende = new Tableau { Titre = "LÉGENDE" };
+                            legende.Colonnes.Add(new Colonne("", 130));
+                            legende.Lignes.Add(new[] { "Une couleur par spool (voir ORDRE DE MONTAGE)" });
+                            legende.Lignes.Add(new[] { "Étiquette : n° de spool · ordre de montage" });
+                            if (soudures) legende.Lignes.Add(new[] { "× : soudure de chantier" });
+                            if (gris) legende.Lignes.Add(new[] { lots.Count > 1 ? "Gris : autres spools et tuyauterie sans numéro" : "Gris : tuyauterie sans numéro de spool" });
+                            var tableaux = new List<Tableau>
+                            {
+                                Montage.Tableau(etapes, x => Palette[couleur[x]].Nom, x => feuillesIso.Contains(GenerateurIso.NumeroFeuille(r, x.Nom)) ? GenerateurIso.NumeroFeuille(r, x.Nom) : "à générer"),
+                                legende,
+                            };
+                            var systemes = string.Join(", ", lot.Select(x => x.Systeme).Where(x => x != "").Distinct());
+                            var ensembles = string.Join(", ", lot.Select(x => x.Ensemble).Where(x => x != "").Distinct());
+                            var numero = "REP-" + Court((depuisActive ? active.Name : "3D") + (nomLot != "" ? " " + nomLot : ""), 40);
+                            var feuille = gen.Feuille(vue, numero, "Repérage des spools" + suffixe,
+                                "REPÉRAGE DES SPOOLS POUR LE MONTAGE" + (nomLot != "" ? " – " + nomLot.ToUpperInvariant() : ""),
+                                (systemes != "" ? "Système " + systemes : "") + (ensembles != "" ? (systemes != "" ? " · " : "") + ensembles : ""), tableaux, out _, out var z);
+                            if (vue is View3D v3d) gen.Nord(feuille, v3d, z);
+                            premiere = premiere ?? feuille;
+                        }
+                        else if (!depuisActive) vue.Scale = 50;
+                        premiere = premiere ?? vue;
+
+                        Colorer(doc, vue, lot, couleur, tous, gris);
+                        Etiqueter(doc, vue, lot, etapes, couleur, groupes, avertissements);
+                        if (soudures) MarquerSoudures(doc, vue, lot, avertissements);
+                        t.Commit();
+                        creees.Add(vue.Name + " : " + lot.Count + " spool(s)");
+                    }
+                }
+                tg.Assimilate();
             }
-            uidoc.ActiveView = (View)feuille ?? vue;
-            var msg = etapes.Count + " spool(s) repéré(s), dans l'ordre de montage." + (avertissements.Count > 0 ? "\n" + string.Join("\n", avertissements.Distinct()) : "");
-            new TaskDialog("Pipe-Fit – Repérage") { MainInstruction = "Vue de repérage « " + vue.Name + " » créée", MainContent = msg }.Show();
+            if (premiere != null) uidoc.ActiveView = premiere;
+            var msg = string.Join("\n", creees) + (avertissements.Count > 0 ? "\n\n" + string.Join("\n", avertissements.Distinct()) : "");
+            new TaskDialog("Pipe-Fit – Repérage") { MainInstruction = creees.Count + " vue(s) de repérage créée(s)", MainContent = msg }.Show();
             return Result.Succeeded;
         }
 
-        static string Court(string s)
+        static string Court(string s, int max = 20)
         {
             var c = new string(s.Where(ch => char.IsLetterOrDigit(ch) || ch == '-' || ch == ' ').ToArray()).Trim();
-            return c.Length > 20 ? c.Substring(0, 20).Trim() : c;
+            return c.Length > max ? c.Substring(0, max).Trim() : c;
         }
 
-        static View3D Vue3D(Document doc, Reglages r, List<Element> tous)
+        static BoundingBoxXYZ Englobant(List<Element> elements, double margeMm)
+        {
+            double x0 = double.MaxValue, y0 = double.MaxValue, z0 = double.MaxValue, x1 = double.MinValue, y1 = double.MinValue, z1 = double.MinValue;
+            foreach (var e in elements)
+            {
+                var b = e.get_BoundingBox(null);
+                if (b == null) continue;
+                x0 = Math.Min(x0, b.Min.X); y0 = Math.Min(y0, b.Min.Y); z0 = Math.Min(z0, b.Min.Z);
+                x1 = Math.Max(x1, b.Max.X); y1 = Math.Max(y1, b.Max.Y); z1 = Math.Max(z1, b.Max.Z);
+            }
+            var m = Compat.Pieds(margeMm);
+            return new BoundingBoxXYZ { Min = new XYZ(x0 - m, y0 - m, z0 - m), Max = new XYZ(x1 + m, y1 + m, z1 + m) };
+        }
+
+        /// <summary>Cadrage d'un plan ou d'une coupe sur la zone du groupe (zone cadrée, avec 1 m de marge).</summary>
+        static void Cadrer(View vue, List<Element> elements, List<string> avertissements)
+        {
+            try
+            {
+                if (vue is View3D v3) { v3.SetSectionBox(Englobant(elements, 1000)); return; }
+                var b = Englobant(elements, 1000);
+                var cb = vue.CropBox;
+                var inv = cb.Transform.Inverse;
+                var coins = new[] { b.Min, b.Max, new XYZ(b.Min.X, b.Max.Y, b.Min.Z), new XYZ(b.Max.X, b.Min.Y, b.Max.Z),
+                    new XYZ(b.Min.X, b.Min.Y, b.Max.Z), new XYZ(b.Max.X, b.Max.Y, b.Min.Z), new XYZ(b.Min.X, b.Max.Y, b.Max.Z), new XYZ(b.Max.X, b.Min.Y, b.Min.Z) }
+                    .Select(p => inv.OfPoint(p)).ToList();
+                vue.CropBoxActive = true;
+                vue.CropBox = new BoundingBoxXYZ
+                {
+                    Transform = cb.Transform,
+                    Min = new XYZ(coins.Min(p => p.X), coins.Min(p => p.Y), cb.Min.Z),
+                    Max = new XYZ(coins.Max(p => p.X), coins.Max(p => p.Y), cb.Max.Z),
+                };
+                vue.CropBoxVisible = false;
+            }
+            catch (Exception ex) { avertissements.Add("cadrage de « " + vue.Name + " » impossible : " + ex.Message); }
+        }
+
+        static View3D Vue3D(Document doc, Reglages r, List<Element> tous, List<Element> zone = null)
         {
             var type = new FilteredElementCollector(doc).OfClass(typeof(ViewFamilyType)).Cast<ViewFamilyType>().First(v => v.ViewFamily == ViewFamily.ThreeDimensional);
             var vue = View3D.CreateIsometric(doc, type.Id);
@@ -125,6 +183,7 @@ namespace PipeFit.Isometries.Revit
             }
             var m = Compat.Pieds(500);
             var min = new XYZ(x0 - m, y0 - m, z0 - m); var max = new XYZ(x1 + m, y1 + m, z1 + m);
+            if (zone != null && zone.Count > 0) { var bz = Englobant(zone, 1000); min = bz.Min; max = bz.Max; } // zone du groupe seulement
             var avant = GenerateurIso.Direction(r.Orientation);
             var haut = (XYZ.BasisZ - avant * avant.DotProduct(XYZ.BasisZ)).Normalize();
             vue.SetOrientation(new ViewOrientation3D((min + max) / 2 - avant * (max - min).GetLength() * 2, haut, avant));
@@ -249,11 +308,15 @@ namespace PipeFit.Isometries.Revit
         readonly System.Windows.Forms.CheckBox ckFeuille = new System.Windows.Forms.CheckBox { Text = "Feuille avec l'ordre de montage et la légende", AutoSize = false, Checked = true };
         readonly System.Windows.Forms.CheckBox ckGris = new System.Windows.Forms.CheckBox { Text = "Tuyauterie sans numéro de spool en gris", AutoSize = false, Checked = true };
         readonly System.Windows.Forms.CheckBox ckSoudures = new System.Windows.Forms.CheckBox { Text = "Marquer les soudures de chantier (×)", AutoSize = false, Checked = true };
+        readonly System.Windows.Forms.ComboBox cbPar = new System.Windows.Forms.ComboBox { DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList };
+        readonly System.Windows.Forms.CheckBox ckZone = new System.Windows.Forms.CheckBox { Text = "Cadrer chaque vue sur la zone de ses spools", AutoSize = false, Checked = true };
 
         public bool DepuisActive => rbActive.Checked;
         public bool Feuille => ckFeuille.Checked;
         public bool Gris => ckGris.Checked;
         public bool Soudures => ckSoudures.Checked;
+        public Montage.Regroupement Par => (Montage.Regroupement)Math.Max(0, cbPar.SelectedIndex);
+        public bool Zone => ckZone.Checked && cbPar.SelectedIndex > 0;
 
         public FenetreReperage(string vueActive, int nbSpools)
         {
@@ -263,7 +326,7 @@ namespace PipeFit.Isometries.Revit
             FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
             MaximizeBox = MinimizeBox = false;
             StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
-            ClientSize = new System.Drawing.Size(500, 268);
+            ClientSize = new System.Drawing.Size(500, 340);
             Controls.Add(new System.Windows.Forms.Label
             {
                 Text = nbSpools + " spool(s) numéroté(s) : chacun dans sa couleur, avec son numéro et son ordre de montage.",
@@ -273,12 +336,19 @@ namespace PipeFit.Isometries.Revit
             rbActive.Enabled = vueActive != null;
             rbActive.SetBounds(14, 44, 472, 22); rb3D.SetBounds(14, 70, 472, 22);
             (vueActive != null ? rbActive : rb3D).Checked = true;
-            ckFeuille.SetBounds(14, 110, 472, 22); ckGris.SetBounds(14, 136, 472, 22); ckSoudures.SetBounds(14, 162, 472, 22);
-            Controls.AddRange(new System.Windows.Forms.Control[] { rbActive, rb3D, ckFeuille, ckGris, ckSoudures });
+            Controls.Add(new System.Windows.Forms.Label { Text = "Une vue par :", Location = new System.Drawing.Point(14, 111), AutoSize = true });
+            cbPar.Items.AddRange(new object[] { "une seule vue pour tous les spools", "système", "ensemble (zone de montage)", "système et ensemble" });
+            cbPar.SelectedIndex = 0;
+            cbPar.SetBounds(110, 108, 376, 24);
+            ckZone.SetBounds(30, 136, 456, 22);
+            cbPar.SelectedIndexChanged += (s, e) => ckZone.Enabled = cbPar.SelectedIndex > 0;
+            ckZone.Enabled = false;
+            ckFeuille.SetBounds(14, 176, 472, 22); ckGris.SetBounds(14, 202, 472, 22); ckSoudures.SetBounds(14, 228, 472, 22);
+            Controls.AddRange(new System.Windows.Forms.Control[] { rbActive, rb3D, cbPar, ckZone, ckFeuille, ckGris, ckSoudures });
             var ok = new System.Windows.Forms.Button { Text = "Créer la vue", DialogResult = System.Windows.Forms.DialogResult.OK };
-            ok.SetBounds(292, 222, 110, 30);
+            ok.SetBounds(292, 294, 110, 30);
             var annuler = new System.Windows.Forms.Button { Text = "Annuler", DialogResult = System.Windows.Forms.DialogResult.Cancel };
-            annuler.SetBounds(410, 222, 76, 30);
+            annuler.SetBounds(410, 294, 76, 30);
             Controls.AddRange(new System.Windows.Forms.Control[] { ok, annuler });
             AcceptButton = ok; CancelButton = annuler;
         }

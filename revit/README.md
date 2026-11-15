@@ -17,6 +17,7 @@ nomenclatures et étiquettes Revit. Les autres boutons les créent aussi d'eux-m
 | Paramètre | Type | Rempli par |
 |---|---|---|
 | Numéro de spool | Texte | Numéroter spools (ou à la main) |
+| Ensemble de spools | Texte | Ensembles spools : ensemble de montage (zone géographique) |
 | Soudures chantier (Pipe-Fit) | Texte | Soudure chantier : joints marqués (n° de connecteur:surlongueur), ne pas modifier à la main |
 | Pouces soudures (Pipe-Fit) | Nombre | Isométries spools : pouces-diamètre des soudures portées par l'élément, chaque soudure comptée une fois (le raccord plutôt que le tube) ; total par spool dans une nomenclature Revit regroupée par « Numéro de spool » |
 
@@ -68,6 +69,14 @@ canalisations, raccords, accessoires et pièces de fabrication) est créé dans 
   quantitatif (tube acheté surlongueurs comprises). Entre deux tubes, un seul côté la porte. La longueur maximale de tube
   d'un spool (6 m) tient compte de deux surlongueurs possibles, pour que le débit tienne dans la barre.
 
+## Ensembles de spools (zones de montage)
+
+Bouton **Ensembles spools** : regroupe les spools en ensembles de montage, par exemple « Ensemble A » = spools 1 à 10
+d'une zone du bâtiment. Cocher des spools (ou une plage « du n° … au n° … », ou ceux de la sélection Revit), nommer
+l'ensemble (« Ensemble A, B, C… » proposés), « Affecter » ; on enchaîne les ensembles sans fermer la fenêtre.
+L'ensemble est écrit dans le paramètre partagé « Ensemble de spools » de tous les éléments du spool (créé au besoin,
+aussi par « Paramètres Pipe-Fit ») et figure dans le tableau SPOOL des isométries.
+
 ## Repérage des spools pour le montage
 
 Bouton **Repérage spools** : vue de repérage pour le chantier.
@@ -79,6 +88,10 @@ Bouton **Repérage spools** : vue de repérage pour le chantier.
 - Feuille « REP-… » avec le tableau **ORDRE DE MONTAGE** (n°, spool, couleur, posé contre, longueur de tube, feuille
   d'isométrie) et la légende. L'ordre part du spool d'arrivée (écoulement connu par Revit, sinon spool raccordé à un
   équipement, sinon le plus bas) et avance de proche en proche ; une branche de té vient juste après le spool du té.
+- **Une vue par système, par ensemble, ou par système et ensemble** (ou une seule vue) : chaque vue montre ses spools
+  en couleur et les autres en gris, cadrée sur leur zone (zone de coupe en 3D, cadrage en plan ou en coupe), avec sa
+  feuille et son ordre de montage. Dans un ensemble, on prolonge ce qui est déjà monté : le premier spool se pose contre
+  le spool de l'ensemble voisin.
 - Relancer la commande remplace la vue et la feuille de repérage du même nom.
 
 ## Ce que fait la commande

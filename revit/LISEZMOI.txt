@@ -38,11 +38,17 @@ SOUDURES CHANTIER ET SURLONGUEURS (bouton « Soudure chantier »)
   - Surlongueur à recouper sur place : ajoutée au débit du tube côté soudure chantier (liste de débit,
     « R1 +100 » sur l'isométrie, quantitatif). Réglage général dans la fenêtre des isométries.
 
+ENSEMBLES DE SPOOLS (bouton « Ensembles spools »)
+  Regrouper les spools par zone de montage : cocher une plage (ex. SP-001 à SP-010) ou la sélection,
+  nommer l'ensemble (« Ensemble A »), Affecter ; puis l'ensemble suivant. Paramètre « Ensemble de spools ».
+
 REPÉRAGE POUR LE MONTAGE (bouton « Repérage spools »)
   Ouvrir le plan, la coupe ou la vue 3D voulue (ou choisir une nouvelle vue 3D), cliquer le bouton :
   copie de la vue avec chaque spool dans sa couleur, étiquette « n° de spool · ordre de montage »,
   soudures de chantier marquées ×, et feuille avec le tableau ORDRE DE MONTAGE (posé contre, longueur,
   feuille d'isométrie) et la légende.
+  Une vue par système, par ensemble ou par système et ensemble : les autres spools en gris, vue cadrée
+  sur la zone, ordre de montage propre à chaque vue (on prolonge ce qui est déjà monté).
 
 AVANT DE LANCER
   Le numéro de spool est attribué par le bouton « Numéroter spools », ou renseigné à la main dans un paramètre texte des canalisations, raccords et accessoires

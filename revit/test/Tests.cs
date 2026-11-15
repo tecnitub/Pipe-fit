@@ -293,6 +293,9 @@ static class Tests
             var sC = Sp("SP-2", C("c", "Tuyau", "", TypeComposant.Tube, 50, 2000, null, E(1152, 0, 500, 50, "b"), E(3152, 0, 500, 50, null)));
             var sD = Sp("SP-4", C("d", "Tuyau", "", TypeComposant.Tube, 50, 500, null, E(1076, 76, 500, 50, "b"), E(1076, 576, 500, 50, null)));
             var sE = Sp("SP-9", C("x", "Tuyau", "", TypeComposant.Tube, 50, 500, null, E(0, 0, 0, 50, null), E(500, 0, 0, 50, null)));
+            // Noms des spools voisins, comme les donne la lecture du modèle
+            void Voisin(Spool sp, string id, string nom) { sp.NomsExterieurs[id] = nom; sp.ExterieursSpool.Add(id); }
+            Voisin(sA, "b", "SP-1"); Voisin(sB, "a", "SP-3"); Voisin(sB, "c", "SP-2"); Voisin(sB, "d", "SP-4"); Voisin(sC, "b", "SP-1"); Voisin(sD, "b", "SP-1");
             foreach (var sp in new[] { sA, sB, sC, sD, sE }) AnalyseSpool.Analyser(sp);
             var et = Montage.Ordonner(new List<Spool> { sB, sC, sD, sA, sE });
             Verifier(string.Join(",", et.Where(e => e.Ensemble == et.First(x => x.Spool == sA).Ensemble).Select(e => e.Spool.Nom)) == "SP-3,SP-1,SP-2,SP-4",
@@ -300,6 +303,19 @@ static class Tests
             Verifier(et.First(e => e.Spool == sA).PoseContre == "P1" && et.First(e => e.Spool == sD).PoseContre == "SP-1", "posé contre : pompe, puis spool précédent");
             Verifier(et.First(e => e.Spool == sB).Voisins.SequenceEqual(new[] { "SP-2", "SP-3", "SP-4" }), "voisins du spool");
             Verifier(et.Select(e => e.Ensemble).Distinct().Count() == 2 && et.Select(e => e.Ordre).SequenceEqual(new[] { 1, 2, 3, 4, 5 }), "deux ensembles, ordre continu");
+            // Groupes : par ensemble, par système et ensemble ; un groupe qui ne touche pas la pompe part du spool voisin de l'autre groupe
+            sA.Ensemble = "Ensemble A"; sB.Ensemble = "Ensemble A"; sC.Ensemble = "Ensemble B"; sD.Ensemble = "Ensemble B";
+            foreach (var sp in new[] { sA, sB, sC, sD, sE }) sp.Systeme = "EGD";
+            sE.Systeme = "EGR";
+            var ge = Montage.Grouper(new List<Spool> { sA, sB, sC, sD, sE }, Montage.Regroupement.Ensemble);
+            Verifier(string.Join("|", ge.Select(g => g.Nom + ":" + string.Join(",", g.Spools.Select(x => x.Nom)))) == "Ensemble A:SP-1,SP-3|Ensemble B:SP-2,SP-4|sans ensemble:SP-9",
+                "regroupement par ensemble : " + string.Join("|", ge.Select(g => g.Nom)));
+            Verifier(Montage.Grouper(new List<Spool> { sA, sB, sC, sD, sE }, Montage.Regroupement.SystemeEtEnsemble).Select(g => g.Nom)
+                .SequenceEqual(new[] { "EGD – Ensemble A", "EGD – Ensemble B", "EGR – sans ensemble" }), "regroupement par système et ensemble");
+            var ebB = Montage.Ordonner(ge[1].Spools);
+            Verifier(ebB.Count == 2 && ebB.All(e => e.PoseContre == "SP-1"), "ensemble B : chaque morceau posé contre le spool de l'ensemble A");
+            Verifier(MiseEnPage.Tableaux(sA, "", "")[0].Lignes.Any(l => l[0] == "Ensemble" && l[1] == "Ensemble A"), "ensemble dans le tableau SPOOL de l'isométrie");
+
             var tm = Montage.Tableau(et, sp => "bleu", sp => "ISO-" + sp.Nom);
             Verifier(tm.Largeur <= 130.001 && tm.Lignes[0][1] == et[0].Spool.Nom && tm.Lignes.Any(l => l[1] == "SP-2" && l[4] == "2,0 m"), "tableau ordre de montage");
         }

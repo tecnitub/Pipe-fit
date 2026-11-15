@@ -93,6 +93,8 @@ namespace PipeFit.Isometries.Revit
         {
             var s = new Spool { Nom = nom, SurlongueurMm = surlongueurMm };
             foreach (var e in elements) s.Composants.Add(Composant(doc, e));
+            s.Ensemble = elements.Select(e => e.LookupParameter(ParametreSpool.NomEnsemble)?.AsString()?.Trim() ?? "").Where(v => v != "")
+                .GroupBy(v => v).OrderByDescending(g => g.Count()).Select(g => g.Key).FirstOrDefault() ?? "";
 
             // Ce qui est raccordé aux extrémités : autre spool, équipement, réseau
             var ids = new HashSet<string>(s.Composants.Select(c => c.Id));

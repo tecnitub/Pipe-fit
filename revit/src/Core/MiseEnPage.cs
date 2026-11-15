@@ -59,6 +59,7 @@ namespace PipeFit.Isometries.Core
             info.Colonnes.Add(new Colonne("", 40)); info.Colonnes.Add(new Colonne("", 90));
             if (!string.IsNullOrWhiteSpace(projet)) info.Lignes.Add(new[] { "Projet", projet });
             if (s.Systeme != "") info.Lignes.Add(new[] { "Système", s.Systeme });
+            if (s.Ensemble != "") info.Lignes.Add(new[] { "Ensemble", s.Ensemble });
             if (s.Materiau != "") info.Lignes.Add(new[] { "Matière", s.Materiau });
             info.Lignes.Add(new[] { "DN maxi", Diametres.Dn(s.DnMax) });
             info.Lignes.Add(new[] { "Longueur développée", (s.LongueurDeveloppeeMm / 1000).ToString("0.00", Fr) + " m" });
