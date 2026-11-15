@@ -155,6 +155,7 @@ function creer({ DB, db, broadcast, racineDocuments }) {
       let n = `${base}.pdf`, k = 2;
       while (fs.existsSync(path.join(c.chemin, dossier, n))) n = `${base} (${k++}).pdf`;
       const abs = path.join(c.chemin, dossier, n);
+      if (!path.resolve(abs).startsWith(path.resolve(c.chemin) + path.sep)) throw new Error('Nom de fichier refusé');
       fs.writeFileSync(abs, buf);
       const st = fs.statSync(abs), rel = `${dossier}/${n}`;
       db.prepare('INSERT INTO fiches_sync (rel, fiche_id, taille, mtime) VALUES (?, ?, ?, ?) ON CONFLICT(rel) DO UPDATE SET fiche_id = excluded.fiche_id, taille = excluded.taille, mtime = excluded.mtime').run(rel, fiche, st.size, st.mtimeMs);

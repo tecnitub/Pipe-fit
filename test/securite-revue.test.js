@@ -65,6 +65,16 @@ test('archives zip (dossier de consultation, classeurs, Word) : contenu décompr
   assert.strictEqual((await ok.text('ok.txt')).length, 800);
 });
 
+test('dépôt d\'une fiche technique : le nom du fabricant ne fait pas sortir du dossier de la bibliothèque', () => {
+  const FT = require('../public/js/fiches-tech');
+  for (const fab of ['..', '.', ' .. ', '...']) {
+    const d = FT.nomFichier(fab), racine = path.join(os.tmpdir(), 'bibliotheque');
+    assert.ok(path.join(racine, d, 'fiche.pdf').startsWith(racine + path.sep), `« ${fab} » → « ${d} »`);
+    assert.ok(path.dirname(path.join(racine, d, 'fiche.pdf')) !== racine, `« ${fab} » : fiche écrite à la racine`);
+  }
+  assert.strictEqual(FT.nomFichier('Atlantic'), 'Atlantic');
+});
+
 test('factures reçues (adresse de dépôt, import) : flux compressés d\'un PDF décompressés avec une limite', async () => {
   const zlib = require('node:zlib'), DB = require('../server/db'), EF = require('../server/efacture');
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'pipefit-ef-')), db = DB.open(path.join(d, 'x.db'));

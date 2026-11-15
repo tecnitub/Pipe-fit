@@ -156,6 +156,26 @@ const Collaboration = (() => {
       actions.appendChild(bt);
     }
     afficherPresence();
+    if (/^#\/?reglages/.test(location.hash || '') && S.config) carteReglagesVersions();
+  }
+  // Réglages : nombre et âge des versions gardées, séance de travail, corbeille (administrateur)
+  function carteReglagesVersions() {
+    const app = document.getElementById('app');
+    if (!app || app.querySelector('#reglages-versions')) return;
+    const r = VersionsEtude.reglages(S.config.versions), admin = S.me && S.me.role === 'admin', dis = admin ? '' : 'disabled';
+    const champs = [['max', 'Versions gardées par étude (au plus)'], ['jours', 'Âge maximal d\'une version (jours, 0 : sans limite)'], ['intervalleMin', 'Séance de travail (minutes) : enregistrements d\'une même personne regroupés'], ['corbeilleMax', 'Calculs gardés dans la corbeille (par étude)']];
+    const c = document.createElement('div');
+    c.className = 'carte'; c.id = 'reglages-versions';
+    c.innerHTML = `<h2>Versions des études</h2><p class="muted petit">Chaque enregistrement significatif garde une version compressée de l'étude (aperçu, restauration depuis la page de l'étude). La version la plus récente est toujours gardée.</p>
+      <div class="grille-champs">${champs.map(([k, l]) => `<label>${esc(l)}<input type="text" inputmode="numeric" data-versions="${k}" value="${esc(r[k])}" ${dis}></label>`).join('')}</div>
+      ${admin ? '<div class="actions-ligne"><button class="petit" id="versions-ok">Enregistrer</button></div>' : ''}`;
+    app.appendChild(c);
+    const ok = c.querySelector('#versions-ok');
+    if (ok) ok.onclick = async () => {
+      const v = {};
+      c.querySelectorAll('[data-versions]').forEach(x => { const n = parseInt(String(x.value).replace(/\s/g, ''), 10); if (Number.isFinite(n) && n >= 0) v[x.dataset.versions] = n; });
+      try { S.config = await api('PUT', '/api/config', { ...S.config, versions: VersionsEtude.reglages(v) }); toast('Réglages des versions enregistrés.'); } catch (e) { toast(e.message, 5000); }
+    };
   }
   if (typeof App !== 'undefined' && typeof window !== 'undefined') {
     const rendu = App.render;

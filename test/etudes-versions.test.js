@@ -128,3 +128,16 @@ test('limites réglables (Réglages, administrateur) et étude enregistrée avan
   const vs2 = (await call(base, 'GET', '/api/etudes/ancienne/versions', null, j)).body;
   assert.deepStrictEqual(vs2.map(x => x.motif), ['', 'État avant le suivi des versions']);
 });
+
+test('modules du travail à plusieurs servis par les serveurs Études et DOE', async () => {
+  for (const f of ['/js/collaboration.js', '/js/versions-etude.js', '/shared/fusion-etude.js']) {
+    const r = await fetch(base + f);
+    assert.strictEqual(r.status, 200, f);
+    assert.match(r.headers.get('content-type'), /javascript/);
+  }
+  process.env.DOE_DB_FILE = path.join(dir, 'doe.db');
+  const doe = require('../doe/server').server;
+  await new Promise(r => doe.listen(0, '127.0.0.1', r));
+  try { assert.strictEqual((await fetch(`http://127.0.0.1:${doe.address().port}/shared/fusion-etude.js`)).status, 200); }
+  finally { doe.close(); doe.closeAllConnections(); }
+});
