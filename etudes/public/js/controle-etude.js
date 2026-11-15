@@ -141,7 +141,7 @@ const ControleEtude = (() => {
 
     // 9. Reste à faire du guide (étapes non couvertes ci-dessus)
     if (Gu) { const r = essai(() => Gu.restesAFaire(et)) || { etapes: [] };
-      r.etapes.filter(x => !x.fait && !['valeurs', 'estimees', 'conformite'].includes(x.groupe) && x.id !== 'erreurs' && x.id !== 'installation-erreurs' && x.id !== 'controle').forEach(x => add('guide', 'info', `${x.titre}${x.info ? ` : ${x.info}` : ''}`, { origine: 'Guide de l\'étude', action: x.action || null })); }
+      r.etapes.filter(x => !x.fait && (!x.phase || x.phase === 'etude') && !['valeurs', 'estimees', 'conformite'].includes(x.groupe) && x.id !== 'erreurs' && x.id !== 'installation-erreurs' && x.id !== 'controle').forEach(x => add('guide', 'info', `${x.titre}${x.info ? ` : ${x.info}` : ''}`, { origine: 'Guide de l\'étude', action: x.action || null })); }
 
     return out.sort((a, b) => CATEGORIES.findIndex(c => c[0] === a.categorie) - CATEGORIES.findIndex(c => c[0] === b.categorie) || RANG[a.gravite] - RANG[b.gravite]);
   }
