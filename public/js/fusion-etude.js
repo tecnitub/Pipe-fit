@@ -9,7 +9,7 @@
 const FusionEtude = (() => {
   const ABSENT = undefined;
   // Champs dérivés (recalculés à chaque enregistrement) : jamais présentés comme conflit, ma valeur est gardée
-  const DERIVES = new Set(['avancement', 'consequences', 'etatReference', '_v', '_at', '_by']);
+  const DERIVES = new Set(['avancement', 'consequences', 'etatReference', '_etats', '_v', '_at', '_by']);
   const estObjet = x => x !== null && typeof x === 'object' && !Array.isArray(x);
   function egal(a, b) {
     if (a === b) return true;
