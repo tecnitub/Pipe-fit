@@ -56,6 +56,8 @@ const TYPES_DOCUMENTS = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'imag
 const db = DB.open(DB_FILE);
 API.initTables(db);
 Push.initTables(db);
+// Jetons de service des applications Études et DOE (portée réduite, durée limitée, révocables)
+const JETONS = require('./jetons-apps').creer({ db });
 
 /* ---------- Initialisation ---------- */
 if (!db.prepare('SELECT 1 FROM settings WHERE id = 1').get()) {
@@ -468,7 +470,12 @@ function ouvrirSession(req, accountId) {
 function currentAccount(req) {
   const token = cookies(req).sid;
   // Clé d'API (automatisations) : les droits sont ceux du compte propriétaire de la clé
-  if (!token) { const a = API.compteDeCle(db, req.headers.authorization); return a ? { ...a, token: null, cleApi: true } : null; }
+  if (!token) {
+    // Jeton de service d'une application (Études, DOE) : droits du compte, limités aux routes de l'application
+    const j = JETONS.compte(req.headers.authorization);
+    if (j) return { ...j, token: null };
+    const a = API.compteDeCle(db, req.headers.authorization); return a ? { ...a, token: null, cleApi: true } : null;
+  }
   const h = empreinte(token);
   const s = db.prepare('SELECT * FROM sessions WHERE token = ?').get(h);
   if (!s || s.expires < Date.now()) return null;
@@ -606,6 +613,15 @@ async function api(req, res, url) {
 
   const acc = currentAccount(req);
   if (!acc) return fail(res, 401, 'Non connecté');
+  if (acc.jetonApp && !JETONS.routeAutorisee(acc.jetonApp, method, p.join('/'))) return fail(res, 403, `Route non autorisée pour le jeton de l'application ${acc.jetonApp === 'doe' ? 'DOE' : 'Études'}`);
+  // Jeton de service pour l'application Études ou DOE (appelé par son serveur à la connexion, avec la session Pipe-Fit
+  // de la personne, aussitôt fermée ensuite) : la session ne quitte jamais Pipe-Fit
+  if (p[0] === 'jetons-apps' && !p[1] && method === 'POST') {
+    if (!acc.token) return fail(res, 403, 'Session Pipe-Fit requise');
+    const b = await readBody(req);
+    try { const j = JETONS.emettre(acc, String(b.app || '')); DB.audit(db, acc.login, `jeton de l'application ${j.app}`, null, null, HS.ipClient(req)); return send(res, 200, j); }
+    catch (e) { return fail(res, e.status || 400, e.message); }
+  }
 
   // Mon lien d'agenda (iCal) et, pour l'administrateur, le planning dans Outlook
   if (p[0] === 'agenda' && p[1] === 'lien') {
@@ -629,6 +645,7 @@ async function api(req, res, url) {
   }
 
   if (p[0] === 'logout' && method === 'POST') {
+    if (acc.jetonApp) { JETONS.revoquer(acc.jetonEmpreinte); return send(res, 200, { ok: true }); }
     db.prepare('DELETE FROM sessions WHERE token = ?').run(acc.token);
     return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(req, '', 0) });
   }
@@ -650,14 +667,15 @@ async function api(req, res, url) {
     if (faible) return fail(res, 400, faible);
     db.prepare('UPDATE accounts SET pass = ? WHERE id = ?').run(DB.hashPassword(next), acc.id);
     db.prepare('DELETE FROM sessions WHERE account_id = ? AND token <> ?').run(acc.id, acc.token);
+    JETONS.revoquerCompte(acc.id); // applications Études et DOE : reconnexion avec le nouveau mot de passe
     DB.audit(db, acc.login, 'changement de mot de passe');
     return send(res, 200, { ok: true });
   }
   // Mes appareils connectés : nombre, et déconnexion de tous les autres (téléphone perdu…)
   if (p[0] === 'me' && p[1] === 'sessions') {
-    if (method === 'GET') return send(res, 200, { autres: db.prepare('SELECT COUNT(*) n FROM sessions WHERE account_id = ? AND token <> ? AND expires > ?').get(acc.id, acc.token || '', Date.now()).n });
+    if (method === 'GET') return send(res, 200, { autres: db.prepare('SELECT COUNT(*) n FROM sessions WHERE account_id = ? AND token <> ? AND expires > ?').get(acc.id, acc.token || '', Date.now()).n, applications: JETONS.nombre(acc.id) });
     if (method === 'DELETE') {
-      const n = db.prepare('DELETE FROM sessions WHERE account_id = ? AND token <> ?').run(acc.id, acc.token || '').changes;
+      const n = db.prepare('DELETE FROM sessions WHERE account_id = ? AND token <> ?').run(acc.id, acc.token || '').changes + JETONS.revoquerCompte(acc.id);
       DB.audit(db, acc.login, 'déconnexion des autres appareils', null, null, String(n));
       return send(res, 200, { deconnectes: n });
     }
@@ -1652,6 +1670,7 @@ async function api(req, res, url) {
       if (body.password) {
         db.prepare('UPDATE accounts SET pass = ? WHERE id = ?').run(DB.hashPassword(body.password), target.id);
         db.prepare('DELETE FROM sessions WHERE account_id = ?').run(target.id);
+        JETONS.revoquerCompte(target.id);
       }
       DB.audit(db, acc.login, 'modification compte', null, target.id, target.login);
       return send(res, 200, { ok: true });
@@ -1659,6 +1678,7 @@ async function api(req, res, url) {
     if (method === 'DELETE') {
       if (target.id === acc.id) return fail(res, 400, 'Impossible de supprimer son propre compte');
       db.prepare('DELETE FROM sessions WHERE account_id = ?').run(target.id);
+      JETONS.revoquerCompte(target.id);
       db.prepare('DELETE FROM accounts WHERE id = ?').run(target.id);
       DB.audit(db, acc.login, 'suppression compte', null, target.id, target.login);
       return send(res, 200, { ok: true });
@@ -1672,7 +1692,7 @@ async function api(req, res, url) {
     return send(res, 200, {
       https: { requete: isHttps(req), natif: SERVEUR.etat.https, certificat: SERVEUR.etat.certificat, recharge: SERVEUR.etat.recharge, redirection: +process.env.HTTP_REDIRECT_PORT || null },
       proxy: { detecte: !!req.headers['x-forwarded-for'], confiance: HS.proxyDeConfiance(req), ip: HS.ipClient(req) },
-      sessions: db.prepare('SELECT COUNT(*) n FROM sessions WHERE expires > ?').get(Date.now()).n, dureeSessionJours: SESSION_DAYS,
+      sessions: db.prepare('SELECT COUNT(*) n FROM sessions WHERE expires > ?').get(Date.now()).n, dureeSessionJours: SESSION_DAYS, jetonsApplications: JETONS.nombre(),
       cles: db.prepare('SELECT COUNT(*) n FROM api_keys').get().n, webhooksHttp: API.webhooks(DB, db).filter(w => w.actif && /^http:/i.test(w.url)).length,
       admins: db.prepare("SELECT COUNT(*) n FROM accounts WHERE role = 'admin'").get().n,
       echecs24h: echecs.length, derniersEchecs: echecs.slice(0, 10), m365: m365Pret(),
@@ -1764,7 +1784,7 @@ if (require.main === module) {
   SAUVEGARDE.demarrer();
   AGENDA.demarrer();
   // Sessions expirées effacées toutes les heures
-  setInterval(() => db.prepare('DELETE FROM sessions WHERE expires < ?').run(Date.now()), 3600000).unref();
+  setInterval(() => { db.prepare('DELETE FROM sessions WHERE expires < ?').run(Date.now()); db.prepare('DELETE FROM jetons_apps WHERE expires < ?').run(Date.now()); }, 3600000).unref();
   SERVEUR.surveiller();
   const schema = SERVEUR.etat.https ? 'https' : 'http';
   if (SERVEUR.etat.https && process.env.HTTP_REDIRECT_PORT) SERVEUR.redirection(+process.env.HTTP_REDIRECT_PORT, HOST, PORT);

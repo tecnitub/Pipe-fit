@@ -76,6 +76,7 @@ PIPEFIT_URL=http://localhost:3000 npm run start:doe
 | `PIPEFIT_URL` | adresse de Pipe-Fit vue par le serveur DOE | http://localhost:3000 |
 | `PIPEFIT_PUBLIC_URL` | adresse de Pipe-Fit pour le lien « Pipe-Fit ↗ » du navigateur | même machine, port 3000 |
 | `DOE_DB_FILE` | base des dossiers et pièces jointes | doe/data/doe.db |
+| `DOE_CLE_SESSIONS` | clé (64 caractères hexadécimaux) qui chiffre le jeton Pipe-Fit des sessions ; sinon fichier `doe-sessions.key` créé à côté de la base (droits 600) | fichier généré |
 
 Les dossiers et leurs pièces jointes (60 Mo max par fichier) sont stockés dans la base DOE, séparée de celle de Pipe-Fit.
 Sauvegardez `doe/data/` avec la base Pipe-Fit.

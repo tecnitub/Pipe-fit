@@ -440,3 +440,4 @@ Les actions importantes (envois, sauvegardes, réglages) sont aussi dans l'**His
 | `DOE_PORT`, `DOE_DB_FILE` | application DOE | 3100, `doe/data/doe.db` |
 | `ETUDES_PORT`, `ETUDES_DB_FILE` | application Études | 3200, `etudes/data/etudes.db` |
 | `PIPEFIT_URL`, `PIPEFIT_PUBLIC_URL` | adresse du CRM vue par le DOE et les Études | `http://localhost:3000` |
+| `ETUDES_CLE_SESSIONS`, `DOE_CLE_SESSIONS` | clé de chiffrement du jeton de service Pipe-Fit des sessions des Études et du DOE (64 caractères hexadécimaux) ; sinon fichier `*-sessions.key` généré à côté de leur base (droits 600) | fichier généré |

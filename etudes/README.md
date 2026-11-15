@@ -229,6 +229,8 @@ PIPEFIT_URL=http://localhost:3000 npm run start:etudes
 | `PIPEFIT_URL` | adresse de Pipe-Fit vue par le serveur Études | http://localhost:3000 |
 | `PIPEFIT_PUBLIC_URL` | adresse de Pipe-Fit pour le lien « Pipe-Fit ↗ » du navigateur | même machine, port 3000 |
 | `ETUDES_DB_FILE` | base des études | etudes/data/etudes.db |
+| `ETUDES_CLE_SESSIONS` | clé (64 caractères hexadécimaux) qui chiffre le jeton Pipe-Fit des sessions ; sinon fichier `etudes-sessions.key` créé à côté de la base (droits 600, à ne pas sauvegarder avec elle) | fichier généré |
+| `ETUDES_CORBEILLE_JOURS` | durée de conservation des études supprimées (sauf réglage dans Réglages) | 30 |
 
 `node etudes/build-demo.js` produit la démonstration `dist/pipefit-etudes-demo.html` (sans serveur, avec une étude d'exemple).
 

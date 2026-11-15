@@ -1,5 +1,5 @@
-// Écritures des applications DOE et Études dans Pipe-Fit, avec la session Pipe-Fit de la personne connectée
-// (`appel(chemin, opts)` ajoute son cookie) : fiche réécrite avec contrôle de version, fichier envoyé, état d'une étude.
+// Écritures des applications DOE et Études dans Pipe-Fit, avec le jeton de service de la personne connectée
+// (`appel(chemin, opts)` ajoute son jeton) : fiche réécrite avec contrôle de version, fichier envoyé, état d'une étude.
 const crypto = require('node:crypto');
 
 const idPF = () => crypto.randomBytes(10).toString('hex');
@@ -39,4 +39,28 @@ async function lienEtude(appel, id) {
   const r = await appel(`/api/liens/etudes/${encodeURIComponent(id)}`);
   return r.ok ? r.json() : null;
 }
-module.exports = { idPF, modifierPF, envoyerFichierPF, publierEtat, lienEtude };
+// Connexion d'une personne dans l'application (Études, DOE) : identifiant et mot de passe vérifiés par Pipe-Fit (adresse
+// du client transmise pour sa limite de tentatives), rôle contrôlé, puis la session Pipe-Fit est échangée contre un
+// jeton de service de l'application (portée réduite, durée limitée) et fermée aussitôt : elle n'est jamais conservée.
+// → { me, jeton, expire } ; erreur { status, message } (401 identifiants, 403 rôle, 429 trop de tentatives, 502 Pipe-Fit)
+async function connexionPF(PIPEFIT, { login, password, ip, app, roles, refusRole }) {
+  const erreur = (status, message) => Object.assign(new Error(message), { status });
+  let r;
+  try { r = await fetch(`${PIPEFIT}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': ip }, body: JSON.stringify({ login, password }), signal: AbortSignal.timeout(15000) }); }
+  catch (e) { throw erreur(502, `Pipe-Fit est injoignable (${PIPEFIT}) : vérifiez l'adresse PIPEFIT_URL.`); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw erreur([401, 429].includes(r.status) ? r.status : 502, j.error || 'Identifiant ou mot de passe incorrect');
+  const cookie = String(r.headers.get('set-cookie') || '').split(';')[0];
+  const fermer = () => fetch(`${PIPEFIT}/api/logout`, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(10000) }).catch(() => {});
+  try {
+    const me = await (await fetch(`${PIPEFIT}/api/me`, { headers: { Cookie: cookie }, signal: AbortSignal.timeout(15000) })).json().catch(() => ({}));
+    if (!roles.includes(me.role)) throw erreur(403, refusRole);
+    const t = await fetch(`${PIPEFIT}/api/jetons-apps`, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ app }), signal: AbortSignal.timeout(15000) });
+    const jt = await t.json().catch(() => ({}));
+    if (!t.ok || !jt.jeton) throw erreur(502, jt.error || 'Pipe-Fit n\'a pas délivré de jeton à l\'application (version de Pipe-Fit à mettre à jour ?)');
+    return { me, jeton: jt.jeton, expire: jt.expire };
+  } finally { await fermer(); }
+}
+// Appel à Pipe-Fit avec le jeton de service de l'application
+const appelJeton = (PIPEFIT, jeton, chemin, opts = {}) => fetch(PIPEFIT + chemin, { ...opts, headers: { ...(opts.headers || {}), Authorization: `Bearer ${jeton}` }, signal: AbortSignal.timeout(30000) });
+module.exports = { idPF, modifierPF, envoyerFichierPF, publierEtat, lienEtude, connexionPF, appelJeton };

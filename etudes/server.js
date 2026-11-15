@@ -41,6 +41,26 @@ db.exec(`PRAGMA journal_mode = WAL;
   CREATE TABLE IF NOT EXISTS modeles_biblio (id TEXT PRIMARY KEY, cle TEXT UNIQUE, data TEXT NOT NULL, updated_at TEXT, updated_by TEXT);`);
 // Fiche de l'équipe Pipe-Fit du compte connecté (responsable des étapes : « Mes étapes »)
 if (!db.prepare('PRAGMA table_info(sessions)').all().some(c => c.name === 'user_id')) db.exec('ALTER TABLE sessions ADD COLUMN user_id TEXT');
+// Jeton de service Pipe-Fit de chaque session (jamais la session Pipe-Fit elle-même) : chiffré (AES-256-GCM, lié à la
+// session) avec la clé propre à ce serveur, gardée hors de la base (variable ETUDES_CLE_SESSIONS, sinon fichier etudes-sessions.key)
+const SecretLocal = require('../server/secret-local');
+const CLE = SecretLocal.cleServeur({ env: process.env.ETUDES_CLE_SESSIONS, fichier: process.env.ETUDES_CLE_SESSIONS_FICHIER || path.join(path.dirname(DB_FILE), 'etudes-sessions.key') }).cle;
+db.exec('PRAGMA secure_delete = ON');
+{
+  const cols = db.prepare('PRAGMA table_info(sessions)').all().map(c => c.name);
+  if (!cols.includes('pf_jeton')) db.exec('ALTER TABLE sessions ADD COLUMN pf_jeton TEXT; ALTER TABLE sessions ADD COLUMN pf_expire TEXT;');
+  // Migration : sessions d'avant les jetons (cookie de session Pipe-Fit en clair) effacées, octets compris (secure_delete,
+  // journal vidé) ; ces sessions Pipe-Fit sont fermées dans Pipe-Fit dès qu'il répond. Les personnes se reconnectent.
+  const anciennes = db.prepare("SELECT pf_cookie FROM sessions WHERE pf_cookie IS NOT NULL AND pf_cookie <> ''").all().map(r => r.pf_cookie);
+  const n = db.prepare("DELETE FROM sessions WHERE pf_jeton IS NULL OR (pf_cookie IS NOT NULL AND pf_cookie <> '')").run().changes;
+  if (n) {
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    console.log(`Études : ${n} session(s) d'avant le chiffrement fermée(s) (reconnexion demandée)`);
+    setTimeout(() => anciennes.forEach(c => fetch(`${PIPEFIT}/api/logout`, { method: 'POST', headers: { Cookie: c, 'Content-Type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(10000) }).catch(() => {})), 3000).unref();
+  }
+}
+const jetonDe = s => SecretLocal.dechiffrer(CLE, s.pf_jeton, s.sid);
+
 // Bibliothèque de modèles partagée entre les études (même module que le navigateur : doublons, versions, prix)
 const BiblioModeles = require('./public/js/bibliotheque-modeles');
 // Versions des études, corbeille des calculs supprimés, présence (qui a l'étude ouverte)
@@ -102,13 +122,15 @@ function session(req) {
   if (!sid) return null;
   const s = db.prepare('SELECT * FROM sessions WHERE sid = ?').get(empreinte(sid));
   if (!s) return null;
-  if (Date.now() - new Date(s.created_at) > SESSION_JOURS * 86400000) { db.prepare('DELETE FROM sessions WHERE sid = ?').run(s.sid); return null; }
+  if (Date.now() - new Date(s.created_at) > SESSION_JOURS * 86400000 || (s.pf_expire && s.pf_expire < new Date().toISOString())) { db.prepare('DELETE FROM sessions WHERE sid = ?').run(s.sid); return null; }
   return s;
 }
 
 /* ---------- Lien avec Pipe-Fit ---------- */
 async function pipefit(s, chemin, opts = {}) {
-  const r = await fetch(PIPEFIT + chemin, { ...opts, headers: { ...(opts.headers || {}), Cookie: s.pf_cookie }, signal: AbortSignal.timeout(30000) });
+  const jeton = jetonDe(s);
+  if (!jeton) { db.prepare('DELETE FROM sessions WHERE sid = ?').run(s.sid); throw Object.assign(new Error('Session expirée : reconnectez-vous.'), { status: 401 }); }
+  const r = await PF.appelJeton(PIPEFIT, jeton, chemin, opts);
   if (r.status === 401) { db.prepare('DELETE FROM sessions WHERE sid = ?').run(s.sid); throw Object.assign(new Error('Session Pipe-Fit expirée : reconnectez-vous.'), { status: 401 }); }
   return r;
 }
@@ -179,16 +201,12 @@ async function api(req, res, url) {
 
   if (p[0] === 'login' && method === 'POST') {
     const { login, password } = await lireJSON(req);
-    let r;
-    try { r = await fetch(`${PIPEFIT}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': HS.ipClient(req) }, body: JSON.stringify({ login, password }), signal: AbortSignal.timeout(15000) }); }
-    catch (e) { return fail(res, 502, `Pipe-Fit est injoignable (${PIPEFIT}) : vérifiez l'adresse PIPEFIT_URL.`); }
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) return fail(res, r.status === 401 ? 401 : 502, j.error || 'Identifiant ou mot de passe incorrect');
-    const pf = String(r.headers.get('set-cookie') || '').split(';')[0];
-    const me = await (await fetch(`${PIPEFIT}/api/me`, { headers: { Cookie: pf } })).json().catch(() => ({}));
-    if (!ROLES_ETUDES.includes(me.role)) return fail(res, 403, 'L\'application Études est réservée au bureau (administrateur ou chargé d\'affaires).');
-    const sid = crypto.randomBytes(24).toString('base64url');
-    db.prepare('INSERT INTO sessions (sid, login, nom, role, pf_cookie, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(empreinte(sid), me.login, me.nom, me.role, pf, new Date().toISOString(), me.userId || null);
+    let c;
+    try { c = await PF.connexionPF(PIPEFIT, { login, password, ip: HS.ipClient(req), app: 'etudes', roles: ROLES_ETUDES, refusRole: 'L\'application Études est réservée au bureau (administrateur ou chargé d\'affaires).' }); }
+    catch (e) { return fail(res, e.status || 502, e.message); }
+    const { me } = c, sid = crypto.randomBytes(24).toString('base64url'), h = empreinte(sid);
+    db.prepare('INSERT INTO sessions (sid, login, nom, role, pf_cookie, created_at, user_id, pf_jeton, pf_expire) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)')
+      .run(h, me.login, me.nom, me.role, new Date().toISOString(), me.userId || null, SecretLocal.chiffrer(CLE, c.jeton, h), c.expire || null);
     return send(res, 200, { login: me.login, nom: me.nom, role: me.role }, { 'Set-Cookie': cookieSession(req, sid, SESSION_JOURS * 86400) });
   }
   const s = session(req);
