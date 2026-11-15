@@ -121,19 +121,23 @@
   }
   // Relances des étapes des études (simulation locale du contrôle périodique du serveur) : échéance à J-2 ou dépassée,
   // étape bloquante ; une notification par personne, une seule fois par étape, échéance et état
+  // Personnes à prévenir pour un responsable d'étape (comme server/relances-etapes.js)
+  function destEtapesDemo(r, a) {
+    const cs = db.accounts || [];
+    if (!r) return [];
+    if (r.type === 'user') { if (cs.some(c => c.userId === r.id)) return [r.id]; const u = (db.users || []).find(x => x.id === r.id); return u && u.chefId && cs.some(c => c.userId === u.chefId) ? [u.chefId] : []; }
+    // Rôle compagnon : les compagnons prévus au planning du chantier, sinon le chargé d'affaires
+    if (r.role === 'compagnon' && a) { const pl = new Set((db.planning || []).filter(x => x.affaireId === a.id).map(x => x.userId)), cp = cs.filter(c => c.role === 'atelier' && c.userId && pl.has(c.userId)).map(c => c.userId); if (cp.length) return [...new Set(cp)]; }
+    if (r.role === 'conducteur' || r.role === 'compagnon') return a && a.chargeId ? [a.chargeId] : [];
+    if (r.role === 'be') return cs.filter(c => c.role === 'charge').map(c => c.userId);
+    return [];
+  }
   function relancesEtapesDemo() {
     if (typeof SuiviEtapes === 'undefined') return 0;
     const auj = isoLocal(new Date()), deja = SuiviEtapes.purgerDeja(db.relancesEtapes || {}, auj);
     const liste = SuiviEtapes.relances((db.liens || []).filter(l => l.app === 'etudes'), { today: auj, deja, terrain: db.etapesTerrain || [] });
     if (!liste.length) return 0;
-    const cs = db.accounts || [], par = new Map();
-    const dest = (r, a) => {
-      if (!r) return [];
-      if (r.type === 'user') { if (cs.some(c => c.userId === r.id)) return [r.id]; const u = (db.users || []).find(x => x.id === r.id); return u && u.chefId && cs.some(c => c.userId === u.chefId) ? [u.chefId] : []; }
-      if (r.role === 'conducteur' || r.role === 'compagnon') return a && a.chargeId ? [a.chargeId] : [];
-      if (r.role === 'be') return cs.filter(c => c.role === 'charge').map(c => c.userId);
-      return [];
-    };
+    const cs = db.accounts || [], par = new Map(), dest = destEtapesDemo;
     liste.forEach(x => {
       const a = (db.affaires || []).find(y => y.id === x.affaireId);
       [...new Set(dest(x.responsable, a).filter(Boolean))].forEach(uid => { if (!par.has(uid)) par.set(uid, []); par.get(uid).push({ ...x, code: a ? a.code || '' : '' }); });
@@ -146,8 +150,32 @@
       db.notifications.push({ id: 'nt' + DemoSeed.uid(), type: 'etape', userId: uid, affaireId: l[0].affaireId || '', titre, texte: l.map(x => `${x.code ? `${x.code} · ` : ''}${x.texte}`).join('\n'),
         lien: bureau ? '#/etapes' : l[0].affaireId ? `#/pointage/chantier/${l[0].affaireId}` : '#/pointage/chantiers', date: now, lu: false, _v: 1, _at: now, _by: 'Pipe-Fit' });
     });
+    // Récapitulatif par e-mail (simulé : gardé dans les envois de la démonstration), un par personne et par jour au plus
+    db.relancesEtapesMail = db.relancesEtapesMail || {};
+    par.forEach((l, uid) => {
+      const c = cs.find(x => x.userId === uid), pref = ((db.etapesPrefs || {})[uid] || {}).email !== false;
+      if (!c || !pref || db.relancesEtapesMail[uid] === auj) return;
+      const m = SuiviEtapes.mailRelances({ nom: c.nom, items: l, liens: {}, societe: (db.settings || {}).societe || '', today: auj });
+      db.envois = db.envois || [];
+      db.envois.push({ id: 'en' + DemoSeed.uid(), date: new Date().toISOString(), type: 'relance-etapes', col: '', docId: '', numero: '', to: [c.email || `${c.login}@exemple.fr`], cc: [], objet: m.sujet, pieces: [], mode: 'Démonstration (non envoyé)', par: 'Pipe-Fit', _v: 1, _at: new Date().toISOString(), _by: 'Pipe-Fit' });
+      db.relancesEtapesMail[uid] = auj;
+    });
     db.relancesEtapes = deja; save();
     return liste.length;
+  }
+  // Avancement des étapes tenu à jour (comme le serveur) : étapes faites sur le terrain, réserves levées, PV de réception
+  // signé ou chantier terminé ; recalé à l'enregistrement suivant de l'étude
+  function ajusterEtapesDemo(affaireId) {
+    if (typeof SuiviEtapes === 'undefined') return 0;
+    let n = 0;
+    (db.liens || []).filter(l => l.app === 'etudes' && l.affaireId && (!affaireId || l.affaireId === affaireId) && (l.resume || {}).avancement).forEach(l => {
+      const etats = SuiviEtapes.etatsChantier({ affaire: (db.affaires || []).find(a => a.id === l.affaireId), reserves: (db.reserves || []).filter(r => r.affaireId === l.affaireId), receptions: (db.receptions || []).filter(r => r.affaireId === l.affaireId) }, l.id);
+      const av = SuiviEtapes.ajusterAvancement(l.resume.avancement, Object.entries(etats).map(([id, fait]) => ({ id, fait })), { source: 'chantier', par: 'Pipe-Fit' });
+      if (av) { l.resume.avancement = av; n++; }
+      (db.etapesTerrain || []).filter(t => t.etudeId === l.id).forEach(t => { const a2 = SuiviEtapes.ajusterAvancement(l.resume.avancement, [{ id: t.etapeId, fait: true }], { source: 'terrain', par: t.par, le: t.maj }); if (a2) { l.resume.avancement = a2; n++; } });
+    });
+    if (n) save();
+    return n;
   }
   function planningModifie(acc, avant, apres) {
     if (typeof NotifPlanning === 'undefined' || !NotifPlanning.change(avant, apres)) return;
@@ -394,9 +422,21 @@
         if (!p[2] && method === 'GET') {
           if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Réservé au bureau' }];
           return [200, etudesL().filter(l => (l.resume || {}).avancement).map(l => { const a = (db.affaires || []).find(x => x.id === l.affaireId) || {};
-            return { etudeId: l.id, objet: String(l.resume.objet || ''), affaireId: l.affaireId, affaire: [a.code, a.nom].filter(Boolean).join(' — '), chargeId: a.chargeId || '', avancement: l.resume.avancement, maj: l.maj }; })];
+            return { etudeId: l.id, objet: String(l.resume.objet || ''), affaireId: l.affaireId, affaire: [a.code, a.nom].filter(Boolean).join(' — '), chargeId: a.chargeId || '', avancement: l.resume.avancement, maj: l.maj, fraicheur: SuiviEtapes.fraicheur(l.resume.avancement) }; })];
         }
         if (p[2] === 'mes' && method === 'GET') return [200, etapesDe(acc, query.get('affaireId') || '')];
+        // Étapes qui attendent la personne (ouverture de session) et préférence du récapitulatif par e-mail
+        if (p[2] === 'dues' && method === 'GET') {
+          if (!acc.userId) return [200, []];
+          return [200, SuiviEtapes.relances(etudesL(), { today: isoLocal(new Date()), deja: {}, terrain: db.etapesTerrain }).filter(x => destEtapesDemo(x.responsable, (db.affaires || []).find(a => a.id === x.affaireId)).includes(acc.userId))
+            .map(x => ({ type: x.type, etudeId: x.etudeId, affaireId: x.affaireId, etapeId: x.etapeId, titre: x.titre || '', echeance: x.echeance || '', texte: x.texte, code: ((db.affaires || []).find(a => a.id === x.affaireId) || {}).code || '' }))];
+        }
+        if (p[2] === 'preferences') {
+          if (!acc.userId) return [400, { error: 'Compte sans fiche de l\'équipe : pas de relance' }];
+          db.etapesPrefs = db.etapesPrefs || {};
+          if (method === 'PUT') { db.etapesPrefs[acc.userId] = { email: body.email !== false, le: new Date().toISOString() }; save(); }
+          return [200, { email: (db.etapesPrefs[acc.userId] || {}).email !== false, adresse: true }];
+        }
         if (p[2] === 'terrain' && method === 'GET') return ['admin', 'charge'].includes(acc.role) ? [200, db.etapesTerrain.filter(t => t.etudeId === (query.get('etudeId') || ''))] : [403, { error: 'Réservé au bureau' }];
         if (p[2] === 'fait' && method === 'POST') {
           const e = etapesDe(acc).find(x => x.etudeId === String(body.etudeId || '') && x.id === String(body.etapeId || ''));
@@ -405,6 +445,9 @@
           if (!commentaire && !photoId) return [400, { error: 'Photo ou commentaire attendu' }];
           const rec = { etudeId: e.etudeId, etapeId: e.id, affaireId: e.affaireId, fait: true, le: isoLocal(new Date()), par: acc.nom, parId: acc.userId || '', commentaire, photoId, cle: DemoSeed.uid(), maj: new Date().toISOString() };
           db.etapesTerrain = db.etapesTerrain.filter(t => !(t.etudeId === rec.etudeId && t.etapeId === rec.etapeId)).concat([rec]);
+          // Avancement ajusté tout de suite dans le CRM (recalé au prochain enregistrement de l'étude)
+          const l = etudesL().find(x => x.id === rec.etudeId), av = l && (l.resume || {}).avancement ? SuiviEtapes.ajusterAvancement(l.resume.avancement, [{ id: rec.etapeId, fait: true }], { source: 'terrain', par: acc.nom, le: rec.maj }) : null;
+          if (av) l.resume.avancement = av;
           save(); return [200, rec];
         }
         return [404, { error: 'Route inconnue' }];
@@ -473,7 +516,10 @@
           const l = { app: p[1], id: p[2], affaireId, devisId: String(body.devisId || (avant && avant.devisId) || ''), clientId: String(body.clientId || (avant && avant.clientId) || ''),
             resume: body.resume, maj: new Date().toISOString(), par: acc.nom, relie: avant ? avant.relie || null : null };
           if (i >= 0) db.liens[i] = l; else db.liens.push(l);
-          save(); return [200, l];
+          save();
+          // Étapes du terrain et données du chantier plus récentes réappliquées (comme le serveur)
+          if (p[1] === 'etudes' && l.affaireId) ajusterEtapesDemo(l.affaireId);
+          return [200, l];
         }
       }
     }
@@ -687,6 +733,8 @@
         if (existing) db[col][i] = rec; else db[col].push(rec);
         audit(existing ? 'modification' : 'création', col, labelOf(rec));
         save();
+        // Réserve levée, PV de réception signé, chantier terminé : avancement des étapes des études ajusté
+        if (['reserves', 'receptions', 'affaires'].includes(col)) ajusterEtapesDemo(col === 'affaires' ? rec.id : rec.affaireId);
         if (col === 'planning') planningModifie(acc, existing, rec);
         if (col === 'affaires') documentsModifies(existing, rec);
         // Chantier créé depuis un devis : les études faites pour ce devis y sont reliées

@@ -146,6 +146,8 @@ const App = {
     Notifs.demarrer();
     await HorsLigne.demarrer();
     this.render();
+    // Étapes des études qui attendent la personne : signalées à l'ouverture de la session
+    if (typeof etapesALaConnexion === 'function') etapesALaConnexion();
     if (Store.horsLigne) this.toast('Hors connexion : vous travaillez avec les données gardées sur ce téléphone. Vos saisies partiront au retour du réseau.', 6000);
     window.addEventListener('hashchange', () => { Modal.close(); this.render(); });
   },

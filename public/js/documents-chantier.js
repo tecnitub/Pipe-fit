@@ -375,6 +375,8 @@ async function chargerLiens(affaireId) {
 const lienDoeDe = affaireId => (liensChantier.get(affaireId) || []).find(l => l.app === 'doe');
 // Une application a enregistré : carte du chantier affiché mise à jour
 function liensModifies(affaireId) {
+  // Avancement des étapes (ajusté par le CRM ou envoyé par Études) : écrans des étapes et des chantiers à jour
+  if (typeof chargerEtapesPF === 'function' && /^#\/(chantiers|etapes)/.test(location.hash)) chargerEtapesPF(true);
   if (!liensChantier.has(affaireId) && !location.hash.includes(affaireId)) return;
   chargerLiens(affaireId).then(() => { const z = document.querySelector(`#liens-apps[data-affaire="${CSS.escape(affaireId)}"]`); if (z) { z.innerHTML = liensAppsHtml(Store.get('affaires', affaireId)); bindLiensApps(z, Store.get('affaires', affaireId)); } });
 }

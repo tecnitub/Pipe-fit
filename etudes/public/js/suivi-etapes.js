@@ -3,7 +3,9 @@
 // résumé d'avancement mis en cache dans l'étude (et.avancement, calculé à l'enregistrement) pour les tableaux de bord
 // (portefeuille des études, liste des chantiers du CRM), relances (échéance à J-2, dépassée, étape qui en bloque une
 // autre), étapes de l'utilisateur (« Mes étapes », appli des compagnons) et synthèse imprimable « État d'avancement ».
-// Données : et.suiviEtapes[id] = { responsable, echeance, sansObjet, motif, etat, faitTerrain, historique: [] }.
+// Données : et.suiviEtapes[id] = { responsable, echeance, sansObjet, motif, etat, faitTerrain, historique: [] } ;
+// et.suiviEtapes._etats = { le, par, f: [faites], o: [ouvertes] } : état des étapes au dernier enregistrement, pour noter à
+// l'ouverture suivante ce qui est devenu fait (ou rouvert) entre deux sessions (observer).
 // Fonctions pures (testées sous Node) ; affichage et dialogues dans le navigateur (application Études).
 const SuiviEtapes = (() => {
   const essai = f => { try { return f(); } catch (e) { return null; } };
@@ -122,7 +124,58 @@ const SuiviEtapes = (() => {
       if (fait && noterFait(et, e, user, date)) n++;
       else if (!fait && noterRouvert(et, e, user, date)) n++;
     });
+    // État gardé pour la session suivante, seulement s'il a été calculé avec les données du chantier (etapes.complet)
+    if (etapes && etapes.complet !== false) instantane(et, etapes, user, date);
     return n;
+  }
+
+  /* ---------- Étapes faites (ou rouvertes) entre deux sessions ---------- */
+  const MAX_ETATS = 600;
+  const faitPour = (et, e) => !!e.fait || !!suivi(et, e.id).faitTerrain;
+  // Signature compacte des états (identifiants des étapes faites et ouvertes, hors sans objet)
+  function instantane(et, etapes, user, date) {
+    if (!et || !Array.isArray(etapes)) return null;
+    const f = [], o = [];
+    etapes.forEach(e => { if (!e || !e.id || suivi(et, e.id).sansObjet) return; (faitPour(et, e) ? f : o).push(String(e.id).slice(0, 120)); });
+    et.suiviEtapes = et.suiviEtapes || {};
+    et.suiviEtapes._etats = { le: date || new Date().toISOString(), ...(qui(user).par ? { par: qui(user).par } : {}), f: f.slice(0, MAX_ETATS), o: o.slice(0, MAX_ETATS) };
+    return et.suiviEtapes._etats;
+  }
+  // Données du chantier lues dans Pipe-Fit (achats, chantier, mise en service, réception…) : source d'un changement
+  const RE_CHANTIER = /^(chantier|mes|reception|achats|doe|exploitation|commandes?|consultation|pose|plaques?|reserves?)[:-]/;
+  function sourceChangement(et, e, prev) {
+    const s = suivi(et, e.id);
+    if (s.faitTerrain && (!prev.le || String(s.faitTerrain.le || '') >= String(prev.le).slice(0, 10))) return { source: 'terrain', texte: `fait sur le terrain par ${s.faitTerrain.par || 'un compagnon'}` };
+    if (et._by && et._at && String(et._at) > String(prev.le || '') && et._by !== prev.par) return { source: 'utilisateur', texte: `étude modifiée par ${et._by}` };
+    if (RE_CHANTIER.test(String(e.id)) || PHASES_TERRAIN.includes(phaseDe(e)) || ['achats', 'doe', 'exploitation'].includes(phaseDe(e))) return { source: 'chantier', texte: 'données du chantier (Pipe-Fit)' };
+    return { source: '', texte: '' };
+  }
+  // À l'ouverture de l'étude (données du chantier lues) : étapes devenues faites ou rouvertes depuis le dernier
+  // enregistrement, notées avec la date d'observation et la source connue ; renvoie [{ id, action, source }]
+  function observer(et, etapes, { user, date } = {}) {
+    if (!et || et.modele || !Array.isArray(etapes)) return [];
+    const prev = (et.suiviEtapes || {})._etats, le = date || new Date().toISOString(), out = [];
+    user = user || moi();
+    if (prev && Array.isArray(prev.f) && Array.isArray(prev.o)) {
+      const avantF = new Set(prev.f), avantO = new Set(prev.o), depuis = prev.le ? dateFr(prev.le) : '';
+      etapes.forEach(e => {
+        if (!e || !e.id) return;
+        const s = suivi(et, e.id), fg = e.faitGuide !== undefined ? !!e.faitGuide : !!e.fait, fait = fg || !!s.faitTerrain;
+        if (s.sansObjet) return;
+        // Faite sur le terrain : déjà dans l'historique (« fait sur le terrain »)
+        if (fait && !fg && s.faitTerrain) { if (s.etat !== 'fait') suiviEcrit(et, e.id).etat = 'fait'; return; }
+        const action = fait && avantO.has(e.id) && s.etat !== 'fait' ? 'fait' : !fait && avantF.has(e.id) ? 'rouvert' : '';
+        if (!action) return;
+        const src = sourceChangement(et, e, prev), st = suiviEcrit(et, e.id), h = st.historique = st.historique || [];
+        h.push({ le, ...qui(user), action, observe: true, ...(src.source ? { source: src.source } : {}),
+          detail: `Constaté à l'ouverture de l'étude : ${action === 'fait' ? 'faite' : 'rouverte'}${depuis ? ` depuis le ${depuis}` : ' entre deux sessions'}${src.texte ? ` (${src.texte})` : ''}`.slice(0, 300) });
+        if (h.length > MAX_HISTORIQUE) h.splice(0, h.length - MAX_HISTORIQUE);
+        st.etat = action === 'fait' ? 'fait' : 'ouvert';
+        out.push({ id: e.id, action, source: src.source });
+      });
+    }
+    if (out.length || !prev) instantane(et, etapes, user, le);
+    return out;
   }
   // Étapes faites sur le terrain (appli des compagnons : photo, commentaire), relues dans Pipe-Fit
   function fusionnerTerrain(et, retours) {
@@ -171,6 +224,8 @@ const SuiviEtapes = (() => {
     if (!r) return null;
     const l = (r.etapes || []).slice();
     if (Array.isArray(r.actives)) l.actives = r.actives.slice();
+    // Calculées sans les données du chantier (pas encore lues) : pas d'état gardé pour la session suivante
+    l.complet = !et.affaireId || !!ch;
     return l;
   };
   // { le, pct, faits, total, sansObjet, retards, bientot, phases: { phase: { faits, total } }, restes: [compact] } ;
@@ -182,7 +237,7 @@ const SuiviEtapes = (() => {
     const faits = comptees.filter(e => e.fait).length, total = comptees.length, ouverts = new Set(restes(d).map(e => e.id));
     const rang = e => (e.etatEcheance === 'retard' ? 0 : e.etatEcheance === 'bientot' ? 1 : e.responsable ? 2 : 3);
     const r = restes(d).slice().sort((a, b) => rang(a) - rang(b) || String(a.echeance || '9').localeCompare(String(b.echeance || '9')));
-    return { le: today, pct: total ? Math.round(faits / total * 100) : 100, faits, total, sansObjet: d.filter(e => e.sansObjet).length,
+    return { le: today, pct: total ? Math.round(faits / total * 100) : 100, faits, total, ...(act ? { actives: [...act] } : {}), sansObjet: d.filter(e => e.sansObjet).length,
       retards: d.filter(e => e.etatEcheance === 'retard').length, bientot: d.filter(e => e.etatEcheance === 'bientot').length, phases,
       restes: r.slice(0, MAX_RESTES).map(e => ({ id: String(e.id), titre: String(e.titre || '').slice(0, 120), phase: e.phase, ...(e.responsable ? { responsable: e.responsable } : {}), ...(e.echeance ? { echeance: e.echeance } : {}),
         ...(e.bloquePar.filter(x => ouverts.has(x)).length ? { bloquePar: e.bloquePar.filter(x => ouverts.has(x)) } : {}) })) };
@@ -235,7 +290,9 @@ const SuiviEtapes = (() => {
       const av = (l.resume || {}).avancement;
       if (!av || !l.affaireId) return;
       const c = { chargeId: ctx.chargeDe ? ctx.chargeDe(l.affaireId) : '', ...(ctx.planifie ? { planifie: ctx.planifie(user.id, l.affaireId) } : {}) };
-      (av.restes || []).forEach(r => {
+      // Étapes retirées des restes par l'ajustement du CRM (faites sur le terrain) : toujours montrées, cochées
+      const ajustees = Object.entries((av.ajuste || {}).etapes || {}).filter(([id, x]) => x && x.fait && x.reste && faitsTerrain.has(`${l.id}|${id}`)).map(([, x]) => x.reste);
+      [...(av.restes || []), ...ajustees].forEach(r => {
         if (ctx.phases && !ctx.phases.includes(r.phase)) return;
         if (!correspond(r.responsable, user, c)) return;
         const t = faitsTerrain.get(`${l.id}|${r.id}`);
@@ -273,6 +330,86 @@ const SuiviEtapes = (() => {
   }
   // Mémoire des relances : entrées de plus de 120 jours oubliées
   const purgerDeja = (deja, today) => Object.fromEntries(Object.entries(deja || {}).filter(([, d]) => ecartJours(today || jour(), d) <= 120));
+
+  /* ---------- Avancement tenu à jour dans le CRM entre deux enregistrements de l'étude ---------- */
+  // Étapes du guide dont l'état se lit dans les données du chantier du CRM (même règle que guide-etude.js)
+  const ETAPES_CRM = {
+    'chantier:reserves': { titre: 'Lever les réserves sur le chantier', phase: 'chantier' },
+    'reception:pv': { titre: 'Prononcer la réception des travaux', phase: 'reception' },
+  };
+  // data : { affaire, reserves (du chantier), receptions (PV du chantier) } → { id: fait (true / false) } ; étape absente
+  // quand le CRM n'en sait rien (pas de réserve venue de l'étude)
+  function etatsChantier(data, etudeId) {
+    const out = {}, d = data || {};
+    const res = (d.reserves || []).filter(r => r && r.origine && r.origine.app === 'etudes' && r.origine.etudeId === etudeId);
+    if (res.length) out['chantier:reserves'] = res.every(r => r.statut === 'Levée');
+    const statut = String((d.affaire || {}).statut || '');
+    out['reception:pv'] = (d.receptions || []).some(p => p && p.type === 'reception' && p.statut === 'Signé') || /^(termin|r[eé]ceptionn|clos|cl[oô]tur|sold)/i.test(statut);
+    return out;
+  }
+  // Ajustement incrémental du résumé mis en cache (étape faite sur le terrain, réserve levée, PV signé…), sans attendre
+  // l'enregistrement de l'étude, qui recalcule tout (recalage exact). changements : [{ id, fait, titre?, phase? }] ;
+  // ctx : { le (ISO), source ('terrain', 'chantier'), par, today }. Une étape n'est rouverte que si l'ajustement l'avait
+  // fermée. Renvoie le nouveau résumé (copie) ou null si rien ne change.
+  function ajusterAvancement(av, changements, ctx = {}) {
+    if (!av || typeof av !== 'object' || !Array.isArray(changements) || !changements.length) return null;
+    const today = ctx.today || jour(), le = ctx.le || new Date().toISOString();
+    const a = JSON.parse(JSON.stringify(av)), act = Array.isArray(a.actives) ? new Set(a.actives) : null, compte = ph => !act || act.has(ph);
+    a.restes = a.restes || []; a.phases = a.phases || {};
+    const aj = a.ajuste = a.ajuste || { etapes: {} };
+    aj.etapes = aj.etapes || {};
+    const ph = x => (a.phases[x] = a.phases[x] || { faits: 0, total: 0 });
+    const marque = (id, fait, reste) => { aj.etapes[id] = { fait, le, source: String(ctx.source || ''), ...(ctx.par ? { par: String(ctx.par).slice(0, 80) } : {}), ...(reste ? { reste } : {}) }; };
+    let n = 0;
+    changements.forEach(c => {
+      if (!c || !c.id) return;
+      const id = String(c.id), i = a.restes.findIndex(r => r.id === id);
+      if (c.fait && i >= 0) {
+        const r = a.restes.splice(i, 1)[0], p = r.phase || phaseDe(r), e = etatEcheance(r.echeance, today, false);
+        if (compte(p)) a.faits = (a.faits || 0) + 1;
+        ph(p).faits = Math.min(ph(p).total, ph(p).faits + 1);
+        if (e === 'retard') a.retards = Math.max(0, (a.retards || 0) - 1);
+        if (e === 'bientot') a.bientot = Math.max(0, (a.bientot || 0) - 1);
+        a.restes.forEach(x => { if (x.bloquePar) { x.bloquePar = x.bloquePar.filter(b => b !== id); if (!x.bloquePar.length) delete x.bloquePar; } });
+        marque(id, true, r); n++;
+      } else if (!c.fait && i < 0 && aj.etapes[id] && aj.etapes[id].fait) {
+        const r = aj.etapes[id].reste || { id, titre: c.titre || (ETAPES_CRM[id] || {}).titre || id, phase: c.phase || (ETAPES_CRM[id] || {}).phase || 'etude' }, p = r.phase || 'etude';
+        if (compte(p)) a.faits = Math.max(0, (a.faits || 0) - 1);
+        ph(p).faits = Math.max(0, ph(p).faits - 1);
+        if (etatEcheance(r.echeance, today, false) === 'retard') a.retards = (a.retards || 0) + 1;
+        a.restes.push(r);
+        marque(id, false); n++;
+      }
+    });
+    if (!n) return null;
+    const ids = Object.keys(aj.etapes);
+    if (ids.length > MAX_RESTES) ids.slice(0, ids.length - MAX_RESTES).forEach(k => delete aj.etapes[k]);
+    a.pct = a.total ? Math.round(Math.min(a.faits, a.total) / a.total * 100) : 100;
+    Object.assign(aj, { le, source: String(ctx.source || ''), ...(ctx.par ? { par: String(ctx.par).slice(0, 80) } : {}) });
+    return a;
+  }
+  // Fraîcheur de l'avancement affiché dans le CRM : { calcule (jour du calcul dans Études), ajuste (ISO), source, par }
+  const fraicheur = av => (!av ? null : { calcule: av.le || '', ...(av.ajuste && av.ajuste.le ? { ajuste: av.ajuste.le, source: av.ajuste.source || '', par: av.ajuste.par || '' } : {}) });
+
+  /* ---------- Récapitulatif des relances par e-mail (un par personne et par jour au plus) ---------- */
+  // items : relances ({ type, texte, etudeId, affaireId, code }) ; liens : { etapes, etude(etudeId), chantier(affaireId),
+  // preferences } (adresses complètes, vides si inconnues) ; renvoie { sujet, html, texte }
+  function mailRelances({ nom = '', items = [], liens = {}, societe = '', today } = {}) {
+    const l = (items || []).slice(0, 60), retards = l.filter(x => x.type === 'retard').length, codes = [...new Set(l.map(x => x.code).filter(Boolean))];
+    const sujet = `${retards ? `${retards} étape(s) en retard` : `${l.length} étape(s) à suivre`}${codes.length === 1 ? ` — ${codes[0]}` : ''} (récapitulatif du ${dateFr(today || jour())})`;
+    const lib = x => (x.type === 'retard' ? 'En retard' : x.type === 'bloque' ? 'Bloque une autre étape' : 'Échéance proche');
+    const lien = x => (x.etudeId && liens.etude ? liens.etude(x.etudeId) : x.affaireId && liens.chantier ? liens.chantier(x.affaireId) : '') || '';
+    const td = 'style="border-top:1px solid #ddd"';
+    const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#222"><p>Bonjour${nom ? ` ${esc(nom)}` : ''},</p>
+      <p>Voici les étapes des études qui vous attendent :</p>
+      <table cellpadding="6" style="border-collapse:collapse;border:1px solid #ccc"><tr style="background:#f2f2f2"><th align="left">Chantier</th><th align="left">Étape</th><th align="left">État</th><th></th></tr>
+      ${l.map(x => { const u = lien(x); return `<tr><td ${td}>${esc(x.code || '')}</td><td ${td}>${esc(x.texte)}</td><td ${td}>${esc(lib(x))}</td><td ${td}>${u ? `<a href="${esc(u)}">Ouvrir</a>` : ''}</td></tr>`; }).join('')}</table>
+      ${(items || []).length > l.length ? `<p>… et ${(items || []).length - l.length} autre(s).</p>` : ''}
+      ${liens.etapes ? `<p><a href="${esc(liens.etapes)}">Voir toutes mes étapes</a></p>` : '<p>Retrouvez vos étapes dans Pipe-Fit.</p>'}
+      <p style="color:#777;font-size:12px">Message automatique de Pipe-Fit${societe ? ` (${esc(societe)})` : ''}, un récapitulatif par jour au plus. ${liens.preferences ? `<a href="${esc(liens.preferences)}">Ne plus recevoir ces e-mails</a>` : 'Pour ne plus recevoir ces e-mails : Pipe-Fit, Étapes des études, case « Récapitulatif par e-mail ».'}</p></div>`;
+    const texte = [`Bonjour${nom ? ` ${nom}` : ''},`, '', 'Étapes des études qui vous attendent :', ...l.map(x => `- ${x.code ? `${x.code} · ` : ''}${x.texte} (${lib(x)})`), '', liens.etapes ? `Toutes mes étapes : ${liens.etapes}` : ''].join('\n');
+    return { sujet, html, texte };
+  }
 
   /* ---------- Affichage (navigateur, application Études) ---------- */
   let cfg = {};
@@ -429,6 +566,6 @@ const SuiviEtapes = (() => {
 
   return { PHASES, PHASE, PHASES_TERRAIN, ROLES, ROLE, ROLES_COMPTE, normPhase, phaseDe, libelleResponsable, responsableValide, correspond, suivi, historique, estSansObjet,
     affecter, marquerSansObjet, retablir, noterFait, noterRouvert, suivreEtats, fusionnerTerrain, etatEcheance, decorer, mesEtapes, avancement, mettreAJour, etapesEtude,
-    portefeuille, responsables, etapesPour, relances, purgerDeja, configurer, htmlEtape, badgesEtape, actionsEtape, lier, vue, filtre, choisirFiltre, FILTRES, htmlPdf, genererPdf, dialogueHistorique, ACTIONS };
+    portefeuille, responsables, etapesPour, relances, purgerDeja, ETAPES_CRM, etatsChantier, ajusterAvancement, fraicheur, mailRelances, instantane, observer, configurer, htmlEtape, badgesEtape, actionsEtape, lier, vue, filtre, choisirFiltre, FILTRES, htmlPdf, genererPdf, dialogueHistorique, ACTIONS };
 })();
 if (typeof module !== 'undefined') module.exports = SuiviEtapes;

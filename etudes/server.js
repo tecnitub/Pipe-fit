@@ -20,7 +20,7 @@ const PARTAGES = { '/shared/pdf.js': path.join(__dirname, '..', 'public', 'js', 
   '/shared/pdf-lib.min.js': path.join(__dirname, '..', 'doe', 'public', 'vendor', 'pdf-lib-1.17.1.min.js'),
   '/logo-tecnitub.png': path.join(__dirname, '..', 'doe', 'public', 'logo-tecnitub.png'),
   // Lecture du CCTP et du DPGF (inventaire des producteurs et émetteurs) : texte des PDF, classeurs Excel
-  ...Object.fromEntries(['ocr.js', 'pdf-lecture.js', 'cctp-lecture.js', 'xlsx.js', 'xls.js', 'inventaire-cvc.js', 'dce.js', 'materiel-retenu.js', 'fiches-tech.js', 'essais.js', 'planches.js', 'plaque-registre.js', 'reserves-terrain.js', 'retour-chantier.js', 'rex-equipements.js', 'installe.js', 'devis-lecture.js', 'planning-etude.js', 'aide.js'].map(f => [`/shared/${f}`, path.join(__dirname, '..', 'public', 'js', f)])),
+  ...Object.fromEntries(['ocr.js', 'pdf-lecture.js', 'cctp-lecture.js', 'xlsx.js', 'xls.js', 'inventaire-cvc.js', 'dce.js', 'materiel-retenu.js', 'fiches-tech.js', 'essais.js', 'planches.js', 'plaque-registre.js', 'reserves-terrain.js', 'retour-chantier.js', 'rex-equipements.js', 'installe.js', 'devis-lecture.js', 'planning-etude.js', 'aide.js', 'offre-etude.js'].map(f => [`/shared/${f}`, path.join(__dirname, '..', 'public', 'js', f)])),
   ...Object.fromEntries(['pdf.min.js', 'pdf.worker.min.js'].map(f => [`/vendor/pdfjs/${f}`, path.join(__dirname, '..', 'public', 'vendor', 'pdfjs', f)])),
   // Lecture des caractères (CCTP scannés) : mêmes fichiers que le CRM
   ...Object.fromEntries(['tesseract.min.js', 'worker.min.js', 'tesseract-core-simd-lstm.wasm.js', 'fra.traineddata.gz'].map(f => [`/vendor/tesseract/${f}`, path.join(__dirname, '..', 'public', 'vendor', 'tesseract', f)])) };
@@ -292,6 +292,18 @@ async function api(req, res, url) {
       return { ...a, documents: docs };
     });
     return send(res, 200, { ok: true, docId, indice });
+  }
+  // Devis fournisseur lu dans l'étude → offre de la consultation du chantier dans Pipe-Fit (créée ou complétée) ; sens
+  // inverse : offres saisies ou lues dans Pipe-Fit pour le matériel retenu de l'étude
+  if (p[0] === 'pf' && p[1] === 'offre-consultation' && method === 'POST') {
+    const b = await lireJSON(req);
+    const r = await pipefit(s, '/api/liens/offre-etude', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+    const j = await r.json().catch(() => ({}));
+    return r.ok ? send(res, 200, j) : fail(res, [400, 403].includes(r.status) ? r.status : 502, j.error || 'Offre refusée par Pipe-Fit');
+  }
+  if (p[0] === 'pf' && p[1] === 'offres-etude' && method === 'GET') {
+    const r = await pipefit(s, `/api/liens/offres-etude?etudeId=${encodeURIComponent(url.searchParams.get('etudeId') || '')}`);
+    return r.ok ? send(res, 200, await r.json()) : send(res, 200, []);
   }
   // Devis brouillon créé dans Pipe-Fit à partir du métré de l'étude (client, contact et site de l'affaire)
   // Liste d'achat d'une étude : consultation fournisseurs « En cours » dans Pipe-Fit (offres, attribution, commandes)

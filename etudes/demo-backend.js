@@ -204,6 +204,35 @@
       if (c) { c.consultations = c.consultations || []; c.consultations.push({ id, ref, objet: String(b.objet || 'Liste d\'achat du bureau d\'études'), affaireId: b.affaireId, date: now.slice(0, 10), dateLimite: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), dateLivraison: '', statut: 'En cours', lignes: b.lignes, fournisseurs: [], origine: { app: 'etudes', etudeId: b.etudeId || '' }, _v: 1, _at: now, _by: s.nom }); storage.set(window.PIPEFIT_CRM_KEY, JSON.stringify(c)); }
       return rep(200, { id, ref });
     }
+    // Devis lu dans l'étude → offre de la consultation du chantier (comme le serveur Pipe-Fit, OffreEtude), sans le PDF
+    if (p[0] === 'pf' && p[1] === 'offre-consultation' && method === 'POST') {
+      const b = body(), c = crm(), lien = c && b.etudeId ? lienCrm(b.etudeId) : null, et = db.etudes.find(e => e.id === b.etudeId);
+      const affaireId = (lien && lien.affaireId) || (et && et.affaireId) || '';
+      if (!c || !affaireId || typeof OffreEtude === 'undefined') return err(400, 'Étude non reliée à un chantier du CRM de démonstration');
+      const lignes = ((b.devis || {}).lignes || []).filter(l => l && l.cle && Number(l.pu) > 0);
+      if (!lignes.length) return err(400, 'Aucune ligne du devis rapprochée du matériel retenu');
+      const now = new Date().toISOString(), jour = now.slice(0, 10), par = s.nom;
+      c.entreprises = c.entreprises || []; c.consultations = c.consultations || [];
+      let ent = OffreEtude.trouverFournisseur(c.entreprises, (b.devis || {}).fournisseur), entCree = false;
+      if (!ent) { ent = { id: `e${Date.now().toString(36)}`, nom: String((b.devis || {}).fournisseur || 'Fournisseur').slice(0, 120), categorie: 'Fournisseur', _v: 1, _at: now, _by: par }; c.entreprises.push(ent); entCree = true; }
+      let cs = OffreEtude.trouverConsultation(c.consultations, { affaireId, etudeId: b.etudeId, cles: lignes.map(l => l.cle) }), cree = false;
+      if (!cs) {
+        cs = { id: `cs${Date.now().toString(36)}`, ...OffreEtude.nouvelleConsultation({ affaireId, etudeId: b.etudeId, objet: `Matériel retenu — ${(et && et.objet) || ''}`, jour }), ref: `CS-${new Date().getFullYear()}-${String(c.consultations.length + 1).padStart(4, '0')}`, _v: 0, _at: now, _by: par };
+        c.consultations.push(cs); cree = true;
+      }
+      const parCle = new Map((b.materiel || []).map(m => [m.cle, m]));
+      const { index, ajoutees } = OffreEtude.completerLignes(cs, b.etudeId, cree && (b.materiel || []).length ? b.materiel : lignes.map(l => parCle.get(l.cle) || l));
+      const r = OffreEtude.appliquerOffre(cs, ent.id, { ...b.devis, lignes }, index, { etudeId: b.etudeId, devisId: b.devisId || '', par, jour, source: typeof DevisLecture !== 'undefined' ? DevisLecture.source({ fournisseur: ent.nom, numero: (b.devis || {}).numero, date: (b.devis || {}).date }) : '' });
+      Object.assign(cs, { _v: (cs._v || 0) + 1, _at: now, _by: par });
+      storage.set(window.PIPEFIT_CRM_KEY, JSON.stringify(c));
+      return rep(200, { consultationId: cs.id, ref: cs.ref, cree, offre: r.etat, lignes: r.lignes, ajoutees, fournisseur: ent.nom, entrepriseId: ent.id, fournisseurCree: entCree, piece: false, demo: true });
+    }
+    if (p[0] === 'pf' && p[1] === 'offres-etude') {
+      const eid = new URL(url, 'http://x').searchParams.get('etudeId') || '', c = crm(), lien = c ? lienCrm(eid) : null, et = db.etudes.find(e => e.id === eid);
+      const affaireId = (lien && lien.affaireId) || (et && et.affaireId) || '';
+      if (!c || !affaireId || typeof OffreEtude === 'undefined') return rep(200, []);
+      return rep(200, OffreEtude.offresEtude((c.consultations || []).filter(x => x.affaireId === affaireId), eid, id => ((c.entreprises || []).find(e => e.id === id) || {}).nom || ''));
+    }
     if (p[0] === 'pf' && p[1] === 'devis' && method === 'POST') {
       const b = body(); db.envoisPF = db.envoisPF || [];
       const numero = `DV-${new Date().getFullYear()}-${String(90 + db.envoisPF.filter(x => x.genre === 'devis').length).padStart(4, '0')}`;

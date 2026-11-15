@@ -71,6 +71,23 @@ function creer({ db, broadcast }) {
     rows.forEach(r => relier(r.app, r.id, { affaireId }, par));
     return rows.length;
   }
+  // Avancement des étapes ajusté par le CRM (étape faite sur le terrain, réserve levée, PV signé) entre deux
+  // enregistrements de l'étude : ajuster(avancement) → nouvel avancement ou null (rien à changer). La date du dernier
+  // envoi par Études (updated_at) ne bouge pas : l'enregistrement suivant de l'étude recale tout.
+  function ajusterAvancement(app, id, ajuster) {
+    const r = lire(app, id);
+    if (!r) return null;
+    const resume = JSON.parse(r.resume);
+    if (!resume.avancement) return null;
+    const av = ajuster(resume.avancement);
+    if (!av) return null;
+    resume.avancement = av;
+    const s = JSON.stringify(resume);
+    if (s.length > TAILLE_MAX) return null;
+    db.prepare('UPDATE liens_apps SET resume = ? WHERE app = ? AND id = ?').run(s, app, id);
+    signaler(app, r.affaire_id);
+    return av;
+  }
   function supprimer(app, id) {
     const r = lire(app, id);
     if (!r) return;
@@ -117,7 +134,7 @@ function creer({ db, broadcast }) {
     signaler('etudes', affaireId);
     return ligneTerrain(db.prepare('SELECT * FROM etapes_terrain WHERE etude_id = ? AND etape_id = ?').get(String(etudeId), String(etapeId)));
   }
-  return { APPS, liste, un, enregistrer, relier, relierDevis, supprimer, suivis, suivre, etapesTerrain, noterEtapeTerrain };
+  return { APPS, liste, un, enregistrer, relier, relierDevis, supprimer, ajusterAvancement, suivis, suivre, etapesTerrain, noterEtapeTerrain };
 }
 
 module.exports = { creer, APPS };

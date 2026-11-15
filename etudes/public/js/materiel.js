@@ -50,6 +50,8 @@ function dialogueMateriel(et) {
   box.classList.add('large');
   // Suivi du chantier : les lignes envoyées au client depuis Pipe-Fit passent « soumis au client »
   chargerSuivi(et).then(s => { const n = MaterielRetenu.reprendreSuivi(et.materiel, lignesMateriel(et), s, aujourdhui()); if (n) { enregistrer(et); toast(`${n} ligne(s) envoyée(s) au client depuis Pipe-Fit : passées « soumis au client »`, 5000); } if (box.isConnected) rendu(); });
+  // Offres saisies ou lues dans les consultations du chantier (Pipe-Fit) : prix repris dans l'étude
+  offresDuCrm(et).then(n => { if (n && box.isConnected) rendu(); });
   const fermer = () => { box.classList.remove('large'); Modal.close(); App.render(); };
   const rendu = () => {
     const ls = lignesMateriel(et), b = MaterielRetenu.bilan(ls), chapitres = [...new Set(ls.map(l => l.chapitre))], suivi = new Map((suiviChantier.get(et.id) || []).map(s => [s.cle, s]));
@@ -85,10 +87,10 @@ function dialogueMateriel(et) {
       <datalist id="ml-fab">${[...new Set(ls.map(l => l.fabricant).filter(Boolean))].map(f => `<option value="${esc(f)}">`).join('')}</datalist>
       ${(() => { const ach = ls.map(l => (suivi.get(l.cle) || {}).achat).filter(a => a && a.etat), n = e => ach.filter(a => MaterielRetenu.ORDRE_ACHAT.indexOf(a.etat) >= MaterielRetenu.ORDRE_ACHAT.indexOf(e)).length;
         return ach.length ? `<p class="petit">Achats (Pipe-Fit) : ${n('consulte')}/${ls.length} consulté(s) · ${n('commande')} commandé(s) · ${n('recu')} reçu(s)</p>` : ''; })()}
-      ${(et.devisFournisseurs || []).length ? `<p class="petit">💶 ${et.devisFournisseurs.length} devis fournisseur(s) lu(s) : ${et.devisFournisseurs.map(d => esc([d.fournisseur, d.numero].filter(Boolean).join(' '))).join(' · ')} — ${ls.filter(l => l.prix).length}/${ls.length} prix repris</p>` : ''}
+      ${(et.devisFournisseurs || []).length ? `<p class="petit">💶 ${et.devisFournisseurs.length} devis fournisseur(s) lu(s) : ${et.devisFournisseurs.map(d => `${esc([d.fournisseur, d.numero].filter(Boolean).join(' '))}${d.origine === 'crm' ? ` <span class="muted" title="Offre saisie ou lue dans la consultation ${esc(d.ref || '')} de Pipe-Fit">(Pipe-Fit${d.ref ? ` ${esc(d.ref)}` : ''})</span>` : d.consultation ? ` <span class="muted" title="Offre dans la consultation de Pipe-Fit">→ ${esc(d.consultation.ref || 'consultation')}</span>` : ''}`).join(' · ')} — ${ls.filter(l => l.prix).length}/${ls.length} prix repris</p>` : ''}
       <div class="actions"><button class="secondaire" id="ml-ajout">+ Ajouter un matériel</button>
         <label class="btn secondaire" title="PDF du devis du fournisseur : lignes lues et rapprochées du matériel retenu, prix repris au chiffrage">📄 Lire un devis fournisseur<input type="file" id="ml-devis" accept=".pdf,application/pdf,image/*" hidden></label>
-        ${(et.devisFournisseurs || []).length ? `<button class="secondaire" id="ml-comparer">Comparer les devis (${et.devisFournisseurs.length})</button>` : ''}<button class="secondaire" id="ml-soumis" ${b.aSoumettre ? '' : 'disabled'}>Marquer « soumis au client » (${b.aSoumettre})</button>
+        ${(et.devisFournisseurs || []).length ? `<button class="secondaire" id="ml-comparer">Comparer les devis (${et.devisFournisseurs.length})</button>` : ''}${(() => { const n = devisSansOffre(et).length; return n ? `<button class="secondaire" id="ml-offres" title="Retrouve la consultation du chantier dans Pipe-Fit (ou la crée) et y ajoute l'offre de chaque fournisseur, lignes rapprochées, PDF et source">Créer / compléter l'offre dans la consultation (${n})</button>` : ''; })()}<button class="secondaire" id="ml-soumis" ${b.aSoumettre ? '' : 'disabled'}>Marquer « soumis au client » (${b.aSoumettre})</button>
         <span class="espace"></span><button class="secondaire" id="ml-fermer">Fermer</button><button class="secondaire" id="ml-csv">CSV</button><button id="ml-pdf">📄 Liste à faire valider (PDF)</button></div>`;
     lier(ls);
     chargerFichesBiblio(et, ls).then(ch => { if (ch && box.isConnected) rendu(); });
@@ -132,6 +134,12 @@ function dialogueMateriel(et) {
     };
     const cmp = box.querySelector('#ml-comparer');
     if (cmp) cmp.onclick = () => comparatifDevis(et, () => dialogueMateriel(et));
+    const off = box.querySelector('#ml-offres');
+    if (off) off.onclick = async () => {
+      off.disabled = true;
+      for (const d of devisSansOffre(et)) await offreVersConsultation(et, d);
+      if (box.isConnected) rendu();
+    };
   };
   rendu();
 }
@@ -196,6 +204,7 @@ function dialogueDevis(et, lignesTexte, nom, o = {}) {
   const cibles = ciblesMateriel(et), a = DevisLecture.associer(lu.lignes, cibles), choix = Object.fromEntries(Object.entries(a.parLigne).map(([i, p]) => [i, p.cle]));
   const box = Modal.open('');
   box.classList.add('large');
+  let versConsultation = !!et.affaireId;
   const fermer = () => { box.classList.remove('large'); Modal.close(); if (o.retour) o.retour(); else App.render(); };
   const opt = (i, cle) => {
     const cands = ((a.parLigne[i] || {}).candidats || []), ks = cands.map(c => c.cle), autres = cibles.filter(c => !ks.includes(c.cle));
@@ -218,7 +227,10 @@ function dialogueDevis(et, lignesTexte, nom, o = {}) {
           <td class="petit">${cle ? (cle === p.cle && !p.manuel ? `${Math.round(p.s * 100)} % · ${esc(p.motif)}` : 'choix manuel') : '—'}</td></tr>`; }).join('')}
       </tbody></table></div>
       <p class="petit muted">${pris.length}/${cibles.length} équipement(s) du matériel retenu chiffré(s) par ce devis${cibles.length - pris.length ? ` · ${cibles.length - pris.length} sans prix dans ce devis` : ''}. Les prix repris passent au chiffrage (métré, devis Pipe-Fit) avec leur source.</p>
+      ${et.affaireId ? `<label class="case petit"><input type="checkbox" id="dv-cs" ${versConsultation ? 'checked' : ''}> Créer / compléter l'offre de ce fournisseur dans la consultation du chantier (Pipe-Fit), avec les lignes rapprochées et le PDF</label>` : ''}
       <div class="actions"><button class="secondaire" id="dv-x">Annuler</button><button id="dv-ok" ${lu.lignes.length ? '' : 'disabled'}>Enregistrer le devis et reprendre ${pris.length} prix</button></div>`;
+    const cs = box.querySelector('#dv-cs');
+    if (cs) cs.onchange = () => { versConsultation = cs.checked; };
     box.querySelectorAll('[data-dv]').forEach(sl => sl.onchange = () => {
       const i = sl.dataset.dv;
       // Une ligne du matériel retenu ne reçoit qu'une ligne du devis : l'ancienne ligne qui la portait est libérée
@@ -239,7 +251,9 @@ function dialogueDevis(et, lignesTexte, nom, o = {}) {
       Object.entries(prix).forEach(([cle, p]) => { const l = ls.find(x => x.cle === cle); if (l) MaterielRetenu.saisir(et.materiel, l, 'prix', p, aujourdhui()); });
       enregistrer(et);
       toast(`Devis ${devis.fournisseur || ''} ${devis.numero || ''} : ${Object.keys(prix).length} prix repris au matériel retenu et au chiffrage`, 5000);
+      const garde = et.devisFournisseurs.find(d => d.id === id), octets = o.fichier ? new Uint8Array(await o.fichier.arrayBuffer().catch(() => new ArrayBuffer(0))) : null;
       fermer();
+      if (versConsultation && et.affaireId && garde) offreVersConsultation(et, garde, octets);
     };
   };
   rendu();
@@ -268,6 +282,43 @@ function comparatifDevis(et, retour) {
   box.querySelector('#cd-x').onclick = fermer;
   box.querySelectorAll('[data-cd]').forEach(b => b.onclick = () => retenir(col(b.dataset.cd).prix));
   box.querySelector('#cd-opt').onclick = () => retenir(Object.fromEntries(c.lignes.filter(l => l.moinsDisant).map(l => [l.cle, col(l.moinsDisant).prix[l.cle]])));
+}
+/* ---------- Devis lu dans l'étude ↔ offre de la consultation du chantier (Pipe-Fit, OffreEtude) ---------- */
+// Devis lus ici (pas venus de Pipe-Fit) dont l'offre n'est pas encore dans la consultation du chantier
+const devisSansOffre = et => (et.affaireId ? (et.devisFournisseurs || []).filter(d => d.origine !== 'crm' && !d.consultation && Object.keys(d.parLigne || {}).length) : []);
+// Offre du fournisseur créée ou complétée dans la consultation du chantier (retrouvée par le matériel retenu, créée
+// sinon) : lignes rapprochées, PDF du devis (octets, sinon pièce gardée avec l'étude), source ; pas de doublon
+async function offreVersConsultation(et, d, octets) {
+  const parLigne = Object.fromEntries(Object.entries(d.parLigne || {}).map(([i, cle]) => [i, { cle }])), prix = DevisLecture.prixRetenus(d, parLigne);
+  const lignes = Object.entries(prix).map(([cle, p]) => ({ cle, pu: p.pu, reference: p.reference, designation: p.ligne, qte: p.qteDevis }));
+  if (!lignes.length) { toast('Aucune ligne du devis rapprochée du matériel retenu : rien à reporter dans la consultation.', 5000); return null; }
+  let bytes = octets && octets.length ? octets : null;
+  if (!bytes && d.fichierId) { try { const r = await fetch(`/api/fichiers/${encodeURIComponent(d.fichierId)}`, { credentials: 'same-origin' }); if (r.ok) bytes = new Uint8Array(await r.arrayBuffer()); } catch (e) { bytes = null; } }
+  const pdf = bytes && bytes.length < 7.5 * 1024 * 1024 && String.fromCharCode(...bytes.subarray(0, 4)) === '%PDF' ? { nom: d.fichier || 'Devis.pdf', base64: base64(bytes) } : null;
+  const materiel = ciblesMateriel(et).map(c => ({ cle: c.cle, designation: c.designation, reference: c.reference, fabricant: c.fabricant, qte: c.qte }));
+  try {
+    const r = await api('POST', '/api/pf/offre-consultation', { etudeId: et.id, devisId: d.id, devis: { fournisseur: d.fournisseur, numero: d.numero, date: d.date, validite: d.validite, delai: d.delai, totalFrais: d.totalFrais, lignes }, materiel, ...(pdf ? { pdf } : {}) });
+    d.consultation = { id: r.consultationId, ref: r.ref, le: aujourdhui(), entrepriseId: r.entrepriseId };
+    enregistrer(et);
+    toast(`Consultation ${r.ref || ''}${r.cree ? ' créée' : ''} dans Pipe-Fit : offre de ${r.fournisseur} ${r.offre === 'creee' ? 'ajoutée' : r.offre === 'completee' ? 'complétée (même n° de devis)' : 'remplacée (nouveau n° de devis)'}, ${r.lignes} ligne(s)${r.piece ? ', PDF joint' : ''}${r.fournisseurCree ? ` — fournisseur « ${r.fournisseur} » créé` : ''}`, 7000);
+    return r;
+  } catch (e) { toast(`Offre non reportée dans la consultation : ${e.message}`, 6000); return null; }
+}
+// Sens inverse : offres saisies ou lues dans Pipe-Fit pour ce matériel retenu → devis de l'étude (comparatif) et prix
+// (matériel sans prix, prix venu de la même offre, offre retenue dans Pipe-Fit) ; une fois par session et par étude
+const offresCrmLues = new Set();
+async function offresDuCrm(et, forcer) {
+  if (!et.affaireId || et.modele || typeof OffreEtude === 'undefined' || (!forcer && offresCrmLues.has(et.id))) return 0;
+  offresCrmLues.add(et.id);
+  let l;
+  try { l = await api('GET', `/api/pf/offres-etude?etudeId=${encodeURIComponent(et.id)}`); } catch (e) { return 0; }
+  if (!Array.isArray(l) || !l.length) return 0;
+  et.materiel = et.materiel || {};
+  const r = OffreEtude.versEtude(et, l, { lignes: lignesMateriel(et), saisir: (ligne, p) => MaterielRetenu.saisir(et.materiel, ligne, 'prix', p, aujourdhui()), today: aujourdhui() });
+  if (!r.devis && !r.prix) return 0;
+  enregistrer(et);
+  toast(`Pipe-Fit : ${r.devis} offre(s) des consultations du chantier reprise(s) dans l'étude${r.prix ? `, ${r.prix} prix mis à jour` : ''}`, 5000);
+  return r.devis + r.prix;
 }
 // Documents commerciaux du vrac (« Joindre au matériel retenu / à la consultation ») : devis lus l'un après l'autre
 function lireDevisVrac(et, docs) {
