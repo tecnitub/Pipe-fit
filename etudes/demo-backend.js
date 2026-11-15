@@ -82,7 +82,9 @@
     set(k, v) { try { sessionStorage.setItem(k, v); } catch (e) { /* stockage indisponible */ } },
     del(k) { try { sessionStorage.removeItem(k); } catch (e) { /* stockage indisponible */ } },
   };
-  const loginOnglet = () => ses.get(ME_KEY) || storage.get(ME_KEY);
+  // Le compte de l'onglet ne prime que si un autre onglet s'est connecté depuis (dernier onglet connecté mémorisé)
+  const DERNIER_KEY = 'pipefit-etudes-demo-dernier-onglet';
+  const loginOnglet = () => (ses.get(ME_KEY) && storage.get(DERNIER_KEY) && storage.get(DERNIER_KEY) !== ONGLET ? ses.get(ME_KEY) : storage.get(ME_KEY));
   const me = () => COMPTES.find(c => c.login === loginOnglet()) || (loginOnglet() === 'deconnecte' ? null : compteCrm());
   const ONGLET = ses.get('pipefit-etudes-demo-onglet') || `o${Math.random().toString(36).slice(2, 10)}`;
   ses.set('pipefit-etudes-demo-onglet', ONGLET);
@@ -175,7 +177,7 @@
       const b = body(), c = COMPTES.find(x => x.login === String(b.login || '').trim().toLowerCase());
       if (!c || !b.password) return err(401, 'Identifiant ou mot de passe incorrect');
       if (!['admin', 'charge'].includes(c.role)) return err(403, 'Application réservée au bureau (administrateur, chargé d\'affaires)');
-      storage.set(ME_KEY, c.login); ses.set(ME_KEY, c.login); return rep(200, c);
+      storage.set(ME_KEY, c.login); storage.set(DERNIER_KEY, ONGLET); ses.set(ME_KEY, c.login); return rep(200, c);
     }
     const s = me();
     if (!s) return err(401, 'Non connecté');
