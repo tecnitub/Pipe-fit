@@ -236,10 +236,18 @@ test('matériel du chantier : commande liée, substitution, livraison et avancem
   assert.ok(!('pu' in cta.commande), 'pas de prix');
   assert.strictEqual(ms.find(m => m.cle === 'b').commande, null);
   const av = (await call(pfBase, 'GET', '/api/liens/avancement', null, pfJacky)).body;
-  assert.deepStrictEqual(av['af-av'], { total: 2, valides: 2, commandes: 1, livres: 1, poses: 0, enService: 0, substitutions: 1 });
+  assert.deepStrictEqual(av['af-av'], { total: 2, valides: 2, consultes: 1, commandes: 1, livres: 1, poses: 0, enService: 0, substitutions: 1 });
   assert.strictEqual((await call(pfBase, 'GET', '/api/liens/avancement', null, pfMarc)).status, 403);
   // Substitution signalée par le bureau (pas par un compagnon)
   assert.strictEqual((await call(pfBase, 'POST', '/api/liens/materiel/suivi', { affaireId: 'af-av', action: 'substitution', etudeId: 'et-av', cle: 'a', reference: 'CTA-DF 4500' }, pfMarc)).status, 403);
   assert.strictEqual((await call(pfBase, 'POST', '/api/liens/materiel/suivi', { affaireId: 'af-av', action: 'substitution', etudeId: 'et-av', cle: 'a', reference: 'CTA-DF 4500', commande: 'CF-AV' }, pfJacky)).status, 200);
   assert.strictEqual((await call(pfBase, 'GET', '/api/liens/materiel?affaireId=af-av', null, pfJacky)).body.find(m => m.cle === 'a').substitutionDemandee.reference, 'CTA-DF 4500');
+  // État d'achat renvoyé à l'étude : consulté (consultation partie du matériel validé), commandé, reçu
+  await call(pfBase, 'PUT', '/api/records/consultations/cs-av', { data: { ref: 'DP-AV', affaireId: 'af-av', date: '2026-11-02', statut: 'En cours', lignes: [
+    { designation: 'Caisson', qte: 1, materiel: { etudeId: 'et-av', cle: 'b', reference: 'CE-1200' } }], fournisseurs: [{ entrepriseId: 'x', statut: 'Consulté' }] } }, admin);
+  const suivi = (await call(pfBase, 'GET', '/api/liens/materiel/suivi?etudeId=et-av', null, pfJacky)).body;
+  assert.strictEqual(suivi.find(s => s.cle === 'a').achat.etat, 'recu');
+  assert.ok(suivi.find(s => s.cle === 'a').achat.substitution);
+  assert.strictEqual(suivi.find(s => s.cle === 'b').achat.etat, 'consulte');
+  assert.match(suivi.find(s => s.cle === 'b').achat.consultation, /\w/, 'n° de la consultation');
 });

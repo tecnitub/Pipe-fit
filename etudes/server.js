@@ -20,7 +20,7 @@ const PARTAGES = { '/shared/pdf.js': path.join(__dirname, '..', 'public', 'js', 
   '/shared/pdf-lib.min.js': path.join(__dirname, '..', 'doe', 'public', 'vendor', 'pdf-lib-1.17.1.min.js'),
   '/logo-tecnitub.png': path.join(__dirname, '..', 'doe', 'public', 'logo-tecnitub.png'),
   // Lecture du CCTP et du DPGF (inventaire des producteurs et émetteurs) : texte des PDF, classeurs Excel
-  ...Object.fromEntries(['ocr.js', 'pdf-lecture.js', 'cctp-lecture.js', 'xlsx.js', 'xls.js', 'inventaire-cvc.js', 'dce.js', 'materiel-retenu.js', 'fiches-tech.js', 'essais.js', 'planches.js', 'plaque-registre.js', 'reserves-terrain.js', 'retour-chantier.js', 'rex-equipements.js'].map(f => [`/shared/${f}`, path.join(__dirname, '..', 'public', 'js', f)])),
+  ...Object.fromEntries(['ocr.js', 'pdf-lecture.js', 'cctp-lecture.js', 'xlsx.js', 'xls.js', 'inventaire-cvc.js', 'dce.js', 'materiel-retenu.js', 'fiches-tech.js', 'essais.js', 'planches.js', 'plaque-registre.js', 'reserves-terrain.js', 'retour-chantier.js', 'rex-equipements.js', 'installe.js', 'devis-lecture.js', 'planning-etude.js'].map(f => [`/shared/${f}`, path.join(__dirname, '..', 'public', 'js', f)])),
   ...Object.fromEntries(['pdf.min.js', 'pdf.worker.min.js'].map(f => [`/vendor/pdfjs/${f}`, path.join(__dirname, '..', 'public', 'vendor', 'pdfjs', f)])),
   // Lecture des caractères (CCTP scannés) : mêmes fichiers que le CRM
   ...Object.fromEntries(['tesseract.min.js', 'worker.min.js', 'tesseract-core-simd-lstm.wasm.js', 'fra.traineddata.gz'].map(f => [`/vendor/tesseract/${f}`, path.join(__dirname, '..', 'public', 'vendor', 'tesseract', f)])) };

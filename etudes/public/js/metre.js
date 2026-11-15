@@ -188,8 +188,18 @@ const Metre = ((N, C, D, L, Sc) => {
     const nCalc = notes.filter(n => !n.lien).length;
     if (nCalc) ajouter('be', { chapitre: 'Études', designation: 'Études d\'exécution, notes de calcul et schémas', unite: 'forfait', qte: 1, heures: lin(R.be, nCalc), mo: 'be', source: 'étude', recherche: { type: 'aucune' } });
     // Matériel retenu (fabricant et référence exacte choisis) : repris dans la désignation, donc dans le devis
+    // Équipements du CCTP / DPGF qu'aucun calcul ne couvre encore : postes du métré (clé stable « cctp|… »), donc chiffrés,
+    // au matériel retenu et commandés comme les autres
+    const MR = typeof MaterielRetenu !== 'undefined' ? MaterielRetenu : (typeof window === 'undefined' ? require('../../../public/js/materiel-retenu') : null);
+    if (MR && (etude.inventaire || []).length) {
+      const eq = [...postes.entries()].filter(([, p]) => p.unite === 'u').map(([cle, p]) => ({ cle, designation: p.designation }));
+      MR.avecInventaire(eq, etude.inventaire).slice(eq.length).forEach(x => ajouter(x.cle, { chapitre: x.chapitre, designation: x.designation, unite: 'u', qte: x.qte, heures: x.heures, mo: 'monteur', source: 'CCTP / DPGF', recherche: x.recherche, inventaire: true }));
+    }
     const retenu = etude.materiel || {}, refDe = cle => { const x = retenu[cle]; return x && String(x.reference || '').trim() ? [x.fabricant, x.reference].map(v => String(v || '').trim()).filter(Boolean).join(' ') : ''; };
+    // Prix d'achat lu dans un devis fournisseur (matériel retenu) : repris au chiffrage avec sa source
+    const prixDe = cle => { const x = (retenu[cle] || {}).prix; return x && num(x.pu) > 0 ? { pu: num(x.pu), source: String(x.source || '').slice(0, 160), date: String(x.date || '').slice(0, 10) } : null; };
     return [...postes.entries()].map(([cle, p]) => ({ ...p, cle, designationBase: p.designation, ...(p.unite === 'u' && refDe(cle) ? { designation: `${p.designation} — ${refDe(cle)}`, fabricant: String(retenu[cle].fabricant || '').trim(), reference: String(retenu[cle].reference).trim() } : {}),
+      ...(p.unite === 'u' && prixDe(cle) ? { prixAchat: prixDe(cle) } : {}),
       qte: Math.round(p.qte * 100) / 100, heures: p.heures * (R.coefs[p.mo] ?? 1), sources: [...p.sources] }))
       .sort((a, b) => CHAPITRES.indexOf(a.chapitre) - CHAPITRES.indexOf(b.chapitre) || a.designation.localeCompare(b.designation, 'fr'));
   }
@@ -244,6 +254,9 @@ const Metre = ((N, C, D, L, Sc) => {
   }
 
   /* ---------- Lignes du devis Pipe-Fit ---------- */
+  // Prix de vente d'une fourniture achetée sur devis : coefficient de l'article de la bibliothèque (vente / revient), sinon 1,3
+  const COEF_VENTE = 1.3;
+  const coefVente = a => (a && num(a.coutRevient) > 0 && num(a.prixVente) > 0 ? num(a.prixVente) / num(a.coutRevient) : COEF_VENTE);
   function lignesDevis(postes, articles = [], mainoeuvre = []) {
     const art = id => articles.find(a => a.id === id), mo = id => mainoeuvre.find(m => m.id === id);
     const F = (a, qte, des, unite) => (a ? { type: 'f', articleId: a.id, designation: a.designation, unite: a.unite, qte, pu: num(a.prixVente), cout: num(a.coutRevient), poids: num(a.poidsUnitaire) }
@@ -255,7 +268,8 @@ const Metre = ((N, C, D, L, Sc) => {
       out.push({ type: 'chapitre', titre: ch });
       ps.forEach(p => {
         const a = art(p.articleId), m = mo(p.moId), composants = [];
-        if (p.recherche.type !== 'aucune') composants.push(F(a, p.unite === 'ml' ? 1 + R.chute / 100 : 1, p.designation, p.unite));
+        if (p.prixAchat) composants.push({ ...F(a, 1, p.designation, p.unite), pu: Math.round(p.prixAchat.pu * coefVente(a) * 100) / 100, cout: p.prixAchat.pu, source: p.prixAchat.source });
+        else if (p.recherche.type !== 'aucune') composants.push(F(a, p.unite === 'ml' ? 1 + R.chute / 100 : 1, p.designation, p.unite));
         (p.accessoires || []).forEach(x => { if (x.article) composants.push(F(x.article, x.qte)); });
         if (m && p.heures > 0) composants.push({ type: 'mo', moId: m.id, libelle: m.libelle, heures: Math.round(p.heures * 100) / 100, taux: num(m.tauxVente), cout: num(m.tauxCout) });
         out.push({ type: 'ouvrage', designation: p.designation, unite: p.unite, qte: p.qte, composants, ...(a || p.recherche.type === 'aucune' ? {} : { libre: true }) });
@@ -266,7 +280,7 @@ const Metre = ((N, C, D, L, Sc) => {
   // Estimation du prix de vente d'un poste (fourniture + main-d'œuvre), pour l'aperçu
   function prixPoste(p, articles = [], mainoeuvre = []) {
     const a = articles.find(x => x.id === p.articleId), m = mainoeuvre.find(x => x.id === p.moId);
-    const fourn = (a ? num(a.prixVente) * (p.unite === 'ml' ? 1 + R.chute / 100 : 1) : 0) + (p.accessoires || []).reduce((s, x) => s + (x.article ? num(x.article.prixVente) * x.qte : 0), 0);
+    const fourn = (p.prixAchat ? p.prixAchat.pu * coefVente(a) : a ? num(a.prixVente) * (p.unite === 'ml' ? 1 + R.chute / 100 : 1) : 0) + (p.accessoires || []).reduce((s, x) => s + (x.article ? num(x.article.prixVente) * x.qte : 0), 0);
     return { unitaire: fourn + (m ? num(m.tauxVente) * p.heures : 0), total: p.qte * (fourn + (m ? num(m.tauxVente) * p.heures : 0)), heures: p.qte * p.heures };
   }
   // Calage sur le retour d'expérience : chantiers terminés de Pipe-Fit, heures prévues au devis face aux heures pointées,
@@ -289,7 +303,7 @@ const Metre = ((N, C, D, L, Sc) => {
   // manchettes) restent au métré sans référence de fabricant à soumettre
   const ACCESSOIRES = ['piquage', 'registre', 'accessoire-gaine', 'manchette'];
   const estEquipement = p => p.unite === 'u' && p.chapitre !== 'Études' && !ACCESSOIRES.includes((p.recherche || {}).type);
-  return { estEquipement, metre, rapprocher, lignesDevis, prixPoste, csv, score, CHAPITRES, DEFAUTS, LIBELLES_EQUIP, utiliser, ratios, calage, moPour };
+  return { estEquipement, metre, rapprocher, lignesDevis, prixPoste, coefVente, COEF_VENTE, csv, score, CHAPITRES, DEFAUTS, LIBELLES_EQUIP, utiliser, ratios, calage, moPour };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Donnees !== 'undefined' ? Donnees : require('./donnees'),
   typeof Liens !== 'undefined' ? Liens : require('./liens'), typeof Schema !== 'undefined' ? Schema : require('./schema'));
 if (typeof module !== 'undefined') module.exports = Metre;

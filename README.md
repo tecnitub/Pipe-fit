@@ -691,7 +691,7 @@ de créer un doublon. La ligne de commande est ensuite rattachée à sa fiche (h
 
 ## Offres fournisseurs : lecture des PDF et meilleure proposition
 
-**Consultation** (Achats → Consultations) : « Importer l'offre (PDF, Excel) » sur la ligne d'un fournisseur lit son devis
+**Consultation** (Achats → Consultations) : « Lire le devis (PDF, Excel) » sur la ligne d'un fournisseur lit son devis (fournisseur, n°, date, validité, lignes sur une ou plusieurs lignes, sous-totaux, frais de port ; rapprochement par référence exacte puis désignation, famille et grandeur)
 PDF (ou une photo, ou un PDF scanné) sur l'appareil, sans rien envoyer à l'extérieur (pdf.js dans `public/vendor/pdfjs`,
 OCR pour les scans) : lignes d'articles retrouvées en vérifiant quantité × prix (− remise) = montant, référence
 fournisseur, prix net, remise, désignation sur plusieurs lignes, port, total HT (contrôle de cohérence), validité et délai.
@@ -847,6 +847,11 @@ de calcul et états comme le feraient leurs serveurs.
   tâche est planifiée ou pointée sur le chantier (début au premier jour, fin au dernier, durée prévue au minimum) ; une
   phase pas commencée à sa date glisse à aujourd'hui ; les phases qui en dépendent se décalent d'autant. Une phase
   terminée n'est plus déplacée par les affectations futures.
+- **Relié à l'étude** (« 📐 Planning depuis l'étude ») : les heures de main-d'œuvre du métré de l'application Études sont
+  réparties en tâches (préparation et approvisionnements, réseaux, production, CTA et ventilation, terminaux, régulation
+  et électricité, essais et mise en service, DOE), durées selon l'effectif saisi. Chaque tâche porte le matériel retenu à
+  avoir reçu avant de commencer : « Approvisionnement des tâches » signale une livraison prévue après le début de la
+  tâche, du matériel pas encore commandé à l'approche du début, une commande sans date de livraison.
 - **Gantt global** (Planning → « 📊 Gantt et plan de charge ») : tous les chantiers en cours sur 8 à 52 semaines, par
   chantier ou regroupés par chargé d'affaires (filtre par chargé d'affaires), retards signalés.
 - **Plan de charge à venir** : par semaine, heures restantes des phases (réparties sur leurs jours ouvrés), heures déjà

@@ -64,6 +64,9 @@ function resumePF(et) {
     // Matériel retenu : fabricant, référence exacte et validation du client (fiche du chantier, appli des compagnons)
     if (typeof MaterielRetenu !== 'undefined') materiel = MaterielRetenu.pourCrm(MaterielRetenu.lignes(postes, et.materiel));
   } catch (e) { equipements = []; }
+  // Heures de main-d'œuvre du métré par chapitre et équipements de chaque chapitre : proposition de planning du chantier
+  let heures = [];
+  try { if (typeof PlanningEtude !== 'undefined') heures = PlanningEtude.heuresMetre(Metre.metre(et)); } catch (e) { heures = []; }
   // Débits théoriques pour les relevés d'équilibrage : schémas aérauliques (bouche par bouche), réseaux arborescents (par vanne)
   const debits = PointsMes.debits(et, Liens);
   // Points de mise en service (valeurs attendues, réseaux à éprouver, contrôles) : liste des mises en service du chantier
@@ -76,7 +79,7 @@ function resumePF(et) {
   let reserves = [];
   try { if (typeof AnnexesExploitation !== 'undefined' && typeof ReservesTerrain !== 'undefined' && (et.notes || []).some(n => (Notes.TYPES[n.type] || {}).annexe)) reserves = ReservesTerrain.pourCrm(AnnexesExploitation.reserves(et, Liens), et.reservesConformite || {}); } catch (e) { reserves = []; }
   return allegerResume({ objet: et.objet, client: et.client || '', clientId: et.clientId || '', devisId: et.devisId || '', indice: et.indice, date: et.date, auteur: et.auteur || '', verificateur: et.verificateur || '', description: String(et.description || '').slice(0, 500),
-    notes, erreurs: notes.reduce((s, n) => s + n.erreurs, 0), attention: notes.reduce((s, n) => s + n.attention, 0), equipements, materiel, debits, mes, entretien, reserves, regulation: (() => { try { return Regulation.pourDoe(et, Liens); } catch (e) { return null; } })(), renumerotations: (et.renumerotations || []).slice(-20), devis: (et.devisPF || []).slice(-10) });
+    notes, erreurs: notes.reduce((s, n) => s + n.erreurs, 0), attention: notes.reduce((s, n) => s + n.attention, 0), equipements, materiel, heures, debits, mes, entretien, reserves, regulation: (() => { try { return Regulation.pourDoe(et, Liens); } catch (e) { return null; } })(), renumerotations: (et.renumerotations || []).slice(-20), devis: (et.devisPF || []).slice(-10) });
 }
 const corpsEtude = et => { let resume; try { resume = et.modele ? undefined : resumePF(et); } catch (e) { resume = undefined; } return { data: et, version: et._v, resume }; };
 // Enregistrement différé (une requête à la fois par étude, contrôle de version)
@@ -1804,9 +1807,12 @@ function dialogueVrac(et) {
       try { const m = Vrac.appliquer(et, x, x.cible, nouvelleNote); if (x.type === 'document' && /^doc:/.test(x.cible || '')) await joindre(x); if (m) comptes.push(m); } catch (e) { comptes.push(`${x.nom} : ${e.message}`); }
     }
     if (!comptes.length) return toast('Rien à répartir.', 3000);
+    // Documents commerciaux joints au matériel retenu ou à la consultation : devis à lire (lignes, prix, rapprochement)
+    const devisVrac = items.filter(y => y.type === 'document' && /^doc:/.test(y.cible || '') && (y.lignes || []).length);
     enregistrer(et); Modal.close(); App.render();
-    const r = Modal.open(`<h2>📥 Matériel réparti</h2><ul>${comptes.map(c => `<li>${esc(c)}</li>`).join('')}</ul><p class="muted petit">Chaque modèle est inscrit une fois au registre des équipements ; les calculs reprennent ses valeurs. Complétez ce qui reste à choisir (tronçon d'une bouche ou d'un point de puisage, branche d'une pompe).</p><div class="actions"><button class="secondaire" id="vr-reg">Ouvrir le registre</button><button id="vr-fin">OK</button></div>`);
+    const r = Modal.open(`<h2>📥 Matériel réparti</h2><ul>${comptes.map(c => `<li>${esc(c)}</li>`).join('')}</ul><p class="muted petit">Chaque modèle est inscrit une fois au registre des équipements ; les calculs reprennent ses valeurs. Complétez ce qui reste à choisir (tronçon d'une bouche ou d'un point de puisage, branche d'une pompe).</p><div class="actions">${devisVrac.length ? `<button class="secondaire" id="vr-devis" title="Lignes du devis rapprochées du matériel retenu, prix repris au chiffrage, comparatif des devis">📄 Lire ${devisVrac.length > 1 ? `les ${devisVrac.length} devis` : 'le devis'}</button>` : ''}<button class="secondaire" id="vr-reg">Ouvrir le registre</button><button id="vr-fin">OK</button></div>`);
     r.querySelector('#vr-fin').onclick = Modal.close;
+    if (devisVrac.length) r.querySelector('#vr-devis').onclick = () => lireDevisVrac(et, devisVrac);
     r.querySelector('#vr-reg').onclick = () => dialogueRegistre(et);
   };
 }

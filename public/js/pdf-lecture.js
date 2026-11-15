@@ -17,7 +17,8 @@ const PdfLecture = (() => {
 
   // Éléments de texte d'une page -> lignes (même hauteur), cellules (écart horizontal important), puis lignes de tableau :
   // une désignation écrite sur plusieurs lignes dans sa case est rattachée à la ligne qui porte les prix.
-  function enLignes(items) {
+  // o.fusion === false : lignes telles qu'écrites (sans rattacher les morceaux de désignation à la ligne des prix)
+  function enLignes(items, o = {}) {
     // Gras simulé par surimpression (même texte répété au même endroit, à un point près) : gardé une fois
     const el = [], vus = new Map();
     items.filter(i => i && i.str && i.str.trim() && i.transform).forEach(i => {
@@ -44,7 +45,7 @@ const PdfLecture = (() => {
       l.cellules.forEach(x => { x.t = x.t.replace(/\s+/g, ' ').trim(); });
       l.texte = l.cellules.map(x => x.t).join('\t');
     });
-    return regrouper(lignes);
+    return o.fusion === false ? lignes.map(l => l.texte) : regrouper(lignes);
   }
   // Blocs de lignes rapprochées (une ligne du tableau avec son retrait) : séparés par un écart vertical plus grand
   function regrouper(lignes) {
@@ -158,7 +159,8 @@ const PdfLecture = (() => {
     } catch (err) { /* sans interface */ }
   }
 
-  // Fichier (PDF ou image) -> { lignes, ocr, pages } ; opts : pagesMax (12 par défaut), ocr (false : pages scannées ignorées)
+  // Fichier (PDF ou image) -> { lignes, ocr, pages } ; opts : pagesMax (12 par défaut), ocr (false : pages scannées ignorées),
+  // simples (true : aussi lignesSimples, les lignes du texte sans rattachement des désignations — lecture des devis)
   // OCR indisponible : { …, ocrIndisponible: true, message } (pages scannées laissées sans texte, jamais d'échec de la lecture)
   async function lire(fichier, progression = () => {}, opts = {}) {
     if (!fichier || typeof fichier.arrayBuffer !== 'function') throw new Error('Aucun fichier à lire');
@@ -175,16 +177,16 @@ const PdfLecture = (() => {
     }
     const lib = await charger();
     const doc = await lib.getDocument({ data: new Uint8Array(await fichier.arrayBuffer()), isEvalSupported: false, disableFontFace: true, useSystemFonts: false }).promise;
-    const n = Math.min(doc.numPages, opts.pagesMax || 12), lignes = [];
+    const n = Math.min(doc.numPages, opts.pagesMax || 12), lignes = [], simples = [];
     let ocr = false, charabias = 0;
     for (let p = 1; p <= n; p++) {
       progression((p - 1) / n);
       const page = await doc.getPage(p);
       // Texte réparé (ligatures, accents, exposants) ; texte illisible (police à encodage personnalisé) : lu par OCR
-      const brut = enLignes((await page.getTextContent()).items), illisible = charabia(brut);
+      const items = (await page.getTextContent()).items, brut = enLignes(items), illisible = charabia(brut);
       const l = illisible ? [] : brut.map(reparer);
       if (illisible) charabias++;
-      if (l.join('').replace(/\s/g, '').length > 40) { lignes.push(...l); continue; }
+      if (l.join('').replace(/\s/g, '').length > 40) { lignes.push(...l); if (opts.simples) simples.push(...enLignes(items, { fusion: false }).map(reparer)); continue; }
       if (opts.ocr === false) continue;
       // Page sans texte (scan) : rendue en image puis lue (OCR indisponible : page laissée sans texte)
       if (indispo) continue;
@@ -192,10 +194,10 @@ const PdfLecture = (() => {
       c.width = vue.width; c.height = vue.height;
       await page.render({ canvasContext: c.getContext('2d'), viewport: vue }).promise;
       const lu = await parOcr(c.toDataURL('image/png'), x => progression((p - 1 + x) / n));
-      if (!indispo) { ocr = true; lignes.push(...lu); }
+      if (!indispo) { ocr = true; lignes.push(...lu); if (opts.simples) simples.push(...lu); }
     }
     progression(1);
-    return { lignes, ocr, pages: doc.numPages, ...(charabias ? { illisible: charabias } : {}), ...marque() };
+    return { lignes, ocr, pages: doc.numPages, ...(opts.simples ? { lignesSimples: simples } : {}), ...(charabias ? { illisible: charabias } : {}), ...marque() };
   }
   return { lire, enLignes, reparer, ligatures, accents, charabia };
 })();

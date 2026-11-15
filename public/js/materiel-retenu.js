@@ -28,7 +28,9 @@ const MaterielRetenu = (() => {
     });
     return out;
   }
-  const champs = x => ({ fabricant: txt(x.fabricant, 80), reference: txt(x.reference, 120), dateSoumission: txt(x.dateSoumission, 10), dateValidation: txt(x.dateValidation, 10), obs: txt(x.obs, 500), fiche: txt(x.fiche, 500), pElec: Number.isFinite(Number(x.pElec)) && x.pElec !== '' ? Number(x.pElec) : null });
+  // Prix d'achat lu dans un devis fournisseur : { pu, puBrut, remise, fournisseur, numero, date, validite, source }
+  const prixDe = p => (p && Number(p.pu) > 0 ? { pu: Number(p.pu), puBrut: Number(p.puBrut) || Number(p.pu), remise: Number(p.remise) || 0, fournisseur: txt(p.fournisseur, 80), numero: txt(p.numero, 40), date: txt(p.date, 10), validite: txt(p.validite, 10), source: txt(p.source, 160), devisId: txt(p.devisId, 40), reference: txt(p.reference, 60) } : null);
+  const champs = x => ({ prix: prixDe(x.prix), fabricant: txt(x.fabricant, 80), reference: txt(x.reference, 120), dateSoumission: txt(x.dateSoumission, 10), dateValidation: txt(x.dateValidation, 10), obs: txt(x.obs, 500), fiche: txt(x.fiche, 500), pElec: Number.isFinite(Number(x.pElec)) && x.pElec !== '' ? Number(x.pElec) : null });
 
   // Saisie d'un champ (modifie saisies) : le statut suit (référence effacée → « à choisir » ; validé → date du jour)
   function saisir(saisies, ligne, champ, valeur, aujourdhui) {
@@ -163,6 +165,71 @@ const MaterielRetenu = (() => {
     return ['Chantier;Équipement;Fabricant;Référence;N° de série;Mis en service le;Fin de garantie;Opération;Précision;Périodicité (mois);Première échéance',
       ...lignes.map(l => l.map(x => `"${String(x ?? '').replace(/"/g, '""')}"`).join(';'))].join('\r\n');
   }
-  return { ENTRETIEN, garanties, csvEntretien, debitsChantier, typeMes, STATUTS, VALIDES, ACTIONS, ACTIONS_COMPAGNON, statutDe, estValide, libelleRef, lignes, saisir, bilan, pourCrm, pourChantier, csv, appliquerSuivi, aRelancer, reprendreSuivi };
+  /* ---------- Du CCTP / DPGF à la commande : un identifiant par équipement ---------- */
+  // Famille d'un équipement : d'après le genre de l'inventaire du CCTP, la clé du métré ou la désignation
+  const FAMILLE_GENRE = { cta: 'cta', ventilateur: 'caisson', desenfumage: 'caisson', 'pac-air': 'pac', 'pac-eau': 'pac', 'pac-rev': 'pac', 'gf-air': 'pac', 'gf-eau': 'pac',
+    'chaudiere-cond': 'generateur', 'chaudiere-gaz': 'generateur', 'chaudiere-fioul': 'generateur', 'chaudiere-bois': 'generateur', echangeur: 'echangeur', 'echangeur-aux': 'echangeur',
+    pompe: 'pompe', vanne2v: 'vanne', vanne3v: 'vanne', vase: 'vase', tampon: 'ballon', ecs: 'ballon', 'bouche-soufflage': 'bouche', 'bouche-extraction': 'bouche',
+    ventilo: 'terminal', aerotherme: 'terminal', radiateurs: 'terminal', radiant: 'terminal', plafond: 'terminal', split: 'terminal', plancher: 'plancher', regulation: 'regulation', sanitaire: 'sanitaire' };
+  const sansAcc = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  function familleEquipement(cle, designation = '') {
+    const [k, a] = String(cle || '').split('|');
+    if (k === 'cctp') return FAMILLE_GENRE[a] || 'autre';
+    if (k === 'aero') return /^cta/.test(a || '') ? 'cta' : 'caisson';
+    if (k === 'cta') return 'cta';
+    if (k === 'gen') return /^(pac|gf)/.test(a || '') ? 'pac' : /^echangeur/.test(a || '') ? 'echangeur' : 'generateur';
+    const directe = { pompe: 'pompe', vanne: 'vanne', vase: 'vase', ballon: 'ballon', tampon: 'ballon', bouche: 'bouche', echangeur: 'echangeur', appareil: 'sanitaire' }[k];
+    if (directe) return directe;
+    const t = sansAcc(designation);
+    return /ventilo|cassette|radiateur|aerotherme|split|unite interieure|panneau rayonnant|poutre/.test(t) ? 'terminal' : /pompe a chaleur|groupe (froid|de production)|refroidisseur/.test(t) ? 'pac'
+      : /centrale de traitement|\bcta\b/.test(t) ? 'cta' : /extracteur|ventilateur|caisson|tourelle|desenfumage/.test(t) ? 'caisson' : /plancher/.test(t) ? 'plancher'
+        : /armoire|regulation|automate|gtb|gtc/.test(t) ? 'regulation' : /ballon|chauffe-?eau|preparateur/.test(t) ? 'ballon' : /chaudiere/.test(t) ? 'generateur' : 'autre';
+  }
+  // Chapitre du métré et heures de pose par unité d'un équipement du CCTP non calculé (à ajuster dans le métré)
+  const CHAPITRE_FAMILLE = { cta: ['Aéraulique', 16], caisson: ['Aéraulique', 6], bouche: ['Aéraulique', 0.75], pac: ['Production', 16], generateur: ['Production', 16], echangeur: ['Production', 8],
+    ballon: ['Production', 6], pompe: ['Équipements hydrauliques', 3], vanne: ['Équipements hydrauliques', 2], vase: ['Équipements hydrauliques', 3], terminal: ['Émetteurs', 3], plancher: ['Émetteurs', 8],
+    regulation: ['Régulation et sécurités', 8], sanitaire: ['Appareils sanitaires', 1.5] };
+  const slug = t => sansAcc(t).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48);
+  // Clé stable d'un équipement du CCTP / DPGF (ne dépend pas de l'ordre de lecture) : « cctp|<genre>|<repère ou désignation> »
+  const cleInventaire = x => `cctp|${x.genre || 'autre'}|${slug(x.repere || x.designation) || 'equipement'}`;
+  // Équipements de l'inventaire (CCTP / DPGF) qu'aucun poste du métré ne couvre (pas encore dimensionnés par un calcul) :
+  // ajoutés au matériel retenu avec une clé stable, pour être choisis, consultés, commandés et suivis comme les autres
+  function avecInventaire(postes, inventaire) {
+    const ps = postes || [], couvertes = new Set(ps.map(p => familleEquipement(p.cle, p.designationBase || p.designation)));
+    const vus = new Set(ps.map(p => p.cle)), ajout = [];
+    (inventaire || []).filter(x => x && x.inclus !== false && !x.variante && x.categorie !== 'reseau' && FAMILLE_GENRE[x.genre] && !couvertes.has(FAMILLE_GENRE[x.genre])).forEach(x => {
+      let cle = cleInventaire(x), k = 2;
+      while (vus.has(cle)) cle = `${cleInventaire(x)}#${k++}`;
+      vus.add(cle);
+      const [chapitre, heures] = CHAPITRE_FAMILLE[FAMILLE_GENRE[x.genre]] || ['Équipements hydrauliques', 3];
+      ajout.push({ cle, chapitre, designation: [x.repere, txt(x.designation, 160)].filter(Boolean).join(' — '), qte: Number(x.qte) || 1, unite: 'u', heures, mo: 'monteur', sources: ['CCTP / DPGF'], inventaire: true, prescrit: txt(x.prescrit, 200),
+        recherche: { type: 'mots', mots: sansAcc(x.designation).split(/[^a-z0-9]+/).filter(m => m.length >= 4).slice(0, 2) } });
+    });
+    return [...ps, ...ajout];
+  }
+  // État d'achat d'une ligne du chantier (suiviCommandes) : consulté, offre reçue, commandé (livraison prévue), reçu
+  function etatAchat(m) {
+    const c = (m && m.commande) || null, k = (m && m.consultation) || null;
+    if (c && m.livraison === 'livrée') return { etat: 'recu', libelle: 'Reçu', date: c.dateLivraison || '', commande: c.numero || '', prevue: c.datePrevue || '' };
+    if (c && m.livraison === 'livrée en partie') return { etat: 'partiel', libelle: 'Reçu en partie', date: c.dateLivraison || '', commande: c.numero || '', prevue: c.datePrevue || '' };
+    if (c) return { etat: 'commande', libelle: 'Commandé', date: c.date || '', commande: c.numero || '', prevue: c.datePrevue || '', fournisseur: c.fournisseur || '' };
+    if (k && k.offres) return { etat: 'offre', libelle: `Consulté — ${k.offres} offre(s)`, date: k.date || '', consultation: k.ref || '', prevue: k.dateLivraison || '' };
+    if (k) return { etat: 'consulte', libelle: 'Consulté', date: k.date || '', consultation: k.ref || '', prevue: k.dateLivraison || '' };
+    return { etat: '', libelle: '', date: '', prevue: '' };
+  }
+  const ORDRE_ACHAT = ['', 'consulte', 'offre', 'commande', 'partiel', 'recu'];
+  // Suivi renvoyé à l'étude (application Études) : lignes du suivi du chantier, complétées de l'état d'achat de chaque
+  // équipement (consultation, commande, réception) ; ms : suiviCommandes du chantier
+  function suiviAvecAchats(etudeId, suivis, ms) {
+    const out = (suivis || []).map(s => ({ ...s })), parCle = new Map(out.map(s => [s.cle, s]));
+    (ms || []).filter(m => m.etudeId === etudeId).forEach(m => {
+      const a = etatAchat(m);
+      if (!a.etat) return;
+      const achat = { ...a, consultationRef: (m.consultation || {}).ref || '', fournisseurs: (m.consultation || {}).fournisseurs || [], substitution: !!m.substitution };
+      if (parCle.has(m.cle)) parCle.get(m.cle).achat = achat; else { const s = { etudeId, cle: m.cle, achat }; out.push(s); parCle.set(m.cle, s); }
+    });
+    return out;
+  }
+  return { prixDe, familleEquipement, cleInventaire, avecInventaire, etatAchat, ORDRE_ACHAT, suiviAvecAchats, ENTRETIEN, garanties, csvEntretien, debitsChantier, typeMes, STATUTS, VALIDES, ACTIONS, ACTIONS_COMPAGNON, statutDe, estValide, libelleRef, lignes, saisir, bilan, pourCrm, pourChantier, csv, appliquerSuivi, aRelancer, reprendreSuivi };
 })();
 if (typeof module !== 'undefined') module.exports = MaterielRetenu;

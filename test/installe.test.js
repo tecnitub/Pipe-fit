@@ -59,7 +59,7 @@ test('matériel retenu face aux commandes : lien exact, substitution à la comma
   assert.ok(cta.lienExact && cta.substitution && cta.livraison === 'livrée');
   assert.ok(bouche.lienExact && bouche.substitution, 'référence relevée sur le bon de livraison');
   assert.strictEqual(pompe.commande, null);
-  assert.deepStrictEqual(I.avancement(s), { total: 3, valides: 2, commandes: 2, livres: 2, poses: 1, enService: 0, substitutions: 2 });
+  assert.deepStrictEqual(I.avancement(s), { total: 3, valides: 2, consultes: 2, commandes: 2, livres: 2, poses: 1, enService: 0, substitutions: 2 });
   // Conforme quand la commande porte la référence validée
   cmd[0].lignes[0].designation = 'Centrale Ventilia CTA-DF 3000';
   assert.ok(!I.suiviCommandes(ms, I.lignesCommandes(cmd, 'af'))[0].substitution);

@@ -345,6 +345,10 @@
       }
       return [404, { error: 'Route inconnue' }];
     }
+    // Matériel retenu d'un chantier face aux consultations et commandes (consulté, commandé, reçu)
+    const nomEntDemo = id => ((db.entreprises || []).find(e => e.id === id) || {}).nom || '';
+    const suiviMaterielDemo = aff => Installe.suiviCommandes(MaterielRetenu.pourChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === aff), (db.materielSuivi || []).filter(s => s.affaireId === aff)),
+      Installe.lignesCommandes(db.commandes || [], aff, nomEntDemo, id => (db.articles || []).find(a => a.id === id)), (db.consultations || []).filter(c => c.affaireId === aff), nomEntDemo);
     // État des applications Études et DOE par chantier (envoyé par leurs cadres dans la démonstration)
     if (p[0] === 'liens') {
       // Retour du chantier vers une étude et retour d'expérience des modèles (comme le serveur)
@@ -353,22 +357,25 @@
         materiel: MaterielRetenu.pourChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === a.id), (db.materielSuivi || []).filter(x => x.affaireId === a.id)) })), new Date().toISOString().slice(0, 10))] : [403, { error: 'Réservé au bureau' }];
       if (p[1] === 'materiel' && !p[2] && method === 'GET') {
         if (acc.role === 'atelier' && !Compagnon.regles(db.settings).materiel) return [200, []];
-        const aff = query.get('affaireId') || '', lc = Installe.lignesCommandes(db.commandes || [], aff, id => ((db.entreprises || []).find(e => e.id === id) || {}).nom || '', id => (db.articles || []).find(a => a.id === id));
-        const ms = Installe.suiviCommandes(MaterielRetenu.pourChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === aff), (db.materielSuivi || []).filter(s => s.affaireId === aff)), lc);
+        const aff = query.get('affaireId') || '', ms = suiviMaterielDemo(aff);
         const ft = FichesTech.trouver(db.fichesTech || [], ms.map((m, i) => ({ cle: i, fabricant: m.fabricant, reference: m.reference, date: m.poseLe || '' })));
         return [200, ms.map((m, i) => (ft[i].fiche ? { ...m, ficheTech: ft[i].fiche } : m))];
       }
       if (p[1] === 'avancement' && method === 'GET') {
         if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Réservé au bureau' }];
         const ids = [...new Set((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId).map(l => l.affaireId))];
-        return [200, Object.fromEntries(ids.map(id => [id, Installe.avancement(Installe.suiviCommandes(MaterielRetenu.pourChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === id), (db.materielSuivi || []).filter(s => s.affaireId === id)),
-          Installe.lignesCommandes(db.commandes || [], id, eid => ((db.entreprises || []).find(e => e.id === eid) || {}).nom || '')))]).filter(([, a]) => a.total))];
+        return [200, Object.fromEntries(ids.map(id => [id, Installe.avancement(suiviMaterielDemo(id))]).filter(([, a]) => a.total))];
       }
       if (p[1] === 'plan-mes' && method === 'GET') return [200, PlanMes.pointsChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === (query.get('affaireId') || '')))];
       if (p[1] === 'debits' && !p[2] && method === 'GET') return [200, MaterielRetenu.debitsChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === (query.get('affaireId') || '')))];
       if (p[1] === 'materiel' && p[2] === 'suivi') {
         db.materielSuivi = db.materielSuivi || [];
-        if (method === 'GET') return ['admin', 'charge'].includes(acc.role) ? [200, db.materielSuivi.filter(s => (query.get('etudeId') && s.etudeId === query.get('etudeId')) || (query.get('affaireId') && s.affaireId === query.get('affaireId')))] : [403, { error: 'Réservé au bureau' }];
+        if (method === 'GET') {
+          if (!['admin', 'charge'].includes(acc.role)) return [403, { error: 'Réservé au bureau' }];
+          const eid = query.get('etudeId'), suivis = db.materielSuivi.filter(s => (eid && s.etudeId === eid) || (query.get('affaireId') && s.affaireId === query.get('affaireId')));
+          const lien = eid ? (db.liens || []).find(l => l.app === 'etudes' && l.id === eid && l.affaireId) : null;
+          return [200, lien ? MaterielRetenu.suiviAvecAchats(eid, suivis, suiviMaterielDemo(lien.affaireId)) : suivis];
+        }
         if (method === 'POST') {
           if (acc.role === 'atelier' && (!Compagnon.regles(db.settings).materiel || !MaterielRetenu.ACTIONS_COMPAGNON.includes(body.action))) return [403, { error: 'Action réservée au bureau' }];
           const affaireId = String(body.affaireId || ''), etudes = new Set((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === affaireId).map(l => l.id));

@@ -17,7 +17,7 @@ const Installe = (() => {
       const art = l.articleId ? article(l.articleId) : null, qte = Number(l.qte) || 0, recue = Number(l.qteRecue) || 0;
       const livree = c.statut === 'Réceptionnée' || (qte > 0 && recue >= qte - 1e-9), partielle = !livree && (recue > 0 || c.statut === 'Réceptionnée partiellement');
       const derniere = (c.receptions || []).slice(-1)[0] || null;
-      return { cle: `${c.id}:${i}`, commandeId: c.id, numero: c.numero || '', date: c.date || '', fournisseur: nomFournisseur(c.fournisseurId), statut: c.statut || '',
+      return { cle: `${c.id}:${i}`, commandeId: c.id, numero: c.numero || '', date: c.date || '', datePrevue: c.dateLivraison || '', fournisseur: nomFournisseur(c.fournisseurId), statut: c.statut || '',
         designation: String(l.designation || (art && art.designation) || ''), ref: String((art && art.ref) || l.ref || ''), qte, qteRecue: recue,
         livraison: livree ? 'livrée' : partielle ? 'livrée en partie' : 'non livrée', dateLivraison: derniere ? derniere.date || '' : '',
         // Ligne créée depuis le matériel retenu d'une étude : lien exact ; référence relevée sur le bon de livraison si différente
@@ -84,20 +84,38 @@ const Installe = (() => {
     return l.designation;
   };
 
-  // Matériel retenu d'un chantier face aux commandes : commande, substitution, livraison ; puis avancement
-  // ms : lignes du matériel retenu (pourChantier) ; lignes : lignesCommandes
-  function suiviCommandes(ms, lignes) {
+  // Consultations fournisseurs du chantier où figure une ligne du matériel retenu (lien { etudeId, cle } porté par la ligne,
+  // posé quand la consultation part du matériel validé) : n°, date, fournisseurs consultés, offres reçues
+  function consultationsMateriel(consultations, nomFournisseur = () => '') {
+    const out = new Map();
+    (consultations || []).forEach(c => (c.lignes || []).forEach(l => {
+      if (!l.materiel || !l.materiel.etudeId) return;
+      const k = `${l.materiel.etudeId}|${l.materiel.cle || ''}`, fs = c.fournisseurs || [];
+      const x = { consultationId: c.id, ref: c.ref || '', date: c.date || '', statut: c.statut || '', dateLimite: c.dateLimite || '', dateLivraison: c.dateLivraison || '',
+        consultes: fs.filter(f => f.statut !== 'À consulter').length, offres: fs.filter(f => f.statut === 'Offre reçue').length, fournisseurs: fs.map(f => nomFournisseur(f.entrepriseId)).filter(Boolean).slice(0, 8) };
+      // La plus avancée (offres reçues, puis la plus récente)
+      const ex = out.get(k);
+      if (!ex || x.offres > ex.offres || (x.offres === ex.offres && x.date > ex.date)) out.set(k, x);
+    }));
+    return out;
+  }
+  // Matériel retenu d'un chantier face aux consultations et aux commandes : consultation, commande (livraison prévue),
+  // substitution, livraison ; puis avancement
+  // ms : lignes du matériel retenu (pourChantier) ; lignes : lignesCommandes ; consultations : enregistrements du CRM
+  function suiviCommandes(ms, lignes, consultations = [], nomFournisseur = () => '') {
     const r = rapprocher((ms || []).map(m => ({ id: `${m.etudeId}|${m.cle}`, etudeId: m.etudeId, cle: m.cle, designation: m.designation, reference: m.reference })), lignes);
+    const cs = consultationsMateriel(consultations, nomFournisseur);
     return (ms || []).map(m => {
       const x = r.resultats.find(y => y.id === `${m.etudeId}|${m.cle}`) || {};
-      return { ...m, commande: x.ligne ? { numero: x.ligne.numero, statut: x.ligne.statut, designation: x.ligne.designation, ref: x.ligne.ref, refRecue: x.ligne.refRecue, fournisseur: x.ligne.fournisseur, commandeId: x.ligne.commandeId } : null,
-        lienExact: !!x.exact, substitution: x.etat === 'reference-differente', livraison: x.ligne ? x.livraison : '' };
+      return { ...m, commande: x.ligne ? { numero: x.ligne.numero, statut: x.ligne.statut, designation: x.ligne.designation, ref: x.ligne.ref, refRecue: x.ligne.refRecue, fournisseur: x.ligne.fournisseur, commandeId: x.ligne.commandeId,
+        date: x.ligne.date || '', datePrevue: x.ligne.datePrevue || '', dateLivraison: x.ligne.dateLivraison || '', qte: x.ligne.qte, qteRecue: x.ligne.qteRecue } : null,
+        consultation: cs.get(`${m.etudeId}|${m.cle}`) || null, lienExact: !!x.exact, substitution: x.etat === 'reference-differente', livraison: x.ligne ? x.livraison : '' };
     });
   }
   function avancement(suivi) {
     const n = f => suivi.filter(f).length;
-    return { total: suivi.length, valides: n(m => m.valide), commandes: n(m => m.commande), livres: n(m => m.livraison === 'livrée'), poses: n(m => m.poseLe), enService: n(m => m.mesLe), substitutions: n(m => m.substitution) };
+    return { total: suivi.length, valides: n(m => m.valide), consultes: n(m => m.consultation || m.commande), commandes: n(m => m.commande), livres: n(m => m.livraison === 'livrée'), poses: n(m => m.poseLe), enService: n(m => m.mesLe), substitutions: n(m => m.substitution) };
   }
-  return { lienDe, suiviCommandes, avancement, norm, lignesCommandes, score, rapprocher, commandeDe, referenceCommandee, consommable };
+  return { lienDe, suiviCommandes, consultationsMateriel, avancement, norm, lignesCommandes, score, rapprocher, commandeDe, referenceCommandee, consommable };
 })();
 if (typeof module !== 'undefined') module.exports = Installe;

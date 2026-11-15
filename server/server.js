@@ -310,8 +310,12 @@ async function relancerDemandesFiches() {
   }
 }
 // Matériel retenu d'un chantier avec sa fiche technique (version en vigueur à la pose)
+const nomEntreprise = id => (id ? (DB.getRecord(db, 'entreprises', String(id)) || {}).nom : '') || '';
+// Matériel retenu d'un chantier face aux consultations et commandes (consulté, commandé, livraison prévue, reçu)
+const suiviMaterielPF = affaireId => Installe.suiviCommandes(MaterielRetenu.pourChantier(LIENS.liste({ affaireId, app: 'etudes' }), LIENS.suivis({ affaireId })), lignesCommandesPF(affaireId),
+  recordsDe('consultations').filter(c => c.affaireId === affaireId), nomEntreprise);
 const materielAvecFiches = affaireId => {
-  const ms = Installe.suiviCommandes(MaterielRetenu.pourChantier(LIENS.liste({ affaireId, app: 'etudes' }), LIENS.suivis({ affaireId })), lignesCommandesPF(affaireId));
+  const ms = suiviMaterielPF(affaireId);
   const ft = FICHES.trouver(ms.map((m, i) => ({ cle: i, fabricant: m.fabricant, reference: m.reference, date: m.poseLe || '' })));
   return ms.map((m, i) => (ft[i].fiche ? { ...m, ficheTech: ft[i].fiche, ...(ft[i].autres ? { documentsFabricant: ft[i].autres } : {}) } : m));
 };
@@ -792,7 +796,7 @@ async function api(req, res, url) {
       if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
       const parAffaire = {};
       LIENS.liste({ app: 'etudes' }).filter(l => l.affaireId).forEach(l => { (parAffaire[l.affaireId] = parAffaire[l.affaireId] || []).push(l); });
-      return send(res, 200, Object.fromEntries(Object.entries(parAffaire).map(([id, ls]) => [id, Installe.avancement(Installe.suiviCommandes(MaterielRetenu.pourChantier(ls, LIENS.suivis({ affaireId: id })), lignesCommandesPF(id)))]).filter(([, a]) => a.total)));
+      return send(res, 200, Object.fromEntries(Object.keys(parAffaire).map(id => [id, Installe.avancement(suiviMaterielPF(id))]).filter(([, a]) => a.total)));
     }
     // Valeurs réglées sur site différentes de l'étude (PV « Réglages de la régulation ») : reprises dans l'étude
     if (p[1] === 'valeurs-reglees' && method === 'GET') {
@@ -830,7 +834,13 @@ async function api(req, res, url) {
     }
     // Suivi d'une ligne : soumission au client (bureau), pose / mise en service / photo de la plaque (bureau et compagnons)
     if (p[1] === 'materiel' && p[2] === 'suivi') {
-      if (method === 'GET') { if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau'); return send(res, 200, LIENS.suivis({ etudeId: url.searchParams.get('etudeId') || '', affaireId: url.searchParams.get('affaireId') || '' })); }
+      if (method === 'GET') {
+        if (!['admin', 'charge'].includes(acc.role)) return fail(res, 403, 'Réservé au bureau');
+        const etudeId = url.searchParams.get('etudeId') || '', suivis = LIENS.suivis({ etudeId, affaireId: url.searchParams.get('affaireId') || '' });
+        // Étude : état d'achat de chaque équipement (consultation, commande, réception) joint au suivi du chantier
+        const lien = etudeId ? LIENS.liste({ app: 'etudes' }).find(l => l.id === etudeId && l.affaireId) : null;
+        return send(res, 200, lien ? MaterielRetenu.suiviAvecAchats(etudeId, suivis, suiviMaterielPF(lien.affaireId)) : suivis);
+      }
       if (method === 'POST') {
         const b = await readBody(req), lignes = Array.isArray(b.lignes) ? b.lignes.slice(0, 300) : [b];
         if (estCompagnon(acc) && (!reglesCompagnon().materiel || !MaterielRetenu.ACTIONS_COMPAGNON.includes(b.action))) return fail(res, 403, 'Action réservée au bureau');

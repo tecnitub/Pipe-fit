@@ -163,7 +163,16 @@
       if (typeof RexEquipements === 'undefined' || typeof MaterielRetenu === 'undefined') return rep(200, []);
       return rep(200, RexEquipements.historique((c.affaires || []).map(a => ({ id: a.id, code: a.code || '', interventions: (a.contrat || {}).interventions || [], materiel: MaterielRetenu.pourChantier(liens.filter(l => l.affaireId === a.id), (c.materielSuivi || []).filter(x => x.affaireId === a.id)) })), new Date().toISOString().slice(0, 10)));
     }
-    if (p[0] === 'pf' && p[1] === 'materiel-suivi') return rep(200, ((crm() || {}).materielSuivi || []).filter(x => x.etudeId === new URL(url, 'http://x').searchParams.get('etudeId')));
+    if (p[0] === 'pf' && p[1] === 'materiel-suivi') {
+      const c = crm() || {}, eid = new URL(url, 'http://x').searchParams.get('etudeId'), suivis = (c.materielSuivi || []).filter(x => x.etudeId === eid);
+      // État d'achat (consultation, commande, réception) lu dans le CRM de la démonstration
+      const lien = (c.liens || []).find(l => l.app === 'etudes' && l.id === eid && l.affaireId);
+      if (!lien || typeof Installe === 'undefined') return rep(200, suivis);
+      const aff = lien.affaireId, nom = id => ((c.entreprises || []).find(e => e.id === id) || {}).nom || '';
+      const ms = Installe.suiviCommandes(MaterielRetenu.pourChantier((c.liens || []).filter(l => l.app === 'etudes' && l.affaireId === aff), (c.materielSuivi || []).filter(s => s.affaireId === aff)),
+        Installe.lignesCommandes(c.commandes || [], aff, nom), (c.consultations || []).filter(x => x.affaireId === aff), nom);
+      return rep(200, MaterielRetenu.suiviAvecAchats(eid, suivis, ms));
+    }
     // Reliée au CRM : devis et note de calcul créés par la page du CRM
     if (dansCrm && p[0] === 'pf' && ['document', 'devis'].includes(p[1]) && method === 'POST') {
       const b = body();

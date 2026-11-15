@@ -41,7 +41,8 @@ const OffreChoix = (() => {
     const f = (c.fournisseurs || []).find(x => x.entrepriseId === eid);
     if (!f || f.statut !== 'Offre reçue') throw new Error('Offre de ce fournisseur non reçue');
     const t = totaux(c, f), o = f.offre || {};
-    const lignes = (c.lignes || []).map((l, i) => ({ articleId: l.articleId || '', refFournisseur: (o.refs || {})[i] || '', designation: l.designation, unite: l.unite, qte: n(l.qte), pu: r2(t.pu(i) || 0) }));
+    // Lien avec le matériel retenu de l'étude gardé sur la ligne de commande (livraison, substitution, DOE, état d'achat)
+    const lignes = (c.lignes || []).map((l, i) => ({ articleId: l.articleId || '', refFournisseur: (o.refs || {})[i] || '', designation: l.designation, unite: l.unite, qte: n(l.qte), pu: r2(t.pu(i) || 0), ...(l.materiel ? { materiel: { ...l.materiel } } : {}) }));
     if (t.port) lignes.push({ articleId: '', designation: 'Frais de port', unite: 'forfait', qte: 1, pu: t.port });
     return { numero: '', fournisseurId: eid, affaireId: c.affaireId || '', date, dateLivraison: c.dateLivraison || '', statut: 'Brouillon', lignes, consultationId: c.id,
       devisFournisseurId: o.pieceId || '', devisFournisseurRef: o.reference || '', devisFournisseurNom: o.pieceNom || '' };

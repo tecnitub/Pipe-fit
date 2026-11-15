@@ -17,9 +17,16 @@ async function joindreOffre(fichier) {
 async function lireOffreFichier(fichier) {
   const box = Modal.open(`<h2 style="margin-top:0">Lecture de ${esc(fichier.name)}</h2><p class="muted" id="lo-etat">Lecture du document…</p><progress id="lo-p" max="1" value="0" style="width:100%"></progress>`);
   try {
-    const r = await PdfLecture.lire(fichier, x => { const p = box.querySelector('#lo-p'); if (p) p.value = x; });
+    const r = await PdfLecture.lire(fichier, x => { const p = box.querySelector('#lo-p'); if (p) p.value = x; }, { simples: true });
     box.querySelector('#lo-etat').textContent = 'Analyse des lignes…';
+    // Lecteur de devis (en-tête, désignations sur plusieurs lignes, sous-totaux, frais) ; l'ancienne lecture reste en
+    // secours quand elle reconnaît plus de lignes (scan très abîmé)
+    const d = typeof DevisLecture !== 'undefined' ? DevisLecture.lire(r.lignesSimples || r.lignes, { connus: fournisseursList().map(e => e.nom), societe: (Store.data.settings || {}).societe || '' }) : null;
     const a = OffreLecture.analyser(r.lignes);
+    if (d && d.lignes.length >= a.lignes.length) {
+      return { lignes: d.lignes.map(l => ({ ...l, ref: l.reference, montant: l.total })), port: d.totalFrais, remiseGlobale: d.remiseGlobale, totalHT: d.totalHT, validite: d.validite, delai: d.delai,
+        reference: d.numero, date: d.date, coherent: d.coherent !== false, fournisseur: d.fournisseur, frais: d.frais, devis: d, ocr: r.ocr, texte: r.lignes };
+    }
     return { ...a, ocr: r.ocr, texte: r.lignes };
   } finally { Modal.close(); }
 }
@@ -29,9 +36,16 @@ async function importerOffrePdf(c, eid, fichier, { pieceDeja = '' } = {}) {
   let lu;
   try { lu = await lireOffreFichier(fichier); } catch (e) { return notify(`Lecture impossible : ${e.message}`); }
   if (!lu.lignes.length) return notify(`Aucune ligne de prix reconnue dans ${fichier.name}${lu.ocr ? ' (document scanné : lecture moins fiable)' : ''}. Saisissez l'offre avec « Saisir l'offre ».`);
-  const { parDemande, nonAssociees } = OffreLecture.associer(lu.lignes, c.lignes, Store.all('articles'));
+  // Rapprochement : référence exacte (référence validée de l'étude, référence fournisseur), puis désignation + famille + grandeur
+  const { parDemande, nonAssociees } = lu.devis ? (() => {
+    const r = DevisLecture.associer(lu.lignes, DevisLecture.ciblesConsultation(c.lignes, Store.all('articles'))), pd = {};
+    Object.entries(r.parLigne).forEach(([j, x]) => { if (x.cle !== '') pd[+x.cle] = +j; });
+    return { parDemande: pd, nonAssociees: r.nonAssociees };
+  })() : OffreLecture.associer(lu.lignes, c.lignes, Store.all('articles'));
+  const autreFournisseur = lu.fournisseur && clientName(eid) && !Rapprochement.ressemblance(lu.fournisseur, clientName(eid)) && !String(clientName(eid)).toLowerCase().includes(String(lu.fournisseur).toLowerCase());
   const opt = j => lu.lignes.map((l, k) => `<option value="${k}" ${k === j ? 'selected' : ''}>${esc([l.ref, l.designation].filter(Boolean).join(' · ').slice(0, 70))} · ${fmt(l.qte, 2)} × ${eur(l.pu)}</option>`).join('');
   const box = Modal.open(`<h2 style="margin-top:0">Offre de ${esc(clientName(eid))}</h2>
+    ${lu.devis ? `<p class="small">Devis lu : <strong>${esc(lu.fournisseur || 'fournisseur non reconnu')}</strong>${lu.date ? ` du ${dateFr(lu.date)}` : ''}${lu.validite ? ` · valable jusqu'au ${dateFr(lu.validite)}` : ''}${(lu.frais || []).filter(x => x.montant).length ? ` · frais : ${lu.frais.filter(x => x.montant).map(x => `${esc(x.libelle)} ${eur(x.montant)}`).join(', ')}` : ''}${autreFournisseur ? ` <span class="warn-text">— ce devis semble venir d'un autre fournisseur que ${esc(clientName(eid))}</span>` : ''}</p>` : ''}
     <p class="small ${lu.coherent ? 'pos' : 'warn-text'}">${lu.lignes.length} ligne(s) lue(s)${lu.reference ? ` · offre n° ${esc(lu.reference)}` : ''}${lu.totalHT !== null ? ` · total HT du document ${eur(lu.totalHT)} ${lu.coherent ? '✓ cohérent avec les lignes' : '⚠ différent de la somme des lignes : vérifiez'}` : ''}${lu.ocr ? ' · document scanné : vérifiez les prix' : ''}</p>
     <div class="table-wrap"><table class="compact lo-table"><tr><th>N°</th><th>Demandé</th><th class="num">Qté</th><th>Ligne de l'offre</th><th>Réf. fournisseur</th><th class="num">Qté offerte</th><th class="num">PU net HT</th></tr>
       ${c.lignes.map((l, i) => { const j = parDemande[i], x = j === undefined ? null : lu.lignes[j];
@@ -71,7 +85,9 @@ async function importerOffrePdf(c, eid, fichier, { pieceDeja = '' } = {}) {
     const f = c.fournisseurs.find(x => x.entrepriseId === eid);
     const v = s => box.querySelector(s).value;
     f.offre = { ...(f.offre || {}), prix, refs, port: v('#lo-port'), remise: v('#lo-rem'), delai: v('#lo-del'), validite: v('#lo-val'), pieceId: pieceId || (f.offre || {}).pieceId || '', pieceNom: pieceId ? fichier.name : (f.offre || {}).pieceNom || '', aLire: false,
-      reference: lu.reference || '', date: isoDate(new Date()), lecture: { fichier: fichier.name, lignes: lu.lignes.length, ocr: lu.ocr, coherent: lu.coherent } };
+      reference: lu.reference || '', date: isoDate(new Date()), dateDevis: lu.date || '', lecture: { fichier: fichier.name, lignes: lu.lignes.length, ocr: lu.ocr, coherent: lu.coherent, fournisseur: lu.fournisseur || '', date: lu.date || '' },
+      // Source des prix (repris dans la commande et la bibliothèque) : devis, fournisseur, n°, date
+      source: lu.devis ? DevisLecture.source({ fournisseur: lu.fournisseur || clientName(eid), numero: lu.reference, date: lu.date }) : '' };
     f.statut = 'Offre reçue';
     Store.upsert('consultations', c); Modal.close(); App.render();
     App.toast(`Offre de ${clientName(eid)} : ${Object.keys(prix).length}/${c.lignes.length} ligne(s) chiffrée(s)`, 4000);

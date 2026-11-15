@@ -14,8 +14,63 @@ function capaciteSemaine(sem) {
   return sumBy(personnesPlanning(), u => capacite(u) * (1 - jours.filter(d => absenceJour(u.id, d)).length / 5));
 }
 
+/* ---------- Planning relié à l'étude (heures du métré, matériel à recevoir avant chaque tâche) ---------- */
+// Études du bureau d'études reliées au chantier, avec les heures de main-d'œuvre du métré par lot
+const etudesPlanning = a => (typeof liensChantier !== 'undefined' ? liensChantier.get(a.id) || [] : [])
+  .filter(l => l.app === 'etudes' && ((l.resume || {}).heures || []).length).map(l => ({ etudeId: l.id, objet: (l.resume || {}).objet || 'Étude', lots: l.resume.heures }));
+const materielGanttLu = new Set();
+function materielGantt(a) {
+  if (typeof materielChantier === 'undefined') return null;
+  if (!materielGanttLu.has(a.id)) {
+    materielGanttLu.add(a.id);
+    api('GET', `/api/liens/materiel?affaireId=${encodeURIComponent(a.id)}`).then(ms => { if (Array.isArray(ms)) { materielChantier.set(a.id, ms); if (location.hash.includes(a.id)) App.render(); } }).catch(() => {});
+  }
+  return materielChantier.get(a.id) || null;
+}
+// Approvisionnement : pour chaque tâche, matériel reçu / commandé / à commander, alerte si la tâche démarre avant la réception
+function approGanttHtml(a, phases) {
+  if (!phases.some(p => (p.materiel || []).length)) return '';
+  const ms = materielGantt(a);
+  if (!ms) return '<h2>Approvisionnement des tâches</h2><p class="small muted">Matériel de l\'étude : lecture…</p>';
+  const r = PlanningEtude.alertes(phases, ms, { aujourdhui: isoDate(new Date()), etatAchat: MaterielRetenu.etatAchat });
+  const avec = phases.filter(p => (p.materiel || []).length);
+  return `<h2>Approvisionnement des tâches <span class="muted small">matériel retenu à avoir reçu avant de commencer</span></h2>
+    ${r.alertes.length ? `<ul class="gt-appro">${r.alertes.map(x => `<li class="${x.niveau === 'erreur' ? 'neg' : 'warn-text'}">${x.niveau === 'erreur' ? '⛔' : '⚠️'} ${esc(x.texte)}</li>`).join('')}</ul>` : '<p class="small pos">✓ Aucune tâche ne commence avant la réception prévue de son matériel.</p>'}
+    <div class="table-wrap"><table class="compact"><tr><th>Tâche</th><th>Début</th><th class="num">Équipements</th><th class="num">Reçus</th><th class="num">Commandés</th><th class="num">À commander</th></tr>
+      ${avec.map(p => { const b = r.bilan[p.id] || {}; return `<tr><td>${esc(p.libelle)}</td><td>${dateFr(p.debut)}</td><td class="num">${b.total}${b.inconnus ? ` <span class="muted small">(+${b.inconnus} sans référence choisie)</span>` : ''}</td><td class="num">${b.recus}</td><td class="num">${b.commandes}</td><td class="num ${b.retards ? 'neg' : ''}">${b.aCommander}</td></tr>`; }).join('')}</table></div>`;
+}
+function dialoguePhasesEtude(a, save, uid) {
+  const es = etudesPlanning(a), premier = Store.all('planning').filter(p => p.affaireId === a.id && p.date).map(p => p.date).sort()[0];
+  const box = Modal.open(`<h2 style="margin-top:0">Planning depuis l'étude</h2>
+    <p class="small muted">Heures de main-d'œuvre du métré (${es.map(e => esc(e.objet)).join(', ')}) réparties en lots, durées selon l'effectif ; chaque tâche porte le matériel retenu à avoir reçu avant de commencer.</p>
+    <div class="grid2"><div class="field"><label for="pe-eff">Effectif sur le chantier (compagnons)</label><input id="pe-eff" type="number" min="1" step="1" value="2"></div>
+      <div class="field"><label for="pe-hj">Heures par jour et par compagnon</label><input id="pe-hj" type="number" min="1" step="0.5" value="7"></div>
+      <div class="field"><label for="pe-deb">Début de la préparation</label><input id="pe-deb" type="date" value="${esc(premier && premier > isoDate(new Date()) ? premier : GanttCalc.prochainOuvre(isoDate(new Date())))}"></div></div>
+    <div id="pe-apercu"></div>
+    <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="pe-x">Annuler</button><button id="pe-ok">${(a.phases || []).length ? 'Remplacer les phases' : 'Créer les phases'}</button></div>`, true);
+  const v = id => box.querySelector(id).value;
+  const calc = () => PlanningEtude.proposer(es, { effectif: num(v('#pe-eff')), heuresJour: num(v('#pe-hj')), debut: v('#pe-deb'), uid });
+  const apercu = () => {
+    const ph = calc();
+    box.querySelector('#pe-apercu').innerHTML = ph.length ? `<div class="table-wrap"><table class="compact"><tr><th>Tâche</th><th class="num">Heures</th><th class="num">Durée (j ouvrés)</th><th class="num">Équipe</th><th>Après</th><th class="num">Matériel</th></tr>
+      ${ph.map(p => `<tr><td>${esc(p.libelle)}</td><td class="num">${fmt(p.heures)} h</td><td class="num">${p.duree}</td><td class="num">${p.equipe}</td><td class="small">${p.apres.map(id => esc((ph.find(q => q.id === id) || {}).libelle || '')).join(', ')}</td><td class="num">${p.materiel.length}</td></tr>`).join('')}</table></div>` : '<p class="muted">Pas d\'heures de pose dans le métré de l\'étude.</p>';
+  };
+  ['#pe-eff', '#pe-hj', '#pe-deb'].forEach(s2 => { box.querySelector(s2).oninput = apercu; });
+  apercu();
+  box.querySelector('#pe-x').onclick = Modal.close;
+  box.querySelector('#pe-ok').onclick = async () => {
+    const ph = calc();
+    if (!ph.length) return;
+    if ((a.phases || []).length && !await ask(`Remplacer les ${a.phases.length} phase(s) du chantier par les ${ph.length} tâches tirées de l'étude ?`, 'Remplacer')) return;
+    a.phases = ph; Modal.close(); save();
+    App.toast(`${ph.length} tâches créées d'après le métré de l'étude`, 4000);
+  };
+}
+
 /* ---------- Gantt d'un chantier ---------- */
 function ganttChantier(a) {
+  // Études reliées (heures du métré) lues en arrière-plan
+  if (typeof chargerLiens === 'function' && typeof liensChantier !== 'undefined' && !liensChantier.has(a.id)) chargerLiens(a.id).then(l => { if ((l || []).length && location.hash.includes(a.id)) App.render(); });
   const g = ganttDe(a), edit = Store.can('write', 'affaires'), today = isoDate(new Date()), s = Calc.affaire(a);
   const phases = g.phases;
   const debut = GanttCalc.lundi(GanttCalc.plus([g.debut || today, today].sort()[0], -7));
@@ -34,7 +89,7 @@ function ganttChantier(a) {
         <span class="gt-av" style="width:${Math.round(p.avancement * 100)}%"></span><span class="gt-txt">${esc(p.libelle)}</span>${edit ? '<span class="gt-poignee" data-resize="1"></span>' : ''}</div></div>`;
   };
   return `<div class="toolbar"><a href="#/chantiers" class="btn secondary">← Chantiers</a><span class="spacer"></span>
-    ${edit ? `${phases.length ? '' : '<button id="gt-types">Phases types (d\'après le budget d\'heures)</button>'}<button class="secondary" id="gt-add">+ Phase</button>` : ''}</div>
+    ${edit ? `${etudesPlanning(a).length ? '<button id="gt-etude" title="Lots et durées d\'après les heures du métré de l\'étude, selon l\'effectif ; matériel à recevoir avant chaque tâche">📐 Planning depuis l\'étude</button>' : ''}${phases.length ? '' : '<button id="gt-types">Phases types (d\'après le budget d\'heures)</button>'}<button class="secondary" id="gt-add">+ Phase</button>` : ''}</div>
   <h1>${esc(affaireLabel(a))} ${badge(a.statut)}</h1>${chantierOnglets(a, 'gantt')}
   <div class="cards">
     <div class="card"><div class="label">Début → fin</div><div class="value">${g.debut ? `${dateCourte(g.debut)} → ${dateCourte(g.fin)}` : '—'}</div><div class="sub">${g.fin ? `${GanttCalc.ouvresEntre(g.debut, g.fin)} jours ouvrés` : 'Aucune phase'}</div></div>
@@ -43,6 +98,8 @@ function ganttChantier(a) {
     <div class="card"><div class="label">Décalage</div><div class="value ${g.retard ? 'neg' : ''}">${g.retard ? `${g.retard} j` : 'aucun'}</div><div class="sub">phases non commencées à la date prévue</div></div>
   </div>
   ${g.alertes.map(t => `<p class="warn-text">${esc(t)}</p>`).join('')}
+  ${(() => { const r = phases.some(p => (p.materiel || []).length) && typeof materielChantier !== 'undefined' && materielChantier.get(a.id) ? PlanningEtude.alertes(phases, materielChantier.get(a.id), { aujourdhui: today, etatAchat: MaterielRetenu.etatAchat }).alertes.filter(x => x.niveau === 'erreur') : [];
+    return r.length ? `<p class="neg">⛔ ${r.length} équipement(s) livré(s) après le début de leur tâche : voir « Approvisionnement des tâches ».</p>` : ''; })()}
   <label class="check no-print"><input type="checkbox" id="gt-recaler" ${a.ganttRecaler !== false ? 'checked' : ''} ${edit ? '' : 'disabled'}> Recaler sur le planning des équipes : une phase suit les jours où sa tâche est planifiée ou pointée, une phase pas commencée à temps glisse à aujourd'hui, et les phases suivantes se décalent</label>
   ${phases.length ? `<div class="gt-cadre"><div class="gt-noms"><div class="gt-tete">Phase</div>${phases.map(p => `<div class="gt-nom" title="${esc(p.libelle)}"><strong>${esc(p.libelle)}</strong><span class="small muted">${dateCourte(p.debut)} → ${dateCourte(p.fin)} <span class="badge ${ETATS_PHASE[p.etat]}">${esc(p.etat)}</span></span></div>`).join('')}</div>
     <div class="gt-defile"><div class="gt-zone" style="width:${nbJours * L}px">
@@ -65,7 +122,8 @@ function ganttChantier(a) {
       <td class="num">${fmt(c.pointees || 0, 1)} h</td>
       <td class="nowrap">${edit ? `<button class="small secondary" data-haut="${i}" ${i ? '' : 'disabled'} aria-label="Monter">↑</button><button class="small danger" data-del="${i}" aria-label="Supprimer">✕</button>` : ''}</td></tr>`; }).join('')}
     </table></div><datalist id="gt-taches">${TACHES_PLANNING().map(t => `<option value="${esc(t)}">`).join('')}</datalist>
-    <p class="small muted">« Tâche du planning » relie la phase aux affectations des équipes (Planning) et aux heures pointées sur cette tâche. « Au plus tôt » vide : la phase démarre après la précédente.</p>` : ''}`;
+    <p class="small muted">« Tâche du planning » relie la phase aux affectations des équipes (Planning) et aux heures pointées sur cette tâche. « Au plus tôt » vide : la phase démarre après la précédente.</p>` : ''}
+  ${approGanttHtml(a, phases)}`;
 }
 
 function bindGanttChantier(root, a) {
@@ -82,6 +140,7 @@ function bindGanttChantier(root, a) {
     a.phases = GanttCalc.phasesTypes(s.heuresPrevues || 0, premier || GanttCalc.prochainOuvre(isoDate(new Date())), uid);
     save();
   });
+  on('#gt-etude', () => dialoguePhasesEtude(a, save, uid));
   on('#gt-add', () => {
     const der = (a.phases || []).slice(-1)[0];
     a.phases = [...(a.phases || []), { id: uid(), libelle: 'Nouvelle phase', tache: '', duree: 5, heures: 0, apres: der ? [der.id] : [], decalage: 0, termine: false, ...(der ? {} : { debut: GanttCalc.prochainOuvre(isoDate(new Date())) }) }];
