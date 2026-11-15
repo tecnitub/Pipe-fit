@@ -389,3 +389,12 @@ table.docs-emis td:nth-child(3) { min-width: 220px; }
   .carte.note .note-actions { margin-left: auto; }
 }
 @media (max-width: 700px) { .carte .actions-ligne > button { flex: 1 1 auto; } }
+/* Matériel retenu : désignation lisible et gardée à gauche quand le tableau défile ; en-tête collant */
+table.materiel-retenu td:first-child { min-width: 190px; }
+table.materiel-retenu thead th { position: sticky; top: 0; z-index: 2; }
+table.materiel-retenu tbody td:first-child { position: sticky; left: 0; z-index: 1; background: var(--panneau); box-shadow: 1px 0 0 var(--bord); }
+table.materiel-retenu tr.total td:first-child { position: static; }
+@media (max-width: 700px) { table.materiel-retenu td:first-child { min-width: 150px; max-width: 170px; } }
+details.aide-intro { margin: -4px 0 8px; }
+details.aide-intro > summary { cursor: pointer; }
+@media (max-width: 700px) { details.aide-intro > summary { min-height: 40px; box-sizing: border-box; padding: 10px 0; } }

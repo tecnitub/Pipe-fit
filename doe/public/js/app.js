@@ -139,7 +139,7 @@ Vues.accueil = {
       ${dossiers.length ? `<div class="grille">${dossiers.map(({ d, a, m }) => `<a class="carte dossier" href="#/doe/${d.id}/${d.statut === 'Étude' ? 'etude' : 'garde'}">
         <div class="anneau" style="--p:${m.pct}"><span>${m.pct}%</span></div>
         <div><strong>${esc(a.code || '')}</strong> ${esc(d.operation || a.nom || '')}<div class="muted petit">${esc((d.intervenants.mo || {}).raison || '')}</div>
-          <div class="petit">Lot ${esc(d.lot || '?')} · indice ${esc(d.indice)} · ${d.statut === 'Remis' ? `<span class="badge ok">Remis le ${dateFr(d.dateRemise)}</span>` : `${d.statut === 'Étude' ? '<span class="badge pf">Étude</span> ' : ''}<span class="badge">${m.manques.length} à compléter</span>`}</div>
+          <div class="petit">${d.lot ? `Lot ${esc(d.lot)}` : 'Lot à renseigner'} · indice ${esc(d.indice)} · ${d.statut === 'Remis' ? `<span class="badge ok">Remis le ${dateFr(d.dateRemise)}</span>` : `${d.statut === 'Étude' ? '<span class="badge pf">Étude</span> ' : ''}<span class="badge">${m.manques.length} à compléter</span>`}</div>
           <div class="muted petit">Modifié ${d._at ? new Date(d._at).toLocaleDateString('fr-FR') : ''} par ${esc(d._by || '')}</div></div></a>`).join('')}</div>`
         : '<p class="muted">Aucun dossier pour l\'instant. Créez-en un à partir d\'un chantier ci-dessous.</p>'}</section>
     <section><h2>Chantiers Pipe-Fit sans dossier <span class="compte">${sans.length}</span></h2>
@@ -197,7 +197,7 @@ Vues.doe = {
     if (!doe) return '<p>Dossier introuvable. <a href="#/">Retour</a></p>';
     const sec = p[1] || 'garde', a = PF.get('affaires', doe.affaireId) || {}, m = manquesDOE(doe);
     const parSection = k => m.manques.filter(x => x.section === k || (k === 's5' && x.section === 's5')).length;
-    return `<div class="barre"><a href="#/" class="btn secondaire">← Dossiers</a><div class="titre-doe"><strong>${esc(a.code || '')}</strong> ${esc(doe.operation || a.nom || '')}<div class="muted petit">Lot ${esc(doe.lot || '?')} — ${esc(doe.discipline)} · indice ${esc(doe.indice)} · <span id="etat-enreg">${doe._by ? `modifié par ${esc(doe._by)}` : ''}</span></div></div>
+    return `<div class="barre"><a href="#/" class="btn secondaire">← Dossiers</a><div class="titre-doe"><strong>${esc(a.code || '')}</strong> ${esc(doe.operation || a.nom || '')}<div class="muted petit">${doe.lot ? `Lot ${esc(doe.lot)}` : 'Lot à renseigner (page de garde)'} — ${esc(doe.discipline)} · indice ${esc(doe.indice)} · <span id="etat-enreg">${doe._by ? `modifié par ${esc(doe._by)}` : ''}</span></div></div>
       <span class="espace"></span><button class="secondaire" id="maj-pf" title="Reprendre les informations du chantier dans Pipe-Fit (les champs déjà saisis ne sont pas modifiés)">🔄 Reprendre depuis Pipe-Fit</button>
       <button id="generer">📄 Générer le DOE (PDF)</button></div>
       <div class="editeur"><nav class="sections">${TRAME.sections.map(([k, l]) => { const n = parSection(k); return `<a href="#/doe/${doe.id}/${k}" class="${k === sec ? 'actif' : ''}"><span>${esc(l)}</span>${n ? `<i class="pastille">${n}</i>` : '<i class="ok">✓</i>'}</a>`; }).join('')}
@@ -217,6 +217,9 @@ Vues.doe = {
     });
     root.querySelector('#maj-pf').onclick = async () => { await PF.charger(true); const n = prefillDepuisPF(doe); enregistrer(doe); App.render(); toast(n ? `${n} information(s) reprise(s) de Pipe-Fit` : 'Rien de nouveau dans Pipe-Fit'); };
     root.querySelector('#generer').onclick = () => genererDOE(doe);
+    // Téléphone : bandeau des sections défilé jusqu'à la section ouverte
+    const nav = root.querySelector('.sections'), act = nav && nav.querySelector('a.actif');
+    if (nav && act && nav.scrollWidth > nav.clientWidth) nav.scrollLeft = Math.max(0, act.offsetLeft - nav.offsetLeft - 24);
     if (SECTIONS[sec] && SECTIONS[sec].bind) SECTIONS[sec].bind(root, doe);
   },
 };
@@ -224,7 +227,8 @@ Vues.doe = {
 // Lignes de tableau éditables : [{ cle, lib, large }] sur un tableau d'objets ou de tableaux
 function tableEditable(id, lignes, cols, opts = {}) {
   return `<table class="edit" data-table="${id}"><tr>${cols.map(c => `<th>${esc(c.lib)}</th>`).join('')}${opts.extra ? `<th>${esc(opts.extra)}</th>` : ''}<th></th></tr>
-    ${lignes.map((l, i) => `<tr>${cols.map((c, j) => `<td><input data-cell="${id}.${i}.${c.cle ?? j}" value="${esc(c.cle !== undefined ? l[c.cle] : l[j])}" placeholder="${esc(c.ph || '')}"></td>`).join('')}${opts.extra ? `<td>${opts.extra2(l, i)}</td>` : ''}<td><button class="icone" data-suppr="${id}.${i}" aria-label="Retirer">✕</button></td></tr>`).join('')}</table>
+    ${lignes.map((l, i) => `<tr>${cols.map((c, j) => `<td><input data-cell="${id}.${i}.${c.cle ?? j}" value="${esc(c.cle !== undefined ? l[c.cle] : l[j])}" placeholder="${esc(c.ph || '')}" aria-label="${esc(c.lib)}"></td>`).join('')}${opts.extra ? `<td>${opts.extra2(l, i)}</td>` : ''}<td><button class="icone" data-suppr="${id}.${i}" aria-label="Retirer">✕</button></td></tr>`).join('')}
+    ${!lignes.length && opts.vide ? `<tr><td colspan="${cols.length + (opts.extra ? 2 : 1)}" class="muted petit vide-tableau">${esc(opts.vide)}</td></tr>` : ''}</table>
     <button class="secondaire petit" data-ajout="${id}">+ Ligne</button>`;
 }
 function bindTables(root, doe, defs) {
@@ -301,7 +305,7 @@ SECTIONS.s3 = {
     <div class="actions-ligne"><button class="secondaire" id="import-pf">Importer le matériel du chantier (Pipe-Fit)</button><button class="secondaire" id="fiches-ajout">+ Joindre des fiches techniques</button><button class="secondaire" id="fiches-biblio" title="Fiche de chaque équipement (marque + référence) dans la bibliothèque Pipe-Fit, version en vigueur à la date de pose">📄 Fiches de la bibliothèque Pipe-Fit</button></div>
     ${doe.familles.slice().sort().map(fid => { const f = familleDe(fid), eqs = doe.equipements.map((e, i) => ({ e, i })).filter(x => x.e.famille === fid), fiches = doe.fiches.map((x, i) => ({ x, i })).filter(y => y.x.famille === fid);
       return `<div class="famille"><h3>${fid} ${esc(f.titre)}</h3>
-        ${eqs.map(({ e, i }) => `<details class="equipement" ${vide(e.repere) || vide(e.serie) ? 'open' : ''}><summary><strong>${esc(e.repere || 'Repère ?')}</strong> ${esc(e.designation || '')} ${esc([e.marque, e.reference].filter(Boolean).join(' '))}${e.aConfirmer ? ' <span class="badge" title="Matériel prévu par l\'étude, pas encore validé par le client">à confirmer</span>' : ''}${e.plaqueEtat === 'substitution' ? ` <span class="badge erreur" title="Modèle lu sur la plaque différent du modèle retenu : substitution à faire valider">⚠️ plaque : ${esc(e.plaqueLue || '')}</span>` : e.plaqueEtat === 'conforme' ? ' <span class="badge ok" title="Modèle lu sur la plaque conforme au modèle retenu">plaque conforme</span>' : ''}${e.quantite ? ` <span class="muted">× ${esc(e.quantite)}</span>` : ''}${['repere', 'marque', 'reference', 'serie'].some(k => vide(e[k])) ? ' <span class="badge">à compléter</span>' : ''}</summary>
+        ${eqs.map(({ e, i }) => `<details class="equipement" ${vide(e.repere) || vide(e.serie) ? 'open' : ''}><summary><strong>${e.repere ? esc(e.repere) : '<span class="avert">Repère à saisir</span>'}</strong> ${esc(e.designation || '')} ${esc([e.marque, e.reference].filter(Boolean).join(' '))}${e.aConfirmer ? ' <span class="badge" title="Matériel prévu par l\'étude, pas encore validé par le client">à confirmer</span>' : ''}${e.plaqueEtat === 'substitution' ? ` <span class="badge erreur" title="Modèle lu sur la plaque différent du modèle retenu : substitution à faire valider">⚠️ plaque : ${esc(e.plaqueLue || '')}</span>` : e.plaqueEtat === 'conforme' ? ' <span class="badge ok" title="Modèle lu sur la plaque conforme au modèle retenu">plaque conforme</span>' : ''}${e.quantite ? ` <span class="muted">× ${esc(e.quantite)}</span>` : ''}${['repere', 'marque', 'reference', 'serie'].some(k => vide(e[k])) ? ' <span class="badge">à compléter</span>' : ''}</summary>
           <div class="grille-champs">${champ('Repère', `equipements.${i}.repere`, e.repere)}${champ('Désignation', `equipements.${i}.designation`, e.designation)}${champ('Marque', `equipements.${i}.marque`, e.marque)}${champ('Référence', `equipements.${i}.reference`, e.reference)}
             ${champ('N° de série', `equipements.${i}.serie`, e.serie)}${champ('Quantité', `equipements.${i}.quantite`, e.quantite, { ph: '' })}${champ('Localisation', `equipements.${i}.localisation`, e.localisation)}
             ${f.champs.map((c, j) => champ(c, `equipements.${i}.champs.${j}`, (e.champs || [])[j])).join('')}
@@ -428,11 +432,11 @@ SECTIONS.s5 = { html: doe => `<h2>5. Rapports de mise en service</h2><p class="m
 SECTIONS.s6 = { html: doe => `<h2>6. Essais, contrôles et mesures</h2>${controlesHtml(doe, controlesActifs(doe).filter(k => k[0] === '6'))}`, bind: bindControles };
 SECTIONS.s7 = {
   html: doe => `<h2>7. Maintenance et exploitation</h2><h3>7.1 Carnet de maintenance préventive</h3>
-    ${tableEditable('maintenance', doe.maintenance, [{ lib: 'Équipement' }, { lib: 'Opération' }, { lib: 'Fréquence' }, { lib: 'Intervenant' }])}
+    ${tableEditable('maintenance', doe.maintenance, [{ lib: 'Équipement' }, { lib: 'Opération' }, { lib: 'Fréquence' }, { lib: 'Intervenant' }], { vide: `Carnet vide : proposez les opérations selon les familles d'équipements${doe.affaireId ? ', reprenez l\'entretien calculé par les études du chantier' : ''} ou ajoutez une ligne.` })}
     <button class="secondaire petit" id="maint-auto">Proposer selon les familles d'équipements</button>${doe.affaireId ? ' <button class="secondaire petit" id="maint-etudes" title="Visites et contrôles obligatoires ou recommandés induits par les calculs annexes des études du chantier (F-gaz, chaudière, légionelles, détection CO, hottes…), avec fréquence et référence">Reprendre l\'entretien des études</button>' : ''}
     <h3>7.2 Notices d'exploitation</h3><ul class="pieces">${doe.notices.map((n, i) => `<li>${lienFichier(n.fichier)} <input data-ch="notices.${i}.libelle" value="${esc(n.libelle)}"><button class="icone" data-retirer="notices.${i}">✕</button></li>`).join('') || '<li class="manque">Aucune notice</li>'}</ul>
     <button class="secondaire petit" id="notice-ajout">+ Joindre des notices</button> <button class="petit" id="notice-generer" title="Notice de l'installation : équipements posés, consignes de conduite et de sécurité, réglages et mesures des PV de mise en service signés, carnet d'entretien, formation, contacts">📘 Générer la notice d'exploitation</button>
-    <h3>7.3 Pièces de rechange recommandées</h3>${tableEditable('pieces', doe.pieces, [{ lib: 'Équipement' }, { lib: 'Pièce' }, { lib: 'Référence constructeur' }, { lib: 'Qté min.' }])}`,
+    <h3>7.3 Pièces de rechange recommandées</h3>${tableEditable('pieces', doe.pieces, [{ lib: 'Équipement' }, { lib: 'Pièce' }, { lib: 'Référence constructeur' }, { lib: 'Qté min.' }], { vide: 'Aucune pièce de rechange : une ligne par pièce conseillée par le fabricant (sans objet sinon, mention reprise dans le DOE).' })}`,
   bind: (root, doe) => {
     bindTables(root, doe, { maintenance: Object.assign(() => doe.maintenance, { tableau: true }), pieces: Object.assign(() => doe.pieces, { tableau: true }) });
     root.querySelector('#maint-auto').onclick = () => { const deja = new Set(doe.maintenance.map(l => `${l[0]}|${l[1]}`)); let n = 0; doe.familles.forEach(f => (TRAME.maintenance[f] || []).forEach(l => { if (!deja.has(`${l[0]}|${l[1]}`)) { doe.maintenance.push([...l]); n++; } })); enregistrer(doe); App.render(); toast(`${n} opération(s) ajoutée(s)`); };

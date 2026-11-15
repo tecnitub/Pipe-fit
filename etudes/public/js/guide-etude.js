@@ -626,6 +626,8 @@ const GuideEtude = (() => {
     if (!r || !r.total) return '';
     const S = Sv(), parId = new Map(r.etapes.map(x => [x.id, x]));
     const s = r.suivante, restes = r.restes, actives = new Set(r.actives);
+    // Données du chantier pas encore lues (premier affichage de l'étude) : signalé, le guide se complète à leur arrivée
+    const cc = chantierCache.get(et.id), lecture = !!et.affaireId && typeof api === 'function' && (!cc || cc.encours);
     // Suivi des étapes (responsable, échéance, sans objet) : filtres « Mes étapes / En retard / Sans objet » et PDF
     const V = S && S.vue ? essai(() => S.vue(et, r.etapes)) : null;
     const suivi = x => (S && S.htmlEtape ? essai(() => S.htmlEtape(et, x)) || '' : '');
@@ -649,7 +651,7 @@ const GuideEtude = (() => {
       ${autres ? `<details class="guide-liste"${ouvert ?? autres <= 6 ? ' open' : ''}><summary>${autres} autre(s) étape(s) à faire, par phase et par impact</summary>${phasesHtml}</details>` : ''}`;
     }
     return `<div class="carte guide-etude" id="guide-etude"><div class="parcours-tete"><strong>${!restes.filter(x => actives.has(x.phase)).length ? '✅ Reste à faire : rien pour les phases en cours' : `📝 Reste à faire — ${r.pct} %`}</strong>
-        <div class="parcours-barre" role="progressbar" aria-label="Avancement des phases en cours" aria-valuenow="${r.pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${r.pct}%"></span></div><span class="petit muted">${r.faits} / ${r.total} étape(s)${V && V.resume ? ` · ${V.resume}` : ''}</span></div>
+        <div class="parcours-barre" role="progressbar" aria-label="Avancement des phases en cours" aria-valuenow="${r.pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${r.pct}%"></span></div><span class="petit muted">${r.faits} / ${r.total} étape(s)${V && V.resume ? ` · ${V.resume}` : ''}${lecture ? ' · <span class="guide-lecture" role="status">⏳ lecture du chantier dans Pipe-Fit…</span>' : ''}</span></div>
       <div class="guide-phases">${puces}</div>
       ${V ? V.barre : ''}
       ${corps}</div>`;
@@ -739,7 +741,7 @@ const GuideEtude = (() => {
     };
     const S = Sv();
     if (S && S.lier) essai(() => S.lier(guide, et, rafraichir, () => derniers.get(et.id)));
-    if (et.affaireId) chargerChantier(et).then(change => { if (change && document.querySelector('#guide-etude')) rafraichir(); }).catch(() => {});
+    if (et.affaireId) chargerChantier(et).then(change => { const g = document.querySelector('#guide-etude'); if (g && (change || g.querySelector('.guide-lecture'))) rafraichir(); }).catch(() => {});
   }
   // Liste détaillée ouverte au prochain affichage (après « Créer toute l'étude »)
   const ouvrir = () => { ouvert = true; };

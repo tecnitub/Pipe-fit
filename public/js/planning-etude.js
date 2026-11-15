@@ -16,7 +16,7 @@ const PlanningEtude = (() => {
     { lot: 'terminaux', libelle: 'Terminaux (émetteurs, bouches, appareils)', tache: 'Terminaux' },
     { lot: 'regulation', libelle: 'Régulation et électricité', tache: 'Régulation' },
     { lot: 'essais', libelle: 'Essais et mise en service', tache: 'Contrôles / essais' },
-    { lot: 'doe', libelle: 'DOE et réception', tache: '' },
+    { lot: 'doe', libelle: 'Réception et DOE', tache: '' },
   ];
   // Lot d'un poste du métré : chapitre, clé et désignation
   function lotDe(p) {

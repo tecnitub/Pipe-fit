@@ -31,6 +31,8 @@ h3 { font-size: 15px; color: var(--bleu); margin: 16px 0 8px; }
 .muted { color: var(--muted); }
 .erreur, .manque { color: var(--rouge); }
 .manque { font-style: italic; font-size: 13px; }
+.avert { color: var(--alerte); }
+.vide-tableau { padding: 10px; font-style: italic; }
 .carte { background: var(--panneau); border: 1px solid var(--bord); border-radius: 12px; padding: 16px; }
 .connexion { max-width: 380px; margin: 60px auto; display: grid; gap: 12px; }
 .connexion label { display: grid; gap: 4px; font-size: 13px; }
@@ -191,4 +193,14 @@ details.equipement[open] summary { margin-bottom: 10px; }
   summary { min-height: 40px; }
   input[type="file"] { min-height: 40px; }
   td > input[type="checkbox"], th > input[type="checkbox"] { width: 32px; height: 32px; }
+}
+
+/* DOE sur téléphone : sections en bandeau défilant (la section ouverte reste visible), avancement compact en tête ;
+   le contenu de la section arrive tout de suite sous le titre */
+@media (max-width: 700px) {
+  .sections { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 6px; padding: 6px; scrollbar-width: thin; align-items: stretch; }
+  .sections a { flex: 0 0 auto; white-space: nowrap; border: 1px solid var(--bord); }
+  .sections .progression { order: -1; flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 0 6px 0 0; margin: 0; border-top: 0; border-right: 1px solid var(--bord); text-align: left; white-space: nowrap; }
+  .sections .progression .anneau.grand { width: 40px; height: 40px; }
+  .sections .progression .anneau.grand span { width: 32px; height: 32px; font-size: 11px; }
 }

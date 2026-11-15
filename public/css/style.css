@@ -1349,3 +1349,7 @@ body:has(.modal:not(.hidden)) .as-fab, body.menu-ouvert .as-fab, body.selecteur-
 .etf-champ { display: inline-flex; align-items: center; gap: 6px; }
 .etf-phases .etf-phase { display: inline-block; margin-right: 6px; }
 @media (max-width: 700px) { .etf-champ { flex: 1 1 100%; } .etf-champ select { flex: 1; } }
+/* Consultation : actions d'un fournisseur sur plusieurs lignes, action principale en premier */
+.cs-actions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; min-width: 260px; }
+.cs-actions .btn, .cs-actions button { margin: 0; }
+@media (max-width: 700px) { .cs-actions { min-width: 220px; } .cs-actions .btn, .cs-actions button { min-height: 40px; } }

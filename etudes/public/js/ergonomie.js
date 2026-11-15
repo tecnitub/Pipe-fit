@@ -4,7 +4,8 @@
 // - tableaux de lignes : chaque cellule reçoit l'intitulé de sa colonne (lecteur d'écran, carte par ligne sur téléphone),
 //   indice de défilement horizontal, Entrée / Maj+Entrée pour passer à la ligne suivante / précédente (même colonne) ;
 // - schémas SVG zoomables (boutons, Ctrl + molette) et déplaçables à la souris ; lisibles d'emblée sur téléphone ;
-// - sur téléphone, actions nombreuses d'un calcul regroupées dans un menu « Plus d'actions ».
+// - sur téléphone, actions nombreuses d'un calcul regroupées dans un menu « Plus d'actions » ;
+// - boutons à icône seule nommés d'après leur aide (lecteurs d'écran).
 (function (racine) {
   // Raccourci d'un libellé : partie avant la première précision (« (vide : … », « — … », « : … »), unité gardée
   function libelleCourt(l, max = 40) {
@@ -186,7 +187,11 @@
   let prevu = false;
   function decorer() {
     prevu = false;
-    [document.getElementById('app'), document.getElementById('modal')].filter(Boolean).forEach(r => { etiqueter(r); decorerSchemas(r); regrouper(r); r.querySelectorAll('.defile-x').forEach(majDefile); });
+    [document.getElementById('app'), document.getElementById('modal')].filter(Boolean).forEach(r => {
+      etiqueter(r); decorerSchemas(r); regrouper(r); r.querySelectorAll('.defile-x').forEach(majDefile);
+      // Boutons à icône seule (✂️, ✕, ▲…) : leur aide devient leur nom pour les lecteurs d'écran
+      r.querySelectorAll('button[title]:not([aria-label])').forEach(b => { if (!/[A-Za-zÀ-ÿ0-9]/.test(b.textContent)) b.setAttribute('aria-label', b.title); });
+    });
   }
   const planifier = () => { if (!prevu) { prevu = true; requestAnimationFrame(decorer); } };
   const obs = new MutationObserver(planifier);
