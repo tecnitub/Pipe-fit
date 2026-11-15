@@ -8,6 +8,8 @@
   --bg: #eef1f3; --surface: #ffffff; --fg: #18212b; --muted: #5d6a77; --line: #cdd5dc;
   --accent: #0b5cad; --accent-fg: #ffffff; --weld: #d0661a;
   --paper: #ffffff; --ink: #121820; --dim: #1f5f9e; --frame: #8a96a3;
+  --p0: #005eb8; --p1: #e87722; --p2: #009646; --p3: #c81e2d; --p4: #783caa; --p5: #00a0be;
+  --p6: #8c5a28; --p7: #dc3c96; --p8: #788214; --p9: #142878; --p10: #c89600; --p11: #5a6e82;
   --f-display: "Barlow Semi Condensed", "Arial Narrow", Arial, sans-serif;
   --f-body: "Barlow", "Segoe UI", Arial, sans-serif;
   --f-mono: "IBM Plex Mono", Consolas, monospace;
@@ -15,11 +17,15 @@
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #11161c; --surface: #19212a; --fg: #e3e9ef; --muted: #93a1ae; --line: #2c3742;
   --accent: #5aa3ec; --accent-fg: #0b1622; --weld: #f08a3c;
-  --paper: #1a2129; --ink: #e2e8ee; --dim: #7cb6ee; --frame: #5f6c79; color-scheme: dark } }
+  --paper: #1a2129; --ink: #e2e8ee; --dim: #7cb6ee; --frame: #5f6c79; color-scheme: dark;
+  --p0: #4fa3f0; --p1: #f59a52; --p2: #3cc47c; --p3: #f05a66; --p4: #b48ae6; --p5: #3ccfe6;
+  --p6: #c99a64; --p7: #f07cc0; --p8: #b8c44a; --p9: #8aa0f0; --p10: #f0c840; --p11: #9fb2c4; } }
 :root[data-theme="dark"] {
   --bg: #11161c; --surface: #19212a; --fg: #e3e9ef; --muted: #93a1ae; --line: #2c3742;
   --accent: #5aa3ec; --accent-fg: #0b1622; --weld: #f08a3c;
-  --paper: #1a2129; --ink: #e2e8ee; --dim: #7cb6ee; --frame: #5f6c79; color-scheme: dark }
+  --paper: #1a2129; --ink: #e2e8ee; --dim: #7cb6ee; --frame: #5f6c79; color-scheme: dark;
+  --p0: #4fa3f0; --p1: #f59a52; --p2: #3cc47c; --p3: #f05a66; --p4: #b48ae6; --p5: #3ccfe6;
+  --p6: #c99a64; --p7: #f07cc0; --p8: #b8c44a; --p9: #8aa0f0; --p10: #f0c840; --p11: #9fb2c4; }
 
 * { box-sizing: border-box }
 body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 15px; line-height: 1.45 }
@@ -81,6 +87,10 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
 .k-weldtxt { fill: var(--weld); font-family: Arial, "Liberation Sans", sans-serif; font-weight: 700 }
 .k-frame { stroke: var(--frame); fill: none }
 .k-bg { fill: var(--paper) }
+.swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 6px }
+.rep-intro { font-size: 14px; color: var(--muted); padding: 8px 10px 0; margin: 0; max-width: 80ch }
+#rep { display: block; width: 100%; height: auto; background: var(--paper) }
+.rep-wrap { padding: 10px; display: grid; gap: 12px }
 @media (prefers-reduced-motion: no-preference) { .sheet-scroll svg { transition: width .15s ease } }
 </style>
 
@@ -111,6 +121,16 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
     <div class="hint">Feuille A3 paysage, cotes en mm. Agrandissez avec + puis faites glisser pour parcourir le dessin.</div>
   </section>
 
+  <section class="sheet-card" aria-label="Repérage des spools pour le montage">
+    <div class="sheet-bar"><span class="name" id="repName">Repérage des spools pour le montage</span></div>
+    <p class="rep-intro">Bouton « Repérage spools » : chaque spool dans sa couleur, avec son numéro et son ordre de montage, soudures de chantier marquées ×.
+      Exemple : réseau d'eau glacée départ découpé automatiquement en spools (6 m de tube, surlongueurs de 100 mm comprises) et numéroté par le complément.</p>
+    <div class="rep-wrap">
+      <svg id="rep" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Vue de repérage des spools"></svg>
+      <div id="repTable"></div>
+    </div>
+  </section>
+
   <section>
     <div class="tabs" role="tablist" id="tabs">
       <button role="tab" data-t="lia" aria-selected="true">Provenance / destination</button>
@@ -129,7 +149,8 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
 <script id="data" type="application/json">__DATA__</script>
 <script>
 (() => {
-  const D = JSON.parse(document.getElementById('data').textContent);
+  const ALL = JSON.parse(document.getElementById('data').textContent);
+  const D = ALL.spools, REP = ALL.reperage;
   const NS = 'http://www.w3.org/2000/svg';
   const ORIENTS = [
     { k: 'SE', l: 'Sud-est', f: [-1, 1, -1], txt: 'vue depuis le sud-est' },
@@ -370,7 +391,38 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
     document.getElementById('layers').innerHTML = [['rep', 'Repères'], ['sou', 'Soudures'], ['cot', 'Cotes']].map(([k, l]) => `<button data-k="${k}" aria-pressed="${st[k]}">${l}</button>`).join('');
   }
 
-  function tout() { boutons(); stats(); dessiner(); panneau(); save(); }
+  // Vue de repérage : réseau complet, une couleur par spool, étiquettes « n° · ordre », soudures chantier ×
+  function reperage() {
+    const R = repere(st.o), proj = p => [v3.dot(p, R.right), -v3.dot(p, R.up)];
+    const svg = document.getElementById('rep');
+    svg.innerHTML = '';
+    const pts = REP.spools.flatMap(s => s.segments.flat()).map(proj);
+    const minx = Math.min(...pts.map(p => p[0])), maxx = Math.max(...pts.map(p => p[0])), miny = Math.min(...pts.map(p => p[1])), maxy = Math.max(...pts.map(p => p[1]));
+    const ext = Math.max(maxx - minx, maxy - miny), pad = ext * 0.16, fs = ext * 0.024;
+    svg.setAttribute('viewBox', `${minx - pad} ${miny - pad} ${maxx - minx + 2 * pad} ${maxy - miny + 2 * pad}`);
+    const cx = (minx + maxx) / 2, cy = (miny + maxy) / 2;
+    REP.spools.forEach(s => s.segments.forEach(([a, b]) => {
+      const p = proj(a), q = proj(b);
+      el('line', { x1: p[0], y1: p[1], x2: q[0], y2: q[1], stroke: `var(--p${s.couleur})`, 'stroke-width': fs * 0.45, 'stroke-linecap': 'round' }, svg);
+    }));
+    REP.soudures.forEach(w => { const p = proj(w); el('text', { x: p[0], y: p[1], 'font-size': fs * 1.5, 'font-weight': 700, fill: 'var(--weld)', 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-family': 'Arial, sans-serif' }, svg, '×'); });
+    REP.spools.forEach(s => {
+      const p = proj(s.label);
+      let nx = 0, ny = -1;
+      if (s.dir) { const d = proj(s.dir); const l = Math.hypot(d[0], d[1]); if (l > 1e-6) { nx = -d[1] / l; ny = d[0] / l; } }
+      if ((p[0] - cx) * nx + (p[1] - cy) * ny < 0) { nx = -nx; ny = -ny; }
+      const tx = p[0] + nx * fs * 3.2, ty = p[1] + ny * fs * 3.2, txt = `${s.nom} · ${s.ordre}`, w = txt.length * fs * 0.62 + fs, h = fs * 1.7;
+      el('line', { x1: p[0], y1: p[1], x2: tx, y2: ty, stroke: `var(--p${s.couleur})`, 'stroke-width': fs * 0.08 }, svg);
+      el('rect', { x: tx - w / 2, y: ty - h / 2, width: w, height: h, rx: fs * 0.2, fill: 'var(--paper)', stroke: `var(--p${s.couleur})`, 'stroke-width': fs * 0.12 }, svg);
+      el('text', { x: tx, y: ty, 'font-size': fs, 'font-weight': 700, fill: `var(--p${s.couleur})`, 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-family': 'Arial, sans-serif' }, svg, txt);
+    });
+    document.getElementById('repName').textContent = `Repérage des spools pour le montage · ${REP.nbSpools} spools · ${fr.format(REP.tube)} m de tube`;
+    const cols = REP.colonnes.map((t, i) => ({ t, r: i === 4, html: i === 2 }));
+    document.getElementById('repTable').innerHTML = table(cols, REP.tableau.map((l, i) => l.map((v, j) => j === 2 ? `<span class="swatch" style="background:var(--p${REP.spools[i].couleur})"></span>${esc(v)}` : v))) +
+      '<p class="note">Ordre de montage : on part du spool raccordé à la CTA (arrivée de l\'eau), puis de proche en proche ; la branche du té vient juste après lui. « Posé contre » : le spool ou l\'équipement déjà en place.</p>';
+  }
+
+  function tout() { boutons(); stats(); dessiner(); panneau(); reperage(); save(); }
 
   document.getElementById('spools').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { st.s = +b.dataset.i; tout(); } });
   document.getElementById('orients').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { st.o = +b.dataset.i; tout(); } });

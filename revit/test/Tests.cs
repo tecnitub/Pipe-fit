@@ -285,6 +285,25 @@ static class Tests
             Verifier(x1.Composants[0].PoucesSoudures == 0 && x2.Composants[0].PoucesSoudures == 4, "soudure chantier entre spools comptée une fois (côté coude)");
         }
 
+        // Ordre de montage : P1 → A → B → C (A part de la pompe), B a une branche D
+        {
+            Spool Sp(string nom, params Composant[] cs) { var sp = new Spool { Nom = nom, Composants = cs.ToList() }; sp.NomsExterieurs["POMPE"] = "P1"; return sp; }
+            var sA = Sp("SP-3", C("a", "Tuyau", "", TypeComposant.Tube, 50, 1000, null, E(0, 0, 500, 50, "POMPE"), E(1000, 0, 500, 50, "b")));
+            var sB = Sp("SP-1", C("b", "Té", "", TypeComposant.Te, 50, 0, new Point3(1076, 0, 500), E(1000, 0, 500, 50, "a"), E(1152, 0, 500, 50, "c"), E(1076, 76, 500, 50, "d")));
+            var sC = Sp("SP-2", C("c", "Tuyau", "", TypeComposant.Tube, 50, 2000, null, E(1152, 0, 500, 50, "b"), E(3152, 0, 500, 50, null)));
+            var sD = Sp("SP-4", C("d", "Tuyau", "", TypeComposant.Tube, 50, 500, null, E(1076, 76, 500, 50, "b"), E(1076, 576, 500, 50, null)));
+            var sE = Sp("SP-9", C("x", "Tuyau", "", TypeComposant.Tube, 50, 500, null, E(0, 0, 0, 50, null), E(500, 0, 0, 50, null)));
+            foreach (var sp in new[] { sA, sB, sC, sD, sE }) AnalyseSpool.Analyser(sp);
+            var et = Montage.Ordonner(new List<Spool> { sB, sC, sD, sA, sE });
+            Verifier(string.Join(",", et.Where(e => e.Ensemble == et.First(x => x.Spool == sA).Ensemble).Select(e => e.Spool.Nom)) == "SP-3,SP-1,SP-2,SP-4",
+                "ordre de montage depuis la pompe : " + string.Join(",", et.Select(e => e.Spool.Nom)));
+            Verifier(et.First(e => e.Spool == sA).PoseContre == "P1" && et.First(e => e.Spool == sD).PoseContre == "SP-1", "posé contre : pompe, puis spool précédent");
+            Verifier(et.First(e => e.Spool == sB).Voisins.SequenceEqual(new[] { "SP-2", "SP-3", "SP-4" }), "voisins du spool");
+            Verifier(et.Select(e => e.Ensemble).Distinct().Count() == 2 && et.Select(e => e.Ordre).SequenceEqual(new[] { 1, 2, 3, 4, 5 }), "deux ensembles, ordre continu");
+            var tm = Montage.Tableau(et, sp => "bleu", sp => "ISO-" + sp.Nom);
+            Verifier(tm.Largeur <= 130.001 && tm.Lignes[0][1] == et[0].Spool.Nom && tm.Lignes.Any(l => l[1] == "SP-2" && l[4] == "2,0 m"), "tableau ordre de montage");
+        }
+
         // Bride contre bride (ou vanne) : joint boulonné
         var b = new Spool { Nom = "B" };
         b.Composants.Add(C("a", "Bride", "PN16", TypeComposant.Bride, 80, 0, null, E(0, 0, 0, 80, "x"), E(10, 0, 0, 80, "b")));

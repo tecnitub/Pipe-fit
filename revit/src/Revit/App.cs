@@ -49,6 +49,14 @@ namespace PipeFit.Isometries.Revit
                 Image = Image("soudure16.png"),
             });
             panneau.AddItem(bouton);
+            panneau.AddItem(new PushButtonData("PipeFitReperage", "Repérage\nspools", Assembly.GetExecutingAssembly().Location, typeof(CmdReperage).FullName)
+            {
+                ToolTip = "Vue de repérage pour le montage : chaque spool dans sa couleur, son numéro et son ordre de montage, soudures de chantier marquées.",
+                LongDescription = "Copie de la vue active (plan, coupe, 3D) ou nouvelle vue 3D de la tuyauterie ; feuille avec le tableau « ordre de montage » "
+                    + "(posé contre, longueur de tube, feuille d'isométrie) et la légende des couleurs.",
+                LargeImage = Image("reperage32.png"),
+                Image = Image("reperage16.png"),
+            });
             panneau.AddItem(new PushButtonData("PipeFitQuantitatif", "Quantitatif\nchiffrage", Assembly.GetExecutingAssembly().Location, typeof(CmdQuantitatif).FullName)
             {
                 ToolTip = "Exporte le quantitatif du projet pour le chiffrage automatique dans Pipe-Fit (Devis → Chiffrage depuis plan).",

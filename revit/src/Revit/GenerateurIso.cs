@@ -144,7 +144,7 @@ namespace PipeFit.Isometries.Revit
             else
             {
                 cadre = new Rect(15, 15, 405, 282);
-                DessinerCadreA3(feuille, spool);
+                DessinerCadreA3(feuille, "ISOMÉTRIE DE FABRICATION – SPOOL " + spool.Nom, spool.Systeme != "" ? "Système " + spool.Systeme : "", NumeroFeuille(r, spool.Nom));
                 zoneTableaux = new Rect(cadre.X0, 50, cadre.X1, cadre.Y1);
             }
 
@@ -181,6 +181,54 @@ namespace PipeFit.Isometries.Revit
             EcrireEchelle(feuille, zoneVue, res.Echelle);
             return res;
         }
+
+        /// <summary>
+        /// Feuille avec cartouche (ou cadre A3), tableaux rangés à droite et vue posée à l'échelle normalisée qui tient
+        /// (vue de repérage des spools…). La feuille de même numéro est remplacée.
+        /// </summary>
+        public ViewSheet Feuille(View vue, string numero, string nom, string titre, string sousTitre, List<Tableau> tableaux, out int echelle, out Rect zoneVue)
+        {
+            var ancienne = new FilteredElementCollector(doc).OfClass(typeof(ViewSheet)).Cast<ViewSheet>().FirstOrDefault(v => v.SheetNumber == numero);
+            if (ancienne != null)
+            {
+                if (ancienne.Id == vueActive) ancienne.SheetNumber = numero + " (ancienne " + DateTime.Now.ToString("HHmmss", CultureInfo.InvariantCulture) + ")";
+                else doc.Delete(ancienne.Id);
+            }
+            var feuille = ViewSheet.Create(doc, cartouche?.Id ?? ElementId.InvalidElementId);
+            feuille.SheetNumber = numero;
+            feuille.Name = nom;
+            doc.Regenerate();
+            Rect cadre, zoneTableaux;
+            if (cartouche != null && FilteredElementCollectorCartouche(feuille) is Element tb && tb.get_BoundingBox(feuille) is BoundingBoxXYZ bb)
+            {
+                cadre = new Rect(Compat.Mm(bb.Min.X) + 12, Compat.Mm(bb.Min.Y) + 12, Compat.Mm(bb.Max.X) - 12, Compat.Mm(bb.Max.Y) - 12);
+                zoneTableaux = new Rect(cadre.X0, cadre.Y0 + 60, cadre.X1, cadre.Y1);
+            }
+            else
+            {
+                cadre = new Rect(15, 15, 405, 282);
+                DessinerCadreA3(feuille, titre, sousTitre, numero);
+                zoneTableaux = new Rect(cadre.X0, 50, cadre.X1, cadre.Y1);
+            }
+            var page = MiseEnPage.Ranger(zoneTableaux, tableaux, HauteurLigneMm);
+            zoneVue = new Rect(cadre.X0, cadre.Y0, page.ZoneVue.X1, cadre.Y1);
+            foreach (var p in page.Tableaux) DessinerTableau(feuille, p);
+
+            var centre = new XYZ(Compat.Pieds((zoneVue.X0 + zoneVue.X1) / 2), Compat.Pieds((zoneVue.Y0 + zoneVue.Y1) / 2), 0);
+            vue.Scale = 100;
+            var vp = Viewport.Create(doc, feuille.Id, vue.Id, centre);
+            doc.Regenerate();
+            var o = vp.GetBoxOutline();
+            echelle = MiseEnPage.ChoisirEchelle(Compat.Mm(o.MaximumPoint.X - o.MinimumPoint.X) * 100, Compat.Mm(o.MaximumPoint.Y - o.MinimumPoint.Y) * 100,
+                zoneVue.Largeur * 0.92, zoneVue.Hauteur * 0.92);
+            vue.Scale = echelle;
+            doc.Regenerate();
+            vp.SetBoxCenter(centre);
+            Texte(feuille, zoneVue.X0 + 2, zoneVue.Y0 + 4, "Échelle 1:" + echelle.ToString(CultureInfo.InvariantCulture));
+            return feuille;
+        }
+
+        public void Nord(ViewSheet f, View3D vue, Rect zone) => DessinerNord(f, vue, zone);
 
         Element FilteredElementCollectorCartouche(ViewSheet feuille) =>
             new FilteredElementCollector(doc, feuille.Id).OfCategory(BuiltInCategory.OST_TitleBlocks).FirstElement();
@@ -510,7 +558,7 @@ namespace PipeFit.Isometries.Revit
         }
 
         /// <summary>Cadre A3 paysage et cartouche simple, quand aucun cartouche n'est choisi.</summary>
-        void DessinerCadreA3(ViewSheet f, Spool s)
+        void DessinerCadreA3(ViewSheet f, string titre, string sousTitre, string numeroFeuille)
         {
             Trait(f, 0, 0, 420, 0); Trait(f, 420, 0, 420, 297); Trait(f, 420, 297, 0, 297); Trait(f, 0, 297, 0, 0);
             Trait(f, 10, 10, 410, 10); Trait(f, 410, 10, 410, 287); Trait(f, 410, 287, 10, 287); Trait(f, 10, 287, 10, 10);
@@ -519,10 +567,10 @@ namespace PipeFit.Isometries.Revit
             Trait(f, x0, y0, x0, y1); Trait(f, x0, y1, x1, y1);
             Trait(f, x0, 33, x1, 33); Trait(f, x0, 21, x1, 21);
             Trait(f, 330, y0, 330, 33);
-            Texte(f, x0 + 2, 39, "ISOMÉTRIE DE FABRICATION – SPOOL " + s.Nom, gras: true);
+            Texte(f, x0 + 2, 39, MiseEnPage.Tronquer(titre, 186, HauteurTexteMm), gras: true);
             Texte(f, x0 + 2, 27, MiseEnPage.Tronquer(projet, 108, HauteurTexteMm));
-            Texte(f, 332, 27, "Feuille " + NumeroFeuille(r, s.Nom));
-            Texte(f, x0 + 2, 15.5, MiseEnPage.Tronquer(s.Systeme != "" ? "Système " + s.Systeme : "", 108, HauteurTexteMm));
+            Texte(f, 332, 27, "Feuille " + numeroFeuille);
+            Texte(f, x0 + 2, 15.5, MiseEnPage.Tronquer(sousTitre, 108, HauteurTexteMm));
             Texte(f, 332, 15.5, DateTime.Now.ToString("dd/MM/yyyy", CultureInfo.GetCultureInfo("fr-FR")));
         }
 

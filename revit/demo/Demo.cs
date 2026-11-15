@@ -162,6 +162,74 @@ static class Demo
         return res;
     }
 
+    // Réseau complet pour la vue de repérage : eau glacée départ DN100 de la CTA-02 au ballon B1, piquage vers l'aérotherme A1,
+    // découpé automatiquement en spools (6 m de tube moins deux surlongueurs de 100 mm), numéroté EGD-SP-001…
+    static List<Spool> Reseau()
+    {
+        var tmp = new Spool { Nom = "réseau" };
+        new Ligne(tmp, "EG départ", "Acier P235GH").Depart(new Point3(0, 0, 0), X, 100, "CTA-02")
+            .Coude(4500, Y).Te(4200, Z, out var br).Coude(5200, X).Coude(3800, M(Y)).FinBride(2600, "BALLON-B1");
+        br.Coude(1500, X).FinBride(2600, "AERO-A1");
+        tmp.Composants[0].Extremites[0].Sens = SensFlux.Entree;
+        foreach (var c in tmp.Composants) c.Abreviation = "EGD";
+        var groupes = Decoupage.Spools(tmp.Composants, 6000 - 2 * 100);
+        var spoolDe = new Dictionary<string, string>();
+        var noms = new List<string>();
+        for (int i = 0; i < groupes.Count; i++)
+        {
+            var nom = Decoupage.Format(Decoupage.Prefixe("SP-", "EGD"), i + 1, 3);
+            noms.Add(nom);
+            foreach (var c in groupes[i]) spoolDe[c.Id] = nom;
+        }
+        var noms2 = new Dictionary<string, string> { ["CTA-02"] = "CTA-02", ["BALLON-B1"] = "B1 (ballon)", ["AERO-A1"] = "A1 (aérotherme)" };
+        var res = new List<Spool>();
+        for (int i = 0; i < groupes.Count; i++)
+        {
+            var s = new Spool { Nom = noms[i], Composants = groupes[i], SurlongueurMm = 100 };
+            foreach (var e in s.Composants.SelectMany(c => c.Extremites).Where(e => e.ConnecteA != null && !s.Composants.Any(c => c.Id == e.ConnecteA)))
+            {
+                if (spoolDe.TryGetValue(e.ConnecteA, out var autre)) { s.NomsExterieurs[e.ConnecteA] = autre; s.ExterieursSpool.Add(e.ConnecteA); }
+                else s.NomsExterieurs[e.ConnecteA] = noms2.TryGetValue(e.ConnecteA, out var n) ? n : e.ConnecteA;
+                var voisin = tmp.Composants.FirstOrDefault(c => c.Id == e.ConnecteA);
+                e.VoisinEstTube = voisin != null && voisin.Type == TypeComposant.Tube;
+            }
+            AnalyseSpool.Analyser(s);
+            res.Add(s);
+        }
+        return res;
+    }
+
+    static object Reperage()
+    {
+        var spools = Reseau();
+        var etapes = Montage.Ordonner(spools);
+        string[] couleurs = { "bleu", "orange", "vert", "rouge", "violet", "turquoise", "marron", "rose", "olive", "marine", "or", "gris-bleu" };
+        var idx = new Dictionary<Spool, int>();
+        for (int i = 0; i < etapes.Count; i++) idx[etapes[i].Spool] = i % couleurs.Length;
+        var vus = new HashSet<string>();
+        var soudures = spools.SelectMany(s => s.Assemblages).Where(a => a.Nature == NatureAssemblage.RaccordementChantier && a.Soude)
+            .Where(a => vus.Add(Math.Round(a.Position.X) + "|" + Math.Round(a.Position.Y) + "|" + Math.Round(a.Position.Z))).Select(a => P(a.Position)).ToList();
+        return new
+        {
+            spools = etapes.Select(e => new
+            {
+                nom = e.Spool.Nom, ordre = e.Ordre, couleur = idx[e.Spool],
+                segments = e.Spool.Composants.SelectMany(c => Cotation.EstNoeud(c)
+                    ? c.Extremites.Select(x => new[] { P(x.Position), P(Cotation.PointAxe(c)) })
+                    : c.Extremites.Count >= 2 ? new[] { new[] { P(c.Extremites[0].Position), P(c.Extremites[1].Position) } } : new double[0][][]).ToList(),
+                label = P(e.Spool.Composants.Where(c => c.Type == TypeComposant.Tube).OrderByDescending(c => c.LongueurMm)
+                    .Select(c => (c.Extremites[0].Position + c.Extremites[1].Position) * 0.5).DefaultIfEmpty(e.Spool.Composants[0].Extremites[0].Position).First()),
+                dir = e.Spool.Composants.Where(c => c.Type == TypeComposant.Tube).OrderByDescending(c => c.LongueurMm)
+                    .Select(c => P((c.Extremites[1].Position - c.Extremites[0].Position).Normalise())).FirstOrDefault(),
+            }),
+            soudures,
+            tableau = Montage.Tableau(etapes, s => couleurs[idx[s]], s => "ISO-" + s.Nom).Lignes,
+            colonnes = Montage.Tableau(etapes, s => "", s => "").Colonnes.Select(c => c.Titre),
+            nbSpools = spools.Count,
+            tube = Math.Round(spools.Sum(s => Decoupage.LongueurTube(s.Composants)) / 1000, 1),
+        };
+    }
+
     static double[] P(Point3 p) => new[] { Math.Round(p.X, 1), Math.Round(p.Y, 1), Math.Round(p.Z, 1) };
 
     static int Main(string[] args)
@@ -198,11 +266,11 @@ static class Demo
                 quantitatif = Quantitatif.Csv(new[] { s }),
             };
         });
-        var json = JsonSerializer.Serialize(sortie, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
+        var json = JsonSerializer.Serialize(new { spools = sortie, reperage = Reperage() }, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
         File.WriteAllText(args.Length > 0 ? args[0] : "demo.json", json);
         if (args.Length > 1) File.WriteAllText(args[1], Quantitatif.Csv(spools)); // exemple de quantitatif pour la démo du CRM
-        foreach (var s in spools)
-            Console.WriteLine($"{s.Nom} : " + string.Join(" | ", s.Liaisons.Select(l => l.Numero + " " + l.Libelle)));
+        foreach (var e in Montage.Ordonner(Reseau()))
+            Console.WriteLine($"{e.Ordre}. {e.Spool.Nom} contre {e.PoseContre} : {Decoupage.LongueurTube(e.Spool.Composants) / 1000:0.00} m, voisins {string.Join(",", e.Voisins)}");
         return 0;
     }
 }

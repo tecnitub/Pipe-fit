@@ -68,6 +68,19 @@ canalisations, raccords, accessoires et pièces de fabrication) est créé dans 
   quantitatif (tube acheté surlongueurs comprises). Entre deux tubes, un seul côté la porte. La longueur maximale de tube
   d'un spool (6 m) tient compte de deux surlongueurs possibles, pour que le débit tienne dans la barre.
 
+## Repérage des spools pour le montage
+
+Bouton **Repérage spools** : vue de repérage pour le chantier.
+
+- Vue de départ : copie de la vue active (plan d'étage, coupe, vue 3D) ou nouvelle vue 3D isométrique de toute la
+  tuyauterie (et des équipements), nommée « REPÉRAGE SPOOLS ».
+- Chaque spool dans sa couleur (lignes épaisses, surfaces pleines), étiquette encadrée « n° de spool · ordre de
+  montage » avec ligne de rappel ; soudures de chantier marquées « × » ; tuyauterie sans numéro en gris.
+- Feuille « REP-… » avec le tableau **ORDRE DE MONTAGE** (n°, spool, couleur, posé contre, longueur de tube, feuille
+  d'isométrie) et la légende. L'ordre part du spool d'arrivée (écoulement connu par Revit, sinon spool raccordé à un
+  équipement, sinon le plus bas) et avance de proche en proche ; une branche de té vient juste après le spool du té.
+- Relancer la commande remplace la vue et la feuille de repérage du même nom.
+
 ## Ce que fait la commande
 
 Pour chaque spool coché :
