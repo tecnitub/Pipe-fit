@@ -65,6 +65,7 @@ namespace PipeFit.Isometries.Revit
             etiquetteTube = Etiquette(BuiltInCategory.OST_PipeTags, r.EtiquetteTube);
             etiquetteRaccord = Etiquette(BuiltInCategory.OST_PipeFittingTags, r.EtiquetteRaccord);
             etiquetteAccessoire = Etiquette(BuiltInCategory.OST_PipeAccessoryTags, r.EtiquetteAccessoire);
+            try { ParametreSpool.CreerPouces(doc, doc.Application); } catch { /* sans ce paramètre, les pouces restent sur la feuille */ }
             projet = doc.ProjectInformation?.Name ?? "";
             if (projet == "") projet = doc.Title;
         }
@@ -120,6 +121,10 @@ namespace PipeFit.Isometries.Revit
 
             var parCle = elements.ToDictionary(e => Compat.Cle(e.Id));
             if (r.EcrireRepere) EcrireReperes(spool, parCle, res);
+            // Pouces de soudure par élément : nomenclatures Revit (total par spool, par réseau…)
+            foreach (var c in spool.Composants)
+                if (parCle.TryGetValue(c.Id, out var el) && el.LookupParameter(ParametreSpool.NomPouces) is Parameter pp && !pp.IsReadOnly && pp.StorageType == StorageType.Double)
+                    pp.Set(Math.Round(c.PoucesSoudures, 2));
 
             var vue = CreerVue(spool, elements);
             var feuille = ViewSheet.Create(doc, cartouche?.Id ?? ElementId.InvalidElementId);

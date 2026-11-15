@@ -26,6 +26,37 @@ namespace PipeFit.Isometries.Revit
         public const string NomSoudures = "Soudures chantier (Pipe-Fit)";
         static readonly Guid GuidSoudures = new Guid("b2c74e19-3f6a-4d8b-a1e5-7c0d9f2b6e48");
 
+        /// <summary>Pouces-diamètre des soudures portées par l'élément, écrits à la génération des isométries.</summary>
+        public const string NomPouces = "Pouces soudures (Pipe-Fit)";
+        static readonly Guid GuidPouces = new Guid("d47a2c6e-91b3-4f05-8e7d-3a6b2f1c9e57");
+
+        static bool Existe(Document doc, string nom) => LectureModele.ElementsTuyauterie(doc).Any(e => e.LookupParameter(nom) != null)
+            || new FilteredElementCollector(doc).OfClass(typeof(SharedParameterElement)).Any(p => p.Name == nom);
+
+        /// <summary>Crée les paramètres Pipe-Fit absents du projet ; renvoie, pour chacun, s'il vient d'être créé.</summary>
+        public static List<(string Nom, bool Cree)> CreerTous(Document doc, Application app)
+        {
+            var res = new List<(string, bool)>();
+            foreach (var (nom, guid, spec, desc) in new[]
+            {
+                (Nom, Guid, SpecTypeId.String.Text, "Numéro du spool de préfabrication (Pipe-Fit Isométries)."),
+                (NomSoudures, GuidSoudures, SpecTypeId.String.Text, "Connecteurs marqués soudure chantier par Pipe-Fit (n° de connecteur:surlongueur en mm). Se règle avec le bouton Soudure chantier."),
+                (NomPouces, GuidPouces, SpecTypeId.Number, "Pouces-diamètre des soudures portées par l'élément (écrits par Isométries spools)."),
+            })
+            {
+                var existe = Existe(doc, nom);
+                if (!existe) Creer(doc, app, nom, guid, desc, spec);
+                res.Add((nom, !existe));
+            }
+            return res;
+        }
+
+        /// <summary>Crée le paramètre des pouces de soudure s'il manque.</summary>
+        public static void CreerPouces(Document doc, Application app)
+        {
+            if (!Existe(doc, NomPouces)) Creer(doc, app, NomPouces, GuidPouces, "Pouces-diamètre des soudures portées par l'élément (écrits par Isométries spools).", SpecTypeId.Number);
+        }
+
         /// <summary>Crée et lie le paramètre « Numéro de spool » (dans une transaction ouverte). Renvoie son nom.</summary>
         public static string Creer(Document doc, Application app) =>
             Creer(doc, app, Nom, Guid, "Numéro du spool de préfabrication (Pipe-Fit Isométries).");
@@ -33,11 +64,11 @@ namespace PipeFit.Isometries.Revit
         /// <summary>Crée et lie le paramètre des soudures chantier marquées, s'il n'existe pas encore.</summary>
         public static void CreerSoudures(Document doc, Application app)
         {
-            if (LectureModele.ElementsTuyauterie(doc).Any(e => e.LookupParameter(NomSoudures) != null)) return;
+            if (Existe(doc, NomSoudures)) return;
             Creer(doc, app, NomSoudures, GuidSoudures, "Connecteurs marqués soudure chantier par Pipe-Fit (n° de connecteur:surlongueur en mm). Ne pas modifier à la main.");
         }
 
-        static string Creer(Document doc, Application app, string nom, Guid guid, string description)
+        static string Creer(Document doc, Application app, string nom, Guid guid, string description, ForgeTypeId spec = null)
         {
             var ancien = app.SharedParametersFilename;
             var fichier = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PipeFit", "Parametres partages Pipe-Fit.txt");
@@ -50,7 +81,7 @@ namespace PipeFit.Isometries.Revit
                 var df = app.OpenSharedParameterFile() ?? throw new InvalidOperationException("fichier de paramètres partagés illisible : " + fichier);
                 var groupe = df.Groups.get_Item("Pipe-Fit") ?? df.Groups.Create("Pipe-Fit");
                 def = groupe.Definitions.get_Item(nom) as ExternalDefinition
-                    ?? (ExternalDefinition)groupe.Definitions.Create(new ExternalDefinitionCreationOptions(nom, SpecTypeId.String.Text) { GUID = guid, Description = description });
+                    ?? (ExternalDefinition)groupe.Definitions.Create(new ExternalDefinitionCreationOptions(nom, spec ?? SpecTypeId.String.Text) { GUID = guid, Description = description });
             }
             finally { app.SharedParametersFilename = ancien; }
 

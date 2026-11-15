@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 
 namespace PipeFit.Isometries.Core
 {
@@ -91,6 +92,8 @@ namespace PipeFit.Isometries.Core
         public string Designation = "";
         /// <summary>Surlongueur ajoutée au débit de ce tube, à recouper sur place (soudures chantier).</summary>
         public double SurlongueurMm;
+        /// <summary>Pouces-diamètre des soudures portées par cet élément (chaque soudure comptée une seule fois).</summary>
+        public double PoucesSoudures;
     }
 
     public enum NatureAssemblage { Soudure, Boulonne, RaccordementChantier, ExtremiteLibre }
@@ -110,6 +113,13 @@ namespace PipeFit.Isometries.Core
         public double SurlongueurMm;
         /// <summary>Tube qui porte la surlongueur.</summary>
         public Composant Recoupe;
+        /// <summary>L'élément de l'autre côté (hors spool) est un tube.</summary>
+        public bool VoisinTube;
+        /// <summary>Assemblage soudé (soudure atelier, ou raccordement chantier soudé) ; faux pour un joint boulonné.</summary>
+        public bool Soude => Nature == NatureAssemblage.Soudure
+            || (Nature == NatureAssemblage.RaccordementChantier && !AnalyseSpool.Boulonnable(A) && (B == null || !AnalyseSpool.Boulonnable(B)));
+        /// <summary>Élément qui porte la soudure dans les nomenclatures (null : portée par l'élément hors spool).</summary>
+        public Composant Porteur;
         public double PoucesDiametre => Diametres.Pouces(DnMm);
     }
 
@@ -123,6 +133,8 @@ namespace PipeFit.Isometries.Core
         public string Materiau = "";
         public int Quantite;
         public double LongueurMm;
+        /// <summary>Pouces-diamètre des soudures portées par les éléments de la ligne.</summary>
+        public double PoucesSoudures;
         public List<Composant> Composants = new List<Composant>();
         public bool EstTube => Type == TypeComposant.Tube;
     }
@@ -167,9 +179,12 @@ namespace PipeFit.Isometries.Core
         public double PoucesDiametre(NatureAssemblage n)
         {
             double s = 0;
-            foreach (var a in Assemblages) if (a.Nature == n) s += a.PoucesDiametre;
+            foreach (var a in Assemblages) if (a.Nature == n && (n != NatureAssemblage.RaccordementChantier || a.Soude)) s += a.PoucesDiametre;
             return s;
         }
+
+        /// <summary>Raccordements chantier soudés (vrai) ou boulonnés (faux).</summary>
+        public int RaccordementsChantier(bool soudes) => Assemblages.Count(a => a.Nature == NatureAssemblage.RaccordementChantier && a.Soude == soudes);
     }
 
     public static class Diametres

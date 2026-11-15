@@ -23,6 +23,14 @@ namespace PipeFit.Isometries.Revit
                 LargeImage = Image("icone32.png"),
                 Image = Image("icone16.png"),
             };
+            panneau.AddItem(new PushButtonData("PipeFitParametres", "Paramètres\nPipe-Fit", Assembly.GetExecutingAssembly().Location, typeof(CmdParametres).FullName)
+            {
+                ToolTip = "Crée dans le projet (ou le gabarit) les paramètres Numéro de spool, Soudures chantier et Pouces soudures.",
+                LongDescription = "Paramètres partagés d'occurrence sur les canalisations, raccords et accessoires, à ajouter à vos nomenclatures et étiquettes. "
+                    + "Les autres boutons les créent aussi tout seuls au besoin.",
+                LargeImage = Image("parametres32.png"),
+                Image = Image("parametres16.png"),
+            });
             panneau.AddItem(new PushButtonData("PipeFitNumeroter", "Numéroter\nspools", Assembly.GetExecutingAssembly().Location, typeof(CmdNumeroter).FullName)
             {
                 ToolTip = "Attribue les numéros de spool : à la sélection (complétée jusqu'aux brides) ou par découpage automatique aux joints boulonnés.",

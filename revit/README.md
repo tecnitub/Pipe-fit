@@ -8,6 +8,21 @@ Le numéro de spool est attribué avec le bouton **Numéroter spools** (ci-desso
 (paramètre partagé « Numéro de spool », « Spool »… : la fenêtre propose tous les paramètres texte trouvés et choisit
 d'office celui qui est renseigné), ou dans la propriété *Spool* des pièces de fabrication MEP.
 
+## Paramètres du projet
+
+Bouton **Paramètres Pipe-Fit** : crée d'avance, dans le projet ou le gabarit, les paramètres partagés d'occurrence du
+complément (canalisations, raccords, accessoires, canalisations souples, pièces de fabrication), à ajouter aux
+nomenclatures et étiquettes Revit. Les autres boutons les créent aussi d'eux-mêmes au besoin.
+
+| Paramètre | Type | Rempli par |
+|---|---|---|
+| Numéro de spool | Texte | Numéroter spools (ou à la main) |
+| Soudures chantier (Pipe-Fit) | Texte | Soudure chantier : joints marqués (n° de connecteur:surlongueur), ne pas modifier à la main |
+| Pouces soudures (Pipe-Fit) | Nombre | Isométries spools : pouces-diamètre des soudures portées par l'élément, chaque soudure comptée une fois (le raccord plutôt que le tube) ; total par spool dans une nomenclature Revit regroupée par « Numéro de spool » |
+
+Fichier de paramètres partagés : `%AppData%\PipeFit\Parametres partages Pipe-Fit.txt` (GUID fixes : mêmes paramètres
+d'un projet à l'autre).
+
 ## Numéroter les spools
 
 Bouton **Numéroter spools** du ruban. Le paramètre « Numéro de spool » (paramètre partagé, texte, lié aux
@@ -58,7 +73,7 @@ Pour chaque spool coché :
 | Soudures | `S1`, `S2`… (soudures atelier) et `R1`, `R2`… (raccordements chantier) posés sur la vue |
 | Provenance / destination | À chaque extrémité du spool, flèche dans le sens de l'écoulement et cartouche **« VIENT DE … »** / **« VA VERS … »** : numéro du spool raccordé (renvoi vers son isométrie), sinon repère (*Marque*) de l'équipement (pompe, CTA, bac…), sinon nom du réseau ; « extrémité libre » si rien n'est raccordé dans la maquette. Tableau **PROVENANCE / DESTINATION** sur la feuille. Le sens est celui de l'écoulement calculé par Revit ; à défaut, la première extrémité de la ligne est l'arrivée |
 | Cotes | Chaîne de cotes sur chaque tronçon droit : **d'axe en axe** entre coudes, tés, croix et piquages, **d'axe à face de bride** en bout de spool, de face à face aux joints boulonnés intermédiaires (vanne entre brides), d'axe à bout de tube quand le spool se termine sans bride. Dessinées sur la feuille, exactement superposées à la vue, valeur en mm alignée sur la ligne |
-| Feuille `<préfixe><spool>` | Cartouche du projet ou cadre A3 fourni ; vue à l'échelle normalisée la plus grande qui tient (1:1 … 1:250) ; flèche du nord ; tableaux **SPOOL**, **NOMENCLATURE**, **LISTE DE DÉBIT**, **ASSEMBLAGES** (soudures en pouces-diamètre, joints boulonnés, raccordements chantier, extrémités libres) |
+| Feuille `<préfixe><spool>` | Cartouche du projet ou cadre A3 fourni ; vue à l'échelle normalisée la plus grande qui tient (1:1 … 1:250) ; flèche du nord ; tableaux **SPOOL**, **NOMENCLATURE** (avec les pouces de soudure par ligne et leur total), **LISTE DE DÉBIT**, **ASSEMBLAGES** (soudures atelier et chantier en pouces-diamètre, joints boulonnés, extrémités libres) |
 | Exports | `ISO <spool>.pdf`, `ISO <spool>.pcf` (Piping Component File pour Isogen, Spoolgen, M4 ISO, Plant 3D…), `Nomenclature spools.csv` (importable dans Pipe-Fit : *Devis → Chiffrage depuis plan*), `Soudures spools.csv`, `Cotes spools.csv`, `Liaisons spools.csv` ; dans le PCF, renvois `END-CONNECTION-PIPELINE` / `END-CONNECTION-EQUIPMENT` |
 
 La génération complète est une seule opération Revit (annulable par Ctrl+Z). Relancer avec l'option *Remplacer*

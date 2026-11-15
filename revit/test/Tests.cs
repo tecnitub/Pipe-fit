@@ -253,6 +253,34 @@ static class Tests
             Verifier(tt.Debits.Sum(d => d.SurlongueurMm) == 100, "tube contre tube : surlongueur d'un seul côté");
         }
 
+        // Pouces de soudure dans la nomenclature : chaque soudure portée une fois, par le raccord plutôt que le tube
+        {
+            var sp = Exemple(); AnalyseSpool.Analyser(sp);
+            var pid = sp.Composants.ToDictionary(c => c.Id);
+            // Soudures : 1-2 (coude), 2-3 (coude), 3-4 (té), 4-5 (té/bride : plus grand id = bride 5), 4-6 (té)
+            Verifier(pid["2"].PoucesSoudures == 4 && pid["4"].PoucesSoudures == 4 && pid["5"].PoucesSoudures == 2 && pid["1"].PoucesSoudures == 0,
+                "soudures portées par les raccords : coude 4\", té 4\", bride 2\"");
+            Verifier(sp.Composants.Sum(c => c.PoucesSoudures) == sp.PoucesDiametre(NatureAssemblage.Soudure), "total = soudures atelier, chacune une fois");
+            var tn = MiseEnPage.Tableaux(sp, "", "").First(t => t.Titre == "NOMENCLATURE");
+            Verifier(tn.Colonnes.Last().Titre == "Pouces" && tn.Largeur <= 130.001, "colonne Pouces, 130 mm");
+            Verifier(tn.Lignes.Last()[1] == "Total soudures (pouces-diamètre)" && tn.Lignes.Last()[5] == "10\"", "ligne de total : " + tn.Lignes.Last()[5]);
+            Verifier(tn.Lignes.Any(l => l[1].StartsWith("Coude") && l[5] == "4\""), "pouces de la ligne coude");
+            // Raccordement chantier vers une bride d'un autre spool : boulonné, pas de pouces de soudure
+            var ta = MiseEnPage.Tableaux(sp, "", "").First(t => t.Titre == "ASSEMBLAGES");
+            Verifier(ta.Lignes.Any(l => l[0] == "Joint boulonné chantier" && l[1] == "1") && !ta.Lignes.Any(l => l[0] == "Soudure chantier"),
+                "bride en bout : joint boulonné chantier, sans pouces");
+            // Soudure chantier entre deux spools (tube contre coude) : comptée par le coude seulement
+            var x1 = new Spool { Nom = "A" };
+            x1.Composants.Add(C("t", "Tuyau", "", TypeComposant.Tube, 100, 1000, null, E(0, 0, 0, 100, null), E(1000, 0, 0, 100, "k")));
+            x1.Composants[0].Extremites[1].VoisinEstTube = false;
+            AnalyseSpool.Analyser(x1);
+            var x2 = new Spool { Nom = "B" };
+            x2.Composants.Add(C("k", "Coude", "", TypeComposant.Coude, 100, 0, new Point3(1076, 0, 0), E(1000, 0, 0, 100, "t"), E(1076, 0, 76, 100, null)));
+            x2.Composants[0].Extremites[0].VoisinEstTube = true;
+            AnalyseSpool.Analyser(x2);
+            Verifier(x1.Composants[0].PoucesSoudures == 0 && x2.Composants[0].PoucesSoudures == 4, "soudure chantier entre spools comptée une fois (côté coude)");
+        }
+
         // Bride contre bride (ou vanne) : joint boulonné
         var b = new Spool { Nom = "B" };
         b.Composants.Add(C("a", "Bride", "PN16", TypeComposant.Bride, 80, 0, null, E(0, 0, 0, 80, "x"), E(10, 0, 0, 80, "b")));

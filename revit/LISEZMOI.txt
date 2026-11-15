@@ -9,6 +9,12 @@ INSTALLATION
   3. Relancer Revit : onglet « Pipe-Fit » > groupe « Fabrication » > « Isométries spools ».
   Désinstaller : Installer.bat -Desinstaller
 
+PARAMÈTRES (bouton « Paramètres Pipe-Fit »)
+  Crée d'avance dans le projet ou le gabarit : « Numéro de spool », « Soudures chantier (Pipe-Fit) »
+  et « Pouces soudures (Pipe-Fit) » (pouces-diamètre des soudures portées par chaque élément, écrits à la
+  génération des isométries). À ajouter aux nomenclatures Revit : regroupées par Numéro de spool, le total
+  des pouces donne les pouces de soudure du spool.
+
 NUMÉROTER LES SPOOLS (bouton « Numéroter spools »)
   - À la main : sélectionner dans Revit un élément du spool (un tube suffit), cliquer « Numéroter spools » :
     tout ce qui lui est soudé jusqu'aux brides reçoit le prochain numéro libre (SP-001, SP-002…).

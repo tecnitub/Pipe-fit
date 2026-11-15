@@ -54,6 +54,7 @@ namespace PipeFit.Isometries.Core
             Debiter(s, ordre);
             // Matière à prévoir : la nomenclature des tubes comprend les surlongueurs à recouper sur place
             foreach (var l in s.Nomenclature.Where(x => x.EstTube)) l.LongueurMm = l.Composants.Sum(c => c.LongueurMm + c.SurlongueurMm);
+            AttribuerSoudures(s);
 
             s.Systeme = PlusFrequent(s.Composants.Select(c => c.Systeme));
             s.Materiau = PlusFrequent(s.Composants.Where(c => c.Type == TypeComposant.Tube).Select(c => c.Materiau));
@@ -254,7 +255,7 @@ namespace PipeFit.Isometries.Core
                     if (e.ConnecteA == null) { liste.Add(new Assemblage { Nature = NatureAssemblage.ExtremiteLibre, A = a, Position = e.Position, DnMm = e.DnMm }); continue; }
                     if (!parId.TryGetValue(e.ConnecteA, out var b))
                     {
-                        var r = new Assemblage { Nature = NatureAssemblage.RaccordementChantier, A = a, Exterieur = e.ConnecteA, Position = e.Position, DnMm = e.DnMm };
+                        var r = new Assemblage { Nature = NatureAssemblage.RaccordementChantier, A = a, Exterieur = e.ConnecteA, Position = e.Position, DnMm = e.DnMm, VoisinTube = e.VoisinEstTube };
                         Surlongueur(s, r, a, e, e.VoisinEstTube, e.ConnecteA);
                         liste.Add(r);
                         continue;
@@ -303,6 +304,32 @@ namespace PipeFit.Isometries.Core
             if (v <= 0) return false;
             r.SurlongueurMm = v; r.Recoupe = a;
             return true;
+        }
+
+        /// <summary>
+        /// Chaque soudure est portée par un seul élément, pour être comptée une fois dans les nomenclatures (isométrie et
+        /// nomenclatures Revit) : le raccord plutôt que le tube ; entre deux tubes ou deux raccords, le plus grand identifiant.
+        /// Une soudure de raccordement entre deux spools n'est ainsi comptée que dans l'un des deux.
+        /// </summary>
+        static void AttribuerSoudures(Spool s)
+        {
+            foreach (var c in s.Composants) c.PoucesSoudures = 0;
+            foreach (var a in s.Assemblages)
+            {
+                a.Porteur = null;
+                if (!a.Soude) continue;
+                bool tubeA = a.A.Type == TypeComposant.Tube;
+                if (a.B != null)
+                {
+                    bool tubeB = a.B.Type == TypeComposant.Tube;
+                    a.Porteur = tubeA != tubeB ? (tubeA ? a.B : a.A) : string.CompareOrdinal(a.A.Id, a.B.Id) > 0 ? a.A : a.B;
+                }
+                else if (a.Exterieur == null) a.Porteur = a.A;
+                else if (tubeA != a.VoisinTube) a.Porteur = tubeA ? null : a.A;
+                else a.Porteur = string.CompareOrdinal(a.A.Id, a.Exterieur) > 0 ? a.A : null;
+                if (a.Porteur != null) a.Porteur.PoucesSoudures += a.PoucesDiametre;
+            }
+            foreach (var l in s.Nomenclature) l.PoucesSoudures = l.Composants.Sum(c => c.PoucesSoudures);
         }
 
         static List<Assemblage> Dedoublonner(List<Assemblage> liste)

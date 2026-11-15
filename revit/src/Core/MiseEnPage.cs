@@ -77,14 +77,18 @@ namespace PipeFit.Isometries.Core
             }
 
             var nom = new Tableau { Titre = "NOMENCLATURE" };
-            nom.Colonnes.Add(new Colonne("Rep.", 10)); nom.Colonnes.Add(new Colonne("Désignation", 62));
-            nom.Colonnes.Add(new Colonne("DN", 14)); nom.Colonnes.Add(new Colonne("Matière", 26)); nom.Colonnes.Add(new Colonne("Qté", 18, true));
+            nom.Colonnes.Add(new Colonne("Rep.", 10)); nom.Colonnes.Add(new Colonne("Désignation", 52));
+            nom.Colonnes.Add(new Colonne("DN", 14)); nom.Colonnes.Add(new Colonne("Matière", 22)); nom.Colonnes.Add(new Colonne("Qté", 16, true));
+            nom.Colonnes.Add(new Colonne("Pouces", 16, true));
             foreach (var l in s.Nomenclature)
                 nom.Lignes.Add(new[]
                 {
                     l.Repere.ToString(CultureInfo.InvariantCulture), l.Designation, Taille(l), l.Materiau,
                     l.EstTube ? (l.LongueurMm / 1000).ToString("0.00", Fr) + " m" : l.Quantite.ToString(CultureInfo.InvariantCulture),
+                    l.PoucesSoudures > 0 ? l.PoucesSoudures.ToString("0.##", Fr) + "\"" : "",
                 });
+            var total = s.Nomenclature.Sum(l => l.PoucesSoudures);
+            nom.Lignes.Add(new[] { "", "Total soudures (pouces-diamètre)", "", "", "", total.ToString("0.##", Fr) + "\"" });
             res.Add(nom);
 
             if (s.Debits.Count > 0)
@@ -101,12 +105,15 @@ namespace PipeFit.Isometries.Core
 
             var ass = new Tableau { Titre = "ASSEMBLAGES" };
             ass.Colonnes.Add(new Colonne("Nature", 70)); ass.Colonnes.Add(new Colonne("Nombre", 25, true)); ass.Colonnes.Add(new Colonne("Pouces-dia.", 35, true));
-            foreach (var n in new[] { NatureAssemblage.Soudure, NatureAssemblage.Boulonne, NatureAssemblage.RaccordementChantier, NatureAssemblage.ExtremiteLibre })
+            void Ligne(string nature, int nb, double pouces, bool toujours = false)
             {
-                var nb = s.Nombre(n);
-                if (nb == 0 && n != NatureAssemblage.Soudure) continue;
-                ass.Lignes.Add(new[] { ExportCsv.Nature(n), nb.ToString(CultureInfo.InvariantCulture), s.PoucesDiametre(n).ToString("0.##", Fr) });
+                if (nb > 0 || toujours) ass.Lignes.Add(new[] { nature, nb.ToString(CultureInfo.InvariantCulture), pouces > 0 ? pouces.ToString("0.##", Fr) : "" });
             }
+            Ligne("Soudure atelier", s.Nombre(NatureAssemblage.Soudure), s.PoucesDiametre(NatureAssemblage.Soudure), true);
+            Ligne("Soudure chantier", s.RaccordementsChantier(true), s.PoucesDiametre(NatureAssemblage.RaccordementChantier));
+            Ligne("Joint boulonné", s.Nombre(NatureAssemblage.Boulonne), 0);
+            Ligne("Joint boulonné chantier", s.RaccordementsChantier(false), 0);
+            Ligne("Extrémité libre", s.Nombre(NatureAssemblage.ExtremiteLibre), 0);
             res.Add(ass);
             return res;
         }
