@@ -1,0 +1,357 @@
+<title>Pipe-Fit Isométries</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Mise en page : bandeau titre, sélecteurs (spool, orientation, calques), feuille A3 zoomable, onglets de détail. */
+:root {
+  --bg: #eef1f3; --surface: #ffffff; --fg: #18212b; --muted: #5d6a77; --line: #cdd5dc;
+  --accent: #0b5cad; --accent-fg: #ffffff; --weld: #d0661a;
+  --paper: #ffffff; --ink: #121820; --dim: #1f5f9e; --frame: #8a96a3;
+  --f-display: "Barlow Semi Condensed", "Arial Narrow", Arial, sans-serif;
+  --f-body: "Barlow", "Segoe UI", Arial, sans-serif;
+  --f-mono: "IBM Plex Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11161c; --surface: #19212a; --fg: #e3e9ef; --muted: #93a1ae; --line: #2c3742;
+  --accent: #5aa3ec; --accent-fg: #0b1622; --weld: #f08a3c;
+  --paper: #1a2129; --ink: #e2e8ee; --dim: #7cb6ee; --frame: #5f6c79; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #11161c; --surface: #19212a; --fg: #e3e9ef; --muted: #93a1ae; --line: #2c3742;
+  --accent: #5aa3ec; --accent-fg: #0b1622; --weld: #f08a3c;
+  --paper: #1a2129; --ink: #e2e8ee; --dim: #7cb6ee; --frame: #5f6c79; color-scheme: dark }
+
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 15px; line-height: 1.45 }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 20px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 16px }
+header { display: grid; gap: 4px }
+.eyebrow { font-family: var(--f-display); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; font-size: 12px; color: var(--accent) }
+h1 { font-family: var(--f-display); font-weight: 700; font-size: clamp(26px, 5vw, 36px); line-height: 1.1; margin: 0; text-wrap: balance }
+.intro { margin: 0; color: var(--muted); max-width: 68ch }
+
+.controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: end }
+.group { display: grid; gap: 6px; min-width: 0 }
+.group > span { font-family: var(--f-display); font-weight: 600; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted) }
+.seg { display: flex; flex-wrap: wrap; gap: 6px }
+.seg button, .tool { font: 500 14px var(--f-body); color: var(--fg); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 6px; padding: 7px 12px; cursor: pointer; min-height: 36px }
+.seg button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg) }
+.seg button:focus-visible, .tool:focus-visible, .tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.seg .spool b { font-family: var(--f-display); font-weight: 700; letter-spacing: .02em }
+.seg .spool small { display: block; font-size: 11px; opacity: .8 }
+
+.stats { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 14px; color: var(--muted) }
+.stats b { color: var(--fg); font-family: var(--f-display); font-size: 17px; font-variant-numeric: tabular-nums }
+
+.sheet-card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden }
+.sheet-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap }
+.sheet-bar .name { font-family: var(--f-display); font-weight: 600; margin-right: auto }
+.tool { padding: 5px 10px; min-height: 32px; min-width: 36px }
+.sheet-scroll { overflow: auto; -webkit-overflow-scrolling: touch; background: var(--bg); max-height: 78vh }
+.sheet-scroll svg { display: block; background: var(--paper); aspect-ratio: 420 / 297; max-width: none }
+.hint { font-size: 13px; color: var(--muted); padding: 6px 10px 10px }
+
+.tabs { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--line) }
+.tabs button { font: 600 14px var(--f-display); letter-spacing: .03em; background: none; border: 0; border-bottom: 3px solid transparent;
+  color: var(--muted); padding: 10px 12px; cursor: pointer; white-space: nowrap }
+.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent) }
+.panel { padding-top: 12px; min-width: 0 }
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface) }
+table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums }
+th, td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap }
+th { font-family: var(--f-display); font-weight: 600; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted) }
+td.r, th.r { text-align: right }
+tr:last-child td { border-bottom: 0 }
+.panel h3 { font-family: var(--f-display); font-size: 16px; margin: 18px 0 8px; letter-spacing: .02em }
+.panel h3:first-child { margin-top: 0 }
+.pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 99px; border: 1px solid currentColor }
+.pill.s { color: var(--weld) } .pill.b { color: var(--dim) } .pill.r { color: var(--muted) }
+pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+  padding: 12px; overflow: auto; max-height: 460px }
+.note { font-size: 13px; color: var(--muted); margin: 8px 0 0; max-width: 72ch }
+
+/* Feuille */
+.k-ink { stroke: var(--ink); fill: none }
+.k-txt { fill: var(--ink); font-family: Arial, "Liberation Sans", sans-serif }
+.k-dim { stroke: var(--dim); fill: none }
+.k-dimtxt { fill: var(--dim); font-family: Arial, "Liberation Sans", sans-serif }
+.k-weld { fill: var(--weld) }
+.k-weldtxt { fill: var(--weld); font-family: Arial, "Liberation Sans", sans-serif; font-weight: 700 }
+.k-frame { stroke: var(--frame); fill: none }
+.k-bg { fill: var(--paper) }
+@media (prefers-reduced-motion: no-preference) { .sheet-scroll svg { transition: width .15s ease } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Démonstration · complément Revit Pipe-Fit</div>
+    <h1>Isométries de fabrication par spool</h1>
+    <p class="intro">Trois spools d'exemple passés dans le moteur du complément : la feuille ci-dessous est celle que la commande
+      « Isométries spools » crée dans Revit, avec les repères, les soudures et les cotes d'axe en axe et d'axe à bride.</p>
+  </header>
+
+  <div class="controls">
+    <div class="group"><span>Spool</span><div class="seg" id="spools"></div></div>
+    <div class="group"><span>Orientation</span><div class="seg" id="orients"></div></div>
+    <div class="group"><span>Afficher</span><div class="seg" id="layers"></div></div>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <section class="sheet-card" aria-label="Feuille d'isométrie">
+    <div class="sheet-bar">
+      <span class="name" id="sheetName"></span>
+      <button class="tool" id="zoomOut" aria-label="Réduire">−</button>
+      <button class="tool" id="zoomFit">Ajuster</button>
+      <button class="tool" id="zoomIn" aria-label="Agrandir">+</button>
+    </div>
+    <div class="sheet-scroll" id="scroll"><svg id="sheet" xmlns="http://www.w3.org/2000/svg" role="img"></svg></div>
+    <div class="hint">Feuille A3 paysage, cotes en mm. Agrandissez avec + puis faites glisser pour parcourir le dessin.</div>
+  </section>
+
+  <section>
+    <div class="tabs" role="tablist" id="tabs">
+      <button role="tab" data-t="nom" aria-selected="true">Nomenclature</button>
+      <button role="tab" data-t="deb">Débit</button>
+      <button role="tab" data-t="ass">Soudures</button>
+      <button role="tab" data-t="cot">Cotes</button>
+      <button role="tab" data-t="pcf">Fichier PCF</button>
+      <button role="tab" data-t="csv">CSV Pipe-Fit</button>
+    </div>
+    <div class="panel" id="panel"></div>
+  </section>
+</div>
+
+<script id="data" type="application/json">__DATA__</script>
+<script>
+(() => {
+  const D = JSON.parse(document.getElementById('data').textContent);
+  const NS = 'http://www.w3.org/2000/svg';
+  const ORIENTS = [
+    { k: 'SE', l: 'Sud-est', f: [-1, 1, -1], txt: 'vue depuis le sud-est' },
+    { k: 'SO', l: 'Sud-ouest', f: [1, 1, -1], txt: 'vue depuis le sud-ouest' },
+    { k: 'NE', l: 'Nord-est', f: [-1, -1, -1], txt: 'vue depuis le nord-est' },
+    { k: 'NO', l: 'Nord-ouest', f: [1, -1, -1], txt: 'vue depuis le nord-ouest' },
+  ];
+  const ECHELLES = [1, 2, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100, 125, 150, 200, 250];
+  const st = { s: 0, o: 0, rep: true, sou: true, cot: true, zoom: 1, tab: 'nom' };
+  try { const m = JSON.parse(localStorage.getItem('pf-iso') || '{}'); Object.assign(st, m, { zoom: 1 }); } catch (e) {}
+  const save = () => { try { localStorage.setItem('pf-iso', JSON.stringify({ s: st.s, o: st.o, rep: st.rep, sou: st.sou, cot: st.cot, tab: st.tab })); } catch (e) {} };
+  if (!(st.s >= 0 && st.s < D.length)) st.s = 0;
+
+  const fr = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
+  const v3 = { dot: (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2], sub: (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]],
+    mul: (a, k) => [a[0]*k, a[1]*k, a[2]*k], cross: (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]],
+    norm: a => { const l = Math.hypot(...a); return [a[0]/l, a[1]/l, a[2]/l]; } };
+
+  // Même construction que le complément : direction de regard, haut = Z projeté, droite = regard × haut
+  function repere(o) {
+    const f = v3.norm(ORIENTS[o].f);
+    const up = v3.norm(v3.sub([0, 0, 1], v3.mul(f, v3.dot(f, [0, 0, 1]))));
+    return { f, up, right: v3.cross(f, up) };
+  }
+  const tronquer = (t, w, h = 2.5) => { t = t || ''; const max = Math.floor((w - 2) / (0.62 * h)); return max < 2 ? '' : t.length <= max ? t : t.slice(0, max - 1).trimEnd() + '…'; };
+
+  function el(tag, attrs, parent, text) {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (text != null) e.textContent = text;
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+
+  function dessiner() {
+    const s = D[st.s], R = repere(st.o);
+    const svg = document.getElementById('sheet');
+    svg.innerHTML = '';
+    svg.setAttribute('viewBox', '0 0 420 297');
+    svg.setAttribute('aria-label', 'Isométrie de fabrication du spool ' + s.nom);
+    const Y = y => 297 - y;
+    el('rect', { x: 0, y: 0, width: 420, height: 297, class: 'k-bg' }, svg);
+    const g = el('g', {}, svg);
+    const line = (x1, y1, x2, y2, cls = 'k-ink', w = 0.25) => el('line', { x1, y1: Y(y1), x2, y2: Y(y2), class: cls, 'stroke-width': w, 'stroke-linecap': 'round' }, g);
+    const text = (x, y, t, o = {}) => el('text', { x, y: Y(y), class: o.cls || 'k-txt', 'font-size': o.size || 2.5, 'font-weight': o.bold ? 700 : 400,
+      'text-anchor': o.anchor || 'start', 'dominant-baseline': 'central', ...(o.rot != null ? { transform: `rotate(${o.rot} ${x} ${Y(y)})` } : {}) }, g, t);
+
+    // Cadre A3 et cartouche (comme le cadre fourni quand aucun cartouche n'est choisi)
+    [[0, 0, 420, 297], [10, 10, 400, 277]].forEach(([x, y, w, h], i) => el('rect', { x, y: Y(y + h), width: w, height: h, class: i ? 'k-ink' : 'k-frame', 'stroke-width': i ? 0.5 : 0.25 }, g));
+    line(220, 10, 220, 45); line(220, 45, 410, 45); line(220, 33, 410, 33); line(220, 21, 410, 21); line(330, 10, 330, 33);
+    text(222, 39, 'ISOMÉTRIE DE FABRICATION – SPOOL ' + s.nom, { bold: true });
+    text(222, 27, 'Démonstration Pipe-Fit'); text(332, 27, 'Feuille ISO-' + s.nom);
+    text(222, 15.5, 'Système ' + s.systeme); text(332, 15.5, '15/11/2026');
+
+    // Tableaux, positions calculées par le complément
+    s.tableaux.forEach(t => {
+      const h = 5, entete = t.colonnes.some(c => c.t), n = t.lignes.length + (entete ? 2 : 1), w = t.colonnes.reduce((a, c) => a + c.w, 0), bas = t.y - n * h;
+      el('rect', { x: t.x, y: Y(t.y), width: w, height: n * h, class: 'k-ink', 'stroke-width': 0.25 }, g);
+      for (let i = 1; i < n; i++) line(t.x, t.y - i * h, t.x + w, t.y - i * h, 'k-ink', i === 1 ? 0.35 : 0.18);
+      let cx = t.x;
+      t.colonnes.slice(0, -1).forEach(c => { cx += c.w; line(cx, t.y - h, cx, bas, 'k-ink', 0.18); });
+      text(t.x + 1.5, t.y - h / 2, t.titre, { bold: true });
+      let ligne = 1;
+      if (entete) { cx = t.x; t.colonnes.forEach(c => { text(c.d ? cx + c.w - 1.5 : cx + 1.5, t.y - h * 1.5, tronquer(c.t, c.w), { bold: true, anchor: c.d ? 'end' : 'start' }); cx += c.w; }); ligne = 2; }
+      t.lignes.forEach(l => { cx = t.x; t.colonnes.forEach((c, j) => { text(c.d ? cx + c.w - 1.5 : cx + 1.5, t.y - h * (ligne + .5), tronquer(l[j], c.w), { anchor: c.d ? 'end' : 'start' }); cx += c.w; }); ligne++; });
+    });
+
+    // Projection de la vue, échelle normalisée qui tient dans la zone (marge pour étiquettes et cotes)
+    const zv = { x0: s.zoneVue[0], y0: s.zoneVue[1], x1: s.zoneVue[2], y1: s.zoneVue[3] };
+    const pts = []; s.composants.forEach(c => c.ext.forEach(e => pts.push(e.p)));
+    const proj = p => [v3.dot(p, R.right), v3.dot(p, R.up)];
+    const pp = pts.map(proj);
+    const minx = Math.min(...pp.map(p => p[0])), maxx = Math.max(...pp.map(p => p[0])), miny = Math.min(...pp.map(p => p[1])), maxy = Math.max(...pp.map(p => p[1]));
+    const marge = 300;
+    const n = ECHELLES.find(k => (maxx - minx + 2 * marge) / k <= (zv.x1 - zv.x0) * 0.78 && (maxy - miny + 2 * marge) / k <= (zv.y1 - zv.y0) * 0.78) || 250;
+    const cxm = (minx + maxx) / 2, cym = (miny + maxy) / 2, cxs = (zv.x0 + zv.x1) / 2, cys = (zv.y0 + zv.y1) / 2;
+    const F = p => { const q = proj(p); return [cxs + (q[0] - cxm) / n, cys + (q[1] - cym) / n]; };
+    const gc = pp.reduce((a, p) => [a[0] + p[0], a[1] + p[1]], [0, 0]).map(v => v / pp.length);
+    const centre = [cxs + (gc[0] - cxm) / n, cys + (gc[1] - cym) / n];
+
+    // Géométrie unifilaire
+    const TRAIT = 0.7;
+    const perp = (a, b, l) => { const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1; return [-dy / L * l, dx / L * l]; };
+    s.composants.forEach(c => {
+      const e = c.ext.map(x => F(x.p));
+      if (c.axe) { const a = F(c.axe); e.forEach(p => line(p[0], p[1], a[0], a[1], 'k-ink', TRAIT)); return; }
+      if (e.length < 2) return;
+      const [a, b] = e;
+      if (c.type === 'Bride') {
+        line(a[0], a[1], b[0], b[1], 'k-ink', TRAIT);
+        const face = c.ext[0].ext || !s.composants.some(o => o.type === 'Tube' && o.ext.some(x => x.p.join() === c.ext[0].p.join())) ? a : b;
+        const q = perp(a, b, 2.2); line(face[0] - q[0], face[1] - q[1], face[0] + q[0], face[1] + q[1], 'k-ink', 0.5);
+      } else if (c.type === 'Vanne' || c.type === 'Accessoire') {
+        const q = perp(a, b, 2.4);
+        el('path', { d: `M${a[0]+q[0]} ${Y(a[1]+q[1])}L${b[0]-q[0]} ${Y(b[1]-q[1])}L${b[0]+q[0]} ${Y(b[1]+q[1])}L${a[0]-q[0]} ${Y(a[1]-q[1])}Z`, class: 'k-ink', 'stroke-width': 0.35, 'stroke-linejoin': 'round' }, g);
+        const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], up = 3.6; line(m[0], m[1], m[0], m[1] + up, 'k-ink', 0.35); line(m[0] - 1.6, m[1] + up, m[0] + 1.6, m[1] + up, 'k-ink', 0.35);
+      } else if (c.type === 'Reduction') {
+        const q1 = perp(a, b, 1.6), q2 = perp(a, b, 0.9);
+        el('path', { d: `M${a[0]+q1[0]} ${Y(a[1]+q1[1])}L${b[0]+q2[0]} ${Y(b[1]+q2[1])}L${b[0]-q2[0]} ${Y(b[1]-q2[1])}L${a[0]-q1[0]} ${Y(a[1]-q1[1])}Z`, class: 'k-ink', 'stroke-width': 0.35 }, g);
+      } else line(a[0], a[1], b[0], b[1], 'k-ink', TRAIT);
+    });
+
+    // Repères (bulles), décalés vers le haut, alternés gauche / droite
+    if (st.rep) {
+      let i = 0;
+      s.composants.forEach(c => {
+        const pts2 = c.ext.map(x => F(x.p));
+        const m = c.axe ? F(c.axe) : [pts2.reduce((a, p) => a + p[0], 0) / pts2.length, pts2.reduce((a, p) => a + p[1], 0) / pts2.length];
+        const sens = i++ % 2 ? -1 : 1, hx = m[0] + sens * 5, hy = m[1] + 8;
+        line(m[0], m[1], hx, hy - 2.3, 'k-ink', 0.18);
+        if (c.type === 'Tube') { el('rect', { x: hx - 3.4, y: Y(hy + 2.1), width: 6.8, height: 4.2, class: 'k-ink', 'stroke-width': 0.25, fill: 'var(--paper)' }, g); }
+        else el('circle', { cx: hx, cy: Y(hy), r: 2.4, class: 'k-ink', 'stroke-width': 0.25, fill: 'var(--paper)' }, g);
+        text(hx, hy, c.repere, { anchor: 'middle', size: 2.3, bold: true });
+      });
+    }
+
+    // Soudures et raccordements chantier
+    if (st.sou) s.assemblages.forEach(a => {
+      if (a.nature !== 'Soudure' && a.nature !== 'RaccordementChantier') return;
+      const p = F(a.p);
+      if (a.nature === 'Soudure') el('circle', { cx: p[0], cy: Y(p[1]), r: 0.75, class: 'k-weld' }, g);
+      else el('path', { d: `M${p[0]} ${Y(p[1])}l1.4 -2.4l-2.8 0Z`, class: 'k-weld' }, g);
+      text(p[0], p[1] - 3.2, a.n, { cls: 'k-weldtxt', anchor: 'middle', size: 2.1 });
+    });
+
+    // Cotes : même construction que le complément (attaches, ligne décalée vers l'extérieur, traits obliques)
+    if (st.cot) s.cotes.forEach(c => {
+      const a = F(c.a), b = F(c.b);
+      let vx = b[0] - a[0], vy = b[1] - a[1]; const l = Math.hypot(vx, vy);
+      if (l < 2) return;
+      const ux = vx / l, uy = vy / l; let nx = -uy, ny = ux;
+      if (((a[0] + b[0]) / 2 - centre[0]) * nx + ((a[1] + b[1]) / 2 - centre[1]) * ny < 0) { nx = -nx; ny = -ny; }
+      const dec = 7, att = 1.5, tr = 1.3;
+      line(a[0] + nx * att, a[1] + ny * att, a[0] + nx * (dec + att), a[1] + ny * (dec + att), 'k-dim', 0.18);
+      line(b[0] + nx * att, b[1] + ny * att, b[0] + nx * (dec + att), b[1] + ny * (dec + att), 'k-dim', 0.18);
+      const ax = a[0] + nx * dec, ay = a[1] + ny * dec, bx = b[0] + nx * dec, by = b[1] + ny * dec;
+      line(ax, ay, bx, by, 'k-dim', 0.22);
+      const tx = (ux + nx) / Math.SQRT2 * tr, ty = (uy + ny) / Math.SQRT2 * tr;
+      line(ax - tx, ay - ty, ax + tx, ay + ty, 'k-dim', 0.35); line(bx - tx, by - ty, bx + tx, by + ty, 'k-dim', 0.35);
+      let ang = Math.atan2(uy, ux); if (ang > Math.PI / 2 + 1e-9) ang -= Math.PI; if (ang <= -Math.PI / 2 + 1e-9) ang += Math.PI;
+      text((ax + bx) / 2 + nx * 2.2, (ay + by) / 2 + ny * 2.2, c.v, { cls: 'k-dimtxt', anchor: 'middle', rot: -ang * 180 / Math.PI });
+    });
+
+    // Flèche du nord projetée et échelle
+    { let dx = R.right[1], dy = R.up[1]; const l = Math.hypot(dx, dy); dx /= l; dy /= l;
+      const ox = zv.x0 + 12, oy = zv.y1 - 22, tx = ox + dx * 14, ty = oy + dy * 14, a = Math.atan2(dy, dx);
+      line(ox, oy, tx, ty, 'k-ink', 0.35);
+      [0.4, -0.4].forEach(d => line(tx, ty, tx - 4 * Math.cos(a + d), ty - 4 * Math.sin(a + d), 'k-ink', 0.35));
+      text(tx + dx * 4, ty + dy * 4, 'N', { bold: true, anchor: 'middle' }); }
+    text(zv.x0 + 2, zv.y0 + 4, `Échelle 1:${n}   –   cotes en mm   –   ${ORIENTS[st.o].txt}`);
+
+    document.getElementById('sheetName').textContent = `Feuille ISO-${s.nom} · 1:${n}`;
+    appliquerZoom();
+  }
+
+  function appliquerZoom() {
+    const svg = document.getElementById('sheet');
+    svg.style.width = (st.zoom * 100) + '%';
+    svg.style.height = 'auto';
+  }
+  function zoomer(k) {
+    const sc = document.getElementById('scroll');
+    const cx = (sc.scrollLeft + sc.clientWidth / 2) / sc.scrollWidth, cy = (sc.scrollTop + sc.clientHeight / 2) / sc.scrollHeight;
+    st.zoom = Math.min(6, Math.max(1, k === 0 ? 1 : st.zoom * k));
+    appliquerZoom();
+    sc.scrollLeft = cx * sc.scrollWidth - sc.clientWidth / 2; sc.scrollTop = cy * sc.scrollHeight - sc.clientHeight / 2;
+  }
+
+  const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const table = (cols, rows) => `<div class="tbl-wrap"><table><thead><tr>${cols.map(c => `<th class="${c.r ? 'r' : ''}">${esc(c.t)}</th>`).join('')}</tr></thead><tbody>${
+    rows.map(r => `<tr>${r.map((v, i) => `<td class="${cols[i].r ? 'r' : ''}">${cols[i].html ? v : esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  const tab = (s, titre) => s.tableaux.find(t => t.titre === titre);
+
+  function panneau() {
+    const s = D[st.s], p = document.getElementById('panel');
+    document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.t === st.tab));
+    if (st.tab === 'nom') {
+      const t = tab(s, 'NOMENCLATURE');
+      p.innerHTML = table(t.colonnes.map(c => ({ t: c.t, r: c.d })), t.lignes) +
+        `<p class="note">Repère 1, 2, 3… = numéro de ligne, écrit dans le paramètre « Marque » de chaque raccord. Les tubes sont repérés T1, T2… dans l'ordre de la ligne.</p>`;
+    } else if (st.tab === 'deb') {
+      const t = tab(s, 'LISTE DE DÉBIT');
+      p.innerHTML = t ? table(t.colonnes.map(c => ({ t: c.t, r: c.d })), t.lignes) + `<p class="note">Longueurs de coupe réelles des tubes, entre chanfreins.</p>` : '<p>Aucun tube.</p>';
+    } else if (st.tab === 'ass') {
+      const t = tab(s, 'ASSEMBLAGES');
+      const lib = { Soudure: ['Soudure atelier', 's'], Boulonne: ['Joint boulonné', 'b'], RaccordementChantier: ['Raccordement chantier', 'r'], ExtremiteLibre: ['Extrémité libre', 'r'] };
+      p.innerHTML = `<h3>Synthèse</h3>` + table(t.colonnes.map(c => ({ t: c.t, r: c.d })), t.lignes) + `<h3>Détail</h3>` +
+        table([{ t: 'N°' }, { t: 'Nature', html: true }, { t: 'DN' }, { t: 'Pouces-dia.', r: true }],
+          s.assemblages.map(a => [a.n, `<span class="pill ${lib[a.nature][1]}">${lib[a.nature][0]}</span>`, 'DN' + Math.round(a.dn), fr.format(a.pd)]));
+    } else if (st.tab === 'cot') {
+      p.innerHTML = table([{ t: 'Cote (mm)', r: true }, { t: 'De / à' }], s.cotes.map(c => [c.v, c.l])) +
+        `<p class="note">Axe = intersection des axes du coude ou du té. Bride = face de la bride. Une vanne entre brides coupe la chaîne : cotes jusqu'à ses faces, puis face à face.</p>`;
+    } else if (st.tab === 'pcf') {
+      p.innerHTML = `<pre>${esc(s.pcf)}</pre><p class="note">Fichier ISO ${esc(s.nom)}.pcf, lisible par Isogen, Spoolgen ou Plant 3D pour une isométrie normalisée.</p>`;
+    } else {
+      p.innerHTML = `<pre>${esc(s.csv)}</pre><p class="note">« Nomenclature spools.csv » : importable tel quel dans Pipe-Fit, Devis → Chiffrage depuis plan.</p>`;
+    }
+  }
+
+  function stats() {
+    const s = D[st.s];
+    document.getElementById('stats').innerHTML = [
+      ['Système', s.systeme], ['Matière', s.materiau], ['DN maxi', 'DN' + Math.round(s.dnMax)],
+      ['Longueur développée', fr.format(s.longueur / 1000) + ' m'], ['Soudures atelier', s.soudures + ' · ' + fr.format(s.pouces) + '"'],
+    ].map(([k, v]) => `<span>${k} <b>${esc(v)}</b></span>`).join('');
+  }
+
+  function boutons() {
+    const sp = document.getElementById('spools');
+    sp.innerHTML = D.map((s, i) => `<button class="spool" data-i="${i}" aria-pressed="${i === st.s}"><b>${esc(s.nom)}</b><small>${esc(s.systeme)} · DN${Math.round(s.dnMax)}</small></button>`).join('');
+    document.getElementById('orients').innerHTML = ORIENTS.map((o, i) => `<button data-i="${i}" aria-pressed="${i === st.o}">${o.l}</button>`).join('');
+    document.getElementById('layers').innerHTML = [['rep', 'Repères'], ['sou', 'Soudures'], ['cot', 'Cotes']].map(([k, l]) => `<button data-k="${k}" aria-pressed="${st[k]}">${l}</button>`).join('');
+  }
+
+  function tout() { boutons(); stats(); dessiner(); panneau(); save(); }
+
+  document.getElementById('spools').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { st.s = +b.dataset.i; tout(); } });
+  document.getElementById('orients').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { st.o = +b.dataset.i; tout(); } });
+  document.getElementById('layers').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { st[b.dataset.k] = !st[b.dataset.k]; tout(); } });
+  document.getElementById('tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { st.tab = b.dataset.t; panneau(); save(); } });
+  document.getElementById('zoomIn').onclick = () => zoomer(1.5);
+  document.getElementById('zoomOut').onclick = () => zoomer(1 / 1.5);
+  document.getElementById('zoomFit').onclick = () => zoomer(0);
+  window.addEventListener('resize', appliquerZoom);
+  tout();
+})();
+</script>

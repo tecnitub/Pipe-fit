@@ -54,6 +54,7 @@ revit/
   src/Revit/       lecture du modèle, génération des vues et feuilles, commande, ruban
   src/UI/          fenêtre de réglages (WinForms)
   test/            tests du cœur de calcul : dotnet run --project revit/test
+  demo/            démonstration web (3 spools d'exemple calculés par le cœur) : bash revit/demo/build.sh
   installer/       manifeste .addin et installeur PowerShell
   build.sh         compile pour Revit 2023 → 2027 et produit dist/PipeFit-Revit-Isometries-x.y.z.zip
 ```
