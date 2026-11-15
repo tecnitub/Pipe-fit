@@ -64,6 +64,8 @@ table.edit input, table.edit select { padding: 4px 6px; }
 .sections a:hover { background: var(--bleu-clair); }
 .pastille { font-style: normal; font-size: 12px; background: #fff3d6; color: #7a4b00; border-radius: 9px; padding: 0 7px; }
 .sections .ok { font-style: normal; color: var(--ok); }
+.sections a.sans-objet { color: var(--muted); font-style: italic; }
+.sections .so { font-style: normal; color: var(--muted); }
 .progression { display: grid; justify-items: center; gap: 4px; padding: 12px 0 4px; border-top: 1px solid var(--bord); margin-top: 6px; text-align: center; }
 .contenu { background: var(--panneau); border: 1px solid var(--bord); border-radius: 12px; padding: 4px 18px 18px; min-width: 0; }
 .titre-doe { min-width: 0; }
@@ -133,6 +135,7 @@ details.equipement[open] summary { margin-bottom: 10px; }
 .doe-doc .confidentiel { font-style: italic; color: #6b7280; margin-top: 26px; font-size: 11px; }
 .doe-doc .sommaire td { border: 0; border-bottom: 1px dotted #b7c0d0; font-size: 13px; padding: 7px 4px; }
 .doe-doc .sommaire tr.annexe td { font-size: 12px; color: #444; padding-left: 18px; }
+.doe-doc .sommaire tr.sans-objet td { color: #666; font-style: italic; }
 .doe-doc .sommaire .num { text-align: right; width: 60px; }
 .doe-doc .sommaire .pts { width: 1px; }
 .doe-doc.intercalaire { text-align: center; padding-top: 200px; }

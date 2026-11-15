@@ -1,10 +1,12 @@
 // Plan de classement type d'un DOE TECNITUB (CVC / Plomberie / Tuyauterie) : sections, gabarits et valeurs par défaut.
-// Les numéros de section suivent la convention TECNITUB (pas de section 4).
+// Les numéros de section suivent la convention TECNITUB : la section 4 n'existe pas dans le DOE de référence. Elle est
+// affichée « sans objet » (navigation, écran, sommaire du DOE généré) pour que le saut de 3 à 5 ne passe pas pour un oubli.
 const A_COMPLETER = 'À compléter';
 const TRAME = {
+  // [clé, libellé, sansObjet] : une section sans objet n'a ni contenu, ni élément à compléter, ni page dans le DOE
   sections: [
     ['cctp', 'CCTP : lecture et contrôle'], ['etude', 'Étude : fiches techniques et visas'], ['garde', 'Page de garde et intervenants'], ['s1', '1. Documents administratifs'], ['s2', '2. Plans de recollement'],
-    ['s3', '3. Fiches techniques des équipements'], ['s5', '5. Rapports de mise en service'], ['s6', '6. Essais, contrôles et mesures'],
+    ['s3', '3. Fiches techniques des équipements'], ['s4', '4. Sans objet', true], ['s5', '5. Rapports de mise en service'], ['s6', '6. Essais, contrôles et mesures'],
     ['s7', '7. Maintenance et exploitation'], ['s8', '8. Formation des exploitants'], ['s9', '9. Garanties et assurances'],
     ['s10', '10. Annexes'], ['signatures', 'Signatures de remise'],
   ],

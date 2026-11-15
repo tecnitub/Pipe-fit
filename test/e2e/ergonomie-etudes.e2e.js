@@ -93,6 +93,35 @@ test('Ergonomie DOE : téléphone 390 px sans défilement horizontal ni cible ta
   assert.deepStrictEqual(erreurs, []);
 });
 
+test('DOE : numérotation des sections cohérente (navigation, écran, document généré), section 4 « sans objet »', { skip: sansPlaywright, timeout: 120000 }, async () => {
+  const { p, erreurs } = await ouvrir('doe.html', { width: 1400, height: 900 }, false);
+  if (!(await p.evaluate(() => S.does.length))) { await p.click('[data-creer]'); await p.waitForTimeout(1200); }
+  const id = await p.evaluate(() => S.does[0].id);
+  await p.evaluate(h => { location.hash = h; }, `#/doe/${id}/s3`); await p.waitForTimeout(400);
+  const num = t => (/^(\d+)\./.exec(String(t).trim()) || [])[1] || null;
+  const nav = await p.$$eval('nav.sections > a', as => as.map(a => ({ href: a.getAttribute('href').split('/').pop(), texte: a.innerText.trim() })));
+  const nums = nav.map(x => num(x.texte)).filter(Boolean).map(Number);
+  assert.deepStrictEqual(nums, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], `numéros de la navigation : ${nums}`);
+  // Document généré : mêmes numéros et même ordre que la navigation (sections paginées + section 4 au sommaire)
+  const doc = await p.evaluate(i => { const d = S.does.find(x => x.id === i); return sectionsHtml(d).map(([cle, titre]) => [cle, titre]); }, id);
+  const sommaire = await p.evaluate(parties => entreesSommaire(parties, 3).map(e => [e.cle, e.titre, e.page]), doc.map(([cle, titre]) => ({ cle, titre, sommaire: true, n: 1 })));
+  assert.deepStrictEqual(sommaire.map(e => num(e[1])).filter(Boolean).map(Number), nums, 'numéros du sommaire du DOE');
+  assert.deepStrictEqual(sommaire.find(e => e[0] === 's4'), ['s4', '4. SANS OBJET', '—']);
+  for (const x of nav.filter(y => num(y.texte))) {
+    await p.evaluate(h => { location.hash = h; }, `#/doe/${id}/${x.href}`); await p.waitForTimeout(150);
+    const h2 = await p.$eval('.contenu h2', h => h.innerText);
+    assert.strictEqual(num(h2), num(x.texte), `écran ${x.href} : « ${h2} »`);
+    assert.strictEqual(await p.$eval('nav.sections a.actif', a => a.getAttribute('href').split('/').pop()), x.href);
+    const d = doc.find(([cle]) => cle === x.href);
+    if (x.href !== 's4') assert.strictEqual(num(d[1]), num(x.texte), `document généré ${x.href}`);
+    else assert.strictEqual(d, undefined, 'section 4 sans page dans le DOE');
+  }
+  // Section inconnue : page de garde, marquée active
+  await p.evaluate(h => { location.hash = h; }, `#/doe/${id}/s42`); await p.waitForTimeout(150);
+  assert.strictEqual(await p.$eval('nav.sections a.actif', a => a.getAttribute('href').split('/').pop()), 'garde');
+  assert.deepStrictEqual(erreurs, []);
+});
+
 test('Ergonomie Études : ordinateur (tableaux collants, Entrée, groupes repliables, zoom, dialogue)', { skip: sansPlaywright, timeout: 120000 }, async () => {
   const { p, erreurs } = await ouvrir('etudes.html', { width: 1400, height: 900 }, false);
   const r = await p.evaluate(() => { const et = S.etudes.filter(x => !x.modele).sort((a, b) => b.notes.length - a.notes.length)[0]; return { id: et.id, arbo: et.notes.find(n => n.type === 'arbo').id, pid: et.notes.find(n => n.type === 'pid').id }; });

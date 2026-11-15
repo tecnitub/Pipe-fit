@@ -59,7 +59,7 @@ Un dossier peut commencer dès l'**étude d'exécution** (« Démarrer l'étude 
 
 ## Contenu du DOE généré
 
-Page de garde, sommaire paginé, sections 1, 2, 3, 5, 6, 7, 8, 9, 10 (pas de section 4), signatures de remise,
+Page de garde, sommaire paginé, sections 1, 2, 3, 5, 6, 7, 8, 9, 10 (pas de section 4 dans le plan TECNITUB : indiquée « sans objet » dans la navigation et au sommaire), signatures de remise,
 puis les annexes A, B, F, G, H, O et R avec leurs intercalaires et les PDF / images joints.
 En-tête TECNITUB sur chaque page du dossier, pied de page « Page X / Y » sur tout le document.
 Nom du fichier : `DOE_LOT{n}_{DISCIPLINE}_{Operation}_Ind{X}.pdf`. Toute valeur absente est écrite « À compléter ».

@@ -191,23 +191,25 @@ const lireChemin = (o, ch) => ch.split('.').reduce((x, k) => (x == null ? x : x[
 function ecrireChemin(o, ch, v) { const ks = ch.split('.'); let x = o; ks.slice(0, -1).forEach(k => { if (x[k] == null) x[k] = /^\d+$/.test(k) ? [] : {}; x = x[k]; }); x[ks[ks.length - 1]] = v; }
 const lienFichier = f => (f ? `<a href="${fichierUrl(f)}" target="_blank" rel="noopener" class="fichier">${/pdf/.test(f.mime || f.nom) ? '📄' : /image/.test(f.mime || '') ? '🖼️' : '📁'} ${esc(f.nom || 'fichier')}</a>${f.src === 'pf' ? ' <span class="badge pf" title="Fichier du chantier dans Pipe-Fit">Pipe-Fit</span>' : ''}` : '<span class="manque">aucun fichier</span>');
 
+// Section ouverte d'après l'adresse : une section inconnue ouvre la page de garde (marquée active dans la navigation)
+const sectionOuverte = p => (SECTIONS[p[1]] ? p[1] : 'garde');
 Vues.doe = {
   html: p => {
     const doe = S.does.find(d => d.id === p[0]);
     if (!doe) return '<p>Dossier introuvable. <a href="#/">Retour</a></p>';
-    const sec = p[1] || 'garde', a = PF.get('affaires', doe.affaireId) || {}, m = manquesDOE(doe);
-    const parSection = k => m.manques.filter(x => x.section === k || (k === 's5' && x.section === 's5')).length;
+    const sec = sectionOuverte(p), a = PF.get('affaires', doe.affaireId) || {}, m = manquesDOE(doe);
+    const parSection = k => m.manques.filter(x => x.section === k).length;
     return `<div class="barre"><a href="#/" class="btn secondaire">← Dossiers</a><div class="titre-doe"><strong>${esc(a.code || '')}</strong> ${esc(doe.operation || a.nom || '')}<div class="muted petit">${doe.lot ? `Lot ${esc(doe.lot)}` : 'Lot à renseigner (page de garde)'} — ${esc(doe.discipline)} · indice ${esc(doe.indice)} · <span id="etat-enreg">${doe._by ? `modifié par ${esc(doe._by)}` : ''}</span></div></div>
       <span class="espace"></span><button class="secondaire" id="maj-pf" title="Reprendre les informations du chantier dans Pipe-Fit (les champs déjà saisis ne sont pas modifiés)">🔄 Reprendre depuis Pipe-Fit</button>
       <button id="generer">📄 Générer le DOE (PDF)</button></div>
-      <div class="editeur"><nav class="sections">${TRAME.sections.map(([k, l]) => { const n = parSection(k); return `<a href="#/doe/${doe.id}/${k}" class="${k === sec ? 'actif' : ''}"><span>${esc(l)}</span>${n ? `<i class="pastille">${n}</i>` : '<i class="ok">✓</i>'}</a>`; }).join('')}
+      <div class="editeur"><nav class="sections">${TRAME.sections.map(([k, l, so]) => { const n = parSection(k); return `<a href="#/doe/${doe.id}/${k}" class="${k === sec ? 'actif' : ''}${so ? ' sans-objet' : ''}"${so ? ' title="Section absente du plan de classement TECNITUB"' : ''}><span>${esc(l)}</span>${so ? '<i class="so" aria-hidden="true">—</i>' : n ? `<i class="pastille">${n}</i>` : '<i class="ok">✓</i>'}</a>`; }).join('')}
         <div class="progression"><div class="anneau grand" style="--p:${m.pct}"><span>${m.pct}%</span></div><div class="petit">${m.manques.length} élément(s) à compléter</div><a href="#/doe/${doe.id}/manques" class="petit">Voir la liste</a></div></nav>
-      <div class="contenu">${(SECTIONS[sec] || SECTIONS.garde).html(doe, a, m)}</div></div>`;
+      <div class="contenu">${SECTIONS[sec].html(doe, a, m)}</div></div>`;
   },
   bind: (root, p) => {
     const doe = S.does.find(d => d.id === p[0]);
     if (!doe) return;
-    const sec = p[1] || 'garde';
+    const sec = sectionOuverte(p);
     root.querySelectorAll('[data-ch]').forEach(el => el.onchange = () => {
       ecrireChemin(doe, el.dataset.ch, el.type === 'checkbox' ? el.checked : el.value);
       // Fin de GPA : un an après la réception, sauf si elle a été saisie à la main
@@ -428,6 +430,10 @@ function bindControles(root, doe) {
   root.querySelectorAll('[data-ctl-ret]').forEach(b => b.onclick = () => { const [k, k2, i] = b.dataset.ctlRet.split('.'); itemsControle(doe, `${k}.${k2}`).splice(+i, 1); enregistrer(doe); App.render(); });
   root.querySelectorAll('[data-ctl-ajout]').forEach(b => b.onclick = () => { itemsControle(doe, b.dataset.ctlAjout).push({ libelle: '', present: false, fichiers: [] }); enregistrer(doe); App.render(); });
 }
+// Section 4 : absente du plan de classement TECNITUB (rien à saisir) ; signalée « sans objet » au sommaire du DOE
+SECTIONS.s4 = { html: doe => `<h2>4. Sans objet</h2><p>Le plan de classement TECNITUB ne comporte pas de section 4 : les fiches techniques des équipements (section 3) sont suivies des rapports de mise en service (section 5).</p>
+  <p class="muted">Rien à compléter ici. Le sommaire du DOE généré indique « 4. Sans objet » pour que la numérotation reste continue aux yeux du lecteur.</p>
+  <p><a class="btn secondaire" href="#/doe/${doe.id}/s3">← 3. Fiches techniques</a> <a class="btn" href="#/doe/${doe.id}/s5">5. Rapports de mise en service →</a></p>` };
 SECTIONS.s5 = { html: doe => `<h2>5. Rapports de mise en service</h2><p class="muted">Joignez les PV signés par le technicien et le responsable de chantier. Une pièce jointe coche « Présent » automatiquement.</p>${controlesHtml(doe, controlesActifs(doe).filter(k => k[0] === '5'))}`, bind: bindControles };
 SECTIONS.s6 = { html: doe => `<h2>6. Essais, contrôles et mesures</h2>${controlesHtml(doe, controlesActifs(doe).filter(k => k[0] === '6'))}`, bind: bindControles };
 SECTIONS.s7 = {

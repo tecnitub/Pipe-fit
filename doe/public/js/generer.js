@@ -87,7 +87,20 @@ function htmlCerfa(f, x) {
     ...(f.observations ? [['Observations', esc(f.observations)]] : []), ['Détenteur (signature)', `${esc(f.signataireNom || '')}${f.signatureClientId ? `<br><img class="sig" src="${x.img(f.signatureClientId)}" alt="Signature">` : ''}`]])}
     ${e.photoPlaqueId ? `<div class="doc-photos"><figure><img src="${x.img(e.photoPlaqueId)}" alt="Plaque signalétique"><figcaption>Plaque signalétique</figcaption></figure></div>` : ''}`;
 }
-const htmlSommaire = (entrees, doe) => `<div class="doe-doc"><h2>SOMMAIRE</h2><table class="sommaire">${entrees.map(e => `<tr class="${e.annexe ? 'annexe' : ''}"><td>${esc(e.titre)}</td><td class="pts"></td><td class="num">${e.page}</td></tr>`).join('')}</table>
+// Entrées du sommaire : parties paginées (garde exclue), plus les sections sans objet du plan (section 4), placées après
+// la section qui les précède dans la navigation, sans numéro de page
+function entreesSommaire(parties, premierePage) {
+  let page = premierePage;
+  const entrees = [];
+  parties.forEach(pt => { if (pt.sommaire) entrees.push({ cle: pt.cle, titre: pt.titre, page, annexe: pt.annexe }); page += pt.n; });
+  TRAME.sections.forEach(([k, l, so], i) => {
+    if (!so) return;
+    const avant = TRAME.sections.slice(0, i).map(x => x[0]), j = entrees.reduce((r, e, n) => (avant.includes(e.cle) ? n : r), -1);
+    entrees.splice(j + 1, 0, { cle: k, titre: l.toUpperCase(), page: '—', sansObjet: true });
+  });
+  return entrees;
+}
+const htmlSommaire = (entrees, doe) => `<div class="doe-doc"><h2>SOMMAIRE</h2><table class="sommaire">${entrees.map(e => `<tr class="${e.annexe ? 'annexe' : e.sansObjet ? 'sans-objet' : ''}"><td>${esc(e.titre)}</td><td class="pts"></td><td class="num">${e.page}</td></tr>`).join('')}</table>
   <p class="petit">DOE lot n°${esc(doe.lot || '…')} — ${esc(doe.operation)} — indice ${esc(doe.indice)}</p></div>`;
 
 // Texte compatible avec les polices standard du PDF (WinAnsi)
@@ -133,12 +146,7 @@ async function genererDOE(doe) {
       try { pt.doc = await PDFDocument.load(pt.bytes, { ignoreEncryption: true }); pt.n = pt.doc.getPageCount(); }
       catch (e) { erreurs.push(`un PDF joint est illisible (${e.message})`); pt.n = 0; }
     }
-    const construireSommaire = async nSom => {
-      let page = 1 + parties[0].n + nSom;
-      const entrees = [];
-      parties.slice(1).forEach(pt => { if (pt.sommaire) entrees.push({ titre: pt.titre, page, annexe: pt.annexe }); page += pt.n; });
-      return PDF.depuisHTML(htmlSommaire(entrees, doe), 'Sommaire', null, opts);
-    };
+    const construireSommaire = async nSom => PDF.depuisHTML(htmlSommaire(entreesSommaire(parties.slice(1), 1 + parties[0].n + nSom), doe), 'Sommaire', null, opts);
     let somBytes = await construireSommaire(1), som = await PDFDocument.load(somBytes);
     if (som.getPageCount() > 1) { somBytes = await construireSommaire(som.getPageCount()); som = await PDFDocument.load(somBytes); }
     parties.splice(1, 0, { cle: 'sommaire', doc: som, n: som.getPageCount(), entete: true });
