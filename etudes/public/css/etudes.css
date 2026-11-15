@@ -221,6 +221,25 @@ ul.af { padding-left: 18px; font-size: 13.5px; display: grid; gap: 6px; }
   .guide-actions { width: 100%; }
   .guide-actions button { flex: 1 1 auto; }
 }
+/* Phases du guide (Étude → Exploitation), étapes bloquées, correction sur place */
+.guide-phases { display: flex; flex-wrap: wrap; gap: .35em; margin: 0 0 .6em; }
+.guide-puce { font-size: 12.5px; padding: .15em .55em; border-radius: 999px; background: rgba(224, 138, 0, .12); white-space: nowrap; }
+.guide-puce.faite { background: var(--ok-fond); color: var(--ok-texte); }
+.guide-puce.a-venir { background: rgba(127, 127, 127, .1); color: var(--muted); }
+.guide-phase { margin: .45em 0; padding: .1em .5em .4em; border-radius: 8px; border: 1px solid rgba(127, 127, 127, .2); }
+.guide-phase > summary { cursor: pointer; padding: .35em 0; }
+.guide-phase.a-venir { opacity: .8; border-style: dashed; }
+.guide-suivante-phase { margin: .2em 0 .4em; }
+.guide-etape.bloquee, .guide-suivante.bloquee { background: rgba(127, 127, 127, .1); }
+.guide-bloque { color: var(--att-texte); }
+.guide-bloque button.lien { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
+.guide-editeur { flex-basis: 100%; }
+.guide-editeur > summary { cursor: pointer; color: var(--muted); }
+.guide-ed-corps { display: flex; flex-wrap: wrap; gap: .5em .8em; align-items: flex-end; margin-top: .35em; }
+.guide-ed-corps label { display: flex; flex-direction: column; gap: .15em; font-size: 13px; min-width: 0; max-width: 100%; }
+.guide-ed-corps input { width: 8em; max-width: 100%; }
+.guide-ed-corps select { max-width: 100%; }
+@media (max-width: 600px) { .guide-ed-corps label, .guide-ed-corps select, .guide-ed-corps input { width: 100%; } .guide-ed-actions { width: 100%; } .guide-ed-actions button { width: 100%; } }
 
 /* ---------- Ergonomie (ordinateur et téléphone) ---------- */
 /* Grand écran : largeur utile augmentée (tableaux de lignes, résultats à côté de la saisie) */
