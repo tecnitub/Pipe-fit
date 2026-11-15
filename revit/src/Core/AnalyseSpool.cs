@@ -44,6 +44,7 @@ namespace PipeFit.Isometries.Core
                 if (c.Type == TypeComposant.Autre) c.Type = Classer(c);
                 if (c.DnMm <= 0 && c.Extremites.Count > 0) c.DnMm = c.Extremites.Max(e => e.DnMm);
                 c.AngleDeg = c.Type == TypeComposant.Coude ? AngleCoude(c) : 0;
+                c.Genre = Robinetterie.Genre(c);
                 c.Designation = Designer(c);
             }
             HeriterMateriau(s);
@@ -63,6 +64,7 @@ namespace PipeFit.Isometries.Core
             s.LongueurDeveloppeeMm = s.Composants.Where(c => c.Type == TypeComposant.Tube).Sum(c => c.LongueurMm);
             s.Cotes = Cotation.Calculer(s);
             s.Liaisons = Liaisons.Calculer(s, ordre);
+            Robinetterie.Ecoulement(s);
         }
 
         // ---------- Type de composant ----------
@@ -72,8 +74,10 @@ namespace PipeFit.Isometries.Core
         {
             var nom = Normaliser(c.Famille + " " + c.TypeNom);
             if (c.EstAccessoire)
-                return Regex.IsMatch(nom, @"vanne|robinet|valve|clapet|papillon|opercule|guillotine|soupape|boisseau")
-                    ? TypeComposant.Vanne : TypeComposant.Accessoire;
+            {
+                var g = Robinetterie.Genre(c);
+                return g == GenreRobinet.Aucun ? TypeComposant.Accessoire : Robinetterie.Type(g);
+            }
             if (Regex.IsMatch(nom, @"\b(tube|tuyau|pipe|canalisation)\b") && c.Extremites.Count == 2 && c.Centre == null) return TypeComposant.Tube;
             if (Regex.IsMatch(nom, @"coude|elbow|\bbend\b|cintre")) return TypeComposant.Coude;
             if (Regex.IsMatch(nom, @"reduc|reducer|transition|cone")) return TypeComposant.Reduction;
@@ -141,8 +145,14 @@ namespace PipeFit.Isometries.Core
             {
                 d = fam == "" ? Libelle(c.Type) : fam;
                 if (type != "" && !Normaliser(d).Contains(Normaliser(type))) d += " " + type;
-                // Préfixe « Coude », « Té »… quand le nom de la famille ne le dit pas
-                if (MotsCles.TryGetValue(c.Type, out var mots) && !Regex.IsMatch(Normaliser(d), mots)) d = Libelle(c.Type) + " " + d;
+                // Préfixe « Coude », « Té », « Clapet anti-retour »… quand le nom de la famille ne le dit pas
+                var genre = Robinetterie.Genre(c);
+                if (genre != GenreRobinet.Aucun && genre != GenreRobinet.Vanne)
+                {
+                    var lib = Robinetterie.Libelle(genre);
+                    if (!Normaliser(d).Contains(Normaliser(lib.Split(' ')[0]))) d = lib + " " + d;
+                }
+                else if (MotsCles.TryGetValue(c.Type, out var mots) && !Regex.IsMatch(Normaliser(d), mots)) d = Libelle(c.Type) + " " + d;
             }
             if (c.Type == TypeComposant.Coude && c.AngleDeg > 0 && !d.Contains("°"))
                 d += " " + Math.Round(c.AngleDeg).ToString(CultureInfo.InvariantCulture) + "°";
@@ -161,7 +171,8 @@ namespace PipeFit.Isometries.Core
         {
             var parId = s.Composants.ToDictionary(c => c.Id);
             for (int passe = 0; passe < 3; passe++)
-                foreach (var c in s.Composants.Where(x => string.IsNullOrWhiteSpace(x.Materiau)))
+                // La robinetterie et les accessoires ont leur propre matière (corps fonte, laiton…) : pas d'héritage du tube
+                foreach (var c in s.Composants.Where(x => string.IsNullOrWhiteSpace(x.Materiau) && !x.EstAccessoire))
                     foreach (var e in c.Extremites)
                         if (e.ConnecteA != null && parId.TryGetValue(e.ConnecteA, out var v) && !string.IsNullOrWhiteSpace(v.Materiau))
                         { c.Materiau = v.Materiau; break; }

@@ -320,6 +320,52 @@ static class Tests
             Verifier(tm.Largeur <= 130.001 && tm.Lignes[0][1] == et[0].Spool.Nom && tm.Lignes.Any(l => l[1] == "SP-2" && l[4] == "2,0 m"), "tableau ordre de montage");
         }
 
+        // Robinetterie : genres, désignation, sens d'écoulement, PCF, symboles
+        {
+            Composant Acc(string fam, string type = "") { var c = C("x", fam, type, TypeComposant.Autre, 100, 0, null, E(0, 0, 0, 100, null), E(100, 0, 0, 100, null)); c.EstAccessoire = true; return c; }
+            var genres = new[] { ("Vanne papillon", GenreRobinet.Papillon), ("Clapet à battant", GenreRobinet.Clapet), ("Vanne d'équilibrage STAD", GenreRobinet.Reglage),
+                ("Dilatoflex", GenreRobinet.Compensateur), ("Manchette antivibratile", GenreRobinet.Compensateur), ("Filtre à tamis en Y", GenreRobinet.Filtre),
+                ("Robinet à boisseau sphérique", GenreRobinet.Boisseau), ("Vanne à opercule", GenreRobinet.Vanne), ("Clapet anti-retour à disque", GenreRobinet.Clapet),
+                ("Butterfly Valve - Lug", GenreRobinet.Papillon), ("Balancing Valve", GenreRobinet.Reglage), ("Check Valve", GenreRobinet.Clapet) };
+            foreach (var (fam, g) in genres) Verifier(Robinetterie.Genre(Acc(fam)) == g, "genre de « " + fam + " » : " + Robinetterie.Genre(Acc(fam)));
+            Verifier(AnalyseSpool.Classer(Acc("Dilatoflex")) == TypeComposant.Accessoire && AnalyseSpool.Classer(Acc("Clapet à battant")) == TypeComposant.Vanne,
+                "compensateur = accessoire, clapet = vanne");
+
+            // Ligne tube – clapet – tube, arrivée du fluide par le bout gauche
+            Spool Ligne(bool depuisGauche)
+            {
+                var sp = new Spool { Nom = "R" };
+                sp.Composants.Add(C("t1", "Tuyau", "", TypeComposant.Tube, 100, 1000, null, E(0, 0, 0, 100, null), E(1000, 0, 0, 100, "v")));
+                var v = C("v", "Dilatoflex", "", TypeComposant.Autre, 100, 0, null, E(1000, 0, 0, 100, "t1"), E(1190, 0, 0, 100, "t2"));
+                v.Famille = "Clapet à battant"; v.EstAccessoire = true; sp.Composants.Add(v);
+                sp.Composants.Add(C("t2", "Tuyau", "", TypeComposant.Tube, 100, 1000, null, E(1190, 0, 0, 100, "v"), E(2190, 0, 0, 100, null)));
+                (depuisGauche ? sp.Composants[0].Extremites[0] : sp.Composants[2].Extremites[1]).Sens = SensFlux.Entree;
+                AnalyseSpool.Analyser(sp);
+                return sp;
+            }
+            var lg = Ligne(true); var vg = lg.Composants[1];
+            Verifier(vg.Genre == GenreRobinet.Clapet && vg.Designation.StartsWith("Clapet à battant"), "désignation du clapet : " + vg.Designation);
+            lg.Composants[0].Materiau = "Acier"; AnalyseSpool.Analyser(lg);
+            Verifier(lg.Composants[1].Materiau == "", "la robinetterie n'hérite pas de la matière du tube");
+            Verifier(vg.Amont != null && vg.Amont.Position.X == 1000, "écoulement de gauche à droite : amont du clapet à x = 1000");
+            var pcfg = ExportPcf.Generer(lg, "");
+            Verifier(pcfg.Contains("VALVE\r\n    END-POINT 1000.0 0.0 0.0 100\r\n    END-POINT 1190.0 0.0 0.0 100\r\n    SKEY CKFL\r\n    FLOW-ARROW FORWARD"), "PCF : clapet dans le sens de l'écoulement");
+            var ld = Ligne(false); var vd = ld.Composants[1];
+            Verifier(vd.Amont != null && vd.Amont.Position.X == 1190, "écoulement inversé : amont du clapet à x = 1190");
+            Verifier(ExportPcf.Generer(ld, "").Contains("VALVE\r\n    END-POINT 1190.0 0.0 0.0 100\r\n    END-POINT 1000.0"), "PCF : points inversés avec l'écoulement");
+            var dila = Acc("Dilatoflex"); dila.Type = TypeComposant.Autre;
+            var sd = new Spool { Nom = "D", Composants = { dila } }; AnalyseSpool.Analyser(sd);
+            Verifier(dila.Designation == "Compensateur de dilatation Dilatoflex" && ExportPcf.Generer(sd, "").Contains("MISC-COMPONENT"), "compensateur : désignation et PCF (" + dila.Designation + ")");
+
+            // Symboles : chaque genre a le sien ; placés selon l'axe du tube
+            var vus = new HashSet<int>();
+            foreach (GenreRobinet g in Enum.GetValues(typeof(GenreRobinet)))
+                if (g != GenreRobinet.Aucun) vus.Add(Robinetterie.Symbole(g).Count * 100 + (int)Math.Round(Robinetterie.Symbole(g).Sum(x => x.U1 + x.V2) * 10));
+            Verifier(vus.Count == 7, "7 symboles différents");
+            var pl = Robinetterie.Placer(new List<Robinetterie.Segment> { new Robinetterie.Segment(1, 0, 0, 1) }, 10, 20, 0, 1);
+            Verifier(Math.Abs(pl[0].x1 - 10) < 1e-9 && Math.Abs(pl[0].y1 - 21) < 1e-9 && Math.Abs(pl[0].x2 - 9) < 1e-9 && Math.Abs(pl[0].y2 - 20) < 1e-9, "symbole tourné sur l'axe du tube");
+        }
+
         // Bride contre bride (ou vanne) : joint boulonné
         var b = new Spool { Nom = "B" };
         b.Composants.Add(C("a", "Bride", "PN16", TypeComposant.Bride, 80, 0, null, E(0, 0, 0, 80, "x"), E(10, 0, 0, 80, "b")));

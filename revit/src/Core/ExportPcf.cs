@@ -119,16 +119,24 @@ namespace PipeFit.Isometries.Core
                     L("    SKEY CPBW");
                     break;
                 case TypeComposant.Vanne:
-                    if (e.Count < 2) return null;
-                    L("VALVE"); Bout(e[0]); Bout(e[1]);
-                    L("    SKEY VVFL");
-                    break;
+                    {
+                        if (e.Count < 2) return null;
+                        // Points dans le sens de l'écoulement (indispensable pour un clapet)
+                        var o = Robinetterie.Ordre(c);
+                        L("VALVE"); Bout(o[0]); Bout(o[1]);
+                        L("    SKEY " + SkeyVanne(c.Genre));
+                        if (c.Genre == GenreRobinet.Clapet && c.Amont != null) L("    FLOW-ARROW FORWARD");
+                        break;
+                    }
                 case TypeComposant.Accessoire:
-                    if (e.Count < 2) return null;
-                    L("INSTRUMENT"); Bout(e[0]); Bout(e[1]);
-                    L("    CENTRE-POINT " + Pt(centre));
-                    L("    SKEY INFL");
-                    break;
+                    {
+                        if (e.Count < 2) return null;
+                        var o = Robinetterie.Ordre(c);
+                        if (c.Genre == GenreRobinet.Filtre) { L("FILTER"); Bout(o[0]); Bout(o[1]); L("    SKEY FIFL"); }
+                        else if (c.Genre == GenreRobinet.Compensateur) { L("MISC-COMPONENT"); Bout(o[0]); Bout(o[1]); L("    SKEY EXFL"); }
+                        else { L("INSTRUMENT"); Bout(o[0]); Bout(o[1]); L("    CENTRE-POINT " + Pt(centre)); L("    SKEY INFL"); }
+                        break;
+                    }
                 case TypeComposant.Manchon:
                     if (e.Count < 2) return null;
                     L("COUPLING"); Bout(e[0]); Bout(e[1]);
@@ -139,6 +147,22 @@ namespace PipeFit.Isometries.Core
                     break;
             }
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// Codes SKEY Isogen usuels des vannes à brides (à adapter à votre configuration Isogen) : opercule VTFL,
+        /// papillon VYFL, réglage (soupape) VGFL, clapet CKFL, boisseau VBFL.
+        /// </summary>
+        static string SkeyVanne(GenreRobinet g)
+        {
+            switch (g)
+            {
+                case GenreRobinet.Papillon: return "VYFL";
+                case GenreRobinet.Reglage: return "VGFL";
+                case GenreRobinet.Clapet: return "CKFL";
+                case GenreRobinet.Boisseau: return "VBFL";
+                default: return "VTFL";
+            }
         }
 
         /// <summary>Extrémités du passage droit d'un té : les deux qui sont le plus à l'opposé l'une de l'autre.</summary>

@@ -53,6 +53,22 @@ canalisations, raccords, accessoires et pièces de fabrication) est créé dans 
   le spool dépasse 6 m de tube.
 - Les éléments numérotés restent sélectionnés : contrôle visuel, puis **Isométries spools**.
 
+## Robinetterie
+
+- **Genre reconnu** d'après le nom de la famille (français ou anglais) : vanne (opercule), vanne papillon, vanne de
+  réglage / d'équilibrage (STAD, TBV…), clapet anti-retour, vanne à boisseau, filtre, compensateur de dilatation
+  (Dilatoflex, manchette antivibratile, soufflet). La désignation de la nomenclature le précise au besoin
+  (« Compensateur de dilatation Dilatoflex »). La robinetterie garde sa propre matière (pas celle du tube).
+- **Symboles d'isométrie normalisés** (option cochée par défaut) : les familles de robinetterie sont masquées dans la
+  vue et le symbole de leur genre est dessiné sur la feuille, orienté sur le tube, avec sa bulle de repère : papillon
+  (disque), réglage (cercle, tige, flèche de réglage), clapet (moitié aval hachurée et flèche d'écoulement), boisseau,
+  filtre en Y, compensateur (soufflet).
+- **Sens d'écoulement** propagé dans le spool depuis son arrivée : il oriente le clapet et l'ordre des points du PCF.
+- **PCF** : VALVE avec SKEY par genre (VTFL opercule, VYFL papillon, VGFL réglage, CKFL clapet, VBFL boisseau),
+  FILTER, compensateur en MISC-COMPONENT ; codes Isogen usuels, à adapter à votre configuration.
+- Une vanne ou un compensateur entre deux brides est un composant boulonné : livré à part, il n'est dans aucun spool en
+  numérotation automatique. Dans le CRM, le compensateur est chiffré comme la robinetterie (pose à l'unité selon le DN).
+
 ## Soudures chantier et surlongueurs
 
 - Toute limite entre deux spools est une **soudure chantier** (R1, R2… sur l'isométrie, « Soudure chantier » dans le

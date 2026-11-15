@@ -94,6 +94,10 @@ namespace PipeFit.Isometries.Core
         public double SurlongueurMm;
         /// <summary>Pouces-diamètre des soudures portées par cet élément (chaque soudure comptée une seule fois).</summary>
         public double PoucesSoudures;
+        /// <summary>Genre de robinetterie (vanne papillon, réglage, clapet, compensateur…), Aucun pour un tube ou un raccord.</summary>
+        public GenreRobinet Genre;
+        /// <summary>Extrémité par où arrive le fluide (sens d'écoulement), null s'il n'est pas connu.</summary>
+        public Extremite Amont;
     }
 
     public enum NatureAssemblage { Soudure, Boulonne, RaccordementChantier, ExtremiteLibre }

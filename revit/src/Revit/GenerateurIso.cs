@@ -165,7 +165,9 @@ namespace PipeFit.Isometries.Revit
             vue.Scale = res.Echelle;
             doc.Regenerate();
 
-            Etiqueter(vue, elements, res);
+            var symbolises = new HashSet<string>(r.SymbolesRobinetterie
+                ? spool.Composants.Where(c => c.Genre != GenreRobinet.Aucun && c.Extremites.Count >= 2).Select(c => c.Id) : Enumerable.Empty<string>());
+            Etiqueter(vue, elements.Where(e => !symbolises.Contains(Compat.Cle(e.Id))).ToList(), res);
             if (r.NumerosSoudure) NumeroterAssemblages(vue, spool, res);
             doc.Regenerate();
             vp.SetBoxCenter(centre);
@@ -175,6 +177,7 @@ namespace PipeFit.Isometries.Revit
             {
                 if (r.Cotation) Coter(feuille, projection, spool, res);
                 Renvoyer(feuille, projection, spool, zoneVue, res);
+                if (r.SymbolesRobinetterie) Symboliser(feuille, projection, spool, res);
             }
 
             DessinerNord(feuille, vue, zoneVue);
@@ -304,6 +307,13 @@ namespace PipeFit.Isometries.Revit
 
             vue.IsolateElementsTemporary(elements.Select(e => e.Id).ToList());
             vue.ConvertTemporaryHideIsolateToPermanent();
+            // Robinetterie remplacée par les symboles normalisés dessinés sur la feuille
+            if (r.SymbolesRobinetterie)
+            {
+                var cles = new HashSet<string>(spool.Composants.Where(c => c.Genre != GenreRobinet.Aucun && c.Extremites.Count >= 2).Select(c => c.Id));
+                var masques = elements.Where(e => cles.Contains(Compat.Cle(e.Id))).Select(e => e.Id).ToList();
+                if (masques.Count > 0) try { vue.HideElements(masques); } catch { }
+            }
             vue.SaveOrientationAndLock();
             return vue;
         }
@@ -445,6 +455,43 @@ namespace PipeFit.Isometries.Revit
                 catch { echecs++; }
             }
             if (echecs > 0) res.Avertissements.Add(echecs + " cote(s) non dessinée(s)");
+        }
+
+        // ---------- Robinetterie ----------
+
+        /// <summary>
+        /// Symbole normalisé de chaque vanne / accessoire (papillon, réglage, clapet avec flèche d'écoulement, compensateur…),
+        /// orienté sur le tube dans le sens de l'écoulement, avec sa bulle de repère.
+        /// </summary>
+        void Symboliser(ViewSheet f, Func<Point3, (double x, double y)> Feuille, Spool spool, Resultat res)
+        {
+            var (cx, cy) = CentreDessin(spool, Feuille);
+            int echecs = 0;
+            foreach (var c in spool.Composants.Where(x => x.Genre != GenreRobinet.Aucun && x.Extremites.Count >= 2))
+            {
+                try
+                {
+                    var o = Robinetterie.Ordre(c);
+                    var a = Feuille(o[0].Position); var b = Feuille(o[1].Position);
+                    double mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, dx = b.x - a.x, dy = b.y - a.y, l = Math.Sqrt(dx * dx + dy * dy);
+                    if (l < 0.3) { dx = 1; dy = 0; l = 1; } // vu en bout
+                    dx /= l; dy /= l;
+                    foreach (var s in Robinetterie.Placer(Robinetterie.Symbole(c.Genre), mx, my, dx, dy)) Trait(f, s.x1, s.y1, s.x2, s.y2);
+                    // Bulle de repère côté intérieur du dessin (les cotes sont à l'extérieur)
+                    double nx = -dy, ny = dx;
+                    if ((mx - cx) * nx + (my - cy) * ny > 0) { nx = -nx; ny = -ny; }
+                    double bx = mx + nx * 9, by = my + ny * 9, rb = 2.4;
+                    Trait(f, mx + nx * 3.4, my + ny * 3.4, bx - nx * rb, by - ny * rb);
+                    for (int i = 0; i < 12; i++)
+                    {
+                        double t1 = Math.PI * i / 6, t2 = Math.PI * (i + 1) / 6;
+                        Trait(f, bx + rb * Math.Cos(t1), by + rb * Math.Sin(t1), bx + rb * Math.Cos(t2), by + rb * Math.Sin(t2));
+                    }
+                    Texte(f, bx, by, c.Repere, gras: true, centre: true);
+                }
+                catch { echecs++; }
+            }
+            if (echecs > 0) res.Avertissements.Add(echecs + " symbole(s) de robinetterie non dessiné(s)");
         }
 
         // ---------- Provenance / destination ----------

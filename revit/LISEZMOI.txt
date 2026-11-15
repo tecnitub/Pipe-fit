@@ -95,6 +95,11 @@ QUANTITATIF POUR LE CHIFFRAGE (bouton « Quantitatif chiffrage »)
     atelier / chantier selon le pourcentage réglé dans le chiffrage.
   Pipe-Fit chiffre alors les soudures réelles à la place de son estimation par famille.
 
+ROBINETTERIE
+  Vannes papillon, de réglage, clapets, boisseaux, filtres et compensateurs (Dilatoflex) sont reconnus par
+  le nom de leur famille et dessinés sur l'isométrie avec leur symbole normalisé (le clapet avec la flèche
+  d'écoulement). Option « Robinetterie en symboles normalisés » dans la fenêtre des isométries.
+
 BON À SAVOIR
   - Un assemblage entre deux brides, ou entre une bride et une vanne / un accessoire, est compté comme joint
     boulonné ; tous les autres assemblages internes au spool comme soudures atelier.

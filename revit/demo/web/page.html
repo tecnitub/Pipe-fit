@@ -244,6 +244,12 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
         line(a[0], a[1], b[0], b[1], 'k-ink', TRAIT);
         const face = c.ext[0].ext || !s.composants.some(o => o.type === 'Tube' && o.ext.some(x => x.p.join() === c.ext[0].p.join())) ? a : b;
         const q = perp(a, b, 2.2); line(face[0] - q[0], face[1] - q[1], face[0] + q[0], face[1] + q[1], 'k-ink', 0.5);
+      } else if (c.sym) {
+        // Symbole d'isométrie normalisé (même définition que le complément), orienté dans le sens de l'écoulement
+        const o0 = F(c.o[0]), o1 = F(c.o[1]);
+        let dx = o1[0] - o0[0], dy = o1[1] - o0[1]; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+        const mx = (o0[0] + o1[0]) / 2, my = (o0[1] + o1[1]) / 2, px = -dy, py = dx;
+        c.sym.forEach(([u1, v1, u2, v2]) => line(mx + u1 * dx + v1 * px, my + u1 * dy + v1 * py, mx + u2 * dx + v2 * px, my + u2 * dy + v2 * py, 'k-ink', 0.3));
       } else if (c.type === 'Vanne' || c.type === 'Accessoire') {
         const q = perp(a, b, 2.4);
         el('path', { d: `M${a[0]+q[0]} ${Y(a[1]+q[1])}L${b[0]-q[0]} ${Y(b[1]-q[1])}L${b[0]+q[0]} ${Y(b[1]+q[1])}L${a[0]-q[0]} ${Y(a[1]-q[1])}Z`, class: 'k-ink', 'stroke-width': 0.35, 'stroke-linejoin': 'round' }, g);
@@ -258,6 +264,18 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
     if (st.rep) {
       let i = 0;
       s.composants.forEach(c => {
+        if (c.sym) {
+          // Bulle de repère de la robinetterie, côté intérieur du dessin (les cotes sont à l'extérieur)
+          const o0 = F(c.o[0]), o1 = F(c.o[1]);
+          let dx = o1[0] - o0[0], dy = o1[1] - o0[1]; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+          const mx = (o0[0] + o1[0]) / 2, my = (o0[1] + o1[1]) / 2; let nx = -dy, ny = dx;
+          if ((mx - centre[0]) * nx + (my - centre[1]) * ny > 0) { nx = -nx; ny = -ny; }
+          const bx = mx + nx * 9, by = my + ny * 9;
+          line(mx + nx * 3.4, my + ny * 3.4, bx - nx * 2.4, by - ny * 2.4, 'k-ink', 0.18);
+          el('circle', { cx: bx, cy: Y(by), r: 2.4, class: 'k-ink', 'stroke-width': 0.25, fill: 'var(--paper)' }, g);
+          text(bx, by, c.repere, { anchor: 'middle', size: 2.3, bold: true });
+          return;
+        }
         const pts2 = c.ext.map(x => F(x.p));
         const m = c.axe ? F(c.axe) : [pts2.reduce((a, p) => a + p[0], 0) / pts2.length, pts2.reduce((a, p) => a + p[1], 0) / pts2.length];
         const sens = i++ % 2 ? -1 : 1, hx = m[0] + sens * 5, hy = m[1] + 8;
@@ -398,7 +416,7 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
     const svg = document.getElementById('rep');
     svg.innerHTML = '';
     // Groupe affiché : tous les spools, ou un ensemble (les autres en gris, vue cadrée sur la zone, ordre recalculé)
-    const G = st.rep && REP.groupes.find(g => g.nom === st.rep);
+    const G = st.grp && REP.groupes.find(g => g.nom === st.grp);
     document.getElementById('repGroupes').innerHTML = [['', 'Tous les spools'], ...REP.groupes.map(g => [g.nom, g.nom])]
       .map(([k, l]) => `<button data-g="${esc(k)}" aria-pressed="${(G ? G.nom : '') === k}">${esc(l)}</button>`).join('');
     const info = s => { if (!G) return { actif: true, couleur: s.couleur, ordre: s.ordre }; const o = G.ordre.find(x => x.spool === s.nom); return o ? { actif: true, couleur: o.couleur, ordre: o.ordre } : { actif: false }; };
@@ -438,7 +456,7 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
   document.getElementById('spools').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { st.s = +b.dataset.i; tout(); } });
   document.getElementById('orients').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { st.o = +b.dataset.i; tout(); } });
   document.getElementById('layers').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { st[b.dataset.k] = !st[b.dataset.k]; tout(); } });
-  document.getElementById('repGroupes').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { st.rep = b.dataset.g; reperage(); } });
+  document.getElementById('repGroupes').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { st.grp = b.dataset.g; reperage(); } });
   document.getElementById('tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { st.tab = b.dataset.t; panneau(); save(); } });
   document.getElementById('zoomIn').onclick = () => zoomer(1.5);
   document.getElementById('zoomOut').onclick = () => zoomer(1 / 1.5);

@@ -143,6 +143,14 @@ static class Demo
             .Coude(2000, Y).Vanne(700, "Vanne papillon", 52).Coude(800, M(Z)).FinTube(1200, "SP-103");
         res.Add(b);
 
+        // SP-104 : essai robinetterie, eau glacée DN100 de la pompe P2 à la CTA-03 : vanne papillon, clapet anti-retour,
+        // vanne de réglage (équilibrage) et compensateur Dilatoflex, chacun entre deux brides
+        var d = new Spool { Nom = "SP-104" };
+        new Ligne(d, "EG-104", "Acier P235GH").Depart(new Point3(0, 0, 0), X, 100, "POMPE-P2").Arrivee()
+            .Vanne(700, "Vanne papillon", 52).Vanne(600, "Clapet à battant", 190).Coude(800, Z)
+            .Vanne(500, "Vanne d'équilibrage STAD-F", 290).Coude(700, Y).Vanne(500, "Dilatoflex", 130).FinBride(600, "CTA-03");
+        res.Add(d);
+
         // SP-103 : retour process DN80 réduit en DN50
         var c = new Spool { Nom = "SP-103" };
         new Ligne(c, "PROC-R", "Inox 304L").Depart(new Point3(0, 0, 0), Y, 80, "SP-102")
@@ -150,7 +158,7 @@ static class Demo
         res.Add(c);
 
         // Noms des éléments raccordés, comme le complément les lit dans la maquette (numéro de spool ou repère d'équipement)
-        var noms = new Dictionary<string, string> { ["POMPE-P1"] = "P1 (pompe NEP)", ["VANNE-V12"] = "V12 (vanne)", ["CTA-01"] = "CTA-01", ["BAC-T2"] = "T2 (bac)" };
+        var noms = new Dictionary<string, string> { ["POMPE-P2"] = "P2 (pompe)", ["CTA-03"] = "CTA-03", ["POMPE-P1"] = "P1 (pompe NEP)", ["VANNE-V12"] = "V12 (vanne)", ["CTA-01"] = "CTA-01", ["BAC-T2"] = "T2 (bac)" };
         foreach (var s in res)
             foreach (var id in s.Composants.SelectMany(c => c.Extremites).Select(e => e.ConnecteA).Where(i => i != null && !s.Composants.Any(c => c.Id == i)).Distinct())
             {
@@ -258,7 +266,9 @@ static class Demo
                 nom = s.Nom, systeme = s.Systeme, materiau = s.Materiau, dnMax = s.DnMax, longueur = Math.Round(s.LongueurDeveloppeeMm),
                 composants = s.Composants.Select(c => new
                 {
-                    id = c.Id, type = c.Type.ToString(), designation = c.Designation, repere = c.Repere, dn = c.DnMm,
+                    id = c.Id, type = c.Type.ToString(), designation = c.Designation, repere = c.Repere, dn = c.DnMm, genre = c.Genre.ToString(),
+                    sym = c.Genre != GenreRobinet.Aucun ? Robinetterie.Symbole(c.Genre).Select(x => new[] { x.U1, x.V1, x.U2, x.V2 }) : null,
+                    o = c.Genre != GenreRobinet.Aucun ? Robinetterie.Ordre(c).Select(x => P(x.Position)) : null,
                     axe = Cotation.EstNoeud(c) ? P(Cotation.PointAxe(c)) : null,
                     ext = c.Extremites.Select(e => new { p = P(e.Position), dn = e.DnMm, ext = e.ConnecteA != null && !s.Composants.Any(x => x.Id == e.ConnecteA) ? e.ConnecteA : null }),
                 }),

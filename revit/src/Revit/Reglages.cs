@@ -27,6 +27,8 @@ namespace PipeFit.Isometries.Revit
         public bool NumerosSoudure = true;
         /// <summary>Cotes d'axe en axe et d'axe à bride sur la feuille.</summary>
         public bool Cotation = true;
+        /// <summary>Robinetterie dessinée avec les symboles d'isométrie normalisés (familles masquées dans la vue).</summary>
+        public bool SymbolesRobinetterie = true;
         /// <summary>Surlongueur laissée sur les tubes à toutes les soudures chantier, à recouper sur place (mm).</summary>
         public double SurlongueurMm;
         /// <summary>Surlongueur proposée en marquant une soudure chantier (transport, incertitude).</summary>
@@ -77,6 +79,7 @@ namespace PipeFit.Isometries.Revit
                         case "ParametreRepere": r.ParametreRepere = v; break;
                         case "NumerosSoudure": r.NumerosSoudure = v == "1"; break;
                         case "Cotation": r.Cotation = v == "1"; break;
+                        case "SymbolesRobinetterie": r.SymbolesRobinetterie = v == "1"; break;
                         case "SurlongueurMm": if (double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var sl) && sl >= 0) r.SurlongueurMm = sl; break;
                         case "SurlongueurMarqueMm": if (double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var sm) && sm >= 0) r.SurlongueurMarqueMm = sm; break;
                         case "ExportPdf": r.ExportPdf = v == "1"; break;
@@ -108,7 +111,7 @@ namespace PipeFit.Isometries.Revit
                     "ParametreSpool=" + ParametreSpool, "Cartouche=" + Cartouche, "PrefixeFeuille=" + PrefixeFeuille,
                     "Orientation=" + Orientation, "Unifilaire=" + B(Unifilaire), "Remplacer=" + B(Remplacer),
                     "EtiquetteTube=" + EtiquetteTube, "EtiquetteRaccord=" + EtiquetteRaccord, "EtiquetteAccessoire=" + EtiquetteAccessoire,
-                    "EcrireRepere=" + B(EcrireRepere), "ParametreRepere=" + ParametreRepere, "NumerosSoudure=" + B(NumerosSoudure), "Cotation=" + B(Cotation),
+                    "EcrireRepere=" + B(EcrireRepere), "ParametreRepere=" + ParametreRepere, "NumerosSoudure=" + B(NumerosSoudure), "Cotation=" + B(Cotation), "SymbolesRobinetterie=" + B(SymbolesRobinetterie),
                     "SurlongueurMm=" + SurlongueurMm.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     "SurlongueurMarqueMm=" + SurlongueurMarqueMm.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     "ExportPdf=" + B(ExportPdf), "ExportPcf=" + B(ExportPcf), "ExportCsv=" + B(ExportCsv), "Dossier=" + Dossier,
