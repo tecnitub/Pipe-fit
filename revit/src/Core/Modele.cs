@@ -124,6 +124,8 @@ namespace PipeFit.Isometries.Core
     public sealed class Spool
     {
         public string Nom = "";
+        /// <summary>Tuyauterie pas encore découpée en spools (un groupe par réseau) : soudures à répartir atelier / chantier.</summary>
+        public bool HorsSpool;
         public List<Composant> Composants = new List<Composant>();
 
         // Résultats de l'analyse (AnalyseSpool.Analyser)

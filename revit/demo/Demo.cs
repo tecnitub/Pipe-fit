@@ -194,10 +194,12 @@ static class Demo
                 soudures = s.Nombre(NatureAssemblage.Soudure), pouces = s.PoucesDiametre(NatureAssemblage.Soudure),
                 pcf = ExportPcf.Generer(s, "Demonstration Pipe-Fit"),
                 csv = ExportCsv.Nomenclature(new[] { s }),
+                quantitatif = Quantitatif.Csv(new[] { s }),
             };
         });
         var json = JsonSerializer.Serialize(sortie, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
         File.WriteAllText(args.Length > 0 ? args[0] : "demo.json", json);
+        if (args.Length > 1) File.WriteAllText(args[1], Quantitatif.Csv(spools)); // exemple de quantitatif pour la démo du CRM
         foreach (var s in spools)
             Console.WriteLine($"{s.Nom} : " + string.Join(" | ", s.Liaisons.Select(l => l.Numero + " " + l.Libelle)));
         return 0;

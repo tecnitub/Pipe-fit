@@ -47,6 +47,7 @@ function lignesPlan(sheet, analyse, uniteLongueur) {
   const long = rows.map(r => num(String(val(r, 'longueur')).replace(/[^\d.,-]/g, '').replace(',', '.')));
   const enMm = uniteLongueur === 'mm' || (uniteLongueur !== 'm' && Math.max(0, ...long) > 60);
   return rows.map((r, i) => ({ systeme: val(r, 'systeme'), famille: val(r, 'famille'), type: val(r, 'type'), taille: val(r, 'taille'), dn: lireDN(val(r, 'taille') || val(r, 'type') || val(r, 'famille')),
+    nature: Quantitatif.nature(val(r, 'famille'), val(r, 'type')),
     longueur: Math.round((enMm ? long[i] / 1000 : long[i]) * 1000) / 1000, qte: num(String(val(r, 'quantite')).replace(',', '.')) || 1 }));
 }
 
@@ -85,7 +86,7 @@ const POSE_ROB_DEFAUT = [[15, 0.3], [25, 0.4], [50, 0.6], [80, 0.9], [100, 1.2],
 function parametresDefaut() {
   const mo = code => (Store.all('mainoeuvre').find(m => m.code === code) || {}).id || '';
   return { cadenceAtelier: 70, cadenceChantier: 35, partAtelier: 70, heuresJour: 7, moAtelier: mo('PREF') || mo('SOUD'), moChantier: mo('MONT') || mo('SOUD'), tauxAtelier: '', tauxPose: '', coutPose: '',
-    poseTubes: POSE_TUBE_DEFAUT.map(x => ({ ...x })), poseRobinetterie: POSE_ROB_DEFAUT.map(x => ({ ...x })),
+    poseTubes: POSE_TUBE_DEFAUT.map(x => ({ ...x })), poseRobinetterie: POSE_ROB_DEFAUT.map(x => ({ ...x })), jointsBoulonnes: Quantitatif.JOINTS_DEFAUT.map(x => ({ ...x })),
     niveaux: NIVEAUX_DEFAUT.map(n => ({ ...n })), niveau: 1, regroupement: 'systeme', uniteLongueur: 'auto' };
 }
 // Temps lu dans un barème par diamètre : la ligne du DN, sinon celle du diamètre supérieur le plus proche
@@ -102,7 +103,17 @@ const tauxDe = (m, vente, cout) => ({ m, vente: vente === '' || vente == null ? 
 function calculerChiffrage(ch) {
   const p = { ...parametresDefaut(), ...(ch.params || {}) }, niv = p.niveaux[p.niveau] || p.niveaux[0];
   const groupes = {};
+  // Soudures réelles (quantitatif du complément Revit) : elles remplacent l'estimation par famille
+  const natureDe = l => l.nature ?? Quantitatif.nature(l.famille, l.type);
+  const reelles = (ch.lignes || []).some(l => Quantitatif.estSoudure(natureDe(l)));
   (ch.lignes || []).forEach(l => {
+    const nat = natureDe(l);
+    if (nat) {
+      const sys = p.regroupement === 'systeme' ? l.systeme : '', cle = `${sys}|#${nat}|${l.dn}`;
+      const g = groupes[cle] = groupes[cle] || { systeme: sys, fam: null, nature: nat, dn: l.dn, brut: Quantitatif.libelle(nat), qte: 0, n: 0 };
+      g.qte += l.qte; g.n += l.qte;
+      return;
+    }
     const fam = familleDe(l), cle = `${p.regroupement === 'systeme' ? l.systeme : ''}|${fam ? fam.id : cleFamille(`${l.famille} ${l.type}`)}|${l.dn}`;
     const g = groupes[cle] = groupes[cle] || { systeme: p.regroupement === 'systeme' ? l.systeme : '', fam, dn: l.dn, brut: `${l.famille}${l.type ? ' : ' + l.type : ''}`, qte: 0, n: 0 };
     g.qte += fam && fam.unite === 'ml' ? (l.longueur || 0) * l.qte : l.qte; g.n += l.qte;
@@ -110,8 +121,14 @@ function calculerChiffrage(ch) {
   const A = tauxDe(Store.get('mainoeuvre', p.moAtelier) || {}, p.tauxAtelier), C = tauxDe(Store.get('mainoeuvre', p.moChantier) || {}, p.tauxPose, p.coutPose);
   const hj = num(p.heuresJour), part = Math.min(1, Math.max(0, num(p.partAtelier) / 100));
   const liste = Object.values(groupes).map(g => {
+    if (g.nature) {
+      const u = Quantitatif.unitaire(g.nature, g.dn, p, niv.coef, poucesDN);
+      return { ...g, cat: 'reel', a: null, sd: 0, inch: u.inch, qte: Math.round(g.qte * 100) / 100, unite: Quantitatif.estSoudure(g.nature) ? 'soudure' : 'joint',
+        poucesA: u.poucesA * g.qte, poucesC: u.poucesC * g.qte, souduresC: u.souduresC * g.qte, hA: u.hA, hPose: u.hPose, hSoudC: u.hSoudC, hC: u.hPose + u.hSoudC,
+        cout: 0, pu: 0, A, C, statut: 'ok' };
+    }
     const cat = categorieFamille(g.fam), a = articleDe(g.fam, g.dn), inch = poucesDN(g.dn);
-    const sd = g.fam && cat !== 'tube' ? souduresDe(g.fam, g.dn) : 0;
+    const sd = g.fam && cat !== 'tube' && !reelles ? souduresDe(g.fam, g.dn) : 0;
     const poucesA = sd * part * inch, poucesC = sd * (1 - part) * inch;
     // Préfabrication : soudures réalisées en atelier + temps de la famille (le tube est en fourniture seule)
     const hA = g.fam && cat !== 'tube' ? (poucesA / Math.max(1, num(p.cadenceAtelier)) * hj + num(g.fam.tempsPrefab)) * niv.coef : 0;
@@ -134,7 +151,7 @@ function calculerChiffrage(ch) {
   };
   tot.prefab = tot.fournitures + sumBy(liste, g => g.hA * A.vente * g.qte); tot.pose = sumBy(liste, g => g.hC * C.vente * g.qte);
   tot.total = tot.fournitures + tot.mo + tot.extras; tot.cout = tot.achats + tot.coutMO + tot.coutExtras;
-  return { p, niv, liste, extras, tot, A, C };
+  return { p, niv, liste, extras, tot, A, C, reelles };
 }
 
 const POUCES_TXT = x => `${fmt(x, 2).replace(/,00$/, '')}"`;
@@ -154,11 +171,11 @@ function lignesDevisDepuis(ch) {
       if (g.a) comp.push({ type: 'f', articleId: g.a.id, designation: g.a.designation, unite: g.a.unite, qte: 1, pu: g.pu, cout: g.cout, poids: num(g.a.poidsUnitaire) });
       if (g.hA > 0 && A.m.id) comp.push(mo(A, g.hA));
       if (!comp.length && g.statut === 'ok') return;
-      out.push({ type: 'ouvrage', plan: ch.id, designation: g.a ? g.a.designation : nomDe(g), unite: g.unite, qte: g.qte, composants: comp,
-        detail: g.cat === 'tube' ? 'Fourniture seule' : g.sd ? `${fmt(g.sd, 2).replace(/,00$/, '')} soudure(s) de ${POUCES_TXT(g.inch)} par ${g.unite}, ${fmt(num(p.partAtelier), 0)} % en atelier` : '' });
+      out.push({ type: 'ouvrage', plan: ch.id, designation: g.a ? g.a.designation : g.nature && Quantitatif.estSoudure(g.nature) ? `${nomDe(g)} (${POUCES_TXT(g.inch)})` : nomDe(g), unite: g.unite, qte: g.qte, composants: comp,
+        detail: g.nature ? `Quantité relevée sur la maquette${g.nature.endsWith('A') || g.nature.endsWith('C') ? '' : `, ${fmt(num(p.partAtelier), 0)} % en atelier`}` : g.cat === 'tube' ? 'Fourniture seule' : g.sd ? `${fmt(g.sd, 2).replace(/,00$/, '')} soudure(s) de ${POUCES_TXT(g.inch)} par ${g.unite}, ${fmt(num(p.partAtelier), 0)} % en atelier` : '' });
     });
     const pose = [];
-    gs.filter(g => g.hPose > 0).forEach(g => pose.push({ type: 'ouvrage', plan: ch.id, designation: g.cat === 'tube' ? `Pose tuyauterie DN${g.dn}${g.a ? ` (${g.a.designation})` : ''}` : `Pose ${nomDe(g)}`,
+    gs.filter(g => g.hPose > 0).forEach(g => pose.push({ type: 'ouvrage', plan: ch.id, designation: g.nature ? nomDe({ ...g, brut: Quantitatif.libelle('jointC') }) : g.cat === 'tube' ? `Pose tuyauterie DN${g.dn}${g.a ? ` (${g.a.designation})` : ''}` : `Pose ${nomDe(g)}`,
       unite: g.unite, qte: g.qte, composants: C.m.id ? [mo(C, g.hPose)] : [] }));
     // Soudures de raccordement sur site, regroupées par diamètre
     const parDN = {};
@@ -224,17 +241,18 @@ Views.chiffrage = params => {
   <h2>1. Nomenclature du plan</h2>
   <div class="toolbar">
     <label class="btn secondary">${(ch.lignes || []).length ? 'Remplacer la nomenclature' : 'Importer la nomenclature (.txt, .csv, .xlsx)'}<input type="file" id="ch-file" accept=".txt,.csv,.tsv,.xlsx" hidden></label>
-    ${document.body.classList.contains('demo') ? '<button class="secondary" id="ch-exemple">Nomenclature d\'exemple (Revit)</button>' : ''}
+    ${document.body.classList.contains('demo') ? '<button class="secondary" id="ch-exemple">Nomenclature d\'exemple (Revit)</button><button class="secondary" id="ch-exemple-q">Quantitatif d\'exemple (isométries Revit)</button>' : ''}
     <label class="inline small">Longueurs <select id="ch-ul"><option value="auto" ${p.uniteLongueur === 'auto' ? 'selected' : ''}>détection auto</option><option value="mm" ${p.uniteLongueur === 'mm' ? 'selected' : ''}>en mm</option><option value="m" ${p.uniteLongueur === 'm' ? 'selected' : ''}>en m</option></select></label>
     <label class="inline small">Regrouper <select id="ch-grp"><option value="systeme" ${p.regroupement === 'systeme' ? 'selected' : ''}>par réseau / système</option><option value="" ${p.regroupement !== 'systeme' ? 'selected' : ''}>tout ensemble</option></select></label>
   </div>
   ${ch.fichier ? `<p class="muted small">${esc(ch.fichier)} · ${(ch.lignes || []).length} ligne(s) · colonnes reconnues : ${esc(Object.keys(ch.colonnes || {}).join(', '))}</p>` : ''}
+  ${r.reelles ? '<p class="small"><span class="badge b-ok">Soudures réelles</span> Le fichier vient du complément Revit : les soudures et joints boulonnés relevés sur la maquette (atelier dans les spools, chantier entre spools) remplacent l\'estimation par famille.</p>' : ''}
 
   ${r.liste.length ? `<h2>2. Correspondance avec la bibliothèque ${t.manquants ? `<span class="badge b-warn">${t.manquants} à relier</span>` : '<span class="badge b-ok">complète</span>'}</h2>
   <div class="table-wrap"><table class="compact ch-table"><tr><th>Réseau</th><th>Élément du plan</th><th>DN</th><th class="num">Qté</th><th>Famille CAO / article</th><th class="num">Soudures / u</th><th class="num">Pouces atelier / chantier</th><th class="num">h préfab / u</th><th class="num">h pose / u</th><th class="num">Achat / u</th><th class="num">Vente / u</th></tr>
     ${r.liste.map((g, i) => `<tr class="${g.statut !== 'ok' ? 'a-chiffrer' : ''}"><td class="small">${esc(g.systeme)}</td><td>${esc(g.fam ? g.fam.nom : g.brut)}</td><td>${g.dn || ''}</td><td class="num">${fmt(g.qte, 2)} ${esc(g.unite)}</td>
-      <td>${g.statut === 'famille' ? `<button class="small" data-creer="${i}">Créer la famille</button>` : g.statut === 'article' ? `<button class="small" data-relier="${i}">Choisir l'article DN${g.dn}</button>` : `<span class="small">${esc(g.a.ref)} · ${esc(g.a.designation)}</span>`}</td>
-      <td class="num small">${g.cat === 'tube' ? '<span class="muted">fourniture seule</span>' : g.sd ? `${fmt(g.sd, 2).replace(/,00$/, '')} × ${POUCES_TXT(g.inch)}` : '—'}</td>
+      <td>${g.nature ? '<span class="small muted">Relevé de la maquette (Revit)</span>' : g.statut === 'famille' ? `<button class="small" data-creer="${i}">Créer la famille</button>` : g.statut === 'article' ? `<button class="small" data-relier="${i}">Choisir l'article DN${g.dn}</button>` : `<span class="small">${esc(g.a.ref)} · ${esc(g.a.designation)}</span>`}</td>
+      <td class="num small">${g.cat === 'tube' ? '<span class="muted">fourniture seule</span>' : g.nature ? (Quantitatif.estSoudure(g.nature) ? `1 × ${POUCES_TXT(g.inch)}` : '—') : g.sd ? `${fmt(g.sd, 2).replace(/,00$/, '')} × ${POUCES_TXT(g.inch)}` : r.reelles && g.cat === 'raccord' ? '<span class="muted">soudures réelles</span>' : '—'}</td>
       <td class="num">${fmt(g.poucesA, 1)} / ${fmt(g.poucesC, 1)}</td><td class="num">${fmt(g.hA, 2)}</td><td class="num" title="pose ${fmt(g.hPose, 2)} h + soudures sur site ${fmt(g.hSoudC, 2)} h">${fmt(g.hC, 2)}</td><td class="num">${g.a ? eur(g.cout) : '—'}</td><td class="num">${g.a ? eur(g.pu) : '—'}</td></tr>`).join('')}</table></div>` : ''}
 
   <h2>3. Paramètres du chiffrage</h2>
@@ -243,7 +261,7 @@ Views.chiffrage = params => {
     <div><h3 style="margin-top:0">Préfabrication atelier</h3>
       <p class="muted small">Fournitures du plan (le tube en fourniture seule) et soudures des raccords réalisées en atelier.</p>
       <div class="field"><label for="cp-cA">Cadence atelier (pouces / jour / soudeur)</label><input id="cp-cA" data-p="cadenceAtelier" type="number" step="1" value="${esc(p.cadenceAtelier)}"></div>
-      <div class="field"><label for="cp-part">Soudures réalisées en atelier (%)</label><input id="cp-part" data-p="partAtelier" type="number" step="5" min="0" max="100" value="${esc(p.partAtelier)}"></div>
+      <div class="field"><label for="cp-part">Soudures réalisées en atelier (%)${r.reelles ? ' <span class="muted small">(seulement pour la tuyauterie non découpée en spools)</span>' : ''}</label><input id="cp-part" data-p="partAtelier" type="number" step="5" min="0" max="100" value="${esc(p.partAtelier)}"></div>
       <div class="field"><label for="cp-hj">Heures par jour</label><input id="cp-hj" data-p="heuresJour" type="number" step="0.5" value="${esc(p.heuresJour)}"></div>
       <div class="field"><label for="cp-moA">Main-d'œuvre atelier</label><select id="cp-moA" data-p="moAtelier">${moOpts(p.moAtelier)}</select></div>
       <div class="field"><label for="cp-tA">Taux horaire atelier €/h <span class="muted small">(vide = ${eur(num((Store.get('mainoeuvre', p.moAtelier) || {}).tauxVente))})</span></label><input id="cp-tA" data-p="tauxAtelier" data-vide="1" type="number" step="0.5" value="${esc(p.tauxAtelier ?? '')}"></div>
@@ -257,7 +275,7 @@ Views.chiffrage = params => {
       </div>
       <div class="field"><label for="cp-cC">Cadence soudure sur site (pouces / jour / soudeur)</label><input id="cp-cC" data-p="cadenceChantier" type="number" step="1" value="${esc(p.cadenceChantier)}"></div>
       <div class="baremes">
-        ${[['poseTubes', 'Pose des tubes', 'h / ml'], ['poseRobinetterie', 'Pose de la robinetterie', 'h / u']].map(([k, titre, u]) => `<div><table class="compact bareme"><tr><th>${titre}</th><th class="num">${u}</th><th></th></tr>
+        ${[['poseTubes', 'Pose des tubes', 'h / ml'], ['poseRobinetterie', 'Pose de la robinetterie', 'h / u'], ['jointsBoulonnes', 'Montage des joints boulonnés', 'h / joint']].map(([k, titre, u]) => `<div><table class="compact bareme"><tr><th>${titre}</th><th class="num">${u}</th><th></th></tr>
           ${(p[k] || []).map((x, i) => `<tr><td>DN <input data-bar="${k}" data-i="${i}" data-k="dn" type="number" value="${esc(x.dn)}" style="width:70px" aria-label="DN"></td><td class="num"><input data-bar="${k}" data-i="${i}" data-k="h" type="number" step="0.05" value="${esc(x.h)}" style="width:70px" aria-label="Heures"></td><td><button class="small danger" data-bardel="${k}|${i}" aria-label="Retirer">✕</button></td></tr>`).join('')}
           </table><button class="secondary small" data-baradd="${k}">+ Diamètre</button></div>`).join('')}
       </div>
@@ -312,6 +330,8 @@ Views.chiffrage.bind = (root, params) => {
   };
   const ex = q('#ch-exemple');
   if (ex) ex.onclick = () => charger('Nomenclature tuyauterie (exemple Revit).txt', XLSX.readCSV(new TextEncoder().encode(nomenclatureExemple()).buffer)[0]);
+  const exq = q('#ch-exemple-q');
+  if (exq) exq.onclick = () => charger('Quantitatif chiffrage Pipe-Fit (exemple).csv', XLSX.readCSV(new TextEncoder().encode(QUANTITATIF_EXEMPLE).buffer)[0]);
   root.querySelectorAll('[data-p]').forEach(el => el.onchange = () => { ch.params[el.dataset.p] = el.tagName === 'SELECT' || (el.dataset.vide && el.value === '') ? el.value : num(el.value); save(); });
   root.querySelectorAll('[data-bar]').forEach(el => el.onchange = () => { ch.params[el.dataset.bar][+el.dataset.i][el.dataset.k] = num(el.value); ch.params[el.dataset.bar].sort((a, b) => num(a.dn) - num(b.dn)); save(); });
   root.querySelectorAll('[data-bardel]').forEach(b => b.onclick = () => { const [k, i] = b.dataset.bardel.split('|'); ch.params[k].splice(+i, 1); save(); });
@@ -419,6 +439,34 @@ function editerFamille(f) {
   };
   lier();
 }
+
+// Démonstration : quantitatif exporté par le complément Revit « Pipe-Fit Isométries » (bouton « Quantitatif chiffrage »)
+// pour les spools SP-101 à SP-103 de sa démonstration, produit par son moteur de calcul (bash revit/demo/build.sh)
+const QUANTITATIF_EXEMPLE = `Réseau;Famille;Type;Taille;Longueur;Nombre;Matériau;Désignation;Repères spools
+EG-101;Tube;Acier P235GH;DN100;3867;1;Acier P235GH;Tube Acier P235GH;SP-102
+EG-101;Bride à collerette;PN16;DN100;;3;Acier P235GH;Bride à collerette PN16;SP-102
+EG-101;Coude - Soudé;3D;DN100;;2;Acier P235GH;Coude - Soudé 3D 90°;SP-102
+EG-101;Vanne papillon;PN16;DN100;;1;Acier P235GH;Vanne papillon PN16;SP-102
+EG-101;Joint boulonné atelier;brides;DN100;;2;;Joints boulonnés dans les spools;SP-102
+EG-101;Joint boulonné chantier;brides;DN100;;1;;Joints boulonnés de raccordement;SP-102
+EG-101;Soudure atelier;bout à bout;DN100;;7;;Soudures dans les spools (préfabrication);SP-102
+EG-101;Soudure chantier;bout à bout;DN100;;1;;Soudures de raccordement entre spools / équipements;SP-102
+NEP-ALLER;Tube;Inox 316L;DN50;3968;1;Inox 316L;Tube Inox 316L;SP-101
+NEP-ALLER;Bride à collerette;PN16;DN50;;3;Inox 316L;Bride à collerette PN16;SP-101
+NEP-ALLER;Coude - Soudé;3D;DN50;;2;Inox 316L;Coude - Soudé 3D 90°;SP-101
+NEP-ALLER;Té - Soudé;Égal;DN50;;1;Inox 316L;Té - Soudé Égal;SP-101
+NEP-ALLER;Joint boulonné chantier;brides;DN50;;3;;Joints boulonnés de raccordement;SP-101
+NEP-ALLER;Soudure atelier;bout à bout;DN50;;10;;Soudures dans les spools (préfabrication);SP-101
+PROC-R;Tube;Inox 304L;DN80;532;1;Inox 304L;Tube Inox 304L;SP-103
+PROC-R;Tube;Inox 304L;DN50;1295;1;Inox 304L;Tube Inox 304L;SP-103
+PROC-R;Bride à collerette;PN16;DN80;;1;Inox 304L;Bride à collerette PN16;SP-103
+PROC-R;Bride à collerette;PN16;DN50;;1;Inox 304L;Bride à collerette PN16;SP-103
+PROC-R;Coude - Soudé;3D;DN50;;2;Inox 304L;Coude - Soudé 3D 90°;SP-103
+PROC-R;Réduction concentrique;Soudée;DN80 x DN50;;1;Inox 304L;Réduction concentrique Soudée;SP-103
+PROC-R;Joint boulonné chantier;brides;DN80;;1;;Joints boulonnés de raccordement;SP-103
+PROC-R;Joint boulonné chantier;brides;DN50;;1;;Joints boulonnés de raccordement;SP-103
+PROC-R;Soudure atelier;bout à bout;DN80;;2;;Soudures dans les spools (préfabrication);SP-103
+PROC-R;Soudure atelier;bout à bout;DN50;;6;;Soudures dans les spools (préfabrication);SP-103`;
 
 // Démonstration : export de nomenclature Revit (texte séparé par tabulations, longueurs en mm, titre en première ligne)
 function nomenclatureExemple() {

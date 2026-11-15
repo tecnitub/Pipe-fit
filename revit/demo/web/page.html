@@ -119,7 +119,8 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
       <button role="tab" data-t="ass">Soudures</button>
       <button role="tab" data-t="cot">Cotes</button>
       <button role="tab" data-t="pcf">Fichier PCF</button>
-      <button role="tab" data-t="csv">CSV Pipe-Fit</button>
+      <button role="tab" data-t="qte">Quantitatif chiffrage</button>
+      <button role="tab" data-t="csv">CSV nomenclature</button>
     </div>
     <div class="panel" id="panel"></div>
   </section>
@@ -342,6 +343,11 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
     } else if (st.tab === 'cot') {
       p.innerHTML = table([{ t: 'Cote (mm)', r: true }, { t: 'De / à' }], s.cotes.map(c => [c.v, c.l])) +
         `<p class="note">Axe = intersection des axes du coude ou du té. Bride = face de la bride. Une vanne entre brides coupe la chaîne : cotes jusqu'à ses faces, puis face à face.</p>`;
+    } else if (st.tab === 'qte') {
+      const rows = s.quantitatif.trim().split(/\r?\n/).map(l => l.split(';'));
+      const cols = rows[0].map((t, i) => ({ t, r: i === 4 || i === 5 }));
+      p.innerHTML = table(cols.slice(0, 8), rows.slice(1).map(r => r.slice(0, 8))) +
+        `<p class="note">Bouton « Quantitatif chiffrage » du ruban Revit : fichier importé tel quel dans Pipe-Fit (Devis → Chiffrage depuis plan). Les soudures et joints réels, en atelier dans les spools et sur chantier entre spools, remplacent l'estimation par famille. Longueurs en mm.</p>`;
     } else if (st.tab === 'pcf') {
       p.innerHTML = `<pre>${esc(s.pcf)}</pre><p class="note">Fichier ISO ${esc(s.nom)}.pcf, lisible par Isogen, Spoolgen ou Plant 3D pour une isométrie normalisée.</p>`;
     } else {

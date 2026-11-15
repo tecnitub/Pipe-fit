@@ -117,6 +117,32 @@ static class Tests
             && sr.Liaisons.Skip(1).All(l => l.Sens == SensFlux.Sortie), "sens d'écoulement Revit respecté");
         Verifier(ExportCsv.Liaisons(new[] { sl }).Contains(";Va vers;SP-03;DN50;déduit de la ligne"), "CSV liaisons : " + ExportCsv.Liaisons(new[] { sl }));
 
+        // Quantitatif pour le chiffrage Pipe-Fit
+        var q1 = Exemple(); q1.Composants.ForEach(c => c.Systeme = "EG-101");
+        var q2 = Exemple(); q2.Nom = "SP-03"; q2.Composants.ForEach(c => { c.Systeme = "EG-101"; c.Id = "b" + c.Id; foreach (var e in c.Extremites) if (e.ConnecteA != null && e.ConnecteA != "VANNE-EXT") e.ConnecteA = "b" + e.ConnecteA; });
+        // Les deux spools se raccordent bride contre bride : 5 (SP-02) ↔ b5 (SP-03)
+        q1.Composants.First(c => c.Id == "5").Extremites[1].ConnecteA = "b5";
+        q2.Composants.First(c => c.Id == "b5").Extremites[1].ConnecteA = "5";
+        AnalyseSpool.Analyser(q1); AnalyseSpool.Analyser(q2);
+        var ql = Quantitatif.Calculer(new[] { q1, q2 });
+        var qtube = ql.FirstOrDefault(l => l.EstTube);
+        Verifier(qtube != null && qtube.Famille == "Tube" && Math.Abs(qtube.LongueurMm - 2 * 2874) < 0.1 && qtube.Spools.Count == 2, "quantitatif : tube cumulé sur les 2 spools");
+        Verifier(ql.Any(l => l.Famille == "Soudure atelier" && l.Taille == "DN50" && l.Nombre == 10), "quantitatif : 10 soudures atelier DN50");
+        // Raccordement entre les deux spools : un seul joint, vu des deux côtés
+        Verifier(ql.Count(l => l.Famille == "Joint boulonné chantier") == 1 && ql.First(l => l.Famille == "Joint boulonné chantier").Nombre == 1,
+            "quantitatif : raccordement commun compté une fois, boulonné (bride)");
+        var hs = Exemple(); hs.HorsSpool = true; AnalyseSpool.Analyser(hs);
+        var qh = Quantitatif.Calculer(new[] { hs });
+        Verifier(qh.Any(l => l.Famille == "Soudure" && l.Nombre == 5) && !qh.Any(l => l.Famille == "Soudure atelier"), "quantitatif hors spool : soudures à répartir");
+        var qcsv = Quantitatif.Csv(new[] { q1 }).Split(new[] { "\r\n" }, StringSplitOptions.RemoveEmptyEntries);
+        Verifier(qcsv[0] == "Réseau;Famille;Type;Taille;Longueur;Nombre;Matériau;Désignation;Repères spools", "CSV quantitatif : en-tête");
+        Verifier(qcsv.Contains("EG-101;Tube;Inox 316L;DN50;2874;1;Inox 316L;Tube Inox 316L;SP-02"), "CSV quantitatif : ligne tube : " + qcsv[1]);
+        Verifier(qcsv.Any(l => l.StartsWith("EG-101;Soudure atelier;bout à bout;DN50;;5;")), "CSV quantitatif : soudures atelier");
+        var sred = new Spool { Nom = "R" };
+        sred.Composants.Add(C("x", "Réduction", "", TypeComposant.Reduction, 80, 0, null, E(0, 0, 0, 80, null), E(90, 0, 0, 50, null)));
+        AnalyseSpool.Analyser(sred);
+        Verifier(Quantitatif.Calculer(new[] { sred }).Any(l => l.Taille == "DN80 x DN50"), "quantitatif : taille d'une réduction");
+
         // Bride contre bride (ou vanne) : joint boulonné
         var b = new Spool { Nom = "B" };
         b.Composants.Add(C("a", "Bride", "PN16", TypeComposant.Bride, 80, 0, null, E(0, 0, 0, 80, "x"), E(10, 0, 0, 80, "b")));

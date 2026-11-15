@@ -32,8 +32,7 @@ namespace PipeFit.Isometries.Revit
 
             var r = Reglages.Charger();
             var candidats = LectureModele.ParametresCandidats(tous);
-            if (!candidats.Contains(r.ParametreSpool) || !tous.Any(e => LectureModele.ValeurSpool(e, r.ParametreSpool) != ""))
-                r.ParametreSpool = LectureModele.ParametreParDefaut(tous, candidats);
+            r.ParametreSpool = ParametreSpool(r, tous, candidats);
             if (r.Dossier == "" && doc.PathName != "") r.Dossier = Path.Combine(Path.GetDirectoryName(doc.PathName) ?? "", "Isométries");
 
             var donnees = new DonneesFenetre
@@ -75,6 +74,14 @@ namespace PipeFit.Isometries.Revit
             }
 
             return Generer(uidoc, r, groupesSpool, ref message);
+        }
+
+        /// <summary>Paramètre du numéro de spool : celui mémorisé s'il est renseigné dans ce projet, sinon le plus probable.</summary>
+        public static string ParametreSpool(Reglages r, List<Element> tous, List<string> candidats = null)
+        {
+            candidats = candidats ?? LectureModele.ParametresCandidats(tous);
+            if (candidats.Contains(r.ParametreSpool) && tous.Any(e => LectureModele.ValeurSpool(e, r.ParametreSpool) != "")) return r.ParametreSpool;
+            return LectureModele.ParametreParDefaut(tous, candidats);
         }
 
         static Result Generer(UIDocument uidoc, Reglages r, Dictionary<string, List<Element>> groupes, ref string message)
@@ -170,7 +177,8 @@ namespace PipeFit.Isometries.Revit
                     File.WriteAllText(Path.Combine(r.Dossier, "Soudures spools.csv"), ExportCsv.Soudures(spools), utf8);
                     File.WriteAllText(Path.Combine(r.Dossier, "Cotes spools.csv"), ExportCsv.Cotes(spools), utf8);
                     File.WriteAllText(Path.Combine(r.Dossier, "Liaisons spools.csv"), ExportCsv.Liaisons(spools), utf8);
-                    notes.Add("CSV : nomenclature, soudures, cotes et liaisons (provenance / destination)");
+                    File.WriteAllText(Path.Combine(r.Dossier, "Quantitatif chiffrage Pipe-Fit.csv"), Quantitatif.Csv(spools), utf8);
+                    notes.Add("CSV : nomenclature, soudures, cotes, liaisons, et « Quantitatif chiffrage Pipe-Fit.csv » (chiffrage des spools générés)");
                 }
                 catch (Exception ex) { notes.Add("CSV : " + ex.Message); }
             }

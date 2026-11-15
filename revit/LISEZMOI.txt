@@ -44,6 +44,16 @@ CE QUI EST CRÉÉ POUR CHAQUE SPOOL
   Relancer la génération met à jour les feuilles et vues existantes (option « Remplacer »).
   Toute la génération s'annule en une fois avec Ctrl+Z.
 
+QUANTITATIF POUR LE CHIFFRAGE (bouton « Quantitatif chiffrage »)
+  Exporte le quantitatif de tout le projet dans un fichier CSV, à importer dans Pipe-Fit :
+  Devis > Chiffrage depuis plan > Importer la nomenclature.
+  - Fournitures par réseau : tubes en mètres, raccords et robinetterie en nombre, par DN et matériau.
+  - Soudures réelles de la maquette : en atelier (dans les spools) et sur chantier (entre spools), par DN.
+  - Joints boulonnés en atelier et sur chantier.
+  - La tuyauterie pas encore numérotée en spools est comptée aussi : ses soudures sont réparties
+    atelier / chantier selon le pourcentage réglé dans le chiffrage.
+  Pipe-Fit chiffre alors les soudures réelles à la place de son estimation par famille.
+
 BON À SAVOIR
   - Un assemblage entre deux brides, ou entre une bride et une vanne / un accessoire, est compté comme joint
     boulonné ; tous les autres assemblages internes au spool comme soudures atelier.

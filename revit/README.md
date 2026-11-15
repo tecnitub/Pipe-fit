@@ -1,7 +1,8 @@
 # Pipe-Fit Isométries – complément Revit
 
-Complément Revit (2023 à 2027) qui produit **une isométrie de fabrication par numéro de spool** depuis la maquette 3D :
-onglet **Pipe-Fit → Fabrication → Isométries spools**.
+Complément Revit (2023 à 2027) qui produit **une isométrie de fabrication par numéro de spool** depuis la maquette 3D
+(onglet **Pipe-Fit → Fabrication → Isométries spools**) et le **quantitatif pour le chiffrage automatique** dans Pipe-Fit
+(**Quantitatif chiffrage**).
 
 Le numéro de spool doit être renseigné au préalable dans un paramètre texte des canalisations, raccords et accessoires
 (paramètre partagé « Numéro de spool », « Spool »… : la fenêtre propose tous les paramètres texte trouvés et choisit
@@ -24,6 +25,25 @@ Pour chaque spool coché :
 La génération complète est une seule opération Revit (annulable par Ctrl+Z). Relancer avec l'option *Remplacer*
 met à jour les feuilles et vues déjà générées. Les éléments de tuyauterie sans numéro de spool sont signalés et
 peuvent être sélectionnés dans le modèle depuis la fenêtre.
+
+## Quantitatif pour le chiffrage Pipe-Fit
+
+Bouton **Quantitatif chiffrage** du ruban (et fichier `Quantitatif chiffrage Pipe-Fit.csv` écrit avec les exports des
+isométries) : le quantitatif de tout le projet, importé tel quel dans Pipe-Fit (*Devis → Chiffrage depuis plan →
+Importer la nomenclature*).
+
+| Lignes | Contenu |
+|---|---|
+| Fournitures | Par réseau : tubes en longueur totale (mm), raccords et robinetterie en nombre, par famille, type, DN (`DN80 x DN50` pour une réduction) et matériau |
+| Soudures réelles | `Soudure atelier` (dans un spool) et `Soudure chantier` (entre deux spools ou vers un équipement), par réseau et DN |
+| Joints boulonnés | `Joint boulonné atelier` (vanne entre brides dans un spool) et `Joint boulonné chantier` (bride en bout de spool) |
+| Hors spool | Tuyauterie pas encore numérotée, regroupée par réseau : `Soudure` et `Joint boulonné` sans lieu, répartis par la part atelier du chiffrage |
+
+Un raccordement entre deux spools n'est compté qu'une fois. Dans Pipe-Fit, dès que le fichier contient des soudures
+réelles, elles remplacent l'estimation par famille (soudures par raccord × part atelier) : heures de préfabrication à la
+cadence atelier, soudures de raccordement à la cadence chantier, montage des joints selon le barème « Montage des joints
+boulonnés » (h / joint par DN) des paramètres du chiffrage. Les fournitures restent reliées aux familles CAO et aux
+articles de la bibliothèque comme avant.
 
 ## Règles de calcul
 

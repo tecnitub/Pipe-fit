@@ -24,6 +24,15 @@ namespace PipeFit.Isometries.Revit
                 Image = Image("icone16.png"),
             };
             panneau.AddItem(bouton);
+            panneau.AddItem(new PushButtonData("PipeFitQuantitatif", "Quantitatif\nchiffrage", Assembly.GetExecutingAssembly().Location, typeof(CmdQuantitatif).FullName)
+            {
+                ToolTip = "Exporte le quantitatif du projet pour le chiffrage automatique dans Pipe-Fit (Devis → Chiffrage depuis plan).",
+                LongDescription = "Fournitures par réseau (tubes en longueur, raccords et robinetterie en nombre, par DN et matériau) et soudures réelles "
+                    + "de la maquette : atelier dans les spools, chantier entre spools ; joints boulonnés. La tuyauterie pas encore découpée en spools "
+                    + "est comptée aussi, ses soudures étant réparties atelier / chantier par le chiffrage.",
+                LargeImage = Image("quantitatif32.png"),
+                Image = Image("quantitatif16.png"),
+            });
             return Result.Succeeded;
         }
 
