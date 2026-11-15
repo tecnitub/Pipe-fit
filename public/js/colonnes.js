@@ -62,5 +62,18 @@ const Colonnes = (() => {
       if (raz) raz.onclick = () => { enregistrer(ecran, null); App.render(); };
     });
   }
-  return { appliquer };
+  // Tableaux en cartes sur téléphone (classe « cartes-tel », style.css) : chaque cellule reçoit l'intitulé de sa colonne
+  // (data-l, affiché au-dessus de la valeur dans la carte), sauf si elle en a déjà un (data-l="" : pas d'intitulé)
+  function etiqueter(root) {
+    root.querySelectorAll('table.cartes-tel').forEach(table => {
+      const tete = table.querySelector('tr');
+      if (!tete || !tete.querySelector('th')) return;
+      const libs = [...tete.children].map(th => th.textContent.trim());
+      [...table.querySelectorAll('tr')].slice(1).forEach(tr => {
+        if (tr.children.length !== libs.length) return; // ligne vide « Aucun… » (colspan)
+        [...tr.children].forEach((td, i) => { if (!td.hasAttribute('data-l')) td.setAttribute('data-l', libs[i]); });
+      });
+    });
+  }
+  return { appliquer, etiqueter };
 })();

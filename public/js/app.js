@@ -31,6 +31,7 @@ const App = {
     root.querySelectorAll('.tabs a.active').forEach(a => { const t = a.parentElement; if (t.scrollWidth > t.clientWidth) t.scrollLeft = a.offsetLeft - t.offsetLeft - (t.clientWidth - a.offsetWidth) / 2; });
     masquerLiensAcces(root);
     Colonnes.appliquer(root);
+    Colonnes.etiqueter(root);
     if (typeof brancherDicteeTexte === 'function') brancherDicteeTexte(root);
     if (typeof boutonAssistant === 'function') boutonAssistant();
     this.pendingRemote = false;

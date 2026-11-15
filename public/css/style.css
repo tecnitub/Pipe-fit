@@ -975,6 +975,26 @@ fieldset.mi-titre[hidden] { display: none; }
   .edit-lines tr.subtotal td:empty { display: none; }
 }
 
+/* Tableaux de liste en cartes sur téléphone (classe « cartes-tel ») : même principe que les lignes du devis, une carte
+   par ligne, titre (td.ct-titre) en haut sur toute la largeur, les autres cellules en grille avec l'intitulé de leur
+   colonne au-dessus (data-l, posé par Colonnes.etiqueter) ; case de sélection en haut à droite */
+@media (max-width: 600px) {
+  .table-wrap > table.cartes-tel { min-width: 0; }
+  .table-wrap:has(> table.cartes-tel) { overflow: visible; border: 0; background: none; }
+  table.cartes-tel, table.cartes-tel > tbody { display: block; width: 100%; }
+  table.cartes-tel tr:has(> th) { display: none; }
+  table.cartes-tel tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 12px; position: relative; padding: 10px 12px; margin: 0 0 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+  table.cartes-tel td { display: block; min-width: 0; padding: 0; border: 0; text-align: left; overflow-wrap: anywhere; }
+  table.cartes-tel td.num { text-align: left; }
+  table.cartes-tel td.nowrap { white-space: normal; }
+  table.cartes-tel td[data-l]:not([data-l=""])::before { content: attr(data-l); display: block; margin-bottom: 2px; color: var(--muted); font-size: 12px; font-weight: 400; text-transform: uppercase; letter-spacing: .03em; }
+  table.cartes-tel td.ct-titre { grid-column: 1 / -1; order: -1; font-size: 15px; font-weight: 600; }
+  table.cartes-tel td.ct-large, table.cartes-tel td[colspan] { grid-column: 1 / -1; }
+  table.cartes-tel tr:has(> td.sel-cell) > td.ct-titre { padding-right: 40px; }
+  table.cartes-tel td.sel-cell { position: absolute; top: 8px; right: 8px; width: auto; }
+  table.cartes-tel td:empty { display: none; }
+}
+
 /* Colonnes des tableaux choisies par chacun : barre de pastilles, poignée de largeur */
 .col-barre { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 6px; }
 .col-puces { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

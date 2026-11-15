@@ -78,6 +78,31 @@ for (const [compte, ecrans, titre] of [['acc-admin', BUREAU, 'bureau'], ['acc-ke
   });
 }
 
+test('Ergonomie CRM (390 px) : Étapes des études et chantiers en cartes, sans tableau qui défile ; tableau sur ordinateur', { skip: sansPlaywright, timeout: 120000 }, async () => {
+  const etat = () => [...document.querySelectorAll('#app table.cartes-tel')].map(t => {
+    const lignes = [...t.querySelectorAll('tr')].filter(tr => tr.querySelector('td') && getComputedStyle(tr).display !== 'none');
+    return { n: lignes.length, affichage: lignes.length ? getComputedStyle(lignes[0]).display : '', defile: t.closest('.table-wrap').scrollWidth > t.closest('.table-wrap').clientWidth + 1,
+      intitules: lignes.length ? [...lignes[0].children].filter(td => !td.classList.contains('ct-titre') && !td.classList.contains('sel-cell')).every(td => td.dataset.l) : false };
+  });
+  for (const [viewport, tel] of [[{ width: 390, height: 844 }, true], [{ width: 1400, height: 900 }, false]]) {
+    const { p, erreurs } = await ouvrir('acc-claire', viewport);
+    for (const hash of ['#/etapes', '#/chantiers']) {
+      await aller(p, hash); await p.waitForTimeout(400);
+      const t = await p.evaluate(etat);
+      assert.ok(t.length && t.every(x => x.n), `${hash} : tableau en cartes absent`);
+      if (tel) {
+        assert.ok(t.every(x => x.affichage === 'grid' && !x.defile && x.intitules), `${hash} (390 px) : ${JSON.stringify(t)}`);
+        const m = await p.evaluate(MESURER);
+        assert.strictEqual(m.defilement, 0, `${hash} : défilement horizontal`);
+        assert.deepStrictEqual(m.petites, [], `${hash} : cibles < 40 px`);
+      } else assert.ok(t.every(x => x.affichage === 'table-row'), `${hash} (ordinateur) : ${JSON.stringify(t)}`);
+    }
+    // Carte d'un chantier : un toucher ouvre sa fiche
+    if (tel) { await aller(p, '#/chantiers'); await p.click('table.cartes-tel tr[data-go] td.ct-titre'); await p.waitForTimeout(400); assert.match(await p.evaluate(() => location.hash), /^#\/chantier\//); }
+    assert.deepStrictEqual(erreurs, []);
+  }
+});
+
 test('Ergonomie CRM (390 px) : navigation au pouce, menu complet en volet, dialogue aux actions visibles', { skip: sansPlaywright, timeout: 120000 }, async () => {
   const { p, erreurs } = await ouvrir('acc-admin');
   await aller(p, '#/dashboard');
