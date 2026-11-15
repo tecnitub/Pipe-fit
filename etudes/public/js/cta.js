@@ -32,6 +32,11 @@ const Cta = ((D, C, N) => {
   }
   const HUMID = { aucune: 'Aucune', vapeur: 'Humidificateur vapeur', adiabatique: 'Humidificateur adiabatique (ruissellement, contact ou pulvérisation)' };
   const humidifie = e => e.humid === 'vapeur' || e.humid === 'adiabatique';
+  // Rafraîchissement adiabatique d'été : direct (air neuf humidifié) ou indirect (air extrait humidifié, échange par le
+  // récupérateur d'une centrale double flux) ; « non » par défaut
+  const RAFR = { non: 'Non', direct: 'Direct (air neuf humidifié, évolution isenthalpe)', indirect: 'Indirect (air extrait humidifié, refroidissement par le récupérateur)' };
+  const rafrEte = e => (e && (e.adiabEte === 'direct' || e.adiabEte === 'indirect') ? e.adiabEte : 'non');
+  const avecAdiab = e => e.humid === 'adiabatique' || rafrEte(e) !== 'non';
 
   const RECUP = { aucun: ['Sans récupérateur', 0], plaques: ['Échangeur à plaques à contre-courant', 75], roue: ['Roue rotative', 80], glycol: ['Batteries à eau glycolée (boucle)', 50] };
   const CATEGORIES_SFP = [[500, 'SFP 1'], [750, 'SFP 2'], [1250, 'SFP 3'], [2000, 'SFP 4'], [3000, 'SFP 5'], [4500, 'SFP 6'], [Infinity, 'SFP 7']];
@@ -60,13 +65,14 @@ const Cta = ((D, C, N) => {
       { k: 'TsH', l: 'Température de soufflage', u: '°C', d: 20 , si: e => e.modeP !== 'saisie' },
       { k: 'humid', l: 'Humidification', t: 's', o: Object.entries(HUMID), d: 'aucune' },
       { k: 'HRmin', l: 'Humidité relative intérieure à tenir', u: '%', d: 40, si: humidifie },
-      { k: 'effHum', l: 'Efficacité de saturation de l\'humidificateur (85 % : valeur courante, à valider sur la fiche)', u: '%', d: 85, si: e => e.humid === 'adiabatique' },
-      { k: 'deconc', l: 'Déconcentration (purge), en part de l\'eau évaporée (à valider selon la qualité de l\'eau)', u: '%', d: 25, si: e => e.humid === 'adiabatique' },
-      { k: 'dpHum', l: 'Perte de charge de l\'humidificateur adiabatique', u: 'Pa', d: 60, si: e => e.humid === 'adiabatique' },
+      { k: 'effHum', l: 'Efficacité de saturation de l\'humidificateur (85 % : valeur courante, à valider sur la fiche)', u: '%', d: 85, si: avecAdiab },
+      { k: 'deconc', l: 'Déconcentration (purge), en part de l\'eau évaporée (à valider selon la qualité de l\'eau)', u: '%', d: 25, si: avecAdiab },
+      { k: 'dpHum', l: 'Perte de charge de l\'humidificateur adiabatique', u: 'Pa', d: 60, si: avecAdiab },
       { k: 'PpompeHum', l: 'Pompe de recirculation de l\'humidificateur (0,37 kW : valeur courante, à valider sur la fiche)', u: 'kW', d: 0.37, si: e => e.humid === 'adiabatique' },
       { g: 'Conditions d\'été' }, { k: 'TeE', l: 'Température extérieure de base', u: '°C', d: 32 , si: e => e.modeP !== 'saisie' }, { k: 'HReE', l: 'Humidité relative extérieure', u: '%', d: 40 , si: e => e.modeP !== 'saisie' },
       { k: 'TiE', l: 'Température intérieure (reprise)', u: '°C', d: 26 , si: e => e.modeP !== 'saisie' }, { k: 'HRiE', l: 'Humidité relative intérieure (reprise)', u: '%', d: 50 , si: e => e.modeP !== 'saisie' },
-      { k: 'TsE', l: 'Température de soufflage', u: '°C', d: 16 , si: e => e.modeP !== 'saisie' }, 
+      { k: 'TsE', l: 'Température de soufflage', u: '°C', d: 16 , si: e => e.modeP !== 'saisie' },
+      { k: 'adiabEte', l: 'Rafraîchissement adiabatique en été', t: 's', o: Object.entries(RAFR), d: 'non', si: e => e.modeP !== 'saisie' },
       { g: 'Régimes d\'eau' }, { k: 'TcAller', l: 'Eau chaude : départ', u: '°C', d: 70, si: bcEau }, { k: 'TcRetour', l: 'Eau chaude : retour', u: '°C', d: 50, si: bcEau },
       { k: 'TfAller', l: 'Eau glacée : départ', u: '°C', d: 7, si: bfEau }, { k: 'TfRetour', l: 'Eau glacée : retour', u: '°C', d: 12, si: bfEau },
       { g: 'Pertes de charge et ventilateurs' },
@@ -87,14 +93,30 @@ const Cta = ((D, C, N) => {
       const recup = type === 'double' ? (RECUP[e.recup] ? e.recup : 'plaques') : 'aucun', eta = recup === 'aucun' ? 0 : (e.eta === '' || e.eta === undefined ? RECUP[recup][1] : num(e.eta)) / 100;
       // Batteries : chaude + froide, chaude seule, froide seule ou batterie unique change-over
       const fAN = type === 'melange' ? Math.min(1, Math.max(0, num(e.pAN, 30) / 100)) : 1, froid = bfEau(e), chaudeEau = bcEau(e), elecChaude = e.batElec === 'chaude' && !chaudeEau, chaude = chaudeEau || elecChaude, co = e.froid === 'co';
-      const saison = (Te, HRe, Ti, HRi, Ts, hiver) => {
+      // Refroidissement évaporatif : évolution isenthalpe d'efficacité ε vers la température humide, limitée à Tmin
+      // (humidificateur modulé pour ne pas souffler en dessous de la consigne)
+      const epsH = Math.min(1, Math.max(0.05, num(e.effHum, 85) / 100));
+      const evaporer = (X, Tmin) => {
+        const Tw = Thumide(X.h), xs = xDe(Tw, 100); let x2 = X.x + epsH * (xs - X.x);
+        if (Tmin !== undefined && TdeH(X.h, x2) < Tmin) x2 = Math.max(X.x, (X.h - 1.006 * Tmin) / (2501 + 1.86 * Tmin));
+        return { s: etat(TdeH(X.h, x2), x2), Tw };
+      };
+      const saison = (Te, HRe, Ti, HRi, Ts, hiver, rafr = 'non') => {
         const E = etat(Te, xDe(Te, HRe)), R = etat(Ti, xDe(Ti, HRi)), pts = [['Air neuf extérieur', E]];
         // Récupérateur sensible (rapport des débits pris en compte pour la température rejetée)
-        let A = E, rejet = null;
+        let A = E, rejet = null, rafraich = null;
         if (eta > 0) {
-          A = etat(Te + eta * (Ti - Te), E.x); pts.push(['Après récupérateur', A]);
-          const mS = masseAir(Qs, Te), mR = masseAir(Qr, Ti), Tr = Ti - mS / Math.max(mR, 1e-9) * (A.T - Te);
-          rejet = etat(Tr, Math.min(R.x, xDe(Tr, 100)));
+          // Rafraîchissement indirect : air extrait humidifié avant le récupérateur, qui refroidit l'air neuf sans l'humidifier
+          let Rx = R;
+          if (!hiver && rafr === 'indirect') { const v = evaporer(R); Rx = v.s; pts.push(['Air extrait humidifié (rafraîchissement indirect)', Rx]); rafraich = { mode: 'indirect', Tw: v.Tw, avant: R, apres: Rx, m: masseAir(Qr, Ti) }; }
+          A = etat(Te + eta * (Rx.T - Te), E.x); pts.push(['Après récupérateur', A]);
+          const mS = masseAir(Qs, Te), mR = masseAir(Qr, Ti), Tr = Rx.T - mS / Math.max(mR, 1e-9) * (A.T - Te);
+          rejet = etat(Tr, Math.min(Rx.x, xDe(Tr, 100)));
+        }
+        // Rafraîchissement direct : air neuf humidifié (isenthalpe), sans descendre sous la consigne de soufflage
+        if (!hiver && rafr === 'direct') {
+          const av = A, v = evaporer(A, type === 'melange' ? undefined : Ts); A = v.s; pts.push(['Après rafraîchissement adiabatique direct', A]);
+          rafraich = { mode: 'direct', Tw: v.Tw, avant: av, apres: A, m: masseAir(Qs * fAN, av.T) };
         }
         if (type === 'melange') { A = melange(A, R, fAN); pts.push([`Mélange (${nf(fAN * 100, 0)} % d'air neuf)`, A]); }
         const m = masseAir(Qs, A.T); let P = 0, cond = 0, vapeur = 0, B = A, adiab = null;
@@ -117,12 +139,15 @@ const Cta = ((D, C, N) => {
         } else if (froid && Ts < A.T) {
           const xs = Math.min(A.x, xDe(Ts, 95)); B = etat(Ts, xs); P = m * (A.h - B.h); cond = m * (A.x - xs) * 3600; pts.push([co ? 'Après batterie change-over (froid)' : 'Après batterie froide', B]);
         }
-        return { E, R, pts, soufflage: B, P, cond, vapeur, adiab, rejet, m, avantBatterie: A };
+        return { E, R, pts, soufflage: B, P, cond, vapeur, adiab, rejet, m, avantBatterie: A, rafraich };
       };
       const H = saison(num(e.TeH, -7), num(e.HReH, 90), num(e.TiH, 20), num(e.HRiH, 35), num(e.TsH, 20), true);
-      const S = saison(num(e.TeE, 32), num(e.HReE, 40), num(e.TiE, 26), num(e.HRiE, 50), num(e.TsE, 16), false);
       // Puissances saisies (fiche du fabricant) : elles remplacent le calcul des évolutions de l'air
       const saisie = e.modeP === 'saisie';
+      // Rafraîchissement adiabatique d'été (indirect : centrale double flux avec récupérateur seulement)
+      const rafrDem = rafrEte(e), indirectOk = type === 'double' && recup !== 'aucun', rafr = saisie || (rafrDem === 'indirect' && !indirectOk) ? 'non' : rafrDem;
+      const ete = m => saison(num(e.TeE, 32), num(e.HReE, 40), num(e.TiE, 26), num(e.HRiE, 50), num(e.TsE, 16), false, m);
+      const S = ete(rafr), S0 = rafr !== 'non' ? ete('non') : S;
       if (saisie) {
         H.P = chaude ? num(e.PchaudS) : 0; S.P = froid ? num(e.PfroidS) : 0; S.cond = 0; H.vapeur = 0; H.adiab = null; H.rejet = null;
         if (chaude && !(H.P > 0)) alertes.push(alerte('attention', `Puissance de la batterie chaude${elecChaude ? ' électrique' : ''} à saisir (fiche technique du fabricant).`));
@@ -137,8 +162,8 @@ const Cta = ((D, C, N) => {
       if (e.batElec === 'chaude' && chaudeEau) alertes.push(alerte('attention', 'Batterie chaude à eau et batterie chaude électrique : la batterie électrique est comptée en appoint (puissance à saisir).'));
       const Sf = Qs / 3600 / num(e.vf, 2.5);
       // Ventilateurs
-      const dpS = num(e.dpReseauS) + num(e.dpFiltreAN) + (recup !== 'aucun' ? num(e.dpRecup) : 0) + (chaudeEau && !co ? num(e.dpBC) : 0) + (froid ? num(e.dpBF) : 0) + (e.batElec ? num(e.dpBE, 30) : 0) + (e.humid === 'vapeur' ? 30 : e.humid === 'adiabatique' ? num(e.dpHum, 60) : 0) + num(e.dpDivers);
-      const dpR = type === 'simple' ? 0 : num(e.dpReseauR) + num(e.dpFiltreR) + (recup !== 'aucun' ? num(e.dpRecup) : 0) + num(e.dpDivers) / 2;
+      const dpS = num(e.dpReseauS) + num(e.dpFiltreAN) + (recup !== 'aucun' ? num(e.dpRecup) : 0) + (chaudeEau && !co ? num(e.dpBC) : 0) + (froid ? num(e.dpBF) : 0) + (e.batElec ? num(e.dpBE, 30) : 0) + (e.humid === 'vapeur' ? 30 : e.humid === 'adiabatique' || rafr === 'direct' ? num(e.dpHum, 60) : 0) + num(e.dpDivers);
+      const dpR = type === 'simple' ? 0 : num(e.dpReseauR) + num(e.dpFiltreR) + (recup !== 'aucun' ? num(e.dpRecup) : 0) + num(e.dpDivers) / 2 + (rafr === 'indirect' ? num(e.dpHum, 60) : 0);
       const eta_v = num(e.rendement, 60) / 100, PvS = Qs / 3600 * dpS / eta_v, PvR = Qr / 3600 * dpR / eta_v;
       const sfpS = PvS / Math.max(Qs / 3600, 1e-9), sfpR = Qr ? PvR / (Qr / 3600) : 0, sfp = (PvS + PvR) / Math.max(Qs / 3600, 1e-9);
       const cat = v => CATEGORIES_SFP.find(([l]) => v <= l)[1];
@@ -164,6 +189,21 @@ const Cta = ((D, C, N) => {
         if (chaudeEau && ad.T1 > num(e.TcAller, 70) - 5) alertes.push(alerte('attention', `Préchauffage à ${nf(ad.T1, 1)} °C pour une eau chaude à ${nf(num(e.TcAller, 70), 0)} °C : écart trop faible pour la batterie de préchauffage ; augmenter l'efficacité de l'humidificateur ou la température d'eau.`));
         alertes.push(alerte('info', `Humidificateur adiabatique : préchauffage à ${nf(ad.T1, 1)} °C (+${nf(ad.Ppre, 1)} kW), ${nf(ad.eau, 1)} kg/h d'eau évaporée, air à ${nf(ad.T2, 1)} °C après l'humidificateur ; ${nf(ad.Psupp, 1)} kW de chauffage en plus pour vaporiser l'eau ; appoint d'eau ${nf(ad.appoint, 1)} kg/h (purge de déconcentration comprise). Efficacité de ${nf(ad.eps * 100, 0)} % à valider sur la fiche de l'humidificateur ; traitement d'eau et désinfection (risque de légionelle, entretien et vidange réguliers).`));
       }
+      // Rafraîchissement adiabatique d'été : soufflage atteint, froid économisé, eau évaporée, humidité et hygiène
+      let rf = null;
+      if (rafrDem !== 'non' && saisie) alertes.push(alerte('attention', 'Rafraîchissement adiabatique d\'été non calculé avec des puissances saisies : passer aux puissances calculées depuis les conditions.'));
+      if (rafrDem === 'indirect' && !indirectOk && !saisie) alertes.push(alerte('attention', 'Rafraîchissement adiabatique indirect : il demande une centrale double flux avec récupérateur (l\'air extrait humidifié refroidit l\'air neuf dans l\'échangeur) ; non compté. Choisir le mode direct ou ajouter un récupérateur.'));
+      if (S.rafraich) {
+        const X = S.rafraich, eau = X.m * (X.apres.x - X.avant.x) * 3600, purge = eau * Math.max(0, num(e.deconc, 25)) / 100;
+        const Peco = froid ? S0.P - S.P : S.m * 1.006 * Math.max(0, S0.soufflage.T - S.soufflage.T);
+        rf = { mode: X.mode, Tw: X.Tw, Tavant: X.avant.T, Tapres: X.apres.T, HRapres: X.apres.HR, Tsoufflage: S.soufflage.T, HRsoufflage: S.soufflage.HR, Tsans: S0.soufflage.T, P0: froid ? S0.P : 0, P: froid ? S.P : 0, Peco, eau, purge, appoint: eau + purge };
+        const lib = X.mode === 'direct' ? 'direct' : 'indirect';
+        alertes.push(alerte('info', `Rafraîchissement adiabatique ${lib} : ${X.mode === 'direct' ? 'air neuf' : 'air extrait'} de ${nf(X.avant.T, 1)} à ${nf(X.apres.T, 1)} °C (température humide ${nf(X.Tw, 1)} °C, efficacité ${nf(epsH * 100, 0)} %), soufflage à ${nf(S.soufflage.T, 1)} °C · ${nf(S.soufflage.HR, 0)} % ; ${froid ? `batterie froide ${nf(S.P, 1)} kW au lieu de ${nf(S0.P, 1)} kW` : 'sans batterie froide'} (${nf(Peco, 1)} kW de froid économisés) ; ${nf(eau, 1)} kg/h d'eau évaporée (appoint ${nf(eau + purge, 1)} kg/h).`));
+        if (froid && Peco <= 0.05) alertes.push(alerte('attention', `Rafraîchissement adiabatique ${lib} sans économie de froid à la base d'été : l'eau évaporée est condensée sur la batterie froide (air humide). À réserver aux heures où l'air est sec, ou à régler en séquence avant la batterie froide.`));
+        if (X.mode === 'direct' && !(froid && S.P > 0) && S.soufflage.HR > 70) alertes.push(alerte('attention', `Humidité relative de soufflage de ${nf(S.soufflage.HR, 0)} % (rafraîchissement direct) : au-delà de 70 %, inconfort, risque de condensation sur les gaines et les bouches et de développement microbien ; limiter l'humidification (régulation sur l'humidité de soufflage), passer en indirect ou compléter par la batterie froide.`));
+        if (X.mode === 'indirect' && recup === 'roue') alertes.push(alerte('attention', 'Rafraîchissement indirect sur roue rotative : la roue transfère une partie de l\'humidité de l\'air extrait vers l\'air neuf (roue hygroscopique, fuites) ; préférer un échangeur à plaques ou une boucle à eau glycolée.'));
+        alertes.push(alerte('attention', 'Humidification adiabatique (risque sanitaire : légionelles, développement microbien) : eau d\'alimentation traitée, pas d\'eau stagnante (vidange du bac à l\'arrêt, séchage du média), nettoyage et désinfection périodiques, analyses selon le carnet d\'entretien ; respecter la réglementation et les recommandations en vigueur sur l\'entretien des humidificateurs (VDI 6022, NF EN 13053) — fréquences à fixer avec l\'exploitant.'));
+      }
       if (sfpS > 2000) alertes.push(alerte('attention', `Puissance spécifique du ventilateur de soufflage ${nf(sfpS, 0)} W/(m³/s) (${cat(sfpS)}) : réduire les pertes de charge ou la vitesse frontale.`));
       // Fiche technique chargée : pression disponible face au réseau, puissances des batteries et des ventilateurs
       if (e.fiche) { const FC = typeof FicheCta !== 'undefined' ? FicheCta : require('./fiche-cta');
@@ -171,7 +211,7 @@ const Cta = ((D, C, N) => {
       alertes.push(alerte('ok', `${co ? `Batterie change-over ${nf(H.P, 1)} kW chaud / ${nf(S.P, 1)} kW froid` : [chaudeEau && `Batterie chaude ${nf(H.P, 1)} kW`, froid && `batterie froide ${nf(S.P, 1)} kW`, e.batElec && `${(BAT_ELEC[elecChaude ? 'chaude' : e.batElec] || 'batterie électrique').toLowerCase()} ${nf(Pbe, 1)} kW`].filter(Boolean).join(', ') || 'Sans batterie'} ; ventilateurs ${nf((PvS + PvR) / 1000, 2)} kW, SFP ${nf(sfp, 0)} W/(m³/s).`));
       const lig = (nom, s) => [nom, nf(s.T, 1), nf(s.HR, 0), nf(s.x * 1000, 2), nf(s.h, 1)];
       return {
-        valeurs: { Pchaud: chaudeEau ? H.P : 0, Pbe, Pfroid: S.P, QwC, QwF, condensats: S.cond, vapeur: H.vapeur, ...(ad ? { adiabatique: ad, eauEvaporee: ad.eau, appointEau: ad.appoint, Pprechauffage: ad.Ppre, Ppostchauffage: ad.Ppost } : {}), PvS, PvR, sfp, sfpS, sfpR, dpS, dpR, Sf, eta, hiver: H.pts.map(p => p[1]), ete: S.pts.map(p => p[1]) },
+        valeurs: { Pchaud: chaudeEau ? H.P : 0, Pbe, Pfroid: S.P, QwC, QwF, condensats: S.cond, vapeur: H.vapeur, ...(ad ? { adiabatique: ad, eauEvaporee: ad.eau, appointEau: ad.appoint, Pprechauffage: ad.Ppre, Ppostchauffage: ad.Ppost } : {}), ...(rf ? { rafraichissement: rf, PfroidEconomise: rf.Peco, eauRafraichissement: rf.eau } : {}), PvS, PvR, sfp, sfpS, sfpR, dpS, dpR, Sf, eta, hiver: H.pts.map(p => p[1]), ete: S.pts.map(p => p[1]) },
         resume: [...(e.fiche && (e.fiche.fabricant || e.fiche.reference) ? [['Centrale (fiche technique)', [e.fiche.fabricant, e.fiche.reference].filter(Boolean).join(' ')]] : []), ['Débit soufflé / repris', `${nf(Qs, 0)} / ${nf(Qr, 0)} m³/h`], ...(eta ? [['Récupérateur', `${RECUP[recup][0]}, efficacité ${nf(eta * 100, 0)} %`]] : []),
           ...(saisie ? [['Puissances', 'saisies (fiche technique du fabricant), sans calcul des évolutions de l\'air']] : []),
           ...(co ? [['Batterie change-over (hiver)', `${nf(H.P, 1)} kW · ${nf(QwC, 2)} m³/h d'eau chaude (${nf(num(e.TcAller, 70), 0)}/${nf(num(e.TcRetour, 50), 0)} °C)`]]
@@ -182,6 +222,7 @@ const Cta = ((D, C, N) => {
           ...(ad ? [['Humidificateur adiabatique', `${nf(ad.eau, 1)} kg/h d'eau évaporée · efficacité ${nf(ad.eps * 100, 0)} % · air à ${nf(ad.T2, 1)} °C en sortie (température humide ${nf(ad.Tw, 1)} °C)`],
             ...(chaude ? [['Préchauffage / post-chauffage', `${nf(ad.Ppre, 1)} kW (air porté à ${nf(ad.T1, 1)} °C) / ${nf(ad.Ppost, 1)} kW ; dont ${nf(ad.Psupp, 1)} kW dus à l'humidification`]] : []),
             ['Eau d\'appoint de l\'humidificateur', `${nf(ad.appoint, 1)} kg/h (${nf(ad.eau, 1)} évaporés + ${nf(ad.purge, 1)} de déconcentration à ${nf(num(e.deconc, 25), 0)} %)`]] : []),
+          ...(rf ? [['Rafraîchissement adiabatique en été', `${rf.mode === 'direct' ? 'direct' : 'indirect'} · soufflage à ${nf(rf.Tsoufflage, 1)} °C · ${nf(rf.HRsoufflage, 0)} % (sans : ${nf(rf.Tsans, 1)} °C) · ${nf(rf.Peco, 1)} kW de froid économisés · ${nf(rf.eau, 1)} kg/h d'eau évaporée (appoint ${nf(rf.appoint, 1)} kg/h)`]] : []),
           ['Section frontale des batteries', `${nf(Sf, 2)} m² (${nf(num(e.vf, 2.5), 1)} m/s)`],
           ['Ventilateur de soufflage', `${nf(dpS, 0)} Pa · ${nf(PvS / 1000, 2)} kW · ${cat(sfpS)}`], ...(Qr ? [['Ventilateur de reprise', `${nf(dpR, 0)} Pa · ${nf(PvR / 1000, 2)} kW · ${cat(sfpR)}`]] : []),
           ['SFP de la centrale', `${nf(sfp, 0)} W/(m³/s)`]],
@@ -196,15 +237,17 @@ const Cta = ((D, C, N) => {
           'Récupérateur : efficacité sensible appliquée côté air neuf ; humidité de l\'air neuf inchangée (pas de transfert d\'humidité).',
           'Batterie froide : air en sortie à la température de soufflage, humidité relative limitée à 95 % (déshumidification si le point de rosée de l\'air entrant est supérieur).',
           'Puissance absorbée d\'un ventilateur = débit × perte de charge totale / rendement global ; SFP selon NF EN 16798-3 (catégories 1 à 7).',
-          ...(e.humid === 'adiabatique' ? ['Humidificateur adiabatique : évolution isenthalpe (h constante), efficacité de saturation ε = (x2 − x1) / (xs − x1), xs à la température humide de l\'air entrant ; préchauffage jusqu\'à l\'enthalpie qui donne l\'humidité de consigne, puis post-chauffage à la température de soufflage ; arrêté l\'été (pas de refroidissement évaporatif compté) ; eau d\'appoint = eau évaporée × (1 + taux de déconcentration).'] : [])],
+          ...(e.humid === 'adiabatique' ? [`Humidificateur adiabatique : évolution isenthalpe (h constante), efficacité de saturation ε = (x2 − x1) / (xs − x1), xs à la température humide de l\'air entrant ; préchauffage jusqu\'à l\'enthalpie qui donne l\'humidité de consigne, puis post-chauffage à la température de soufflage ; ${rf ? 'en été, rafraîchissement adiabatique compté (voir ci-dessous)' : 'arrêté l\'été (pas de refroidissement évaporatif compté)'} ; eau d\'appoint = eau évaporée × (1 + taux de déconcentration).`] : []),
+          ...(rf ? [rf.mode === 'direct' ? 'Rafraîchissement adiabatique direct : air neuf humidifié en évolution isenthalpe, T2 = T1 − ε (T1 − Th) (efficacité de saturation ε, Th température humide), humidificateur modulé pour ne pas souffler sous la consigne ; batterie froide ensuite si nécessaire. Froid économisé = batterie froide sans rafraîchissement − avec (ou refroidissement sensible apporté sans batterie froide).'
+            : 'Rafraîchissement adiabatique indirect : air extrait humidifié en évolution isenthalpe avant le récupérateur, air neuf refroidi sans apport d\'humidité : T = Te + η (T extrait humidifié − Te). Froid économisé = batterie froide sans rafraîchissement − avec.'] : [])],
         synthese: `${nf(Qs, 0)} m³/h${chaudeEau ? ` · BC ${nf(H.P, 0)} kW` : ''}${froid ? ` · BF ${nf(S.P, 0)} kW` : ''}${Pbe > 0 ? ` · BE ${nf(Pbe, 0)} kW` : ''} · SFP ${nf(sfp, 0)}`,
-        schema: dessinerCta(e, { type, recup, froid, H, S, Qs, Qr }),
+        schema: dessinerCta(e, { type, recup, froid, H, S, Qs, Qr, rafr }),
       };
     },
   };
 
   /* ---------- Schéma de principe de la CTA ---------- */
-  function dessinerCta(e, { type, recup, froid, H, S, Qs, Qr }) {
+  function dessinerCta(e, { type, recup, froid, H, S, Qs, Qr, rafr = 'non' }) {
     const co = e.froid === 'co', chaude = bcEau(e), adiab = e.humid === 'adiabatique', be = e.batElec ? [['batterie-c', e.batElec === 'chaude' ? 'Batterie électrique' : e.batElec === 'prechauffage' ? 'Préchauffage électrique' : 'Appoint électrique']] : [];
     const out = [], c = '#1f2937', bleu = '#2563eb', rouge = '#c0392b', vert = '#15803d';
     const R = (x, y, w, h, col = c) => out.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff" stroke="${col}" stroke-width="1.5"/>`);
@@ -227,7 +270,8 @@ const Cta = ((D, C, N) => {
     };
     const etatTxt = (x, y, s, coul) => { T(x, y, `${nf(s.T, 1)} °C · ${nf(s.HR, 0)} %`, { fs: 9, c: coul }); };
     // Ligne de soufflage
-    const sousf = [['volet', 'Volet air neuf'], ['filtre', 'Filtre ePM1'], ...(recup !== 'aucun' ? [['recup', '']] : []), ...(type === 'melange' ? [['melange', '']] : []),
+    // Rafraîchissement direct sans humidificateur d'hiver : humidificateur adiabatique après le récupérateur
+    const sousf = [['volet', 'Volet air neuf'], ['filtre', 'Filtre ePM1'], ...(recup !== 'aucun' ? [['recup', '']] : []), ...(rafr === 'direct' && !adiab ? [['adiab', 'Rafraîch. adiabatique']] : []), ...(type === 'melange' ? [['melange', '']] : []),
       ...(e.batElec === 'prechauffage' ? be : []), ...(co ? [['batterie-f', 'Batterie change-over']] : [...(chaude ? [['batterie-c', adiab ? 'Préchauffage' : 'Batterie chaude']] : []), ...(froid ? [['batterie-f', 'Batterie froide']] : [])]), ...(e.batElec && e.batElec !== 'prechauffage' ? be : []), ...(e.humid === 'vapeur' ? [['humid', 'Humidificateur']] : []),
       // Humidificateur adiabatique : après le préchauffage, suivi du post-chauffage (seconde batterie chaude)
       ...(adiab ? [['adiab', 'Humidif. adiabatique'], ...(chaude && !co ? [['batterie-c', 'Post-chauffage']] : [])] : []), ['ventilo', 'Ventilateur'], ['silencieux', 'Silencieux']];
@@ -252,7 +296,7 @@ const Cta = ((D, C, N) => {
     // Ligne de reprise (droite → gauche)
     if (type !== 'simple') {
       const xr0 = xRecup.recup || xRecup.melange;
-      const rep = [['filtre', 'Filtre ePM10'], ['ventilo', 'Ventilateur'], ['silencieux', 'Silencieux']];
+      const rep = [...(rafr === 'indirect' ? [['adiab', 'Humidif. air extrait']] : []), ['filtre', 'Filtre ePM10'], ['ventilo', 'Ventilateur'], ['silencieux', 'Silencieux']];
       let xr = xFin - W;
       L(xFin, yR + Hc / 2, xFin + 60, yR + Hc / 2, '#7c3aed', 2.5); fleche(xFin + 2, yR + Hc / 2, -1, '#7c3aed'); T(xFin + 40, yR + Hc / 2 - 10, 'Reprise', { fs: 10, b: true });
       T(xFin + 40, yR + Hc / 2 + 18, `${nf(Qr, 0)} m³/h`, { fs: 9 });
@@ -383,6 +427,6 @@ const Cta = ((D, C, N) => {
 
   // Batteries d'une CTA : chaude, froide, change-over (champ « froid » : oui, non, froide, co)
   const batteries = e => ({ chaude: bcEau(e), froide: bfEau(e), co: (e || {}).froid === 'co', elec: (e || {}).batElec || '' });
-  return { pws, xDe, hDe, HRde, etat, BOUCHES, lwBouche, termeLocal, OBJECTIFS, batteries, bcEau, bfEau, BAT_ELEC };
+  return { RAFR, Thumide, pws, xDe, hDe, HRde, etat, BOUCHES, lwBouche, termeLocal, OBJECTIFS, batteries, bcEau, bfEau, BAT_ELEC };
 })(typeof Donnees !== 'undefined' ? Donnees : require('./donnees'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Notes !== 'undefined' ? Notes : require('./notes'));
 if (typeof module !== 'undefined') module.exports = Cta;
