@@ -89,12 +89,39 @@ namespace PipeFit.Isometries.Revit
 
         // ---------- Conversion en composants ----------
 
-        public static Spool Convertir(Document doc, string nom, List<Element> elements)
+        public static Spool Convertir(Document doc, string nom, List<Element> elements, string parametreSpool)
         {
             var s = new Spool { Nom = nom };
             foreach (var e in elements) s.Composants.Add(Composant(doc, e));
+
+            // Ce qui est raccordé aux extrémités : autre spool, équipement, réseau
+            var ids = new HashSet<string>(s.Composants.Select(c => c.Id));
+            foreach (var ext in s.Composants.SelectMany(c => c.Extremites))
+            {
+                if (ext.ConnecteA == null || ids.Contains(ext.ConnecteA) || s.NomsExterieurs.ContainsKey(ext.ConnecteA)) continue;
+                var autre = doc.GetElement(Compat.IdDepuis(ext.ConnecteA));
+                if (autre == null) continue;
+                var spool = ValeurSpool(autre, parametreSpool);
+                if (spool != "") { s.NomsExterieurs[ext.ConnecteA] = spool; s.ExterieursSpool.Add(ext.ConnecteA); }
+                else s.NomsExterieurs[ext.ConnecteA] = NomExterieur(doc, autre);
+            }
             AnalyseSpool.Analyser(s);
             return s;
+        }
+
+        /// <summary>Nom lisible d'un élément raccordé hors spool : repère (Marque) de l'équipement, sinon famille et type ; réseau pour une tuyauterie.</summary>
+        static string NomExterieur(Document doc, Element e)
+        {
+            var marque = Texte(e, BuiltInParameter.ALL_MODEL_MARK);
+            var estTuyauterie = Categories.Any(c => Compat.EstCategorie(e, c));
+            if (estTuyauterie)
+            {
+                var sys = Texte(e, BuiltInParameter.RBS_SYSTEM_NAME_PARAM);
+                return sys != "" ? "réseau " + sys + " (hors spool)" : "tuyauterie hors spool";
+            }
+            var type = doc.GetElement(e.GetTypeId()) as ElementType;
+            var nom = type == null ? e.Name : type.FamilyName + " " + type.Name;
+            return marque != "" ? marque + " (" + (type?.FamilyName ?? e.Category?.Name ?? "") + ")" : nom;
         }
 
         static Composant Composant(Document doc, Element e)
@@ -113,12 +140,15 @@ namespace PipeFit.Isometries.Revit
                 var ext = new Extremite { DnMm = Math.Round(Compat.Mm(cn.Radius * 2), 1) };
                 try { ext.Position = P(cn.Origin); } catch { continue; }
                 try { var z = cn.CoordinateSystem?.BasisZ; if (z != null) ext.Direction = new Point3(z.X, z.Y, z.Z); } catch { }
+                ext.Sens = Sens(cn, false);
                 foreach (Connector r in cn.AllRefs)
                 {
                     var owner = r.Owner;
                     if (owner == null || owner.Id == e.Id || owner is MEPSystem) continue;
                     if ((r.ConnectorType & ConnectorType.Physical) == 0) continue;
                     ext.ConnecteA = Compat.Cle(owner.Id);
+                    // Sens inconnu sur notre connecteur : on lit celui d'en face, à l'envers
+                    if (ext.Sens == SensFlux.Inconnu) ext.Sens = Sens(r, true);
                     break;
                 }
                 c.Extremites.Add(ext);
@@ -148,6 +178,21 @@ namespace PipeFit.Isometries.Revit
             }
             if (c.DnMm <= 0 && c.Extremites.Count > 0) c.DnMm = c.Extremites.Max(x => x.DnMm);
             return c;
+        }
+
+        /// <summary>Sens d'écoulement d'un connecteur (In = le fluide entre dans l'élément), inversé pour le connecteur d'en face.</summary>
+        static SensFlux Sens(Connector c, bool enFace)
+        {
+            try
+            {
+                switch (c.Direction)
+                {
+                    case FlowDirectionType.In: return enFace ? SensFlux.Sortie : SensFlux.Entree;
+                    case FlowDirectionType.Out: return enFace ? SensFlux.Entree : SensFlux.Sortie;
+                    default: return SensFlux.Inconnu;
+                }
+            }
+            catch { return SensFlux.Inconnu; }
         }
 
         static TypeComposant TypeRevit(PartType t)

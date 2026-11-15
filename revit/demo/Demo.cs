@@ -55,6 +55,13 @@ sealed class Ligne
         return this;
     }
 
+    /// <summary>Écoulement calculé par Revit (réseau raccordé à une pompe ou une CTA) : l'arrivée est connue.</summary>
+    public Ligne Arrivee()
+    {
+        s.Composants[0].Extremites[0].Sens = SensFlux.Entree;
+        return this;
+    }
+
     public Ligne Coude(double axe, Point3 nouvelle)
     {
         var a = Coude(Dn); nouvelle = nouvelle.Normalise();
@@ -125,14 +132,14 @@ static class Demo
 
         // SP-101 : NEP aller, inox 316L DN50, piquage d'une branche vers une vanne
         var a = new Spool { Nom = "SP-101" };
-        new Ligne(a, "NEP-ALLER", "Inox 316L").Depart(new Point3(0, 0, 0), X, 50, "POMPE-P1")
-            .Coude(1200, Z).Coude(900, Y).Te(600, X, out var br).FinBride(1500, "SP-102");
+        new Ligne(a, "NEP-ALLER", "Inox 316L").Depart(new Point3(0, 0, 0), X, 50, "POMPE-P1").Arrivee()
+            .Coude(1200, Z).Coude(900, Y).Te(600, X, out var br).FinBride(1500, "SP-105");
         br.FinBride(450, "VANNE-V12");
         res.Add(a);
 
         // SP-102 : eau glacée, acier P235GH DN100, vanne papillon entre brides, fin bout de tube (soudure chantier)
         var b = new Spool { Nom = "SP-102" };
-        new Ligne(b, "EG-101", "Acier P235GH").Depart(new Point3(0, 0, 0), X, 100, "CTA-01")
+        new Ligne(b, "EG-101", "Acier P235GH").Depart(new Point3(0, 0, 0), X, 100, "CTA-01").Arrivee()
             .Coude(2000, Y).Vanne(700, "Vanne papillon", 52).Coude(800, M(Z)).FinTube(1200, "SP-103");
         res.Add(b);
 
@@ -142,6 +149,14 @@ static class Demo
             .Reduction(600, 50).Coude(1100, Z).Coude(500, M(X)).FinBride(750, "BAC-T2");
         res.Add(c);
 
+        // Noms des éléments raccordés, comme le complément les lit dans la maquette (numéro de spool ou repère d'équipement)
+        var noms = new Dictionary<string, string> { ["POMPE-P1"] = "P1 (pompe NEP)", ["VANNE-V12"] = "V12 (vanne)", ["CTA-01"] = "CTA-01", ["BAC-T2"] = "T2 (bac)" };
+        foreach (var s in res)
+            foreach (var id in s.Composants.SelectMany(c => c.Extremites).Select(e => e.ConnecteA).Where(i => i != null && !s.Composants.Any(c => c.Id == i)).Distinct())
+            {
+                s.NomsExterieurs[id] = noms.TryGetValue(id, out var nom) ? nom : id;
+                if (id.StartsWith("SP-")) s.ExterieursSpool.Add(id);
+            }
         foreach (var s in res) AnalyseSpool.Analyser(s);
         return res;
     }
@@ -165,6 +180,8 @@ static class Demo
                     axe = Cotation.EstNoeud(c) ? P(Cotation.PointAxe(c)) : null,
                     ext = c.Extremites.Select(e => new { p = P(e.Position), dn = e.DnMm, ext = e.ConnecteA != null && !s.Composants.Any(x => x.Id == e.ConnecteA) ? e.ConnecteA : null }),
                 }),
+                liaisons = s.Liaisons.Select(l => new { n = l.Numero, entree = l.Sens == SensFlux.Entree, texte = l.Libelle, sens = l.SensTexte,
+                    a = l.RaccordeA, spool = l.AutreSpool, connu = l.SensConnu, p = P(l.Position), d = l.Direction.HasValue ? P(l.Direction.Value) : null, dn = l.DnMm }),
                 cotes = s.Cotes.Select(c => new { a = P(c.A), b = P(c.B), v = c.Valeur, l = c.Libelle }),
                 assemblages = s.Assemblages.Select(x => new { n = x.Numero, nature = x.Nature.ToString(), p = P(x.Position), dn = x.DnMm, pd = x.PoucesDiametre }),
                 tableaux = page.Tableaux.Select(pl => new
@@ -182,7 +199,7 @@ static class Demo
         var json = JsonSerializer.Serialize(sortie, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
         File.WriteAllText(args.Length > 0 ? args[0] : "demo.json", json);
         foreach (var s in spools)
-            Console.WriteLine($"{s.Nom} : {s.Composants.Count} éléments, {s.Nombre(NatureAssemblage.Soudure)} soudures, cotes : " + string.Join(", ", s.Cotes.Select(c => c.Valeur + " (" + c.Libelle + ")")));
+            Console.WriteLine($"{s.Nom} : " + string.Join(" | ", s.Liaisons.Select(l => l.Numero + " " + l.Libelle)));
         return 0;
     }
 }

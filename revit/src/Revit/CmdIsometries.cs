@@ -96,7 +96,7 @@ namespace PipeFit.Isometries.Revit
                 foreach (var nom in r.Spools)
                 {
                     if (!groupes.TryGetValue(nom, out var elements)) continue;
-                    var spool = LectureModele.Convertir(doc, nom, elements);
+                    var spool = LectureModele.Convertir(doc, nom, elements, r.ParametreSpool);
                     using (var t = new Transaction(doc, "Pipe-Fit : isométrie " + nom))
                     {
                         var opt = t.GetFailureHandlingOptions();
@@ -169,7 +169,8 @@ namespace PipeFit.Isometries.Revit
                     File.WriteAllText(Path.Combine(r.Dossier, "Nomenclature spools.csv"), ExportCsv.Nomenclature(spools), utf8);
                     File.WriteAllText(Path.Combine(r.Dossier, "Soudures spools.csv"), ExportCsv.Soudures(spools), utf8);
                     File.WriteAllText(Path.Combine(r.Dossier, "Cotes spools.csv"), ExportCsv.Cotes(spools), utf8);
-                    notes.Add("CSV : « Nomenclature spools.csv », « Soudures spools.csv » et « Cotes spools.csv »");
+                    File.WriteAllText(Path.Combine(r.Dossier, "Liaisons spools.csv"), ExportCsv.Liaisons(spools), utf8);
+                    notes.Add("CSV : nomenclature, soudures, cotes et liaisons (provenance / destination)");
                 }
                 catch (Exception ex) { notes.Add("CSV : " + ex.Message); }
             }

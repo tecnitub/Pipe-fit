@@ -49,6 +49,18 @@ namespace PipeFit.Isometries.Core
             return sb.ToString();
         }
 
+        public static string Liaisons(IEnumerable<Spool> spools)
+        {
+            var sb = new StringBuilder();
+            Ligne(sb, "Spool", "Rep.", "Sens", "Raccordé à", "DN", "Sens d'écoulement", "X (mm)", "Y (mm)", "Z (mm)");
+            foreach (var s in spools)
+                foreach (var l in s.Liaisons)
+                    Ligne(sb, s.Nom, l.Numero, l.SensTexte, l.RaccordeA != "" ? l.RaccordeA : "extrémité libre", Diametres.Dn(l.DnMm),
+                        l.SensConnu ? "calculé par Revit" : "déduit de la ligne",
+                        l.Position.X.ToString("0", Fr), l.Position.Y.ToString("0", Fr), l.Position.Z.ToString("0", Fr));
+            return sb.ToString();
+        }
+
         public static string Nature(NatureAssemblage n)
         {
             switch (n)

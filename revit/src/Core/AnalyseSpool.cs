@@ -59,6 +59,7 @@ namespace PipeFit.Isometries.Core
             s.DnMax = s.Composants.Count == 0 ? 0 : s.Composants.Max(c => c.DnMm);
             s.LongueurDeveloppeeMm = s.Composants.Where(c => c.Type == TypeComposant.Tube).Sum(c => c.LongueurMm);
             s.Cotes = Cotation.Calculer(s);
+            s.Liaisons = Liaisons.Calculer(s, ordre);
         }
 
         // ---------- Type de composant ----------

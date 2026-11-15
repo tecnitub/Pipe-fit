@@ -27,6 +27,9 @@ CE QUI EST CRÉÉ POUR CHAQUE SPOOL
   - Repères écrits dans les éléments (paramètre « Marque » par défaut) : T1, T2… pour les tubes dans l'ordre
     de la ligne, 1, 2, 3… pour les raccords et accessoires (= numéro de la nomenclature), puis étiquetés.
   - Numéros de soudure S1, S2… et de raccordement chantier R1, R2… posés sur la vue.
+  - Renvois à chaque extrémité : « VIENT DE … » / « VA VERS … » avec une flèche dans le sens de l'écoulement.
+    Le nom est le numéro de spool de l'élément raccordé, sinon la Marque de l'équipement (pompe, CTA…),
+    sinon le nom du réseau. Pour un nom d'équipement lisible, renseigner sa Marque (ex. « P1 »).
   - Cotes de fabrication sur chaque tronçon droit : d'axe en axe entre coudes / tés / piquages, d'axe à face
     de bride en bout de spool (de face à face au droit d'une vanne entre brides), d'axe à bout de tube si le
     spool se termine sans bride. Valeurs en mm. Elles sont dessinées sur la feuille par-dessus la vue :
@@ -36,7 +39,7 @@ CE QUI EST CRÉÉ POUR CHAQUE SPOOL
     (soudures atelier en pouces-diamètre, joints boulonnés, raccordements chantier).
   - Exports dans le dossier choisi : ISO <spool>.pdf, ISO <spool>.pcf (Isogen, Spoolgen…),
     « Nomenclature spools.csv » (importable dans Pipe-Fit : Devis > Chiffrage depuis plan)
-    « Soudures spools.csv » et « Cotes spools.csv ».
+    « Soudures spools.csv », « Cotes spools.csv » et « Liaisons spools.csv ».
 
   Relancer la génération met à jour les feuilles et vues existantes (option « Remplacer »).
   Toute la génération s'annule en une fois avec Ctrl+Z.

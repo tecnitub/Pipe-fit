@@ -40,6 +40,14 @@ namespace PipeFit.Isometries.Core
                 codes[code] = c.Designation + (c.Materiau != "" ? " - " + c.Materiau : "") + (c.Taille != "" ? " - " + c.Taille : "");
             }
 
+            // Renvois de début et fin de ligne : autre spool (pipeline) ou équipement
+            foreach (var l in s.Liaisons.Where(x => x.RaccordeA != ""))
+            {
+                L(l.AutreSpool ? "END-CONNECTION-PIPELINE" : "END-CONNECTION-EQUIPMENT");
+                L("    CO-ORDS " + Pt(l.Position) + " " + Bore(l.DnMm));
+                L((l.AutreSpool ? "    PIPELINE-REFERENCE " : "    CONNECTION-REFERENCE ") + Ascii(l.RaccordeA));
+            }
+
             L("MATERIALS");
             foreach (var kv in codes.OrderBy(k => k.Key, StringComparer.Ordinal))
             {

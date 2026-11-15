@@ -66,6 +66,16 @@ namespace PipeFit.Isometries.Core
             info.Lignes.Add(new[] { "Date", date });
             res.Add(info);
 
+            if (s.Liaisons.Count > 0)
+            {
+                var lia = new Tableau { Titre = "PROVENANCE / DESTINATION" };
+                lia.Colonnes.Add(new Colonne("Rep.", 12)); lia.Colonnes.Add(new Colonne("Sens", 22));
+                lia.Colonnes.Add(new Colonne("Raccordé à", 76)); lia.Colonnes.Add(new Colonne("DN", 20));
+                foreach (var l in s.Liaisons)
+                    lia.Lignes.Add(new[] { l.Numero, l.SensTexte, l.RaccordeA != "" ? l.RaccordeA + (l.AutreSpool ? " (isométrie)" : "") : "extrémité libre", Diametres.Dn(l.DnMm) });
+                res.Add(lia);
+            }
+
             var nom = new Tableau { Titre = "NOMENCLATURE" };
             nom.Colonnes.Add(new Colonne("Rep.", 10)); nom.Colonnes.Add(new Colonne("Désignation", 62));
             nom.Colonnes.Add(new Colonne("DN", 14)); nom.Colonnes.Add(new Colonne("Matière", 26)); nom.Colonnes.Add(new Colonne("Qté", 18, true));

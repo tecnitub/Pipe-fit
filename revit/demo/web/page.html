@@ -89,7 +89,7 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
     <div class="eyebrow">Démonstration · complément Revit Pipe-Fit</div>
     <h1>Isométries de fabrication par spool</h1>
     <p class="intro">Trois spools d'exemple passés dans le moteur du complément : la feuille ci-dessous est celle que la commande
-      « Isométries spools » crée dans Revit, avec les repères, les soudures et les cotes d'axe en axe et d'axe à bride.</p>
+      « Isométries spools » crée dans Revit, avec les repères, les soudures, les cotes d'axe en axe et d'axe à bride, et les renvois « vient de / va vers » à chaque extrémité.</p>
   </header>
 
   <div class="controls">
@@ -113,7 +113,8 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
 
   <section>
     <div class="tabs" role="tablist" id="tabs">
-      <button role="tab" data-t="nom" aria-selected="true">Nomenclature</button>
+      <button role="tab" data-t="lia" aria-selected="true">Provenance / destination</button>
+      <button role="tab" data-t="nom">Nomenclature</button>
       <button role="tab" data-t="deb">Débit</button>
       <button role="tab" data-t="ass">Soudures</button>
       <button role="tab" data-t="cot">Cotes</button>
@@ -136,9 +137,9 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
     { k: 'NO', l: 'Nord-ouest', f: [1, -1, -1], txt: 'vue depuis le nord-ouest' },
   ];
   const ECHELLES = [1, 2, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100, 125, 150, 200, 250];
-  const st = { s: 0, o: 0, rep: true, sou: true, cot: true, zoom: 1, tab: 'nom' };
-  try { const m = JSON.parse(localStorage.getItem('pf-iso') || '{}'); Object.assign(st, m, { zoom: 1 }); } catch (e) {}
-  const save = () => { try { localStorage.setItem('pf-iso', JSON.stringify({ s: st.s, o: st.o, rep: st.rep, sou: st.sou, cot: st.cot, tab: st.tab })); } catch (e) {} };
+  const st = { s: 0, o: 0, rep: true, sou: true, cot: true, zoom: 1, tab: 'lia' };
+  try { const m = JSON.parse(localStorage.getItem('pf-iso2') || '{}'); Object.assign(st, m, { zoom: 1 }); } catch (e) {}
+  const save = () => { try { localStorage.setItem('pf-iso2', JSON.stringify({ s: st.s, o: st.o, rep: st.rep, sou: st.sou, cot: st.cot, tab: st.tab })); } catch (e) {} };
   if (!(st.s >= 0 && st.s < D.length)) st.s = 0;
 
   const fr = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
@@ -271,6 +272,22 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
       text((ax + bx) / 2 + nx * 2.2, (ay + by) / 2 + ny * 2.2, c.v, { cls: 'k-dimtxt', anchor: 'middle', rot: -ang * 180 / Math.PI });
     });
 
+    // Renvois : d'où vient le spool, où il va (flèche dans le sens de l'écoulement + cartouche)
+    s.liaisons.forEach(l => {
+      const p = F(l.p);
+      let dx = p[0] - centre[0], dy = p[1] - centre[1];
+      if (l.d) { const q = F([l.p[0] + l.d[0] * 1000, l.p[1] + l.d[1] * 1000, l.p[2] + l.d[2] * 1000]); if (Math.hypot(q[0] - p[0], q[1] - p[1]) > 1e-6) { dx = q[0] - p[0]; dy = q[1] - p[1]; } }
+      const lg = Math.hypot(dx, dy) || 1; dx /= lg; dy /= lg;
+      const x0 = p[0] + dx * 2, y0 = p[1] + dy * 2, x1 = p[0] + dx * 13, y1 = p[1] + dy * 13;
+      line(x0, y0, x1, y1, 'k-ink', 0.35);
+      const px = l.entree ? x0 : x1, py = l.entree ? y0 : y1, a = Math.atan2(dy, dx) + (l.entree ? Math.PI : 0);
+      el('path', { d: `M${px} ${Y(py)}L${px - 3 * Math.cos(a + .35)} ${Y(py - 3 * Math.sin(a + .35))}L${px - 3 * Math.cos(a - .35)} ${Y(py - 3 * Math.sin(a - .35))}Z`, fill: 'var(--ink)' }, g);
+      const txt = l.n + '  ' + l.texte, w = txt.length * 0.62 * 2.5 + 4, h = 6;
+      const bx0 = Math.max(zv.x0 + 1, Math.min(dx >= 0 ? x1 + 1 : x1 - 1 - w, zv.x1 - w - 1));
+      el('rect', { x: bx0, y: Y(y1 + h / 2), width: w, height: h, class: 'k-ink', 'stroke-width': 0.35, fill: 'var(--paper)' }, g);
+      text(bx0 + 2, y1, txt, { bold: true });
+    });
+
     // Flèche du nord projetée et échelle
     { let dx = R.right[1], dy = R.up[1]; const l = Math.hypot(dx, dy); dx /= l; dy /= l;
       const ox = zv.x0 + 12, oy = zv.y1 - 22, tx = ox + dx * 14, ty = oy + dy * 14, a = Math.atan2(dy, dx);
@@ -304,7 +321,12 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
   function panneau() {
     const s = D[st.s], p = document.getElementById('panel');
     document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.t === st.tab));
-    if (st.tab === 'nom') {
+    if (st.tab === 'lia') {
+      p.innerHTML = table([{ t: 'Rep.' }, { t: 'Sens', html: true }, { t: 'Raccordé à', html: true }, { t: 'DN' }, { t: 'Sens d\'écoulement' }],
+        s.liaisons.map(l => [l.n, `<span class="pill ${l.entree ? 'b' : 's'}">${l.entree ? '→ Vient de' : 'Va vers →'}</span>`,
+          l.a ? (l.spool ? `<b>${esc(l.a)}</b> · isométrie ${esc('ISO-' + l.a)}` : esc(l.a)) : 'extrémité libre', 'DN' + Math.round(l.dn), l.connu ? 'calculé par Revit' : 'déduit de la ligne'])) +
+        `<p class="note">Le nom vient de la maquette : numéro de spool de l'élément raccordé, sinon repère (Marque) de l'équipement, sinon nom du réseau. Le sens suit l'écoulement calculé par Revit ; à défaut, la première extrémité de la ligne est l'arrivée.</p>`;
+    } else if (st.tab === 'nom') {
       const t = tab(s, 'NOMENCLATURE');
       p.innerHTML = table(t.colonnes.map(c => ({ t: c.t, r: c.d })), t.lignes) +
         `<p class="note">Repère 1, 2, 3… = numéro de ligne, écrit dans le paramètre « Marque » de chaque raccord. Les tubes sont repérés T1, T2… dans l'ordre de la ligne.</p>`;

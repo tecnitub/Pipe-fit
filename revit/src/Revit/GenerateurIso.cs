@@ -165,7 +165,12 @@ namespace PipeFit.Isometries.Revit
             doc.Regenerate();
             vp.SetBoxCenter(centre);
             doc.Regenerate();
-            if (r.Cotation) Coter(feuille, vue, vp, spool, res);
+            var projection = Projection(vue, vp, res);
+            if (projection != null)
+            {
+                if (r.Cotation) Coter(feuille, projection, spool, res);
+                Renvoyer(feuille, projection, spool, zoneVue, res);
+            }
 
             DessinerNord(feuille, vue, zoneVue);
             EcrireEchelle(feuille, zoneVue, res.Echelle);
@@ -315,32 +320,43 @@ namespace PipeFit.Isometries.Revit
 
         // ---------- Cotation ----------
 
+        /// <summary>Passage d'un point du modèle (mm) à la feuille (mm papier), à travers la vue posée dans la fenêtre.</summary>
+        Func<Point3, (double x, double y)> Projection(View3D vue, Viewport vp, Resultat res)
+        {
+            try
+            {
+                var versProjection = vue.GetModelToProjectionTransforms().First().GetModelToProjectionTransform();
+                var versFeuille = vp.GetProjectionToSheetTransform();
+                return p =>
+                {
+                    var q = versFeuille.OfPoint(versProjection.OfPoint(new XYZ(Compat.Pieds(p.X), Compat.Pieds(p.Y), Compat.Pieds(p.Z))));
+                    return (Compat.Mm(q.X), Compat.Mm(q.Y));
+                };
+            }
+            catch (Exception ex)
+            {
+                res.Avertissements.Add("cotes et renvois non dessinés (" + ex.Message + ") : voir les tableaux et les CSV");
+                return null;
+            }
+        }
+
+        static (double x, double y) CentreDessin(Spool spool, Func<Point3, (double x, double y)> Feuille)
+        {
+            double cx = 0, cy = 0; int n = 0;
+            foreach (var c in spool.Composants)
+                foreach (var e in c.Extremites) { var q = Feuille(e.Position); cx += q.x; cy += q.y; n++; }
+            return n > 0 ? (cx / n, cy / n) : (0, 0);
+        }
+
         /// <summary>
         /// Cotes de fabrication dessinées sur la feuille, projetées sur la vue isométrique : lignes d'attache,
         /// ligne de cote décalée vers l'extérieur du spool, traits obliques aux extrémités, valeur en mm alignée.
         /// </summary>
-        void Coter(ViewSheet f, View3D vue, Viewport vp, Spool spool, Resultat res)
+        void Coter(ViewSheet f, Func<Point3, (double x, double y)> Feuille, Spool spool, Resultat res)
         {
             if (spool.Cotes.Count == 0) return;
-            Transform versProjection, versFeuille;
-            try
-            {
-                versProjection = vue.GetModelToProjectionTransforms().First().GetModelToProjectionTransform();
-                versFeuille = vp.GetProjectionToSheetTransform();
-            }
-            catch (Exception ex) { res.Avertissements.Add("cotes non dessinées (" + ex.Message + ") : voir « Cotes spools.csv »"); return; }
-
-            (double x, double y) Feuille(Point3 p)
-            {
-                var q = versFeuille.OfPoint(versProjection.OfPoint(new XYZ(Compat.Pieds(p.X), Compat.Pieds(p.Y), Compat.Pieds(p.Z))));
-                return (Compat.Mm(q.X), Compat.Mm(q.Y));
-            }
-
             // Centre du dessin : les cotes sont rejetées du côté opposé
-            double cx = 0, cy = 0; int n = 0;
-            foreach (var c in spool.Composants)
-                foreach (var e in c.Extremites) { var q = Feuille(e.Position); cx += q.x; cy += q.y; n++; }
-            if (n > 0) { cx /= n; cy /= n; }
+            var (cx, cy) = CentreDessin(spool, Feuille);
 
             const double decalage = 7, attache = 1.5, trait = 1.3;
             int echecs = 0;
@@ -376,6 +392,54 @@ namespace PipeFit.Isometries.Revit
                 catch { echecs++; }
             }
             if (echecs > 0) res.Avertissements.Add(echecs + " cote(s) non dessinée(s)");
+        }
+
+        // ---------- Provenance / destination ----------
+
+        /// <summary>
+        /// Renvoi à chaque extrémité du spool : flèche dans le sens de l'écoulement (vers le spool à l'arrivée,
+        /// vers l'extérieur au départ) et cartouche « VIENT DE SP-100 » / « VA VERS POMPE P1 ».
+        /// </summary>
+        void Renvoyer(ViewSheet f, Func<Point3, (double x, double y)> Feuille, Spool spool, Rect zone, Resultat res)
+        {
+            var (cx, cy) = CentreDessin(spool, Feuille);
+            int echecs = 0;
+            foreach (var l in spool.Liaisons)
+            {
+                try
+                {
+                    var p = Feuille(l.Position);
+                    // Direction de sortie dans le plan de la feuille : axe du connecteur projeté, sinon depuis le centre
+                    double dx = p.x - cx, dy = p.y - cy;
+                    if (l.Direction.HasValue)
+                    {
+                        var q = Feuille(l.Position + l.Direction.Value.Normalise() * 1000);
+                        if (Math.Abs(q.x - p.x) + Math.Abs(q.y - p.y) > 1e-6) { dx = q.x - p.x; dy = q.y - p.y; }
+                    }
+                    var lg = Math.Sqrt(dx * dx + dy * dy);
+                    if (lg < 1e-9) { dx = 1; dy = 0; lg = 1; }
+                    dx /= lg; dy /= lg;
+
+                    double x0 = p.x + dx * 2, y0 = p.y + dy * 2, x1 = p.x + dx * 13, y1 = p.y + dy * 13;
+                    Trait(f, x0, y0, x1, y1);
+                    // Pointe : vers le spool à l'arrivée, vers l'extérieur au départ
+                    double px = l.Sens == SensFlux.Entree ? x0 : x1, py = l.Sens == SensFlux.Entree ? y0 : y1;
+                    double a = Math.Atan2(dy, dx) + (l.Sens == SensFlux.Entree ? Math.PI : 0);
+                    foreach (var d in new[] { 0.35, -0.35 })
+                        Trait(f, px, py, px - 3 * Math.Cos(a + d), py - 3 * Math.Sin(a + d));
+
+                    // Cartouche de renvoi au bout de la flèche
+                    var txt = MiseEnPage.Tronquer(l.Numero + "  " + l.Libelle, 110, HauteurTexteMm);
+                    double w = txt.Length * 0.68 * HauteurTexteMm + 4, h = 6;
+                    double bx0 = dx >= 0 ? x1 + 1 : x1 - 1 - w, by0 = y1 - h / 2;
+                    bx0 = Math.Max(zone.X0 + 1, Math.Min(bx0, zone.X1 - w - 1)); // reste dans la zone de la vue
+                    Trait(f, bx0, by0, bx0 + w, by0); Trait(f, bx0 + w, by0, bx0 + w, by0 + h);
+                    Trait(f, bx0 + w, by0 + h, bx0, by0 + h); Trait(f, bx0, by0 + h, bx0, by0);
+                    Texte(f, bx0 + 2, y1, txt, gras: true);
+                }
+                catch { echecs++; }
+            }
+            if (echecs > 0) res.Avertissements.Add(echecs + " renvoi(s) non dessiné(s)");
         }
 
         // ---------- Dessin sur la feuille ----------

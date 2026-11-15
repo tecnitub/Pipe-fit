@@ -19,6 +19,16 @@ namespace PipeFit.Isometries.Revit
 #endif
         }
 
+        public static ElementId IdDepuis(string cle)
+        {
+            var v = long.Parse(cle, System.Globalization.CultureInfo.InvariantCulture);
+#if REVIT2023
+            return new ElementId((int)v);
+#else
+            return new ElementId(v);
+#endif
+        }
+
         public static string Cle(ElementId id) => Valeur(id).ToString(System.Globalization.CultureInfo.InvariantCulture);
 
         public static bool EstCategorie(Element e, BuiltInCategory bic)

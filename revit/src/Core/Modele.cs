@@ -32,6 +32,31 @@ namespace PipeFit.Isometries.Core
         public Point3? Direction;
         /// <summary>Identifiant du composant raccordé (dans ou hors du spool), null si l'extrémité est libre.</summary>
         public string ConnecteA;
+        /// <summary>Sens d'écoulement à cette extrémité, quand Revit le connaît (réseau avec équipement).</summary>
+        public SensFlux Sens;
+    }
+
+    public enum SensFlux { Inconnu, Entree, Sortie }
+
+    /// <summary>
+    /// Extrémité du spool sur l'isométrie : d'où il vient (entrée) ou où il va (sortie), et à quoi il se raccorde
+    /// (autre spool, équipement, réseau) ; extrémité libre si rien n'est raccordé dans la maquette.
+    /// </summary>
+    public sealed class Liaison
+    {
+        public string Numero = "";
+        public SensFlux Sens;
+        /// <summary>Vrai quand le sens vient de Revit (écoulement calculé), faux s'il est déduit de l'ordre de la ligne.</summary>
+        public bool SensConnu;
+        /// <summary>Nom de ce qui est raccordé : « SP-102 », « POMPE P1 », « Réseau EG-101 »… ; vide = extrémité libre.</summary>
+        public string RaccordeA = "";
+        /// <summary>Vrai si l'élément raccordé appartient à un autre spool (renvoi vers son isométrie).</summary>
+        public bool AutreSpool;
+        public Point3 Position;
+        public Point3? Direction;
+        public double DnMm;
+        public string Libelle => (Sens == SensFlux.Entree ? "VIENT DE " : "VA VERS ") + (RaccordeA != "" ? RaccordeA : "(extrémité libre)");
+        public string SensTexte => Sens == SensFlux.Entree ? "Vient de" : "Va vers";
     }
 
     public sealed class Composant
@@ -107,6 +132,12 @@ namespace PipeFit.Isometries.Core
         public List<Assemblage> Assemblages = new List<Assemblage>();
         /// <summary>Cotes de fabrication : axe/axe, axe/bride, axe/extrémité (Cotation.Calculer).</summary>
         public List<Cote> Cotes = new List<Cote>();
+        /// <summary>Provenance et destination du spool (Liaisons.Calculer).</summary>
+        public List<Liaison> Liaisons = new List<Liaison>();
+        /// <summary>Nom des éléments hors spool raccordés, par identifiant (renseigné à la lecture du modèle).</summary>
+        public Dictionary<string, string> NomsExterieurs = new Dictionary<string, string>();
+        /// <summary>Identifiants des éléments hors spool qui appartiennent à un autre spool.</summary>
+        public HashSet<string> ExterieursSpool = new HashSet<string>();
         public string Systeme = "";
         public string Materiau = "";
         public double DnMax;

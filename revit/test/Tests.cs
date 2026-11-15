@@ -98,6 +98,25 @@ static class Tests
         Verifier(cd.Count == 3 && cd.Contains("600 bride / bride") && cd.Contains("200 bride / bride") && cd.Contains("350 bride / extrémité"),
             "chaîne droite coupée aux joints boulonnés : " + string.Join(", ", cd));
 
+        // Provenance / destination : sans sens Revit, la première extrémité de la ligne est l'arrivée
+        var sl = Exemple();
+        sl.NomsExterieurs["VANNE-EXT"] = "SP-03"; sl.ExterieursSpool.Add("VANNE-EXT");
+        AnalyseSpool.Analyser(sl);
+        Verifier(sl.Liaisons.Count == 3, "3 liaisons (départ libre, bride vers SP-03, bout de branche libre)");
+        Verifier(sl.Liaisons[0].Sens == SensFlux.Entree && sl.Liaisons[0].RaccordeA == "" && sl.Liaisons[0].Numero == "L1", "L1 = arrivée au début de la ligne");
+        var vers = sl.Liaisons.FirstOrDefault(l => l.RaccordeA == "SP-03");
+        Verifier(vers != null && vers.Sens == SensFlux.Sortie && vers.AutreSpool && vers.Libelle == "VA VERS SP-03", "renvoi « VA VERS SP-03 »");
+        var tl = MiseEnPage.Tableaux(sl, "P", "d").FirstOrDefault(t => t.Titre == "PROVENANCE / DESTINATION");
+        Verifier(tl != null && tl.Lignes.Any(l => l[1] == "Va vers" && l[2] == "SP-03 (isométrie)"), "tableau PROVENANCE / DESTINATION");
+        Verifier(ExportPcf.Generer(sl, "").Contains("END-CONNECTION-PIPELINE\r\n    CO-ORDS 1000.0 0.0 1620.0 50\r\n    PIPELINE-REFERENCE SP-03"), "PCF : renvoi vers le spool suivant");
+        // Sens fourni par Revit : respecté
+        var sr = Exemple();
+        sr.Composants.First(c => c.Id == "5").Extremites[1].Sens = SensFlux.Entree;
+        AnalyseSpool.Analyser(sr);
+        Verifier(sr.Liaisons[0].Position.Z == 1620 && sr.Liaisons[0].Sens == SensFlux.Entree && sr.Liaisons[0].SensConnu
+            && sr.Liaisons.Skip(1).All(l => l.Sens == SensFlux.Sortie), "sens d'écoulement Revit respecté");
+        Verifier(ExportCsv.Liaisons(new[] { sl }).Contains(";Va vers;SP-03;DN50;déduit de la ligne"), "CSV liaisons : " + ExportCsv.Liaisons(new[] { sl }));
+
         // Bride contre bride (ou vanne) : joint boulonné
         var b = new Spool { Nom = "B" };
         b.Composants.Add(C("a", "Bride", "PN16", TypeComposant.Bride, 80, 0, null, E(0, 0, 0, 80, "x"), E(10, 0, 0, 80, "b")));
@@ -138,7 +157,7 @@ static class Tests
 
         // Mise en page
         var tabs = MiseEnPage.Tableaux(s, "Projet", "15/11/2026");
-        Verifier(tabs.Count == 4 && tabs.All(t => t.Largeur <= 130.001), "4 tableaux de 130 mm maxi");
+        Verifier(tabs.Count == 5 && tabs.All(t => t.Largeur <= 130.001), "5 tableaux de 130 mm maxi");
         var page = MiseEnPage.Ranger(new Rect(10, 10, 410, 287), tabs, 5);
         Verifier(page.Tableaux.All(p => p.X >= 10 && p.Y <= 287 && p.Y - p.Tableau.Hauteur(5) >= 10 - 1e-9), "tableaux dans la zone");
         Verifier(page.ZoneVue.X1 <= page.Tableaux.Min(p => p.X), "la vue ne chevauche pas les tableaux");
