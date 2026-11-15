@@ -35,7 +35,7 @@ namespace PipeFit.Isometries.Revit
 
             var r = Reglages.Charger();
             var param = CmdIsometries.ParametreSpool(r, tous);
-            var spools = Lire(doc, tous, param);
+            var spools = Lire(doc, tous, param, r.SurlongueurMm);
 
             string fichier;
             using (var dlg = new SaveFileDialog
@@ -58,15 +58,15 @@ namespace PipeFit.Isometries.Revit
         }
 
         /// <summary>Spools numérotés, puis tuyauterie non numérotée regroupée par réseau.</summary>
-        public static List<Spool> Lire(Document doc, List<Element> tous, string param)
+        public static List<Spool> Lire(Document doc, List<Element> tous, string param, double surlongueurMm = 0)
         {
             var res = new List<Spool>();
             var groupes = LectureModele.ParSpool(tous, param, out var sansSpool);
             foreach (var g in groupes.OrderBy(k => k.Key, Comparer<string>.Create(AnalyseSpool.ComparerNaturel)))
-                res.Add(LectureModele.Convertir(doc, g.Key, g.Value, param));
+                res.Add(LectureModele.Convertir(doc, g.Key, g.Value, param, surlongueurMm));
             foreach (var g in sansSpool.GroupBy(e => e.get_Parameter(BuiltInParameter.RBS_SYSTEM_NAME_PARAM)?.AsString() ?? ""))
             {
-                var s = LectureModele.Convertir(doc, g.Key == "" ? "hors spool" : g.Key, g.ToList(), param);
+                var s = LectureModele.Convertir(doc, g.Key == "" ? "hors spool" : g.Key, g.ToList(), param, surlongueurMm);
                 s.HorsSpool = true;
                 res.Add(s);
             }

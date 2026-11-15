@@ -31,6 +31,22 @@ canalisations, raccords, accessoires et pièces de fabrication) est créé dans 
   le spool dépasse 6 m de tube.
 - Les éléments numérotés restent sélectionnés : contrôle visuel, puis **Isométries spools**.
 
+## Soudures chantier et surlongueurs
+
+- Toute limite entre deux spools est une **soudure chantier** (R1, R2… sur l'isométrie, « Soudure chantier » dans le
+  quantitatif) : coupes à 6 m, changements de système, raccordements entre spools ou vers un équipement.
+- Bouton **Soudure chantier** : pour ajouter une soudure de chantier là où on veut (transport, incertitude de cote),
+  cliquer près du joint dans la vue (ou l'élément puis celui d'en face) ; cliquer à nouveau un joint marqué retire la
+  marque ; Échap pour terminer. Le joint est mémorisé dans le paramètre « Soudures chantier (Pipe-Fit) » (créé dans le
+  projet) ; la numérotation et le découpage automatique coupent toujours le spool à cet endroit, et si les deux côtés
+  avaient le même numéro, la plus petite partie prend tout de suite le numéro suivant. Pour une soudure au milieu d'un
+  tube, diviser d'abord le tube dans Revit (Modifier → Diviser l'élément).
+- **Surlongueur à recouper sur place** : réglage général dans la fenêtre des isométries (toutes les soudures chantier),
+  et valeur propre aux joints marqués avec le bouton (100 mm proposés). Elle s'ajoute à la longueur de coupe du tube côté
+  soudure chantier (liste de débit : colonne « dont surl. »), apparaît sur l'isométrie (« R1 +100 ») et dans le
+  quantitatif (tube acheté surlongueurs comprises). Entre deux tubes, un seul côté la porte. La longueur maximale de tube
+  d'un spool (6 m) tient compte de deux surlongueurs possibles, pour que le débit tienne dans la barre.
+
 ## Ce que fait la commande
 
 Pour chaque spool coché :

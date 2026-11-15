@@ -157,7 +157,8 @@ static class Demo
                 s.NomsExterieurs[id] = noms.TryGetValue(id, out var nom) ? nom : id;
                 if (id.StartsWith("SP-")) s.ExterieursSpool.Add(id);
             }
-        foreach (var s in res) AnalyseSpool.Analyser(s);
+        // Surlongueur de 100 mm laissée sur les tubes aux soudures chantier, à recouper sur place
+        foreach (var s in res) { s.SurlongueurMm = 100; AnalyseSpool.Analyser(s); }
         return res;
     }
 
@@ -183,7 +184,7 @@ static class Demo
                 liaisons = s.Liaisons.Select(l => new { n = l.Numero, entree = l.Sens == SensFlux.Entree, texte = l.Libelle, sens = l.SensTexte,
                     a = l.RaccordeA, spool = l.AutreSpool, connu = l.SensConnu, p = P(l.Position), d = l.Direction.HasValue ? P(l.Direction.Value) : null, dn = l.DnMm }),
                 cotes = s.Cotes.Select(c => new { a = P(c.A), b = P(c.B), v = c.Valeur, l = c.Libelle }),
-                assemblages = s.Assemblages.Select(x => new { n = x.Numero, nature = x.Nature.ToString(), p = P(x.Position), dn = x.DnMm, pd = x.PoucesDiametre }),
+                assemblages = s.Assemblages.Select(x => new { n = x.Numero, nature = x.Nature.ToString(), p = P(x.Position), dn = x.DnMm, pd = x.PoucesDiametre, s = x.SurlongueurMm }),
                 tableaux = page.Tableaux.Select(pl => new
                 {
                     x = pl.X, y = pl.Y, titre = pl.Tableau.Titre,

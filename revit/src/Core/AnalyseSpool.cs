@@ -50,8 +50,10 @@ namespace PipeFit.Isometries.Core
 
             var ordre = Parcourir(s.Composants);
             NumeroterNomenclature(s, ordre);
-            Debiter(s, ordre);
             ListerAssemblages(s, ordre);
+            Debiter(s, ordre);
+            // Matière à prévoir : la nomenclature des tubes comprend les surlongueurs à recouper sur place
+            foreach (var l in s.Nomenclature.Where(x => x.EstTube)) l.LongueurMm = l.Composants.Sum(c => c.LongueurMm + c.SurlongueurMm);
 
             s.Systeme = PlusFrequent(s.Composants.Select(c => c.Systeme));
             s.Materiau = PlusFrequent(s.Composants.Where(c => c.Type == TypeComposant.Tube).Select(c => c.Materiau));
@@ -236,7 +238,8 @@ namespace PipeFit.Isometries.Core
             foreach (var t in ordre.Where(c => c.Type == TypeComposant.Tube))
             {
                 t.Repere = "T" + (++n).ToString(CultureInfo.InvariantCulture);
-                s.Debits.Add(new Debit { Repere = t.Repere, Tube = t, LongueurMm = Math.Round(t.LongueurMm), DnMm = t.DnMm });
+                t.SurlongueurMm = s.Assemblages.Where(a => a.Recoupe == t).Sum(a => a.SurlongueurMm);
+                s.Debits.Add(new Debit { Repere = t.Repere, Tube = t, LongueurMm = Math.Round(t.LongueurMm + t.SurlongueurMm), SurlongueurMm = t.SurlongueurMm, DnMm = t.DnMm });
             }
         }
 
@@ -251,13 +254,28 @@ namespace PipeFit.Isometries.Core
                     if (e.ConnecteA == null) { liste.Add(new Assemblage { Nature = NatureAssemblage.ExtremiteLibre, A = a, Position = e.Position, DnMm = e.DnMm }); continue; }
                     if (!parId.TryGetValue(e.ConnecteA, out var b))
                     {
-                        liste.Add(new Assemblage { Nature = NatureAssemblage.RaccordementChantier, A = a, Exterieur = e.ConnecteA, Position = e.Position, DnMm = e.DnMm });
+                        var r = new Assemblage { Nature = NatureAssemblage.RaccordementChantier, A = a, Exterieur = e.ConnecteA, Position = e.Position, DnMm = e.DnMm };
+                        Surlongueur(s, r, a, e, e.VoisinEstTube, e.ConnecteA);
+                        liste.Add(r);
                         continue;
                     }
                     var cle = string.CompareOrdinal(a.Id, b.Id) < 0 ? a.Id + "|" + b.Id : b.Id + "|" + a.Id;
                     cle += "|" + Math.Round(e.Position.X) + "|" + Math.Round(e.Position.Y) + "|" + Math.Round(e.Position.Z);
                     if (!vus.Add(cle)) continue;
                     var nature = Boulonnable(a) && Boulonnable(b) ? NatureAssemblage.Boulonne : NatureAssemblage.Soudure;
+                    // Soudure chantier imposée à l'intérieur du spool (pas encore renuméroté) : raccordement chantier
+                    var eb = Cotation.EnFace(b, a, e.Position);
+                    if (nature == NatureAssemblage.Soudure && (e.CoupeChantier || (eb != null && eb.CoupeChantier)))
+                    {
+                        var r = new Assemblage { Nature = NatureAssemblage.RaccordementChantier, A = a, B = b, Exterieur = b.Id, Position = e.Position, DnMm = e.DnMm };
+                        if (!Surlongueur(s, r, a, e, b.Type == TypeComposant.Tube, b.Id) && b.Type == TypeComposant.Tube && eb != null)
+                        {
+                            var v = eb.SurlongueurMm ?? e.SurlongueurMm ?? s.SurlongueurMm;
+                            if (v > 0) { r.SurlongueurMm = v; r.Recoupe = b; }
+                        }
+                        liste.Add(r);
+                        continue;
+                    }
                     liste.Add(new Assemblage { Nature = nature, A = a, B = b, Position = e.Position, DnMm = e.DnMm });
                 }
             // Un même couple d'éléments vu des deux côtés (positions légèrement différentes) : une seule fois
@@ -271,6 +289,20 @@ namespace PipeFit.Isometries.Core
                     case NatureAssemblage.RaccordementChantier: x.Numero = "R" + (++nc); break;
                     default: x.Numero = "E" + (++nl); break;
                 }
+        }
+
+        /// <summary>
+        /// Surlongueur d'une soudure chantier, laissée sur le tube « a » pour être recoupée sur place. Entre deux tubes,
+        /// un seul côté la porte (le plus grand identifiant), pour ne pas la compter deux fois.
+        /// </summary>
+        static bool Surlongueur(Spool s, Assemblage r, Composant a, Extremite e, bool voisinTube, string voisin)
+        {
+            if (a.Type != TypeComposant.Tube || Boulonnable(a)) return false;
+            if (voisinTube && string.CompareOrdinal(a.Id, voisin ?? "") < 0) return false;
+            var v = e.SurlongueurMm ?? s.SurlongueurMm;
+            if (v <= 0) return false;
+            r.SurlongueurMm = v; r.Recoupe = a;
+            return true;
         }
 
         static List<Assemblage> Dedoublonner(List<Assemblage> liste)

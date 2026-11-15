@@ -214,6 +214,45 @@ static class Tests
                 "coude avec le premier tube, tube de 8 m signalé");
         }
 
+        // Soudures chantier imposées et surlongueurs à recouper sur place
+        {
+            // tube t1 (1000) – coude k – tube t2 (2000) ; soudure chantier marquée entre k et t2, surlongueur 150 sur ce joint
+            Func<List<Composant>> ligne = () => new List<Composant>
+            {
+                C("t1", "Tuyau", "", TypeComposant.Tube, 50, 1000, null, E(0, 0, 0, 50, null), E(1000, 0, 0, 50, "k")),
+                C("k", "Coude", "", TypeComposant.Coude, 50, 0, new Point3(1076, 0, 0), E(1000, 0, 0, 50, "t1"), E(1076, 0, 76, 50, "t2")),
+                C("t2", "Tuyau", "", TypeComposant.Tube, 50, 2000, null, E(1076, 0, 76, 50, "k"), E(1076, 0, 2076, 50, "EQUIP")),
+            };
+            var L1 = ligne();
+            L1[1].Extremites[1].CoupeChantier = true; L1[1].Extremites[1].SurlongueurMm = 150;
+            var gs = Decoupage.Spools(L1);
+            Verifier(gs.Count == 2 && gs.Any(g => g.Count == 1 && g[0].Id == "t2"), "soudure chantier marquée : spool coupé au joint");
+            Verifier(Decoupage.Etendre(L1, new[] { "t1" }).Count == 2, "sélection complétée arrêtée à la soudure chantier");
+
+            // Analyse sans renumérotation : le joint marqué est un raccordement chantier ; surlongueur 150 sur t2 ;
+            // l'extrémité vers l'équipement : surlongueur par défaut (80) sur t2 aussi
+            var sp = new Spool { Nom = "X", Composants = ligne(), SurlongueurMm = 80 };
+            sp.Composants[1].Extremites[1].CoupeChantier = true; sp.Composants[1].Extremites[1].SurlongueurMm = 150;
+            AnalyseSpool.Analyser(sp);
+            Verifier(sp.Nombre(NatureAssemblage.RaccordementChantier) == 2 && sp.Nombre(NatureAssemblage.Soudure) == 1, "joint marqué compté en soudure chantier");
+            var d2 = sp.Debits.First(d => d.Tube.Id == "t2");
+            Verifier(d2.SurlongueurMm == 230 && d2.LongueurMm == 2230, "débit t2 : 2000 + 150 + 80 = 2230 (" + d2.LongueurMm + ")");
+            Verifier(sp.Debits.First(d => d.Tube.Id == "t1").SurlongueurMm == 0, "t1 : extrémité libre, pas de surlongueur");
+            var tdeb = MiseEnPage.Tableaux(sp, "", "").First(t => t.Titre == "LISTE DE DÉBIT");
+            Verifier(tdeb.Lignes.Any(l => l[0] == d2.Repere && l[2] == "2230" && l[3] == "+230"), "tableau de débit : coupe et surlongueur");
+            Verifier(Math.Abs(Quantitatif.Calculer(new[] { sp }).First(l => l.EstTube).LongueurMm - 3230) < 0.1, "quantitatif : tube surlongueurs comprises");
+            Verifier(Math.Abs(sp.Nomenclature.First(l => l.EstTube).LongueurMm - 3230) < 0.1, "nomenclature : tube surlongueurs comprises");
+            Verifier(ExportCsv.Soudures(new[] { sp }).Contains(";150 sur " + d2.Repere + ";"), "CSV soudures : surlongueur");
+
+            // Entre deux tubes, un seul côté porte la surlongueur
+            var tt = new Spool { Nom = "Y", SurlongueurMm = 100 };
+            tt.Composants.Add(C("a1", "Tuyau", "", TypeComposant.Tube, 50, 1000, null, E(0, 0, 0, 50, null), E(1000, 0, 0, 50, "a2")));
+            tt.Composants.Add(C("a2", "Tuyau", "", TypeComposant.Tube, 50, 1000, null, E(1000, 0, 0, 50, "a1"), E(2000, 0, 0, 50, null)));
+            tt.Composants[0].Extremites[1].CoupeChantier = true;
+            AnalyseSpool.Analyser(tt);
+            Verifier(tt.Debits.Sum(d => d.SurlongueurMm) == 100, "tube contre tube : surlongueur d'un seul côté");
+        }
+
         // Bride contre bride (ou vanne) : joint boulonné
         var b = new Spool { Nom = "B" };
         b.Composants.Add(C("a", "Bride", "PN16", TypeComposant.Bride, 80, 0, null, E(0, 0, 0, 80, "x"), E(10, 0, 0, 80, "b")));

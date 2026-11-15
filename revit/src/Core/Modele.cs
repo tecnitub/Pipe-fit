@@ -34,6 +34,12 @@ namespace PipeFit.Isometries.Core
         public string ConnecteA;
         /// <summary>Sens d'écoulement à cette extrémité, quand Revit le connaît (réseau avec équipement).</summary>
         public SensFlux Sens;
+        /// <summary>Soudure chantier imposée à ce joint (transport, incertitude) : le spool est coupé ici.</summary>
+        public bool CoupeChantier;
+        /// <summary>Surlongueur à recouper sur place propre à ce joint (sinon celle du spool).</summary>
+        public double? SurlongueurMm;
+        /// <summary>L'élément raccordé de l'autre côté est un tube (pour ne mettre la surlongueur que d'un côté).</summary>
+        public bool VoisinEstTube;
     }
 
     public enum SensFlux { Inconnu, Entree, Sortie }
@@ -83,6 +89,8 @@ namespace PipeFit.Isometries.Core
         public int LigneNomenclature;
         public double AngleDeg;
         public string Designation = "";
+        /// <summary>Surlongueur ajoutée au débit de ce tube, à recouper sur place (soudures chantier).</summary>
+        public double SurlongueurMm;
     }
 
     public enum NatureAssemblage { Soudure, Boulonne, RaccordementChantier, ExtremiteLibre }
@@ -98,6 +106,10 @@ namespace PipeFit.Isometries.Core
         public Composant B;
         /// <summary>Identifiant de l'élément hors spool, pour un raccordement chantier.</summary>
         public string Exterieur;
+        /// <summary>Surlongueur laissée sur le tube à cette soudure chantier, à recouper sur place.</summary>
+        public double SurlongueurMm;
+        /// <summary>Tube qui porte la surlongueur.</summary>
+        public Composant Recoupe;
         public double PoucesDiametre => Diametres.Pouces(DnMm);
     }
 
@@ -119,7 +131,9 @@ namespace PipeFit.Isometries.Core
     {
         public string Repere = "";
         public Composant Tube;
+        /// <summary>Longueur de coupe, surlongueur comprise.</summary>
         public double LongueurMm;
+        public double SurlongueurMm;
         public double DnMm;
     }
 
@@ -128,6 +142,8 @@ namespace PipeFit.Isometries.Core
         public string Nom = "";
         /// <summary>Tuyauterie pas encore découpée en spools (un groupe par réseau) : soudures à répartir atelier / chantier.</summary>
         public bool HorsSpool;
+        /// <summary>Surlongueur laissée sur les tubes aux soudures chantier, à recouper sur place (mm).</summary>
+        public double SurlongueurMm;
         public List<Composant> Composants = new List<Composant>();
 
         // Résultats de l'analyse (AnalyseSpool.Analyser)

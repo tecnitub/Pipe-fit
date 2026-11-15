@@ -124,7 +124,8 @@ namespace PipeFit.Isometries.Revit
         static PlanNumerotation Plan(Document doc, List<Element> tous, Dictionary<string, Element> parCle, List<string> selection,
             Dictionary<string, Composant> composants, Reglages r, string param, string numeroManuel)
         {
-            var plan = new PlanNumerotation { LongueurMaxMm = Math.Max(0, r.LongueurMaxM) * 1000 };
+            // Une surlongueur peut s'ajouter à chaque bout coupé : la barre du commerce doit les contenir
+            var plan = new PlanNumerotation { LongueurMaxMm = r.LongueurMaxM > 0 ? Math.Max(500, r.LongueurMaxM * 1000 - 2 * r.SurlongueurMm) : 0 };
             var numerotes = new HashSet<string>(param == CreerParametre ? Enumerable.Empty<string>()
                 : parCle.Where(kv => LectureModele.ValeurSpool(kv.Value, param) != "").Select(kv => kv.Key));
             var bloques = r.RemplacerNumeros ? new HashSet<string>() : numerotes;

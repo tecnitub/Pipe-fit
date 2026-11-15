@@ -32,6 +32,14 @@ namespace PipeFit.Isometries.Revit
                 LargeImage = Image("numeroter32.png"),
                 Image = Image("numeroter16.png"),
             });
+            panneau.AddItem(new PushButtonData("PipeFitSoudureChantier", "Soudure\nchantier", Assembly.GetExecutingAssembly().Location, typeof(CmdSoudureChantier).FullName)
+            {
+                ToolTip = "Marque un joint comme soudure de chantier (transport, incertitude), avec une surlongueur à recouper sur place.",
+                LongDescription = "Cliquez près des joints dans la vue : le spool y est coupé (la plus petite partie prend le numéro suivant), la soudure "
+                    + "apparaît en R… sur l'isométrie et la surlongueur s'ajoute au débit du tube. Cliquer un joint marqué retire la marque.",
+                LargeImage = Image("soudure32.png"),
+                Image = Image("soudure16.png"),
+            });
             panneau.AddItem(bouton);
             panneau.AddItem(new PushButtonData("PipeFitQuantitatif", "Quantitatif\nchiffrage", Assembly.GetExecutingAssembly().Location, typeof(CmdQuantitatif).FullName)
             {

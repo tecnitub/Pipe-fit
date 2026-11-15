@@ -29,11 +29,12 @@ namespace PipeFit.Isometries.Core
         public static string Soudures(IEnumerable<Spool> spools)
         {
             var sb = new StringBuilder();
-            Ligne(sb, "Spool", "N°", "Nature", "DN", "Pouces-diamètre", "Élément 1", "Élément 2", "X (mm)", "Y (mm)", "Z (mm)");
+            Ligne(sb, "Spool", "N°", "Nature", "DN", "Pouces-diamètre", "Élément 1", "Élément 2", "Surlongueur à recouper (mm)", "X (mm)", "Y (mm)", "Z (mm)");
             foreach (var s in spools)
                 foreach (var a in s.Assemblages)
                     Ligne(sb, s.Nom, a.Numero, Nature(a.Nature), Diametres.Dn(a.DnMm), a.PoucesDiametre.ToString("0.##", Fr),
                         Rep(a.A), a.B != null ? Rep(a.B) : a.Nature == NatureAssemblage.RaccordementChantier ? "hors spool" : "libre",
+                        a.SurlongueurMm > 0 ? a.SurlongueurMm.ToString("0", Fr) + " sur " + a.Recoupe?.Repere : "",
                         a.Position.X.ToString("0", Fr), a.Position.Y.ToString("0", Fr), a.Position.Z.ToString("0", Fr));
             return sb.ToString();
         }

@@ -309,7 +309,7 @@ namespace PipeFit.Isometries.Revit
             {
                 if (a.Nature != NatureAssemblage.Soudure && a.Nature != NatureAssemblage.RaccordementChantier) continue;
                 var p = new XYZ(Compat.Pieds(a.Position.X), Compat.Pieds(a.Position.Y), Compat.Pieds(a.Position.Z)) + bas;
-                try { TextNote.Create(doc, vue.Id, p, a.Numero, opt); }
+                try { TextNote.Create(doc, vue.Id, p, a.Numero + (a.SurlongueurMm > 0 ? " +" + a.SurlongueurMm.ToString("0", CultureInfo.InvariantCulture) : ""), opt); }
                 catch
                 {
                     res.Avertissements.Add("numéros de soudure non posés sur la vue (voir le tableau ASSEMBLAGES et l'export CSV)");

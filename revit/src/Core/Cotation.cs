@@ -66,6 +66,10 @@ namespace PipeFit.Isometries.Core
             return true;
         }
 
+        /// <summary>Extrémité de « c » raccordée à « autre » au point donné (null si aucune).</summary>
+        public static Extremite EnFace(Composant c, Composant autre, Point3 point) =>
+            c.Extremites.Where(x => x.ConnecteA == autre.Id).OrderBy(x => x.Position.Distance(point)).FirstOrDefault();
+
         public static List<Cote> Calculer(Spool s)
         {
             var parId = s.Composants.ToDictionary(c => c.Id);

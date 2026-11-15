@@ -91,9 +91,11 @@ namespace PipeFit.Isometries.Core
             {
                 var deb = new Tableau { Titre = "LISTE DE DÉBIT" };
                 deb.Colonnes.Add(new Colonne("Rep.", 12)); deb.Colonnes.Add(new Colonne("DN", 16));
-                deb.Colonnes.Add(new Colonne("Long. (mm)", 24, true)); deb.Colonnes.Add(new Colonne("Désignation", 78));
+                deb.Colonnes.Add(new Colonne("Coupe (mm)", 24, true)); deb.Colonnes.Add(new Colonne("dont surl.", 20, true));
+                deb.Colonnes.Add(new Colonne("Désignation", 58));
                 foreach (var d in s.Debits)
-                    deb.Lignes.Add(new[] { d.Repere, Diametres.Dn(d.DnMm), d.LongueurMm.ToString("0", Fr), d.Tube.Designation });
+                    deb.Lignes.Add(new[] { d.Repere, Diametres.Dn(d.DnMm), d.LongueurMm.ToString("0", Fr),
+                        d.SurlongueurMm > 0 ? "+" + d.SurlongueurMm.ToString("0", Fr) : "", d.Tube.Designation });
                 res.Add(deb);
             }
 

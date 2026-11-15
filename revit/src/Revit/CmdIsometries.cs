@@ -103,7 +103,7 @@ namespace PipeFit.Isometries.Revit
                 foreach (var nom in r.Spools)
                 {
                     if (!groupes.TryGetValue(nom, out var elements)) continue;
-                    var spool = LectureModele.Convertir(doc, nom, elements, r.ParametreSpool);
+                    var spool = LectureModele.Convertir(doc, nom, elements, r.ParametreSpool, r.SurlongueurMm);
                     using (var t = new Transaction(doc, "Pipe-Fit : isométrie " + nom))
                     {
                         var opt = t.GetFailureHandlingOptions();

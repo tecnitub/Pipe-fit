@@ -252,7 +252,7 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
       const p = F(a.p);
       if (a.nature === 'Soudure') el('circle', { cx: p[0], cy: Y(p[1]), r: 0.75, class: 'k-weld' }, g);
       else el('path', { d: `M${p[0]} ${Y(p[1])}l1.4 -2.4l-2.8 0Z`, class: 'k-weld' }, g);
-      text(p[0], p[1] - 3.2, a.n, { cls: 'k-weldtxt', anchor: 'middle', size: 2.1 });
+      text(p[0], p[1] - 3.2, a.n + (a.s > 0 ? ' +' + Math.round(a.s) : ''), { cls: 'k-weldtxt', anchor: 'middle', size: 2.1 });
     });
 
     // Cotes : même construction que le complément (attaches, ligne décalée vers l'extérieur, traits obliques)
@@ -333,7 +333,7 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
         `<p class="note">Repère 1, 2, 3… = numéro de ligne, écrit dans le paramètre « Marque » de chaque raccord. Les tubes sont repérés T1, T2… dans l'ordre de la ligne.</p>`;
     } else if (st.tab === 'deb') {
       const t = tab(s, 'LISTE DE DÉBIT');
-      p.innerHTML = t ? table(t.colonnes.map(c => ({ t: c.t, r: c.d })), t.lignes) + `<p class="note">Longueurs de coupe réelles des tubes, entre chanfreins.</p>` : '<p>Aucun tube.</p>';
+      p.innerHTML = t ? table(t.colonnes.map(c => ({ t: c.t, r: c.d })), t.lignes) + `<p class="note">Longueurs de coupe des tubes, entre chanfreins. Aux soudures chantier, le tube est débité avec une surlongueur (ici 100 mm) à recouper sur place : colonne « dont surl. », et « R1 +100 » sur l'isométrie.</p>` : '<p>Aucun tube.</p>';
     } else if (st.tab === 'ass') {
       const t = tab(s, 'ASSEMBLAGES');
       const lib = { Soudure: ['Soudure atelier', 's'], Boulonne: ['Joint boulonné', 'b'], RaccordementChantier: ['Raccordement chantier', 'r'], ExtremiteLibre: ['Extrémité libre', 'r'] };

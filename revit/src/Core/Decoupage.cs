@@ -24,6 +24,14 @@ namespace PipeFit.Isometries.Core
             !(AnalyseSpool.Boulonnable(a) && AnalyseSpool.Boulonnable(b))
             && (a.Systeme == "" || b.Systeme == "" || string.Equals(a.Systeme, b.Systeme, StringComparison.OrdinalIgnoreCase));
 
+        /// <summary>Joint marqué « soudure chantier » d'un côté ou de l'autre : on coupe le spool ici.</summary>
+        public static bool CoupeImposee(Composant c, Extremite e, Composant v)
+        {
+            if (e.CoupeChantier) return true;
+            var ev = Cotation.EnFace(v, c, e.Position);
+            return ev != null && ev.CoupeChantier;
+        }
+
         public static double LongueurTube(IEnumerable<Composant> g) => g.Where(c => c.Type == TypeComposant.Tube).Sum(c => c.LongueurMm);
 
         /// <summary>
@@ -44,7 +52,7 @@ namespace PipeFit.Isometries.Core
                 {
                     if (e.ConnecteA == null || !parId.TryGetValue(e.ConnecteA, out var v) || res.Contains(v.Id)) continue;
                     if (bloques != null && bloques.Contains(v.Id)) continue;
-                    if (!MemeSpool(c, v)) continue;
+                    if (!MemeSpool(c, v) || CoupeImposee(c, e, v)) continue;
                     res.Add(v.Id);
                     file.Enqueue(v.Id);
                 }
@@ -111,8 +119,9 @@ namespace PipeFit.Isometries.Core
                     var c = pile.Pop();
                     morceau.Add(c);
                     // Voisins empilés à l'envers : on suit d'abord la ligne principale (plus gros DN)
-                    var voisins = c.Extremites.Where(e => e.ConnecteA != null && parId.ContainsKey(e.ConnecteA) && !places.Contains(e.ConnecteA))
-                        .OrderBy(e => e.DnMm).Select(e => parId[e.ConnecteA]).Where(v => MemeSpool(c, v)).Distinct().ToList();
+                    var voisins = c.Extremites.Where(e => e.ConnecteA != null && parId.ContainsKey(e.ConnecteA) && !places.Contains(e.ConnecteA)
+                            && MemeSpool(c, parId[e.ConnecteA]) && !CoupeImposee(c, e, parId[e.ConnecteA]))
+                        .OrderBy(e => e.DnMm).Select(e => parId[e.ConnecteA]).Distinct().ToList();
                     foreach (var v in voisins)
                     {
                         if (places.Contains(v.Id)) continue;

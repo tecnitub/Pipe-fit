@@ -89,9 +89,9 @@ namespace PipeFit.Isometries.Revit
 
         // ---------- Conversion en composants ----------
 
-        public static Spool Convertir(Document doc, string nom, List<Element> elements, string parametreSpool)
+        public static Spool Convertir(Document doc, string nom, List<Element> elements, string parametreSpool, double surlongueurMm = 0)
         {
-            var s = new Spool { Nom = nom };
+            var s = new Spool { Nom = nom, SurlongueurMm = surlongueurMm };
             foreach (var e in elements) s.Composants.Add(Composant(doc, e));
 
             // Ce qui est raccordé aux extrémités : autre spool, équipement, réseau
@@ -139,18 +139,21 @@ namespace PipeFit.Isometries.Revit
             c.Taille = Texte(e, BuiltInParameter.RBS_CALCULATED_SIZE);
             c.EstAccessoire = Compat.EstCategorie(e, BuiltInCategory.OST_PipeAccessory);
 
+            var marques = ParametreSpool.Marques(e);
             foreach (var cn in Connecteurs(e))
             {
                 var ext = new Extremite { DnMm = Math.Round(Compat.Mm(cn.Radius * 2), 1) };
                 try { ext.Position = P(cn.Origin); } catch { continue; }
                 try { var z = cn.CoordinateSystem?.BasisZ; if (z != null) ext.Direction = new Point3(z.X, z.Y, z.Z); } catch { }
                 ext.Sens = Sens(cn, false);
+                if (marques.TryGetValue(cn.Id, out var surl)) { ext.CoupeChantier = true; ext.SurlongueurMm = surl; }
                 foreach (Connector r in cn.AllRefs)
                 {
                     var owner = r.Owner;
                     if (owner == null || owner.Id == e.Id || owner is MEPSystem) continue;
                     if ((r.ConnectorType & ConnectorType.Physical) == 0) continue;
                     ext.ConnecteA = Compat.Cle(owner.Id);
+                    ext.VoisinEstTube = owner is Pipe || owner is FlexPipe || (owner is FabricationPart fpv && fpv.IsAStraight());
                     // Sens inconnu sur notre connecteur : on lit celui d'en face, à l'envers
                     if (ext.Sens == SensFlux.Inconnu) ext.Sens = Sens(r, true);
                     break;

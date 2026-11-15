@@ -20,6 +20,14 @@ NUMÉROTER LES SPOOLS (bouton « Numéroter spools »)
   - Le paramètre « Numéro de spool » est créé dans le projet s'il n'existe pas.
   - Les éléments déjà numérotés sont conservés (case à cocher pour les renuméroter).
 
+SOUDURES CHANTIER ET SURLONGUEURS (bouton « Soudure chantier »)
+  - Les coupes entre spools (6 m, changement de système, raccordements) sont des soudures chantier.
+  - Pour en ajouter une (transport, incertitude) : cliquer le bouton, choisir la surlongueur, puis cliquer
+    près de chaque joint dans la vue. Recliquer un joint marqué retire la marque. Échap pour terminer.
+    Si les deux côtés avaient le même numéro de spool, la plus petite partie prend le numéro suivant.
+  - Surlongueur à recouper sur place : ajoutée au débit du tube côté soudure chantier (liste de débit,
+    « R1 +100 » sur l'isométrie, quantitatif). Réglage général dans la fenêtre des isométries.
+
 AVANT DE LANCER
   Le numéro de spool est attribué par le bouton « Numéroter spools », ou renseigné à la main dans un paramètre texte des canalisations, raccords et accessoires
   (ex. paramètre partagé « Numéro de spool »), ou dans la propriété « Spool » des pièces de fabrication MEP.

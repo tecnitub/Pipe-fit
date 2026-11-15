@@ -56,7 +56,8 @@ namespace PipeFit.Isometries.Core
                         Reseau = reseau, Famille = famille, Type = type, Taille = taille, DnMm = c.DnMm, Materiau = c.Materiau,
                         Designation = c.Designation, EstTube = tube,
                     });
-                    if (tube) l.LongueurMm += c.LongueurMm; else l.Nombre++;
+                    // Tube acheté surlongueurs comprises (recoupées sur place)
+                    if (tube) l.LongueurMm += c.LongueurMm + c.SurlongueurMm; else l.Nombre++;
                     if (nomSpool != "") l.Spools.Add(nomSpool);
                 }
 
