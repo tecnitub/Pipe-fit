@@ -79,7 +79,9 @@ function resumePF(et) {
   let reserves = [];
   try { if (typeof AnnexesExploitation !== 'undefined' && typeof ReservesTerrain !== 'undefined' && (et.notes || []).some(n => (Notes.TYPES[n.type] || {}).annexe)) reserves = ReservesTerrain.pourCrm(AnnexesExploitation.reserves(et, Liens), et.reservesConformite || {}); } catch (e) { reserves = []; }
   return allegerResume({ objet: et.objet, client: et.client || '', clientId: et.clientId || '', devisId: et.devisId || '', indice: et.indice, date: et.date, auteur: et.auteur || '', verificateur: et.verificateur || '', description: String(et.description || '').slice(0, 500),
-    notes, erreurs: notes.reduce((s, n) => s + n.erreurs, 0), attention: notes.reduce((s, n) => s + n.attention, 0), equipements, materiel, heures, debits, mes, entretien, reserves, regulation: (() => { try { return Regulation.pourDoe(et, Liens); } catch (e) { return null; } })(), renumerotations: (et.renumerotations || []).slice(-20), devis: (et.devisPF || []).slice(-10) });
+    notes, erreurs: notes.reduce((s, n) => s + n.erreurs, 0), attention: notes.reduce((s, n) => s + n.attention, 0), equipements, materiel, heures, debits, mes, entretien, reserves, regulation: (() => { try { return Regulation.pourDoe(et, Liens); } catch (e) { return null; } })(), renumerotations: (et.renumerotations || []).slice(-20), devis: (et.devisPF || []).slice(-10),
+    // Avancement des étapes (mis en cache à l'enregistrement) : tableau de bord des chantiers, relances, appli des compagnons
+    ...(et.avancement ? { avancement: et.avancement } : {}) });
 }
 const corpsEtude = et => { let resume; try { resume = et.modele ? undefined : resumePF(et); } catch (e) { resume = undefined; } return { data: et, version: et._v, resume }; };
 // Enregistrement différé (une requête à la fois par étude, contrôle de version)
@@ -103,6 +105,8 @@ function enregistrer(etude) {
   st.t = setTimeout(async () => {
     if (st.vol) { st.encore = true; return; }
     st.vol = true;
+    // Étapes du « Reste à faire » : faites / rouvertes notées dans l'historique, avancement mis en cache (et.avancement)
+    if (!etude.modele && typeof SuiviEtapes !== 'undefined') { try { SuiviEtapes.mettreAJour(etude, utilisateurSuivi()); } catch (e) { /* étude incomplète */ } }
     try {
       const r = await api('PUT', `/api/etudes/${etude.id}`, corpsEtude(etude));
       Object.assign(etude, { _v: r._v, _at: r._at, _by: r._by });
@@ -119,6 +123,8 @@ function enregistrer(etude) {
   S.enCours.set(etude.id, st);
   majEtatEnregistrement('Enregistrement…');
 }
+// Utilisateur courant pour le suivi des étapes : fiche de l'équipe Pipe-Fit (userId), nom, rôle du compte
+const utilisateurSuivi = () => (S.me ? { id: S.me.userId || '', nom: S.me.nom || S.me.login, login: S.me.login, role: S.me.role } : null);
 const majEtatEnregistrement = t => { const e = document.getElementById('etat-enreg'); if (e) e.textContent = t; };
 
 /* ---------- Calculateur générique ---------- */
@@ -401,6 +407,7 @@ Vues.accueil = {
     const etudes = S.etudes.filter(x => !x.modele && (!q || `${x.objet} ${x.client} ${libelleAffaire(affaireDe(x.affaireId))}`.toLowerCase().includes(q)));
     const modeles = S.etudes.filter(x => x.modele);
     return `<div class="barre"><h1>Études</h1><button id="nouvelle">+ Nouvelle étude</button><input type="search" id="q" aria-label="Rechercher une étude" placeholder="Rechercher une étude, une affaire…" value="${esc(q)}"></div>
+      ${portefeuilleHtml(etudes)}
       <section>${listeEtudes(etudes)}</section>
       <section><h2>Modèles d'études <span class="compte">${Modeles.INTEGRES.length + modeles.length}</span></h2><p class="muted petit">« Nouvelle étude » permet de partir d'un modèle ; une étude s'enregistre comme modèle depuis sa page.</p>
         <div class="types">${Modeles.INTEGRES.map(m => `<button class="carte type" data-modele="${m.id}"><span class="ico">📐</span><span><strong>${esc(m.nom)}</strong><span class="muted petit">${esc(m.description)}</span></span></button>`).join('')}
@@ -414,8 +421,66 @@ Vues.accueil = {
     root.querySelector('#nouvelle').onclick = () => dialogueNouvelleEtude();
     root.querySelectorAll('[data-modele]').forEach(b => b.onclick = () => dialogueNouvelleEtude('', null, b.dataset.modele));
     lierListe(root);
+    lierPortefeuille(root);
   },
 };
+
+/* ---------- Portefeuille : avancement des études par phase, retards, étapes par personne ---------- */
+// Lu dans le résumé mis en cache à l'enregistrement (et.avancement) ; une étude enregistrée avant le suivi des étapes est
+// calculée une fois par session (pas à chaque affichage)
+const avancementsCalcules = new Map();
+function avancementDe(et) {
+  if (et.avancement) return et.avancement;
+  if (!avancementsCalcules.has(et.id)) {
+    let av = null;
+    // Sur une copie : le guide complète l'étude en la parcourant (registre…), ce qui ne doit pas se faire depuis l'accueil
+    try { const c = copie(et), b = SuiviEtapes.etapesEtude(c); if (b) av = SuiviEtapes.avancement(c, SuiviEtapes.decorer(c, b)); } catch (e) { av = null; }
+    avancementsCalcules.set(et.id, av);
+  }
+  return avancementsCalcules.get(et.id);
+}
+const FILTRES_PF = () => { const d = { phase: '', responsable: '', retard: false, mes: false }; try { return { ...d, ...JSON.parse(sessionStorage.getItem('etudes-pf') || '{}') }; } catch (e) { return d; } };
+function portefeuilleHtml(etudes) {
+  if (typeof SuiviEtapes === 'undefined' || !etudes.length) return '';
+  const SE = SuiviEtapes, f = FILTRES_PF(), u = utilisateurSuivi();
+  const items = etudes.map(et => ({ etudeId: et.id, objet: et.objet, affaireId: et.affaireId, affaire: libelleAffaire(affaireDe(et.affaireId)), chargeId: (affaireDe(et.affaireId) || {}).chargeId || '', avancement: avancementDe(et) })).filter(x => x.avancement);
+  if (!items.length) return '';
+  const filtre = f.phase || f.responsable || f.retard || f.mes;
+  const r = SE.portefeuille(items, { phase: f.phase, responsable: f.responsable, retard: f.retard, moi: f.mes ? u : null }), resp = SE.responsables(items);
+  const retards = SE.portefeuille(items, { retard: true }).lignes.length, mes = u ? SE.portefeuille(items, { moi: u }).lignes.length : 0;
+  const phasesHtml = av => SE.PHASES.filter(([k]) => av.phases[k]).map(([k, l, i]) => { const p = av.phases[k], pc = Math.round(p.faits / p.total * 100); return `<span class="pf-phase${pc === 100 ? ' complete' : ''}" title="${esc(l)} : ${p.faits} / ${p.total}">${i} ${pc} %</span>`; }).join(' ');
+  const badgeEch = l => (l.echeance ? `<span class="badge ${l.etatEcheance === 'retard' ? 'erreur' : l.etatEcheance === 'bientot' ? 'attention' : 'info'}">${l.etatEcheance === 'retard' ? '⏰ ' : '📅 '}${dateFr(l.echeance)}</span>` : '');
+  return `<section class="portefeuille"><details class="carte"${filtre || retards ? ' open' : ''}><summary><strong>📊 Portefeuille des études</strong> <span class="muted petit">${items.length} étude(s)${retards ? ` · <span class="txt-erreur">${retards} étape(s) en retard</span>` : ''}${u ? ` · ${mes} étape(s) pour moi` : ''}</span></summary>
+    <div class="pf-filtres"><label>Phase<select id="pf-phase"><option value="">Toutes</option>${SE.PHASES.map(([k, l]) => `<option value="${k}" ${f.phase === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+      <label>Responsable<select id="pf-resp"><option value="">Tous</option><option value="aucun" ${f.responsable === 'aucun' ? 'selected' : ''}>Non affectées</option>${resp.map(([k, l]) => `<option value="${esc(k)}" ${f.responsable === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+      <label class="case"><input type="checkbox" id="pf-retard" ${f.retard ? 'checked' : ''}> En retard</label><label class="case"><input type="checkbox" id="pf-mes" ${f.mes ? 'checked' : ''}> Mes étapes</label></div>
+    <div class="defile-x"><table class="liste"><thead><tr><th>Étude</th><th>Avancement</th><th>Par phase</th><th>Retards</th></tr></thead><tbody>
+    ${r.etudes.map(x => `<tr class="cliquable" data-href="#/etude/${x.etudeId}"><td><a href="#/etude/${x.etudeId}"><strong>${esc(x.objet)}</strong></a>${x.affaire ? `<div class="muted petit">${esc(x.affaire)}</div>` : ''}</td>
+      <td class="pf-av"><span class="parcours-barre pf-barre" role="progressbar" aria-valuenow="${x.avancement.pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${x.avancement.pct}%"></span></span> <span class="petit">${x.avancement.pct} %</span></td><td class="petit">${phasesHtml(x.avancement)}</td>
+      <td>${x.retards ? `<span class="badge erreur">${x.retards}</span>` : '<span class="muted">—</span>'}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Aucune étude pour ces filtres.</td></tr>'}</tbody></table></div>
+    ${filtre ? `<h3>Étapes <span class="compte">${r.lignes.length}</span></h3><ul class="suivi-liste">${r.lignes.slice(0, 100).map(l => `<li class="${l.etatEcheance === 'retard' ? 'suivi-retard' : ''}"><span class="guide-txt"><span class="petit muted">${SE.PHASE[l.phase].ico} ${esc(SE.PHASE[l.phase].libelle)} · ${esc(l.objet)}</span><strong>${esc(l.titre)}</strong></span>
+      <span class="suivi-etape">${l.responsable ? `<span class="badge info">👤 ${esc(SE.libelleResponsable(l.responsable))}</span>` : ''}${badgeEch(l)}<a class="secondaire btn petit" href="#/etude/${l.etudeId}">Ouvrir</a></span></li>`).join('')}</ul>` : ''}
+  </details></section>`;
+}
+function lierPortefeuille(root) {
+  const z = root.querySelector('.portefeuille');
+  if (!z) return;
+  const maj = () => { sessionStorage.setItem('etudes-pf', JSON.stringify({ phase: z.querySelector('#pf-phase').value, responsable: z.querySelector('#pf-resp').value, retard: z.querySelector('#pf-retard').checked, mes: z.querySelector('#pf-mes').checked })); App.render(); };
+  z.querySelectorAll('select, input').forEach(el => { el.onchange = maj; });
+}
+// Étapes faites sur le terrain (appli des compagnons : photo, commentaire) : relues dans Pipe-Fit à l'ouverture de l'étude
+const terrainLu = new Set();
+async function chargerEtapesTerrain(et) {
+  if (!et.affaireId || et.modele || terrainLu.has(et.id)) return;
+  terrainLu.add(et.id);
+  let l = [];
+  try { l = await api('GET', `/api/pf/etapes-terrain?etudeId=${encodeURIComponent(et.id)}`); } catch (e) { return; }
+  const n = SuiviEtapes.fusionnerTerrain(et, Array.isArray(l) ? l : []);
+  if (!n) return;
+  enregistrer(et);
+  toast(`${n} étape(s) faite(s) sur le chantier reprise(s) dans l'étude`, 5000);
+  if (location.hash.startsWith(`#/etude/${et.id}`)) avecFocus(App.render);
+}
 
 // Lien « Études » d'un chantier dans Pipe-Fit : études de l'affaire, création pré-remplie
 Vues.chantier = {
@@ -548,6 +613,7 @@ Vues.etude = {
       ${(et.inventaire || []).length ? (() => { const inc = et.inventaire.filter(x => x.inclus !== false), nb = c => inc.filter(x => x.categorie === c).reduce((t, x) => t + (Notes.num(x.qte) || 1), 0), lignes = c => inc.filter(x => x.categorie === c).length;
         return `<div class="carte petit">📑 <strong>Inventaire du dossier de consultation</strong> : ${nb('producteur')} producteur(s), ${lignes('emetteur')} type(s) d'émetteurs, ${lignes('auxiliaire')} type(s) d'auxiliaires — ${esc([...new Set(inc.map(x => InventaireCVC.GENRES[x.genre] && InventaireCVC.GENRES[x.genre].libelle).filter(Boolean))].join(', '))} <button class="secondaire petit" id="inventaire2">Voir / préremplir</button></div>`; })() : ''}
       ${typeof GuideEtude !== 'undefined' ? GuideEtude.html(et) : ''}
+      ${typeof SuiviEtapes !== 'undefined' ? SuiviEtapes.carte(et) : ''}
       ${typeof parcoursHtml === 'function' ? parcoursHtml(et) : ''}
       ${typeof carteRegistre === 'function' ? carteRegistre(et) : ''}
       ${typeof BibliothequeModeles !== 'undefined' ? BibliothequeModeles.carte(et) : ''}
@@ -586,6 +652,7 @@ Vues.etude = {
     root.querySelectorAll('#vrac, #vrac2').forEach(b => { b.onclick = () => dialogueVrac(et); });
     if (typeof lierParcours === 'function') lierParcours(root, et);
     if (typeof GuideEtude !== 'undefined') GuideEtude.lier(root, et);
+    if (typeof SuiviEtapes !== 'undefined') { SuiviEtapes.lier(root.querySelector('#suivi-etapes'), et, () => avecFocus(App.render)); chargerEtapesTerrain(et); }
     const rg = root.querySelector('#registre');
     if (rg) rg.onclick = () => dialogueRegistre(et);
     const ancienEtude = { climat: et.climat, typeBatiment: et.typeBatiment, neuf: et.neuf };
@@ -2400,6 +2467,8 @@ async function demarrer() {
   // Les affaires Pipe-Fit sont facultatives : l'application reste utilisable si Pipe-Fit ne répond pas
   try { S.pf = await api('GET', '/api/pf/affaires'); } catch (e) { toast(`Affaires Pipe-Fit indisponibles : ${e.message}`, 5000); }
   S.etudes.forEach(et => { et.notes = et.notes || []; et.historique = et.historique || []; });
+  // Suivi des étapes : utilisateur courant, personnes affectables (équipe Pipe-Fit), enregistrement de l'étude
+  if (typeof SuiviEtapes !== 'undefined') SuiviEtapes.configurer({ utilisateur: utilisateurSuivi, utilisateurs: () => S.pf.users || [], enregistrer, chargeDe: id => (affaireDe(id) || {}).chargeId || '', affaireDe: id => libelleAffaire(affaireDe(id)) });
   ValeursRegl.utiliser(S.config.valeursRegl); Catalogue.utiliser(S.config.catalogues); Calculs.utiliserFluides(S.config.fluides); Schema.utiliserReglementation(S.config.reglementation); Metre.utiliser(S.config.metre);
   App.render();
   window.addEventListener('hashchange', () => { Modal.close(); App.render(); });

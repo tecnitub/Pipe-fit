@@ -35,6 +35,8 @@ db.exec(`PRAGMA journal_mode = WAL;
   CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT);
   CREATE TABLE IF NOT EXISTS fichiers (id TEXT PRIMARY KEY, nom TEXT, mime TEXT, data BLOB, taille INTEGER, created_by TEXT, created_at TEXT);
   CREATE TABLE IF NOT EXISTS modeles_biblio (id TEXT PRIMARY KEY, cle TEXT UNIQUE, data TEXT NOT NULL, updated_at TEXT, updated_by TEXT);`);
+// Fiche de l'équipe Pipe-Fit du compte connecté (responsable des étapes : « Mes étapes »)
+if (!db.prepare('PRAGMA table_info(sessions)').all().some(c => c.name === 'user_id')) db.exec('ALTER TABLE sessions ADD COLUMN user_id TEXT');
 // Bibliothèque de modèles partagée entre les études (même module que le navigateur : doublons, versions, prix)
 const BiblioModeles = require('./public/js/bibliotheque-modeles');
 
@@ -101,6 +103,8 @@ const extraitPF = d => ({
   articles: (d.articles || []).map(a => ({ id: a.id, ref: a.ref, designation: a.designation, famille: a.famille, sousFamille: a.sousFamille, unite: a.unite, prixVente: a.prixVente, coutRevient: a.coutRevient, poidsUnitaire: a.poidsUnitaire })),
   mainoeuvre: (d.mainoeuvre || []).map(m => ({ id: m.id, code: m.code, libelle: m.libelle, tauxVente: m.tauxVente, tauxCout: m.tauxCout })),
   prixFournisseurs: prixFournisseurs(d),
+  // Équipe (responsables des étapes de l'étude) : identifiant, nom et rôle seulement
+  users: (d.users || []).filter(u => u && u.id && !u.archive && u.actif !== false).map(u => ({ id: u.id, nom: String(u.nom || ''), role: u.role || '' })),
 });
 // Prix fournisseurs des offres reçues dans les consultations (derniers prix connus de la bibliothèque de modèles) :
 // désignation de la ligne, fournisseur, prix unitaire HT, date de l'offre
@@ -153,7 +157,7 @@ async function api(req, res, url) {
     const me = await (await fetch(`${PIPEFIT}/api/me`, { headers: { Cookie: pf } })).json().catch(() => ({}));
     if (!ROLES_ETUDES.includes(me.role)) return fail(res, 403, 'L\'application Études est réservée au bureau (administrateur ou chargé d\'affaires).');
     const sid = crypto.randomBytes(24).toString('base64url');
-    db.prepare('INSERT INTO sessions (sid, login, nom, role, pf_cookie, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(empreinte(sid), me.login, me.nom, me.role, pf, new Date().toISOString());
+    db.prepare('INSERT INTO sessions (sid, login, nom, role, pf_cookie, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(empreinte(sid), me.login, me.nom, me.role, pf, new Date().toISOString(), me.userId || null);
     return send(res, 200, { login: me.login, nom: me.nom, role: me.role }, { 'Set-Cookie': cookieSession(req, sid, SESSION_JOURS * 86400) });
   }
   const s = session(req);
@@ -163,7 +167,7 @@ async function api(req, res, url) {
     db.prepare('DELETE FROM sessions WHERE sid = ?').run(s.sid); cacheDonnees.delete(s.sid);
     return send(res, 200, { ok: true }, { 'Set-Cookie': cookieSession(req, '', 0) });
   }
-  if (p[0] === 'me' && method === 'GET') return send(res, 200, { login: s.login, nom: s.nom, role: s.role, pipefit: process.env.PIPEFIT_PUBLIC_URL || '' });
+  if (p[0] === 'me' && method === 'GET') return send(res, 200, { login: s.login, nom: s.nom, role: s.role, userId: s.user_id || '', pipefit: process.env.PIPEFIT_PUBLIC_URL || '' });
 
   // Affaires de Pipe-Fit (lecture seule, droits de l'utilisateur)
   if (p[0] === 'pf' && p[1] === 'affaires' && method === 'GET') {
@@ -174,6 +178,13 @@ async function api(req, res, url) {
     const data = extraitPF(await r.json());
     cacheDonnees.set(s.sid, { t: Date.now(), data });
     return send(res, 200, data);
+  }
+
+  // Étapes de l'étude faites sur le terrain (appli des compagnons : photo, commentaire), reprises dans le suivi des étapes
+  if (p[0] === 'pf' && p[1] === 'etapes-terrain' && method === 'GET') {
+    const r = await pipefit(s, `/api/liens/etapes/terrain?etudeId=${encodeURIComponent(url.searchParams.get('etudeId') || '')}`);
+    if (!r.ok) return fail(res, 502, 'Lecture des étapes du chantier impossible');
+    return send(res, 200, await r.json());
   }
 
   // Fichier d'un document du chantier (CCTP, DPGF), lu par Pipe-Fit avec les droits de la personne

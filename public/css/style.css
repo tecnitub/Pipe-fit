@@ -1338,3 +1338,9 @@ body:has(.modal:not(.hidden)) .as-fab, body.menu-ouvert .as-fab, body.selecteur-
   @keyframes mm-monte { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }
 }
 @media print { .navbas, .menu-mobile, .menu-fond { display: none !important; } }
+
+/* Étapes des études : liste des chantiers, appli des compagnons (« Mes étapes ») */
+.etapes-ch { white-space: nowrap; text-decoration: none; }
+.mes-etapes li.etape-retard { border-color: var(--bad); }
+.mes-etapes .etape-bientot { color: var(--warn, #b45309); font-weight: 600; }
+.mes-etapes button { min-height: 40px; }
