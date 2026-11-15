@@ -518,7 +518,7 @@ Vues.etude = {
     if (!et.modele && typeof Registre !== 'undefined' && !et.equipements) { try { if (Registre.collecter(et)) enregistrer(et); else et.equipements = []; } catch (e) { /* étude incomplète */ } }
     const a = affaireDe(et.affaireId);
     return `<div class="barre"><a href="#/" class="secondaire btn petit">← Études</a><h1 class="titre-etude">${esc(et.objet)}</h1><span class="badge pf">${et.modele ? 'Modèle' : `Indice ${esc(et.indice)}`}</span>
-        <span class="espace"></span><span class="muted petit" id="etat-enreg"></span><button class="secondaire" id="inventaire">📑 CCTP / DPGF</button><button class="secondaire" id="materiel">🏷️ Matériel retenu</button><button class="secondaire" id="chiffrer">💶 Métré et chiffrage</button><button id="pdf">📄 Note de calcul PDF</button></div>
+        <span class="espace"></span><span class="muted petit" id="etat-enreg"></span><button class="secondaire" id="inventaire">📑 CCTP / DPGF</button><button class="secondaire" id="materiel">🏷️ Matériel retenu</button><button class="secondaire" id="chiffrer">💶 Métré et chiffrage</button>${et.modele || typeof ControleEtude === 'undefined' ? '' : '<button class="secondaire" id="controle-etude" title="Passe toute l\'étude en revue avant l\'envoi : erreurs des calculs, valeurs estimées, paramètres à valider, réserves, matériel, incohérences, fiches manquantes ; rapport filtré selon le destinataire">🔎 Contrôler l\'étude</button>'}<button id="pdf">📄 Note de calcul PDF</button></div>
       <details class="carte fiche-etude"${typeof matchMedia === 'function' && matchMedia('(max-width: 700px)').matches ? '' : ' open'}><summary><strong>Fiche de l'étude</strong> <span class="muted petit">${esc([et.client || clientDe(a), et.date ? dateFr(et.date) : '', et.auteur].filter(Boolean).join(' · '))}</span></summary><div class="grille-champs">
         <label class="large">Objet<input data-e="objet" value="${esc(et.objet)}"></label>
         <label>Affaire Pipe-Fit<select data-e="affaireId">${optionsAffaires(et.affaireId)}</select></label>
@@ -544,6 +544,7 @@ Vues.etude = {
       ${typeof GuideEtude !== 'undefined' ? GuideEtude.html(et) : ''}
       ${typeof parcoursHtml === 'function' ? parcoursHtml(et) : ''}
       ${typeof carteRegistre === 'function' ? carteRegistre(et) : ''}
+      ${typeof BibliothequeModeles !== 'undefined' ? BibliothequeModeles.carte(et) : ''}
       ${typeof carteMateriel === 'function' ? carteMateriel(et) : ''}
       ${carteDocuments(et)}
       ${tableauBordHtml(et)}
@@ -595,6 +596,8 @@ Vues.etude = {
       };
     });
     root.querySelector('#pdf').onclick = () => genererNoteCalcul(et);
+    const ce = root.querySelector('#controle-etude');
+    if (ce) ce.onclick = () => ControleEtude.dialogue(et);
     const dc = root.querySelector('#docs-chantier');
     if (dc) dc.onclick = () => {
       const d = String(et.description || ''), refs = referencesDocuments(et, affaireDe(et.affaireId)).filter(r => !d.includes(r));
@@ -1152,9 +1155,10 @@ Vues.note = {
         ${n.type === 'evacuation' ? '<button class="secondaire" id="evac-san" title="Une ligne par appareil du calcul sanitaire choisi (lavabos, WC, douches…), avec sa salle et son étage ; il reste à choisir le tronçon">🚽 Reprendre les appareils du calcul sanitaire</button>' : ''}
         ${n.type === 'bouches' && et.notes.some(x => x.type === 'pieces' || x.type === 'aero') ? '<button class="secondaire" id="bouches-pieces" title="Une ligne par pièce de l\'étude (bilan pièce par pièce, bouches du schéma aéraulique) ; surface et débit repris et verrouillés">🏠 Reprendre les pièces de l\'étude</button>' : ''}
         ${n.type === 'terminaux' && et.notes.some(x => x.type === 'pieces') ? '<button class="secondaire" id="term-pieces" title="Un terminal par pièce du bilan pièce par pièce qui n\'en a pas, aux puissances de la pièce">🏠 Créer les terminaux des pièces</button>' : ''}
-        ${(Notes.TYPES[n.type].champs || []).some(c => c.k === 'troncons' && (c.colonnes || []).some(x => x.k === 'L')) ? '<button class="secondaire" id="longueurs-plan" title="Nomenclature de canalisations ou de gaines exportée de Revit (CSV, Excel) ou plan DXF (une couche par tronçon) : longueurs additionnées par repère et reportées sur les tronçons de même repère">📏 Longueurs depuis Revit / DXF</button>' : ''}
+        ${(Notes.TYPES[n.type].champs || []).some(c => c.k === 'troncons' && (c.colonnes || []).some(x => x.k === 'L')) ? '<button class="secondaire" id="longueurs-plan" title="Nomenclature de canalisations ou de gaines exportée de Revit (CSV, Excel) ou plan DXF (une couche par tronçon), ou maquette IFC (IfcPipeSegment / IfcDuctSegment) : longueurs additionnées par repère et reportées sur les tronçons de même repère">📏 Longueurs depuis Revit / DXF / IFC</button>' : ''}
         ${n.type === 'arbo' ? (n.entrees.jumeau && et.notes.some(x => x.id === n.entrees.jumeau) ? `<button class="secondaire" id="arbo-recopier" title="Tronçons, longueurs, branches et émetteurs repris du réseau jumeau (les tubes imposés et la pompe de ce réseau sont gardés)">🔄 Recopier l'arborescence de ${esc((et.notes.find(x => x.id === n.entrees.jumeau) || {}).titre || '')}</button>` : `<button class="secondaire" id="arbo-jumeau" title="Réseau de l'autre saison avec la même arborescence, les mêmes repères et émetteurs : réseau séparé (4 tubes) ou même réseau en change-over">${n.entrees.saison === 'froid' ? '🔥 Créer le réseau chaud' : '❄️ Créer le réseau froid'} (4 tubes / change-over)</button>`) : ''}
         ${n.type === 'arbo' ? '<button class="secondaire" id="arbo-emetteurs" title="Une branche par terminal ou batterie de CTA de l\'étude, reliée : puissance, débit et pertes de charge remplis ; il reste à choisir le tronçon amont et la longueur">🌀 Ajouter les émetteurs de l\'étude</button>' : ''}
+        ${n.type === 'pieces' && typeof Ifc !== 'undefined' ? '<button class="secondaire" id="pieces-ifc" title="Espaces de la maquette IFC (IFC2x3 / IFC4) : nom, numéro, étage, surface et hauteur ; aperçu avant d\'appliquer">🏗️ Pièces depuis la maquette IFC</button>' : ''}
         ${n.type === 'cable' ? '<button id="cable-reprendre">🔌 Reprendre les liaisons de l\'alimentation électrique</button>' : ''}<span class="espace"></span><button class="secondaire" id="supprimer">Supprimer ce calcul</button></div></div>`;
   },
   bind: (root, et, noteId) => {
@@ -1608,6 +1612,8 @@ Vues.note = {
     if (ar) ar.onclick = () => { const src = et.notes.find(x => x.id === n.entrees.jumeau); if (!src) return; const k = Equilibrage.recopierArbre(src.entrees, n.entrees); enregistrer(et); App.render(); toast(k ? `${k} modification(s) d'arborescence reprise(s) de ${src.titre}` : 'Arborescences déjà identiques.', 5000); };
     const lp = root.querySelector('#longueurs-plan');
     if (lp) lp.onclick = () => dialogueLongueurs(et, n);
+    const pi = root.querySelector('#pieces-ifc');
+    if (pi) pi.onclick = () => dialoguePiecesIfc(et, n);
     const ae = root.querySelector('#arbo-emetteurs');
     if (ae) ae.onclick = () => {
       // Réseau d'un circuit du schéma de principe : ses terminaux (et ceux non rattachés, qui le deviennent)
@@ -1802,11 +1808,12 @@ function dialogueVrac(et) {
 
 // Longueurs des tronçons depuis un export Revit (CSV, texte, Excel) ou un DXF : aperçu, puis report sur les tronçons
 function dialogueLongueurs(et, n) {
-  const b = Modal.open(`<h2>📏 Longueurs depuis les plans</h2><p class="muted petit">Revit : nomenclature de canalisations ou de gaines avec une colonne « Repère » (ou « Commentaires ») égale au repère du tronçon et une colonne « Longueur », exportée en CSV / texte ou Excel. DXF : une couche par tronçon, nommée par son repère. Les longueurs d'un même repère sont additionnées, les mm convertis en m.</p>
-    <p><label class="btn">📂 Choisir l'export (CSV, TXT, XLSX, DXF)<input type="file" id="lg-f" accept=".csv,.txt,.xlsx,.dxf" hidden></label></p>
+  const b = Modal.open(`<h2>📏 Longueurs depuis les plans</h2><p class="muted petit">Revit : nomenclature de canalisations ou de gaines avec une colonne « Repère » (ou « Commentaires ») égale au repère du tronçon et une colonne « Longueur », exportée en CSV / texte ou Excel. DXF : une couche par tronçon, nommée par son repère. IFC : éléments de réseau (IfcPipeSegment, IfcDuctSegment, IfcFlowSegment) avec leur quantité « Length », repérés par la propriété « Repère » / « Commentaires » (sinon le Tag ou le nom) ou regroupés par système. Les longueurs d'un même repère sont additionnées, les mm convertis en m.</p>
+    <p><label class="btn">📂 Choisir l'export (CSV, TXT, XLSX, DXF, IFC)<input type="file" id="lg-f" accept=".csv,.txt,.xlsx,.dxf,.ifc" hidden></label>
+      <label class="petit" id="lg-ifc-cle" hidden>Repérage IFC <select id="lg-ifc"><option value="rep">par repère du tronçon</option><option value="systeme">par système</option></select></label></p>
     <label class="case"><input type="checkbox" id="lg-div"${n.type === 'arbo' ? '' : ' disabled'}> Diviser par 2 (l'export contient l'aller et le retour sous le même repère ; le calcul attend la longueur aller)</label>
     <div id="lg-res"></div><div class="actions"><button class="secondaire" id="lg-x">Fermer</button><button id="lg-ok" disabled>Reporter les longueurs</button></div>`);
-  let lu = null;
+  let lu = null, ifc = null;
   const tr = () => n.entrees.troncons || [];
   const rendre = () => {
     const z = b.querySelector('#lg-res'); if (!lu) { z.innerHTML = ''; return; }
@@ -1819,10 +1826,13 @@ function dialogueLongueurs(et, n) {
   };
   b.querySelector('#lg-x').onclick = Modal.close;
   b.querySelector('#lg-div').onchange = rendre;
+  b.querySelector('#lg-ifc').onchange = () => { if (ifc) { lu = Ifc.longueurs(ifc, { cle: b.querySelector('#lg-ifc').value }); rendre(); } };
   b.querySelector('#lg-f').onchange = async ev => {
     const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
     try {
-      if (/\.dxf$/i.test(f.name)) lu = Longueurs.dxf(await f.text());
+      ifc = null; b.querySelector('#lg-ifc-cle').hidden = true;
+      if (/\.ifc$/i.test(f.name)) { ifc = Ifc.lire(await f.text()); lu = Ifc.longueurs(ifc, { cle: b.querySelector('#lg-ifc').value }); b.querySelector('#lg-ifc-cle').hidden = false; }
+      else if (/\.dxf$/i.test(f.name)) lu = Longueurs.dxf(await f.text());
       else if (/\.xlsx$/i.test(f.name)) { const fe = await XLSX.read(await f.arrayBuffer()); lu = fe.map(x => Longueurs.depuisTableau(x.rows)).find(x => !x.erreur) || Longueurs.depuisTableau((fe[0] || {}).rows); }
       else lu = Longueurs.depuisTableau(Longueurs.csv(await f.text()));
     } catch (e) { lu = { erreur: `Lecture impossible : ${e.message}`, parRep: new Map() }; }
@@ -1832,6 +1842,41 @@ function dialogueLongueurs(et, n) {
     const p = Longueurs.proposer(tr(), lu.parRep, { diviser: b.querySelector('#lg-div').checked });
     p.lignes.forEach(x => { tr()[x.i].L = x.apres; });
     enregistrer(et); Modal.close(); App.render(); toast(`${p.lignes.length} longueur(s) reprise(s) des plans : pertes de charge et métré recalculés.`, 5000);
+  };
+}
+// Pièces du bilan pièce par pièce depuis la maquette IFC (ifc.js) : aperçu (nouvelles pièces, pièces mises à jour), puis report
+function dialoguePiecesIfc(et, n) {
+  const b = Modal.open(`<h2>🏗️ Pièces depuis la maquette IFC</h2><p class="muted petit">Espaces (IfcSpace) de la maquette exportée de Revit, ArchiCAD… en IFC2x3 ou IFC4 (fichier .ifc texte) : numéro et nom, étage (IfcBuildingStorey), surface et hauteur (quantités Qto ou propriétés ; hauteur déduite du volume). Une pièce de même nom est mise à jour (surface, hauteur, étage) ; les autres sont ajoutées avec un usage déduit du nom. Vitrages et orientations restent à compléter.</p>
+    <p><label class="btn">📂 Choisir la maquette (.ifc)<input type="file" id="pi-f" accept=".ifc" hidden></label></p>
+    <div id="pi-res"></div><div class="actions"><button class="secondaire" id="pi-x">Fermer</button><button id="pi-ok" disabled>Appliquer au bilan</button></div>`);
+  let lu = null, props = [], rempl = false;
+  const exemple = JSON.stringify((n.entrees.pieces || []).map(p => p.nom)) === JSON.stringify((Notes.defauts('pieces').pieces || []).map(p => p.nom));
+  const nf = v => (v === '' || v === null || v === undefined ? '—' : String(v).replace('.', ','));
+  const rendre = () => {
+    const z = b.querySelector('#pi-res'); if (!lu) { z.innerHTML = ''; return; }
+    if (lu.erreur) { z.innerHTML = `<p class="erreur">${esc(lu.erreur)}</p>`; b.querySelector('#pi-ok').disabled = true; return; }
+    props = Ifc.versPieces(lu, n.entrees.pieces || [], { remplacer: rempl });
+    b.querySelector('#pi-ok').disabled = !props.length;
+    z.innerHTML = `<p class="petit" id="pi-resume">${esc(Ifc.resume(lu))}${lu.erreurs.length ? ` · ${lu.erreurs.length} entité(s) illisible(s) ignorée(s)` : ''}</p>
+      <label class="case"><input type="checkbox" id="pi-rempl" ${rempl ? 'checked' : ''}> Remplacer toutes les pièces actuelles du bilan${exemple ? ' (pièces d\'exemple)' : ''}</label>
+      ${props.length ? `<div class="defile-x" style="max-height:45vh;overflow:auto"><table><thead><tr><th><input type="checkbox" id="pi-tout" checked aria-label="Tout"></th><th>Pièce</th><th>Étage</th><th>Usage</th><th>Surface (m²)</th><th>Hauteur (m)</th><th></th></tr></thead><tbody>${props.map((x, k) => `<tr><td><input type="checkbox" data-pi="${k}" checked aria-label="Retenir"></td><td>${esc(x.piece.nom)}</td><td>${esc(x.piece.etage || '')}</td><td>${esc((Pieces.USAGES[x.piece.usage] || [''])[0])}</td>
+        <td>${x.avant && String(x.avant.S) !== String(x.piece.S) ? `${nf(x.avant.S)} → ` : ''}<strong>${nf(x.piece.S)}</strong></td><td>${x.avant && String(x.avant.H) !== String(x.piece.H) ? `${nf(x.avant.H)} → ` : ''}${nf(x.piece.H)}${x.espace.H ? '' : ' <span class="muted">(défaut)</span>'}</td><td>${x.action === 'ajout' ? '<span class="badge">nouvelle</span>' : '<span class="badge info">mise à jour</span>'}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Aucun espace (IfcSpace) dans la maquette.</p>'}`;
+    b.querySelector('#pi-rempl').onchange = ev => { rempl = ev.target.checked; rendre(); };
+    const tout = b.querySelector('#pi-tout'); if (tout) tout.onchange = () => b.querySelectorAll('[data-pi]').forEach(c => { c.checked = tout.checked; });
+  };
+  b.querySelector('#pi-x').onclick = Modal.close;
+  b.querySelector('#pi-f').onchange = async ev => {
+    const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
+    try { lu = Ifc.lire(await f.text()); if (!lu.espaces.length) lu.erreur = `${Ifc.resume(lu)} : aucun espace (IfcSpace) — exportez les pièces / espaces de la maquette.`; } catch (e) { lu = { erreur: `Lecture impossible : ${e.message}` }; }
+    rempl = exemple;
+    rendre();
+  };
+  b.querySelector('#pi-ok').onclick = () => {
+    const retenues = new Set([...b.querySelectorAll('[data-pi]:checked')].map(c => +c.dataset.pi));
+    if (!retenues.size) return toast('Cochez au moins une pièce.', 3000);
+    n.entrees.pieces = Ifc.appliquerPieces(n.entrees.pieces || [], props, { remplacer: rempl, retenues });
+    const aj = [...retenues].filter(k => props[k].action === 'ajout').length;
+    enregistrer(et); Modal.close(); App.render(); toast(`Maquette IFC : ${aj} pièce(s) ajoutée(s), ${retenues.size - aj} mise(s) à jour. Complétez vitrages et orientations.`, 6000);
   };
 }
 function dialogueFichesMes(et) {

@@ -171,6 +171,9 @@ const GuideEtude = (() => {
 
     // 11. Émission des notes, 12. envoi au chantier
     if (notes.length) {
+      // Contrôle global avant l'envoi (controle-etude.js) : rapport émis au moins une fois (PDF)
+      const ctl = (et.controles || []).slice(-1)[0];
+      a('emission', 'controle', 'Contrôler l\'étude avant l\'envoi', ctl, ctl ? `Dernier contrôle le ${ctl.le.split('-').reverse().join('/')} (${ctl.erreur} bloquant(s), ${ctl.attention} à traiter)` : 'Erreurs, valeurs estimées, réserves, matériel, incohérences et fiches manquantes passés en revue', ['controle', '🔎 Contrôler l\'étude']);
       const nonEmises = notes.filter(n => !(n.emissions || []).length);
       a('emission', 'emission', 'Émettre les notes de calcul', !nonEmises.length, nonEmises.length ? `${nonEmises.length} note(s) jamais émise(s)` : 'Toutes émises', ['pdf', '📄 Note de calcul PDF']);
       a('chantier', 'chantier', 'Relier l\'étude au chantier', et.affaireId, et.affaireId ? 'Étude reliée au chantier Pipe-Fit' : 'Matériel, mises en service et devis suivent le chantier', ['champ:affaireId', '🔗 Choisir le chantier']);
@@ -223,6 +226,8 @@ const GuideEtude = (() => {
       if (code === 'vrac') return dialogueVrac(et);
       if (code === 'registre') return dialogueRegistre(et);
       if (code === 'reserves-conformite') return dialogueReservesConformite(et);
+      if (code === 'materiel') return dialogueMateriel(et);
+      if (code === 'controle') return ControleEtude.dialogue(et);
       if (code === 'pdf') return genererNoteCalcul(et);
       if (code === 'diffuser') { const d = document.querySelector('#doc-diffuser'); if (d && !d.disabled) { d.scrollIntoView({ behavior: 'smooth', block: 'center' }); d.click(); } else { const c = document.querySelector('#doc-liste') || d; if (c) c.scrollIntoView({ behavior: 'smooth', block: 'center' }); toast('Émettez d\'abord une note de calcul (PDF), puis diffusez-la.', 5000); } }
     });

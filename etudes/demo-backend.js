@@ -51,7 +51,10 @@
     contacts: (src.contacts || []).filter(c => entsAff.has(c.entrepriseId)).map(c => ({ id: c.id, entrepriseId: c.entrepriseId, civilite: c.civilite || '', prenom: c.prenom || '', nom: c.nom || '', fonction: c.fonction || '', email: c.email || '' })),
     articles: (src.articles || []).map(a => ({ id: a.id, ref: a.ref, designation: a.designation, famille: a.famille, sousFamille: a.sousFamille, unite: a.unite, prixVente: a.prixVente, coutRevient: a.coutRevient, poidsUnitaire: a.poidsUnitaire })),
     devis: (src.devis || []).map(x => ({ id: x.id, numero: x.numero, objet: x.objet, clientId: x.clientId, statut: x.statut, affaireId: x.affaireId || '' })),
-    mainoeuvre: (src.mainoeuvre || []).map(m => ({ id: m.id, code: m.code, libelle: m.libelle, tauxVente: m.tauxVente, tauxCout: m.tauxCout })) };
+    mainoeuvre: (src.mainoeuvre || []).map(m => ({ id: m.id, code: m.code, libelle: m.libelle, tauxVente: m.tauxVente, tauxCout: m.tauxCout })),
+    // Prix des offres reçues dans les consultations (derniers prix connus de la bibliothèque de modèles)
+    prixFournisseurs: (src.consultations || []).flatMap(c => (c.fournisseurs || []).filter(f => f.offre && f.offre.prix).flatMap(f => Object.entries(f.offre.prix).map(([i, prix]) => ({ designation: ((c.lignes || [])[+i] || {}).designation || '', unite: ((c.lignes || [])[+i] || {}).unite || 'u',
+      fournisseur: ((src.entreprises || []).find(e => e.id === f.entrepriseId) || {}).nom || '', prix: Number(prix), date: String(f.offre.date || c.date || '').slice(0, 10), consultation: c.ref || '' })))).filter(x => x.fournisseur && x.prix > 0) };
   const af = pf.affaires.find(a => a.type !== 'horsDevis') || {};
   // Étude d'exemple : distribution vapeur et eau chaude d'un atelier
   // Étude d'exemple (etudes/demo-exemple.js) : distribution vapeur et eau chaude d'un atelier
@@ -203,6 +206,18 @@
       if (exist) db.etudes[i] = rec; else db.etudes.push(rec);
       if (rec.modele) { if (exist) signalerCrm(rec.id, '', null, true); } else signalerCrm(rec.id, rec.affaireId, resume || (() => { try { return resumePF(rec); } catch (e) { return null; } })());
       save(); return rep(200, rec);
+    }
+    // Bibliothèque de modèles partagée entre les études : gardée sur l'appareil (même module que le serveur)
+    if (p[0] === 'bibliotheque-modeles') {
+      db.biblioModeles = db.biblioModeles || [];
+      if (!p[1] && method === 'GET') return rep(200, db.biblioModeles.slice().reverse());
+      if (!p[1] && method === 'POST') {
+        const b = body(), e = BibliothequeModeles.nettoyer(b.entree || {});
+        if (!e) return err(400, 'Type, fabricant et référence du modèle requis');
+        const r = BibliothequeModeles.integrer(db.biblioModeles, e, { par: s.nom, etudeId: b.etudeId || '' });
+        db.biblioModeles = r.liste; save(); return rep(200, { statut: r.statut, entree: r.entree });
+      }
+      if (p[1] && method === 'DELETE') { if (s.role !== 'admin') return err(403, 'Réservé à l\'administrateur'); db.biblioModeles = db.biblioModeles.filter(x => x.id !== p[1]); save(); return rep(200, { ok: true }); }
     }
     if (p[0] === 'regles-inventaire') {
       if (method === 'GET') return rep(200, db.regles || []);
