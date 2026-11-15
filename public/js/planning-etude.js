@@ -42,9 +42,26 @@ const PlanningEtude = (() => {
     return LOTS.map(l => out.get(l.lot)).filter(Boolean).map(x => ({ ...x, heures: Math.round(x.heures * 10) / 10, cles: x.cles.slice(0, 300) }));
   }
 
+  // Équipes d'un chantier : [{ id, nom, effectif }] (o.equipes), sinon o.nbEquipes équipes de o.effectifEquipe compagnons
+  function equipesDe(o = {}) {
+    if (Array.isArray(o.equipes) && o.equipes.length) return o.equipes.filter(e => e && e.id).map(e => ({ id: String(e.id), nom: e.nom || String(e.id), effectif: Math.max(1, Math.round(num(e.effectif)) || 1) }));
+    const n = Math.min(9, Math.round(num(o.nbEquipes)));
+    return n >= 1 ? Array.from({ length: n }, (_, i) => ({ id: `E${i + 1}`, nom: `Équipe ${i + 1}`, effectif: Math.max(1, Math.round(num(o.effectifEquipe)) || 2) })) : null;
+  }
+  // Équipe proposée pour chaque lot (rang modulo le nombre d'équipes) : réseaux, terminaux et essais à la première,
+  // production et régulation à la deuxième, CTA à la troisième
+  const AFFINITE = { reseaux: 0, production: 1, cta: 2, terminaux: 0, regulation: 1, essais: 0 };
+  // Dépendances techniques (fin → début) en mode équipes : l'enchaînement d'une même équipe est fait par le calcul des
+  // dates (une équipe ne fait qu'une tâche à la fois)
+  const DEPENDANCES = { preparation: [], reseaux: ['preparation'], production: ['reseaux'], cta: ['reseaux'], terminaux: ['reseaux'], regulation: ['production', 'cta', 'terminaux'],
+    essais: ['reseaux', 'production', 'cta', 'terminaux', 'regulation'], doe: ['essais'] };
+
   // Proposition de phases. lots : heuresMetre d'une ou plusieurs études ([{ etudeId, lots }]) ;
-  // o : { effectif (compagnons), heuresJour, debut, uid, partEssais, joursDoe, joursAppro }
+  // o : { effectif (compagnons), heuresJour, debut, uid, partEssais, joursDoe, joursAppro } ; plusieurs équipes :
+  // { equipes: [{ id, nom, effectif }] ou nbEquipes + effectifEquipe, affectation: { lot: id d'équipe } }
   function proposer(etudes, o = {}) {
+    const eqs = equipesDe(o);
+    if (eqs) return proposerEquipes(etudes, eqs, o);
     const effectif = Math.max(1, Math.round(num(o.effectif) || 2)), hj = Math.max(1, num(o.heuresJour) || 7), uid = o.uid || (() => Math.random().toString(36).slice(2, 10));
     const parLot = new Map();
     (etudes || []).forEach(e => (e.lots || []).forEach(l => {
@@ -83,6 +100,48 @@ const PlanningEtude = (() => {
     return phases;
   }
 
+  // Heures par lot de toutes les études, matériel compris
+  function cumulLots(etudes) {
+    const parLot = new Map();
+    (etudes || []).forEach(e => (e.lots || []).forEach(l => {
+      const x = parLot.get(l.lot) || { heures: 0, materiel: [] };
+      x.heures += num(l.heures);
+      x.materiel.push(...(l.cles || []).map(c => `${e.etudeId}|${c}`));
+      parLot.set(l.lot, x);
+    }));
+    return parLot;
+  }
+  // Proposition avec plusieurs équipes : chaque lot de pose affecté à une équipe (durée selon son effectif), dépendances
+  // techniques multiples ; préparation et DOE au bureau (hors équipes)
+  function proposerEquipes(etudes, eqs, o = {}) {
+    const hj = Math.max(1, num(o.heuresJour) || 7), uid = o.uid || (() => Math.random().toString(36).slice(2, 10)), parLot = cumulLots(etudes);
+    const chantier = ['reseaux', 'production', 'cta', 'terminaux', 'regulation'].reduce((s, k) => s + ((parLot.get(k) || {}).heures || 0), 0);
+    if (!chantier) return [];
+    const aff = o.affectation || {}, eqDe = lot => eqs.find(e => e.id === aff[lot]) || eqs[(AFFINITE[lot] || 0) % eqs.length];
+    parLot.set('essais', { heures: Math.max(eqDe('essais').effectif * hj, Math.round(chantier * (o.partEssais ?? 0.08))), materiel: [] });
+    parLot.set('doe', { heures: (o.joursDoe ?? 3) * hj, materiel: [] });
+    const prep = parLot.get('preparation') || { heures: 0, materiel: [] };
+    parLot.set('preparation', { ...prep, joursMin: o.joursAppro ?? 15 });
+    const phases = [], idDe = {}, preds = {};
+    LOTS.forEach(L => {
+      const x = parLot.get(L.lot);
+      if (!x || !(x.heures > 0) && !['preparation', 'doe'].includes(L.lot)) return;
+      const bureau = ['preparation', 'doe'].includes(L.lot), E = bureau ? null : eqDe(L.lot), eff = E ? E.effectif : 1;
+      const duree = Math.max(x.joursMin || 1, Math.ceil(x.heures / (eff * hj)) || 1);
+      // Dépendances présentes ; un lot absent est remplacé par ses propres prédécesseurs
+      const deps = k => (idDe[k] ? [k] : (DEPENDANCES[k] || []).flatMap(deps));
+      // Réduction transitive : une dépendance déjà assurée par une autre (réseaux avant la régulation…) n'est pas répétée
+      const toutes = [...new Set(DEPENDANCES[L.lot].flatMap(deps))], amont = k => { const v = new Set(), f = q => (preds[q] || []).forEach(r => { if (!v.has(r)) { v.add(r); f(r); } }); f(k); return v; };
+      const apres = toutes.filter(k => !toutes.some(j => j !== k && amont(j).has(k)));
+      preds[L.lot] = apres;
+      const p = { id: uid(), libelle: L.libelle, tache: L.tache, duree, heures: Math.round(x.heures), apres: apres.map(k => idDe[k]), decalage: 0, termine: false,
+        lot: L.lot, equipe: eff, ...(E ? { equipeId: E.id } : {}), materiel: [...new Set(x.materiel)], origine: 'etude', ...(L.lot === 'preparation' && o.debut ? { debut: o.debut } : {}) };
+      idDe[L.lot] = p.id;
+      phases.push(p);
+    });
+    return phases;
+  }
+
   // Alertes d'approvisionnement : pour chaque phase calculée (GanttCalc.calculer) portant du matériel, l'état d'achat de
   // chaque équipement (lignes du chantier : suiviCommandes, clé « étude|clé ») ; etatAchat : MaterielRetenu.etatAchat
   // o : { aujourdhui, delaiAppro (jours calendaires pour commander avant le début), etatAchat }
@@ -115,6 +174,6 @@ const PlanningEtude = (() => {
     });
     return { alertes: out, bilan };
   }
-  return { LOTS, lotDe, heuresMetre, proposer, alertes };
+  return { LOTS, AFFINITE, DEPENDANCES, lotDe, heuresMetre, equipesDe, proposer, alertes };
 })();
 if (typeof module !== 'undefined') module.exports = PlanningEtude;
