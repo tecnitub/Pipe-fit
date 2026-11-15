@@ -409,6 +409,10 @@ const AnnexesEnergie = ((N) => {
     }).filter(Boolean);
   }
   let auxEnCours = false;
+  // Bilan électrique mis en cache par étude : recalculé seulement quand une autre note que les « Énergie annuelle »
+  // change (il résout toutes les notes de l'étude)
+  const cacheEq = new Map();
+  const signature = et => { try { return JSON.stringify({ ...et, notes: (et.notes || []).filter(n => n.type !== 'energieAnnuelle'), historique: 0, suiviEtapes: 0, _at: 0, _v: 0, _by: 0 }); } catch (err) { return null; } };
   const lierEnergie = N.TYPES.energieAnnuelle.lier;
   N.TYPES.energieAnnuelle.lier = function (ctx) {
     lierEnergie(ctx);
@@ -418,7 +422,12 @@ const AnnexesEnergie = ((N) => {
     // Garde de réentrance : le bilan électrique résout toutes les notes de l'étude, dont celle-ci
     auxEnCours = true;
     let eq = [];
-    try { eq = El.equipementsEtude(ctx.etude, Ln()); } catch (err) { eq = []; } finally { auxEnCours = false; }
+    const sig = signature(ctx.etude), c = cacheEq.get(ctx.etude.id || '');
+    if (sig && c && c.sig === sig) { eq = c.eq; auxEnCours = false; }
+    else {
+      try { eq = El.equipementsEtude(ctx.etude, Ln()); } catch (err) { eq = []; } finally { auxEnCours = false; }
+      if (sig) { if (cacheEq.size > 20) cacheEq.clear(); cacheEq.set(ctx.etude.id || '', { sig, eq }); }
+    }
     const lignes = auxDepuisEquipements(eq);
     if (lignes.length) ctx.reprendreLignes('auxiliaires', lignes, { cle: 'rep', libelle: 'bilan électrique de l\'étude', colonnesVerrouillees: ['rep', 'designation', 'usage', 'P'] });
   };
