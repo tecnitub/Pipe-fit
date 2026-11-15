@@ -25,7 +25,11 @@
   let db;
   try { db = JSON.parse(storage.get(KEY)); } catch (e) { db = null; }
   if (!db || !Array.isArray(db.does)) db = { does: [], fichiers: {}, config: {} };
-  const save = () => { if (!storage.set(KEY, JSON.stringify(db))) console.warn('Stockage local plein : les pièces jointes restent en mémoire.'); };
+  // Plusieurs onglets : la base est relue à chaque requête (un autre onglet a pu enregistrer un dossier), sauf si
+  // le stockage est plein (pièces jointes gardées en mémoire)
+  let horsStockage = false;
+  const save = () => { horsStockage = !storage.set(KEY, JSON.stringify(db)); if (horsStockage) console.warn('Stockage local plein : les pièces jointes restent en mémoire.'); };
+  const relire = () => { if (horsStockage) return; try { const d = JSON.parse(storage.get(KEY)); if (d && Array.isArray(d.does)) db = d; } catch (e) { /* base en mémoire */ } };
   const me = () => COMPTES.find(c => c.login === storage.get(ME_KEY)) || (storage.get(ME_KEY) === 'deconnecte' ? null : compteCrm());
   const config = () => ({ ...CONFIG_DEFAUT, ...db.config, societe: { ...CONFIG_DEFAUT.societe, ...(db.config.societe || {}) } });
   const rep = (status, obj) => new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
@@ -48,6 +52,7 @@
     if (!u.startsWith('/api/')) return vraiFetch(url, opts);
     const method = (opts.method || 'GET').toUpperCase(), p = u.split('?')[0].split('/').slice(2).map(decodeURIComponent);
     const body = () => JSON.parse(opts.body || '{}');
+    relire();
     if (p[0] === 'login' && method === 'POST') {
       const b = body(), c = COMPTES.find(x => x.login === String(b.login || '').trim().toLowerCase());
       if (!c || !b.password) return err(401, 'Identifiant ou mot de passe incorrect');

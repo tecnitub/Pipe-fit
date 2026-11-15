@@ -20,7 +20,7 @@ const PARTAGES = { '/shared/pdf.js': path.join(__dirname, '..', 'public', 'js', 
   '/shared/pdf-lib.min.js': path.join(__dirname, '..', 'doe', 'public', 'vendor', 'pdf-lib-1.17.1.min.js'),
   '/logo-tecnitub.png': path.join(__dirname, '..', 'doe', 'public', 'logo-tecnitub.png'),
   // Lecture du CCTP et du DPGF (inventaire des producteurs et émetteurs) : texte des PDF, classeurs Excel
-  ...Object.fromEntries(['ocr.js', 'pdf-lecture.js', 'cctp-lecture.js', 'xlsx.js', 'xls.js', 'inventaire-cvc.js', 'dce.js', 'materiel-retenu.js', 'fiches-tech.js', 'essais.js', 'planches.js', 'plaque-registre.js', 'reserves-terrain.js', 'retour-chantier.js', 'rex-equipements.js', 'installe.js', 'devis-lecture.js', 'planning-etude.js'].map(f => [`/shared/${f}`, path.join(__dirname, '..', 'public', 'js', f)])),
+  ...Object.fromEntries(['ocr.js', 'pdf-lecture.js', 'cctp-lecture.js', 'xlsx.js', 'xls.js', 'inventaire-cvc.js', 'dce.js', 'materiel-retenu.js', 'fiches-tech.js', 'essais.js', 'planches.js', 'plaque-registre.js', 'reserves-terrain.js', 'retour-chantier.js', 'rex-equipements.js', 'installe.js', 'devis-lecture.js', 'planning-etude.js', 'fusion-etude.js'].map(f => [`/shared/${f}`, path.join(__dirname, '..', 'public', 'js', f)])),
   ...Object.fromEntries(['pdf.min.js', 'pdf.worker.min.js'].map(f => [`/vendor/pdfjs/${f}`, path.join(__dirname, '..', 'public', 'vendor', 'pdfjs', f)])),
   // Lecture des caractères (CCTP scannés) : mêmes fichiers que le CRM
   ...Object.fromEntries(['tesseract.min.js', 'worker.min.js', 'tesseract-core-simd-lstm.wasm.js', 'fra.traineddata.gz'].map(f => [`/vendor/tesseract/${f}`, path.join(__dirname, '..', 'public', 'vendor', 'tesseract', f)])) };
@@ -39,6 +39,8 @@ db.exec(`PRAGMA journal_mode = WAL;
 if (!db.prepare('PRAGMA table_info(sessions)').all().some(c => c.name === 'user_id')) db.exec('ALTER TABLE sessions ADD COLUMN user_id TEXT');
 // Bibliothèque de modèles partagée entre les études (même module que le navigateur : doublons, versions, prix)
 const BiblioModeles = require('./public/js/bibliotheque-modeles');
+// Versions des études, corbeille des calculs supprimés, présence (qui a l'étude ouverte)
+const Historique = require('./historique')(db, { reglages: () => ({ max: process.env.ETUDES_VERSIONS_MAX, jours: process.env.ETUDES_VERSIONS_JOURS, intervalleMin: process.env.ETUDES_VERSIONS_INTERVALLE, ...(lireConfig().versions || {}) }) });
 
 // Identité de l'entreprise sur les notes de calcul (la même que pour les DOE), modifiable dans Réglages
 const CONFIG_DEFAUT = require('../doe/config-defaut');
@@ -335,9 +337,23 @@ async function api(req, res, url) {
   if (p[0] === 'etudes' && p[1]) {
     if (!/^[\w-]{1,64}$/.test(p[1])) return fail(res, 400, 'Identifiant invalide');
     const exist = db.prepare('SELECT * FROM etudes WHERE id = ?').get(p[1]);
+    // Présence : qui d'autre a l'étude ouverte (signalé par le navigateur toutes les 30 s), version enregistrée
+    if (p[2] === 'presence' && !p[3] && method === 'POST') {
+      const b = await lireJSON(req), autres = Historique.presence(p[1], s, { quitte: b.quitte === true });
+      return send(res, 200, { autres, ...(exist ? { _v: exist.version, _at: exist.updated_at, _by: exist.updated_by } : {}) });
+    }
+    // Versions (liste, aperçu d'une version) et corbeille des calculs supprimés ; la restauration est un enregistrement
+    // ordinaire (PUT avec le motif) : contrôle de version, nouvelle version, rien n'est perdu
+    if (['versions', 'corbeille'].includes(p[2]) && method === 'GET' && !p[4]) {
+      if (!exist) return fail(res, 404, 'Étude introuvable');
+      if (!p[3]) return send(res, 200, p[2] === 'versions' ? Historique.versions(p[1]) : Historique.corbeille(p[1]));
+      const r = p[2] === 'versions' ? Historique.version(p[1], p[3]) : Historique.elementCorbeille(p[1], p[3]);
+      return r ? send(res, 200, r) : fail(res, 404, p[2] === 'versions' ? 'Version introuvable' : 'Calcul introuvable dans la corbeille');
+    }
+    if (p[2]) return fail(res, 404, 'Route inconnue');
     if (method === 'GET') return exist ? send(res, 200, ligne(exist)) : fail(res, 404, 'Étude introuvable');
     if (method === 'PUT') {
-      const { data, version, resume } = await lireJSON(req);
+      const { data, version, resume, motif } = await lireJSON(req);
       if (!data || typeof data !== 'object' || !String(data.objet || '').trim() || !Array.isArray(data.notes)) return fail(res, 400, 'Données manquantes (objet de l\'étude, notes)');
       if (exist && version !== exist.version) return fail(res, 409, `Modifiée entre-temps par ${exist.updated_by}`, { record: ligne(exist) });
       // Étude sans chantier déjà reliée dans le CRM : le chantier est repris
@@ -345,17 +361,24 @@ async function api(req, res, url) {
         const l = await PF.lienEtude((chemin, opts) => pipefit(s, chemin, opts), p[1]).catch(() => null);
         if (l && l.affaireId) data.affaireId = l.affaireId;
       }
+      // Contrôle refait après l'appel à Pipe-Fit : un autre enregistrement a pu passer pendant l'attente
+      const actuel = db.prepare('SELECT * FROM etudes WHERE id = ?').get(p[1]);
+      if (actuel && (!exist || actuel.version !== exist.version)) return fail(res, 409, `Modifiée entre-temps par ${actuel.updated_by}`, { record: ligne(actuel) });
       const propre = Object.fromEntries(Object.entries(data).filter(([k]) => !k.startsWith('_') && k !== 'id'));
       const v = exist ? exist.version + 1 : 1, now = new Date().toISOString();
       db.prepare(`INSERT INTO etudes (id, affaire_id, data, version, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET affaire_id = excluded.affaire_id, data = excluded.data, version = excluded.version, updated_at = excluded.updated_at, updated_by = excluded.updated_by`)
         .run(p[1], data.affaireId || '', JSON.stringify(propre), v, now, s.nom || s.login);
+      // Historique : version (ou mise à jour de la version de la séance), calculs supprimés mis à la corbeille
+      try { Historique.apresEnregistrement(p[1], exist ? JSON.parse(exist.data) : null, propre, { version: v, auteur: s.nom || s.login, motif: typeof motif === 'string' ? motif : '', maintenant: now }); }
+      catch (e) { console.warn(`Études : historique de ${p[1]} non enregistré (${e.message})`); }
+      Historique.presence(p[1], s, { modifie: true });
       // État de l'étude dans Pipe-Fit (avec ou sans chantier ; un modèle n'y figure pas)
       if (data.modele) { if (exist) signalerPF(s, p[1], null, null); }
       else signalerPF(s, p[1], String(data.affaireId || ''), resume, { clientId: String(data.clientId || ''), devisId: String(data.devisId || '') });
       return send(res, 200, ligne(db.prepare('SELECT * FROM etudes WHERE id = ?').get(p[1])));
     }
-    if (method === 'DELETE') { db.prepare('DELETE FROM etudes WHERE id = ?').run(p[1]); if (exist) signalerPF(s, p[1], null, null); return send(res, 200, { ok: true }); }
+    if (method === 'DELETE') { db.prepare('DELETE FROM etudes WHERE id = ?').run(p[1]); Historique.supprimer(p[1]); if (exist) signalerPF(s, p[1], null, null); return send(res, 200, { ok: true }); }
   }
 
   // Corrections de l'inventaire CCTP / DPGF retenues (règles partagées par le bureau d'études, enregistrées par tous)

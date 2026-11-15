@@ -37,6 +37,31 @@ const S = { me: null, config: null, does: [], enCours: new Map() };
 const doeDe = affaireId => S.does.find(d => d.affaireId === affaireId);
 // Corps d'un enregistrement : le dossier et son résumé pour la fiche chantier de Pipe-Fit (avancement, CCTP, visas)
 const corpsDOE = (doe, version) => { let resume; try { resume = typeof resumeEtude === 'function' ? resumeEtude(doe) : undefined; } catch (e) { resume = undefined; } return { data: doe, version, resume }; };
+// Version de départ de chaque dossier (dernière chargée ou enregistrée ici) : fusion des enregistrements concurrents
+const basesDOE = new Map();
+const sansMetaD = o => { const c = JSON.parse(JSON.stringify(o || {})); ['_v', '_at', '_by'].forEach(k => delete c[k]); return c; };
+// Dossier enregistré entre-temps par quelqu'un d'autre (409) : ses changements et les miens réunis s'ils portent sur des
+// parties différentes (fusion-etude.js), dialogue « mes changements / ceux de X » sinon ; renvoie s'il faut réenregistrer
+async function fusionnerDOE(doe, record) {
+  const base = basesDOE.get(doe.id) || null, local = sansMetaD(doe), distant = sansMetaD(record), autre = record._by || 'un autre utilisateur';
+  let { fusion, conflits } = FusionEtude.fusionner(base, local, distant);
+  if (conflits.length) {
+    const choix = await new Promise(res => {
+      let fini = false;
+      const b = Modal.open(FusionEtude.dialogueHtml(conflits, { autre, objet: 'dossier' })), m = document.getElementById('modal');
+      const obs = new MutationObserver(() => { if (m.hidden && !fini) { fini = true; obs.disconnect(); res({}); } });
+      obs.observe(m, { attributes: true, attributeFilter: ['hidden'] });
+      FusionEtude.lierDialogue(b, conflits, c => { fini = true; obs.disconnect(); Modal.close(); res(c); });
+    });
+    ({ fusion } = FusionEtude.fusionner(base, local, distant, { choix }));
+  }
+  Object.keys(doe).forEach(k => { if (k !== 'id') delete doe[k]; });
+  Object.assign(doe, fusion, { id: record.id || doe.id, _v: record._v, _at: record._at, _by: record._by });
+  basesDOE.set(doe.id, distant);
+  toast(conflits.length ? `${conflits.length} conflit(s) tranché(s) avec ${autre} : dossier fusionné enregistré.` : `Modifications de ${autre} réunies aux vôtres : dossier fusionné enregistré.`, 6000);
+  App.render();
+  return !FusionEtude.egal(fusion, distant);
+}
 // Enregistrement différé (une requête à la fois par dossier, contrôle de version)
 function enregistrer(doe) {
   const st = S.enCours.get(doe.id) || {};
@@ -45,11 +70,15 @@ function enregistrer(doe) {
     if (st.vol) { st.encore = true; return; }
     st.vol = true;
     try {
+      const envoye = sansMetaD(doe);
       const r = await api('PUT', `/api/does/${doe.id}`, corpsDOE(doe, doe._v));
       Object.assign(doe, { _v: r._v, _at: r._at, _by: r._by });
+      basesDOE.set(doe.id, envoye);
       majEtatEnregistrement('Enregistré');
     } catch (e) {
-      if (e.status === 409 && e.data.record) { Object.assign(doe, e.data.record); toast(`${e.message} : version la plus récente rechargée.`, 5000); App.render(); }
+      if (e.status === 409 && e.data.record && typeof FusionEtude !== 'undefined' && e.data.record.id === doe.id) {
+        try { if (await fusionnerDOE(doe, e.data.record)) st.encore = true; else majEtatEnregistrement('Enregistré'); } catch (er) { majEtatEnregistrement('Non enregistré'); toast(er.message, 5000); }
+      } else if (e.status === 409 && e.data.record) { Object.assign(doe, e.data.record); toast(`${e.message} : version la plus récente rechargée.`, 5000); App.render(); }
       else { majEtatEnregistrement('Non enregistré'); toast(e.message, 5000); }
     }
     st.vol = false;
@@ -556,6 +585,7 @@ async function demarrer() {
   document.getElementById('app').innerHTML = '<p class="muted">Chargement des chantiers Pipe-Fit…</p>';
   try { [S.config, S.does] = await Promise.all([api('GET', '/api/config'), api('GET', '/api/does'), PF.charger()]); }
   catch (e) { document.getElementById('app').innerHTML = `<p class="erreur">${esc(e.message)}</p>`; return; }
+  S.does.forEach(d => basesDOE.set(d.id, sansMetaD(d)));
   App.render();
   window.addEventListener('hashchange', () => { Modal.close(); App.render(); });
 }

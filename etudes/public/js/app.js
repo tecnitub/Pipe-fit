@@ -90,8 +90,10 @@ function resumePF(et) {
     ...(et.avancement ? { avancement: et.avancement } : {}) });
 }
 const corpsEtude = et => { let resume; try { resume = et.modele ? undefined : resumePF(et); } catch (e) { resume = undefined; } return { data: et, version: et._v, resume }; };
-// Enregistrement différé (une requête à la fois par étude, contrôle de version)
-function enregistrer(etude) {
+// Enregistrement différé (une requête à la fois par étude, contrôle de version) ; opts.motif : motif de la version
+// (restauration, fusion). Enregistrée entre-temps par quelqu'un d'autre (409) : fusion de ses changements et des miens
+// (collaboration.js : réunis s'ils portent sur des parties différentes, dialogue de choix sinon), puis nouvel envoi.
+function enregistrer(etude, opts) {
   if (!S.etudes.includes(etude)) S.etudes.unshift(etude);
   // Registre des équipements : fiches des calculs inscrites, valeurs du registre reportées sur tous les emplacements
   if (!etude.modele && typeof Registre !== 'undefined') {
@@ -107,20 +109,30 @@ function enregistrer(etude) {
   // Valeurs estimées : retirées dès qu'une valeur réelle existe (saisie, bilan, fiche, calcul relié), rafraîchies sinon
   if (!etude.modele && typeof Estimations !== 'undefined') { try { if (Estimations.enPlace(etude).length || JSON.stringify(etude.notes || []).includes('"_estimes"')) Estimations.appliquer(etude, { rafraichir: true }); } catch (e) { /* étude incomplète */ } }
   const st = S.enCours.get(etude.id) || {};
+  if (opts && opts.motif) st.motif = opts.motif;
   clearTimeout(st.t);
+  st.attente = true;
   st.t = setTimeout(async () => {
+    st.attente = false;
     if (st.vol) { st.encore = true; return; }
     st.vol = true;
     // Étapes du « Reste à faire » : faites / rouvertes notées dans l'historique, avancement mis en cache (et.avancement)
     if (!etude.modele && typeof SuiviEtapes !== 'undefined') { try { SuiviEtapes.mettreAJour(etude, utilisateurSuivi()); } catch (e) { /* étude incomplète */ } }
+    const coll = typeof Collaboration !== 'undefined' ? Collaboration : null;
     try {
-      const r = await api('PUT', `/api/etudes/${etude.id}`, corpsEtude(etude));
+      const corps = corpsEtude(etude), envoye = coll ? coll.instantane(etude) : null;
+      if (st.motif) { corps.motif = st.motif; st.motif = ''; }
+      const r = await api('PUT', `/api/etudes/${etude.id}`, corps);
       Object.assign(etude, { _v: r._v, _at: r._at, _by: r._by });
+      if (coll) coll.memoriser(etude.id, { ...envoye, affaireId: r.affaireId || envoye.affaireId });
       // Chantier relié depuis Pipe-Fit (commande reçue) : repris dans l'étude
       if (r.affaireId && r.affaireId !== etude.affaireId) { etude.affaireId = r.affaireId; etude.client = etude.client || clientDe(affaireDe(r.affaireId)); toast(`Étude reliée au chantier ${libelleAffaire(affaireDe(r.affaireId))} dans Pipe-Fit`, 5000); App.render(); }
       majEtatEnregistrement('Enregistré');
     } catch (e) {
-      if (e.status === 409 && e.data.record) { Object.assign(etude, e.data.record); toast(`${e.message} : version la plus récente rechargée.`, 5000); App.render(); }
+      if (e.status === 409 && e.data.record && coll) {
+        try { const f = await coll.conflit(etude, e.data.record); if (f.aEnregistrer) { st.encore = true; st.motif = f.motif; } else majEtatEnregistrement('Enregistré'); }
+        catch (er) { majEtatEnregistrement('Non enregistré'); toast(er.message, 5000); }
+      } else if (e.status === 409 && e.data.record) { Object.assign(etude, e.data.record); toast(`${e.message} : version la plus récente rechargée.`, 5000); App.render(); }
       else { majEtatEnregistrement('Non enregistré'); toast(e.message, 5000); }
     }
     st.vol = false;
@@ -2490,6 +2502,8 @@ async function demarrer() {
   catch (e) { document.getElementById('app').innerHTML = `<p class="erreur">${esc(e.message)}</p>`; return; }
   // Les affaires Pipe-Fit sont facultatives : l'application reste utilisable si Pipe-Fit ne répond pas
   try { S.pf = await api('GET', '/api/pf/affaires'); } catch (e) { toast(`Affaires Pipe-Fit indisponibles : ${e.message}`, 5000); }
+  // Version de départ de chaque étude (fusion en cas d'enregistrements concurrents), avant tout complément local
+  if (typeof Collaboration !== 'undefined') S.etudes.forEach(et => Collaboration.memoriser(et.id, Collaboration.instantane(et)));
   S.etudes.forEach(et => { et.notes = et.notes || []; et.historique = et.historique || []; });
   // Suivi des étapes : utilisateur courant, personnes affectables (équipe Pipe-Fit), enregistrement de l'étude
   if (typeof SuiviEtapes !== 'undefined') SuiviEtapes.configurer({ utilisateur: utilisateurSuivi, utilisateurs: () => S.pf.users || [], enregistrer, chargeDe: id => (affaireDe(id) || {}).chargeId || '', affaireDe: id => libelleAffaire(affaireDe(id)) });
