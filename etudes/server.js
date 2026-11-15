@@ -26,6 +26,9 @@ const PARTAGES = { '/shared/pdf.js': path.join(__dirname, '..', 'public', 'js', 
   ...Object.fromEntries(['tesseract.min.js', 'worker.min.js', 'tesseract-core-simd-lstm.wasm.js', 'fra.traineddata.gz'].map(f => [`/vendor/tesseract/${f}`, path.join(__dirname, '..', 'public', 'vendor', 'tesseract', f)])) };
 const MAX_JSON = 25 * 1024 * 1024, SESSION_JOURS = 14; // note de calcul PDF transmise en JSON (base64)
 const ROLES_ETUDES = ['admin', 'charge'];
+// Limite des tentatives de connexion propre à l'application : par identifiant et par adresse du client réel,
+// temporisation progressive (voir server/limite-connexion.js)
+const TENTATIVES = require('../server/limite-connexion').creer();
 // Routes coûteuses : dépôt de fichiers (60 par minute et par compte), fichiers du chantier lus au travers de Pipe-Fit
 // (CCTP, DPGF lus et reconnus dans le navigateur : 120 par minute), données Pipe-Fit complètes (retour d'expérience)
 const LIMITES = { depot: HS.limiteur({ max: 60, fenetreMs: 60000 }), lecture: HS.limiteur({ max: 120, fenetreMs: 60000 }), donnees: HS.limiteur({ max: 20, fenetreMs: 60000 }) };
@@ -100,7 +103,7 @@ function send(res, status, obj, headers = {}) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
   res.end(JSON.stringify(obj));
 }
-const fail = (res, status, error, extra = {}) => send(res, status, { error, ...extra });
+const fail = (res, status, error, extra = {}, headers = {}) => send(res, status, { error, ...extra }, headers);
 function lireJSON(req) {
   return new Promise((resolve, reject) => {
     let size = 0; const chunks = [];
@@ -211,10 +214,18 @@ async function api(req, res, url) {
   if (HS.origineRefusee(req)) return fail(res, 403, 'Origine de la requête refusée');
 
   if (p[0] === 'login' && method === 'POST') {
-    const { login, password } = await lireJSON(req);
+    const { login, password } = await lireJSON(req), qui = { login, ip: HS.ipClient(req) };
+    const att = TENTATIVES.attente(qui);
+    if (att) return fail(res, 429, TENTATIVES.message(att), { attente: att }, { 'Retry-After': String(att) });
     let c;
     try { c = await PF.connexionPF(PIPEFIT, { login, password, ip: HS.ipClient(req), app: 'etudes', roles: ROLES_ETUDES, refusRole: 'L\'application Études est réservée au bureau (administrateur ou chargé d\'affaires).' }); }
-    catch (e) { return fail(res, e.status || 502, e.message); }
+    catch (e) {
+      // Mauvais identifiant ou mot de passe : compté (un refus pour le rôle n'est pas un mot de passe faux)
+      if (e.status === 401) { const a = TENTATIVES.echec(qui); return fail(res, 401, a ? `${e.message}. ${TENTATIVES.message(a)}` : e.message, a ? { attente: a } : {}); }
+      if (e.status === 429) return fail(res, 429, e.message);
+      return fail(res, e.status || 502, e.message);
+    }
+    TENTATIVES.succes(qui);
     const { me } = c, sid = crypto.randomBytes(24).toString('base64url'), h = empreinte(sid);
     db.prepare('INSERT INTO sessions (sid, login, nom, role, pf_cookie, created_at, user_id, pf_jeton, pf_expire) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)')
       .run(h, me.login, me.nom, me.role, new Date().toISOString(), me.userId || null, SecretLocal.chiffrer(CLE, c.jeton, h), c.expire || null);

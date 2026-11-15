@@ -227,7 +227,7 @@ docker run -d -p 3000:3000 -v pipefit-data:/data -e ADMIN_PASSWORD=MonMotDePasse
 | `TLS_DIR` | `<dossier de la base>/tls` | Dossier du certificat HTTPS : `cert.pem` + `key.pem`, ou `certificat.pfx` |
 | `TLS_CERT`, `TLS_KEY` / `TLS_PFX`, `TLS_PASSPHRASE` | — | Certificat HTTPS ailleurs que dans `TLS_DIR` |
 | `HTTP_REDIRECT_PORT` | — | Port HTTP (ex. `80`) renvoyé vers HTTPS |
-| `TRUST_PROXY` | — | `1` : reverse proxy installé sur une autre machine (adresse réelle des clients) |
+| `TRUST_PROXY` | — | `1` : reverse proxy installé sur une autre machine (adresse réelle des clients) ; ou liste des adresses des proxys (`10.0.0.2,10.0.0.3`) ; `0` : ne jamais lire `X-Forwarded-For` |
 | `SEED_DEMO` | `1` | Données de démo initiales (l'écran de première configuration permet de partir d'une base vide) |
 
 **HTTPS** (indispensable avant tout accès depuis l'extérieur et pour l'appli des compagnons) — deux façons :

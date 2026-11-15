@@ -54,14 +54,28 @@ const CSP = ["default-src 'self'", "script-src 'self' 'wasm-unsafe-eval' blob:",
   "frame-src 'self' blob: data:", "frame-ancestors 'none'", "base-uri 'self'", "form-action 'self'"].join('; ');
 
 const estLoopback = a => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(a);
-// Proxy de confiance : celui du même serveur (Caddy, Nginx, IIS installé sur la machine), ou tout proxy si TRUST_PROXY=1
-const proxyDeConfiance = req => process.env.TRUST_PROXY === '1' || estLoopback(req.socket.remoteAddress);
+const normaliser = a => String(a || '').trim().replace(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/, '$1');
+// Proxy de confiance (TRUST_PROXY) : non défini, celui du même serveur (Caddy, Nginx, IIS installé sur la machine,
+// applications DOE et Études) ; « 1 » : tout proxy ; « 0 » : aucun (X-Forwarded-For jamais lu) ; sinon la liste des
+// adresses des proxys de l'entreprise (« 10.0.0.2, 10.0.0.3 »), en plus de la machine elle-même
+const proxysListes = () => String(process.env.TRUST_PROXY || '').split(',').map(normaliser).filter(x => x && x !== '1' && x !== '0');
+function adresseDeConfiance(a) {
+  const t = String(process.env.TRUST_PROXY || '').trim();
+  if (t === '1') return true;
+  if (t === '0') return false;
+  return estLoopback(a) || proxysListes().includes(normaliser(a));
+}
+const proxyDeConfiance = req => adresseDeConfiance(req.socket.remoteAddress);
 const passeParUnProxy = req => !!(req.headers['x-forwarded-for'] || req.headers.forwarded || req.headers['x-real-ip']);
-// Adresse du client : la dernière ajoutée par le proxy de confiance (celles écrites par le client lui-même sont ignorées)
+// Adresse du client réel : X-Forwarded-For n'est lu que si la connexion vient d'un proxy de confiance ; on remonte alors
+// la chaîne depuis la fin en sautant les proxys de confiance (les adresses écrites par le client lui-même sont ignorées)
 function ipClient(req) {
-  const xff = String(req.headers['x-forwarded-for'] || '').split(',').map(s => s.trim()).filter(Boolean);
-  if (xff.length && proxyDeConfiance(req)) return xff[xff.length - 1];
-  return req.socket.remoteAddress || '';
+  const direct = normaliser(req.socket.remoteAddress);
+  if (!proxyDeConfiance(req)) return direct;
+  const xff = String(req.headers['x-forwarded-for'] || '').split(',').map(normaliser).filter(Boolean);
+  if (String(process.env.TRUST_PROXY || '').trim() === '1') return xff.length ? xff[xff.length - 1] : direct;
+  for (let i = xff.length - 1; i >= 0; i--) if (!adresseDeConfiance(xff[i]) || i === 0) return xff[i];
+  return direct;
 }
 // Requête faite sur le serveur lui-même (et non relayée par un proxy installé sur la même machine)
 const estLocal = req => estLoopback(req.socket.remoteAddress) && !passeParUnProxy(req);

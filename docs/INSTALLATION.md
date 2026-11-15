@@ -433,7 +433,7 @@ Les actions importantes (envois, sauvegardes, réglages) sont aussi dans l'**His
 | `BACKUP_DIR` | sauvegardes quotidiennes | `<données>/Sauvegardes` |
 | `TLS_DIR`, `TLS_PASSPHRASE` | certificat HTTPS intégré | `<données>/tls` |
 | `HTTP_REDIRECT_PORT` | port HTTP renvoyé vers HTTPS | — |
-| `TRUST_PROXY` | reverse proxy sur une autre machine | — |
+| `TRUST_PROXY` | reverse proxy sur une autre machine : `1` (tout proxy), ou liste de ses adresses (`10.0.0.2,10.0.0.3`) ; `0` : `X-Forwarded-For` jamais lu (limites de tentatives de connexion du CRM, des Études et du DOE) | proxy de la machine elle-même |
 | `ADMIN_PASSWORD` | crée le compte `admin` au premier démarrage | — |
 | `SEED_DEMO` | `0` : base vide | `1` |
 | `ANTHROPIC_API_KEY` | clé de l'assistant (sinon : Paramètres → Assistant) | — |

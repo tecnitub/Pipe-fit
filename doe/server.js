@@ -29,6 +29,9 @@ const MAX_JSON = 5 * 1024 * 1024, MAX_FICHIER = 60 * 1024 * 1024, SESSION_JOURS 
 const TYPES = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', dwg: 'image/vnd.dwg', dxf: 'image/vnd.dxf',
   ifc: 'application/x-step', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', zip: 'application/zip' };
 const ROLES_DOE = ['admin', 'charge'];
+// Limite des tentatives de connexion propre à l'application : par identifiant et par adresse du client réel,
+// temporisation progressive (voir server/limite-connexion.js)
+const TENTATIVES = require('../server/limite-connexion').creer();
 // Dépôt de pièces jointes (jusqu'à 60 Mo chacune) : 60 par minute et par compte
 const LIMITE_DEPOT = HS.limiteur({ max: 60, fenetreMs: 60000 });
 
@@ -74,7 +77,7 @@ function send(res, status, obj, headers = {}) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
   res.end(JSON.stringify(obj));
 }
-const fail = (res, status, error, extra = {}) => send(res, status, { error, ...extra });
+const fail = (res, status, error, extra = {}, headers = {}) => send(res, status, { error, ...extra }, headers);
 function lire(req, max) {
   return new Promise((resolve, reject) => {
     let size = 0; const chunks = [];
@@ -160,11 +163,19 @@ async function api(req, res, url) {
   if (HS.origineRefusee(req)) return fail(res, 403, 'Origine de la requête refusée');
 
   if (p[0] === 'login' && method === 'POST') {
-    const { login, password } = await lireJSON(req);
+    const { login, password } = await lireJSON(req), qui = { login, ip: HS.ipClient(req) };
+    const att = TENTATIVES.attente(qui);
+    if (att) return fail(res, 429, TENTATIVES.message(att), { attente: att }, { 'Retry-After': String(att) });
     let c;
     // Adresse du client transmise : Pipe-Fit limite les tentatives par personne et non pour tout le serveur DOE
     try { c = await PF.connexionPF(PIPEFIT, { login, password, ip: HS.ipClient(req), app: 'doe', roles: ROLES_DOE, refusRole: 'L\'application DOE est réservée au bureau (administrateur ou chargé d\'affaires).' }); }
-    catch (e) { return fail(res, e.status || 502, e.message); }
+    catch (e) {
+      // Mauvais identifiant ou mot de passe : compté (un refus pour le rôle n'est pas un mot de passe faux)
+      if (e.status === 401) { const a = TENTATIVES.echec(qui); return fail(res, 401, a ? `${e.message}. ${TENTATIVES.message(a)}` : e.message, a ? { attente: a } : {}); }
+      if (e.status === 429) return fail(res, 429, e.message);
+      return fail(res, e.status || 502, e.message);
+    }
+    TENTATIVES.succes(qui);
     const { me } = c, sid = crypto.randomBytes(24).toString('base64url'), h = empreinte(sid);
     db.prepare('INSERT INTO sessions (sid, login, nom, role, pf_cookie, created_at, pf_jeton, pf_expire) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)')
       .run(h, me.login, me.nom, me.role, new Date().toISOString(), SecretLocal.chiffrer(CLE, c.jeton, h), c.expire || null);
