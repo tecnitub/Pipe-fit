@@ -1373,3 +1373,26 @@ body:has(.modal:not(.hidden)) .as-fab, body.menu-ouvert .as-fab, body.selecteur-
 .cs-actions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; min-width: 260px; }
 .cs-actions .btn, .cs-actions button { margin: 0; }
 @media (max-width: 700px) { .cs-actions { min-width: 220px; } .cs-actions .btn, .cs-actions button { min-height: 40px; } }
+/* Consultation sur téléphone : fournitures et fournisseurs en cartes (cartes-tel), actions en pleine largeur, action
+   principale en premier ; comparatif des offres en tableau qui défile, N° et désignation (et libellés des totaux) figés */
+.cs-glisser { display: none; }
+@media (max-width: 600px) {
+  .cs-fourn .cs-actions { min-width: 0; justify-content: stretch; }
+  .cs-fourn .cs-actions > .btn, .cs-fourn .cs-actions > button { flex: 1 1 calc(50% - 4px); }
+  .cs-fourn .cs-actions > :first-child, .cs-fourn .cs-actions > label.btn { flex-basis: 100%; }
+  .cs-fourn .cs-actions > .btn, .cs-fourn .cs-actions > button { white-space: normal; }
+  .cs-fourn select { width: 100% !important; }
+  table.cs-lignes td.cs-num { display: none; }
+  table.cs-lignes td.ct-titre input { width: 100%; }
+  table.cs-lignes td input { width: 100% !important; }
+  table.cs-lignes td.cs-suppr { align-self: end; justify-self: end; }
+  .cs-glisser { display: block; margin: 6px 0; }
+  .cs-comparatif th { white-space: normal; min-width: 92px; }
+  .cs-comparatif .cs-n, .cs-comparatif .cs-d, .cs-comparatif .cs-fige { position: sticky; z-index: 1; box-sizing: border-box; }
+  .cs-comparatif .cs-n { left: 0; width: 30px; min-width: 30px; max-width: 30px; padding-inline: 4px; }
+  .cs-comparatif .cs-d { left: 30px; width: 124px; min-width: 124px; max-width: 124px; box-shadow: 1px 0 0 var(--border); overflow-wrap: anywhere; }
+  .cs-comparatif .cs-fige { left: 0; box-shadow: 1px 0 0 var(--border); text-align: left; }
+  .cs-comparatif th.cs-n, .cs-comparatif th.cs-d { background: var(--head); }
+  .cs-comparatif td.cs-n, .cs-comparatif td.cs-d { background: var(--panel); }
+  .cs-comparatif td.cs-fige { background: var(--panel-alt); }
+}

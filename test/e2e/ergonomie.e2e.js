@@ -103,6 +103,44 @@ test('Ergonomie CRM (390 px) : Étapes des études et chantiers en cartes, sans 
   }
 });
 
+test('Consultation (390 px) : offre saisie, comparatif à colonnes figées, fournisseurs en cartes, actions ≥ 40 px', { skip: sansPlaywright, timeout: 120000 }, async () => {
+  const { p, erreurs } = await ouvrir('acc-claire');
+  // Consultation de démonstration : 3 lignes, 2 fournisseurs (une offre complète, une offre reçue par e-mail pas encore lue)
+  await p.evaluate(async () => {
+    const arts = Store.all('articles').slice(0, 3), fours = Store.all('entreprises').filter(e => /fournisseur/i.test(e.categorie || '')).slice(0, 2);
+    await Store.upsert('consultations', { id: 'cs-e2e', ref: 'CF-E2E', date: '2026-11-15', objet: 'Consultation e2e', statut: 'En cours', affaireId: Store.all('affaires')[0].id,
+      lignes: arts.map((a, i) => ({ articleId: a.id, designation: a.designation, unite: a.unite || 'u', qte: i + 2 })),
+      fournisseurs: fours.map((f, k) => ({ entrepriseId: f.id, statut: k ? 'Consulté' : 'Offre reçue', envoyeLe: '2026-11-14', offre: k ? { aLire: true } : { prix: { 0: 10, 1: 20, 2: 30 }, delai: 5, port: 25 } })) });
+  });
+  await aller(p, '#/consultations/cs-e2e');
+  // Offre du 2e fournisseur saisie au dialogue (l'offre reçue par e-mail n'a pas encore de prix)
+  await (await p.$$('[data-offre]'))[1].click(); await p.waitForTimeout(300);
+  for (const [k, el] of (await p.$$('#modal-box [data-pi]')).entries()) await el.fill(String(9 + k));
+  await p.click('#of-ok'); await p.waitForTimeout(500);
+  assert.deepStrictEqual(await p.evaluate(() => Store.get('consultations', 'cs-e2e').fournisseurs.map(f => f.statut)), ['Offre reçue', 'Offre reçue']);
+  await p.evaluate(() => scrollTo(0, 0));
+  const m = await p.evaluate(MESURER);
+  assert.strictEqual(m.defilement, 0, 'défilement horizontal de la page');
+  assert.deepStrictEqual(m.petites, [], 'cibles < 40 px');
+  // Fournitures et fournisseurs en cartes ; « Retenir et commander » visible dans la carte de chaque offre complète
+  const cartes = await p.evaluate(() => ['.cs-lignes', '.cs-fourn'].map(s => { const t = document.querySelector(`table${s}`), w = t.closest('.table-wrap'); return { grille: getComputedStyle(t.querySelector('tr[data-i], tr:nth-child(2)')).display, defile: w.scrollWidth > w.clientWidth + 1 }; }));
+  assert.deepStrictEqual(cartes, [{ grille: 'grid', defile: false }, { grille: 'grid', defile: false }]);
+  const retenir = await p.$$eval('.cs-fourn [data-retenir]', bs => bs.map(b => { const r = b.getBoundingClientRect(); return r.width > 300 && r.height >= 40; }));
+  assert.deepStrictEqual(retenir, [true, true]);
+  // Comparatif : tableau qui défile, N° et désignation figés à gauche, totaux libellés
+  const fige = await p.evaluate(() => {
+    const w = document.querySelector('.cs-comparatif').closest('.table-wrap'), d = document.querySelector('.cs-comparatif td.cs-d'), tot = document.querySelector('.cs-comparatif td.cs-fige');
+    const x0 = d.getBoundingClientRect().left; w.scrollLeft = w.scrollWidth;
+    return { defile: w.scrollWidth > w.clientWidth, deplace: Math.abs(d.getBoundingClientRect().left - x0), totalVisible: tot.getBoundingClientRect().left >= w.getBoundingClientRect().left - 1 };
+  });
+  assert.ok(fige.defile && fige.deplace < 1 && fige.totalVisible, JSON.stringify(fige));
+  // Retenir et commander : dialogue aux actions visibles
+  await p.click('.cs-fourn [data-retenir]'); await p.waitForTimeout(400);
+  const dlg = await p.evaluate(MESURER);
+  assert.deepStrictEqual(dlg.petites, [], 'dialogue « Retenir » : cibles < 40 px');
+  assert.deepStrictEqual(erreurs, []);
+});
+
 test('Ergonomie CRM (390 px) : navigation au pouce, menu complet en volet, dialogue aux actions visibles', { skip: sansPlaywright, timeout: 120000 }, async () => {
   const { p, erreurs } = await ouvrir('acc-admin');
   await aller(p, '#/dashboard');

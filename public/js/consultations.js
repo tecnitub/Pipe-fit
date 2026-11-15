@@ -135,10 +135,10 @@ function consultationEditeur(id) {
 
   <h2>Fournitures demandées</h2>
   <datalist id="cs-unites">${UNITES.map(u => `<option value="${esc(u)}">`).join('')}</datalist>
-  <div class="table-wrap"><table class="compact cs-lignes"><tr><th>N°</th><th>Désignation</th><th>Unité</th><th class="num">Qté</th><th class="num">Prix bibliothèque</th><th></th></tr>
-    ${lignes.map((l, i) => `<tr data-i="${i}"><td>${i + 1}</td><td><input data-k="designation" value="${esc(l.designation)}" ${ouverte ? '' : 'disabled'}></td><td><input data-k="unite" list="cs-unites" autocomplete="off" value="${esc(l.unite || '')}" style="width:80px" ${ouverte ? '' : 'disabled'}></td>
-      <td class="num"><input data-k="qte" type="number" step="any" value="${esc(l.qte)}" style="width:90px" ${ouverte ? '' : 'disabled'}></td><td class="num muted">${l.articleId ? eur((Store.get('articles', l.articleId) || {}).coutRevient) : ''}</td>
-      <td>${ouverte ? `<button class="small danger" data-ldel="${i}" aria-label="Retirer">✕</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Aucune ligne.</td></tr>'}</table></div>
+  <div class="table-wrap"><table class="compact cs-lignes cartes-tel"><tr><th>N°</th><th>Désignation</th><th>Unité</th><th class="num">Qté</th><th class="num">Prix bibliothèque</th><th></th></tr>
+    ${lignes.map((l, i) => `<tr data-i="${i}"><td class="cs-num" data-l="">${i + 1}</td><td class="ct-titre" data-l="Ligne ${i + 1}"><input data-k="designation" aria-label="Désignation de la ligne ${i + 1}" value="${esc(l.designation)}" ${ouverte ? '' : 'disabled'}></td><td><input data-k="unite" aria-label="Unité" list="cs-unites" autocomplete="off" value="${esc(l.unite || '')}" style="width:80px" ${ouverte ? '' : 'disabled'}></td>
+      <td class="num"><input data-k="qte" aria-label="Quantité" type="number" step="any" value="${esc(l.qte)}" style="width:90px" ${ouverte ? '' : 'disabled'}></td><td class="num muted">${l.articleId ? eur((Store.get('articles', l.articleId) || {}).coutRevient) : ''}</td>
+      <td class="cs-suppr" data-l="">${ouverte ? `<button class="small danger" data-ldel="${i}" aria-label="Retirer">✕</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Aucune ligne.</td></tr>'}</table></div>
   ${ouverte ? `<div class="toolbar">${articleSelect('cs-art')}<input id="cs-q" type="number" step="any" value="1" style="width:80px" aria-label="Quantité"><button class="secondary" id="cs-add">Ajouter</button><button class="secondary" id="cs-libre">Ligne libre</button><button class="secondary" id="cs-dicter">🎤 Dicter</button>
     ${sources.length ? `<select id="cs-src" style="width:auto"><option value="">Reprendre…</option>${sources.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}</select>` : ''}</div>` : ''}
 
@@ -146,11 +146,11 @@ function consultationEditeur(id) {
   <h2>Fournisseurs consultés</h2>
   <div id="cs-boite" class="small muted"></div>
   ${offresAClasserHtml(c)}
-  <div class="table-wrap"><table><tr><th>Fournisseur</th><th>Statut</th><th>Envoyée le</th><th class="num">Offre nette HT</th><th>Délai</th><th></th></tr>
+  <div class="table-wrap"><table class="cartes-tel cs-fourn"><tr><th>Fournisseur</th><th>Statut</th><th>Envoyée le</th><th class="num">Offre nette HT</th><th>Délai</th><th></th></tr>
     ${fs.map(f => { const o = totOffre(f.entrepriseId), off = f.offre || {}; const id = `${c.id}~${f.entrepriseId}`;
-      return `<tr><td><strong>${esc(clientName(f.entrepriseId))}</strong>${off.remarques ? `<br><span class="muted small">${esc(off.remarques)}</span>` : ''}${off.mail ? `<br><span class="small">📧 reçue par e-mail le ${new Date(off.mail.recuLe).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}${off.aLire ? ' · <span class="badge b-warn">à lire</span>' : ''}</span>` : ''}${off.aLire && off.pieceId ? ` <button class="small" data-lire="${esc(f.entrepriseId)}">Lire l'offre</button>` : ''}</td><td><select data-fstatut="${esc(f.entrepriseId)}" style="width:auto">${optionsStr(STATUTS_CONSULT_F, f.statut)}</select></td>
+      return `<tr><td class="ct-titre" data-l=""><strong>${esc(clientName(f.entrepriseId))}</strong>${off.remarques ? `<br><span class="muted small">${esc(off.remarques)}</span>` : ''}${off.mail ? `<br><span class="small">📧 reçue par e-mail le ${new Date(off.mail.recuLe).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}${off.aLire ? ' · <span class="badge b-warn">à lire</span>' : ''}</span>` : ''}${off.aLire && off.pieceId ? ` <button class="small" data-lire="${esc(f.entrepriseId)}">Lire l'offre</button>` : ''}</td><td><select data-fstatut="${esc(f.entrepriseId)}" aria-label="Statut de ${esc(clientName(f.entrepriseId))}" style="width:auto">${optionsStr(STATUTS_CONSULT_F, f.statut)}</select></td>
         <td>${dateFr(f.envoyeLe)}</td><td class="num">${o ? `${eur(o.t.net)}${o.t.complet ? '' : `<br><span class="warn-text small">${o.t.nb}/${lignes.length} lignes</span>`}` : ''}</td><td>${off.delai ? `${esc(off.delai)} j` : ''}</td>
-        <td><div class="cs-actions">${(() => { /* Action principale selon l'avancement : envoyer la demande, lire le devis reçu, retenir l'offre */
+        <td class="ct-large" data-l=""><div class="cs-actions">${(() => { /* Action principale selon l'avancement : envoyer la demande, lire le devis reçu, retenir l'offre */
           const bureau = ['admin', 'charge'].includes(Store.me.role), retenir = ouverte && f.statut === 'Offre reçue' && offreTotaux(c, f).complet && bureau;
           const prim = retenir ? 'retenir' : f.statut === 'À consulter' && bureau ? 'envoyer' : f.statut !== 'Offre reçue' && f.statut !== 'Décline' ? 'lire' : '';
           return `${retenir ? `<button class="small" data-retenir="${esc(f.entrepriseId)}" title="Commande créée avec cette offre et envoyée au fournisseur par e-mail">✅ Retenir et commander</button>` : ''}
@@ -166,14 +166,14 @@ function consultationEditeur(id) {
     <div class="card"><div class="label">Optimum ligne par ligne</div><div class="value">${eur(an.optimum)}</div><div class="sub">${an.fournisseursOpt.length} fournisseur(s), ports compris${an.classement[0] ? ` · gain ${eur(an.classement[0].t.net - an.optimum)}` : ''}</div></div>
     <div class="card"><div class="label">Budget (prix bibliothèque)</div><div class="value">${eur(sumBy(lignes, l => num((Store.get('articles', l.articleId) || {}).coutRevient) * num(l.qte)))}</div><div class="sub">${lignes.filter(l => l.articleId).length}/${lignes.length} lignes avec un prix de référence</div></div>
   </div>
-  <div class="table-wrap"><table class="compact cs-comparatif"><tr><th>N°</th><th>Désignation</th><th class="num">Qté</th>${an.offres.map(o => `<th class="num">${esc(clientName(o.f.entrepriseId))}</th>`).join('')}<th class="num">Écart / bibliothèque</th>${ouverte ? '<th>Attribuer à</th>' : ''}</tr>
+  <p class="small muted cs-glisser">Faites glisser le tableau pour voir toutes les offres : la désignation et les totaux restent affichés.</p><div class="table-wrap"><table class="compact cs-comparatif"><tr><th class="cs-n">N°</th><th class="cs-d">Désignation</th><th class="num">Qté</th>${an.offres.map(o => `<th class="num">${esc(clientName(o.f.entrepriseId))}</th>`).join('')}<th class="num">Écart / bibliothèque</th>${ouverte ? '<th>Attribuer à</th>' : ''}</tr>
     ${lignes.map((l, i) => { const m = an.meilleurs[i], ref = num((Store.get('articles', l.articleId) || {}).coutRevient);
-      return `<tr><td>${i + 1}</td><td>${esc(l.designation)}</td><td class="num">${fmt(l.qte, 2)} ${esc(l.unite || '')}</td>
+      return `<tr><td class="cs-n">${i + 1}</td><td class="cs-d">${esc(l.designation)}</td><td class="num">${fmt(l.qte, 2)} ${esc(l.unite || '')}</td>
         ${an.offres.map(o => { const pu = o.t.pu(i); return `<td class="num ${m && m.eid === o.f.entrepriseId ? 'meilleur' : ''}">${pu === null ? '<span class="muted">—</span>' : `${eur(pu)}<br><span class="muted small">${eur(pu * num(l.qte))}</span>`}</td>`; }).join('')}
         <td class="num ${m && ref && m.pu > ref ? 'neg' : m && ref ? 'pos' : ''}">${m && ref ? `${m.pu > ref ? '+' : ''}${fmt((m.pu / ref - 1) * 100, 1)} %` : ''}</td>
-        ${ouverte ? `<td><select data-attr="${i}" style="width:auto"><option value="">—</option>${an.offres.filter(o => o.t.pu(i) !== null).map(o => `<option value="${esc(o.f.entrepriseId)}" ${((c.attribution || {})[i] || '') === o.f.entrepriseId ? 'selected' : ''}>${esc(clientName(o.f.entrepriseId))}</option>`).join('')}</select></td>` : ''}</tr>`; }).join('')}
-    <tr class="subtotal"><td colspan="3">Total net (remise et port compris)</td>${an.offres.map(o => `<td class="num">${eur(o.t.net)}${o.t.remise ? `<br><span class="small">remise ${eur(o.t.remise)}</span>` : ''}${o.t.port ? `<br><span class="small">port ${eur(o.t.port)}</span>` : ''}</td>`).join('')}<td></td>${ouverte ? '<td></td>' : ''}</tr>
-    <tr class="subtotal"><td colspan="3">Délai / validité</td>${an.offres.map(o => `<td class="num small">${o.f.offre.delai ? esc(o.f.offre.delai) + ' j' : '—'}${o.f.offre.validite ? ` · jusqu'au ${dateFr(o.f.offre.validite)}` : ''}</td>`).join('')}<td></td>${ouverte ? '<td></td>' : ''}</tr></table></div>
+        ${ouverte ? `<td><select data-attr="${i}" aria-label="Attribuer la ligne ${i + 1} à" style="width:auto"><option value="">—</option>${an.offres.filter(o => o.t.pu(i) !== null).map(o => `<option value="${esc(o.f.entrepriseId)}" ${((c.attribution || {})[i] || '') === o.f.entrepriseId ? 'selected' : ''}>${esc(clientName(o.f.entrepriseId))}</option>`).join('')}</select></td>` : ''}</tr>`; }).join('')}
+    <tr class="subtotal"><td colspan="2" class="cs-fige">Total net (remise et port compris)</td><td></td>${an.offres.map(o => `<td class="num">${eur(o.t.net)}${o.t.remise ? `<br><span class="small">remise ${eur(o.t.remise)}</span>` : ''}${o.t.port ? `<br><span class="small">port ${eur(o.t.port)}</span>` : ''}</td>`).join('')}<td></td>${ouverte ? '<td></td>' : ''}</tr>
+    <tr class="subtotal"><td colspan="2" class="cs-fige">Délai / validité</td><td></td>${an.offres.map(o => `<td class="num small">${o.f.offre.delai ? esc(o.f.offre.delai) + ' j' : '—'}${o.f.offre.validite ? ` · jusqu'au ${dateFr(o.f.offre.validite)}` : ''}</td>`).join('')}<td></td>${ouverte ? '<td></td>' : ''}</tr></table></div>
   ${ouverte ? `<div class="toolbar">
     ${an.classement[0] && ['admin', 'charge'].includes(Store.me.role) ? `<button data-retenir="${esc(an.classement[0].f.entrepriseId)}">✅ Retenir le mieux-disant et commander (${esc(clientName(an.classement[0].f.entrepriseId))}, ${eur(an.classement[0].t.net)} HT)</button>` : ''}
     ${an.classement[0] ? `<button class="secondary" id="cs-tout">Tout attribuer au mieux-disant (${esc(clientName(an.classement[0].f.entrepriseId))})</button>` : ''}
@@ -231,7 +231,8 @@ function lireOffreExcel(sheet, c) {
 
 // Saisie de l'offre d'un fournisseur
 function saisirOffre(c, eid) {
-  const f = c.fournisseurs.find(x => x.entrepriseId === eid), o = f.offre || { prix: {} };
+  // Offre reçue par e-mail et pas encore lue : pièce jointe sans prix (offre.prix absent)
+  const f = c.fournisseurs.find(x => x.entrepriseId === eid), o = { ...(f.offre || {}), prix: (f.offre || {}).prix || {} };
   const box = Modal.open(`<h2 style="margin-top:0">Offre de ${esc(clientName(eid))}</h2>
     <div class="table-wrap"><table class="compact"><tr><th>N°</th><th>Désignation</th><th class="num">Qté</th><th class="num">PU HT proposé</th></tr>
       ${c.lignes.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.designation)}</td><td class="num">${fmt(l.qte, 2)} ${esc(l.unite || '')}</td><td class="num"><input type="number" step="0.01" data-pi="${i}" value="${esc(o.prix[i] ?? '')}" style="width:110px" placeholder="non chiffré"></td></tr>`).join('')}</table></div>
