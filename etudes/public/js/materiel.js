@@ -15,8 +15,8 @@ function carteMateriel(et) {
   const ls = lignesMateriel(et);
   if (!ls.length) return '';
   const b = MaterielRetenu.bilan(ls), relance = ls.filter(l => MaterielRetenu.aRelancer(l, aujourdhui())).length;
-  return `<div class="carte petit">🏷️ <strong>Matériel retenu</strong> : ${b.total - b.aChoisir}/${b.total} référence(s) choisie(s) · ${b.valides} validée(s) par le client${b.soumis ? ` · ${b.soumis} soumise(s)` : ''}${relance ? ` · <span class="manque">${relance} sans réponse depuis plus de 15 jours : relancer le client</span>` : ''}${b.aSoumettre ? ` · ${b.aSoumettre} à soumettre` : ''}${b.refuses ? ` · <span class="manque">${b.refuses} refusée(s)</span>` : ''}${b.orphelins ? ` · <span class="manque">${b.orphelins} à reprendre</span>` : ''}
-    <button class="secondaire petit" id="materiel2">Choisir / faire valider</button></div>`;
+  return `<div class="outil-ligne" id="carte-materiel"><div class="outil-txt">🏷️ <strong>Matériel retenu</strong> : ${b.total - b.aChoisir}/${b.total} référence(s) choisie(s) · ${b.valides} validée(s) par le client${b.soumis ? ` · ${b.soumis} soumise(s)` : ''}${relance ? ` · <span class="manque">${relance} sans réponse depuis plus de 15 jours : relancer le client</span>` : ''}${b.aSoumettre ? ` · ${b.aSoumettre} à soumettre` : ''}${b.refuses ? ` · <span class="manque">${b.refuses} refusée(s)</span>` : ''}${b.orphelins ? ` · <span class="manque">${b.orphelins} à reprendre</span>` : ''}</div>
+    <div class="outil-actions"><button class="secondaire petit" id="materiel2">Choisir / faire valider</button></div></div>`;
 }
 
 // Suivi du chantier lu dans Pipe-Fit (soumission envoyée depuis le CRM, pose, mise en service, photos de la plaque)

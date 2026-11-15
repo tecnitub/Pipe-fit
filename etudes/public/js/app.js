@@ -577,6 +577,10 @@ Vues.nouvelle = {
 };
 
 // Étude : en-tête, indices, liste des notes de calcul
+// Fiche de l'étude : ouverte pour une nouvelle étude (sans calcul), repliée ensuite (la place va au guide et aux calculs) ;
+// le choix de la personne est gardé pendant la session
+const fichesOuvertes = new Map();
+const ficheOuverte = et => (fichesOuvertes.has(et.id) ? fichesOuvertes.get(et.id) : !(et.notes || []).length || !String(et.objet || '').trim());
 Vues.etude = {
   html: p => (p[1] && !['comparer', 'installation'].includes(p[1]) ? Vues.etude.html0(p) : avecCalculsMemorises(() => Vues.etude.html0(p))),
   html0: ([id, noteId, ids]) => {
@@ -589,8 +593,8 @@ Vues.etude = {
     if (!et.modele && typeof Registre !== 'undefined' && !et.equipements) { try { if (Registre.collecter(et)) enregistrer(et); else et.equipements = []; } catch (e) { /* étude incomplète */ } }
     const a = affaireDe(et.affaireId);
     return `<div class="barre"><a href="#/" class="secondaire btn petit">← Études</a><h1 class="titre-etude">${esc(et.objet)}</h1><span class="badge pf">${et.modele ? 'Modèle' : `Indice ${esc(et.indice)}`}</span>
-        <span class="espace"></span><span class="muted petit" id="etat-enreg"></span><button class="secondaire" id="inventaire">📑 CCTP / DPGF</button><button class="secondaire" id="materiel">🏷️ Matériel retenu</button><button class="secondaire" id="chiffrer">💶 Métré et chiffrage</button>${et.modele || typeof ControleEtude === 'undefined' ? '' : '<button class="secondaire" id="controle-etude" title="Passe toute l\'étude en revue avant l\'envoi : erreurs des calculs, valeurs estimées, paramètres à valider, réserves, matériel, incohérences, fiches manquantes ; rapport filtré selon le destinataire">🔎 Contrôler l\'étude</button>'}<button id="pdf">📄 Note de calcul PDF</button></div>
-      <details class="carte fiche-etude"${typeof matchMedia === 'function' && matchMedia('(max-width: 700px)').matches ? '' : ' open'}><summary><strong>Fiche de l'étude</strong> <span class="muted petit">${esc([et.client || clientDe(a), et.date ? dateFr(et.date) : '', et.auteur].filter(Boolean).join(' · '))}</span></summary><div class="grille-champs">
+        <span class="espace"></span><span class="muted petit" id="etat-enreg" role="status"></span><span class="actions-etude"><button class="secondaire" id="inventaire">📑 CCTP / DPGF</button><button class="secondaire" id="materiel">🏷️ Matériel retenu</button><button class="secondaire" id="chiffrer">💶 Métré et chiffrage</button>${et.modele || typeof ControleEtude === 'undefined' ? '' : '<button class="secondaire" id="controle-etude" title="Passe toute l\'étude en revue avant l\'envoi : erreurs des calculs, valeurs estimées, paramètres à valider, réserves, matériel, incohérences, fiches manquantes ; rapport filtré selon le destinataire">🔎 Contrôler l\'étude</button>'}<button id="pdf">📄 Note de calcul PDF</button></span></div>
+      <details class="carte fiche-etude" id="fiche-etude"${ficheOuverte(et) ? ' open' : ''}><summary><strong>Fiche de l'étude</strong> <span class="muted petit">${esc([et.client || clientDe(a), et.date ? dateFr(et.date) : '', et.auteur, et.statut || 'Pour avis'].filter(Boolean).join(' · '))}</span></summary><div class="grille-champs">
         <label class="large">Objet<input data-e="objet" value="${esc(et.objet)}"></label>
         <label>Affaire Pipe-Fit<select data-e="affaireId">${optionsAffaires(et.affaireId)}</select></label>
         ${et.modele || et.affaireId ? '' : `<label>Client Pipe-Fit (étude sans chantier)<select data-e="clientId"><option value="">—</option>${S.pf.entreprises.filter(e => e.categorie !== 'Fournisseur').slice().sort((x, y) => x.nom.localeCompare(y.nom)).map(e => `<option value="${esc(e.id)}" ${e.id === et.clientId ? 'selected' : ''}>${esc(e.nom)}</option>`).join('')}</select></label>
@@ -613,17 +617,8 @@ Vues.etude = {
       ${(et.inventaire || []).length ? (() => { const inc = et.inventaire.filter(x => x.inclus !== false), nb = c => inc.filter(x => x.categorie === c).reduce((t, x) => t + (Notes.num(x.qte) || 1), 0), lignes = c => inc.filter(x => x.categorie === c).length;
         return `<div class="carte petit">📑 <strong>Inventaire du dossier de consultation</strong> : ${nb('producteur')} producteur(s), ${lignes('emetteur')} type(s) d'émetteurs, ${lignes('auxiliaire')} type(s) d'auxiliaires — ${esc([...new Set(inc.map(x => InventaireCVC.GENRES[x.genre] && InventaireCVC.GENRES[x.genre].libelle).filter(Boolean))].join(', '))} <button class="secondaire petit" id="inventaire2">Voir / préremplir</button></div>`; })() : ''}
       ${typeof GuideEtude !== 'undefined' ? GuideEtude.html(et) : ''}
-      ${typeof SuiviEtapes !== 'undefined' ? SuiviEtapes.carte(et) : ''}
       ${typeof parcoursHtml === 'function' ? parcoursHtml(et) : ''}
-      ${typeof carteRegistre === 'function' ? carteRegistre(et) : ''}
-      ${typeof BibliothequeModeles !== 'undefined' ? BibliothequeModeles.carte(et) : ''}
-      ${typeof carteMateriel === 'function' ? carteMateriel(et) : ''}
-      ${carteDocuments(et)}
-      ${tableauBordHtml(et)}
-      ${typeof carteReperes === 'function' ? carteReperes(et) : ''}
-      ${typeof carteExploitation === 'function' ? carteExploitation(et) : ''}
-      ${typeof carteRetourChantier === 'function' ? carteRetourChantier(et) : ''}
-      <div class="barre"><h2>Calculs <span class="compte">${et.notes.length}</span></h2><button id="ajout">+ Ajouter un calcul</button>${et.notes.some(n => ['pid', 'arbo', 'terminaux', 'cta', 'ecs'].includes(n.type)) ? `<a class="secondaire btn" id="installation" href="#/etude/${et.id}/installation" title="Schémas de principe, circuits, réseaux arborescents, branches et consommateurs d'eau : raccordements et contrôles de cohérence">💧 Installation hydraulique</a>` : ''}<button class="secondaire" id="vrac" title="Charger toutes les fiches techniques du chantier d'un coup, puis les répartir dans les calculs (terminaux, CTA, production, pompes, vase, ballon, bouches, robinetterie…) sans ressaisie">📥 Matériel en vrac</button><span class="espace"></span>
+      <div class="barre barre-calculs"><h2>Calculs <span class="compte">${et.notes.length}</span></h2><button id="ajout">+ Ajouter un calcul</button>${et.notes.some(n => ['pid', 'arbo', 'terminaux', 'cta', 'ecs'].includes(n.type)) ? `<a class="secondaire btn" id="installation" href="#/etude/${et.id}/installation" title="Schémas de principe, circuits, réseaux arborescents, branches et consommateurs d'eau : raccordements et contrôles de cohérence">💧 Installation hydraulique</a>` : ''}<button class="secondaire" id="vrac" title="Charger toutes les fiches techniques du chantier d'un coup, puis les répartir dans les calculs (terminaux, CTA, production, pompes, vase, ballon, bouches, robinetterie…) sans ressaisie">📥 Matériel en vrac</button><span class="espace"></span>
         ${et.notes.length ? '<button class="secondaire" id="fiches-mes" title="Une fiche par équipement (générateurs, pompes, terminaux, CTA…) : points de contrôle, valeurs attendues de l\'étude, mesures à relever">📋 Fiches de mise en service</button>' : ''}
         ${et.notes.length > 1 ? '<button class="secondaire" id="comparer" disabled title="Cocher au moins deux calculs">⚖️ Comparer la sélection</button>' : ''}</div>
       ${et.notes.length ? (() => { const carte = (n, i) => { const t = Notes.TYPES[n.type], r = Liens.calculer(et, n), err = r.alertes.filter(x => x.niveau === 'erreur').length, att = r.alertes.filter(x => x.niveau === 'attention').length;
@@ -633,7 +628,11 @@ Vues.etude = {
         // Calculs annexes (émetteurs, énergie, froid, ventilation, plomberie, réglementation) : rangés à part, repliés
         const princ = et.notes.map((n, i) => [n, i]).filter(([n]) => !(Notes.TYPES[n.type] || {}).annexe), ann = et.notes.map((n, i) => [n, i]).filter(([n]) => (Notes.TYPES[n.type] || {}).annexe);
         return `<div class="notes">${princ.map(([n, i]) => carte(n, i)).join('')}</div>${ann.length ? `<details class="carte annexes-etude"${ann.length <= 3 ? ' open' : ''}><summary><strong>🗂️ Calculs annexes</strong> <span class="compte">${ann.length}</span> <span class="muted petit">reliés aux besoins de l'étude</span></summary><div class="notes">${ann.map(([n, i]) => carte(n, i)).join('')}</div></details>` : ''}`; })()
-        : '<p class="muted">Aucun calcul : ajoutez-en un ou versez un calcul rapide dans cette étude.</p>'}`;
+        : '<p class="muted">Aucun calcul : ajoutez-en un ou versez un calcul rapide dans cette étude.</p>'}
+      ${groupeEtude('groupe-equipements', '🧰 Équipements et matériel', [typeof carteRegistre === 'function' ? carteRegistre(et) : '', typeof carteMateriel === 'function' ? carteMateriel(et) : '', typeof carteReperes === 'function' ? carteReperes(et) : '', typeof BibliothequeModeles !== 'undefined' ? BibliothequeModeles.carte(et) : ''])}
+      ${carteDocuments(et)}
+      ${tableauBordHtml(et)}
+      ${groupeEtude('groupe-chantier', '🏗️ Chantier et exploitation', [typeof carteRetourChantier === 'function' ? carteRetourChantier(et) : '', typeof carteExploitation === 'function' ? carteExploitation(et) : ''])}`;
   },
   bind: (root, [id, noteId, ids]) => {
     const et = etudeDe(id);
@@ -643,6 +642,8 @@ Vues.etude = {
     if (noteId) return Vues.note.bind(root, et, noteId);
     const fm = root.querySelector('#fiches-mes');
     if (fm) fm.onclick = () => dialogueFichesMes(et);
+    const fe = root.querySelector('#fiche-etude');
+    if (fe) fe.addEventListener('toggle', () => { fichesOuvertes.set(et.id, fe.open); });
     if (typeof lierReperes === 'function') lierReperes(root, et);
     const rc = root.querySelector('#reserves-conformite');
     if (rc) rc.onclick = () => dialogueReservesConformite(et);
@@ -652,7 +653,8 @@ Vues.etude = {
     root.querySelectorAll('#vrac, #vrac2').forEach(b => { b.onclick = () => dialogueVrac(et); });
     if (typeof lierParcours === 'function') lierParcours(root, et);
     if (typeof GuideEtude !== 'undefined') GuideEtude.lier(root, et);
-    if (typeof SuiviEtapes !== 'undefined') { SuiviEtapes.lier(root.querySelector('#suivi-etapes'), et, () => avecFocus(App.render)); chargerEtapesTerrain(et); }
+    // Suivi des étapes : intégré au guide « Reste à faire » (filtres, affectation, PDF) ; étapes faites sur le terrain relues
+    if (typeof SuiviEtapes !== 'undefined') chargerEtapesTerrain(et);
     const rg = root.querySelector('#registre');
     if (rg) rg.onclick = () => dialogueRegistre(et);
     const ancienEtude = { climat: et.climat, typeBatiment: et.typeBatiment, neuf: et.neuf };
@@ -1984,14 +1986,16 @@ function dialogueFichesMes(et) {
 // Exploitation des calculs annexes (annexes-exploitation.js) : réserves de conformité à lever avec le bureau de contrôle
 // (liste à cocher enregistrée dans l'étude, PDF) et visites d'entretien transmises au carnet du DOE / contrat d'entretien
 const annexesEtude = et => (et.notes || []).some(n => (Notes.TYPES[n.type] || {}).annexe);
+// Groupe de lignes d'outils de la page de l'étude (registre, matériel, repères… ; retour du chantier, exploitation)
+const groupeEtude = (id, titre, lignes) => { const l = lignes.filter(Boolean); return l.length ? `<section class="carte groupe-etude" id="${id}" aria-label="${esc(titre.replace(/^\S+\s/, ''))}"><h3>${esc(titre)}</h3>${l.join('')}</section>` : ''; };
 function carteExploitation(et) {
   if (et.modele || typeof AnnexesExploitation === 'undefined' || !annexesEtude(et)) return '';
   let l = [], ops = [];
   try { contexteEtude = et; l = AnnexesExploitation.reserves(et, Liens); ops = AnnexesExploitation.entretien(et, Liens); } catch (e) { return ''; }
   const d = AnnexesExploitation.etat(et, l), obl = ops.filter(o => o.niveau === 'obligatoire').length;
-  return `<div class="carte petit exploitation-etude" id="carte-exploitation">🛡️ <strong>Réserves de conformité</strong> : ${d.total ? `${d.faits} / ${d.total} levée(s)${d.restent ? ` — <strong>${d.restent} à lever</strong> avec le bureau de contrôle` : ''}` : 'aucune'}
-    · 🔧 <strong>Entretien</strong> : ${ops.length} visite(s) ou contrôle(s) dont ${obl} obligatoire(s), repris par le carnet du DOE et le contrat d'entretien
-    <span class="espace"></span><button class="secondaire petit" id="reserves-conformite">📋 Récapitulatif des réserves</button> <button class="secondaire petit" id="visites-entretien">🔧 Visites d'entretien</button></div>`;
+  return `<div class="outil-ligne exploitation-etude" id="carte-exploitation"><div class="outil-txt">🛡️ <strong>Réserves de conformité</strong> : ${d.total ? `${d.faits} / ${d.total} levée(s)${d.restent ? ` — <strong>${d.restent} à lever</strong> avec le bureau de contrôle` : ''}` : 'aucune'}
+    · 🔧 <strong>Entretien</strong> : ${ops.length} visite(s) ou contrôle(s) dont ${obl} obligatoire(s), repris par le carnet du DOE (section 7) et le contrat d'entretien</div>
+    <div class="outil-actions"><button class="secondaire petit" id="reserves-conformite">📋 Récapitulatif des réserves</button><button class="secondaire petit" id="visites-entretien">🔧 Visites d'entretien</button></div></div>`;
 }
 /* ---------- Repères des équipements (reperes.js) et conséquences d'un changement après émission (revisions.js) ---------- */
 // État de référence et conséquences : complet = recalcul de l'état courant (page de l'étude) ; sinon seulement quand
@@ -2016,9 +2020,9 @@ function carteReperes(et) {
   cons = suivreEngagement(et, true) || [];
   if (JSON.stringify(et.consequences || []) !== avant) setTimeout(() => enregistrer(et), 0);
   const ref = et.etatReference;
-  return `<div class="carte petit reperes-etude" id="carte-reperes">🏷️ <strong>Repères des équipements</strong> : ${t.lignes.length} équipement(s)${t.conflits.length ? ` — <strong class="erreur">${t.conflits.length} conflit(s)</strong>` : ' — un seul repère par équipement'}
-    · 🔁 <strong>Conséquences du changement</strong> : ${ref ? (cons.length ? `<strong>${cons.length} à traiter</strong> depuis l'état émis du ${dateFr(ref.le)}` : `aucune depuis l'état émis du ${dateFr(ref.le)}`) : 'rien d\'émis ni de validé pour l\'instant'}
-    <span class="espace"></span><button class="secondaire petit" id="table-reperes">🏷️ Table des repères</button> <button class="secondaire petit" id="voir-consequences" ${ref ? '' : 'disabled'}>🔁 Conséquences du changement${cons.length ? ` (${cons.length})` : ''}</button></div>`;
+  return `<div class="outil-ligne reperes-etude" id="carte-reperes"><div class="outil-txt">🔢 <strong>Repères des équipements</strong> : ${t.lignes.length} équipement(s)${t.conflits.length ? ` — <strong class="erreur">${t.conflits.length} conflit(s)</strong>` : ' — un seul repère par équipement'}
+    · 🔁 <strong>Conséquences du changement</strong> : ${ref ? (cons.length ? `<strong>${cons.length} à traiter</strong> depuis l'état émis du ${dateFr(ref.le)}` : `aucune depuis l'état émis du ${dateFr(ref.le)}`) : 'rien d\'émis ni de validé pour l\'instant'}</div>
+    <div class="outil-actions"><button class="secondaire petit" id="table-reperes">🔢 Table des repères</button><button class="secondaire petit" id="voir-consequences" ${ref ? '' : 'disabled title="Disponible après la première émission ou validation de matériel"'}>🔁 Conséquences du changement${cons.length ? ` (${cons.length})` : ''}</button></div></div>`;
 }
 function lierReperes(root, et) {
   const a = root.querySelector('#table-reperes');
@@ -2160,7 +2164,9 @@ function tableauBordHtml(et) {
   const tuile = (v, l, c) => `<div class="tuile ${v ? c : 'ok'}"><strong>${v}</strong><span>${l}</span></div>`;
   return `<div class="carte tableau-bord"><h3 style="margin-top:0">📊 Tableau de bord de l'étude</h3>
     <div class="tuiles">${tuile(err, 'erreur(s) de calcul', 'erreur')}${tuile(att, 'point(s) d\'attention', 'attention')}${tuile(fiches, 'fiche(s) technique(s) à charger', 'attention')}${tuile(nonEmis, 'calcul(s) jamais émis', 'attention')}${tuile(modifies, 'modifié(s) depuis l\'émission', 'erreur')}</div>
-    ${aFaire.length ? `<ul class="a-faire">${aFaire.slice(0, 14).map(x => `<li class="${x.niveau}"><a href="#/etude/${et.id}/${x.n.id}">${esc(lib(x.n))}</a> : ${esc(x.texte)}</li>`).join('')}${aFaire.length > 14 ? `<li class="muted">… et ${aFaire.length - 14} autre(s)</li>` : ''}</ul>` : '<p class="petit muted">✓ Rien à reprendre : calculs sans erreur, fiches chargées, notes émises à jour.</p>'}</div>`;
+    ${aFaire.length ? (() => { const ul = `<ul class="a-faire">${aFaire.slice(0, 14).map(x => `<li class="${x.niveau}"><a href="#/etude/${et.id}/${x.n.id}">${esc(lib(x.n))}</a> : ${esc(x.texte)}</li>`).join('')}${aFaire.length > 14 ? `<li class="muted">… et ${aFaire.length - 14} autre(s)</li>` : ''}</ul>`;
+      // Liste longue repliée (les fiches à charger sont aussi dans le guide « Reste à faire ») ; erreurs toujours visibles
+      return aFaire.length > 4 && !err ? `<details class="a-faire-detail"><summary>Voir les ${aFaire.length} point(s) à reprendre</summary>${ul}</details>` : ul; })() : '<p class="petit muted">✓ Rien à reprendre : calculs sans erreur, fiches chargées, notes émises à jour.</p>'}</div>`;
 }
 function etatEmission(et, n) {
   const d = Revisions.derniere(n);

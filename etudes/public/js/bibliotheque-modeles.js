@@ -170,8 +170,8 @@ const BibliothequeModeles = (() => {
     const n = cache ? cache.length : null;
     if (!cache) charger().then(() => { const z = document.querySelector('#biblio-modeles-nb'); if (z) z.textContent = `${cache.length} modèle(s) commun(s)`; });
     const partageables = etatRegistre(et, cache || []).filter(y => ['nouveau', 'different'].includes(y.etat)).length;
-    return `<div class="carte petit" id="carte-biblio-modeles">📚 <strong>Bibliothèque de modèles</strong> (partagée entre les études) : <span id="biblio-modeles-nb">${n === null ? '…' : `${n} modèle(s) commun(s)`}</span>${partageables && cache ? ` · <span class="avert">${partageables} modèle(s) de l'étude à partager</span>` : ''}
-      <span class="espace"></span><button class="secondaire petit" data-biblio-modeles="reprendre">🔎 Reprendre un modèle</button> <button class="secondaire petit" data-biblio-modeles="partager" ${(et.equipements || []).length ? '' : 'disabled title="Registre vide"'}>📤 Partager les modèles validés</button></div>`;
+    return `<div class="outil-ligne" id="carte-biblio-modeles"><div class="outil-txt">📚 <strong>Bibliothèque de modèles</strong> (partagée entre les études) : <span id="biblio-modeles-nb">${n === null ? 'lecture…' : `${n} modèle(s) commun(s)`}</span>${partageables && cache ? ` · <span class="avert">${partageables} modèle(s) de l'étude à partager</span>` : ''}</div>
+      <div class="outil-actions"><button class="secondaire petit" data-biblio-modeles="reprendre">🔎 Reprendre un modèle</button><button class="secondaire petit" data-biblio-modeles="partager" ${(et.equipements || []).length ? '' : 'disabled title="Registre vide"'}>📤 Partager les modèles validés</button></div></div>`;
   }
 
   // Partage des modèles du registre : cochés = validés par la personne ; fiche de la bibliothèque du CRM, prix

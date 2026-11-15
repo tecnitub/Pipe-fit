@@ -118,3 +118,28 @@ test('Ergonomie Études : ordinateur (tableaux collants, Entrée, groupes replia
   assert.ok(vis, 'boutons du dialogue hors de vue');
   assert.deepStrictEqual(erreurs, []);
 });
+
+test('Études : page de l\'étude — suivi des étapes dans le guide « Reste à faire », calculs avant les outils', { skip: sansPlaywright, timeout: 120000 }, async () => {
+  const { p, erreurs } = await ouvrir('etudes.html', { width: 1400, height: 900 }, false);
+  const id = await p.evaluate(() => { const et = S.etudes.filter(x => !x.modele).sort((a, b) => b.notes.length - a.notes.length)[0]; location.hash = `#/etude/${et.id}`; return et.id; });
+  await p.waitForTimeout(1200);
+  // Une seule présentation des étapes : plus de carte « Suivi des étapes » à part, filtres et PDF dans le guide
+  assert.strictEqual(await p.$('#suivi-etapes'), null, 'carte de suivi en double');
+  assert.ok(await p.$('#guide-etude [data-suivi-filtre="mes"]') && await p.$('#guide-etude [data-suivi-filtre="retard"]') && await p.$('#guide-etude [data-suivi-pdf]'), 'filtres ou PDF absents du guide');
+  // Filtre « En retard » : liste des étapes en retard (ou état vide explicite), puis retour à la vue par phase
+  await p.click('#guide-etude [data-suivi-filtre="retard"]'); await p.waitForTimeout(300);
+  assert.strictEqual(await p.$eval('#guide-etude [data-suivi-filtre="retard"]', b => b.getAttribute('aria-pressed')), 'true');
+  assert.ok(await p.$('#guide-etude .guide-filtree li, #guide-etude .guide-vide'), 'liste filtrée absente');
+  assert.strictEqual(await p.$('#guide-etude .guide-liste'), null, 'vue par phase encore affichée');
+  await p.click('#guide-etude [data-suivi-filtre="phases"]'); await p.waitForTimeout(300);
+  assert.strictEqual(await p.$('#guide-etude .guide-filtree'), null);
+  // Ordre : guide, calculs, puis outils (équipements et matériel ; chantier et exploitation) ; fiche de l'étude repliée
+  // quand l'étude a des calculs
+  const ordre = await p.evaluate(() => ['#guide-etude', '#ajout', '#groupe-equipements', '#groupe-chantier'].map(s => { const e = document.querySelector(s); return e ? e.getBoundingClientRect().top + scrollY : -1; }));
+  assert.ok(ordre.every(x => x >= 0) && ordre.every((x, i) => !i || x > ordre[i - 1]), `ordre des blocs : ${ordre}`);
+  assert.strictEqual(await p.$eval('#fiche-etude', d => d.open), false);
+  // Même pourcentage dans le guide et dans le résumé envoyé aux tableaux de bord (portefeuille, CRM)
+  const pc = await p.evaluate(i => { const et = S.etudes.find(x => x.id === i), b = SuiviEtapes.etapesEtude(et); return [SuiviEtapes.avancement(et, SuiviEtapes.decorer(et, b)).pct, Number((/Reste à faire — (\d+) %/.exec(document.querySelector('#guide-etude').innerText) || [])[1])]; }, id);
+  assert.strictEqual(pc[0], pc[1], `pourcentages différents : ${pc}`);
+  assert.deepStrictEqual(erreurs, []);
+});

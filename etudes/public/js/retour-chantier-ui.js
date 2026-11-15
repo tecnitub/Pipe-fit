@@ -7,7 +7,18 @@
 const retourCache = new Map();
 let rexCache = null;
 const reglagesRetour = et => ({ tolerance: 10, toleranceComptage: 15, seuilPannes: 30, minInstalles: 2, djuReel: '', ...(et.retourChantier || {}) });
-const lignesRetenues = et => { try { return MaterielRetenu.lignes(Metre.metre(et).filter(Metre.estEquipement), et.materiel); } catch (e) { return []; } };
+// Lignes du matériel retenu (métré de l'étude) : gardées tant que les calculs, le matériel, le registre et les réglages
+// sont les mêmes (le métré complet est long à refaire à chaque affichage de la page)
+const lignesRetenuesCache = new Map();
+const lignesRetenues = et => {
+  let cle = '';
+  try { cle = JSON.stringify([et.notes, et.materiel, et.equipements]); } catch (e) { cle = ''; }
+  const c = lignesRetenuesCache.get(et.id), conf = typeof S !== 'undefined' && S ? S.config : null;
+  if (cle && c && c.cle === cle && c.conf === conf) return c.l;
+  let l; try { l = MaterielRetenu.lignes(Metre.metre(et).filter(Metre.estEquipement), et.materiel); } catch (e) { l = []; }
+  if (cle) lignesRetenuesCache.set(et.id, { cle, conf, l });
+  return l;
+};
 async function chargerRetour(et, forcer) {
   if (!et.affaireId) return null;
   if (!forcer && retourCache.has(et.id)) return retourCache.get(et.id);
@@ -25,9 +36,9 @@ const alertesRex = (et, h) => { const g = reglagesRetour(et); return typeof RexE
 function carteRetourChantier(et) {
   if (et.modele || typeof MesuresRetour === 'undefined') return '';
   const c = (et.comptages || {}).releves || [];
-  return `<div class="carte petit retour-chantier" id="carte-retour">↩️ <strong>Retour du chantier</strong> ${et.affaireId ? '' : '<span class="muted">— étude non reliée à un chantier de Pipe-Fit</span>'}
-    <span class="espace"></span><button class="secondaire petit" id="rc-mesures" ${et.affaireId ? '' : 'disabled'}>📏 Mesures et réglages</button> <button class="secondaire petit" id="rc-plaques" ${et.affaireId ? '' : 'disabled'}>🏷️ Plaques et registre</button>
-    <button class="secondaire petit" id="rc-reserves" ${et.affaireId ? '' : 'disabled'}>🛡️ Réserves levées</button> <button class="secondaire petit" id="rc-fiabilite">⚠️ Fiabilité des modèles</button> <button class="secondaire petit" id="rc-comptages">📈 Comptages${c.length ? ` (${c.length})` : ''}</button>
+  return `<div class="outil-ligne retour-chantier" id="carte-retour"><div class="outil-txt">↩️ <strong>Retour du chantier</strong> ${et.affaireId ? '<span class="muted">: mesures, plaques, réserves et consommations relevées sur le chantier</span>' : '<span class="muted">— étude non reliée à un chantier de Pipe-Fit (fiche de l\'étude, « Affaire Pipe-Fit »)</span>'}</div>
+    <div class="outil-actions"><button class="secondaire petit" id="rc-mesures" ${et.affaireId ? '' : 'disabled'}>📏 Mesures et réglages</button> <button class="secondaire petit" id="rc-plaques" ${et.affaireId ? '' : 'disabled'}>🏷️ Plaques et registre</button>
+    <button class="secondaire petit" id="rc-reserves" ${et.affaireId ? '' : 'disabled'}>🛡️ Réserves levées</button> <button class="secondaire petit" id="rc-fiabilite">⚠️ Fiabilité des modèles</button> <button class="secondaire petit" id="rc-comptages">📈 Comptages${c.length ? ` (${c.length})` : ''}</button></div>
     <div id="rex-alertes"></div></div>`;
 }
 function lierRetourChantier(root, et) {
@@ -35,8 +46,11 @@ function lierRetourChantier(root, et) {
   on('#rc-mesures', () => dialogueMesures(et)); on('#rc-plaques', () => dialoguePlaques(et)); on('#rc-reserves', () => dialogueReservesLevees(et));
   on('#rc-fiabilite', () => dialogueFiabilite(et)); on('#rc-comptages', () => dialogueComptages(et));
   // Alerte à l'ouverture de l'étude : modèle retenu au taux de pannes élevé sur les autres affaires
-  if (lignesRetenues(et).some(l => l.reference)) chargerRex().then(h => {
-    const z = document.querySelector('#rex-alertes'), a = alertesRex(et, h);
+  // (après l'affichage : le métré n'est pas refait avant que la page soit visible)
+  chargerRex().then(h => {
+    const z = document.querySelector('#rex-alertes');
+    if (!z || !(h || []).length || !lignesRetenues(et).some(l => l.reference)) return;
+    const a = alertesRex(et, h);
     if (z && a.length) z.innerHTML = `<p class="alerte attention petit">⚠️ ${a.length} modèle(s) retenu(s) avec un taux de pannes élevé sur les affaires précédentes : ${a.map(x => `<strong>${esc(x.designation)}</strong> — ${esc(x.texte)}`).join(' ; ')}</p>`;
   }).catch(() => {});
 }

@@ -146,27 +146,40 @@ const SuiviEtapes = (() => {
     return d < 0 ? 'retard' : d <= DELAI_RELANCE ? 'bientot' : '';
   }
   const prerequis = e => [...new Set([].concat(e.bloquePar || e.blocages || e.dependances || []).map(x => (x && typeof x === 'object' ? x.id : x)).filter(Boolean).map(String))];
-  // Copie des étapes avec leur suivi ; une étape sans objet ou faite sur le terrain compte comme faite
+  // Copie des étapes avec leur suivi ; une étape sans objet ou faite sur le terrain compte comme faite.
+  // Les phases en cours du guide (etapes.actives) sont gardées sur la copie.
   function decorer(et, etapes, opts = {}) {
     const today = opts.today || jour();
-    return (etapes || []).map(e => {
+    const d = (etapes || []).map(e => {
       const s = suivi(et, e.id), fait = !!e.fait || !!s.sansObjet || !!s.faitTerrain;
       return { ...e, phase: phaseDe(e), fait, faitGuide: !!e.fait, sansObjet: !!s.sansObjet, motif: s.motif || '', sansObjetPar: s.sansObjetPar || '', sansObjetLe: s.sansObjetLe || '',
         responsable: s.responsable || null, echeance: s.echeance || '', faitTerrain: s.faitTerrain || null, historique: (s.historique || []).slice(), etatEcheance: etatEcheance(s.echeance, today, fait), bloquePar: prerequis(e) };
     });
+    if (etapes && Array.isArray(etapes.actives)) d.actives = etapes.actives.slice();
+    return d;
   }
   const restes = decorees => decorees.filter(e => !e.fait);
   const mesEtapes = (decorees, user, ctx) => restes(decorees).filter(e => correspond(e.responsable, user, ctx));
 
   /* ---------- Résumé d'avancement (mis en cache dans l'étude) ---------- */
   const Gd = () => essai(() => (typeof GuideEtude !== 'undefined' ? GuideEtude : require('./guide-etude')));
-  const etapesEtude = et => { const G = Gd(), r = G ? essai(() => G.restesAFaire(et)) : null; return r ? r.etapes || [] : null; };
-  // { le, pct, faits, total, sansObjet, retards, bientot, phases: { phase: { faits, total } }, restes: [compact] }
+  // Étapes du guide, avec les données du chantier déjà lues par le guide (même calcul que l'écran) ; etapes.actives :
+  // phases en cours (les phases d'un chantier pas encore relié ne comptent pas dans le pourcentage, comme dans le guide)
+  const etapesEtude = et => {
+    const G = Gd(), ch = G && G.donneesChantier ? essai(() => G.donneesChantier(et)) : null;
+    const r = G ? essai(() => G.restesAFaire(et, ch ? { chantier: ch } : {})) : null;
+    if (!r) return null;
+    const l = (r.etapes || []).slice();
+    if (Array.isArray(r.actives)) l.actives = r.actives.slice();
+    return l;
+  };
+  // { le, pct, faits, total, sansObjet, retards, bientot, phases: { phase: { faits, total } }, restes: [compact] } ;
+  // pct, faits et total : phases en cours seulement (decorees.actives), toutes les phases sinon
   function avancement(et, decorees, today) {
     today = today || jour();
-    const phases = {}, d = decorees || [];
+    const phases = {}, d = decorees || [], act = Array.isArray(d.actives) ? new Set(d.actives) : null, comptees = act ? d.filter(e => act.has(e.phase)) : d;
     d.forEach(e => { const p = phases[e.phase] = phases[e.phase] || { faits: 0, total: 0 }; p.total++; if (e.fait) p.faits++; });
-    const faits = d.filter(e => e.fait).length, total = d.length, ouverts = new Set(restes(d).map(e => e.id));
+    const faits = comptees.filter(e => e.fait).length, total = comptees.length, ouverts = new Set(restes(d).map(e => e.id));
     const rang = e => (e.etatEcheance === 'retard' ? 0 : e.etatEcheance === 'bientot' ? 1 : e.responsable ? 2 : 3);
     const r = restes(d).slice().sort((a, b) => rang(a) - rang(b) || String(a.echeance || '9').localeCompare(String(b.echeance || '9')));
     return { le: today, pct: total ? Math.round(faits / total * 100) : 100, faits, total, sansObjet: d.filter(e => e.sansObjet).length,
@@ -335,8 +348,9 @@ const SuiviEtapes = (() => {
       <div class="actions"><button id="se-x">Fermer</button></div>`);
     if (b) b.querySelector('#se-x').onclick = fermer;
   }
-  // Branche les boutons de htmlEtape / carte sous root ; rafraichir() après chaque modification
-  function lier(root, et, rafraichir) {
+  // Branche les boutons de htmlEtape et de la barre de filtres (guide « Reste à faire ») sous root ; rafraichir() après
+  // chaque modification ; etapes() : étapes affichées par le guide (avec les données du chantier), reprises dans le PDF
+  function lier(root, et, rafraichir, etapes) {
     if (!root) return;
     const apres = () => { if (rafraichir) rafraichir(); };
     root.querySelectorAll('[data-suivi-action]').forEach(b => b.onclick = ev => {
@@ -347,29 +361,31 @@ const SuiviEtapes = (() => {
       if (a === 'retablir') { retablir(et, id, moi()); sauver(et); return apres(); }
       if (a === 'historique') return dialogueHistorique(et, id);
     });
-    root.querySelectorAll('[data-suivi-filtre]').forEach(b => b.onclick = () => { filtreCarte = b.dataset.suiviFiltre; apres(); });
+    root.querySelectorAll('[data-suivi-filtre]').forEach(b => b.onclick = () => { choisirFiltre(b.dataset.suiviFiltre); apres(); });
     const pdf = root.querySelector('[data-suivi-pdf]');
-    if (pdf) pdf.onclick = () => genererPdf(et);
+    if (pdf) pdf.onclick = () => genererPdf(et, etapes ? essai(etapes) : null);
   }
 
-  // Carte « Suivi des étapes » de l'étude : Mes étapes / en retard / toutes / sans objet
-  let filtreCarte = 'mes';
-  const FILTRES = [['mes', 'Mes étapes'], ['retard', 'En retard'], ['restes', 'À faire'], ['sans-objet', 'Sans objet']];
-  function carte(et) {
-    if (!et || et.modele) return '';
-    const brutes = etapesEtude(et);
-    if (!brutes || !brutes.length) return '';
-    const d = decorer(et, brutes, { today: today() }), u = moi(), ctx = { chargeId: cfg.chargeDe ? essai(() => cfg.chargeDe(et.affaireId)) : '' };
-    const mes = u ? mesEtapes(d, u, ctx) : [], av = avancement(et, d, today());
-    const liste = filtreCarte === 'mes' ? mes : filtreCarte === 'retard' ? d.filter(e => e.etatEcheance === 'retard') : filtreCarte === 'sans-objet' ? d.filter(e => e.sansObjet) : restes(d);
-    const parPhase = PHASES.filter(([k]) => av.phases[k]).map(([k]) => `<span class="suivi-phase" title="${esc(PHASE[k].libelle)} : ${av.phases[k].faits} / ${av.phases[k].total}">${PHASE[k].ico} ${esc(PHASE[k].libelle)} <strong>${Math.round(av.phases[k].faits / av.phases[k].total * 100)} %</strong></span>`).join('');
-    const nb = { mes: mes.length, retard: av.retards, restes: av.total - av.faits, 'sans-objet': av.sansObjet };
-    return `<details class="carte suivi-etapes" id="suivi-etapes"${mes.length || av.retards ? ' open' : ''}><summary><strong>👥 Suivi des étapes</strong> <span class="muted petit">${av.pct} % · ${mes.length} pour moi${av.retards ? ` · <span class="txt-erreur">${av.retards} en retard</span>` : ''}</span></summary>
-      <div class="suivi-phases">${parPhase}</div>
-      <div class="suivi-filtres" role="group" aria-label="Étapes affichées">${FILTRES.map(([k, l]) => `<button type="button" class="${filtreCarte === k ? '' : 'secondaire '}petit" data-suivi-filtre="${k}" aria-pressed="${filtreCarte === k}">${esc(l)} (${nb[k]})</button>`).join('')}
-        <span class="espace"></span><button type="button" class="secondaire petit" data-suivi-pdf="1" title="Phases, %, étapes restantes par responsable, retards, sans objet et dernières actions">🖨️ État d'avancement PDF</button></div>
-      ${liste.length ? `<ul class="suivi-liste">${liste.map(e => `<li class="${e.etatEcheance === 'retard' ? 'suivi-retard' : ''}"><span class="guide-txt"><span class="petit muted">${PHASE[e.phase].ico} ${esc(PHASE[e.phase].libelle)}</span><strong>${esc(e.titre)}</strong>${e.sansObjet ? `<span class="petit">Motif : ${esc(e.motif)}${e.sansObjetPar ? ` (${esc(e.sansObjetPar)}, ${dateFr(jour(e.sansObjetLe))})` : ''}</span>` : e.info ? `<span class="petit">${esc(e.info)}</span>` : ''}</span>${htmlEtape(et, e)}</li>`).join('')}</ul>`
-        : `<p class="muted petit">${filtreCarte === 'mes' ? 'Aucune étape ne vous est affectée : « À faire » pour affecter les étapes.' : 'Aucune étape.'}</p>`}</details>`;
+  // Vue du guide « Reste à faire » : par phase (défaut), mes étapes, en retard, sans objet ; gardée pendant la session
+  const FILTRES = [['phases', 'Par phase'], ['mes', 'Mes étapes'], ['retard', 'En retard'], ['sans-objet', 'Sans objet']];
+  let filtreVue = null;
+  const filtre = () => {
+    if (filtreVue === null) { filtreVue = essai(() => sessionStorage.getItem('etudes-guide-filtre')) || 'phases'; if (!FILTRES.some(([k]) => k === filtreVue)) filtreVue = 'phases'; }
+    return filtreVue;
+  };
+  function choisirFiltre(k) { filtreVue = FILTRES.some(([x]) => x === k) ? k : 'phases'; essai(() => sessionStorage.setItem('etudes-guide-filtre', filtreVue)); }
+  // Étapes décorées du guide → { filtre, compteurs, liste (étapes du filtre, null pour « par phase »), barre (HTML),
+  // resume (« n pour moi · n en retard ») }
+  function vue(et, etapes) {
+    const d = (etapes || []).filter(e => e && e.id), u = moi(), ctx = { chargeId: cfg.chargeDe ? essai(() => cfg.chargeDe(et.affaireId)) : '' };
+    const mes = u ? mesEtapes(d, u, ctx) : [], retards = d.filter(e => e.etatEcheance === 'retard'), so = d.filter(e => e.sansObjet);
+    const nb = { mes: mes.length, retard: retards.length, 'sans-objet': so.length };
+    const f = filtre(), liste = f === 'mes' ? mes : f === 'retard' ? retards : f === 'sans-objet' ? so : null;
+    const barre = `<div class="suivi-filtres" role="group" aria-label="Étapes affichées">${FILTRES.map(([k, l]) => `<button type="button" class="${f === k ? '' : 'secondaire '}petit${k === 'retard' && nb.retard ? ' a-retard' : ''}" data-suivi-filtre="${k}" aria-pressed="${f === k}">${esc(l)}${k === 'phases' ? '' : ` (${nb[k]})`}</button>`).join('')}
+      <span class="espace"></span><button type="button" class="secondaire petit" data-suivi-pdf="1" title="Phases, %, étapes restantes par responsable, retards, sans objet et dernières actions">🖨️ État d'avancement (PDF)</button></div>`;
+    const resume = [u ? `${nb.mes} pour moi` : '', nb.retard ? `<span class="txt-erreur">${nb.retard} en retard</span>` : ''].filter(Boolean).join(' · ');
+    const vide = { mes: 'Aucune étape ne vous est affectée. Affectez les étapes depuis la vue « Par phase » (bouton « Affecter… » de chaque étape).', retard: 'Aucune étape en retard.', 'sans-objet': 'Aucune étape marquée sans objet.' }[f] || '';
+    return { filtre: f, compteurs: nb, liste, barre, resume, vide };
   }
 
   /* ---------- Synthèse imprimable « État d'avancement » ---------- */
@@ -387,11 +403,11 @@ const SuiviEtapes = (() => {
       ${so.length ? `<h3>Étapes sans objet</h3><table class="tn"><thead><tr><th>Étape</th><th>Motif</th><th>Par, le</th></tr></thead><tbody>${so.map(e => `<tr><td>${esc(e.titre)}</td><td>${esc(e.motif)}</td><td>${esc(e.sansObjetPar)}${e.sansObjetLe ? `, ${dateFr(jour(e.sansObjetLe))}` : ''}</td></tr>`).join('')}</tbody></table>` : ''}
       ${actions.length ? `<h3>Dernières actions</h3><table class="tn"><thead><tr><th>Date</th><th>Qui</th><th>Action</th><th>Étape</th></tr></thead><tbody>${actions.map(h => `<tr><td>${dateFr(jour(h.le))}</td><td>${esc(h.par || '—')}</td><td>${esc(String(ACTIONS[h.action] || h.action).replace(/^\S+\s/, ''))}${h.detail ? ` : ${esc(h.detail)}` : ''}</td><td>${esc(h.titre)}</td></tr>`).join('')}</tbody></table>` : ''}</div>`;
   }
-  async function genererPdf(et) {
+  async function genererPdf(et, etapes) {
     const b = ouvrir('<h2>État d\'avancement</h2><p>Mise en page…</p>');
     try {
       const a = cfg.affaireDe ? essai(() => cfg.affaireDe(et.affaireId)) : '';
-      const html = htmlPdf(et, { affaire: a || '' }), conv = typeof pourPdf === 'function' ? pourPdf : x => x;
+      const html = htmlPdf(et, { affaire: a || '', ...(Array.isArray(etapes) && etapes.length ? { etapes } : {}) }), conv = typeof pourPdf === 'function' ? pourPdf : x => x;
       const bytes = await PDF.depuisHTML(conv(html), 'État d\'avancement', null, { margeHaut: 36, margeBas: 36 });
       const nom = `Etat_avancement_${String(et.objet || 'etude').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w]+/g, '_').slice(0, 40)}.pdf`;
       b.innerHTML = `<h2>État d'avancement généré</h2><p><strong>${esc(nom)}</strong></p><div class="actions"><button class="secondaire" id="se-f">Fermer</button><button id="se-dl">Télécharger le PDF</button></div>`;
@@ -402,6 +418,6 @@ const SuiviEtapes = (() => {
 
   return { PHASES, PHASE, PHASES_TERRAIN, ROLES, ROLE, ROLES_COMPTE, normPhase, phaseDe, libelleResponsable, responsableValide, correspond, suivi, historique, estSansObjet,
     affecter, marquerSansObjet, retablir, noterFait, noterRouvert, suivreEtats, fusionnerTerrain, etatEcheance, decorer, mesEtapes, avancement, mettreAJour, etapesEtude,
-    portefeuille, responsables, etapesPour, relances, purgerDeja, configurer, htmlEtape, lier, carte, htmlPdf, genererPdf, dialogueHistorique, ACTIONS };
+    portefeuille, responsables, etapesPour, relances, purgerDeja, configurer, htmlEtape, lier, vue, filtre, choisirFiltre, FILTRES, htmlPdf, genererPdf, dialogueHistorique, ACTIONS };
 })();
 if (typeof module !== 'undefined') module.exports = SuiviEtapes;

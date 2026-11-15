@@ -23,8 +23,8 @@ function resumeEquipement(x) {
 
 function carteRegistre(et) {
   const b = Registre.bilan(et), n = b.reduce((s, y) => s + y.emplacements.length, 0), libres = b.filter(y => !y.emplacements.length).length;
-  return `<div class="carte petit">🗂️ <strong>Registre des équipements</strong> : ${b.length ? `${b.length} modèle(s) · ${n} emplacement(s) dans les calculs${libres ? ` · <span class="avert">${libres} à placer</span>` : ''}` : 'vide — chargez les fiches du chantier en vrac : chaque modèle est saisi une fois et réparti dans les calculs'}
-    <button class="secondaire petit" id="registre">Ouvrir le registre</button> <button class="secondaire petit" id="vrac2">📥 Matériel en vrac</button></div>`;
+  return `<div class="outil-ligne" id="carte-registre"><div class="outil-txt">🗂️ <strong>Registre des équipements</strong> : ${b.length ? `${b.length} modèle(s) · ${n} emplacement(s) dans les calculs${libres ? ` · <span class="avert">${libres} à placer</span>` : ''}` : 'vide — chargez les fiches du chantier en vrac : chaque modèle est saisi une fois et réparti dans les calculs'}</div>
+    <div class="outil-actions"><button class="secondaire petit" id="registre">Ouvrir le registre</button><button class="secondaire petit" id="vrac2">📥 Matériel en vrac</button></div></div>`;
 }
 
 function dialogueRegistre(et) {
@@ -179,6 +179,8 @@ function parcoursHtml(et) {
   if (et.modele || !(et.notes || []).length) return '';
   let e; try { e = etapesEtude(et); } catch (err) { return ''; }
   const faits = e.filter(x => x.fait).length, pct = Math.round(faits / e.length * 100), cur = e.findIndex(x => !x.fait);
+  // Tout est fait : une ligne (les six étapes restent lisibles en survol), la place va aux calculs
+  if (pct === 100) return `<div class="carte parcours parcours-fait" title="${esc(e.map(x => `✓ ${x.titre} : ${x.info}`).join('\n'))}"><strong>🎉 Étude prête : tout est relié, rien à ressaisir</strong> <span class="petit muted">${esc(e.map(x => x.titre).join(' · '))}</span></div>`;
   return `<div class="carte parcours"><div class="parcours-tete"><strong>${pct === 100 ? '🎉 Étude prête : tout est relié, rien à ressaisir' : `🧭 Parcours de l'étude — ${pct} %`}</strong>
       <div class="parcours-barre"><span style="width:${pct}%"></span></div></div>
     <ol class="parcours-etapes">${e.map((x, i) => `<li class="${x.fait ? 'fait' : i === cur ? 'actuelle' : ''}"><span class="pastille">${x.fait ? '✓' : x.ico}</span><span class="txt"><strong>${esc(x.titre)}</strong><span class="petit">${esc(x.info)}</span>

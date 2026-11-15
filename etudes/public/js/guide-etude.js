@@ -30,7 +30,7 @@ const GuideEtude = (() => {
   const dateFrG = iso => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '');
 
   // Phases, dans l'ordre d'une affaire
-  const PHASES = [['etude', '📐', 'Étude'], ['achats', '🛒', 'Achats'], ['chantier', '🏗️', 'Chantier'], ['mes', '🔧', 'Mise en service'], ['reception', '🤝', 'Réception'], ['doe', '📚', 'DOE'], ['exploitation', '📈', 'Exploitation']];
+  const PHASES = [['etude', '📐', 'Étude'], ['achats', '🛒', 'Achats'], ['chantier', '🏗️', 'Chantier'], ['mes', '🔧', 'Mise en service'], ['reception', '🤝', 'Réception'], ['doe', '📚', 'DOE'], ['exploitation', '♻️', 'Exploitation']];
   // Groupes : [clé, icône, libellé, phase, impact de base], dans l'ordre logique
   const GROUPES = [['donnees', '🏢', 'Données de l\'étude', 'etude', 8], ['dossier', '📑', 'Dossier de consultation', 'etude', 4], ['calculs', '🧮', 'Calculs à créer', 'etude', 7], ['bilans', '🌡️', 'Bilans', 'etude', 4],
     ['valeurs', '✏️', 'Valeurs à confirmer', 'etude', 3], ['estimees', '📐', 'Valeurs estimées à confirmer', 'etude', 3], ['verifier', '🔎', 'Valeurs reprises à vérifier', 'etude', 2], ['raccordement', '🌀', 'Raccordements', 'etude', 4],
@@ -576,13 +576,24 @@ const GuideEtude = (() => {
     chantierCache.set(et.id, { t: Date.now(), affaireId: et.affaireId, data: data || (c && c.data) || null });
     return JSON.stringify(data || (c && c.data) || null) !== (avant || 'null');
   }
-  // Étapes à afficher : chantier en cache, suivi des étapes, historique des étapes devenues faites
+  // Étapes à afficher : chantier en cache, suivi des étapes, historique des étapes devenues faites.
+  // Résultat gardé tant que l'étude, les données du chantier, les réglages et le jour sont les mêmes : un nouvel
+  // affichage de la page (filtre, retour d'un dialogue, données du chantier inchangées) ne refait pas tout le guide.
+  const memo = new Map();
+  const globaux = () => (typeof S !== 'undefined' && S ? [S.config, S.pf] : []);
+  const cleDe = (et, c) => { try { return JSON.stringify([et, c && c.data, new Date().toDateString()]); } catch (e) { return ''; } };
   function calculer(et) {
+    const c = chantierCache.get(et.id), g = globaux(), cle = cleDe(et, c), m = memo.get(et.id);
+    if (cle && m && m.cle === cle && m.g.length === g.length && m.g.every((x, i) => x === g[i])) return m.r;
     const r = restesAFaire(et, { chantier: donneesChantier(et) });
+    r.etapes.actives = r.actives; // phases en cours : même pourcentage dans l'état d'avancement (PDF)
     derniers.set(et.id, r.etapes);
-    const S = Sv(), avant = restantes.get(et.id);
-    if (avant && S && S.noterFait) r.etapes.filter(x => x.fait && avant.has(x.id)).forEach(x => essai(() => S.noterFait(et, x)));
+    const Sx = Sv(), avant = restantes.get(et.id);
+    if (avant && Sx && Sx.noterFait) r.etapes.filter(x => x.fait && avant.has(x.id)).forEach(x => essai(() => Sx.noterFait(et, x)));
     restantes.set(et.id, new Set(r.etapes.filter(x => !x.fait).map(x => x.id)));
+    // Clé reprise après coup : l'historique « fait » vient peut-être de compléter l'étude
+    const apres = cle && cleDe(et, c);
+    if (apres) memo.set(et.id, { cle: apres, g, r }); else memo.delete(et.id);
     return r;
   }
   const lienBlocage = (x, parId) => {
@@ -615,25 +626,33 @@ const GuideEtude = (() => {
     if (!r || !r.total) return '';
     const S = Sv(), parId = new Map(r.etapes.map(x => [x.id, x]));
     const s = r.suivante, restes = r.restes, actives = new Set(r.actives);
+    // Suivi des étapes (responsable, échéance, sans objet) : filtres « Mes étapes / En retard / Sans objet » et PDF
+    const V = S && S.vue ? essai(() => S.vue(et, r.etapes)) : null;
     const suivi = x => (S && S.htmlEtape ? essai(() => S.htmlEtape(et, x)) || '' : '');
-    const bouton = (x, principal) => `${x.tout ? `<button class="petit" data-guide="${esc(x.tout[0])}" title="Tous les calculs d'après l'inventaire, raccordés, puissances manquantes estimées">${esc(x.tout[1])}</button>` : ''}${x.action ? `<button class="${principal && !x.bloquee ? '' : 'secondaire '}petit" data-guide="${esc(x.action[0])}">${esc(x.action[1])}</button>` : ''}${x.confirmer ? `<button class="secondaire petit" data-guide="${esc(x.confirmer)}" title="${x.libConfirmer ? 'Marquer l\'étape comme faite' : 'Les valeurs par défaut conviennent'}">${esc(x.libConfirmer || '✓ C\'est bon')}</button>` : ''}`;
-    const ligne = x => `<li class="guide-etape${x.bloquee ? ' bloquee' : ''}" data-etape="${esc(x.id)}"><span class="guide-txt"><strong>${x.bloquee ? '🔒 ' : ''}${esc(x.titre)}</strong><span class="petit">${esc(x.info)}</span>${x.bloquee ? lienBlocage(x, parId) : ''}${suivi(x)}</span><span class="guide-actions">${bouton(x, false)}</span>${editeurHtml(et, x)}</li>`;
+    const bouton = (x, principal) => (x.fait ? '' : `${x.tout ? `<button class="petit" data-guide="${esc(x.tout[0])}" title="Tous les calculs d'après l'inventaire, raccordés, puissances manquantes estimées">${esc(x.tout[1])}</button>` : ''}${x.action ? `<button class="${principal && !x.bloquee ? '' : 'secondaire '}petit" data-guide="${esc(x.action[0])}">${esc(x.action[1])}</button>` : ''}${x.confirmer ? `<button class="secondaire petit" data-guide="${esc(x.confirmer)}" title="${x.libConfirmer ? 'Marquer l\'étape comme faite' : 'Les valeurs par défaut conviennent'}">${esc(x.libConfirmer || '✓ C\'est bon')}</button>` : ''}`);
+    const ligne = (x, phase) => `<li class="guide-etape${x.bloquee ? ' bloquee' : ''}${x.etatEcheance === 'retard' ? ' suivi-retard' : ''}" data-etape="${esc(x.id)}"><span class="guide-txt">${phase ? `<span class="petit muted">${PHASE[x.phase].ico} ${esc(PHASE[x.phase].libelle)} · ${esc(GROUPE[x.groupe].libelle)}</span>` : ''}<strong>${x.bloquee ? '🔒 ' : ''}${esc(x.titre)}</strong><span class="petit">${esc(x.sansObjet ? `Motif : ${x.motif}${x.sansObjetPar ? ` (${x.sansObjetPar})` : ''}` : x.info)}</span>${x.bloquee ? lienBlocage(x, parId) : ''}${suivi(x)}</span><span class="guide-actions">${bouton(x, false)}</span>${x.fait ? '' : editeurHtml(et, x)}</li>`;
     const puces = r.phases.filter(p => p.total || !p.active).map(p => `<span class="guide-puce${p.active ? '' : ' a-venir'}${p.active && p.pct === 100 ? ' faite' : ''}" title="${esc(p.active ? `${p.faits} / ${p.total} étape(s) faite(s)` : 'Phase à venir : l\'étude n\'est pas encore reliée à un chantier')}">${p.ico} ${esc(p.libelle)} <b>${p.active ? `${p.pct} %` : 'à venir'}</b></span>`).join('');
-    const phasesHtml = r.phases.filter(p => p.total || !p.active).map(p => {
-      const l = restes.filter(x => x.phase === p.id && x !== s);
-      if (p.active && !l.length) return '';
-      const groupes = GROUPES.filter(g => g[3] === p.id).map(([g]) => [g, l.filter(x => x.groupe === g)]).filter(([, y]) => y.length);
-      const ouv = phasesOuvertes.has(p.id) ? phasesOuvertes.get(p.id) : p.active && (p.id === (s && s.phase) || l.length <= 6);
-      return `<details class="guide-phase${p.active ? '' : ' a-venir'}" data-phase="${p.id}"${ouv ? ' open' : ''}><summary>${p.ico} <strong>${esc(p.libelle)}</strong> <span class="petit muted">${p.active ? `${p.pct} % · ${p.faits} / ${p.total} · ${l.length} à faire` : `à venir${l.length ? ` · ${l.length} étape(s) prévue(s)` : ''}`}</span></summary>
-        ${!p.active ? `<p class="petit muted">${p.id === 'achats' ? 'S\'ouvre dès qu\'un matériel est choisi ou que l\'étude est reliée au chantier.' : 'S\'applique une fois l\'étude reliée au chantier Pipe-Fit (fiche de l\'étude, « Affaire Pipe-Fit »).'}</p>` : p.suivante && p.suivante !== s ? `<p class="petit guide-suivante-phase">➡️ Étape suivante de la phase : <strong>${esc(p.suivante.titre)}</strong></p>` : ''}
-        ${groupes.map(([g, y]) => `<h4>${GROUPE[g].ico} ${esc(GROUPE[g].libelle)}</h4><ul>${y.map(ligne).join('')}</ul>`).join('')}</details>`;
-    }).join('');
-    const autres = restes.filter(x => x !== s).length;
+    let corps;
+    if (V && V.liste) corps = V.liste.length ? `<ul class="guide-filtree">${V.liste.map(x => ligne(x, true)).join('')}</ul>` : `<p class="muted petit guide-vide">${esc(V.vide)}</p>`;
+    else {
+      const phasesHtml = r.phases.filter(p => p.total || !p.active).map(p => {
+        const l = restes.filter(x => x.phase === p.id && x !== s);
+        if (p.active && !l.length) return '';
+        const groupes = GROUPES.filter(g => g[3] === p.id).map(([g]) => [g, l.filter(x => x.groupe === g)]).filter(([, y]) => y.length);
+        const ouv = phasesOuvertes.has(p.id) ? phasesOuvertes.get(p.id) : p.active && (p.id === (s && s.phase) || l.length <= 6);
+        return `<details class="guide-phase${p.active ? '' : ' a-venir'}" data-phase="${p.id}"${ouv ? ' open' : ''}><summary>${p.ico} <strong>${esc(p.libelle)}</strong> <span class="petit muted">${p.active ? `${p.pct} % · ${p.faits} / ${p.total} · ${l.length} à faire` : `à venir${l.length ? ` · ${l.length} étape(s) prévue(s)` : ''}`}</span></summary>
+          ${!p.active ? `<p class="petit muted">${p.id === 'achats' ? 'S\'ouvre dès qu\'un matériel est choisi ou que l\'étude est reliée au chantier.' : 'S\'applique une fois l\'étude reliée au chantier Pipe-Fit (fiche de l\'étude, « Affaire Pipe-Fit »).'}</p>` : p.suivante && p.suivante !== s ? `<p class="petit guide-suivante-phase">➡️ Étape suivante de la phase : <strong>${esc(p.suivante.titre)}</strong></p>` : ''}
+          ${groupes.map(([g, y]) => `<h4>${GROUPE[g].ico} ${esc(GROUPE[g].libelle)}</h4><ul>${y.map(x => ligne(x)).join('')}</ul>`).join('')}</details>`;
+      }).join('');
+      const autres = restes.filter(x => x !== s).length;
+      corps = `${s ? `<div class="guide-suivante${s.bloquee ? ' bloquee' : ''}" data-etape="${esc(s.id)}"><span class="guide-ico" aria-hidden="true">${GROUPE[s.groupe].ico}</span><span class="guide-txt"><span class="petit muted">Étape suivante · ${esc(PHASE[s.phase].libelle)} · ${esc(GROUPE[s.groupe].libelle)}${s.dependants ? ` · ${s.dependants} étape(s) en dépendent` : ''}</span><strong>${esc(s.titre)}</strong><span class="petit">${esc(s.info)}</span>${s.bloquee ? lienBlocage(s, parId) : ''}${suivi(s)}</span><span class="guide-actions">${bouton(s, true)}</span>${editeurHtml(et, s)}</div>` : ''}
+      ${autres ? `<details class="guide-liste"${ouvert ?? autres <= 6 ? ' open' : ''}><summary>${autres} autre(s) étape(s) à faire, par phase et par impact</summary>${phasesHtml}</details>` : ''}`;
+    }
     return `<div class="carte guide-etude" id="guide-etude"><div class="parcours-tete"><strong>${!restes.filter(x => actives.has(x.phase)).length ? '✅ Reste à faire : rien pour les phases en cours' : `📝 Reste à faire — ${r.pct} %`}</strong>
-        <div class="parcours-barre" role="progressbar" aria-valuenow="${r.pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${r.pct}%"></span></div><span class="petit muted">${r.faits} / ${r.total}</span></div>
+        <div class="parcours-barre" role="progressbar" aria-label="Avancement des phases en cours" aria-valuenow="${r.pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${r.pct}%"></span></div><span class="petit muted">${r.faits} / ${r.total} étape(s)${V && V.resume ? ` · ${V.resume}` : ''}</span></div>
       <div class="guide-phases">${puces}</div>
-      ${s ? `<div class="guide-suivante${s.bloquee ? ' bloquee' : ''}" data-etape="${esc(s.id)}"><span class="guide-ico">${GROUPE[s.groupe].ico}</span><span class="guide-txt"><span class="petit muted">Étape suivante · ${esc(PHASE[s.phase].libelle)} · ${esc(GROUPE[s.groupe].libelle)}${s.dependants ? ` · ${s.dependants} étape(s) en dépendent` : ''}</span><strong>${esc(s.titre)}</strong><span class="petit">${esc(s.info)}</span>${s.bloquee ? lienBlocage(s, parId) : ''}${suivi(s)}</span><span class="guide-actions">${bouton(s, true)}</span>${editeurHtml(et, s)}</div>` : ''}
-      ${autres ? `<details class="guide-liste"${ouvert ?? autres <= 6 ? ' open' : ''}><summary>${autres} autre(s) action(s) à faire, par phase et par impact</summary>${phasesHtml}</details>` : ''}</div>`;
+      ${V ? V.barre : ''}
+      ${corps}</div>`;
   }
   // Actions des boutons : dialogues et vues de l'application (globales du navigateur)
   function lier(root, et) {
@@ -719,11 +738,11 @@ const GuideEtude = (() => {
       g.replaceWith(nv); lier(nv, et);
     };
     const S = Sv();
-    if (S && S.lier) essai(() => S.lier(guide, et, rafraichir));
+    if (S && S.lier) essai(() => S.lier(guide, et, rafraichir, () => derniers.get(et.id)));
     if (et.affaireId) chargerChantier(et).then(change => { if (change && document.querySelector('#guide-etude')) rafraichir(); }).catch(() => {});
   }
   // Liste détaillée ouverte au prochain affichage (après « Créer toute l'étude »)
   const ouvrir = () => { ouvert = true; };
-  return { restesAFaire, construire, synthese, valeursNote, suggestionsAnnexes, corriger, html, lier, ouvrir, chargerChantier, GROUPES, PHASES };
+  return { restesAFaire, construire, synthese, valeursNote, suggestionsAnnexes, corriger, html, lier, ouvrir, chargerChantier, donneesChantier, GROUPES, PHASES };
 })();
 if (typeof module !== 'undefined') module.exports = GuideEtude;

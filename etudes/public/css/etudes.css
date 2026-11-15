@@ -328,14 +328,17 @@ details.plus-actions .plus-liste > * { text-align: left; width: 100%; }
 .annexes-types h4 { margin: .8em 0 .3em; }
 
 /* Suivi des étapes : responsable, échéance, sans objet, historique ; portefeuille des études */
-.suivi-etapes { border-left: 4px solid #3b7dd8; }
-.suivi-etapes > summary, .portefeuille > details > summary { cursor: pointer; padding: .3em 0; }
+.portefeuille > details > summary { cursor: pointer; padding: .3em 0; }
 .suivi-phases { display: flex; flex-wrap: wrap; gap: .4em .9em; margin: .5em 0; }
 .suivi-phase { font-size: .9em; }
 .suivi-filtres { display: flex; flex-wrap: wrap; gap: .4em; align-items: center; margin: .4em 0 .6em; }
 .suivi-liste { list-style: none; margin: 0; padding: 0; display: grid; gap: .4em; }
 .suivi-liste li { display: flex; gap: .6em; align-items: center; flex-wrap: wrap; padding: .45em .55em; border-radius: 8px; background: rgba(127, 127, 127, .06); }
-.suivi-liste li.suivi-retard { outline: 2px solid var(--err-texte); outline-offset: -2px; }
+.guide-filtree { list-style: none; margin: 0; padding: 0; display: grid; gap: .4em; }
+.guide-filtree li { display: flex; gap: .6em; align-items: center; flex-wrap: wrap; padding: .45em .55em; border-radius: 8px; background: rgba(127, 127, 127, .06); }
+.guide-vide { margin: .3em 0; }
+.suivi-filtres button.a-retard:not([aria-pressed="true"]) { color: var(--err-texte); border-color: var(--err-texte); }
+.suivi-liste li.suivi-retard, .guide-etude li.suivi-retard { outline: 2px solid var(--err-texte); outline-offset: -2px; }
 .suivi-etape { display: inline-flex; flex-wrap: wrap; gap: .35em; align-items: center; }
 .suivi-actions { display: inline-flex; flex-wrap: wrap; gap: .35em; }
 .txt-erreur { color: var(--err-texte); font-weight: 600; }
@@ -352,3 +355,37 @@ details.plus-actions .plus-liste > * { text-align: left; width: 100%; }
   .suivi-actions button { flex: 1 1 auto; }
   .pf-filtres label { flex: 1 1 140px; }
 }
+
+/* Page de l'étude : groupes de lignes d'outils (équipements et matériel ; chantier et exploitation) */
+.groupe-etude h3 { margin: 0 0 .3em; font-size: 1em; }
+.outil-ligne { display: flex; flex-wrap: wrap; gap: .4em .8em; align-items: center; padding: .5em 0; border-top: 1px solid var(--bord, #d6dbe1); font-size: 13.5px; }
+.groupe-etude h3 + .outil-ligne { border-top: 0; }
+.outil-txt { flex: 1 1 320px; min-width: 0; overflow-wrap: anywhere; }
+.outil-actions { display: flex; flex-wrap: wrap; gap: .4em; }
+.outil-ligne #rex-alertes { flex-basis: 100%; }
+.outil-ligne #rex-alertes:empty { display: none; }
+.parcours-fait { display: flex; flex-wrap: wrap; gap: .3em .8em; align-items: baseline; padding-top: .55em; padding-bottom: .55em; }
+@media (max-width: 700px) {
+  .outil-actions { width: 100%; }
+  .outil-actions button { flex: 1 1 auto; min-height: 40px; }
+}
+.actions-etude { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; justify-content: flex-end; }
+@media (max-width: 700px) {
+  .actions-etude { display: grid; grid-template-columns: 1fr 1fr; width: 100%; margin-left: 0; }
+  .actions-etude > button { width: 100%; padding-left: 6px; padding-right: 6px; }
+  .actions-etude > #pdf { grid-column: 1 / -1; }
+}
+/* Documents émis : colonnes lisibles sur téléphone (le tableau défile dans son cadre) */
+table.docs-emis td:first-child, table.docs-emis td:nth-child(4), table.docs-emis td:nth-child(5) { white-space: nowrap; }
+table.docs-emis td:nth-child(3) { min-width: 220px; }
+@media (max-width: 700px) { table.docs-emis { min-width: 640px; } }
+.a-faire-detail > summary { cursor: pointer; padding: .3em 0; }
+@media (max-width: 700px) { .a-faire-detail > summary { min-height: 40px; box-sizing: border-box; padding: 9px 0; } }
+/* Téléphone : barre des calculs en deux colonnes ; état et actions d'un calcul sur une même ligne */
+@media (max-width: 700px) {
+  .barre-calculs > h2 { flex: 1 1 auto; }
+  .barre-calculs > :not(h2) { flex: 1 1 40%; justify-content: center; text-align: center; }
+  .carte.note .note-etat { flex: 1 1 auto; }
+  .carte.note .note-actions { margin-left: auto; }
+}
+@media (max-width: 700px) { .carte .actions-ligne > button { flex: 1 1 auto; } }
