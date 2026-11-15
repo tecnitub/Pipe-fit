@@ -99,6 +99,11 @@ QUANTITATIF POUR LE CHIFFRAGE (bouton « Quantitatif chiffrage »)
   Bulles de repère, cadres T1…, n° de soudure, renvois et textes de cote sont placés sur la feuille sans
   jamais se recouvrir (option cochée par défaut ; décochée, ce sont les étiquettes Revit).
 
+LISTE DE DÉBIT
+  Longueur reprise de l'élément tube dans Revit (paramètre Longueur), plus la surlongueur = coupe ;
+  système de canalisation (type de système Revit) sur chaque ligne. Fichier « Liste de débit.csv » pour
+  l'atelier : par système de canalisation, DN et matière, avec la barre de 6 m où couper chaque tube.
+
 LÉGENDE DES SYMBOLES
   Chaque isométrie porte la légende des symboles présents (bande sous le dessin). La feuille ISO-LÉGENDE,
   créée avec les isométries, donne tous les symboles (option dans la fenêtre des isométries).

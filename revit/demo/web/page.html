@@ -485,7 +485,18 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
         `<p class="note">Repère 1, 2, 3… = numéro de ligne, écrit dans le paramètre « Marque » de chaque raccord. Les tubes sont repérés T1, T2… dans l'ordre de la ligne.</p>`;
     } else if (st.tab === 'deb') {
       const t = tab(s, 'LISTE DE DÉBIT');
-      p.innerHTML = t ? table(t.colonnes.map(c => ({ t: c.t, r: c.d })), t.lignes) + `<p class="note">Longueurs de coupe des tubes, entre chanfreins. Aux soudures chantier, le tube est débité avec une surlongueur (ici 100 mm) à recouper sur place : colonne « dont surl. », et « R1 +100 » sur l'isométrie.</p>` : '<p>Aucun tube.</p>';
+      const ld = ALL.listeDebit || [];
+      const groupes = [...new Set(ld.map(l => l.sys + '|' + l.dn + '|' + l.mat))];
+      p.innerHTML = (t ? `<h3>Spool ${esc(s.nom)}</h3>` + table(t.colonnes.map(c => ({ t: c.t, r: c.d })), t.lignes) +
+        `<p class="note">« Revit » : longueur de l'élément tube dans Revit (paramètre Longueur). « Coupe » : longueur à débiter, surlongueur à recouper comprise (ici 100 mm aux soudures chantier).</p>` : '<p>Aucun tube.</p>') +
+        `<h3>Liste de débit de l'atelier (tous les spools)</h3>` +
+        groupes.map(gk => {
+          const ls = ld.filter(l => l.sys + '|' + l.dn + '|' + l.mat === gk), barres = Math.max(...ls.map(l => l.barre));
+          return `<p class="note"><b>${esc(ls[0].sys)} · DN${Math.round(ls[0].dn)} · ${esc(ls[0].mat)}</b> — ${ls.length} tube(s), ${fr.format(ls.reduce((a, l) => a + l.coupe, 0) / 1000)} m, ${barres} barre(s) de 6 m</p>` +
+            table([{ t: 'Spool' }, { t: 'Rep.' }, { t: 'Revit (mm)', r: true }, { t: 'Surl.', r: true }, { t: 'Coupe (mm)', r: true }, { t: 'Barre', r: true }],
+              ls.map(l => [l.spool, l.rep, fr.format(l.revit), l.surl ? '+' + l.surl : '', fr.format(l.coupe), l.barre || 'hors barre']));
+        }).join('') +
+        `<p class="note">Fichier « Liste de débit.csv » : par système de canalisation, DN et matière, du plus long au plus court ; chaque tube est affecté à une barre de 6 m (trait de scie 3 mm).</p>`;
     } else if (st.tab === 'ass') {
       const t = tab(s, 'ASSEMBLAGES');
       const lib = { Soudure: ['Soudure atelier', 's'], Boulonne: ['Joint boulonné', 'b'], RaccordementChantier: ['Raccordement chantier', 'r'], ExtremiteLibre: ['Extrémité libre', 'r'] };

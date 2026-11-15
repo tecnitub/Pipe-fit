@@ -80,6 +80,8 @@ namespace PipeFit.Isometries.Core
         public string Systeme = "";
         /// <summary>Abréviation du système Revit (ex. « EGD » pour eau glacée départ).</summary>
         public string Abreviation = "";
+        /// <summary>Système de canalisation (type de système Revit : « Eau glacée départ »…).</summary>
+        public string TypeSysteme = "";
         public double LongueurMm;
         public Point3? Centre;
         public List<Extremite> Extremites = new List<Extremite>();
@@ -149,8 +151,12 @@ namespace PipeFit.Isometries.Core
         public Composant Tube;
         /// <summary>Longueur de coupe, surlongueur comprise.</summary>
         public double LongueurMm;
+        /// <summary>Longueur de l'élément tube dans Revit (paramètre « Longueur »), arrondie au mm.</summary>
+        public double LongueurRevitMm;
         public double SurlongueurMm;
         public double DnMm;
+        /// <summary>Système de canalisation du tube (type de système, à défaut nom du système).</summary>
+        public string Systeme = "";
     }
 
     public sealed class Spool

@@ -138,6 +138,8 @@ namespace PipeFit.Isometries.Revit
             c.Systeme = Texte(e, BuiltInParameter.RBS_SYSTEM_NAME_PARAM);
             c.Abreviation = Texte(e, BuiltInParameter.RBS_SYSTEM_ABBREVIATION_PARAM);
             if (c.Systeme == "") c.Systeme = Texte(e, BuiltInParameter.RBS_PIPING_SYSTEM_TYPE_PARAM);
+            // Système de canalisation (type de système : « Eau glacée départ »…), pour la liste de débit
+            c.TypeSysteme = Texte(e, BuiltInParameter.RBS_PIPING_SYSTEM_TYPE_PARAM);
             c.Taille = Texte(e, BuiltInParameter.RBS_CALCULATED_SIZE);
             c.EstAccessoire = Compat.EstCategorie(e, BuiltInCategory.OST_PipeAccessory);
 

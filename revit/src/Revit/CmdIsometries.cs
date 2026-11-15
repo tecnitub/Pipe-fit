@@ -182,7 +182,9 @@ namespace PipeFit.Isometries.Revit
                     File.WriteAllText(Path.Combine(r.Dossier, "Cotes spools.csv"), ExportCsv.Cotes(spools), utf8);
                     File.WriteAllText(Path.Combine(r.Dossier, "Liaisons spools.csv"), ExportCsv.Liaisons(spools), utf8);
                     File.WriteAllText(Path.Combine(r.Dossier, "Quantitatif chiffrage Pipe-Fit.csv"), Quantitatif.Csv(spools), utf8);
-                    notes.Add("CSV : nomenclature, soudures, cotes, liaisons, et « Quantitatif chiffrage Pipe-Fit.csv » (chiffrage des spools générés)");
+                    // Liste de débit de l'atelier : par système de canalisation, DN, matière ; barres du commerce (longueur réglée, 6 m)
+                    File.WriteAllText(Path.Combine(r.Dossier, "Liste de débit.csv"), ListeDebit.Csv(spools, r.LongueurMaxM > 0 ? r.LongueurMaxM * 1000 : 6000, 3), utf8);
+                    notes.Add("CSV : nomenclature, soudures, cotes, liaisons, « Quantitatif chiffrage Pipe-Fit.csv » et « Liste de débit.csv » (atelier, barres de 6 m)");
                 }
                 catch (Exception ex) { notes.Add("CSV : " + ex.Message); }
             }

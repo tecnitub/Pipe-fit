@@ -243,7 +243,7 @@ static class Tests
             Verifier(d2.SurlongueurMm == 230 && d2.LongueurMm == 2230, "débit t2 : 2000 + 150 + 80 = 2230 (" + d2.LongueurMm + ")");
             Verifier(sp.Debits.First(d => d.Tube.Id == "t1").SurlongueurMm == 0, "t1 : extrémité libre, pas de surlongueur");
             var tdeb = MiseEnPage.Tableaux(sp, "", "").First(t => t.Titre == "LISTE DE DÉBIT");
-            Verifier(tdeb.Lignes.Any(l => l[0] == d2.Repere && l[2] == "2230" && l[3] == "+230"), "tableau de débit : coupe et surlongueur");
+            Verifier(tdeb.Lignes.Any(l => l[0] == d2.Repere && l[2] == "2000" && l[3] == "+230" && l[4] == "2230"), "tableau de débit : longueur Revit, surlongueur, coupe");
             Verifier(Math.Abs(Quantitatif.Calculer(new[] { sp }).First(l => l.EstTube).LongueurMm - 3230) < 0.1, "quantitatif : tube surlongueurs comprises");
             Verifier(Math.Abs(sp.Nomenclature.First(l => l.EstTube).LongueurMm - 3230) < 0.1, "nomenclature : tube surlongueurs comprises");
             Verifier(ExportCsv.Soudures(new[] { sp }).Contains(";150 sur " + d2.Repere + ";"), "CSV soudures : surlongueur");
@@ -438,6 +438,38 @@ static class Tests
             Verifier(compl.Lignes.SelectMany(l => new[] { l[1], l[3] }).All(x => MiseEnPage.Tronquer(x, 62, 2.5) == x), "légende compacte : aucun libellé tronqué");
             var tout = Legende.Tableau(Legende.Toutes());
             Verifier(tout.Lignes.Count == 14 && tout.Largeur <= 130.001, "légende complète : 14 lignes");
+        }
+
+        // Liste de débit : longueur de l'élément Revit, système de canalisation, calepinage en barres de 6 m
+        {
+            var sd = Exemple(); sd.SurlongueurMm = 0;
+            foreach (var c in sd.Composants) c.TypeSysteme = "Eau glacée départ";
+            AnalyseSpool.Analyser(sd);
+            var d1 = sd.Debits[0];
+            Verifier(d1.LongueurRevitMm == 924 && d1.LongueurMm == 924 && d1.Systeme == "Eau glacée départ", "débit : longueur Revit et système de canalisation");
+            var tdeb = MiseEnPage.Tableaux(sd, "", "").First(t => t.Titre == "LISTE DE DÉBIT");
+            Verifier(tdeb.Largeur <= 130.001 && tdeb.Colonnes.Last().Titre == "Système de canalisation" && tdeb.Lignes[0][2] == "924" && tdeb.Lignes[0][5] == "Eau glacée départ",
+                "tableau de débit : longueur Revit, coupe, système");
+            // Deux spools, deux systèmes ; barres de 6 m, trait de scie 3 mm : 5000 → barre 1 (reste 997) ; 2500, 2400 → barre 2 ;
+            // 1000 ne tient plus dans les 997 mm de la barre 1 → barre 2 (reste 1094)
+            Spool Tubes(string nom, string sys, params double[] lg)
+            {
+                var sp = new Spool { Nom = nom };
+                for (int i = 0; i < lg.Length; i++)
+                {
+                    var c = C(nom + i, "Tuyau", "Acier", TypeComposant.Tube, 100, lg[i], null, E(0, i * 1000, 0, 100, null), E(lg[i], i * 1000, 0, 100, null));
+                    c.TypeSysteme = sys; c.Materiau = "Acier"; sp.Composants.Add(c);
+                }
+                AnalyseSpool.Analyser(sp);
+                return sp;
+            }
+            var ld = ListeDebit.Calculer(new[] { Tubes("SP-1", "Eau glacée départ", 5000, 2400), Tubes("SP-2", "Eau glacée départ", 2500, 1000), Tubes("SP-3", "Eau glacée retour", 7000) });
+            var egd = ld.Where(l => l.Systeme == "Eau glacée départ").ToList();
+            Verifier(egd.Select(l => l.CoupeMm).SequenceEqual(new double[] { 5000, 2500, 2400, 1000 }) && egd.Select(l => l.Barre).SequenceEqual(new[] { 1, 2, 2, 2 }),
+                "calepinage : " + string.Join(",", egd.Select(l => l.CoupeMm + "→" + l.Barre)));
+            Verifier(ListeDebit.Barres(egd) == 2 && ld.First(l => l.Systeme == "Eau glacée retour").Barre == 0, "2 barres ; tube de 7 m hors barre");
+            var csvd = ListeDebit.Csv(new[] { Tubes("SP-1", "Eau glacée départ", 5000) });
+            Verifier(csvd.StartsWith("Système de canalisation;DN;Matière;Spool;Rep.;Longueur Revit (mm)") && csvd.Contains("Eau glacée départ;DN100;Acier;SP-1;T1;5000;;5000;1"), "CSV liste de débit");
         }
 
         // Bride contre bride (ou vanne) : joint boulonné

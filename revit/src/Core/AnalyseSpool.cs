@@ -258,7 +258,11 @@ namespace PipeFit.Isometries.Core
             {
                 t.Repere = "T" + (++n).ToString(CultureInfo.InvariantCulture);
                 t.SurlongueurMm = s.Assemblages.Where(a => a.Recoupe == t).Sum(a => a.SurlongueurMm);
-                s.Debits.Add(new Debit { Repere = t.Repere, Tube = t, LongueurMm = Math.Round(t.LongueurMm + t.SurlongueurMm), SurlongueurMm = t.SurlongueurMm, DnMm = t.DnMm });
+                s.Debits.Add(new Debit
+                {
+                    Repere = t.Repere, Tube = t, LongueurRevitMm = Math.Round(t.LongueurMm), LongueurMm = Math.Round(t.LongueurMm + t.SurlongueurMm),
+                    SurlongueurMm = t.SurlongueurMm, DnMm = t.DnMm, Systeme = t.TypeSysteme != "" ? t.TypeSysteme : t.Systeme,
+                });
             }
         }
 

@@ -64,6 +64,16 @@ rappel évitent de traverser les étiquettes. Le texte d'une cote glisse le long
 Si une vue est trop chargée pour tout placer, un avertissement le signale (agrandir l'échelle ou la feuille).
 Option décochée : étiquettes Revit (familles d'étiquettes choisies), placées par Revit.
 
+## Liste de débit
+
+- La longueur d'un tube est celle de l'élément dans Revit (paramètre « Longueur » de la canalisation ; longueur d'axe
+  pour une pièce de fabrication), arrondie au mm. La **coupe** y ajoute la surlongueur à recouper sur place.
+- Tableau **LISTE DE DÉBIT** de chaque isométrie : repère, DN, longueur Revit, surlongueur, coupe, **système de
+  canalisation** (type de système Revit : « Eau glacée départ »…, à défaut nom du système).
+- Fichier **Liste de débit.csv** (exports CSV) pour l'atelier, tous spools générés : classé par système de canalisation,
+  DN et matière, du plus long au plus court, avec la **barre du commerce** où couper chaque tube (barres de la longueur
+  réglée pour la numérotation, 6 m par défaut, trait de scie 3 mm ; « hors barre » pour un tube plus long).
+
 ## Légende des symboles
 
 - Sur chaque isométrie, bande **LÉGENDE** sous le dessin (à gauche du cartouche, deux symboles par ligne) : les

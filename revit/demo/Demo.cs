@@ -17,13 +17,16 @@ sealed class Ligne
 
     public Ligne(Spool s, string sys, string mat) { this.s = s; this.sys = sys; this.mat = mat; }
 
+    // Système de canalisation (type de système Revit) des réseaux d'exemple
+    static string TypeSys(string sys) => sys.StartsWith("NEP") ? "NEP aller" : sys.StartsWith("PROC") ? "Process retour" : "Eau glacée départ";
+
     static double Coude(double dn) => dn <= 25 ? 38 : dn <= 50 ? 76 : dn <= 80 ? 114 : 152;
     static double Te(double dn) => dn <= 25 ? 38 : dn <= 50 ? 64 : dn <= 80 ? 86 : 105;
     static double Bride(double dn) => dn <= 25 ? 54 : dn <= 50 ? 62 : dn <= 80 ? 68 : 75;
 
     Composant Ajouter(string fam, string type, double dn, Point3? centre, double lg, params (Point3 p, Point3 d, double dn)[] bouts)
     {
-        var c = new Composant { Id = "E" + (++n), Famille = fam, TypeNom = type, DnMm = dn, Centre = centre, LongueurMm = lg, Systeme = sys,
+        var c = new Composant { Id = "E" + (++n), Famille = fam, TypeNom = type, DnMm = dn, Centre = centre, LongueurMm = lg, Systeme = sys, TypeSysteme = TypeSys(sys),
             Materiau = fam == "Tuyau" ? mat : "", Taille = dn + " mm" };
         foreach (var b in bouts) c.Extremites.Add(new Extremite { Position = b.p, Direction = b.d, DnMm = b.dn });
         s.Composants.Add(c);
@@ -301,7 +304,9 @@ static class Demo
             var d = Legende.Dessin(t.Code);
             return new { code = t.Code, libelle = t.Libelle, soudure = d.Soudure, traits = d.Traits.Select(x => new[] { x.U1, x.V1, x.U2, x.V2 }), textes = d.Textes.Select(x => new object[] { x.U, x.V, x.Texte, x.Gras }) };
         });
-        var json = JsonSerializer.Serialize(new { spools = sortie, reperage = Reperage(), legende }, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
+        // Liste de débit de l'atelier, tous spools d'exemple : par système de canalisation, DN, matière ; barres de 6 m
+        var listeDebit = ListeDebit.Calculer(spools).Select(l => new { sys = l.Systeme, dn = l.DnMm, mat = l.Materiau, spool = l.Spool, rep = l.Repere, revit = l.LongueurRevitMm, surl = l.SurlongueurMm, coupe = l.CoupeMm, barre = l.Barre });
+        var json = JsonSerializer.Serialize(new { spools = sortie, reperage = Reperage(), legende, listeDebit }, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
         File.WriteAllText(args.Length > 0 ? args[0] : "demo.json", json);
         if (args.Length > 1) File.WriteAllText(args[1], Quantitatif.Csv(spools)); // exemple de quantitatif pour la démo du CRM
         foreach (var e in Montage.Ordonner(Reseau()))

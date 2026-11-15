@@ -97,12 +97,13 @@ namespace PipeFit.Isometries.Core
             if (s.Debits.Count > 0)
             {
                 var deb = new Tableau { Titre = "LISTE DE DÉBIT" };
-                deb.Colonnes.Add(new Colonne("Rep.", 12)); deb.Colonnes.Add(new Colonne("DN", 16));
-                deb.Colonnes.Add(new Colonne("Coupe (mm)", 24, true)); deb.Colonnes.Add(new Colonne("dont surl.", 20, true));
-                deb.Colonnes.Add(new Colonne("Désignation", 58));
+                // Longueur de l'élément dans Revit, surlongueur, longueur de coupe, système de canalisation
+                deb.Colonnes.Add(new Colonne("Rep.", 10)); deb.Colonnes.Add(new Colonne("DN", 14));
+                deb.Colonnes.Add(new Colonne("Revit", 18, true)); deb.Colonnes.Add(new Colonne("Surl.", 14, true));
+                deb.Colonnes.Add(new Colonne("Coupe", 18, true)); deb.Colonnes.Add(new Colonne("Système de canalisation", 56));
                 foreach (var d in s.Debits)
-                    deb.Lignes.Add(new[] { d.Repere, Diametres.Dn(d.DnMm), d.LongueurMm.ToString("0", Fr),
-                        d.SurlongueurMm > 0 ? "+" + d.SurlongueurMm.ToString("0", Fr) : "", d.Tube.Designation });
+                    deb.Lignes.Add(new[] { d.Repere, Diametres.Dn(d.DnMm), d.LongueurRevitMm.ToString("0", Fr),
+                        d.SurlongueurMm > 0 ? "+" + d.SurlongueurMm.ToString("0", Fr) : "", d.LongueurMm.ToString("0", Fr), d.Systeme });
                 res.Add(deb);
             }
 
