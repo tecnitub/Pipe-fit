@@ -194,15 +194,60 @@ const MaterielRetenu = (() => {
   const cleInventaire = x => `cctp|${x.genre || 'autre'}|${slug(x.repere || x.designation) || 'equipement'}`;
   // Équipements de l'inventaire (CCTP / DPGF) qu'aucun poste du métré ne couvre (pas encore dimensionnés par un calcul) :
   // ajoutés au matériel retenu avec une clé stable, pour être choisis, consultés, commandés et suivis comme les autres
+  // Couverture du CCTP / DPGF équipement par équipement : chaque unité de l'inventaire est rapprochée d'une unité d'un poste
+  // calculé de la même famille — d'abord le poste qui vient de cette ligne de l'inventaire, puis le repère cité dans la
+  // désignation du poste, puis la grandeur (débit d'air, puissance, volume à 10 % près), puis la désignation (deux mots
+  // en commun), enfin le nombre (poste sans grandeur comparable). Deux grandeurs connues et différentes ne se couvrent pas :
+  // un CCTP à deux CTA de 4 000 et 1 500 m³/h n'est pas couvert par une seule CTA calculée de 4 000 m³/h.
+  // postes : [{ cle, designation, qte, inv?: [id], grandeurs?: { Q, P, Pfr, V } }] (unités du métré ; postes « cctp| » et
+  // accessoires de gaine — manchettes, piquages, registres — écartés)
+  // Rend { couverts: [{ x, qte, cle, par }], restes: [{ x, qte, partiel }] } (restes : quantité non couverte)
+  const MOTS_VIDES = new Set(['avec', 'pour', 'dans', 'type', 'marque', 'telle', 'tels', 'telles', 'que', 'decrit', 'decrite', 'decrits', 'compris', 'equivalent', 'similaire', 'selon', 'tous', 'leurs', 'accessoires', 'fourniture', 'pose', 'raccordement', 'raccordements', 'plenum', 'compris']);
+  const motsDe = t => new Set(sansAcc(t).split(/[^a-z0-9]+/).filter(m => m.length >= 4 && !MOTS_VIDES.has(m)));
+  // Repère cité dans un texte, séparateurs et zéros de tête libres (« CTA-2 » dans « CTA 2 », « CTA02 », « [CTA 2] »)
+  const repereDans = (rep, t) => {
+    const p = sansAcc(rep).match(/[a-z]+|\d+/g) || [];
+    if (!p.length || p.join('').length < 2) return false;
+    return new RegExp(`(?:^|[^a-z0-9])${p.map(x => (/^\d/.test(x) ? `0*${+x}` : x)).join('[^a-z0-9]?')}(?![a-z0-9])`).test(sansAcc(t));
+  };
+  const nb = v => { const n = parseFloat(String(v ?? '').replace(/\s/g, '').replace(',', '.')); return Number.isFinite(n) ? n : NaN; };
+  const grandeursInv = x => { const g = {}, c = x.carac || {}; [['Q', x.Q], ['P', x.P], ['Pfr', x.Pfr], ['V', c.volume]].forEach(([k, v]) => { if (nb(v) > 0) g[k] = nb(v); }); return g; };
+  // Écart relatif sur les grandeurs communes : le plus faible ; null sans grandeur commune
+  const ecartGrandeurs = (a, b) => { const k = Object.keys(a || {}).filter(c => (b || {})[c] > 0); return k.length ? Math.min(...k.map(c => Math.abs(a[c] - b[c]) / Math.max(a[c], b[c]))) : null; };
+  const TOLERANCE = 0.1;
+  // Gros équipements de l'inventaire qu'aucun calcul ne compte (guide « Reste à faire », contrôle de l'étude)
+  const gros = r => (r.restes || []).filter(y => FAMILLES_CALCULEES.includes(FAMILLE_GENRE[y.x.genre]));
+  const libelleReste = y => `${y.x.repere ? `${y.x.repere} ` : ''}${txt(y.x.designation, 60)}${y.qte > 1 ? ` (${y.qte} u${y.partiel ? ' non couvertes' : ''})` : y.partiel ? ' (1 u non couverte)' : ''}`;
+  function couverture(postes, inventaire) {
+    const cap = (postes || []).filter(p => p && !/^(?:cctp|manchette|piquage|registre|acc|cf)\|/.test(p.cle || '') && (p.unite || 'u') === 'u').map(p => ({ p, famille: familleEquipement(p.cle, p.designationBase || p.designation), reste: Number(p.qte) || 1, mots: motsDe(p.designationBase || p.designation) }));
+    const items = (inventaire || []).filter(x => x && x.inclus !== false && !x.variante && x.categorie !== 'reseau' && FAMILLE_GENRE[x.genre])
+      .map(x => ({ x, famille: FAMILLE_GENRE[x.genre], reste: Math.max(1, Math.round(Number(x.qte) || 1)), g: grandeursInv(x), mots: motsDe(x.designation) }));
+    const couverts = [];
+    const prendre = (it, c, par) => { const q = Math.min(it.reste, c.reste); if (q <= 0) return; it.reste -= q; c.reste -= q; couverts.push({ x: it.x, qte: q, cle: c.p.cle, par }); };
+    const passe = (par, choisir, ordre = items) => ordre.forEach(it => { while (it.reste > 0) { const l = cap.filter(c => c.reste > 0 && c.famille === it.famille), c = choisir(it, l); if (!c) break; prendre(it, c, par); } });
+    // 1. Poste issu de la ligne de l'inventaire (calcul créé d'après elle) ; 2. repère cité par le poste
+    passe('inventaire', (it, l) => l.find(c => it.x.id && (c.p.inv || []).includes(it.x.id)));
+    passe('repere', (it, l) => (it.x.repere ? l.find(c => repereDans(it.x.repere, `${c.p.designationBase || c.p.designation} ${c.p.titre || ''}`)) : null));
+    // 3. Grandeur la plus proche, à 10 % près
+    passe('grandeur', (it, l) => l.map(c => [c, ecartGrandeurs(it.g, c.p.grandeurs)]).filter(([, e]) => e !== null && e <= TOLERANCE).sort((a, b) => a[1] - b[1]).map(([c]) => c)[0]);
+    // 4. Désignation : deux mots significatifs en commun, grandeurs non contradictoires
+    const compatible = (it, c) => { const e = ecartGrandeurs(it.g, c.p.grandeurs); return e === null || e <= TOLERANCE; };
+    passe('designation', (it, l) => l.filter(c => compatible(it, c) && [...it.mots].filter(m => c.mots.has(m)).length >= 2)[0]);
+    // 5. Nombre : poste de la famille sans grandeur contradictoire ; les équipements rattachés à un réseau d'abord
+    passe('famille', (it, l) => l.find(c => compatible(it, c)), [...items].sort((a, b) => (b.x.reseau ? 1 : 0) - (a.x.reseau ? 1 : 0)));
+    return { couverts, restes: items.filter(it => it.reste > 0).map(it => ({ x: it.x, qte: it.reste, partiel: it.reste < Math.max(1, Math.round(Number(it.x.qte) || 1)) })) };
+  }
+  // Familles des gros équipements dont un calcul du métré compte l'unité (signalées quand elles ne sont pas couvertes)
+  const FAMILLES_CALCULEES = ['cta', 'caisson', 'pac', 'generateur', 'echangeur', 'ballon', 'pompe', 'vase'];
   function avecInventaire(postes, inventaire) {
-    const ps = postes || [], couvertes = new Set(ps.map(p => familleEquipement(p.cle, p.designationBase || p.designation)));
-    const vus = new Set(ps.map(p => p.cle)), ajout = [];
-    (inventaire || []).filter(x => x && x.inclus !== false && !x.variante && x.categorie !== 'reseau' && FAMILLE_GENRE[x.genre] && !couvertes.has(FAMILLE_GENRE[x.genre])).forEach(x => {
+    const ps = postes || [], vus = new Set(ps.map(p => p.cle)), ajout = [];
+    couverture(ps, inventaire).restes.forEach(({ x, qte, partiel }) => {
       let cle = cleInventaire(x), k = 2;
       while (vus.has(cle)) cle = `${cleInventaire(x)}#${k++}`;
       vus.add(cle);
       const [chapitre, heures] = CHAPITRE_FAMILLE[FAMILLE_GENRE[x.genre]] || ['Équipements hydrauliques', 3];
-      ajout.push({ cle, chapitre, designation: [x.repere, txt(x.designation, 160)].filter(Boolean).join(' — '), qte: Number(x.qte) || 1, unite: 'u', heures, mo: 'monteur', sources: ['CCTP / DPGF'], inventaire: true, prescrit: txt(x.prescrit, 200),
+      ajout.push({ cle, chapitre, designation: [x.repere, txt(x.designation, 160)].filter(Boolean).join(' — '), qte, unite: 'u', heures, mo: 'monteur', sources: ['CCTP / DPGF'], inventaire: true, prescrit: txt(x.prescrit, 200),
+        ...(partiel ? { partiel: `${qte} sur ${Math.round(Number(x.qte) || 1)} : le reste est compté par un calcul` } : {}),
         recherche: { type: 'mots', mots: sansAcc(x.designation).split(/[^a-z0-9]+/).filter(m => m.length >= 4).slice(0, 2) } });
     });
     return [...ps, ...ajout];
@@ -230,6 +275,6 @@ const MaterielRetenu = (() => {
     });
     return out;
   }
-  return { prixDe, familleEquipement, cleInventaire, avecInventaire, etatAchat, ORDRE_ACHAT, suiviAvecAchats, ENTRETIEN, garanties, csvEntretien, debitsChantier, typeMes, STATUTS, VALIDES, ACTIONS, ACTIONS_COMPAGNON, statutDe, estValide, libelleRef, lignes, saisir, bilan, pourCrm, pourChantier, csv, appliquerSuivi, aRelancer, reprendreSuivi };
+  return { prixDe, familleEquipement, cleInventaire, avecInventaire, couverture, FAMILLES_CALCULEES, grosNonCouverts: gros, libelleReste, etatAchat, ORDRE_ACHAT, suiviAvecAchats, ENTRETIEN, garanties, csvEntretien, debitsChantier, typeMes, STATUTS, VALIDES, ACTIONS, ACTIONS_COMPAGNON, statutDe, estValide, libelleRef, lignes, saisir, bilan, pourCrm, pourChantier, csv, appliquerSuivi, aRelancer, reprendreSuivi };
 })();
 if (typeof module !== 'undefined') module.exports = MaterielRetenu;

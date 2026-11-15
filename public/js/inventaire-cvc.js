@@ -107,6 +107,8 @@ const InventaireCVC = (() => {
       // Plafond ou total réglementaire (« la somme des puissances … inférieure ou égale à 70 kW », « ne dépassera pas ») : pas
       // la puissance d'un équipement
       if (/somme des puissances|inferieure?s? ou egale?s?|superieure?s? ou egale?s?|ne (?:doit|devra|devront|pourra) pas depasser|ne depassera|\blimitee?s? a\b|plafonnee?s? a\b/.test(avant)) continue;
+      // Borne (« batterie de puissance mini < 3 kW », « > 70 kW ») : pas la puissance de l'équipement
+      if (/[<>≤≥]\s*$/.test(t.slice(Math.max(0, m.index - 3), m.index))) continue;
       if (/deperditions?|apports?|metabolisme|occupants?\b|\boccupation|par personne|\(\s*\d+\s*p\b|\bdont\s*$/.test(avant) || /^\s*dont\b/.test(norm(t.slice(m.index + m[0].length, m.index + m[0].length + 8)))) continue;
       const suf0 = String(m[4] || '').toLowerCase(), apres = norm(t.slice(m.index + m[0].length, m.index + m[0].length + 25));
       // Qualificatif écrit juste après (« 69 kW froid », « 12 kW électrique »)
@@ -384,6 +386,62 @@ const InventaireCVC = (() => {
   const PAR_PREFIXE = { CTA: { categorie: 'emetteur', genre: 'cta' }, EXT: { categorie: 'auxiliaire', genre: 'ventilateur' }, VMC: { categorie: 'auxiliaire', genre: 'ventilateur' },
     SPL: { categorie: 'emetteur', genre: 'split' }, DSF: { categorie: 'auxiliaire', genre: 'desenfumage' }, GF: { categorie: 'producteur', genre: 'gf-air' }, CH: { categorie: 'producteur', genre: 'chaudiere-gaz' } };
   const TITRE_NON_EQ = /^(?:depose|repose|modifications?|extensions?|demontage|decapage|sablage|nettoyage|tests?\b|installation (?:du|de la|des)\b|balisage|socles?\b|manutention|mise en place|vidange|desembouage|kits?\b|stations? de neutralisation|neutraliseurs?|robinets?|conduits? (?:de fumee|d'evacuation des fumees)|traitement des boues)/;
+  // Composition d'une CTA écrite par sections (« Section batterie eau glacée … puissance 32,5 kW dont 20 kW sensible »,
+  // « Groupe moto-ventilateur (soufflage) … puissance électrique absorbée 1,2 kW », « Récupérateur rotatif … rendement 81 % ») :
+  // puissance de chaque batterie (la première citée dans sa section), puissances absorbées des ventilateurs additionnées
+  const SECTION_CTA = /batteries? (?:a )?eau glacee|batteries? (?:a )?eau froide|batteries? froides?|batteries? (?:a )?eau chaude|batteries? chaudes?|batteries? electriques?|moto-? ?ventilateurs?|recuperat\w*|echangeur rotatif|roue (?:de recuperation|enthalpique|a adsorption)/g;
+  function compositionCta(texte) {
+    const t = norm(texte), marques = [...t.matchAll(SECTION_CTA)], out = {};
+    let Pel = 0;
+    marques.forEach((m, k) => {
+      const s = t.slice(m.index, k + 1 < marques.length ? marques[k + 1].index : m.index + 600), nom = m[0];
+      const kw = re => { const r = re.exec(s); return r ? nombre(r[1]) / (/^w/.test(r[2]) ? 1000 : 1) : NaN; };
+      if (/^batter/.test(nom)) {
+        const P = kw(/puissance[^0-9]{0,40}?(\d+(?:[.,]\d+)?)\s*(kw|w)\b/);
+        const k2 = /glacee|froid/.test(nom) ? 'Pfr' : /chaud/.test(nom) ? 'Pch' : 'PelBe';
+        if (P > 0 && out[k2] === undefined) out[k2] = P;
+      } else if (/ventilateur/.test(nom)) {
+        const P = kw(/puissance (?:electrique )?absorbee[^0-9]{0,60}?(\d+(?:[.,]\d+)?)\s*(kw|w)\b/);
+        if (P > 0) Pel += P;
+      } else if (out.rendement === undefined) {
+        const r = /rendement[^0-9]{0,25}(\d{2}(?:[.,]\d+)?)\s*%/.exec(s);
+        if (r) out.rendement = nombre(r[1]);
+      }
+    });
+    if (Pel > 0) out.Pel = Math.round(Pel * 100) / 100;
+    return out;
+  }
+  // Liste de points écrite au CCTP par classe (« Téléalarmes (TA) : - Défaut ventilateurs 2TA - Thermostat antigel 1TA 3TA
+  // Télémesures (TM) : … ») : nombre par classe — le total écrit en fin de classe, sinon la somme des lignes — et
+  // libellés ; null sans liste. Lecture d'un PDF image : « 17TM » pour « 1TM » (T lu 7), « Pression 17M 4TM » (classe
+  // de la ligne mal lue, suivie du total)
+  const CLASSES_PT = { ta: 'TA', ts: 'TS', tm: 'TM', tc: 'TC', tr: 'TR', tru: 'TR', tcp: 'TCP', tq: 'TQ' };
+  const CL_PT = '(?:ta|ts|tm|tc|tru?|tcp|tq)\\b';
+  function pointsPrescrits(texte) {
+    // Texte d'origine (accents gardés pour les libellés) et sa forme normalisée, de même longueur
+    const o = String(texte || '').normalize('NFC').replace(/[–—]/g, '-').replace(/\s+/g, ' '), n0 = o.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const t = n0.length === o.length ? n0 : norm(o), src = n0.length === o.length ? o : t;
+    const titres = [...t.matchAll(/tele[\s-]?\w+\s*\((ta|ts|tm|tc|tru?|tcp|tq)\)\s*:?/g)];
+    if (!titres.length) return null;
+    const out = { lignes: [] };
+    titres.forEach((m, k) => {
+      const d0 = m.index + m[0].length, c = CLASSES_PT[m[1]], sec = t.slice(d0, k + 1 < titres.length ? titres[k + 1].index : undefined);
+      const lignes = [...sec.matchAll(new RegExp(`-\\s*([^-]{3,90}?)\\s+(\\d{1,2})\\s?${CL_PT}`, 'g'))].map(r => {
+        const g = d0 + r.index + r[0].indexOf(r[1]);
+        let lib = src.slice(g, g + r[1].length).trim(), n = /^\d7$/.test(r[2]) && !/\s$/.test(r[0].slice(0, -3)) ? +r[2][0] : +r[2], total = null;
+        const mal = /\s(\d)[a-z0-9]{1,3}$/i.exec(lib);
+        if (mal) { total = n; n = +mal[1]; lib = lib.slice(0, mal.index).trim(); }
+        return { lib, n, total, fin: r.index + r[0].length };
+      });
+      lignes.forEach(l => out.lignes.push({ classe: c, libelle: l.lib, n: l.n }));
+      const der = lignes[lignes.length - 1], reste = (der ? sec.slice(der.fin) : sec).trim();
+      const ecrit = new RegExp(`(\\d{1,2})\\s?${CL_PT}`).exec(reste), total = ecrit ? +ecrit[1] : der && der.total !== null ? der.total : null;
+      const n = total !== null ? total : lignes.reduce((x, l) => x + l.n, 0);
+      if (n > 0) out[c] = (out[c] || 0) + n;
+    });
+    out.total = ['TA', 'TS', 'TM', 'TC', 'TR', 'TCP', 'TQ'].reduce((x, c) => x + (out[c] || 0), 0);
+    return out.total > 0 ? out : null;
+  }
   function depuisCctp(equipements, reseaux = [], articles = []) {
     const titres = new Map((articles || []).map(a => [a.num, a.titre]));
     const ancetres = num => { const p = String(num).split('.'), out = []; for (let k = p.length - 1; k >= 1; k--) { const t = titres.get(p.slice(0, k).join('.')); if (t) out.push(t); } return out; };
@@ -467,6 +525,20 @@ const InventaireCVC = (() => {
       fils.forEach(e => { if (!e.prescrit) e.prescrit = o.prescrit; if (!e.regime) e.regime = o.regime; if (!e.reseau) e.reseau = o.reseau; Object.entries(o.details || {}).forEach(([c, v]) => { if (e.details[c] === undefined) e.details[c] = v; }); });
       out.splice(k, 1);
     }
+    // CTA décrite section par section dans ses sous-articles (« Composition », « Caractéristiques ») : puissances des
+    // batteries, puissance absorbée des ventilateurs et rendement du récupérateur, prioritaires sur les valeurs lues au
+    // texte général (bilan de la zone, filtres « ePM1 55 % »)
+    out.filter(e => e.genre === 'cta' && !e.enumere && e.article).forEach(e => {
+      const desc = (articles || []).filter(a => String(a.num).startsWith(`${e.article}.`) && /composition|caracteristique|constitution|descripti|centrale|caisson/.test(norm(a.titre)));
+      if (!desc.length) return;
+      const c = compositionCta(desc.map(a => a.texte || '').join(' '));
+      const b = e.details.batteries = e.details.batteries || {};
+      if (c.Pch > 0) { e.P = c.Pch; e.carac.Pch = c.Pch; b.chaude = true; }
+      if (c.Pfr > 0) { e.Pfr = c.Pfr; e.carac.Pfr = c.Pfr; b.froide = true; }
+      if (c.Pel > 0 && !Number.isFinite(e.Pel)) { e.Pel = c.Pel; e.carac.Pel = c.Pel; }
+      if (c.rendement > 0) e.carac.rendement = c.rendement;
+      if (!Object.keys(b).length) delete e.details.batteries;
+    });
     out.forEach(e => {
       e.alim = alimentation(`${e._texte} ${enfants(e.article)} ${['ecs', 'split'].includes(e.genre) ? ancetres(e.article).join(' ') : ''}`, e.genre);
       // Émetteur énuméré (« 2 aérothermes (zone …) ») : son alimentation est décrite par le texte de l'article
@@ -481,6 +553,16 @@ const InventaireCVC = (() => {
       const det = details(`${a.titre}. ${a.texte || ''}`, a.titre);
       if (!det.regulation) return;
       out.push({ categorie: 'auxiliaire', genre: 'regulation', designation: a.titre, qte: 1, P: NaN, Pfr: NaN, Pel: NaN, Q: NaN, regime: '', repere: '', prescrit: det.marque ? `marque ${det.marque}` : '', carac: {}, details: det, reseau: '', alim: '', sources: [`CCTP art. ${a.num}`], article: a.num, _texte: a.texte || '' });
+    });
+    // Liste de points GTB prescrite par le CCTP pour un équipement (« Configuration des points CTA » sous l'article de la
+    // CTA) : nombre de points par classe, comparé aux points générés par l'alimentation électrique et la régulation
+    (articles || []).filter(a => /(?:configuration|liste) des points/.test(norm(a.titre))).forEach(a => {
+      const pts = pointsPrescrits(a.texte || '');
+      if (!pts) return;
+      const cibles = out.filter(e => e.genre !== 'regulation' && e.article && String(a.num).startsWith(`${e.article}.`)
+        && (e.categorie === 'producteur' || ['cta', 'ventilateur', 'desenfumage', 'pompe'].includes(e.genre)));
+      const plus = cibles.filter(e => !cibles.some(o => o !== e && String(o.article).startsWith(`${e.article}.`)));
+      plus.forEach(e => { if (!e.details.pointsCctp) e.details.pointsCctp = { ...pts, source: `CCTP art. ${a.num}` }; });
     });
     // Intitulés identiques (« Centrale double flux » dans deux chapitres) : nommés par leur chapitre
     const doubles = out.filter(e => e.chapitre && out.some(o => o !== e && norm(o.designation) === norm(e.designation)));
@@ -1324,6 +1406,8 @@ const InventaireCVC = (() => {
       Object.assign(F.entrees, { Pgen: nombre(tfp.Pfr), recupGf: 'totale', regimeRecup: rc, ...(nombre(c.EER) > 1 ? { eerRecup: nombre(c.EER) } : {}) }, regimeSchema(c.regimeFroid || '7/12', Sc));
       if (F.entrees.reseau !== 'perso') { delete F.entrees.Tdep; delete F.entrees.Tret; }
       C.entrees.recupDe = '@froid';
+      // Sans appoint au dossier : le générateur du schéma chaud est la thermofrigopompe elle-même (machine du schéma froid)
+      if (!chauds.some(x => !/^pac/.test(x.genre) || det(x).role)) C.entrees.machineRecup = 'oui';
       Object.assign(C.entrees, regimeSchema(rc, Sc));
       if (C.entrees.reseau !== 'perso') { delete C.entrees.Tdep; delete C.entrees.Tret; }
       F.entrees.titreInstallation = `Thermofrigopompe — eau glacée`; C.entrees.titreInstallation = 'Thermofrigopompe — chauffage';
@@ -1531,7 +1615,8 @@ const InventaireCVC = (() => {
     if (!e.zones.length) alertes.push('Aucune bouche reconnue : ajoutez les zones dans le schéma.');
     // Centrales de traitement d'air : un calcul « CTA » chacune (batteries, récupérateur, débits, puissances lues)
     const ctas = inc.filter(x => x.genre === 'cta').map(versCta);
-    return { entrees: e, alertes, ctas };
+    // CTA dont le schéma porte le nom (la première) : origine du schéma aéraulique, sa centrale comptée une fois au métré
+    return { entrees: e, alertes, ctas, ctaSrc: cta ? cta.id || '' : '' };
   }
 
   /* ---------- Vers le calcul d'une CTA ---------- */
@@ -1585,7 +1670,11 @@ const InventaireCVC = (() => {
   }
   function versTerminaux(inventaire) {
     const inc = (inventaire || []).filter(x => x.inclus !== false && !x.variante), alertes = [], appareils = [], compteur = {};
-    const liste = inc.filter(x => ['ventilo', 'split', 'aerotherme', 'plafond', 'radiateurs'].includes(x.genre)), qte = x => Math.max(1, Math.round(nombre(x.qte) || 1));
+    // Split décrit en deux lignes (« Unité extérieure … », « Unité intérieure … ») : un terminal par unité intérieure, l'unité
+    // extérieure en fait partie (pas un terminal de plus)
+    const UE = /\bunites? exterieures?|\bgroupes? exterieurs?|\bunites? de condensation|\bcondenseurs?\b/, UI = /\bunites? interieures?|\bmura(?:l|ux|le)|cassettes?|consoles?|gainables?|plafonniers?/;
+    const avecUi = inc.some(x => x.genre === 'split' && UI.test(norm(x.designation)) && !UE.test(norm(x.designation)));
+    const liste = inc.filter(x => ['ventilo', 'split', 'aerotherme', 'plafond', 'radiateurs'].includes(x.genre) && !(x.genre === 'split' && avecUi && UE.test(norm(x.designation)) && !UI.test(norm(x.designation)))), qte = x => Math.max(1, Math.round(nombre(x.qte) || 1));
     // Au-delà de TERM_MAX appareils, une part pour chaque ligne du dossier (au prorata, au moins un) plutôt que les premières
     const total = liste.reduce((s, x) => s + qte(x), 0), quota = new Map(liste.map(x => [x, total > TERM_MAX ? Math.max(1, Math.floor(qte(x) * TERM_MAX / total)) : qte(x)]));
     while ([...quota.values()].reduce((s, v) => s + v, 0) > TERM_MAX) { const [x] = [...quota.entries()].sort((a, b) => b[1] - a[1])[0]; quota.set(x, quota.get(x) - 1); }
@@ -1637,6 +1726,20 @@ const InventaireCVC = (() => {
   };
   const PELEC = { pac: P => (P > 0 ? Math.round(P / 3 * 10) / 10 : ''), generateur: P => (P > 0 ? Math.max(0.2, Math.round(P * 0.003 * 10) / 10) : 0.3), cta: () => '', ventilo: () => 0.1, aerotherme: () => 0.3, split: P => (P > 0 ? Math.round(P / 3.5 * 100) / 100 : ''), pompe: () => '', vanne: () => 0.01, ventilateur: () => '' };
   const PREFIXES = { pac: 'PAC', generateur: 'G', cta: 'CTA', ventilo: 'VC', aerotherme: 'AT', split: 'SP', pompe: 'P', vanne: 'VM', ventilateur: 'V', resistance: 'BEC' };
+  // Liste de points du CCTP → points de l'automate [libellé, type d'E/S] : une ligne par point (« Défaut ventilateurs 2TA » :
+  // deux points), classe gardée par le type (TA, TS : entrée TOR ; TM : entrée analogique ; TC : sortie TOR ; TR : sortie
+  // analogique) ; total écrit plus grand que les lignes lues : points à préciser
+  const TYPE_CLASSE = { TA: 'ETOR', TS: 'ETOR', TM: 'EA', TC: 'STOR', TR: 'SA', TCP: 'Bus', TQ: 'Bus' };
+  function pointsCctpElec(p) {
+    if (!p || !(p.total > 0)) return null;
+    const out = [], maj = t => t.charAt(0).toUpperCase() + t.slice(1);
+    Object.keys(TYPE_CLASSE).forEach(c => {
+      const l = (p.lignes || []).filter(y => y.classe === c);
+      l.forEach(y => { for (let k = 1; k <= y.n; k++) { const lib = `${maj(y.libelle)}${y.n > 1 ? ` (${k})` : ''}`; out.push([c === 'TA' && !/defaut|alarme|securite/.test(norm(lib)) ? `Alarme ${lib.charAt(0).toLowerCase()}${lib.slice(1)}` : c === 'TS' && /defaut|alarme/.test(norm(lib)) ? `État ${lib.charAt(0).toLowerCase()}${lib.slice(1)}` : lib, TYPE_CLASSE[c]]); } });
+      for (let k = l.reduce((s, y) => s + y.n, 0) + 1; k <= (p[c] || 0); k++) out.push([`${c} n° ${k} prescrit au CCTP (${p.source || 'liste de points'}) — à préciser`, TYPE_CLASSE[c]]);
+    });
+    return out.length ? out : null;
+  }
   function versElec(inventaire) {
     const out = [];
     // Ballon ECS électrique : résistance (puissance électrique citée, sinon 2,4 kW jusqu'à 300 L)
@@ -1652,7 +1755,8 @@ const InventaireCVC = (() => {
       const Pe = Number.isFinite(PelSeule) && PelSeule > 0 ? PelSeule : type === 'resistance' ? ((x.carac || {}).volume > 300 ? 3.6 : 2.4)
         : /^gf/.test(x.genre) && Pfr > 0 ? Math.round(Pfr / (eer > 1 ? eer : 3) * 10) / 10 : (PELEC[type] || (() => ''))(Number.isFinite(P) ? P : 0);
       const tension = (x.carac || {}).tension === '400 V' && tension0 === 'mono' && type !== 'vanne' ? 'tri' : (x.carac || {}).tension === '230 V' && tension0 === 'tri' && !(Pe > 3) ? 'mono' : tension0;
-      const base = { type, tension, regulation, designation: x.designation.slice(0, 60), depart: type === 'ventilateur' ? 'variateur' : undefined };
+      const pc = pointsCctpElec((x.details || {}).pointsCctp);
+      const base = { type, tension, regulation, designation: x.designation.slice(0, 60), depart: type === 'ventilateur' ? 'variateur' : undefined, ...(pc ? { pointsCctp: pc } : {}) };
       // Repère : celui du CCTP, sinon préfixe du type numéroté (VC-01, VC-02…)
       const pre = x.repere || PREFIXES[type] || 'EQ', suite = () => { compteur[pre] = (compteur[pre] || 0) + 1; return `${pre}-${String(compteur[pre]).padStart(2, '0')}`; };
       if (q <= 10) for (let k = 1; k <= q; k++) out.push({ src: `inv:${x.id || i}:${k}`, rep: x.repere && q === 1 ? x.repere : x.repere ? `${pre}-${String(k).padStart(2, '0')}` : suite(), ...base, P: Pe });
@@ -1662,6 +1766,6 @@ const InventaireCVC = (() => {
     return out;
   }
 
-  return { depuisFeuilles, numeroEnTete, ecarts, ecartsTexte, LIB_ECART, cleRegle, appliquerRegles, apprendre, tableauEquipements, fusionnerAnnexe, caracteristiques, caracTexte, puissances, alimentation, rattacher, NATURES, NATURE, natureReseau, estReseau, reseauxCctp, fusionnerReseaux, REGLES, GENRES, classer, puissance, regime, debitAir, depuisCctp, depuisDpgf, depuisDpgfTexte, fusionner, versSchema, versSchemaAir, versElec, norm, details, provenance, aVerifier, valeurChamp, CHAMPS, LIB_CHAMP, versCta, versTerminaux, versSanitaire, appareilSanitaire, versRegulation, montageCircuit, versSchemas, estPrimaire };
+  return { compositionCta, pointsPrescrits, depuisFeuilles, numeroEnTete, ecarts, ecartsTexte, LIB_ECART, cleRegle, appliquerRegles, apprendre, tableauEquipements, fusionnerAnnexe, caracteristiques, caracTexte, puissances, alimentation, rattacher, NATURES, NATURE, natureReseau, estReseau, reseauxCctp, fusionnerReseaux, REGLES, GENRES, classer, puissance, regime, debitAir, depuisCctp, depuisDpgf, depuisDpgfTexte, fusionner, versSchema, versSchemaAir, versElec, norm, details, provenance, aVerifier, valeurChamp, CHAMPS, LIB_CHAMP, versCta, versTerminaux, versSanitaire, appareilSanitaire, versRegulation, montageCircuit, versSchemas, estPrimaire };
 })();
 if (typeof module !== 'undefined') module.exports = InventaireCVC;

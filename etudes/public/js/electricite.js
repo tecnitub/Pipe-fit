@@ -387,7 +387,9 @@ const Electricite = ((N, Sc) => {
     eqs.forEach(q => {
       const reg = REGULS[q.regulation] || REGULS.aucune;
       // Terminal piloté par l'automate : ses points (ventilateur, vannes, sonde…) ; groupe de n appareils : points par appareil
-      const liste = q.regulation === 'terminal' && Array.isArray(q.pointsUnit) ? q.pointsUnit.map(([d, t]) => ['', d, t])
+      // Liste de points prescrite au CCTP pour l'équipement (reprise de l'inventaire) : elle remplace la liste type
+      const liste = Array.isArray(q.pointsCctp) && q.pointsCctp.length ? q.pointsCctp.map(([d, t]) => ['', d, t])
+        : q.regulation === 'terminal' && Array.isArray(q.pointsUnit) ? q.pointsUnit.map(([d, t]) => ['', d, t])
         : q.regulation === 'bus' && POINTS_BUS[q.type] ? POINTS_BUS[q.type].map(d => ['', d, 'Bus']) : [...reg[1]];
       if (q.moteur && q.regulation === 'tor' && q.depart === 'variateur') liste.push(['', 'Consigne de vitesse', 'SA']);
       const nb = Math.max(1, Math.round(num(q.nb, 1))), court = String(q.designation || q.t[0]).replace(/^\d+ × /, '');
@@ -1270,7 +1272,7 @@ const Electricite = ((N, Sc) => {
         if (r.alim && ex.alim !== r.alim) ch.alim = r.alim;
         if (r.tension && r.pFiche && ex.tension !== r.tension) ch.tension = r.tension;
         if (r.regImpose && r.regulation && ex.regulation !== r.regulation) ch.regulation = r.regulation;
-        ['nb', 'pointsUnit', 'afAuto', 'local', 'role'].forEach(k => { if (r[k] !== undefined && JSON.stringify(ex[k]) !== JSON.stringify(r[k])) ch[k] = r[k]; });
+        ['nb', 'pointsUnit', 'pointsCctp', 'afAuto', 'local', 'role'].forEach(k => { if (r[k] !== undefined && JSON.stringify(ex[k]) !== JSON.stringify(r[k])) ch[k] = r[k]; });
         if (Object.keys(ch).length) { Object.assign(ex, ch); n.majs++; }
       } else { garde.push({ ...r, alim: r.alim || '', depart: r.depart || '', pilote: '', L: '', fonctionnement: '' }); n.ajoutees++; }
     });

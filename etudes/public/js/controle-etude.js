@@ -140,11 +140,19 @@ const ControleEtude = (() => {
       });
     }
 
+    // 8 bis. Couverture du CCTP / DPGF : gros équipements du dossier qu'aucun calcul ne compte
+    const Mt = G.Metre(), Mr = G.MaterielRetenu();
+    if (Mt && Mt.couverture && Mr && Mr.grosNonCouverts && notes.length) {
+      const restes = Mr.grosNonCouverts(essai(() => Mt.couverture(et)) || { restes: [] });
+      restes.slice(0, 8).forEach(y => add('incoherences', 'attention', `${Mr.libelleReste(y)} : prévu au CCTP / DPGF (${((y.x.sources || [])[0]) || 'inventaire'}) mais compté par aucun calcul — ajouté au métré tel quel, à dimensionner.`, { origine: 'CCTP / DPGF', action: ['creer-tout', '⚡ Créer les calculs manquants'] }));
+      if (restes.length > 8) add('incoherences', 'attention', `${restes.length - 8} autre(s) équipement(s) du CCTP / DPGF comptés par aucun calcul.`, { origine: 'CCTP / DPGF', action: ['inventaire-revoir', '🔎 Ouvrir l\'inventaire'] });
+    }
+
     // 9. Reste à faire du guide (étapes non couvertes ci-dessus)
     if (Gu) { const r = essai(() => Gu.restesAFaire(et)) || { etapes: [] };
       // Étape déclarée « sans objet » (motif tracé dans le suivi des étapes) : plus signalée
       const SE = G.SuiviEtapes();
-      r.etapes.filter(x => !x.fait && (!x.phase || x.phase === 'etude') && !(SE && SE.estSansObjet(et, x.id)) && !['valeurs', 'estimees', 'conformite'].includes(x.groupe) && x.id !== 'erreurs' && x.id !== 'installation-erreurs' && x.id !== 'controle').forEach(x => add('guide', 'info', `${x.titre}${x.info ? ` : ${x.info}` : ''}`, { origine: 'Guide de l\'étude', action: x.action || null })); }
+      r.etapes.filter(x => !x.fait && (!x.phase || x.phase === 'etude') && !(SE && SE.estSansObjet(et, x.id)) && !['valeurs', 'estimees', 'conformite'].includes(x.groupe) && x.id !== 'erreurs' && x.id !== 'installation-erreurs' && x.id !== 'controle' && x.id !== 'couverture-cctp').forEach(x => add('guide', 'info', `${x.titre}${x.info ? ` : ${x.info}` : ''}`, { origine: 'Guide de l\'étude', action: x.action || null })); }
 
     return out.sort((a, b) => CATEGORIES.findIndex(c => c[0] === a.categorie) - CATEGORIES.findIndex(c => c[0] === b.categorie) || RANG[a.gravite] - RANG[b.gravite]);
   }

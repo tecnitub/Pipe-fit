@@ -83,7 +83,7 @@ const EtudeAuto = (() => {
     }
     // 2. CTA (une par centrale) et schéma aéraulique s'il y a des bouches ; débit absent laissé vide (estimé ensuite)
     if (G(['cta', 'bouche-soufflage', 'bouche-extraction', 'ventilateur'])) {
-      const { entrees, alertes, ctas } = I.versSchemaAir(inv, reseaux);
+      const { entrees, alertes, ctas, ctaSrc } = I.versSchemaAir(inv, reseaux);
       (ctas || []).forEach(c => {
         const e = { ...c.entrees };
         if (!(num(e.Qs) > 0)) { e.Qs = ''; if (e.type !== 'simple') e.Qr = ''; }
@@ -94,8 +94,10 @@ const EtudeAuto = (() => {
       // zone d'exemple : pas de débit inventé)
       if ((entrees.zones || []).length || !ctx.ctas.size) {
         const seule = ctx.ctas.size === 1 ? [...ctx.ctas.values()][0] : null;
+        // Plusieurs CTA : le schéma porte le nom de la première (origineInv) sans lui imposer les débits de toutes les
+        // bouches ; le métré ne compte pas sa centrale une seconde fois
         poser(ctx, 'aero', 'aero', `Schéma aéraulique — ${entrees.titreInstallation || 'd\'après le CCTP / DPGF'}`, { ...entrees, zones: entrees.zones || [], ...(seule ? { cta: seule.id } : {}) },
-          { commentaire: `Prérempli d'après le dossier de consultation (CCTP / DPGF) : ${(entrees.zones || []).length ? 'vérifier les distances des zones au ventilateur et les longueurs d\'antenne' : 'zones et bouches à saisir'}.${alertes.length ? ` À vérifier : ${alertes.join(' ')}` : ''}` });
+          { ...(!seule && ctaSrc && ctx.ctas.has(ctaSrc) ? { origineInv: ctaSrc } : {}), commentaire: `Prérempli d'après le dossier de consultation (CCTP / DPGF) : ${(entrees.zones || []).length ? 'vérifier les distances des zones au ventilateur et les longueurs d\'antenne' : 'zones et bouches à saisir'}.${alertes.length ? ` À vérifier : ${alertes.join(' ')}` : ''}` });
       }
     }
     // 3. Terminaux : chaque appareil garde l'équipement de l'inventaire dont il vient (raccordement), et sa zone

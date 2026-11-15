@@ -195,6 +195,20 @@ const GuideEtude = (() => {
       if (G(['ventilo', 'split', 'aerotherme'])) creer.push(a('calculs', 'creer-terminaux', 'Terminaux', aType('terminaux'), aType('terminaux') ? 'Créés' : 'Type, puissances, batterie et vanne de chaque terminal', ['creer:terminaux', '🌀 Créer les terminaux'], tout));
     }
 
+    // 3 bis. Couverture du CCTP / DPGF équipement par équipement : gros équipements (CTA, caissons, production, ballons,
+    // pompes, vases) qu'aucun calcul ne compte — ajoutés au métré tels quels, à dimensionner ; la seconde CTA d'un CCTP qui
+    // en prévoit deux n'est pas couverte par la seule CTA calculée
+    const MT3 = notes.length && inv.length ? Mt() : null, MR3 = MT3 ? Mr() : null;
+    if (MT3 && MT3.couverture && MR3 && MR3.grosNonCouverts) {
+      const cv = essai(() => MT3.couverture(et));
+      if (cv && (cv.couverts.length || cv.restes.length)) {
+        const restes = MR3.grosNonCouverts(cv), sig = restes.map(y => `${y.x.id || y.x.designation}:${y.qte}`).join('|');
+        a('calculs', 'couverture-cctp', 'Équipements du dossier couverts par les calculs', !restes.length || confirme('couverture-cctp', sig),
+          restes.length ? `${restes.length} équipement(s) du CCTP / DPGF sans calcul : ${liste(restes.map(MR3.libelleReste))} — ajouté(s) au métré tel(s) quel(s), à dimensionner` : `${cv.couverts.length} rapprochement(s) avec les calculs, tout est couvert`,
+          ['creer-tout', '⚡ Créer les calculs manquants'], { ...(restes.length ? manuel('couverture-cctp', sig, '✓ Garder tels quels') : {}), poids: restes.length });
+      }
+    }
+
     // 4. Bilans : les puissances des circuits et des terminaux doivent être justifiées (températures de base du climat)
     if (notes.some(n => ['pid', 'terminaux', 'cta', 'arbo'].includes(n.type)) || inv.length) {
       const bil = notes.filter(n => ['bilan', 'batiment', 'pieces'].includes(n.type));
@@ -289,6 +303,17 @@ const GuideEtude = (() => {
         a('regulation', 'zones', 'Zones, consignes et horaires', !defaut, defaut ? 'Consignes types : à préciser par zone (préremplir depuis l\'étude)' : `${(e.consignesZones || []).length} zone(s) définie(s)`, [`note:${elec.id}`, '🎛️ Préciser les zones'], { dependDe: ['typeBatiment'] });
         const I2 = Ic(), reg = I2 && I2.versRegulation ? I2.versRegulation(et.inventaire || []).entrees : {};
         if (reg.marqueAutomate || reg.gtb) a('regulation', 'marque', 'Régulation prescrite au CCTP', (!reg.marqueAutomate || e.marqueAutomate === reg.marqueAutomate) && (!reg.gtb || e.gtb === reg.gtb), `CCTP : ${[reg.marqueAutomate, reg.gtb, reg.busEquip].filter(Boolean).join(', ')}`, [`note:${elec.id}`, '🎛️ Vérifier']);
+        // Liste de points prescrite au CCTP pour un équipement (« Configuration des points CTA ») face aux points générés
+        const presc = inv.filter(x => x.details && x.details.pointsCctp && x.repere);
+        if (presc.length) {
+          // Écart dès qu'une classe (TA, TS, TM, TC, TR…) compte moins de points générés que prescrits
+          const Lk = Ln(), pts = (Lk && essai(() => Lk.calculer(et, elec).valeurs.listePoints)) || [], deRep = r => pts.filter(p => norm(p[0]) === norm(r));
+          const ecarts = presc.map(x => { const l = deRep(x.repere), p = x.details.pointsCctp; return { x, p, g: l.length, manque: ['TA', 'TS', 'TM', 'TC', 'TR', 'TCP', 'TQ'].some(c => (p[c] || 0) > l.filter(q => q[4] === c).length) }; }).filter(y => y.manque);
+          const cl = p => ['TA', 'TS', 'TM', 'TC', 'TR', 'TCP', 'TQ'].filter(c => p[c]).map(c => `${p[c]} ${c}`).join(', '), sig = ecarts.map(y => `${y.x.repere}:${y.p.total}:${y.g}`).join('|');
+          a('regulation', 'points-cctp', 'Points GTB prescrits au CCTP', !ecarts.length || confirme('points-cctp', sig),
+            ecarts.length ? `${ecarts.map(y => `${y.x.repere} : ${y.p.total} prescrits (${cl(y.p)}, ${y.p.source}), ${y.g} générés`).slice(0, 3).join(' ; ')}${ecarts.length > 3 ? ` et ${ecarts.length - 3} autre(s)` : ''} — compléter la régulation de l'équipement (points par appareil)`
+              : `${presc.length} équipement(s) : points prescrits couverts`, [`note:${elec.id}`, '🎛️ Compléter les points'], ecarts.length ? manuel('points-cctp', sig, '✓ Liste vérifiée') : {});
+        }
         const eq = (e.equipements || []).filter(l => l && (l.rep || l.designation)), sansP = eq.filter(l => vide(l.P));
         a('electricite', 'elec-puissances', 'Puissances électriques', eq.length && !sansP.length, !eq.length ? 'Aucun équipement : « Mettre à jour depuis l\'étude »' : sansP.length ? `${sansP.length} équipement(s) sans puissance : ${sansP.slice(0, 3).map(l => l.rep || l.designation).join(', ')}` : `${eq.length} équipement(s) renseigné(s)`, [`note:${elec.id}`, '⚡ Compléter']);
       }

@@ -90,6 +90,7 @@ const CctpLecture = (() => {
     }
     return out;
   }
+  const UNITE_EN_TETE = /^(?:k?w|kwh|mw|m3|m³|m2|m²|°c?|%|k?pa|mbar|bar|mce|l\/[sh]|litres?|db\(?a?\)?|kg|mm|hz|tr\/min)(?![a-zà-ÿ])/i;
   function articles(lignes) {
     const blocs = new Map();
     let courant = null;
@@ -100,6 +101,8 @@ const CctpLecture = (() => {
       // Article : numéro en au moins deux parties (ou « Article 3 »), titre surtout en lettres ; numéro à tirets (« 4-3-1 »)
       // suivi d'un titre en majuscule (pas « 10-12 personnes »)
       const parties = m ? numeroCanon(m[1]).split('.').length : 0, tirets = m && !/[.]/.test(m[1]);
+      // Valeur suivie de son unité, renvoyée à la ligne (« 32.5 kW dont 20 kW sensible », « 12,5 m3/h … ») : la suite du texte
+      if (m && !/^art/i.test(l) && UNITE_EN_TETE.test(m[2])) { if (courant) { courant.corps.push(l); courant.brut.push(String(brut).trim()); } continue; }
       if (m && (parties >= 2 || /^art/i.test(l)) && (!tirets || /^[A-ZÀ-Ý'«"(]/.test(m[2])) && /[a-zà-ÿ]{3}/i.test(m[2]) && (m[2].match(/\d/g) || []).length < m[2].length / 3) {
         const num = numeroCanon(m[1]), titre = m[2].replace(/\s*(?:[._…]{3,}|\.{2,}\s*\d{1,3}\s*$).*$/, '').trim();
         courant = { num, titre, corps: [], brut: [], sommaire: /[._…]{3,}|\.{2,}\s*\d{1,3}\s*$/.test(l) };

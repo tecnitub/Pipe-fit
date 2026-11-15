@@ -37,8 +37,15 @@ const Metre = ((N, C, D, L, Sc) => {
 
   /* ---------- Métré ---------- */
   // Postes : { cle, chapitre, designation, unite, qte, recherche: { mots, taille }, heures (par unité), mo: 'monteur'|'calorifugeur'|'be', source }
-  function metre(etude) {
-    const postes = new Map(), ajouter = (cle, p) => { const ex = postes.get(cle); if (ex) { ex.qte += p.qte; ex.sources.add(p.source); } else postes.set(cle, { ...p, sources: new Set([p.source]) }); };
+  const grandeursPoste = x => {
+    const g = {}; ['Q', 'P', 'Pfr', 'V'].forEach(k => { const v = num(x[k]); if (v > 0) g[k] = v; });
+    return { ...(Object.keys(g).length ? { grandeurs: g } : {}), ...(x.inv ? { inv: [x.inv] } : {}), ...(x.titre ? { titre: x.titre } : {}) };
+  };
+  // opts.sansInventaire : postes des calculs seulement (sans les équipements du CCTP / DPGF non couverts)
+  function metre(etude, opts = {}) {
+    // inv : lignes de l'inventaire dont vient le poste ; grandeurs : débit (m³/h), puissance (kW), volume (L) d'une unité,
+    // pour rapprocher chaque équipement du CCTP / DPGF du poste calculé qui le couvre
+    const postes = new Map(), ajouter = (cle, p) => { const ex = postes.get(cle); if (ex) { ex.qte += p.qte; ex.sources.add(p.source); (p.inv || []).forEach(i => { if (!(ex.inv = ex.inv || []).includes(i)) ex.inv.push(i); }); } else postes.set(cle, { ...p, sources: new Set([p.source]) }); };
     const tube = (serie, cle, Lm, source) => {
       const t = C.tube(serie, cle);
       if (!t || !(Lm > 0)) return;
@@ -46,7 +53,7 @@ const Metre = ((N, C, D, L, Sc) => {
       ajouter(`tube|${serie}|${cle}`, { chapitre: 'Tuyauteries', designation: `Tuyauterie ${court} ${t.nom}, raccords et supports compris`, unite: 'ml', qte: Lm, heures: heuresMl(serie, t.dn), mo: 'monteur', source,
         recherche: { type: 'tube', matiere: mat, dn: t.dn, de: t.de }, accessoires: [{ type: 'coude', matiere: mat, dn: t.dn, de: t.de, qte: R.coudesParMl }, { type: 'support', qte: R.supportsParMl }] });
     };
-    const equip = (cle, chapitre, designation, qte, heures, recherche, source) => { const r = R.equip[recherche.type]; if (qte > 0) ajouter(cle, { chapitre, designation, unite: 'u', qte, heures: r === undefined ? heures : lin(r, recherche.dn), mo: 'monteur', recherche, source }); };
+    const equip = (cle, chapitre, designation, qte, heures, recherche, source, extra) => { const r = R.equip[recherche.type]; if (qte > 0) ajouter(cle, { chapitre, designation, unite: 'u', qte, heures: r === undefined ? heures : lin(r, recherche.dn), mo: 'monteur', recherche, source, ...(extra ? grandeursPoste(extra) : {}) }); };
     const notes = etude.notes || [], titre = n => `N${notes.indexOf(n) + 1}`, calc = new Map(), annexes = [];
     notes.forEach(n => {
       const e = L.resoudre(etude, n).entrees, r = N.calculer(n.type, e), v = r.valeurs || {}, src = titre(n);
@@ -86,7 +93,7 @@ const Metre = ((N, C, D, L, Sc) => {
         if (v.QaMax > 0) equip(`vda|${Math.round(v.QaMax * 3600)}`, 'Désenfumage', `Ventilateur d'amenée d'air ${nf(v.QaMax * 3600, 0)} m³/h`, 1, 8, { type: 'ventilateur' }, src);
         equip('volet|desenfumage', 'Désenfumage', 'Volet de désenfumage motorisé (24/48 V, bobine à émission) et grille', v.volets, 2.5, { type: 'volet' }, src);
       }
-      if (n.type === 'cta' && v.Pchaud !== undefined) equip(`cta|${num(e.Qs)}`, 'Aéraulique', `Centrale de traitement d'air ${nf(num(e.Qs), 0)} m³/h (batterie chaude ${nf(v.Pchaud, 0)} kW${v.Pfroid ? `, froide ${nf(v.Pfroid, 0)} kW` : ''})`, 1, 16, { type: 'cta' }, src);
+      if (n.type === 'cta' && v.Pchaud !== undefined) equip(`cta|${num(e.Qs)}`, 'Aéraulique', `Centrale de traitement d'air ${nf(num(e.Qs), 0)} m³/h (batterie chaude ${nf(v.Pchaud, 0)} kW${v.Pfroid ? `, froide ${nf(v.Pfroid, 0)} kW` : ''})`, 1, 16, { type: 'cta' }, src, { Q: num(e.Qs), inv: n.origineInv, titre: n.titre });
       if (n.type === 'bouches') (v.bouches || []).forEach(b => equip(`bouche|${b.type}|${b.taille}`, 'Aéraulique', `${b.type} ${b.taille}, plénum et raccordement`, b.n, 0.75, { type: 'bouche', taille: b.taille }, src));
       if (n.type === 'tuyauterie' && v.choix) tube(e.serie, v.choix, num(e.L), src);
       if (n.type === 'vapeur' && v.choix) { tube(e.serie, v.choix, num(e.L), src); if (v.condensats) tube(e.serie, v.condensats, num(e.L), src); }
@@ -99,9 +106,11 @@ const Metre = ((N, C, D, L, Sc) => {
       if (n.type === 'gaine' && v.choix) ajouter(`gaine|${v.choix}`, { chapitre: 'Aéraulique', designation: `Gaine ${v.choix} mm galvanisée, supports compris`, unite: 'ml', qte: num(e.L), heures: R.gaine, mo: 'monteur', source: src, recherche: { type: 'gaine', nom: v.choix } });
       // Schéma aéraulique : CTA ou caisson, bouches, gaines principales et antennes
       if (n.type === 'aero') {
-        const cta = /^cta/.test(v.producteur || ''), Q = Math.max(v.Qs || 0, v.Qr || 0), relie = e.cta && notes.some(x => x.id === e.cta && x.type === 'cta');
+        const cta = /^cta/.test(v.producteur || ''), Q = Math.max(v.Qs || 0, v.Qr || 0), relie = (e.cta && notes.some(x => x.id === e.cta && x.type === 'cta'))
+          // Schéma créé d'après la CTA d'un dossier qui en compte plusieurs : la centrale est comptée par son calcul de CTA
+          || (cta && n.origineInv && notes.some(x => x.type === 'cta' && x.origineInv === n.origineInv));
         // Relié à un calcul de CTA : la centrale est comptée par ce calcul
-        if (!relie) equip(`aero|${v.producteur}|${Math.round(Q)}`, 'Aéraulique', cta ? `Centrale de traitement d'air ${nf(Q, 0)} m³/h${v.Qr && v.Qs ? ' double flux' : ''}` : `Caisson ${v.Qs ? 'd\'insufflation' : 'd\'extraction'} ${nf(Q, 0)} m³/h`, 1, cta ? 16 : 6, { type: cta ? 'cta' : 'caisson' }, src);
+        if (!relie) equip(`aero|${v.producteur}|${Math.round(Q)}`, 'Aéraulique', cta ? `Centrale de traitement d'air ${nf(Q, 0)} m³/h${v.Qr && v.Qs ? ' double flux' : ''}` : `Caisson ${v.Qs ? 'd\'insufflation' : 'd\'extraction'} ${nf(Q, 0)} m³/h`, 1, cta ? 16 : 6, { type: cta ? 'cta' : 'caisson' }, src, { Q, titre: n.titre });
         (v.bouches || []).forEach(b => equip(`bouche|${b.type}|${b.taille}`, 'Aéraulique', `${b.type} ${b.taille}, plénum et raccordement`, b.n, 0.75, { type: 'bouche', taille: b.taille }, src));
         (v.troncons || []).forEach(t => ajouter(`gaine|${t.nom}`, { chapitre: 'Aéraulique', designation: `Gaine ${t.nom} mm galvanisée, supports compris`, unite: 'ml', qte: t.L, heures: R.gaine, mo: 'monteur', source: src, recherche: { type: 'gaine', nom: t.nom } }));
         // Accessoires de gaine : piquages / tés, registres de réglage, coudes et clapets coupe-feu des singularités, manchettes souples
@@ -118,20 +127,24 @@ const Metre = ((N, C, D, L, Sc) => {
         if (sCalo > 0) ajouter('calo-gaine|25', { chapitre: 'Calorifuge', designation: 'Calorifuge laine minérale 25 mm revêtue aluminium sur gaines de soufflage', unite: 'm²', qte: sCalo, heures: 0.35, mo: 'calorifugeur', source: src, recherche: { type: 'calorifuge-gaine' } });
       }
       if (n.type === 'aeraulique') (v.troncons || []).forEach(t => ajouter(`gaine|${t.nom}`, { chapitre: 'Aéraulique', designation: `Gaine ${t.nom} mm galvanisée, supports compris`, unite: 'ml', qte: t.L, heures: R.gaine, mo: 'monteur', source: src, recherche: { type: 'gaine', nom: t.nom } }));
-      if (n.type === 'vase' && v.choisi) equip(`vase|${v.choisi}`, 'Équipements hydrauliques', `Vase d'expansion ${v.choisi} L, gonflé à ${nf(v.p0, 1)} bar`, 1, 3, { type: 'vase', volume: v.choisi }, src);
+      if (n.type === 'vase' && v.choisi) equip(`vase|${v.choisi}`, 'Équipements hydrauliques', `Vase d'expansion ${v.choisi} L, gonflé à ${nf(v.p0, 1)} bar`, 1, 3, { type: 'vase', volume: v.choisi }, src, { V: num(v.choisi) });
       if (n.type === 'vanne' && v.vanne) equip(`vanne|${v.vanne.type}|${v.vanne.dn}|${v.vanne.Kvs}`, 'Équipements hydrauliques', `${N.libVanne(v.vanne)} motorisée`, 1, 2, { type: 'vanne', sorte: v.vanne.type, dn: v.vanne.dn, kvs: v.vanne.Kvs }, src);
       if (n.type === 'pid') {
-        const d = Sc.dimensionner(e), G = d.gen[0];
-        if (d.multi) d.multi.forEach(x => equip(`gen|${x.type}|${x.P}`, 'Production', `${x.gen[0]} ${nf(x.P, 0)} kW`, 1, 16, { type: 'generateur', mots: x.gen[0] }, src));
-        else equip(`gen|${e.generateur}|${d.Pg}`, 'Production', `${G} ${nf(d.Pg, 0)} kW${d.co ? ` (froid ${nf(d.co.dF.Pg, 0)} kW)` : ''}`, d.n, 16, { type: 'generateur', mots: G }, src);
+        const d = Sc.dimensionner(e), G = d.gen[0], froid = t => (Sc.GENERATEURS && (Sc.GENERATEURS[t] || [])[1] === 'froid') || /^gf/.test(t || '');
+        const gP = (t, P) => (froid(t) || (e.recupGf && e.recupGf !== 'non') ? { Pfr: P } : { P });
+        if (d.multi) d.multi.forEach(x => equip(`gen|${x.type}|${x.P}`, 'Production', `${x.gen[0]} ${nf(x.P, 0)} kW`, 1, 16, { type: 'generateur', mots: x.gen[0] }, src, gP(x.type, x.P)));
+        // Thermofrigopompe sans appoint : la machine du schéma froid (récupération totale) est aussi le générateur de ce
+        // schéma chaud — comptée une fois, par le schéma froid
+        else if (!(e.machineRecup === 'oui' && e.recupDe && notes.some(x => x.id === e.recupDe && x.type === 'pid')))
+          equip(`gen|${e.generateur}|${d.Pg}`, 'Production', `${G} ${nf(d.Pg, 0)} kW${d.co ? ` (froid ${nf(d.co.dF.Pg, 0)} kW)` : ''}`, d.n, 16, { type: 'generateur', mots: G }, src, { ...gP(e.generateur, d.Pg), ...(d.co ? { Pfr: d.co.dF.Pg } : {}) });
         equip(`soupape|${d.tg.dn}`, 'Production', `Soupape de sécurité sur générateur`, d.n, 0.5, { type: 'soupape' }, src);
         if (d.tb) equip(`bouteille|${d.tb.cle}`, 'Production', `Bouteille de découplage ${d.tb.nom}`, 1, 6, { type: 'bouteille' }, src);
         if (d.echangeur) equip(`echangeur|${Math.round(d.Pdem)}`, 'Production', `Échangeur à plaques ${nf(d.Pdem, 0)} kW (≈ ${nf(d.Aech, 1)} m²)`, 1, 8, { type: 'echangeur' }, src);
-        (d.ballons || []).forEach(b => equip(`ballon|${b.fonction}|${b.V}`, 'Production', `${b.lib} ${nf(b.V, 0)} L`, 1, b.V > 1000 ? 8 : 6, { type: 'tampon', volume: b.V }, src));
+        (d.ballons || []).forEach(b => equip(`ballon|${b.fonction}|${b.V}`, 'Production', `${b.lib} ${nf(b.V, 0)} L`, 1, b.V > 1000 ? 8 : 6, { type: 'tampon', volume: b.V }, src, { V: b.V }));
         // Évacuation de la chaleur : aéroréfrigérant ou tour, pompe et vanne de by-pass du circuit de refroidissement
         if (d.evac) { const ev = d.evac; equip(`evac|${ev.type}|${Math.round(ev.P)}`, 'Production', `${ev.lib} ${nf(ev.P, 0)} kW (${ev.Tc}/${ev.Tf} °C, ${ev.nVent} ventilateur(s))`, 1, 16, { type: 'generateur', mots: ev.lib }, src);
           equip('vanne|3v|by-pass-evac', 'Production', 'Vanne 3 voies motorisée de by-pass hivernal (refroidissement)', 1, 2, { type: 'vanne', sorte: '3v' }, src); tube(e.serie, ev.t.cle, ev.L, `${src} (circuit de refroidissement)`); }
-        if (d.tampon && d.tampon.V > 0) equip(`tampon|${d.tampon.V}`, 'Production', `Ballon tampon ${nf(d.tampon.V, 0)} L`, 1, 6, { type: 'tampon', volume: d.tampon.V }, src);
+        if (d.tampon && d.tampon.V > 0) equip(`tampon|${d.tampon.V}`, 'Production', `Ballon tampon ${nf(d.tampon.V, 0)} L`, 1, 6, { type: 'tampon', volume: d.tampon.V }, src, { V: d.tampon.V });
         if (e.desemboueur !== 'non') equip(`desemboueur|${d.tc.dn}`, 'Production', `Pot à boue / désemboueur DN ${d.tc.dn}`, 1, 3, { type: 'desemboueur', dn: d.tc.dn }, src);
         tube(e.serie, d.tc.cle, 2 * (d.circuits.length * 1.5 + 2), `${src} (collecteurs)`);
         if (d.multi) d.multi.forEach(x => tube(e.serie, x.t.cle, 6, `${src} (raccordement de ${x.rep})`));
@@ -191,9 +204,9 @@ const Metre = ((N, C, D, L, Sc) => {
     // Équipements du CCTP / DPGF qu'aucun calcul ne couvre encore : postes du métré (clé stable « cctp|… »), donc chiffrés,
     // au matériel retenu et commandés comme les autres
     const MR = typeof MaterielRetenu !== 'undefined' ? MaterielRetenu : (typeof window === 'undefined' ? require('../../../public/js/materiel-retenu') : null);
-    if (MR && (etude.inventaire || []).length) {
-      const eq = [...postes.entries()].filter(([, p]) => p.unite === 'u').map(([cle, p]) => ({ cle, designation: p.designation }));
-      MR.avecInventaire(eq, etude.inventaire).slice(eq.length).forEach(x => ajouter(x.cle, { chapitre: x.chapitre, designation: x.designation, unite: 'u', qte: x.qte, heures: x.heures, mo: 'monteur', source: 'CCTP / DPGF', recherche: x.recherche, inventaire: true }));
+    if (MR && (etude.inventaire || []).length && !opts.sansInventaire) {
+      const eq = [...postes.entries()].filter(([, p]) => p.unite === 'u').map(([cle, p]) => ({ cle, designation: p.designation, qte: p.qte, inv: p.inv || [], grandeurs: p.grandeurs || {}, titre: p.titre || '' }));
+      MR.avecInventaire(eq, etude.inventaire).slice(eq.length).forEach(x => ajouter(x.cle, { chapitre: x.chapitre, designation: x.designation, unite: 'u', qte: x.qte, heures: x.heures, mo: 'monteur', source: 'CCTP / DPGF', recherche: x.recherche, inventaire: true, ...(x.partiel ? { partiel: x.partiel } : {}) }));
     }
     const retenu = etude.materiel || {}, refDe = cle => { const x = retenu[cle]; return x && String(x.reference || '').trim() ? [x.fabricant, x.reference].map(v => String(v || '').trim()).filter(Boolean).join(' ') : ''; };
     // Prix d'achat lu dans un devis fournisseur (matériel retenu) : repris au chiffrage avec sa source
@@ -202,6 +215,14 @@ const Metre = ((N, C, D, L, Sc) => {
       ...(p.unite === 'u' && prixDe(cle) ? { prixAchat: prixDe(cle) } : {}),
       qte: Math.round(p.qte * 100) / 100, heures: p.heures * (R.coefs[p.mo] ?? 1), sources: [...p.sources] }))
       .sort((a, b) => CHAPITRES.indexOf(a.chapitre) - CHAPITRES.indexOf(b.chapitre) || a.designation.localeCompare(b.designation, 'fr'));
+  }
+
+  // Couverture du CCTP / DPGF par les calculs, équipement par équipement (materiel-retenu.js) : équipements de l'inventaire
+  // qu'aucun poste calculé ne compte (ajoutés au métré tels quels, à dimensionner)
+  function couverture(etude) {
+    const MR = typeof MaterielRetenu !== 'undefined' ? MaterielRetenu : (typeof window === 'undefined' ? require('../../../public/js/materiel-retenu') : null);
+    if (!MR || !MR.couverture || !(etude.inventaire || []).length) return { couverts: [], restes: [] };
+    return MR.couverture(metre(etude, { sansInventaire: true }).filter(p => p.unite === 'u').map(p => ({ ...p, designation: p.designationBase })), etude.inventaire);
   }
 
   /* ---------- Rapprochement avec la bibliothèque de prix ---------- */
@@ -303,7 +324,7 @@ const Metre = ((N, C, D, L, Sc) => {
   // manchettes) restent au métré sans référence de fabricant à soumettre
   const ACCESSOIRES = ['piquage', 'registre', 'accessoire-gaine', 'manchette'];
   const estEquipement = p => p.unite === 'u' && p.chapitre !== 'Études' && !ACCESSOIRES.includes((p.recherche || {}).type);
-  return { estEquipement, metre, rapprocher, lignesDevis, prixPoste, coefVente, COEF_VENTE, csv, score, CHAPITRES, DEFAUTS, LIBELLES_EQUIP, utiliser, ratios, calage, moPour };
+  return { estEquipement, metre, couverture, rapprocher, lignesDevis, prixPoste, coefVente, COEF_VENTE, csv, score, CHAPITRES, DEFAUTS, LIBELLES_EQUIP, utiliser, ratios, calage, moPour };
 })(typeof Notes !== 'undefined' ? Notes : require('./notes'), typeof Calculs !== 'undefined' ? Calculs : require('./calculs'), typeof Donnees !== 'undefined' ? Donnees : require('./donnees'),
   typeof Liens !== 'undefined' ? Liens : require('./liens'), typeof Schema !== 'undefined' ? Schema : require('./schema'));
 if (typeof module !== 'undefined') module.exports = Metre;
