@@ -1253,7 +1253,7 @@ Vues.note = {
         ${(Notes.TYPES[n.type].champs || []).some(c => c.k === 'troncons' && (c.colonnes || []).some(x => x.k === 'L')) ? '<button class="secondaire" id="longueurs-plan" title="Nomenclature de canalisations ou de gaines exportée de Revit (CSV, Excel) ou plan DXF (une couche par tronçon), ou maquette IFC (IfcPipeSegment / IfcDuctSegment) : longueurs additionnées par repère et reportées sur les tronçons de même repère">📏 Longueurs depuis Revit / DXF / IFC</button>' : ''}
         ${n.type === 'arbo' ? (n.entrees.jumeau && et.notes.some(x => x.id === n.entrees.jumeau) ? `<button class="secondaire" id="arbo-recopier" title="Tronçons, longueurs, branches et émetteurs repris du réseau jumeau (les tubes imposés et la pompe de ce réseau sont gardés)">🔄 Recopier l'arborescence de ${esc((et.notes.find(x => x.id === n.entrees.jumeau) || {}).titre || '')}</button>` : `<button class="secondaire" id="arbo-jumeau" title="Réseau de l'autre saison avec la même arborescence, les mêmes repères et émetteurs : réseau séparé (4 tubes) ou même réseau en change-over">${n.entrees.saison === 'froid' ? '🔥 Créer le réseau chaud' : '❄️ Créer le réseau froid'} (4 tubes / change-over)</button>`) : ''}
         ${n.type === 'arbo' ? '<button class="secondaire" id="arbo-emetteurs" title="Une branche par terminal ou batterie de CTA de l\'étude, reliée : puissance, débit et pertes de charge remplis ; il reste à choisir le tronçon amont et la longueur">🌀 Ajouter les émetteurs de l\'étude</button>' : ''}
-        ${n.type === 'pieces' && typeof Ifc !== 'undefined' ? '<button class="secondaire" id="pieces-ifc" title="Espaces de la maquette IFC (IFC2x3 / IFC4) : nom, numéro, étage, surface et hauteur ; aperçu avant d\'appliquer">🏗️ Pièces depuis la maquette IFC</button>' : ''}
+        ${n.type === 'pieces' && typeof Ifc !== 'undefined' ? '<button class="secondaire" id="pieces-ifc" title="Espaces de la maquette IFC (IFC2x3 / IFC4, STEP ou IFC XML) : nom, numéro, étage, surface, hauteur, vitrages et orientation ; aperçu avant d\'appliquer">🏗️ Pièces depuis la maquette IFC</button>' : ''}
         ${n.type === 'cable' ? '<button id="cable-reprendre">🔌 Reprendre les liaisons de l\'alimentation électrique</button>' : ''}<span class="espace"></span><button class="secondaire" id="supprimer">Supprimer ce calcul</button></div></div>`;
   },
   bind: (root, et, noteId) => {
@@ -1907,7 +1907,7 @@ function dialogueVrac(et) {
 // Longueurs des tronçons depuis un export Revit (CSV, texte, Excel) ou un DXF : aperçu, puis report sur les tronçons
 function dialogueLongueurs(et, n) {
   const b = Modal.open(`<h2>📏 Longueurs depuis les plans</h2><p class="muted petit">Revit : nomenclature de canalisations ou de gaines avec une colonne « Repère » (ou « Commentaires ») égale au repère du tronçon et une colonne « Longueur », exportée en CSV / texte ou Excel. DXF : une couche par tronçon, nommée par son repère. IFC : éléments de réseau (IfcPipeSegment, IfcDuctSegment, IfcFlowSegment) avec leur quantité « Length », repérés par la propriété « Repère » / « Commentaires » (sinon le Tag ou le nom) ou regroupés par système. Les longueurs d'un même repère sont additionnées, les mm convertis en m.</p>
-    <p><label class="btn">📂 Choisir l'export (CSV, TXT, XLSX, DXF, IFC)<input type="file" id="lg-f" accept=".csv,.txt,.xlsx,.dxf,.ifc" hidden></label>
+    <p><label class="btn">📂 Choisir l'export (CSV, TXT, XLSX, DXF, IFC)<input type="file" id="lg-f" accept=".csv,.txt,.xlsx,.dxf,.ifc,.ifcxml" hidden></label>
       <label class="petit" id="lg-ifc-cle" hidden>Repérage IFC <select id="lg-ifc"><option value="rep">par repère du tronçon</option><option value="systeme">par système</option></select></label></p>
     <label class="case"><input type="checkbox" id="lg-div"${n.type === 'arbo' ? '' : ' disabled'}> Diviser par 2 (l'export contient l'aller et le retour sous le même repère ; le calcul attend la longueur aller)</label>
     <div id="lg-res"></div><div class="actions"><button class="secondaire" id="lg-x">Fermer</button><button id="lg-ok" disabled>Reporter les longueurs</button></div>`);
@@ -1929,7 +1929,7 @@ function dialogueLongueurs(et, n) {
     const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
     try {
       ifc = null; b.querySelector('#lg-ifc-cle').hidden = true;
-      if (/\.ifc$/i.test(f.name)) { ifc = Ifc.lire(await f.text()); lu = Ifc.longueurs(ifc, { cle: b.querySelector('#lg-ifc').value }); b.querySelector('#lg-ifc-cle').hidden = false; }
+      if (/\.ifc(xml)?$/i.test(f.name)) { ifc = Ifc.lire(await f.text()); lu = Ifc.longueurs(ifc, { cle: b.querySelector('#lg-ifc').value }); b.querySelector('#lg-ifc-cle').hidden = false; }
       else if (/\.dxf$/i.test(f.name)) lu = Longueurs.dxf(await f.text());
       else if (/\.xlsx$/i.test(f.name)) { const fe = await XLSX.read(await f.arrayBuffer()); lu = fe.map(x => Longueurs.depuisTableau(x.rows)).find(x => !x.erreur) || Longueurs.depuisTableau((fe[0] || {}).rows); }
       else lu = Longueurs.depuisTableau(Longueurs.csv(await f.text()));
@@ -1944,8 +1944,8 @@ function dialogueLongueurs(et, n) {
 }
 // Pièces du bilan pièce par pièce depuis la maquette IFC (ifc.js) : aperçu (nouvelles pièces, pièces mises à jour), puis report
 function dialoguePiecesIfc(et, n) {
-  const b = Modal.open(`<h2>🏗️ Pièces depuis la maquette IFC</h2><p class="muted petit">Espaces (IfcSpace) de la maquette exportée de Revit, ArchiCAD… en IFC2x3 ou IFC4 (fichier .ifc texte) : numéro et nom, étage (IfcBuildingStorey), surface et hauteur (quantités Qto ou propriétés ; hauteur déduite du volume). Une pièce de même nom est mise à jour (surface, hauteur, étage) ; les autres sont ajoutées avec un usage déduit du nom. Vitrages et orientations restent à compléter.</p>
-    <p><label class="btn">📂 Choisir la maquette (.ifc)<input type="file" id="pi-f" accept=".ifc" hidden></label></p>
+  const b = Modal.open(`<h2>🏗️ Pièces depuis la maquette IFC</h2><p class="muted petit">Espaces (IfcSpace) de la maquette exportée de Revit, ArchiCAD… en IFC2x3 ou IFC4 (fichier .ifc texte ou IFC XML .ifcxml) : numéro et nom, étage (IfcBuildingStorey), surface et hauteur (quantités Qto ou propriétés ; hauteur déduite du volume), vitrages (fenêtres rattachées à la pièce par les limites d'espace et les murs) et leur orientation (nord géographique de la maquette). Une pièce de même nom est mise à jour ; les autres sont ajoutées avec un usage déduit du nom. Vérifiez l'orientation proposée avant d'appliquer.</p>
+    <p><label class="btn">📂 Choisir la maquette (.ifc, .ifcxml)<input type="file" id="pi-f" accept=".ifc,.ifcxml,.xml" hidden></label></p>
     <div id="pi-res"></div><div class="actions"><button class="secondaire" id="pi-x">Fermer</button><button id="pi-ok" disabled>Appliquer au bilan</button></div>`);
   let lu = null, props = [], rempl = false;
   const exemple = JSON.stringify((n.entrees.pieces || []).map(p => p.nom)) === JSON.stringify((Notes.defauts('pieces').pieces || []).map(p => p.nom));
@@ -1955,10 +1955,18 @@ function dialoguePiecesIfc(et, n) {
     if (lu.erreur) { z.innerHTML = `<p class="erreur">${esc(lu.erreur)}</p>`; b.querySelector('#pi-ok').disabled = true; return; }
     props = Ifc.versPieces(lu, n.entrees.pieces || [], { remplacer: rempl });
     b.querySelector('#pi-ok').disabled = !props.length;
+    // Vitrages : fenêtres non rattachées à une pièce, nord de la maquette
+    const fen = lu.vitrages || [], horsPiece = fen.filter(w => !(w.espaces || []).length).length, choixO = Ifc.ORIENTS.concat('aucune');
+    const libO = o => (o === 'aucune' ? 'Sans vitrage' : o);
     z.innerHTML = `<p class="petit" id="pi-resume">${esc(Ifc.resume(lu))}${lu.erreurs.length ? ` · ${lu.erreurs.length} entité(s) illisible(s) ignorée(s)` : ''}</p>
+      ${fen.length ? `<p class="petit muted" id="pi-nord">Nord géographique : ${lu.nord && /TrueNorth/.test(lu.nord.source) ? `tourné de ${nf(lu.nord.rotation)}° par rapport à l'axe Y du projet (${esc(lu.nord.source)})` : 'axe Y du projet (TrueNorth absent de la maquette : orientations à vérifier)'}${horsPiece ? ` · ${horsPiece} fenêtre(s) non rattachée(s) à une pièce (limites d'espace absentes)` : ''}</p>` : ''}
       <label class="case"><input type="checkbox" id="pi-rempl" ${rempl ? 'checked' : ''}> Remplacer toutes les pièces actuelles du bilan${exemple ? ' (pièces d\'exemple)' : ''}</label>
-      ${props.length ? `<div class="defile-x" style="max-height:45vh;overflow:auto"><table><thead><tr><th><input type="checkbox" id="pi-tout" checked aria-label="Tout"></th><th>Pièce</th><th>Étage</th><th>Usage</th><th>Surface (m²)</th><th>Hauteur (m)</th><th></th></tr></thead><tbody>${props.map((x, k) => `<tr><td><input type="checkbox" data-pi="${k}" checked aria-label="Retenir"></td><td>${esc(x.piece.nom)}</td><td>${esc(x.piece.etage || '')}</td><td>${esc((Pieces.USAGES[x.piece.usage] || [''])[0])}</td>
-        <td>${x.avant && String(x.avant.S) !== String(x.piece.S) ? `${nf(x.avant.S)} → ` : ''}<strong>${nf(x.piece.S)}</strong></td><td>${x.avant && String(x.avant.H) !== String(x.piece.H) ? `${nf(x.avant.H)} → ` : ''}${nf(x.piece.H)}${x.espace.H ? '' : ' <span class="muted">(défaut)</span>'}</td><td>${x.action === 'ajout' ? '<span class="badge">nouvelle</span>' : '<span class="badge info">mise à jour</span>'}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Aucun espace (IfcSpace) dans la maquette.</p>'}`;
+      ${props.length ? `<div class="defile-x" style="max-height:45vh;overflow:auto"><table class="ifc-apercu"><thead><tr><th><input type="checkbox" id="pi-tout" checked aria-label="Tout"></th><th>Pièce</th><th>Étage</th><th>Usage</th><th>Surface (m²)</th><th>Hauteur (m)</th><th>Vitrages (m²)</th><th>Orientation</th><th></th></tr></thead><tbody>${props.map((x, k) => `<tr><td><input type="checkbox" data-pi="${k}" checked aria-label="Retenir"></td><td>${esc(x.piece.nom)}</td><td>${esc(x.piece.etage || '')}</td><td>${esc((Pieces.USAGES[x.piece.usage] || [''])[0])}</td>
+        <td>${x.avant && String(x.avant.S) !== String(x.piece.S) ? `${nf(x.avant.S)} → ` : ''}<strong>${nf(x.piece.S)}</strong></td><td>${x.avant && String(x.avant.H) !== String(x.piece.H) ? `${nf(x.avant.H)} → ` : ''}${nf(x.piece.H)}${x.espace.H ? '' : ' <span class="muted">(défaut)</span>'}</td>
+        <td>${x.espace.Svitrage ? `${x.avant && String(x.avant.vitrage) !== String(x.piece.vitrage) ? `${nf(x.avant.vitrage)} → ` : ''}<strong>${nf(x.piece.vitrage)}</strong> <span class="muted">(${x.espace.fenetres} fenêtre${x.espace.fenetres > 1 ? 's' : ''})</span>` : `<span class="muted">${x.avant ? nf(x.avant.vitrage) : '—'}</span>`}</td>
+        <td>${x.espace.Svitrage ? `<select data-pi-o="${k}" aria-label="Orientation de ${esc(x.piece.nom)}">${choixO.map(o => `<option value="${o}"${o === x.piece.orient ? ' selected' : ''}>${libO(o)}</option>`).join('')}</select>${x.piece.vitragesDetail ? ` <span class="petit muted" data-pi-d="${k}">${esc(x.piece.vitragesDetail)}</span>` : ''}${x.espace.aVerifier ? ' <span class="badge attention" title="Orientation déduite de l\'axe du mur ou fenêtre partagée entre plusieurs pièces">à vérifier</span>' : ''}` : `<span class="muted">${esc(x.avant ? libO(x.avant.orient || 'aucune') : '—')}</span>`}</td>
+        <td>${x.action === 'ajout' ? '<span class="badge">nouvelle</span>' : '<span class="badge info">mise à jour</span>'}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Aucun espace (IfcSpace) dans la maquette.</p>'}`;
+    b.querySelectorAll('[data-pi-o]').forEach(sel => { sel.onchange = () => { const k = +sel.dataset.piO; Ifc.changerOrientation(props[k], sel.value); const d = b.querySelector(`[data-pi-d="${k}"]`); if (d) d.remove(); }; });
     b.querySelector('#pi-rempl').onchange = ev => { rempl = ev.target.checked; rendre(); };
     const tout = b.querySelector('#pi-tout'); if (tout) tout.onchange = () => b.querySelectorAll('[data-pi]').forEach(c => { c.checked = tout.checked; });
   };
@@ -1974,7 +1982,8 @@ function dialoguePiecesIfc(et, n) {
     if (!retenues.size) return toast('Cochez au moins une pièce.', 3000);
     n.entrees.pieces = Ifc.appliquerPieces(n.entrees.pieces || [], props, { remplacer: rempl, retenues });
     const aj = [...retenues].filter(k => props[k].action === 'ajout').length;
-    enregistrer(et); Modal.close(); App.render(); toast(`Maquette IFC : ${aj} pièce(s) ajoutée(s), ${retenues.size - aj} mise(s) à jour. Complétez vitrages et orientations.`, 6000);
+    const avecVit = [...retenues].filter(k => props[k].espace && props[k].espace.Svitrage).length;
+    enregistrer(et); Modal.close(); App.render(); toast(`Maquette IFC : ${aj} pièce(s) ajoutée(s), ${retenues.size - aj} mise(s) à jour${avecVit ? `, vitrages et orientation repris pour ${avecVit} pièce(s)` : ''}. ${avecVit < retenues.size ? 'Complétez les vitrages manquants.' : 'Vérifiez les orientations.'}`, 6000);
   };
 }
 function dialogueFichesMes(et) {

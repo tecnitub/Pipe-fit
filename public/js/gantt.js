@@ -43,26 +43,35 @@ function dialoguePhasesEtude(a, save, uid) {
   const es = etudesPlanning(a), premier = Store.all('planning').filter(p => p.affaireId === a.id && p.date).map(p => p.date).sort()[0];
   const box = Modal.open(`<h2 style="margin-top:0">Planning depuis l'étude</h2>
     <p class="small muted">Heures de main-d'œuvre du métré (${es.map(e => esc(e.objet)).join(', ')}) réparties en lots, durées selon l'effectif ; chaque tâche porte le matériel retenu à avoir reçu avant de commencer.</p>
-    <div class="grid2"><div class="field"><label for="pe-eff">Effectif sur le chantier (compagnons)</label><input id="pe-eff" type="number" min="1" step="1" value="2"></div>
+    <div class="grid2"><div class="field"><label for="pe-neq">Nombre d'équipes</label><input id="pe-neq" type="number" min="1" max="9" step="1" value="${Math.max(1, (a.equipes || []).length || 1)}"></div>
+      <div class="field"><label for="pe-eff">Effectif par équipe (compagnons)</label><input id="pe-eff" type="number" min="1" step="1" value="${((a.equipes || [])[0] || {}).effectif || 2}"></div>
       <div class="field"><label for="pe-hj">Heures par jour et par compagnon</label><input id="pe-hj" type="number" min="1" step="0.5" value="7"></div>
       <div class="field"><label for="pe-deb">Début de la préparation</label><input id="pe-deb" type="date" value="${esc(premier && premier > isoDate(new Date()) ? premier : GanttCalc.prochainOuvre(isoDate(new Date())))}"></div></div>
     <div id="pe-apercu"></div>
     <div class="modal-actions"><span style="flex:1"></span><button class="secondary" id="pe-x">Annuler</button><button id="pe-ok">${(a.phases || []).length ? 'Remplacer les phases' : 'Créer les phases'}</button></div>`, true);
   const v = id => box.querySelector(id).value;
-  const calc = () => PlanningEtude.proposer(es, { effectif: num(v('#pe-eff')), heuresJour: num(v('#pe-hj')), debut: v('#pe-deb'), uid });
+  // Équipes du chantier (noms gardés) et affectation des lots choisie dans l'aperçu
+  const affectation = {};
+  const equipes = () => { const n = Math.max(1, Math.min(9, Math.round(num(v('#pe-neq'))) || 1)), eff = Math.max(1, Math.round(num(v('#pe-eff'))) || 1);
+    return Array.from({ length: n }, (_, i) => ({ id: `E${i + 1}`, nom: ((a.equipes || [])[i] || {}).nom || `Équipe ${i + 1}`, effectif: eff })); };
+  const calc = () => PlanningEtude.proposer(es, { equipes: equipes(), affectation, heuresJour: num(v('#pe-hj')), debut: v('#pe-deb'), uid });
   const apercu = () => {
-    const ph = calc();
-    box.querySelector('#pe-apercu').innerHTML = ph.length ? `<div class="table-wrap"><table class="compact"><tr><th>Tâche</th><th class="num">Heures</th><th class="num">Durée (j ouvrés)</th><th class="num">Équipe</th><th>Après</th><th class="num">Matériel</th></tr>
-      ${ph.map(p => `<tr><td>${esc(p.libelle)}</td><td class="num">${fmt(p.heures)} h</td><td class="num">${p.duree}</td><td class="num">${p.equipe}</td><td class="small">${p.apres.map(id => esc((ph.find(q => q.id === id) || {}).libelle || '')).join(', ')}</td><td class="num">${p.materiel.length}</td></tr>`).join('')}</table></div>` : '<p class="muted">Pas d\'heures de pose dans le métré de l\'étude.</p>';
+    const ph = calc(), eqs = equipes(), g = GanttCalc.calculer({ id: a.id, phases: ph, equipes: eqs, ganttRecaler: false }, { aujourdhui: isoDate(new Date()) }), dc = id => g.phases.find(q => q.id === id) || {};
+    box.querySelector('#pe-apercu').innerHTML = ph.length ? `<div class="table-wrap"><table class="compact"><tr><th>Tâche</th><th class="num">Heures</th><th>Équipe</th><th class="num">Durée (j ouvrés)</th><th>Après</th><th>Dates</th><th class="num">Matériel</th></tr>
+      ${ph.map(p => `<tr class="${dc(p.id).critique ? 'gt-crit-ligne' : ''}"><td>${esc(p.libelle)}${dc(p.id).critique ? ' <span class="badge b-bad" title="Chemin critique : sans marge">critique</span>' : ''}</td><td class="num">${fmt(p.heures)} h</td>
+        <td>${p.equipeId ? `<select data-pe-lot="${esc(p.lot)}" style="min-width:140px" aria-label="Équipe de ${esc(p.libelle)}">${eqs.map(e => `<option value="${esc(e.id)}" ${e.id === p.equipeId ? 'selected' : ''}>${esc(e.nom)} (${e.effectif})</option>`).join('')}</select>` : '<span class="muted small">bureau</span>'}</td>
+        <td class="num">${p.duree}</td><td class="small">${p.apres.map(id => esc((ph.find(q => q.id === id) || {}).libelle || '')).join(', ')}</td><td class="small nowrap">${dateCourte(dc(p.id).debut)} → ${dateCourte(dc(p.id).fin)}</td><td class="num">${p.materiel.length}</td></tr>`).join('')}</table></div>
+      <p class="small muted">Fin prévue le ${dateFr(g.fin)} · une équipe ne fait qu'une tâche à la fois : ses tâches s'enchaînent dans l'ordre des dépendances.</p>` : '<p class="muted">Pas d\'heures de pose dans le métré de l\'étude.</p>';
+    box.querySelectorAll('[data-pe-lot]').forEach(sel => { sel.onchange = () => { affectation[sel.dataset.peLot] = sel.value; apercu(); }; });
   };
-  ['#pe-eff', '#pe-hj', '#pe-deb'].forEach(s2 => { box.querySelector(s2).oninput = apercu; });
+  ['#pe-neq', '#pe-eff', '#pe-hj', '#pe-deb'].forEach(s2 => { box.querySelector(s2).oninput = apercu; });
   apercu();
   box.querySelector('#pe-x').onclick = Modal.close;
   box.querySelector('#pe-ok').onclick = async () => {
     const ph = calc();
     if (!ph.length) return;
     if ((a.phases || []).length && !await ask(`Remplacer les ${a.phases.length} phase(s) du chantier par les ${ph.length} tâches tirées de l'étude ?`, 'Remplacer')) return;
-    a.phases = ph; Modal.close(); save();
+    a.phases = ph; a.equipes = equipes(); Modal.close(); save();
     App.toast(`${ph.length} tâches créées d'après le métré de l'étude`, 4000);
   };
 }
@@ -80,12 +89,25 @@ function ganttChantier(a) {
   const jours = Array.from({ length: nbJours }, (_, i) => GanttCalc.plus(debut, i));
   const semaines = jours.filter(d => jourDe(d).getDay() === 1);
   const resteTotal = sumBy(phases, p => p.reste), heuresPhases = sumBy(phases, p => p.heures);
+  const rang = new Map(phases.map((p, i) => [p.id, i])), yL = i => 40 + i * 40 + 20;
+  // Liens fin → début de toutes les dépendances (et enchaînements d'une même équipe, en pointillés)
+  const liensSvg = () => {
+    const ls = (g.liens || []).filter(l => rang.has(l.de) && rang.has(l.vers));
+    if (!ls.length) return '';
+    const H = 40 + phases.length * 40;
+    return `<svg class="gt-liens" width="${nbJours * L}" height="${H}" viewBox="0 0 ${nbJours * L} ${H}" aria-hidden="true">
+      <defs><marker id="gt-fl" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 Z" class="gt-fl"/></marker>
+        <marker id="gt-fl-c" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 Z" class="gt-fl-c"/></marker></defs>
+      ${ls.map(l => { const q = phases[rang.get(l.de)], p = phases[rang.get(l.vers)], x1 = x(q.fin) + L, y1 = yL(rang.get(l.de)), x2 = x(p.debut), y2 = yL(rang.get(l.vers));
+        const d = x2 >= x1 + 8 ? `M${x1} ${y1} H${x1 + 4} V${y2} H${x2}` : `M${x1} ${y1} h4 V${y2 + (y2 > y1 ? -14 : 14)} H${x2 - 8} V${y2} H${x2}`;
+        return `<path d="${d}" class="gt-lien${l.critique ? ' crit' : ''}${l.equipe ? ' equipe' : ''}" marker-end="url(#${l.critique ? 'gt-fl-c' : 'gt-fl'})" data-lien="${esc(l.de)}>${esc(l.vers)}"><title>${esc(q.libelle)} → ${esc(p.libelle)}${l.decalage ? ` (+${l.decalage} j)` : ''}${l.equipe ? ' · même équipe' : ''}</title></path>`; }).join('')}</svg>`;
+  };
   const ligne = p => {
     const w = x(p.fin) - x(p.debut) + L;
     return `<div class="gt-ligne" data-ph="${esc(p.id)}">
       ${p.jours.map(d => (d >= debut && d <= fin ? `<i class="gt-jour" style="left:${x(d) + L / 2 - 3}px" title="Au planning le ${dateFr(d)}"></i>` : '')).join('')}
-      <div class="gt-barre etat-${p.etat.replace(/\s/g, '-')} ${p.source === 'planning' ? 'planifiee' : ''}" style="left:${x(p.debut)}px;width:${w}px;--h:${teinte(a.id)}" data-bar="${esc(p.id)}"
-        title="${esc(p.libelle)} : ${dateFr(p.debut)} → ${dateFr(p.fin)} (${p.duree} j ouvrés)${p.contrainte ? ` · après « ${esc(p.contrainte)} »` : ''}${p.source === 'planning' ? ' · calée sur le planning' : ''}${p.glissement ? ` · décalée de ${p.glissement} j (pas commencée à la date prévue)` : ''}">
+      <div class="gt-barre etat-${p.etat.replace(/\s/g, '-')} ${p.source === 'planning' ? 'planifiee' : ''} ${p.critique ? 'critique' : ''}" style="left:${x(p.debut)}px;width:${w}px;--h:${teinte(a.id)}" data-bar="${esc(p.id)}"
+        title="${esc(p.libelle)} : ${dateFr(p.debut)} → ${dateFr(p.fin)} (${p.duree} j ouvrés)${p.equipeNom ? ` · ${esc(p.equipeNom)}` : ''}${p.contrainte ? ` · après « ${esc(p.contrainte)} »` : ''}${p.critique ? ' · chemin critique' : ` · marge ${p.marge} j`}${p.source === 'planning' ? ' · calée sur le planning' : ''}${p.glissement ? ` · décalée de ${p.glissement} j (pas commencée à la date prévue)` : ''}">
         <span class="gt-av" style="width:${Math.round(p.avancement * 100)}%"></span><span class="gt-txt">${esc(p.libelle)}</span>${edit ? '<span class="gt-poignee" data-resize="1"></span>' : ''}</div></div>`;
   };
   return `<div class="toolbar"><a href="#/chantiers" class="btn secondary">← Chantiers</a><span class="spacer"></span>
@@ -95,34 +117,43 @@ function ganttChantier(a) {
     <div class="card"><div class="label">Début → fin</div><div class="value">${g.debut ? `${dateCourte(g.debut)} → ${dateCourte(g.fin)}` : '—'}</div><div class="sub">${g.fin ? `${GanttCalc.ouvresEntre(g.debut, g.fin)} jours ouvrés` : 'Aucune phase'}</div></div>
     <div class="card"><div class="label">Heures des phases</div><div class="value">${fmt(heuresPhases)} h</div><div class="sub">budget du chantier ${fmt(s.heuresPrevues)} h${Math.abs(heuresPhases - s.heuresPrevues) > 1 && heuresPhases ? ` · <span class="warn-text">écart ${fmt(heuresPhases - s.heuresPrevues)} h</span>` : ''}</div></div>
     <div class="card"><div class="label">Reste à faire</div><div class="value">${fmt(resteTotal)} h</div><div class="sub">pointé ${fmt(s.heuresPassees, 1)} h</div></div>
+    <div class="card"><div class="label">Chemin critique</div><div class="value">${(g.critique || []).length} phase(s)</div><div class="sub">${(a.equipes || []).length ? `${a.equipes.length} équipe(s) : ${a.equipes.map(e => `${esc(e.nom)} (${e.effectif})`).join(', ')}` : 'sans marge : un retard décale la fin'}</div></div>
     <div class="card"><div class="label">Décalage</div><div class="value ${g.retard ? 'neg' : ''}">${g.retard ? `${g.retard} j` : 'aucun'}</div><div class="sub">phases non commencées à la date prévue</div></div>
   </div>
   ${g.alertes.map(t => `<p class="warn-text">${esc(t)}</p>`).join('')}
   ${(() => { const r = phases.some(p => (p.materiel || []).length) && typeof materielChantier !== 'undefined' && materielChantier.get(a.id) ? PlanningEtude.alertes(phases, materielChantier.get(a.id), { aujourdhui: today, etatAchat: MaterielRetenu.etatAchat }).alertes.filter(x => x.niveau === 'erreur') : [];
     return r.length ? `<p class="neg">⛔ ${r.length} équipement(s) livré(s) après le début de leur tâche : voir « Approvisionnement des tâches ».</p>` : ''; })()}
   <label class="check no-print"><input type="checkbox" id="gt-recaler" ${a.ganttRecaler !== false ? 'checked' : ''} ${edit ? '' : 'disabled'}> Recaler sur le planning des équipes : une phase suit les jours où sa tâche est planifiée ou pointée, une phase pas commencée à temps glisse à aujourd'hui, et les phases suivantes se décalent</label>
-  ${phases.length ? `<div class="gt-cadre"><div class="gt-noms"><div class="gt-tete">Phase</div>${phases.map(p => `<div class="gt-nom" title="${esc(p.libelle)}"><strong>${esc(p.libelle)}</strong><span class="small muted">${dateCourte(p.debut)} → ${dateCourte(p.fin)} <span class="badge ${ETATS_PHASE[p.etat]}">${esc(p.etat)}</span></span></div>`).join('')}</div>
+  ${phases.length ? `<div class="gt-cadre"><div class="gt-noms"><div class="gt-tete">Phase</div>${phases.map(p => `<div class="gt-nom${p.critique ? ' critique' : ''}" title="${esc(p.libelle)}${p.critique ? ' (chemin critique)' : ''}"><strong>${esc(p.libelle)}</strong><span class="small muted">${dateCourte(p.debut)} → ${dateCourte(p.fin)}${p.equipeNom ? ` · ${esc(p.equipeNom)}` : ''} <span class="badge ${ETATS_PHASE[p.etat]}">${esc(p.etat)}</span></span></div>`).join('')}</div>
     <div class="gt-defile"><div class="gt-zone" style="width:${nbJours * L}px">
       <div class="gt-tete">${semaines.map(d => `<span class="gt-sem" style="left:${x(d)}px;width:${7 * L}px">S${isoWeek(jourDe(d)).split('-W')[1]} · ${dateCourte(d)}</span>`).join('')}
         ${jours.map(d => `<span class="gt-j ${GanttCalc.ouvre(d) ? '' : 'we'}" style="left:${x(d)}px;width:${L}px">${jourDe(d).getDate()}</span>`).join('')}</div>
       <div class="gt-fond">${jours.filter(d => !GanttCalc.ouvre(d)).map(d => `<i class="gt-we" style="left:${x(d)}px;width:${L}px"></i>`).join('')}<i class="gt-auj" style="left:${x(today) + L / 2}px" title="Aujourd'hui"></i></div>
-      ${phases.map(ligne).join('')}
+      ${liensSvg()}${phases.map(ligne).join('')}
     </div></div></div>
-    <p class="small muted no-print">● jour au planning des équipes ou pointé · barre pleine : calée sur le planning · partie foncée : heures pointées${edit ? ' · glissez une barre pour la déplacer, son bord droit pour changer sa durée' : ''}.</p>` : `<p class="muted">Pas encore de Gantt pour ce chantier.${edit ? ' « Phases types » crée la préparation, la préfabrication, le montage, les essais et la réception à partir du budget d\'heures, à ajuster ensuite.' : ''}</p>`}
-  ${phases.length ? `<h2>Phases</h2><div class="table-wrap"><table class="gt-table"><tr><th>Phase</th><th>Tâche du planning</th><th>Au plus tôt</th><th class="num">Durée (j)</th><th class="num">Heures</th><th>Après</th><th class="num">Décalage (j)</th><th>Terminée</th><th class="num">Pointé</th><th></th></tr>
-    ${(a.phases || []).map((p, i) => { const c = phases.find(x => x.id === p.id) || {}; return `<tr data-i="${i}">
+    <p class="small muted no-print">● jour au planning des équipes ou pointé · barre pleine : calée sur le planning · partie foncée : heures pointées · <span class="gt-leg-crit">contour rouge : chemin critique</span> · flèches : dépendances fin → début (pointillés : même équipe)${edit ? ' · glissez une barre pour la déplacer, son bord droit pour changer sa durée' : ''}.</p>` : `<p class="muted">Pas encore de Gantt pour ce chantier.${edit ? ' « Phases types » crée la préparation, la préfabrication, le montage, les essais et la réception à partir du budget d\'heures, à ajuster ensuite.' : ''}</p>`}
+  ${phases.length || (a.equipes || []).length ? `<h2>Équipes <span class="muted small">une équipe ne fait qu'une phase à la fois</span></h2>
+    <div class="gt-equipes">${(a.equipes || []).map((e, k) => `<div class="gt-equipe" data-eq="${k}"><input data-eqk="nom" value="${esc(e.nom || '')}" aria-label="Nom de l'équipe" ${edit ? '' : 'disabled'}>
+      <label class="small">Effectif <input data-eqk="effectif" type="number" min="1" step="1" value="${esc(e.effectif || 1)}" style="width:60px" ${edit ? '' : 'disabled'}></label>
+      <span class="small muted">${phases.filter(p => p.equipeId === e.id).length} phase(s)</span>${edit ? `<button class="small danger" data-eqdel="${k}" aria-label="Supprimer l'équipe">✕</button>` : ''}</div>`).join('')}
+      ${edit ? '<button class="small secondary" id="gt-eq-add">+ Équipe</button>' : ''}${(a.equipes || []).length ? '' : '<span class="small muted">Aucune équipe : les phases ne sont pas limitées par les ressources.</span>'}</div>` : ''}
+  ${phases.length ? `<h2>Phases</h2><div class="table-wrap"><table class="gt-table"><tr><th>Phase</th><th>Tâche du planning</th><th>Équipe</th><th>Au plus tôt</th><th class="num">Durée (j)</th><th class="num">Heures</th><th>Après (fin → début, décalage en j ouvrés)</th><th class="num">Marge (j)</th><th>Terminée</th><th class="num">Pointé</th><th></th></tr>
+    ${(a.phases || []).map((p, i) => { const c = phases.find(x => x.id === p.id) || {}; return `<tr data-i="${i}" class="${c.critique ? 'gt-crit-ligne' : ''}">
       <td><input data-k="libelle" value="${esc(p.libelle || '')}" ${edit ? '' : 'disabled'}></td>
       <td><input data-k="tache" list="gt-taches" value="${esc(p.tache || '')}" placeholder="—" ${edit ? '' : 'disabled'}></td>
+      <td><select data-k="equipeId" ${edit ? '' : 'disabled'} aria-label="Équipe"><option value="">—</option>${(a.equipes || []).map(e => `<option value="${esc(e.id)}" ${p.equipeId === e.id ? 'selected' : ''}>${esc(e.nom)}</option>`).join('')}${p.equipeId && !(a.equipes || []).some(e => e.id === p.equipeId) ? `<option value="${esc(p.equipeId)}" selected>${esc(p.equipeId)}</option>` : ''}</select></td>
       <td><input data-k="debut" type="date" value="${esc(p.debut || '')}" ${edit ? '' : 'disabled'}></td>
       <td class="num"><input data-k="duree" type="number" min="1" step="1" value="${esc(p.duree || 1)}" style="width:70px" ${edit ? '' : 'disabled'}></td>
       <td class="num"><input data-k="heures" type="number" min="0" step="1" value="${esc(p.heures || 0)}" style="width:80px" ${edit ? '' : 'disabled'}></td>
-      <td><select data-k="apres" ${edit ? '' : 'disabled'}><option value="">—</option>${(a.phases || []).filter(q => q.id !== p.id).map(q => `<option value="${esc(q.id)}" ${(p.apres || [])[0] === q.id ? 'selected' : ''}>${esc(q.libelle)}</option>`).join('')}</select></td>
-      <td class="num"><input data-k="decalage" type="number" step="1" value="${esc(p.decalage || 0)}" style="width:60px" ${edit ? '' : 'disabled'}></td>
+      <td class="gt-deps">${(p.apres || []).filter(id => (a.phases || []).some(q => q.id === id)).map(id => `<span class="gt-dep" data-dep="${esc(id)}">${esc(((a.phases || []).find(q => q.id === id) || {}).libelle || '')}
+        <input data-dep-lag="${esc(id)}" type="number" min="0" step="1" value="${GanttCalc.decalageDe(p, id)}" aria-label="Décalage après ${esc(((a.phases || []).find(q => q.id === id) || {}).libelle || '')}" ${edit ? '' : 'disabled'}> j${edit ? `<button class="small secondary" data-dep-del="${esc(id)}" aria-label="Retirer la dépendance">✕</button>` : ''}</span>`).join('')}
+        ${edit ? `<select data-dep-add aria-label="Ajouter une dépendance"><option value="">+ après…</option>${(a.phases || []).filter(q => q.id !== p.id && !(p.apres || []).includes(q.id)).map(q => `<option value="${esc(q.id)}">${esc(q.libelle)}</option>`).join('')}</select>` : ''}</td>
+      <td class="num ${c.critique ? 'neg' : ''}">${c.critique ? '0 · critique' : c.marge ?? ''}</td>
       <td><input data-k="termine" type="checkbox" ${p.termine ? 'checked' : ''} ${edit ? '' : 'disabled'}></td>
       <td class="num">${fmt(c.pointees || 0, 1)} h</td>
       <td class="nowrap">${edit ? `<button class="small secondary" data-haut="${i}" ${i ? '' : 'disabled'} aria-label="Monter">↑</button><button class="small danger" data-del="${i}" aria-label="Supprimer">✕</button>` : ''}</td></tr>`; }).join('')}
     </table></div><datalist id="gt-taches">${TACHES_PLANNING().map(t => `<option value="${esc(t)}">`).join('')}</datalist>
-    <p class="small muted">« Tâche du planning » relie la phase aux affectations des équipes (Planning) et aux heures pointées sur cette tâche. « Au plus tôt » vide : la phase démarre après la précédente.</p>` : ''}
+    <p class="small muted">« Tâche du planning » relie la phase aux affectations des équipes (Planning) et aux heures pointées sur cette tâche. « Au plus tôt » vide : la phase démarre après ses dépendances (toutes, fin → début, plus leur décalage) et quand son équipe est libre. Marge : jours ouvrés de retard possibles sans décaler la fin du chantier.</p>` : ''}
   ${approGanttHtml(a, phases)}`;
 }
 
@@ -148,10 +179,26 @@ function bindGanttChantier(root, a) {
   });
   const rec = root.querySelector('#gt-recaler');
   if (rec) rec.onchange = () => { a.ganttRecaler = rec.checked; save(); };
+  // Équipes du chantier : nom, effectif, ajout, suppression (ses phases ne sont plus affectées)
+  on('#gt-eq-add', () => { const eqs = a.equipes || []; let k = eqs.length + 1; while (eqs.some(e => e.id === `E${k}`)) k++; a.equipes = [...eqs, { id: `E${k}`, nom: `Équipe ${eqs.length + 1}`, effectif: 2 }]; save(); });
+  root.querySelectorAll('.gt-equipe [data-eqk]').forEach(el => el.onchange = () => { const e = a.equipes[+el.closest('[data-eq]').dataset.eq]; e[el.dataset.eqk] = el.dataset.eqk === 'effectif' ? Math.max(1, Math.round(num(el.value)) || 1) : el.value; save(); });
+  root.querySelectorAll('[data-eqdel]').forEach(b => b.onclick = async () => {
+    const e = a.equipes[+b.dataset.eqdel];
+    if (!await ask(`Supprimer « ${e.nom} » ? Ses phases ne seront plus affectées à une équipe.`, 'Supprimer')) return;
+    a.equipes = a.equipes.filter(x => x !== e); (a.phases || []).forEach(p => { if (p.equipeId === e.id) delete p.equipeId; }); save();
+  });
+  // Dépendances multiples : ajout, retrait, décalage propre à chaque dépendance
+  root.querySelectorAll('.gt-table tr[data-i] [data-dep-add]').forEach(el => el.onchange = () => { const p = a.phases[+el.closest('tr').dataset.i]; if (!el.value) return; p.apres = [...new Set([...(p.apres || []), el.value])]; save(); });
+  root.querySelectorAll('.gt-table tr[data-i] [data-dep-del]').forEach(el => el.onclick = () => {
+    const p = a.phases[+el.closest('tr').dataset.i], id = el.dataset.depDel;
+    p.apres = (p.apres || []).filter(x => x !== id); if (p.decalages) delete p.decalages[id]; save();
+  });
+  root.querySelectorAll('.gt-table tr[data-i] [data-dep-lag]').forEach(el => el.onchange = () => { const p = a.phases[+el.closest('tr').dataset.i]; p.decalages = { ...(p.decalages || {}), [el.dataset.depLag]: Math.max(0, Math.round(num(el.value))) }; save(); });
   root.querySelectorAll('.gt-table tr[data-i] [data-k]').forEach(el => el.onchange = () => {
     const p = a.phases[+el.closest('tr').dataset.i], k = el.dataset.k;
     if (k === 'termine') p.termine = el.checked;
     else if (k === 'apres') p.apres = el.value ? [el.value] : [];
+    else if (k === 'equipeId') { if (el.value) p.equipeId = el.value; else delete p.equipeId; }
     else if (['duree', 'heures', 'decalage'].includes(k)) p[k] = k === 'duree' ? Math.max(1, Math.round(num(el.value))) : num(el.value);
     else p[k] = el.value;
     save();
@@ -160,7 +207,7 @@ function bindGanttChantier(root, a) {
     const i = +b.dataset.del, p = a.phases[i];
     if (!await ask(`Supprimer la phase « ${p.libelle} » ?`, 'Supprimer')) return;
     a.phases.splice(i, 1);
-    a.phases.forEach(q => { q.apres = (q.apres || []).flatMap(id => (id === p.id ? p.apres || [] : [id])); });
+    a.phases.forEach(q => { q.apres = [...new Set((q.apres || []).flatMap(id => (id === p.id ? p.apres || [] : [id])))]; if (q.decalages) delete q.decalages[p.id]; });
     save();
   });
   root.querySelectorAll('[data-haut]').forEach(b => b.onclick = () => { const i = +b.dataset.haut; [a.phases[i - 1], a.phases[i]] = [a.phases[i], a.phases[i - 1]]; save(); });

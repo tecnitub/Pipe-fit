@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Maquette fictive écrite à la main (IFC4, ifcXML) : la même que vitrages-fictifs.ifc (deux bureaux, mur sud et mur est,
+     nord tourné de 45 degrés), unités en mm ; références (ref), entités en ligne, valeurs « -wrapper », listes. -->
+<ifcXML xmlns="http://www.buildingsmart-tech.org/ifcXML/IFC4/Add2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.buildingsmart-tech.org/ifcXML/IFC4/Add2 IFC4_ADD2.xsd" id="uos_1" express="IFC4" configuration="ifcXML4">
+  <header><name>vitrages-fictifs.ifcxml</name><author>Bureau ACME</author></header>
+  <IfcProject id="i1" GlobalId="0YvctVUKr0kugbFTf53O9L" Name="Projet ACME vitrages">
+    <RepresentationContexts>
+      <IfcGeometricRepresentationContext id="i6" ContextType="Model" CoordinateSpaceDimension="3" Precision="1E-05">
+        <WorldCoordinateSystem xsi:type="IfcAxis2Placement3D" id="i7"><Location xsi:type="IfcCartesianPoint" id="i9" Coordinates="0 0 0"/></WorldCoordinateSystem>
+        <TrueNorth id="i8" xsi:type="IfcDirection" DirectionRatios="-0.707106781187 0.707106781187"/>
+      </IfcGeometricRepresentationContext>
+    </RepresentationContexts>
+    <UnitsInContext id="i5" xsi:type="IfcUnitAssignment">
+      <Units>
+        <IfcSIUnit id="i2" UnitType="LENGTHUNIT" Prefix="MILLI" Name="METRE"/>
+        <IfcSIUnit id="i3" UnitType="AREAUNIT" Name="SQUARE_METRE"/>
+        <IfcSIUnit id="i4" UnitType="VOLUMEUNIT" Name="CUBIC_METRE"/>
+      </Units>
+    </UnitsInContext>
+  </IfcProject>
+  <IfcBuilding id="i10" GlobalId="1kTvXnbbzCWw8lcMd1dR4o" Name="B&#226;timent A" CompositionType="ELEMENT"/>
+  <IfcBuildingStorey id="i11" GlobalId="2HCQ3jD3n3xu9L2XWpwV0z" Name="RDC" CompositionType="ELEMENT" Elevation="0">
+    <ObjectPlacement xsi:type="IfcLocalPlacement" id="i100"><RelativePlacement xsi:type="IfcAxis2Placement3D" id="i101"><Location ref="i9" xsi:type="IfcCartesianPoint" xsi:nil="true"/></RelativePlacement></ObjectPlacement>
+  </IfcBuildingStorey>
+  <IfcRelAggregates id="i12" GlobalId="3sy8tz4D1BqQuSr1lH8bY1">
+    <RelatingObject xsi:type="IfcBuilding" ref="i10" xsi:nil="true"/>
+    <RelatedObjects><IfcBuildingStorey ref="i11" xsi:nil="true"/></RelatedObjects>
+  </IfcRelAggregates>
+  <IfcSpace id="i20" GlobalId="1zJkLhK4f0kQ$5mZ5Gc8xE" Name="001" LongName="Bureau sud-ouest" CompositionType="ELEMENT">
+    <ObjectPlacement xsi:type="IfcLocalPlacement" id="i110"><PlacementRelTo ref="i100" xsi:type="IfcLocalPlacement" xsi:nil="true"/>
+      <RelativePlacement xsi:type="IfcAxis2Placement3D" id="i111"><Location xsi:type="IfcCartesianPoint" id="i112" Coordinates="2000 2000 0"/></RelativePlacement></ObjectPlacement>
+  </IfcSpace>
+  <IfcSpace id="i21" GlobalId="1zJkLhK4f0kQ$5mZ5Gc8xF" Name="002" LongName="Bureau angle" CompositionType="ELEMENT">
+    <ObjectPlacement xsi:type="IfcLocalPlacement" id="i115"><PlacementRelTo ref="i100" xsi:type="IfcLocalPlacement" xsi:nil="true"/>
+      <RelativePlacement xsi:type="IfcAxis2Placement3D" id="i116"><Location xsi:type="IfcCartesianPoint" id="i117" Coordinates="7000 2000 0"/></RelativePlacement></ObjectPlacement>
+  </IfcSpace>
+  <IfcRelAggregates id="i22" GlobalId="0ZsJFPzcf3xA1H$pWUq1Ab">
+    <RelatingObject xsi:type="IfcBuildingStorey" ref="i11" xsi:nil="true"/>
+    <RelatedObjects><IfcSpace ref="i20" xsi:nil="true"/><IfcSpace ref="i21" xsi:nil="true"/></RelatedObjects>
+  </IfcRelAggregates>
+  <IfcRelDefinesByProperties id="i25" GlobalId="3pZ4G7aXz0Wfl1HmbNqUv1">
+    <RelatedObjects><IfcSpace ref="i20" xsi:nil="true"/></RelatedObjects>
+    <RelatingPropertyDefinition xsi:type="IfcElementQuantity" id="i24" GlobalId="2b5Ij1VtL6chb1jqdfDXv1" Name="Qto_SpaceBaseQuantities">
+      <Quantities><IfcQuantityArea id="i23" Name="NetFloorArea" AreaValue="20"/></Quantities>
+    </RelatingPropertyDefinition>
+  </IfcRelDefinesByProperties>
+  <IfcRelDefinesByProperties id="i28" GlobalId="3pZ4G7aXz0Wfl1HmbNqUv2">
+    <RelatedObjects><IfcSpace ref="i21" xsi:nil="true"/></RelatedObjects>
+    <RelatingPropertyDefinition xsi:type="IfcPropertySet" id="i27" GlobalId="2b5Ij1VtL6chb1jqdfDXv2" Name="Pset_ACME">
+      <HasProperties><IfcPropertySingleValue id="i26" Name="Area"><NominalValue><IfcAreaMeasure-wrapper>25</IfcAreaMeasure-wrapper></NominalValue></IfcPropertySingleValue></HasProperties>
+    </RelatingPropertyDefinition>
+  </IfcRelDefinesByProperties>
+  <IfcDirection id="i122" DirectionRatios="0 0 1"/>
+  <IfcDirection id="i123" DirectionRatios="1 0 0"/>
+  <IfcWall id="i30" GlobalId="2O2Fr$t4X7Zf8NOew3FLOH" Name="Mur sud">
+    <ObjectPlacement xsi:type="IfcLocalPlacement" id="i120"><PlacementRelTo ref="i100" xsi:type="IfcLocalPlacement" xsi:nil="true"/>
+      <RelativePlacement xsi:type="IfcAxis2Placement3D" id="i121"><Location ref="i9" xsi:type="IfcCartesianPoint" xsi:nil="true"/><Axis ref="i122" xsi:type="IfcDirection" xsi:nil="true"/><RefDirection ref="i123" xsi:type="IfcDirection" xsi:nil="true"/></RelativePlacement></ObjectPlacement>
+  </IfcWall>
+  <IfcWall id="i31" GlobalId="2O2Fr$t4X7Zf8NOew3FLOI" Name="Mur est">
+    <ObjectPlacement xsi:type="IfcLocalPlacement" id="i125"><PlacementRelTo ref="i100" xsi:type="IfcLocalPlacement" xsi:nil="true"/>
+      <RelativePlacement xsi:type="IfcAxis2Placement3D" id="i126"><Location xsi:type="IfcCartesianPoint" id="i127" Coordinates="10000 0 0"/><Axis ref="i122" xsi:type="IfcDirection" xsi:nil="true"/><RefDirection xsi:type="IfcDirection" id="i128" DirectionRatios="0 1 0"/></RelativePlacement></ObjectPlacement>
+  </IfcWall>
+  <IfcOpeningElement id="i50" GlobalId="3yGQ9zZbD0ZgYtD2Y3wWm1" Name="Ouverture F1">
+    <ObjectPlacement xsi:type="IfcLocalPlacement" id="i130"><PlacementRelTo ref="i120" xsi:type="IfcLocalPlacement" xsi:nil="true"/><RelativePlacement xsi:type="IfcAxis2Placement3D" id="i133"><Location xsi:type="IfcCartesianPoint" id="i136" Coordinates="2000 0 900"/></RelativePlacement></ObjectPlacement>
+  </IfcOpeningElement>
+  <IfcOpeningElement id="i51" GlobalId="3yGQ9zZbD0ZgYtD2Y3wWm2" Name="Ouverture F2">
+    <ObjectPlacement xsi:type="IfcLocalPlacement" id="i131"><PlacementRelTo ref="i120" xsi:type="IfcLocalPlacement" xsi:nil="true"/><RelativePlacement xsi:type="IfcAxis2Placement3D" id="i134"><Location xsi:type="IfcCartesianPoint" id="i137" Coordinates="7000 0 900"/></RelativePlacement></ObjectPlacement>
+  </IfcOpeningElement>
+  <IfcOpeningElement id="i52" GlobalId="3yGQ9zZbD0ZgYtD2Y3wWm3" Name="Ouverture F3">
+    <ObjectPlacement xsi:type="IfcLocalPlacement" id="i132"><PlacementRelTo ref="i125" xsi:type="IfcLocalPlacement" xsi:nil="true"/><RelativePlacement xsi:type="IfcAxis2Placement3D" id="i135"><Location xsi:type="IfcCartesianPoint" id="i138" Coordinates="3000 0 900"/></RelativePlacement></ObjectPlacement>
+  </IfcOpeningElement>
+  <IfcRelVoidsElement id="i53" GlobalId="1Wq3Hk0Yb8xAQ6c7L0kQm1"><RelatingBuildingElement xsi:type="IfcWall" ref="i30" xsi:nil="true"/><RelatedOpeningElement xsi:type="IfcOpeningElement" ref="i50" xsi:nil="true"/></IfcRelVoidsElement>
+  <IfcRelVoidsElement id="i54" GlobalId="1Wq3Hk0Yb8xAQ6c7L0kQm2"><RelatingBuildingElement xsi:type="IfcWall" ref="i30" xsi:nil="true"/><RelatedOpeningElement xsi:type="IfcOpeningElement" ref="i51" xsi:nil="true"/></IfcRelVoidsElement>
+  <IfcRelVoidsElement id="i55" GlobalId="1Wq3Hk0Yb8xAQ6c7L0kQm3"><RelatingBuildingElement xsi:type="IfcWall" ref="i31" xsi:nil="true"/><RelatedOpeningElement xsi:type="IfcOpeningElement" ref="i52" xsi:nil="true"/></IfcRelVoidsElement>
+  <IfcWindow id="i40" GlobalId="0Lk2sYb7r1BvG4o5U2pZx1" Name="F1 fen&#234;tre 200x150" OverallHeight="1500" OverallWidth="2000">
+    <ObjectPlacement xsi:type="IfcLocalPlacement" id="i140"><PlacementRelTo ref="i130" xsi:type="IfcLocalPlacement" xsi:nil="true"/><RelativePlacement ref="i101" xsi:type="IfcAxis2Placement3D" xsi:nil="true"/></ObjectPlacement>
+  </IfcWindow>
+  <IfcWindow id="i41" GlobalId="0Lk2sYb7r1BvG4o5U2pZx2" Name="F2 baie">
+    <ObjectPlacement xsi:type="IfcLocalPlacement" id="i141"><PlacementRelTo ref="i131" xsi:type="IfcLocalPlacement" xsi:nil="true"/><RelativePlacement ref="i101" xsi:type="IfcAxis2Placement3D" xsi:nil="true"/></ObjectPlacement>
+  </IfcWindow>
+  <IfcWindow id="i42" GlobalId="0Lk2sYb7r1BvG4o5U2pZx3" Name="F3 fen&#234;tre 100x120" OverallHeight="1200" OverallWidth="1000">
+    <ObjectPlacement xsi:type="IfcLocalPlacement" id="i142"><PlacementRelTo ref="i132" xsi:type="IfcLocalPlacement" xsi:nil="true"/><RelativePlacement ref="i101" xsi:type="IfcAxis2Placement3D" xsi:nil="true"/></ObjectPlacement>
+  </IfcWindow>
+  <IfcRelDefinesByProperties id="i45" GlobalId="3pZ4G7aXz0Wfl1HmbNqUv5">
+    <RelatedObjects><IfcWindow ref="i41" xsi:nil="true"/></RelatedObjects>
+    <RelatingPropertyDefinition xsi:type="IfcElementQuantity" id="i44" GlobalId="2b5Ij1VtL6chb1jqdfDXv5" Name="Qto_WindowBaseQuantities">
+      <Quantities><IfcQuantityArea id="i43" Name="Area" AreaValue="4.5"/></Quantities>
+    </RelatingPropertyDefinition>
+  </IfcRelDefinesByProperties>
+  <IfcRelFillsElement id="i56" GlobalId="2Zr6Jk9Ut0hB8Qx1Y2wFv1"><RelatingOpeningElement ref="i50" xsi:type="IfcOpeningElement" xsi:nil="true"/><RelatedBuildingElement ref="i40" xsi:type="IfcWindow" xsi:nil="true"/></IfcRelFillsElement>
+  <IfcRelFillsElement id="i57" GlobalId="2Zr6Jk9Ut0hB8Qx1Y2wFv2"><RelatingOpeningElement ref="i51" xsi:type="IfcOpeningElement" xsi:nil="true"/><RelatedBuildingElement ref="i41" xsi:type="IfcWindow" xsi:nil="true"/></IfcRelFillsElement>
+  <IfcRelFillsElement id="i58" GlobalId="2Zr6Jk9Ut0hB8Qx1Y2wFv3"><RelatingOpeningElement ref="i52" xsi:type="IfcOpeningElement" xsi:nil="true"/><RelatedBuildingElement ref="i42" xsi:type="IfcWindow" xsi:nil="true"/></IfcRelFillsElement>
+  <IfcCurveBoundedPlane id="i62">
+    <BasisSurface xsi:type="IfcPlane" id="i63"><Position xsi:type="IfcAxis2Placement3D" id="i65"><Location xsi:type="IfcCartesianPoint" id="i66" Coordinates="-2000 -2000 0"/><Axis xsi:type="IfcDirection" id="i67" DirectionRatios="0 -1 0"/><RefDirection ref="i123" xsi:type="IfcDirection" xsi:nil="true"/></Position></BasisSurface>
+    <OuterBoundary xsi:type="IfcPolyline" id="i64"><Points>
+      <IfcCartesianPoint id="i68" Coordinates="0 0"/><IfcCartesianPoint id="i69" Coordinates="5000 0"/><IfcCartesianPoint id="i160" Coordinates="5000 3000"/><IfcCartesianPoint id="i161" Coordinates="0 3000"/><IfcCartesianPoint ref="i68" xsi:nil="true"/>
+    </Points></OuterBoundary>
+    <InnerBoundaries/>
+  </IfcCurveBoundedPlane>
+  <IfcRelSpaceBoundary id="i60" GlobalId="0kG3pQx7e2Xb9Nf4R1sTd1" PhysicalOrVirtualBoundary="PHYSICAL" InternalOrExternalBoundary="EXTERNAL">
+    <RelatingSpace xsi:type="IfcSpace" ref="i20" xsi:nil="true"/><RelatedBuildingElement xsi:type="IfcWall" ref="i30" xsi:nil="true"/>
+    <ConnectionGeometry xsi:type="IfcConnectionSurfaceGeometry" id="i61"><SurfaceOnRelatingElement ref="i62" xsi:type="IfcCurveBoundedPlane" xsi:nil="true"/></ConnectionGeometry>
+  </IfcRelSpaceBoundary>
+  <IfcRelSpaceBoundary id="i70" GlobalId="0kG3pQx7e2Xb9Nf4R1sTd2" PhysicalOrVirtualBoundary="PHYSICAL" InternalOrExternalBoundary="EXTERNAL">
+    <RelatingSpace xsi:type="IfcSpace" ref="i21" xsi:nil="true"/><RelatedBuildingElement xsi:type="IfcWall" ref="i30" xsi:nil="true"/>
+    <ConnectionGeometry xsi:type="IfcConnectionSurfaceGeometry" id="i71"><SurfaceOnRelatingElement ref="i62" xsi:type="IfcCurveBoundedPlane" xsi:nil="true"/></ConnectionGeometry>
+  </IfcRelSpaceBoundary>
+  <IfcRelSpaceBoundary id="i80" GlobalId="0kG3pQx7e2Xb9Nf4R1sTd3" PhysicalOrVirtualBoundary="PHYSICAL" InternalOrExternalBoundary="EXTERNAL">
+    <RelatingSpace xsi:type="IfcSpace" ref="i21" xsi:nil="true"/><RelatedBuildingElement xsi:type="IfcWall" ref="i31" xsi:nil="true"/>
+  </IfcRelSpaceBoundary>
+  <IfcPipeSegment id="i90" GlobalId="1r4WlRb7X0QhZ5k$uJ3qA3" Name="Tube acier" Tag="A1" PredefinedType="RIGIDSEGMENT"/>
+  <IfcRelDefinesByProperties id="i92" GlobalId="3pZ4G7aXz0Wfl1HmbNqUv9">
+    <RelatedObjects><IfcPipeSegment ref="i90" xsi:nil="true"/></RelatedObjects>
+    <RelatingPropertyDefinition xsi:type="IfcElementQuantity" id="i91" Name="Qto_PipeSegmentBaseQuantities"><Quantities><IfcQuantityLength id="i93" Name="Length" LengthValue="12500"/></Quantities></RelatingPropertyDefinition>
+  </IfcRelDefinesByProperties>
+</ifcXML>

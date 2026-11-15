@@ -1033,6 +1033,27 @@ th.col-th { position: relative; }
 .gt-poignee { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; cursor: ew-resize; background: hsl(var(--h) 45% 45% / .35); }
 .gt-jour { position: absolute; top: 33px; width: 6px; height: 6px; border-radius: 50%; background: var(--text); opacity: .55; }
 .gt-table input:not([type=checkbox]), .gt-table select { min-width: 0; }
+/* Chemin critique, liens de dépendance, équipes */
+.gt-barre.critique { outline: 2px solid var(--bad); outline-offset: 1px; }
+.gt-nom.critique strong { color: var(--bad); }
+.gt-crit-ligne td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
+.gt-leg-crit { color: var(--bad); }
+.gt-liens { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 1; overflow: visible; }
+.gt-lien { fill: none; stroke: var(--muted); stroke-width: 1.3; opacity: .8; }
+.gt-lien.equipe { stroke-dasharray: 3 3; }
+.gt-lien.crit { stroke: var(--bad); stroke-width: 1.8; opacity: 1; }
+.gt-fl { fill: var(--muted); } .gt-fl-c { fill: var(--bad); }
+.gt-ligne .gt-barre { z-index: 2; }
+.gt-deps { min-width: 220px; }
+.gt-table select[data-k="equipeId"] { min-width: 110px; }
+.gt-dep { display: inline-flex; align-items: center; gap: 4px; margin: 2px 6px 2px 0; padding: 1px 4px 1px 8px; border: 1px solid var(--border); border-radius: 12px; font-size: 12px; white-space: nowrap; }
+.gt-dep input { width: 46px; padding: 1px 4px; }
+.gt-dep button { padding: 0 5px; min-height: 0; line-height: 1.4; }
+.gt-deps select { max-width: 180px; }
+.gt-equipes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0 10px; }
+.gt-equipe { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+.gt-equipe input[data-eqk="nom"] { width: 130px; }
+@media (max-width: 640px) { .gt-equipe { flex-wrap: wrap; } .gt-equipe input[data-eqk="nom"] { width: 100%; } }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .gt-barre, :root:not([data-theme="light"]) .gg-ph { background: hsl(var(--h) 35% 30%); border-color: hsl(var(--h) 45% 50%); color: hsl(var(--h) 70% 88%); }
   :root:not([data-theme="light"]) .gt-barre.planifiee { background: hsl(var(--h) 40% 38%); } }
 :root[data-theme="dark"] .gt-barre, :root[data-theme="dark"] .gg-ph { background: hsl(var(--h) 35% 30%); border-color: hsl(var(--h) 45% 50%); color: hsl(var(--h) 70% 88%); }
