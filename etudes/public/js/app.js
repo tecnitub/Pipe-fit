@@ -2034,7 +2034,7 @@ function lierReperes(root, et) {
 function dialogueReperes(et, filtre = '') {
   let t;
   try { contexteEtude = et; t = avecCalculsMemorises(() => Reperes.table(et)); } catch (e) { return toast(`Table des repères impossible : ${e.message}`, 6000); }
-  const b = Modal.open(`<h2>🏷️ Table des repères</h2><p class="muted petit">Un seul repère par équipement : le renommer ici le change dans le calcul qui le porte, la ligne de l'armoire, les points GTC, le métré et le matériel retenu (statut, fabricant et référence gardés), les réserves et les fiches de mise en service. Ce qui est hors de l'étude (étiquettes imprimées, commandes, DOE émis) est listé après le renommage.</p>
+  const b = Modal.open(`<h2>🔢 Table des repères</h2><p class="muted petit">Un seul repère par équipement : le renommer ici le change dans le calcul qui le porte, la ligne de l'armoire, les points GTC, le métré et le matériel retenu (statut, fabricant et référence gardés), les réserves et les fiches de mise en service. Ce qui est hors de l'étude (étiquettes imprimées, commandes, DOE émis) est listé après le renommage.</p>
     <div id="rp-conflits"></div>
     <label class="petit">Rechercher <input id="rp-q" type="search" value="${esc(filtre)}" placeholder="Repère, désignation, calcul…" style="min-width:16em"></label>
     <div style="max-height:52vh;overflow:auto"><table class="liste compact petit" id="rp-table"><thead><tr><th>Repère</th><th>Équipement</th><th>Calcul</th><th>Où il figure</th><th></th></tr></thead><tbody></tbody></table></div>
@@ -2100,6 +2100,7 @@ function dialogueConsequences(et) {
         <td style="white-space:nowrap">${x.action === 'resoumettre' && ((et.materiel || {})[x.cible] || {}).statut ? `<button class="petit" data-cs-res="${esc(x.cle)}">↺ Repasser à soumettre</button> ` : ''}<button class="secondaire petit" data-cs-vu="${esc(x.cle)}">✓ Marquer vu</button></td></tr>`).join('')}</table>` : ''; }).join('')
         : '<p class="muted">✓ Aucune conséquence à traiter.</p>'}
       ${vues.length ? `<details><summary class="petit muted">${vues.length} déjà traitée(s)</summary><ul class="petit muted">${vues.slice(-30).map(x => `<li>${esc(Revisions.CATEGORIES[x.categorie] || '')} — ${esc(x.titre)} (${x.statut === 'fait' ? 'fait' : 'vu'})</li>`).join('')}</ul></details>` : ''}`;
+    const tout = b.querySelector('#cs-tout'); if (tout) tout.hidden = !l.length;
     b.querySelectorAll('[data-cs-vu]').forEach(x => { x.onclick = () => { Revisions.marquerVu(et, x.dataset.csVu, aujourdhui()); enregistrer(et); rendre(); }; });
     b.querySelectorAll('[data-cs-res]').forEach(x => { x.onclick = () => { const c = et.consequences.find(y => y.cle === x.dataset.csRes); Revisions.repasserASoumettre(et, c.cible, c.detail, aujourdhui()); enregistrer(et); toast('Ligne du matériel repassée « à soumettre » : à renvoyer au client avec la nouvelle fiche.', 5000); rendre(); }; });
   };
@@ -2298,7 +2299,7 @@ function dialogueMajValeurs() {
 const ecrireChemin = (o, chemin, v) => { const k = chemin.split('.'); k.slice(0, -1).reduce((a, x) => (a[x] = a[x] || {}), o)[k[k.length - 1]] = v; };
 Vues.reglages = {
   html: () => { const c = S.config, admin = S.me.role === 'admin', dis = admin ? '' : 'disabled';
-    return `<h1>Réglages</h1>${admin ? '' : '<p class="muted">Réservé à l\'administrateur.</p>'}
+    return `<h1>Réglages</h1>${admin ? '' : '<p class="alerte attention petit">🔒 Consultation seule : les réglages sont modifiés par l\'administrateur.</p>'}
     <div class="carte"><h2>Entreprise (en-tête des notes de calcul)</h2><div class="grille-champs">${[['raison', 'Raison sociale'], ['activite', 'Activité'], ['adresse', 'Adresse'], ['tel', 'Téléphone'], ['siret', 'SIRET'], ['email', 'E-mail']]
       .map(([k, l]) => `<label>${l}<input data-cfg="societe.${k}" value="${esc(c.societe[k])}" ${dis}></label>`).join('')}
       <label>Couleur de la charte<input data-cfg="couleur" type="color" value="${esc(c.couleur)}" ${dis}></label></div></div>

@@ -398,3 +398,9 @@ table.materiel-retenu tr.total td:first-child { position: static; }
 details.aide-intro { margin: -4px 0 8px; }
 details.aide-intro > summary { cursor: pointer; }
 @media (max-width: 700px) { details.aide-intro > summary { min-height: 40px; box-sizing: border-box; padding: 10px 0; } }
+/* Guide « Reste à faire » sur ordinateur : affecter / sans objet / historique en liens discrets, l'action de l'étape
+   reste le bouton visible ; sur téléphone ils gardent leur taille de bouton (cibles tactiles) */
+@media (min-width: 701px) {
+  .guide-etude .suivi-actions button { background: none; border: 0; box-shadow: none; padding: 2px 4px; min-height: 0; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; font-size: 12.5px; }
+  .guide-etude .suivi-actions button:hover { color: var(--texte); }
+}

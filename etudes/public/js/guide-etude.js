@@ -258,7 +258,7 @@ const GuideEtude = (() => {
       const conf = (essai(() => RP.table(et, { gtb: false, mes: false, metre: false })) || {}).conflits || [], vus = new Set();
       conf.forEach(c => {
         let id = `coherence:repere:${c.nature}:${c.rep}`, k = 2; while (vus.has(id)) id = `coherence:repere:${c.nature}:${c.rep}#${k++}`; vus.add(id);
-        a('coherence', id, `Conflit de repère ${c.rep}`, false, c.texte, [`reperes:${c.rep}`, '🏷️ Table des repères'], { gravite: c.nature === 'doublon' ? 2 : 1 });
+        a('coherence', id, `Conflit de repère ${c.rep}`, false, c.texte, [`reperes:${c.rep}`, '🔢 Table des repères'], { gravite: c.nature === 'doublon' ? 2 : 1 });
       });
     }
     const cons = ((et && et.consequences) || []).filter(x => x && x.statut === 'ouvert');
@@ -591,6 +591,9 @@ const GuideEtude = (() => {
     const Sx = Sv(), avant = restantes.get(et.id);
     if (avant && Sx && Sx.noterFait) r.etapes.filter(x => x.fait && avant.has(x.id)).forEach(x => essai(() => Sx.noterFait(et, x)));
     restantes.set(et.id, new Set(r.etapes.filter(x => !x.fait).map(x => x.id)));
+    // Résumé d'avancement de l'étude (portefeuille, CRM) aligné sur ce que montre le guide, données du chantier comprises ;
+    // envoyé au CRM au prochain enregistrement
+    if (!et.modele && Sx && Sx.avancement) { const av = essai(() => Sx.avancement(et, r.etapes)); if (av) et.avancement = av; }
     // Clé reprise après coup : l'historique « fait » vient peut-être de compléter l'étude
     const apres = cle && cleDe(et, c);
     if (apres) memo.set(et.id, { cle: apres, g, r }); else memo.delete(et.id);

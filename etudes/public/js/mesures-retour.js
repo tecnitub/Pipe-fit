@@ -126,7 +126,7 @@ const MesuresRetour = (() => {
     const ajouter = (o) => { const e = ecartPct(o.calcule, o.mesure); lignes.push({ ...o, ecart: e, conforme: e === null ? null : Math.abs(e) <= tol + 1e-9 }); return lignes[lignes.length - 1]; };
     // 1. Relevés d'équilibrage (bouche par bouche, vanne par vanne)
     (equilibrages || []).forEach(eq => {
-      const hydro = eq.type === 'Hydraulique', unite = eq.unite || (hydro ? 'm³/h' : 'm³/h'), src = `${eq.numero ? `Relevé ${eq.numero}` : 'Relevé d\'équilibrage'}${eq.date ? ` du ${String(eq.date).slice(0, 10)}` : ''}`;
+      const hydro = eq.type === 'Hydraulique', unite = eq.unite || (hydro ? 'm³/h' : 'm³/h'), src = `${eq.numero ? `Relevé ${eq.numero}` : 'Relevé d\'équilibrage'}${eq.date ? ` du ${String(eq.date).slice(0, 10).split('-').reverse().join('/')}` : ''}`;
       let sc = 0, sm = 0, k = 0;
       (eq.lignes || []).forEach(l => {
         const rep = txt(l.repere, 40), mes = n(l.mesure); if (!rep && !l.local) return;
@@ -160,7 +160,7 @@ const MesuresRetour = (() => {
     });
     // 2. PV de mise en service : mesures avec une valeur attendue de l'étude (débits, pressions)
     (mises || []).forEach(m => {
-      const niveau = NIVEAU_PV[m.type] || 'equipement', src = `${m.numero ? `PV ${m.numero}` : 'PV de mise en service'}${m.date ? ` du ${String(m.date).slice(0, 10)}` : ''}`, eqt = txt(m.equipement || m.installation, 100);
+      const niveau = NIVEAU_PV[m.type] || 'equipement', src = `${m.numero ? `PV ${m.numero}` : 'PV de mise en service'}${m.date ? ` du ${String(m.date).slice(0, 10).split('-').reverse().join('/')}` : ''}`, eqt = txt(m.equipement || m.installation, 100);
       (m.mesures || []).forEach(x => {
         const a = n(x.attendu), v = n(x.valeur);
         if (a === null || v === null || !comparable(x.unite)) return;

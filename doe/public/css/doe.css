@@ -32,6 +32,9 @@ h3 { font-size: 15px; color: var(--bleu); margin: 16px 0 8px; }
 .erreur, .manque { color: var(--rouge); }
 .manque { font-style: italic; font-size: 13px; }
 .avert { color: var(--alerte); }
+/* Bouton ou champ désactivé : reconnaissable (sinon il ressemble à un bouton actif qui ne répond pas) */
+button:disabled, .btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; filter: grayscale(.4); }
+input:disabled, select:disabled, textarea:disabled { opacity: .7; cursor: not-allowed; background: var(--fond); }
 .vide-tableau { padding: 10px; font-style: italic; }
 .carte { background: var(--panneau); border: 1px solid var(--bord); border-radius: 12px; padding: 16px; }
 .connexion { max-width: 380px; margin: 60px auto; display: grid; gap: 12px; }
