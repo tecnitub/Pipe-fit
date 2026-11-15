@@ -33,7 +33,10 @@ db.exec(`PRAGMA journal_mode = WAL;
   CREATE TABLE IF NOT EXISTS sessions (sid TEXT PRIMARY KEY, login TEXT, nom TEXT, role TEXT, pf_cookie TEXT, created_at TEXT);
   CREATE TABLE IF NOT EXISTS etudes (id TEXT PRIMARY KEY, affaire_id TEXT, data TEXT NOT NULL, version INTEGER NOT NULL, updated_at TEXT, updated_by TEXT);
   CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT);
-  CREATE TABLE IF NOT EXISTS fichiers (id TEXT PRIMARY KEY, nom TEXT, mime TEXT, data BLOB, taille INTEGER, created_by TEXT, created_at TEXT);`);
+  CREATE TABLE IF NOT EXISTS fichiers (id TEXT PRIMARY KEY, nom TEXT, mime TEXT, data BLOB, taille INTEGER, created_by TEXT, created_at TEXT);
+  CREATE TABLE IF NOT EXISTS modeles_biblio (id TEXT PRIMARY KEY, cle TEXT UNIQUE, data TEXT NOT NULL, updated_at TEXT, updated_by TEXT);`);
+// Bibliothèque de modèles partagée entre les études (même module que le navigateur : doublons, versions, prix)
+const BiblioModeles = require('./public/js/bibliotheque-modeles');
 
 // Identité de l'entreprise sur les notes de calcul (la même que pour les DOE), modifiable dans Réglages
 const CONFIG_DEFAUT = require('../doe/config-defaut');
@@ -97,7 +100,18 @@ const extraitPF = d => ({
   devis: (d.devis || []).map(x => ({ id: x.id, numero: x.numero, objet: x.objet, clientId: x.clientId, statut: x.statut, affaireId: x.affaireId || '' })),
   articles: (d.articles || []).map(a => ({ id: a.id, ref: a.ref, designation: a.designation, famille: a.famille, sousFamille: a.sousFamille, unite: a.unite, prixVente: a.prixVente, coutRevient: a.coutRevient, poidsUnitaire: a.poidsUnitaire })),
   mainoeuvre: (d.mainoeuvre || []).map(m => ({ id: m.id, code: m.code, libelle: m.libelle, tauxVente: m.tauxVente, tauxCout: m.tauxCout })),
+  prixFournisseurs: prixFournisseurs(d),
 });
+// Prix fournisseurs des offres reçues dans les consultations (derniers prix connus de la bibliothèque de modèles) :
+// désignation de la ligne, fournisseur, prix unitaire HT, date de l'offre
+function prixFournisseurs(d) {
+  const ents = new Map((d.entreprises || []).map(e => [e.id, e.nom])), out = [];
+  (d.consultations || []).forEach(c => (c.fournisseurs || []).forEach(f => {
+    const o = f && f.offre; if (!o || !o.prix) return;
+    Object.entries(o.prix).forEach(([i, prix]) => { const l = (c.lignes || [])[+i]; if (l && Number(prix) > 0) out.push({ designation: String(l.designation || '').slice(0, 200), unite: l.unite || 'u', fournisseur: ents.get(f.entrepriseId) || '', prix: Number(prix), date: String(o.date || c.date || '').slice(0, 10), consultation: c.ref || '' }); });
+  }));
+  return out.filter(x => x.fournisseur).slice(-3000);
+}
 const { idPF, envoyerFichierPF, publierEtat } = PF;
 const modifierPF = (s, col, id, modifier) => PF.modifierPF((chemin, opts) => pipefit(s, chemin, opts), col, id, modifier);
 const cacheDonnees = new Map(); // sid -> { t, data }
@@ -335,6 +349,27 @@ async function api(req, res, url) {
         .map(x => ({ objet: x.objet, cle: x.cle.slice(0, 120), ...(x.genre ? { genre: String(x.genre).slice(0, 40) } : {}), ...(x.inclus === false ? { inclus: false } : {}), ...(x.nature ? { nature: String(x.nature).slice(0, 40) } : {}), exemple: String(x.exemple || '').slice(0, 120), date: String(x.date || '').slice(0, 10) }));
       db.prepare("INSERT INTO config (key, value) VALUES ('regles-inventaire', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(l));
       return send(res, 200, l);
+    }
+  }
+  // Bibliothèque de modèles partagée entre les études : liste, enregistrement (doublon même fabricant + référence :
+  // nouvelle version si les valeurs ou la fiche changent, prix ajoutés), retrait réservé à l'administrateur
+  if (p[0] === 'bibliotheque-modeles') {
+    const lire = () => db.prepare('SELECT data FROM modeles_biblio ORDER BY updated_at DESC').all().map(r => JSON.parse(r.data));
+    if (!p[1] && method === 'GET') return send(res, 200, lire());
+    if (!p[1] && method === 'POST') {
+      const b = await lireJSON(req), e = BiblioModeles.nettoyer(b.entree || {});
+      if (!e) return fail(res, 400, 'Type, fabricant et référence du modèle requis');
+      const ex = db.prepare('SELECT data FROM modeles_biblio WHERE cle = ?').get(e.cle), base = ex ? [JSON.parse(ex.data)] : [];
+      if (!ex && db.prepare('SELECT COUNT(*) AS n FROM modeles_biblio').get().n >= 5000) return fail(res, 507, 'Bibliothèque pleine (5 000 modèles)');
+      const r = BiblioModeles.integrer(base, e, { par: s.nom || s.login, etudeId: /^[\w-]{1,64}$/.test(String(b.etudeId || '')) ? b.etudeId : '' });
+      if (r.statut !== 'identique') db.prepare(`INSERT INTO modeles_biblio (id, cle, data, updated_at, updated_by) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(cle) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at, updated_by = excluded.updated_by`).run(r.entree.id, r.entree.cle, JSON.stringify(r.entree), new Date().toISOString(), s.nom || s.login);
+      return send(res, 200, { statut: r.statut, entree: r.entree });
+    }
+    if (p[1] && method === 'DELETE') {
+      if (s.role !== 'admin') return fail(res, 403, 'Réservé à l\'administrateur');
+      db.prepare('DELETE FROM modeles_biblio WHERE id = ?').run(String(p[1]));
+      return send(res, 200, { ok: true });
     }
   }
   // Réglages : identité de l'entreprise sur les notes de calcul

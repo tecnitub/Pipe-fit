@@ -1,0 +1,67 @@
+ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('ViewDefinition [CoordinationView]'),'2;1');
+FILE_NAME('maquette-fictive.ifc','2026-01-01T00:00:00',('Bureau ACME'),('ACME'),'Fichier écrit à la main','Test','');
+FILE_SCHEMA(('IFC2X3'));
+ENDSEC;
+DATA;
+/* Maquette fictive : un bâtiment de deux niveaux, quatre espaces, trois tuyauteries et une gaine (unités en mm) */
+#1=IFCPROJECT('0YvctVUKr0kugbFTf53O9L',$,'Projet ACME',$,$,$,$,$,#5);
+#2=IFCSIUNIT(*,.LENGTHUNIT.,.MILLI.,.METRE.);
+#3=IFCSIUNIT(*,.AREAUNIT.,$,.SQUARE_METRE.);
+#4=IFCSIUNIT(*,.VOLUMEUNIT.,$,.CUBIC_METRE.);
+#5=IFCUNITASSIGNMENT((#2,#3,#4));
+#10=IFCBUILDING('1kTvXnbbzCWw8lcMd1dR4o',$,'B\X2\00E2\X0\timent A',$,$,$,$,$,.ELEMENT.,$,$,$);
+#11=IFCBUILDINGSTOREY('2HCQ3jD3n3xu9L2XWpwV0z',$,'RDC',$,$,$,$,$,.ELEMENT.,0.);
+#12=IFCBUILDINGSTOREY('0iV8FlLtX6VeUBXkyGkVQc',$,'R+1',$,$,$,$,$,.ELEMENT.,3200.);
+#13=IFCRELAGGREGATES('3sy8tz4D1BqQuSr1lH8bY1',$,$,$,#10,(#11,#12));
+#20=IFCSPACE('1zJkLhK4f0kQ$5mZ5Gc8xE',$,'001',$,$,$,$,'Accueil',.ELEMENT.,.INTERNAL.,$);
+#21=IFCSPACE('1zJkLhK4f0kQ$5mZ5Gc8xF',$,'101',$,$,$,$,'Bureau direction',.ELEMENT.,.INTERNAL.,$);
+#22=IFCSPACE('1zJkLhK4f0kQ$5mZ5Gc8xG',$,'102',$,$,$,$,'Salle de r\X2\00E9\X0\union',.ELEMENT.,.INTERNAL.,$);
+#23=IFCSPACE('1zJkLhK4f0kQ$5mZ5Gc8xH',$,'103',$,$,$,$,'WC hommes',.ELEMENT.,.INTERNAL.,$);
+#24=IFCRELAGGREGATES('0ZsJFPzcf3xA1H$pWUq1Ab',$,$,$,#11,(#20));
+#25=IFCRELAGGREGATES('0ZsJFPzcf3xA1H$pWUq1Ac',$,$,$,#12,(#21,#22,#23));
+/* Quantités des espaces (Qto_SpaceBaseQuantities) ; hauteur en mm (unité du projet) */
+#30=IFCQUANTITYAREA('NetFloorArea',$,$,42.5);
+#31=IFCQUANTITYLENGTH('FinishCeilingHeight',$,$,3000.);
+#32=IFCELEMENTQUANTITY('2b5Ij1VtL6chb1jqdfDXv1',$,'Qto_SpaceBaseQuantities',$,$,(#30,#31));
+#33=IFCRELDEFINESBYPROPERTIES('3pZ4G7aXz0Wfl1HmbNqUv1',$,$,$,(#20),#32);
+#34=IFCQUANTITYAREA('NetFloorArea',$,$,18.);
+#35=IFCQUANTITYVOLUME('NetVolume',$,$,48.6);
+#36=IFCELEMENTQUANTITY('2b5Ij1VtL6chb1jqdfDXv2',$,'Qto_SpaceBaseQuantities',$,$,(#34,#35));
+#37=IFCRELDEFINESBYPROPERTIES('3pZ4G7aXz0Wfl1HmbNqUv2',$,$,$,(#21),#36);
+/* Salle de réunion : surface dans un jeu de propriétés (IfcAreaMeasure), multi-ligne */
+#40=IFCPROPERTYSINGLEVALUE('Area',$,
+  IFCAREAMEASURE(30.25),$);
+#41=IFCPROPERTYSINGLEVALUE('Height',$,IFCLENGTHMEASURE(2700.),$);
+#42=IFCPROPERTYSET('1Ap9Fz8e19ivF7ugK3OYc1',$,'Pset_ACME; dimensions',$,(#40,#41));
+#43=IFCRELDEFINESBYPROPERTIES('3pZ4G7aXz0Wfl1HmbNqUv3',$,$,$,(#22),#42);
+#44=IFCQUANTITYAREA('GrossFloorArea',$,$,4.2);
+#45=IFCELEMENTQUANTITY('2b5Ij1VtL6chb1jqdfDXv4',$,'Qto_SpaceBaseQuantities',$,$,(#44));
+#46=IFCRELDEFINESBYPROPERTIES('3pZ4G7aXz0Wfl1HmbNqUv4',$,$,$,(#23),#45);
+/* Réseaux : un système chauffage, tronçons repérés par la propriété « Commentaires » ou le Tag */
+#50=IFCSYSTEM('0W7aHR1zP3dAqY4mGv6Rt1',$,'Chauffage RDC',$,$);
+#51=IFCPIPESEGMENTTYPE('0W7aHR1zP3dAqY4mGv6Rt2',$,'Tube acier',$,$,$,$,$,$,.RIGIDSEGMENT.);
+#52=IFCFLOWSEGMENT('1r4WlRb7X0QhZ5k$uJ3qA1',$,'Tube acier:21,3',$,$,$,$,'A1');
+#53=IFCFLOWSEGMENT('1r4WlRb7X0QhZ5k$uJ3qA2',$,'Tube acier:21,3',$,$,$,$,'A1');
+#54=IFCPIPESEGMENT('1r4WlRb7X0QhZ5k$uJ3qA3',$,'Tube acier:33,7',$,$,$,$,'1r4WlRb7X0QhZ5k$uJ3qA3',.RIGIDSEGMENT.);
+#55=IFCDUCTSEGMENT('1r4WlRb7X0QhZ5k$uJ3qA4',$,'Gaine circulaire 250',$,$,$,$,'S1',.RIGIDSEGMENT.);
+#56=IFCRELDEFINESBYTYPE('2Lm5b2jW91GfXH2uY0Qnc1',$,$,$,(#52,#53),#51);
+#57=IFCRELASSIGNSTOGROUP('2Lm5b2jW91GfXH2uY0Qnc2',$,$,$,(#52,#53,#54),$,#50);
+#60=IFCQUANTITYLENGTH('Length',$,$,12500.);
+#61=IFCELEMENTQUANTITY('2b5Ij1VtL6chb1jqdfDXv6',$,'Qto_PipeSegmentBaseQuantities',$,$,(#60));
+#62=IFCRELDEFINESBYPROPERTIES('3pZ4G7aXz0Wfl1HmbNqUv6',$,$,$,(#52),#61);
+#63=IFCQUANTITYLENGTH('Length',$,$,7500.);
+#64=IFCELEMENTQUANTITY('2b5Ij1VtL6chb1jqdfDXv7',$,'Qto_PipeSegmentBaseQuantities',$,$,(#63));
+#65=IFCRELDEFINESBYPROPERTIES('3pZ4G7aXz0Wfl1HmbNqUv7',$,$,$,(#53),#64);
+#66=IFCPROPERTYSINGLEVALUE('Commentaires',$,IFCTEXT('B2'),$);
+#67=IFCPROPERTYSINGLEVALUE('Length',$,IFCPOSITIVELENGTHMEASURE(4000.),$);
+#68=IFCPROPERTYSET('1Ap9Fz8e19ivF7ugK3OYc8',$,'Donn\X2\00E9\X0\es d''identit\X2\00E9\X0\',$,(#66,#67));
+#69=IFCRELDEFINESBYPROPERTIES('3pZ4G7aXz0Wfl1HmbNqUv8',$,$,$,(#54),#68);
+#70=IFCQUANTITYLENGTH('Length',$,$,9000.);
+#71=IFCELEMENTQUANTITY('2b5Ij1VtL6chb1jqdfDXv9',$,'Qto_DuctSegmentBaseQuantities',$,$,(#70));
+#72=IFCRELDEFINESBYPROPERTIES('3pZ4G7aXz0Wfl1HmbNqUv9',$,$,$,(#55),#71);
+#73=IFCRELCONTAINEDINSPATIALSTRUCTURE('0Q5mGrj1T2ePp7XQnHn5x1',$,$,$,(#52,#53,#54),#11);
+#74=IFCRELCONTAINEDINSPATIALSTRUCTURE('0Q5mGrj1T2ePp7XQnHn5x2',$,$,$,(#55),#12);
+ENDSEC;
+END-ISO-10303-21;

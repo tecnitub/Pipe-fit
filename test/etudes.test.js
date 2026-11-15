@@ -146,3 +146,26 @@ test('lien avec Pipe-Fit : devis brouillon et note de calcul dans les documents 
   const f = await call(pfBase, 'GET', `/api/files/${docs[0].fichierId}`, null, pfc);
   assert.strictEqual(f.body.subarray(0, 4).toString(), '%PDF');
 });
+
+test('bibliothèque de modèles partagée : enregistrement, doublon, nouvelle version, prix, retrait réservé à l\'administrateur', async () => {
+  const c = await connexion('jacky');
+  // Prix des offres reçues dans les consultations du CRM : désignation, fournisseur, prix, date (sans autre donnée)
+  const d = (await call(base, 'GET', '/api/pf/affaires', null, c)).body;
+  assert.ok(Array.isArray(d.prixFournisseurs) && d.prixFournisseurs.every(x => Object.keys(x).every(k => ['designation', 'unite', 'fournisseur', 'prix', 'date', 'consultation'].includes(k))));
+  const e = { type: 'pompe', fabricant: 'ACME Pompes', reference: 'CIRCU 25-60', nom: 'Fiche ACME', valeurs: { Q: 2.5, H: 6, courbe: '0:7;2,5:6;4:4' }, prix: [{ fournisseur: 'Négoce Exemple', prix: '412,50', date: '2026-10-01' }] };
+  assert.strictEqual((await call(base, 'POST', '/api/bibliotheque-modeles', { entree: { type: 'pompe', fabricant: 'ACME' } }, c)).status, 400);
+  const r1 = await call(base, 'POST', '/api/bibliotheque-modeles', { entree: e, etudeId: 'e1' }, c);
+  assert.deepStrictEqual([r1.status, r1.body.statut, r1.body.entree.version, r1.body.entree.prix[0].prix, r1.body.entree.validePar], [200, 'ajoute', 1, 412.5, 'jacky']);
+  // Même fabricant et même référence (écriture différente) : doublon, rien de neuf
+  const r2 = await call(base, 'POST', '/api/bibliotheque-modeles', { entree: { ...e, fabricant: 'acme pompes', reference: 'CIRCU-25/60' } }, c);
+  assert.deepStrictEqual([r2.body.statut, r2.body.entree.id], ['identique', r1.body.entree.id]);
+  // Autre fiche et autres valeurs : nouvelle version, l'ancienne gardée ; prix d'un autre fournisseur ajouté
+  const r3 = await call(base, 'POST', '/api/bibliotheque-modeles', { entree: { ...e, valeurs: { Q: 2.6, H: 6.2 }, fiche: { id: 'ft9', fichierId: 'f9', nom: 'ACME_CIRCU_2026.pdf', date: '2026-09-01' }, prix: [{ fournisseur: 'Autre négoce', prix: 399, date: '2026-11-02' }] } }, c);
+  assert.deepStrictEqual([r3.body.statut, r3.body.entree.version, r3.body.entree.versions.length, r3.body.entree.versions[0].valeurs.Q, r3.body.entree.prix.length], ['version', 2, 1, 2.5, 2]);
+  const l = (await call(base, 'GET', '/api/bibliotheque-modeles', null, c)).body;
+  assert.strictEqual(l.length, 1); assert.strictEqual(l[0].fiche.fichierId, 'f9');
+  assert.strictEqual((await call(base, 'DELETE', `/api/bibliotheque-modeles/${l[0].id}`, {}, c)).status, 403);
+  const admin = (await call(base, 'POST', '/api/login', { login: 'admin', password: 'admin-test-pw' })).cookie;
+  assert.strictEqual((await call(base, 'DELETE', `/api/bibliotheque-modeles/${l[0].id}`, {}, admin)).status, 200);
+  assert.strictEqual((await call(base, 'GET', '/api/bibliotheque-modeles', null, c)).body.length, 0);
+});
