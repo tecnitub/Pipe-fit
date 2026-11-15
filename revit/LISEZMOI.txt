@@ -18,6 +18,10 @@ PARAMÈTRES (bouton « Paramètres Pipe-Fit »)
 NUMÉROTER LES SPOOLS (bouton « Numéroter spools »)
   - À la main : sélectionner dans Revit un élément du spool (un tube suffit), cliquer « Numéroter spools » :
     tout ce qui lui est soudé jusqu'aux brides reçoit le prochain numéro libre (SP-001, SP-002…).
+  - Entièrement à la main : option « Choisir moi-même tous les éléments du spool », puis cliquer chaque
+    élément dans la vue (recliquer retire) et « Terminer ». Rien n'est ajouté ni retiré ; le complément
+    signale morceaux non raccordés, systèmes mélangés, plus de 6 m de tube, éléments déjà numérotés.
+    On enchaîne sur le spool suivant jusqu'à Échap.
   - Automatique : sans sélection, toute la tuyauterie sans numéro est découpée en spools et numérotée à la suite,
     système par système (EGD-SP-001, EGR-SP-001…). On coupe aux brides et vannes, au changement de système
     (départ / retour, fluides différents) et dès que le spool dépasserait 6 m de tube (barre du commerce,

@@ -25,12 +25,6 @@ namespace PipeFit.Isometries.Revit
     [Transaction(TransactionMode.Manual)]
     public sealed class CmdSoudureChantier : IExternalCommand
     {
-        sealed class FiltreTuyauterie : ISelectionFilter
-        {
-            public bool AllowElement(Element e) => LectureModele.Connecteurs(e).Any();
-            public bool AllowReference(Reference r, XYZ p) => true;
-        }
-
         public Result Execute(ExternalCommandData data, ref string message, ElementSet elementsErreur)
         {
             var uidoc = data.Application.ActiveUIDocument;

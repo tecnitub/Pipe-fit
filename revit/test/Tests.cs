@@ -179,6 +179,10 @@ static class Tests
             var gv = Decoupage.Spools(V);
             Verifier(gv.Count == 2 && !gv.Any(g => g.Any(c => c.Id == "v")), "vanne entre brides : non numérotée, 2 spools");
             Verifier(Decoupage.Prochain(new[] { "SP-001", "SP-007", "EG-SP-020", "SP-x", null }, "SP-") == 8, "prochain numéro libre");
+            Verifier(Decoupage.NumeroSuivant("EGD-SP-007", new[] { "EGD-SP-009", "SP-020" }) == "EGD-SP-010" && Decoupage.NumeroSuivant("SP-01", new string[0]) == "SP-02"
+                && Decoupage.NumeroSuivant("A", new string[0]) == "A-01", "numéro suivant");
+            Verifier(Decoupage.Morceaux(L.Where(c => "abc".Contains(c.Id)).ToList()) == 1 && Decoupage.Morceaux(L.Where(c => "adi".Contains(c.Id)).ToList()) == 3,
+                "choix manuel : nombre de morceaux non raccordés");
             Verifier(Decoupage.Format("SP-", 8, 3) == "SP-008" && Decoupage.Format("", 12, 2) == "12", "format du numéro");
             Verifier(Decoupage.Prefixe("SP-", "EGD") == "EGD-SP-" && Decoupage.Prefixe("SP-", "") == "SP-" && Decoupage.Prefixe("", "EGD") == "EGD-"
                 && Decoupage.Prefixe("", "") == "SP-", "préfixe par système");

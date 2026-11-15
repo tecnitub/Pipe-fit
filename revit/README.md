@@ -30,6 +30,12 @@ canalisations, raccords, accessoires et pièces de fabrication) est créé dans 
 
 - **À la main** : sélectionner un élément du spool dans Revit (un tube suffit), cliquer : tout ce qui lui est soudé,
   jusqu'aux brides, reçoit le prochain numéro libre (`SP-008` après `SP-007`), modifiable avant de valider.
+- **Entièrement à la main** : choisir « Choisir moi-même tous les éléments du spool », puis cliquer dans la vue chacun
+  des éléments (recliquer retire), et « Terminer » dans la barre d'options. Rien n'est ajouté ni retiré. Avant d'écrire,
+  le complément signale ce qui mérite un coup d'œil : morceaux non raccordés entre eux, plusieurs systèmes, tube au-delà
+  de 6 m, éléments déjà numérotés (renumérotés), numéro déjà porté par d'autres éléments ; « Non » permet de reprendre
+  le choix. On enchaîne ensuite sur le spool suivant (numéro suivant) jusqu'à Échap. Sans numéro tapé dans la fenêtre,
+  chaque spool prend le prochain numéro libre de son système (EGD-SP-004, puis EGR-SP-002…).
 - **Automatique** : sans sélection (ou en choisissant le découpage automatique), toute la tuyauterie sans numéro est
   découpée en spools et numérotée à la suite, système par système, du plus bas au plus haut. On coupe :
   - aux joints boulonnés (bride contre bride, bride contre vanne) ; une vanne prise entre deux brides n'est dans aucun

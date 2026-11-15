@@ -17,6 +17,9 @@ namespace PipeFit.Isometries.Revit
     sealed class PlanNumerotation
     {
         public List<(string Numero, List<Element> Elements)> Spools = new List<(string, List<Element>)>();
+        public bool Manuel;   // choix des éléments dans la vue, après la fenêtre
+        public string NumeroManuel = "";
+        public int ReseauDevant;
         public int Ignores;   // déjà numérotés, laissés tels quels
         public int Isoles;    // vannes / accessoires entre deux joints boulonnés
         public int TropLongs; // tubes de plus que la longueur maxi à eux seuls
@@ -27,6 +30,8 @@ namespace PipeFit.Isometries.Revit
         public string Apercu()
         {
             if (Erreur != "") return Erreur;
+            if (Manuel) return "Spool " + (NumeroManuel != "" ? NumeroManuel : "?") + (ReseauDevant > 0 ? " (le système devant le numéro suit les éléments cliqués)" : "")
+                + " : cliquez ses éléments dans la vue après « Numéroter ».";
             if (Spools.Count == 0) return "Rien à numéroter.";
             var n = Spools.Sum(s => s.Elements.Count);
             var sb = new StringBuilder();
@@ -81,10 +86,16 @@ namespace PipeFit.Isometries.Revit
             }
 
             string param, numero;
+            bool numeroSaisi;
             using (var f = new FenetreNumerotation(r, parametres, defaut, selection.Count, Suggerer, Planifier))
             {
                 if (f.ShowDialog(new FenetreRevit(data.Application.MainWindowHandle)) != System.Windows.Forms.DialogResult.OK) return Result.Cancelled;
-                param = f.Parametre; numero = f.Numero;
+                param = f.Parametre; numero = f.Numero; numeroSaisi = f.NumeroSaisi;
+            }
+            if (r.ModeNumerotation == 2)
+            {
+                r.Enregistrer();
+                return Manuel(data, uidoc, tous, r, param, numeroSaisi ? numero : null, ref message);
             }
 
             var plan = Planifier(r, param, numero);
@@ -118,6 +129,106 @@ namespace PipeFit.Isometries.Revit
             return Result.Succeeded;
         }
 
+        /// <summary>
+        /// Choix vraiment manuel : l'utilisateur clique tous les éléments du spool dans la vue (rien n'est ajouté ni retiré),
+        /// le numéro est écrit après contrôle, puis on enchaîne sur le spool suivant jusqu'à Échap.
+        /// numeroImpose : numéro tapé dans la fenêtre ; null = prochain numéro libre selon le système des éléments cliqués.
+        /// </summary>
+        Result Manuel(ExternalCommandData data, UIDocument uidoc, List<Element> tous, Reglages r, string param, string numeroImpose, ref string message)
+        {
+            var doc = uidoc.Document;
+            var filtre = new FiltreTuyauterie();
+            var faits = new List<string>();
+            var dejaPris = new List<string>();
+            var numero = numeroImpose;
+            var preselection = uidoc.Selection.GetElementIds().Select(id => doc.GetElement(id)).Where(e => e != null && filtre.AllowElement(e))
+                .Select(e => new Reference(e)).ToList();
+            double maxMm = r.LongueurMaxM > 0 ? r.LongueurMaxM * 1000 : 0;
+
+            while (true)
+            {
+                // Numéro de ce spool : imposé (puis suivants), ou calculé après le choix, d'après le système
+                var invite = numero != null ? "Spool " + numero : "Nouveau spool";
+                IList<Reference> refs;
+                try
+                {
+                    refs = preselection.Count > 0
+                        ? uidoc.Selection.PickObjects(Autodesk.Revit.UI.Selection.ObjectType.Element, filtre, invite + " : cliquez tous ses éléments (recliquer retire), puis Terminer. Échap pour arrêter.", preselection)
+                        : uidoc.Selection.PickObjects(Autodesk.Revit.UI.Selection.ObjectType.Element, filtre, invite + " : cliquez tous ses éléments (recliquer retire), puis Terminer. Échap pour arrêter.");
+                }
+                catch (Autodesk.Revit.Exceptions.OperationCanceledException) { break; }
+                preselection.Clear();
+                var elements = refs.Select(x => doc.GetElement(x)).Where(e => e != null).GroupBy(e => e.Id).Select(g => g.First()).ToList();
+                if (elements.Count == 0) break;
+
+                var comps = elements.Select(e => LectureModele.Lire(doc, e)).ToList();
+                var existants = Valeurs(tous, param).Concat(dejaPris).ToList();
+                var num = numero;
+                if (num == null)
+                {
+                    var reseau = r.ReseauDevant == 0 ? "" : Decoupage.Reseau(comps, r.ReseauDevant == 1);
+                    var prefixe = Decoupage.Prefixe(r.PrefixeSpool, reseau);
+                    num = Decoupage.Format(prefixe, Decoupage.Prochain(existants, prefixe), r.Chiffres);
+                }
+
+                // Contrôles : l'utilisateur décide, mais en connaissance de cause
+                var alertes = new List<string>();
+                var morceaux = Decoupage.Morceaux(comps);
+                if (morceaux > 1) alertes.Add("les éléments forment " + morceaux + " morceaux non raccordés entre eux");
+                var systemes = comps.Select(c => c.Systeme).Where(x => x != "").Distinct().ToList();
+                if (systemes.Count > 1) alertes.Add("plusieurs systèmes : " + string.Join(", ", systemes));
+                var tube = Decoupage.LongueurTube(comps);
+                if (maxMm > 0 && tube > maxMm + 0.5) alertes.Add((tube / 1000).ToString("0.00") + " m de tube (plus de " + r.LongueurMaxM.ToString("0.#") + " m)");
+                var autres = param == CreerParametre ? new List<string>()
+                    : elements.Select(e => LectureModele.ValeurSpool(e, param)).Where(v => v != "" && v != num).Distinct().ToList();
+                if (autres.Count > 0) alertes.Add("élément(s) déjà numéroté(s) " + string.Join(", ", autres) + " : ils seront renumérotés");
+                var choisis = new HashSet<ElementId>(elements.Select(e => e.Id));
+                if (param != CreerParametre && tous.Any(e => !choisis.Contains(e.Id) && LectureModele.ValeurSpool(e, param) == num))
+                    alertes.Add("le numéro " + num + " est déjà porté par d'autres éléments : ils formeront un seul spool avec ceux-ci");
+
+                var td = new TaskDialog("Pipe-Fit – Spool " + num)
+                {
+                    MainInstruction = "Numéroter " + elements.Count + " élément(s) en " + num + " ?",
+                    MainContent = (alertes.Count > 0 ? "À vérifier :\n- " + string.Join("\n- ", alertes) + "\n\n" : "")
+                        + (tube > 0 ? (tube / 1000).ToString("0.00") + " m de tube. " : "") + "Oui : écrire le numéro. Non : refaire le choix. Annuler : arrêter.",
+                    CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No | TaskDialogCommonButtons.Cancel,
+                    DefaultButton = alertes.Count > 0 ? TaskDialogResult.No : TaskDialogResult.Yes,
+                };
+                var rep = td.Show();
+                if (rep == TaskDialogResult.Cancel) break;
+                if (rep == TaskDialogResult.No) { preselection = refs.ToList(); continue; }
+
+                int ecrits = 0, refus = 0;
+                using (var t = new Transaction(doc, "Pipe-Fit : spool " + num))
+                {
+                    t.Start();
+                    if (param == CreerParametre)
+                    {
+                        try { param = ParametreSpool.Creer(doc, data.Application.Application); doc.Regenerate(); }
+                        catch (Exception ex) { t.RollBack(); message = "Création du paramètre « " + ParametreSpool.Nom + " » impossible : " + ex.Message; return Result.Failed; }
+                        r.ParametreSpool = param; r.Enregistrer();
+                    }
+                    foreach (var e in elements) if (Ecrire(e, param, num)) ecrits++; else refus++;
+                    t.Commit();
+                }
+                dejaPris.Add(num);
+                faits.Add(num + " : " + ecrits + " élément(s)" + (refus > 0 ? " (" + refus + " sans paramètre)" : ""));
+                uidoc.Selection.SetElementIds(elements.Select(e => e.Id).ToList());
+                numero = numero != null ? Decoupage.NumeroSuivant(num, Valeurs(tous, param).Concat(dejaPris)) : null;
+            }
+
+            if (faits.Count > 0)
+            {
+                r.ParametreSpool = param; r.Enregistrer();
+                new TaskDialog("Pipe-Fit – Numérotation manuelle")
+                {
+                    MainInstruction = faits.Count + " spool(s) numéroté(s) dans « " + param + " »",
+                    MainContent = string.Join("\n", faits) + "\n\nCliquez ensuite sur « Isométries spools » pour générer les feuilles.",
+                }.Show();
+            }
+            return faits.Count > 0 ? Result.Succeeded : Result.Cancelled;
+        }
+
         static IEnumerable<string> Valeurs(List<Element> tous, string param) =>
             param == CreerParametre ? Enumerable.Empty<string>() : tous.Select(e => LectureModele.ValeurSpool(e, param)).Where(v => v != "");
 
@@ -130,6 +241,8 @@ namespace PipeFit.Isometries.Revit
                 : parCle.Where(kv => LectureModele.ValeurSpool(kv.Value, param) != "").Select(kv => kv.Key));
             var bloques = r.RemplacerNumeros ? new HashSet<string>() : numerotes;
             var tousComp = composants.Values.ToList();
+
+            if (r.ModeNumerotation == 2) { plan.Manuel = true; plan.NumeroManuel = (numeroManuel ?? "").Trim(); plan.ReseauDevant = r.ReseauDevant; return plan; }
 
             if (r.ModeNumerotation == 0)
             {

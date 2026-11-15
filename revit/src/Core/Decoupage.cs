@@ -137,6 +137,33 @@ namespace PipeFit.Isometries.Core
             return res;
         }
 
+        /// <summary>Nombre de morceaux non raccordés entre eux dans un choix d'éléments (1 = d'un seul tenant).</summary>
+        public static int Morceaux(List<Composant> choix)
+        {
+            var parId = choix.ToDictionary(c => c.Id);
+            var vus = new HashSet<string>();
+            int n = 0;
+            foreach (var c in choix)
+            {
+                if (!vus.Add(c.Id)) continue;
+                n++;
+                var file = new Queue<Composant>(new[] { c });
+                while (file.Count > 0)
+                    foreach (var e in file.Dequeue().Extremites)
+                        if (e.ConnecteA != null && parId.TryGetValue(e.ConnecteA, out var v) && vus.Add(v.Id)) file.Enqueue(v);
+            }
+            return n;
+        }
+
+        /// <summary>Numéro qui suit « numero » (même préfixe, même nombre de chiffres) et n'est pas déjà pris : EGD-SP-007 → EGD-SP-008.</summary>
+        public static string NumeroSuivant(string numero, IEnumerable<string> existants)
+        {
+            var m = Regex.Match((numero ?? "").Trim(), @"^(.*?)(\d+)$");
+            var prefixe = m.Success ? m.Groups[1].Value : (numero ?? "").Trim() + "-";
+            var chiffres = m.Success ? m.Groups[2].Value.Length : 2;
+            return Format(prefixe, Prochain(existants.Concat(new[] { numero }), prefixe), chiffres);
+        }
+
         /// <summary>Numéro formé du préfixe et d'un nombre sur « chiffres » positions : SP-007.</summary>
         public static string Format(string prefixe, int n, int chiffres) => (prefixe ?? "") + n.ToString(new string('0', Math.Max(1, chiffres)), CultureInfo.InvariantCulture);
 

@@ -44,7 +44,7 @@ namespace PipeFit.Isometries.Revit
         /// <summary>Longueur de tube maximale d'un spool, en mètres (barre du commerce : 6 m) ; 0 = sans limite.</summary>
         public double LongueurMaxM = 6;
         public bool CompleterBrides = true;
-        /// <summary>0 : la sélection forme un spool ; 1 : découpage automatique aux joints boulonnés.</summary>
+        /// <summary>0 : la sélection (complétée) forme un spool ; 1 : découpage automatique ; 2 : choix manuel élément par élément.</summary>
         public int ModeNumerotation;
         public bool RemplacerNumeros;
 
@@ -88,7 +88,7 @@ namespace PipeFit.Isometries.Revit
                         case "ReseauDevant": if (int.TryParse(v, out var rd) && rd >= 0 && rd <= 2) r.ReseauDevant = rd; break;
                         case "LongueurMaxM": if (double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var lm) && lm >= 0) r.LongueurMaxM = lm; break;
                         case "CompleterBrides": r.CompleterBrides = v == "1"; break;
-                        case "ModeNumerotation": r.ModeNumerotation = v == "1" ? 1 : 0; break;
+                        case "ModeNumerotation": r.ModeNumerotation = v == "1" ? 1 : v == "2" ? 2 : 0; break;
                         case "RemplacerNumeros": r.RemplacerNumeros = v == "1"; break;
                     }
                 }

@@ -12,6 +12,8 @@ namespace PipeFit.Isometries.Revit
     {
         public string Parametre => cbParam.SelectedItem as string ?? "";
         public string Numero => tbNumero.Text.Trim();
+        /// <summary>Numéro tapé par l'utilisateur (sinon, en choix manuel, il est calculé d'après le système des éléments cliqués).</summary>
+        public bool NumeroSaisi { get; private set; }
 
         readonly Reglages r;
         readonly Func<Reglages, string, string> suggerer;
@@ -21,6 +23,13 @@ namespace PipeFit.Isometries.Revit
         readonly CheckBox ckCompleter = new CheckBox { Text = "Compléter jusqu'aux brides (tout ce qui leur est soudé)", AutoSize = false };
         readonly Label lblNumero = new Label { Text = "Numéro :", AutoSize = false };
         readonly TextBox tbNumero = new TextBox();
+        readonly RadioButton rbManuel = new RadioButton { Text = "Choisir moi-même tous les éléments du spool, un par un dans la vue", AutoSize = false };
+        readonly Label lblManuel = new Label
+        {
+            Text = "Après « Numéroter » : cliquez chaque élément (recliquer retire), puis « Terminer » dans la barre d'options. "
+                + "Rien n'est ajouté ni retiré ; on enchaîne sur le spool suivant.",
+            AutoSize = false, ForeColor = SystemColors.GrayText,
+        };
         readonly RadioButton rbAuto = new RadioButton { Text = "Découper automatiquement en spools aux brides et vannes", AutoSize = false };
         readonly Label lblPortee = new Label { AutoSize = false, ForeColor = SystemColors.GrayText };
         readonly TextBox tbPrefixe = new TextBox();
@@ -41,23 +50,25 @@ namespace PipeFit.Isometries.Revit
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(560, 530);
+            ClientSize = new Size(560, 590);
 
             int y = 14;
             Controls.Add(new Label { Text = "Paramètre du numéro de spool :", Location = new Point(14, y + 3), AutoSize = true });
             cbParam.SetBounds(210, y, 334, 24); Controls.Add(cbParam);
             y += 38;
 
-            var gMode = new GroupBox { Text = "Quoi numéroter", Location = new Point(14, y), Size = new Size(530, 172) };
+            var gMode = new GroupBox { Text = "Quoi numéroter", Location = new Point(14, y), Size = new Size(530, 232) };
             rbSel.SetBounds(12, 22, 500, 22);
             ckCompleter.SetBounds(32, 46, 480, 22);
-            lblNumero.SetBounds(32, 75, 70, 20);
-            tbNumero.SetBounds(104, 72, 160, 24);
-            rbAuto.SetBounds(12, 108, 500, 22);
-            lblPortee.SetBounds(32, 132, 480, 32);
-            gMode.Controls.AddRange(new Control[] { rbSel, ckCompleter, lblNumero, tbNumero, rbAuto, lblPortee });
+            rbManuel.SetBounds(12, 74, 500, 22);
+            lblManuel.SetBounds(32, 97, 486, 34);
+            lblNumero.SetBounds(32, 139, 70, 20);
+            tbNumero.SetBounds(104, 136, 160, 24);
+            rbAuto.SetBounds(12, 170, 500, 22);
+            lblPortee.SetBounds(32, 194, 480, 32);
+            gMode.Controls.AddRange(new Control[] { rbSel, ckCompleter, rbManuel, lblManuel, lblNumero, tbNumero, rbAuto, lblPortee });
             Controls.Add(gMode);
-            y += 182;
+            y += 242;
 
             var gFormat = new GroupBox { Text = "Découpage et format du numéro", Location = new Point(14, y), Size = new Size(530, 172) };
             gFormat.Controls.Add(new Label { Text = "Préfixe :", Location = new Point(12, 27), AutoSize = true });
@@ -90,7 +101,9 @@ namespace PipeFit.Isometries.Revit
             cbParam.SelectedItem = parametres.Contains(defaut) ? defaut : parametres.FirstOrDefault();
             rbSel.Enabled = nbSelection > 0;
             rbSel.Text = nbSelection > 0 ? "Les " + nbSelection + " élément(s) sélectionné(s) forment un spool" : "Les éléments sélectionnés forment un spool (rien n'est sélectionné)";
-            if (r.ModeNumerotation == 0 && nbSelection > 0) rbSel.Checked = true; else rbAuto.Checked = true;
+            if (r.ModeNumerotation == 0 && nbSelection > 0) rbSel.Checked = true;
+            else if (r.ModeNumerotation == 2) rbManuel.Checked = true;
+            else rbAuto.Checked = true;
             lblPortee.Text = nbSelection > 0 ? "Portée : les " + nbSelection + " élément(s) sélectionné(s)." : "Portée : toute la tuyauterie du projet.";
             ckCompleter.Checked = r.CompleterBrides;
             tbPrefixe.Text = r.PrefixeSpool;
@@ -102,7 +115,7 @@ namespace PipeFit.Isometries.Revit
 
             // Mise à jour de l'aperçu
             EventHandler maj = (s, e) => Maj(s == tbNumero);
-            foreach (var c in new Control[] { cbParam, rbSel, rbAuto, ckCompleter, tbPrefixe, nudChiffres, cbReseau, nudLongueur, ckRemplacer, tbNumero })
+            foreach (var c in new Control[] { cbParam, rbSel, rbManuel, rbAuto, ckCompleter, tbPrefixe, nudChiffres, cbReseau, nudLongueur, ckRemplacer, tbNumero })
                 switch (c)
                 {
                     case ComboBox cb: cb.SelectedIndexChanged += maj; break;
@@ -115,7 +128,7 @@ namespace PipeFit.Isometries.Revit
             {
                 Lire();
                 var plan = planifier(r, Parametre, Numero);
-                if (plan.Erreur != "" || plan.Spools.Count == 0) { MessageBox.Show(this, plan.Apercu(), Text, MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+                if (plan.Erreur != "" || (plan.Spools.Count == 0 && !plan.Manuel)) { MessageBox.Show(this, plan.Apercu(), Text, MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
                 DialogResult = DialogResult.OK;
             };
             pret = true;
@@ -124,7 +137,7 @@ namespace PipeFit.Isometries.Revit
 
         void Lire()
         {
-            r.ModeNumerotation = rbSel.Checked ? 0 : 1;
+            r.ModeNumerotation = rbSel.Checked ? 0 : rbManuel.Checked ? 2 : 1;
             r.CompleterBrides = ckCompleter.Checked;
             r.PrefixeSpool = tbPrefixe.Text.Trim();
             r.Chiffres = (int)nudChiffres.Value;
@@ -137,10 +150,13 @@ namespace PipeFit.Isometries.Revit
         {
             if (!pret) return;
             Lire();
-            ckCompleter.Enabled = lblNumero.Enabled = tbNumero.Enabled = rbSel.Checked;
+            ckCompleter.Enabled = rbSel.Checked;
+            lblNumero.Enabled = tbNumero.Enabled = rbSel.Checked || rbManuel.Checked;
+            lblManuel.Enabled = rbManuel.Checked;
             lblPortee.Enabled = rbAuto.Checked;
+            if (saisieNumero) NumeroSaisi = tbNumero.Text.Trim() != "";
             // Numéro proposé : le prochain libre, tant que l'utilisateur ne l'a pas changé lui-même
-            if (!saisieNumero && rbSel.Checked)
+            if (!saisieNumero && !NumeroSaisi && (rbSel.Checked || rbManuel.Checked))
             {
                 pret = false;
                 tbNumero.Text = suggerer(r, Parametre);
