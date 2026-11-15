@@ -23,6 +23,15 @@ namespace PipeFit.Isometries.Revit
                 LargeImage = Image("icone32.png"),
                 Image = Image("icone16.png"),
             };
+            panneau.AddItem(new PushButtonData("PipeFitNumeroter", "Numéroter\nspools", Assembly.GetExecutingAssembly().Location, typeof(CmdNumeroter).FullName)
+            {
+                ToolTip = "Attribue les numéros de spool : à la sélection (complétée jusqu'aux brides) ou par découpage automatique aux joints boulonnés.",
+                LongDescription = "Sélectionnez un élément d'un spool (un tube suffit) puis cliquez : tout ce qui lui est soudé jusqu'aux brides reçoit le "
+                    + "prochain numéro libre (SP-001, SP-002…). Sans sélection, ou en mode automatique, toute la tuyauterie sans numéro est découpée en "
+                    + "spools aux brides et vannes et numérotée à la suite. Le paramètre « Numéro de spool » est créé dans le projet s'il manque.",
+                LargeImage = Image("numeroter32.png"),
+                Image = Image("numeroter16.png"),
+            });
             panneau.AddItem(bouton);
             panneau.AddItem(new PushButtonData("PipeFitQuantitatif", "Quantitatif\nchiffrage", Assembly.GetExecutingAssembly().Location, typeof(CmdQuantitatif).FullName)
             {

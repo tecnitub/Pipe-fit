@@ -143,6 +143,46 @@ static class Tests
         AnalyseSpool.Analyser(sred);
         Verifier(Quantitatif.Calculer(new[] { sred }).Any(l => l.Taille == "DN80 x DN50"), "quantitatif : taille d'une réduction");
 
+        // Numérotation : découpage aux joints boulonnés
+        {
+            // Ligne : tube a – bride b | bride c – tube d – coude e – tube f | vanne g | bride h – tube i
+            var L = new List<Composant>
+            {
+                C("a", "Tuyau", "", TypeComposant.Tube, 50, 500, null, E(0, 0, 0, 50, null), E(500, 0, 0, 50, "b")),
+                C("b", "Bride", "", TypeComposant.Autre, 50, 0, null, E(500, 0, 0, 50, "a"), E(550, 0, 0, 50, "c")),
+                C("c", "Bride", "", TypeComposant.Autre, 50, 0, null, E(550, 0, 0, 50, "b"), E(600, 0, 0, 50, "d")),
+                C("d", "Tuyau", "", TypeComposant.Tube, 50, 400, null, E(600, 0, 0, 50, "c"), E(1000, 0, 0, 50, "e")),
+                C("e", "Coude", "", TypeComposant.Autre, 50, 0, new Point3(1076, 0, 0), E(1000, 0, 0, 50, "d"), E(1076, 0, 76, 50, "f")),
+                C("f", "Tuyau", "", TypeComposant.Tube, 50, 400, null, E(1076, 0, 76, 50, "e"), E(1076, 0, 476, 50, "g")),
+                C("g", "Vanne", "", TypeComposant.Autre, 50, 0, null, E(1076, 0, 476, 50, "f"), E(1076, 0, 526, 50, "h")),
+                C("h", "Bride", "", TypeComposant.Autre, 50, 0, null, E(1076, 0, 526, 50, "g"), E(1076, 0, 576, 50, "i")),
+                C("i", "Tuyau", "", TypeComposant.Tube, 50, 300, null, E(1076, 0, 576, 50, "h"), E(1076, 0, 876, 50, null)),
+            };
+            L.First(c => c.Id == "g").EstAccessoire = true;
+            var et = Decoupage.Etendre(L, new[] { "d" });
+            Verifier(string.Join(",", et.OrderBy(x => x)) == "c,d,e,f,g", "sélection complétée jusqu'aux brides : " + string.Join(",", et.OrderBy(x => x)));
+            var etb = Decoupage.Etendre(L, new[] { "d" }, new HashSet<string> { "f" });
+            Verifier(string.Join(",", etb.OrderBy(x => x)) == "c,d,e", "arrêt sur un élément déjà numéroté");
+            var gr = Decoupage.Spools(L);
+            Verifier(gr.Count == 3 && gr.Select(g => string.Join("", g.Select(c => c.Id).OrderBy(x => x))).SequenceEqual(new[] { "ab", "cdefg", "hi" }),
+                "découpage en 3 spools : " + string.Join(" | ", gr.Select(g => string.Join("", g.Select(c => c.Id)))));
+            // Vanne entre deux brides : pièce à part, pas de spool
+            var V = new List<Composant>
+            {
+                C("p", "Tuyau", "", TypeComposant.Tube, 80, 500, null, E(0, 0, 0, 80, null), E(500, 0, 0, 80, "q")),
+                C("q", "Bride", "", TypeComposant.Autre, 80, 0, null, E(500, 0, 0, 80, "p"), E(550, 0, 0, 80, "v")),
+                C("v", "Vanne papillon", "", TypeComposant.Autre, 80, 0, null, E(550, 0, 0, 80, "q"), E(600, 0, 0, 80, "r")),
+                C("r", "Bride", "", TypeComposant.Autre, 80, 0, null, E(600, 0, 0, 80, "v"), E(650, 0, 0, 80, "t")),
+                C("t", "Tuyau", "", TypeComposant.Tube, 80, 500, null, E(650, 0, 0, 80, "r"), E(1150, 0, 0, 80, null)),
+            };
+            V.First(c => c.Id == "v").EstAccessoire = true;
+            var gv = Decoupage.Spools(V);
+            Verifier(gv.Count == 2 && !gv.Any(g => g.Any(c => c.Id == "v")), "vanne entre brides : non numérotée, 2 spools");
+            Verifier(Decoupage.Prochain(new[] { "SP-001", "SP-007", "EG-SP-020", "SP-x", null }, "SP-") == 8, "prochain numéro libre");
+            Verifier(Decoupage.Format("SP-", 8, 3) == "SP-008" && Decoupage.Format("", 12, 2) == "12", "format du numéro");
+            Verifier(Decoupage.Prefixe("SP-", true, "EG-101") == "EG-101-SP-" && Decoupage.Prefixe("SP-", false, "EG-101") == "SP-", "préfixe par réseau");
+        }
+
         // Bride contre bride (ou vanne) : joint boulonné
         var b = new Spool { Nom = "B" };
         b.Composants.Add(C("a", "Bride", "PN16", TypeComposant.Bride, 80, 0, null, E(0, 0, 0, 80, "x"), E(10, 0, 0, 80, "b")));

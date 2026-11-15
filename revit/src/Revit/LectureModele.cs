@@ -124,6 +124,9 @@ namespace PipeFit.Isometries.Revit
             return marque != "" ? marque + " (" + (type?.FamilyName ?? e.Category?.Name ?? "") + ")" : nom;
         }
 
+        /// <summary>Composant (modèle Core) d'un élément de tuyauterie : type, DN, extrémités et raccordements.</summary>
+        public static Composant Lire(Document doc, Element e) => Composant(doc, e);
+
         static Composant Composant(Document doc, Element e)
         {
             var c = new Composant { Id = Compat.Cle(e.Id) };

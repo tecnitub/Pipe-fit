@@ -4,9 +4,23 @@ Complément Revit (2023 à 2027) qui produit **une isométrie de fabrication par
 (onglet **Pipe-Fit → Fabrication → Isométries spools**) et le **quantitatif pour le chiffrage automatique** dans Pipe-Fit
 (**Quantitatif chiffrage**).
 
-Le numéro de spool doit être renseigné au préalable dans un paramètre texte des canalisations, raccords et accessoires
+Le numéro de spool est attribué avec le bouton **Numéroter spools** (ci-dessous), ou renseigné à la main dans un paramètre texte des canalisations, raccords et accessoires
 (paramètre partagé « Numéro de spool », « Spool »… : la fenêtre propose tous les paramètres texte trouvés et choisit
 d'office celui qui est renseigné), ou dans la propriété *Spool* des pièces de fabrication MEP.
+
+## Numéroter les spools
+
+Bouton **Numéroter spools** du ruban. Le paramètre « Numéro de spool » (paramètre partagé, texte, lié aux
+canalisations, raccords, accessoires et pièces de fabrication) est créé dans le projet s'il n'existe pas.
+
+- **À la main** : sélectionner un élément du spool dans Revit (un tube suffit), cliquer : tout ce qui lui est soudé,
+  jusqu'aux brides, reçoit le prochain numéro libre (`SP-008` après `SP-007`), modifiable avant de valider.
+- **Automatique** : sans sélection (ou en choisissant le découpage automatique), toute la tuyauterie sans numéro est
+  découpée en spools aux joints boulonnés (bride contre bride, bride contre vanne) et numérotée à la suite, réseau par
+  réseau, du plus bas au plus haut. Une vanne prise entre deux brides n'est dans aucun spool (pièce livrée à part).
+- Format : préfixe (`SP-`), nombre de chiffres, réseau devant le numéro au choix (`EG-101-SP-001`). Les éléments déjà
+  numérotés sont conservés, sauf demande de renumérotation ; l'aperçu indique avant validation les numéros attribués.
+- Les éléments numérotés restent sélectionnés : contrôle visuel, puis **Isométries spools**.
 
 ## Ce que fait la commande
 

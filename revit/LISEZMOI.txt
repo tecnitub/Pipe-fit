@@ -9,8 +9,16 @@ INSTALLATION
   3. Relancer Revit : onglet « Pipe-Fit » > groupe « Fabrication » > « Isométries spools ».
   Désinstaller : Installer.bat -Desinstaller
 
+NUMÉROTER LES SPOOLS (bouton « Numéroter spools »)
+  - À la main : sélectionner dans Revit un élément du spool (un tube suffit), cliquer « Numéroter spools » :
+    tout ce qui lui est soudé jusqu'aux brides reçoit le prochain numéro libre (SP-001, SP-002…).
+  - Automatique : sans sélection, toute la tuyauterie sans numéro est découpée en spools aux brides et vannes
+    et numérotée à la suite. Les vannes entre deux brides ne sont dans aucun spool.
+  - Le paramètre « Numéro de spool » est créé dans le projet s'il n'existe pas.
+  - Les éléments déjà numérotés sont conservés (case à cocher pour les renuméroter).
+
 AVANT DE LANCER
-  Le numéro de spool doit être renseigné dans un paramètre texte des canalisations, raccords et accessoires
+  Le numéro de spool est attribué par le bouton « Numéroter spools », ou renseigné à la main dans un paramètre texte des canalisations, raccords et accessoires
   (ex. paramètre partagé « Numéro de spool »), ou dans la propriété « Spool » des pièces de fabrication MEP.
   Les éléments doivent être raccordés entre eux (connecteurs), comme pour un réseau Revit normal.
 

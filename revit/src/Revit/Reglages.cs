@@ -32,6 +32,15 @@ namespace PipeFit.Isometries.Revit
         public bool ExportCsv = true;
         public string Dossier = "";
 
+        // Numérotation des spools
+        public string PrefixeSpool = "SP-";
+        public int Chiffres = 3;
+        public bool ParReseau;
+        public bool CompleterBrides = true;
+        /// <summary>0 : la sélection forme un spool ; 1 : découpage automatique aux joints boulonnés.</summary>
+        public int ModeNumerotation;
+        public bool RemplacerNumeros;
+
         static string Fichier => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PipeFit", "Isometries.ini");
 
         public static Reglages Charger()
@@ -65,6 +74,12 @@ namespace PipeFit.Isometries.Revit
                         case "ExportPcf": r.ExportPcf = v == "1"; break;
                         case "ExportCsv": r.ExportCsv = v == "1"; break;
                         case "Dossier": r.Dossier = v; break;
+                        case "PrefixeSpool": r.PrefixeSpool = v; break;
+                        case "Chiffres": if (int.TryParse(v, out var ch) && ch >= 1 && ch <= 6) r.Chiffres = ch; break;
+                        case "ParReseau": r.ParReseau = v == "1"; break;
+                        case "CompleterBrides": r.CompleterBrides = v == "1"; break;
+                        case "ModeNumerotation": r.ModeNumerotation = v == "1" ? 1 : 0; break;
+                        case "RemplacerNumeros": r.RemplacerNumeros = v == "1"; break;
                     }
                 }
             }
@@ -85,6 +100,8 @@ namespace PipeFit.Isometries.Revit
                     "EtiquetteTube=" + EtiquetteTube, "EtiquetteRaccord=" + EtiquetteRaccord, "EtiquetteAccessoire=" + EtiquetteAccessoire,
                     "EcrireRepere=" + B(EcrireRepere), "ParametreRepere=" + ParametreRepere, "NumerosSoudure=" + B(NumerosSoudure), "Cotation=" + B(Cotation),
                     "ExportPdf=" + B(ExportPdf), "ExportPcf=" + B(ExportPcf), "ExportCsv=" + B(ExportCsv), "Dossier=" + Dossier,
+                    "PrefixeSpool=" + PrefixeSpool, "Chiffres=" + Chiffres, "ParReseau=" + B(ParReseau), "CompleterBrides=" + B(CompleterBrides),
+                    "ModeNumerotation=" + ModeNumerotation, "RemplacerNumeros=" + B(RemplacerNumeros),
                 }, Encoding.UTF8);
             }
             catch { /* pas bloquant */ }
