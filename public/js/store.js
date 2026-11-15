@@ -170,8 +170,9 @@ const Store = {
     es.addEventListener('liens', e => { try { const p = JSON.parse(e.data); if (typeof liensModifies === 'function') liensModifies(p.affaireId); } catch (err) { /* message incomplet */ } });
     es.addEventListener('settings', e => { this.data.settings = JSON.parse(e.data).settings; App.remoteUpdate(); });
     es.addEventListener('reload', e => {
-      try { if (JSON.parse(e.data).client === CLIENT_ID) return; } catch (err) { /* ancien format */ }
-      this.load().then(() => App.remoteUpdate('Les données ont été rechargées'));
+      let perimetre = false;
+      try { const m = JSON.parse(e.data); if (m.client === CLIENT_ID) return; perimetre = !!m.perimetre; } catch (err) { /* ancien format */ }
+      this.load().then(() => App.remoteUpdate(perimetre ? 'Vos chantiers ont changé (planning mis à jour)' : 'Les données ont été rechargées'));
     });
     // Après une coupure réseau, on resynchronise tout.
     let wasDown = false;

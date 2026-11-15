@@ -126,7 +126,35 @@ function atelierRefus(acc, col, obj, existing) {
 const recordsDe = col => db.prepare('SELECT data FROM records WHERE col = ?').all(col).map(r => JSON.parse(r.data));
 const estCompagnon = acc => acc && acc.role === 'atelier';
 const reglesCompagnon = () => Compagnon.regles(DB.getSettings(db));
-const contexteCompagnon = acc => Compagnon.contexte(acc.user_id, recordsDe('users'), recordsDe('affaires'));
+// Contexte d'un compagnon (équipe, périmètre de chantiers : lui et son équipe au planning, pointages, bons d'intervention
+// sur la période réglée, réserves affectées, hors devis ouverts) : gardé une minute, recalculé dès qu'une donnée source change
+const COLS_PERIMETRE = new Set([...Compagnon.SOURCES, 'affaires', 'users']);
+let ctxCompagnons = new Map();
+function contexteCompagnon(acc) {
+  const k = acc.user_id || '', jour = new Date().toISOString().slice(0, 10), c = ctxCompagnons.get(k);
+  if (c && c.jour === jour && Date.now() - c.t < 60000) return c.ctx;
+  const ctx = Compagnon.contexte(acc.user_id, recordsDe('users'), recordsDe('affaires'),
+    Object.fromEntries(Compagnon.SOURCES.map(c => [c, recordsDe(c)])), reglesCompagnon(), jour);
+  if (ctxCompagnons.size > 500) ctxCompagnons = new Map();
+  ctxCompagnons.set(k, { ctx, jour, t: Date.now() });
+  return ctx;
+}
+// Périmètre envoyé à chaque compagnon avec ses données (/api/data) : comparé au nouveau à chaque modification des sources
+const signaturesChargees = new Map();
+const signaturePerimetre = ctx => (ctx.chantiers ? [...ctx.chantiers.entries()].map(e => e.join(':')).sort().join(',') : '*');
+// Chantier hors du périmètre d'un compagnon (bureau, administrateur : jamais)
+const REFUS_PERIMETRE = 'Ce chantier ne fait pas partie de vos chantiers ni de ceux de votre équipe : demandez au bureau de vous l\'affecter au planning.';
+const chantierRefuse = (acc, affaireId) => estCompagnon(acc) && !!affaireId && !Compagnon.autorise(contexteCompagnon(acc), String(affaireId));
+// Écriture (ou suppression : obj = null) d'un compagnon sur une fiche rattachée à un chantier hors de son périmètre :
+// refusée. Exceptions : réserve qui lui est affectée ; saisie personnelle (heures, frais…) déjà enregistrée dont le
+// chantier ne change pas (un ancien pointage reste corrigeable tant qu'il n'est pas validé).
+function refusPerimetreEcriture(acc, col, id, obj, existing) {
+  if (!estCompagnon(acc)) return null;
+  if (col === 'affaires') return existing && chantierRefuse(acc, id) ? REFUS_PERIMETRE : null;
+  if (col === 'reserves' && existing && existing.assigneA && existing.assigneA === acc.user_id) return null;
+  if (Compagnon.PERSONNELLES.includes(col) && existing && (!obj || String(existing.affaireId || '') === String(obj.affaireId || ''))) return null;
+  return [obj && obj.affaireId, existing && existing.affaireId].some(a => chantierRefuse(acc, a)) ? REFUS_PERIMETRE : null;
+}
 // Affichage par accès (Paramètres) : données des écrans masqués à ce compte, retirées ou en lecture seule
 const restrictionsDe = (acc, settings) => Acces.restrictions(Acces.masques(acc && { id: acc.id, role: acc.role }, (settings || DB.getSettings(db)).acces));
 const REFUS_ACCES = 'Accès non autorisé pour votre compte (Paramètres → Affichage par accès)';
@@ -138,6 +166,11 @@ function broadcast(event, payload) {
   try { signalerEtapesChantier(event, payload); } catch (e) { /* démarrage : suivi des étapes pas encore prêt */ }
   const msg = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
   let regles = null, ctx = null, settings = null;
+  // Données sources du périmètre des compagnons modifiées : périmètres recalculés ; un compagnon connecté dont les
+  // chantiers changent recharge ses données (chantier ajouté ou retiré)
+  const perimetreTouche = event === 'reload' || event === 'settings' || ((event === 'change' || event === 'delete') && payload && COLS_PERIMETRE.has(payload.col));
+  const nouvelles = new Map();
+  if (perimetreTouche) ctxCompagnons = new Map();
   for (const [res, acc] of clients) {
     // Compte dont des écrans sont masqués : données de ces écrans retirées du flux
     settings = settings || DB.getSettings(db);
@@ -151,9 +184,15 @@ function broadcast(event, payload) {
     }
     // Compagnon : chaque modification est filtrée ; un réglage modifié recharge ses données filtrées
     if (event === 'settings') { res.write(`event: reload\ndata: ${JSON.stringify({ client: null })}\n\n`); continue; }
+    const uidc = acc.user_id || '';
+    if (perimetreTouche && event !== 'reload' && signaturesChargees.has(uidc)) {
+      if (!nouvelles.has(uidc)) nouvelles.set(uidc, signaturePerimetre(contexteCompagnon(acc)));
+      if (nouvelles.get(uidc) !== signaturesChargees.get(uidc)) { res.write(`event: reload\ndata: ${JSON.stringify({ client: null, perimetre: true })}\n\n`); continue; }
+    }
+    if (event === 'delete' && payload && payload.col === 'affaires') { res.write(msg); continue; }
     if (event !== 'change' || !payload || !payload.col) { res.write(msg); continue; }
     regles = regles || reglesCompagnon();
-    if (!ctx || ctx.userId !== acc.user_id) ctx = Compagnon.contexte(acc.user_id, recordsDe('users'), recordsDe('affaires'));
+    if (!ctx || ctx.userId !== acc.user_id) ctx = contexteCompagnon(acc);
     const rec = Acces.filtrer(r, payload.col, Compagnon.filtrer(payload.col, payload.record, regles, ctx));
     res.write(rec ? `event: change\ndata: ${JSON.stringify({ ...payload, record: rec })}\n\n`
       : `event: delete\ndata: ${JSON.stringify({ col: payload.col, id: payload.record && payload.record.id, client: payload.client })}\n\n`);
@@ -215,8 +254,10 @@ function etapesDe(acc, affaireId) {
   const user = { id: acc.user_id || '', role: acc.role, nom: acc.nom };
   if (!user.id && acc.role === 'atelier') return [];
   const charges = new Map(recordsDe('affaires').map(a => [a.id, a.chargeId || ''])), planning = recordsDe('planning');
+  // Étape « compagnon » : sur un chantier où il est prévu au planning, et qui fait partie de son périmètre
+  const ctx = estCompagnon(acc) ? contexteCompagnon(acc) : null;
   return SuiviEtapes.etapesPour(LIENS.liste({ app: 'etudes', ...(affaireId ? { affaireId } : {}) }), user, { chargeDe: id => charges.get(id) || '',
-    planifie: (uid, aid) => planning.some(x => x.userId === uid && x.affaireId === aid), terrain: LIENS.etapesTerrain(affaireId ? { affaireId } : {}) });
+    planifie: (uid, aid) => (!ctx || Compagnon.autorise(ctx, aid)) && planning.some(x => x.userId === uid && x.affaireId === aid), terrain: LIENS.etapesTerrain(affaireId ? { affaireId } : {}) });
 }
 
 /* ---------- Fiches techniques : références du matériel retenu sans fiche, demandes aux fournisseurs ---------- */
@@ -365,7 +406,8 @@ const materielAvecFiches = affaireId => {
   const ft = FICHES.trouver(ms.map((m, i) => ({ cle: i, fabricant: m.fabricant, reference: m.reference, date: m.poseLe || '' })));
   return ms.map((m, i) => (ft[i].fiche ? { ...m, ficheTech: ft[i].fiche, ...(ft[i].autres ? { documentsFabricant: ft[i].autres } : {}) } : m));
 };
-const ASSISTANT = require('./assistant').creer({ DB, db, broadcast, notifier: obj => NOTIFS.enregistrer(obj), fiches: { rechercher: (q, n) => FICHES.rechercher(q, n), materiel: affaireId => materielAvecFiches(affaireId) } });
+const ASSISTANT = require('./assistant').creer({ DB, db, broadcast, notifier: obj => NOTIFS.enregistrer(obj), fiches: { rechercher: (q, n) => FICHES.rechercher(q, n), materiel: affaireId => materielAvecFiches(affaireId) },
+  chantierAutorise: (acc, affaireId) => !chantierRefuse(acc, affaireId) });
 const SAUVEGARDE = require('./sauvegarde').creer({ DB, db, dossierDefaut: path.join(path.dirname(DB_FILE), 'Sauvegardes'),
   autres: [{ prefixe: 'doe', fichier: process.env.DOE_DB_FILE || path.join(__dirname, '..', 'doe', 'data', 'doe.db') },
     { prefixe: 'etudes', fichier: process.env.ETUDES_DB_FILE || path.join(__dirname, '..', 'etudes', 'data', 'etudes.db') }] });
@@ -629,13 +671,25 @@ async function api(req, res, url) {
     return;
   }
 
-  if (p[0] === 'data' && method === 'GET') return send(res, 200, Acces.filtrerTout(restrictionsDe(acc), estCompagnon(acc) ? Compagnon.filtrerTout(DB.allData(db), reglesCompagnon(), contexteCompagnon(acc)) : DB.allData(db)));
+  if (p[0] === 'data' && method === 'GET') {
+    if (!estCompagnon(acc)) return send(res, 200, Acces.filtrerTout(restrictionsDe(acc), DB.allData(db)));
+    const ctx = contexteCompagnon(acc);
+    signaturesChargees.set(acc.user_id || '', signaturePerimetre(ctx));
+    if (signaturesChargees.size > 2000) signaturesChargees.delete(signaturesChargees.keys().next().value);
+    return send(res, 200, Acces.filtrerTout(restrictionsDe(acc), Compagnon.filtrerTout(DB.allData(db), reglesCompagnon(), ctx)));
+  }
 
   // Lecture par l'API : liste filtrée d'une collection, ou un élément
   if (p[0] === 'records' && p[1] && method === 'GET') {
     if (!DB.COLLECTIONS.includes(p[1])) return fail(res, 404, 'Collection inconnue');
     if (restrictionsDe(acc).cacher.has(p[1])) return fail(res, 403, REFUS_ACCES);
-    if (p[2]) { const r = pourCompagnon(acc, p[1], DB.getRecord(db, p[1], p[2])); return r ? send(res, 200, r) : fail(res, 404, 'Élément introuvable'); }
+    if (p[2]) {
+      const brut = DB.getRecord(db, p[1], p[2]), r = pourCompagnon(acc, p[1], brut);
+      if (r) return send(res, 200, r);
+      // Compagnon : chantier (ou fiche d'un chantier) hors de son périmètre → refus explicite
+      if (brut && estCompagnon(acc) && chantierRefuse(acc, p[1] === 'affaires' ? brut.id : brut.affaireId)) return fail(res, 403, REFUS_PERIMETRE, { horsPerimetre: true });
+      return fail(res, 404, 'Élément introuvable');
+    }
     const depuis = url.searchParams.get('modifieDepuis') || '';
     const filtres = String(url.searchParams.get('filtre') || '').split(',').map(x => x.split(':')).filter(x => x[0] && x.length > 1).map(([k, ...v]) => [k, v.join(':')]);
     const limite = Math.min(5000, parseInt(url.searchParams.get('limite'), 10) || 5000);
@@ -799,6 +853,7 @@ async function api(req, res, url) {
     const b = await readBody(req), m = DB.getRecord(db, 'materiels', String(b.materielId || ''));
     if (!m || m.archive || (estCompagnon(acc) && !m.scan)) return fail(res, 404, 'Outil inconnu ou non étiqueté');
     if (estCompagnon(acc) && !acc.user_id) return fail(res, 403, 'Compte non relié à une fiche de l\'équipe');
+    if (chantierRefuse(acc, b.affaireId)) return fail(res, 403, REFUS_PERIMETRE, { horsPerimetre: true });
     let obj;
     try { obj = Stock.affecter(DB.clean(m), { action: b.action, userId: b.action === 'prendre' ? String(b.userId && !estCompagnon(acc) ? b.userId : acc.user_id || '') : '', affaireId: String(b.affaireId || ''), date: new Date().toISOString().slice(0, 10), par: acc.nom || acc.login }); }
     catch (e) { return fail(res, 400, e.message); }
@@ -931,6 +986,7 @@ async function api(req, res, url) {
       if (estCompagnon(acc) && !reglesCompagnon().materiel) return send(res, 200, []);
       const affaireId = url.searchParams.get('affaireId') || '';
       if (!affaireId) return send(res, 200, []);
+      if (chantierRefuse(acc, affaireId)) return fail(res, 403, REFUS_PERIMETRE, { horsPerimetre: true });
       // Matériel retenu + suivi du chantier + commandes (commandé, substitution, livré) — sans prix
       // Fiche technique de la bibliothèque (version en vigueur à la pose), notices et certificats du fabricant
       return send(res, 200, materielAvecFiches(affaireId));
@@ -945,21 +1001,25 @@ async function api(req, res, url) {
     // Valeurs réglées sur site différentes de l'étude (PV « Réglages de la régulation ») : reprises dans l'étude
     if (p[1] === 'valeurs-reglees' && method === 'GET') {
       const affaireId = url.searchParams.get('affaireId') || '';
+      if (chantierRefuse(acc, affaireId)) return fail(res, 403, REFUS_PERIMETRE, { horsPerimetre: true });
       return send(res, 200, affaireId ? Essais.valeursReglees(recordsDe('misesEnService').filter(m => m.affaireId === affaireId)) : []);
     }
     // Pressions de gaine relevées à la mise en service des CTA du chantier (consignes de la régulation des études)
     if (p[1] === 'pressions-cta' && method === 'GET') {
       const affaireId = url.searchParams.get('affaireId') || '';
+      if (chantierRefuse(acc, affaireId)) return fail(res, 403, REFUS_PERIMETRE, { horsPerimetre: true });
       return send(res, 200, affaireId ? Essais.pressionsCta(recordsDe('misesEnService').filter(m => m.affaireId === affaireId)) : []);
     }
     // Débits théoriques des études du chantier (relevés d'équilibrage, bureau et compagnons)
     if (p[1] === 'debits' && !p[2] && method === 'GET') {
       const affaireId = url.searchParams.get('affaireId') || '';
+      if (chantierRefuse(acc, affaireId)) return fail(res, 403, REFUS_PERIMETRE, { horsPerimetre: true });
       return send(res, 200, affaireId ? MaterielRetenu.debitsChantier(LIENS.liste({ affaireId, app: 'etudes' })) : []);
     }
     // Points de mise en service des études du chantier (liste des mises en service, bureau et compagnons)
     if (p[1] === 'plan-mes' && method === 'GET') {
       const affaireId = url.searchParams.get('affaireId') || '';
+      if (chantierRefuse(acc, affaireId)) return fail(res, 403, REFUS_PERIMETRE, { horsPerimetre: true });
       return send(res, 200, affaireId ? PlanMes.pointsChantier(LIENS.liste({ affaireId, app: 'etudes' })) : []);
     }
     // Retour du chantier vers une étude : mesures (relevés d'équilibrage, PV de mise en service), réserves levées, suivi du matériel
@@ -990,6 +1050,7 @@ async function api(req, res, url) {
         if (estCompagnon(acc) && (!reglesCompagnon().materiel || !MaterielRetenu.ACTIONS_COMPAGNON.includes(b.action))) return fail(res, 403, 'Action réservée au bureau');
         const affaireId = String(b.affaireId || '');
         if (!affaireId || !DB.getRecord(db, 'affaires', affaireId)) return fail(res, 400, 'Chantier introuvable');
+        if (chantierRefuse(acc, affaireId)) return fail(res, 403, REFUS_PERIMETRE, { horsPerimetre: true });
         try {
           const jour = new Date().toISOString().slice(0, 10), par = acc.nom || acc.login;
           const etudes = new Set(LIENS.liste({ affaireId, app: 'etudes' }).map(l => l.id));
@@ -1136,6 +1197,8 @@ async function api(req, res, url) {
         const existing = DB.getRecord(db, col, id);
         if (existing && version !== existing._v) return { conflict: existing };
         let obj = { ...DB.clean(data), id };
+        const horsPerimetre = refusPerimetreEcriture(acc, col, id, obj, existing);
+        if (horsPerimetre) return { forbidden: horsPerimetre };
         // Une facture émise n'est plus modifiable, sauf son paiement et son suivi (relances, notes d'appel) (admin excepté).
         // (et la retenue de garantie tant que la facture n'est ni transmise, ni déposée, ni payée)
         if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...DB.clean(existing), statut: obj.statut, exportCompta: obj.exportCompta, datePaiement: obj.datePaiement, relances: obj.relances,
@@ -1236,6 +1299,8 @@ async function api(req, res, url) {
       const existing = DB.getRecord(db, col, id);
       if (!canDelete(acc, col, existing)) return fail(res, 403, col === 'factures' ? 'Une facture numérotée ne peut pas être supprimée (numérotation continue obligatoire) : établissez un avoir.' : existing && (existing.pvId || existing.statut === 'Signé') ? 'Élément figé par un procès-verbal signé' : 'Droits insuffisants');
       if (!existing) return send(res, 200, { ok: true });
+      const horsPerimetre = refusPerimetreEcriture(acc, col, id, null, existing);
+      if (horsPerimetre) return fail(res, 403, horsPerimetre);
       const refus = atelierRefus(acc, col, null, existing);
       if (refus) return fail(res, 403, refus);
       db.prepare('DELETE FROM records WHERE col = ? AND id = ?').run(col, id);
@@ -1343,6 +1408,7 @@ async function api(req, res, url) {
     if (estCompagnon(acc) && !acc.user_id) return fail(res, 403, 'Compte non relié à une fiche de l\'équipe');
     const b = await readBody(req), aff = DB.getRecord(db, 'affaires', String(b.affaireId || ''));
     if (!aff) return fail(res, 400, 'Chantier à choisir');
+    if (chantierRefuse(acc, aff.id)) return fail(res, 403, REFUS_PERIMETRE, { horsPerimetre: true });
     const articles = recordsDe('articles'), ls = ConsultTerrain.lignes(b.lignes, articles);
     if (!ls.length) return fail(res, 400, 'Ajoutez au moins une ligne avec une quantité');
     const g = ConsultTerrain.grouper(ls, articles, DB.getConfig(db, 'familles-fournisseurs') || {});

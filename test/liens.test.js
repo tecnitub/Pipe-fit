@@ -46,8 +46,12 @@ let pfJacky, pfMarc;
 
 test('API des liens : bureau uniquement, application connue, résumé retiré avec le chantier', async () => {
   const admin = (await call(pfBase, 'POST', '/api/login', { login: 'admin', password: 'admin-test-pw' })).cookie;
-  for (const [login, role] of [['jacky', 'charge'], ['marc', 'atelier']])
-    assert.strictEqual((await call(pfBase, 'POST', '/api/accounts', { login, password: 'motdepasse1', role, nom: login }, admin)).status, 200);
+  for (const [login, role, userId] of [['jacky', 'charge'], ['marc', 'atelier', 'o5']])
+    assert.strictEqual((await call(pfBase, 'POST', '/api/accounts', { login, password: 'motdepasse1', role, nom: login, userId }, admin)).status, 200);
+  // Marc (compagnon) est prévu au planning des chantiers des tests suivants (il ne voit que ses chantiers)
+  const jour = new Date().toISOString().slice(0, 10);
+  for (const affaireId of ['af-mat', 'af-suivi', 'af-debits', 'af-av'])
+    assert.strictEqual((await call(pfBase, 'PUT', `/api/records/planning/pl-${affaireId}`, { data: { userId: 'o5', affaireId, date: jour, heuresPrevues: 8 } }, admin)).status, 200);
   pfJacky = (await call(pfBase, 'POST', '/api/login', { login: 'jacky', password: 'motdepasse1' })).cookie;
   pfMarc = (await call(pfBase, 'POST', '/api/login', { login: 'marc', password: 'motdepasse1' })).cookie;
   assert.strictEqual((await call(pfBase, 'GET', '/api/liens?affaireId=af1', null, pfMarc)).status, 403);
@@ -175,6 +179,7 @@ test('matériel retenu des études : visible sur le chantier par les compagnons,
   assert.strictEqual((await call(pfBase, 'PUT', '/api/liens/etudes/et-mat', { affaireId: 'af-mat', resume: { objet: 'CTA bureaux', materiel } }, pfJacky)).status, 200);
   const r = await call(pfBase, 'GET', '/api/liens/materiel?affaireId=af-mat', null, pfMarc);
   assert.strictEqual(r.status, 200, 'compagnon autorisé');
+  assert.strictEqual((await call(pfBase, 'GET', '/api/liens/materiel?affaireId=af-autre', null, pfMarc)).status, 403, 'chantier où il n\'est pas prévu');
   assert.deepStrictEqual(r.body.map(m => [m.reference, m.valide]), [['CTA-X 3000 DF', true], ['DFC 160', false]]);
   assert.strictEqual(r.body[0].etude, 'CTA bureaux');
   // Réglage « matériel » décoché pour les compagnons : rien ; le bureau voit toujours

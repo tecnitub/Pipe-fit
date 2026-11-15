@@ -234,6 +234,10 @@
   function handle(method, path, body, query = new URLSearchParams()) {
     const p = path.replace(/^\/api\/?/, '').split('/').filter(Boolean);
     const acc = me();
+    // Périmètre du compagnon (comme le serveur) : ses chantiers et ceux de son équipe au planning sur la période réglée
+    const ctxC = () => Compagnon.contexte(acc.userId, db.users, db.affaires, Object.fromEntries(Compagnon.SOURCES.map(c => [c, db[c] || []])), Compagnon.regles(db.settings), isoLocal(new Date()));
+    const REFUS_PERIMETRE = [403, { error: 'Ce chantier ne fait pas partie de vos chantiers ni de ceux de votre équipe : demandez au bureau de vous l\'affecter au planning.', horsPerimetre: true }];
+    const horsPerimetre = aff => acc.role === 'atelier' && !!aff && !Compagnon.autorise(ctxC(), String(aff));
     if (p[0] === 'setup') return [200, { needed: false, local: true }];
     if (p[0] === 'me' && !p[1]) return [200, { ...acc, version: 'démonstration', m365: !!(db.m365 || {}).actif, prefs: (db.prefs || {})[acc.id] || {}, adressesEnvoi: db.adressesEnvoi || {}, assistant: accesAssistant(acc) }];
     // Assistant simulé (sans IA) : mêmes droits et mêmes réglages que le vrai
@@ -274,6 +278,7 @@
     if (p[0] === 'consultations' && p[1] === 'terrain' && method === 'POST') {
       const aff = db.affaires.find(a => a.id === String(body.affaireId || ''));
       if (!aff) return [400, { error: 'Chantier à choisir' }];
+      if (horsPerimetre(aff.id)) return REFUS_PERIMETRE;
       const ls = ConsultTerrain.lignes(body.lignes, db.articles);
       if (!ls.length) return [400, { error: 'Ajoutez au moins une ligne avec une quantité' }];
       const g = ConsultTerrain.grouper(ls, db.articles, db.famillesFournisseurs || {}), now = new Date().toISOString(), jour = now.slice(0, 10), meta = { _v: 1, _at: now, _by: acc.nom };
@@ -295,6 +300,7 @@
     if (p[0] === 'parc' && p[1] === 'scan' && method === 'POST') {
       const m = (db.materiels || []).find(x => x.id === String(body.materielId || ''));
       if (!m || m.archive || (acc.role === 'atelier' && !m.scan)) return [404, { error: 'Outil inconnu ou non étiqueté' }];
+      if (horsPerimetre(body.affaireId)) return REFUS_PERIMETRE;
       try { Object.assign(m, Stock.affecter(m, { action: body.action, userId: body.action === 'prendre' ? String(acc.role !== 'atelier' && body.userId ? body.userId : acc.userId || '') : '', affaireId: String(body.affaireId || ''), date: new Date().toISOString().slice(0, 10), par: acc.nom }), { _v: (m._v || 1) + 1, _at: new Date().toISOString(), _by: acc.nom }); }
       catch (e) { return [400, { error: e.message }]; }
       save(); return [200, m];
@@ -416,7 +422,7 @@
         const etapesDe = (a, affaireId) => {
           if (!a.userId && a.role === 'atelier') return [];
           return SuiviEtapes.etapesPour(etudesL().filter(l => !affaireId || l.affaireId === affaireId), { id: a.userId || '', role: a.role, nom: a.nom }, { chargeDe: id => ((db.affaires || []).find(x => x.id === id) || {}).chargeId || '',
-            planifie: (uid, aid) => (db.planning || []).some(x => x.userId === uid && x.affaireId === aid), terrain: db.etapesTerrain.filter(t => !affaireId || t.affaireId === affaireId) });
+            planifie: (uid, aid) => !horsPerimetre(aid) && (db.planning || []).some(x => x.userId === uid && x.affaireId === aid), terrain: db.etapesTerrain.filter(t => !affaireId || t.affaireId === affaireId) });
         };
         relancesEtapesDemo();
         if (!p[2] && method === 'GET') {
@@ -458,6 +464,7 @@
         materiel: MaterielRetenu.pourChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === a.id), (db.materielSuivi || []).filter(x => x.affaireId === a.id)) })), new Date().toISOString().slice(0, 10))] : [403, { error: 'Réservé au bureau' }];
       if (p[1] === 'materiel' && !p[2] && method === 'GET') {
         if (acc.role === 'atelier' && !Compagnon.regles(db.settings).materiel) return [200, []];
+        if (horsPerimetre(query.get('affaireId'))) return REFUS_PERIMETRE;
         const aff = query.get('affaireId') || '', ms = suiviMaterielDemo(aff);
         const ft = FichesTech.trouver(db.fichesTech || [], ms.map((m, i) => ({ cle: i, fabricant: m.fabricant, reference: m.reference, date: m.poseLe || '' })));
         return [200, ms.map((m, i) => (ft[i].fiche ? { ...m, ficheTech: ft[i].fiche } : m))];
@@ -467,6 +474,7 @@
         const ids = [...new Set((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId).map(l => l.affaireId))];
         return [200, Object.fromEntries(ids.map(id => [id, Installe.avancement(suiviMaterielDemo(id))]).filter(([, a]) => a.total))];
       }
+      if (['plan-mes', 'debits', 'valeurs-reglees', 'pressions-cta'].includes(p[1]) && !p[2] && method === 'GET' && horsPerimetre(query.get('affaireId'))) return REFUS_PERIMETRE;
       if (p[1] === 'plan-mes' && method === 'GET') return [200, PlanMes.pointsChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === (query.get('affaireId') || '')))];
       if (p[1] === 'debits' && !p[2] && method === 'GET') return [200, MaterielRetenu.debitsChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === (query.get('affaireId') || '')))];
       if (p[1] === 'materiel' && p[2] === 'suivi') {
@@ -479,6 +487,7 @@
         }
         if (method === 'POST') {
           if (acc.role === 'atelier' && (!Compagnon.regles(db.settings).materiel || !MaterielRetenu.ACTIONS_COMPAGNON.includes(body.action))) return [403, { error: 'Action réservée au bureau' }];
+          if (horsPerimetre(body.affaireId)) return REFUS_PERIMETRE;
           const affaireId = String(body.affaireId || ''), etudes = new Set((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === affaireId).map(l => l.id));
           try {
             const out = (Array.isArray(body.lignes) ? body.lignes : [body]).map(l => {
@@ -678,7 +687,7 @@
       COLLECTIONS.forEach(c => { out[c] = JSON.parse(JSON.stringify(db[c])); });
       // Compagnon : mêmes données filtrées que sur le serveur (prix, montants, budgets d'heures…)
       const r = Acces.restrictions(Acces.masques(acc, db.settings.acces)); // affichage par accès : même contrôle que le serveur
-      return [200, Acces.filtrerTout(r, acc.role === 'atelier' ? Compagnon.filtrerTout(out, Compagnon.regles(db.settings), Compagnon.contexte(acc.userId, db.users, db.affaires)) : out)];
+      return [200, Acces.filtrerTout(r, acc.role === 'atelier' ? Compagnon.filtrerTout(out, Compagnon.regles(db.settings), ctxC()) : out)];
     }
     if (p[0] === 'records') {
       const [, col, id] = p;
@@ -686,11 +695,24 @@
       if (['PUT', 'DELETE'].includes(method) && Acces.ecritureRefusee(Acces.restrictions(Acces.masques(acc, db.settings.acces)), col)) return [403, { error: 'Accès non autorisé pour votre compte (Paramètres → Affichage par accès)' }];
       const i = db[col].findIndex(o => o.id === id);
       const existing = i >= 0 ? db[col][i] : null;
+      // Compagnon : fiche d'un chantier hors de son périmètre (mêmes exceptions que le serveur)
+      const refusPerimetre = (c, obj, ex) => {
+        if (c === 'affaires') return !!ex && horsPerimetre(ex.id);
+        if (c === 'reserves' && ex && ex.assigneA && ex.assigneA === acc.userId) return false;
+        if (Compagnon.PERSONNELLES.includes(c) && ex && (!obj || String(ex.affaireId || '') === String(obj.affaireId || ''))) return false;
+        return [obj && obj.affaireId, ex && ex.affaireId].some(a => horsPerimetre(a));
+      };
+      if (method === 'GET' && id && acc.role === 'atelier') {
+        const r = existing && Compagnon.filtrer(col, JSON.parse(JSON.stringify(existing)), Compagnon.regles(db.settings), ctxC());
+        if (r) return [200, r];
+        return existing && horsPerimetre(col === 'affaires' ? existing.id : existing.affaireId) ? REFUS_PERIMETRE : [404, { error: 'Élément introuvable' }];
+      }
       if (method === 'PUT') {
         const fiche = col === 'users' && existing, interimaire = acc.role === 'charge' && col === 'users' && body.data && body.data.type === 'interimaire' && (!fiche || fiche.type === 'interimaire');
         if (!canWrite(acc, col) && !(acc.role === 'atelier' && ['affaires', 'reserves'].includes(col)) && !interimaire) return [403, { error: 'Droits insuffisants' }];
         if (existing && body.version !== existing._v) return [409, { error: `Modifié entre-temps par ${existing._by}`, record: existing }];
         let obj = { ...clean(body.data || {}), id };
+        if (acc.role === 'atelier' && refusPerimetre(col, obj, existing)) return REFUS_PERIMETRE;
         if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...clean(existing), statut: obj.statut, exportCompta: obj.exportCompta, datePaiement: obj.datePaiement, relances: obj.relances,
           retenuePct: Retenue.modifiable(existing) ? Retenue.taux(obj.retenuePct) : existing.retenuePct };
         if (col === 'factures') { obj.type = existing ? existing.type : (obj.type === 'avoir' ? 'avoir' : undefined); if (!obj.type) delete obj.type; }
@@ -743,7 +765,7 @@
         if (col === 'affaires' && acc.role === 'atelier' && !existing) db.accounts.filter(a => ['admin', 'charge'].includes(a.role) && a.userId).forEach(a => db.notifications.push({ id: 'nt' + DemoSeed.uid(), type: 'horsDevis', userId: a.userId, affaireId: rec.id,
           titre: `🛠️ Intervention hors devis ouverte : ${rec.code}`, texte: `${acc.nom} — ${rec.nom}. À compléter (client, site, chargé d'affaires).`, lien: `#/chantier/${rec.id}`, date: new Date().toISOString(), lu: false, _v: 1, _at: new Date().toISOString(), _by: 'Pipe-Fit' }));
         if (col === 'affaires' && acc.role === 'atelier' && !existing) save();
-        const rendu = acc.role === 'atelier' ? Compagnon.filtrer(col, JSON.parse(JSON.stringify(rec)), Compagnon.regles(db.settings), Compagnon.contexte(acc.userId, db.users, db.affaires)) : JSON.parse(JSON.stringify(rec));
+        const rendu = acc.role === 'atelier' ? Compagnon.filtrer(col, JSON.parse(JSON.stringify(rec)), Compagnon.regles(db.settings), ctxC()) : JSON.parse(JSON.stringify(rec));
         return [200, rendu || { id: rec.id, _v: rec._v }];
       }
       if (method === 'DELETE') {
@@ -751,6 +773,7 @@
         const fige = existing && acc.role !== 'admin' && ((col === 'receptions' && existing.statut === 'Signé') || (col === 'reserves' && existing.pvId));
         const allowed = (col === 'factures' ? acc.role === 'admin' : canWrite(acc, col)) && !atelierRefus(acc, col, null, existing) && !fige;
         if (!allowed) return [403, { error: 'Droits insuffisants' }];
+        if (existing && acc.role === 'atelier' && refusPerimetre(col, null, existing)) return REFUS_PERIMETRE;
         if (existing) { db[col].splice(i, 1); audit('suppression', col, labelOf(existing)); save(); if (col === 'planning') planningModifie(acc, existing, null); }
         return [200, { ok: true }];
       }

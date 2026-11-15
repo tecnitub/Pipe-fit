@@ -145,14 +145,18 @@ function bindDocumentsChantier(root, a) {
 }
 
 /* ---------- Compagnon : mes chantiers ---------- */
-// Chantiers du compagnon : planifiés de J-7 à J+21, ou pointés ces 15 derniers jours (lui et son équipe)
+// Chantiers du compagnon : ceux que le serveur lui envoie (son périmètre : lui et son équipe au planning, pointages,
+// bons d'intervention, réserves, hors devis), avec la prochaine date prévue (lui, puis son équipe). Sans périmètre
+// (accès à tous les chantiers) : planifiés de J-7 à J+21, ou pointés ces 15 derniers jours (lui et son équipe).
 function chantiersDuCompagnon(u) {
   const ids = [u.id, ...equipeDe(u.id).map(m => m.id)], auj = isoDate(new Date()), debut = isoDate(addDays(new Date(), -7)), fin = isoDate(addDays(new Date(), 21)), recent = isoDate(addDays(new Date(), -15));
+  const perimetre = Store.all('affaires').some(a => a.perimetre);
   const prochains = {};
+  if (perimetre) Store.all('affaires').filter(a => a.perimetre && !a.archive).forEach(a => { prochains[a.id] = ''; });
   Store.all('planning').filter(p => ids.includes(p.userId) && p.affaireId && p.date >= debut && p.date <= fin).forEach(p => { if (p.date >= auj && (!prochains[p.affaireId] || p.date < prochains[p.affaireId])) prochains[p.affaireId] = p.date; else prochains[p.affaireId] = prochains[p.affaireId] || ''; });
-  Store.all('temps').filter(t => ids.includes(t.userId) && t.date >= recent).forEach(t => { if (!(t.affaireId in prochains)) prochains[t.affaireId] = ''; });
+  if (!perimetre) Store.all('temps').filter(t => ids.includes(t.userId) && t.date >= recent).forEach(t => { if (!(t.affaireId in prochains)) prochains[t.affaireId] = ''; });
   return Object.entries(prochains).map(([id, d]) => ({ a: Store.get('affaires', id), prochain: d })).filter(x => x.a)
-    .sort((x, y) => (x.prochain || '9999').localeCompare(y.prochain || '9999'));
+    .sort((x, y) => Number(x.a.perimetre === 'equipe') - Number(y.a.perimetre === 'equipe') || (x.prochain || '9999').localeCompare(y.prochain || '9999'));
 }
 const docsNonVus = affaireId => Notifs.nonLues().filter(n => n.type === 'document' && n.affaireId === affaireId).length;
 
@@ -160,14 +164,16 @@ function chantiersCompagnon(u) {
   const liste = chantiersDuCompagnon(u), R = reglesCompagnon();
   return `<div class="pointage"><h1>Mes chantiers</h1>${pointageTabs('chantiers', u.id)}
     ${typeof mesEtapesZone === 'function' ? mesEtapesZone('') : ''}
-    ${liste.length ? liste.map(({ a, prochain }) => {
+    ${liste.length ? liste.map(({ a, prochain }, i) => {
       const site = siteOf(a.clientId, a.siteId), nd = documentsVisibles(a).length, nv = docsNonVus(a.id);
-      return `<a class="card ch-carte" href="#/pointage/chantier/${a.id}" style="--h:${teinte(a.id)}">
+      const titre = a.perimetre === 'equipe' && (i === 0 || liste[i - 1].a.perimetre !== 'equipe') ? '<h2 class="ch-groupe">Chantiers de mon équipe</h2>' : '';
+      return `${titre}<a class="card ch-carte" href="#/pointage/chantier/${a.id}" style="--h:${teinte(a.id)}">
         <div><strong>${esc(a.code || '')}</strong> ${esc(a.nom || '')}</div>
         ${R.client && clientName(a.clientId) ? `<div class="small muted">${esc(clientName(a.clientId))}</div>` : ''}
         ${site ? `<div class="small">📍 ${esc(site.libelle)} · ${esc(site.ville || '')}</div>` : ''}
         <div class="small">${prochain ? `📅 ${prochain === isoDate(new Date()) ? 'aujourd\'hui' : jourLong(prochain)}` : '<span class="muted">pas de date prévue</span>'}${R.documents ? ` · 📎 ${nd} document${nd > 1 ? 's' : ''}` : ''}${nv ? ' <span class="badge b-warn">nouveau</span>' : ''}</div></a>`;
-    }).join('') : '<p class="muted">Aucun chantier prévu pour vous en ce moment.</p>'}${mesHabilitations(u)}${monMateriel(u)}</div>`;
+    }).join('') : '<p class="muted">Aucun chantier prévu pour vous ou votre équipe en ce moment.</p>'}
+    ${liste.some(x => x.a.perimetre) ? `<p class="small muted">Vos chantiers et ceux de votre équipe : prévus au planning ou pointés autour d'aujourd'hui (${reglesCompagnon().perimetreJours} jours), réserves à lever, interventions ouvertes. Un autre chantier : demandez au bureau de vous l'affecter.</p>` : ''}${mesHabilitations(u)}${monMateriel(u)}</div>`;
 }
 
 // Matériel prévu au devis : total par article et détail par ouvrage (quantités selon les réglages)
@@ -202,7 +208,10 @@ function materielPrevu(a) {
 const ficheCompagnonSel = { mode: 'article' };
 function ficheChantierCompagnon(u, id) {
   const a = Store.get('affaires', id);
-  if (!a) return `<div class="pointage"><h1>Chantier</h1>${pointageTabs('chantiers', u.id)}<p class="muted">Chantier introuvable.</p></div>`;
+  // Chantier absent des données reçues : hors de son périmètre (le serveur ne l'envoie pas) ou supprimé
+  if (!a) return `<div class="pointage"><h1>Chantier</h1>${pointageTabs('chantiers', u.id)}<div class="card" id="ch-hors-perimetre" role="alert"><p style="margin-top:0"><strong>Ce chantier n'est pas dans vos chantiers.</strong></p>
+    <p class="small">Vous voyez les chantiers où vous-même ou un membre de votre équipe êtes prévus au planning (ou avez pointé) en ce moment. Si vous devez y intervenir, demandez au bureau de vous l'affecter ; il apparaîtra ici dès que le planning sera mis à jour. Le chantier a peut-être aussi été supprimé.</p>
+    <a class="btn secondary" href="#/pointage/chantiers">← Mes chantiers</a></div></div>`;
   const R = reglesCompagnon(), site = siteOf(a.clientId, a.siteId), adr = site ? fullAddress(site) : '', contact = Store.get('contacts', a.contactId);
   const jours = Store.all('planning').filter(p => p.affaireId === a.id && p.userId === u.id && p.date >= isoDate(new Date())).sort((x, y) => x.date.localeCompare(y.date)).slice(0, 6);
   const docs = documentsVisibles(a).filter(d => !Securite.estDocSecurite(d.categorie)).sort((x, y) => CATEGORIES_DOC.findIndex(c => c[0] === x.categorie) - CATEGORIES_DOC.findIndex(c => c[0] === y.categorie));
@@ -257,6 +266,10 @@ function reglagesCompagnonCarte() {
   <div class="card" id="cp-carte">
     <p class="muted small" style="margin-top:0">Le serveur filtre les données avant l'envoi : ce qui est décoché ne part pas sur leur téléphone. Factures, situations, achats, taux horaires et salaires ne leur sont jamais envoyés. Ils voient toujours leur planning, leurs heures, leurs rapports et l'adresse du chantier.</p>
     <div class="cp-options">${Compagnon.OPTIONS.map(([k, l, , aide]) => `<label class="check cp-opt"><input type="checkbox" data-cp="${k}" ${R[k] ? 'checked' : ''}><span>${esc(l)}${aide ? `<br><span class="muted small">${esc(aide)}</span>` : ''}</span></label>`).join('')}</div>
+    <h3>Chantiers visibles</h3>
+    <p class="muted small" style="margin-top:0">Chaque compagnon voit les chantiers où lui-même ou un membre de son équipe (même chef d'équipe, fiche « Équipe habituelle de ») est prévu au planning, a pointé des heures ou rédigé un bon d'intervention autour d'aujourd'hui, a une réserve à lever, ou a ouvert une intervention hors devis. Le bureau voit tout.</p>
+    <label class="check cp-opt"><input type="checkbox" id="cp-tous" ${R.tousChantiers ? 'checked' : ''}><span>Accès à tous les chantiers<br><span class="muted small">Ancien fonctionnement : tous les chantiers, sans montants.</span></span></label>
+    <label style="display:block;margin-top:8px">Période prise en compte : ± <input type="number" id="cp-jours" min="0" max="365" step="1" value="${esc(R.perimetreJours)}" style="width:90px" ${R.tousChantiers ? 'disabled' : ''} aria-label="Période du planning prise en compte, en jours"> jours autour d'aujourd'hui</label>
     <div class="toolbar" style="margin:10px 0 0"><button class="secondary small" id="cp-chantier">Réglage « chantier seul, sans prix »</button><button class="secondary small" id="cp-defaut">Réglage par défaut</button></div>
   </div>`;
 }
@@ -265,7 +278,9 @@ function bindReglagesCompagnon(root) {
   if (!carte) return;
   const enregistrer = async regles => { await Store.saveSettings({ ...Store.data.settings, compagnon: regles }); App.toast('Réglages des compagnons enregistrés'); App.render(); };
   carte.querySelectorAll('[data-cp]').forEach(cb => cb.onchange = () => enregistrer({ ...reglesCompagnon(), [cb.dataset.cp]: cb.checked }));
-  carte.querySelector('#cp-chantier').onclick = () => enregistrer({ ...Compagnon.DEFAUT, client: false, contactSite: true, materiel: true, quantites: true, commandes: true, documents: true, collegues: true, heuresBudget: false, prix: false });
+  carte.querySelector('#cp-tous').onchange = e => enregistrer({ ...reglesCompagnon(), tousChantiers: e.target.checked });
+  carte.querySelector('#cp-jours').onchange = e => { const n = Math.round(Number(e.target.value)); if (!(n >= 0 && n <= 365)) { App.toast('Période : de 0 à 365 jours'); return; } enregistrer({ ...reglesCompagnon(), perimetreJours: n }); };
+  carte.querySelector('#cp-chantier').onclick = () => enregistrer({ ...Compagnon.DEFAUT, perimetreJours: reglesCompagnon().perimetreJours, tousChantiers: reglesCompagnon().tousChantiers, client: false, contactSite: true, materiel: true, quantites: true, commandes: true, documents: true, collegues: true, heuresBudget: false, prix: false });
   carte.querySelector('#cp-defaut').onclick = () => enregistrer({ ...Compagnon.DEFAUT });
 }
 

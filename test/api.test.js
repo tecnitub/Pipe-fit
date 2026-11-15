@@ -156,6 +156,9 @@ test('droits par rôle, conflits de version et numérotation', async () => {
   // Hors devis : numéro HD, matériel saisi par l'opérateur, bon signé par le client figé
   const hd = (await call('PUT', '/api/records/affaires/hd-x', { data: { nom: 'Dépannage', type: 'horsDevis', statut: 'Ouvert' } }, claire)).body;
   assert.match(hd.code, new RegExp(`^HD-${year}-\\d{3}$`));
+  // Intervention pas encore au planning de l'opérateur : hors de ses chantiers ; affecté par le bureau, il saisit
+  assert.strictEqual((await call('PUT', '/api/records/consommations/cs-x', { data: { affaireId: 'hd-x', userId: 'o1', articleId: 'a1', qte: 2 } }, atelier)).status, 403);
+  assert.strictEqual((await call('PUT', '/api/records/planning/pl-hd', { data: { affaireId: 'hd-x', userId: 'o1', date: aujourdhui, heuresPrevues: 4 } }, claire)).status, 200);
   assert.strictEqual((await call('PUT', '/api/records/consommations/cs-x', { data: { affaireId: 'hd-x', userId: 'o1', articleId: 'a1', qte: 2 } }, atelier)).status, 200);
   assert.strictEqual((await call('PUT', '/api/records/consommations/cs-y', { data: { affaireId: 'hd-x', userId: 'o2', articleId: 'a1', qte: 2 } }, atelier)).status, 403);
   const bon = (await call('PUT', '/api/records/rapports/ri-s', { data: { affaireId: 'hd-x', userId: 'o1', travaux: 'Pose', signatureClientId: up.body.id, signataireNom: 'Client' } }, atelier)).body;

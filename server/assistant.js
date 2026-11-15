@@ -29,7 +29,7 @@ function coutAppel(modele, u = {}) {
   return ((u.input_tokens || 0) * t[0] + (u.output_tokens || 0) * t[1] + (u.cache_creation_input_tokens || 0) * t[0] * 1.25 + (u.cache_read_input_tokens || 0) * t[2]) / 1e6;
 }
 
-function creer({ DB, db, broadcast, notifier, fiches = null }) {
+function creer({ DB, db, broadcast, notifier, fiches = null, chantierAutorise = () => true }) {
   db.exec(`CREATE TABLE IF NOT EXISTS assistant_conv (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, titre TEXT, messages TEXT NOT NULL, fil TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS assistant_usage (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, account_id TEXT, login TEXT, nom TEXT, profil TEXT, modele TEXT,
       appels INTEGER, entree INTEGER, sortie INTEGER, cache_ecriture INTEGER, cache_lecture INTEGER, cout REAL NOT NULL)`);
@@ -105,7 +105,12 @@ function creer({ DB, db, broadcast, notifier, fiches = null }) {
     return { articleId: art ? art.id : '', designation: String((art && art.designation) || l.designation || 'Fourniture').slice(0, 200), unite: String(l.unite || (art && art.unite) || 'u').slice(0, 10),
       qte: Math.max(0, Number(l.qte) || 0), ...(prix ? { pu: r2(Number(l.pu) > 0 ? Number(l.pu) : art ? Number(art.coutRevient) || 0 : 0) } : { pu: 0 }), ...(art && art.ref ? { refFournisseur: art.ref } : {}) };
   }).filter(l => l.qte > 0);
-  const chantierOuErreur = id => { const a = id && DB.getRecord(db, 'affaires', String(id)); if (id && !a) throw new Error(`Chantier ${id} introuvable : utilisez chercher_chantiers.`); return a || null; };
+  // Compagnon : seulement les chantiers de son périmètre (lui et son équipe au planning) ; le bureau : tous
+  const chantierOuErreur = (id, acc) => {
+    const a = id && DB.getRecord(db, 'affaires', String(id));
+    if (id && (!a || (acc && !chantierAutorise(acc, a.id)))) throw new Error(`Chantier ${id} introuvable dans vos chantiers : utilisez chercher_chantiers.`);
+    return a || null;
+  };
 
   /* ---------- Outils ---------- */
   const S = (props, requis = []) => ({ type: 'object', properties: props, required: requis, additionalProperties: false });
@@ -113,7 +118,7 @@ function creer({ DB, db, broadcast, notifier, fiches = null }) {
   const OUTILS = [
     { name: 'chercher_chantiers', droit: 'tous', description: 'Trouve les chantiers en cours d\'après un code (CH-2026-001), un nom, un client ou une ville. Renvoie id, code, nom, client, adresse du site, chargé d\'affaires.',
       input_schema: S({ texte: { type: 'string' } }, ['texte']),
-      run: (i, acc, bureau) => meilleurs(actifs(), i.texte, a => [a.code, a.nom, nomEnt(a.clientId), adresse(siteDe(a))]).map(a => ({ id: a.id, code: a.code, nom: a.nom, client: nomEnt(a.clientId), site: adresse(siteDe(a)), chargeAffaires: nomUser(a.chargeId), ...(bureau ? { statut: a.statut } : {}) })) },
+      run: (i, acc, bureau) => meilleurs(actifs().filter(a => bureau || chantierAutorise(acc, a.id)), i.texte, a => [a.code, a.nom, nomEnt(a.clientId), adresse(siteDe(a))]).map(a => ({ id: a.id, code: a.code, nom: a.nom, client: nomEnt(a.clientId), site: adresse(siteDe(a)), chargeAffaires: nomUser(a.chargeId), ...(bureau ? { statut: a.statut } : {}) })) },
     { name: 'chercher_fournisseurs', droit: 'bureau', description: 'Trouve les fournisseurs d\'après leur nom ou leur secteur. Renvoie id, nom, e-mail, ville.',
       input_schema: S({ texte: { type: 'string' } }, ['texte']),
       run: i => meilleurs(tous('entreprises').filter(e => /fournisseur/i.test(e.categorie || '')), i.texte, e => [e.nom, e.secteur]).map(e => ({ id: e.id, nom: e.nom, email: e.email || '', secteur: e.secteur || '' })) },
@@ -126,7 +131,7 @@ function creer({ DB, db, broadcast, notifier, fiches = null }) {
       run: (i, acc) => {
         const f = DB.getRecord(db, 'entreprises', String(i.fournisseurId || ''));
         if (!f) throw new Error('Fournisseur introuvable : utilisez chercher_fournisseurs.');
-        const a = chantierOuErreur(i.affaireId), lignes = lignesPropres(i.lignes, true);
+        const a = chantierOuErreur(i.affaireId, acc), lignes = lignesPropres(i.lignes, true);
         if (!lignes.length) throw new Error('Aucune ligne avec une quantité.');
         const c = creerRecord('commandes', { numero: '', fournisseurId: f.id, affaireId: a ? a.id : '', date: new Date().toISOString().slice(0, 10), dateLivraison: /^\d{4}-\d{2}-\d{2}$/.test(i.dateLivraison || '') ? i.dateLivraison : '',
           statut: 'Brouillon', lignes, note: String(i.note || '').slice(0, 500), origine: 'assistant', preparePar: acc.nom || acc.login }, `Assistant (${acc.login})`);
@@ -137,7 +142,7 @@ function creer({ DB, db, broadcast, notifier, fiches = null }) {
     { name: 'preparer_consultation', droit: 'bureau', description: 'Prépare une demande de prix (consultation) auprès de plusieurs fournisseurs, en brouillon : la personne l\'envoie elle-même.',
       input_schema: S({ objet: { type: 'string' }, affaireId: { type: 'string' }, fournisseurIds: { type: 'array', items: { type: 'string' } }, lignes: LIGNES, dateLimite: { type: 'string', description: 'AAAA-MM-JJ' } }, ['objet', 'fournisseurIds', 'lignes']),
       run: (i, acc) => {
-        const a = chantierOuErreur(i.affaireId), lignes = lignesPropres(i.lignes, false).map(({ pu, refFournisseur, ...l }) => l);
+        const a = chantierOuErreur(i.affaireId, acc), lignes = lignesPropres(i.lignes, false).map(({ pu, refFournisseur, ...l }) => l);
         const fs = [...new Set(i.fournisseurIds || [])].filter(id => DB.getRecord(db, 'entreprises', id)).map(entrepriseId => ({ entrepriseId, statut: 'À consulter' }));
         if (!fs.length || !lignes.length) throw new Error('Il faut au moins un fournisseur (chercher_fournisseurs) et une ligne.');
         const c = creerRecord('consultations', { ref: '', objet: String(i.objet).slice(0, 200), affaireId: a ? a.id : '', date: new Date().toISOString().slice(0, 10), dateLimite: /^\d{4}-\d{2}-\d{2}$/.test(i.dateLimite || '') ? i.dateLimite : '',
@@ -146,8 +151,8 @@ function creer({ DB, db, broadcast, notifier, fiches = null }) {
       } },
     { name: 'etat_chantier', droit: 'bureau', description: 'Point sur un chantier : statut, heures pointées, commandes (n°, fournisseur, statut, montant), demandes de prix en cours, prochaines affectations.',
       input_schema: S({ affaireId: { type: 'string' } }, ['affaireId']),
-      run: i => {
-        const a = chantierOuErreur(i.affaireId), auj = new Date().toISOString().slice(0, 10);
+      run: (i, acc) => {
+        const a = chantierOuErreur(i.affaireId, acc), auj = new Date().toISOString().slice(0, 10);
         return { code: a.code, nom: a.nom, statut: a.statut, client: nomEnt(a.clientId), chargeAffaires: nomUser(a.chargeId), heuresPointees: r2(tous('temps').filter(t => t.affaireId === a.id).reduce((s, t) => s + (Number(t.heures) || 0), 0)),
           commandes: tous('commandes').filter(c => c.affaireId === a.id).map(c => ({ numero: c.numero, fournisseur: nomEnt(c.fournisseurId), statut: c.statut, totalHT: r2((c.lignes || []).reduce((t, l) => t + (Number(l.qte) || 0) * (Number(l.pu) || 0), 0)), livraison: c.dateLivraison || '' })),
           demandesDePrix: tous('consultations').filter(c => c.affaireId === a.id && c.statut === 'En cours').map(c => ({ ref: c.ref, objet: c.objet })),
@@ -168,14 +173,14 @@ function creer({ DB, db, broadcast, notifier, fiches = null }) {
       run: i => fiches.rechercher(i.texte, 12).map(r => ({ fabricant: r.fabricant, references: (r.references || []).slice(0, 5), type: r.type, document: r.nom, version: r.date, remplacee: r.remplacee, page: r.page, extrait: r.extrait })) },
     { name: 'caracteristiques_materiel_chantier', droit: 'chantier', description: 'Matériel retenu d\'un chantier (fabricant, référence) avec les caractéristiques lues dans sa fiche technique : débit, pression disponible, puissances chaud / froid / électrique, fluide, niveau sonore, tension, volume.',
       input_schema: S({ affaireId: { type: 'string' } }, ['affaireId']),
-      run: i => { chantierOuErreur(i.affaireId); return fiches.materiel(String(i.affaireId)).map(m => ({ designation: m.designation, fabricant: m.fabricant, reference: m.reference, statut: m.statut, ficheTechnique: m.ficheTech ? `${m.ficheTech.nom}${m.ficheTech.date ? ` (version du ${m.ficheTech.date})` : ''}` : 'aucune dans la bibliothèque', caracteristiques: (m.ficheTech && m.ficheTech.carac) || null })); } }] : []),
+      run: (i, acc) => { chantierOuErreur(i.affaireId, acc); return fiches.materiel(String(i.affaireId)).map(m => ({ designation: m.designation, fabricant: m.fabricant, reference: m.reference, statut: m.statut, ficheTechnique: m.ficheTech ? `${m.ficheTech.nom}${m.ficheTech.date ? ` (version du ${m.ficheTech.date})` : ''}` : 'aucune dans la bibliothèque', caracteristiques: (m.ficheTech && m.ficheTech.carac) || null })); } }] : []),
     { name: 'infos_chantier', droit: 'chantier', description: 'Informations pratiques d\'un chantier : adresse du site, contact sur place, chargé d\'affaires, consignes.',
       input_schema: S({ affaireId: { type: 'string' } }, ['affaireId']),
-      run: i => { const a = chantierOuErreur(i.affaireId), k = DB.getRecord(db, 'contacts', a.contactId) || {}; return { code: a.code, nom: a.nom, site: adresse(siteDe(a)), contact: [k.prenom, k.nom].filter(Boolean).join(' '), telContact: k.mobile || k.tel || '', chargeAffaires: nomUser(a.chargeId), consignes: a.consignes || a.acces || '' }; } },
+      run: (i, acc) => { const a = chantierOuErreur(i.affaireId, acc), k = DB.getRecord(db, 'contacts', a.contactId) || {}; return { code: a.code, nom: a.nom, site: adresse(siteDe(a)), contact: [k.prenom, k.nom].filter(Boolean).join(' '), telContact: k.mobile || k.tel || '', chargeAffaires: nomUser(a.chargeId), consignes: a.consignes || a.acces || '' }; } },
     { name: 'demander_materiel', droit: 'materiel', description: 'Compagnon : transmet au bureau une demande de matériel pour un chantier (le bureau choisit le fournisseur, valide et commande).',
       input_schema: S({ affaireId: { type: 'string' }, lignes: LIGNES, pourLe: { type: 'string', description: 'AAAA-MM-JJ' }, note: { type: 'string' } }, ['affaireId', 'lignes']),
       run: (i, acc) => {
-        const a = chantierOuErreur(i.affaireId), lignes = lignesPropres(i.lignes, true);
+        const a = chantierOuErreur(i.affaireId, acc), lignes = lignesPropres(i.lignes, true);
         if (!lignes.length) throw new Error('Aucune ligne avec une quantité.');
         const c = creerRecord('commandes', { numero: '', fournisseurId: '', affaireId: a.id, date: new Date().toISOString().slice(0, 10), dateLivraison: /^\d{4}-\d{2}-\d{2}$/.test(i.pourLe || '') ? i.pourLe : '', statut: 'Brouillon',
           lignes, note: String(i.note || '').slice(0, 500), origine: 'assistant', demandePar: acc.nom || acc.login }, `Assistant (${acc.login})`);
@@ -185,7 +190,7 @@ function creer({ DB, db, broadcast, notifier, fiches = null }) {
     { name: 'signaler', droit: 'signaler', description: 'Compagnon : signale un problème, un manque ou une réserve au bureau (chargé d\'affaires du chantier).',
       input_schema: S({ affaireId: { type: 'string' }, sujet: { type: 'string' }, details: { type: 'string' }, urgent: { type: 'boolean' } }, ['sujet', 'details']),
       run: (i, acc) => {
-        const a = chantierOuErreur(i.affaireId);
+        const a = chantierOuErreur(i.affaireId, acc);
         const dest = a && a.chargeId ? [a.chargeId] : tous('users').filter(u => u.role === 'charge').map(u => u.id);
         dest.forEach(uid => notifier && notifier({ type: 'assistant', userId: uid, affaireId: a ? a.id : '', titre: `${i.urgent ? '⚠️ URGENT — ' : ''}${String(i.sujet).slice(0, 80)}${a ? ` (${a.code})` : ''}`, texte: `${acc.nom || acc.login} : ${String(i.details).slice(0, 400)}`, lien: a ? `#/chantier/${a.id}` : '', date: new Date().toISOString(), lu: false }));
         DB.audit(db, acc.login, 'signalement via l\'assistant', 'affaires', a ? a.id : null, String(i.sujet).slice(0, 80));

@@ -63,7 +63,9 @@ test('compagnon : données filtrées, réglages, documents et notification', asy
   await call('PUT', '/api/settings', { ...settings, compagnon: {} }, admin);
 
   // Matériel saisi par un compagnon : prix de la bibliothèque, jamais le sien ; réponse sans prix
-  const c = await call('PUT', '/api/records/consommations/cs-k', { data: { affaireId: 'hd2', userId: 'o1', date: '2026-10-16', articleId: 'a4', designation: 'Coude', qte: 2, pu: 1, cout: 1 } }, kevin);
+  // (sur un chantier où il est prévu : af1 ; af2, chantier terminé où personne de son équipe n'intervient, lui est refusé)
+  assert.strictEqual((await call('PUT', '/api/records/consommations/cs-h', { data: { affaireId: 'af2', userId: 'o1', date: '2026-10-16', articleId: 'a4', designation: 'Coude', qte: 2 } }, kevin)).status, 403);
+  const c = await call('PUT', '/api/records/consommations/cs-k', { data: { affaireId: 'af1', userId: 'o1', date: '2026-10-16', articleId: 'a4', designation: 'Coude', qte: 2, pu: 1, cout: 1 } }, kevin);
   assert.strictEqual(c.status, 200); assert.strictEqual(c.body.pu, undefined);
   const vu = (await call('GET', '/api/records/consommations/cs-k', null, claire)).body;
   assert.strictEqual(vu.pu, 26); assert.strictEqual(vu.cout, 21);
