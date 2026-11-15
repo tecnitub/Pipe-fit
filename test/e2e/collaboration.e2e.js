@@ -47,8 +47,17 @@ test('deux onglets, deux personnes sur la même étude : fusion, conflit, prése
   await enregistre(A.p, id);
   await B.p.evaluate(() => location.reload()); await B.p.waitForTimeout(1500);
   for (const o of [A, B]) { await o.p.evaluate(i => { location.hash = `#/etude/${i}`; }, id); await o.p.waitForTimeout(500); }
-  const v0 = await B.p.evaluate(i => etudeDe(i)._v, id);
-  assert.strictEqual(await A.p.evaluate(i => etudeDe(i)._v, id), v0);
+  // Les deux onglets peuvent réenregistrer seuls (suivi des étapes une fois le chantier lu) : on attend qu'ils soient
+  // stables puis qu'ils convergent vers la même version par le signalement de présence
+  let v1 = 0, v2 = -1;
+  for (let k = 0; k < 15 && v1 !== v2; k++) {
+    await A.p.waitForTimeout(600); await enregistre(A.p, id); await enregistre(B.p, id);
+    await A.p.evaluate(() => Collaboration.battre()); await B.p.evaluate(() => Collaboration.battre());
+    await enregistre(A.p, id); await enregistre(B.p, id);
+    v1 = await A.p.evaluate(i => etudeDe(i)._v, id); v2 = await B.p.evaluate(i => etudeDe(i)._v, id);
+  }
+  assert.strictEqual(v2, v1, 'les deux onglets ont la même version de l\'étude');
+  const v0 = v1;
 
   // Présence : chacun voit l'autre sur l'étude
   await A.p.evaluate(() => Collaboration.battre());
