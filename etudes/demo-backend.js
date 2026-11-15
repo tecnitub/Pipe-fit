@@ -153,6 +153,13 @@
     if (p[0] === 'pf' && p[1] === 'fiches' && p[2] === 'pages') { const f = ((crm() || seed).fichesTech || []).find(x => x.id === new URL(url, 'http://x').searchParams.get('id')); return f ? rep(200, { pages: (((crm() || {}).fichesTexte || {})[f.id]) || [(f.texteDemo || []).join('\n')].filter(Boolean) }) : err(404, 'Fiche inconnue'); }
     if (p[0] === 'pf' && p[1] === 'fiches' && p[2] === 'catalogue-lignes') return rep(200, ((crm() || seed).fichesTech || []).filter(f => !f.absente && !f.remplaceePar && (f.type || 'fiche') === 'fiche').flatMap(f => (f.references || []).map(r => { const c = (f.caracParRef || {})[String(r).toUpperCase().replace(/[^A-Z0-9]/g, '')] || f.carac || {}; return { fabricant: f.fabricant, reference: r, famille: f.famille || 'autre', designation: f.designation || '', ...(c.Q ? { Qmax: c.Q } : {}), ...(c.Pch || c.Pfr || c.P ? { P: c.Pch || c.Pfr || c.P } : {}), ...(c.Pel ? { Pelec: c.Pel } : {}) }; })));
     if (p[0] === 'pf' && p[1] === 'fiches' && p[2] === 'catalogue') return rep(200, { total: new Set((body().lignes || []).map(l => l.url)).size, demo: true });
+    // Retour du chantier et retour d'expérience des modèles : calculés sur les données de la démo du CRM, comme le serveur Pipe-Fit
+    if (p[0] === 'pf' && p[1] === 'retour') { const q = new URL(url, 'http://x').searchParams, c = crm() || seed; return rep(200, typeof RetourChantier === 'undefined' ? {} : RetourChantier.collecter({ misesEnService: c.misesEnService, equilibrages: c.equilibrages, reserves: c.reserves, suivis: c.materielSuivi || [] }, q.get('affaireId') || '', q.get('etudeId') || '')); }
+    if (p[0] === 'pf' && p[1] === 'rex-modeles') {
+      const c = crm() || seed, liens = c.liens || [];
+      if (typeof RexEquipements === 'undefined' || typeof MaterielRetenu === 'undefined') return rep(200, []);
+      return rep(200, RexEquipements.historique((c.affaires || []).map(a => ({ id: a.id, code: a.code || '', interventions: (a.contrat || {}).interventions || [], materiel: MaterielRetenu.pourChantier(liens.filter(l => l.affaireId === a.id), (c.materielSuivi || []).filter(x => x.affaireId === a.id)) })), new Date().toISOString().slice(0, 10)));
+    }
     if (p[0] === 'pf' && p[1] === 'materiel-suivi') return rep(200, ((crm() || {}).materielSuivi || []).filter(x => x.etudeId === new URL(url, 'http://x').searchParams.get('etudeId')));
     // Reliée au CRM : devis et note de calcul créés par la page du CRM
     if (dansCrm && p[0] === 'pf' && ['document', 'devis'].includes(p[1]) && method === 'POST') {

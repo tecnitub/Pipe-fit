@@ -62,6 +62,7 @@ function contratChantierHtml(a) {
       ${ech.length ? `<h3>Facturation</h3><div class="table-wrap"><table><tr><th>Période</th><th class="num">Montant HT</th><th>Facture</th></tr>
         ${ech.map(x => { const f = x.factureId && Store.get('factures', x.factureId); return `<tr><td>${dateFr(x.du)} → ${dateFr(x.au)}</td><td class="num">${eur(x.montant)}</td>
           <td>${f ? `<a href="#/facture/${esc(f.id)}">${esc(f.numero || 'facture')}</a> <span class="badge">${esc(f.statut)}</span>` : bureau && x.du <= auj ? `<button class="small" data-ct-fact="${esc(x.periode)}">🧾 Facturer</button>` : '<span class="muted small">à venir</span>'}</td></tr>`; }).join('')}</table></div>` : ''}
+      ${interventionsContratHtml(a, bureau)}
       ${bureau && b.fin && b.fin <= Contrats.plusMois(auj, 2) ? '<button class="small secondary" id="ct-renouv">🔁 Renouveler le contrat</button>' : ''}
     </div>`;
 }
@@ -103,6 +104,12 @@ function bindContratChantier(root, a) {
     m.querySelector('#ctv-x').onclick = Modal.close;
     m.querySelector('#ctv-ok').onclick = () => { const parId = m.querySelector('#ctv-par').value; Contrats.marquerFaite(c, v.id, { date: m.querySelector('#ctv-date').value, parId, par: parId ? userName(parId) : '', observations: m.querySelector('#ctv-obs').value, operations: [...m.querySelectorAll('[data-op]')].map(x => x.checked) }); Modal.close(); maj(c, 'Visite enregistrée'); };
   });
+  // Interventions (pannes, pièces changées) rattachées à l'équipement : retour d'expérience par modèle (études suivantes)
+  const iv = z.querySelector('#ct-interv'); if (iv) iv.onclick = () => nouvelleInterventionContrat(a, maj);
+  z.querySelectorAll('[data-ct-iv-suppr]').forEach(b => b.onclick = async () => {
+    if (!await ask('Supprimer cette intervention ?', 'Supprimer')) return;
+    const c = JSON.parse(JSON.stringify(a.contrat)); c.interventions = (c.interventions || []).filter(x => x.id !== b.dataset.ctIvSuppr); maj(c, 'Intervention supprimée');
+  });
   z.querySelectorAll('[data-ct-cr]').forEach(b => b.onclick = () => {
     const v = a.contrat.visites.find(x => x.id === b.dataset.ctCr), corps = () => `<h3 class="doc-h">Visite d'entretien</h3><p>Prévue le ${dateFr(v.prevue)}, réalisée le ${dateFr(v.faiteLe)}${v.par ? ` par ${esc(v.par)}` : ''}.</p>
       <table class="doc-lines compact"><tr><th>Équipement</th><th>Opération</th><th>Intervenant</th><th>Réalisée</th></tr>${v.operations.map(o => `<tr><td>${esc(o.equipement)}</td><td>${esc(o.operation)}</td><td>${esc(o.intervenant)}</td><td>${o.faite ? 'oui' : '<strong>non</strong>'}</td></tr>`).join('')}</table>
@@ -117,4 +124,36 @@ function bindContratChantier(root, a) {
     c.factures = [...(c.factures || []), { periode: e.periode, factureId: f.id }];
     maj(c, 'Facture de l\'échéance créée');
   });
+}
+
+/* ---------- Interventions du contrat : pannes, pièces changées (retour d'expérience des modèles) ---------- */
+function interventionsContratHtml(a, bureau) {
+  const l = ((a.contrat || {}).interventions || []).slice().sort((x, y) => String(y.date).localeCompare(String(x.date)));
+  return `<h3>Interventions <span class="muted small">${l.length ? `${l.filter(x => RexEquipements.defaillance(x)).length} panne(s) ou pièce(s) changée(s)` : 'pannes, pièces changées'}</span></h3>
+    ${l.length ? `<div class="table-wrap"><table><tr><th>Date</th><th>Type</th><th>Équipement</th><th>Description, pièces</th><th></th></tr>${l.map(x => `<tr><td>${dateFr(x.date)}</td><td>${esc(x.type)}</td>
+      <td>${esc(x.designation || x.repere || '—')}<br><span class="small muted">${esc([x.fabricant, x.reference].filter(Boolean).join(' '))}${x.serie ? ` · n° ${esc(x.serie)}` : ''}${x.rattachePar ? ` · retrouvé par ${esc(x.rattachePar)}` : x.reference ? '' : ' · <span class="warn-text">équipement non retrouvé</span>'}</span></td>
+      <td class="small">${esc(x.description)}${(x.pieces || []).length ? `<br>Pièces : ${esc(x.pieces.map(p => `${p.designation}${p.qte > 1 ? ` × ${p.qte}` : ''}`).join(', '))}` : ''}</td>
+      <td>${bureau ? `<button class="small danger" data-ct-iv-suppr="${esc(x.id)}" aria-label="Supprimer l'intervention">✕</button>` : ''}</td></tr>`).join('')}</table></div>` : '<p class="small muted">Pannes et pièces changées rattachées à l\'équipement (n° de série ou repère) : historique par modèle sur toutes les affaires, alerte dans les études qui retiennent un modèle peu fiable.</p>'}
+    ${bureau ? '<button class="small secondary" id="ct-interv">＋ Intervention (panne, pièce changée)</button>' : ''}`;
+}
+function nouvelleInterventionContrat(a, maj) {
+  const ms = (typeof materielChantier !== 'undefined' && materielChantier.get(a.id)) || [];
+  const m = Modal.open(`<h2>Intervention sur un équipement</h2>
+    <div class="grid2"><div class="field"><label for="iv-date">Date</label><input type="date" id="iv-date" value="${isoDate(new Date())}"></div>
+      <div class="field"><label for="iv-type">Type</label><select id="iv-type">${RexEquipements.TYPES.map(t => `<option>${esc(t)}</option>`).join('')}</select></div>
+      <div class="field" style="grid-column:1/-1"><label for="iv-eq">Équipement du chantier</label><select id="iv-eq"><option value="">— retrouver par n° de série ou repère —</option>${ms.map(x => `<option value="${esc(`${x.etudeId}|${x.cle}`)}">${esc(`${x.designation} — ${[x.fabricant, x.reference].filter(Boolean).join(' ')}${x.serie ? ` (n° ${x.serie})` : ''}`)}</option>`).join('')}</select></div>
+      <div class="field"><label for="iv-serie">N° de série</label><input id="iv-serie"></div><div class="field"><label for="iv-rep">Repère</label><input id="iv-rep" placeholder="P1, CTA-01…"></div>
+      <div class="field"><label for="iv-fab">Fabricant (si l'équipement n'est pas retrouvé)</label><input id="iv-fab"></div><div class="field"><label for="iv-ref">Référence</label><input id="iv-ref"></div></div>
+    <div class="field"><label for="iv-desc">Constat, travaux</label><textarea id="iv-desc" rows="2" data-dictee placeholder="Ex. pompe bloquée, garniture remplacée"></textarea></div>
+    <div class="field"><label for="iv-pieces">Pièces changées (une par ligne)</label><textarea id="iv-pieces" rows="2" placeholder="Garniture mécanique"></textarea></div>
+    <div class="actions"><button class="secondary" id="iv-x">Annuler</button><button id="iv-ok">Enregistrer</button></div>`);
+  const v = s => m.querySelector(s).value.trim();
+  m.querySelector('#iv-x').onclick = Modal.close;
+  m.querySelector('#iv-ok').onclick = () => {
+    if (!v('#iv-eq') && !v('#iv-serie') && !v('#iv-rep') && !v('#iv-ref')) return notify('Choisissez l\'équipement, ou indiquez son n° de série, son repère ou sa référence.');
+    const o = RexEquipements.intervention({ date: v('#iv-date'), type: v('#iv-type'), equipement: v('#iv-eq'), serie: v('#iv-serie'), repere: v('#iv-rep'), fabricant: v('#iv-fab'), reference: v('#iv-ref'), description: v('#iv-desc'), pieces: v('#iv-pieces') }, ms,
+      { id: `iv${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, par: userName(Store.me.userId) || Store.me.nom || '' });
+    const c = JSON.parse(JSON.stringify(Store.get('affaires', a.id).contrat)); c.interventions = [...(c.interventions || []), o].slice(-500);
+    Modal.close(); maj(c, o.rattachePar ? `Intervention enregistrée sur ${o.designation} (retrouvé par ${o.rattachePar})` : 'Intervention enregistrée (équipement non retrouvé dans le matériel retenu)');
+  };
 }

@@ -114,7 +114,9 @@ function bindEssai(root, kind, e, { manques, calc, maj }) {
       if (signer && kind === 'mes' && o.materiel && o.affaireId && (o.photoPlaqueId || String(o.numeroSerie || '').trim())) {
         const [etudeId, ...cle] = String(o.materiel).split('|');
         HorsLigne.appeler('POST', '/api/liens/materiel/suivi', { affaireId: o.affaireId, action: 'photo', lignes: [{ etudeId, cle: cle.join('|') }], ...(o.photoPlaqueId ? { fichierId: o.photoPlaqueId, nom: `Plaque ${o.numero || o.equipement || ''}`.trim() } : {}),
-          ...(String(o.numeroSerie || '').trim() ? { serie: String(o.numeroSerie).trim(), serieLue: false } : {}) }).catch(() => {});
+          ...(String(o.numeroSerie || '').trim() ? { serie: String(o.numeroSerie).trim(), serieLue: false } : {}),
+          // Marque et modèle du PV (lus sur la plaque ou saisis) : comparés au modèle retenu (alerte de substitution)
+          ...(String(o.marque || '').trim() ? { marqueLue: String(o.marque).trim() } : {}), ...(String(o.modele || '').trim() ? { modeleLu: String(o.modele).trim() } : {}) }).catch(() => {});
       }
       Object.assign(essaiBrouillon[kind], { cle: null, e: null });
       App.toast(signer ? `${conf.court} signé` : 'Brouillon enregistré', 4000);

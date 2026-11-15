@@ -76,7 +76,7 @@ test('serveur : PV de mise en service et relevé d\'équilibrage complets pour �
   await call('POST', '/api/accounts', { login: 'ahmed', password: 'motdepasse1', role: 'atelier', nom: 'Ahmed', userId: 'o2' }, admin);
   const ahmed = (await call('POST', '/api/login', { login: 'ahmed', password: 'motdepasse1' })).cookie;
   const d = (await call('GET', '/api/data', null, ahmed)).body;
-  assert.deepStrictEqual([d.misesEnService.length, d.equilibrages.length], [1, 1]);
+  assert.deepStrictEqual([d.misesEnService.length, d.equilibrages.length], [1, 3]);
   const m = { affaireId: 'af4', userId: 'o2', date: '2026-10-21', type: 'pompes', equipement: 'Pompe double P1', ...E.modele('pompes'), statut: 'Signé' };
   assert.match((await call('PUT', '/api/records/misesEnService/ms-t', { data: m }, ahmed)).body.error, /incomplet : points de contrôle non renseignés, conclusion/);
   m.controles.forEach(c => { c.etat = 'OK'; }); m.resultat = 'Mis en service';

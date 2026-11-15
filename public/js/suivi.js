@@ -200,13 +200,14 @@ Views.reception = params => {
 
   <h2>Réserves <span class="muted small">${ouvertes.length} ouverte(s) sur ${res.length}</span></h2>
   <div class="table-wrap"><table><tr><th>N°</th><th>Localisation</th><th>Description</th><th>Responsable</th><th>Échéance</th><th>Photo</th><th>Statut</th><th></th></tr>
-    ${res.map(r => `<tr><td>${esc(r.numero)}</td><td>${esc(r.localisation)}</td><td>${esc(r.description)}${r.commentaireLevee ? `<br><span class="small pos">Levée : ${esc(r.commentaireLevee)}</span>` : ''}</td><td>${esc(r.responsable)}</td>
+    ${res.map(r => `<tr><td>${esc(r.numero)}</td><td>${esc(r.localisation)}</td><td>${esc(r.description)}${r.commentaireLevee ? `<br><span class="small pos">Levée${r.leveePar ? ` par ${esc(r.leveePar)}` : ''} : ${esc(r.commentaireLevee)}</span>` : ''}</td><td>${esc(r.responsable)}${r.assigneA ? `<br><span class="small muted">→ ${esc(userName(r.assigneA))}</span>` : ''}</td>
       <td class="${r.statut !== 'Levée' && r.echeance && r.echeance < isoDate(new Date()) ? 'neg' : ''}">${dateFr(r.echeance)}</td>
       <td>${r.photoId ? `<a href="${fileUrl(r.photoId)}" target="_blank" rel="noopener"><img class="thumb" src="${fileUrl(r.photoId)}" alt="Photo de la réserve"></a>` : ''}${r.photoLeveeId ? `<a href="${fileUrl(r.photoLeveeId)}" target="_blank" rel="noopener"><img class="thumb" src="${fileUrl(r.photoLeveeId)}" alt="Photo après levée"></a>` : ''}</td>
       <td>${r.statut === 'Levée' ? `<span class="badge b-ok">Levée le ${dateFr(r.dateLevee)}</span>` : '<span class="badge b-warn">Ouverte</span>'}${r.pvId ? ' <span class="badge" title="Figée par le procès-verbal">PV</span>' : ''}</td>
       <td class="actions">${r.statut !== 'Levée' ? `<button class="small" data-lever="${r.id}">Lever</button>` : ''}${!r.pvId ? `<button class="small danger" data-delres="${r.id}" aria-label="Supprimer la réserve">✕</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Aucune réserve.</td></tr>'}
   </table></div>
   ${mesReceptionHtml(a, pv)}
+  <div id="res-terrain" data-affaire="${esc(a.id)}">${typeof reservesTerrainHtml === 'function' ? reservesTerrainHtml(a) : ''}</div>
   ${!pv ? `<datalist id="rs-locs">${[...new Set([...res.map(r => r.localisation), ...Store.all('misesEnService').filter(m => m.affaireId === a.id).flatMap(m => [m.localisation, m.zone]), site && site.libelle].map(x => String(x || '').trim()).filter(Boolean))].map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
   <div class="card reserve-form">
     <strong>Nouvelle réserve</strong>
@@ -271,6 +272,8 @@ Views.reception.bind = (root, params) => {
   });
   root.querySelectorAll('[data-delres]').forEach(b => b.onclick = () => ask('Supprimer cette réserve ?', 'Supprimer').then(ok => { if (ok) { Store.remove('reserves', b.dataset.delres); App.render(); } }));
   root.querySelectorAll('[data-lever]').forEach(b => b.onclick = () => leverReserve(Store.get('reserves', b.dataset.lever)));
+  // Réserves de l'étude et des PV : reprise et affectation aux compagnons (reserves-terrain-ui.js)
+  if (typeof chargerReservesTerrain === 'function') chargerReservesTerrain(root, a);
 
   const cvC = root.querySelector('#sig-client');
   if (!cvC) return;

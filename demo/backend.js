@@ -347,6 +347,10 @@
     }
     // État des applications Études et DOE par chantier (envoyé par leurs cadres dans la démonstration)
     if (p[0] === 'liens') {
+      // Retour du chantier vers une étude et retour d'expérience des modèles (comme le serveur)
+      if (p[1] === 'retour' && method === 'GET') return ['admin', 'charge'].includes(acc.role) ? [200, RetourChantier.collecter({ misesEnService: db.misesEnService, equilibrages: db.equilibrages, reserves: db.reserves, suivis: (db.materielSuivi || []).filter(x => x.etudeId === (query.get('etudeId') || '')) }, query.get('affaireId') || '', query.get('etudeId') || '')] : [403, { error: 'Réservé au bureau' }];
+      if (p[1] === 'rex-modeles' && method === 'GET') return ['admin', 'charge'].includes(acc.role) ? [200, RexEquipements.historique((db.affaires || []).map(a => ({ id: a.id, code: a.code || '', interventions: (a.contrat || {}).interventions || [],
+        materiel: MaterielRetenu.pourChantier((db.liens || []).filter(l => l.app === 'etudes' && l.affaireId === a.id), (db.materielSuivi || []).filter(x => x.affaireId === a.id)) })), new Date().toISOString().slice(0, 10))] : [403, { error: 'Réservé au bureau' }];
       if (p[1] === 'materiel' && !p[2] && method === 'GET') {
         if (acc.role === 'atelier' && !Compagnon.regles(db.settings).materiel) return [200, []];
         const aff = query.get('affaireId') || '', lc = Installe.lignesCommandes(db.commandes || [], aff, id => ((db.entreprises || []).find(e => e.id === id) || {}).nom || '', id => (db.articles || []).find(a => a.id === id));
@@ -572,7 +576,7 @@
       const existing = i >= 0 ? db[col][i] : null;
       if (method === 'PUT') {
         const fiche = col === 'users' && existing, interimaire = acc.role === 'charge' && col === 'users' && body.data && body.data.type === 'interimaire' && (!fiche || fiche.type === 'interimaire');
-        if (!canWrite(acc, col) && !(acc.role === 'atelier' && col === 'affaires') && !interimaire) return [403, { error: 'Droits insuffisants' }];
+        if (!canWrite(acc, col) && !(acc.role === 'atelier' && ['affaires', 'reserves'].includes(col)) && !interimaire) return [403, { error: 'Droits insuffisants' }];
         if (existing && body.version !== existing._v) return [409, { error: `Modifié entre-temps par ${existing._by}`, record: existing }];
         let obj = { ...clean(body.data || {}), id };
         if (col === 'factures' && existing && acc.role !== 'admin') obj = { ...clean(existing), statut: obj.statut, exportCompta: obj.exportCompta, datePaiement: obj.datePaiement, relances: obj.relances,
@@ -588,7 +592,9 @@
         // Traçabilité : qui a créé le chantier ou l'intervention, et quand
         if (col === 'affaires' && !existing && !obj.creeLe) Object.assign(obj, { creePar: acc.nom, creeParId: acc.userId || '', creeLe: new Date().toISOString() });
         if (col === 'affaires' && existing) ['creePar', 'creeParId', 'creeLe'].forEach(k => { if (existing[k]) obj[k] = existing[k]; });
-        const refus = col === 'affaires' ? null : atelierRefus(acc, col, obj, existing);
+        // Réserve affectée à un compagnon : seule sa levée (photo, commentaire) est acceptée, comme sur le serveur
+        if (col === 'reserves' && acc.role === 'atelier') { const e = ReservesTerrain.ecritureCompagnon(existing && clean(existing), obj, acc.userId); if (e.refus) return [403, { error: e.refus }]; obj = { ...e.obj, id: obj.id, leveePar: acc.nom }; }
+        const refus = col === 'affaires' || (col === 'reserves' && acc.role === 'atelier') ? null : atelierRefus(acc, col, obj, existing);
         if (refus) return [403, { error: refus }];
         if (col === 'consultations' && obj.terrain) setTimeout(() => { autoCommandesDemo(); save(); }, 0);
         // Matériel saisi par un compagnon : prix de la bibliothèque (comme le serveur)
