@@ -33,6 +33,15 @@ DONNÉES ET SAUVEGARDE
   sur le réseau (choisir un dossier sur un autre disque ou un NAS).
   Journal du serveur : C:\ProgramData\PipeFitCRM\logs\serveur.log
 
+MOT DE PASSE OUBLIÉ (CRM, Études et DOE utilisent les mêmes comptes)
+  Sur le serveur : menu Démarrer > Pipe-Fit CRM > « Mot de passe oublié »
+  (clic droit > Exécuter en tant qu'administrateur). La liste des comptes
+  s'affiche ; tapez l'identifiant puis deux fois le nouveau mot de passe
+  (10 caractères au moins). Les sessions du compte sont fermées.
+  Plus aucun administrateur : tapez --creer-admin pour créer le compte « admin ».
+  Un administrateur peut aussi changer le mot de passe d'un autre compte dans
+  Pipe-Fit > Paramètres > Comptes.
+
 CONFIGURATION DU SERVEUR (dossiers réseau, partage, HTTPS, compte de service)
   Script deploy\windows\configurer-serveur.ps1 du pack de déploiement.
   Mode d'emploi complet : docs\guide-installation.html du pack.

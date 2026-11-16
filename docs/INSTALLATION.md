@@ -168,6 +168,14 @@ chantier. Rien à régler de plus : les deux applications écrivent dans le CRM 
    Renseigner pour chacun son **adresse Microsoft 365** (expéditeur de ses e-mails) et, pour les compagnons, la
    **personne du planning** reliée au compte.
 3. Mots de passe : 10 caractères au moins ; chacun le change dans Paramètres → Mon compte.
+4. **Mot de passe oublié** (CRM, Études et DOE partagent les mêmes comptes) : un administrateur change celui d'un autre
+   compte dans Paramètres → Comptes. S'il s'agit du seul administrateur, réinitialiser **sur le serveur** :
+   - Windows : menu Démarrer → Pipe-Fit CRM → « Mot de passe oublié » (clic droit → Exécuter en tant
+     qu'administrateur), taper l'identifiant puis deux fois le nouveau mot de passe ;
+   - Linux / Docker : `DB_FILE=<chemin de pipefit.db> npm run reinit-mot-de-passe -- <identifiant>` (sans identifiant :
+     liste des comptes ; `--creer-admin` crée un compte `admin` s'il n'existe plus aucun administrateur).
+
+   Les sessions du compte sont fermées (CRM, Études, DOE) ; l'opération est tracée au journal.
 
 ✅ Chaque utilisateur se connecte depuis son poste ; un compagnon ne voit que ses chantiers et ses saisies.
 
