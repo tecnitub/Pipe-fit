@@ -313,24 +313,33 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
 
     // Géométrie unifilaire
     const TRAIT = 0.7, symboles = { forts: [], durs: [] };
+    // Axe d'un symbole : milieu et direction d'écoulement, ou raccordement et direction vers l'appareil (piquage)
+    const axeSymbole = c => {
+      if (c.o.length === 1) {
+        const p = F(c.o[0]); let dx = 0, dy = 1;
+        if (c.dirp) { const q = F([c.o[0][0] + c.dirp[0] * 1000, c.o[0][1] + c.dirp[1] * 1000, c.o[0][2] + c.dirp[2] * 1000]); if (Math.hypot(q[0] - p[0], q[1] - p[1]) > 1e-6) { dx = q[0] - p[0]; dy = q[1] - p[1]; } }
+        const l = Math.hypot(dx, dy) || 1; return [p[0], p[1], dx / l, dy / l];
+      }
+      const o0 = F(c.o[0]), o1 = F(c.o[1]); let dx = o1[0] - o0[0], dy = o1[1] - o0[1]; const l = Math.hypot(dx, dy) || 1;
+      return [(o0[0] + o1[0]) / 2, (o0[1] + o1[1]) / 2, dx / l, dy / l];
+    };
     const perp = (a, b, l) => { const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1; return [-dy / L * l, dx / L * l]; };
     s.composants.forEach(c => {
       const e = c.ext.map(x => F(x.p));
       if (c.axe) { const a = F(c.axe); e.forEach(p => line(p[0], p[1], a[0], a[1], 'k-ink', TRAIT)); return; }
-      if (e.length < 2) return;
+      if (e.length < 2 && !c.sym) return;
       const [a, b] = e;
-      if (c.type === 'Bride') {
-        line(a[0], a[1], b[0], b[1], 'k-ink', TRAIT);
-        const face = c.ext[0].ext || !s.composants.some(o => o.type === 'Tube' && o.ext.some(x => x.p.join() === c.ext[0].p.join())) ? a : b;
-        const q = perp(a, b, 2.2); line(face[0] - q[0], face[1] - q[1], face[0] + q[0], face[1] + q[1], 'k-ink', 0.5);
-      } else if (c.sym) {
-        // Symbole d'isométrie normalisé (même définition que le complément), orienté dans le sens de l'écoulement
-        const o0 = F(c.o[0]), o1 = F(c.o[1]);
-        let dx = o1[0] - o0[0], dy = o1[1] - o0[1]; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
-        const mx = (o0[0] + o1[0]) / 2, my = (o0[1] + o1[1]) / 2, px = -dy, py = dx;
+      if (c.sym) {
+        // Symbole d'isométrie normalisé (même définition que le complément), orienté dans le sens de l'écoulement ;
+        // appareil sur piquage : depuis son raccordement, vers l'appareil
+        const [mx, my, dx, dy] = axeSymbole(c), px = -dy, py = dx;
         const segs = c.sym.map(([u1, v1, u2, v2]) => [mx + u1 * dx + v1 * px, my + u1 * dy + v1 * py, mx + u2 * dx + v2 * px, my + u2 * dy + v2 * py]);
         segs.forEach(q => { line(q[0], q[1], q[2], q[3], 'k-ink', 0.3); symboles.forts.push(q); });
         symboles.durs.push([Math.min(...segs.map(q => Math.min(q[0], q[2]))), Math.min(...segs.map(q => Math.min(q[1], q[3]))), Math.max(...segs.map(q => Math.max(q[0], q[2]))), Math.max(...segs.map(q => Math.max(q[1], q[3])))]);
+      } else if (c.type === 'Bride') {
+        line(a[0], a[1], b[0], b[1], 'k-ink', TRAIT);
+        const face = c.ext[0].ext || !s.composants.some(o => o.type === 'Tube' && o.ext.some(x => x.p.join() === c.ext[0].p.join())) ? a : b;
+        const q = perp(a, b, 2.2); line(face[0] - q[0], face[1] - q[1], face[0] + q[0], face[1] + q[1], 'k-ink', 0.5);
       } else if (c.type === 'Vanne' || c.type === 'Accessoire') {
         const q = perp(a, b, 2.4);
         el('path', { d: `M${a[0]+q[0]} ${Y(a[1]+q[1])}L${b[0]-q[0]} ${Y(b[1]-q[1])}L${b[0]+q[0]} ${Y(b[1]+q[1])}L${a[0]-q[0]} ${Y(a[1]-q[1])}Z`, class: 'k-ink', 'stroke-width': 0.35, 'stroke-linejoin': 'round' }, g);
@@ -368,8 +377,8 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
       const lt = Pl.largeur(c.v, 2.5) + 1;
       let mx, my, cadre;
       let libre = false;
-      for (const cote2 of [2.2, -2.2]) {
-        for (const t of [0.5, 0.35, 0.65, 0.22, 0.78, 0.1, 0.9]) {
+      for (const cote2 of [2.2, -2.2, 5.6, 9.0]) {
+        for (const t of [0.5, 0.35, 0.65, 0.22, 0.78, 0.1, 0.9, -0.6, 1.6, -1.2, 2.2]) {
           mx = ax + (bx - ax) * t + nx * cote2; my = ay + (by - ay) * t + ny * cote2;
           cadre = Pl.tourne(mx, my, lt, 3.3, ang);
           if (!obs.durs.some(o => Pl.recouvre(cadre, o))) { libre = true; break; }
@@ -411,8 +420,9 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
     if (st.rep) {
       const bulle = (c, x, y, dir) => { const d = Math.max(4.8, Pl.largeur(c.repere, 2.3, true) + 1.6); etiq.push({ forme: 'bulle', texte: c.repere, w: d, h: d, ancrages: [[x, y]], dir }); };
       s.composants.filter(c => c.sym).forEach(c => {
-        const o0 = F(c.o[0]), o1 = F(c.o[1]), mx = (o0[0] + o1[0]) / 2, my = (o0[1] + o1[1]) / 2;
-        bulle(c, mx, my, normale(o1[0] - o0[0], o1[1] - o0[1], mx, my));
+        const [mx, my, dx, dy] = axeSymbole(c);
+        if (c.o.length === 1) bulle(c, mx + dx * 9, my + dy * 9, [dx, dy]);
+        else bulle(c, mx, my, normale(dx, dy, mx, my));
       });
       s.composants.filter(c => !c.sym && c.type !== 'Tube').forEach(c => {
         if (c.axe) { const a = F(c.axe); bulle(c, a[0], a[1], [a[0] - centre[0], a[1] - centre[1]]); return; }

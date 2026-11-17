@@ -337,6 +337,32 @@ static class Tests
             Verifier(AnalyseSpool.Classer(Acc("Dilatoflex")) == TypeComposant.Accessoire && AnalyseSpool.Classer(Acc("Clapet à battant")) == TypeComposant.Vanne,
                 "compensateur = accessoire, clapet = vanne");
 
+            // Robinetterie installée par TECNITUB (fiche technique robinetterie) : reconnue par la seule référence du type
+            var refs = new[]
+            {
+                ("ASTORI 304", GenreRobinet.Boisseau), ("304AB DN25", GenreRobinet.Boisseau), ("VPI 4648-02 DN100", GenreRobinet.Papillon), ("VPE 4508-08 DN400", GenreRobinet.Papillon),
+                ("STAD DN40", GenreRobinet.Reglage), ("STAF DN80", GenreRobinet.Reglage), ("CGR 165 DN25", GenreRobinet.Reglage),
+                ("FLEXVENT SUPER R7", GenreRobinet.Purgeur), ("Flamco Flexvent R9", GenreRobinet.Purgeur), ("F 3240-EP DN65", GenreRobinet.Filtre),
+                ("WIKA 818i 0-6 bar", GenreRobinet.Manometre), ("CGR 293CB", GenreRobinet.Thermometre), ("294CB L100", GenreRobinet.Thermometre),
+                ("CB 3448N DN80", GenreRobinet.Clapet), ("DI 7240N DN65", GenreRobinet.Compensateur), ("Manchon anti-vibratile", GenreRobinet.Compensateur),
+                ("V2V COMBINEE DN50", GenreRobinet.Motorisee), ("Vanne 2 voies Siemens", GenreRobinet.Motorisee), ("CGR 369 DN100", GenreRobinet.Compensateur),
+            };
+            foreach (var (type, g) in refs)
+                Verifier(Robinetterie.Genre(Acc("Accessoire de canalisation", type)) == g, "référence « " + type + " » : " + Robinetterie.Genre(Acc("Accessoire de canalisation", type)) + " au lieu de " + g);
+            Verifier(Robinetterie.Genre(Acc("Tuyau", "Inox 304L")) != GenreRobinet.Boisseau, "« 304L » (inox) n'est pas un boisseau");
+            // Appareils sur piquage (un seul raccordement) : symbolisés
+            var pur = Acc("Accessoire", "FLEXVENT SUPER R7"); pur.Extremites.RemoveAt(1); pur.Type = TypeComposant.Autre;
+            var spu = new Spool { Nom = "PU" }; spu.Composants.Add(pur); AnalyseSpool.Analyser(spu);
+            Verifier(pur.Genre == GenreRobinet.Purgeur && Robinetterie.Symbolise(pur) && pur.Designation.StartsWith("Purgeur d'air"), "purgeur sur piquage : symbolisé (" + pur.Designation + ")");
+            Verifier(Legende.Pour(spu).Any(x => x.Code == "PURGEUR"), "purgeur dans la légende de l'isométrie");
+            // Purgeur vissé sur un tube : joint démontable, pas de soudure
+            var tpu = new Spool { Nom = "TP" };
+            tpu.Composants.Add(C("t", "Tuyau", "", TypeComposant.Tube, 15, 200, null, E(0, 0, 0, 15, null), E(200, 0, 0, 15, "p")));
+            var pu2 = Acc("Accessoire", "FLEXVENT R9"); pu2.Id = "p"; pu2.Type = TypeComposant.Autre; pu2.Extremites.RemoveAt(1);
+            pu2.Extremites[0].Position = new Point3(200, 0, 0); pu2.Extremites[0].ConnecteA = "t"; tpu.Composants.Add(pu2);
+            AnalyseSpool.Analyser(tpu);
+            Verifier(tpu.Nombre(NatureAssemblage.Soudure) == 0 && tpu.Nombre(NatureAssemblage.Boulonne) == 1, "purgeur vissé : joint démontable, sans soudure");
+
             // Le nom du TYPE décide : famille générique, types parlants ; correspondance choisie pour un type muet
             var gen = Acc("Accessoire de canalisation", "Vanne papillon DN100");
             Verifier(Robinetterie.Genre(gen) == GenreRobinet.Papillon, "genre lu dans le nom du type");
@@ -384,7 +410,7 @@ static class Tests
             var vus = new HashSet<int>();
             foreach (GenreRobinet g in Enum.GetValues(typeof(GenreRobinet)))
                 if (g != GenreRobinet.Aucun) vus.Add(Robinetterie.Symbole(g).Count * 100 + (int)Math.Round(Robinetterie.Symbole(g).Sum(x => x.U1 + x.V2) * 10));
-            Verifier(vus.Count == 7, "7 symboles différents");
+            Verifier(vus.Count == 11, "11 symboles différents : " + vus.Count);
             var pl = Robinetterie.Placer(new List<Robinetterie.Segment> { new Robinetterie.Segment(1, 0, 0, 1) }, 10, 20, 0, 1);
             Verifier(Math.Abs(pl[0].x1 - 10) < 1e-9 && Math.Abs(pl[0].y1 - 21) < 1e-9 && Math.Abs(pl[0].x2 - 9) < 1e-9 && Math.Abs(pl[0].y2 - 20) < 1e-9, "symbole tourné sur l'axe du tube");
         }
@@ -430,7 +456,7 @@ static class Tests
         // Légende des symboles
         {
             var toutes = Legende.Toutes().ToList();
-            Verifier(toutes.Count == 14 && toutes.All(t => Legende.Dessin(t.Code).Traits.Count > 0), "légende : 14 symboles, tous dessinés");
+            Verifier(toutes.Count == 18 && toutes.All(t => Legende.Dessin(t.Code).Traits.Count > 0), "légende : 18 symboles, tous dessinés");
             Verifier(toutes.All(t => Legende.Dessin(t.Code).Traits.All(x => Math.Abs(x.U1) <= 11 && Math.Abs(x.U2) <= 11 && Math.Abs(x.V1) <= 3.6 && Math.Abs(x.V2) <= 3.6)),
                 "chaque symbole tient dans sa case (22 × 7 mm)");
             var spl = Exemple(); AnalyseSpool.Analyser(spl);
@@ -443,7 +469,7 @@ static class Tests
             var compl = Legende.Compacte(Legende.Toutes());
             Verifier(compl.Lignes.SelectMany(l => new[] { l[1], l[3] }).All(x => MiseEnPage.Tronquer(x, 62, 2.5) == x), "légende compacte : aucun libellé tronqué");
             var tout = Legende.Tableau(Legende.Toutes());
-            Verifier(tout.Lignes.Count == 14 && tout.Largeur <= 130.001, "légende complète : 14 lignes");
+            Verifier(tout.Lignes.Count == 18 && tout.Largeur <= 130.001, "légende complète : 18 lignes");
         }
 
         // Liste de débit : longueur de l'élément Revit, système de canalisation, calepinage en barres de 6 m

@@ -117,6 +117,15 @@ sealed class Ligne
         Ouvert.Extremites[1].ConnecteA = exterieur;
     }
 
+    /// <summary>Appareil sur piquage (purgeur, manomètre…) au bout d'une dérivation : un seul raccordement.</summary>
+    public void Appareil(double axe, string fam, string type)
+    {
+        Tube(axe);
+        var c = Ajouter(fam, type, Dn, null, 0, (Pos, Dir * -1, Dn));
+        c.EstAccessoire = true;
+        Relier(c, 0); Ouvert = c; Bout = 0;
+    }
+
     public void FinTube(double axe, string exterieur)
     {
         Tube(axe);
@@ -146,13 +155,16 @@ static class Demo
             .Coude(2000, Y).Vanne(700, "Vanne papillon", 52).Coude(800, M(Z)).FinTube(1200, "SP-103");
         res.Add(b);
 
-        // SP-104 : essai robinetterie, eau glacée DN100 de la pompe P2 à la CTA-03 : vanne papillon, clapet anti-retour,
-        // vanne de réglage (équilibrage) et compensateur Dilatoflex, chacun entre deux brides
+        // SP-104 : essai avec la robinetterie installée par TECNITUB (fiche technique), eau glacée DN100 de la pompe P2 à la
+        // CTA-03. Famille générique : seule la RÉFÉRENCE du type donne le symbole (VPI 4648 → papillon, F 3240 → filtre,
+        // CB 3448 → clapet, STAF → réglage, V2V → vanne motorisée, DI 7240 → manchon anti-vibratile, FLEXVENT → purgeur)
         var d = new Spool { Nom = "SP-104" };
         new Ligne(d, "EG-104", "Acier P235GH").Depart(new Point3(0, 0, 0), X, 100, "POMPE-P2").Arrivee()
-            // Famille générique : c'est le nom du type qui donne le symbole (STAD-F → vanne de réglage)
-            .Vanne(700, "Robinetterie à brides", 52, "Vanne papillon DN100 PN16").Vanne(600, "Robinetterie à brides", 190, "Clapet à battant DN100").Coude(800, Z)
-            .Vanne(500, "Robinetterie à brides", 290, "STAD-F DN100").Coude(700, Y).Vanne(500, "Robinetterie à brides", 130, "Dilatoflex DN100 L130").FinBride(600, "CTA-03");
+            .Vanne(600, "Robinetterie à brides", 52, "TECOFI VPI 4648-02 DN100").Vanne(500, "Robinetterie à brides", 280, "TECOFI F 3240-EP DN100")
+            .Vanne(500, "Robinetterie à brides", 180, "TECOFI CB 3448N DN100").Coude(700, Z).Te(500, X, out var brp)
+            .Vanne(500, "Robinetterie à brides", 290, "IMI STAF DN100").Coude(700, Y)
+            .Vanne(500, "Robinetterie à brides", 250, "SIEMENS V2V COMBINEE DN100").Vanne(500, "Robinetterie à brides", 130, "TECOFI DI 7240N DN100").FinBride(500, "CTA-03");
+        brp.Appareil(250, "Accessoire de canalisation", "FLAMCO FLEXVENT SUPER R7");
         res.Add(d);
 
         // SP-103 : retour process DN80 réduit en DN50
@@ -277,8 +289,10 @@ static class Demo
                 composants = s.Composants.Select(c => new
                 {
                     id = c.Id, type = c.Type.ToString(), designation = c.Designation, repere = c.Repere, dn = c.DnMm, genre = c.Genre.ToString(),
-                    sym = c.Genre != GenreRobinet.Aucun ? Robinetterie.Symbole(c.Genre).Select(x => new[] { x.U1, x.V1, x.U2, x.V2 }) : null,
+                    sym = Robinetterie.Symbolise(c) ? Robinetterie.Symbole(c.Genre).Select(x => new[] { x.U1, x.V1, x.U2, x.V2 }) : null,
                     o = c.Genre != GenreRobinet.Aucun ? Robinetterie.Ordre(c).Select(x => P(x.Position)) : null,
+                    // Appareil sur piquage : axe vers l'appareil (sens inverse de son connecteur)
+                    dirp = Robinetterie.Symbolise(c) && c.Extremites.Count == 1 && c.Extremites[0].Direction.HasValue ? P(c.Extremites[0].Direction.Value * -1) : null,
                     axe = Cotation.EstNoeud(c) ? P(Cotation.PointAxe(c)) : null,
                     ext = c.Extremites.Select(e => new { p = P(e.Position), dn = e.DnMm, ext = e.ConnecteA != null && !s.Composants.Any(x => x.Id == e.ConnecteA) ? e.ConnecteA : null }),
                 }),

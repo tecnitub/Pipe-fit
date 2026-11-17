@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 
 namespace PipeFit.Isometries.Core
 {
-    public enum GenreRobinet { Aucun, Vanne, Papillon, Reglage, Clapet, Boisseau, Filtre, Compensateur }
+    public enum GenreRobinet { Aucun, Vanne, Papillon, Reglage, Clapet, Boisseau, Filtre, Compensateur, Motorisee, Purgeur, Manometre, Thermometre }
 
     public static class Robinetterie
     {
@@ -42,12 +42,18 @@ namespace PipeFit.Isometries.Core
         {
             var n = AnalyseSpool.Normaliser(nom);
             if (n == "") return GenreRobinet.Aucun;
-            if (Regex.IsMatch(n, @"compensateur|dilatoflex|dilatation|soufflet|manchette|antivibrat|lyre|bellows|expansion")) return GenreRobinet.Compensateur;
-            if (Regex.IsMatch(n, @"clapet|anti ?retour|\bcheck\b|non ?return")) return GenreRobinet.Clapet;
-            if (Regex.IsMatch(n, @"reglage|equilibrage|balancing|\bstad|\btbv|\bmsv|regulat|debit")) return GenreRobinet.Reglage;
-            if (Regex.IsMatch(n, @"papillon|butterfly")) return GenreRobinet.Papillon;
-            if (Regex.IsMatch(n, @"boisseau|quart de tour|\bball\b|sphere|\bbille")) return GenreRobinet.Boisseau;
-            if (Regex.IsMatch(n, @"filtre|strainer|tamis")) return GenreRobinet.Filtre;
+            // Mots-clés génériques (français, anglais) et références des fabricants utilisés par TECNITUB
+            // (fiche technique robinetterie : ASTORI, TECOFI, IMI Hydronic, CGR, FLAMCO, WIKA, SIEMENS)
+            if (Regex.IsMatch(n, @"compensateur|dilatoflex|dilatation|soufflet|manchette|anti ?vibrat|lyre|bellows|expansion|\bdi ?7240|\bcgr ?369")) return GenreRobinet.Compensateur;
+            if (Regex.IsMatch(n, @"clapet|anti ?retour|\bcheck\b|non ?return|battant|\bcb ?3448")) return GenreRobinet.Clapet;
+            if (Regex.IsMatch(n, @"2 voies|deux voies|3 voies|trois voies|\bv2v|\bv3v|motoris|servomoteur|actionneur|\bpicv|vanne de regulation|regulation motor|control valve|\bsiemens|\bbelimo")) return GenreRobinet.Motorisee;
+            if (Regex.IsMatch(n, @"reglage|equilibrage|balancing|\bstad|\bstaf|\btbv|\bmsv|\bimi\b|hydronic|robinet a soupape|\bcgr ?165|debit")) return GenreRobinet.Reglage;
+            if (Regex.IsMatch(n, @"papillon|butterfly|\bvpi ?4648|\bvpe ?4508")) return GenreRobinet.Papillon;
+            if (Regex.IsMatch(n, @"boisseau|quart de tour|\bball\b|sphere|\bbille|\bastori|\b304 ?ab\b")) return GenreRobinet.Boisseau;
+            if (Regex.IsMatch(n, @"filtre|strainer|tamis|\bf ?3240")) return GenreRobinet.Filtre;
+            if (Regex.IsMatch(n, @"purgeur|degazeur|air vent|\bvent\b|flexvent|\bflamco|separateur d air")) return GenreRobinet.Purgeur;
+            if (Regex.IsMatch(n, @"manometre|pressure gauge|\bgauge\b|\bwika|\b818 ?i?\b")) return GenreRobinet.Manometre;
+            if (Regex.IsMatch(n, @"thermometre|thermometer|\b29[34] ?cb")) return GenreRobinet.Thermometre;
             if (Regex.IsMatch(n, @"vanne|robinet|valve|opercule|guillotine|soupape|\bpointeau")) return GenreRobinet.Vanne;
             return GenreRobinet.Aucun;
         }
@@ -62,6 +68,10 @@ namespace PipeFit.Isometries.Core
                 case GenreRobinet.Boisseau: return "Vanne à boisseau";
                 case GenreRobinet.Filtre: return "Filtre";
                 case GenreRobinet.Compensateur: return "Compensateur de dilatation";
+                case GenreRobinet.Motorisee: return "Vanne de régulation motorisée";
+                case GenreRobinet.Purgeur: return "Purgeur d'air";
+                case GenreRobinet.Manometre: return "Manomètre";
+                case GenreRobinet.Thermometre: return "Thermomètre";
                 case GenreRobinet.Vanne: return "Vanne";
                 default: return "";
             }
@@ -78,13 +88,24 @@ namespace PipeFit.Isometries.Core
                 case GenreRobinet.Boisseau: return "boisseau";
                 case GenreRobinet.Filtre: return "filtre";
                 case GenreRobinet.Compensateur: return "compensateur";
+                case GenreRobinet.Motorisee: return "motoris";
+                case GenreRobinet.Purgeur: return "purgeur";
+                case GenreRobinet.Manometre: return "manometre";
+                case GenreRobinet.Thermometre: return "thermometre";
                 default: return "vanne";
             }
         }
 
         /// <summary>Le genre vaut composant de ligne démontable (vanne, accessoire) : pas un raccord soudé.</summary>
         public static TypeComposant Type(GenreRobinet g) =>
-            g == GenreRobinet.Compensateur || g == GenreRobinet.Filtre ? TypeComposant.Accessoire : TypeComposant.Vanne;
+            g == GenreRobinet.Compensateur || g == GenreRobinet.Filtre || UnPort(g) ? TypeComposant.Accessoire : TypeComposant.Vanne;
+
+        /// <summary>Appareil monté sur un seul raccordement (piquage) : purgeur, manomètre, thermomètre.</summary>
+        public static bool UnPort(GenreRobinet g) => g == GenreRobinet.Purgeur || g == GenreRobinet.Manometre || g == GenreRobinet.Thermometre;
+
+        /// <summary>Le composant est dessiné par un symbole normalisé (en ligne entre deux raccordements, ou sur un piquage).</summary>
+        public static bool Symbolise(Composant c) =>
+            c.Genre != GenreRobinet.Aucun && (c.Extremites.Count >= 2 || (c.Extremites.Count == 1 && UnPort(c.Genre)));
 
         /// <summary>
         /// Sens d'écoulement : à partir des arrivées du spool (extrémités « entrée »), chaque composant reçoit son extrémité
@@ -143,8 +164,31 @@ namespace PipeFit.Isometries.Core
             }
             void Papillon() { Seg(-a, -h, a, h); Seg(-a, h, a, -h); Seg(-a, -h, -a, h); Seg(a, -h, a, h); }
             void Tige() { Seg(0, 0, 0, h + 2); Seg(-1.4, h + 2, 1.4, h + 2); }
+            // Appareils sur piquage : u part du tube (0) vers l'appareil ; queue de 3 mm puis l'appareil
             switch (g)
             {
+                case GenreRobinet.Purgeur:
+                    Seg(0, 0, 3, 0);
+                    Seg(3, -1.6, 6.2, -1.6); Seg(6.2, -1.6, 6.2, 1.6); Seg(6.2, 1.6, 3, 1.6); Seg(3, 1.6, 3, -1.6);
+                    Seg(6.2, 0, 8.6, 0); Seg(8.6, 0, 7.6, 0.8); Seg(8.6, 0, 7.6, -0.8);   // évent : flèche de sortie d'air
+                    return s;
+                case GenreRobinet.Manometre:
+                    Seg(0, 0, 3, 0); Cercle(5.4, 0, 2.4); Seg(5.4, 0, 6.8, 1.3);          // cadran et aiguille
+                    return s;
+                case GenreRobinet.Thermometre:
+                    Seg(0, 0, 3, 0);
+                    Seg(3, -0.8, 7.6, -0.8); Seg(7.6, -0.8, 7.6, 0.8); Seg(7.6, 0.8, 3, 0.8); Seg(3, 0.8, 3, -0.8);
+                    Cercle(8.8, 0, 1.2);                                                       // tige et bulbe
+                    return s;
+            }
+            switch (g)
+            {
+                case GenreRobinet.Motorisee:
+                    // Vanne 2 voies : corps de vanne, tige et servomoteur (carré avec M)
+                    Papillon(); Seg(0, 0, 0, h + 0.6);
+                    Seg(-1.8, h + 0.6, 1.8, h + 0.6); Seg(1.8, h + 0.6, 1.8, h + 3.2); Seg(1.8, h + 3.2, -1.8, h + 3.2); Seg(-1.8, h + 3.2, -1.8, h + 0.6);
+                    Seg(-1.1, h + 1.0, -1.1, h + 2.8); Seg(-1.1, h + 2.8, 0, h + 1.8); Seg(0, h + 1.8, 1.1, h + 2.8); Seg(1.1, h + 2.8, 1.1, h + 1.0);
+                    break;
                 case GenreRobinet.Compensateur:
                     // Soufflet : brides aux deux bouts et ondes en zigzag
                     Seg(-a, -h, -a, h); Seg(a, -h, a, h);

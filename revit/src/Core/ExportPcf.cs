@@ -161,6 +161,7 @@ namespace PipeFit.Isometries.Core
                 case GenreRobinet.Reglage: return "VGFL";
                 case GenreRobinet.Clapet: return "CKFL";
                 case GenreRobinet.Boisseau: return "VBFL";
+                case GenreRobinet.Motorisee: return "CVFL";
                 default: return "VTFL";
             }
         }

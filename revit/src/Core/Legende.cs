@@ -38,6 +38,10 @@ namespace PipeFit.Isometries.Core
             ("BOISSEAU", "Vanne à boisseau"),
             ("FILTRE", "Filtre en Y"),
             ("COMPENSATEUR", "Compensateur de dilatation"),
+            ("MOTORISEE", "Vanne de régulation motorisée (2 voies)"),
+            ("PURGEUR", "Purgeur d'air"),
+            ("MANOMETRE", "Manomètre"),
+            ("THERMOMETRE", "Thermomètre"),
         };
 
         public static IEnumerable<(string Code, string Libelle)> Toutes() => Tous;
@@ -49,6 +53,7 @@ namespace PipeFit.Isometries.Core
             ["SOUDCH"] = "Soudure chantier, surlongueur", ["COTE"] = "Cote axe / axe, axe / bride (mm)", ["RENVOI"] = "Renvoi vient de / va vers",
             ["NORD"] = "Nord du projet", ["REGLAGE"] = "Vanne de réglage / équilibrage", ["CLAPET"] = "Clapet anti-retour (écoulement)",
             ["COMPENSATEUR"] = "Compensateur de dilatation", ["FILTRE"] = "Filtre en Y", ["VANNE"] = "Vanne (opercule)",
+            ["MOTORISEE"] = "Vanne 2 voies motorisée",
         };
 
         public static string Court(string code, string libelle) => Courts.TryGetValue(code, out var c) ? c : libelle;
@@ -64,7 +69,7 @@ namespace PipeFit.Isometries.Core
             if (s.Assemblages.Any(a => a.Nature == NatureAssemblage.RaccordementChantier && a.Soude)) codes.Add("SOUDCH");
             if (s.Cotes.Count > 0) codes.Add("COTE");
             if (s.Liaisons.Count > 0) codes.Add("RENVOI");
-            foreach (var c in s.Composants.Where(c => c.Genre != GenreRobinet.Aucun && c.Extremites.Count >= 2)) codes.Add(Code(c.Genre));
+            foreach (var c in s.Composants.Where(Robinetterie.Symbolise)) codes.Add(Code(c.Genre));
             return Tous.Where(t => codes.Contains(t.Code)).ToList();
         }
 
@@ -109,8 +114,15 @@ namespace PipeFit.Isometries.Core
             void Tuyau(double a = 10) => S(-a, 0, a, 0);
             if (Enum.TryParse(code, true, out GenreRobinet g) && g != GenreRobinet.Aucun)
             {
-                // Robinetterie : le symbole de la feuille, réduit, sur un bout de tuyauterie
                 const double k = 0.62;
+                if (Robinetterie.UnPort(g))
+                {
+                    // Appareil sur piquage : tube horizontal en bas, appareil vers le haut
+                    S(-10, -2.6, 10, -2.6);
+                    foreach (var s in Robinetterie.Symbole(g)) S(-s.V1 * k, -2.6 + s.U1 * k, -s.V2 * k, -2.6 + s.U2 * k);
+                    return d;
+                }
+                // Robinetterie en ligne : le symbole de la feuille, réduit, sur un bout de tuyauterie
                 S(-10, 0, -7 * k / 2 - 0.4, 0); S(7 * k / 2 + 0.4, 0, 10, 0);
                 foreach (var s in Robinetterie.Symbole(g)) S(s.U1 * k, s.V1 * k, s.U2 * k, s.V2 * k);
                 return d;

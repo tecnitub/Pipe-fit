@@ -285,7 +285,9 @@ namespace PipeFit.Isometries.Core
                     var cle = string.CompareOrdinal(a.Id, b.Id) < 0 ? a.Id + "|" + b.Id : b.Id + "|" + a.Id;
                     cle += "|" + Math.Round(e.Position.X) + "|" + Math.Round(e.Position.Y) + "|" + Math.Round(e.Position.Z);
                     if (!vus.Add(cle)) continue;
-                    var nature = Boulonnable(a) && Boulonnable(b) ? NatureAssemblage.Boulonne : NatureAssemblage.Soudure;
+                    // Joint démontable : bride contre bride / vanne, ou appareil vissé sur piquage (purgeur, manomètre, thermomètre)
+                    var nature = (Boulonnable(a) && Boulonnable(b)) || Robinetterie.UnPort(a.Genre) || Robinetterie.UnPort(b.Genre)
+                        ? NatureAssemblage.Boulonne : NatureAssemblage.Soudure;
                     // Soudure chantier imposée à l'intérieur du spool (pas encore renuméroté) : raccordement chantier
                     var eb = Cotation.EnFace(b, a, e.Position);
                     if (nature == NatureAssemblage.Soudure && (e.CoupeChantier || (eb != null && eb.CoupeChantier)))

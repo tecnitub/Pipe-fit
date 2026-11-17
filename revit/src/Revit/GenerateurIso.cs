@@ -176,7 +176,7 @@ namespace PipeFit.Isometries.Revit
             doc.Regenerate();
 
             var symbolises = new HashSet<string>(r.SymbolesRobinetterie
-                ? spool.Composants.Where(c => c.Genre != GenreRobinet.Aucun && c.Extremites.Count >= 2).Select(c => c.Id) : Enumerable.Empty<string>());
+                ? spool.Composants.Where(Robinetterie.Symbolise).Select(c => c.Id) : Enumerable.Empty<string>());
             if (!r.RepereFeuille)
             {
                 Etiqueter(vue, elements.Where(e => !symbolises.Contains(Compat.Cle(e.Id))).ToList(), res);
@@ -342,7 +342,7 @@ namespace PipeFit.Isometries.Revit
             // Robinetterie remplacée par les symboles normalisés dessinés sur la feuille
             if (r.SymbolesRobinetterie)
             {
-                var cles = new HashSet<string>(spool.Composants.Where(c => c.Genre != GenreRobinet.Aucun && c.Extremites.Count >= 2).Select(c => c.Id));
+                var cles = new HashSet<string>(spool.Composants.Where(Robinetterie.Symbolise).Select(c => c.Id));
                 var masques = elements.Where(e => cles.Contains(Compat.Cle(e.Id))).Select(e => e.Id).ToList();
                 if (masques.Count > 0) try { vue.HideElements(masques); } catch { }
             }
@@ -489,9 +489,10 @@ namespace PipeFit.Isometries.Revit
                     double mx = 0, my = 0; Rect cadre = null;
                     // Le long de la ligne, au-dessus puis de l'autre côté de la ligne de cote
                     var libre = false;
-                    foreach (var cote2 in new[] { 2.2, -2.2 })
+                    // Au-dessus, de l'autre côté, sur une deuxième rangée, puis dans le prolongement de la cote (tronçon court)
+                    foreach (var cote2 in new[] { 2.2, -2.2, 5.6, 9.0 })
                     {
-                        foreach (var t in new[] { 0.5, 0.35, 0.65, 0.22, 0.78, 0.1, 0.9 })
+                        foreach (var t in new[] { 0.5, 0.35, 0.65, 0.22, 0.78, 0.1, 0.9, -0.6, 1.6, -1.2, 2.2 })
                         {
                             mx = ax + (bx - ax) * t + nx * cote2; my = ay + (by - ay) * t + ny * cote2;
                             cadre = PlacementEtiquettes.CadreTourne(mx, my, lt, HauteurTexteMm + 0.8, angle);
@@ -517,15 +518,22 @@ namespace PipeFit.Isometries.Revit
         void Symboliser(ViewSheet f, Func<Point3, (double x, double y)> Feuille, Spool spool, Resultat res, Obstacles obs)
         {
             int echecs = 0;
-            foreach (var c in spool.Composants.Where(x => x.Genre != GenreRobinet.Aucun && x.Extremites.Count >= 2))
+            var (cxd, cyd) = CentreDessin(spool, Feuille);
+            foreach (var c in spool.Composants.Where(Robinetterie.Symbolise))
             {
                 try
                 {
-                    var o = Robinetterie.Ordre(c);
-                    var a = Feuille(o[0].Position); var b = Feuille(o[1].Position);
-                    double mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, dx = b.x - a.x, dy = b.y - a.y, l = Math.Sqrt(dx * dx + dy * dy);
-                    if (l < 0.3) { dx = 1; dy = 0; l = 1; } // vu en bout
-                    dx /= l; dy /= l;
+                    double mx, my, dx, dy;
+                    if (c.Extremites.Count == 1) (mx, my, dx, dy) = AxePiquage(c, Feuille, cxd, cyd);
+                    else
+                    {
+                        var o = Robinetterie.Ordre(c);
+                        var a = Feuille(o[0].Position); var b = Feuille(o[1].Position);
+                        mx = (a.x + b.x) / 2; my = (a.y + b.y) / 2; dx = b.x - a.x; dy = b.y - a.y;
+                        var l = Math.Sqrt(dx * dx + dy * dy);
+                        if (l < 0.3) { dx = 1; dy = 0; l = 1; } // vu en bout
+                        dx /= l; dy /= l;
+                    }
                     var segs = Robinetterie.Placer(Robinetterie.Symbole(c.Genre), mx, my, dx, dy);
                     Traits(f, segs);
                     foreach (var s in segs) obs.TraitsForts.Add(s);
@@ -534,6 +542,25 @@ namespace PipeFit.Isometries.Revit
                 catch { echecs++; }
             }
             if (echecs > 0) res.Avertissements.Add(echecs + " symbole(s) de robinetterie non dessiné(s)");
+        }
+
+        /// <summary>
+        /// Appareil sur piquage (purgeur, manomètre, thermomètre) : origine au raccordement, axe vers l'appareil (à l'opposé du
+        /// tube : sens inverse du connecteur de l'appareil), sinon vers l'extérieur du dessin.
+        /// </summary>
+        static (double x, double y, double dx, double dy) AxePiquage(Composant c, Func<Point3, (double x, double y)> Feuille, double cx, double cy)
+        {
+            var e = c.Extremites[0];
+            var p = Feuille(e.Position);
+            double dx = 0, dy = 1;
+            if (e.Direction.HasValue)
+            {
+                var q = Feuille(e.Position - e.Direction.Value.Normalise() * 1000);
+                if (Math.Abs(q.x - p.x) + Math.Abs(q.y - p.y) > 1e-6) { dx = q.x - p.x; dy = q.y - p.y; }
+            }
+            else if (Math.Abs(p.x - cx) + Math.Abs(p.y - cy) > 1e-6) { dx = p.x - cx; dy = p.y - cy; }
+            var l = Math.Sqrt(dx * dx + dy * dy);
+            return (p.x, p.y, dx / l, dy / l);
         }
 
         // ---------- Repères placés sans chevauchement ----------
@@ -588,12 +615,19 @@ namespace PipeFit.Isometries.Revit
                 return new Etiquette { Texte = texte, Largeur = d, Hauteur = d, Ancrages = { (x, y) }, Direction = dir };
             }
 
-            var robinets = spool.Composants.Where(c => c.Genre != GenreRobinet.Aucun && c.Extremites.Count >= 2);
-            var raccords = spool.Composants.Where(c => c.Type != TypeComposant.Tube && !(c.Genre != GenreRobinet.Aucun && c.Extremites.Count >= 2));
+            var robinets = spool.Composants.Where(Robinetterie.Symbolise);
+            var raccords = spool.Composants.Where(c => c.Type != TypeComposant.Tube && !Robinetterie.Symbolise(c));
             foreach (var c in robinets.Concat(raccords))
             {
                 if (seulement != null && !seulement.Contains(c.Id)) continue;
                 double mx, my, dx = 1, dy = 0;
+                if (c.Extremites.Count == 1 && Robinetterie.Symbolise(c))
+                {
+                    // Appareil sur piquage : bulle accrochée au bout de l'appareil, dans le prolongement
+                    var (px, py, ax, ay) = AxePiquage(c, Feuille, cx, cy);
+                    liste.Add((Bulle(c.Repere, px + ax * 9, py + ay * 9, (ax, ay)), "bulle"));
+                    continue;
+                }
                 if (Cotation.EstNoeud(c)) { var p = Feuille(Cotation.PointAxe(c)); mx = p.x; my = p.y; dx = 0; dy = 0; }
                 else if (c.Extremites.Count >= 2)
                 {

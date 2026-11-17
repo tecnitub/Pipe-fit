@@ -124,6 +124,9 @@ ROBINETTERIE
   battant », « STAD-F », « Dilatoflex »…), sinon d'après la famille. Bouton « Symboles… » de la fenêtre des
   isométries : liste des types du projet et symbole trouvé, à corriger type par type (mémorisé).
   Symboles normalisés sur l'isométrie (le clapet avec la flèche d'écoulement).
+  Références reconnues d'office : ASTORI 304, TECOFI VPI 4648 / VPE 4508 / F 3240 / CB 3448 / DI 7240,
+  IMI STAD / STAF, CGR 165 / 293CB / 294CB / 369, SIEMENS V2V, FLAMCO FLEXVENT, WIKA 818.
+  Purgeurs, manomètres et thermomètres sur piquage ont aussi leur symbole.
 
 BON À SAVOIR
   - Un assemblage entre deux brides, ou entre une bride et une vanne / un accessoire, est compté comme joint

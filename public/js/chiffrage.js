@@ -72,7 +72,7 @@ function categorieFamille(f) {
   const n = normRecherche(`${f.nom} ${f.alias || ''}`);
   if (/support|collier|rail/.test(n)) return 'autre';
   if (f.unite === 'ml' && /tub|tuyau|pipe|canalisation/.test(n)) return 'tube';
-  if (/vanne|robinet|clapet|purgeur|filtre|valve|soupape|compteur|manometre|detendeur|compensateur|dilatoflex|dilatation|manchette|soufflet/.test(n)) return 'robinetterie';
+  if (/vanne|robinet|clapet|purgeur|filtre|valve|soupape|compteur|manometre|thermometre|detendeur|compensateur|dilatoflex|dilatation|manchette|soufflet/.test(n)) return 'robinetterie';
   return num(f.soudures) ? 'raccord' : 'autre';
 }
 // Soudures par unité : celles de l'article pour ce diamètre, sinon celles de la famille (ex. coude DN50 = 2 soudures de 2")

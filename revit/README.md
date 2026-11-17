@@ -105,6 +105,13 @@ Option décochée : étiquettes Revit (familles d'étiquettes choisies), placée
   « Dilatoflex »…), puis d'après le nom de la famille si le type ne dit rien : vanne (opercule), vanne papillon, vanne de
   réglage / d'équilibrage (STAD, TBV, MSV…), clapet anti-retour, vanne à boisseau, filtre, compensateur de dilatation
   (Dilatoflex, manchette antivibratile, soufflet). Mots-clés français et anglais.
+- **Références des fabricants installés par TECNITUB** (fiche technique robinetterie) reconnues d'office, même sans mot
+  descriptif dans le nom : ASTORI 304 / 304AB (boisseau), TECOFI VPI 4648 / VPE 4508 (papillon), F 3240 (filtre),
+  CB 3448 (clapet double battant), DI 7240 (manchon anti-vibratile), IMI STAD / STAF et CGR 165 (réglage), SIEMENS V2V
+  (vanne 2 voies motorisée), FLAMCO FLEXVENT (purgeur), WIKA 818 (manomètre), CGR 293CB / 294CB (thermomètre), CGR 369
+  (compensateur).
+- **Appareils sur piquage** (un seul raccordement) : purgeur d'air, manomètre, thermomètre ont leur symbole, dessiné
+  depuis le piquage vers l'appareil ; leur raccordement vissé compte comme joint démontable, pas comme soudure.
 - **Correspondances par type** : bouton « Symboles… » de la fenêtre des isométries ; il liste les types d'accessoires
   du projet avec le symbole trouvé (et s'il vient du type ou de la famille), et permet de le corriger type par type
   (ex. « BOA-H DN80 » → vanne de réglage). Choix mémorisés dans `%AppData%\PipeFit\Symboles robinetterie.ini`, valables

@@ -13,7 +13,8 @@ namespace PipeFit.Isometries.Revit
     {
         const string Auto = "(automatique)";
         static readonly GenreRobinet[] Genres =
-            { GenreRobinet.Vanne, GenreRobinet.Papillon, GenreRobinet.Reglage, GenreRobinet.Clapet, GenreRobinet.Boisseau, GenreRobinet.Filtre, GenreRobinet.Compensateur };
+            { GenreRobinet.Vanne, GenreRobinet.Papillon, GenreRobinet.Reglage, GenreRobinet.Clapet, GenreRobinet.Boisseau, GenreRobinet.Filtre, GenreRobinet.Compensateur,
+              GenreRobinet.Motorisee, GenreRobinet.Purgeur, GenreRobinet.Manometre, GenreRobinet.Thermometre };
 
         readonly DataGridView grille = new DataGridView
         {
