@@ -23,9 +23,9 @@ using Font = System.Drawing.Font;
 namespace PipeFit.Isometries.Revit
 {
     [Transaction(TransactionMode.Manual)]
-    public sealed class CmdSoudureChantier : IExternalCommand
+    public sealed class CmdSoudureChantier : CommandeBase
     {
-        public Result Execute(ExternalCommandData data, ref string message, ElementSet elementsErreur)
+        protected override Result Executer(ExternalCommandData data, ref string message, ElementSet elementsErreur)
         {
             var uidoc = data.Application.ActiveUIDocument;
             if (uidoc == null) { message = "Ouvrez un projet Revit."; return Result.Failed; }

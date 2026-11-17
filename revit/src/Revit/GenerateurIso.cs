@@ -159,7 +159,8 @@ namespace PipeFit.Isometries.Revit
                 && (r.SymbolesRobinetterie || !Enum.TryParse(x.Code, true, out GenreRobinet _))).ToList();
             var legende = Legende.Compacte(entrees);
             var hLeg = legende.Hauteur(HauteurLigneMm);
-            DessinerTableau(feuille, new Placement { Tableau = legende, X = zoneVue.X0, Y = zoneVue.Y0 + 8 + hLeg });
+            var zl = zoneVue;
+            Etape("légende", res, () => DessinerTableau(feuille, new Placement { Tableau = legende, X = zl.X0, Y = zl.Y0 + 8 + hLeg }));
             zoneVue = new Rect(zoneVue.X0, zoneVue.Y0 + 8 + hLeg + 3, zoneVue.X1, zoneVue.Y1);
 
             // Vue sur la feuille, à l'échelle qui tient dans la zone (marge pour les étiquettes)
@@ -193,14 +194,14 @@ namespace PipeFit.Isometries.Revit
                 foreach (var seg in Segments(spool, projection)) obs.Traits.Add(seg);
                 obs.Durs.Add(new Rect(zoneVue.X0, zoneVue.Y1 - 32, zoneVue.X0 + 32, zoneVue.Y1));   // flèche du nord
                 obs.Durs.Add(cartouche == null ? new Rect(220, 10, 410, 45) : new Rect(cadre.X1 - 180, cadre.Y0 - 12, cadre.X1 + 12, cadre.Y0 + 50)); // cartouche
-                if (r.Cotation) Coter(feuille, projection, spool, res, obs);
-                if (r.SymbolesRobinetterie) Symboliser(feuille, projection, spool, res, obs);
-                Renvoyer(feuille, projection, spool, zoneVue, res, obs);
-                Reperer(feuille, projection, spool, zoneVue, res, obs, r.RepereFeuille ? null : symbolises);
+                if (r.Cotation) Etape("cotes", res, () => Coter(feuille, projection, spool, res, obs));
+                if (r.SymbolesRobinetterie) Etape("symboles de robinetterie", res, () => Symboliser(feuille, projection, spool, res, obs));
+                Etape("renvois", res, () => Renvoyer(feuille, projection, spool, zoneVue, res, obs));
+                Etape("repères", res, () => Reperer(feuille, projection, spool, zoneVue, res, obs, r.RepereFeuille ? null : symbolises));
             }
 
-            DessinerNord(feuille, vue, zoneVue);
-            EcrireEchelle(feuille, zoneBas, res.Echelle);
+            Etape("flèche du nord", res, () => DessinerNord(feuille, vue, zoneVue));
+            Etape("échelle", res, () => EcrireEchelle(feuille, zoneBas, res.Echelle));
             return res;
         }
 
@@ -252,6 +253,17 @@ namespace PipeFit.Isometries.Revit
 
         public void Nord(ViewSheet f, View3D vue, Rect zone) => DessinerNord(f, vue, zone);
 
+        /// <summary>Étape d'annotation non bloquante : en cas d'erreur, la feuille est quand même créée et le bilan le signale.</summary>
+        void Etape(string nom, Resultat res, Action action)
+        {
+            try { action(); }
+            catch (Exception ex)
+            {
+                Journal.Ecrire("Spool " + res.Spool + ", " + nom + " : ERREUR\n" + ex);
+                res.Avertissements.Add(nom + " non dessiné(e)s : " + ex.Message);
+            }
+        }
+
         Element FilteredElementCollectorCartouche(ViewSheet feuille) =>
             new FilteredElementCollector(doc, feuille.Id).OfCategory(BuiltInCategory.OST_TitleBlocks).FirstElement();
 
@@ -298,7 +310,8 @@ namespace PipeFit.Isometries.Revit
         View3D CreerVue(Spool spool, List<Element> elements)
         {
             var vue = View3D.CreateIsometric(doc, typeVue3D);
-            vue.Name = NomVue(spool.Nom);
+            try { vue.Name = NomVue(spool.Nom); }
+            catch { vue.Name = NomVue(spool.Nom) + " " + DateTime.Now.ToString("HHmmss", CultureInfo.InvariantCulture); } // nom déjà pris par une autre vue
             if (vue.ViewTemplateId != ElementId.InvalidElementId) vue.ViewTemplateId = ElementId.InvalidElementId;
 
             // Encombrement du spool
@@ -333,7 +346,7 @@ namespace PipeFit.Isometries.Revit
                 var masques = elements.Where(e => cles.Contains(Compat.Cle(e.Id))).Select(e => e.Id).ToList();
                 if (masques.Count > 0) try { vue.HideElements(masques); } catch { }
             }
-            vue.SaveOrientationAndLock();
+            try { vue.SaveOrientationAndLock(); } catch (Exception ex) { Journal.Ecrire("Verrouillage de la vue " + vue.Name + " : " + ex.Message); }
             return vue;
         }
 
@@ -514,7 +527,8 @@ namespace PipeFit.Isometries.Revit
                     if (l < 0.3) { dx = 1; dy = 0; l = 1; } // vu en bout
                     dx /= l; dy /= l;
                     var segs = Robinetterie.Placer(Robinetterie.Symbole(c.Genre), mx, my, dx, dy);
-                    foreach (var s in segs) { Trait(f, s.x1, s.y1, s.x2, s.y2); obs.TraitsForts.Add(s); }
+                    Traits(f, segs);
+                    foreach (var s in segs) obs.TraitsForts.Add(s);
                     obs.Durs.Add(new Rect(segs.Min(s => Math.Min(s.x1, s.x2)), segs.Min(s => Math.Min(s.y1, s.y2)), segs.Max(s => Math.Max(s.x1, s.x2)), segs.Max(s => Math.Max(s.y1, s.y2))));
                 }
                 catch { echecs++; }
@@ -610,11 +624,7 @@ namespace PipeFit.Isometries.Revit
                 if (forme == "soudure")
                 {
                     // Point de soudure et numéro ; trait de rappel si le numéro s'est éloigné
-                    for (int i = 0; i < 8; i++)
-                    {
-                        double t1 = Math.PI * i / 4, t2 = Math.PI * (i + 1) / 4;
-                        Trait(f, e.Ancrage.x + 0.6 * Math.Cos(t1), e.Ancrage.y + 0.6 * Math.Sin(t1), e.Ancrage.x + 0.6 * Math.Cos(t2), e.Ancrage.y + 0.6 * Math.Sin(t2));
-                    }
+                    Cercle(f, e.Ancrage.x, e.Ancrage.y, 0.6);
                     if (Math.Sqrt((rx - e.Ancrage.x) * (rx - e.Ancrage.x) + (ry - e.Ancrage.y) * (ry - e.Ancrage.y)) > 3) Trait(f, e.Ancrage.x, e.Ancrage.y, rx, ry);
                     Texte(f, e.X, e.Y, e.Texte, gras: true, centre: true);
                     continue;
@@ -622,12 +632,7 @@ namespace PipeFit.Isometries.Revit
                 Trait(f, e.Ancrage.x, e.Ancrage.y, rx, ry);
                 if (forme == "bulle")
                 {
-                    var rb = e.Largeur / 2;
-                    for (int i = 0; i < 16; i++)
-                    {
-                        double t1 = Math.PI * i / 8, t2 = Math.PI * (i + 1) / 8;
-                        Trait(f, e.X + rb * Math.Cos(t1), e.Y + rb * Math.Sin(t1), e.X + rb * Math.Cos(t2), e.Y + rb * Math.Sin(t2));
-                    }
+                    Cercle(f, e.X, e.Y, e.Largeur / 2);
                 }
                 else
                 {
@@ -695,10 +700,31 @@ namespace PipeFit.Isometries.Revit
 
         static XYZ P(double xMm, double yMm) => new XYZ(Compat.Pieds(xMm), Compat.Pieds(yMm), 0);
 
+        /// <summary>Longueur minimale d'un trait (mm papier) : Revit refuse les courbes plus courtes que sa tolérance (≈ 1,2 mm).</summary>
+        const double TraitMin = 1.25;
+
+        /// <summary>Trait sur la feuille ; un trait trop court pour Revit est ignoré (il ne doit jamais arrêter la génération).</summary>
         void Trait(View v, double x0, double y0, double x1, double y1)
         {
-            if (Math.Abs(x1 - x0) + Math.Abs(y1 - y0) < 0.5) return;
-            doc.Create.NewDetailCurve(v, Line.CreateBound(P(x0, y0), P(x1, y1)));
+            if (Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)) < TraitMin) return;
+            try { doc.Create.NewDetailCurve(v, Line.CreateBound(P(x0, y0), P(x1, y1))); }
+            catch (Exception ex) { Journal.Ecrire("Trait ignoré : " + ex.Message); }
+        }
+
+        /// <summary>Cercle (arc Revit complet), pour les bulles et les points de soudure.</summary>
+        void Cercle(View v, double x, double y, double r)
+        {
+            try { doc.Create.NewDetailCurve(v, Arc.Create(P(x, y), Compat.Pieds(r), 0, 2 * Math.PI, XYZ.BasisX, XYZ.BasisY)); }
+            catch (Exception ex) { Journal.Ecrire("Cercle ignoré : " + ex.Message); }
+        }
+
+        /// <summary>
+        /// Suite de petits segments (cercles des symboles…) redécoupée en traits d'au moins 1,25 mm : les segments qui se
+        /// suivent sont enchaînés, et l'on ne trace une corde que lorsqu'elle est assez longue pour Revit.
+        /// </summary>
+        void Traits(View v, IEnumerable<(double x1, double y1, double x2, double y2)> segments)
+        {
+            foreach (var c in Cordes.Decouper(segments, TraitMin)) Trait(v, c.x1, c.y1, c.x2, c.y2);
         }
 
         void Texte(View v, double x, double y, string t, bool gras = false, bool droite = false, bool centre = false)
@@ -709,7 +735,8 @@ namespace PipeFit.Isometries.Revit
                 HorizontalAlignment = droite ? HorizontalTextAlignment.Right : centre ? HorizontalTextAlignment.Center : HorizontalTextAlignment.Left,
                 VerticalAlignment = VerticalTextAlignment.Middle,
             };
-            TextNote.Create(doc, v.Id, P(x, y), t, opt);
+            try { TextNote.Create(doc, v.Id, P(x, y), t, opt); }
+            catch (Exception ex) { Journal.Ecrire("Texte ignoré « " + t + " » : " + ex.Message); }
         }
 
         void DessinerTableau(ViewSheet f, Placement pl)
@@ -758,7 +785,7 @@ namespace PipeFit.Isometries.Revit
         void DessinerSymbole(ViewSheet f, double x, double y, string code)
         {
             var d = Legende.Dessin(code);
-            foreach (var s in d.Traits) Trait(f, x + s.U1, y + s.V1, x + s.U2, y + s.V2);
+            Traits(f, d.Traits.Select(s => (x + s.U1, y + s.V1, x + s.U2, y + s.V2)));
             foreach (var t in d.Textes) Texte(f, x + t.U, y + t.V, t.Texte, gras: t.Gras, centre: true);
         }
 

@@ -224,7 +224,7 @@ namespace PipeFit.Isometries.Revit
             }
             lblInfo.Text = param == ""
                 ? "Choisissez le paramètre qui contient le numéro de spool."
-                : spools.Count == 0 ? "Aucun élément de tuyauterie n'a de valeur pour « " + param + " »."
+                : spools.Count == 0 ? "Aucun spool numéroté dans « " + param + " ». Le plus simple : sélectionnez la tuyauterie avec Ctrl, puis bouton « Générer un spool »."
                 : sans > 0 ? sans + " élément(s) de tuyauterie sans numéro de spool (ignorés)." : "";
             lnkSansSpool.Visible = param != "" && sans > 0;
             AfficherSpools();

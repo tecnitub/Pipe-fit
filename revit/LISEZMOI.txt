@@ -9,6 +9,14 @@ INSTALLATION
   3. Relancer Revit : onglet « Pipe-Fit » > groupe « Fabrication » > « Isométries spools ».
   Désinstaller : Installer.bat -Desinstaller
 
+LE PLUS SIMPLE : BOUTON « GÉNÉRER UN SPOOL »
+  1. Dans Revit, sélectionner avec Ctrl toute la tuyauterie du spool (tubes, coudes, brides, vannes…).
+  2. Cliquer « Générer un spool » : le prochain numéro est proposé (modifiable), avec les points à vérifier.
+  3. « Générer l'isométrie » : numéro écrit sur les éléments, isométrie créée et ouverte.
+
+EN CAS D'ERREUR
+  Le message s'affiche ; le détail est dans %AppData%\PipeFit\journal.txt (à envoyer pour le dépannage).
+
 PARAMÈTRES (bouton « Paramètres Pipe-Fit »)
   Crée d'avance dans le projet ou le gabarit : « Numéro de spool », « Soudures chantier (Pipe-Fit) »
   et « Pouces soudures (Pipe-Fit) » (pouces-diamètre des soudures portées par chaque élément, écrits à la

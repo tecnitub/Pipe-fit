@@ -11,9 +11,9 @@ using Autodesk.Revit.UI;
 namespace PipeFit.Isometries.Revit
 {
     [Transaction(TransactionMode.Manual)]
-    public sealed class CmdParametres : IExternalCommand
+    public sealed class CmdParametres : CommandeBase
     {
-        public Result Execute(ExternalCommandData data, ref string message, ElementSet elementsErreur)
+        protected override Result Executer(ExternalCommandData data, ref string message, ElementSet elementsErreur)
         {
             var doc = data.Application.ActiveUIDocument?.Document;
             if (doc == null || doc.IsFamilyDocument) { message = "Ouvrez un projet ou un gabarit de projet Revit."; return Result.Failed; }

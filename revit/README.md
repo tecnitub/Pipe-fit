@@ -8,6 +8,23 @@ Le numéro de spool est attribué avec le bouton **Numéroter spools** (ci-desso
 (paramètre partagé « Numéro de spool », « Spool »… : la fenêtre propose tous les paramètres texte trouvés et choisit
 d'office celui qui est renseigné), ou dans la propriété *Spool* des pièces de fabrication MEP.
 
+## Générer un spool (le plus simple)
+
+Bouton **Générer un spool** : sélectionner dans Revit, avec Ctrl (ou une fenêtre de sélection), toute une partie de
+tuyauterie (tubes, raccords, brides, robinetterie), puis cliquer. Une petite fenêtre propose le prochain numéro libre
+(modifiable ; si les éléments portent déjà tous le même numéro, l'isométrie est régénérée) et signale ce qui mérite un
+coup d'œil (morceaux non raccordés, plusieurs systèmes, plus de 6 m de tube). « Générer l'isométrie » : le numéro est
+écrit sur les éléments (paramètre « Numéro de spool » créé s'il manque) et l'isométrie est générée et ouverte, avec les
+réglages de la fenêtre des isométries (cartouche, cotes, symboles, exports). Sans sélection préalable, cliquer les
+éléments puis Terminer.
+
+## Dépannage
+
+Toute erreur d'un bouton Pipe-Fit est affichée en clair (détail dépliable) et écrite dans
+`%AppData%\PipeFit\journal.txt` : envoyer ce fichier pour le dépannage. Les traits trop courts pour Revit (moins de
+1,2 mm sur la feuille) ne sont jamais tracés tels quels : les cercles sont de vrais arcs et les petits segments des
+symboles sont redécoupés ; chaque étape d'annotation (cotes, symboles, repères, légende…) est non bloquante.
+
 ## Paramètres du projet
 
 Bouton **Paramètres Pipe-Fit** : crée d'avance, dans le projet ou le gabarit, les paramètres partagés d'occurrence du

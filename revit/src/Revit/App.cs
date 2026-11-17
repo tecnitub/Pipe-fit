@@ -23,6 +23,16 @@ namespace PipeFit.Isometries.Revit
                 LargeImage = Image("icone32.png"),
                 Image = Image("icone16.png"),
             };
+            // Mode manuel le plus direct : sélectionner la tuyauterie avec Ctrl, cliquer, l'isométrie est générée
+            panneau.AddItem(new PushButtonData("PipeFitGenererSpool", "Générer\nun spool", Assembly.GetExecutingAssembly().Location, typeof(CmdGenererSpool).FullName)
+            {
+                ToolTip = "Sélectionnez avec Ctrl toute une partie de tuyauterie, puis cliquez : numéro de spool attribué et isométrie générée.",
+                LongDescription = "Les éléments sélectionnés (canalisations, raccords, accessoires) reçoivent le prochain numéro de spool, modifiable ; "
+                    + "le paramètre « Numéro de spool » est créé s'il manque ; l'isométrie de ce spool est générée et ouverte. "
+                    + "Sans sélection, cliquez les éléments puis Terminer.",
+                LargeImage = Image("icone32.png"),
+                Image = Image("icone16.png"),
+            });
             panneau.AddItem(new PushButtonData("PipeFitParametres", "Paramètres\nPipe-Fit", Assembly.GetExecutingAssembly().Location, typeof(CmdParametres).FullName)
             {
                 ToolTip = "Crée dans le projet (ou le gabarit) les paramètres Numéro de spool, Soudures chantier et Pouces soudures.",

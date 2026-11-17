@@ -17,9 +17,9 @@ using PipeFit.Isometries.Core;
 namespace PipeFit.Isometries.Revit
 {
     [Transaction(TransactionMode.ReadOnly)]
-    public sealed class CmdQuantitatif : IExternalCommand
+    public sealed class CmdQuantitatif : CommandeBase
     {
-        public Result Execute(ExternalCommandData data, ref string message, ElementSet elementsErreur)
+        protected override Result Executer(ExternalCommandData data, ref string message, ElementSet elementsErreur)
         {
             var uidoc = data.Application.ActiveUIDocument;
             if (uidoc == null) { message = "Ouvrez un projet Revit."; return Result.Failed; }

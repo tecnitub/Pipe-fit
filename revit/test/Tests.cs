@@ -478,6 +478,22 @@ static class Tests
             Verifier(csvd.StartsWith("Système de canalisation;DN;Matière;Spool;Rep.;Longueur Revit (mm)") && csvd.Contains("Eau glacée départ;DN100;Acier;SP-1;T1;5000;;5000;1"), "CSV liste de débit");
         }
 
+        // Traits trop courts pour Revit : redécoupage en cordes ≥ 1,25 mm (cause d'arrêt de la génération)
+        {
+            var tous = new List<(double, double, double, double)>();
+            foreach (GenreRobinet g in Enum.GetValues(typeof(GenreRobinet)))
+                if (g != GenreRobinet.Aucun) tous.AddRange(Robinetterie.Placer(Robinetterie.Symbole(g), 100, 100, 1, 0));
+            foreach (var t in Legende.Toutes()) tous.AddRange(Legende.Dessin(t.Code).Traits.Select(x => (x.U1, x.V1, x.U2, x.V2)));
+            var cordes = Cordes.Decouper(tous);
+            Verifier(cordes.All(c => Math.Sqrt((c.x2 - c.x1) * (c.x2 - c.x1) + (c.y2 - c.y1) * (c.y2 - c.y1)) >= 1.25 - 1e-9), "aucun trait de moins de 1,25 mm");
+            // Petit cercle (r = 0,73 mm, 12 segments de 0,38 mm) : toujours dessiné, en quelques cordes
+            var cercle = Robinetterie.Symbole(GenreRobinet.Papillon).Skip(5).Take(12).Select(x => (x.U1, x.V1, x.U2, x.V2)).ToList();
+            var cc = Cordes.Decouper(cercle);
+            Verifier(cercle.All(x => Math.Sqrt((x.Item3 - x.Item1) * (x.Item3 - x.Item1) + (x.Item4 - x.Item2) * (x.Item4 - x.Item2)) < 1.25) && cc.Count >= 2,
+                "petit cercle du papillon redécoupé en " + cc.Count + " cordes");
+            Verifier(Cordes.Decouper(new[] { (0.0, 0.0, 0.5, 0.0) }).Count == 0 && Cordes.Decouper(new[] { (0.0, 0.0, 5.0, 0.0) }).Count == 1, "segment isolé trop court abandonné, long conservé");
+        }
+
         // Bride contre bride (ou vanne) : joint boulonné
         var b = new Spool { Nom = "B" };
         b.Composants.Add(C("a", "Bride", "PN16", TypeComposant.Bride, 80, 0, null, E(0, 0, 0, 80, "x"), E(10, 0, 0, 80, "b")));

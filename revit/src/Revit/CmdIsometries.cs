@@ -14,9 +14,9 @@ namespace PipeFit.Isometries.Revit
 {
     [Transaction(TransactionMode.Manual)]
     [Regeneration(RegenerationOption.Manual)]
-    public sealed class CmdIsometries : IExternalCommand
+    public sealed class CmdIsometries : CommandeBase
     {
-        public Result Execute(ExternalCommandData data, ref string message, ElementSet elementsErreur)
+        protected override Result Executer(ExternalCommandData data, ref string message, ElementSet elementsErreur)
         {
             var uidoc = data.Application.ActiveUIDocument;
             if (uidoc == null) { message = "Ouvrez un projet Revit."; return Result.Failed; }
@@ -87,7 +87,7 @@ namespace PipeFit.Isometries.Revit
             return LectureModele.ParametreParDefaut(tous, candidats);
         }
 
-        static Result Generer(UIDocument uidoc, Reglages r, Dictionary<string, List<Element>> groupes, ref string message)
+        internal static Result Generer(UIDocument uidoc, Reglages r, Dictionary<string, List<Element>> groupes, ref string message)
         {
             var doc = uidoc.Document;
             var resultats = new List<Resultat>();
@@ -124,7 +124,8 @@ namespace PipeFit.Isometries.Revit
                         catch (Exception ex)
                         {
                             if (t.HasStarted() && !t.HasEnded()) t.RollBack();
-                            resultats.Add(new Resultat { Spool = nom, Ignore = true, Avertissements = { "erreur : " + ex.Message } });
+                            Journal.Ecrire("Isométrie " + nom + " : ERREUR\n" + ex);
+                            resultats.Add(new Resultat { Spool = nom, Ignore = true, Avertissements = { "erreur : " + ex.Message + " (détail : " + Journal.Chemin + ")" } });
                         }
                     }
                 }

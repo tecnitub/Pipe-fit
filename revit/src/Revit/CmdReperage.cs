@@ -15,7 +15,7 @@ using PipeFit.Isometries.Core;
 namespace PipeFit.Isometries.Revit
 {
     [Transaction(TransactionMode.Manual)]
-    public sealed class CmdReperage : IExternalCommand
+    public sealed class CmdReperage : CommandeBase
     {
         static readonly (string Nom, byte R, byte G, byte B)[] Palette =
         {
@@ -24,7 +24,7 @@ namespace PipeFit.Isometries.Revit
             ("olive", 120, 130, 20), ("marine", 20, 40, 120), ("or", 200, 150, 0), ("gris-bleu", 90, 110, 130),
         };
 
-        public Result Execute(ExternalCommandData data, ref string message, ElementSet elementsErreur)
+        protected override Result Executer(ExternalCommandData data, ref string message, ElementSet elementsErreur)
         {
             var uidoc = data.Application.ActiveUIDocument;
             if (uidoc == null) { message = "Ouvrez un projet Revit."; return Result.Failed; }
