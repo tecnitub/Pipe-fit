@@ -274,3 +274,10 @@ details.equipement[open] summary { margin-bottom: 10px; }
   .aide-bouton { min-width: 40px; min-height: 40px; }
 }
 @media print { .aide-panneau, .aide-bulle, .aide-cible, .aide-bloc, .aide-propose, .aide-bouton { display: none !important; } }
+
+/* Connexion : aide « Mot de passe oublié ? » */
+.mdp-oublie { margin-top: 14px; font-size: 13px; text-align: left; }
+.mdp-oublie summary { cursor: pointer; color: inherit; text-decoration: underline; min-height: 40px; display: flex; align-items: center; }
+.mdp-oublie ol { padding-left: 18px; margin: 6px 0; }
+.mdp-oublie li { margin: 4px 0; }
+.mdp-oublie code { font-size: 12px; word-break: break-all; }

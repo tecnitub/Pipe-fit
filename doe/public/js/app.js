@@ -144,7 +144,14 @@ Vues.connexion = {
     <p class="muted">Connectez-vous avec votre compte Pipe-Fit (bureau).</p>
     <label>Identifiant<input name="login" autocomplete="username" required autofocus></label>
     <label>Mot de passe<input name="password" type="password" autocomplete="current-password" required></label>
-    ${err ? `<p class="erreur">${esc(err)}</p>` : ''}<button>Se connecter</button></form>`,
+    ${err ? `<p class="erreur">${esc(err)}</p>` : ''}<button>Se connecter</button>
+    <details class="mdp-oublie"><summary>Mot de passe oublié ?</summary>
+      <ol>
+        <li>Demandez à un <strong>administrateur</strong> de Pipe-Fit : il le change dans Paramètres → Comptes.</li>
+        <li>Vous êtes le seul administrateur : <strong>sur le serveur</strong> où Pipe-Fit est installé, menu Démarrer → Pipe-Fit CRM → <strong>« Mot de passe oublié »</strong> (clic droit → Exécuter en tant qu'administrateur), ou le fichier <code>reinit-mot-de-passe.cmd</code> du dossier d'installation (C:\\Program Files\\PipeFitCRM). Tapez l'identifiant puis deux fois le nouveau mot de passe.</li>
+        <li>Serveur Linux ou Docker : <code>npm run reinit-mot-de-passe -- &lt;identifiant&gt;</code>.</li>
+      </ol>
+      <p>Le même compte sert pour le CRM, Études et le DOE.</p></details></form>`,
 };
 function ecranConnexion(err) {
   document.body.classList.add('deconnecte');
