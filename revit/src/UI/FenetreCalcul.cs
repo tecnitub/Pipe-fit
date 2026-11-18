@@ -34,6 +34,8 @@ namespace PipeFit.Isometries.Revit
         bool[] debitSaisi => courant.DebitSaisi;
         readonly bool parChemins;
         readonly ComboBox cbChemin = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+        /// <summary>Écriture des résultats dans la maquette (fournie par la commande) : tronçons calculés, vitesse maximale ; renvoie le compte rendu.</summary>
+        public Func<List<Troncon>, double, string> EcrireMaquette;
         /// <summary>Éléments du chemin à sélectionner dans Revit (bouton « Sélectionner le chemin »).</summary>
         public List<string> CheminASelectionner { get; private set; }
         readonly string projet, titre;
@@ -144,6 +146,18 @@ namespace PipeFit.Isometries.Revit
                 Dimensionner();
             }
 
+            var ecrire = new Button { Text = "Écrire dans la maquette", Anchor = AnchorStyles.Bottom | AnchorStyles.Right };
+            ecrire.SetBounds(ClientSize.Width - 480, ClientSize.Height - 44, 180, 32);
+            Controls.Add(ecrire);
+            ecrire.Click += (s2, e2) =>
+            {
+                if (EcrireMaquette == null) return;
+                Recalculer();
+                // Tous les chemins : chaque élément garde son plus fort débit
+                var tous = etats.SelectMany(et => et.Troncons).ToList();
+                try { MessageBox.Show(this, EcrireMaquette(tous, (double)nudVmax.Value), "Pipe-Fit – Résultats dans la maquette"); }
+                catch (Exception ex) { MessageBox.Show(this, "Écriture impossible : " + ex.Message, "Pipe-Fit"); }
+            };
             var export = new Button { Text = "Note de calcul (PDF, Excel)…", Anchor = AnchorStyles.Bottom | AnchorStyles.Right };
             export.SetBounds(ClientSize.Width - 290, ClientSize.Height - 44, 170, 32);
             var fermer = new Button { Text = "Fermer", DialogResult = DialogResult.OK, Anchor = AnchorStyles.Bottom | AnchorStyles.Right };

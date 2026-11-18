@@ -15,7 +15,7 @@ using TaskDialog = Autodesk.Revit.UI.TaskDialog;
 
 namespace PipeFit.Isometries.Revit
 {
-    [Transaction(TransactionMode.ReadOnly)]
+    [Transaction(TransactionMode.Manual)]
     public sealed class CmdPerteCharge : CommandeBase
     {
         protected override Result Executer(ExternalCommandData data, ref string message, ElementSet elementsErreur)
@@ -40,7 +40,10 @@ namespace PipeFit.Isometries.Revit
             if (troncons.Count == 0) { TaskDialog.Show("Pipe-Fit", "Aucune canalisation exploitable dans la sélection."); return Result.Cancelled; }
             var projet = doc.ProjectInformation?.Name;
             using (var f = new FenetreCalcul(false, "Perte de charge hydraulique", string.IsNullOrWhiteSpace(projet) ? doc.Title : projet, troncons, notes))
+            {
+                f.EcrireMaquette = (tr, vmax) => ResultatsMaquette.Ecrire(doc, data.Application.Application, uidoc.ActiveView, tr, vmax, false);
                 f.ShowDialog(new FenetreRevit(data.Application.MainWindowHandle));
+            }
             return Result.Succeeded;
         }
 

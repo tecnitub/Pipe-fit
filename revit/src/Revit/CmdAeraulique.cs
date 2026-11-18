@@ -21,7 +21,7 @@ namespace PipeFit.Isometries.Revit
         public bool AllowReference(Reference r, XYZ p) => true;
     }
 
-    [Transaction(TransactionMode.ReadOnly)]
+    [Transaction(TransactionMode.Manual)]
     public sealed class CmdAeraulique : CommandeBase
     {
         static readonly BuiltInCategory[] Cats = { BuiltInCategory.OST_DuctCurves, BuiltInCategory.OST_FlexDuctCurves, BuiltInCategory.OST_DuctFitting,
@@ -50,7 +50,10 @@ namespace PipeFit.Isometries.Revit
             if (troncons.Count == 0) { TaskDialog.Show("Pipe-Fit", "Aucune gaine exploitable dans la sélection."); return Result.Cancelled; }
             var projet = doc.ProjectInformation?.Name;
             using (var f = new FenetreCalcul(true, "Débit, vitesse et perte de charge – ventilation", string.IsNullOrWhiteSpace(projet) ? doc.Title : projet, troncons, notes))
+            {
+                f.EcrireMaquette = (tr, vmax) => ResultatsMaquette.Ecrire(doc, data.Application.Application, uidoc.ActiveView, tr, vmax, true);
                 f.ShowDialog(new FenetreRevit(data.Application.MainWindowHandle));
+            }
             return Result.Succeeded;
         }
 
@@ -276,7 +279,7 @@ namespace PipeFit.Isometries.Revit
     /// dérivation selon le chemin, registres, coupe-feu, silencieux, bouche) ; le chemin le plus défavorisé donne la
     /// pression du réseau au ventilateur. Le chemin choisi peut être sélectionné dans Revit.
     /// </summary>
-    [Transaction(TransactionMode.ReadOnly)]
+    [Transaction(TransactionMode.Manual)]
     public sealed class CmdPerteAeraulique : CommandeBase
     {
         protected override Result Executer(ExternalCommandData data, ref string message, ElementSet elementsErreur)
@@ -342,6 +345,7 @@ namespace PipeFit.Isometries.Revit
             var projet = doc.ProjectInformation?.Name;
             using (var f = new FenetreCalcul(true, "Perte de charge aéraulique", string.IsNullOrWhiteSpace(projet) ? doc.Title : projet, liste, notes, true))
             {
+                f.EcrireMaquette = (tr, vmax) => ResultatsMaquette.Ecrire(doc, data.Application.Application, uidoc.ActiveView, tr, vmax, true);
                 var res = f.ShowDialog(new FenetreRevit(data.Application.MainWindowHandle));
                 if (res == System.Windows.Forms.DialogResult.Yes && f.CheminASelectionner != null)
                     uidoc.Selection.SetElementIds(f.CheminASelectionner.Select(Compat.IdDepuis).ToList());
