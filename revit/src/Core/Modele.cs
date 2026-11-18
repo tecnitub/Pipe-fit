@@ -141,6 +141,8 @@ namespace PipeFit.Isometries.Core
     public sealed class LigneNomenclature
     {
         public int Repere;
+        /// <summary>Cote face à face (mm) d'une vanne ou d'un accessoire en ligne (clapet, filtre, compensateur…), 0 sinon.</summary>
+        public double FaceAFaceMm;
         public TypeComposant Type;
         public string Designation = "";
         public string Taille = "";

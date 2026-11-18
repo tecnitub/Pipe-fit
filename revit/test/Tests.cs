@@ -95,8 +95,16 @@ static class Tests
         d.Composants.Add(C("t2", "Tuyau", "Acier", TypeComposant.Tube, 80, 300, null, E(850, 0, 0, 80, "f3"), E(1150, 0, 0, 80, null)));
         AnalyseSpool.Analyser(d);
         var cd = d.Cotes.Select(c => c.Valeur + " " + c.Libelle).OrderBy(x => x).ToList();
-        Verifier(cd.Count == 3 && cd.Contains("600 bride / bride") && cd.Contains("200 bride / bride") && cd.Contains("350 bride / extrémité"),
-            "chaîne droite coupée aux joints boulonnés : " + string.Join(", ", cd));
+        // Bride : cote au bout de la bride ; vanne : cote à son axe (milieu entre ses faces)
+        Verifier(cd.Count == 4 && cd.Contains("600 bride / bride") && cd.Contains("100 bride / axe") && cd.Contains("100 axe / bride") && cd.Contains("350 bride / extrémité"),
+            "chaîne droite : bout des brides et axe de la vanne : " + string.Join(", ", cd));
+        var lv = d.Nomenclature.Single(l => l.Type == TypeComposant.Vanne);
+        Verifier(lv.FaceAFaceMm == 200 && d.Nomenclature.Where(l => l.Type != TypeComposant.Vanne).All(l => l.FaceAFaceMm == 0), "nomenclature : cote face à face de la vanne (200)");
+        var tnd = MiseEnPage.Tableaux(d, "", "").First(t => t.Titre == "NOMENCLATURE");
+        var ic = tnd.Colonnes.FindIndex(c => c.Titre == "Cote");
+        Verifier(ic > 0 && tnd.Lignes.Any(r => r[ic] == "200") && tnd.Lignes.All(r => r.Length == tnd.Colonnes.Count) && Math.Abs(tnd.Largeur - 130) < 0.01,
+            "tableau nomenclature : colonne « Cote » de la vanne");
+        Verifier(ExportCsv.Nomenclature(new[] { d }).Contains(";200\r\n"), "CSV nomenclature : face à face");
 
         // Provenance / destination : sans sens Revit, la première extrémité de la ligne est l'arrivée
         var sl = Exemple();

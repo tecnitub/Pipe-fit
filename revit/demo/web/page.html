@@ -377,8 +377,8 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
       const lt = Pl.largeur(c.v, 2.5) + 1;
       let mx, my, cadre;
       let libre = false;
-      for (const cote2 of [2.2, -2.2, 5.6, 9.0]) {
-        for (const t of [0.5, 0.35, 0.65, 0.22, 0.78, 0.1, 0.9, -0.6, 1.6, -1.2, 2.2]) {
+      for (const cote2 of [2.2, -2.2, 5.6, 9.0, 12.4, -5.6]) {
+        for (const t of [0.5, 0.35, 0.65, 0.22, 0.78, 0.1, 0.9, -0.6, 1.6, -1.2, 2.2, -1.8, 2.8]) {
           mx = ax + (bx - ax) * t + nx * cote2; my = ay + (by - ay) * t + ny * cote2;
           cadre = Pl.tourne(mx, my, lt, 3.3, ang);
           if (!obs.durs.some(o => Pl.recouvre(cadre, o))) { libre = true; break; }
@@ -516,7 +516,7 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
           s.assemblages.map(a => [a.n, `<span class="pill ${lib[a.nature][1]}">${lib[a.nature][0]}</span>`, 'DN' + Math.round(a.dn), fr.format(a.pd)]));
     } else if (st.tab === 'cot') {
       p.innerHTML = table([{ t: 'Cote (mm)', r: true }, { t: 'De / à' }], s.cotes.map(c => [c.v, c.l])) +
-        `<p class="note">Axe = intersection des axes du coude ou du té. Bride = face de la bride. Une vanne entre brides coupe la chaîne : cotes jusqu'à ses faces, puis face à face.</p>`;
+        `<p class="note">Axe = intersection des axes du coude ou du té. Bride = face de la bride. Bride : cote au bout de la bride. Vanne, clapet, filtre, compensateur : cote à leur axe ; leur face à face est dans la nomenclature (colonne Cote).</p>`;
     } else if (st.tab === 'qte') {
       const rows = s.quantitatif.trim().split(/\r?\n/).map(l => l.split(';'));
       const cols = rows[0].map((t, i) => ({ t, r: i === 4 || i === 5 }));

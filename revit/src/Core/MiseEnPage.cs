@@ -80,18 +80,24 @@ namespace PipeFit.Isometries.Core
             }
 
             var nom = new Tableau { Titre = "NOMENCLATURE" };
-            nom.Colonnes.Add(new Colonne("Rep.", 10)); nom.Colonnes.Add(new Colonne("Désignation", 52));
-            nom.Colonnes.Add(new Colonne("DN", 14)); nom.Colonnes.Add(new Colonne("Matière", 22)); nom.Colonnes.Add(new Colonne("Qté", 16, true));
-            nom.Colonnes.Add(new Colonne("Pouces", 16, true));
+            // « Cote » : face à face des vannes et accessoires en ligne (clapet, filtre, dilatoflex…), en mm
+            bool faf = s.Nomenclature.Any(l => l.FaceAFaceMm > 0);
+            nom.Colonnes.Add(new Colonne("Rep.", 10)); nom.Colonnes.Add(new Colonne("Désignation", faf ? 46 : 52));
+            nom.Colonnes.Add(new Colonne("DN", faf ? 12 : 14));
+            if (faf) nom.Colonnes.Add(new Colonne("Cote", 12, true));
+            nom.Colonnes.Add(new Colonne("Matière", faf ? 20 : 22)); nom.Colonnes.Add(new Colonne("Qté", faf ? 15 : 16, true));
+            nom.Colonnes.Add(new Colonne("Pouces", faf ? 15 : 16, true));
             foreach (var l in s.Nomenclature)
                 nom.Lignes.Add(new[]
                 {
-                    l.Repere.ToString(CultureInfo.InvariantCulture), l.Designation, Taille(l), l.Materiau,
+                    l.Repere.ToString(CultureInfo.InvariantCulture), l.Designation, Taille(l) }
+                    .Concat(faf ? new[] { l.FaceAFaceMm > 0 ? l.FaceAFaceMm.ToString("0", Fr) : "" } : new string[0]).Concat(new[] { l.Materiau,
                     l.EstTube ? (l.LongueurMm / 1000).ToString("0.00", Fr) + " m" : l.Quantite.ToString(CultureInfo.InvariantCulture),
                     l.PoucesSoudures > 0 ? l.PoucesSoudures.ToString("0.##", Fr) + "\"" : "",
-                });
+                }).ToArray());
             var total = s.Nomenclature.Sum(l => l.PoucesSoudures);
-            nom.Lignes.Add(new[] { "", "Total soudures (pouces-diamètre)", "", "", "", total.ToString("0.##", Fr) + "\"" });
+            nom.Lignes.Add(new[] { "", "Total soudures (pouces-diamètre)", "" }.Concat(faf ? new[] { "" } : new string[0])
+                .Concat(new[] { "", "", total.ToString("0.##", Fr) + "\"" }).ToArray());
             res.Add(nom);
 
             if (s.Debits.Count > 0)

@@ -490,9 +490,9 @@ namespace PipeFit.Isometries.Revit
                     // Le long de la ligne, au-dessus puis de l'autre côté de la ligne de cote
                     var libre = false;
                     // Au-dessus, de l'autre côté, sur une deuxième rangée, puis dans le prolongement de la cote (tronçon court)
-                    foreach (var cote2 in new[] { 2.2, -2.2, 5.6, 9.0 })
+                    foreach (var cote2 in new[] { 2.2, -2.2, 5.6, 9.0, 12.4, -5.6 })
                     {
-                        foreach (var t in new[] { 0.5, 0.35, 0.65, 0.22, 0.78, 0.1, 0.9, -0.6, 1.6, -1.2, 2.2 })
+                        foreach (var t in new[] { 0.5, 0.35, 0.65, 0.22, 0.78, 0.1, 0.9, -0.6, 1.6, -1.2, 2.2, -1.8, 2.8 })
                         {
                             mx = ax + (bx - ax) * t + nx * cote2; my = ay + (by - ay) * t + ny * cote2;
                             cadre = PlacementEtiquettes.CadreTourne(mx, my, lt, HauteurTexteMm + 0.8, angle);

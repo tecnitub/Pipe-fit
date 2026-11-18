@@ -119,6 +119,10 @@ LÉGENDE DES SYMBOLES
   Chaque isométrie porte la légende des symboles présents (bande sous le dessin). La feuille ISO-LÉGENDE,
   créée avec les isométries, donne tous les symboles (option dans la fenêtre des isométries).
 
+COTES DES VANNES ET BRIDES
+  Bride : cote au bout de la bride. Vanne, clapet, filtre, compensateur : cote à l'axe (milieu entre les
+  faces). La nomenclature donne leur face à face (colonne « Cote », en mm).
+
 PIQUAGES
   Le piquage dessiné par Revit (avec une longueur) est en réalité la branche piquée directement sur le
   collecteur : une seule soudure, côté collecteur ; la longueur du piquage est ajoutée au débit du tube

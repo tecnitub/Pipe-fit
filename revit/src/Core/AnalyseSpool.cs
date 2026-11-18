@@ -254,13 +254,17 @@ namespace PipeFit.Isometries.Core
         public static double LongueurPiquage(Composant p) =>
             p.Extremites.Count == 2 ? (p.Extremites[0].Position - p.Extremites[1].Position).Longueur : 0;
 
+        /// <summary>Cote face à face d'une vanne ou d'un accessoire en ligne (distance entre ses deux faces), 0 sinon.</summary>
+        public static double FaceAFace(Composant c) =>
+            Cotation.EstVanne(c) ? c.Extremites[0].Position.Distance(c.Extremites[1].Position) : 0;
+
         static void NumeroterNomenclature(Spool s, List<Composant> ordre)
         {
             var rang = new Dictionary<string, int>();
             for (int i = 0; i < ordre.Count; i++) rang[ordre[i].Id] = i;
             foreach (var c in s.Composants.Where(x => x.PiquageDirect)) { c.Repere = ""; c.LigneNomenclature = 0; }
             var groupes = s.Composants.Where(c => !c.PiquageDirect)
-                .GroupBy(c => string.Join("|", (int)c.Type, Normaliser(c.Designation), Normaliser(c.Taille), Math.Round(c.DnMm), Normaliser(c.Materiau)))
+                .GroupBy(c => string.Join("|", (int)c.Type, Math.Round(FaceAFace(c)), Normaliser(c.Designation), Normaliser(c.Taille), Math.Round(c.DnMm), Normaliser(c.Materiau)))
                 .Select(g => g.ToList())
                 .OrderBy(g => Array.IndexOf(OrdreNomenclature, g[0].Type))
                 .ThenByDescending(g => g[0].DnMm)
@@ -274,6 +278,7 @@ namespace PipeFit.Isometries.Core
                 {
                     Repere = ++n, Type = g[0].Type, Designation = g[0].Designation, Taille = g[0].Taille, DnMm = g[0].DnMm,
                     Materiau = g[0].Materiau, Quantite = g.Count, LongueurMm = g.Sum(c => c.LongueurMm), Composants = g,
+                    FaceAFaceMm = Math.Round(FaceAFace(g[0])),
                 };
                 foreach (var c in g) { c.LigneNomenclature = n; c.Repere = n.ToString(CultureInfo.InvariantCulture); }
                 s.Nomenclature.Add(l);

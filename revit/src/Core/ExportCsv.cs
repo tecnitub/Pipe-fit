@@ -14,14 +14,14 @@ namespace PipeFit.Isometries.Core
         public static string Nomenclature(IEnumerable<Spool> spools)
         {
             var sb = new StringBuilder();
-            Ligne(sb, "Spool", "Rep.", "Famille", "Type", "Taille", "Longueur", "Nombre", "Matériau", "Système", "Désignation");
+            Ligne(sb, "Spool", "Rep.", "Famille", "Type", "Taille", "Longueur", "Nombre", "Matériau", "Système", "Désignation", "Face à face (mm)");
             foreach (var s in spools)
                 foreach (var l in s.Nomenclature)
                 {
                     var c = l.Composants[0];
                     Ligne(sb, s.Nom, l.Repere.ToString(CultureInfo.InvariantCulture), c.Famille, c.TypeNom, l.Taille != "" ? l.Taille : Diametres.Dn(l.DnMm),
                         l.EstTube ? System.Math.Round(l.LongueurMm).ToString(Fr) : "", l.EstTube ? "1" : l.Quantite.ToString(CultureInfo.InvariantCulture),
-                        l.Materiau, c.Systeme, l.Designation);
+                        l.Materiau, c.Systeme, l.Designation, l.FaceAFaceMm > 0 ? l.FaceAFaceMm.ToString("0", Fr) : "");
                 }
             return sb.ToString();
         }

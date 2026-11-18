@@ -1,6 +1,7 @@
 // Cotation de fabrication d'un spool : chaîne de cotes le long de chaque tronçon droit,
 //   - d'axe en axe entre raccords qui changent de direction (coudes, tés, croix, piquages),
-//   - d'axe à face de bride en bout de spool (ou à un joint boulonné intermédiaire : vanne, bride/bride),
+//   - d'axe à face de bride en bout de spool (ou à un joint bride/bride intermédiaire) : la cote d'une bride est au bout de la bride,
+//   - à l'AXE de la vanne (milieu entre ses deux faces) pour la robinetterie en ligne (vanne, filtre, clapet, compensateur…),
 //   - d'axe à extrémité quand le spool se termine sur un bout de tube (raccordement chantier, chanfrein).
 // Les points d'axe sont l'intersection des axes des connecteurs (sommet du coude, centre du té).
 using System;
@@ -66,6 +67,13 @@ namespace PipeFit.Isometries.Core
             return true;
         }
 
+        /// <summary>Robinetterie en ligne (deux raccordements) : la cote s'arrête à son axe, pas à ses faces.</summary>
+        public static bool EstVanne(Composant c) =>
+            (c.Type == TypeComposant.Vanne || c.Type == TypeComposant.Accessoire) && c.Extremites.Count == 2;
+
+        /// <summary>Axe d'une vanne : milieu entre ses deux faces de raccordement.</summary>
+        public static Point3 AxeVanne(Composant c) => (c.Extremites[0].Position + c.Extremites[1].Position) * 0.5;
+
         /// <summary>Extrémité de « c » raccordée à « autre » au point donné (null si aucune).</summary>
         public static Extremite EnFace(Composant c, Composant autre, Point3 point) =>
             c.Extremites.Where(x => x.ConnecteA == autre.Id).OrderBy(x => x.Position.Distance(point)).FirstOrDefault();
@@ -91,7 +99,14 @@ namespace PipeFit.Isometries.Core
             {
                 for (int garde = 0; garde < 10000; garde++)
                 {
-                    if (Externe(ext))
+                    if (EstVanne(cur))
+                    {
+                        // On sort d'une vanne (la chaîne est à son axe) : cote axe de la vanne → face de sortie
+                        Ajouter(o, no, ext.Position, NatureNoeud.Bride);
+                        o = ext.Position; no = NatureNoeud.Bride;
+                        if (Externe(ext)) return;
+                    }
+                    else if (Externe(ext))
                     {
                         Ajouter(o, no, ext.Position, AnalyseSpool.Boulonnable(cur) ? NatureNoeud.Bride : NatureNoeud.Extremite);
                         return;
@@ -99,9 +114,16 @@ namespace PipeFit.Isometries.Core
                     var nb = parId[ext.ConnecteA];
                     if (AnalyseSpool.Boulonnable(cur) && AnalyseSpool.Boulonnable(nb))
                     {
-                        // Joint boulonné intermédiaire : cote jusqu'à la face, puis nouvelle chaîne au-delà
+                        // Joint boulonné intermédiaire : cote jusqu'au bout de la bride, puis nouvelle chaîne au-delà
                         Ajouter(o, no, ext.Position, NatureNoeud.Bride);
                         o = ext.Position; no = NatureNoeud.Bride;
+                    }
+                    if (EstVanne(nb))
+                    {
+                        // Vanne : cote jusqu'à son axe (milieu entre ses faces), puis nouvelle chaîne depuis cet axe
+                        var av = AxeVanne(nb);
+                        Ajouter(o, no, av, NatureNoeud.Axe);
+                        o = av; no = NatureNoeud.Axe;
                     }
                     var entree = nb.Extremites.OrderBy(x => x.Position.Distance(ext.Position)).FirstOrDefault();
                     if (entree == null) return;
@@ -128,7 +150,14 @@ namespace PipeFit.Isometries.Core
                 {
                     var na = AnalyseSpool.Boulonnable(c) ? NatureNoeud.Bride : NatureNoeud.Extremite;
                     var autres = c.Extremites.Where(y => y != x).ToList();
-                    if (autres.Count == 1) Marcher(x.Position, na, c, autres[0]);
+                    if (autres.Count != 1) continue;
+                    if (EstVanne(c))
+                    {
+                        // Spool qui commence par une vanne : face → axe de la vanne, puis la suite depuis l'axe
+                        Ajouter(x.Position, NatureNoeud.Bride, AxeVanne(c), NatureNoeud.Axe);
+                        Marcher(AxeVanne(c), NatureNoeud.Axe, c, autres[0]);
+                    }
+                    else Marcher(x.Position, na, c, autres[0]);
                 }
             return cotes;
         }
