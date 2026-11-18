@@ -62,6 +62,23 @@ static class Tests
         var r = PerteCharge.Hydraulique(new[] { t, c, new Troncon { DiametreMm = 54.5, DebitM3h = 30, LongueurM = 1 } }, e20);
         Verifier(Math.Abs(r.TotalPa - (t.PerteTotalePa + c.PerteTotalePa + r.Troncons[2].PerteTotalePa)) < 1e-6 && r.Troncons[2].Alerte.Contains("vitesse") && r.Troncons[0].Alerte.Contains("Pa/m") && r.Troncons[1].Alerte == ""
             && Math.Abs(r.TotalMce(e20) - r.TotalPa / (998.2 * 9.80665)) < 0.01, "total, mCE et alerte de vitesse");
+        // Té : ζ selon les débits, rapporté à la vitesse de sortie ; perte = ζc × ρvc²/2
+        {
+            double ac = PerteCharge.AireRonde(107.1), ab = PerteCharge.AireRonde(37.2);  // DN100 / DN32
+            var zb = PerteCharge.ZetaTe(30, ac, 2, ab, true).Value;
+            double vc = 30 / 3600.0 / ac, vb = 2 / 3600.0 / ab;
+            var tb = new Troncon { DiametreMm = 37.2, DebitM3h = 2, Zeta = zb }; PerteCharge.Calculer(tb, e20);
+            var attendu = 0.9 * (1 + Math.Pow(vb / vc, 2)) * 998.2 * vc * vc / 2;
+            Verifier(Math.Abs(tb.PerteSinguliere - attendu) < 0.02 * attendu && tb.VitesseMs < 0.6, "té DN100 30 m³/h → dérivation DN32 2 m³/h : vitesse de la branche ("
+                + tb.VitesseMs.ToString("0.00") + " m/s), perte " + tb.PerteSinguliere.ToString("0") + " Pa ≈ " + attendu.ToString("0"));
+            // Ancien calcul (Ø de la branche avec le débit du collecteur) : perte plus de 100 fois trop forte
+            var faux = new Troncon { DiametreMm = 37.2, DebitM3h = 30, Zeta = 1.3 }; PerteCharge.Calculer(faux, e20);
+            Verifier(faux.PerteSinguliere > 50 * tb.PerteSinguliere, "l'ancien calcul surestimait la dérivation (" + faux.PerteSinguliere.ToString("0") + " Pa)");
+            var zp = PerteCharge.ZetaTe(30, ac, 28, ac, false).Value;
+            Verifier(zp >= 0 && zp < 0.01, "té passage, débit presque inchangé : perte quasi nulle (ζ " + zp + ")");
+            Verifier(Math.Abs(PerteCharge.ZetaTe(10, ac, 10, ac, true).Value - 1.8) < 1e-9, "dérivation à vitesse égale : ζ 1,8");
+            Verifier(PerteCharge.ZetaTe(0, ac, 2, ab, true) == null, "débits inconnus : ζ par défaut");
+        }
         // Air : Ø315, 1500 m³/h : 5,35 m/s, ≈ 1,1 Pa/m ; rectangulaire 400×200
         var ga = new Troncon { DiametreMm = 315, LongueurM = 5, RugositeMm = 0.15, DebitM3h = 1500 };
         PerteCharge.Calculer(ga, a20);

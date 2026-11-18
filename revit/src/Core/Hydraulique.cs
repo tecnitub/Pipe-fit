@@ -201,6 +201,23 @@ namespace PipeFit.Isometries.Core
             return 0.2;
         }
 
+        /// <summary>
+        /// ζ d'un té (ou d'une dérivation) selon la répartition des débits, rapporté à la vitesse de la SORTIE empruntée par
+        /// le chemin (celle du tronçon de calcul) — formules d'Idelchik, té à 90° en écoulement divergent :
+        ///   dérivation : ζc = 0,9 × (1 + (vs/vc)²) ;   passage : ζc = 0,4 × (1 − vs/vc)²   (rapportés à la vitesse commune vc),
+        ///   puis ζ = ζc × (vc/vs)².
+        /// La voie commune est celle du plus fort débit. Débits ou sections inconnus : ζ par défaut (null).
+        /// </summary>
+        public static double? ZetaTe(double qCommunM3h, double aireCommuneM2, double qSortieM3h, double aireSortieM2, bool derivation)
+        {
+            if (qCommunM3h <= 0 || qSortieM3h <= 0 || aireCommuneM2 <= 0 || aireSortieM2 <= 0) return null;
+            double vc = qCommunM3h / aireCommuneM2, vs = qSortieM3h / aireSortieM2, r = vs / vc;
+            var zc = derivation ? 0.9 * (1 + r * r) : 0.4 * (1 - r) * (1 - r);
+            return Math.Round(zc / (r * r), 3);
+        }
+
+        public static double AireRonde(double diametreMm) => Math.PI * Math.Pow(diametreMm / 1000, 2) / 4;
+
         public enum OrganeAir { Gaine, Coude, Te, Transition, Registre, CoupeFeu, Silencieux, Bouche, Autre }
 
         /// <summary>

@@ -256,7 +256,7 @@ fenêtre), cliquez. Pour chaque élément :
   débit saisi (repéré *) ;
 - fluide : eau, eau + MEG ou eau + MPG (pourcentage), à la température choisie (masse volumique et viscosité calculées) ;
 - perte linéaire **Darcy-Weisbach**, λ de **Colebrook-White** (64/Re en laminaire) ; pertes singulières ζ·ρv²/2 avec ζ
-  par défaut : coude 90° 0,3 (au prorata de l'angle), té passage 0,3 / dérivation 1,3 (d'après le chemin choisi),
+  par défaut : coude 90° 0,3 (au prorata de l'angle), té selon la répartition des débits (ci-dessous),
   réduction 0,1, vanne 0,2, papillon 0,3, boisseau 0,1, vanne de réglage 6, clapet 2, filtre 2,5, vanne motorisée 4,
   compensateur 0,2 ;
 - tableau : débit, ζ et **perte fixe** (valeur fabricant en Pa : batterie, échangeur…) modifiables, recalcul immédiat ;
@@ -280,6 +280,13 @@ ajoutée en tête de chaque chemin : le total devient la pression au ventilateur
 - le **chemin le plus défavorisé** est en tête de liste : sa perte de charge est la **pression du réseau au
   ventilateur** (la perte propre de la CTA n'est pas comptée) ; chaque chemin peut être affiché, modifié (ζ, pertes
   fixes, débits) et **sélectionné dans Revit** ; note de calcul Excel du chemin affiché.
+
+**Tés et dérivations** (hydraulique et ventilation) : chaque voie du té prend le diamètre (ou la section) et le débit
+de l'élément raccordé, même hors sélection ; la voie commune est celle du plus fort débit, la sortie celle du chemin.
+Le tronçon du té a **la section et le débit de la sortie** (la branche en dérivation) et
+ζ = ζc × (vc/vs)² avec, d'après Idelchik (té à 90°, écoulement divergent) : dérivation ζc = 0,9 × (1 + (vs/vc)²),
+passage ζc = 0,4 × (1 − vs/vc)². Débits inconnus : ζ par défaut (eau 1,3 / 0,3 ; air 0,6 / 0,2). En réseau de retour
+(écoulement convergent) la même formule est appliquée, du côté de la sécurité.
 
 **Débit et vitesse ventilation** (gaines) : sélectionnez les gaines (réseau ou chemin), cliquez.
 - section de chaque gaine (Ø ou largeur × hauteur, raccords : leur plus grand raccordement), rugosité du type de gaine ;

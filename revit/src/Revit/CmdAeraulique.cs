@@ -75,12 +75,33 @@ namespace PipeFit.Isometries.Revit
 
         internal static double DebitElement(Element e) => Debit(e);
 
+        /// <summary>Débit d'un élément du réseau : calcul Revit, sinon somme des bouches en aval.</summary>
+        internal static Func<string, double> DebitDe(Document doc, Dictionary<string, Element> reseau, Dictionary<string, double> arbre) => id =>
+        {
+            if (reseau.TryGetValue(id, out var el) && !Compat.EstCategorie(el, BuiltInCategory.OST_DuctTerminal) && !Compat.EstCategorie(el, BuiltInCategory.OST_MechanicalEquipment))
+            {
+                var q = Debit(el);
+                if (q > 0) return q;
+            }
+            return arbre.TryGetValue(id, out var qa) ? qa : 0;
+        };
+
         static double Debit(Element e)
         {
             var q = e.get_Parameter(BuiltInParameter.RBS_DUCT_FLOW_PARAM)?.AsDouble() ?? 0;
             if (q <= 0 && Compat.EstCategorie(e, BuiltInCategory.OST_DuctTerminal))
                 foreach (var cn in Connecteurs(e)) { try { q = Math.Max(q, Math.Abs(cn.Flow)); } catch { } }
             return q > 0 ? M3h(q) : 0;
+        }
+
+        static (double d, double l, double h) SectionConnecteur(Connector cn)
+        {
+            try
+            {
+                if (cn.Shape == ConnectorProfileType.Round) return (Compat.Mm(cn.Radius * 2), 0, 0);
+                return (0, Compat.Mm(cn.Width), Compat.Mm(cn.Height));
+            }
+            catch { return (0, 0, 0); }
         }
 
         /// <summary>Section d'un élément : gaine (Ø ou largeur × hauteur), sinon son plus grand raccordement.</summary>
@@ -144,7 +165,7 @@ namespace PipeFit.Isometries.Revit
         /// Ligne de calcul d'un élément. Té : dérivation ou passage d'après les éléments voisins du chemin (amont / aval
         /// donnés), sinon d'après la sélection.
         /// </summary>
-        internal static Troncon Ligne(Document doc, Element e, double debit, Func<Element, bool> dansChemin, ref int n)
+        internal static Troncon Ligne(Document doc, Element e, double debit, Func<Element, bool> dansChemin, ref int n, Func<string, double> debitDe = null)
         {
             var k = Compat.Cle(e.Id);
             var (d, w, h) = Section(e);
@@ -167,7 +188,7 @@ namespace PipeFit.Isometries.Revit
                 || pt == PartType.SpudPerpendicular || pt == PartType.SpudAdjustable) o = PerteCharge.OrganeAir.Te;
             else if (pt == PartType.Transition) o = PerteCharge.OrganeAir.Transition;
             else o = PerteCharge.OrganeParNom(nom);
-            double angle = 90; bool derivation = false;
+            double angle = 90; bool derivation = false; double? zetaTe = null;
             try
             {
                 if (o == PerteCharge.OrganeAir.Coude && cns.Count == 2)
@@ -177,15 +198,39 @@ namespace PipeFit.Isometries.Revit
                 }
                 if (o == PerteCharge.OrganeAir.Te)
                 {
-                    // Passage si le chemin entre et sort par deux raccordements opposés
-                    var parcourus = cns.Where(cn => cn.AllRefs.Cast<Connector>().Any(r => r.Owner != null && r.Owner.Id != e.Id && dansChemin(r.Owner))).ToList();
-                    derivation = parcourus.Count >= 2 && !parcourus.Any(a => parcourus.Any(b => a.Id != b.Id && a.CoordinateSystem.BasisZ.DotProduct(b.CoordinateSystem.BasisZ) < -0.9));
+                    // Voies du té : élément raccordé, son débit, la section du raccordement. Voie commune = plus fort débit ;
+                    // sortie = l'autre voie du chemin. Le tronçon prend la section et le débit de la SORTIE.
+                    var voies = cns.Select(cn => (C: cn, V: cn.AllRefs.Cast<Connector>().Select(r => r.Owner).FirstOrDefault(ow => ow != null && ow.Id != e.Id && !(ow is MEPSystem))))
+                        .Select(x => (x.C, x.V, Q: x.V != null && debitDe != null ? debitDe(Compat.Cle(x.V.Id)) : 0)).ToList();
+                    var parcourus = voies.Where(x => x.V != null && dansChemin(x.V)).ToList();
+                    var commune = voies.Where(x => x.Q > 0).OrderByDescending(x => x.Q).Select(x => x.C).FirstOrDefault();
+                    Connector sortie = commune != null && parcourus.Any(x => x.C.Id == commune.Id)
+                        ? parcourus.Where(x => x.C.Id != commune.Id).Select(x => x.C).FirstOrDefault()
+                        : parcourus.OrderBy(x => x.Q).Select(x => x.C).FirstOrDefault();
+                    if (commune != null && sortie != null && commune.Id != sortie.Id)
+                        derivation = commune.CoordinateSystem.BasisZ.DotProduct(sortie.CoordinateSystem.BasisZ) >= -0.9;
+                    else
+                        derivation = parcourus.Count >= 2 && !parcourus.Any(a => parcourus.Any(b => a.C.Id != b.C.Id && a.C.CoordinateSystem.BasisZ.DotProduct(b.C.CoordinateSystem.BasisZ) < -0.9));
                     nom += derivation ? " (dérivation)" : " (passage)";
+                    if (sortie != null)
+                    {
+                        var (ds, ws, hs) = SectionConnecteur(sortie);
+                        if (ds > 0 || ws * hs > 0) { t.DiametreMm = ds; t.LargeurMm = ws; t.HauteurMm = hs; d = ds; }
+                        var qs = voies.First(x => x.C.Id == sortie.Id).Q;
+                        if (qs > 0) t.DebitM3h = qs;
+                        if (commune != null && commune.Id != sortie.Id)
+                        {
+                            var (dc, wc, hc) = SectionConnecteur(commune);
+                            var ac = dc > 0 ? PerteCharge.AireRonde(dc) : wc * hc / 1e6;
+                            var aS = ds > 0 ? PerteCharge.AireRonde(ds) : ws * hs / 1e6;
+                            zetaTe = PerteCharge.ZetaTe(voies.First(x => x.C.Id == commune.Id).Q, ac, qs, aS, derivation);
+                        }
+                    }
                 }
             }
             catch { }
             t.Designation = nom;
-            t.Zeta = PerteCharge.ZetaAir(o, d > 0, angle, derivation);
+            t.Zeta = zetaTe ?? PerteCharge.ZetaAir(o, d > 0, angle, derivation);
             t.Nature = o.ToString(); t.Repere = o == PerteCharge.OrganeAir.Bouche ? "B" + (++n) : "R" + (++n);
             // Perte de charge fabricant (paramètre Pipe-Fit, sinon valeur trouvée dans la famille) : remplace le ζ par défaut
             bool equipement = Compat.EstCategorie(e, BuiltInCategory.OST_MechanicalEquipment);
@@ -212,7 +257,7 @@ namespace PipeFit.Isometries.Revit
             {
                 var k = Compat.Cle(e.Id);
                 var q = Debit(e);
-                res.Add(Ligne(doc, e, q > 0 ? q : arbre.TryGetValue(k, out var qa) ? qa : 0, x => ids.Contains(x.Id), ref n));
+                res.Add(Ligne(doc, e, q > 0 ? q : arbre.TryGetValue(k, out var qa) ? qa : 0, x => ids.Contains(x.Id), ref n, DebitDe(doc, reseau, arbre)));
             }
             return res;
         }
@@ -282,7 +327,7 @@ namespace PipeFit.Isometries.Revit
                     if (!reseau.TryGetValue(id, out var e) || id == source) continue;
                     var q = CmdAeraulique.DebitElement(e);
                     lignes.Add(CmdAeraulique.Ligne(doc, e, q > 0 && !Compat.EstCategorie(e, BuiltInCategory.OST_DuctTerminal) ? q : arbre.TryGetValue(id, out var qa) ? qa : q,
-                        x => ids.Contains(Compat.Cle(x.Id)), ref n));
+                        x => ids.Contains(Compat.Cle(x.Id)), ref n, CmdAeraulique.DebitDe(doc, reseau, arbre)));
                 }
                 var b = reseau[kv.Key];
                 var nomB = ((doc.GetElement(b.GetTypeId()) as ElementType)?.FamilyName ?? b.Name) + " " + Compat.Cle(b.Id)

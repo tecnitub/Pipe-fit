@@ -46,6 +46,26 @@ namespace PipeFit.Isometries.Revit
 
         static double M3h(double interne) => UnitUtils.ConvertFromInternalUnits(interne, UnitTypeId.CubicMetersPerHour);
 
+        /// <summary>Diamètre intérieur (mm) et débit (m³/h) du tube raccordé à une extrémité, sélectionné ou non.</summary>
+        static (double D, double Q) Tube(Document doc, Extremite x, Dictionary<string, double> dint, Dictionary<string, double> debit)
+        {
+            if (x.ConnecteA == null) return (x.DnMm, 0);
+            double d = dint.TryGetValue(x.ConnecteA, out var dd) ? dd : 0, q = debit.TryGetValue(x.ConnecteA, out var qq) ? qq : 0;
+            if (d > 0 && q > 0) return (d, q);
+            try
+            {
+                if (doc.GetElement(Compat.IdDepuis(x.ConnecteA)) is Pipe p)
+                {
+                    var di = p.get_Parameter(BuiltInParameter.RBS_PIPE_INNER_DIAM_PARAM)?.AsDouble() ?? 0;
+                    if (d <= 0 && di > 0) d = Compat.Mm(di);
+                    var f = p.get_Parameter(BuiltInParameter.RBS_PIPE_FLOW_PARAM)?.AsDouble() ?? 0;
+                    if (q <= 0 && f > 0) q = M3h(f);
+                }
+            }
+            catch { }
+            return (d > 0 ? d : x.DnMm, q);
+        }
+
         public static List<Troncon> Troncons(Document doc, List<Element> elements, out List<string> notes)
         {
             notes = new List<string>();
@@ -88,13 +108,38 @@ namespace PipeFit.Isometries.Revit
                     t.DiametreMm = di > 0 ? di : c.DnMm;
                     t.DebitM3h = voisins.Select(x => debit.TryGetValue(x.ConnecteA, out var q) ? q : 0).DefaultIfEmpty(0).Max();
                     bool derivation = false;
-                    if ((c.Type == TypeComposant.Te || c.Type == TypeComposant.Croix) && c.Extremites.Count >= 3)
+                    bool te = (c.Type == TypeComposant.Te || c.Type == TypeComposant.Croix) && c.Extremites.Count >= 3;
+                    if (te || (c.Type == TypeComposant.Piquage && c.Extremites.Count == 2))
                     {
-                        var (r1, r2) = ExportPcf.Passage(c.Extremites, Cotation.PointAxe(c));
-                        derivation = voisins.Count >= 2 && !(voisins.Contains(r1) && voisins.Contains(r2));
+                        // Té : chaque voie avec le diamètre intérieur et le débit du tube raccordé (même hors sélection) ;
+                        // voie commune = plus fort débit, sortie = l'autre voie du chemin. Le tronçon prend la section et le
+                        // débit de la SORTIE (branche en dérivation), et ζ selon la répartition des débits.
+                        var voies = c.Extremites.Select(x => (X: x, Info: Tube(doc, x, dint, debit))).ToList();
+                        var commune = voies.Where(v => v.Info.Q > 0).OrderByDescending(v => v.Info.Q).Select(v => v.X).FirstOrDefault();
+                        var chemin = voies.Where(v => voisins.Contains(v.X)).ToList();
+                        Extremite sortie = null;
+                        if (commune != null && chemin.Any(v => v.X == commune)) sortie = chemin.Where(v => v.X != commune).Select(v => v.X).FirstOrDefault();
+                        else sortie = chemin.OrderBy(v => v.Info.Q).Select(v => v.X).FirstOrDefault();
+                        if (te)
+                        {
+                            var (r1, r2) = ExportPcf.Passage(c.Extremites, Cotation.PointAxe(c));
+                            if (commune != null && sortie != null) derivation = !((commune == r1 || commune == r2) && (sortie == r1 || sortie == r2));
+                            else derivation = voisins.Count >= 2 && !(voisins.Contains(r1) && voisins.Contains(r2));
+                        }
+                        else derivation = true; // piquage : on entre ou on sort par la branche
+                        if (sortie != null)
+                        {
+                            var so = voies.First(v => v.X == sortie).Info;
+                            t.DiametreMm = so.D > 0 ? so.D : sortie.DnMm;
+                            t.DebitM3h = so.Q;
+                            var co = commune != null ? voies.First(v => v.X == commune).Info : default;
+                            var z = commune != null && commune != sortie
+                                ? PerteCharge.ZetaTe(co.Q, PerteCharge.AireRonde(co.D > 0 ? co.D : commune.DnMm), so.Q, PerteCharge.AireRonde(t.DiametreMm), derivation) : null;
+                            t.Zeta = z ?? PerteCharge.ZetaHydraulique(c.Type, c.Genre, c.AngleDeg, derivation);
+                        }
+                        else t.Zeta = PerteCharge.ZetaHydraulique(c.Type, c.Genre, c.AngleDeg, derivation);
                     }
-                    else if (c.Type == TypeComposant.Piquage) derivation = voisins.Count >= 2;
-                    t.Zeta = PerteCharge.ZetaHydraulique(c.Type, c.Genre, c.AngleDeg, derivation);
+                    else t.Zeta = PerteCharge.ZetaHydraulique(c.Type, c.Genre, c.AngleDeg, derivation);
                     if (c.Type == TypeComposant.Te || c.Type == TypeComposant.Croix) t.Designation += derivation ? " (dérivation)" : " (passage)";
                     // Équipement ou accessoire avec sa perte fabricant (paramètre Pipe-Fit, sinon valeur de la famille) : remplace le ζ
                     if (parCle.TryGetValue(c.Id, out var el) && (Compat.EstCategorie(el, BuiltInCategory.OST_PipeAccessory)
