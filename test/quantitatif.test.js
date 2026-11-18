@@ -102,3 +102,23 @@ test('sans soudures réelles (ancienne nomenclature) : estimation par famille in
   assert.strictEqual(c.liste[0].sd, 2);
   assert.strictEqual(+c.tot.poucesA.toFixed(2), 4 * 2 * 2 * 0.7);
 });
+
+test('export Excel du complément Revit : la feuille « Quantitatif » est importée, même si une autre est plus longue', () => {
+  const run = chiffrage();
+  const r = run.json(`(() => {
+    const quanti = { name: 'Quantitatif', rows: [
+      ['Réseau', 'Famille', 'Type', 'Taille', 'Longueur (mm)', 'Nombre', 'Matériau', 'Désignation', 'Pouces-diamètre', 'Repères spools'],
+      ['EG-101', 'Tube', 'Inox 316L', 'DN50', 5748, null, 'Inox 316L', 'Tube Inox 316L', null, 'SP-02'],
+      ['EG-101', 'Soudure atelier', 'bout à bout', 'DN50', null, 5, null, 'Soudures dans les spools', 10, 'SP-02']] };
+    const longue = { name: 'Nomenclatures', rows: Array.from({ length: 20 }, (_, i) => ['SP-0' + i, i, 'Coude', 'DN50']) };
+    const synth = { name: 'Synthèse', rows: [['Quantitatif tuyauterie'], ['Réseau', 'Tube (m)']] };
+    const sheet = feuilleNomenclature([synth, longue, quanti]);
+    const an = analyserNomenclature(sheet);
+    const lignes = lignesPlan(sheet, an, 'auto');
+    return { nom: sheet.name, colonnes: Object.keys(an.colonnes).sort(), lignes, autre: feuilleNomenclature([synth, longue]).name };
+  })()`, 'excel.js');
+  assert.strictEqual(r.nom, 'Quantitatif');
+  assert.deepStrictEqual(r.colonnes, ['famille', 'longueur', 'quantite', 'systeme', 'taille', 'type']);
+  assert.deepStrictEqual(r.lignes.map(l => [l.famille, l.longueur, l.qte, l.nature]), [['Tube', 5.748, 1, ''], ['Soudure atelier', 0, 5, 'soudureA']]);
+  assert.strictEqual(r.autre, 'Nomenclatures', 'sans feuille Quantitatif : la plus longue, comme avant');
+});

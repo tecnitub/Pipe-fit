@@ -331,6 +331,7 @@ static class Demo
         var json = JsonSerializer.Serialize(new { spools = sortie, reperage = Reperage(), legende, listeDebit }, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
         File.WriteAllText(args.Length > 0 ? args[0] : "demo.json", json);
         if (args.Length > 1) File.WriteAllText(args[1], Quantitatif.Csv(spools)); // exemple de quantitatif pour la démo du CRM
+        if (args.Length > 2) File.WriteAllBytes(args[2], ExportExcel.Quantites(spools, "Démonstration Pipe-Fit", new DateTime(2026, 11, 18, 9, 0, 0))); // classeur Excel des quantités
         foreach (var e in Montage.Ordonner(Reseau()))
             Console.WriteLine($"{e.Ordre}. {e.Spool.Nom} contre {e.PoseContre} : {Decoupage.LongueurTube(e.Spool.Composants) / 1000:0.00} m, voisins {string.Join(",", e.Voisins)}");
         return 0;

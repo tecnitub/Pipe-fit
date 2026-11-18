@@ -1,5 +1,6 @@
-// Commande « Quantitatif chiffrage » : exporte, pour tout le projet, le quantitatif lu par Pipe-Fit
-// (Devis → Chiffrage depuis plan) : fournitures par réseau, soudures et joints boulonnés réels.
+// Commande « Quantitatif chiffrage » : exporte, pour tout le projet, les quantités vers un classeur Excel (synthèse,
+// quantitatif, soudures, liste de débit, nomenclatures) ou le CSV lu par Pipe-Fit (Devis → Chiffrage depuis plan) :
+// fournitures par réseau, soudures et joints boulonnés réels.
 // Les spools numérotés donnent leurs soudures atelier / chantier ; la tuyauterie pas encore numérotée est comptée
 // par réseau, avec des soudures « à répartir » (part atelier du chiffrage).
 using System;
@@ -37,23 +38,36 @@ namespace PipeFit.Isometries.Revit
             var param = CmdIsometries.ParametreSpool(r, tous);
             var spools = Lire(doc, tous, param, r.SurlongueurMm);
 
-            string fichier;
+            string fichier; bool excel;
             using (var dlg = new SaveFileDialog
             {
-                Title = "Quantitatif pour le chiffrage Pipe-Fit",
-                Filter = "Fichier CSV (*.csv)|*.csv",
-                FileName = Nettoyer(doc.Title) + " - quantitatif Pipe-Fit.csv",
+                Title = "Quantités : classeur Excel ou CSV pour le chiffrage Pipe-Fit",
+                Filter = "Classeur Excel (*.xlsx)|*.xlsx|Fichier CSV pour le chiffrage (*.csv)|*.csv",
+                FilterIndex = 1,
+                FileName = Nettoyer(doc.Title) + " - quantités Pipe-Fit.xlsx",
                 InitialDirectory = Directory.Exists(r.Dossier) ? r.Dossier : doc.PathName != "" ? Path.GetDirectoryName(doc.PathName) : "",
             })
             {
                 if (dlg.ShowDialog(new FenetreRevit(data.Application.MainWindowHandle)) != DialogResult.OK) return Result.Cancelled;
                 fichier = dlg.FileName;
+                excel = dlg.FilterIndex == 1 || Path.GetExtension(fichier).Equals(".xlsx", StringComparison.OrdinalIgnoreCase);
+                if (excel && !Path.GetExtension(fichier).Equals(".xlsx", StringComparison.OrdinalIgnoreCase)) fichier = Path.ChangeExtension(fichier, ".xlsx");
             }
 
-            try { File.WriteAllText(fichier, Quantitatif.Csv(spools), new UTF8Encoding(true)); }
+            try
+            {
+                if (excel)
+                {
+                    var projet = doc.ProjectInformation?.Name;
+                    File.WriteAllBytes(fichier, ExportExcel.Quantites(spools, string.IsNullOrWhiteSpace(projet) ? doc.Title : projet, DateTime.Now));
+                }
+                else File.WriteAllText(fichier, Quantitatif.Csv(spools), new UTF8Encoding(true));
+            }
+            catch (IOException ex) { message = "Écriture impossible (fichier ouvert dans Excel ?) : " + ex.Message; return Result.Failed; }
             catch (Exception ex) { message = "Écriture impossible : " + ex.Message; return Result.Failed; }
 
-            Bilan(spools, fichier, param);
+            Bilan(spools, fichier, param, excel);
+            if (excel) try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(fichier) { UseShellExecute = true }); } catch { /* Excel absent : le fichier reste enregistré */ }
             return Result.Succeeded;
         }
 
@@ -73,7 +87,7 @@ namespace PipeFit.Isometries.Revit
             return res;
         }
 
-        static void Bilan(List<Spool> spools, string fichier, string param)
+        static void Bilan(List<Spool> spools, string fichier, string param, bool excel)
         {
             var lignes = Quantitatif.Calculer(spools);
             int N(string famille) => lignes.Where(l => l.Famille == famille).Sum(l => l.Nombre);
@@ -88,9 +102,11 @@ namespace PipeFit.Isometries.Revit
                 sb.AppendLine(horsSpool + " élément(s) sans numéro de spool" + (param != "" ? " (« " + param + " »)" : "") + " : "
                     + N("Soudure") + " soudures à répartir atelier / chantier dans le chiffrage.");
             sb.AppendLine();
-            sb.AppendLine("Dans Pipe-Fit : Devis → Chiffrage depuis plan → Importer la nomenclature, puis choisir ce fichier.");
+            if (excel) sb.AppendLine("Classeur Excel : Synthèse par réseau, Quantitatif, Soudures par spool, Liste de débit, Nomenclatures. "
+                + "Il s'importe aussi tel quel dans Pipe-Fit (Devis → Chiffrage depuis plan → Importer la nomenclature).");
+            else sb.AppendLine("Dans Pipe-Fit : Devis → Chiffrage depuis plan → Importer la nomenclature, puis choisir ce fichier.");
             sb.Append(fichier);
-            new TaskDialog("Pipe-Fit – Quantitatif") { MainInstruction = "Quantitatif exporté pour le chiffrage", MainContent = sb.ToString() }.Show();
+            new TaskDialog("Pipe-Fit – Quantitatif") { MainInstruction = excel ? "Quantités exportées vers Excel" : "Quantitatif exporté pour le chiffrage", MainContent = sb.ToString() }.Show();
         }
 
         static string Nettoyer(string s)

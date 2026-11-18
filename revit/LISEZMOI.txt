@@ -96,7 +96,13 @@ CE QUI EST CRÉÉ POUR CHAQUE SPOOL
   Relancer la génération met à jour les feuilles et vues existantes (option « Remplacer »).
   Toute la génération s'annule en une fois avec Ctrl+Z.
 
-QUANTITATIF POUR LE CHIFFRAGE (bouton « Quantitatif chiffrage »)
+EXPORT DES QUANTITÉS VERS EXCEL (bouton « Quantités Excel »)
+  Choisissez « Classeur Excel (*.xlsx) » : classeur de 5 feuilles, ouvert à la fin de l'export.
+  - Synthèse par réseau : tube, raccords, brides, robinetterie, soudures et pouces-diamètre, totaux.
+  - Quantitatif (format du chiffrage, importable dans Pipe-Fit), Soudures par spool, Liste de débit,
+    Nomenclatures des spools (avec l'encombrement des vannes).
+
+QUANTITATIF POUR LE CHIFFRAGE (même bouton, type « Fichier CSV pour le chiffrage »)
   Exporte le quantitatif de tout le projet dans un fichier CSV, à importer dans Pipe-Fit :
   Devis > Chiffrage depuis plan > Importer la nomenclature.
   - Fournitures par réseau : tubes en mètres, raccords et robinetterie en nombre, par DN et matériau.

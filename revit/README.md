@@ -2,7 +2,7 @@
 
 Complément Revit (2023 à 2027) qui produit **une isométrie de fabrication par numéro de spool** depuis la maquette 3D
 (onglet **Pipe-Fit → Fabrication → Isométries spools**) et le **quantitatif pour le chiffrage automatique** dans Pipe-Fit
-(**Quantitatif chiffrage**).
+(**Quantités Excel** : classeur Excel ou CSV du chiffrage).
 
 Le numéro de spool est attribué avec le bouton **Numéroter spools** (ci-dessous), ou renseigné à la main dans un paramètre texte des canalisations, raccords et accessoires
 (paramètre partagé « Numéro de spool », « Spool »… : la fenêtre propose tous les paramètres texte trouvés et choisit
@@ -243,9 +243,25 @@ La génération complète est une seule opération Revit (annulable par Ctrl+Z).
 met à jour les feuilles et vues déjà générées. Les éléments de tuyauterie sans numéro de spool sont signalés et
 peuvent être sélectionnés dans le modèle depuis la fenêtre.
 
+## Export des quantités vers Excel
+
+Bouton **Quantités Excel** du ruban, type « Classeur Excel (*.xlsx) » (proposé par défaut) : un classeur de 5 feuilles,
+ouvert dans Excel à la fin de l'export.
+
+| Feuille | Contenu |
+|---|---|
+| Synthèse | Par réseau : tube (m), raccords, brides, robinetterie, soudures atelier / chantier / hors spool (nombre et pouces-diamètre), joints boulonnés ; ligne de total en formules |
+| Quantitatif | Mêmes lignes que le CSV du chiffrage, en nombres, avec les pouces-diamètre des soudures ; s'importe tel quel dans Pipe-Fit (la feuille « Quantitatif » est reconnue) |
+| Soudures | Par spool : soudures atelier et chantier (nombre, pouces), joints boulonnés, longueur de tube ; total |
+| Liste de débit | Tubes à couper : longueur Revit, piquage, surlongueur, coupe, barre de 6 m ; total |
+| Nomenclatures | Nomenclature de chaque spool : repère, désignation, DN, encombrement, matière, quantité, longueur, pouces |
+
+En-têtes en gras, volets figés, filtres automatiques, mise en page paysage A4. Écrit sans Excel ni bibliothèque
+(Excel n'est nécessaire que pour l'ouvrir).
+
 ## Quantitatif pour le chiffrage Pipe-Fit
 
-Bouton **Quantitatif chiffrage** du ruban (et fichier `Quantitatif chiffrage Pipe-Fit.csv` écrit avec les exports des
+Bouton **Quantités Excel** du ruban, type « Fichier CSV pour le chiffrage » (et fichier `Quantitatif chiffrage Pipe-Fit.csv` écrit avec les exports des
 isométries) : le quantitatif de tout le projet, importé tel quel dans Pipe-Fit (*Devis → Chiffrage depuis plan →
 Importer la nomenclature*).
 

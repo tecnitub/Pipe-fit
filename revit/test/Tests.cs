@@ -35,10 +35,34 @@ static class Tests
         return s;
     }
 
+    static void TestExcel()
+    {
+        var sp = Exemple(); AnalyseSpool.Analyser(sp);
+        var hs = Exemple(); hs.Nom = "EG-101"; hs.HorsSpool = true; AnalyseSpool.Analyser(hs);
+        var octets = ExportExcel.Quantites(new List<Spool> { sp, hs }, "Projet <test> & co", new DateTime(2026, 11, 18));
+        using (var z = new System.IO.Compression.ZipArchive(new System.IO.MemoryStream(octets)))
+        {
+            var noms = z.Entries.Select(e => e.FullName).ToList();
+            Verifier(noms.Contains("xl/workbook.xml") && noms.Count(n => n.StartsWith("xl/worksheets/sheet")) == 5, "Excel : classeur de 5 feuilles");
+            var wb = new System.IO.StreamReader(z.GetEntry("xl/workbook.xml").Open()).ReadToEnd();
+            Verifier(wb.Contains("name=\"Synthèse\"") && wb.Contains("name=\"Quantitatif\"") && wb.Contains("name=\"Liste de débit\""), "Excel : noms des feuilles");
+            foreach (var e in z.Entries.Where(e => e.FullName.EndsWith(".xml")))
+                try { System.Xml.Linq.XDocument.Load(e.Open()); } catch (Exception ex) { Verifier(false, "Excel : XML invalide " + e.FullName + " : " + ex.Message); }
+            var s2 = new System.IO.StreamReader(z.GetEntry("xl/worksheets/sheet2.xml").Open()).ReadToEnd();
+            Verifier(s2.Contains("Soudure atelier") && s2.Contains("<autoFilter"), "Excel : feuille Quantitatif (soudures, filtre)");
+            var s1 = new System.IO.StreamReader(z.GetEntry("xl/worksheets/sheet1.xml").Open()).ReadToEnd();
+            Verifier(s1.Contains("<f>SUM(") && s1.Contains("Projet &lt;test&gt; &amp; co"), "Excel : totaux en formules, texte échappé");
+        }
+        var sortie = Environment.GetEnvironmentVariable("PIPEFIT_XLSX");
+        if (!string.IsNullOrEmpty(sortie)) System.IO.File.WriteAllBytes(sortie, octets);
+        Verifier(Xlsx.Colonne(0) == "A" && Xlsx.Colonne(25) == "Z" && Xlsx.Colonne(26) == "AA", "Excel : lettres de colonnes");
+    }
+
     static Spool s0BR() { var s = Exemple(); s.Composants.First(c => c.Id == "5").Extremites[1].ConnecteA = "VANNE-EXT"; AnalyseSpool.Analyser(s); return s; }
 
     static int Main()
     {
+        TestExcel();
         var s = Exemple();
         AnalyseSpool.Analyser(s);
         var parId = s.Composants.ToDictionary(c => c.Id);

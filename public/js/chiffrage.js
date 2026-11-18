@@ -41,6 +41,11 @@ function analyserNomenclature(sheet) {
   });
   return { entete: best.idx, colonnes: best.map, titres: sheet.rows[best.idx] || [] };
 }
+// Classeur à plusieurs feuilles : la feuille « Quantitatif » de l'export Excel Pipe-Fit (Revit), sinon la plus longue
+function feuilleNomenclature(sheets) {
+  const q = sheets.find(s => /^quantitatif$/i.test(String(s.name || '').trim()));
+  return q || [...sheets].sort((a, b) => b.rows.length - a.rows.length)[0];
+}
 function lignesPlan(sheet, analyse, uniteLongueur) {
   const c = analyse.colonnes, val = (r, k) => (c[k] === undefined ? '' : String(r[c[k]] ?? '').trim());
   const rows = sheet.rows.slice(analyse.entete + 1).filter(r => val(r, 'famille') || val(r, 'type'));
@@ -325,7 +330,7 @@ Views.chiffrage.bind = (root, params) => {
   q('#ch-file').onchange = async e => {
     const file = e.target.files[0]; e.target.value = '';
     if (!file) return;
-    try { const buf = await file.arrayBuffer(); const sheets = /\.xlsx$/i.test(file.name) ? await XLSX.read(buf) : XLSX.readCSV(buf); charger(file.name, sheets.sort((a, b) => b.rows.length - a.rows.length)[0]); }
+    try { const buf = await file.arrayBuffer(); const sheets = /\.xlsx$/i.test(file.name) ? await XLSX.read(buf) : XLSX.readCSV(buf); charger(file.name, feuilleNomenclature(sheets)); }
     catch (err) { notify('Lecture impossible : ' + err.message); }
   };
   const ex = q('#ch-exemple');
