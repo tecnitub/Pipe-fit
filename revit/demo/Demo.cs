@@ -286,6 +286,7 @@ static class Demo
             return new
             {
                 nom = s.Nom, systeme = s.Systeme, materiau = s.Materiau, dnMax = s.DnMax, longueur = Math.Round(s.LongueurDeveloppeeMm),
+                symBride = SymboleBride.Dessin().Select(x => new[] { x.U1, x.V1, x.U2, x.V2 }),
                 composants = s.Composants.Select(c => new
                 {
                     id = c.Id, type = c.Type.ToString(), designation = c.Designation, repere = c.Repere, dn = c.DnMm, genre = c.Genre.ToString(),
@@ -294,6 +295,8 @@ static class Demo
                     // Appareil sur piquage : axe vers l'appareil (sens inverse de son connecteur)
                     dirp = Robinetterie.Symbolise(c) && c.Extremites.Count == 1 && c.Extremites[0].Direction.HasValue ? P(c.Extremites[0].Direction.Value * -1) : null,
                     axe = Cotation.EstNoeud(c) ? P(Cotation.PointAxe(c)) : null,
+                    // Bride : face de joint, côté soudé et symbole collet + bride tournante (u = 0 à la face)
+                    bride = SymboleBride.Dessinee(c) ? new { f = P(SymboleBride.Faces(c, s).Face.Position), s = P(SymboleBride.Faces(c, s).Soudure.Position) } : null,
                     ext = c.Extremites.Select(e => new { p = P(e.Position), dn = e.DnMm, ext = e.ConnecteA != null && !s.Composants.Any(x => x.Id == e.ConnecteA) ? e.ConnecteA : null }),
                 }),
                 liaisons = s.Liaisons.Select(l => new { n = l.Numero, entree = l.Sens == SensFlux.Entree, texte = l.Libelle, sens = l.SensTexte,

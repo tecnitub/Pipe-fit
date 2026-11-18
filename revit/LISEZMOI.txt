@@ -1,4 +1,4 @@
-﻿PIPE-FIT ISOMÉTRIES – complément Revit (2023 à 2027)
+PIPE-FIT ISOMÉTRIES – complément Revit (2023 à 2027)
 =====================================================
 
 Une isométrie de fabrication par numéro de spool, en un clic, depuis la maquette 3D.
@@ -127,7 +127,13 @@ PIQUAGES
   Le piquage dessiné par Revit (avec une longueur) est en réalité la branche piquée directement sur le
   collecteur : une seule soudure, côté collecteur ; la longueur du piquage est ajoutée au débit du tube
   de branche (colonne « Piq. ») ; pas de pièce « piquage » en nomenclature ni au quantitatif.
-  Les weldolets, sockolets et selles restent des pièces soudées des deux côtés.
+  Seule la soudure sur le collecteur compte, même si la branche est dans un autre spool.
+  Cote toujours à l'axe : de l'axe du collecteur au bout de la branche ou à l'axe du raccord suivant.
+  Les weldolets, sockolets et selles restent des pièces en nomenclature (une soudure, sur le collecteur).
+
+BRIDES
+  Dessinées par le symbole collet + bride tournante (lèvre du collet à la face de joint, bride libre
+  derrière). La famille Revit de la bride est masquée dans la vue de l'isométrie.
 
 ROBINETTERIE
   Le symbole est choisi d'après le NOM DE LA FAMILLE de l'accessoire (« Vanne papillon », « TECOFI CB 3448N »,

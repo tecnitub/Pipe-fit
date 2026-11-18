@@ -176,7 +176,7 @@ namespace PipeFit.Isometries.Revit
             doc.Regenerate();
 
             var symbolises = new HashSet<string>(r.SymbolesRobinetterie
-                ? spool.Composants.Where(Robinetterie.Symbolise).Select(c => c.Id) : Enumerable.Empty<string>());
+                ? spool.Composants.Where(c => Robinetterie.Symbolise(c) || SymboleBride.Dessinee(c)).Select(c => c.Id) : Enumerable.Empty<string>());
             if (!r.RepereFeuille)
             {
                 Etiqueter(vue, elements.Where(e => !symbolises.Contains(Compat.Cle(e.Id))).ToList(), res);
@@ -342,7 +342,8 @@ namespace PipeFit.Isometries.Revit
             // Robinetterie remplacée par les symboles normalisés dessinés sur la feuille
             if (r.SymbolesRobinetterie)
             {
-                var cles = new HashSet<string>(spool.Composants.Where(Robinetterie.Symbolise).Select(c => c.Id));
+                // … et brides remplacées par le symbole collet + bride tournante
+                var cles = new HashSet<string>(spool.Composants.Where(c => Robinetterie.Symbolise(c) || SymboleBride.Dessinee(c)).Select(c => c.Id));
                 var masques = elements.Where(e => cles.Contains(Compat.Cle(e.Id))).Select(e => e.Id).ToList();
                 if (masques.Count > 0) try { vue.HideElements(masques); } catch { }
             }
@@ -541,7 +542,25 @@ namespace PipeFit.Isometries.Revit
                 }
                 catch { echecs++; }
             }
-            if (echecs > 0) res.Avertissements.Add(echecs + " symbole(s) de robinetterie non dessiné(s)");
+            // Brides : tube jusqu'à la face de joint, collet + bride tournante à la face
+            foreach (var c in spool.Composants.Where(SymboleBride.Dessinee))
+            {
+                try
+                {
+                    var (face, soudure) = SymboleBride.Faces(c, spool);
+                    var a = Feuille(face.Position); var b = Feuille(soudure.Position);
+                    double dx = b.x - a.x, dy = b.y - a.y, l = Math.Sqrt(dx * dx + dy * dy);
+                    if (l < 0.3) continue; // vue en bout : le tube suffit
+                    dx /= l; dy /= l;
+                    if (l >= 1.25) Trait(f, a.x, a.y, b.x, b.y);
+                    var segs = Robinetterie.Placer(SymboleBride.Dessin(), a.x, a.y, dx, dy);
+                    Traits(f, segs);
+                    foreach (var s in segs) obs.TraitsForts.Add(s);
+                    obs.Durs.Add(new Rect(segs.Min(s => Math.Min(s.x1, s.x2)), segs.Min(s => Math.Min(s.y1, s.y2)), segs.Max(s => Math.Max(s.x1, s.x2)), segs.Max(s => Math.Max(s.y1, s.y2))));
+                }
+                catch { echecs++; }
+            }
+            if (echecs > 0) res.Avertissements.Add(echecs + " symbole(s) de robinetterie ou de bride non dessiné(s)");
         }
 
         /// <summary>

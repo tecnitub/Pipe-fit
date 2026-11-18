@@ -31,6 +31,7 @@ namespace PipeFit.Isometries.Core
             ("COTE", "Cote d'axe en axe / d'axe à bride (mm)"),
             ("RENVOI", "Renvoi : vient de / va vers (sens d'écoulement)"),
             ("NORD", "Nord du projet"),
+            ("BRIDE", "Bride tournante sur collet (face de joint côté lèvre)"),
             ("VANNE", "Vanne (opercule)"),
             ("PAPILLON", "Vanne papillon"),
             ("REGLAGE", "Vanne de réglage / d'équilibrage"),
@@ -51,7 +52,7 @@ namespace PipeFit.Isometries.Core
         {
             ["TUBE"] = "Repère de tube (liste de débit)", ["BULLE"] = "Repère de nomenclature", ["SOUD"] = "Soudure atelier",
             ["SOUDCH"] = "Soudure chantier, surlongueur", ["COTE"] = "Cote axe / axe, axe / bride (mm)", ["RENVOI"] = "Renvoi vient de / va vers",
-            ["NORD"] = "Nord du projet", ["REGLAGE"] = "Vanne de réglage / équilibrage", ["CLAPET"] = "Clapet anti-retour (écoulement)",
+            ["NORD"] = "Nord du projet", ["BRIDE"] = "Bride tournante sur collet", ["REGLAGE"] = "Vanne de réglage / équilibrage", ["CLAPET"] = "Clapet anti-retour (écoulement)",
             ["COMPENSATEUR"] = "Compensateur de dilatation", ["FILTRE"] = "Filtre en Y", ["VANNE"] = "Vanne (opercule)",
             ["MOTORISEE"] = "Vanne 2 voies motorisée",
         };
@@ -70,6 +71,7 @@ namespace PipeFit.Isometries.Core
             if (s.Cotes.Count > 0) codes.Add("COTE");
             if (s.Liaisons.Count > 0) codes.Add("RENVOI");
             foreach (var c in s.Composants.Where(Robinetterie.Symbolise)) codes.Add(Code(c.Genre));
+            if (s.Composants.Any(SymboleBride.Dessinee)) codes.Add("BRIDE");
             return Tous.Where(t => codes.Contains(t.Code)).ToList();
         }
 
@@ -129,6 +131,11 @@ namespace PipeFit.Isometries.Core
             }
             switch (code)
             {
+                case "BRIDE":
+                    // Deux brides tournantes sur collets, face contre face au centre de la case
+                    S(-10, 0, -0.1, 0); S(0.1, 0, 10, 0);
+                    foreach (var x in SymboleBride.Dessin()) { S(-0.1 - x.U1, x.V1 * 0.85, -0.1 - x.U2, x.V2 * 0.85); S(0.1 + x.U1, x.V1 * 0.85, 0.1 + x.U2, x.V2 * 0.85); }
+                    break;
                 case "TUBE":
                     S(-10, -2, 10, 0 - 2); S(-1, -2, -1.6, -0.8);
                     S(-3.4, -0.8, 3.4, -0.8); S(3.4, -0.8, 3.4, 3.2); S(3.4, 3.2, -3.4, 3.2); S(-3.4, 3.2, -3.4, -0.8);

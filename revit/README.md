@@ -112,11 +112,22 @@ Option décochée : étiquettes Revit (familles d'étiquettes choisies), placée
 
 - **Piquage Revit = branche piquée directement sur le collecteur.** Revit dessine un raccord à piquage avec une longueur ;
   en atelier, c'est le tube de branche qui est piqué sur le collecteur. Le complément :
-  - garde **une seule soudure, côté collecteur** (celle côté tube de branche est ignorée) ;
+  - garde **une seule soudure, côté collecteur** (celle côté tube de branche est ignorée, même si la branche est dans
+    un autre spool : pas de soudure chantier sur le piquage) ;
+  - **cote toujours à l'axe** : de l'axe du collecteur (connecteur Revit projeté sur l'axe du tube collecteur) au bout
+    de la branche ou à l'axe du raccord suivant ; la cote du collecteur est coupée à l'axe du piquage ;
   - **ajoute la longueur du piquage au débit du tube de branche** (colonne « Piq. » de la liste de débit, « Piquage (mm) »
     dans le CSV) et au tube du quantitatif ;
   - ne compte **pas de pièce** pour le piquage (ni nomenclature, ni quantitatif, ni bulle).
-- Les vrais olets et selles (weldolet, sockolet, threadolet, selle, bossage) restent des pièces soudées des deux côtés.
+- Les olets et selles (weldolet, sockolet, threadolet, selle, bossage) restent des pièces en nomenclature ; comme pour
+  tout piquage, seule leur soudure sur le collecteur est comptée.
+
+## Symbole des brides
+
+- Chaque bride en ligne est dessinée sur la feuille par le symbole **collet + bride tournante** : lèvre du collet à la
+  face de joint (côté vanne, autre bride ou équipement), épaulement, et bride libre derrière la lèvre (deux rectangles
+  qui ne touchent pas le tube). La famille Revit de la bride est masquée dans la vue (option « symboles normalisés »).
+- Le symbole figure dans la légende de l'isométrie et dans la feuille de légende.
 
 ## Robinetterie
 

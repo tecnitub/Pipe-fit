@@ -234,6 +234,8 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
               if (pen < meilleur) { meilleur = pen; choix = [cx, cy, anc]; }
             }
         if (!choix) { const anc = e.ancrages[0]; choix = [anc[0], anc[1] + dmin + e.h / 2, anc]; meilleur = 10000; }
+        // Pas de place libre tout près (n° de soudure dans un endroit chargé) : plus loin, avec une ligne de rappel
+        if (meilleur >= 10000 && !rappel) { e.rappel = true; e.dmax = Math.max(dmax, 20); placer([e], obs, z); return; }
         [e.x, e.y, e.ancrage] = choix; e.chevauche = meilleur >= 10000;
         obs.durs.push([e.x - e.w / 2, e.y - e.h / 2, e.x + e.w / 2, e.y + e.h / 2]);
         if (rappel) { const [bx, by] = bord(e, e.x, e.y, e.ancrage); obs.forts.push([e.ancrage[0], e.ancrage[1], bx, by]); }
@@ -336,6 +338,16 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
         const segs = c.sym.map(([u1, v1, u2, v2]) => [mx + u1 * dx + v1 * px, my + u1 * dy + v1 * py, mx + u2 * dx + v2 * px, my + u2 * dy + v2 * py]);
         segs.forEach(q => { line(q[0], q[1], q[2], q[3], 'k-ink', 0.3); symboles.forts.push(q); });
         symboles.durs.push([Math.min(...segs.map(q => Math.min(q[0], q[2]))), Math.min(...segs.map(q => Math.min(q[1], q[3]))), Math.max(...segs.map(q => Math.max(q[0], q[2]))), Math.max(...segs.map(q => Math.max(q[1], q[3])))]);
+      } else if (c.type === 'Bride' && c.bride) {
+        // Collet + bride tournante (même symbole que le complément) : face de joint côté lèvre, tube jusqu'à la face
+        const f = F(c.bride.f), w = F(c.bride.s); let dx = w[0] - f[0], dy = w[1] - f[1]; const l = Math.hypot(dx, dy);
+        line(f[0], f[1], w[0], w[1], 'k-ink', TRAIT);
+        if (l >= 0.3) {
+          dx /= l; dy /= l; const px = -dy, py = dx;
+          const segs = s.symBride.map(([u1, v1, u2, v2]) => [f[0] + u1 * dx + v1 * px, f[1] + u1 * dy + v1 * py, f[0] + u2 * dx + v2 * px, f[1] + u2 * dy + v2 * py]);
+          segs.forEach(q => { line(q[0], q[1], q[2], q[3], 'k-ink', 0.3); symboles.forts.push(q); });
+          symboles.durs.push([Math.min(...segs.map(q => Math.min(q[0], q[2]))), Math.min(...segs.map(q => Math.min(q[1], q[3]))), Math.max(...segs.map(q => Math.max(q[0], q[2]))), Math.max(...segs.map(q => Math.max(q[1], q[3])))]);
+        }
       } else if (c.type === 'Bride') {
         line(a[0], a[1], b[0], b[1], 'k-ink', TRAIT);
         const face = c.ext[0].ext || !s.composants.some(o => o.type === 'Tube' && o.ext.some(x => x.p.join() === c.ext[0].p.join())) ? a : b;

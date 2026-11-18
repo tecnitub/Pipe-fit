@@ -37,7 +37,8 @@ namespace PipeFit.Isometries.Core
         public static Point3 PointAxe(Composant c)
         {
             var e = c.Extremites;
-            // Piquage : le connecteur côté tube principal est sur l'axe de ce tube
+            // Piquage : point de l'axe du collecteur sous la branche (calculé à l'analyse), sinon connecteur côté collecteur
+            if (c.Type == TypeComposant.Piquage && c.AxeCollecteur.HasValue) return c.AxeCollecteur.Value;
             if (c.Type == TypeComposant.Piquage && e.Count >= 2) return e.OrderByDescending(x => x.DnMm).First().Position;
             for (int i = 0; i < e.Count; i++)
                 for (int j = i + 1; j < e.Count; j++)
@@ -138,8 +139,12 @@ namespace PipeFit.Isometries.Core
             foreach (var c in s.Composants.Where(EstNoeud))
             {
                 var axe = PointAxe(c);
+                // Piquage : le côté collecteur n'est pas suivi (la cote du collecteur est coupée à l'axe du piquage plus bas)
+                var cotCol = c.Type == TypeComposant.Piquage && c.AxeCollecteur.HasValue
+                    ? c.Extremites.OrderBy(x => x.Position.Distance(axe)).First() : null;
                 foreach (var x in c.Extremites)
                 {
+                    if (x == cotCol) continue;
                     if (Externe(x)) { Ajouter(axe, NatureNoeud.Axe, x.Position, NatureNoeud.Extremite); continue; }
                     Marcher(axe, NatureNoeud.Axe, c, x);
                 }
@@ -159,6 +164,23 @@ namespace PipeFit.Isometries.Core
                     }
                     else Marcher(x.Position, na, c, autres[0]);
                 }
+            // Piquages sur un collecteur : la cote qui longe le collecteur est coupée à l'axe de chaque piquage
+            foreach (var p in s.Composants.Where(c => c.Type == TypeComposant.Piquage))
+            {
+                var axe = PointAxe(p);
+                for (int i = 0; i < cotes.Count; i++)
+                {
+                    var c = cotes[i];
+                    var ab = c.B - c.A; var l = ab.Longueur;
+                    if (l < 2) continue;
+                    var k = (axe - c.A).Dot(ab) / (l * l);
+                    if (k * l < 1 || (1 - k) * l < 1) continue;
+                    if ((c.A + ab * k - axe).Longueur > 1) continue;
+                    cotes[i] = new Cote { A = c.A, NatureA = c.NatureA, B = axe, NatureB = NatureNoeud.Axe };
+                    cotes.Insert(i + 1, new Cote { A = axe, NatureA = NatureNoeud.Axe, B = c.B, NatureB = c.NatureB });
+                    break;
+                }
+            }
             return cotes;
         }
 

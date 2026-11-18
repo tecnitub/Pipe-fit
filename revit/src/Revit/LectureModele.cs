@@ -20,6 +20,23 @@ namespace PipeFit.Isometries.Revit
             "Repère spool", "Repere spool", "PF_Spool", "Isométrie", "ISO",
         };
 
+        /// <summary>Raccord à piquage Revit (type de pièce « Tap » / « Spud », ou famille nommée piquage, olet, selle).</summary>
+        static bool EstPiquage(Element owner)
+        {
+            try
+            {
+                if (owner is FamilyInstance fi)
+                {
+                    if (fi.MEPModel is Autodesk.Revit.DB.Mechanical.MechanicalFitting mf && (mf.PartType == PartType.TapPerpendicular || mf.PartType == PartType.TapAdjustable || mf.PartType == PartType.SpudAdjustable || mf.PartType == PartType.SpudPerpendicular))
+                        return true;
+                    var nom = AnalyseSpool.Normaliser((fi.Symbol?.FamilyName ?? "") + " " + fi.Name);
+                    return System.Text.RegularExpressions.Regex.IsMatch(nom, @"piquage|olet\b|weldolet|sockolet|\btap\b|spud|selle");
+                }
+            }
+            catch { }
+            return false;
+        }
+
         static readonly BuiltInCategory[] Categories =
         {
             BuiltInCategory.OST_PipeCurves, BuiltInCategory.OST_PipeFitting, BuiltInCategory.OST_PipeAccessory,
@@ -158,6 +175,7 @@ namespace PipeFit.Isometries.Revit
                     if ((r.ConnectorType & ConnectorType.Physical) == 0) continue;
                     ext.ConnecteA = Compat.Cle(owner.Id);
                     ext.VoisinEstTube = owner is Pipe || owner is FlexPipe || (owner is FabricationPart fpv && fpv.IsAStraight());
+                    ext.VoisinEstPiquage = EstPiquage(owner);
                     // Sens inconnu sur notre connecteur : on lit celui d'en face, à l'envers
                     if (ext.Sens == SensFlux.Inconnu) ext.Sens = Sens(r, true);
                     break;

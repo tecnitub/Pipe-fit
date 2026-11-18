@@ -41,6 +41,8 @@ namespace PipeFit.Isometries.Core
         public double? SurlongueurMm;
         /// <summary>L'élément raccordé de l'autre côté est un tube (pour ne mettre la surlongueur que d'un côté).</summary>
         public bool VoisinEstTube;
+        /// <summary>L'élément raccordé ici (hors spool) est un piquage : bout du tube de branche, sans soudure.</summary>
+        public bool VoisinEstPiquage;
     }
 
     public enum SensFlux { Inconnu, Entree, Sortie }
@@ -105,6 +107,8 @@ namespace PipeFit.Isometries.Core
         public bool PiquageDirect;
         /// <summary>Tube de branche : longueur du piquage direct ajoutée à son débit.</summary>
         public double PiquageMm;
+        /// <summary>Piquage : point de l'axe du collecteur où la branche est piquée (projection sur l'axe du tube collecteur).</summary>
+        public Point3? AxeCollecteur;
         /// <summary>Extrémité côté branche d'un piquage direct.</summary>
         public Extremite CoteBranche;
         /// <summary>Extrémité par où arrive le fluide (sens d'écoulement), null s'il n'est pas connu.</summary>

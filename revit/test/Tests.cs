@@ -35,6 +35,8 @@ static class Tests
         return s;
     }
 
+    static Spool s0BR() { var s = Exemple(); s.Composants.First(c => c.Id == "5").Extremites[1].ConnecteA = "VANNE-EXT"; AnalyseSpool.Analyser(s); return s; }
+
     static int Main()
     {
         var s = Exemple();
@@ -98,6 +100,10 @@ static class Tests
         // Bride : cote au bout de la bride ; vanne : cote à son axe (milieu entre ses faces)
         Verifier(cd.Count == 4 && cd.Contains("600 bride / bride") && cd.Contains("100 bride / axe") && cd.Contains("100 axe / bride") && cd.Contains("350 bride / extrémité"),
             "chaîne droite : bout des brides et axe de la vanne : " + string.Join(", ", cd));
+        var (fa1, so1) = SymboleBride.Faces(d.Composants.First(c => c.Id == "f2"), d);
+        var (fa0, _) = SymboleBride.Faces(d.Composants.First(c => c.Id == "f1"), d);
+        Verifier(fa1.Position.X == 600 && so1.Position.X == 550 && fa0.Position.X == 0, "bride : face de joint côté vanne / équipement, soudure côté tube");
+        Verifier(SymboleBride.Dessin().Count > 8, "symbole collet + bride tournante");
         var lv = d.Nomenclature.Single(l => l.Type == TypeComposant.Vanne);
         Verifier(lv.FaceAFaceMm == 200 && d.Nomenclature.Where(l => l.Type != TypeComposant.Vanne).All(l => l.FaceAFaceMm == 0), "nomenclature : cote face à face de la vanne (200)");
         var tnd = MiseEnPage.Tableaux(d, "", "").First(t => t.Titre == "NOMENCLATURE");
@@ -433,13 +439,38 @@ static class Tests
                 var qp = Quantitatif.Calculer(new[] { sq });
                 Verifier(!qp.Any(l => l.Famille.StartsWith("Raccord à piquage")), "piquage : pas de fourniture au quantitatif");
                 Verifier(ListeDebit.Csv(new[] { sq }).Contains(";T2;500;80;;580;") || ListeDebit.Csv(new[] { sq }).Contains(";500;80;;580;"), "CSV débit : colonne piquage");
+                // Cotes toujours à l'axe : axe du collecteur → bout de la branche ; le collecteur est coté jusqu'à l'axe du piquage
+                var cq = sq.Cotes.Select(c => c.Valeur + " " + c.Libelle).OrderBy(x => x).ToList();
+                Verifier(cq.Contains("580 axe / extrémité") && cq.Count(x => x == "1000 extrémité / axe" || x == "1000 axe / extrémité") == 2,
+                    "piquage : axe collecteur → bout de branche (580), collecteur coupé à l'axe du piquage : " + string.Join(", ", cq));
+                // Connecteur Revit sur la paroi du collecteur (z = 57) : la cote part quand même de l'axe du collecteur
+                var spr = new Spool { Nom = "PR" };
+                spr.Composants.Add(C("col", "Tuyau", "", TypeComposant.Tube, 100, 2000, null, E(0, 0, 0, 100, null), E(2000, 0, 0, 100, null)));
+                spr.Composants.Add(C("pq", "Raccord à piquage", "Standard", TypeComposant.Autre, 50, 0, null, E(1000, 0, 57, 100, "col"), E(1000, 0, 120, 50, "br")));
+                spr.Composants.Add(C("br", "Tuyau", "", TypeComposant.Tube, 50, 500, null, E(1000, 0, 120, 50, "pq"), E(1000, 0, 620, 50, "cd")));
+                spr.Composants.Add(C("cd", "Coude", "", TypeComposant.Coude, 50, 0, new Point3(1000, 0, 700), E(1000, 0, 620, 50, "br"), E(1080, 0, 700, 50, null)));
+                AnalyseSpool.Analyser(spr);
+                var cr = spr.Cotes.Select(c => c.Valeur + " " + c.Libelle).ToList();
+                Verifier(cr.Contains("700 axe / axe"), "piquage : axe du collecteur → axe du coude suivant (700) : " + string.Join(", ", cr));
                 // Un weldolet reste une pièce soudée des deux côtés
                 var sw = new Spool { Nom = "WO" };
                 sw.Composants.Add(C("col", "Tuyau", "", TypeComposant.Tube, 100, 2000, null, E(0, 0, 0, 100, null), E(2000, 0, 0, 100, null)));
                 sw.Composants.Add(C("wo", "Weldolet", "Standard", TypeComposant.Autre, 50, 0, null, E(1000, 0, 0, 100, "col"), E(1000, 0, 80, 50, "br")));
                 sw.Composants.Add(C("br", "Tuyau", "", TypeComposant.Tube, 50, 500, null, E(1000, 0, 80, 50, "wo"), E(1000, 0, 580, 50, null)));
                 AnalyseSpool.Analyser(sw);
-                Verifier(!sw.Composants[1].PiquageDirect && sw.Nombre(NatureAssemblage.Soudure) == 2, "weldolet : pièce réelle, 2 soudures");
+                Verifier(!sw.Composants[1].PiquageDirect && sw.Nombre(NatureAssemblage.Soudure) == 1 && sw.Nomenclature.Any(l => l.Type == TypeComposant.Piquage),
+                    "weldolet : pièce en nomenclature, seule la soudure sur le collecteur compte");
+                // Branche dans un autre spool que le piquage : aucune soudure chantier côté branche, d'un côté comme de l'autre
+                var sc = new Spool { Nom = "PC" };
+                sc.Composants.Add(C("col", "Tuyau", "", TypeComposant.Tube, 100, 2000, null, E(0, 0, 0, 100, null), E(2000, 0, 0, 100, null)));
+                sc.Composants.Add(C("pq", "Raccord à piquage", "Standard", TypeComposant.Autre, 50, 0, null, E(1000, 0, 0, 100, "col"), E(1000, 0, 80, 50, "AUTRE-BR")));
+                AnalyseSpool.Analyser(sc);
+                Verifier(sc.Nombre(NatureAssemblage.Soudure) == 1 && sc.Nombre(NatureAssemblage.RaccordementChantier) == 0, "piquage, branche dans un autre spool : rien côté branche");
+                var sb2 = new Spool { Nom = "BC" };
+                sb2.Composants.Add(C("br", "Tuyau", "", TypeComposant.Tube, 50, 500, null, E(1000, 0, 80, 50, "pq"), E(1000, 0, 580, 50, null)));
+                sb2.Composants[0].Extremites[0].VoisinEstPiquage = true;
+                AnalyseSpool.Analyser(sb2);
+                Verifier(sb2.Nombre(NatureAssemblage.RaccordementChantier) == 0, "spool de la branche : pas de soudure chantier sur le piquage");
             }
 
             // Ligne tube – clapet – tube, arrivée du fluide par le bout gauche
@@ -518,7 +549,7 @@ static class Tests
         // Légende des symboles
         {
             var toutes = Legende.Toutes().ToList();
-            Verifier(toutes.Count == 18 && toutes.All(t => Legende.Dessin(t.Code).Traits.Count > 0), "légende : 18 symboles, tous dessinés");
+            Verifier(toutes.Count == 19 && toutes.All(t => Legende.Dessin(t.Code).Traits.Count > 0), "légende : 19 symboles, tous dessinés");
             Verifier(toutes.All(t => Legende.Dessin(t.Code).Traits.All(x => Math.Abs(x.U1) <= 11 && Math.Abs(x.U2) <= 11 && Math.Abs(x.V1) <= 3.6 && Math.Abs(x.V2) <= 3.6)),
                 "chaque symbole tient dans sa case (22 × 7 mm)");
             var spl = Exemple(); AnalyseSpool.Analyser(spl);
@@ -531,7 +562,9 @@ static class Tests
             var compl = Legende.Compacte(Legende.Toutes());
             Verifier(compl.Lignes.SelectMany(l => new[] { l[1], l[3] }).All(x => MiseEnPage.Tronquer(x, 62, 2.5) == x), "légende compacte : aucun libellé tronqué");
             var tout = Legende.Tableau(Legende.Toutes());
-            Verifier(tout.Lignes.Count == 18 && tout.Largeur <= 130.001, "légende complète : 18 lignes");
+            Verifier(tout.Lignes.Count == 19 && tout.Largeur <= 130.001, "légende complète : 19 lignes");
+            // Bride : symbole collet + bride tournante ; face de joint du côté qui n'est pas soudé au tube
+            Verifier(Legende.Pour(s0BR()).Any(x => x.Code == "BRIDE"), "bride dans la légende de l'isométrie");
         }
 
         // Liste de débit : longueur de l'élément Revit, système de canalisation, calepinage en barres de 6 m

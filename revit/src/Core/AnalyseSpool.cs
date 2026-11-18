@@ -233,9 +233,9 @@ namespace PipeFit.Isometries.Core
             var parId = s.Composants.ToDictionary(c => c.Id);
             foreach (var c in s.Composants)
             {
-                c.PiquageDirect = false; c.CoteBranche = null;
+                c.PiquageDirect = false; c.CoteBranche = null; c.AxeCollecteur = null;
                 if (c.Type != TypeComposant.Piquage || c.Extremites.Count != 2) continue;
-                if (Regex.IsMatch(Normaliser(c.Famille + " " + c.TypeNom), @"olet|selle|saddle|bossage|manchon|coupling")) continue;
+                c.AxeCollecteur = AxeDuCollecteur(c, parId);
                 bool AuBoutDunTube(Extremite e) =>
                     e.ConnecteA != null && parId.TryGetValue(e.ConnecteA, out var v) && v.Type == TypeComposant.Tube
                     && v.Extremites.Any(x => (x.Position - e.Position).Longueur < 2);
@@ -246,8 +246,31 @@ namespace PipeFit.Isometries.Core
                     // Deux bouts de tube et même DN : le collecteur est celui dont l'axe passe par le point d'axe du piquage
                     branche = c.Extremites.OrderBy(x => x.DnMm).ThenByDescending(x => (x.Position - Cotation.PointAxe(c)).Longueur).First();
                 }
-                c.PiquageDirect = true; c.CoteBranche = branche;
+                // Côté branche connu pour tous les piquages (seule la soudure sur le collecteur est comptée) ; les olets et selles
+                // restent des pièces achetées, les autres piquages sont la branche piquée directement
+                c.CoteBranche = branche;
+                c.PiquageDirect = !Regex.IsMatch(Normaliser(c.Famille + " " + c.TypeNom), @"olet|selle|saddle|bossage|manchon|coupling");
             }
+        }
+
+        /// <summary>
+        /// Point de l'axe du collecteur sous un piquage : le connecteur côté collecteur (Revit le place souvent sur la paroi)
+        /// projeté sur l'axe du tube collecteur. Les cotes sont toujours à l'axe.
+        /// </summary>
+        static Point3 AxeDuCollecteur(Composant p, Dictionary<string, Composant> parId)
+        {
+            Composant Voisin(Extremite e) => e.ConnecteA != null && parId.TryGetValue(e.ConnecteA, out var v) ? v : null;
+            bool AuBout(Extremite e, Composant v) => v.Extremites.Any(x => (x.Position - e.Position).Longueur < 2);
+            // Côté collecteur : l'extrémité raccordée à un tube qui passe sous le piquage (pas à son bout), sinon le plus gros DN
+            var col = p.Extremites.FirstOrDefault(e => Voisin(e) is Composant v && v.Type == TypeComposant.Tube && v.Extremites.Count == 2 && !AuBout(e, v))
+                      ?? p.Extremites.OrderByDescending(x => x.DnMm).First();
+            var t = Voisin(col);
+            if (t == null || t.Type != TypeComposant.Tube || t.Extremites.Count != 2) return col.Position;
+            var a = t.Extremites[0].Position; var d = t.Extremites[1].Position - a;
+            var l2 = d.Dot(d);
+            if (l2 < 1e-6) return col.Position;
+            var k = (col.Position - a).Dot(d) / l2;
+            return a + d * k;
         }
 
         /// <summary>Longueur d'un piquage direct (de son extrémité côté collecteur à celle côté branche).</summary>
@@ -314,6 +337,8 @@ namespace PipeFit.Isometries.Core
                     if (e.ConnecteA == null) { liste.Add(new Assemblage { Nature = NatureAssemblage.ExtremiteLibre, A = a, Position = e.Position, DnMm = e.DnMm }); continue; }
                     if (!parId.TryGetValue(e.ConnecteA, out var b))
                     {
+                        // Piquage : pas de soudure côté branche, même quand la branche (ou le piquage) est dans un autre spool
+                        if (CoteBrancheDirecte(a, e.Position) || (a.Type == TypeComposant.Tube && e.VoisinEstPiquage)) continue;
                         var r = new Assemblage { Nature = NatureAssemblage.RaccordementChantier, A = a, Exterieur = e.ConnecteA, Position = e.Position, DnMm = e.DnMm, VoisinTube = e.VoisinEstTube };
                         Surlongueur(s, r, a, e, e.VoisinEstTube, e.ConnecteA);
                         liste.Add(r);
@@ -322,7 +347,7 @@ namespace PipeFit.Isometries.Core
                     var cle = string.CompareOrdinal(a.Id, b.Id) < 0 ? a.Id + "|" + b.Id : b.Id + "|" + a.Id;
                     cle += "|" + Math.Round(e.Position.X) + "|" + Math.Round(e.Position.Y) + "|" + Math.Round(e.Position.Z);
                     if (!vus.Add(cle)) continue;
-                    // Piquage direct : pas de soudure côté branche (la branche est le piquage), seule reste celle sur le collecteur
+                    // Piquage : pas de soudure côté branche, seule compte celle sur le collecteur
                     if (CoteBrancheDirecte(a, e.Position) || CoteBrancheDirecte(b, e.Position)) continue;
                     // Joint démontable : bride contre bride / vanne, ou appareil vissé sur piquage (purgeur, manomètre, thermomètre)
                     var nature = (Boulonnable(a) && Boulonnable(b)) || Robinetterie.UnPort(a.Genre) || Robinetterie.UnPort(b.Genre)
@@ -356,7 +381,7 @@ namespace PipeFit.Isometries.Core
         }
 
         static bool CoteBrancheDirecte(Composant c, Point3 p) =>
-            c.PiquageDirect && c.CoteBranche != null && (c.CoteBranche.Position - p).Longueur < 2;
+            c.Type == TypeComposant.Piquage && c.CoteBranche != null && (c.CoteBranche.Position - p).Longueur < 2;
 
         /// <summary>
         /// Surlongueur d'une soudure chantier, laissée sur le tube « a » pour être recoupée sur place. Entre deux tubes,

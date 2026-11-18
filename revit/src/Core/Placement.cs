@@ -85,6 +85,13 @@ namespace PipeFit.Isometries.Core
                 choix = (anc.Item1, anc.Item2 + e.DistanceMin + e.Hauteur / 2, anc);
                 meilleur = 10000;
             }
+            if (meilleur >= 10000 && !e.Rappel)
+            {
+                // Pas de place libre tout près (n° de soudure dans un endroit chargé) : plus loin, avec une ligne de rappel
+                e.Rappel = true; e.DistanceMax = Math.Max(e.DistanceMax, 20);
+                PlacerUne(e, obs, zone);
+                return;
+            }
             e.X = choix.x; e.Y = choix.y; e.Ancrage = choix.a; e.Place = true; e.Chevauche = meilleur >= 10000;
             obs.Durs.Add(new Rect(e.X - e.Largeur / 2, e.Y - e.Hauteur / 2, e.X + e.Largeur / 2, e.Y + e.Hauteur / 2));
             if (e.Rappel) { var (bx, by) = Bord(e, e.X, e.Y, e.Ancrage); obs.TraitsForts.Add((e.Ancrage.x, e.Ancrage.y, bx, by)); }
