@@ -44,13 +44,13 @@ namespace PipeFit.Isometries.Revit
             return Result.Succeeded;
         }
 
-        static double M3h(double interne) => UnitUtils.ConvertFromInternalUnits(interne, UnitTypeId.CubicMetersPerHour);
+        internal static double M3h(double interne) => UnitUtils.ConvertFromInternalUnits(interne, UnitTypeId.CubicMetersPerHour);
 
-        static bool EstEquipement(Element e) => Compat.EstCategorie(e, BuiltInCategory.OST_MechanicalEquipment) || Compat.EstCategorie(e, BuiltInCategory.OST_PlumbingFixtures);
+        internal static bool EstEquipement(Element e) => Compat.EstCategorie(e, BuiltInCategory.OST_MechanicalEquipment) || Compat.EstCategorie(e, BuiltInCategory.OST_PlumbingFixtures);
 
-        static string NomFamille(Element e) => ((e.Document.GetElement(e.GetTypeId()) as ElementType)?.FamilyName ?? "") + " " + e.Name;
+        internal static string NomFamille(Element e) => ((e.Document.GetElement(e.GetTypeId()) as ElementType)?.FamilyName ?? "") + " " + e.Name;
 
-        static double DnMax(Element e) => LectureModele.Connecteurs(e).Select(c => { try { return Compat.Mm(c.Radius * 2); } catch { return 0; } }).DefaultIfEmpty(0).Max();
+        internal static double DnMax(Element e) => LectureModele.Connecteurs(e).Select(c => { try { return Compat.Mm(c.Radius * 2); } catch { return 0; } }).DefaultIfEmpty(0).Max();
 
         /// <summary>
         /// Débits du réseau relié à la sélection : somme des débits des équipements consommateurs en aval de la source
@@ -99,7 +99,7 @@ namespace PipeFit.Isometries.Revit
         }
 
         /// <summary>Diamètre intérieur (mm) et débit (m³/h) du tube raccordé à une extrémité, sélectionné ou non.</summary>
-        static (double D, double Q) Tube(Document doc, Extremite x, Dictionary<string, double> dint, Dictionary<string, double> debit)
+        internal static (double D, double Q) Tube(Document doc, Extremite x, Dictionary<string, double> dint, Dictionary<string, double> debit)
         {
             if (x.ConnecteA == null) return (x.DnMm, 0);
             double d = dint.TryGetValue(x.ConnecteA, out var dd) ? dd : 0, q = debit.TryGetValue(x.ConnecteA, out var qq) ? qq : 0;

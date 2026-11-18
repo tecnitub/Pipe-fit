@@ -295,6 +295,34 @@ static class Tests
         if (!string.IsNullOrEmpty(svg)) System.IO.File.WriteAllText(svg, sc.Svg("Schéma de principe – essai"));
     }
 
+    static void TestEquilibrage()
+    {
+        // Production P → aller A1 → té TA → (VC1 par R1) / (A2 → VC2 par R2) ; retours vers TR → B → P
+        var v = new Dictionary<string, List<string>>();
+        void L(string a, string b) { (v.TryGetValue(a, out var x) ? x : v[a] = new List<string>()).Add(b); (v.TryGetValue(b, out var y) ? y : v[b] = new List<string>()).Add(a); }
+        L("P", "A1"); L("A1", "TA"); L("TA", "R1"); L("R1", "VC1"); L("TA", "A2"); L("A2", "R2"); L("R2", "VC2");
+        L("VC1", "B1"); L("B1", "TR"); L("VC2", "B2"); L("B2", "B3"); L("B3", "TR"); L("TR", "RB"); L("RB", "P");
+        var eq = new HashSet<string> { "P", "VC1", "VC2" };
+        var b = Equilibrage.Boucle(v, "P", "VC2", n => !eq.Contains(n)).Value;
+        Verifier(string.Join(">", b.Aller) == "A1>TA>A2>R2" && string.Join(">", b.Retour) == "B2>B3>TR>RB", "équilibrage : boucle aller / retour du VC2");
+        var e = Fluide.Eau(45);
+        var tubes = new Dictionary<string, double> { ["A1"] = 20, ["A2"] = 30, ["B1"] = 5, ["B2"] = 10, ["B3"] = 20, ["RB"] = 20 };
+        Troncon Ligne(string n, string prec, string suiv, double q, Func<string, double> debitDe) =>
+            n.StartsWith("R") && n.Length == 2 && n != "RB"
+                ? new Troncon { Id = n, Repere = n, Designation = "STAD", DiametreMm = 27.3, DebitM3h = q, Zeta = 6 }
+                : new Troncon { Id = n, Repere = n, Designation = "Tube", DiametreMm = n.StartsWith("T") ? 41.9 : 41.9, LongueurM = tubes.TryGetValue(n, out var lg) ? lg : 0, DebitM3h = q, Zeta = n.StartsWith("T") ? 0.5 : 0 };
+        var r = Equilibrage.Calculer(v, "P", new Dictionary<string, double> { ["VC1"] = 1.5, ["VC2"] = 2.0 }, n => !eq.Contains(n), Ligne,
+            c => c == "VC1" ? 12000 : 15000, n => n == "R1" || n == "R2", e, 20000);
+        var c1 = r.Boucles.First(x => x.Consommateur == "VC1"); var c2 = r.Boucles.First(x => x.Consommateur == "VC2");
+        Verifier(r.DebitTotalM3h == 3.5 && c2.Critique && !c1.Critique, "équilibrage : boucle la plus longue critique, débit total 3,5 m³/h");
+        var a1 = c1.Troncons.First(t => t.Id == "A1"); var a2 = c2.Troncons.First(t => t.Id == "A2");
+        Verifier(a1.DebitM3h == 3.5 && a2.DebitM3h == 2.0, "équilibrage : débit d'un tube commun = somme des boucles (A1 3,5 ; A2 2)");
+        Verifier(Math.Abs(c1.TotalPa + c1.ADissiperPa - r.HauteurPa) < 1e-6 && c1.ADissiperPa > 0 && c1.KvRequis > 0 && c1.KvRequis < c2.KvRequis * 3,
+            "équilibrage : VC1 dissipe l'écart dans R1 (Kv " + c1.KvRequis + " ; VC2 " + c2.KvRequis + ")");
+        Verifier(Math.Abs(c1.KvRequis - 1.5 / Math.Sqrt(c1.VanneCiblePa / 1e5)) < 0.01, "Kv requis = Q / √ΔP(bar)");
+        Verifier(r.HauteurMce(e) > (r.HauteurPa) / (e.Rho * 9.81) && r.SourcePa == 20000, "hauteur manométrique : réseau + production");
+    }
+
     static void TestExcel()
     {
         var sp = Exemple(); AnalyseSpool.Analyser(sp);
@@ -326,6 +354,7 @@ static class Tests
         TestHydraulique();
         TestPertesFabricant();
         TestSchema();
+        TestEquilibrage();
         var s = Exemple();
         AnalyseSpool.Analyser(s);
         var parId = s.Composants.ToDictionary(c => c.Id);

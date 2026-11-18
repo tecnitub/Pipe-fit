@@ -22,14 +22,21 @@ namespace PipeFit.Isometries.Core
         public List<(string Libelle, double Pa)> Chemins = new List<(string, double)>();
         /// <summary>Chemin détaillé dans le tableau (mode chemins).</summary>
         public string CheminCalcule = "";
-        double PressionReseau => Chemins.Count > 0 ? Chemins.Max(c => c.Pa) : Resultat.TotalPa;
+        /// <summary>Tableau libre (équilibrage…) à la place du tableau par élément ; texte du résultat encadré.</summary>
+        public List<(string Titre, double Largeur, bool Droite)> Colonnes;
+        public List<string[]> Lignes = new List<string[]>();
+        public string TexteResultat = "";
+        public string TitreTableau = "Résultats par élément";
+        public string ConclusionLibre = "";
+        double PressionReseau => Chemins.Count > 0 ? Chemins.Max(c => c.Pa) : Resultat?.TotalPa ?? 0;
 
-        public string Total => (Resultat.TotalPa / 1000).ToString("0.00", Fr) + " kPa"
+        public string Total => Resultat == null ? TexteResultat : (Resultat.TotalPa / 1000).ToString("0.00", Fr) + " kPa"
             + (Air ? " (" + Resultat.TotalPa.ToString("0", Fr) + " Pa)" : " = " + Resultat.TotalMce(Fluide).ToString("0.00", Fr) + " mCE");
 
         /// <summary>Conclusion proposée (modifiable) : perte de charge totale, vitesses, remarques.</summary>
         public string ConclusionProposee()
         {
+            if (Resultat == null) return ConclusionLibre;
             var r = Resultat;
             var vmax = r.Troncons.Where(t => t.DebitM3h > 0).Select(t => t.VitesseMs).DefaultIfEmpty(0).Max();
             var alertes = r.Troncons.Count(t => t.Alerte != "");
@@ -43,7 +50,7 @@ namespace PipeFit.Isometries.Core
             return texte;
         }
 
-        public IEnumerable<string> Remarques() => Resultat.Troncons.Where(t => t.Alerte != "").Select(t => (t.Repere != "" ? t.Repere + " – " : "") + t.Designation + " : " + t.Alerte);
+        public IEnumerable<string> Remarques() => Resultat == null ? Enumerable.Empty<string>() : Resultat.Troncons.Where(t => t.Alerte != "").Select(t => (t.Repere != "" ? t.Repere + " – " : "") + t.Designation + " : " + t.Alerte);
 
         string Methode => "Perte linéaire : Darcy-Weisbach, coefficient de frottement lambda de Colebrook-White (64/Re en laminaire). "
             + "Pertes singulières : zeta · rho·v²/2, plus les pertes fabricant saisies (Pa).";
@@ -85,13 +92,14 @@ namespace PipeFit.Isometries.Core
             foreach (var h in hyp) Paragraphe("•  " + h);
 
             // Tableau
-            Titre2("Résultats par élément");
+            Titre2(TitreTableau);
             var cols = new (string T, double L, bool D)[]
             {
                 ("Rep.", 34, false), ("Élément", 166, false), ("Section", 56, false), ("Débit m³/h", 54, true), ("Long. m", 44, true), ("v m/s", 40, true),
                 ("Reynolds", 52, true), ("lambda", 42, true), ("J Pa/m", 44, true), ("zeta", 34, true), ("Pd Pa", 42, true), ("dP lin. Pa", 52, true),
                 ("dP sing. Pa", 56, true), ("dP total Pa", 58, true),
             };
+            if (Colonnes != null) cols = Colonnes.Select(c => (c.Titre, c.Largeur, c.Droite)).ToArray();
             double lt = cols.Sum(c => c.L), x0 = m, hl = 13;
             void Entete()
             {
@@ -115,11 +123,12 @@ namespace PipeFit.Isometries.Core
             }
             Saut(hl * 3); Entete();
             string F(double v, string f) => v.ToString(f, Fr);
-            foreach (var t in Resultat.Troncons)
+            if (Colonnes != null) foreach (var l in Lignes) Ligne(l, l.Length > 0 && l[0] == "Total");
+            else foreach (var t in Resultat.Troncons)
                 Ligne(new[] { t.Repere + (t.Alerte != "" ? " *" : ""), t.Designation, t.Section, F(t.DebitM3h, "0.##"), t.LongueurM > 0 ? F(t.LongueurM, "0.00") : "", F(t.VitesseMs, "0.00"),
                     F(Math.Round(t.Reynolds), "0"), F(t.Lambda, "0.0000"), t.LongueurM > 0 ? F(t.PerteLineairePaM, Air ? "0.00" : "0") : "", t.Zeta != 0 ? F(t.Zeta, "0.###") : "",
                     F(t.PressionDynamiquePa, "0.0"), F(t.PerteLineairePa, "0.0"), F(t.PerteSinguliere, "0.0"), F(t.PerteTotalePa, "0.0") });
-            Ligne(new[] { "", "Total", "", "", F(Resultat.LongueurM, "0.0"), "", "", "", "", "", "", F(Resultat.LineairePa, "0"), F(Resultat.SingulierPa, "0"), F(Resultat.TotalPa, "0") }, true);
+            if (Colonnes == null) Ligne(new[] { "", "Total", "", "", F(Resultat.LongueurM, "0.0"), "", "", "", "", "", "", F(Resultat.LineairePa, "0"), F(Resultat.SingulierPa, "0"), F(Resultat.TotalPa, "0") }, true);
             y += 6;
             var rem = Remarques().ToList();
             if (rem.Count > 0) { Titre2("Remarques (*)"); foreach (var r in rem) Paragraphe("•  " + r, 8.5); }
@@ -131,7 +140,7 @@ namespace PipeFit.Isometries.Core
             Titre2("Résultat");
             Saut(30);
             pdf.Rectangle(m, y, W - 2 * m, 24, 0.94, 0.6);
-            pdf.Texte(m + 8, y + 16, Chemins.Count > 0
+            pdf.Texte(m + 8, y + 16, Resultat == null ? TexteResultat : Chemins.Count > 0
                 ? "Pression du réseau au ventilateur : " + PressionReseau.ToString("0", Fr) + " Pa   –   chemin détaillé : " + Total
                 : (Air ? "Perte de charge du réseau : " : "Perte de charge du circuit : ") + Total, 11, true);
             y += 32;
@@ -154,6 +163,29 @@ namespace PipeFit.Isometries.Core
 
         public byte[] Excel()
         {
+            if (Colonnes != null)
+            {
+                var fe = new FeuilleXlsx { Nom = "Note de calcul", Largeurs = Colonnes.Select(c => Math.Max(8, c.Largeur / 5.5)).ToList() };
+                fe.Ajouter(new Cellule(Titre + (Societe != "" ? " – " + Societe : ""), StyleCellule.Titre));
+                fe.Ajouter(new Cellule("Projet : " + Projet + (Affaire != "" ? "   –   Affaire : " + Affaire : "") + "   –   Indice " + Indice + " du " + Date.ToString("dd/MM/yyyy", Fr)
+                    + "   –   Rédigé : " + Redacteur + "   –   Vérifié : " + Verificateur));
+                if (Objet != "") fe.Ajouter(new Cellule("Objet : " + Objet));
+                if (Fluide != null) fe.Ajouter(new Cellule("Fluide : " + Fluide.Nom + " – ρ " + Fluide.Rho.ToString("0.0", Fr) + " kg/m³, ν " + (Fluide.Nu * 1e6).ToString("0.000", Fr) + " mm²/s"));
+                foreach (var h in Hypotheses.Where(h => !string.IsNullOrWhiteSpace(h))) fe.Ajouter(new Cellule("Hypothèse : " + h));
+                fe.Vide();
+                fe.LigneEntete = fe.Lignes.Count; fe.NbColonnesFiltre = Colonnes.Count;
+                fe.Lignes.Add(Colonnes.Select(c => new Cellule(c.Titre, StyleCellule.Entete)).ToList());
+                foreach (var l in Lignes)
+                    fe.Lignes.Add(l.Select((v, i) => Colonnes[i].Droite && double.TryParse((v ?? "").Replace(" ", "").Replace("\u202f", ""), System.Globalization.NumberStyles.Float, Fr, out var d)
+                        ? new Cellule(d, l[0] == "Total" ? StyleCellule.TotalDecimal : StyleCellule.Decimal) : new Cellule(v ?? "", l[0] == "Total" ? StyleCellule.Gras : StyleCellule.Texte)).ToList());
+                fe.DerniereLigneFiltre = fe.Lignes.Count - 1 - (Lignes.Count > 0 && Lignes[Lignes.Count - 1][0] == "Total" ? 1 : 0);
+                fe.Vide();
+                fe.Ajouter(new Cellule(TexteResultat, StyleCellule.Gras));
+                fe.Vide();
+                fe.Ajouter(new Cellule("Conclusion", StyleCellule.Gras));
+                fe.Ajouter(new Cellule(Conclusion != "" ? Conclusion : ConclusionProposee()));
+                return Xlsx.Ecrire(new[] { fe });
+            }
             var lignes = new List<string>
             {
                 "Projet : " + Projet + (Affaire != "" ? "   –   Affaire : " + Affaire : ""),

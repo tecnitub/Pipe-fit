@@ -116,6 +116,15 @@ namespace PipeFit.Isometries.Revit
                 LargeImage = Image("hydraulique32.png"),
                 Image = Image("hydraulique16.png"),
             });
+            calculs.AddItem(new PushButtonData("PipeFitEquilibrage", "Équilibrage\nhydraulique", Assembly.GetExecutingAssembly().Location, typeof(CmdEquilibrage).FullName)
+            {
+                ToolTip = "Équilibrage du circuit : boucle de chaque équipement, boucle critique, pression à dissiper et Kv requis des vannes de réglage, point de fonctionnement de la pompe.",
+                LongDescription = "Cliquez un élément du circuit (aller et retour dessinés). Source : production ou pompe ; consommateurs : équipements avec « Débit hydraulique (m³/h) ». "
+                    + "Débits cumulés le long des boucles, pertes (tubes, raccords, tés selon les débits, vannes, pertes fabricant), Kv requis de chaque STAD / STAF, "
+                    + "hauteur manométrique de la pompe ; note de calcul PDF / Excel.",
+                LargeImage = Image("hydraulique32.png"),
+                Image = Image("hydraulique16.png"),
+            });
             calculs.AddItem(new PushButtonData("PipeFitPerteAeraulique", "Perte de charge\naéraulique", Assembly.GetExecutingAssembly().Location, typeof(CmdPerteAeraulique).FullName)
             {
                 ToolTip = "Perte de charge aéraulique de la CTA à chaque bouche : chemin le plus défavorisé et pression du réseau au ventilateur.",
