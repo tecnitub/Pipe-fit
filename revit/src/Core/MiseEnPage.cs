@@ -80,13 +80,14 @@ namespace PipeFit.Isometries.Core
             }
 
             var nom = new Tableau { Titre = "NOMENCLATURE" };
-            // « Cote » : face à face des vannes et accessoires en ligne (clapet, filtre, dilatoflex…), en mm
+            // « Encombrement » : face à face des vannes et accessoires en ligne (clapet, filtre, dilatoflex…), en mm
             bool faf = s.Nomenclature.Any(l => l.FaceAFaceMm > 0);
-            nom.Colonnes.Add(new Colonne("Rep.", 10)); nom.Colonnes.Add(new Colonne("Désignation", faf ? 46 : 52));
-            nom.Colonnes.Add(new Colonne("DN", faf ? 12 : 14));
-            if (faf) nom.Colonnes.Add(new Colonne("Cote", 12, true));
-            nom.Colonnes.Add(new Colonne("Matière", faf ? 20 : 22)); nom.Colonnes.Add(new Colonne("Qté", faf ? 15 : 16, true));
-            nom.Colonnes.Add(new Colonne("Pouces", faf ? 15 : 16, true));
+            // (tableau élargi à 150 mm quand la colonne est présente : chaque titre tient entier)
+            nom.Colonnes.Add(new Colonne("Rep.", 10)); nom.Colonnes.Add(new Colonne("Désignation", faf ? 50 : 56));
+            nom.Colonnes.Add(new Colonne("DN", 13));
+            if (faf) nom.Colonnes.Add(new Colonne("Encombrement", 26, true));
+            nom.Colonnes.Add(new Colonne("Matière", 22)); nom.Colonnes.Add(new Colonne("Qté", 15, true));
+            nom.Colonnes.Add(new Colonne("Pouces", 14, true));
             foreach (var l in s.Nomenclature)
                 nom.Lignes.Add(new[]
                 {
@@ -175,13 +176,57 @@ namespace PipeFit.Isometries.Core
             return (int)(Math.Ceiling(k / 50) * 50);
         }
 
-        /// <summary>Texte raccourci pour tenir dans une colonne (largeur moyenne d'un caractère ≈ 0,62 × hauteur).</summary>
-        public static string Tronquer(string texte, double largeurMm, double hauteurTexteMm)
+        /// <summary>
+        /// Largeur estimée d'un texte (mm) : chasse de chaque caractère en police Arial, rapportée à la hauteur des
+        /// majuscules (la « taille » d'un texte Revit), un peu plus large en gras. Volontairement prudente.
+        /// </summary>
+        public static double LargeurTexte(string texte, double hauteurTexteMm, bool gras = false)
+        {
+            double em = 0;
+            foreach (var ch in texte ?? "") em += Chasse(ch);
+            return em * hauteurTexteMm / 0.716 * (gras ? 1.07 : 1.0);
+        }
+
+        static double Chasse(char c)
+        {
+            if (c == ' ') return 0.28;
+            if ("iljìíîï.,;:'!|".IndexOf(c) >= 0) return 0.24;
+            if ("frt()-[]/\\".IndexOf(c) >= 0) return 0.36;
+            if (c == 'm') return 0.84;
+            if (c == 'w') return 0.73;
+            if (c == 'M' || c == 'W') return 0.86;
+            if (c == 'I') return 0.28;
+            if (c == 'J') return 0.52;
+            if (c == '…') return 1.0;
+            if (c == '"' || c == '°') return 0.4;
+            if (char.IsDigit(c)) return 0.56;
+            if (char.IsUpper(c)) return 0.72;
+            if (char.IsLower(c)) return 0.56;
+            return 0.62;
+        }
+
+        /// <summary>Hauteur des textes dans les cases des tableaux (mm, hauteur des majuscules).</summary>
+        public const double HauteurTexteTableau = 2.0;
+
+        /// <summary>Marge intérieure d'une case de tableau, de chaque côté (mm).</summary>
+        public const double MargeCase = 1.5;
+
+        /// <summary>Texte raccourci (« … ») pour tenir dans une colonne, marges comprises : jamais de débordement sur la voisine.</summary>
+        public static string Tronquer(string texte, double largeurMm, double hauteurTexteMm, bool gras = false)
         {
             texte = texte ?? "";
-            var max = (int)Math.Floor((largeurMm - 2) / (0.62 * hauteurTexteMm));
-            if (max < 2) return "";
-            return texte.Length <= max ? texte : texte.Substring(0, max - 1).TrimEnd() + "…";
+            var dispo = largeurMm - 2 * MargeCase - 0.3;
+            if (LargeurTexte(texte, hauteurTexteMm, gras) <= dispo) return texte;
+            for (int n = texte.Length - 1; n >= 1; n--)
+            {
+                var t = texte.Substring(0, n).TrimEnd() + "…";
+                if (LargeurTexte(t, hauteurTexteMm, gras) <= dispo) return t;
+            }
+            return "";
         }
+
+        /// <summary>Le titre de chaque colonne tient sans être raccourci.</summary>
+        public static bool TitresEntiers(Tableau t, double hauteurTexteMm) =>
+            t.Colonnes.All(c => string.IsNullOrEmpty(c.Titre) || Tronquer(c.Titre, c.LargeurMm, hauteurTexteMm, true) == c.Titre);
     }
 }

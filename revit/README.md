@@ -104,9 +104,12 @@ Option décochée : étiquettes Revit (familles d'étiquettes choisies), placée
 - **Bride** : la cote s'arrête au bout de la bride (face de bride).
 - **Vanne et robinetterie en ligne** (vanne, clapet, filtre, compensateur / dilatoflex…) : la cote s'arrête à l'**axe** de
   la vanne (milieu entre ses deux faces) ; la chaîne donne face de bride → axe → face de bride.
-- **Nomenclature** : colonne « Cote » = face à face (mm) de chaque vanne ou accessoire en ligne ; même valeur dans le CSV
+- **Nomenclature** : colonne « Encombrement » = face à face (mm) de chaque vanne ou accessoire en ligne ; même valeur dans le CSV
   de nomenclature (colonne « Face à face (mm) »). Deux vannes de même désignation mais de face à face différent sont sur
   deux lignes.
+- **Textes des tableaux** : 2 mm (hauteur des majuscules, police Arial) ; la largeur de chaque texte est estimée
+  caractère par caractère et le texte est raccourci (« … ») pour ne jamais déborder sur la colonne voisine ; les titres
+  de colonnes tiennent toujours entiers (la nomenclature passe à 150 mm de large avec la colonne Encombrement).
 
 ## Piquages
 

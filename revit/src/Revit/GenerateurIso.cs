@@ -56,8 +56,10 @@ namespace PipeFit.Isometries.Revit
 
         public void Preparer()
         {
-            texte = TypeTexte("Pipe-Fit ISO 2,5 mm", false);
-            texteGras = TypeTexte("Pipe-Fit ISO 2,5 mm gras", true);
+            texte = TypeTexte("Pipe-Fit ISO 2,5 mm", false, HauteurTexteMm);
+            texteGras = TypeTexte("Pipe-Fit ISO 2,5 mm gras", true, HauteurTexteMm);
+            texteTableau = TypeTexte("Pipe-Fit ISO tableaux 2 mm", false, MiseEnPage.HauteurTexteTableau);
+            texteTableauGras = TypeTexte("Pipe-Fit ISO tableaux 2 mm gras", true, MiseEnPage.HauteurTexteTableau);
             typeVue3D = new FilteredElementCollector(doc).OfClass(typeof(ViewFamilyType)).Cast<ViewFamilyType>()
                 .First(v => v.ViewFamily == ViewFamily.ThreeDimensional).Id;
             cartouche = string.IsNullOrEmpty(r.Cartouche) ? null : Cartouches(doc).FirstOrDefault(c => NomType(c) == r.Cartouche);
@@ -70,14 +72,16 @@ namespace PipeFit.Isometries.Revit
             if (projet == "") projet = doc.Title;
         }
 
-        ElementId TypeTexte(string nom, bool gras)
+        ElementId texteTableau, texteTableauGras;
+
+        ElementId TypeTexte(string nom, bool gras, double hauteurMm)
         {
             var existant = new FilteredElementCollector(doc).OfClass(typeof(TextNoteType)).Cast<TextNoteType>().FirstOrDefault(t => t.Name == nom);
             if (existant != null) return existant.Id;
             var base_ = doc.GetElement(doc.GetDefaultElementTypeId(ElementTypeGroup.TextNoteType)) as TextNoteType
                 ?? new FilteredElementCollector(doc).OfClass(typeof(TextNoteType)).Cast<TextNoteType>().First();
             var t = (TextNoteType)base_.Duplicate(nom);
-            t.get_Parameter(BuiltInParameter.TEXT_SIZE)?.Set(Compat.Pieds(HauteurTexteMm));
+            t.get_Parameter(BuiltInParameter.TEXT_SIZE)?.Set(Compat.Pieds(hauteurMm));
             t.get_Parameter(BuiltInParameter.TEXT_FONT)?.Set("Arial");
             t.get_Parameter(BuiltInParameter.TEXT_BACKGROUND)?.Set(1); // transparent
             t.get_Parameter(BuiltInParameter.TEXT_WIDTH_SCALE)?.Set(1.0);
@@ -780,10 +784,12 @@ namespace PipeFit.Isometries.Revit
             foreach (var c in Cordes.Decouper(segments, TraitMin)) Trait(v, c.x1, c.y1, c.x2, c.y2);
         }
 
-        void Texte(View v, double x, double y, string t, bool gras = false, bool droite = false, bool centre = false)
+        void Texte(View v, double x, double y, string t, bool gras = false, bool droite = false, bool centre = false, bool tableau = false)
         {
             if (string.IsNullOrEmpty(t)) return;
-            var opt = new TextNoteOptions(gras ? texteGras : texte)
+            var type = tableau ? (gras ? texteTableauGras : texteTableau) : (gras ? texteGras : texte);
+            if (type == null || type == ElementId.InvalidElementId) type = gras ? texteGras : texte;
+            var opt = new TextNoteOptions(type)
             {
                 HorizontalAlignment = droite ? HorizontalTextAlignment.Right : centre ? HorizontalTextAlignment.Center : HorizontalTextAlignment.Left,
                 VerticalAlignment = VerticalTextAlignment.Middle,
@@ -809,13 +815,14 @@ namespace PipeFit.Isometries.Revit
             double cx = x;
             for (int j = 0; j < t.Colonnes.Count - 1; j++) { cx += t.Colonnes[j].LargeurMm; Trait(f, cx, y - h, cx, bas); }
 
-            Texte(f, x + 1.5, y - h / 2, t.Titre, gras: true);
+            Texte(f, x + 1.5, y - h / 2, MiseEnPage.Tronquer(t.Titre, w, HauteurTexteMm, true), gras: true);
+            var ht = MiseEnPage.HauteurTexteTableau;
             if (entete)
             {
                 cx = x;
                 foreach (var c in t.Colonnes)
                 {
-                    Texte(f, c.Droite ? cx + c.LargeurMm - 1.5 : cx + 1.5, y - h * 1.5, MiseEnPage.Tronquer(c.Titre, c.LargeurMm, HauteurTexteMm), gras: true, droite: c.Droite);
+                    Texte(f, c.Droite ? cx + c.LargeurMm - 1.5 : cx + 1.5, y - h * 1.5, MiseEnPage.Tronquer(c.Titre, c.LargeurMm, ht, true), gras: true, droite: c.Droite, tableau: true);
                     cx += c.LargeurMm;
                 }
             }
@@ -828,7 +835,7 @@ namespace PipeFit.Isometries.Revit
                 {
                     var c = t.Colonnes[j];
                     if (l[j] != null && l[j].StartsWith(Legende.Marque)) DessinerSymbole(f, cx + c.LargeurMm / 2, ym, l[j].Substring(Legende.Marque.Length));
-                    else Texte(f, c.Droite ? cx + c.LargeurMm - 1.5 : cx + 1.5, ym, MiseEnPage.Tronquer(l[j], c.LargeurMm, HauteurTexteMm), droite: c.Droite);
+                    else Texte(f, c.Droite ? cx + c.LargeurMm - 1.5 : cx + 1.5, ym, MiseEnPage.Tronquer(l[j], c.LargeurMm, ht), droite: c.Droite, tableau: true);
                     cx += c.LargeurMm;
                 }
             }
@@ -882,7 +889,7 @@ namespace PipeFit.Isometries.Revit
             Trait(f, x0, y0, x0, y1); Trait(f, x0, y1, x1, y1);
             Trait(f, x0, 33, x1, 33); Trait(f, x0, 21, x1, 21);
             Trait(f, 330, y0, 330, 33);
-            Texte(f, x0 + 2, 39, MiseEnPage.Tronquer(titre, 186, HauteurTexteMm), gras: true);
+            Texte(f, x0 + 2, 39, MiseEnPage.Tronquer(titre, 186, HauteurTexteMm, true), gras: true);
             Texte(f, x0 + 2, 27, MiseEnPage.Tronquer(projet, 108, HauteurTexteMm));
             Texte(f, 332, 27, "Feuille " + numeroFeuille);
             Texte(f, x0 + 2, 15.5, MiseEnPage.Tronquer(sousTitre, 108, HauteurTexteMm));

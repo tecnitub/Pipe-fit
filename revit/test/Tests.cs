@@ -107,10 +107,25 @@ static class Tests
         var lv = d.Nomenclature.Single(l => l.Type == TypeComposant.Vanne);
         Verifier(lv.FaceAFaceMm == 200 && d.Nomenclature.Where(l => l.Type != TypeComposant.Vanne).All(l => l.FaceAFaceMm == 0), "nomenclature : cote face à face de la vanne (200)");
         var tnd = MiseEnPage.Tableaux(d, "", "").First(t => t.Titre == "NOMENCLATURE");
-        var ic = tnd.Colonnes.FindIndex(c => c.Titre == "Cote");
-        Verifier(ic > 0 && tnd.Lignes.Any(r => r[ic] == "200") && tnd.Lignes.All(r => r.Length == tnd.Colonnes.Count) && Math.Abs(tnd.Largeur - 130) < 0.01,
-            "tableau nomenclature : colonne « Cote » de la vanne");
+        var ic = tnd.Colonnes.FindIndex(c => c.Titre == "Encombrement");
+        Verifier(ic > 0 && tnd.Lignes.Any(r => r[ic] == "200") && tnd.Lignes.All(r => r.Length == tnd.Colonnes.Count) && Math.Abs(tnd.Largeur - 150) < 0.01,
+            "tableau nomenclature : colonne « Encombrement » de la vanne");
         Verifier(ExportCsv.Nomenclature(new[] { d }).Contains(";200\r\n"), "CSV nomenclature : face à face");
+        // Aucun texte ne déborde de sa colonne : titres entiers, cases raccourcies (« … ») à la largeur de la colonne
+        foreach (var tb in MiseEnPage.Tableaux(d, "Projet", "17/11/2026").Concat(MiseEnPage.Tableaux(Exemple(), "Projet", "17/11/2026")))
+        {
+            Verifier(MiseEnPage.TitresEntiers(tb, MiseEnPage.HauteurTexteTableau), "titres de colonnes entiers : " + tb.Titre + " (" + string.Join(", ", tb.Colonnes.Where(c => MiseEnPage.Tronquer(c.Titre, c.LargeurMm, MiseEnPage.HauteurTexteTableau, true) != c.Titre).Select(c => c.Titre)) + ")");
+            Verifier(tb.Lignes.All(r => r.Select((v, j) => MiseEnPage.LargeurTexte(MiseEnPage.Tronquer(v, tb.Colonnes[j].LargeurMm, MiseEnPage.HauteurTexteTableau), MiseEnPage.HauteurTexteTableau) <= tb.Colonnes[j].LargeurMm - 3).All(x => x)), "cases dans leur colonne : " + tb.Titre);
+        }
+        Verifier(MiseEnPage.Tronquer("Vanne papillon TECOFI VPI 4648-02 DN100", 38, 2.5).EndsWith("…"), "désignation longue raccourcie");
+        // Légendes : libellés entiers (jamais raccourcis), titres entiers
+        foreach (var tlg in new[] { Legende.Compacte(Legende.Toutes()), Legende.Tableau(Legende.Toutes()) })
+        {
+            var coupes = tlg.Lignes.SelectMany(r => r.Select((v, j) => (v, j))).Where(x => x.v != null && !x.v.StartsWith(Legende.Marque)
+                && MiseEnPage.Tronquer(x.v, tlg.Colonnes[x.j].LargeurMm, MiseEnPage.HauteurTexteTableau) != x.v).Select(x => x.v).ToList();
+            Verifier(coupes.Count == 0 && MiseEnPage.TitresEntiers(tlg, MiseEnPage.HauteurTexteTableau), "légende sans texte raccourci : " + string.Join(" | ", coupes));
+        }
+        Verifier(MiseEnPage.LargeurTexte("MMMM", 2.5) > MiseEnPage.LargeurTexte("iiii", 2.5) * 3, "largeur de texte selon les caractères");
 
         // Provenance / destination : sans sens Revit, la première extrémité de la ligne est l'arrivée
         var sl = Exemple();
@@ -664,7 +679,7 @@ static class Tests
         Verifier(page2.Tableaux.Select(p => p.X).Distinct().Count() == 3, "débordement : une colonne par tableau");
         Verifier(MiseEnPage.ChoisirEchelle(5000, 3000, 250, 250) == 20, "échelle 1:20 pour 5 m dans 250 mm");
         Verifier(MiseEnPage.ChoisirEchelle(400, 200, 250, 250) == 2, "échelle 1:2 pour une petite pièce");
-        Verifier(MiseEnPage.Tronquer("Coude soudé inox 316L à grand rayon", 30, 2.5) == "Coude soudé inox…", "texte tronqué : " + MiseEnPage.Tronquer("Coude soudé inox 316L à grand rayon", 30, 2.5));
+        Verifier(MiseEnPage.Tronquer("Coude soudé inox 316L à grand rayon", 30, 2.5).EndsWith("…") && MiseEnPage.LargeurTexte(MiseEnPage.Tronquer("Coude soudé inox 316L à grand rayon", 30, 2.5), 2.5) <= 27, "texte tronqué : " + MiseEnPage.Tronquer("Coude soudé inox 316L à grand rayon", 30, 2.5));
 
         // Tri naturel des spools
         var noms = new List<string> { "SP-10", "SP-2", "SP-1", "A", "SP-02b" };

@@ -142,6 +142,6 @@ namespace PipeFit.Isometries.Core
         }
 
         /// <summary>Largeur approximative d'un texte Arial (mm) : 0,62 × hauteur par caractère (0,68 en gras).</summary>
-        public static double LargeurTexte(string t, double hauteur, bool gras = false) => (t ?? "").Length * hauteur * (gras ? 0.68 : 0.62);
+        public static double LargeurTexte(string t, double hauteur, bool gras = false) => MiseEnPage.LargeurTexte(t, hauteur, gras);
     }
 }

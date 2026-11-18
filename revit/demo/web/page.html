@@ -188,7 +188,18 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
     const up = v3.norm(v3.sub([0, 0, 1], v3.mul(f, v3.dot(f, [0, 0, 1]))));
     return { f, up, right: v3.cross(f, up) };
   }
-  const tronquer = (t, w, h = 2.5) => { t = t || ''; const max = Math.floor((w - 2) / (0.62 * h)); return max < 2 ? '' : t.length <= max ? t : t.slice(0, max - 1).trimEnd() + '…'; };
+  // Largeur d'un texte et texte raccourci : même calcul que le complément (chasse Arial, hauteur des majuscules)
+  const chasse = ch => ch === ' ' ? 0.28 : "iljìíîï.,;:'!|".includes(ch) ? 0.24 : 'frt()-[]/\\'.includes(ch) ? 0.36 : ch === 'm' ? 0.84 : ch === 'w' ? 0.73
+    : ch === 'M' || ch === 'W' ? 0.86 : ch === 'I' ? 0.28 : ch === 'J' ? 0.52 : ch === '…' ? 1 : ch === '"' || ch === '°' ? 0.4 : /[0-9]/.test(ch) ? 0.56
+    : ch !== ch.toLowerCase() ? 0.72 : ch !== ch.toUpperCase() ? 0.56 : 0.62;
+  const largeurTexte = (t, h, gras) => [...String(t ?? '')].reduce((a, ch) => a + chasse(ch), 0) * h / 0.716 * (gras ? 1.07 : 1);
+  const HT = 2.0; // hauteur des textes de tableau (majuscules), comme dans Revit
+  const tronquer = (t, w, h = HT, gras = false) => {
+    t = String(t ?? ''); const dispo = w - 3.3;
+    if (largeurTexte(t, h, gras) <= dispo) return t;
+    for (let n = t.length - 1; n >= 1; n--) { const r = t.slice(0, n).trimEnd() + '…'; if (largeurTexte(r, h, gras) <= dispo) return r; }
+    return '';
+  };
 
   // Placement des étiquettes sans chevauchement : portage fidèle de PlacementEtiquettes (cœur du complément)
   const Pl = (() => {
@@ -288,13 +299,15 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
       for (let i = 1; i < haut + t.lignes.length; i++) line(t.x, bas_(i), t.x + w, bas_(i), 'k-ink', i === 1 ? 0.35 : 0.18);
       let cx = t.x;
       t.colonnes.slice(0, -1).forEach(c => { cx += c.w; line(cx, t.y - h, cx, bas, 'k-ink', 0.18); });
-      text(t.x + 1.5, t.y - h / 2, t.titre, { bold: true });
-      if (entete) { cx = t.x; t.colonnes.forEach(c => { text(c.d ? cx + c.w - 1.5 : cx + 1.5, t.y - h * 1.5, tronquer(c.t, c.w), { bold: true, anchor: c.d ? 'end' : 'start' }); cx += c.w; }); }
+      text(t.x + 1.5, t.y - h / 2, tronquer(t.titre, w, 2.5, true), { bold: true });
+      // Taille SVG = cadratin : hauteur des majuscules HT comme dans Revit
+      const fs = HT / 0.716;
+      if (entete) { cx = t.x; t.colonnes.forEach(c => { text(c.d ? cx + c.w - 1.5 : cx + 1.5, t.y - h * 1.5, tronquer(c.t, c.w, HT, true), { bold: true, size: fs, anchor: c.d ? 'end' : 'start' }); cx += c.w; }); }
       t.lignes.forEach((l, i) => {
         const ym = (bas_(haut + i) + bas_(haut + i + 1)) / 2; cx = t.x;
         t.colonnes.forEach((c, j) => {
           if (String(l[j]).startsWith('§')) symbole(g, cx + c.w / 2, ym, l[j].slice(1), line, text);
-          else text(c.d ? cx + c.w - 1.5 : cx + 1.5, ym, tronquer(l[j], c.w), { anchor: c.d ? 'end' : 'start' });
+          else text(c.d ? cx + c.w - 1.5 : cx + 1.5, ym, tronquer(l[j], c.w), { size: fs, anchor: c.d ? 'end' : 'start' });
           cx += c.w;
         });
       });
@@ -528,7 +541,7 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
           s.assemblages.map(a => [a.n, `<span class="pill ${lib[a.nature][1]}">${lib[a.nature][0]}</span>`, 'DN' + Math.round(a.dn), fr.format(a.pd)]));
     } else if (st.tab === 'cot') {
       p.innerHTML = table([{ t: 'Cote (mm)', r: true }, { t: 'De / à' }], s.cotes.map(c => [c.v, c.l])) +
-        `<p class="note">Axe = intersection des axes du coude ou du té. Bride = face de la bride. Bride : cote au bout de la bride. Vanne, clapet, filtre, compensateur : cote à leur axe ; leur face à face est dans la nomenclature (colonne Cote).</p>`;
+        `<p class="note">Axe = intersection des axes du coude ou du té. Bride = face de la bride. Bride : cote au bout de la bride. Vanne, clapet, filtre, compensateur : cote à leur axe ; leur face à face est dans la nomenclature (colonne Encombrement).</p>`;
     } else if (st.tab === 'qte') {
       const rows = s.quantitatif.trim().split(/\r?\n/).map(l => l.split(';'));
       const cols = rows[0].map((t, i) => ({ t, r: i === 4 || i === 5 }));

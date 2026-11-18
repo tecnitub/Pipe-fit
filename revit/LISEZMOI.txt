@@ -121,7 +121,7 @@ LÉGENDE DES SYMBOLES
 
 COTES DES VANNES ET BRIDES
   Bride : cote au bout de la bride. Vanne, clapet, filtre, compensateur : cote à l'axe (milieu entre les
-  faces). La nomenclature donne leur face à face (colonne « Cote », en mm).
+  faces). La nomenclature donne leur face à face (colonne « Encombrement », en mm).
 
 PIQUAGES
   Le piquage dessiné par Revit (avec une longueur) est en réalité la branche piquée directement sur le
