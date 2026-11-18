@@ -406,6 +406,34 @@ static class Tests
             Verifier(AnalyseSpool.Classer(Acc("Bride spéciale", "DN100")) == TypeComposant.Vanne, "correspondance choisie : passe avant la bride");
             Robinetterie.Correspondances.Clear();
 
+            // Piquage Revit (raccord à piquage avec une longueur) : la branche est piquée directement sur le collecteur
+            {
+                var sq = new Spool { Nom = "PQ" };
+                sq.Composants.Add(C("col", "Tuyau", "", TypeComposant.Tube, 100, 2000, null, E(0, 0, 0, 100, null), E(2000, 0, 0, 100, null)));
+                sq.Composants[0].Materiau = "Acier";
+                var pq = C("pq", "Raccord à piquage - Soudé", "Standard", TypeComposant.Autre, 50, 0, null, E(1000, 0, 0, 100, "col"), E(1000, 0, 80, 50, "br"));
+                sq.Composants.Add(pq);
+                sq.Composants.Add(C("br", "Tuyau", "", TypeComposant.Tube, 50, 500, null, E(1000, 0, 80, 50, "pq"), E(1000, 0, 580, 50, null)));
+                sq.Composants[2].Materiau = "Acier";
+                AnalyseSpool.Analyser(sq);
+                Verifier(pq.Type == TypeComposant.Piquage && pq.PiquageDirect && pq.CoteBranche == pq.Extremites[1], "piquage direct reconnu, côté branche = petit DN");
+                Verifier(sq.Nombre(NatureAssemblage.Soudure) == 1 && sq.Assemblages.Single(x => x.Nature == NatureAssemblage.Soudure).Position.Z == 0,
+                    "piquage : une seule soudure, sur le collecteur (" + sq.Nombre(NatureAssemblage.Soudure) + ")");
+                var db = sq.Debits.Single(d => d.Tube.Id == "br");
+                Verifier(db.LongueurRevitMm == 500 && db.PiquageMm == 80 && db.LongueurMm == 580, "débit de la branche : 500 + 80 de piquage = " + db.LongueurMm);
+                Verifier(sq.Nomenclature.All(l => l.Type != TypeComposant.Piquage) && pq.Repere == "", "piquage : pas de pièce en nomenclature");
+                var qp = Quantitatif.Calculer(new[] { sq });
+                Verifier(!qp.Any(l => l.Famille.StartsWith("Raccord à piquage")), "piquage : pas de fourniture au quantitatif");
+                Verifier(ListeDebit.Csv(new[] { sq }).Contains(";T2;500;80;;580;") || ListeDebit.Csv(new[] { sq }).Contains(";500;80;;580;"), "CSV débit : colonne piquage");
+                // Un weldolet reste une pièce soudée des deux côtés
+                var sw = new Spool { Nom = "WO" };
+                sw.Composants.Add(C("col", "Tuyau", "", TypeComposant.Tube, 100, 2000, null, E(0, 0, 0, 100, null), E(2000, 0, 0, 100, null)));
+                sw.Composants.Add(C("wo", "Weldolet", "Standard", TypeComposant.Autre, 50, 0, null, E(1000, 0, 0, 100, "col"), E(1000, 0, 80, 50, "br")));
+                sw.Composants.Add(C("br", "Tuyau", "", TypeComposant.Tube, 50, 500, null, E(1000, 0, 80, 50, "wo"), E(1000, 0, 580, 50, null)));
+                AnalyseSpool.Analyser(sw);
+                Verifier(!sw.Composants[1].PiquageDirect && sw.Nombre(NatureAssemblage.Soudure) == 2, "weldolet : pièce réelle, 2 soudures");
+            }
+
             // Ligne tube – clapet – tube, arrivée du fluide par le bout gauche
             Spool Ligne(bool depuisGauche)
             {
@@ -527,7 +555,7 @@ static class Tests
                 "calepinage : " + string.Join(",", egd.Select(l => l.CoupeMm + "→" + l.Barre)));
             Verifier(ListeDebit.Barres(egd) == 2 && ld.First(l => l.Systeme == "Eau glacée retour").Barre == 0, "2 barres ; tube de 7 m hors barre");
             var csvd = ListeDebit.Csv(new[] { Tubes("SP-1", "Eau glacée départ", 5000) });
-            Verifier(csvd.StartsWith("Système de canalisation;DN;Matière;Spool;Rep.;Longueur Revit (mm)") && csvd.Contains("Eau glacée départ;DN100;Acier;SP-1;T1;5000;;5000;1"), "CSV liste de débit");
+            Verifier(csvd.StartsWith("Système de canalisation;DN;Matière;Spool;Rep.;Longueur Revit (mm)") && csvd.Contains("Eau glacée départ;DN100;Acier;SP-1;T1;5000;;;5000;1"), "CSV liste de débit");
         }
 
         // Traits trop courts pour Revit : redécoupage en cordes ≥ 1,25 mm (cause d'arrêt de la génération)

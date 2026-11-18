@@ -48,13 +48,14 @@ namespace PipeFit.Isometries.Core
                 c.Designation = Designer(c);
             }
             HeriterMateriau(s);
+            MarquerPiquages(s);
 
             var ordre = Parcourir(s.Composants);
             NumeroterNomenclature(s, ordre);
             ListerAssemblages(s, ordre);
             Debiter(s, ordre);
             // Matière à prévoir : la nomenclature des tubes comprend les surlongueurs à recouper sur place
-            foreach (var l in s.Nomenclature.Where(x => x.EstTube)) l.LongueurMm = l.Composants.Sum(c => c.LongueurMm + c.SurlongueurMm);
+            foreach (var l in s.Nomenclature.Where(x => x.EstTube)) l.LongueurMm = l.Composants.Sum(c => c.LongueurMm + c.PiquageMm + c.SurlongueurMm);
             AttribuerSoudures(s);
 
             s.Systeme = PlusFrequent(s.Composants.Select(c => c.Systeme));
@@ -222,11 +223,43 @@ namespace PipeFit.Isometries.Core
 
         // ---------- Nomenclature, débit, assemblages ----------
 
+        /// <summary>
+        /// Piquages directs : un piquage Revit (raccord à piquage, longueur dessinée) qui n'est pas un olet ni une selle est
+        /// en réalité la branche piquée sur le collecteur. On repère son côté branche : l'extrémité raccordée au BOUT d'un
+        /// tube (le collecteur, lui, passe sous le piquage), sinon la plus petite.
+        /// </summary>
+        static void MarquerPiquages(Spool s)
+        {
+            var parId = s.Composants.ToDictionary(c => c.Id);
+            foreach (var c in s.Composants)
+            {
+                c.PiquageDirect = false; c.CoteBranche = null;
+                if (c.Type != TypeComposant.Piquage || c.Extremites.Count != 2) continue;
+                if (Regex.IsMatch(Normaliser(c.Famille + " " + c.TypeNom), @"olet|selle|saddle|bossage|manchon|coupling")) continue;
+                bool AuBoutDunTube(Extremite e) =>
+                    e.ConnecteA != null && parId.TryGetValue(e.ConnecteA, out var v) && v.Type == TypeComposant.Tube
+                    && v.Extremites.Any(x => (x.Position - e.Position).Longueur < 2);
+                var bouts = c.Extremites.Where(AuBoutDunTube).ToList();
+                var branche = bouts.Count == 1 ? bouts[0] : c.Extremites.OrderBy(x => x.DnMm).First();
+                if (bouts.Count == 2 && Math.Abs(c.Extremites[0].DnMm - c.Extremites[1].DnMm) < 0.5)
+                {
+                    // Deux bouts de tube et même DN : le collecteur est celui dont l'axe passe par le point d'axe du piquage
+                    branche = c.Extremites.OrderBy(x => x.DnMm).ThenByDescending(x => (x.Position - Cotation.PointAxe(c)).Longueur).First();
+                }
+                c.PiquageDirect = true; c.CoteBranche = branche;
+            }
+        }
+
+        /// <summary>Longueur d'un piquage direct (de son extrémité côté collecteur à celle côté branche).</summary>
+        public static double LongueurPiquage(Composant p) =>
+            p.Extremites.Count == 2 ? (p.Extremites[0].Position - p.Extremites[1].Position).Longueur : 0;
+
         static void NumeroterNomenclature(Spool s, List<Composant> ordre)
         {
             var rang = new Dictionary<string, int>();
             for (int i = 0; i < ordre.Count; i++) rang[ordre[i].Id] = i;
-            var groupes = s.Composants
+            foreach (var c in s.Composants.Where(x => x.PiquageDirect)) { c.Repere = ""; c.LigneNomenclature = 0; }
+            var groupes = s.Composants.Where(c => !c.PiquageDirect)
                 .GroupBy(c => string.Join("|", (int)c.Type, Normaliser(c.Designation), Normaliser(c.Taille), Math.Round(c.DnMm), Normaliser(c.Materiau)))
                 .Select(g => g.ToList())
                 .OrderBy(g => Array.IndexOf(OrdreNomenclature, g[0].Type))
@@ -255,9 +288,11 @@ namespace PipeFit.Isometries.Core
             {
                 t.Repere = "T" + (++n).ToString(CultureInfo.InvariantCulture);
                 t.SurlongueurMm = s.Assemblages.Where(a => a.Recoupe == t).Sum(a => a.SurlongueurMm);
+                // Branche piquée directement sur le collecteur : le tube comprend la longueur du piquage dessiné par Revit
+                var piq = t.PiquageMm = s.Composants.Where(p => p.PiquageDirect && p.CoteBranche?.ConnecteA == t.Id).Sum(LongueurPiquage);
                 s.Debits.Add(new Debit
                 {
-                    Repere = t.Repere, Tube = t, LongueurRevitMm = Math.Round(t.LongueurMm), LongueurMm = Math.Round(t.LongueurMm + t.SurlongueurMm),
+                    Repere = t.Repere, Tube = t, LongueurRevitMm = Math.Round(t.LongueurMm), LongueurMm = Math.Round(t.LongueurMm + piq + t.SurlongueurMm), PiquageMm = Math.Round(piq),
                     SurlongueurMm = t.SurlongueurMm, DnMm = t.DnMm, Systeme = t.TypeSysteme != "" ? t.TypeSysteme : t.Systeme,
                 });
             }
@@ -282,6 +317,8 @@ namespace PipeFit.Isometries.Core
                     var cle = string.CompareOrdinal(a.Id, b.Id) < 0 ? a.Id + "|" + b.Id : b.Id + "|" + a.Id;
                     cle += "|" + Math.Round(e.Position.X) + "|" + Math.Round(e.Position.Y) + "|" + Math.Round(e.Position.Z);
                     if (!vus.Add(cle)) continue;
+                    // Piquage direct : pas de soudure côté branche (la branche est le piquage), seule reste celle sur le collecteur
+                    if (CoteBrancheDirecte(a, e.Position) || CoteBrancheDirecte(b, e.Position)) continue;
                     // Joint démontable : bride contre bride / vanne, ou appareil vissé sur piquage (purgeur, manomètre, thermomètre)
                     var nature = (Boulonnable(a) && Boulonnable(b)) || Robinetterie.UnPort(a.Genre) || Robinetterie.UnPort(b.Genre)
                         ? NatureAssemblage.Boulonne : NatureAssemblage.Soudure;
@@ -312,6 +349,9 @@ namespace PipeFit.Isometries.Core
                     default: x.Numero = "E" + (++nl); break;
                 }
         }
+
+        static bool CoteBrancheDirecte(Composant c, Point3 p) =>
+            c.PiquageDirect && c.CoteBranche != null && (c.CoteBranche.Position - p).Longueur < 2;
 
         /// <summary>
         /// Surlongueur d'une soudure chantier, laissée sur le tube « a » pour être recoupée sur place. Entre deux tubes,

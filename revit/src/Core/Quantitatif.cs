@@ -43,7 +43,7 @@ namespace PipeFit.Isometries.Core
             foreach (var s in spools)
             {
                 var nomSpool = s.HorsSpool ? "" : s.Nom;
-                foreach (var c in s.Composants)
+                foreach (var c in s.Composants.Where(x => !x.PiquageDirect))
                 {
                     var reseau = c.Systeme != "" ? c.Systeme : s.Systeme;
                     var taille = Taille(c);
@@ -57,7 +57,7 @@ namespace PipeFit.Isometries.Core
                         Designation = c.Designation, EstTube = tube,
                     });
                     // Tube acheté surlongueurs comprises (recoupées sur place)
-                    if (tube) l.LongueurMm += c.LongueurMm + c.SurlongueurMm; else l.Nombre++;
+                    if (tube) l.LongueurMm += c.LongueurMm + c.PiquageMm + c.SurlongueurMm; else l.Nombre++;
                     if (nomSpool != "") l.Spools.Add(nomSpool);
                 }
 

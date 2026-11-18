@@ -119,6 +119,12 @@ LÉGENDE DES SYMBOLES
   Chaque isométrie porte la légende des symboles présents (bande sous le dessin). La feuille ISO-LÉGENDE,
   créée avec les isométries, donne tous les symboles (option dans la fenêtre des isométries).
 
+PIQUAGES
+  Le piquage dessiné par Revit (avec une longueur) est en réalité la branche piquée directement sur le
+  collecteur : une seule soudure, côté collecteur ; la longueur du piquage est ajoutée au débit du tube
+  de branche (colonne « Piq. ») ; pas de pièce « piquage » en nomenclature ni au quantitatif.
+  Les weldolets, sockolets et selles restent des pièces soudées des deux côtés.
+
 ROBINETTERIE
   Le symbole est choisi d'après le NOM DE LA FAMILLE de l'accessoire (« Vanne papillon », « TECOFI CB 3448N »,
   « IMI STAF », « Dilatoflex »…). Le nom du type n'est pas lu (il peut ne contenir que le DN).

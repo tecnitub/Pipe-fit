@@ -12,7 +12,7 @@ namespace PipeFit.Isometries.Core
     public sealed class LigneDebit
     {
         public string Systeme = "", Materiau = "", Spool = "", Repere = "";
-        public double DnMm, LongueurRevitMm, SurlongueurMm, CoupeMm;
+        public double DnMm, LongueurRevitMm, PiquageMm, SurlongueurMm, CoupeMm;
         /// <summary>Barre du commerce où couper ce tube (1, 2…), dans son groupe système / DN / matière ; 0 si plus long qu'une barre.</summary>
         public int Barre;
     }
@@ -24,7 +24,7 @@ namespace PipeFit.Isometries.Core
             var lignes = spools.SelectMany(s => s.Debits.Select(d => new LigneDebit
             {
                 Systeme = d.Systeme, Materiau = d.Tube.Materiau, Spool = s.Nom, Repere = d.Repere, DnMm = d.DnMm,
-                LongueurRevitMm = d.LongueurRevitMm, SurlongueurMm = d.SurlongueurMm, CoupeMm = d.LongueurMm,
+                LongueurRevitMm = d.LongueurRevitMm, PiquageMm = d.PiquageMm, SurlongueurMm = d.SurlongueurMm, CoupeMm = d.LongueurMm,
             })).ToList();
             var res = new List<LigneDebit>();
             foreach (var g in lignes.GroupBy(l => (l.Systeme, Math.Round(l.DnMm), l.Materiau))
@@ -52,11 +52,11 @@ namespace PipeFit.Isometries.Core
             var fr = CultureInfo.GetCultureInfo("fr-FR");
             var sb = new StringBuilder();
             void Ligne(params string[] c) => sb.Append(string.Join(";", c.Select(v => (v ?? "").IndexOfAny(new[] { ';', '"' }) >= 0 ? "\"" + v.Replace("\"", "\"\"") + "\"" : v ?? ""))).Append("\r\n");
-            Ligne("Système de canalisation", "DN", "Matière", "Spool", "Rep.", "Longueur Revit (mm)", "Surlongueur (mm)", "Coupe (mm)",
+            Ligne("Système de canalisation", "DN", "Matière", "Spool", "Rep.", "Longueur Revit (mm)", "Piquage (mm)", "Surlongueur (mm)", "Coupe (mm)",
                 "Barre de " + (barreMm / 1000).ToString("0.#", fr) + " m");
             foreach (var l in Calculer(spools, barreMm, traitScieMm))
                 Ligne(l.Systeme, Diametres.Dn(l.DnMm), l.Materiau, l.Spool, l.Repere, l.LongueurRevitMm.ToString("0", fr),
-                    l.SurlongueurMm > 0 ? l.SurlongueurMm.ToString("0", fr) : "", l.CoupeMm.ToString("0", fr), l.Barre > 0 ? l.Barre.ToString(fr) : "hors barre");
+                    l.PiquageMm > 0 ? l.PiquageMm.ToString("0", fr) : "", l.SurlongueurMm > 0 ? l.SurlongueurMm.ToString("0", fr) : "", l.CoupeMm.ToString("0", fr), l.Barre > 0 ? l.Barre.ToString(fr) : "hors barre");
             return sb.ToString();
         }
     }

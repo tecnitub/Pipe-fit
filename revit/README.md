@@ -99,6 +99,16 @@ Option décochée : étiquettes Revit (familles d'étiquettes choisies), placée
 - Feuille **ISO-LÉGENDE** (option « Feuille de légende de tous les symboles », cochée) créée avec les isométries :
   tous les symboles, en deux tableaux (repères, soudures, cotes ; robinetterie et accessoires), à joindre au dossier.
 
+## Piquages
+
+- **Piquage Revit = branche piquée directement sur le collecteur.** Revit dessine un raccord à piquage avec une longueur ;
+  en atelier, c'est le tube de branche qui est piqué sur le collecteur. Le complément :
+  - garde **une seule soudure, côté collecteur** (celle côté tube de branche est ignorée) ;
+  - **ajoute la longueur du piquage au débit du tube de branche** (colonne « Piq. » de la liste de débit, « Piquage (mm) »
+    dans le CSV) et au tube du quantitatif ;
+  - ne compte **pas de pièce** pour le piquage (ni nomenclature, ni quantitatif, ni bulle).
+- Les vrais olets et selles (weldolet, sockolet, threadolet, selle, bossage) restent des pièces soudées des deux côtés.
+
 ## Robinetterie
 
 - **Genre reconnu d'après le seul nom de la FAMILLE de l'accessoire** (« Vanne papillon », « Clapet à battant », « IMI STAF »,

@@ -98,6 +98,15 @@ namespace PipeFit.Isometries.Core
         public double PoucesSoudures;
         /// <summary>Genre de robinetterie (vanne papillon, réglage, clapet, compensateur…), Aucun pour un tube ou un raccord.</summary>
         public GenreRobinet Genre;
+        /// <summary>
+        /// Piquage dessiné par Revit avec une longueur, qui n'existe pas en atelier : la branche est piquée directement
+        /// sur le collecteur. Pas de pièce, pas de soudure côté branche ; sa longueur s'ajoute au débit du tube de branche.
+        /// </summary>
+        public bool PiquageDirect;
+        /// <summary>Tube de branche : longueur du piquage direct ajoutée à son débit.</summary>
+        public double PiquageMm;
+        /// <summary>Extrémité côté branche d'un piquage direct.</summary>
+        public Extremite CoteBranche;
         /// <summary>Extrémité par où arrive le fluide (sens d'écoulement), null s'il n'est pas connu.</summary>
         public Extremite Amont;
     }
@@ -151,6 +160,8 @@ namespace PipeFit.Isometries.Core
         public Composant Tube;
         /// <summary>Longueur de coupe, surlongueur comprise.</summary>
         public double LongueurMm;
+        /// <summary>Longueur du piquage Revit ajoutée (branche piquée directement sur le collecteur).</summary>
+        public double PiquageMm;
         /// <summary>Longueur de l'élément tube dans Revit (paramètre « Longueur »), arrondie au mm.</summary>
         public double LongueurRevitMm;
         public double SurlongueurMm;

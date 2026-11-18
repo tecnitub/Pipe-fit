@@ -99,11 +99,16 @@ namespace PipeFit.Isometries.Core
                 var deb = new Tableau { Titre = "LISTE DE DÉBIT" };
                 // Longueur de l'élément dans Revit, surlongueur, longueur de coupe, système de canalisation
                 deb.Colonnes.Add(new Colonne("Rep.", 10)); deb.Colonnes.Add(new Colonne("DN", 14));
-                deb.Colonnes.Add(new Colonne("Revit", 18, true)); deb.Colonnes.Add(new Colonne("Surl.", 14, true));
-                deb.Colonnes.Add(new Colonne("Coupe", 18, true)); deb.Colonnes.Add(new Colonne("Système de canalisation", 56));
+                deb.Colonnes.Add(new Colonne("Revit", 18, true));
+                // « Piq. » : longueur du piquage Revit ajoutée (branche piquée directement sur le collecteur)
+                bool piq = s.Debits.Any(d => d.PiquageMm > 0);
+                if (piq) deb.Colonnes.Add(new Colonne("Piq.", 12, true));
+                deb.Colonnes.Add(new Colonne("Surl.", 14, true));
+                deb.Colonnes.Add(new Colonne("Coupe", 18, true)); deb.Colonnes.Add(new Colonne("Système de canalisation", piq ? 44 : 56));
                 foreach (var d in s.Debits)
-                    deb.Lignes.Add(new[] { d.Repere, Diametres.Dn(d.DnMm), d.LongueurRevitMm.ToString("0", Fr),
-                        d.SurlongueurMm > 0 ? "+" + d.SurlongueurMm.ToString("0", Fr) : "", d.LongueurMm.ToString("0", Fr), d.Systeme });
+                    deb.Lignes.Add(new[] { d.Repere, Diametres.Dn(d.DnMm), d.LongueurRevitMm.ToString("0", Fr) }
+                        .Concat(piq ? new[] { d.PiquageMm > 0 ? "+" + d.PiquageMm.ToString("0", Fr) : "" } : new string[0]).Concat(new[] {
+                        d.SurlongueurMm > 0 ? "+" + d.SurlongueurMm.ToString("0", Fr) : "", d.LongueurMm.ToString("0", Fr), d.Systeme }).ToArray());
                 res.Add(deb);
             }
 

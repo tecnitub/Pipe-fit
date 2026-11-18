@@ -616,7 +616,7 @@ namespace PipeFit.Isometries.Revit
             }
 
             var robinets = spool.Composants.Where(Robinetterie.Symbolise);
-            var raccords = spool.Composants.Where(c => c.Type != TypeComposant.Tube && !Robinetterie.Symbolise(c));
+            var raccords = spool.Composants.Where(c => c.Type != TypeComposant.Tube && !Robinetterie.Symbolise(c) && c.Repere != "");
             foreach (var c in robinets.Concat(raccords))
             {
                 if (seulement != null && !seulement.Contains(c.Id)) continue;
