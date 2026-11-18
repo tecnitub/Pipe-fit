@@ -274,6 +274,44 @@ static class Demo
 
     static double[] P(Point3 p) => new[] { Math.Round(p.X, 1), Math.Round(p.Y, 1), Math.Round(p.Z, 1) };
 
+    /// <summary>Réseau d'essai : groupe froid → pompe → collecteur → CTA et 2 ventilo-convecteurs, retour en boucle ; réseau de gaines.</summary>
+    static (List<NoeudSchema> Noeuds, List<(string, string)> Liens) ReseauPid()
+    {
+        var n = new List<NoeudSchema>(); var l = new List<(string, string)>();
+        int k = 0;
+        NoeudSchema A(NatureSchema nat, string lib = "", GenreRobinet g = GenreRobinet.Aucun, string dim = "DN100", string sys = "EG-D", bool src = false)
+        { var x = new NoeudSchema { Id = "n" + (++k), Nature = nat, Libelle = lib, Genre = g, Dimension = dim, DnMm = double.Parse(dim.Replace("DN", "").Replace("Ø", "").Split('×')[0]), Systeme = sys, Source = src, Retour = sys.EndsWith("-R") }; n.Add(x); return x; }
+        void Lier(params NoeudSchema[] ch) { for (int i = 0; i + 1 < ch.Length; i++) l.Add((ch[i].Id, ch[i + 1].Id)); }
+        NoeudSchema T(string dim = "DN100", string sys = "EG-D") => A(NatureSchema.Ligne, "", GenreRobinet.Aucun, dim, sys);
+        var gf = A(NatureSchema.Equipement, "GF-01 Groupe froid", src: true, dim: "DN125");
+        var v1 = A(NatureSchema.Vanne, "V1", GenreRobinet.Papillon); var p1 = A(NatureSchema.Pompe, "P1"); var c1 = A(NatureSchema.Vanne, "CL1", GenreRobinet.Clapet);
+        var f1 = A(NatureSchema.Vanne, "F1", GenreRobinet.Filtre);
+        var t1 = A(NatureSchema.Te); var t2 = A(NatureSchema.Te);
+        var cta = A(NatureSchema.Equipement, "CTA-01 batterie froide", dim: "DN80");
+        var r1 = A(NatureSchema.Vanne, "STAF-1", GenreRobinet.Reglage, "DN32"); var vc1 = A(NatureSchema.Equipement, "VC-01", dim: "DN32");
+        var r2 = A(NatureSchema.Vanne, "V2V-2", GenreRobinet.Motorisee, "DN32"); var vc2 = A(NatureSchema.Equipement, "VC-02", dim: "DN32");
+        var red = A(NatureSchema.Reduction, "", dim: "DN80");
+        var pu = A(NatureSchema.Vanne, "PU", GenreRobinet.Purgeur, "DN15");
+        Lier(gf, T("DN125"), v1, T(), f1, T(), p1, T(), c1, T(), t1, T(), t2, T(), red, T("DN80"), cta);
+        Lier(t1, T("DN32"), r1, T("DN32"), vc1);
+        Lier(t2, T("DN32"), r2, T("DN32"), vc2);
+        Lier(t2, T("DN15"), pu);
+        // Retour
+        var t3 = A(NatureSchema.Te, sys: "EG-R"); var t4 = A(NatureSchema.Te, sys: "EG-R"); var vr = A(NatureSchema.Vanne, "V3", GenreRobinet.Papillon, sys: "EG-R");
+        Lier(cta, T("DN80", "EG-R"), t3, T("DN100", "EG-R"), t4, T("DN100", "EG-R"), vr, T("DN125", "EG-R"), gf);
+        Lier(vc1, T("DN32", "EG-R"), t4);
+        Lier(vc2, T("DN32", "EG-R"), t3);
+        // Gaines : CTA → soufflage → 3 bouches, avec registre et coupe-feu
+        var ctaAir = A(NatureSchema.Equipement, "CTA-01 soufflage", dim: "Ø500", sys: "SOUF", src: true);
+        var ta = A(NatureSchema.Te, dim: "Ø500", sys: "SOUF"); var tb = A(NatureSchema.Te, dim: "Ø400", sys: "SOUF");
+        var cf = A(NatureSchema.Accessoire, "CF", dim: "Ø500", sys: "SOUF"); var reg = A(NatureSchema.Accessoire, "R1", dim: "Ø250", sys: "SOUF");
+        var b1 = A(NatureSchema.Bouche, "B1", dim: "Ø200", sys: "SOUF"); var b2 = A(NatureSchema.Bouche, "B2", dim: "Ø200", sys: "SOUF"); var b3 = A(NatureSchema.Bouche, "B3", dim: "Ø200", sys: "SOUF");
+        Lier(ctaAir, T("Ø500", "SOUF"), cf, T("Ø500", "SOUF"), ta, T("Ø400", "SOUF"), tb, T("Ø250", "SOUF"), b1);
+        Lier(ta, T("Ø250", "SOUF"), reg, T("Ø250", "SOUF"), b2);
+        Lier(tb, T("Ø200", "SOUF"), b3);
+        return (n, l);
+    }
+
     static int Main(string[] args)
     {
         var spools = Spools();
@@ -328,7 +366,9 @@ static class Demo
         });
         // Liste de débit de l'atelier, tous spools d'exemple : par système de canalisation, DN, matière ; barres de 6 m
         var listeDebit = ListeDebit.Calculer(spools).Select(l => new { sys = l.Systeme, dn = l.DnMm, mat = l.Materiau, spool = l.Spool, rep = l.Repere, revit = l.LongueurRevitMm, surl = l.SurlongueurMm, coupe = l.CoupeMm, barre = l.Barre });
-        var json = JsonSerializer.Serialize(new { spools = sortie, reperage = Reperage(), legende, listeDebit }, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
+        var (pn, pl) = ReseauPid();
+        var pid = Schema.Construire(pn, pl).Svg();
+        var json = JsonSerializer.Serialize(new { spools = sortie, reperage = Reperage(), legende, listeDebit, pid }, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
         File.WriteAllText(args.Length > 0 ? args[0] : "demo.json", json);
         if (args.Length > 1) File.WriteAllText(args[1], Quantitatif.Csv(spools)); // exemple de quantitatif pour la démo du CRM
         if (args.Length > 2) File.WriteAllBytes(args[2], ExportExcel.Quantites(spools, "Démonstration Pipe-Fit", new DateTime(2026, 11, 18, 9, 0, 0))); // classeur Excel des quantités

@@ -131,6 +131,15 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
     <div class="leg-grid" id="legende"></div>
   </section>
 
+  <section class="sheet-card" aria-label="Schéma de principe (P&amp;ID)" style="min-width:0">
+    <div class="sheet-bar"><span class="name">Schéma de principe (P&amp;ID) – repris de la maquette 3D</span></div>
+    <p class="rep-intro">Bouton « Schéma de principe (P&amp;ID) » : le réseau relié à la sélection est redessiné en filaire dans une vue de dessin Revit.
+      Tubes, coudes et brides fondus en lignes ; vannes, pompes, équipements, bouches et tés gardés ; tronc horizontal, chaque dérivation sur sa ligne,
+      sans croisement ; l'aller avant le retour, les boucles fermées par des renvois « vers … » ; réseau et DN sur les lignes.
+      Exemple : groupe froid, pompe, CTA et ventilo-convecteurs (eau glacée aller / retour) et soufflage d'une CTA.</p>
+    <div style="background:#fff;border-radius:8px;padding:8px;overflow-x:auto;max-width:100%;box-sizing:border-box"><div id="pid" style="width:100%;min-width:900px"></div></div>
+  </section>
+
   <section class="sheet-card" aria-label="Repérage des spools pour le montage">
     <div class="sheet-bar"><span class="name" id="repName">Repérage des spools pour le montage</span></div>
     <p class="rep-intro">Bouton « Repérage spools » : chaque spool dans sa couleur, avec son numéro et son ordre de montage, soudures de chantier marquées ×.
@@ -257,6 +266,7 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
 
   // Symbole de légende (dessin du cœur du complément) centré en (x, y), mm de la feuille
   const LEG = Object.fromEntries((ALL.legende || []).map(l => [l.code, l]));
+  if (ALL.pid) { const pidBox = document.getElementById('pid'); if (pidBox) { pidBox.innerHTML = ALL.pid; const sv = pidBox.querySelector('svg'); if (sv) { sv.style.width = '100%'; sv.style.height = 'auto'; } } }
   function symbole(g, x, y, code, line, text) {
     const d = LEG[code]; if (!d) return;
     d.traits.forEach(([u1, v1, u2, v2]) => line(x + u1, y + v1, x + u2, y + v2, d.soudure ? 'k-ink' : 'k-ink', 0.22));

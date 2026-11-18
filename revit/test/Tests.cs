@@ -157,6 +157,106 @@ static class Tests
         Verifier(PertesFabricant.DepuisTexte("25 Pa") == 25 && PertesFabricant.DepuisTexte("0,3 bar") == 30000 && Math.Abs(PertesFabricant.DepuisTexte("2,5 mCE").Value - 24516.6) < 0.1
             && PertesFabricant.DepuisTexte("12", "Perte de charge (kPa)") == 12000 && PertesFabricant.DepuisTexte("n.c.") == null && PertesFabricant.DepuisTexte("15 mmCE") == 15 * 9.80665,
             "lecture d'une perte de charge écrite en texte");
+        foreach (var n in new[] { "Débit", "Débit d'air", "Airflow", "Flow", "Débit eau (l/s)", "Water Flow", "Q nominal", "Volumenstrom" })
+            Verifier(PertesFabricant.EstNomDebit(n), "nom de débit reconnu : " + n);
+        foreach (var n in new[] { "Coefficient de débit", "Kvs", "Configuration du débit", "Direction du débit", "Méthode de débit", PertesFabricant.NomDebitAeraulique, "Perte de charge", "Vitesse" })
+            Verifier(!PertesFabricant.EstNomDebit(n), "pas un débit : " + n);
+        Verifier(PertesFabricant.DebitDepuisNombre("Débit (l/s)", 100) == 360 && PertesFabricant.DebitDepuisNombre("Airflow cfm", 1000) == 1699.01
+            && PertesFabricant.DebitDepuisNombre("Débit m3/s", 0.5) == 1800 && PertesFabricant.DebitDepuisNombre("Débit", 1200) == 1200 && PertesFabricant.DebitDepuisNombre("Débit l/h", 500) == 0.5,
+            "débit converti d'après l'unité du nom");
+        Verifier(PertesFabricant.DebitDepuisTexte("85 l/s") == 306 && PertesFabricant.DebitDepuisTexte("1 200") == null || PertesFabricant.DebitDepuisTexte("1200 m³/h") == 1200, "débit écrit en texte");
+    }
+
+    /// <summary>Réseau d'essai : groupe froid → pompe → collecteur → CTA et 2 ventilo-convecteurs, retour en boucle ; réseau de gaines.</summary>
+    public static (List<NoeudSchema> Noeuds, List<(string, string)> Liens) ReseauEssai()
+    {
+        var n = new List<NoeudSchema>(); var l = new List<(string, string)>();
+        int k = 0;
+        NoeudSchema A(NatureSchema nat, string lib = "", GenreRobinet g = GenreRobinet.Aucun, string dim = "DN100", string sys = "EG-D", bool src = false)
+        { var x = new NoeudSchema { Id = "n" + (++k), Nature = nat, Libelle = lib, Genre = g, Dimension = dim, DnMm = double.Parse(dim.Replace("DN", "").Replace("Ø", "").Split('×')[0]), Systeme = sys, Source = src, Retour = sys.EndsWith("-R") }; n.Add(x); return x; }
+        void Lier(params NoeudSchema[] ch) { for (int i = 0; i + 1 < ch.Length; i++) l.Add((ch[i].Id, ch[i + 1].Id)); }
+        NoeudSchema T(string dim = "DN100", string sys = "EG-D") => A(NatureSchema.Ligne, "", GenreRobinet.Aucun, dim, sys);
+        var gf = A(NatureSchema.Equipement, "GF-01 Groupe froid", src: true, dim: "DN125");
+        var v1 = A(NatureSchema.Vanne, "V1", GenreRobinet.Papillon); var p1 = A(NatureSchema.Pompe, "P1"); var c1 = A(NatureSchema.Vanne, "CL1", GenreRobinet.Clapet);
+        var f1 = A(NatureSchema.Vanne, "F1", GenreRobinet.Filtre);
+        var t1 = A(NatureSchema.Te); var t2 = A(NatureSchema.Te);
+        var cta = A(NatureSchema.Equipement, "CTA-01 batterie froide", dim: "DN80");
+        var r1 = A(NatureSchema.Vanne, "STAF-1", GenreRobinet.Reglage, "DN32"); var vc1 = A(NatureSchema.Equipement, "VC-01", dim: "DN32");
+        var r2 = A(NatureSchema.Vanne, "V2V-2", GenreRobinet.Motorisee, "DN32"); var vc2 = A(NatureSchema.Equipement, "VC-02", dim: "DN32");
+        var red = A(NatureSchema.Reduction, "", dim: "DN80");
+        var pu = A(NatureSchema.Vanne, "PU", GenreRobinet.Purgeur, "DN15");
+        Lier(gf, T("DN125"), v1, T(), f1, T(), p1, T(), c1, T(), t1, T(), t2, T(), red, T("DN80"), cta);
+        Lier(t1, T("DN32"), r1, T("DN32"), vc1);
+        Lier(t2, T("DN32"), r2, T("DN32"), vc2);
+        Lier(t2, T("DN15"), pu);
+        // Retour
+        var t3 = A(NatureSchema.Te, sys: "EG-R"); var t4 = A(NatureSchema.Te, sys: "EG-R"); var vr = A(NatureSchema.Vanne, "V3", GenreRobinet.Papillon, sys: "EG-R");
+        Lier(cta, T("DN80", "EG-R"), t3, T("DN100", "EG-R"), t4, T("DN100", "EG-R"), vr, T("DN125", "EG-R"), gf);
+        Lier(vc1, T("DN32", "EG-R"), t4);
+        Lier(vc2, T("DN32", "EG-R"), t3);
+        // Gaines : CTA → soufflage → 3 bouches, avec registre et coupe-feu
+        var ctaAir = A(NatureSchema.Equipement, "CTA-01 soufflage", dim: "Ø500", sys: "SOUF", src: true);
+        var ta = A(NatureSchema.Te, dim: "Ø500", sys: "SOUF"); var tb = A(NatureSchema.Te, dim: "Ø400", sys: "SOUF");
+        var cf = A(NatureSchema.Accessoire, "CF", dim: "Ø500", sys: "SOUF"); var reg = A(NatureSchema.Accessoire, "R1", dim: "Ø250", sys: "SOUF");
+        var b1 = A(NatureSchema.Bouche, "B1", dim: "Ø200", sys: "SOUF"); var b2 = A(NatureSchema.Bouche, "B2", dim: "Ø200", sys: "SOUF"); var b3 = A(NatureSchema.Bouche, "B3", dim: "Ø200", sys: "SOUF");
+        Lier(ctaAir, T("Ø500", "SOUF"), cf, T("Ø500", "SOUF"), ta, T("Ø400", "SOUF"), tb, T("Ø250", "SOUF"), b1);
+        Lier(ta, T("Ø250", "SOUF"), reg, T("Ø250", "SOUF"), b2);
+        Lier(tb, T("Ø200", "SOUF"), b3);
+        return (n, l);
+    }
+
+    static void TestSchema()
+    {
+        var (noeuds, liens) = ReseauEssai();
+        var sc = Schema.Construire(noeuds, liens);
+        var significatifs = noeuds.Where(x => x.Nature != NatureSchema.Ligne).Select(x => x.Id).ToList();
+        var places = sc.Symboles.Where(x => x.Nature != NatureSchema.Renvoi).Select(x => x.Id).ToList();
+        Verifier(significatifs.All(places.Contains) && places.Count == places.Distinct().Count(), "schéma : chaque élément significatif placé une fois (" + places.Count + "/" + significatifs.Count + ")");
+        Verifier(sc.Reseaux == 2 && sc.Symboles.Count(x => x.Nature == NatureSchema.Renvoi) >= 1, "schéma : 2 réseaux, boucle aller / retour fermée par un renvoi");
+        Verifier(sc.Traits.All(t => Math.Abs(t.X1 - t.X2) < 1e-6 || Math.Abs(t.Y1 - t.Y2) < 1e-6), "schéma : traits orthogonaux");
+        // Aucun croisement : deux traits ne se coupent qu'en un point d'extrémité commun
+        int croisements = 0;
+        foreach (var a in sc.Traits) foreach (var b in sc.Traits)
+        {
+            if (ReferenceEquals(a, b)) continue;
+            bool ah = Math.Abs(a.Y1 - a.Y2) < 1e-6, bh = Math.Abs(b.Y1 - b.Y2) < 1e-6;
+            if (ah == bh) continue;
+            var h = ah ? a : b; var v = ah ? b : a;
+            double hx0 = Math.Min(h.X1, h.X2), hx1 = Math.Max(h.X1, h.X2), vy0 = Math.Min(v.Y1, v.Y2), vy1 = Math.Max(v.Y1, v.Y2);
+            if (v.X1 > hx0 + 0.01 && v.X1 < hx1 - 0.01 && h.Y1 > vy0 + 0.01 && h.Y1 < vy1 - 0.01) croisements++;
+        }
+        Verifier(croisements == 0, "schéma : aucun croisement de traits (" + croisements + ")");
+        // Textes : pas de chevauchement entre eux ni avec les cadres des symboles
+        var boites = sc.Textes.Select(t => (X0: t.Centre ? t.X - t.Largeur / 2 : t.X, X1: t.Centre ? t.X + t.Largeur / 2 : t.X + t.Largeur, Y0: t.Y - t.Taille / 2, Y1: t.Y + t.Taille / 2, T: t.Texte)).ToList();
+        int chev = 0; var ex = new List<string>();
+        for (int i = 0; i < boites.Count; i++) for (int j = i + 1; j < boites.Count; j++)
+        {
+            var a = boites[i]; var b = boites[j];
+            if (a.X0 < b.X1 - 0.2 && b.X0 < a.X1 - 0.2 && a.Y0 < b.Y1 - 0.2 && b.Y0 < a.Y1 - 0.2) { chev++; if (ex.Count < 4) ex.Add(a.T + " / " + b.T); }
+        }
+        Verifier(chev == 0, "schéma : textes sans chevauchement (" + chev + " " + string.Join(" | ", ex) + ")");
+        // Textes : ni sur un symbole, ni sur un trait
+        int surSymbole = 0, surTrait = 0; var ex2 = new List<string>();
+        foreach (var b in boites)
+        {
+            foreach (var sy in sc.Symboles.Where(x => x.Nature != NatureSchema.Te))
+            {
+                var d = Schema.Dessin(sy);
+                if (d.Count == 0) continue;
+                double x0 = sy.X + d.Min(g => Math.Min(g.U1, g.U2)), x1 = sy.X + d.Max(g => Math.Max(g.U1, g.U2)), y0 = sy.Y + d.Min(g => Math.Min(g.V1, g.V2)), y1 = sy.Y + d.Max(g => Math.Max(g.V1, g.V2));
+                if (b.X0 < x1 - 0.2 && x0 < b.X1 - 0.2 && b.Y0 < y1 - 0.2 && y0 < b.Y1 - 0.2) { surSymbole++; if (ex2.Count < 4) ex2.Add(b.T + " sur " + sy.Nature + " " + sy.Libelle); }
+            }
+            foreach (var t in sc.Traits)
+            {
+                double tx0 = Math.Min(t.X1, t.X2), tx1 = Math.Max(t.X1, t.X2), ty0 = Math.Min(t.Y1, t.Y2), ty1 = Math.Max(t.Y1, t.Y2);
+                if (b.X0 < tx1 - 0.2 && tx0 < b.X1 - 0.2 && b.Y0 < ty1 + 0.2 && ty0 - 0.2 < b.Y1) { surTrait++; if (ex2.Count < 6) ex2.Add(b.T + " sur un trait"); }
+            }
+        }
+        Verifier(surSymbole == 0 && surTrait == 0, "schéma : textes hors symboles et traits (" + surSymbole + ", " + surTrait + " : " + string.Join(" | ", ex2) + ")");
+        // Aller d'abord : la CTA et les ventilo-convecteurs sont en aval de l'aller (pas reliés par le retour)
+        Verifier(sc.Symboles.Count(x => x.Nature == NatureSchema.Renvoi && x.Libelle.StartsWith("GF-01")) >= 1, "schéma : le retour revient au groupe froid par un renvoi");
+        var svg = Environment.GetEnvironmentVariable("PIPEFIT_PID");
+        if (!string.IsNullOrEmpty(svg)) System.IO.File.WriteAllText(svg, sc.Svg("Schéma de principe – essai"));
     }
 
     static void TestExcel()
@@ -189,6 +289,7 @@ static class Tests
         TestExcel();
         TestHydraulique();
         TestPertesFabricant();
+        TestSchema();
         var s = Exemple();
         AnalyseSpool.Analyser(s);
         var parId = s.Composants.ToDictionary(c => c.Id);

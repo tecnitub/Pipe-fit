@@ -46,6 +46,58 @@ namespace PipeFit.Isometries.Revit
 
         static double M3h(double interne) => UnitUtils.ConvertFromInternalUnits(interne, UnitTypeId.CubicMetersPerHour);
 
+        static bool EstEquipement(Element e) => Compat.EstCategorie(e, BuiltInCategory.OST_MechanicalEquipment) || Compat.EstCategorie(e, BuiltInCategory.OST_PlumbingFixtures);
+
+        static string NomFamille(Element e) => ((e.Document.GetElement(e.GetTypeId()) as ElementType)?.FamilyName ?? "") + " " + e.Name;
+
+        static double DnMax(Element e) => LectureModele.Connecteurs(e).Select(c => { try { return Compat.Mm(c.Radius * 2); } catch { return 0; } }).DefaultIfEmpty(0).Max();
+
+        /// <summary>
+        /// Débits du réseau relié à la sélection : somme des débits des équipements consommateurs en aval de la source
+        /// (équipement de production ou pompe, sinon l'élément sélectionné de plus gros diamètre). Le parcours s'arrête aux
+        /// équipements (on ne passe pas de l'aller au retour à travers un émetteur).
+        /// </summary>
+        static Dictionary<string, double> DebitsHydrauliques(Document doc, List<Element> elements, out string note)
+        {
+            note = null;
+            var reseau = new Dictionary<string, Element>(); var liens = new Dictionary<string, HashSet<string>>();
+            HashSet<string> L(string k) { if (!liens.TryGetValue(k, out var h)) liens[k] = h = new HashSet<string>(); return h; }
+            var file = new Queue<Element>();
+            foreach (var e in elements) { reseau[Compat.Cle(e.Id)] = e; file.Enqueue(e); }
+            var vus = new HashSet<string>();
+            while (file.Count > 0 && reseau.Count < 20000)
+            {
+                var e = file.Dequeue(); var k = Compat.Cle(e.Id);
+                if (!vus.Add(k)) continue;
+                foreach (var cn in LectureModele.Connecteurs(e))
+                    foreach (Connector r in cn.AllRefs)
+                    {
+                        var ow = r.Owner;
+                        if (ow == null || ow.Id == e.Id || ow is MEPSystem || (r.ConnectorType & ConnectorType.Physical) == 0) continue;
+                        var kv = Compat.Cle(ow.Id);
+                        L(k).Add(kv); L(kv).Add(k);
+                        if (!reseau.ContainsKey(kv)) reseau[kv] = ow;
+                        if (!EstEquipement(e) && !EstEquipement(ow) && !vus.Contains(kv)) file.Enqueue(ow);
+                    }
+            }
+            var production = new System.Text.RegularExpressions.Regex(@"pompe|pump|circulateur|groupe (froid|de production)|chiller|refroidisseur|chaudi|boiler|\bpac\b|chaleur|heat ?pump|production|thermofrigopompe|\btfp\b|sous.?station|echangeur primaire");
+            var equipements = reseau.Values.Where(EstEquipement).ToList();
+            var sources = equipements.Where(e => production.IsMatch(AnalyseSpool.Normaliser(NomFamille(e)))).OrderByDescending(DnMax).ToList();
+            var consommateurs = new Dictionary<string, double>();
+            foreach (var e in equipements.Except(sources))
+            {
+                var q = ParametresPerte.Pa(e, GenrePerte.DebitHydraulique);
+                if (q > 0) consommateurs[Compat.Cle(e.Id)] = q.Value;
+            }
+            if (consommateurs.Count == 0) return new Dictionary<string, double>();
+            var src = sources.FirstOrDefault() ?? elements.OrderByDescending(DnMax).First();
+            var voisins = liens.ToDictionary(kv => kv.Key, kv => kv.Value.ToList());
+            var res = PerteCharge.DebitsArbre(voisins, consommateurs, Compat.Cle(src.Id));
+            note = consommateurs.Count + " équipement(s) avec un débit (" + consommateurs.Values.Sum().ToString("0.##") + " m³/h) : débits calculés en aval de « "
+                + NomFamille(src).Trim() + " »" + (sources.Count == 0 ? " (pas de production ni de pompe reliée : élément sélectionné de plus gros diamètre)" : "") + ".";
+            return res;
+        }
+
         /// <summary>Diamètre intérieur (mm) et débit (m³/h) du tube raccordé à une extrémité, sélectionné ou non.</summary>
         static (double D, double Q) Tube(Document doc, Extremite x, Dictionary<string, double> dint, Dictionary<string, double> debit)
         {
@@ -85,7 +137,13 @@ namespace PipeFit.Isometries.Revit
                 var q = e.get_Parameter(BuiltInParameter.RBS_PIPE_FLOW_PARAM)?.AsDouble() ?? 0;
                 if (q > 0) debit[k] = M3h(q);
             }
-            if (debit.Count == 0) notes.Add("Pas de débit calculé par Revit sur ces tubes : débit saisi appliqué.");
+            // Débits par l'arborescence quand Revit n'en donne pas : équipements consommateurs (« Débit hydraulique (m³/h) »
+            // ou débit trouvé dans la famille), en aval de la production / pompe
+            var arbreQ = DebitsHydrauliques(doc, elements, out var noteQ);
+            int completes = 0;
+            foreach (var kv in arbreQ) if (kv.Value > 0 && !debit.ContainsKey(kv.Key)) { debit[kv.Key] = kv.Value; completes++; }
+            if (noteQ != null) notes.Add(noteQ);
+            if (debit.Count == 0) notes.Add("Pas de débit calculé par Revit ni d'équipement avec un débit : débit saisi appliqué.");
 
             var res = new List<Troncon>();
             foreach (var c in AnalyseSpool.Parcourir(spool.Composants))

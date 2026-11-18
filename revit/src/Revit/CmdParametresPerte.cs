@@ -25,12 +25,13 @@ namespace PipeFit.Isometries.Revit
 
             var choix = new TaskDialog("Pipe-Fit – Paramètres perte de charge")
             {
-                MainInstruction = "Paramètres de perte de charge des bouches et des équipements",
+                MainInstruction = "Paramètres de perte de charge et de débit des bouches et des équipements",
                 MainContent = "Crée les paramètres « " + ParametresPerte.Nom(GenrePerte.Bouche) + " » (bouches d'air), « " + ParametresPerte.Nom(GenrePerte.Hydraulique)
                     + " » (équipements de génie climatique, accessoires de canalisation) et « " + ParametresPerte.Nom(GenrePerte.Aeraulique)
-                    + " » (équipements, accessoires de gaine), lus par les calculs de perte de charge.\n\n"
-                    + "Les pertes de charge déjà présentes dans les familles sous un autre nom ou dans une autre unité (Pressure Drop, ΔP (kPa), mbar, mCE, "
-                    + "paramètre Revit « Perte de charge », raccordements) sont recopiées et converties.",
+                    + " » (équipements, accessoires de gaine), « " + ParametresPerte.Nom(GenrePerte.DebitHydraulique) + " » et « " + ParametresPerte.Nom(GenrePerte.DebitAeraulique)
+                    + " » (équipements, bouches), lus par les calculs de perte de charge.\n\n"
+                    + "Les pertes de charge et débits déjà présents dans les familles sous un autre nom ou dans une autre unité (Pressure Drop, ΔP (kPa), mbar, mCE, "
+                    + "Airflow, Débit (l/s), cfm, paramètres Revit « Perte de charge » / « Débit », raccordements) sont recopiés et convertis.",
                 CommonButtons = TaskDialogCommonButtons.Cancel,
             };
             choix.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, "Créer les paramètres et récupérer les valeurs existantes", "Les valeurs déjà saisies dans les paramètres Pipe-Fit sont gardées.");
@@ -46,7 +47,7 @@ namespace PipeFit.Isometries.Revit
                 t.Start();
                 var crees = ParametresPerte.Creer(doc, data.Application.Application);
                 doc.Regenerate();
-                bilan.AppendLine(crees.Count > 0 ? "Paramètres créés : " + string.Join(", ", crees) + "." : "Les trois paramètres existaient déjà.");
+                bilan.AppendLine(crees.Count > 0 ? "Paramètres créés : " + string.Join(", ", crees) + "." : "Les paramètres existaient déjà.");
                 foreach (GenrePerte g in Enum.GetValues(typeof(GenrePerte)))
                 {
                     var elements = new FilteredElementCollector(doc).WherePasses(new ElementMulticategoryFilter(ParametresPerte.Categories(g).ToList()))
@@ -86,12 +87,13 @@ namespace PipeFit.Isometries.Revit
         static bool Concerne(Element e, GenrePerte g)
         {
             if (g == GenrePerte.Bouche || !Compat.EstCategorie(e, BuiltInCategory.OST_MechanicalEquipment)) return true;
+            bool eau = g == GenrePerte.Hydraulique || g == GenrePerte.DebitHydraulique;
             try
             {
                 var cm = (e as FamilyInstance)?.MEPModel?.ConnectorManager;
                 if (cm == null) return false;
                 foreach (Connector c in cm.Connectors)
-                    if (g == GenrePerte.Hydraulique ? c.Domain == Domain.DomainPiping : c.Domain == Domain.DomainHvac) return true;
+                    if (eau ? c.Domain == Domain.DomainPiping : c.Domain == Domain.DomainHvac) return true;
             }
             catch { }
             return false;

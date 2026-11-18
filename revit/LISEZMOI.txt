@@ -96,11 +96,17 @@ CE QUI EST CRÉÉ POUR CHAQUE SPOOL
   Relancer la génération met à jour les feuilles et vues existantes (option « Remplacer »).
   Toute la génération s'annule en une fois avec Ctrl+Z.
 
+SCHÉMA DE PRINCIPE (P&ID) (groupe « Schémas »)
+  Sélectionnez un élément du réseau, cliquez « Schéma de principe (P&ID) ». Le réseau est redessiné en
+  filaire dans une nouvelle vue de dessin : vannes, pompes, équipements, bouches, tés ; aller puis retour,
+  boucles fermées par des renvois « vers … » ; réseau et DN sur les lignes ; aucun croisement.
+
 CALCULS (groupe « Calculs »)
   Perte de charge : sélectionnez le chemin (tubes, raccords, vannes), cliquez « Perte de charge ».
   Diamètre intérieur, rugosité et débit lus dans Revit ; fluide eau / eau glycolée et température au
   choix ; ζ par raccord et par vanne modifiables ; ΔP en kPa et mCE ; note de calcul Excel.
-  Paramètres perte de charge : crée « Perte de charge bouche (Pa) », « … équipement hydraulique (kPa) »,
+  Paramètres calculs : crée aussi « Débit hydraulique (m³/h) » et « Débit aéraulique (m³/h) » (débits des
+  équipements et bouches, valeurs existantes reconnues : Airflow, l/s, cfm…), et « Perte de charge bouche (Pa) », « … équipement hydraulique (kPa) »,
   « … équipement aéraulique (Pa) » et y recopie (convertis) les valeurs déjà présentes dans les familles
   (Pressure Drop, ΔP kPa, mbar, mCE, paramètre Revit « Perte de charge »…). Les calculs les utilisent.
   Perte de charge aéraulique : cliquez une gaine du réseau. Chemin de la CTA vers chaque bouche,

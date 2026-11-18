@@ -91,7 +91,11 @@ namespace PipeFit.Isometries.Revit
             var q = e.get_Parameter(BuiltInParameter.RBS_DUCT_FLOW_PARAM)?.AsDouble() ?? 0;
             if (q <= 0 && Compat.EstCategorie(e, BuiltInCategory.OST_DuctTerminal))
                 foreach (var cn in Connecteurs(e)) { try { q = Math.Max(q, Math.Abs(cn.Flow)); } catch { } }
-            return q > 0 ? M3h(q) : 0;
+            if (q > 0) return M3h(q);
+            // Bouche ou équipement : paramètre « Débit aéraulique (m³/h) », sinon débit trouvé dans la famille
+            if (Compat.EstCategorie(e, BuiltInCategory.OST_DuctTerminal) || Compat.EstCategorie(e, BuiltInCategory.OST_MechanicalEquipment))
+                return ParametresPerte.Pa(e, GenrePerte.DebitAeraulique) ?? 0;
+            return 0;
         }
 
         static (double d, double l, double h) SectionConnecteur(Connector cn)

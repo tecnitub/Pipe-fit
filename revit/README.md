@@ -39,6 +39,8 @@ nomenclatures et étiquettes Revit. Les autres boutons les créent aussi d'eux-m
 | Perte de charge bouche (Pa) | Nombre | Paramètres perte de charge : perte fabricant des bouches d'air, lue par la perte de charge aéraulique |
 | Perte de charge équipement hydraulique (kPa) | Nombre | Paramètres perte de charge : perte côté eau des équipements et accessoires de canalisation (batterie, échangeur, vanne…), lue par la perte de charge hydraulique |
 | Perte de charge équipement aéraulique (Pa) | Nombre | Paramètres perte de charge : perte côté air des équipements et accessoires de gaine (CTA, filtre, registre, silencieux…), lue par la perte de charge aéraulique |
+| Débit hydraulique (m³/h) | Nombre | Paramètres calculs : débit d'eau des équipements (ventilo-convecteur, batterie, émetteur…) ; la perte de charge hydraulique en déduit les débits du réseau quand Revit n'en calcule pas |
+| Débit aéraulique (m³/h) | Nombre | Paramètres calculs : débit d'air des bouches et équipements, lu par les calculs aérauliques quand Revit ne le donne pas |
 | Cotes ajoutées (Pipe-Fit) | Texte | Ajouter une cote : points d'attache des cotes ajoutées à la main, ne pas modifier à la main |
 | Pouces soudures (Pipe-Fit) | Nombre | Isométries spools : pouces-diamètre des soudures portées par l'élément, chaque soudure comptée une fois (le raccord plutôt que le tube) ; total par spool dans une nomenclature Revit regroupée par « Numéro de spool » |
 
@@ -246,6 +248,21 @@ La génération complète est une seule opération Revit (annulable par Ctrl+Z).
 met à jour les feuilles et vues déjà générées. Les éléments de tuyauterie sans numéro de spool sont signalés et
 peuvent être sélectionnés dans le modèle depuis la fenêtre.
 
+## Schéma de principe (P&ID)
+
+Bouton **Schéma de principe (P&ID)** (groupe Schémas) : reprend en filaire les éléments dessinés en 3D. Sélectionnez
+un élément du réseau (tuyauterie ou gaine), cliquez, choisissez « tout le réseau relié » ou « la sélection seulement ».
+- tubes, coudes, brides, manchons fondus en lignes ; restent les **tés** (point), **vannes** (symboles de la légende des
+  isométries : papillon, réglage, clapet, filtre, motorisée…), **réductions**, **pompes**, **équipements** (cadre avec
+  repère et famille), **bouches**, extrémités libres ;
+- départ de la **source** (production, CTA, sinon le plus gros équipement) ; tronc horizontal, chaque dérivation sur sa
+  propre ligne en dessous, **sans croisement** ; **l'aller avant le retour** (classification des systèmes Revit) : les
+  équipements sont en aval de l'aller, le retour part d'eux ; les **boucles** sont fermées par des **renvois** « vers … »
+  (nom de l'équipement, ou lettre posée sur le té de destination) ;
+- **réseau et DN** (ou Ø, l × h) écrits sous les lignes à chaque changement ;
+- dessiné dans une **nouvelle vue de dessin** (1:10) « PID date heure », à placer sur une feuille ; relancer après une
+  modification de la maquette.
+
 ## Calculs : perte de charge hydraulique, débit et vitesse en ventilation
 
 Groupe **Calculs** de l'onglet Pipe-Fit.
@@ -262,7 +279,11 @@ fenêtre), cliquez. Pour chaque élément :
 - tableau : débit, ζ et **perte fixe** (valeur fabricant en Pa : batterie, échangeur…) modifiables, recalcul immédiat ;
   alertes (vitesse > maxi, < 0,3 m/s, > 250 Pa/m) ; **ΔP totale en kPa et mCE** ; note de calcul **Excel**.
 
-**Paramètres perte de charge** : crée les trois paramètres de perte de charge fabricant (tableau des paramètres
+**Paramètres calculs** : crée les trois paramètres de perte de charge fabricant et les deux paramètres de **débit**
+(hydraulique et aéraulique, m³/h ; valeurs déjà présentes reconnues : paramètre Revit « Débit », « Airflow », « Débit (l/s) »,
+cfm, l/h, débit des raccordements…). Débits hydrauliques : quand Revit n'en calcule pas, ceux des équipements
+consommateurs sont additionnés en aval de la production ou de la pompe (le parcours s'arrête aux équipements, l'aller ne
+passe pas au retour). Pertes de charge : il crée les trois paramètres de perte de charge fabricant (tableau des paramètres
 ci-dessus) sur les bouches, équipements de génie climatique, accessoires de canalisation et de gaine, et **recopie les
 valeurs déjà présentes dans les familles** mais inutilisables par le calcul : paramètre Revit « Perte de charge »,
 paramètre de famille nommé « Pressure Drop », « ΔP (kPa) », « Chute de pression (mbar) », « Dp_mCE », texte « 25 Pa »…,

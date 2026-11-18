@@ -84,11 +84,23 @@ namespace PipeFit.Isometries.Revit
                 LargeImage = Image("reperage32.png"),
                 Image = Image("reperage16.png"),
             });
+            // Schéma de principe (P&ID) filaire depuis la maquette 3D
+            var schemas = app.CreateRibbonPanel(Onglet, "Schémas");
+            schemas.AddItem(new PushButtonData("PipeFitPid", "Schéma de\nprincipe (P&ID)", Assembly.GetExecutingAssembly().Location, typeof(CmdPid).FullName)
+            {
+                ToolTip = "Reprend en filaire (schéma de principe P&ID) le réseau dessiné en 3D : vannes, pompes, équipements, bouches, tés, réseaux et DN.",
+                LongDescription = "Sélectionnez un élément du réseau (tuyauterie ou gaine) puis cliquez : tout le réseau relié (ou la sélection seulement) est "
+                    + "redessiné en schéma filaire dans une nouvelle vue de dessin. Tubes, coudes et brides fondus en lignes ; tronc horizontal, dérivations "
+                    + "sur leur propre ligne sans croisement ; aller avant retour, boucles fermées par des renvois « vers … » ; réseau et DN sur les lignes.",
+                LargeImage = Image("pid32.png"),
+                Image = Image("pid16.png"),
+            });
+
             // Groupe « Calculs » : perte de charge hydraulique, débit / vitesse en ventilation
             var calculs = app.CreateRibbonPanel(Onglet, "Calculs");
-            calculs.AddItem(new PushButtonData("PipeFitParametresPerte", "Paramètres\nperte de charge", Assembly.GetExecutingAssembly().Location, typeof(CmdParametresPerte).FullName)
+            calculs.AddItem(new PushButtonData("PipeFitParametresPerte", "Paramètres\ncalculs", Assembly.GetExecutingAssembly().Location, typeof(CmdParametresPerte).FullName)
             {
-                ToolTip = "Crée les paramètres « Perte de charge bouche (Pa) », « … équipement hydraulique (kPa) », « … équipement aéraulique (Pa) » et y recopie les valeurs déjà présentes dans les familles.",
+                ToolTip = "Crée les paramètres de perte de charge (bouche Pa, équipement hydraulique kPa, équipement aéraulique Pa) et de débit (hydraulique, aéraulique m³/h) et y recopie les valeurs déjà présentes dans les familles.",
                 LongDescription = "Paramètres partagés d'occurrence sur les bouches, équipements de génie climatique, accessoires de canalisation et de gaine. "
                     + "Les pertes de charge fabricant déjà présentes sous un autre nom ou une autre unité (Pressure Drop, ΔP (kPa), mbar, mCE, paramètre Revit "
                     + "« Perte de charge », raccordements de la famille) sont converties et recopiées. Les calculs de perte de charge lisent ces paramètres.",
