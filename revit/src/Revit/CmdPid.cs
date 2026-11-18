@@ -121,7 +121,7 @@ namespace PipeFit.Isometries.Revit
 
         static string Texte(Element e, BuiltInParameter p) { try { return e.get_Parameter(p)?.AsString() ?? ""; } catch { return ""; } }
 
-        static bool EstRetour(Element e)
+        internal static bool EstRetour(Element e)
         {
             foreach (var c in Connecteurs(e))
             {
@@ -137,8 +137,8 @@ namespace PipeFit.Isometries.Revit
             return Regex.IsMatch(AnalyseSpool.Normaliser(Texte(e, BuiltInParameter.RBS_SYSTEM_NAME_PARAM)), @"retour|return");
         }
 
-        static readonly Regex Pompe = new Regex(@"pompe|pump|circulateur|surpresseur");
-        static readonly Regex Source = new Regex(@"groupe (froid|de production)|chiller|refroidisseur|chaudi|boiler|\bpac\b|chaleur|heat ?pump|production|thermofrigopompe|\btfp\b|sous.?station|\bcta\b|centrale (de traitement|double flux)|caisson|extracteur|ventilateur|rooftop|air handling|\bahu\b|\bvmc\b");
+        internal static readonly Regex Pompe = new Regex(@"pompe|pump|circulateur|surpresseur");
+        internal static readonly Regex Source = new Regex(@"groupe (froid|de production)|chiller|refroidisseur|chaudi|boiler|\bpac\b|chaleur|heat ?pump|production|thermofrigopompe|\btfp\b|sous.?station|\bcta\b|centrale (de traitement|double flux)|caisson|extracteur|ventilateur|rooftop|air handling|\bahu\b|\bvmc\b");
 
         /// <summary>Type de système (pour son style de trait) de chaque système affiché, lu sur les éléments.</summary>
         public static Dictionary<string, ElementId> TypesSystemes = new Dictionary<string, ElementId>();

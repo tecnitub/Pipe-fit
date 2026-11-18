@@ -144,6 +144,15 @@ namespace PipeFit.Isometries.Revit
                 LargeImage = Image("quantitatif32.png"),
                 Image = Image("quantitatif16.png"),
             });
+            var aide = app.CreateRibbonPanel(Onglet, "Aide");
+            aide.AddItem(new PushButtonData("PipeFitDiagnostic", "Diagnostic", Assembly.GetExecutingAssembly().Location, typeof(CmdDiagnostic).FullName)
+            {
+                ToolTip = "Rapport Excel de ce que Pipe-Fit reconnaît dans le projet, avec le journal des erreurs, à envoyer pour la mise au point.",
+                LongDescription = "Versions, éléments par catégorie, paramètres Pipe-Fit présents, robinetterie (genre et symbole reconnus d'après le nom de famille), "
+                    + "raccords, systèmes (classification, aller / retour, couleur), équipements et bouches (rôle, pertes de charge et débits trouvés), fin du journal.",
+                LargeImage = Image("parametres32.png"),
+                Image = Image("parametres16.png"),
+            });
             return Result.Succeeded;
         }
 
