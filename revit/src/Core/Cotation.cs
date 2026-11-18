@@ -17,6 +17,8 @@ namespace PipeFit.Isometries.Core
     {
         public Point3 A, B;
         public NatureNoeud NatureA, NatureB;
+        /// <summary>Cote ajoutée à la main (bouton « Ajouter une cote »), valeur calculée sur la géométrie.</summary>
+        public bool Ajoutee;
         public double LongueurMm => A.Distance(B);
         public string Valeur => Math.Round(LongueurMm).ToString("0", CultureInfo.InvariantCulture);
         /// <summary>« axe / axe », « axe / bride »…</summary>
@@ -181,6 +183,18 @@ namespace PipeFit.Isometries.Core
                     break;
                 }
             }
+            // Cotes ajoutées à la main : entre deux points d'attache, valeur recalculée sur la géométrie
+            foreach (var c in s.Composants)
+                foreach (var ca in c.CotesAjoutees)
+                {
+                    var pa = CoteAjoutee.Point(c, ca.AttacheA);
+                    (Point3, NatureNoeud)? pb = parId.TryGetValue(ca.IdB, out var b) ? CoteAjoutee.Point(b, ca.AttacheB)
+                        : ca.PositionB.HasValue ? (ca.PositionB.Value, ca.AttacheB == "axe" ? NatureNoeud.Axe : NatureNoeud.Extremite) : ((Point3, NatureNoeud)?)null;
+                    if (pa == null || pb == null || pa.Value.Item1.Distance(pb.Value.Item1) < 1) continue;
+                    var ka = Cle(pa.Value.Item1); var kb = Cle(pb.Value.Item1);
+                    if (cotes.Any(x => (Cle(x.A) == ka && Cle(x.B) == kb) || (Cle(x.A) == kb && Cle(x.B) == ka))) continue; // déjà générée
+                    cotes.Add(new Cote { A = pa.Value.Item1, NatureA = pa.Value.Item2, B = pb.Value.Item1, NatureB = pb.Value.Item2, Ajoutee = true });
+                }
             return cotes;
         }
 

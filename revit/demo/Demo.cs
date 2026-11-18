@@ -165,6 +165,10 @@ static class Demo
             .Vanne(500, "IMI STAF", 290, "DN100").Coude(700, Y)
             .Vanne(500, "SIEMENS V2V COMBINEE", 250, "DN100").Vanne(500, "TECOFI DI 7240N", 130, "DN100").FinBride(500, "CTA-03");
         brp.Appareil(250, "FLAMCO FLEXVENT SUPER R7", "DN15");
+        // Cote ajoutée à la main (bouton « Ajouter une cote ») : axe du clapet → axe de la vanne de réglage STAF
+        var clapet = d.Composants.First(c => c.Famille == "TECOFI CB 3448N");
+        var staf = d.Composants.First(c => c.Famille == "IMI STAF");
+        clapet.CotesAjoutees.Add(new CoteAjoutee { AttacheA = "axe", IdB = staf.Id, AttacheB = "axe" });
         res.Add(d);
 
         // SP-103 : retour process DN80 réduit en DN50
@@ -301,7 +305,7 @@ static class Demo
                 }),
                 liaisons = s.Liaisons.Select(l => new { n = l.Numero, entree = l.Sens == SensFlux.Entree, texte = l.Libelle, sens = l.SensTexte,
                     a = l.RaccordeA, spool = l.AutreSpool, connu = l.SensConnu, p = P(l.Position), d = l.Direction.HasValue ? P(l.Direction.Value) : null, dn = l.DnMm }),
-                cotes = s.Cotes.Select(c => new { a = P(c.A), b = P(c.B), v = c.Valeur, l = c.Libelle }),
+                cotes = s.Cotes.Select(c => new { a = P(c.A), b = P(c.B), v = c.Valeur, l = c.Libelle + (c.Ajoutee ? " (cote ajoutée)" : ""), aj = c.Ajoutee }),
                 assemblages = s.Assemblages.Select(x => new { n = x.Numero, nature = x.Nature.ToString(), p = P(x.Position), dn = x.DnMm, pd = x.PoucesDiametre, s = x.SurlongueurMm }),
                 tableaux = page.Tableaux.Select(pl => new
                 {

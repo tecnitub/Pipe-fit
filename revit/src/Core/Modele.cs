@@ -105,6 +105,8 @@ namespace PipeFit.Isometries.Core
         /// sur le collecteur. Pas de pièce, pas de soudure côté branche ; sa longueur s'ajoute au débit du tube de branche.
         /// </summary>
         public bool PiquageDirect;
+        /// <summary>Cotes ajoutées à la main depuis cet élément (point A) vers un autre élément (point B).</summary>
+        public List<CoteAjoutee> CotesAjoutees = new List<CoteAjoutee>();
         /// <summary>Tube de branche : longueur du piquage direct ajoutée à son débit.</summary>
         public double PiquageMm;
         /// <summary>Piquage : point de l'axe du collecteur où la branche est piquée (projection sur l'axe du tube collecteur).</summary>

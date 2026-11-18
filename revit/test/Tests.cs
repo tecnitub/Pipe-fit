@@ -81,6 +81,31 @@ static class Tests
         Verifier(cotes.Contains("674 axe / extrémité"), "cote d'axe à bout de tube (branche)");
         Verifier(cotes.Contains("1000 extrémité / axe") || cotes.Contains("1000 axe / extrémité"), "cote bout de tube / axe coude");
 
+        // Cotes ajoutées à la main : enregistrement, point d'attache le plus proche du clic, valeur recalculée
+        {
+            var lu = CoteAjoutee.Lire(CoteAjoutee.Ecrire(new[] { new CoteAjoutee { AttacheA = "axe", IdB = "6", AttacheB = "bout1", PositionB = new Point3(1674, 0, 1500) } }));
+            Verifier(lu.Count == 1 && lu[0].IdB == "6" && lu[0].AttacheB == "bout1" && lu[0].PositionB.Value.X == 1674, "cote ajoutée : relue telle qu'écrite");
+            Verifier(CoteAjoutee.Lire("n'importe quoi|axe>12:bout0").Count == 1, "cote ajoutée : entrée illisible ignorée");
+            var sm = Exemple();
+            AnalyseSpool.Analyser(sm);
+            var coude = sm.Composants.First(c => c.Id == "2");
+            Verifier(CoteAjoutee.PlusProche(coude, new Point3(990, 0, 20)).Code == "axe", "clic sur le coude : axe du coude");
+            var t6 = sm.Composants.First(c => c.Id == "6");
+            Verifier(CoteAjoutee.PlusProche(t6, new Point3(1650, 0, 1500)).Code == "bout1", "clic près du bout du tube : son extrémité");
+            coude.CotesAjoutees.Add(new CoteAjoutee { AttacheA = "axe", IdB = "6", AttacheB = "bout1" });
+            AnalyseSpool.Analyser(sm);
+            var aj = sm.Cotes.Where(c => c.Ajoutee).ToList();
+            Verifier(aj.Count == 1 && aj[0].Valeur == "1644" && aj[0].Libelle == "axe / extrémité", "cote ajoutée axe coude → bout de branche : " + string.Join(", ", aj.Select(c => c.Valeur + " " + c.Libelle)));
+            // Même cote que l'automatique : pas en double
+            coude.CotesAjoutees.Clear(); coude.CotesAjoutees.Add(new CoteAjoutee { AttacheA = "axe", IdB = "4", AttacheB = "axe" });
+            AnalyseSpool.Analyser(sm);
+            Verifier(sm.Cotes.Count(c => c.Ajoutee) == 0 && sm.Cotes.Count(c => c.Valeur == "1500") == 1, "cote ajoutée déjà générée : pas de doublon");
+            // Élément B hors du spool : la cote s'arrête à la position enregistrée
+            coude.CotesAjoutees.Clear(); coude.CotesAjoutees.Add(new CoteAjoutee { AttacheA = "axe", IdB = "AUTRE", AttacheB = "axe", PositionB = new Point3(1000, 3000, 0) });
+            AnalyseSpool.Analyser(sm);
+            Verifier(sm.Cotes.Any(c => c.Ajoutee && c.Valeur == "3000"), "cote ajoutée vers un élément hors spool");
+        }
+
         // Point d'axe par intersection des directions des connecteurs (coude dont l'insertion n'est pas au sommet)
         var coudeDir = C("k", "Coude", "", TypeComposant.Coude, 50, 0, new Point3(978, 0, 22), E(924, 0, 0, 50, null), E(1000, 0, 76, 50, null));
         coudeDir.Extremites[0].Direction = new Point3(-1, 0, 0); coudeDir.Extremites[1].Direction = new Point3(0, 0, 1);

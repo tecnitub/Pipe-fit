@@ -59,6 +59,15 @@ namespace PipeFit.Isometries.Revit
                 Image = Image("soudure16.png"),
             });
             panneau.AddItem(bouton);
+            panneau.AddItem(new PushButtonData("PipeFitCote", "Ajouter\nune cote", Assembly.GetExecutingAssembly().Location, typeof(CmdCote).FullName)
+            {
+                ToolTip = "Ajoute une cote que la cotation automatique n'a pas faite : cliquez deux points, la valeur est calculée.",
+                LongDescription = "Dans la vue 3D de l'isométrie (ou une vue de la maquette), cliquez deux éléments : chaque clic s'accroche au point "
+                    + "d'attache le plus proche (axe d'un coude, d'un té, d'un piquage, axe d'une vanne, face de bride, bout de tube). La valeur "
+                    + "est recalculée sur la géométrie à chaque génération. Recliquer les deux mêmes points retire la cote. Échap pour terminer.",
+                LargeImage = Image("cote32.png"),
+                Image = Image("cote16.png"),
+            });
             panneau.AddItem(new PushButtonData("PipeFitEnsembles", "Ensembles\nspools", Assembly.GetExecutingAssembly().Location, typeof(CmdEnsembles).FullName)
             {
                 ToolTip = "Regroupe les spools en ensembles de montage (zones géographiques) : « Ensemble A » = spools 1 à 10…",

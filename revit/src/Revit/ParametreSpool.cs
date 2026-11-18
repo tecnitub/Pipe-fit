@@ -27,6 +27,25 @@ namespace PipeFit.Isometries.Revit
         static readonly Guid GuidSoudures = new Guid("b2c74e19-3f6a-4d8b-a1e5-7c0d9f2b6e48");
 
         /// <summary>Ensemble de montage (zone géographique) du spool : « Ensemble A »…</summary>
+        public const string NomCotes = "Cotes ajoutées (Pipe-Fit)";
+        static readonly Guid GuidCotes = new Guid("8c3f6a21-4d7e-4b59-a0c2-e61f5b3d9a74");
+        const string DescCotes = "Cotes ajoutées à la main par le bouton Ajouter une cote (points d'attache, valeur recalculée). Ne pas modifier à la main.";
+
+        public static void CreerCotes(Document doc, Application app)
+        {
+            if (!Existe(doc, NomCotes)) Creer(doc, app, NomCotes, GuidCotes, DescCotes);
+        }
+
+        public static List<PipeFit.Isometries.Core.CoteAjoutee> Cotes(Element e) =>
+            PipeFit.Isometries.Core.CoteAjoutee.Lire(e.LookupParameter(NomCotes)?.AsString());
+
+        public static bool EcrireCotes(Element e, IEnumerable<PipeFit.Isometries.Core.CoteAjoutee> cotes)
+        {
+            var p = e.LookupParameter(NomCotes);
+            if (p == null || p.IsReadOnly) return false;
+            return p.Set(PipeFit.Isometries.Core.CoteAjoutee.Ecrire(cotes));
+        }
+
         public const string NomEnsemble = "Ensemble de spools";
         static readonly Guid GuidEnsemble = new Guid("5a8e1f37-c62d-4b90-9e14-7d3b0a6c2f85");
 
@@ -53,6 +72,7 @@ namespace PipeFit.Isometries.Revit
                 (NomEnsemble, GuidEnsemble, SpecTypeId.String.Text, "Ensemble de montage (zone géographique) du spool, affecté par le bouton Ensembles spools."),
                 (NomSoudures, GuidSoudures, SpecTypeId.String.Text, "Connecteurs marqués soudure chantier par Pipe-Fit (n° de connecteur:surlongueur en mm). Se règle avec le bouton Soudure chantier."),
                 (NomPouces, GuidPouces, SpecTypeId.Number, "Pouces-diamètre des soudures portées par l'élément (écrits par Isométries spools)."),
+                (NomCotes, GuidCotes, SpecTypeId.String.Text, DescCotes),
             })
             {
                 var existe = Existe(doc, nom);

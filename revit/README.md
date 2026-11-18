@@ -36,6 +36,7 @@ nomenclatures et étiquettes Revit. Les autres boutons les créent aussi d'eux-m
 | Numéro de spool | Texte | Numéroter spools (ou à la main) |
 | Ensemble de spools | Texte | Ensembles spools : ensemble de montage (zone géographique) |
 | Soudures chantier (Pipe-Fit) | Texte | Soudure chantier : joints marqués (n° de connecteur:surlongueur), ne pas modifier à la main |
+| Cotes ajoutées (Pipe-Fit) | Texte | Ajouter une cote : points d'attache des cotes ajoutées à la main, ne pas modifier à la main |
 | Pouces soudures (Pipe-Fit) | Nombre | Isométries spools : pouces-diamètre des soudures portées par l'élément, chaque soudure comptée une fois (le raccord plutôt que le tube) ; total par spool dans une nomenclature Revit regroupée par « Numéro de spool » |
 
 Fichier de paramètres partagés : `%AppData%\PipeFit\Parametres partages Pipe-Fit.txt` (GUID fixes : mêmes paramètres
@@ -110,6 +111,18 @@ Option décochée : étiquettes Revit (familles d'étiquettes choisies), placée
 - **Textes des tableaux** : 2 mm (hauteur des majuscules, police Arial) ; la largeur de chaque texte est estimée
   caractère par caractère et le texte est raccourci (« … ») pour ne jamais déborder sur la colonne voisine ; les titres
   de colonnes tiennent toujours entiers (la nomenclature passe à 150 mm de large avec la colonne Encombrement).
+
+## Ajouter une cote
+
+- Bouton **« Ajouter une cote »** : pour une cote que la cotation automatique n'a pas faite. Ouvrez la vue 3D de
+  l'isométrie (ou une vue de la maquette), cliquez deux éléments ; chaque clic s'accroche au **point d'attache** le
+  plus proche : axe d'un coude, d'un té, d'un piquage ; axe d'une vanne ou d'un accessoire en ligne ; face de bride ;
+  bout de tube. La vanne ou la bride voisine du tube cliqué est proposée aussi (elles sont masquées dans la vue
+  d'isométrie, remplacées par leur symbole).
+- **La valeur n'est jamais saisie** : elle est recalculée sur la géométrie (longueur vraie entre les deux points) à
+  chaque génération, donc reste juste si le modèle change.
+- Enregistrée sur le 1er élément cliqué (paramètre « Cotes ajoutées (Pipe-Fit) ») ; elle figure sur l'isométrie de son
+  spool. Recliquer les deux mêmes points retire la cote. Une cote déjà générée automatiquement n'est pas doublée.
 
 ## Piquages
 

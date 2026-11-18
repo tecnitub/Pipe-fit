@@ -160,6 +160,7 @@ namespace PipeFit.Isometries.Revit
             c.Taille = Texte(e, BuiltInParameter.RBS_CALCULATED_SIZE);
             c.EstAccessoire = Compat.EstCategorie(e, BuiltInCategory.OST_PipeAccessory);
 
+            try { c.CotesAjoutees = ParametreSpool.Cotes(e); } catch { }
             var marques = ParametreSpool.Marques(e);
             foreach (var cn in Connecteurs(e))
             {
@@ -288,6 +289,6 @@ namespace PipeFit.Isometries.Revit
 
         static double Double(Element e, BuiltInParameter bip) => e.get_Parameter(bip)?.AsDouble() ?? 0;
 
-        static Point3 P(XYZ p) => new Point3(Compat.Mm(p.X), Compat.Mm(p.Y), Compat.Mm(p.Z));
+        internal static Point3 P(XYZ p) => new Point3(Compat.Mm(p.X), Compat.Mm(p.Y), Compat.Mm(p.Z));
     }
 }
