@@ -212,7 +212,21 @@ static class Tests
         var significatifs = noeuds.Where(x => x.Nature != NatureSchema.Ligne).Select(x => x.Id).ToList();
         var places = sc.Symboles.Where(x => x.Nature != NatureSchema.Renvoi).Select(x => x.Id).ToList();
         Verifier(significatifs.All(places.Contains) && places.Count == places.Distinct().Count(), "schéma : chaque élément significatif placé une fois (" + places.Count + "/" + significatifs.Count + ")");
-        Verifier(sc.Reseaux == 2 && sc.Symboles.Count(x => x.Nature == NatureSchema.Renvoi) >= 1, "schéma : 2 réseaux, boucle aller / retour fermée par un renvoi");
+        Verifier(sc.Reseaux == 2 && sc.Symboles.Count(x => x.Nature == NatureSchema.Renvoi) == 0 && sc.Traits.Count(t => t.Liaison) >= 4, "schéma : 2 réseaux, retours tracés jusqu'à leur cible (pas de renvoi)");
+        var gf = sc.Symboles.First(x => x.Libelle.StartsWith("GF-01"));
+        Verifier(sc.Traits.Any(t => t.Liaison && Math.Abs(Math.Max(t.Y1, t.Y2) - (gf.Y - 5)) < 0.01 && t.X1 > gf.X - gf.DemiLargeur && t.X1 < gf.X + gf.DemiLargeur), "schéma : le retour arrive sous le groupe froid");
+        Verifier(sc.Traits.Where(t => t.Liaison).All(t => t.Systeme == "EG-R"), "schéma : les retours gardent leur système (style de trait)");
+        // Espace de lecture : une liaison qui croise une ligne est interrompue (aucun croisement franc, des coupures présentes)
+        var lz = sc.Traits.Where(t => t.Liaison).ToList();
+        int sauts = 0;
+        foreach (var a in lz) foreach (var b in lz)
+        {
+            if (a == b) continue;
+            bool ah = Math.Abs(a.Y1 - a.Y2) < 1e-6, bh = Math.Abs(b.Y1 - b.Y2) < 1e-6;
+            if (ah && bh && Math.Abs(a.Y1 - b.Y1) < 1e-6 && Math.Abs(Math.Min(b.X1, b.X2) - Math.Max(a.X1, a.X2) - 2 * Schema.Saut) < 0.01) sauts++;
+            if (!ah && !bh && Math.Abs(a.X1 - b.X1) < 1e-6 && Math.Abs(Math.Min(b.Y1, b.Y2) - Math.Max(a.Y1, a.Y2) - 2 * Schema.Saut) < 0.01) sauts++;
+        }
+        Verifier(sauts >= 1, "schéma : espace de lecture aux croisements (" + sauts + ")");
         Verifier(sc.Traits.All(t => Math.Abs(t.X1 - t.X2) < 1e-6 || Math.Abs(t.Y1 - t.Y2) < 1e-6), "schéma : traits orthogonaux");
         // Aucun croisement : deux traits ne se coupent qu'en un point d'extrémité commun
         int croisements = 0;
@@ -253,8 +267,7 @@ static class Tests
             }
         }
         Verifier(surSymbole == 0 && surTrait == 0, "schéma : textes hors symboles et traits (" + surSymbole + ", " + surTrait + " : " + string.Join(" | ", ex2) + ")");
-        // Aller d'abord : la CTA et les ventilo-convecteurs sont en aval de l'aller (pas reliés par le retour)
-        Verifier(sc.Symboles.Count(x => x.Nature == NatureSchema.Renvoi && x.Libelle.StartsWith("GF-01")) >= 1, "schéma : le retour revient au groupe froid par un renvoi");
+
         var svg = Environment.GetEnvironmentVariable("PIPEFIT_PID");
         if (!string.IsNullOrEmpty(svg)) System.IO.File.WriteAllText(svg, sc.Svg("Schéma de principe – essai"));
     }

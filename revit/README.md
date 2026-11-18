@@ -257,8 +257,12 @@ un élément du réseau (tuyauterie ou gaine), cliquez, choisissez « tout le r�
   repère et famille), **bouches**, extrémités libres ;
 - départ de la **source** (production, CTA, sinon le plus gros équipement) ; tronc horizontal, chaque dérivation sur sa
   propre ligne en dessous, **sans croisement** ; **l'aller avant le retour** (classification des systèmes Revit) : les
-  équipements sont en aval de l'aller, le retour part d'eux ; les **boucles** sont fermées par des **renvois** « vers … »
-  (nom de l'équipement, ou lettre posée sur le té de destination) ;
+  équipements sont en aval de l'aller, le retour part d'eux et **est tracé jusqu'à son arrivée** (bas du cadre de la
+  production, té du collecteur retour) : parmi plusieurs tracés orthogonaux, celui qui ne traverse ni symbole ni texte,
+  croise le moins de lignes et reste le plus court ; **là où deux lignes se croisent, le tracé est interrompu** (espace de
+  1,3 mm de part et d'autre) pour la lecture ; renvoi « vers … » seulement si aucune liaison n'est possible ;
+- **départ et retour gardent la couleur, le motif de ligne et l'épaisseur du type de système Revit** (styles de ligne
+  « Pipe-Fit schéma - système » créés et mis à jour à chaque schéma) ;
 - **réseau et DN** (ou Ø, l × h) écrits sous les lignes à chaque changement ;
 - dessiné dans une **nouvelle vue de dessin** (1:10) « PID date heure », à placer sur une feuille ; relancer après une
   modification de la maquette.

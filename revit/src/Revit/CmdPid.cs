@@ -140,8 +140,12 @@ namespace PipeFit.Isometries.Revit
         static readonly Regex Pompe = new Regex(@"pompe|pump|circulateur|surpresseur");
         static readonly Regex Source = new Regex(@"groupe (froid|de production)|chiller|refroidisseur|chaudi|boiler|\bpac\b|chaleur|heat ?pump|production|thermofrigopompe|\btfp\b|sous.?station|\bcta\b|centrale (de traitement|double flux)|caisson|extracteur|ventilateur|rooftop|air handling|\bahu\b|\bvmc\b");
 
+        /// <summary>Type de système (pour son style de trait) de chaque système affiché, lu sur les éléments.</summary>
+        public static Dictionary<string, ElementId> TypesSystemes = new Dictionary<string, ElementId>();
+
         public static (List<NoeudSchema>, List<(string, string)>) Lire(Document doc, List<Element> reseau)
         {
+            TypesSystemes = new Dictionary<string, ElementId>();
             var noeuds = new List<NoeudSchema>();
             var ids = new HashSet<string>(reseau.Select(e => Compat.Cle(e.Id)));
             var liens = new List<(string, string)>();
@@ -157,6 +161,13 @@ namespace PipeFit.Isometries.Revit
                     Id = k, Retour = EstRetour(e),
                     Systeme = Texte(e, BuiltInParameter.RBS_SYSTEM_ABBREVIATION_PARAM) is string ab && ab != "" ? ab : Texte(e, BuiltInParameter.RBS_SYSTEM_NAME_PARAM),
                 };
+                // Type de système : couleur, motif et épaisseur des lignes du schéma
+                if (n.Systeme != "" && !TypesSystemes.ContainsKey(n.Systeme))
+                {
+                    var tid = e.get_Parameter(BuiltInParameter.RBS_PIPING_SYSTEM_TYPE_PARAM)?.AsElementId();
+                    if (tid == null || tid == ElementId.InvalidElementId) tid = e.get_Parameter(BuiltInParameter.RBS_DUCT_SYSTEM_TYPE_PARAM)?.AsElementId();
+                    if (tid != null && tid != ElementId.InvalidElementId) TypesSystemes[n.Systeme] = tid;
+                }
                 var cns = Connecteurs(e).ToList();
                 foreach (var c in cns)
                     try { n.DnMm = Math.Max(n.DnMm, c.Shape == ConnectorProfileType.Round ? Compat.Mm(c.Radius * 2) : Compat.Mm(Math.Max(c.Width, c.Height))); } catch { }
@@ -262,7 +273,16 @@ namespace PipeFit.Isometries.Revit
                 catch { }
             }
 
-            foreach (var t in s.Traits) Trait(t.X1, t.Y1, t.X2, t.Y2, large);
+            // Lignes du schéma avec le style du type de système Revit (couleur, motif, épaisseur), départ comme retour
+            var styles = new Dictionary<string, GraphicsStyle>();
+            GraphicsStyle StyleDe(string sys)
+            {
+                if (sys == null || sys == "") return large;
+                if (styles.TryGetValue(sys, out var st)) return st;
+                st = TypesSystemes.TryGetValue(sys, out var tid) ? StyleSysteme(doc, sys, doc.GetElement(tid) as MEPSystemType) : null;
+                return styles[sys] = st ?? large;
+            }
+            foreach (var t in s.Traits) Trait(t.X1, t.Y1, t.X2, t.Y2, StyleDe(t.Systeme));
             foreach (var sy in s.Symboles)
             {
                 if (sy.Nature == NatureSchema.Te)
@@ -287,6 +307,31 @@ namespace PipeFit.Isometries.Revit
             foreach (var t in s.Textes) Texte(t.X, t.Y, t.Texte, t.Gras ? gras : texte, t.Centre);
             Texte(s.X0, s.Y1 + 8, titre, titreT, false);
             return vue;
+        }
+
+        /// <summary>
+        /// Style de ligne « Pipe-Fit schéma – système » (sous-catégorie de Lignes) reprenant la couleur, le motif de ligne et
+        /// l'épaisseur du type de système ; mis à jour à chaque schéma si le type de système a changé.
+        /// </summary>
+        static GraphicsStyle StyleSysteme(Document doc, string systeme, MEPSystemType type)
+        {
+            if (type == null) return null;
+            try
+            {
+                var lignes = doc.Settings.Categories.get_Item(BuiltInCategory.OST_Lines);
+                var nom = "Pipe-Fit schéma - " + System.Text.RegularExpressions.Regex.Replace(systeme, @"[\\:{}\[\]|;<>?`~]", "_");
+                Category sc = null;
+                foreach (Category c in lignes.SubCategories) if (c.Name == nom) { sc = c; break; }
+                if (sc == null) sc = doc.Settings.Categories.NewSubcategory(lignes, nom);
+                var couleur = type.LineColor;
+                sc.LineColor = couleur != null && couleur.IsValid ? couleur : new Color(0, 0, 0);
+                var motif = type.LinePatternId;
+                sc.SetLinePatternId(motif != null && motif != ElementId.InvalidElementId ? motif : LinePatternElement.GetSolidPatternId(), GraphicsStyleType.Projection);
+                var ep = type.LineWeight;
+                sc.SetLineWeight(ep > 0 && ep <= 16 ? Math.Max(ep, 3) : 5, GraphicsStyleType.Projection);
+                return sc.GetGraphicsStyle(GraphicsStyleType.Projection);
+            }
+            catch { return null; }
         }
 
         static GraphicsStyle StyleLarge(Document doc)

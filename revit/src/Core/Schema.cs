@@ -32,10 +32,12 @@ namespace PipeFit.Isometries.Core
         public bool Source;
         /// <summary>Réseau de retour (classification Revit) : parcouru après l'aller, pour que les équipements soient en aval de l'aller.</summary>
         public bool Retour;
+        /// <summary>Renvoi : élément où la ligne revient (boucle aller / retour), relié par un tracé.</summary>
+        public string Cible = "";
     }
 
-    public sealed class TraitSchema { public double X1, Y1, X2, Y2; public string Systeme = ""; }
-    public sealed class SymboleSchema { public string Id = ""; public NatureSchema Nature; public GenreRobinet Genre; public double X, Y, Dx = 1, Dy; public string Libelle = ""; public double DemiLargeur; }
+    public sealed class TraitSchema { public double X1, Y1, X2, Y2; public string Systeme = ""; public bool Liaison; }
+    public sealed class SymboleSchema { public string Id = ""; public NatureSchema Nature; public GenreRobinet Genre; public double X, Y, Dx = 1, Dy; public string Libelle = ""; public double DemiLargeur; public string Cible = ""; }
     public sealed class TexteSchema { public double X, Y; public string Texte = ""; public double Taille = 2.5; public bool Gras, Centre; public double Largeur => MiseEnPage.LargeurTexte(Texte, Taille, Gras); }
 
     public sealed class Schema
@@ -45,6 +47,10 @@ namespace PipeFit.Isometries.Core
         public List<TexteSchema> Textes = new List<TexteSchema>();
         public double X0, Y0, X1, Y1;
         public int Reseaux;
+        /// <summary>Systèmes de retour (style de trait en démonstration ; dans Revit, le style vient du type de système).</summary>
+        public HashSet<string> SystemesRetour = new HashSet<string>();
+        /// <summary>Espace laissé de part et d'autre d'un croisement, sur la ligne qui passe (mm).</summary>
+        public const double Saut = 1.3;
 
         public const double PasLigne = 18, Ecart = 6, Hauteur = 2.5, Petit = 2.0;
 
@@ -115,9 +121,12 @@ namespace PipeFit.Isometries.Core
                 Mesurer(arbre);
                 if (s.Reseaux > 0) ligne += 1;
                 s.Reseaux++;
+                int s0 = s.Symboles.Count, t0 = s.Traits.Count, x0 = s.Textes.Count;
                 s.Chaine(arbre, 0, ligne, ref ligne, null);
+                s.Relier(s0, t0, x0, ref ligne);
                 ligne++;
             }
+            foreach (var n in parId.Values) if (n.Retour && n.Systeme != "") s.SystemesRetour.Add(n.Systeme);
             s.Bornes();
             return s;
         }
@@ -173,6 +182,7 @@ namespace PipeFit.Isometries.Core
             // Cible « ligne » (tube) : l'élément visible le plus proche en remontant l'arbre
             string Visible(string id) { var c = id; while (c != null && !Significatif(parId[c])) c = parentDe.TryGetValue(c, out var pp) ? pp : null; return c ?? id; }
             renvois = renvois.Select(x => (x.Renvoi, Visible(x.Cible))).ToList();
+            foreach (var (rn, c) in renvois) rn.D.Cible = c;
             foreach (var g in renvois.GroupBy(x => x.Cible))
             {
                 var cible = parId[g.Key];
@@ -224,13 +234,8 @@ namespace PipeFit.Isometries.Core
                         Textes.Add(new TexteSchema { X = (xDebutTrait + g) / 2, Y = y - 3.4, Texte = lib, Taille = Petit, Centre = true });
                         sysAffiche = sysTrait; dimAffichee = dimTrait;
                     }
-                    Symboles.Add(new SymboleSchema { Id = d.Id, Nature = d.Nature, Genre = d.Genre, X = xs, Y = y, Libelle = d.Libelle, DemiLargeur = DemiSymbole(d) });
-                    if (d.Nature == NatureSchema.Renvoi)
-                    {
-                        // Renvoi : texte à droite de la flèche
-                        Textes.Add(new TexteSchema { X = xs + 5.5, Y = y, Texte = TexteRenvoi(d), Taille = Petit });
-                        xBord = xs + 5.5 + MiseEnPage.LargeurTexte(TexteRenvoi(d), Petit);
-                    }
+                    Symboles.Add(new SymboleSchema { Id = d.Id, Nature = d.Nature, Genre = d.Genre, X = xs, Y = y, Libelle = d.Libelle, DemiLargeur = DemiSymbole(d), Cible = d.Cible });
+                    if (d.Nature == NatureSchema.Renvoi) xBord = xs + 4; // relié ensuite par un tracé (texte « vers … » à défaut)
                     var et = Etiquette(d);
                     if (et != "") Textes.Add(new TexteSchema { X = xs, Y = y + Math.Max(1.4, Haut(d)) + 0.6 + Petit / 2, Texte = et, Taille = Petit, Centre = true });
                     xDebutTrait = xs + DemiSymbole(d);
@@ -258,6 +263,150 @@ namespace PipeFit.Isometries.Core
                 Chaine(e, xa, l, ref derniere, dernierSymbole ?? debut.D);
             }
         }
+
+        // ---------- Liaisons de retour (boucles) ----------
+
+        (double X0, double Y0, double X1, double Y1) Boite(SymboleSchema sy)
+        {
+            var d = Dessin(sy);
+            if (d.Count == 0) return (sy.X, sy.Y, sy.X, sy.Y);
+            return (sy.X + d.Min(g => Math.Min(g.U1, g.U2)), sy.Y + d.Min(g => Math.Min(g.V1, g.V2)), sy.X + d.Max(g => Math.Max(g.U1, g.U2)), sy.Y + d.Max(g => Math.Max(g.V1, g.V2)));
+        }
+
+        static (double X0, double Y0, double X1, double Y1) Boite(TexteSchema t) =>
+            (t.Centre ? t.X - t.Largeur / 2 : t.X, t.Y - t.Taille / 2 - 0.3, t.Centre ? t.X + t.Largeur / 2 : t.X + t.Largeur, t.Y + t.Taille / 2 + 0.3);
+
+        /// <summary>
+        /// Chaque renvoi d'un réseau devient un tracé orthogonal jusqu'à sa cible (bas ou haut du cadre d'un équipement, té).
+        /// Plusieurs tracés sont essayés (passage juste sous ou au-dessus des lignes concernées, plus loin, plusieurs abscisses
+        /// de départ et d'arrivée) : on garde celui qui ne traverse ni symbole ni texte, ne longe aucun trait, croise le moins
+        /// de lignes et reste le plus court. Là où il croise une ligne, le tracé est interrompu (espace de lecture).
+        /// </summary>
+        void Relier(int s0, int t0, int x0, ref int ligne)
+        {
+            var renvois = Symboles.Skip(s0).Where(r => r.Nature == NatureSchema.Renvoi).ToList();
+            if (renvois.Count == 0) return;
+            var obstacles = Symboles.Skip(s0).Where(z => z.Nature != NatureSchema.Te && z.Nature != NatureSchema.Renvoi).Select(z => (Sym: z, B: Boite(z))).ToList();
+            var textes = Textes.Skip(x0).Select(Boite).ToList();
+            double yBas = new[] { Traits.Skip(t0).Select(t => Math.Min(t.Y1, t.Y2)).DefaultIfEmpty(0).Min(), obstacles.Select(o => o.B.Y0).DefaultIfEmpty(0).Min(),
+                textes.Select(t => t.Y0).DefaultIfEmpty(0).Min() }.Min();
+            double yHaut = new[] { Traits.Skip(t0).Select(t => Math.Max(t.Y1, t.Y2)).DefaultIfEmpty(0).Max(), obstacles.Select(o => o.B.Y1).DefaultIfEmpty(0).Max() }.Max();
+            var liaisons = new List<TraitSchema>();
+
+            bool Bloque((double x1, double y1, double x2, double y2) g, SymboleSchema sauf)
+            {
+                double ax = Math.Min(g.x1, g.x2), bx = Math.Max(g.x1, g.x2), ay = Math.Min(g.y1, g.y2), by = Math.Max(g.y1, g.y2);
+                bool h = by - ay < 1e-6;
+                foreach (var o in obstacles)
+                    if (o.Sym != sauf && bx > o.B.X0 - 0.6 && ax < o.B.X1 + 0.6 && by > o.B.Y0 - 0.6 && ay < o.B.Y1 + 0.6) return true;
+                foreach (var t in textes)
+                    if (bx > t.X0 - 0.4 && ax < t.X1 + 0.4 && by > t.Y0 - 0.2 && ay < t.Y1 + 0.2) return true;
+                // Pas de trait confondu ni trop proche en parallèle
+                foreach (var t in Traits.Concat(liaisons))
+                {
+                    bool th = Math.Abs(t.Y1 - t.Y2) < 1e-6;
+                    if (th != h) continue;
+                    if (h && Math.Abs(t.Y1 - ay) < 1.0 && Math.Max(t.X1, t.X2) > ax + 0.01 && Math.Min(t.X1, t.X2) < bx - 0.01) return true;
+                    if (!h && Math.Abs(t.X1 - ax) < 1.0 && Math.Max(t.Y1, t.Y2) > ay + 0.01 && Math.Min(t.Y1, t.Y2) < by - 0.01) return true;
+                }
+                return false;
+            }
+            int Croisements((double x1, double y1, double x2, double y2) g)
+            {
+                bool h = Math.Abs(g.y1 - g.y2) < 1e-6; int n = 0;
+                double a = h ? Math.Min(g.x1, g.x2) : Math.Min(g.y1, g.y2), b = h ? Math.Max(g.x1, g.x2) : Math.Max(g.y1, g.y2), f = h ? g.y1 : g.x1;
+                foreach (var t in Traits.Concat(liaisons))
+                {
+                    bool th = Math.Abs(t.Y1 - t.Y2) < 1e-6;
+                    if (th == h) continue;
+                    double ta = th ? Math.Min(t.X1, t.X2) : Math.Min(t.Y1, t.Y2), tb = th ? Math.Max(t.X1, t.X2) : Math.Max(t.Y1, t.Y2), tf = th ? t.Y1 : t.X1;
+                    if (tf > a + 0.05 && tf < b - 0.05 && f > ta + 0.05 && f < tb - 0.05) n++;
+                }
+                return n;
+            }
+
+            var parCible = new Dictionary<string, int>();
+            double yMin = yBas;
+            foreach (var r in renvois.OrderBy(z => z.Y).ThenByDescending(z => z.X))
+            {
+                var cible = Symboles.Skip(s0).FirstOrDefault(z => z.Id == r.Cible && z.Nature != NatureSchema.Renvoi);
+                if (cible == null) { Textes.Add(new TexteSchema { X = r.X + 5.5, Y = r.Y, Texte = "vers " + Court(r.Libelle), Taille = Petit }); continue; }
+                var sys = Traits.Where(t => Math.Abs(t.Y1 - r.Y) < 1e-6 && Math.Abs(t.Y2 - r.Y) < 1e-6 && Math.Abs(Math.Max(t.X1, t.X2) - (r.X - r.DemiLargeur)) < 0.5).Select(t => t.Systeme).FirstOrDefault() ?? "";
+                double xs = r.X - r.DemiLargeur, ys = r.Y;
+                int n = parCible.TryGetValue(cible.Id, out var k) ? k : 0; parCible[cible.Id] = n + 1;
+                // Points d'arrivée : sous ou sur le cadre (équipement, pompe), sous ou sur le té
+                var arrivees = new List<(double X, double Y, bool ParDessous)>();
+                var abscisses = new List<double>();
+                if (cible.Nature == NatureSchema.Equipement)
+                    for (double f = 0.5; f > 0.05; f -= 0.1) { abscisses.Add(cible.X + cible.DemiLargeur * f + 1.5 * n); abscisses.Add(cible.X - cible.DemiLargeur * f - 1.5 * n); }
+                else for (int i2 = 0; i2 < 9; i2++) abscisses.Add(cible.X + (i2 % 2 == 0 ? 1 : -1) * 2.5 * ((i2 + 1) / 2) + 1.5 * n);
+                double haut = cible.Nature == NatureSchema.Equipement ? 5 : cible.Nature == NatureSchema.Pompe ? 4 : cible.Nature == NatureSchema.Te ? 0 : Boite(cible).Y1 - cible.Y;
+                double bas = cible.Nature == NatureSchema.Equipement ? 5 : cible.Nature == NatureSchema.Pompe ? 4 : cible.Nature == NatureSchema.Te ? 0 : cible.Y - Boite(cible).Y0;
+                foreach (var ax in abscisses) { arrivees.Add((ax, cible.Y - bas, true)); arrivees.Add((ax, cible.Y + haut, false)); }
+                // Niveaux de passage : juste sous / au-dessus des deux extrémités, puis plus loin
+                var niveauxBas = new List<double>(); var niveauxHaut = new List<double>();
+                for (double l = Math.Min(ys, cible.Y - bas) - 7; l >= yBas - 4 - 3 * renvois.Count - 1e-9; l -= 2.5) niveauxBas.Add(l);
+                for (double l = Math.Max(ys, cible.Y + haut) + 7; l <= yHaut - 2 + 1e-9; l += 2.5) niveauxHaut.Add(l);
+                (double x1, double y1, double x2, double y2)[] meilleur = null; double score = double.MaxValue;
+                for (int dxi = 0; dxi < 40 && score > 1e8; dxi++)
+                {
+                    double xd = xs + 2.5 * dxi;
+                    foreach (var (axv, ay, dessous) in arrivees)
+                        foreach (var lv in dessous ? niveauxBas : niveauxHaut)
+                        {
+                            var chemin = new[] { (xs, ys, xd, ys), (xd, ys, xd, lv), (xd, lv, axv, lv), (axv, lv, axv, ay) }
+                                .Where(g => Math.Abs(g.Item1 - g.Item3) > 1e-6 || Math.Abs(g.Item2 - g.Item4) > 1e-6).ToArray();
+                            bool ok = true; int cr = 0; double lg = 0;
+                            for (int gi = 0; gi < chemin.Length && ok; gi++)
+                            {
+                                var g = chemin[gi];
+                                if (Bloque(g, gi == chemin.Length - 1 ? cible : null)) ok = false;
+                                cr += Croisements(g); lg += Math.Abs(g.Item1 - g.Item3) + Math.Abs(g.Item2 - g.Item4);
+                            }
+                            if (!ok) continue;
+                            var sc = cr * 60 + lg;
+                            if (sc < score) { score = sc; meilleur = chemin; }
+                        }
+                    if (meilleur != null && dxi >= 6) break;
+                }
+                if (meilleur == null)
+                {
+                    // Aucun tracé propre : couloir sous le réseau
+                    double yL = yBas - 4 - 3 * liaisons.Count(t => t.Liaison && Math.Abs(t.Y1 - t.Y2) < 1e-6 && t.Y1 < yBas);
+                    meilleur = new[] { (xs, ys, xs, yL), (xs, yL, abscisses[0], yL), (abscisses[0], yL, abscisses[0], cible.Y - bas) };
+                }
+                foreach (var g in meilleur) { liaisons.Add(new TraitSchema { X1 = g.Item1, Y1 = g.Item2, X2 = g.Item3, Y2 = g.Item4, Systeme = sys, Liaison = true }); yMin = Math.Min(yMin, Math.Min(g.Item2, g.Item4)); }
+                Symboles.Remove(r);
+            }
+            // Croisements : la liaison s'interrompt de part et d'autre de la ligne croisée (les liaisons entre elles : la plus récente)
+            var poses = new List<TraitSchema>();
+            foreach (var l in liaisons)
+            {
+                bool hz = Math.Abs(l.Y1 - l.Y2) < 1e-6;
+                double a = hz ? Math.Min(l.X1, l.X2) : Math.Min(l.Y1, l.Y2), b = hz ? Math.Max(l.X1, l.X2) : Math.Max(l.Y1, l.Y2), fixe = hz ? l.Y1 : l.X1;
+                var coupes = new List<double>();
+                foreach (var t in Traits.Concat(poses))
+                {
+                    bool th = Math.Abs(t.Y1 - t.Y2) < 1e-6;
+                    if (th == hz) continue;
+                    double ta = th ? Math.Min(t.X1, t.X2) : Math.Min(t.Y1, t.Y2), tb = th ? Math.Max(t.X1, t.X2) : Math.Max(t.Y1, t.Y2), tf = th ? t.Y1 : t.X1;
+                    if (tf > a + 0.05 && tf < b - 0.05 && fixe > ta + 0.05 && fixe < tb - 0.05) coupes.Add(tf);
+                }
+                double debut = a;
+                foreach (var c in coupes.OrderBy(c => c))
+                {
+                    if (c - Saut > debut + 0.05) poses.Add(Morceau(hz, fixe, debut, c - Saut, l.Systeme));
+                    debut = Math.Max(debut, c + Saut);
+                }
+                if (b > debut + 0.05) poses.Add(Morceau(hz, fixe, debut, b, l.Systeme));
+            }
+            Traits.AddRange(poses);
+            ligne = Math.Max(ligne, (int)Math.Ceiling(-yMin / PasLigne));
+        }
+
+        static TraitSchema Morceau(bool horizontal, double fixe, double a, double b, string sys) =>
+            horizontal ? new TraitSchema { X1 = a, Y1 = fixe, X2 = b, Y2 = fixe, Systeme = sys, Liaison = true }
+                       : new TraitSchema { X1 = fixe, Y1 = a, X2 = fixe, Y2 = b, Systeme = sys, Liaison = true };
 
         void Trait(double x1, double y1, double x2, double y2, string sys)
         {
@@ -319,6 +468,16 @@ namespace PipeFit.Isometries.Core
 
         // ---------- SVG (démonstration, vérification) ----------
 
+        static readonly string[] Couleurs = { "#1f6fd1", "#d14b1f", "#1b9e5a", "#8a3fd1", "#c79100", "#0f8f9e", "#b8326b", "#5a6b7a" };
+
+        /// <summary>Couleur et pointillé d'un système (démonstration) : une couleur par fluide, le retour en tirets.</summary>
+        public (string Couleur, string Tirets) Style(string systeme)
+        {
+            var fluide = System.Text.RegularExpressions.Regex.Replace(systeme ?? "", @"[-_ ]?(d|r|dep|ret|depart|retour|aller|s|souf|rep|ext)$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            int h = 0; foreach (var ch in fluide) h = (h * 31 + ch) & 0x7fffffff;
+            return (Couleurs[h % Couleurs.Length], SystemesRetour.Contains(systeme ?? "") ? "2.2 1.4" : "");
+        }
+
         public string Svg(string titre = "")
         {
             var inv = CultureInfo.InvariantCulture;
@@ -329,7 +488,11 @@ namespace PipeFit.Isometries.Core
             sb.Append("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 " + w.ToString("0.#", inv) + " " + h.ToString("0.#", inv) + "\" font-family=\"Arial, sans-serif\">");
             if (titre != "") sb.Append("<text x=\"" + m + "\" y=\"" + (m + 2) + "\" font-size=\"3.4\" font-weight=\"700\">" + Esc(titre) + "</text>");
             sb.Append("<g stroke=\"#1d2733\" stroke-width=\"0.35\" stroke-linecap=\"round\" fill=\"none\">");
-            foreach (var t in Traits) sb.Append("<line x1=\"" + X(t.X1) + "\" y1=\"" + Yv(t.Y1) + "\" x2=\"" + X(t.X2) + "\" y2=\"" + Yv(t.Y2) + "\" stroke-width=\"0.5\"/>");
+            foreach (var t in Traits)
+            {
+                var (c, d) = Style(t.Systeme);
+                sb.Append("<line x1=\"" + X(t.X1) + "\" y1=\"" + Yv(t.Y1) + "\" x2=\"" + X(t.X2) + "\" y2=\"" + Yv(t.Y2) + "\" stroke=\"" + c + "\" stroke-width=\"0.5\"" + (d != "" ? " stroke-dasharray=\"" + d + "\"" : "") + "/>");
+            }
             foreach (var sy in Symboles)
                 foreach (var g in Dessin(sy))
                     sb.Append("<line x1=\"" + X(sy.X + g.U1) + "\" y1=\"" + Yv(sy.Y + g.V1) + "\" x2=\"" + X(sy.X + g.U2) + "\" y2=\"" + Yv(sy.Y + g.V2) + "\"/>");

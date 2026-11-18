@@ -98,8 +98,9 @@ CE QUI EST CRÉÉ POUR CHAQUE SPOOL
 
 SCHÉMA DE PRINCIPE (P&ID) (groupe « Schémas »)
   Sélectionnez un élément du réseau, cliquez « Schéma de principe (P&ID) ». Le réseau est redessiné en
-  filaire dans une nouvelle vue de dessin : vannes, pompes, équipements, bouches, tés ; aller puis retour,
-  boucles fermées par des renvois « vers … » ; réseau et DN sur les lignes ; aucun croisement.
+  filaire dans une nouvelle vue de dessin : vannes, pompes, équipements, bouches, tés ; départ et retour
+  tracés tous les deux, avec la couleur et le type de trait de leur système Revit ; là où deux lignes se
+  croisent, un espace est laissé pour la lecture ; réseau et DN sur les lignes.
 
 CALCULS (groupe « Calculs »)
   Perte de charge : sélectionnez le chemin (tubes, raccords, vannes), cliquez « Perte de charge ».

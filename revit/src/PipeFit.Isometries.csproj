@@ -12,7 +12,7 @@
     <TargetFramework Condition="'$(RevitVersion)' &gt;= '2027'">net10.0-windows</TargetFramework>
     <AssemblyName>PipeFit.Isometries</AssemblyName>
     <RootNamespace>PipeFit.Isometries</RootNamespace>
-    <Version>2.19.0</Version>
+    <Version>2.20.0</Version>
     <Company>TECNITUB</Company>
     <Product>Pipe-Fit Isométries</Product>
     <Description>Isométries de fabrication par numéro de spool pour Revit</Description>
