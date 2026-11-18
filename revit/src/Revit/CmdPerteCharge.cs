@@ -96,6 +96,14 @@ namespace PipeFit.Isometries.Revit
                     else if (c.Type == TypeComposant.Piquage) derivation = voisins.Count >= 2;
                     t.Zeta = PerteCharge.ZetaHydraulique(c.Type, c.Genre, c.AngleDeg, derivation);
                     if (c.Type == TypeComposant.Te || c.Type == TypeComposant.Croix) t.Designation += derivation ? " (dérivation)" : " (passage)";
+                    // Équipement ou accessoire avec sa perte fabricant (paramètre Pipe-Fit, sinon valeur de la famille) : remplace le ζ
+                    if (parCle.TryGetValue(c.Id, out var el) && (Compat.EstCategorie(el, BuiltInCategory.OST_PipeAccessory)
+                        || Compat.EstCategorie(el, BuiltInCategory.OST_MechanicalEquipment) || Compat.EstCategorie(el, BuiltInCategory.OST_PlumbingFixtures)))
+                    {
+                        if (Compat.EstCategorie(el, BuiltInCategory.OST_MechanicalEquipment)) { t.Nature = "Equipement"; t.Zeta = 0; t.Designation = "Équipement " + t.Designation; }
+                        var pa = ParametresPerte.Pa(el, GenrePerte.Hydraulique);
+                        if (pa > 0) { t.PerteFixePa = pa.Value; t.Zeta = 0; t.Designation += " (fabricant)"; }
+                    }
                 }
                 res.Add(t);
             }

@@ -86,6 +86,15 @@ namespace PipeFit.Isometries.Revit
             });
             // Groupe « Calculs » : perte de charge hydraulique, débit / vitesse en ventilation
             var calculs = app.CreateRibbonPanel(Onglet, "Calculs");
+            calculs.AddItem(new PushButtonData("PipeFitParametresPerte", "Paramètres\nperte de charge", Assembly.GetExecutingAssembly().Location, typeof(CmdParametresPerte).FullName)
+            {
+                ToolTip = "Crée les paramètres « Perte de charge bouche (Pa) », « … équipement hydraulique (kPa) », « … équipement aéraulique (Pa) » et y recopie les valeurs déjà présentes dans les familles.",
+                LongDescription = "Paramètres partagés d'occurrence sur les bouches, équipements de génie climatique, accessoires de canalisation et de gaine. "
+                    + "Les pertes de charge fabricant déjà présentes sous un autre nom ou une autre unité (Pressure Drop, ΔP (kPa), mbar, mCE, paramètre Revit "
+                    + "« Perte de charge », raccordements de la famille) sont converties et recopiées. Les calculs de perte de charge lisent ces paramètres.",
+                LargeImage = Image("parametres32.png"),
+                Image = Image("parametres16.png"),
+            });
             calculs.AddItem(new PushButtonData("PipeFitPerteCharge", "Perte de\ncharge", Assembly.GetExecutingAssembly().Location, typeof(CmdPerteCharge).FullName)
             {
                 ToolTip = "Perte de charge hydraulique sur la tuyauterie sélectionnée (tubes, raccords, vannes) : vitesses, Pa/m, ΔP totale en kPa et mCE.",

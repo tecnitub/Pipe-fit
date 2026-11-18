@@ -187,6 +187,14 @@ namespace PipeFit.Isometries.Revit
             t.Designation = nom;
             t.Zeta = PerteCharge.ZetaAir(o, d > 0, angle, derivation);
             t.Nature = o.ToString(); t.Repere = o == PerteCharge.OrganeAir.Bouche ? "B" + (++n) : "R" + (++n);
+            // Perte de charge fabricant (paramètre Pipe-Fit, sinon valeur trouvée dans la famille) : remplace le ζ par défaut
+            bool equipement = Compat.EstCategorie(e, BuiltInCategory.OST_MechanicalEquipment);
+            if (equipement) { t.Nature = "Equipement"; t.Repere = "E" + n; }
+            if (o == PerteCharge.OrganeAir.Bouche || equipement || Compat.EstCategorie(e, BuiltInCategory.OST_DuctAccessory))
+            {
+                var pa = ParametresPerte.Pa(e, o == PerteCharge.OrganeAir.Bouche && !equipement ? GenrePerte.Bouche : GenrePerte.Aeraulique);
+                if (pa > 0) { t.PerteFixePa = pa.Value; t.Zeta = 0; t.Designation += " (fabricant)"; }
+            }
             return t;
         }
 
@@ -248,10 +256,15 @@ namespace PipeFit.Isometries.Revit
                 return Result.Cancelled;
             }
             var chemins = PerteCharge.Chemins(voisins, source, bouches.Keys);
+            // CTA source avec sa perte de charge côté air (paramètre ou famille) : comptée en tête de chaque chemin
+            var paCta = equip != null ? ParametresPerte.Pa(equip, GenrePerte.Aeraulique) : null;
+            var cta = paCta > 0 ? equip : null;
             var notes = new List<string>
             {
                 bouches.Count + " bouche(s), " + bouches.Values.Sum().ToString("0") + " m³/h ; chemins depuis "
-                    + (equip != null ? "« " + (equip as FamilyInstance)?.Symbol?.FamilyName + " » (sa propre perte n'est pas comptée)" : "l'élément de plus grande section (pas de CTA reliée)") + ".",
+                    + (equip != null ? "« " + (equip as FamilyInstance)?.Symbol?.FamilyName + " »" : "l'élément de plus grande section (pas de CTA reliée)") + ".",
+                cta != null ? "Pertes internes de la CTA comptées (" + paCta.Value.ToString("0") + " Pa) : le total est la pression au ventilateur."
+                    : "Pertes internes de la CTA non renseignées (paramètre « " + ParametresPerte.Nom(GenrePerte.Aeraulique) + " ») : le total est la pression du réseau seul.",
             };
             if (chemins.Count < bouches.Count) notes.Add((bouches.Count - chemins.Count) + " bouche(s) non reliée(s) à la source.");
 
@@ -263,9 +276,10 @@ namespace PipeFit.Isometries.Revit
                 var ids = new HashSet<string>(kv.Value); ids.Add(source);
                 int n = 0;
                 var lignes = new List<Troncon>();
+                if (cta != null) { var tc = CmdAeraulique.Ligne(doc, cta, bouches.Values.Sum(), x => false, ref n); tc.Designation = "CTA " + tc.Designation + " – pertes internes"; lignes.Add(tc); }
                 foreach (var id in kv.Value)
                 {
-                    if (!reseau.TryGetValue(id, out var e) || Compat.EstCategorie(e, BuiltInCategory.OST_MechanicalEquipment)) continue;
+                    if (!reseau.TryGetValue(id, out var e) || id == source) continue;
                     var q = CmdAeraulique.DebitElement(e);
                     lignes.Add(CmdAeraulique.Ligne(doc, e, q > 0 && !Compat.EstCategorie(e, BuiltInCategory.OST_DuctTerminal) ? q : arbre.TryGetValue(id, out var qa) ? qa : q,
                         x => ids.Contains(Compat.Cle(x.Id)), ref n));

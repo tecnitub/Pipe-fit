@@ -128,6 +128,20 @@ static class Tests
         }
     }
 
+    static void TestPertesFabricant()
+    {
+        foreach (var n in new[] { "Perte de charge", "Pressure Drop", "ΔP (kPa)", "Chute de pression mbar", "Dp_mCE", "Perte de charge eau (kPa)", "Druckverlust", "PDC" })
+            Verifier(PertesFabricant.EstNomPerte(n), "nom de perte de charge reconnu : " + n);
+        foreach (var n in new[] { "Coefficient de perte de charge", "Méthode de perte de charge", "Débit", "Diamètre", PertesFabricant.NomBouche, "Pression statique" })
+            Verifier(!PertesFabricant.EstNomPerte(n), "pas une perte de charge : " + n);
+        Verifier(PertesFabricant.DepuisNombre("ΔP (kPa)", 12) == 12000 && PertesFabricant.DepuisNombre("Perte de charge mbar", 3) == 300
+            && Math.Abs(PertesFabricant.DepuisNombre("Dp_mCE", 2) - 19613.3) < 0.1 && PertesFabricant.DepuisNombre("Pressure Drop", 25) == 25
+            && PertesFabricant.DepuisNombre("Perte de charge bar", 0.5) == 50000, "conversion d'après l'unité du nom");
+        Verifier(PertesFabricant.DepuisTexte("25 Pa") == 25 && PertesFabricant.DepuisTexte("0,3 bar") == 30000 && Math.Abs(PertesFabricant.DepuisTexte("2,5 mCE").Value - 24516.6) < 0.1
+            && PertesFabricant.DepuisTexte("12", "Perte de charge (kPa)") == 12000 && PertesFabricant.DepuisTexte("n.c.") == null && PertesFabricant.DepuisTexte("15 mmCE") == 15 * 9.80665,
+            "lecture d'une perte de charge écrite en texte");
+    }
+
     static void TestExcel()
     {
         var sp = Exemple(); AnalyseSpool.Analyser(sp);
@@ -157,6 +171,7 @@ static class Tests
     {
         TestExcel();
         TestHydraulique();
+        TestPertesFabricant();
         var s = Exemple();
         AnalyseSpool.Analyser(s);
         var parId = s.Composants.ToDictionary(c => c.Id);

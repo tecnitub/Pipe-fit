@@ -36,6 +36,9 @@ nomenclatures et étiquettes Revit. Les autres boutons les créent aussi d'eux-m
 | Numéro de spool | Texte | Numéroter spools (ou à la main) |
 | Ensemble de spools | Texte | Ensembles spools : ensemble de montage (zone géographique) |
 | Soudures chantier (Pipe-Fit) | Texte | Soudure chantier : joints marqués (n° de connecteur:surlongueur), ne pas modifier à la main |
+| Perte de charge bouche (Pa) | Nombre | Paramètres perte de charge : perte fabricant des bouches d'air, lue par la perte de charge aéraulique |
+| Perte de charge équipement hydraulique (kPa) | Nombre | Paramètres perte de charge : perte côté eau des équipements et accessoires de canalisation (batterie, échangeur, vanne…), lue par la perte de charge hydraulique |
+| Perte de charge équipement aéraulique (Pa) | Nombre | Paramètres perte de charge : perte côté air des équipements et accessoires de gaine (CTA, filtre, registre, silencieux…), lue par la perte de charge aéraulique |
 | Cotes ajoutées (Pipe-Fit) | Texte | Ajouter une cote : points d'attache des cotes ajoutées à la main, ne pas modifier à la main |
 | Pouces soudures (Pipe-Fit) | Nombre | Isométries spools : pouces-diamètre des soudures portées par l'élément, chaque soudure comptée une fois (le raccord plutôt que le tube) ; total par spool dans une nomenclature Revit regroupée par « Numéro de spool » |
 
@@ -258,6 +261,16 @@ fenêtre), cliquez. Pour chaque élément :
   compensateur 0,2 ;
 - tableau : débit, ζ et **perte fixe** (valeur fabricant en Pa : batterie, échangeur…) modifiables, recalcul immédiat ;
   alertes (vitesse > maxi, < 0,3 m/s, > 250 Pa/m) ; **ΔP totale en kPa et mCE** ; note de calcul **Excel**.
+
+**Paramètres perte de charge** : crée les trois paramètres de perte de charge fabricant (tableau des paramètres
+ci-dessus) sur les bouches, équipements de génie climatique, accessoires de canalisation et de gaine, et **recopie les
+valeurs déjà présentes dans les familles** mais inutilisables par le calcul : paramètre Revit « Perte de charge »,
+paramètre de famille nommé « Pressure Drop », « ΔP (kPa) », « Chute de pression (mbar) », « Dp_mCE », texte « 25 Pa »…,
+perte de charge des raccordements de la famille ; l'unité est lue dans le nom ou le texte (Pa, kPa, mbar, bar, mCE,
+mmCE, psi, inWG) et convertie. Choix : récupérer sans écraser, tout remplacer, ou créer seulement ; bilan par paramètre
+(déjà renseignés, récupérés, à saisir). Dans les calculs, une perte fabricant **remplace le ζ par défaut** de l'élément ;
+sans paramètre renseigné, la valeur trouvée dans la famille est prise quand même. La perte côté air de la **CTA** est
+ajoutée en tête de chaque chemin : le total devient la pression au ventilateur.
 
 **Perte de charge aéraulique** (réseau de ventilation) : sélectionnez une gaine du réseau (ou la CTA), cliquez.
 - le réseau relié est parcouru de la **CTA** (sinon de l'élément de plus grande section) jusqu'à **chaque bouche** ;

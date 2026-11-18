@@ -99,7 +99,7 @@ namespace PipeFit.Isometries.Revit
             Creer(doc, app, NomSoudures, GuidSoudures, "Connecteurs marqués soudure chantier par Pipe-Fit (n° de connecteur:surlongueur en mm). Ne pas modifier à la main.");
         }
 
-        static string Creer(Document doc, Application app, string nom, Guid guid, string description, ForgeTypeId spec = null)
+        internal static string Creer(Document doc, Application app, string nom, Guid guid, string description, ForgeTypeId spec = null, BuiltInCategory[] categories = null)
         {
             var ancien = app.SharedParametersFilename;
             var fichier = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PipeFit", "Parametres partages Pipe-Fit.txt");
@@ -117,7 +117,7 @@ namespace PipeFit.Isometries.Revit
             finally { app.SharedParametersFilename = ancien; }
 
             var cats = app.Create.NewCategorySet();
-            foreach (var bic in Categories)
+            foreach (var bic in categories ?? Categories)
             {
                 var cat = Category.GetCategory(doc, bic);
                 if (cat != null && cat.AllowsBoundParameters) cats.Insert(cat);
