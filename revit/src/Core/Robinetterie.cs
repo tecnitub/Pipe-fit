@@ -12,29 +12,49 @@ namespace PipeFit.Isometries.Core
     public static class Robinetterie
     {
         /// <summary>
-        /// Correspondances choisies par l'utilisateur : nom du type d'accessoire (normalisé) → symbole. Elles passent avant
-        /// la recherche par mots-clés (ex. « KSB BOA-H » → vanne de réglage).
+        /// Correspondances choisies par l'utilisateur : nom de la FAMILLE d'accessoire (normalisé) → symbole. Elles passent
+        /// avant la recherche par mots-clés (ex. famille « KSB BOA-H » → vanne de réglage).
         /// </summary>
         public static Dictionary<string, GenreRobinet> Correspondances = new Dictionary<string, GenreRobinet>();
 
-        public static string Cle(string typeNom) => AnalyseSpool.Normaliser(typeNom);
+        public static string Cle(string famille) => AnalyseSpool.Normaliser(famille);
 
         /// <summary>
-        /// Genre d'un accessoire ou d'une vanne : correspondance choisie pour son type, sinon recherche des mots-clés dans le
-        /// nom du TYPE, sinon dans le nom de la famille. parType : le genre vient du nom du type.
+        /// Genre d'un accessoire ou d'une vanne, d'après le seul NOM DE SA FAMILLE (le nom du type n'est pas lu) :
+        /// correspondance choisie pour la famille, sinon recherche des mots-clés et références fabricants dans ce nom,
+        /// sinon vanne par défaut. reconnu : la famille a donné le genre (pas le défaut).
         /// </summary>
         public static GenreRobinet Genre(Composant c) => Genre(c, out _);
 
-        public static GenreRobinet Genre(Composant c, out bool parType)
+        public static GenreRobinet Genre(Composant c, out bool reconnu)
         {
-            parType = false;
+            reconnu = false;
             if (!c.EstAccessoire && c.Type != TypeComposant.Vanne && c.Type != TypeComposant.Accessoire) return GenreRobinet.Aucun;
-            if (Correspondances.TryGetValue(Cle(c.TypeNom), out var choisi) && choisi != GenreRobinet.Aucun) { parType = true; return choisi; }
-            var g = ParMots(c.TypeNom);
-            if (g != GenreRobinet.Aucun) { parType = true; return g; }
-            g = ParMots(c.Famille);
-            if (g != GenreRobinet.Aucun) return g;
+            if (Correspondances.TryGetValue(Cle(c.Famille), out var choisi) && choisi != GenreRobinet.Aucun) { reconnu = true; return choisi; }
+            var g = ParMots(c.Famille);
+            if (g != GenreRobinet.Aucun) { reconnu = true; return g; }
+            // Raccord dessiné dans une famille d'accessoire (ex. bride sous une famille de vanne) : pas de robinetterie
+            if (Raccord(c.Famille) != null) return GenreRobinet.Aucun;
             return c.EstAccessoire ? GenreRobinet.Vanne : GenreRobinet.Aucun;
+        }
+
+        /// <summary>
+        /// Raccord désigné par le nom de la FAMILLE d'un accessoire qui ne nomme aucune robinetterie (« Bride à collerette »,
+        /// « Bride pleine », « Coude »…) : la pièce est ce raccord, pas une vanne. Null sinon. Une correspondance choisie
+        /// pour la famille dans « Symboles… » passe avant.
+        /// </summary>
+        public static TypeComposant? Raccord(string famille)
+        {
+            var n = AnalyseSpool.Normaliser(famille);
+            if (n == "" || ParMots(famille) != GenreRobinet.Aucun) return null;
+            if (Correspondances.TryGetValue(Cle(famille), out var choisi) && choisi != GenreRobinet.Aucun) return null;
+            if (Regex.IsMatch(n, @"bride|flange|collerette|\bfaux ?bride")) return TypeComposant.Bride;
+            if (Regex.IsMatch(n, @"coude|elbow|\bbend\b|cintre")) return TypeComposant.Coude;
+            if (Regex.IsMatch(n, @"reduction|reducer|\breduc")) return TypeComposant.Reduction;
+            if (Regex.IsMatch(n, @"bouchon|\bcap\b|fond bombe|calotte|obturateur")) return TypeComposant.Bouchon;
+            if (Regex.IsMatch(n, @"\b(te|tee)\b")) return TypeComposant.Te;
+            if (Regex.IsMatch(n, @"manchon|coupling|raccord union|mamelon|nipple")) return TypeComposant.Manchon;
+            return null;
         }
 
         /// <summary>Genre reconnu par mots-clés dans un nom (Aucun si rien ne correspond).</summary>

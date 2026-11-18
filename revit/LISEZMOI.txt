@@ -120,9 +120,13 @@ LÉGENDE DES SYMBOLES
   créée avec les isométries, donne tous les symboles (option dans la fenêtre des isométries).
 
 ROBINETTERIE
-  Le symbole est choisi d'après le NOM DU TYPE de l'accessoire (« Vanne papillon DN100 », « Clapet à
-  battant », « STAD-F », « Dilatoflex »…), sinon d'après la famille. Bouton « Symboles… » de la fenêtre des
-  isométries : liste des types du projet et symbole trouvé, à corriger type par type (mémorisé).
+  Le symbole est choisi d'après le NOM DE LA FAMILLE de l'accessoire (« Vanne papillon », « TECOFI CB 3448N »,
+  « IMI STAF », « Dilatoflex »…). Le nom du type n'est pas lu (il peut ne contenir que le DN).
+  Famille sans mot reconnu : vanne par défaut. Bouton « Symboles… » de la fenêtre des isométries : liste des
+  familles du projet et symbole trouvé, à corriger famille par famille (mémorisé).
+  Bride dessinée dans une famille de vanne (accessoire de canalisation) : si le nom de la famille dit
+  « bride » (ou coude, réduction, té, bouchon, manchon) sans nommer de robinetterie, la pièce est une
+  BRIDE (cotes axe à bride, soudure au tube, matière du tube), pas une vanne.
   Symboles normalisés sur l'isométrie (le clapet avec la flèche d'écoulement).
   Références reconnues d'office : ASTORI 304, TECOFI VPI 4648 / VPE 4508 / F 3240 / CB 3448 / DI 7240,
   IMI STAD / STAF, CGR 165 / 293CB / 294CB / 369, SIEMENS V2V, FLAMCO FLEXVENT, WIKA 818.

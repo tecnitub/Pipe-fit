@@ -337,7 +337,7 @@ static class Tests
             Verifier(AnalyseSpool.Classer(Acc("Dilatoflex")) == TypeComposant.Accessoire && AnalyseSpool.Classer(Acc("Clapet à battant")) == TypeComposant.Vanne,
                 "compensateur = accessoire, clapet = vanne");
 
-            // Robinetterie installée par TECNITUB (fiche technique robinetterie) : reconnue par la seule référence du type
+            // Robinetterie installée par TECNITUB (fiche technique robinetterie) : reconnue par la référence dans le nom de la FAMILLE
             var refs = new[]
             {
                 ("ASTORI 304", GenreRobinet.Boisseau), ("304AB DN25", GenreRobinet.Boisseau), ("VPI 4648-02 DN100", GenreRobinet.Papillon), ("VPE 4508-08 DN400", GenreRobinet.Papillon),
@@ -347,38 +347,64 @@ static class Tests
                 ("CB 3448N DN80", GenreRobinet.Clapet), ("DI 7240N DN65", GenreRobinet.Compensateur), ("Manchon anti-vibratile", GenreRobinet.Compensateur),
                 ("V2V COMBINEE DN50", GenreRobinet.Motorisee), ("Vanne 2 voies Siemens", GenreRobinet.Motorisee), ("CGR 369 DN100", GenreRobinet.Compensateur),
             };
-            foreach (var (type, g) in refs)
-                Verifier(Robinetterie.Genre(Acc("Accessoire de canalisation", type)) == g, "référence « " + type + " » : " + Robinetterie.Genre(Acc("Accessoire de canalisation", type)) + " au lieu de " + g);
-            Verifier(Robinetterie.Genre(Acc("Tuyau", "Inox 304L")) != GenreRobinet.Boisseau, "« 304L » (inox) n'est pas un boisseau");
+            foreach (var (fam, g) in refs)
+            {
+                Verifier(Robinetterie.Genre(Acc(fam, "Standard")) == g, "famille « " + fam + " » : " + Robinetterie.Genre(Acc(fam, "Standard")) + " au lieu de " + g);
+                // Le nom du type n'est pas lu : la même référence dans le type seul ne donne pas le symbole
+                if (g != GenreRobinet.Vanne) Verifier(Robinetterie.Genre(Acc("Accessoire de canalisation", fam)) == GenreRobinet.Vanne, "référence « " + fam + " » dans le TYPE seul : ignorée");
+            }
+            Verifier(Robinetterie.Genre(Acc("Inox 304L")) != GenreRobinet.Boisseau, "« 304L » (inox) n'est pas un boisseau");
             // Appareils sur piquage (un seul raccordement) : symbolisés
-            var pur = Acc("Accessoire", "FLEXVENT SUPER R7"); pur.Extremites.RemoveAt(1); pur.Type = TypeComposant.Autre;
+            var pur = Acc("FLEXVENT SUPER R7", "R7"); pur.Extremites.RemoveAt(1); pur.Type = TypeComposant.Autre;
             var spu = new Spool { Nom = "PU" }; spu.Composants.Add(pur); AnalyseSpool.Analyser(spu);
             Verifier(pur.Genre == GenreRobinet.Purgeur && Robinetterie.Symbolise(pur) && pur.Designation.StartsWith("Purgeur d'air"), "purgeur sur piquage : symbolisé (" + pur.Designation + ")");
             Verifier(Legende.Pour(spu).Any(x => x.Code == "PURGEUR"), "purgeur dans la légende de l'isométrie");
             // Purgeur vissé sur un tube : joint démontable, pas de soudure
             var tpu = new Spool { Nom = "TP" };
             tpu.Composants.Add(C("t", "Tuyau", "", TypeComposant.Tube, 15, 200, null, E(0, 0, 0, 15, null), E(200, 0, 0, 15, "p")));
-            var pu2 = Acc("Accessoire", "FLEXVENT R9"); pu2.Id = "p"; pu2.Type = TypeComposant.Autre; pu2.Extremites.RemoveAt(1);
+            var pu2 = Acc("Flamco Flexvent R9", "R9"); pu2.Id = "p"; pu2.Type = TypeComposant.Autre; pu2.Extremites.RemoveAt(1);
             pu2.Extremites[0].Position = new Point3(200, 0, 0); pu2.Extremites[0].ConnecteA = "t"; tpu.Composants.Add(pu2);
             AnalyseSpool.Analyser(tpu);
             Verifier(tpu.Nombre(NatureAssemblage.Soudure) == 0 && tpu.Nombre(NatureAssemblage.Boulonne) == 1, "purgeur vissé : joint démontable, sans soudure");
 
-            // Le nom du TYPE décide : famille générique, types parlants ; correspondance choisie pour un type muet
-            var gen = Acc("Accessoire de canalisation", "Vanne papillon DN100");
-            Verifier(Robinetterie.Genre(gen) == GenreRobinet.Papillon, "genre lu dans le nom du type");
-            var contra = Acc("Vanne à opercule", "Clapet à battant PN16");
-            Verifier(Robinetterie.Genre(contra) == GenreRobinet.Clapet, "le nom du type passe avant celui de la famille");
-            var muet = Acc("Robinetterie KSB", "BOA-H DN80");
-            Verifier(Robinetterie.Genre(muet) == GenreRobinet.Vanne, "type muet : genre de la famille (vanne)");
-            Robinetterie.Correspondances[Robinetterie.Cle("BOA-H DN80")] = GenreRobinet.Reglage;
-            Verifier(Robinetterie.Genre(muet) == GenreRobinet.Reglage, "correspondance choisie pour le type");
-            var spm = new Spool { Nom = "M" }; var cm = Acc("Robinetterie KSB", "BOA-H DN80"); cm.Type = TypeComposant.Autre; spm.Composants.Add(cm); AnalyseSpool.Analyser(spm);
-            Verifier(cm.Genre == GenreRobinet.Reglage && cm.Designation == "Vanne de réglage BOA-H DN80", "désignation d'après le type : " + cm.Designation);
+            // Le nom de la FAMILLE décide, jamais celui du type ; correspondance choisie pour une famille muette
+            var gen = Acc("Vanne papillon", "DN100 PN16");
+            Verifier(Robinetterie.Genre(gen) == GenreRobinet.Papillon, "genre lu dans le nom de la famille");
+            var contra = Acc("Vanne papillon", "Clapet à battant PN16");
+            Verifier(Robinetterie.Genre(contra) == GenreRobinet.Papillon, "le nom du type est ignoré (la famille décide)");
+            var muet = Acc("Robinetterie KSB BOA-H", "DN80");
+            Verifier(Robinetterie.Genre(muet) == GenreRobinet.Vanne, "famille muette : vanne par défaut");
+            Robinetterie.Correspondances[Robinetterie.Cle("Robinetterie KSB BOA-H")] = GenreRobinet.Reglage;
+            Verifier(Robinetterie.Genre(muet) == GenreRobinet.Reglage, "correspondance choisie pour la famille");
+            Robinetterie.Correspondances[Robinetterie.Cle("DN80")] = GenreRobinet.Clapet;
+            Verifier(Robinetterie.Genre(muet) == GenreRobinet.Reglage, "une correspondance au nom du type n'est pas lue");
+            var spm = new Spool { Nom = "M" }; var cm = Acc("Robinetterie KSB BOA-H", "DN80"); cm.Type = TypeComposant.Autre; spm.Composants.Add(cm); AnalyseSpool.Analyser(spm);
+            Verifier(cm.Genre == GenreRobinet.Reglage && cm.Designation == "Vanne de réglage Robinetterie KSB BOA-H DN80", "désignation famille + type : " + cm.Designation);
             Robinetterie.Correspondances.Clear();
-            var spp = new Spool { Nom = "P" }; var cp = Acc("Accessoire de canalisation", "Vanne papillon DN100"); cp.Type = TypeComposant.Autre; spp.Composants.Add(cp); AnalyseSpool.Analyser(spp);
-            Verifier(cp.Designation == "Vanne papillon DN100", "désignation = nom du type parlant : " + cp.Designation);
-            var sps = new Spool { Nom = "S" }; var cs = Acc("Robinetterie à brides", "STAD-F DN100"); cs.Type = TypeComposant.Autre; sps.Composants.Add(cs); AnalyseSpool.Analyser(sps);
-            Verifier(cs.Genre == GenreRobinet.Reglage && cs.Designation == "Vanne de réglage STAD-F DN100", "type STAD-F : genre précisé : " + cs.Designation);
+            var sps = new Spool { Nom = "S" }; var cs = Acc("IMI STAF", "DN100"); cs.Type = TypeComposant.Autre; sps.Composants.Add(cs); AnalyseSpool.Analyser(sps);
+            Verifier(cs.Genre == GenreRobinet.Reglage && cs.Designation == "Vanne de réglage IMI STAF DN100", "famille STAF : genre précisé : " + cs.Designation);
+
+            // Bride dessinée dans une famille d'accessoire (catégorie vanne) : le nom de la famille en fait une bride
+            Verifier(AnalyseSpool.Classer(Acc("Bride à collerette PN16", "DN100")) == TypeComposant.Bride, "bride sous famille d'accessoire : bride");
+            Verifier(Robinetterie.Genre(Acc("Bride plate à souder", "DN80")) == GenreRobinet.Aucun, "bride sous famille d'accessoire : pas de symbole de vanne");
+            Verifier(AnalyseSpool.Classer(Acc("Vanne à brides", "DN100")) == TypeComposant.Vanne, "« vanne à brides » reste une vanne");
+            Verifier(AnalyseSpool.Classer(Acc("TECOFI VPI 4648-02 entre brides", "DN100")) == TypeComposant.Vanne, "papillon entre brides reste une vanne");
+            var bp = Acc("Bride pleine", "DN100"); bp.Extremites.RemoveAt(1);
+            Verifier(AnalyseSpool.Classer(bp) == TypeComposant.Bride, "bride pleine sous famille d'accessoire");
+            {
+                var sb = new Spool { Nom = "BR" };
+                sb.Composants.Add(C("t", "Tuyau", "", TypeComposant.Tube, 100, 1000, null, E(0, 0, 0, 100, null), E(1000, 0, 0, 100, "b")));
+                sb.Composants[0].Materiau = "Acier P235GH";
+                var br = Acc("Bride à collerette", "DN100"); br.Id = "b"; br.Type = TypeComposant.Autre;
+                br.Extremites[0].ConnecteA = "t"; br.Extremites[0].Position = new Point3(1000, 0, 0); br.Extremites[1].Position = new Point3(1080, 0, 0);
+                sb.Composants.Add(br); AnalyseSpool.Analyser(sb);
+                Verifier(br.Type == TypeComposant.Bride && br.Genre == GenreRobinet.Aucun && !Robinetterie.Symbolise(br) && br.Materiau == "Acier P235GH",
+                    "bride sous famille d'accessoire : bride, sans symbole, matière du tube (" + br.Type + ", " + br.Designation + ", " + br.Materiau + ")");
+                Verifier(sb.Nombre(NatureAssemblage.Soudure) == 1, "bride soudée au tube : 1 soudure");
+            }
+            Robinetterie.Correspondances[Robinetterie.Cle("Bride spéciale")] = GenreRobinet.Clapet;
+            Verifier(AnalyseSpool.Classer(Acc("Bride spéciale", "DN100")) == TypeComposant.Vanne, "correspondance choisie : passe avant la bride");
+            Robinetterie.Correspondances.Clear();
 
             // Ligne tube – clapet – tube, arrivée du fluide par le bout gauche
             Spool Ligne(bool depuisGauche)

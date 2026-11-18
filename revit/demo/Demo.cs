@@ -156,15 +156,15 @@ static class Demo
         res.Add(b);
 
         // SP-104 : essai avec la robinetterie installée par TECNITUB (fiche technique), eau glacée DN100 de la pompe P2 à la
-        // CTA-03. Famille générique : seule la RÉFÉRENCE du type donne le symbole (VPI 4648 → papillon, F 3240 → filtre,
+        // CTA-03. La RÉFÉRENCE dans le nom de la FAMILLE donne le symbole (le type ne dit que le DN) (VPI 4648 → papillon, F 3240 → filtre,
         // CB 3448 → clapet, STAF → réglage, V2V → vanne motorisée, DI 7240 → manchon anti-vibratile, FLEXVENT → purgeur)
         var d = new Spool { Nom = "SP-104" };
         new Ligne(d, "EG-104", "Acier P235GH").Depart(new Point3(0, 0, 0), X, 100, "POMPE-P2").Arrivee()
-            .Vanne(600, "Robinetterie à brides", 52, "TECOFI VPI 4648-02 DN100").Vanne(500, "Robinetterie à brides", 280, "TECOFI F 3240-EP DN100")
-            .Vanne(500, "Robinetterie à brides", 180, "TECOFI CB 3448N DN100").Coude(700, Z).Te(500, X, out var brp)
-            .Vanne(500, "Robinetterie à brides", 290, "IMI STAF DN100").Coude(700, Y)
-            .Vanne(500, "Robinetterie à brides", 250, "SIEMENS V2V COMBINEE DN100").Vanne(500, "Robinetterie à brides", 130, "TECOFI DI 7240N DN100").FinBride(500, "CTA-03");
-        brp.Appareil(250, "Accessoire de canalisation", "FLAMCO FLEXVENT SUPER R7");
+            .Vanne(600, "TECOFI VPI 4648-02", 52, "DN100").Vanne(500, "TECOFI F 3240-EP", 280, "DN100")
+            .Vanne(500, "TECOFI CB 3448N", 180, "DN100").Coude(700, Z).Te(500, X, out var brp)
+            .Vanne(500, "IMI STAF", 290, "DN100").Coude(700, Y)
+            .Vanne(500, "SIEMENS V2V COMBINEE", 250, "DN100").Vanne(500, "TECOFI DI 7240N", 130, "DN100").FinBride(500, "CTA-03");
+        brp.Appareil(250, "FLAMCO FLEXVENT SUPER R7", "DN15");
         res.Add(d);
 
         // SP-103 : retour process DN80 réduit en DN50

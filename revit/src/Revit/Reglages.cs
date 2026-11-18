@@ -60,9 +60,9 @@ namespace PipeFit.Isometries.Revit
 
         static string Fichier => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PipeFit", "Isometries.ini");
 
-        static string FichierSymboles => Path.Combine(Path.GetDirectoryName(Fichier), "Symboles robinetterie.ini");
+        static string FichierSymboles => Path.Combine(Path.GetDirectoryName(Fichier), "Symboles robinetterie par famille.ini");
 
-        /// <summary>Correspondances nom de type d'accessoire → symbole (fichier « Symboles robinetterie.ini », lignes « type=Genre »).</summary>
+        /// <summary>Correspondances nom de famille d'accessoire → symbole (fichier « Symboles robinetterie par famille.ini », lignes « famille=Genre »).</summary>
         public static Dictionary<string, PipeFit.Isometries.Core.GenreRobinet> ChargerSymboles()
         {
             var d = new Dictionary<string, PipeFit.Isometries.Core.GenreRobinet>();

@@ -1,5 +1,5 @@
-// Fenêtre « Symboles de robinetterie » : pour chaque type d'accessoire du projet, le symbole trouvé d'après le nom du
-// type (puis de la famille), modifiable. Les choix sont mémorisés par nom de type (Symboles robinetterie.ini).
+// Fenêtre « Symboles de robinetterie » : pour chaque FAMILLE d'accessoire du projet, le symbole trouvé d'après le nom de
+// la famille (le nom du type n'est pas lu), modifiable. Les choix sont mémorisés par nom de famille.
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -32,29 +32,31 @@ namespace PipeFit.Isometries.Revit
             ClientSize = new Size(820, 480);
             var intro = new Label
             {
-                Text = "Le symbole est trouvé d'après le NOM DU TYPE de l'accessoire (mots « papillon », « clapet », « réglage », « STAD », "
-                    + "« Dilatoflex »…), puis d'après la famille. Choisissez un symbole pour corriger un type ; « (automatique) » revient à la recherche.",
+                Text = "Le symbole est trouvé d'après le NOM DE LA FAMILLE de l'accessoire (mots « papillon », « clapet », « réglage », références "
+                    + "« STAF », « VPI 4648 », « FLEXVENT »…) ; le nom du type n'est pas lu. Choisissez un symbole pour corriger une famille ; « (automatique) » revient à la recherche.",
                 Location = new Point(12, 10), Size = new Size(796, 36),
             };
             grille.SetBounds(12, 52, 796, 372);
             grille.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             grille.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Famille", ReadOnly = true, FillWeight = 30 });
-            grille.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Type", ReadOnly = true, FillWeight = 34 });
-            grille.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Trouvé par le nom", ReadOnly = true, FillWeight = 18 });
+            grille.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Types (pour information)", ReadOnly = true, FillWeight = 34 });
+            grille.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Trouvé par la famille", ReadOnly = true, FillWeight = 18 });
             var choix = new DataGridViewComboBoxColumn { HeaderText = "Symbole", FillWeight = 22, FlatStyle = FlatStyle.Flat };
             choix.Items.Add(Auto);
             foreach (var g in Genres) choix.Items.Add(Robinetterie.Libelle(g));
             grille.Columns.Add(choix);
 
             var actuel = Robinetterie.Correspondances;
-            foreach (var (fam, type) in types)
+            foreach (var grp in types.GroupBy(t => t.Famille).OrderBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase))
             {
-                var c = new Composant { Famille = fam, TypeNom = type, EstAccessoire = true };
-                var trouve = Robinetterie.ParMots(type);
-                var source = trouve != GenreRobinet.Aucun ? "type" : (trouve = Robinetterie.ParMots(fam)) != GenreRobinet.Aucun ? "famille" : "aucun mot-clé";
-                var auto = trouve == GenreRobinet.Aucun ? "Vanne (par défaut)" : Robinetterie.Libelle(trouve) + " (" + source + ")";
-                var val = actuel.TryGetValue(Robinetterie.Cle(type), out var g) && g != GenreRobinet.Aucun ? Robinetterie.Libelle(g) : Auto;
-                grille.Rows.Add(fam, type, auto, val);
+                var fam = grp.Key;
+                var noms = string.Join(", ", grp.Select(t => t.Type).Where(t => !string.IsNullOrWhiteSpace(t)).Distinct());
+                var trouve = Robinetterie.ParMots(fam);
+                var rac = Robinetterie.Raccord(fam);
+                var auto = rac != null ? AnalyseSpool.Libelle(rac.Value) + " (raccord, sans symbole)"
+                    : trouve == GenreRobinet.Aucun ? "Vanne (par défaut)" : Robinetterie.Libelle(trouve);
+                var val = actuel.TryGetValue(Robinetterie.Cle(fam), out var g) && g != GenreRobinet.Aucun ? Robinetterie.Libelle(g) : Auto;
+                grille.Rows.Add(fam, noms, auto, val);
             }
             if (types.Count == 0) intro.Text += "\n(Aucun accessoire de canalisation dans ce projet.)";
 
@@ -71,7 +73,7 @@ namespace PipeFit.Isometries.Revit
                 var d = new Dictionary<string, GenreRobinet>(Robinetterie.Correspondances);
                 foreach (DataGridViewRow row in grille.Rows)
                 {
-                    var cle = Robinetterie.Cle(row.Cells[1].Value as string ?? "");
+                    var cle = Robinetterie.Cle(row.Cells[0].Value as string ?? "");
                     var v = row.Cells[3].Value as string ?? Auto;
                     var g = Genres.FirstOrDefault(x => Robinetterie.Libelle(x) == v);
                     if (v == Auto) d.Remove(cle); else d[cle] = g;

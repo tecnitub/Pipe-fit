@@ -101,23 +101,27 @@ Option décochée : étiquettes Revit (familles d'étiquettes choisies), placée
 
 ## Robinetterie
 
-- **Genre reconnu d'après le nom du TYPE de l'accessoire** (« Vanne papillon DN100 », « Clapet à battant », « STAD-F »,
-  « Dilatoflex »…), puis d'après le nom de la famille si le type ne dit rien : vanne (opercule), vanne papillon, vanne de
+- **Genre reconnu d'après le seul nom de la FAMILLE de l'accessoire** (« Vanne papillon », « Clapet à battant », « IMI STAF »,
+  « Dilatoflex »…) ; le nom du type n'est jamais lu. Famille sans mot reconnu : vanne par défaut. Genres : vanne (opercule), vanne papillon, vanne de
   réglage / d'équilibrage (STAD, TBV, MSV…), clapet anti-retour, vanne à boisseau, filtre, compensateur de dilatation
   (Dilatoflex, manchette antivibratile, soufflet). Mots-clés français et anglais.
-- **Références des fabricants installés par TECNITUB** (fiche technique robinetterie) reconnues d'office, même sans mot
-  descriptif dans le nom : ASTORI 304 / 304AB (boisseau), TECOFI VPI 4648 / VPE 4508 (papillon), F 3240 (filtre),
+- **Brides dessinées dans une famille de vanne** (catégorie accessoire de canalisation) : si le nom de la famille dit
+  « bride », « collerette », « flange » (ou coude, réduction, té, bouchon, manchon) sans nommer de robinetterie, la pièce
+  est traitée comme une bride : pas de symbole de vanne, cotes axe à bride, soudure au tube, matière du tube.
+  « Vanne à brides » ou « VPI 4648 entre brides » restent des vannes.
+- **Références des fabricants installés par TECNITUB** (fiche technique robinetterie) reconnues d'office dans le nom de la famille, même sans mot
+  descriptif : ASTORI 304 / 304AB (boisseau), TECOFI VPI 4648 / VPE 4508 (papillon), F 3240 (filtre),
   CB 3448 (clapet double battant), DI 7240 (manchon anti-vibratile), IMI STAD / STAF et CGR 165 (réglage), SIEMENS V2V
   (vanne 2 voies motorisée), FLAMCO FLEXVENT (purgeur), WIKA 818 (manomètre), CGR 293CB / 294CB (thermomètre), CGR 369
   (compensateur).
 - **Appareils sur piquage** (un seul raccordement) : purgeur d'air, manomètre, thermomètre ont leur symbole, dessiné
   depuis le piquage vers l'appareil ; leur raccordement vissé compte comme joint démontable, pas comme soudure.
-- **Correspondances par type** : bouton « Symboles… » de la fenêtre des isométries ; il liste les types d'accessoires
-  du projet avec le symbole trouvé (et s'il vient du type ou de la famille), et permet de le corriger type par type
-  (ex. « BOA-H DN80 » → vanne de réglage). Choix mémorisés dans `%AppData%\PipeFit\Symboles robinetterie.ini`, valables
+- **Correspondances par famille** : bouton « Symboles… » de la fenêtre des isométries ; il liste les familles
+  d'accessoires du projet (avec leurs types pour information) et le symbole trouvé, et permet de le corriger famille par
+  famille (ex. « KSB BOA-H » → vanne de réglage). Choix mémorisés dans `%AppData%\PipeFit\Symboles robinetterie par famille.ini`, valables
   pour toutes les commandes et tous les projets.
-- **Désignation** de la nomenclature : le nom du type, précédé du genre s'il ne le dit pas (« Vanne de réglage STAD-F
-  DN100 »). La robinetterie garde sa propre matière (pas celle du tube).
+- **Désignation** de la nomenclature : nom de la famille puis du type, précédés du genre s'ils ne le disent pas
+  (« Vanne de réglage IMI STAF DN100 »). La robinetterie garde sa propre matière (pas celle du tube).
 - **Symboles d'isométrie normalisés** (option cochée par défaut) : les familles de robinetterie sont masquées dans la
   vue et le symbole de leur genre est dessiné sur la feuille, orienté sur le tube, avec sa bulle de repère : papillon
   (disque), réglage (cercle, tige, flèche de réglage), clapet (moitié aval hachurée et flèche d'écoulement), boisseau,

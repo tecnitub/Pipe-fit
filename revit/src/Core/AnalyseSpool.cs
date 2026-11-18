@@ -75,6 +75,10 @@ namespace PipeFit.Isometries.Core
             var nom = Normaliser(c.Famille + " " + c.TypeNom);
             if (c.EstAccessoire)
             {
+                // Bride (ou autre raccord) dessinée dans une famille d'accessoire : le nom de la famille la désigne
+                var r = Robinetterie.Raccord(c.Famille);
+                if (r == TypeComposant.Bride && c.Extremites.Count == 1) return TypeComposant.Bride;
+                if (r != null) return r.Value;
                 var g = Robinetterie.Genre(c);
                 return g == GenreRobinet.Aucun ? TypeComposant.Accessoire : Robinetterie.Type(g);
             }
@@ -141,13 +145,6 @@ namespace PipeFit.Isometries.Core
             string d;
             if (c.Type == TypeComposant.Tube)
                 d = "Tube" + (type != "" ? " " + type : fam != "" && !Normaliser(fam).StartsWith("tub") ? " " + fam : "");
-            else if (c.EstAccessoire && Robinetterie.Genre(c, out var parType) is var gt && parType && SansDefaut(c.TypeNom) != "")
-            {
-                // Robinetterie reconnue par le nom de son type : la désignation est ce nom (précédé du genre s'il ne le dit pas)
-                d = c.TypeNom.Trim();
-                var lib = Robinetterie.Libelle(gt);
-                if (gt != GenreRobinet.Vanne && !Normaliser(d).Contains(Robinetterie.MotCle(gt))) d = lib + " " + d;
-            }
             else
             {
                 d = fam == "" ? Libelle(c.Type) : fam;
@@ -179,7 +176,7 @@ namespace PipeFit.Isometries.Core
             var parId = s.Composants.ToDictionary(c => c.Id);
             for (int passe = 0; passe < 3; passe++)
                 // La robinetterie et les accessoires ont leur propre matière (corps fonte, laiton…) : pas d'héritage du tube
-                foreach (var c in s.Composants.Where(x => string.IsNullOrWhiteSpace(x.Materiau) && !x.EstAccessoire))
+                foreach (var c in s.Composants.Where(x => string.IsNullOrWhiteSpace(x.Materiau) && !(x.EstAccessoire && x.Genre != GenreRobinet.Aucun)))
                     foreach (var e in c.Extremites)
                         if (e.ConnecteA != null && parId.TryGetValue(e.ConnecteA, out var v) && !string.IsNullOrWhiteSpace(v.Materiau))
                         { c.Materiau = v.Materiau; break; }
