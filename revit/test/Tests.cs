@@ -368,6 +368,17 @@ static class Tests
         Verifier(cotes.Contains("674 axe / extrémité"), "cote d'axe à bout de tube (branche)");
         Verifier(cotes.Contains("1000 extrémité / axe") || cotes.Contains("1000 axe / extrémité"), "cote bout de tube / axe coude");
 
+        // Pente : évacuation à 1 %, tube horizontal, tube vertical
+        {
+            var tp = C("p", "Tuyau", "", TypeComposant.Tube, 100, 2000, null, E(0, 0, 0, 100, null), E(2000, 0, -20, 100, null));
+            AnalyseSpool.Pente(tp);
+            Verifier(tp.PentePourcent == 1 && tp.BasIndex == 1 && tp.TextePente == "pente 1 %", "pente 1 % vers l'extrémité basse (" + tp.TextePente + ")");
+            var th = C("h", "Tuyau", "", TypeComposant.Tube, 100, 2000, null, E(0, 0, 0, 100, null), E(2000, 0, 0, 100, null)); AnalyseSpool.Pente(th);
+            var tv = C("v", "Tuyau", "", TypeComposant.Tube, 100, 2000, null, E(0, 0, 0, 100, null), E(0, 0, 2000, 100, null)); AnalyseSpool.Pente(tv);
+            var t5 = C("q", "Tuyau", "", TypeComposant.Tube, 100, 2000, null, E(0, 0, 10, 100, null), E(2000, 0, 0, 100, null)); AnalyseSpool.Pente(t5);
+            Verifier(th.PentePourcent == 0 && tv.PentePourcent == 0 && t5.TextePente == "pente 0,5 %" && t5.BasIndex == 1, "pas de pente à l'horizontale ni à la verticale ; 0,5 %");
+        }
+
         // Cotes ajoutées à la main : enregistrement, point d'attache le plus proche du clic, valeur recalculée
         {
             var lu = CoteAjoutee.Lire(CoteAjoutee.Ecrire(new[] { new CoteAjoutee { AttacheA = "axe", IdB = "6", AttacheB = "bout1", PositionB = new Point3(1674, 0, 1500) } }));

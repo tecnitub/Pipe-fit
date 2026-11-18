@@ -468,10 +468,18 @@ pre { margin: 0; font: 12.5px/1.5 var(--f-mono); background: var(--surface); bor
       });
       s.composants.filter(c => c.type === 'Tube' && c.ext.length >= 2).forEach(c => {
         const a = F(c.ext[0].p), b = F(c.ext[1].p);
-        etiq.push({ forme: 'cadre', texte: c.repere, w: Pl.largeur(c.repere, 2.3, true) + 2.4, h: 4.2, dir: normale(b[0] - a[0], b[1] - a[1], (a[0] + b[0]) / 2, (a[1] + b[1]) / 2),
+        etiq.push({ forme: 'cadre', texte: c.repere + (c.pente ? '  ' + c.pente : ''), w: Pl.largeur(c.repere + (c.pente ? '  ' + c.pente : ''), 2.3, true) + 2.4, h: 4.2, dir: normale(b[0] - a[0], b[1] - a[1], (a[0] + b[0]) / 2, (a[1] + b[1]) / 2),
           ancrages: [0.5, 0.3, 0.7, 0.15, 0.85].map(t => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]) });
       });
     }
+    // Flèche de pente le long des tubes en pente, vers l'extrémité basse
+    s.composants.filter(c => c.pente && c.bas && c.ext.length >= 2).forEach(c => {
+      const a = F(c.ext[0].p), b = F(c.ext[1].p), lo = F(c.bas), hi = Math.hypot(lo[0] - a[0], lo[1] - a[1]) < 1e-6 ? b : a;
+      let dx = lo[0] - hi[0], dy = lo[1] - hi[1]; const l = Math.hypot(dx, dy); if (l < 12) return;
+      dx /= l; dy /= l; const nx = -dy, ny = dx, mx = (a[0] + b[0]) / 2 + nx * 2.6, my = (a[1] + b[1]) / 2 + ny * 2.6;
+      const segs = [[mx - dx * 4, my - dy * 4, mx + dx * 4, my + dy * 4], [mx + dx * 4, my + dy * 4, mx + dx * 2.4 + nx * 1.1, my + dy * 2.4 + ny * 1.1], [mx + dx * 4, my + dy * 4, mx + dx * 2.4 - nx * 1.1, my + dy * 2.4 - ny * 1.1]];
+      segs.forEach(q => { line(q[0], q[1], q[2], q[3], 'k-ink', 0.3); obs.forts.push(q); });
+    });
     Pl.placer(etiq, obs, zv);
     etiq.forEach(e => {
       const [rx, ry] = Pl.bord(e, e.x, e.y, e.ancrage);

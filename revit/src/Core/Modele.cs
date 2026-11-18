@@ -107,6 +107,11 @@ namespace PipeFit.Isometries.Core
         public bool PiquageDirect;
         /// <summary>Cotes ajoutées à la main depuis cet élément (point A) vers un autre élément (point B).</summary>
         public List<CoteAjoutee> CotesAjoutees = new List<CoteAjoutee>();
+        /// <summary>Tube en pente (0,05 à 25 %) : pente en %, 0 sinon ; BasIndex = extrémité basse (0 ou 1).</summary>
+        public double PentePourcent;
+        public int BasIndex;
+        /// <summary>« pente 1 % », « pente 0,5 % ».</summary>
+        public string TextePente => PentePourcent > 0 ? "pente " + PentePourcent.ToString(PentePourcent < 10 ? "0.#" : "0", System.Globalization.CultureInfo.GetCultureInfo("fr-FR")) + " %" : "";
         /// <summary>Tube de branche : longueur du piquage direct ajoutée à son débit.</summary>
         public double PiquageMm;
         /// <summary>Piquage : point de l'axe du collecteur où la branche est piquée (projection sur l'axe du tube collecteur).</summary>

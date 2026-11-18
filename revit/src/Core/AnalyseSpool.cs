@@ -49,6 +49,7 @@ namespace PipeFit.Isometries.Core
             }
             HeriterMateriau(s);
             MarquerPiquages(s);
+            foreach (var c in s.Composants) Pente(c);
 
             var ordre = Parcourir(s.Composants);
             NumeroterNomenclature(s, ordre);
@@ -222,6 +223,20 @@ namespace PipeFit.Isometries.Core
         }
 
         // ---------- Nomenclature, débit, assemblages ----------
+
+        /// <summary>Pente d'un tube (0,05 à 25 %, ni horizontal ni vertical) et son extrémité basse.</summary>
+        public static void Pente(Composant c)
+        {
+            c.PentePourcent = 0; c.BasIndex = 0;
+            if (c.Type != TypeComposant.Tube || c.Extremites.Count != 2) return;
+            var d = c.Extremites[1].Position - c.Extremites[0].Position;
+            var hz = Math.Sqrt(d.X * d.X + d.Y * d.Y);
+            if (hz < 1) return;
+            var p = Math.Abs(d.Z) / hz;
+            if (p < 0.0005 || p > 0.25) return;
+            c.PentePourcent = Math.Round(p * 100, p * 100 < 10 ? 1 : 0);
+            c.BasIndex = d.Z < 0 ? 1 : 0;
+        }
 
         /// <summary>
         /// Piquages directs : un piquage Revit (raccord à piquage, longueur dessinée) qui n'est pas un olet ni une selle est

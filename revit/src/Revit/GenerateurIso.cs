@@ -517,6 +517,30 @@ namespace PipeFit.Isometries.Revit
         // ---------- Robinetterie ----------
 
         /// <summary>
+        /// Flèche de pente le long d'un tube en pente, vers son extrémité basse, à côté du milieu du tube.
+        /// </summary>
+        void FlechePente(ViewSheet f, Composant c, Func<Point3, (double x, double y)> Feuille, Obstacles obs)
+        {
+            try
+            {
+                var haut = Feuille(c.Extremites[1 - c.BasIndex].Position); var bas = Feuille(c.Extremites[c.BasIndex].Position);
+                double dx = bas.x - haut.x, dy = bas.y - haut.y, l = Math.Sqrt(dx * dx + dy * dy);
+                if (l < 12) return;
+                dx /= l; dy /= l;
+                double nx = -dy, ny = dx, mx = (haut.x + bas.x) / 2 + nx * 2.6, my = (haut.y + bas.y) / 2 + ny * 2.6;
+                var segs = new List<(double, double, double, double)>
+                {
+                    (mx - dx * 4, my - dy * 4, mx + dx * 4, my + dy * 4),
+                    (mx + dx * 4, my + dy * 4, mx + dx * 2.4 + nx * 1.1, my + dy * 2.4 + ny * 1.1),
+                    (mx + dx * 4, my + dy * 4, mx + dx * 2.4 - nx * 1.1, my + dy * 2.4 - ny * 1.1),
+                };
+                Traits(f, segs);
+                foreach (var g in segs) obs.TraitsForts.Add(g);
+            }
+            catch { }
+        }
+
+        /// <summary>
         /// Symbole normalisé de chaque vanne / accessoire (papillon, réglage, clapet avec flèche d'écoulement, compensateur…),
         /// orienté sur le tube dans le sens de l'écoulement, avec sa bulle de repère.
         /// </summary>
@@ -666,8 +690,10 @@ namespace PipeFit.Isometries.Revit
                 foreach (var c in spool.Composants.Where(x => x.Type == TypeComposant.Tube && x.Extremites.Count >= 2))
                 {
                     var a = Feuille(c.Extremites[0].Position); var b = Feuille(c.Extremites[1].Position);
-                    var e = new Etiquette { Texte = c.Repere, Largeur = PlacementEtiquettes.LargeurTexte(c.Repere, h, true) + 2.4, Hauteur = h + 1.7,
+                    var txt = c.Repere + (c.PentePourcent > 0 ? "  " + c.TextePente : "");
+                    var e = new Etiquette { Texte = txt, Largeur = PlacementEtiquettes.LargeurTexte(txt, h, true) + 2.4, Hauteur = h + 1.7,
                         Direction = Normale(b.x - a.x, b.y - a.y, (a.x + b.x) / 2, (a.y + b.y) / 2) };
+                    if (c.PentePourcent > 0) FlechePente(f, c, Feuille, obs);
                     foreach (var t in new[] { 0.5, 0.3, 0.7, 0.15, 0.85 }) e.Ancrages.Add((a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t));
                     liste.Add((e, "cadre"));
                 }

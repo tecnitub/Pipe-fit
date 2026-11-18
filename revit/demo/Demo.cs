@@ -171,6 +171,12 @@ static class Demo
         clapet.CotesAjoutees.Add(new CoteAjoutee { AttacheA = "axe", IdB = staf.Id, AttacheB = "axe" });
         res.Add(d);
 
+        // SP-105 : évacuation des condensats en pente à 1 % (acier galvanisé DN50), descente en chute verticale
+        var ev = new Spool { Nom = "SP-105" };
+        new Ligne(ev, "EU-105", "Acier galvanisé").Depart(new Point3(0, 0, 0), new Point3(1, 0, -0.01), 50, "CTA-03")
+            .Coude(1800, new Point3(0, 1, -0.01)).Coude(1500, M(Z)).FinTube(900, "COLONNE-EU");
+        res.Add(ev);
+
         // SP-103 : retour process DN80 réduit en DN50
         var c = new Spool { Nom = "SP-103" };
         new Ligne(c, "PROC-R", "Inox 304L").Depart(new Point3(0, 0, 0), Y, 80, "SP-102")
@@ -337,6 +343,7 @@ static class Demo
                     // Appareil sur piquage : axe vers l'appareil (sens inverse de son connecteur)
                     dirp = Robinetterie.Symbolise(c) && c.Extremites.Count == 1 && c.Extremites[0].Direction.HasValue ? P(c.Extremites[0].Direction.Value * -1) : null,
                     axe = Cotation.EstNoeud(c) ? P(Cotation.PointAxe(c)) : null,
+                    pente = c.TextePente, bas = c.PentePourcent > 0 ? P(c.Extremites[c.BasIndex].Position) : null,
                     // Bride : face de joint, côté soudé et symbole collet + bride tournante (u = 0 à la face)
                     bride = SymboleBride.Dessinee(c) ? new { f = P(SymboleBride.Faces(c, s).Face.Position), s = P(SymboleBride.Faces(c, s).Soudure.Position) } : null,
                     ext = c.Extremites.Select(e => new { p = P(e.Position), dn = e.DnMm, ext = e.ConnecteA != null && !s.Composants.Any(x => x.Id == e.ConnecteA) ? e.ConnecteA : null }),
