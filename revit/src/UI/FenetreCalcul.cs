@@ -17,9 +17,25 @@ namespace PipeFit.Isometries.Revit
     {
         static readonly CultureInfo Fr = CultureInfo.GetCultureInfo("fr-FR");
         readonly bool air;
-        readonly List<Troncon> troncons;
-        readonly double[] debitsModele;     // débit lu (Revit ou calculé depuis les bouches), 0 si inconnu
-        readonly bool[] debitSaisi;
+        /// <summary>Un jeu de lignes : tout le calcul, ou un chemin de la CTA vers une bouche.</summary>
+        sealed class Etat
+        {
+            public string Libelle = "";
+            public List<Troncon> Troncons;
+            public double[] DebitsModele;   // débit lu (Revit ou calculé depuis les bouches), 0 si inconnu
+            public bool[] DebitSaisi;
+            public List<string> Ids = new List<string>();
+            public double TotalPa;
+        }
+        readonly List<Etat> etats = new List<Etat>();
+        Etat courant;
+        List<Troncon> troncons => courant.Troncons;
+        double[] debitsModele => courant.DebitsModele;
+        bool[] debitSaisi => courant.DebitSaisi;
+        readonly bool parChemins;
+        readonly ComboBox cbChemin = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+        /// <summary>Éléments du chemin à sélectionner dans Revit (bouton « Sélectionner le chemin »).</summary>
+        public List<string> CheminASelectionner { get; private set; }
         readonly string projet, titre;
         readonly List<string> notes;
         ResultatPerte resultat;
@@ -47,10 +63,15 @@ namespace PipeFit.Isometries.Revit
         const int CDebit = 3, CZeta = 7, CFixe = 8;
 
         public FenetreCalcul(bool air, string titre, string projet, List<Troncon> troncons, List<string> notes)
+            : this(air, titre, projet, new List<(string, List<Troncon>)> { ("", troncons) }, notes, false) { }
+
+        /// <summary>Mode chemins : un chemin par bouche (le plus défavorisé en tête), choisi dans la liste.</summary>
+        public FenetreCalcul(bool air, string titre, string projet, List<(string Libelle, List<Troncon> Troncons)> chemins, List<string> notes, bool parChemins)
         {
-            this.air = air; this.titre = titre; this.projet = projet; this.troncons = troncons; this.notes = notes ?? new List<string>();
-            debitsModele = troncons.Select(t => t.DebitM3h).ToArray();
-            debitSaisi = new bool[troncons.Count];
+            this.air = air; this.titre = titre; this.projet = projet; this.notes = notes ?? new List<string>(); this.parChemins = parChemins;
+            foreach (var (lib, tr) in chemins)
+                etats.Add(new Etat { Libelle = lib, Troncons = tr, DebitsModele = tr.Select(t => t.DebitM3h).ToArray(), DebitSaisi = new bool[tr.Count], Ids = tr.Select(t => t.Id).ToList() });
+            courant = etats[0];
             Text = "Pipe-Fit – " + titre;
             Font = new Font("Segoe UI", 9f);
             AutoScaleMode = AutoScaleMode.Dpi;
@@ -79,6 +100,17 @@ namespace PipeFit.Isometries.Revit
                 Controls.AddRange(new Control[] { cbFluide, nudGlycol, nudTemp, nudDebit, nudVmax });
             }
             y += 34;
+            if (parChemins)
+            {
+                L("Chemin :", 12, 60);
+                cbChemin.SetBounds(72, y, 700, 24); cbChemin.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+                var sel = new Button { Text = "Sélectionner ce chemin dans Revit", Anchor = AnchorStyles.Top | AnchorStyles.Left };
+                sel.SetBounds(784, y - 1, 240, 27);
+                sel.Click += (s2, e2) => { CheminASelectionner = courant.Ids.ToList(); DialogResult = DialogResult.Yes; Close(); };
+                Controls.AddRange(new Control[] { cbChemin, sel });
+                cbChemin.SelectedIndexChanged += (s2, e2) => { if (cbChemin.SelectedIndex >= 0 && etats[cbChemin.SelectedIndex] != courant) { courant = etats[cbChemin.SelectedIndex]; Remplir(); Recalculer(); } };
+                y += 32;
+            }
             lblNote.Text = (air
                 ? "Débits : lus dans Revit, sinon calculés depuis les bouches en aval de la CTA (source). ζ et pertes fixes (bouches, batteries, filtres : valeurs fabricant) modifiables."
                 : "Débits : lus dans Revit (calcul de débit du système), sinon le débit saisi ci-dessus. ζ par défaut selon le raccord ou la vanne (pleine ouverture), modifiables ; perte fixe : valeur fabricant (Pa).")
@@ -91,7 +123,7 @@ namespace PipeFit.Isometries.Revit
             void Col(string t, int w, bool ro = true) => grille.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = t, FillWeight = w, ReadOnly = ro, SortMode = DataGridViewColumnSortMode.NotSortable });
             Col("Rep.", 5); Col("Élément", 30); Col("Section (mm)", 9); Col("Débit (m³/h)", 9, false); Col("Long. (m)", 7); Col("Vitesse (m/s)", 8); Col("J (Pa/m)", 7);
             Col("ζ", 6, false); Col("Perte fixe (Pa)", 8, false); Col("ΔP (Pa)", 8); Col("Remarque", 26);
-            foreach (var t in troncons) grille.Rows.Add(t.Repere, t.Designation, t.Section, "", t.LongueurM > 0 ? t.LongueurM.ToString("0.00", Fr) : "", "", "", t.Zeta.ToString("0.###", Fr), t.PerteFixePa != 0 ? t.PerteFixePa.ToString("0", Fr) : "", "", "");
+            Remplir();
             Controls.Add(grille);
 
             lblTotal.SetBounds(12, ClientSize.Height - basGrille + 8, 900, 24); lblTotal.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
@@ -127,6 +159,12 @@ namespace PipeFit.Isometries.Revit
             Recalculer();
         }
 
+        void Remplir()
+        {
+            grille.Rows.Clear();
+            foreach (var t in troncons) grille.Rows.Add(t.Repere, t.Designation, t.Section, "", t.LongueurM > 0 ? t.LongueurM.ToString("0.00", Fr) : "", "", "", t.Zeta.ToString("0.###", Fr), t.PerteFixePa != 0 ? t.PerteFixePa.ToString("0", Fr) : "", "", "");
+        }
+
         static double Nombre(object v, double defaut)
         {
             var s = (v as string ?? v?.ToString() ?? "").Trim().Replace(" ", "").Replace('.', ',');
@@ -159,9 +197,24 @@ namespace PipeFit.Isometries.Revit
         {
             if (chargement) return;
             fluide = FluideChoisi();
-            for (int i = 0; i < troncons.Count; i++)
-                if (!debitSaisi[i]) troncons[i].DebitM3h = debitsModele[i] > 0 ? debitsModele[i] : (double)nudDebit.Value;
-            resultat = air ? PerteCharge.Aeraulique(troncons, fluide, (double)nudVmax.Value) : PerteCharge.Hydraulique(troncons, fluide, (double)nudVmax.Value);
+            foreach (var et in etats)
+            {
+                for (int i = 0; i < et.Troncons.Count; i++)
+                    if (!et.DebitSaisi[i]) et.Troncons[i].DebitM3h = et.DebitsModele[i] > 0 ? et.DebitsModele[i] : (double)nudDebit.Value;
+                var re = air ? PerteCharge.Aeraulique(et.Troncons, fluide, (double)nudVmax.Value) : PerteCharge.Hydraulique(et.Troncons, fluide, (double)nudVmax.Value);
+                et.TotalPa = re.TotalPa;
+                if (et == courant) resultat = re;
+            }
+            if (parChemins)
+            {
+                // Libellés : ΔP de chaque chemin, le plus défavorisé repéré
+                var max = etats.Max(e => e.TotalPa);
+                var idx = cbChemin.SelectedIndex;
+                cbChemin.BeginUpdate(); cbChemin.Items.Clear();
+                foreach (var et in etats) cbChemin.Items.Add(et.Libelle + " – " + et.TotalPa.ToString("0", Fr) + " Pa" + (et.TotalPa >= max - 1e-9 ? "   ◄ le plus défavorisé" : ""));
+                cbChemin.SelectedIndex = idx >= 0 ? idx : etats.IndexOf(courant);
+                cbChemin.EndUpdate();
+            }
             for (int i = 0; i < troncons.Count; i++)
             {
                 var t = troncons[i]; var r = grille.Rows[i];
@@ -179,6 +232,10 @@ namespace PipeFit.Isometries.Revit
                 + "   –   linéaire " + resultat.LineairePa.ToString("0", Fr) + " Pa, singulière " + resultat.SingulierPa.ToString("0", Fr) + " Pa, "
                 + resultat.LongueurM.ToString("0.0", Fr) + " m";
             var alertes = troncons.Count(t => t.Alerte != "");
+            if (parChemins)
+                tot = "Ce chemin : " + resultat.TotalPa.ToString("0", Fr) + " Pa   –   pression du réseau au ventilateur (chemin le plus défavorisé) : "
+                    + etats.Max(e => e.TotalPa).ToString("0", Fr) + " Pa   –   linéaire " + resultat.LineairePa.ToString("0", Fr) + " Pa, singulière "
+                    + resultat.SingulierPa.ToString("0", Fr) + " Pa, " + resultat.LongueurM.ToString("0.0", Fr) + " m";
             lblTotal.Text = tot + (alertes > 0 ? "   –   " + alertes + " remarque(s)" : "");
             lblTotal.ForeColor = alertes > 0 ? Color.Firebrick : SystemColors.ControlText;
         }
@@ -203,6 +260,12 @@ namespace PipeFit.Isometries.Revit
                     "Débit si inconnu : " + ((double)nudDebit.Value).ToString("0.##", Fr) + " m³/h (repéré * dans la fenêtre) ; vitesse maximale " + ((double)nudVmax.Value).ToString("0.0", Fr) + " m/s.",
                 };
                 hyp.AddRange(notes);
+                if (parChemins)
+                {
+                    hyp.Add("Chemin calculé : " + courant.Libelle + " – " + courant.TotalPa.ToString("0", Fr) + " Pa. Pression du réseau au ventilateur (chemin le plus défavorisé) : "
+                        + etats.Max(e => e.TotalPa).ToString("0", Fr) + " Pa.");
+                    hyp.Add("Autres chemins : " + string.Join(" ; ", etats.OrderByDescending(e => e.TotalPa).Select(e => e.Libelle + " " + e.TotalPa.ToString("0", Fr) + " Pa")));
+                }
                 try
                 {
                     File.WriteAllBytes(dlg.FileName, ExportCalcul.PerteCharge(resultat, fluide, titre, projet, hyp, air, DateTime.Now));

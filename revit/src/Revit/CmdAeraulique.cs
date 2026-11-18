@@ -73,6 +73,8 @@ namespace PipeFit.Isometries.Revit
 
         static double M3h(double interne) => UnitUtils.ConvertFromInternalUnits(interne, UnitTypeId.CubicMetersPerHour);
 
+        internal static double DebitElement(Element e) => Debit(e);
+
         static double Debit(Element e)
         {
             var q = e.get_Parameter(BuiltInParameter.RBS_DUCT_FLOW_PARAM)?.AsDouble() ?? 0;
@@ -103,10 +105,9 @@ namespace PipeFit.Isometries.Revit
             return best;
         }
 
-        public static List<Troncon> Troncons(Document doc, List<Element> elements, out List<string> notes)
+        /// <summary>Réseau de gaines relié aux éléments donnés (bouches et CTA comprises) : éléments et voisinages.</summary>
+        internal static (Dictionary<string, Element> Reseau, Dictionary<string, List<string>> Voisins) Reseau(List<Element> elements)
         {
-            notes = new List<string>();
-            // Réseau relié à la sélection (bouches et CTA comprises), pour les débits en aval
             var reseau = new Dictionary<string, Element>(); var voisins = new Dictionary<string, List<string>>();
             var file = new Queue<Element>(elements);
             foreach (var e in elements) reseau[Compat.Cle(e.Id)] = e;
@@ -121,66 +122,174 @@ namespace PipeFit.Isometries.Revit
                     if (!reseau.ContainsKey(kv) && (EstGaine(v) || Compat.EstCategorie(v, BuiltInCategory.OST_MechanicalEquipment))) { reseau[kv] = v; file.Enqueue(v); }
                 }
             }
-            var propres = reseau.Where(kv => Compat.EstCategorie(kv.Value, BuiltInCategory.OST_DuctTerminal)).ToDictionary(kv => kv.Key, kv => Debit(kv.Value));
-            var equip = reseau.Values.FirstOrDefault(e => Compat.EstCategorie(e, BuiltInCategory.OST_MechanicalEquipment));
-            string source = equip != null ? Compat.Cle(equip.Id)
-                : elements.OrderByDescending(e => { var (d, w, h) = Section(e); return d > 0 ? Math.PI * d * d / 4 : w * h; }).Select(e => Compat.Cle(e.Id)).First();
-            var arbre = propres.Values.Sum() > 0 ? PerteCharge.DebitsArbre(voisins, propres, source) : new Dictionary<string, double>();
-            notes.Add(propres.Count + " bouche(s) dans le réseau, " + propres.Values.Sum().ToString("0") + " m³/h ; débits en aval de "
-                + (equip != null ? "« " + (equip as FamilyInstance)?.Symbol?.FamilyName + " »" : "l'élément de plus grande section") + ".");
+            return (reseau, voisins);
+        }
 
+        static double Aire(Element e) { var (d, w, h) = Section(e); return d > 0 ? Math.PI * d * d / 4 : w * h; }
+
+        /// <summary>Débits de chaque élément du réseau (somme des bouches en aval de la source) et source retenue.</summary>
+        internal static (Dictionary<string, double> Arbre, string Source, Element Equipement, Dictionary<string, double> Bouches) Debits(
+            Dictionary<string, Element> reseau, Dictionary<string, List<string>> voisins, List<Element> elements)
+        {
+            var bouches = reseau.Where(kv => Compat.EstCategorie(kv.Value, BuiltInCategory.OST_DuctTerminal)).ToDictionary(kv => kv.Key, kv => Debit(kv.Value));
+            var equip = reseau.Values.FirstOrDefault(e => Compat.EstCategorie(e, BuiltInCategory.OST_MechanicalEquipment));
+            var source = equip != null ? Compat.Cle(equip.Id)
+                : reseau.Values.Where(e => !Compat.EstCategorie(e, BuiltInCategory.OST_DuctTerminal)).DefaultIfEmpty(elements[0])
+                    .OrderByDescending(Aire).Select(e => Compat.Cle(e.Id)).First();
+            var arbre = bouches.Values.Sum() > 0 ? PerteCharge.DebitsArbre(voisins, bouches, source) : new Dictionary<string, double>();
+            return (arbre, source, equip, bouches);
+        }
+
+        /// <summary>
+        /// Ligne de calcul d'un élément. Té : dérivation ou passage d'après les éléments voisins du chemin (amont / aval
+        /// donnés), sinon d'après la sélection.
+        /// </summary>
+        internal static Troncon Ligne(Document doc, Element e, double debit, Func<Element, bool> dansChemin, ref int n)
+        {
+            var k = Compat.Cle(e.Id);
+            var (d, w, h) = Section(e);
+            var famille = (doc.GetElement(e.GetTypeId()) as ElementType)?.FamilyName ?? e.Name;
+            var nom = famille + (e.Name != "" && e.Name != famille ? " " + e.Name : "");
+            var t = new Troncon { Id = k, Designation = nom, DiametreMm = d, LargeurMm = w, HauteurMm = h, RugositeMm = 0.15, DebitM3h = debit };
+            if (e is MEPCurve mc)
+            {
+                t.Nature = "Gaine"; t.Repere = "G" + (++n);
+                t.LongueurM = Compat.Mm(e.get_Parameter(BuiltInParameter.CURVE_ELEM_LENGTH)?.AsDouble() ?? 0) / 1000;
+                try { var rr = (doc.GetElement(mc.GetTypeId()) as MEPCurveType)?.Roughness ?? 0; if (rr > 0) t.RugositeMm = Compat.Mm(rr); } catch { }
+                return t;
+            }
+            var cns = Connecteurs(e).ToList();
+            PerteCharge.OrganeAir o;
+            var pt = (e as FamilyInstance)?.MEPModel is MechanicalFitting mf ? mf.PartType : PartType.Undefined;
+            if (Compat.EstCategorie(e, BuiltInCategory.OST_DuctTerminal)) o = PerteCharge.OrganeAir.Bouche;
+            else if (pt == PartType.Elbow) o = PerteCharge.OrganeAir.Coude;
+            else if (pt == PartType.Tee || pt == PartType.Cross || pt == PartType.Wye || pt == PartType.TapPerpendicular || pt == PartType.TapAdjustable
+                || pt == PartType.SpudPerpendicular || pt == PartType.SpudAdjustable) o = PerteCharge.OrganeAir.Te;
+            else if (pt == PartType.Transition) o = PerteCharge.OrganeAir.Transition;
+            else o = PerteCharge.OrganeParNom(nom);
+            double angle = 90; bool derivation = false;
+            try
+            {
+                if (o == PerteCharge.OrganeAir.Coude && cns.Count == 2)
+                {
+                    var dot = cns[0].CoordinateSystem.BasisZ.DotProduct(cns[1].CoordinateSystem.BasisZ);
+                    angle = 180 - Math.Acos(Math.Max(-1, Math.Min(1, dot))) * 180 / Math.PI;
+                }
+                if (o == PerteCharge.OrganeAir.Te)
+                {
+                    // Passage si le chemin entre et sort par deux raccordements opposés
+                    var parcourus = cns.Where(cn => cn.AllRefs.Cast<Connector>().Any(r => r.Owner != null && r.Owner.Id != e.Id && dansChemin(r.Owner))).ToList();
+                    derivation = parcourus.Count >= 2 && !parcourus.Any(a => parcourus.Any(b => a.Id != b.Id && a.CoordinateSystem.BasisZ.DotProduct(b.CoordinateSystem.BasisZ) < -0.9));
+                    nom += derivation ? " (dérivation)" : " (passage)";
+                }
+            }
+            catch { }
+            t.Designation = nom;
+            t.Zeta = PerteCharge.ZetaAir(o, d > 0, angle, derivation);
+            t.Nature = o.ToString(); t.Repere = o == PerteCharge.OrganeAir.Bouche ? "B" + (++n) : "R" + (++n);
+            return t;
+        }
+
+        public static List<Troncon> Troncons(Document doc, List<Element> elements, out List<string> notes)
+        {
+            notes = new List<string>();
+            var (reseau, voisins) = Reseau(elements);
+            var (arbre, source, equip, bouches) = Debits(reseau, voisins, elements);
+            notes.Add(bouches.Count + " bouche(s) dans le réseau, " + bouches.Values.Sum().ToString("0") + " m³/h ; débits en aval de "
+                + (equip != null ? "« " + (equip as FamilyInstance)?.Symbol?.FamilyName + " »" : "l'élément de plus grande section") + ".");
+            var ids = new HashSet<ElementId>(elements.Select(x => x.Id));
             var res = new List<Troncon>();
             int n = 0;
             foreach (var e in elements)
             {
                 var k = Compat.Cle(e.Id);
-                var (d, w, h) = Section(e);
-                var famille = (doc.GetElement(e.GetTypeId()) as ElementType)?.FamilyName ?? e.Name;
-                var nom = famille + (e.Name != "" && e.Name != famille ? " " + e.Name : "");
-                var t = new Troncon { Id = k, Designation = nom, DiametreMm = d, LargeurMm = w, HauteurMm = h, RugositeMm = 0.15 };
-                var qRevit = Debit(e);
-                t.DebitM3h = qRevit > 0 ? qRevit : arbre.TryGetValue(k, out var qa) ? qa : 0;
-                if (e is MEPCurve mc)
-                {
-                    t.Nature = "Gaine"; t.Repere = "G" + (++n);
-                    t.LongueurM = Compat.Mm(e.get_Parameter(BuiltInParameter.CURVE_ELEM_LENGTH)?.AsDouble() ?? 0) / 1000;
-                    try { var rr = (doc.GetElement(mc.GetTypeId()) as MEPCurveType)?.Roughness ?? 0; if (rr > 0) t.RugositeMm = Compat.Mm(rr); } catch { }
-                }
-                else
-                {
-                    var cns = Connecteurs(e).ToList();
-                    PerteCharge.OrganeAir o;
-                    var pt = (e as FamilyInstance)?.MEPModel is MechanicalFitting mf ? mf.PartType : PartType.Undefined;
-                    if (Compat.EstCategorie(e, BuiltInCategory.OST_DuctTerminal)) o = PerteCharge.OrganeAir.Bouche;
-                    else if (pt == PartType.Elbow) o = PerteCharge.OrganeAir.Coude;
-                    else if (pt == PartType.Tee || pt == PartType.Cross || pt == PartType.Wye || pt == PartType.TapPerpendicular || pt == PartType.TapAdjustable
-                        || pt == PartType.SpudPerpendicular || pt == PartType.SpudAdjustable) o = PerteCharge.OrganeAir.Te;
-                    else if (pt == PartType.Transition) o = PerteCharge.OrganeAir.Transition;
-                    else o = PerteCharge.OrganeParNom(nom);
-                    double angle = 90; bool derivation = false;
-                    try
-                    {
-                        if (o == PerteCharge.OrganeAir.Coude && cns.Count == 2)
-                        {
-                            var dot = cns[0].CoordinateSystem.BasisZ.DotProduct(cns[1].CoordinateSystem.BasisZ);
-                            angle = 180 - Math.Acos(Math.Max(-1, Math.Min(1, dot))) * 180 / Math.PI;
-                        }
-                        if (o == PerteCharge.OrganeAir.Te)
-                        {
-                            // Passage si le chemin choisi entre et sort par deux raccordements opposés
-                            var dansChemin = cns.Where(cn => cn.AllRefs.Cast<Connector>().Any(r => r.Owner != null && r.Owner.Id != e.Id && elements.Any(x => x.Id == r.Owner.Id))).ToList();
-                            derivation = dansChemin.Count >= 2 && !dansChemin.Any(a => dansChemin.Any(b => a.Id != b.Id && a.CoordinateSystem.BasisZ.DotProduct(b.CoordinateSystem.BasisZ) < -0.9));
-                            nom += derivation ? " (dérivation)" : " (passage)";
-                        }
-                    }
-                    catch { }
-                    t.Designation = nom;
-                    t.Zeta = PerteCharge.ZetaAir(o, d > 0, angle, derivation);
-                    t.Nature = o.ToString(); t.Repere = o == PerteCharge.OrganeAir.Bouche ? "B" + (++n) : "R" + (++n);
-                }
-                res.Add(t);
+                var q = Debit(e);
+                res.Add(Ligne(doc, e, q > 0 ? q : arbre.TryGetValue(k, out var qa) ? qa : 0, x => ids.Contains(x.Id), ref n));
             }
             return res;
         }
+    }
+}
+
+namespace PipeFit.Isometries.Revit
+{
+    /// <summary>
+    /// Commande « Perte de charge aéraulique » : sur le réseau relié à la sélection, chemin de la CTA (ou de l'élément de
+    /// plus grande section) vers chaque bouche ; perte de charge de chaque chemin (gaines, coudes, tés en passage ou en
+    /// dérivation selon le chemin, registres, coupe-feu, silencieux, bouche) ; le chemin le plus défavorisé donne la
+    /// pression du réseau au ventilateur. Le chemin choisi peut être sélectionné dans Revit.
+    /// </summary>
+    [Transaction(TransactionMode.ReadOnly)]
+    public sealed class CmdPerteAeraulique : CommandeBase
+    {
+        protected override Result Executer(ExternalCommandData data, ref string message, ElementSet elementsErreur)
+        {
+            var uidoc = data.Application.ActiveUIDocument;
+            if (uidoc == null) { message = "Ouvrez un projet Revit."; return Result.Failed; }
+            var doc = uidoc.Document;
+            var elements = uidoc.Selection.GetElementIds().Select(doc.GetElement)
+                .Where(e => CmdAeraulique.EstGaine(e) || (e != null && Compat.EstCategorie(e, BuiltInCategory.OST_MechanicalEquipment))).ToList();
+            if (elements.Count == 0)
+            {
+                try
+                {
+                    var r = uidoc.Selection.PickObject(ObjectType.Element, new FiltreGaines(), "Perte de charge aéraulique : cliquez une gaine du réseau");
+                    elements = new List<Element> { doc.GetElement(r) };
+                }
+                catch (Autodesk.Revit.Exceptions.OperationCanceledException) { return Result.Cancelled; }
+            }
+
+            var (reseau, voisins) = CmdAeraulique.Reseau(elements);
+            var (arbre, source, equip, bouches) = CmdAeraulique.Debits(reseau, voisins, elements);
+            if (bouches.Count == 0)
+            {
+                TaskDialog.Show("Pipe-Fit", "Aucune bouche reliée à ce réseau : les chemins vont de la CTA aux bouches. "
+                    + "Pour une gaine seule, utilisez « Débit et vitesse ventilation ».");
+                return Result.Cancelled;
+            }
+            var chemins = PerteCharge.Chemins(voisins, source, bouches.Keys);
+            var notes = new List<string>
+            {
+                bouches.Count + " bouche(s), " + bouches.Values.Sum().ToString("0") + " m³/h ; chemins depuis "
+                    + (equip != null ? "« " + (equip as FamilyInstance)?.Symbol?.FamilyName + " » (sa propre perte n'est pas comptée)" : "l'élément de plus grande section (pas de CTA reliée)") + ".",
+            };
+            if (chemins.Count < bouches.Count) notes.Add((bouches.Count - chemins.Count) + " bouche(s) non reliée(s) à la source.");
+
+            // Un jeu de lignes par chemin (ζ des tés selon le chemin) ; ordre provisoire : le plus long d'abord
+            var liste = new List<(string, List<Troncon>)>();
+            var a20 = Fluide.Air(20);
+            foreach (var kv in chemins)
+            {
+                var ids = new HashSet<string>(kv.Value); ids.Add(source);
+                int n = 0;
+                var lignes = new List<Troncon>();
+                foreach (var id in kv.Value)
+                {
+                    if (!reseau.TryGetValue(id, out var e) || Compat.EstCategorie(e, BuiltInCategory.OST_MechanicalEquipment)) continue;
+                    var q = CmdAeraulique.DebitElement(e);
+                    lignes.Add(CmdAeraulique.Ligne(doc, e, q > 0 && !Compat.EstCategorie(e, BuiltInCategory.OST_DuctTerminal) ? q : arbre.TryGetValue(id, out var qa) ? qa : q,
+                        x => ids.Contains(Compat.Cle(x.Id)), ref n));
+                }
+                var b = reseau[kv.Key];
+                var nomB = ((doc.GetElement(b.GetTypeId()) as ElementType)?.FamilyName ?? b.Name) + " " + Compat.Cle(b.Id)
+                    + " (" + bouches[kv.Key].ToString("0") + " m³/h" + (b.LookupParameter("Marque")?.AsString() is string m && m != "" ? ", " + m : "") + ")";
+                liste.Add((nomB, lignes));
+            }
+            liste = liste.OrderByDescending(c => PerteCharge.Aeraulique(c.Item2.Select(Copie).ToList(), a20).TotalPa).ToList();
+            var projet = doc.ProjectInformation?.Name;
+            using (var f = new FenetreCalcul(true, "Perte de charge aéraulique", string.IsNullOrWhiteSpace(projet) ? doc.Title : projet, liste, notes, true))
+            {
+                var res = f.ShowDialog(new FenetreRevit(data.Application.MainWindowHandle));
+                if (res == System.Windows.Forms.DialogResult.Yes && f.CheminASelectionner != null)
+                    uidoc.Selection.SetElementIds(f.CheminASelectionner.Select(Compat.IdDepuis).ToList());
+            }
+            return Result.Succeeded;
+        }
+
+        static Troncon Copie(Troncon t) => new Troncon
+        {
+            Id = t.Id, DiametreMm = t.DiametreMm, LargeurMm = t.LargeurMm, HauteurMm = t.HauteurMm, RugositeMm = t.RugositeMm,
+            LongueurM = t.LongueurM, DebitM3h = t.DebitM3h, Zeta = t.Zeta, PerteFixePa = t.PerteFixePa,
+        };
     }
 }

@@ -100,6 +100,8 @@ CALCULS (groupe « Calculs »)
   Perte de charge : sélectionnez le chemin (tubes, raccords, vannes), cliquez « Perte de charge ».
   Diamètre intérieur, rugosité et débit lus dans Revit ; fluide eau / eau glycolée et température au
   choix ; ζ par raccord et par vanne modifiables ; ΔP en kPa et mCE ; note de calcul Excel.
+  Perte de charge aéraulique : cliquez une gaine du réseau. Chemin de la CTA vers chaque bouche,
+  le plus défavorisé en tête = pression du réseau au ventilateur ; chemin sélectionnable dans Revit.
   Débit et vitesse ventilation : sélectionnez les gaines, cliquez. Débit (Revit, sinon somme des
   bouches en aval de la CTA), vitesse, Pa/m, pertes des coudes, tés, registres, coupe-feu ;
   dimensionnement Ø / rectangulaire ; note de calcul Excel.

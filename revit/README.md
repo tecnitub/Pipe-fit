@@ -259,6 +259,15 @@ fenêtre), cliquez. Pour chaque élément :
 - tableau : débit, ζ et **perte fixe** (valeur fabricant en Pa : batterie, échangeur…) modifiables, recalcul immédiat ;
   alertes (vitesse > maxi, < 0,3 m/s, > 250 Pa/m) ; **ΔP totale en kPa et mCE** ; note de calcul **Excel**.
 
+**Perte de charge aéraulique** (réseau de ventilation) : sélectionnez une gaine du réseau (ou la CTA), cliquez.
+- le réseau relié est parcouru de la **CTA** (sinon de l'élément de plus grande section) jusqu'à **chaque bouche** ;
+- un **chemin par bouche** : gaines (Pa/m), coudes, tés **en passage ou en dérivation selon le chemin**, transitions,
+  registres, clapets coupe-feu, silencieux, bouche (perte fabricant à saisir en Pa, signalée tant qu'elle manque) ;
+- débits : calcul Revit, sinon somme des bouches en aval ;
+- le **chemin le plus défavorisé** est en tête de liste : sa perte de charge est la **pression du réseau au
+  ventilateur** (la perte propre de la CTA n'est pas comptée) ; chaque chemin peut être affiché, modifié (ζ, pertes
+  fixes, débits) et **sélectionné dans Revit** ; note de calcul Excel du chemin affiché.
+
 **Débit et vitesse ventilation** (gaines) : sélectionnez les gaines (réseau ou chemin), cliquez.
 - section de chaque gaine (Ø ou largeur × hauteur, raccords : leur plus grand raccordement), rugosité du type de gaine ;
 - **débit** : calcul Revit, sinon **somme des bouches en aval** de la CTA (ou de l'élément de plus grande section) dans le

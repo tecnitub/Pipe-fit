@@ -152,6 +152,7 @@ namespace PipeFit.Isometries.Core
                 if (t.DebitM3h <= 0) a.Add("débit nul");
                 else if (t.VitesseMs > vMax) a.Add("vitesse > " + vMax.ToString("0.#") + " m/s (bruit)");
                 if (t.LongueurM > 0 && t.PerteLineairePaM > 2) a.Add("perte linéaire > 2 Pa/m");
+                if (t.Nature == "Bouche" && t.PerteFixePa == 0) a.Add("perte de la bouche à saisir (fabricant)");
                 t.Alerte = string.Join(" ; ", a);
             }
             return r;
@@ -258,6 +259,33 @@ namespace PipeFit.Isometries.Core
         }
 
         // ---------- Débits d'un réseau en arbre ----------
+
+        /// <summary>
+        /// Chemins d'un réseau depuis la source jusqu'à chaque cible (bouche) : liste d'éléments, source exclue, cible
+        /// comprise, dans le sens de l'air. Une cible non reliée à la source n'a pas de chemin.
+        /// </summary>
+        public static Dictionary<string, List<string>> Chemins(Dictionary<string, List<string>> voisins, string source, IEnumerable<string> cibles)
+        {
+            var res = new Dictionary<string, List<string>>();
+            if (source == null || !voisins.ContainsKey(source)) return res;
+            var parent = new Dictionary<string, string> { [source] = null };
+            var file = new Queue<string>(); file.Enqueue(source);
+            while (file.Count > 0)
+            {
+                var n = file.Dequeue();
+                foreach (var v in voisins.TryGetValue(n, out var l) ? l : new List<string>())
+                    if (!parent.ContainsKey(v)) { parent[v] = n; file.Enqueue(v); }
+            }
+            foreach (var c in cibles)
+            {
+                if (!parent.ContainsKey(c) || c == source) continue;
+                var ch = new List<string>();
+                for (var n = c; n != null && n != source; n = parent[n]) ch.Add(n);
+                ch.Reverse();
+                res[c] = ch;
+            }
+            return res;
+        }
 
         /// <summary>
         /// Débit de chaque élément d'un réseau en arbre alimenté depuis « source » : somme des débits propres (bouches) des

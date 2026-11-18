@@ -70,6 +70,8 @@ static class Tests
         PerteCharge.Calculer(gr, a20);
         Verifier(Math.Abs(gr.VitesseMs - 5.0) < 0.001 && Math.Abs(gr.DiametreHydrauliqueM - 0.2667) < 0.001 && gr.Section == "400×200", "400×200, 1440 m³/h : 5 m/s, Dh 267 mm");
         Verifier(PerteCharge.Aeraulique(new[] { gr }, a20, 4).Troncons[0].Alerte.Contains("vitesse"), "air : alerte au-delà de la vitesse maximale");
+        Verifier(PerteCharge.Aeraulique(new[] { new Troncon { Nature = "Bouche", DiametreMm = 200, DebitM3h = 300 } }, a20).Troncons[0].Alerte.Contains("bouche")
+            && PerteCharge.Aeraulique(new[] { new Troncon { Nature = "Bouche", DiametreMm = 200, DebitM3h = 300, PerteFixePa = 20 } }, a20).Troncons[0].Alerte == "", "bouche : perte fabricant à saisir");
         Verifier(PerteCharge.OrganeParNom("Clapet coupe-feu CF 2h") == PerteCharge.OrganeAir.CoupeFeu && PerteCharge.OrganeParNom("Bouche d'extraction") == PerteCharge.OrganeAir.Bouche
             && PerteCharge.OrganeParNom("Registre de réglage") == PerteCharge.OrganeAir.Registre && PerteCharge.OrganeParNom("Coude 90 rond") == PerteCharge.OrganeAir.Coude, "organes de ventilation par le nom");
         // Dimensionnement
@@ -82,6 +84,8 @@ static class Tests
             ["B"] = new List<string> { "T", "b1" }, ["C"] = new List<string> { "T", "b2", "b3" }, ["b1"] = new List<string> { "B" }, ["b2"] = new List<string> { "C" }, ["b3"] = new List<string> { "C" },
         };
         var q = PerteCharge.DebitsArbre(v, new Dictionary<string, double> { ["b1"] = 300, ["b2"] = 200, ["b3"] = 100 }, "CTA");
+        var chem = PerteCharge.Chemins(v, "CTA", new[] { "b1", "b2", "b3", "isolée" });
+        Verifier(chem.Count == 3 && string.Join(">", chem["b2"]) == "A>T>C>b2" && string.Join(">", chem["b1"]) == "A>T>B>b1", "chemins de la CTA vers chaque bouche");
         Verifier(q["A"] == 600 && q["T"] == 600 && q["B"] == 300 && q["C"] == 300 && q["b2"] == 200 && q["CTA"] == 600, "débits de l'arbre : somme des bouches en aval");
         // Note de calcul Excel : chemin hydraulique type (pompe → CTA) et réseau de ventilation
         {
@@ -104,10 +108,13 @@ static class Tests
                 new Troncon { Repere = "R2", Designation = "Coude 90° rect.", LargeurMm = 600, HauteurMm = 300, DebitM3h = 3000, Zeta = PerteCharge.ZetaAir(PerteCharge.OrganeAir.Coude, false) },
                 new Troncon { Repere = "R3", Designation = "Clapet coupe-feu", LargeurMm = 600, HauteurMm = 300, DebitM3h = 3000, Zeta = PerteCharge.ZetaAir(PerteCharge.OrganeAir.CoupeFeu, false) },
                 new Troncon { Repere = "G4", Designation = "Gaine Ø315", DiametreMm = 315, LongueurM = 6, RugositeMm = 0.15, DebitM3h = 1500 },
-                new Troncon { Repere = "B5", Designation = "Bouche de soufflage", DiametreMm = 200, DebitM3h = 300, PerteFixePa = 25 },
+                new Troncon { Repere = "B5", Nature = "Bouche", Designation = "Bouche de soufflage", DiametreMm = 200, DebitM3h = 300, PerteFixePa = 25 },
             };
             var ra = PerteCharge.Aeraulique(ventil, Fluide.Air(20));
-            var xa = ExportCalcul.PerteCharge(ra, Fluide.Air(20), "Débit, vitesse et perte de charge – ventilation", "Démonstration", null, true, new DateTime(2026, 11, 18, 10, 0, 0));
+            var xa = ExportCalcul.PerteCharge(ra, Fluide.Air(20), "Perte de charge aéraulique", "Démonstration", new[]
+            {
+                "Chemin calculé : CTA-01 → bouche B5 (300 m³/h) – " + ra.TotalPa.ToString("0") + " Pa. Pression du réseau au ventilateur (chemin le plus défavorisé) : " + ra.TotalPa.ToString("0") + " Pa.",
+            }, true, new DateTime(2026, 11, 18, 10, 0, 0));
             foreach (var x in new[] { xh, xa })
                 using (var z = new System.IO.Compression.ZipArchive(new System.IO.MemoryStream(x)))
                     foreach (var en in z.Entries.Where(en => en.FullName.EndsWith(".xml"))) System.Xml.Linq.XDocument.Load(en.Open());
@@ -116,7 +123,7 @@ static class Tests
             if (!string.IsNullOrEmpty(dossier))
             {
                 System.IO.File.WriteAllBytes(System.IO.Path.Combine(dossier, "Perte de charge hydraulique (exemple).xlsx"), xh);
-                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dossier, "Ventilation débit vitesse (exemple).xlsx"), xa);
+                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dossier, "Perte de charge aéraulique (exemple).xlsx"), xa);
             }
         }
     }

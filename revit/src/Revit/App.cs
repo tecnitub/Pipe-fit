@@ -95,6 +95,16 @@ namespace PipeFit.Isometries.Revit
                 LargeImage = Image("hydraulique32.png"),
                 Image = Image("hydraulique16.png"),
             });
+            calculs.AddItem(new PushButtonData("PipeFitPerteAeraulique", "Perte de charge\naéraulique", Assembly.GetExecutingAssembly().Location, typeof(CmdPerteAeraulique).FullName)
+            {
+                ToolTip = "Perte de charge aéraulique de la CTA à chaque bouche : chemin le plus défavorisé et pression du réseau au ventilateur.",
+                LongDescription = "Sélectionnez une gaine (ou la CTA) du réseau puis cliquez. Pour chaque bouche, le chemin depuis la CTA : gaines (Pa/m), coudes, "
+                    + "tés en passage ou en dérivation selon le chemin, transitions, registres, clapets coupe-feu, silencieux, bouche (perte fabricant à saisir). "
+                    + "Débits : Revit, sinon somme des bouches en aval. Le chemin le plus défavorisé donne la pression du réseau ; sélection du chemin dans Revit "
+                    + "et note de calcul Excel.",
+                LargeImage = Image("aeraulique32.png"),
+                Image = Image("aeraulique16.png"),
+            });
             calculs.AddItem(new PushButtonData("PipeFitAeraulique", "Débit et vitesse\nventilation", Assembly.GetExecutingAssembly().Location, typeof(CmdAeraulique).FullName)
             {
                 ToolTip = "Débit, vitesse et perte de charge sur les gaines de ventilation sélectionnées ; dimensionnement Ø / rectangulaire.",
