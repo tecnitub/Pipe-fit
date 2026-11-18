@@ -84,6 +84,26 @@ namespace PipeFit.Isometries.Revit
                 LargeImage = Image("reperage32.png"),
                 Image = Image("reperage16.png"),
             });
+            // Groupe « Calculs » : perte de charge hydraulique, débit / vitesse en ventilation
+            var calculs = app.CreateRibbonPanel(Onglet, "Calculs");
+            calculs.AddItem(new PushButtonData("PipeFitPerteCharge", "Perte de\ncharge", Assembly.GetExecutingAssembly().Location, typeof(CmdPerteCharge).FullName)
+            {
+                ToolTip = "Perte de charge hydraulique sur la tuyauterie sélectionnée (tubes, raccords, vannes) : vitesses, Pa/m, ΔP totale en kPa et mCE.",
+                LongDescription = "Sélectionnez le chemin à calculer (avec Ctrl ou par fenêtre) puis cliquez. Diamètre intérieur et rugosité du segment de tuyau Revit, "
+                    + "débit du calcul Revit (sinon débit saisi), fluide (eau, eau glycolée MEG / MPG) et température au choix. Darcy-Weisbach / Colebrook, "
+                    + "ζ par raccord et par vanne modifiables. Note de calcul Excel.",
+                LargeImage = Image("hydraulique32.png"),
+                Image = Image("hydraulique16.png"),
+            });
+            calculs.AddItem(new PushButtonData("PipeFitAeraulique", "Débit et vitesse\nventilation", Assembly.GetExecutingAssembly().Location, typeof(CmdAeraulique).FullName)
+            {
+                ToolTip = "Débit, vitesse et perte de charge sur les gaines de ventilation sélectionnées ; dimensionnement Ø / rectangulaire.",
+                LongDescription = "Sélectionnez les gaines (réseau ou chemin) puis cliquez. Débit de chaque gaine : calcul Revit, sinon somme des bouches en aval "
+                    + "de la CTA. Section, vitesse (alerte au-delà de la vitesse maximale), Pa/m, pertes des coudes, tés, registres, coupe-feu, silencieux. "
+                    + "Outil de dimensionnement et note de calcul Excel.",
+                LargeImage = Image("ventilation32.png"),
+                Image = Image("ventilation16.png"),
+            });
             panneau.AddItem(new PushButtonData("PipeFitQuantitatif", "Quantités\nExcel", Assembly.GetExecutingAssembly().Location, typeof(CmdQuantitatif).FullName)
             {
                 ToolTip = "Exporte les quantités du projet vers Excel (synthèse, quantitatif, soudures, liste de débit, nomenclatures) ou en CSV pour le chiffrage Pipe-Fit.",

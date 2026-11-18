@@ -96,6 +96,14 @@ CE QUI EST CRÉÉ POUR CHAQUE SPOOL
   Relancer la génération met à jour les feuilles et vues existantes (option « Remplacer »).
   Toute la génération s'annule en une fois avec Ctrl+Z.
 
+CALCULS (groupe « Calculs »)
+  Perte de charge : sélectionnez le chemin (tubes, raccords, vannes), cliquez « Perte de charge ».
+  Diamètre intérieur, rugosité et débit lus dans Revit ; fluide eau / eau glycolée et température au
+  choix ; ζ par raccord et par vanne modifiables ; ΔP en kPa et mCE ; note de calcul Excel.
+  Débit et vitesse ventilation : sélectionnez les gaines, cliquez. Débit (Revit, sinon somme des
+  bouches en aval de la CTA), vitesse, Pa/m, pertes des coudes, tés, registres, coupe-feu ;
+  dimensionnement Ø / rectangulaire ; note de calcul Excel.
+
 EXPORT DES QUANTITÉS VERS EXCEL (bouton « Quantités Excel »)
   Choisissez « Classeur Excel (*.xlsx) » : classeur de 5 feuilles, ouvert à la fin de l'export.
   - Synthèse par réseau : tube, raccords, brides, robinetterie, soudures et pouces-diamètre, totaux.

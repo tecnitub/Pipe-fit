@@ -168,3 +168,43 @@ namespace PipeFit.Isometries.Core
         }
     }
 }
+
+namespace PipeFit.Isometries.Core
+{
+    public static class ExportCalcul
+    {
+        /// <summary>Note de calcul de perte de charge (hydraulique ou aéraulique) : hypothèses, tableau par élément, totaux.</summary>
+        public static byte[] PerteCharge(ResultatPerte r, Fluide f, string titre, string projet, IEnumerable<string> hypotheses, bool air, DateTime date)
+        {
+            var fe = new FeuilleXlsx { Nom = air ? "Aéraulique" : "Hydraulique", Largeurs = { 8, 40, 14, 12, 10, 10, 9, 10, 10, 8, 11, 12, 12, 12, 40 } };
+            fe.Ajouter(new Cellule(titre + (string.IsNullOrWhiteSpace(projet) ? "" : " – " + projet), StyleCellule.Titre));
+            fe.Ajouter(new Cellule("Pipe-Fit, " + date.ToString("dd/MM/yyyy HH:mm") + " – " + f.Nom + " : ρ = " + f.Rho.ToString("0.0#") + " kg/m³, ν = " + (f.Nu * 1e6).ToString("0.000") + " mm²/s"));
+            foreach (var h in hypotheses ?? Enumerable.Empty<string>()) fe.Ajouter(new Cellule(h));
+            fe.Vide();
+            fe.LigneEntete = fe.Lignes.Count; fe.NbColonnesFiltre = 15;
+            fe.Ajouter(new Cellule("Rep.", StyleCellule.Entete), new Cellule("Élément", StyleCellule.Entete), new Cellule("Section (mm)", StyleCellule.Entete),
+                new Cellule("Débit (m³/h)", StyleCellule.Entete), new Cellule("Long. (m)", StyleCellule.Entete), new Cellule("Vitesse (m/s)", StyleCellule.Entete),
+                new Cellule("Reynolds", StyleCellule.Entete), new Cellule("λ", StyleCellule.Entete), new Cellule("J (Pa/m)", StyleCellule.Entete), new Cellule("ζ", StyleCellule.Entete),
+                new Cellule("Pd (Pa)", StyleCellule.Entete), new Cellule("ΔP linéaire (Pa)", StyleCellule.Entete), new Cellule("ΔP singulière (Pa)", StyleCellule.Entete),
+                new Cellule("ΔP total (Pa)", StyleCellule.Entete), new Cellule("Remarque", StyleCellule.Entete));
+            int de = fe.Prochaine;
+            foreach (var t in r.Troncons)
+                fe.Ajouter(new Cellule(t.Repere), new Cellule(t.Designation), new Cellule(t.Section), new Cellule(Math.Round(t.DebitM3h, 2), StyleCellule.Decimal),
+                    t.LongueurM > 0 ? new Cellule(Math.Round(t.LongueurM, 2), StyleCellule.Decimal) : new Cellule(null), new Cellule(Math.Round(t.VitesseMs, 2), StyleCellule.Decimal),
+                    new Cellule(Math.Round(t.Reynolds), StyleCellule.Entier), new Cellule(Math.Round(t.Lambda, 4)), t.LongueurM > 0 ? new Cellule(Math.Round(t.PerteLineairePaM, 2), StyleCellule.Decimal) : new Cellule(null),
+                    t.Zeta != 0 ? new Cellule(t.Zeta) : new Cellule(null), new Cellule(Math.Round(t.PressionDynamiquePa, 1), StyleCellule.Decimal),
+                    new Cellule(Math.Round(t.PerteLineairePa, 1), StyleCellule.Decimal), new Cellule(Math.Round(t.PerteSinguliere, 1), StyleCellule.Decimal),
+                    new Cellule(Math.Round(t.PerteTotalePa, 1), StyleCellule.Decimal), new Cellule(t.Alerte));
+            int a = fe.Prochaine - 1;
+            fe.DerniereLigneFiltre = a - 1;
+            Cellule S(int col, double v) => new Cellule(Math.Round(v, 1), StyleCellule.TotalDecimal, a >= de ? "SUM(" + Xlsx.Colonne(col) + de + ":" + Xlsx.Colonne(col) + a + ")" : null);
+            fe.Ajouter(new Cellule("Total", StyleCellule.Gras), new Cellule(""), new Cellule(""), new Cellule(""), S(4, r.LongueurM), new Cellule(""), new Cellule(""), new Cellule(""),
+                new Cellule(""), new Cellule(""), new Cellule(""), S(11, r.LineairePa), S(12, r.SingulierPa), S(13, r.TotalPa));
+            fe.Vide();
+            fe.Ajouter(new Cellule(""), new Cellule("Perte de charge totale : " + Math.Round(r.TotalPa / 1000, 2).ToString("0.00") + " kPa"
+                + (air ? "" : " = " + Math.Round(r.TotalMce(f), 2).ToString("0.00") + " mCE") + " (" + Math.Round(r.TotalPa) + " Pa)", StyleCellule.Gras));
+            fe.Ajouter(new Cellule(""), new Cellule("Méthode : Darcy-Weisbach, λ de Colebrook-White (64/Re en laminaire) ; singularités ζ·ρv²/2 (+ pertes fixes saisies)."));
+            return Xlsx.Ecrire(new[] { fe });
+        }
+    }
+}

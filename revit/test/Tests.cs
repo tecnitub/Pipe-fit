@@ -35,6 +35,92 @@ static class Tests
         return s;
     }
 
+    static void TestHydraulique()
+    {
+        // Fluides : valeurs de référence
+        var e20 = Fluide.Eau(20); var e80 = Fluide.Eau(80); var a20 = Fluide.Air(20);
+        Verifier(Math.Abs(e20.Rho - 998.2) < 0.5 && Math.Abs(e20.Nu * 1e6 - 1.004) < 0.02, "eau 20 °C : 998 kg/m³, 1,00 mm²/s (" + e20.Rho.ToString("0.0") + ", " + (e20.Nu * 1e6).ToString("0.000") + ")");
+        Verifier(Math.Abs(e80.Rho - 971.8) < 0.8 && Math.Abs(e80.Nu * 1e6 - 0.365) < 0.02, "eau 80 °C : 972 kg/m³, 0,365 mm²/s (" + e80.Rho.ToString("0.0") + ", " + (e80.Nu * 1e6).ToString("0.000") + ")");
+        Verifier(Math.Abs(a20.Rho - 1.204) < 0.01 && Math.Abs(a20.Nu * 1e6 - 15.1) < 0.3, "air 20 °C : 1,20 kg/m³, 15,1 mm²/s");
+        var g = Fluide.EauGlycolee(20, 30, false);
+        Verifier(g.Rho > 1030 && g.Rho < 1050 && g.Nu > 1.8 * e20.Nu && g.Nu < 2.8 * e20.Nu, "MEG 30 % : plus dense et plus visqueux que l'eau");
+        // Frottement : laminaire, lisse (Blasius), rugueux
+        Verifier(Math.Abs(PerteCharge.Lambda(1000, 0) - 0.064) < 1e-9, "laminaire : 64/Re");
+        Verifier(Math.Abs(PerteCharge.Lambda(1e5, 0) - 0.0180) < 0.0005, "Colebrook lisse Re 1e5 : 0,018");
+        Verifier(Math.Abs(PerteCharge.Lambda(1e7, 0.01) - 0.0379) < 0.0006, "Colebrook rugueux ε/D 0,01 : 0,038");
+        // Acier DN50 (Ø int. 54,5), 10 m³/h d'eau à 20 °C : 1,19 m/s, environ 300 Pa/m
+        var t = new Troncon { DiametreMm = 54.5, LongueurM = 10, RugositeMm = 0.045, DebitM3h = 10 };
+        PerteCharge.Calculer(t, e20);
+        Verifier(Math.Abs(t.VitesseMs - 1.19) < 0.01 && t.PerteLineairePaM > 280 && t.PerteLineairePaM < 320 && Math.Abs(t.PerteLineairePa - t.PerteLineairePaM * 10) < 1e-6,
+            "DN50 10 m³/h : 1,19 m/s, ≈ 300 Pa/m (" + t.VitesseMs.ToString("0.00") + " m/s, " + t.PerteLineairePaM.ToString("0") + " Pa/m)");
+        // Singulière : ζ × ρv²/2
+        var c = new Troncon { DiametreMm = 54.5, DebitM3h = 10, Zeta = PerteCharge.ZetaHydraulique(TypeComposant.Coude, GenreRobinet.Aucun, 90) };
+        PerteCharge.Calculer(c, e20);
+        Verifier(Math.Abs(c.PerteSinguliere - 0.3 * 998.2 * 1.19 * 1.19 / 2) < 5 && c.PerteLineairePa == 0, "coude 90° : 0,3 × ρv²/2 (" + c.PerteSinguliere.ToString("0") + " Pa)");
+        Verifier(PerteCharge.ZetaHydraulique(TypeComposant.Coude, GenreRobinet.Aucun, 45) == 0.15 && PerteCharge.ZetaHydraulique(TypeComposant.Te, GenreRobinet.Aucun, 0, true) == 1.3
+            && PerteCharge.ZetaHydraulique(TypeComposant.Vanne, GenreRobinet.Clapet) == 2 && PerteCharge.ZetaHydraulique(TypeComposant.Vanne, GenreRobinet.Reglage) == 6, "ζ par défaut");
+        var r = PerteCharge.Hydraulique(new[] { t, c, new Troncon { DiametreMm = 54.5, DebitM3h = 30, LongueurM = 1 } }, e20);
+        Verifier(Math.Abs(r.TotalPa - (t.PerteTotalePa + c.PerteTotalePa + r.Troncons[2].PerteTotalePa)) < 1e-6 && r.Troncons[2].Alerte.Contains("vitesse") && r.Troncons[0].Alerte.Contains("Pa/m") && r.Troncons[1].Alerte == ""
+            && Math.Abs(r.TotalMce(e20) - r.TotalPa / (998.2 * 9.80665)) < 0.01, "total, mCE et alerte de vitesse");
+        // Air : Ø315, 1500 m³/h : 5,35 m/s, ≈ 1,1 Pa/m ; rectangulaire 400×200
+        var ga = new Troncon { DiametreMm = 315, LongueurM = 5, RugositeMm = 0.15, DebitM3h = 1500 };
+        PerteCharge.Calculer(ga, a20);
+        Verifier(Math.Abs(ga.VitesseMs - 5.35) < 0.02 && ga.PerteLineairePaM > 0.95 && ga.PerteLineairePaM < 1.3, "Ø315 1500 m³/h : 5,35 m/s, ≈ 1,1 Pa/m (" + ga.PerteLineairePaM.ToString("0.00") + ")");
+        var gr = new Troncon { LargeurMm = 400, HauteurMm = 200, LongueurM = 1, RugositeMm = 0.15, DebitM3h = 1440 };
+        PerteCharge.Calculer(gr, a20);
+        Verifier(Math.Abs(gr.VitesseMs - 5.0) < 0.001 && Math.Abs(gr.DiametreHydrauliqueM - 0.2667) < 0.001 && gr.Section == "400×200", "400×200, 1440 m³/h : 5 m/s, Dh 267 mm");
+        Verifier(PerteCharge.Aeraulique(new[] { gr }, a20, 4).Troncons[0].Alerte.Contains("vitesse"), "air : alerte au-delà de la vitesse maximale");
+        Verifier(PerteCharge.OrganeParNom("Clapet coupe-feu CF 2h") == PerteCharge.OrganeAir.CoupeFeu && PerteCharge.OrganeParNom("Bouche d'extraction") == PerteCharge.OrganeAir.Bouche
+            && PerteCharge.OrganeParNom("Registre de réglage") == PerteCharge.OrganeAir.Registre && PerteCharge.OrganeParNom("Coude 90 rond") == PerteCharge.OrganeAir.Coude, "organes de ventilation par le nom");
+        // Dimensionnement
+        Verifier(PerteCharge.DiametreRond(1500, 5) == 355 && PerteCharge.DiametreRond(1500, 6) == 315, "Ø normalisé pour 1500 m³/h : 355 à 5 m/s, 315 à 6 m/s");
+        Verifier(PerteCharge.Rectangulaire(1440, 4, 200) == (500, 200), "rectangulaire 1440 m³/h à 4 m/s, h 200 : 500×200");
+        // Débits d'un arbre : CTA → gaine A → (té) → B → bouche 1 (300) ; → C → bouches 2 et 3 (200 + 100)
+        var v = new Dictionary<string, List<string>>
+        {
+            ["CTA"] = new List<string> { "A" }, ["A"] = new List<string> { "CTA", "T" }, ["T"] = new List<string> { "A", "B", "C" },
+            ["B"] = new List<string> { "T", "b1" }, ["C"] = new List<string> { "T", "b2", "b3" }, ["b1"] = new List<string> { "B" }, ["b2"] = new List<string> { "C" }, ["b3"] = new List<string> { "C" },
+        };
+        var q = PerteCharge.DebitsArbre(v, new Dictionary<string, double> { ["b1"] = 300, ["b2"] = 200, ["b3"] = 100 }, "CTA");
+        Verifier(q["A"] == 600 && q["T"] == 600 && q["B"] == 300 && q["C"] == 300 && q["b2"] == 200 && q["CTA"] == 600, "débits de l'arbre : somme des bouches en aval");
+        // Note de calcul Excel : chemin hydraulique type (pompe → CTA) et réseau de ventilation
+        {
+            var e45 = Fluide.EauGlycolee(7, 30, false);
+            var ch = new List<Troncon>
+            {
+                new Troncon { Repere = "T1", Designation = "Tube acier DN80", DiametreMm = 82.5, LongueurM = 12.4, DebitM3h = 18 },
+                new Troncon { Repere = "2", Designation = "Coude 90°", DiametreMm = 82.5, DebitM3h = 18, Zeta = PerteCharge.ZetaHydraulique(TypeComposant.Coude, GenreRobinet.Aucun) },
+                new Troncon { Repere = "5", Designation = "Vanne papillon TECOFI VPI 4648", DiametreMm = 82.5, DebitM3h = 18, Zeta = PerteCharge.ZetaHydraulique(TypeComposant.Vanne, GenreRobinet.Papillon) },
+                new Troncon { Repere = "6", Designation = "Filtre TECOFI F 3240", DiametreMm = 82.5, DebitM3h = 18, Zeta = PerteCharge.ZetaHydraulique(TypeComposant.Vanne, GenreRobinet.Filtre) },
+                new Troncon { Repere = "7", Designation = "Vanne de réglage IMI STAF", DiametreMm = 82.5, DebitM3h = 18, Zeta = PerteCharge.ZetaHydraulique(TypeComposant.Vanne, GenreRobinet.Reglage) },
+                new Troncon { Repere = "T2", Designation = "Tube acier DN80", DiametreMm = 82.5, LongueurM = 8.6, DebitM3h = 18 },
+                new Troncon { Repere = "9", Designation = "Batterie froide CTA (fabricant)", DiametreMm = 82.5, DebitM3h = 18, PerteFixePa = 25000 },
+            };
+            var rh = PerteCharge.Hydraulique(ch, e45);
+            var xh = ExportCalcul.PerteCharge(rh, e45, "Perte de charge hydraulique", "Démonstration", new[] { "Chemin pompe P2 → CTA-03" }, false, new DateTime(2026, 11, 18, 10, 0, 0));
+            var ventil = new List<Troncon>
+            {
+                new Troncon { Repere = "G1", Designation = "Gaine 600×300", LargeurMm = 600, HauteurMm = 300, LongueurM = 8, RugositeMm = 0.15, DebitM3h = 3000 },
+                new Troncon { Repere = "R2", Designation = "Coude 90° rect.", LargeurMm = 600, HauteurMm = 300, DebitM3h = 3000, Zeta = PerteCharge.ZetaAir(PerteCharge.OrganeAir.Coude, false) },
+                new Troncon { Repere = "R3", Designation = "Clapet coupe-feu", LargeurMm = 600, HauteurMm = 300, DebitM3h = 3000, Zeta = PerteCharge.ZetaAir(PerteCharge.OrganeAir.CoupeFeu, false) },
+                new Troncon { Repere = "G4", Designation = "Gaine Ø315", DiametreMm = 315, LongueurM = 6, RugositeMm = 0.15, DebitM3h = 1500 },
+                new Troncon { Repere = "B5", Designation = "Bouche de soufflage", DiametreMm = 200, DebitM3h = 300, PerteFixePa = 25 },
+            };
+            var ra = PerteCharge.Aeraulique(ventil, Fluide.Air(20));
+            var xa = ExportCalcul.PerteCharge(ra, Fluide.Air(20), "Débit, vitesse et perte de charge – ventilation", "Démonstration", null, true, new DateTime(2026, 11, 18, 10, 0, 0));
+            foreach (var x in new[] { xh, xa })
+                using (var z = new System.IO.Compression.ZipArchive(new System.IO.MemoryStream(x)))
+                    foreach (var en in z.Entries.Where(en => en.FullName.EndsWith(".xml"))) System.Xml.Linq.XDocument.Load(en.Open());
+            Verifier(rh.TotalPa > 25000 && ra.Troncons[0].VitesseMs > 4.6 && ra.Troncons[0].VitesseMs < 4.7, "notes de calcul hydraulique et aéraulique");
+            var dossier = Environment.GetEnvironmentVariable("PIPEFIT_CALC");
+            if (!string.IsNullOrEmpty(dossier))
+            {
+                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dossier, "Perte de charge hydraulique (exemple).xlsx"), xh);
+                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dossier, "Ventilation débit vitesse (exemple).xlsx"), xa);
+            }
+        }
+    }
+
     static void TestExcel()
     {
         var sp = Exemple(); AnalyseSpool.Analyser(sp);
@@ -63,6 +149,7 @@ static class Tests
     static int Main()
     {
         TestExcel();
+        TestHydraulique();
         var s = Exemple();
         AnalyseSpool.Analyser(s);
         var parId = s.Composants.ToDictionary(c => c.Id);

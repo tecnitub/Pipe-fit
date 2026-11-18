@@ -243,6 +243,32 @@ La génération complète est une seule opération Revit (annulable par Ctrl+Z).
 met à jour les feuilles et vues déjà générées. Les éléments de tuyauterie sans numéro de spool sont signalés et
 peuvent être sélectionnés dans le modèle depuis la fenêtre.
 
+## Calculs : perte de charge hydraulique, débit et vitesse en ventilation
+
+Groupe **Calculs** de l'onglet Pipe-Fit.
+
+**Perte de charge** (tuyauterie dessinée) : sélectionnez le chemin à calculer (tubes, raccords, vannes ; Ctrl ou
+fenêtre), cliquez. Pour chaque élément :
+- diamètre intérieur et rugosité du **segment de tuyau Revit**, longueur ; débit du **calcul de débit Revit**, sinon le
+  débit saisi (repéré *) ;
+- fluide : eau, eau + MEG ou eau + MPG (pourcentage), à la température choisie (masse volumique et viscosité calculées) ;
+- perte linéaire **Darcy-Weisbach**, λ de **Colebrook-White** (64/Re en laminaire) ; pertes singulières ζ·ρv²/2 avec ζ
+  par défaut : coude 90° 0,3 (au prorata de l'angle), té passage 0,3 / dérivation 1,3 (d'après le chemin choisi),
+  réduction 0,1, vanne 0,2, papillon 0,3, boisseau 0,1, vanne de réglage 6, clapet 2, filtre 2,5, vanne motorisée 4,
+  compensateur 0,2 ;
+- tableau : débit, ζ et **perte fixe** (valeur fabricant en Pa : batterie, échangeur…) modifiables, recalcul immédiat ;
+  alertes (vitesse > maxi, < 0,3 m/s, > 250 Pa/m) ; **ΔP totale en kPa et mCE** ; note de calcul **Excel**.
+
+**Débit et vitesse ventilation** (gaines) : sélectionnez les gaines (réseau ou chemin), cliquez.
+- section de chaque gaine (Ø ou largeur × hauteur, raccords : leur plus grand raccordement), rugosité du type de gaine ;
+- **débit** : calcul Revit, sinon **somme des bouches en aval** de la CTA (ou de l'élément de plus grande section) dans le
+  réseau relié à la sélection ;
+- vitesse (alerte au-delà de la vitesse maxi, 6 m/s par défaut), Pa/m, pertes des coudes (0,25 rond / 0,3 rect.), tés
+  (passage 0,2 / dérivation 0,6), transitions, registres, clapets coupe-feu, silencieux (reconnus par le nom de famille) ;
+  perte des bouches à saisir (Pa, fabricant) ;
+- **dimensionnement** : pour un débit et une vitesse visée, Ø normalisé et gaine rectangulaire de hauteur donnée ;
+- note de calcul Excel.
+
 ## Export des quantités vers Excel
 
 Bouton **Quantités Excel** du ruban, type « Classeur Excel (*.xlsx) » (proposé par défaut) : un classeur de 5 feuilles,
