@@ -174,7 +174,7 @@ namespace PipeFit.Isometries.Core
     public static class ExportCalcul
     {
         /// <summary>Note de calcul de perte de charge (hydraulique ou aéraulique) : hypothèses, tableau par élément, totaux.</summary>
-        public static byte[] PerteCharge(ResultatPerte r, Fluide f, string titre, string projet, IEnumerable<string> hypotheses, bool air, DateTime date)
+        public static byte[] PerteCharge(ResultatPerte r, Fluide f, string titre, string projet, IEnumerable<string> hypotheses, bool air, DateTime date, string conclusion = null)
         {
             var fe = new FeuilleXlsx { Nom = air ? "Aéraulique" : "Hydraulique", Largeurs = { 8, 40, 14, 12, 10, 10, 9, 10, 10, 8, 11, 12, 12, 12, 40 } };
             fe.Ajouter(new Cellule(titre + (string.IsNullOrWhiteSpace(projet) ? "" : " – " + projet), StyleCellule.Titre));
@@ -204,6 +204,9 @@ namespace PipeFit.Isometries.Core
             fe.Ajouter(new Cellule(""), new Cellule("Perte de charge totale : " + Math.Round(r.TotalPa / 1000, 2).ToString("0.00") + " kPa"
                 + (air ? "" : " = " + Math.Round(r.TotalMce(f), 2).ToString("0.00") + " mCE") + " (" + Math.Round(r.TotalPa) + " Pa)", StyleCellule.Gras));
             fe.Ajouter(new Cellule(""), new Cellule("Méthode : Darcy-Weisbach, λ de Colebrook-White (64/Re en laminaire) ; singularités ζ·ρv²/2 (+ pertes fixes saisies)."));
+            var rem = r.Troncons.Where(t => t.Alerte != "").ToList();
+            if (rem.Count > 0) { fe.Vide(); fe.Ajouter(new Cellule(""), new Cellule("Remarques", StyleCellule.Gras)); foreach (var t in rem) fe.Ajouter(new Cellule(t.Repere), new Cellule(t.Designation + " : " + t.Alerte)); }
+            if (!string.IsNullOrWhiteSpace(conclusion)) { fe.Vide(); fe.Ajouter(new Cellule(""), new Cellule("Conclusion", StyleCellule.Gras)); fe.Ajouter(new Cellule(""), new Cellule(conclusion)); }
             return Xlsx.Ecrire(new[] { fe });
         }
     }

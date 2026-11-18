@@ -144,7 +144,7 @@ namespace PipeFit.Isometries.Revit
                 Dimensionner();
             }
 
-            var export = new Button { Text = "Exporter vers Excel…", Anchor = AnchorStyles.Bottom | AnchorStyles.Right };
+            var export = new Button { Text = "Note de calcul (PDF, Excel)…", Anchor = AnchorStyles.Bottom | AnchorStyles.Right };
             export.SetBounds(ClientSize.Width - 290, ClientSize.Height - 44, 170, 32);
             var fermer = new Button { Text = "Fermer", DialogResult = DialogResult.OK, Anchor = AnchorStyles.Bottom | AnchorStyles.Right };
             fermer.SetBounds(ClientSize.Width - 110, ClientSize.Height - 44, 98, 32);
@@ -252,27 +252,22 @@ namespace PipeFit.Isometries.Revit
         void Exporter()
         {
             Recalculer();
-            using (var dlg = new SaveFileDialog { Title = "Note de calcul", Filter = "Classeur Excel (*.xlsx)|*.xlsx", FileName = titre + ".xlsx" })
+            var hyp = new List<string>
             {
-                if (dlg.ShowDialog(this) != DialogResult.OK) return;
-                var hyp = new List<string>
-                {
-                    "Débit si inconnu : " + ((double)nudDebit.Value).ToString("0.##", Fr) + " m³/h (repéré * dans la fenêtre) ; vitesse maximale " + ((double)nudVmax.Value).ToString("0.0", Fr) + " m/s.",
-                };
-                hyp.AddRange(notes);
-                if (parChemins)
-                {
-                    hyp.Add("Chemin calculé : " + courant.Libelle + " – " + courant.TotalPa.ToString("0", Fr) + " Pa. Pression du réseau au ventilateur (chemin le plus défavorisé) : "
-                        + etats.Max(e => e.TotalPa).ToString("0", Fr) + " Pa.");
-                    hyp.Add("Autres chemins : " + string.Join(" ; ", etats.OrderByDescending(e => e.TotalPa).Select(e => e.Libelle + " " + e.TotalPa.ToString("0", Fr) + " Pa")));
-                }
-                try
-                {
-                    File.WriteAllBytes(dlg.FileName, ExportCalcul.PerteCharge(resultat, fluide, titre, projet, hyp, air, DateTime.Now));
-                    try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(dlg.FileName) { UseShellExecute = true }); } catch { }
-                }
-                catch (Exception ex) { MessageBox.Show(this, "Écriture impossible (fichier ouvert dans Excel ?) : " + ex.Message, "Pipe-Fit"); }
-            }
+                "Débit si inconnu : " + ((double)nudDebit.Value).ToString("0.##", Fr) + " m³/h (repéré * dans la fenêtre) ; vitesse maximale retenue " + ((double)nudVmax.Value).ToString("0.0", Fr) + " m/s.",
+            };
+            hyp.AddRange(notes);
+            if (troncons.Any(t => t.PerteFixePa > 0)) hyp.Add("Pertes de charge fabricant prises en compte : " + string.Join(", ", troncons.Where(t => t.PerteFixePa > 0).Select(t => (t.Repere != "" ? t.Repere : t.Designation) + " " + t.PerteFixePa.ToString("0", Fr) + " Pa")) + ".");
+            var note = new NoteCalcul
+            {
+                Titre = "Note de calcul – " + titre.ToLowerInvariant().Replace("débit, vitesse et perte de charge – ventilation", "débit, vitesse et perte de charge en ventilation"),
+                Projet = projet, Air = air, Fluide = fluide, Resultat = resultat, Hypotheses = hyp, Date = DateTime.Today,
+                Objet = (air ? (parChemins ? "Perte de charge du réseau de ventilation de la CTA à chaque bouche ; chemin détaillé : " + courant.Libelle + "."
+                                           : "Débit, vitesse et perte de charge des gaines sélectionnées (" + troncons.Count + " éléments).")
+                             : "Perte de charge du circuit sélectionné (" + troncons.Count + " éléments, " + resultat.LongueurM.ToString("0.0", Fr) + " m de tube)."),
+            };
+            if (parChemins) { note.Chemins = etats.Select(e => (e.Libelle, e.TotalPa)).ToList(); note.CheminCalcule = courant.Libelle; }
+            using (var f = new FenetreNote(note)) f.ShowDialog(this);
         }
     }
 }

@@ -112,6 +112,8 @@ CALCULS (groupe « Calculs »)
   (Pressure Drop, ΔP kPa, mbar, mCE, paramètre Revit « Perte de charge »…). Les calculs les utilisent.
   Perte de charge aéraulique : cliquez une gaine du réseau. Chemin de la CTA vers chaque bouche,
   le plus défavorisé en tête = pression du réseau au ventilateur ; chemin sélectionnable dans Revit.
+  Note de calcul : bouton « Note de calcul (PDF, Excel)… » des fenêtres de calcul ; cartouche, objet,
+  hypothèses et conclusion modifiables ; export PDF (A4 paysage) et Excel.
   Débit et vitesse ventilation : sélectionnez les gaines, cliquez. Débit (Revit, sinon somme des
   bouches en aval de la CTA), vitesse, Pa/m, pertes des coudes, tés, registres, coupe-feu ;
   dimensionnement Ø / rectangulaire ; note de calcul Excel.

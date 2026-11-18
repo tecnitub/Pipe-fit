@@ -187,7 +187,7 @@ namespace PipeFit.Isometries.Core
             return em * hauteurTexteMm / 0.716 * (gras ? 1.07 : 1.0);
         }
 
-        static double Chasse(char c)
+        public static double Chasse(char c)
         {
             if (c == ' ') return 0.28;
             if ("iljìíîï.,;:'!|".IndexOf(c) >= 0) return 0.24;

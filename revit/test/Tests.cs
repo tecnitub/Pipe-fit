@@ -136,11 +136,34 @@ static class Tests
                 using (var z = new System.IO.Compression.ZipArchive(new System.IO.MemoryStream(x)))
                     foreach (var en in z.Entries.Where(en => en.FullName.EndsWith(".xml"))) System.Xml.Linq.XDocument.Load(en.Open());
             Verifier(rh.TotalPa > 25000 && ra.Troncons[0].VitesseMs > 4.6 && ra.Troncons[0].VitesseMs < 4.7, "notes de calcul hydraulique et aéraulique");
+            // Note de calcul éditable : PDF et Excel
+            var note = new NoteCalcul
+            {
+                Titre = "Note de calcul – perte de charge hydraulique", Projet = "Démonstration Pipe-Fit", Affaire = "2026-118", Indice = "B", Redacteur = "C. Vert",
+                Verificateur = "J. Martin", Societe = "TECNITUB", Objet = "Vérification de la hauteur manométrique de la pompe P2 sur le circuit eau glacée pompe P2 → CTA-03 (DN80).",
+                Date = new DateTime(2026, 11, 18), Fluide = e45, Resultat = rh, Hypotheses = { "Débit de calcul 18 m³/h (puissance froid 105 kW, ΔT 5 K).", "Vannes pleine ouverture ; batterie froide : perte fabricant 25 kPa." },
+            };
+            var pdfOctets = note.Pdf();
+            var debut = System.Text.Encoding.ASCII.GetString(pdfOctets, 0, 8);
+            var fin = System.Text.Encoding.ASCII.GetString(pdfOctets, pdfOctets.Length - 6, 6);
+            Verifier(debut.StartsWith("%PDF-1.4") && fin.Contains("%%EOF") && note.ConclusionProposee().Contains("kPa"), "note de calcul : PDF valide, conclusion proposée");
+            Verifier(PdfSimple.Transcrire("ΔP λ ζ ρ") == "Delta P lambda zeta rho" && PdfSimple.Couper("un deux trois quatre cinq six sept", 60, 9).Count > 1, "PDF : lettres grecques transcrites, lignes coupées");
+            var noteXl = note.Excel();
+            using (var z = new System.IO.Compression.ZipArchive(new System.IO.MemoryStream(noteXl)))
+                Verifier(new System.IO.StreamReader(z.GetEntry("xl/worksheets/sheet1.xml").Open()).ReadToEnd().Contains("Conclusion"), "note de calcul : Excel avec conclusion");
+            // Note longue : plusieurs pages, en-têtes répétés
+            var longue = new NoteCalcul { Fluide = e45, Resultat = PerteCharge.Hydraulique(Enumerable.Range(1, 90).Select(i => new Troncon { Repere = "T" + i, Designation = "Tube acier DN80 n° " + i, DiametreMm = 82.5, LongueurM = 2, DebitM3h = 18 }).ToList(), e45) };
+            var pl = longue.Pdf();
+            var txt = System.Text.Encoding.ASCII.GetString(pl);
+            Verifier(System.Text.RegularExpressions.Regex.Matches(txt, "/Type /Page /").Count >= 3, "note longue : plusieurs pages");
             var dossier = Environment.GetEnvironmentVariable("PIPEFIT_CALC");
             if (!string.IsNullOrEmpty(dossier))
             {
                 System.IO.File.WriteAllBytes(System.IO.Path.Combine(dossier, "Perte de charge hydraulique (exemple).xlsx"), xh);
                 System.IO.File.WriteAllBytes(System.IO.Path.Combine(dossier, "Perte de charge aéraulique (exemple).xlsx"), xa);
+                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dossier, "Note de calcul hydraulique (exemple).pdf"), pdfOctets);
+                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dossier, "Note de calcul hydraulique (exemple).xlsx"), noteXl);
+                System.IO.File.WriteAllBytes(System.IO.Path.Combine(dossier, "note-longue.pdf"), pl);
             }
         }
     }

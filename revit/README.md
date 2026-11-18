@@ -306,6 +306,15 @@ ajoutée en tête de chaque chemin : le total devient la pression au ventilateur
   ventilateur** (la perte propre de la CTA n'est pas comptée) ; chaque chemin peut être affiché, modifié (ζ, pertes
   fixes, débits) et **sélectionné dans Revit** ; note de calcul Excel du chemin affiché.
 
+**Note de calcul** (bouton « Note de calcul (PDF, Excel)… » des fenêtres de calcul) : cartouche (titre, projet, n°
+d'affaire, indice, date, société, rédacteur, vérificateur), objet, hypothèses (une par ligne ; fluide et méthode ajoutés
+automatiquement) et conclusion pré-remplis d'après les résultats et **modifiables** ; société, rédacteur, vérificateur et
+affaire mémorisés. Exports :
+- **PDF** A4 paysage, sans logiciel tiers : cartouche, objet, hypothèses, tableau par élément (Re, λ, J, ζ, Pd, pertes
+  linéaire / singulière / totale) paginé avec en-têtes répétés, remarques, chemins du réseau, résultat encadré
+  (kPa / mCE, pression du réseau au ventilateur), conclusion, pied de page « page x / N » ;
+- **Excel** : la même note dans un classeur (tableau filtrable, totaux en formules, remarques, conclusion).
+
 **Tés et dérivations** (hydraulique et ventilation) : chaque voie du té prend le diamètre (ou la section) et le débit
 de l'élément raccordé, même hors sélection ; la voie commune est celle du plus fort débit, la sortie celle du chemin.
 Le tronçon du té a **la section et le débit de la sortie** (la branche en dérivation) et
