@@ -212,6 +212,9 @@ static class Tests
         Lier(t1, T("DN32"), r1, T("DN32"), vc1);
         Lier(t2, T("DN32"), r2, T("DN32"), vc2);
         Lier(t2, T("DN15"), pu);
+        var pi = A(NatureSchema.Vanne, "PI-1", GenreRobinet.Manometre, "DN15"); var ti = A(NatureSchema.Vanne, "TI-1", GenreRobinet.Thermometre, "DN15", "EG-R");
+        Lier(t1, T("DN15"), pi);
+        Lier(cta, T("DN15", "EG-R"), ti);
         // Retour
         var t3 = A(NatureSchema.Te, sys: "EG-R"); var t4 = A(NatureSchema.Te, sys: "EG-R"); var vr = A(NatureSchema.Vanne, "V3", GenreRobinet.Papillon, sys: "EG-R");
         Lier(cta, T("DN80", "EG-R"), t3, T("DN100", "EG-R"), t4, T("DN100", "EG-R"), vr, T("DN125", "EG-R"), gf);
@@ -291,6 +294,9 @@ static class Tests
         }
         Verifier(surSymbole == 0 && surTrait == 0, "schéma : textes hors symboles et traits (" + surSymbole + ", " + surTrait + " : " + string.Join(" | ", ex2) + ")");
 
+        sc.AjouterLegende();
+        Verifier(sc.Textes.Any(t => t.Texte == "LÉGENDE") && sc.Textes.Any(t => t.Texte == "Manomètre (PI)") && sc.Textes.Any(t => t.Texte.StartsWith("Réseau EG-R")), "schéma : légende des symboles et des réseaux");
+        Verifier(sc.Symboles.Any(x => Schema.TexteCadre(x) == "PI") && sc.Symboles.Any(x => Schema.TexteCadre(x) == "TI"), "schéma : instruments PI / TI");
         var svg = Environment.GetEnvironmentVariable("PIPEFIT_PID");
         if (!string.IsNullOrEmpty(svg)) System.IO.File.WriteAllText(svg, sc.Svg("Schéma de principe – essai"));
     }
@@ -321,6 +327,25 @@ static class Tests
             "équilibrage : VC1 dissipe l'écart dans R1 (Kv " + c1.KvRequis + " ; VC2 " + c2.KvRequis + ")");
         Verifier(Math.Abs(c1.KvRequis - 1.5 / Math.Sqrt(c1.VanneCiblePa / 1e5)) < 0.01, "Kv requis = Q / √ΔP(bar)");
         Verifier(r.HauteurMce(e) > (r.HauteurPa) / (e.Rho * 9.81) && r.SourcePa == 20000, "hauteur manométrique : réseau + production");
+        var fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
+        string K(double pa) => (pa / 1000).ToString("0.0", fr);
+        var n = new NoteCalcul
+        {
+            Titre = "Note de calcul – équilibrage hydraulique", Projet = "Démonstration Pipe-Fit", Affaire = "2026-118", Indice = "A", Redacteur = "C. Vert", Societe = "TECNITUB",
+            Fluide = e, Date = new DateTime(2026, 11, 18), TitreTableau = "Équilibrage par équipement",
+            Objet = "Équilibrage du circuit chauffage : VC1 et VC2 depuis la chaufferie.",
+            Hypotheses = { "Vanne de la boucle critique : au moins 3 kPa.", "Kv requis = Q / √(ΔP en bar)." },
+            Colonnes = new List<(string, double, bool)> { ("Équipement", 150, false), ("Débit m³/h", 54, true), ("Circuit kPa", 56, true), ("Équip. kPa", 56, true), ("Boucle kPa", 56, true),
+                ("À dissiper kPa", 66, true), ("Vanne de réglage", 140, false), ("dP vanne kPa", 60, true), ("Kv requis", 50, true), ("Remarque", 86, false) },
+            TexteResultat = "Point de fonctionnement de la pompe : " + r.DebitTotalM3h.ToString("0.##", fr) + " m³/h sous " + K(r.HauteurPa + r.SourcePa) + " kPa = " + r.HauteurMce(e).ToString("0.00", fr) + " mCE",
+            ConclusionLibre = "La boucle critique est celle de VC2 ; R1 est à régler au Kv requis.",
+        };
+        n.Lignes = r.Boucles.Select(b => new[] { b.Libelle, b.DebitM3h.ToString("0.##", fr), K(b.CircuitPa), K(b.ConsommateurPa), K(b.TotalPa), b.Critique ? "critique" : K(b.ADissiperPa),
+            b.VanneLibelle, b.Vanne != "" ? K(b.VanneCiblePa) : "", b.Vanne != "" ? b.KvRequis.ToString("0.00", fr) : "", b.Remarque }).ToList();
+        var pdfE = n.Pdf(); var xlE = n.Excel();
+        Verifier(System.Text.Encoding.ASCII.GetString(pdfE, 0, 8).StartsWith("%PDF") && xlE.Length > 1000, "note d'équilibrage : PDF et Excel");
+        var dos = Environment.GetEnvironmentVariable("PIPEFIT_CALC");
+        if (!string.IsNullOrEmpty(dos)) { System.IO.File.WriteAllBytes(System.IO.Path.Combine(dos, "Note d'équilibrage (exemple).pdf"), pdfE); }
     }
 
     static void TestExcel()

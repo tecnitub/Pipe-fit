@@ -96,11 +96,15 @@ CE QUI EST CRÉÉ POUR CHAQUE SPOOL
   Relancer la génération met à jour les feuilles et vues existantes (option « Remplacer »).
   Toute la génération s'annule en une fois avec Ctrl+Z.
 
+DIAGNOSTIC (groupe « Aide »)
+  Rapport Excel de ce que Pipe-Fit reconnaît dans le projet et fin du journal : à envoyer pour la mise au point.
+
 SCHÉMA DE PRINCIPE (P&ID) (groupe « Schémas »)
   Sélectionnez un élément du réseau, cliquez « Schéma de principe (P&ID) ». Le réseau est redessiné en
   filaire dans une nouvelle vue de dessin : vannes, pompes, équipements, bouches, tés ; départ et retour
   tracés tous les deux, avec la couleur et le type de trait de leur système Revit ; là où deux lignes se
-  croisent, un espace est laissé pour la lecture ; réseau et DN sur les lignes.
+  croisent, un espace est laissé pour la lecture ; réseau et DN sur les lignes ; manomètres PI et
+  thermomètres TI ; légende ; relancer redessine la même vue ; option : placer sur une feuille.
 
 CALCULS (groupe « Calculs »)
   Perte de charge : sélectionnez le chemin (tubes, raccords, vannes), cliquez « Perte de charge ».
@@ -112,6 +116,10 @@ CALCULS (groupe « Calculs »)
   (Pressure Drop, ΔP kPa, mbar, mCE, paramètre Revit « Perte de charge »…). Les calculs les utilisent.
   Perte de charge aéraulique : cliquez une gaine du réseau. Chemin de la CTA vers chaque bouche,
   le plus défavorisé en tête = pression du réseau au ventilateur ; chemin sélectionnable dans Revit.
+  Équilibrage hydraulique : cliquez un élément du circuit. Boucle de chaque équipement (débit renseigné)
+  depuis la production, boucle critique, pression à dissiper et Kv requis des vannes de réglage, point de
+  fonctionnement de la pompe ; note de calcul.
+  Écrire dans la maquette : vitesse et pertes calculées en paramètres, éléments trop rapides en rouge.
   Note de calcul : bouton « Note de calcul (PDF, Excel)… » des fenêtres de calcul ; cartouche, objet,
   hypothèses et conclusion modifiables ; export PDF (A4 paysage) et Excel.
   Débit et vitesse ventilation : sélectionnez les gaines, cliquez. Débit (Revit, sinon somme des

@@ -302,6 +302,9 @@ static class Demo
         Lier(t1, T("DN32"), r1, T("DN32"), vc1);
         Lier(t2, T("DN32"), r2, T("DN32"), vc2);
         Lier(t2, T("DN15"), pu);
+        var pi = A(NatureSchema.Vanne, "PI-1", GenreRobinet.Manometre, "DN15"); var ti = A(NatureSchema.Vanne, "TI-1", GenreRobinet.Thermometre, "DN15", "EG-R");
+        Lier(t1, T("DN15"), pi);
+        Lier(cta, T("DN15", "EG-R"), ti);
         // Retour
         var t3 = A(NatureSchema.Te, sys: "EG-R"); var t4 = A(NatureSchema.Te, sys: "EG-R"); var vr = A(NatureSchema.Vanne, "V3", GenreRobinet.Papillon, sys: "EG-R");
         Lier(cta, T("DN80", "EG-R"), t3, T("DN100", "EG-R"), t4, T("DN100", "EG-R"), vr, T("DN125", "EG-R"), gf);
@@ -374,7 +377,8 @@ static class Demo
         // Liste de débit de l'atelier, tous spools d'exemple : par système de canalisation, DN, matière ; barres de 6 m
         var listeDebit = ListeDebit.Calculer(spools).Select(l => new { sys = l.Systeme, dn = l.DnMm, mat = l.Materiau, spool = l.Spool, rep = l.Repere, revit = l.LongueurRevitMm, surl = l.SurlongueurMm, coupe = l.CoupeMm, barre = l.Barre });
         var (pn, pl) = ReseauPid();
-        var pid = Schema.Construire(pn, pl).Svg();
+        var schemaPid = Schema.Construire(pn, pl); schemaPid.AjouterLegende();
+        var pid = schemaPid.Svg();
         var json = JsonSerializer.Serialize(new { spools = sortie, reperage = Reperage(), legende, listeDebit, pid }, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
         File.WriteAllText(args.Length > 0 ? args[0] : "demo.json", json);
         if (args.Length > 1) File.WriteAllText(args[1], Quantitatif.Csv(spools)); // exemple de quantitatif pour la démo du CRM

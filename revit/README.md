@@ -171,6 +171,8 @@ Option décochée : étiquettes Revit (familles d'étiquettes choisies), placée
   d'accessoires du projet (avec leurs types pour information) et le symbole trouvé, et permet de le corriger famille par
   famille (ex. « KSB BOA-H » → vanne de réglage). Choix mémorisés dans `%AppData%\PipeFit\Symboles robinetterie par famille.ini`, valables
   pour toutes les commandes et tous les projets.
+- **Pente** : un tube en pente (0,05 à 25 %) porte « pente x % » dans son cadre de repère et une flèche vers son
+  extrémité basse.
 - **Désignation** de la nomenclature : nom de la famille puis du type, précédés du genre s'ils ne le disent pas
   (« Vanne de réglage IMI STAF DN100 »). La robinetterie garde sa propre matière (pas celle du tube).
 - **Symboles d'isométrie normalisés** (option cochée par défaut) : les familles de robinetterie sont masquées dans la
@@ -264,8 +266,18 @@ un élément du réseau (tuyauterie ou gaine), cliquez, choisissez « tout le r�
 - **départ et retour gardent la couleur, le motif de ligne et l'épaisseur du type de système Revit** (styles de ligne
   « Pipe-Fit schéma - système » créés et mis à jour à chaque schéma) ;
 - **réseau et DN** (ou Ø, l × h) écrits sous les lignes à chaque changement ;
-- dessiné dans une **nouvelle vue de dessin** (1:10) « PID date heure », à placer sur une feuille ; relancer après une
-  modification de la maquette.
+- **instruments** en bulle normalisée : manomètre « PI », thermomètre « TI » ;
+- **légende** sous le schéma : chaque symbole présent et le style de ligne de chaque réseau ;
+- dessiné dans une vue de dessin (1:10) « PID – réseaux » : relancer après une modification de la maquette **redessine
+  la même vue** (elle garde sa place sur la feuille) ; option « placer le schéma sur une feuille » (nouvelle feuille
+  PID-01… avec le cartouche du projet).
+
+## Diagnostic
+
+Bouton **Diagnostic** (groupe Aide) : rapport Excel de ce que Pipe-Fit reconnaît dans le projet, à envoyer pour la mise
+au point : versions, éléments par catégorie, paramètres Pipe-Fit présents, robinetterie (genre et symbole d'après le
+nom de famille), raccords (type déduit), systèmes (classification, aller / retour, couleur), équipements et bouches
+(rôle, pertes de charge et débits trouvés et leur source), fin du journal des erreurs.
 
 ## Calculs : perte de charge hydraulique, débit et vitesse en ventilation
 
@@ -314,6 +326,18 @@ affaire mémorisés. Exports :
   linéaire / singulière / totale) paginé avec en-têtes répétés, remarques, chemins du réseau, résultat encadré
   (kPa / mCE, pression du réseau au ventilateur), conclusion, pied de page « page x / N » ;
 - **Excel** : la même note dans un classeur (tableau filtrable, totaux en formules, remarques, conclusion).
+
+**Équilibrage hydraulique** : cliquez un élément du circuit (aller et retour dessinés). Source : production (groupe froid,
+chaudière, PAC, sous-station…) ou pompe ; consommateurs : équipements avec « Débit hydraulique (m³/h) ». Pour chaque
+consommateur, sa **boucle** (aller depuis la source, l'équipement, retour vers la source : deux chemins sans élément
+commun) ; débit de chaque élément = somme des boucles qui le traversent ; pertes des tubes, raccords, tés (selon les
+débits), vannes et pertes fabricant ; **boucle critique** (sa vanne garde au moins 3 kPa) ; **pression à dissiper** et
+**Kv requis** (Q / √ΔP en bar) de chaque vanne de réglage (STAD, STAF…) ; **point de fonctionnement de la pompe**
+(débit total, hauteur réseau + production en kPa et mCE) ; note de calcul PDF / Excel.
+
+**Écrire dans la maquette** (bouton des fenêtres de calcul) : paramètres « Vitesse calculée (m/s) », « Perte linéaire
+calculée (Pa/m) », « Perte de charge calculée (Pa) » sur les éléments calculés, et filtre « Pipe-Fit – vitesse > x m/s »
+ajouté à la vue active (éléments trop rapides en rouge).
 
 **Tés et dérivations** (hydraulique et ventilation) : chaque voie du té prend le diamètre (ou la section) et le débit
 de l'élément raccordé, même hors sélection ; la voie commune est celle du plus fort débit, la sortie celle du chemin.

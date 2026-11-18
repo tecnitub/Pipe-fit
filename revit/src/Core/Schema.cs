@@ -70,6 +70,7 @@ namespace PipeFit.Isometries.Core
             switch (n.Nature)
             {
                 case NatureSchema.Te: case NatureSchema.Extremite: case NatureSchema.Renvoi: return 0.5;
+                case NatureSchema.Vanne when n.Genre == GenreRobinet.Manometre || n.Genre == GenreRobinet.Thermometre: return 6;
                 case NatureSchema.Vanne: case NatureSchema.Accessoire: return Robinetterie.UnPort(n.Genre) ? 3 : 4;
                 case NatureSchema.Reduction: return 2;
                 case NatureSchema.Pompe: return 4;
@@ -424,6 +425,59 @@ namespace PipeFit.Isometries.Core
             X0 = xs.Min(); X1 = xs.Max(); Y0 = ys.Min(); Y1 = ys.Max();
         }
 
+        // ---------- Légende ----------
+
+        static string LibelleLegende(SymboleSchema s)
+        {
+            switch (s.Nature)
+            {
+                case NatureSchema.Te: return "Piquage / té";
+                case NatureSchema.Vanne: return s.Genre == GenreRobinet.Manometre ? "Manomètre (PI)" : s.Genre == GenreRobinet.Thermometre ? "Thermomètre (TI)" : Robinetterie.Libelle(s.Genre) is string l && l != "" ? l : "Vanne";
+                case NatureSchema.Accessoire: return "Accessoire de gaine (registre, coupe-feu…)";
+                case NatureSchema.Reduction: return "Réduction";
+                case NatureSchema.Pompe: return "Pompe";
+                case NatureSchema.Equipement: return "Équipement (repère, famille)";
+                case NatureSchema.Bouche: return "Bouche d'air";
+                case NatureSchema.Extremite: return "Extrémité libre";
+                case NatureSchema.Renvoi: return "Renvoi « vers … »";
+                default: return "";
+            }
+        }
+
+        /// <summary>
+        /// Légende sous le schéma : chaque symbole présent (une fois) et le style de ligne de chaque système, sur 4 colonnes.
+        /// </summary>
+        public void AjouterLegende()
+        {
+            var types = Symboles.GroupBy(s => s.Nature + "|" + (s.Nature == NatureSchema.Vanne || s.Nature == NatureSchema.Accessoire ? s.Genre.ToString() : ""))
+                .Select(g => g.First()).Where(s => LibelleLegende(s) != "").OrderBy(s => (int)s.Nature).ThenBy(s => (int)s.Genre).ToList();
+            var systemes = Traits.Select(t => t.Systeme).Where(x => x != "").Distinct().OrderBy(x => x, StringComparer.CurrentCultureIgnoreCase).ToList();
+            if (types.Count == 0 && systemes.Count == 0) return;
+            Bornes();
+            double y0 = Y0 - 12, colonne = 72, x0 = X0;
+            Textes.Add(new TexteSchema { X = x0, Y = y0, Texte = "LÉGENDE", Taille = Hauteur, Gras = true });
+            int i = 0;
+            void Case(out double x, out double y) { x = x0 + (i % 4) * colonne; y = y0 - 9 - (i / 4) * 12; i++; }
+            foreach (var t in types)
+            {
+                Case(out var x, out var y);
+                var d = new SymboleSchema { Nature = t.Nature, Genre = t.Genre, X = x + 10, Y = y, DemiLargeur = t.Nature == NatureSchema.Equipement ? 7 : t.DemiLargeur, Libelle = t.Nature == NatureSchema.Equipement ? "" : "" };
+                if (t.Nature != NatureSchema.Equipement && t.Nature != NatureSchema.Te && t.Nature != NatureSchema.Renvoi && t.Nature != NatureSchema.Extremite)
+                { Trait(x, y, x + 10 - d.DemiLargeur, y, ""); if (!(t.Nature == NatureSchema.Vanne && Robinetterie.UnPort(t.Genre)) && t.Nature != NatureSchema.Bouche) Trait(x + 10 + d.DemiLargeur, y, x + 20, y, ""); }
+                if (t.Nature == NatureSchema.Te || t.Nature == NatureSchema.Renvoi || t.Nature == NatureSchema.Extremite) Trait(x, y, x + (t.Nature == NatureSchema.Te ? 20 : 10), y, "");
+                if (t.Nature == NatureSchema.Equipement) d.Y = y;
+                Symboles.Add(d);
+                Textes.Add(new TexteSchema { X = x + 23, Y = y, Texte = LibelleLegende(t), Taille = Petit });
+            }
+            foreach (var sys in systemes)
+            {
+                Case(out var x, out var y);
+                Traits.Add(new TraitSchema { X1 = x, Y1 = y, X2 = x + 20, Y2 = y, Systeme = sys });
+                Textes.Add(new TexteSchema { X = x + 23, Y = y, Texte = "Réseau " + sys + (SystemesRetour.Contains(sys) ? " (retour)" : ""), Taille = Petit });
+            }
+            Bornes();
+        }
+
         // ---------- Dessin des symboles (mm papier, centrés sur le point du symbole) ----------
 
         /// <summary>Traits d'un symbole du schéma ; l'axe de la ligne est horizontal (u vers la droite).</summary>
@@ -443,6 +497,10 @@ namespace PipeFit.Isometries.Core
             switch (s.Nature)
             {
                 case NatureSchema.Te: Cercle(0, 0, 0.6, 8); break;
+                case NatureSchema.Vanne when s.Genre == GenreRobinet.Manometre || s.Genre == GenreRobinet.Thermometre:
+                    // Instrument : bulle normalisée (PI, TI) sur piquage
+                    S(-6, 0, -3, 0); Cercle(0, 0, 3, 24);
+                    break;
                 case NatureSchema.Vanne:
                 case NatureSchema.Accessoire:
                     if (s.Genre != GenreRobinet.Aucun)
@@ -464,7 +522,8 @@ namespace PipeFit.Isometries.Core
         }
 
         /// <summary>Libellé écrit dans le cadre d'un équipement.</summary>
-        public static string TexteCadre(SymboleSchema s) => s.Nature == NatureSchema.Equipement ? Court(s.Libelle) : "";
+        public static string TexteCadre(SymboleSchema s) => s.Nature == NatureSchema.Equipement ? Court(s.Libelle)
+            : s.Nature == NatureSchema.Vanne && s.Genre == GenreRobinet.Manometre ? "PI" : s.Nature == NatureSchema.Vanne && s.Genre == GenreRobinet.Thermometre ? "TI" : "";
 
         // ---------- SVG (démonstration, vérification) ----------
 
@@ -473,6 +532,7 @@ namespace PipeFit.Isometries.Core
         /// <summary>Couleur et pointillé d'un système (démonstration) : une couleur par fluide, le retour en tirets.</summary>
         public (string Couleur, string Tirets) Style(string systeme)
         {
+            if (string.IsNullOrEmpty(systeme)) return ("#1d2733", "");
             var fluide = System.Text.RegularExpressions.Regex.Replace(systeme ?? "", @"[-_ ]?(d|r|dep|ret|depart|retour|aller|s|souf|rep|ext)$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
             int h = 0; foreach (var ch in fluide) h = (h * 31 + ch) & 0x7fffffff;
             return (Couleurs[h % Couleurs.Length], SystemesRetour.Contains(systeme ?? "") ? "2.2 1.4" : "");
@@ -499,7 +559,7 @@ namespace PipeFit.Isometries.Core
             sb.Append("</g><g fill=\"#1d2733\">");
             foreach (var sy in Symboles.Where(x => x.Nature == NatureSchema.Te))
                 sb.Append("<circle cx=\"" + X(sy.X) + "\" cy=\"" + Yv(sy.Y) + "\" r=\"0.7\"/>");
-            foreach (var sy in Symboles.Where(x => x.Nature == NatureSchema.Equipement))
+            foreach (var sy in Symboles.Where(x => TexteCadre(x) != ""))
                 sb.Append("<text x=\"" + X(sy.X) + "\" y=\"" + Yv(sy.Y - 0.8) + "\" font-size=\"" + Petit.ToString(inv) + "\" font-weight=\"700\" text-anchor=\"middle\">" + Esc(TexteCadre(sy)) + "</text>");
             foreach (var t in Textes)
                 sb.Append("<text x=\"" + X(t.X) + "\" y=\"" + Yv(t.Y - t.Taille * 0.35) + "\" font-size=\"" + t.Taille.ToString(inv) + "\"" + (t.Gras ? " font-weight=\"700\"" : "")

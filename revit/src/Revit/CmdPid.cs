@@ -62,26 +62,31 @@ namespace PipeFit.Isometries.Revit
             };
             choix.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, "Tout le réseau relié à la sélection", "Tuyauteries et gaines raccordées, équipements et bouches compris.");
             choix.AddCommandLink(TaskDialogCommandLinkId.CommandLink2, "La sélection seulement");
+            choix.VerificationText = "Placer le schéma sur une feuille (cartouche du projet), s'il n'est pas déjà sur une feuille";
             var r2 = choix.Show();
+            bool surFeuille = choix.WasVerificationChecked();
             if (r2 != TaskDialogResult.CommandLink1 && r2 != TaskDialogResult.CommandLink2) return Result.Cancelled;
             var reseau = r2 == TaskDialogResult.CommandLink1 ? Relie(elements) : elements.GroupBy(e => e.Id).Select(g => g.First()).ToList();
 
             var (noeuds, liens) = Lire(doc, reseau);
             var schema = Schema.Construire(noeuds, liens);
+            schema.AjouterLegende();
             if (schema.Symboles.Count == 0 && schema.Traits.Count == 0) { TaskDialog.Show("Pipe-Fit", "Rien à dessiner dans cette sélection."); return Result.Cancelled; }
 
             var systemes = noeuds.Select(n => n.Systeme).Where(x => x != "").Distinct().OrderBy(x => x).ToList();
-            ViewDrafting vue;
+            ViewDrafting vue; bool misAJour; ViewSheet feuille = null;
+            var libSys = systemes.Count > 0 ? string.Join(", ", systemes.Take(6)) + (systemes.Count > 6 ? "…" : "") : "réseau";
             using (var t = new Transaction(doc, "Pipe-Fit : schéma de principe"))
             {
                 t.Start();
-                vue = Dessiner(doc, schema, "Schéma de principe – " + (systemes.Count > 0 ? string.Join(", ", systemes.Take(6)) + (systemes.Count > 6 ? "…" : "") : "réseau"));
+                vue = Dessiner(doc, schema, "Schéma de principe – " + libSys, "PID – " + libSys, out misAJour);
+                if (surFeuille) feuille = PlacerSurFeuille(doc, vue);
                 t.Commit();
             }
             try { uidoc.ActiveView = vue; } catch { }
-            TaskDialog.Show("Pipe-Fit – Schéma de principe", "Vue « " + vue.Name + " » créée : " + schema.Reseaux + " réseau(x), " + schema.Symboles.Count(s => s.Nature != NatureSchema.Te && s.Nature != NatureSchema.Renvoi)
+            TaskDialog.Show("Pipe-Fit – Schéma de principe", "Vue « " + vue.Name + " » " + (misAJour ? "mise à jour" : "créée") + (feuille != null ? ", placée sur la feuille " + feuille.SheetNumber : "") + " : " + schema.Reseaux + " réseau(x), " + schema.Symboles.Count(s => s.Nature != NatureSchema.Te && s.Nature != NatureSchema.Renvoi)
                 + " élément(s) (vannes, pompes, équipements, bouches…), " + schema.Symboles.Count(s => s.Nature == NatureSchema.Renvoi) + " renvoi(s) de boucle.\n\n"
-                + "La vue est une vue de dessin : elle se place sur une feuille comme les autres. Relancez la commande après une modification de la maquette.");
+                + "Relancez la commande après une modification de la maquette : la même vue est redessinée (elle reste sur sa feuille).");
             return Result.Succeeded;
         }
 
@@ -238,15 +243,45 @@ namespace PipeFit.Isometries.Revit
 
         static XYZ P(double x, double y) => new XYZ(Compat.Pieds(x * Echelle), Compat.Pieds(y * Echelle), 0);
 
-        static ViewDrafting Dessiner(Document doc, Schema s, string titre)
+        /// <summary>Place la vue sur une nouvelle feuille (premier cartouche du projet) si elle n'est encore sur aucune feuille.</summary>
+        static ViewSheet PlacerSurFeuille(Document doc, View vue)
         {
-            var type = new FilteredElementCollector(doc).OfClass(typeof(ViewFamilyType)).Cast<ViewFamilyType>().First(v => v.ViewFamily == ViewFamily.Drafting);
-            var vue = ViewDrafting.Create(doc, type.Id);
+            if (new FilteredElementCollector(doc).OfClass(typeof(Viewport)).Cast<Viewport>().Any(v => v.ViewId == vue.Id)) return null;
+            var cartouche = new FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_TitleBlocks).OfClass(typeof(FamilySymbol)).Cast<FamilySymbol>().FirstOrDefault();
+            if (cartouche != null && !cartouche.IsActive) cartouche.Activate();
+            var f = ViewSheet.Create(doc, cartouche?.Id ?? ElementId.InvalidElementId);
+            var numeros = new HashSet<string>(new FilteredElementCollector(doc).OfClass(typeof(ViewSheet)).Cast<ViewSheet>().Select(v => v.SheetNumber));
+            int n = 1; while (numeros.Contains("PID-" + n.ToString("00"))) n++;
+            f.SheetNumber = "PID-" + n.ToString("00");
+            try { f.Name = vue.Name.Replace("PID – ", "Schéma de principe – "); } catch { }
+            doc.Regenerate();
+            var o = f.Outline;
+            var centre = o != null && o.Max.U > o.Min.U ? new XYZ((o.Min.U + o.Max.U) / 2, (o.Min.V + o.Max.V) / 2, 0) : new XYZ(Compat.Pieds(210), Compat.Pieds(148), 0);
+            if (Viewport.CanAddViewToSheet(doc, f.Id, vue.Id)) Viewport.Create(doc, f.Id, vue.Id, centre);
+            return f;
+        }
+
+        static ViewDrafting Dessiner(Document doc, Schema s, string titre, string nomVue, out bool misAJour)
+        {
+            // Même réseau : la vue existante est vidée puis redessinée (elle garde sa place sur la feuille)
+            var vue = new FilteredElementCollector(doc).OfClass(typeof(ViewDrafting)).Cast<ViewDrafting>().FirstOrDefault(v => v.Name == nomVue && !v.IsTemplate);
+            misAJour = vue != null;
+            if (vue != null)
+            {
+                var anciens = new FilteredElementCollector(doc, vue.Id).WhereElementIsNotElementType()
+                    .Where(e => e.OwnerViewId == vue.Id && (e is CurveElement || e is TextNote || e is FilledRegion)).Select(e => e.Id).ToList();
+                if (anciens.Count > 0) doc.Delete(anciens);
+            }
+            else
+            {
+                var type = new FilteredElementCollector(doc).OfClass(typeof(ViewFamilyType)).Cast<ViewFamilyType>().First(v => v.ViewFamily == ViewFamily.Drafting);
+                vue = ViewDrafting.Create(doc, type.Id);
+                var noms = new HashSet<string>(new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>().Select(v => v.Name));
+                var nom = nomVue; int i = 2;
+                while (noms.Contains(nom)) nom = nomVue + " (" + i++ + ")";
+                try { vue.Name = nom; } catch { vue.Name = "PID " + DateTime.Now.ToString("yyyy-MM-dd HH'h'mm"); }
+            }
             vue.Scale = (int)Echelle;
-            var noms = new HashSet<string>(new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>().Select(v => v.Name));
-            var nom = "PID " + DateTime.Now.ToString("yyyy-MM-dd HH'h'mm"); int i = 2;
-            while (noms.Contains(nom)) nom = "PID " + DateTime.Now.ToString("yyyy-MM-dd HH'h'mm") + " (" + i++ + ")";
-            vue.Name = nom;
             var texte = TypeTexte(doc, "Pipe-Fit schéma 2 mm", 2.0, false);
             var gras = TypeTexte(doc, "Pipe-Fit schéma 2 mm gras", 2.0, true);
             var titreT = TypeTexte(doc, "Pipe-Fit schéma 3,5 mm gras", 3.5, true);

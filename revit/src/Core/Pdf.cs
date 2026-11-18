@@ -39,6 +39,7 @@ namespace PipeFit.Isometries.Core
                     case 'ρ': sb.Append("rho"); break;
                     case 'ν': sb.Append("nu"); break;
                     case '≈': sb.Append("~"); break;
+                    case '√': sb.Append("racine"); break;
                     case '≤': sb.Append("<="); break;
                     case '≥': sb.Append(">="); break;
                     case '→': sb.Append("->"); break;
