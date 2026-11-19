@@ -89,6 +89,17 @@ namespace PipeFit.Isometries.Core
         /// <summary>Axe d'une vanne : milieu entre ses deux faces de raccordement.</summary>
         public static Point3 AxeVanne(Composant c) => (c.Extremites[0].Position + c.Extremites[1].Position) * 0.5;
 
+        /// <summary>
+        /// Conduite principale d'un té ou d'une croix : les deux raccordements les plus opposés (null pour un autre raccord).
+        /// Une branche est cotée de son bout à l'axe de la conduite principale ; celle-ci n'est pas coupée au té.
+        /// </summary>
+        static (Extremite A, Extremite B)? Passage(Composant c)
+        {
+            if ((c.Type != TypeComposant.Te && c.Type != TypeComposant.Croix) || c.Extremites.Count < 3) return null;
+            var (a, b) = ExportPcf.Passage(c.Extremites, PointAxe(c));
+            return (a, b);
+        }
+
         /// <summary>La sortie n'est pas sur l'axe qui va de « o » à l'entrée (écart de plus d'1 mm).</summary>
         static bool Decale(Point3 o, Point3 entree, Point3 sortie)
         {
@@ -154,6 +165,13 @@ namespace PipeFit.Isometries.Core
                     }
                     var entree = nb.Extremites.OrderBy(x => x.Position.Distance(ext.Position)).FirstOrDefault();
                     if (entree == null) return;
+                    // Té / croix traversé par la conduite principale : la cote n'est pas coupée, elle continue de l'autre côté
+                    var passage = Passage(nb);
+                    if (passage.HasValue && (entree == passage.Value.A || entree == passage.Value.B))
+                    {
+                        cur = nb; ext = entree == passage.Value.A ? passage.Value.B : passage.Value.A;
+                        continue;
+                    }
                     if (EstNoeud(nb)) { Ajouter(o, no, PointAxe(nb), NatureNoeud.Axe); return; }
                     var autres = nb.Extremites.Where(x => x != entree).ToList();
                     if (autres.Count != 1) { Ajouter(o, no, entree.Position, NatureNoeud.Extremite); return; }
@@ -175,9 +193,12 @@ namespace PipeFit.Isometries.Core
                 // Piquage : le côté collecteur n'est pas suivi (la cote du collecteur est coupée à l'axe du piquage plus bas)
                 var cotCol = c.Type == TypeComposant.Piquage && c.AxeCollecteur.HasValue
                     ? c.Extremites.OrderBy(x => x.Position.Distance(axe)).First() : null;
+                var run = Passage(c);
                 foreach (var x in c.Extremites)
                 {
                     if (x == cotCol) continue;
+                    // Té / croix : seules les branches partent de l'axe ; la conduite principale est cotée d'un seul tenant
+                    if (run.HasValue && (x == run.Value.A || x == run.Value.B)) continue;
                     // Piquage : jamais de cote sur sa propre longueur (la branche est cotée de l'axe du collecteur à la bride)
                     if (Externe(x)) { if (c.Type != TypeComposant.Piquage) Ajouter(axe, NatureNoeud.Axe, x.Position, NatureNoeud.Extremite); continue; }
                     Marcher(axe, NatureNoeud.Axe, c, x);

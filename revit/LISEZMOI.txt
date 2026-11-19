@@ -161,6 +161,8 @@ LÉGENDE DES SYMBOLES
   créée avec les isométries, donne tous les symboles (option dans la fenêtre des isométries).
 
 COTES TOUJOURS À L'AXE
+  Té, croix, piquage : une seule cote par branche, du bout de la branche à l'axe de la conduite principale ;
+  la conduite principale n'est pas coupée au té.
   Cotes d'axe en axe ou au point d'épure (sommet des coudes, centre des tés). Les raccords sont reconnus
   par leur type de pièce Revit avant leur nom ; toute pièce qui change de direction est cotée à son point
   d'épure ; une réduction excentrée coupe la cote (jamais entre deux axes décalés).

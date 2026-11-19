@@ -445,9 +445,10 @@ static class Tests
         // Cotation : axe coude → axe té (1500), axe té → face de bride (120), axe té → bout de tube (674),
         // bout de tube de départ → axe coude (1000)
         var cotes = s.Cotes.Select(c => c.Valeur + " " + c.Libelle).OrderBy(x => x).ToList();
-        Verifier(cotes.Count == 4, "4 cotes : " + string.Join(", ", cotes));
-        Verifier(cotes.Contains("1500 axe / axe"), "cote d'axe en axe coude/té");
-        Verifier(cotes.Contains("120 axe / bride"), "cote d'axe à bride");
+        // Té : la conduite principale n'est pas coupée (coude → bride d'un seul tenant), la branche est cotée de son bout à l'axe
+        Verifier(cotes.Count == 3, "3 cotes : " + string.Join(", ", cotes));
+        Verifier(cotes.Contains("1620 axe / bride"), "conduite principale non coupée au té : axe du coude → bride (1620)");
+        Verifier(!cotes.Any(x => x.StartsWith("1500 ") || x.StartsWith("120 ")), "aucune cote au centre du té sur la conduite principale");
         Verifier(cotes.Contains("674 axe / extrémité"), "cote d'axe à bout de tube (branche)");
         Verifier(cotes.Contains("1000 extrémité / axe") || cotes.Contains("1000 axe / extrémité"), "cote bout de tube / axe coude");
 
@@ -490,9 +491,9 @@ static class Tests
             var pa2 = CoteAjoutee.PourLigneAttache(coude, new Point3(0, 0, 0), new Point3(1, 0, 0), 1000);
             Verifier(pa2.Code == "axe", "ligne d'attache sur le coude : son point d'épure");
             // Même cote que l'automatique : pas en double
-            coude.CotesAjoutees.Clear(); coude.CotesAjoutees.Add(new CoteAjoutee { AttacheA = "axe", IdB = "4", AttacheB = "axe" });
+            coude.CotesAjoutees.Clear(); coude.CotesAjoutees.Add(new CoteAjoutee { AttacheA = "axe", IdB = "5", AttacheB = "bout1" });
             AnalyseSpool.Analyser(sm);
-            Verifier(sm.Cotes.Count(c => c.Ajoutee) == 0 && sm.Cotes.Count(c => c.Valeur == "1500") == 1, "cote ajoutée déjà générée : pas de doublon");
+            Verifier(sm.Cotes.Count(c => c.Ajoutee) == 0 && sm.Cotes.Count(c => c.Valeur == "1620") == 1, "cote ajoutée déjà générée : pas de doublon");
             // Élément B hors du spool : la cote s'arrête à la position enregistrée
             coude.CotesAjoutees.Clear(); coude.CotesAjoutees.Add(new CoteAjoutee { AttacheA = "axe", IdB = "AUTRE", AttacheB = "axe", PositionB = new Point3(1000, 3000, 0) });
             AnalyseSpool.Analyser(sm);

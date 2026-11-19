@@ -107,6 +107,10 @@ Option décochée : étiquettes Revit (familles d'étiquettes choisies), placée
 
 ## Cotes toujours à l'axe
 
+- **Té, croix, piquage : une seule cote par branche**, du bout de la branche à l'axe de la conduite principale ; la
+  conduite principale n'est **pas coupée** au centre du té (elle est cotée d'un seul tenant, d'un point d'épure ou d'une
+  bride à l'autre).
+
 - Toutes les cotes vont **d'axe en axe ou au point d'épure** (intersection des axes) : sommet des coudes, centre des tés,
   axe du collecteur sous un piquage, axe des vannes ; face de bride et bout de tube sont sur l'axe.
 - Les raccords sont reconnus d'abord par leur **type de pièce Revit** (coude, té, croix, réduction, bouchon, piquage),
