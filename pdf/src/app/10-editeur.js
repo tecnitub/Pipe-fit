@@ -5,13 +5,14 @@
   //  cadre / ellipse {x,y,w,h,couleur,epaisseur} · surligne / masque / caviarde {x,y,w,h} · image {x,y,w,h,image}
   //  tampon {x,y,w,h,texte,ligne2,couleur} · cote {x1,y1,x2,y2} · longueur / surface {points} (+ etiquette calculée)
   //  compte {points, symbole, reseau} · legende {x,y,w,h,titre,lignes (calculées)} ; mesures et comptages : reseau, dn
-  const BOITES = ['masque', 'surligne', 'cadre', 'caviarde', 'ellipse', 'bulle', 'image', 'tampon', 'zoneEchelle', 'legende'];
+  //  zone {x,y,w,h : emplacement, src {x,y,w,h} : partie de la page déplacée, fond : couleur laissée à sa place}
+  const BOITES = ['masque', 'surligne', 'cadre', 'caviarde', 'ellipse', 'bulle', 'image', 'tampon', 'zoneEchelle', 'legende', 'zone'];
   const EN_SVG = ['ligne', 'fleche', 'crayon', 'ellipse', 'bulle', 'tampon', 'cote', 'longueur', 'surface', 'angle', 'compte', 'legende'];
   const SANS_DIV = ['ligne', 'fleche', 'crayon', 'ellipse', 'cote', 'longueur', 'surface', 'angle', 'texteModifie', 'compte'];
   const MESURES = ['cote', 'longueur', 'surface', 'angle'];
   // Outils qui s'accrochent aux traits du plan (extrémités, puis traits)
   const ACCROCHE = ['cote', 'longueur', 'surface', 'angle', 'etalonner', 'ligne', 'fleche'];
-  const A_TRACER = ['masque', 'surligne', 'cadre', 'caviarde', 'ellipse', 'bulle', 'zoneEchelle'];
+  const A_TRACER = ['masque', 'surligne', 'cadre', 'caviarde', 'ellipse', 'bulle', 'zoneEchelle', 'zone'];
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const ed = { page: null, elements: [], outil: 'selection', choisi: null, ech: 1, L: 0, H: 0, hist: [], point: null, trace: null, tampon: null, lignes: null };
   const reglages = {
@@ -450,6 +451,17 @@
       return d;
     });
   }
+  // Zone déplacée : à son nouvel emplacement, la même partie de la page (copiée du rendu affiché) ;
+  // sa place d'origine est recouverte du fond (voir dessinerCalque)
+  function noeudsZone(e, i, d) {
+    const src = $('#ed-canvas');
+    const c = document.createElement('canvas');
+    const kx = src.width, ky = src.height;
+    c.width = Math.max(1, Math.round(e.src.w * kx)); c.height = Math.max(1, Math.round(e.src.h * ky));
+    if (src.width) c.getContext('2d').drawImage(src, e.src.x * kx, e.src.y * ky, e.src.w * kx, e.src.h * ky, 0, 0, c.width, c.height);
+    d.appendChild(c);
+    return [];
+  }
   function dessinerCalque() {
     const noeuds = [];
     majMesures(ed.elements, ed.page);
@@ -485,6 +497,7 @@
           if (e.type === 'surligne') d.style.background = e.couleur || '#ffeb3b';
           if (e.type === 'cadre') { d.style.borderColor = e.couleur || '#d32f2f'; d.style.borderWidth = `${(e.epaisseur || 2) * ed.ech}px`; }
           if (e.type === 'image') { const im = document.createElement('img'); im.src = etat.images.get(e.image)?.url || ''; d.appendChild(im); }
+          if (e.type === 'zone' && e.src) noeudsZone(e, i, d);
           if (e.type === 'zoneEchelle') d.dataset.libelle = `Zone ${e.echelle ? (e.echelle.libelle || 'étalonnée') : 'sans échelle'}`;
         }
         noeuds.push(d);
@@ -505,7 +518,15 @@
     });
     if (ed.outil === 'editertexte' && ed.lignes) noeuds.push(...noeudsLignes());
     noeuds.push(...noeudsResultats());
-    calque.replaceChildren(...noeuds);
+    // Places d'origine des zones déplacées, sous tout le reste
+    const caches = ed.elements.map((e, i) => {
+      if (e.type !== 'zone' || !e.src) return null;
+      const c = document.createElement('div');
+      c.className = `el-zone-origine${ed.choisi === i ? ' choisi' : ''}`;
+      Object.assign(c.style, { left: px(e.src.x, 'x'), top: px(e.src.y, 'y'), width: px(e.src.w, 'x'), height: px(e.src.h, 'y'), background: e.fond || '#fff' });
+      return c;
+    }).filter(Boolean);
+    calque.replaceChildren(...caches, ...noeuds);
     calque.querySelectorAll('.el-texte, .el-texteModifie').forEach(d => d.classList.toggle('choisi', Number(d.dataset.i) === ed.choisi));
     majProprietes();
     majRecapMesures();

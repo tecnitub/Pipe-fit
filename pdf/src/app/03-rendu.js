@@ -57,6 +57,16 @@
     const g = canvas.getContext('2d');
     const L = canvas.width, H = canvas.height;
     const k = ech * dpr;
+    // Zones déplacées d'abord, à partir du rendu de la page seule : place d'origine recouverte, contenu recopié
+    const zones = seulement ? [] : p.elements.filter(e => e.type === 'zone' && e.src);
+    if (zones.length) {
+      const copie = document.createElement('canvas');
+      copie.width = L; copie.height = H;
+      copie.getContext('2d').drawImage(canvas, 0, 0);
+      for (const z of zones) { g.fillStyle = z.fond || '#fff'; g.fillRect(z.src.x * L, z.src.y * H, z.src.w * L, z.src.h * H); }
+      for (const z of zones) g.drawImage(copie, z.src.x * L, z.src.y * H, z.src.w * L, z.src.h * H, z.x * L, z.y * H, z.w * L, z.h * H);
+      copie.width = copie.height = 0;
+    }
     for (const e of p.elements) {
       if (seulement && e.type !== seulement) continue;
       const x = e.x * L, y = e.y * H, w = (e.w || 0) * L, h = (e.h || 0) * H;

@@ -95,7 +95,7 @@
         const t = cible.dataset.poignee;
         if (t === 'redim') {
           let w = Math.max(0.005, p.x - o.x), h = Math.max(0.005, p.y - o.y);
-          if (e.type === 'image' && !m.shiftKey) h = w * (o.h / o.w);   // proportions conservées (Maj pour les libérer)
+          if ((e.type === 'image' || e.type === 'zone') && !m.shiftKey) h = w * (o.h / o.w);   // proportions conservées (Maj pour les libérer)
           e.w = w; e.h = h;
         } else if (t === 'p1' || t === 'p2') {
           const fixe = t === 'p1' ? { x: o.x2, y: o.y2 } : { x: o.x1, y: o.y1 };
@@ -239,6 +239,15 @@
         } else if (petit) { ed.elements.pop(); ed.choisi = null; ed.hist.pop(); dessinerCalque(); return; }
         dessinerCalque();
         if (type === 'bulle') { editerTexte(ed.choisi); ed.hist.pop(); }
+        if (type === 'zone') {
+          // Partie encadrée : elle se déplace (et s'agrandit) à la souris ; sa place d'origine devient blanche
+          e.src = { x: e.x, y: e.y, w: e.w, h: e.h };
+          e.fond = '#ffffff';
+          choisirOutil('selection');
+          choisirElement(ed.elements.indexOf(e));
+          note('Faites glisser la zone encadrée à sa nouvelle place (poignée en bas à droite : agrandir ou réduire ; Maj : sans garder les proportions). Suppr : la remettre en place.', 'ok');
+          return;
+        }
         if (type === 'zoneEchelle') {
           const rep = prompt('Échelle de cette zone (ex. 1/20 pour un détail) :', '1/20');
           const m = /^\s*1\s*[/:]\s*(\d+(?:[.,]\d+)?)\s*$/.exec(rep || '');

@@ -349,3 +349,28 @@ test('grands plans : mosaïque (feuilles, plan d\'assemblage, rotation) et rédu
   assert.strictEqual(r.getPageCount(), 3);
   assert.deepStrictEqual(r.getPages().map(p => Math.round(p.getSize().width)), [842, 595, 595]);
 });
+
+test('zone déplacée : contenu recopié au nouvel emplacement (vectoriel), place d\'origine recouverte', async () => {
+  const d = await PDFDocument.create();
+  const f = await d.embedFont(StandardFonts.Helvetica);
+  for (const rot of [0, 90]) {
+    const p = d.addPage([595, 842]);
+    p.drawText('CARTOUCHE', { x: 50, y: 750, size: 20, font: f });
+    p.setRotation(globalThis.PDFLib.degrees(rot));
+  }
+  const octets = await d.save();
+  const zone = { type: 'zone', src: { x: 0.05, y: 0.06, w: 0.3, h: 0.05 }, x: 0.55, y: 0.85, w: 0.3, h: 0.05, fond: '#ffffff' };
+  const sortie = await Moteur.compiler({ sources: { a: { octets } }, pages: [{ source: 'a', index: 0, rotation: 0, elements: [zone] }, { source: 'a', index: 1, rotation: 90, elements: [{ ...zone, src: { x: 0.06, y: 0.05, w: 0.06, h: 0.3 } }] }], options: { editable: false } });
+  const doc = await PDFDocument.load(sortie);
+  for (const page of doc.getPages()) {
+    const xo = page.node.Resources().lookup(PDFName.of('XObject'));
+    const formes = xo.keys().map(k => xo.lookup(k)).filter(o => o.dict && o.dict.get(PDFName.of('Subtype')) === PDFName.of('Form'));
+    assert.strictEqual(formes.length, 1, 'une forme : la zone recopiée');
+    const contenu = Buffer.from(globalThis.PDFLib.decodePDFRawStream(formes[0]).decode()).toString('latin1');
+    assert.match(contenu, /CARTOUCHE|<[0-9A-F]+> Tj/, 'texte d\'origine dans la zone');
+    const bbox = formes[0].dict.lookup(PDFName.of('BBox')).asArray().map(n => Math.round(n.asNumber()));
+    assert.ok(bbox[2] > bbox[0] && bbox[3] > bbox[1]);
+  }
+  // Page d'origine non modifiée par la zone : le texte reste dans son flux (masqué par le fond)
+  assert.match(await contenuPages(sortie), /CARTOUCHE|Tj/);
+});

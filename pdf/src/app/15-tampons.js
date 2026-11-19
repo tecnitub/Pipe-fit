@@ -151,6 +151,6 @@
       return;
     }
     if (ctrl || ev.altKey) return;
-    const outils = { n: 'compte', v: 'selection', t: 'texte', b: 'bulle', l: 'ligne', f: 'fleche', r: 'cadre', e: 'ellipse', c: 'crayon', s: 'surligne', m: 'masque', x: 'caviarde', i: 'image' };
+    const outils = { d: 'zone', n: 'compte', v: 'selection', t: 'texte', b: 'bulle', l: 'ligne', f: 'fleche', r: 'cadre', e: 'ellipse', c: 'crayon', s: 'surligne', m: 'masque', x: 'caviarde', i: 'image' };
     if (outils[touche]) choisirOutil(outils[touche]);
   }

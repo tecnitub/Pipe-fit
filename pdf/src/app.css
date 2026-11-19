@@ -144,6 +144,10 @@ svg.forme path.prise { stroke: transparent; fill: none; stroke-width: 14px; poin
 .calque.trace svg.forme path, .calque.trace .el { cursor: crosshair; }
 .contour { position: absolute; border: 1.5px dashed #2f80ed; pointer-events: none; border-radius: 3px; }
 .el-texte[contenteditable=true] { cursor: text; outline: 2px solid #2f80ed; user-select: text; }
+.el-zone { cursor: move; outline: 1px dashed #1565c0; outline-offset: 0; }
+.el-zone canvas { display: block; width: 100%; height: 100%; }
+.el-zone-origine { position: absolute; pointer-events: none; }
+.el-zone-origine.choisi { outline: 1px dashed #9aa7b5; }
 .el-masque { background: #fff; outline: 1px dotted #9aa7b5; cursor: move; }
 .el-surligne { opacity: .35; cursor: move; }
 .el-cadre { border-style: solid; cursor: move; }

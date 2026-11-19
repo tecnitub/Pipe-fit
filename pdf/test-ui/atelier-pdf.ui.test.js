@@ -569,3 +569,43 @@ test('grands plans : mosaïque A3 à l\'échelle avec plan d\'assemblage, ou pla
   assert.deepStrictEqual(page.erreurs, []);
   await page.context().close();
 });
+
+test('déplacer une zone : encadrer une partie de la page et la faire glisser ailleurs', { skip: ignorer }, async () => {
+  const page = await appli();
+  await ajouter(page, ['notice.pdf'], 3);
+  await ouvrirPage(page, 1);
+  const b = await page.locator('#ed-page').boundingBox();
+  const P = (x, y) => [b.x + x / 595 * b.width, b.y + (842 - y) / 842 * b.height];
+  // Titre « Notice CTA page 1 » (x 60, y 760, corps 24) encadré puis descendu de 400 points
+  await page.click('[data-outil=zone]');
+  await page.mouse.move(...P(50, 795)); await page.mouse.down(); await page.mouse.move(...P(330, 750), { steps: 5 }); await page.mouse.up();
+  assert.strictEqual(await page.evaluate(() => window.AtelierPDF.ed.outil), 'selection', 'retour à la sélection pour déplacer');
+  await page.mouse.move(...P(190, 772)); await page.mouse.down(); await page.mouse.move(...P(190, 372), { steps: 8 }); await page.mouse.up();
+  const z = await page.evaluate(() => window.AtelierPDF.ed.elements.find(e => e.type === 'zone'));
+  assert.ok(Math.abs((z.y - z.src.y) * 842 - 400) < 3, `déplacée de ${(z.y - z.src.y) * 842} pt`);
+  // Écran : la zone affiche bien le titre (pixels foncés), sa place d'origine est blanche
+  const sombres = await page.evaluate(() => { const c = document.querySelector('.el-zone canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 100) n++; return n; });
+  assert.ok(sombres > 50, 'titre visible dans la zone');
+  await page.click('#ed-fermer');
+  const octets = await enregistrer(page);
+  // PDF : rendu de la page 1, encre au nouvel emplacement, plus à l'ancien
+  const encre = await page.evaluate(async b64 => {
+    const doc = await pdfjsLib.getDocument({ data: Uint8Array.from(atob(b64), c => c.charCodeAt(0)) }).promise;
+    const p = await doc.getPage(1);
+    const vp = p.getViewport({ scale: 1 });
+    const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
+    const g = c.getContext('2d');
+    await p.render({ canvasContext: g, viewport: vp }).promise;
+    const zone = (x0, y0, x1, y1) => { const d = g.getImageData(x0, 842 - y1, x1 - x0, y1 - y0).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 100) n++; return n; };
+    return { origine: zone(55, 755, 320, 790), destination: zone(55, 355, 320, 390) };
+  }, Buffer.from(octets).toString('base64'));
+  assert.strictEqual(encre.origine, 0, 'place d\'origine vide');
+  assert.ok(encre.destination > 200, `titre au nouvel emplacement (${encre.destination})`);
+  // Suppr : la zone revient à sa place
+  await ouvrirPage(page, 1);
+  await page.evaluate(() => window.AtelierPDF.choisirElement(window.AtelierPDF.ed.elements.findIndex(e => e.type === 'zone')));
+  await page.keyboard.press('Delete');
+  assert.strictEqual(await page.evaluate(() => window.AtelierPDF.ed.elements.filter(e => e.type === 'zone').length), 0);
+  assert.deepStrictEqual(page.erreurs, []);
+  await page.context().close();
+});

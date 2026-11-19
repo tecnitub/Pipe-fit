@@ -41,6 +41,8 @@ Obtenir les fichiers : onglet **Actions** du dépôt GitHub → dernière exécu
 - **Tampons** (BON POUR EXÉCUTION, VISA, VU… avec nom et date) et **signatures mémorisées** sur le poste.
 - **Mesures sur plan** à l'échelle (1/50, 1/100… ou étalonnage sur une cote) : cotes, longueurs cumulées, surfaces ;
   total par page.
+- **Déplacer une zone** de la page (cartouche, bloc de texte, détail) : encadrer puis faire glisser, agrandir ou
+  réduire ; contenu recopié en vectoriel dans le PDF, place d'origine recouverte.
 - **Métré** : réseau (EF, ECS, chauffage, gaz…, couleur du réseau) et diamètre (DN, cuivre, PER, Ø) sur chaque
   mesure, **comptage de symboles** (radiateurs, bouches, vannes…), **légende** automatique sur le plan, export
   **Excel** (.xlsx : longueurs par réseau et diamètre, comptages, surfaces, détail).

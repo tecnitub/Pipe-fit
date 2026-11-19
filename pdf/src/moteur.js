@@ -327,6 +327,10 @@
     const boite = page.getCropBox();
     const affiche = tailleAffichee(boite, r);
     const versChemin = (x, y) => { const p = versPdf(boite, r, x / affiche.l, y / affiche.h); return [p.x, -p.y]; };
+    // Zones déplacées en premier : place d'origine recouverte du fond, contenu posé au nouvel emplacement
+    const zones = (elements || []).filter(e => e.type === 'zone' && ctx.zones && ctx.zones.has(e));
+    for (const z of zones) page.drawRectangle({ ...rectPdf(boite, r, z.src), color: couleur(z.fond, [1, 1, 1]) });
+    for (const z of zones) { const rd = rectPdf(boite, r, z); page.drawPage(ctx.zones.get(z), { x: rd.x, y: rd.y, width: rd.width, height: rd.height }); }
     for (const e of elements || []) {
       if (e.type === 'texte') {
         const police = e.gras ? ctx.policeGras : ctx.police;
@@ -680,6 +684,20 @@
         const zonePdf = e => (e.coins ? { poly: e.coins.map(([u, v]) => { const q = versPdf(boite0, r, u, v); return [q.x, q.y]; }) } : rectPdf(boite0, r, e.zone));
         const comptes = (!p.type || p.type === 'pdf') ? await retirerTexte(sortie, page, modifs.map(zonePdf), ctx) : modifs.map(() => 0);
         elements = p.elements.map(e => { const k = modifs.indexOf(e); return k >= 0 ? { ...e, retire: comptes[k] > 0, policeOrigine: comptes.polices ? comptes.polices[k] : null } : e; });
+      }
+      // Zones déplacées : la partie de la page d'origine est intégrée telle quelle (vectorielle), avant tout ajout
+      const zones = (p.elements || []).filter(e => e.type === 'zone' && e.src && e.src.w > 0 && e.src.h > 0);
+      ctx.zones = null;
+      if (zones.length) {
+        const boite0 = page.getCropBox();
+        ctx.zones = new Map();
+        if (!page.node.Contents()) page.node.set(lib().PDFName.of('Contents'), sortie.context.register(sortie.context.stream('')));
+        for (const z of zones) {
+          const rs = rectPdf(boite0, r, z.src);
+          const emb = await sortie.embedPage(page, { left: rs.x, bottom: rs.y, right: rs.x + rs.width, top: rs.y + rs.height });
+          await emb.embed(); // contenu copié maintenant, sans les annotations ajoutées ensuite
+          ctx.zones.set(z, emb);
+        }
       }
       // Annotations et texte OCR dans un flux à part, retiré si le PDF est rouvert dans Atelier PDF pour être modifié
       nouveauFlux(page);

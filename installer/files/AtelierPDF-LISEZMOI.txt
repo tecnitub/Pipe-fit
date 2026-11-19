@@ -151,6 +151,17 @@ COMPILER ET ENREGISTRER
   « Diviser… » crée plusieurs PDF : un par document, un par page, toutes les N pages,
   ou selon des plages (ex. 1-3, 4-10, 11-).
 
+DÉPLACER UNE PARTIE DE LA PAGE (dans l'éditeur de page)
+  Outil « ✥ Déplacer une zone » (touche D) : encadrer à la souris la partie à
+  déplacer (un cartouche, un bloc de texte, un logo, un détail de plan…), puis la
+  faire glisser à sa nouvelle place sur la feuille.
+  - Poignée en bas à droite : agrandir ou réduire (proportions gardées ; Maj
+    enfoncée : libres). Flèches du clavier : ajuster au point près.
+  - Sa place d'origine devient blanche.
+  - Le contenu déplacé reste net dans le PDF (texte et traits d'origine, pas une
+    photo de la page).
+  - Pour la remettre en place : la sélectionner et Suppr (ou Ctrl+Z).
+
 MESURER SUR UN PLAN (dans l'éditeur de page)
   1. Choisir l'échelle du plan dans la liste « Échelle » (1/50, 1/100…).
      Elle s'applique à toutes les pages du même document.
