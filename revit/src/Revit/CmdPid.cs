@@ -43,16 +43,8 @@ namespace PipeFit.Isometries.Revit
             if (uidoc == null) { message = "Ouvrez un projet Revit."; return Result.Failed; }
             var doc = uidoc.Document;
             var elements = uidoc.Selection.GetElementIds().Select(doc.GetElement).Where(EstReseau).ToList();
-            if (elements.Count == 0)
-            {
-                try
-                {
-                    elements = uidoc.Selection.PickObjects(ObjectType.Element, new FiltreReseau(), "Schéma de principe : sélectionnez un ou plusieurs éléments du réseau, puis Terminer")
-                        .Select(r => doc.GetElement(r)).ToList();
-                }
-                catch (Autodesk.Revit.Exceptions.OperationCanceledException) { return Result.Cancelled; }
-            }
-            if (elements.Count == 0) return Result.Cancelled;
+            // Sans sélection : les P&ID du projet (par types de systèmes)
+            if (elements.Count == 0) return ParSystemes(data, doc, uidoc);
 
             var choix = new TaskDialog("Pipe-Fit – Schéma de principe")
             {
@@ -62,9 +54,11 @@ namespace PipeFit.Isometries.Revit
             };
             choix.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, "Tout le réseau relié à la sélection", "Tuyauteries et gaines raccordées, équipements et bouches compris.");
             choix.AddCommandLink(TaskDialogCommandLinkId.CommandLink2, "La sélection seulement");
+            choix.AddCommandLink(TaskDialogCommandLinkId.CommandLink3, "Les P&ID du projet (PID chaud, PID froid, PID aéraulique…)", "Choisir les types de systèmes de chaque P&ID, puis générer.");
             choix.VerificationText = "Placer le schéma sur une feuille (cartouche du projet), s'il n'est pas déjà sur une feuille";
             var r2 = choix.Show();
             bool surFeuille = choix.WasVerificationChecked();
+            if (r2 == TaskDialogResult.CommandLink3) return ParSystemes(data, doc, uidoc);
             if (r2 != TaskDialogResult.CommandLink1 && r2 != TaskDialogResult.CommandLink2) return Result.Cancelled;
             var reseau = r2 == TaskDialogResult.CommandLink1 ? Relie(elements) : elements.GroupBy(e => e.Id).Select(g => g.First()).ToList();
 
@@ -87,6 +81,102 @@ namespace PipeFit.Isometries.Revit
             TaskDialog.Show("Pipe-Fit – Schéma de principe", "Vue « " + vue.Name + " » " + (misAJour ? "mise à jour" : "créée") + (feuille != null ? ", placée sur la feuille " + feuille.SheetNumber : "") + " : " + schema.Reseaux + " réseau(x), " + schema.Symboles.Count(s => s.Nature != NatureSchema.Te && s.Nature != NatureSchema.Renvoi)
                 + " élément(s) (vannes, pompes, équipements, bouches…), " + schema.Symboles.Count(s => s.Nature == NatureSchema.Renvoi) + " renvoi(s) de boucle.\n\n"
                 + "Relancez la commande après une modification de la maquette : la même vue est redessinée (elle reste sur sa feuille).");
+            return Result.Succeeded;
+        }
+
+        // ---------- P&ID par types de systèmes ----------
+
+        const string NomParametre = "P&ID Pipe-Fit (définitions)";
+        static readonly Guid GuidParametre = new Guid("4f8d2a6c-1b93-4e57-a0c8-7d36e15b9f22");
+
+        static string Classification(MEPSystemType t)
+        {
+            try
+            {
+                switch (t.SystemClassification)
+                {
+                    case MEPSystemClassification.SupplyHydronic: return "aller";
+                    case MEPSystemClassification.ReturnHydronic: return "retour";
+                    case MEPSystemClassification.SupplyAir: return "soufflage";
+                    case MEPSystemClassification.ReturnAir: return "reprise";
+                    case MEPSystemClassification.ExhaustAir: return "extraction";
+                    case MEPSystemClassification.DomesticHotWater: return "eau chaude sanitaire";
+                    case MEPSystemClassification.DomesticColdWater: return "eau froide sanitaire";
+                    case MEPSystemClassification.Sanitary: return "évacuation";
+                    default: return t.SystemClassification.ToString();
+                }
+            }
+            catch { return ""; }
+        }
+
+        static ElementId TypeSysteme(Element e)
+        {
+            var id = e.get_Parameter(BuiltInParameter.RBS_PIPING_SYSTEM_TYPE_PARAM)?.AsElementId();
+            if (id == null || id == ElementId.InvalidElementId) id = e.get_Parameter(BuiltInParameter.RBS_DUCT_SYSTEM_TYPE_PARAM)?.AsElementId();
+            return id ?? ElementId.InvalidElementId;
+        }
+
+        Result ParSystemes(ExternalCommandData data, Document doc, UIDocument uidoc)
+        {
+            var elementsReseau = new FilteredElementCollector(doc).WherePasses(new ElementMulticategoryFilter(Cats.ToList())).WhereElementIsNotElementType()
+                .Where(e => !(e is FamilyInstance fi) || fi.SuperComponent == null).ToList();
+            var parType = elementsReseau.GroupBy(TypeSysteme).Where(g => g.Key != ElementId.InvalidElementId).ToDictionary(g => g.Key, g => g.Count());
+            var typesRevit = new FilteredElementCollector(doc).OfClass(typeof(MEPSystemType)).Cast<MEPSystemType>()
+                .Where(t => parType.ContainsKey(t.Id)).OrderBy(t => t is MechanicalSystemType).ThenBy(t => t.Name).ToList();
+            if (typesRevit.Count == 0) { TaskDialog.Show("Pipe-Fit", "Aucune tuyauterie ni gaine rattachée à un type de système dans ce projet."); return Result.Cancelled; }
+            var infos = typesRevit.Select(t => new TypeSystemeInfo { Nom = t.Name, Abreviation = t.Abbreviation ?? "", Classification = Classification(t), Air = t is MechanicalSystemType, Elements = parType[t.Id] }).ToList();
+            var texte = doc.ProjectInformation?.LookupParameter(NomParametre)?.AsString();
+            var defs = DefinitionsPid.Lire(texte);
+            if (defs.Count == 0) defs = DefinitionsPid.Proposer(infos);
+
+            List<DefinitionPid> aGenerer; bool surFeuille;
+            using (var f = new FenetrePid(defs, infos))
+            {
+                var r = f.ShowDialog(new FenetreRevit(data.Application.MainWindowHandle));
+                if (r != System.Windows.Forms.DialogResult.OK && r != System.Windows.Forms.DialogResult.Yes) return Result.Cancelled;
+                defs = f.Definitions; aGenerer = r == System.Windows.Forms.DialogResult.OK ? f.AGenerer : new List<DefinitionPid>(); surFeuille = f.SurFeuille;
+            }
+            var bilan = new List<string>();
+            ViewDrafting derniere = null;
+            using (var t = new Transaction(doc, "Pipe-Fit : P&ID du projet"))
+            {
+                t.Start();
+                try
+                {
+                    if (!new FilteredElementCollector(doc).OfClass(typeof(SharedParameterElement)).Any(p => p.Name == NomParametre))
+                        ParametreSpool.Creer(doc, data.Application.Application, NomParametre, GuidParametre, "Définitions des P&ID Pipe-Fit (types de systèmes de chaque schéma). Se règle avec le bouton Schéma de principe.",
+                            SpecTypeId.String.Text, new[] { BuiltInCategory.OST_ProjectInformation });
+                    doc.Regenerate();
+                    doc.ProjectInformation?.LookupParameter(NomParametre)?.Set(DefinitionsPid.Ecrire(defs));
+                }
+                catch (Exception ex) { bilan.Add("Définitions non enregistrées dans le projet : " + ex.Message); }
+
+                var idsParNom = typesRevit.GroupBy(x => x.Name).ToDictionary(g => g.Key, g => g.Select(x => x.Id).ToList());
+                foreach (var d in aGenerer)
+                {
+                    var ids = new HashSet<ElementId>(d.Systemes.Where(idsParNom.ContainsKey).SelectMany(n => idsParNom[n]));
+                    var garde = new Dictionary<ElementId, Element>();
+                    foreach (var e in elementsReseau) if (ids.Contains(TypeSysteme(e))) garde[e.Id] = e;
+                    // Raccords et accessoires sans type de système, équipements et bouches raccordés aux réseaux choisis
+                    for (int passe = 0; passe < 4; passe++)
+                        foreach (var e in garde.Values.ToList())
+                            foreach (var v in Voisins(e))
+                                if (!garde.ContainsKey(v.Id) && (TypeSysteme(v) == ElementId.InvalidElementId || ids.Contains(TypeSysteme(v)))) garde[v.Id] = v;
+                    if (garde.Count == 0) { bilan.Add(d.Nom + " : aucun élément."); continue; }
+                    var (noeuds, liens) = Lire(doc, garde.Values.ToList());
+                    var schema = Schema.Construire(noeuds, liens);
+                    schema.AjouterLegende();
+                    var vue = Dessiner(doc, schema, "Schéma de principe – " + d.Nom, "PID – " + d.Nom, out var maj);
+                    var feuille = surFeuille ? PlacerSurFeuille(doc, vue) : null;
+                    derniere = vue;
+                    bilan.Add(d.Nom + " : vue « " + vue.Name + " » " + (maj ? "mise à jour" : "créée") + (feuille != null ? ", feuille " + feuille.SheetNumber : "")
+                        + " – " + schema.Reseaux + " réseau(x), " + schema.Symboles.Count(x => x.Nature != NatureSchema.Te && x.Nature != NatureSchema.Renvoi) + " élément(s).");
+                }
+                t.Commit();
+            }
+            if (derniere != null) try { uidoc.ActiveView = derniere; } catch { }
+            TaskDialog.Show("Pipe-Fit – P&ID du projet", (aGenerer.Count == 0 ? "Définitions des P&ID enregistrées dans le projet." : string.Join("\n", bilan))
+                + (aGenerer.Count > 0 ? "\n\nRelancez après une modification de la maquette : chaque P&ID est redessiné dans sa vue." : ""));
             return Result.Succeeded;
         }
 

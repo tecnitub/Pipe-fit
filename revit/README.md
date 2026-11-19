@@ -252,8 +252,15 @@ peuvent être sélectionnés dans le modèle depuis la fenêtre.
 
 ## Schéma de principe (P&ID)
 
-Bouton **Schéma de principe (P&ID)** (groupe Schémas) : reprend en filaire les éléments dessinés en 3D. Sélectionnez
-un élément du réseau (tuyauterie ou gaine), cliquez, choisissez « tout le réseau relié » ou « la sélection seulement ».
+Bouton **Schéma de principe (P&ID)** (groupe Schémas) : reprend en filaire les éléments dessinés en 3D.
+- **P&ID du projet** (lancé sans sélection, ou choix « Les P&ID du projet ») : fenêtre avec la liste des P&ID (cochés =
+  à générer) et, pour chacun, **les types de systèmes qui lui appartiennent** (un système peut être dans plusieurs P&ID).
+  Proposition automatique d'après les noms : **PID chaud** (chauffage, eau chaude…), **PID froid** (eau glacée,
+  refroidissement…), **PID aéraulique** (gaines), PID autres réseaux ; ajouter, renommer, supprimer. Les définitions sont
+  enregistrées **dans le projet** (paramètre « P&ID Pipe-Fit (définitions) » des informations du projet). Chaque P&ID
+  reprend les éléments de ses systèmes, les raccords et accessoires sans système et les équipements / bouches raccordés,
+  et se dessine dans sa vue « PID – nom » (mise à jour au même endroit à chaque génération).
+- **Réseau sélectionné** : sélectionnez un élément, cliquez, choisissez « tout le réseau relié » ou « la sélection seulement ».
 - **symbole d'après le seul nom de la famille, comme les isométries** (le nom du type n'est pas lu ; correspondances
   « Symboles… » comprises) : accessoire → vanne du genre reconnu, ou raccord si la famille le dit (bride, réduction, té) ;
   raccord → vanne si sa famille nomme une robinetterie, sinon réduction / té d'après le nom puis le type de pièce Revit ;

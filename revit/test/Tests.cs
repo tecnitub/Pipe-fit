@@ -233,6 +233,20 @@ static class Tests
 
     static void TestSchema()
     {
+        // P&ID par systèmes : proposition et enregistrement
+        var types = new[]
+        {
+            new TypeSystemeInfo { Nom = "Eau glacée départ", Abreviation = "EG-D" }, new TypeSystemeInfo { Nom = "Eau glacée retour", Abreviation = "EG-R" },
+            new TypeSystemeInfo { Nom = "Chauffage aller", Abreviation = "CH-A" }, new TypeSystemeInfo { Nom = "Chauffage retour", Abreviation = "CH-R" },
+            new TypeSystemeInfo { Nom = "Soufflage", Air = true }, new TypeSystemeInfo { Nom = "Reprise", Air = true }, new TypeSystemeInfo { Nom = "Gaz naturel", Abreviation = "GAZ" },
+        };
+        var prop = DefinitionsPid.Proposer(types);
+        Verifier(prop.Count == 4 && prop[0].Nom == "PID chaud" && prop[0].Systemes.Count == 2 && prop[1].Systemes.Contains("Eau glacée retour") && prop[2].Systemes.Count == 2
+            && prop[3].Systemes.Single() == "Gaz naturel", "P&ID proposés : chaud, froid, aéraulique, autres");
+        prop[0].Nom = "PID chaufferie ¦ RDC";
+        var relu = DefinitionsPid.Lire(DefinitionsPid.Ecrire(prop));
+        Verifier(relu.Count == 4 && relu[0].Nom == "PID chaufferie   RDC" && relu[1].Systemes.SequenceEqual(prop[1].Systemes), "P&ID : définitions relues telles qu'écrites");
+
         // Symbole du schéma d'après le seul nom de la famille, comme les isométries
         Verifier(Schema.Classer(CategorieSchema.Accessoire, "TECOFI CB 3448N") == (NatureSchema.Vanne, GenreRobinet.Clapet, false), "P&ID : clapet par le nom de famille");
         Verifier(Schema.Classer(CategorieSchema.Accessoire, "Bride à collerette PN16").Nature == NatureSchema.Ligne, "P&ID : bride dessinée en famille de vanne → ligne, pas de vanne");

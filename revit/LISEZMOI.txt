@@ -100,6 +100,9 @@ DIAGNOSTIC (groupe « Aide »)
   Rapport Excel de ce que Pipe-Fit reconnaît dans le projet et fin du journal : à envoyer pour la mise au point.
 
 SCHÉMA DE PRINCIPE (P&ID) (groupe « Schémas »)
+  Sans sélection : fenêtre « P&ID du projet ». Créez vos P&ID (PID chaud, PID froid, PID aéraulique… proposés
+  d'après les noms des systèmes) et cochez les types de systèmes de chacun ; enregistré dans le projet ;
+  « Générer » dessine chaque P&ID coché dans sa vue « PID – nom ».
   Sélectionnez un élément du réseau, cliquez « Schéma de principe (P&ID) ». Le réseau est redessiné en
   filaire dans une nouvelle vue de dessin : vannes, pompes, équipements, bouches, tés ; départ et retour
   tracés tous les deux, avec la couleur et le type de trait de leur système Revit ; là où deux lignes se

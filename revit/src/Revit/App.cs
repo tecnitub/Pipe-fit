@@ -88,7 +88,7 @@ namespace PipeFit.Isometries.Revit
             var schemas = app.CreateRibbonPanel(Onglet, "Schémas");
             schemas.AddItem(new PushButtonData("PipeFitPid", "Schéma de\nprincipe (P&ID)", Assembly.GetExecutingAssembly().Location, typeof(CmdPid).FullName)
             {
-                ToolTip = "Reprend en filaire (schéma de principe P&ID) le réseau dessiné en 3D : vannes, pompes, équipements, bouches, tés, réseaux et DN.",
+                ToolTip = "Schémas de principe (P&ID) filaires repris de la maquette 3D. Sans sélection : les P&ID du projet (PID chaud, froid, aéraulique…), dont vous choisissez les systèmes.",
                 LongDescription = "Sélectionnez un élément du réseau (tuyauterie ou gaine) puis cliquez : tout le réseau relié (ou la sélection seulement) est "
                     + "redessiné en schéma filaire dans une nouvelle vue de dessin. Tubes, coudes et brides fondus en lignes ; tronc horizontal, dérivations "
                     + "sur leur propre ligne sans croisement ; aller avant retour, boucles fermées par des renvois « vers … » ; réseau et DN sur les lignes.",
