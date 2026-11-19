@@ -84,6 +84,16 @@ namespace PipeFit.Isometries.Core
                 var g = Robinetterie.Genre(c);
                 return g == GenreRobinet.Aucun ? TypeComposant.Accessoire : Robinetterie.Type(g);
             }
+            // Raccord : le type de pièce Revit d'abord (un coude nommé « Courbe » ou « Raccord soudé 90 » reste un coude)
+            switch (c.TypePiece ?? "")
+            {
+                case "Elbow": return TypeComposant.Coude;
+                case "Tee": case "Wye": case "LateralTee": return c.Extremites.Count >= 4 ? TypeComposant.Croix : TypeComposant.Te;
+                case "Cross": case "LateralCross": return TypeComposant.Croix;
+                case "Transition": return TypeComposant.Reduction;
+                case "Cap": return TypeComposant.Bouchon;
+                case "TapPerpendicular": case "TapAdjustable": case "SpudPerpendicular": case "SpudAdjustable": return TypeComposant.Piquage;
+            }
             if (Regex.IsMatch(nom, @"\b(tube|tuyau|pipe|canalisation)\b") && c.Extremites.Count == 2 && c.Centre == null) return TypeComposant.Tube;
             if (Regex.IsMatch(nom, @"coude|elbow|\bbend\b|cintre")) return TypeComposant.Coude;
             if (Regex.IsMatch(nom, @"reduc|reducer|transition|cone")) return TypeComposant.Reduction;
@@ -103,6 +113,7 @@ namespace PipeFit.Isometries.Core
                 case 2:
                     var e1 = c.Extremites[0]; var e2 = c.Extremites[1];
                     if (Math.Abs(e1.DnMm - e2.DnMm) > 0.5) return TypeComposant.Reduction;
+                    if (e1.Direction.HasValue && e2.Direction.HasValue && Cotation.Devie(c)) return TypeComposant.Coude;
                     if (c.Centre.HasValue)
                     {
                         var a = Angle(e1.Position - c.Centre.Value, e2.Position - c.Centre.Value);
@@ -117,6 +128,10 @@ namespace PipeFit.Isometries.Core
         public static double AngleCoude(Composant c)
         {
             if (c.Extremites.Count != 2) return 0;
+            // Directions des raccordements (sortantes) : déviation = 180° − angle entre elles
+            var d1 = c.Extremites[0].Direction; var d2 = c.Extremites[1].Direction;
+            if (d1.HasValue && d2.HasValue && d1.Value.Longueur > 1e-9 && d2.Value.Longueur > 1e-9)
+                return Math.Round(180 - Angle(d1.Value, d2.Value), 1);
             var centre = c.Centre ?? Milieu(c.Extremites[0].Position, c.Extremites[1].Position);
             var a = Angle(c.Extremites[0].Position - centre, c.Extremites[1].Position - centre);
             return a < 1 ? 0 : 180 - a;

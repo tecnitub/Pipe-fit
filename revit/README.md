@@ -105,6 +105,17 @@ Option décochée : étiquettes Revit (familles d'étiquettes choisies), placée
 - Feuille **ISO-LÉGENDE** (option « Feuille de légende de tous les symboles », cochée) créée avec les isométries :
   tous les symboles, en deux tableaux (repères, soudures, cotes ; robinetterie et accessoires), à joindre au dossier.
 
+## Cotes toujours à l'axe
+
+- Toutes les cotes vont **d'axe en axe ou au point d'épure** (intersection des axes) : sommet des coudes, centre des tés,
+  axe du collecteur sous un piquage, axe des vannes ; face de bride et bout de tube sont sur l'axe.
+- Les raccords sont reconnus d'abord par leur **type de pièce Revit** (coude, té, croix, réduction, bouchon, piquage),
+  puis par le nom de la famille : un coude nommé « Courbe » ou « Raccord soudé 90° » est coté à son point d'épure.
+- Garde-fou géométrique : toute pièce à deux raccordements qui **change de direction** est un nœud coté à son point
+  d'épure, jamais traversée par une cote ; l'angle du coude est lu sur les directions des raccordements.
+- **Réduction excentrée** (axe décalé) : la cote s'arrête à sa face d'entrée et repart de sa face de sortie, pour ne
+  jamais relier deux axes différents.
+
 ## Cotation des vannes et brides
 
 - **Bride** : la cote s'arrête au bout de la bride (face de bride).

@@ -487,6 +487,39 @@ static class Tests
             Verifier(sm.Cotes.Any(c => c.Ajoutee && c.Valeur == "3000"), "cote ajoutée vers un élément hors spool");
         }
 
+        // Cotes toujours à l'axe : coude mal nommé (« Courbe »), type de pièce Revit, réduction excentrée
+        {
+            Spool Ligne(string famCoude, string typePiece, bool directions)
+            {
+                var sp = new Spool { Nom = "AX" };
+                sp.Composants.Add(C("t1", "Tuyau", "", TypeComposant.Tube, 100, 924, null, E(0, 0, 0, 100, null), E(924, 0, 0, 100, "k")));
+                var k = C("k", famCoude, "", TypeComposant.Autre, 100, 0, null, E(924, 0, 0, 100, "t1"), E(1000, 76, 0, 100, "t2"));
+                k.TypePiece = typePiece;
+                if (directions) { k.Extremites[0].Direction = new Point3(-1, 0, 0); k.Extremites[1].Direction = new Point3(0, 1, 0); }
+                sp.Composants.Add(k);
+                sp.Composants.Add(C("t2", "Tuyau", "", TypeComposant.Tube, 100, 924, null, E(1000, 76, 0, 100, "k"), E(1000, 1000, 0, 100, null)));
+                AnalyseSpool.Analyser(sp);
+                return sp;
+            }
+            var s1 = Ligne("Courbe 90 acier", "", true);
+            var c1 = s1.Cotes.Select(c => c.Valeur + " " + c.Libelle).OrderBy(x => x).ToList();
+            Verifier(c1.Count == 2 && c1.All(x => x.StartsWith("1000")) && s1.Composants.First(c => c.Id == "k").Type == TypeComposant.Coude,
+                "coude nommé « Courbe » : coude, cotes au point d'épure (" + string.Join(", ", c1) + ")");
+            Verifier(Math.Abs(s1.Composants.First(c => c.Id == "k").AngleDeg - 90) < 0.1, "angle du coude d'après les directions : 90°");
+            var s2 = Ligne("Raccord soudé", "Elbow", false);
+            Verifier(s2.Composants.First(c => c.Id == "k").Type == TypeComposant.Coude, "type de pièce Revit « Elbow » : coude, quel que soit le nom");
+            // Réduction excentrée : axe décalé de 20 mm
+            var sx = new Spool { Nom = "EX" };
+            sx.Composants.Add(C("a", "Tuyau", "", TypeComposant.Tube, 100, 1000, null, E(0, 0, 0, 100, null), E(1000, 0, 0, 100, "r")));
+            var rd = C("r", "Réduction excentrée", "", TypeComposant.Autre, 100, 0, null, E(1000, 0, 0, 100, "a"), E(1100, 0, -20, 65, "b"));
+            rd.Extremites[0].Direction = new Point3(-1, 0, 0); rd.Extremites[1].Direction = new Point3(1, 0, 0);
+            sx.Composants.Add(rd);
+            sx.Composants.Add(C("b", "Tuyau", "", TypeComposant.Tube, 65, 900, null, E(1100, 0, -20, 65, "r"), E(2000, 0, -20, 65, null)));
+            AnalyseSpool.Analyser(sx);
+            var cr2 = sx.Cotes.Select(c => c.Valeur).OrderBy(x => x).ToList();
+            Verifier(sx.Cotes.All(c => Math.Abs(c.A.Z - c.B.Z) < 1e-6), "réduction excentrée : aucune cote ne relie deux axes décalés (" + string.Join(", ", cr2) + ")");
+        }
+
         // Point d'axe par intersection des directions des connecteurs (coude dont l'insertion n'est pas au sommet)
         var coudeDir = C("k", "Coude", "", TypeComposant.Coude, 50, 0, new Point3(978, 0, 22), E(924, 0, 0, 50, null), E(1000, 0, 76, 50, null));
         coudeDir.Extremites[0].Direction = new Point3(-1, 0, 0); coudeDir.Extremites[1].Direction = new Point3(0, 0, 1);

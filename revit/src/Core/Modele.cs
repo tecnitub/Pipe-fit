@@ -72,6 +72,8 @@ namespace PipeFit.Isometries.Core
     {
         public string Id = "";
         public TypeComposant Type = TypeComposant.Autre;
+        /// <summary>Type de pièce Revit d'un raccord (« Elbow », « Tee », « Transition »…), vide sinon : prioritaire sur le nom.</summary>
+        public string TypePiece = "";
         /// <summary>Vrai pour les accessoires de canalisation (vannes, filtres, instruments…).</summary>
         public bool EstAccessoire;
         public string Famille = "";

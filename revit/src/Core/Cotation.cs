@@ -30,7 +30,19 @@ namespace PipeFit.Isometries.Core
     {
         /// <summary>Composants où l'axe change de direction : la cote s'arrête à leur point d'axe.</summary>
         public static bool EstNoeud(Composant c) =>
-            c.Type == TypeComposant.Coude || c.Type == TypeComposant.Te || c.Type == TypeComposant.Croix || c.Type == TypeComposant.Piquage;
+            c.Type == TypeComposant.Coude || c.Type == TypeComposant.Te || c.Type == TypeComposant.Croix || c.Type == TypeComposant.Piquage || Devie(c);
+
+        /// <summary>
+        /// Pièce à deux raccordements qui change de direction (coude mal nommé, raccord coudé…) : nœud, coté à son point
+        /// d'épure (intersection des axes), jamais traversé par une cote.
+        /// </summary>
+        public static bool Devie(Composant c)
+        {
+            if (c.Type == TypeComposant.Tube || c.Extremites.Count != 2) return false;
+            var d1 = c.Extremites[0].Direction; var d2 = c.Extremites[1].Direction;
+            if (!d1.HasValue || !d2.HasValue || d1.Value.Longueur < 1e-9 || d2.Value.Longueur < 1e-9) return false;
+            return d1.Value.Normalise().Dot(d2.Value.Normalise()) > -0.9994; // déviation de plus de 2°
+        }
 
         /// <summary>
         /// Point d'axe d'un raccord : intersection des axes de deux connecteurs non parallèles ; à défaut le point
@@ -76,6 +88,16 @@ namespace PipeFit.Isometries.Core
 
         /// <summary>Axe d'une vanne : milieu entre ses deux faces de raccordement.</summary>
         public static Point3 AxeVanne(Composant c) => (c.Extremites[0].Position + c.Extremites[1].Position) * 0.5;
+
+        /// <summary>La sortie n'est pas sur l'axe qui va de « o » à l'entrée (écart de plus d'1 mm).</summary>
+        static bool Decale(Point3 o, Point3 entree, Point3 sortie)
+        {
+            var d = entree - o;
+            if (d.Longueur < 1) return false;
+            var u = d.Normalise(); var w = sortie - o;
+            var lat = w - u * w.Dot(u);
+            return lat.Longueur > 1;
+        }
 
         /// <summary>Extrémité de « c » raccordée à « autre » au point donné (null si aucune).</summary>
         public static Extremite EnFace(Composant c, Composant autre, Point3 point) =>
@@ -133,6 +155,13 @@ namespace PipeFit.Isometries.Core
                     if (EstNoeud(nb)) { Ajouter(o, no, PointAxe(nb), NatureNoeud.Axe); return; }
                     var autres = nb.Extremites.Where(x => x != entree).ToList();
                     if (autres.Count != 1) { Ajouter(o, no, entree.Position, NatureNoeud.Extremite); return; }
+                    // Axe décalé à la traversée (réduction excentrée…) : la cote s'arrête à la face d'entrée et repart de la sortie
+                    if (!EstVanne(nb) && Decale(o, entree.Position, autres[0].Position))
+                    {
+                        var nf = AnalyseSpool.Boulonnable(nb) ? NatureNoeud.Bride : NatureNoeud.Extremite;
+                        Ajouter(o, no, entree.Position, nf);
+                        o = autres[0].Position; no = nf;
+                    }
                     cur = nb; ext = autres[0];
                 }
             }

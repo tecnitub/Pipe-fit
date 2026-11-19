@@ -159,6 +159,7 @@ namespace PipeFit.Isometries.Revit
             c.TypeSysteme = Texte(e, BuiltInParameter.RBS_PIPING_SYSTEM_TYPE_PARAM);
             c.Taille = Texte(e, BuiltInParameter.RBS_CALCULATED_SIZE);
             c.EstAccessoire = Compat.EstCategorie(e, BuiltInCategory.OST_PipeAccessory);
+            try { if (e is FamilyInstance fiP && fiP.MEPModel is Autodesk.Revit.DB.Mechanical.MechanicalFitting mfP) c.TypePiece = mfP.PartType.ToString(); } catch { }
 
             try { c.CotesAjoutees = ParametreSpool.Cotes(e); } catch { }
             var marques = ParametreSpool.Marques(e);

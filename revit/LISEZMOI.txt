@@ -160,6 +160,11 @@ LÉGENDE DES SYMBOLES
   Chaque isométrie porte la légende des symboles présents (bande sous le dessin). La feuille ISO-LÉGENDE,
   créée avec les isométries, donne tous les symboles (option dans la fenêtre des isométries).
 
+COTES TOUJOURS À L'AXE
+  Cotes d'axe en axe ou au point d'épure (sommet des coudes, centre des tés). Les raccords sont reconnus
+  par leur type de pièce Revit avant leur nom ; toute pièce qui change de direction est cotée à son point
+  d'épure ; une réduction excentrée coupe la cote (jamais entre deux axes décalés).
+
 COTES DES VANNES ET BRIDES
   Bride : cote au bout de la bride. Vanne, clapet, filtre, compensateur : cote à l'axe (milieu entre les
   faces). La nomenclature donne leur face à face (colonne « Encombrement », en mm).
