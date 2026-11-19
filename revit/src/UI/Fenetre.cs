@@ -43,7 +43,7 @@ namespace PipeFit.Isometries.Revit
         readonly CheckBox ckRemplacer = Case("Remplacer les isométries déjà générées"), ckRepere = Case("Écrire le repère dans :"),
             ckSoudures = Case("Numéros de soudure (S1…) et de raccordement (R1…) sur la vue"),
             ckCotes = Case("Cotes d'axe en axe et d'axe à bride (ou à bout de tube)"),
-            ckSymboles = Case("Robinetterie en symboles normalisés (papillon, réglage, clapet, compensateur…)"),
+            ckSymboles = Case("Robinetterie en symboles normalisés (vannes, clapets, filtres…)"),
             ckFeuille = Case("Repères et n° de soudure placés sans chevauchement (sinon étiquettes Revit ci-dessus)"),
             ckLegende = Case("Feuille de légende de tous les symboles (ISO-LÉGENDE)"),
             ckPdf = Case("PDF (une feuille par spool)"), ckPcf = Case("PCF (Isogen, Spoolgen…)"), ckCsv = Case("CSV nomenclature, soudures et cotes (Pipe-Fit)");

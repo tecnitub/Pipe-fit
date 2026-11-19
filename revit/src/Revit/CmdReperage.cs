@@ -330,7 +330,7 @@ namespace PipeFit.Isometries.Revit
             ClientSize = new System.Drawing.Size(500, 340);
             Controls.Add(new System.Windows.Forms.Label
             {
-                Text = nbSpools + " spool(s) numéroté(s) : chacun dans sa couleur, avec son numéro et son ordre de montage.",
+                Text = nbSpools + " spool(s) : chacun en couleur, avec son numéro et son ordre de montage.",
                 Location = new System.Drawing.Point(14, 12), Size = new System.Drawing.Size(472, 20),
             });
             rbActive.Text = vueActive != null ? "Copie de la vue active « " + vueActive + " » (plan, coupe ou 3D)" : "Copie de la vue active (ouvrez un plan, une coupe ou une vue 3D)";

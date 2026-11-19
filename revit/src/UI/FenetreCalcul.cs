@@ -128,7 +128,7 @@ namespace PipeFit.Isometries.Revit
             Remplir();
             Controls.Add(grille);
 
-            lblTotal.SetBounds(12, ClientSize.Height - basGrille + 8, 900, 24); lblTotal.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            lblTotal.SetBounds(12, ClientSize.Height - basGrille + 8, ClientSize.Width - 24, 24); lblTotal.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             Controls.Add(lblTotal);
             if (air)
             {
@@ -247,7 +247,7 @@ namespace PipeFit.Isometries.Revit
                 + resultat.LongueurM.ToString("0.0", Fr) + " m";
             var alertes = troncons.Count(t => t.Alerte != "");
             if (parChemins)
-                tot = "Ce chemin : " + resultat.TotalPa.ToString("0", Fr) + " Pa   –   pression du réseau au ventilateur (chemin le plus défavorisé) : "
+                tot = "Ce chemin : " + resultat.TotalPa.ToString("0", Fr) + " Pa   –   réseau au ventilateur : "
                     + etats.Max(e => e.TotalPa).ToString("0", Fr) + " Pa   –   linéaire " + resultat.LineairePa.ToString("0", Fr) + " Pa, singulière "
                     + resultat.SingulierPa.ToString("0", Fr) + " Pa, " + resultat.LongueurM.ToString("0.0", Fr) + " m";
             lblTotal.Text = tot + (alertes > 0 ? "   –   " + alertes + " remarque(s)" : "");

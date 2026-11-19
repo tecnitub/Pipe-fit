@@ -28,14 +28,14 @@ namespace PipeFit.Isometries.Revit
             Text = "Pipe-Fit – P&ID du projet";
             Font = new Font("Segoe UI", 9f); Ergonomie.Preparer(this); StartPosition = FormStartPosition.CenterParent; MinimizeBox = false;
             ClientSize = new Size(900, 560);
-            Controls.Add(new Label { Text = "P&ID (cochez ceux à générer) :", Location = new Point(12, 12), Size = new Size(280, 20) });
-            lbPid.SetBounds(12, 34, 280, 380); lbPid.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
+            Controls.Add(new Label { Text = "P&ID (cochez ceux à générer) :", Location = new Point(12, 12), Size = new Size(340, 20) });
+            lbPid.SetBounds(12, 34, 340, 380); lbPid.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
             Controls.Add(lbPid);
             int yb = 422;
             Button B(string t, int x, int w) { var b = new Button { Text = t, Anchor = AnchorStyles.Bottom | AnchorStyles.Left }; b.SetBounds(x, yb, w, 28); Controls.Add(b); return b; }
-            var ajouter = B("Ajouter…", 12, 66); var renommer = B("Renommer…", 82, 80); var supprimer = B("Supprimer", 166, 72); var proposer = B("Proposer", 242, 50);
-            lblSys.SetBounds(310, 12, 578, 20); lblSys.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right; Controls.Add(lblSys);
-            lbSys.SetBounds(310, 34, 578, 416); lbSys.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            var ajouter = B("Ajouter…", 12, 78); var renommer = B("Renommer…", 94, 92); var supprimer = B("Supprimer", 190, 84); var proposer = B("Proposer", 278, 74);
+            lblSys.SetBounds(370, 12, 518, 20); lblSys.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right; Controls.Add(lblSys);
+            lbSys.SetBounds(370, 34, 518, 416); lbSys.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             foreach (var t in types) lbSys.Items.Add(t.Libelle);
             Controls.Add(lbSys);
             Controls.Add(new Label
