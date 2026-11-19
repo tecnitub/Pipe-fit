@@ -9,9 +9,9 @@
 <body>
 <header class="barre">
   <div class="marque"><span class="logo">PDF</span><span>Atelier PDF</span></div>
-  <div class="outils">
+  <div class="outils ruban">
     <div class="menu">
-      <button id="b-projet" title="Nouveau, ouvrir ou enregistrer un projet ; documents des chantiers Pipe-Fit">📁<span class="lib"> Projet</span> ▾</button>
+      <button id="b-projet" title="Nouveau, ouvrir ou enregistrer un projet ; documents des chantiers Pipe-Fit" data-ico="projet"><span class="lib">Projet ▾</span></button>
       <div id="menu-projet" class="menu-liste" hidden>
         <button id="m-nouveau">Nouveau (repartir de zéro)</button>
         <button id="m-ouvrir">Ouvrir un projet ou un PDF…</button>
@@ -24,29 +24,29 @@
         <button id="m-pf-deconnexion">⏏ Se déconnecter de Pipe-Fit</button>
       </div>
     </div>
-    <button id="b-ouvrir" class="principal-clair" title="Ajouter des PDF ou des images (Ctrl+O)">＋ Ajouter des fichiers</button>
-    <button id="b-blanche" title="Insérer une page blanche après la sélection">▯<span class="lib"> Page blanche</span></button>
-    <button id="b-intercalaire" title="Insérer une page de titre (intercalaire) après la sélection">❡<span class="lib"> Intercalaire</span></button>
-    <button id="b-doe" title="Assembler un DOE : page de garde, sections avec intercalaires, documents classés, sommaire">📚<span class="lib"> DOE…</span></button>
+    <button id="b-ouvrir" class="principal-clair" title="Ajouter des PDF ou des images (Ctrl+O)" data-ico="ajouter"><span class="lib">Ajouter</span></button>
+    <button id="b-blanche" title="Insérer une page blanche après la sélection" data-ico="blanche"><span class="lib">Page<span class="long"> blanche</span></span></button>
+    <button id="b-intercalaire" title="Insérer une page de titre (intercalaire) après la sélection" data-ico="intercalaire"><span class="lib">Intercalaire</span></button>
+    <button id="b-doe" title="Assembler un DOE : page de garde, sections avec intercalaires, documents classés, sommaire" data-ico="doe"><span class="lib">DOE</span></button>
     <span class="sep"></span>
-    <button id="b-annuler" title="Annuler (Ctrl+Z)">↶</button>
-    <button id="b-retablir" title="Rétablir (Ctrl+Y)">↷</button>
+    <button id="b-annuler" title="Annuler (Ctrl+Z)" data-ico="annuler"><span class="lib">Annuler</span></button>
+    <button id="b-retablir" title="Rétablir (Ctrl+Y)" data-ico="retablir"><span class="lib">Rétablir</span></button>
     <span class="sep"></span>
-    <button id="b-gauche" class="sel" title="Pivoter à gauche (Maj+R)">⟲</button>
-    <button id="b-droite" class="sel" title="Pivoter à droite (R)">⟳</button>
-    <button id="b-dupliquer" class="sel" title="Dupliquer (Ctrl+D)">⧉<span class="lib"> Dupliquer</span></button>
-    <button id="b-modifier" class="sel" title="Modifier la page : texte, masquer, surligner, signature… (double-clic)">✎<span class="lib"> Modifier</span></button>
-    <button id="b-comparer" title="Comparer deux pages (ex. indices A et B d'un plan) : sélectionnez-les avec Ctrl+clic">⇆<span class="lib"> Comparer</span></button>
-    <button id="b-ocr" title="Reconnaître le texte des scans et photos (OCR) : PDF interrogeable, texte sélectionnable, caviardage par recherche. Pages sélectionnées, ou toutes.">🔍<span class="lib"> OCR</span></button>
-    <button id="b-supprimer" class="sel danger" title="Supprimer les pages sélectionnées (Suppr)">🗑<span class="lib"> Supprimer</span></button>
+    <button id="b-gauche" class="sel" title="Pivoter à gauche (Maj+R)" data-ico="pivoter-g"><span class="lib">Pivoter</span></button>
+    <button id="b-droite" class="sel" title="Pivoter à droite (R)" data-ico="pivoter-d"><span class="lib">Pivoter</span></button>
+    <button id="b-dupliquer" class="sel" title="Dupliquer (Ctrl+D)" data-ico="dupliquer"><span class="lib">Dupliquer</span></button>
+    <button id="b-modifier" class="sel" title="Modifier la page : texte, masquer, surligner, signature… (double-clic)" data-ico="modifier"><span class="lib">Modifier</span></button>
+    <button id="b-comparer" title="Comparer deux pages (ex. indices A et B d'un plan) : sélectionnez-les avec Ctrl+clic" data-ico="comparer"><span class="lib">Comparer</span></button>
+    <button id="b-ocr" title="Reconnaître le texte des scans et photos (OCR) : PDF interrogeable, texte sélectionnable, caviardage par recherche. Pages sélectionnées, ou toutes." data-ico="ocr"><span class="lib">OCR</span></button>
+    <button id="b-supprimer" class="sel danger" title="Supprimer les pages sélectionnées (Suppr)" data-ico="supprimer"><span class="lib">Supprimer</span></button>
     <span class="sep"></span>
-    <button id="b-extraire" class="sel" title="Enregistrer seulement les pages sélectionnées dans un nouveau PDF">⇱<span class="lib"> Extraire</span></button>
-    <button id="b-diviser" title="Découper en plusieurs PDF">✂<span class="lib"> Diviser…</span></button>
-    <button id="b-rechercher" title="Rechercher un mot dans le document (Ctrl+F)">🔎</button>
-    <button id="b-imprimer" title="Imprimer le document (Ctrl+P)">🖨<span class="lib"> Imprimer</span></button>
-    <button id="b-plans" title="Imprimer les grands plans (A0, A1, A2) sur des feuilles A4 ou A3 : en mosaïque à l'échelle, ou réduits">▦<span class="lib"> Grands plans…</span></button>
-    <button id="b-aide" title="Comment faire ? Aide et visite guidée (F1)">❓<span class="lib"> Aide</span></button>
-    <button id="b-enregistrer" class="principal" title="Compiler toutes les pages en un PDF (Ctrl+S)">⬇ Enregistrer le PDF</button>
+    <button id="b-extraire" class="sel" title="Enregistrer seulement les pages sélectionnées dans un nouveau PDF" data-ico="extraire"><span class="lib">Extraire</span></button>
+    <button id="b-diviser" title="Découper en plusieurs PDF" data-ico="diviser"><span class="lib">Diviser</span></button>
+    <button id="b-rechercher" title="Rechercher un mot dans le document (Ctrl+F)" data-ico="rechercher"><span class="lib">Rechercher</span></button>
+    <button id="b-imprimer" title="Imprimer le document (Ctrl+P)" data-ico="imprimer"><span class="lib">Imprimer</span></button>
+    <button id="b-plans" title="Imprimer les grands plans (A0, A1, A2) sur des feuilles A4 ou A3 : en mosaïque à l'échelle, ou réduits" data-ico="plans"><span class="lib">Grands plans</span></button>
+    <button id="b-aide" title="Comment faire ? Aide et visite guidée (F1)" data-ico="aide"><span class="lib">Aide</span></button>
+    <button id="b-enregistrer" class="principal" title="Compiler toutes les pages en un PDF (Ctrl+S)" data-ico="enregistrer"><span class="lib">Enregistrer<span class="long"> le PDF</span></span></button>
   </div>
 </header>
 
@@ -148,47 +148,31 @@
 <!-- Éditeur de page -->
 <div id="editeur" class="modale" hidden>
   <div class="ed-barre">
-    <div class="groupe-outils" id="ed-outils">
-      <button data-outil="selection" class="actif" title="Sélectionner, déplacer, redimensionner (V)">↖</button>
+    <div class="groupe-outils ruban" id="ed-outils">
+      <button data-outil="selection" class="actif" title="Sélectionner, déplacer, redimensionner (V)" data-ico="selection"><span class="lib">Sélection</span></button>
       <span class="sep-ed"></span>
-      <button data-outil="editertexte" title="Modifier le texte du PDF : cliquer sur une ligne et la corriger ; l'ancien texte est retiré du fichier (scans : après OCR)">✏️<span class="lib">&nbsp;Modifier le texte</span></button>
-      <button data-outil="texte" title="Texte à la volée : cliquer sur la page et écrire (T)">T<span class="lib">&nbsp;Texte</span></button>
-      <button data-outil="bulle" title="Bulle : tracer la bulle (ou cliquer sur le point à commenter), puis écrire. Le point bleu règle la pointe (B)">💬<span class="lib">&nbsp;Bulle</span></button>
+      <button data-outil="editertexte" title="Modifier le texte du PDF : cliquer sur une ligne et la corriger ; l'ancien texte est retiré du fichier (scans : après OCR)" data-ico="editertexte"><span class="lib">Modifier texte</span></button>
+      <button data-outil="texte" title="Texte à la volée : cliquer sur la page et écrire (T)" data-ico="texte"><span class="lib">Texte</span></button>
+      <button data-outil="bulle" title="Bulle : tracer la bulle (ou cliquer sur le point à commenter), puis écrire. Le point bleu règle la pointe (B)" data-ico="bulle"><span class="lib">Bulle</span></button>
       <span class="sep-ed"></span>
-      <button data-outil="ligne" title="Trait (L) – Maj : horizontal, vertical ou 45°">╱<span class="lib">&nbsp;Trait</span></button>
-      <button data-outil="fleche" title="Flèche (F) – Maj : horizontale, verticale ou 45°">↗<span class="lib">&nbsp;Flèche</span></button>
-      <button data-outil="cadre" title="Rectangle / carré (R)">▢<span class="lib">&nbsp;Carré</span></button>
-      <button data-outil="ellipse" title="Ellipse / cercle (E)">◯<span class="lib">&nbsp;Cercle</span></button>
-      <button data-outil="crayon" title="Dessin à main levée (C)">✎<span class="lib">&nbsp;Crayon</span></button>
+      <button data-outil="ligne" title="Trait (L) – Maj : horizontal, vertical ou 45°" data-ico="ligne"><span class="lib">Trait</span></button>
+      <button data-outil="fleche" title="Flèche (F) – Maj : horizontale, verticale ou 45°" data-ico="fleche"><span class="lib">Flèche</span></button>
+      <button data-outil="cadre" title="Rectangle / carré (R)" data-ico="cadre"><span class="lib">Carré</span></button>
+      <button data-outil="ellipse" title="Ellipse / cercle (E)" data-ico="ellipse"><span class="lib">Cercle</span></button>
+      <button data-outil="crayon" title="Dessin à main levée (C)" data-ico="crayon"><span class="lib">Crayon</span></button>
       <span class="sep-ed"></span>
-      <button data-outil="surligne" title="Surligner une zone (S)">▬<span class="lib">&nbsp;Surligner</span></button>
-      <button data-outil="masque" title="Masquer en blanc, blanc correcteur (M) – le contenu reste dans le fichier">▭<span class="lib">&nbsp;Masquer</span></button>
-      <button data-outil="zone" title="Déplacer une partie de la page : encadrer un texte, un schéma, un cartouche… puis le faire glisser ailleurs sur la feuille (D)">✥<span class="lib">&nbsp;Déplacer une zone</span></button>
-      <button data-outil="caviarde" title="Caviarder (X) : zone noire, le contenu dessous est réellement supprimé à l'enregistrement">■<span class="lib">&nbsp;Caviarder</span></button>
-      <button data-outil="image" title="Insérer une image : signature, tampon, photo, logo (I) – ou Ctrl+V pour coller une image copiée">🖼<span class="lib">&nbsp;Image</span></button>
-      <button id="ed-tampon" data-outil-menu="tampon" title="Tampons (BON POUR EXÉCUTION, VISA, VU…) et signatures mémorisées">🔖<span class="lib">&nbsp;Tampon</span></button>
+      <button data-outil="surligne" title="Surligner une zone (S)" data-ico="surligne"><span class="lib">Surligner</span></button>
+      <button data-outil="masque" title="Masquer en blanc, blanc correcteur (M) – le contenu reste dans le fichier" data-ico="masque"><span class="lib">Masquer</span></button>
+      <button data-outil="zone" title="Déplacer une partie de la page : encadrer un texte, un schéma, un cartouche… puis le faire glisser ailleurs sur la feuille (D)" data-ico="zone"><span class="lib">Déplacer</span></button>
+      <button data-outil="caviarde" title="Caviarder (X) : zone noire, le contenu dessous est réellement supprimé à l'enregistrement" data-ico="caviarde"><span class="lib">Caviarder</span></button>
+      <button data-outil="image" title="Insérer une image : signature, tampon, photo, logo (I) – ou Ctrl+V pour coller une image copiée" data-ico="image"><span class="lib">Image</span></button>
+      <button id="ed-tampon" data-outil-menu="tampon" title="Tampons (BON POUR EXÉCUTION, VISA, VU…) et signatures mémorisées" data-ico="tampon"><span class="lib">Tampon</span></button>
       <span class="sep-ed"></span>
-      <button data-outil="cote" title="Cote : distance entre deux points, à l'échelle du plan (Maj : 0/45/90°)">📏<span class="lib">&nbsp;Cote</span></button>
-      <button data-outil="longueur" title="Longueur cumulée (ex. tuyauterie) : un clic par point, double-clic pour finir">〰<span class="lib">&nbsp;Longueur</span></button>
-      <button data-outil="surface" title="Surface : un clic par sommet, double-clic pour finir">⬠<span class="lib">&nbsp;Surface</span></button>
-      <button data-outil="angle" title="Angle : un clic sur un côté, un sur le sommet, un sur l'autre côté">∠<span class="lib">&nbsp;Angle</span></button>
-      <button data-outil="compte" title="Compter des symboles (radiateurs, bouches, vannes…) : un clic par symbole, clic sur un repère pour le retirer (N)">🔢<span class="lib">&nbsp;Compter</span></button>
-      <label title="Échelle du plan (toutes les pages de ce document)"><span class="lib">Échelle</span><span class="ico-seul">📐</span>
-        <select id="ed-echelle">
-          <option value="">non définie</option>
-          <option value="1/1">1/1</option><option value="1/5">1/5</option><option value="1/10">1/10</option><option value="1/20">1/20</option>
-          <option value="1/25">1/25</option><option value="1/50">1/50</option><option value="1/75">1/75</option><option value="1/100">1/100</option>
-          <option value="1/200">1/200</option><option value="1/250">1/250</option><option value="1/500">1/500</option><option value="1/1000">1/1000</option>
-          <option value="etalonnee" hidden>Étalonnée</option>
-          <option value="etalonner">Étalonner sur une cote connue…</option>
-          <option value="zone">Zone à une autre échelle (détail)…</option>
-        </select></label>
-      <span id="ed-metre" class="metre" hidden>
-        <select id="ed-reseau" title="Réseau de la mesure ou du comptage : couleur du réseau, totaux par réseau dans la légende et le métré Excel"></select>
-        <input id="ed-dn" list="liste-dn" placeholder="DN" title="Diamètre (ex. DN20, Cu 14, Ø160) : totaux par diamètre dans le métré" size="7">
-        <input id="ed-symbole" list="liste-symboles" placeholder="Symbole" title="Symbole compté (ex. Radiateur, Bouche d'extraction, Vanne)" size="16">
-        <button id="ed-legende" title="Ajouter sur la page une légende des réseaux, avec les longueurs et les quantités (mise à jour automatique)">▤<span class="lib"> Légende</span></button>
-      </span>
+      <button data-outil="cote" title="Cote : distance entre deux points, à l'échelle du plan (Maj : 0/45/90°)" data-ico="cote"><span class="lib">Cote</span></button>
+      <button data-outil="longueur" title="Longueur cumulée (ex. tuyauterie) : un clic par point, double-clic pour finir" data-ico="longueur"><span class="lib">Longueur</span></button>
+      <button data-outil="surface" title="Surface : un clic par sommet, double-clic pour finir" data-ico="surface"><span class="lib">Surface</span></button>
+      <button data-outil="angle" title="Angle : un clic sur un côté, un sur le sommet, un sur l'autre côté" data-ico="angle"><span class="lib">Angle</span></button>
+      <button data-outil="compte" title="Compter des symboles (radiateurs, bouches, vannes…) : un clic par symbole, clic sur un repère pour le retirer (N)" data-ico="compte"><span class="lib">Compter</span></button>
       <datalist id="liste-dn">
         <option value="DN10"><option value="DN15"><option value="DN20"><option value="DN25"><option value="DN32"><option value="DN40"><option value="DN50"><option value="DN65"><option value="DN80"><option value="DN100"><option value="DN125"><option value="DN150"><option value="DN200">
         <option value="Cu 12"><option value="Cu 14"><option value="Cu 16"><option value="Cu 18"><option value="Cu 22"><option value="Cu 28"><option value="Cu 35"><option value="Cu 42"><option value="Cu 54">
@@ -204,7 +188,23 @@
       </datalist>
     </div>
     <div class="groupe-outils">
-      <label title="Couleur">🎨 <input type="color" id="ed-couleur" value="#000000"></label>
+      <label class="lib-champ" title="Échelle du plan (toutes les pages de ce document)"><span data-ico="echelle"></span>Échelle
+        <select id="ed-echelle">
+          <option value="">non définie</option>
+          <option value="1/1">1/1</option><option value="1/5">1/5</option><option value="1/10">1/10</option><option value="1/20">1/20</option>
+          <option value="1/25">1/25</option><option value="1/50">1/50</option><option value="1/75">1/75</option><option value="1/100">1/100</option>
+          <option value="1/200">1/200</option><option value="1/250">1/250</option><option value="1/500">1/500</option><option value="1/1000">1/1000</option>
+          <option value="etalonnee" hidden>Étalonnée</option>
+          <option value="etalonner">Étalonner sur une cote connue…</option>
+          <option value="zone">Zone à une autre échelle (détail)…</option>
+        </select></label>
+      <span id="ed-metre" class="metre" hidden>
+        <select id="ed-reseau" title="Réseau de la mesure ou du comptage : couleur du réseau, totaux par réseau dans la légende et le métré Excel"></select>
+        <input id="ed-dn" list="liste-dn" placeholder="DN" title="Diamètre (ex. DN20, Cu 14, Ø160) : totaux par diamètre dans le métré" size="7">
+        <input id="ed-symbole" list="liste-symboles" placeholder="Symbole" title="Symbole compté (ex. Radiateur, Bouche d'extraction, Vanne)" size="16">
+        <button id="ed-legende" title="Ajouter sur la page une légende des réseaux, avec les longueurs et les quantités (mise à jour automatique)" data-ico="legende"><span class="lib">Légende</span></button>
+      </span>
+      <label title="Couleur">Couleur <input type="color" id="ed-couleur" value="#000000"></label>
       <label title="Épaisseur du trait (points)">Trait <input type="number" id="ed-epaisseur" min="0.5" max="30" step="0.5" value="2"></label>
       <label title="Taille du texte (points)">Taille <input type="number" id="ed-taille" min="5" max="120" value="12"></label>
       <label class="case-ed" title="Texte en gras"><input type="checkbox" id="ed-gras"> <b>G</b></label>
@@ -212,32 +212,32 @@
         <select id="ed-police" title="Police du texte modifié"><option value="helvetica">Arial / Helvetica</option><option value="times">Times</option><option value="courier">Courier</option></select>
         <label class="case-ed" title="Italique"><input type="checkbox" id="ed-italique"> <i>I</i></label>
       </span>
-      <button id="ed-dupl" title="Dupliquer l'élément (Ctrl+D)">⧉</button>
-      <button id="ed-memoriser" title="Garder cette image (signature, tampon) dans la bibliothèque, pour la réutiliser" hidden>☆ Mémoriser</button>
-      <button id="ed-suppr" title="Supprimer l'élément (Suppr)">🗑</button>
+      <button id="ed-dupl" title="Dupliquer l'élément (Ctrl+D)" data-ico="dupliquer"><span class="lib">Dupliquer</span></button>
+      <button id="ed-memoriser" title="Garder cette image (signature, tampon) dans la bibliothèque, pour la réutiliser" hidden data-ico="memoriser"><span class="lib">Mémoriser</span></button>
+      <button id="ed-suppr" title="Supprimer l'élément (Suppr)" data-ico="supprimer"><span class="lib">Supprimer</span></button>
     </div>
     <div class="groupe-outils">
-      <button id="ed-caviarder" title="Rechercher un mot ou un nom dans tous les PDF et le caviarder partout">■<span class="lib"> Caviarder un mot…</span></button>
-      <button id="ed-excel" title="Métré du dossier dans un classeur Excel : longueurs par réseau et diamètre, comptages, surfaces, détail">⬇<span class="lib"> Métré (Excel)</span></button>
+      <button id="ed-caviarder" title="Rechercher un mot ou un nom dans tous les PDF et le caviarder partout" data-ico="caviarder-mot"><span class="lib">Caviarder un mot</span></button>
+      <button id="ed-excel" title="Métré du dossier dans un classeur Excel : longueurs par réseau et diamètre, comptages, surfaces, détail" data-ico="excel"><span class="lib">Métré Excel</span></button>
       <span class="zoom-ed" title="Zoom : Ctrl + molette (ou pincer le pavé tactile) ; Ctrl + / Ctrl − ; Ctrl 0 : page entière. Espace + glisser (ou bouton du milieu) pour déplacer la page.">
-        <button id="ed-zoom-moins" title="Zoom arrière (Ctrl −)">−</button>
+        <button id="ed-zoom-moins" title="Zoom arrière (Ctrl −)" data-ico="zoom-moins"></button>
         <select id="ed-zoom">
           <option value="actuel">100 %</option>
           <option value="page">Page entière</option><option value="largeur">Pleine largeur</option>
           <option value="0.5">50 %</option><option value="0.75">75 %</option><option value="1">100 %</option><option value="1.5">150 %</option>
           <option value="2">200 %</option><option value="3">300 %</option><option value="4">400 %</option><option value="8">800 %</option>
         </select>
-        <button id="ed-zoom-plus" title="Zoom avant (Ctrl +)">+</button>
+        <button id="ed-zoom-plus" title="Zoom avant (Ctrl +)" data-ico="zoom-plus"></button>
       </span>
-      <button id="ed-ocr" title="Reconnaître le texte de cette page (OCR) : scan ou photo, pour le corriger avec « Modifier le texte » ou y chercher">🔍<span class="lib"> OCR</span></button>
-      <button id="ed-rechercher" title="Rechercher (Ctrl+F)">🔎</button>
-      <button id="ed-imprimer" title="Imprimer le document (Ctrl+P)">🖨</button>
-      <button id="ed-vignettes-bascule" title="Afficher ou masquer les vignettes des pages">▤</button>
-      <button id="ed-prec" title="Page précédente (Page préc.)">◀</button>
+      <button id="ed-ocr" title="Reconnaître le texte de cette page (OCR) : scan ou photo, pour le corriger avec « Modifier texte » ou y chercher" data-ico="ocr"><span class="lib">OCR</span></button>
+      <button id="ed-rechercher" title="Rechercher (Ctrl+F)" data-ico="rechercher"><span class="lib">Rechercher</span></button>
+      <button id="ed-imprimer" title="Imprimer le document (Ctrl+P)" data-ico="imprimer"><span class="lib">Imprimer</span></button>
+      <button id="ed-vignettes-bascule" title="Afficher ou masquer les vignettes des pages" data-ico="vignettes"><span class="lib">Vignettes</span></button>
+      <button id="ed-prec" title="Page précédente (Page préc.)" data-ico="prec"></button>
       <span id="ed-num"></span>
-      <button id="ed-suiv" title="Page suivante (Page suiv.)">▶</button>
-      <button id="ed-aide-bouton" title="Comment faire ? (F1)">❓</button>
-      <button id="ed-fermer" class="principal">Terminé</button>
+      <button id="ed-suiv" title="Page suivante (Page suiv.)" data-ico="suiv"></button>
+      <button id="ed-aide-bouton" title="Comment faire ? (F1)" data-ico="aide"><span class="lib">Aide</span></button>
+      <button id="ed-fermer" class="principal" data-ico="termine"><span class="lib">Terminé</span></button>
     </div>
   </div>
   <div id="ed-tampons" class="tampons" hidden>
@@ -268,7 +268,7 @@
     </div>
   </div>
   <div class="ed-aide"><span id="ed-recap" class="recap"></span> Glisser pour tracer · double-clic sur un texte ou une bulle pour le corriger · Ctrl+V colle une image ou un texte · Échap revient à la sélection · Ctrl+Z annule.
-    Pour <b>corriger</b> le texte du PDF : « ✏️ Modifier le texte ». Pour <b>supprimer</b> une information confidentielle : « Caviarder ».</div>
+    Pour <b>corriger</b> le texte du PDF : « Modifier texte ». Pour <b>supprimer</b> une information confidentielle : « Caviarder ».</div>
 </div>
 
 <!-- Comparaison de deux pages -->
@@ -333,7 +333,7 @@
     </div>
     <label class="champ">Sections (une par ligne, dans l'ordre) <button id="doe-defaut" type="button" class="lien">sections Tecnitub par défaut</button><textarea id="doe-sections" rows="8"></textarea></label>
     <label class="case"><input type="checkbox" id="doe-classer" checked> Classer automatiquement les documents déjà ajoutés, d'après le nom de leur fichier (« Fiche technique… », « PV d'essai… », « Plan RDC… »)</label>
-    <p class="aide">Une page de garde et un intercalaire par section sont créés ; le sommaire (après la page de garde), les signets par section et la numérotation sont activés. Refaire « DOE… » après avoir ajouté des documents met la structure à jour.</p>
+    <p class="aide">Une page de garde et un intercalaire par section sont créés ; le sommaire (après la page de garde), les signets par section et la numérotation sont activés. Refaire « DOE » après avoir ajouté des documents met la structure à jour.</p>
     <div class="boutons"><button id="doe-annuler">Annuler</button><button id="doe-ok" class="principal">Créer le DOE</button></div>
   </div>
 </div>

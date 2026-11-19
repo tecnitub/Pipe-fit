@@ -45,7 +45,7 @@
     $('#ed-scene').scrollTo(0, 0);
     await afficherPage();
     afficherChamps();
-    // Page pdf.js (polices chargées par l'affichage : nom, gras, italique pour « Modifier le texte »)
+    // Page pdf.js (polices chargées par l'affichage : nom, gras, italique pour « Modifier texte »)
     ed.pagePdfjs = p.type === 'pdf' ? await (await etat.sources.get(p.source).doc).getPage(p.index + 1) : null;
     if (ed.outil === 'editertexte') preparerLignes();
   }

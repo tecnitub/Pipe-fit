@@ -45,7 +45,7 @@
       d.append(im, n, x);
       d.onclick = () => armerTampon({ image: item });
       return d;
-    }) : [Object.assign(document.createElement('p'), { className: 'aide', textContent: 'Aucune image : insérez votre signature (outil Image), sélectionnez-la puis « ☆ Mémoriser ».' })]));
+    }) : [Object.assign(document.createElement('p'), { className: 'aide', textContent: 'Aucune image : insérez votre signature (outil Image), sélectionnez-la puis « Mémoriser ».' })]));
     zone.hidden = false;
   }
   $('#tp-perso').addEventListener('click', () => {

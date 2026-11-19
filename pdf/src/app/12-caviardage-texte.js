@@ -158,14 +158,14 @@
     } else note('Cliquez sur une ligne pour la corriger (Maj+clic : tout le paragraphe). À l\'enregistrement, l\'ancien texte est retiré du fichier.');
     dessinerCalque();
   }
-  // OCR de la page ouverte dans l'éditeur ; « Modifier le texte » reprend ensuite avec les lignes reconnues
+  // OCR de la page ouverte dans l'éditeur ; « Modifier texte » reprend ensuite avec les lignes reconnues
   async function lireTextePage(p = ed.page) {
     if (!p || p.type === 'blanche') return 0;
     validerEditeur();
     const n = await lancerOcr([p]);
     if (!n || ed.page !== p) return n;
     if (ed.outil === 'editertexte') await preparerLignes();
-    else note('Texte de la page reconnu : outil « ✏️ Modifier le texte » pour le corriger, Ctrl+F pour y chercher.', 'ok');
+    else note('Texte de la page reconnu : outil « Modifier texte » pour le corriger, Ctrl+F pour y chercher.', 'ok');
     return n;
   }
   function noeudsLignes() {
