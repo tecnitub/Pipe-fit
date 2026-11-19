@@ -189,6 +189,7 @@ namespace PipeFit.Isometries.Revit
             doc.Regenerate();
             vp.SetBoxCenter(centre);
             doc.Regenerate();
+            Echantillon = spool.Composants.SelectMany(c => c.Extremites.Select(x => x.Position)).Take(40).ToList();
             var projection = Projection(vue, vp, res);
             if (projection != null)
             {
@@ -337,6 +338,22 @@ namespace PipeFit.Isometries.Revit
             vue.SetOrientation(new ViewOrientation3D(centre - avant * (max - min).GetLength() * 2, haut, avant));
 
             vue.SetSectionBox(new BoundingBoxXYZ { Min = min, Max = max });
+            // Zone cadrée fixée autour du spool (dans le repère de la vue) : la vue occupe exactement cette zone sur la feuille,
+            // ce qui permet de placer cotes et repères sans dépendre de l'emprise calculée par Revit
+            try
+            {
+                var cb = vue.CropBox; var t = cb.Transform; var inv = t.Inverse;
+                double u0 = double.MaxValue, v0 = double.MaxValue, w0 = double.MaxValue, u1 = double.MinValue, v1 = double.MinValue, w1 = double.MinValue;
+                foreach (var cx in new[] { min.X, max.X }) foreach (var cy in new[] { min.Y, max.Y }) foreach (var cz in new[] { min.Z, max.Z })
+                {
+                    var q = inv.OfPoint(new XYZ(cx, cy, cz));
+                    u0 = Math.Min(u0, q.X); v0 = Math.Min(v0, q.Y); w0 = Math.Min(w0, q.Z); u1 = Math.Max(u1, q.X); v1 = Math.Max(v1, q.Y); w1 = Math.Max(w1, q.Z);
+                }
+                vue.CropBox = new BoundingBoxXYZ { Transform = t, Min = new XYZ(u0, v0, w0 - 1000), Max = new XYZ(u1, v1, w1 + 1000) };
+                vue.CropBoxActive = true;
+                vue.CropBoxVisible = false;
+            }
+            catch (Exception ex) { Journal.Ecrire("Zone cadrée de la vue " + vue.Name + " non fixée : " + ex.Message); }
             try { vue.SetCategoryHidden(new ElementId(BuiltInCategory.OST_SectionBox), true); } catch { }
             vue.DetailLevel = r.Unifilaire ? ViewDetailLevel.Coarse : ViewDetailLevel.Fine;
             vue.DisplayStyle = DisplayStyle.HLR;
@@ -420,25 +437,60 @@ namespace PipeFit.Isometries.Revit
 
         // ---------- Cotation ----------
 
-        /// <summary>Passage d'un point du modèle (mm) à la feuille (mm papier), à travers la vue posée dans la fenêtre.</summary>
+        /// <summary>
+        /// Passage d'un point du modèle (mm) à la feuille (mm papier). Vue cadrée : centre de la fenêtre de vue sur la feuille +
+        /// coordonnées du point dans le repère de la zone cadrée (droite, haut) / échelle. Comparé au passage par les
+        /// transformations Revit : l'écart éventuel est noté dans le journal (calage des cotes).
+        /// </summary>
         Func<Point3, (double x, double y)> Projection(View3D vue, Viewport vp, Resultat res)
         {
+            Func<Point3, (double x, double y)> parRevit = null, parCadrage = null;
             try
             {
                 var versProjection = vue.GetModelToProjectionTransforms().First().GetModelToProjectionTransform();
                 var versFeuille = vp.GetProjectionToSheetTransform();
-                return p =>
+                parRevit = p =>
                 {
                     var q = versFeuille.OfPoint(versProjection.OfPoint(new XYZ(Compat.Pieds(p.X), Compat.Pieds(p.Y), Compat.Pieds(p.Z))));
                     return (Compat.Mm(q.X), Compat.Mm(q.Y));
                 };
             }
-            catch (Exception ex)
+            catch (Exception ex) { Journal.Ecrire("Transformations Revit indisponibles pour " + vue.Name + " : " + ex.Message); }
+            try
             {
-                res.Avertissements.Add("cotes et renvois non dessinés (" + ex.Message + ") : voir les tableaux et les CSV");
-                return null;
+                if (vue.CropBoxActive)
+                {
+                    var cb = vue.CropBox; var t = cb.Transform;
+                    var centreVue = t.OfPoint((cb.Min + cb.Max) / 2);
+                    var centreFeuille = vp.GetBoxCenter();
+                    double echelle = vue.Scale;
+                    parCadrage = p =>
+                    {
+                        var d = new XYZ(Compat.Pieds(p.X), Compat.Pieds(p.Y), Compat.Pieds(p.Z)) - centreVue;
+                        return (Compat.Mm(centreFeuille.X + d.DotProduct(t.BasisX) / echelle), Compat.Mm(centreFeuille.Y + d.DotProduct(t.BasisY) / echelle));
+                    };
+                }
             }
+            catch (Exception ex) { Journal.Ecrire("Calage par la zone cadrée impossible pour " + vue.Name + " : " + ex.Message); }
+            if (parRevit != null && parCadrage != null)
+            {
+                // Écart entre les deux calages sur quelques points du spool
+                try
+                {
+                    double ecart = Echantillon.Select(q => { var a = parRevit(q); var b = parCadrage(q); return Math.Sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)); }).DefaultIfEmpty(0).Max();
+                    Journal.Ecrire("Calage des cotes " + vue.Name + " : écart transformations Revit / zone cadrée = " + ecart.ToString("0.0", CultureInfo.InvariantCulture) + " mm");
+                    if (ecart > 0.5) res.Avertissements.Add("calage des cotes : écart de " + ecart.ToString("0.0", CultureInfo.InvariantCulture) + " mm corrigé (zone cadrée de la vue)");
+                }
+                catch { }
+            }
+            if (parCadrage != null) return parCadrage;
+            if (parRevit != null) return parRevit;
+            res.Avertissements.Add("cotes et renvois non dessinés (placement sur la feuille impossible) : voir les tableaux et les CSV");
+            return null;
         }
+
+        /// <summary>Points du spool en cours (extrémités), pour comparer les calages.</summary>
+        List<Point3> Echantillon = new List<Point3>();
 
         static (double x, double y) CentreDessin(Spool spool, Func<Point3, (double x, double y)> Feuille)
         {

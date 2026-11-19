@@ -119,6 +119,33 @@ namespace PipeFit.Isometries.Revit
             }
             feuilles.Add(eq);
 
+            // Spools : pièces telles que Pipe-Fit les comprend, et cotes calculées (pour comparer avec l'isométrie)
+            try
+            {
+                var tous = LectureModele.ElementsTuyauterie(doc);
+                var param = CmdIsometries.ParametreSpool(Reglages.Charger(), tous);
+                if (!string.IsNullOrEmpty(param))
+                {
+                    var spools = CmdQuantitatif.Lire(doc, tous, param).Where(x => !x.HorsSpool).Take(15).ToList();
+                    string P(Point3 p) => Math.Round(p.X) + " ; " + Math.Round(p.Y) + " ; " + Math.Round(p.Z);
+                    var pc = new FeuilleXlsx { Nom = "Spools – pièces", Largeurs = { 12, 10, 30, 20, 16, 14, 14, 8, 10, 12, 26 }, LigneEntete = 0, NbColonnesFiltre = 11 };
+                    pc.Ajouter(H("Spool"), H("Id"), H("Famille"), H("Type"), H("Type de pièce Revit"), H("Type Pipe-Fit"), H("Genre"), H("DN"), H("Extrémités"), H("Directions"), H("Point d'axe / épure"));
+                    var ct = new FeuilleXlsx { Nom = "Spools – cotes", Largeurs = { 12, 10, 20, 26, 26, 10 }, LigneEntete = 0, NbColonnesFiltre = 6 };
+                    ct.Ajouter(H("Spool"), H("Valeur (mm)"), H("De / à"), H("Point A (x ; y ; z)"), H("Point B (x ; y ; z)"), H("Ajoutée"));
+                    foreach (var sp in spools)
+                    {
+                        foreach (var c in sp.Composants)
+                            pc.Ajouter(T(sp.Nom), T(c.Id), T(c.Famille), T(c.TypeNom), T(c.TypePiece), T(AnalyseSpool.Libelle(c.Type)), T(c.Genre == GenreRobinet.Aucun ? "" : Robinetterie.Libelle(c.Genre)),
+                                T(Diametres.Dn(c.DnMm)), Nb(c.Extremites.Count), T(c.Extremites.Count(x => x.Direction.HasValue) + "/" + c.Extremites.Count),
+                                T(Cotation.EstNoeud(c) ? P(Cotation.PointAxe(c)) : ""));
+                        foreach (var k in sp.Cotes)
+                            ct.Ajouter(T(sp.Nom), Nb(Math.Round(k.LongueurMm)), T(k.Libelle), T(P(k.A)), T(P(k.B)), T(k.Ajoutee ? "oui" : ""));
+                    }
+                    feuilles.Add(pc); feuilles.Add(ct);
+                }
+            }
+            catch (Exception ex) { var fx = new FeuilleXlsx { Nom = "Spools – pièces" }; fx.Ajouter(T("Lecture des spools impossible : " + ex.Message)); feuilles.Add(fx); }
+
             // Journal
             var jr = new FeuilleXlsx { Nom = "Journal", Largeurs = { 160 } };
             try
