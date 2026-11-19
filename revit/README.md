@@ -150,10 +150,11 @@ Option décochée : étiquettes Revit (familles d'étiquettes choisies), placée
   en atelier, c'est le tube de branche qui est piqué sur le collecteur. Le complément :
   - garde **une seule soudure, côté collecteur** (celle côté tube de branche est ignorée, même si la branche est dans
     un autre spool : pas de soudure chantier sur le piquage) ;
-  - **cote toujours à l'axe** : de l'axe du collecteur (connecteur Revit projeté sur l'axe du tube collecteur) au bout
-    de la branche ou à l'axe du raccord suivant ; la cote du collecteur est coupée à l'axe du piquage ;
-  - **ajoute la longueur du piquage au débit du tube de branche** (colonne « Piq. » de la liste de débit, « Piquage (mm) »
-    dans le CSV) et au tube du quantitatif ;
+  - **ne tient pas compte du piquage ni de sa longueur** : la branche est cotée **de l'axe du collecteur** (connecteur
+    Revit projeté sur l'axe du tube collecteur) **à la bride** (ou au bout de la branche, ou à l'axe du raccord suivant),
+    y compris quand le piquage est dans le spool du collecteur et la branche dans un autre spool ; aucune cote sur la
+    longueur du piquage ; la cote du collecteur est coupée à l'axe du piquage (position de la branche) ;
+  - la liste de débit et le quantitatif prennent **la longueur Revit du tube de branche**, sans ajouter le piquage ;
   - ne compte **pas de pièce** pour le piquage (ni nomenclature, ni quantitatif, ni bulle).
 - Les olets et selles (weldolet, sockolet, threadolet, selle, bossage) restent des pièces en nomenclature ; comme pour
   tout piquage, seule leur soudure sur le collecteur est comptée.

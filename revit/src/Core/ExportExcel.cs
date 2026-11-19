@@ -138,19 +138,19 @@ namespace PipeFit.Isometries.Core
 
         static FeuilleXlsx Debit(List<Spool> spools, double barreMm)
         {
-            var f = new FeuilleXlsx { Nom = "Liste de débit", Largeurs = { 24, 9, 18, 12, 7, 15, 12, 13, 12, 10 }, LigneEntete = 0, NbColonnesFiltre = 10 };
-            f.Ajouter(H("Système de canalisation"), H("DN"), H("Matière"), H("Spool"), H("Rep."), H("Longueur Revit (mm)"), H("Piquage (mm)"), H("Surlongueur (mm)"),
+            var f = new FeuilleXlsx { Nom = "Liste de débit", Largeurs = { 24, 9, 18, 12, 7, 15, 13, 12, 10 }, LigneEntete = 0, NbColonnesFiltre = 9 };
+            f.Ajouter(H("Système de canalisation"), H("DN"), H("Matière"), H("Spool"), H("Rep."), H("Longueur Revit (mm)"), H("Surlongueur (mm)"),
                 H("Coupe (mm)"), H("Barre de " + (barreMm / 1000).ToString("0.#") + " m"));
             int de = f.Prochaine; double tot = 0;
             foreach (var l in ListeDebit.Calculer(spools, barreMm))
             {
-                f.Ajouter(T(l.Systeme), T(Diametres.Dn(l.DnMm)), T(l.Materiau), T(l.Spool), T(l.Repere), N(l.LongueurRevitMm), Nz(l.PiquageMm), Nz(l.SurlongueurMm), N(l.CoupeMm),
+                f.Ajouter(T(l.Systeme), T(Diametres.Dn(l.DnMm)), T(l.Materiau), T(l.Spool), T(l.Repere), N(l.LongueurRevitMm), Nz(l.SurlongueurMm), N(l.CoupeMm),
                     l.Barre > 0 ? N(l.Barre) : T("hors barre"));
                 tot += l.CoupeMm;
             }
             int a = f.Prochaine - 1;
             f.DerniereLigneFiltre = a - 1;
-            if (a >= de) f.Ajouter(new Cellule("Total", StyleCellule.Gras), T(""), T(""), T(""), T(""), T(""), T(""), T(""), Somme(8, de, a, tot, StyleCellule.TotalEntier));
+            if (a >= de) f.Ajouter(new Cellule("Total", StyleCellule.Gras), T(""), T(""), T(""), T(""), T(""), T(""), Somme(7, de, a, tot, StyleCellule.TotalEntier));
             return f;
         }
 

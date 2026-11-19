@@ -20,6 +20,29 @@ namespace PipeFit.Isometries.Revit
             "Repère spool", "Repere spool", "PF_Spool", "Isométrie", "ISO",
         };
 
+        /// <summary>
+        /// Point de l'axe du collecteur sous un piquage : son raccordement côté collecteur projeté sur l'axe du tube collecteur.
+        /// </summary>
+        static Point3? AxeCollecteur(Element piquage, ElementId branche)
+        {
+            try
+            {
+                var cm = (piquage as FamilyInstance)?.MEPModel?.ConnectorManager;
+                if (cm == null) return null;
+                foreach (Connector c in cm.Connectors)
+                    foreach (Connector r in c.AllRefs)
+                    {
+                        if (r.Owner == null || r.Owner.Id == piquage.Id || r.Owner.Id == branche || !(r.Owner is MEPCurve mc)) continue;
+                        if (!(mc.Location is LocationCurve lc) || !(lc.Curve is Line l)) continue;
+                        var u = l.Direction; var o = l.GetEndPoint(0);
+                        var p = o + u * (c.Origin - o).DotProduct(u);
+                        return P(p);
+                    }
+            }
+            catch { }
+            return null;
+        }
+
         /// <summary>Raccord à piquage Revit (type de pièce « Tap » / « Spud », ou famille nommée piquage, olet, selle).</summary>
         static bool EstPiquage(Element owner)
         {
@@ -178,6 +201,7 @@ namespace PipeFit.Isometries.Revit
                     ext.ConnecteA = Compat.Cle(owner.Id);
                     ext.VoisinEstTube = owner is Pipe || owner is FlexPipe || (owner is FabricationPart fpv && fpv.IsAStraight());
                     ext.VoisinEstPiquage = EstPiquage(owner);
+                    if (ext.VoisinEstPiquage) ext.AxeCollecteur = AxeCollecteur(owner, e.Id);
                     // Sens inconnu sur notre connecteur : on lit celui d'en face, à l'envers
                     if (ext.Sens == SensFlux.Inconnu) ext.Sens = Sens(r, true);
                     break;

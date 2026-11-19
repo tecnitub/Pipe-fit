@@ -177,10 +177,11 @@ AJOUTER UNE COTE
 
 PIQUAGES
   Le piquage dessiné par Revit (avec une longueur) est en réalité la branche piquée directement sur le
-  collecteur : une seule soudure, côté collecteur ; la longueur du piquage est ajoutée au débit du tube
-  de branche (colonne « Piq. ») ; pas de pièce « piquage » en nomenclature ni au quantitatif.
+  collecteur : une seule soudure, côté collecteur ; le piquage et sa longueur ne sont pas comptés (ni cote,
+  ni débit) ; pas de pièce « piquage » en nomenclature ni au quantitatif.
   Seule la soudure sur le collecteur compte, même si la branche est dans un autre spool.
-  Cote toujours à l'axe : de l'axe du collecteur au bout de la branche ou à l'axe du raccord suivant.
+  Cote de la branche : de l'axe du collecteur à la bride (ou au bout de la branche, ou à l'axe du raccord
+  suivant), même si le piquage est dans le spool du collecteur.
   Les weldolets, sockolets et selles restent des pièces en nomenclature (une soudure, sur le collecteur).
 
 BRIDES

@@ -900,11 +900,11 @@ static class Tests
                 Verifier(sq.Nombre(NatureAssemblage.Soudure) == 1 && sq.Assemblages.Single(x => x.Nature == NatureAssemblage.Soudure).Position.Z == 0,
                     "piquage : une seule soudure, sur le collecteur (" + sq.Nombre(NatureAssemblage.Soudure) + ")");
                 var db = sq.Debits.Single(d => d.Tube.Id == "br");
-                Verifier(db.LongueurRevitMm == 500 && db.PiquageMm == 80 && db.LongueurMm == 580, "débit de la branche : 500 + 80 de piquage = " + db.LongueurMm);
+                Verifier(db.LongueurRevitMm == 500 && db.PiquageMm == 0 && db.LongueurMm == 500, "débit de la branche : longueur du piquage non comptée (" + db.LongueurMm + ")");
                 Verifier(sq.Nomenclature.All(l => l.Type != TypeComposant.Piquage) && pq.Repere == "", "piquage : pas de pièce en nomenclature");
                 var qp = Quantitatif.Calculer(new[] { sq });
                 Verifier(!qp.Any(l => l.Famille.StartsWith("Raccord à piquage")), "piquage : pas de fourniture au quantitatif");
-                Verifier(ListeDebit.Csv(new[] { sq }).Contains(";T2;500;80;;580;") || ListeDebit.Csv(new[] { sq }).Contains(";500;80;;580;"), "CSV débit : colonne piquage");
+                Verifier(!ListeDebit.Csv(new[] { sq }).Contains("Piquage"), "CSV débit : pas de colonne piquage");
                 // Cotes toujours à l'axe : axe du collecteur → bout de la branche ; le collecteur est coté jusqu'à l'axe du piquage
                 var cq = sq.Cotes.Select(c => c.Valeur + " " + c.Libelle).OrderBy(x => x).ToList();
                 Verifier(cq.Contains("580 axe / extrémité") && cq.Count(x => x == "1000 extrémité / axe" || x == "1000 axe / extrémité") == 2,
@@ -918,6 +918,19 @@ static class Tests
                 AnalyseSpool.Analyser(spr);
                 var cr = spr.Cotes.Select(c => c.Valeur + " " + c.Libelle).ToList();
                 Verifier(cr.Contains("700 axe / axe"), "piquage : axe du collecteur → axe du coude suivant (700) : " + string.Join(", ", cr));
+                // Piquage seul (branche dans un autre spool) : pas de cote sur sa longueur
+                var sp1 = new Spool { Nom = "P1" };
+                sp1.Composants.Add(C("col", "Tuyau", "", TypeComposant.Tube, 100, 2000, null, E(0, 0, 0, 100, null), E(2000, 0, 0, 100, null)));
+                sp1.Composants.Add(C("pq", "Raccord à piquage", "Standard", TypeComposant.Autre, 50, 0, null, E(1000, 0, 57, 100, "col"), E(1000, 0, 120, 50, "AUTRE")));
+                AnalyseSpool.Analyser(sp1);
+                Verifier(!sp1.Cotes.Any(c => Math.Round(c.LongueurMm) == 120 || Math.Round(c.LongueurMm) == 63), "piquage seul : aucune cote sur sa longueur (" + string.Join(", ", sp1.Cotes.Select(c => c.Valeur)) + ")");
+                // Spool de la branche : tube + bride, piquage dans le spool du collecteur → cote axe du collecteur → face de bride
+                var sb3 = new Spool { Nom = "B3" };
+                sb3.Composants.Add(C("br", "Tuyau", "", TypeComposant.Tube, 50, 500, null, E(1000, 0, 120, 50, "pq"), E(1000, 0, 620, 50, "fl")));
+                sb3.Composants.Add(C("fl", "Bride à collerette", "PN16", TypeComposant.Autre, 50, 0, null, E(1000, 0, 620, 50, "br"), E(1000, 0, 670, 50, "VANNE")));
+                sb3.Composants[0].Extremites[0].VoisinEstPiquage = true; sb3.Composants[0].Extremites[0].AxeCollecteur = new Point3(1000, 0, 0);
+                AnalyseSpool.Analyser(sb3);
+                Verifier(sb3.Cotes.Count == 1 && sb3.Cotes[0].Valeur == "670" && sb3.Cotes[0].Libelle == "axe / bride", "branche : cote de l'axe du collecteur à la bride (" + string.Join(", ", sb3.Cotes.Select(c => c.Valeur + " " + c.Libelle)) + ")");
                 // Un weldolet reste une pièce soudée des deux côtés
                 var sw = new Spool { Nom = "WO" };
                 sw.Composants.Add(C("col", "Tuyau", "", TypeComposant.Tube, 100, 2000, null, E(0, 0, 0, 100, null), E(2000, 0, 0, 100, null)));
@@ -1062,7 +1075,7 @@ static class Tests
                 "calepinage : " + string.Join(",", egd.Select(l => l.CoupeMm + "→" + l.Barre)));
             Verifier(ListeDebit.Barres(egd) == 2 && ld.First(l => l.Systeme == "Eau glacée retour").Barre == 0, "2 barres ; tube de 7 m hors barre");
             var csvd = ListeDebit.Csv(new[] { Tubes("SP-1", "Eau glacée départ", 5000) });
-            Verifier(csvd.StartsWith("Système de canalisation;DN;Matière;Spool;Rep.;Longueur Revit (mm)") && csvd.Contains("Eau glacée départ;DN100;Acier;SP-1;T1;5000;;;5000;1"), "CSV liste de débit");
+            Verifier(csvd.StartsWith("Système de canalisation;DN;Matière;Spool;Rep.;Longueur Revit (mm)") && csvd.Contains("Eau glacée départ;DN100;Acier;SP-1;T1;5000;;5000;1"), "CSV liste de débit");
         }
 
         // Traits trop courts pour Revit : redécoupage en cordes ≥ 1,25 mm (cause d'arrêt de la génération)

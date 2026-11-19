@@ -347,7 +347,8 @@ namespace PipeFit.Isometries.Core
                 t.Repere = "T" + (++n).ToString(CultureInfo.InvariantCulture);
                 t.SurlongueurMm = s.Assemblages.Where(a => a.Recoupe == t).Sum(a => a.SurlongueurMm);
                 // Branche piquée directement sur le collecteur : le tube comprend la longueur du piquage dessiné par Revit
-                var piq = t.PiquageMm = s.Composants.Where(p => p.PiquageDirect && p.CoteBranche?.ConnecteA == t.Id).Sum(LongueurPiquage);
+                // La longueur du piquage Revit n'est pas comptée : seule compte la cote de l'axe du collecteur à la bride
+                var piq = t.PiquageMm = 0;
                 s.Debits.Add(new Debit
                 {
                     Repere = t.Repere, Tube = t, LongueurRevitMm = Math.Round(t.LongueurMm), LongueurMm = Math.Round(t.LongueurMm + piq + t.SurlongueurMm), PiquageMm = Math.Round(piq),

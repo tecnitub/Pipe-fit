@@ -43,6 +43,8 @@ namespace PipeFit.Isometries.Core
         public bool VoisinEstTube;
         /// <summary>L'élément raccordé ici (hors spool) est un piquage : bout du tube de branche, sans soudure.</summary>
         public bool VoisinEstPiquage;
+        /// <summary>Bout de branche piquée (piquage hors spool) : point de l'axe du collecteur, origine de la cote de la branche.</summary>
+        public Point3? AxeCollecteur;
     }
 
     public enum SensFlux { Inconnu, Entree, Sortie }

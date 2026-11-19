@@ -133,7 +133,9 @@ namespace PipeFit.Isometries.Core
                     }
                     else if (Externe(ext))
                     {
-                        Ajouter(o, no, ext.Position, AnalyseSpool.Boulonnable(cur) ? NatureNoeud.Bride : NatureNoeud.Extremite);
+                        // Bout piqué sur un collecteur (autre spool) : la cote va à l'axe du collecteur, pas au bout du piquage
+                        if (ext.VoisinEstPiquage && ext.AxeCollecteur.HasValue) Ajouter(o, no, ext.AxeCollecteur.Value, NatureNoeud.Axe);
+                        else Ajouter(o, no, ext.Position, AnalyseSpool.Boulonnable(cur) ? NatureNoeud.Bride : NatureNoeud.Extremite);
                         return;
                     }
                     var nb = parId[ext.ConnecteA];
@@ -176,7 +178,8 @@ namespace PipeFit.Isometries.Core
                 foreach (var x in c.Extremites)
                 {
                     if (x == cotCol) continue;
-                    if (Externe(x)) { Ajouter(axe, NatureNoeud.Axe, x.Position, NatureNoeud.Extremite); continue; }
+                    // Piquage : jamais de cote sur sa propre longueur (la branche est cotée de l'axe du collecteur à la bride)
+                    if (Externe(x)) { if (c.Type != TypeComposant.Piquage) Ajouter(axe, NatureNoeud.Axe, x.Position, NatureNoeud.Extremite); continue; }
                     Marcher(axe, NatureNoeud.Axe, c, x);
                 }
             }
@@ -193,6 +196,8 @@ namespace PipeFit.Isometries.Core
                         Ajouter(x.Position, NatureNoeud.Bride, AxeVanne(c), NatureNoeud.Axe);
                         Marcher(AxeVanne(c), NatureNoeud.Axe, c, autres[0]);
                     }
+                    // Branche piquée sur un collecteur d'un autre spool : la cote part de l'axe du collecteur, pas du bout du piquage
+                    else if (x.VoisinEstPiquage && x.AxeCollecteur.HasValue) Marcher(x.AxeCollecteur.Value, NatureNoeud.Axe, c, autres[0]);
                     else Marcher(x.Position, na, c, autres[0]);
                 }
             // Piquages sur un collecteur : la cote qui longe le collecteur est coupée à l'axe de chaque piquage

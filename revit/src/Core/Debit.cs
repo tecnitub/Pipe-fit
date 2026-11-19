@@ -52,11 +52,11 @@ namespace PipeFit.Isometries.Core
             var fr = CultureInfo.GetCultureInfo("fr-FR");
             var sb = new StringBuilder();
             void Ligne(params string[] c) => sb.Append(string.Join(";", c.Select(v => (v ?? "").IndexOfAny(new[] { ';', '"' }) >= 0 ? "\"" + v.Replace("\"", "\"\"") + "\"" : v ?? ""))).Append("\r\n");
-            Ligne("Système de canalisation", "DN", "Matière", "Spool", "Rep.", "Longueur Revit (mm)", "Piquage (mm)", "Surlongueur (mm)", "Coupe (mm)",
+            Ligne("Système de canalisation", "DN", "Matière", "Spool", "Rep.", "Longueur Revit (mm)", "Surlongueur (mm)", "Coupe (mm)",
                 "Barre de " + (barreMm / 1000).ToString("0.#", fr) + " m");
             foreach (var l in Calculer(spools, barreMm, traitScieMm))
                 Ligne(l.Systeme, Diametres.Dn(l.DnMm), l.Materiau, l.Spool, l.Repere, l.LongueurRevitMm.ToString("0", fr),
-                    l.PiquageMm > 0 ? l.PiquageMm.ToString("0", fr) : "", l.SurlongueurMm > 0 ? l.SurlongueurMm.ToString("0", fr) : "", l.CoupeMm.ToString("0", fr), l.Barre > 0 ? l.Barre.ToString(fr) : "hors barre");
+                    l.SurlongueurMm > 0 ? l.SurlongueurMm.ToString("0", fr) : "", l.CoupeMm.ToString("0", fr), l.Barre > 0 ? l.Barre.ToString(fr) : "hors barre");
             return sb.ToString();
         }
     }
