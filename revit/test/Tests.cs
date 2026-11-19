@@ -907,8 +907,8 @@ static class Tests
                 Verifier(!ListeDebit.Csv(new[] { sq }).Contains("Piquage"), "CSV débit : pas de colonne piquage");
                 // Cotes toujours à l'axe : axe du collecteur → bout de la branche ; le collecteur est coté jusqu'à l'axe du piquage
                 var cq = sq.Cotes.Select(c => c.Valeur + " " + c.Libelle).OrderBy(x => x).ToList();
-                Verifier(cq.Contains("580 axe / extrémité") && cq.Count(x => x == "1000 extrémité / axe" || x == "1000 axe / extrémité") == 2,
-                    "piquage : axe collecteur → bout de branche (580), collecteur coupé à l'axe du piquage : " + string.Join(", ", cq));
+                Verifier(cq.Count(x => x.EndsWith("axe / extrémité") || x.EndsWith("extrémité / axe")) == 1 && cq.Contains("580 axe / extrémité") && !cq.Any(x => x.StartsWith("1000 ")),
+                    "piquage : une seule cote, axe du collecteur → bout de branche (580), collecteur non coupé : " + string.Join(", ", cq));
                 // Connecteur Revit sur la paroi du collecteur (z = 57) : la cote part quand même de l'axe du collecteur
                 var spr = new Spool { Nom = "PR" };
                 spr.Composants.Add(C("col", "Tuyau", "", TypeComposant.Tube, 100, 2000, null, E(0, 0, 0, 100, null), E(2000, 0, 0, 100, null)));

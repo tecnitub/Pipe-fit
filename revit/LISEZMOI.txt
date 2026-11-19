@@ -181,7 +181,8 @@ PIQUAGES
   ni débit) ; pas de pièce « piquage » en nomenclature ni au quantitatif.
   Seule la soudure sur le collecteur compte, même si la branche est dans un autre spool.
   Cote de la branche : de l'axe du collecteur à la bride (ou au bout de la branche, ou à l'axe du raccord
-  suivant), même si le piquage est dans le spool du collecteur.
+  suivant), même si le piquage est dans le spool du collecteur. Une seule cote par piquage : la cote du
+  collecteur n'est pas coupée.
   Les weldolets, sockolets et selles restent des pièces en nomenclature (une soudure, sur le collecteur).
 
 BRIDES

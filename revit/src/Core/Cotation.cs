@@ -200,23 +200,7 @@ namespace PipeFit.Isometries.Core
                     else if (x.VoisinEstPiquage && x.AxeCollecteur.HasValue) Marcher(x.AxeCollecteur.Value, NatureNoeud.Axe, c, autres[0]);
                     else Marcher(x.Position, na, c, autres[0]);
                 }
-            // Piquages sur un collecteur : la cote qui longe le collecteur est coupée à l'axe de chaque piquage
-            foreach (var p in s.Composants.Where(c => c.Type == TypeComposant.Piquage))
-            {
-                var axe = PointAxe(p);
-                for (int i = 0; i < cotes.Count; i++)
-                {
-                    var c = cotes[i];
-                    var ab = c.B - c.A; var l = ab.Longueur;
-                    if (l < 2) continue;
-                    var k = (axe - c.A).Dot(ab) / (l * l);
-                    if (k * l < 1 || (1 - k) * l < 1) continue;
-                    if ((c.A + ab * k - axe).Longueur > 1) continue;
-                    cotes[i] = new Cote { A = c.A, NatureA = c.NatureA, B = axe, NatureB = NatureNoeud.Axe };
-                    cotes.Insert(i + 1, new Cote { A = axe, NatureA = NatureNoeud.Axe, B = c.B, NatureB = c.NatureB });
-                    break;
-                }
-            }
+            // Piquage : une seule cote, du bout de la branche à l'axe du collecteur (la cote du collecteur n'est pas coupée)
             // Cotes ajoutées à la main : entre deux points d'attache, valeur recalculée sur la géométrie
             foreach (var c in s.Composants)
                 foreach (var ca in c.CotesAjoutees)

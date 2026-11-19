@@ -153,7 +153,7 @@ Option décochée : étiquettes Revit (familles d'étiquettes choisies), placée
   - **ne tient pas compte du piquage ni de sa longueur** : la branche est cotée **de l'axe du collecteur** (connecteur
     Revit projeté sur l'axe du tube collecteur) **à la bride** (ou au bout de la branche, ou à l'axe du raccord suivant),
     y compris quand le piquage est dans le spool du collecteur et la branche dans un autre spool ; aucune cote sur la
-    longueur du piquage ; la cote du collecteur est coupée à l'axe du piquage (position de la branche) ;
+    longueur du piquage ; **une seule cote par piquage**, du bout de la branche à l'axe du collecteur (la cote du collecteur n'est pas coupée) ;
   - la liste de débit et le quantitatif prennent **la longueur Revit du tube de branche**, sans ajouter le piquage ;
   - ne compte **pas de pièce** pour le piquage (ni nomenclature, ni quantitatif, ni bulle).
 - Les olets et selles (weldolet, sockolet, threadolet, selle, bossage) restent des pièces en nomenclature ; comme pour
