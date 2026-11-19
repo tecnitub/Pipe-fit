@@ -1,6 +1,13 @@
 PIPE-FIT ISOMÉTRIES – complément Revit (2023 à 2027)
 =====================================================
 
+RUBAN PIPE-FIT
+  Spools      : Numéroter (ou Générer un spool, même bouton), Soudure chantier, Ensembles de spools
+  Isométries  : Isométries spools, Ajouter une cote, Repérage de montage, Quantités Excel
+  Schémas     : Schéma de principe (P&ID)
+  Calculs     : Hydraulique (perte de charge, équilibrage), Aéraulique (réseau, débit et vitesse)
+  Réglages    : Paramètres spools, Paramètres calculs, Diagnostic
+
 Une isométrie de fabrication par numéro de spool, en un clic, depuis la maquette 3D.
 
 INSTALLATION
@@ -17,7 +24,7 @@ LE PLUS SIMPLE : BOUTON « GÉNÉRER UN SPOOL »
 EN CAS D'ERREUR
   Le message s'affiche ; le détail est dans %AppData%\PipeFit\journal.txt (à envoyer pour le dépannage).
 
-PARAMÈTRES (bouton « Paramètres Pipe-Fit »)
+PARAMÈTRES (bouton « Paramètres spools », groupe Réglages)
   Crée d'avance dans le projet ou le gabarit : « Numéro de spool », « Soudures chantier (Pipe-Fit) »
   et « Pouces soudures (Pipe-Fit) » (pouces-diamètre des soudures portées par chaque élément, écrits à la
   génération des isométries). À ajouter aux nomenclatures Revit : regroupées par Numéro de spool, le total
@@ -96,7 +103,7 @@ CE QUI EST CRÉÉ POUR CHAQUE SPOOL
   Relancer la génération met à jour les feuilles et vues existantes (option « Remplacer »).
   Toute la génération s'annule en une fois avec Ctrl+Z.
 
-DIAGNOSTIC (groupe « Aide »)
+DIAGNOSTIC (groupe « Réglages »)
   Rapport Excel de ce que Pipe-Fit reconnaît dans le projet et fin du journal : à envoyer pour la mise au point.
 
 SCHÉMA DE PRINCIPE (P&ID) (groupe « Schémas »)
@@ -111,7 +118,7 @@ SCHÉMA DE PRINCIPE (P&ID) (groupe « Schémas »)
   Comme pour les isométries, le symbole vient du NOM DE LA FAMILLE (bride dessinée en famille de vanne
   = bride ; correspondances « Symboles… » comprises).
 
-CALCULS (groupe « Calculs »)
+CALCULS (groupe « Calculs » : menus Hydraulique et Aéraulique)
   Perte de charge : sélectionnez le chemin (tubes, raccords, vannes), cliquez « Perte de charge ».
   Diamètre intérieur, rugosité et débit lus dans Revit ; fluide eau / eau glycolée et température au
   choix ; ζ par raccord et par vanne modifiables ; ΔP en kPa et mCE ; note de calcul Excel.

@@ -1,12 +1,27 @@
 # Pipe-Fit Isométries – complément Revit
 
 Complément Revit (2023 à 2027) qui produit **une isométrie de fabrication par numéro de spool** depuis la maquette 3D
-(onglet **Pipe-Fit → Fabrication → Isométries spools**) et le **quantitatif pour le chiffrage automatique** dans Pipe-Fit
+(onglet **Pipe-Fit → Isométries → Isométries spools**) et le **quantitatif pour le chiffrage automatique** dans Pipe-Fit
 (**Quantités Excel** : classeur Excel ou CSV du chiffrage).
 
 Le numéro de spool est attribué avec le bouton **Numéroter spools** (ci-dessous), ou renseigné à la main dans un paramètre texte des canalisations, raccords et accessoires
 (paramètre partagé « Numéro de spool », « Spool »… : la fenêtre propose tous les paramètres texte trouvés et choisit
 d'office celui qui est renseigné), ou dans la propriété *Spool* des pièces de fabrication MEP.
+
+
+## Le ruban Pipe-Fit
+
+| Groupe | Commandes |
+|---|---|
+| **Spools** | Numéroter (bouton partagé : Numéroter spools / Générer un spool), Soudure chantier, Ensembles de spools |
+| **Isométries** | Isométries spools, Ajouter une cote, Repérage de montage, Quantités Excel |
+| **Schémas** | Schéma de principe (P&ID) |
+| **Calculs** | Hydraulique (perte de charge, équilibrage), Aéraulique (perte de charge du réseau, débit et vitesse) |
+| **Réglages** | Paramètres spools, Paramètres calculs, Diagnostic |
+
+Les fenêtres sont dessinées pour 96 ppp et mises à l'échelle par Windows (125 %, 150 %…) : positions et textes suivent
+ensemble ; un libellé trop long est raccourci (« … ») avec une info-bulle. Un contrôle automatique sous Windows
+(`revit/ergonomie`, workflow « Ergonomie Revit ») ouvre chaque fenêtre et signale chevauchements et textes coupés.
 
 ## Générer un spool (le plus simple)
 
@@ -27,7 +42,7 @@ symboles sont redécoupés ; chaque étape d'annotation (cotes, symboles, repèr
 
 ## Paramètres du projet
 
-Bouton **Paramètres Pipe-Fit** : crée d'avance, dans le projet ou le gabarit, les paramètres partagés d'occurrence du
+Bouton **Paramètres spools** (groupe Réglages) : crée d'avance, dans le projet ou le gabarit, les paramètres partagés d'occurrence du
 complément (canalisations, raccords, accessoires, canalisations souples, pièces de fabrication), à ajouter aux
 nomenclatures et étiquettes Revit. Les autres boutons les créent aussi d'eux-mêmes au besoin.
 
@@ -306,14 +321,16 @@ Bouton **Schéma de principe (P&ID)** (groupe Schémas) : reprend en filaire les
 
 ## Diagnostic
 
-Bouton **Diagnostic** (groupe Aide) : rapport Excel de ce que Pipe-Fit reconnaît dans le projet, à envoyer pour la mise
+Bouton **Diagnostic** (groupe Réglages) : rapport Excel de ce que Pipe-Fit reconnaît dans le projet, à envoyer pour la mise
 au point : versions, éléments par catégorie, paramètres Pipe-Fit présents, robinetterie (genre et symbole d'après le
 nom de famille), raccords (type déduit), systèmes (classification, aller / retour, couleur), équipements et bouches
 (rôle, pertes de charge et débits trouvés et leur source), fin du journal des erreurs.
 
 ## Calculs : perte de charge hydraulique, débit et vitesse en ventilation
 
-Groupe **Calculs** de l'onglet Pipe-Fit.
+Groupe **Calculs** de l'onglet Pipe-Fit : menu **Hydraulique** (Perte de charge du chemin sélectionné, Équilibrage des
+boucles et Kv) et menu **Aéraulique** (Perte de charge du réseau CTA → bouches, Débit, vitesse et dimensionnement) ;
+« Paramètres calculs » est dans le groupe Réglages.
 
 **Perte de charge** (tuyauterie dessinée) : sélectionnez le chemin à calculer (tubes, raccords, vannes ; Ctrl ou
 fenêtre), cliquez. Pour chaque élément :

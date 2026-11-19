@@ -1,4 +1,4 @@
-// Onglet « Pipe-Fit » du ruban Revit, groupe « Fabrication », bouton « Isométries spools ».
+// Onglet « Pipe-Fit » du ruban Revit : groupes Spools, Isométries, Schémas, Calculs, Réglages.
 using System;
 using System.Reflection;
 using System.Windows.Media.Imaging;

@@ -68,7 +68,7 @@ namespace PipeFit.Isometries.Revit
             if (consommateurs.Count == 0)
             {
                 TaskDialog.Show("Pipe-Fit – Équilibrage", "Aucun équipement consommateur avec un débit sur ce circuit. Renseignez « " + PertesFabricant.NomDebitHydraulique
-                    + " » (bouton Paramètres calculs) sur les ventilo-convecteurs, batteries, émetteurs…");
+                    + " » (Réglages › Paramètres calculs) sur les ventilo-convecteurs, batteries, émetteurs…");
                 return Result.Cancelled;
             }
 

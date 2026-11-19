@@ -23,7 +23,7 @@ namespace PipeFit.Isometries.Revit
             var doc = uidoc.Document;
             if (doc.IsFamilyDocument) { message = "Commande disponible dans un projet."; return Result.Failed; }
 
-            var choix = new TaskDialog("Pipe-Fit – Paramètres perte de charge")
+            var choix = new TaskDialog("Pipe-Fit – Paramètres calculs")
             {
                 MainInstruction = "Paramètres de perte de charge et de débit des bouches et des équipements",
                 MainContent = "Crée les paramètres « " + ParametresPerte.Nom(GenrePerte.Bouche) + " » (bouches d'air), « " + ParametresPerte.Nom(GenrePerte.Hydraulique)
@@ -79,7 +79,7 @@ namespace PipeFit.Isometries.Revit
             bilan.AppendLine("Saisissez les valeurs manquantes (fiche fabricant) dans les propriétés des éléments, ou dans une nomenclature. "
                 + "Les calculs « Perte de charge » et « Perte de charge aéraulique » les lisent ; sans paramètre renseigné, ils prennent "
                 + "aussi la valeur trouvée dans la famille.");
-            new TaskDialog("Pipe-Fit – Paramètres perte de charge") { MainInstruction = "Paramètres de perte de charge prêts", MainContent = bilan.ToString() }.Show();
+            new TaskDialog("Pipe-Fit – Paramètres calculs") { MainInstruction = "Paramètres de perte de charge prêts", MainContent = bilan.ToString() }.Show();
             return Result.Succeeded;
         }
 

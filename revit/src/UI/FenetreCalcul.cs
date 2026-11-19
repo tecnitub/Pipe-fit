@@ -114,8 +114,8 @@ namespace PipeFit.Isometries.Revit
                 y += 32;
             }
             lblNote.Text = (air
-                ? "Débits : lus dans Revit, sinon calculés depuis les bouches en aval de la CTA. Pertes fabricant (bouches, CTA, registres…) : paramètres « Perte de charge bouche (Pa) » / « … équipement aéraulique (Pa) » (bouton Paramètres perte de charge) ; ζ et pertes fixes modifiables ici."
-                : "Débits : lus dans Revit, sinon le débit saisi ci-dessus. ζ par défaut selon le raccord ou la vanne (pleine ouverture). Pertes fabricant : paramètre « Perte de charge équipement hydraulique (kPa) » (bouton Paramètres perte de charge) ; ζ et pertes fixes (Pa) modifiables ici.")
+                ? "Débits : lus dans Revit, sinon calculés depuis les bouches en aval de la CTA. Pertes fabricant (bouches, CTA, registres…) : paramètres « Perte de charge bouche (Pa) » / « … équipement aéraulique (Pa) » (bouton Réglages › Paramètres calculs) ; ζ et pertes fixes modifiables ici."
+                : "Débits : lus dans Revit, sinon le débit saisi ci-dessus. ζ par défaut selon le raccord ou la vanne (pleine ouverture). Pertes fabricant : paramètre « Perte de charge équipement hydraulique (kPa) » (bouton Réglages › Paramètres calculs) ; ζ et pertes fixes (Pa) modifiables ici.")
                 + (this.notes.Count > 0 ? "  " + string.Join("  ", this.notes) : "");
             lblNote.SetBounds(12, y, 1156, 34); lblNote.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             y += 38;
