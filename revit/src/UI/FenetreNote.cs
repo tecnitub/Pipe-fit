@@ -36,7 +36,7 @@ namespace PipeFit.Isometries.Revit
             this.note = note;
             Text = "Pipe-Fit – Note de calcul";
             Font = new Font("Segoe UI", 9f);
-            AutoScaleMode = AutoScaleMode.Dpi;
+            Ergonomie.Preparer(this);
             StartPosition = FormStartPosition.CenterParent;
             MinimizeBox = false;
             ClientSize = new Size(820, 660);

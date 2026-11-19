@@ -31,7 +31,7 @@ namespace PipeFit.Isometries.Revit
         {
             this.calcul = calcul; this.projet = projet; this.notes = notes;
             Text = "Pipe-Fit – Équilibrage hydraulique";
-            Font = new Font("Segoe UI", 9f); AutoScaleMode = AutoScaleMode.Dpi; StartPosition = FormStartPosition.CenterParent; MinimizeBox = false;
+            Font = new Font("Segoe UI", 9f); Ergonomie.Preparer(this); StartPosition = FormStartPosition.CenterParent; MinimizeBox = false;
             ClientSize = new Size(1180, 600);
             cbFluide.Items.AddRange(new object[] { "Eau", "Eau + monoéthylène glycol (MEG)", "Eau + monopropylène glycol (MPG)" }); cbFluide.SelectedIndex = 0;
             Controls.Add(new Label { Text = "Fluide :", Location = new Point(12, 15), Size = new Size(50, 20) }); cbFluide.SetBounds(62, 12, 220, 24);

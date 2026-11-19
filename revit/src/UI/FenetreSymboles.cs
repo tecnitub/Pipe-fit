@@ -26,7 +26,7 @@ namespace PipeFit.Isometries.Revit
         {
             Text = "Pipe-Fit – Symboles de robinetterie";
             Font = new Font("Segoe UI", 9f);
-            AutoScaleMode = AutoScaleMode.Dpi;
+            Ergonomie.Preparer(this);
             StartPosition = FormStartPosition.CenterParent;
             MinimizeBox = false;
             ClientSize = new Size(820, 480);

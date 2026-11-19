@@ -48,7 +48,7 @@ namespace PipeFit.Isometries.Revit
             this.r = r; this.suggerer = suggerer; this.planifier = planifier;
             Text = "Pipe-Fit – Numéroter les spools";
             Font = new Font("Segoe UI", 9f);
-            AutoScaleMode = AutoScaleMode.Dpi;
+            Ergonomie.Preparer(this);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;

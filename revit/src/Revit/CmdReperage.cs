@@ -323,7 +323,7 @@ namespace PipeFit.Isometries.Revit
         {
             Text = "Pipe-Fit – Repérage des spools pour le montage";
             Font = new System.Drawing.Font("Segoe UI", 9f);
-            AutoScaleMode = System.Windows.Forms.AutoScaleMode.Dpi;
+            Ergonomie.Preparer(this);
             FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
             MaximizeBox = MinimizeBox = false;
             StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;

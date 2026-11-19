@@ -1,0 +1,35 @@
+# Ergonomie des fenêtres du complément Revit : sous Windows, chaque fenêtre est ouverte avec des données d'exemple,
+# les chevauchements et textes coupés sont listés dans le journal de l'étape « Contrôle », et les captures sont jointes
+# (onglet Actions > exécution > Artifacts > ergonomie-captures).
+name: Ergonomie Revit
+
+on:
+  push:
+    paths:
+      - 'revit/**'
+      - '.github/workflows/ergonomie-revit.yml'
+  workflow_dispatch:
+
+jobs:
+  fenetres:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Compilation du complément (Revit 2025)
+        run: dotnet build revit/src -c Release -p:RevitVersion=2025
+      - name: Contrôle des fenêtres
+        shell: pwsh
+        run: |
+          dotnet build revit/ergonomie -c Release
+          $exe = Get-ChildItem -Recurse revit/ergonomie/bin -Filter PipeFit.Ergonomie.exe | Select-Object -First 1
+          $p = Start-Process -FilePath $exe.FullName -ArgumentList "captures" -NoNewWindow -Wait -PassThru -RedirectStandardOutput sortie.txt
+          Get-Content sortie.txt
+          "Fenêtres en défaut : $($p.ExitCode)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ergonomie-captures
+          path: captures/*.png

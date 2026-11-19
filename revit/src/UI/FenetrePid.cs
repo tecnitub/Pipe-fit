@@ -26,7 +26,7 @@ namespace PipeFit.Isometries.Revit
             Definitions = definitions.Select(d => new DefinitionPid { Nom = d.Nom, Systemes = d.Systemes.ToList() }).ToList();
             this.types = types;
             Text = "Pipe-Fit – P&ID du projet";
-            Font = new Font("Segoe UI", 9f); AutoScaleMode = AutoScaleMode.Dpi; StartPosition = FormStartPosition.CenterParent; MinimizeBox = false;
+            Font = new Font("Segoe UI", 9f); Ergonomie.Preparer(this); StartPosition = FormStartPosition.CenterParent; MinimizeBox = false;
             ClientSize = new Size(900, 560);
             Controls.Add(new Label { Text = "P&ID (cochez ceux à générer) :", Location = new Point(12, 12), Size = new Size(280, 20) });
             lbPid.SetBounds(12, 34, 280, 380); lbPid.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
@@ -111,7 +111,7 @@ namespace PipeFit.Isometries.Revit
 
         string Saisie(string invite, string valeur)
         {
-            using (var f = new Form { Text = "Pipe-Fit", FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(380, 110), MinimizeBox = false, MaximizeBox = false, Font = Font })
+            using (var f = new Form { AutoScaleDimensions = new SizeF(96F, 96F), AutoScaleMode = AutoScaleMode.Dpi, Text = "Pipe-Fit", FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(380, 110), MinimizeBox = false, MaximizeBox = false, Font = Font })
             {
                 var tb = new TextBox { Text = valeur }; tb.SetBounds(12, 36, 356, 24);
                 var ok = new Button { Text = "OK", DialogResult = DialogResult.OK }; ok.SetBounds(196, 72, 80, 28);

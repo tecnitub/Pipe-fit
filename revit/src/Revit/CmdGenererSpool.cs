@@ -133,7 +133,7 @@ namespace PipeFit.Isometries.Revit
         {
             Text = "Pipe-Fit – Générer un spool";
             Font = new Font("Segoe UI", 9f);
-            AutoScaleMode = AutoScaleMode.Dpi;
+            Ergonomie.Preparer(this);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;

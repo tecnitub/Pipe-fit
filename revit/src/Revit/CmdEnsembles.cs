@@ -125,7 +125,7 @@ namespace PipeFit.Isometries.Revit
             this.infos = infos; this.affecter = affecter;
             Text = "Pipe-Fit – Ensembles de spools (zones de montage)";
             Font = new Font("Segoe UI", 9f);
-            AutoScaleMode = AutoScaleMode.Dpi;
+            Ergonomie.Preparer(this);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;

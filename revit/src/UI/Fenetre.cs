@@ -60,7 +60,7 @@ namespace PipeFit.Isometries.Revit
             this.r = r; this.d = d;
             Text = "Pipe-Fit – Isométries de fabrication par spool";
             Font = new Font("Segoe UI", 9f);
-            AutoScaleMode = AutoScaleMode.Dpi;
+            Ergonomie.Preparer(this);
             FormBorderStyle = FormBorderStyle.Sizable;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;

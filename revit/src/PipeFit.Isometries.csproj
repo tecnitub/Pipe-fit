@@ -41,6 +41,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Contrôle d'ergonomie des fenêtres sous Windows (revit/ergonomie, intégration continue) -->
+    <InternalsVisibleTo Include="PipeFit.Ergonomie" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="Resources\*.png" />
   </ItemGroup>
 </Project>

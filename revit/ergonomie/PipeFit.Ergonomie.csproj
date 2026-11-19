@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Contrôle d'ergonomie des fenêtres du complément (Windows) : chaque fenêtre est ouverte avec des données d'exemple,
+       les chevauchements et textes coupés sont listés, une capture est enregistrée. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>PipeFit.Ergonomie</AssemblyName>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <NoWarn>$(NoWarn);CA1416;NU1701</NoWarn>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="PipeFit.Isometries">
+      <HintPath>..\src\bin\Release\2025\PipeFit.Isometries.dll</HintPath>
+    </Reference>
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="2025.*" ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="2025.*" ExcludeAssets="runtime" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

@@ -76,7 +76,7 @@ namespace PipeFit.Isometries.Revit
             courant = etats[0];
             Text = "Pipe-Fit – " + titre;
             Font = new Font("Segoe UI", 9f);
-            AutoScaleMode = AutoScaleMode.Dpi;
+            Ergonomie.Preparer(this);
             StartPosition = FormStartPosition.CenterParent;
             MinimizeBox = false;
             ClientSize = new Size(1180, 680);
