@@ -105,6 +105,8 @@ SCHÉMA DE PRINCIPE (P&ID) (groupe « Schémas »)
   tracés tous les deux, avec la couleur et le type de trait de leur système Revit ; là où deux lignes se
   croisent, un espace est laissé pour la lecture ; réseau et DN sur les lignes ; manomètres PI et
   thermomètres TI ; légende ; relancer redessine la même vue ; option : placer sur une feuille.
+  Comme pour les isométries, le symbole vient du NOM DE LA FAMILLE (bride dessinée en famille de vanne
+  = bride ; correspondances « Symboles… » comprises).
 
 CALCULS (groupe « Calculs »)
   Perte de charge : sélectionnez le chemin (tubes, raccords, vannes), cliquez « Perte de charge ».

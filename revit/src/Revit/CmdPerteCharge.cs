@@ -53,6 +53,9 @@ namespace PipeFit.Isometries.Revit
 
         internal static string NomFamille(Element e) => ((e.Document.GetElement(e.GetTypeId()) as ElementType)?.FamilyName ?? "") + " " + e.Name;
 
+        /// <summary>Nom de la famille seul : le rôle (pompe, production) et le symbole en dépendent, pas le type.</summary>
+        internal static string Famille(Element e) => (e.Document.GetElement(e.GetTypeId()) as ElementType)?.FamilyName ?? e.Name;
+
         internal static double DnMax(Element e) => LectureModele.Connecteurs(e).Select(c => { try { return Compat.Mm(c.Radius * 2); } catch { return 0; } }).DefaultIfEmpty(0).Max();
 
         /// <summary>
@@ -85,7 +88,7 @@ namespace PipeFit.Isometries.Revit
             }
             var production = new System.Text.RegularExpressions.Regex(@"pompe|pump|circulateur|groupe (froid|de production)|chiller|refroidisseur|chaudi|boiler|\bpac\b|chaleur|heat ?pump|production|thermofrigopompe|\btfp\b|sous.?station|echangeur primaire");
             var equipements = reseau.Values.Where(EstEquipement).ToList();
-            var sources = equipements.Where(e => production.IsMatch(AnalyseSpool.Normaliser(NomFamille(e)))).OrderByDescending(DnMax).ToList();
+            var sources = equipements.Where(e => production.IsMatch(AnalyseSpool.Normaliser(Famille(e)))).OrderByDescending(DnMax).ToList();
             var consommateurs = new Dictionary<string, double>();
             foreach (var e in equipements.Except(sources))
             {

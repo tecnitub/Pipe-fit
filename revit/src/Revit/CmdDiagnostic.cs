@@ -106,9 +106,9 @@ namespace PipeFit.Isometries.Revit
             foreach (var e in new FilteredElementCollector(doc).WherePasses(new ElementMulticategoryFilter(new List<BuiltInCategory> { BuiltInCategory.OST_MechanicalEquipment, BuiltInCategory.OST_DuctTerminal }))
                 .WhereElementIsNotElementType().Take(400))
             {
-                var nom = AnalyseSpool.Normaliser(Fam(e) + " " + Typ(e));
                 bool bouche = Compat.EstCategorie(e, BuiltInCategory.OST_DuctTerminal);
-                var role = bouche ? "bouche" : CmdPid.Pompe.IsMatch(nom) ? "pompe" : CmdPid.Source.IsMatch(nom) ? "production / CTA (source)" : "équipement";
+                var (natE, genreE, srcE) = Schema.Classer(CategorieSchema.Equipement, Fam(e));
+                var role = bouche ? "bouche" : natE == NatureSchema.Pompe ? "pompe" : srcE ? "production / CTA (source)" : natE == NatureSchema.Vanne ? "robinetterie (" + Robinetterie.Libelle(genreE) + ")" : "équipement";
                 var gp = bouche ? GenrePerte.Bouche : (LectureModele.Connecteurs(e).Any() ? GenrePerte.Hydraulique : GenrePerte.Aeraulique);
                 var gd = bouche || gp == GenrePerte.Aeraulique ? GenrePerte.DebitAeraulique : GenrePerte.DebitHydraulique;
                 var p = ParametresPerte.Lire(e, gp); var pt = p == null ? ParametresPerte.Trouver(e, gp) : null;

@@ -50,9 +50,9 @@ namespace PipeFit.Isometries.Revit
                     }
             }
             var voisins = liens.ToDictionary(kv => kv.Key, kv => kv.Value.Where(reseau.ContainsKey).ToList());
-            bool Pompe(Element e) => CmdPid.Pompe.IsMatch(AnalyseSpool.Normaliser(CmdPerteCharge.NomFamille(e)));
+            bool Pompe(Element e) => CmdPid.Pompe.IsMatch(AnalyseSpool.Normaliser(CmdPerteCharge.Famille(e)));
             var equipements = reseau.Values.Where(CmdPerteCharge.EstEquipement).ToList();
-            var productions = equipements.Where(e => !Pompe(e) && CmdPid.Source.IsMatch(AnalyseSpool.Normaliser(CmdPerteCharge.NomFamille(e)))).OrderByDescending(CmdPerteCharge.DnMax).ToList();
+            var productions = equipements.Where(e => !Pompe(e) && CmdPid.Source.IsMatch(AnalyseSpool.Normaliser(CmdPerteCharge.Famille(e)))).OrderByDescending(CmdPerteCharge.DnMax).ToList();
             var source = productions.FirstOrDefault() ?? equipements.Where(Pompe).OrderByDescending(CmdPerteCharge.DnMax).FirstOrDefault();
             if (source == null)
             {

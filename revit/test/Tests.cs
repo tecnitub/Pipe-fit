@@ -233,6 +233,21 @@ static class Tests
 
     static void TestSchema()
     {
+        // Symbole du schéma d'après le seul nom de la famille, comme les isométries
+        Verifier(Schema.Classer(CategorieSchema.Accessoire, "TECOFI CB 3448N") == (NatureSchema.Vanne, GenreRobinet.Clapet, false), "P&ID : clapet par le nom de famille");
+        Verifier(Schema.Classer(CategorieSchema.Accessoire, "Bride à collerette PN16").Nature == NatureSchema.Ligne, "P&ID : bride dessinée en famille de vanne → ligne, pas de vanne");
+        Verifier(Schema.Classer(CategorieSchema.Accessoire, "Réduction concentrique").Nature == NatureSchema.Reduction, "P&ID : réduction dessinée en accessoire");
+        Verifier(Schema.Classer(CategorieSchema.Accessoire, "Robinetterie KSB").Genre == GenreRobinet.Vanne, "P&ID : famille muette → vanne par défaut");
+        Verifier(Schema.Classer(CategorieSchema.Raccord, "Vanne papillon soudée").Genre == GenreRobinet.Papillon && Schema.Classer(CategorieSchema.Raccord, "Té égal").Nature == NatureSchema.Te
+            && Schema.Classer(CategorieSchema.Raccord, "Coude 90", NatureSchema.Ligne).Nature == NatureSchema.Ligne && Schema.Classer(CategorieSchema.Raccord, "Raccord générique", NatureSchema.Te).Nature == NatureSchema.Te,
+            "P&ID : raccords (vanne en raccord, té par le nom, sinon type de pièce Revit)");
+        Verifier(Schema.Classer(CategorieSchema.Equipement, "Pompe double Wilo").Nature == NatureSchema.Pompe && Schema.Classer(CategorieSchema.Equipement, "Groupe froid Carrier").Source
+            && Schema.Classer(CategorieSchema.Equipement, "Vanne 3 voies SIEMENS").Genre == GenreRobinet.Motorisee && Schema.Classer(CategorieSchema.Equipement, "Vase d'expansion").Nature == NatureSchema.Equipement,
+            "P&ID : équipements (pompe, production, vanne motorisée, vase d'expansion)");
+        Robinetterie.Correspondances[Robinetterie.Cle("KSB BOA-H")] = GenreRobinet.Reglage;
+        Verifier(Schema.Classer(CategorieSchema.Accessoire, "KSB BOA-H").Genre == GenreRobinet.Reglage, "P&ID : correspondance « Symboles… » par famille");
+        Robinetterie.Correspondances.Clear();
+
         var (noeuds, liens) = ReseauEssai();
         var sc = Schema.Construire(noeuds, liens);
         var significatifs = noeuds.Where(x => x.Nature != NatureSchema.Ligne).Select(x => x.Id).ToList();

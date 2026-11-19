@@ -17,6 +17,9 @@ namespace PipeFit.Isometries.Core
 {
     public enum NatureSchema { Ligne, Te, Vanne, Accessoire, Reduction, Pompe, Equipement, Bouche, Extremite, Renvoi }
 
+    /// <summary>Catégorie Revit d'un élément pour le schéma.</summary>
+    public enum CategorieSchema { Ligne, Raccord, Accessoire, AccessoireGaine, Bouche, Equipement }
+
     public sealed class NoeudSchema
     {
         public string Id = "";
@@ -53,6 +56,55 @@ namespace PipeFit.Isometries.Core
         public const double Saut = 1.3;
 
         public const double PasLigne = 18, Ecart = 6, Hauteur = 2.5, Petit = 2.0;
+
+        // ---------- Symbole d'après le nom de la famille (même règle que les isométries) ----------
+
+        public static readonly System.Text.RegularExpressions.Regex Pompe = new System.Text.RegularExpressions.Regex(@"pompe|pump|circulateur|surpresseur");
+        public static readonly System.Text.RegularExpressions.Regex Source = new System.Text.RegularExpressions.Regex(
+            @"groupe (froid|de production)|chiller|refroidisseur|chaudi|boiler|\bpac\b|chaleur|heat ?pump|production|thermofrigopompe|\btfp\b|sous.?station|\bcta\b|centrale (de traitement|double flux)|caisson|extracteur|ventilateur|rooftop|air handling|\bahu\b|\bvmc\b");
+
+        /// <summary>
+        /// Nature et genre d'un élément d'après le seul NOM DE SA FAMILLE (le nom du type n'est pas lu), comme les isométries :
+        /// accessoire → vanne du genre reconnu (correspondances « Symboles… » comprises) ou raccord si la famille le dit
+        /// (bride, réduction, té…) ; raccord → vanne si sa famille nomme une robinetterie, réduction ou té d'après le nom,
+        /// sinon « parDefaut » (type de pièce Revit) ; équipement → pompe, source (production, CTA) ou vanne d'après le nom.
+        /// </summary>
+        public static (NatureSchema Nature, GenreRobinet Genre, bool Source) Classer(CategorieSchema cat, string famille, NatureSchema parDefaut = NatureSchema.Ligne)
+        {
+            var n = AnalyseSpool.Normaliser(famille);
+            NatureSchema DepuisRaccord(TypeComposant t) => t == TypeComposant.Reduction ? NatureSchema.Reduction
+                : t == TypeComposant.Te || t == TypeComposant.Croix || t == TypeComposant.Piquage ? NatureSchema.Te : NatureSchema.Ligne;
+            switch (cat)
+            {
+                case CategorieSchema.Accessoire:
+                    {
+                        var r = Robinetterie.Raccord(famille);
+                        if (r != null) return (DepuisRaccord(r.Value), GenreRobinet.Aucun, false);
+                        return (NatureSchema.Vanne, Robinetterie.Genre(new Composant { Famille = famille ?? "", EstAccessoire = true }), false);
+                    }
+                case CategorieSchema.Raccord:
+                    {
+                        var choisi = Robinetterie.Correspondances.TryGetValue(Robinetterie.Cle(famille), out var c) ? c : GenreRobinet.Aucun;
+                        var g = choisi != GenreRobinet.Aucun ? choisi : Robinetterie.ParMots(famille);
+                        if (g != GenreRobinet.Aucun) return (NatureSchema.Vanne, g, false);
+                        if (System.Text.RegularExpressions.Regex.IsMatch(n, @"reduc|reducer|transition|cone")) return (NatureSchema.Reduction, GenreRobinet.Aucun, false);
+                        if (System.Text.RegularExpressions.Regex.IsMatch(n, @"\b(te|tee|tes)\b|croix|cross|culotte|wye|piquage|olet\b|\btap\b")) return (NatureSchema.Te, GenreRobinet.Aucun, false);
+                        return (parDefaut, GenreRobinet.Aucun, false);
+                    }
+                case CategorieSchema.AccessoireGaine: return (NatureSchema.Accessoire, GenreRobinet.Aucun, false);
+                case CategorieSchema.Bouche: return (NatureSchema.Bouche, GenreRobinet.Aucun, false);
+                case CategorieSchema.Equipement:
+                    {
+                        if (Pompe.IsMatch(n)) return (NatureSchema.Pompe, GenreRobinet.Aucun, false);
+                        if (Source.IsMatch(n)) return (NatureSchema.Equipement, GenreRobinet.Aucun, true);
+                        // Robinetterie dessinée en équipement (vanne motorisée, filtre, compteur…) : son symbole
+                        var g = Robinetterie.ParMots(famille);
+                        if (g != GenreRobinet.Aucun && g != GenreRobinet.Compensateur && g != GenreRobinet.Purgeur) return (NatureSchema.Vanne, g, false);
+                        return (NatureSchema.Equipement, GenreRobinet.Aucun, false);
+                    }
+                default: return (NatureSchema.Ligne, GenreRobinet.Aucun, false);
+            }
+        }
 
         // ---------- Construction ----------
 

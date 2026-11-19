@@ -142,8 +142,8 @@ namespace PipeFit.Isometries.Revit
             return Regex.IsMatch(AnalyseSpool.Normaliser(Texte(e, BuiltInParameter.RBS_SYSTEM_NAME_PARAM)), @"retour|return");
         }
 
-        internal static readonly Regex Pompe = new Regex(@"pompe|pump|circulateur|surpresseur");
-        internal static readonly Regex Source = new Regex(@"groupe (froid|de production)|chiller|refroidisseur|chaudi|boiler|\bpac\b|chaleur|heat ?pump|production|thermofrigopompe|\btfp\b|sous.?station|\bcta\b|centrale (de traitement|double flux)|caisson|extracteur|ventilateur|rooftop|air handling|\bahu\b|\bvmc\b");
+        internal static Regex Pompe => Schema.Pompe;
+        internal static Regex Source => Schema.Source;
 
         /// <summary>Type de système (pour son style de trait) de chaque système affiché, lu sur les éléments.</summary>
         public static Dictionary<string, ElementId> TypesSystemes = new Dictionary<string, ElementId>();
@@ -159,7 +159,6 @@ namespace PipeFit.Isometries.Revit
             {
                 var k = Compat.Cle(e.Id);
                 var famille = (doc.GetElement(e.GetTypeId()) as ElementType)?.FamilyName ?? e.Name;
-                var nomN = AnalyseSpool.Normaliser(famille + " " + e.Name);
                 var marque = Texte(e, BuiltInParameter.ALL_MODEL_MARK);
                 var n = new NoeudSchema
                 {
@@ -194,27 +193,25 @@ namespace PipeFit.Isometries.Revit
                 }
                 else if (Compat.EstCategorie(e, BuiltInCategory.OST_PipeFitting) || Compat.EstCategorie(e, BuiltInCategory.OST_DuctFitting))
                 {
+                    // Nom de la famille d'abord (vanne dessinée en raccord, réduction, té), sinon type de pièce Revit
                     var pt = (e as FamilyInstance)?.MEPModel is MechanicalFitting mf ? mf.PartType : PartType.Undefined;
-                    n.Nature = pt == PartType.Transition ? NatureSchema.Reduction
+                    var defaut = pt == PartType.Transition ? NatureSchema.Reduction
                         : pt == PartType.Tee || pt == PartType.Cross || pt == PartType.Wye || pt == PartType.TapPerpendicular || pt == PartType.TapAdjustable
                           || pt == PartType.SpudPerpendicular || pt == PartType.SpudAdjustable ? NatureSchema.Te : NatureSchema.Ligne;
+                    var (nat, g, _) = Schema.Classer(CategorieSchema.Raccord, famille, defaut);
+                    n.Nature = nat; n.Genre = g;
+                    if (nat == NatureSchema.Vanne) n.Libelle = marque != "" ? marque : Schema.Court(famille);
                 }
                 else if (Compat.EstCategorie(e, BuiltInCategory.OST_PipeAccessory))
                 {
-                    n.Nature = NatureSchema.Vanne;
-                    try
-                    {
-                        var c = LectureModele.Lire(doc, e);
-                        c.EstAccessoire = true;
-                        n.Genre = Robinetterie.Genre(c);
-                    }
-                    catch { n.Genre = GenreRobinet.Vanne; }
-                    n.Libelle = marque != "" ? marque : Schema.Court(famille);
+                    var (nat, g, _) = Schema.Classer(CategorieSchema.Accessoire, famille);
+                    n.Nature = nat; n.Genre = g;
+                    if (nat == NatureSchema.Vanne) n.Libelle = marque != "" ? marque : Schema.Court(famille);
                 }
                 else if (Compat.EstCategorie(e, BuiltInCategory.OST_DuctAccessory))
                 {
                     n.Nature = NatureSchema.Accessoire;
-                    var o = PerteCharge.OrganeParNom(famille + " " + e.Name);
+                    var o = PerteCharge.OrganeParNom(famille);
                     n.Libelle = marque != "" ? marque : o == PerteCharge.OrganeAir.CoupeFeu ? "CF" : o == PerteCharge.OrganeAir.Registre ? "Registre"
                         : o == PerteCharge.OrganeAir.Silencieux ? "Silencieux" : Schema.Court(famille);
                 }
@@ -225,9 +222,10 @@ namespace PipeFit.Isometries.Revit
                 }
                 else
                 {
-                    n.Nature = Pompe.IsMatch(nomN) ? NatureSchema.Pompe : NatureSchema.Equipement;
-                    n.Source = n.Nature == NatureSchema.Equipement && Source.IsMatch(nomN);
-                    n.Libelle = n.Nature == NatureSchema.Pompe ? (marque != "" ? marque : "Pompe") : ((marque != "" ? marque + " " : "") + famille).Trim();
+                    var (nat, g, src) = Schema.Classer(CategorieSchema.Equipement, famille);
+                    n.Nature = nat; n.Genre = g; n.Source = src;
+                    n.Libelle = nat == NatureSchema.Pompe ? (marque != "" ? marque : "Pompe") : nat == NatureSchema.Vanne ? (marque != "" ? marque : Schema.Court(famille))
+                        : ((marque != "" ? marque + " " : "") + famille).Trim();
                 }
                 noeuds.Add(n);
                 foreach (var v in Voisins(e))

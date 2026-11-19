@@ -254,6 +254,10 @@ peuvent être sélectionnés dans le modèle depuis la fenêtre.
 
 Bouton **Schéma de principe (P&ID)** (groupe Schémas) : reprend en filaire les éléments dessinés en 3D. Sélectionnez
 un élément du réseau (tuyauterie ou gaine), cliquez, choisissez « tout le réseau relié » ou « la sélection seulement ».
+- **symbole d'après le seul nom de la famille, comme les isométries** (le nom du type n'est pas lu ; correspondances
+  « Symboles… » comprises) : accessoire → vanne du genre reconnu, ou raccord si la famille le dit (bride, réduction, té) ;
+  raccord → vanne si sa famille nomme une robinetterie, sinon réduction / té d'après le nom puis le type de pièce Revit ;
+  équipement → pompe, production / CTA (source) ou vanne (vanne 3 voies, filtre…) d'après le nom ;
 - tubes, coudes, brides, manchons fondus en lignes ; restent les **tés** (point), **vannes** (symboles de la légende des
   isométries : papillon, réglage, clapet, filtre, motorisée…), **réductions**, **pompes**, **équipements** (cadre avec
   repère et famille), **bouches**, extrémités libres ;
