@@ -170,10 +170,10 @@ COTES DES VANNES ET BRIDES
   faces). La nomenclature donne leur face à face (colonne « Encombrement », en mm).
 
 AJOUTER UNE COTE
-  Bouton « Ajouter une cote » : ouvrez la vue 3D de l'isométrie, cliquez deux éléments. Chaque clic
-  s'accroche au point le plus proche (axe du coude / té / piquage, axe de la vanne, face de bride, bout de
-  tube). La valeur est calculée par le logiciel et recalculée à chaque génération. Recliquer les deux
-  mêmes points retire la cote. Régénérez ensuite l'isométrie du spool.
+  Dans une vue en plan ou une coupe (pas en 3D). Recommandé : dessinez une cote alignée Revit sur les axes
+  ou extrémités des tuyauteries, sélectionnez-la, cliquez « Ajouter une cote » : elle est reportée sur
+  l'isométrie, mesurée suivant sa direction. Ou : cliquez deux points avec accrochage. La valeur est
+  recalculée à chaque génération ; reprendre la même cote la retire.
 
 PIQUAGES
   Le piquage dessiné par Revit (avec une longueur) est en réalité la branche piquée directement sur le

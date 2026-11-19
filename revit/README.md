@@ -130,15 +130,19 @@ Option décochée : étiquettes Revit (familles d'étiquettes choisies), placée
 
 ## Ajouter une cote
 
-- Bouton **« Ajouter une cote »** : pour une cote que la cotation automatique n'a pas faite. Ouvrez la vue 3D de
-  l'isométrie (ou une vue de la maquette), cliquez deux éléments ; chaque clic s'accroche au **point d'attache** le
-  plus proche : axe d'un coude, d'un té, d'un piquage ; axe d'une vanne ou d'un accessoire en ligne ; face de bride ;
-  bout de tube. La vanne ou la bride voisine du tube cliqué est proposée aussi (elles sont masquées dans la vue
-  d'isométrie, remplacées par leur symbole).
-- **La valeur n'est jamais saisie** : elle est recalculée sur la géométrie (longueur vraie entre les deux points) à
-  chaque génération, donc reste juste si le modèle change.
-- Enregistrée sur le 1er élément cliqué (paramètre « Cotes ajoutées (Pipe-Fit) ») ; elle figure sur l'isométrie de son
-  spool. Recliquer les deux mêmes points retire la cote. Une cote déjà générée automatiquement n'est pas doublée.
+- Bouton **« Ajouter une cote »**, dans une **vue en plan (vue de dessus) ou une coupe** — pas en 3D — avec la précision
+  d'une **cote alignée** :
+  1. **convertir des cotes alignées Revit** (recommandé) : dessinez la cote avec l'outil Revit « Cote alignée », qui
+     s'accroche précisément aux axes et extrémités des tuyauteries, sélectionnez-la, cliquez. Chaque ligne d'attache est
+     rattachée au point d'attache de la pièce visée le plus proche le long de la cote (axe d'un coude / té, axe d'une
+     vanne, face de bride, bout de tube) ; une cote à plusieurs segments donne plusieurs cotes ;
+  2. **cliquer deux points** avec accrochage (extrémités, milieux, intersections, perpendiculaire) : la pièce la plus
+     proche de chaque point, dans le plan de la vue, est retenue.
+- La cote garde **sa direction de mesure** : la valeur reportée sur l'isométrie est la projection sur cette direction
+  (comme une cote alignée), **recalculée sur la géométrie à chaque génération** ; elle est tracée sur l'isométrie suivant
+  cette direction.
+- Enregistrée sur le 1er élément (paramètre « Cotes ajoutées (Pipe-Fit) ») ; reprendre la même cote la retire ; une cote
+  déjà générée automatiquement n'est pas doublée.
 
 ## Piquages
 

@@ -61,10 +61,10 @@ namespace PipeFit.Isometries.Revit
             panneau.AddItem(bouton);
             panneau.AddItem(new PushButtonData("PipeFitCote", "Ajouter\nune cote", Assembly.GetExecutingAssembly().Location, typeof(CmdCote).FullName)
             {
-                ToolTip = "Ajoute une cote que la cotation automatique n'a pas faite : cliquez deux points, la valeur est calculée.",
-                LongDescription = "Dans la vue 3D de l'isométrie (ou une vue de la maquette), cliquez deux éléments : chaque clic s'accroche au point "
-                    + "d'attache le plus proche (axe d'un coude, d'un té, d'un piquage, axe d'une vanne, face de bride, bout de tube). La valeur "
-                    + "est recalculée sur la géométrie à chaque génération. Recliquer les deux mêmes points retire la cote. Échap pour terminer.",
+                ToolTip = "Ajoute une cote à l'isométrie, prise en plan ou en coupe comme une cote alignée : conversion de cotes alignées Revit, ou deux points cliqués avec accrochage.",
+                LongDescription = "Dans une vue en plan ou une coupe : dessinez la cote avec l'outil Revit « Cote alignée » (accrochage précis aux axes et extrémités), "
+                    + "sélectionnez-la et cliquez ; ou cliquez deux points. Chaque ligne d'attache est rattachée au point d'attache de la pièce visée (axe d'un coude / té, "
+                    + "axe d'une vanne, face de bride, bout de tube). La valeur, mesurée suivant la direction de la cote, est recalculée à chaque génération.",
                 LargeImage = Image("cote32.png"),
                 Image = Image("cote16.png"),
             });

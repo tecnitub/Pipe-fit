@@ -220,6 +220,13 @@ namespace PipeFit.Isometries.Core
                     (Point3, NatureNoeud)? pb = parId.TryGetValue(ca.IdB, out var b) ? CoteAjoutee.Point(b, ca.AttacheB)
                         : ca.PositionB.HasValue ? (ca.PositionB.Value, ca.AttacheB == "axe" ? NatureNoeud.Axe : NatureNoeud.Extremite) : ((Point3, NatureNoeud)?)null;
                     if (pa == null || pb == null || pa.Value.Item1.Distance(pb.Value.Item1) < 1) continue;
+                    // Cote alignée : mesurée suivant sa direction, tracée de A dans cette direction
+                    if (ca.Axe.HasValue && ca.Axe.Value.Longueur > 1e-9)
+                    {
+                        var bp = CoteAjoutee.Projete(pa.Value.Item1, pb.Value.Item1, ca.Axe.Value);
+                        if (pa.Value.Item1.Distance(bp) < 1) continue;
+                        pb = (bp, pb.Value.Item2);
+                    }
                     var ka = Cle(pa.Value.Item1); var kb = Cle(pb.Value.Item1);
                     if (cotes.Any(x => (Cle(x.A) == ka && Cle(x.B) == kb) || (Cle(x.A) == kb && Cle(x.B) == ka))) continue; // déjà générée
                     cotes.Add(new Cote { A = pa.Value.Item1, NatureA = pa.Value.Item2, B = pb.Value.Item1, NatureB = pb.Value.Item2, Ajoutee = true });

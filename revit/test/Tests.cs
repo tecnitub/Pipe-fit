@@ -477,6 +477,18 @@ static class Tests
             AnalyseSpool.Analyser(sm);
             var aj = sm.Cotes.Where(c => c.Ajoutee).ToList();
             Verifier(aj.Count == 1 && aj[0].Valeur == "1644" && aj[0].Libelle == "axe / extrémité", "cote ajoutée axe coude → bout de branche : " + string.Join(", ", aj.Select(c => c.Valeur + " " + c.Libelle)));
+            // Cote alignée prise en plan (direction X) : valeur = projection sur X, relue telle qu'écrite
+            coude.CotesAjoutees.Clear(); coude.CotesAjoutees.Add(new CoteAjoutee { AttacheA = "axe", IdB = "6", AttacheB = "bout1", Axe = new Point3(1, 0, 0) });
+            var relue = CoteAjoutee.Lire(CoteAjoutee.Ecrire(coude.CotesAjoutees));
+            Verifier(relue[0].Axe.HasValue && relue[0].Axe.Value.X == 1, "cote alignée : direction relue");
+            AnalyseSpool.Analyser(sm);
+            var al = sm.Cotes.Where(c => c.Ajoutee).ToList();
+            Verifier(al.Count == 1 && al[0].Valeur == "674" && Math.Abs(al[0].B.Z - al[0].A.Z) < 1e-6, "cote alignée suivant X : 674 (projection), pas la distance en biais 1644");
+            // Ligne d'attache d'une cote alignée : point de l'élément le plus proche le long de la direction
+            var pl = CoteAjoutee.PourLigneAttache(t6, new Point3(0, 0, 0), new Point3(1, 0, 0), 1674);
+            Verifier(pl.Code == "bout1" && pl.Ecart < 1, "ligne d'attache à x = 1674 : bout du tube");
+            var pa2 = CoteAjoutee.PourLigneAttache(coude, new Point3(0, 0, 0), new Point3(1, 0, 0), 1000);
+            Verifier(pa2.Code == "axe", "ligne d'attache sur le coude : son point d'épure");
             // Même cote que l'automatique : pas en double
             coude.CotesAjoutees.Clear(); coude.CotesAjoutees.Add(new CoteAjoutee { AttacheA = "axe", IdB = "4", AttacheB = "axe" });
             AnalyseSpool.Analyser(sm);
