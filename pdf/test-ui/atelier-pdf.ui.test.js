@@ -609,3 +609,29 @@ test('déplacer une zone : encadrer une partie de la page et la faire glisser ai
   assert.deepStrictEqual(page.erreurs, []);
   await page.context().close();
 });
+
+test('modifier le texte d\'un scan : « Modifier le texte » lance l\'OCR de la page, puis la ligne se corrige', { skip: ignorer, timeout: 120000 }, async () => {
+  const page = await appli();
+  await ajouter(page, ['scan.png'], 1);
+  await ouvrirPage(page, 1);
+  await page.click('[data-outil=editertexte]');
+  // Pas de texte dans une photo : la page est lue automatiquement, ses lignes deviennent cliquables
+  await page.waitForSelector('.ligne-texte[title*="Robinet"]', { timeout: 60000 });
+  assert.ok(await page.evaluate(() => window.AtelierPDF.etat.pages[0].ocr.length > 5));
+  await page.click('.ligne-texte[title*="Robinet"]');
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('Robinet de vidange DN 65 remplacé le 12/11/2026.');
+  await page.mouse.click(10, 900);
+  const e = await page.evaluate(() => window.AtelierPDF.ed.elements.find(x => x.type === 'texteModifie'));
+  assert.ok(e && e.taille > 8 && e.taille < 40, `taille reprise du scan (${e && e.taille})`);
+  await page.click('#ed-fermer');
+  const [texte] = await texteDuPdf(page, await enregistrer(page));
+  assert.match(texte, /Robinet de vidange DN 65 remplacé le 12\/11\/2026\./);
+  assert.ok(!/DN 50/.test(texte), 'ancien texte reconnu retiré du PDF');
+  assert.match(texte, /Dupont/, 'le reste du texte reconnu est gardé (PDF interrogeable)');
+  // Bouton OCR de l'éditeur : relire la page à la demande
+  await ouvrirPage(page, 1);
+  assert.ok(await page.isVisible('#ed-ocr'));
+  assert.deepStrictEqual(page.erreurs, []);
+  await page.context().close();
+});

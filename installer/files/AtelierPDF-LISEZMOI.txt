@@ -70,8 +70,12 @@ MODIFIER LE TEXTE D'UN PDF (double-clic sur la page, puis « ✏️ Modifier le 
   - À l'enregistrement, l'ancien texte est RETIRÉ du fichier (il ne réapparaît
     pas au copier-coller ni dans une recherche) ; le fond, les traits et le reste
     de la page ne bougent pas.
-  - Scans et photos : lancez d'abord « 🔍 OCR » ; l'ancien texte, qui fait partie
-    de l'image, est alors recouvert par la couleur du fond.
+  - Scans et photos : en choisissant « ✏️ Modifier le texte », la page est lue
+    automatiquement (OCR, quelques secondes, sur le poste) ; ses lignes
+    s'encadrent ensuite et se corrigent de la même façon. L'ancien texte, qui fait
+    partie de l'image, est recouvert par la couleur du fond. Bouton « 🔍 OCR » de
+    la page : la relire à la demande. Vérifiez le texte reconnu avant de valider
+    (l'écriture manuscrite n'est pas reconnue).
   - Maj+clic sur une ligne : tout le PARAGRAPHE, qui revient à la ligne tout seul
     à la largeur d'origine.
   - La police d'origine du PDF est réutilisée quand elle contient toutes les

@@ -120,6 +120,7 @@
   $('#ed-tampon').addEventListener('click', ouvrirTampons);
   $('#ed-memoriser').addEventListener('click', memoriserImage);
   $('#ed-excel').addEventListener('click', exporterMetre);
+  $('#ed-ocr').addEventListener('click', () => { if (ed.page) { ed.page.ocrTente = true; lireTextePage(); } });
   $('#ed-fermer').addEventListener('click', fermerEditeur);
   $('#ed-prec').addEventListener('click', () => changerPage(-1));
   $('#ed-suiv').addEventListener('click', () => changerPage(1));
