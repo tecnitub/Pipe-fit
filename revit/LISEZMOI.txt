@@ -162,7 +162,8 @@ LÉGENDE DES SYMBOLES
 
 COTES TOUJOURS À L'AXE
   Té, croix, piquage : une seule cote par branche, du bout de la branche à l'axe de la conduite principale ;
-  la conduite principale n'est pas coupée au té.
+  la conduite principale est cotée d'un seul tenant, avec une cote de position de la branche (depuis un
+  point d'épure de la conduite, sinon son extrémité la plus proche).
   Cotes d'axe en axe ou au point d'épure (sommet des coudes, centre des tés). Les raccords sont reconnus
   par leur type de pièce Revit avant leur nom ; toute pièce qui change de direction est cotée à son point
   d'épure ; une réduction excentrée coupe la cote (jamais entre deux axes décalés).
@@ -183,8 +184,8 @@ PIQUAGES
   ni débit) ; pas de pièce « piquage » en nomenclature ni au quantitatif.
   Seule la soudure sur le collecteur compte, même si la branche est dans un autre spool.
   Cote de la branche : de l'axe du collecteur à la bride (ou au bout de la branche, ou à l'axe du raccord
-  suivant), même si le piquage est dans le spool du collecteur. Une seule cote par piquage : la cote du
-  collecteur n'est pas coupée.
+  suivant), même si le piquage est dans le spool du collecteur. Le collecteur est coté d'un seul tenant,
+  avec une cote de position du piquage.
   Les weldolets, sockolets et selles restent des pièces en nomenclature (une soudure, sur le collecteur).
 
 BRIDES

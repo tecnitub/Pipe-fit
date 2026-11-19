@@ -221,7 +221,25 @@ namespace PipeFit.Isometries.Core
                     else if (x.VoisinEstPiquage && x.AxeCollecteur.HasValue) Marcher(x.AxeCollecteur.Value, NatureNoeud.Axe, c, autres[0]);
                     else Marcher(x.Position, na, c, autres[0]);
                 }
-            // Piquage : une seule cote, du bout de la branche à l'axe du collecteur (la cote du collecteur n'est pas coupée)
+            // Position de chaque branche (té, croix, piquage) sur la conduite principale : la conduite reste cotée d'un seul tenant,
+            // et une cote de position va d'une de ses extrémités (point d'épure de préférence, sinon la plus proche) à l'axe de la branche
+            var principales = cotes.ToList();
+            foreach (var n in s.Composants.Where(c => (c.Type == TypeComposant.Te || c.Type == TypeComposant.Croix || c.Type == TypeComposant.Piquage) && c.Extremites.Count >= 2))
+            {
+                var p = PointAxe(n);
+                var porteuse = principales.Where(c =>
+                {
+                    var ab = c.B - c.A; var l = ab.Longueur;
+                    if (l < 2) return false;
+                    var k = (p - c.A).Dot(ab) / (l * l);
+                    return k * l > 1 && (1 - k) * l > 1 && (c.A + ab * k - p).Longueur <= 1;
+                }).OrderByDescending(c => c.LongueurMm).FirstOrDefault();
+                if (porteuse == null) continue;
+                var depuisA = porteuse.NatureA == NatureNoeud.Axe && porteuse.NatureB != NatureNoeud.Axe ? true
+                    : porteuse.NatureB == NatureNoeud.Axe && porteuse.NatureA != NatureNoeud.Axe ? false
+                    : porteuse.A.Distance(p) <= porteuse.B.Distance(p);
+                if (depuisA) Ajouter(porteuse.A, porteuse.NatureA, p, NatureNoeud.Axe); else Ajouter(porteuse.B, porteuse.NatureB, p, NatureNoeud.Axe);
+            }
             // Cotes ajoutées à la main : entre deux points d'attache, valeur recalculée sur la géométrie
             foreach (var c in s.Composants)
                 foreach (var ca in c.CotesAjoutees)

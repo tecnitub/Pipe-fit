@@ -446,9 +446,9 @@ static class Tests
         // bout de tube de départ → axe coude (1000)
         var cotes = s.Cotes.Select(c => c.Valeur + " " + c.Libelle).OrderBy(x => x).ToList();
         // Té : la conduite principale n'est pas coupée (coude → bride d'un seul tenant), la branche est cotée de son bout à l'axe
-        Verifier(cotes.Count == 3, "3 cotes : " + string.Join(", ", cotes));
-        Verifier(cotes.Contains("1620 axe / bride"), "conduite principale non coupée au té : axe du coude → bride (1620)");
-        Verifier(!cotes.Any(x => x.StartsWith("1500 ") || x.StartsWith("120 ")), "aucune cote au centre du té sur la conduite principale");
+        Verifier(cotes.Count == 4, "4 cotes : " + string.Join(", ", cotes));
+        Verifier(cotes.Contains("1620 axe / bride"), "conduite principale cotée d'un seul tenant : axe du coude → bride (1620)");
+        Verifier(cotes.Contains("1500 axe / axe") && !cotes.Any(x => x.StartsWith("120 ")), "position de la branche sur la conduite : axe du coude → axe du té (1500)");
         Verifier(cotes.Contains("674 axe / extrémité"), "cote d'axe à bout de tube (branche)");
         Verifier(cotes.Contains("1000 extrémité / axe") || cotes.Contains("1000 axe / extrémité"), "cote bout de tube / axe coude");
 
@@ -908,8 +908,8 @@ static class Tests
                 Verifier(!ListeDebit.Csv(new[] { sq }).Contains("Piquage"), "CSV débit : pas de colonne piquage");
                 // Cotes toujours à l'axe : axe du collecteur → bout de la branche ; le collecteur est coté jusqu'à l'axe du piquage
                 var cq = sq.Cotes.Select(c => c.Valeur + " " + c.Libelle).OrderBy(x => x).ToList();
-                Verifier(cq.Count(x => x.EndsWith("axe / extrémité") || x.EndsWith("extrémité / axe")) == 1 && cq.Contains("580 axe / extrémité") && !cq.Any(x => x.StartsWith("1000 ")),
-                    "piquage : une seule cote, axe du collecteur → bout de branche (580), collecteur non coupé : " + string.Join(", ", cq));
+                Verifier(cq.Contains("580 axe / extrémité") && cq.Contains("2000 extrémité / extrémité") && cq.Count(x => x.StartsWith("1000 ")) == 1 && cq.Count == 3,
+                    "piquage : branche (580), collecteur d'un seul tenant (2000), position du piquage (1000) : " + string.Join(", ", cq));
                 // Connecteur Revit sur la paroi du collecteur (z = 57) : la cote part quand même de l'axe du collecteur
                 var spr = new Spool { Nom = "PR" };
                 spr.Composants.Add(C("col", "Tuyau", "", TypeComposant.Tube, 100, 2000, null, E(0, 0, 0, 100, null), E(2000, 0, 0, 100, null)));
