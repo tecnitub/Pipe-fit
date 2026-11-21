@@ -77,8 +77,13 @@
     const images = {};
     for (const p of pages) for (const e of p.elements) if (e.type === 'image' && etat.images.has(e.image)) images[e.image] = etat.images.get(e.image);
     let k = 0;
+    // DOE : sommaire après la page de garde ; documents rangés sous la section (intercalaire) qui les précède
+    opts = { ...opts, sommaireApres: pages[0] && pages[0].doe === 'garde' ? 1 : 0 };
+    let dansSection = false;
     for (const p of pages) {
       const s = etat.sources.get(p.source);
+      if (p.doe === 'section') dansSection = true;
+      const niveau = dansSection && p.doe !== 'section' ? 1 : 0;
       const caches = p.elements.filter(e => e.type === 'caviarde');
       const enImage = caches.length > 0 || (p.type === 'pdf' && (s.rasteriser || opts.compresser));
       // Texte à garder interrogeable : reconnu (OCR), ou celui du PDF quand la page devient une image
@@ -91,7 +96,8 @@
       if (p.ocr) donnees.ocr = caches.length ? p.ocr.filter(m => !sousCaviardage(m, caches)) : p.ocr;
       if (p.echelle) donnees.echelle = p.echelle;
       if (p.titre) donnees.intercalaire = p.titre;
-      const commun = { elements: p.elements, groupe: s ? s.nom : p.titre, source: s ? s.id : (p.titre ? p.id : null), ocr: mots, donnees };
+      if (p.doe) donnees.doe = p.doe;
+      const commun = { elements: p.elements, groupe: s ? s.nom : p.titre, source: s ? s.id : (p.titre ? p.id : null), ocr: mots, donnees, niveau };
       if (caches.length) {
         // Caviardage : la page est recopiée en image avec les zones noircies, le texte et les images dessous disparaissent
         liste.push({ ...await pageCaviardee(p, opts.compresser ? opts.dpi : 200), ...commun, rotation: 0 });
@@ -210,6 +216,9 @@
     let octets;
     try { octets = await occupe('Préparation de l\'impression…', avance => produire(etat.pages, { ...options(), editable: false }, avance)); }
     catch (e) { note(`Impression impossible : ${e.message || e}`, 'erreur'); return; }
+    imprimerOctets(octets);
+  }
+  function imprimerOctets(octets) {
     const url = URL.createObjectURL(new Blob([octets], { type: 'application/pdf' }));
     document.querySelectorAll('iframe.impression').forEach(f => f.remove());
     const cadre = document.createElement('iframe');

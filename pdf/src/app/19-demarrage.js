@@ -87,4 +87,4 @@
   // Ouvert avec des fichiers : on les affiche ; sinon, proposition de reprendre le travail laissé
   ouvrirFichiersTransmis().then(async ouverts => { if (!ouverts) { await proposerReprise(); proposerVisite(); } });
   // Accès pour les tests automatisés
-  window.AtelierPDF = { etat, importer, produire, options };
+  window.AtelierPDF = { etat, importer, produire, options, ed, choisirElement };

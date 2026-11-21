@@ -48,9 +48,10 @@
     c.innerHTML = `<div class="vignette"></div>
       <div class="pied"><span class="marqueur"></span><span class="num"></span><span class="nom"></span></div>
       <div class="actions-carte">
-        <button data-a="gauche" title="Pivoter à gauche">⟲</button><button data-a="droite" title="Pivoter à droite">⟳</button>
-        <button data-a="modifier" title="Modifier la page">✎</button><button data-a="supprimer" title="Supprimer">✕</button>
+        <button data-a="gauche" data-ico="pivoter-g" title="Pivoter à gauche"></button><button data-a="droite" data-ico="pivoter-d" title="Pivoter à droite"></button>
+        <button data-a="modifier" data-ico="modifier" title="Modifier la page (double-clic)"></button><button data-a="supprimer" data-ico="supprimer" title="Supprimer la page"></button>
       </div>`;
+    poserIcones(c);
     observateur.observe(c);
     return c;
   }
@@ -119,7 +120,8 @@
     ul.replaceChildren(...liste.map(s => {
       const li = document.createElement('li');
       li.innerHTML = `<span class="pastille"></span><div class="nomzone"><input title="Titre dans le sommaire et les signets"><span class="infos"></span><span class="alerte"></span></div>
-        <button data-a="choisir" title="Sélectionner ses pages">☐</button><button data-a="retirer" title="Retirer ce document">✕</button>`;
+        <button data-a="choisir" data-ico="choisir" title="Sélectionner ses pages"></button><button data-a="retirer" data-ico="retirer" title="Retirer ce document"></button>`;
+      poserIcones(li);
       li.querySelector('.pastille').style.background = s.couleur;
       const inp = li.querySelector('input');
       inp.value = s.nom;

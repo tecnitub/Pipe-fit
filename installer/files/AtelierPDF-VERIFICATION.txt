@@ -35,7 +35,7 @@ C. TRAVAIL COURANT
 [ ] 12. Double-clic sur une page : zoom à la molette avec Ctrl, barre d'espace +
         glisser pour se déplacer, vignettes à gauche (clic, glisser).
 [ ] 13. Barre d'outils lisible sur le portable (pas de boutons coupés).
-[ ] 14. « ✏️ Modifier le texte » sur un devis : la ligne corrigée ressemble à
+[ ] 14. « Modifier texte » sur un devis : la ligne corrigée ressemble à
         l'originale ; dans le PDF enregistré, Ctrl+F ne trouve plus l'ancien texte.
 [ ] 15. OCR d'un scan (🔍 OCR) : quelques secondes par page ; Ctrl+F trouve un mot du scan.
 [ ] 16. Un formulaire PDF (Cerfa) se remplit et s'enregistre.
@@ -53,6 +53,17 @@ D. PIPE-FIT (si utilisé)
 E. ANNOTATIONS DANS ACROBAT
 [ ] 23. Case « Annotations en commentaires (Acrobat) » cochée : dans Acrobat Reader,
         les annotations apparaissent dans la liste des commentaires et se déplacent.
+
+E2. MÉTRÉ, DOE, GRANDS PLANS
+[ ] 23b. Plan à l'échelle 1/50 : réseau EF + DN20, tracer une longueur ; « Compter »
+        3 radiateurs ; « Légende » ; « Métré Excel » : le fichier s'ouvre dans
+        Excel avec les feuilles Longueurs, Comptages, Surfaces, Détail.
+[ ] 23c. « DOE » avec quelques documents : page de garde, intercalaires, documents
+        bien rangés ; PDF enregistré : sommaire après la page de garde, signets
+        par section.
+[ ] 23d. « Grands plans » sur un plan A1, en A3 mosaïque, imprimé à 100 % : les
+        feuilles s'assemblent (croix alignées) et une cote mesurée sur papier
+        correspond à l'échelle du plan.
 
 F. MISE À JOUR
 [ ] 24. Déposer un AtelierPDF-Setup de version plus récente dans le dossier réseau

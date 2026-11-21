@@ -146,12 +146,27 @@
     if (!p) return;
     try { ed.lignes = await lignesTexte(p); } catch (e) { console.error(e); ed.lignes = []; }
     if (ed.page !== p) return;
+    // Scan ou photo sans texte : la page est lue (OCR) tout de suite, puis ses lignes deviennent modifiables
+    if (!ed.lignes.length && (p.type === 'pdf' || p.type === 'image') && !(p.ocr && p.ocr.length) && !p.ocrTente) {
+      p.ocrTente = true;
+      if (await lireTextePage(p)) return;
+    }
     if (!ed.lignes.length) {
       note(p.type === 'pdf' || p.type === 'image'
-        ? 'Aucun texte lisible sur cette page (scan ou photo) : lancez d\'abord « 🔍 OCR », ou utilisez « Masquer » puis « Texte ».'
+        ? 'Aucun texte reconnu sur cette page : utilisez « Masquer » puis « Texte » pour la corriger.'
         : 'Aucun texte sur cette page.', 'erreur');
     } else note('Cliquez sur une ligne pour la corriger (Maj+clic : tout le paragraphe). À l\'enregistrement, l\'ancien texte est retiré du fichier.');
     dessinerCalque();
+  }
+  // OCR de la page ouverte dans l'éditeur ; « Modifier texte » reprend ensuite avec les lignes reconnues
+  async function lireTextePage(p = ed.page) {
+    if (!p || p.type === 'blanche') return 0;
+    validerEditeur();
+    const n = await lancerOcr([p]);
+    if (!n || ed.page !== p) return n;
+    if (ed.outil === 'editertexte') await preparerLignes();
+    else note('Texte de la page reconnu : outil « Modifier texte » pour le corriger, Ctrl+F pour y chercher.', 'ok');
+    return n;
   }
   function noeudsLignes() {
     const deja = ed.elements.filter(e => e.type === 'texteModifie').map(e => e.zone);
